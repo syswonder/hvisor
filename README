@@ -1,0 +1,23 @@
+# armv8-baremetal-demo-rust
+
+使用rust写的armv8裸机程序，仅供学习！
+
+## ~/.cargo/config
+```shell
+[target.aarch64-unknown-linux-gnu]
+linker = "aarch64-linux-gnu-gcc"
+
+[build]
+target = "aarch64-unknown-linux-gnu"
+
+[alias]
+build_aarch64 = "build --target aarch64-unknown-linux-gnu"
+```
+其中需要安装linker：`apt-get install aarch64-linux-gnu-`
+安装rust toolchain：`rustup install nightly && rustup default nightly && rustup target add aarch64-unknown-linux-gnu`
+
+## 编译
+```shell
+cargo clean && cargo build [--realease] 
+```
+然后复制到目标Armv8机器执行。
