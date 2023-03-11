@@ -6,7 +6,7 @@
 ```shell
 [target.aarch64-unknown-linux-gnu]
 linker = "aarch64-linux-gnu-gcc"
-rustflags = ["-C", "link-arg=-nostartfiles -Tlinker.ld"]
+rustflags = ["-C", "link-args=-nostartfiles -Tlinker.ld"]
 ```
 其中需要安装linker：`apt-get install aarch64-linux-gnu-`
 安装rust toolchain：`rustup install nightly && rustup default nightly && rustup target add aarch64-unknown-linux-gnu`
@@ -15,4 +15,20 @@ rustflags = ["-C", "link-arg=-nostartfiles -Tlinker.ld"]
 ```shell
 cargo clean && cargo build [--realease] 
 ```
-然后复制到目标Armv8机器执行。
+
+## Qemu
+qemu-system-aarch64 \
+    -M virt \
+    -m 1024M \
+    -cpu cortex-a53 \
+    -nographic \
+    -kernel target/aarch64-unknown-linux-gnu/debug/armv8-baremetal-demo-rust
+
+## 编译GDB for aarch64
+1. 下载gdb source: https://ftp.gnu.org/gnu/gdb/
+2. tar -xzvf xxx
+3. mkdir build 
+4. cd $_
+5. ../configure --prefix=$PWD --host=aarch64-linux-gnu
+PS: host填写自己电脑里交叉编译器的前缀，然后configure会自动寻找该前缀的编译器
+6. make -j$(nproc) CFALGS=-static CXXFLAGS=-static 
