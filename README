@@ -13,7 +13,7 @@ rustflags = ["-C", "link-args=-nostartfiles -Tlinker.ld"]
 
 ## 编译
 ```shell
-cargo clean && cargo build [--realease] 
+cargo clean && cargo build --target aarch64-unknown-linux-gnu
 ```
 
 ## Qemu
@@ -29,10 +29,17 @@ qemu-system-aarch64 \
     -m 1024M \
     -cpu cortex-a53 \
     -nographic \
+    -machine virtualization=on \ 
+    #-machine secure=on \
     -kernel target/aarch64-unknown-linux-gnu/debug/armv8-baremetal-demo-rust \
     -S -s
 
-然后使用aarch64-linux-gnu-gdb -x debug.gdb
+PS: -machine virtualization=on开启虚拟化，则启用EL2，-machine secure=on，则启用EL3。我们只需要从EL2启动即可。
+然后使用aarch64-linux-gnu-gdb -x debug.gdb。qemu默认从EL1启动virt
+参考：
+1. https://stackoverflow.com/questions/42824706/qemu-system-aarch64-entering-el1-when-emulating-a53-power-up
+2. https://stackoverflow.com/questions/31787617/what-is-the-current-execution-mode-exception-level-etc
+3. https://github.com/cirosantilli/linux-kernel-module-cheat/tree/35684b1b7e0a04a68987056cb15abd97e3d2f0cc#arm-exception-level
 
 ## 编译GDB for aarch64
 1. 下载gdb source: https://ftp.gnu.org/gnu/gdb/
