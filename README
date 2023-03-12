@@ -23,12 +23,24 @@ qemu-system-aarch64 \
     -cpu cortex-a53 \
     -nographic \
     -kernel target/aarch64-unknown-linux-gnu/debug/armv8-baremetal-demo-rust
+## Qemu调试
+qemu-system-aarch64 \
+    -M virt \
+    -m 1024M \
+    -cpu cortex-a53 \
+    -nographic \
+    -kernel target/aarch64-unknown-linux-gnu/debug/armv8-baremetal-demo-rust \
+    -S -s
+
+然后使用aarch64-linux-gnu-gdb -x debug.gdb
 
 ## 编译GDB for aarch64
 1. 下载gdb source: https://ftp.gnu.org/gnu/gdb/
 2. tar -xzvf xxx
 3. mkdir build 
 4. cd $_
-5. ../configure --prefix=$PWD --host=aarch64-linux-gnu
+5. ../configure --prefix=$PWD --target=aarch64-linux-gnu
 PS: host填写自己电脑里交叉编译器的前缀，然后configure会自动寻找该前缀的编译器
-6. make -j$(nproc) CFALGS=-static CXXFLAGS=-static 
+6. make -j$(nproc) [CFALGS=-static CXXFLAGS=-static]
+
+PS: --target指定要调试的程序的架构 --host指定运行gdb程序的架构
