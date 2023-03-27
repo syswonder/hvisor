@@ -1,6 +1,7 @@
 # armv8-baremetal-demo-rust
 
-使用rust写的armv8 hypervisor，仅供学习！
+使用rust写的armv8 hypervisor，Porting from 
+https://github.com/rcore-os/RVM1.5
 
 ## ~/.cargo/config
 ```shell
