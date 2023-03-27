@@ -13,5 +13,5 @@ _start:
     b     el2_entry                   //; 否则，进入el2_entry
 
 
-    bl    not_main                    //; 跳转
+    bl    init                    //; 跳转
     b     .                           //; 永远不会运行到这里
