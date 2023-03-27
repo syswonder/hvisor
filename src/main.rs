@@ -6,7 +6,7 @@ use core::arch::global_asm; // 支持内联汇编
 mod panic;
 mod driver;
 mod lib;
-global_asm!(include_str!("start.s")); // 内联汇编
+global_asm!(include_str!("arch/aarch64/start.s")); // 内联汇编
 
 #[macro_export]
 macro_rules! print {
@@ -18,8 +18,8 @@ macro_rules! println {
     ($($arg:tt)*) => ($crate::print!("{}\n", format_args!($($arg)*)));
 }
 
-#[no_mangle] // 关闭Rust的名称修改功能，让rust在编译时不修改我们定义的函数名，这样在start.s就可以跳入这里
-pub extern "C" fn init(cpu_id: usize) { // extern "C" 使用C语言的调用约定，即ABI，如参数放置的寄存器约定，返回值的寄存器约定，详见：https://en.wikipedia.org/wiki/Calling_convention 。然后我们就可以在Rust之外调用该函数。从x0寄存器
+#[no_mangle]
+pub extern "C" fn init(cpu_id: usize) {
     println!("Welcome AArch64 Bare Metal Hypervisor\n");
     boot_hypervisor(cpu_id);
 }
