@@ -1,5 +1,5 @@
 #![no_std] // 禁用标准库链接
-#![no_main] // 不使用main入口，使用自己定义实际入口_start，因为我们还没有出事后堆栈指针 
+#![no_main] // 不使用main入口，使用自己定义实际入口_start，因为我们还没有初始化堆栈指针 
 
 use core::arch::global_asm; // 支持内联汇编
 
