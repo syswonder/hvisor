@@ -5,3 +5,12 @@ version = 3
 [[package]]
 name = "armv8-baremetal-demo-rust"
 version = "0.1.0"
+dependencies = [
+ "spin",
+]
+
+[[package]]
+name = "spin"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "13287b4da9d1207a4f4929ac390916d64eacfe236a487e9a9f5b3be392be5162"
