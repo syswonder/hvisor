@@ -1,16 +1,33 @@
-ENTRY(_start)
+ENTRY(arch_entry)
+
+BASE_ADDRESS = 0xffffc0200000;
+
 SECTIONS
 {
-    . = 0x40000000; /* QEMU的物理内存地址，文件加载地址 */
-    .text.boot : {*(.text.boot)} /* 指定start.s编译后start.o文件的代码段.text输出为.startup段, 如果不刻意声明这一段，那么容易出现起始代码不是start.s文件*/
-    .text : {*(.text)}
-    .data : {*(.data)}
-    .rodata : {*(.rodata)}
-    .bss : {*(.bss)}
+	. = BASE_ADDRESS;
 
-    . = ALIGN(8); /* 8字节对齐，下面放栈 */
+	.header		: {
+		__header_start = .;
+		KEEP(*(.header))
+	}
 
-    . = . + 0x4000; /* 栈的大小是0x4000=16KB */
-    stack_top = .; /* 对应start.s中的stack_top */
+	. = ALIGN(4K);
+	.text		: { *(.text .text.*) }
 
+	. = ALIGN(4K);
+	.rodata		: { *(.rodata .rodata.*) }
+
+	. = ALIGN(4K);
+	.data		: { *(.data .data.*) *(.got .got.*) }
+
+	. = ALIGN(4K);
+	.bss		: { *(.bss .bss.*) *(COMMON) }
+
+	. = ALIGN(4K);
+	__core_end = .;
+
+	__entry_offset = arch_entry - BASE_ADDRESS;
+	__core_size = __core_end - BASE_ADDRESS;
+
+	/DISCARD/ : { *(.comment) *(.gnu*) *(.note*) *(.eh_frame*) }
 }

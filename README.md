@@ -66,6 +66,19 @@ qemu-system-aarch64 \
 2. https://stackoverflow.com/questions/31787617/what-is-the-current-execution-mode-exception-level-etc
 3. https://github.com/cirosantilli/linux-kernel-module-cheat/tree/35684b1b7e0a04a68987056cb15abd97e3d2f0cc#arm-exception-level
 
+## Type 1.5 启动
+
+1. 下载并制作ubuntu镜像，在qemu中启动
+```shell
+make image
+```
+
+2. 在qemu中启动制作好的虚拟机镜像
+```shell
+make qemu
+```
+
+
 ## 编译GDB for aarch64（未成功）
 1. 下载gdb source: https://ftp.gnu.org/gnu/gdb/gdb-13.1.tar.gz
 2. tar -xzvf gdb-13.1.tar.gz

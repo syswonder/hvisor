@@ -1,12 +1,18 @@
 [package]
-name = "armv8-baremetal-demo-rust"
+name = "rvmarm"
 version = "0.1.0"
 edition = "2021"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-spin = "0.7"
+log = "0.4"
+spin = "0.9"
+bitflags = "2.1"
+bit_field = "0.10"
+numeric-enum-macro = "0.2"
+tock-registers = "0.8"
+aarch64-cpu = "9.3"
 
 [profile.dev]
 panic = "abort"
