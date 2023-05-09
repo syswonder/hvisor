@@ -7,7 +7,9 @@ use core::result::Result;
 #[cfg(target_arch = "aarch64")]
 #[path = "arch/aarch64/mod.rs"]
 mod arch;
+mod consts;
 mod header;
+mod memory;
 mod panic;
 
 fn main() -> Result<(), ()> {

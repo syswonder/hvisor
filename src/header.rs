@@ -1,7 +1,6 @@
 use core::fmt::{Debug, Formatter, Result};
 
-const PER_CPU_SIZE: usize = 0; // todo
-pub const HV_HEADER_PTR: *const HvHeader = __header_start as _;
+use crate::consts::{HV_HEADER_PTR, PER_CPU_SIZE};
 
 const HEADER_SIGNATURE: [u8; 8] = *b"RVMIMAGE";
 
