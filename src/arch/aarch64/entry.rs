@@ -35,8 +35,8 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
     core::arch::asm!(
         "
 
-        mov	x16, x0
-	    mov	x17, x30
+        mov	x16, x0                             //x16 cpuid
+	    mov	x17, x30                            //x17 linux ret addr
         /* skip for now
         TODO:1 change header or config read step into a singe not naked func
         *      2 just read them depend on offset         
