@@ -3,8 +3,8 @@ LOG ?=
 STATS ?= off
 PORT ?= 2333
 
-# do not support debug mode
-MODE := release
+# default release mode
+MODE ?= release
 
 export MODE
 export LOG
@@ -43,5 +43,8 @@ elf:
 .PHONY: scp
 scp:
 	scp -P $(PORT) -r $(target_bin) jail@localhost:~/
+.PHONY: disa
+disa:
+	rust-objdump --disassemble $(target_elf) > rvm.S
 $(target_bin): elf
 	$(OBJCOPY) $(target_elf) --strip-all -O binary $@
