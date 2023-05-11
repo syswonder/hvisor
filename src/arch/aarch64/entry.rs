@@ -1,5 +1,27 @@
 use crate::consts::{HV_HEADER_PTR, PER_CPU_SIZE};
 use core::arch::global_asm; // 支持内联汇编
+
+global_asm!(
+    
+    include_str!("./page_table.S"),
+);
+
+
+pub unsafe extern "C" fn enable_mmu() -> i32 {
+    core::arch::asm!(
+        "
+        adrp	x0, __trampoline_start
+
+        /* map the l1 table that includes the firmware and the uart */
+        get_index x2, x13, 0
+        set_table bootstrap_pt_l0, x2, bootstrap_pt_l1_hyp_uart
+    
+        
+        
+    ",
+        options(noreturn),
+    );
+}
 pub unsafe extern "C" fn el2_entry() -> i32 {
     core::arch::asm!(
         "
@@ -7,22 +29,14 @@ pub unsafe extern "C" fn el2_entry() -> i32 {
         lsr	x1, x1, #26      // EC, bits [31:26]
         cmp	x1, #0x16           // hvc ec value
         b.ne	.		/* not hvc */
-        b {enable_mmu}
+        b {0}
         bl {entry}     
         eret
     ",
-        entry = sym crate::entry,
         sym enable_mmu,
+        entry = sym crate::entry,
         options(noreturn),
 
-    );
-}
-pub unsafe extern "C" fn enable_mmu() -> i32 {
-    core::arch::asm!(
-        "
-        
-    ",
-        options(noreturn),
     );
 }
 global_asm!(
@@ -38,7 +52,7 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
         mov	x16, x0                             //x16 cpuid
 	    mov	x17, x30                            //x17 linux ret addr
         /* skip for now
-        TODO:1 change header or config read step into a singe not naked func
+        *TODO:1 change header or config read step into a singe not naked func
         *      2 just read them depend on offset         
         adr     x0, HV_HEADER_PTR               //store header addr for get info from it
         adrp	x1, __core_end                  //get page pool addr for calculate config addr 
