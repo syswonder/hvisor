@@ -1,10 +1,4 @@
-.macro virt2phys, register
-    add	\register, \register, x11
-.endm
 
-.macro phys2virt, register
-    sub	\register, \register, x11
-.endm
 
 .macro	ventry	label
 	.align	7
