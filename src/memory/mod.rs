@@ -46,5 +46,13 @@
 //!     +--------------------------------------+ - hv_end (higher address)
 //!
 pub mod addr;
+pub mod heap;
 mod paging;
 pub const PAGE_SIZE: usize = paging::PageSize::Size4K as usize;
+pub fn init_heap() {
+    // Set PHYS_VIRT_OFFSET early.
+    unsafe {
+        addr::PHYS_VIRT_OFFSET =0xffff_4060_0000;
+    };
+    heap::init();
+}

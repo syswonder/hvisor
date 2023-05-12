@@ -1,7 +1,17 @@
 use crate::consts::{HV_HEADER_PTR, PER_CPU_SIZE};
 use core::arch::global_asm; // 支持内联汇编
+use crate::percpu::PerCpu;
+global_asm!(
+    include_str!("./page_table.S"),);
+global_asm!(
+    include_str!("./bootvec.S"),
+    sym el2_entry
+);
+global_asm!(
+    include_str!("./hyp_vec.S"),
+    sym crate::arch_handle_exit);
 
-global_asm!(include_str!("./page_table.S"),);
+    
 pub unsafe extern "C" fn boot_pt() -> i32 {
     core::arch::asm!(
         "
@@ -67,13 +77,68 @@ pub unsafe extern "C" fn enable_mmu() -> i32 {
         options(noreturn),
     );
 }
-pub unsafe extern "C" fn switch_stack() -> i32 {
+pub unsafe extern "C" fn vmreturn() -> i32 {
     core::arch::asm!(
         "
-        bl {entry} 
+        mov	x30, x17 
+        ret        //return to linux
+        
+    ",
+        options(noreturn),
+    );
+}
+pub unsafe extern "C" fn switch_stack() -> i32 {
+    let per_cpu_size=PER_CPU_SIZE;
+    let cpu_data = match PerCpu::new() {
+        Ok(c) => c,
+        Err(e) => return e.code(),
+    };
+    let hv_sp = cpu_data.stack_top();
+    core::arch::asm!(
+        "
+        /* install the final vectors */
+        adr	x1, hyp_vectors
+        msr	vbar_el2, x1
+    
+        mov	x0, x16		/* preserved cpuid, will be passed to entry */
+        adrp	x1, __core_end
+        mov	x2, {per_cpu_size}
+        /*
+         * percpu data = pool + cpuid * percpu_size
+         */
+        madd	x1, x2, x0, x1
+    
+        /* set up the stack and push the root cell's callee saved registers */
+        mov	sp, {hv_sp}
+        stp	x29, x17, [sp, #-16]!	/* note: our caller lr is in x17 */
+        stp	x27, x28, [sp, #-16]!
+        stp	x25, x26, [sp, #-16]!
+        stp	x23, x24, [sp, #-16]!
+        stp	x21, x22, [sp, #-16]!
+        stp	x19, x20, [sp, #-16]!
+        /*
+         * We pad the stack, so we can consistently access the guest
+         * registers from either the initialization, or the exception
+         * handling code paths. 19 caller saved registers plus the
+         * exit_reason, which we don't use on entry.
+         */
+        sub	sp, sp, 20 * 8
+    
+        mov	x29, xzr	/* reset fp,lr */
+        mov	x30, xzr
+    
+        /* Call entry(cpuid, struct per_cpu*). Should not return. */
+        bl {entry}
+        eret        //back to ?arch_entry hvc0
+        mov	x30, x17 
+        ret        //return to linux
+
     
                 
     ",
+    per_cpu_size=in(reg) per_cpu_size,
+    hv_sp=in(reg) hv_sp,
+        //vmreturn=sym vmreturn,
         entry = sym crate::entry,
         options(noreturn),
     );
@@ -87,7 +152,7 @@ pub unsafe extern "C" fn el2_entry() -> i32 {
         b.ne	.		/* not hvc */
         bl {0}
         adr	x0, bootstrap_pt_l0
-	    adr	x30, {2}	/* set lr manually to ensure... */
+	    adr	x30, {2}	/* set lr switch_stack phy*/
 	    phys2virt x30		
 	    b	{1}     
         eret
@@ -100,10 +165,7 @@ pub unsafe extern "C" fn el2_entry() -> i32 {
 
     );
 }
-global_asm!(
-    include_str!("./bootvec.S"),
-    sym el2_entry
-);
+
 #[naked]
 #[no_mangle]
 pub unsafe extern "C" fn arch_entry() -> i32 {
@@ -112,16 +174,9 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
 
         mov	x16, x0                             //x16 cpuid
 	    mov	x17, x30                            //x17 linux ret addr
-        /* skip for now
+        /*
         *TODO:1 change header or config read step into a singe not naked func
         *      2 just read them depend on offset         
-        adr     x0, HV_HEADER_PTR               //store header addr for get info from it
-        adrp	x1, __core_end                  //get page pool addr for calculate config addr 
-        ldrh	w2, [x0, #HEADER_MAX_CPUS]      //get cpu num
-        mov	x3, #PER_CPU_SIZE                   //get percpu size
-        
-        * sysconfig = pool + max_cpus * percpu_size
-        madd	x1, x2, x3, x1 //get config addr
         */
         ldr	x13, =BASE_ADDRESS 
         ldr	x12, =0x7fc00000                    //should be read from config file
@@ -134,7 +189,7 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
         hvc	#0                                  //install bootstrap vec
 
         hvc	#0	                                /* bootstrap vectors enter EL2 at el2_entry */
-        b .                                     //do not return here
+                                     //tmp return here
         mov	x30, x17                            /* we go back to linux */
         //mov x0, -22                           
         ret
