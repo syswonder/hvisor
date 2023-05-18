@@ -13,28 +13,28 @@ extern crate buddy_system_allocator;
 #[path = "arch/aarch64/mod.rs"]
 mod arch;
 mod consts;
+mod error;
 mod header;
 mod memory;
-mod error;
 mod panic;
 mod percpu;
-use percpu::PerCpu;
 use error::HvResult;
+use percpu::PerCpu;
 
-fn primary_init_early() -> HvResult{
+fn primary_init_early() -> HvResult {
     memory::init_heap();
     Ok(())
 }
-fn main(cpuid:u32,cpu_data: &mut PerCpu) -> HvResult {
+fn main(cpuid: u32, cpu_data: &mut PerCpu) -> HvResult {
     let is_primary = cpuid == 0;
     if is_primary {
         primary_init_early()?;
     }
+    cpu_data.activate_vmm()
+}
+fn arch_handle_exit() -> Result<(), ()> {
     Ok(())
 }
-fn arch_handle_exit()-> Result<(), ()> {
-    Ok(())
-}
-extern "C" fn entry(cpuid:u32,cpu_data: &mut PerCpu) -> () {
-    if let Err(_e) = main(cpuid,cpu_data) {}
+extern "C" fn entry(cpuid: u32, cpu_data: &mut PerCpu) -> () {
+    if let Err(_e) = main(cpuid, cpu_data) {}
 }
