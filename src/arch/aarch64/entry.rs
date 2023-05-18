@@ -1,8 +1,7 @@
 use crate::consts::{HV_HEADER_PTR, PER_CPU_SIZE};
-use core::arch::global_asm; // 支持内联汇编
 use crate::percpu::PerCpu;
-global_asm!(
-    include_str!("./page_table.S"),);
+use core::arch::global_asm; // 支持内联汇编
+global_asm!(include_str!("./page_table.S"),);
 global_asm!(
     include_str!("./bootvec.S"),
     sym el2_entry
@@ -11,7 +10,6 @@ global_asm!(
     include_str!("./hyp_vec.S"),
     sym crate::arch_handle_exit);
 
-    
 pub unsafe extern "C" fn boot_pt() -> i32 {
     core::arch::asm!(
         "
@@ -35,7 +33,7 @@ pub unsafe extern "C" fn boot_pt() -> i32 {
         set_block bootstrap_pt_l2_hyp_uart, x2, x12, 2
     
         adrp	x0, bootstrap_pt_l0  //phy addr
-        
+        /*  TODO: flush dcache */
         ret
     
         
@@ -62,7 +60,7 @@ pub unsafe extern "C" fn enable_mmu() -> i32 {
 
 	    isb
 	    tlbi	alle2
-	    dsb	nsh
+	    dsb	nsh   //Memory&ins Barrier 
 
 	    /* Enable MMU, allow cacheability for instructions and data */
 	    ldr	x1, =SCTLR_FLAG
@@ -72,28 +70,45 @@ pub unsafe extern "C" fn enable_mmu() -> i32 {
 	    tlbi	alle2
 	    dsb	nsh
 
-	    ret        
+	    ret        //x30:switch_stack el2 virt_addr
     ",
         options(noreturn),
     );
 }
-pub unsafe extern "C" fn vmreturn() -> i32 {
+pub unsafe extern "C" fn vmreturn(_gu_regs: usize) -> i32 {
     core::arch::asm!(
         "
-        mov	x30, x17 
-        ret        //return to linux
+        mov	sp, x0
+        ldp	x1, x0, [sp], #16	/* x1 is the exit_reason */
+        ldp	x1, x2, [sp], #16
+        ldp	x3, x4, [sp], #16
+        ldp	x5, x6, [sp], #16
+        ldp	x7, x8, [sp], #16
+        ldp	x9, x10, [sp], #16
+        ldp	x11, x12, [sp], #16
+        ldp	x13, x14, [sp], #16
+        ldp	x15, x16, [sp], #16
+        ldp	x17, x18, [sp], #16
+        ldp	x19, x20, [sp], #16
+        ldp	x21, x22, [sp], #16
+        ldp	x23, x24, [sp], #16
+        ldp	x25, x26, [sp], #16
+        ldp	x27, x28, [sp], #16
+        ldp	x29, x30, [sp], #16
+        eret                            //ret to el2_entry hvc #0
         
     ",
         options(noreturn),
     );
 }
 pub unsafe extern "C" fn switch_stack() -> i32 {
-    let per_cpu_size=PER_CPU_SIZE;
+    let per_cpu_size = PER_CPU_SIZE;
     let cpu_data = match PerCpu::new() {
         Ok(c) => c,
         Err(e) => return e.code(),
     };
-    let hv_sp = cpu_data.stack_top();
+    let hv_sp = cpu_data.stack_top(); //Per_cpu+per_cpu_size-8
+    let gu_reg = cpu_data.guest_reg(); //guest_regs
     core::arch::asm!(
         "
         /* install the final vectors */
@@ -107,23 +122,25 @@ pub unsafe extern "C" fn switch_stack() -> i32 {
          * percpu data = pool + cpuid * percpu_size
          */
         madd	x1, x2, x0, x1
-    
-        /* set up the stack and push the root cell's callee saved registers */
-        mov	sp, {hv_sp}
-        stp	x29, x17, [sp, #-16]!	/* note: our caller lr is in x17 */
-        stp	x27, x28, [sp, #-16]!
-        stp	x25, x26, [sp, #-16]!
-        stp	x23, x24, [sp, #-16]!
-        stp	x21, x22, [sp, #-16]!
-        stp	x19, x20, [sp, #-16]!
+
+        /*save root cell's callee saved registers x19~x30 */
+        mov  x8,{gu_reg}
         /*
-         * We pad the stack, so we can consistently access the guest
-         * registers from either the initialization, or the exception
-         * handling code paths. 19 caller saved registers plus the
-         * exit_reason, which we don't use on entry.
-         */
-        sub	sp, sp, 20 * 8
-    
+        * We pad the guest_reg field, so we can consistently access the guest
+        * registers from either the initialization, or the exception
+        * handling code paths. 19 caller saved registers plus the
+        * exit_reason, which we don't use on entry.
+        */
+        add	x8, x8, 18 * 8
+        stp	x19, x20, [x8, #16]!
+        stp	x21, x22, [x8, #16]!
+        stp	x23, x24, [x8, #16]!
+        stp	x25, x26, [x8, #16]!
+        stp	x27, x28, [x8, #16]!
+        stp	x29, x17, [x8, #16]!	/* note: our caller lr is in x17 */
+            
+        /* set up the stack*/
+        mov	sp, {hv_sp}
         mov	x29, xzr	/* reset fp,lr */
         mov	x30, xzr
     
@@ -136,9 +153,9 @@ pub unsafe extern "C" fn switch_stack() -> i32 {
     
                 
     ",
-    per_cpu_size=in(reg) per_cpu_size,
-    hv_sp=in(reg) hv_sp,
-        //vmreturn=sym vmreturn,
+        per_cpu_size=in(reg) per_cpu_size,
+        hv_sp=in(reg) hv_sp,
+        gu_reg=in(reg) gu_reg,
         entry = sym crate::entry,
         options(noreturn),
     );
@@ -152,7 +169,7 @@ pub unsafe extern "C" fn el2_entry() -> i32 {
         b.ne	.		/* not hvc */
         bl {0}
         adr	x0, bootstrap_pt_l0
-	    adr	x30, {2}	/* set lr switch_stack phy*/
+	    adr	x30, {2}	/* set lr switch_stack phy-virt*/
 	    phys2virt x30		
 	    b	{1}     
         eret
@@ -190,8 +207,7 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
 
         hvc	#0	                                /* bootstrap vectors enter EL2 at el2_entry */
                                      //tmp return here
-        mov	x30, x17                            /* we go back to linux */
-        //mov x0, -22                           
+        mov x0, 0                              //return success to jailhouse driver                       
         ret
 
     ",
