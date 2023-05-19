@@ -119,6 +119,7 @@ pub unsafe extern "C" fn switch_stack() -> i32 {
     let hv_sp = cpu_data.stack_top(); //Per_cpu+per_cpu_size-8
     core::arch::asm!(
         "
+        mov	sp, {hv_sp}
         /* install the final vectors */
         adr	x1, hyp_vectors
         msr	vbar_el2, x1
@@ -132,7 +133,7 @@ pub unsafe extern "C" fn switch_stack() -> i32 {
         madd	x1, x2, x0, x1
 
         /*/* set up the stack  save root cell's callee saved registers x19~x30 */
-        mov	sp, {hv_sp}
+        
         stp	x29, x17, [sp, #-16]!	/* note: our caller lr is in x17 */
         stp	x27, x28, [sp, #-16]!
         stp	x25, x26, [sp, #-16]!
