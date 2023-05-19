@@ -72,6 +72,9 @@ pub unsafe extern "C" fn enable_mmu() -> i32 {
 	    isb
 	    tlbi	alle2
 	    dsb	nsh
+        adrp	x1, __boot_stack
+        phys2virt x1
+        mov    sp,x1 
 
 	    ret        //x30:switch_stack el2 virt_addr
     ",

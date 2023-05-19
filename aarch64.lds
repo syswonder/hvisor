@@ -31,6 +31,10 @@ SECTIONS
 	.bss		: { *(.bss .bss.*) *(COMMON) }
 
 	. = ALIGN(4K);
+	. = . + 0x4000; 
+    __boot_stack = .; 
+
+	. = ALIGN(4K);
 	__core_end = .;
 
 	__entry_offset = arch_entry - BASE_ADDRESS;
