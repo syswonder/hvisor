@@ -9,7 +9,8 @@ global_asm!(
 global_asm!(
     include_str!("./hyp_vec.S"),
     sym crate::arch_handle_exit);
-
+#[naked]
+#[no_mangle]
 pub unsafe extern "C" fn boot_pt() -> i32 {
     core::arch::asm!(
         "
@@ -42,6 +43,8 @@ pub unsafe extern "C" fn boot_pt() -> i32 {
         options(noreturn),
     );
 }
+#[naked]
+#[no_mangle]
 #[link_section = ".trampoline"]
 pub unsafe extern "C" fn enable_mmu() -> i32 {
     core::arch::asm!(
@@ -75,6 +78,8 @@ pub unsafe extern "C" fn enable_mmu() -> i32 {
         options(noreturn),
     );
 }
+#[naked]
+#[no_mangle]
 pub unsafe extern "C" fn vmreturn(_gu_regs: usize) -> i32 {
     core::arch::asm!(
         "
@@ -101,6 +106,7 @@ pub unsafe extern "C" fn vmreturn(_gu_regs: usize) -> i32 {
         options(noreturn),
     );
 }
+#[no_mangle]
 pub unsafe extern "C" fn switch_stack() -> i32 {
     let per_cpu_size = PER_CPU_SIZE;
     let cpu_data = match PerCpu::new() {
@@ -157,6 +163,8 @@ pub unsafe extern "C" fn switch_stack() -> i32 {
         options(noreturn),
     );
 }
+#[naked]
+#[no_mangle]
 pub unsafe extern "C" fn el2_entry() -> i32 {
     core::arch::asm!(
         "
