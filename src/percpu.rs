@@ -18,7 +18,7 @@ pub struct GeneralRegisters {
 pub struct PerCpu {
     /// Referenced by arch::cpu::thread_pointer() for x86_64.
     self_vaddr: VirtAddr,
-    guest_regs: GeneralRegisters, //should be in vcpu
+    //guest_regs: GeneralRegisters, //should be in vcpu
     pub id: u32,
     // Stack will be placed here.
 }
@@ -36,9 +36,11 @@ impl PerCpu {
     pub fn stack_top(&self) -> VirtAddr {
         self as *const _ as VirtAddr + PER_CPU_SIZE - 8
     }
+    /*
     pub fn guest_reg(&self) -> VirtAddr {
         &self.guest_regs as *const _ as VirtAddr
     }
+    */
     pub fn activate_vmm(&mut self) -> HvResult {
         ACTIVATED_CPUS.fetch_add(1, Ordering::SeqCst);
         self.return_linux()?;
@@ -46,7 +48,7 @@ impl PerCpu {
     }
     pub fn return_linux(&mut self) -> HvResult {
         unsafe {
-            vmreturn(self.guest_reg());
+            vmreturn(self.stack_top());
         }
         Ok(())
     }

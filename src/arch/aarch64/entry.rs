@@ -79,22 +79,22 @@ pub unsafe extern "C" fn vmreturn(_gu_regs: usize) -> i32 {
     core::arch::asm!(
         "
         mov	sp, x0
-        ldp	x1, x0, [sp], #16	/* x1 is the exit_reason */
-        ldp	x1, x2, [sp], #16
-        ldp	x3, x4, [sp], #16
-        ldp	x5, x6, [sp], #16
-        ldp	x7, x8, [sp], #16
-        ldp	x9, x10, [sp], #16
-        ldp	x11, x12, [sp], #16
-        ldp	x13, x14, [sp], #16
-        ldp	x15, x16, [sp], #16
-        ldp	x17, x18, [sp], #16
-        ldp	x19, x20, [sp], #16
-        ldp	x21, x22, [sp], #16
-        ldp	x23, x24, [sp], #16
-        ldp	x25, x26, [sp], #16
-        ldp	x27, x28, [sp], #16
-        ldp	x29, x30, [sp], #16
+        ldp	x29, x30, [sp, #-16]!
+        ldp	x27, x28, [sp, #-16]!
+        ldp	x25, x26, [sp, #-16]!
+        ldp	x23, x24, [sp, #-16]!
+        ldp	x21, x22, [sp, #-16]!
+        ldp	x19, x20, [sp, #-16]!
+        ldp	x17, x18, [sp, #-16]!
+        ldp	x15, x16, [sp, #-16]!
+        ldp	x13, x14, [sp, #-16]!
+        ldp	x11, x12, [sp, #-16]!
+        ldp	x9, x10, [sp, #-16]!
+        ldp	x7, x8, [sp, #-16]!
+        ldp	x5, x6, [sp, #-16]!
+        ldp	x3, x4, [sp, #-16]!
+        ldp	x1, x2, [sp, #-16]!
+        ldp	x1, x0, [sp, #-16]!	/* x1 is the exit_reason */
         eret                            //ret to el2_entry hvc #0
         
     ",
@@ -108,7 +108,6 @@ pub unsafe extern "C" fn switch_stack() -> i32 {
         Err(e) => return e.code(),
     };
     let hv_sp = cpu_data.stack_top(); //Per_cpu+per_cpu_size-8
-    let gu_reg = cpu_data.guest_reg(); //guest_regs
     core::arch::asm!(
         "
         /* install the final vectors */
@@ -123,24 +122,23 @@ pub unsafe extern "C" fn switch_stack() -> i32 {
          */
         madd	x1, x2, x0, x1
 
-        /*save root cell's callee saved registers x19~x30 */
-        mov  x8,{gu_reg}
+        /*/* set up the stack  save root cell's callee saved registers x19~x30 */
+        mov	sp, {hv_sp}
+        stp	x29, x17, [sp, #-16]!	/* note: our caller lr is in x17 */
+        stp	x27, x28, [sp, #-16]!
+        stp	x25, x26, [sp, #-16]!
+        stp	x23, x24, [sp, #-16]!
+        stp	x21, x22, [sp, #-16]!
+        stp	x19, x20, [sp, #-16]!
+
         /*
         * We pad the guest_reg field, so we can consistently access the guest
         * registers from either the initialization, or the exception
         * handling code paths. 19 caller saved registers plus the
         * exit_reason, which we don't use on entry.
         */
-        add	x8, x8, 18 * 8
-        stp	x19, x20, [x8, #16]!
-        stp	x21, x22, [x8, #16]!
-        stp	x23, x24, [x8, #16]!
-        stp	x25, x26, [x8, #16]!
-        stp	x27, x28, [x8, #16]!
-        stp	x29, x17, [x8, #16]!	/* note: our caller lr is in x17 */
+        sub	sp, sp, 20 * 8
             
-        /* set up the stack*/
-        mov	sp, {hv_sp}
         mov	x29, xzr	/* reset fp,lr */
         mov	x30, xzr
     
@@ -155,7 +153,6 @@ pub unsafe extern "C" fn switch_stack() -> i32 {
     ",
         per_cpu_size=in(reg) per_cpu_size,
         hv_sp=in(reg) hv_sp,
-        gu_reg=in(reg) gu_reg,
         entry = sym crate::entry,
         options(noreturn),
     );
