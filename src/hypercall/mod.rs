@@ -6,16 +6,10 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use numeric_enum_macro::numeric_enum;
 
 numeric_enum! {
-    #[repr(u32)]
+    #[repr(u64)]
     #[derive(Debug, Eq, PartialEq, Copy, Clone)]
     pub enum HyperCallCode {
         HypervisorDisable = 0,
-    }
-}
-
-impl HyperCallCode {
-    fn is_privileged(self) -> bool {
-        (self as u32).get_bits(30..32) == 0
     }
 }
 
@@ -30,7 +24,16 @@ impl<'a> HyperCall<'a> {
         Self { cpu_data }
     }
 
-    pub fn hypercall(&mut self, code: u32, arg0: u64, _arg1: u64) -> HvResult {
+    pub fn hypercall(&mut self, code: u64, arg0: u64, _arg1: u64) -> HvResult {
+        let code = match HyperCallCode::try_from(code) {
+            Ok(code) => code,
+            Err(_) => {
+                return Ok(());
+            }
+        };
+        let ret = match code {
+            HyperCallCode::HypervisorDisable => self.hypervisor_disable(),
+        };
         Ok(())
     }
 

@@ -1,14 +1,14 @@
 use crate::error::HvResult;
-
+use crate::percpu::GeneralRegisters;
 #[repr(C)]
 pub struct Vcpu {
     /// RSP will be loaded from here when handle VM exits.
-    host_stack_top: u64,
+    regs: GeneralRegisters,
 }
 impl Vcpu {
     pub fn new() -> HvResult<Self> {
         let mut ret = Self {
-            host_stack_top: PerCpu::current().stack_top() as _,
+            regs: GeneralRegisters,
         };
         Ok(ret)
     }
