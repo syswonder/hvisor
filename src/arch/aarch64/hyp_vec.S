@@ -23,7 +23,7 @@
 
 	mov	x29, xzr	/* reset fp,lr */
 	mov	x30, xzr
-	mov	x0, sp
+	mov	x0, sp		/*x0 guest regs*/
 	bl	{0}
 	b	.
 .endm

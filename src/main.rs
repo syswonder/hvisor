@@ -15,6 +15,7 @@ mod arch;
 mod consts;
 mod error;
 mod header;
+mod hypercall;
 mod memory;
 mod panic;
 mod percpu;
