@@ -32,9 +32,6 @@ fn main(cpuid: u32, cpu_data: &mut PerCpu) -> HvResult {
     }
     cpu_data.activate_vmm()
 }
-fn arch_handle_exit() -> Result<(), ()> {
-    Ok(())
-}
 extern "C" fn entry(cpuid: u32, cpu_data: &mut PerCpu) -> () {
     if let Err(_e) = main(cpuid, cpu_data) {}
 }

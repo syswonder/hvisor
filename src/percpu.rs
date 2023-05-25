@@ -36,11 +36,11 @@ impl PerCpu {
     pub fn stack_top(&self) -> VirtAddr {
         self as *const _ as VirtAddr + PER_CPU_SIZE - 8
     }
-    /*
+
     pub fn guest_reg(&self) -> VirtAddr {
-        &self.guest_regs as *const _ as VirtAddr
+        self as *const _ as VirtAddr + PER_CPU_SIZE - 8 - 32 * 8
     }
-    */
+
     pub fn activate_vmm(&mut self) -> HvResult {
         ACTIVATED_CPUS.fetch_add(1, Ordering::SeqCst);
         self.return_linux()?;
@@ -48,7 +48,7 @@ impl PerCpu {
     }
     pub fn return_linux(&mut self) -> HvResult {
         unsafe {
-            vmreturn(self.stack_top());
+            vmreturn(self.guest_reg());
         }
         Ok(())
     }
