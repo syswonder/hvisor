@@ -1,3 +1,4 @@
+use super::exception::arch_handle_exit;
 use crate::consts::{HV_HEADER_PTR, PER_CPU_SIZE};
 use crate::percpu::PerCpu;
 use core::arch::global_asm; // 支持内联汇编
@@ -8,7 +9,7 @@ global_asm!(
 );
 global_asm!(
     include_str!("./hyp_vec.S"),
-    sym crate::arch_handle_exit);
+    sym arch_handle_exit);
 #[naked]
 #[no_mangle]
 pub unsafe extern "C" fn boot_pt() -> i32 {
