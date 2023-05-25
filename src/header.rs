@@ -26,7 +26,7 @@ impl HvHeader {
 }
 
 #[repr(C)]
-struct HvHeaderStuff {
+pub struct HvHeaderStuff {
     signature: [u8; 8],
     core_size: unsafe extern "C" fn(),
     percpu_size: usize,
@@ -36,7 +36,7 @@ struct HvHeaderStuff {
     max_cpus: u32,
     online_cpus: u32,
     debug_console_base: usize,
-    arm_linux_hyp_vectors: u64,
+    pub arm_linux_hyp_vectors: u64,
     arm_linux_hyp_abi: u32,
 }
 
@@ -50,7 +50,7 @@ extern "C" {
 
 #[used]
 #[link_section = ".header"]
-static HEADER_STUFF: HvHeaderStuff = HvHeaderStuff {
+pub static mut HEADER_STUFF: HvHeaderStuff = HvHeaderStuff {
     signature: HEADER_SIGNATURE,
     core_size: __core_size,
     percpu_size: PER_CPU_SIZE,

@@ -1,4 +1,5 @@
 use super::entry::vmreturn;
+use crate::header::{HvHeaderStuff, HEADER_STUFF};
 use crate::hypercall::HyperCall;
 use crate::percpu::PerCpu;
 use crate::percpu::{this_cpu_data, GeneralRegisters};

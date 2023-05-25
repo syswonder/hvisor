@@ -1,8 +1,9 @@
 //use crate::arch::vcpu::Vcpu;
-use crate::arch::entry::vmreturn;
+use crate::arch::entry::{shutdown_el2, virt2phys_el2, vmreturn};
 use crate::consts::{PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::error::HvResult;
 use crate::header::HvHeader;
+use crate::header::{HvHeaderStuff, HEADER_STUFF};
 use crate::memory::addr::VirtAddr;
 use core::fmt::{Debug, Formatter, Result};
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -50,6 +51,7 @@ impl PerCpu {
     }
     pub fn deactivate_vmm(&mut self, ret_code: usize) -> HvResult {
         ACTIVATED_CPUS.fetch_sub(1, Ordering::SeqCst);
+        self.arch_shutdown_self();
         Ok(())
     }
     pub fn return_linux(&mut self) -> HvResult {
@@ -58,9 +60,43 @@ impl PerCpu {
         }
         Ok(())
     }
+    /*should be in vcpu*/
+    pub fn arch_shutdown_self(&mut self) -> HvResult {
+        /* Free the guest */
+
+        /* Remove stage-2 mappings */
+
+        /* TLB flush needs the cell's VMID */
+
+        /* we will restore the root cell state with the MMU turned off,
+         * so we need to make sure it has been committed to memory */
+
+        /* hand over control of EL2 back to Linux */
+        let linux_hyp_vec: u64 =
+            unsafe { core::ptr::read_volatile(&HEADER_STUFF.arm_linux_hyp_vectors as *const _) };
+        unsafe {
+            core::arch::asm!(
+                "
+                msr vbar_el2,{linux_hyp_vec}
+        ",
+                linux_hyp_vec= in(reg) linux_hyp_vec,
+            );
+        }
+
+        /* Return to EL1 */
+        /* Disable mmu */
+
+        unsafe {
+            let page_offset: u64 = 0xffff_4060_0000;
+            virt2phys_el2(self.guest_reg(), page_offset);
+        }
+        Ok(())
+    }
 }
 
 pub fn this_cpu_data<'a>() -> &'a mut PerCpu {
+    /*per cpu data should be handled after final el2 paging init
+    now just only cpu 0*/
     let cpu_id = 0;
     let cpu_data: usize = PER_CPU_ARRAY_PTR as VirtAddr + cpu_id as usize * PER_CPU_SIZE;
     unsafe { &mut *(cpu_data as *mut PerCpu) }
