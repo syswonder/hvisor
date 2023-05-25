@@ -1,6 +1,7 @@
 .macro handle_vmexit exit_reason
 	.align	7
 	/* Fill the union registers. Should comply with NUM_USR_REGS */
+	/*now sp =>per_cpu stack top*/
 	stp	x29, x30, [sp, #-16]!
 	stp	x27, x28, [sp, #-16]!
 	stp	x25, x26, [sp, #-16]!

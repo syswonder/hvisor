@@ -72,9 +72,10 @@ pub unsafe extern "C" fn enable_mmu() -> i32 {
 	    isb
 	    tlbi	alle2
 	    dsb	nsh
+        /*TODO: per cpu boot stack*/
         adrp	x1, __boot_stack
         phys2virt x1
-        mov    sp,x1 
+        mov    sp,x1      //set boot stack
 
 	    ret        //x30:switch_stack el2 virt_addr
     ",
@@ -86,24 +87,26 @@ pub unsafe extern "C" fn enable_mmu() -> i32 {
 pub unsafe extern "C" fn vmreturn(_gu_regs: usize) -> i32 {
     core::arch::asm!(
         "
+        /* x0: guest registers */
         mov	sp, x0
-        ldp	x29, x30, [sp, #-16]!
-        ldp	x27, x28, [sp, #-16]!
-        ldp	x25, x26, [sp, #-16]!
-        ldp	x23, x24, [sp, #-16]!
-        ldp	x21, x22, [sp, #-16]!
-        ldp	x19, x20, [sp, #-16]!
-        ldp	x17, x18, [sp, #-16]!
-        ldp	x15, x16, [sp, #-16]!
-        ldp	x13, x14, [sp, #-16]!
-        ldp	x11, x12, [sp, #-16]!
-        ldp	x9, x10, [sp, #-16]!
-        ldp	x7, x8, [sp, #-16]!
-        ldp	x5, x6, [sp, #-16]!
-        ldp	x3, x4, [sp, #-16]!
-        ldp	x1, x2, [sp, #-16]!
-        ldp	x1, x0, [sp, #-16]!	/* x1 is the exit_reason */
-        eret                            //ret to el2_entry hvc #0
+        ldp	x1, x0, [sp], #16	/* x1 is the exit_reason */
+        ldp	x1, x2, [sp], #16
+        ldp	x3, x4, [sp], #16
+        ldp	x5, x6, [sp], #16
+        ldp	x7, x8, [sp], #16
+        ldp	x9, x10, [sp], #16
+        ldp	x11, x12, [sp], #16
+        ldp	x13, x14, [sp], #16
+        ldp	x15, x16, [sp], #16
+        ldp	x17, x18, [sp], #16
+        ldp	x19, x20, [sp], #16
+        ldp	x21, x22, [sp], #16
+        ldp	x23, x24, [sp], #16
+        ldp	x25, x26, [sp], #16
+        ldp	x27, x28, [sp], #16
+        ldp	x29, x30, [sp], #16
+        /*now el2 sp point to per cpu stack top*/
+        eret                            //ret to el2_entry hvc #0 now,depend on ELR_EL2
         
     ",
         options(noreturn),
@@ -118,7 +121,7 @@ pub unsafe extern "C" fn switch_stack() -> i32 {
     };
     let hv_sp = cpu_data.stack_top(); //Per_cpu+per_cpu_size-8
     core::arch::asm!(
-        "
+        "/*set per cpu stack el2*/
         mov	sp, {hv_sp}
         /* install the final vectors */
         adr	x1, hyp_vectors
@@ -215,8 +218,8 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
         hvc	#0                                  //install bootstrap vec
 
         hvc	#0	                                /* bootstrap vectors enter EL2 at el2_entry */
-                                     //tmp return here
-        mov x0, 0                              //return success to jailhouse driver                       
+                                     //tmp return here =ELR_EL2
+        mov x0, 0                              //return success code to jailhouse driver                       
         ret
 
     ",
