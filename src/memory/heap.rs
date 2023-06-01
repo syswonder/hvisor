@@ -18,4 +18,8 @@ pub(super) fn init() {
             .lock()
             .init(heap_start, HEAP_BLOCK * MACHINE_ALIGN);
     }
+    info!(
+        "Heap allocator init end: {:#x?}",
+        heap_start..heap_start + HV_HEAP_SIZE
+    );
 }

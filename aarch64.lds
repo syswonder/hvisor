@@ -28,11 +28,14 @@ SECTIONS
 							. = . + (1 << 12); } .trampoline : { __trampoline_start = .; *(.trampoline) }
 
 	. = ALIGN(4K);
-	.bss		: { *(.bss .bss.*) *(COMMON) }
-
+	.bss		: { *(.bss .bss.*) *(COMMON) 
 	. = ALIGN(4K);
+	__boot_stack = .; 
 	. = . + 0x4000; 
-    __boot_stack = .; 
+    __boot_stack_top = .; 
+	}
+
+	
 
 	. = ALIGN(4K);
 	__core_end = .;
