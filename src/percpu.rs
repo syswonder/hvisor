@@ -27,7 +27,7 @@ pub struct PerCpu {
 
 impl PerCpu {
     pub fn new<'a>(cpu_id: u64) -> HvResult<&'a mut Self> {
-        //let cpu_id = ENTERED_CPUS.fetch_add(1, Ordering::SeqCst);
+        let _cpu_rank = ENTERED_CPUS.fetch_add(1, Ordering::SeqCst);
         let vaddr = PER_CPU_ARRAY_PTR as VirtAddr + cpu_id as usize * PER_CPU_SIZE;
         let ret = unsafe { &mut *(vaddr as *mut Self) };
         ret.id = cpu_id;
@@ -41,6 +41,9 @@ impl PerCpu {
 
     pub fn guest_reg(&self) -> VirtAddr {
         self as *const _ as VirtAddr + PER_CPU_SIZE - 8 - 32 * 8
+    }
+    pub fn entered_cpus() -> u32 {
+        ENTERED_CPUS.load(Ordering::Acquire)
     }
     pub fn activated_cpus() -> u32 {
         ACTIVATED_CPUS.load(Ordering::Acquire)
