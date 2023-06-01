@@ -1,5 +1,5 @@
 ARCH ?= aarch64
-LOG ?=
+LOG ?=trace
 STATS ?= off
 PORT ?= 2333
 

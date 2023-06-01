@@ -49,6 +49,24 @@ pub mod addr;
 pub mod heap;
 mod paging;
 pub const PAGE_SIZE: usize = paging::PageSize::Size4K as usize;
+
+use bitflags::bitflags;
+
+bitflags! {
+    #[derive(Clone, Copy, Debug)]
+    pub struct MemFlags: u64 {
+        const READ          = 1 << 0;
+        const WRITE         = 1 << 1;
+        const EXECUTE       = 1 << 2;
+        const DMA           = 1 << 3;
+        const IO            = 1 << 4;
+        const NO_HUGEPAGES  = 1 << 8;
+        const USER          = 1 << 9;
+    }
+}
+
+
+
 pub fn init_heap() {
     // Set PHYS_VIRT_OFFSET early.
     unsafe {

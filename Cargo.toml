@@ -14,6 +14,7 @@ numeric-enum-macro = "0.2"
 buddy_system_allocator = "0.8"
 tock-registers = "0.8"
 aarch64-cpu = "9.3"
+lazy_static = { version = "1.4", features = ["spin_no_std"] }
 
 [profile.dev]
 panic = "abort"
