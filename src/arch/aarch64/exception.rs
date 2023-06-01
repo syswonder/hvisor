@@ -68,6 +68,7 @@ fn handle_hvc(frame: &TrapFrame) {
         return;
     }
     */
+    info!("Handel hvc");
     let (code, arg0, arg1) = (frame.regs.usr[0], frame.regs.usr[1], frame.regs.usr[2]);
     let cpu_data = unsafe { this_cpu_data() as &mut PerCpu };
     HyperCall::new(cpu_data).hypercall(code as _, arg0, arg1);

@@ -63,7 +63,6 @@ pub static mut HEADER_STUFF: HvHeaderStuff = HvHeaderStuff {
     arm_linux_hyp_vectors: 0,
     arm_linux_hyp_abi: 0,
 };
-
 impl Debug for HvHeader {
     fn fmt(&self, f: &mut Formatter) -> Result {
         f.debug_struct("HvHeader")
