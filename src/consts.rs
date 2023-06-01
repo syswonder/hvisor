@@ -7,7 +7,7 @@ pub use crate::memory::PAGE_SIZE;
 pub const HV_HEAP_SIZE: usize = 1024 * 1024; // 1 MB
 
 /// Size of the per-CPU data (stack and other CPU-local data).
-pub const PER_CPU_SIZE: usize = 16 * 1024; // 16KB
+pub const PER_CPU_SIZE: usize = 32 * 1024; // 32KB  //may get bigger when dev
 
 /// Size of the per cpu boot stack
 pub const PER_CPU_BOOT_SIZE: usize = 1024; // 1KB

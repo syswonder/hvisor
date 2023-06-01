@@ -31,12 +31,31 @@ mod hypercall;
 mod memory;
 mod panic;
 mod percpu;
-
 use config::HvSystemConfig;
+use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use error::HvResult;
 use header::HvHeader;
 use percpu::PerCpu;
+static ERROR_NUM: AtomicI32 = AtomicI32::new(0);
 
+fn has_err() -> bool {
+    ERROR_NUM.load(Ordering::Acquire) != 0
+}
+
+fn wait_for(condition: impl Fn() -> bool) -> HvResult {
+    while !has_err() && condition() {
+        core::hint::spin_loop();
+    }
+    if has_err() {
+        hv_result_err!(EBUSY, "Other cpu init failed!")
+    } else {
+        Ok(())
+    }
+}
+
+fn wait_for_counter(counter: &AtomicU32, max_value: u32) -> HvResult {
+    wait_for(|| counter.load(Ordering::Acquire) < max_value)
+}
 fn primary_init_early() -> HvResult {
     logging::init();
     info!("Logging is enabled.");
@@ -74,6 +93,13 @@ fn main(cpu_data: &mut PerCpu) -> HvResult {
     println!("Hello");
     println!("cpuid{} vaddr{:#x?}", cpu_data.id, cpu_data.self_vaddr);
     let is_primary = cpu_data.id == 0;
+    let online_cpus = HvHeader::get().online_cpus;
+    wait_for(|| PerCpu::entered_cpus() < online_cpus)?;
+    println!(
+        "{} CPU {} entered.",
+        if is_primary { "Primary" } else { "Secondary" },
+        cpu_data.id
+    );
     if is_primary {
         primary_init_early()?;
     }
