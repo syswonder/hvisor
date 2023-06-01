@@ -1,6 +1,7 @@
 use super::exception::arch_handle_exit;
 use crate::consts::{HV_HEADER_PTR, PER_CPU_BOOT_SIZE, PER_CPU_SIZE};
 use crate::device::uart::{UART_BASE_PHYS, UART_BASE_VIRT};
+use crate::header::HvHeader;
 use crate::percpu::PerCpu;
 use core::arch::global_asm; // 支持内联汇编
 global_asm!(include_str!("./page_table.S"),);
@@ -23,9 +24,18 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
             *TODO:1 change header or config read step into a singe not naked func
             *      2 just read them depend on offset         
             */
+            /*get header addr el1*/
+            adrp x0,__header_start
+            ldrh	w2, [x0, #48]                  //HEADER_MAX_CPUS
+            mov	x3, {per_cpu_size}
+            adrp x1,__core_end
+            /*
+	        * sysconfig = pool + max_cpus * percpu_size
+	        */
+	        madd	x1, x2, x3, x1 //get config addr
             ldr	x13, =BASE_ADDRESS 
-            ldr	x12, =0x7fc00000                    //should be read from config file
-            ldr x14, ={uart_base_phys}              //should be read from config file
+            ldr	x12, [x1, #12]                      //phyaddr read from config
+            ldr x14, [x1, #44]                      //SYSCONFIG_DEBUG_CONSOLE_PHYS
             ldr x15, ={uart_base_virt}              //consts
             sub	x11, x12, x13                       //x11= (el2 mmu on)virt-phy offset 
             ldr	x1, =bootstrap_vectors
@@ -36,12 +46,12 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
             hvc	#0                                  //install bootstrap vec
     
             hvc	#0	                                /* bootstrap vectors enter EL2 at el2_entry */
-                                         //tmp return here =ELR_EL2
+                                                    //tmp return here =ELR_EL2
             mov x0, 0                              //return success code to jailhouse driver                       
             ret
     
         ",
-        uart_base_phys=const UART_BASE_PHYS,
+        per_cpu_size=const PER_CPU_SIZE,
         uart_base_virt=const UART_BASE_VIRT,
         options(noreturn),
     );
@@ -155,7 +165,7 @@ pub unsafe extern "C" fn enable_mmu() -> i32 {
     );
 }
 #[no_mangle]
-pub unsafe extern "C" fn switch_stack(cpuid: u32) -> i32 {
+pub unsafe extern "C" fn switch_stack(cpuid: u64) -> i32 {
     let cpu_data = match PerCpu::new(cpuid) {
         Ok(c) => c,
         Err(e) => return e.code(),
@@ -168,7 +178,7 @@ pub unsafe extern "C" fn switch_stack(cpuid: u32) -> i32 {
         adr	x1, hyp_vectors
         msr	vbar_el2, x1
     
-        mov	x0, x16		/* cpudata to entry(cpudata)*/
+        mov	x0, {cpu_data}		/* cpudata to entry(cpudata)*/
 
         /*/* set up the stack  save root cell's callee saved registers x19~x30 */
         
@@ -190,7 +200,7 @@ pub unsafe extern "C" fn switch_stack(cpuid: u32) -> i32 {
         mov	x29, xzr	/* reset fp,lr */
         mov	x30, xzr
     
-        /* Call entry(cpuid, struct per_cpu*). Should not return. */
+        /* Call entry(struct per_cpu*). Should not return. */
         bl {entry}
         eret        //back to ?arch_entry hvc0
         mov	x30, x17 
@@ -201,7 +211,7 @@ pub unsafe extern "C" fn switch_stack(cpuid: u32) -> i32 {
     ",
         hv_sp=in(reg) hv_sp,
         entry = sym crate::entry,
-        in("x16") cpu_data,
+        cpu_data=in(reg) cpu_data,
         options(noreturn),
     );
 }

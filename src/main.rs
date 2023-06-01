@@ -68,12 +68,11 @@ fn primary_init_early() -> HvResult {
     info!("Hypervisor header: {:#x?}", HvHeader::get());
     debug!("System config: {:#x?}", system_config);
 
-    memory::init_heap();
-
     Ok(())
 }
 fn main(cpu_data: &mut PerCpu) -> HvResult {
     println!("Hello");
+    println!("cpuid{} vaddr{:#x?}", cpu_data.id, cpu_data.self_vaddr);
     let is_primary = cpu_data.id == 0;
     if is_primary {
         primary_init_early()?;
