@@ -1,3 +1,5 @@
+use aarch64_cpu::registers::MPIDR_EL1;
+
 //use crate::arch::vcpu::Vcpu;
 use crate::arch::entry::{shutdown_el2, virt2phys_el2, vmreturn};
 use crate::consts::{PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
@@ -5,8 +7,10 @@ use crate::error::HvResult;
 use crate::header::HvHeader;
 use crate::header::{HvHeaderStuff, HEADER_STUFF};
 use crate::memory::addr::VirtAddr;
+use aarch64_cpu::{asm, registers::*};
 use core::fmt::{Debug, Formatter, Result};
 use core::sync::atomic::{AtomicU32, Ordering};
+use tock_registers::interfaces::*;
 static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
 static ACTIVATED_CPUS: AtomicU32 = AtomicU32::new(0);
 #[repr(C)]
@@ -102,7 +106,11 @@ impl PerCpu {
 pub fn this_cpu_data<'a>() -> &'a mut PerCpu {
     /*per cpu data should be handled after final el2 paging init
     now just only cpu 0*/
-    let cpu_id = 0;
+    /*arm_read_sysreg(MPIDR_EL1, mpidr);
+    return mpidr & MPIDR_CPUID_MASK;*/
+    let mpidr = MPIDR_EL1.get();
+
+    let cpu_id = mpidr & 0xff00ffffff;
     let cpu_data: usize = PER_CPU_ARRAY_PTR as VirtAddr + cpu_id as usize * PER_CPU_SIZE;
     unsafe { &mut *(cpu_data as *mut PerCpu) }
 }

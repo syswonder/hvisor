@@ -103,6 +103,7 @@ fn main(cpu_data: &mut PerCpu) -> HvResult {
     if is_primary {
         primary_init_early()?;
     }
+    //memory::init_hv_page_table()?;
     cpu_data.activate_vmm()
 }
 extern "C" fn entry(cpu_data: &mut PerCpu) -> () {
