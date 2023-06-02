@@ -51,7 +51,9 @@ mod paging;
 pub const PAGE_SIZE: usize = paging::PageSize::Size4K as usize;
 use crate::config::HvSystemConfig;
 use crate::consts::HV_BASE;
+use crate::header::HvHeader;
 use bitflags::bitflags;
+//pub use mm::{MemoryRegion, MemorySet};
 
 bitflags! {
     #[derive(Clone, Copy, Debug)]
