@@ -49,7 +49,8 @@ pub mod addr;
 pub mod heap;
 mod paging;
 pub const PAGE_SIZE: usize = paging::PageSize::Size4K as usize;
-
+use crate::config::HvSystemConfig;
+use crate::consts::HV_BASE;
 use bitflags::bitflags;
 
 bitflags! {
@@ -65,12 +66,11 @@ bitflags! {
     }
 }
 
-
-
 pub fn init_heap() {
     // Set PHYS_VIRT_OFFSET early.
     unsafe {
-        addr::PHYS_VIRT_OFFSET =0xffff_4060_0000;
+        addr::PHYS_VIRT_OFFSET =
+            HV_BASE - HvSystemConfig::get().hypervisor_memory.phys_start as usize
     };
     heap::init();
 }
