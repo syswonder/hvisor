@@ -31,6 +31,7 @@ mod hypercall;
 mod memory;
 mod panic;
 mod percpu;
+use crate::percpu::this_cpu_data;
 use config::HvSystemConfig;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use error::HvResult;
@@ -91,7 +92,12 @@ fn primary_init_early() -> HvResult {
 }
 fn main(cpu_data: &mut PerCpu) -> HvResult {
     println!("Hello");
-    println!("cpuid{} vaddr{:#x?}", cpu_data.id, cpu_data.self_vaddr);
+    println!(
+        "cpuid{} vaddr{:#x?} phyid{}",
+        cpu_data.id,
+        cpu_data.self_vaddr,
+        this_cpu_data().id
+    );
     let is_primary = cpu_data.id == 0;
     let online_cpus = HvHeader::get().online_cpus;
     wait_for(|| PerCpu::entered_cpus() < online_cpus)?;

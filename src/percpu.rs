@@ -54,6 +54,7 @@ impl PerCpu {
     }
     pub fn activate_vmm(&mut self) -> HvResult {
         ACTIVATED_CPUS.fetch_add(1, Ordering::SeqCst);
+        HCR_EL2.write(HCR_EL2::RW::EL1IsAarch64 + HCR_EL2::TSC::TrapSMC);
         self.return_linux()?;
         unreachable!()
     }
