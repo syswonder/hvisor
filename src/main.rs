@@ -93,10 +93,11 @@ fn primary_init_early() -> HvResult {
 fn main(cpu_data: &mut PerCpu) -> HvResult {
     println!("Hello");
     println!(
-        "cpuid{} vaddr{:#x?} phyid{}",
+        "cpuid{} vaddr{:#x?} phyid{} &cpu_data{:#x?}",
         cpu_data.id,
         cpu_data.self_vaddr,
-        this_cpu_data().id
+        this_cpu_data().id,
+        cpu_data as *const _
     );
     let is_primary = cpu_data.id == 0;
     let online_cpus = HvHeader::get().online_cpus;

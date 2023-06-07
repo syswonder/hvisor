@@ -13,6 +13,16 @@ pub mod ExceptionType {
     pub const EXIT_REASON_EL1_ABORT: u64 = 0x1;
     pub const EXIT_REASON_EL1_IRQ: u64 = 0x2;
 }
+const SMC_TYPE_MASK: u64 = 0x3F000000;
+pub mod SmcType {
+    pub const STANDARD_SC: u64 = 0x4000000;
+}
+pub mod PsciFnId {
+    pub const PSCI_CPU_OFF_32: u64 = 0x84000002;
+    pub const PSCI_AFFINITY_INFO_32: u64 = 0x84000004;
+    pub const PSCI_AFFINITY_INFO_64: u64 = 0xc4000004;
+}
+
 pub enum trap_return {
     TRAP_HANDLED = 1,
     TRAP_UNHANDLED = 0,
@@ -21,11 +31,10 @@ pub enum trap_return {
 #[repr(C)]
 #[derive(Debug)]
 pub struct TrapFrame<'a> {
-    // Pushed by ` hyp_vec.S/handle_vmexit`
     pub regs: &'a mut GeneralRegisters,
-    pub esr: u64,
-    pub spsr: u64,
-    //pub sp: u64,
+    pub esr: u64, //ESR_EL2 exception reason
+    pub spsr: u64, //SPSR_EL2 exception info
+                  //pub sp: u64,
 }
 impl<'a> TrapFrame<'a> {
     pub fn new(regs: &'a mut GeneralRegisters) -> Self {
@@ -72,39 +81,62 @@ fn handle_hvc(frame: &TrapFrame) {
     */
     let (code, arg0, arg1) = (frame.regs.usr[0], frame.regs.usr[1], frame.regs.usr[2]);
     let cpu_data = unsafe { this_cpu_data() as &mut PerCpu };
-    info!(
+    debug!(
         "Handel hvc! cpu data{:#x?} cpuid{} vaddr{:#x?}",
-        &cpu_data as *const _, cpu_data.id, cpu_data.self_vaddr
+        cpu_data as *const _, cpu_data.id, cpu_data.self_vaddr
     );
     HyperCall::new(cpu_data).hypercall(code as _, arg0, arg1);
 }
 fn handle_smc(frame: &mut TrapFrame) {
-    let (code, arg0, arg1) = (frame.regs.usr[0], frame.regs.usr[1], frame.regs.usr[2]);
-    let cpu_data = unsafe { this_cpu_data() as &mut PerCpu };
-    info!(
-        "Handel smc! cpu data{:#x?} cpuid{} vaddr{:#x?}",
-        &cpu_data as *const _, cpu_data.id, cpu_data.self_vaddr
+    let (code, arg0, arg1, arg2) = (
+        frame.regs.usr[0],
+        frame.regs.usr[1],
+        frame.regs.usr[2],
+        frame.regs.usr[3],
     );
-    frame.regs.usr[0] = 0; // return success anyway
+    let cpu_data = unsafe { this_cpu_data() as &mut PerCpu };
+    debug!(
+        "Handel smc! cpu data{:#x?} cpuid{} vaddr{:#x?}",
+        cpu_data as *const _, cpu_data.id, cpu_data.self_vaddr
+    );
+    debug!(
+        "SMC from CPU{},func_id:{},arg0:{},arg1:{},arg2:{}",
+        cpu_data.id, code, arg0, arg1, arg2
+    );
+    match code & SMC_TYPE_MASK {
+        SmcType::STANDARD_SC => handle_psic(frame, code, arg0, arg1, arg2),
+        _ => {
+            error!("unsupported smc")
+        }
+    }
 
-    if cpu_data.id == 3 {
-        frame.regs.usr[0] = 1;
-        // trick linux this cpu off
-        unsafe {
+    arch_skip_instruction(frame); //skip the smc ins
+}
+fn handle_psic(frame: &mut TrapFrame, code: u64, arg0: u64, arg1: u64, arg2: u64) {
+    match code {
+        PsciFnId::PSCI_CPU_OFF_32 => unsafe {
             core::arch::asm!(
                 "
                 wfi
         ",
             );
+        },
+        PsciFnId::PSCI_AFFINITY_INFO_32 => {
+            frame.regs.usr[0] = 1;
+        }
+        PsciFnId::PSCI_AFFINITY_INFO_64 => {
+            frame.regs.usr[0] = 1;
+        }
+        _ => {
+            error!("unsupported smc standard service")
         }
     }
-    arch_skip_instruction(frame); //skip the smc ins
 }
 fn arch_skip_instruction(frame: &TrapFrame) {
     let mut pc = ELR_EL2.get();
     let ins = match ESR_EL2.read(ESR_EL2::IL) {
-        0 => 2,
-        1 => 4,
+        0 => 2, //16bit ins
+        1 => 4, //32 bit ins
         _ => 0,
     };
     pc = pc + ins;
