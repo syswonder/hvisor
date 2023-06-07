@@ -1,7 +1,7 @@
 ARCH ?= aarch64
 LOG ?=trace
 STATS ?= off
-PORT ?= 2333
+PORT ?= 23333
 
 # default release mode
 MODE ?= debug
@@ -42,7 +42,7 @@ elf:
 	cargo build $(build_args)
 .PHONY: scp
 scp:
-	scp -P $(PORT) -r $(target_bin) jail@localhost:~/
+	scp -P $(PORT) -r $(target_bin) root@localhost:~/
 .PHONY: disa
 disa:
 	rust-objdump --disassemble $(target_elf) > rvm.S
