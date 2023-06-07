@@ -3,6 +3,7 @@ use core::fmt::{Debug, Formatter, Result};
 use crate::consts::{HV_HEADER_PTR, PER_CPU_SIZE};
 
 const HEADER_SIGNATURE: [u8; 8] = *b"RVMIMAGE";
+//const HEADER_SIGNATURE: [u8; 8] = *b"JAILHOUS";
 
 #[repr(C)]
 pub struct HvHeader {

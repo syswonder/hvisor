@@ -87,7 +87,7 @@ fn handle_smc(frame: &mut TrapFrame) {
     );
     frame.regs.usr[0] = 0; // return success anyway
 
-    if (cpu_data.id == 3) {
+    if cpu_data.id == 3 {
         frame.regs.usr[0] = 1;
         // trick linux this cpu off
         unsafe {
