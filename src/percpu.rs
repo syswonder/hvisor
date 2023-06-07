@@ -25,7 +25,7 @@ pub struct PerCpu {
     /// Referenced by arch::cpu::thread_pointer() for x86_64.
     pub self_vaddr: VirtAddr,
     //guest_regs: GeneralRegisters, //should be in vcpu
-
+    pub wait_for_poweron: bool,
     // Stack will be placed here.
 }
 
@@ -36,6 +36,7 @@ impl PerCpu {
         let ret = unsafe { &mut *(vaddr as *mut Self) };
         ret.id = cpu_id;
         ret.self_vaddr = vaddr;
+        ret.wait_for_poweron = false;
         Ok(ret)
     }
 
@@ -112,6 +113,10 @@ pub fn this_cpu_data<'a>() -> &'a mut PerCpu {
     let mpidr = MPIDR_EL1.get();
 
     let cpu_id = mpidr & 0xff00ffffff;
+    let cpu_data: usize = PER_CPU_ARRAY_PTR as VirtAddr + cpu_id as usize * PER_CPU_SIZE;
+    unsafe { &mut *(cpu_data as *mut PerCpu) }
+}
+pub fn get_cpu_data<'a>(cpu_id: u64) -> &'a mut PerCpu {
     let cpu_data: usize = PER_CPU_ARRAY_PTR as VirtAddr + cpu_id as usize * PER_CPU_SIZE;
     unsafe { &mut *(cpu_data as *mut PerCpu) }
 }

@@ -2,7 +2,7 @@ use super::entry::vmreturn;
 use crate::header::{HvHeaderStuff, HEADER_STUFF};
 use crate::hypercall::HyperCall;
 use crate::percpu::PerCpu;
-use crate::percpu::{this_cpu_data, GeneralRegisters};
+use crate::percpu::{get_cpu_data, this_cpu_data, GeneralRegisters};
 use aarch64_cpu::{asm, registers::*};
 use tock_registers::interfaces::*;
 #[allow(dead_code)]
@@ -81,9 +81,10 @@ fn handle_hvc(frame: &TrapFrame) {
     */
     let (code, arg0, arg1) = (frame.regs.usr[0], frame.regs.usr[1], frame.regs.usr[2]);
     let cpu_data = unsafe { this_cpu_data() as &mut PerCpu };
+
     debug!(
-        "Handel hvc! cpu data{:#x?} cpuid{} vaddr{:#x?}",
-        cpu_data as *const _, cpu_data.id, cpu_data.self_vaddr
+        "HVC from CPU{},code:{:#x?},arg0:{:#x?},arg1:{:#x?}",
+        cpu_data.id, code, arg0, arg1
     );
     HyperCall::new(cpu_data).hypercall(code as _, arg0, arg1);
 }
@@ -96,15 +97,11 @@ fn handle_smc(frame: &mut TrapFrame) {
     );
     let cpu_data = unsafe { this_cpu_data() as &mut PerCpu };
     debug!(
-        "Handel smc! cpu data{:#x?} cpuid{} vaddr{:#x?}",
-        cpu_data as *const _, cpu_data.id, cpu_data.self_vaddr
-    );
-    debug!(
-        "SMC from CPU{},func_id:{},arg0:{},arg1:{},arg2:{}",
+        "SMC from CPU{},func_id:{:#x?},arg0:{},arg1:{},arg2:{}",
         cpu_data.id, code, arg0, arg1, arg2
     );
     match code & SMC_TYPE_MASK {
-        SmcType::STANDARD_SC => handle_psic(frame, code, arg0, arg1, arg2),
+        SmcType::STANDARD_SC => handle_psic(cpu_data, frame, code, arg0, arg1, arg2),
         _ => {
             error!("unsupported smc")
         }
@@ -112,9 +109,17 @@ fn handle_smc(frame: &mut TrapFrame) {
 
     arch_skip_instruction(frame); //skip the smc ins
 }
-fn handle_psic(frame: &mut TrapFrame, code: u64, arg0: u64, arg1: u64, arg2: u64) {
+fn handle_psic(
+    cpu_data: &mut PerCpu,
+    frame: &mut TrapFrame,
+    code: u64,
+    arg0: u64,
+    arg1: u64,
+    arg2: u64,
+) {
     match code {
         PsciFnId::PSCI_CPU_OFF_32 => unsafe {
+            cpu_data.wait_for_poweron = true;
             core::arch::asm!(
                 "
                 wfi
@@ -122,10 +127,12 @@ fn handle_psic(frame: &mut TrapFrame, code: u64, arg0: u64, arg1: u64, arg2: u64
             );
         },
         PsciFnId::PSCI_AFFINITY_INFO_32 => {
-            frame.regs.usr[0] = 1;
+            let cpu_data = get_cpu_data(arg0);
+            frame.regs.usr[0] = cpu_data.wait_for_poweron.into();
         }
         PsciFnId::PSCI_AFFINITY_INFO_64 => {
-            frame.regs.usr[0] = 1;
+            let cpu_data = get_cpu_data(arg0);
+            frame.regs.usr[0] = cpu_data.wait_for_poweron.into();
         }
         _ => {
             error!("unsupported smc standard service")
@@ -135,7 +142,7 @@ fn handle_psic(frame: &mut TrapFrame, code: u64, arg0: u64, arg1: u64, arg2: u64
 fn arch_skip_instruction(frame: &TrapFrame) {
     let mut pc = ELR_EL2.get();
     let ins = match ESR_EL2.read(ESR_EL2::IL) {
-        0 => 2, //16bit ins
+        0 => 2, //16 bit ins
         1 => 4, //32 bit ins
         _ => 0,
     };
