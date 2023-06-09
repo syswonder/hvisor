@@ -5,8 +5,7 @@ version = 3
 [[package]]
 name = "aarch64-cpu"
 version = "9.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "eb711c57d60565ba8f6523eb371e6243639617d817b4df1ae09af250af1af411"
+source = "git+https://github.com/likey99/aarch64-cpu#2d37a0cade622e578d68a508e778b50228054274"
 dependencies = [
  "tock-registers",
 ]
