@@ -1,5 +1,6 @@
 pub mod entry;
 pub mod exception;
+pub mod sysreg;
 pub mod s2pt;
 //mod vcpu;
 

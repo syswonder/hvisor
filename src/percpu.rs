@@ -56,7 +56,9 @@ impl PerCpu {
     pub fn activate_vmm(&mut self) -> HvResult {
         ACTIVATED_CPUS.fetch_add(1, Ordering::SeqCst);
         set_vtcr_flags();
-        HCR_EL2.write(HCR_EL2::RW::EL1IsAarch64 + HCR_EL2::TSC::EnableTrapSmcToEl2 + HCR_EL2::VM::SET);
+        HCR_EL2.modify(
+            HCR_EL2::RW::EL1IsAarch64 + HCR_EL2::TSC::EnableTrapSmcToEl2 + HCR_EL2::VM::SET,
+        );
         self.return_linux()?;
         unreachable!()
     }
@@ -90,15 +92,7 @@ impl PerCpu {
         /* hand over control of EL2 back to Linux */
         let linux_hyp_vec: u64 =
             unsafe { core::ptr::read_volatile(&HEADER_STUFF.arm_linux_hyp_vectors as *const _) };
-        unsafe {
-            core::arch::asm!(
-                "
-                msr vbar_el2,{linux_hyp_vec}
-        ",
-                linux_hyp_vec= in(reg) linux_hyp_vec,
-            );
-        }
-
+        VBAR_EL2.set(linux_hyp_vec);
         /* Return to EL1 */
         /* Disable mmu */
 
