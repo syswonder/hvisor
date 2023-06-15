@@ -1,7 +1,6 @@
-# armv8-baremetal-demo-rust
+# sysHyper
 
-使用rust写的armv8 hypervisor，Porting from 
-https://github.com/rcore-os/RVM1.5
+使用rust写的hypervisor, 主要面向mission-critical的设备和系统，参考了JailHouse、RVM等项目。
 
 ## ~/.cargo/config
 ```shell
