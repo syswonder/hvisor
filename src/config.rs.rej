@@ -1,0 +1,16 @@
+diff a/src/config.rs b/src/config.rs	(rejected hunks)
+@@ -126,10 +126,13 @@ struct HvIommu {
+ #[derive(Clone, Copy, Debug)]
+ #[repr(C, packed)]
+ struct ArchPlatformInfo {
++    maintenance_irq: u8,
+     gic_version: u8,
+     gicd_base: u64,
++    gicc_base: u64,
++    gich_base: u64,
++    gicv_base: u64,
+     gicr_base: u64,
+-    maintenance_irq: u8,
+ }
+ 
+ #[derive(Clone, Copy, Debug)]

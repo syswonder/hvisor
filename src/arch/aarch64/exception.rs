@@ -10,8 +10,9 @@ use tock_registers::interfaces::*;
 #[allow(non_upper_case_globals)]
 pub mod ExceptionType {
     pub const EXIT_REASON_EL2_ABORT: u64 = 0x0;
-    pub const EXIT_REASON_EL1_ABORT: u64 = 0x1;
-    pub const EXIT_REASON_EL1_IRQ: u64 = 0x2;
+    pub const EXIT_REASON_EL2_IRQ: u64 = 0x1;
+    pub const EXIT_REASON_EL1_ABORT: u64 = 0x2;
+    pub const EXIT_REASON_EL1_IRQ: u64 = 0x3;
 }
 const SMC_TYPE_MASK: u64 = 0x3F000000;
 pub mod SmcType {
@@ -48,11 +49,15 @@ impl<'a> TrapFrame<'a> {
 }
 /*From hyp_vec->handle_vmexit x0:guest regs x1:exit_reason sp =stack_top-32*8*/
 pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> Result<(), ()> {
+    let mpidr = MPIDR_EL1.get();
+    let cpu_id = mpidr & 0xff00ffffff;
+    info!("cpu {} exit", cpu_id);
     match regs.exit_reason as u64 {
-        ExceptionType::EXIT_REASON_EL1_IRQ => irqchip_handle_irq(),
+        ExceptionType::EXIT_REASON_EL1_IRQ => irqchip_handle_irq1(),
         ExceptionType::EXIT_REASON_EL1_ABORT => arch_handle_trap(regs),
-        ExceptionType::EXIT_REASON_EL2_ABORT => arch_dump_exit(),
-        _ => arch_dump_exit(),
+        ExceptionType::EXIT_REASON_EL2_ABORT => arch_dump_exit(regs.exit_reason),
+        ExceptionType::EXIT_REASON_EL2_IRQ => irqchip_handle_irq2(),
+        _ => arch_dump_exit(regs.exit_reason),
     }
     unsafe {
         vmreturn(regs as *const _ as usize);
@@ -60,7 +65,14 @@ pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> Result<(), ()> {
 
     Ok(())
 }
-fn irqchip_handle_irq() {}
+fn irqchip_handle_irq1() {
+    error!("irq not handle from el1");
+    loop {}
+}
+fn irqchip_handle_irq2() {
+    error!("irq not handle from el2");
+    loop {}
+}
 fn arch_handle_trap(regs: &mut GeneralRegisters) {
     let mut frame = TrapFrame::new(regs);
     let mut ret = trap_return::TRAP_UNHANDLED;
@@ -68,7 +80,11 @@ fn arch_handle_trap(regs: &mut GeneralRegisters) {
         Some(ESR_EL2::EC::Value::HVC64) => handle_hvc(&frame),
         Some(ESR_EL2::EC::Value::SMC64) => handle_smc(&mut frame),
         _ => {
-            error!("Unsupported Exception!");
+            error!(
+                "Unsupported Exception EC:{:#x?}!",
+                ESR_EL2.read(ESR_EL2::EC)
+            );
+            loop {}
             ret = trap_return::TRAP_UNHANDLED;
         }
     }
@@ -125,6 +141,8 @@ fn handle_psic(
                 wfi
         ",
             );
+            info!("weak up at el2!");
+            loop {}
         },
         PsciFnId::PSCI_AFFINITY_INFO_32 => {
             let cpu_data = get_cpu_data(arg0);
@@ -149,4 +167,7 @@ fn arch_skip_instruction(frame: &TrapFrame) {
     pc = pc + ins;
     ELR_EL2.set(pc);
 }
-fn arch_dump_exit() {}
+fn arch_dump_exit(reason: u64) {
+    error!("Unsupported Exit:{:#x?}!", reason);
+    loop {}
+}
