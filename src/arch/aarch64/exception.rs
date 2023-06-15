@@ -64,9 +64,9 @@ fn irqchip_handle_irq() {}
 fn arch_handle_trap(regs: &mut GeneralRegisters) {
     let mut frame = TrapFrame::new(regs);
     let mut ret = trap_return::TRAP_UNHANDLED;
-    match ESR_EL2.read(ESR_EL2::EC) {
-        0x16 => handle_hvc(&frame),
-        0x17 => handle_smc(&mut frame),
+    match ESR_EL2.read_as_enum(ESR_EL2::EC) {
+        Some(ESR_EL2::EC::Value::HVC64) => handle_hvc(&frame),
+        Some(ESR_EL2::EC::Value::SMC64) => handle_smc(&mut frame),
         _ => {
             error!("Unsupported Exception!");
             ret = trap_return::TRAP_UNHANDLED;
