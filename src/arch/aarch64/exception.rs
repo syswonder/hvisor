@@ -117,7 +117,7 @@ fn handle_smc(frame: &mut TrapFrame) {
         cpu_data.id, code, arg0, arg1, arg2
     );
     match code & SMC_TYPE_MASK {
-        SmcType::STANDARD_SC => handle_psic(cpu_data, frame, code, arg0, arg1, arg2),
+        SmcType::STANDARD_SC => handle_psci(cpu_data, frame, code, arg0, arg1, arg2),
         _ => {
             error!("unsupported smc")
         }
@@ -125,7 +125,7 @@ fn handle_smc(frame: &mut TrapFrame) {
 
     arch_skip_instruction(frame); //skip the smc ins
 }
-fn handle_psic(
+fn handle_psci(
     cpu_data: &mut PerCpu,
     frame: &mut TrapFrame,
     code: u64,
@@ -136,13 +136,13 @@ fn handle_psic(
     match code {
         PsciFnId::PSCI_CPU_OFF_32 => unsafe {
             cpu_data.wait_for_poweron = true;
+            HCR_EL2.modify(HCR_EL2::IMO::SET);
             core::arch::asm!(
                 "
                 wfi
         ",
             );
             info!("weak up at el2!");
-            loop {}
         },
         PsciFnId::PSCI_AFFINITY_INFO_32 => {
             let cpu_data = get_cpu_data(arg0);
