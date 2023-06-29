@@ -57,7 +57,10 @@ impl PerCpu {
         ACTIVATED_CPUS.fetch_add(1, Ordering::SeqCst);
         set_vtcr_flags();
         HCR_EL2.modify(
-            HCR_EL2::RW::EL1IsAarch64 + HCR_EL2::TSC::EnableTrapSmcToEl2 + HCR_EL2::VM::SET,
+            HCR_EL2::RW::EL1IsAarch64
+                + HCR_EL2::TSC::EnableTrapSmcToEl2
+                + HCR_EL2::VM::SET
+                + HCR_EL2::IMO::SET,
         );
         self.return_linux()?;
         unreachable!()

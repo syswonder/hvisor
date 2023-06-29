@@ -76,151 +76,117 @@
 //!           - 00..15 SGIs
 //!           - 16..31 PPIs
 
-mod gicc;
 mod gicd;
-
-use crate::{
-    bsp::{self, device_driver::common::BoundedUsize},
-    cpu, driver, exception, synchronization,
-    synchronization::InitStateLock,
-};
-
-//--------------------------------------------------------------------------------------------------
-// Private Definitions
-//--------------------------------------------------------------------------------------------------
-
-type HandlerTable = [Option<exception::asynchronous::IRQHandlerDescriptor<IRQNumber>>;
-    IRQNumber::MAX_INCLUSIVE + 1];
-
-//--------------------------------------------------------------------------------------------------
-// Public Definitions
-//--------------------------------------------------------------------------------------------------
-
-/// Used for the associated type of trait [`exception::asynchronous::interface::IRQManager`].
-pub type IRQNumber = BoundedUsize<{ GICv2::MAX_IRQ_NUMBER }>;
-
+mod gicr;
+use crate::arch::sysreg::{read_sysreg, write_sysreg};
 /// Representation of the GIC.
-pub struct GICv2 {
+pub struct GICv3 {
     /// The Distributor.
     gicd: gicd::GICD,
 
     /// The CPU Interface.
-    gicc: gicc::GICC,
-
-    /// Stores registered IRQ handlers. Writable only during kernel init. RO afterwards.
-    handler_table: InitStateLock<HandlerTable>,
+    gicr: gicr::GICR,
 }
-
-//--------------------------------------------------------------------------------------------------
-// Public Code
-//--------------------------------------------------------------------------------------------------
-
-impl GICv2 {
-    const MAX_IRQ_NUMBER: usize = 300; // Normally 1019, but keep it lower to save some space.
-
-    pub const COMPATIBLE: &'static str = "GICv2 (ARM Generic Interrupt Controller v2)";
-
-    /// Create an instance.
-    ///
-    /// # Safety
-    ///
+impl GICv3 {
     /// - The user must ensure to provide a correct MMIO start address.
-    pub const unsafe fn new(gicd_mmio_start_addr: usize, gicc_mmio_start_addr: usize) -> Self {
+    pub const unsafe fn new(gicd_mmio_start_addr: usize, gicr_mmio_start_addr: usize) -> Self {
         Self {
             gicd: gicd::GICD::new(gicd_mmio_start_addr),
-            gicc: gicc::GICC::new(gicc_mmio_start_addr),
-            handler_table: InitStateLock::new([None; IRQNumber::MAX_INCLUSIVE + 1]),
+            gicr: gicr::GICR::new(gicr_mmio_start_addr),
         }
+    }
+    pub fn read_aff(&self) -> u64 {
+        self.gicr.read_aff()
     }
 }
 
-//------------------------------------------------------------------------------
-// OS Interface Code
-//------------------------------------------------------------------------------
-use synchronization::interface::ReadWriteEx;
-
-impl driver::interface::DeviceDriver for GICv2 {
-    type IRQNumberType = IRQNumber;
-
-    fn compatible(&self) -> &'static str {
-        Self::COMPATIBLE
-    }
-
-    unsafe fn init(&self) -> Result<(), &'static str> {
-        if bsp::cpu::BOOT_CORE_ID == cpu::smp::core_id() {
-            self.gicd.boot_core_init();
-        }
-
-        self.gicc.priority_accept_all();
-        self.gicc.enable();
-
-        Ok(())
+pub fn gicv3_cpu_init() {
+    // unsafe {write_sysreg!(icc_sgi1r_el1, val);}
+    // let intid = unsafe { read_sysreg!(icc_iar1_el1) } as u32;
+    //arm_read_sysreg(ICC_CTLR_EL1, cell_icc_ctlr);
+    info!("gicv3 init!");
+    unsafe {
+        let ctlr = read_sysreg!(icc_ctlr_el1);
+        write_sysreg!(icc_ctlr_el1, 0x2);
+        let pmr = read_sysreg!(icc_pmr_el1);
+        write_sysreg!(icc_pmr_el1, 0xf0);
+        let igrpen = read_sysreg!(icc_igrpen1_el1);
+        write_sysreg!(icc_igrpen1_el1, 0x1);
+        let vtr = read_sysreg!(ich_vtr_el2);
+        let mut vmcr = ((pmr & 0xff) << 24) | (1 << 1) | (1 << 9);
+        write_sysreg!(ich_vmcr_el2, vmcr);
+        write_sysreg!(ich_hcr_el2, 0x1);
     }
 }
 
-impl exception::asynchronous::interface::IRQManager for GICv2 {
-    type IRQNumberType = IRQNumber;
+pub fn gicv3_handle_irq_el1() {
+    if let Some(irq_id) = pending_irq() {
+        if irq_id < 16 {
+            info!("sgi got {}", irq_id);
+            loop {}
+        }
+        deactivate_irq(irq_id);
+        inject_irq(irq_id);
+    }
+}
+fn pending_irq() -> Option<usize> {
+    let iar = unsafe { read_sysreg!(icc_iar1_el1) } as usize;
+    if iar >= 0x3fe {
+        // spurious
+        None
+    } else {
+        Some(iar as _)
+    }
+}
+fn deactivate_irq(irq_id: usize) {}
+fn read_lr(id: usize) -> u32 {
+    unsafe { read_sysreg!(ich_lr) as u32 }
+}
+fn inject_irq(irq_id: usize) {
+    // mask
+    const LR_VIRTIRQ_MASK: usize = 0x3ff;
+    const LR_PHYSIRQ_MASK: usize = 0x3ff << 10;
 
-    fn register_handler(
-        &self,
-        irq_handler_descriptor: exception::asynchronous::IRQHandlerDescriptor<Self::IRQNumberType>,
-    ) -> Result<(), &'static str> {
-        self.handler_table.write(|table| {
-            let irq_number = irq_handler_descriptor.number().get();
-
-            if table[irq_number].is_some() {
-                return Err("IRQ handler already registered");
+    const LR_PENDING_BIT: u32 = 1 << 28;
+    const LR_HW_BIT: u32 = 1 << 31;
+    let elsr: u64 = unsafe { read_sysreg!(ich_elrsr_el2) };
+    let vtr = unsafe { read_sysreg!(ich_vtr_el2) } as usize;
+    let lr_num: usize = (vtr & 0xf) + 1;
+    let mut lr_idx = -1 as isize;
+    for i in 0..lr_num {
+        if (1 << i) & elsr > 0 {
+            if lr_idx == -1 {
+                lr_idx = i as isize;
             }
+            continue;
+        }
 
-            table[irq_number] = Some(irq_handler_descriptor);
-
-            Ok(())
-        })
-    }
-
-    fn enable(&self, irq_number: &Self::IRQNumberType) {
-        self.gicd.enable(irq_number);
-    }
-
-    fn handle_pending_irqs<'irq_context>(
-        &'irq_context self,
-        ic: &exception::asynchronous::IRQContext<'irq_context>,
-    ) {
-        // Extract the highest priority pending IRQ number from the Interrupt Acknowledge Register
-        // (IAR).
-        let irq_number = self.gicc.pending_irq_number(ic);
-
-        // Guard against spurious interrupts.
-        if irq_number > GICv2::MAX_IRQ_NUMBER {
+        // overlap
+        //let lr_val = read_lr(i) as usize;
+        if (i & LR_VIRTIRQ_MASK) == irq_id {
             return;
         }
-
-        // Call the IRQ handler. Panic if there is none.
-        self.handler_table.read(|table| {
-            match table[irq_number] {
-                None => panic!("No handler registered for IRQ {}", irq_number),
-                Some(descriptor) => {
-                    // Call the IRQ handler. Panics on failure.
-                    descriptor.handler().handle().expect("Error handling IRQ");
-                }
-            }
-        });
-
-        // Signal completion of handling.
-        self.gicc.mark_comleted(irq_number as u32, ic);
     }
+    debug!("To Inject IRQ {}, find lr {}", irq_id, lr_idx);
 
-    fn print_handler(&self) {
-        use crate::info;
+    if lr_idx == -1 {
+        return;
+    } else {
+        let mut val = 0;
 
-        info!("      Peripheral handler:");
+        val = irq_id as u32;
+        val |= LR_PENDING_BIT;
 
-        self.handler_table.read(|table| {
-            for (i, opt) in table.iter().skip(32).enumerate() {
-                if let Some(handler) = opt {
-                    info!("            {: >3}. {}", i + 32, handler.name());
-                }
-            }
-        });
+        if false
+        /* sgi */
+        {
+            todo!()
+        } else {
+            val |= ((irq_id << 10) & LR_PHYSIRQ_MASK) as u32;
+            val |= LR_HW_BIT;
+        }
+
+        debug!("To write lr {} val {}", lr_idx, val);
+        //self.write_lr(lr_idx as usize, val);
     }
 }
