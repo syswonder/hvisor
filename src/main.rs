@@ -20,7 +20,7 @@ extern crate lazy_static;
 #[macro_use]
 mod logging;
 
-#[cfg(target_arch = "aarch64")]
+//#[cfg(target_arch = "aarch64")]
 #[path = "arch/aarch64/mod.rs"]
 mod arch;
 mod cell;
@@ -33,14 +33,14 @@ mod memory;
 mod panic;
 mod percpu;
 
-use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
-
+use crate::cell::root_cell;
 use crate::percpu::this_cpu_data;
 use config::HvSystemConfig;
+use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+use device::gicv3::gicv3_cpu_init;
 use error::HvResult;
 use header::HvHeader;
 use percpu::PerCpu;
-use crate::cell:: root_cell;
 
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
 static INIT_EARLY_OK: AtomicU32 = AtomicU32::new(0);
@@ -143,7 +143,7 @@ fn main(cpu_data: &mut PerCpu) -> HvResult {
     } else {
         wait_for_counter(&INIT_LATE_OK, 1)?
     }
-
+    gicv3_cpu_init();
     cpu_data.activate_vmm()
 }
 extern "C" fn entry(cpu_data: &mut PerCpu) -> () {

@@ -3,6 +3,9 @@
 // See LICENSE-APACHE and LICENSE-MIT for details.
 
 /// Reads and returns the value of the given aarch64 system register.
+/// use crate::arch::sysreg::write_sysreg;
+/// unsafe {write_sysreg!(icc_sgi1r_el1, val);}
+/// let intid = unsafe { read_sysreg!(icc_iar1_el1) } as u32;
 macro_rules! read_sysreg {
     ($name:ident) => {
         {

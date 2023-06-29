@@ -1,9 +1,26 @@
 diff a/src/main.rs b/src/main.rs	(rejected hunks)
-@@ -91,7 +91,6 @@ fn primary_init_early() -> HvResult {
-     Ok(())
+@@ -20,7 +20,7 @@ extern crate lazy_static;
+ #[macro_use]
+ mod logging;
+ 
+-#[cfg(target_arch = "aarch64")]
++//#[cfg(target_arch = "aarch64")]
+ #[path = "arch/aarch64/mod.rs"]
+ mod arch;
+ mod config;
+@@ -34,6 +34,7 @@ mod percpu;
+ use crate::percpu::this_cpu_data;
+ use config::HvSystemConfig;
+ use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
++use device::gicv3::gicv3_cpu_init;
+ use error::HvResult;
+ use header::HvHeader;
+ use percpu::PerCpu;
+@@ -109,6 +110,7 @@ fn main(cpu_data: &mut PerCpu) -> HvResult {
+     if is_primary {
+         primary_init_early()?;
+     }
++    gicv3_cpu_init();
+     //memory::init_hv_page_table()?;
+     cpu_data.activate_vmm()
  }
- fn main(cpu_data: &mut PerCpu) -> HvResult {
--    println!("Hello");
-     println!(
-         "cpuid{} vaddr{:#x?} phyid{} &cpu_data{:#x?}",
-         cpu_data.id,

@@ -1,4 +1,5 @@
 use super::entry::vmreturn;
+use crate::device::gicv3::gicv3_handle_irq_el1;
 use crate::header::{HvHeaderStuff, HEADER_STUFF};
 use crate::hypercall::HyperCall;
 use crate::percpu::PerCpu;
@@ -66,8 +67,8 @@ pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> Result<(), ()> {
     Ok(())
 }
 fn irqchip_handle_irq1() {
-    error!("irq not handle from el1");
-    loop {}
+    info!("irq from el1");
+    gicv3_handle_irq_el1();
 }
 fn irqchip_handle_irq2() {
     error!("irq not handle from el2");
