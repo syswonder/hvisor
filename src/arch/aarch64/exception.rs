@@ -52,7 +52,7 @@ impl<'a> TrapFrame<'a> {
 pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> Result<(), ()> {
     let mpidr = MPIDR_EL1.get();
     let cpu_id = mpidr & 0xff00ffffff;
-    info!("cpu {} exit", cpu_id);
+    debug!("cpu exit");
     match regs.exit_reason as u64 {
         ExceptionType::EXIT_REASON_EL1_IRQ => irqchip_handle_irq1(),
         ExceptionType::EXIT_REASON_EL1_ABORT => arch_handle_trap(regs),
@@ -67,7 +67,7 @@ pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> Result<(), ()> {
     Ok(())
 }
 fn irqchip_handle_irq1() {
-    info!("irq from el1");
+    debug!("irq from el1");
     gicv3_handle_irq_el1();
 }
 fn irqchip_handle_irq2() {
@@ -80,11 +80,13 @@ fn arch_handle_trap(regs: &mut GeneralRegisters) {
     match ESR_EL2.read_as_enum(ESR_EL2::EC) {
         Some(ESR_EL2::EC::Value::HVC64) => handle_hvc(&frame),
         Some(ESR_EL2::EC::Value::SMC64) => handle_smc(&mut frame),
+        //TODO: handle sysreg
         _ => {
             error!(
                 "Unsupported Exception EC:{:#x?}!",
                 ESR_EL2.read(ESR_EL2::EC)
             );
+            error!("esr_el2: iss {:#x?}", ESR_EL2.read(ESR_EL2::ISS));
             loop {}
             ret = trap_return::TRAP_UNHANDLED;
         }
@@ -137,13 +139,14 @@ fn handle_psci(
     match code {
         PsciFnId::PSCI_CPU_OFF_32 => unsafe {
             cpu_data.wait_for_poweron = true;
-            HCR_EL2.modify(HCR_EL2::IMO::SET);
+            //HCR_EL2.modify(HCR_EL2::IMO::SET);
             core::arch::asm!(
                 "
                 wfi
         ",
             );
             info!("weak up at el2!");
+            loop {}
         },
         PsciFnId::PSCI_AFFINITY_INFO_32 => {
             let cpu_data = get_cpu_data(arg0);

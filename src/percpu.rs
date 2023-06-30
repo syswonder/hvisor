@@ -60,7 +60,8 @@ impl PerCpu {
             HCR_EL2::RW::EL1IsAarch64
                 + HCR_EL2::TSC::EnableTrapSmcToEl2
                 + HCR_EL2::VM::SET
-                + HCR_EL2::IMO::SET,
+                + HCR_EL2::IMO::SET
+                + HCR_EL2::FMO::SET,
         );
         self.return_linux()?;
         unreachable!()
