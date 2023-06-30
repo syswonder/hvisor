@@ -138,13 +138,49 @@ fn pending_irq() -> Option<usize> {
         Some(iar as _)
     }
 }
-fn deactivate_irq(irq_id: usize) {}
+fn deactivate_irq(irq_id: usize) {
+    unsafe {
+        write_sysreg!(icc_eoir1_el1, irq_id as u64);
+        //write_sysreg!(icc_dir_el1, irq_id as u64);
+    }
+}
 fn read_lr(id: usize) -> u64 {
-    unsafe { read_sysreg!(ich_lr0_el2) }
+    unsafe {
+        match id {
+            0 => read_sysreg!(ich_lr0_el2),
+            1 => read_sysreg!(ich_lr1_el2),
+            2 => read_sysreg!(ich_lr2_el2),
+            3 => read_sysreg!(ich_lr3_el2),
+            4 => read_sysreg!(ich_lr4_el2),
+            5 => read_sysreg!(ich_lr5_el2),
+            6 => read_sysreg!(ich_lr6_el2),
+            7 => read_sysreg!(ich_lr7_el2),
+            _ => {
+                error!("lr over");
+                loop {}
+            }
+        }
+    }
 }
 fn write_lr(id: usize, val: u64) {
-    unsafe { write_sysreg!(ich_lr0_el2, val) }
+    unsafe {
+        match id {
+            0 => write_sysreg!(ich_lr0_el2, val),
+            1 => write_sysreg!(ich_lr1_el2, val),
+            2 => write_sysreg!(ich_lr2_el2, val),
+            3 => write_sysreg!(ich_lr3_el2, val),
+            4 => write_sysreg!(ich_lr4_el2, val),
+            5 => write_sysreg!(ich_lr5_el2, val),
+            6 => write_sysreg!(ich_lr6_el2, val),
+            7 => write_sysreg!(ich_lr7_el2, val),
+            _ => {
+                error!("lr over");
+                loop {}
+            }
+        }
+    }
 }
+
 fn inject_irq(irq_id: usize) {
     // mask
     const LR_VIRTIRQ_MASK: usize = 0x3ff;
@@ -174,20 +210,21 @@ fn inject_irq(irq_id: usize) {
     if lr_idx == -1 {
         return;
     } else {
+        // lr = irq_id;
+        // /* Only group 1 interrupts */
+        // lr |= ICH_LR_GROUP_BIT;
+        // lr |= ICH_LR_PENDING;
+        // if (!is_sgi(irq_id)) {
+        //     lr |= ICH_LR_HW_BIT;
+        //     lr |= (u64)irq_id << ICH_LR_PHYS_ID_SHIFT;
+        // }
         let mut val = 0;
 
-        val = irq_id as u64;
-        val |= LR_PENDING_BIT;
-
-        if false
-        /* sgi */
-        {
-            todo!()
-        } else {
-            val |= ((irq_id << 10) & LR_PHYSIRQ_MASK) as u64;
-            val |= LR_HW_BIT;
-        }
-
+        val = irq_id as u64; //v intid
+        val |= 1 << 60; //group 1
+        val |= 1 << 62; //state pending
+        val |= 1 << 61; //map hardware
+        val |= ((irq_id as u64) << 32); //p intid
         debug!("To write lr {} val {}", lr_idx, val);
         write_lr(lr_idx as usize, val);
     }

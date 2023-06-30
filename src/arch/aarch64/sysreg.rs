@@ -35,3 +35,18 @@ macro_rules! write_sysreg {
     }
 }
 pub(crate) use write_sysreg;
+
+// macro_rules! read_lrreg {
+//     ($lr:expr) => {
+//         {
+//             let mut value: u64;
+//             ::core::arch::asm!(
+//                 concat!("mrs {value:x}, ","ich_lr",::core::stringify!($id),"_el2"),
+//                 value = out(reg) value,
+//                 options(nomem, nostack),
+//             );
+//             value
+//         }
+//     }
+// }
+// pub(crate) use read_lrreg;
