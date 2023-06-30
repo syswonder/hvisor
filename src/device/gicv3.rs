@@ -139,16 +139,19 @@ fn pending_irq() -> Option<usize> {
     }
 }
 fn deactivate_irq(irq_id: usize) {}
-fn read_lr(id: usize) -> u32 {
-    unsafe { read_sysreg!(ich_lr) as u32 }
+fn read_lr(id: usize) -> u64 {
+    unsafe { read_sysreg!(ich_lr0_el2) }
+}
+fn write_lr(id: usize, val: u64) {
+    unsafe { write_sysreg!(ich_lr0_el2, val) }
 }
 fn inject_irq(irq_id: usize) {
     // mask
     const LR_VIRTIRQ_MASK: usize = 0x3ff;
     const LR_PHYSIRQ_MASK: usize = 0x3ff << 10;
 
-    const LR_PENDING_BIT: u32 = 1 << 28;
-    const LR_HW_BIT: u32 = 1 << 31;
+    const LR_PENDING_BIT: u64 = 1 << 28;
+    const LR_HW_BIT: u64 = 1 << 31;
     let elsr: u64 = unsafe { read_sysreg!(ich_elrsr_el2) };
     let vtr = unsafe { read_sysreg!(ich_vtr_el2) } as usize;
     let lr_num: usize = (vtr & 0xf) + 1;
@@ -160,9 +163,8 @@ fn inject_irq(irq_id: usize) {
             }
             continue;
         }
-
         // overlap
-        //let lr_val = read_lr(i) as usize;
+        let lr_val = read_lr(i) as usize;
         if (i & LR_VIRTIRQ_MASK) == irq_id {
             return;
         }
@@ -174,7 +176,7 @@ fn inject_irq(irq_id: usize) {
     } else {
         let mut val = 0;
 
-        val = irq_id as u32;
+        val = irq_id as u64;
         val |= LR_PENDING_BIT;
 
         if false
@@ -182,11 +184,11 @@ fn inject_irq(irq_id: usize) {
         {
             todo!()
         } else {
-            val |= ((irq_id << 10) & LR_PHYSIRQ_MASK) as u32;
+            val |= ((irq_id << 10) & LR_PHYSIRQ_MASK) as u64;
             val |= LR_HW_BIT;
         }
 
         debug!("To write lr {} val {}", lr_idx, val);
-        //self.write_lr(lr_idx as usize, val);
+        write_lr(lr_idx as usize, val);
     }
 }
