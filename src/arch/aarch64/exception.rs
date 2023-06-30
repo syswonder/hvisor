@@ -80,6 +80,7 @@ fn arch_handle_trap(regs: &mut GeneralRegisters) {
     match ESR_EL2.read_as_enum(ESR_EL2::EC) {
         Some(ESR_EL2::EC::Value::HVC64) => handle_hvc(&frame),
         Some(ESR_EL2::EC::Value::SMC64) => handle_smc(&mut frame),
+        Some(ESR_EL2::EC::Value::TrappedMsrMrs) => handle_sysreg(&mut frame),
         //TODO: handle sysreg
         _ => {
             error!(
@@ -91,6 +92,9 @@ fn arch_handle_trap(regs: &mut GeneralRegisters) {
             ret = trap_return::TRAP_UNHANDLED;
         }
     }
+}
+fn handle_sysreg(frame: &mut TrapFrame) {
+    arch_skip_instruction(frame); //skip sgi write
 }
 fn handle_hvc(frame: &TrapFrame) {
     /*
