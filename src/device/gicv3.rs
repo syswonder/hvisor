@@ -99,11 +99,24 @@ impl GICv3 {
         self.gicr.read_aff()
     }
 }
-
+fn sdei_check() -> i64 {
+    unsafe {
+        core::arch::asm!(
+            "
+    ldr x0, =0xc4000020
+    smc #0
+    ret
+    ",
+            options(noreturn),
+        );
+    }
+}
 pub fn gicv3_cpu_init() {
     // unsafe {write_sysreg!(icc_sgi1r_el1, val);}
     // let intid = unsafe { read_sysreg!(icc_iar1_el1) } as u32;
     //arm_read_sysreg(ICC_CTLR_EL1, cell_icc_ctlr);
+    let sdei_ver = sdei_check();
+    info!("sdei vecsion: {}", sdei_ver);
     info!("gicv3 init!");
     unsafe {
         let ctlr = read_sysreg!(icc_ctlr_el1);
@@ -121,10 +134,10 @@ pub fn gicv3_cpu_init() {
 
 pub fn gicv3_handle_irq_el1() {
     if let Some(irq_id) = pending_irq() {
-        if irq_id < 16 {
-            info!("sgi got {}", irq_id);
-            loop {}
-        }
+        // if irq_id < 16 {
+        //     info!("sgi got {}", irq_id);
+        //     loop {}
+        // }
         deactivate_irq(irq_id);
         inject_irq(irq_id);
     }
