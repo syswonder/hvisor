@@ -1,4 +1,5 @@
 use super::entry::vmreturn;
+use crate::arch::sysreg::write_sysreg;
 use crate::device::gicv3::gicv3_handle_irq_el1;
 use crate::header::{HvHeaderStuff, HEADER_STUFF};
 use crate::hypercall::HyperCall;
@@ -94,6 +95,14 @@ fn arch_handle_trap(regs: &mut GeneralRegisters) {
     }
 }
 fn handle_sysreg(frame: &mut TrapFrame) {
+    debug!("esr_el2: iss {:#x?}", ESR_EL2.read(ESR_EL2::ISS));
+    let rt = (ESR_EL2.get() >> 5) & 0x1f;
+    let val = frame.regs.usr[rt as usize];
+    debug!("esr_el2 rt{}: {:#x?}", rt, val);
+    unsafe {
+        write_sysreg!(icc_sgi1r_el1, val);
+    }
+
     arch_skip_instruction(frame); //skip sgi write
 }
 fn handle_hvc(frame: &TrapFrame) {

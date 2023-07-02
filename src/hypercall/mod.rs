@@ -58,7 +58,7 @@ impl<'a> HyperCall<'a> {
         HyperCallResult::Ok(0)
     }
 }
-fn arch_send_event(cpuid: u64) -> HvResult {
+pub fn arch_send_event(cpuid: u64) -> HvResult {
     let aff3: u64 = 0 << 48;
     let aff2: u64 = 0 << 32;
     let aff1: u64 = 0 << 16;
