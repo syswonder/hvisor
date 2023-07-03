@@ -53,18 +53,20 @@ impl<'a> HyperCall<'a> {
     }
     fn hypervisor_cell_create(&mut self) -> HyperCallResult {
         info!("CPU {} handle hvc cell create", self.cpu_data.id);
+        //TODO should be read from config files
         let target_cpu = 3;
         arch_send_event(target_cpu);
         HyperCallResult::Ok(0)
     }
 }
+pub const SGI_HV_ID: u64 = 15;
 pub fn arch_send_event(cpuid: u64) -> HvResult {
     let aff3: u64 = 0 << 48;
     let aff2: u64 = 0 << 32;
     let aff1: u64 = 0 << 16;
     let irm: u64 = 0 << 40;
-    let sgi_id: u64 = 15 << 24;
-    let target_list: u64 = 1 << 3;
+    let sgi_id: u64 = SGI_HV_ID << 24;
+    let target_list: u64 = 1 << cpuid;
     let val: u64 = aff1 | aff2 | aff3 | irm | sgi_id | target_list;
     unsafe {
         write_sysreg!(icc_sgi1r_el1, val);

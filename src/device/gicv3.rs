@@ -79,6 +79,7 @@
 mod gicd;
 mod gicr;
 use crate::arch::sysreg::{read_sysreg, write_sysreg};
+use crate::hypercall::SGI_HV_ID;
 /// Representation of the GIC.
 pub struct GICv3 {
     /// The Distributor.
@@ -134,10 +135,14 @@ pub fn gicv3_cpu_init() {
 
 pub fn gicv3_handle_irq_el1() {
     if let Some(irq_id) = pending_irq() {
-        // if irq_id < 16 {
-        //     info!("sgi got {}", irq_id);
-        //     loop {}
-        // }
+        if (irq_id < 16) {
+            info!("sgi get {}", irq_id);
+        }
+        if irq_id == SGI_HV_ID as usize {
+            info!("hv sgi got {}", irq_id);
+            loop {}
+        }
+
         deactivate_irq(irq_id);
         inject_irq(irq_id);
     }
@@ -160,6 +165,7 @@ fn deactivate_irq(irq_id: usize) {
 fn read_lr(id: usize) -> u64 {
     unsafe {
         match id {
+            //TODO get lr size from gic reg
             0 => read_sysreg!(ich_lr0_el2),
             1 => read_sysreg!(ich_lr1_el2),
             2 => read_sysreg!(ich_lr2_el2),
@@ -168,6 +174,14 @@ fn read_lr(id: usize) -> u64 {
             5 => read_sysreg!(ich_lr5_el2),
             6 => read_sysreg!(ich_lr6_el2),
             7 => read_sysreg!(ich_lr7_el2),
+            8 => read_sysreg!(ich_lr8_el2),
+            9 => read_sysreg!(ich_lr9_el2),
+            10 => read_sysreg!(ich_lr10_el2),
+            11 => read_sysreg!(ich_lr11_el2),
+            12 => read_sysreg!(ich_lr12_el2),
+            13 => read_sysreg!(ich_lr13_el2),
+            14 => read_sysreg!(ich_lr14_el2),
+            15 => read_sysreg!(ich_lr15_el2),
             _ => {
                 error!("lr over");
                 loop {}
@@ -186,6 +200,14 @@ fn write_lr(id: usize, val: u64) {
             5 => write_sysreg!(ich_lr5_el2, val),
             6 => write_sysreg!(ich_lr6_el2, val),
             7 => write_sysreg!(ich_lr7_el2, val),
+            8 => write_sysreg!(ich_lr8_el2, val),
+            9 => write_sysreg!(ich_lr9_el2, val),
+            10 => write_sysreg!(ich_lr10_el2, val),
+            11 => write_sysreg!(ich_lr11_el2, val),
+            12 => write_sysreg!(ich_lr12_el2, val),
+            13 => write_sysreg!(ich_lr13_el2, val),
+            14 => write_sysreg!(ich_lr14_el2, val),
+            15 => write_sysreg!(ich_lr15_el2, val),
             _ => {
                 error!("lr over");
                 loop {}
@@ -218,7 +240,7 @@ fn inject_irq(irq_id: usize) {
             return;
         }
     }
-    debug!("To Inject IRQ {}, find lr {}", irq_id, lr_idx);
+    //debug!("To Inject IRQ {}, find lr {}", irq_id, lr_idx);
 
     if lr_idx == -1 {
         return;
@@ -238,7 +260,7 @@ fn inject_irq(irq_id: usize) {
         val |= 1 << 62; //state pending
         val |= 1 << 61; //map hardware
         val |= ((irq_id as u64) << 32); //p intid
-        debug!("To write lr {} val {}", lr_idx, val);
+                                        //debug!("To write lr {} val {}", lr_idx, val);
         write_lr(lr_idx as usize, val);
     }
 }

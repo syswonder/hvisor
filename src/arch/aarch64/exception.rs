@@ -53,7 +53,7 @@ impl<'a> TrapFrame<'a> {
 pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> Result<(), ()> {
     let mpidr = MPIDR_EL1.get();
     let cpu_id = mpidr & 0xff00ffffff;
-    debug!("cpu exit");
+    //debug!("cpu exit");
     match regs.exit_reason as u64 {
         ExceptionType::EXIT_REASON_EL1_IRQ => irqchip_handle_irq1(),
         ExceptionType::EXIT_REASON_EL1_ABORT => arch_handle_trap(regs),
@@ -68,7 +68,7 @@ pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> Result<(), ()> {
     Ok(())
 }
 fn irqchip_handle_irq1() {
-    debug!("irq from el1");
+    //debug!("irq from el1");
     gicv3_handle_irq_el1();
 }
 fn irqchip_handle_irq2() {
@@ -114,7 +114,7 @@ fn handle_hvc(frame: &TrapFrame) {
     let (code, arg0, arg1) = (frame.regs.usr[0], frame.regs.usr[1], frame.regs.usr[2]);
     let cpu_data = unsafe { this_cpu_data() as &mut PerCpu };
 
-    debug!(
+    info!(
         "HVC from CPU{},code:{:#x?},arg0:{:#x?},arg1:{:#x?}",
         cpu_data.id, code, arg0, arg1
     );
@@ -128,7 +128,7 @@ fn handle_smc(frame: &mut TrapFrame) {
         frame.regs.usr[3],
     );
     let cpu_data = unsafe { this_cpu_data() as &mut PerCpu };
-    debug!(
+    info!(
         "SMC from CPU{},func_id:{:#x?},arg0:{},arg1:{},arg2:{}",
         cpu_data.id, code, arg0, arg1, arg2
     );
@@ -159,7 +159,7 @@ fn handle_psci(
         ",
             );
             info!("weak up at el2!");
-            loop {}
+            //loop {}
         },
         PsciFnId::PSCI_AFFINITY_INFO_32 => {
             let cpu_data = get_cpu_data(arg0);
