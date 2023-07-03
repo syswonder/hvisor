@@ -136,7 +136,7 @@ pub fn gicv3_cpu_init() {
 pub fn gicv3_handle_irq_el1() {
     if let Some(irq_id) = pending_irq() {
         if (irq_id < 16) {
-            info!("sgi get {}", irq_id);
+            debug!("sgi get {}", irq_id);
         }
         if irq_id == SGI_HV_ID as usize {
             info!("hv sgi got {}", irq_id);
@@ -159,6 +159,9 @@ fn pending_irq() -> Option<usize> {
 fn deactivate_irq(irq_id: usize) {
     unsafe {
         write_sysreg!(icc_eoir1_el1, irq_id as u64);
+        if irq_id < 16 {
+            write_sysreg!(icc_dir_el1, irq_id as u64);
+        }
         //write_sysreg!(icc_dir_el1, irq_id as u64);
     }
 }
@@ -237,12 +240,14 @@ fn inject_irq(irq_id: usize) {
         // overlap
         let lr_val = read_lr(i) as usize;
         if (i & LR_VIRTIRQ_MASK) == irq_id {
+            warn!("irq mask!{} {}", i, irq_id);
             return;
         }
     }
     //debug!("To Inject IRQ {}, find lr {}", irq_id, lr_idx);
 
     if lr_idx == -1 {
+        warn!("full lr");
         return;
     } else {
         // lr = irq_id;
