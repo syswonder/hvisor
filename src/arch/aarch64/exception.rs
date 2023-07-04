@@ -53,7 +53,7 @@ impl<'a> TrapFrame<'a> {
 pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> Result<(), ()> {
     let mpidr = MPIDR_EL1.get();
     let cpu_id = mpidr & 0xff00ffffff;
-    //debug!("cpu exit");
+    trace!("cpu exit");
     match regs.exit_reason as u64 {
         ExceptionType::EXIT_REASON_EL1_IRQ => irqchip_handle_irq1(),
         ExceptionType::EXIT_REASON_EL1_ABORT => arch_handle_trap(regs),
@@ -95,10 +95,10 @@ fn arch_handle_trap(regs: &mut GeneralRegisters) {
     }
 }
 fn handle_sysreg(frame: &mut TrapFrame) {
-    debug!("esr_el2: iss {:#x?}", ESR_EL2.read(ESR_EL2::ISS));
+    trace!("esr_el2: iss {:#x?}", ESR_EL2.read(ESR_EL2::ISS));
     let rt = (ESR_EL2.get() >> 5) & 0x1f;
     let val = frame.regs.usr[rt as usize];
-    debug!("esr_el2 rt{}: {:#x?}", rt, val);
+    trace!("esr_el2 rt{}: {:#x?}", rt, val);
     unsafe {
         write_sysreg!(icc_sgi1r_el1, val);
     }
@@ -152,11 +152,10 @@ fn handle_psci(
     match code {
         PsciFnId::PSCI_CPU_OFF_32 => unsafe {
             cpu_data.wait_for_poweron = true;
-            //HCR_EL2.modify(HCR_EL2::IMO::SET);
             core::arch::asm!(
                 "
                 wfi
-        ",
+            ",
             );
             info!("weak up at el2!");
             //loop {}
@@ -175,16 +174,20 @@ fn handle_psci(
     }
 }
 fn arch_skip_instruction(frame: &TrapFrame) {
+    //ELR_EL2: ret address
     let mut pc = ELR_EL2.get();
+    //ESR_EL2::IL exception instruction length
     let ins = match ESR_EL2.read(ESR_EL2::IL) {
         0 => 2, //16 bit ins
         1 => 4, //32 bit ins
         _ => 0,
     };
+    //skip ins
     pc = pc + ins;
     ELR_EL2.set(pc);
 }
 fn arch_dump_exit(reason: u64) {
+    //TODO hypervisor coredump
     error!("Unsupported Exit:{:#x?}!", reason);
     loop {}
 }
