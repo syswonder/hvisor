@@ -119,13 +119,26 @@ pub fn gicv3_cpu_init() {
     let sdei_ver = sdei_check();
     info!("sdei vecsion: {}", sdei_ver);
     info!("gicv3 init!");
+    //TODO only cpu0 print gicv3 init?
     unsafe {
         let ctlr = read_sysreg!(icc_ctlr_el1);
+        debug!("ctlr: {:#x?}", ctlr);
         write_sysreg!(icc_ctlr_el1, 0x2);
+        unsafe {
+            core::arch::asm!(
+                "
+        ldr x0, =0x2
+        msr icc_ctlr_el1,x0
+        ",
+            );
+        }
+        let ctlr2 = read_sysreg!(icc_ctlr_el1);
+        debug!("ctlr2: {:#x?}", ctlr2);
         let pmr = read_sysreg!(icc_pmr_el1);
         write_sysreg!(icc_pmr_el1, 0xf0);
         let igrpen = read_sysreg!(icc_igrpen1_el1);
         write_sysreg!(icc_igrpen1_el1, 0x1);
+        debug!("ctlr: {:#x?}, pmr:{:#x?},igrpen{:#x?}", ctlr, pmr, igrpen);
         let vtr = read_sysreg!(ich_vtr_el2);
         let mut vmcr = ((pmr & 0xff) << 24) | (1 << 1) | (1 << 9);
         write_sysreg!(ich_vmcr_el2, vmcr);
@@ -133,10 +146,24 @@ pub fn gicv3_cpu_init() {
     }
 }
 
+pub fn gicv3_cpu_shutdown() {
+    // unsafe {write_sysreg!(icc_sgi1r_el1, val);}
+    // let intid = unsafe { read_sysreg!(icc_iar1_el1) } as u32;
+    //arm_read_sysreg(ICC_CTLR_EL1, cell_icc_ctlr);
+    info!("gicv3 shutdown!");
+    unsafe {
+        let ctlr = read_sysreg!(icc_ctlr_el1);
+        let pmr = read_sysreg!(icc_pmr_el1);
+        let igrpen = read_sysreg!(icc_igrpen1_el1);
+        debug!("ctlr: {:#x?}, pmr:{:#x?},igrpen{:#x?}", ctlr, pmr, igrpen);
+        //TODO gicv3 reset
+    }
+}
+
 pub fn gicv3_handle_irq_el1() {
     if let Some(irq_id) = pending_irq() {
         if (irq_id < 16) {
-            debug!("sgi get {}", irq_id);
+            trace!("sgi get {}", irq_id);
         }
         if irq_id == SGI_HV_ID as usize {
             info!("hv sgi got {}", irq_id);

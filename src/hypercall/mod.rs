@@ -52,7 +52,7 @@ impl<'a> HyperCall<'a> {
         unreachable!()
     }
     fn hypervisor_cell_create(&mut self) -> HyperCallResult {
-        info!("CPU {} handle hvc cell create", self.cpu_data.id);
+        info!("handle hvc cell create");
         //TODO should be read from config files
         let target_cpu = 3;
         arch_send_event(target_cpu);

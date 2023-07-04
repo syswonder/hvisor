@@ -3,6 +3,7 @@ use aarch64_cpu::registers::MPIDR_EL1;
 //use crate::arch::vcpu::Vcpu;
 use crate::arch::entry::{shutdown_el2, virt2phys_el2, vmreturn};
 use crate::consts::{PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
+use crate::device::gicv3::gicv3_cpu_shutdown;
 use crate::error::HvResult;
 use crate::header::HvHeader;
 use crate::header::{HvHeaderStuff, HEADER_STUFF};
@@ -55,6 +56,7 @@ impl PerCpu {
     }
     pub fn activate_vmm(&mut self) -> HvResult {
         ACTIVATED_CPUS.fetch_add(1, Ordering::SeqCst);
+        info!("activating cpu {}", self.id);
         set_vtcr_flags();
         HCR_EL2.modify(
             HCR_EL2::RW::EL1IsAarch64
@@ -68,7 +70,7 @@ impl PerCpu {
     }
     pub fn deactivate_vmm(&mut self, ret_code: usize) -> HvResult {
         ACTIVATED_CPUS.fetch_sub(1, Ordering::SeqCst);
-        info!("Disabling cpu{}", self.id);
+        info!("Disabling cpu {}", self.id);
         self.arch_shutdown_self();
         Ok(())
     }
@@ -80,6 +82,8 @@ impl PerCpu {
     }
     /*should be in vcpu*/
     pub fn arch_shutdown_self(&mut self) -> HvResult {
+        /*irqchip reset*/
+        gicv3_cpu_shutdown();
         /* Free the guest */
         HCR_EL2.set(0x80000000);
         VTCR_EL2.set(0x80000000);
