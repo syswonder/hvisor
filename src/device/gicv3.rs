@@ -112,40 +112,54 @@ fn sdei_check() -> i64 {
         );
     }
 }
+//TODO: add Distributor init
 pub fn gicv3_cpu_init() {
-    // unsafe {write_sysreg!(icc_sgi1r_el1, val);}
-    // let intid = unsafe { read_sysreg!(icc_iar1_el1) } as u32;
-    //arm_read_sysreg(ICC_CTLR_EL1, cell_icc_ctlr);
-    let sdei_ver = sdei_check();
+    //TODO: add Redistributor init
+    let sdei_ver = -1; //sdei_check();
     info!("sdei vecsion: {}", sdei_ver);
     info!("gicv3 init!");
     //TODO only cpu0 print gicv3 init?
+    //TODO icc_ctlr_el1 value? 0x8f02
+    //Identifier bits. Read-only and writes are ignored.
+    //Priority bits. Read-only and writes are ignored.
     unsafe {
         let ctlr = read_sysreg!(icc_ctlr_el1);
         debug!("ctlr: {:#x?}", ctlr);
-        write_sysreg!(icc_ctlr_el1, 0x2);
-        unsafe {
-            core::arch::asm!(
-                "
-        ldr x0, =0x2
-        msr icc_ctlr_el1,x0
-        ",
-            );
-        }
+        write_sysreg!(icc_ctlr_el1, 0x2); // ICC_EOIR1_EL1 provide priority drop functionality only. ICC_DIR_EL1 provides interrupt deactivation functionality.
         let ctlr2 = read_sysreg!(icc_ctlr_el1);
         debug!("ctlr2: {:#x?}", ctlr2);
         let pmr = read_sysreg!(icc_pmr_el1);
-        write_sysreg!(icc_pmr_el1, 0xf0);
+        write_sysreg!(icc_pmr_el1, 0xf0); // Interrupt Controller Interrupt Priority Mask Register
         let igrpen = read_sysreg!(icc_igrpen1_el1);
-        write_sysreg!(icc_igrpen1_el1, 0x1);
+        write_sysreg!(icc_igrpen1_el1, 0x1); //group 1 irq
         debug!("ctlr: {:#x?}, pmr:{:#x?},igrpen{:#x?}", ctlr, pmr, igrpen);
         let vtr = read_sysreg!(ich_vtr_el2);
-        let mut vmcr = ((pmr & 0xff) << 24) | (1 << 1) | (1 << 9);
+        let mut vmcr = ((pmr & 0xff) << 24) | (1 << 1) | (1 << 9); //VPMR|VENG1|VEOIM
         write_sysreg!(ich_vmcr_el2, vmcr);
-        write_sysreg!(ich_hcr_el2, 0x1);
+        write_sysreg!(ich_hcr_el2, 0x1); //enable virt cpu insterface
     }
 }
-
+fn gicv3_clear_pending_irqs() {
+    let vtr = unsafe { read_sysreg!(ich_vtr_el2) } as usize;
+    let lr_num: usize = (vtr & 0xf) + 1;
+    for i in 0..lr_num {
+        write_lr(i, 0) //clear lr
+    }
+    let num_priority_bits = (vtr >> 29) + 1;
+    /* Clear active priority bits */
+    unsafe {
+        if num_priority_bits >= 5 {
+            write_sysreg!(ICH_AP1R0_EL2, 0); //Interrupt Controller Hyp Active Priorities Group 1 Register 0 No interrupt active
+        }
+        if num_priority_bits >= 6 {
+            write_sysreg!(ICH_AP1R1_EL2, 0);
+        }
+        if num_priority_bits > 6 {
+            write_sysreg!(ICH_AP1R2_EL2, 0);
+            write_sysreg!(ICH_AP1R3_EL2, 0);
+        }
+    }
+}
 pub fn gicv3_cpu_shutdown() {
     // unsafe {write_sysreg!(icc_sgi1r_el1, val);}
     // let intid = unsafe { read_sysreg!(icc_iar1_el1) } as u32;
@@ -154,8 +168,8 @@ pub fn gicv3_cpu_shutdown() {
     unsafe {
         let ctlr = read_sysreg!(icc_ctlr_el1);
         let pmr = read_sysreg!(icc_pmr_el1);
-        let igrpen = read_sysreg!(icc_igrpen1_el1);
-        debug!("ctlr: {:#x?}, pmr:{:#x?},igrpen{:#x?}", ctlr, pmr, igrpen);
+        let ich_hcr = read_sysreg!(ich_hcr_el2);
+        debug!("ctlr: {:#x?}, pmr:{:#x?},ich_hcr{:#x?}", ctlr, pmr, ich_hcr);
         //TODO gicv3 reset
     }
 }
@@ -164,7 +178,11 @@ pub fn gicv3_handle_irq_el1() {
     if let Some(irq_id) = pending_irq() {
         if (irq_id < 16) {
             trace!("sgi get {}", irq_id);
+            if irq_id != 0 {
+                info!("sgi get {}", irq_id);
+            }
         }
+
         if irq_id == SGI_HV_ID as usize {
             info!("hv sgi got {}", irq_id);
             loop {}
@@ -274,7 +292,8 @@ fn inject_irq(irq_id: usize) {
     //debug!("To Inject IRQ {}, find lr {}", irq_id, lr_idx);
 
     if lr_idx == -1 {
-        warn!("full lr");
+        error!("full lr");
+        loop {}
         return;
     } else {
         // lr = irq_id;

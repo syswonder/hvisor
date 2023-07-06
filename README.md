@@ -1,100 +1,149 @@
-# armv8-baremetal-demo-rust
+# sysHyper 
+![Static Badge](https://img.shields.io/badge/sysHyper-orange)
+![GitHub](https://img.shields.io/github/license/likey99/armv8-rust-hypervisor?color=red)
 
-使用rust写的armv8 hypervisor，Porting from 
-https://github.com/rcore-os/RVM1.5
+[![Contributors](https://img.shields.io/github/contributors/likey99/armv8-rust-hypervisor?color=blue)](https://github.com/likey99/armv8-rust-hypervisor)
+![GitHub Repo stars](https://img.shields.io/github/stars/likey99/armv8-rust-hypervisor?color=yellow)
+![GitHub commit activity (branch)](https://img.shields.io/github/commit-activity/w/likey99/armv8-rust-hypervisor?color=black)
 
-## ~/.cargo/config
-```shell
-[build]
-target = "aarch64-unknown-none"
+![GitHub code size in bytes](https://img.shields.io/github/languages/code-size/likey99/armv8-rust-hypervisor?color=green)
+![GitHub repo size](https://img.shields.io/github/repo-size/likey99/armv8-rust-hypervisor?color=white)
+![GitHub top language](https://img.shields.io/github/languages/top/likey99/armv8-rust-hypervisor?color=orange)
 
-[target.aarch64-unknown-linux-gnu]
-linker = "aarch64-linux-gnu-gcc"
-rustflags = [
-    "-C", "link-arg=-nostartfiles -Tlinker.ld",
-]
 
-[target.aarch64-unknown-none]
-linker = "aarch64-none-elf-gcc"
+
+
+Armv8 hypervisor based on Linux & implemented in Rust，porting from [RVM1.5](https://github.com/rcore-os/RVM1.5) & [jailhouse](https://github.com/siemens/jailhouse)
+
+## Progress
+- [x] arch_entry
+- [x] cpu
+- [x] logging
+- [x] exception
+- [x] gicv3
+- [ ] memory
+- [ ] ....
+## Platform
+- [x] qemu
+- [ ] imx
+- [ ] ti
+- [ ] rpi4
+## 环境配置
+### 安装rust
+首先安装 Rust 版本管理器 rustup 和 Rust 包管理器 cargo，为了在国内加速访问，可以设置使用中科大的镜像服务器。
+```sh
+export RUSTUP_DIST_SERVER=https://mirrors.ustc.edu.cn/rust-static
+export RUSTUP_UPDATE_ROOT=https://mirrors.ustc.edu.cn/rust-static/rustup
+curl https://sh.rustup.rs -sSf | sh  
 ```
-其中需要安装linker：`aarch64-none-elf-` 地址：https://developer.arm.com/-/media/Files/downloads/gnu-a/10.3-2021.07/binrel/gcc-arm-10.3-2021.07-x86_64-aarch64-none-elf.tar.xz?rev=9d9808a2d2194b1283d6a74b40d46ada&hash=4E429A41C958483C9DB8ED84B051D010F86BA624
-
-安装rust toolchain：`rustup install nightly && rustup default nightly && rustup target add aarch64-unknown-none (optional, we use json config)`
-
-`apt install gdb-multiarch`
-
-## 编译
-```shell
-make
+最好把 Rust 包管理器 cargo 镜像地址 crates.io 也替换成中国科学技术大学的镜像服务器，来加速三方库的下载。 打开或新建 ~/.cargo/config 文件，并把内容修改为：
+```sh
+[source.crates-io]
+registry = "https://github.com/rust-lang/crates.io-index"
+replace-with = 'ustc'
+[source.ustc]
+registry = "git://mirrors.ustc.edu.cn/crates.io-index"
+```
+### qemu模拟器编译
+```sh
+sudo apt install autoconf automake autotools-dev curl libmpc-dev libmpfr-dev libgmp-dev \
+              gawk build-essential bison flex texinfo gperf libtool patchutils bc \
+              zlib1g-dev libexpat-dev pkg-config  libglib2.0-dev libpixman-1-dev git tmux python3 ninja-build  # 安装编译所需的依赖包
+wget https://download.qemu.org/qemu-7.0.0.tar.xz  # 下载源码
+tar xvJf qemu-7.0.0.tar.xz   # 解压
+cd qemu-7.0.0
+./configure   #生成设置文件
+make -j$(nproc)   #编译
+qemu-system-aarch64 --version   #查看版本
+```
+qemu版本>7.2需要额外配置，否则在启动时可能出现以下问题
+```
+network backend user is not compiled into this binary
+```
+需要在编译前进行以下设置：
+```sh
+sudo apt install libslirp-dev 
+../configure --enable-slirp
+```
+编译完成后可以```sudo make install```将 Qemu 安装到 ```/usr/local/bin``` 目录下,
+也可以编辑``` ~/.bashrc``` 文件（如果使用的是默认的 bash 终端），在文件的末尾加入：
+```
+export PATH=$PATH:/path/to/qemu-7.0.0/build
 ```
 
-## Qemu
-```shell
-make start
+### 启动qemu
+```sh
+mkdir qemu-test    # 新建一个文件夹用来测试
+cp -r test-img/* qemu-test   #将所需的文件传入测试文件夹
+cd qemu-test
+cd host
+./test.sh    #启动qemu
 ```
-OR
-```shell
+linux默认用户密码为root/root
+### 编译sysHyper
+在host执行
+```sh
+make     #编译得到hypervisor镜像rvmarm.bin
+make scp   #将得到的rvmarm.bin文件传入qemu上运行的linux
+```
+### 运行sysHyper
+将必要的文件传入guest linux：
+```sh
+scp -P 2333 -r qemu-test/guest/* root@localhost:~/
+```
+在guest linux中
+```sh
+./setup.sh  #设置文件路径
+./enable.sh   #运行sysHyper，开启虚拟化
+cat /proc/cpuinfo   #查看当前linux cpuinfo
+jailhouse cell create configs/qemu-arm64-gic-demo.cell  #新建一个cell，将cpu 3 移出root cell
+cat /proc/cpuinfo   #查看当前linux cpuinfo，cpu3被shutdown了
+jailhouse disable  # 关闭虚拟化
+```
+### output
+应该可以看到hypervisor运行打印的一些信息
+
+
+### 调试
+可以使用vscode进行可视化调试，在原有qemu命令末尾加上```-s -S```
+```sh
 qemu-system-aarch64 \
-    -M virt \
-    -m 1024M \
-    -cpu cortex-a53 \
-    -nographic \
-    -kernel target/aarch64-unknown-linux-gnu/debug/armv8-baremetal-demo-rust
+-drive file=./rootfs.qcow2,discard=unmap,if=none,id=disk,format=qcow2 \
+-device virtio-blk-device,drive=disk \
+-m 1G -serial mon:stdio  \
+-kernel Image \
+-append "root=/dev/vda mem=768M"  \
+-cpu cortex-a57 -smp 4 -nographic -machine virt,gic-version=3,virtualization=on \
+-device virtio-serial-device -device virtconsole,chardev=con \
+-chardev vc,id=con  \
+-net nic \
+-net user,hostfwd=tcp::2333-:22 -s -S
 ```
-## Qemu调试
-```shell
+先启动qemu，然后按F5即可开始调试
+
+### 原版jailhouse
+在开发调试的过程中，为了方便与原版jailhouse做对比，还提供了v0.12版本的原版jailhouse运行环境：
+- test-img/host/jail-img 内核
+- test-img/guest/jail   原版jailhouse编译生成文件
+运行命令为：
+```sh
 qemu-system-aarch64 \
-    -M virt \
-    -m 1024M \
-    -cpu cortex-a53 \
-    -nographic \
-    -machine virtualization=on \ 
-    #-machine secure=on \
-    -kernel target/aarch64-unknown-linux-gnu/debug/armv8-baremetal-demo-rust \
-    -S -s
+-drive file=./rootfs.qcow2,discard=unmap,if=none,id=disk,format=qcow2 \
+-m 1G -serial mon:stdio -netdev user,id=net,hostfwd=tcp::23333-:22 \
+-kernel jail-img \
+-append "root=/dev/vda mem=768M"  \
+-cpu cortex-a57 -smp 16 -nographic -machine virt,gic-version=3,virtualization=on \
+-device virtio-serial-device -device virtconsole,chardev=con -chardev vc,id=con -device virtio-blk-device,drive=disk \
+-device virtio-net-device,netdev=net
 ```
-然后使用
-
-`gdb-multiarch target/aarch64-unknown-linux-gnu/debug/armv8-baremetal-demo-rust `
-
-进入gdb 输入：`target remote :1234` 即开始调试
-> PS: -machine virtualization=on开启虚拟化，则启用EL2，-machine secure=on，则启用EL3。我们只需要从EL2启动即可。
-然后使用aarch64-linux-gnu-gdb -x debug.gdb。qemu默认从EL1启动virt
-
-参考：
-1. https://stackoverflow.com/questions/42824706/qemu-system-aarch64-entering-el1-when-emulating-a53-power-up
-2. https://stackoverflow.com/questions/31787617/what-is-the-current-execution-mode-exception-level-etc
-3. https://github.com/cirosantilli/linux-kernel-module-cheat/tree/35684b1b7e0a04a68987056cb15abd97e3d2f0cc#arm-exception-level
-
-## Type 1.5 启动
-
-1. 下载并制作ubuntu镜像，在qemu中启动
-```shell
-make image
-```
-
-2. 在qemu中启动制作好的虚拟机镜像
-```shell
-make qemu
+在guest中：
+```sh
+cd jail
+insmod ./jailhouse.ko
+cp jailhouse.bin /lib/firmware/
+./jailhouse enable configs/qemu-arm64.cell
 ```
 
 
-## 编译GDB for aarch64（未成功）
-1. 下载gdb source: https://ftp.gnu.org/gnu/gdb/gdb-13.1.tar.gz
-2. tar -xzvf gdb-13.1.tar.gz
-3. mkdir build 
-4. cd $_
-5. ../configure --prefix=$PWD --target=aarch64-linux-gnu
-PS: host填写自己电脑里交叉编译器的前缀，然后configure会自动寻找该前缀的编译器
-6. make -j$(nproc) [CFALGS=-static CXXFLAGS=-static]
-
-PS: --target指定要调试的程序的架构 --host指定运行gdb程序的架构
-
-参考：
-http://ruer.fun/2021/04/20/GDB-%E7%BC%96%E8%AF%91%E6%96%B9%E6%B3%95-2021/
-## 编译qemu（可用）
-1. download qemu7.2.source
-2. tar 解压
-3. mkdir build %% cd build
-4. ../qemu-7.2.0/configure --enable-kvm --enable-slirp --enable-debug --target-list=aarch64-softmmu,x86_64-softmmu
-5. make -j2
+本项目的相关文档在
+https://github.com/syswonder/report
