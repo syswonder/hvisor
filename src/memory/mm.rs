@@ -8,6 +8,8 @@ use core::fmt::{Debug, Formatter, Result};
 use super::addr::{align_down, align_up};
 use super::{mapper::Mapper, paging::GenericPageTable, MemFlags};
 use crate::error::HvResult;
+use crate::memory::PhysAddr;
+use crate::memory::paging::{PageSize, PagingResult};
 
 #[derive(Clone)]
 pub struct MemoryRegion<VA> {
@@ -124,8 +126,11 @@ where
         self.pt.activate();
     }
 
-    pub fn page_table(&self) -> &PT {
-        &self.pt
+    pub unsafe fn page_table_query(
+        &self,
+        vaddr: PT::VA,
+    ) -> PagingResult<(PhysAddr, MemFlags, PageSize)> {
+        self.pt.query(vaddr)
     }
 }
 
