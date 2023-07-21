@@ -15,6 +15,7 @@ buddy_system_allocator = "0.8"
 tock-registers = "0.8"
 aarch64-cpu = {git = "https://github.com/likey99/aarch64-cpu"}
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
+bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "03bd9909" }
 
 [profile.dev]
 panic = "abort"
