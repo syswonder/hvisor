@@ -1,0 +1,79 @@
+use crate::arch::Stage2PageTable;
+use crate::config::{CellConfig, HvSystemConfig};
+use crate::error::HvResult;
+use crate::memory::addr::{GuestPhysAddr, HostPhysAddr};
+use crate::memory::{MemFlags, MemoryRegion, MemorySet, GenericPageTableImmut};
+
+#[derive(Debug)]
+pub struct Cell<'a> {
+    /// Cell configuration.
+    pub config: CellConfig<'a>,
+    /// Guest physical memory set.
+    pub gpm: MemorySet<Stage2PageTable>,
+}
+
+impl Cell<'_> {
+    fn new_root() -> HvResult<Self> {
+        let sys_config = HvSystemConfig::get();
+        let cell_config = sys_config.root_cell.config();
+        let mmcfg_start = sys_config.platform_info.pci_mmconfig_base;
+        let mmcfg_size = (sys_config.platform_info.pci_mmconfig_end_bus + 1) as u64 * 256 * 4096;
+        let hv_phys_start = sys_config.hypervisor_memory.phys_start as usize;
+        let hv_phys_size = sys_config.hypervisor_memory.size as usize;
+
+        let mut gpm: MemorySet<Stage2PageTable> = MemorySet::new();
+
+        // Map hypervisor memory to the empty page.
+        // gpm.insert(MemoryRegion::new_with_empty_mapper(
+        //     hv_phys_start,
+        //     hv_phys_size,
+        //     MemFlags::READ | MemFlags::NO_HUGEPAGES,
+        // ))?;
+
+        gpm.insert(MemoryRegion::new_with_offset_mapper(
+            hv_phys_start as GuestPhysAddr,
+            hv_phys_start as HostPhysAddr,
+            hv_phys_size as usize,
+            MemFlags::READ | MemFlags::NO_HUGEPAGES,
+                ))?;
+
+        // Map all physical memory regions.
+        for region in cell_config.mem_regions() {
+            gpm.insert(MemoryRegion::new_with_offset_mapper(
+                region.virt_start as GuestPhysAddr,
+                region.phys_start as HostPhysAddr,
+                region.size as usize,
+                region.flags,
+            ))?;
+        }
+
+        gpm.insert(MemoryRegion::new_with_offset_mapper(
+            mmcfg_start as GuestPhysAddr,
+            mmcfg_start as HostPhysAddr,
+            mmcfg_size as usize,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+                ))?;
+        
+        trace!("Guest phyiscal memory set: {:#x?}", gpm);
+
+        Ok(Self {
+            config: cell_config,
+            gpm,
+        })
+    }
+}
+
+static ROOT_CELL: spin::Once<Cell> = spin::Once::new();
+
+pub fn root_cell<'a>() -> &'a Cell<'a> {
+    ROOT_CELL.get().expect("Uninitialized root cell!")
+}
+
+pub fn init() -> HvResult {
+    let root_cell = Cell::new_root()?;
+    info!("Root cell init end.");
+    debug!("{:#x?}", root_cell);
+
+    ROOT_CELL.call_once(|| root_cell);
+    Ok(())
+}
