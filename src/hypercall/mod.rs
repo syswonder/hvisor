@@ -29,6 +29,7 @@ impl<'a> HyperCall<'a> {
         let code = match HyperCallCode::try_from(code) {
             Ok(code) => code,
             Err(_) => {
+                warn!("hypercall unsupported!");
                 return Ok(());
             }
         };

@@ -185,7 +185,13 @@ pub fn gicv3_handle_irq_el1() {
 
         if irq_id == SGI_HV_ID as usize {
             info!("hv sgi got {}", irq_id);
-            loop {}
+            unsafe {
+                core::arch::asm!(
+                    "
+                wfi
+            ",
+                );
+            }
         }
 
         deactivate_irq(irq_id);
