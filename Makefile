@@ -1,7 +1,7 @@
 ARCH ?= aarch64
 LOG ?=info
 STATS ?= off
-PORT ?= 23333
+PORT ?= 2333
 
 # default debug mode
 MODE ?= debug
