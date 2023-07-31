@@ -3,6 +3,7 @@ use aarch64_cpu::registers::MPIDR_EL1;
 //use crate::arch::vcpu::Vcpu;
 use crate::arch::entry::{shutdown_el2, virt2phys_el2, vmreturn};
 use crate::consts::{PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
+use crate::device::gicv3::gicv3_cpu_init;
 use crate::device::gicv3::gicv3_cpu_shutdown;
 use crate::error::HvResult;
 use crate::header::HvHeader;
@@ -65,6 +66,7 @@ impl PerCpu {
                 + HCR_EL2::IMO::SET
                 + HCR_EL2::FMO::SET,
         );
+        gicv3_cpu_init();
         self.return_linux()?;
         unreachable!()
     }
