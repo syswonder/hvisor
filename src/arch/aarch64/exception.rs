@@ -82,6 +82,7 @@ fn arch_handle_trap(regs: &mut GeneralRegisters) {
         Some(ESR_EL2::EC::Value::HVC64) => handle_hvc(&frame),
         Some(ESR_EL2::EC::Value::SMC64) => handle_smc(&mut frame),
         Some(ESR_EL2::EC::Value::TrappedMsrMrs) => handle_sysreg(&mut frame),
+        Some(ESR_EL2::EC::Value::DataAbortLowerEL) => handle_dabt(&mut frame),
         //TODO: handle sysreg
         _ => {
             error!(
@@ -94,13 +95,23 @@ fn arch_handle_trap(regs: &mut GeneralRegisters) {
         }
     }
 }
+fn handle_dabt(frame: &mut TrapFrame) {
+    warn!("skip data access!");
+    arch_skip_instruction(frame);
+}
 fn handle_sysreg(frame: &mut TrapFrame) {
+    //send sgi
     trace!("esr_el2: iss {:#x?}", ESR_EL2.read(ESR_EL2::ISS));
     let rt = (ESR_EL2.get() >> 5) & 0x1f;
     let val = frame.regs.usr[rt as usize];
     trace!("esr_el2 rt{}: {:#x?}", rt, val);
-    unsafe {
-        write_sysreg!(icc_sgi1r_el1, val);
+    let sgi_id: u64 = (val & (0xf << 24)) >> 24;
+    if this_cpu_data().wait_for_poweron {
+        warn!("skip send sgi {:#x?}", sgi_id);
+    } else {
+        unsafe {
+            write_sysreg!(icc_sgi1r_el1, val);
+        }
     }
 
     arch_skip_instruction(frame); //skip sgi write
@@ -157,7 +168,7 @@ fn handle_psci(
                 wfi
             ",
             );
-            info!("weak up at el2!");
+            info!("wake up at el2!");
             //loop {}
         },
         PsciFnId::PSCI_AFFINITY_INFO_32 => {

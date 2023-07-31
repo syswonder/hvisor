@@ -33,6 +33,7 @@ mod memory;
 mod panic;
 mod percpu;
 
+use crate::arch::sysreg::{read_sysreg, write_sysreg};
 use crate::cell::root_cell;
 use crate::percpu::this_cpu_data;
 use config::HvSystemConfig;
@@ -41,12 +42,10 @@ use device::gicv3::gicv3_cpu_init;
 use error::HvResult;
 use header::HvHeader;
 use percpu::PerCpu;
-
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
 static INIT_EARLY_OK: AtomicU32 = AtomicU32::new(0);
 static INIT_LATE_OK: AtomicU32 = AtomicU32::new(0);
 static ERROR_NUM: AtomicI32 = AtomicI32::new(0);
-
 fn has_err() -> bool {
     ERROR_NUM.load(Ordering::Acquire) != 0
 }
@@ -121,7 +120,7 @@ fn main(cpu_data: &mut PerCpu) -> HvResult {
     let is_primary = cpu_data.id == 0;
     let online_cpus = HvHeader::get().online_cpus;
     wait_for(|| PerCpu::entered_cpus() < online_cpus)?;
-    info!(
+    println!(
         "{} CPU {} entered.",
         if is_primary { "Primary" } else { "Secondary" },
         cpu_data.id

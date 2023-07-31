@@ -3,8 +3,8 @@ LOG ?=info
 STATS ?= off
 PORT ?= 23333
 
-# default release mode
-MODE ?= release
+# default debug mode
+MODE ?= debug
 
 export MODE
 export LOG

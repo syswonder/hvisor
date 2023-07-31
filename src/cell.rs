@@ -2,7 +2,7 @@ use crate::arch::Stage2PageTable;
 use crate::config::{CellConfig, HvSystemConfig};
 use crate::error::HvResult;
 use crate::memory::addr::{GuestPhysAddr, HostPhysAddr};
-use crate::memory::{MemFlags, MemoryRegion, MemorySet, GenericPageTableImmut};
+use crate::memory::{GenericPageTableImmut, MemFlags, MemoryRegion, MemorySet};
 
 #[derive(Debug)]
 pub struct Cell<'a> {
@@ -35,25 +35,43 @@ impl Cell<'_> {
             hv_phys_start as HostPhysAddr,
             hv_phys_size as usize,
             MemFlags::READ | MemFlags::NO_HUGEPAGES,
-                ))?;
+        ))?;
 
         // Map all physical memory regions.
-        for region in cell_config.mem_regions() {
-            gpm.insert(MemoryRegion::new_with_offset_mapper(
-                region.virt_start as GuestPhysAddr,
-                region.phys_start as HostPhysAddr,
-                region.size as usize,
-                region.flags,
-            ))?;
-        }
+        gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x09000000 as GuestPhysAddr,
+            0x09000000 as HostPhysAddr,
+            0x37000000 as usize,
+            MemFlags::READ | MemFlags::WRITE,
+        ))?;
+        gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x40000000 as GuestPhysAddr,
+            0x40000000 as HostPhysAddr,
+            0x3fb00000 as usize,
+            MemFlags::READ | MemFlags::WRITE,
+        ))?;
+        gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x7fb00000 as GuestPhysAddr,
+            0x7fb00000 as HostPhysAddr,
+            0x100000 as usize,
+            MemFlags::READ | MemFlags::WRITE,
+        ))?;
+        // for region in cell_config.mem_regions() {
+        //     gpm.insert(MemoryRegion::new_with_offset_mapper(
+        //         region.virt_start as GuestPhysAddr,
+        //         region.phys_start as HostPhysAddr,
+        //         region.size as usize,
+        //         region.flags,
+        //     ))?;
+        // }
 
         gpm.insert(MemoryRegion::new_with_offset_mapper(
             mmcfg_start as GuestPhysAddr,
             mmcfg_start as HostPhysAddr,
             mmcfg_size as usize,
             MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-                ))?;
-        
+        ))?;
+
         trace!("Guest phyiscal memory set: {:#x?}", gpm);
 
         Ok(Self {
