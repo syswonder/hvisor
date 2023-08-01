@@ -36,6 +36,14 @@ macro_rules! write_sysreg {
 }
 pub(crate) use write_sysreg;
 
+macro_rules! smc_arg1 {
+    ($value:expr) => {{
+        let mut v: i64 = $value;
+        ::core::arch::asm!("smc #0", inout("x0") v, options(nomem, nostack),);
+        v
+    }};
+}
+pub(crate) use smc_arg1;
 // macro_rules! read_lrreg {
 //     ($lr:expr) => {
 //         {

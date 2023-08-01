@@ -4,7 +4,7 @@ STATS ?= off
 PORT ?= 2333
 
 # default debug mode
-MODE ?= debug
+MODE ?=debug
 
 export MODE
 export LOG

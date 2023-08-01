@@ -20,10 +20,6 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
     
             mov	x16, x0                             //x16 cpuid
             mov	x17, x30                            //x17 linux ret addr
-            /*
-            *TODO:1 change header or config read step into a singe not naked func
-            *      2 just read them depend on offset         
-            */
             /*get header addr el1*/
             adrp x0,__header_start
             ldrh	w2, [x0, #48]                  //HEADER_MAX_CPUS
@@ -32,7 +28,7 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
             /*
 	        * sysconfig = pool + max_cpus * percpu_size
 	        */
-	        madd	x1, x2, x3, x1 //get config addr
+	        madd	x1, x2, x3, x1                  //get config addr
             ldr	x13, =BASE_ADDRESS 
             ldr	x12, [x1, #12]                      //phyaddr read from config
             ldr x14, [x1, #44]                      //SYSCONFIG_DEBUG_CONSOLE_PHYS
@@ -41,6 +37,7 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
             ldr	x1, =bootstrap_vectors
             virt2phys x1       
     
+            /*TODO: clean and invaild d cache*/
             /* choose opcode */
             mov	x0, 0
             hvc	#0                                  //install bootstrap vec
@@ -61,15 +58,15 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
 pub unsafe extern "C" fn el2_entry() -> i32 {
     core::arch::asm!(
         "
-        mrs	x1, esr_el2      //  Exception Syndrome Register
-        lsr	x1, x1, #26      // EC, bits [31:26]
-        cmp	x1, #0x16           // hvc ec value
-        b.ne	.		/* not hvc */
-        bl {0}          /*set boot pt*/
+        mrs	x1, esr_el2                     //  Exception Syndrome Register
+        lsr	x1, x1, #26                     // EC, bits [31:26]
+        cmp	x1, #0x16                       // hvc ec value
+        b.ne	.		                    /* not hvc */
+        bl {0}                              /*set boot pt*/
         adr	x0, bootstrap_pt_l0
-	    adr	x30, {2}	/* set lr switch_stack phy-virt*/
+	    adr	x30, {2}	                    /* set lr switch_stack phy-virt*/
 	    phys2virt x30		
-	    b	{1}         /*enable mmu*/
+	    b	{1}                             /*enable mmu*/
         eret
     ",
         sym boot_pt,
