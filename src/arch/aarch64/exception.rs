@@ -83,7 +83,6 @@ fn arch_handle_trap(regs: &mut GeneralRegisters) {
         Some(ESR_EL2::EC::Value::SMC64) => handle_smc(&mut frame),
         Some(ESR_EL2::EC::Value::TrappedMsrMrs) => handle_sysreg(&mut frame),
         Some(ESR_EL2::EC::Value::DataAbortLowerEL) => handle_dabt(&mut frame),
-        //TODO: handle sysreg
         _ => {
             error!(
                 "Unsupported Exception EC:{:#x?}!",
@@ -97,9 +96,11 @@ fn arch_handle_trap(regs: &mut GeneralRegisters) {
 }
 fn handle_dabt(frame: &mut TrapFrame) {
     warn!("skip data access!");
+    //TODO finish dabt handle
     arch_skip_instruction(frame);
 }
 fn handle_sysreg(frame: &mut TrapFrame) {
+    //TODO check sysreg type
     //send sgi
     trace!("esr_el2: iss {:#x?}", ESR_EL2.read(ESR_EL2::ISS));
     let rt = (ESR_EL2.get() >> 5) & 0x1f;

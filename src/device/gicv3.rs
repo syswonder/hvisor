@@ -78,7 +78,7 @@
 
 mod gicd;
 mod gicr;
-use crate::arch::sysreg::{read_sysreg, write_sysreg};
+use crate::arch::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::hypercall::SGI_HV_ID;
 /// Representation of the GIC.
 pub struct GICv3 {
@@ -100,26 +100,13 @@ impl GICv3 {
         self.gicr.read_aff()
     }
 }
-fn sdei_check() -> i64 {
-    unsafe {
-        core::arch::asm!(
-            "
-    ldr x0, =0xc4000020
-    smc #0
-    ret
-    ",
-            options(noreturn),
-        );
-    }
-}
+
 //TODO: add Distributor init
 pub fn gicv3_cpu_init() {
     //TODO: add Redistributor init
-    let sdei_ver = -1; //sdei_check();
+    let sdei_ver = unsafe { smc_arg1!(0xc4000020) }; //sdei_check();
     info!("sdei vecsion: {}", sdei_ver);
     info!("gicv3 init!");
-    //TODO only cpu0 print gicv3 init?
-    //TODO icc_ctlr_el1 value? 0x8f02
     //Identifier bits. Read-only and writes are ignored.
     //Priority bits. Read-only and writes are ignored.
     unsafe {
