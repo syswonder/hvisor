@@ -56,6 +56,7 @@ impl Cell<'_> {
             0x100000 as usize,
             MemFlags::READ | MemFlags::WRITE,
         ))?;
+        // TODO: panic in debug mod
         // for region in cell_config.mem_regions() {
         //     gpm.insert(MemoryRegion::new_with_offset_mapper(
         //         region.virt_start as GuestPhysAddr,
@@ -90,7 +91,7 @@ pub fn root_cell<'a>() -> &'a Cell<'a> {
 pub fn init() -> HvResult {
     let root_cell = Cell::new_root()?;
     info!("Root cell init end.");
-    debug!("{:#x?}", root_cell);
+    // debug!("{:#x?}", root_cell);
 
     ROOT_CELL.call_once(|| root_cell);
     Ok(())
