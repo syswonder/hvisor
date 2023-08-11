@@ -66,7 +66,6 @@ impl PerCpu {
                 + HCR_EL2::IMO::SET
                 + HCR_EL2::FMO::SET,
         );
-        gicv3_cpu_init();
         self.return_linux()?;
         unreachable!()
     }
