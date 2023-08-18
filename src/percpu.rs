@@ -215,7 +215,7 @@ fn cpu_reset() {
     // //disable stage 1
     // write_sysreg!(SCTLR_EL1, 0);
     //SCTLR_EL1.set(((1 << 11) | (1 << 20) | (3 << 22) | (3 << 28)));
-    SCTLR_EL1.modify(SCTLR_EL1::M::Disable);
+    //SCTLR_EL1.modify(SCTLR_EL1::M::Disable);
     //HCR_EL2.modify(HCR_EL2::VM::Disable);
     unsafe {
         //isb();
@@ -240,13 +240,17 @@ pub unsafe extern "C" fn set_el1_pc() -> i32 {
             ldr x2,=0x7fc00000
             sub	x3, x1, x2 
             adr x0,{entry} //hva
-            sub	x0, x0, x3 //hpa
+            //sub	x0, x0, x3 //hpa
             //add x0,x0,0x100000
             //ldr x0,=0x80100000
 
             msr	ELR_EL2, x0
             // mrs x4,vbar_el2
             // msr vbar_el1,x4
+            //change stage 1 el1 mm
+            mrs x4,ttbr0_el2
+            msr ttbr0_el1,x4
+            msr ttbr1_el1,x4
             eret
         ",
             entry = sym el1_test,
@@ -273,12 +277,14 @@ pub unsafe extern "C" fn el1_test() -> i32 {
         ldr x10,[x2,#100]
         ldr x2,=0xfffffe00000
         ldr x10,[x2,#100]
-        ldr x2,=0x100000000000
-        ldr x10,[x2,#100]
-        ldr x2,=0x1fffffffffff
-        ldr x10,[x2,#100]
-        ldr x2,=0xffff00000000
-        ldr x10,[x2,#100]
+
+        //stage2 phy addr over 44bit
+        // ldr x2,=0x100000000000
+        // ldr x10,[x2,#100]
+        // ldr x2,=0x1fffffffffff
+        // ldr x10,[x2,#100]
+        // ldr x2,=0xffff00000000
+        // ldr x10,[x2,#100]
         ldr x2,=0xffffc0200000
         ldr x10,[x2,#100]
         ldr x10,[x1,#100]
