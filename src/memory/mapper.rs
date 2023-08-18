@@ -32,6 +32,7 @@ impl<VA: From<usize> + Into<usize> + Copy> MemoryRegion<VA> {
     ) -> Self {
         let start_vaddr = align_down(start_vaddr.into());
         let start_paddr = align_down(start_paddr);
+        // bug: vaddr > paddr?
         let phys_virt_offset = start_vaddr - start_paddr;
         Self::new(
             start_vaddr.into(),

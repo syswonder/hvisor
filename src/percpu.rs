@@ -62,13 +62,20 @@ impl PerCpu {
         ACTIVATED_CPUS.fetch_add(1, Ordering::SeqCst);
         info!("activating cpu {}", self.id);
         set_vtcr_flags();
-        HCR_EL2.modify(
+        HCR_EL2.write(
             HCR_EL2::RW::EL1IsAarch64
                 + HCR_EL2::TSC::EnableTrapSmcToEl2
                 + HCR_EL2::VM::SET
                 + HCR_EL2::IMO::SET
                 + HCR_EL2::FMO::SET,
         );
+        if (self.id == 3) {
+            info!("test el1!");
+            test_cpu_el1();
+        } else {
+            info!("stop here!");
+            loop {}
+        }
         self.return_linux()?;
         unreachable!()
     }
@@ -167,65 +174,79 @@ pub fn test_cpu_el1() {
     cpu_reset();
 }
 #[no_mangle]
-#[link_section = ".trampoline"]
 fn cpu_reset() {
     /* put the cpu in a reset state */
     /* AARCH64_TODO: handle big endian support */
-    // write_sysreg!(CNTKCTL_EL1, 0);
-    // write_sysreg!(PMCR_EL0, 0);
+    write_sysreg!(CNTKCTL_EL1, 0);
+    write_sysreg!(PMCR_EL0, 0);
 
     // /* AARCH64_TODO: wipe floating point registers */
     // /* wipe special registers */
-    // write_sysreg!(SP_EL0, 0);
-    // write_sysreg!(SP_EL1, 0);
-    // write_sysreg!(SPSR_EL1, 0);
+    write_sysreg!(SP_EL0, 0);
+    write_sysreg!(SP_EL1, 0);
+    write_sysreg!(SPSR_EL1, 0);
 
     // /* wipe the system registers */
-    // write_sysreg!(AFSR0_EL1, 0);
-    // write_sysreg!(AFSR1_EL1, 0);
-    // write_sysreg!(AMAIR_EL1, 0);
-    // write_sysreg!(CONTEXTIDR_EL1, 0);
-    // write_sysreg!(CPACR_EL1, 0);
-    // write_sysreg!(CSSELR_EL1, 0);
-    // write_sysreg!(ESR_EL1, 0);
-    // write_sysreg!(FAR_EL1, 0);
-    // write_sysreg!(MAIR_EL1, 0);
-    // write_sysreg!(PAR_EL1, 0);
-    // write_sysreg!(TCR_EL1, 0);
-    // write_sysreg!(TPIDRRO_EL0, 0);
-    // write_sysreg!(TPIDR_EL0, 0);
-    // write_sysreg!(TPIDR_EL1, 0);
-    // write_sysreg!(TTBR0_EL1, 0);
-    // write_sysreg!(TTBR1_EL1, 0);
-    // write_sysreg!(VBAR_EL1, 0);
+    write_sysreg!(AFSR0_EL1, 0);
+    write_sysreg!(AFSR1_EL1, 0);
+    write_sysreg!(AMAIR_EL1, 0);
+    write_sysreg!(CONTEXTIDR_EL1, 0);
+    write_sysreg!(CPACR_EL1, 0);
+    write_sysreg!(CSSELR_EL1, 0);
+    write_sysreg!(ESR_EL1, 0);
+    write_sysreg!(FAR_EL1, 0);
+    write_sysreg!(MAIR_EL1, 0);
+    write_sysreg!(PAR_EL1, 0);
+    write_sysreg!(TCR_EL1, 0);
+    write_sysreg!(TPIDRRO_EL0, 0);
+    write_sysreg!(TPIDR_EL0, 0);
+    write_sysreg!(TPIDR_EL1, 0);
+    write_sysreg!(TTBR0_EL1, 0);
+    write_sysreg!(TTBR1_EL1, 0);
+    write_sysreg!(VBAR_EL1, 0);
 
-    // /* wipe timer registers */
-    // write_sysreg!(CNTP_CTL_EL0, 0);
-    // write_sysreg!(CNTP_CVAL_EL0, 0);
-    // write_sysreg!(CNTP_TVAL_EL0, 0);
-    // write_sysreg!(CNTV_CTL_EL0, 0);
-    // write_sysreg!(CNTV_CVAL_EL0, 0);
-    // write_sysreg!(CNTV_TVAL_EL0, 0);
-    //disable stage 1
+    /* wipe timer registers */
+    write_sysreg!(CNTP_CTL_EL0, 0);
+    write_sysreg!(CNTP_CVAL_EL0, 0);
+    write_sysreg!(CNTP_TVAL_EL0, 0);
+    write_sysreg!(CNTV_CTL_EL0, 0);
+    write_sysreg!(CNTV_CVAL_EL0, 0);
+    write_sysreg!(CNTV_TVAL_EL0, 0);
+    // //disable stage 1
+    // write_sysreg!(SCTLR_EL1, 0);
     //SCTLR_EL1.set(((1 << 11) | (1 << 20) | (3 << 22) | (3 << 28)));
     SCTLR_EL1.modify(SCTLR_EL1::M::Disable);
+    //HCR_EL2.modify(HCR_EL2::VM::Disable);
     unsafe {
-        isb();
+        //isb();
+        set_el1_pc();
     }
     //disable stage2
     //HCR_EL2.modify(HCR_EL2::VM::Disable);
-
+}
+#[no_mangle]
+pub unsafe extern "C" fn set_el1_pc() -> i32 {
+    //info!("Hello World! from el1");
     //set el1 pc
     unsafe {
         core::arch::asm!(
             "
+            // mov	x0, #965
+            // msr	SPSR_EL2, x0
+            tlbi alle1is
+            tlbi alle2is
             //x3 hva-hpa
             ldr x1,=0xffffc0200000
             ldr x2,=0x7fc00000
             sub	x3, x1, x2 
             adr x0,{entry} //hva
             sub	x0, x0, x3 //hpa
+            //add x0,x0,0x100000
+            //ldr x0,=0x80100000
+
             msr	ELR_EL2, x0
+            // mrs x4,vbar_el2
+            // msr vbar_el1,x4
             eret
         ",
             entry = sym el1_test,
@@ -234,12 +255,33 @@ fn cpu_reset() {
     }
 }
 #[no_mangle]
-#[link_section = ".trampoline"]
 pub unsafe extern "C" fn el1_test() -> i32 {
     //info!("Hello World! from el1");
     core::arch::asm!(
         "
         mov x0,#9
+        ldr x10,[x2,#100]
+        ldr x2,=0x7fd00000
+        ldr x10,[x2,#100]
+        ldr x2,=0xf7fd00000
+        ldr x10,[x2,#100]
+        ldr x2,=0xff7fd00000
+        ldr x10,[x2,#100]
+        ldr x2,=0xff7fd00000
+        ldr x10,[x2,#100]
+        ldr x2,=0xfff7fd00000
+        ldr x10,[x2,#100]
+        ldr x2,=0xfffffe00000
+        ldr x10,[x2,#100]
+        ldr x2,=0x100000000000
+        ldr x10,[x2,#100]
+        ldr x2,=0x1fffffffffff
+        ldr x10,[x2,#100]
+        ldr x2,=0xffff00000000
+        ldr x10,[x2,#100]
+        ldr x2,=0xffffc0200000
+        ldr x10,[x2,#100]
+        ldr x10,[x1,#100]
         hvc #0
         wfi
     ",
