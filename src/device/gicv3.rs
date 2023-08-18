@@ -80,6 +80,7 @@ mod gicd;
 mod gicr;
 use crate::arch::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::hypercall::SGI_HV_ID;
+use crate::percpu::test_cpu_el1;
 /// Representation of the GIC.
 pub struct GICv3 {
     /// The Distributor.
@@ -163,26 +164,43 @@ pub fn gicv3_cpu_shutdown() {
 
 pub fn gicv3_handle_irq_el1() {
     if let Some(irq_id) = pending_irq() {
-        if (irq_id < 16) {
+        // enum ipi_msg_type {
+        //     IPI_WAKEUP,
+        //     IPI_TIMER,
+        //     IPI_RESCHEDULE,
+        //     IPI_CALL_FUNC,
+        //     IPI_CPU_STOP,
+        //     IPI_IRQ_WORK,
+        //     IPI_COMPLETION,
+        //     /*
+        //      * CPU_BACKTRACE is special and not included in NR_IPI
+        //      * or tracable with trace_ipi_*
+        //      */
+        //     IPI_CPU_BACKTRACE,
+        //     /*
+        //      * SGI8-15 can be reserved by secure firmware, and thus may
+        //      * not be usable by the kernel. Please keep the above limited
+        //      * to at most 8 entries.
+        //      */
+        // };
+        //SGI
+        if irq_id < 16 {
             trace!("sgi get {}", irq_id);
-            if irq_id != 0 {
-                info!("sgi get {}", irq_id);
+            if irq_id < 8 {
+                trace!("sgi get {},inject", irq_id);
+                deactivate_irq(irq_id);
+                inject_irq(irq_id);
+            } else if irq_id == SGI_HV_ID as usize {
+                info!("HV SGI EVENT {}", irq_id);
+                test_cpu_el1();
+            } else {
+                warn!("skip sgi {}", irq_id);
             }
+        } else {
+            //inject phy irq
+            deactivate_irq(irq_id);
+            inject_irq(irq_id);
         }
-
-        if irq_id == SGI_HV_ID as usize {
-            info!("hv sgi got {}", irq_id);
-            unsafe {
-                core::arch::asm!(
-                    "
-                wfi
-            ",
-                );
-            }
-        }
-
-        deactivate_irq(irq_id);
-        inject_irq(irq_id);
     }
 }
 fn pending_irq() -> Option<usize> {
@@ -282,7 +300,7 @@ fn inject_irq(irq_id: usize) {
             return;
         }
     }
-    //debug!("To Inject IRQ {}, find lr {}", irq_id, lr_idx);
+    debug!("To Inject IRQ {}, find lr {}", irq_id, lr_idx);
 
     if lr_idx == -1 {
         error!("full lr");

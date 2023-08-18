@@ -1,5 +1,5 @@
 use super::entry::vmreturn;
-use crate::arch::sysreg::write_sysreg;
+use crate::arch::sysreg::{read_sysreg, write_sysreg};
 use crate::device::gicv3::gicv3_handle_irq_el1;
 use crate::header::{HvHeaderStuff, HEADER_STUFF};
 use crate::hypercall::HyperCall;
@@ -83,6 +83,7 @@ fn arch_handle_trap(regs: &mut GeneralRegisters) {
         Some(ESR_EL2::EC::Value::SMC64) => handle_smc(&mut frame),
         Some(ESR_EL2::EC::Value::TrappedMsrMrs) => handle_sysreg(&mut frame),
         Some(ESR_EL2::EC::Value::DataAbortLowerEL) => handle_dabt(&mut frame),
+        Some(ESR_EL2::EC::Value::InstrAbortLowerEL) => handle_iabt(&mut frame),
         _ => {
             error!(
                 "Unsupported Exception EC:{:#x?}!",
@@ -94,8 +95,28 @@ fn arch_handle_trap(regs: &mut GeneralRegisters) {
         }
     }
 }
+fn handle_iabt(frame: &mut TrapFrame) {
+    let iss = ESR_EL2.read(ESR_EL2::ISS);
+    let op = iss >> 6 & 0x1;
+    let hpfar = read_sysreg!(HPFAR_EL2);
+    let hdfar = read_sysreg!(FAR_EL2);
+    let mut address = hpfar << 8;
+    address |= hdfar & 0xfff;
+    error!("error ins access {} at {:#x?}!", op, address);
+    error!("esr_el2: iss {:#x?}", iss);
+    loop {}
+    //TODO finish dabt handle
+    arch_skip_instruction(frame);
+}
 fn handle_dabt(frame: &mut TrapFrame) {
-    warn!("skip data access!");
+    let iss = ESR_EL2.read(ESR_EL2::ISS);
+    let op = iss >> 6 & 0x1;
+    let hpfar = read_sysreg!(HPFAR_EL2);
+    let hdfar = read_sysreg!(FAR_EL2);
+    let mut address = hpfar << 8;
+    address |= hdfar & 0xfff;
+    warn!("skip data access {} at {:#x?}!", op, address);
+    warn!("esr_el2: iss {:#x?}", iss);
     //TODO finish dabt handle
     arch_skip_instruction(frame);
 }
