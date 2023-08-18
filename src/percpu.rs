@@ -2,6 +2,7 @@ use aarch64_cpu::registers::MPIDR_EL1;
 
 //use crate::arch::vcpu::Vcpu;
 use crate::arch::entry::{shutdown_el2, virt2phys_el2, vmreturn};
+use crate::arch::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::consts::{PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::device::gicv3::gicv3_cpu_init;
 use crate::device::gicv3::gicv3_cpu_shutdown;
@@ -15,6 +16,8 @@ use core::sync::atomic::{AtomicU32, Ordering};
 use tock_registers::interfaces::*;
 static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
 static ACTIVATED_CPUS: AtomicU32 = AtomicU32::new(0);
+use core::arch::global_asm; // 支持内联汇编
+global_asm!(include_str!("./arch/aarch64/page_table.S"),);
 #[repr(C)]
 #[derive(Debug, Default)]
 pub struct GeneralRegisters {
@@ -156,5 +159,90 @@ pub unsafe extern "C" fn isb() {
         "
             isb
         ",
+    );
+}
+
+pub fn test_cpu_el1() {
+    info!("hello from el2");
+    cpu_reset();
+}
+#[no_mangle]
+#[link_section = ".trampoline"]
+fn cpu_reset() {
+    /* put the cpu in a reset state */
+    /* AARCH64_TODO: handle big endian support */
+    // write_sysreg!(CNTKCTL_EL1, 0);
+    // write_sysreg!(PMCR_EL0, 0);
+
+    // /* AARCH64_TODO: wipe floating point registers */
+    // /* wipe special registers */
+    // write_sysreg!(SP_EL0, 0);
+    // write_sysreg!(SP_EL1, 0);
+    // write_sysreg!(SPSR_EL1, 0);
+
+    // /* wipe the system registers */
+    // write_sysreg!(AFSR0_EL1, 0);
+    // write_sysreg!(AFSR1_EL1, 0);
+    // write_sysreg!(AMAIR_EL1, 0);
+    // write_sysreg!(CONTEXTIDR_EL1, 0);
+    // write_sysreg!(CPACR_EL1, 0);
+    // write_sysreg!(CSSELR_EL1, 0);
+    // write_sysreg!(ESR_EL1, 0);
+    // write_sysreg!(FAR_EL1, 0);
+    // write_sysreg!(MAIR_EL1, 0);
+    // write_sysreg!(PAR_EL1, 0);
+    // write_sysreg!(TCR_EL1, 0);
+    // write_sysreg!(TPIDRRO_EL0, 0);
+    // write_sysreg!(TPIDR_EL0, 0);
+    // write_sysreg!(TPIDR_EL1, 0);
+    // write_sysreg!(TTBR0_EL1, 0);
+    // write_sysreg!(TTBR1_EL1, 0);
+    // write_sysreg!(VBAR_EL1, 0);
+
+    // /* wipe timer registers */
+    // write_sysreg!(CNTP_CTL_EL0, 0);
+    // write_sysreg!(CNTP_CVAL_EL0, 0);
+    // write_sysreg!(CNTP_TVAL_EL0, 0);
+    // write_sysreg!(CNTV_CTL_EL0, 0);
+    // write_sysreg!(CNTV_CVAL_EL0, 0);
+    // write_sysreg!(CNTV_TVAL_EL0, 0);
+    //disable stage 1
+    //SCTLR_EL1.set(((1 << 11) | (1 << 20) | (3 << 22) | (3 << 28)));
+    SCTLR_EL1.modify(SCTLR_EL1::M::Disable);
+    unsafe {
+        isb();
+    }
+    //disable stage2
+    //HCR_EL2.modify(HCR_EL2::VM::Disable);
+
+    //set el1 pc
+    unsafe {
+        core::arch::asm!(
+            "
+            //x3 hva-hpa
+            ldr x1,=0xffffc0200000
+            ldr x2,=0x7fc00000
+            sub	x3, x1, x2 
+            adr x0,{entry} //hva
+            sub	x0, x0, x3 //hpa
+            msr	ELR_EL2, x0
+            eret
+        ",
+            entry = sym el1_test,
+            options(noreturn),
+        );
+    }
+}
+#[no_mangle]
+#[link_section = ".trampoline"]
+pub unsafe extern "C" fn el1_test() -> i32 {
+    //info!("Hello World! from el1");
+    core::arch::asm!(
+        "
+        mov x0,#9
+        hvc #0
+        wfi
+    ",
+        options(noreturn),
     );
 }

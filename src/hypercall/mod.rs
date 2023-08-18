@@ -62,6 +62,7 @@ impl<'a> HyperCall<'a> {
 }
 pub const SGI_HV_ID: u64 = 15;
 pub fn arch_send_event(cpuid: u64) -> HvResult {
+    //TODO: add more info
     let aff3: u64 = 0 << 48;
     let aff2: u64 = 0 << 32;
     let aff1: u64 = 0 << 16;
