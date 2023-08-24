@@ -17,7 +17,7 @@ use tock_registers::interfaces::*;
 static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
 static ACTIVATED_CPUS: AtomicU32 = AtomicU32::new(0);
 use core::arch::global_asm; // 支持内联汇编
-global_asm!(include_str!("./arch/aarch64/page_table.S"),);
+                            // global_asm!(include_str!("./arch/aarch64/page_table.S"),);
 #[repr(C)]
 #[derive(Debug, Default)]
 pub struct GeneralRegisters {
@@ -214,7 +214,7 @@ fn cpu_reset() {
     write_sysreg!(CNTV_TVAL_EL0, 0);
     // //disable stage 1
     // write_sysreg!(SCTLR_EL1, 0);
-    //SCTLR_EL1.set(((1 << 11) | (1 << 20) | (3 << 22) | (3 << 28)));
+    SCTLR_EL1.set(((1 << 11) | (1 << 20) | (3 << 22) | (3 << 28)));
     //SCTLR_EL1.modify(SCTLR_EL1::M::Disable);
     //HCR_EL2.modify(HCR_EL2::VM::Disable);
     unsafe {
@@ -231,66 +231,53 @@ pub unsafe extern "C" fn set_el1_pc() -> i32 {
     unsafe {
         core::arch::asm!(
             "
-            // mov	x0, #965
-            // msr	SPSR_EL2, x0
+            mov	x0, #965
+            msr	SPSR_EL2, x0
             tlbi alle1is
             tlbi alle2is
-            //x3 hva-hpa
-            ldr x1,=0xffffc0200000
-            ldr x2,=0x7fc00000
-            sub	x3, x1, x2 
-            adr x0,{entry} //hva
-            //sub	x0, x0, x3 //hpa
-            //add x0,x0,0x100000
-            //ldr x0,=0x80100000
-
+            ldr x0,= 0xa0000000
             msr	ELR_EL2, x0
-            // mrs x4,vbar_el2
-            // msr vbar_el1,x4
-            //change stage 1 el1 mm
-            mrs x4,ttbr0_el2
-            msr ttbr0_el1,x4
-            msr ttbr1_el1,x4
             eret
         ",
-            entry = sym el1_test,
             options(noreturn),
         );
     }
 }
-#[no_mangle]
-pub unsafe extern "C" fn el1_test() -> i32 {
-    //info!("Hello World! from el1");
-    core::arch::asm!(
-        "
-        mov x0,#9
-        ldr x10,[x2,#100]
-        ldr x2,=0x7fd00000
-        ldr x10,[x2,#100]
-        ldr x2,=0xf7fd00000
-        ldr x10,[x2,#100]
-        ldr x2,=0xff7fd00000
-        ldr x10,[x2,#100]
-        ldr x2,=0xff7fd00000
-        ldr x10,[x2,#100]
-        ldr x2,=0xfff7fd00000
-        ldr x10,[x2,#100]
-        ldr x2,=0xfffffe00000
-        ldr x10,[x2,#100]
+// #[no_mangle]
+// pub unsafe extern "C" fn el1_test() -> i32 {
+//     //info!("Hello World! from el1");
+//     core::arch::asm!(
+//         "
+//         mov x0,#9
+//         msr ttbr0_el1,x4
+//         msr ttbr1_el1,x4
+//         ldr x10,[x2,#100]
+//         ldr x2,=0x7fd00000
+//         ldr x10,[x2,#100]
+//         ldr x2,=0xf7fd00000
+//         ldr x10,[x2,#100]
+//         ldr x2,=0xff7fd00000
+//         ldr x10,[x2,#100]
+//         ldr x2,=0xff7fd00000
+//         ldr x10,[x2,#100]
+//         ldr x2,=0xfff7fd00000
+//         ldr x10,[x2,#100]
+//         ldr x2,=0xfffffe00000
+//         ldr x10,[x2,#100]
 
-        //stage2 phy addr over 44bit
-        // ldr x2,=0x100000000000
-        // ldr x10,[x2,#100]
-        // ldr x2,=0x1fffffffffff
-        // ldr x10,[x2,#100]
-        // ldr x2,=0xffff00000000
-        // ldr x10,[x2,#100]
-        ldr x2,=0xffffc0200000
-        ldr x10,[x2,#100]
-        ldr x10,[x1,#100]
-        hvc #0
-        wfi
-    ",
-        options(noreturn),
-    );
-}
+//         //stage2 phy addr over 44bit
+//         // ldr x2,=0x100000000000
+//         // ldr x10,[x2,#100]
+//         // ldr x2,=0x1fffffffffff
+//         // ldr x10,[x2,#100]
+//         // ldr x2,=0xffff00000000
+//         // ldr x10,[x2,#100]
+//         ldr x2,=0xffffc0200000
+//         ldr x10,[x2,#100]
+//         ldr x10,[x1,#100]
+//         hvc #0
+//         wfi
+//     ",
+//         options(noreturn),
+//     );
+// }
