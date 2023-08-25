@@ -20,24 +20,9 @@ impl Cell<'_> {
         let mmcfg_start = sys_config.platform_info.pci_mmconfig_base;
         let mmcfg_size = (sys_config.platform_info.pci_mmconfig_end_bus + 1) as u64 * 256 * 4096;
         let hv_phys_start = sys_config.hypervisor_memory.phys_start as usize;
-        //let hv_virt_start = sys_config.hypervisor_memory.virt_start as usize;
         let hv_phys_size = sys_config.hypervisor_memory.size as usize;
 
         let mut gpm: MemorySet<Stage2PageTable> = MemorySet::new();
-
-        // Map hypervisor memory to the empty page.
-        // gpm.insert(MemoryRegion::new_with_empty_mapper(
-        //     hv_phys_start,
-        //     hv_phys_size,
-        //     MemFlags::READ | MemFlags::NO_HUGEPAGES,
-        // ))?;
-
-        // gpm.insert(MemoryRegion::new_with_offset_mapper(
-        //     0xffffc0200000 as GuestPhysAddr,
-        //     0x7fc00000 as HostPhysAddr,
-        //     0x00400000 as usize,
-        //     MemFlags::READ | MemFlags::NO_HUGEPAGES,
-        // ))?;
         info!("set gpm for el1");
         gpm.insert(MemoryRegion::new_with_offset_mapper(
             0xa0000000 as GuestPhysAddr,
@@ -47,7 +32,7 @@ impl Cell<'_> {
         ))?;
 
         gpm.insert(MemoryRegion::new_with_offset_mapper(
-            HV_BASE as GuestPhysAddr,
+            hv_phys_start as GuestPhysAddr,
             hv_phys_start as HostPhysAddr,
             hv_phys_size as usize,
             MemFlags::READ | MemFlags::NO_HUGEPAGES,
@@ -79,22 +64,6 @@ impl Cell<'_> {
             0x0200000 as usize,
             MemFlags::READ | MemFlags::WRITE,
         ))?;
-        //add test_el1 memory Map
-        // gpm.insert(MemoryRegion::new_with_offset_mapper(
-        //     0xffffc0200000 as GuestPhysAddr,
-        //     0x00007fc00000 as HostPhysAddr,
-        //     0x000000400000 as usize,
-        //     MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
-        // ))?;
-        // for region in cell_config.mem_regions() {
-        //     gpm.insert(MemoryRegion::new_with_offset_mapper(
-        //         region.virt_start as GuestPhysAddr,
-        //         region.phys_start as HostPhysAddr,
-        //         region.size as usize,
-        //         region.flags,
-        //     ))?;
-        // }
-
         gpm.insert(MemoryRegion::new_with_offset_mapper(
             mmcfg_start as GuestPhysAddr,
             mmcfg_start as HostPhysAddr,
