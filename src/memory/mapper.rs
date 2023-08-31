@@ -12,7 +12,7 @@ pub(super) enum Mapper {
 impl Mapper {
     pub fn map_fn<VA: Into<usize>>(&self, vaddr: VA) -> PhysAddr {
         match self {
-            Self::Offset(ref off) => vaddr.into() - *off,
+            Self::Offset(ref off) => (vaddr.into()).wrapping_sub(*off),
             Self::Fixed(ref paddr) => *paddr,
         }
     }
@@ -32,7 +32,7 @@ impl<VA: From<usize> + Into<usize> + Copy> MemoryRegion<VA> {
     ) -> Self {
         let start_vaddr = align_down(start_vaddr.into());
         let start_paddr = align_down(start_paddr);
-        let phys_virt_offset = start_vaddr - start_paddr;
+        let phys_virt_offset = start_vaddr.wrapping_sub(start_paddr);
         Self::new(
             start_vaddr.into(),
             size,
