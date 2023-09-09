@@ -28,8 +28,9 @@
 	b	.
 .endm
 EXIT_REASON_EL2_ABORT	=0x0
-EXIT_REASON_EL1_ABORT	=0x1
-EXIT_REASON_EL1_IRQ	=0x2
+EXIT_REASON_EL2_IRQ		=0x1
+EXIT_REASON_EL1_ABORT	=0x2
+EXIT_REASON_EL1_IRQ		=0x3
 	.align 11
 hyp_vectors:
 	ventry	.
@@ -38,7 +39,7 @@ hyp_vectors:
 	ventry	.
 
 	handle_vmexit EXIT_REASON_EL2_ABORT
-	ventry	.
+	handle_vmexit EXIT_REASON_EL2_IRQ
 	ventry	.
 	ventry	.
 

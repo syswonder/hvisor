@@ -103,6 +103,12 @@ pub unsafe extern "C" fn boot_pt() -> i32 {
     
         get_index x2, x13, 2
         set_block bootstrap_pt_l2_hyp_uart, x2, x12, 2
+        # add l2 block 2M
+        add x12, x12, #0x200000
+        add x13, x13, #0x200000
+        get_index x2, x13, 2
+        set_block bootstrap_pt_l2_hyp_uart, x2, x12, 2 
+
         get_index x3, x15, 2
 	    set_block_dev bootstrap_pt_l2_hyp_uart, x3, x14, 2
     

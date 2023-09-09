@@ -12,11 +12,11 @@ const HV_MAX_IOMMU_UNITS: usize = 8;
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
-struct HvConsole {
-    address: u64,
-    size: u32,
+pub struct HvConsole {
+    pub address: u64,
+    pub size: u32,
     console_type: u16,
-    flags: u16,
+    pub flags: u16,
     divider: u32,
     gate_nr: u32,
     clock_reg: u64,
@@ -122,24 +122,41 @@ struct HvIommu {
     amd_features: u32,
 }
 
+// #[cfg(target_arch = "x86_64")]
+// #[derive(Debug)]
+// #[repr(C, packed)]
+// struct X86PlatformInfo {
+//     pm_timer_address: u16,
+//     vtd_interrupt_limit: u32,
+//     apic_mode: u8,
+//     _padding: [u8; 3],
+//     tsc_khz: u32,
+//     apic_khz: u32,
+//     iommu_units: [HvIommu; HV_MAX_IOMMU_UNITS],
+// }
+
 #[cfg(target_arch = "aarch64")]
 #[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
-struct ArchPlatformInfo {
+struct ArmPlatformInfo {
+    maintenance_irq: u8,
     gic_version: u8,
     gicd_base: u64,
+    gicc_base: u64,
+    gich_base: u64,
+    gicv_base: u64,
     gicr_base: u64,
-    maintenance_irq: u8,
+    _pooling: [u32; 34],
 }
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
-struct PlatformInfo {
-    pci_mmconfig_base: u64,
-    pci_mmconfig_end_bus: u8,
+pub struct PlatformInfo {
+    pub pci_mmconfig_base: u64,
+    pub pci_mmconfig_end_bus: u8,
     pci_is_virtual: u8,
     pci_domain: u16,
-    arch: ArchPlatformInfo,
+    arch: ArmPlatformInfo,
 }
 
 /// General descriptor of the system.
@@ -152,8 +169,8 @@ pub struct HvSystemConfig {
 
     /// Jailhouse's location in memory
     pub hypervisor_memory: HvMemoryRegion,
-    debug_console: HvConsole,
-    platform_info: PlatformInfo,
+    pub debug_console: HvConsole,
+    pub platform_info: PlatformInfo,
     pub root_cell: HvCellDesc,
     // CellConfigLayout placed here.
 }

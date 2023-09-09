@@ -1,15 +1,16 @@
+use crate::arch::sysreg::write_sysreg;
 use crate::error::HvResult;
 use crate::percpu::PerCpu;
 use bit_field::BitField;
 use core::convert::TryFrom;
 use core::sync::atomic::{AtomicU32, Ordering};
 use numeric_enum_macro::numeric_enum;
-
 numeric_enum! {
     #[repr(u64)]
     #[derive(Debug, Eq, PartialEq, Copy, Clone)]
     pub enum HyperCallCode {
         HypervisorDisable = 0,
+        HypervisorCellCreate = 1,
     }
 }
 
@@ -28,11 +29,13 @@ impl<'a> HyperCall<'a> {
         let code = match HyperCallCode::try_from(code) {
             Ok(code) => code,
             Err(_) => {
+                warn!("hypercall unsupported!");
                 return Ok(());
             }
         };
         let ret = match code {
             HyperCallCode::HypervisorDisable => self.hypervisor_disable(),
+            HyperCallCode::HypervisorCellCreate => self.hypervisor_cell_create(),
         };
         Ok(())
     }
@@ -49,4 +52,25 @@ impl<'a> HyperCall<'a> {
         self.cpu_data.deactivate_vmm(0)?;
         unreachable!()
     }
+    fn hypervisor_cell_create(&mut self) -> HyperCallResult {
+        info!("handle hvc cell create");
+        //TODO should be read from config files
+        let target_cpu = 3;
+        arch_send_event(target_cpu);
+        HyperCallResult::Ok(0)
+    }
+}
+pub const SGI_HV_ID: u64 = 15;
+pub fn arch_send_event(cpuid: u64) -> HvResult {
+    let aff3: u64 = 0 << 48;
+    let aff2: u64 = 0 << 32;
+    let aff1: u64 = 0 << 16;
+    let irm: u64 = 0 << 40;
+    let sgi_id: u64 = SGI_HV_ID << 24;
+    let target_list: u64 = 1 << cpuid;
+    let val: u64 = aff1 | aff2 | aff3 | irm | sgi_id | target_list;
+    unsafe {
+        write_sysreg!(icc_sgi1r_el1, val);
+    }
+    Ok(())
 }
