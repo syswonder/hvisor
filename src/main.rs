@@ -20,9 +20,10 @@ extern crate lazy_static;
 #[macro_use]
 mod logging;
 
-#[cfg(target_arch = "aarch64")]
+//#[cfg(target_arch = "aarch64")]
 #[path = "arch/aarch64/mod.rs"]
 mod arch;
+mod cell;
 mod config;
 mod consts;
 mod device;
@@ -31,12 +32,20 @@ mod hypercall;
 mod memory;
 mod panic;
 mod percpu;
+
+use crate::arch::sysreg::{read_sysreg, write_sysreg};
+use crate::cell::root_cell;
 use crate::percpu::this_cpu_data;
 use config::HvSystemConfig;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+use device::gicv3::gicv3_cpu_init;
 use error::HvResult;
 use header::HvHeader;
 use percpu::PerCpu;
+
+static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
+static INIT_EARLY_OK: AtomicU32 = AtomicU32::new(0);
+static INIT_LATE_OK: AtomicU32 = AtomicU32::new(0);
 static ERROR_NUM: AtomicI32 = AtomicI32::new(0);
 
 fn has_err() -> bool {
@@ -63,7 +72,7 @@ fn primary_init_early() -> HvResult {
 
     let system_config = HvSystemConfig::get();
     let revision = system_config.revision;
-    println!(
+    info!(
         "\n\
         Initializing hypervisor...\n\
         config_signature = {:?}\n\
@@ -86,10 +95,22 @@ fn primary_init_early() -> HvResult {
     memory::init_heap();
     system_config.check()?;
     info!("Hypervisor header: {:#x?}", HvHeader::get());
-    debug!("System config: {:#x?}", system_config);
+    info!("System config: {:#x?}", system_config);
 
+    memory::init_frame_allocator();
+    memory::init_hv_page_table()?;
+    cell::init()?;
+
+    INIT_EARLY_OK.store(1, Ordering::Release);
     Ok(())
 }
+
+fn primary_init_late() {
+    info!("Primary CPU init late...");
+    // Do nothing...
+    INIT_LATE_OK.store(1, Ordering::Release);
+}
+
 fn main(cpu_data: &mut PerCpu) -> HvResult {
     println!("Hello");
     println!(
@@ -107,10 +128,27 @@ fn main(cpu_data: &mut PerCpu) -> HvResult {
         if is_primary { "Primary" } else { "Secondary" },
         cpu_data.id
     );
+
     if is_primary {
         primary_init_early()?;
+    } else {
+        wait_for_counter(&INIT_EARLY_OK, 1)?
     }
-    //memory::init_hv_page_table()?;
+
+    unsafe { 
+        memory::hv_page_table().read().activate();
+        root_cell().gpm.activate();
+     };
+    println!("CPU {} init OK.", cpu_data.id);
+    INITED_CPUS.fetch_add(1, Ordering::SeqCst);
+    wait_for_counter(&INITED_CPUS, online_cpus)?;
+
+    if is_primary {
+        primary_init_late();
+    } else {
+        wait_for_counter(&INIT_LATE_OK, 1)?
+    }
+    gicv3_cpu_init();
     cpu_data.activate_vmm()
 }
 extern "C" fn entry(cpu_data: &mut PerCpu) -> () {

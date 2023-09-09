@@ -1,9 +1,9 @@
 ARCH ?= aarch64
-LOG ?=trace
+LOG ?=info
 STATS ?= off
-PORT ?= 23333
+PORT ?= 2333
 
-# default release mode
+# default debug mode
 MODE ?= debug
 
 export MODE

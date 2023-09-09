@@ -98,6 +98,7 @@ impl Log for SimpleLogger {
         let level = record.level();
         let line = record.line().unwrap_or(0);
         let target = record.target();
+        let cpu_id = crate::percpu::this_cpu_data().id;
         let level_color = match level {
             Level::Error => ColorCode::BrightRed,
             Level::Warn => ColorCode::BrightYellow,
@@ -114,8 +115,9 @@ impl Log for SimpleLogger {
         };
         print(with_color!(
             ColorCode::White,
-            "[{} {} {}\n",
+            "[{} {} {} {}\n",
             with_color!(level_color, "{:<5}", level),
+            with_color!(ColorCode::White, "{}]", cpu_id),
             with_color!(ColorCode::White, "{}:{}]", target, line),
             with_color!(args_color, "{}", record.args()),
         ));
