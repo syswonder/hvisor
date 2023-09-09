@@ -12,11 +12,11 @@ const HV_MAX_IOMMU_UNITS: usize = 8;
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
-struct HvConsole {
-    address: u64,
-    size: u32,
+pub struct HvConsole {
+    pub address: u64,
+    pub size: u32,
     console_type: u16,
-    flags: u16,
+    pub flags: u16,
     divider: u32,
     gate_nr: u32,
     clock_reg: u64,
@@ -169,7 +169,7 @@ pub struct HvSystemConfig {
 
     /// Jailhouse's location in memory
     pub hypervisor_memory: HvMemoryRegion,
-    debug_console: HvConsole,
+    pub debug_console: HvConsole,
     pub platform_info: PlatformInfo,
     pub root_cell: HvCellDesc,
     // CellConfigLayout placed here.
