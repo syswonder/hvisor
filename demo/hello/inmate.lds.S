@@ -1,6 +1,6 @@
 
 ENTRY(el1_entry)
-CONFIG_INMATE_BASE = 0xa0000000;
+CONFIG_INMATE_BASE = 0x00000000;
 SECTIONS {
 	. = CONFIG_INMATE_BASE;
 	.header		: { KEEP(*(.header)) }
