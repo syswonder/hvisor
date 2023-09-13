@@ -144,6 +144,16 @@ cp jailhouse.bin /lib/firmware/
 ./jailhouse enable configs/qemu-arm64.cell
 ```
 
+### 编译demo
+现在支持新建一个cell，运行简单的hello world程序。
+```sh
+cd demo/hello
+make
+cd ../..
+cp demo/hello/target/aarch64/debug/hello.bin qemu-test/host
+```
+在原有qemu启动命令里加上`-device loader,addr=0x7fa00000,file=hello.bin,force-raw=on \`
+在执行cell create之后应该可以看到输出的`Hello, world!`
 
 本项目的相关文档在
 https://github.com/syswonder/report

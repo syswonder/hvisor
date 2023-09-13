@@ -168,9 +168,9 @@ pub unsafe extern "C" fn isb() {
 pub fn test_cpu_el1() {
     info!("hello from el2");
     let mut gpm: MemorySet<Stage2PageTable> = MemorySet::new();
-    info!("set gpm for el1");
+    info!("set gpm for cell1");
     gpm.insert(MemoryRegion::new_with_offset_mapper(
-        0xa0000000 as GuestPhysAddr,
+        0x00000000 as GuestPhysAddr,
         0x7fa00000 as HostPhysAddr,
         0x00100000 as usize,
         MemFlags::READ | MemFlags::WRITE | MemFlags::NO_HUGEPAGES,
@@ -232,23 +232,23 @@ fn cpu_reset() {
     //HCR_EL2.modify(HCR_EL2::VM::Disable);
     unsafe {
         //isb();
-        set_el1_pc();
+        set_el1_pc(0x00000000);
     }
     //disable stage2
     //HCR_EL2.modify(HCR_EL2::VM::Disable);
 }
 #[no_mangle]
-pub unsafe extern "C" fn set_el1_pc() -> i32 {
+pub unsafe extern "C" fn set_el1_pc(entry: usize) -> i32 {
     //info!("Hello World! from el1");
     //set el1 pc
+    // x0:entry
     unsafe {
         core::arch::asm!(
             "
-            mov	x0, #965
-            msr	SPSR_EL2, x0
+            mov	x1, #965
+            msr	SPSR_EL2, x1
             tlbi alle1is
             tlbi alle2is
-            ldr x0,= 0xa0000000
             msr	ELR_EL2, x0
             eret
         ",
@@ -256,41 +256,3 @@ pub unsafe extern "C" fn set_el1_pc() -> i32 {
         );
     }
 }
-// #[no_mangle]
-// pub unsafe extern "C" fn el1_test() -> i32 {
-//     //info!("Hello World! from el1");
-//     core::arch::asm!(
-//         "
-//         mov x0,#9
-//         msr ttbr0_el1,x4
-//         msr ttbr1_el1,x4
-//         ldr x10,[x2,#100]
-//         ldr x2,=0x7fd00000
-//         ldr x10,[x2,#100]
-//         ldr x2,=0xf7fd00000
-//         ldr x10,[x2,#100]
-//         ldr x2,=0xff7fd00000
-//         ldr x10,[x2,#100]
-//         ldr x2,=0xff7fd00000
-//         ldr x10,[x2,#100]
-//         ldr x2,=0xfff7fd00000
-//         ldr x10,[x2,#100]
-//         ldr x2,=0xfffffe00000
-//         ldr x10,[x2,#100]
-
-//         //stage2 phy addr over 44bit
-//         // ldr x2,=0x100000000000
-//         // ldr x10,[x2,#100]
-//         // ldr x2,=0x1fffffffffff
-//         // ldr x10,[x2,#100]
-//         // ldr x2,=0xffff00000000
-//         // ldr x10,[x2,#100]
-//         ldr x2,=0xffffc0200000
-//         ldr x10,[x2,#100]
-//         ldr x10,[x1,#100]
-//         hvc #0
-//         wfi
-//     ",
-//         options(noreturn),
-//     );
-// }

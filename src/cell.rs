@@ -23,14 +23,6 @@ impl Cell<'_> {
         let hv_phys_size = sys_config.hypervisor_memory.size as usize;
 
         let mut gpm: MemorySet<Stage2PageTable> = MemorySet::new();
-        info!("set gpm for el1");
-        gpm.insert(MemoryRegion::new_with_offset_mapper(
-            0xa0000000 as GuestPhysAddr,
-            0x7fa00000 as HostPhysAddr,
-            0x00100000 as usize,
-            MemFlags::READ | MemFlags::WRITE | MemFlags::NO_HUGEPAGES,
-        ))?;
-
         gpm.insert(MemoryRegion::new_with_offset_mapper(
             hv_phys_start as GuestPhysAddr,
             hv_phys_start as HostPhysAddr,
