@@ -80,6 +80,9 @@ mod gicd;
 mod gicr;
 use crate::arch::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::hypercall::SGI_HV_ID;
+use crate::hypercall::SGI_RESUME_ID;
+use crate::percpu::PerCpu;
+use crate::percpu::{get_cpu_data, this_cpu_data};
 use crate::percpu::test_cpu_el1;
 /// Representation of the GIC.
 pub struct GICv3 {
@@ -193,6 +196,10 @@ pub fn gicv3_handle_irq_el1() {
             } else if irq_id == SGI_HV_ID as usize {
                 info!("HV SGI EVENT {}", irq_id);
                 test_cpu_el1();
+            } else if irq_id == SGI_RESUME_ID as usize {
+                info!("hv sgi got {}, resume", irq_id);
+                // let cpu_data = unsafe { this_cpu_data() as &mut PerCpu };
+                // cpu_data.suspend_cpu = false;
             } else {
                 warn!("skip sgi {}", irq_id);
             }
