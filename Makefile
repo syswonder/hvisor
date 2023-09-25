@@ -41,10 +41,21 @@ all: $(target_bin)
 elf:
 	cargo build $(build_args)
 .PHONY: scp
-scp:
-	scp -P $(PORT) -r $(target_bin) root@localhost:~/
+scp: $(target_bin)
+	scp -P $(PORT) -r $(target_bin) qemu-test/guest/* root@localhost:~/
 .PHONY: disa
 disa:
 	rust-objdump --disassemble $(target_elf) > rvm.S
 $(target_bin): elf
 	$(OBJCOPY) $(target_elf) --strip-all -O binary $@
+run: all
+	cd qemu-test/host && ./test.sh
+
+monitor:
+	gdb-multiarch \
+	-ex 'target remote:1234' \
+	-ex 'file $(target_elf)'
+
+# 'add-symbol-file qemu-test/guest/jailhouse.ko 0xffff800008c20000 -s .data 0xffff800008c27000 -s .bss 0xffff800008c27908'
+# b *0xffff800013008788
+# w *0xffff80001320e00c

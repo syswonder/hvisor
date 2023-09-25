@@ -1,11 +1,10 @@
 use super::entry::vmreturn;
 use crate::arch::sysreg::{read_sysreg, write_sysreg};
 use crate::device::gicv3::gicv3_handle_irq_el1;
-use crate::header::{HvHeaderStuff, HEADER_STUFF};
 use crate::hypercall::HyperCall;
 use crate::percpu::PerCpu;
 use crate::percpu::{get_cpu_data, this_cpu_data, GeneralRegisters};
-use aarch64_cpu::{asm, registers::*};
+use aarch64_cpu::registers::*;
 use tock_registers::interfaces::*;
 #[allow(dead_code)]
 #[allow(non_snake_case)]
@@ -26,10 +25,10 @@ pub mod PsciFnId {
     pub const PSCI_AFFINITY_INFO_64: u64 = 0xc4000004;
 }
 
-pub enum trap_return {
-    TRAP_HANDLED = 1,
-    TRAP_UNHANDLED = 0,
-    TRAP_FORBIDDEN = -1,
+pub enum TrapReturn {
+    TrapHandled = 1,
+    TrapUnhandled = 0,
+    TrapForbidden = -1,
 }
 #[repr(C)]
 #[derive(Debug)]
@@ -77,7 +76,7 @@ fn irqchip_handle_irq2() {
 }
 fn arch_handle_trap(regs: &mut GeneralRegisters) {
     let mut frame = TrapFrame::new(regs);
-    let mut ret = trap_return::TRAP_UNHANDLED;
+    let mut ret = TrapReturn::TrapUnhandled;
     match ESR_EL2.read_as_enum(ESR_EL2::EC) {
         Some(ESR_EL2::EC::Value::HVC64) => handle_hvc(&frame),
         Some(ESR_EL2::EC::Value::SMC64) => handle_smc(&mut frame),
@@ -91,7 +90,7 @@ fn arch_handle_trap(regs: &mut GeneralRegisters) {
             );
             error!("esr_el2: iss {:#x?}", ESR_EL2.read(ESR_EL2::ISS));
             loop {}
-            ret = trap_return::TRAP_UNHANDLED;
+            ret = TrapReturn::TrapUnhandled;
         }
     }
 }

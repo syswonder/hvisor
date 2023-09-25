@@ -316,14 +316,14 @@ where
         page: Page<VA>,
         paddr: PhysAddr,
         flags: MemFlags,
-    ) -> PagingResult<(&mut PTE)> {
+    ) -> PagingResult<&mut PTE> {
         let entry: &mut PTE = self.get_entry_mut_or_create(page)?;
         if !entry.is_unused() {
             return Err(PagingError::AlreadyMapped);
         }
         entry.set_addr(page.size.align_down(paddr));
         entry.set_flags(flags, page.size.is_huge());
-        Ok((entry))
+        Ok(entry)
     }
 
     fn unmap_page(&mut self, vaddr: VA) -> PagingResult<(PhysAddr, PageSize)> {
