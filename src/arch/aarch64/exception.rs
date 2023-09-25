@@ -90,7 +90,7 @@ fn arch_handle_trap(regs: &mut GeneralRegisters) {
             );
             error!("esr_el2: iss {:#x?}", ESR_EL2.read(ESR_EL2::ISS));
             loop {}
-            ret = TrapReturn::TrapUnhandled;
+            // ret = TrapReturn::TrapUnhandled;
         }
     }
 }
@@ -105,7 +105,7 @@ fn handle_iabt(frame: &mut TrapFrame) {
     error!("esr_el2: iss {:#x?}", iss);
     loop {}
     //TODO finish dabt handle
-    arch_skip_instruction(frame);
+    // arch_skip_instruction(frame);
 }
 fn handle_dabt(frame: &mut TrapFrame) {
     let iss = ESR_EL2.read(ESR_EL2::ISS);

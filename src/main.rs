@@ -3,8 +3,6 @@
 // 不使用main入口，使用自己定义实际入口_start，因为我们还没有初始化堆栈指针
 #![feature(asm_const)]
 #![feature(naked_functions)] //  surpport naked function
-#![feature(default_alloc_error_handler)]
-use core::arch::global_asm;
 // 支持内联汇编
 #[macro_use]
 extern crate alloc;
@@ -31,7 +29,6 @@ mod memory;
 mod panic;
 mod percpu;
 
-use crate::arch::sysreg::{read_sysreg, write_sysreg};
 use crate::cell::root_cell;
 use crate::percpu::this_cpu_data;
 use config::HvSystemConfig;

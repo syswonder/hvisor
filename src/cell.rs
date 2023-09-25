@@ -1,9 +1,8 @@
 use crate::arch::Stage2PageTable;
 use crate::config::{CellConfig, HvSystemConfig};
-use crate::consts::HV_BASE;
 use crate::error::HvResult;
 use crate::memory::addr::{GuestPhysAddr, HostPhysAddr};
-use crate::memory::{GenericPageTableImmut, MemFlags, MemoryRegion, MemorySet};
+use crate::memory::{MemFlags, MemoryRegion, MemorySet};
 
 #[derive(Debug)]
 pub struct Cell<'a> {
