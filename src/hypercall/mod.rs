@@ -1,12 +1,7 @@
 use crate::arch::sysreg::write_sysreg;
-use crate::cell::Cell;
-use crate::config::HvCellDesc;
 use crate::error::HvResult;
-use crate::memory::{MemoryRegion, MemFlags};
 use crate::percpu::PerCpu;
-use bit_field::BitField;
 use core::convert::TryFrom;
-use core::mem::size_of;
 use core::sync::atomic::{AtomicU32, Ordering};
 use numeric_enum_macro::numeric_enum;
 numeric_enum! {

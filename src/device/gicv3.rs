@@ -81,8 +81,6 @@ mod gicr;
 use crate::arch::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::hypercall::SGI_HV_ID;
 use crate::hypercall::SGI_RESUME_ID;
-use crate::percpu::PerCpu;
-use crate::percpu::{get_cpu_data, this_cpu_data};
 use crate::percpu::test_cpu_el1;
 /// Representation of the GIC.
 pub struct GICv3 {
@@ -312,7 +310,7 @@ fn inject_irq(irq_id: usize) {
     if lr_idx == -1 {
         error!("full lr");
         loop {}
-        return;
+        // return;
     } else {
         // lr = irq_id;
         // /* Only group 1 interrupts */
@@ -328,7 +326,7 @@ fn inject_irq(irq_id: usize) {
         val |= 1 << 60; //group 1
         val |= 1 << 62; //state pending
         val |= 1 << 61; //map hardware
-        val |= ((irq_id as u64) << 32); //p intid
+        val |= (irq_id as u64) << 32; //p intid
                                         //debug!("To write lr {} val {}", lr_idx, val);
         write_lr(lr_idx as usize, val);
     }
