@@ -56,12 +56,9 @@ pub mod addr;
 use core::ops::{Deref, DerefMut};
 
 use bitflags::bitflags;
-use spin::{Once, RwLock};
-
 use crate::config::HvSystemConfig;
 use crate::consts::HV_BASE;
-use crate::error::HvResult;
-use crate::header::HvHeader;
+
 
 pub use addr::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr, PhysAddr, VirtAddr};
 pub use frame::Frame;

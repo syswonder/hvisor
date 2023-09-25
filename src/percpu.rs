@@ -1,25 +1,22 @@
 use aarch64_cpu::registers::MPIDR_EL1;
 
 //use crate::arch::vcpu::Vcpu;
-use crate::arch::entry::{shutdown_el2, virt2phys_el2, vmreturn};
-use crate::arch::sysreg::{read_sysreg, smc_arg1, write_sysreg};
+use crate::arch::entry::{virt2phys_el2, vmreturn};
+use crate::arch::sysreg::write_sysreg;
 use crate::arch::Stage2PageTable;
 use crate::consts::{PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
-use crate::device::gicv3::gicv3_cpu_init;
 use crate::device::gicv3::gicv3_cpu_shutdown;
 use crate::error::HvResult;
-use crate::header::HvHeader;
-use crate::header::{HvHeaderStuff, HEADER_STUFF};
+use crate::header::HEADER_STUFF;
 use crate::memory::addr::VirtAddr;
 use crate::memory::addr::{GuestPhysAddr, HostPhysAddr};
-use crate::memory::{GenericPageTableImmut, MemFlags, MemoryRegion, MemorySet};
-use aarch64_cpu::{asm, registers::*};
-use core::fmt::{Debug, Formatter, Result};
+use crate::memory::{MemFlags, MemoryRegion, MemorySet};
+use aarch64_cpu::registers::*;
+use core::fmt::Debug;
 use core::sync::atomic::{AtomicU32, Ordering};
 use tock_registers::interfaces::*;
 static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
 static ACTIVATED_CPUS: AtomicU32 = AtomicU32::new(0);
-use core::arch::global_asm; // 支持内联汇编
                             // global_asm!(include_str!("./arch/aarch64/page_table.S"),);
 #[repr(C)]
 #[derive(Debug, Default)]
@@ -227,7 +224,7 @@ fn cpu_reset() {
     write_sysreg!(CNTV_TVAL_EL0, 0);
     // //disable stage 1
     // write_sysreg!(SCTLR_EL1, 0);
-    SCTLR_EL1.set(((1 << 11) | (1 << 20) | (3 << 22) | (3 << 28)));
+    SCTLR_EL1.set((1 << 11) | (1 << 20) | (3 << 22) | (3 << 28));
     //SCTLR_EL1.modify(SCTLR_EL1::M::Disable);
     //HCR_EL2.modify(HCR_EL2::VM::Disable);
     unsafe {

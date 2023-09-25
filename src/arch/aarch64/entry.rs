@@ -1,7 +1,6 @@
 use super::exception::arch_handle_exit;
-use crate::consts::{HV_HEADER_PTR, PER_CPU_BOOT_SIZE, PER_CPU_SIZE};
-use crate::device::uart::{UART_BASE_PHYS, UART_BASE_VIRT};
-use crate::header::HvHeader;
+use crate::consts::{PER_CPU_BOOT_SIZE, PER_CPU_SIZE};
+use crate::device::uart::UART_BASE_VIRT;
 use crate::percpu::PerCpu;
 use core::arch::global_asm; // 支持内联汇编
 global_asm!(include_str!("./page_table.S"),);
