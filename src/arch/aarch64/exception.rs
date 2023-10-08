@@ -51,7 +51,7 @@ impl<'a> TrapFrame<'a> {
 /*From hyp_vec->handle_vmexit x0:guest regs x1:exit_reason sp =stack_top-32*8*/
 pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> Result<(), ()> {
     let mpidr = MPIDR_EL1.get();
-    let cpu_id = mpidr & 0xff00ffffff;
+    let _cpu_id = mpidr & 0xff00ffffff;
     trace!("cpu exit");
     match regs.exit_reason as u64 {
         ExceptionType::EXIT_REASON_EL1_IRQ => irqchip_handle_irq1(),
@@ -76,7 +76,7 @@ fn irqchip_handle_irq2() {
 }
 fn arch_handle_trap(regs: &mut GeneralRegisters) {
     let mut frame = TrapFrame::new(regs);
-    let mut ret = TrapReturn::TrapUnhandled;
+    let mut _ret = TrapReturn::TrapUnhandled;
     match ESR_EL2.read_as_enum(ESR_EL2::EC) {
         Some(ESR_EL2::EC::Value::HVC64) => handle_hvc(&frame),
         Some(ESR_EL2::EC::Value::SMC64) => handle_smc(&mut frame),
@@ -94,7 +94,7 @@ fn arch_handle_trap(regs: &mut GeneralRegisters) {
         }
     }
 }
-fn handle_iabt(frame: &mut TrapFrame) {
+fn handle_iabt(_frame: &mut TrapFrame) {
     let iss = ESR_EL2.read(ESR_EL2::ISS);
     let op = iss >> 6 & 0x1;
     let hpfar = read_sysreg!(HPFAR_EL2);
@@ -130,9 +130,7 @@ fn handle_sysreg(frame: &mut TrapFrame) {
     if this_cpu_data().wait_for_poweron {
         warn!("skip send sgi {:#x?}", sgi_id);
     } else {
-        unsafe {
-            write_sysreg!(icc_sgi1r_el1, val);
-        }
+        write_sysreg!(icc_sgi1r_el1, val);
     }
 
     arch_skip_instruction(frame); //skip sgi write
@@ -144,7 +142,7 @@ fn handle_hvc(frame: &TrapFrame) {
     }
     */
     let (code, arg0, arg1) = (frame.regs.usr[0], frame.regs.usr[1], frame.regs.usr[2]);
-    let cpu_data = unsafe { this_cpu_data() as &mut PerCpu };
+    let cpu_data = this_cpu_data() as &mut PerCpu;
 
     info!(
         "HVC from CPU{},code:{:#x?},arg0:{:#x?},arg1:{:#x?}",
@@ -159,7 +157,7 @@ fn handle_smc(frame: &mut TrapFrame) {
         frame.regs.usr[2],
         frame.regs.usr[3],
     );
-    let cpu_data = unsafe { this_cpu_data() as &mut PerCpu };
+    let cpu_data = this_cpu_data() as &mut PerCpu;
     info!(
         "SMC from CPU{},func_id:{:#x?},arg0:{},arg1:{},arg2:{}",
         cpu_data.id, code, arg0, arg1, arg2
@@ -178,8 +176,8 @@ fn handle_psci(
     frame: &mut TrapFrame,
     code: u64,
     arg0: u64,
-    arg1: u64,
-    arg2: u64,
+    _arg1: u64,
+    _arg2: u64,
 ) {
     match code {
         PsciFnId::PSCI_CPU_OFF_32 => unsafe {
@@ -205,7 +203,7 @@ fn handle_psci(
         }
     }
 }
-fn arch_skip_instruction(frame: &TrapFrame) {
+fn arch_skip_instruction(_frame: &TrapFrame) {
     //ELR_EL2: ret address
     let mut pc = ELR_EL2.get();
     //ESR_EL2::IL exception instruction length

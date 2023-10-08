@@ -1,7 +1,11 @@
-use crate::arch::sysreg::write_sysreg;
+use crate::cell::root_cell;
+use crate::config::HvCellDesc;
+use crate::control::arch_send_event;
 use crate::error::HvResult;
 use crate::percpu::PerCpu;
+use alloc::sync::Arc;
 use core::convert::TryFrom;
+use core::mem::size_of;
 use core::sync::atomic::{AtomicU32, Ordering};
 use numeric_enum_macro::numeric_enum;
 numeric_enum! {
@@ -38,7 +42,7 @@ impl<'a> HyperCall<'a> {
                 return Ok(());
             }
         };
-        let ret = match code {
+        let _ret = match code {
             HyperCallCode::HypervisorDisable => self.hypervisor_disable(),
             HyperCallCode::HypervisorCellCreate => self.hypervisor_cell_create(arg0),
             HyperCallCode::HypervisorCellLoad => self.hypervisor_cell_load(arg0),
@@ -62,48 +66,54 @@ impl<'a> HyperCall<'a> {
     }
 
     fn hypervisor_cell_create(&mut self, config_address: u64) -> HyperCallResult {
-        info!("handle hvc cell create");
+        info!("handle hvc cell create, config_address = {:#x?}", config_address);
         //TODO should be read from config files
 
-        // todo: check if at root cell
+        let cell = self.cpu_data.cell.clone().unwrap();
+        if !Arc::ptr_eq(&cell, &root_cell()) {
+            warn!("Creation over non-root cells: unsupported!");
+            return HyperCallResult::Err(hv_err!(EPERM));
+        }
+        warn!("prepare to suspend root_cell");
 
-        // todo: cell_suspend(root cell)
+        let root_cell = root_cell().clone();
+        root_cell.read().suspend();
+        let cfg_page_offs = config_address as usize & 0xfff;
 
-        // let cfg_pages_offs = config_address as usize & PAGE_OFFS_MASK;
-        // let cfg_pages = pages(cfg_pages_offs + size_of::<HvCellDesc>());
-        // let cell_some = self.cpu_data.cell;
+        // 根据 Jailhouse 的方法，这里应该将 config_address（一个客户机的物理地址）映射到当前 CPU 的虚拟地址空间中。
+        // 然而，我发现可以直接访问这个物理地址，所以没有进行映射操作。不过目前还不确定这样做是否会引起问题。
+        let cfg = unsafe { *(config_address as *const HvCellDesc) };
+
+        // todo: 检查新cell是否和已有cell同id或同名
         
-        // let cell = match self.cpu_data.cell {
-        //     Some(cell_ptr) => cell_ptr,
-        //     None => {
-        //         warn!("null cell point!");
-        //         todo!();
-        //     }
-        // };
-        // cell.gpm.insert(MemoryRegion::new_with_empty_mapper(
+        // let cell_w = cell.write();
+        // cell_w.gpm.insert(MemoryRegion::new_with_empty_mapper(
         //     config_address as usize,
-        //     cfg_pages_offs + size_of::<HvCellDesc>(), 
+        //     cfg_pages_offs + size_of::<HvCellDesc>(),
         //     MemFlags::READ,
         // ))?;
 
-        // let cfg_total_size: 
-
-        let target_cpu = 3;
-        arch_send_event(target_cpu, SGI_HV_ID);
+        let cfg_total_size = cfg.config_size() + size_of::<HvCellDesc>();
+        warn!("cfg = {:#x?}", cfg);
+        warn!("cfg_total_size = {:#x?}", cfg_total_size);
+        
+        // let target_cpu = 3;
+        // arch_send_event(target_cpu, SGI_HV_ID);
+        info!("prepare to return!");
         HyperCallResult::Ok(0)
     }
 
-    fn hypervisor_cell_load(&mut self, id: u64) -> HyperCallResult {
+    fn hypervisor_cell_load(&mut self, _id: u64) -> HyperCallResult {
         info!("handle hvc cell load");
         HyperCallResult::Ok(0)
     }
 
-    fn hypervisor_cell_start(&mut self, id: u64) -> HyperCallResult {
+    fn hypervisor_cell_start(&mut self, _id: u64) -> HyperCallResult {
         info!("handle hvc cell start");
         HyperCallResult::Ok(0)
     }
 
-    fn hypervisor_cell_destroy(&mut self, id: u64) -> HyperCallResult {
+    fn hypervisor_cell_destroy(&mut self, _id: u64) -> HyperCallResult {
         info!("handle hvc cell destroy");
         let target_cpu = 3;
         arch_send_event(target_cpu, SGI_RESUME_ID);
@@ -111,18 +121,3 @@ impl<'a> HyperCall<'a> {
     }
 }
 
-pub fn arch_send_event(cpuid: u64, sgi_num: u64) -> HvResult {
-    //TODO: add more info
-    let aff3: u64 = 0 << 48;
-    let aff2: u64 = 0 << 32;
-    let aff1: u64 = 0 << 16;
-    let irm: u64 = 0 << 40;
-    let sgi_id: u64 = sgi_num << 24;
-    let target_list: u64 = 1 << cpuid;
-    let val: u64 = aff1 | aff2 | aff3 | irm | sgi_id | target_list;
-    unsafe {
-        write_sysreg!(icc_sgi1r_el1, val);
-    }
-    info!("write sgi sys value = {:#x}", val);
-    Ok(())
-}

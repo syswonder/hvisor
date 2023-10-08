@@ -64,7 +64,7 @@ pub use addr::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr, PhysAdd
 pub use frame::Frame;
 pub use mm::{MemoryRegion, MemorySet};
 pub use paging::{GenericPTE, PagingInstr};
-pub use paging::{GenericPageTable, GenericPageTableImmut, Level4PageTable, Level4PageTableImmut};
+pub use paging::{GenericPageTable, GenericPageTableImmut, Level4PageTable, Level4PageTableImmut, npages};
 
 pub const PAGE_SIZE: usize = paging::PageSize::Size4K as usize;
 
