@@ -173,13 +173,14 @@ pub struct HvSystemConfig {
     pub platform_info: PlatformInfo,
     pub root_cell: HvCellDesc,
     // CellConfigLayout placed here.
+    // pub config_layout: CellConfigLayout,
 }
 
 /// A dummy layout with all variant-size fields empty.
 #[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
 struct CellConfigLayout {
-    cpus: [u64; 0],
+    cpus: [u64; 1],
     mem_regions: [HvMemoryRegion; 0],
     cache_regions: [HvCacheRegion; 0],
     irqchips: [HvIrqChip; 0],
@@ -241,10 +242,10 @@ impl<'a> CellConfig<'a> {
         self.desc.config_size()
     }
 
-    pub fn cpu_set(&self) -> &[u64] {
+    pub fn cpu_set(&self) -> &[u8] {
         // XXX: data may unaligned, which cause panic on debug mode. Same below.
         // See: https://doc.rust-lang.org/src/core/slice/mod.rs.html#6435-6443
-        unsafe { slice::from_raw_parts(self.config_ptr(), self.desc.cpu_set_size as usize / 8) }
+        unsafe { slice::from_raw_parts(self.config_ptr(), self.desc.cpu_set_size as usize) }
     }
 
     pub fn mem_regions(&self) -> &[HvMemoryRegion] {
