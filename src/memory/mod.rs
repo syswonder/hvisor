@@ -62,12 +62,13 @@ use crate::consts::HV_BASE;
 
 pub use addr::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr, PhysAddr, VirtAddr};
 pub use frame::Frame;
-pub use mm::{MemoryRegion, MemorySet};
+pub use mm::{MemoryRegion, MemorySet, PARKING_MEMORY_SET, PARKING_INST_PAGE};
 pub use paging::{GenericPTE, PagingInstr};
 pub use paging::{GenericPageTable, GenericPageTableImmut, Level4PageTable, Level4PageTableImmut, npages};
 
 pub const PAGE_SIZE: usize = paging::PageSize::Size4K as usize;
 
+pub const VIRT_PHYS_OFFSET_EL2: usize = 0xffff_4060_0000;
 //pub use mm::{MemoryRegion, MemorySet};
 
 bitflags! {

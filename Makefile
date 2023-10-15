@@ -55,7 +55,3 @@ monitor:
 	gdb-multiarch \
 	-ex 'target remote:1234' \
 	-ex 'file $(target_elf)'
-
-# 'add-symbol-file qemu-test/guest/jailhouse.ko 0xffff800008c20000 -s .data 0xffff800008c27000 -s .bss 0xffff800008c27908'
-# b *0xffff800013008788
-# w *0xffff80001320e00c

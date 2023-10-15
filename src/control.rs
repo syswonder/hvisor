@@ -1,7 +1,9 @@
-use crate::{arch::sysreg::write_sysreg, error::HvResult, percpu::get_cpu_data, hypercall::SGI_HV_ID};
+use crate::{arch::sysreg::write_sysreg, error::HvResult, percpu::get_cpu_data, hypercall::SGI_EVENT_ID};
 
-pub fn arch_send_event(cpu_id: u64, sgi_num: u64) -> HvResult {
-    //TODO: add more info
+pub fn send_event(cpu_id: u64, sgi_num: u64) -> HvResult {
+    // TODO: add more info
+    // *** The problem with not being able to input commands may be due to this.
+    // We will try to change a SGI_ID and add more info
     let aff3: u64 = 0 << 48;
     let aff2: u64 = 0 << 32;
     let aff1: u64 = 0 << 16;
@@ -15,6 +17,7 @@ pub fn arch_send_event(cpu_id: u64, sgi_num: u64) -> HvResult {
 }
 
 pub fn suspend_cpu(cpu_id: u64) {
+    info!("suspending cpu {:#x?}", cpu_id);
     let cpu_data = get_cpu_data(cpu_id);
     let _lock = cpu_data.ctrl_lock.lock();
     cpu_data.need_suspend = true;
@@ -22,6 +25,21 @@ pub fn suspend_cpu(cpu_id: u64) {
     drop(_lock);
 
     if !target_suspended {
-        arch_send_event(cpu_id, SGI_HV_ID);
+        send_event(cpu_id, SGI_EVENT_ID);
     }
+}
+
+pub fn resume_cpu(cpu_id: u64) {
+    info!("resuming cpu {:#x?}", cpu_id);
+    let cpu_data = get_cpu_data(cpu_id);
+    let _lock = cpu_data.ctrl_lock.lock();
+    cpu_data.need_suspend = false;
+}
+
+pub fn park_cpu(cpu_id: u64) {
+    info!("parking cpu {:#x?}", cpu_id);
+    let cpu_data = get_cpu_data(cpu_id);
+    let _lock = cpu_data.ctrl_lock.lock();
+    cpu_data.need_suspend = false;
+    cpu_data.park = true;
 }

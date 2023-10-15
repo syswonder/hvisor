@@ -1,19 +1,21 @@
 use aarch64_cpu::registers::MPIDR_EL1;
 use alloc::sync::Arc;
-use spin::{RwLock, Mutex};
+use spin::{Mutex, RwLock};
 
 //use crate::arch::vcpu::Vcpu;
 use crate::arch::entry::{virt2phys_el2, vmreturn};
 use crate::arch::sysreg::write_sysreg;
 use crate::arch::Stage2PageTable;
 use crate::cell::Cell;
-use crate::consts::{PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
+use crate::consts::{PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::device::gicv3::gicv3_cpu_shutdown;
 use crate::error::HvResult;
 use crate::header::HEADER_STUFF;
 use crate::memory::addr::VirtAddr;
 use crate::memory::addr::{GuestPhysAddr, HostPhysAddr};
-use crate::memory::{MemFlags, MemoryRegion, MemorySet};
+use crate::memory::{
+    MemFlags, MemoryRegion, MemorySet, PARKING_INST_PAGE, PARKING_MEMORY_SET, VIRT_PHYS_OFFSET_EL2,
+};
 use aarch64_cpu::registers::*;
 use core::fmt::Debug;
 use core::sync::atomic::{AtomicU32, Ordering};
@@ -36,7 +38,8 @@ pub struct PerCpu {
     pub wait_for_poweron: bool,
     pub need_suspend: bool,
     pub suspended: bool,
-    pub cell: Option<Arc<RwLock<Cell<'static>>>>,
+    pub park: bool,
+    pub cell: Option<Arc<RwLock<Cell>>>,
     pub ctrl_lock: Mutex<()>,
     // Stack will be placed here.
 }
@@ -52,6 +55,7 @@ impl PerCpu {
             wait_for_poweron: false,
             need_suspend: false,
             suspended: false,
+            park: false,
             cell: None,
             ctrl_lock: Mutex::new(()),
         };
@@ -114,7 +118,7 @@ impl PerCpu {
         /* we will restore the root cell state with the MMU turned off,
          * so we need to make sure it has been committed to memory */
 
-        /* hand over control of EL2 back to Linux */
+        /* hand over control of                        EL2 back to Linux */
         let linux_hyp_vec: u64 =
             unsafe { core::ptr::read_volatile(&HEADER_STUFF.arm_linux_hyp_vectors as *const _) };
         VBAR_EL2.set(linux_hyp_vec);
@@ -176,17 +180,25 @@ pub unsafe extern "C" fn isb() {
 }
 
 pub fn check_events() {
-    info!("check_events start");
     let cpu_data: &mut PerCpu = this_cpu_data();
     let mut _lock = Some(cpu_data.ctrl_lock.lock());
     while cpu_data.need_suspend {
         cpu_data.suspended = true;
         _lock = None; // release lock here
-        _lock = Some(cpu_data.ctrl_lock.lock());
+        while cpu_data.need_suspend {}
+        _lock = Some(cpu_data.ctrl_lock.lock()); // acquire lock again
     }
     cpu_data.suspended = false;
-    info!("check_events done");
-    // drop `_lock` here
+    if cpu_data.park {
+        cpu_data.park = false;
+        cpu_data.wait_for_poweron = true;
+    }
+    drop(_lock);
+
+    if cpu_data.wait_for_poweron {
+        warn!("check_events: park current cpu");
+        park_current_cpu();
+    }
 }
 
 #[allow(unused)]
@@ -209,11 +221,11 @@ pub fn test_cpu_el1() {
     unsafe {
         gpm.activate();
     }
-    cpu_reset();
+    reset_current_cpu();
 }
 
 #[no_mangle]
-fn cpu_reset() {
+fn reset_current_cpu() {
     /* put the cpu in a reset state */
     /* AARCH64_TODO: handle big endian support */
     write_sysreg!(CNTKCTL_EL1, 0);
@@ -264,8 +276,38 @@ fn cpu_reset() {
     //HCR_EL2.modify(HCR_EL2::VM::Disable);
 }
 
+pub fn park_current_cpu() {
+    let cpu_data = this_cpu_data();
+    let _lock = cpu_data.ctrl_lock.lock();
+    cpu_data.park = false;
+    cpu_data.wait_for_poweron = true;
+    drop(_lock);
+
+    // reset current cpu -> pc = 0x0 (wfi)
+    PARKING_MEMORY_SET.call_once(|| {
+        let parking_code: [u8; 8] = [0x7f, 0x20, 0x03, 0xd5, 0xff, 0xff, 0xff, 0x17]; // 1: wfi; b 1b
+        unsafe {
+            PARKING_INST_PAGE[..8].copy_from_slice(&parking_code);
+        }
+
+        let mut gpm = MemorySet::<Stage2PageTable>::new();
+        gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0 as GuestPhysAddr,
+            unsafe { &PARKING_INST_PAGE as *const _ as HostPhysAddr - VIRT_PHYS_OFFSET_EL2 },
+            PAGE_SIZE,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ))
+        .unwrap();
+        gpm
+    });
+    unsafe {
+        PARKING_MEMORY_SET.get().unwrap().activate();
+    }
+    reset_current_cpu();
+}
+
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Copy, Clone, Debug)]
 pub struct CpuSet {
     max_cpu_id: u64,
     bitmap: u64,
@@ -275,19 +317,27 @@ impl CpuSet {
     pub fn new(max_cpu_id: u64, bitmap: u64) -> Self {
         Self { max_cpu_id, bitmap }
     }
+    pub fn set_bit(&mut self, id: u64) {
+        assert!(id <= self.max_cpu_id);
+        self.bitmap |= 1 << id;
+    }
+    pub fn clear_bit(&mut self, id: u64) {
+        assert!(id <= self.max_cpu_id);
+        self.bitmap &= !(1 << id);
+    }
     pub fn contains_cpu(&self, id: u64) -> bool {
         id <= self.max_cpu_id && (self.bitmap & (1 << id)) != 0
     }
-    pub fn all<'a>(&'a self) -> impl Iterator<Item = u64> + 'a {
+    pub fn iter<'a>(&'a self) -> impl Iterator<Item = u64> + 'a {
         (0..=self.max_cpu_id).filter(move |&i| self.contains_cpu(i))
     }
-    pub fn all_except<'a>(&'a self, id: u64) -> impl Iterator<Item = u64> + 'a {
+    pub fn iter_except<'a>(&'a self, id: u64) -> impl Iterator<Item = u64> + 'a {
         (0..=self.max_cpu_id).filter(move |&i| self.contains_cpu(i) && i != id)
     }
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn set_el1_pc(_entry: usize) -> i32 {
+pub unsafe extern "C" fn set_el1_pc(_entry: usize) {
     //info!("Hello World! from el1");
     //set el1 pc
     // x0:entry
@@ -299,9 +349,7 @@ pub unsafe extern "C" fn set_el1_pc(_entry: usize) -> i32 {
             tlbi alle1is
             tlbi alle2is
             msr	ELR_EL2, x0
-            eret
-        ",
-            options(noreturn),
+        "
         );
     }
 }

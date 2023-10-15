@@ -79,8 +79,7 @@
 mod gicd;
 mod gicr;
 use crate::arch::sysreg::{read_sysreg, smc_arg1, write_sysreg};
-use crate::hypercall::SGI_HV_ID;
-use crate::hypercall::SGI_RESUME_ID;
+use crate::hypercall::{SGI_EVENT_ID, SGI_RESUME_ID};
 use crate::percpu::check_events;
 /// Representation of the GIC.
 pub struct GICv3 {
@@ -191,8 +190,9 @@ pub fn gicv3_handle_irq_el1() {
                 trace!("sgi get {},inject", irq_id);
                 deactivate_irq(irq_id);
                 inject_irq(irq_id);
-            } else if irq_id == SGI_HV_ID as usize {
+            } else if irq_id == SGI_EVENT_ID as usize {
                 info!("HV SGI EVENT {}", irq_id);
+                deactivate_irq(irq_id);
                 check_events();
                 // test_cpu_el1();
             } else if irq_id == SGI_RESUME_ID as usize {
@@ -204,6 +204,9 @@ pub fn gicv3_handle_irq_el1() {
             }
         } else {
             //inject phy irq
+            // if irq_id > 31 {
+            //     info!("*** get spi_irq id = {}", irq_id);
+            // }
             deactivate_irq(irq_id);
             inject_irq(irq_id);
         }
@@ -302,7 +305,7 @@ fn inject_irq(irq_id: usize) {
         // overlap
         let lr_val = read_lr(i) as usize;
         if (i & LR_VIRTIRQ_MASK) == irq_id {
-            warn!("irq mask!{} {}", i, irq_id);
+            trace!("irq mask!{} {}", i, irq_id);
             return;
         }
     }

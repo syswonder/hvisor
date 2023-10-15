@@ -4,12 +4,15 @@
 
 use alloc::collections::btree_map::{BTreeMap, Entry};
 use core::fmt::{Debug, Formatter, Result};
+use spin::Once;
 
 use super::addr::{align_down, align_up};
+use super::AlignedPage;
 use super::{mapper::Mapper, paging::GenericPageTable, MemFlags};
+use crate::arch::Stage2PageTable;
 use crate::error::HvResult;
-use crate::memory::PhysAddr;
 use crate::memory::paging::{PageSize, PagingResult};
+use crate::memory::PhysAddr;
 
 #[derive(Clone)]
 pub struct MemoryRegion<VA> {
@@ -168,3 +171,7 @@ where
         self.clear();
     }
 }
+
+pub static PARKING_MEMORY_SET: Once<MemorySet<Stage2PageTable>> = Once::new();
+
+pub static mut PARKING_INST_PAGE: AlignedPage = AlignedPage::new();
