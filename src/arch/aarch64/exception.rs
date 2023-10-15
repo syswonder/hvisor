@@ -2,7 +2,7 @@ use super::entry::vmreturn;
 use crate::arch::sysreg::{read_sysreg, write_sysreg};
 use crate::device::gicv3::gicv3_handle_irq_el1;
 use crate::hypercall::HyperCall;
-use crate::percpu::PerCpu;
+use crate::percpu::{PerCpu, park_current_cpu};
 use crate::percpu::{get_cpu_data, this_cpu_data, GeneralRegisters};
 use aarch64_cpu::registers::*;
 use tock_registers::interfaces::*;
@@ -181,14 +181,15 @@ fn handle_psci(
 ) {
     match code {
         PsciFnId::PSCI_CPU_OFF_32 => unsafe {
-            cpu_data.wait_for_poweron = true;
-            core::arch::asm!(
-                "
-                wfi
-            ",
-            );
-            info!("wake up at el2!");
-            //loop {}
+            park_current_cpu();
+            // cpu_data.wait_for_poweron = true;
+            // core::arch::asm!(
+            //     "
+            //     wfi
+            // ",
+            // );
+            // info!("wake up at el2!");
+            // //loop {}
         },
         PsciFnId::PSCI_AFFINITY_INFO_32 => {
             let cpu_data = get_cpu_data(arg0);

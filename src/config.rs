@@ -194,8 +194,8 @@ pub struct CellConfig<'a> {
 }
 
 impl HvCellDesc {
-    pub const fn config(&self) -> CellConfig {
-        CellConfig::from(self)
+    pub fn config(&self) -> CellConfig {
+        CellConfig::new(self)
     }
 
     pub const fn config_size(&self) -> usize {
@@ -230,16 +230,24 @@ impl HvSystemConfig {
 }
 
 impl<'a> CellConfig<'a> {
-    const fn from(desc: &'a HvCellDesc) -> Self {
+    pub fn new(desc: &'a HvCellDesc) -> Self {
         Self { desc }
+    }
+
+    pub fn desc_ptr(&self) -> *const HvCellDesc {
+        self.desc as *const _
     }
 
     fn config_ptr<T>(&self) -> *const T {
         unsafe { (self.desc as *const HvCellDesc).add(1) as _ }
     }
 
-    pub const fn size(&self) -> usize {
+    pub const fn config_size(&self) -> usize {
         self.desc.config_size()
+    }
+
+    pub const fn total_size(&self) -> usize {
+        self.desc.config_size() + size_of::<HvCellDesc>()
     }
 
     pub fn cpu_set(&self) -> &[u8] {
@@ -254,6 +262,13 @@ impl<'a> CellConfig<'a> {
             slice::from_raw_parts(ptr, self.desc.num_memory_regions as usize)
         }
     }
+
+    pub fn as_slice(&self) -> &[u8] {
+        unsafe {
+            let ptr = self.desc_ptr();
+            slice::from_raw_parts(ptr as *const u8, self.total_size())
+        }
+    }
 }
 
 impl Debug for CellConfig<'_> {
@@ -265,7 +280,7 @@ impl Debug for CellConfig<'_> {
         }
         f.debug_struct("CellConfig")
             .field("name", &core::str::from_utf8(&name[..len]))
-            .field("size", &self.size())
+            .field("size", &self.config_size())
             .field("mem_regions", &self.mem_regions())
             .finish()
     }
