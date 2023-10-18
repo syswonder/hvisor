@@ -53,7 +53,7 @@ pub struct HvCellDesc {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[repr(C, packed)]
+#[repr(C)]
 pub struct HvMemoryRegion {
     pub phys_start: u64,
     pub virt_start: u64,
@@ -248,6 +248,10 @@ impl<'a> CellConfig<'a> {
 
     pub const fn total_size(&self) -> usize {
         self.desc.config_size() + size_of::<HvCellDesc>()
+    }
+
+    pub const fn id(&self) -> u32 {
+        self.desc.id
     }
 
     pub fn cpu_set(&self) -> &[u8] {

@@ -192,8 +192,8 @@ pub fn gicv3_handle_irq_el1() {
                 inject_irq(irq_id);
             } else if irq_id == SGI_EVENT_ID as usize {
                 info!("HV SGI EVENT {}", irq_id);
-                deactivate_irq(irq_id);
                 check_events();
+                deactivate_irq(irq_id);
                 // test_cpu_el1();
             } else if irq_id == SGI_RESUME_ID as usize {
                 info!("hv sgi got {}, resume", irq_id);

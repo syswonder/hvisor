@@ -3,20 +3,22 @@ use alloc::vec::Vec;
 use spin::RwLock;
 
 use crate::arch::Stage2PageTable;
-use crate::config::{CellConfig, HvSystemConfig};
-use crate::control::{suspend_cpu, resume_cpu};
+use crate::config::{CellConfig, HvCellDesc, HvSystemConfig};
+use crate::control::{resume_cpu, suspend_cpu};
 use crate::error::HvResult;
 use crate::memory::addr::{GuestPhysAddr, HostPhysAddr};
 use crate::memory::{npages, Frame, MemFlags, MemoryRegion, MemorySet};
 use crate::percpu::{this_cpu_data, CpuSet};
 
-#[derive(Debug)]
 pub struct Cell {
+    /// Communication Page
+    pub comm_page: Frame,
     /// Cell configuration.
-    pub config_frames: Frame,
+    pub config_frame: Frame,
     /// Guest physical memory set.
     pub gpm: MemorySet<Stage2PageTable>,
     pub cpu_set: CpuSet,
+    pub loadable: bool,
 }
 
 impl Cell {
@@ -97,13 +99,17 @@ impl Cell {
         assert!(config_pages == 1);
 
         // copy config to the newly allocated frame
-        let mut frame = Frame::new()?;
-        frame.copy_data_from(config.as_slice());
+        let mut config_frame = Frame::new()?;
+        config_frame.copy_data_from(config.as_slice());
+
+        let mut comm_page = Frame::new()?;
 
         Ok(Self {
-            config_frames: frame,
+            config_frame,
             gpm,
             cpu_set: CpuSet::new(cpu_set.len() as u64 * 8 - 1, cpu_set_long),
+            loadable: false,
+            comm_page,
         })
     }
 
@@ -131,6 +137,16 @@ impl Cell {
     pub fn owns_cpu(&self, id: u64) -> bool {
         self.cpu_set.contains_cpu(id)
     }
+
+    pub fn config(&self) -> CellConfig {
+        unsafe {
+            CellConfig::new(
+                &(self.config_frame.start_paddr() as *const HvCellDesc)
+                    .as_ref()
+                    .unwrap(),
+            )
+        }
+    }
 }
 
 static ROOT_CELL: spin::Once<Arc<RwLock<Cell>>> = spin::Once::new();
@@ -142,6 +158,14 @@ pub fn add_cell(cell: Arc<RwLock<Cell>>) {
 
 pub fn root_cell() -> Arc<RwLock<Cell>> {
     ROOT_CELL.get().expect("Uninitialized root cell!").clone()
+}
+
+pub fn find_cell_by_id(cell_id: u32) -> Option<Arc<RwLock<Cell>>> {
+    CELL_LIST
+        .read()
+        .iter()
+        .find(|cell| cell.read().config().id() == cell_id)
+        .map(|cell| cell.clone())
 }
 
 pub fn init() -> HvResult {

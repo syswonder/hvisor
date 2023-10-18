@@ -78,7 +78,7 @@ fn arch_handle_trap(regs: &mut GeneralRegisters) {
     let mut frame = TrapFrame::new(regs);
     let mut _ret = TrapReturn::TrapUnhandled;
     match ESR_EL2.read_as_enum(ESR_EL2::EC) {
-        Some(ESR_EL2::EC::Value::HVC64) => handle_hvc(&frame),
+        Some(ESR_EL2::EC::Value::HVC64) => handle_hvc(&mut frame),
         Some(ESR_EL2::EC::Value::SMC64) => handle_smc(&mut frame),
         Some(ESR_EL2::EC::Value::TrappedMsrMrs) => handle_sysreg(&mut frame),
         Some(ESR_EL2::EC::Value::DataAbortLowerEL) => handle_dabt(&mut frame),
@@ -135,7 +135,7 @@ fn handle_sysreg(frame: &mut TrapFrame) {
 
     arch_skip_instruction(frame); //skip sgi write
 }
-fn handle_hvc(frame: &TrapFrame) {
+fn handle_hvc(frame: &mut TrapFrame) {
     /*
     if ESR_EL2.read(ESR_EL2::ISS) != 0x4a48 {
         return;
@@ -148,7 +148,8 @@ fn handle_hvc(frame: &TrapFrame) {
         "HVC from CPU{},code:{:#x?},arg0:{:#x?},arg1:{:#x?}",
         cpu_data.id, code, arg0, arg1
     );
-    HyperCall::new(cpu_data).hypercall(code as _, arg0, arg1);
+    let result = HyperCall::new(cpu_data).hypercall(code as _, arg0, arg1).unwrap();
+    frame.regs.usr[0] = result as _;
 }
 fn handle_smc(frame: &mut TrapFrame) {
     let (code, arg0, arg1, arg2) = (
@@ -163,7 +164,7 @@ fn handle_smc(frame: &mut TrapFrame) {
         cpu_data.id, code, arg0, arg1, arg2
     );
     match code & SMC_TYPE_MASK {
-        SmcType::STANDARD_SC => handle_psci(cpu_data, frame, code, arg0, arg1, arg2),
+        SmcType::STANDARD_SC => handle_psci(frame, code, arg0, arg1, arg2),
         _ => {
             error!("unsupported smc")
         }
@@ -172,7 +173,6 @@ fn handle_smc(frame: &mut TrapFrame) {
     arch_skip_instruction(frame); //skip the smc ins
 }
 fn handle_psci(
-    cpu_data: &mut PerCpu,
     frame: &mut TrapFrame,
     code: u64,
     arg0: u64,
@@ -219,6 +219,6 @@ fn arch_skip_instruction(_frame: &TrapFrame) {
 }
 fn arch_dump_exit(reason: u64) {
     //TODO hypervisor coredump
-    error!("Unsupported Exit:{:#x?}!", reason);
+    error!("Unsupported Exit:{:#x?}, elr={:#x?}", reason, ELR_EL2.get());
     loop {}
 }
