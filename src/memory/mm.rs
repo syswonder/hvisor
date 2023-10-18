@@ -118,6 +118,16 @@ where
         }
     }
 
+    pub fn map_partial(&mut self, mem: &MemoryRegion<PT::VA>) -> HvResult {
+        // Todo: Check if the memory area is included in the memory set.
+        self.pt.map(mem)
+    }
+
+    pub fn unmap_partial(&mut self, mem: &MemoryRegion<PT::VA>) -> HvResult {
+        // Todo: Check if the memory area is included in the memory set.
+        self.pt.unmap(mem)
+    }
+
     pub fn clear(&mut self) {
         for region in self.regions.values() {
             self.pt.unmap(region).unwrap();

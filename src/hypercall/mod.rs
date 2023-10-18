@@ -1,9 +1,11 @@
-use crate::cell::{add_cell, root_cell, Cell};
-use crate::config::{CellConfig, HvCellDesc};
-use crate::control::{send_event, park_cpu};
+use crate::cell::{add_cell, find_cell_by_id, root_cell, Cell};
+use crate::config::{CellConfig, HvCellDesc, HvMemoryRegion};
+use crate::control::{park_cpu, reset_cpu, send_event};
 use crate::error::HvResult;
-use crate::percpu::{this_cpu_data, PerCpu, get_cpu_data};
+use crate::memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion};
+use crate::percpu::{get_cpu_data, this_cpu_data, PerCpu};
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use core::convert::TryFrom;
 use core::sync::atomic::{AtomicU32, Ordering};
 use numeric_enum_macro::numeric_enum;
@@ -15,7 +17,7 @@ numeric_enum! {
         HypervisorDisable = 0,
         HypervisorCellCreate = 1,
         HypervisorCellStart = 2,
-        HypervisorCellLoad = 3,
+        HypervisorCellSetLoadable = 3,
         HypervisorCellDestroy = 4,
     }
 }
@@ -35,22 +37,21 @@ impl<'a> HyperCall<'a> {
         Self { cpu_data }
     }
 
-    pub fn hypercall(&mut self, code: u64, arg0: u64, _arg1: u64) -> HvResult {
+    pub fn hypercall(&mut self, code: u64, arg0: u64, _arg1: u64) -> HyperCallResult {
         let code = match HyperCallCode::try_from(code) {
             Ok(code) => code,
             Err(_) => {
-                warn!("hypercall unsupported!");
-                return Ok(());
+                warn!("hypercall id={} unsupported!", code);
+                return Ok(0);
             }
         };
-        let _ret = match code {
+        match code {
             HyperCallCode::HypervisorDisable => self.hypervisor_disable(),
             HyperCallCode::HypervisorCellCreate => self.hypervisor_cell_create(arg0),
-            HyperCallCode::HypervisorCellLoad => self.hypervisor_cell_load(arg0),
+            HyperCallCode::HypervisorCellSetLoadable => self.hypervisor_cell_set_loadable(arg0),
             HyperCallCode::HypervisorCellStart => self.hypervisor_cell_start(arg0),
             HyperCallCode::HypervisorCellDestroy => self.hypervisor_cell_destroy(arg0),
-        };
-        Ok(())
+        }
     }
 
     fn hypervisor_disable(&mut self) -> HyperCallResult {
@@ -75,8 +76,7 @@ impl<'a> HyperCall<'a> {
 
         let cell = self.cpu_data.cell.clone().unwrap();
         if !Arc::ptr_eq(&cell, &root_cell()) {
-            warn!("Creation over non-root cells: unsupported!");
-            return HyperCallResult::Err(hv_err!(EPERM));
+            return hv_result_err!(EPERM, "Creation over non-root cells: unsupported!");
         }
         info!("prepare to suspend root_cell");
 
@@ -118,7 +118,6 @@ impl<'a> HyperCall<'a> {
 
         // todo: arch_cell_create
 
-        // todo: remove the new cell's CPUs from the root cell
         let cpu_set = cell.cpu_set;
         info!("cell.cpu_set = {:#x?}", cell.cpu_set);
         let cell_p = Arc::new(RwLock::new(cell));
@@ -130,21 +129,109 @@ impl<'a> HyperCall<'a> {
                 get_cpu_data(cpu).cell = Some(cell_p.clone());
             });
         }
-        // todo: memory mapping
-        add_cell(cell_p.clone());
+
+        // memory mapping
+
+        {
+            let mem_regs: Vec<HvMemoryRegion> = cell_p.read().config().mem_regions().to_vec();
+            let mut cell = cell_p.write();
+            let comm_page_pa = cell.comm_page.start_paddr();
+            let root_gpm = &mut root_cell.write().gpm;
+
+            mem_regs.iter().for_each(|mem| {
+                if !(mem.flags.contains(MemFlags::COMMUNICATION)
+                    || mem.flags.contains(MemFlags::ROOTSHARED))
+                {
+                    root_gpm
+                        .unmap_partial(&MemoryRegion::new_with_offset_mapper(
+                            mem.phys_start as _,
+                            mem.phys_start as _,
+                            mem.size as _,
+                            mem.flags,
+                        ))
+                        .unwrap();
+                }
+                
+                cell.gpm
+                    .insert(MemoryRegion::from_hv_memregion(mem, Some(comm_page_pa)))
+                    .unwrap()
+            });
+        }
+
+        add_cell(cell_p);
         root_cell.read().resume();
-        
-        info!("done!");
+
+        info!("cell create done!");
         HyperCallResult::Ok(0)
     }
 
-    fn hypervisor_cell_load(&mut self, config_address: u64) -> HyperCallResult {
-        info!("handle hvc cell load");
+    fn hypervisor_cell_set_loadable(&mut self, cell_id: u64) -> HyperCallResult {
+        let this_cpu_cell = self.cpu_data.cell.clone().unwrap();
+        if !Arc::ptr_eq(&this_cpu_cell, &root_cell()) {
+            return hv_result_err!(EPERM, "Operation over non-root cells: unsupported!");
+        }
+        let cell = match find_cell_by_id(cell_id as _) {
+            Some(cell) => cell,
+            None => return hv_result_err!(ENOENT),
+        };
+        if Arc::ptr_eq(&cell, &root_cell()) {
+            return hv_result_err!(EINVAL, "Setting root-cell as loadable is not allowed!");
+        }
+        let mut cell_lock = cell.write();
+        cell_lock.suspend();
+        cell_lock.cpu_set.iter().for_each(|cpu_id| park_cpu(cpu_id));
+        cell_lock.loadable = true;
+        info!(
+            "cell.mem_regions() = {:#x?}",
+            cell_lock.config().mem_regions()
+        );
+        let mem_regs: Vec<HvMemoryRegion> = cell_lock.config().mem_regions().to_vec();
+
+        // remap to rootcell
+        let root_cell = root_cell();
+        let root_gpm = &mut root_cell.write().gpm;
+        mem_regs.iter().for_each(|mem| {
+            if mem.flags.contains(MemFlags::LOADABLE) {
+                root_gpm
+                    .map_partial(&MemoryRegion::new_with_offset_mapper(
+                        mem.phys_start as GuestPhysAddr,
+                        mem.phys_start as HostPhysAddr,
+                        mem.size as _,
+                        mem.flags,
+                    ))
+                    .unwrap();
+            }
+        });
+        info!("set loadbable done!");
         HyperCallResult::Ok(0)
     }
 
-    fn hypervisor_cell_start(&mut self, _id: u64) -> HyperCallResult {
+    fn hypervisor_cell_start(&mut self, cell_id: u64) -> HyperCallResult {
         info!("handle hvc cell start");
+
+        let cell = match find_cell_by_id(cell_id as _) {
+            Some(cell) => cell,
+            None => return hv_result_err!(ENOENT),
+        };
+        unsafe { assert!(*(0x7faf0000 as *mut u8) != 0x00) }
+        warn!("image = {:x?}", unsafe { *(0x7faf0000 as *const [u8; 64]) });
+        cell.read().suspend();
+
+        // set cell.comm_page
+        {
+            let mut cell_lock = cell.write();
+            cell_lock.comm_page.fill(0);
+            cell_lock.comm_page.copy_data_from("JHCOMM".as_bytes());
+            cell_lock.comm_page.as_slice_mut()[6] = 0x01;
+        }
+
+        // todo: unmap from root cell
+
+        // todo: set pc to `cpu_on_entry`
+        cell.read().cpu_set.iter().for_each(|cpu_id| {
+            reset_cpu(cpu_id);
+        });
+        cell.read().resume();
         HyperCallResult::Ok(0)
     }
 

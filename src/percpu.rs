@@ -14,7 +14,7 @@ use crate::header::HEADER_STUFF;
 use crate::memory::addr::VirtAddr;
 use crate::memory::addr::{GuestPhysAddr, HostPhysAddr};
 use crate::memory::{
-    MemFlags, MemoryRegion, MemorySet, PARKING_INST_PAGE, PARKING_MEMORY_SET, VIRT_PHYS_OFFSET_EL2,
+    MemFlags, MemoryRegion, MemorySet, PARKING_INST_PAGE, PARKING_MEMORY_SET, PHYS_VIRT_OFFSET,
 };
 use aarch64_cpu::registers::*;
 use core::fmt::Debug;
@@ -39,6 +39,7 @@ pub struct PerCpu {
     pub need_suspend: bool,
     pub suspended: bool,
     pub park: bool,
+    pub reset: bool,
     pub cell: Option<Arc<RwLock<Cell>>>,
     pub ctrl_lock: Mutex<()>,
     // Stack will be placed here.
@@ -56,6 +57,7 @@ impl PerCpu {
             need_suspend: false,
             suspended: false,
             park: false,
+            reset: false,
             cell: None,
             ctrl_lock: Mutex::new(()),
         };
@@ -189,15 +191,23 @@ pub fn check_events() {
         _lock = Some(cpu_data.ctrl_lock.lock()); // acquire lock again
     }
     cpu_data.suspended = false;
+
+    let mut reset = false;
     if cpu_data.park {
         cpu_data.park = false;
         cpu_data.wait_for_poweron = true;
+    } else if cpu_data.reset {
+        cpu_data.reset = false;
+        cpu_data.wait_for_poweron = false;
+        reset = true;
     }
     drop(_lock);
 
     if cpu_data.wait_for_poweron {
         warn!("check_events: park current cpu");
         park_current_cpu();
+    } else if reset {
+        reset_current_cpu();
     }
 }
 
@@ -265,6 +275,9 @@ fn reset_current_cpu() {
     write_sysreg!(CNTV_TVAL_EL0, 0);
     // //disable stage 1
     // write_sysreg!(SCTLR_EL1, 0);
+    unsafe {
+        this_cpu_data().cell.clone().unwrap().read().gpm.activate();
+    }
     SCTLR_EL1.set((1 << 11) | (1 << 20) | (3 << 22) | (3 << 28));
     //SCTLR_EL1.modify(SCTLR_EL1::M::Disable);
     //HCR_EL2.modify(HCR_EL2::VM::Disable);
@@ -293,17 +306,17 @@ pub fn park_current_cpu() {
         let mut gpm = MemorySet::<Stage2PageTable>::new();
         gpm.insert(MemoryRegion::new_with_offset_mapper(
             0 as GuestPhysAddr,
-            unsafe { &PARKING_INST_PAGE as *const _ as HostPhysAddr - VIRT_PHYS_OFFSET_EL2 },
+            unsafe { &PARKING_INST_PAGE as *const _ as HostPhysAddr - PHYS_VIRT_OFFSET },
             PAGE_SIZE,
             MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
         ))
         .unwrap();
         gpm
     });
+    reset_current_cpu();
     unsafe {
         PARKING_MEMORY_SET.get().unwrap().activate();
     }
-    reset_current_cpu();
 }
 
 #[repr(C)]
@@ -327,6 +340,9 @@ impl CpuSet {
     }
     pub fn contains_cpu(&self, id: u64) -> bool {
         id <= self.max_cpu_id && (self.bitmap & (1 << id)) != 0
+    }
+    pub fn first_cpu(&self) -> Option<u64> {
+        (0..=self.max_cpu_id).find(move |&i| self.contains_cpu(i))
     }
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = u64> + 'a {
         (0..=self.max_cpu_id).filter(move |&i| self.contains_cpu(i))
