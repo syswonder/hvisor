@@ -1,7 +1,8 @@
-use crate::cell::{add_cell, find_cell_by_id, root_cell, Cell};
-use crate::config::{CellConfig, HvCellDesc, HvMemoryRegion};
+use crate::cell::{add_cell, find_cell_by_id, root_cell, Cell, CommPage, CommRegion};
+use crate::config::{CellConfig, HvCellDesc, HvMemoryRegion, HvSystemConfig};
 use crate::control::{park_cpu, reset_cpu, send_event};
 use crate::error::HvResult;
+use crate::memory::addr::virt_to_phys;
 use crate::memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion};
 use crate::percpu::{get_cpu_data, this_cpu_data, PerCpu};
 use alloc::sync::Arc;
@@ -25,7 +26,8 @@ numeric_enum! {
 pub const SGI_INJECT_ID: u64 = 0;
 pub const SGI_EVENT_ID: u64 = 15;
 pub const SGI_RESUME_ID: u64 = 14;
-
+const CELL_SHUT_DOWN: u32 = 2;
+const COMM_REGION_ABI_REVISION: u16 = 1;
 pub type HyperCallResult = HvResult<usize>;
 
 pub struct HyperCall<'a> {
@@ -135,7 +137,10 @@ impl<'a> HyperCall<'a> {
         {
             let mem_regs: Vec<HvMemoryRegion> = cell_p.read().config().mem_regions().to_vec();
             let mut cell = cell_p.write();
-            let comm_page_pa = cell.comm_page.start_paddr();
+			// cell.comm_page.comm_region.cell_state = CELL_SHUT_DOWN;
+            // let comm_page_pa = virt_to_phys(&cell.comm_page as *const _ as usize);
+			let comm_page_pa = cell.comm_page.start_paddr();
+			assert_eq!(comm_page_pa % 4096, 0);
             let root_gpm = &mut root_cell.write().gpm;
 
             mem_regs.iter().for_each(|mem| {
@@ -180,6 +185,7 @@ impl<'a> HyperCall<'a> {
         let mut cell_lock = cell.write();
         cell_lock.suspend();
         cell_lock.cpu_set.iter().for_each(|cpu_id| park_cpu(cpu_id));
+		// cell_lock.comm_page.comm_region.cell_state = CELL_SHUT_DOWN;
         cell_lock.loadable = true;
         info!(
             "cell.mem_regions() = {:#x?}",
@@ -218,11 +224,29 @@ impl<'a> HyperCall<'a> {
         cell.read().suspend();
 
         // set cell.comm_page
-        {
+        unsafe {
             let mut cell_lock = cell.write();
             cell_lock.comm_page.fill(0);
-            cell_lock.comm_page.copy_data_from("JHCOMM".as_bytes());
-            cell_lock.comm_page.as_slice_mut()[6] = 0x01;
+            // cell_lock.comm_page.fill_zero();
+			let flags = cell_lock.config().flags();
+			let console = cell_lock.config().console();
+			let comm_region = (cell_lock.comm_page.as_mut_ptr() as *mut CommRegion).as_mut().unwrap();
+			// let comm_region = &mut cell_lock.comm_page.comm_region;
+			comm_region.revision = COMM_REGION_ABI_REVISION;
+			comm_region.signature.copy_from_slice("JHCOMM".as_bytes());
+			// set virtual debug console
+			if flags & 0x40000000 > 0 {
+				comm_region.flags |= 0x0001;
+			}
+			if flags & 0x80000000 > 0 {
+				comm_region.flags |= 0x0002;
+			}
+			comm_region.console = console;
+			let system_config = HvSystemConfig::get();
+			comm_region.gic_version = system_config.platform_info.arch.gic_version;
+			comm_region.gicd_base = system_config.platform_info.arch.gicd_base;
+			comm_region.gicc_base = system_config.platform_info.arch.gicc_base;
+			comm_region.gicr_base = system_config.platform_info.arch.gicr_base;
         }
 
         // todo: unmap from root cell

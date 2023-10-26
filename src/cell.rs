@@ -3,16 +3,64 @@ use alloc::vec::Vec;
 use spin::RwLock;
 
 use crate::arch::Stage2PageTable;
-use crate::config::{CellConfig, HvCellDesc, HvSystemConfig};
+use crate::config::{CellConfig, HvCellDesc, HvSystemConfig, HvConsole};
 use crate::control::{resume_cpu, suspend_cpu};
 use crate::error::HvResult;
 use crate::memory::addr::{GuestPhysAddr, HostPhysAddr};
 use crate::memory::{npages, Frame, MemFlags, MemoryRegion, MemorySet};
 use crate::percpu::{this_cpu_data, CpuSet};
 
+#[repr(C)]
+pub struct CommPage {
+	pub comm_region: CommRegion,
+	// padding: [u8; 4096], 
+}
+
+impl CommPage{
+	fn new() -> Self {
+		Self { comm_region: CommRegion::new() }
+	}
+	// set CommPage to 0s
+	pub fn fill_zero(&mut self) {
+		unsafe { core::ptr::write_bytes(self as *mut _, 0, 1)}
+	}
+}
+#[repr(C)]
+pub struct CommRegion {
+	pub signature: [u8; 6],
+	pub revision: u16,
+	pub cell_state: u32, // volatile
+	msg_to_cell: u32, // volatile
+	reply_from_cell: u32, //volatile
+	pub flags: u32, //volatile
+	pub console: HvConsole,
+	pub gic_version: u8,
+	pub gicd_base: u64,
+	pub gicc_base: u64,
+	pub gicr_base: u64,
+}
+
+impl CommRegion {
+	fn new() -> Self {
+		Self {
+			signature: [0; 6],
+			revision: 0,
+			cell_state: 0,
+			msg_to_cell: 0,
+			reply_from_cell: 0,
+			flags: 0,
+			console: HvConsole::new(),
+			gic_version: 0,
+			gicd_base: 0,
+			gicc_base: 0,
+			gicr_base: 0,
+		}
+	}
+}
 pub struct Cell {
     /// Communication Page
     pub comm_page: Frame,
+	// pub comm_page: CommPage,	
     /// Cell configuration.
     pub config_frame: Frame,
     /// Guest physical memory set.
@@ -103,7 +151,8 @@ impl Cell {
         config_frame.copy_data_from(config.as_slice());
 
         let mut comm_page = Frame::new()?;
-
+        // let mut comm_page = CommPage::new();
+		// info!("comm page size is :{}", core::mem::size_of::<CommPage>());
         Ok(Self {
             config_frame,
             gpm,
