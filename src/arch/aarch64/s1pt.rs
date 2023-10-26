@@ -1,6 +1,8 @@
 use core::fmt;
+use bitflags::bitflags;
 use numeric_enum_macro::numeric_enum;
-use aarch64_cpu::registers::VTTBR_EL2;
+use aarch64_cpu::registers::TTBR0_EL2;
+use tock_registers::interfaces::Writeable;
 
 use crate::memory::addr::{GuestPhysAddr, HostPhysAddr, PhysAddr};
 use crate::memory::{GenericPTE, Level4PageTable, MemFlags, PAGE_SIZE, PagingInstr};
@@ -9,7 +11,7 @@ bitflags::bitflags! {
     /// Memory attribute fields in the VMSAv8-64 translation table format descriptors.
     #[derive(Clone, Copy, Debug)]
     pub struct DescriptorAttr: u64 {
-        // Attribute fields in stage 2 VMSAv8-64 Block and Page descriptors:
+        // Attribute fields in stage 1 VMSAv8-64 Block and Page descriptors:
 
         /// Whether the descriptor is valid.
         const VALID =       1 << 0;
@@ -17,17 +19,22 @@ bitflags::bitflags! {
         /// (not a 2M, 1G block)
         const NON_BLOCK =   1 << 1;
         /// Memory attributes index field.
-        const ATTR      =   0b1111 << 2;
-        /// Access permission: accessable at EL0/1, Read / Write.
-        const S2AP_R      =   1 << 6;
-        /// Access permission: accessable at EL0/1, Write.
-        const S2AP_W      =   1 << 7;
+        const ATTR_INDX =   0b111 << 2;
+        /// Non-secure bit. For memory accesses from Secure state, specifies whether the output
+        /// address is in Secure or Non-secure memory.
+        const NS =          1 << 5;
+        /// Access permission: accessable at EL0.
+        const AP_EL0 =      1 << 6;
+        /// Access permission: read-only.
+        const AP_RO =       1 << 7;
         /// Shareability: Inner Shareable (otherwise Outer Shareable).
-        const INNER     =   1 << 8;
+        const INNER =       1 << 8;
         /// Shareability: Inner or Outer Shareable (otherwise Non-shareable).
         const SHAREABLE =   1 << 9;
         /// The Access flag.
         const AF =          1 << 10;
+        /// The not global bit.
+        const NG =          1 << 11;
     }
 }
 
@@ -35,13 +42,14 @@ numeric_enum! {
     #[repr(u64)]
     #[derive(Debug, Clone, Copy, Eq, PartialEq)]
     enum MemType {
+        Normal = 0,
         Device = 1,
-        Normal = 15,
     }
 }
 
+
 impl DescriptorAttr {
-    const ATTR_INDEX_MASK: u64 = 0b1111_00;
+    const ATTR_INDEX_MASK: u64 = 0b111_00;
 
     const fn from_mem_type(mem_type: MemType) -> Self {
         let mut bits = (mem_type as u64) << 2;
@@ -54,8 +62,8 @@ impl DescriptorAttr {
     fn mem_type(&self) -> MemType {
         let idx = (self.bits() & Self::ATTR_INDEX_MASK) >> 2;
         match idx {
+            0 => MemType::Normal,
             1 => MemType::Device,
-            15 => MemType::Normal,
             _ => panic!("Invalid memory attribute index"),
         }
     }
@@ -70,10 +78,10 @@ impl MemType {
 impl From<DescriptorAttr> for MemFlags {
     fn from(attr: DescriptorAttr) -> Self {
         let mut flags = Self::empty();
-        if attr.contains(DescriptorAttr::VALID) && attr.contains(DescriptorAttr::S2AP_R) {
+        if attr.contains(DescriptorAttr::VALID) && attr.contains(DescriptorAttr::AP_EL0) {
             flags |= Self::READ;
         }
-        if attr.contains(DescriptorAttr::S2AP_W) {
+        if !attr.contains(DescriptorAttr::AP_RO) {
             flags |= Self::WRITE;
         }
         if attr.mem_type() == MemType::Device {
@@ -92,10 +100,10 @@ impl From<MemFlags> for DescriptorAttr {
         };
         attr |= Self::VALID | Self::AF;
         if flags.contains(MemFlags::READ) {
-            attr |= Self::S2AP_R;
+            attr |= Self::AP_EL0;
         }
-        if flags.contains(MemFlags::WRITE) {
-            attr |= Self::S2AP_W;
+        if !flags.contains(MemFlags::WRITE) {
+            attr |= Self::AP_RO;
         }
         attr
     }
@@ -103,7 +111,7 @@ impl From<MemFlags> for DescriptorAttr {
 
 #[derive(Clone, Copy)]
 #[repr(transparent)]
-pub struct PageTableEntry(u64);
+pub struct PageTableEntry(pub u64);
 
 impl PageTableEntry {
     const PHYS_ADDR_MASK: usize = 0xffff_ffff_ffff & !(PAGE_SIZE - 1);
@@ -114,7 +122,7 @@ impl PageTableEntry {
 }
 
 impl GenericPTE for PageTableEntry {
-    fn addr(&self) -> HostPhysAddr {
+    fn addr(&self) -> GuestPhysAddr {
         PhysAddr::from(self.0 as usize & Self::PHYS_ADDR_MASK)
     }
 
@@ -134,7 +142,7 @@ impl GenericPTE for PageTableEntry {
         !DescriptorAttr::from_bits_truncate(self.0).contains(DescriptorAttr::NON_BLOCK)
     }
 
-    fn set_addr(&mut self, paddr: HostPhysAddr) {
+    fn set_addr(&mut self, paddr: GuestPhysAddr) {
         self.0 = (self.0 & !Self::PHYS_ADDR_MASK as u64) | (paddr as u64 & Self::PHYS_ADDR_MASK as u64);
     }
 
@@ -150,7 +158,7 @@ impl GenericPTE for PageTableEntry {
         self.set_flags_and_mem_type(flags, mem_type);
     }
 
-    fn set_table(&mut self, paddr: HostPhysAddr) {
+    fn set_table(&mut self, paddr: GuestPhysAddr) {
         self.set_addr(paddr);
         self.set_flags_and_mem_type(
             DescriptorAttr::VALID | DescriptorAttr::NON_BLOCK,
@@ -173,14 +181,14 @@ impl PageTableEntry {
     }
 
     fn set_flags_and_mem_type(&mut self, flags: DescriptorAttr, mem_type: MemType) {
-        let attr = flags | DescriptorAttr::from_mem_type(mem_type);
+        let mut attr = flags | DescriptorAttr::from_mem_type(mem_type);
         self.0 = (attr.bits() & !Self::PHYS_ADDR_MASK as u64) | (self.0 as u64 & Self::PHYS_ADDR_MASK as u64);
     }
 }
 
 impl fmt::Debug for PageTableEntry {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Stage2PageTableEntry")
+        f.debug_struct("Stage1PageTableEntry")
             .field("raw", &self.0)
             .field("paddr", &self.addr())
             .field("attr", &DescriptorAttr::from_bits_truncate(self.0))
@@ -190,11 +198,11 @@ impl fmt::Debug for PageTableEntry {
     }
 }
 
-pub struct S2PTInstr;
+pub struct S1PTInstr;
 
-impl PagingInstr for S2PTInstr {
+impl PagingInstr for S1PTInstr {
     unsafe fn activate(root_paddr: HostPhysAddr) {
-        VTTBR_EL2.set_baddr(root_paddr as _);
+        TTBR0_EL2.set(root_paddr as _);
     }
 
     fn flush(_vaddr: Option<usize>) {
@@ -202,4 +210,4 @@ impl PagingInstr for S2PTInstr {
     }
 }
 
-pub type Stage2PageTable = Level4PageTable<GuestPhysAddr, PageTableEntry, S2PTInstr>;
+pub type Stage1PageTable = Level4PageTable<GuestPhysAddr, PageTableEntry, S1PTInstr>;

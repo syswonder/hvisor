@@ -20,6 +20,9 @@ pub const HV_HEADER_PTR: *const HvHeader = __header_start as _;
 /// Pointer of the per-CPU data array.
 pub const PER_CPU_ARRAY_PTR: *mut VirtAddr = __core_end as _;
 
+/// Pointer of trampoline start.
+pub const TRAMPOLINE_START: *mut VirtAddr = __trampoline_start as _;
+
 /// Pointer of the `HvSystemConfig` structure.
 pub fn hv_config_ptr() -> *const HvSystemConfig {
     (PER_CPU_ARRAY_PTR as usize + HvHeader::get().max_cpus as usize * PER_CPU_SIZE) as _
@@ -38,4 +41,5 @@ pub fn hv_end() -> VirtAddr {
 extern "C" {
     fn __header_start();
     fn __core_end();
+    fn __trampoline_start();
 }

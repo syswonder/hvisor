@@ -174,7 +174,7 @@ pub struct HvSystemConfig {
 
     /// Jailhouse's location in memory
     pub hypervisor_memory: HvMemoryRegion,
-    debug_console: HvConsole,
+    pub debug_console: HvConsole,
     pub platform_info: PlatformInfo,
     pub root_cell: HvCellDesc,
     // CellConfigLayout placed here.

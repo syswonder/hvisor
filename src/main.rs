@@ -37,10 +37,12 @@ use device::gicv3::gicv3_cpu_init;
 use error::HvResult;
 use header::HvHeader;
 use percpu::PerCpu;
+
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
 static INIT_EARLY_OK: AtomicU32 = AtomicU32::new(0);
 static INIT_LATE_OK: AtomicU32 = AtomicU32::new(0);
 static ERROR_NUM: AtomicI32 = AtomicI32::new(0);
+
 fn has_err() -> bool {
     ERROR_NUM.load(Ordering::Acquire) != 0
 }
@@ -91,6 +93,7 @@ fn primary_init_early() -> HvResult {
     info!("System config: {:#x?}", system_config);
 
     memory::init_frame_allocator();
+    memory::init_hv_page_table()?;
     cell::init()?;
 
     INIT_EARLY_OK.store(1, Ordering::Release);
