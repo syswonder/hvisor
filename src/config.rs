@@ -13,10 +13,10 @@ const HV_MAX_IOMMU_UNITS: usize = 8;
 #[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
 pub struct HvConsole {
-    address: u64,
-    size: u32,
+    pub address: u64,
+    pub size: u32,
     console_type: u16,
-    flags: u16,
+    pub flags: u16,
     divider: u32,
     gate_nr: u32,
     clock_reg: u64,
