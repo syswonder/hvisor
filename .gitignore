@@ -2,3 +2,5 @@
 /rvm.S
 /tmp
 /qemu-test
+/demo/hello/target
+/demo/gic-demo/

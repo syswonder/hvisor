@@ -65,11 +65,11 @@ use crate::device::pl011::UART_BASE_VIRT;
 use crate::error::HvResult;
 use crate::header::HvHeader;
 
-pub use addr::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr, PhysAddr, VirtAddr};
+pub use addr::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr, PhysAddr, VirtAddr, PHYS_VIRT_OFFSET};
 pub use frame::Frame;
-pub use mm::{MemoryRegion, MemorySet};
+pub use mm::{MemoryRegion, MemorySet, PARKING_MEMORY_SET, PARKING_INST_PAGE};
 pub use paging::{GenericPTE, PagingInstr};
-pub use paging::{GenericPageTable, GenericPageTableImmut, Level4PageTable, Level4PageTableImmut};
+pub use paging::{GenericPageTable, GenericPageTableImmut, Level4PageTable, Level4PageTableImmut, npages};
 
 pub const PAGE_SIZE: usize = paging::PageSize::Size4K as usize;
 
@@ -83,6 +83,9 @@ bitflags! {
         const EXECUTE       = 1 << 2;
         const DMA           = 1 << 3;
         const IO            = 1 << 4;
+        const COMMUNICATION = 1 << 5;
+        const LOADABLE      = 1 << 6;
+        const ROOTSHARED    = 1 << 7;
         const NO_HUGEPAGES  = 1 << 8;
         const USER          = 1 << 9;
     }
