@@ -1,5 +1,4 @@
 use core::fmt;
-use bitflags::bitflags;
 use numeric_enum_macro::numeric_enum;
 use aarch64_cpu::registers::VTTBR_EL2;
 
@@ -174,7 +173,7 @@ impl PageTableEntry {
     }
 
     fn set_flags_and_mem_type(&mut self, flags: DescriptorAttr, mem_type: MemType) {
-        let mut attr = flags | DescriptorAttr::from_mem_type(mem_type);
+        let attr = flags | DescriptorAttr::from_mem_type(mem_type);
         self.0 = (attr.bits() & !Self::PHYS_ADDR_MASK as u64) | (self.0 as u64 & Self::PHYS_ADDR_MASK as u64);
     }
 }

@@ -3,13 +3,9 @@
 // 不使用main入口，使用自己定义实际入口_start，因为我们还没有初始化堆栈指针
 #![feature(asm_const)]
 #![feature(naked_functions)] //  surpport naked function
-#![feature(default_alloc_error_handler)]
-use core::arch::global_asm;
 // 支持内联汇编
-use core::result::Result;
 #[macro_use]
 extern crate alloc;
-#[macro_use]
 extern crate buddy_system_allocator;
 #[macro_use]
 mod error;
@@ -19,7 +15,7 @@ extern crate log;
 extern crate lazy_static;
 #[macro_use]
 mod logging;
-
+mod control;
 //#[cfg(target_arch = "aarch64")]
 #[path = "arch/aarch64/mod.rs"]
 mod arch;
@@ -33,7 +29,6 @@ mod memory;
 mod panic;
 mod percpu;
 
-use crate::arch::sysreg::{read_sysreg, write_sysreg};
 use crate::cell::root_cell;
 use crate::percpu::this_cpu_data;
 use config::HvSystemConfig;
@@ -98,7 +93,8 @@ fn primary_init_early() -> HvResult {
     info!("System config: {:#x?}", system_config);
 
     memory::init_frame_allocator();
-    memory::init_hv_page_table()?;
+    // TODO： there is one bug when enable stage 1 table in el2
+    // memory::init_hv_page_table()?;
     cell::init()?;
 
     INIT_EARLY_OK.store(1, Ordering::Release);
@@ -111,7 +107,7 @@ fn primary_init_late() {
     INIT_LATE_OK.store(1, Ordering::Release);
 }
 
-fn main(cpu_data: &mut PerCpu) -> HvResult {
+fn main(cpu_data: &'static mut PerCpu) -> HvResult {
     println!("Hello");
     println!(
         "cpuid{} vaddr{:#x?} phyid{} &cpu_data{:#x?}",
@@ -135,10 +131,13 @@ fn main(cpu_data: &mut PerCpu) -> HvResult {
         wait_for_counter(&INIT_EARLY_OK, 1)?
     }
 
+    cpu_data.cell = Some(root_cell().clone());
     unsafe { 
-        memory::hv_page_table().read().activate();
-        root_cell().gpm.activate();
-     };
+        // TODO： there is one bug when enable stage 1 table in el2
+        // memory::hv_page_table().read().activate();
+        root_cell().read().gpm.activate() 
+    };
+
     println!("CPU {} init OK.", cpu_data.id);
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
     wait_for_counter(&INITED_CPUS, online_cpus)?;
@@ -151,6 +150,6 @@ fn main(cpu_data: &mut PerCpu) -> HvResult {
     gicv3_cpu_init();
     cpu_data.activate_vmm()
 }
-extern "C" fn entry(cpu_data: &mut PerCpu) -> () {
+extern "C" fn entry(cpu_data: &'static mut PerCpu) -> () {
     if let Err(_e) = main(cpu_data) {}
 }

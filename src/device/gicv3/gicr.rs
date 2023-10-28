@@ -5,8 +5,8 @@
 //! GICC Driver - GIC CPU interface.
 use crate::device::common::MMIODerefWrapper;
 use tock_registers::{
-    interfaces::{Readable, Writeable},
-    register_bitfields, register_structs,
+    interfaces::Readable,
+    register_structs,
     registers::{ReadOnly, ReadWrite},
 };
 

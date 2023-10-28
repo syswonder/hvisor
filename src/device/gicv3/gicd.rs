@@ -8,8 +8,7 @@
 //!   - SPI - Shared Peripheral Interrupt.
 use crate::device::common::MMIODerefWrapper;
 use tock_registers::{
-    interfaces::{Readable, Writeable},
-    register_bitfields, register_structs,
+    register_structs,
     registers::{ReadOnly, ReadWrite},
 };
 

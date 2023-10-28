@@ -78,8 +78,9 @@
 
 mod gicd;
 mod gicr;
-use crate::arch::sysreg::{read_sysreg, write_sysreg};
-use crate::hypercall::SGI_HV_ID;
+use crate::arch::sysreg::{read_sysreg, smc_arg1, write_sysreg};
+use crate::hypercall::{SGI_EVENT_ID, SGI_RESUME_ID};
+use crate::percpu::check_events;
 /// Representation of the GIC.
 pub struct GICv3 {
     /// The Distributor.
@@ -100,26 +101,13 @@ impl GICv3 {
         self.gicr.read_aff()
     }
 }
-fn sdei_check() -> i64 {
-    unsafe {
-        core::arch::asm!(
-            "
-    ldr x0, =0xc4000020
-    smc #0
-    ret
-    ",
-            options(noreturn),
-        );
-    }
-}
+
 //TODO: add Distributor init
 pub fn gicv3_cpu_init() {
     //TODO: add Redistributor init
-    let sdei_ver = -1; //sdei_check();
+    let sdei_ver = unsafe { smc_arg1!(0xc4000020) }; //sdei_check();
     info!("sdei vecsion: {}", sdei_ver);
     info!("gicv3 init!");
-    //TODO only cpu0 print gicv3 init?
-    //TODO icc_ctlr_el1 value? 0x8f02
     //Identifier bits. Read-only and writes are ignored.
     //Priority bits. Read-only and writes are ignored.
     unsafe {
@@ -176,26 +164,52 @@ pub fn gicv3_cpu_shutdown() {
 
 pub fn gicv3_handle_irq_el1() {
     if let Some(irq_id) = pending_irq() {
-        if (irq_id < 16) {
+        // enum ipi_msg_type {
+        //     IPI_WAKEUP,
+        //     IPI_TIMER,
+        //     IPI_RESCHEDULE,
+        //     IPI_CALL_FUNC,
+        //     IPI_CPU_STOP,
+        //     IPI_IRQ_WORK,
+        //     IPI_COMPLETION,
+        //     /*
+        //      * CPU_BACKTRACE is special and not included in NR_IPI
+        //      * or tracable with trace_ipi_*
+        //      */
+        //     IPI_CPU_BACKTRACE,
+        //     /*
+        //      * SGI8-15 can be reserved by secure firmware, and thus may
+        //      * not be usable by the kernel. Please keep the above limited
+        //      * to at most 8 entries.
+        //      */
+        // };
+        //SGI
+        if irq_id < 16 {
             trace!("sgi get {}", irq_id);
-            if irq_id != 0 {
-                info!("sgi get {}", irq_id);
+            if irq_id < 8 {
+                trace!("sgi get {},inject", irq_id);
+                deactivate_irq(irq_id);
+                inject_irq(irq_id);
+            } else if irq_id == SGI_EVENT_ID as usize {
+                info!("HV SGI EVENT {}", irq_id);
+                check_events();
+                deactivate_irq(irq_id);
+                // test_cpu_el1();
+            } else if irq_id == SGI_RESUME_ID as usize {
+                info!("hv sgi got {}, resume", irq_id);
+                // let cpu_data = unsafe { this_cpu_data() as &mut PerCpu };
+                // cpu_data.suspend_cpu = false;
+            } else {
+                warn!("skip sgi {}", irq_id);
             }
+        } else {
+            //inject phy irq
+            // if irq_id > 31 {
+            //     info!("*** get spi_irq id = {}", irq_id);
+            // }
+            deactivate_irq(irq_id);
+            inject_irq(irq_id);
         }
-
-        if irq_id == SGI_HV_ID as usize {
-            info!("hv sgi got {}", irq_id);
-            unsafe {
-                core::arch::asm!(
-                    "
-                wfi
-            ",
-                );
-            }
-        }
-
-        deactivate_irq(irq_id);
-        inject_irq(irq_id);
     }
 }
 fn pending_irq() -> Option<usize> {
@@ -291,16 +305,16 @@ fn inject_irq(irq_id: usize) {
         // overlap
         let lr_val = read_lr(i) as usize;
         if (i & LR_VIRTIRQ_MASK) == irq_id {
-            warn!("irq mask!{} {}", i, irq_id);
+            trace!("irq mask!{} {}", i, irq_id);
             return;
         }
     }
-    //debug!("To Inject IRQ {}, find lr {}", irq_id, lr_idx);
+    debug!("To Inject IRQ {}, find lr {}", irq_id, lr_idx);
 
     if lr_idx == -1 {
         error!("full lr");
         loop {}
-        return;
+        // return;
     } else {
         // lr = irq_id;
         // /* Only group 1 interrupts */
@@ -316,7 +330,7 @@ fn inject_irq(irq_id: usize) {
         val |= 1 << 60; //group 1
         val |= 1 << 62; //state pending
         val |= 1 << 61; //map hardware
-        val |= ((irq_id as u64) << 32); //p intid
+        val |= (irq_id as u64) << 32; //p intid
                                         //debug!("To write lr {} val {}", lr_idx, val);
         write_lr(lr_idx as usize, val);
     }

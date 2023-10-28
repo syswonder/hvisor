@@ -22,6 +22,11 @@ pub struct HvConsole {
     clock_reg: u64,
 }
 
+impl HvConsole {
+	pub fn new() -> Self {
+		Self { address: 0, size: 0, console_type: 0, flags: 0, divider: 0, gate_nr: 0, clock_reg: 0 }
+	}
+}
 /// The jailhouse cell configuration.
 ///
 /// @note Keep Config._HEADER_FORMAT in jailhouse-cell-linux in sync with this
@@ -49,11 +54,11 @@ pub struct HvCellDesc {
     cpu_reset_address: u64,
     msg_reply_timeout: u64,
 
-    console: HvConsole,
+    pub console: HvConsole,
 }
 
 #[derive(Clone, Copy, Debug)]
-#[repr(C, packed)]
+#[repr(C)]
 pub struct HvMemoryRegion {
     pub phys_start: u64,
     pub virt_start: u64,
@@ -138,14 +143,14 @@ struct HvIommu {
 #[cfg(target_arch = "aarch64")]
 #[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
-struct ArmPlatformInfo {
+pub struct ArmPlatformInfo {
     maintenance_irq: u8,
-    gic_version: u8,
-    gicd_base: u64,
-    gicc_base: u64,
+    pub gic_version: u8,
+    pub gicd_base: u64,
+    pub gicc_base: u64,
     gich_base: u64,
     gicv_base: u64,
-    gicr_base: u64,
+    pub gicr_base: u64,
     _pooling: [u32; 34],
 }
 
@@ -156,7 +161,7 @@ pub struct PlatformInfo {
     pub pci_mmconfig_end_bus: u8,
     pci_is_virtual: u8,
     pci_domain: u16,
-    arch: ArmPlatformInfo,
+    pub arch: ArmPlatformInfo,
 }
 
 /// General descriptor of the system.
@@ -173,13 +178,14 @@ pub struct HvSystemConfig {
     pub platform_info: PlatformInfo,
     pub root_cell: HvCellDesc,
     // CellConfigLayout placed here.
+    // pub config_layout: CellConfigLayout,
 }
 
 /// A dummy layout with all variant-size fields empty.
 #[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
 struct CellConfigLayout {
-    cpus: [u64; 0],
+    cpus: [u64; 1],
     mem_regions: [HvMemoryRegion; 0],
     cache_regions: [HvCacheRegion; 0],
     irqchips: [HvIrqChip; 0],
@@ -193,8 +199,8 @@ pub struct CellConfig<'a> {
 }
 
 impl HvCellDesc {
-    pub const fn config(&self) -> CellConfig {
-        CellConfig::from(self)
+    pub fn config(&self) -> CellConfig {
+        CellConfig::new(self)
     }
 
     pub const fn config_size(&self) -> usize {
@@ -229,28 +235,54 @@ impl HvSystemConfig {
 }
 
 impl<'a> CellConfig<'a> {
-    const fn from(desc: &'a HvCellDesc) -> Self {
+    pub fn new(desc: &'a HvCellDesc) -> Self {
         Self { desc }
+    }
+
+    pub fn desc_ptr(&self) -> *const HvCellDesc {
+        self.desc as *const _
     }
 
     fn config_ptr<T>(&self) -> *const T {
         unsafe { (self.desc as *const HvCellDesc).add(1) as _ }
     }
 
-    pub const fn size(&self) -> usize {
+    pub const fn config_size(&self) -> usize {
         self.desc.config_size()
     }
 
-    pub fn cpu_set(&self) -> &[u64] {
+    pub const fn total_size(&self) -> usize {
+        self.desc.config_size() + size_of::<HvCellDesc>()
+    }
+
+    pub const fn id(&self) -> u32 {
+        self.desc.id
+    }
+
+	pub const fn flags(&self) -> u32 {
+		self.desc.flags
+	}
+
+	pub fn console(&self) -> HvConsole {
+		self.desc.console
+	}
+    pub fn cpu_set(&self) -> &[u8] {
         // XXX: data may unaligned, which cause panic on debug mode. Same below.
         // See: https://doc.rust-lang.org/src/core/slice/mod.rs.html#6435-6443
-        unsafe { slice::from_raw_parts(self.config_ptr(), self.desc.cpu_set_size as usize / 8) }
+        unsafe { slice::from_raw_parts(self.config_ptr(), self.desc.cpu_set_size as usize) }
     }
 
     pub fn mem_regions(&self) -> &[HvMemoryRegion] {
         unsafe {
             let ptr = self.cpu_set().as_ptr_range().end as _;
             slice::from_raw_parts(ptr, self.desc.num_memory_regions as usize)
+        }
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        unsafe {
+            let ptr = self.desc_ptr();
+            slice::from_raw_parts(ptr as *const u8, self.total_size())
         }
     }
 }
@@ -264,7 +296,7 @@ impl Debug for CellConfig<'_> {
         }
         f.debug_struct("CellConfig")
             .field("name", &core::str::from_utf8(&name[..len]))
-            .field("size", &self.size())
+            .field("size", &self.config_size())
             .field("mem_regions", &self.mem_regions())
             .finish()
     }
