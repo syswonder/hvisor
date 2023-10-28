@@ -93,7 +93,8 @@ fn primary_init_early() -> HvResult {
     info!("System config: {:#x?}", system_config);
 
     memory::init_frame_allocator();
-    memory::init_hv_page_table()?;
+    // TODO： there is one bug when enable stage 1 table in el2
+    // memory::init_hv_page_table()?;
     cell::init()?;
 
     INIT_EARLY_OK.store(1, Ordering::Release);
@@ -131,7 +132,11 @@ fn main(cpu_data: &'static mut PerCpu) -> HvResult {
     }
 
     cpu_data.cell = Some(root_cell().clone());
-    unsafe { root_cell().read().gpm.activate() };
+    unsafe { 
+        // TODO： there is one bug when enable stage 1 table in el2
+        // memory::hv_page_table().read().activate();
+        root_cell().read().gpm.activate() 
+    };
 
     println!("CPU {} init OK.", cpu_data.id);
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
