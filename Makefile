@@ -42,7 +42,7 @@ elf:
 	cargo build $(build_args)
 .PHONY: scp
 scp: $(target_bin)
-	scp -P $(PORT) -r $(target_bin) qemu-test/guest/* root@localhost:~/
+	scp -P $(PORT) -r $(target_bin) qemu-test/guest/* scp root@localhost:~/
 .PHONY: disa
 disa:
 	rust-objdump --disassemble $(target_elf) > rvm.S

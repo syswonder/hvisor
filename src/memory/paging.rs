@@ -426,7 +426,6 @@ where
         let _lock = self.clonee_lock.lock();
         let mut vaddr = region.start.into();
         let mut size = region.size;
-        let mut x = 0;
         while size > 0 {
             let paddr = region.mapper.map_fn(vaddr);
             let page_size = if PageSize::Size1G.is_aligned(vaddr)

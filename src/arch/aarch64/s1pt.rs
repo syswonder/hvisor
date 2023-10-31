@@ -1,5 +1,4 @@
 use core::fmt;
-use bitflags::bitflags;
 use numeric_enum_macro::numeric_enum;
 use aarch64_cpu::registers::TTBR0_EL2;
 use tock_registers::interfaces::Writeable;
