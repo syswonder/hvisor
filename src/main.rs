@@ -37,12 +37,10 @@ use device::gicv3::gicv3_cpu_init;
 use error::HvResult;
 use header::HvHeader;
 use percpu::PerCpu;
-
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
 static INIT_EARLY_OK: AtomicU32 = AtomicU32::new(0);
 static INIT_LATE_OK: AtomicU32 = AtomicU32::new(0);
 static ERROR_NUM: AtomicI32 = AtomicI32::new(0);
-
 fn has_err() -> bool {
     ERROR_NUM.load(Ordering::Acquire) != 0
 }
@@ -107,6 +105,14 @@ fn primary_init_late() {
     INIT_LATE_OK.store(1, Ordering::Release);
 }
 
+fn per_cpu_init() {
+    let cpu_data = this_cpu_data();
+    cpu_data.cell = Some(root_cell());
+    gicv3_cpu_init();
+    unsafe { root_cell().read().gpm.activate() };
+    println!("CPU {} init OK.", cpu_data.id);
+}
+
 fn main(cpu_data: &'static mut PerCpu) -> HvResult {
     println!("Hello");
     println!(
@@ -131,14 +137,8 @@ fn main(cpu_data: &'static mut PerCpu) -> HvResult {
         wait_for_counter(&INIT_EARLY_OK, 1)?
     }
 
-    cpu_data.cell = Some(root_cell().clone());
-    unsafe { 
-        // TODO： there is one bug when enable stage 1 table in el2
-        // memory::hv_page_table().read().activate();
-        root_cell().read().gpm.activate() 
-    };
+    per_cpu_init();
 
-    println!("CPU {} init OK.", cpu_data.id);
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
     wait_for_counter(&INITED_CPUS, online_cpus)?;
 
@@ -147,7 +147,6 @@ fn main(cpu_data: &'static mut PerCpu) -> HvResult {
     } else {
         wait_for_counter(&INIT_LATE_OK, 1)?
     }
-    gicv3_cpu_init();
     cpu_data.activate_vmm()
 }
 extern "C" fn entry(cpu_data: &'static mut PerCpu) -> () {

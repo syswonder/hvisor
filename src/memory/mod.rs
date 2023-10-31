@@ -50,6 +50,7 @@ mod heap;
 mod mapper;
 mod mm;
 mod paging;
+mod mmio;
 
 pub mod addr;
 
@@ -70,6 +71,7 @@ pub use frame::Frame;
 pub use mm::{MemoryRegion, MemorySet, PARKING_MEMORY_SET, PARKING_INST_PAGE};
 pub use paging::{GenericPTE, PagingInstr};
 pub use paging::{GenericPageTable, GenericPageTableImmut, Level4PageTable, Level4PageTableImmut, npages};
+pub use mmio::*;
 
 pub const PAGE_SIZE: usize = paging::PageSize::Size4K as usize;
 

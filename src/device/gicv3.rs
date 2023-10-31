@@ -79,7 +79,10 @@
 mod gicd;
 mod gicr;
 use crate::arch::sysreg::{read_sysreg, smc_arg1, write_sysreg};
+use crate::config::HvSystemConfig;
+use crate::error::HvResult;
 use crate::hypercall::{SGI_EVENT_ID, SGI_RESUME_ID};
+use crate::memory::MMIOAccess;
 use crate::percpu::check_events;
 /// Representation of the GIC.
 pub struct GICv3 {
@@ -108,6 +111,10 @@ pub fn gicv3_cpu_init() {
     let sdei_ver = unsafe { smc_arg1!(0xc4000020) }; //sdei_check();
     info!("sdei vecsion: {}", sdei_ver);
     info!("gicv3 init!");
+
+    let gicd_base: u64 = HvSystemConfig::get().platform_info.arch.gicd_base;
+    let gicr_base: u64 = HvSystemConfig::get().platform_info.arch.gicr_base;
+    
     //Identifier bits. Read-only and writes are ignored.
     //Priority bits. Read-only and writes are ignored.
     unsafe {
@@ -124,7 +131,7 @@ pub fn gicv3_cpu_init() {
         let vtr = read_sysreg!(ich_vtr_el2);
         let mut vmcr = ((pmr & 0xff) << 24) | (1 << 1) | (1 << 9); //VPMR|VENG1|VEOIM
         write_sysreg!(ich_vmcr_el2, vmcr);
-        write_sysreg!(ich_hcr_el2, 0x1); //enable virt cpu insterface
+        write_sysreg!(ich_hcr_el2, 0x1); //enable virt cpu interface
     }
 }
 fn gicv3_clear_pending_irqs() {
@@ -194,7 +201,6 @@ pub fn gicv3_handle_irq_el1() {
                 info!("HV SGI EVENT {}", irq_id);
                 check_events();
                 deactivate_irq(irq_id);
-                // test_cpu_el1();
             } else if irq_id == SGI_RESUME_ID as usize {
                 info!("hv sgi got {}, resume", irq_id);
                 // let cpu_data = unsafe { this_cpu_data() as &mut PerCpu };
@@ -331,7 +337,13 @@ fn inject_irq(irq_id: usize) {
         val |= 1 << 62; //state pending
         val |= 1 << 61; //map hardware
         val |= (irq_id as u64) << 32; //p intid
-                                        //debug!("To write lr {} val {}", lr_idx, val);
+                                      //debug!("To write lr {} val {}", lr_idx, val);
         write_lr(lr_idx as usize, val);
     }
 }
+
+pub fn gicv3_mmio_handler(x: &MMIOAccess) -> HvResult {
+    hv_result_err!(EINVAL)
+}
+
+pub const GICD_SIZE: u64 = 0x10000;
