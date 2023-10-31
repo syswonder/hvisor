@@ -165,6 +165,11 @@ pub fn set_vtcr_flags() {
     VTCR_EL2.write(vtcr_flags);
 }
 
+pub fn this_cell() -> Arc<RwLock<Cell>> {
+    this_cpu_data().cell.clone().unwrap()
+}
+
+
 pub unsafe extern "C" fn arm_paging_vcpu_flush_tlbs() {
     core::arch::asm!(
         "
