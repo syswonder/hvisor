@@ -1,4 +1,4 @@
-use crate::{arch::sysreg::write_sysreg, percpu::get_cpu_data, hypercall::SGI_EVENT_ID};
+use crate::{arch::sysreg::write_sysreg, hypercall::SGI_EVENT_ID, percpu::get_cpu_data};
 
 pub fn send_event(cpu_id: u64, sgi_num: u64) {
     // TODO: add more info

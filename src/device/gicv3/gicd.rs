@@ -6,6 +6,7 @@
 //!
 //! # Glossary
 //!   - SPI - Shared Peripheral Interrupt.
+#![allow(dead_code)]
 use crate::device::common::MMIODerefWrapper;
 use tock_registers::{
     register_structs,

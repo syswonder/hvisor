@@ -33,11 +33,14 @@ impl MMIORegion {
     }
 }
 
+#[allow(unused)]
 pub fn mmio_handle_access(mmio: &MMIOAccess) -> HvResult {
     let cell = this_cell();
     let cell_r = cell.read();
     match cell_r.find_mmio_region(mmio.address, mmio.size) {
-        Some(x) => { println!("x={:x?}", x.0); },
+        Some(x) => {
+            println!("x={:x?}", x.0);
+        }
         None => todo!(),
     }
     loop {}

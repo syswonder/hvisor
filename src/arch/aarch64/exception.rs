@@ -2,8 +2,8 @@ use super::entry::vmreturn;
 use crate::arch::sysreg::{read_sysreg, write_sysreg};
 use crate::device::gicv3::gicv3_handle_irq_el1;
 use crate::hypercall::HyperCall;
-use crate::percpu::{PerCpu, park_current_cpu};
 use crate::percpu::{get_cpu_data, this_cpu_data, GeneralRegisters};
+use crate::percpu::{park_current_cpu, PerCpu};
 use aarch64_cpu::registers::*;
 use tock_registers::interfaces::*;
 #[allow(dead_code)]
@@ -16,15 +16,17 @@ pub mod ExceptionType {
     pub const EXIT_REASON_EL1_IRQ: u64 = 0x3;
 }
 const SMC_TYPE_MASK: u64 = 0x3F000000;
+#[allow(non_snake_case)]
 pub mod SmcType {
     pub const STANDARD_SC: u64 = 0x4000000;
 }
+#[allow(non_snake_case)]
 pub mod PsciFnId {
     pub const PSCI_CPU_OFF_32: u64 = 0x84000002;
     pub const PSCI_AFFINITY_INFO_32: u64 = 0x84000004;
     pub const PSCI_AFFINITY_INFO_64: u64 = 0xc4000004;
 }
-
+#[allow(dead_code)]
 pub enum TrapReturn {
     TrapHandled = 1,
     TrapUnhandled = 0,
@@ -148,7 +150,9 @@ fn handle_hvc(frame: &mut TrapFrame) {
         "HVC from CPU{},code:{:#x?},arg0:{:#x?},arg1:{:#x?}",
         cpu_data.id, code, arg0, arg1
     );
-    let result = HyperCall::new(cpu_data).hypercall(code as _, arg0, arg1).unwrap();
+    let result = HyperCall::new(cpu_data)
+        .hypercall(code as _, arg0, arg1)
+        .unwrap();
     frame.regs.usr[0] = result as _;
 }
 fn handle_smc(frame: &mut TrapFrame) {
@@ -172,13 +176,8 @@ fn handle_smc(frame: &mut TrapFrame) {
 
     arch_skip_instruction(frame); //skip the smc ins
 }
-fn handle_psci(
-    frame: &mut TrapFrame,
-    code: u64,
-    arg0: u64,
-    _arg1: u64,
-    _arg2: u64,
-) {
+#[allow(unused_unsafe)]
+fn handle_psci(frame: &mut TrapFrame, code: u64, arg0: u64, _arg1: u64, _arg2: u64) {
     match code {
         PsciFnId::PSCI_CPU_OFF_32 => unsafe {
             park_current_cpu();

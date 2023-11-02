@@ -9,9 +9,11 @@ use crate::device::gicv3::{gicv3_mmio_handler, GICD_SIZE};
 use crate::error::HvResult;
 use crate::memory::addr::{GuestPhysAddr, HostPhysAddr};
 use crate::memory::{
-    npages, Frame, MemFlags, MemoryRegion, MemorySet, MMIOConfig, MMIORegion, MMIOHandler,
+    npages, Frame, MMIOConfig, MMIOHandler, MMIORegion, MemFlags, MemoryRegion, MemorySet,
 };
 use crate::percpu::{this_cpu_data, CpuSet};
+use crate::INIT_LATE_OK;
+use core::sync::atomic::Ordering;
 
 #[repr(C)]
 pub struct CommPage {
@@ -20,12 +22,14 @@ pub struct CommPage {
 }
 
 impl CommPage {
+    #[allow(unused)]
     fn new() -> Self {
         Self {
             comm_region: CommRegion::new(),
         }
     }
     // set CommPage to 0s
+    #[allow(unused)]
     pub fn fill_zero(&mut self) {
         unsafe { core::ptr::write_bytes(self as *mut _, 0, 1) }
     }
@@ -85,6 +89,7 @@ impl Cell {
         let hv_phys_start = sys_config.hypervisor_memory.phys_start as usize;
         let hv_phys_size = sys_config.hypervisor_memory.size as usize;
 
+        // Back the region of hypervisor core in linux so that shutdown will not trigger violations.
         cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
             hv_phys_start as GuestPhysAddr,
             hv_phys_start as HostPhysAddr,
@@ -93,44 +98,34 @@ impl Cell {
         ))?;
 
         // Map all physical memory regions.
-        /* MMIO (permissive) */
-        {
-            cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
-                0x09000000 as GuestPhysAddr,
-                0x09000000 as HostPhysAddr,
-                0x37000000 as usize,
-                MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-            ))?;
-            /* RAM */
-            cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
-                0x40000000 as GuestPhysAddr,
-                0x40000000 as HostPhysAddr,
-                0x3fb00000 as usize,
-                MemFlags::READ | MemFlags::WRITE,
-            ))?;
-            /* "physical" PCI ECAM */
-            cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
-                0x7fb00000 as GuestPhysAddr,
-                0x7fb00000 as HostPhysAddr,
-                0x100000 as usize,
-                MemFlags::READ | MemFlags::WRITE,
-            ))?;
-            //add gicd gicr memory map
-            cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
-                0x8000000 as GuestPhysAddr,
-                0x8000000 as HostPhysAddr,
-                0x0200000 as usize,
-                MemFlags::READ | MemFlags::WRITE,
-            ))?;
-            cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
-                mmcfg_start as GuestPhysAddr,
-                mmcfg_start as HostPhysAddr,
-                mmcfg_size as usize,
-                MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-            ))?;
+        let mem_regs = cell.config().mem_regions().to_vec();
+        mem_regs.iter().for_each(|mem| {
+            cell.gpm
+                .insert(MemoryRegion::new_with_offset_mapper(
+                    mem.virt_start as GuestPhysAddr,
+                    mem.phys_start as HostPhysAddr,
+                    mem.size as _,
+                    mem.flags,
+                ))
+                .unwrap()
+        });
 
-            trace!("Guest phyiscal memory set: {:#x?}", cell.gpm);
-        }
+        // TODO: Without this mapping, enable hypervisor will get an error, maybe now we don't have mmio handlers.
+        cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            mmcfg_start as GuestPhysAddr,
+            mmcfg_start as HostPhysAddr,
+            mmcfg_size as usize,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ))?;
+
+        // TODO: Without this mapping, create a new cell will get warnings because we don't have mmio handlers now.
+        cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x800_0000 as GuestPhysAddr,
+            0x800_0000 as HostPhysAddr,
+            0x020_0000 as usize,
+            MemFlags::READ | MemFlags::WRITE,
+        ))?;
+        trace!("Guest phyiscal memory set: {:#x?}", cell.gpm);
         Ok(cell)
     }
 
@@ -155,7 +150,7 @@ impl Cell {
         let mut config_frame = Frame::new()?;
         config_frame.copy_data_from(config.as_slice());
 
-        let mut comm_page = Frame::new()?;
+        let comm_page = Frame::new()?;
 
         let mut cell = Self {
             config_frame,
@@ -201,13 +196,13 @@ impl Cell {
     }
 
     pub fn config(&self) -> CellConfig {
-        unsafe {
-            CellConfig::new(
-                &(self.config_frame.start_paddr() as *const HvCellDesc)
-                    .as_ref()
-                    .unwrap(),
-            )
-        }
+        // Enable stage 1 translation in el2 changes config_addr from physical address to virtual address
+        // with an offset `PHYS_VIRT_OFFSET`, so we need to check whether stage 1 translation is enabled.
+        let config_addr = match INIT_LATE_OK.load(Ordering::Relaxed) {
+            1 => self.config_frame.as_ptr() as usize,
+            _ => self.config_frame.start_paddr(),
+        };
+        unsafe { CellConfig::new(&(config_addr as *const HvCellDesc).as_ref().unwrap()) }
     }
 
     pub fn mmio_region_register(&mut self, start: GuestPhysAddr, size: u64, handler: MMIOHandler) {
