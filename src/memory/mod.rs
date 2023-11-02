@@ -49,8 +49,8 @@ mod frame;
 mod heap;
 mod mapper;
 mod mm;
-mod paging;
 mod mmio;
+mod paging;
 
 pub mod addr;
 
@@ -62,19 +62,25 @@ use spin::{Once, RwLock};
 use crate::arch::Stage1PageTable;
 use crate::config::HvSystemConfig;
 use crate::consts::{HV_BASE, TRAMPOLINE_START};
+use crate::device::gicv3::{GICD_SIZE, GICR_SIZE};
 use crate::device::pl011::UART_BASE_VIRT;
 use crate::error::HvResult;
 use crate::header::HvHeader;
 
-pub use addr::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr, PhysAddr, VirtAddr, PHYS_VIRT_OFFSET};
+pub use addr::{
+    GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr, PhysAddr, VirtAddr, PHYS_VIRT_OFFSET,
+};
 pub use frame::Frame;
-pub use mm::{MemoryRegion, MemorySet, PARKING_MEMORY_SET, PARKING_INST_PAGE};
-pub use paging::{GenericPTE, PagingInstr};
-pub use paging::{GenericPageTable, GenericPageTableImmut, Level4PageTable, Level4PageTableImmut, npages};
+pub use mm::{MemoryRegion, MemorySet, PARKING_INST_PAGE, PARKING_MEMORY_SET};
 pub use mmio::*;
+pub use paging::{
+    npages, GenericPageTable, GenericPageTableImmut, Level4PageTable, Level4PageTableImmut,
+};
+pub use paging::{GenericPTE, PagingInstr};
 
 pub const PAGE_SIZE: usize = paging::PageSize::Size4K as usize;
-
+pub const TEMPORARY_MAPPING_BASE: usize = 0x80_0000_0000;
+pub const NUM_TEMPORARY_PAGES: usize = 16;
 //pub use mm::{MemoryRegion, MemorySet};
 
 bitflags! {
@@ -114,12 +120,15 @@ pub fn init_frame_allocator() {
 }
 
 pub fn init_hv_page_table() -> HvResult {
-    let header = HvHeader::get();
     let sys_config = HvSystemConfig::get();
-    let cell_config = sys_config.root_cell.config();
     let hv_phys_start = sys_config.hypervisor_memory.phys_start as usize;
     let hv_phys_size = sys_config.hypervisor_memory.size as usize;
     let trampoline_page = TRAMPOLINE_START as usize - 0xffff_4060_0000;
+    let gicd_base = sys_config.platform_info.arch.gicd_base;
+    let gicr_base = sys_config.platform_info.arch.gicr_base;
+    let gicr_size: u64 = HvHeader::get().online_cpus as u64 * GICR_SIZE;
+    let mmcfg_start = sys_config.platform_info.pci_mmconfig_base;
+    let mmcfg_size = (sys_config.platform_info.pci_mmconfig_end_bus + 1) as u64 * 256 * 4096;
 
     let mut hv_pt: MemorySet<Stage1PageTable> = MemorySet::new();
 
@@ -127,7 +136,7 @@ pub fn init_hv_page_table() -> HvResult {
         HV_BASE as GuestPhysAddr,
         hv_phys_start as HostPhysAddr,
         hv_phys_size as usize,
-        MemFlags::READ| MemFlags::WRITE | MemFlags::NO_HUGEPAGES,
+        MemFlags::READ | MemFlags::WRITE | MemFlags::NO_HUGEPAGES,
     ))?;
 
     hv_pt.insert(MemoryRegion::new_with_offset_mapper(
@@ -138,40 +147,33 @@ pub fn init_hv_page_table() -> HvResult {
     ))?;
 
     hv_pt.insert(MemoryRegion::new_with_offset_mapper(
-        0x09000000 as GuestPhysAddr,
-        0x09000000 as HostPhysAddr,
-        0x37000000 as usize,
-        MemFlags::READ | MemFlags::WRITE,
-    ))?;
-    hv_pt.insert(MemoryRegion::new_with_offset_mapper(
-        0x40000000 as GuestPhysAddr,
-        0x40000000 as HostPhysAddr,
-        0x3fb00000 as usize,
-        MemFlags::READ | MemFlags::WRITE,
-    ))?;
-    hv_pt.insert(MemoryRegion::new_with_offset_mapper(
-        0x7fb00000 as GuestPhysAddr,
-        0x7fb00000 as HostPhysAddr,
-        0x100000 as usize,
-        MemFlags::READ | MemFlags::WRITE,
-    ))?;
-    //TODO: panic in debug mod
-    // for region in cell_config.mem_regions() {
-    //     hv_pt.insert(MemoryRegion::new_with_offset_mapper(
-    //         region.virt_start as GuestPhysAddr,
-    //         region.phys_start as HostPhysAddr,
-    //         region.size as usize,
-    //         region.flags,
-    //     ))?;
-    // }
-
-    hv_pt.insert(MemoryRegion::new_with_offset_mapper(
         UART_BASE_VIRT,
         sys_config.debug_console.address as PhysAddr,
         sys_config.debug_console.size as usize,
         MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
     ))?;
 
+    // add gicd memory map
+    hv_pt.insert(MemoryRegion::new_with_offset_mapper(
+        gicd_base as GuestPhysAddr,
+        gicd_base as HostPhysAddr,
+        GICD_SIZE as usize,
+        MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+    ))?;
+    //add gicr memory map
+    hv_pt.insert(MemoryRegion::new_with_offset_mapper(
+        gicr_base as GuestPhysAddr,
+        gicr_base as HostPhysAddr,
+        gicr_size as usize,
+        MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+    ))?;
+
+    hv_pt.insert(MemoryRegion::new_with_offset_mapper(
+        mmcfg_start as GuestPhysAddr,
+        mmcfg_start as HostPhysAddr,
+        mmcfg_size as usize,
+        MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+    ))?;
     info!("Hypervisor page table init end.");
     debug!("Hypervisor virtual memory set: {:#x?}", hv_pt);
 

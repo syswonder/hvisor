@@ -183,9 +183,9 @@ impl Frame {
     pub fn copy_data_from(&mut self, data: &[u8]) {
         let len = data.len();
         assert!(data.len() <= self.size());
-        unsafe { self.as_slice_mut()[..len].copy_from_slice(data); }
+        self.as_slice_mut()[..len].copy_from_slice(data);
     }
-}  
+}
 
 impl Drop for Frame {
     fn drop(&mut self) {
