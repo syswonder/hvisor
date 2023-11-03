@@ -190,7 +190,12 @@ impl<'a> HyperCall<'a> {
         if Arc::ptr_eq(&cell, &root_cell()) {
             return hv_result_err!(EINVAL, "Setting root-cell as loadable is not allowed!");
         }
+
         let mut cell_w = cell.write();
+        if cell_w.loadable {
+            return HyperCallResult::Ok(0);
+        }
+
         cell_w.suspend();
         cell_w.cpu_set.iter().for_each(|cpu_id| park_cpu(cpu_id));
         cell_w.loadable = true;
@@ -223,8 +228,8 @@ impl<'a> HyperCall<'a> {
             Some(cell) => cell,
             None => return hv_result_err!(ENOENT),
         };
-        unsafe { assert!(*(0x7faf0000 as *mut u8) != 0x00) }
-        warn!("image = {:x?}", unsafe { *(0x7faf0000 as *const [u8; 64]) });
+        // unsafe { assert!(*(0x7faf0000 as *mut u8) != 0x00) }
+        // warn!("image = {:x?}", unsafe { *(0x7faf0000 as *const [u8; 64]) });
         cell.read().suspend();
 
         // set cell.comm_page
