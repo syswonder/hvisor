@@ -16,7 +16,7 @@ OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 build_path := target/$(ARCH)/$(MODE)
 target_elf := $(build_path)/rvmarm
 target_bin := $(build_path)/rvmarm.bin
-guest_obj  := demo/gic-demo/gic-demo-linked.o
+guest_obj  := demo/linux-loader-linked.o
 features :=
 
 ifeq ($(STATS), on)

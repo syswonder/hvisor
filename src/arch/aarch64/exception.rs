@@ -1,9 +1,10 @@
 use super::entry::vmreturn;
 use crate::arch::sysreg::{read_sysreg, write_sysreg};
+use crate::control::send_event;
 use crate::device::gicv3::gicv3_handle_irq_el1;
-use crate::hypercall::HyperCall;
-use crate::percpu::{PerCpu, park_current_cpu};
+use crate::hypercall::{HyperCall, SGI_EVENT_ID};
 use crate::percpu::{get_cpu_data, this_cpu_data, GeneralRegisters};
+use crate::percpu::{park_current_cpu, PerCpu};
 use aarch64_cpu::registers::*;
 use tock_registers::interfaces::*;
 #[allow(dead_code)]
@@ -17,12 +18,31 @@ pub mod ExceptionType {
 }
 const SMC_TYPE_MASK: u64 = 0x3F000000;
 pub mod SmcType {
+    pub const ARCH_SC: u64 = 0x0;
     pub const STANDARD_SC: u64 = 0x4000000;
 }
+
+const PSCI_VERSION_1_1: u64 = 0x10001;
+const PSCI_TOS_NOT_PRESENT_MP: u64 = 2;
+const ARM_SMCCC_VERSION_1_1: u64 = 0x10001;
+
 pub mod PsciFnId {
+    pub const PSCI_VERSION: u64 = 0x84000000;
+    pub const PSCI_CPU_SUSPEND_32: u64 = 0x84000001;
     pub const PSCI_CPU_OFF_32: u64 = 0x84000002;
+    pub const PSCI_CPU_ON_32: u64 = 0x84000003;
     pub const PSCI_AFFINITY_INFO_32: u64 = 0x84000004;
+    pub const PSCI_MIG_INFO_TYPE: u64 = 0x84000006;
+    pub const PSCI_FEATURES: u64 = 0x8400000a;
+
+    pub const PSCI_CPU_SUSPEND_64: u64 = 0xc4000001;
+    pub const PSCI_CPU_ON_64: u64 = 0xc4000003;
     pub const PSCI_AFFINITY_INFO_64: u64 = 0xc4000004;
+}
+
+pub mod SMCccFnId {
+    pub const SMCCC_VERSION: u64 = 0x80000000;
+    pub const SMCCC_ARCH_FEATURES: u64 = 0x80000001;
 }
 
 pub enum TrapReturn {
@@ -108,14 +128,14 @@ fn handle_iabt(_frame: &mut TrapFrame) {
     // arch_skip_instruction(frame);
 }
 fn handle_dabt(frame: &mut TrapFrame) {
-    let iss = ESR_EL2.read(ESR_EL2::ISS);
-    let op = iss >> 6 & 0x1;
-    let hpfar = read_sysreg!(HPFAR_EL2);
-    let hdfar = read_sysreg!(FAR_EL2);
-    let mut address = hpfar << 8;
-    address |= hdfar & 0xfff;
-    warn!("skip data access {} at {:#x?}!", op, address);
-    warn!("esr_el2: iss {:#x?}", iss);
+    // let iss = ESR_EL2.read(ESR_EL2::ISS);
+    // let op = iss >> 6 & 0x1;
+    // let hpfar = read_sysreg!(HPFAR_EL2);
+    // let hdfar = read_sysreg!(FAR_EL2);
+    // let mut address = hpfar << 8;
+    // address |= hdfar & 0xfff;
+    // warn!("skip data access {} at {:#x?}!", op, address);
+    // warn!("esr_el2: iss {:#x?}", iss);
     //TODO finish dabt handle
     arch_skip_instruction(frame);
 }
@@ -148,7 +168,9 @@ fn handle_hvc(frame: &mut TrapFrame) {
         "HVC from CPU{},code:{:#x?},arg0:{:#x?},arg1:{:#x?}",
         cpu_data.id, code, arg0, arg1
     );
-    let result = HyperCall::new(cpu_data).hypercall(code as _, arg0, arg1).unwrap();
+    let result = HyperCall::new(cpu_data)
+        .hypercall(code as _, arg0, arg1)
+        .unwrap();
     frame.regs.usr[0] = result as _;
 }
 fn handle_smc(frame: &mut TrapFrame) {
@@ -160,50 +182,92 @@ fn handle_smc(frame: &mut TrapFrame) {
     );
     let cpu_data = this_cpu_data() as &mut PerCpu;
     info!(
-        "SMC from CPU{},func_id:{:#x?},arg0:{},arg1:{},arg2:{}",
+        "SMC from CPU{}, func_id:{:#x?}, arg0:{:#x?}, arg1:{:#x?}, arg2:{:#x?}",
         cpu_data.id, code, arg0, arg1, arg2
     );
-    match code & SMC_TYPE_MASK {
-        SmcType::STANDARD_SC => handle_psci(frame, code, arg0, arg1, arg2),
+    let result = match code & SMC_TYPE_MASK {
+        SmcType::ARCH_SC => handle_arch_smc(frame, code, arg0, arg1, arg2),
+        SmcType::STANDARD_SC => handle_psci_smc(frame, code, arg0, arg1, arg2),
         _ => {
-            error!("unsupported smc")
+            error!("unsupported smc");
+            0
         }
-    }
+    };
+
+    frame.regs.usr[0] = result;
 
     arch_skip_instruction(frame); //skip the smc ins
 }
-fn handle_psci(
-    frame: &mut TrapFrame,
-    code: u64,
-    arg0: u64,
-    _arg1: u64,
-    _arg2: u64,
-) {
+
+fn psci_emulate_features_info(code: u64) -> u64 {
     match code {
-        PsciFnId::PSCI_CPU_OFF_32 => unsafe {
+        PsciFnId::PSCI_VERSION
+        | PsciFnId::PSCI_CPU_SUSPEND_32
+        | PsciFnId::PSCI_CPU_SUSPEND_64
+        | PsciFnId::PSCI_CPU_OFF_32
+        | PsciFnId::PSCI_CPU_ON_32
+        | PsciFnId::PSCI_CPU_ON_64
+        | PsciFnId::PSCI_AFFINITY_INFO_32
+        | PsciFnId::PSCI_AFFINITY_INFO_64
+        | PsciFnId::PSCI_FEATURES
+        | SMCccFnId::SMCCC_VERSION => 0,
+        _ => !0,
+    }
+}
+
+fn psci_emulate_cpu_on(frame: &mut TrapFrame) -> u64 {
+    // Todo: Check if `cpu` is in the cpuset of current cell
+    let cpu = frame.regs.usr[1] & 0xff00ffffff;
+    warn!("psci: try to wake up cpu {}", cpu);
+
+    let target_data = get_cpu_data(cpu);
+    let _lock = target_data.ctrl_lock.lock();
+
+    if target_data.wait_for_poweron {
+        target_data.cpu_on_entry = frame.regs.usr[2];
+        // todo: set cpu_on_context
+        target_data.reset = true;
+    } else {
+        error!("psci: cpu {} already on", cpu);
+        return u64::MAX - 3;
+    };
+
+    drop(_lock);
+    send_event(cpu, SGI_EVENT_ID);
+    0
+}
+
+fn handle_psci_smc(frame: &mut TrapFrame, code: u64, arg0: u64, _arg1: u64, _arg2: u64) -> u64 {
+    match code {
+        PsciFnId::PSCI_VERSION => PSCI_VERSION_1_1,
+        PsciFnId::PSCI_CPU_OFF_32 => {
             park_current_cpu();
-            // cpu_data.wait_for_poweron = true;
-            // core::arch::asm!(
-            //     "
-            //     wfi
-            // ",
-            // );
-            // info!("wake up at el2!");
-            // //loop {}
-        },
-        PsciFnId::PSCI_AFFINITY_INFO_32 => {
-            let cpu_data = get_cpu_data(arg0);
-            frame.regs.usr[0] = cpu_data.wait_for_poweron.into();
+            return 0;
         }
-        PsciFnId::PSCI_AFFINITY_INFO_64 => {
-            let cpu_data = get_cpu_data(arg0);
-            frame.regs.usr[0] = cpu_data.wait_for_poweron.into();
+        PsciFnId::PSCI_AFFINITY_INFO_32 | PsciFnId::PSCI_AFFINITY_INFO_64 => {
+            get_cpu_data(arg0).wait_for_poweron as _
         }
+        PsciFnId::PSCI_MIG_INFO_TYPE => PSCI_TOS_NOT_PRESENT_MP,
+        PsciFnId::PSCI_FEATURES => psci_emulate_features_info(frame.regs.usr[1]),
+        PsciFnId::PSCI_CPU_ON_64 => psci_emulate_cpu_on(frame),
         _ => {
-            error!("unsupported smc standard service")
+            error!("unsupported smc standard service");
+            return 0;
         }
     }
 }
+
+fn handle_arch_smc(frame: &mut TrapFrame, code: u64, arg0: u64, _arg1: u64, _arg2: u64) -> u64 {
+    match code {
+        SMCccFnId::SMCCC_VERSION => PSCI_VERSION_1_1,
+        SMCccFnId::SMCCC_ARCH_FEATURES => !0,
+        _ => {
+            error!("unsupported ARM smc service");
+            return !0;
+        }
+    }
+}
+
 fn arch_skip_instruction(_frame: &TrapFrame) {
     //ELR_EL2: ret address
     let mut pc = ELR_EL2.get();
