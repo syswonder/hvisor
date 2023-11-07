@@ -266,6 +266,11 @@ impl<'a> CellConfig<'a> {
 	pub fn console(&self) -> HvConsole {
 		self.desc.console
 	}
+
+	pub fn cpu_reset_address(&self) -> u64 {
+		self.desc.cpu_reset_address
+	}
+
     pub fn cpu_set(&self) -> &[u8] {
         // XXX: data may unaligned, which cause panic on debug mode. Same below.
         // See: https://doc.rust-lang.org/src/core/slice/mod.rs.html#6435-6443

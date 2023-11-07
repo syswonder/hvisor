@@ -1,5 +1,6 @@
 use crate::cell::{add_cell, find_cell_by_id, root_cell, Cell, CommRegion};
 use crate::config::{CellConfig, HvCellDesc, HvMemoryRegion, HvSystemConfig};
+use crate::consts::INVALID_ADDRESS;
 use crate::control::{park_cpu, reset_cpu, send_event};
 use crate::error::HvResult;
 use crate::memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion};
@@ -161,14 +162,19 @@ impl<'a> HyperCall<'a> {
                     .unwrap();
             });
             // add gicd & gicr mapping here
-            cell.gpm
-                .insert(MemoryRegion::new_with_offset_mapper(
-                    0x8000000 as GuestPhysAddr,
-                    0x8000000 as HostPhysAddr,
-                    0x0200000 as usize,
-                    MemFlags::READ | MemFlags::WRITE,
-                ))
-                .unwrap();
+            cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                0x8000000 as GuestPhysAddr,
+                0x8000000 as HostPhysAddr,
+                0x0200000 as usize,
+                MemFlags::READ | MemFlags::WRITE,
+            ))?;
+            // /* "physical" PCI ECAM */
+            // cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            //     0x7fb00000 as GuestPhysAddr,
+            //     0x7fb00000 as HostPhysAddr,
+            //     0x100000 as usize,
+            //     MemFlags::READ | MemFlags::WRITE,
+            // ))?;
         }
 
         add_cell(cell_p);
@@ -264,7 +270,16 @@ impl<'a> HyperCall<'a> {
         // todo: unmap from root cell
 
         // todo: set pc to `cpu_on_entry`
+        // reset_cpu(cell.read().cpu_set.first_cpu().unwrap());
+
+        let mut is_first = true;
         cell.read().cpu_set.iter().for_each(|cpu_id| {
+            get_cpu_data(cpu_id).cpu_on_entry = if is_first {
+                cell.read().config().cpu_reset_address()
+            } else {
+                INVALID_ADDRESS
+            };
+            is_first = false;
             reset_cpu(cpu_id);
         });
         HyperCallResult::Ok(0)
