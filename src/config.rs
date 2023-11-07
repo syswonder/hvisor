@@ -273,13 +273,13 @@ impl<'a> CellConfig<'a> {
         self.desc.flags
     }
 
-	pub fn console(&self) -> HvConsole {
-		self.desc.console
-	}
+    pub fn console(&self) -> HvConsole {
+        self.desc.console
+    }
 
-	pub fn cpu_reset_address(&self) -> u64 {
-		self.desc.cpu_reset_address
-	}
+    pub fn cpu_reset_address(&self) -> u64 {
+        self.desc.cpu_reset_address
+    }
 
     pub fn cpu_set(&self) -> &[u8] {
         // XXX: data may unaligned, which cause panic on debug mode. Same below.
