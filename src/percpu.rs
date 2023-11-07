@@ -7,7 +7,7 @@ use crate::arch::entry::{virt2phys_el2, vmreturn};
 use crate::arch::sysreg::write_sysreg;
 use crate::arch::Stage2PageTable;
 use crate::cell::Cell;
-use crate::consts::{PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
+use crate::consts::{PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE, INVALID_ADDRESS};
 use crate::device::gicv3::gicv3_cpu_shutdown;
 use crate::error::HvResult;
 use crate::header::HEADER_STUFF;
@@ -35,6 +35,7 @@ pub struct PerCpu {
     /// Referenced by arch::cpu::thread_pointer() for x86_64.
     pub self_vaddr: VirtAddr,
     // guest_regs: GeneralRegisters, //should be in vcpu
+    pub cpu_on_entry: u64,
     pub wait_for_poweron: bool,
     pub need_suspend: bool,
     pub suspended: bool,
@@ -53,6 +54,7 @@ impl PerCpu {
         *ret = PerCpu {
             id: cpu_id,
             self_vaddr: vaddr,
+            cpu_on_entry: INVALID_ADDRESS,
             wait_for_poweron: false,
             need_suspend: false,
             suspended: false,
@@ -203,8 +205,12 @@ pub fn check_events() {
         cpu_data.wait_for_poweron = true;
     } else if cpu_data.reset {
         cpu_data.reset = false;
-        cpu_data.wait_for_poweron = false;
-        reset = true;
+        if cpu_data.cpu_on_entry != INVALID_ADDRESS {
+            cpu_data.wait_for_poweron = false;
+            reset = true;
+        } else {
+            cpu_data.wait_for_poweron = true; // prepare to park
+        }
     }
     drop(_lock);
 
@@ -212,35 +218,35 @@ pub fn check_events() {
         warn!("check_events: park current cpu");
         park_current_cpu();
     } else if reset {
-        reset_current_cpu();
+        reset_current_cpu(cpu_data.cpu_on_entry);
     }
 }
 
-#[allow(unused)]
-pub fn test_cpu_el1() {
-    info!("hello from el2");
-    let mut gpm: MemorySet<Stage2PageTable> = MemorySet::new();
-    info!("set gpm for cell1");
-    gpm.insert(MemoryRegion::new_with_offset_mapper(
-        0x00000000 as GuestPhysAddr,
-        0x7fa00000 as HostPhysAddr,
-        0x00100000 as usize,
-        MemFlags::READ | MemFlags::WRITE | MemFlags::NO_HUGEPAGES,
-    ));
-    gpm.insert(MemoryRegion::new_with_offset_mapper(
-        0x09000000 as GuestPhysAddr,
-        0x09000000 as HostPhysAddr,
-        0x00001000 as usize,
-        MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-    ));
-    unsafe {
-        gpm.activate();
-    }
-    reset_current_cpu();
-}
+// #[allow(unused)]
+// pub fn test_cpu_el1() {
+//     info!("hello from el2");
+//     let mut gpm: MemorySet<Stage2PageTable> = MemorySet::new();
+//     info!("set gpm for cell1");
+//     gpm.insert(MemoryRegion::new_with_offset_mapper(
+//         0x00000000 as GuestPhysAddr,
+//         0x7fa00000 as HostPhysAddr,
+//         0x00100000 as usize,
+//         MemFlags::READ | MemFlags::WRITE | MemFlags::NO_HUGEPAGES,
+//     ));
+//     gpm.insert(MemoryRegion::new_with_offset_mapper(
+//         0x09000000 as GuestPhysAddr,
+//         0x09000000 as HostPhysAddr,
+//         0x00001000 as usize,
+//         MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+//     ));
+//     unsafe {
+//         gpm.activate();
+//     }
+//     reset_current_cpu();
+// }
 
 #[no_mangle]
-fn reset_current_cpu() {
+fn reset_current_cpu(entry: u64) {
     /* put the cpu in a reset state */
     /* AARCH64_TODO: handle big endian support */
     write_sysreg!(CNTKCTL_EL1, 0);
@@ -288,7 +294,7 @@ fn reset_current_cpu() {
     //HCR_EL2.modify(HCR_EL2::VM::Disable);
     unsafe {
         //isb();
-        set_el1_pc(0x00000000);
+        set_el1_pc(entry);
     }
     //disable stage2
     //HCR_EL2.modify(HCR_EL2::VM::Disable);
@@ -318,7 +324,7 @@ pub fn park_current_cpu() {
         .unwrap();
         gpm
     });
-    reset_current_cpu();
+    reset_current_cpu(0);
     unsafe {
         PARKING_MEMORY_SET.get().unwrap().activate();
     }
@@ -360,7 +366,7 @@ impl CpuSet {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn set_el1_pc(_entry: usize) {
+pub unsafe extern "C" fn set_el1_pc(_entry: u64) {
     //info!("Hello World! from el1");
     //set el1 pc
     // x0:entry

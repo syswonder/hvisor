@@ -23,6 +23,8 @@ pub const PER_CPU_ARRAY_PTR: *mut VirtAddr = __core_end as _;
 /// Pointer of trampoline start.
 pub const TRAMPOLINE_START: *mut VirtAddr = __trampoline_start as _;
 
+pub const INVALID_ADDRESS: u64 = u64::MAX;
+
 /// Pointer of the `HvSystemConfig` structure.
 pub fn hv_config_ptr() -> *const HvSystemConfig {
     (PER_CPU_ARRAY_PTR as usize + HvHeader::get().max_cpus as usize * PER_CPU_SIZE) as _
