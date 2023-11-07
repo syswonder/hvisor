@@ -1,13 +1,15 @@
+#![allow(dead_code)]
 use crate::cell::{add_cell, find_cell_by_id, root_cell, Cell, CommRegion};
 use crate::config::{CellConfig, HvCellDesc, HvMemoryRegion, HvSystemConfig};
-use crate::consts::INVALID_ADDRESS;
+use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
 use crate::control::{park_cpu, reset_cpu, send_event};
 use crate::error::HvResult;
-use crate::memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion};
+use crate::memory::{self, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion};
 use crate::percpu::{get_cpu_data, this_cpu_data, PerCpu};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::convert::TryFrom;
+use core::mem::size_of;
 use core::sync::atomic::{AtomicU32, Ordering};
 use numeric_enum_macro::numeric_enum;
 use spin::RwLock;
@@ -85,20 +87,33 @@ impl<'a> HyperCall<'a> {
         let root_cell = root_cell().clone();
         root_cell.read().suspend();
 
-        // 根据 Jailhouse 的方法，这里应该将 config_address（一个客户机的物理地址）映射到当前 CPU 的虚拟地址空间中。
-        // 然而，我发现可以直接访问这个物理地址，所以没有进行映射操作。不过目前还不确定这样做是否会引起问题。
-        let desc = unsafe { (config_address as *const HvCellDesc).as_ref().unwrap() };
-
         // todo: 检查新cell是否和已有cell同id或同名
+        let config_address = unsafe {
+            cell.write()
+                .gpm
+                .page_table_query(config_address as usize)
+                .unwrap()
+                .0
+        };
+        let cfg_pages_offs = config_address as usize & (PAGE_SIZE - 1);
+        let cfg_mapping = memory::hv_page_table().write().map_temporary(
+            config_address,
+            cfg_pages_offs + size_of::<HvCellDesc>(),
+            MemFlags::READ,
+        )?;
 
-        // let cell_w = cell.write();
-        // cell_w.gpm.insert(MemoryRegion::new_with_empty_mapper(
-        //     config_address as usize,
-        //     cfg_pages_offs + size_of::<HvCellDesc>(),
-        //     MemFlags::READ,
-        // ))?;
+        let desc = unsafe {
+            ((cfg_mapping + cfg_pages_offs) as *const HvCellDesc)
+                .as_ref()
+                .unwrap()
+        };
         let config = CellConfig::new(desc);
         let config_total_size = config.total_size();
+        memory::hv_page_table().write().map_temporary(
+            config_address,
+            cfg_pages_offs + config_total_size,
+            MemFlags::READ,
+        )?;
         info!("cell.desc = {:#x?}", desc);
 
         // we create the new cell here
@@ -109,7 +124,6 @@ impl<'a> HyperCall<'a> {
         }
 
         {
-            let cpu_set = cell.cpu_set;
             let root_cell_r = root_cell.read();
             for id in cell.cpu_set.iter() {
                 if !root_cell_r.owns_cpu(id) {
@@ -161,6 +175,7 @@ impl<'a> HyperCall<'a> {
                     .insert(MemoryRegion::from_hv_memregion(mem, Some(comm_page_pa)))
                     .unwrap();
             });
+            // TODO: We should't add gic mapping to a cell, when mmio is finished, remove this.
             // add gicd & gicr mapping here
             cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
                 0x8000000 as GuestPhysAddr,

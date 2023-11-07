@@ -4,7 +4,7 @@ use core::{fmt::Debug, marker::PhantomData, slice};
 use spin::Mutex;
 
 use super::addr::{phys_to_virt, PhysAddr};
-use super::{Frame, MemFlags, MemoryRegion};
+use super::{Frame, MemFlags, MemoryRegion, TEMPORARY_MAPPING_BASE};
 use crate::error::{HvError, HvResult};
 use crate::memory::addr::virt_to_phys;
 use crate::memory::VirtAddr;
@@ -318,7 +318,7 @@ where
         flags: MemFlags,
     ) -> PagingResult<&mut PTE> {
         let entry: &mut PTE = self.get_entry_mut_or_create(page)?;
-        if !entry.is_unused() {
+        if !entry.is_unused() && page.vaddr.into() != TEMPORARY_MAPPING_BASE {
             return Err(PagingError::AlreadyMapped);
         }
         entry.set_addr(page.size.align_down(paddr));
@@ -444,16 +444,15 @@ where
                 PageSize::Size4K
             };
             let page = Page::new_aligned(vaddr.into(), page_size);
-            let page_result =
-                self.inner
-                    .map_page(page, paddr, region.flags)
-                    .map_err(|e: PagingError| {
-                        error!(
-                            "failed to map page: {:#x?}({:?}) -> {:#x?}, {:?}",
-                            vaddr, page_size, paddr, e
-                        );
-                        e
-                    })?;
+            self.inner
+                .map_page(page, paddr, region.flags)
+                .map_err(|e: PagingError| {
+                    error!(
+                        "failed to map page: {:#x?}({:?}) -> {:#x?}, {:?}",
+                        vaddr, page_size, paddr, e
+                    );
+                    e
+                })?;
             vaddr += page_size as usize;
             size -= page_size as usize;
         }

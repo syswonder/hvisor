@@ -7,7 +7,7 @@ use crate::arch::entry::{virt2phys_el2, vmreturn};
 use crate::arch::sysreg::write_sysreg;
 use crate::arch::Stage2PageTable;
 use crate::cell::Cell;
-use crate::consts::{PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE, INVALID_ADDRESS};
+use crate::consts::{INVALID_ADDRESS, PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::device::gicv3::gicv3_cpu_shutdown;
 use crate::error::HvResult;
 use crate::header::HEADER_STUFF;
@@ -96,7 +96,7 @@ impl PerCpu {
     pub fn deactivate_vmm(&mut self, _ret_code: usize) -> HvResult {
         ACTIVATED_CPUS.fetch_sub(1, Ordering::SeqCst);
         info!("Disabling cpu {}", self.id);
-        self.arch_shutdown_self();
+        self.arch_shutdown_self()?;
         Ok(())
     }
     pub fn return_linux(&mut self) -> HvResult {
@@ -167,10 +167,10 @@ pub fn set_vtcr_flags() {
     VTCR_EL2.write(vtcr_flags);
 }
 
+#[allow(unused)]
 pub fn this_cell() -> Arc<RwLock<Cell>> {
     this_cpu_data().cell.clone().unwrap()
 }
-
 
 pub unsafe extern "C" fn arm_paging_vcpu_flush_tlbs() {
     core::arch::asm!(
@@ -341,6 +341,7 @@ impl CpuSet {
     pub fn new(max_cpu_id: u64, bitmap: u64) -> Self {
         Self { max_cpu_id, bitmap }
     }
+    #[allow(unused)]
     pub fn set_bit(&mut self, id: u64) {
         assert!(id <= self.max_cpu_id);
         self.bitmap |= 1 << id;
@@ -352,6 +353,7 @@ impl CpuSet {
     pub fn contains_cpu(&self, id: u64) -> bool {
         id <= self.max_cpu_id && (self.bitmap & (1 << id)) != 0
     }
+    #[allow(unused)]
     pub fn first_cpu(&self) -> Option<u64> {
         (0..=self.max_cpu_id).find(move |&i| self.contains_cpu(i))
     }

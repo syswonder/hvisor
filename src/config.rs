@@ -8,6 +8,7 @@ const CONFIG_SIGNATURE: [u8; 6] = *b"RVMSYS";
 const CONFIG_REVISION: u16 = 10;
 
 const HV_CELL_NAME_MAXLEN: usize = 31;
+#[allow(dead_code)]
 const HV_MAX_IOMMU_UNITS: usize = 8;
 
 #[derive(Clone, Copy, Debug)]
@@ -23,9 +24,18 @@ pub struct HvConsole {
 }
 
 impl HvConsole {
-	pub fn new() -> Self {
-		Self { address: 0, size: 0, console_type: 0, flags: 0, divider: 0, gate_nr: 0, clock_reg: 0 }
-	}
+    #[allow(unused)]
+    pub fn new() -> Self {
+        Self {
+            address: 0,
+            size: 0,
+            console_type: 0,
+            flags: 0,
+            divider: 0,
+            gate_nr: 0,
+            clock_reg: 0,
+        }
+    }
 }
 /// The jailhouse cell configuration.
 ///
@@ -259,17 +269,17 @@ impl<'a> CellConfig<'a> {
         self.desc.id
     }
 
-	pub const fn flags(&self) -> u32 {
-		self.desc.flags
-	}
+    pub const fn flags(&self) -> u32 {
+        self.desc.flags
+    }
 
-	pub fn console(&self) -> HvConsole {
-		self.desc.console
-	}
+    pub fn console(&self) -> HvConsole {
+        self.desc.console
+    }
 
-	pub fn cpu_reset_address(&self) -> u64 {
-		self.desc.cpu_reset_address
-	}
+    pub fn cpu_reset_address(&self) -> u64 {
+        self.desc.cpu_reset_address
+    }
 
     pub fn cpu_set(&self) -> &[u8] {
         // XXX: data may unaligned, which cause panic on debug mode. Same below.

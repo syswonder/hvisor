@@ -3,6 +3,7 @@
 // Copyright (c) 2020-2022 Andre Richter <andre.o.richter@gmail.com>
 
 //! GICC Driver - GIC CPU interface.
+#![allow(dead_code)]
 use crate::device::common::MMIODerefWrapper;
 use tock_registers::{
     interfaces::Readable,

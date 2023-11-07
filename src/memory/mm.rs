@@ -7,8 +7,8 @@ use core::fmt::{Debug, Formatter, Result};
 use spin::Once;
 
 use super::addr::{align_down, align_up};
-use super::AlignedPage;
 use super::{mapper::Mapper, paging::GenericPageTable, MemFlags};
+use super::{AlignedPage, VirtAddr, NUM_TEMPORARY_PAGES, PAGE_SIZE, TEMPORARY_MAPPING_BASE};
 use crate::arch::Stage2PageTable;
 use crate::error::HvResult;
 use crate::memory::paging::{PageSize, PagingResult};
@@ -144,6 +144,28 @@ where
         vaddr: PT::VA,
     ) -> PagingResult<(PhysAddr, MemFlags, PageSize)> {
         self.pt.query(vaddr)
+    }
+    /// Map a physical address to a temporary virtual address.
+    /// It should only used when access an address in el2 but hypervisor doesn't have the mapping.
+    pub fn map_temporary(
+        &mut self,
+        start_paddr: PhysAddr,
+        size: usize,
+        flags: MemFlags,
+    ) -> HvResult<VirtAddr> {
+        if size > NUM_TEMPORARY_PAGES * PAGE_SIZE {
+            warn!("Trying to map a too big space in temporary area");
+            return hv_result_err!(EINVAL);
+        }
+        let region: MemoryRegion<PT::VA> = MemoryRegion::new_with_offset_mapper(
+            TEMPORARY_MAPPING_BASE.into(),
+            start_paddr,
+            size,
+            flags,
+        );
+        self.pt.map(&region)?;
+        self.regions.insert(region.start, region);
+        Ok(TEMPORARY_MAPPING_BASE)
     }
 }
 

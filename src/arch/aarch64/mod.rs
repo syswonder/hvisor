@@ -1,8 +1,8 @@
 pub mod entry;
 pub mod exception;
-pub mod sysreg;
 pub mod s1pt;
 pub mod s2pt;
+pub mod sysreg;
 //mod vcpu;
 
 pub use s1pt::Stage1PageTable;
