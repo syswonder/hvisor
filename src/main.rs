@@ -3,7 +3,8 @@
 // 不使用main入口，使用自己定义实际入口_start，因为我们还没有初始化堆栈指针
 #![feature(asm_const)]
 #![feature(naked_functions)] //  surpport naked function
-                             // 支持内联汇编
+// 支持内联汇编
+#![deny(warnings)] // 将warnings作为error
 #[macro_use]
 extern crate alloc;
 extern crate buddy_system_allocator;

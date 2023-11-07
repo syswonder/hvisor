@@ -25,6 +25,7 @@ pub mod SmcType {
 
 const PSCI_VERSION_1_1: u64 = 0x10001;
 const PSCI_TOS_NOT_PRESENT_MP: u64 = 2;
+#[allow(dead_code)]
 const ARM_SMCCC_VERSION_1_1: u64 = 0x10001;
 
 #[allow(non_snake_case)]
@@ -41,7 +42,7 @@ pub mod PsciFnId {
     pub const PSCI_CPU_ON_64: u64 = 0xc4000003;
     pub const PSCI_AFFINITY_INFO_64: u64 = 0xc4000004;
 }
-
+#[allow(non_snake_case)]
 pub mod SMCccFnId {
     pub const SMCCC_VERSION: u64 = 0x80000000;
     pub const SMCCC_ARCH_FEATURES: u64 = 0x80000001;
@@ -132,13 +133,32 @@ fn handle_iabt(_frame: &mut TrapFrame) {
 }
 fn handle_dabt(frame: &mut TrapFrame) {
     // let iss = ESR_EL2.read(ESR_EL2::ISS);
-    // let op = iss >> 6 & 0x1;
+    // let is_write = iss >> 6 & 0x1;
+    // let srt = iss >> 16 & 0x1f;
+    // let sas = iss >> 22 & 0x3;
+
+    // let size = 1 << sas;
     // let hpfar = read_sysreg!(HPFAR_EL2);
     // let hdfar = read_sysreg!(FAR_EL2);
     // let mut address = hpfar << 8;
     // address |= hdfar & 0xfff;
-    // warn!("skip data access {} at {:#x?}!", op, address);
-    // warn!("esr_el2: iss {:#x?}", iss);
+    // warn!(
+    //     "data access (is_write={}) at {:#x?}!",
+    //     is_write == 1,
+    //     address
+    // );
+    // let mmio_access = MMIOAccess {
+    //     address: address as _,
+    //     size,
+    //     is_write: is_write != 0,
+    //     value: if srt == 31 {
+    //         0
+    //     } else {
+    //         frame.regs.usr[srt as usize]
+    //     },
+    // };
+    // let res = mmio_handle_access(&mmio_access);
+
     //TODO finish dabt handle
     arch_skip_instruction(frame);
 }
@@ -260,7 +280,7 @@ fn handle_psci_smc(frame: &mut TrapFrame, code: u64, arg0: u64, _arg1: u64, _arg
     }
 }
 
-fn handle_arch_smc(frame: &mut TrapFrame, code: u64, arg0: u64, _arg1: u64, _arg2: u64) -> u64 {
+fn handle_arch_smc(_frame: &mut TrapFrame, code: u64, _arg0: u64, _arg1: u64, _arg2: u64) -> u64 {
     match code {
         SMCccFnId::SMCCC_VERSION => PSCI_VERSION_1_1,
         SMCccFnId::SMCCC_ARCH_FEATURES => !0,
