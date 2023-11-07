@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use crate::cell::{add_cell, find_cell_by_id, root_cell, Cell, CommRegion};
 use crate::config::{CellConfig, HvCellDesc, HvMemoryRegion, HvSystemConfig};
-use crate::consts::{PAGE_SIZE, INVALID_ADDRESS};
+use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
 use crate::control::{park_cpu, reset_cpu, send_event};
 use crate::error::HvResult;
 use crate::memory::{self, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion};

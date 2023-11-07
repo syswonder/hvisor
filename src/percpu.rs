@@ -7,7 +7,7 @@ use crate::arch::entry::{virt2phys_el2, vmreturn};
 use crate::arch::sysreg::write_sysreg;
 use crate::arch::Stage2PageTable;
 use crate::cell::Cell;
-use crate::consts::{PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE, INVALID_ADDRESS};
+use crate::consts::{INVALID_ADDRESS, PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::device::gicv3::gicv3_cpu_shutdown;
 use crate::error::HvResult;
 use crate::header::HEADER_STUFF;
