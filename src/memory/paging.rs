@@ -6,7 +6,7 @@ use spin::Mutex;
 use super::addr::{phys_to_virt, PhysAddr};
 use super::{Frame, MemFlags, MemoryRegion, TEMPORARY_MAPPING_BASE};
 use crate::error::{HvError, HvResult};
-use crate::memory::addr::{virt_to_phys, is_aligned};
+use crate::memory::addr::{is_aligned, virt_to_phys};
 use crate::memory::VirtAddr;
 
 #[derive(Debug)]
@@ -418,7 +418,11 @@ where
     }
 
     fn map(&mut self, region: &MemoryRegion<VA>) -> HvResult {
-        assert!(is_aligned(region.start.into()), "region.start = {:#x?}", region.start.into());
+        assert!(
+            is_aligned(region.start.into()),
+            "region.start = {:#x?}",
+            region.start.into()
+        );
         assert!(is_aligned(region.size), "region.size = {:#x?}", region.size);
         trace!(
             "create mapping in {}: {:#x?}",

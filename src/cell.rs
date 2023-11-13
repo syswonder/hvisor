@@ -198,12 +198,7 @@ impl Cell {
             if gicr_base == 0 {
                 continue;
             }
-            self.mmio_region_register(
-                gicr_base,
-                GICR_SIZE,
-                gicv3_gicr_mmio_handler,
-                cpu as _,
-            );
+            self.mmio_region_register(gicr_base, GICR_SIZE, gicv3_gicr_mmio_handler, cpu as _);
         }
     }
 
