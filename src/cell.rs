@@ -9,9 +9,10 @@ use crate::device::gicv3::{
     gicv3_gicd_mmio_handler, gicv3_gicr_mmio_handler, GICD_IROUTER, GICD_SIZE, GICR_SIZE,
 };
 use crate::error::HvResult;
-use crate::memory::addr::{GuestPhysAddr, HostPhysAddr};
+use crate::memory::addr::{is_aligned, GuestPhysAddr, HostPhysAddr};
 use crate::memory::{
-    npages, Frame, MMIOConfig, MMIOHandler, MMIORegion, MemFlags, MemoryRegion, MemorySet,
+    mmio_subpage_handler, npages, Frame, MMIOConfig, MMIOHandler, MMIORegion, MemFlags,
+    MemoryRegion, MemorySet,
 };
 use crate::percpu::{get_cpu_data, mpidr_to_cpuid, this_cpu_data, CpuSet};
 use crate::INIT_LATE_OK;
@@ -74,7 +75,7 @@ pub struct Cell {
     /// Cell configuration.
     pub config_frame: Frame,
     /// Guest physical memory set.
-    pub gpm: MemorySet<Stage2PageTable>,
+    gpm: MemorySet<Stage2PageTable>,
     pub mmio: Vec<MMIOConfig>,
     pub cpu_set: CpuSet,
     pub irq_bitmap: [u32; 1024 / 32],
@@ -93,33 +94,31 @@ impl Cell {
         let hv_phys_size = sys_config.hypervisor_memory.size as usize;
 
         // Back the region of hypervisor core in linux so that shutdown will not trigger violations.
-        cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
+        cell.mem_region_insert(MemoryRegion::new_with_offset_mapper(
             hv_phys_start as GuestPhysAddr,
             hv_phys_start as HostPhysAddr,
             hv_phys_size as usize,
             MemFlags::READ | MemFlags::NO_HUGEPAGES,
-        ))?;
+        ));
 
         // Map all physical memory regions.
         let mem_regs = cell.config().mem_regions().to_vec();
         mem_regs.iter().for_each(|mem| {
-            cell.gpm
-                .insert(MemoryRegion::new_with_offset_mapper(
-                    mem.virt_start as GuestPhysAddr,
-                    mem.phys_start as HostPhysAddr,
-                    mem.size as _,
-                    mem.flags,
-                ))
-                .unwrap()
+            cell.mem_region_insert(MemoryRegion::new_with_offset_mapper(
+                mem.virt_start as GuestPhysAddr,
+                mem.phys_start as HostPhysAddr,
+                mem.size as _,
+                mem.flags,
+            ))
         });
 
         // TODO: Without this mapping, enable hypervisor will get an error, maybe now we don't have mmio handlers.
-        cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
+        cell.mem_region_insert(MemoryRegion::new_with_offset_mapper(
             mmcfg_start as GuestPhysAddr,
             mmcfg_start as HostPhysAddr,
             mmcfg_size as usize,
             MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-        ))?;
+        ));
 
         // TODO: Without this mapping, create a new cell will get warnings because we don't have mmio handlers now.
         // cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
@@ -178,7 +177,7 @@ impl Cell {
                     *dest |= *src; // 对每个元素进行位或操作
                 });
         }
-        warn!("irq bitmap = {:#x?}", self.irq_bitmap);
+        // warn!("irq bitmap = {:#x?}", self.irq_bitmap);
     }
 
     fn register_gicv3_mmio_handlers(&mut self) {
@@ -195,8 +194,12 @@ impl Cell {
 
         // add gicr handler
         for cpu in CpuSet::from_cpuset_slice(syscfg.cpu_set()).iter() {
+            let gicr_base = get_cpu_data(cpu).gicr_base as _;
+            if gicr_base == 0 {
+                continue;
+            }
             self.mmio_region_register(
-                get_cpu_data(cpu).gicr_base as _,
+                gicr_base,
                 GICR_SIZE,
                 gicv3_gicr_mmio_handler,
                 cpu as _,
@@ -239,6 +242,51 @@ impl Cell {
         unsafe { CellConfig::new(&(config_addr as *const HvCellDesc).as_ref().unwrap()) }
     }
 
+    pub fn gpm_activate(&self) {
+        unsafe { self.gpm.activate() }
+    }
+
+    pub fn gpm_query(&self, gpa: GuestPhysAddr) -> usize {
+        unsafe { self.gpm.page_table_query(gpa).unwrap().0 }
+    }
+
+    pub fn mem_region_map_partial(&mut self, mem: &MemoryRegion<GuestPhysAddr>) {
+        if is_aligned(mem.size) {
+            self.gpm.map_partial(mem).unwrap();
+        } else {
+            // Handle subpages
+            self.mmio_region_register(
+                mem.start as _,
+                mem.size as _,
+                mmio_subpage_handler,
+                mem.start.wrapping_sub(mem.mapper.offset()) as _,
+            );
+        }
+    }
+
+    pub fn mem_region_unmap_partial(&mut self, mem: &MemoryRegion<GuestPhysAddr>) {
+        if is_aligned(mem.size) {
+            self.gpm.unmap_partial(mem).unwrap();
+        } else {
+            // Handle subpages
+            self.mmio_region_unregister(mem.start);
+        }
+    }
+
+    pub fn mem_region_insert(&mut self, mem: MemoryRegion<GuestPhysAddr>) {
+        if is_aligned(mem.size) {
+            self.gpm.insert(mem).unwrap();
+        } else {
+            // Handle subpages
+            self.mmio_region_register(
+                mem.start as _,
+                mem.size as _,
+                mmio_subpage_handler,
+                mem.start.wrapping_sub(mem.mapper.offset()) as _,
+            );
+        }
+    }
+
     pub fn mmio_region_register(
         &mut self,
         start: GuestPhysAddr,
@@ -246,11 +294,25 @@ impl Cell {
         handler: MMIOHandler,
         arg: u64,
     ) {
+        if let Some(mmio) = self.mmio.iter().find(|mmio| mmio.region.start == start) {
+            panic!("duplicated mmio region {:#x?}", mmio);
+        }
         self.mmio.push(MMIOConfig {
             region: MMIORegion { start, size },
             handler,
             arg,
         })
+    }
+
+    pub fn mmio_region_unregister(&mut self, start: GuestPhysAddr) {
+        if let Some((idx, _)) = self
+            .mmio
+            .iter()
+            .enumerate()
+            .find(|(_, mmio)| mmio.region.start == start)
+        {
+            self.mmio.remove(idx);
+        }
     }
 
     pub fn find_mmio_region(

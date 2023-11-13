@@ -114,10 +114,10 @@ fn gicv3_handle_irq_ops(mmio: &mut MMIOAccess, irq: u32) -> HvResult {
     let cell_r = cell.read();
 
     if !is_spi(irq) || !cell_r.irq_in_cell(irq) {
-        info!(
-            "gicd-mmio: skip irq {} access, reg = {:#x?}",
-            irq, mmio.address
-        );
+        // info!(
+        //     "gicd-mmio: skip irq {} access, reg = {:#x?}",
+        //     irq, mmio.address
+        // );
         return Ok(());
     }
 
@@ -194,7 +194,7 @@ fn restrict_bitmask_access(
      * In order to avoid division, the number of bits per irq is limited
      * to powers of 2 for the moment.
      */
-    let irqs_per_reg = 32 >> bits_per_irq;
+    let irqs_per_reg = 32 / bits_per_irq;
     let irq_bits = (1 << bits_per_irq) - 1;
     /* First, extract the first interrupt affected by this access */
     let first_irq = reg_index * irqs_per_reg;

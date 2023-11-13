@@ -90,7 +90,7 @@ fn primary_init_early() -> HvResult {
     memory::init_heap();
     system_config.check()?;
     info!("Hypervisor header: {:#x?}", HvHeader::get());
-    info!("System config: {:#x?}", system_config);
+    // info!("System config: {:#x?}", system_config);
 
     memory::init_frame_allocator();
     memory::init_hv_page_table()?;
@@ -112,7 +112,7 @@ fn per_cpu_init() {
     gicv3_cpu_init();
     unsafe {
         memory::hv_page_table().read().activate();
-        root_cell().read().gpm.activate()
+        root_cell().read().gpm_activate();
     };
     println!("CPU {} init OK.", cpu_data.id);
 }

@@ -38,21 +38,6 @@ impl MMIORegion {
     }
 }
 
-pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
-    let cell = this_cell();
-    let res = cell.read().find_mmio_region(mmio.address, mmio.size);
-    match res {
-        Some((region, handler, arg)) => {
-            mmio.address -= region.start;
-            handler(mmio, arg)
-        }
-        None => {
-            warn!("unhandled mmio fault {:#x?}", mmio);
-            hv_result_err!(EINVAL)
-        }
-    }
-}
-
 pub fn mmio_perform_access(base: u64, mmio: &mut MMIOAccess) {
     let addr = base as usize + mmio.address;
 
@@ -75,4 +60,24 @@ pub fn mmio_perform_access(base: u64, mmio: &mut MMIOAccess) {
             }
         }
     }
+}
+
+pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
+    let cell = this_cell();
+    let res = cell.read().find_mmio_region(mmio.address, mmio.size);
+    match res {
+        Some((region, handler, arg)) => {
+            mmio.address -= region.start;
+            handler(mmio, arg)
+        }
+        None => {
+            warn!("unhandled mmio fault {:#x?}", mmio);
+            hv_result_err!(EINVAL)
+        }
+    }
+}
+
+pub fn mmio_subpage_handler(mmio: &mut MMIOAccess, base: u64) -> HvResult {
+    mmio_perform_access(base, mmio);
+    Ok(())
 }
