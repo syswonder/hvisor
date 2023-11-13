@@ -117,7 +117,7 @@ impl<'a> HyperCall<'a> {
         info!("cell.desc = {:#x?}", desc);
 
         // we create the new cell here
-        let cell = Cell::new(config)?;
+        let cell = Cell::new(config, false)?;
 
         if cell.owns_cpu(this_cpu_data().id) {
             panic!("error: try to assign the CPU we are currently running on");
@@ -177,12 +177,18 @@ impl<'a> HyperCall<'a> {
             });
             // TODO: We should't add gic mapping to a cell, when mmio is finished, remove this.
             // add gicd & gicr mapping here
-            cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
-                0x8000000 as GuestPhysAddr,
-                0x8000000 as HostPhysAddr,
-                0x0200000 as usize,
-                MemFlags::READ | MemFlags::WRITE,
-            ))?;
+            // cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            //     0x8000000 as GuestPhysAddr,
+            //     0x8000000 as HostPhysAddr,
+            //     0x0200000 as usize,
+            //     MemFlags::READ | MemFlags::WRITE,
+            // ))?;
+            // cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            //     0xa003000 as GuestPhysAddr,
+            //     0xa003000 as HostPhysAddr,
+            //     0x1000 as usize,
+            //     MemFlags::READ | MemFlags::WRITE,
+            // ))?;
             // /* "physical" PCI ECAM */
             // cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
             //     0x7fb00000 as GuestPhysAddr,
@@ -191,6 +197,8 @@ impl<'a> HyperCall<'a> {
             //     MemFlags::READ | MemFlags::WRITE,
             // ))?;
         }
+
+        cell_p.write().gicv3_config_commit();
 
         add_cell(cell_p);
         root_cell.read().resume();

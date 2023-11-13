@@ -7,8 +7,9 @@ use crate::arch::entry::{virt2phys_el2, vmreturn};
 use crate::arch::sysreg::write_sysreg;
 use crate::arch::Stage2PageTable;
 use crate::cell::Cell;
+use crate::config::HvSystemConfig;
 use crate::consts::{INVALID_ADDRESS, PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
-use crate::device::gicv3::gicv3_cpu_shutdown;
+use crate::device::gicv3::{gicv3_cpu_shutdown, GICR_SIZE};
 use crate::error::HvResult;
 use crate::header::HEADER_STUFF;
 use crate::memory::addr::VirtAddr;
@@ -42,6 +43,8 @@ pub struct PerCpu {
     pub park: bool,
     pub reset: bool,
     pub cell: Option<Arc<RwLock<Cell>>>,
+    pub mpidr: u64,
+    pub gicr_base: u64,
     pub ctrl_lock: Mutex<()>,
     // Stack will be placed here.
 }
@@ -61,6 +64,8 @@ impl PerCpu {
             park: false,
             reset: false,
             cell: None,
+            mpidr: MPIDR_EL1.get(),
+            gicr_base: HvSystemConfig::get().platform_info.arch.gicr_base + cpu_id * GICR_SIZE,
             ctrl_lock: Mutex::new(()),
         };
         Ok(ret)
@@ -144,7 +149,7 @@ pub fn this_cpu_data<'a>() -> &'a mut PerCpu {
     return mpidr & MPIDR_CPUID_MASK;*/
     let mpidr = MPIDR_EL1.get();
 
-    let cpu_id = mpidr & 0xff00ffffff;
+    let cpu_id = mpidr_to_cpuid(mpidr);
     let cpu_data: usize = PER_CPU_ARRAY_PTR as VirtAddr + cpu_id as usize * PER_CPU_SIZE;
     unsafe { &mut *(cpu_data as *mut PerCpu) }
 }
@@ -341,6 +346,16 @@ impl CpuSet {
     pub fn new(max_cpu_id: u64, bitmap: u64) -> Self {
         Self { max_cpu_id, bitmap }
     }
+    pub fn from_cpuset_slice(cpu_set: &[u8]) -> Self {
+        if cpu_set.len() != 8 {
+            todo!("Cpu_set should be 8 bytes!");
+        }
+        let cpu_set_long: u64 = cpu_set
+            .iter()
+            .enumerate()
+            .fold(0, |acc, (i, x)| acc | (*x as u64) << (i * 8));
+        Self::new(cpu_set.len() as u64 * 8 - 1, cpu_set_long)
+    }
     #[allow(unused)]
     pub fn set_bit(&mut self, id: u64) {
         assert!(id <= self.max_cpu_id);
@@ -381,4 +396,8 @@ pub unsafe extern "C" fn set_el1_pc(_entry: u64) {
         "
         );
     }
+}
+
+pub fn mpidr_to_cpuid(mpidr: u64) -> u64 {
+    mpidr & 0xff00ffffff
 }
