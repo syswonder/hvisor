@@ -144,7 +144,6 @@ fn handle_dabt(frame: &mut TrapFrame) {
     let hpfar = read_sysreg!(HPFAR_EL2);
     let far = read_sysreg!(FAR_EL2);
     let address = (far & 0xfff) | (hpfar << 8);
-    // info!("handle_dabt {:#x?}", address);
 
     let mut mmio_access = MMIOAccess {
         address: address as _,

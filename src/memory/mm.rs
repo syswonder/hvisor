@@ -6,11 +6,11 @@ use alloc::collections::btree_map::{BTreeMap, Entry};
 use core::fmt::{Debug, Formatter, Result};
 use spin::Once;
 
-use super::addr::{align_down, align_up};
 use super::{mapper::Mapper, paging::GenericPageTable, MemFlags};
 use super::{AlignedPage, VirtAddr, NUM_TEMPORARY_PAGES, PAGE_SIZE, TEMPORARY_MAPPING_BASE};
 use crate::arch::Stage2PageTable;
 use crate::error::HvResult;
+use crate::memory::addr::is_aligned;
 use crate::memory::paging::{PageSize, PagingResult};
 use crate::memory::PhysAddr;
 
@@ -19,7 +19,7 @@ pub struct MemoryRegion<VA> {
     pub start: VA,
     pub size: usize,
     pub flags: MemFlags,
-    pub(super) mapper: Mapper,
+    pub mapper: Mapper,
 }
 
 pub struct MemorySet<PT: GenericPageTable>
@@ -32,8 +32,7 @@ where
 
 impl<VA: From<usize> + Into<usize> + Copy> MemoryRegion<VA> {
     pub(super) fn new(start: VA, size: usize, flags: MemFlags, mapper: Mapper) -> Self {
-        let start = align_down(start.into());
-        let size = align_up(size);
+        let start = start.into();
         Self {
             start: start.into(),
             size,
@@ -86,6 +85,8 @@ where
 
     /// Add a memory region to this set.
     pub fn insert(&mut self, region: MemoryRegion<PT::VA>) -> HvResult {
+        assert!(is_aligned(region.start.into()));
+        assert!(is_aligned(region.size));
         if region.size == 0 {
             return Ok(());
         }
