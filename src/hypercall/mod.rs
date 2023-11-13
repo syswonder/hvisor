@@ -4,7 +4,7 @@ use crate::config::{CellConfig, HvCellDesc, HvMemoryRegion, HvSystemConfig};
 use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
 use crate::control::{park_cpu, reset_cpu, send_event};
 use crate::error::HvResult;
-use crate::memory::addr::{is_aligned, align_up, align_down};
+use crate::memory::addr::{align_down, align_up, is_aligned};
 use crate::memory::{self, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion};
 use crate::percpu::{get_cpu_data, this_cpu_data, PerCpu};
 use alloc::sync::Arc;
@@ -90,7 +90,7 @@ impl<'a> HyperCall<'a> {
 
         // todo: 检查新cell是否和已有cell同id或同名
         let config_address = cell.write().gpm_query(config_address as _);
-        
+
         let cfg_pages_offs = config_address as usize & (PAGE_SIZE - 1);
         let cfg_mapping = memory::hv_page_table().write().map_temporary(
             align_down(config_address),
@@ -233,14 +233,13 @@ impl<'a> HyperCall<'a> {
 
         mem_regs.iter().for_each(|mem| {
             if mem.flags.contains(MemFlags::LOADABLE) {
-                root_cell_w
-                    .mem_region_map_partial(&MemoryRegion::new_with_offset_mapper(
-                        mem.phys_start as GuestPhysAddr,
-                        mem.phys_start as HostPhysAddr,
-                        mem.size as _,
-                        mem.flags,
-                    ));            
-                }
+                root_cell_w.mem_region_map_partial(&MemoryRegion::new_with_offset_mapper(
+                    mem.phys_start as GuestPhysAddr,
+                    mem.phys_start as HostPhysAddr,
+                    mem.size as _,
+                    mem.flags,
+                ));
+            }
         });
         info!("set loadbable done!");
         HyperCallResult::Ok(0)

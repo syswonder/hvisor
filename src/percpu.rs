@@ -291,9 +291,9 @@ fn reset_current_cpu(entry: u64) {
     write_sysreg!(CNTV_TVAL_EL0, 0);
     // //disable stage 1
     // write_sysreg!(SCTLR_EL1, 0);
-    
+
     this_cell().read().gpm_activate();
-    
+
     SCTLR_EL1.set((1 << 11) | (1 << 20) | (3 << 22) | (3 << 28));
     //SCTLR_EL1.modify(SCTLR_EL1::M::Disable);
     //HCR_EL2.modify(HCR_EL2::VM::Disable);
