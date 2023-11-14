@@ -87,12 +87,12 @@ pub struct HvCacheRegion {
 }
 
 #[derive(Clone, Copy, Debug)]
-#[repr(C, packed)]
+#[repr(C)]
 pub struct HvIrqChip {
-    address: u64,
-    id: u32,
-    pin_base: u32,
-    pin_bitmap: [u32; 4],
+    pub address: u64,
+    pub id: u32,
+    pub pin_base: u32,
+    pub pin_bitmap: [u32; 4],
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -292,6 +292,14 @@ impl<'a> CellConfig<'a> {
             let ptr = self.cpu_set().as_ptr_range().end as _;
             slice::from_raw_parts(ptr, self.desc.num_memory_regions as usize)
         }
+    }
+
+    pub fn irq_chips(&self) -> &[HvIrqChip] {
+        let ptr = (self.config_ptr::<u8>() as usize)
+            + self.desc.cpu_set_size as usize
+            + self.desc.num_memory_regions as usize * size_of::<HvMemoryRegion>()
+            + self.desc.num_cache_regions as usize * size_of::<HvCacheRegion>();
+        unsafe { slice::from_raw_parts(ptr as *const _, self.desc.num_irqchips as usize) }
     }
 
     pub fn as_slice(&self) -> &[u8] {

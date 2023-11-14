@@ -4,6 +4,7 @@ use crate::config::{CellConfig, HvCellDesc, HvMemoryRegion, HvSystemConfig};
 use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
 use crate::control::{park_cpu, reset_cpu, send_event};
 use crate::error::HvResult;
+use crate::memory::addr::{align_down, align_up, is_aligned};
 use crate::memory::{self, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion};
 use crate::percpu::{get_cpu_data, this_cpu_data, PerCpu};
 use alloc::sync::Arc;
@@ -88,17 +89,12 @@ impl<'a> HyperCall<'a> {
         root_cell.read().suspend();
 
         // todo: 检查新cell是否和已有cell同id或同名
-        let config_address = unsafe {
-            cell.write()
-                .gpm
-                .page_table_query(config_address as usize)
-                .unwrap()
-                .0
-        };
+        let config_address = cell.write().gpm_query(config_address as _);
+
         let cfg_pages_offs = config_address as usize & (PAGE_SIZE - 1);
         let cfg_mapping = memory::hv_page_table().write().map_temporary(
-            config_address,
-            cfg_pages_offs + size_of::<HvCellDesc>(),
+            align_down(config_address),
+            align_up(cfg_pages_offs + size_of::<HvCellDesc>()),
             MemFlags::READ,
         )?;
 
@@ -110,14 +106,14 @@ impl<'a> HyperCall<'a> {
         let config = CellConfig::new(desc);
         let config_total_size = config.total_size();
         memory::hv_page_table().write().map_temporary(
-            config_address,
-            cfg_pages_offs + config_total_size,
+            align_down(config_address),
+            align_up(cfg_pages_offs + config_total_size),
             MemFlags::READ,
         )?;
         info!("cell.desc = {:#x?}", desc);
 
         // we create the new cell here
-        let cell = Cell::new(config)?;
+        let cell = Cell::new(config, false)?;
 
         if cell.owns_cpu(this_cpu_data().id) {
             panic!("error: try to assign the CPU we are currently running on");
@@ -148,49 +144,57 @@ impl<'a> HyperCall<'a> {
 
         // memory mapping
 
-        {
-            let mem_regs: Vec<HvMemoryRegion> = cell_p.read().config().mem_regions().to_vec();
-            let mut cell = cell_p.write();
-            // cell.comm_page.comm_region.cell_state = CELL_SHUT_DOWN;
-            // let comm_page_pa = virt_to_phys(&cell.comm_page as *const _ as usize);
-            let comm_page_pa = cell.comm_page.start_paddr();
-            assert_eq!(comm_page_pa % 4096, 0);
-            let root_gpm = &mut root_cell.write().gpm;
+        let mut cell = cell_p.write();
 
-            mem_regs.iter().for_each(|mem| {
-                if !(mem.flags.contains(MemFlags::COMMUNICATION)
-                    || mem.flags.contains(MemFlags::ROOTSHARED))
-                {
-                    root_gpm
-                        .unmap_partial(&MemoryRegion::new_with_offset_mapper(
-                            mem.phys_start as _,
-                            mem.phys_start as _,
-                            mem.size as _,
-                            mem.flags,
-                        ))
-                        .unwrap();
-                }
+        let mem_regs: Vec<HvMemoryRegion> = cell.config().mem_regions().to_vec();
+        // cell.comm_page.comm_region.cell_state = CELL_SHUT_DOWN;
 
-                cell.gpm
-                    .insert(MemoryRegion::from_hv_memregion(mem, Some(comm_page_pa)))
-                    .unwrap();
-            });
-            // TODO: We should't add gic mapping to a cell, when mmio is finished, remove this.
-            // add gicd & gicr mapping here
-            cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
-                0x8000000 as GuestPhysAddr,
-                0x8000000 as HostPhysAddr,
-                0x0200000 as usize,
-                MemFlags::READ | MemFlags::WRITE,
-            ))?;
-            // /* "physical" PCI ECAM */
-            // cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
-            //     0x7fb00000 as GuestPhysAddr,
-            //     0x7fb00000 as HostPhysAddr,
-            //     0x100000 as usize,
-            //     MemFlags::READ | MemFlags::WRITE,
-            // ))?;
-        }
+        let comm_page_pa = cell.comm_page.start_paddr();
+        assert!(is_aligned(comm_page_pa));
+
+        let mut rc_w = root_cell.write();
+
+        mem_regs.iter().for_each(|mem| {
+            if !(mem.flags.contains(MemFlags::COMMUNICATION)
+                || mem.flags.contains(MemFlags::ROOTSHARED))
+            {
+                rc_w.mem_region_unmap_partial(&MemoryRegion::new_with_offset_mapper(
+                    mem.phys_start as _,
+                    mem.phys_start as _,
+                    mem.size as _,
+                    mem.flags,
+                ));
+            }
+
+            cell.mem_region_insert(MemoryRegion::from_hv_memregion(mem, Some(comm_page_pa)))
+        });
+
+        drop(rc_w);
+
+        // TODO: We should't add gic mapping to a cell, when mmio is finished, remove this.
+        // add gicd & gicr mapping here
+        // cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
+        //     0x8000000 as GuestPhysAddr,
+        //     0x8000000 as HostPhysAddr,
+        //     0x0200000 as usize,
+        //     MemFlags::READ | MemFlags::WRITE,
+        // ))?;
+        // cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
+        //     0xa003000 as GuestPhysAddr,
+        //     0xa003000 as HostPhysAddr,
+        //     0x1000 as usize,
+        //     MemFlags::READ | MemFlags::WRITE,
+        // ))?;
+        // /* "physical" PCI ECAM */
+        // cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
+        //     0x7fb00000 as GuestPhysAddr,
+        //     0x7fb00000 as HostPhysAddr,
+        //     0x100000 as usize,
+        //     MemFlags::READ | MemFlags::WRITE,
+        // ))?;
+
+        cell.gicv3_config_commit();
+        drop(cell);
 
         add_cell(cell_p);
         root_cell.read().resume();
@@ -225,17 +229,16 @@ impl<'a> HyperCall<'a> {
 
         // remap to rootcell
         let root_cell = root_cell();
-        let root_gpm = &mut root_cell.write().gpm;
+        let mut root_cell_w = root_cell.write();
+
         mem_regs.iter().for_each(|mem| {
             if mem.flags.contains(MemFlags::LOADABLE) {
-                root_gpm
-                    .map_partial(&MemoryRegion::new_with_offset_mapper(
-                        mem.phys_start as GuestPhysAddr,
-                        mem.phys_start as HostPhysAddr,
-                        mem.size as _,
-                        mem.flags,
-                    ))
-                    .unwrap();
+                root_cell_w.mem_region_map_partial(&MemoryRegion::new_with_offset_mapper(
+                    mem.phys_start as GuestPhysAddr,
+                    mem.phys_start as HostPhysAddr,
+                    mem.size as _,
+                    mem.flags,
+                ));
             }
         });
         info!("set loadbable done!");

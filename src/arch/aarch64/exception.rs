@@ -3,7 +3,9 @@ use crate::arch::sysreg::{read_sysreg, write_sysreg};
 use crate::control::send_event;
 use crate::device::gicv3::gicv3_handle_irq_el1;
 use crate::hypercall::{HyperCall, SGI_EVENT_ID};
-use crate::percpu::{get_cpu_data, this_cpu_data, GeneralRegisters};
+use crate::memory::{mmio_handle_access, MMIOAccess};
+use crate::num::sign_extend;
+use crate::percpu::{get_cpu_data, mpidr_to_cpuid, this_cpu_data, GeneralRegisters};
 use crate::percpu::{park_current_cpu, PerCpu};
 use aarch64_cpu::registers::*;
 use tock_registers::interfaces::*;
@@ -75,7 +77,7 @@ impl<'a> TrapFrame<'a> {
 /*From hyp_vec->handle_vmexit x0:guest regs x1:exit_reason sp =stack_top-32*8*/
 pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> Result<(), ()> {
     let mpidr = MPIDR_EL1.get();
-    let _cpu_id = mpidr & 0xff00ffffff;
+    let _cpu_id = mpidr_to_cpuid(mpidr);
     trace!("cpu exit");
     match regs.exit_reason as u64 {
         ExceptionType::EXIT_REASON_EL1_IRQ => irqchip_handle_irq1(),
@@ -132,32 +134,40 @@ fn handle_iabt(_frame: &mut TrapFrame) {
     // arch_skip_instruction(frame);
 }
 fn handle_dabt(frame: &mut TrapFrame) {
-    // let iss = ESR_EL2.read(ESR_EL2::ISS);
-    // let is_write = iss >> 6 & 0x1;
-    // let srt = iss >> 16 & 0x1f;
-    // let sas = iss >> 22 & 0x3;
+    let iss = ESR_EL2.read(ESR_EL2::ISS);
+    let is_write = (iss >> 6 & 0x1) != 0;
+    let srt = iss >> 16 & 0x1f;
+    let sse = (iss >> 21 & 0x1) != 0;
+    let sas = iss >> 22 & 0x3;
 
-    // let size = 1 << sas;
-    // let hpfar = read_sysreg!(HPFAR_EL2);
-    // let hdfar = read_sysreg!(FAR_EL2);
-    // let mut address = hpfar << 8;
-    // address |= hdfar & 0xfff;
-    // warn!(
-    //     "data access (is_write={}) at {:#x?}!",
-    //     is_write == 1,
-    //     address
-    // );
-    // let mmio_access = MMIOAccess {
-    //     address: address as _,
-    //     size,
-    //     is_write: is_write != 0,
-    //     value: if srt == 31 {
-    //         0
-    //     } else {
-    //         frame.regs.usr[srt as usize]
-    //     },
-    // };
-    // let res = mmio_handle_access(&mmio_access);
+    let size = 1 << sas;
+    let hpfar = read_sysreg!(HPFAR_EL2);
+    let far = read_sysreg!(FAR_EL2);
+    let address = (far & 0xfff) | (hpfar << 8);
+
+    let mut mmio_access = MMIOAccess {
+        address: address as _,
+        size,
+        is_write,
+        value: if srt == 31 {
+            0
+        } else {
+            frame.regs.usr[srt as usize]
+        },
+    };
+    match mmio_handle_access(&mut mmio_access) {
+        Ok(_) => {
+            if !is_write && srt != 31 {
+                if sse {
+                    mmio_access.value = sign_extend(mmio_access.value, 8 * size);
+                }
+                frame.regs.usr[srt as usize] = mmio_access.value;
+            }
+        }
+        Err(e) => {
+            panic!("mmio_handle_access: {:#x?}", e);
+        }
+    }
 
     //TODO finish dabt handle
     arch_skip_instruction(frame);
@@ -240,7 +250,7 @@ fn psci_emulate_features_info(code: u64) -> u64 {
 
 fn psci_emulate_cpu_on(frame: &mut TrapFrame) -> u64 {
     // Todo: Check if `cpu` is in the cpuset of current cell
-    let cpu = frame.regs.usr[1] & 0xff00ffffff;
+    let cpu = mpidr_to_cpuid(frame.regs.usr[1]);
     warn!("psci: try to wake up cpu {}", cpu);
 
     let target_data = get_cpu_data(cpu);

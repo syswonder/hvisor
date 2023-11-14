@@ -174,6 +174,15 @@ pub fn init_hv_page_table() -> HvResult {
         mmcfg_size as usize,
         MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
     ))?;
+
+    // add virtio map
+    hv_pt.insert(MemoryRegion::new_with_offset_mapper(
+        0xa000000 as GuestPhysAddr,
+        0xa000000 as HostPhysAddr,
+        0x4000 as usize,
+        MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+    ))?;
+
     info!("Hypervisor page table init end.");
     debug!("Hypervisor virtual memory set: {:#x?}", hv_pt);
 

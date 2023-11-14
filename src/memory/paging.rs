@@ -6,7 +6,7 @@ use spin::Mutex;
 use super::addr::{phys_to_virt, PhysAddr};
 use super::{Frame, MemFlags, MemoryRegion, TEMPORARY_MAPPING_BASE};
 use crate::error::{HvError, HvResult};
-use crate::memory::addr::virt_to_phys;
+use crate::memory::addr::{is_aligned, virt_to_phys};
 use crate::memory::VirtAddr;
 
 #[derive(Debug)]
@@ -418,6 +418,12 @@ where
     }
 
     fn map(&mut self, region: &MemoryRegion<VA>) -> HvResult {
+        assert!(
+            is_aligned(region.start.into()),
+            "region.start = {:#x?}",
+            region.start.into()
+        );
+        assert!(is_aligned(region.size), "region.size = {:#x?}", region.size);
         trace!(
             "create mapping in {}: {:#x?}",
             core::any::type_name::<Self>(),
@@ -473,6 +479,10 @@ where
                 error!("failed to unmap page: {:#x?}, {:?}", vaddr, e);
                 e
             })?;
+            if !page_size.is_aligned(vaddr) {
+                error!("error vaddr={:#x?}", vaddr);
+                loop {}
+            }
             assert!(page_size.is_aligned(vaddr));
             assert!(page_size as usize <= size);
             vaddr += page_size as usize;
