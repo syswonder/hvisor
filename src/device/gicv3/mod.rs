@@ -80,10 +80,12 @@ mod gicd;
 mod gicr;
 use crate::arch::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::config::HvSystemConfig;
-use crate::error::HvResult;
 use crate::hypercall::{SGI_EVENT_ID, SGI_RESUME_ID};
-use crate::memory::MMIOAccess;
 use crate::percpu::check_events;
+
+pub use gicd::{gicv3_gicd_mmio_handler, GICD_IROUTER};
+pub use gicr::gicv3_gicr_mmio_handler;
+
 /// Representation of the GIC.
 pub struct GICv3 {
     /// The Distributor.
@@ -328,9 +330,17 @@ fn inject_irq(irq_id: usize) {
     }
 }
 
-pub fn gicv3_mmio_handler(_x: &MMIOAccess) -> HvResult {
-    hv_result_err!(EINVAL)
-}
-
 pub const GICD_SIZE: u64 = 0x10000;
 pub const GICR_SIZE: u64 = 0x20000;
+
+pub fn is_sgi(irqn: u32) -> bool {
+    irqn < 16
+}
+
+pub fn is_ppi(irqn: u32) -> bool {
+    irqn > 15 && irqn < 32
+}
+
+pub fn is_spi(irqn: u32) -> bool {
+    irqn > 31 && irqn < 1020
+}
