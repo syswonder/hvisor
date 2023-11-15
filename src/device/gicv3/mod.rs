@@ -76,7 +76,7 @@
 //!           - 00..15 SGIs
 //!           - 16..31 PPIs
 #![allow(dead_code)]
-mod gicd;
+pub mod gicd;
 mod gicr;
 use crate::arch::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::config::HvSystemConfig;

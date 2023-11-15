@@ -5,6 +5,7 @@ use spin::RwLock;
 use crate::arch::Stage2PageTable;
 use crate::config::{CellConfig, HvCellDesc, HvConsole, HvSystemConfig};
 use crate::control::{resume_cpu, suspend_cpu};
+use crate::device::gicv3::gicd::{GICD_ICACTIVER, GICD_ICENABLER};
 use crate::device::gicv3::{
     gicv3_gicd_mmio_handler, gicv3_gicr_mmio_handler, GICD_IROUTER, GICD_SIZE, GICR_SIZE,
 };
@@ -16,6 +17,7 @@ use crate::memory::{
 };
 use crate::percpu::{get_cpu_data, mpidr_to_cpuid, this_cpu_data, CpuSet};
 use crate::INIT_LATE_OK;
+use core::ptr::write_volatile;
 use core::sync::atomic::Ordering;
 
 #[repr(C)]
@@ -234,17 +236,19 @@ impl Cell {
             1 => self.config_frame.as_ptr() as usize,
             _ => self.config_frame.start_paddr(),
         };
-        unsafe { CellConfig::new(&(config_addr as *const HvCellDesc).as_ref().unwrap()) }
+        unsafe { CellConfig::new((config_addr as *const HvCellDesc).as_ref().unwrap()) }
     }
 
     pub fn gpm_activate(&self) {
         unsafe { self.gpm.activate() }
     }
-
+    /// Query an ipa from cell's stage 2 page table to get pa.
     pub fn gpm_query(&self, gpa: GuestPhysAddr) -> usize {
         unsafe { self.gpm.page_table_query(gpa).unwrap().0 }
     }
-
+    /// Map a mem region to a cell. \
+    /// If the mem size is aligned to one page, it will be inserted into page table. \
+    /// Otherwise into mmio regions.
     pub fn mem_region_map_partial(&mut self, mem: &MemoryRegion<GuestPhysAddr>) {
         if is_aligned(mem.size) {
             self.gpm.map_partial(mem).unwrap();
@@ -258,7 +262,7 @@ impl Cell {
             );
         }
     }
-
+    /// Unmap a mem region from gpm or mmio regions of the cell.
     pub fn mem_region_unmap_partial(&mut self, mem: &MemoryRegion<GuestPhysAddr>) {
         if is_aligned(mem.size) {
             self.gpm.unmap_partial(mem).unwrap();
@@ -267,7 +271,9 @@ impl Cell {
             self.mmio_region_unregister(mem.start);
         }
     }
-
+    /// Insert a mem region to cell. \
+    /// If the mem size is aligned to one page, it will be inserted into page table. \
+    /// Otherwise into mmio regions.
     pub fn mem_region_insert(&mut self, mem: MemoryRegion<GuestPhysAddr>) {
         if is_aligned(mem.size) {
             self.gpm.insert(mem).unwrap();
@@ -281,7 +287,7 @@ impl Cell {
             );
         }
     }
-
+    /// Register a mmio region and its handler.
     pub fn mmio_region_register(
         &mut self,
         start: GuestPhysAddr,
@@ -298,7 +304,7 @@ impl Cell {
             arg,
         })
     }
-
+    /// Remove the mmio region beginning at `start`.
     pub fn mmio_region_unregister(&mut self, start: GuestPhysAddr) {
         if let Some((idx, _)) = self
             .mmio
@@ -309,7 +315,7 @@ impl Cell {
             self.mmio.remove(idx);
         }
     }
-
+    /// Find the mmio region contains (addr..addr+size).
     pub fn find_mmio_region(
         &self,
         addr: GuestPhysAddr,
@@ -320,13 +326,13 @@ impl Cell {
             .find(|cfg| cfg.region.contains_region(addr, size))
             .map(|cfg| (cfg.region, cfg.handler, cfg.arg))
     }
-
+    /// If irq_id belongs to this cell
     pub fn irq_in_cell(&self, irq_id: u32) -> bool {
         let idx = (irq_id / 32) as usize;
         let bit_pos = (irq_id % 32) as usize;
         (self.irq_bitmap[idx] & (1 << bit_pos)) != 0
     }
-
+    /// Add irq_id to this cell
     pub fn gicv3_adjust_irq_target(&mut self, irq_id: u32) {
         let gicd_base = HvSystemConfig::get().platform_info.arch.gicd_base;
         let irouter = (gicd_base + GICD_IROUTER + 8 * irq_id as u64) as *mut u64;
@@ -340,7 +346,7 @@ impl Cell {
             }
         }
     }
-
+    /// Commit the change of cell's irq mapping. It must be done when change the cell's irq mapping.
     pub fn gicv3_config_commit(&mut self) {
         let rc = root_cell();
         let mut rc_w = rc.write();
@@ -354,13 +360,68 @@ impl Cell {
             }
         }
     }
+    /// Clear the cell's irqs and return its mapping to root cell. Called when destroy this cell.
+    pub fn gicv3_exit(&self) {
+        /* ensure all SPIs of the cell are masked and deactivated */
+        self.irqchip_reset();
+        let gicd_base = HvSystemConfig::get().platform_info.arch.gicd_base;
+        let rc = root_cell();
+        let mut rc_w = rc.write();
+        /* set all pins of the old cell in the root cell */
+        for chip in &self.config().irq_chips().to_vec() {
+            if chip.address != gicd_base {
+                continue;
+            }
+            for (idx, &mask) in chip.pin_bitmap.iter().enumerate() {
+                rc_w.irq_bitmap[chip.pin_base as usize / 32 + idx] |= mask;
+            }
+        }
+        /* mask out pins again that actually didn't belong to the root cell */
+        for chip in &rc_w.config().irq_chips().to_vec() {
+            if chip.address != gicd_base {
+                continue;
+            }
+            for (idx, &mask) in chip.pin_bitmap.iter().enumerate() {
+                rc_w.irq_bitmap[chip.pin_base as usize / 32 + idx] &= mask;
+            }
+        }
+    }
+    /// Mask and deactivate all SPIs of the cell.
+    pub fn irqchip_reset(&self) {
+        let gicd_base = HvSystemConfig::get().platform_info.arch.gicd_base;
+        for (idx, &mask) in self.irq_bitmap.iter().enumerate() {
+            if idx == 0 {
+                continue;
+            }
+            unsafe {
+                write_volatile(
+                    (gicd_base + GICD_ICENABLER + idx as u64 * 4) as *mut u32,
+                    mask,
+                );
+                write_volatile(
+                    (gicd_base + GICD_ICACTIVER + idx as u64 * 4) as *mut u32,
+                    mask,
+                );
+            }
+        }
+    }
 }
 
 static ROOT_CELL: spin::Once<Arc<RwLock<Cell>>> = spin::Once::new();
 static CELL_LIST: RwLock<Vec<Arc<RwLock<Cell>>>> = RwLock::new(vec![]);
-
+/// Add cell to CELL_LIST
 pub fn add_cell(cell: Arc<RwLock<Cell>>) {
     CELL_LIST.write().push(cell);
+}
+/// Remove cell from CELL_LIST
+pub fn remove_cell(cell_id: u32) {
+    let mut cell_list = CELL_LIST.write();
+    let (idx, _) = cell_list
+        .iter()
+        .enumerate()
+        .find(|(_, cell)| cell.read().config().id() == cell_id)
+        .unwrap();
+    cell_list.remove(idx);
 }
 
 pub fn root_cell() -> Arc<RwLock<Cell>> {
@@ -372,13 +433,12 @@ pub fn find_cell_by_id(cell_id: u32) -> Option<Arc<RwLock<Cell>>> {
         .read()
         .iter()
         .find(|cell| cell.read().config().id() == cell_id)
-        .map(|cell| cell.clone())
+        .cloned()
 }
 
 pub fn init() -> HvResult {
     let root_cell = Arc::new(RwLock::new(Cell::new_root()?));
     info!("Root cell init end.");
-    //debug!("{:#x?}", root_cell);
 
     add_cell(root_cell.clone());
     ROOT_CELL.call_once(|| root_cell);
