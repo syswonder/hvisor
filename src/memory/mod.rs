@@ -167,7 +167,8 @@ pub fn init_hv_page_table() -> HvResult {
         gicr_size as usize,
         MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
     ))?;
-
+    // Map pci region. Jailhouse doesn't map pci region to el2.
+    // Now we simplify the complex pci handler and just map it.
     hv_pt.insert(MemoryRegion::new_with_offset_mapper(
         mmcfg_start as GuestPhysAddr,
         mmcfg_start as HostPhysAddr,
