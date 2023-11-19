@@ -193,7 +193,7 @@ pub unsafe extern "C" fn isb() {
     );
 }
 
-pub fn check_events() {
+pub fn check_events(regs: &mut GeneralRegisters) {
     let cpu_data: &mut PerCpu = this_cpu_data();
     let mut _lock = Some(cpu_data.ctrl_lock.lock());
     while cpu_data.need_suspend {
@@ -223,7 +223,10 @@ pub fn check_events() {
         warn!("check_events: park current cpu");
         park_current_cpu();
     } else if reset {
+        warn!("check_events: reset current cpu -> {:#x?}", cpu_data.cpu_on_entry);
         reset_current_cpu(cpu_data.cpu_on_entry);
+        // TODO: set actual rukos dtb address
+        regs.usr[0] = 0x44000000;
     }
 }
 

@@ -81,7 +81,7 @@ mod gicr;
 use crate::arch::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::config::HvSystemConfig;
 use crate::hypercall::{SGI_EVENT_ID, SGI_RESUME_ID};
-use crate::percpu::check_events;
+use crate::percpu::{check_events, GeneralRegisters};
 
 pub use gicd::{gicv3_gicd_mmio_handler, GICD_IROUTER};
 pub use gicr::gicv3_gicr_mmio_handler;
@@ -165,7 +165,7 @@ pub fn gicv3_cpu_shutdown() {
     //TODO gicv3 reset
 }
 
-pub fn gicv3_handle_irq_el1() {
+pub fn gicv3_handle_irq_el1(regs: &mut GeneralRegisters) {
     if let Some(irq_id) = pending_irq() {
         // enum ipi_msg_type {
         //     IPI_WAKEUP,
@@ -195,7 +195,7 @@ pub fn gicv3_handle_irq_el1() {
                 inject_irq(irq_id);
             } else if irq_id == SGI_EVENT_ID as usize {
                 info!("HV SGI EVENT {}", irq_id);
-                check_events();
+                check_events(regs);
                 deactivate_irq(irq_id);
             } else if irq_id == SGI_RESUME_ID as usize {
                 info!("hv sgi got {}, resume", irq_id);

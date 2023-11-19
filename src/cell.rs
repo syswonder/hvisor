@@ -202,6 +202,13 @@ impl Cell {
             }
             self.mmio_region_register(gicr_base, GICR_SIZE, gicv3_gicr_mmio_handler, cpu as _);
         }
+
+        self.mem_region_insert(MemoryRegion::new_with_offset_mapper(
+            0x8080000 as GuestPhysAddr,
+            0x8080000 as HostPhysAddr,
+            0x20000 as usize,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ));
     }
 
     pub fn suspend(&self) {
