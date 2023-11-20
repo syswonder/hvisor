@@ -82,7 +82,7 @@ pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> Result<(), ()> {
     let _cpu_id = mpidr_to_cpuid(mpidr);
     trace!("cpu exit");
     match regs.exit_reason as u64 {
-        ExceptionType::EXIT_REASON_EL1_IRQ => irqchip_handle_irq1(regs),
+        ExceptionType::EXIT_REASON_EL1_IRQ => irqchip_handle_irq1(),
         ExceptionType::EXIT_REASON_EL1_ABORT => arch_handle_trap(regs),
         ExceptionType::EXIT_REASON_EL2_ABORT => arch_dump_exit(regs.exit_reason),
         ExceptionType::EXIT_REASON_EL2_IRQ => irqchip_handle_irq2(),
@@ -94,9 +94,9 @@ pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> Result<(), ()> {
 
     Ok(())
 }
-fn irqchip_handle_irq1(regs: &mut GeneralRegisters) {
+fn irqchip_handle_irq1() {
     //debug!("irq from el1");
-    gicv3_handle_irq_el1(regs);
+    gicv3_handle_irq_el1();
 }
 fn irqchip_handle_irq2() {
     error!("irq not handle from el2");
