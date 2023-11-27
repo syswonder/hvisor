@@ -220,9 +220,10 @@ pub fn check_events() {
     drop(_lock);
 
     if cpu_data.wait_for_poweron {
-        warn!("check_events: park current cpu");
+        info!("check_events: park current cpu");
         park_current_cpu();
     } else if reset {
+        info!("check_events: reset current cpu -> {:#x?}", cpu_data.cpu_on_entry);
         reset_current_cpu(cpu_data.cpu_on_entry);
     }
 }

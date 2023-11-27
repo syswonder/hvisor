@@ -1,11 +1,11 @@
 use super::entry::vmreturn;
 use crate::arch::sysreg::{read_sysreg, write_sysreg};
-use crate::control::send_event;
+use crate::control::{send_event, park_cpu};
 use crate::device::gicv3::gicv3_handle_irq_el1;
 use crate::hypercall::{HyperCall, SGI_EVENT_ID};
 use crate::memory::{mmio_handle_access, MMIOAccess};
 use crate::num::sign_extend;
-use crate::percpu::{get_cpu_data, mpidr_to_cpuid, this_cpu_data, GeneralRegisters};
+use crate::percpu::{get_cpu_data, mpidr_to_cpuid, this_cell, this_cpu_data, GeneralRegisters};
 use crate::percpu::{park_current_cpu, PerCpu};
 use aarch64_cpu::registers::*;
 use tock_registers::interfaces::*;
@@ -38,9 +38,11 @@ pub mod PsciFnId {
     pub const PSCI_CPU_ON_32: u64 = 0x84000003;
     pub const PSCI_AFFINITY_INFO_32: u64 = 0x84000004;
     pub const PSCI_MIG_INFO_TYPE: u64 = 0x84000006;
+    pub const PSCI_SYSTEM_OFF: u64 = 0x84000008;
     pub const PSCI_FEATURES: u64 = 0x8400000a;
 
     pub const PSCI_CPU_SUSPEND_64: u64 = 0xc4000001;
+    pub const PSCI_CPU_OFF_64: u64 = 0xc4000002;
     pub const PSCI_CPU_ON_64: u64 = 0xc4000003;
     pub const PSCI_AFFINITY_INFO_64: u64 = 0xc4000004;
 }
@@ -168,7 +170,6 @@ fn handle_dabt(frame: &mut TrapFrame) {
             panic!("mmio_handle_access: {:#x?}", e);
         }
     }
-
     //TODO finish dabt handle
     arch_skip_instruction(frame);
 }
@@ -251,7 +252,7 @@ fn psci_emulate_features_info(code: u64) -> u64 {
 fn psci_emulate_cpu_on(frame: &mut TrapFrame) -> u64 {
     // Todo: Check if `cpu` is in the cpuset of current cell
     let cpu = mpidr_to_cpuid(frame.regs.usr[1]);
-    warn!("psci: try to wake up cpu {}", cpu);
+    info!("psci: try to wake up cpu {}", cpu);
 
     let target_data = get_cpu_data(cpu);
     let _lock = target_data.ctrl_lock.lock();
@@ -273,19 +274,28 @@ fn psci_emulate_cpu_on(frame: &mut TrapFrame) -> u64 {
 fn handle_psci_smc(frame: &mut TrapFrame, code: u64, arg0: u64, _arg1: u64, _arg2: u64) -> u64 {
     match code {
         PsciFnId::PSCI_VERSION => PSCI_VERSION_1_1,
-        PsciFnId::PSCI_CPU_OFF_32 => {
+        PsciFnId::PSCI_CPU_OFF_32 | PsciFnId::PSCI_CPU_OFF_64 => {
             park_current_cpu();
-            return 0;
+            0
         }
         PsciFnId::PSCI_AFFINITY_INFO_32 | PsciFnId::PSCI_AFFINITY_INFO_64 => {
             get_cpu_data(arg0).wait_for_poweron as _
         }
         PsciFnId::PSCI_MIG_INFO_TYPE => PSCI_TOS_NOT_PRESENT_MP,
         PsciFnId::PSCI_FEATURES => psci_emulate_features_info(frame.regs.usr[1]),
-        PsciFnId::PSCI_CPU_ON_64 => psci_emulate_cpu_on(frame),
+        PsciFnId::PSCI_CPU_ON_32 | PsciFnId::PSCI_CPU_ON_64 => psci_emulate_cpu_on(frame),
+        PsciFnId::PSCI_SYSTEM_OFF => {
+            this_cell().read().suspend();
+            for cpu in this_cell().read().cpu_set.iter_except(this_cpu_data().id) {
+                park_cpu(cpu);
+            }
+            park_current_cpu();
+            0
+        }
+
         _ => {
-            error!("unsupported smc standard service");
-            return 0;
+            error!("unsupported smc standard service {}", code);
+            0
         }
     }
 }
