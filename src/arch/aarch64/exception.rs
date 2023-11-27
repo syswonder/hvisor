@@ -252,7 +252,7 @@ fn psci_emulate_features_info(code: u64) -> u64 {
 fn psci_emulate_cpu_on(frame: &mut TrapFrame) -> u64 {
     // Todo: Check if `cpu` is in the cpuset of current cell
     let cpu = mpidr_to_cpuid(frame.regs.usr[1]);
-    warn!("psci: try to wake up cpu {}", cpu);
+    info!("psci: try to wake up cpu {}", cpu);
 
     let target_data = get_cpu_data(cpu);
     let _lock = target_data.ctrl_lock.lock();

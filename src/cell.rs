@@ -179,7 +179,7 @@ impl Cell {
                     *dest |= *src; // 对每个元素进行位或操作
                 });
         }
-        // warn!("irq bitmap = {:#x?}", self.irq_bitmap);
+        // info!("irq bitmap = {:#x?}", self.irq_bitmap);
     }
 
     fn register_gicv3_mmio_handlers(&mut self) {
@@ -348,7 +348,7 @@ impl Cell {
         unsafe {
             let route = mpidr_to_cpuid(irouter.read_volatile());
             if !self.owns_cpu(route) {
-                warn!("adjust irq {} target -> cpu {}", irq_id, mpidr & 0xff);
+                info!("adjust irq {} target -> cpu {}", irq_id, mpidr & 0xff);
                 irouter.write_volatile(mpidr);
             }
         }
