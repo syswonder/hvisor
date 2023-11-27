@@ -474,13 +474,11 @@ where
         let _lock = self.clonee_lock.lock();
         let mut vaddr = region.start.into();
         let mut size = region.size;
-        info!("unmapping region {:#x?}", region);
         while size > 0 {
             let (_, page_size) = self.inner.unmap_page(vaddr.into()).map_err(|e| {
                 error!("failed to unmap page: {:#x?}, {:?}", vaddr, e);
                 e
             })?;
-            info!("unmapping page size {:#x?}", page_size as usize);
             if !page_size.is_aligned(vaddr) {
                 error!("error vaddr={:#x?}", vaddr);
                 loop {}
