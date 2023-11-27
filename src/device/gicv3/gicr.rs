@@ -124,7 +124,7 @@ impl GICR {
 }
 
 pub fn gicv3_gicr_mmio_handler(mmio: &mut MMIOAccess, cpu: u64) -> HvResult {
-    // warn!("gicr({}) mmio = {:#x?}", cpu, mmio);
+    // info!("gicr({}) mmio = {:#x?}", cpu, mmio);
     let gicr_base = get_cpu_data(cpu).gicr_base;
     match mmio.address as u64 {
         GICR_IIDR | 0xffd0..=0xfffc => {

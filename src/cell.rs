@@ -179,7 +179,7 @@ impl Cell {
                     *dest |= *src; // 对每个元素进行位或操作
                 });
         }
-        // warn!("irq bitmap = {:#x?}", self.irq_bitmap);
+        // info!("irq bitmap = {:#x?}", self.irq_bitmap);
     }
 
     fn register_gicv3_mmio_handlers(&mut self) {
@@ -202,6 +202,13 @@ impl Cell {
             }
             self.mmio_region_register(gicr_base, GICR_SIZE, gicv3_gicr_mmio_handler, cpu as _);
         }
+
+        self.mem_region_insert(MemoryRegion::new_with_offset_mapper(
+            0x8080000 as GuestPhysAddr,
+            0x8080000 as HostPhysAddr,
+            0x20000 as usize,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ));
     }
 
     pub fn suspend(&self) {
@@ -341,7 +348,7 @@ impl Cell {
         unsafe {
             let route = mpidr_to_cpuid(irouter.read_volatile());
             if !self.owns_cpu(route) {
-                warn!("adjust irq {} target -> cpu {}", irq_id, mpidr & 0xff);
+                info!("adjust irq {} target -> cpu {}", irq_id, mpidr & 0xff);
                 irouter.write_volatile(mpidr);
             }
         }
