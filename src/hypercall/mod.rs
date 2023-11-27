@@ -68,7 +68,7 @@ impl<'a> HyperCall<'a> {
         while TRY_DISABLE_CPUS.load(Ordering::Acquire) < cpus {
             core::hint::spin_loop();
         }
-        info!("Handel hvc disable");
+        info!("Handle hvc disable");
         self.cpu_data.deactivate_vmm(0)?;
         unreachable!()
     }
