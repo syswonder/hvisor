@@ -84,7 +84,7 @@ use crate::hypercall::{SGI_EVENT_ID, SGI_RESUME_ID};
 use crate::percpu::check_events;
 
 pub use gicd::{gicv3_gicd_mmio_handler, GICD_IROUTER};
-pub use gicr::gicv3_gicr_mmio_handler;
+pub use gicr::{gicv3_gicr_mmio_handler, LAST_GICR};
 
 /// Representation of the GIC.
 pub struct GICv3 {
