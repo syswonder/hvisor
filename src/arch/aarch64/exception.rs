@@ -1,6 +1,6 @@
 use super::entry::vmreturn;
 use crate::arch::sysreg::{read_sysreg, write_sysreg};
-use crate::control::{send_event, park_cpu};
+use crate::control::{park_cpu, send_event};
 use crate::device::gicv3::gicv3_handle_irq_el1;
 use crate::hypercall::{HyperCall, SGI_EVENT_ID};
 use crate::memory::{mmio_handle_access, MMIOAccess};

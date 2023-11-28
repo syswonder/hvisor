@@ -7,18 +7,18 @@ use crate::config::{CellConfig, HvCellDesc, HvConsole, HvSystemConfig};
 use crate::control::{resume_cpu, suspend_cpu};
 use crate::device::gicv3::gicd::{GICD_ICACTIVER, GICD_ICENABLER};
 use crate::device::gicv3::{
-    gicv3_gicd_mmio_handler, gicv3_gicr_mmio_handler, GICD_IROUTER, GICD_SIZE, GICR_SIZE,
+    gicv3_gicd_mmio_handler, gicv3_gicr_mmio_handler, GICD_IROUTER, GICD_SIZE, GICR_SIZE, LAST_GICR,
 };
 use crate::error::HvResult;
 use crate::memory::addr::{is_aligned, GuestPhysAddr, HostPhysAddr};
 use crate::memory::{
-    mmio_subpage_handler, npages, Frame, MMIOConfig, MMIOHandler, MMIORegion, MemFlags,
-    MemoryRegion, MemorySet,
+    mmio_generic_handler, mmio_subpage_handler, npages, Frame, MMIOConfig, MMIOHandler, MMIORegion,
+    MemFlags, MemoryRegion, MemorySet,
 };
 use crate::percpu::{get_cpu_data, mpidr_to_cpuid, this_cpu_data, CpuSet};
 use crate::INIT_LATE_OK;
 use core::ptr::write_volatile;
-use core::sync::atomic::Ordering;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 #[repr(C)]
 pub struct CommPage {
@@ -71,7 +71,9 @@ impl CommRegion {
         }
     }
 }
+static CELL_ID: AtomicU32 = AtomicU32::new(0);
 pub struct Cell {
+    id: u32,
     /// Communication Page
     pub comm_page: Frame,
     /// Cell configuration.
@@ -122,13 +124,6 @@ impl Cell {
             MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
         ));
 
-        // TODO: Without this mapping, create a new cell will get warnings because we don't have mmio handlers now.
-        // cell.gpm.insert(MemoryRegion::new_with_offset_mapper(
-        //     0x800_0000 as GuestPhysAddr,
-        //     0x800_0000 as HostPhysAddr,
-        //     0x020_0000 as usize,
-        //     MemFlags::READ | MemFlags::WRITE,
-        // ))?;
         trace!("Guest phyiscal memory set: {:#x?}", cell.gpm);
         Ok(cell)
     }
@@ -138,6 +133,7 @@ impl Cell {
         assert!(npages(config.total_size()) == 1);
 
         let mut cell: Cell = Self {
+            id: CELL_ID.load(Ordering::Relaxed),
             config_frame: {
                 let mut config_frame = Frame::new()?;
                 config_frame.copy_data_from(config.as_slice());
@@ -150,7 +146,7 @@ impl Cell {
             mmio: vec![],
             irq_bitmap: [0; 1024 / 32],
         };
-
+        CELL_ID.fetch_add(1, Ordering::SeqCst);
         cell.register_gicv3_mmio_handlers();
         cell.init_irq_bitmap();
         if !is_root_cell {
@@ -195,39 +191,41 @@ impl Cell {
         let syscfg = sys.root_cell.config();
 
         // add gicr handler
+        let mut last_gicr: u64 = 0;
         for cpu in CpuSet::from_cpuset_slice(syscfg.cpu_set()).iter() {
             let gicr_base = get_cpu_data(cpu).gicr_base as _;
             if gicr_base == 0 {
                 continue;
             }
+            last_gicr += 1;
             self.mmio_region_register(gicr_base, GICR_SIZE, gicv3_gicr_mmio_handler, cpu as _);
         }
+        LAST_GICR.call_once(|| last_gicr - 1);
+        self.mmio_region_register(0x8080000, 0x20000, mmio_generic_handler, 0x8080000);
+    }
 
-        self.mem_region_insert(MemoryRegion::new_with_offset_mapper(
-            0x8080000 as GuestPhysAddr,
-            0x8080000 as HostPhysAddr,
-            0x20000 as usize,
-            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-        ));
+    /// Get cell id
+    pub fn id(&self) -> u32 {
+        self.id
     }
 
     pub fn suspend(&self) {
-        info!("suspending cpu_set = {:#x?}", self.cpu_set);
+        trace!("suspending cpu_set = {:#x?}", self.cpu_set);
         self.cpu_set
             .iter_except(this_cpu_data().id)
             .for_each(|cpu_id| {
-                info!("try to suspend cpu_id = {:#x?}", cpu_id);
+                trace!("try to suspend cpu_id = {:#x?}", cpu_id);
                 suspend_cpu(cpu_id);
             });
         info!("send sgi done!");
     }
 
     pub fn resume(&self) {
-        info!("resuming cpu_set = {:#x?}", self.cpu_set);
+        trace!("resuming cpu_set = {:#x?}", self.cpu_set);
         self.cpu_set
             .iter_except(this_cpu_data().id)
             .for_each(|cpu_id| {
-                info!("try to resume cpu_id = {:#x?}", cpu_id);
+                trace!("try to resume cpu_id = {:#x?}", cpu_id);
                 resume_cpu(cpu_id);
             });
     }

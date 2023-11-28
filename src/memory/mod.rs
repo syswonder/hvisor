@@ -184,6 +184,7 @@ pub fn init_hv_page_table() -> HvResult {
         MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
     ))?;
 
+    // add virt gic its
     hv_pt.insert(MemoryRegion::new_with_offset_mapper(
         0x8080000 as GuestPhysAddr,
         0x8080000 as HostPhysAddr,
