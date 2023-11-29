@@ -18,7 +18,7 @@ use crate::memory::{
 use crate::percpu::{get_cpu_data, mpidr_to_cpuid, this_cpu_data, CpuSet};
 use crate::INIT_LATE_OK;
 use core::ptr::write_volatile;
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::Ordering;
 
 #[repr(C)]
 pub struct CommPage {
@@ -71,9 +71,7 @@ impl CommRegion {
         }
     }
 }
-static CELL_ID: AtomicU32 = AtomicU32::new(0);
 pub struct Cell {
-    id: u32,
     /// Communication Page
     pub comm_page: Frame,
     /// Cell configuration.
@@ -133,7 +131,6 @@ impl Cell {
         assert!(npages(config.total_size()) == 1);
 
         let mut cell: Cell = Self {
-            id: CELL_ID.load(Ordering::Relaxed),
             config_frame: {
                 let mut config_frame = Frame::new()?;
                 config_frame.copy_data_from(config.as_slice());
@@ -146,7 +143,6 @@ impl Cell {
             mmio: vec![],
             irq_bitmap: [0; 1024 / 32],
         };
-        CELL_ID.fetch_add(1, Ordering::SeqCst);
         cell.register_gicv3_mmio_handlers();
         cell.init_irq_bitmap();
         if !is_root_cell {
@@ -206,7 +202,7 @@ impl Cell {
 
     /// Get cell id
     pub fn id(&self) -> u32 {
-        self.id
+        self.config().id()
     }
 
     pub fn suspend(&self) {

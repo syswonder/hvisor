@@ -27,14 +27,14 @@ pub fn print(args: fmt::Arguments) {
     let _locked = PRINT_LOCK.lock();
     Stdout.write_fmt(args).unwrap();
 }
-
+/// print without line breaks
 #[macro_export]
 macro_rules! print {
     ($fmt: literal $(, $($arg: tt)+)?) => {
         $crate::logging::print(format_args!($fmt $(, $($arg)+)?));
     }
 }
-
+/// print with line breaks
 #[macro_export]
 macro_rules! println {
     () => { print!("\n") };
