@@ -71,13 +71,22 @@ pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
             handler(mmio, arg)
         }
         None => {
-            warn!("unhandled mmio fault {:#x?}", mmio);
+            warn!(
+                "Cell {} unhandled mmio fault {:#x?}",
+                cell.read().id(),
+                mmio
+            );
             hv_result_err!(EINVAL)
         }
     }
 }
 
 pub fn mmio_subpage_handler(mmio: &mut MMIOAccess, base: u64) -> HvResult {
+    mmio_perform_access(base, mmio);
+    Ok(())
+}
+
+pub fn mmio_generic_handler(mmio: &mut MMIOAccess, base: u64) -> HvResult {
     mmio_perform_access(base, mmio);
     Ok(())
 }

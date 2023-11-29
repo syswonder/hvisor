@@ -14,7 +14,7 @@ pub fn send_event(cpu_id: u64, sgi_num: u64) {
 }
 
 pub fn suspend_cpu(cpu_id: u64) {
-    info!("suspending cpu {:#x?}", cpu_id);
+    trace!("suspending cpu {:#x?}", cpu_id);
     let cpu_data = get_cpu_data(cpu_id);
     let _lock = cpu_data.ctrl_lock.lock();
     cpu_data.need_suspend = true;
@@ -27,14 +27,14 @@ pub fn suspend_cpu(cpu_id: u64) {
 }
 
 pub fn resume_cpu(cpu_id: u64) {
-    info!("resuming cpu {:#x?}", cpu_id);
+    trace!("resuming cpu {:#x?}", cpu_id);
     let cpu_data = get_cpu_data(cpu_id);
     let _lock = cpu_data.ctrl_lock.lock();
     cpu_data.need_suspend = false;
 }
 
 pub fn park_cpu(cpu_id: u64) {
-    info!("parking cpu {:#x?}", cpu_id);
+    trace!("parking cpu {:#x?}", cpu_id);
     let cpu_data = get_cpu_data(cpu_id);
     let _lock = cpu_data.ctrl_lock.lock();
     cpu_data.park = true;
@@ -42,7 +42,7 @@ pub fn park_cpu(cpu_id: u64) {
 }
 
 pub fn reset_cpu(cpu_id: u64) {
-    info!("resetting cpu {:#x?}", cpu_id);
+    trace!("resetting cpu {:#x?}", cpu_id);
     let cpu_data = get_cpu_data(cpu_id);
     let _lock = cpu_data.ctrl_lock.lock();
     cpu_data.reset = true;

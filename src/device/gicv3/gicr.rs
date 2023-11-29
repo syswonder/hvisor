@@ -11,6 +11,7 @@ use crate::{
     percpu::{get_cpu_data, this_cell},
 };
 use alloc::sync::Arc;
+use spin::Once;
 use tock_registers::{
     interfaces::Readable,
     register_structs,
@@ -102,7 +103,7 @@ const GICR_ISACTIVER: u64 = GICD_ISACTIVER;
 const GICR_ICACTIVER: u64 = GICD_ICACTIVER;
 const GICR_IPRIORITYR: u64 = GICD_IPRIORITYR;
 const GICR_ICFGR: u64 = GICD_ICFGR;
-
+const GICR_TYPER_LAST: u64 = 1 << 4;
 /// Representation of the GIC Distributor.
 pub struct GICR {
     /// Access to shared registers is guarded with a lock.
@@ -123,10 +124,18 @@ impl GICR {
     }
 }
 
+pub static LAST_GICR: Once<u64> = Once::new();
+
 pub fn gicv3_gicr_mmio_handler(mmio: &mut MMIOAccess, cpu: u64) -> HvResult {
     // info!("gicr({}) mmio = {:#x?}", cpu, mmio);
     let gicr_base = get_cpu_data(cpu).gicr_base;
     match mmio.address as u64 {
+        GICR_TYPER => {
+            mmio_perform_access(gicr_base, mmio);
+            if cpu == *LAST_GICR.get().unwrap() {
+                mmio.value |= GICR_TYPER_LAST;
+            }
+        }
         GICR_IIDR | 0xffd0..=0xfffc => {
             // Read-only registers that might be used by a cell to find the redistributor corresponding to a CPU. Keep them accessible.
             mmio_perform_access(gicr_base, mmio);
