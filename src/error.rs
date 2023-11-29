@@ -88,7 +88,7 @@ impl Debug for HvError {
         Ok(())
     }
 }
-
+/// Generate a HvError according to error node and msg.
 #[macro_export]
 macro_rules! hv_err {
     ($num: ident) => {{
@@ -100,7 +100,7 @@ macro_rules! hv_err {
         HvError::new($num, file!(), line!(), column!(), Some($msg.into()))
     }};
 }
-
+/// Generate a Err including a HvError struct
 #[macro_export]
 macro_rules! hv_result_err {
     ($num: ident) => {
