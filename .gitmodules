@@ -1,3 +1,0 @@
-[submodule "test-img"]
-	path = test-img
-	url = git@github.com:syswonder/sysHyper-testimg.git

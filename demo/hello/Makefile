@@ -14,9 +14,9 @@ export STATS
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 
 build_path := target/$(ARCH)/$(MODE)
-target_elf := $(build_path)/rvmarm
-target_bin := $(build_path)/rvmarm.bin
-guest_obj  := demo/helloworld_aarch64-qemu-virt.elf
+target_elf := $(build_path)/hello
+target_bin := $(build_path)/hello.bin
+
 features :=
 
 ifeq ($(STATS), on)
@@ -40,20 +40,8 @@ all: $(target_bin)
 .PHONY: elf
 elf:
 	cargo build $(build_args)
-.PHONY: scp
-scp: $(target_bin)
-	scp -P $(PORT) -r $(target_bin) qemu-test/guest/* scp root@localhost:~/
 .PHONY: disa
 disa:
-	rust-objdump --disassemble $(target_elf) > rvm.S
+	rust-objdump --disassemble $(target_elf) > hello.S
 $(target_bin): elf
 	$(OBJCOPY) $(target_elf) --strip-all -O binary $@
-run: all
-	cd qemu-test/host && ./test.sh
-
-monitor:
-	gdb-multiarch \
-	-ex 'target remote:1234' \
-	-ex 'file $(target_elf)' \
-	-ex 'add-symbol-file $(guest_obj)' \
-	-ex 'continue'

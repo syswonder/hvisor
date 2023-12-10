@@ -7,7 +7,7 @@ pub use crate::memory::PAGE_SIZE;
 pub const HV_HEAP_SIZE: usize = 1024 * 1024; // 1 MB
 
 /// Size of the per-CPU data (stack and other CPU-local data).
-pub const PER_CPU_SIZE: usize = 32 * 1024; // 32KB  //may get bigger when dev
+pub const PER_CPU_SIZE: usize = 64 * 1024; // 64KB  //may get bigger when dev
 
 /// Size of the per cpu boot stack
 pub const PER_CPU_BOOT_SIZE: usize = 1024; // 1KB
@@ -22,6 +22,8 @@ pub const PER_CPU_ARRAY_PTR: *mut VirtAddr = __core_end as _;
 
 /// Pointer of trampoline start.
 pub const TRAMPOLINE_START: *mut VirtAddr = __trampoline_start as _;
+
+pub const INVALID_ADDRESS: u64 = u64::MAX;
 
 /// Pointer of the `HvSystemConfig` structure.
 pub fn hv_config_ptr() -> *const HvSystemConfig {

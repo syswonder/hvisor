@@ -4,9 +4,9 @@ use core::{fmt::Debug, marker::PhantomData, slice};
 use spin::Mutex;
 
 use super::addr::{phys_to_virt, PhysAddr};
-use super::{Frame, MemFlags, MemoryRegion};
+use super::{Frame, MemFlags, MemoryRegion, TEMPORARY_MAPPING_BASE};
 use crate::error::{HvError, HvResult};
-use crate::memory::addr::virt_to_phys;
+use crate::memory::addr::{is_aligned, virt_to_phys};
 use crate::memory::VirtAddr;
 
 #[derive(Debug)]
@@ -316,14 +316,14 @@ where
         page: Page<VA>,
         paddr: PhysAddr,
         flags: MemFlags,
-    ) -> PagingResult<(&mut PTE)> {
+    ) -> PagingResult<&mut PTE> {
         let entry: &mut PTE = self.get_entry_mut_or_create(page)?;
-        if !entry.is_unused() {
+        if !entry.is_unused() && page.vaddr.into() != TEMPORARY_MAPPING_BASE {
             return Err(PagingError::AlreadyMapped);
         }
         entry.set_addr(page.size.align_down(paddr));
         entry.set_flags(flags, page.size.is_huge());
-        Ok((entry))
+        Ok(entry)
     }
 
     fn unmap_page(&mut self, vaddr: VA) -> PagingResult<(PhysAddr, PageSize)> {
@@ -418,6 +418,12 @@ where
     }
 
     fn map(&mut self, region: &MemoryRegion<VA>) -> HvResult {
+        assert!(
+            is_aligned(region.start.into()),
+            "region.start = {:#x?}",
+            region.start.into()
+        );
+        assert!(is_aligned(region.size), "region.size = {:#x?}", region.size);
         trace!(
             "create mapping in {}: {:#x?}",
             core::any::type_name::<Self>(),
@@ -426,7 +432,6 @@ where
         let _lock = self.clonee_lock.lock();
         let mut vaddr = region.start.into();
         let mut size = region.size;
-        let mut x = 0;
         while size > 0 {
             let paddr = region.mapper.map_fn(vaddr);
             let page_size = if PageSize::Size1G.is_aligned(vaddr)
@@ -445,16 +450,15 @@ where
                 PageSize::Size4K
             };
             let page = Page::new_aligned(vaddr.into(), page_size);
-            let page_result =
-                self.inner
-                    .map_page(page, paddr, region.flags)
-                    .map_err(|e: PagingError| {
-                        error!(
-                            "failed to map page: {:#x?}({:?}) -> {:#x?}, {:?}",
-                            vaddr, page_size, paddr, e
-                        );
-                        e
-                    })?;
+            self.inner
+                .map_page(page, paddr, region.flags)
+                .map_err(|e: PagingError| {
+                    error!(
+                        "failed to map page: {:#x?}({:?}) -> {:#x?}, {:?}",
+                        vaddr, page_size, paddr, e
+                    );
+                    e
+                })?;
             vaddr += page_size as usize;
             size -= page_size as usize;
         }
@@ -475,6 +479,10 @@ where
                 error!("failed to unmap page: {:#x?}, {:?}", vaddr, e);
                 e
             })?;
+            if !page_size.is_aligned(vaddr) {
+                error!("error vaddr={:#x?}", vaddr);
+                loop {}
+            }
             assert!(page_size.is_aligned(vaddr));
             assert!(page_size as usize <= size);
             vaddr += page_size as usize;
@@ -550,5 +558,13 @@ fn next_table_mut_or_create<'a, E: GenericPTE>(
         Ok(table_of_mut(paddr))
     } else {
         next_table_mut(entry)
+    }
+}
+
+pub fn npages(sz: usize) -> usize {
+    if sz & 0xfff == 0 {
+        sz >> 12
+    } else {
+        (sz >> 12) + 1
     }
 }

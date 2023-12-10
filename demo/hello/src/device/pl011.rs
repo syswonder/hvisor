@@ -1,13 +1,18 @@
-#![allow(dead_code)]
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite, WriteOnly};
 
-use crate::memory::addr::{PhysAddr, VirtAddr};
 use spin::Mutex;
+pub type VirtAddr = usize;
+pub type PhysAddr = usize;
 
+pub type GuestVirtAddr = usize;
+pub type GuestPhysAddr = usize;
+
+pub type HostVirtAddr = VirtAddr;
+pub type HostPhysAddr = PhysAddr;
 pub const UART_BASE_PHYS: PhysAddr = 0x09000000;
-pub const UART_BASE_VIRT: VirtAddr = 0xffffc0000000;
+pub const UART_BASE_VIRT: VirtAddr = 0x09000000;
 
 lazy_static! {
     static ref UART: Mutex<Pl011Uart> = {

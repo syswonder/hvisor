@@ -4,19 +4,22 @@
 
 use alloc::collections::btree_map::{BTreeMap, Entry};
 use core::fmt::{Debug, Formatter, Result};
+use spin::Once;
 
-use super::addr::{align_down, align_up};
 use super::{mapper::Mapper, paging::GenericPageTable, MemFlags};
+use super::{AlignedPage, VirtAddr, NUM_TEMPORARY_PAGES, PAGE_SIZE, TEMPORARY_MAPPING_BASE};
+use crate::arch::Stage2PageTable;
 use crate::error::HvResult;
-use crate::memory::PhysAddr;
+use crate::memory::addr::is_aligned;
 use crate::memory::paging::{PageSize, PagingResult};
+use crate::memory::PhysAddr;
 
 #[derive(Clone)]
 pub struct MemoryRegion<VA> {
     pub start: VA,
     pub size: usize,
     pub flags: MemFlags,
-    pub(super) mapper: Mapper,
+    pub mapper: Mapper,
 }
 
 pub struct MemorySet<PT: GenericPageTable>
@@ -29,8 +32,7 @@ where
 
 impl<VA: From<usize> + Into<usize> + Copy> MemoryRegion<VA> {
     pub(super) fn new(start: VA, size: usize, flags: MemFlags, mapper: Mapper) -> Self {
-        let start = align_down(start.into());
-        let size = align_up(size);
+        let start = start.into();
         Self {
             start: start.into(),
             size,
@@ -83,6 +85,8 @@ where
 
     /// Add a memory region to this set.
     pub fn insert(&mut self, region: MemoryRegion<PT::VA>) -> HvResult {
+        assert!(is_aligned(region.start.into()));
+        assert!(is_aligned(region.size));
         if region.size == 0 {
             return Ok(());
         }
@@ -115,6 +119,16 @@ where
         }
     }
 
+    pub fn map_partial(&mut self, mem: &MemoryRegion<PT::VA>) -> HvResult {
+        // Todo: Check if the memory area is included in the memory set.
+        self.pt.map(mem)
+    }
+
+    pub fn unmap_partial(&mut self, mem: &MemoryRegion<PT::VA>) -> HvResult {
+        // Todo: Check if the memory area is included in the memory set.
+        self.pt.unmap(mem)
+    }
+
     pub fn clear(&mut self) {
         for region in self.regions.values() {
             self.pt.unmap(region).unwrap();
@@ -131,6 +145,28 @@ where
         vaddr: PT::VA,
     ) -> PagingResult<(PhysAddr, MemFlags, PageSize)> {
         self.pt.query(vaddr)
+    }
+    /// Map a physical address to a temporary virtual address.
+    /// It should only used when access an address in el2 but hypervisor doesn't have the mapping.
+    pub fn map_temporary(
+        &mut self,
+        start_paddr: PhysAddr,
+        size: usize,
+        flags: MemFlags,
+    ) -> HvResult<VirtAddr> {
+        if size > NUM_TEMPORARY_PAGES * PAGE_SIZE {
+            warn!("Trying to map a too big space in temporary area");
+            return hv_result_err!(EINVAL);
+        }
+        let region: MemoryRegion<PT::VA> = MemoryRegion::new_with_offset_mapper(
+            TEMPORARY_MAPPING_BASE.into(),
+            start_paddr,
+            size,
+            flags,
+        );
+        self.pt.map(&region)?;
+        self.regions.insert(region.start, region);
+        Ok(TEMPORARY_MAPPING_BASE)
     }
 }
 
@@ -168,3 +204,7 @@ where
         self.clear();
     }
 }
+
+pub static PARKING_MEMORY_SET: Once<MemorySet<Stage2PageTable>> = Once::new();
+
+pub static mut PARKING_INST_PAGE: AlignedPage = AlignedPage::new();

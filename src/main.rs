@@ -1,15 +1,22 @@
+//! The main module and entrypoint
+//!
+//! Various facilities of hvisor are implemented as submodules. The most
+//! important ones are:
+//!
+//! - [`memory`]: Memory management
+//! - [`hypercall`]: Hypercall handling
+//! - [`device`]: Device management
+//! - [`arch`]: Architecture's related
+
 #![no_std] // 禁用标准库链接
 #![no_main]
 // 不使用main入口，使用自己定义实际入口_start，因为我们还没有初始化堆栈指针
 #![feature(asm_const)]
 #![feature(naked_functions)] //  surpport naked function
-#![feature(default_alloc_error_handler)]
-use core::arch::global_asm;
 // 支持内联汇编
-use core::result::Result;
+#![deny(warnings, missing_docs)] // 将warnings作为error
 #[macro_use]
 extern crate alloc;
-#[macro_use]
 extern crate buddy_system_allocator;
 #[macro_use]
 mod error;
@@ -19,7 +26,7 @@ extern crate log;
 extern crate lazy_static;
 #[macro_use]
 mod logging;
-
+mod control;
 //#[cfg(target_arch = "aarch64")]
 #[path = "arch/aarch64/mod.rs"]
 mod arch;
@@ -30,10 +37,10 @@ mod device;
 mod header;
 mod hypercall;
 mod memory;
+mod num;
 mod panic;
 mod percpu;
 
-use crate::arch::sysreg::{read_sysreg, write_sysreg};
 use crate::cell::root_cell;
 use crate::percpu::this_cpu_data;
 use config::HvSystemConfig;
@@ -42,12 +49,10 @@ use device::gicv3::gicv3_cpu_init;
 use error::HvResult;
 use header::HvHeader;
 use percpu::PerCpu;
-
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
 static INIT_EARLY_OK: AtomicU32 = AtomicU32::new(0);
 static INIT_LATE_OK: AtomicU32 = AtomicU32::new(0);
 static ERROR_NUM: AtomicI32 = AtomicI32::new(0);
-
 fn has_err() -> bool {
     ERROR_NUM.load(Ordering::Acquire) != 0
 }
@@ -95,7 +100,7 @@ fn primary_init_early() -> HvResult {
     memory::init_heap();
     system_config.check()?;
     info!("Hypervisor header: {:#x?}", HvHeader::get());
-    info!("System config: {:#x?}", system_config);
+    // info!("System config: {:#x?}", system_config);
 
     memory::init_frame_allocator();
     memory::init_hv_page_table()?;
@@ -111,7 +116,18 @@ fn primary_init_late() {
     INIT_LATE_OK.store(1, Ordering::Release);
 }
 
-fn main(cpu_data: &mut PerCpu) -> HvResult {
+fn per_cpu_init() {
+    let cpu_data = this_cpu_data();
+    cpu_data.cell = Some(root_cell());
+    gicv3_cpu_init();
+    unsafe {
+        memory::hv_page_table().read().activate();
+        root_cell().read().gpm_activate();
+    };
+    println!("CPU {} init OK.", cpu_data.id);
+}
+
+fn main(cpu_data: &'static mut PerCpu) -> HvResult {
     println!("Hello");
     println!(
         "cpuid{} vaddr{:#x?} phyid{} &cpu_data{:#x?}",
@@ -135,11 +151,8 @@ fn main(cpu_data: &mut PerCpu) -> HvResult {
         wait_for_counter(&INIT_EARLY_OK, 1)?
     }
 
-    unsafe { 
-        memory::hv_page_table().read().activate();
-        root_cell().gpm.activate();
-     };
-    println!("CPU {} init OK.", cpu_data.id);
+    per_cpu_init();
+
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
     wait_for_counter(&INITED_CPUS, online_cpus)?;
 
@@ -148,9 +161,8 @@ fn main(cpu_data: &mut PerCpu) -> HvResult {
     } else {
         wait_for_counter(&INIT_LATE_OK, 1)?
     }
-    gicv3_cpu_init();
     cpu_data.activate_vmm()
 }
-extern "C" fn entry(cpu_data: &mut PerCpu) -> () {
+extern "C" fn entry(cpu_data: &'static mut PerCpu) -> () {
     if let Err(_e) = main(cpu_data) {}
 }

@@ -179,6 +179,12 @@ impl Frame {
     pub fn as_slice_mut(&mut self) -> &mut [u8] {
         unsafe { core::slice::from_raw_parts_mut(self.as_mut_ptr(), self.size()) }
     }
+
+    pub fn copy_data_from(&mut self, data: &[u8]) {
+        let len = data.len();
+        assert!(data.len() <= self.size());
+        self.as_slice_mut()[..len].copy_from_slice(data);
+    }
 }
 
 impl Drop for Frame {
