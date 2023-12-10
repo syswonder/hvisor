@@ -1,6 +1,6 @@
 //! The main module and entrypoint
 //!
-//! Various facilities of sysHyper are implemented as submodules. The most
+//! Various facilities of hvisor are implemented as submodules. The most
 //! important ones are:
 //!
 //! - [`memory`]: Memory management
