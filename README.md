@@ -1,12 +1,12 @@
-# sysHyper 
+# hvisor 
 <p align = "center">
 <br><br>
-<img src="https://img.shields.io/badge/sysHyper-orange" />
-<img src="https://img.shields.io/github/license/syswonder/sysHyper?color=red" />
-<img src="https://img.shields.io/github/contributors/syswonder/sysHyper?color=blue" />
-<img src="https://img.shields.io/github/languages/code-size/syswonder/sysHyper?color=green">
-<img src="https://img.shields.io/github/repo-size/syswonder/sysHyper?color=white">
-<img src="https://img.shields.io/github/languages/top/syswonder/sysHyper?color=orange">
+<img src="https://img.shields.io/badge/hvisor-orange" />
+<img src="https://img.shields.io/github/license/syswonder/hvisor?color=red" />
+<img src="https://img.shields.io/github/contributors/syswonder/hvisor?color=blue" />
+<img src="https://img.shields.io/github/languages/code-size/syswonder/hvisor?color=green">
+<img src="https://img.shields.io/github/repo-size/syswonder/hvisor?color=white">
+<img src="https://img.shields.io/github/languages/top/syswonder/hvisor?color=orange">
 <br><br>
 </p>
 
@@ -38,11 +38,11 @@ To make it easy to get started, [here](https://bhpan.buaa.edu.cn/link/AA1BF35BBB
 ├── home
 	├── arm64 
         ├── images: Contains a Linux Image and ramfs.
-        ├── sysHyper: Files required to run sysHyper.
+        ├── hvisor: Files required to run hvisor.
         ├── jailhouse: Files required to run jailhouse.
 ```
 
-The following describes how to run a non-root-linux on jailhouse/sysHyper based on `ubuntu-20.04-rootfs_ext4.img`:
+The following describes how to run a non-root-linux on jailhouse/hvisor based on `ubuntu-20.04-rootfs_ext4.img`:
 
 1. Build `rvmarm.bin`:
 
@@ -50,7 +50,7 @@ The following describes how to run a non-root-linux on jailhouse/sysHyper based 
    make all
    ```
 
-   Then copy `target/aarch64/debug/rvmarm.bin` to `~/sysHyper/` in `ubuntu-20.04-rootfs_ext4.img`.
+   Then copy `target/aarch64/debug/rvmarm.bin` to `~/hvisor/` in `ubuntu-20.04-rootfs_ext4.img`.
 
 2. Start QEMU:
 
@@ -75,7 +75,7 @@ The following describes how to run a non-root-linux on jailhouse/sysHyper based 
 
 4. Go to the home directory and start non-root-linux:
 
-   * For sysHyper: go to the `sysHyper` folder and run:
+   * For hvisor: go to the `hvisor` folder and run:
 
      ```
      ./setup.sh

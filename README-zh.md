@@ -1,12 +1,12 @@
-# sysHyper 
+# hvisor 
 <p align = "center">
 <br><br>
-<img src="https://img.shields.io/badge/sysHyper-orange" />
-<img src="https://img.shields.io/github/license/syswonder/sysHyper?color=red" />
-<img src="https://img.shields.io/github/contributors/syswonder/sysHyper?color=blue" />
-<img src="https://img.shields.io/github/languages/code-size/syswonder/sysHyper?color=green">
-<img src="https://img.shields.io/github/repo-size/syswonder/sysHyper?color=white">
-<img src="https://img.shields.io/github/languages/top/syswonder/sysHyper?color=orange">
+<img src="https://img.shields.io/badge/hvisor-orange" />
+<img src="https://img.shields.io/github/license/syswonder/hvisor?color=red" />
+<img src="https://img.shields.io/github/contributors/syswonder/hvisor?color=blue" />
+<img src="https://img.shields.io/github/languages/code-size/syswonder/hvisor?color=green">
+<img src="https://img.shields.io/github/repo-size/syswonder/hvisor?color=white">
+<img src="https://img.shields.io/github/languages/top/syswonder/hvisor?color=orange">
 <br><br>
 </p>
 
@@ -36,11 +36,11 @@ README：[中文](./README-zh.md) | [English](README.md)
 ├── home
 	├── arm64 
         ├── images: 包含一个Linux Image和内存文件系统
-        ├── sysHyper: 运行sysHyper所需要的文件
+        ├── hvisor: 运行hvisor所需要的文件
         ├── jailhouse: 运行jailhouse所需要的文件
 ```
 
-下面介绍基于`ubuntu-20.04-rootfs_ext4.img`，在jailhouse/sysHyper上运行一个non-root-linux的方法：
+下面介绍基于`ubuntu-20.04-rootfs_ext4.img`，在jailhouse/hvisor上运行一个non-root-linux的方法：
 
 1. 在本项目目录下构建`rvmarm.bin`：
 
@@ -48,7 +48,7 @@ README：[中文](./README-zh.md) | [English](README.md)
    make all
    ```
 
-   并将`target/aarch64/debug/rvmarm.bin`复制到`ubuntu-20.04-rootfs_ext4.img`中的`sysHyper`目录下。
+   并将`target/aarch64/debug/rvmarm.bin`复制到`ubuntu-20.04-rootfs_ext4.img`中的`hvisor`目录下。
 
 2. 在本项目目录下启动qemu
 
@@ -73,7 +73,7 @@ README：[中文](./README-zh.md) | [English](README.md)
 
 4. 进入主目录，启动non-root-linux：
 
-   * sysHyper：进入sysHyper文件夹，依次执行：
+   * hvisor：进入hvisor文件夹，依次执行：
 
      ```
      ./setup.sh
