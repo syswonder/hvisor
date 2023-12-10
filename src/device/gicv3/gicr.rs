@@ -3,11 +3,24 @@
 // Copyright (c) 2020-2022 Andre Richter <andre.o.richter@gmail.com>
 
 //! GICC Driver - GIC CPU interface.
-use crate::device::common::MMIODerefWrapper;
+#![allow(dead_code)]
+use crate::{
+    device::common::MMIODerefWrapper,
+    error::HvResult,
+    memory::{mmio_perform_access, MMIOAccess},
+    percpu::{get_cpu_data, this_cell},
+};
+use alloc::sync::Arc;
+use spin::Once;
 use tock_registers::{
-    interfaces::{Readable, Writeable},
-    register_bitfields, register_structs,
+    interfaces::Readable,
+    register_structs,
     registers::{ReadOnly, ReadWrite},
+};
+
+use super::gicd::{
+    GICD_ICACTIVER, GICD_ICENABLER, GICD_ICFGR, GICD_ICPENDR, GICD_IPRIORITYR, GICD_ISACTIVER,
+    GICD_ISENABLER, GICD_ISPENDR,
 };
 
 register_structs! {
@@ -69,11 +82,28 @@ type LpiReg = MMIODerefWrapper<GicRedistributorLPIRegs>;
 /// Abstraction for the banked parts of the associated MMIO registers.
 type SgiReg = MMIODerefWrapper<GicRedistributorSGIRegs>;
 
-const GICR_SGI_BASE: usize = 0x10000;
 //--------------------------------------------------------------------------------------------------
 // Public Definitions
 //--------------------------------------------------------------------------------------------------
 
+const GICR_CTLR: u64 = 0x0000;
+const GICR_IIDR: u64 = 0x0004;
+const GICR_TYPER: u64 = 0x0008;
+const GICR_STATUSR: u64 = 0x0010;
+const GICR_WAKER: u64 = 0x0014;
+const GICR_SYNCR: u64 = 0x00c0;
+const GICR_PIDR2: u64 = 0xffe8;
+const GICR_SGI_BASE: u64 = 0x10000;
+
+const GICR_ISENABLER: u64 = GICD_ISENABLER;
+const GICR_ICENABLER: u64 = GICD_ICENABLER;
+const GICR_ISPENDR: u64 = GICD_ISPENDR;
+const GICR_ICPENDR: u64 = GICD_ICPENDR;
+const GICR_ISACTIVER: u64 = GICD_ISACTIVER;
+const GICR_ICACTIVER: u64 = GICD_ICACTIVER;
+const GICR_IPRIORITYR: u64 = GICD_IPRIORITYR;
+const GICR_ICFGR: u64 = GICD_ICFGR;
+const GICR_TYPER_LAST: u64 = 1 << 4;
 /// Representation of the GIC Distributor.
 pub struct GICR {
     /// Access to shared registers is guarded with a lock.
@@ -86,10 +116,39 @@ impl GICR {
     pub const unsafe fn new(mmio_start_addr: usize) -> Self {
         Self {
             gicr_registers0: LpiReg::new(mmio_start_addr),
-            gicr_registers1: SgiReg::new(mmio_start_addr + GICR_SGI_BASE),
+            gicr_registers1: SgiReg::new(mmio_start_addr + GICR_SGI_BASE as usize),
         }
     }
     pub fn read_aff(&self) -> u64 {
         self.gicr_registers0.TYPER.get()
     }
+}
+
+pub static LAST_GICR: Once<u64> = Once::new();
+
+pub fn gicv3_gicr_mmio_handler(mmio: &mut MMIOAccess, cpu: u64) -> HvResult {
+    // info!("gicr({}) mmio = {:#x?}", cpu, mmio);
+    let gicr_base = get_cpu_data(cpu).gicr_base;
+    match mmio.address as u64 {
+        GICR_TYPER => {
+            mmio_perform_access(gicr_base, mmio);
+            if cpu == *LAST_GICR.get().unwrap() {
+                mmio.value |= GICR_TYPER_LAST;
+            }
+        }
+        GICR_IIDR | 0xffd0..=0xfffc => {
+            // Read-only registers that might be used by a cell to find the redistributor corresponding to a CPU. Keep them accessible.
+            mmio_perform_access(gicr_base, mmio);
+        }
+        GICR_SYNCR => {
+            mmio.value = 0;
+        }
+        _ => {
+            if Arc::ptr_eq(&this_cell(), get_cpu_data(cpu).cell.as_ref().unwrap()) {
+                // ignore access to foreign redistributors
+                mmio_perform_access(gicr_base, mmio);
+            }
+        }
+    }
+    HvResult::Ok(())
 }

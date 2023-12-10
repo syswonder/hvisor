@@ -1,4 +1,6 @@
 /target
-/rvm.S
-/tmp
 /qemu-test
+/demo/*
+!/demo/hello
+/demo/hello/target
+scp

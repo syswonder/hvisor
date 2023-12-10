@@ -1,10 +1,11 @@
-use core::fmt;
-use bitflags::bitflags;
-use numeric_enum_macro::numeric_enum;
+#![allow(unused)]
 use aarch64_cpu::registers::VTTBR_EL2;
+use core::fmt;
+use numeric_enum_macro::numeric_enum;
 
 use crate::memory::addr::{GuestPhysAddr, HostPhysAddr, PhysAddr};
-use crate::memory::{GenericPTE, Level4PageTable, MemFlags, PAGE_SIZE, PagingInstr};
+use crate::memory::{GenericPTE, Level4PageTable, MemFlags, PagingInstr, PAGE_SIZE};
+use crate::percpu::{arm_paging_vcpu_flush_tlbs, isb};
 
 bitflags::bitflags! {
     /// Memory attribute fields in the VMSAv8-64 translation table format descriptors.
@@ -136,15 +137,16 @@ impl GenericPTE for PageTableEntry {
     }
 
     fn set_addr(&mut self, paddr: HostPhysAddr) {
-        self.0 = (self.0 & !Self::PHYS_ADDR_MASK as u64) | (paddr as u64 & Self::PHYS_ADDR_MASK as u64);
+        self.0 =
+            (self.0 & !Self::PHYS_ADDR_MASK as u64) | (paddr as u64 & Self::PHYS_ADDR_MASK as u64);
     }
 
     fn set_flags(&mut self, flags: MemFlags, is_huge: bool) {
-        let mut mem_type:MemType = MemType::Normal;
+        let mut mem_type: MemType = MemType::Normal;
         if flags.contains(MemFlags::IO) {
             mem_type = MemType::Device;
         }
-        let mut flags:DescriptorAttr = flags.into();
+        let mut flags: DescriptorAttr = flags.into();
         if !is_huge {
             flags |= DescriptorAttr::NON_BLOCK;
         }
@@ -174,8 +176,9 @@ impl PageTableEntry {
     }
 
     fn set_flags_and_mem_type(&mut self, flags: DescriptorAttr, mem_type: MemType) {
-        let mut attr = flags | DescriptorAttr::from_mem_type(mem_type);
-        self.0 = (attr.bits() & !Self::PHYS_ADDR_MASK as u64) | (self.0 as u64 & Self::PHYS_ADDR_MASK as u64);
+        let attr = flags | DescriptorAttr::from_mem_type(mem_type);
+        self.0 = (attr.bits() & !Self::PHYS_ADDR_MASK as u64)
+            | (self.0 as u64 & Self::PHYS_ADDR_MASK as u64);
     }
 }
 
@@ -196,6 +199,8 @@ pub struct S2PTInstr;
 impl PagingInstr for S2PTInstr {
     unsafe fn activate(root_paddr: HostPhysAddr) {
         VTTBR_EL2.set_baddr(root_paddr as _);
+        isb();
+        arm_paging_vcpu_flush_tlbs();
     }
 
     fn flush(_vaddr: Option<usize>) {
