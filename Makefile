@@ -14,8 +14,8 @@ export STATS
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 
 build_path := target/$(ARCH)/$(MODE)
-target_elf := $(build_path)/rvmarm
-target_bin := $(build_path)/rvmarm.bin
+target_elf := $(build_path)/hvisor
+target_bin := $(build_path)/hvisor.bin
 guest_obj  := demo/helloworld_aarch64-qemu-virt.elf
 features :=
 
@@ -45,7 +45,7 @@ scp: $(target_bin)
 	scp -P $(PORT) -r $(target_bin) qemu-test/guest/* scp root@localhost:~/
 .PHONY: disa
 disa:
-	rust-objdump --disassemble $(target_elf) > rvm.S
+	rust-objdump --disassemble $(target_elf) > hvisor.S
 $(target_bin): elf
 	$(OBJCOPY) $(target_elf) --strip-all -O binary $@
 run: all

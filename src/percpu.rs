@@ -20,7 +20,6 @@ use crate::memory::{
 use aarch64_cpu::registers::*;
 use core::fmt::Debug;
 use core::sync::atomic::{AtomicU32, Ordering};
-use tock_registers::interfaces::*;
 static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
 static ACTIVATED_CPUS: AtomicU32 = AtomicU32::new(0);
 // global_asm!(include_str!("./arch/aarch64/page_table.S"),);
@@ -90,7 +89,7 @@ impl PerCpu {
         set_vtcr_flags();
         HCR_EL2.write(
             HCR_EL2::RW::EL1IsAarch64
-                + HCR_EL2::TSC::EnableTrapSmcToEl2
+                + HCR_EL2::TSC::EnableTrapEl1SmcToEl2
                 + HCR_EL2::VM::SET
                 + HCR_EL2::IMO::SET
                 + HCR_EL2::FMO::SET,

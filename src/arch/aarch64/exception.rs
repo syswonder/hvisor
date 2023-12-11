@@ -8,7 +8,6 @@ use crate::num::sign_extend;
 use crate::percpu::{get_cpu_data, mpidr_to_cpuid, this_cell, this_cpu_data, GeneralRegisters};
 use crate::percpu::{park_current_cpu, PerCpu};
 use aarch64_cpu::registers::*;
-use tock_registers::interfaces::*;
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[allow(non_upper_case_globals)]

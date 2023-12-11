@@ -4,8 +4,9 @@ version = 3
 
 [[package]]
 name = "aarch64-cpu"
-version = "9.3.1"
-source = "git+https://github.com/likey99/aarch64-cpu#2d37a0cade622e578d68a508e778b50228054274"
+version = "9.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ac42a04a61c19fc8196dd728022a784baecc5d63d7e256c01ad1b3fbfab26287"
 dependencies = [
  "tock-registers",
 ]
@@ -58,6 +59,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf1de4339761588bc0619e3cbc0120ee582ebb74b53b4efbf79117bd2da40fd"
 
 [[package]]
+name = "hvisor"
+version = "0.1.0"
+dependencies = [
+ "aarch64-cpu",
+ "bit_field 0.10.2",
+ "bitflags",
+ "bitmap-allocator",
+ "buddy_system_allocator",
+ "lazy_static",
+ "log",
+ "numeric-enum-macro",
+ "spin 0.9.8",
+ "tock-registers",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -90,22 +107,6 @@ name = "numeric-enum-macro"
 version = "0.2.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "300e4bdb6b46b592948e700ea1ef24a4296491f6a0ee722b258040abd15a3714"
-
-[[package]]
-name = "rvmarm"
-version = "0.1.0"
-dependencies = [
- "aarch64-cpu",
- "bit_field 0.10.2",
- "bitflags",
- "bitmap-allocator",
- "buddy_system_allocator",
- "lazy_static",
- "log",
- "numeric-enum-macro",
- "spin 0.9.8",
- "tock-registers",
-]
 
 [[package]]
 name = "scopeguard"
