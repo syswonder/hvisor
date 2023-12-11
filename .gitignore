@@ -1,6 +1,6 @@
 /target
 /qemu-test
-/demo/*
+/demo
 !/demo/hello
 /demo/hello/target
 scp

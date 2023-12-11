@@ -35,20 +35,20 @@ README：[中文](./README-zh.md) | [English](README.md)
 ```
 ├── home
 	├── arm64 
-        ├── images: 包含一个Linux Image和内存文件系统
-        ├── hvisor: 运行hvisor所需要的文件
-        ├── jailhouse: 运行jailhouse所需要的文件
+		├── images: 包含一个Linux Image和内存文件系统
+		├── hvisor: 运行hvisor所需要的文件
+		├── jailhouse: 运行jailhouse所需要的文件
 ```
 
 下面介绍基于`ubuntu-20.04-rootfs_ext4.img`，在jailhouse/hvisor上运行一个non-root-linux的方法：
 
-1. 在本项目目录下构建`rvmarm.bin`：
+1. 在本项目目录下构建`hvisor.bin`：
 
    ```makefile
    make all
    ```
 
-   并将`target/aarch64/debug/rvmarm.bin`复制到`ubuntu-20.04-rootfs_ext4.img`中的`hvisor`目录下。
+   并将`target/aarch64/debug/hvisor.bin`复制到`ubuntu-20.04-rootfs_ext4.img`中的`hvisor`目录下。
 
 2. 在本项目目录下启动qemu
 

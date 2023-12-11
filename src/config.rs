@@ -4,7 +4,7 @@ use core::{mem::size_of, slice};
 use crate::error::HvResult;
 use crate::memory::MemFlags;
 
-const CONFIG_SIGNATURE: [u8; 6] = *b"RVMSYS";
+const CONFIG_SIGNATURE: [u8; 6] = *b"HVISOR";
 const CONFIG_REVISION: u16 = 10;
 
 const HV_CELL_NAME_MAXLEN: usize = 31;
