@@ -141,6 +141,7 @@ fn handle_dabt(frame: &mut TrapFrame) {
     let sse = (iss >> 21 & 0x1) != 0;
     let sas = iss >> 22 & 0x3;
 
+    // size indicates how many bytes attempted by the operation.
     let size = 1 << sas;
     let hpfar = read_sysreg!(HPFAR_EL2);
     let far = read_sysreg!(FAR_EL2);

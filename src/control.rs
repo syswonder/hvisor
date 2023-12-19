@@ -1,5 +1,10 @@
-use crate::{arch::sysreg::write_sysreg, hypercall::SGI_EVENT_ID, percpu::get_cpu_data};
+use crate::{
+    arch::sysreg::write_sysreg,
+    hypercall::SGI_EVENT_ID,
+    percpu::{get_cpu_data, this_cpu_data},
+};
 
+/// send sgi to cpu
 pub fn send_event(cpu_id: u64, sgi_num: u64) {
     // TODO: add more info
     let aff3: u64 = 0 << 48;
@@ -11,6 +16,18 @@ pub fn send_event(cpu_id: u64, sgi_num: u64) {
     let val: u64 = aff1 | aff2 | aff3 | irm | sgi_id | target_list;
     write_sysreg!(icc_sgi1r_el1, val);
     // info!("write sgi sys value = {:#x}", val);
+}
+/// suspend current cpu
+pub fn suspend_self() {
+    let cpu_data = this_cpu_data();
+    let mut _lock = Some(cpu_data.ctrl_lock.lock());
+    cpu_data.need_suspend = true;
+    cpu_data.suspended = true;
+    _lock = None;
+    while cpu_data.need_suspend {}
+    _lock = Some(cpu_data.ctrl_lock.lock());
+    cpu_data.suspended = false;
+    drop(_lock);
 }
 
 pub fn suspend_cpu(cpu_id: u64) {

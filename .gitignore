@@ -4,3 +4,12 @@
 !/demo/hello
 /demo/hello/target
 scp
+.gdb_history
+*.mod.[co]
+*.mod
+*.[oa]
+*.cmd
+Module.symvers
+modules.order
+hvisor_ko/main.ko
+hvisor_user/hvisor

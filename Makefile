@@ -16,7 +16,7 @@ OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 build_path := target/$(ARCH)/$(MODE)
 target_elf := $(build_path)/hvisor
 target_bin := $(build_path)/hvisor.bin
-guest_obj  := demo/helloworld_aarch64-qemu-virt.elf
+guest_obj  := demo/linux-loader-linked.o
 features :=
 
 ifeq ($(STATS), on)

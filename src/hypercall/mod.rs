@@ -2,11 +2,15 @@
 use crate::cell::{add_cell, find_cell_by_id, remove_cell, root_cell, Cell, CommRegion};
 use crate::config::{CellConfig, HvCellDesc, HvMemoryRegion, HvSystemConfig};
 use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
-use crate::control::{park_cpu, reset_cpu};
+use crate::control::{park_cpu, reset_cpu, resume_cpu, send_event};
+use crate::device::emu::HVISOR_DEVICE;
 use crate::device::pci::mmio_pci_handler;
+use crate::device::virtio::VIRTIO_RESULT_MAP;
 use crate::error::HvResult;
 use crate::memory::addr::{align_down, align_up, is_aligned};
-use crate::memory::{self, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion};
+use crate::memory::{
+    self, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, EMU_SHARED_REGION_BASE,
+};
 use crate::percpu::{get_cpu_data, this_cpu_data, PerCpu};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -24,12 +28,16 @@ numeric_enum! {
         HypervisorCellStart = 2,
         HypervisorCellSetLoadable = 3,
         HypervisorCellDestroy = 4,
+        HypervisorInitVirtio = 9,
+        HypervisorFinishReq = 10,
     }
 }
 
 pub const SGI_INJECT_ID: u64 = 0;
-pub const SGI_EVENT_ID: u64 = 15;
+pub const SGI_VIRTIO_REQ_ID: u64 = 8;
+pub const SGI_VIRTIO_RES_ID: u64 = 9;
 pub const SGI_RESUME_ID: u64 = 14;
+pub const SGI_EVENT_ID: u64 = 15;
 const CELL_SHUT_DOWN: u32 = 2;
 const COMM_REGION_ABI_REVISION: u16 = 1;
 pub type HyperCallResult = HvResult<usize>;
@@ -57,9 +65,58 @@ impl<'a> HyperCall<'a> {
             HyperCallCode::HypervisorCellSetLoadable => self.hypervisor_cell_set_loadable(arg0),
             HyperCallCode::HypervisorCellStart => self.hypervisor_cell_start(arg0),
             HyperCallCode::HypervisorCellDestroy => self.hypervisor_cell_destroy(arg0),
+            HyperCallCode::HypervisorInitVirtio => self.hypervisor_init_virtio(arg0),
+            HyperCallCode::HypervisorFinishReq => self.hypervisor_finish_req(),
         }
     }
 
+    // Send virtio req result to non root. Only root cell calls.
+    fn hypervisor_finish_req(&self) -> HyperCallResult {
+        let cell = self.cpu_data.cell.clone().unwrap();
+        if !Arc::ptr_eq(&cell, &root_cell()) {
+            return hv_result_err!(
+                EPERM,
+                "Virtio finish operation over non-root cells: unsupported!"
+            );
+        }
+        let dev = HVISOR_DEVICE.lock();
+        let res = dev.get_result();
+        let mut map = VIRTIO_RESULT_MAP.lock();
+        map.insert(res.src_cpu, res.value);
+        if res.is_cfg == 1 {
+            resume_cpu(res.src_cpu);
+        } else {
+            info!("hvc finish req, value is {:#x?}", res.value);
+            send_event(res.src_cpu, SGI_VIRTIO_RES_ID);
+        }
+        HyperCallResult::Ok(0)
+    }
+
+    // only root cell calls the function and set virtio shared region between el1 and el2.
+    fn hypervisor_init_virtio(&mut self, shared_region_addr: u64) -> HyperCallResult {
+        info!(
+            "handle hvc init virtio, shared_region_addr = {:#x?}",
+            shared_region_addr
+        );
+        let cell = self.cpu_data.cell.clone().unwrap();
+        if !Arc::ptr_eq(&cell, &root_cell()) {
+            return hv_result_err!(EPERM, "Init virtio over non-root cells: unsupported!");
+        }
+        let shared_region_addr_pa = cell.read().gpm_query(shared_region_addr as _);
+        let offset = shared_region_addr_pa & (PAGE_SIZE - 1);
+        memory::hv_page_table()
+            .write()
+            .insert(MemoryRegion::new_with_offset_mapper(
+                EMU_SHARED_REGION_BASE,
+                align_down(shared_region_addr_pa),
+                PAGE_SIZE,
+                MemFlags::READ | MemFlags::WRITE,
+            ))?;
+        HVISOR_DEVICE
+            .lock()
+            .set_base_addr(EMU_SHARED_REGION_BASE + offset);
+        HyperCallResult::Ok(0)
+    }
     fn hypervisor_disable(&mut self) -> HyperCallResult {
         let cpus = PerCpu::activated_cpus();
 
@@ -110,7 +167,7 @@ impl<'a> HyperCall<'a> {
             align_up(cfg_pages_offs + config_total_size),
             MemFlags::READ,
         )?;
-        info!("cell.desc = {:#x?}", desc);
+        trace!("cell.desc = {:#x?}", desc);
 
         // we create the new cell here
         let cell = Cell::new(config, false)?;
@@ -197,7 +254,7 @@ impl<'a> HyperCall<'a> {
 
         cell_w.cpu_set.iter().for_each(|cpu_id| park_cpu(cpu_id));
         cell_w.loadable = true;
-        info!("cell.mem_regions() = {:#x?}", cell_w.config().mem_regions());
+        trace!("cell.mem_regions() = {:#x?}", cell_w.config().mem_regions());
         let mem_regs: Vec<HvMemoryRegion> = cell_w.config().mem_regions().to_vec();
 
         // remap to rootcell
