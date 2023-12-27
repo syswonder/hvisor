@@ -1,3 +1,5 @@
+#ifndef __HVISOR_H
+#define __HVISOR_H
 #include <linux/ioctl.h>
 #include <linux/types.h>
 #define MMAP_SIZE 1024
@@ -66,3 +68,5 @@ static inline __u64 hvisor_call_arg1(__u64 num, __u64 arg1)
 		: "memory");
 	return num_result;
 }
+
+#endif /* __HVISOR_H */

@@ -73,6 +73,7 @@ static int hvisor_map(struct file * filp, struct vm_area_struct *vma)
     
     // device_region must be aligned to one page.
     phys = virt_to_phys(device_region);
+    // vma->vm_flags |= (VM_IO | VM_LOCKED | (VM_DONTEXPAND | VM_DONTDUMP)); Not sure should we add this line.
     if(remap_pfn_range(vma, 
                     vma->vm_start,
                     phys >> PAGE_SHIFT,

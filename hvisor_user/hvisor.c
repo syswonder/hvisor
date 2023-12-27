@@ -10,8 +10,11 @@
 #include <signal.h>
 
 #include "hvisor.h"
+#include "virtio.h"
+#include "log.h"
 int hvisor_init();
 void hvisor_sig_handler(int n, siginfo_t *info, void *unused);
+
 struct hvisor_device_region *device_region;
 int fd;
 
@@ -56,6 +59,8 @@ int hvisor_init()
     if (sigaction(SIGHVI, &act, NULL) == -1) 
         printf("register signal handler failed");
 
+    init_virtio_devices();
+    log_info("hvisor init okay!");
     while(1);
 
 unmap:
@@ -72,10 +77,7 @@ void hvisor_sig_handler(int n, siginfo_t *info, void *unused)
         while (nreq--) {
             struct device_req *req = &device_region->req_list[nreq];
             struct device_result *res = &device_region->res;
-            res->src_cpu = req->src_cpu;
-            res->value = 0x74726976;
-            res->is_cfg = req->is_cfg;
-            printf("src_cell is %d, src_cpu is %lld\n", req->src_cell, req->src_cpu);
+            virtio_handle_req(req, res);
             device_region->nreq --;
             ioctl(fd, HVISOR_FINISH);
         }

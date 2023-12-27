@@ -9,7 +9,27 @@
     "files.associations": {
         "signal.h": "c",
         "page.h": "c",
-        "types.h": "c"
+        "types.h": "c",
+        "vector": "c",
+        "stdlib.h": "c",
+        "virtio.h": "c",
+        "hvisor.h": "c",
+        "virtio_blk.h": "c",
+        "*.tcc": "c",
+        "optional": "c",
+        "istream": "c",
+        "ostream": "c",
+        "ratio": "c",
+        "system_error": "c",
+        "array": "c",
+        "functional": "c",
+        "tuple": "c",
+        "type_traits": "c",
+        "utility": "c",
+        "time.h": "c",
+        "stdint.h": "c",
+        "cstdint": "c",
+        "log.h": "c"
     },
     // "rust-analyzer.cargo.features": [
     //     "board_qemu"

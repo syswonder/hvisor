@@ -1,5 +1,5 @@
 CC = /home/lgw/tools/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-gcc
-CFLAGS = -Wall -Wextra
-
-all: hvisor.c
-	$(CC) $(CFLAGS) -o hvisor $< -I../hvisor_ko/
+CFLAGS = -Wall -Wextra -DLOG_USE_COLOR
+objects := $(wildcard *.c)
+all: 
+	$(CC) $(CFLAGS) -o hvisor $(objects) -I../hvisor_ko/ -I./includes/
