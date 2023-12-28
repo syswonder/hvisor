@@ -209,24 +209,24 @@ impl<'a> HyperCall<'a> {
         let comm_page_pa = cell.comm_page.start_paddr();
         assert!(is_aligned(comm_page_pa));
 
-        let mut rc_w = root_cell.write();
-
+        // let mut rc_w = root_cell.write();
+        // 为什么这里需要unmap
         mem_regs.iter().for_each(|mem| {
-            if !(mem.flags.contains(MemFlags::COMMUNICATION)
-                || mem.flags.contains(MemFlags::ROOTSHARED))
-            {
-                rc_w.mem_region_unmap_partial(&MemoryRegion::new_with_offset_mapper(
-                    mem.phys_start as _,
-                    mem.phys_start as _,
-                    mem.size as _,
-                    mem.flags,
-                ));
-            }
+            // if !(mem.flags.contains(MemFlags::COMMUNICATION)
+            //     || mem.flags.contains(MemFlags::ROOTSHARED))
+            // {
+            //     rc_w.mem_region_unmap_partial(&MemoryRegion::new_with_offset_mapper(
+            //         mem.phys_start as _,
+            //         mem.phys_start as _,
+            //         mem.size as _,
+            //         mem.flags,
+            //     ));
+            // }
 
             cell.mem_region_insert(MemoryRegion::from_hv_memregion(mem, Some(comm_page_pa)))
         });
 
-        drop(rc_w);
+        // drop(rc_w);
         // add pci mapping
         let sys_config = HvSystemConfig::get();
         let mmcfg_start = sys_config.platform_info.pci_mmconfig_base;
@@ -259,16 +259,16 @@ impl<'a> HyperCall<'a> {
 
         // remap to rootcell
         let root_cell = root_cell();
-        let mut root_cell_w = root_cell.write();
+        let root_cell_w = root_cell.write();
 
         mem_regs.iter().for_each(|mem| {
             if mem.flags.contains(MemFlags::LOADABLE) {
-                root_cell_w.mem_region_map_partial(&MemoryRegion::new_with_offset_mapper(
-                    mem.phys_start as GuestPhysAddr,
-                    mem.phys_start as HostPhysAddr,
-                    mem.size as _,
-                    mem.flags,
-                ));
+                // root_cell_w.mem_region_map_partial(&MemoryRegion::new_with_offset_mapper(
+                //     mem.phys_start as GuestPhysAddr,
+                //     mem.phys_start as HostPhysAddr,
+                //     mem.size as _,
+                //     mem.flags,
+                // ));
             }
         });
         root_cell_w.resume();
@@ -312,15 +312,15 @@ impl<'a> HyperCall<'a> {
         if cell_w.loadable {
             let mem_regs: Vec<HvMemoryRegion> = cell_w.config().mem_regions().to_vec();
             let root_cell = root_cell();
-            let mut root_cell_w = root_cell.write();
+            let root_cell_w = root_cell.write();
             mem_regs.iter().for_each(|mem| {
                 if mem.flags.contains(MemFlags::LOADABLE) {
-                    root_cell_w.mem_region_unmap_partial(&MemoryRegion::new_with_offset_mapper(
-                        mem.phys_start as GuestPhysAddr,
-                        mem.phys_start as HostPhysAddr,
-                        mem.size as _,
-                        mem.flags,
-                    ));
+                    // root_cell_w.mem_region_unmap_partial(&MemoryRegion::new_with_offset_mapper(
+                        // mem.phys_start as GuestPhysAddr,
+                        // mem.phys_start as HostPhysAddr,
+                        // mem.size as _,
+                        // mem.flags,
+                    // ));
                 }
             });
             cell_w.loadable = false;

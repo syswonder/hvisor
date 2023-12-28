@@ -102,7 +102,7 @@ struct VirtIODevice
 #define VIRT_VENDOR 0x48564953 /* 'HVIS' */
 
 /* v1.0 compliant */
-#define VIRTIO_F_VERSION_1		32
+#define VIRTIO_F_VERSION_1 ((uint64_t)1 << 32)
 
 /*
  * Control registers

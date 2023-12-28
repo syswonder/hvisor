@@ -29,7 +29,8 @@
         "time.h": "c",
         "stdint.h": "c",
         "cstdint": "c",
-        "log.h": "c"
+        "log.h": "c",
+        "ioctl.h": "c"
     },
     // "rust-analyzer.cargo.features": [
     //     "board_qemu"

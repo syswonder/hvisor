@@ -78,8 +78,8 @@ typedef struct virtio_blk_config BlkConfig;
 BlkConfig *init_blk_config(uint64_t bsize);
 
 /* Feature bits */
-#define VIRTIO_BLK_F_SIZE_MAX	1	/* Indicates maximum segment size */
-#define VIRTIO_BLK_F_SEG_MAX	2	/* Indicates maximum # of segments */
+#define VIRTIO_BLK_F_SIZE_MAX	(1<<1)	/* Indicates maximum segment size */
+#define VIRTIO_BLK_F_SEG_MAX	(1<<2)	/* Indicates maximum # of segments */
 
 #define BLK_SIZE_MAX 524288 // 128 * 4096
 #define BLK_SEG_MAX 512

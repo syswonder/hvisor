@@ -26,16 +26,22 @@ int main(int argc, char *argv[])
 int hvisor_init()
 {
     int err;
-    printf("hvisor init\n");
+    log_set_level(0);
+    FILE *log_file = fopen("log.txt", "w+");
+    if (log_file == NULL) {
+        log_error("open log file failed");
+    }
+    log_add_fp(log_file, 0);
+    log_info("hvisor init");
     fd = open("/dev/hvisor", O_RDWR);
     if (fd < 0) {
-        printf("open hvisor failed\n");
+        log_error("open hvisor failed");
         exit(1);
     }
     // ioctl for init virtio
     err = ioctl(fd, HVISOR_INIT_VIRTIO);
     if (err) {
-        printf("ioctl failed, err code is %d\n", err);
+        log_error("ioctl failed, err code is %d", err);
         close(fd);
         exit(1);
     }
@@ -43,7 +49,7 @@ int hvisor_init()
     // mmap: create shared memory
     device_region = (struct hvisor_device_region *) mmap(NULL, MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (device_region == (void *)-1) {
-        printf("mmap failed\n");
+        log_error("mmap failed");
         goto unmap;
     }
 
@@ -57,7 +63,7 @@ int hvisor_init()
     // If there are five signal B, only handle once. 
     act.sa_mask = block_mask;
     if (sigaction(SIGHVI, &act, NULL) == -1) 
-        printf("register signal handler failed");
+        log_error("register signal handler failed");
 
     init_virtio_devices();
     log_info("hvisor init okay!");
@@ -70,10 +76,10 @@ unmap:
 
 void hvisor_sig_handler(int n, siginfo_t *info, void *unused)
 {
-    printf("received one signal %d\n", n);
+    log_trace("received one signal %d", n);
     if (n == SIGHVI) {
         unsigned int nreq = device_region->nreq;
-        printf("nreq is %u\n", nreq);
+        log_trace("nreq is %u", nreq);
         while (nreq--) {
             struct device_req *req = &device_region->req_list[nreq];
             struct device_result *res = &device_region->res;

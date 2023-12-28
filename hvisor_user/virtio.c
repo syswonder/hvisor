@@ -5,11 +5,19 @@
 #include "hvisor.h"
 #include "virtio_blk.h"
 #include "log.h"
+#include <sys/mman.h>
+#include <fcntl.h>
+
 VirtIODevice *dev_blk;
+// 拥有整个non root mem区域的virt_addr
+uint64_t *virt_addr;
 
 // TODO: 根据配置文件初始化device. 可以参考rhyper的emu_virtio_mmio_init函数
 int init_virtio_devices() 
 {
+    int mem_fd = open("/dev/mem", O_RDWR | O_NDELAY);
+    virt_addr = mmap(NULL, 0x8000000, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, 0x70000000);
+    log_info("mmap virt addr is %#x", virt_addr);
     dev_blk = create_virtio_device(VirtioTBlock);
     return 0;
 }
@@ -48,6 +56,7 @@ void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type)
         vq = malloc(sizeof(VirtQueue));
         virtqueue_reset(vq, 0);
         vq->notify_handler = virtio_blk_notify_handler;
+        log_debug("notify handler addr is %#x", vq->notify_handler);
         vdev->vqs = vq;
         break;
     default:
@@ -73,6 +82,7 @@ BlkConfig *init_blk_config(uint64_t bsize)
 
 void virtio_dev_reset(VirtIODevice *vdev) 
 {
+    log_trace("virtio dev reset");
     vdev->regs.status = 0;
     vdev->regs.interrupt_status = 0;
     int idx = vdev->regs.queue_sel;
@@ -85,18 +95,21 @@ void virtio_dev_reset(VirtIODevice *vdev)
 
 void virtqueue_reset(VirtQueue *vq, int idx) 
 {
+    void *addr = vq->notify_handler;
     memset(vq, 0, sizeof(VirtQueue));
     vq->vq_idx = idx;
+    vq->notify_handler = addr;
 }   
 
 int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
 {
+    log_debug("virtio blk notify handler enter");
     return 0;
 }
 
 static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size) 
 {
-    printf("virtio mmio read at %x\n", offset);
+    log_trace("virtio mmio read at %#x", offset);
     if (!vdev) {
         /* If no backend is present, we treat most registers as
          * read-as-zero, except for the magic number, version and
@@ -125,7 +138,7 @@ static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned s
     }
 
     if (size != 4) {
-        printf("virtio-mmio-read: wrong size access to register!\n");
+        log_error("virtio-mmio-read: wrong size access to register!");
         return 0;
     }
 
@@ -175,10 +188,10 @@ static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned s
     case VIRTIO_MMIO_QUEUE_AVAIL_HIGH:
     case VIRTIO_MMIO_QUEUE_USED_LOW:
     case VIRTIO_MMIO_QUEUE_USED_HIGH:
-        printf("Error: read of write-only register\n");
+        log_error("read of write-only register");
         return 0;
     default:
-        printf("Error: bad register offset %x\n", offset);
+        log_error("bad register offset %#x", offset);
         return 0;
     }
     return 0;
@@ -186,7 +199,7 @@ static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned s
 
 static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t value, unsigned size)
 {
-    printf("virtio mmio write at %x\n", offset);
+    log_trace("virtio mmio write at %#x, value is %d\n", offset, value);
     VirtMmioRegs *regs = &vdev->regs;
     VirtDev *dev = &vdev->dev;
     VirtQueue *vqs = vdev->vqs;
@@ -200,11 +213,11 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
 
     if (offset >= VIRTIO_MMIO_CONFIG) {
         offset -= VIRTIO_MMIO_CONFIG;
-        printf("virtio_mmio_write: can't write config space\n");
+        log_error("virtio_mmio_write: can't write config space");
         return;
     }
     if (size != 4) {
-        printf("virtio_mmio_write: wrong size access to register!\n");
+        log_error("virtio_mmio_write: wrong size access to register!");
         return;
     }
 
@@ -242,10 +255,13 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
         vqs[regs->queue_sel].ready = value;
         break;
     case VIRTIO_MMIO_QUEUE_NOTIFY:
+        log_debug("queue notify begin");
         regs->interrupt_status = VIRTIO_MMIO_INT_VRING;
         if (value < vdev->vqs_len) {
+            log_debug("queue notify ready, handler addr is %#x", vqs[value].notify_handler);
             vqs[value].notify_handler(vdev, &vqs[value]);
         }
+        log_debug("queue notify end");
         break;
     case VIRTIO_MMIO_INTERRUPT_ACK:
         regs->interrupt_status &= !value;
@@ -302,12 +318,13 @@ int virtio_handle_req(struct device_req *req, struct device_result *res)
         virtio_mmio_write(dev_blk, offs, req->value, req->size);
     } else {
         res->value = virtio_mmio_read(dev_blk, offs, req->size);
+        log_debug("read value is %d\n", res->value);
     }
     res->src_cpu = req->src_cpu;
     res->is_cfg = req->is_cfg;
     if (!res->is_cfg) {
         res->value = dev_blk->dev.irq_id;
     }
-    log_info("src_cell is %d, src_cpu is %lld\n", req->src_cell, req->src_cpu);
+    log_debug("src_cell is %d, src_cpu is %lld", req->src_cell, req->src_cpu);
     return 0;
 }
