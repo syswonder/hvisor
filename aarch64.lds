@@ -6,12 +6,8 @@ SECTIONS
 {
 	. = BASE_ADDRESS;
 
-	.header		: {
-		__header_start = .;
-		KEEP(*(.header))
-	}
-
 	. = ALIGN(4K);
+	.boot       : { *(.boot) }
 	.text		: { *(.text .text.*) }
 
 	. = ALIGN(4K);

@@ -47,7 +47,6 @@ use config::HvSystemConfig;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use device::gicv3::gicv3_cpu_init;
 use error::HvResult;
-use header::HvHeader;
 use percpu::PerCpu;
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
 static INIT_EARLY_OK: AtomicU32 = AtomicU32::new(0);
@@ -99,7 +98,7 @@ fn primary_init_early() -> HvResult {
 
     memory::init_heap();
     system_config.check()?;
-    info!("Hypervisor header: {:#x?}", HvHeader::get());
+    // info!("Hypervisor header: {:#x?}", HvHeader::get());
     // info!("System config: {:#x?}", system_config);
 
     memory::init_frame_allocator();
@@ -137,7 +136,9 @@ fn main(cpu_data: &'static mut PerCpu) -> HvResult {
         cpu_data as *const _
     );
     let is_primary = cpu_data.id == 0;
-    let online_cpus = HvHeader::get().online_cpus;
+
+    let online_cpus = 0;
+    // let online_cpus = HvHeader::get().online_cpus;
     wait_for(|| PerCpu::entered_cpus() < online_cpus)?;
     println!(
         "{} CPU {} entered.",

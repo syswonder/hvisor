@@ -11,7 +11,6 @@ use crate::config::HvSystemConfig;
 use crate::consts::{INVALID_ADDRESS, PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::device::gicv3::{gicv3_cpu_shutdown, GICR_SIZE};
 use crate::error::HvResult;
-use crate::header::HEADER_STUFF;
 use crate::memory::addr::VirtAddr;
 use crate::memory::addr::{GuestPhysAddr, HostPhysAddr};
 use crate::memory::{
@@ -125,13 +124,6 @@ impl PerCpu {
         VTTBR_EL2.set(0);
         /* we will restore the root cell state with the MMU turned off,
          * so we need to make sure it has been committed to memory */
-
-        /* hand over control of                        EL2 back to Linux */
-        let linux_hyp_vec: u64 =
-            unsafe { core::ptr::read_volatile(&HEADER_STUFF.arm_linux_hyp_vectors as *const _) };
-        VBAR_EL2.set(linux_hyp_vec);
-        /* Return to EL1 */
-        /* Disable mmu */
 
         unsafe {
             let page_offset: u64 = 0xffff_4060_0000;

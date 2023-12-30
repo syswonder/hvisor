@@ -62,10 +62,9 @@ use spin::{Once, RwLock};
 use crate::arch::Stage1PageTable;
 use crate::config::HvSystemConfig;
 use crate::consts::{HV_BASE, TRAMPOLINE_START};
-use crate::device::gicv3::{GICD_SIZE, GICR_SIZE};
+use crate::device::gicv3::GICD_SIZE;
 use crate::device::pl011::UART_BASE_VIRT;
 use crate::error::HvResult;
-use crate::header::HvHeader;
 
 pub use addr::{
     GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr, PhysAddr, VirtAddr, PHYS_VIRT_OFFSET,
@@ -126,7 +125,8 @@ pub fn init_hv_page_table() -> HvResult {
     let trampoline_page = TRAMPOLINE_START as usize - 0xffff_4060_0000;
     let gicd_base = sys_config.platform_info.arch.gicd_base;
     let gicr_base = sys_config.platform_info.arch.gicr_base;
-    let gicr_size: u64 = HvHeader::get().online_cpus as u64 * GICR_SIZE;
+    let gicr_size = 0;
+    // let gicr_size: u64 = HvHeader::get().online_cpus as u64 * GICR_SIZE;
     let mmcfg_start = sys_config.platform_info.pci_mmconfig_base;
     let mmcfg_size = (sys_config.platform_info.pci_mmconfig_end_bus + 1) as u64 * 256 * 4096;
 

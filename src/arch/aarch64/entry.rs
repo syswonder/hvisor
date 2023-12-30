@@ -1,5 +1,5 @@
 use super::exception::arch_handle_exit;
-use crate::consts::{PER_CPU_BOOT_SIZE, PER_CPU_SIZE};
+use crate::consts::{PER_CPU_BOOT_SIZE, PER_CPU_SIZE, MAX_CPU_NUM};
 use crate::device::uart::UART_BASE_VIRT;
 use crate::percpu::PerCpu;
 use core::arch::global_asm; // 支持内联汇编
@@ -13,22 +13,21 @@ global_asm!(
     sym arch_handle_exit);
 #[naked]
 #[no_mangle]
+#[link_section = ".boot"]
 pub unsafe extern "C" fn arch_entry() -> i32 {
     core::arch::asm!(
         "
-    
-            mov	x16, x0                             //x16 cpuid
-            mov	x17, x30                            //x17 linux ret addr
+            mov	x16, x0                             // x16 = cpuid
+            mov	x17, x30                            // x17 = linux ret addr
             /*get header addr el1*/
-            adrp x0,__header_start
-            ldrh	w2, [x0, #48]                  //HEADER_MAX_CPUS
-            mov	x3, {per_cpu_size}
-            adrp x1,__core_end
+            mov	x2, {max_cpu_num}                   // x2 = max_cpu_num
+            mov	x3, {per_cpu_size}                  // x3 = per_cpu_size
+            adrp x1, __core_end
             /*
 	        * sysconfig = pool + max_cpus * percpu_size
 	        */
-	        madd	x1, x2, x3, x1                  //get config addr
-            ldr	x13, =BASE_ADDRESS 
+	        madd	x1, x2, x3, x1                  // x1 = sysconfig addr
+            ldr	x13, =BASE_ADDRESS                  // x13 = base addr
             ldr	x12, [x1, #12]                      //phyaddr read from config
             ldr x14, [x1, #44]                      //SYSCONFIG_DEBUG_CONSOLE_PHYS
             ldr x15, ={uart_base_virt}              //consts
@@ -49,18 +48,16 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
         ",
         per_cpu_size=const PER_CPU_SIZE,
         uart_base_virt=const UART_BASE_VIRT,
+        max_cpu_num=const MAX_CPU_NUM,
         options(noreturn),
     );
 }
+
 #[naked]
 #[no_mangle]
 pub unsafe extern "C" fn el2_entry() -> i32 {
     core::arch::asm!(
         "
-        mrs	x1, esr_el2                     //  Exception Syndrome Register
-        lsr	x1, x1, #26                     // EC, bits [31:26]
-        cmp	x1, #0x16                       // hvc ec value
-        b.ne	.		                    /* not hvc */
         bl {0}                              /*set boot pt*/
         adr	x0, bootstrap_pt_l0
 	    adr	x30, {2}	                    /* set lr switch_stack phy-virt*/
@@ -73,7 +70,6 @@ pub unsafe extern "C" fn el2_entry() -> i32 {
         sym switch_stack,
 
         options(noreturn),
-
     );
 }
 #[naked]
@@ -207,9 +203,6 @@ pub unsafe extern "C" fn switch_stack(cpuid: u64) -> i32 {
         eret        //back to ?arch_entry hvc0
         mov	x30, x17 
         ret        //return to linux
-
-    
-                
     ",
         hv_sp=in(reg) hv_sp,
         entry = sym crate::entry,
