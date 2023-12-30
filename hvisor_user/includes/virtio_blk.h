@@ -5,6 +5,12 @@ typedef uint16_t  __virtio16;
 typedef uint32_t  __virtio32;
 typedef uint64_t  __virtio64;
 
+struct virtio_blk_req_head {
+	uint32_t req_type;
+	uint32_t reserved;
+	uint64_t sector;
+};
+
 struct virtio_blk_config {
 	/* The capacity (in 512-byte sectors). */
 	__virtio64 capacity;
@@ -75,14 +81,32 @@ struct virtio_blk_config {
 
 
 typedef struct virtio_blk_config BlkConfig;
+typedef struct virtio_blk_req_head BlkReqHead;
+
 BlkConfig *init_blk_config(uint64_t bsize);
 
 /* Feature bits */
 #define VIRTIO_BLK_F_SIZE_MAX	(1<<1)	/* Indicates maximum segment size */
 #define VIRTIO_BLK_F_SEG_MAX	(1<<2)	/* Indicates maximum # of segments */
 
+// #define BLK_SIZE_MAX 131072
 #define BLK_SIZE_MAX 524288 // 128 * 4096
 #define BLK_SEG_MAX 512
 
 #define VIRTQUEUE_BLK_MAX_SIZE 256
+
+#define VIRTIO_BLK_T_IN		0
+#define VIRTIO_BLK_T_OUT	1
+/* Cache flush command */
+#define VIRTIO_BLK_T_FLUSH	4
+
+/* Get device ID command */
+#define VIRTIO_BLK_T_GET_ID    8
+
+// A blk sector size
+#define SECTOR_BSIZE 512
+
+#define VIRTIO_BLK_S_OK         0
+#define VIRTIO_BLK_S_IOERR      1
+#define VIRTIO_BLK_S_UNSUPP     2
 #endif /* _HVISOR_VIRTIO_BLK_H */

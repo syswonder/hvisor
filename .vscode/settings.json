@@ -30,7 +30,10 @@
         "stdint.h": "c",
         "cstdint": "c",
         "log.h": "c",
-        "ioctl.h": "c"
+        "ioctl.h": "c",
+        "fcntl.h": "c",
+        "unistd.h": "c",
+        "errno.h": "c"
     },
     // "rust-analyzer.cargo.features": [
     //     "board_qemu"

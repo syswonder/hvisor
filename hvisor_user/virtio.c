@@ -7,16 +7,27 @@
 #include "log.h"
 #include <sys/mman.h>
 #include <fcntl.h>
-
+#include <unistd.h>
+#include <errno.h>
 VirtIODevice *dev_blk;
 // 拥有整个non root mem区域的virt_addr
-uint64_t *virt_addr;
-
+void *virt_addr;
+void *phys_addr;
+int img_fd;
 // TODO: 根据配置文件初始化device. 可以参考rhyper的emu_virtio_mmio_init函数
 int init_virtio_devices() 
 {
+    // img_fd = open("ubuntu-20.04-rootfs_ext4.img", O_RDWR);
+    img_fd = open("virtio_ext4.img", O_RDWR);
+
+    if (img_fd == -1) {
+        log_error("cannot open virtio_blk.img, Error code is %d", errno);
+        return -1;
+    }
+
     int mem_fd = open("/dev/mem", O_RDWR | O_NDELAY);
-    virt_addr = mmap(NULL, 0x8000000, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, 0x70000000);
+    phys_addr = 0x70000000;
+    virt_addr = mmap(NULL, 0x8000000, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, phys_addr);
     log_info("mmap virt addr is %#x", virt_addr);
     dev_blk = create_virtio_device(VirtioTBlock);
     return 0;
@@ -35,7 +46,7 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type)
         vdev->dev.features = VIRTIO_BLK_F_SEG_MAX | VIRTIO_BLK_F_SIZE_MAX | VIRTIO_F_VERSION_1;
         vdev->dev.irq_id = 67;
         vdev->dev.type = dev_type;
-        vdev->dev.config = init_blk_config(524288); // 256MB
+        vdev->dev.config = init_blk_config(BLK_SIZE_MAX); // 256MB
         init_virtio_queue(vdev, dev_type);
         break;
     
@@ -101,11 +112,150 @@ void virtqueue_reset(VirtQueue *vq, int idx)
     vq->notify_handler = addr;
 }   
 
+// check if virtqueue has new requests
+bool virtqueue_is_empty(VirtQueue *vq)
+{
+    if(vq->avail_ring == NULL) {
+        log_error("virtqueue's avail ring is invalid");
+        return true;
+    }
+    uint16_t last_avail_idx = vq->last_avail_idx;
+    uint16_t idx = vq->avail_ring->idx;
+    if (last_avail_idx == idx) 
+        return true;
+    else 
+        return false;
+}
+
+// get the first descriptor chain's head idx in descriptor table.
+uint16_t virtqueue_pop_desc_chain_head(VirtQueue *vq)
+{
+    uint16_t ring_idx = vq->last_avail_idx % vq->num;
+    vq->last_avail_idx++;
+    return vq->avail_ring->ring[ring_idx];
+}
+
+bool desc_is_writable(VirtqDesc *desc_table, uint16_t idx) 
+{
+    if (desc_table[idx].flags & VRING_DESC_F_WRITE) 
+        return true;
+    return false;
+}
+
+void* get_virt_addr(void *addr)
+{
+    return virt_addr - phys_addr + addr;
+}
+
+// 解决一个描述符链
+void virtqueue_handle_request(VirtQueue *vq, uint16_t desc_head_idx) 
+{
+    VirtqDesc *desc_table = vq->desc_table;
+    uint16_t desc_idx = desc_head_idx;
+    // handle head
+    if(desc_is_writable(desc_table, desc_idx)) {
+        log_error("virt queue's desc chain header should not be writable!");
+        return ;
+    }
+    desc_idx = desc_table[desc_idx].next;
+    BlkReqHead *head = (BlkReqHead *)get_virt_addr(desc_table[desc_idx].addr);
+    // 获取本次请求的数据总长度
+    uint32_t req_len = 0; 
+    bool is_support = true;
+    char *buf = NULL;
+    switch (head->req_type)
+    {
+    case VIRTIO_BLK_T_IN:
+    case VIRTIO_BLK_T_OUT:
+    {
+        uint64_t offset = head->sector * SECTOR_BSIZE; // 这个是对的, 512一个扇区大小
+        while (desc_table[desc_idx].flags & VRING_DESC_F_NEXT)  
+        {
+            buf = get_virt_addr(desc_table[desc_idx].addr);
+            if (head->req_type == VIRTIO_BLK_T_IN){
+                log_debug("read offset is %d", offset);
+                pread(img_fd, buf, desc_table[desc_idx].len, offset);
+                printf("pread buf is ");
+                for (int i=0; i<desc_table[desc_idx].len; i++) 
+                    printf("%x", buf[i]);
+                printf("\n");
+            }
+            else {
+                pwrite(img_fd, buf, desc_table[desc_idx].len, offset);
+            } 
+            offset += desc_table[desc_idx].len;
+            req_len += desc_table[desc_idx].len;
+            desc_idx = desc_table[desc_idx].next;
+        }
+    }
+        break;
+    case VIRTIO_BLK_T_GET_ID:
+    {
+        char s[20] = "virtio-blk";
+        buf = get_virt_addr(desc_table[desc_idx].addr);
+        memcpy(buf, s, 20);
+        req_len = desc_table[desc_idx].len;
+        desc_idx = desc_table[desc_idx].next;
+    }
+        break;
+    default:
+        log_error("unsupported virtqueue request type: %d", head->req_type);
+        is_support = false;
+        break;
+    }
+
+    // the status field of desc chain
+    if (!desc_is_writable(desc_table, desc_idx)) {
+        log_error("Failed to write virt blk queue desc status");
+        return ;
+    }
+    uint8_t *vstatus = (uint8_t *)get_virt_addr(desc_table[desc_idx].addr);
+    if (is_support) 
+        *vstatus = VIRTIO_BLK_S_OK;
+    else 
+        *vstatus = VIRTIO_BLK_S_UNSUPP;
+    // update used ring
+    VirtqUsed *used_ring = vq->used_ring;
+    uint16_t used_idx = used_ring->idx;
+    uint64_t num = vq->num;
+    used_ring->flags = vq->used_flags;
+    used_ring->ring[used_idx % num].id = desc_head_idx;
+    used_ring->ring[used_idx % num].len = req_len;
+    log_debug("used_ring->idx is %d\n", used_ring->idx);
+    used_ring->idx++;
+    log_debug("changed used_ring->idx is %d\n", used_ring->idx);
+}
+
 int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
 {
     log_debug("virtio blk notify handler enter");
+    /*
+    1. 从可用环中取出请求, 
+    2. 将请求池的各个请求映射为文件进行处理
+    */
+    while(!virtqueue_is_empty(vq)) {
+        uint16_t desc_idx = virtqueue_pop_desc_chain_head(vq); //描述符链头
+        // TODO: disable notify
+        virtqueue_handle_request(vq, desc_idx);
+    }
     return 0;
 }
+
+void virtqueue_set_desc_table(VirtQueue *vq)
+{
+    vq->desc_table = (VirtqDesc *)(virt_addr + vq->desc_table_addr - phys_addr);
+}
+
+void virtqueue_set_avail(VirtQueue *vq)
+{
+    vq->avail_ring = (VirtqAvail *)(virt_addr + vq->avail_addr - phys_addr);
+}
+
+void virtqueue_set_used(VirtQueue *vq)
+{
+    vq->used_ring = (VirtqUsed *)(virt_addr + vq->used_addr - phys_addr);
+}
+
 
 static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size) 
 {
@@ -250,6 +400,7 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
         break;
     case VIRTIO_MMIO_QUEUE_NUM:
         vqs[regs->queue_sel].num = value;
+        log_debug("virtqueue num is %d", value);
         break;
     case VIRTIO_MMIO_QUEUE_READY:
         vqs[regs->queue_sel].ready = value;
@@ -278,22 +429,21 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
         break;
     case VIRTIO_MMIO_QUEUE_DESC_HIGH:
         vqs[regs->queue_sel].desc_table_addr |= value << 32;
-        // TODO: 设置下desc table的地址???
-        // virtqueue_set_desc_table();
+        virtqueue_set_desc_table(&vqs[regs->queue_sel]);
         break;
     case VIRTIO_MMIO_QUEUE_AVAIL_LOW:
         vqs[regs->queue_sel].avail_addr |= value & UINT32_MAX;
         break;
     case VIRTIO_MMIO_QUEUE_AVAIL_HIGH:
-        // TODO: 设置avail ring的地址
         vqs[regs->queue_sel].avail_addr |= value << 32;
+        virtqueue_set_avail(&vqs[regs->queue_sel]);
         break;
     case VIRTIO_MMIO_QUEUE_USED_LOW:
         vqs[regs->queue_sel].used_addr |= value & UINT32_MAX;
         break;
     case VIRTIO_MMIO_QUEUE_USED_HIGH:
-        // TODO: 设置used ring的地址
         vqs[regs->queue_sel].used_addr |= value << 32;
+        virtqueue_set_used(&vqs[regs->queue_sel]);
         break;
     case VIRTIO_MMIO_MAGIC_VALUE:
     case VIRTIO_MMIO_VERSION:
