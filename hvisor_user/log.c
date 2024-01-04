@@ -50,7 +50,7 @@ static const char *level_colors[] = {
 #endif
 
 
-static void stdout_callback(log_Event *ev) {
+static void stdout_callback(log_Event *ev, int with_enter) {
   char buf[16];
   buf[strftime(buf, sizeof(buf), "%H:%M:%S", ev->time)] = '\0';
 #ifdef LOG_USE_COLOR
@@ -64,7 +64,8 @@ static void stdout_callback(log_Event *ev) {
     buf, level_strings[ev->level], ev->file, ev->line);
 #endif
   vfprintf(ev->udata, ev->fmt, ev->ap);
-  fprintf(ev->udata, "\n");
+  if (with_enter)
+    fprintf(ev->udata, "\n");
   fflush(ev->udata);
 }
 
@@ -137,7 +138,7 @@ static void init_event(log_Event *ev, void *udata) {
 }
 
 
-void log_log(int level, const char *file, int line, const char *fmt, ...) {
+void log_log(int with_enter, int level, const char *file, int line, const char *fmt, ...) {
   log_Event ev = {
     .fmt   = fmt,
     .file  = file,
@@ -150,7 +151,7 @@ void log_log(int level, const char *file, int line, const char *fmt, ...) {
   if (!L.quiet && level >= L.level) {
     init_event(&ev, stderr);
     va_start(ev.ap, fmt);
-    stdout_callback(&ev);
+    stdout_callback(&ev, with_enter);
     va_end(ev.ap);
   }
 

@@ -3,7 +3,7 @@
 #include <linux/ioctl.h>
 #include <linux/types.h>
 #define MMAP_SIZE 1024
-#define MAX_REQ 4
+#define MAX_REQ 8
 
 #define SIGHVI 10
 #define HVISOR_INIT_VIRTIO  _IO(1, 0) // virtio device init
@@ -32,6 +32,7 @@ struct hvisor_device_region {
 	__u32 nreq;
 	struct device_req req_list[MAX_REQ];
 	struct device_result res;
+	__u8 inuse;
 };
 
 

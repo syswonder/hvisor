@@ -39,10 +39,13 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: u64) -> HvResult {
     debug!("mmio virtio handler");
     let is_cfg = mmio.address != QUEUE_NOTIFY;
     if !is_cfg {
-        info!("notify !!!");
+        info!("notify !!!, cpu id is {}", this_cpu_id());
     }
     mmio.address += base as usize;
     let mut req_list = VIRTIO_REQ_LIST.lock();
+    if req_list.len() != 0 {
+        info!("virtio req list len is {}, cpu id is {}", req_list.len(), this_cpu_id());
+    }
     req_list.push_back(VirtioReq::new(
         this_cell_id(),
         this_cpu_id(),
@@ -69,6 +72,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: u64) -> HvResult {
 /// When virtio req type is notify, root cell will send sgi to non root, \
 /// and non root will call this function.
 pub fn handle_virtio_result() {
+    info!("notify resolved");
     let map = VIRTIO_RESULT_MAP.lock();
     let irq_id = map.get(&this_cpu_id()).unwrap();
     inject_irq(*irq_id as _, false);

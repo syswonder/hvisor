@@ -78,14 +78,19 @@ void hvisor_sig_handler(int n, siginfo_t *info, void *unused)
 {
     log_trace("received one signal %d", n);
     if (n == SIGHVI) {
-        unsigned int nreq = device_region->nreq;
-        log_trace("nreq is %u", nreq);
-        while (nreq--) {
-            struct device_req *req = &device_region->req_list[nreq];
+        // while (device_region->inuse == 1);
+        // device_region->inuse = 1;
+        // unsigned int nreq = device_region->nreq;
+        // el0和el2如果同时操作这个缓冲区, 是不是得加锁
+        while (device_region->nreq != 0) {
+            log_debug("nreq is %u", device_region->nreq);
+            struct device_req *req = &device_region->req_list[device_region->nreq - 1];
             struct device_result *res = &device_region->res;
             virtio_handle_req(req, res);
             device_region->nreq --;
+            log_debug("after nreq is %u", device_region->nreq);
             ioctl(fd, HVISOR_FINISH);
         }
+        device_region->inuse = 0;
     }
 }

@@ -67,7 +67,6 @@ void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type)
         vq = malloc(sizeof(VirtQueue));
         virtqueue_reset(vq, 0);
         vq->notify_handler = virtio_blk_notify_handler;
-        log_debug("notify handler addr is %#x", vq->notify_handler);
         vdev->vqs = vq;
         break;
     default:
@@ -189,11 +188,20 @@ void virtqueue_handle_request(VirtQueue *vq, uint16_t desc_head_idx)
                 if (readl != desc_table[desc_idx].len) {
                     log_error("pread len is wrong");
                 }
-                printf("pread buf is ");
-                for (int i=0; i<desc_table[desc_idx].len; i++) 
-                    printf("%x", buf[i]);
-                printf("\n");
+                // printf("pread buf is ");
+                // for (int i=0; i<desc_table[desc_idx].len; i++) 
+                //     printf("%c", buf[i]);
+                // printf("\n");
 
+
+                // char *pbuf = (char *)malloc(desc_table[desc_idx].len*2 + 20);
+                // int poff = 0;
+                // poff += sprintf(pbuf, "pread buf is ");
+                // for (int i=0; i<desc_table[desc_idx].len; i++) 
+                //     poff += sprintf(pbuf + poff, "%x",buf[i]);
+                // sprintf(pbuf + poff, "\n");
+                // log_debug("%s", pbuf);
+                // free(pbuf);
             }
             else {
                 pwrite(img_fd, buf, desc_table[desc_idx].len, offset);
@@ -255,7 +263,7 @@ void virtqueue_enable_notify(VirtQueue *vq) {
 
 int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
 {
-    log_debug("virtio blk notify handler enter");
+    log_trace("virtio blk notify handler enter");
     /*
     1. 从可用环中取出请求, 
     2. 将请求池的各个请求映射为文件进行处理
@@ -275,19 +283,19 @@ int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
 
 void virtqueue_set_desc_table(VirtQueue *vq)
 {
-    log_debug("desc table ipa is %#x", vq->desc_table_addr);
+    log_trace("desc table ipa is %#x", vq->desc_table_addr);
     vq->desc_table = (VirtqDesc *)(virt_addr + vq->desc_table_addr - phys_addr);
 }
 
 void virtqueue_set_avail(VirtQueue *vq)
 {
-    log_debug("avail ring ipa is %#x", vq->avail_addr);
+    log_trace("avail ring ipa is %#x", vq->avail_addr);
     vq->avail_ring = (VirtqAvail *)(virt_addr + vq->avail_addr - phys_addr);
 }
 
 void virtqueue_set_used(VirtQueue *vq)
 {
-    log_debug("used ring ipa is %#x", vq->used_addr);
+    log_trace("used ring ipa is %#x", vq->used_addr);
     vq->used_ring = (VirtqUsed *)(virt_addr + vq->used_addr - phys_addr);
 }
 
@@ -435,7 +443,7 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
         break;
     case VIRTIO_MMIO_QUEUE_NUM:
         vqs[regs->queue_sel].num = value;
-        log_debug("virtqueue num is %d", value);
+        log_trace("virtqueue num is %d", value);
         break;
     case VIRTIO_MMIO_QUEUE_READY:
         vqs[regs->queue_sel].ready = value;
@@ -444,7 +452,7 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
         log_debug("queue notify begin");
         regs->interrupt_status = VIRTIO_MMIO_INT_VRING;
         if (value < vdev->vqs_len) {
-            log_debug("queue notify ready, handler addr is %#x", vqs[value].notify_handler);
+            log_trace("queue notify ready, handler addr is %#x", vqs[value].notify_handler);
             vqs[value].notify_handler(vdev, &vqs[value]);
         }
         log_debug("queue notify end");

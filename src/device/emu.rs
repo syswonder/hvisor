@@ -4,7 +4,7 @@ use super::{
     gicv3::{inject_irq, IRQHVI},
     virtio::{VirtioReq, VIRTIO_REQ_LIST},
 };
-const MAX_REQ: usize = 4;
+const MAX_REQ: usize = 8;
 pub static HVISOR_DEVICE: Mutex<HvisorDevice> = Mutex::new(HvisorDevice::default());
 pub struct HvisorDevice {
     base_address: usize, // el1 and el2 shared region addr, el2 virtual address
@@ -32,7 +32,7 @@ impl HvisorDevice {
     }
 
     pub fn is_full(&self) -> bool {
-        self.region().nreq >= MAX_REQ as u32
+        self.region().nreq >= 2 as u32
     }
 
     pub fn push_req(&mut self, req: HvisorDeviceReq) {
@@ -42,12 +42,18 @@ impl HvisorDevice {
         }
         region.req_list[region.nreq as usize] = req;
         region.nreq += 1;
+        info!("push req, nreq is {}", region.nreq);
     }
 
     pub fn get_result(&self) -> &HvisorDeviceRes {
         let res = &self.region().res as *const HvisorDeviceRes;
         unsafe { &*res }
     }
+
+    pub fn get_nreq(&self) -> u32 {
+        self.region().nreq
+    }
+
 }
 
 /// El1 and EL2 shared region for virtio requests and results.
@@ -56,6 +62,7 @@ pub struct HvisorDeviceRegion {
     nreq: u32,
     req_list: [HvisorDeviceReq; MAX_REQ],
     res: HvisorDeviceRes,
+    inuse: u8,
 }
 
 /// Hvisor device requests
@@ -101,9 +108,14 @@ pub fn handle_virtio_requests() {
     if !dev.is_enable {
         panic!("dev is not enabled");
     }
+    info!("req is {}", dev.get_nreq());
+    if dev.is_full() {
+        error!("dev can't solve this rq");
+        return;
+    }
     while !req_list.is_empty() {
         if dev.is_full() {
-            info!("dev is full");
+            error!("dev is full");
             break;
         }
         let req = req_list.pop_front().unwrap();
