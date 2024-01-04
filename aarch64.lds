@@ -8,7 +8,17 @@ SECTIONS
 
 	. = ALIGN(4K);
 	.boot       : { *(.boot) }
+
+	. = ALIGN(16);
 	.text		: { *(.text .text.*) }
+
+	. = ALIGN(4K);
+	.rootcfg		: {
+		__root_config = .;
+		*(.rootcfg);
+		KEEP(*(.rootcfg))
+		. = . + (1 << 12);
+	}
 
 	. = ALIGN(4K);
 	.rodata		: { *(.rodata .rodata.*) }
@@ -26,11 +36,12 @@ SECTIONS
 							. = . + (1 << 12); } .trampoline : { __trampoline_start = .; *(.trampoline) }
 
 	. = ALIGN(4K);
-	.bss		: { *(.bss .bss.*) *(COMMON) 
-	. = ALIGN(4K);
-	__boot_stack = .; 
-	. = . + 0x4000; 
-    __boot_stack_top = .; 
+	.bss		: {
+		*(.bss .bss.*) *(COMMON) 
+		. = ALIGN(4K);
+		__boot_stack = .; 
+		. = . + 0x4000; 
+    	__boot_stack_top = .; 
 	}
 
 	

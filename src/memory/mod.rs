@@ -106,11 +106,6 @@ pub fn hv_page_table<'a>() -> &'a RwLock<MemorySet<Stage1PageTable>> {
 }
 
 pub fn init_heap() {
-    // Set PHYS_VIRT_OFFSET early.
-    unsafe {
-        addr::PHYS_VIRT_OFFSET =
-            HV_BASE - HvSystemConfig::get().hypervisor_memory.phys_start as usize
-    };
     heap::init();
 }
 

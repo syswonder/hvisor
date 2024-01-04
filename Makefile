@@ -6,6 +6,11 @@ PORT ?= 2333
 MODE ?= debug
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 
+export MODE
+export LOG
+export ARCH
+export STATS
+
 # Build paths
 build_path := target/$(ARCH)/$(MODE)
 target_elf := $(build_path)/hvisor
@@ -36,6 +41,7 @@ scp: $(target_bin)
 
 disa:
 	rust-objdump --disassemble $(target_elf) > hvisor.S
+	aarch64-none-elf-readelf -lS $(target_elf) > hvisor-elf.txt
 
 $(target_bin): elf
 	$(OBJCOPY) $(target_elf) --strip-all -O binary $@
@@ -46,14 +52,19 @@ qemu-system-aarch64 \
 	-drive file=./qemu-test/host/rootfs.qcow2,discard=unmap,if=none,id=disk,format=qcow2 \
 	-device virtio-blk-device,drive=disk \
 	-m 1G -serial mon:stdio \
-	-kernel $(target_bin) \
+	-kernel imgs/jmp/jmp.bin \
 	-append "root=/dev/vda mem=768M" \
-	-cpu cortex-a57 -smp 16 -nographic -machine virt,gic-version=3,virtualization=on \
+	-cpu cortex-a57 \
+	-smp 16 -nographic \
+	-machine virt,gic-version=3,virtualization=on \
+	-device loader,file="$(target_bin)",addr=0x7fc00000,force-raw=on\
 	-device virtio-serial-device -device virtconsole,chardev=con \
 	-chardev vc,id=con \
 	-net nic \
 	-net user,hostfwd=tcp::$(PORT)-:22
 endef
+# -bios imgs/u-boot/u-boot.bin \
+# -append "root=/dev/vda mem=768M"
 
 # Run targets
 run: all

@@ -10,41 +10,33 @@ global_asm!(
 );
 global_asm!(
     include_str!("./hyp_vec.S"),
-    sym arch_handle_exit);
+    sym arch_handle_exit
+);
+global_asm!("
+    .section \".rootcfg\", \"a\"
+    .incbin \"imgs/root-config/qemu-arm64.cell\"
+");
+
 #[naked]
 #[no_mangle]
 #[link_section = ".boot"]
 pub unsafe extern "C" fn arch_entry() -> i32 {
     core::arch::asm!(
         "
-            mov	x16, x0                             // x16 = cpuid
+            mrs	x16, MPIDR_EL1
+            and x16, x16, #0xffffff                 // x16 = cpuid
             mov	x17, x30                            // x17 = linux ret addr
             /*get header addr el1*/
             mov	x2, {max_cpu_num}                   // x2 = max_cpu_num
             mov	x3, {per_cpu_size}                  // x3 = per_cpu_size
-            adrp x1, __core_end
-            /*
-	        * sysconfig = pool + max_cpus * percpu_size
-	        */
-	        madd	x1, x2, x3, x1                  // x1 = sysconfig addr
-            ldr	x13, =BASE_ADDRESS                  // x13 = base addr
-            ldr	x12, [x1, #12]                      //phyaddr read from config
-            ldr x14, [x1, #44]                      //SYSCONFIG_DEBUG_CONSOLE_PHYS
-            ldr x15, ={uart_base_virt}              //consts
-            sub	x11, x12, x13                       //x11= (el2 mmu on)virt-phy offset 
-            ldr	x1, =bootstrap_vectors
-            virt2phys x1       
-    
-            /*TODO: clean and invaild d cache*/
-            /* choose opcode */
-            mov	x0, 0
-            hvc	#0                                  //install bootstrap vec
-    
-            hvc	#0	                                /* bootstrap vectors enter EL2 at el2_entry */
-                                                    //tmp return here =ELR_EL2
-            mov x0, 0                              //return success code to jailhouse driver                       
-            ret
-    
+            adrp x1, __root_config                  // x1 = root_config
+            ldr	x13, =BASE_ADDRESS                  // x13 = (virt) hyp base addr
+            ldr	x12, [x1, #12]                      // x12 = (phys) hyp base addr
+            ldr x14, [x1, #44]                      // x14 = (virt) uart addr
+            ldr x15, ={uart_base_virt}              // x15 = (phys) uart addr
+            sub	x11, x12, x13                       // x11 = (el2 mmu on)virt-phy offset 
+
+            b el2_entry
         ",
         per_cpu_size=const PER_CPU_SIZE,
         uart_base_virt=const UART_BASE_VIRT,
@@ -56,14 +48,18 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
 #[naked]
 #[no_mangle]
 pub unsafe extern "C" fn el2_entry() -> i32 {
-    core::arch::asm!(
-        "
-        bl {0}                              /*set boot pt*/
+    core::arch::asm!("
+        cmp x16, #0
+        b.eq 2f                             /* set boot pt */
+    1:
         adr	x0, bootstrap_pt_l0
-	    adr	x30, {2}	                    /* set lr switch_stack phy-virt*/
+	    adr	x30, {2}	                    /* lr = switch_stack phy-virt*/
 	    phys2virt x30		
-	    b	{1}                             /*enable mmu*/
+	    b	{1}                             /* enable mmu */
         eret
+    2:
+        bl {0}
+        b 1b
     ",
         sym boot_pt,
         sym enable_mmu,

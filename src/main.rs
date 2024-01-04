@@ -34,19 +34,22 @@ mod cell;
 mod config;
 mod consts;
 mod device;
-mod header;
 mod hypercall;
 mod memory;
 mod num;
 mod panic;
 mod percpu;
 
-use crate::cell::root_cell;
+use crate::consts::HV_BASE;
+use crate::memory::addr;
 use crate::percpu::this_cpu_data;
+use crate::{cell::root_cell, consts::MAX_CPU_NUM};
+use arch::entry::arch_entry;
 use config::HvSystemConfig;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use device::gicv3::gicv3_cpu_init;
 use error::HvResult;
+use memory::addr::virt_to_phys;
 use percpu::PerCpu;
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
 static INIT_EARLY_OK: AtomicU32 = AtomicU32::new(0);
@@ -99,7 +102,7 @@ fn primary_init_early() -> HvResult {
     memory::init_heap();
     system_config.check()?;
     // info!("Hypervisor header: {:#x?}", HvHeader::get());
-    // info!("System config: {:#x?}", system_config);
+    info!("System config: {:#x?}", system_config);
 
     memory::init_frame_allocator();
     memory::init_hv_page_table()?;
@@ -126,10 +129,26 @@ fn per_cpu_init() {
     println!("CPU {} init OK.", cpu_data.id);
 }
 
+fn wakeup_secondary_cpus(this_id: u64) {
+    for cpu_id in 0..MAX_CPU_NUM {
+        if cpu_id == this_id {
+            continue;
+        }
+        psci::cpu_on(cpu_id | 0x80000000, virt_to_phys(arch_entry as _) as _, 0).unwrap_or_else(
+            |err| {
+                if let psci::error::Error::AlreadyOn = err {
+                } else {
+                    panic!("can't wake up cpu {}", cpu_id);
+                }
+            },
+        );
+    }
+}
+
 fn main(cpu_data: &'static mut PerCpu) -> HvResult {
     println!("Hello");
     println!(
-        "cpuid{} vaddr{:#x?} phyid{} &cpu_data{:#x?}",
+        "cpuid {} vaddr {:#x?} phyid {} &cpu_data {:#x?}",
         cpu_data.id,
         cpu_data.self_vaddr,
         this_cpu_data().id,
@@ -137,9 +156,17 @@ fn main(cpu_data: &'static mut PerCpu) -> HvResult {
     );
     let is_primary = cpu_data.id == 0;
 
-    let online_cpus = 0;
-    // let online_cpus = HvHeader::get().online_cpus;
-    wait_for(|| PerCpu::entered_cpus() < online_cpus)?;
+    if is_primary {
+        // Set PHYS_VIRT_OFFSET early.
+        unsafe {
+            addr::PHYS_VIRT_OFFSET =
+                HV_BASE - HvSystemConfig::get().hypervisor_memory.phys_start as usize
+        };
+        wakeup_secondary_cpus(cpu_data.id);
+    }
+
+    wait_for(|| PerCpu::entered_cpus() < MAX_CPU_NUM as _)?;
+
     println!(
         "{} CPU {} entered.",
         if is_primary { "Primary" } else { "Secondary" },
@@ -155,7 +182,7 @@ fn main(cpu_data: &'static mut PerCpu) -> HvResult {
     per_cpu_init();
 
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
-    wait_for_counter(&INITED_CPUS, online_cpus)?;
+    // wait_for_counter(&INITED_CPUS, online_cpus)?;
 
     if is_primary {
         primary_init_late();

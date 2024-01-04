@@ -21,12 +21,15 @@ pub const TRAMPOLINE_START: *mut VirtAddr = __trampoline_start as _;
 
 pub const INVALID_ADDRESS: u64 = u64::MAX;
 
-pub const MAX_CPU_NUM: usize = 16;
+pub const MAX_CPU_NUM: u64 = 16;
+
+extern "C" {
+    fn __root_config();
+}
 
 /// Pointer of the `HvSystemConfig` structure.
 pub fn hv_config_ptr() -> *const HvSystemConfig {
-    error!("hv_config_ptr!!!");
-    0 as _
+    __root_config as _
     // (PER_CPU_ARRAY_PTR as usize + HvHeader::get().max_cpus as usize * PER_CPU_SIZE) as _
 }
 
