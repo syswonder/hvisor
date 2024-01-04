@@ -93,7 +93,7 @@ BlkConfig *init_blk_config(uint64_t bsize);
 #define BLK_SIZE_MAX 524288 // 128 * 4096
 #define BLK_SEG_MAX 512
 
-#define VIRTQUEUE_BLK_MAX_SIZE 256
+#define VIRTQUEUE_BLK_MAX_SIZE 512
 
 #define VIRTIO_BLK_T_IN		0
 #define VIRTIO_BLK_T_OUT	1

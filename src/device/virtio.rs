@@ -36,8 +36,11 @@ impl VirtioReq {
 
 /// non root cell's virtio request handler
 pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: u64) -> HvResult {
-    info!("mmio virtio handler");
+    debug!("mmio virtio handler");
     let is_cfg = mmio.address != QUEUE_NOTIFY;
+    if !is_cfg {
+        info!("notify !!!");
+    }
     mmio.address += base as usize;
     let mut req_list = VIRTIO_REQ_LIST.lock();
     req_list.push_back(VirtioReq::new(
@@ -56,9 +59,10 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: u64) -> HvResult {
         if !mmio.is_write {
             let map = VIRTIO_RESULT_MAP.lock();
             mmio.value = *map.get(&this_cpu_id()).unwrap();
-            info!("non root receives value: {:#x?}", mmio.value);
+            debug!("non root receives value: {:#x?}", mmio.value);
         }
     }
+    info!("non root returns");
     Ok(())
 }
 

@@ -86,7 +86,7 @@ impl<'a> HyperCall<'a> {
         if res.is_cfg == 1 {
             resume_cpu(res.src_cpu);
         } else {
-            info!("hvc finish req, value is {:#x?}", res.value);
+            debug!("hvc finish req, value is {:#x?}", res.value);
             send_event(res.src_cpu, SGI_VIRTIO_RES_ID);
         }
         HyperCallResult::Ok(0)
@@ -94,7 +94,7 @@ impl<'a> HyperCall<'a> {
 
     // only root cell calls the function and set virtio shared region between el1 and el2.
     fn hypervisor_init_virtio(&mut self, shared_region_addr: u64) -> HyperCallResult {
-        info!(
+        debug!(
             "handle hvc init virtio, shared_region_addr = {:#x?}",
             shared_region_addr
         );
@@ -316,10 +316,10 @@ impl<'a> HyperCall<'a> {
             mem_regs.iter().for_each(|mem| {
                 if mem.flags.contains(MemFlags::LOADABLE) {
                     // root_cell_w.mem_region_unmap_partial(&MemoryRegion::new_with_offset_mapper(
-                        // mem.phys_start as GuestPhysAddr,
-                        // mem.phys_start as HostPhysAddr,
-                        // mem.size as _,
-                        // mem.flags,
+                    //     mem.phys_start as GuestPhysAddr,
+                    //     mem.phys_start as HostPhysAddr,
+                    //     mem.size as _,
+                    //     mem.flags,
                     // ));
                 }
             });

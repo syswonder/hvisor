@@ -95,7 +95,7 @@ impl From<VirtioReq> for HvisorDeviceReq {
 
 ///  When there are new virtio requests, root cell calls this function.
 pub fn handle_virtio_requests() {
-    info!("handle virtio requests");
+    debug!("handle virtio requests");
     let mut req_list = VIRTIO_REQ_LIST.lock();
     let mut dev = HVISOR_DEVICE.lock();
     if !dev.is_enable {
@@ -112,5 +112,5 @@ pub fn handle_virtio_requests() {
         dev.push_req(hreq);
     }
     inject_irq(IRQHVI, false);
-    info!("back to el1 from virtio handler");
+    debug!("back to el1 from virtio handler");
 }
