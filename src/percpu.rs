@@ -158,6 +158,12 @@ pub fn get_cpu_data<'a>(cpu_id: u64) -> &'a mut PerCpu {
     unsafe { &mut *(cpu_data as *mut PerCpu) }
 }
 
+// get current cpu id
+pub fn this_cpu_id() -> u64 {
+    let mpidr = MPIDR_EL1.get();
+    mpidr_to_cpuid(mpidr)
+}
+
 pub fn set_vtcr_flags() {
     let vtcr_flags = VTCR_EL2::TG0::Granule4KB
         + VTCR_EL2::PS::PA_44B_16TB
@@ -229,29 +235,6 @@ pub fn check_events() {
         reset_current_cpu(cpu_data.cpu_on_entry);
     }
 }
-
-// #[allow(unused)]
-// pub fn test_cpu_el1() {
-//     info!("hello from el2");
-//     let mut gpm: MemorySet<Stage2PageTable> = MemorySet::new();
-//     info!("set gpm for cell1");
-//     gpm.insert(MemoryRegion::new_with_offset_mapper(
-//         0x00000000 as GuestPhysAddr,
-//         0x7fa00000 as HostPhysAddr,
-//         0x00100000 as usize,
-//         MemFlags::READ | MemFlags::WRITE | MemFlags::NO_HUGEPAGES,
-//     ));
-//     gpm.insert(MemoryRegion::new_with_offset_mapper(
-//         0x09000000 as GuestPhysAddr,
-//         0x09000000 as HostPhysAddr,
-//         0x00001000 as usize,
-//         MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-//     ));
-//     unsafe {
-//         gpm.activate();
-//     }
-//     reset_current_cpu();
-// }
 
 #[no_mangle]
 fn reset_current_cpu(entry: u64) {

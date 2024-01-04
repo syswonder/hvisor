@@ -81,8 +81,7 @@ pub use paging::{GenericPTE, PagingInstr};
 pub const PAGE_SIZE: usize = paging::PageSize::Size4K as usize;
 pub const TEMPORARY_MAPPING_BASE: usize = 0x80_0000_0000;
 pub const NUM_TEMPORARY_PAGES: usize = 16;
-//pub use mm::{MemoryRegion, MemorySet};
-
+pub const EMU_SHARED_REGION_BASE: usize = 0x80_0001_0000;
 bitflags! {
     #[derive(Clone, Copy, Debug)]
     pub struct MemFlags: u64 {

@@ -141,6 +141,7 @@ fn handle_dabt(frame: &mut TrapFrame) {
     let sse = (iss >> 21 & 0x1) != 0;
     let sas = iss >> 22 & 0x3;
 
+    // size indicates how many bytes attempted by the operation.
     let size = 1 << sas;
     let hpfar = read_sysreg!(HPFAR_EL2);
     let far = read_sysreg!(FAR_EL2);
@@ -197,7 +198,7 @@ fn handle_hvc(frame: &mut TrapFrame) {
     let (code, arg0, arg1) = (frame.regs.usr[0], frame.regs.usr[1], frame.regs.usr[2]);
     let cpu_data = this_cpu_data() as &mut PerCpu;
 
-    info!(
+    debug!(
         "HVC from CPU{},code:{:#x?},arg0:{:#x?},arg1:{:#x?}",
         cpu_data.id, code, arg0, arg1
     );

@@ -80,7 +80,9 @@ pub mod gicd;
 mod gicr;
 use crate::arch::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::config::HvSystemConfig;
-use crate::hypercall::{SGI_EVENT_ID, SGI_RESUME_ID};
+use crate::device::emu::handle_virtio_requests;
+use crate::device::virtio::handle_virtio_result;
+use crate::hypercall::{SGI_EVENT_ID, SGI_RESUME_ID, SGI_VIRTIO_REQ_ID, SGI_VIRTIO_RES_ID};
 use crate::percpu::check_events;
 
 pub use gicd::{gicv3_gicd_mmio_handler, GICD_IROUTER};
@@ -167,50 +169,34 @@ pub fn gicv3_cpu_shutdown() {
 
 pub fn gicv3_handle_irq_el1() {
     if let Some(irq_id) = pending_irq() {
-        // enum ipi_msg_type {
-        //     IPI_WAKEUP,
-        //     IPI_TIMER,
-        //     IPI_RESCHEDULE,
-        //     IPI_CALL_FUNC,
-        //     IPI_CPU_STOP,
-        //     IPI_IRQ_WORK,
-        //     IPI_COMPLETION,
-        //     /*
-        //      * CPU_BACKTRACE is special and not included in NR_IPI
-        //      * or tracable with trace_ipi_*
-        //      */
-        //     IPI_CPU_BACKTRACE,
-        //     /*
-        //      * SGI8-15 can be reserved by secure firmware, and thus may
-        //      * not be usable by the kernel. Please keep the above limited
-        //      * to at most 8 entries.
-        //      */
-        // };
         //SGI
         if irq_id < 16 {
             trace!("sgi get {}", irq_id);
             if irq_id < 8 {
                 trace!("sgi get {},inject", irq_id);
                 deactivate_irq(irq_id);
-                inject_irq(irq_id);
+                inject_irq(irq_id, false);
             } else if irq_id == SGI_EVENT_ID as usize {
-                info!("HV SGI EVENT {}", irq_id);
+                // info!("HV SGI EVENT {}", irq_id);
                 check_events();
                 deactivate_irq(irq_id);
             } else if irq_id == SGI_RESUME_ID as usize {
                 info!("hv sgi got {}, resume", irq_id);
                 // let cpu_data = unsafe { this_cpu_data() as &mut PerCpu };
                 // cpu_data.suspend_cpu = false;
+            } else if irq_id == SGI_VIRTIO_REQ_ID as usize {
+                handle_virtio_requests();
+                deactivate_irq(irq_id);
+            } else if irq_id == SGI_VIRTIO_RES_ID as usize {
+                handle_virtio_result();
+                deactivate_irq(irq_id);
             } else {
                 warn!("skip sgi {}", irq_id);
             }
         } else {
             //inject phy irq
-            // if irq_id > 31 {
-            //     info!("*** get spi_irq id = {}", irq_id);
-            // }
             deactivate_irq(irq_id);
-            inject_irq(irq_id);
+            inject_irq(irq_id, true);
         }
     }
 }
@@ -280,59 +266,50 @@ fn write_lr(id: usize, val: u64) {
     }
 }
 
-fn inject_irq(irq_id: usize) {
+pub fn inject_irq(irq_id: usize, is_hardware: bool) {
     // mask
-    const LR_VIRTIRQ_MASK: usize = 0x3ff;
-    const LR_PHYSIRQ_MASK: usize = 0x3ff << 10;
+    const LR_VIRTIRQ_MASK: usize = (1 << 32) - 1;
 
-    const LR_PENDING_BIT: u64 = 1 << 28;
-    const LR_HW_BIT: u64 = 1 << 31;
     let elsr: u64 = read_sysreg!(ich_elrsr_el2);
     let vtr = read_sysreg!(ich_vtr_el2) as usize;
     let lr_num: usize = (vtr & 0xf) + 1;
-    let mut lr_idx = -1 as isize;
+    let mut free_ir = -1 as isize;
     for i in 0..lr_num {
+        // find a free list register
         if (1 << i) & elsr > 0 {
-            if lr_idx == -1 {
-                lr_idx = i as isize;
+            if free_ir == -1 {
+                free_ir = i as isize;
             }
             continue;
         }
-        // overlap
-        let _lr_val = read_lr(i) as usize;
-        if (i & LR_VIRTIRQ_MASK) == irq_id {
-            trace!("irq mask!{} {}", i, irq_id);
+        let lr_val = read_lr(i) as usize;
+        // if a virtual interrupt is enabled and equals to the physical interrupt irq_id
+        if (lr_val & LR_VIRTIRQ_MASK) == irq_id {
+            trace!("virtual irq {} enables again", irq_id);
             return;
         }
     }
-    debug!("To Inject IRQ {}, find lr {}", irq_id, lr_idx);
+    // debug!("To Inject IRQ {}, find lr {}", irq_id, free_ir);
 
-    if lr_idx == -1 {
+    if free_ir == -1 {
         error!("full lr");
         loop {}
-        // return;
     } else {
-        // lr = irq_id;
-        // /* Only group 1 interrupts */
-        // lr |= ICH_LR_GROUP_BIT;
-        // lr |= ICH_LR_PENDING;
-        // if (!is_sgi(irq_id)) {
-        //     lr |= ICH_LR_HW_BIT;
-        //     lr |= (u64)irq_id << ICH_LR_PHYS_ID_SHIFT;
-        // }
         let mut val = irq_id as u64; //v intid
         val |= 1 << 60; //group 1
         val |= 1 << 62; //state pending
-        val |= 1 << 61; //map hardware
-        val |= (irq_id as u64) << 32; //p intid
-                                      //debug!("To write lr {} val {}", lr_idx, val);
-        write_lr(lr_idx as usize, val);
+
+        if !is_sgi(irq_id as _) && is_hardware {
+            val |= 1 << 61; //map hardware
+            val |= (irq_id as u64) << 32; //pINTID
+        }
+        write_lr(free_ir as usize, val);
     }
 }
 
 pub const GICD_SIZE: u64 = 0x10000;
 pub const GICR_SIZE: u64 = 0x20000;
-
+pub const IRQHVI: usize = 32 + 0x20;
 pub fn is_sgi(irqn: u32) -> bool {
     irqn < 16
 }

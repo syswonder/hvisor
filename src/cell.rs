@@ -9,13 +9,14 @@ use crate::device::gicv3::gicd::{GICD_ICACTIVER, GICD_ICENABLER};
 use crate::device::gicv3::{
     gicv3_gicd_mmio_handler, gicv3_gicr_mmio_handler, GICD_IROUTER, GICD_SIZE, GICR_SIZE, LAST_GICR,
 };
+use crate::device::virtio::mmio_virtio_handler;
 use crate::error::HvResult;
 use crate::memory::addr::{is_aligned, GuestPhysAddr, HostPhysAddr};
 use crate::memory::{
     mmio_generic_handler, mmio_subpage_handler, npages, Frame, MMIOConfig, MMIOHandler, MMIORegion,
     MemFlags, MemoryRegion, MemorySet,
 };
-use crate::percpu::{get_cpu_data, mpidr_to_cpuid, this_cpu_data, CpuSet};
+use crate::percpu::{get_cpu_data, mpidr_to_cpuid, this_cell, this_cpu_data, CpuSet};
 use crate::INIT_LATE_OK;
 use core::ptr::write_volatile;
 use core::sync::atomic::Ordering;
@@ -149,6 +150,8 @@ impl Cell {
             let root_cell = root_cell();
             let mut root_cell_w = root_cell.write();
             root_cell_w.remove_irqs(&cell.irq_bitmap);
+            // add virtio mmio test region
+            cell.mmio_region_register(0x0a003e00, 0x200, mmio_virtio_handler, 0x0a003e00);
         }
         Ok(cell)
     }
@@ -444,4 +447,8 @@ pub fn init() -> HvResult {
     add_cell(root_cell.clone());
     ROOT_CELL.call_once(|| root_cell);
     Ok(())
+}
+
+pub fn this_cell_id() -> u32 {
+    this_cell().read().id()
 }

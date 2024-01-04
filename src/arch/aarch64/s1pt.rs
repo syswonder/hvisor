@@ -203,7 +203,15 @@ pub struct S1PTInstr;
 
 impl PagingInstr for S1PTInstr {
     unsafe fn activate(root_paddr: HostPhysAddr) {
+        // TTBR1_EL2 is ignored by PE because HCR_EL2.E2H is 0.
         TTBR0_EL2.set(root_paddr as _);
+        core::arch::asm!(
+            "
+                isb
+                tlbi	alle2
+                dsb	nsh
+            "
+        );
     }
 
     fn flush(_vaddr: Option<usize>) {

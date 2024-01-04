@@ -2,15 +2,41 @@
     "rust-analyzer.linkedProjects": [
         "./Cargo.toml"
     ],
-    // Prevent "can't find crate for `test`" error on no_std
-    // Ref: https://github.com/rust-lang/vscode-rust/issues/729
-    // For vscode-rust plugin users:
     "rust.target": "aarch64-unknown-none",
     "rust.all_targets": false,
-    // For Rust Analyzer plugin users:
     "rust-analyzer.cargo.target": "aarch64-unknown-none",
     "rust-analyzer.checkOnSave.allTargets": false,
+    "files.associations": {
+        "signal.h": "c",
+        "page.h": "c",
+        "types.h": "c",
+        "vector": "c",
+        "stdlib.h": "c",
+        "virtio.h": "c",
+        "hvisor.h": "c",
+        "virtio_blk.h": "c",
+        "*.tcc": "c",
+        "optional": "c",
+        "istream": "c",
+        "ostream": "c",
+        "ratio": "c",
+        "system_error": "c",
+        "array": "c",
+        "functional": "c",
+        "tuple": "c",
+        "type_traits": "c",
+        "utility": "c",
+        "time.h": "c",
+        "stdint.h": "c",
+        "cstdint": "c",
+        "log.h": "c",
+        "ioctl.h": "c",
+        "fcntl.h": "c",
+        "unistd.h": "c",
+        "errno.h": "c"
+    },
     // "rust-analyzer.cargo.features": [
     //     "board_qemu"
     // ]
+
 }

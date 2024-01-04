@@ -14,7 +14,7 @@
 #![feature(asm_const)]
 #![feature(naked_functions)] //  surpport naked function
 // 支持内联汇编
-#![deny(warnings, missing_docs)] // 将warnings作为error
+// #![deny(warnings, missing_docs)] // 将warnings作为error
 #[macro_use]
 extern crate alloc;
 extern crate buddy_system_allocator;
