@@ -204,6 +204,7 @@ void virtqueue_handle_request(VirtQueue *vq, uint16_t desc_head_idx)
                 // free(pbuf);
             }
             else {
+                log_debug("write offset is %d", offset);
                 pwrite(img_fd, buf, desc_table[desc_idx].len, offset);
             } 
             offset += desc_table[desc_idx].len;
@@ -254,11 +255,11 @@ void virtqueue_handle_request(VirtQueue *vq, uint16_t desc_head_idx)
 }
 
 void virtqueue_disable_notify(VirtQueue *vq) {
-    vq->used_flags |= (uint16_t)VRING_USED_F_NO_NOTIFY;
+    vq->used_ring->flags |= (uint16_t)VRING_USED_F_NO_NOTIFY;
 }
 
 void virtqueue_enable_notify(VirtQueue *vq) {
-    vq->used_flags &= !(uint16_t)VRING_USED_F_NO_NOTIFY;
+    vq->used_ring->flags &= !(uint16_t)VRING_USED_F_NO_NOTIFY;
 }
 
 int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
@@ -270,13 +271,13 @@ int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
     */
     while(!virtqueue_is_empty(vq)) {
         uint16_t desc_idx = virtqueue_pop_desc_chain_head(vq); //描述符链头
-        // TODO: disable notify
+        // TODO: 这个notify是怎么弄???
         virtqueue_disable_notify(vq);
-        if (vq->avail_ring->idx == vq->last_avail_idx) {
-            virtqueue_enable_notify(vq);
-        }
+        // if (vq->avail_ring->idx == vq->last_avail_idx) {
+        // }
         log_debug("avail_idx is %d, last_avail_idx is %d, desc_head_idx is %d", vq->avail_ring->idx, vq->last_avail_idx, desc_idx);
         virtqueue_handle_request(vq, desc_idx);
+        virtqueue_enable_notify(vq);
     }
     return 0;
 }

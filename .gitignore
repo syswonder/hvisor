@@ -13,3 +13,4 @@ Module.symvers
 modules.order
 hvisor_ko/main.ko
 hvisor_user/hvisor
+*.cpp
