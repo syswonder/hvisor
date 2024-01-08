@@ -105,9 +105,7 @@ pub fn handle_virtio_requests() {
     debug!("handle virtio requests");
     let mut req_list = VIRTIO_REQ_LIST.lock();
     let mut dev = HVISOR_DEVICE.lock();
-    if !dev.is_enable {
-        panic!("dev is not enabled");
-    }
+    assert_eq!(dev.is_enable, true);
     info!("req is {}", dev.get_nreq());
     if dev.is_full() {
         error!("dev can't solve this rq");

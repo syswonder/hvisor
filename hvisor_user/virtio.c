@@ -273,11 +273,11 @@ int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
         uint16_t desc_idx = virtqueue_pop_desc_chain_head(vq); //描述符链头
         // TODO: 这个notify是怎么弄???
         virtqueue_disable_notify(vq);
-        // if (vq->avail_ring->idx == vq->last_avail_idx) {
-        // }
+        if (vq->avail_ring->idx == vq->last_avail_idx) {
+        virtqueue_enable_notify(vq);
+        }
         log_debug("avail_idx is %d, last_avail_idx is %d, desc_head_idx is %d", vq->avail_ring->idx, vq->last_avail_idx, desc_idx);
         virtqueue_handle_request(vq, desc_idx);
-        virtqueue_enable_notify(vq);
     }
     return 0;
 }

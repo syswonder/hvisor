@@ -5,7 +5,7 @@ use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
 use crate::control::{park_cpu, reset_cpu, resume_cpu, send_event};
 use crate::device::emu::HVISOR_DEVICE;
 use crate::device::pci::mmio_pci_handler;
-use crate::device::virtio::VIRTIO_RESULT_MAP;
+use crate::device::virtio::{VIRTIO_RESULT_MAP, VIRTIO_IO_IN_PROGRESS};
 use crate::error::HvResult;
 use crate::memory::addr::{align_down, align_up, is_aligned};
 use crate::memory::{
@@ -87,6 +87,9 @@ impl<'a> HyperCall<'a> {
             resume_cpu(res.src_cpu);
         } else {
             debug!("hvc finish req, value is {:#x?}", res.value);
+            let mut io_in_progress = VIRTIO_IO_IN_PROGRESS.lock();
+            assert_eq!(*io_in_progress, true);
+            *io_in_progress = false;
             send_event(res.src_cpu, SGI_VIRTIO_RES_ID);
         }
         HyperCallResult::Ok(0)

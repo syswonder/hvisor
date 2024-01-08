@@ -14,6 +14,8 @@ use super::gicv3::inject_irq;
 pub static VIRTIO_REQ_LIST: Mutex<LinkedList<VirtioReq>> = Mutex::new(LinkedList::new());
 /// cpu_id: value
 pub static VIRTIO_RESULT_MAP: Mutex<BTreeMap<u64, u64>> = Mutex::new(BTreeMap::new());
+/// Is root process io request.
+pub static VIRTIO_IO_IN_PROGRESS: Mutex<bool> = Mutex::new(false);
 const QUEUE_NOTIFY: usize = 0x50;
 pub struct VirtioReq {
     pub src_cell: u32,
@@ -40,6 +42,12 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: u64) -> HvResult {
     let is_cfg = mmio.address != QUEUE_NOTIFY;
     if !is_cfg {
         info!("notify !!!, cpu id is {}", this_cpu_id());
+        let mut io_in_progress = VIRTIO_IO_IN_PROGRESS.lock();
+        if *io_in_progress == true {
+            return Ok(());
+        } else {
+            *io_in_progress = true;
+        }
     }
     mmio.address += base as usize;
     let mut req_list = VIRTIO_REQ_LIST.lock();

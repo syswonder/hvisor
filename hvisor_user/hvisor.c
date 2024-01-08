@@ -26,7 +26,7 @@ int main(int argc, char *argv[])
 int hvisor_init()
 {
     int err;
-    log_set_level(LOG_DEBUG);
+    log_set_level(LOG_ERROR);
     FILE *log_file = fopen("log.txt", "w+");
     if (log_file == NULL) {
         log_error("open log file failed");
