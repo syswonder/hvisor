@@ -111,6 +111,7 @@ pub fn handle_virtio_requests() {
         error!("dev can't solve this rq");
         return;
     }
+    // 如果环形请求队列为空, 那么不再加请求；等finish req的hvc发生时,再调用这个函数判断
     while !req_list.is_empty() {
         if dev.is_full() {
             error!("dev is full");

@@ -60,7 +60,6 @@ int hvisor_init()
     act.sa_flags = SA_SIGINFO;
     act.sa_sigaction = hvisor_sig_handler;
     // If one signal A is being handled, another signal B occurs, signal B will be blocked until signal A is finished.
-    // If there are five signal B, only handle once. 
     act.sa_mask = block_mask;
     if (sigaction(SIGHVI, &act, NULL) == -1) 
         log_error("register signal handler failed");

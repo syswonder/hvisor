@@ -5,7 +5,8 @@
 #define MMAP_SIZE 1024
 #define MAX_REQ 8
 
-#define SIGHVI 10
+// We use queue signal instead of flag signal to catch all signals, preventing some signals should be processed but ignored.
+#define SIGHVI 34
 #define HVISOR_INIT_VIRTIO  _IO(1, 0) // virtio device init
 #define HVISOR_GET_TASK _IO(1, 1)	
 #define HVISOR_FINISH _IO(1, 2)		  // finish one virtio req	
