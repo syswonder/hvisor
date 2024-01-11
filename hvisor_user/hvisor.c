@@ -13,7 +13,8 @@
 #include "virtio.h"
 #include "log.h"
 int hvisor_init();
-void hvisor_sig_handler(int n, siginfo_t *info, void *unused);
+// void hvisor_sig_handler(int n, siginfo_t *info, void *unused);
+void handle_virtio_requests();
 
 struct hvisor_device_region *device_region;
 int fd;
@@ -53,43 +54,26 @@ int hvisor_init()
         goto unmap;
     }
 
-    // register signal handler
-    struct sigaction act;
-    sigset_t block_mask;
-    sigfillset(&block_mask);
-    act.sa_flags = SA_SIGINFO;
-    act.sa_sigaction = hvisor_sig_handler;
-    // If one signal A is being handled, another signal B occurs, signal B will be blocked until signal A is finished.
-    act.sa_mask = block_mask;
-    if (sigaction(SIGHVI, &act, NULL) == -1) 
-        log_error("register signal handler failed");
-
     init_virtio_devices();
     log_info("hvisor init okay!");
-    while(1);
+    handle_virtio_requests();
 
 unmap:
     munmap(device_region, MMAP_SIZE);
     return 0;
 }
 
-void hvisor_sig_handler(int n, siginfo_t *info, void *unused)
+void handle_virtio_requests()
 {
-    log_trace("received one signal %d", n);
-    if (n == SIGHVI) {
-        // while (device_region->inuse == 1);
-        // device_region->inuse = 1;
-        // unsigned int nreq = device_region->nreq;
-        // el0和el2如果同时操作这个缓冲区, 是不是得加锁
-        while (device_region->nreq != 0) {
-            log_debug("nreq is %u", device_region->nreq);
-            struct device_req *req = &device_region->req_list[device_region->nreq - 1];
-            struct device_result *res = &device_region->res;
-            virtio_handle_req(req, res);
-            device_region->nreq --;
-            log_debug("after nreq is %u", device_region->nreq);
+    unsigned int last_req_idx = device_region->last_req_idx;
+    struct device_req *req;
+    while (1) {
+        if (last_req_idx < device_region->idx) {
+            req = &device_region->req_list[last_req_idx % MAX_REQ];
+            virtio_handle_req(req);
+            last_req_idx++;
+            device_region->last_req_idx = last_req_idx;
             ioctl(fd, HVISOR_FINISH);
         }
-        device_region->inuse = 0;
     }
 }

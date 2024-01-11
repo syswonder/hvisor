@@ -505,19 +505,17 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
     }
 }
 
-int virtio_handle_req(struct device_req *req, struct device_result *res) 
+int virtio_handle_req(struct device_req *req) 
 {
     uint64_t offs = req->address - dev_blk->base_addr;
     if (req->is_write) {
         virtio_mmio_write(dev_blk, offs, req->value, req->size);
     } else {
-        res->value = virtio_mmio_read(dev_blk, offs, req->size);
-        log_debug("read value is %d\n", res->value);
+        req->value = virtio_mmio_read(dev_blk, offs, req->size);
+        log_debug("read value is %d\n", req->value);
     }
-    res->src_cpu = req->src_cpu;
-    res->is_cfg = req->is_cfg;
-    if (!res->is_cfg) {
-        res->value = dev_blk->dev.irq_id;
+    if (!req->is_cfg) {
+        req->value = dev_blk->dev.irq_id;
     }
     log_debug("src_cell is %d, src_cpu is %lld", req->src_cell, req->src_cpu);
     return 0;

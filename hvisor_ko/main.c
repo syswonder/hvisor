@@ -29,8 +29,8 @@ int hvisor_init_virtio(void)
 	device_region = __get_free_pages(GFP_KERNEL, 0);
     SetPageReserved(virt_to_page(device_region));
     // init device region
-    device_region->nreq = 0;
-    device_region->inuse = 0;
+    device_region->idx = 0;
+    device_region->last_req_idx = 0;
 	if (device_region == NULL)
 		return -ENOMEM;
 	err = hvisor_call_arg1(HVISOR_HC_INIT_VIRTIO, __pa(device_region));

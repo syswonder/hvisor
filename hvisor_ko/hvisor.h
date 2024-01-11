@@ -3,7 +3,7 @@
 #include <linux/ioctl.h>
 #include <linux/types.h>
 #define MMAP_SIZE 1024
-#define MAX_REQ 8
+#define MAX_REQ 4
 
 // We use queue signal instead of flag signal to catch all signals, preventing some signals should be processed but ignored.
 #define SIGHVI 34
@@ -22,18 +22,10 @@ struct device_req {
 	__u8 is_cfg;
 };
 
-// return request result to el2
-struct device_result {
-	__u64 src_cpu;
-	__u64 value;
-	__u8 is_cfg;
-};
-
 struct hvisor_device_region {
-	__u32 nreq;
+	__u32 idx;
+	__u32 last_req_idx;
 	struct device_req req_list[MAX_REQ];
-	struct device_result res;
-	__u8 inuse;
 };
 
 

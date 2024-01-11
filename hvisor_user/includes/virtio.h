@@ -233,7 +233,7 @@ void virtqueue_reset(VirtQueue *vq, int idx);
 
 int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq);
 
-int virtio_handle_req(struct device_req *req, struct device_result *res);
+int virtio_handle_req(struct device_req *req);
 
 /* This marks a buffer as continuing via the next field. */
 #define VRING_DESC_F_NEXT	1

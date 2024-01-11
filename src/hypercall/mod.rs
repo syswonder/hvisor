@@ -3,9 +3,9 @@ use crate::cell::{add_cell, find_cell_by_id, remove_cell, root_cell, Cell, CommR
 use crate::config::{CellConfig, HvCellDesc, HvMemoryRegion, HvSystemConfig};
 use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
 use crate::control::{park_cpu, reset_cpu, resume_cpu, send_event};
-use crate::device::emu::HVISOR_DEVICE;
+use crate::device::emu::{HVISOR_DEVICE, MAX_REQ, handle_virtio_requests};
 use crate::device::pci::mmio_pci_handler;
-use crate::device::virtio::{VIRTIO_RESULT_MAP, VIRTIO_IO_IN_PROGRESS};
+use crate::device::virtio::VIRTIO_RESULT_MAP;
 use crate::error::HvResult;
 use crate::memory::addr::{align_down, align_up, is_aligned};
 use crate::memory::{
@@ -79,19 +79,26 @@ impl<'a> HyperCall<'a> {
                 "Virtio finish operation over non-root cells: unsupported!"
             );
         }
-        let dev = HVISOR_DEVICE.lock();
-        let res = dev.get_result();
+        let mut dev = HVISOR_DEVICE.lock();
         let mut map = VIRTIO_RESULT_MAP.lock();
-        map.insert(res.src_cpu, res.value);
-        if res.is_cfg == 1 {
-            resume_cpu(res.src_cpu);
-        } else {
-            debug!("hvc finish req, value is {:#x?}", res.value);
-            let mut io_in_progress = VIRTIO_IO_IN_PROGRESS.lock();
-            assert_eq!(*io_in_progress, true);
-            *io_in_progress = false;
-            send_event(res.src_cpu, SGI_VIRTIO_RES_ID);
+        let region = dev.region();
+        let last_req_idx = region.last_req_idx;
+        for i in dev.shadow_last_req_idx..last_req_idx {
+            let idx = (i % MAX_REQ) as usize;
+            let src_cpu = region.req_list[idx].src_cpu;
+            let value = region.req_list[idx].value;
+            let is_cfg = region.req_list[idx].is_cfg;
+            map.insert(src_cpu, value);
+            if is_cfg == 1 {
+                resume_cpu(src_cpu);
+            } else {
+                debug!("hvc finish req, value is {:#x?}", value);
+                send_event(src_cpu, SGI_VIRTIO_RES_ID);
+            }
         }
+        dev.shadow_last_req_idx = last_req_idx;
+        drop(dev);
+        handle_virtio_requests();
         HyperCallResult::Ok(0)
     }
 

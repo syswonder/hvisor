@@ -1,18 +1,16 @@
 use spin::Mutex;
 
-use super::{
-    gicv3::{inject_irq, IRQHVI},
-    virtio::{VirtioReq, VIRTIO_REQ_LIST},
-};
-const MAX_REQ: usize = 8;
+use super::virtio::{VirtioReq, TRAMPOLINE_REQ_LIST};
+pub const MAX_REQ: u32 = 4;
 pub static HVISOR_DEVICE: Mutex<HvisorDevice> = Mutex::new(HvisorDevice::default());
 pub struct HvisorDevice {
     base_address: usize, // el1 and el2 shared region addr, el2 virtual address
     is_enable: bool,
+    pub shadow_last_req_idx: u32,
 }
 
 impl HvisorDevice {
-    fn region(&self) -> &mut HvisorDeviceRegion {
+    pub fn region(&self) -> &mut HvisorDeviceRegion {
         if !self.is_enable {
             panic!("hvisor device region is not enabled!");
         }
@@ -23,6 +21,7 @@ impl HvisorDevice {
         HvisorDevice {
             base_address: 0,
             is_enable: false,
+            shadow_last_req_idx: 0,
         }
     }
 
@@ -32,26 +31,19 @@ impl HvisorDevice {
     }
 
     pub fn is_full(&self) -> bool {
-        self.region().nreq >= 2 as u32
+        let region = self.region();
+        if region.idx - region.last_req_idx == MAX_REQ as u32 {
+            info!("hvisor req queue full");
+            true
+        } else {
+            false
+        }
     }
 
     pub fn push_req(&mut self, req: HvisorDeviceReq) {
         let region = self.region();
-        if region.nreq >= MAX_REQ as u32 {
-            panic!("hvisor device region should'nt be full");
-        }
-        region.req_list[region.nreq as usize] = req;
-        region.nreq += 1;
-        info!("push req, nreq is {}", region.nreq);
-    }
-
-    pub fn get_result(&self) -> &HvisorDeviceRes {
-        let res = &self.region().res as *const HvisorDeviceRes;
-        unsafe { &*res }
-    }
-
-    pub fn get_nreq(&self) -> u32 {
-        self.region().nreq
+        region.req_list[(region.idx % MAX_REQ)as usize] = req;
+        region.idx += 1;
     }
 
 }
@@ -59,30 +51,20 @@ impl HvisorDevice {
 /// El1 and EL2 shared region for virtio requests and results.
 #[repr(C)]
 pub struct HvisorDeviceRegion {
-    nreq: u32,
-    req_list: [HvisorDeviceReq; MAX_REQ],
-    res: HvisorDeviceRes,
-    inuse: u8,
+    idx: u32,
+    pub last_req_idx: u32,
+    pub req_list: [HvisorDeviceReq; MAX_REQ as usize],
 }
 
 /// Hvisor device requests
 #[repr(C)]
 pub struct HvisorDeviceReq {
-    src_cpu: u64,
+    pub src_cpu: u64,
     address: u64,
     size: u64,
-    value: u64,
+    pub value: u64,
     src_cell: u32,
     is_wirte: u8,
-    is_cfg: u8,
-}
-
-/// Hvisor device result
-#[repr(C)]
-pub struct HvisorDeviceRes {
-    pub src_cpu: u64,
-    /// For notify req, it is the irq_id
-    pub value: u64,
     pub is_cfg: u8,
 }
 
@@ -103,25 +85,21 @@ impl From<VirtioReq> for HvisorDeviceReq {
 ///  When there are new virtio requests, root cell calls this function.
 pub fn handle_virtio_requests() {
     debug!("handle virtio requests");
-    let mut req_list = VIRTIO_REQ_LIST.lock();
     let mut dev = HVISOR_DEVICE.lock();
     assert_eq!(dev.is_enable, true);
-    info!("req is {}", dev.get_nreq());
     if dev.is_full() {
-        error!("dev can't solve this rq");
+        // When req list is full, just return. 
+        // When root calls finish req hvc, it will call this function again. 
         return;
     }
-    // 如果环形请求队列为空, 那么不再加请求；等finish req的hvc发生时,再调用这个函数判断
+    let mut req_list = TRAMPOLINE_REQ_LIST.lock();
     while !req_list.is_empty() {
         if dev.is_full() {
-            error!("dev is full");
             break;
         }
         let req = req_list.pop_front().unwrap();
-        // TODO: 为了避免处理请求时，其他VM需要等待，因此可以尝试拿到一个请求就释放req_list. 不确定会不会提高性能
         let hreq: HvisorDeviceReq = req.into();
         dev.push_req(hreq);
     }
-    inject_irq(IRQHVI, false);
     debug!("back to el1 from virtio handler");
 }
