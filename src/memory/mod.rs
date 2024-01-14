@@ -1,50 +1,3 @@
-//! Hypervisor Memory Layout
-//!
-//!     +--------------------------------------+ - HV_BASE: 0xffff_ff00_0000_0000 (lower address)
-//!     | HvHeader                             |
-//!     +--------------------------------------+
-//!     | Text Segment                         |
-//!     |                                      |
-//!     +--------------------------------------+
-//!     | Read-only Data Segment               |
-//!     |                                      |
-//!     +--------------------------------------+
-//!     | Data Segment                         |
-//!     |                                      |
-//!     +--------------------------------------+
-//!     | BSS Segment                          |
-//!     | (includes hypervisor heap)           |
-//!     |                                      |
-//!     +--------------------------------------+ - PER_CPU_ARRAY_PTR (core_end)
-//!     |  +--------------------------------+  |
-//!     |  | Per-CPU Data 0                 |  |
-//!     |  +--------------------------------+  |
-//!     |  | Per-CPU Stack 0                |  |
-//!     |  +--------------------------------+  | - PER_CPU_ARRAY_PTR + PER_CPU_SIZE
-//!     |  | Per-CPU Data 1                 |  |
-//!     |  +--------------------------------+  |
-//!     |  | Per-CPU Stack 1                |  |
-//!     |  +--------------------------------+  |
-//!     :  :                                :  :
-//!     :  :                                :  :
-//!     |  +--------------------------------+  |
-//!     |  | Per-CPU Data n-1               |  |
-//!     |  +--------------------------------+  |
-//!     |  | Per-CPU Stack n-1              |  |
-//!     |  +--------------------------------+  | - hv_config_ptr
-//!     |  | HvSystemConfig                 |  |
-//!     |  | +----------------------------+ |  |
-//!     |  | | CellConfigLayout           | |  |
-//!     |  | |                            | |  |
-//!     |  | +----------------------------+ |  |
-//!     |  +--------------------------------+  |
-//!     +--------------------------------------| - free_memory_start
-//!     |  Dynamic Page Pool                   |
-//!     :                                      :
-//!     :                                      :
-//!     |                                      |
-//!     +--------------------------------------+ - hv_end (higher address)
-//!
 mod frame;
 mod heap;
 mod mapper;
@@ -61,8 +14,8 @@ use spin::{Once, RwLock};
 
 use crate::arch::Stage1PageTable;
 use crate::config::HvSystemConfig;
-use crate::consts::{HV_BASE, TRAMPOLINE_START};
-use crate::device::gicv3::GICD_SIZE;
+use crate::consts::{HV_BASE, TRAMPOLINE_START, MAX_CPU_NUM};
+use crate::device::gicv3::{GICD_SIZE, GICR_SIZE};
 use crate::device::pl011::UART_BASE_VIRT;
 use crate::error::HvResult;
 
@@ -117,13 +70,12 @@ pub fn init_hv_page_table() -> HvResult {
     let sys_config = HvSystemConfig::get();
     let hv_phys_start = sys_config.hypervisor_memory.phys_start as usize;
     let hv_phys_size = sys_config.hypervisor_memory.size as usize;
-    let trampoline_page = TRAMPOLINE_START as usize - 0xffff_4060_0000;
+    let trampoline_page = TRAMPOLINE_START as usize - unsafe { PHYS_VIRT_OFFSET };
     let gicd_base = sys_config.platform_info.arch.gicd_base;
     let gicr_base = sys_config.platform_info.arch.gicr_base;
-    let gicr_size = 0;
-    // let gicr_size: u64 = HvHeader::get().online_cpus as u64 * GICR_SIZE;
-    let mmcfg_start = sys_config.platform_info.pci_mmconfig_base;
-    let mmcfg_size = (sys_config.platform_info.pci_mmconfig_end_bus + 1) as u64 * 256 * 4096;
+    let gicr_size: u64 = MAX_CPU_NUM as u64 * GICR_SIZE;
+    // let mmcfg_start = sys_config.platform_info.pci_mmconfig_base;
+    // let mmcfg_size = (sys_config.platform_info.pci_mmconfig_end_bus + 1) as u64 * 256 * 4096;
 
     let mut hv_pt: MemorySet<Stage1PageTable> = MemorySet::new();
 
@@ -162,14 +114,15 @@ pub fn init_hv_page_table() -> HvResult {
         gicr_size as usize,
         MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
     ))?;
-    // Map pci region. Jailhouse doesn't map pci region to el2.
-    // Now we simplify the complex pci handler and just map it.
-    hv_pt.insert(MemoryRegion::new_with_offset_mapper(
-        mmcfg_start as GuestPhysAddr,
-        mmcfg_start as HostPhysAddr,
-        mmcfg_size as usize,
-        MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-    ))?;
+
+    // // Map pci region. Jailhouse doesn't map pci region to el2.
+    // // Now we simplify the complex pci handler and just map it.
+    // hv_pt.insert(MemoryRegion::new_with_offset_mapper(
+    //     mmcfg_start as GuestPhysAddr,
+    //     mmcfg_start as HostPhysAddr,
+    //     mmcfg_size as usize,
+    //     MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+    // ))?;
 
     // add virtio map
     hv_pt.insert(MemoryRegion::new_with_offset_mapper(
@@ -188,6 +141,7 @@ pub fn init_hv_page_table() -> HvResult {
     ))?;
 
     info!("Hypervisor page table init end.");
+
     debug!("Hypervisor virtual memory set: {:#x?}", hv_pt);
 
     HV_PT.call_once(|| RwLock::new(hv_pt));

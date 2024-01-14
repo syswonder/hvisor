@@ -40,9 +40,14 @@ mod num;
 mod panic;
 mod percpu;
 
+use crate::arch::entry::vmreturn;
 use crate::consts::HV_BASE;
+use crate::control::cell_start;
+use crate::device::gicv3::enable_irqs;
+use crate::device::gicv3::gicd::enable_gic_are_ns;
+use crate::device::gicv3::gicr::enable_ipi;
 use crate::memory::addr;
-use crate::percpu::this_cpu_data;
+use crate::percpu::{this_cpu_data, park_current_cpu};
 use crate::{cell::root_cell, consts::MAX_CPU_NUM};
 use arch::entry::arch_entry;
 use config::HvSystemConfig;
@@ -52,6 +57,8 @@ use error::HvResult;
 use memory::addr::virt_to_phys;
 use percpu::PerCpu;
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
+static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
+static ACTIVATED_CPUS: AtomicU32 = AtomicU32::new(0);
 static INIT_EARLY_OK: AtomicU32 = AtomicU32::new(0);
 static INIT_LATE_OK: AtomicU32 = AtomicU32::new(0);
 static ERROR_NUM: AtomicI32 = AtomicI32::new(0);
@@ -73,6 +80,7 @@ fn wait_for(condition: impl Fn() -> bool) -> HvResult {
 fn wait_for_counter(counter: &AtomicU32, max_value: u32) -> HvResult {
     wait_for(|| counter.load(Ordering::Acquire) < max_value)
 }
+
 fn primary_init_early() -> HvResult {
     logging::init();
     info!("Logging is enabled.");
@@ -114,18 +122,24 @@ fn primary_init_early() -> HvResult {
 
 fn primary_init_late() {
     info!("Primary CPU init late...");
-    // Do nothing...
+    enable_gic_are_ns();
     INIT_LATE_OK.store(1, Ordering::Release);
 }
 
 fn per_cpu_init() {
     let cpu_data = this_cpu_data();
     cpu_data.cell = Some(root_cell());
+
     gicv3_cpu_init();
+
     unsafe {
         memory::hv_page_table().read().activate();
         root_cell().read().gpm_activate();
     };
+
+    enable_ipi();
+    enable_irqs();
+
     println!("CPU {} init OK.", cpu_data.id);
 }
 
@@ -166,6 +180,7 @@ fn main(cpu_data: &'static mut PerCpu) -> HvResult {
     }
 
     wait_for(|| PerCpu::entered_cpus() < MAX_CPU_NUM as _)?;
+    assert_eq!(PerCpu::entered_cpus(), MAX_CPU_NUM as _);
 
     println!(
         "{} CPU {} entered.",
@@ -182,14 +197,24 @@ fn main(cpu_data: &'static mut PerCpu) -> HvResult {
     per_cpu_init();
 
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
-    // wait_for_counter(&INITED_CPUS, online_cpus)?;
+    wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _)?;
 
     if is_primary {
         primary_init_late();
     } else {
         wait_for_counter(&INIT_LATE_OK, 1)?
     }
-    cpu_data.activate_vmm()
+
+    cpu_data.activate_vmm();   
+    wait_for_counter(&ACTIVATED_CPUS, MAX_CPU_NUM as _)?;
+
+    if cpu_data.id == 0 {
+        cell_start(0)?;
+        cpu_data.start_root();
+    } else {
+        park_current_cpu();
+        unsafe { vmreturn(cpu_data.guest_reg()) }
+    }
 }
 extern "C" fn entry(cpu_data: &'static mut PerCpu) -> () {
     if let Err(_e) = main(cpu_data) {}

@@ -9,78 +9,19 @@
 #![allow(dead_code)]
 use crate::{
     config::HvSystemConfig,
-    device::common::MMIODerefWrapper,
     error::HvResult,
-    memory::{mmio_perform_access, MMIOAccess},
-    percpu::this_cell,
+    memory::{mmio_perform_access, MMIOAccess}, percpu::this_cell,
 };
 use spin::Mutex;
-use tock_registers::{
-    register_structs,
-    registers::{ReadOnly, ReadWrite},
-};
 
-use super::is_spi;
-
-register_structs! {
-    #[allow(non_snake_case)]
-    GicDistributorRegs {
-        /// Distributor Control Register.
-        (0x0000 => CTLR: ReadWrite<u32>),
-        /// Interrupt Controller Type Register.
-        (0x0004 => TYPER: ReadOnly<u32>),
-        /// Distributor Implementer Identification Register.
-        (0x0008 => IIDR: ReadOnly<u32>),
-        (0x000c => _reserved_0),
-        /// Interrupt Group Registers.
-        (0x0080 => IGROUPR: [ReadWrite<u32>; 32]),
-        /// Interrupt Set-Enable Registers.
-        (0x0100 => ISENABLER: [ReadWrite<u32>;32]),
-        /// Interrupt Clear-Enable Registers.
-        (0x0180 => ICENABLER: [ReadWrite<u32>; 32]),
-        /// Interrupt Set-Pending Registers.
-        (0x0200 => ISPENDR: [ReadWrite<u32>; 32]),
-        /// Interrupt Clear-Pending Registers.
-        (0x0280 => ICPENDR: [ReadWrite<u32>; 32]),
-        /// Interrupt Set-Active Registers.
-        (0x0300 => ISACTIVER: [ReadWrite<u32>;32]),
-        /// Interrupt Clear-Active Registers.
-        (0x0380 => ICACTIVER: [ReadWrite<u32>; 32]),
-        /// Interrupt Priority Registers.
-        (0x0400 => IPRIORITYR: [ReadWrite<u32>; 256]),
-        /// Interrupt Processor Targets Registers.
-        (0x0800 => ITARGETSR: [ReadWrite<u32>; 256]),
-        /// Interrupt Configuration Registers.
-        (0x0c00 => ICFGR: [ReadWrite<u32>; 64]),
-        (0x0d00 => _reserved_1),
-        (0x0f04 => @END),
-    }
-}
-/// Abstraction for the banked parts of the associated MMIO registers.
-type DisReg = MMIODerefWrapper<GicDistributorRegs>;
-
-//--------------------------------------------------------------------------------------------------
-// Public Definitions
-//--------------------------------------------------------------------------------------------------
-
-/// Representation of the GIC Distributor.
-pub struct GICD {
-    /// Access to shared registers is guarded with a lock.
-    gicd_registers: DisReg,
-}
-
-impl GICD {
-    pub const unsafe fn new(mmio_start_addr: usize) -> Self {
-        Self {
-            gicd_registers: DisReg::new(mmio_start_addr),
-        }
-    }
-}
+use super::{is_spi, reg_range};
 
 static GICD_LOCK: Mutex<()> = Mutex::new(());
 
 pub const GICD_CTLR: u64 = 0x0000;
-pub const GICD_CTLR_ARE_NS: u64 = 1 << 4;
+pub const GICD_CTLR_ARE_NS: u64 = 1 << 5;
+pub const GICD_CTLR_GRP1NS_ENA: u64 = 1 << 1;
+
 pub const GICD_TYPER: u64 = 0x0004;
 pub const GICD_IIDR: u64 = 0x0008;
 pub const GICD_IGROUPR: u64 = 0x0080;
@@ -104,20 +45,16 @@ const GICDV3_PIDR0: u64 = 0xffe0;
 const GICDV3_PIDR2: u64 = 0xffe8;
 const GICDV3_PIDR4: u64 = 0xffd0;
 
-fn reg_range(base: u64, n: u64, size: u64) -> core::ops::Range<u64> {
-    base..(base + (n - 1) * size)
-}
-
 // The return value should be the register value to be read.
 fn gicv3_handle_irq_ops(mmio: &mut MMIOAccess, irq: u32) -> HvResult {
     let cell = this_cell();
     let cell_r = cell.read();
 
     if !is_spi(irq) || !cell_r.irq_in_cell(irq) {
-        // info!(
-        //     "gicd-mmio: skip irq {} access, reg = {:#x?}",
-        //     irq, mmio.address
-        // );
+        debug!(
+            "gicd-mmio: skip irq {} access, reg = {:#x?}",
+            irq, mmio.address
+        );
         return Ok(());
     }
 
@@ -147,7 +84,7 @@ fn gicd_misc_access(mmio: &mut MMIOAccess, gicd_base: u64) -> HvResult {
 }
 
 pub fn gicv3_gicd_mmio_handler(mmio: &mut MMIOAccess, _arg: u64) -> HvResult {
-    // info!("mmio = {:#x?}", mmio);
+    // debug!("gicd mmio = {:#x?}", mmio);
     let gicd_base = HvSystemConfig::get().platform_info.arch.gicd_base;
     let reg = mmio.address as u64;
 
@@ -180,6 +117,14 @@ pub fn gicv3_gicd_mmio_handler(mmio: &mut MMIOAccess, _arg: u64) -> HvResult {
     }
 }
 
+pub fn enable_gic_are_ns() {
+    let gicd_base = HvSystemConfig::get().platform_info.arch.gicd_base;
+    unsafe {
+        ((gicd_base + GICD_CTLR) as *mut u32)
+            .write_volatile(GICD_CTLR_ARE_NS as u32 | GICD_CTLR_GRP1NS_ENA as u32);
+    }
+}
+
 fn restrict_bitmask_access(
     mmio: &mut MMIOAccess,
     reg_index: u64,
@@ -201,6 +146,7 @@ fn restrict_bitmask_access(
 
     for irq in 0..irqs_per_reg {
         if cell_r.irq_in_cell((first_irq + irq) as _) {
+            debug!("restrict visit irq {}", first_irq + irq);
             access_mask |= irq_bits << (irq * bits_per_irq);
         }
     }

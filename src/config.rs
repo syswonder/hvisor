@@ -3,6 +3,7 @@ use core::{mem::size_of, slice};
 
 use crate::error::HvResult;
 use crate::memory::MemFlags;
+use crate::percpu::CpuSet;
 
 const CONFIG_SIGNATURE: [u8; 6] = *b"HVISOR";
 const CONFIG_REVISION: u16 = 10;
@@ -229,6 +230,7 @@ impl HvSystemConfig {
         unsafe { &*crate::consts::hv_config_ptr() }
     }
 
+    #[allow(unused)]
     pub const fn size(&self) -> usize {
         size_of::<Self>() + self.root_cell.config_size()
     }
@@ -281,7 +283,13 @@ impl<'a> CellConfig<'a> {
         self.desc.cpu_reset_address
     }
 
-    pub fn cpu_set(&self) -> &[u8] {
+    pub fn cpu_set(&self) -> CpuSet {
+        // XXX: data may unaligned, which cause panic on debug mode. Same below.
+        // See: https://doc.rust-lang.org/src/core/slice/mod.rs.html#6435-6443
+        CpuSet::from_cpuset_slice(self.cpu_set_slice())
+    }
+
+    pub fn cpu_set_slice(&self) -> &[u8] {
         // XXX: data may unaligned, which cause panic on debug mode. Same below.
         // See: https://doc.rust-lang.org/src/core/slice/mod.rs.html#6435-6443
         unsafe { slice::from_raw_parts(self.config_ptr(), self.desc.cpu_set_size as usize) }
@@ -289,7 +297,7 @@ impl<'a> CellConfig<'a> {
 
     pub fn mem_regions(&self) -> &[HvMemoryRegion] {
         unsafe {
-            let ptr = self.cpu_set().as_ptr_range().end as _;
+            let ptr = self.cpu_set_slice().as_ptr_range().end as _;
             slice::from_raw_parts(ptr, self.desc.num_memory_regions as usize)
         }
     }

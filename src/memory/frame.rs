@@ -108,7 +108,7 @@ impl Frame {
     /// Allocate one physical frame and fill with zero.
     pub fn new_zero() -> HvResult<Self> {
         let mut f = Self::new()?;
-        f.zero();
+        f.clear();
         Ok(f)
     }
 
@@ -162,11 +162,14 @@ impl Frame {
 
     /// Fill `self` with `byte`.
     pub fn fill(&mut self, byte: u8) {
-        unsafe { core::ptr::write_bytes(self.as_mut_ptr(), byte, self.size()) }
+        let ptr = self.as_mut_ptr();
+        for i in 0..self.size() {
+            unsafe { *ptr.add(i) = byte; }
+        }
     }
 
     /// Fill `self` with zero.
-    pub fn zero(&mut self) {
+    pub fn clear(&mut self) {
         self.fill(0)
     }
 

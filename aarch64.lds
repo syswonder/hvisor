@@ -9,16 +9,8 @@ SECTIONS
 	. = ALIGN(4K);
 	.boot       : { *(.boot) }
 
-	. = ALIGN(16);
-	.text		: { *(.text .text.*) }
-
 	. = ALIGN(4K);
-	.rootcfg		: {
-		__root_config = .;
-		*(.rootcfg);
-		KEEP(*(.rootcfg))
-		. = . + (1 << 12);
-	}
+	.text		: { *(.text .text.*) }
 
 	. = ALIGN(4K);
 	.rodata		: { *(.rodata .rodata.*) }
@@ -44,7 +36,12 @@ SECTIONS
     	__boot_stack_top = .; 
 	}
 
-	
+	. = ALIGN(4K);
+	.rootcfg		: {
+		__rootcfg = .;
+		*(.rootcfg);
+		KEEP(*(.rootcfg))
+	}
 
 	. = ALIGN(4K);
 	__core_end = .;

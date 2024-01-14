@@ -5,10 +5,9 @@ use spin::RwLock;
 use crate::arch::Stage2PageTable;
 use crate::config::{CellConfig, HvCellDesc, HvConsole, HvSystemConfig};
 use crate::control::{resume_cpu, suspend_cpu};
-use crate::device::gicv3::gicd::{GICD_ICACTIVER, GICD_ICENABLER};
-use crate::device::gicv3::{
-    gicv3_gicd_mmio_handler, gicv3_gicr_mmio_handler, GICD_IROUTER, GICD_SIZE, GICR_SIZE, LAST_GICR,
-};
+use crate::device::gicv3::gicr::gicv3_gicr_mmio_handler;
+use crate::device::gicv3::{GICD_SIZE, GICR_SIZE};
+use crate::device::gicv3::gicd::{GICD_ICACTIVER, GICD_ICENABLER, gicv3_gicd_mmio_handler, GICD_IROUTER};
 use crate::error::HvResult;
 use crate::memory::addr::{is_aligned, GuestPhysAddr, HostPhysAddr};
 use crate::memory::{
@@ -76,12 +75,13 @@ pub struct Cell {
     pub comm_page: Frame,
     /// Cell configuration.
     pub config_frame: Frame,
-    /// Guest physical memory set.
-    gpm: MemorySet<Stage2PageTable>,
     pub mmio: Vec<MMIOConfig>,
     pub cpu_set: CpuSet,
     pub irq_bitmap: [u32; 1024 / 32],
     pub loadable: bool,
+
+    pub max_cpu_id: u64,
+    gpm: MemorySet<Stage2PageTable>,
 }
 
 impl Cell {
@@ -137,11 +137,12 @@ impl Cell {
                 config_frame
             },
             gpm: MemorySet::new(),
-            cpu_set: CpuSet::from_cpuset_slice(config.cpu_set()),
+            cpu_set: config.cpu_set(),
             loadable: false,
             comm_page: Frame::new()?,
             mmio: vec![],
             irq_bitmap: [0; 1024 / 32],
+            max_cpu_id: 0,
         };
         cell.register_gicv3_mmio_handlers();
         cell.init_irq_bitmap();
@@ -188,15 +189,15 @@ impl Cell {
 
         // add gicr handler
         let mut last_gicr: u64 = 0;
-        for cpu in CpuSet::from_cpuset_slice(syscfg.cpu_set()).iter() {
+        for cpu in syscfg.cpu_set().iter() {
             let gicr_base = get_cpu_data(cpu).gicr_base as _;
             if gicr_base == 0 {
                 continue;
             }
-            last_gicr += 1;
+            last_gicr = last_gicr.max(cpu);
             self.mmio_region_register(gicr_base, GICR_SIZE, gicv3_gicr_mmio_handler, cpu as _);
         }
-        LAST_GICR.call_once(|| last_gicr - 1);
+        self.max_cpu_id = last_gicr;
         self.mmio_region_register(0x8080000, 0x20000, mmio_generic_handler, 0x8080000);
     }
 
@@ -438,6 +439,7 @@ pub fn find_cell_by_id(cell_id: u32) -> Option<Arc<RwLock<Cell>>> {
 }
 
 pub fn init() -> HvResult {
+    info!("Root cell initializing...");
     let root_cell = Arc::new(RwLock::new(Cell::new_root()?));
     info!("Root cell init end.");
 

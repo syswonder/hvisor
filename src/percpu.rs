@@ -2,8 +2,9 @@ use aarch64_cpu::registers::MPIDR_EL1;
 use alloc::sync::Arc;
 use spin::{Mutex, RwLock};
 
+use crate::{ENTERED_CPUS, ACTIVATED_CPUS};
 //use crate::arch::vcpu::Vcpu;
-use crate::arch::entry::{virt2phys_el2, vmreturn};
+use crate::arch::entry::vmreturn;
 use crate::arch::sysreg::write_sysreg;
 use crate::arch::Stage2PageTable;
 use crate::cell::Cell;
@@ -18,9 +19,8 @@ use crate::memory::{
 };
 use aarch64_cpu::registers::*;
 use core::fmt::Debug;
-use core::sync::atomic::{AtomicU32, Ordering};
-static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
-static ACTIVATED_CPUS: AtomicU32 = AtomicU32::new(0);
+use core::sync::atomic::Ordering;
+
 // global_asm!(include_str!("./arch/aarch64/page_table.S"),);
 #[repr(C)]
 #[derive(Debug, Default)]
@@ -82,7 +82,7 @@ impl PerCpu {
     pub fn activated_cpus() -> u32 {
         ACTIVATED_CPUS.load(Ordering::Acquire)
     }
-    pub fn activate_vmm(&mut self) -> HvResult {
+    pub fn activate_vmm(&mut self) {
         ACTIVATED_CPUS.fetch_add(1, Ordering::SeqCst);
         info!("activating cpu {}", self.id);
         set_vtcr_flags();
@@ -93,8 +93,6 @@ impl PerCpu {
                 + HCR_EL2::IMO::SET
                 + HCR_EL2::FMO::SET,
         );
-        self.return_linux()?;
-        unreachable!()
     }
     pub fn deactivate_vmm(&mut self, _ret_code: usize) -> HvResult {
         ACTIVATED_CPUS.fetch_sub(1, Ordering::SeqCst);
@@ -102,11 +100,13 @@ impl PerCpu {
         self.arch_shutdown_self()?;
         Ok(())
     }
-    pub fn return_linux(&mut self) -> HvResult {
+    pub fn start_root(&mut self) -> ! {
+        let regs = self.guest_reg() as *mut GeneralRegisters;
         unsafe {
+            (*regs).usr[0] = 0x50000000;           // device_tree addr
+            set_el1_pc(self.cpu_on_entry);
             vmreturn(self.guest_reg());
         }
-        Ok(())
     }
     /*should be in vcpu*/
     pub fn arch_shutdown_self(&mut self) -> HvResult {
@@ -125,11 +125,12 @@ impl PerCpu {
         /* we will restore the root cell state with the MMU turned off,
          * so we need to make sure it has been committed to memory */
 
-        unsafe {
-            let page_offset: u64 = 0xffff_4060_0000;
-            virt2phys_el2(self.guest_reg(), page_offset);
-        }
-        Ok(())
+        todo!();
+        // unsafe {
+        //     let page_offset: u64 = todo!();
+        //     virt2phys_el2(self.guest_reg(), page_offset);
+        // }
+        // Ok(())
     }
 }
 

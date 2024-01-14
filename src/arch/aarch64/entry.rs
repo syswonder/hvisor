@@ -15,6 +15,12 @@ global_asm!(
 global_asm!("
     .section \".rootcfg\", \"a\"
     .incbin \"imgs/root-config/qemu-arm64.cell\"
+
+    // .section \".rootdtb\", \"a\"
+    // .incbin \"imgs/root-img/root.dtb\"
+
+    // .section \".rootimage\", \"a\"
+    // .incbin \"imgs/root-img/Image\"
 ");
 
 #[naked]
@@ -29,7 +35,7 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
             /*get header addr el1*/
             mov	x2, {max_cpu_num}                   // x2 = max_cpu_num
             mov	x3, {per_cpu_size}                  // x3 = per_cpu_size
-            adrp x1, __root_config                  // x1 = root_config
+            adrp x1, __rootcfg                      // x1 = root_config
             ldr	x13, =BASE_ADDRESS                  // x13 = (virt) hyp base addr
             ldr	x12, [x1, #12]                      // x12 = (phys) hyp base addr
             ldr x14, [x1, #44]                      // x14 = (virt) uart addr
@@ -210,7 +216,7 @@ pub unsafe extern "C" fn switch_stack(cpuid: u64) -> i32 {
 #[naked]
 #[no_mangle]
 #[link_section = ".trampoline"]
-pub unsafe extern "C" fn vmreturn(_gu_regs: usize) -> i32 {
+pub unsafe extern "C" fn vmreturn(_gu_regs: usize) -> ! {
     core::arch::asm!(
         "
         /* x0: guest registers */
