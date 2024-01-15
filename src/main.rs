@@ -40,14 +40,14 @@ mod num;
 mod panic;
 mod percpu;
 
-use crate::arch::entry::vmreturn;
 use crate::consts::HV_BASE;
 use crate::control::cell_start;
+use crate::control::wait_for_poweron;
 use crate::device::gicv3::enable_irqs;
 use crate::device::gicv3::gicd::enable_gic_are_ns;
 use crate::device::gicv3::gicr::enable_ipi;
 use crate::memory::addr;
-use crate::percpu::{this_cpu_data, park_current_cpu};
+use crate::percpu::this_cpu_data;
 use crate::{cell::root_cell, consts::MAX_CPU_NUM};
 use arch::entry::arch_entry;
 use config::HvSystemConfig;
@@ -205,17 +205,17 @@ fn main(cpu_data: &'static mut PerCpu) -> HvResult {
         wait_for_counter(&INIT_LATE_OK, 1)?
     }
 
-    cpu_data.activate_vmm();   
+    cpu_data.activate_vmm();
     wait_for_counter(&ACTIVATED_CPUS, MAX_CPU_NUM as _)?;
 
-    if cpu_data.id == 0 {
+    if is_primary {
         cell_start(0)?;
         cpu_data.start_root();
     } else {
-        park_current_cpu();
-        unsafe { vmreturn(cpu_data.guest_reg()) }
+        wait_for_poweron();
     }
 }
+
 extern "C" fn entry(cpu_data: &'static mut PerCpu) -> () {
     if let Err(_e) = main(cpu_data) {}
 }

@@ -1,3 +1,4 @@
+#![allow(unused)]
 use alloc::{sync::Arc, vec::Vec};
 use spin::RwLock;
 
@@ -149,7 +150,7 @@ pub fn cell_start(id: u64) -> HvResult<()> {
             INVALID_ADDRESS
         };
         is_first = false;
-        reset_cpu(cpu_id);
+        // reset_cpu(cpu_id);
     });
 
     cell_w.irqchip_reset();
@@ -160,4 +161,22 @@ pub fn cell_start(id: u64) -> HvResult<()> {
 
     info!("start cell done!");
     Ok(())
+}
+
+pub fn wait_for_poweron() -> ! {
+    let cpu_data = this_cpu_data();
+    let mut _lock = Some(cpu_data.ctrl_lock.lock());
+    cpu_data.wait_for_poweron = true;
+    while !cpu_data.reset {
+        error!("reset = {}", cpu_data.reset);
+        _lock = None;
+        while !cpu_data.reset {}
+        error!("reset1 = {}", cpu_data.reset);
+        _lock = Some(cpu_data.ctrl_lock.lock());
+    }
+    cpu_data.reset = false;
+    cpu_data.wait_for_poweron = false;
+    drop(_lock);
+
+    cpu_data.start_root();
 }

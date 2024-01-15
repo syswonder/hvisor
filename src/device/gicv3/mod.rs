@@ -172,7 +172,6 @@ pub fn gicv3_handle_irq_el1() {
         // };
         //SGI
         if irq_id < 16 {
-            info!("sgi get {}", irq_id);
             if irq_id < 8 {
                 trace!("sgi get {},inject", irq_id);
                 deactivate_irq(irq_id);
