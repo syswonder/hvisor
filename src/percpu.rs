@@ -103,7 +103,7 @@ impl PerCpu {
     pub fn start_root(&mut self) -> ! {
         let regs = self.guest_reg() as *mut GeneralRegisters;
         unsafe {
-            (*regs).usr[0] = 0x50000000;           // device_tree addr
+            (*regs).usr[0] = 0x40100000;           // device_tree addr
             set_el1_pc(self.cpu_on_entry);
             vmreturn(self.guest_reg());
         }

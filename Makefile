@@ -51,27 +51,30 @@ $(target_bin): elf
 
 # QEMU command template
 define qemu_cmd
-echo " go 0x5fc00000 " | \
+e2fsck -f fsimg && \
 qemu-system-aarch64 \
-	-drive if=none,file=fsimg,id=disk,format=raw \
+	-drive file=fsimg,discard=unmap,if=none,id=disk \
 	-device virtio-blk-device,drive=disk \
 	-m 1G -serial mon:stdio \
 	-bios imgs/u-boot/u-boot.bin \
 	-cpu cortex-a57 \
-	-smp 4 -nographic \
+	-smp 2 -nographic \
 	-machine virt,secure=on,gic-version=3,virtualization=on \
 	-device virtio-serial-device -device virtconsole,chardev=con \
 	-device loader,file="$(target_bin)",addr=0x5fc00000,force-raw=on \
-	-device loader,file="$(root_dtb)",addr=0x50000000,force-raw=on \
-	-device loader,file="$(root_kernel)",addr=0x50040000,force-raw=on \
+	-device loader,file="$(root_dtb)",addr=0x40100000,force-raw=on \
+	-device loader,file="$(root_kernel)",addr=0x40200000,force-raw=on \
 	-chardev vc,id=con \
 	-net nic \
 	-net user,hostfwd=tcp::$(PORT)-:22
 endef
+
+# echo " go 0x5fc00000 " | \
 # -bios imgs/u-boot/u-boot.bin \
 # -append "root=/dev/vda mem=768M"
 # -device loader,file="$(target_bin)",addr=0x5fc00000,force-raw=on\
 # -drive file=./qemu-test/host/rootfs.qcow2,discard=unmap,if=none,id=disk,format=qcow2 \
+# -drive if=none,file=fsimg,id=disk,format=raw \
 
 # dhcp
 # pci enum
@@ -92,5 +95,5 @@ monitor:
 		-ex 'target remote:1234' \
 		-ex 'file $(target_elf)' \
 		-ex 'add-symbol-file $(guest_obj)' \
-		-ex 'b *0x50040000' \
+		-ex 'b *0x40200000' \
 		-ex 'c' \

@@ -104,7 +104,11 @@ fn arch_handle_trap(regs: &mut GeneralRegisters) {
     let mut frame = TrapFrame::new(regs);
     let mut _ret = TrapReturn::TrapUnhandled;
 
-    trace!("arch_handle_trap ec={:#x?} elr={:#x?}", ESR_EL2.read(ESR_EL2::EC), ESR_EL2.read(ESR_EL2::ISS));
+    trace!(
+        "arch_handle_trap ec={:#x?} elr={:#x?}",
+        ESR_EL2.read(ESR_EL2::EC),
+        ESR_EL2.read(ESR_EL2::ISS)
+    );
 
     match ESR_EL2.read_as_enum(ESR_EL2::EC) {
         Some(ESR_EL2::EC::Value::HVC64) => handle_hvc(&mut frame),
@@ -188,6 +192,9 @@ fn handle_sysreg(frame: &mut TrapFrame) {
     if this_cpu_data().wait_for_poweron {
         warn!("skip send sgi {:#x?}", sgi_id);
     } else {
+        // if sgi_id != 0 {
+        //     warn!("send sgi {:#x?}", sgi_id);
+        // }
         write_sysreg!(icc_sgi1r_el1, val);
     }
 

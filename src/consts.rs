@@ -21,7 +21,7 @@ pub const TRAMPOLINE_START: *mut VirtAddr = __trampoline_start as _;
 
 pub const INVALID_ADDRESS: u64 = u64::MAX;
 
-pub const MAX_CPU_NUM: u64 = 4;
+pub const MAX_CPU_NUM: u64 = 2;
 
 extern "C" {
     fn __rootcfg();
