@@ -4,16 +4,18 @@ use spin::RwLock;
 
 use crate::{
     arch::sysreg::write_sysreg,
-    cell::{find_cell_by_id, root_cell, Cell, CommRegion},
-    config::{HvMemoryRegion, HvSystemConfig},
+    cell::{add_cell, find_cell_by_id, root_cell, Cell, CommRegion},
+    config::{CellConfig, HvCellDesc, HvMemoryRegion, HvSystemConfig},
     consts::INVALID_ADDRESS,
+    device::pci::mmio_pci_handler,
     error::HvResult,
     hypercall::{COMM_REGION_ABI_REVISION, SGI_EVENT_ID},
     memory::{
-        addr::{GuestPhysAddr, HostPhysAddr},
+        self,
+        addr::{align_down, is_aligned, GuestPhysAddr, HostPhysAddr},
         MemFlags, MemoryRegion,
     },
-    percpu::{get_cpu_data, this_cpu_data, PerCpu},
+    percpu::{get_cpu_data, this_cell, this_cpu_data, PerCpu},
 };
 
 pub fn send_event(cpu_id: u64, sgi_num: u64) {
@@ -87,13 +89,9 @@ pub fn cell_management_prologue(
     HvResult::Ok(cell)
 }
 
-pub fn cell_start(id: u64) -> HvResult<()> {
+pub fn prepare_cell_start(cell: Arc<RwLock<Cell>>) -> HvResult<()> {
     let cpu_data = this_cpu_data();
-    let cell = if id != 0 {
-        cell_management_prologue(cpu_data, id)?
-    } else {
-        root_cell()
-    };
+
     let mut cell_w = cell.write();
 
     {
@@ -125,53 +123,79 @@ pub fn cell_start(id: u64) -> HvResult<()> {
         comm_region.gicr_base = system_config.platform_info.arch.gicr_base;
     }
 
-    if cell_w.loadable && id != 0 {
-        let mem_regs: Vec<HvMemoryRegion> = cell_w.config().mem_regions().to_vec();
-        let root_cell = root_cell();
-        let mut root_cell_w = root_cell.write();
-        mem_regs.iter().for_each(|mem| {
-            if mem.flags.contains(MemFlags::LOADABLE) {
-                root_cell_w.mem_region_unmap_partial(&MemoryRegion::new_with_offset_mapper(
-                    mem.phys_start as GuestPhysAddr,
-                    mem.phys_start as HostPhysAddr,
-                    mem.size as _,
-                    mem.flags,
-                ));
-            }
+    cell_w
+        .cpu_set
+        .iter()
+        .enumerate()
+        .for_each(|(index, cpu_id)| {
+            get_cpu_data(cpu_id).cpu_on_entry = if index == 0 {
+                cell_w.config().cpu_reset_address()
+            } else {
+                INVALID_ADDRESS
+            };
         });
-        cell_w.loadable = false;
-    }
-
-    let mut is_first = true;
-    cell_w.cpu_set.iter().for_each(|cpu_id| {
-        get_cpu_data(cpu_id).cpu_on_entry = if is_first {
-            cell_w.config().cpu_reset_address()
-        } else {
-            INVALID_ADDRESS
-        };
-        is_first = false;
-        // reset_cpu(cpu_id);
-    });
 
     cell_w.irqchip_reset();
-
-    if id != 0 {
-        root_cell().read().resume();
-    }
 
     info!("start cell done!");
     Ok(())
 }
 
+pub fn do_cell_create(desc: &HvCellDesc) -> HvResult<Arc<RwLock<Cell>>> {
+    let config = CellConfig::new(desc);
+    let config_total_size = config.total_size();
+
+    // we create the new cell here
+    let cell = Cell::new(config, false)?;
+
+    if cell.owns_cpu(this_cpu_data().id) {
+        panic!("error: try to assign the CPU we are currently running on");
+    }
+    // todo: arch_cell_create
+
+    let cpu_set = cell.cpu_set;
+
+    let new_cell_pointer = Arc::new(RwLock::new(cell));
+    {
+        cpu_set.iter().for_each(|cpu| {
+            get_cpu_data(cpu).cell = Some(new_cell_pointer.clone());
+        });
+    }
+
+    // memory mapping
+    {
+        let mut cell = new_cell_pointer.write();
+
+        let mem_regs: Vec<HvMemoryRegion> = cell.config().mem_regions().to_vec();
+        // cell.comm_page.comm_region.cell_state = CELL_SHUT_DOWN;
+
+        let comm_page_pa = cell.comm_page.start_paddr();
+        assert!(is_aligned(comm_page_pa));
+
+        mem_regs.iter().for_each(|mem| {
+            cell.mem_region_insert(MemoryRegion::from_hv_memregion(mem, Some(comm_page_pa)))
+        });
+
+        // add pci mapping
+        let sys_config = HvSystemConfig::get();
+        let mmcfg_start = sys_config.platform_info.pci_mmconfig_base;
+        let mmcfg_size = (sys_config.platform_info.pci_mmconfig_end_bus + 1) as u64 * 256 * 4096;
+        cell.mmio_region_register(mmcfg_start as _, mmcfg_size, mmio_pci_handler, mmcfg_start);
+
+        cell.adjust_irq_mappings();
+    }
+
+    add_cell(new_cell_pointer.clone());
+
+    Ok(new_cell_pointer)
+}
 pub fn wait_for_poweron() -> ! {
     let cpu_data = this_cpu_data();
     let mut _lock = Some(cpu_data.ctrl_lock.lock());
     cpu_data.wait_for_poweron = true;
     while !cpu_data.reset {
-        error!("reset = {}", cpu_data.reset);
         _lock = None;
         while !cpu_data.reset {}
-        error!("reset1 = {}", cpu_data.reset);
         _lock = Some(cpu_data.ctrl_lock.lock());
     }
     cpu_data.reset = false;

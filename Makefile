@@ -52,22 +52,28 @@ $(target_bin): elf
 # QEMU command template
 define qemu_cmd
 e2fsck -f fsimg && \
-qemu-system-aarch64 \
-	-drive file=fsimg,discard=unmap,if=none,id=disk \
-	-device virtio-blk-device,drive=disk \
-	-m 1G -serial mon:stdio \
-	-bios imgs/u-boot/u-boot.bin \
-	-cpu cortex-a57 \
-	-smp 2 -nographic \
+sudo qemu-system-aarch64 \
 	-machine virt,secure=on,gic-version=3,virtualization=on \
-	-device virtio-serial-device -device virtconsole,chardev=con \
+	-cpu cortex-a57 \
+	-smp 4 \
+	-m 1G \
+	-nographic \
+	-bios imgs/u-boot/u-boot.bin \
+	\
+	-drive if=none,file=fsimg,id=hd1,format=raw \
+	-device virtio-blk-device,drive=hd1 \
+	-drive if=none,file=fsimg1,id=hd0,format=raw \
+	-device virtio-blk-device,drive=hd0 \
+	-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
+	-device virtio-net-device,netdev=net0,mac=52:55:00:d1:55:01 \
+	-device virtio-serial-device -chardev pty,id=serial3 -device virtconsole,chardev=serial3 \
+	\
 	-device loader,file="$(target_bin)",addr=0x5fc00000,force-raw=on \
 	-device loader,file="$(root_dtb)",addr=0x40100000,force-raw=on \
 	-device loader,file="$(root_kernel)",addr=0x40200000,force-raw=on \
-	-chardev vc,id=con \
-	-net nic \
-	-net user,hostfwd=tcp::$(PORT)-:22
+
 endef
+
 
 # echo " go 0x5fc00000 " | \
 # -bios imgs/u-boot/u-boot.bin \
@@ -75,6 +81,8 @@ endef
 # -device loader,file="$(target_bin)",addr=0x5fc00000,force-raw=on\
 # -drive file=./qemu-test/host/rootfs.qcow2,discard=unmap,if=none,id=disk,format=qcow2 \
 # -drive if=none,file=fsimg,id=disk,format=raw \
+# -net nic \
+# -net user,hostfwd=tcp::$(PORT)-:22
 
 # dhcp
 # pci enum

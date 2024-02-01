@@ -357,6 +357,7 @@ impl CpuSet {
         assert!(id <= self.max_cpu_id);
         self.bitmap |= 1 << id;
     }
+    #[allow(unused)]
     pub fn clear_bit(&mut self, id: u64) {
         assert!(id <= self.max_cpu_id);
         self.bitmap &= !(1 << id);

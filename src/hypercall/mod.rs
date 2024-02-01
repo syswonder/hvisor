@@ -1,20 +1,19 @@
 #![allow(dead_code)]
-use crate::cell::{add_cell, remove_cell, root_cell, Cell};
-use crate::config::{CellConfig, HvCellDesc, HvMemoryRegion, HvSystemConfig};
+use crate::cell::{find_cell_by_id, remove_cell, root_cell};
+use crate::config::{HvCellDesc, HvMemoryRegion};
 use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
-use crate::control::{park_cpu, cell_management_prologue, cell_start};
-use crate::device::pci::mmio_pci_handler;
+use crate::control::{cell_management_prologue, do_cell_create, park_cpu, prepare_cell_start};
 use crate::error::HvResult;
-use crate::memory::addr::{align_down, align_up, is_aligned};
+use crate::memory::addr::{align_down, align_up};
 use crate::memory::{self, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion};
-use crate::percpu::{get_cpu_data, this_cpu_data, PerCpu};
+use crate::percpu::{get_cpu_data, PerCpu};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::convert::TryFrom;
 use core::mem::size_of;
 use core::sync::atomic::{AtomicU32, Ordering};
 use numeric_enum_macro::numeric_enum;
-use spin::RwLock;
+
 numeric_enum! {
     #[repr(u64)]
     #[derive(Debug, Eq, PartialEq, Copy, Clone)]
@@ -98,89 +97,13 @@ impl<'a> HyperCall<'a> {
             MemFlags::READ,
         )?;
 
-        let desc = unsafe {
+        let desc: &HvCellDesc = unsafe {
             ((cfg_mapping + cfg_pages_offs) as *const HvCellDesc)
                 .as_ref()
                 .unwrap()
         };
-        let config = CellConfig::new(desc);
-        let config_total_size = config.total_size();
-        memory::hv_page_table().write().map_temporary(
-            align_down(config_address),
-            align_up(cfg_pages_offs + config_total_size),
-            MemFlags::READ,
-        )?;
-        info!("cell.desc = {:#x?}", desc);
 
-        // we create the new cell here
-        let cell = Cell::new(config, false)?;
-
-        if cell.owns_cpu(this_cpu_data().id) {
-            panic!("error: try to assign the CPU we are currently running on");
-        }
-
-        {
-            let root_cell_r = root_cell.read();
-            for id in cell.cpu_set.iter() {
-                if !root_cell_r.owns_cpu(id) {
-                    panic!("error: the root cell's cpu set must be super-set of new cell's set")
-                }
-            }
-        }
-
-        // todo: arch_cell_create
-
-        let cpu_set = cell.cpu_set;
-        info!("cell.cpu_set = {:#x?}", cell.cpu_set);
-        let cell_p = Arc::new(RwLock::new(cell));
-        {
-            let mut root_cell_w = root_cell.write();
-            cpu_set.iter().for_each(|cpu| {
-                park_cpu(cpu);
-                root_cell_w.cpu_set.clear_bit(cpu);
-                get_cpu_data(cpu).cell = Some(cell_p.clone());
-            });
-        }
-
-        // memory mapping
-
-        let mut cell = cell_p.write();
-
-        let mem_regs: Vec<HvMemoryRegion> = cell.config().mem_regions().to_vec();
-        // cell.comm_page.comm_region.cell_state = CELL_SHUT_DOWN;
-
-        let comm_page_pa = cell.comm_page.start_paddr();
-        assert!(is_aligned(comm_page_pa));
-
-        let mut rc_w = root_cell.write();
-
-        mem_regs.iter().for_each(|mem| {
-            if !(mem.flags.contains(MemFlags::COMMUNICATION)
-                || mem.flags.contains(MemFlags::ROOTSHARED))
-            {
-                rc_w.mem_region_unmap_partial(&MemoryRegion::new_with_offset_mapper(
-                    mem.phys_start as _,
-                    mem.phys_start as _,
-                    mem.size as _,
-                    mem.flags,
-                ));
-            }
-
-            cell.mem_region_insert(MemoryRegion::from_hv_memregion(mem, Some(comm_page_pa)))
-        });
-
-        drop(rc_w);
-        // add pci mapping
-        let sys_config = HvSystemConfig::get();
-        let mmcfg_start = sys_config.platform_info.pci_mmconfig_base;
-        let mmcfg_size = (sys_config.platform_info.pci_mmconfig_end_bus + 1) as u64 * 256 * 4096;
-        cell.mmio_region_register(mmcfg_start as _, mmcfg_size, mmio_pci_handler, mmcfg_start);
-
-        cell.gicv3_config_commit();
-        drop(cell);
-
-        add_cell(cell_p);
-        root_cell.read().resume();
+        do_cell_create(desc)?;
 
         info!("cell create done!");
         HyperCallResult::Ok(0)
@@ -221,7 +144,7 @@ impl<'a> HyperCall<'a> {
 
     pub fn hypervisor_cell_start(&mut self, cell_id: u64) -> HyperCallResult {
         info!("handle hvc cell start");
-        cell_start(cell_id)?;
+        prepare_cell_start(find_cell_by_id(cell_id as _).unwrap())?;
         HyperCallResult::Ok(0)
     }
 
@@ -257,7 +180,7 @@ impl<'a> HyperCall<'a> {
         });
         drop(root_cell_w);
         cell_w.gicv3_exit();
-        cell_w.gicv3_config_commit();
+        cell_w.adjust_irq_mappings();
         drop(cell_w);
         // Drop the cell will destroy cell's MemorySet so that all page tables will free
         drop(cell);
@@ -268,4 +191,3 @@ impl<'a> HyperCall<'a> {
         HyperCallResult::Ok(0)
     }
 }
-

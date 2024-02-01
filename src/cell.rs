@@ -5,9 +5,11 @@ use spin::RwLock;
 use crate::arch::Stage2PageTable;
 use crate::config::{CellConfig, HvCellDesc, HvConsole, HvSystemConfig};
 use crate::control::{resume_cpu, suspend_cpu};
+use crate::device::gicv3::gicd::{
+    gicv3_gicd_mmio_handler, GICD_ICACTIVER, GICD_ICENABLER, GICD_IROUTER,
+};
 use crate::device::gicv3::gicr::gicv3_gicr_mmio_handler;
 use crate::device::gicv3::{GICD_SIZE, GICR_SIZE};
-use crate::device::gicv3::gicd::{GICD_ICACTIVER, GICD_ICENABLER, gicv3_gicd_mmio_handler, GICD_IROUTER};
 use crate::error::HvResult;
 use crate::memory::addr::{is_aligned, GuestPhysAddr, HostPhysAddr};
 use crate::memory::{
@@ -15,9 +17,8 @@ use crate::memory::{
     MemFlags, MemoryRegion, MemorySet,
 };
 use crate::percpu::{get_cpu_data, mpidr_to_cpuid, this_cpu_data, CpuSet};
-use crate::INIT_LATE_OK;
+use core::panic;
 use core::ptr::write_volatile;
-use core::sync::atomic::Ordering;
 
 #[repr(C)]
 pub struct CommPage {
@@ -234,10 +235,12 @@ impl Cell {
     pub fn config(&self) -> CellConfig {
         // Enable stage 1 translation in el2 changes config_addr from physical address to virtual address
         // with an offset `PHYS_VIRT_OFFSET`, so we need to check whether stage 1 translation is enabled.
-        let config_addr = match INIT_LATE_OK.load(Ordering::Relaxed) {
-            1 => self.config_frame.as_ptr() as usize,
-            _ => self.config_frame.start_paddr(),
-        };
+        // let config_addr = match INIT_LATE_OK.load(Ordering::Relaxed) {
+        //     1 => self.config_frame.as_ptr() as usize,
+        //     _ => self.config_frame.start_paddr(),
+        // };
+        let config_addr = self.config_frame.as_ptr() as usize;
+        info!("config ptr ={:#x?}", config_addr);
         unsafe { CellConfig::new((config_addr as *const HvCellDesc).as_ref().unwrap()) }
     }
 
@@ -264,15 +267,17 @@ impl Cell {
             );
         }
     }
+
     /// Unmap a mem region from gpm or mmio regions of the cell.
-    pub fn mem_region_unmap_partial(&mut self, mem: &MemoryRegion<GuestPhysAddr>) {
-        if is_aligned(mem.size) {
-            self.gpm.unmap_partial(mem).unwrap();
-        } else {
-            // Handle subpages
-            self.mmio_region_unregister(mem.start);
-        }
-    }
+    // pub fn mem_region_unmap_partial(&mut self, mem: &MemoryRegion<GuestPhysAddr>) {
+    //     if is_aligned(mem.size) {
+    //         self.gpm.unmap_partial(mem).unwrap();
+    //     } else {
+    //         // Handle subpages
+    //         self.mmio_region_unregister(mem.start);
+    //     }
+    // }
+
     /// Insert a mem region to cell. \
     /// If the mem size is aligned to one page, it will be inserted into page table. \
     /// Otherwise into mmio regions.
@@ -307,16 +312,16 @@ impl Cell {
         })
     }
     /// Remove the mmio region beginning at `start`.
-    pub fn mmio_region_unregister(&mut self, start: GuestPhysAddr) {
-        if let Some((idx, _)) = self
-            .mmio
-            .iter()
-            .enumerate()
-            .find(|(_, mmio)| mmio.region.start == start)
-        {
-            self.mmio.remove(idx);
-        }
-    }
+    // pub fn mmio_region_unregister(&mut self, start: GuestPhysAddr) {
+    //     if let Some((idx, _)) = self
+    //         .mmio
+    //         .iter()
+    //         .enumerate()
+    //         .find(|(_, mmio)| mmio.region.start == start)
+    //     {
+    //         self.mmio.remove(idx);
+    //     }
+    // }
     /// Find the mmio region contains (addr..addr+size).
     pub fn find_mmio_region(
         &self,
@@ -337,8 +342,10 @@ impl Cell {
     /// Add irq_id to this cell
     pub fn gicv3_adjust_irq_target(&mut self, irq_id: u32) {
         let gicd_base = HvSystemConfig::get().platform_info.arch.gicd_base;
+        info!("debug, {:#x?}", gicd_base);
         let irouter = (gicd_base + GICD_IROUTER + 8 * irq_id as u64) as *mut u64;
-        let mpidr = get_cpu_data(self.cpu_set.first_cpu().unwrap()).mpidr;
+        let mpidr: u64 = get_cpu_data(self.cpu_set.first_cpu().unwrap()).mpidr;
+        info!("irouter, {:#x?}; mpidr, {:#x?}", irouter, mpidr);
 
         unsafe {
             let route = mpidr_to_cpuid(irouter.read_volatile());
@@ -349,16 +356,16 @@ impl Cell {
         }
     }
     /// Commit the change of cell's irq mapping. It must be done when change the cell's irq mapping.
-    pub fn gicv3_config_commit(&mut self) {
+    pub fn adjust_irq_mappings(&mut self) {
         let rc = root_cell();
-        let mut rc_w = rc.write();
+        let rc_r = rc.read();
 
         for n in 32..1024 {
             if self.irq_in_cell(n) {
+                if rc_r.irq_in_cell(n) {
+                    panic!("irq {} in root cell", n);
+                }
                 self.gicv3_adjust_irq_target(n);
-            }
-            if rc_w.irq_in_cell(n) {
-                rc_w.gicv3_adjust_irq_target(n);
             }
         }
     }

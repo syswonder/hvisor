@@ -40,13 +40,16 @@ mod num;
 mod panic;
 mod percpu;
 
+use crate::consts::nr1_config_ptr;
 use crate::consts::HV_BASE;
-use crate::control::cell_start;
+use crate::control::do_cell_create;
+use crate::control::prepare_cell_start;
 use crate::control::wait_for_poweron;
 use crate::device::gicv3::enable_irqs;
 use crate::device::gicv3::gicd::enable_gic_are_ns;
 use crate::device::gicv3::gicr::enable_ipi;
 use crate::memory::addr;
+use crate::percpu::this_cell;
 use crate::percpu::this_cpu_data;
 use crate::{cell::root_cell, consts::MAX_CPU_NUM};
 use arch::entry::arch_entry;
@@ -115,6 +118,14 @@ fn primary_init_early() -> HvResult {
     memory::init_frame_allocator();
     memory::init_hv_page_table()?;
     cell::init()?;
+
+    unsafe {
+        // We should activate new hv-pt here in advance,
+        // in case of triggering data aborts in `cell::init()`
+        memory::hv_page_table().read().activate();
+    }
+
+    do_cell_create(unsafe { nr1_config_ptr().as_ref().unwrap() })?;
 
     INIT_EARLY_OK.store(1, Ordering::Release);
     Ok(())
@@ -189,7 +200,7 @@ fn main(cpu_data: &'static mut PerCpu) -> HvResult {
     );
 
     if is_primary {
-        primary_init_early()?;
+        primary_init_early()?; // create root cell here
     } else {
         wait_for_counter(&INIT_EARLY_OK, 1)?
     }
@@ -208,8 +219,8 @@ fn main(cpu_data: &'static mut PerCpu) -> HvResult {
     cpu_data.activate_vmm();
     wait_for_counter(&ACTIVATED_CPUS, MAX_CPU_NUM as _)?;
 
-    if is_primary {
-        cell_start(0)?;
+    if is_primary || cpu_data.id == 2 {
+        prepare_cell_start(this_cell())?;
         cpu_data.start_root();
     } else {
         wait_for_poweron();

@@ -16,8 +16,8 @@ global_asm!("
     .section \".rootcfg\", \"a\"
     .incbin \"imgs/root-config/qemu-arm64.cell\"
 
-    // .section \".rootdtb\", \"a\"
-    // .incbin \"imgs/root-img/root.dtb\"
+    .section \".nrcfg1\", \"a\"
+    .incbin \"imgs/root-config/qemu-arm64-linux-demo.cell\"
 
     // .section \".rootimage\", \"a\"
     // .incbin \"imgs/root-img/Image\"

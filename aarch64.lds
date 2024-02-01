@@ -44,6 +44,13 @@ SECTIONS
 	}
 
 	. = ALIGN(4K);
+	.nrcfg1		: {
+		__nrcfg1 = .;
+		*(.nrcfg1);
+		KEEP(*(.nrcfg1))
+	}
+
+	. = ALIGN(4K);
 	__core_end = .;
 
 	__entry_offset = arch_entry - BASE_ADDRESS;
