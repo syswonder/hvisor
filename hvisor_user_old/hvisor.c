@@ -27,7 +27,7 @@ int main(int argc, char *argv[])
 int hvisor_init()
 {
     int err;
-    log_set_level(LOG_ERROR);
+    log_set_level(LOG_INFO);
     FILE *log_file = fopen("log.txt", "w+");
     if (log_file == NULL) {
         log_error("open log file failed");
@@ -67,12 +67,16 @@ void handle_virtio_requests()
 {
     unsigned int last_req_idx = device_region->last_req_idx;
     struct device_req *req;
+    int flag = 0;
     while (1) {
         if (last_req_idx < device_region->idx) {
             req = &device_region->req_list[last_req_idx % MAX_REQ];
             virtio_handle_req(req);
             last_req_idx++;
             device_region->last_req_idx = last_req_idx;
+            flag = 1;
+        } else if (flag == 1){
+            flag = 0;
             ioctl(fd, HVISOR_FINISH);
         }
     }

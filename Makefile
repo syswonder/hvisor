@@ -1,5 +1,5 @@
 ARCH ?= aarch64
-LOG ?=info
+LOG ?=error
 STATS ?= off
 PORT ?= 2333
 
@@ -57,3 +57,4 @@ monitor:
 	-ex 'file $(target_elf)' \
 	-ex 'add-symbol-file $(guest_obj)' \
 	-ex 'continue'
+

@@ -42,10 +42,9 @@ impl HvisorDevice {
 
     pub fn push_req(&mut self, req: HvisorDeviceReq) {
         let region = self.region();
-        region.req_list[(region.idx % MAX_REQ)as usize] = req;
+        region.req_list[(region.idx % MAX_REQ) as usize] = req;
         region.idx += 1;
     }
-
 }
 
 /// El1 and EL2 shared region for virtio requests and results.
@@ -88,8 +87,9 @@ pub fn handle_virtio_requests() {
     let mut dev = HVISOR_DEVICE.lock();
     assert_eq!(dev.is_enable, true);
     if dev.is_full() {
-        // When req list is full, just return. 
-        // When root calls finish req hvc, it will call this function again. 
+        // When req list is full, just return.
+        // When root calls finish req hvc, it will call this function again.
+        info!("back to el1 from virtio handler");
         return;
     }
     let mut req_list = TRAMPOLINE_REQ_LIST.lock();
@@ -101,5 +101,5 @@ pub fn handle_virtio_requests() {
         let hreq: HvisorDeviceReq = req.into();
         dev.push_req(hreq);
     }
-    debug!("back to el1 from virtio handler");
+    info!("back to el1 from virtio handler");
 }

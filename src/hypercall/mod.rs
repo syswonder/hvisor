@@ -3,14 +3,12 @@ use crate::cell::{add_cell, find_cell_by_id, remove_cell, root_cell, Cell, CommR
 use crate::config::{CellConfig, HvCellDesc, HvMemoryRegion, HvSystemConfig};
 use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
 use crate::control::{park_cpu, reset_cpu, resume_cpu, send_event};
-use crate::device::emu::{HVISOR_DEVICE, MAX_REQ, handle_virtio_requests};
+use crate::device::emu::{handle_virtio_requests, HVISOR_DEVICE, MAX_REQ};
 use crate::device::pci::mmio_pci_handler;
 use crate::device::virtio::VIRTIO_RESULT_MAP;
 use crate::error::HvResult;
 use crate::memory::addr::{align_down, align_up, is_aligned};
-use crate::memory::{
-    self, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, EMU_SHARED_REGION_BASE,
-};
+use crate::memory::{self, MemFlags, MemoryRegion, EMU_SHARED_REGION_BASE};
 use crate::percpu::{get_cpu_data, this_cpu_data, PerCpu};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -92,7 +90,7 @@ impl<'a> HyperCall<'a> {
             if is_cfg == 1 {
                 resume_cpu(src_cpu);
             } else {
-                debug!("hvc finish req, value is {:#x?}", value);
+                info!("hvc finish req, value is {:#x?}", value);
                 send_event(src_cpu, SGI_VIRTIO_RES_ID);
             }
         }
@@ -321,8 +319,8 @@ impl<'a> HyperCall<'a> {
         }
         if cell_w.loadable {
             let mem_regs: Vec<HvMemoryRegion> = cell_w.config().mem_regions().to_vec();
-            let root_cell = root_cell();
-            let root_cell_w = root_cell.write();
+            // let root_cell = root_cell();
+            // let root_cell_w = root_cell.write();
             mem_regs.iter().for_each(|mem| {
                 if mem.flags.contains(MemFlags::LOADABLE) {
                     // root_cell_w.mem_region_unmap_partial(&MemoryRegion::new_with_offset_mapper(

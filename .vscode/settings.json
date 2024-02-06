@@ -35,6 +35,7 @@
         "unistd.h": "c",
         "errno.h": "c"
     },
+    "rust-analyzer.showUnlinkedFileNotification": false,
     // "rust-analyzer.cargo.features": [
     //     "board_qemu"
     // ]

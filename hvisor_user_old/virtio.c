@@ -6,6 +6,7 @@
 #include "virtio_blk.h"
 #include "log.h"
 #include <sys/mman.h>
+#include <sys/uio.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
@@ -14,20 +15,24 @@ VirtIODevice *dev_blk;
 void *virt_addr;
 void *phys_addr;
 int img_fd;
+#define NON_ROOT_PHYS_START 0x70000000
+#define NON_ROOT_PHYS_SIZE 0x8000000
+#define NON_ROOT_PHYS_START2 0x81000000
+#define NON_ROOT_PHYS_SIZE2 0x30000000
 // TODO: 根据配置文件初始化device. 可以参考rhyper的emu_virtio_mmio_init函数
 int init_virtio_devices() 
 {
-    // img_fd = open("ubuntu-20.04-rootfs_ext4.img", O_RDWR);
-    img_fd = open("virtio_ext4.img", O_RDWR);
+    img_fd = open("ubuntu-20.04-rootfs_ext4.img", O_RDWR);
+    // img_fd = open("virtio_ext4.img", O_RDWR);
 
     if (img_fd == -1) {
         log_error("cannot open virtio_blk.img, Error code is %d", errno);
         return -1;
     }
 
-    int mem_fd = open("/dev/mem", O_RDWR | O_NDELAY);
-    phys_addr = 0x70000000;
-    virt_addr = mmap(NULL, 0x8000000, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, phys_addr);
+    int mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
+    phys_addr = NON_ROOT_PHYS_START2;
+    virt_addr = mmap(NULL, NON_ROOT_PHYS_SIZE2, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, phys_addr);
     log_info("mmap virt addr is %#x", virt_addr);
     dev_blk = create_virtio_device(VirtioTBlock);
     return 0;
@@ -175,42 +180,27 @@ void virtqueue_handle_request(VirtQueue *vq, uint16_t desc_head_idx)
     case VIRTIO_BLK_T_OUT:
     {
         uint64_t offset = head->sector * SECTOR_BSIZE; // 这个是对的, 512一个扇区大小
-        while (desc_table[desc_idx].flags & VRING_DESC_F_NEXT)  
-        {
-            log_debug("desc_idx is %d, addr is %#x, len is %d", desc_idx, desc_table[desc_idx].addr, desc_table[desc_idx].len);
-            buf = get_virt_addr(desc_table[desc_idx].addr);
-            if (head->req_type == VIRTIO_BLK_T_IN){
-                log_debug("read offset is %d", offset);
-                ssize_t readl = pread(img_fd, buf, desc_table[desc_idx].len, offset);
-                if (readl == -1) {
-                    log_error("pread failed");
-                }
-                if (readl != desc_table[desc_idx].len) {
-                    log_error("pread len is wrong");
-                }
-                // printf("pread buf is ");
-                // for (int i=0; i<desc_table[desc_idx].len; i++) 
-                //     printf("%c", buf[i]);
-                // printf("\n");
-
-
-                // char *pbuf = (char *)malloc(desc_table[desc_idx].len*2 + 20);
-                // int poff = 0;
-                // poff += sprintf(pbuf, "pread buf is ");
-                // for (int i=0; i<desc_table[desc_idx].len; i++) 
-                //     poff += sprintf(pbuf + poff, "%x",buf[i]);
-                // sprintf(pbuf + poff, "\n");
-                // log_debug("%s", pbuf);
-                // free(pbuf);
-            }
-            else {
-                log_debug("write offset is %d", offset);
-                pwrite(img_fd, buf, desc_table[desc_idx].len, offset);
-            } 
-            offset += desc_table[desc_idx].len;
-            req_len += desc_table[desc_idx].len;
-            desc_idx = desc_table[desc_idx].next;
+        int iov_num = 0, data_len = 0;
+        for (; desc_table[desc_idx].flags & VRING_DESC_F_NEXT; iov_num++, desc_idx = desc_table[desc_idx].next);
+        struct iovec *iovs = malloc(iov_num * sizeof(struct iovec));
+        desc_idx = desc_table[desc_head_idx].next;
+        for (int i=0; desc_table[desc_idx].flags & VRING_DESC_F_NEXT; i++, desc_idx = desc_table[desc_idx].next) {
+            iovs[i].iov_base = get_virt_addr(desc_table[desc_idx].addr);
+            iovs[i].iov_len = desc_table[desc_idx].len;
+            data_len += iovs[i].iov_len;
         }
+        if (head->req_type == VIRTIO_BLK_T_IN) {
+            ssize_t readl = preadv(img_fd, iovs, iov_num, offset);
+            if (readl == -1) {
+                log_error("pread failed");
+            } 
+            if (readl != data_len) {
+                log_error("pread len is wrong");
+            }
+        } else {
+            pwritev(img_fd, iovs, iov_num, offset);
+        }
+        req_len = data_len;
     }
         break;
     case VIRTIO_BLK_T_GET_ID:
@@ -420,7 +410,7 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
         if (value) {
             regs->dev_feature_sel = 1;
         } else {
-            regs->dev_feature_sel = 0;
+            regs->dev_feature_sel = 0;      
         }
         break;
     case VIRTIO_MMIO_DRIVER_FEATURES:

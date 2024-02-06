@@ -267,6 +267,7 @@ impl Cell {
         }
     }
     /// Unmap a mem region from gpm or mmio regions of the cell.
+    #[allow(dead_code)]
     pub fn mem_region_unmap_partial(&mut self, mem: &MemoryRegion<GuestPhysAddr>) {
         if is_aligned(mem.size) {
             self.gpm.unmap_partial(mem).unwrap();
