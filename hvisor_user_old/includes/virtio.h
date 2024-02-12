@@ -70,9 +70,9 @@ struct VirtQueue {
     uint64_t avail_addr;
     uint64_t used_addr;
 
-    VirtqDesc *desc_table;
-    VirtqAvail *avail_ring;
-    VirtqUsed *used_ring;
+    volatile VirtqDesc *desc_table; // volatile tells compiler don't optimize it. 
+    volatile VirtqAvail *avail_ring;
+    volatile VirtqUsed *used_ring;
     int (*notify_handler)(VirtIODevice *vdev, VirtQueue *vq);
 
     uint16_t last_avail_idx;
