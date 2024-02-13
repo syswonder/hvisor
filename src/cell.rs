@@ -240,7 +240,6 @@ impl Cell {
         //     _ => self.config_frame.start_paddr(),
         // };
         let config_addr = self.config_frame.as_ptr() as usize;
-        info!("config ptr ={:#x?}", config_addr);
         unsafe { CellConfig::new((config_addr as *const HvCellDesc).as_ref().unwrap()) }
     }
 
