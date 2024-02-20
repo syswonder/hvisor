@@ -13,7 +13,7 @@ use crate::{
 use super::gicv3::inject_irq;
 /// When non root's virtio driver communicates with device, the message will be stored this req list and passed to root cell.
 pub static TRAMPOLINE_REQ_LIST: Mutex<LinkedList<VirtioReq>> = Mutex::new(LinkedList::new());
-/// cpu_id: value
+/// cpu_id: value(irq_id || returned value)
 pub static VIRTIO_RESULT_MAP: Mutex<BTreeMap<u64, u64>> = Mutex::new(BTreeMap::new());
 const QUEUE_NOTIFY: usize = 0x50;
 pub struct VirtioReq {

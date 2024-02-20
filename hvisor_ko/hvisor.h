@@ -22,10 +22,19 @@ struct device_req {
 	__u8 is_cfg;
 };
 
+struct device_res {
+    __u64 tar_cpu;
+    __u64 value;
+    __u8 is_cfg;
+};
+
 struct hvisor_device_region {
-	__u32 idx;
+	__u32 req_idx;
 	__u32 last_req_idx;
+    __u32 res_idx;
+    __u32 last_res_idx;
 	struct device_req req_list[MAX_REQ];
+    struct device_res res_list[MAX_REQ];
 };
 
 
@@ -62,5 +71,9 @@ static inline __u64 hvisor_call_arg1(__u64 num, __u64 arg1)
 		: "memory");
 	return num_result;
 }
+/// hvisor kernel module fd
+int ko_fd;
+
+volatile struct hvisor_device_region *device_region;
 
 #endif /* __HVISOR_H */

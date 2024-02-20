@@ -4,13 +4,17 @@
 #include "virtio.h"
 #include "hvisor.h"
 #include "virtio_blk.h"
+#include "virtio_net.h"
 #include "log.h"
 #include <sys/mman.h>
 #include <sys/uio.h>
 #include <fcntl.h>
 #include <unistd.h>
 #include <errno.h>
-VirtIODevice *dev_blk;
+#include <sys/ioctl.h>
+
+VirtIODevice *vdevs[16];
+int vdevs_num;
 // 拥有整个non root mem区域的virt_addr
 void *virt_addr;
 void *phys_addr;
@@ -19,8 +23,8 @@ int img_fd;
 #define NON_ROOT_PHYS_SIZE 0x8000000
 #define NON_ROOT_PHYS_START2 0x81000000
 #define NON_ROOT_PHYS_SIZE2 0x30000000
-// TODO: 根据配置文件初始化device. 可以参考rhyper的emu_virtio_mmio_init函数
-int init_virtio_devices() 
+// TODO: 根据配置文件初始化device. 可以参考rhyper的emu_virtio_mmio_init函数; 也可以命令行随时指定
+int init_virtio_devices()
 {
     img_fd = open("ubuntu-20.04-rootfs_ext4.img", O_RDWR);
     // img_fd = open("virtio_ext4.img", O_RDWR);
@@ -34,12 +38,13 @@ int init_virtio_devices()
     phys_addr = NON_ROOT_PHYS_START2;
     virt_addr = mmap(NULL, NON_ROOT_PHYS_SIZE2, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, phys_addr);
     log_info("mmap virt addr is %#x", virt_addr);
-    dev_blk = create_virtio_device(VirtioTBlock);
+    create_virtio_device(VirtioTBlock, 1);
+    create_virtio_device(VirtioTNet, 1);
     return 0;
 }
 
 // create a virtio device.
-VirtIODevice *create_virtio_device(VirtioDeviceType dev_type) 
+VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t cell_id)
 {
     VirtIODevice *vdev = NULL;
     switch (dev_type)
@@ -48,54 +53,70 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type)
         vdev = calloc(1, sizeof(VirtIODevice));
         init_mmio_regs(&vdev->regs, dev_type);
         vdev->base_addr = 0xa003e00;
-        vdev->dev.features = VIRTIO_BLK_F_SEG_MAX | VIRTIO_BLK_F_SIZE_MAX | VIRTIO_F_VERSION_1;
-        vdev->dev.irq_id = 67;
-        vdev->dev.type = dev_type;
-        vdev->dev.config = init_blk_config(BLK_SIZE_MAX); // 256MB
+        vdev->len = 0x200;
+        vdev->cell_id = cell_id;
+        vdev->irq_id = 67;
+        vdev->type = dev_type;
+        vdev->regs.dev_feature = VIRTIO_BLK_F_SEG_MAX | VIRTIO_BLK_F_SIZE_MAX | VIRTIO_F_VERSION_1;
+        vdev->dev = init_blk_dev(BLK_SIZE_MAX); // 256MB
         init_virtio_queue(vdev, dev_type);
         break;
-    
+    case VirtioTNet:
+        vdev = calloc(1, sizeof(VirtIODevice));
+        init_mmio_regs(&vdev->regs, dev_type);
+        vdev->base_addr = 0xa003c00;
+        vdev->len = 0x200;
+        vdev->cell_id = cell_id;
+        vdev->irq_id = 68;
+        // TODO: 先按着acrn的来吧, 之后再试着弄CSUM之类的
+        vdev->regs.dev_feature = VIRTIO_NET_FEATURES;
+        vdev->type = dev_type;
+        uint8_t mac[] = {0x00, 0x16, 0x3E, 0x10, 0x10, 0x10};
+        vdev->dev = init_net_dev(mac);
+        init_virtio_queue(vdev, dev_type);
+        virtio_net_init(vdev, "tap0");
     default:
         break;
     }
+    vdevs[vdevs_num++] = vdev;
     return vdev;
 }
 
-void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type) 
-{   
+void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type)
+{
     VirtQueue *vq = NULL;
     switch (type)
     {
     case VirtioTBlock:
-        vdev->regs.queue_num_max = VIRTQUEUE_BLK_MAX_SIZE;
         vdev->vqs_len = 1;
         vq = malloc(sizeof(VirtQueue));
         virtqueue_reset(vq, 0);
+        vq->queue_num_max = VIRTQUEUE_BLK_MAX_SIZE;
         vq->notify_handler = virtio_blk_notify_handler;
         vdev->vqs = vq;
         break;
+    case VirtioTNet:
+        vdev->vqs_len = VIRTIO_NET_MAXQ;
+        vq = malloc(sizeof(VirtQueue) * VIRTIO_NET_MAXQ);
+        for (int i = 0; i < VIRTIO_NET_MAXQ; ++i) {
+            virtqueue_reset(vq, i);
+            vq[i].queue_num_max = VIRTQUEUE_NET_MAX_SIZE;
+        }
+        vq[VIRTIO_NET_RXQ].notify_handler = virtio_net_rxq_notify_handler;
+        vq[VIRTIO_NET_TXQ].notify_handler = virtio_net_txq_notify_handler;
+        vdev->vqs = vq;
     default:
         break;
     }
 }
 
-void init_mmio_regs(VirtMmioRegs *regs, VirtioDeviceType type) 
+void init_mmio_regs(VirtMmioRegs *regs, VirtioDeviceType type)
 {
     regs->device_id = type;
     regs->queue_sel = 0;
 }
 
-// create blk config.
-BlkConfig *init_blk_config(uint64_t bsize) 
-{
-    BlkConfig *config = malloc(sizeof(BlkConfig));
-    config->capacity = bsize;
-    config->size_max = BLK_SIZE_MAX;
-    config->seg_max = BLK_SEG_MAX;
-    return config;
-}
-
-void virtio_dev_reset(VirtIODevice *vdev) 
+void virtio_dev_reset(VirtIODevice *vdev)
 {
     log_trace("virtio dev reset");
     vdev->regs.status = 0;
@@ -105,16 +126,18 @@ void virtio_dev_reset(VirtIODevice *vdev)
     for(uint32_t i=0; i<vdev->vqs_len; i++) {
         virtqueue_reset(&vdev->vqs[i], i);
     }
-    vdev->dev.activated = false;
+    vdev->activated = false;
 }
 
-void virtqueue_reset(VirtQueue *vq, int idx) 
+void virtqueue_reset(VirtQueue *vq, int idx)
 {
+    vq += idx;
+    // don't reset notify handler
     void *addr = vq->notify_handler;
     memset(vq, 0, sizeof(VirtQueue));
     vq->vq_idx = idx;
     vq->notify_handler = addr;
-}   
+}
 
 // check if virtqueue has new requests
 bool virtqueue_is_empty(VirtQueue *vq)
@@ -123,11 +146,9 @@ bool virtqueue_is_empty(VirtQueue *vq)
         log_error("virtqueue's avail ring is invalid");
         return true;
     }
-    uint16_t last_avail_idx = vq->last_avail_idx;
-    uint16_t idx = vq->avail_ring->idx;
-    if (last_avail_idx == idx) 
+    if (vq->last_avail_idx == vq->avail_ring->idx)
         return true;
-    else 
+    else
         return false;
 }
 
@@ -139,9 +160,9 @@ uint16_t virtqueue_pop_desc_chain_head(VirtQueue *vq)
     return vq->avail_ring->ring[ring_idx];
 }
 
-bool desc_is_writable(VirtqDesc *desc_table, uint16_t idx) 
+bool desc_is_writable(VirtqDesc *desc_table, uint16_t idx)
 {
-    if (desc_table[idx].flags & VRING_DESC_F_WRITE) 
+    if (desc_table[idx].flags & VRING_DESC_F_WRITE)
         return true;
     return false;
 }
@@ -151,97 +172,10 @@ void* get_virt_addr(void *addr)
     return virt_addr - phys_addr + addr;
 }
 
-// 获取non root linux的ipa
+// get non root linux's ipa
 void* get_phys_addr(void *addr)
 {
     return addr - virt_addr + phys_addr;
-}
-// 解决一个描述符链
-void virtqueue_handle_request(VirtQueue *vq, uint16_t desc_head_idx) 
-{
-    VirtqDesc *desc_table = vq->desc_table;
-    uint16_t desc_idx = desc_head_idx;
-    // handle head
-    if(desc_is_writable(desc_table, desc_idx)) {
-        log_error("virt queue's desc chain header should not be writable!");
-        return ;
-    }
-    log_debug("desc_table addr is %#x, idx is %d, blkreqhead ipa is %#x", get_phys_addr(desc_table), desc_idx, desc_table[desc_idx].addr);
-    BlkReqHead *head = (BlkReqHead *)get_virt_addr(desc_table[desc_idx].addr);
-    log_debug("head addr is %#x", head);
-    desc_idx = desc_table[desc_idx].next;
-    // 获取本次请求的数据总长度
-    uint32_t req_len = 0; 
-    bool is_support = true;
-    char *buf = NULL;
-    switch (head->req_type)
-    {
-    case VIRTIO_BLK_T_IN:
-    case VIRTIO_BLK_T_OUT:
-    {
-        uint64_t offset = head->sector * SECTOR_BSIZE; // 这个是对的, 512一个扇区大小
-        int iov_num = 0, data_len = 0;
-        for (; desc_table[desc_idx].flags & VRING_DESC_F_NEXT; iov_num++, desc_idx = desc_table[desc_idx].next);
-        struct iovec *iovs = malloc(iov_num * sizeof(struct iovec));
-        desc_idx = desc_table[desc_head_idx].next;
-        for (int i=0; desc_table[desc_idx].flags & VRING_DESC_F_NEXT; i++, desc_idx = desc_table[desc_idx].next) {
-            iovs[i].iov_base = get_virt_addr(desc_table[desc_idx].addr);
-            iovs[i].iov_len = desc_table[desc_idx].len;
-            data_len += iovs[i].iov_len;
-        }
-        if (head->req_type == VIRTIO_BLK_T_IN) {
-            ssize_t readl = preadv(img_fd, iovs, iov_num, offset);
-            if (readl == -1) {
-                log_error("pread failed");
-            } 
-            if (readl != data_len) {
-                log_error("pread len is wrong");
-            }
-        } else {
-            pwritev(img_fd, iovs, iov_num, offset);
-        }
-        req_len = data_len;
-    }
-        break;
-    case VIRTIO_BLK_T_GET_ID:
-    {
-        log_debug("virtio get id");
-        char s[20] = "virtio-lgw-blk";
-        buf = get_virt_addr(desc_table[desc_idx].addr);
-        memcpy(buf, s, 20);
-        req_len = desc_table[desc_idx].len;
-        desc_idx = desc_table[desc_idx].next;
-    }
-        break;
-    default:
-        log_error("unsupported virtqueue request type: %u", head->req_type);
-        is_support = false;
-        while (desc_table[desc_idx].flags & VRING_DESC_F_NEXT) {
-            desc_idx = desc_table[desc_idx].next;
-        }
-        break;
-    }
-
-    // the status field of desc chain
-    if (!desc_is_writable(desc_table, desc_idx)) {
-        log_error("Failed to write virt blk queue desc status");
-        return ;
-    }
-    uint8_t *vstatus = (uint8_t *)get_virt_addr(desc_table[desc_idx].addr);
-    if (is_support) 
-        *vstatus = VIRTIO_BLK_S_OK;
-    else 
-        *vstatus = VIRTIO_BLK_S_UNSUPP;
-    // update used ring
-    VirtqUsed *used_ring = vq->used_ring;
-    uint16_t used_idx = used_ring->idx;
-    uint64_t num = vq->num;
-    used_ring->flags = vq->used_flags;
-    used_ring->ring[used_idx % num].id = desc_head_idx;
-    used_ring->ring[used_idx % num].len = req_len;
-    log_debug("used_ring->idx is %d\n", used_ring->idx);
-    used_ring->idx++;
-    log_debug("changed used_ring->idx is %d\n", used_ring->idx);
 }
 
 void virtqueue_disable_notify(VirtQueue *vq) {
@@ -250,26 +184,6 @@ void virtqueue_disable_notify(VirtQueue *vq) {
 
 void virtqueue_enable_notify(VirtQueue *vq) {
     vq->used_ring->flags &= !(uint16_t)VRING_USED_F_NO_NOTIFY;
-}
-
-int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
-{
-    log_trace("virtio blk notify handler enter");
-    /*
-    1. 从可用环中取出请求, 
-    2. 将请求池的各个请求映射为文件进行处理
-    */
-    while(!virtqueue_is_empty(vq)) {
-        uint16_t desc_idx = virtqueue_pop_desc_chain_head(vq); //描述符链头
-        // TODO: 这个notify是怎么弄???
-        virtqueue_disable_notify(vq);
-        if (vq->avail_ring->idx == vq->last_avail_idx) {
-        virtqueue_enable_notify(vq);
-        }
-        log_debug("avail_idx is %d, last_avail_idx is %d, desc_head_idx is %d", vq->avail_ring->idx, vq->last_avail_idx, desc_idx);
-        virtqueue_handle_request(vq, desc_idx);
-    }
-    return 0;
 }
 
 void virtqueue_set_desc_table(VirtQueue *vq)
@@ -290,8 +204,69 @@ void virtqueue_set_used(VirtQueue *vq)
     vq->used_ring = (VirtqUsed *)(virt_addr + vq->used_addr - phys_addr);
 }
 
+/*
+ * Helper inline for vq_getchain(): record the i'th "real"
+ * descriptor.
+ * Return 0 on success and -1 when i is out of range  or mapping
+ *        fails.
+ */
+static inline int
+_vq_record(int i, volatile VirtqDesc *vd,
+           struct iovec *iov, int n_iov, uint16_t *flags) {
+    // 将vd指向的描述符记录在iov中的第i个元素中
+    void *host_addr;
 
-static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size) 
+    if (i >= n_iov)
+        return -1;
+    host_addr = get_virt_addr(vd->addr);
+    iov[i].iov_base = host_addr;
+    iov[i].iov_len = vd->len;
+    if (flags != NULL)
+        flags[i] = vd->flags;
+    return 0;
+}
+/// record one descriptor list to iov
+/// \param pidx the first descriptor's idx in descriptor list.
+/// \param n_iov the max num of iov
+/// \param flags each descriptor's flags
+/// \return the valid num of iov
+int vq_getchain(VirtQueue *vq, uint16_t *pidx,
+                struct iovec *iov, int n_iov, uint16_t *flags)
+{
+    uint16_t next, idx;
+    volatile VirtqDesc *vdesc;
+    idx = vq->last_avail_idx;
+    vq->last_avail_idx++;
+    *pidx = next = vq->avail_ring->ring[idx & (vq->num - 1)];
+
+    for (int i=0; i < vq->num; next = vdesc->next) {
+        vdesc = &vq->desc_table[next];
+        if (_vq_record(i, vdesc, iov, n_iov, flags)) {
+            log_error("vq record failed");
+            return -1;
+        }
+        i++;
+        if ((vdesc->flags & VRING_DESC_F_NEXT) == 0)
+            return i;
+    }
+    log_error("desc not end?");
+    return -1;
+}
+
+void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
+{
+    volatile VirtqUsed *used_ring;
+    volatile VirtqUsedElem *elem;
+    uint16_t used_idx, mask;
+    used_ring = vq->used_ring;
+    used_idx = used_ring->idx;
+    mask = vq->num - 1;
+    elem = used_ring[used_idx++ & mask];
+    elem->id = idx;
+    elem->len = iolen;
+    used_ring->idx = used_idx;
+}
+static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size)
 {
     log_trace("virtio mmio read at %#x", offset);
     if (!vdev) {
@@ -317,8 +292,8 @@ static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned s
 
     if (offset >= VIRTIO_MMIO_CONFIG) {
         offset -= VIRTIO_MMIO_CONFIG;
-        // TODO: 不知道需不需要判断size
-        return *(uint64_t *)(vdev->dev.config + offset);
+        // the first member of vdev->dev must be config.
+        return *(uint64_t *)(vdev->dev + offset);
     }
 
     if (size != 4) {
@@ -337,12 +312,12 @@ static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned s
         return VIRT_VENDOR;
     case VIRTIO_MMIO_DEVICE_FEATURES:
         if (vdev->regs.dev_feature_sel) {
-            return vdev->dev.features >> 32;
+            return vdev->regs.dev_feature >> 32;
         } else {
-            return vdev->dev.features;
+            return vdev->regs.dev_feature;
         }
     case VIRTIO_MMIO_QUEUE_NUM_MAX:
-        return vdev->regs.queue_num_max;
+        return vdev->vqs[vdev->regs.queue_sel].queue_num_max;
     case VIRTIO_MMIO_QUEUE_READY:
         return vdev->vqs[vdev->regs.queue_sel].ready;
     case VIRTIO_MMIO_INTERRUPT_STATUS:
@@ -385,7 +360,6 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
 {
     log_trace("virtio mmio write at %#x, value is %d\n", offset, value);
     VirtMmioRegs *regs = &vdev->regs;
-    VirtDev *dev = &vdev->dev;
     VirtQueue *vqs = vdev->vqs;
     if (!vdev) {
         /* If no backend is present, we just make all registers
@@ -410,14 +384,14 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
         if (value) {
             regs->dev_feature_sel = 1;
         } else {
-            regs->dev_feature_sel = 0;      
+            regs->dev_feature_sel = 0;
         }
         break;
     case VIRTIO_MMIO_DRIVER_FEATURES:
         if (regs->drv_feature_sel) {
-            vdev->driver_features |= value << 32;
+            regs->drv_feature |= value << 32;
         } else {
-            vdev->driver_features |= value;
+            regs->drv_feature |= value;
         }
         break;
     case VIRTIO_MMIO_DRIVER_FEATURES_SEL:
@@ -495,17 +469,49 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
     }
 }
 
-int virtio_handle_req(struct device_req *req) 
+static inline bool in_range(uint64_t value, uint64_t lower, uint64_t len)
 {
-    uint64_t offs = req->address - dev_blk->base_addr;
-    if (req->is_write) {
-        virtio_mmio_write(dev_blk, offs, req->value, req->size);
-    } else {
-        req->value = virtio_mmio_read(dev_blk, offs, req->size);
-        log_debug("read value is %d\n", req->value);
+    return ((value >= lower) && (value < (lower + len)));
+}
+
+void virtio_finish_req(uint64_t tar_cpu, uint64_t value, uint8_t is_cfg)
+{
+    // TODO: 多线程时要加锁.
+    struct device_res *res;
+    unsigned int res_idx = device_region->res_idx;
+    while (res_idx - device_region->last_res_idx == MAX_REQ);
+    res = &device_region->res_list[res_idx & (MAX_REQ - 1)];
+    res->value = value;
+    res->tar_cpu = tar_cpu;
+    res->is_cfg = is_cfg;
+    // TODO: Barrier
+    device_region->res_idx++;
+    ioctl(ko_fd, HVISOR_FINISH);
+}
+
+int virtio_handle_req(struct device_req *req)
+{
+    int i;
+    uint64_t value;
+    for (i = 0; i < vdevs_num; ++i) {
+        if ((req->src_cell == vdevs[i]->cell_id) && in_range(req->address, vdevs[i]->base_addr, vdevs[i]->len))
+            break;
     }
-    if (!req->is_cfg) {
-        req->value = dev_blk->dev.irq_id;
+    if (i == vdevs_num) {
+        log_error("no matched virtio dev");
+        return -1;
+    }
+    VirtIODevice *vdev = vdevs[i];
+    uint64_t offs = req->address - vdev->base_addr;
+    if (req->is_write) {
+        virtio_mmio_write(vdev, offs, req->value, req->size);
+    } else {
+        value = virtio_mmio_read(vdev, offs, req->size);
+        log_debug("read value is %d\n", value);
+    }
+    if (req->is_cfg) {
+        // If a request is a control not a data request
+        virtio_finish_req(req->src_cpu, value, 1);
     }
     log_debug("src_cell is %d, src_cpu is %lld", req->src_cell, req->src_cpu);
     return 0;

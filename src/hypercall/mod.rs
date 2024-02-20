@@ -80,21 +80,22 @@ impl<'a> HyperCall<'a> {
         let mut dev = HVISOR_DEVICE.lock();
         let mut map = VIRTIO_RESULT_MAP.lock();
         let region = dev.region();
-        let last_req_idx = region.last_req_idx;
-        for i in dev.shadow_last_req_idx..last_req_idx {
-            let idx = (i % MAX_REQ) as usize;
-            let src_cpu = region.req_list[idx].src_cpu;
-            let value = region.req_list[idx].value;
-            let is_cfg = region.req_list[idx].is_cfg;
-            map.insert(src_cpu, value);
+        let mut last_res_idx = region.last_res_idx;
+        while (last_res_idx < region.res_idx) {
+            let idx = (last_res_idx & (MAX_REQ - 1)) as usize;
+            let value = region.res_list[idx].value;
+            let tar_cpu = region.res_list[idx].tar_cpu;
+            let is_cfg = region.res_list[idx].is_cfg;
+            map.insert(tar_cpu, value);
             if is_cfg == 1 {
-                resume_cpu(src_cpu);
+                resume_cpu(tar_cpu);
             } else {
                 info!("hvc finish req, value is {:#x?}", value);
-                send_event(src_cpu, SGI_VIRTIO_RES_ID);
+                send_event(tar_cpu, SGI_VIRTIO_RES_ID);
             }
+            last_res_idx = last_res_idx.wrapping_add(1);
         }
-        dev.shadow_last_req_idx = last_req_idx;
+        region.last_res_idx = last_res_idx;
         drop(dev);
         handle_virtio_requests();
         HyperCallResult::Ok(0)

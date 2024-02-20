@@ -8,16 +8,15 @@
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <signal.h>
-
+#include <pthread.h>
 #include "hvisor.h"
 #include "virtio.h"
 #include "log.h"
+#include "mevent.h"
 int hvisor_init();
 // void hvisor_sig_handler(int n, siginfo_t *info, void *unused);
 void handle_virtio_requests();
 
-struct hvisor_device_region *device_region;
-int fd;
 
 int main(int argc, char *argv[])
 {
@@ -34,27 +33,28 @@ int hvisor_init()
     }
     log_add_fp(log_file, 0);
     log_info("hvisor init");
-    fd = open("/dev/hvisor", O_RDWR);
-    if (fd < 0) {
+    ko_fd = open("/dev/hvisor", O_RDWR);
+    if (ko_fd < 0) {
         log_error("open hvisor failed");
         exit(1);
     }
     // ioctl for init virtio
-    err = ioctl(fd, HVISOR_INIT_VIRTIO);
+    err = ioctl(ko_fd, HVISOR_INIT_VIRTIO);
     if (err) {
         log_error("ioctl failed, err code is %d", err);
-        close(fd);
+        close(ko_fd);
         exit(1);
     }
 
     // mmap: create shared memory
-    device_region = (struct hvisor_device_region *) mmap(NULL, MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+    device_region = (struct hvisor_device_region *) mmap(NULL, MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, ko_fd, 0);
     if (device_region == (void *)-1) {
         log_error("mmap failed");
         goto unmap;
     }
 
     init_virtio_devices();
+    mevent_init();
     log_info("hvisor init okay!");
     handle_virtio_requests();
 
@@ -67,17 +67,18 @@ void handle_virtio_requests()
 {
     unsigned int last_req_idx = device_region->last_req_idx;
     struct device_req *req;
-    int flag = 0;
+//    int flag = 0;
     while (1) {
-        if (last_req_idx < device_region->idx) {
-            req = &device_region->req_list[last_req_idx % MAX_REQ];
+        if (last_req_idx < device_region->req_idx) {
+            req = &device_region->req_list[last_req_idx & (MAX_REQ - 1)];
             virtio_handle_req(req);
             last_req_idx++;
             device_region->last_req_idx = last_req_idx;
-            flag = 1;
-        } else if (flag == 1){
-            flag = 0;
-            ioctl(fd, HVISOR_FINISH);
+            // TODO: Barrier
+//            flag = 1;
+//        } else if (flag == 1){
+//            flag = 0;
+//            ioctl(ko_fd, HVISOR_FINISH);
         }
     }
 }

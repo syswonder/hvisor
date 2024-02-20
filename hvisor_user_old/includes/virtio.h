@@ -2,21 +2,21 @@
 #define __HVISOR_VIRTIO_H
 #include <stdint.h>
 #include <stdbool.h>
+#include <sys/uio.h>
 #include "hvisor.h"
 #define VIRT_QUEUE_SIZE 512
 
 typedef struct VirtMmioRegs {
     uint32_t device_id;
-    // uint32_t dev_feature;
     uint32_t dev_feature_sel;
-    // uint32_t drv_feature;
     uint32_t drv_feature_sel;
     uint32_t queue_sel;
-    uint32_t queue_num_max;
     uint32_t interrupt_status;
     uint32_t interrupt_ack;
     uint32_t status;
     uint32_t generation;
+    uint64_t dev_feature;
+    uint64_t drv_feature;
 } VirtMmioRegs;
 
 typedef enum {
@@ -24,14 +24,6 @@ typedef enum {
     VirtioTNet,
     VirtioTBlock
 } VirtioDeviceType;
-
-typedef struct VirtDev {
-    uint64_t features;
-    uint32_t irq_id;
-    VirtioDeviceType type;
-    void *config;
-    bool activated;
-} VirtDev;
 
 typedef struct VirtqDesc {
     uint64_t addr;
@@ -65,6 +57,7 @@ typedef struct VirtQueue VirtQueue;
 struct VirtQueue {
     uint64_t vq_idx;
     uint64_t num; // queue size. elements number
+    uint32_t queue_num_max;
 
     uint64_t desc_table_addr;
     uint64_t avail_addr;
@@ -82,18 +75,20 @@ struct VirtQueue {
     uint8_t ready;
 
 };
-
+// The highest representations of virtio device
 struct VirtIODevice
 {
     uint32_t id;
     uint32_t vqs_len;
-    uint32_t cell_id; 
-    uint64_t driver_features;
-    uint64_t driver_status;
+    uint32_t cell_id;
+    uint32_t irq_id;
     uint64_t base_addr; // the virtio device's base addr in non root cell's memory
+    uint64_t len;       // mmio region's length
+    VirtioDeviceType type;
     VirtMmioRegs regs;
-    VirtDev dev;
     VirtQueue *vqs;
+    void *dev;          // according to device type, blk is BlkDev, net is NetDev.
+    bool activated;
 };
 
 
@@ -221,7 +216,7 @@ struct VirtIODevice
 
 
 int init_virtio_devices();
-VirtIODevice *create_virtio_device(VirtioDeviceType dev_type);
+VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t cell_id);
 void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type);
 
 void init_mmio_regs(VirtMmioRegs *regs, VirtioDeviceType type);
@@ -231,9 +226,21 @@ void virtio_dev_reset(VirtIODevice *vdev);
 
 void virtqueue_reset(VirtQueue *vq, int idx);
 
-int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq);
+bool virtqueue_is_empty(VirtQueue *vq);
 
+uint16_t virtqueue_pop_desc_chain_head(VirtQueue *vq);
+
+void virtqueue_disable_notify(VirtQueue *vq);
+void virtqueue_enable_notify(VirtQueue *vq);
+
+bool desc_is_writable(VirtqDesc *desc_table, uint16_t idx)
+void* get_virt_addr(void *addr);
+void* get_phys_addr(void *addr);
 int virtio_handle_req(struct device_req *req);
+int vq_getchain(VirtQueue *vq, uint16_t *pidx,
+                struct iovec *iov, int n_iov, uint16_t *flags);
+void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen);
+void virtio_finish_req(uint64_t tar_cpu, uint64_t value);
 
 /* This marks a buffer as continuing via the next field. */
 #define VRING_DESC_F_NEXT	1
