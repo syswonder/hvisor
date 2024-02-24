@@ -4,6 +4,7 @@ use spin::RwLock;
 
 use crate::arch::Stage2PageTable;
 use crate::config::{CellConfig, HvCellDesc, HvConsole, HvSystemConfig};
+use crate::consts::MAX_CPU_NUM;
 use crate::control::{resume_cpu, suspend_cpu};
 use crate::device::gicv3::gicd::{
     gicv3_gicd_mmio_handler, GICD_ICACTIVER, GICD_ICENABLER, GICD_IROUTER,
@@ -80,8 +81,6 @@ pub struct Cell {
     pub cpu_set: CpuSet,
     pub irq_bitmap: [u32; 1024 / 32],
     pub loadable: bool,
-
-    pub max_cpu_id: u64,
     gpm: MemorySet<Stage2PageTable>,
 }
 
@@ -115,7 +114,7 @@ impl Cell {
             ))
         });
 
-        // TODO: Without this mapping, enable hypervisor will get an error, maybe now we don't have mmio handlers.
+        // TODO: Without this mapping, enabling hypervisor will get an error, maybe now we don't have mmio handlers.
         cell.mem_region_insert(MemoryRegion::new_with_offset_mapper(
             mmcfg_start as GuestPhysAddr,
             mmcfg_start as HostPhysAddr,
@@ -143,7 +142,6 @@ impl Cell {
             comm_page: Frame::new()?,
             mmio: vec![],
             irq_bitmap: [0; 1024 / 32],
-            max_cpu_id: 0,
         };
         cell.register_gicv3_mmio_handlers();
         cell.init_irq_bitmap();
@@ -185,20 +183,15 @@ impl Cell {
             0,
         );
 
-        let sys = HvSystemConfig::get();
-        let syscfg = sys.root_cell.config();
-
         // add gicr handler
-        let mut last_gicr: u64 = 0;
-        for cpu in syscfg.cpu_set().iter() {
+        for cpu in 0..MAX_CPU_NUM {
             let gicr_base = get_cpu_data(cpu).gicr_base as _;
+            warn!("registering gicr {} at {:#x?}", cpu, gicr_base);
             if gicr_base == 0 {
                 continue;
             }
-            last_gicr = last_gicr.max(cpu);
             self.mmio_region_register(gicr_base, GICR_SIZE, gicv3_gicr_mmio_handler, cpu as _);
         }
-        self.max_cpu_id = last_gicr;
         self.mmio_region_register(0x8080000, 0x20000, mmio_generic_handler, 0x8080000);
     }
 
@@ -349,8 +342,9 @@ impl Cell {
         unsafe {
             let route = mpidr_to_cpuid(irouter.read_volatile());
             if !self.owns_cpu(route) {
-                info!("adjust irq {} target -> cpu {}", irq_id, mpidr & 0xff);
-                irouter.write_volatile(mpidr);
+                warn!("adjust irq {} target -> cpu {}", irq_id, mpidr_to_cpuid(mpidr));
+                irouter.write_volatile(mpidr & 0xff);
+                warn!("now target = {:#x?}", irouter.read_volatile());
             }
         }
     }

@@ -5,9 +5,7 @@
 //! GICC Driver - GIC CPU interface.
 #![allow(dead_code)]
 use crate::{
-    error::HvResult,
-    memory::{mmio_perform_access, MMIOAccess},
-    percpu::{get_cpu_data, this_cell, this_cpu_data}, hypercall::SGI_EVENT_ID,
+    consts::MAX_CPU_NUM, error::HvResult, hypercall::SGI_EVENT_ID, memory::{mmio_perform_access, MMIOAccess}, percpu::{get_cpu_data, this_cell, this_cpu_data}
 };
 use alloc::sync::Arc;
 
@@ -40,6 +38,7 @@ const GICR_IPRIORITYR: u64 = GICD_IPRIORITYR;
 const GICR_ICFGR: u64 = GICD_ICFGR;
 const GICR_TYPER_LAST: u64 = 1 << 4;
 
+#[allow(unused)]
 pub fn enable_ipi() {
     let base = this_cpu_data().gicr_base + GICR_SGI_BASE;
 
@@ -57,10 +56,8 @@ pub fn enable_ipi() {
             let reg = SGI_EVENT_ID / 4;
             let offset = SGI_EVENT_ID % 4 * 8;
             let mask = ((1 << 8) - 1) << offset;
-            info!("reg={}, offset={}", reg, offset);
             let p = gicr_ipriorityr0.add(reg as _);
             let prio = p.read_volatile();
-            info!("p={:#x?}, prio={:#x?}, new={:#x?}", p, prio, (prio & !mask) | (0xa0 << offset));
 
             p.write_volatile((prio & !mask) | (0xa0 << offset));
         }
@@ -71,12 +68,12 @@ pub fn enable_ipi() {
 }
 
 pub fn gicv3_gicr_mmio_handler(mmio: &mut MMIOAccess, cpu: u64) -> HvResult {
-    info!("gicr({}) mmio = {:#x?}", cpu, mmio);
+    debug!("gicr({}) mmio = {:#x?}", cpu, mmio);
     let gicr_base = get_cpu_data(cpu).gicr_base;
     match mmio.address as u64 {
         GICR_TYPER => {
             mmio_perform_access(gicr_base, mmio);
-            if cpu == this_cell().read().max_cpu_id {
+            if cpu == MAX_CPU_NUM - 1 {
                 debug!("this is the last gicr");
                 mmio.value |= GICR_TYPER_LAST;
             }

@@ -2,7 +2,7 @@ use aarch64_cpu::registers::MPIDR_EL1;
 use alloc::sync::Arc;
 use spin::{Mutex, RwLock};
 
-use crate::{ENTERED_CPUS, ACTIVATED_CPUS};
+use crate::{ACTIVATED_CPUS, ENTERED_CPUS};
 //use crate::arch::vcpu::Vcpu;
 use crate::arch::entry::vmreturn;
 use crate::arch::sysreg::write_sysreg;
@@ -100,10 +100,15 @@ impl PerCpu {
         self.arch_shutdown_self()?;
         Ok(())
     }
-    pub fn start_root(&mut self) -> ! {
+    pub fn start_vm(&mut self) -> ! {
         let regs = self.guest_reg() as *mut GeneralRegisters;
         unsafe {
-            (*regs).usr[0] = 0x40100000;           // device_tree addr
+            (*regs).usr[0] = if this_cpu_data().id == 0 {
+                0x40100000
+            } else {
+                0x60100000
+            }; // device_tree addr
+            info!("cpu_on_entry={:#x?}", self.cpu_on_entry);
             set_el1_pc(self.cpu_on_entry);
             vmreturn(self.guest_reg());
         }

@@ -173,6 +173,7 @@ pub fn do_cell_create(desc: &HvCellDesc) -> HvResult<Arc<RwLock<Cell>>> {
         assert!(is_aligned(comm_page_pa));
 
         mem_regs.iter().for_each(|mem| {
+            warn!("a={:#x?}, b={:#x?}", mem.virt_start, mem.phys_start);
             cell.mem_region_insert(MemoryRegion::from_hv_memregion(mem, Some(comm_page_pa)))
         });
 
@@ -202,5 +203,5 @@ pub fn wait_for_poweron() -> ! {
     cpu_data.wait_for_poweron = false;
     drop(_lock);
 
-    cpu_data.start_root();
+    cpu_data.start_vm();
 }

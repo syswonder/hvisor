@@ -1,9 +1,5 @@
 /target
 /qemu-test
-/demo
-!/demo/hello
-/demo/hello/target
-scp
-test-img
-hvisor.S
-imgs
+/test-img
+/hvisor.S
+/imgs/dts/*.dtb

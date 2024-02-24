@@ -294,7 +294,7 @@ fn inject_irq(irq_id: usize) {
             return;
         }
     }
-    debug!("To Inject IRQ {}, find lr {}", irq_id, lr_idx);
+    // debug!("To Inject IRQ {}, find lr {}", irq_id, lr_idx);
 
     if lr_idx == -1 {
         error!("full lr");

@@ -34,7 +34,6 @@ pub fn hv_config_ptr() -> *const HvSystemConfig {
     // (PER_CPU_ARRAY_PTR as usize + HvHeader::get().max_cpus as usize * PER_CPU_SIZE) as _
 }
 
-
 pub fn nr1_config_ptr() -> *const HvCellDesc {
     __nrcfg1 as _
 }

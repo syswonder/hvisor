@@ -10,7 +10,8 @@
 use crate::{
     config::HvSystemConfig,
     error::HvResult,
-    memory::{mmio_perform_access, MMIOAccess}, percpu::this_cell,
+    memory::{mmio_perform_access, MMIOAccess},
+    percpu::this_cell,
 };
 use spin::Mutex;
 
@@ -84,7 +85,7 @@ fn gicd_misc_access(mmio: &mut MMIOAccess, gicd_base: u64) -> HvResult {
 }
 
 pub fn gicv3_gicd_mmio_handler(mmio: &mut MMIOAccess, _arg: u64) -> HvResult {
-    // debug!("gicd mmio = {:#x?}", mmio);
+    trace!("gicd mmio = {:#x?}", mmio);
     let gicd_base = HvSystemConfig::get().platform_info.arch.gicd_base;
     let reg = mmio.address as u64;
 

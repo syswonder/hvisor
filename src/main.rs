@@ -47,7 +47,6 @@ use crate::control::prepare_cell_start;
 use crate::control::wait_for_poweron;
 use crate::device::gicv3::enable_irqs;
 use crate::device::gicv3::gicd::enable_gic_are_ns;
-use crate::device::gicv3::gicr::enable_ipi;
 use crate::memory::addr;
 use crate::percpu::this_cell;
 use crate::percpu::this_cpu_data;
@@ -139,16 +138,19 @@ fn primary_init_late() {
 
 fn per_cpu_init() {
     let cpu_data = this_cpu_data();
-    cpu_data.cell = Some(root_cell());
+    
+    if cpu_data.cell.is_none() {
+        cpu_data.cell = Some(root_cell());
+    }
 
     gicv3_cpu_init();
 
     unsafe {
         memory::hv_page_table().read().activate();
-        root_cell().read().gpm_activate();
+        this_cell().read().gpm_activate();
     };
 
-    enable_ipi();
+    // enable_ipi();
     enable_irqs();
 
     println!("CPU {} init OK.", cpu_data.id);
@@ -219,9 +221,9 @@ fn main(cpu_data: &'static mut PerCpu) -> HvResult {
     cpu_data.activate_vmm();
     wait_for_counter(&ACTIVATED_CPUS, MAX_CPU_NUM as _)?;
 
-    if is_primary || cpu_data.id == 2 {
+    if cpu_data.id == 2 {
         prepare_cell_start(this_cell())?;
-        cpu_data.start_root();
+        cpu_data.start_vm();
     } else {
         wait_for_poweron();
     }
