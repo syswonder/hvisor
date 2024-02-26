@@ -74,9 +74,9 @@ pub struct HvisorDeviceReq {
 
 #[repr(C)]
 pub struct HvisorDeviceRes {
-    pub tar_cpu: u64,
+    pub target: u64,
     pub value: u64,
-    pub is_cfg: u8,
+    pub res_type: u8, // 0 : no interrupt to cpu ; 1 : interrupt to cpu; 2 : interrupt to a cell
 }
 
 impl From<VirtioReq> for HvisorDeviceReq {

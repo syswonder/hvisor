@@ -23,9 +23,9 @@ struct device_req {
 };
 
 struct device_res {
-    __u64 tar_cpu;
+    __u64 target;
     __u64 value;
-    __u8 is_cfg;
+    __u8 type; // 0 : no interrupt to cpu ; 1 : interrupt to cpu; 2 : interrupt to a cell
 };
 
 struct hvisor_device_region {

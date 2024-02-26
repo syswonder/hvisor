@@ -10,7 +10,7 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 #include <sys/uio.h>
-
+#include <errno.h>
 static uint8_t dummybuf[2048];
 
 NetDev *init_net_dev(uint8_t mac[])
@@ -24,6 +24,9 @@ NetDev *init_net_dev(uint8_t mac[])
     dev->config.mac[5] = mac[5];
     dev->config.status = VIRTIO_NET_S_LINK_UP;
     dev->tapfd = -1;
+    dev->rx_ready = 0;
+    dev->rx_merge = 1;
+    dev->rx_vhdrlen = sizeof(struct virtio_net_rxhdr);
     dev->mevp = NULL;
 }
 // open tap device
@@ -51,41 +54,107 @@ static int virtio_net_tap_open(char *devname)
     strncpy(devname, ifr.ifr_name, IFNAMSIZ);
     return tunfd;
 }
-/// Called when tap device received packets
-static void virtio_net_rx_callback(int fd, enum ev_type type, void *param)
-{
-    VirtIODevice *vdev = param;
 
-}
-
+/// When driver adds buffers to rxq, it will notify rxq.
 int virtio_net_rxq_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
 {
+    NetDev *net = vdev->dev;
+    if (net->rx_ready == 0) {
+        net->rx_ready = 1;
+        if (vq->used_ring != NULL) {
+            vq->used_ring->flags |= VRING_USED_F_NO_NOTIFY;
+        }
+    }
+}
+/// remove the first tlen data in iov, return the new iov. the new iov num is in niov.
+static inline struct iovec *
+rx_iov_trim(struct iovec *iov, int *niov, int tlen)
+{
+    struct iovec *riov;
+    if (iov[0].iov_len < tlen) {
+        log_warn("iov_len is %lu, tlen = %d", iov[0].iov_len, tlen);
+        return NULL;
+    }
+    iov[0].iov_len -= tlen;
+    if (iov[0].iov_len == 0) {
+        if (*niov <= 1) {
+            log_warn("rx_iov_trim: *niov=%d\n", *niov);
+            return NULL;
+        }
+        *niov -= 1;
+        riov = &iov[1];
+    } else {
+        iov[0].iov_base = (void *)((uintptr_t)iov[0].iov_base + tlen);
+        riov = &iov[0];
+    }
 
+    return riov;
 }
 
+/// Called when tap device received packets by virtio_net_rx_callback.
 static void virtio_net_tap_rx(VirtIODevice *vdev)
 {
-    struct iovec iov[VIRTQUEUE_NET_MAX_SIZE];
+    struct iovec iov[VIRTQUEUE_NET_MAX_SIZE], *riov;
     NetDev *net = vdev->dev;
     VirtQueue *rx_vq = vdev->vqs[VIRTIO_NET_RXQ];
-
+    int n, len;
+    uint16_t idx;
+    void *vrx;
     if (net->tapfd == -1 || vdev->type != VirtioTNet) {
         log_error("tap rx is wrong");
         return;
     }
     // if rx_vq is not setup, drop the packet
-    if (!rx_vq->ready) {
+    if (!net->rx_ready) {
         read(net->tapfd, dummybuf, sizeof(dummybuf));
         return;
     }
 
     if (virtqueue_is_empty(rx_vq)) {
         read(net->tapfd, dummybuf, sizeof(dummybuf));
+        vq_endchains(rx_vq, 1);
         return;
     }
 
+    while (!virtqueue_is_empty(rx_vq)) {
+        n = vq_getchain(rx_vq, &idx, iov, VIRTQUEUE_NET_MAX_SIZE, NULL);
+        if (n < 1 || n > VIRTQUEUE_NET_MAX_SIZE) {
+            log_error("vq_getchain failed");
+            return;
+        }
+        vrx = iov[0].iov_base;
+        riov = rx_iov_trim(iov, &n, net->rx_vhdrlen);
+        if(riov == NULL)
+            return;
+        len = readv(net->tapfd, riov, n);
 
+        if (len < 0 && errno == EWOULDBLOCK) {
+            // No more packets from tapfd, restore last_avail_idx.
+            log_info("no more packets");
+            vq_retchain(rx_vq);
+            vq_endchains(rx_vq, 0);
+            return;
+        }
 
+        memset(vrx, 0, net->rx_vhdrlen);
+        if (net->rx_merge) {
+            struct virtio_net_rxhdr *vrxh;
+
+            vrxh = vrx;
+            vrxh->vrh_bufs = 1;
+        }
+
+        update_used_ring(vq, idx, len + net->rx_vhdrlen);
+    }
+
+    vq_endchains(vq, 1);
+}
+
+/// Called when tap device received packets
+static void virtio_net_rx_callback(int fd, enum ev_type type, void *param)
+{
+    VirtIODevice *vdev = param;
+    virtio_net_tap_rx(vdev);
 }
 
 /// Send iov to tap device.
@@ -152,7 +221,7 @@ int virtio_net_init(VirtIODevice *vdev, char *devname)
         log_error("open tap device failed");
         return -1;
     }
-    // set tap device O_NONBLOCK
+    // set tap device O_NONBLOCK. If io operation like readv blocks, then return errno EWOULDBLOCK
     int opt = 1;
     if (ioctl(net->tapfd, FIONBIO, &opt) < 0) {
         log_error("tap device O_NONBLOCK failed");

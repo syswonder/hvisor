@@ -93,6 +93,7 @@ void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type)
         virtqueue_reset(vq, 0);
         vq->queue_num_max = VIRTQUEUE_BLK_MAX_SIZE;
         vq->notify_handler = virtio_blk_notify_handler;
+        vq->dev = vdev;
         vdev->vqs = vq;
         break;
     case VirtioTNet:
@@ -101,6 +102,7 @@ void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type)
         for (int i = 0; i < VIRTIO_NET_MAXQ; ++i) {
             virtqueue_reset(vq, i);
             vq[i].queue_num_max = VIRTQUEUE_NET_MAX_SIZE;
+            vq[i]->dev = vdev;
         }
         vq[VIRTIO_NET_RXQ].notify_handler = virtio_net_rxq_notify_handler;
         vq[VIRTIO_NET_TXQ].notify_handler = virtio_net_txq_notify_handler;
@@ -266,6 +268,24 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
     elem->len = iolen;
     used_ring->idx = used_idx;
 }
+
+/// restore last_avail_idx when you called vq_getchain()
+void vq_retchain(VirtQueue *vq) {
+    vq->last_avail_idx--;
+}
+
+/// If vq's used ring is changed, then inject interrupt to vq's cell
+void vq_endchains(VirtQueue *vq, int used_all_avail)
+{
+    uint16_t new_idx, old_idx;
+    int intr;
+    old_idx = vq->last_used_idx;
+    vq->last_used_idx = new_idx = vq->used_ring->idx;
+    intr = new_idx != old_idx && !(vq->avail_ring->flags & VRING_AVAIL_F_NO_INTERRUPT);
+    if (intr)
+        virtio_finish_req(vq->dev->cell_id, vq->dev->irq_id, 2);
+}
+
 static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size)
 {
     log_trace("virtio mmio read at %#x", offset);
@@ -474,7 +494,8 @@ static inline bool in_range(uint64_t value, uint64_t lower, uint64_t len)
     return ((value >= lower) && (value < (lower + len)));
 }
 
-void virtio_finish_req(uint64_t tar_cpu, uint64_t value, uint8_t is_cfg)
+// add a result to res list, and notify hypervisor through ioctl
+void virtio_finish_req(uint64_t target, uint64_t value, uint8_t type)
 {
     // TODO: 多线程时要加锁.
     struct device_res *res;
@@ -482,8 +503,8 @@ void virtio_finish_req(uint64_t tar_cpu, uint64_t value, uint8_t is_cfg)
     while (res_idx - device_region->last_res_idx == MAX_REQ);
     res = &device_region->res_list[res_idx & (MAX_REQ - 1)];
     res->value = value;
-    res->tar_cpu = tar_cpu;
-    res->is_cfg = is_cfg;
+    res->target = target;
+    res->type = type;
     // TODO: Barrier
     device_region->res_idx++;
     ioctl(ko_fd, HVISOR_FINISH);
@@ -505,12 +526,16 @@ int virtio_handle_req(struct device_req *req)
     uint64_t offs = req->address - vdev->base_addr;
     if (req->is_write) {
         virtio_mmio_write(vdev, offs, req->value, req->size);
+        value = vdev->irq_id;
     } else {
         value = virtio_mmio_read(vdev, offs, req->size);
         log_debug("read value is %d\n", value);
     }
     if (req->is_cfg) {
         // If a request is a control not a data request
+        virtio_finish_req(req->src_cpu, value, 0);
+    } else {
+        // request is a data request, need to inject interrupt
         virtio_finish_req(req->src_cpu, value, 1);
     }
     log_debug("src_cell is %d, src_cpu is %lld", req->src_cell, req->src_cpu);

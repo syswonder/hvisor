@@ -60,6 +60,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: u64) -> HvResult {
         if !mmio.is_write {
             let map = VIRTIO_RESULT_MAP.lock();
             mmio.value = *map.get(&this_cpu_id()).unwrap();
+            // Attention: If map is a list, 无论mmio是否为is_write都需要把值取出来
             debug!("non root receives value: {:#x?}", mmio.value);
         }
     }

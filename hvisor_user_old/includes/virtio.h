@@ -55,6 +55,7 @@ struct VirtQueue;
 typedef struct VirtQueue VirtQueue;
 
 struct VirtQueue {
+    VirtIODevice *dev;
     uint64_t vq_idx;
     uint64_t num; // queue size. elements number
     uint32_t queue_num_max;
@@ -69,11 +70,10 @@ struct VirtQueue {
     int (*notify_handler)(VirtIODevice *vdev, VirtQueue *vq);
 
     uint16_t last_avail_idx;
-    uint16_t last_used_idx;
+    uint16_t last_used_idx; // TODO: 记得总体更新used ring后,更新这个
     uint16_t used_flags;
 
     uint8_t ready;
-
 };
 // The highest representations of virtio device
 struct VirtIODevice
@@ -240,8 +240,9 @@ int virtio_handle_req(struct device_req *req);
 int vq_getchain(VirtQueue *vq, uint16_t *pidx,
                 struct iovec *iov, int n_iov, uint16_t *flags);
 void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen);
-void virtio_finish_req(uint64_t tar_cpu, uint64_t value);
-
+void virtio_finish_req(uint64_t target, uint64_t value, uint8_t type);
+void vq_retchain(VirtQueue *vq);
+void vq_endchains(VirtQueue *vq, int used_all_avail);
 /* This marks a buffer as continuing via the next field. */
 #define VRING_DESC_F_NEXT	1
 /* This marks a buffer as write-only (otherwise read-only). */

@@ -84,14 +84,24 @@ impl<'a> HyperCall<'a> {
         while (last_res_idx < region.res_idx) {
             let idx = (last_res_idx & (MAX_REQ - 1)) as usize;
             let value = region.res_list[idx].value;
-            let tar_cpu = region.res_list[idx].tar_cpu;
-            let is_cfg = region.res_list[idx].is_cfg;
-            map.insert(tar_cpu, value);
-            if is_cfg == 1 {
-                resume_cpu(tar_cpu);
-            } else {
-                info!("hvc finish req, value is {:#x?}", value);
-                send_event(tar_cpu, SGI_VIRTIO_RES_ID);
+            let target = region.res_list[idx].target;
+            let res_type = region.res_list[idx].res_type;
+            match res_type {
+                0 => {
+                    map.insert(target, value);
+                    resume_cpu(target);
+                },
+                1 => {
+                    map.insert(target, value);
+                    send_event(target, SGI_VIRTIO_RES_ID);
+                },
+                2 => {
+                    let cell = find_cell_by_id(target as u32).unwrap();
+                    let tar_cpu = cell.read().cpu_set.first_cpu().unwrap();
+                    map.insert(tar_cpu, value);
+                    send_event(tar_cpu, SGI_VIRTIO_RES_ID);
+                },
+                _ => panic!("res_type is invalid");
             }
             last_res_idx = last_res_idx.wrapping_add(1);
         }

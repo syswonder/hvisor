@@ -35,7 +35,7 @@
 				(1 << 21) /* guest can send gratuitous pkts */
 
 #define VIRTIO_NET_FEATURES \
-    ( VIRTIO_F_VERSION_1 | VIRTIO_NET_F_MAC | VIRTIO_NET_F_STATUS)
+    ( VIRTIO_F_VERSION_1 | VIRTIO_NET_F_MAC | VIRTIO_NET_F_STATUS | VIRTIO_NET_F_MRG_RXBUF)
 
 #define VIRTIO_NET_S_LINK_UP 1
 
@@ -64,6 +64,9 @@ typedef struct virtio_net_rxhdr NetRxHdr;
 typedef struct virtio_net_dev {
     NetConfig config;
     int tapfd;
+    int rx_ready;   // If rxq has available empty buffers.
+    int rx_vhdrlen; // rx buf header length
+    int rx_merge;   // In default, VIRTIO_NET_F_MRG_RXBUF feature will be enabled, and rx_merge is 1.
     struct mevent *mevp;
 } NetDev;
 
