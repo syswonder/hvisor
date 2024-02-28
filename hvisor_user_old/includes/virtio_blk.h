@@ -1,6 +1,7 @@
 #ifndef _HVISOR_VIRTIO_BLK_H
 #define _HVISOR_VIRTIO_BLK_H
 #include <stdint.h>
+#include "virtio.h"
 struct virtio_blk_req_head {
 	uint32_t req_type;
 	uint32_t reserved;
@@ -80,6 +81,7 @@ typedef struct virtio_blk_req_head BlkReqHead;
 
 typedef struct virtio_blk_dev {
     BlkConfig config;
+    int img_fd;
 } BlkDev;
 
 BlkDev *init_blk_dev(uint64_t bsize);

@@ -13,12 +13,14 @@
 #include <errno.h>
 #include <sys/ioctl.h>
 
+extern int ko_fd;
+extern volatile struct hvisor_device_region *device_region;
+
 VirtIODevice *vdevs[16];
 int vdevs_num;
 // 拥有整个non root mem区域的virt_addr
 void *virt_addr;
 void *phys_addr;
-int img_fd;
 #define NON_ROOT_PHYS_START 0x70000000
 #define NON_ROOT_PHYS_SIZE 0x8000000
 #define NON_ROOT_PHYS_START2 0x81000000
@@ -26,6 +28,8 @@ int img_fd;
 // TODO: 根据配置文件初始化device. 可以参考rhyper的emu_virtio_mmio_init函数; 也可以命令行随时指定
 int init_virtio_devices()
 {
+    int img_fd;
+    VirtIODevice *dev;
     img_fd = open("ubuntu-20.04-rootfs_ext4.img", O_RDWR);
     // img_fd = open("virtio_ext4.img", O_RDWR);
 
@@ -38,8 +42,9 @@ int init_virtio_devices()
     phys_addr = NON_ROOT_PHYS_START2;
     virt_addr = mmap(NULL, NON_ROOT_PHYS_SIZE2, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, phys_addr);
     log_info("mmap virt addr is %#x", virt_addr);
-    create_virtio_device(VirtioTBlock, 1);
-    create_virtio_device(VirtioTNet, 1);
+    dev = create_virtio_device(VirtioTBlock, 1);
+    ((BlkDev *)dev->dev)->img_fd = img_fd;
+    //    create_virtio_device(VirtioTNet, 1);
     return 0;
 }
 
@@ -102,7 +107,7 @@ void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type)
         for (int i = 0; i < VIRTIO_NET_MAXQ; ++i) {
             virtqueue_reset(vq, i);
             vq[i].queue_num_max = VIRTQUEUE_NET_MAX_SIZE;
-            vq[i]->dev = vdev;
+            vq[i].dev = vdev;
         }
         vq[VIRTIO_NET_RXQ].notify_handler = virtio_net_rxq_notify_handler;
         vq[VIRTIO_NET_TXQ].notify_handler = virtio_net_txq_notify_handler;
@@ -117,7 +122,7 @@ void init_mmio_regs(VirtMmioRegs *regs, VirtioDeviceType type)
     regs->device_id = type;
     regs->queue_sel = 0;
 }
-
+// TODO: virtio-net看看如何reset
 void virtio_dev_reset(VirtIODevice *vdev)
 {
     log_trace("virtio dev reset");
@@ -162,7 +167,7 @@ uint16_t virtqueue_pop_desc_chain_head(VirtQueue *vq)
     return vq->avail_ring->ring[ring_idx];
 }
 
-bool desc_is_writable(VirtqDesc *desc_table, uint16_t idx)
+bool desc_is_writable(volatile VirtqDesc *desc_table, uint16_t idx)
 {
     if (desc_table[idx].flags & VRING_DESC_F_WRITE)
         return true;
@@ -263,7 +268,7 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
     used_ring = vq->used_ring;
     used_idx = used_ring->idx;
     mask = vq->num - 1;
-    elem = used_ring[used_idx++ & mask];
+    elem = &used_ring[used_idx++ & mask];
     elem->id = idx;
     elem->len = iolen;
     used_ring->idx = used_idx;
@@ -494,23 +499,28 @@ static inline bool in_range(uint64_t value, uint64_t lower, uint64_t len)
     return ((value >= lower) && (value < (lower + len)));
 }
 
+/// Write barrier to make sure all write operations are finished before this operation
+static inline void dmb_ishst(void) {
+    asm volatile ("dmb ishst":: : "memory");
+}
+
 // add a result to res list, and notify hypervisor through ioctl
 void virtio_finish_req(uint64_t target, uint64_t value, uint8_t type)
 {
     // TODO: 多线程时要加锁.
-    struct device_res *res;
+    volatile struct device_res *res;
     unsigned int res_idx = device_region->res_idx;
     while (res_idx - device_region->last_res_idx == MAX_REQ);
     res = &device_region->res_list[res_idx & (MAX_REQ - 1)];
     res->value = value;
     res->target = target;
     res->type = type;
-    // TODO: Barrier
+    dmb_ishst();
     device_region->res_idx++;
     ioctl(ko_fd, HVISOR_FINISH);
 }
 
-int virtio_handle_req(struct device_req *req)
+int virtio_handle_req(volatile struct device_req *req)
 {
     int i;
     uint64_t value;
@@ -531,7 +541,7 @@ int virtio_handle_req(struct device_req *req)
         value = virtio_mmio_read(vdev, offs, req->size);
         log_debug("read value is %d\n", value);
     }
-    if (req->is_cfg) {
+    if (!req->need_interrupt) {
         // If a request is a control not a data request
         virtio_finish_req(req->src_cpu, value, 0);
     } else {

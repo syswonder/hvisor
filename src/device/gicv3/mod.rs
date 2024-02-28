@@ -185,6 +185,7 @@ pub fn gicv3_handle_irq_el1() {
                 // let cpu_data = unsafe { this_cpu_data() as &mut PerCpu };
                 // cpu_data.suspend_cpu = false;
             } else if irq_id == SGI_VIRTIO_REQ_ID as usize {
+                panic!("impossible to run here");
                 handle_virtio_requests();
                 deactivate_irq(irq_id);
             } else if irq_id == SGI_VIRTIO_RES_ID as usize {

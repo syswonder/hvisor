@@ -77,11 +77,11 @@ impl<'a> HyperCall<'a> {
                 "Virtio finish operation over non-root cells: unsupported!"
             );
         }
-        let mut dev = HVISOR_DEVICE.lock();
+        let dev = HVISOR_DEVICE.lock();
         let mut map = VIRTIO_RESULT_MAP.lock();
         let region = dev.region();
         let mut last_res_idx = region.last_res_idx;
-        while (last_res_idx < region.res_idx) {
+        while last_res_idx < region.res_idx {
             let idx = (last_res_idx & (MAX_REQ - 1)) as usize;
             let value = region.res_list[idx].value;
             let target = region.res_list[idx].target;
@@ -90,24 +90,26 @@ impl<'a> HyperCall<'a> {
                 0 => {
                     map.insert(target, value);
                     resume_cpu(target);
-                },
+                    info!("res_type: 0, value is {}", value);
+                }
                 1 => {
                     map.insert(target, value);
                     send_event(target, SGI_VIRTIO_RES_ID);
-                },
+                    info!("res_type: 1, value is {}", value);
+                }
                 2 => {
                     let cell = find_cell_by_id(target as u32).unwrap();
                     let tar_cpu = cell.read().cpu_set.first_cpu().unwrap();
                     map.insert(tar_cpu, value);
                     send_event(tar_cpu, SGI_VIRTIO_RES_ID);
-                },
-                _ => panic!("res_type is invalid");
+                    info!("res_type: 2, value is {}", value);
+                }
+                _ => panic!("res_type is invalid"),
             }
             last_res_idx = last_res_idx.wrapping_add(1);
         }
         region.last_res_idx = last_res_idx;
         drop(dev);
-        handle_virtio_requests();
         HyperCallResult::Ok(0)
     }
 

@@ -1,3 +1,5 @@
+use core::sync::atomic::fence;
+use core::sync::atomic::Ordering;
 use spin::Mutex;
 
 use super::virtio::{VirtioReq, TRAMPOLINE_REQ_LIST};
@@ -41,7 +43,11 @@ impl HvisorDevice {
     pub fn push_req(&mut self, req: HvisorDeviceReq) {
         let region = self.region();
         region.req_list[(region.req_idx % MAX_REQ) as usize] = req;
+        // Write barrier so that virtio device sees changes to req_list before change to req_idx
+        fence(Ordering::SeqCst);
         region.req_idx = region.req_idx.wrapping_add(1);
+        // Write barrier so that device can see change after this method returns
+        fence(Ordering::SeqCst);
     }
 }
 
@@ -69,7 +75,7 @@ pub struct HvisorDeviceReq {
     pub value: u64,
     src_cell: u32,
     is_write: u8,
-    pub is_cfg: u8,
+    pub need_interrupt: u8,
 }
 
 #[repr(C)]
@@ -79,6 +85,28 @@ pub struct HvisorDeviceRes {
     pub res_type: u8, // 0 : no interrupt to cpu ; 1 : interrupt to cpu; 2 : interrupt to a cell
 }
 
+impl HvisorDeviceReq {
+    pub fn new(
+        src_cpu: u64,
+        address: u64,
+        size: u64,
+        value: u64,
+        src_cell: u32,
+        is_write: bool,
+        need_interrupt: u8,
+    ) -> Self {
+        let is_write = if is_write { 1 } else { 0 };
+        Self {
+            src_cpu,
+            address,
+            size,
+            value,
+            src_cell,
+            is_write,
+            need_interrupt,
+        }
+    }
+}
 impl From<VirtioReq> for HvisorDeviceReq {
     fn from(value: VirtioReq) -> Self {
         Self {
@@ -88,7 +116,7 @@ impl From<VirtioReq> for HvisorDeviceReq {
             size: value.mmio.size,
             is_write: if value.mmio.is_write { 1 } else { 0 },
             value: value.mmio.value,
-            is_cfg: if value.is_cfg { 1 } else { 0 },
+            need_interrupt: if value.is_cfg { 1 } else { 0 },
         }
     }
 }

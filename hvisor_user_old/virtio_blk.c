@@ -1,6 +1,7 @@
 #include "virtio_blk.h"
 #include "virtio.h"
 #include <stdlib.h>
+#include <string.h>
 #include "log.h"
 // create blk dev.
 BlkDev *init_blk_dev(uint64_t bsize)
@@ -9,33 +10,16 @@ BlkDev *init_blk_dev(uint64_t bsize)
     dev->config.capacity = bsize;
     dev->config.size_max = BLK_SIZE_MAX;
     dev->config.seg_max = BLK_SEG_MAX;
+    dev->img_fd = -1;
     return dev;
-}
-
-int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
-{
-    log_trace("virtio blk notify handler enter");
-    /*
-    1. 从可用环中取出请求,
-    2. 将请求池的各个请求映射为文件进行处理
-    */
-    virtqueue_disable_notify(vq);
-    while(!virtqueue_is_empty(vq)) {
-        uint16_t desc_idx = virtqueue_pop_desc_chain_head(vq); //描述符链头
-        // TODO: 这个notify是怎么弄???
-        log_debug("avail_idx is %d, last_avail_idx is %d, desc_head_idx is %d", vq->avail_ring->idx, vq->last_avail_idx, desc_idx);
-        virtq_blk_handle_one_request(vq, desc_idx);
-    }
-    virtqueue_enable_notify(vq);
-
-    return 0;
 }
 
 // handle one descriptor list
 static void virtq_blk_handle_one_request(VirtQueue *vq, uint16_t desc_head_idx)
 {
-    VirtqDesc *desc_table = vq->desc_table;
+    volatile VirtqDesc *desc_table = vq->desc_table;
     uint16_t desc_idx = desc_head_idx;
+    BlkDev *blkDev = vq->dev->dev;
     // handle head
     if(desc_is_writable(desc_table, desc_idx)) {
         log_error("virt queue's desc chain header should not be writable!");
@@ -65,7 +49,7 @@ static void virtq_blk_handle_one_request(VirtQueue *vq, uint16_t desc_head_idx)
                 data_len += iovs[i].iov_len;
             }
             if (head->req_type == VIRTIO_BLK_T_IN) {
-                ssize_t readl = preadv(img_fd, iovs, iov_num, offset);
+                ssize_t readl = preadv(blkDev->img_fd, iovs, iov_num, offset);
                 if (readl == -1) {
                     log_error("pread failed");
                 }
@@ -73,7 +57,7 @@ static void virtq_blk_handle_one_request(VirtQueue *vq, uint16_t desc_head_idx)
                     log_error("pread len is wrong");
                 }
             } else {
-                pwritev(img_fd, iovs, iov_num, offset);
+                pwritev(blkDev->img_fd, iovs, iov_num, offset);
             }
             req_len = data_len;
         }
@@ -108,7 +92,7 @@ static void virtq_blk_handle_one_request(VirtQueue *vq, uint16_t desc_head_idx)
     else
         *vstatus = VIRTIO_BLK_S_UNSUPP;
     // update used ring
-    VirtqUsed *used_ring = vq->used_ring;
+    volatile VirtqUsed *used_ring = vq->used_ring;
     uint16_t used_idx = used_ring->idx;
     uint64_t num = vq->num;
 //    used_ring->flags = vq->used_flags;
@@ -117,4 +101,23 @@ static void virtq_blk_handle_one_request(VirtQueue *vq, uint16_t desc_head_idx)
     log_debug("used_ring->idx is %d\n", used_ring->idx);
     used_ring->idx++;
     log_debug("changed used_ring->idx is %d\n", used_ring->idx);
+}
+
+int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
+{
+    log_trace("virtio blk notify handler enter");
+    /*
+    1. 从可用环中取出请求,
+    2. 将请求池的各个请求映射为文件进行处理
+    */
+    virtqueue_disable_notify(vq);
+    while(!virtqueue_is_empty(vq)) {
+        uint16_t desc_idx = virtqueue_pop_desc_chain_head(vq); //描述符链头
+        // TODO: 这个notify是怎么弄???
+        log_debug("avail_idx is %d, last_avail_idx is %d, desc_head_idx is %d", vq->avail_ring->idx, vq->last_avail_idx, desc_idx);
+        virtq_blk_handle_one_request(vq, desc_idx);
+    }
+    virtqueue_enable_notify(vq);
+
+    return 0;
 }

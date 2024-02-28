@@ -233,16 +233,18 @@ uint16_t virtqueue_pop_desc_chain_head(VirtQueue *vq);
 void virtqueue_disable_notify(VirtQueue *vq);
 void virtqueue_enable_notify(VirtQueue *vq);
 
-bool desc_is_writable(VirtqDesc *desc_table, uint16_t idx)
+bool desc_is_writable(volatile VirtqDesc *desc_table, uint16_t idx);
 void* get_virt_addr(void *addr);
 void* get_phys_addr(void *addr);
-int virtio_handle_req(struct device_req *req);
+int virtio_handle_req(volatile struct device_req *req);
 int vq_getchain(VirtQueue *vq, uint16_t *pidx,
                 struct iovec *iov, int n_iov, uint16_t *flags);
 void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen);
 void virtio_finish_req(uint64_t target, uint64_t value, uint8_t type);
 void vq_retchain(VirtQueue *vq);
 void vq_endchains(VirtQueue *vq, int used_all_avail);
+
+
 /* This marks a buffer as continuing via the next field. */
 #define VRING_DESC_F_NEXT	1
 /* This marks a buffer as write-only (otherwise read-only). */

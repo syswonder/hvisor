@@ -17,8 +17,11 @@ int hvisor_init();
 // void hvisor_sig_handler(int n, siginfo_t *info, void *unused);
 void handle_virtio_requests();
 
+/// hvisor kernel module fd
+int ko_fd;
+volatile struct hvisor_device_region *device_region;
 
-int main(int argc, char *argv[])
+int main()
 {
     hvisor_init();
 }
@@ -59,14 +62,14 @@ int hvisor_init()
     handle_virtio_requests();
 
 unmap:
-    munmap(device_region, MMAP_SIZE);
+    munmap((void *)device_region, MMAP_SIZE);
     return 0;
 }
 
 void handle_virtio_requests()
 {
     unsigned int last_req_idx = device_region->last_req_idx;
-    struct device_req *req;
+    volatile struct device_req *req;
 //    int flag = 0;
     while (1) {
         if (last_req_idx < device_region->req_idx) {
@@ -74,11 +77,7 @@ void handle_virtio_requests()
             virtio_handle_req(req);
             last_req_idx++;
             device_region->last_req_idx = last_req_idx;
-            // TODO: Barrier
-//            flag = 1;
-//        } else if (flag == 1){
-//            flag = 0;
-//            ioctl(ko_fd, HVISOR_FINISH);
+            // dmb_ishst(); 应该不需要
         }
     }
 }

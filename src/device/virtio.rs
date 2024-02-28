@@ -1,12 +1,9 @@
 use alloc::collections::{BTreeMap, LinkedList};
 use spin::Mutex;
 
+use crate::device::emu::{HvisorDeviceReq, HVISOR_DEVICE};
 use crate::{
-    cell::this_cell_id,
-    control::{send_event, suspend_self},
-    error::HvResult,
-    hypercall::SGI_VIRTIO_REQ_ID,
-    memory::MMIOAccess,
+    cell::this_cell_id, control::suspend_self, error::HvResult, memory::MMIOAccess,
     percpu::this_cpu_id,
 };
 
@@ -38,22 +35,26 @@ impl VirtioReq {
 /// non root cell's virtio request handler
 pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: u64) -> HvResult {
     debug!("mmio virtio handler");
-    let is_cfg = mmio.address != QUEUE_NOTIFY;
-    if !is_cfg {
+    let need_interrupt = if mmio.address == QUEUE_NOTIFY { 1 } else { 0 };
+    if need_interrupt == 1 {
         info!("notify !!!, cpu id is {}", this_cpu_id());
     }
     mmio.address += base as usize;
-    let mut req_list = TRAMPOLINE_REQ_LIST.lock();
-    req_list.push_back(VirtioReq::new(
-        this_cell_id(),
+    let mut dev = HVISOR_DEVICE.lock();
+    while dev.is_req_list_full() {}
+    let hreq = HvisorDeviceReq::new(
         this_cpu_id(),
-        is_cfg,
-        mmio.clone(),
-    ));
-    drop(req_list);
-    send_event(0, SGI_VIRTIO_REQ_ID);
+        mmio.address as _,
+        mmio.size,
+        mmio.value,
+        this_cell_id(),
+        mmio.is_write,
+        need_interrupt,
+    );
+    dev.push_req(hreq);
+    drop(dev);
     // if it is cfg request, current cpu should be blocked until gets the result
-    if is_cfg {
+    if need_interrupt == 0 {
         // block current cpu
         suspend_self();
         // current cpu waked up

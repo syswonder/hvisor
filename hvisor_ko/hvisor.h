@@ -19,7 +19,7 @@ struct device_req {
 	__u64 value;
 	__u32 src_cell;
 	__u8 is_write;
-	__u8 is_cfg;
+	__u8 need_interrupt;
 };
 
 struct device_res {
@@ -71,9 +71,7 @@ static inline __u64 hvisor_call_arg1(__u64 num, __u64 arg1)
 		: "memory");
 	return num_result;
 }
-/// hvisor kernel module fd
-int ko_fd;
 
-volatile struct hvisor_device_region *device_region;
+
 
 #endif /* __HVISOR_H */

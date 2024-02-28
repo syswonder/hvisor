@@ -28,7 +28,9 @@ NetDev *init_net_dev(uint8_t mac[])
     dev->rx_merge = 1;
     dev->rx_vhdrlen = sizeof(struct virtio_net_rxhdr);
     dev->mevp = NULL;
+    return dev;
 }
+
 // open tap device
 static int virtio_net_tap_open(char *devname)
 {
@@ -65,6 +67,7 @@ int virtio_net_rxq_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
             vq->used_ring->flags |= VRING_USED_F_NO_NOTIFY;
         }
     }
+    return 0;
 }
 /// remove the first tlen data in iov, return the new iov. the new iov num is in niov.
 static inline struct iovec *
@@ -96,7 +99,7 @@ static void virtio_net_tap_rx(VirtIODevice *vdev)
 {
     struct iovec iov[VIRTQUEUE_NET_MAX_SIZE], *riov;
     NetDev *net = vdev->dev;
-    VirtQueue *rx_vq = vdev->vqs[VIRTIO_NET_RXQ];
+    VirtQueue *vq = &vdev->vqs[VIRTIO_NET_RXQ];
     int n, len;
     uint16_t idx;
     void *vrx;
@@ -104,20 +107,20 @@ static void virtio_net_tap_rx(VirtIODevice *vdev)
         log_error("tap rx is wrong");
         return;
     }
-    // if rx_vq is not setup, drop the packet
+    // if vq is not setup, drop the packet
     if (!net->rx_ready) {
         read(net->tapfd, dummybuf, sizeof(dummybuf));
         return;
     }
 
-    if (virtqueue_is_empty(rx_vq)) {
+    if (virtqueue_is_empty(vq)) {
         read(net->tapfd, dummybuf, sizeof(dummybuf));
-        vq_endchains(rx_vq, 1);
+        vq_endchains(vq, 1);
         return;
     }
 
-    while (!virtqueue_is_empty(rx_vq)) {
-        n = vq_getchain(rx_vq, &idx, iov, VIRTQUEUE_NET_MAX_SIZE, NULL);
+    while (!virtqueue_is_empty(vq)) {
+        n = vq_getchain(vq, &idx, iov, VIRTQUEUE_NET_MAX_SIZE, NULL);
         if (n < 1 || n > VIRTQUEUE_NET_MAX_SIZE) {
             log_error("vq_getchain failed");
             return;
@@ -131,8 +134,8 @@ static void virtio_net_tap_rx(VirtIODevice *vdev)
         if (len < 0 && errno == EWOULDBLOCK) {
             // No more packets from tapfd, restore last_avail_idx.
             log_info("no more packets");
-            vq_retchain(rx_vq);
-            vq_endchains(rx_vq, 0);
+            vq_retchain(vq);
+            vq_endchains(vq, 0);
             return;
         }
 

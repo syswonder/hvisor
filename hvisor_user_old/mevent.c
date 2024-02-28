@@ -23,6 +23,7 @@ static void *mevent_loop(void *param)
         }
     }
 }
+
 // transform me_type to epoll type
 static int
 mevent_get_epoll_event(struct mevent *mevp)
@@ -65,7 +66,6 @@ int mevent_init()
     epoll_fd = epoll_create1(0);
     pthread_t mevent_tid;
     pthread_create(&mevent_tid, NULL, mevent_loop, NULL);
-    pthread_setname_np(mevent_tid, "mevent_loop");
     if (epoll_fd >= 0)
         return 0;
     else {
