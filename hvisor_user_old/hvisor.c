@@ -13,6 +13,7 @@
 #include "virtio.h"
 #include "log.h"
 #include "mevent.h"
+#include "tools.h"
 int hvisor_init();
 // void hvisor_sig_handler(int n, siginfo_t *info, void *unused);
 void handle_virtio_requests();
@@ -34,7 +35,7 @@ int hvisor_init()
     if (log_file == NULL) {
         log_error("open log file failed");
     }
-    log_add_fp(log_file, 0);
+//    log_add_fp(log_file, 0);
     log_info("hvisor init");
     ko_fd = open("/dev/hvisor", O_RDWR);
     if (ko_fd < 0) {
@@ -68,15 +69,15 @@ unmap:
 
 void handle_virtio_requests()
 {
-    unsigned int last_req_idx = device_region->last_req_idx;
+    unsigned int req_front = device_region->req_front;
     volatile struct device_req *req;
 //    int flag = 0;
     while (1) {
-        if (last_req_idx < device_region->req_idx) {
-            req = &device_region->req_list[last_req_idx & (MAX_REQ - 1)];
+        if (!is_queue_empty(req_front, device_region->req_rear)) {
+            req = &device_region->req_list[req_front];
             virtio_handle_req(req);
-            last_req_idx++;
-            device_region->last_req_idx = last_req_idx;
+            req_front = (req_front + 1) & (MAX_REQ - 1);
+            device_region->req_front = req_front;
             // dmb_ishst(); 应该不需要
         }
     }

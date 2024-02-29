@@ -32,8 +32,17 @@ impl HvisorDevice {
 
     pub fn is_req_list_full(&self) -> bool {
         let region = self.region();
-        if region.req_idx.wrapping_sub(region.last_req_idx) == MAX_REQ as u32 {
+        if ((region.req_rear + 1) & (MAX_REQ - 1)) == region.req_front {
             info!("hvisor req queue full");
+            true
+        } else {
+            false
+        }
+    }
+
+    pub fn is_res_list_empty(&self) -> bool {
+        let region = self.region();
+        if region.res_rear == region.res_front {
             true
         } else {
             false
@@ -42,10 +51,10 @@ impl HvisorDevice {
 
     pub fn push_req(&mut self, req: HvisorDeviceReq) {
         let region = self.region();
-        region.req_list[(region.req_idx % MAX_REQ) as usize] = req;
+        region.req_list[(region.req_rear % MAX_REQ) as usize] = req;
         // Write barrier so that virtio device sees changes to req_list before change to req_idx
         fence(Ordering::SeqCst);
-        region.req_idx = region.req_idx.wrapping_add(1);
+        region.req_rear = (region.req_rear + 1) % MAX_REQ;
         // Write barrier so that device can see change after this method returns
         fence(Ordering::SeqCst);
     }
@@ -54,14 +63,14 @@ impl HvisorDevice {
 /// El1 and EL2 shared region for virtio requests and results.
 #[repr(C)]
 pub struct HvisorDeviceRegion {
-    /// The next place a request will be put, only hvisor updates
-    req_idx: u32,
-    /// The next place a request will be processed, only device model updates
-    pub last_req_idx: u32,
-    /// The next place a virtio result will be put, only device model updates
-    pub res_idx: u32,
-    /// The next place a virtio result will be processed, only hvisor updates
-    pub last_res_idx: u32,
+    /// The first elem of req list, only virtio device updates
+    pub req_front: u32,
+    /// The last elem's next place of req list, only hvisor updates
+    pub req_rear: u32,
+    /// The first elem of res list, only hvisor updates
+    pub res_front: u32,
+    /// The last elem's next place of res list, only virtio device updates
+    res_rear: u32,
     pub req_list: [HvisorDeviceReq; MAX_REQ as usize],
     pub res_list: [HvisorDeviceRes; MAX_REQ as usize],
 }
@@ -120,26 +129,26 @@ impl From<VirtioReq> for HvisorDeviceReq {
         }
     }
 }
-
-///  When there are new virtio requests, root cell calls this function.
-pub fn handle_virtio_requests() {
-    debug!("handle virtio requests");
-    let mut dev = HVISOR_DEVICE.lock();
-    assert_eq!(dev.is_enable, true);
-    if dev.is_req_list_full() {
-        // When req list is full, just return.
-        // When root calls finish req hvc, it will call this function again.
-        info!("back to el1 from virtio handler");
-        return;
-    }
-    let mut req_list = TRAMPOLINE_REQ_LIST.lock();
-    while !req_list.is_empty() {
-        if dev.is_req_list_full() {
-            break;
-        }
-        let req = req_list.pop_front().unwrap();
-        let hreq: HvisorDeviceReq = req.into();
-        dev.push_req(hreq);
-    }
-    info!("back to el1 from virtio handler");
-}
+//
+// ///  When there are new virtio requests, root cell calls this function.
+// pub fn handle_virtio_requests() {
+//     debug!("handle virtio requests");
+//     let mut dev = HVISOR_DEVICE.lock();
+//     assert_eq!(dev.is_enable, true);
+//     if dev.is_req_list_full() {
+//         // When req list is full, just return.
+//         // When root calls finish req hvc, it will call this function again.
+//         info!("back to el1 from virtio handler");
+//         return;
+//     }
+//     let mut req_list = TRAMPOLINE_REQ_LIST.lock();
+//     while !req_list.is_empty() {
+//         if dev.is_req_list_full() {
+//             break;
+//         }
+//         let req = req_list.pop_front().unwrap();
+//         let hreq: HvisorDeviceReq = req.into();
+//         dev.push_req(hreq);
+//     }
+//     info!("back to el1 from virtio handler");
+// }

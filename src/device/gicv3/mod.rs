@@ -80,7 +80,6 @@ pub mod gicd;
 mod gicr;
 use crate::arch::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::config::HvSystemConfig;
-use crate::device::emu::handle_virtio_requests;
 use crate::device::virtio::handle_virtio_result;
 use crate::hypercall::{SGI_EVENT_ID, SGI_RESUME_ID, SGI_VIRTIO_REQ_ID, SGI_VIRTIO_RES_ID};
 use crate::percpu::check_events;
@@ -186,7 +185,7 @@ pub fn gicv3_handle_irq_el1() {
                 // cpu_data.suspend_cpu = false;
             } else if irq_id == SGI_VIRTIO_REQ_ID as usize {
                 panic!("impossible to run here");
-                handle_virtio_requests();
+                // handle_virtio_requests();
                 deactivate_irq(irq_id);
             } else if irq_id == SGI_VIRTIO_RES_ID as usize {
                 handle_virtio_result();

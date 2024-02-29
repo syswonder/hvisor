@@ -3,7 +3,7 @@ use crate::cell::{add_cell, find_cell_by_id, remove_cell, root_cell, Cell, CommR
 use crate::config::{CellConfig, HvCellDesc, HvMemoryRegion, HvSystemConfig};
 use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
 use crate::control::{park_cpu, reset_cpu, resume_cpu, send_event};
-use crate::device::emu::{handle_virtio_requests, HVISOR_DEVICE, MAX_REQ};
+use crate::device::emu::{HVISOR_DEVICE, MAX_REQ};
 use crate::device::pci::mmio_pci_handler;
 use crate::device::virtio::VIRTIO_RESULT_MAP;
 use crate::error::HvResult;
@@ -80,12 +80,11 @@ impl<'a> HyperCall<'a> {
         let dev = HVISOR_DEVICE.lock();
         let mut map = VIRTIO_RESULT_MAP.lock();
         let region = dev.region();
-        let mut last_res_idx = region.last_res_idx;
-        while last_res_idx < region.res_idx {
-            let idx = (last_res_idx & (MAX_REQ - 1)) as usize;
-            let value = region.res_list[idx].value;
-            let target = region.res_list[idx].target;
-            let res_type = region.res_list[idx].res_type;
+        while !dev.is_res_list_empty() {
+            let res_front = region.res_front as usize;
+            let value = region.res_list[res_front].value;
+            let target = region.res_list[res_front].target;
+            let res_type = region.res_list[res_front].res_type;
             match res_type {
                 0 => {
                     map.insert(target, value);
@@ -106,9 +105,8 @@ impl<'a> HyperCall<'a> {
                 }
                 _ => panic!("res_type is invalid"),
             }
-            last_res_idx = last_res_idx.wrapping_add(1);
+            region.res_front = (region.res_front + 1) & (MAX_REQ - 1);
         }
-        region.last_res_idx = last_res_idx;
         drop(dev);
         HyperCallResult::Ok(0)
     }

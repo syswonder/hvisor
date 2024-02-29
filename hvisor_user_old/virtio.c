@@ -12,7 +12,7 @@
 #include <unistd.h>
 #include <errno.h>
 #include <sys/ioctl.h>
-
+#include "tools.h"
 extern int ko_fd;
 extern volatile struct hvisor_device_region *device_region;
 
@@ -139,11 +139,15 @@ void virtio_dev_reset(VirtIODevice *vdev)
 void virtqueue_reset(VirtQueue *vq, int idx)
 {
     vq += idx;
-    // don't reset notify handler
+    // reserve these fields
     void *addr = vq->notify_handler;
+    VirtIODevice *dev = vq->dev;
+    uint32_t queue_num_max = vq->queue_num_max;
     memset(vq, 0, sizeof(VirtQueue));
     vq->vq_idx = idx;
     vq->notify_handler = addr;
+    vq->dev = dev;
+    vq->queue_num_max = queue_num_max;
 }
 
 // check if virtqueue has new requests
@@ -185,6 +189,7 @@ void* get_phys_addr(void *addr)
     return addr - virt_addr + phys_addr;
 }
 
+// When virtio device is processing virtqueue, driver adding an elem to virtqueue is no need to notify device.
 void virtqueue_disable_notify(VirtQueue *vq) {
     vq->used_ring->flags |= (uint16_t)VRING_USED_F_NO_NOTIFY;
 }
@@ -509,14 +514,14 @@ void virtio_finish_req(uint64_t target, uint64_t value, uint8_t type)
 {
     // TODO: 多线程时要加锁.
     volatile struct device_res *res;
-    unsigned int res_idx = device_region->res_idx;
-    while (res_idx - device_region->last_res_idx == MAX_REQ);
-    res = &device_region->res_list[res_idx & (MAX_REQ - 1)];
+    unsigned int res_rear = device_region->res_rear;
+    while (is_queue_full(device_region->res_front, res_rear, MAX_REQ));
+    res = &device_region->res_list[res_rear];
     res->value = value;
     res->target = target;
     res->type = type;
     dmb_ishst();
-    device_region->res_idx++;
+    device_region->res_rear = (res_rear + 1) & (MAX_REQ - 1);
     ioctl(ko_fd, HVISOR_FINISH);
 }
 

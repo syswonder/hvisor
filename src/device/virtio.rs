@@ -41,7 +41,12 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: u64) -> HvResult {
     }
     mmio.address += base as usize;
     let mut dev = HVISOR_DEVICE.lock();
-    while dev.is_req_list_full() {}
+    while dev.is_req_list_full() {
+        // When root linux's cpu is in el2's finish req handler and is getting the dev lock,
+        // if we don't release dev lock, it will cause a dead lock.
+        drop(dev);
+        dev = HVISOR_DEVICE.lock();
+    }
     let hreq = HvisorDeviceReq::new(
         this_cpu_id(),
         mmio.address as _,

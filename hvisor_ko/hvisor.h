@@ -29,10 +29,10 @@ struct device_res {
 };
 
 struct hvisor_device_region {
-	__u32 req_idx;
-	__u32 last_req_idx;
-    __u32 res_idx;
-    __u32 last_res_idx;
+	__u32 req_front;
+	__u32 req_rear;
+    __u32 res_front;
+    __u32 res_rear;
 	struct device_req req_list[MAX_REQ];
     struct device_res res_list[MAX_REQ];
 };
