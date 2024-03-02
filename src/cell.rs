@@ -334,10 +334,8 @@ impl Cell {
     /// Add irq_id to this cell
     pub fn gicv3_adjust_irq_target(&mut self, irq_id: u32) {
         let gicd_base = HvSystemConfig::get().platform_info.arch.gicd_base;
-        info!("debug, {:#x?}", gicd_base);
         let irouter = (gicd_base + GICD_IROUTER + 8 * irq_id as u64) as *mut u64;
         let mpidr: u64 = get_cpu_data(self.cpu_set.first_cpu().unwrap()).mpidr;
-        info!("irouter, {:#x?}; mpidr, {:#x?}", irouter, mpidr);
 
         unsafe {
             let route = mpidr_to_cpuid(irouter.read_volatile());

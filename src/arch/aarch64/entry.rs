@@ -54,13 +54,13 @@ pub unsafe extern "C" fn el2_entry() -> i32 {
     core::arch::asm!("
         cmp x16, #0
         b.eq 2f                             /* set boot pt */
-    1:
+    1:                                      
         adr	x0, bootstrap_pt_l0
 	    adr	x30, {2}	                    /* lr = switch_stack phy-virt*/
 	    phys2virt x30		
 	    b	{1}                             /* enable mmu */
         eret
-    2:
+    2:                                      /* primary cpu: set boot-pt */
         bl {0}
         b 1b
     ",
@@ -124,13 +124,13 @@ pub unsafe extern "C" fn enable_mmu() -> i32 {
         * x0: u64 ttbr0_el2
         */
    
-       /* setup the MMU for EL2 hypervisor mappings */
-       ldr	x1, =MAIR_FLAG
-       msr	mair_el2, x1
-       ldr	x1, =TCR_FLAG
-	    msr	tcr_el2, x1
+        /* setup the MMU for EL2 hypervisor mappings */
+        ldr	x1, =MAIR_FLAG     
+        msr	mair_el2, x1       // memory attributes for pagetable
+        ldr	x1, =TCR_FLAG
+	    msr	tcr_el2, x1        // translate control, virt range = [0, 2^48)
 
-	    msr	ttbr0_el2, x0
+	    msr	ttbr0_el2, x0      // el2 page table base addr
 
 	    isb
 	    tlbi	alle2
@@ -138,24 +138,26 @@ pub unsafe extern "C" fn enable_mmu() -> i32 {
 
 	    /* Enable MMU, allow cacheability for instructions and data */
 	    ldr	x1, =SCTLR_FLAG
-	    msr	sctlr_el2, x1
+	    msr	sctlr_el2, x1      // system control register
 
 	    isb
-	    tlbi	alle2
+	    tlbi alle2
 	    dsb	nsh
+
         /*TODO: ??per cpu boot stack  x16:cpuid*/
-        adrp	x1, __boot_stack
+        adrp	  x1, __boot_stack
         phys2virt x1
+
         /*
 	    * percpu boot stack = __boot_stack + cpuid * percpu_size
 	    */
-        mov    x0,x16     //switch_stack(cpuid)
-        mov	x2, {per_cpu_boot_size}
-	    madd	x1, x2, x0, x1
-        mov    sp,x1      //set boot stack
+        mov    x0, x16                  // x0 = cpuid
+        mov	   x2, {per_cpu_boot_size}  // x2 = percpu_size
+	    madd   x1, x2, x0, x1           // x1 = __boot_stack + cpuid * percpu_size
+        mov    sp, x1                   // set boot stack
         
 
-	    ret        //x30:switch_stack el2 virt_addr
+	    ret        // x30:switch_stack el2 virt_addr
     ",
         per_cpu_boot_size= const PER_CPU_BOOT_SIZE,
         options(noreturn),
@@ -174,17 +176,6 @@ pub unsafe extern "C" fn switch_stack(cpuid: u64) -> i32 {
         /* install the final vectors */
         adr	x1, hyp_vectors
         msr	vbar_el2, x1
-    
-        mov	x0, {cpu_data}		/* cpudata to entry(cpudata)*/
-
-        /*/* set up the stack  save root cell's callee saved registers x19~x30 */
-        
-        stp	x29, x17, [sp, #-16]!	/* note: our caller lr is in x17 */
-        stp	x27, x28, [sp, #-16]!
-        stp	x25, x26, [sp, #-16]!
-        stp	x23, x24, [sp, #-16]!
-        stp	x21, x22, [sp, #-16]!
-        stp	x19, x20, [sp, #-16]!
 
         /*
         * We pad the guest_reg field, so we can consistently access the guest
@@ -192,19 +183,17 @@ pub unsafe extern "C" fn switch_stack(cpuid: u64) -> i32 {
         * handling code paths. 19 caller saved registers plus the
         * exit_reason, which we don't use on entry.
         */
-        sub	sp, sp, 20 * 8
+        sub	sp, sp, 32 * 8
             
-        mov	x29, xzr	/* reset fp,lr */
+        mov	x29, xzr	/* reset fp, lr */
         mov	x30, xzr
     
         /* Call entry(struct per_cpu*). Should not return. */
-        bl {entry}
-        eret        //back to ?arch_entry hvc0
-        mov	x30, x17 
-        ret        //return to linux
+        mov	x0, {cpu_data}		/* cpudata to entry(cpudata) */
+        b {rust_main}
     ",
         hv_sp=in(reg) hv_sp,
-        entry = sym crate::entry,
+        rust_main = sym crate::rust_main,
         cpu_data=in(reg) cpu_data,
         options(noreturn),
     );
@@ -265,7 +254,7 @@ pub unsafe extern "C" fn shutdown_el2(_gu_regs: usize) -> i32 {
     core::arch::asm!(
         "
         /* x0: guest registers */
-        /*Disable mmu*/
+        /* Disable mmu */
         SCTLR_FLAG2=0x00001005
         mrs	x1, sctlr_el2
         ldr	x2, =SCTLR_FLAG2

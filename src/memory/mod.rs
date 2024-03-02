@@ -107,6 +107,7 @@ pub fn init_hv_page_table() -> HvResult {
         GICD_SIZE as usize,
         MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
     ))?;
+
     //add gicr memory map
     hv_pt.insert(MemoryRegion::new_with_offset_mapper(
         gicr_base as GuestPhysAddr,
@@ -143,6 +144,8 @@ pub fn init_hv_page_table() -> HvResult {
     info!("Hypervisor page table init end.");
 
     debug!("Hypervisor virtual memory set: {:#x?}", hv_pt);
+
+    unsafe { hv_pt.activate(); }
 
     HV_PT.call_once(|| RwLock::new(hv_pt));
 

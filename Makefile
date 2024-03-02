@@ -51,8 +51,8 @@ disa:
 $(target_bin): elf
 	$(OBJCOPY) $(target_elf) --strip-all -O binary $@
 
-FSIMG1=/media/clk/c21/qemu-linux/disk1.img
-FSIMG2=/media/clk/c21/qemu-linux/disk2.img
+FSIMG1=/path/to/disk1.img
+FSIMG2=/path/to/disk2.img
 
 # QEMU command template
 define qemu_cmd
@@ -133,7 +133,7 @@ baremetal:
 		-nographic \
 		-kernel $(root_kernel) \
 		-append "root=/dev/vda mem=1536m" \
-		-drive if=none,file=fsimg1,id=hd1,format=raw \
+		-drive if=none,file=$(FSIMG1),id=hd1,format=raw \
 		-device virtio-blk-device,drive=hd1 \
 		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
 		-device virtio-net-device,netdev=net0,mac=52:55:00:d1:55:01 \

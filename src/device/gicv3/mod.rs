@@ -81,7 +81,6 @@ pub mod gicr;
 use core::arch::asm;
 
 use crate::arch::sysreg::{read_sysreg, smc_arg1, write_sysreg};
-use crate::config::HvSystemConfig;
 use crate::hypercall::{SGI_EVENT_ID, SGI_RESUME_ID};
 use crate::percpu::check_events;
 
@@ -93,11 +92,7 @@ pub fn reg_range(base: u64, n: u64, size: u64) -> core::ops::Range<u64> {
 pub fn gicv3_cpu_init() {
     //TODO: add Redistributor init
     let sdei_ver = unsafe { smc_arg1!(0xc4000020) }; //sdei_check();
-    info!("sdei version: {}", sdei_ver);
-    info!("gicv3 init!");
-
-    let _gicd_base: u64 = HvSystemConfig::get().platform_info.arch.gicd_base;
-    let _gicr_base: u64 = HvSystemConfig::get().platform_info.arch.gicr_base;
+    info!("gicv3 init: sdei version: {}", sdei_ver);
 
     //Identifier bits. Read-only and writes are ignored.
     //Priority bits. Read-only and writes are ignored.
@@ -272,10 +267,10 @@ fn write_lr(id: usize, val: u64) {
 fn inject_irq(irq_id: usize) {
     // mask
     const LR_VIRTIRQ_MASK: usize = 0x3ff;
-    const LR_PHYSIRQ_MASK: usize = 0x3ff << 10;
+    // const LR_PHYSIRQ_MASK: usize = 0x3ff << 10;
 
-    const LR_PENDING_BIT: u64 = 1 << 28;
-    const LR_HW_BIT: u64 = 1 << 31;
+    // const LR_PENDING_BIT: u64 = 1 << 28;
+    // const LR_HW_BIT: u64 = 1 << 31;
     let elsr: u64 = read_sysreg!(ich_elrsr_el2);
     let vtr = read_sysreg!(ich_vtr_el2) as usize;
     let lr_num: usize = (vtr & 0xf) + 1;
@@ -321,14 +316,6 @@ fn inject_irq(irq_id: usize) {
 
 pub const GICD_SIZE: u64 = 0x10000;
 pub const GICR_SIZE: u64 = 0x20000;
-
-pub fn is_sgi(irqn: u32) -> bool {
-    irqn < 16
-}
-
-pub fn is_ppi(irqn: u32) -> bool {
-    irqn > 15 && irqn < 32
-}
 
 pub fn is_spi(irqn: u32) -> bool {
     irqn > 31 && irqn < 1020

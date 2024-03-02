@@ -111,18 +111,18 @@ fn primary_init_early() -> HvResult {
 
     memory::init_heap();
     system_config.check()?;
-    // info!("Hypervisor header: {:#x?}", HvHeader::get());
+
     info!("System config: {:#x?}", system_config);
 
     memory::init_frame_allocator();
     memory::init_hv_page_table()?;
     cell::init()?;
 
-    unsafe {
-        // We should activate new hv-pt here in advance,
-        // in case of triggering data aborts in `cell::init()`
-        memory::hv_page_table().read().activate();
-    }
+    // unsafe {
+    //     // We should activate new hv-pt here in advance,
+    //     // in case of triggering data aborts in `cell::init()`
+    //     memory::hv_page_table().read().activate();
+    // }
 
     do_cell_create(unsafe { nr1_config_ptr().as_ref().unwrap() })?;
 
@@ -172,7 +172,7 @@ fn wakeup_secondary_cpus(this_id: u64) {
     }
 }
 
-fn main(cpu_data: &'static mut PerCpu) -> HvResult {
+fn rust_main(cpu_data: &'static mut PerCpu) -> HvResult {
     println!("Hello");
     println!(
         "cpuid {} vaddr {:#x?} phyid {} &cpu_data {:#x?}",
@@ -191,7 +191,6 @@ fn main(cpu_data: &'static mut PerCpu) -> HvResult {
         };
         wakeup_secondary_cpus(cpu_data.id);
     }
-
     wait_for(|| PerCpu::entered_cpus() < MAX_CPU_NUM as _)?;
     assert_eq!(PerCpu::entered_cpus(), MAX_CPU_NUM as _);
 
@@ -229,6 +228,3 @@ fn main(cpu_data: &'static mut PerCpu) -> HvResult {
     }
 }
 
-extern "C" fn entry(cpu_data: &'static mut PerCpu) -> () {
-    if let Err(_e) = main(cpu_data) {}
-}
