@@ -5,10 +5,6 @@ use crate::percpu::PerCpu;
 use core::arch::global_asm; // 支持内联汇编
 global_asm!(include_str!("./page_table.S"),);
 global_asm!(
-    include_str!("./bootvec.S"),
-    sym el2_entry
-);
-global_asm!(
     include_str!("./hyp_vec.S"),
     sym arch_handle_exit
 );
@@ -23,7 +19,7 @@ global_asm!("
 #[naked]
 #[no_mangle]
 #[link_section = ".boot"]
-pub unsafe extern "C" fn arch_entry() -> i32 {
+unsafe extern "C" fn arch_entry() -> i32 {
     core::arch::asm!(
         "
             mrs	x16, MPIDR_EL1
@@ -39,8 +35,21 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
             ldr x15, ={uart_base_virt}              // x15 = (phys) uart addr
             sub	x11, x12, x13                       // x11 = (el2 mmu on)virt-phy offset 
 
-            b el2_entry
+            cmp x16, #0
+            b.eq 2f                             /* set boot pt */
+        1:                                      
+            adr	x0, bootstrap_pt_l0
+            adr	x30, {2}	                    /* lr = switch_stack phy-virt*/
+            phys2virt x30		
+            b	{1}                             /* enable mmu */
+            eret
+        2:                                      /* primary cpu: set boot-pt */
+            bl {0}
+            b 1b
         ",
+        sym boot_pt,
+        sym enable_mmu,
+        sym switch_stack,
         per_cpu_size=const PER_CPU_SIZE,
         uart_base_virt=const UART_BASE_VIRT,
         max_cpu_num=const MAX_CPU_NUM,
@@ -48,29 +57,6 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
     );
 }
 
-#[naked]
-#[no_mangle]
-pub unsafe extern "C" fn el2_entry() -> i32 {
-    core::arch::asm!("
-        cmp x16, #0
-        b.eq 2f                             /* set boot pt */
-    1:                                      
-        adr	x0, bootstrap_pt_l0
-	    adr	x30, {2}	                    /* lr = switch_stack phy-virt*/
-	    phys2virt x30		
-	    b	{1}                             /* enable mmu */
-        eret
-    2:                                      /* primary cpu: set boot-pt */
-        bl {0}
-        b 1b
-    ",
-        sym boot_pt,
-        sym enable_mmu,
-        sym switch_stack,
-
-        options(noreturn),
-    );
-}
 #[naked]
 #[no_mangle]
 pub unsafe extern "C" fn boot_pt() -> i32 {

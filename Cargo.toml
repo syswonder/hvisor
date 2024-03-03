@@ -13,10 +13,14 @@ bit_field = "0.10"
 numeric-enum-macro = "0.2"
 buddy_system_allocator = "0.8"
 tock-registers = "0.8"
-aarch64-cpu = "9.4.0"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "03bd9909" }
 psci = { version = "0.1.0", default-features = false, features = ["smc"]}
+
+[target.'cfg(target_arch = "aarch64")'.dependencies]
+aarch64-cpu = "9.4.0"
+
+[target.'cfg(target_arch = "riscv64")'.dependencies]
 
 [profile.dev]
 panic = "abort"
