@@ -202,5 +202,5 @@ pub fn wait_for_poweron() -> ! {
     cpu_data.wait_for_poweron = false;
     drop(_lock);
 
-    cpu_data.start_vm();
+    cpu_data.start_zone();
 }

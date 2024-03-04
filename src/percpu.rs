@@ -100,7 +100,7 @@ impl PerCpu {
         self.arch_shutdown_self()?;
         Ok(())
     }
-    pub fn start_vm(&mut self) -> ! {
+    pub fn start_zone(&mut self) -> ! {
         let regs = self.guest_reg() as *mut GeneralRegisters;
         unsafe {
             (*regs).usr[0] = if this_cpu_data().id == 0 {
@@ -109,8 +109,8 @@ impl PerCpu {
                 0x60100000
             }; // device_tree addr
             info!("cpu_on_entry={:#x?}", self.cpu_on_entry);
-            set_el1_pc(self.cpu_on_entry);
-            vmreturn(self.guest_reg());
+            set_vm_pc(self.cpu_on_entry);
+            vmreturn(self.guest_reg())
         }
     }
     /*should be in vcpu*/
@@ -251,61 +251,6 @@ pub fn check_events() {
 //     reset_current_cpu();
 // }
 
-#[no_mangle]
-fn reset_current_cpu(entry: u64) {
-    /* put the cpu in a reset state */
-    /* AARCH64_TODO: handle big endian support */
-    write_sysreg!(CNTKCTL_EL1, 0);
-    write_sysreg!(PMCR_EL0, 0);
-
-    // /* AARCH64_TODO: wipe floating point registers */
-    // /* wipe special registers */
-    write_sysreg!(SP_EL0, 0);
-    write_sysreg!(SP_EL1, 0);
-    write_sysreg!(SPSR_EL1, 0);
-
-    // /* wipe the system registers */
-    write_sysreg!(AFSR0_EL1, 0);
-    write_sysreg!(AFSR1_EL1, 0);
-    write_sysreg!(AMAIR_EL1, 0);
-    write_sysreg!(CONTEXTIDR_EL1, 0);
-    write_sysreg!(CPACR_EL1, 0);
-    write_sysreg!(CSSELR_EL1, 0);
-    write_sysreg!(ESR_EL1, 0);
-    write_sysreg!(FAR_EL1, 0);
-    write_sysreg!(MAIR_EL1, 0);
-    write_sysreg!(PAR_EL1, 0);
-    write_sysreg!(TCR_EL1, 0);
-    write_sysreg!(TPIDRRO_EL0, 0);
-    write_sysreg!(TPIDR_EL0, 0);
-    write_sysreg!(TPIDR_EL1, 0);
-    write_sysreg!(TTBR0_EL1, 0);
-    write_sysreg!(TTBR1_EL1, 0);
-    write_sysreg!(VBAR_EL1, 0);
-
-    /* wipe timer registers */
-    write_sysreg!(CNTP_CTL_EL0, 0);
-    write_sysreg!(CNTP_CVAL_EL0, 0);
-    write_sysreg!(CNTP_TVAL_EL0, 0);
-    write_sysreg!(CNTV_CTL_EL0, 0);
-    write_sysreg!(CNTV_CVAL_EL0, 0);
-    write_sysreg!(CNTV_TVAL_EL0, 0);
-    // //disable stage 1
-    // write_sysreg!(SCTLR_EL1, 0);
-
-    this_cell().read().gpm_activate();
-
-    SCTLR_EL1.set((1 << 11) | (1 << 20) | (3 << 22) | (3 << 28));
-    //SCTLR_EL1.modify(SCTLR_EL1::M::Disable);
-    //HCR_EL2.modify(HCR_EL2::VM::Disable);
-    unsafe {
-        //isb();
-        set_el1_pc(entry);
-    }
-    //disable stage2
-    //HCR_EL2.modify(HCR_EL2::VM::Disable);
-}
-
 pub fn park_current_cpu() {
     let cpu_data = this_cpu_data();
     let _lock = cpu_data.ctrl_lock.lock();
@@ -379,24 +324,6 @@ impl CpuSet {
     }
     pub fn iter_except<'a>(&'a self, id: u64) -> impl Iterator<Item = u64> + 'a {
         (0..=self.max_cpu_id).filter(move |&i| self.contains_cpu(i) && i != id)
-    }
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn set_el1_pc(_entry: u64) {
-    //info!("Hello World! from el1");
-    //set el1 pc
-    // x0:entry
-    unsafe {
-        core::arch::asm!(
-            "
-            mov	x1, #965
-            msr	SPSR_EL2, x1
-            tlbi alle1is
-            tlbi alle2is
-            msr	ELR_EL2, x0
-        "
-        );
     }
 }
 

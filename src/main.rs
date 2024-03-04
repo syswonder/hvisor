@@ -27,8 +27,6 @@ extern crate lazy_static;
 #[macro_use]
 mod logging;
 mod control;
-//#[cfg(target_arch = "aarch64")]
-#[path = "arch/aarch64/mod.rs"]
 mod arch;
 mod cell;
 mod config;
@@ -51,7 +49,7 @@ use crate::memory::addr;
 use crate::percpu::this_cell;
 use crate::percpu::this_cpu_data;
 use crate::{cell::root_cell, consts::MAX_CPU_NUM};
-use arch::entry::arch_entry;
+use arch::arch_entry;
 use config::HvSystemConfig;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use device::gicv3::gicv3_cpu_init;
@@ -222,7 +220,7 @@ fn rust_main(cpu_data: &'static mut PerCpu) -> HvResult {
 
     if cpu_data.id == 2 {
         prepare_cell_start(this_cell())?;
-        cpu_data.start_vm();
+        cpu_data.start_zone();
     } else {
         wait_for_poweron();
     }
