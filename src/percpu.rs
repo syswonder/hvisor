@@ -2,8 +2,9 @@ use aarch64_cpu::registers::MPIDR_EL1;
 use alloc::sync::Arc;
 use spin::{Mutex, RwLock};
 
+use crate::{ACTIVATED_CPUS, ENTERED_CPUS};
 //use crate::arch::vcpu::Vcpu;
-use crate::arch::entry::{virt2phys_el2, vmreturn};
+use crate::arch::entry::vmreturn;
 use crate::arch::sysreg::write_sysreg;
 use crate::arch::Stage2PageTable;
 use crate::cell::Cell;
@@ -11,7 +12,6 @@ use crate::config::HvSystemConfig;
 use crate::consts::{INVALID_ADDRESS, PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::device::gicv3::{gicv3_cpu_shutdown, GICR_SIZE};
 use crate::error::HvResult;
-use crate::header::HEADER_STUFF;
 use crate::memory::addr::VirtAddr;
 use crate::memory::addr::{GuestPhysAddr, HostPhysAddr};
 use crate::memory::{
@@ -19,10 +19,8 @@ use crate::memory::{
 };
 use aarch64_cpu::registers::*;
 use core::fmt::Debug;
-use core::sync::atomic::{AtomicU32, Ordering};
-use tock_registers::interfaces::*;
-static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
-static ACTIVATED_CPUS: AtomicU32 = AtomicU32::new(0);
+use core::sync::atomic::Ordering;
+
 // global_asm!(include_str!("./arch/aarch64/page_table.S"),);
 #[repr(C)]
 #[derive(Debug, Default)]
@@ -84,19 +82,17 @@ impl PerCpu {
     pub fn activated_cpus() -> u32 {
         ACTIVATED_CPUS.load(Ordering::Acquire)
     }
-    pub fn activate_vmm(&mut self) -> HvResult {
+    pub fn activate_vmm(&mut self) {
         ACTIVATED_CPUS.fetch_add(1, Ordering::SeqCst);
         info!("activating cpu {}", self.id);
         set_vtcr_flags();
         HCR_EL2.write(
             HCR_EL2::RW::EL1IsAarch64
-                + HCR_EL2::TSC::EnableTrapSmcToEl2
+                + HCR_EL2::TSC::EnableTrapEl1SmcToEl2
                 + HCR_EL2::VM::SET
                 + HCR_EL2::IMO::SET
                 + HCR_EL2::FMO::SET,
         );
-        self.return_linux()?;
-        unreachable!()
     }
     pub fn deactivate_vmm(&mut self, _ret_code: usize) -> HvResult {
         ACTIVATED_CPUS.fetch_sub(1, Ordering::SeqCst);
@@ -104,11 +100,18 @@ impl PerCpu {
         self.arch_shutdown_self()?;
         Ok(())
     }
-    pub fn return_linux(&mut self) -> HvResult {
+    pub fn start_vm(&mut self) -> ! {
+        let regs = self.guest_reg() as *mut GeneralRegisters;
         unsafe {
+            (*regs).usr[0] = if this_cpu_data().id == 0 {
+                0x40100000
+            } else {
+                0x60100000
+            }; // device_tree addr
+            info!("cpu_on_entry={:#x?}", self.cpu_on_entry);
+            set_el1_pc(self.cpu_on_entry);
             vmreturn(self.guest_reg());
         }
-        Ok(())
     }
     /*should be in vcpu*/
     pub fn arch_shutdown_self(&mut self) -> HvResult {
@@ -127,18 +130,12 @@ impl PerCpu {
         /* we will restore the root cell state with the MMU turned off,
          * so we need to make sure it has been committed to memory */
 
-        /* hand over control of                        EL2 back to Linux */
-        let linux_hyp_vec: u64 =
-            unsafe { core::ptr::read_volatile(&HEADER_STUFF.arm_linux_hyp_vectors as *const _) };
-        VBAR_EL2.set(linux_hyp_vec);
-        /* Return to EL1 */
-        /* Disable mmu */
-
-        unsafe {
-            let page_offset: u64 = 0xffff_4060_0000;
-            virt2phys_el2(self.guest_reg(), page_offset);
-        }
-        Ok(())
+        todo!();
+        // unsafe {
+        //     let page_offset: u64 = todo!();
+        //     virt2phys_el2(self.guest_reg(), page_offset);
+        // }
+        // Ok(())
     }
 }
 
@@ -365,6 +362,7 @@ impl CpuSet {
         assert!(id <= self.max_cpu_id);
         self.bitmap |= 1 << id;
     }
+    #[allow(unused)]
     pub fn clear_bit(&mut self, id: u64) {
         assert!(id <= self.max_cpu_id);
         self.bitmap &= !(1 << id);

@@ -54,6 +54,7 @@ impl<VA: From<usize> + Into<usize> + Copy> MemoryRegion<VA> {
 }
 
 impl MemoryRegion<GuestPhysAddr> {
+    #[allow(unused)]
     pub fn from_hv_memregion(mem: &HvMemoryRegion, comm_page_addr: Option<HostPhysAddr>) -> Self {
         let host_pa = if mem.flags.contains(MemFlags::COMMUNICATION) {
             comm_page_addr.unwrap()

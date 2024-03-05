@@ -8,7 +8,6 @@ use crate::num::sign_extend;
 use crate::percpu::{get_cpu_data, mpidr_to_cpuid, this_cell, this_cpu_data, GeneralRegisters};
 use crate::percpu::{park_current_cpu, PerCpu};
 use aarch64_cpu::registers::*;
-use tock_registers::interfaces::*;
 #[allow(dead_code)]
 #[allow(non_snake_case)]
 #[allow(non_upper_case_globals)]
@@ -27,8 +26,7 @@ pub mod SmcType {
 
 const PSCI_VERSION_1_1: u64 = 0x10001;
 const PSCI_TOS_NOT_PRESENT_MP: u64 = 2;
-#[allow(dead_code)]
-const ARM_SMCCC_VERSION_1_1: u64 = 0x10001;
+const ARM_SMCCC_VERSION_1_0: u64 = 0x10000;
 
 #[allow(non_snake_case)]
 pub mod PsciFnId {
@@ -76,24 +74,24 @@ impl<'a> TrapFrame<'a> {
         }
     }
 }
+
 /*From hyp_vec->handle_vmexit x0:guest regs x1:exit_reason sp =stack_top-32*8*/
-pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> Result<(), ()> {
+pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> ! {
     let mpidr = MPIDR_EL1.get();
     let _cpu_id = mpidr_to_cpuid(mpidr);
-    trace!("cpu exit");
+    trace!("cpu exit, exit_reson:{:#x?}", regs.exit_reason);
     match regs.exit_reason as u64 {
         ExceptionType::EXIT_REASON_EL1_IRQ => irqchip_handle_irq1(),
-        ExceptionType::EXIT_REASON_EL1_ABORT => arch_handle_trap(regs),
-        ExceptionType::EXIT_REASON_EL2_ABORT => arch_dump_exit(regs.exit_reason),
+        ExceptionType::EXIT_REASON_EL1_ABORT => arch_handle_trap_el1(regs),
+        ExceptionType::EXIT_REASON_EL2_ABORT => arch_handle_trap_el2(regs),
         ExceptionType::EXIT_REASON_EL2_IRQ => irqchip_handle_irq2(),
         _ => arch_dump_exit(regs.exit_reason),
     }
     unsafe {
         vmreturn(regs as *const _ as usize);
     }
-
-    Ok(())
 }
+
 fn irqchip_handle_irq1() {
     //debug!("irq from el1");
     gicv3_handle_irq_el1();
@@ -102,9 +100,17 @@ fn irqchip_handle_irq2() {
     error!("irq not handle from el2");
     loop {}
 }
-fn arch_handle_trap(regs: &mut GeneralRegisters) {
+
+fn arch_handle_trap_el1(regs: &mut GeneralRegisters) {
     let mut frame = TrapFrame::new(regs);
     let mut _ret = TrapReturn::TrapUnhandled;
+
+    trace!(
+        "arch_handle_trap ec={:#x?} elr={:#x?}",
+        ESR_EL2.read(ESR_EL2::EC),
+        ESR_EL2.read(ESR_EL2::ISS)
+    );
+
     match ESR_EL2.read_as_enum(ESR_EL2::EC) {
         Some(ESR_EL2::EC::Value::HVC64) => handle_hvc(&mut frame),
         Some(ESR_EL2::EC::Value::SMC64) => handle_smc(&mut frame),
@@ -122,6 +128,33 @@ fn arch_handle_trap(regs: &mut GeneralRegisters) {
         }
     }
 }
+
+fn arch_handle_trap_el2(_regs: &mut GeneralRegisters) {
+    match ESR_EL2.read_as_enum(ESR_EL2::EC) {
+        Some(ESR_EL2::EC::Value::HVC64) => {
+            error!("EL2 Exception: HVC64 call, ELR_EL2: {:#x?}", ELR_EL2.get())
+        }
+
+        Some(ESR_EL2::EC::Value::SMC64) => {
+            error!("EL2 Exception: SMC64 call, ELR_EL2: {:#x?}", ELR_EL2.get())
+        }
+
+        Some(ESR_EL2::EC::Value::DataAbortCurrentEL) => {
+            error!("EL2 Exception: Data Abort, ELR_EL2: {:#x?}, FAR_EL2: {:#x?}", ELR_EL2.get(),  FAR_EL2.get())
+        }
+
+        Some(ESR_EL2::EC::Value::InstrAbortCurrentEL) => {
+            error!("EL2 Exception: Instruction Abort, ELR_EL2: {:#x?}, FAR_EL2: {:#x?}", ELR_EL2.get(), FAR_EL2.get())
+        }
+
+        // ... 其他异常类型
+        _ => {
+            error!("Unhandled EL2 Exception: EC={:#x?}", 1);
+        }
+    }
+    loop {}
+}
+
 fn handle_iabt(_frame: &mut TrapFrame) {
     let iss = ESR_EL2.read(ESR_EL2::ISS);
     let op = iss >> 6 & 0x1;
@@ -157,6 +190,9 @@ fn handle_dabt(frame: &mut TrapFrame) {
             frame.regs.usr[srt as usize]
         },
     };
+
+    trace!("handle_dabt: {:#x?}", mmio_access);
+
     match mmio_handle_access(&mut mmio_access) {
         Ok(_) => {
             if !is_write && srt != 31 {
@@ -184,6 +220,9 @@ fn handle_sysreg(frame: &mut TrapFrame) {
     if this_cpu_data().wait_for_poweron {
         warn!("skip send sgi {:#x?}", sgi_id);
     } else {
+        // if sgi_id != 0 {
+        //     warn!("send sgi {:#x?}", sgi_id);
+        // }
         write_sysreg!(icc_sgi1r_el1, val);
     }
 
@@ -267,6 +306,7 @@ fn psci_emulate_cpu_on(frame: &mut TrapFrame) -> u64 {
     };
 
     drop(_lock);
+    info!("sending to {}", cpu);
     send_event(cpu, SGI_EVENT_ID);
     0
 }
@@ -302,7 +342,7 @@ fn handle_psci_smc(frame: &mut TrapFrame, code: u64, arg0: u64, _arg1: u64, _arg
 
 fn handle_arch_smc(_frame: &mut TrapFrame, code: u64, _arg0: u64, _arg1: u64, _arg2: u64) -> u64 {
     match code {
-        SMCccFnId::SMCCC_VERSION => PSCI_VERSION_1_1,
+        SMCccFnId::SMCCC_VERSION => ARM_SMCCC_VERSION_1_0,
         SMCccFnId::SMCCC_ARCH_FEATURES => !0,
         _ => {
             error!("unsupported ARM smc service");
@@ -324,6 +364,7 @@ fn arch_skip_instruction(_frame: &TrapFrame) {
     pc = pc + ins;
     ELR_EL2.set(pc);
 }
+
 fn arch_dump_exit(reason: u64) {
     //TODO hypervisor coredump
     error!("Unsupported Exit:{:#x?}, elr={:#x?}", reason, ELR_EL2.get());

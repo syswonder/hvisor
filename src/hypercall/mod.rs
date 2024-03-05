@@ -1,20 +1,19 @@
 #![allow(dead_code)]
-use crate::cell::{add_cell, find_cell_by_id, remove_cell, root_cell, Cell, CommRegion};
-use crate::config::{CellConfig, HvCellDesc, HvMemoryRegion, HvSystemConfig};
+use crate::cell::{find_cell_by_id, remove_cell, root_cell};
+use crate::config::{HvCellDesc, HvMemoryRegion};
 use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
-use crate::control::{park_cpu, reset_cpu};
-use crate::device::pci::mmio_pci_handler;
+use crate::control::{cell_management_prologue, do_cell_create, park_cpu, prepare_cell_start};
 use crate::error::HvResult;
-use crate::memory::addr::{align_down, align_up, is_aligned};
+use crate::memory::addr::{align_down, align_up};
 use crate::memory::{self, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion};
-use crate::percpu::{get_cpu_data, this_cpu_data, PerCpu};
+use crate::percpu::{get_cpu_data, PerCpu};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::convert::TryFrom;
 use core::mem::size_of;
 use core::sync::atomic::{AtomicU32, Ordering};
 use numeric_enum_macro::numeric_enum;
-use spin::RwLock;
+
 numeric_enum! {
     #[repr(u64)]
     #[derive(Debug, Eq, PartialEq, Copy, Clone)]
@@ -30,8 +29,8 @@ numeric_enum! {
 pub const SGI_INJECT_ID: u64 = 0;
 pub const SGI_EVENT_ID: u64 = 15;
 pub const SGI_RESUME_ID: u64 = 14;
-const CELL_SHUT_DOWN: u32 = 2;
-const COMM_REGION_ABI_REVISION: u16 = 1;
+pub const COMM_REGION_ABI_REVISION: u16 = 1;
+
 pub type HyperCallResult = HvResult<usize>;
 
 pub struct HyperCall<'a> {
@@ -98,89 +97,13 @@ impl<'a> HyperCall<'a> {
             MemFlags::READ,
         )?;
 
-        let desc = unsafe {
+        let desc: &HvCellDesc = unsafe {
             ((cfg_mapping + cfg_pages_offs) as *const HvCellDesc)
                 .as_ref()
                 .unwrap()
         };
-        let config = CellConfig::new(desc);
-        let config_total_size = config.total_size();
-        memory::hv_page_table().write().map_temporary(
-            align_down(config_address),
-            align_up(cfg_pages_offs + config_total_size),
-            MemFlags::READ,
-        )?;
-        info!("cell.desc = {:#x?}", desc);
 
-        // we create the new cell here
-        let cell = Cell::new(config, false)?;
-
-        if cell.owns_cpu(this_cpu_data().id) {
-            panic!("error: try to assign the CPU we are currently running on");
-        }
-
-        {
-            let root_cell_r = root_cell.read();
-            for id in cell.cpu_set.iter() {
-                if !root_cell_r.owns_cpu(id) {
-                    panic!("error: the root cell's cpu set must be super-set of new cell's set")
-                }
-            }
-        }
-
-        // todo: arch_cell_create
-
-        let cpu_set = cell.cpu_set;
-        info!("cell.cpu_set = {:#x?}", cell.cpu_set);
-        let cell_p = Arc::new(RwLock::new(cell));
-        {
-            let mut root_cell_w = root_cell.write();
-            cpu_set.iter().for_each(|cpu| {
-                park_cpu(cpu);
-                root_cell_w.cpu_set.clear_bit(cpu);
-                get_cpu_data(cpu).cell = Some(cell_p.clone());
-            });
-        }
-
-        // memory mapping
-
-        let mut cell = cell_p.write();
-
-        let mem_regs: Vec<HvMemoryRegion> = cell.config().mem_regions().to_vec();
-        // cell.comm_page.comm_region.cell_state = CELL_SHUT_DOWN;
-
-        let comm_page_pa = cell.comm_page.start_paddr();
-        assert!(is_aligned(comm_page_pa));
-
-        let mut rc_w = root_cell.write();
-
-        mem_regs.iter().for_each(|mem| {
-            if !(mem.flags.contains(MemFlags::COMMUNICATION)
-                || mem.flags.contains(MemFlags::ROOTSHARED))
-            {
-                rc_w.mem_region_unmap_partial(&MemoryRegion::new_with_offset_mapper(
-                    mem.phys_start as _,
-                    mem.phys_start as _,
-                    mem.size as _,
-                    mem.flags,
-                ));
-            }
-
-            cell.mem_region_insert(MemoryRegion::from_hv_memregion(mem, Some(comm_page_pa)))
-        });
-
-        drop(rc_w);
-        // add pci mapping
-        let sys_config = HvSystemConfig::get();
-        let mmcfg_start = sys_config.platform_info.pci_mmconfig_base;
-        let mmcfg_size = (sys_config.platform_info.pci_mmconfig_end_bus + 1) as u64 * 256 * 4096;
-        cell.mmio_region_register(mmcfg_start as _, mmcfg_size, mmio_pci_handler, mmcfg_start);
-
-        cell.gicv3_config_commit();
-        drop(cell);
-
-        add_cell(cell_p);
-        root_cell.read().resume();
+        do_cell_create(desc)?;
 
         info!("cell create done!");
         HyperCallResult::Ok(0)
@@ -219,68 +142,9 @@ impl<'a> HyperCall<'a> {
         HyperCallResult::Ok(0)
     }
 
-    fn hypervisor_cell_start(&mut self, cell_id: u64) -> HyperCallResult {
+    pub fn hypervisor_cell_start(&mut self, cell_id: u64) -> HyperCallResult {
         info!("handle hvc cell start");
-        let cell = cell_management_prologue(self.cpu_data, cell_id)?;
-        let mut cell_w = cell.write();
-        // set cell.comm_page
-        {
-            cell_w.comm_page.fill(0);
-
-            let flags = cell_w.config().flags();
-            let console = cell_w.config().console();
-            let comm_region = unsafe {
-                (cell_w.comm_page.as_mut_ptr() as *mut CommRegion)
-                    .as_mut()
-                    .unwrap()
-            };
-
-            comm_region.revision = COMM_REGION_ABI_REVISION;
-            comm_region.signature.copy_from_slice("JHCOMM".as_bytes());
-
-            // set virtual debug console
-            if flags & 0x40000000 > 0 {
-                comm_region.flags |= 0x0001;
-            }
-            if flags & 0x80000000 > 0 {
-                comm_region.flags |= 0x0002;
-            }
-            comm_region.console = console;
-            let system_config = HvSystemConfig::get();
-            comm_region.gic_version = system_config.platform_info.arch.gic_version;
-            comm_region.gicd_base = system_config.platform_info.arch.gicd_base;
-            comm_region.gicc_base = system_config.platform_info.arch.gicc_base;
-            comm_region.gicr_base = system_config.platform_info.arch.gicr_base;
-        }
-        if cell_w.loadable {
-            let mem_regs: Vec<HvMemoryRegion> = cell_w.config().mem_regions().to_vec();
-            let root_cell = root_cell();
-            let mut root_cell_w = root_cell.write();
-            mem_regs.iter().for_each(|mem| {
-                if mem.flags.contains(MemFlags::LOADABLE) {
-                    root_cell_w.mem_region_unmap_partial(&MemoryRegion::new_with_offset_mapper(
-                        mem.phys_start as GuestPhysAddr,
-                        mem.phys_start as HostPhysAddr,
-                        mem.size as _,
-                        mem.flags,
-                    ));
-                }
-            });
-            cell_w.loadable = false;
-        }
-        let mut is_first = true;
-        cell_w.cpu_set.iter().for_each(|cpu_id| {
-            get_cpu_data(cpu_id).cpu_on_entry = if is_first {
-                cell_w.config().cpu_reset_address()
-            } else {
-                INVALID_ADDRESS
-            };
-            is_first = false;
-            reset_cpu(cpu_id);
-        });
-        cell_w.irqchip_reset();
-        root_cell().read().resume();
-        info!("start cell done!");
+        prepare_cell_start(find_cell_by_id(cell_id as _).unwrap())?;
         HyperCallResult::Ok(0)
     }
 
@@ -316,7 +180,7 @@ impl<'a> HyperCall<'a> {
         });
         drop(root_cell_w);
         cell_w.gicv3_exit();
-        cell_w.gicv3_config_commit();
+        cell_w.adjust_irq_mappings();
         drop(cell_w);
         // Drop the cell will destroy cell's MemorySet so that all page tables will free
         drop(cell);
@@ -326,23 +190,4 @@ impl<'a> HyperCall<'a> {
         info!("cell destroy succeed");
         HyperCallResult::Ok(0)
     }
-}
-
-/// check and suspend root_cell and new_cell.
-fn cell_management_prologue(cpu_data: &mut PerCpu, cell_id: u64) -> HvResult<Arc<RwLock<Cell>>> {
-    let this_cpu_cell = cpu_data.cell.clone().unwrap();
-    let root_cell = root_cell();
-    if !Arc::ptr_eq(&this_cpu_cell, &root_cell) {
-        return hv_result_err!(EPERM, "Manage over non-root cells: unsupported!");
-    }
-    let cell = match find_cell_by_id(cell_id as _) {
-        Some(cell) => cell,
-        None => return hv_result_err!(ENOENT),
-    };
-    if Arc::ptr_eq(&cell, &root_cell) {
-        return hv_result_err!(EINVAL, "Manage root-cell is not allowed!");
-    }
-    root_cell.read().suspend();
-    cell.read().suspend();
-    HvResult::Ok(cell)
 }

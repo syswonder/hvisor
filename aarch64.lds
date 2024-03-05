@@ -6,10 +6,8 @@ SECTIONS
 {
 	. = BASE_ADDRESS;
 
-	.header		: {
-		__header_start = .;
-		KEEP(*(.header))
-	}
+	. = ALIGN(4K);
+	.boot       : { *(.boot) }
 
 	. = ALIGN(4K);
 	.text		: { *(.text .text.*) }
@@ -30,14 +28,27 @@ SECTIONS
 							. = . + (1 << 12); } .trampoline : { __trampoline_start = .; *(.trampoline) }
 
 	. = ALIGN(4K);
-	.bss		: { *(.bss .bss.*) *(COMMON) 
-	. = ALIGN(4K);
-	__boot_stack = .; 
-	. = . + 0x4000; 
-    __boot_stack_top = .; 
+	.bss		: {
+		*(.bss .bss.*) *(COMMON) 
+		. = ALIGN(4K);
+		__boot_stack = .; 
+		. = . + 0x4000; 
+    	__boot_stack_top = .; 
 	}
 
-	
+	. = ALIGN(4K);
+	.rootcfg		: {
+		__rootcfg = .;
+		*(.rootcfg);
+		KEEP(*(.rootcfg))
+	}
+
+	. = ALIGN(4K);
+	.nrcfg1		: {
+		__nrcfg1 = .;
+		*(.nrcfg1);
+		KEEP(*(.nrcfg1))
+	}
 
 	. = ALIGN(4K);
 	__core_end = .;

@@ -13,7 +13,7 @@ pub type GuestPhysAddr = usize;
 pub type HostVirtAddr = VirtAddr;
 pub type HostPhysAddr = PhysAddr;
 
-/// vaddr = paddr + this_offset, initialized at memory::init_heap().
+/// vaddr = paddr + this_offset
 pub static mut PHYS_VIRT_OFFSET: usize = 0;
 
 pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {

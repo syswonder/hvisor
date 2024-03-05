@@ -77,45 +77,22 @@
 //!           - 16..31 PPIs
 #![allow(dead_code)]
 pub mod gicd;
-mod gicr;
+pub mod gicr;
+use core::arch::asm;
+
 use crate::arch::sysreg::{read_sysreg, smc_arg1, write_sysreg};
-use crate::config::HvSystemConfig;
 use crate::hypercall::{SGI_EVENT_ID, SGI_RESUME_ID};
 use crate::percpu::check_events;
 
-pub use gicd::{gicv3_gicd_mmio_handler, GICD_IROUTER};
-pub use gicr::{gicv3_gicr_mmio_handler, LAST_GICR};
-
-/// Representation of the GIC.
-pub struct GICv3 {
-    /// The Distributor.
-    gicd: gicd::GICD,
-
-    /// The CPU Interface.
-    gicr: gicr::GICR,
-}
-impl GICv3 {
-    /// - The user must ensure to provide a correct MMIO start address.
-    pub const unsafe fn new(gicd_mmio_start_addr: usize, gicr_mmio_start_addr: usize) -> Self {
-        Self {
-            gicd: gicd::GICD::new(gicd_mmio_start_addr),
-            gicr: gicr::GICR::new(gicr_mmio_start_addr),
-        }
-    }
-    pub fn read_aff(&self) -> u64 {
-        self.gicr.read_aff()
-    }
+pub fn reg_range(base: u64, n: u64, size: u64) -> core::ops::Range<u64> {
+    base..(base + (n - 1) * size)
 }
 
 //TODO: add Distributor init
 pub fn gicv3_cpu_init() {
     //TODO: add Redistributor init
     let sdei_ver = unsafe { smc_arg1!(0xc4000020) }; //sdei_check();
-    info!("sdei vecsion: {}", sdei_ver);
-    info!("gicv3 init!");
-
-    let _gicd_base: u64 = HvSystemConfig::get().platform_info.arch.gicd_base;
-    let _gicr_base: u64 = HvSystemConfig::get().platform_info.arch.gicr_base;
+    info!("gicv3 init: sdei version: {}", sdei_ver);
 
     //Identifier bits. Read-only and writes are ignored.
     //Priority bits. Read-only and writes are ignored.
@@ -134,6 +111,7 @@ pub fn gicv3_cpu_init() {
     write_sysreg!(ich_vmcr_el2, vmcr);
     write_sysreg!(ich_hcr_el2, 0x1); //enable virt cpu interface
 }
+
 fn gicv3_clear_pending_irqs() {
     let vtr = read_sysreg!(ich_vtr_el2) as usize;
     let lr_num: usize = (vtr & 0xf) + 1;
@@ -153,6 +131,7 @@ fn gicv3_clear_pending_irqs() {
         write_sysreg!(ICH_AP1R3_EL2, 0);
     }
 }
+
 pub fn gicv3_cpu_shutdown() {
     // unsafe {write_sysreg!(icc_sgi1r_el1, val);}
     // let intid = unsafe { read_sysreg!(icc_iar1_el1) } as u32;
@@ -188,7 +167,6 @@ pub fn gicv3_handle_irq_el1() {
         // };
         //SGI
         if irq_id < 16 {
-            trace!("sgi get {}", irq_id);
             if irq_id < 8 {
                 trace!("sgi get {},inject", irq_id);
                 deactivate_irq(irq_id);
@@ -205,6 +183,7 @@ pub fn gicv3_handle_irq_el1() {
                 warn!("skip sgi {}", irq_id);
             }
         } else {
+            trace!("spi/ppi get {}", irq_id);
             //inject phy irq
             // if irq_id > 31 {
             //     info!("*** get spi_irq id = {}", irq_id);
@@ -213,7 +192,9 @@ pub fn gicv3_handle_irq_el1() {
             inject_irq(irq_id);
         }
     }
+    trace!("handle done")
 }
+
 fn pending_irq() -> Option<usize> {
     let iar = read_sysreg!(icc_iar1_el1) as usize;
     if iar >= 0x3fe {
@@ -223,6 +204,7 @@ fn pending_irq() -> Option<usize> {
         Some(iar as _)
     }
 }
+
 fn deactivate_irq(irq_id: usize) {
     write_sysreg!(icc_eoir1_el1, irq_id as u64);
     if irq_id < 16 {
@@ -230,6 +212,7 @@ fn deactivate_irq(irq_id: usize) {
     }
     //write_sysreg!(icc_dir_el1, irq_id as u64);
 }
+
 fn read_lr(id: usize) -> u64 {
     match id {
         //TODO get lr size from gic reg
@@ -255,6 +238,7 @@ fn read_lr(id: usize) -> u64 {
         }
     }
 }
+
 fn write_lr(id: usize, val: u64) {
     match id {
         0 => write_sysreg!(ich_lr0_el2, val),
@@ -283,10 +267,10 @@ fn write_lr(id: usize, val: u64) {
 fn inject_irq(irq_id: usize) {
     // mask
     const LR_VIRTIRQ_MASK: usize = 0x3ff;
-    const LR_PHYSIRQ_MASK: usize = 0x3ff << 10;
+    // const LR_PHYSIRQ_MASK: usize = 0x3ff << 10;
 
-    const LR_PENDING_BIT: u64 = 1 << 28;
-    const LR_HW_BIT: u64 = 1 << 31;
+    // const LR_PENDING_BIT: u64 = 1 << 28;
+    // const LR_HW_BIT: u64 = 1 << 31;
     let elsr: u64 = read_sysreg!(ich_elrsr_el2);
     let vtr = read_sysreg!(ich_vtr_el2) as usize;
     let lr_num: usize = (vtr & 0xf) + 1;
@@ -305,7 +289,7 @@ fn inject_irq(irq_id: usize) {
             return;
         }
     }
-    debug!("To Inject IRQ {}, find lr {}", irq_id, lr_idx);
+    // debug!("To Inject IRQ {}, find lr {}", irq_id, lr_idx);
 
     if lr_idx == -1 {
         error!("full lr");
@@ -333,14 +317,14 @@ fn inject_irq(irq_id: usize) {
 pub const GICD_SIZE: u64 = 0x10000;
 pub const GICR_SIZE: u64 = 0x20000;
 
-pub fn is_sgi(irqn: u32) -> bool {
-    irqn < 16
-}
-
-pub fn is_ppi(irqn: u32) -> bool {
-    irqn > 15 && irqn < 32
-}
-
 pub fn is_spi(irqn: u32) -> bool {
     irqn > 31 && irqn < 1020
+}
+
+pub fn enable_irqs() {
+    unsafe { asm!("msr daifclr, #0xf") };
+}
+
+pub fn disable_irqs() {
+    unsafe { asm!("msr daifset, #0xf") };
 }

@@ -34,22 +34,33 @@ mod cell;
 mod config;
 mod consts;
 mod device;
-mod header;
 mod hypercall;
 mod memory;
 mod num;
 mod panic;
 mod percpu;
 
-use crate::cell::root_cell;
+use crate::consts::nr1_config_ptr;
+use crate::consts::HV_BASE;
+use crate::control::do_cell_create;
+use crate::control::prepare_cell_start;
+use crate::control::wait_for_poweron;
+use crate::device::gicv3::enable_irqs;
+use crate::device::gicv3::gicd::enable_gic_are_ns;
+use crate::memory::addr;
+use crate::percpu::this_cell;
 use crate::percpu::this_cpu_data;
+use crate::{cell::root_cell, consts::MAX_CPU_NUM};
+use arch::entry::arch_entry;
 use config::HvSystemConfig;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use device::gicv3::gicv3_cpu_init;
 use error::HvResult;
-use header::HvHeader;
+use memory::addr::virt_to_phys;
 use percpu::PerCpu;
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
+static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
+static ACTIVATED_CPUS: AtomicU32 = AtomicU32::new(0);
 static INIT_EARLY_OK: AtomicU32 = AtomicU32::new(0);
 static INIT_LATE_OK: AtomicU32 = AtomicU32::new(0);
 static ERROR_NUM: AtomicI32 = AtomicI32::new(0);
@@ -71,6 +82,7 @@ fn wait_for(condition: impl Fn() -> bool) -> HvResult {
 fn wait_for_counter(counter: &AtomicU32, max_value: u32) -> HvResult {
     wait_for(|| counter.load(Ordering::Acquire) < max_value)
 }
+
 fn primary_init_early() -> HvResult {
     logging::init();
     info!("Logging is enabled.");
@@ -99,12 +111,20 @@ fn primary_init_early() -> HvResult {
 
     memory::init_heap();
     system_config.check()?;
-    info!("Hypervisor header: {:#x?}", HvHeader::get());
-    // info!("System config: {:#x?}", system_config);
+
+    info!("System config: {:#x?}", system_config);
 
     memory::init_frame_allocator();
     memory::init_hv_page_table()?;
     cell::init()?;
+
+    // unsafe {
+    //     // We should activate new hv-pt here in advance,
+    //     // in case of triggering data aborts in `cell::init()`
+    //     memory::hv_page_table().read().activate();
+    // }
+
+    do_cell_create(unsafe { nr1_config_ptr().as_ref().unwrap() })?;
 
     INIT_EARLY_OK.store(1, Ordering::Release);
     Ok(())
@@ -112,33 +132,68 @@ fn primary_init_early() -> HvResult {
 
 fn primary_init_late() {
     info!("Primary CPU init late...");
-    // Do nothing...
+    enable_gic_are_ns();
     INIT_LATE_OK.store(1, Ordering::Release);
 }
 
 fn per_cpu_init() {
     let cpu_data = this_cpu_data();
-    cpu_data.cell = Some(root_cell());
+    
+    if cpu_data.cell.is_none() {
+        cpu_data.cell = Some(root_cell());
+    }
+
     gicv3_cpu_init();
+
     unsafe {
         memory::hv_page_table().read().activate();
-        root_cell().read().gpm_activate();
+        this_cell().read().gpm_activate();
     };
+
+    // enable_ipi();
+    enable_irqs();
+
     println!("CPU {} init OK.", cpu_data.id);
 }
 
-fn main(cpu_data: &'static mut PerCpu) -> HvResult {
+fn wakeup_secondary_cpus(this_id: u64) {
+    for cpu_id in 0..MAX_CPU_NUM {
+        if cpu_id == this_id {
+            continue;
+        }
+        psci::cpu_on(cpu_id | 0x80000000, virt_to_phys(arch_entry as _) as _, 0).unwrap_or_else(
+            |err| {
+                if let psci::error::Error::AlreadyOn = err {
+                } else {
+                    panic!("can't wake up cpu {}", cpu_id);
+                }
+            },
+        );
+    }
+}
+
+fn rust_main(cpu_data: &'static mut PerCpu) -> HvResult {
     println!("Hello");
     println!(
-        "cpuid{} vaddr{:#x?} phyid{} &cpu_data{:#x?}",
+        "cpuid {} vaddr {:#x?} phyid {} &cpu_data {:#x?}",
         cpu_data.id,
         cpu_data.self_vaddr,
         this_cpu_data().id,
         cpu_data as *const _
     );
     let is_primary = cpu_data.id == 0;
-    let online_cpus = HvHeader::get().online_cpus;
-    wait_for(|| PerCpu::entered_cpus() < online_cpus)?;
+
+    if is_primary {
+        // Set PHYS_VIRT_OFFSET early.
+        unsafe {
+            addr::PHYS_VIRT_OFFSET =
+                HV_BASE - HvSystemConfig::get().hypervisor_memory.phys_start as usize
+        };
+        wakeup_secondary_cpus(cpu_data.id);
+    }
+    wait_for(|| PerCpu::entered_cpus() < MAX_CPU_NUM as _)?;
+    assert_eq!(PerCpu::entered_cpus(), MAX_CPU_NUM as _);
+
     println!(
         "{} CPU {} entered.",
         if is_primary { "Primary" } else { "Secondary" },
@@ -146,7 +201,7 @@ fn main(cpu_data: &'static mut PerCpu) -> HvResult {
     );
 
     if is_primary {
-        primary_init_early()?;
+        primary_init_early()?; // create root cell here
     } else {
         wait_for_counter(&INIT_EARLY_OK, 1)?
     }
@@ -154,15 +209,22 @@ fn main(cpu_data: &'static mut PerCpu) -> HvResult {
     per_cpu_init();
 
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
-    wait_for_counter(&INITED_CPUS, online_cpus)?;
+    wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _)?;
 
     if is_primary {
         primary_init_late();
     } else {
         wait_for_counter(&INIT_LATE_OK, 1)?
     }
-    cpu_data.activate_vmm()
+
+    cpu_data.activate_vmm();
+    wait_for_counter(&ACTIVATED_CPUS, MAX_CPU_NUM as _)?;
+
+    if cpu_data.id == 2 {
+        prepare_cell_start(this_cell())?;
+        cpu_data.start_vm();
+    } else {
+        wait_for_poweron();
+    }
 }
-extern "C" fn entry(cpu_data: &'static mut PerCpu) -> () {
-    if let Err(_e) = main(cpu_data) {}
-}
+

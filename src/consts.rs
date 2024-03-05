@@ -1,6 +1,5 @@
-use crate::config::HvSystemConfig;
-use crate::header::HvHeader;
-use crate::memory::addr::{align_up, VirtAddr};
+use crate::config::{HvCellDesc, HvSystemConfig};
+use crate::memory::addr::VirtAddr;
 pub use crate::memory::PAGE_SIZE;
 
 /// Size of the hypervisor heap.
@@ -14,9 +13,6 @@ pub const PER_CPU_BOOT_SIZE: usize = 1024; // 1KB
 /// Start virtual address of the hypervisor memory.
 pub const HV_BASE: usize = 0xffffc0200000;
 
-/// Pointer of the `HvHeader` structure.
-pub const HV_HEADER_PTR: *const HvHeader = __header_start as _;
-
 /// Pointer of the per-CPU data array.
 pub const PER_CPU_ARRAY_PTR: *mut VirtAddr = __core_end as _;
 
@@ -25,14 +21,26 @@ pub const TRAMPOLINE_START: *mut VirtAddr = __trampoline_start as _;
 
 pub const INVALID_ADDRESS: u64 = u64::MAX;
 
+pub const MAX_CPU_NUM: u64 = 4;
+
+extern "C" {
+    fn __rootcfg();
+    fn __nrcfg1();
+}
+
 /// Pointer of the `HvSystemConfig` structure.
 pub fn hv_config_ptr() -> *const HvSystemConfig {
-    (PER_CPU_ARRAY_PTR as usize + HvHeader::get().max_cpus as usize * PER_CPU_SIZE) as _
+    __rootcfg as _
+    // (PER_CPU_ARRAY_PTR as usize + HvHeader::get().max_cpus as usize * PER_CPU_SIZE) as _
+}
+
+pub fn nr1_config_ptr() -> *const HvCellDesc {
+    __nrcfg1 as _
 }
 
 /// Pointer of the free memory pool.
 pub fn free_memory_start() -> VirtAddr {
-    align_up(hv_config_ptr() as usize + HvSystemConfig::get().size())
+    (PER_CPU_ARRAY_PTR as usize + MAX_CPU_NUM as usize * PER_CPU_SIZE) as _
 }
 
 /// End virtual address of the hypervisor memory.
@@ -41,7 +49,6 @@ pub fn hv_end() -> VirtAddr {
 }
 
 extern "C" {
-    fn __header_start();
     fn __core_end();
     fn __trampoline_start();
 }

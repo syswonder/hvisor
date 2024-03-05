@@ -5,82 +5,14 @@
 //! GICC Driver - GIC CPU interface.
 #![allow(dead_code)]
 use crate::{
-    device::common::MMIODerefWrapper,
-    error::HvResult,
-    memory::{mmio_perform_access, MMIOAccess},
-    percpu::{get_cpu_data, this_cell},
+    consts::MAX_CPU_NUM, error::HvResult, hypercall::SGI_EVENT_ID, memory::{mmio_perform_access, MMIOAccess}, percpu::{get_cpu_data, this_cell, this_cpu_data}
 };
 use alloc::sync::Arc;
-use spin::Once;
-use tock_registers::{
-    interfaces::Readable,
-    register_structs,
-    registers::{ReadOnly, ReadWrite},
-};
 
 use super::gicd::{
     GICD_ICACTIVER, GICD_ICENABLER, GICD_ICFGR, GICD_ICPENDR, GICD_IPRIORITYR, GICD_ISACTIVER,
-    GICD_ISENABLER, GICD_ISPENDR,
+    GICD_ISENABLER, GICD_ISPENDR, GICD_IGROUPR,
 };
-
-register_structs! {
-    #[allow(non_snake_case)]
-    GicRedistributorLPIRegs {
-        /// Redistributor Control Register.
-        (0x0000 => CTLR: ReadWrite<u32>),
-        /// Implementer Identification Register.
-        (0x0004 => IIDR: ReadOnly<u32>),
-        /// Redistributor Type Register.
-        (0x0008 => TYPER: ReadOnly<u64>),
-        /// Error Reporting Status Register, optional
-        (0x0010 => STATUSR: ReadOnly<u32>),
-        /// Redistributor Wake Register
-        (0x0014 => WAKER: ReadWrite<u32>),
-        (0x0018 => _reserved_0),
-        /// Redistributor Synchronize Register
-        (0x00c0=> SYNCR: ReadOnly<u32>),
-        (0x00c4 => _reserved_1),
-        /// Redistributor Peripheral ID2 Register
-        (0xffe8=> PIDR2: ReadOnly<u32>),
-
-        (0xffec => @END),
-    }
-}
-
-register_structs! {
-    #[allow(non_snake_case)]
-    GicRedistributorSGIRegs {
-        (0x0000 => _reserved_0),
-        /// Interrupt Group Register 0.
-        (0x0080 => IGROUPR0: ReadWrite<u32>),
-        (0x0084 => _reserved_1),
-        /// Interrupt Set-Enable Registers.
-        (0x0100 => ISENABLER0: ReadWrite<u32>),
-        (0x0104 => _reserved_2),
-        /// Interrupt Clear-Enable Registers.
-        (0x0180 => ICENABLER0: ReadWrite<u32>),
-        (0x0184 => _reserved_3),
-        /// , Interrupt Set-Pending Register.
-        (0x0200 => ISPENDR0: ReadWrite<u32>),
-        (0x0204 => _reserved_4),
-        /// Interrupt Clear-Pending Registers.
-        (0x0280 => ICPENDR0: ReadWrite<u32>),
-        (0x0284 => _reserved_5),
-        /// Interrupt Set-Active Registers.
-        (0x0300 => ISACTIVER0: ReadWrite<u32>),
-        (0x0304 => _reserved_6),
-        /// Interrupt Clear-Active Registers.
-        (0x0380 => ICACTIVER0: ReadWrite<u32>),
-
-        (0x0384 => @END),
-    }
-}
-
-/// Abstraction for the non-banked parts of the associated MMIO registers.
-type LpiReg = MMIODerefWrapper<GicRedistributorLPIRegs>;
-
-/// Abstraction for the banked parts of the associated MMIO registers.
-type SgiReg = MMIODerefWrapper<GicRedistributorSGIRegs>;
 
 //--------------------------------------------------------------------------------------------------
 // Public Definitions
@@ -95,6 +27,7 @@ const GICR_SYNCR: u64 = 0x00c0;
 const GICR_PIDR2: u64 = 0xffe8;
 const GICR_SGI_BASE: u64 = 0x10000;
 
+const GICR_IGROUPR: u64 = GICD_IGROUPR;
 const GICR_ISENABLER: u64 = GICD_ISENABLER;
 const GICR_ICENABLER: u64 = GICD_ICENABLER;
 const GICR_ISPENDR: u64 = GICD_ISPENDR;
@@ -104,35 +37,44 @@ const GICR_ICACTIVER: u64 = GICD_ICACTIVER;
 const GICR_IPRIORITYR: u64 = GICD_IPRIORITYR;
 const GICR_ICFGR: u64 = GICD_ICFGR;
 const GICR_TYPER_LAST: u64 = 1 << 4;
-/// Representation of the GIC Distributor.
-pub struct GICR {
-    /// Access to shared registers is guarded with a lock.
-    gicr_registers0: LpiReg,
 
-    /// Access to banked registers is unguarded.
-    gicr_registers1: SgiReg,
-}
-impl GICR {
-    pub const unsafe fn new(mmio_start_addr: usize) -> Self {
-        Self {
-            gicr_registers0: LpiReg::new(mmio_start_addr),
-            gicr_registers1: SgiReg::new(mmio_start_addr + GICR_SGI_BASE as usize),
+#[allow(unused)]
+pub fn enable_ipi() {
+    let base = this_cpu_data().gicr_base + GICR_SGI_BASE;
+
+    unsafe {
+        // 配置 IPI 为非安全中断
+        let gicr_igroupr0 = (base + GICR_IGROUPR) as *mut u32;
+        gicr_igroupr0.write_volatile(gicr_igroupr0.read_volatile() & !(1 << SGI_EVENT_ID));
+
+        // 启用 IPI
+        let gicr_isenabler0 = (base + GICR_ISENABLER) as *mut u32;
+        gicr_isenabler0.write_volatile(1 << SGI_EVENT_ID);
+
+        let gicr_ipriorityr0 = (base + GICR_IPRIORITYR) as *mut u32;
+        {
+            let reg = SGI_EVENT_ID / 4;
+            let offset = SGI_EVENT_ID % 4 * 8;
+            let mask = ((1 << 8) - 1) << offset;
+            let p = gicr_ipriorityr0.add(reg as _);
+            let prio = p.read_volatile();
+
+            p.write_volatile((prio & !mask) | (0xa0 << offset));
         }
-    }
-    pub fn read_aff(&self) -> u64 {
-        self.gicr_registers0.TYPER.get()
+
+        let gicr_waker = (base + GICR_WAKER) as *mut u32;
+        gicr_waker.write_volatile(gicr_waker.read_volatile() & !0x02);
     }
 }
-
-pub static LAST_GICR: Once<u64> = Once::new();
 
 pub fn gicv3_gicr_mmio_handler(mmio: &mut MMIOAccess, cpu: u64) -> HvResult {
-    // info!("gicr({}) mmio = {:#x?}", cpu, mmio);
+    debug!("gicr({}) mmio = {:#x?}", cpu, mmio);
     let gicr_base = get_cpu_data(cpu).gicr_base;
     match mmio.address as u64 {
         GICR_TYPER => {
             mmio_perform_access(gicr_base, mmio);
-            if cpu == *LAST_GICR.get().unwrap() {
+            if cpu == MAX_CPU_NUM - 1 {
+                debug!("this is the last gicr");
                 mmio.value |= GICR_TYPER_LAST;
             }
         }
@@ -147,6 +89,8 @@ pub fn gicv3_gicr_mmio_handler(mmio: &mut MMIOAccess, cpu: u64) -> HvResult {
             if Arc::ptr_eq(&this_cell(), get_cpu_data(cpu).cell.as_ref().unwrap()) {
                 // ignore access to foreign redistributors
                 mmio_perform_access(gicr_base, mmio);
+            } else {
+                trace!("*** gicv3_gicr_mmio_handler: ignore access to foreign redistributors ***");
             }
         }
     }
