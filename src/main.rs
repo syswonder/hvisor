@@ -14,7 +14,7 @@
 #![feature(asm_const)]
 #![feature(naked_functions)] //  surpport naked function
 // 支持内联汇编
-#![deny(warnings, missing_docs)] // 将warnings作为error
+// #![deny(warnings, missing_docs)] // 将warnings作为error
 #[macro_use]
 extern crate alloc;
 extern crate buddy_system_allocator;
@@ -39,23 +39,22 @@ mod panic;
 mod percpu;
 
 use crate::consts::nr1_config_ptr;
-use crate::consts::HV_BASE;
 use crate::control::do_cell_create;
 use crate::control::prepare_cell_start;
 use crate::control::wait_for_poweron;
-use crate::device::gicv3::enable_irqs;
-use crate::device::gicv3::gicd::enable_gic_are_ns;
-use crate::memory::addr;
 use crate::percpu::this_cell;
 use crate::percpu::this_cpu_data;
 use crate::{cell::root_cell, consts::MAX_CPU_NUM};
 use arch::arch_entry;
 use config::HvSystemConfig;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
-use device::gicv3::gicv3_cpu_init;
 use error::HvResult;
 use memory::addr::virt_to_phys;
 use percpu::PerCpu;
+
+#[cfg(target_arch = "aarch64")]
+use device::gicv3::gicv3_cpu_init;
+
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
 static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
 static ACTIVATED_CPUS: AtomicU32 = AtomicU32::new(0);
@@ -130,7 +129,10 @@ fn primary_init_early() -> HvResult {
 
 fn primary_init_late() {
     info!("Primary CPU init late...");
+
+    #[cfg(target_arch = "aarch64")]
     enable_gic_are_ns();
+
     INIT_LATE_OK.store(1, Ordering::Release);
 }
 
@@ -141,6 +143,7 @@ fn per_cpu_init() {
         cpu_data.cell = Some(root_cell());
     }
 
+    #[cfg(target_arch = "aarch64")]
     gicv3_cpu_init();
 
     unsafe {
@@ -149,7 +152,7 @@ fn per_cpu_init() {
     };
 
     // enable_ipi();
-    enable_irqs();
+    // enable_irqs();
 
     println!("CPU {} init OK.", cpu_data.id);
 }
@@ -170,8 +173,32 @@ fn wakeup_secondary_cpus(this_id: u64) {
     }
 }
 
-fn rust_main(cpu_data: &'static mut PerCpu) -> HvResult {
-    println!("Hello");
+fn rust_main(cpuid: usize) -> HvResult {
+    extern "C" {
+        fn stext(); // begin addr of text segment
+        fn etext(); // end addr of text segment
+        fn srodata(); // start addr of Read-Only data segment
+        fn erodata(); // end addr of Read-Only data ssegment
+        fn sdata(); // start addr of data segment
+        fn edata(); // end addr of data segment
+        fn sbss(); // start addr of BSS segment
+        fn ebss(); // end addr of BSS segment
+        fn boot_stack_lower_bound(); // stack lower bound
+        fn boot_stack_top(); // stack top
+        fn __core_end(); // end of kernel
+        fn gdtb();
+        fn vmimg();
+    }
+    println!("Hello, world!");
+    println!(".text [{:#x}, {:#x})", stext as usize, etext as usize);
+    println!(".rodata [{:#x}, {:#x})", srodata as usize, erodata as usize);
+    println!(".data [{:#x}, {:#x})", sdata as usize, edata as usize);
+    println!(
+        "boot_stack top=bottom={:#x}, lower_bound={:#x}",
+        boot_stack_top as usize, boot_stack_lower_bound as usize
+    );
+
+    let cpu_data = PerCpu::new(cpuid);
     println!(
         "cpuid {} vaddr {:#x?} phyid {} &cpu_data {:#x?}",
         cpu_data.id,
@@ -179,8 +206,10 @@ fn rust_main(cpu_data: &'static mut PerCpu) -> HvResult {
         this_cpu_data().id,
         cpu_data as *const _
     );
+
     let is_primary = cpu_data.id == 0;
 
+    #[cfg(target_arch = "aarch64")]
     if is_primary {
         // Set PHYS_VIRT_OFFSET early.
         unsafe {
@@ -189,6 +218,7 @@ fn rust_main(cpu_data: &'static mut PerCpu) -> HvResult {
         };
         wakeup_secondary_cpus(cpu_data.id);
     }
+
     wait_for(|| PerCpu::entered_cpus() < MAX_CPU_NUM as _)?;
     assert_eq!(PerCpu::entered_cpus(), MAX_CPU_NUM as _);
 
@@ -218,7 +248,7 @@ fn rust_main(cpu_data: &'static mut PerCpu) -> HvResult {
     cpu_data.activate_vmm();
     wait_for_counter(&ACTIVATED_CPUS, MAX_CPU_NUM as _)?;
 
-    if cpu_data.id == 2 {
+    if cpu_data.id == 0 {
         prepare_cell_start(this_cell())?;
         cpu_data.start_zone();
     } else {

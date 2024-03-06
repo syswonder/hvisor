@@ -2,15 +2,10 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::RwLock;
 
-use crate::arch::Stage2PageTable;
+use crate::arch::{this_cpu_id, Stage2PageTable};
 use crate::config::{CellConfig, HvCellDesc, HvConsole, HvSystemConfig};
 use crate::consts::MAX_CPU_NUM;
 use crate::control::{resume_cpu, suspend_cpu};
-use crate::device::gicv3::gicd::{
-    gicv3_gicd_mmio_handler, GICD_ICACTIVER, GICD_ICENABLER, GICD_IROUTER,
-};
-use crate::device::gicv3::gicr::gicv3_gicr_mmio_handler;
-use crate::device::gicv3::{GICD_SIZE, GICR_SIZE};
 use crate::error::HvResult;
 use crate::memory::addr::{is_aligned, GuestPhysAddr, HostPhysAddr};
 use crate::memory::{
@@ -203,7 +198,7 @@ impl Cell {
     pub fn suspend(&self) {
         trace!("suspending cpu_set = {:#x?}", self.cpu_set);
         self.cpu_set
-            .iter_except(this_cpu_data().id)
+            .iter_except(this_cpu_id())
             .for_each(|cpu_id| {
                 trace!("try to suspend cpu_id = {:#x?}", cpu_id);
                 suspend_cpu(cpu_id);
@@ -214,7 +209,7 @@ impl Cell {
     pub fn resume(&self) {
         trace!("resuming cpu_set = {:#x?}", self.cpu_set);
         self.cpu_set
-            .iter_except(this_cpu_data().id)
+            .iter_except(this_cpu_id())
             .for_each(|cpu_id| {
                 trace!("try to resume cpu_id = {:#x?}", cpu_id);
                 resume_cpu(cpu_id);

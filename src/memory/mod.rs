@@ -15,7 +15,6 @@ use spin::{Once, RwLock};
 use crate::arch::Stage1PageTable;
 use crate::config::HvSystemConfig;
 use crate::consts::{HV_BASE, TRAMPOLINE_START, MAX_CPU_NUM};
-use crate::device::gicv3::{GICD_SIZE, GICR_SIZE};
 use crate::device::pl011::UART_BASE_VIRT;
 use crate::error::HvResult;
 

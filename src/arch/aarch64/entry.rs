@@ -19,7 +19,7 @@ global_asm!("
 #[naked]
 #[no_mangle]
 #[link_section = ".boot"]
-pub unsafe extern "C" fn arch_entry() -> i32 {
+pub unsafe extern "C" fn arch_entry() -> ! {
     core::arch::asm!(
         "
             mrs	x16, MPIDR_EL1

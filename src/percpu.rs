@@ -1,23 +1,18 @@
-use aarch64_cpu::registers::MPIDR_EL1;
 use alloc::sync::Arc;
 use spin::{Mutex, RwLock};
 
 use crate::{ACTIVATED_CPUS, ENTERED_CPUS};
 //use crate::arch::vcpu::Vcpu;
-use crate::arch::entry::vmreturn;
-use crate::arch::sysreg::write_sysreg;
-use crate::arch::Stage2PageTable;
+use crate::arch::{this_cpu_id, Stage2PageTable};
 use crate::cell::Cell;
 use crate::config::HvSystemConfig;
 use crate::consts::{INVALID_ADDRESS, PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
-use crate::device::gicv3::{gicv3_cpu_shutdown, GICR_SIZE};
 use crate::error::HvResult;
 use crate::memory::addr::VirtAddr;
 use crate::memory::addr::{GuestPhysAddr, HostPhysAddr};
 use crate::memory::{
     MemFlags, MemoryRegion, MemorySet, PARKING_INST_PAGE, PARKING_MEMORY_SET, PHYS_VIRT_OFFSET,
 };
-use aarch64_cpu::registers::*;
 use core::fmt::Debug;
 use core::sync::atomic::Ordering;
 
@@ -30,7 +25,7 @@ pub struct GeneralRegisters {
 }
 #[repr(C)]
 pub struct PerCpu {
-    pub id: u64,
+    pub id: usize,
     /// Referenced by arch::cpu::thread_pointer() for x86_64.
     pub self_vaddr: VirtAddr,
     // guest_regs: GeneralRegisters, //should be in vcpu
@@ -41,15 +36,13 @@ pub struct PerCpu {
     pub park: bool,
     pub reset: bool,
     pub cell: Option<Arc<RwLock<Cell>>>,
-    pub mpidr: u64,
     pub gicr_base: u64,
     pub ctrl_lock: Mutex<()>,
     // Stack will be placed here.
 }
 
 impl PerCpu {
-    pub fn new<'a>(cpu_id: u64) -> HvResult<&'a mut Self> {
-        let _cpu_rank = ENTERED_CPUS.fetch_add(1, Ordering::SeqCst);
+    pub fn new<'a>(cpu_id: usize) -> &'static mut PerCpu {
         let vaddr = PER_CPU_ARRAY_PTR as VirtAddr + cpu_id as usize * PER_CPU_SIZE;
         let ret = unsafe { &mut *(vaddr as *mut Self) };
         *ret = PerCpu {
@@ -62,11 +55,10 @@ impl PerCpu {
             park: false,
             reset: false,
             cell: None,
-            mpidr: MPIDR_EL1.get(),
-            gicr_base: HvSystemConfig::get().platform_info.arch.gicr_base + cpu_id * GICR_SIZE,
+            gicr_base: HvSystemConfig::get().platform_info.arch.gicr_base + cpu_id as u64 * GICR_SIZE,
             ctrl_lock: Mutex::new(()),
         };
-        Ok(ret)
+        ret
     }
 
     pub fn stack_top(&self) -> VirtAddr {
@@ -85,14 +77,16 @@ impl PerCpu {
     pub fn activate_vmm(&mut self) {
         ACTIVATED_CPUS.fetch_add(1, Ordering::SeqCst);
         info!("activating cpu {}", self.id);
-        set_vtcr_flags();
-        HCR_EL2.write(
-            HCR_EL2::RW::EL1IsAarch64
-                + HCR_EL2::TSC::EnableTrapEl1SmcToEl2
-                + HCR_EL2::VM::SET
-                + HCR_EL2::IMO::SET
-                + HCR_EL2::FMO::SET,
-        );
+
+        #[cfg(target_arch = "aarch64")]
+        {
+            set_vtcr_flags();
+            set_hcr_flags();
+        }
+        #[cfg(target_arch = "riscv64")]
+        {
+            todo!("activate_vmm...");
+        }
     }
     pub fn deactivate_vmm(&mut self, _ret_code: usize) -> HvResult {
         ACTIVATED_CPUS.fetch_sub(1, Ordering::SeqCst);
@@ -144,9 +138,8 @@ pub fn this_cpu_data<'a>() -> &'a mut PerCpu {
     now just only cpu 0*/
     /*arm_read_sysreg(MPIDR_EL1, mpidr);
     return mpidr & MPIDR_CPUID_MASK;*/
-    let mpidr = MPIDR_EL1.get();
 
-    let cpu_id = mpidr_to_cpuid(mpidr);
+    let cpu_id = this_cpu_id();
     let cpu_data: usize = PER_CPU_ARRAY_PTR as VirtAddr + cpu_id as usize * PER_CPU_SIZE;
     unsafe { &mut *(cpu_data as *mut PerCpu) }
 }
@@ -154,19 +147,6 @@ pub fn this_cpu_data<'a>() -> &'a mut PerCpu {
 pub fn get_cpu_data<'a>(cpu_id: u64) -> &'a mut PerCpu {
     let cpu_data: usize = PER_CPU_ARRAY_PTR as VirtAddr + cpu_id as usize * PER_CPU_SIZE;
     unsafe { &mut *(cpu_data as *mut PerCpu) }
-}
-
-pub fn set_vtcr_flags() {
-    let vtcr_flags = VTCR_EL2::TG0::Granule4KB
-        + VTCR_EL2::PS::PA_44B_16TB
-        + VTCR_EL2::SH0::Inner
-        + VTCR_EL2::HA::Enabled
-        + VTCR_EL2::SL0.val(2)
-        + VTCR_EL2::ORGN0::NormalWBRAWA
-        + VTCR_EL2::IRGN0::NormalWBRAWA
-        + VTCR_EL2::T0SZ.val(20);
-
-    VTCR_EL2.write(vtcr_flags);
 }
 
 #[allow(unused)]

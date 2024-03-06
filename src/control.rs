@@ -3,7 +3,6 @@ use alloc::{sync::Arc, vec::Vec};
 use spin::RwLock;
 
 use crate::{
-    arch::sysreg::write_sysreg,
     cell::{add_cell, find_cell_by_id, root_cell, Cell, CommRegion},
     config::{CellConfig, HvCellDesc, HvMemoryRegion, HvSystemConfig},
     consts::INVALID_ADDRESS,
@@ -17,19 +16,6 @@ use crate::{
     },
     percpu::{get_cpu_data, this_cell, this_cpu_data, PerCpu},
 };
-
-pub fn send_event(cpu_id: u64, sgi_num: u64) {
-    // TODO: add more info
-    let aff3: u64 = 0 << 48;
-    let aff2: u64 = 0 << 32;
-    let aff1: u64 = 0 << 16;
-    let irm: u64 = 0 << 40;
-    let sgi_id: u64 = sgi_num << 24;
-    let target_list: u64 = 1 << cpu_id;
-    let val: u64 = aff1 | aff2 | aff3 | irm | sgi_id | target_list;
-    write_sysreg!(icc_sgi1r_el1, val);
-    info!("write sgi sys value = {:#x}", val);
-}
 
 pub fn suspend_cpu(cpu_id: u64) {
     trace!("suspending cpu {:#x?}", cpu_id);
