@@ -78,6 +78,8 @@
 #![allow(dead_code)]
 pub mod gicd;
 pub mod gicr;
+pub mod cell;
+
 use core::arch::asm;
 
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
@@ -89,7 +91,7 @@ pub fn reg_range(base: u64, n: u64, size: u64) -> core::ops::Range<u64> {
 }
 
 //TODO: add Distributor init
-pub fn gicv3_cpu_init() {
+pub fn irqchip_cpu_init() {
     //TODO: add Redistributor init
     let sdei_ver = unsafe { smc_arg1!(0xc4000020) }; //sdei_check();
     info!("gicv3 init: sdei version: {}", sdei_ver);

@@ -25,9 +25,10 @@ pub fn suspend_cpu(cpu_id: u64) {
     let target_suspended = cpu_data.suspended;
     drop(_lock);
 
-    if !target_suspended {
-        send_event(cpu_id, SGI_EVENT_ID);
-    }
+    todo!();
+    // if !target_suspended {
+    //     send_event(cpu_id, SGI_EVENT_ID);
+    // }
 }
 
 pub fn resume_cpu(cpu_id: u64) {
@@ -121,7 +122,8 @@ pub fn prepare_cell_start(cell: Arc<RwLock<Cell>>) -> HvResult<()> {
             };
         });
 
-    cell_w.irqchip_reset();
+    todo!();
+    // cell_w.irqchip_reset();
 
     info!("start cell done!");
     Ok(())
@@ -134,46 +136,47 @@ pub fn do_cell_create(desc: &HvCellDesc) -> HvResult<Arc<RwLock<Cell>>> {
     // we create the new cell here
     let cell = Cell::new(config, false)?;
 
-    if cell.owns_cpu(this_cpu_data().id) {
-        panic!("error: try to assign the CPU we are currently running on");
-    }
-    // todo: arch_cell_create
+    todo!();
+    // if cell.owns_cpu(this_cpu_data().id) {
+    //     panic!("error: try to assign the CPU we are currently running on");
+    // }
+    // // todo: arch_cell_create
 
-    let cpu_set = cell.cpu_set;
+    // let cpu_set = cell.cpu_set;
 
-    let new_cell_pointer = Arc::new(RwLock::new(cell));
-    {
-        cpu_set.iter().for_each(|cpu| {
-            get_cpu_data(cpu).cell = Some(new_cell_pointer.clone());
-        });
-    }
+    // let new_cell_pointer = Arc::new(RwLock::new(cell));
+    // {
+    //     cpu_set.iter().for_each(|cpu| {
+    //         get_cpu_data(cpu).cell = Some(new_cell_pointer.clone());
+    //     });
+    // }
 
-    // memory mapping
-    {
-        let mut cell = new_cell_pointer.write();
+    // // memory mapping
+    // {
+    //     let mut cell = new_cell_pointer.write();
 
-        let mem_regs: Vec<HvMemoryRegion> = cell.config().mem_regions().to_vec();
-        // cell.comm_page.comm_region.cell_state = CELL_SHUT_DOWN;
+    //     let mem_regs: Vec<HvMemoryRegion> = cell.config().mem_regions().to_vec();
+    //     // cell.comm_page.comm_region.cell_state = CELL_SHUT_DOWN;
 
-        let comm_page_pa = cell.comm_page.start_paddr();
-        assert!(is_aligned(comm_page_pa));
+    //     let comm_page_pa = cell.comm_page.start_paddr();
+    //     assert!(is_aligned(comm_page_pa));
 
-        mem_regs.iter().for_each(|mem| {
-            cell.mem_region_insert(MemoryRegion::from_hv_memregion(mem, Some(comm_page_pa)))
-        });
+    //     mem_regs.iter().for_each(|mem| {
+    //         cell.mem_region_insert(MemoryRegion::from_hv_memregion(mem, Some(comm_page_pa)))
+    //     });
 
-        // add pci mapping
-        let sys_config = HvSystemConfig::get();
-        let mmcfg_start = sys_config.platform_info.pci_mmconfig_base;
-        let mmcfg_size = (sys_config.platform_info.pci_mmconfig_end_bus + 1) as u64 * 256 * 4096;
-        cell.mmio_region_register(mmcfg_start as _, mmcfg_size, mmio_pci_handler, mmcfg_start);
+    //     // add pci mapping
+    //     let sys_config = HvSystemConfig::get();
+    //     let mmcfg_start = sys_config.platform_info.pci_mmconfig_base;
+    //     let mmcfg_size = (sys_config.platform_info.pci_mmconfig_end_bus + 1) as u64 * 256 * 4096;
+    //     cell.mmio_region_register(mmcfg_start as _, mmcfg_size, mmio_pci_handler, mmcfg_start);
 
-        cell.adjust_irq_mappings();
-    }
+    //     cell.adjust_irq_mappings();
+    // }
 
-    add_cell(new_cell_pointer.clone());
+    // add_cell(new_cell_pointer.clone());
 
-    Ok(new_cell_pointer)
+    // Ok(new_cell_pointer)
 }
 pub fn wait_for_poweron() -> ! {
     let cpu_data = this_cpu_data();

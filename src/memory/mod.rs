@@ -12,7 +12,6 @@ use core::ops::{Deref, DerefMut};
 use bitflags::bitflags;
 use spin::{Once, RwLock};
 
-use crate::arch::Stage1PageTable;
 use crate::config::HvSystemConfig;
 use crate::consts::{HV_BASE, TRAMPOLINE_START, MAX_CPU_NUM};
 use crate::device::pl011::UART_BASE_VIRT;
@@ -22,7 +21,7 @@ pub use addr::{
     GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr, PhysAddr, VirtAddr, PHYS_VIRT_OFFSET,
 };
 pub use frame::Frame;
-pub use mm::{MemoryRegion, MemorySet, PARKING_INST_PAGE, PARKING_MEMORY_SET};
+pub use mm::{MemoryRegion, MemorySet, PARKING_INST_PAGE};
 pub use mmio::*;
 pub use paging::{
     npages, GenericPageTable, GenericPageTableImmut, Level4PageTable, Level4PageTableImmut,
@@ -51,11 +50,11 @@ bitflags! {
 }
 
 /// Page table used for hypervisor.
-static HV_PT: Once<RwLock<MemorySet<Stage1PageTable>>> = Once::new();
+// static HV_PT: Once<RwLock<MemorySet<Stage1PageTable>>> = Once::new();
 
-pub fn hv_page_table<'a>() -> &'a RwLock<MemorySet<Stage1PageTable>> {
-    HV_PT.get().expect("Uninitialized hypervisor page table!")
-}
+// pub fn hv_page_table<'a>() -> &'a RwLock<MemorySet<Stage1PageTable>> {
+//     HV_PT.get().expect("Uninitialized hypervisor page table!")
+// }
 
 pub fn init_heap() {
     heap::init();
@@ -66,6 +65,8 @@ pub fn init_frame_allocator() {
 }
 
 pub fn init_hv_page_table() -> HvResult {
+    #[cfg(target_arch = "invalid")]
+    {
     let sys_config = HvSystemConfig::get();
     let hv_phys_start = sys_config.hypervisor_memory.phys_start as usize;
     let hv_phys_size = sys_config.hypervisor_memory.size as usize;
@@ -147,7 +148,7 @@ pub fn init_hv_page_table() -> HvResult {
     unsafe { hv_pt.activate(); }
 
     HV_PT.call_once(|| RwLock::new(hv_pt));
-
+    }
     Ok(())
 }
 

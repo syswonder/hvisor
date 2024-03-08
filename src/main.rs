@@ -113,6 +113,7 @@ fn primary_init_early() -> HvResult {
 
     memory::init_frame_allocator();
     memory::init_hv_page_table()?;
+    todo!();
     cell::init()?;
 
     // unsafe {
@@ -143,13 +144,12 @@ fn per_cpu_init() {
         cpu_data.cell = Some(root_cell());
     }
 
-    #[cfg(target_arch = "aarch64")]
-    gicv3_cpu_init();
-
-    unsafe {
-        memory::hv_page_table().read().activate();
-        this_cell().read().gpm_activate();
-    };
+    // gicv3_cpu_init();
+    todo!();
+    // unsafe {
+    //     memory::hv_page_table().read().activate();
+    //     this_cell().read().gpm_activate();
+    // };
 
     // enable_ipi();
     // enable_irqs();

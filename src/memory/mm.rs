@@ -8,7 +8,6 @@ use spin::Once;
 
 use super::{mapper::Mapper, paging::GenericPageTable, MemFlags};
 use super::{AlignedPage, VirtAddr, NUM_TEMPORARY_PAGES, PAGE_SIZE, TEMPORARY_MAPPING_BASE};
-use crate::arch::Stage2PageTable;
 use crate::error::HvResult;
 use crate::memory::addr::is_aligned;
 use crate::memory::paging::{PageSize, PagingResult};
@@ -205,6 +204,6 @@ where
     }
 }
 
-pub static PARKING_MEMORY_SET: Once<MemorySet<Stage2PageTable>> = Once::new();
+// pub static PARKING_MEMORY_SET: Once<MemorySet<Stage2PageTable>> = Once::new();
 
 pub static mut PARKING_INST_PAGE: AlignedPage = AlignedPage::new();

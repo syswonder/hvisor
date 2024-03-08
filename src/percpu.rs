@@ -3,7 +3,7 @@ use spin::{Mutex, RwLock};
 
 use crate::{ACTIVATED_CPUS, ENTERED_CPUS};
 //use crate::arch::vcpu::Vcpu;
-use crate::arch::{this_cpu_id, Stage2PageTable};
+use crate::arch::this_cpu_id;
 use crate::cell::Cell;
 use crate::config::HvSystemConfig;
 use crate::consts::{INVALID_ADDRESS, PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
@@ -11,7 +11,7 @@ use crate::error::HvResult;
 use crate::memory::addr::VirtAddr;
 use crate::memory::addr::{GuestPhysAddr, HostPhysAddr};
 use crate::memory::{
-    MemFlags, MemoryRegion, MemorySet, PARKING_INST_PAGE, PARKING_MEMORY_SET, PHYS_VIRT_OFFSET,
+    MemFlags, MemoryRegion, MemorySet, PARKING_INST_PAGE, PHYS_VIRT_OFFSET,
 };
 use core::fmt::Debug;
 use core::sync::atomic::Ordering;
@@ -55,7 +55,8 @@ impl PerCpu {
             park: false,
             reset: false,
             cell: None,
-            gicr_base: HvSystemConfig::get().platform_info.arch.gicr_base + cpu_id as u64 * GICR_SIZE,
+            // gicr_base: HvSystemConfig::get().platform_info.arch.gicr_base + cpu_id as u64 * GICR_SIZE,
+            gicr_base: 0,
             ctrl_lock: Mutex::new(()),
         };
         ret
@@ -88,49 +89,51 @@ impl PerCpu {
             todo!("activate_vmm...");
         }
     }
-    pub fn deactivate_vmm(&mut self, _ret_code: usize) -> HvResult {
+    pub fn deactivate_vmm(&mut self) -> HvResult {
         ACTIVATED_CPUS.fetch_sub(1, Ordering::SeqCst);
         info!("Disabling cpu {}", self.id);
-        self.arch_shutdown_self()?;
-        Ok(())
-    }
-    pub fn start_zone(&mut self) -> ! {
-        let regs = self.guest_reg() as *mut GeneralRegisters;
-        unsafe {
-            (*regs).usr[0] = if this_cpu_data().id == 0 {
-                0x40100000
-            } else {
-                0x60100000
-            }; // device_tree addr
-            info!("cpu_on_entry={:#x?}", self.cpu_on_entry);
-            set_vm_pc(self.cpu_on_entry);
-            vmreturn(self.guest_reg())
-        }
-    }
-    /*should be in vcpu*/
-    pub fn arch_shutdown_self(&mut self) -> HvResult {
-        /*irqchip reset*/
-        gicv3_cpu_shutdown();
-        /* Free the guest */
-        HCR_EL2.set(0x80000000);
-        VTCR_EL2.set(0x80000000);
-        /* Remove stage-2 mappings */
-        unsafe {
-            isb();
-            arm_paging_vcpu_flush_tlbs();
-        }
-        /* TLB flush needs the cell's VMID */
-        VTTBR_EL2.set(0);
-        /* we will restore the root cell state with the MMU turned off,
-         * so we need to make sure it has been committed to memory */
-
         todo!();
-        // unsafe {
-        //     let page_offset: u64 = todo!();
-        //     virt2phys_el2(self.guest_reg(), page_offset);
-        // }
+        // self.arch_shutdown_self()?;
         // Ok(())
     }
+    pub fn start_zone(&mut self) -> ! {
+        todo!();
+        // let regs = self.guest_reg() as *mut GeneralRegisters;
+        // unsafe {
+        //     (*regs).usr[0] = if this_cpu_data().id == 0 {
+        //         0x40100000
+        //     } else {
+        //         0x60100000
+        //     }; // device_tree addr
+        //     info!("cpu_on_entry={:#x?}", self.cpu_on_entry);
+        //     set_vm_pc(self.cpu_on_entry);
+        //     vmreturn(self.guest_reg())
+        // }
+    }
+    /*should be in vcpu*/
+    // pub fn arch_shutdown_self(&mut self) -> HvResult {
+    //     /*irqchip reset*/
+    //     gicv3_cpu_shutdown();
+    //     /* Free the guest */
+    //     HCR_EL2.set(0x80000000);
+    //     VTCR_EL2.set(0x80000000);
+    //     /* Remove stage-2 mappings */
+    //     unsafe {
+    //         isb();
+    //         arm_paging_vcpu_flush_tlbs();
+    //     }
+    //     /* TLB flush needs the cell's VMID */
+    //     VTTBR_EL2.set(0);
+    //     /* we will restore the root cell state with the MMU turned off,
+    //      * so we need to make sure it has been committed to memory */
+
+    //     todo!();
+    //     // unsafe {
+    //     //     let page_offset: u64 = todo!();
+    //     //     virt2phys_el2(self.guest_reg(), page_offset);
+    //     // }
+    //     // Ok(())
+    // }
 }
 
 pub fn this_cpu_data<'a>() -> &'a mut PerCpu {
@@ -204,7 +207,8 @@ pub fn check_events() {
             "check_events: reset current cpu -> {:#x?}",
             cpu_data.cpu_on_entry
         );
-        reset_current_cpu(cpu_data.cpu_on_entry);
+        todo!();
+        // reset_current_cpu(cpu_data.cpu_on_entry);
     }
 }
 
@@ -232,33 +236,34 @@ pub fn check_events() {
 // }
 
 pub fn park_current_cpu() {
-    let cpu_data = this_cpu_data();
-    let _lock = cpu_data.ctrl_lock.lock();
-    cpu_data.park = false;
-    cpu_data.wait_for_poweron = true;
-    drop(_lock);
+    todo!();
+    // let cpu_data = this_cpu_data();
+    // let _lock = cpu_data.ctrl_lock.lock();
+    // cpu_data.park = false;
+    // cpu_data.wait_for_poweron = true;
+    // drop(_lock);
 
-    // reset current cpu -> pc = 0x0 (wfi)
-    PARKING_MEMORY_SET.call_once(|| {
-        let parking_code: [u8; 8] = [0x7f, 0x20, 0x03, 0xd5, 0xff, 0xff, 0xff, 0x17]; // 1: wfi; b 1b
-        unsafe {
-            PARKING_INST_PAGE[..8].copy_from_slice(&parking_code);
-        }
+    // // reset current cpu -> pc = 0x0 (wfi)
+    // PARKING_MEMORY_SET.call_once(|| {
+    //     let parking_code: [u8; 8] = [0x7f, 0x20, 0x03, 0xd5, 0xff, 0xff, 0xff, 0x17]; // 1: wfi; b 1b
+    //     unsafe {
+    //         PARKING_INST_PAGE[..8].copy_from_slice(&parking_code);
+    //     }
 
-        let mut gpm = MemorySet::<Stage2PageTable>::new();
-        gpm.insert(MemoryRegion::new_with_offset_mapper(
-            0 as GuestPhysAddr,
-            unsafe { &PARKING_INST_PAGE as *const _ as HostPhysAddr - PHYS_VIRT_OFFSET },
-            PAGE_SIZE,
-            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-        ))
-        .unwrap();
-        gpm
-    });
-    reset_current_cpu(0);
-    unsafe {
-        PARKING_MEMORY_SET.get().unwrap().activate();
-    }
+    //     let mut gpm = MemorySet::<Stage2PageTable>::new();
+    //     gpm.insert(MemoryRegion::new_with_offset_mapper(
+    //         0 as GuestPhysAddr,
+    //         unsafe { &PARKING_INST_PAGE as *const _ as HostPhysAddr - PHYS_VIRT_OFFSET },
+    //         PAGE_SIZE,
+    //         MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+    //     ))
+    //     .unwrap();
+    //     gpm
+    // });
+    // reset_current_cpu(0);
+    // unsafe {
+    //     PARKING_MEMORY_SET.get().unwrap().activate();
+    // }
 }
 
 #[repr(C)]

@@ -167,6 +167,19 @@ pub struct ArmPlatformInfo {
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
+pub struct ArmPlatformInfo {
+    maintenance_irq: u8,
+    pub gic_version: u8,
+    pub gicd_base: u64,
+    pub gicc_base: u64,
+    gich_base: u64,
+    gicv_base: u64,
+    pub gicr_base: u64,
+    _pooling: [u32; 34],
+}
+
+#[derive(Clone, Copy, Debug)]
+#[repr(C, packed)]
 pub struct PlatformInfo {
     pub pci_mmconfig_base: u64,
     pub pci_mmconfig_end_bus: u8,
