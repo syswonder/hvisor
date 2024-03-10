@@ -173,6 +173,7 @@ fn wakeup_secondary_cpus(this_id: u64) {
     }
 }
 
+#[no_mangle]
 fn rust_main(cpuid: usize) -> HvResult {
     extern "C" {
         fn stext(); // begin addr of text segment

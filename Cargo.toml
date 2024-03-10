@@ -24,6 +24,7 @@ aarch64-cpu = "9.4.0"
 
 [profile.dev]
 panic = "abort"
+debug = 2
 
 [profile.release]
 panic = "abort"

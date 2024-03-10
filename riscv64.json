@@ -4,7 +4,7 @@
   "disable-redzone": true,
   "env": "",
   "executables": true,
-  "features": "",
+  "features": "+a",
   "is-builtin": false,
   "linker": "rust-lld",
   "linker-flavor": "ld.lld",
