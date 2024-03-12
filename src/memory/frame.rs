@@ -205,8 +205,8 @@ impl Drop for Frame {
 }
 
 /// Initialize the physical frame allocator.
-pub(super) fn init() {
-    let mem_pool_start = crate::consts::free_memory_start();
+pub fn init() {
+    let mem_pool_start = crate::consts::mem_pool_start();
     let mem_pool_end = align_down(crate::consts::hv_end());
     let mem_pool_size = mem_pool_end - mem_pool_start;
     FRAME_ALLOCATOR

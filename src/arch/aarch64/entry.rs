@@ -10,10 +10,10 @@ global_asm!(
 );
 global_asm!("
     .section \".rootcfg\", \"a\"
-    .incbin \"imgs/config/qemu-arm64.cell\"
+    .incbin \"imgs/config/qemu-arm64.zone\"
 
     .section \".nrcfg1\", \"a\"
-    .incbin \"imgs/config/qemu-arm64-linux-demo.cell\"
+    .incbin \"imgs/config/qemu-arm64-linux-demo.zone\"
 ");
 
 #[naked]

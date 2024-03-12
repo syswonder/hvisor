@@ -1,6 +1,6 @@
 use core::ptr;
 
-use crate::{error::HvResult, percpu::this_cell};
+use crate::{error::HvResult, percpu::this_zone};
 
 use super::GuestPhysAddr;
 
@@ -63,8 +63,8 @@ pub fn mmio_perform_access(base: u64, mmio: &mut MMIOAccess) {
 }
 
 pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
-    let cell = this_cell();
-    let res = cell.read().find_mmio_region(mmio.address, mmio.size);
+    let zone = this_zone();
+    let res = zone.read().find_mmio_region(mmio.address, mmio.size);
     match res {
         Some((region, handler, arg)) => {
             mmio.address -= region.start;
@@ -72,8 +72,8 @@ pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
         }
         None => {
             warn!(
-                "Cell {} unhandled mmio fault {:#x?}",
-                cell.read().id(),
+                "Zone {} unhandled mmio fault {:#x?}",
+                zone.read().id(),
                 mmio
             );
             hv_result_err!(EINVAL)

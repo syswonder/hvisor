@@ -1,6 +1,6 @@
 use aarch64_cpu::registers::SCTLR_EL1;
 use aarch64_cpu::registers::Writeable;
-use crate::percpu::this_cell;
+use crate::percpu::this_zone;
 use super::sysreg::write_sysreg;
 
 pub fn set_vtcr_flags() {
@@ -67,7 +67,7 @@ fn reset_current_cpu(entry: u64) {
     // //disable stage 1
     // write_sysreg!(SCTLR_EL1, 0);
 
-    this_cell().read().gpm_activate();
+    this_zone().read().gpm_activate();
 
     SCTLR_EL1.set((1 << 11) | (1 << 20) | (3 << 22) | (3 << 28));
     //SCTLR_EL1.modify(SCTLR_EL1::M::Disable);

@@ -1,10 +1,9 @@
-mod frame;
-mod heap;
-mod mapper;
-mod mm;
-mod mmio;
-mod paging;
-
+pub mod frame;
+pub mod heap;
+pub mod mapper;
+pub mod mm;
+pub mod mmio;
+pub mod paging;
 pub mod addr;
 
 use core::ops::{Deref, DerefMut};
@@ -13,8 +12,7 @@ use bitflags::bitflags;
 use spin::{Once, RwLock};
 
 use crate::config::HvSystemConfig;
-use crate::consts::{HV_BASE, TRAMPOLINE_START, MAX_CPU_NUM};
-use crate::device::pl011::UART_BASE_VIRT;
+use crate::consts::{TRAMPOLINE_START, MAX_CPU_NUM};
 use crate::error::HvResult;
 
 pub use addr::{
@@ -55,14 +53,6 @@ bitflags! {
 // pub fn hv_page_table<'a>() -> &'a RwLock<MemorySet<Stage1PageTable>> {
 //     HV_PT.get().expect("Uninitialized hypervisor page table!")
 // }
-
-pub fn init_heap() {
-    heap::init();
-}
-
-pub fn init_frame_allocator() {
-    frame::init();
-}
 
 pub fn init_hv_page_table() -> HvResult {
     #[cfg(target_arch = "invalid")]

@@ -11,7 +11,7 @@ use crate::{
     config::HvSystemConfig,
     error::HvResult,
     memory::{mmio_perform_access, MMIOAccess},
-    percpu::this_cell,
+    percpu::this_zone,
 };
 use spin::Mutex;
 
@@ -48,10 +48,10 @@ const GICDV3_PIDR4: u64 = 0xffd0;
 
 // The return value should be the register value to be read.
 fn gicv3_handle_irq_ops(mmio: &mut MMIOAccess, irq: u32) -> HvResult {
-    let cell = this_cell();
-    let cell_r = cell.read();
+    let zone = this_zone();
+    let zone_r = zone.read();
 
-    if !is_spi(irq) || !cell_r.irq_in_cell(irq) {
+    if !is_spi(irq) || !zone_r.irq_in_zone(irq) {
         debug!(
             "gicd-mmio: skip irq {} access, reg = {:#x?}",
             irq, mmio.address
@@ -133,8 +133,8 @@ fn restrict_bitmask_access(
     is_poke: bool,
     gicd_base: u64,
 ) -> HvResult {
-    let cell = this_cell();
-    let cell_r = cell.read();
+    let zone = this_zone();
+    let zone_r = zone.read();
     let mut access_mask: u64 = 0;
     /*
      * In order to avoid division, the number of bits per irq is limited
@@ -146,7 +146,7 @@ fn restrict_bitmask_access(
     let first_irq = reg_index * irqs_per_reg;
 
     for irq in 0..irqs_per_reg {
-        if cell_r.irq_in_cell((first_irq + irq) as _) {
+        if zone_r.irq_in_zone((first_irq + irq) as _) {
             debug!("restrict visit irq {}", first_irq + irq);
             access_mask |= irq_bits << (irq * bits_per_irq);
         }

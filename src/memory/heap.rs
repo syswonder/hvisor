@@ -8,7 +8,7 @@ use crate::consts::HV_HEAP_SIZE;
 static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::<32>::new();
 
 /// Initialize the global heap allocator.
-pub(super) fn init() {
+pub fn init() {
     const MACHINE_ALIGN: usize = core::mem::size_of::<usize>();
     const HEAP_BLOCK: usize = HV_HEAP_SIZE / MACHINE_ALIGN;
     static mut HEAP: [usize; HEAP_BLOCK] = [0; HEAP_BLOCK];

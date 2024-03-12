@@ -78,7 +78,7 @@
 #![allow(dead_code)]
 pub mod gicd;
 pub mod gicr;
-pub mod cell;
+pub mod zone;
 
 use core::arch::asm;
 
@@ -137,7 +137,7 @@ fn gicv3_clear_pending_irqs() {
 pub fn gicv3_cpu_shutdown() {
     // unsafe {write_sysreg!(icc_sgi1r_el1, val);}
     // let intid = unsafe { read_sysreg!(icc_iar1_el1) } as u32;
-    //arm_read_sysreg(ICC_CTLR_EL1, cell_icc_ctlr);
+    //arm_read_sysreg(ICC_CTLR_EL1, zone_icc_ctlr);
     info!("gicv3 shutdown!");
     let ctlr = read_sysreg!(icc_ctlr_el1);
     let pmr = read_sysreg!(icc_pmr_el1);

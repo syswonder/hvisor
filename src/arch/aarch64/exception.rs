@@ -5,7 +5,7 @@ use crate::device::gicv3::gicv3_handle_irq_el1;
 use crate::hypercall::{HyperCall, SGI_EVENT_ID};
 use crate::memory::{mmio_handle_access, MMIOAccess};
 use crate::num::sign_extend;
-use crate::percpu::{get_cpu_data, mpidr_to_cpuid, this_cell, this_cpu_data, GeneralRegisters};
+use crate::percpu::{get_cpu_data, mpidr_to_cpuid, this_zone, this_cpu_data, GeneralRegisters};
 use crate::percpu::{park_current_cpu, PerCpu};
 use aarch64_cpu::registers::*;
 #[allow(dead_code)]
@@ -289,7 +289,7 @@ fn psci_emulate_features_info(code: u64) -> u64 {
 }
 
 fn psci_emulate_cpu_on(frame: &mut TrapFrame) -> u64 {
-    // Todo: Check if `cpu` is in the cpuset of current cell
+    // Todo: Check if `cpu` is in the cpuset of current zone
     let cpu = mpidr_to_cpuid(frame.regs.usr[1]);
     info!("psci: try to wake up cpu {}", cpu);
 
@@ -325,8 +325,8 @@ fn handle_psci_smc(frame: &mut TrapFrame, code: u64, arg0: u64, _arg1: u64, _arg
         PsciFnId::PSCI_FEATURES => psci_emulate_features_info(frame.regs.usr[1]),
         PsciFnId::PSCI_CPU_ON_32 | PsciFnId::PSCI_CPU_ON_64 => psci_emulate_cpu_on(frame),
         PsciFnId::PSCI_SYSTEM_OFF => {
-            this_cell().read().suspend();
-            for cpu in this_cell().read().cpu_set.iter_except(this_cpu_data().id) {
+            this_zone().read().suspend();
+            for cpu in this_zone().read().cpu_set.iter_except(this_cpu_data().id) {
                 park_cpu(cpu);
             }
             park_current_cpu();

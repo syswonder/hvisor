@@ -4,6 +4,7 @@ QEMU_ARGS := -machine virt
 QEMU_ARGS +=-nographic 
 QEMU_ARGS +=-cpu rv64 
 QEMU_ARGS +=-m 3G 
+QEMU_ARGS +=-smp 4 
 QEMU_ARGS +=-bios default
 # QEMU_ARGS +=-bios $(BOOTLOADER)
 QEMU_ARGS +=-kernel $(target_bin)

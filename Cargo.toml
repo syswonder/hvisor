@@ -21,6 +21,8 @@ psci = { version = "0.1.0", default-features = false, features = ["smc"]}
 aarch64-cpu = "9.4.0"
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
+sbi-rt = { version = "0.0.2", features = ["legacy"] }
+riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"] }
 
 [profile.dev]
 panic = "abort"

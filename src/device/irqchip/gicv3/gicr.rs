@@ -5,7 +5,7 @@
 //! GICC Driver - GIC CPU interface.
 #![allow(dead_code)]
 use crate::{
-    consts::MAX_CPU_NUM, error::HvResult, hypercall::SGI_EVENT_ID, memory::{mmio_perform_access, MMIOAccess}, percpu::{get_cpu_data, this_cell, this_cpu_data}
+    consts::MAX_CPU_NUM, error::HvResult, hypercall::SGI_EVENT_ID, memory::{mmio_perform_access, MMIOAccess}, percpu::{get_cpu_data, this_zone, this_cpu_data}
 };
 use alloc::sync::Arc;
 
@@ -79,14 +79,14 @@ pub fn gicv3_gicr_mmio_handler(mmio: &mut MMIOAccess, cpu: u64) -> HvResult {
             }
         }
         GICR_IIDR | 0xffd0..=0xfffc => {
-            // Read-only registers that might be used by a cell to find the redistributor corresponding to a CPU. Keep them accessible.
+            // Read-only registers that might be used by a zone to find the redistributor corresponding to a CPU. Keep them accessible.
             mmio_perform_access(gicr_base, mmio);
         }
         GICR_SYNCR => {
             mmio.value = 0;
         }
         _ => {
-            if Arc::ptr_eq(&this_cell(), get_cpu_data(cpu).cell.as_ref().unwrap()) {
+            if Arc::ptr_eq(&this_zone(), get_cpu_data(cpu).zone.as_ref().unwrap()) {
                 // ignore access to foreign redistributors
                 mmio_perform_access(gicr_base, mmio);
             } else {

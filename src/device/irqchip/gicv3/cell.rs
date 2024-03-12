@@ -1,4 +1,4 @@
-impl CellIrqchipTrait {
+impl ZoneIrqchipTrait {
     pub fn irqchip_register_mmio_handlers(&mut self) {
         // add gicd handler
         self.mmio_region_register(
@@ -20,7 +20,7 @@ impl CellIrqchipTrait {
         self.mmio_region_register(0x8080000, 0x20000, mmio_generic_handler, 0x8080000);
     }
 
-    /// Add irq_id to this cell
+    /// Add irq_id to this zone
     pub fn irqchip_adjust_target(&mut self, irq_id: u32) {
         let gicd_base = HvSystemConfig::get().platform_info.arch.gicd_base;
         let irouter = (gicd_base + GICD_IROUTER + 8 * irq_id as u64) as *mut u64;
@@ -36,29 +36,29 @@ impl CellIrqchipTrait {
         }
     }
 
-    /// Commit the change of cell's irq mapping. It must be done when changing the cell's irq mapping.
+    /// Commit the change of zone's irq mapping. It must be done when changing the zone's irq mapping.
     pub fn irqchip_adjust_mappings(&mut self) {
-        let rc = root_cell();
+        let rc = root_zone();
         let rc_r = rc.read();
 
         for n in 32..1024 {
-            if self.irq_in_cell(n) {
-                if rc_r.irq_in_cell(n) {
-                    panic!("irq {} in root cell", n);
+            if self.irq_in_zone(n) {
+                if rc_r.irq_in_zone(n) {
+                    panic!("irq {} in root zone", n);
                 }
                 self.irqchip_adjust_target(n);
             }
         }
     }
 
-    /// Clear the cell's irqs and return its mapping to root cell. Called when destroy this cell.
+    /// Clear the zone's irqs and return its mapping to root zone. Called when destroy this zone.
     pub fn irqchip_exit(&self) {
-        /* ensure all SPIs of the cell are masked and deactivated */
+        /* ensure all SPIs of the zone are masked and deactivated */
         self.irqchip_reset();
         let gicd_base = HvSystemConfig::get().platform_info.arch.gicd_base;
-        let rc = root_cell();
+        let rc = root_zone();
         let mut rc_w = rc.write();
-        /* set all pins of the old cell in the root cell */
+        /* set all pins of the old zone in the root zone */
         for chip in &self.config().irq_chips().to_vec() {
             if chip.address != gicd_base {
                 continue;
@@ -67,7 +67,7 @@ impl CellIrqchipTrait {
                 rc_w.irq_bitmap[chip.pin_base as usize / 32 + idx] |= mask;
             }
         }
-        /* mask out pins again that actually didn't belong to the root cell */
+        /* mask out pins again that actually didn't belong to the root zone */
         for chip in &rc_w.config().irq_chips().to_vec() {
             if chip.address != gicd_base {
                 continue;
@@ -78,7 +78,7 @@ impl CellIrqchipTrait {
         }
     }
 
-    /// Mask and deactivate all SPIs of the cell.
+    /// Mask and deactivate all SPIs of the zone.
     pub fn irqchip_reset(&self) {
         let gicd_base = HvSystemConfig::get().platform_info.arch.gicd_base;
         for (idx, &mask) in self.irq_bitmap.iter().enumerate() {

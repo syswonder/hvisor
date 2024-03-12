@@ -38,13 +38,13 @@ impl HvConsole {
         }
     }
 }
-/// The jailhouse cell configuration.
+/// The jailhouse zone configuration.
 ///
-/// @note Keep Config._HEADER_FORMAT in jailhouse-cell-linux in sync with this
+/// @note Keep Config._HEADER_FORMAT in jailhouse-zone-linux in sync with this
 /// structure.
 #[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
-pub struct HvCellDesc {
+pub struct HvZoneDesc {
     signature: [u8; 6],
     revision: u16,
 
@@ -200,15 +200,15 @@ pub struct HvSystemConfig {
     pub hypervisor_memory: HvMemoryRegion,
     pub debug_console: HvConsole,
     pub platform_info: PlatformInfo,
-    pub root_cell: HvCellDesc,
-    // CellConfigLayout placed here.
-    // pub config_layout: CellConfigLayout,
+    pub root_zone: HvZoneDesc,
+    // ZoneConfigLayout placed here.
+    // pub config_layout: ZoneConfigLayout,
 }
 
 /// A dummy layout with all variant-size fields empty.
 #[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
-struct CellConfigLayout {
+struct ZoneConfigLayout {
     cpus: [u64; 1],
     mem_regions: [HvMemoryRegion; 0],
     cache_regions: [HvCacheRegion; 0],
@@ -218,13 +218,13 @@ struct CellConfigLayout {
     pci_caps: [HvPciCapability; 0],
 }
 
-pub struct CellConfig<'a> {
-    desc: &'a HvCellDesc,
+pub struct ZoneConfig<'a> {
+    desc: &'a HvZoneDesc,
 }
 
-impl HvCellDesc {
-    pub fn config(&self) -> CellConfig {
-        CellConfig::new(self)
+impl HvZoneDesc {
+    pub fn config(&self) -> ZoneConfig {
+        ZoneConfig::new(self)
     }
 
     pub const fn config_size(&self) -> usize {
@@ -245,7 +245,7 @@ impl HvSystemConfig {
 
     #[allow(unused)]
     pub const fn size(&self) -> usize {
-        size_of::<Self>() + self.root_cell.config_size()
+        size_of::<Self>() + self.root_zone.config_size()
     }
 
     pub fn check(&self) -> HvResult {
@@ -259,17 +259,17 @@ impl HvSystemConfig {
     }
 }
 
-impl<'a> CellConfig<'a> {
-    pub fn new(desc: &'a HvCellDesc) -> Self {
+impl<'a> ZoneConfig<'a> {
+    pub fn new(desc: &'a HvZoneDesc) -> Self {
         Self { desc }
     }
 
-    pub fn desc_ptr(&self) -> *const HvCellDesc {
+    pub fn desc_ptr(&self) -> *const HvZoneDesc {
         self.desc as *const _
     }
 
     fn config_ptr<T>(&self) -> *const T {
-        unsafe { (self.desc as *const HvCellDesc).add(1) as _ }
+        unsafe { (self.desc as *const HvZoneDesc).add(1) as _ }
     }
 
     pub const fn config_size(&self) -> usize {
@@ -277,7 +277,7 @@ impl<'a> CellConfig<'a> {
     }
 
     pub const fn total_size(&self) -> usize {
-        self.desc.config_size() + size_of::<HvCellDesc>()
+        self.desc.config_size() + size_of::<HvZoneDesc>()
     }
 
     pub const fn id(&self) -> u32 {
@@ -292,8 +292,8 @@ impl<'a> CellConfig<'a> {
         self.desc.console
     }
 
-    pub fn cpu_reset_address(&self) -> u64 {
-        self.desc.cpu_reset_address
+    pub fn cpu_reset_address(&self) -> usize {
+        self.desc.cpu_reset_address as _
     }
 
     pub fn cpu_set(&self) -> CpuSet {
@@ -331,14 +331,14 @@ impl<'a> CellConfig<'a> {
     }
 }
 
-impl Debug for CellConfig<'_> {
+impl Debug for ZoneConfig<'_> {
     fn fmt(&self, f: &mut Formatter) -> Result {
         let name = self.desc.name;
         let mut len = 0;
         while name[len] != 0 {
             len += 1;
         }
-        f.debug_struct("CellConfig")
+        f.debug_struct("ZoneConfig")
             .field("name", &core::str::from_utf8(&name[..len]))
             .field("size", &self.config_size())
             .field("mem_regions", &self.mem_regions())
