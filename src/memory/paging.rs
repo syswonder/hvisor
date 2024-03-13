@@ -3,10 +3,10 @@ use core::{fmt::Debug, marker::PhantomData, slice};
 
 use spin::Mutex;
 
-use super::addr::{phys_to_virt, PhysAddr};
+use super::addr::PhysAddr;
 use super::{Frame, MemFlags, MemoryRegion, TEMPORARY_MAPPING_BASE};
 use crate::error::{HvError, HvResult};
-use crate::memory::addr::{is_aligned, virt_to_phys};
+use crate::memory::addr::is_aligned;
 use crate::memory::VirtAddr;
 
 #[derive(Debug)]
@@ -209,7 +209,7 @@ where
                 }
                 println!(
                     "[ADDR:{:#x?} level:{} - idx:{:03}], vaddr:{:08x?}: {:x?}",
-                    virt_to_phys(entry as *const _ as VirtAddr),
+                    entry as *const _ as VirtAddr,
                     level,
                     idx,
                     vaddr,
@@ -369,10 +369,10 @@ where
         // original page table.
         let pt = Self::new();
         let dst_p4_table = unsafe {
-            slice::from_raw_parts_mut(phys_to_virt(pt.root_paddr()) as *mut PTE, ENTRY_COUNT)
+            slice::from_raw_parts_mut(pt.root_paddr() as *mut PTE, ENTRY_COUNT)
         };
         let src_p4_table = unsafe {
-            slice::from_raw_parts(phys_to_virt(src.root_paddr()) as *const PTE, ENTRY_COUNT)
+            slice::from_raw_parts(src.root_paddr() as *const PTE, ENTRY_COUNT)
         };
         dst_p4_table.clone_from_slice(src_p4_table);
         pt
@@ -529,12 +529,12 @@ const fn p1_index(vaddr: usize) -> usize {
 }
 
 fn table_of<'a, E>(paddr: PhysAddr) -> &'a [E] {
-    let ptr = phys_to_virt(paddr) as *const E;
+    let ptr = paddr as *const E;
     unsafe { slice::from_raw_parts(ptr, ENTRY_COUNT) }
 }
 
 fn table_of_mut<'a, E>(paddr: PhysAddr) -> &'a mut [E] {
-    let ptr = phys_to_virt(paddr) as *mut E;
+    let ptr = paddr as *mut E;
     unsafe { slice::from_raw_parts_mut(ptr, ENTRY_COUNT) }
 }
 

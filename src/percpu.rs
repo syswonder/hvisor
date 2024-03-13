@@ -2,6 +2,7 @@ use alloc::sync::Arc;
 use spin::{Mutex, RwLock};
 
 use crate::arch::cpu::{this_cpu_id, ArchCpu};
+use crate::arch::csr::write_csr;
 use crate::{ACTIVATED_CPUS, ENTERED_CPUS};
 use crate::zone::Zone;
 use crate::config::HvSystemConfig;
@@ -10,7 +11,7 @@ use crate::error::HvResult;
 use crate::memory::addr::VirtAddr;
 use crate::memory::addr::{GuestPhysAddr, HostPhysAddr};
 use crate::memory::{
-    MemFlags, MemoryRegion, MemorySet, PARKING_INST_PAGE, PHYS_VIRT_OFFSET,
+    MemFlags, MemoryRegion, MemorySet, PARKING_INST_PAGE,
 };
 use core::fmt::Debug;
 use core::sync::atomic::Ordering;
@@ -40,6 +41,11 @@ impl PerCpu {
             ctrl_lock: Mutex::new(()),
             boot_cpu: false,
         };
+        #[cfg(target_arch = "riscv64")]
+        {
+            use crate::arch::csr::CSR_SSCRATCH;
+            write_csr!(CSR_SSCRATCH, &ret.arch_cpu as *const _ as usize); //arch cpu pointer
+        }
         ret
     }
 

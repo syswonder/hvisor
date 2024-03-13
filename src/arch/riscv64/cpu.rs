@@ -1,9 +1,8 @@
 use super::csr::*;
 use crate::{
     consts::{PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
-    memory::{PhysAddr, VirtAddr}, percpu::PerCpu,
+    memory::{PhysAddr, VirtAddr}, 
 };
-use core::{arch::asm, panicking::panic};
 
 #[repr(C)]
 #[derive(Debug)]
@@ -100,7 +99,11 @@ impl ArchCpu {
 }
 
 fn this_cpu_arch() -> &'static mut ArchCpu {
-    unsafe { &mut *(read_csr!(CSR_SSCRATCH) as *mut ArchCpu) }
+    let sscratch = read_csr!(CSR_SSCRATCH);
+    if sscratch == 0 {
+        panic!("CSR_SSCRATCH unintialized!");
+    }
+    unsafe { &mut *(sscratch as *mut ArchCpu) }
 }
 
 pub fn this_cpu_id() -> usize {

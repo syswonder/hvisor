@@ -1,6 +1,5 @@
 use crate::config::HvMemoryRegion;
 
-use super::addr::virt_to_phys;
 use super::{AlignedPage, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, PhysAddr};
 
 static EMPTY_PAGE: AlignedPage = AlignedPage::new();
@@ -30,7 +29,7 @@ impl Mapper {
 impl<VA: From<usize> + Into<usize> + Copy> MemoryRegion<VA> {
     #[allow(unused)]
     pub fn new_with_empty_mapper(start: VA, size: usize, flags: MemFlags) -> Self {
-        let paddr = virt_to_phys(EMPTY_PAGE.as_ptr() as usize);
+        let paddr = EMPTY_PAGE.as_ptr() as usize;
         Self::new(start, size, flags, Mapper::Fixed(paddr))
     }
 

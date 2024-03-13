@@ -51,7 +51,6 @@ use arch::entry::arch_entry;
 use config::HvSystemConfig;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use error::HvResult;
-use memory::addr::virt_to_phys;
 use percpu::PerCpu;
 
 #[cfg(target_arch = "aarch64")]
@@ -64,6 +63,14 @@ static INIT_EARLY_OK: AtomicU32 = AtomicU32::new(0);
 static INIT_LATE_OK: AtomicU32 = AtomicU32::new(0);
 static MASTER_CPU: AtomicI32 = AtomicI32::new(-1);
 
+pub fn clear_bss() {
+    extern "C" {
+        fn sbss();
+        fn ebss();
+    }
+    (sbss as usize..ebss as usize).for_each(|a| unsafe { (a as *mut u8).write_volatile(0) });
+}
+
 fn wait_for(condition: impl Fn() -> bool) {
     while condition() {
         core::hint::spin_loop();
@@ -74,40 +81,36 @@ fn wait_for_counter(counter: &AtomicU32, max_value: u32) {
     wait_for(|| counter.load(Ordering::Acquire) < max_value)
 }
 
-fn primary_init_early() -> HvResult {
+fn primary_init_early() {
     logging::init();
     info!("Logging is enabled.");
-
     // let system_config = HvSystemConfig::get();
     // let revision = system_config.revision;
-    // info!(
-    //     "\n\
-    //     Initializing hypervisor...\n\
-    //     config_signature = {:?}\n\
-    //     config_revision = {}\n\
-    //     build_mode = {}\n\
-    //     log_level = {}\n\
-    //     arch = {}\n\
-    //     vendor = {}\n\
-    //     stats = {}\n\
-    //     ",
-    //     core::str::from_utf8(&system_config.signature),
-    //     revision,
-    //     option_env!("MODE").unwrap_or(""),
-    //     option_env!("LOG").unwrap_or(""),
-    //     option_env!("ARCH").unwrap_or(""),
-    //     option_env!("VENDOR").unwrap_or(""),
-    //     option_env!("STATS").unwrap_or("off"),
-    // );
+    info!(
+        "\n\
+        Initializing hypervisor...\n\
+        build_mode = {}\n\
+        log_level = {}\n\
+        arch = {}\n\
+        vendor = {}\n\
+        stats = {}",
+        option_env!("MODE").unwrap_or(""),
+        option_env!("LOG").unwrap_or(""),
+        option_env!("ARCH").unwrap_or(""),
+        option_env!("VENDOR").unwrap_or(""),
+        option_env!("STATS").unwrap_or("off"),
+    );
 
     memory::heap::init();
+    memory::heap::heap_test();
+
     // system_config.check()?;
 
     // info!("System config: {:#x?}", system_config);
 
     memory::frame::init();
-    memory::init_hv_page_table()?;
-    todo!();
+    memory::init_hv_page_table();
+    loop {}
     // zone::init()?;
 
     // unsafe {
@@ -118,8 +121,7 @@ fn primary_init_early() -> HvResult {
 
     // do_zone_create(unsafe { nr1_config_ptr().as_ref().unwrap() })?;
 
-    INIT_EARLY_OK.store(1, Ordering::Release);
-    Ok(())
+    // INIT_EARLY_OK.store(1, Ordering::Release);
 }
 
 fn primary_init_late() {
@@ -176,6 +178,7 @@ fn rust_main(cpuid: usize) {
         fn gdtb();
         fn vmimg();
     }
+
     // println!("Hello, world!");
     // println!(".text [{:#x}, {:#x})", stext as usize, etext as usize);
     // println!(".rodata [{:#x}, {:#x})", srodata as usize, erodata as usize);
@@ -185,18 +188,19 @@ fn rust_main(cpuid: usize) {
     //     boot_stack_top as usize, boot_stack_lower_bound as usize
     // );
 
+    let mut is_primary = false;
+    if MASTER_CPU.load(Ordering::Acquire) == -1 {
+        MASTER_CPU.store(cpuid as i32, Ordering::Release);
+        is_primary = true;
+        clear_bss();
+    }
+
     let cpu_data = PerCpu::new(cpuid);
 
     println!(
         "cpu_id = {}, &cpu_data = {:#x?}",
         cpu_data.id, cpu_data as *const _
     );
-
-    let mut is_primary = false;
-    if MASTER_CPU.load(Ordering::Acquire) == -1 {
-        MASTER_CPU.store(cpuid as i32, Ordering::Release);
-        is_primary = true;
-    }
 
     if is_primary {
         // Set PHYS_VIRT_OFFSET early.
@@ -208,12 +212,13 @@ fn rust_main(cpuid: usize) {
         wakeup_secondary_cpus(cpu_data.id);
     }
 
+    ENTERED_CPUS.fetch_add(1, Ordering::SeqCst);
     wait_for(|| PerCpu::entered_cpus() < MAX_CPU_NUM as _);
     assert_eq!(PerCpu::entered_cpus(), MAX_CPU_NUM as _);
 
     println!(
         "{} CPU {} entered.",
-        if is_primary { "Primary" } else { "Secondary" },
+        if is_primary { "Primary " } else { "Secondary" },
         cpu_data.id
     );
 
@@ -223,6 +228,7 @@ fn rust_main(cpuid: usize) {
         wait_for_counter(&INIT_EARLY_OK, 1);
     }
 
+    loop {}
     // per_cpu_init();
 
     // INITED_CPUS.fetch_add(1, Ordering::SeqCst);

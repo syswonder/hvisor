@@ -1,4 +1,4 @@
-//! SBI call wrappers
+#![allow(dead_code)]
 
 //use crate::arch::riscv::csr::*;
 use riscv::register::{hvip, sie};

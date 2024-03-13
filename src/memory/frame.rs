@@ -4,7 +4,7 @@ use bitmap_allocator::BitAlloc;
 
 use spin::Mutex;
 
-use super::addr::{align_down, align_up, is_aligned, phys_to_virt, virt_to_phys, PhysAddr};
+use super::addr::{align_down, align_up, is_aligned, PhysAddr};
 use crate::consts::PAGE_SIZE;
 use crate::error::HvResult;
 
@@ -152,12 +152,12 @@ impl Frame {
 
     /// convert to raw a pointer.
     pub fn as_ptr(&self) -> *const u8 {
-        phys_to_virt(self.start_paddr) as *const u8
+        self.start_paddr as *const u8
     }
 
     /// convert to a mutable raw pointer.
     pub fn as_mut_ptr(&self) -> *mut u8 {
-        phys_to_virt(self.start_paddr) as *mut u8
+        self.start_paddr as *mut u8
     }
 
     /// Fill `self` with `byte`.
@@ -211,10 +211,10 @@ pub fn init() {
     let mem_pool_size = mem_pool_end - mem_pool_start;
     FRAME_ALLOCATOR
         .lock()
-        .init(virt_to_phys(mem_pool_start), mem_pool_size);
+        .init(mem_pool_start, mem_pool_size);
 
     info!(
-        "Frame allocator init end: {:#x?}",
+        "Frame allocator initialization finished: {:#x?}",
         mem_pool_start..mem_pool_end
     );
 }
