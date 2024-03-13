@@ -137,25 +137,25 @@ static int __init hvisor_init(void)
     }
 
     // The irq number must be retrieved from dtb node, because it is different from GIC's IRQ number.
-    struct device_node *node = NULL;
-    node = of_find_node_by_path("/vm_service");
-    if (!node) {
-        pr_err("vm_service not found\n");
-        return -1;
-    }
-
-    int irq = of_irq_get(node, 0);
-    err = request_irq(irq, irq_handler, IRQF_SHARED | IRQF_TRIGGER_RISING, "hvisor", &hvisor_misc_dev);
-    if (err) {
-        pr_err("hvisor cannot register IRQ, err is %d\n", err);
-        goto irq;
-    }
+//    struct device_node *node = NULL;
+//    node = of_find_node_by_path("/vm_service");
+//    if (!node) {
+//        pr_err("vm_service not found\n");
+//        return -1;
+//    }
+//
+//    int irq = of_irq_get(node, 0);
+//    err = request_irq(irq, irq_handler, IRQF_SHARED | IRQF_TRIGGER_RISING, "hvisor", &hvisor_misc_dev);
+//    if (err) {
+//        pr_err("hvisor cannot register IRQ, err is %d\n", err);
+//        goto irq;
+//    }
     printk("hvisor init done!!!\n");
     return 0;
 
-irq:
-    free_irq(irq,(void *)(irq_handler));
-    return -1;
+//irq:
+//    free_irq(irq,(void *)(irq_handler));
+//    return -1;
 }
 
 /*

@@ -147,7 +147,7 @@ fn gicd_misc_access(mmio: &mut MMIOAccess, gicd_base: u64) -> HvResult {
 }
 
 pub fn gicv3_gicd_mmio_handler(mmio: &mut MMIOAccess, _arg: u64) -> HvResult {
-    // info!("mmio = {:#x?}", mmio);
+    // info!("gicd, mmio = {:#x?}", mmio);
     let gicd_base = HvSystemConfig::get().platform_info.arch.gicd_base;
     let reg = mmio.address as u64;
 

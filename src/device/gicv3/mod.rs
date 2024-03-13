@@ -78,14 +78,18 @@
 #![allow(dead_code)]
 pub mod gicd;
 mod gicr;
+
+use core::ptr::{read_volatile, write_volatile};
+use aarch64_cpu::registers::MPIDR_EL1;
 use crate::arch::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::config::HvSystemConfig;
 use crate::device::virtio::handle_virtio_result;
 use crate::hypercall::{SGI_EVENT_ID, SGI_RESUME_ID, SGI_VIRTIO_REQ_ID, SGI_VIRTIO_RES_ID};
-use crate::percpu::check_events;
+use crate::percpu::{check_events, this_cpu_affinity, this_cpu_data};
 
 pub use gicd::{gicv3_gicd_mmio_handler, GICD_IROUTER};
 pub use gicr::{gicv3_gicr_mmio_handler, LAST_GICR};
+use crate::device::gicv3::gicr::{GICR_ISENABLER, GICR_SGI_BASE, GICR_TYPER};
 
 /// Representation of the GIC.
 pub struct GICv3 {
@@ -108,33 +112,45 @@ impl GICv3 {
     }
 }
 
-//TODO: add Distributor init
 pub fn gicv3_cpu_init() {
-    //TODO: add Redistributor init
     let sdei_ver = unsafe { smc_arg1!(0xc4000020) }; //sdei_check();
     info!("sdei vecsion: {}", sdei_ver);
     info!("gicv3 init!");
 
     let _gicd_base: u64 = HvSystemConfig::get().platform_info.arch.gicd_base;
     let _gicr_base: u64 = HvSystemConfig::get().platform_info.arch.gicr_base;
+    let redist_base = this_cpu_data().gicr_base;
+    // 由于redist_base没有映射, 导致无法访问. 应该不用检查, 下面执行下来应该是对的.
+    // unsafe {
+    //     let typer = read_volatile((redist_base + GICR_TYPER) as *const u64);
+    //     info!("typer is {}", typer >> 32);
+    //     if (typer >> 32) != this_cpu_affinity() {
+    //         panic!("wrong, typer is {}, affinity is {}", typer, this_cpu_affinity());
+    //     }
+    // }
+    // info!("redist_base is {:X}", redist_base);
+    // // Enable all SGIs.
+    // unsafe {
+    //     write_volatile((redist_base + GICR_SGI_BASE + GICR_ISENABLER )as *mut u32, 0xffffu32);
+    // }
 
-    //Identifier bits. Read-only and writes are ignored.
-    //Priority bits. Read-only and writes are ignored.
+    // Make ICC_EOIR1_EL1 provide priority drop functionality only. ICC_DIR_EL1 provides interrupt deactivation functionality.
     let ctlr = read_sysreg!(icc_ctlr_el1);
-    debug!("ctlr: {:#x?}", ctlr);
-    write_sysreg!(icc_ctlr_el1, 0x2); // ICC_EOIR1_EL1 provide priority drop functionality only. ICC_DIR_EL1 provides interrupt deactivation functionality.
-    let ctlr2 = read_sysreg!(icc_ctlr_el1);
-    debug!("ctlr2: {:#x?}", ctlr2);
+    write_sysreg!(icc_ctlr_el1, 0x2);
+    // Set Interrupt Controller Interrupt Priority Mask Register
     let pmr = read_sysreg!(icc_pmr_el1);
-    write_sysreg!(icc_pmr_el1, 0xf0); // Interrupt Controller Interrupt Priority Mask Register
+    write_sysreg!(icc_pmr_el1, 0xf0);
+    // Enable group 1 irq
     let igrpen = read_sysreg!(icc_igrpen1_el1);
-    write_sysreg!(icc_igrpen1_el1, 0x1); //group 1 irq
-    debug!("ctlr: {:#x?}, pmr:{:#x?},igrpen{:#x?}", ctlr, pmr, igrpen);
+    write_sysreg!(icc_igrpen1_el1, 0x1);
+
+    gicv3_clear_pending_irqs();
     let _vtr = read_sysreg!(ich_vtr_el2);
     let vmcr = ((pmr & 0xff) << 24) | (1 << 1) | (1 << 9); //VPMR|VENG1|VEOIM
     write_sysreg!(ich_vmcr_el2, vmcr);
     write_sysreg!(ich_hcr_el2, 0x1); //enable virt cpu interface
 }
+
 fn gicv3_clear_pending_irqs() {
     let vtr = read_sysreg!(ich_vtr_el2) as usize;
     let lr_num: usize = (vtr & 0xf) + 1;
@@ -195,8 +211,11 @@ pub fn gicv3_handle_irq_el1() {
             }
         } else {
             //inject phy irq
-            deactivate_irq(irq_id);
+            // if irq_id >= 32 {
+            //     info!("get irq_id {}", irq_id);
+            // }
             inject_irq(irq_id, true);
+            deactivate_irq(irq_id);
         }
     }
 }
@@ -292,7 +311,7 @@ pub fn inject_irq(irq_id: usize, is_hardware: bool) {
     // debug!("To Inject IRQ {}, find lr {}", irq_id, free_ir);
 
     if free_ir == -1 {
-        error!("full lr");
+        panic!("full lr");
         loop {}
     } else {
         let mut val = irq_id as u64; //v intid

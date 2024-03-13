@@ -44,7 +44,7 @@ int init_virtio_devices()
     log_info("mmap virt addr is %#x", virt_addr);
     dev = create_virtio_device(VirtioTBlock, 1);
     ((BlkDev *)dev->dev)->img_fd = img_fd;
-    //    create_virtio_device(VirtioTNet, 1);
+    create_virtio_device(VirtioTNet, 1);
     return 0;
 }
 
@@ -125,6 +125,7 @@ void init_mmio_regs(VirtMmioRegs *regs, VirtioDeviceType type)
 // TODO: virtio-net看看如何reset
 void virtio_dev_reset(VirtIODevice *vdev)
 {
+    // 当driver读取了4个硬编码信息后, 会reset dev
     log_trace("virtio dev reset");
     vdev->regs.status = 0;
     vdev->regs.interrupt_status = 0;
@@ -233,6 +234,7 @@ _vq_record(int i, volatile VirtqDesc *vd,
     host_addr = get_virt_addr(vd->addr);
     iov[i].iov_base = host_addr;
     iov[i].iov_len = vd->len;
+    log_debug("vd->addr ipa is %x, iov_base is %x, iov_len is %d", vd->addr, host_addr, vd->len);
     if (flags != NULL)
         flags[i] = vd->flags;
     return 0;
@@ -248,10 +250,13 @@ int vq_getchain(VirtQueue *vq, uint16_t *pidx,
     uint16_t next, idx;
     volatile VirtqDesc *vdesc;
     idx = vq->last_avail_idx;
+    if(idx == vq->avail_ring->idx)
+        return 0;
     vq->last_avail_idx++;
     *pidx = next = vq->avail_ring->ring[idx & (vq->num - 1)];
 
     for (int i=0; i < vq->num; next = vdesc->next) {
+        log_debug("vq_getchain: vq_num is %d", vq->num);
         vdesc = &vq->desc_table[next];
         if (_vq_record(i, vdesc, iov, n_iov, flags)) {
             log_error("vq record failed");
@@ -273,10 +278,11 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
     used_ring = vq->used_ring;
     used_idx = used_ring->idx;
     mask = vq->num - 1;
-    elem = &used_ring[used_idx++ & mask];
+    elem = &used_ring->ring[used_idx++ & mask];
     elem->id = idx;
     elem->len = iolen;
     used_ring->idx = used_idx;
+    log_debug("update used ring: used_idx is %d, elem->idx is %d", used_idx-1, idx);
 }
 
 /// restore last_avail_idx when you called vq_getchain()
@@ -298,7 +304,7 @@ void vq_endchains(VirtQueue *vq, int used_all_avail)
 
 static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size)
 {
-    log_trace("virtio mmio read at %#x", offset);
+    log_debug("virtio mmio read at %#x", offset);
     if (!vdev) {
         /* If no backend is present, we treat most registers as
          * read-as-zero, except for the magic number, version and
@@ -388,7 +394,7 @@ static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned s
 
 static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t value, unsigned size)
 {
-    log_trace("virtio mmio write at %#x, value is %d\n", offset, value);
+    log_debug("virtio mmio write at %#x, value is %#x\n", offset, value);
     VirtMmioRegs *regs = &vdev->regs;
     VirtQueue *vqs = vdev->vqs;
     if (!vdev) {
@@ -538,13 +544,17 @@ int virtio_handle_req(volatile struct device_req *req)
         return -1;
     }
     VirtIODevice *vdev = vdevs[i];
+    if (vdev->type == VirtioTNet)
+        log_debug("vdev type is net");
+    else
+        log_debug("vdev type is blk");
     uint64_t offs = req->address - vdev->base_addr;
     if (req->is_write) {
         virtio_mmio_write(vdev, offs, req->value, req->size);
         value = vdev->irq_id;
     } else {
         value = virtio_mmio_read(vdev, offs, req->size);
-        log_debug("read value is %d\n", value);
+        log_debug("read value is 0x%x\n", value);
     }
     if (!req->need_interrupt) {
         // If a request is a control not a data request
@@ -553,6 +563,6 @@ int virtio_handle_req(volatile struct device_req *req)
         // request is a data request, need to inject interrupt
         virtio_finish_req(req->src_cpu, value, 1);
     }
-    log_debug("src_cell is %d, src_cpu is %lld", req->src_cell, req->src_cpu);
+    log_trace("src_cell is %d, src_cpu is %lld", req->src_cell, req->src_cpu);
     return 0;
 }

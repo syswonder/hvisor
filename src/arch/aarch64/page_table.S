@@ -51,3 +51,13 @@
 .macro	get_index idx, addr, lvl
 	ubfx	\idx, \addr, #(12 + (3 - \lvl) * 9), 9     //get index bit from addr depend on lvl, see arm page
 .endm
+
+/*
+ * dcache_line_size - get the minimum D-cache line size from the CTR register.
+ */
+.macro	dcache_line_size, reg, tmp
+    mrs	\tmp, ctr_el0			// read CTR
+    ubfm	\tmp, \tmp, #16, #19		// cache line size encoding
+    mov	\reg, #4			// bytes per word
+    lsl	\reg, \reg, \tmp		// actual cache line size
+.endm

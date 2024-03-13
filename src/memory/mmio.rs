@@ -1,4 +1,6 @@
 use core::ptr;
+use aarch64_cpu::registers::ELR_EL2;
+use tock_registers::interfaces::Readable;
 
 use crate::{error::HvResult, percpu::this_cell};
 
@@ -40,7 +42,10 @@ impl MMIORegion {
 
 pub fn mmio_perform_access(base: u64, mmio: &mut MMIOAccess) {
     let addr = base as usize + mmio.address;
-
+    if addr >= 0x80_0000_3000 && addr < 0x80_0000_4000 {
+        info!("access addr:{:#X}, elr:{:#X}", addr, ELR_EL2.get());
+        return;
+    }
     unsafe {
         if mmio.is_write {
             match mmio.size {
@@ -71,10 +76,11 @@ pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
             handler(mmio, arg)
         }
         None => {
+            let pc = ELR_EL2.get();
             warn!(
-                "Cell {} unhandled mmio fault {:#x?}",
+                "Cell {} unhandled mmio fault {:#x?}, pc is {:#x?}",
                 cell.read().id(),
-                mmio
+                mmio, pc
             );
             hv_result_err!(EINVAL)
         }

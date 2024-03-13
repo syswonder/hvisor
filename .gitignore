@@ -15,3 +15,4 @@ hvisor_ko/main.ko
 hvisor_user/hvisor
 *.cpp
 /.idea
+vmlinux

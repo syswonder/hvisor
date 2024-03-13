@@ -32,11 +32,20 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
             ldr	x12, [x1, #12]                      //phyaddr read from config
             ldr x14, [x1, #44]                      //SYSCONFIG_DEBUG_CONSOLE_PHYS
             ldr x15, ={uart_base_virt}              //consts
-            sub	x11, x12, x13                       //x11= (el2 mmu on)virt-phy offset 
+            sub	x11, x12, x13                       //x11= (el2 mmu on)virt-phy offset
+            // TODO: flush dcache
+            /*
+             * When switching to EL2 using hvc #0, before the MMU is enabled, some
+             * data may still be kept in D-cache, such as the hypervisor core code.
+             * Flush it so that the CPU does not fetch wrong instructions.
+             */
+            // adrp x1,__core_size
+            // mov	x2, #2
+            // bl	arm_dcaches_flush
+
             ldr	x1, =bootstrap_vectors
             virt2phys x1       
     
-            /*TODO: clean and invaild d cache*/
             /* choose opcode */
             mov	x0, 0
             hvc	#0                                  //install bootstrap vec
@@ -54,7 +63,7 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
 }
 #[naked]
 #[no_mangle]
-pub unsafe extern "C" fn el2_entry() -> i32 {
+pub unsafe extern "C" fn el2_entry() {
     core::arch::asm!(
         "
         mrs	x1, esr_el2                     //  Exception Syndrome Register
@@ -109,12 +118,44 @@ pub unsafe extern "C" fn boot_pt() -> i32 {
 	    set_block_dev bootstrap_pt_l2_hyp_uart, x3, x14, 2
     
         adrp	x0, bootstrap_pt_l0  //phy addr
-        /*  TODO: flush dcache */
-        ret
-    
-        
-        
+
+        mov	x1, 4096 * 4
+	    mov	x2, 1
+	    b	arm_dcaches_flush	/* will return to our caller */
     ",
+        options(noreturn),
+    );
+}
+
+#[naked]
+#[no_mangle]
+pub unsafe extern "C" fn arm_dcaches_flush() {
+    core::arch::asm!(
+    "
+    dcache_line_size x3, x4
+	add	x1, x0, x1
+	sub	x4, x3, #1
+	bic	x0, x0, x4
+
+1:	cmp	x2, #0 // DCACHE_CLEAN_ASM
+	b.ne	2f
+	dc	cvac, x0
+	b	4f
+
+2:	cmp	x2, #1 // DCACHE_INVALIDATE_ASM
+	b.ne	3f
+	dc	ivac, x0
+	b	4f
+
+3:	dc	civac, x0			// DCACHE_CLEAN_AND_INVALIDATE
+
+4:	add	x0, x0, x3
+	cmp	x0, x1
+	b.lo	1b
+
+	dsb	sy
+	ret
+	",
         options(noreturn),
     );
 }

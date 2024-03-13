@@ -88,14 +88,14 @@ type SgiReg = MMIODerefWrapper<GicRedistributorSGIRegs>;
 
 const GICR_CTLR: u64 = 0x0000;
 const GICR_IIDR: u64 = 0x0004;
-const GICR_TYPER: u64 = 0x0008;
+pub const GICR_TYPER: u64 = 0x0008;
 const GICR_STATUSR: u64 = 0x0010;
 const GICR_WAKER: u64 = 0x0014;
 const GICR_SYNCR: u64 = 0x00c0;
 const GICR_PIDR2: u64 = 0xffe8;
-const GICR_SGI_BASE: u64 = 0x10000;
+pub const GICR_SGI_BASE: u64 = 0x10000;
 
-const GICR_ISENABLER: u64 = GICD_ISENABLER;
+pub const GICR_ISENABLER: u64 = GICD_ISENABLER;
 const GICR_ICENABLER: u64 = GICD_ICENABLER;
 const GICR_ISPENDR: u64 = GICD_ISPENDR;
 const GICR_ICPENDR: u64 = GICD_ICPENDR;

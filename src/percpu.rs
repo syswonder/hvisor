@@ -141,6 +141,11 @@ impl PerCpu {
     }
 }
 
+pub fn this_cpu_affinity() -> u64{
+    let mpidr = MPIDR_EL1.get();
+    return mpidr;
+}
+
 pub fn this_cpu_data<'a>() -> &'a mut PerCpu {
     /*per cpu data should be handled after final el2 paging init
     now just only cpu 0*/

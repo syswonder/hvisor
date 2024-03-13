@@ -92,8 +92,8 @@ int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq);
 #define VIRTIO_BLK_F_SEG_MAX	(1<<2)	/* Indicates maximum # of segments */
 
 // #define BLK_SIZE_MAX 131072
-#define BLK_SIZE_MAX 1089536 // 512MB, indicate how many of 512B
-#define BLK_SEG_MAX 512
+#define BLK_SIZE_MAX 2097152 // 768MB, indicate how many of 512B
+#define BLK_SEG_MAX 256
 
 #define VIRTQUEUE_BLK_MAX_SIZE 512
 

@@ -34,6 +34,7 @@ NetDev *init_net_dev(uint8_t mac[])
 // open tap device
 static int virtio_net_tap_open(char *devname)
 {
+    log_info("virtio net tap open");
     char tbuf[IFNAMSIZ] = "/dev/net/tun";
     int tunfd, rc;
     struct ifreq ifr;
@@ -42,6 +43,7 @@ static int virtio_net_tap_open(char *devname)
         log_error("Failed to open tap device");
         return -1;
     }
+    log_info("open tun fd succeed");
     memset(&ifr, 0, sizeof(ifr));
     // IFF_NO_PI tells kernel do not provide message header
     ifr.ifr_flags = IFF_TAP | IFF_NO_PI;
@@ -53,13 +55,16 @@ static int virtio_net_tap_open(char *devname)
         close(tunfd);
         return -1;
     }
-    strncpy(devname, ifr.ifr_name, IFNAMSIZ);
+    log_info("ioctl tun fd succeed");
+//    strncpy(devname, ifr.ifr_name, IFNAMSIZ);
+    log_info("open virtio net tap succeed");
     return tunfd;
 }
 
-/// When driver adds buffers to rxq, it will notify rxq.
+/// When driver notifies rxq, it means the rx process can now begin
 int virtio_net_rxq_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
 {
+    log_debug("virtio_net_rxq_notify_handler");
     NetDev *net = vdev->dev;
     if (net->rx_ready == 0) {
         net->rx_ready = 1;
@@ -156,6 +161,7 @@ static void virtio_net_tap_rx(VirtIODevice *vdev)
 /// Called when tap device received packets
 static void virtio_net_rx_callback(int fd, enum ev_type type, void *param)
 {
+    log_debug("virtio_net_rx_callback");
     VirtIODevice *vdev = param;
     virtio_net_tap_rx(vdev);
 }
@@ -204,8 +210,31 @@ static void virtq_tx_handle_one_request(NetDev *net, VirtQueue *vq)
     update_used_ring(vq, idx, tlen);
 }
 
+// static void virtq_tx_handle_one_request(NetDev *net, VirtQueue *vq)
+// {
+//     struct iovec iov[VIRTQUEUE_NET_MAX_SIZE + 1];
+//     int i, n;
+//     int plen, tlen; // packet length and transfer length.
+//     uint16_t idx;
+
+//     n = vq_getchain(vq, &idx, iov, VIRTQUEUE_NET_MAX_SIZE, NULL);
+//     if (n < 1)
+//         return ;
+//     tlen = iov[0].iov_len;
+//     iov[0].iov_base += sizeof(NetRxHdr);
+//     iov[0].iov_len -= sizeof(NetRxHdr);
+//     plen = iov[0].iov_len;
+//     for (i = 1; i < n; i++) {
+//         plen += iov[i].iov_len;
+//         tlen += iov[i].iov_len;
+//     }
+//     log_info("virtio: packet send, %d bytes, %d segs\n\r", plen, n);
+//     virtio_net_tap_tx(net, &iov[0], n, plen);
+//     update_used_ring(vq, idx, tlen);
+// }
 int virtio_net_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
 {
+    log_debug("virtio_net_txq_notify_handler");
     virtqueue_disable_notify(vq);
     while(!virtqueue_is_empty(vq)) {
         virtq_tx_handle_one_request(vdev->dev, vq);
@@ -217,6 +246,7 @@ int virtio_net_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
 
 int virtio_net_init(VirtIODevice *vdev, char *devname)
 {
+    log_info("virtio net init");
     NetDev *net = vdev->dev;
     // open tap device
     net->tapfd = virtio_net_tap_open(devname);

@@ -33,7 +33,7 @@ impl HvisorDevice {
     pub fn is_req_list_full(&self) -> bool {
         let region = self.region();
         if ((region.req_rear + 1) & (MAX_REQ - 1)) == region.req_front {
-            info!("hvisor req queue full");
+            debug!("hvisor req queue full");
             true
         } else {
             false

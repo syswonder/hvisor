@@ -152,6 +152,7 @@ impl Cell {
             root_cell_w.remove_irqs(&cell.irq_bitmap);
             // add virtio mmio test region
             cell.mmio_region_register(0x0a003e00, 0x200, mmio_virtio_handler, 0x0a003e00);
+            cell.mmio_region_register(0x0a003c00, 0x200, mmio_virtio_handler, 0x0a003c00)
         }
         Ok(cell)
     }

@@ -89,19 +89,19 @@ impl<'a> HyperCall<'a> {
                 0 => {
                     map.insert(target, value);
                     resume_cpu(target);
-                    info!("res_type: 0, value is {}", value);
+                    debug!("res_type: 0, value is {}", value);
                 }
                 1 => {
                     map.insert(target, value);
                     send_event(target, SGI_VIRTIO_RES_ID);
-                    info!("res_type: 1, value is {}", value);
+                    debug!("res_type: 1, value is {}", value);
                 }
                 2 => {
                     let cell = find_cell_by_id(target as u32).unwrap();
                     let tar_cpu = cell.read().cpu_set.first_cpu().unwrap();
                     map.insert(tar_cpu, value);
                     send_event(tar_cpu, SGI_VIRTIO_RES_ID);
-                    info!("res_type: 2, value is {}", value);
+                    debug!("res_type: 2, value is {}", value);
                 }
                 _ => panic!("res_type is invalid"),
             }

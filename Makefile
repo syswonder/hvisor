@@ -1,5 +1,5 @@
 ARCH ?= aarch64
-LOG ?=error
+LOG ?= info
 STATS ?= off
 PORT ?= 2333
 
@@ -52,9 +52,9 @@ run: all
 	cd qemu-test/host && ./test.sh
 
 monitor:
-	gdb-multiarch \
+	gdb-multiarch vmlinux \
 	-ex 'target remote:1234' \
-	-ex 'file $(target_elf)' \
-	-ex 'add-symbol-file $(guest_obj)' \
 	-ex 'continue'
 
+#	-ex 'file $(target_elf)' \
+#	-ex 'add-symbol-file $(guest_obj)' \
