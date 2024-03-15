@@ -73,7 +73,7 @@ fn wait_for_counter(counter: &AtomicU32, max_value: u32) -> HvResult {
 }
 fn primary_init_early() -> HvResult {
     logging::init();
-    info!("Logging is enabled.");
+    info!("Hello hvisor!!!");
 
     let system_config = HvSystemConfig::get();
     let revision = system_config.revision;

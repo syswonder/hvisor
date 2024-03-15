@@ -6,20 +6,32 @@
 #include <stdlib.h>
 static int epoll_fd;
 #define	MEVENT_MAX	64
-
+struct mevent mevps[2];
 static void *mevent_loop(void *param)
 {
     struct epoll_event eventlist[MEVENT_MAX];
+    struct mevent *mevp;
     int ret;
     for (;;) {
         ret = epoll_wait(epoll_fd, eventlist, MEVENT_MAX, -1);
+        log_debug("epoll_wait is back, avail num is %d", ret);
         if (ret == -1 && errno != EINTR)
             log_error("Error return from epoll_wait");
-        struct mevent *mevp;
         for (int i = 0; i < ret; ++i) {
+            // log_debug("event is %d, event ptr is 0x%x", eventlist[i].events, eventlist[i].data.ptr);
+            // log_debug("after epoll_wait, mevp->me_fd is %d", mevp->me_fd);
             // handle active mevent
             mevp = eventlist[i].data.ptr;
-            (mevp->run)(mevp->me_fd, mevp->me_type, mevp->run_param);
+            log_debug("mevp->me_fd is %d, me_type is %d", mevp->me_fd, mevp->me_type);
+            if (mevp == NULL) 
+                log_error("mevp shouldn't be null");
+            if (mevp->me_state != 0) {
+                log_debug("begin to run mevp handler, address is 0x%x", mevp->run);
+                mevp->run(mevp->me_fd, mevp->me_type, mevp->run_param);
+            } else {
+                log_debug("run mevps, fd is %d", mevps[0].me_fd);
+                mevps[0].run(mevps[0].me_fd, mevps[0].me_type, mevps[0].run_param);
+            }
         }
     }
 }
@@ -43,34 +55,48 @@ struct mevent *mevent_add(int fd, enum ev_type type,
     struct mevent *mevp;
     struct epoll_event ee;
     int ret;
+    if (fd < 0 || run == NULL)
+        return NULL;
     mevp = calloc(1, sizeof(struct mevent));
     if (mevp == NULL)
         return NULL;
     mevp->me_fd = fd;
     mevp->me_type = type;
+    log_debug("mevp address is 0x%x, mevp->run address is 0x%x", mevp, run);
     mevp->run = run;
     mevp->run_param = run_param;
+    mevp->me_state = 1;
     ee.events = mevent_get_epoll_event(mevp);
     ee.data.ptr = mevp;
+    log_debug("epoll ctl add, epoll_fd is %d, me_fd is %d", epoll_fd, mevp->me_fd);
     ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, mevp->me_fd, &ee);
-    if (ret)
-        return mevp;
-    else {
+    mevps[0] = *mevp;
+    log_debug("after epoll add, me_fd is %d", mevp->me_fd);
+    if (ret < 0) {
+        log_error("epoll_ctl failed, errno is %d", errno);
         free(mevp);
         return NULL;
+    }
+    else {
+        return mevp;
     }
 }
 
 int mevent_init()
 {
     epoll_fd = epoll_create1(0);
-    pthread_t mevent_tid;
-    pthread_create(&mevent_tid, NULL, mevent_loop, NULL);
+    log_debug("create epoll_fd is %d", epoll_fd);
     if (epoll_fd >= 0)
         return 0;
     else {
         log_error("mevent init failed");
         return -1;
     }
+}
+
+void mevent_loop_start()
+{
+    pthread_t mevent_tid;
+    pthread_create(&mevent_tid, NULL, mevent_loop, NULL);
 }
 

@@ -159,7 +159,7 @@ static void virtio_net_tap_rx(VirtIODevice *vdev)
 }
 
 /// Called when tap device received packets
-static void virtio_net_rx_callback(int fd, enum ev_type type, void *param)
+void virtio_net_rx_callback(int fd, enum ev_type type, void *param)
 {
     log_debug("virtio_net_rx_callback");
     VirtIODevice *vdev = param;
@@ -221,6 +221,7 @@ static void virtq_tx_handle_one_request(NetDev *net, VirtQueue *vq)
 //     if (n < 1)
 //         return ;
 //     tlen = iov[0].iov_len;
+//     log_debug("sizeof NetRxHdr is %d", sizeof(NetRxHdr));
 //     iov[0].iov_base += sizeof(NetRxHdr);
 //     iov[0].iov_len -= sizeof(NetRxHdr);
 //     plen = iov[0].iov_len;

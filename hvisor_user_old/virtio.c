@@ -234,7 +234,7 @@ _vq_record(int i, volatile VirtqDesc *vd,
     host_addr = get_virt_addr(vd->addr);
     iov[i].iov_base = host_addr;
     iov[i].iov_len = vd->len;
-    log_debug("vd->addr ipa is %x, iov_base is %x, iov_len is %d", vd->addr, host_addr, vd->len);
+    // log_debug("vd->addr ipa is %x, iov_base is %x, iov_len is %d", vd->addr, host_addr, vd->len);
     if (flags != NULL)
         flags[i] = vd->flags;
     return 0;
@@ -256,7 +256,6 @@ int vq_getchain(VirtQueue *vq, uint16_t *pidx,
     *pidx = next = vq->avail_ring->ring[idx & (vq->num - 1)];
 
     for (int i=0; i < vq->num; next = vdesc->next) {
-        log_debug("vq_getchain: vq_num is %d", vq->num);
         vdesc = &vq->desc_table[next];
         if (_vq_record(i, vdesc, iov, n_iov, flags)) {
             log_error("vq record failed");

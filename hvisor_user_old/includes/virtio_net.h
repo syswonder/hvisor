@@ -75,5 +75,6 @@ NetDev *init_net_dev(uint8_t mac[]);
 int virtio_net_rxq_notify_handler(VirtIODevice *vdev, VirtQueue *vq);
 int virtio_net_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq);
 
+void virtio_net_rx_callback(int fd, enum ev_type type, void *param);
 int virtio_net_init(VirtIODevice *vdev, char *devname);
 #endif //_HVISOR_VIRTIO_NET_H
