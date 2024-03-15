@@ -1,5 +1,6 @@
 //! Physical memory allocation.
 
+use alloc::vec::Vec;
 use bitmap_allocator::BitAlloc;
 
 use spin::Mutex;
@@ -140,6 +141,23 @@ impl Frame {
         }
     }
 
+    pub fn new_16() -> HvResult<Self> {
+        let mut v: Vec<Frame> = Vec::new();
+        loop {
+            let f = Self::new_zero()?;
+            if f.start_paddr & 0b11_1111_1111_1111 == 0 {
+                v.push(f);
+                break;
+            }
+            v.push(f);
+        }
+        let f_16 = v.pop().unwrap();
+        drop(f_16);
+        let ret = Self::new_contiguous(4, 0)?;
+        drop(v);
+        Ok(ret)
+    }
+
     /// Get the start physical address of this frame.
     pub fn start_paddr(&self) -> PhysAddr {
         self.start_paddr
@@ -205,7 +223,7 @@ impl Drop for Frame {
 }
 
 /// Initialize the physical frame allocator.
-pub fn init() {
+pub fn init_frame_allocator() {
     let mem_pool_start = crate::consts::mem_pool_start();
     let mem_pool_end = align_down(crate::consts::hv_end());
     let mem_pool_size = mem_pool_end - mem_pool_start;
@@ -217,4 +235,21 @@ pub fn init() {
         "Frame allocator initialization finished: {:#x?}",
         mem_pool_start..mem_pool_end
     );
+}
+
+pub fn frame_allocator_test() {
+    let mut v: Vec<Frame> = Vec::new();
+    for _ in 0..5 {
+        let frame = Frame::new().unwrap();
+        // println!("{:x?}", frame);
+        v.push(frame);
+    }
+    v.clear();
+    for _ in 0..5 {
+        let frame = Frame::new().unwrap();
+        // println!("{:x?}", frame);
+        v.push(frame);
+    }
+    drop(v);
+    info!("frame_allocator_test passed!");
 }

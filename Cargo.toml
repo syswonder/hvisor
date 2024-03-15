@@ -15,10 +15,11 @@ buddy_system_allocator = "0.8"
 tock-registers = "0.8"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "03bd9909" }
-psci = { version = "0.1.0", default-features = false, features = ["smc"]}
+fdt = { version = "0.1.5", features =["pretty-printing"]}
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 aarch64-cpu = "9.4.0"
+psci = { version = "0.1.0", default-features = false, features = ["smc"]}
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
 sbi-rt = { version = "0.0.2", features = ["legacy"] }

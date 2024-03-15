@@ -13,6 +13,16 @@ pub type GuestPhysAddr = usize;
 pub type HostVirtAddr = VirtAddr;
 pub type HostPhysAddr = PhysAddr;
 
+pub static mut PHYS_VIRT_OFFSET: usize = 0; //HV_BASE - HV_PHY_BASE;
+
+pub fn virt_to_phys(vaddr: VirtAddr) -> PhysAddr {
+    vaddr - unsafe { PHYS_VIRT_OFFSET }
+}
+
+pub fn phys_to_virt(paddr: PhysAddr) -> VirtAddr {
+    paddr + unsafe { PHYS_VIRT_OFFSET }
+}
+
 pub const fn align_down(addr: usize) -> usize {
     addr & !(PAGE_SIZE - 1)
 }

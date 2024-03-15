@@ -39,18 +39,11 @@ mod panic;
 mod percpu;
 mod zone;
 
-use crate::consts::nr1_config_ptr;
-use crate::control::do_zone_create;
-use crate::control::prepare_zone_start;
-use crate::control::wait_for_poweron;
 use crate::percpu::this_cpu_data;
-use crate::percpu::this_zone;
 use crate::{consts::MAX_CPU_NUM, zone::root_zone};
 use arch::cpu::cpu_start;
 use arch::entry::arch_entry;
-use config::HvSystemConfig;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
-use error::HvResult;
 use percpu::PerCpu;
 
 #[cfg(target_arch = "aarch64")]
@@ -81,7 +74,7 @@ fn wait_for_counter(counter: &AtomicU32, max_value: u32) {
     wait_for(|| counter.load(Ordering::Acquire) < max_value)
 }
 
-fn primary_init_early() {
+fn primary_init_early(dtb: usize) {
     logging::init();
     info!("Logging is enabled.");
     // let system_config = HvSystemConfig::get();
@@ -108,8 +101,13 @@ fn primary_init_early() {
 
     // info!("System config: {:#x?}", system_config);
 
-    memory::frame::init();
-    memory::init_hv_page_table();
+    memory::frame::init_frame_allocator();
+    memory::frame::frame_allocator_test();
+
+    info!("host dtb: {:#x}", dtb);
+    let host_fdt = unsafe { fdt::Fdt::from_ptr(dtb as *const u8) }.unwrap();
+    crate::arch::mm::init_hv_page_table(host_fdt).unwrap();
+
     loop {}
     // zone::init()?;
 
@@ -153,31 +151,16 @@ fn per_cpu_init() {
     println!("CPU {} init OK.", cpu_data.id);
 }
 
-fn wakeup_secondary_cpus(this_id: usize) {
+fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
     for cpu_id in 0..MAX_CPU_NUM {
         if cpu_id == this_id {
             continue;
         }
-        cpu_start(cpu_id, arch_entry as _, 0);
+        cpu_start(cpu_id, arch_entry as _, host_dtb);
     }
 }
 
-fn rust_main(cpuid: usize) {
-    extern "C" {
-        fn stext(); // begin addr of text segment
-        fn etext(); // end addr of text segment
-        fn srodata(); // start addr of Read-Only data segment
-        fn erodata(); // end addr of Read-Only data ssegment
-        fn sdata(); // start addr of data segment
-        fn edata(); // end addr of data segment
-        fn sbss(); // start addr of BSS segment
-        fn ebss(); // end addr of BSS segment
-        fn boot_stack_lower_bound(); // stack lower bound
-        fn boot_stack_top(); // stack top
-        fn __core_end(); // end of kernel
-        fn gdtb();
-        fn vmimg();
-    }
+fn rust_main(cpuid: usize, host_dtb: usize) {
 
     // println!("Hello, world!");
     // println!(".text [{:#x}, {:#x})", stext as usize, etext as usize);
@@ -198,8 +181,8 @@ fn rust_main(cpuid: usize) {
     let cpu_data = PerCpu::new(cpuid);
 
     println!(
-        "cpu_id = {}, &cpu_data = {:#x?}",
-        cpu_data.id, cpu_data as *const _
+        "Hello from CPU {}, &cpu_data = {:#x?}, &dtb = {:#x}!",
+        cpu_data.id, cpu_data as *const _, host_dtb
     );
 
     if is_primary {
@@ -209,7 +192,7 @@ fn rust_main(cpuid: usize) {
             addr::PHYS_VIRT_OFFSET =
                 HV_BASE - HvSystemConfig::get().hypervisor_memory.phys_start as usize
         };
-        wakeup_secondary_cpus(cpu_data.id);
+        wakeup_secondary_cpus(cpu_data.id, host_dtb);
     }
 
     ENTERED_CPUS.fetch_add(1, Ordering::SeqCst);
@@ -218,12 +201,12 @@ fn rust_main(cpuid: usize) {
 
     println!(
         "{} CPU {} entered.",
-        if is_primary { "Primary " } else { "Secondary" },
+        if is_primary { "Primary  " } else { "Secondary" },
         cpu_data.id
     );
 
     if is_primary {
-        primary_init_early(); // create root zone here
+        primary_init_early(host_dtb); // create root zone here
     } else {
         wait_for_counter(&INIT_EARLY_OK, 1);
     }

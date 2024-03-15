@@ -4,13 +4,12 @@
 
 use alloc::collections::btree_map::{BTreeMap, Entry};
 use core::fmt::{Debug, Formatter, Result};
-use spin::Once;
 
-use super::{mapper::Mapper, paging::GenericPageTable, MemFlags};
+use super::{mapper::Mapper, MemFlags};
 use super::{AlignedPage, VirtAddr, NUM_TEMPORARY_PAGES, PAGE_SIZE, TEMPORARY_MAPPING_BASE};
+use crate::arch::paging::{GenericPageTable, PageSize, PagingResult};
 use crate::error::HvResult;
 use crate::memory::addr::is_aligned;
-use crate::memory::paging::{PageSize, PagingResult};
 use crate::memory::PhysAddr;
 
 #[derive(Clone)]

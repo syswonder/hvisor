@@ -3,12 +3,13 @@ use alloc::vec::Vec;
 use spin::RwLock;
 
 use crate::arch::cpu::this_cpu_id;
+use crate::arch::paging::npages;
 use crate::config::{ZoneConfig, HvZoneDesc, HvConsole, HvSystemConfig};
 use crate::control::{resume_cpu, suspend_cpu};
 use crate::error::HvResult;
 use crate::memory::addr::{is_aligned, GuestPhysAddr, HostPhysAddr};
 use crate::memory::{
-    mmio_subpage_handler, npages, Frame, MMIOConfig, MMIOHandler, MMIORegion,
+    mmio_subpage_handler, Frame, MMIOConfig, MMIOHandler, MMIORegion,
     MemFlags, MemoryRegion, MemorySet,
 };
 use crate::percpu::CpuSet;
