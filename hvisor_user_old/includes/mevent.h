@@ -12,7 +12,6 @@ struct mevent {
     int me_state;
 };
 int mevent_init(void);
-void mevent_loop_start();
 struct mevent *mevent_add(int fd, enum ev_type type,
                           void (*run)(int, enum ev_type, void *), void *run_param);
 #endif //HVISOR_MEVENT_H

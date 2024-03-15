@@ -43,7 +43,6 @@ static int virtio_net_tap_open(char *devname)
         log_error("Failed to open tap device");
         return -1;
     }
-    log_info("open tun fd succeed");
     memset(&ifr, 0, sizeof(ifr));
     // IFF_NO_PI tells kernel do not provide message header
     ifr.ifr_flags = IFF_TAP | IFF_NO_PI;
@@ -55,7 +54,6 @@ static int virtio_net_tap_open(char *devname)
         close(tunfd);
         return -1;
     }
-    log_info("ioctl tun fd succeed");
 //    strncpy(devname, ifr.ifr_name, IFNAMSIZ);
     log_info("open virtio net tap succeed");
     return tunfd;
@@ -143,7 +141,7 @@ static void virtio_net_tap_rx(VirtIODevice *vdev)
             vq_endchains(vq, 0);
             return;
         }
-
+        log_debug("receive the data from tap device");
         memset(vrx, 0, net->rx_vhdrlen);
         if (net->rx_merge) {
             struct virtio_net_rxhdr *vrxh;

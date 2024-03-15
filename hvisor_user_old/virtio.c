@@ -80,6 +80,7 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t cell_id)
         vdev->dev = init_net_dev(mac);
         init_virtio_queue(vdev, dev_type);
         virtio_net_init(vdev, "tap0");
+        break;
     default:
         break;
     }
@@ -112,6 +113,7 @@ void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type)
         vq[VIRTIO_NET_RXQ].notify_handler = virtio_net_rxq_notify_handler;
         vq[VIRTIO_NET_TXQ].notify_handler = virtio_net_txq_notify_handler;
         vdev->vqs = vq;
+        break;
     default:
         break;
     }
@@ -139,7 +141,6 @@ void virtio_dev_reset(VirtIODevice *vdev)
 
 void virtqueue_reset(VirtQueue *vq, int idx)
 {
-    vq += idx;
     // reserve these fields
     void *addr = vq->notify_handler;
     VirtIODevice *dev = vq->dev;

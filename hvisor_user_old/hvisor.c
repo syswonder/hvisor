@@ -60,7 +60,6 @@ int hvisor_init()
 
     mevent_init();
     init_virtio_devices();
-    mevent_loop_start();
     log_info("hvisor init okay!");
     handle_virtio_requests();
 
