@@ -103,6 +103,7 @@ dependencies = [
  "numeric-enum-macro",
  "psci",
  "riscv",
+ "riscv-decode",
  "sbi-rt",
  "spin 0.9.8",
  "tock-registers",
@@ -194,6 +195,12 @@ dependencies = [
  "log",
  "riscv-target",
 ]
+
+[[package]]
+name = "riscv-decode"
+version = "0.2.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bec7a6dc0b0bb96a4d23271864a45c0d24dcd9dde2a1b630a35f79fa29c588bf"
 
 [[package]]
 name = "riscv-target"

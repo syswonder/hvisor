@@ -38,8 +38,12 @@ mod num;
 mod panic;
 mod percpu;
 mod zone;
+mod platform;
 
+use crate::arch::csr::read_csr;
+use crate::config::{DTB_ADDR, TENANTS};
 use crate::percpu::this_cpu_data;
+use crate::zone::zone_create;
 use crate::{consts::MAX_CPU_NUM, zone::root_zone};
 use arch::cpu::cpu_start;
 use arch::entry::arch_entry;
@@ -106,10 +110,20 @@ fn primary_init_early(dtb: usize) {
 
     info!("host dtb: {:#x}", dtb);
     let host_fdt = unsafe { fdt::Fdt::from_ptr(dtb as *const u8) }.unwrap();
-    crate::arch::mm::init_hv_page_table(host_fdt).unwrap();
 
-    loop {}
-    // zone::init()?;
+    crate::arch::mm::init_hv_page_table(&host_fdt).unwrap();
+    device::irqchip::irqchip_init(&host_fdt);
+
+    for zone_id in 0..TENANTS.len() {
+        info!(
+            "guest{} addr: {:#x}, dtb addr: {:#x}",
+            zone_id,
+            TENANTS[zone_id].0.as_ptr() as usize,
+            TENANTS[zone_id].1.as_ptr() as usize
+        );
+        let vm_paddr_start: usize = TENANTS[zone_id].0.as_ptr() as usize;
+        zone_create(zone_id, vm_paddr_start, TENANTS[zone_id].1.as_ptr(), DTB_ADDR);
+    }
 
     // unsafe {
     //     // We should activate new hv-pt here in advance,
@@ -119,7 +133,7 @@ fn primary_init_early(dtb: usize) {
 
     // do_zone_create(unsafe { nr1_config_ptr().as_ref().unwrap() })?;
 
-    // INIT_EARLY_OK.store(1, Ordering::Release);
+    INIT_EARLY_OK.store(1, Ordering::Release);
 }
 
 fn primary_init_late() {
@@ -131,25 +145,38 @@ fn primary_init_late() {
     INIT_LATE_OK.store(1, Ordering::Release);
 }
 
-fn per_cpu_init() {
-    let cpu_data = this_cpu_data();
-
-    if cpu_data.zone.is_none() {
-        cpu_data.zone = Some(root_zone());
+fn per_cpu_init(cpu: &mut PerCpu) {
+    if cpu.zone.is_none() {
+        warn!("zone is not created for cpu {}", cpu.id);
+    } else {
+        unsafe {
+            memory::hv_page_table().read().activate();
+            cpu.zone.clone().unwrap().read().gpm_activate();
+        };
     }
 
-    // gicv3_cpu_init();
-    todo!();
-    // unsafe {
-    //     memory::hv_page_table().read().activate();
-    //     this_zone().read().gpm_activate();
-    // };
-
-    // enable_ipi();
-    // enable_irqs();
-
-    println!("CPU {} init OK.", cpu_data.id);
+    println!("CPU {} init OK.", cpu.id);
 }
+
+// fn per_cpu_init() {
+//     let cpu_data = this_cpu_data();
+
+//     if cpu_data.zone.is_none() {
+//         cpu_data.zone = Some(root_zone());
+//     }
+
+//     // gicv3_cpu_init();
+//     todo!();
+//     // unsafe {
+//     //     memory::hv_page_table().read().activate();
+//     //     this_zone().read().gpm_activate();
+//     // };
+
+//     // enable_ipi();
+//     // enable_irqs();
+
+//     println!("CPU {} init OK.", cpu_data.id);
+// }
 
 fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
     for cpu_id in 0..MAX_CPU_NUM {
@@ -161,7 +188,7 @@ fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
 }
 
 fn rust_main(cpuid: usize, host_dtb: usize) {
-
+    arch::riscv64::trap::init();
     // println!("Hello, world!");
     // println!(".text [{:#x}, {:#x})", stext as usize, etext as usize);
     // println!(".rodata [{:#x}, {:#x})", srodata as usize, erodata as usize);
@@ -178,11 +205,11 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         clear_bss();
     }
 
-    let cpu_data = PerCpu::new(cpuid);
+    let cpu = PerCpu::new(cpuid);
 
     println!(
         "Hello from CPU {}, &cpu_data = {:#x?}, &dtb = {:#x}!",
-        cpu_data.id, cpu_data as *const _, host_dtb
+        cpu.id, cpu as *const _, host_dtb
     );
 
     if is_primary {
@@ -192,7 +219,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
             addr::PHYS_VIRT_OFFSET =
                 HV_BASE - HvSystemConfig::get().hypervisor_memory.phys_start as usize
         };
-        wakeup_secondary_cpus(cpu_data.id, host_dtb);
+        wakeup_secondary_cpus(cpu.id, host_dtb);
     }
 
     ENTERED_CPUS.fetch_add(1, Ordering::SeqCst);
@@ -202,7 +229,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     println!(
         "{} CPU {} entered.",
         if is_primary { "Primary  " } else { "Secondary" },
-        cpu_data.id
+        cpu.id
     );
 
     if is_primary {
@@ -211,8 +238,21 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         wait_for_counter(&INIT_EARLY_OK, 1);
     }
 
-    loop {}
-    // per_cpu_init();
+    per_cpu_init(cpu);
+
+    INITED_CPUS.fetch_add(1, Ordering::SeqCst);
+    wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _);
+    cpu.cpu_init(DTB_ADDR);
+
+    if is_primary {
+        primary_init_late();
+    } else {
+        wait_for_counter(&INIT_LATE_OK, 1);
+    }
+    use crate::arch::csr::CSR_SIE;
+    let sie = read_csr!(CSR_SIE);
+    println!("CPU{} sie: {:#x}", cpuid, sie);
+    cpu.run_vm();
 
     // INITED_CPUS.fetch_add(1, Ordering::SeqCst);
     // wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _)?;

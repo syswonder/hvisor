@@ -1,8 +1,14 @@
 use spin::RwLock;
 
-use crate::{arch::s1pt::Stage1PageTable, error::HvResult, memory::{addr::align_up, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet, HV_PT}};
+use crate::{
+    arch::s1pt::Stage1PageTable,
+    error::HvResult,
+    memory::{
+        addr::align_up, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet, HV_PT,
+    },
+};
 
-pub fn init_hv_page_table(fdt: fdt::Fdt) -> HvResult {
+pub fn init_hv_page_table(fdt: &fdt::Fdt) -> HvResult {
     let mut hv_pt: MemorySet<Stage1PageTable> = MemorySet::new();
     // let _ = hv_pt.insert(MemoryRegion::new_with_offset_mapper(
     //     0x8000_0000 as HostVirtAddr,
@@ -13,7 +19,7 @@ pub fn init_hv_page_table(fdt: fdt::Fdt) -> HvResult {
     trace!("fdt: {:?}", fdt);
     // The first memory region is used to map the guest physical memory.
     let mem_region = fdt.memory().regions().next().unwrap();
-    debug!("map mem_region: {:?}", mem_region);
+    debug!("map mem_region: {:#x?}", mem_region);
     hv_pt.insert(MemoryRegion::new_with_offset_mapper(
         mem_region.starting_address as GuestPhysAddr,
         mem_region.starting_address as HostPhysAddr,

@@ -73,66 +73,67 @@ pub fn zone_management_prologue(
 }
 
 pub fn prepare_zone_start(zone: Arc<RwLock<Zone>>) -> HvResult<()> {
-    let cpu_data = this_cpu_data();
-
-    let mut zone_w = zone.write();
-
-    {
-        zone_w.comm_page.clear();
-
-        let flags = zone_w.config().flags();
-        let console = zone_w.config().console();
-        let comm_region = unsafe {
-            (zone_w.comm_page.as_mut_ptr() as *mut CommRegion)
-                .as_mut()
-                .unwrap()
-        };
-
-        comm_region.revision = COMM_REGION_ABI_REVISION;
-        comm_region.signature.copy_from_slice("JHCOMM".as_bytes());
-
-        // set virtual debug console
-        if flags & 0x40000000 > 0 {
-            comm_region.flags |= 0x0001;
-        }
-        if flags & 0x80000000 > 0 {
-            comm_region.flags |= 0x0002;
-        }
-        comm_region.console = console;
-        let system_config = HvSystemConfig::get();
-        comm_region.gic_version = system_config.platform_info.arch.gic_version;
-        comm_region.gicd_base = system_config.platform_info.arch.gicd_base;
-        comm_region.gicc_base = system_config.platform_info.arch.gicc_base;
-        comm_region.gicr_base = system_config.platform_info.arch.gicr_base;
-    }
-
-    zone_w
-        .cpu_set
-        .iter()
-        .enumerate()
-        .for_each(|(index, cpu_id)| {
-            get_cpu_data(cpu_id).cpu_on_entry = if index == 0 {
-                zone_w.config().cpu_reset_address()
-            } else {
-                INVALID_ADDRESS
-            };
-        });
-
     todo!();
-    // zone_w.irqchip_reset();
+    // let cpu_data = this_cpu_data();
 
-    info!("start zone done!");
-    Ok(())
+    // let mut zone_w = zone.write();
+
+    // {
+    //     zone_w.comm_page.clear();
+
+    //     let flags = zone_w.config().flags();
+    //     let console = zone_w.config().console();
+    //     let comm_region = unsafe {
+    //         (zone_w.comm_page.as_mut_ptr() as *mut CommRegion)
+    //             .as_mut()
+    //             .unwrap()
+    //     };
+
+    //     comm_region.revision = COMM_REGION_ABI_REVISION;
+    //     comm_region.signature.copy_from_slice("JHCOMM".as_bytes());
+
+    //     // set virtual debug console
+    //     if flags & 0x40000000 > 0 {
+    //         comm_region.flags |= 0x0001;
+    //     }
+    //     if flags & 0x80000000 > 0 {
+    //         comm_region.flags |= 0x0002;
+    //     }
+    //     comm_region.console = console;
+    //     let system_config = HvSystemConfig::get();
+    //     comm_region.gic_version = system_config.platform_info.arch.gic_version;
+    //     comm_region.gicd_base = system_config.platform_info.arch.gicd_base;
+    //     comm_region.gicc_base = system_config.platform_info.arch.gicc_base;
+    //     comm_region.gicr_base = system_config.platform_info.arch.gicr_base;
+    // }
+
+    // zone_w
+    //     .cpu_set
+    //     .iter()
+    //     .enumerate()
+    //     .for_each(|(index, cpu_id)| {
+    //         get_cpu_data(cpu_id).cpu_on_entry = if index == 0 {
+    //             zone_w.config().cpu_reset_address()
+    //         } else {
+    //             INVALID_ADDRESS
+    //         };
+    //     });
+
+    // todo!();
+    // // zone_w.irqchip_reset();
+
+    // info!("start zone done!");
+    // Ok(())
 }
 
 pub fn do_zone_create(desc: &HvZoneDesc) -> HvResult<Arc<RwLock<Zone>>> {
-    let config = ZoneConfig::new(desc);
-    let config_total_size = config.total_size();
-
-    // we create the new zone here
-    let zone = Zone::new(config, false)?;
-
     todo!();
+    // let config = ZoneConfig::new(desc);
+    // let config_total_size = config.total_size();
+
+    // // we create the new zone here
+    // let zone = Zone::new(config, false)?;
+
     // if zone.owns_cpu(this_cpu_data().id) {
     //     panic!("error: try to assign the CPU we are currently running on");
     // }

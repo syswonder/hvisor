@@ -48,9 +48,14 @@ SECTIONS
     . = ALIGN(4K);
 	__core_end = .;
     . = . + 0x2000000;
+
     gdtb = .;
     .dtb : {
         *(.dtb)
+    }
+    . = ALIGN(4K);
+    .rcore : {
+        *(.rcore)
     }
     . = 0x90000000;
     vmimg = .;

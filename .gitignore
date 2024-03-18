@@ -3,3 +3,4 @@
 /test-img
 /hvisor.S
 /imgs/dts/*.dtb
+tenants

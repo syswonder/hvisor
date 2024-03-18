@@ -73,25 +73,26 @@ impl<'a> HyperCall<'a> {
     }
 
     fn hypervisor_zone_create(&mut self, config_address: u64) -> HyperCallResult {
-        info!(
-            "handle hvc zone create, config_address = {:#x?}",
-            config_address
-        );
-
-        let zone = self.cpu_data.zone.clone().unwrap();
-        if !Arc::ptr_eq(&zone, &root_zone()) {
-            return hv_result_err!(EPERM, "Creation over non-root zones: unsupported!");
-        }
-        info!("prepare to suspend root_zone");
-
-        let root_zone = root_zone().clone();
-        root_zone.read().suspend();
-
-        // todo: 检查新zone是否和已有zone同id或同名
-        let config_address = zone.write().gpm_query(config_address as _);
-
-        let cfg_pages_offs = config_address as usize & (PAGE_SIZE - 1);
         todo!();
+        // info!(
+        //     "handle hvc zone create, config_address = {:#x?}",
+        //     config_address
+        // );
+
+        // let zone = self.cpu_data.zone.clone().unwrap();
+        // if !Arc::ptr_eq(&zone, &root_zone()) {
+        //     return hv_result_err!(EPERM, "Creation over non-root zones: unsupported!");
+        // }
+        // info!("prepare to suspend root_zone");
+
+        // let root_zone = root_zone().clone();
+        // root_zone.read().suspend();
+
+        // // todo: 检查新zone是否和已有zone同id或同名
+        // let config_address = zone.write().gpm_query(config_address as _);
+
+        // let cfg_pages_offs = config_address as usize & (PAGE_SIZE - 1);
+        // todo!();
         // let cfg_mapping = memory::hv_page_table().write().map_temporary(
         //     align_down(config_address),
         //     align_up(cfg_pages_offs + size_of::<HvZoneDesc>()),
@@ -106,41 +107,42 @@ impl<'a> HyperCall<'a> {
 
         // do_zone_create(desc)?;
 
-        info!("zone create done!");
-        HyperCallResult::Ok(0)
+        // info!("zone create done!");
+        // HyperCallResult::Ok(0)
     }
 
     fn hypervisor_zone_set_loadable(&mut self, zone_id: u64) -> HyperCallResult {
-        info!("handle hvc zone set loadable");
-        let zone = zone_management_prologue(self.cpu_data, zone_id)?;
-        let mut zone_w = zone.write();
-        if zone_w.loadable {
-            root_zone().read().resume();
-            return HyperCallResult::Ok(0);
-        }
+        todo!();
+        // info!("handle hvc zone set loadable");
+        // let zone = zone_management_prologue(self.cpu_data, zone_id)?;
+        // let mut zone_w = zone.write();
+        // if zone_w.loadable {
+        //     root_zone().read().resume();
+        //     return HyperCallResult::Ok(0);
+        // }
 
-        zone_w.cpu_set.iter().for_each(|cpu_id| park_cpu(cpu_id));
-        zone_w.loadable = true;
-        info!("zone.mem_regions() = {:#x?}", zone_w.config().mem_regions());
-        let mem_regs: Vec<HvMemoryRegion> = zone_w.config().mem_regions().to_vec();
+        // zone_w.cpu_set.iter().for_each(|cpu_id| park_cpu(cpu_id));
+        // zone_w.loadable = true;
+        // info!("zone.mem_regions() = {:#x?}", zone_w.config().mem_regions());
+        // let mem_regs: Vec<HvMemoryRegion> = zone_w.config().mem_regions().to_vec();
 
-        // remap to rootzone
-        let root_zone = root_zone();
-        let mut root_zone_w = root_zone.write();
+        // // remap to rootzone
+        // let root_zone = root_zone();
+        // let mut root_zone_w = root_zone.write();
 
-        mem_regs.iter().for_each(|mem| {
-            if mem.flags.contains(MemFlags::LOADABLE) {
-                root_zone_w.mem_region_map_partial(&MemoryRegion::new_with_offset_mapper(
-                    mem.phys_start as GuestPhysAddr,
-                    mem.phys_start as HostPhysAddr,
-                    mem.size as _,
-                    mem.flags,
-                ));
-            }
-        });
-        root_zone_w.resume();
-        info!("set loadbable done!");
-        HyperCallResult::Ok(0)
+        // mem_regs.iter().for_each(|mem| {
+        //     if mem.flags.contains(MemFlags::LOADABLE) {
+        //         root_zone_w.mem_region_map_partial(&MemoryRegion::new_with_offset_mapper(
+        //             mem.phys_start as GuestPhysAddr,
+        //             mem.phys_start as HostPhysAddr,
+        //             mem.size as _,
+        //             mem.flags,
+        //         ));
+        //     }
+        // });
+        // root_zone_w.resume();
+        // info!("set loadbable done!");
+        // HyperCallResult::Ok(0)
     }
 
     pub fn hypervisor_zone_start(&mut self, zone_id: u64) -> HyperCallResult {

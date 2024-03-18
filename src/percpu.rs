@@ -3,16 +3,14 @@ use spin::{Mutex, RwLock};
 
 use crate::arch::cpu::{this_cpu_id, ArchCpu};
 use crate::arch::csr::write_csr;
-use crate::{ACTIVATED_CPUS, ENTERED_CPUS};
-use crate::zone::Zone;
 use crate::config::HvSystemConfig;
 use crate::consts::{INVALID_ADDRESS, PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::error::HvResult;
 use crate::memory::addr::VirtAddr;
 use crate::memory::addr::{GuestPhysAddr, HostPhysAddr};
-use crate::memory::{
-    MemFlags, MemoryRegion, MemorySet, PARKING_INST_PAGE,
-};
+use crate::memory::{MemFlags, MemoryRegion, MemorySet, PARKING_INST_PAGE};
+use crate::zone::Zone;
+use crate::{ACTIVATED_CPUS, ENTERED_CPUS};
 use core::fmt::Debug;
 use core::sync::atomic::Ordering;
 
@@ -49,13 +47,26 @@ impl PerCpu {
         ret
     }
 
-    pub fn stack_top(&self) -> VirtAddr {
-        self as *const _ as VirtAddr + PER_CPU_SIZE - 8
+    pub fn cpu_init(&mut self, dtb: usize) {
+        info!(
+            "activating cpu {:#x} {:#x} {:#x}",
+            self.id, self.cpu_on_entry, dtb
+        );
+        self.arch_cpu.init(self.cpu_on_entry, self.id, dtb);
     }
 
-    pub fn guest_reg(&self) -> VirtAddr {
-        self as *const _ as VirtAddr + PER_CPU_SIZE - 8 - 32 * 8
+    pub fn run_vm(&mut self) {
+        println!("prepare CPU{} for vm run!", self.id);
+        if self.boot_cpu {
+            println!("boot vm on CPU{}!", self.id);
+            self.arch_cpu.run();
+        } else {
+            self.arch_cpu.idle();
+
+            self.arch_cpu.run();
+        }
     }
+
     pub fn entered_cpus() -> u32 {
         ENTERED_CPUS.load(Ordering::Acquire)
     }
@@ -113,7 +124,6 @@ impl PerCpu {
     //     VTTBR_EL2.set(0);
     //     /* we will restore the root zone state with the MMU turned off,
     //      * so we need to make sure it has been committed to memory */
-
     //     todo!();
     //     // unsafe {
     //     //     let page_offset: u64 = todo!();
@@ -250,8 +260,8 @@ pub fn park_current_cpu() {
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct CpuSet {
-    max_cpu_id: usize,
-    bitmap: u64,
+    pub max_cpu_id: usize,
+    pub bitmap: u64,
 }
 
 impl CpuSet {

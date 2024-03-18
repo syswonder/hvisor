@@ -9,8 +9,9 @@ const CONFIG_SIGNATURE: [u8; 6] = *b"HVISOR";
 const CONFIG_REVISION: u16 = 10;
 
 const HV_CELL_NAME_MAXLEN: usize = 31;
-#[allow(dead_code)]
 const HV_MAX_IOMMU_UNITS: usize = 8;
+
+pub const DTB_ADDR: usize = 0xbfe00000;
 
 #[derive(Clone, Copy, Debug)]
 #[repr(C, packed)]
@@ -345,3 +346,39 @@ impl Debug for ZoneConfig<'_> {
             .finish()
     }
 }
+
+#[repr(C)]
+#[repr(align(4096))]
+pub struct DTBBlob1([u8; include_bytes!("../tenants/linux3.dtb").len()]);
+
+#[link_section = ".dtb"]
+/// the tenant dtb file
+pub static TENANT1_DTB: DTBBlob1 = DTBBlob1(*include_bytes!("../tenants/linux3.dtb"));
+#[link_section = ".initrd"]
+/// the tenant kernel file
+pub static TENANT1: [u8; include_bytes!("../tenants/Image-62").len()] =
+    *include_bytes!("../tenants/Image-62");
+// pub static TENANTS: [(&'static [u8], &'static [u8]); 1] = [(&TENANT1, &TENANT1_DTB)];
+// #[link_section = ".dtb"]
+// /// the tenant dtb file
+// pub static TENANT_DTB: [u8; include_bytes!("../../tenants/rCore-Tutorial-v3/rCore-Tutorial-v3.dtb")
+//     .len()] = *include_bytes!("../../tenants/rCore-Tutorial-v3/rCore-Tutorial-v3.dtb");
+// #[link_section = ".initrd"]
+// static TENANT: [u8; include_bytes!("../../tenants/rCore-Tutorial-v3/rCore-Tutorial-v3.bin").len()] =
+//     *include_bytes!("../../tenants/rCore-Tutorial-v3/rCore-Tutorial-v3.bin");
+
+#[repr(C)]
+#[repr(align(4096))]
+pub struct DTBBlob2([u8; include_bytes!("../tenants/os_ch5.dtb").len()]);
+
+#[link_section = ".dtb"]
+/// the tenant dtb file
+pub static TENANT2_DTB: DTBBlob2 = DTBBlob2(*include_bytes!("../tenants/os_ch5.dtb"));
+
+#[link_section = ".rcore"]
+/// the tenant kernel file
+pub static TENANT2: [u8; include_bytes!("../tenants/os_ch5_802.bin").len()] =
+    *include_bytes!("../tenants/os_ch5_802.bin");
+pub static TENANTS: [(&'static [u8], &'static [u8]); 1] = [(&TENANT2, &TENANT2_DTB.0)];
+// pub static TENANTS: [(&'static [u8], &'static [u8]); 2] =
+//     [(&TENANT1, &TENANT1_DTB.0), (&TENANT2, &TENANT2_DTB.0)];

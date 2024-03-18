@@ -4,15 +4,17 @@ use spin::RwLock;
 
 use crate::arch::cpu::this_cpu_id;
 use crate::arch::paging::npages;
+use crate::arch::s2pt::Stage2PageTable;
 use crate::config::{ZoneConfig, HvZoneDesc, HvConsole, HvSystemConfig};
+use crate::consts::MAX_CPU_NUM;
 use crate::control::{resume_cpu, suspend_cpu};
 use crate::error::HvResult;
-use crate::memory::addr::{is_aligned, GuestPhysAddr, HostPhysAddr};
+use crate::memory::addr::{align_up, is_aligned, GuestPhysAddr, HostPhysAddr};
 use crate::memory::{
     mmio_subpage_handler, Frame, MMIOConfig, MMIOHandler, MMIORegion,
     MemFlags, MemoryRegion, MemorySet,
 };
-use crate::percpu::CpuSet;
+use crate::percpu::{get_cpu_data, CpuSet};
 use core::panic;
 
 #[repr(C)]
@@ -67,86 +69,142 @@ impl CommRegion {
     }
 }
 pub struct Zone {
-    /// Communication Page
-    pub comm_page: Frame,
-    /// Zone configuration.
-    pub config_frame: Frame,
+    pub id: usize,
     pub mmio: Vec<MMIOConfig>,
     pub cpu_set: CpuSet,
     pub irq_bitmap: [u32; 1024 / 32],
-    pub loadable: bool,
-    // gpm: MemorySet<Stage2PageTable>,
+    pub gpm: MemorySet<Stage2PageTable>,
 }
 
 impl Zone {
-    fn new_root() -> HvResult<Self> {
-        let sys_config = HvSystemConfig::get();
-        let zone_config = sys_config.root_zone.config();
-        let mut zone = Self::new(zone_config, true)?;
-
-        let mmcfg_start = sys_config.platform_info.pci_mmconfig_base;
-        let mmcfg_size = (sys_config.platform_info.pci_mmconfig_end_bus + 1) as u64 * 256 * 4096;
-        let hv_phys_start = sys_config.hypervisor_memory.phys_start as usize;
-        let hv_phys_size = sys_config.hypervisor_memory.size as usize;
-
-        todo!();
-        // // Back the region of hypervisor core in linux so that shutdown will not trigger violations.
-        // zone.mem_region_insert(MemoryRegion::new_with_offset_mapper(
-        //     hv_phys_start as GuestPhysAddr,
-        //     hv_phys_start as HostPhysAddr,
-        //     hv_phys_size as usize,
-        //     MemFlags::READ | MemFlags::NO_HUGEPAGES,
-        // ));
-
-        // // Map all physical memory regions.
-        // let mem_regs = zone.config().mem_regions().to_vec();
-        // mem_regs.iter().for_each(|mem| {
-        //     zone.mem_region_insert(MemoryRegion::new_with_offset_mapper(
-        //         mem.virt_start as GuestPhysAddr,
-        //         mem.phys_start as HostPhysAddr,
-        //         mem.size as _,
-        //         mem.flags,
-        //     ))
-        // });
-
-        // // TODO: Without this mapping, enabling hypervisor will get an error, maybe now we don't have mmio handlers.
-        // zone.mem_region_insert(MemoryRegion::new_with_offset_mapper(
-        //     mmcfg_start as GuestPhysAddr,
-        //     mmcfg_start as HostPhysAddr,
-        //     mmcfg_size as usize,
-        //     MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-        // ));
-
-        // trace!("Guest phyiscal memory set: {:#x?}", zone.gpm);
-        // Ok(zone)
+    pub fn new(zoneid: usize) -> Self {
+        Self {
+            id: zoneid,
+            gpm: MemorySet::new(),
+            cpu_set: CpuSet::new(MAX_CPU_NUM as usize, 0),
+            mmio: Vec::new(),
+            irq_bitmap: [0; 1024 / 32],
+        }
     }
 
-    pub fn new(config: ZoneConfig, is_root_zone: bool) -> HvResult<Self> {
-        // todo: config page too big
-        assert!(npages(config.total_size()) == 1);
+    pub fn pt_init(
+        &mut self,
+        vm_paddr_start: usize,
+        fdt: &fdt::Fdt,
+        guest_dtb: usize,
+        dtb_addr: usize,
+    ) -> HvResult {
+        //debug!("fdt: {:?}", fdt);
+        // The first memory region is used to map the guest physical memory.
+        let mem_region = fdt.memory().regions().next().unwrap();
+        info!("map mem_region: {:?}", mem_region);
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            mem_region.starting_address as GuestPhysAddr,
+            vm_paddr_start as HostPhysAddr,
+            mem_region.size.unwrap(),
+            MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+        ))?;
+        // map guest dtb
+        info!("map guest dtb: {:#x}", dtb_addr);
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            dtb_addr as GuestPhysAddr,
+            guest_dtb as HostPhysAddr,
+            align_up(fdt.total_size()),
+            MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+        ))?;
+        // probe virtio mmio device
+        for node in fdt.find_all_nodes("/soc/virtio_mmio") {
+            if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
+                let paddr = reg.starting_address as HostPhysAddr;
+                let size = reg.size.unwrap();
+                info!("map virtio mmio addr: {:#x}, size: {:#x}", paddr, size);
+                self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                    paddr as GuestPhysAddr,
+                    paddr,
+                    size,
+                    MemFlags::READ | MemFlags::WRITE,
+                ))?;
+            }
+        }
 
-        let mut zone: Zone = Self {
-            config_frame: {
-                let mut config_frame = Frame::new()?;
-                config_frame.copy_data_from(config.as_slice());
-                config_frame
-            },
-            // gpm: MemorySet::new(),
-            cpu_set: config.cpu_set(),
-            loadable: false,
-            comm_page: Frame::new()?,
-            mmio: vec![],
-            irq_bitmap: [0; 1024 / 32],
-        };
-        todo!();
-        // zone.irqchip_register_mmio_handlers();
-        // zone.init_irq_bitmap();
-        // if !is_root_zone {
-        //     let root_zone = root_zone();
-        //     let mut root_zone_w = root_zone.write();
-        //     root_zone_w.remove_irqs(&zone.irq_bitmap);
+        // probe virt test
+        for node in fdt.find_all_nodes("/soc/test") {
+            if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
+                let paddr = reg.starting_address as HostPhysAddr;
+                let size = reg.size.unwrap() + 0x1000;
+                info!("map test addr: {:#x}, size: {:#x}", paddr, size);
+                self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                    paddr as GuestPhysAddr,
+                    paddr,
+                    size,
+                    MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+                ))?;
+            }
+        }
+
+        // probe uart device
+        for node in fdt.find_all_nodes("/soc/uart") {
+            if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
+                let paddr = reg.starting_address as HostPhysAddr;
+                let size = align_up(reg.size.unwrap());
+                info!("map uart addr: {:#x}, size: {:#x}", paddr, size);
+                self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                    paddr as GuestPhysAddr,
+                    paddr,
+                    size,
+                    MemFlags::READ | MemFlags::WRITE,
+                ))?;
+            }
+        }
+
+        // probe clint(core local interrupter)
+        for node in fdt.find_all_nodes("/soc/clint") {
+            if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
+                let paddr = reg.starting_address as HostPhysAddr;
+                let size = reg.size.unwrap();
+                info!("map clint addr: {:#x}, size: {:#x}", paddr, size);
+                self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                    paddr as GuestPhysAddr,
+                    paddr,
+                    size,
+                    MemFlags::READ | MemFlags::WRITE,
+                ))?;
+            }
+        }
+
+        // probe plic
+        //TODO: remove plic map from vm
+        // for node in fdt.find_all_nodes("/soc/plic") {
+        //     if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
+        //         let paddr = reg.starting_address as HostPhysAddr;
+        //         //let size = reg.size.unwrap();
+        //         let size = PLIC_GLOBAL_SIZE; //
+        //         debug!("map plic addr: {:#x}, size: {:#x}", paddr, size);
+        //         self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+        //             paddr as GuestPhysAddr,
+        //             paddr,
+        //             size,
+        //             MemFlags::READ | MemFlags::WRITE,
+        //         ))?;
+        //     }
         // }
-        // Ok(zone)
+
+        for node in fdt.find_all_nodes("/soc/pci") {
+            if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
+                let paddr = reg.starting_address as HostPhysAddr;
+                let size = reg.size.unwrap();
+                info!("map pci addr: {:#x}, size: {:#x}", paddr, size);
+                self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                    paddr as GuestPhysAddr,
+                    paddr,
+                    size,
+                    MemFlags::READ | MemFlags::WRITE,
+                ))?;
+            }
+        }
+
+        info!("VM stage 2 memory set: {:#x?}", self.gpm);
+        Ok(())
     }
 
     fn remove_irqs(&mut self, irq_bitmap: &[u32]) {
@@ -168,12 +226,6 @@ impl Zone {
                 });
         }
         // info!("irq bitmap = {:#x?}", self.irq_bitmap);
-    }
-
-
-    /// Get zone id
-    pub fn id(&self) -> u32 {
-        self.config().id()
     }
 
     pub fn suspend(&self) {
@@ -208,14 +260,15 @@ impl Zone {
         //     1 => self.config_frame.as_ptr() as usize,
         //     _ => self.config_frame.start_paddr(),
         // };
-        let config_addr = self.config_frame.as_ptr() as usize;
-        unsafe { ZoneConfig::new((config_addr as *const HvZoneDesc).as_ref().unwrap()) }
+        todo!()
+        // let config_addr = self.config_frame.as_ptr() as usize;
+        // unsafe { ZoneConfig::new((config_addr as *const HvZoneDesc).as_ref().unwrap()) }
     }
 
     pub fn gpm_activate(&self) {
-        todo!();
-        // unsafe { self.gpm.activate() }
+        unsafe { self.gpm.activate() }
     }
+
     /// Query an ipa from zone's stage 2 page table to get pa.
     pub fn gpm_query(&self, gpa: GuestPhysAddr) -> usize {
         todo!();
@@ -342,12 +395,56 @@ pub fn find_zone_by_id(zone_id: u32) -> Option<Arc<RwLock<Zone>>> {
         .cloned()
 }
 
-pub fn init() -> HvResult {
-    info!("Root zone initializing...");
-    let root_zone = Arc::new(RwLock::new(Zone::new_root()?));
-    info!("Root zone init end.");
+pub fn zone_create(
+    vmid: usize,
+    vm_paddr_start: usize,
+    dtb_ptr: *const u8,
+    dtb_addr: usize,
+) -> Arc<RwLock<Zone>> {
+    // we create the new zone here
+    //TODO: create Zone with cpu_set
+    let guest_fdt = unsafe { fdt::Fdt::from_ptr(dtb_ptr) }.unwrap();
+    let guest_entry = guest_fdt
+        .memory()
+        .regions()
+        .next()
+        .unwrap()
+        .starting_address as usize;
+    let mut zone = Zone::new(vmid);
+    zone.pt_init(vm_paddr_start, &guest_fdt, dtb_ptr as usize, dtb_addr)
+        .unwrap();
+    guest_fdt.cpus().for_each(|cpu| {
+        let cpu_id = cpu.ids().all().next().unwrap();
+        zone.cpu_set.set_bit(cpu_id as usize);
+    });
+    //TODO:assign cpu according to cpu_set
+    //TODO:set cpu entry
+    info!("zone cpu_set: {:#b}", zone.cpu_set.bitmap);
+    let cpu_set = zone.cpu_set;
 
-    add_zone(root_zone.clone());
-    ROOT_CELL.call_once(|| root_zone);
-    Ok(())
+    let new_zone_pointer = Arc::new(RwLock::new(zone));
+    {
+        cpu_set.iter().for_each(|cpuid| {
+            let cpu_data = get_cpu_data(cpuid);
+            cpu_data.zone = Some(new_zone_pointer.clone());
+            //chose boot cpu
+            if cpuid == cpu_set.first_cpu().unwrap() {
+                cpu_data.boot_cpu = true;
+            }
+            cpu_data.cpu_on_entry = guest_entry;
+        });
+    }
+    add_zone(new_zone_pointer.clone());
+
+    new_zone_pointer
 }
+
+// pub fn init() -> HvResult {
+//     info!("Root zone initializing...");
+//     let root_zone = Arc::new(RwLock::new(Zone::new_root()?));
+//     info!("Root zone init end.");
+
+//     add_zone(root_zone.clone());
+//     ROOT_CELL.call_once(|| root_zone);
+//     Ok(())
+// }

@@ -148,7 +148,7 @@ pub struct S1PTInstr;
 
 impl PagingInstr for S1PTInstr {
     unsafe fn activate(root_paddr: HostPhysAddr) {
-        println!("activate hv stage 1 page table");
+        info!("activate hv stage 1 page table");
         unsafe {
             satp::set(satp::Mode::Sv39, 0, root_paddr >> 12);
             //core::arch::asm!("sfence.vma");

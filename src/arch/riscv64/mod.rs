@@ -4,4 +4,6 @@ pub mod entry;
 pub mod mm;
 pub mod paging;
 pub mod s1pt;
+pub mod s2pt;
 pub mod sbi;
+pub mod trap;

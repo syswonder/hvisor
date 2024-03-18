@@ -32,7 +32,7 @@ impl ArchCpu {
     pub fn stack_top(&self) -> VirtAddr {
         PER_CPU_ARRAY_PTR as VirtAddr + (self.get_hartid() + 1) as usize * PER_CPU_SIZE - 8
     }
-    pub fn init(&mut self, entry: usize, cpu_id: usize, dtb: usize) -> usize {
+    pub fn init(&mut self, entry: usize, cpu_id: usize, dtb: usize) {
         //self.sepc = guest_test as usize as u64;
         write_csr!(CSR_SSCRATCH, self as *const _ as usize); //arch cpu pointer
         self.sepc = entry;
@@ -76,7 +76,6 @@ impl ArchCpu {
         value = read_csr!(CSR_HGATP);
         info!("CSR_HGATP: {:#x}", value);
         //unreachable!();
-        0
     }
     pub fn run(&mut self) {
         extern "C" {

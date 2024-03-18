@@ -2,9 +2,14 @@
 
 //use crate::arch::riscv::csr::*;
 use riscv::register::{hvip, sie};
-pub mod sbi_eid {
+pub mod SBI_EID {
     pub const SET_TIMER: usize = 0x54494D45;
+    pub const EXTID_HSM: usize = 0x48534D;
+    pub const SEND_IPI: usize = 0x735049;
 }
+
+use super::cpu::ArchCpu;
+
 /// use sbi call to putchar in console (qemu uart handler)
 pub fn console_putchar(c: u8) {
     #[allow(deprecated)]
@@ -35,65 +40,65 @@ pub fn shutdown(failure: bool) -> ! {
     }
     unreachable!()
 }
-// pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
-//     let ret = sbi_call_5(
-//         current_cpu.x[17],
-//         current_cpu.x[16],
-//         current_cpu.x[10],
-//         current_cpu.x[11],
-//         current_cpu.x[12],
-//         current_cpu.x[13],
-//         current_cpu.x[14],
-//     );
-//     current_cpu.sepc += 4;
-//     current_cpu.x[10] = ret.0;
-//     current_cpu.x[11] = ret.1;
-//     trace!("sbi_call_5: error:{:#x}, value:{:#x}", ret.0, ret.1);
-// }
-// pub fn sbi_call_5(
-//     eid: usize,
-//     fid: usize,
-//     arg0: usize,
-//     arg1: usize,
-//     arg2: usize,
-//     arg3: usize,
-//     arg4: usize,
-// ) -> (usize, usize) {
-//     trace!("sbi_call_5: eid:{:#x}, fid:{:#x}", eid, fid);
-//     match eid {
-//         SBI_EID::SET_TIMER => {
-//             {
-//                 info!("VS set timer");
-//                 // write_csr!(CSR_HVIP, 0); //VSTIP
-//                 // write_csr!(CSR_SIE, 1 << 9 | 1 << 5 | 1 << 1);
-//                 set_timer(arg0);
-//                 unsafe {
-//                     // clear guest timer interrupt pending
-//                     hvip::clear_vstip();
-//                     // enable timer interrupt
-//                     sie::set_stimer();
-//                 }
-//                 return (0, 0);
-//             }
-//         }
-//         //_ => sbi_ret = sbi_dummy_handler(),
-//         _ => warn!("Pass through SBI call eid {:#x} fid:{:#x}", eid, fid),
-//     }
-//     let (error, value);
-//     unsafe {
-//         core::arch::asm!(
-//             "ecall",
-//             in("a7") eid,
-//             in("a6") fid,
-//             inlateout("a0") arg0 => error,
-//             inlateout("a1") arg1 => value,
-//             in("a2") arg2,
-//             in("a3") arg3,
-//             in("a4") arg4,
-//         );
-//     }
-//     (error, value)
-// }
+pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
+    let ret = sbi_call_5(
+        current_cpu.x[17],
+        current_cpu.x[16],
+        current_cpu.x[10],
+        current_cpu.x[11],
+        current_cpu.x[12],
+        current_cpu.x[13],
+        current_cpu.x[14],
+    );
+    current_cpu.sepc += 4;
+    current_cpu.x[10] = ret.0;
+    current_cpu.x[11] = ret.1;
+    trace!("sbi_call_5: error:{:#x}, value:{:#x}", ret.0, ret.1);
+}
+pub fn sbi_call_5(
+    eid: usize,
+    fid: usize,
+    arg0: usize,
+    arg1: usize,
+    arg2: usize,
+    arg3: usize,
+    arg4: usize,
+) -> (usize, usize) {
+    trace!("sbi_call_5: eid:{:#x}, fid:{:#x}", eid, fid);
+    match eid {
+        SBI_EID::SET_TIMER => {
+            {
+                info!("VS set timer");
+                // write_csr!(CSR_HVIP, 0); //VSTIP
+                // write_csr!(CSR_SIE, 1 << 9 | 1 << 5 | 1 << 1);
+                set_timer(arg0);
+                unsafe {
+                    // clear guest timer interrupt pending
+                    hvip::clear_vstip();
+                    // enable timer interrupt
+                    sie::set_stimer();
+                }
+                return (0, 0);
+            }
+        }
+        //_ => sbi_ret = sbi_dummy_handler(),
+        _ => debug!("Pass through SBI call eid {:#x} fid:{:#x}", eid, fid),
+    }
+    let (error, value);
+    unsafe {
+        core::arch::asm!(
+            "ecall",
+            in("a7") eid,
+            in("a6") fid,
+            inlateout("a0") arg0 => error,
+            inlateout("a1") arg1 => value,
+            in("a2") arg2,
+            in("a3") arg3,
+            in("a4") arg4,
+        );
+    }
+    (error, value)
+}
 
 //other
 pub const SBI_CONSOLE_PUTCHAR: usize = 1;
