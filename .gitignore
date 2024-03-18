@@ -11,8 +11,8 @@ scp
 *.cmd
 Module.symvers
 modules.order
-hvisor_ko/main.ko
-hvisor_user/hvisor
+driver/main.ko
+daemon/hvisor
 *.cpp
 /.idea
 vmlinux
