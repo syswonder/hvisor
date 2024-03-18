@@ -3,7 +3,7 @@
 #include <linux/ioctl.h>
 #include <linux/types.h>
 #define MMAP_SIZE 4096
-#define MAX_REQ 4
+#define MAX_REQ 32
 
 // We use queue signal instead of flag signal to catch all signals, preventing some signals should be processed but ignored.
 #define SIGHVI 34

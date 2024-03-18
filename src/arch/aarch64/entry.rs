@@ -131,7 +131,7 @@ pub unsafe extern "C" fn boot_pt() -> i32 {
 #[no_mangle]
 pub unsafe extern "C" fn arm_dcaches_flush() {
     core::arch::asm!(
-    "
+        "
     dcache_line_size x3, x4
 	add	x1, x0, x1
 	sub	x4, x3, #1

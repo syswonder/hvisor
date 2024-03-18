@@ -3,9 +3,9 @@ use crate::cell::{add_cell, find_cell_by_id, remove_cell, root_cell, Cell, CommR
 use crate::config::{CellConfig, HvCellDesc, HvMemoryRegion, HvSystemConfig};
 use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
 use crate::control::{park_cpu, reset_cpu, resume_cpu, send_event};
-use crate::device::emu::{HVISOR_DEVICE, MAX_REQ};
 use crate::device::pci::mmio_pci_handler;
-use crate::device::virtio::VIRTIO_RESULT_MAP;
+use crate::device::virtio_trampoline::VIRTIO_RESULT_MAP;
+use crate::device::virtio_trampoline::{HVISOR_DEVICE, MAX_REQ};
 use crate::error::HvResult;
 use crate::memory::addr::{align_down, align_up, is_aligned};
 use crate::memory::{self, MemFlags, MemoryRegion, EMU_SHARED_REGION_BASE};
@@ -32,7 +32,6 @@ numeric_enum! {
 }
 
 pub const SGI_INJECT_ID: u64 = 0;
-pub const SGI_VIRTIO_REQ_ID: u64 = 8;
 pub const SGI_VIRTIO_RES_ID: u64 = 9;
 pub const SGI_RESUME_ID: u64 = 14;
 pub const SGI_EVENT_ID: u64 = 15;

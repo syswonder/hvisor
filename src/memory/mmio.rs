@@ -1,5 +1,5 @@
-use core::ptr;
 use aarch64_cpu::registers::ELR_EL2;
+use core::ptr;
 use tock_registers::interfaces::Readable;
 
 use crate::{error::HvResult, percpu::this_cell};
@@ -80,7 +80,8 @@ pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
             warn!(
                 "Cell {} unhandled mmio fault {:#x?}, pc is {:#x?}",
                 cell.read().id(),
-                mmio, pc
+                mmio,
+                pc
             );
             hv_result_err!(EINVAL)
         }

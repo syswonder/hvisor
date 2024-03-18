@@ -1,10 +1,74 @@
+use alloc::collections::BTreeMap;
 use core::sync::atomic::fence;
 use core::sync::atomic::Ordering;
 use spin::Mutex;
 
-use super::virtio::{VirtioReq, TRAMPOLINE_REQ_LIST};
-pub const MAX_REQ: u32 = 4;
+use crate::{
+    cell::this_cell_id, control::suspend_self, error::HvResult, memory::MMIOAccess,
+    percpu::this_cpu_id,
+};
+
+use super::gicv3::inject_irq;
+
+/// cpu_id: value(irq_id || returned value)
+pub static VIRTIO_RESULT_MAP: Mutex<BTreeMap<u64, u64>> = Mutex::new(BTreeMap::new());
+// For root linux.
 pub static HVISOR_DEVICE: Mutex<HvisorDevice> = Mutex::new(HvisorDevice::default());
+
+const QUEUE_NOTIFY: usize = 0x50;
+pub const MAX_REQ: u32 = 32;
+
+/// non root cell's virtio request handler
+pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: u64) -> HvResult {
+    debug!("mmio virtio handler");
+    let need_interrupt = if mmio.address == QUEUE_NOTIFY { 1 } else { 0 };
+    if need_interrupt == 1 {
+        debug!("notify !!!, cpu id is {}", this_cpu_id());
+    }
+    mmio.address += base as usize;
+    let mut dev = HVISOR_DEVICE.lock();
+    while dev.is_req_list_full() {
+        // When root linux's cpu is in el2's finish req handler and is getting the dev lock,
+        // if we don't release dev lock, it will cause a dead lock.
+        drop(dev);
+        dev = HVISOR_DEVICE.lock();
+    }
+    let hreq = HvisorDeviceReq::new(
+        this_cpu_id(),
+        mmio.address as _,
+        mmio.size,
+        mmio.value,
+        this_cell_id(),
+        mmio.is_write,
+        need_interrupt,
+    );
+    dev.push_req(hreq);
+    drop(dev);
+    // if it is cfg request, current cpu should be blocked until gets the result
+    if need_interrupt == 0 {
+        // block current cpu
+        suspend_self();
+        // current cpu waked up
+        if !mmio.is_write {
+            let map = VIRTIO_RESULT_MAP.lock();
+            mmio.value = *map.get(&this_cpu_id()).unwrap();
+            // Attention: If map is a list, 无论mmio是否为is_write都需要把值取出来
+            debug!("non root receives value: {:#x?}", mmio.value);
+        }
+    }
+    debug!("non root returns");
+    Ok(())
+}
+
+/// When virtio req type is notify, root cell will send sgi to non root, \
+/// and non root will call this function.
+pub fn handle_virtio_result() {
+    debug!("notify resolved");
+    let map = VIRTIO_RESULT_MAP.lock();
+    let irq_id = map.get(&this_cpu_id()).unwrap();
+    inject_irq(*irq_id as _, false);
+}
+
 pub struct HvisorDevice {
     base_address: usize, // el1 and el2 shared region addr, el2 virtual address
     is_enable: bool,
@@ -116,39 +180,3 @@ impl HvisorDeviceReq {
         }
     }
 }
-impl From<VirtioReq> for HvisorDeviceReq {
-    fn from(value: VirtioReq) -> Self {
-        Self {
-            src_cell: value.src_cell,
-            src_cpu: value.src_cpu,
-            address: value.mmio.address as u64,
-            size: value.mmio.size,
-            is_write: if value.mmio.is_write { 1 } else { 0 },
-            value: value.mmio.value,
-            need_interrupt: if value.is_cfg { 1 } else { 0 },
-        }
-    }
-}
-//
-// ///  When there are new virtio requests, root cell calls this function.
-// pub fn handle_virtio_requests() {
-//     debug!("handle virtio requests");
-//     let mut dev = HVISOR_DEVICE.lock();
-//     assert_eq!(dev.is_enable, true);
-//     if dev.is_req_list_full() {
-//         // When req list is full, just return.
-//         // When root calls finish req hvc, it will call this function again.
-//         info!("back to el1 from virtio handler");
-//         return;
-//     }
-//     let mut req_list = TRAMPOLINE_REQ_LIST.lock();
-//     while !req_list.is_empty() {
-//         if dev.is_req_list_full() {
-//             break;
-//         }
-//         let req = req_list.pop_front().unwrap();
-//         let hreq: HvisorDeviceReq = req.into();
-//         dev.push_req(hreq);
-//     }
-//     info!("back to el1 from virtio handler");
-// }

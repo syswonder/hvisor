@@ -9,7 +9,7 @@ use crate::device::gicv3::gicd::{GICD_ICACTIVER, GICD_ICENABLER};
 use crate::device::gicv3::{
     gicv3_gicd_mmio_handler, gicv3_gicr_mmio_handler, GICD_IROUTER, GICD_SIZE, GICR_SIZE, LAST_GICR,
 };
-use crate::device::virtio::mmio_virtio_handler;
+use crate::device::virtio_trampoline::mmio_virtio_handler;
 use crate::error::HvResult;
 use crate::memory::addr::{is_aligned, GuestPhysAddr, HostPhysAddr};
 use crate::memory::{

@@ -79,17 +79,14 @@
 pub mod gicd;
 mod gicr;
 
-use core::ptr::{read_volatile, write_volatile};
-use aarch64_cpu::registers::MPIDR_EL1;
 use crate::arch::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::config::HvSystemConfig;
-use crate::device::virtio::handle_virtio_result;
-use crate::hypercall::{SGI_EVENT_ID, SGI_RESUME_ID, SGI_VIRTIO_REQ_ID, SGI_VIRTIO_RES_ID};
-use crate::percpu::{check_events, this_cpu_affinity, this_cpu_data};
+use crate::device::virtio_trampoline::handle_virtio_result;
+use crate::hypercall::{SGI_EVENT_ID, SGI_RESUME_ID, SGI_VIRTIO_RES_ID};
+use crate::percpu::check_events;
 
 pub use gicd::{gicv3_gicd_mmio_handler, GICD_IROUTER};
 pub use gicr::{gicv3_gicr_mmio_handler, LAST_GICR};
-use crate::device::gicv3::gicr::{GICR_ISENABLER, GICR_SGI_BASE, GICR_TYPER};
 
 /// Representation of the GIC.
 pub struct GICv3 {
@@ -119,29 +116,15 @@ pub fn gicv3_cpu_init() {
 
     let _gicd_base: u64 = HvSystemConfig::get().platform_info.arch.gicd_base;
     let _gicr_base: u64 = HvSystemConfig::get().platform_info.arch.gicr_base;
-    let redist_base = this_cpu_data().gicr_base;
-    // 由于redist_base没有映射, 导致无法访问. 应该不用检查, 下面执行下来应该是对的.
-    // unsafe {
-    //     let typer = read_volatile((redist_base + GICR_TYPER) as *const u64);
-    //     info!("typer is {}", typer >> 32);
-    //     if (typer >> 32) != this_cpu_affinity() {
-    //         panic!("wrong, typer is {}, affinity is {}", typer, this_cpu_affinity());
-    //     }
-    // }
-    // info!("redist_base is {:X}", redist_base);
-    // // Enable all SGIs.
-    // unsafe {
-    //     write_volatile((redist_base + GICR_SGI_BASE + GICR_ISENABLER )as *mut u32, 0xffffu32);
-    // }
 
     // Make ICC_EOIR1_EL1 provide priority drop functionality only. ICC_DIR_EL1 provides interrupt deactivation functionality.
-    let ctlr = read_sysreg!(icc_ctlr_el1);
+    let _ctlr = read_sysreg!(icc_ctlr_el1);
     write_sysreg!(icc_ctlr_el1, 0x2);
     // Set Interrupt Controller Interrupt Priority Mask Register
     let pmr = read_sysreg!(icc_pmr_el1);
     write_sysreg!(icc_pmr_el1, 0xf0);
     // Enable group 1 irq
-    let igrpen = read_sysreg!(icc_igrpen1_el1);
+    let _igrpen = read_sysreg!(icc_igrpen1_el1);
     write_sysreg!(icc_igrpen1_el1, 0x1);
 
     gicv3_clear_pending_irqs();
@@ -199,10 +182,6 @@ pub fn gicv3_handle_irq_el1() {
                 info!("hv sgi got {}, resume", irq_id);
                 // let cpu_data = unsafe { this_cpu_data() as &mut PerCpu };
                 // cpu_data.suspend_cpu = false;
-            } else if irq_id == SGI_VIRTIO_REQ_ID as usize {
-                panic!("impossible to run here");
-                // handle_virtio_requests();
-                deactivate_irq(irq_id);
             } else if irq_id == SGI_VIRTIO_RES_ID as usize {
                 handle_virtio_result();
                 deactivate_irq(irq_id);
@@ -312,7 +291,6 @@ pub fn inject_irq(irq_id: usize, is_hardware: bool) {
 
     if free_ir == -1 {
         panic!("full lr");
-        loop {}
     } else {
         let mut val = irq_id as u64; //v intid
         val |= 1 << 60; //group 1

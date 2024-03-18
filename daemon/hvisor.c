@@ -31,12 +31,12 @@ int hvisor_init()
 {
     // The higher log level is , faster virtio-blk will be.
     int err;
-    log_set_level(LOG_DEBUG);
+    log_set_level(LOG_ERROR);
     FILE *log_file = fopen("log.txt", "w+");
     if (log_file == NULL) {
         log_error("open log file failed");
     }
-    log_add_fp(log_file, LOG_DEBUG);
+    log_add_fp(log_file, LOG_ERROR);
     log_info("hvisor init");
     ko_fd = open("/dev/hvisor", O_RDWR);
     if (ko_fd < 0) {
