@@ -62,6 +62,7 @@ gdb: all update-img
 monitor:
 	riscv64-unknown-elf-gdb \
 		-ex 'file $(target_elf)' \
+		-ex 'add-symbol-file tenants/os' \
 		-ex 'set arch riscv:rv64' \
 		-ex 'target remote:1234' \
 		

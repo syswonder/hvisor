@@ -97,7 +97,7 @@ impl Zone {
         //debug!("fdt: {:?}", fdt);
         // The first memory region is used to map the guest physical memory.
         let mem_region = fdt.memory().regions().next().unwrap();
-        info!("map mem_region: {:?}", mem_region);
+        info!("map mem_region: {:#x?}", mem_region);
         self.gpm.insert(MemoryRegion::new_with_offset_mapper(
             mem_region.starting_address as GuestPhysAddr,
             vm_paddr_start as HostPhysAddr,
@@ -105,7 +105,7 @@ impl Zone {
             MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
         ))?;
         // map guest dtb
-        info!("map guest dtb: {:#x}", dtb_addr);
+        info!("map guest dtb: {:#x?}", dtb_addr);
         self.gpm.insert(MemoryRegion::new_with_offset_mapper(
             dtb_addr as GuestPhysAddr,
             guest_dtb as HostPhysAddr,

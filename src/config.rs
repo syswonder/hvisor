@@ -377,8 +377,8 @@ pub static TENANT2_DTB: DTBBlob2 = DTBBlob2(*include_bytes!("../tenants/os_ch5.d
 
 #[link_section = ".rcore"]
 /// the tenant kernel file
-pub static TENANT2: [u8; include_bytes!("../tenants/os_ch5_802.bin").len()] =
-    *include_bytes!("../tenants/os_ch5_802.bin");
+pub static TENANT2: [u8; include_bytes!("../tenants/os.bin").len()] =
+    *include_bytes!("../tenants/os.bin");
 pub static TENANTS: [(&'static [u8], &'static [u8]); 1] = [(&TENANT2, &TENANT2_DTB.0)];
 // pub static TENANTS: [(&'static [u8], &'static [u8]); 2] =
 //     [(&TENANT1, &TENANT1_DTB.0), (&TENANT2, &TENANT2_DTB.0)];
