@@ -10,14 +10,16 @@ use crate::{
 
 use super::gicv3::inject_irq;
 
-/// cpu_id: value(irq_id || returned value)
-pub static VIRTIO_RESULT_MAP: Mutex<BTreeMap<u64, u64>> = Mutex::new(BTreeMap::new());
-// For root linux.
+/// Save the irqs the virtio-device wants to inject. The format is <cpu_id, List<irq_id>>, and the first elem of List<irq_id> is the valid len of it.
+pub static VIRTIO_IRQS: Mutex<BTreeMap<u64, [u64; MAX_DEVS + 1]>> = Mutex::new(BTreeMap::new());
+/// Save the results the virtio-device returns to the vm for cfg requests. The format is <cpu_id, returned value>
+pub static VIRTIO_CFG_RESULTS: Mutex<BTreeMap<u64, u64>> = Mutex::new(BTreeMap::new());
+// Controller of the shared memory the root linux's virtio device and hvisor shares.
 pub static HVISOR_DEVICE: Mutex<HvisorDevice> = Mutex::new(HvisorDevice::default());
 
 const QUEUE_NOTIFY: usize = 0x50;
 pub const MAX_REQ: u32 = 32;
-
+pub const MAX_DEVS: usize = 4; // Attention: The max virtio-dev number for vm is 4.
 /// non root cell's virtio request handler
 pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: u64) -> HvResult {
     debug!("mmio virtio handler");
@@ -50,7 +52,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: u64) -> HvResult {
         suspend_self();
         // current cpu waked up
         if !mmio.is_write {
-            let map = VIRTIO_RESULT_MAP.lock();
+            let map = VIRTIO_CFG_RESULTS.lock();
             mmio.value = *map.get(&this_cpu_id()).unwrap();
             // Attention: If map is a list, 无论mmio是否为is_write都需要把值取出来
             debug!("non root receives value: {:#x?}", mmio.value);
@@ -64,9 +66,13 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: u64) -> HvResult {
 /// and non root will call this function.
 pub fn handle_virtio_result() {
     debug!("notify resolved");
-    let map = VIRTIO_RESULT_MAP.lock();
-    let irq_id = map.get(&this_cpu_id()).unwrap();
-    inject_irq(*irq_id as _, false);
+    let mut map = VIRTIO_IRQS.lock();
+    let irq_list = map.get_mut(&this_cpu_id()).unwrap();
+    let len = irq_list[0] as usize;
+    for irq_id in irq_list[1..=len].iter() {
+        inject_irq(*irq_id as _, false);
+    }
+    irq_list[0] = 0;
 }
 
 pub struct HvisorDevice {

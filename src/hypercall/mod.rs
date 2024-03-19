@@ -4,8 +4,8 @@ use crate::config::{CellConfig, HvCellDesc, HvMemoryRegion, HvSystemConfig};
 use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
 use crate::control::{park_cpu, reset_cpu, resume_cpu, send_event};
 use crate::device::pci::mmio_pci_handler;
-use crate::device::virtio_trampoline::VIRTIO_RESULT_MAP;
 use crate::device::virtio_trampoline::{HVISOR_DEVICE, MAX_REQ};
+use crate::device::virtio_trampoline::{MAX_DEVS, VIRTIO_CFG_RESULTS, VIRTIO_IRQS};
 use crate::error::HvResult;
 use crate::memory::addr::{align_down, align_up, is_aligned};
 use crate::memory::{self, MemFlags, MemoryRegion, EMU_SHARED_REGION_BASE};
@@ -77,7 +77,8 @@ impl<'a> HyperCall<'a> {
             );
         }
         let dev = HVISOR_DEVICE.lock();
-        let mut map = VIRTIO_RESULT_MAP.lock();
+        let mut map_irq = VIRTIO_IRQS.lock();
+        let mut map_cfg = VIRTIO_CFG_RESULTS.lock();
         let region = dev.region();
         while !dev.is_res_list_empty() {
             let res_front = region.res_front as usize;
@@ -86,21 +87,33 @@ impl<'a> HyperCall<'a> {
             let res_type = region.res_list[res_front].res_type;
             match res_type {
                 0 => {
-                    map.insert(target, value);
+                    // return a value for a cfg request
+                    map_cfg.insert(target, value);
                     resume_cpu(target);
                     debug!("res_type: 0, value is {}", value);
                 }
-                1 => {
-                    map.insert(target, value);
-                    send_event(target, SGI_VIRTIO_RES_ID);
-                    debug!("res_type: 1, value is {}", value);
-                }
-                2 => {
-                    let cell = find_cell_by_id(target as u32).unwrap();
-                    let tar_cpu = cell.read().cpu_set.first_cpu().unwrap();
-                    map.insert(tar_cpu, value);
-                    send_event(tar_cpu, SGI_VIRTIO_RES_ID);
-                    debug!("res_type: 2, value is {}", value);
+                1 | 2 => {
+                    let target_cpu = if res_type == 1 {
+                        // inject irq for a specific cpu
+                        target
+                    } else {
+                        // inject irq for a specific cell
+                        find_cell_by_id(target as u32)
+                            .unwrap()
+                            .read()
+                            .cpu_set
+                            .first_cpu()
+                            .unwrap()
+                    };
+                    let irq_list = map_irq.entry(target_cpu).or_insert([0; MAX_DEVS + 1]);
+                    if !irq_list[1..=irq_list[0] as usize].contains(&value) {
+                        let len = irq_list[0] as usize;
+                        assert!(len + 1 < MAX_DEVS);
+                        irq_list[len + 1] = value;
+                        irq_list[0] += 1;
+                        send_event(target_cpu, SGI_VIRTIO_RES_ID);
+                    }
+                    debug!("res_type: {}, value is {}", res_type, value);
                 }
                 _ => panic!("res_type is invalid"),
             }
