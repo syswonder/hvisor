@@ -1,5 +1,7 @@
+use aarch64_cpu::registers::HCR_EL2;
 use aarch64_cpu::registers::SCTLR_EL1;
 use aarch64_cpu::registers::Writeable;
+use aarch64_cpu::registers::VTCR_EL2;
 use crate::percpu::this_zone;
 use super::sysreg::write_sysreg;
 

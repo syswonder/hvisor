@@ -40,7 +40,6 @@ mod percpu;
 mod zone;
 mod platform;
 
-use crate::arch::csr::read_csr;
 use crate::config::{DTB_ADDR, TENANTS};
 use crate::percpu::this_cpu_data;
 use crate::zone::zone_create;
@@ -249,9 +248,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     } else {
         wait_for_counter(&INIT_LATE_OK, 1);
     }
-    use crate::arch::csr::CSR_SIE;
-    let sie = read_csr!(CSR_SIE);
-    println!("CPU{} sie: {:#x}", cpuid, sie);
+
     cpu.run_vm();
 
     // INITED_CPUS.fetch_add(1, Ordering::SeqCst);

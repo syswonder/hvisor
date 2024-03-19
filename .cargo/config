@@ -1,7 +1,12 @@
-[build]
-target = "riscv64gc-unknown-none-elf"
-
 [target.riscv64gc-unknown-none-elf]
 rustflags = [
-    "-Clink-arg=-Triscv64.ld", "-Cforce-frame-pointers=yes"
+    "-Clink-arg=-Triscv64.ld",
+    "-Cforce-frame-pointers=yes"
+]
+
+[target.aarch64-unknown-none]
+rustflags = [
+    "-Clink-arg=-Taarch64.ld",
+    "-Ctarget-feature=+v8a, +a53",
+    "-Cforce-frame-pointers=yes",
 ]

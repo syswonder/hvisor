@@ -1,15 +1,24 @@
 # Basic settings
-ARCH ?= riscv64
+ARCH ?= aarch64
 LOG ?= info
 STATS ?= off
 PORT ?= 2333
 MODE ?= debug
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 
+ifeq ($(ARCH),aarch64)
+    RUSTC_TARGET := aarch64-unknown-none
+else
+    ifeq ($(ARCH),riscv64)
+        RUSTC_TARGET := riscv64gc-unknown-none-elf
+    else
+        $(error Unsupported ARCH value: $(ARCH))
+    endif
+endif
+
 export MODE
 export LOG
 export ARCH
-export STATS
 
 # Build paths
 build_path := target/riscv64gc-unknown-none-elf/$(MODE)
@@ -22,13 +31,14 @@ zone1_dtb    := imgs/dts/zone1.dtb
 zone1_kernel := imgs/Image
 
 # Features based on STATS
-features :=
-ifeq ($(STATS), on)
-  features += --features stats
-endif
+features := 
 
 # Build arguments
-build_args := --features "$(features)" -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem
+build_args := --features "$(features)" 
+build_args := --target $(RUSTC_TARGET)
+build_args += -Z build-std=core,alloc
+build_args += -Z build-std-features=compiler-builtins-mem
+
 ifeq ($(MODE), release)
   build_args += --release
 endif
@@ -60,7 +70,7 @@ gdb: all update-img
 	$(QEMU) $(QEMU_ARGS) -s -S
 
 monitor:
-	riscv64-unknown-elf-gdb \
+	gdb-multiarch \
 		-ex 'file $(target_elf)' \
 		-ex 'add-symbol-file tenants/os' \
 		-ex 'set arch riscv:rv64' \

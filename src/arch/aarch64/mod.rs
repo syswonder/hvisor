@@ -1,5 +1,5 @@
 pub mod entry;
-pub mod exception;
+pub mod trap;
 pub mod s1pt;
 pub mod s2pt;
 pub mod sysreg;
