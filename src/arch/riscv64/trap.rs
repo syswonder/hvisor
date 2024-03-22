@@ -70,7 +70,7 @@ pub fn sync_exception_handler(current_cpu: &mut ArchCpu) {
         _ => {
             warn!(
                 "CPU {} trap {},sepc: {:#x}",
-                current_cpu.hartid, trap_code, current_cpu.sepc
+                current_cpu.cpuid, trap_code, current_cpu.sepc
             );
             warn!("trap info: {} {:#x} {:#x}", trap_code, trap_value, trap_ins);
             let raw_inst = read_inst(trap_pc);
@@ -158,13 +158,13 @@ fn decode_inst(inst: u32) -> (usize, Option<Instruction>) {
 /// handle external interrupt
 pub fn interrupts_arch_handle(current_cpu: &mut ArchCpu) {
     todo!();
-    // trace!("interrupts_arch_handle @CPU{}", current_cpu.hartid);
+    // trace!("interrupts_arch_handle @CPU{}", current_cpu.cpuid);
     // let trap_code: usize;
     // trap_code = read_csr!(CSR_SCAUSE);
     // trace!("CSR_SCAUSE: {:#x}", trap_code);
     // match trap_code & 0xfff {
     //     InterruptType::STI => {
-    //         trace!("STI on CPU{}", current_cpu.hartid);
+    //         trace!("STI on CPU{}", current_cpu.cpuid);
     //         unsafe {
     //             hvip::set_vstip();
     //             sie::clear_stimer();
@@ -173,11 +173,11 @@ pub fn interrupts_arch_handle(current_cpu: &mut ArchCpu) {
     //         trace!("sie {:#x}", read_csr!(CSR_SIE));
     //     }
     //     InterruptType::SSI => {
-    //         debug!("SSI on CPU {}", current_cpu.hartid);
+    //         debug!("SSI on CPU {}", current_cpu.cpuid);
     //         handle_ssi(current_cpu);
     //     }
     //     InterruptType::SEI => {
-    //         debug!("SEI on CPU {}", current_cpu.hartid);
+    //         debug!("SEI on CPU {}", current_cpu.cpuid);
     //         handle_eirq(current_cpu)
     //     }
     //     _ => {
@@ -196,14 +196,14 @@ pub fn handle_eirq(current_cpu: &mut ArchCpu) {
     // // TODO: handle other irq
     // // check external interrupt && handle
     // // sifive plic: context0=>cpu0,M mode,context1=>cpu0,S mode...
-    // let context_id = 2 * current_cpu.hartid + 1;
+    // let context_id = 2 * current_cpu.cpuid + 1;
     // let mut host_plic = host_plic();
     // let claim_and_complete_addr =
     //     host_plic.read().base + PLIC_GLOBAL_SIZE + 0x1000 * context_id + 0x4;
     // let mut irq = unsafe { core::ptr::read_volatile(claim_and_complete_addr as *const u32) };
     // debug!(
     //     "CPU{} get external irq{}@{:#x}",
-    //     current_cpu.hartid, irq, claim_and_complete_addr
+    //     current_cpu.cpuid, irq, claim_and_complete_addr
     // );
     // host_plic.write().claim_complete[context_id] = irq;
     // // set external interrupt pending, which trigger guest interrupt
@@ -212,10 +212,10 @@ pub fn handle_eirq(current_cpu: &mut ArchCpu) {
 pub fn handle_ssi(current_cpu: &mut ArchCpu) {
     todo!();
     // let sip = read_csr!(CSR_SIP);
-    // debug!("CPU{} sip: {:#x}", current_cpu.hartid, sip);
+    // debug!("CPU{} sip: {:#x}", current_cpu.cpuid, sip);
     // clear_csr!(CSR_SIP, 1 << 1);
     // let sip2 = read_csr!(CSR_SIP);
-    // debug!("CPU{} sip*: {:#x}", current_cpu.hartid, sip2);
+    // debug!("CPU{} sip*: {:#x}", current_cpu.cpuid, sip2);
 
     // debug!("hvip: {:#x}", read_csr!(CSR_HVIP));
     // set_csr!(CSR_HVIP, 1 << 2);

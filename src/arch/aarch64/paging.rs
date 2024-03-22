@@ -1,13 +1,9 @@
-use alloc::{sync::Arc, vec::Vec};
-use core::{fmt::Debug, marker::PhantomData, slice};
-
-use spin::Mutex;
-
-use super::addr::PhysAddr;
-use super::{Frame, MemFlags, MemoryRegion, TEMPORARY_MAPPING_BASE};
 use crate::error::{HvError, HvResult};
 use crate::memory::addr::is_aligned;
-use crate::memory::VirtAddr;
+use crate::memory::{Frame, MemFlags, MemoryRegion, PhysAddr, VirtAddr, TEMPORARY_MAPPING_BASE};
+use alloc::{sync::Arc, vec::Vec};
+use core::{fmt::Debug, marker::PhantomData, slice};
+use spin::Mutex;
 
 #[derive(Debug)]
 pub enum PagingError {
@@ -209,11 +205,7 @@ where
                 }
                 println!(
                     "[ADDR:{:#x?} level:{} - idx:{:03}], vaddr:{:08x?}: {:x?}",
-                    entry as *const _ as VirtAddr,
-                    level,
-                    idx,
-                    vaddr,
-                    entry
+                    entry as *const _ as VirtAddr, level, idx, vaddr, entry
                 );
             },
         );
@@ -368,12 +360,10 @@ where
         // XXX: The clonee won't track intermediate tables, must ensure it lives shorter than the
         // original page table.
         let pt = Self::new();
-        let dst_p4_table = unsafe {
-            slice::from_raw_parts_mut(pt.root_paddr() as *mut PTE, ENTRY_COUNT)
-        };
-        let src_p4_table = unsafe {
-            slice::from_raw_parts(src.root_paddr() as *const PTE, ENTRY_COUNT)
-        };
+        let dst_p4_table =
+            unsafe { slice::from_raw_parts_mut(pt.root_paddr() as *mut PTE, ENTRY_COUNT) };
+        let src_p4_table =
+            unsafe { slice::from_raw_parts(src.root_paddr() as *const PTE, ENTRY_COUNT) };
         dst_p4_table.clone_from_slice(src_p4_table);
         pt
     }

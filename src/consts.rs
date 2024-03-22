@@ -1,4 +1,4 @@
-use crate::config::{HvZoneDesc, HvSystemConfig};
+use crate::config::HvZoneDesc;
 use crate::memory::addr::VirtAddr;
 pub use crate::memory::PAGE_SIZE;
 
@@ -26,16 +26,6 @@ pub const MAX_CPU_NUM: usize = 4;
 extern "C" {
     fn __rootcfg();
     fn __nrcfg1();
-}
-
-/// Pointer of the `HvSystemConfig` structure.
-pub fn hv_config_ptr() -> *const HvSystemConfig {
-    __rootcfg as _
-    // (PER_CPU_ARRAY_PTR as usize + HvHeader::get().max_cpus as usize * PER_CPU_SIZE) as _
-}
-
-pub fn nr1_config_ptr() -> *const HvZoneDesc {
-    __nrcfg1 as _
 }
 
 pub fn core_end() -> VirtAddr {

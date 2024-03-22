@@ -2,13 +2,9 @@ use alloc::sync::Arc;
 use spin::{Mutex, RwLock};
 
 use crate::arch::cpu::{this_cpu_id, ArchCpu};
-use crate::arch::csr::write_csr;
-use crate::config::HvSystemConfig;
-use crate::consts::{INVALID_ADDRESS, PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
+use crate::consts::{INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::error::HvResult;
 use crate::memory::addr::VirtAddr;
-use crate::memory::addr::{GuestPhysAddr, HostPhysAddr};
-use crate::memory::{MemFlags, MemoryRegion, MemorySet, PARKING_INST_PAGE};
 use crate::zone::Zone;
 use crate::{ACTIVATED_CPUS, ENTERED_CPUS};
 use core::fmt::Debug;
@@ -24,7 +20,7 @@ pub struct PerCpu {
     pub zone: Option<Arc<RwLock<Zone>>>,
     pub ctrl_lock: Mutex<()>,
     pub boot_cpu: bool,
-    //percpu stack
+    // percpu stack
 }
 
 impl PerCpu {
@@ -79,8 +75,9 @@ impl PerCpu {
 
         #[cfg(target_arch = "aarch64")]
         {
-            set_vtcr_flags();
-            set_hcr_flags();
+            todo!("activate_vmm...");
+            // set_vtcr_flags();
+            // set_hcr_flags();
         }
         #[cfg(target_arch = "riscv64")]
         {
@@ -303,6 +300,3 @@ impl CpuSet {
     }
 }
 
-pub fn mpidr_to_cpuid(mpidr: u64) -> u64 {
-    mpidr & 0xff00ffffff
-}

@@ -3,11 +3,10 @@ use alloc::{sync::Arc, vec::Vec};
 use spin::RwLock;
 
 use crate::{
-    config::{HvMemoryRegion, HvSystemConfig, HvZoneDesc, ZoneConfig}, consts::INVALID_ADDRESS, device::pci::mmio_pci_handler, error::HvResult, hypercall::{COMM_REGION_ABI_REVISION, SGI_EVENT_ID}, memory::{
-        self,
-        addr::{align_down, is_aligned, GuestPhysAddr, HostPhysAddr},
-        MemFlags, MemoryRegion,
-    }, percpu::{get_cpu_data, this_cpu_data, this_zone, PerCpu}, zone::{add_zone, find_zone_by_id, root_zone, CommRegion, Zone}
+    config::HvZoneDesc,
+    error::HvResult,
+    percpu::PerCpu,
+    zone::{find_zone_by_id, root_zone, Zone},
 };
 
 pub fn suspend_cpu(cpu_id: usize) {

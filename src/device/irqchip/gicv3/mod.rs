@@ -78,7 +78,6 @@
 #![allow(dead_code)]
 pub mod gicd;
 pub mod gicr;
-pub mod zone;
 
 use core::arch::asm;
 

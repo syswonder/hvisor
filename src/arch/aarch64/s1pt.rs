@@ -4,8 +4,9 @@ use core::fmt;
 use numeric_enum_macro::numeric_enum;
 use tock_registers::interfaces::Writeable;
 
-use crate::memory::addr::{GuestPhysAddr, HostPhysAddr, PhysAddr};
-use crate::memory::{GenericPTE, Level4PageTable, MemFlags, PagingInstr, PAGE_SIZE};
+use crate::{consts::PAGE_SIZE, memory::{addr::{GuestPhysAddr, HostPhysAddr, PhysAddr}, MemFlags}};
+
+use super::paging::{GenericPTE, Level4PageTable, PagingInstr};
 
 bitflags::bitflags! {
     /// Memory attribute fields in the VMSAv8-64 translation table format descriptors.

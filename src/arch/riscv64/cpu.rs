@@ -12,25 +12,25 @@ pub struct ArchCpu {
     pub sstatus: usize,
     pub sepc: usize,
     pub stack_top: usize,
-    pub hartid: usize,
+    pub cpuid: usize,
 }
 
 impl ArchCpu {
-    pub fn new(hartid: usize) -> Self {
+    pub fn new(cpuid: usize) -> Self {
         ArchCpu {
             x: [0; 32],
             hstatus: 0,
             sstatus: 0,
             sepc: 0,
             stack_top: 0,
-            hartid,
+            cpuid,
         }
     }
-    pub fn get_hartid(&self) -> usize {
-        self.hartid
+    pub fn get_cpuid(&self) -> usize {
+        self.cpuid
     }
     pub fn stack_top(&self) -> VirtAddr {
-        PER_CPU_ARRAY_PTR as VirtAddr + (self.get_hartid() + 1) as usize * PER_CPU_SIZE - 8
+        PER_CPU_ARRAY_PTR as VirtAddr + (self.get_cpuid() + 1) as usize * PER_CPU_SIZE - 8
     }
     pub fn init(&mut self, entry: usize, cpu_id: usize, dtb: usize) {
         //self.sepc = guest_test as usize as u64;
@@ -90,7 +90,7 @@ impl ArchCpu {
         unsafe {
             core::arch::asm!("wfi");
         }
-        println!("CPU{} weakup!", self.hartid);
+        println!("CPU{} weakup!", self.cpuid);
         debug!("sip: {:#x}", read_csr!(CSR_SIP));
         clear_csr!(CSR_SIP, 1 << 1);
         debug!("sip*: {:#x}", read_csr!(CSR_SIP));
@@ -106,13 +106,13 @@ fn this_cpu_arch() -> &'static mut ArchCpu {
 }
 
 pub fn this_cpu_id() -> usize {
-    this_cpu_arch().get_hartid()
+    this_cpu_arch().get_cpuid()
 }
 
 const HV_BASE: VirtAddr = 0x80200000;
 const HV_PHY_BASE: PhysAddr = 0x80200000;
 
-pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize)  {
+pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
     if let Some(e) = sbi_rt::hart_start(cpuid, HV_PHY_BASE, opaque).err() {
         panic!("cpu_start error: {:#x?}", e);
     }

@@ -1,3 +1,8 @@
+.macro	ventry	label
+	.align	7
+	b	\label
+.endm
+
 .macro handle_vmexit exit_reason
 	.align	7
 	/* Fill the union registers. Should comply with NUM_USR_REGS */
@@ -31,8 +36,9 @@ EXIT_REASON_EL2_ABORT	=0x0
 EXIT_REASON_EL2_IRQ		=0x1
 EXIT_REASON_EL1_ABORT	=0x2
 EXIT_REASON_EL1_IRQ		=0x3
+
 	.align 11
-hyp_vectors:
+_hyp_trap_vector:
 	ventry	.
 	ventry	.
 	ventry	.

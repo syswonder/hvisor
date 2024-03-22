@@ -40,17 +40,12 @@ mod percpu;
 mod zone;
 mod platform;
 
-use crate::config::{DTB_ADDR, TENANTS};
-use crate::percpu::this_cpu_data;
-use crate::zone::zone_create;
-use crate::{consts::MAX_CPU_NUM, zone::root_zone};
-use arch::cpu::cpu_start;
-use arch::entry::arch_entry;
+use crate::config::DTB_ADDR;
+use crate::device::irqchip::gicv3::gicd::enable_gic_are_ns;
+use crate::consts::MAX_CPU_NUM;
+use arch::{cpu::cpu_start, entry::arch_entry};
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
-
-#[cfg(target_arch = "aarch64")]
-use device::gicv3::gicv3_cpu_init;
 
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
 static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
@@ -110,29 +105,30 @@ fn primary_init_early(dtb: usize) {
     info!("host dtb: {:#x}", dtb);
     let host_fdt = unsafe { fdt::Fdt::from_ptr(dtb as *const u8) }.unwrap();
 
-    crate::arch::mm::init_hv_page_table(&host_fdt).unwrap();
-    device::irqchip::irqchip_init(&host_fdt);
+    loop {}
+    // crate::arch::mm::init_hv_page_table(&host_fdt).unwrap();
+    // device::irqchip::irqchip_init(&host_fdt);
 
-    for zone_id in 0..TENANTS.len() {
-        info!(
-            "guest{} addr: {:#x}, dtb addr: {:#x}",
-            zone_id,
-            TENANTS[zone_id].0.as_ptr() as usize,
-            TENANTS[zone_id].1.as_ptr() as usize
-        );
-        let vm_paddr_start: usize = TENANTS[zone_id].0.as_ptr() as usize;
-        zone_create(zone_id, vm_paddr_start, TENANTS[zone_id].1.as_ptr(), DTB_ADDR);
-    }
-
-    // unsafe {
-    //     // We should activate new hv-pt here in advance,
-    //     // in case of triggering data aborts in `zone::init()`
-    //     memory::hv_page_table().read().activate();
+    // for zone_id in 0..TENANTS.len() {
+    //     info!(
+    //         "guest{} addr: {:#x}, dtb addr: {:#x}",
+    //         zone_id,
+    //         TENANTS[zone_id].0.as_ptr() as usize,
+    //         TENANTS[zone_id].1.as_ptr() as usize
+    //     );
+    //     let vm_paddr_start: usize = TENANTS[zone_id].0.as_ptr() as usize;
+    //     zone_create(zone_id, vm_paddr_start, TENANTS[zone_id].1.as_ptr(), DTB_ADDR);
     // }
 
-    // do_zone_create(unsafe { nr1_config_ptr().as_ref().unwrap() })?;
+    // // unsafe {
+    // //     // We should activate new hv-pt here in advance,
+    // //     // in case of triggering data aborts in `zone::init()`
+    // //     memory::hv_page_table().read().activate();
+    // // }
 
-    INIT_EARLY_OK.store(1, Ordering::Release);
+    // // do_zone_create(unsafe { nr1_config_ptr().as_ref().unwrap() })?;
+
+    // INIT_EARLY_OK.store(1, Ordering::Release);
 }
 
 fn primary_init_late() {
@@ -187,7 +183,7 @@ fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
 }
 
 fn rust_main(cpuid: usize, host_dtb: usize) {
-    arch::riscv64::trap::init();
+    arch::trap::install_trap_vector();
     // println!("Hello, world!");
     // println!(".text [{:#x}, {:#x})", stext as usize, etext as usize);
     // println!(".rodata [{:#x}, {:#x})", srodata as usize, erodata as usize);
@@ -212,12 +208,6 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     );
 
     if is_primary {
-        // Set PHYS_VIRT_OFFSET early.
-        #[cfg(target_arch = "aarch64")]
-        unsafe {
-            addr::PHYS_VIRT_OFFSET =
-                HV_BASE - HvSystemConfig::get().hypervisor_memory.phys_start as usize
-        };
         wakeup_secondary_cpus(cpu.id, host_dtb);
     }
 

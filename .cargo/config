@@ -5,6 +5,7 @@ rustflags = [
 ]
 
 [target.aarch64-unknown-none]
+linker = "aarch64-none-elf-ld"
 rustflags = [
     "-Clink-arg=-Taarch64.ld",
     "-Ctarget-feature=+v8a, +a53",

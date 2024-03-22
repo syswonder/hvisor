@@ -1,60 +1,66 @@
 ENTRY(arch_entry)
-
-BASE_ADDRESS = 0xffffc0200000;
+BASE_ADDRESS = 0x40000000;
 
 SECTIONS
 {
-	. = BASE_ADDRESS;
+    . = BASE_ADDRESS;
+    skernel = .;
 
-	. = ALIGN(4K);
-	.boot       : { *(.boot) }
+    stext = .;
+    .text : {
+        *(.text.entry)
+        *(.text .text.*)
+    }
 
-	. = ALIGN(4K);
-	.text		: { *(.text .text.*) }
+    . = ALIGN(4K);
+    etext = .;
+    srodata = .;
+    .rodata : {
+        *(.rodata .rodata.*)
+        *(.srodata .srodata.*)
+    }
 
-	. = ALIGN(4K);
-	.rodata		: { *(.rodata .rodata.*) }
+    . = ALIGN(4K);
+    erodata = .;
+    sdata = .;
+    .data : {
+        *(.data .data.*)
+        *(.sdata .sdata.*)
+    }
 
-	. = ALIGN(4K);
-	.data		: { *(.data .data.*) *(.got .got.*) }
+    . = ALIGN(4K);
+    edata = .;
+    .bss : {
+        *(.bss.stack)
+        sbss = .;
+        *(.bss .bss.*)
+        *(.sbss .sbss.*)
+    }
 
-	. = ALIGN(4K);
-	.bootstrap_page_tables : { bootstrap_pt_l0 = .; 
-							. = . + (1 << 12); bootstrap_pt_l1_hyp_uart = .; 
-							. = . + (1 << 12); bootstrap_pt_l1_trampoline = .; 
-							. = . + (1 << 12); bootstrap_pt_l2_hyp_uart = .; 
-							. = . + (1 << 12); bootstrap_pt_l0_s2 = .;
-							. = . + (1 << 12); bootstrap_pt_l1_s2 = .; 
-							. = . + (1 << 12); } .trampoline : { __trampoline_start = .; *(.trampoline) }
+    . = ALIGN(4K);
+    ebss = .;
+    ekernel = .;
 
-	. = ALIGN(4K);
-	.bss		: {
-		*(.bss .bss.*) *(COMMON) 
-		. = ALIGN(4K);
-		__boot_stack = .; 
-		. = . + 0x4000; 
-    	__boot_stack_top = .; 
-	}
-
-	. = ALIGN(4K);
-	.rootcfg		: {
-		__rootcfg = .;
-		*(.rootcfg);
-		KEEP(*(.rootcfg))
-	}
-
-	. = ALIGN(4K);
-	.nrcfg1		: {
-		__nrcfg1 = .;
-		*(.nrcfg1);
-		KEEP(*(.nrcfg1))
-	}
-
-	. = ALIGN(4K);
+    /DISCARD/ : {
+        *(.eh_frame)
+    }
+    . = ALIGN(4K);
 	__core_end = .;
+    . = . + 0x2000000;
 
-	__entry_offset = arch_entry - BASE_ADDRESS;
-	__core_size = __core_end - BASE_ADDRESS;
+    .dtb : {
+        *(.dtb)
+    }
 
-	/DISCARD/ : { *(.comment) *(.gnu*) *(.note*) *(.eh_frame*) }
+    . = 0x60000000;
+    __vmimg1 = .;
+    .vmimg1 : {
+        *(.vmimg1)
+    }
+    . = 0x70000000;
+    __vmimg2 = .;
+    .vmimg2 : {
+        *(.vmimg2)
+    }
+    
 }

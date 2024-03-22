@@ -49,7 +49,6 @@ SECTIONS
 	__core_end = .;
     . = . + 0x2000000;
 
-    gdtb = .;
     .dtb : {
         *(.dtb)
     }

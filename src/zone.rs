@@ -3,71 +3,15 @@ use alloc::vec::Vec;
 use spin::RwLock;
 
 use crate::arch::cpu::this_cpu_id;
-use crate::arch::paging::npages;
 use crate::arch::s2pt::Stage2PageTable;
-use crate::config::{ZoneConfig, HvZoneDesc, HvConsole, HvSystemConfig};
 use crate::consts::MAX_CPU_NUM;
 use crate::control::{resume_cpu, suspend_cpu};
 use crate::error::HvResult;
-use crate::memory::addr::{align_up, is_aligned, GuestPhysAddr, HostPhysAddr};
-use crate::memory::{
-    mmio_subpage_handler, Frame, MMIOConfig, MMIOHandler, MMIORegion,
-    MemFlags, MemoryRegion, MemorySet,
-};
+use crate::memory::addr::{align_up, GuestPhysAddr, HostPhysAddr};
+use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemFlags, MemoryRegion, MemorySet};
 use crate::percpu::{get_cpu_data, CpuSet};
 use core::panic;
 
-#[repr(C)]
-pub struct CommPage {
-    pub comm_region: CommRegion,
-    // padding: [u8; 4096],
-}
-
-impl CommPage {
-    #[allow(unused)]
-    fn new() -> Self {
-        Self {
-            comm_region: CommRegion::new(),
-        }
-    }
-    // set CommPage to 0s
-    #[allow(unused)]
-    pub fn fill_zero(&mut self) {
-        unsafe { core::ptr::write_bytes(self as *mut _, 0, 1) }
-    }
-}
-#[repr(C)]
-pub struct CommRegion {
-    pub signature: [u8; 6],
-    pub revision: u16,
-    pub zone_state: u32,  // volatile
-    msg_to_zone: u32,     // volatile
-    reply_from_zone: u32, //volatile
-    pub flags: u32,       //volatile
-    pub console: HvConsole,
-    pub gic_version: u8,
-    pub gicd_base: u64,
-    pub gicc_base: u64,
-    pub gicr_base: u64,
-}
-
-impl CommRegion {
-    fn new() -> Self {
-        Self {
-            signature: [0; 6],
-            revision: 0,
-            zone_state: 0,
-            msg_to_zone: 0,
-            reply_from_zone: 0,
-            flags: 0,
-            console: HvConsole::new(),
-            gic_version: 0,
-            gicd_base: 0,
-            gicc_base: 0,
-            gicr_base: 0,
-        }
-    }
-}
 pub struct Zone {
     pub id: usize,
     pub mmio: Vec<MMIOConfig>,
@@ -214,55 +158,40 @@ impl Zone {
     }
 
     fn init_irq_bitmap(&mut self) {
-        let config = self.config();
-        let irq_chips = config.irq_chips().to_vec();
-        for irq_chip in irq_chips.iter() {
-            let irq_bitmap_slice = &mut self.irq_bitmap[1..4 + 1]; // 获取可变的 irq_bitmap 切片
-            irq_bitmap_slice
-                .iter_mut()
-                .zip(irq_chip.pin_bitmap.iter())
-                .for_each(|(dest, src)| {
-                    *dest |= *src; // 对每个元素进行位或操作
-                });
-        }
+        todo!();
+        // let config = self.config();
+        // let irq_chips = config.irq_chips().to_vec();
+        // for irq_chip in irq_chips.iter() {
+        //     let irq_bitmap_slice = &mut self.irq_bitmap[1..4 + 1]; // 获取可变的 irq_bitmap 切片
+        //     irq_bitmap_slice
+        //         .iter_mut()
+        //         .zip(irq_chip.pin_bitmap.iter())
+        //         .for_each(|(dest, src)| {
+        //             *dest |= *src; // 对每个元素进行位或操作
+        //         });
+        // }
         // info!("irq bitmap = {:#x?}", self.irq_bitmap);
     }
 
     pub fn suspend(&self) {
         trace!("suspending cpu_set = {:#x?}", self.cpu_set);
-        self.cpu_set
-            .iter_except(this_cpu_id())
-            .for_each(|cpu_id| {
-                trace!("try to suspend cpu_id = {:#x?}", cpu_id);
-                suspend_cpu(cpu_id);
-            });
+        self.cpu_set.iter_except(this_cpu_id()).for_each(|cpu_id| {
+            trace!("try to suspend cpu_id = {:#x?}", cpu_id);
+            suspend_cpu(cpu_id);
+        });
         info!("send sgi done!");
     }
 
     pub fn resume(&self) {
         trace!("resuming cpu_set = {:#x?}", self.cpu_set);
-        self.cpu_set
-            .iter_except(this_cpu_id())
-            .for_each(|cpu_id| {
-                trace!("try to resume cpu_id = {:#x?}", cpu_id);
-                resume_cpu(cpu_id);
-            });
+        self.cpu_set.iter_except(this_cpu_id()).for_each(|cpu_id| {
+            trace!("try to resume cpu_id = {:#x?}", cpu_id);
+            resume_cpu(cpu_id);
+        });
     }
 
     pub fn owns_cpu(&self, id: usize) -> bool {
         self.cpu_set.contains_cpu(id)
-    }
-
-    pub fn config(&self) -> ZoneConfig {
-        // Enable stage 1 translation in el2 changes config_addr from physical address to virtual address
-        // with an offset `PHYS_VIRT_OFFSET`, so we need to check whether stage 1 translation is enabled.
-        // let config_addr = match INIT_LATE_OK.load(Ordering::Relaxed) {
-        //     1 => self.config_frame.as_ptr() as usize,
-        //     _ => self.config_frame.start_paddr(),
-        // };
-        todo!()
-        // let config_addr = self.config_frame.as_ptr() as usize;
-        // unsafe { ZoneConfig::new((config_addr as *const HvZoneDesc).as_ref().unwrap()) }
     }
 
     pub fn gpm_activate(&self) {
@@ -374,13 +303,14 @@ pub fn add_zone(zone: Arc<RwLock<Zone>>) {
 }
 /// Remove zone from CELL_LIST
 pub fn remove_zone(zone_id: u32) {
-    let mut zone_list = CELL_LIST.write();
-    let (idx, _) = zone_list
-        .iter()
-        .enumerate()
-        .find(|(_, zone)| zone.read().config().id() == zone_id)
-        .unwrap();
-    zone_list.remove(idx);
+    todo!();
+    // let mut zone_list = CELL_LIST.write();
+    // let (idx, _) = zone_list
+    //     .iter()
+    //     .enumerate()
+    //     .find(|(_, zone)| zone.read().config().id() == zone_id)
+    //     .unwrap();
+    // zone_list.remove(idx);
 }
 
 pub fn root_zone() -> Arc<RwLock<Zone>> {
@@ -388,11 +318,12 @@ pub fn root_zone() -> Arc<RwLock<Zone>> {
 }
 
 pub fn find_zone_by_id(zone_id: u32) -> Option<Arc<RwLock<Zone>>> {
-    CELL_LIST
-        .read()
-        .iter()
-        .find(|zone| zone.read().config().id() == zone_id)
-        .cloned()
+    todo!();
+    // CELL_LIST
+    //     .read()
+    //     .iter()
+    //     .find(|zone| zone.read().config().id() == zone_id)
+    //     .cloned()
 }
 
 pub fn zone_create(

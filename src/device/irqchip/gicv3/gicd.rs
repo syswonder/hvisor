@@ -8,7 +8,6 @@
 //!   - SPI - Shared Peripheral Interrupt.
 #![allow(dead_code)]
 use crate::{
-    config::HvSystemConfig,
     error::HvResult,
     memory::{mmio_perform_access, MMIOAccess},
     percpu::this_zone,
@@ -48,18 +47,19 @@ const GICDV3_PIDR4: u64 = 0xffd0;
 
 // The return value should be the register value to be read.
 fn gicv3_handle_irq_ops(mmio: &mut MMIOAccess, irq: u32) -> HvResult {
-    let zone = this_zone();
-    let zone_r = zone.read();
+    todo!();
+    // let zone = this_zone();
+    // let zone_r = zone.read();
 
-    if !is_spi(irq) || !zone_r.irq_in_zone(irq) {
-        debug!(
-            "gicd-mmio: skip irq {} access, reg = {:#x?}",
-            irq, mmio.address
-        );
-        return Ok(());
-    }
+    // if !is_spi(irq) || !zone_r.irq_in_zone(irq) {
+    //     debug!(
+    //         "gicd-mmio: skip irq {} access, reg = {:#x?}",
+    //         irq, mmio.address
+    //     );
+    //     return Ok(());
+    // }
 
-    mmio_perform_access(HvSystemConfig::get().platform_info.arch.gicd_base, mmio);
+    // mmio_perform_access(HvSystemConfig::get().platform_info.arch.gicd_base, mmio);
 
     Ok(())
 }
@@ -85,45 +85,47 @@ fn gicd_misc_access(mmio: &mut MMIOAccess, gicd_base: u64) -> HvResult {
 }
 
 pub fn gicv3_gicd_mmio_handler(mmio: &mut MMIOAccess, _arg: u64) -> HvResult {
-    trace!("gicd mmio = {:#x?}", mmio);
-    let gicd_base = HvSystemConfig::get().platform_info.arch.gicd_base;
-    let reg = mmio.address as u64;
+    todo!();
+    // trace!("gicd mmio = {:#x?}", mmio);
+    // let gicd_base = HvSystemConfig::get().platform_info.arch.gicd_base;
+    // let reg = mmio.address as u64;
 
-    match reg {
-        reg if reg_range(GICD_IROUTER, 1024, 8).contains(&reg) => {
-            gicv3_handle_irq_ops(mmio, (reg - GICD_IROUTER) as u32 / 8)
-        }
-        reg if reg_range(GICD_ITARGETSR, 1024, 1).contains(&reg) => {
-            gicv3_handle_irq_ops(mmio, (reg - GICD_ITARGETSR) as u32)
-        }
-        reg if reg_range(GICD_ICENABLER, 32, 4).contains(&reg)
-            || reg_range(GICD_ISENABLER, 32, 4).contains(&reg)
-            || reg_range(GICD_ICPENDR, 32, 4).contains(&reg)
-            || reg_range(GICD_ISPENDR, 32, 4).contains(&reg)
-            || reg_range(GICD_ICACTIVER, 32, 4).contains(&reg)
-            || reg_range(GICD_ISACTIVER, 32, 4).contains(&reg) =>
-        {
-            restrict_bitmask_access(mmio, (reg & 0x7f) / 4, 1, true, gicd_base)
-        }
-        reg if reg_range(GICD_IGROUPR, 32, 4).contains(&reg) => {
-            restrict_bitmask_access(mmio, (reg & 0x7f) / 4, 1, false, gicd_base)
-        }
-        reg if reg_range(GICD_ICFGR, 64, 4).contains(&reg) => {
-            restrict_bitmask_access(mmio, (reg & 0xff) / 4, 2, false, gicd_base)
-        }
-        reg if reg_range(GICD_IPRIORITYR, 255, 4).contains(&reg) => {
-            restrict_bitmask_access(mmio, (reg & 0x3ff) / 4, 8, false, gicd_base)
-        }
-        _ => gicd_misc_access(mmio, gicd_base),
-    }
+    // match reg {
+    //     reg if reg_range(GICD_IROUTER, 1024, 8).contains(&reg) => {
+    //         gicv3_handle_irq_ops(mmio, (reg - GICD_IROUTER) as u32 / 8)
+    //     }
+    //     reg if reg_range(GICD_ITARGETSR, 1024, 1).contains(&reg) => {
+    //         gicv3_handle_irq_ops(mmio, (reg - GICD_ITARGETSR) as u32)
+    //     }
+    //     reg if reg_range(GICD_ICENABLER, 32, 4).contains(&reg)
+    //         || reg_range(GICD_ISENABLER, 32, 4).contains(&reg)
+    //         || reg_range(GICD_ICPENDR, 32, 4).contains(&reg)
+    //         || reg_range(GICD_ISPENDR, 32, 4).contains(&reg)
+    //         || reg_range(GICD_ICACTIVER, 32, 4).contains(&reg)
+    //         || reg_range(GICD_ISACTIVER, 32, 4).contains(&reg) =>
+    //     {
+    //         restrict_bitmask_access(mmio, (reg & 0x7f) / 4, 1, true, gicd_base)
+    //     }
+    //     reg if reg_range(GICD_IGROUPR, 32, 4).contains(&reg) => {
+    //         restrict_bitmask_access(mmio, (reg & 0x7f) / 4, 1, false, gicd_base)
+    //     }
+    //     reg if reg_range(GICD_ICFGR, 64, 4).contains(&reg) => {
+    //         restrict_bitmask_access(mmio, (reg & 0xff) / 4, 2, false, gicd_base)
+    //     }
+    //     reg if reg_range(GICD_IPRIORITYR, 255, 4).contains(&reg) => {
+    //         restrict_bitmask_access(mmio, (reg & 0x3ff) / 4, 8, false, gicd_base)
+    //     }
+    //     _ => gicd_misc_access(mmio, gicd_base),
+    // }
 }
 
 pub fn enable_gic_are_ns() {
-    let gicd_base = HvSystemConfig::get().platform_info.arch.gicd_base;
-    unsafe {
-        ((gicd_base + GICD_CTLR) as *mut u32)
-            .write_volatile(GICD_CTLR_ARE_NS as u32 | GICD_CTLR_GRP1NS_ENA as u32);
-    }
+    todo!();
+    // let gicd_base = HvSystemConfig::get().platform_info.arch.gicd_base;
+    // unsafe {
+    //     ((gicd_base + GICD_CTLR) as *mut u32)
+    //         .write_volatile(GICD_CTLR_ARE_NS as u32 | GICD_CTLR_GRP1NS_ENA as u32);
+    // }
 }
 
 fn restrict_bitmask_access(
