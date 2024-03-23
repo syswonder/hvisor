@@ -7,7 +7,7 @@ QEMU_ARGS += -m 3G
 QEMU_ARGS += -smp 4 
 QEMU_ARGS += -bios default
 # QEMU_ARGS +=-bios $(BOOTLOADER)
-QEMU_ARGS += -kernel $(target_bin)
+QEMU_ARGS += -kernel $(hvisor_bin)
 QEMU_ARGS += -drive file=imgs/rootfs-busybox.qcow2,format=qcow2,id=hd0 
 #QEMU_ARGS +=-drive file=../guests/rootfs-buildroot.qcow2,format=qcow2,id=hd0 
 QEMU_ARGS += -device virtio-blk-device,drive=hd0 

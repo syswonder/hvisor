@@ -103,12 +103,13 @@ impl ArchCpu {
     }
 
     pub fn run(&mut self) {
-        extern "C" {
-            fn vcpu_arch_entry();
-        }
-        unsafe {
-            vcpu_arch_entry();
-        }
+        todo!("run");
+        // extern "C" {
+        //     fn vcpu_arch_entry();
+        // }
+        // unsafe {
+        //     vcpu_arch_entry();
+        // }
     }
 
     pub fn idle(&self) {

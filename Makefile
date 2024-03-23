@@ -21,9 +21,9 @@ export LOG
 export ARCH
 
 # Build paths
-build_path := target/riscv64gc-unknown-none-elf/$(MODE)
-target_elf := $(build_path)/hvisor
-target_bin := $(build_path)/hvisor.bin
+build_path := target/$(RUSTC_TARGET)/$(MODE)
+hvisor_elf := $(build_path)/hvisor
+hvisor_bin := $(build_path)/hvisor.bin
 
 zone0_dtb    := imgs/dts/zone0.dtb
 zone0_kernel := imgs/Image
@@ -44,34 +44,28 @@ ifeq ($(MODE), release)
 endif
 
 # Targets
-.PHONY: all elf scp disa run gdb monitor clean update-img
-all: $(target_bin)
+.PHONY: all elf disa run gdb monitor clean
+all: $(hvisor_bin)
 
 elf:
 	cargo build $(build_args)
 
-scp: $(target_bin)
-	scp -P $(PORT) -r $(target_bin) qemu-test/guest/* scp root@localhost:~/
-
 disa:
-	rust-objdump --disassemble $(target_elf) > hvisor.S
+	rust-objdump --disassemble $(hvisor_elf) > hvisor.S
 
-$(target_bin): elf
-	$(OBJCOPY) $(target_elf) --strip-all -O binary $@
-
-update-img:
-	make -C imgs/dts
+$(hvisor_bin): elf
+	$(OBJCOPY) $(hvisor_elf) --strip-all -O binary $@
 
 # Run targets
-run: all update-img
+run: all
 	$(QEMU) $(QEMU_ARGS)
 
-gdb: all update-img
+gdb: all
 	$(QEMU) $(QEMU_ARGS) -s -S
 
 monitor:
 	gdb-multiarch \
-		-ex 'file $(target_elf)' \
+		-ex 'file $(hvisor_elf)' \
 		-ex 'add-symbol-file tenants/os' \
 		-ex 'set arch riscv:rv64' \
 		-ex 'target remote:1234' \
@@ -79,14 +73,14 @@ monitor:
 clean:
 	cargo clean
 
-include scripts/qemu-riscv64.mk
+include scripts/qemu-$(ARCH).mk
 
 # -drive if=none,file=fsimg1,id=hd1,format=raw
 
 # echo " go 0x7fc00000 " | \
 # -bios imgs/u-boot/u-boot.bin \
 # -append "root=/dev/vda mem=768M"
-# -device loader,file="$(target_bin)",addr=0x7fc00000,force-raw=on\
+# -device loader,file="$(hvisor_bin)",addr=0x7fc00000,force-raw=on\
 # -drive file=./qemu-test/host/rootfs.qcow2,discard=unmap,if=none,id=disk,format=qcow2 \
 # -drive if=none,file=fsimg,id=disk,format=raw \
 # -net nic \

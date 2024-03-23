@@ -37,6 +37,7 @@ EXIT_REASON_EL2_IRQ		=0x1
 EXIT_REASON_EL1_ABORT	=0x2
 EXIT_REASON_EL1_IRQ		=0x3
 
+.global _hyp_trap_vector
 	.align 11
 _hyp_trap_vector:
 	ventry	.

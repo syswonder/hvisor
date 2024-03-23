@@ -1,4 +1,10 @@
+use core::arch::global_asm;
 use aarch64_cpu::registers::*;
+
+global_asm!(
+    include_str!("./trap.S"),
+    sym arch_handle_exit
+);
 
 #[allow(dead_code)]
 #[allow(non_snake_case)]
