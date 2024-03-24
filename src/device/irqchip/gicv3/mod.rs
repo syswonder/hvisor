@@ -81,6 +81,8 @@ pub mod gicr;
 
 use core::arch::asm;
 
+use fdt::Fdt;
+
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::hypercall::{SGI_EVENT_ID, SGI_RESUME_ID};
 use crate::percpu::check_events;
@@ -328,4 +330,7 @@ pub fn enable_irqs() {
 
 pub fn disable_irqs() {
     unsafe { asm!("msr daifset, #0xf") };
+}
+
+pub fn irqchip_init(_host_fdt: &Fdt) {
 }

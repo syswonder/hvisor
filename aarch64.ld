@@ -1,5 +1,5 @@
 ENTRY(arch_entry)
-BASE_ADDRESS = 0x50000000;
+BASE_ADDRESS = 0x40400000;
 
 SECTIONS
 {
@@ -53,14 +53,12 @@ SECTIONS
     }
 
     . = 0x60000000;
-    __vmimg1 = .;
-    .vmimg1 : {
-        *(.vmimg1)
+    .zone0 : {
+        *(.zone0)
     }
     . = 0x70000000;
-    __vmimg2 = .;
-    .vmimg2 : {
-        *(.vmimg2)
+    .zone1 : {
+        *(.zone1)
     }
     
 }

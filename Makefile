@@ -8,9 +8,11 @@ OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 
 ifeq ($(ARCH),aarch64)
     RUSTC_TARGET := aarch64-unknown-none
+	GDB_ARCH := aarch64
 else
     ifeq ($(ARCH),riscv64)
         RUSTC_TARGET := riscv64gc-unknown-none-elf
+		GDB_ARCH := riscv:rv64
     else
         $(error Unsupported ARCH value: $(ARCH))
     endif
@@ -24,11 +26,6 @@ export ARCH
 build_path := target/$(RUSTC_TARGET)/$(MODE)
 hvisor_elf := $(build_path)/hvisor
 hvisor_bin := $(build_path)/hvisor.bin
-
-zone0_dtb    := imgs/dts/zone0.dtb
-zone0_kernel := imgs/Image
-zone1_dtb    := imgs/dts/zone1.dtb
-zone1_kernel := imgs/Image
 
 # Features based on STATS
 features := 
@@ -51,10 +48,8 @@ elf:
 	cargo build $(build_args)
 
 disa:
+	aarch64-none-elf-readelf -a $(hvisor_elf) > hvisor-elf.txt
 	rust-objdump --disassemble $(hvisor_elf) > hvisor.S
-
-$(hvisor_bin): elf
-	$(OBJCOPY) $(hvisor_elf) --strip-all -O binary $@
 
 # Run targets
 run: all
@@ -66,10 +61,11 @@ gdb: all
 monitor:
 	gdb-multiarch \
 		-ex 'file $(hvisor_elf)' \
-		-ex 'add-symbol-file tenants/os' \
-		-ex 'set arch riscv:rv64' \
+		-ex 'set arch $(GDB_ARCH)' \
 		-ex 'target remote:1234' \
-		
+
+# -ex 'add-symbol-file tenants/os' \
+
 clean:
 	cargo clean
 

@@ -40,7 +40,8 @@ mod percpu;
 mod zone;
 mod platform;
 
-use crate::config::DTB_ADDR;
+use crate::zone::zone_create;
+use crate::{config::DTB_ADDR, platform::qemu_aarch64::TENANTS};
 use crate::device::irqchip::gicv3::gicd::enable_gic_are_ns;
 use crate::consts::MAX_CPU_NUM;
 use arch::{cpu::cpu_start, entry::arch_entry};
@@ -105,20 +106,19 @@ fn primary_init_early(dtb: usize) {
     info!("host dtb: {:#x}", dtb);
     let host_fdt = unsafe { fdt::Fdt::from_ptr(dtb as *const u8) }.unwrap();
 
-    loop {}
-    // crate::arch::mm::init_hv_page_table(&host_fdt).unwrap();
-    // device::irqchip::irqchip_init(&host_fdt);
+    crate::arch::mm::init_hv_page_table(&host_fdt).unwrap();
+    device::irqchip::irqchip_init(&host_fdt);
 
-    // for zone_id in 0..TENANTS.len() {
-    //     info!(
-    //         "guest{} addr: {:#x}, dtb addr: {:#x}",
-    //         zone_id,
-    //         TENANTS[zone_id].0.as_ptr() as usize,
-    //         TENANTS[zone_id].1.as_ptr() as usize
-    //     );
-    //     let vm_paddr_start: usize = TENANTS[zone_id].0.as_ptr() as usize;
-    //     zone_create(zone_id, vm_paddr_start, TENANTS[zone_id].1.as_ptr(), DTB_ADDR);
-    // }
+    for zone_id in 0..TENANTS.len() {
+        info!(
+            "guest{} addr: {:#x}, dtb addr: {:#x}",
+            zone_id,
+            TENANTS[zone_id].0.as_ptr() as usize,
+            TENANTS[zone_id].1.as_ptr() as usize
+        );
+        let vm_paddr_start: usize = TENANTS[zone_id].0.as_ptr() as usize;
+        zone_create(zone_id, vm_paddr_start, TENANTS[zone_id].1.as_ptr(), DTB_ADDR);
+    }
 
     // // unsafe {
     // //     // We should activate new hv-pt here in advance,
@@ -129,6 +129,7 @@ fn primary_init_early(dtb: usize) {
     // // do_zone_create(unsafe { nr1_config_ptr().as_ref().unwrap() })?;
 
     // INIT_EARLY_OK.store(1, Ordering::Release);
+    loop {}
 }
 
 fn primary_init_late() {
@@ -197,6 +198,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     if MASTER_CPU.load(Ordering::Acquire) == -1 {
         MASTER_CPU.store(cpuid as i32, Ordering::Release);
         is_primary = true;
+        #[cfg(target_arch = "riscv64")]
         clear_bss();
     }
 

@@ -47,3 +47,6 @@ QEMU_ARGS +=		 -device virtio-serial-device -chardev pty,id=serial3 -device virt
 # #QEMU_ARGS +=		 -device loader,file=../guests/os_ch5_802.bin,addr=0x80400000 			 
 # #QEMU_ARGS +=		 -device virtio-serial-port -chardev pty,id=serial3 -device virtconsole,chardev=serial3
 # QEMU_ARGS +=		 -device virtio-serial-device -chardev pty,id=serial3 -device virtconsole,chardev=serial3
+
+$(hvisor_bin): elf
+	$(OBJCOPY) $(hvisor_elf) --strip-all -O binary $@

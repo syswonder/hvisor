@@ -1,11 +1,9 @@
 use spin::RwLock;
 
 use crate::{
-    arch::s1pt::Stage1PageTable,
-    error::HvResult,
-    memory::{
-        addr::align_up, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet, HV_PT,
-    },
+    arch::s1pt::Stage1PageTable, consts::PAGE_SIZE, error::HvResult, memory::{
+        addr::{align_down, align_up}, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet, HV_PT,
+    }
 };
 
 pub fn init_hv_page_table(fdt: &fdt::Fdt) -> HvResult {
@@ -26,38 +24,44 @@ pub fn init_hv_page_table(fdt: &fdt::Fdt) -> HvResult {
         mem_region.size.unwrap(),
         MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
     ))?;
+    
     // probe virtio mmio device
-    for node in fdt.find_all_nodes("/soc/virtio_mmio") {
+
+    let mut last_mmio_addr: Option<usize> = None;
+    for node in fdt.find_all_nodes("/virtio_mmio") {
         if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
             let paddr = reg.starting_address as HostPhysAddr;
             let size = reg.size.unwrap();
-            debug!("map virtio mmio addr: {:#x}, size: {:#x}", paddr, size);
-            hv_pt.insert(MemoryRegion::new_with_offset_mapper(
-                paddr as GuestPhysAddr,
-                paddr,
-                size,
-                MemFlags::READ | MemFlags::WRITE,
-            ))?;
+            if last_mmio_addr.is_none() || last_mmio_addr.unwrap() != align_down(paddr) {
+                debug!("map virtio mmio addr: {:#x}, size: {:#x}", paddr, size.max(PAGE_SIZE));
+                hv_pt.insert(MemoryRegion::new_with_offset_mapper(
+                    paddr as GuestPhysAddr,
+                    paddr,
+                    size.max(PAGE_SIZE),
+                    MemFlags::READ | MemFlags::WRITE,
+                ))?;
+            }
+            last_mmio_addr = Some(align_down(paddr));
         }
     }
 
     // probe virt test
-    for node in fdt.find_all_nodes("/soc/test") {
-        if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
-            let paddr = reg.starting_address as HostPhysAddr;
-            let size = reg.size.unwrap() + 0x1000;
-            debug!("map test addr: {:#x}, size: {:#x}", paddr, size);
-            hv_pt.insert(MemoryRegion::new_with_offset_mapper(
-                paddr as GuestPhysAddr,
-                paddr,
-                size,
-                MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
-            ))?;
-        }
-    }
+    // for node in fdt.find_all_nodes("/soc/test") {
+    //     if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
+    //         let paddr = reg.starting_address as HostPhysAddr;
+    //         let size = reg.size.unwrap() + 0x1000;
+    //         debug!("map test addr: {:#x}, size: {:#x}", paddr, size);
+    //         hv_pt.insert(MemoryRegion::new_with_offset_mapper(
+    //             paddr as GuestPhysAddr,
+    //             paddr,
+    //             size,
+    //             MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+    //         ))?;
+    //     }
+    // }
 
     // probe uart device
-    for node in fdt.find_all_nodes("/soc/uart") {
+    for node in fdt.find_all_nodes("/pl011") {
         if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
             let paddr = reg.starting_address as HostPhysAddr;
             let size = align_up(reg.size.unwrap());
@@ -71,49 +75,8 @@ pub fn init_hv_page_table(fdt: &fdt::Fdt) -> HvResult {
         }
     }
 
-    // probe clint(core local interrupter)
-    for node in fdt.find_all_nodes("/soc/clint") {
-        if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
-            let paddr = reg.starting_address as HostPhysAddr;
-            let size = reg.size.unwrap();
-            debug!("map clint addr: {:#x}, size: {:#x}", paddr, size);
-            hv_pt.insert(MemoryRegion::new_with_offset_mapper(
-                paddr as GuestPhysAddr,
-                paddr,
-                size,
-                MemFlags::READ | MemFlags::WRITE,
-            ))?;
-        }
-    }
+    // probe gic...
 
-    // probe plic
-    for node in fdt.find_all_nodes("/soc/plic") {
-        if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
-            let paddr = reg.starting_address as HostPhysAddr;
-            let size = reg.size.unwrap();
-            debug!("map plic addr: {:#x}, size: {:#x}", paddr, size);
-            hv_pt.insert(MemoryRegion::new_with_offset_mapper(
-                paddr as GuestPhysAddr,
-                paddr,
-                size,
-                MemFlags::READ | MemFlags::WRITE,
-            ))?;
-        }
-    }
-
-    for node in fdt.find_all_nodes("/soc/pci") {
-        if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
-            let paddr = reg.starting_address as HostPhysAddr;
-            let size = reg.size.unwrap();
-            debug!("map pci addr: {:#x}, size: {:#x}", paddr, size);
-            hv_pt.insert(MemoryRegion::new_with_offset_mapper(
-                paddr as GuestPhysAddr,
-                paddr,
-                size,
-                MemFlags::READ | MemFlags::WRITE,
-            ))?;
-        }
-    }
     info!("Hypervisor page table init end.");
     debug!("Hypervisor virtual memory set: {:#x?}", hv_pt);
 

@@ -1,4 +1,4 @@
-QEMU := qemu-system-aarch64
+QEMU := echo -e "\nbootm 0x40400000 - 0x40000000" | qemu-system-aarch64
 
 QEMU_ARGS := -machine virt,secure=on,gic-version=3,virtualization=on
 QEMU_ARGS += -cpu cortex-a57
@@ -7,7 +7,7 @@ QEMU_ARGS += -m 2G
 QEMU_ARGS += -nographic
 QEMU_ARGS += -bios imgs/u-boot.bin
 
-QEMU_ARGS += -device loader,file="$(hvisor_bin)",addr=0x50000000,force-raw=on
+QEMU_ARGS += -device loader,file="$(hvisor_bin)",addr=0x40400000,force-raw=on
 
 # -drive if=none,file=$(FSIMG1),id=Xa003e000,format=raw \
 # -device virtio-blk-device,drive=Xa003e000 \
@@ -69,3 +69,9 @@ QEMU_ARGS += -device loader,file="$(hvisor_bin)",addr=0x50000000,force-raw=on
 # 		-netdev tap,id=net0,ifname=tap0,script=no,downscript=no \
 # 		-device virtio-net-device,netdev=net0,mac=52:55:00:d1:55:01 \
 # 		-device virtio-serial-device -chardev pty,id=serial3 -device virtconsole,chardev=serial3
+
+$(hvisor_bin): elf
+	$(OBJCOPY) $(hvisor_elf) --strip-all -O binary $(hvisor_bin).tmp && \
+	mkimage -n hvisor_img -A arm64 -O linux -C none -T kernel -a 0x40400000 \
+	-e 0x40400000 -d $(hvisor_bin).tmp $(hvisor_bin) && \
+	rm -rf $(hvisor_bin).tmp

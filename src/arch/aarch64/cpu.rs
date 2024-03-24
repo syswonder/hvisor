@@ -2,12 +2,12 @@ use crate::{
     arch::sysreg::write_sysreg,
     consts::{INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
     memory::VirtAddr,
-    percpu::{this_zone, PerCpu},
+    percpu::this_zone,
 };
 use aarch64_cpu::registers::{Readable, Writeable, MPIDR_EL1, SCTLR_EL1};
 
 pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
-    psci::cpu_on(cpuid as u64 | 0x80000000, start_addr as _, 0).unwrap_or_else(|err| {
+    psci::cpu_on(cpuid as u64 | 0x80000000, start_addr as _, opaque as _).unwrap_or_else(|err| {
         if let psci::error::Error::AlreadyOn = err {
         } else {
             panic!("can't wake up cpu {}", cpuid);
