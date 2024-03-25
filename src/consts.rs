@@ -7,7 +7,7 @@ pub const HV_HEAP_SIZE: usize = 1024 * 1024; // 1 MB
 pub const HV_MEM_POOL_SIZE: usize = 16 * 1024 * 1024; // 16 MB
 
 /// Size of the per-CPU data (stack and other CPU-local data).
-pub const PER_CPU_SIZE: usize = 64 * 1024; // 64KB  //may get bigger when dev
+pub const PER_CPU_SIZE: usize = 128 * 1024; // 196KB  //may get bigger when dev
 
 /// Size of the per cpu boot stack
 pub const PER_CPU_BOOT_SIZE: usize = 1024; // 1KB

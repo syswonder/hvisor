@@ -6,7 +6,7 @@ use alloc::collections::btree_map::{BTreeMap, Entry};
 use core::fmt::{Debug, Formatter, Result};
 
 use super::{mapper::Mapper, MemFlags};
-use super::{AlignedPage, VirtAddr, NUM_TEMPORARY_PAGES, PAGE_SIZE, TEMPORARY_MAPPING_BASE};
+use super::{AlignedPage, VirtAddr};
 use crate::arch::paging::{GenericPageTable, PageSize, PagingResult};
 use crate::error::HvResult;
 use crate::memory::addr::is_aligned;
@@ -152,19 +152,20 @@ where
         size: usize,
         flags: MemFlags,
     ) -> HvResult<VirtAddr> {
-        if size > NUM_TEMPORARY_PAGES * PAGE_SIZE {
-            warn!("Trying to map a too big space in temporary area");
-            return hv_result_err!(EINVAL);
-        }
-        let region: MemoryRegion<PT::VA> = MemoryRegion::new_with_offset_mapper(
-            TEMPORARY_MAPPING_BASE.into(),
-            start_paddr,
-            size,
-            flags,
-        );
-        self.pt.map(&region)?;
-        self.regions.insert(region.start, region);
-        Ok(TEMPORARY_MAPPING_BASE)
+        todo!();
+    //     if size > NUM_TEMPORARY_PAGES * PAGE_SIZE {
+    //         warn!("Trying to map a too big space in temporary area");
+    //         return hv_result_err!(EINVAL);
+    //     }
+    //     let region: MemoryRegion<PT::VA> = MemoryRegion::new_with_offset_mapper(
+    //         TEMPORARY_MAPPING_BASE.into(),
+    //         start_paddr,
+    //         size,
+    //         flags,
+    //     );
+    //     self.pt.map(&region)?;
+    //     self.regions.insert(region.start, region);
+    //     Ok(TEMPORARY_MAPPING_BASE)
     }
 }
 

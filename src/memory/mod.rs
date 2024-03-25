@@ -18,8 +18,6 @@ use spin::{Once, RwLock};
 use crate::arch::{paging, s1pt::Stage1PageTable};
 
 pub const PAGE_SIZE: usize = paging::PageSize::Size4K as usize;
-pub const TEMPORARY_MAPPING_BASE: usize = 0x80_0000_0000;
-pub const NUM_TEMPORARY_PAGES: usize = 16;
 //pub use mm::{MemoryRegion, MemorySet};
 
 bitflags! {

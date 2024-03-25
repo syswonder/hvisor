@@ -1,6 +1,6 @@
 use crate::error::{HvError, HvResult};
 use crate::memory::addr::is_aligned;
-use crate::memory::{Frame, MemFlags, MemoryRegion, PhysAddr, VirtAddr, TEMPORARY_MAPPING_BASE};
+use crate::memory::{Frame, MemFlags, MemoryRegion, PhysAddr, VirtAddr};
 use alloc::{sync::Arc, vec::Vec};
 use core::{fmt::Debug, marker::PhantomData, slice};
 use spin::Mutex;
@@ -310,7 +310,7 @@ where
         flags: MemFlags,
     ) -> PagingResult<&mut PTE> {
         let entry: &mut PTE = self.get_entry_mut_or_create(page)?;
-        if !entry.is_unused() && page.vaddr.into() != TEMPORARY_MAPPING_BASE {
+        if !entry.is_unused() {
             return Err(PagingError::AlreadyMapped);
         }
         entry.set_addr(page.size.align_down(paddr));
