@@ -16,22 +16,22 @@ impl Zone {
         vm_paddr_start: usize,
         fdt: &fdt::Fdt,
         guest_dtb: usize,
-        dtb_addr: usize,
+        dtb_ipa: usize,
     ) -> HvResult {
         //debug!("fdt: {:?}", fdt);
         // The first memory region is used to map the guest physical memory.
         let mem_region = fdt.memory().regions().next().unwrap();
         info!("map mem_region: {:#x?}", mem_region);
-        // self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-        //     mem_region.starting_address as GuestPhysAddr,
-        //     vm_paddr_start as HostPhysAddr,
-        //     mem_region.size.unwrap(),
-        //     MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
-        // ))?;
-        // map guest dtb
-        info!("map guest dtb: {:#x?}", dtb_addr);
         self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-            dtb_addr as GuestPhysAddr,
+            mem_region.starting_address as GuestPhysAddr,
+            vm_paddr_start as HostPhysAddr,
+            mem_region.size.unwrap(),
+            MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+        ))?;
+        // map guest dtb
+        info!("map guest dtb: {:#x?}", dtb_ipa);
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            dtb_ipa as GuestPhysAddr,
             guest_dtb as HostPhysAddr,
             align_up(fdt.total_size()),
             MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,

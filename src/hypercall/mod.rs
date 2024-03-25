@@ -1,16 +1,8 @@
 #![allow(dead_code)]
-use crate::zone::{find_zone_by_id, root_zone};
-use crate::config::{HvZoneDesc, HvMemoryRegion};
-use crate::consts::PAGE_SIZE;
-use crate::control::{zone_management_prologue, do_zone_create, park_cpu, prepare_zone_start};
 use crate::error::HvResult;
-use crate::memory::addr::{align_down, align_up};
-use crate::memory::{self, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion};
 use crate::percpu::PerCpu;
-use alloc::sync::Arc;
-use alloc::vec::Vec;
+use crate::zone::find_zone_by_id;
 use core::convert::TryFrom;
-use core::mem::size_of;
 use core::sync::atomic::{AtomicU32, Ordering};
 use numeric_enum_macro::numeric_enum;
 
@@ -146,9 +138,10 @@ impl<'a> HyperCall<'a> {
     }
 
     pub fn hypervisor_zone_start(&mut self, zone_id: u64) -> HyperCallResult {
-        info!("handle hvc zone start");
-        prepare_zone_start(find_zone_by_id(zone_id as _).unwrap())?;
-        HyperCallResult::Ok(0)
+        todo!();
+        // info!("handle hvc zone start");
+        // prepare_zone_start(find_zone_by_id(zone_id as _).unwrap())?;
+        // HyperCallResult::Ok(0)
     }
 
     fn hypervisor_zone_destroy(&mut self, zone_id: u64) -> HyperCallResult {

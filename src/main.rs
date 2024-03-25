@@ -28,7 +28,6 @@ extern crate lazy_static;
 #[macro_use]
 mod logging;
 mod arch;
-mod config;
 mod consts;
 mod control;
 mod device;
@@ -37,13 +36,13 @@ mod memory;
 mod num;
 mod panic;
 mod percpu;
-mod zone;
 mod platform;
+mod zone;
 
-use crate::zone::zone_create;
-use crate::{config::DTB_ADDR, platform::qemu_aarch64::TENANTS};
+use crate::consts::{DTB_IPA, MAX_CPU_NUM};
 use crate::device::irqchip::gicv3::gicd::enable_gic_are_ns;
-use crate::consts::MAX_CPU_NUM;
+use crate::platform::qemu_aarch64::TENANTS;
+use crate::zone::zone_create;
 use arch::{cpu::cpu_start, entry::arch_entry};
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
@@ -111,12 +110,10 @@ fn primary_init_early(dtb: usize) {
 
     for zone_id in 0..TENANTS.len() {
         info!(
-            "guest{} addr: {:#x}, dtb addr: {:#x}",
-            zone_id,
-            TENANTS[zone_id].0 as usize,
-            TENANTS[zone_id].1 as usize
+            "guest{} dtb addr: {:#x}",
+            zone_id, TENANTS[zone_id] as usize
         );
-        zone_create(zone_id, TENANTS[zone_id].1 as _, DTB_ADDR);
+        zone_create(zone_id, TENANTS[zone_id] as _, DTB_IPA);
     }
 
     INIT_EARLY_OK.store(1, Ordering::Release);
@@ -224,7 +221,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
 
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
     wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _);
-    cpu.cpu_init(DTB_ADDR);
+    cpu.cpu_init(DTB_IPA);
 
     if is_primary {
         primary_init_late();

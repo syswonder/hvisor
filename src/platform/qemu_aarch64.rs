@@ -1,13 +1,7 @@
-pub const TENANT1_DTB_ADDR: usize = 0x50000000;
-pub const TENANT1_KERNEL_ADDR: usize = 0x50400000;
+pub const TENANT1_DTB_ADDR: usize = 0x90000000;
+pub const TENANT2_DTB_ADDR: usize = 0x91000000;
 
-pub const TENANT2_DTB_ADDR: usize = 0x70000000;
-pub const TENANT2_KERNEL_ADDR: usize = 0x70400000;
-
-pub static TENANTS: [(usize, usize); 2] = [
-    (TENANT1_KERNEL_ADDR, TENANT1_DTB_ADDR),
-    (TENANT2_KERNEL_ADDR, TENANT2_DTB_ADDR),
-];
+pub static TENANTS: [usize; 2] = [TENANT1_DTB_ADDR, TENANT2_DTB_ADDR];
 
 // #[repr(C)]
 // #[repr(align(4096))]

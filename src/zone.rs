@@ -206,11 +206,7 @@ pub fn find_zone_by_id(zone_id: u32) -> Option<Arc<RwLock<Zone>>> {
     //     .cloned()
 }
 
-pub fn zone_create(
-    vmid: usize,
-    dtb_ptr: *const u8,
-    dtb_addr: usize,
-) -> Arc<RwLock<Zone>> {
+pub fn zone_create(vmid: usize, dtb_ptr: *const u8, dtb_ipa: usize) -> Arc<RwLock<Zone>> {
     // we create the new zone here
     //TODO: create Zone with cpu_set
     let guest_fdt = unsafe { fdt::Fdt::from_ptr(dtb_ptr) }.unwrap();
@@ -223,7 +219,7 @@ pub fn zone_create(
 
     debug!("zone fdt guest_addr: {:#b}", guest_entry);
     let mut zone = Zone::new(vmid);
-    zone.pt_init(guest_entry, &guest_fdt, dtb_ptr as usize, dtb_addr)
+    zone.pt_init(guest_entry, &guest_fdt, dtb_ptr as usize, dtb_ipa)
         .unwrap();
     guest_fdt.cpus().for_each(|cpu| {
         let cpu_id = cpu.ids().all().next().unwrap();

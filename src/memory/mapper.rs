@@ -1,5 +1,3 @@
-use crate::config::HvMemoryRegion;
-
 use super::{AlignedPage, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, PhysAddr};
 
 static EMPTY_PAGE: AlignedPage = AlignedPage::new();
@@ -52,19 +50,19 @@ impl<VA: From<usize> + Into<usize> + Copy> MemoryRegion<VA> {
     }
 }
 
-impl MemoryRegion<GuestPhysAddr> {
-    #[allow(unused)]
-    pub fn from_hv_memregion(mem: &HvMemoryRegion, comm_page_addr: Option<HostPhysAddr>) -> Self {
-        let host_pa = if mem.flags.contains(MemFlags::COMMUNICATION) {
-            comm_page_addr.unwrap()
-        } else {
-            mem.phys_start as HostPhysAddr
-        };
-        Self::new_with_offset_mapper(
-            mem.virt_start as GuestPhysAddr,
-            host_pa,
-            mem.size as _,
-            mem.flags,
-        )
-    }
-}
+// impl MemoryRegion<GuestPhysAddr> {
+//     #[allow(unused)]
+//     pub fn from_hv_memregion(mem: &HvMemoryRegion, comm_page_addr: Option<HostPhysAddr>) -> Self {
+//         let host_pa = if mem.flags.contains(MemFlags::COMMUNICATION) {
+//             comm_page_addr.unwrap()
+//         } else {
+//             mem.phys_start as HostPhysAddr
+//         };
+//         Self::new_with_offset_mapper(
+//             mem.virt_start as GuestPhysAddr,
+//             host_pa,
+//             mem.size as _,
+//             mem.flags,
+//         )
+//     }
+// }
