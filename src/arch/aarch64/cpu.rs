@@ -55,51 +55,49 @@ impl ArchCpu {
     }
 
     fn reset(&self) {
-        fn reset_current_cpu(entry: u64) {
-            /* put the cpu in a reset state */
-            /* AARCH64_TODO: handle big endian support */
-            write_sysreg!(CNTKCTL_EL1, 0);
-            write_sysreg!(PMCR_EL0, 0);
+        /* put the cpu in a reset state */
+        /* AARCH64_TODO: handle big endian support */
+        write_sysreg!(CNTKCTL_EL1, 0);
+        write_sysreg!(PMCR_EL0, 0);
 
-            // /* AARCH64_TODO: wipe floating point registers */
-            // /* wipe special registers */
-            write_sysreg!(SP_EL0, 0);
-            write_sysreg!(SP_EL1, 0);
-            write_sysreg!(SPSR_EL1, 0);
+        // /* AARCH64_TODO: wipe floating point registers */
+        // /* wipe special registers */
+        write_sysreg!(SP_EL0, 0);
+        write_sysreg!(SP_EL1, 0);
+        write_sysreg!(SPSR_EL1, 0);
 
-            // /* wipe the system registers */
-            write_sysreg!(AFSR0_EL1, 0);
-            write_sysreg!(AFSR1_EL1, 0);
-            write_sysreg!(AMAIR_EL1, 0);
-            write_sysreg!(CONTEXTIDR_EL1, 0);
-            write_sysreg!(CPACR_EL1, 0);
-            write_sysreg!(CSSELR_EL1, 0);
-            write_sysreg!(ESR_EL1, 0);
-            write_sysreg!(FAR_EL1, 0);
-            write_sysreg!(MAIR_EL1, 0);
-            write_sysreg!(PAR_EL1, 0);
-            write_sysreg!(TCR_EL1, 0);
-            write_sysreg!(TPIDRRO_EL0, 0);
-            write_sysreg!(TPIDR_EL0, 0);
-            write_sysreg!(TPIDR_EL1, 0);
-            write_sysreg!(TTBR0_EL1, 0);
-            write_sysreg!(TTBR1_EL1, 0);
-            write_sysreg!(VBAR_EL1, 0);
+        // /* wipe the system registers */
+        write_sysreg!(AFSR0_EL1, 0);
+        write_sysreg!(AFSR1_EL1, 0);
+        write_sysreg!(AMAIR_EL1, 0);
+        write_sysreg!(CONTEXTIDR_EL1, 0);
+        write_sysreg!(CPACR_EL1, 0);
+        write_sysreg!(CSSELR_EL1, 0);
+        write_sysreg!(ESR_EL1, 0);
+        write_sysreg!(FAR_EL1, 0);
+        write_sysreg!(MAIR_EL1, 0);
+        write_sysreg!(PAR_EL1, 0);
+        write_sysreg!(TCR_EL1, 0);
+        write_sysreg!(TPIDRRO_EL0, 0);
+        write_sysreg!(TPIDR_EL0, 0);
+        write_sysreg!(TPIDR_EL1, 0);
+        write_sysreg!(TTBR0_EL1, 0);
+        write_sysreg!(TTBR1_EL1, 0);
+        write_sysreg!(VBAR_EL1, 0);
 
-            /* wipe timer registers */
-            write_sysreg!(CNTP_CTL_EL0, 0);
-            write_sysreg!(CNTP_CVAL_EL0, 0);
-            write_sysreg!(CNTP_TVAL_EL0, 0);
-            write_sysreg!(CNTV_CTL_EL0, 0);
-            write_sysreg!(CNTV_CVAL_EL0, 0);
-            write_sysreg!(CNTV_TVAL_EL0, 0);
-            // //disable stage 1
-            // write_sysreg!(SCTLR_EL1, 0);
+        /* wipe timer registers */
+        write_sysreg!(CNTP_CTL_EL0, 0);
+        write_sysreg!(CNTP_CVAL_EL0, 0);
+        write_sysreg!(CNTP_TVAL_EL0, 0);
+        write_sysreg!(CNTV_CTL_EL0, 0);
+        write_sysreg!(CNTV_CVAL_EL0, 0);
+        write_sysreg!(CNTV_TVAL_EL0, 0);
+        // //disable stage 1
+        // write_sysreg!(SCTLR_EL1, 0);
 
-            this_zone().read().gpm_activate();
+        this_zone().read().gpm_activate();
 
-            SCTLR_EL1.set((1 << 11) | (1 << 20) | (3 << 22) | (3 << 28));
-        }
+        SCTLR_EL1.set((1 << 11) | (1 << 20) | (3 << 22) | (3 << 28));
     }
 
     pub fn run(&mut self) {

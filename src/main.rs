@@ -105,9 +105,9 @@ fn primary_init_early(dtb: usize) {
     info!("host dtb: {:#x}", dtb);
     let host_fdt = unsafe { fdt::Fdt::from_ptr(dtb as *const u8) }.unwrap();
 
+    device::irqchip::irqchip_init_early(&host_fdt);
     crate::arch::mm::init_hv_page_table(&host_fdt).unwrap();
-    device::irqchip::irqchip_init(&host_fdt);
-
+    
     for zone_id in 0..TENANTS.len() {
         info!(
             "guest{} dtb addr: {:#x}",
@@ -139,7 +139,6 @@ fn per_cpu_init(cpu: &mut PerCpu) {
     }
 
     println!("CPU {} init OK.", cpu.id);
-    loop {}
 }
 
 // fn per_cpu_init() {

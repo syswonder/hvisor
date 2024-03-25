@@ -82,6 +82,7 @@ pub mod gicr;
 use core::arch::asm;
 
 use fdt::Fdt;
+use spin::Once;
 
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::hypercall::{SGI_EVENT_ID, SGI_RESUME_ID};
@@ -317,8 +318,25 @@ fn inject_irq(irq_id: usize) {
     }
 }
 
-pub const GICD_SIZE: u64 = 0x10000;
-pub const GICR_SIZE: u64 = 0x20000;
+pub static GIC: Once<Gic> = Once::new();
+
+#[derive(Debug)]
+pub struct Gic {
+    pub gicd_base: usize,
+    pub gicr_base: usize,
+    pub gicd_size: usize,
+    pub gicr_size: usize,
+}
+
+fn init_gic(gicd_base: usize, gicr_base: usize, gicd_size: usize, gicr_size: usize) {
+    GIC.call_once(|| Gic {
+        gicd_base,
+        gicr_base,
+        gicd_size,
+        gicr_size,
+    });
+    debug!("gic = {:#x?}", GIC.get().unwrap());
+}
 
 pub fn is_spi(irqn: u32) -> bool {
     irqn > 31 && irqn < 1020
@@ -332,5 +350,21 @@ pub fn disable_irqs() {
     unsafe { asm!("msr daifset, #0xf") };
 }
 
-pub fn irqchip_init(_host_fdt: &Fdt) {
+pub fn irqchip_init_early(host_fdt: &Fdt) {
+    let gic_info = host_fdt
+        .find_node("/gic")
+        .unwrap_or_else(|| host_fdt.find_node("/intc").unwrap());
+    let mut reg_iter = gic_info.reg().unwrap();
+
+    let first_reg = reg_iter.next().unwrap();
+    let second_reg = reg_iter.next().unwrap();
+
+    init_gic(
+        first_reg.starting_address as usize,
+        first_reg.size.unwrap(),
+        second_reg.starting_address as usize,
+        second_reg.size.unwrap(),
+    );
 }
+
+pub fn irqchip_init_late(_host_fdt: &Fdt) {}
