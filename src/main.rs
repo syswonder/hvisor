@@ -113,23 +113,13 @@ fn primary_init_early(dtb: usize) {
         info!(
             "guest{} addr: {:#x}, dtb addr: {:#x}",
             zone_id,
-            TENANTS[zone_id].0.as_ptr() as usize,
-            TENANTS[zone_id].1.as_ptr() as usize
+            TENANTS[zone_id].0 as usize,
+            TENANTS[zone_id].1 as usize
         );
-        let vm_paddr_start: usize = TENANTS[zone_id].0.as_ptr() as usize;
-        zone_create(zone_id, vm_paddr_start, TENANTS[zone_id].1.as_ptr(), DTB_ADDR);
+        zone_create(zone_id, TENANTS[zone_id].1 as _, DTB_ADDR);
     }
 
-    // // unsafe {
-    // //     // We should activate new hv-pt here in advance,
-    // //     // in case of triggering data aborts in `zone::init()`
-    // //     memory::hv_page_table().read().activate();
-    // // }
-
-    // // do_zone_create(unsafe { nr1_config_ptr().as_ref().unwrap() })?;
-
-    // INIT_EARLY_OK.store(1, Ordering::Release);
-    loop {}
+    INIT_EARLY_OK.store(1, Ordering::Release);
 }
 
 fn primary_init_late() {
@@ -152,6 +142,7 @@ fn per_cpu_init(cpu: &mut PerCpu) {
     }
 
     println!("CPU {} init OK.", cpu.id);
+    loop {}
 }
 
 // fn per_cpu_init() {

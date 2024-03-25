@@ -26,7 +26,6 @@ pub fn init_hv_page_table(fdt: &fdt::Fdt) -> HvResult {
     ))?;
     
     // probe virtio mmio device
-
     let mut last_mmio_addr: Option<usize> = None;
     for node in fdt.find_all_nodes("/virtio_mmio") {
         if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {

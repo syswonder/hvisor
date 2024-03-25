@@ -1,5 +1,10 @@
 QEMU := echo -e "\nbootm 0x40400000 - 0x40000000" | qemu-system-aarch64
 
+zone0_kernel := tenants/aarch64/kernel/Image
+zone0_dtb    := tenants/aarch64/devicetree/linux1.dtb
+zone1_kernel := tenants/aarch64/kernel/Image
+zone1_dtb    := tenants/aarch64/devicetree/linux2.dtb
+
 QEMU_ARGS := -machine virt,secure=on,gic-version=3,virtualization=on
 QEMU_ARGS += -cpu cortex-a57
 QEMU_ARGS += -smp 4
@@ -8,6 +13,10 @@ QEMU_ARGS += -nographic
 QEMU_ARGS += -bios imgs/u-boot.bin
 
 QEMU_ARGS += -device loader,file="$(hvisor_bin)",addr=0x40400000,force-raw=on
+QEMU_ARGS += -device loader,file="$(zone0_dtb)",addr=0x50000000,force-raw=on
+QEMU_ARGS += -device loader,file="$(zone0_kernel)",addr=0x50400000,force-raw=on
+QEMU_ARGS += -device loader,file="$(zone1_dtb)",addr=0x70000000,force-raw=on
+QEMU_ARGS += -device loader,file="$(zone1_kernel)",addr=0x70400000,force-raw=on
 
 # -drive if=none,file=$(FSIMG1),id=Xa003e000,format=raw \
 # -device virtio-blk-device,drive=Xa003e000 \

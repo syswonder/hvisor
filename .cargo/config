@@ -7,6 +7,6 @@ rustflags = [
 [target.aarch64-unknown-none]
 rustflags = [
     "-Clink-arg=-Taarch64.ld",
-    "-Ctarget-feature=+v8a, +a53",
+    "-Ctarget-feature=+a57,+v8a,+strict-align,-neon,-fp-armv8",
     "-Cforce-frame-pointers=yes",
 ]

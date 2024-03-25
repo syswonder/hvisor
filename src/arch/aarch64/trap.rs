@@ -1,5 +1,5 @@
-use core::arch::global_asm;
 use aarch64_cpu::registers::*;
+use core::arch::global_asm;
 
 global_asm!(
     include_str!("./trap.S"),
@@ -31,10 +31,8 @@ extern "C" {
 }
 
 pub fn install_trap_vector() {
-    unsafe {
-        // Set the trap vector.
-        VBAR_EL2.set(_hyp_trap_vector as _)
-    }
+    // Set the trap vector.
+    VBAR_EL2.set(_hyp_trap_vector as _)
 }
 
 // ----------------------------------------------
@@ -88,7 +86,8 @@ pub fn install_trap_vector() {
 
 /*From hyp_vec->handle_vmexit x0:guest regs x1:exit_reason sp =stack_top-32*8*/
 pub fn arch_handle_exit() -> ! {
-    todo!();
+    error!("trapped");
+    loop {}
     // let mpidr = MPIDR_EL1.get();
     // let _cpu_id = mpidr_to_cpuid(mpidr);
     // trace!("cpu exit, exit_reson:{:#x?}", regs.exit_reason);

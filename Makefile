@@ -58,6 +58,9 @@ run: all
 gdb: all
 	$(QEMU) $(QEMU_ARGS) -s -S
 
+show-features:
+	rustc --print=target-features --target=$(RUSTC_TARGET)
+
 monitor:
 	gdb-multiarch \
 		-ex 'file $(hvisor_elf)' \
