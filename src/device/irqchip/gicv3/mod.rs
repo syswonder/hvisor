@@ -85,10 +85,13 @@ use fdt::Fdt;
 use spin::Once;
 
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
+use crate::consts::MAX_CPU_NUM;
 use crate::hypercall::{SGI_EVENT_ID, SGI_RESUME_ID};
 use crate::percpu::check_events;
 
-pub fn reg_range(base: u64, n: u64, size: u64) -> core::ops::Range<u64> {
+use self::gicd::enable_gic_are_ns;
+
+pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> {
     base..(base + (n - 1) * size)
 }
 
@@ -214,10 +217,11 @@ fn deactivate_irq(irq_id: usize) {
     if irq_id < 16 {
         write_sysreg!(icc_dir_el1, irq_id as u64);
     }
-    //write_sysreg!(icc_dir_el1, irq_id as u64);
+    //write_sysreg!(icc_dir_el1, irq_id as usize);
 }
 
 fn read_lr(id: usize) -> u64 {
+    let id = id as u64;
     match id {
         //TODO get lr size from gic reg
         0 => read_sysreg!(ich_lr0_el2),
@@ -244,6 +248,7 @@ fn read_lr(id: usize) -> u64 {
 }
 
 fn write_lr(id: usize, val: u64) {
+    let id = id as u64;
     match id {
         0 => write_sysreg!(ich_lr0_el2, val),
         1 => write_sysreg!(ich_lr1_el2, val),
@@ -273,9 +278,9 @@ fn inject_irq(irq_id: usize) {
     const LR_VIRTIRQ_MASK: usize = 0x3ff;
     // const LR_PHYSIRQ_MASK: usize = 0x3ff << 10;
 
-    // const LR_PENDING_BIT: u64 = 1 << 28;
-    // const LR_HW_BIT: u64 = 1 << 31;
-    let elsr: u64 = read_sysreg!(ich_elrsr_el2);
+    // const LR_PENDING_BIT: usize = 1 << 28;
+    // const LR_HW_BIT: usize = 1 << 31;
+    let elsr = read_sysreg!(ich_elrsr_el2);
     let vtr = read_sysreg!(ich_vtr_el2) as usize;
     let lr_num: usize = (vtr & 0xf) + 1;
     let mut lr_idx = -1 as isize;
@@ -306,19 +311,20 @@ fn inject_irq(irq_id: usize) {
         // lr |= ICH_LR_PENDING;
         // if (!is_sgi(irq_id)) {
         //     lr |= ICH_LR_HW_BIT;
-        //     lr |= (u64)irq_id << ICH_LR_PHYS_ID_SHIFT;
+        //     lr |= (usize)irq_id << ICH_LR_PHYS_ID_SHIFT;
         // }
-        let mut val = irq_id as u64; //v intid
+        let mut val = irq_id as usize; //v intid
         val |= 1 << 60; //group 1
         val |= 1 << 62; //state pending
         val |= 1 << 61; //map hardware
-        val |= (irq_id as u64) << 32; //p intid
+        val |= (irq_id as usize) << 32; //p intid
                                       //debug!("To write lr {} val {}", lr_idx, val);
-        write_lr(lr_idx as usize, val);
+        write_lr(lr_idx as usize, val as u64);
     }
 }
 
 pub static GIC: Once<Gic> = Once::new();
+pub const PER_GICR_SIZE: usize = 0x20000;
 
 #[derive(Debug)]
 pub struct Gic {
@@ -328,7 +334,7 @@ pub struct Gic {
     pub gicr_size: usize,
 }
 
-fn init_gic(gicd_base: usize, gicr_base: usize, gicd_size: usize, gicr_size: usize) {
+fn init_gic(gicd_base: usize, gicd_size: usize, gicr_base: usize, gicr_size: usize) {
     GIC.call_once(|| Gic {
         gicd_base,
         gicr_base,
@@ -336,6 +342,23 @@ fn init_gic(gicd_base: usize, gicr_base: usize, gicd_size: usize, gicr_size: usi
         gicr_size,
     });
     debug!("gic = {:#x?}", GIC.get().unwrap());
+}
+
+pub fn host_gicd_base() -> usize {
+    GIC.get().unwrap().gicd_base
+}
+
+pub fn host_gicr_base(id: usize) -> usize {
+    assert!(id < MAX_CPU_NUM);
+    GIC.get().unwrap().gicr_base + id * PER_GICR_SIZE
+}
+
+pub fn host_gicd_size() -> usize {
+    GIC.get().unwrap().gicd_size
+}
+
+pub fn host_gicr_size() -> usize {
+    GIC.get().unwrap().gicr_size
 }
 
 pub fn is_spi(irqn: u32) -> bool {
@@ -350,7 +373,7 @@ pub fn disable_irqs() {
     unsafe { asm!("msr daifset, #0xf") };
 }
 
-pub fn irqchip_init_early(host_fdt: &Fdt) {
+pub fn init_early(host_fdt: &Fdt) {
     let gic_info = host_fdt
         .find_node("/gic")
         .unwrap_or_else(|| host_fdt.find_node("/intc").unwrap());
@@ -367,4 +390,6 @@ pub fn irqchip_init_early(host_fdt: &Fdt) {
     );
 }
 
-pub fn irqchip_init_late(_host_fdt: &Fdt) {}
+pub fn init_late() {
+    enable_gic_are_ns();
+}

@@ -52,16 +52,18 @@ impl PerCpu {
     }
 
     pub fn run_vm(&mut self) {
-        println!("prepare CPU{} for vm run!", self.id);
         if self.boot_cpu {
-            println!("boot vm on CPU{}!", self.id);
+            info!("CPU{}: Starting up the virtual machine...", self.id);
             self.arch_cpu.run();
         } else {
+            info!("CPU{}: Idling the CPU before starting VM...", self.id);
             self.arch_cpu.idle();
-
+    
+            info!("CPU{}: Running the virtual machine...", self.id);
             self.arch_cpu.run();
         }
     }
+    
 
     pub fn entered_cpus() -> u32 {
         ENTERED_CPUS.load(Ordering::Acquire)
@@ -90,20 +92,6 @@ impl PerCpu {
         todo!();
         // self.arch_shutdown_self()?;
         // Ok(())
-    }
-    pub fn start_zone(&mut self) -> ! {
-        todo!();
-        // let regs = self.guest_reg() as *mut GeneralRegisters;
-        // unsafe {
-        //     (*regs).usr[0] = if this_cpu_data().id == 0 {
-        //         0x40100000
-        //     } else {
-        //         0x60100000
-        //     }; // device_tree addr
-        //     info!("cpu_on_entry={:#x?}", self.cpu_on_entry);
-        //     set_vm_pc(self.cpu_on_entry);
-        //     vmreturn(self.guest_reg())
-        // }
     }
     /*should be in vcpu*/
     // pub fn arch_shutdown_self(&mut self) -> HvResult {
@@ -142,22 +130,6 @@ pub fn this_cpu_data<'a>() -> &'a mut PerCpu {
 #[allow(unused)]
 pub fn this_zone() -> Arc<RwLock<Zone>> {
     this_cpu_data().zone.clone().unwrap()
-}
-
-pub unsafe extern "C" fn arm_paging_vcpu_flush_tlbs() {
-    core::arch::asm!(
-        "
-            tlbi vmalls12e1is
-        ",
-    );
-}
-
-pub unsafe extern "C" fn isb() {
-    core::arch::asm!(
-        "
-            isb
-        ",
-    );
 }
 
 pub fn check_events() {

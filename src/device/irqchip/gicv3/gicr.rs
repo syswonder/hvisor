@@ -22,25 +22,25 @@ use super::gicd::{
 // Public Definitions
 //--------------------------------------------------------------------------------------------------
 
-const GICR_CTLR: u64 = 0x0000;
-const GICR_IIDR: u64 = 0x0004;
-const GICR_TYPER: u64 = 0x0008;
-const GICR_STATUSR: u64 = 0x0010;
-const GICR_WAKER: u64 = 0x0014;
-const GICR_SYNCR: u64 = 0x00c0;
-const GICR_PIDR2: u64 = 0xffe8;
-const GICR_SGI_BASE: u64 = 0x10000;
+const GICR_CTLR: usize = 0x0000;
+const GICR_IIDR: usize = 0x0004;
+const GICR_TYPER: usize = 0x0008;
+const GICR_STATUSR: usize = 0x0010;
+const GICR_WAKER: usize = 0x0014;
+const GICR_SYNCR: usize = 0x00c0;
+const GICR_PIDR2: usize = 0xffe8;
+const GICR_SGI_BASE: usize = 0x10000;
 
-const GICR_IGROUPR: u64 = GICD_IGROUPR;
-const GICR_ISENABLER: u64 = GICD_ISENABLER;
-const GICR_ICENABLER: u64 = GICD_ICENABLER;
-const GICR_ISPENDR: u64 = GICD_ISPENDR;
-const GICR_ICPENDR: u64 = GICD_ICPENDR;
-const GICR_ISACTIVER: u64 = GICD_ISACTIVER;
-const GICR_ICACTIVER: u64 = GICD_ICACTIVER;
-const GICR_IPRIORITYR: u64 = GICD_IPRIORITYR;
-const GICR_ICFGR: u64 = GICD_ICFGR;
-const GICR_TYPER_LAST: u64 = 1 << 4;
+const GICR_IGROUPR: usize = GICD_IGROUPR;
+const GICR_ISENABLER: usize = GICD_ISENABLER;
+const GICR_ICENABLER: usize = GICD_ICENABLER;
+const GICR_ISPENDR: usize = GICD_ISPENDR;
+const GICR_ICPENDR: usize = GICD_ICPENDR;
+const GICR_ISACTIVER: usize = GICD_ISACTIVER;
+const GICR_ICACTIVER: usize = GICD_ICACTIVER;
+const GICR_IPRIORITYR: usize = GICD_IPRIORITYR;
+const GICR_ICFGR: usize = GICD_ICFGR;
+const GICR_TYPER_LAST: usize = 1 << 4;
 
 #[allow(unused)]
 pub fn enable_ipi() {
@@ -72,7 +72,7 @@ pub fn enable_ipi() {
     // }
 }
 
-pub fn gicv3_gicr_mmio_handler(mmio: &mut MMIOAccess, cpu: u64) -> HvResult {
+pub fn gicv3_gicr_mmio_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
     todo!();
     // debug!("gicr({}) mmio = {:#x?}", cpu, mmio);
     // let gicr_base = get_cpu_data(cpu).gicr_base;

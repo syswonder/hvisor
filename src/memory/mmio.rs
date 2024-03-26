@@ -4,7 +4,7 @@ use crate::{error::HvResult, percpu::this_zone};
 
 use super::GuestPhysAddr;
 
-pub type MMIOHandler = fn(&mut MMIOAccess, u64) -> HvResult;
+pub type MMIOHandler = fn(&mut MMIOAccess, usize) -> HvResult;
 
 #[derive(Copy, Clone, Debug)]
 pub struct MMIOAccess {
@@ -12,33 +12,33 @@ pub struct MMIOAccess {
      * relative offset to region start. */
     pub address: GuestPhysAddr,
     /** Size of the access. */
-    pub size: u64,
+    pub size: usize,
     /** True if write access. */
     pub is_write: bool,
     /** The value to be written or the read value to return. */
-    pub value: u64,
+    pub value: usize,
 }
 
 #[derive(Copy, Clone, Debug)]
 pub struct MMIORegion {
     pub start: GuestPhysAddr,
-    pub size: u64,
+    pub size: usize,
 }
 
 #[derive(Debug)]
 pub struct MMIOConfig {
     pub region: MMIORegion,
     pub handler: MMIOHandler,
-    pub arg: u64,
+    pub arg: usize,
 }
 
 impl MMIORegion {
-    pub fn contains_region(&self, addr: GuestPhysAddr, sz: u64) -> bool {
+    pub fn contains_region(&self, addr: GuestPhysAddr, sz: usize) -> bool {
         addr >= self.start && addr + (sz as usize) <= self.start + (self.size as usize)
     }
 }
 
-pub fn mmio_perform_access(base: u64, mmio: &mut MMIOAccess) {
+pub fn mmio_perform_access(base: usize, mmio: &mut MMIOAccess) {
     let addr = base as usize + mmio.address;
 
     unsafe {
@@ -81,12 +81,12 @@ pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
     }
 }
 
-pub fn mmio_subpage_handler(mmio: &mut MMIOAccess, base: u64) -> HvResult {
+pub fn mmio_subpage_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     mmio_perform_access(base, mmio);
     Ok(())
 }
 
-pub fn mmio_generic_handler(mmio: &mut MMIOAccess, base: u64) -> HvResult {
+pub fn mmio_generic_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     mmio_perform_access(base, mmio);
     Ok(())
 }

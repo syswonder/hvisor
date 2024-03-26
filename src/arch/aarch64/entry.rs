@@ -28,37 +28,6 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
 #[naked]
 #[no_mangle]
 #[link_section = ".trampoline"]
-pub unsafe extern "C" fn vmreturn(_gu_regs: usize) -> ! {
-    core::arch::asm!(
-        "
-        /* x0: guest registers */
-        mov	sp, x0
-        ldp	x1, x0, [sp], #16	/* x1 is the exit_reason */
-        ldp	x1, x2, [sp], #16
-        ldp	x3, x4, [sp], #16
-        ldp	x5, x6, [sp], #16
-        ldp	x7, x8, [sp], #16
-        ldp	x9, x10, [sp], #16
-        ldp	x11, x12, [sp], #16
-        ldp	x13, x14, [sp], #16
-        ldp	x15, x16, [sp], #16
-        ldp	x17, x18, [sp], #16
-        ldp	x19, x20, [sp], #16
-        ldp	x21, x22, [sp], #16
-        ldp	x23, x24, [sp], #16
-        ldp	x25, x26, [sp], #16
-        ldp	x27, x28, [sp], #16
-        ldp	x29, x30, [sp], #16
-        /*now el2 sp point to per cpu stack top*/
-        eret                            //ret to el2_entry hvc #0 now,depend on ELR_EL2
-        
-    ",
-        options(noreturn),
-    );
-}
-#[naked]
-#[no_mangle]
-#[link_section = ".trampoline"]
 pub unsafe extern "C" fn virt2phys_el2(_gu_regs: usize, page_offset: u64) -> i32 {
     core::arch::asm!(
         "

@@ -1,8 +1,11 @@
+use core::sync::atomic::{self, Ordering};
+
 use spin::RwLock;
 
 use crate::{
-    arch::s1pt::Stage1PageTable, consts::PAGE_SIZE, error::HvResult, memory::{
-        addr::{align_down, align_up}, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet, HV_PT,
+    arch::s1pt::Stage1PageTable, consts::PAGE_SIZE, device::irqchip::gicv3::{host_gicd_base, host_gicd_size, host_gicr_base, host_gicr_size}, error::HvResult, memory::{
+        addr::{align_down, align_up},
+        GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet, HV_PT,
     }
 };
 
@@ -24,7 +27,7 @@ pub fn init_hv_page_table(fdt: &fdt::Fdt) -> HvResult {
         mem_region.size.unwrap(),
         MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
     ))?;
-    
+
     // probe virtio mmio device
     let mut last_mmio_addr: Option<usize> = None;
     for node in fdt.find_all_nodes("/virtio_mmio") {
@@ -32,7 +35,11 @@ pub fn init_hv_page_table(fdt: &fdt::Fdt) -> HvResult {
             let paddr = reg.starting_address as HostPhysAddr;
             let size = reg.size.unwrap();
             if last_mmio_addr.is_none() || last_mmio_addr.unwrap() != align_down(paddr) {
-                debug!("map virtio mmio addr: {:#x}, size: {:#x}", paddr, size.max(PAGE_SIZE));
+                debug!(
+                    "map virtio mmio addr: {:#x}, size: {:#x}",
+                    paddr,
+                    size.max(PAGE_SIZE)
+                );
                 hv_pt.insert(MemoryRegion::new_with_offset_mapper(
                     paddr as GuestPhysAddr,
                     paddr,
@@ -76,7 +83,21 @@ pub fn init_hv_page_table(fdt: &fdt::Fdt) -> HvResult {
 
     // probe gic...
 
-    info!("Hypervisor page table init end.");
+    hv_pt.insert(MemoryRegion::new_with_offset_mapper(
+        host_gicd_base(),
+        host_gicd_base(),
+        host_gicd_size(),
+        MemFlags::READ | MemFlags::WRITE,
+    ))?;
+
+    hv_pt.insert(MemoryRegion::new_with_offset_mapper(
+        host_gicr_base(0),
+        host_gicr_base(0),
+        host_gicr_size(),
+        MemFlags::READ | MemFlags::WRITE,
+    ))?;
+
+    info!("Hypervisor page table initialization completed.");
     debug!("Hypervisor virtual memory set: {:#x?}", hv_pt);
 
     HV_PT.call_once(|| RwLock::new(hv_pt));

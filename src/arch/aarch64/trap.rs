@@ -1,6 +1,10 @@
 use aarch64_cpu::registers::*;
 use core::arch::global_asm;
 
+use crate::arch::cpu::mpidr_to_cpuid;
+
+use super::cpu::GeneralRegisters;
+
 global_asm!(
     include_str!("./trap.S"),
     sym arch_handle_exit
@@ -59,122 +63,115 @@ pub fn install_trap_vector() {
 //     pub const SMCCC_ARCH_FEATURES: u64 = 0x80000001;
 // }
 
-// #[allow(dead_code)]
-// pub enum TrapReturn {
-//     TrapHandled = 1,
-//     TrapUnhandled = 0,
-//     TrapForbidden = -1,
-// }
-// #[repr(C)]
-// #[derive(Debug)]
-// pub struct TrapFrame<'a> {
-//     pub regs: &'a mut GeneralRegisters,
-//     pub esr: u64, //ESR_EL2 exception reason
-//     pub spsr: u64, //SPSR_EL2 exception info
-//                   //pub sp: u64,
-// }
-// impl<'a> TrapFrame<'a> {
-//     pub fn new(regs: &'a mut GeneralRegisters) -> Self {
-//         Self {
-//             regs,
-//             esr: ESR_EL2.get(),
-//             spsr: SPSR_EL2.get(),
-//             //sp: 0,
-//         }
-//     }
-// }
+#[allow(unused)]
+pub enum TrapReturn {
+    TrapHandled = 1,
+    TrapUnhandled = 0,
+    TrapForbidden = -1,
+}
+
+#[repr(C)]
+#[derive(Debug)]
+pub struct TrapFrame<'a> {
+    pub regs: &'a mut GeneralRegisters,
+    pub esr: u64, //ESR_EL2 exception reason
+    pub spsr: u64, //SPSR_EL2 exception info
+                  //pub sp: u64,
+}
+impl<'a> TrapFrame<'a> {
+    pub fn new(regs: &'a mut GeneralRegisters) -> Self {
+        Self {
+            regs,
+            esr: ESR_EL2.get(),
+            spsr: SPSR_EL2.get(),
+            //sp: 0,
+        }
+    }
+}
 
 /*From hyp_vec->handle_vmexit x0:guest regs x1:exit_reason sp =stack_top-32*8*/
-pub fn arch_handle_exit() -> ! {
-    error!("trapped");
+pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> ! {
+    let mpidr = MPIDR_EL1.get();
+    let _cpu_id = mpidr_to_cpuid(mpidr);
+    trace!("cpu exit, exit_reson:{:#x?}", regs.exit_reason);
+    match regs.exit_reason as u64 {
+        ExceptionType::EXIT_REASON_EL1_IRQ => irqchip_handle_irq1(),
+        ExceptionType::EXIT_REASON_EL1_ABORT => arch_handle_trap_el1(regs),
+        ExceptionType::EXIT_REASON_EL2_ABORT => arch_handle_trap_el2(regs),
+        ExceptionType::EXIT_REASON_EL2_IRQ => irqchip_handle_irq2(),
+        _ => arch_dump_exit(regs.exit_reason),
+    }
+    unsafe { vmreturn(regs as *const _ as usize) }
+}
+
+fn irqchip_handle_irq1() {
+    debug!("irq from el1");
+    todo!();
+    // gicv3_handle_irq_el1();
+}
+
+fn irqchip_handle_irq2() {
+    error!("irq not handle from el2");
     loop {}
-    // let mpidr = MPIDR_EL1.get();
-    // let _cpu_id = mpidr_to_cpuid(mpidr);
-    // trace!("cpu exit, exit_reson:{:#x?}", regs.exit_reason);
-    // match regs.exit_reason as u64 {
-    //     ExceptionType::EXIT_REASON_EL1_IRQ => irqchip_handle_irq1(),
-    //     ExceptionType::EXIT_REASON_EL1_ABORT => arch_handle_trap_el1(regs),
-    //     ExceptionType::EXIT_REASON_EL2_ABORT => arch_handle_trap_el2(regs),
-    //     ExceptionType::EXIT_REASON_EL2_IRQ => irqchip_handle_irq2(),
-    //     _ => arch_dump_exit(regs.exit_reason),
-    // }
-    // unsafe {
-    //     vmreturn(regs as *const _ as usize);
+}
+
+fn arch_handle_trap_el1(regs: &mut GeneralRegisters) {
+    let mut frame = TrapFrame::new(regs);
+    let mut _ret = TrapReturn::TrapUnhandled;
+
+    trace!(
+        "arch_handle_trap ec={:#x?} elr={:#x?}",
+        ESR_EL2.read(ESR_EL2::EC),
+        ESR_EL2.read(ESR_EL2::ISS)
+    );
+
+    todo!();
+    // match ESR_EL2.read_as_enum(ESR_EL2::EC) {
+    //     Some(ESR_EL2::EC::Value::HVC64) => handle_hvc(&mut frame),
+    //     Some(ESR_EL2::EC::Value::SMC64) => handle_smc(&mut frame),
+    //     Some(ESR_EL2::EC::Value::TrappedMsrMrs) => handle_sysreg(&mut frame),
+    //     Some(ESR_EL2::EC::Value::DataAbortLowerEL) => handle_dabt(&mut frame),
+    //     Some(ESR_EL2::EC::Value::InstrAbortLowerEL) => handle_iabt(&mut frame),
+    //     _ => {
+    //         error!(
+    //             "Unsupported Exception EC:{:#x?}!",
+    //             ESR_EL2.read(ESR_EL2::EC)
+    //         );
+    //         error!("esr_el2: iss {:#x?}", ESR_EL2.read(ESR_EL2::ISS));
+    //         loop {}
+    //         // ret = TrapReturn::TrapUnhandled;
+    //     }
     // }
 }
 
-// fn irqchip_handle_irq1() {
-//     //debug!("irq from el1");
-//     todo!();
-//     // gicv3_handle_irq_el1();
-// }
-
-// fn irqchip_handle_irq2() {
-//     error!("irq not handle from el2");
-//     loop {}
-// }
-
-// fn arch_handle_trap_el1(regs: &mut GeneralRegisters) {
-//     let mut frame = TrapFrame::new(regs);
-//     let mut _ret = TrapReturn::TrapUnhandled;
-
-//     trace!(
-//         "arch_handle_trap ec={:#x?} elr={:#x?}",
-//         ESR_EL2.read(ESR_EL2::EC),
-//         ESR_EL2.read(ESR_EL2::ISS)
-//     );
-
-//     match ESR_EL2.read_as_enum(ESR_EL2::EC) {
-//         Some(ESR_EL2::EC::Value::HVC64) => handle_hvc(&mut frame),
-//         Some(ESR_EL2::EC::Value::SMC64) => handle_smc(&mut frame),
-//         Some(ESR_EL2::EC::Value::TrappedMsrMrs) => handle_sysreg(&mut frame),
-//         Some(ESR_EL2::EC::Value::DataAbortLowerEL) => handle_dabt(&mut frame),
-//         Some(ESR_EL2::EC::Value::InstrAbortLowerEL) => handle_iabt(&mut frame),
-//         _ => {
-//             error!(
-//                 "Unsupported Exception EC:{:#x?}!",
-//                 ESR_EL2.read(ESR_EL2::EC)
-//             );
-//             error!("esr_el2: iss {:#x?}", ESR_EL2.read(ESR_EL2::ISS));
-//             loop {}
-//             // ret = TrapReturn::TrapUnhandled;
-//         }
-//     }
-// }
-
-// fn arch_handle_trap_el2(_regs: &mut GeneralRegisters) {
-//     match ESR_EL2.read_as_enum(ESR_EL2::EC) {
-//         Some(ESR_EL2::EC::Value::HVC64) => {
-//             error!("EL2 Exception: HVC64 call, ELR_EL2: {:#x?}", ELR_EL2.get())
-//         }
-
-//         Some(ESR_EL2::EC::Value::SMC64) => {
-//             error!("EL2 Exception: SMC64 call, ELR_EL2: {:#x?}", ELR_EL2.get())
-//         }
-
-//         Some(ESR_EL2::EC::Value::DataAbortCurrentEL) => {
-//             error!(
-//                 "EL2 Exception: Data Abort, ELR_EL2: {:#x?}, FAR_EL2: {:#x?}",
-//                 ELR_EL2.get(),
-//                 FAR_EL2.get()
-//             )
-//         }
-
-//         Some(ESR_EL2::EC::Value::InstrAbortCurrentEL) => {
-//             error!(
-//                 "EL2 Exception: Instruction Abort, ELR_EL2: {:#x?}, FAR_EL2: {:#x?}",
-//                 ELR_EL2.get(),
-//                 FAR_EL2.get()
-//             )
-//         }
-
-//         // ... 其他异常类型
-//         _ => {
-//             error!("Unhandled EL2 Exception: EC={:#x?}", 1);
-//         }
-//     }
-//     loop {}
-// }
+fn arch_handle_trap_el2(_regs: &mut GeneralRegisters) {
+    match ESR_EL2.read_as_enum(ESR_EL2::EC) {
+        Some(ESR_EL2::EC::Value::HVC64) => {
+            error!("EL2 Exception: HVC64 call, ELR_EL2: {:#x?}", ELR_EL2.get())
+        }
+        Some(ESR_EL2::EC::Value::SMC64) => {
+            error!("EL2 Exception: SMC64 call, ELR_EL2: {:#x?}", ELR_EL2.get())
+        }
+        Some(ESR_EL2::EC::Value::DataAbortCurrentEL) => {
+            error!(
+                "EL2 Exception: Data Abort, ELR_EL2: {:#x?}, FAR_EL2: {:#x?}",
+                ELR_EL2.get(),
+                FAR_EL2.get()
+            )
+        }
+        Some(ESR_EL2::EC::Value::InstrAbortCurrentEL) => {
+            error!(
+                "EL2 Exception: Instruction Abort, ELR_EL2: {:#x?}, FAR_EL2: {:#x?}",
+                ELR_EL2.get(),
+                FAR_EL2.get()
+            )
+        }
+        _ => {
+            error!("Unhandled EL2 Exception: EC={:#x?}", 1);
+        }
+    }
+    loop {}
+}
 
 // fn handle_iabt(_frame: &mut TrapFrame) {
 //     let iss = ESR_EL2.read(ESR_EL2::ISS);
@@ -390,4 +387,35 @@ fn arch_dump_exit(reason: u64) {
     //TODO hypervisor coredump
     error!("Unsupported Exit:{:#x?}, elr={:#x?}", reason, ELR_EL2.get());
     loop {}
+}
+
+#[naked]
+#[no_mangle]
+pub unsafe extern "C" fn vmreturn(_gu_regs: usize) -> ! {
+    core::arch::asm!(
+        "
+        /* x0: guest registers */
+        mov	sp, x0
+        ldp	x1, x0, [sp], #16	/* x1 is the exit_reason */
+        ldp	x1, x2, [sp], #16
+        ldp	x3, x4, [sp], #16
+        ldp	x5, x6, [sp], #16
+        ldp	x7, x8, [sp], #16
+        ldp	x9, x10, [sp], #16
+        ldp	x11, x12, [sp], #16
+        ldp	x13, x14, [sp], #16
+        ldp	x15, x16, [sp], #16
+        ldp	x17, x18, [sp], #16
+        ldp	x19, x20, [sp], #16
+        ldp	x21, x22, [sp], #16
+        ldp	x23, x24, [sp], #16
+        ldp	x25, x26, [sp], #16
+        ldp	x27, x28, [sp], #16
+        ldp	x29, x30, [sp], #16
+        /*now el2 sp point to per cpu stack top*/
+        eret                            //ret to el2_entry hvc #0 now,depend on ELR_EL2
+        
+    ",
+        options(noreturn),
+    );
 }

@@ -14,36 +14,36 @@ use crate::{
 };
 use spin::Mutex;
 
-use super::{is_spi, reg_range};
+use super::{host_gicd_base, is_spi, reg_range};
 
 static GICD_LOCK: Mutex<()> = Mutex::new(());
 
-pub const GICD_CTLR: u64 = 0x0000;
-pub const GICD_CTLR_ARE_NS: u64 = 1 << 5;
-pub const GICD_CTLR_GRP1NS_ENA: u64 = 1 << 1;
+pub const GICD_CTLR: usize = 0x0000;
+pub const GICD_CTLR_ARE_NS: usize = 1 << 5;
+pub const GICD_CTLR_GRP1NS_ENA: usize = 1 << 1;
 
-pub const GICD_TYPER: u64 = 0x0004;
-pub const GICD_IIDR: u64 = 0x0008;
-pub const GICD_IGROUPR: u64 = 0x0080;
-pub const GICD_ISENABLER: u64 = 0x0100;
-pub const GICD_ICENABLER: u64 = 0x0180;
-pub const GICD_ISPENDR: u64 = 0x0200;
-pub const GICD_ICPENDR: u64 = 0x0280;
-pub const GICD_ISACTIVER: u64 = 0x0300;
-pub const GICD_ICACTIVER: u64 = 0x0380;
-pub const GICD_IPRIORITYR: u64 = 0x0400;
-pub const GICD_ITARGETSR: u64 = 0x0800;
-pub const GICD_ICFGR: u64 = 0x0c00;
-pub const GICD_NSACR: u64 = 0x0e00;
-pub const GICD_SGIR: u64 = 0x0f00;
-pub const GICD_CPENDSGIR: u64 = 0x0f10;
-pub const GICD_SPENDSGIR: u64 = 0x0f20;
-pub const GICD_IROUTER: u64 = 0x6000;
+pub const GICD_TYPER: usize = 0x0004;
+pub const GICD_IIDR: usize = 0x0008;
+pub const GICD_IGROUPR: usize = 0x0080;
+pub const GICD_ISENABLER: usize = 0x0100;
+pub const GICD_ICENABLER: usize = 0x0180;
+pub const GICD_ISPENDR: usize = 0x0200;
+pub const GICD_ICPENDR: usize = 0x0280;
+pub const GICD_ISACTIVER: usize = 0x0300;
+pub const GICD_ICACTIVER: usize = 0x0380;
+pub const GICD_IPRIORITYR: usize = 0x0400;
+pub const GICD_ITARGETSR: usize = 0x0800;
+pub const GICD_ICFGR: usize = 0x0c00;
+pub const GICD_NSACR: usize = 0x0e00;
+pub const GICD_SGIR: usize = 0x0f00;
+pub const GICD_CPENDSGIR: usize = 0x0f10;
+pub const GICD_SPENDSGIR: usize = 0x0f20;
+pub const GICD_IROUTER: usize = 0x6000;
 
-const GICDV3_CIDR0: u64 = 0xfff0;
-const GICDV3_PIDR0: u64 = 0xffe0;
-const GICDV3_PIDR2: u64 = 0xffe8;
-const GICDV3_PIDR4: u64 = 0xffd0;
+const GICDV3_CIDR0: usize = 0xfff0;
+const GICDV3_PIDR0: usize = 0xffe0;
+const GICDV3_PIDR2: usize = 0xffe8;
+const GICDV3_PIDR4: usize = 0xffd0;
 
 // The return value should be the register value to be read.
 fn gicv3_handle_irq_ops(mmio: &mut MMIOAccess, irq: u32) -> HvResult {
@@ -64,8 +64,8 @@ fn gicv3_handle_irq_ops(mmio: &mut MMIOAccess, irq: u32) -> HvResult {
     Ok(())
 }
 
-fn gicd_misc_access(mmio: &mut MMIOAccess, gicd_base: u64) -> HvResult {
-    let reg = mmio.address as u64;
+fn gicd_misc_access(mmio: &mut MMIOAccess, gicd_base: usize) -> HvResult {
+    let reg = mmio.address;
     if reg_range(GICDV3_PIDR0, 4, 4).contains(&reg)
         || reg_range(GICDV3_PIDR4, 4, 4).contains(&reg)
         || reg_range(GICDV3_CIDR0, 4, 4).contains(&reg)
@@ -84,7 +84,7 @@ fn gicd_misc_access(mmio: &mut MMIOAccess, gicd_base: u64) -> HvResult {
     Ok(())
 }
 
-pub fn gicv3_gicd_mmio_handler(mmio: &mut MMIOAccess, _arg: u64) -> HvResult {
+pub fn gicv3_gicd_mmio_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
     todo!();
     // trace!("gicd mmio = {:#x?}", mmio);
     // let gicd_base = HvSystemConfig::get().platform_info.arch.gicd_base;
@@ -120,24 +120,22 @@ pub fn gicv3_gicd_mmio_handler(mmio: &mut MMIOAccess, _arg: u64) -> HvResult {
 }
 
 pub fn enable_gic_are_ns() {
-    todo!();
-    // let gicd_base = HvSystemConfig::get().platform_info.arch.gicd_base;
-    // unsafe {
-    //     ((gicd_base + GICD_CTLR) as *mut u32)
-    //         .write_volatile(GICD_CTLR_ARE_NS as u32 | GICD_CTLR_GRP1NS_ENA as u32);
-    // }
+    unsafe {
+        ((host_gicd_base() + GICD_CTLR) as *mut u32)
+            .write_volatile(GICD_CTLR_ARE_NS as u32 | GICD_CTLR_GRP1NS_ENA as u32);
+    }
 }
 
 fn restrict_bitmask_access(
     mmio: &mut MMIOAccess,
-    reg_index: u64,
-    bits_per_irq: u64,
+    reg_index: usize,
+    bits_per_irq: usize,
     is_poke: bool,
-    gicd_base: u64,
+    gicd_base: usize,
 ) -> HvResult {
     let zone = this_zone();
     let zone_r = zone.read();
-    let mut access_mask: u64 = 0;
+    let mut access_mask: usize = 0;
     /*
      * In order to avoid division, the number of bits per irq is limited
      * to powers of 2 for the moment.

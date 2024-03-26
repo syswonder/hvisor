@@ -1,10 +1,14 @@
+use core::ops::DerefMut;
+
 use crate::{
     arch::sysreg::write_sysreg,
     consts::{INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
     memory::VirtAddr,
     percpu::this_zone,
 };
-use aarch64_cpu::registers::{Readable, Writeable, MPIDR_EL1, SCTLR_EL1};
+use aarch64_cpu::registers::{Readable, Writeable, ELR_EL2, MPIDR_EL1, SCTLR_EL1, SPSR_EL2};
+
+use super::trap::vmreturn;
 
 pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
     psci::cpu_on(cpuid as u64 | 0x80000000, start_addr as _, opaque as _).unwrap_or_else(|err| {
@@ -17,41 +21,37 @@ pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
 
 #[repr(C)]
 #[derive(Debug)]
+pub struct GeneralRegisters {
+    pub exit_reason: u64,
+    pub usr: [u64; 31],
+}
+
+#[repr(C)]
+#[derive(Debug)]
 pub struct ArchCpu {
-    pub exit_reason: usize,
-    pub x: [usize; 31], //x0~x31
-    pub esr: usize,
-    pub elr: usize,
-    pub spsr: usize,
     pub cpuid: usize,
 }
 
 impl ArchCpu {
     pub fn new(cpuid: usize) -> Self {
-        ArchCpu {
-            exit_reason: 0,
-            x: [0; 31],
-            esr: 0,
-            spsr: 0,
-            elr: INVALID_ADDRESS,
-            cpuid,
-        }
+        Self { cpuid }
     }
-    pub fn get_cpuid(&self) -> usize {
-        self.cpuid
-    }
-    pub fn stack_top(&self) -> VirtAddr {
-        PER_CPU_ARRAY_PTR as VirtAddr + (self.get_cpuid() + 1) as usize * PER_CPU_SIZE - 8
-    }
+
     pub fn init(&mut self, entry: usize, cpu_id: usize, dtb: usize) {
-        //self.sepc = guest_test as usize as u64;
-        write_sysreg!(tpidr_el2, self as *const _ as u64); // arch cpu pointer
-        self.elr = entry;
-        self.esr = 0;
-        self.spsr = 0x5 | 1 << 6 | 1 << 7 | 1 << 8 | 1 << 9; // SPSR_EL1h | SPSR_D | SPSR_A | SPSR_I | SPSR_F
-        self.x[0] = cpu_id; // cpu id
-        self.x[1] = dtb; // dtb addr
+        ELR_EL2.set(entry as _);
+        SPSR_EL2.set(0x5 | 1 << 6 | 1 << 7 | 1 << 8 | 1 << 9); // SPSR_EL1h | SPSR_D | SPSR_A | SPSR_I | SPSR_F
+        let regs = self.guest_reg();
+        regs.usr[0] = cpu_id as _; // cpu id
+        regs.usr[1] = dtb as _; // dtb addr
         self.reset();
+    }
+
+    fn stack_top(&self) -> VirtAddr {
+        PER_CPU_ARRAY_PTR as VirtAddr + (self.cpuid + 1) as usize * PER_CPU_SIZE - 8
+    }
+
+    fn guest_reg(&self) -> &mut GeneralRegisters {
+        unsafe { &mut *((self.stack_top() - 32 * 8) as *mut GeneralRegisters) }
     }
 
     fn reset(&self) {
@@ -95,26 +95,20 @@ impl ArchCpu {
         // //disable stage 1
         // write_sysreg!(SCTLR_EL1, 0);
 
-        this_zone().read().gpm_activate();
-
         SCTLR_EL1.set((1 << 11) | (1 << 20) | (3 << 22) | (3 << 28));
     }
 
     pub fn run(&mut self) {
-        todo!("run");
-        // extern "C" {
-        //     fn vcpu_arch_entry();
-        // }
-        // unsafe {
-        //     vcpu_arch_entry();
-        // }
+        unsafe {
+            vmreturn(self.guest_reg() as *mut _ as usize);
+        }
     }
 
     pub fn idle(&self) {
         unsafe {
             core::arch::asm!("wfi");
         }
-        println!("CPU{} weakup!", self.cpuid);
+        info!("Wake up from idle...");
     }
 }
 
@@ -124,4 +118,31 @@ pub fn mpidr_to_cpuid(mpidr: u64) -> u64 {
 
 pub fn this_cpu_id() -> usize {
     mpidr_to_cpuid(MPIDR_EL1.get()) as _
+}
+
+pub unsafe fn enable_mmu() {
+    const MAIR_FLAG: usize = 0x004404ff; //10001000000010011111111
+    const SCTLR_FLAG: usize = 0x30c51835; //110000110001010001100000110101
+    const TCR_FLAG: usize = 0x80853510; //10000000100001010011010100010000
+
+    core::arch::asm!(
+        "
+        /* setup the MMU for EL2 hypervisor mappings */
+        ldr	x1, ={MAIR_FLAG}     
+        msr	mair_el2, x1       // memory attributes for pagetable
+        ldr	x1, ={TCR_FLAG}
+	    msr	tcr_el2, x1        // translate control, virt range = [0, 2^48)
+
+	    /* Enable MMU, allow cacheability for instructions and data */
+	    ldr	x1, ={SCTLR_FLAG}
+	    msr	sctlr_el2, x1      // system control register
+
+	    isb
+	    tlbi alle2
+	    dsb	nsh
+    ",
+        MAIR_FLAG = const MAIR_FLAG,
+        TCR_FLAG = const TCR_FLAG,
+        SCTLR_FLAG = const SCTLR_FLAG,
+    );
 }

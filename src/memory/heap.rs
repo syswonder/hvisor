@@ -19,12 +19,12 @@ pub fn init() {
             .init(heap_start, HEAP_BLOCK * MACHINE_ALIGN);
     }
     info!(
-        "Heap allocator init end: {:#x?}",
+        "Heap allocator initialization finished: {:#x?}",
         heap_start..heap_start + HV_HEAP_SIZE
     );
 }
 
-pub fn heap_test() {
+pub fn test() {
     use alloc::boxed::Box;
     use alloc::vec::Vec;
     extern "C" {

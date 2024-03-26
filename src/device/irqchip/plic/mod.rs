@@ -3,7 +3,7 @@ use spin::{Once, RwLock};
 
 use crate::platform::qemu_riscv64::PLIC_MAX_CONTEXT;
 
-pub fn irqchip_init_early(host_fdt: &Fdt) {
+pub fn init_early(host_fdt: &Fdt) {
     let plic_info = host_fdt.find_node("/soc/plic").unwrap();
     init_plic(
         plic_info.reg().unwrap().next().unwrap().starting_address as usize,

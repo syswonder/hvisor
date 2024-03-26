@@ -6,7 +6,6 @@ use numeric_enum_macro::numeric_enum;
 use crate::consts::PAGE_SIZE;
 use crate::memory::addr::{GuestPhysAddr, HostPhysAddr, PhysAddr};
 use crate::memory::MemFlags;
-use crate::percpu::{arm_paging_vcpu_flush_tlbs, isb};
 
 use super::paging::{GenericPTE, Level4PageTable, PagingInstr};
 
@@ -202,8 +201,7 @@ pub struct S2PTInstr;
 impl PagingInstr for S2PTInstr {
     unsafe fn activate(root_paddr: HostPhysAddr) {
         VTTBR_EL2.set_baddr(root_paddr as _);
-        isb();
-        arm_paging_vcpu_flush_tlbs();
+        core::arch::asm!("tlbi vmalls12e1is");
     }
 
     fn flush(_vaddr: Option<usize>) {

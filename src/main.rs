@@ -40,7 +40,6 @@ mod platform;
 mod zone;
 
 use crate::consts::{DTB_IPA, MAX_CPU_NUM};
-use crate::device::irqchip::gicv3::gicd::enable_gic_are_ns;
 use crate::platform::qemu_aarch64::TENANTS;
 use crate::zone::zone_create;
 use arch::{cpu::cpu_start, entry::arch_entry};
@@ -77,14 +76,9 @@ fn primary_init_early(dtb: usize) {
     info!("Logging is enabled.");
     // let system_config = HvSystemConfig::get();
     // let revision = system_config.revision;
+    info!("Hypervisor initialization in progress...");
     info!(
-        "\n\
-        Initializing hypervisor...\n\
-        build_mode = {}\n\
-        log_level = {}\n\
-        arch = {}\n\
-        vendor = {}\n\
-        stats = {}",
+        "build_mode: {}, log_level: {}, arch: {}, vendor: {}, stats: {}",
         option_env!("MODE").unwrap_or(""),
         option_env!("LOG").unwrap_or(""),
         option_env!("ARCH").unwrap_or(""),
@@ -93,21 +87,16 @@ fn primary_init_early(dtb: usize) {
     );
 
     memory::heap::init();
-    memory::heap::heap_test();
-
-    // system_config.check()?;
-
-    // info!("System config: {:#x?}", system_config);
-
-    memory::frame::init_frame_allocator();
-    memory::frame::frame_allocator_test();
+    memory::heap::test();
+    memory::frame::init();
+    memory::frame::test();
 
     info!("host dtb: {:#x}", dtb);
     let host_fdt = unsafe { fdt::Fdt::from_ptr(dtb as *const u8) }.unwrap();
 
-    device::irqchip::irqchip_init_early(&host_fdt);
+    device::irqchip::init_early(&host_fdt);
     crate::arch::mm::init_hv_page_table(&host_fdt).unwrap();
-    
+
     for zone_id in 0..TENANTS.len() {
         info!(
             "guest{} dtb addr: {:#x}",
@@ -121,45 +110,23 @@ fn primary_init_early(dtb: usize) {
 
 fn primary_init_late() {
     info!("Primary CPU init late...");
-
-    #[cfg(target_arch = "aarch64")]
-    enable_gic_are_ns();
+    device::irqchip::init_late();
 
     INIT_LATE_OK.store(1, Ordering::Release);
 }
 
-fn per_cpu_init(cpu: &mut PerCpu) {
+fn per_cpu_mm_init(cpu: &mut PerCpu) {
     if cpu.zone.is_none() {
         warn!("zone is not created for cpu {}", cpu.id);
     } else {
         unsafe {
             memory::hv_page_table().read().activate();
-            cpu.zone.clone().unwrap().read().gpm_activate();
+            cpu.zone.clone().unwrap().read().gpm.activate();
         };
     }
 
-    println!("CPU {} init OK.", cpu.id);
+    println!("CPU {} mm_init OK.", cpu.id);
 }
-
-// fn per_cpu_init() {
-//     let cpu_data = this_cpu_data();
-
-//     if cpu_data.zone.is_none() {
-//         cpu_data.zone = Some(root_zone());
-//     }
-
-//     // gicv3_cpu_init();
-//     todo!();
-//     // unsafe {
-//     //     memory::hv_page_table().read().activate();
-//     //     this_zone().read().gpm_activate();
-//     // };
-
-//     // enable_ipi();
-//     // enable_irqs();
-
-//     println!("CPU {} init OK.", cpu_data.id);
-// }
 
 fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
     for cpu_id in 0..MAX_CPU_NUM {
@@ -172,19 +139,12 @@ fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
 
 fn rust_main(cpuid: usize, host_dtb: usize) {
     arch::trap::install_trap_vector();
-    // println!("Hello, world!");
-    // println!(".text [{:#x}, {:#x})", stext as usize, etext as usize);
-    // println!(".rodata [{:#x}, {:#x})", srodata as usize, erodata as usize);
-    // println!(".data [{:#x}, {:#x})", sdata as usize, edata as usize);
-    // println!(
-    //     "boot_stack top=bottom={:#x}, lower_bound={:#x}",
-    //     boot_stack_top as usize, boot_stack_lower_bound as usize
-    // );
 
     let mut is_primary = false;
     if MASTER_CPU.load(Ordering::Acquire) == -1 {
         MASTER_CPU.store(cpuid as i32, Ordering::Release);
         is_primary = true;
+        println!("Hello, HVISOR!");
         #[cfg(target_arch = "riscv64")]
         clear_bss();
     }
@@ -192,7 +152,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     let cpu = PerCpu::new(cpuid);
 
     println!(
-        "Hello from CPU {}, &cpu_data = {:#x?}, &dtb = {:#x}!",
+        "Booting CPU {}: {:p}, DTB: {:#x}",
         cpu.id, cpu as *const _, host_dtb
     );
 
@@ -205,8 +165,8 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     assert_eq!(PerCpu::entered_cpus(), MAX_CPU_NUM as _);
 
     println!(
-        "{} CPU {} entered.",
-        if is_primary { "Primary  " } else { "Secondary" },
+        "{} CPU {} has entered.",
+        if is_primary { "Primary" } else { "Secondary" },
         cpu.id
     );
 
@@ -216,7 +176,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         wait_for_counter(&INIT_EARLY_OK, 1);
     }
 
-    per_cpu_init(cpu);
+    per_cpu_mm_init(cpu);
 
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
     wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _);
@@ -229,15 +189,6 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     }
 
     cpu.run_vm();
-
-    // INITED_CPUS.fetch_add(1, Ordering::SeqCst);
-    // wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _)?;
-
-    // if is_primary {
-    //     primary_init_late();
-    // } else {
-    //     wait_for_counter(&INIT_LATE_OK, 1)?
-    // }
 
     // cpu_data.activate_vmm();
     // wait_for_counter(&ACTIVATED_CPUS, MAX_CPU_NUM as _)?;

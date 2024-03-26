@@ -74,10 +74,6 @@ impl Zone {
         self.cpu_set.contains_cpu(id)
     }
 
-    pub fn gpm_activate(&self) {
-        unsafe { self.gpm.activate() }
-    }
-
     /// Query an ipa from zone's stage 2 page table to get pa.
     pub fn gpm_query(&self, gpa: GuestPhysAddr) -> usize {
         todo!();
@@ -132,9 +128,9 @@ impl Zone {
     pub fn mmio_region_register(
         &mut self,
         start: GuestPhysAddr,
-        size: u64,
+        size: usize,
         handler: MMIOHandler,
-        arg: u64,
+        arg: usize,
     ) {
         if let Some(mmio) = self.mmio.iter().find(|mmio| mmio.region.start == start) {
             panic!("duplicated mmio region {:#x?}", mmio);
@@ -160,8 +156,8 @@ impl Zone {
     pub fn find_mmio_region(
         &self,
         addr: GuestPhysAddr,
-        size: u64,
-    ) -> Option<(MMIORegion, MMIOHandler, u64)> {
+        size: usize,
+    ) -> Option<(MMIORegion, MMIOHandler, usize)> {
         self.mmio
             .iter()
             .find(|cfg| cfg.region.contains_region(addr, size))

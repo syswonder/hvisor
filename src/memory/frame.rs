@@ -223,7 +223,7 @@ impl Drop for Frame {
 }
 
 /// Initialize the physical frame allocator.
-pub fn init_frame_allocator() {
+pub fn init() {
     let mem_pool_start = crate::consts::mem_pool_start();
     let mem_pool_end = align_down(crate::consts::hv_end());
     let mem_pool_size = mem_pool_end - mem_pool_start;
@@ -237,7 +237,7 @@ pub fn init_frame_allocator() {
     );
 }
 
-pub fn frame_allocator_test() {
+pub fn test() {
     let mut v: Vec<Frame> = Vec::new();
     for _ in 0..5 {
         let frame = Frame::new().unwrap();
