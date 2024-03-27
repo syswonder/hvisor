@@ -6,7 +6,9 @@ use crate::{
     memory::VirtAddr,
     percpu::this_zone,
 };
-use aarch64_cpu::registers::{Readable, Writeable, ELR_EL2, MPIDR_EL1, SCTLR_EL1, SPSR_EL2};
+use aarch64_cpu::registers::{
+    Readable, Writeable, ELR_EL2, HCR_EL2, MPIDR_EL1, SCTLR_EL1, SPSR_EL2, VTCR_EL2,
+};
 
 use super::trap::vmreturn;
 
@@ -30,20 +32,44 @@ pub struct GeneralRegisters {
 #[derive(Debug)]
 pub struct ArchCpu {
     pub cpuid: usize,
+    pub psci_on: bool,
 }
 
 impl ArchCpu {
     pub fn new(cpuid: usize) -> Self {
-        Self { cpuid }
+        Self {
+            cpuid,
+            psci_on: false,
+        }
     }
 
-    pub fn init(&mut self, entry: usize, cpu_id: usize, dtb: usize) {
+    pub fn init(&mut self, entry: usize, _cpu_id: usize, dtb: usize) {
         ELR_EL2.set(entry as _);
-        SPSR_EL2.set(0x5 | 1 << 6 | 1 << 7 | 1 << 8 | 1 << 9); // SPSR_EL1h | SPSR_D | SPSR_A | SPSR_I | SPSR_F
+        SPSR_EL2.set(0x3c5);
         let regs = self.guest_reg();
-        regs.usr[0] = cpu_id as _; // cpu id
-        regs.usr[1] = dtb as _; // dtb addr
-        self.reset();
+        regs.usr[0] = dtb as _; // dtb addr
+        self.reset_vm_regs();
+        self.activate_vmm();
+    }
+
+    fn activate_vmm(&self) {
+        VTCR_EL2.write(
+            VTCR_EL2::TG0::Granule4KB
+                + VTCR_EL2::PS::PA_44B_16TB
+                + VTCR_EL2::SH0::Inner
+                + VTCR_EL2::HA::Enabled
+                + VTCR_EL2::SL0.val(2)
+                + VTCR_EL2::ORGN0::NormalWBRAWA
+                + VTCR_EL2::IRGN0::NormalWBRAWA
+                + VTCR_EL2::T0SZ.val(20),
+        );
+        HCR_EL2.write(
+            HCR_EL2::RW::EL1IsAarch64
+                + HCR_EL2::TSC::EnableTrapEl1SmcToEl2
+                + HCR_EL2::VM::SET
+                + HCR_EL2::IMO::SET
+                + HCR_EL2::FMO::SET,
+        );
     }
 
     fn stack_top(&self) -> VirtAddr {
@@ -54,7 +80,7 @@ impl ArchCpu {
         unsafe { &mut *((self.stack_top() - 32 * 8) as *mut GeneralRegisters) }
     }
 
-    fn reset(&self) {
+    fn reset_vm_regs(&self) {
         /* put the cpu in a reset state */
         /* AARCH64_TODO: handle big endian support */
         write_sysreg!(CNTKCTL_EL1, 0);

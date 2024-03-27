@@ -107,23 +107,6 @@ impl Zone {
     //     }
     // }
 
-    /// Insert a mem region to zone. \
-    /// If the mem size is aligned to one page, it will be inserted into page table. \
-    /// Otherwise into mmio regions.
-    pub fn mem_region_insert(&mut self, mem: MemoryRegion<GuestPhysAddr>) {
-        todo!();
-        // if is_aligned(mem.size) {
-        //     self.gpm.insert(mem).unwrap();
-        // } else {
-        //     // Handle subpages
-        //     self.mmio_region_register(
-        //         mem.start as _,
-        //         mem.size as _,
-        //         mmio_subpage_handler,
-        //         mem.start.wrapping_sub(mem.mapper.offset()) as _,
-        //     );
-        // }
-    }
     /// Register a mmio region and its handler.
     pub fn mmio_region_register(
         &mut self,
@@ -142,16 +125,16 @@ impl Zone {
         })
     }
     /// Remove the mmio region beginning at `start`.
-    // pub fn mmio_region_unregister(&mut self, start: GuestPhysAddr) {
-    //     if let Some((idx, _)) = self
-    //         .mmio
-    //         .iter()
-    //         .enumerate()
-    //         .find(|(_, mmio)| mmio.region.start == start)
-    //     {
-    //         self.mmio.remove(idx);
-    //     }
-    // }
+    pub fn mmio_region_remove(&mut self, start: GuestPhysAddr) {
+        if let Some((idx, _)) = self
+            .mmio
+            .iter()
+            .enumerate()
+            .find(|(_, mmio)| mmio.region.start == start)
+        {
+            self.mmio.remove(idx);
+        }
+    }
     /// Find the mmio region contains (addr..addr+size).
     pub fn find_mmio_region(
         &self,

@@ -33,7 +33,6 @@ mod control;
 mod device;
 mod hypercall;
 mod memory;
-mod num;
 mod panic;
 mod percpu;
 mod platform;

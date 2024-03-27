@@ -1,13 +1,10 @@
 use alloc::vec::Vec;
 
 use crate::{
-    consts::PAGE_SIZE,
-    error::HvResult,
-    memory::{
+    consts::PAGE_SIZE, device::irqchip::gicv3::{gicd::gicv3_gicd_mmio_handler, host_gicd_base, host_gicd_size}, error::HvResult, memory::{
         addr::{align_down, align_up},
         GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
-    },
-    zone::Zone,
+    }, zone::Zone
 };
 
 impl Zone {
@@ -74,5 +71,14 @@ impl Zone {
         }
         info!("VM stage 2 memory set: {:#x?}", self.gpm);
         Ok(())
+    }
+
+    pub fn mmio_init(&mut self) {
+        self.mmio_region_register(
+            host_gicd_base(),
+            host_gicd_size(),
+            gicv3_gicd_mmio_handler,
+            0,
+        );
     }
 }
