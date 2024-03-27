@@ -80,6 +80,9 @@ QEMU_ARGS += -device loader,file="$(zone1_dtb)",addr=0x91000000,force-raw=on
 # 		-device virtio-serial-device -chardev pty,id=serial3 -device virtconsole,chardev=serial3
 
 $(hvisor_bin): elf
+	@if ! command -v mkimage > /dev/null; then \
+		sudo apt update && sudo apt install u-boot-tools; \
+	fi && \
 	$(OBJCOPY) $(hvisor_elf) --strip-all -O binary $(hvisor_bin).tmp && \
 	mkimage -n hvisor_img -A arm64 -O linux -C none -T kernel -a 0x40400000 \
 	-e 0x40400000 -d $(hvisor_bin).tmp $(hvisor_bin) && \
