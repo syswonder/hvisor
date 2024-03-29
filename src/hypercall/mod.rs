@@ -5,7 +5,7 @@ use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
 use crate::control::{park_cpu, reset_cpu, resume_cpu, send_event};
 use crate::device::pci::mmio_pci_handler;
 use crate::device::virtio_trampoline::{HVISOR_DEVICE, MAX_REQ};
-use crate::device::virtio_trampoline::{MAX_DEVS, VIRTIO_CFG_RESULTS, VIRTIO_IRQS};
+use crate::device::virtio_trampoline::{MAX_DEVS, VIRTIO_IRQS};
 use crate::error::HvResult;
 use crate::memory::addr::{align_down, align_up, is_aligned};
 use crate::memory::{self, MemFlags, MemoryRegion, EMU_SHARED_REGION_BASE};
@@ -14,7 +14,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use core::convert::TryFrom;
 use core::mem::size_of;
-use core::sync::atomic::{AtomicU32, Ordering};
+use core::sync::atomic::{fence, AtomicU32, Ordering};
 use numeric_enum_macro::numeric_enum;
 use spin::RwLock;
 numeric_enum! {
@@ -76,48 +76,33 @@ impl<'a> HyperCall<'a> {
                 "Virtio finish operation over non-root cells: unsupported!"
             );
         }
+        // TODO：改region 函数为&mut 参数
         let dev = HVISOR_DEVICE.lock();
         let mut map_irq = VIRTIO_IRQS.lock();
-        let mut map_cfg = VIRTIO_CFG_RESULTS.lock();
         let region = dev.region();
         while !dev.is_res_list_empty() {
             let res_front = region.res_front as usize;
-            let value = region.res_list[res_front].value;
-            let target = region.res_list[res_front].target;
-            let res_type = region.res_list[res_front].res_type;
-            match res_type {
-                0 => {
-                    // return a value for a cfg request
-                    map_cfg.insert(target, value);
-                    resume_cpu(target);
-                    debug!("res_type: 0, value is {}", value);
-                }
-                1 | 2 => {
-                    let target_cpu = if res_type == 1 {
-                        // inject irq for a specific cpu
-                        target
-                    } else {
-                        // inject irq for a specific cell
-                        find_cell_by_id(target as u32)
-                            .unwrap()
-                            .read()
-                            .cpu_set
-                            .first_cpu()
-                            .unwrap()
-                    };
-                    let irq_list = map_irq.entry(target_cpu).or_insert([0; MAX_DEVS + 1]);
-                    if !irq_list[1..=irq_list[0] as usize].contains(&value) {
-                        let len = irq_list[0] as usize;
-                        assert!(len + 1 < MAX_DEVS);
-                        irq_list[len + 1] = value;
-                        irq_list[0] += 1;
-                        send_event(target_cpu, SGI_VIRTIO_RES_ID);
-                    }
-                    debug!("res_type: {}, value is {}", res_type, value);
-                }
-                _ => panic!("res_type is invalid"),
+            let irq_id = region.res_list[res_front].irq_id as u64;
+            let target_cell = region.res_list[res_front].target_cell;
+            // TODO: 可能这里有些小问题，改一改fist_cpu
+            let target_cpu = find_cell_by_id(target_cell)
+                .unwrap()
+                .read()
+                .cpu_set
+                .first_cpu()
+                .unwrap();
+            let irq_list = map_irq.entry(target_cpu).or_insert([0; MAX_DEVS + 1]);
+            if !irq_list[1..=irq_list[0] as usize].contains(&irq_id) {
+                let len = irq_list[0] as usize;
+                assert!(len + 1 < MAX_DEVS);
+                irq_list[len + 1] = irq_id;
+                irq_list[0] += 1;
+                send_event(target_cpu, SGI_VIRTIO_RES_ID);
             }
+    
+            fence(Ordering::SeqCst);
             region.res_front = (region.res_front + 1) & (MAX_REQ - 1);
+            fence(Ordering::SeqCst);
         }
         drop(dev);
         HyperCallResult::Ok(0)

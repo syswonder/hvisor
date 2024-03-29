@@ -4,7 +4,7 @@
 #include <linux/types.h>
 #define MMAP_SIZE 4096
 #define MAX_REQ 32
-
+#define MAX_CPUS 20
 // We use queue signal instead of flag signal to catch all signals, preventing some signals should be processed but ignored.
 #define SIGHVI 34
 #define HVISOR_INIT_VIRTIO  _IO(1, 0) // virtio device init
@@ -23,9 +23,8 @@ struct device_req {
 };
 
 struct device_res {
-    __u64 target;
-    __u64 value;
-    __u8 type; // 0 : no interrupt to cpu ; 1 : interrupt to cpu; 2 : interrupt to a cell
+    __u32 target_cell;
+    __u32 irq_id;
 };
 
 struct hvisor_device_region {
@@ -35,6 +34,8 @@ struct hvisor_device_region {
     __u32 res_rear;
 	struct device_req req_list[MAX_REQ];
     struct device_res res_list[MAX_REQ];
+	__u8 cfg_flags[MAX_CPUS];
+	__u64 cfg_values[MAX_CPUS];
 };
 
 

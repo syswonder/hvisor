@@ -1,7 +1,35 @@
 #ifndef _HVISOR_VIRTIO_BLK_H
 #define _HVISOR_VIRTIO_BLK_H
 #include <stdint.h>
+#include <pthread.h>
+#include <sys/queue.h>
 #include "virtio.h"
+
+/* Feature bits */
+#define VIRTIO_BLK_F_SIZE_MAX	(1<<1)	/* Indicates maximum segment size */
+#define VIRTIO_BLK_F_SEG_MAX	(1<<2)	/* Indicates maximum # of segments */
+
+// #define BLK_SIZE_MAX 131072
+#define BLK_SIZE_MAX 2097152 // 768MB, indicate how many of 512B
+#define BLK_SEG_MAX 256
+
+#define VIRTQUEUE_BLK_MAX_SIZE 512
+
+#define VIRTIO_BLK_T_IN		0
+#define VIRTIO_BLK_T_OUT	1
+/* Cache flush command */
+#define VIRTIO_BLK_T_FLUSH	4
+
+/* Get device ID command */
+#define VIRTIO_BLK_T_GET_ID    8
+
+// A blk sector size
+#define SECTOR_BSIZE 512
+
+#define VIRTIO_BLK_S_OK         0
+#define VIRTIO_BLK_S_IOERR      1
+#define VIRTIO_BLK_S_UNSUPP     2
+
 struct virtio_blk_req_head {
 	uint32_t req_type;
 	uint32_t reserved;
@@ -79,36 +107,31 @@ struct virtio_blk_config {
 typedef struct virtio_blk_config BlkConfig;
 typedef struct virtio_blk_req_head BlkReqHead;
 
+enum blkop {
+	BLK_READ,
+	BLK_WRITE
+};
+// A request needed to process by blk thread.
+struct blkp_req {
+	TAILQ_ENTRY(blkp_req) link;
+    struct iovec iov[BLK_SEG_MAX+2];
+	int iovcnt;
+	uint64_t offset;
+	uint16_t idx;
+	enum blkop type; 
+};
+
 typedef struct virtio_blk_dev {
     BlkConfig config;
     int img_fd;
+	// describe the thread executes read and write.
+	pthread_t tid;
+	pthread_mutex_t mtx;
+	pthread_cond_t cond;
+	TAILQ_HEAD(, blkp_req) procq;
+	int closing;
 } BlkDev;
 
-BlkDev *init_blk_dev(uint64_t bsize);
+BlkDev *init_blk_dev(VirtIODevice *vdev, uint64_t bsize);
 int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq);
-
-/* Feature bits */
-#define VIRTIO_BLK_F_SIZE_MAX	(1<<1)	/* Indicates maximum segment size */
-#define VIRTIO_BLK_F_SEG_MAX	(1<<2)	/* Indicates maximum # of segments */
-
-// #define BLK_SIZE_MAX 131072
-#define BLK_SIZE_MAX 2097152 // 768MB, indicate how many of 512B
-#define BLK_SEG_MAX 256
-
-#define VIRTQUEUE_BLK_MAX_SIZE 512
-
-#define VIRTIO_BLK_T_IN		0
-#define VIRTIO_BLK_T_OUT	1
-/* Cache flush command */
-#define VIRTIO_BLK_T_FLUSH	4
-
-/* Get device ID command */
-#define VIRTIO_BLK_T_GET_ID    8
-
-// A blk sector size
-#define SECTOR_BSIZE 512
-
-#define VIRTIO_BLK_S_OK         0
-#define VIRTIO_BLK_S_IOERR      1
-#define VIRTIO_BLK_S_UNSUPP     2
 #endif /* _HVISOR_VIRTIO_BLK_H */

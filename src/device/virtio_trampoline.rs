@@ -13,13 +13,14 @@ use super::gicv3::inject_irq;
 /// Save the irqs the virtio-device wants to inject. The format is <cpu_id, List<irq_id>>, and the first elem of List<irq_id> is the valid len of it.
 pub static VIRTIO_IRQS: Mutex<BTreeMap<u64, [u64; MAX_DEVS + 1]>> = Mutex::new(BTreeMap::new());
 /// Save the results the virtio-device returns to the vm for cfg requests. The format is <cpu_id, returned value>
-pub static VIRTIO_CFG_RESULTS: Mutex<BTreeMap<u64, u64>> = Mutex::new(BTreeMap::new());
+// pub static VIRTIO_CFG_RESULTS: Mutex<BTreeMap<u64, u64>> = Mutex::new(BTreeMap::new());
 // Controller of the shared memory the root linux's virtio device and hvisor shares.
 pub static HVISOR_DEVICE: Mutex<HvisorDevice> = Mutex::new(HvisorDevice::default());
 
 const QUEUE_NOTIFY: usize = 0x50;
 pub const MAX_REQ: u32 = 32;
 pub const MAX_DEVS: usize = 4; // Attention: The max virtio-dev number for vm is 4.
+pub const MAX_CPUS: usize = 20;
 /// non root cell's virtio request handler
 pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: u64) -> HvResult {
     debug!("mmio virtio handler");
@@ -44,17 +45,26 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: u64) -> HvResult {
         mmio.is_write,
         need_interrupt,
     );
+    let (cfg_flags, cfg_values) = unsafe {
+        (
+            core::slice::from_raw_parts(dev.get_cfg_flags(), MAX_CPUS),
+            core::slice::from_raw_parts(dev.get_cfg_values(), MAX_CPUS),
+        )
+    };
+    let cpu_id = this_cpu_id() as usize;
+    let old_cfg_flag = cfg_flags[cpu_id];
     dev.push_req(hreq);
     drop(dev);
     // if it is cfg request, current cpu should be blocked until gets the result
     if need_interrupt == 0 {
-        // block current cpu
-        suspend_self();
-        // current cpu waked up
+        // when virtio backend finish the req, it will add 1 to cfg_flag.
+        // info!("wait return");
+        while cfg_flags[cpu_id] == old_cfg_flag {}
+        // info!("have return");
         if !mmio.is_write {
-            let map = VIRTIO_CFG_RESULTS.lock();
-            mmio.value = *map.get(&this_cpu_id()).unwrap();
-            // Attention: If map is a list, 无论mmio是否为is_write都需要把值取出来
+            // ensure cfg value is right.
+            fence(Ordering::Acquire);
+            mmio.value = cfg_values[cpu_id];
             debug!("non root receives value: {:#x?}", mmio.value);
         }
     }
@@ -81,11 +91,19 @@ pub struct HvisorDevice {
 }
 
 impl HvisorDevice {
+    // return a mut region
     pub fn region(&self) -> &mut HvisorDeviceRegion {
         if !self.is_enable {
             panic!("hvisor device region is not enabled!");
         }
         unsafe { &mut *(self.base_address as *mut HvisorDeviceRegion) }
+    }
+    // return a non mut region
+    fn immut_region(&self) -> &HvisorDeviceRegion {
+        if !self.is_enable {
+            panic!("hvisor device region is not enabled!");
+        }
+        unsafe { &*(self.base_address as *const HvisorDeviceRegion) }
     }
 
     pub const fn default() -> Self {
@@ -101,7 +119,7 @@ impl HvisorDevice {
     }
 
     pub fn is_req_list_full(&self) -> bool {
-        let region = self.region();
+        let region = self.immut_region();
         if ((region.req_rear + 1) & (MAX_REQ - 1)) == region.req_front {
             debug!("hvisor req queue full");
             true
@@ -111,7 +129,7 @@ impl HvisorDevice {
     }
 
     pub fn is_res_list_empty(&self) -> bool {
-        let region = self.region();
+        let region = self.immut_region();
         if region.res_rear == region.res_front {
             true
         } else {
@@ -128,6 +146,16 @@ impl HvisorDevice {
         // Write barrier so that device can see change after this method returns
         fence(Ordering::SeqCst);
     }
+
+    pub fn get_cfg_flags(&self) -> *const u8 {
+        let region = self.immut_region();
+        region.cfg_flags.as_ptr()
+    }
+
+    pub fn get_cfg_values(&self) -> *const u64 {
+        let region = self.immut_region();
+        region.cfg_values.as_ptr()
+    }
 }
 
 /// El1 and EL2 shared region for virtio requests and results.
@@ -142,7 +170,9 @@ pub struct HvisorDeviceRegion {
     /// The last elem's next place of res list, only virtio device updates
     res_rear: u32,
     pub req_list: [HvisorDeviceReq; MAX_REQ as usize],
-    pub res_list: [HvisorDeviceRes; MAX_REQ as usize],
+    pub res_list: [HvisorDeviceRes; MAX_REQ as usize], // irqs
+    cfg_flags: [u8; MAX_CPUS],
+    cfg_values: [u64; MAX_CPUS],
 }
 
 /// Hvisor device requests
@@ -159,9 +189,8 @@ pub struct HvisorDeviceReq {
 
 #[repr(C)]
 pub struct HvisorDeviceRes {
-    pub target: u64,
-    pub value: u64,
-    pub res_type: u8, // 0 : no interrupt to cpu ; 1 : interrupt to cpu; 2 : interrupt to a cell
+    pub target_cell: u32,
+    pub irq_id: u32,
 }
 
 impl HvisorDeviceReq {

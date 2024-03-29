@@ -3,30 +3,125 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/param.h>
+#include <errno.h>
 #include "log.h"
+
+static void virtblk_done(BlkDev *dev, struct blkp_req *req, VirtQueue *vq, int err) {
+    uint8_t *vstatus = (uint8_t *)(req->iov[req->iovcnt-1].iov_base);
+    if (err == EOPNOTSUPP)
+        *vstatus = VIRTIO_BLK_S_UNSUPP;
+    else if (err != 0) 
+        *vstatus = VIRTIO_BLK_S_IOERR;
+    else 
+        *vstatus = VIRTIO_BLK_S_OK;
+    if (err != 0) {
+        log_error("virt blk err, num is %d", err);
+    }
+    pthread_mutex_lock(&dev->mtx);
+    update_used_ring(vq, req->idx, 1);
+    vq_endchains(vq, TAILQ_EMPTY(&dev->procq));
+    pthread_mutex_unlock(&dev->mtx);
+    free(req);
+}
+// get a blk req from procq
+static int get_breq(BlkDev *dev, struct blkp_req **req) {
+    struct blkp_req *elem;
+    elem = TAILQ_FIRST(&dev->procq);
+    if (elem == NULL) {
+        return 0;
+    }
+    TAILQ_REMOVE(&dev->procq, elem, link);
+    *req = elem;
+    return 1;
+}
+
+static void blkproc(BlkDev *dev, struct blkp_req *req, VirtQueue *vq) {
+    struct iovec *iov = req->iov;
+    int n = req->iovcnt, err;
+    ssize_t len; 
+    switch (req->type)
+    {
+    case BLK_READ:
+        len = preadv(dev->img_fd, &iov[1], n - 2, req->offset);
+        if (len < 0) {
+            log_error("pread failed");
+            err = errno;
+        }
+        break;
+    case BLK_WRITE:
+        len = pwritev(dev->img_fd, &iov[1], n-2, req->offset);
+        if (len < 0) {
+            log_error("pwrite failed");
+            err = errno;
+        }
+        break;
+    default:
+        log_fatal("Operation is not supported");
+        err = EINVAL;
+        break;
+    }
+    virtblk_done(dev, req, vq, err);
+}
+
+// Every virtio-blk has a blkproc_thread that is used for reading and writing.
+static void *blkproc_thread(void *arg)
+{
+    VirtIODevice *vdev = arg;
+    BlkDev *dev = vdev->dev;
+    struct blkp_req *breq;
+    // get_breq will access the critical section, so lock it.
+    pthread_mutex_lock(&dev->mtx);
+    
+    for (;;) {
+        while (get_breq(dev, &breq)) {
+            // blk_proc don't access the critical section, so unlock.
+            pthread_mutex_unlock(&dev->mtx);
+            blkproc(dev, breq, vdev->vqs);
+            pthread_mutex_lock(&dev->mtx);
+        }
+
+        if (dev->closing)
+            break;
+        pthread_cond_wait(&dev->cond, &dev->mtx);
+    }
+    log_error("this shouldn't happen");
+    pthread_mutex_unlock(&dev->mtx);
+    pthread_exit(NULL);
+    return NULL;
+}
+
+
 // create blk dev.
-BlkDev *init_blk_dev(uint64_t bsize)
+BlkDev *init_blk_dev(VirtIODevice *vdev, uint64_t bsize)
 {
     BlkDev *dev = malloc(sizeof(BlkDev));
     dev->config.capacity = bsize;
     dev->config.size_max = BLK_SIZE_MAX;
     dev->config.seg_max = BLK_SEG_MAX;
     dev->img_fd = -1;
+    dev->closing = 0;
+    pthread_mutex_init(&dev->mtx, NULL);
+    pthread_cond_init(&dev->cond, NULL);
+    TAILQ_INIT(&dev->procq);
+
+    pthread_create(&dev->tid, NULL, blkproc_thread, vdev);
     return dev;
 }
+
 
 // handle one descriptor list
 static void virtq_blk_handle_one_request(VirtQueue *vq)
 {
-    struct iovec iov[BLK_SEG_MAX+2];
+    struct blkp_req *breq;
+    struct iovec *iov;
     int i, n, type, writeop;
-    uint16_t idx, flags[BLK_SEG_MAX+2];
+    uint16_t flags[BLK_SEG_MAX+2];
     BlkReqHead *hdr;
     BlkDev *blkDev = vq->dev->dev;
-    ssize_t data_len = 0;
-    bool is_support = true, is_err = false;
-
-    n = vq_getchain(vq, &idx, iov, BLK_SEG_MAX+2, flags);
+    int err = 0;
+    breq = malloc(sizeof(struct blkp_req));
+    iov = breq->iov;
+    n = vq_getchain(vq, &breq->idx, iov, BLK_SEG_MAX+2, flags);
 
     if (n < 2 || n > BLK_SEG_MAX + 2) {
         log_error("iov's num is wrong");
@@ -53,55 +148,35 @@ static void virtq_blk_handle_one_request(VirtQueue *vq)
     writeop = (type == VIRTIO_BLK_T_OUT);
     uint64_t offset = hdr->sector * SECTOR_BSIZE; 
 
-    for (i=1; i<n-1; i++) {
+    for (i=1; i<n-1; i++) 
         if (((flags[i] & VRING_DESC_F_WRITE) == 0) != writeop) {
             log_error("flag is conflict with operation");
             return;
         }
-        data_len += iov[i].iov_len;
-    }
-
-
     switch (type)
     {
         case VIRTIO_BLK_T_IN:
-        {
-            ssize_t readl = preadv(blkDev->img_fd, &iov[1], n - 2, offset);
-            if (readl == -1) {
-                log_error("pread failed");
-                is_err = true;
-            }
-            if (readl != data_len) {
-                log_error("pread len is wrong");
-                is_err = true;
-            }
-        }
-            break;
         case VIRTIO_BLK_T_OUT:
-        {
-            pwritev(blkDev->img_fd, &iov[1], n - 2, offset);
-        }
-            break;
+            breq->iovcnt = n;
+            breq->offset = offset;
+            breq->type = writeop ? BLK_WRITE : BLK_READ;
+            pthread_mutex_lock(&blkDev->mtx);
+            TAILQ_INSERT_TAIL(&blkDev->procq, breq, link);
+            pthread_cond_signal(&blkDev->cond);
+            pthread_mutex_unlock(&blkDev->mtx);
+            return;
         case VIRTIO_BLK_T_GET_ID:
         {
             char s[20] = "hvisor-virblk";
             strncpy(iov[1].iov_base, s, MIN(sizeof(s), iov[1].iov_len));
-        }
             break;
+        }
         default:
             log_error("unsupported virtqueue request type: %u", hdr->req_type);
-            is_support = false;
+            err = EOPNOTSUPP;
             break;
     }
-
-    uint8_t *vstatus = (uint8_t *)(iov[n-1].iov_base);
-    if (is_err)
-        *vstatus = VIRTIO_BLK_S_IOERR;
-    else if (is_support)
-        *vstatus = VIRTIO_BLK_S_OK;
-    else
-        *vstatus = VIRTIO_BLK_S_UNSUPP;
-    update_used_ring(vq, idx, 1);
+    virtblk_done(blkDev, breq, vq, err);
 }
 
 int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq)

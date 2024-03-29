@@ -16,6 +16,7 @@
 extern int ko_fd;
 extern volatile struct hvisor_device_region *device_region;
 
+pthread_mutex_t RES_MUTEX = PTHREAD_MUTEX_INITIALIZER;
 VirtIODevice *vdevs[16];
 int vdevs_num;
 // 拥有整个non root mem区域的virt_addr
@@ -63,7 +64,7 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t cell_id)
         vdev->irq_id = 67;
         vdev->type = dev_type;
         vdev->regs.dev_feature = VIRTIO_BLK_F_SEG_MAX | VIRTIO_BLK_F_SIZE_MAX | VIRTIO_F_VERSION_1;
-        vdev->dev = init_blk_dev(BLK_SIZE_MAX); // 256MB
+        vdev->dev = init_blk_dev(vdev, BLK_SIZE_MAX); // 256MB
         init_virtio_queue(vdev, dev_type);
         break;
     case VirtioTNet:
@@ -124,10 +125,10 @@ void init_mmio_regs(VirtMmioRegs *regs, VirtioDeviceType type)
     regs->device_id = type;
     regs->queue_sel = 0;
 }
-// TODO: virtio-net看看如何reset
+
 void virtio_dev_reset(VirtIODevice *vdev)
 {
-    // 当driver读取了4个硬编码信息后, 会reset dev
+    // When driver read first 4 encoded messages, it will reset dev.
     log_trace("virtio dev reset");
     vdev->regs.status = 0;
     vdev->regs.interrupt_status = 0;
@@ -291,15 +292,19 @@ void vq_retchain(VirtQueue *vq) {
 }
 
 /// If vq's used ring is changed, then inject interrupt to vq's cell
-void vq_endchains(VirtQueue *vq, int used_all_avail)
+void vq_endchains(VirtQueue *vq, int is_no_more)
 {
+    // TODO: think about if used_all_avail is false, do not inject irq.
+    if (!is_no_more) {
+        return;
+    }
     uint16_t new_idx, old_idx;
     int intr;
     old_idx = vq->last_used_idx;
     vq->last_used_idx = new_idx = vq->used_ring->idx;
     intr = new_idx != old_idx && !(vq->avail_ring->flags & VRING_AVAIL_F_NO_INTERRUPT);
     if (intr)
-        virtio_finish_req(vq->dev->cell_id, vq->dev->irq_id, 2);
+        virtio_inject_irq(vq->dev->cell_id, vq->dev->irq_id);
 }
 
 static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size)
@@ -515,26 +520,33 @@ static inline void dmb_ishst(void) {
     asm volatile ("dmb ishst":: : "memory");
 }
 
-// add a result to res list, and notify hypervisor through ioctl
-void virtio_finish_req(uint64_t target, uint64_t value, uint8_t type)
+// Inject irq_id to target cell. It will add to res list, and notify hypervisor through ioctl.
+void virtio_inject_irq(uint32_t target_cell, uint32_t irq_id)
 {
-    // TODO: 多线程时要加锁.
     volatile struct device_res *res;
+    while (is_queue_full(device_region->res_front, device_region->res_rear, MAX_REQ));
+    pthread_mutex_lock(&RES_MUTEX);
     unsigned int res_rear = device_region->res_rear;
-    while (is_queue_full(device_region->res_front, res_rear, MAX_REQ));
     res = &device_region->res_list[res_rear];
-    res->value = value;
-    res->target = target;
-    res->type = type;
+    res->irq_id = irq_id;
+    res->target_cell = target_cell;
     dmb_ishst();
     device_region->res_rear = (res_rear + 1) & (MAX_REQ - 1);
+    pthread_mutex_unlock(&RES_MUTEX);
     ioctl(ko_fd, HVISOR_FINISH);
+}
+
+static void virtio_finish_cfg_req(uint32_t target_cpu, uint64_t value) {
+    device_region->cfg_values[target_cpu] = value;
+    dmb_ishst();
+    device_region->cfg_flags[target_cpu]++;
+    dmb_ishst();
 }
 
 int virtio_handle_req(volatile struct device_req *req)
 {
     int i;
-    uint64_t value;
+    uint64_t value = 0;
     for (i = 0; i < vdevs_num; ++i) {
         if ((req->src_cell == vdevs[i]->cell_id) && in_range(req->address, vdevs[i]->base_addr, vdevs[i]->len))
             break;
@@ -551,18 +563,14 @@ int virtio_handle_req(volatile struct device_req *req)
     uint64_t offs = req->address - vdev->base_addr;
     if (req->is_write) {
         virtio_mmio_write(vdev, offs, req->value, req->size);
-        value = vdev->irq_id;
     } else {
         value = virtio_mmio_read(vdev, offs, req->size);
         log_debug("read value is 0x%x\n", value);
     }
     if (!req->need_interrupt) {
         // If a request is a control not a data request
-        virtio_finish_req(req->src_cpu, value, 0);
-    } else {
-        // request is a data request, need to inject interrupt
-        virtio_finish_req(req->src_cpu, value, 1);
-    }
+        virtio_finish_cfg_req(req->src_cpu, value);
+    } 
     log_trace("src_cell is %d, src_cpu is %lld", req->src_cell, req->src_cpu);
     return 0;
 }

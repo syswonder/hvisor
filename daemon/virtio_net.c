@@ -138,7 +138,7 @@ static void virtio_net_tap_rx(VirtIODevice *vdev)
             // No more packets from tapfd, restore last_avail_idx.
             log_info("no more packets");
             vq_retchain(vq);
-            vq_endchains(vq, 0);
+            vq_endchains(vq, 1);
             return;
         }
         log_debug("receive the data from tap device");

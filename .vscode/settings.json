@@ -33,7 +33,9 @@
         "ioctl.h": "c",
         "fcntl.h": "c",
         "unistd.h": "c",
-        "errno.h": "c"
+        "errno.h": "c",
+        "queue.h": "c",
+        "pthread.h": "c"
     },
     "rust-analyzer.showUnlinkedFileNotification": false,
     // "rust-analyzer.cargo.features": [

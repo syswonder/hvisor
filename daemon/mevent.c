@@ -69,6 +69,7 @@ struct mevent *mevent_add(int fd, enum ev_type type,
     }
 }
 
+// Create a thread monitoring events.
 int mevent_init()
 {
     epoll_fd = epoll_create1(0);

@@ -4,6 +4,8 @@
             "name": "hvisor",
             "includePath": [
                 "${workspaceFolder}/**",
+                "${workspaceFolder}/daemon/includes",
+                "${workspaceFolder}/driver",
                 "~/study/hypervisor/linux/**"
             ],
             "defines": [],

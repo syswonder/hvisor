@@ -240,9 +240,9 @@ int virtio_handle_req(volatile struct device_req *req);
 int vq_getchain(VirtQueue *vq, uint16_t *pidx,
                 struct iovec *iov, int n_iov, uint16_t *flags);
 void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen);
-void virtio_finish_req(uint64_t target, uint64_t value, uint8_t type);
+void virtio_inject_irq(uint32_t target_cell, uint32_t irq_id);
 void vq_retchain(VirtQueue *vq);
-void vq_endchains(VirtQueue *vq, int used_all_avail);
+void vq_endchains(VirtQueue *vq, int is_no_more);
 
 
 /* This marks a buffer as continuing via the next field. */
