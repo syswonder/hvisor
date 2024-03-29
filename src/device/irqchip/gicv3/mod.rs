@@ -78,6 +78,7 @@
 #![allow(dead_code)]
 pub mod gicd;
 pub mod gicr;
+pub mod vgic;
 
 use core::arch::asm;
 
@@ -90,10 +91,6 @@ use crate::hypercall::{SGI_EVENT_ID, SGI_RESUME_ID};
 use crate::percpu::check_events;
 
 use self::gicd::enable_gic_are_ns;
-
-pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> {
-    base..(base + (n - 1) * size)
-}
 
 //TODO: add Distributor init
 pub fn irqchip_cpu_init() {
@@ -318,7 +315,7 @@ fn inject_irq(irq_id: usize) {
         val |= 1 << 62; //state pending
         val |= 1 << 61; //map hardware
         val |= (irq_id as usize) << 32; //p intid
-                                      //debug!("To write lr {} val {}", lr_idx, val);
+                                        //debug!("To write lr {} val {}", lr_idx, val);
         write_lr(lr_idx as usize, val as u64);
     }
 }
@@ -334,14 +331,23 @@ pub struct Gic {
     pub gicr_size: usize,
 }
 
-fn init_gic(gicd_base: usize, gicd_size: usize, gicr_base: usize, gicr_size: usize) {
-    GIC.call_once(|| Gic {
-        gicd_base,
-        gicr_base,
-        gicd_size,
-        gicr_size,
-    });
-    debug!("gic = {:#x?}", GIC.get().unwrap());
+impl Gic {
+    pub fn new(fdt: &Fdt) -> Self {
+        let gic_info = fdt
+            .find_node("/gic")
+            .unwrap_or_else(|| fdt.find_node("/intc").unwrap());
+        let mut reg_iter = gic_info.reg().unwrap();
+
+        let first_reg = reg_iter.next().unwrap();
+        let second_reg = reg_iter.next().unwrap();
+
+        Self {
+            gicd_base: first_reg.starting_address as usize,
+            gicr_base: second_reg.starting_address as usize,
+            gicd_size: first_reg.size.unwrap(),
+            gicr_size: second_reg.size.unwrap(),
+        }
+    }
 }
 
 pub fn host_gicd_base() -> usize {
@@ -374,20 +380,8 @@ pub fn disable_irqs() {
 }
 
 pub fn init_early(host_fdt: &Fdt) {
-    let gic_info = host_fdt
-        .find_node("/gic")
-        .unwrap_or_else(|| host_fdt.find_node("/intc").unwrap());
-    let mut reg_iter = gic_info.reg().unwrap();
-
-    let first_reg = reg_iter.next().unwrap();
-    let second_reg = reg_iter.next().unwrap();
-
-    init_gic(
-        first_reg.starting_address as usize,
-        first_reg.size.unwrap(),
-        second_reg.starting_address as usize,
-        second_reg.size.unwrap(),
-    );
+    GIC.call_once(|| Gic::new(host_fdt));
+    debug!("gic = {:#x?}", GIC.get().unwrap());
 }
 
 pub fn init_late() {

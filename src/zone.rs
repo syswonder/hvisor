@@ -38,7 +38,6 @@ impl Zone {
     }
 
     fn init_irq_bitmap(&mut self) {
-        todo!();
         // let config = self.config();
         // let irq_chips = config.irq_chips().to_vec();
         // for irq_chip in irq_chips.iter() {
