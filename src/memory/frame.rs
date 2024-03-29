@@ -182,7 +182,9 @@ impl Frame {
     pub fn fill(&mut self, byte: u8) {
         let ptr = self.as_mut_ptr();
         for i in 0..self.size() {
-            unsafe { *ptr.add(i) = byte; }
+            unsafe {
+                *ptr.add(i) = byte;
+            }
         }
     }
 
@@ -227,9 +229,7 @@ pub fn init() {
     let mem_pool_start = crate::consts::mem_pool_start();
     let mem_pool_end = align_down(crate::consts::hv_end());
     let mem_pool_size = mem_pool_end - mem_pool_start;
-    FRAME_ALLOCATOR
-        .lock()
-        .init(mem_pool_start, mem_pool_size);
+    FRAME_ALLOCATOR.lock().init(mem_pool_start, mem_pool_size);
 
     info!(
         "Frame allocator initialization finished: {:#x?}",

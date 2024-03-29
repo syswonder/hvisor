@@ -1,5 +1,3 @@
-
-
 use crate::{
     arch::sysreg::write_sysreg,
     consts::{PER_CPU_ARRAY_PTR, PER_CPU_SIZE},

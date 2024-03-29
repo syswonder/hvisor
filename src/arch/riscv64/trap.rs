@@ -1,12 +1,12 @@
 use super::cpu::ArchCpu;
 use crate::arch::csr::read_csr;
+use crate::arch::csr::*;
 use crate::arch::sbi::sbi_vs_handler;
 use crate::memory::{GuestPhysAddr, HostPhysAddr};
 use core::arch::{asm, global_asm};
 use riscv::register::mtvec::TrapMode;
 use riscv::register::stvec;
 use riscv_decode::Instruction;
-use crate::arch::csr::*;
 
 extern "C" {
     fn _hyp_trap_vector();

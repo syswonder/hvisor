@@ -71,11 +71,7 @@ pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
             handler(mmio, arg)
         }
         None => {
-            warn!(
-                "Zone {} unhandled mmio fault {:#x?}",
-                zone.read().id,
-                mmio
-            );
+            warn!("Zone {} unhandled mmio fault {:#x?}", zone.read().id, mmio);
             hv_result_err!(EINVAL)
         }
     }

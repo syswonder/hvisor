@@ -5,7 +5,10 @@ use numeric_enum_macro::numeric_enum;
 use riscv::register::satp;
 use tock_registers::interfaces::Writeable;
 
-use crate::memory::{addr::{HostPhysAddr, PhysAddr}, MemFlags};
+use crate::memory::{
+    addr::{HostPhysAddr, PhysAddr},
+    MemFlags,
+};
 
 use super::paging::{GenericPTE, Level3PageTable, PagingInstr};
 // |Reserved|  PPN  |RSW |Attr|

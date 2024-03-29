@@ -1,11 +1,17 @@
 #![allow(unused)]
-use super::{csr::{write_csr, CSR_HGATP}, paging::{GenericPTE, Level3PageTable, PagingInstr}};
+use super::{
+    csr::{write_csr, CSR_HGATP},
+    paging::{GenericPTE, Level3PageTable, PagingInstr},
+};
 use bit_field::BitField;
 use core::fmt;
 use numeric_enum_macro::numeric_enum;
 use tock_registers::interfaces::Writeable;
 
-use crate::memory::{addr::{HostPhysAddr, PhysAddr}, MemFlags};
+use crate::memory::{
+    addr::{HostPhysAddr, PhysAddr},
+    MemFlags,
+};
 // |Reserved|  PPN  |RSW |Attr|
 // |  63-54 | 53-10 |9-8 |7-0 |
 

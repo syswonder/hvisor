@@ -46,4 +46,3 @@ pub fn enable_gic_are_ns() {
             .write_volatile(GICD_CTLR_ARE_NS as u32 | GICD_CTLR_GRP1NS_ENA as u32);
     }
 }
-

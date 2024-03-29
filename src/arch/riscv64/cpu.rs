@@ -1,7 +1,7 @@
 use super::csr::*;
 use crate::{
     consts::{PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
-    memory::{PhysAddr, VirtAddr}, 
+    memory::{PhysAddr, VirtAddr},
 };
 
 #[repr(C)]

@@ -1,12 +1,14 @@
-
-
 use spin::RwLock;
 
 use crate::{
-    arch::s1pt::Stage1PageTable, consts::PAGE_SIZE, device::irqchip::gicv3::{host_gicd_base, host_gicd_size, host_gicr_base, host_gicr_size}, error::HvResult, memory::{
+    arch::s1pt::Stage1PageTable,
+    consts::PAGE_SIZE,
+    device::irqchip::gicv3::{host_gicd_base, host_gicd_size, host_gicr_base, host_gicr_size},
+    error::HvResult,
+    memory::{
         addr::{align_down, align_up},
         GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet, HV_PT,
-    }
+    },
 };
 
 pub fn init_hv_page_table(fdt: &fdt::Fdt) -> HvResult {

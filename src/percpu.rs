@@ -58,12 +58,11 @@ impl PerCpu {
         } else {
             info!("CPU{}: Idling the CPU before starting VM...", self.id);
             self.arch_cpu.idle();
-    
+
             info!("CPU{}: Running the virtual machine...", self.id);
             self.arch_cpu.run();
         }
     }
-    
 
     pub fn entered_cpus() -> u32 {
         ENTERED_CPUS.load(Ordering::Acquire)
@@ -271,4 +270,3 @@ impl CpuSet {
         (0..=self.max_cpu_id).filter(move |&i| self.contains_cpu(i) && i != id)
     }
 }
-

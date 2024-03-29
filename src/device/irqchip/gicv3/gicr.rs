@@ -58,4 +58,3 @@ pub fn enable_ipi() {
     //     gicr_waker.write_volatile(gicr_waker.read_volatile() & !0x02);
     // }
 }
-

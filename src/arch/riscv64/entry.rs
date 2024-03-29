@@ -1,5 +1,5 @@
-use core::arch::global_asm;
 use crate::consts::PER_CPU_SIZE;
+use core::arch::global_asm;
 
 #[naked]
 #[no_mangle]
