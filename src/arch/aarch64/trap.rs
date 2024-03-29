@@ -5,7 +5,7 @@ use crate::{
     arch::{cpu::mpidr_to_cpuid, sysreg::read_sysreg},
     hypercall::HyperCall,
     memory::{mmio_handle_access, MMIOAccess},
-    percpu::{get_cpu_data, this_cpu_data, this_zone, PerCpu},
+    percpu::{get_cpu_data, this_cpu_data, PerCpu},
 };
 
 use super::cpu::GeneralRegisters;
@@ -232,7 +232,7 @@ fn handle_dabt(frame: &mut TrapFrame) {
     //TODO finish dabt handle
     arch_skip_instruction(frame);
 }
-fn handle_sysreg(frame: &mut TrapFrame) {
+fn handle_sysreg(_frame: &mut TrapFrame) {
     //TODO check sysreg type
     //send sgi
     trace!("esr_el2: iss {:#x?}", ESR_EL2.read(ESR_EL2::ISS));

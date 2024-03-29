@@ -78,6 +78,6 @@ impl Zone {
     }
 
     pub fn mmio_init(&mut self, fdt: &fdt::Fdt) {
-        let gic = Gic::new(fdt);
+        self.vgicv3_mmio_init(fdt);
     }
 }

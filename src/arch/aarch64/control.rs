@@ -1,6 +1,4 @@
-use aarch64_cpu::registers::*;
 use super::sysreg::write_sysreg;
-
 
 pub fn send_event(cpu_id: u64, sgi_num: u64) {
     // TODO: add more info

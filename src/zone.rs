@@ -6,9 +6,9 @@ use crate::arch::cpu::this_cpu_id;
 use crate::arch::s2pt::Stage2PageTable;
 use crate::consts::MAX_CPU_NUM;
 use crate::control::{resume_cpu, suspend_cpu};
-use crate::error::HvResult;
-use crate::memory::addr::{align_up, GuestPhysAddr, HostPhysAddr};
-use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemFlags, MemoryRegion, MemorySet};
+
+use crate::memory::addr::GuestPhysAddr;
+use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemoryRegion, MemorySet};
 use crate::percpu::{get_cpu_data, CpuSet};
 use core::panic;
 
@@ -74,14 +74,14 @@ impl Zone {
     }
 
     /// Query an ipa from zone's stage 2 page table to get pa.
-    pub fn gpm_query(&self, gpa: GuestPhysAddr) -> usize {
+    pub fn gpm_query(&self, _gpa: GuestPhysAddr) -> usize {
         todo!();
         // unsafe { self.gpm.page_table_query(gpa).unwrap().0 }
     }
     /// Map a mem region to a zone. \
     /// If the mem size is aligned to one page, it will be inserted into page table. \
     /// Otherwise into mmio regions.
-    pub fn mem_region_map_partial(&mut self, mem: &MemoryRegion<GuestPhysAddr>) {
+    pub fn mem_region_map_partial(&mut self, _mem: &MemoryRegion<GuestPhysAddr>) {
         todo!();
         // if is_aligned(mem.size) {
         //     self.gpm.map_partial(mem).unwrap();
@@ -160,7 +160,7 @@ pub fn add_zone(zone: Arc<RwLock<Zone>>) {
     CELL_LIST.write().push(zone);
 }
 /// Remove zone from CELL_LIST
-pub fn remove_zone(zone_id: u32) {
+pub fn remove_zone(_zone_id: u32) {
     todo!();
     // let mut zone_list = CELL_LIST.write();
     // let (idx, _) = zone_list
@@ -175,7 +175,7 @@ pub fn root_zone() -> Arc<RwLock<Zone>> {
     ROOT_CELL.get().expect("Uninitialized root zone!").clone()
 }
 
-pub fn find_zone_by_id(zone_id: u32) -> Option<Arc<RwLock<Zone>>> {
+pub fn find_zone_by_id(_zone_id: u32) -> Option<Arc<RwLock<Zone>>> {
     todo!();
     // CELL_LIST
     //     .read()
@@ -196,15 +196,17 @@ pub fn zone_create(vmid: usize, dtb_ptr: *const u8, dtb_ipa: usize) -> Arc<RwLoc
         .starting_address as usize;
 
     debug!("zone fdt guest_addr: {:#b}", guest_entry);
+
     let mut zone = Zone::new(vmid);
     zone.pt_init(guest_entry, &guest_fdt, dtb_ptr as usize, dtb_ipa)
         .unwrap();
+    zone.mmio_init(&guest_fdt);
+
     guest_fdt.cpus().for_each(|cpu| {
         let cpu_id = cpu.ids().all().next().unwrap();
         zone.cpu_set.set_bit(cpu_id as usize);
     });
-    //TODO:assign cpu according to cpu_set
-    //TODO:set cpu entry
+
     info!("zone cpu_set: {:#b}", zone.cpu_set.bitmap);
     let cpu_set = zone.cpu_set;
 

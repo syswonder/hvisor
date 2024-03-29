@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use crate::error::HvResult;
 use crate::percpu::PerCpu;
-use crate::zone::find_zone_by_id;
+
 use core::convert::TryFrom;
 use core::sync::atomic::{AtomicU32, Ordering};
 use numeric_enum_macro::numeric_enum;
@@ -64,7 +64,7 @@ impl<'a> HyperCall<'a> {
         unreachable!()
     }
 
-    fn hypervisor_zone_create(&mut self, config_address: u64) -> HyperCallResult {
+    fn hypervisor_zone_create(&mut self, _config_address: u64) -> HyperCallResult {
         todo!();
         // info!(
         //     "handle hvc zone create, config_address = {:#x?}",
@@ -103,7 +103,7 @@ impl<'a> HyperCall<'a> {
         // HyperCallResult::Ok(0)
     }
 
-    fn hypervisor_zone_set_loadable(&mut self, zone_id: u64) -> HyperCallResult {
+    fn hypervisor_zone_set_loadable(&mut self, _zone_id: u64) -> HyperCallResult {
         todo!();
         // info!("handle hvc zone set loadable");
         // let zone = zone_management_prologue(self.cpu_data, zone_id)?;
@@ -137,14 +137,14 @@ impl<'a> HyperCall<'a> {
         // HyperCallResult::Ok(0)
     }
 
-    pub fn hypervisor_zone_start(&mut self, zone_id: u64) -> HyperCallResult {
+    pub fn hypervisor_zone_start(&mut self, _zone_id: u64) -> HyperCallResult {
         todo!();
         // info!("handle hvc zone start");
         // prepare_zone_start(find_zone_by_id(zone_id as _).unwrap())?;
         // HyperCallResult::Ok(0)
     }
 
-    fn hypervisor_zone_destroy(&mut self, zone_id: u64) -> HyperCallResult {
+    fn hypervisor_zone_destroy(&mut self, _zone_id: u64) -> HyperCallResult {
         #[cfg(target_arch = "invalid")]
         {
             info!("handle hvc zone destroy");

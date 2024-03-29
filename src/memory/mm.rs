@@ -148,9 +148,9 @@ where
     /// It should only used when access an address in el2 but hypervisor doesn't have the mapping.
     pub fn map_temporary(
         &mut self,
-        start_paddr: PhysAddr,
-        size: usize,
-        flags: MemFlags,
+        _start_paddr: PhysAddr,
+        _size: usize,
+        _flags: MemFlags,
     ) -> HvResult<VirtAddr> {
         todo!();
     //     if size > NUM_TEMPORARY_PAGES * PAGE_SIZE {

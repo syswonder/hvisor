@@ -1,10 +1,9 @@
-use core::ops::DerefMut;
+
 
 use crate::{
     arch::sysreg::write_sysreg,
-    consts::{INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
+    consts::{PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
     memory::VirtAddr,
-    percpu::this_zone,
 };
 use aarch64_cpu::registers::{
     Readable, Writeable, ELR_EL2, HCR_EL2, MPIDR_EL1, SCTLR_EL1, SPSR_EL2, VTCR_EL2,

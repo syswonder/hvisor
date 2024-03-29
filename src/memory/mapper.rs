@@ -1,4 +1,4 @@
-use super::{AlignedPage, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, PhysAddr};
+use super::{AlignedPage, MemFlags, MemoryRegion, PhysAddr};
 
 static EMPTY_PAGE: AlignedPage = AlignedPage::new();
 
