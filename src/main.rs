@@ -189,9 +189,6 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
 
     cpu.run_vm();
 
-    // cpu_data.activate_vmm();
-    // wait_for_counter(&ACTIVATED_CPUS, MAX_CPU_NUM as _)?;
-
     // if cpu_data.id == 0 {
     //     prepare_zone_start(this_zone())?;
     //     cpu_data.start_zone();

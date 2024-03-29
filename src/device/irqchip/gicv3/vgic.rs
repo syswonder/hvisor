@@ -3,7 +3,7 @@ use alloc::sync::Arc;
 use super::{gicd::GICD_LOCK, is_spi, Gic};
 use crate::{
     consts::MAX_CPU_NUM,
-    device::irqchip::gicv3::{gicd::*, gicr::*, host_gicd_base, host_gicr_base},
+    device::irqchip::gicv3::{gicd::*, gicr::*, host_gicd_base, host_gicr_base, PER_GICR_SIZE},
     error::HvResult,
     memory::{mmio_perform_access, MMIOAccess},
     percpu::{get_cpu_data, this_zone},
@@ -18,7 +18,40 @@ impl Zone {
     pub fn vgicv3_mmio_init(&mut self, fdt: &fdt::Fdt) {
         let gic = Gic::new(fdt);
         self.mmio_region_register(gic.gicd_base, gic.gicd_size, vgicv3_dist_handler, 0);
+        for cpu in 0..MAX_CPU_NUM {
+            let gicr_base = host_gicr_base(cpu);
+            debug!("registering gicr {} at {:#x?}", cpu, gicr_base);
+            self.mmio_region_register(gicr_base, PER_GICR_SIZE, vgicv3_redist_handler, cpu);
+        }
     }
+
+    pub fn irq_bitmap_init(&mut self, fdt: &fdt::Fdt) {
+        for node in fdt.all_nodes() {
+            if let Some(int_iter) = node.interrupts() {
+                warn!("at i");
+                for int_n in int_iter {
+                    let real_int_n = int_n + 32;
+                    if real_int_n < 1024 {
+                        let index = real_int_n / 32;
+                        let bit_position = real_int_n % 32;
+                        self.irq_bitmap[index] |= 1 << bit_position;
+                    } else {
+                        panic!("irq_id {} exceeds limit", int_n);
+                    }
+                }
+            }
+        }
+        
+        for (index, &word) in self.irq_bitmap.iter().enumerate() {
+            for bit_position in 0..32 {
+                if word & (1 << bit_position) != 0 {
+                    let interrupt_number = index * 32 + bit_position;
+                    warn!("Found interrupt in irq_bitmap: {}", interrupt_number);
+                }
+            }
+        }
+    }
+    
 }
 
 fn restrict_bitmask_access(

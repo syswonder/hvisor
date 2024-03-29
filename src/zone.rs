@@ -31,27 +31,6 @@ impl Zone {
         }
     }
 
-    fn remove_irqs(&mut self, irq_bitmap: &[u32]) {
-        for (i, &bitmap) in irq_bitmap.iter().enumerate() {
-            self.irq_bitmap[i] &= !bitmap; // 使用位与和取反操作，将对应位置的位清零
-        }
-    }
-
-    fn init_irq_bitmap(&mut self) {
-        // let config = self.config();
-        // let irq_chips = config.irq_chips().to_vec();
-        // for irq_chip in irq_chips.iter() {
-        //     let irq_bitmap_slice = &mut self.irq_bitmap[1..4 + 1]; // 获取可变的 irq_bitmap 切片
-        //     irq_bitmap_slice
-        //         .iter_mut()
-        //         .zip(irq_chip.pin_bitmap.iter())
-        //         .for_each(|(dest, src)| {
-        //             *dest |= *src; // 对每个元素进行位或操作
-        //         });
-        // }
-        // info!("irq bitmap = {:#x?}", self.irq_bitmap);
-    }
-
     pub fn suspend(&self) {
         trace!("suspending cpu_set = {:#x?}", self.cpu_set);
         self.cpu_set.iter_except(this_cpu_id()).for_each(|cpu_id| {
@@ -78,33 +57,6 @@ impl Zone {
         todo!();
         // unsafe { self.gpm.page_table_query(gpa).unwrap().0 }
     }
-    /// Map a mem region to a zone. \
-    /// If the mem size is aligned to one page, it will be inserted into page table. \
-    /// Otherwise into mmio regions.
-    pub fn mem_region_map_partial(&mut self, _mem: &MemoryRegion<GuestPhysAddr>) {
-        todo!();
-        // if is_aligned(mem.size) {
-        //     self.gpm.map_partial(mem).unwrap();
-        // } else {
-        //     // Handle subpages
-        //     self.mmio_region_register(
-        //         mem.start as _,
-        //         mem.size as _,
-        //         mmio_subpage_handler,
-        //         mem.start.wrapping_sub(mem.mapper.offset()) as _,
-        //     );
-        // }
-    }
-
-    /// Unmap a mem region from gpm or mmio regions of the zone.
-    // pub fn mem_region_unmap_partial(&mut self, mem: &MemoryRegion<GuestPhysAddr>) {
-    //     if is_aligned(mem.size) {
-    //         self.gpm.unmap_partial(mem).unwrap();
-    //     } else {
-    //         // Handle subpages
-    //         self.mmio_region_unregister(mem.start);
-    //     }
-    // }
 
     /// Register a mmio region and its handler.
     pub fn mmio_region_register(
@@ -201,6 +153,7 @@ pub fn zone_create(vmid: usize, dtb_ptr: *const u8, dtb_ipa: usize) -> Arc<RwLoc
     zone.pt_init(guest_entry, &guest_fdt, dtb_ptr as usize, dtb_ipa)
         .unwrap();
     zone.mmio_init(&guest_fdt);
+    zone.irq_bitmap_init(&guest_fdt);
 
     guest_fdt.cpus().for_each(|cpu| {
         let cpu_id = cpu.ids().all().next().unwrap();
