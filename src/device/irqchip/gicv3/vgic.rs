@@ -27,8 +27,10 @@ impl Zone {
 
     pub fn irq_bitmap_init(&mut self, fdt: &fdt::Fdt) {
         for node in fdt.all_nodes() {
+            if node.name == "timer" {
+                continue;
+            }
             if let Some(int_iter) = node.interrupts() {
-                warn!("at i");
                 for int_n in int_iter {
                     let real_int_n = int_n + 32;
                     if real_int_n < 1024 {
@@ -114,7 +116,7 @@ fn restrict_bitmask_access(
 }
 
 pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
-    debug!("gicr({}) mmio = {:#x?}", cpu, mmio);
+    warn!("gicr({}) mmio = {:#x?}", cpu, mmio);
     let gicr_base = host_gicr_base(cpu);
     match mmio.address {
         GICR_TYPER => {

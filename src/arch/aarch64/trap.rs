@@ -2,10 +2,7 @@ use aarch64_cpu::registers::*;
 use core::arch::global_asm;
 
 use crate::{
-    arch::{cpu::mpidr_to_cpuid, sysreg::read_sysreg},
-    hypercall::HyperCall,
-    memory::{mmio_handle_access, MMIOAccess},
-    percpu::{get_cpu_data, this_cpu_data, PerCpu},
+    arch::{cpu::mpidr_to_cpuid, sysreg::read_sysreg}, device::irqchip::gicv3::gicv3_handle_irq_el1, hypercall::HyperCall, memory::{mmio_handle_access, MMIOAccess}, percpu::{get_cpu_data, this_cpu_data, PerCpu}
 };
 
 use super::cpu::GeneralRegisters;
@@ -111,8 +108,7 @@ pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> ! {
 
 fn irqchip_handle_irq1() {
     debug!("irq from el1");
-    todo!();
-    // gicv3_handle_irq_el1();
+    gicv3_handle_irq_el1();
 }
 
 fn irqchip_handle_irq2() {
