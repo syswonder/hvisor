@@ -4,4 +4,4 @@
 /hvisor.S
 /hvisor-elf.txt
 /imgs/dts/*.dtb
-tenants
+images

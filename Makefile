@@ -26,6 +26,7 @@ export ARCH
 build_path := target/$(RUSTC_TARGET)/$(MODE)
 hvisor_elf := $(build_path)/hvisor
 hvisor_bin := $(build_path)/hvisor.bin
+image_dir  := images/$(ARCH)
 
 # Features based on STATS
 features := 

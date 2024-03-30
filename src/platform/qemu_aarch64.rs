@@ -1,8 +1,8 @@
 pub const TENANT1_DTB_ADDR: usize = 0x90000000;
 pub const TENANT2_DTB_ADDR: usize = 0x91000000;
 
-pub static TENANTS: [usize; 1] = [TENANT1_DTB_ADDR];
-// pub static TENANTS: [usize; 2] = [TENANT1_DTB_ADDR, TENANT2_DTB_ADDR];
+// pub static TENANTS: [usize; 1] = [TENANT1_DTB_ADDR];
+pub static TENANTS: [usize; 1] = [TENANT2_DTB_ADDR];
 
 // #[repr(C)]
 // #[repr(align(4096))]

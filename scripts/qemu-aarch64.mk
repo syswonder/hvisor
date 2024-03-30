@@ -1,19 +1,24 @@
 QEMU := sudo qemu-system-aarch64
 
-FSIMG1 := disk1.img
-FSIMG2 := disk2.img
+UBOOT := $(image_dir)/bootloader/u-boot.bin
 
-zone0_kernel := tenants/aarch64/kernel/Image
-zone0_dtb    := tenants/aarch64/devicetree/linux1.dtb
-zone1_kernel := tenants/aarch64/kernel/Image
-zone1_dtb    := tenants/aarch64/devicetree/linux2.dtb
+FSIMG1 := $(image_dir)/virtdisk/rootfs1.ext4
+FSIMG2 := $(image_dir)/virtdisk/rootfs2.ext4
+
+zone0_kernel := $(image_dir)/kernel/Image
+zone1_kernel := $(image_dir)/kernel/Image
+zone0_dtb    := $(image_dir)/devicetree/linux1.dtb
+zone1_dtb    := $(image_dir)/devicetree/linux2.dtb
 
 QEMU_ARGS := -machine virt,secure=on,gic-version=3,virtualization=on
+
+QEMU_ARGS += -d int
+
 QEMU_ARGS += -cpu cortex-a57
 QEMU_ARGS += -smp 4
 QEMU_ARGS += -m 2G
 QEMU_ARGS += -nographic
-QEMU_ARGS += -bios imgs/u-boot.bin
+QEMU_ARGS += -bios $(UBOOT)
 
 QEMU_ARGS += -device loader,file="$(hvisor_bin)",addr=0x40400000,force-raw=on
 QEMU_ARGS += -device loader,file="$(zone0_kernel)",addr=0x50000000,force-raw=on
@@ -32,40 +37,6 @@ QEMU_ARGS += -device virtio-net-device,netdev=Xa003a000,mac=52:55:00:d1:55:01
 
 QEMU_ARGS += -chardev pty,id=Xa0038000
 QEMU_ARGS += -device virtio-serial-device -device virtconsole,chardev=Xa0038000
-
-# FSIMG1=/path/to/disk1.img
-# FSIMG2=/path/to/disk2.img
- 
-# # QEMU command template
-# define qemu_cmd
-# e2fsck -f $(FSIMG1) && \
-# e2fsck -f $(FSIMG2) && \
-# sudo qemu-system-aarch64 \
-# 	-machine virt,secure=on,gic-version=3,virtualization=on \
-# 	-cpu cortex-a57 \
-# 	-smp 4 \
-# 	-m 2G \
-# 	-nographic \
-# 	-bios imgs/u-boot.bin \
-# 	\
-# 	-device loader,file="$(hvisor_bin)",addr=0x7fc00000,force-raw=on \
-# 	-device loader,file="$(root_dtb)",addr=0x40100000,force-raw=on \
-# 	-device loader,file="$(root_kernel)",addr=0x40200000,force-raw=on \
-# 	-device loader,file="$(nr1_dtb)",addr=0x60100000,force-raw=on \
-# 	-device loader,file="$(nr1_kernel)",addr=0x60200000,force-raw=on \
-# 	\
-# 	-drive if=none,file=$(FSIMG1),id=Xa003e000,format=raw \
-# 	-device virtio-blk-device,drive=Xa003e000 \
-# 	\
-# 	-drive if=none,file=$(FSIMG2),id=Xa003c000,format=raw \
-# 	-device virtio-blk-device,drive=Xa003c000 \
-# 	\
-# 	-netdev tap,id=Xa003a000,ifname=tap0,script=no,downscript=no \
-# 	-device virtio-net-device,netdev=Xa003a000,mac=52:55:00:d1:55:01 \
-# 	\
-# 	-chardev pty,id=Xa0038000 \
-# 	-device virtio-serial-device -device virtconsole,chardev=Xa0038000
-# endef
 
 # baremetal:
 # 	sudo qemu-system-aarch64 \
