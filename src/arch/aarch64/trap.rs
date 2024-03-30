@@ -2,7 +2,7 @@ use aarch64_cpu::registers::*;
 use core::arch::global_asm;
 
 use crate::{
-    arch::{cpu::mpidr_to_cpuid, sysreg::read_sysreg}, device::irqchip::gicv3::gicv3_handle_irq_el1, hypercall::HyperCall, memory::{mmio_handle_access, MMIOAccess}, percpu::{get_cpu_data, this_cpu_data, PerCpu}
+    arch::{cpu::mpidr_to_cpuid, sysreg::{read_sysreg, write_sysreg}}, device::irqchip::gicv3::gicv3_handle_irq_el1, hypercall::HyperCall, memory::{mmio_handle_access, MMIOAccess}, percpu::{get_cpu_data, this_cpu_data, PerCpu}
 };
 
 use super::cpu::GeneralRegisters;
@@ -228,26 +228,27 @@ fn handle_dabt(frame: &mut TrapFrame) {
     //TODO finish dabt handle
     arch_skip_instruction(frame);
 }
-fn handle_sysreg(_frame: &mut TrapFrame) {
+
+fn handle_sysreg(frame: &mut TrapFrame) {
     //TODO check sysreg type
     //send sgi
     trace!("esr_el2: iss {:#x?}", ESR_EL2.read(ESR_EL2::ISS));
-    todo!();
-    // let rt = (ESR_EL2.get() >> 5) & 0x1f;
-    // let val = frame.regs.usr[rt as usize];
-    // trace!("esr_el2 rt{}: {:#x?}", rt, val);
-    // let sgi_id: u64 = (val & (0xf << 24)) >> 24;
-    // if this_cpu_data().wait_for_poweron {
-    //     warn!("skip send sgi {:#x?}", sgi_id);
-    // } else {
-    //     // if sgi_id != 0 {
-    //     //     warn!("send sgi {:#x?}", sgi_id);
-    //     // }
-    //     write_sysreg!(icc_sgi1r_el1, val);
-    // }
+    let rt = (ESR_EL2.get() >> 5) & 0x1f;
+    let val = frame.regs.usr[rt as usize];
+    trace!("esr_el2 rt{}: {:#x?}", rt, val);
+    let sgi_id: u64 = (val & (0xf << 24)) >> 24;
+    if !this_cpu_data().arch_cpu.psci_on {
+        trace!("skip send sgi {:#x?}", sgi_id);
+    } else {
+        if sgi_id != 0 {
+            trace!("send sgi {:#x?}", sgi_id);
+        }
+        write_sysreg!(icc_sgi1r_el1, val);
+    }
 
-    // arch_skip_instruction(frame); //skip sgi write
+    arch_skip_instruction(frame); //skip sgi write
 }
+
 fn handle_hvc(frame: &mut TrapFrame) {
     /*
     if ESR_EL2.read(ESR_EL2::ISS) != 0x4a48 {
@@ -316,20 +317,16 @@ fn psci_emulate_cpu_on(frame: &mut TrapFrame) -> u64 {
     let target_data = get_cpu_data(cpu as _);
     let _lock = target_data.ctrl_lock.lock();
 
-    todo!();
-    // if target_data.wait_for_poweron {
-    //     target_data.cpu_on_entry = frame.regs.usr[2];
-    //     // todo: set cpu_on_context
-    //     target_data.reset = true;
-    // } else {
-    //     error!("psci: cpu {} already on", cpu);
-    //     return u64::MAX - 3;
-    // };
+    if !target_data.arch_cpu.psci_on {
+        target_data.cpu_on_entry = frame.regs.usr[2] as _;
+        target_data.arch_cpu.psci_on = true;
+    } else {
+        error!("psci: cpu {} already on", cpu);
+        return u64::MAX - 3;
+    };
 
-    // drop(_lock);
-    // info!("sending to {}", cpu);
-    // send_event(cpu, SGI_EVENT_ID);
-    // 0
+    drop(_lock);
+    0
 }
 
 fn handle_psci_smc(frame: &mut TrapFrame, code: u64, arg0: u64, _arg1: u64, _arg2: u64) -> u64 {

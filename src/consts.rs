@@ -15,7 +15,7 @@ pub const INVALID_ADDRESS: usize = usize::MAX;
 
 pub const MAX_CPU_NUM: usize = 4;
 
-pub const DTB_IPA: usize = 0xffff00000;
+pub const DTB_IPA: usize = 0x90000000;
 
 pub fn core_end() -> VirtAddr {
     __core_end as _

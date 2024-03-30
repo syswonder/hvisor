@@ -1,7 +1,7 @@
 use crate::{
     arch::sysreg::write_sysreg,
     consts::{PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
-    memory::VirtAddr,
+    memory::VirtAddr, percpu::this_cpu_data,
 };
 use aarch64_cpu::registers::{
     Readable, Writeable, ELR_EL2, HCR_EL2, MPIDR_EL1, SCTLR_EL1, SPSR_EL2, VTCR_EL2,
@@ -128,10 +128,20 @@ impl ArchCpu {
     }
 
     pub fn idle(&self) {
-        unsafe {
-            core::arch::asm!("wfi");
+        // unsafe {
+        //     core::arch::asm!("wfi");
+        // }
+        info!("cpu {} idling", self.cpuid);
+        let cpu_data = this_cpu_data();
+        let mut _lock = Some(cpu_data.ctrl_lock.lock());
+        while !self.psci_on {
+            _lock = None;
+            while !self.psci_on {}
+            _lock = Some(cpu_data.ctrl_lock.lock());
         }
-        info!("Wake up from idle...");
+        drop(_lock);
+        info!("cpu {} wake up from idle", self.cpuid);
+        ELR_EL2.set(cpu_data.cpu_on_entry as _);
     }
 }
 
