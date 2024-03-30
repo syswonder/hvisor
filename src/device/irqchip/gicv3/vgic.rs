@@ -116,7 +116,7 @@ fn restrict_bitmask_access(
 }
 
 pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
-    warn!("gicr({}) mmio = {:#x?}", cpu, mmio);
+    trace!("gicr({}) mmio = {:#x?}", cpu, mmio);
     let gicr_base = host_gicr_base(cpu);
     match mmio.address {
         GICR_TYPER => {

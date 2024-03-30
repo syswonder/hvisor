@@ -238,7 +238,7 @@ fn handle_sysreg(frame: &mut TrapFrame) {
     trace!("esr_el2 rt{}: {:#x?}", rt, val);
     let sgi_id: u64 = (val & (0xf << 24)) >> 24;
     if !this_cpu_data().arch_cpu.psci_on {
-        trace!("skip send sgi {:#x?}", sgi_id);
+        warn!("skip send sgi {:#x?}", sgi_id);
     } else {
         if sgi_id != 0 {
             trace!("send sgi {:#x?}", sgi_id);

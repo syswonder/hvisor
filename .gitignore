@@ -2,5 +2,6 @@
 /qemu-test
 /test-img
 /hvisor.S
+/hvisor-elf.txt
 /imgs/dts/*.dtb
 tenants

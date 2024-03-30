@@ -3,11 +3,9 @@ QEMU := sudo qemu-system-aarch64
 FSIMG1 := disk1.img
 FSIMG2 := disk2.img
 
-# zone0_kernel := tenants/aarch64/kernel/Image
-zone0_kernel := /home/clk/packages/linux/arch/arm64/boot/Image
+zone0_kernel := tenants/aarch64/kernel/Image
 zone0_dtb    := tenants/aarch64/devicetree/linux1.dtb
-# zone1_kernel := tenants/aarch64/kernel/Image
-zone1_kernel := /home/clk/packages/linux/arch/arm64/boot/Image
+zone1_kernel := tenants/aarch64/kernel/Image
 zone1_dtb    := tenants/aarch64/devicetree/linux2.dtb
 
 QEMU_ARGS := -machine virt,secure=on,gic-version=3,virtualization=on

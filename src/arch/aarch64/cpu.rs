@@ -1,7 +1,8 @@
 use crate::{
     arch::sysreg::write_sysreg,
     consts::{PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
-    memory::VirtAddr, percpu::this_cpu_data,
+    memory::VirtAddr,
+    percpu::this_cpu_data,
 };
 use aarch64_cpu::registers::{
     Readable, Writeable, ELR_EL2, HCR_EL2, MPIDR_EL1, SCTLR_EL1, SPSR_EL2, VTCR_EL2,
@@ -25,6 +26,13 @@ pub struct GeneralRegisters {
     pub usr: [u64; 31],
 }
 
+impl GeneralRegisters {
+    pub fn clear(&mut self) {
+        self.exit_reason = 0;
+        self.usr.fill(0);
+    }
+}
+
 #[repr(C)]
 #[derive(Debug)]
 pub struct ArchCpu {
@@ -44,6 +52,7 @@ impl ArchCpu {
         ELR_EL2.set(entry as _);
         SPSR_EL2.set(0x3c5);
         let regs = self.guest_reg();
+        regs.clear();
         regs.usr[0] = dtb as _; // dtb addr
         self.reset_vm_regs();
         self.activate_vmm();
@@ -122,6 +131,7 @@ impl ArchCpu {
     }
 
     pub fn run(&mut self) {
+        self.psci_on = true;
         unsafe {
             vmreturn(self.guest_reg() as *mut _ as usize);
         }
