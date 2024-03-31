@@ -105,16 +105,18 @@ impl Zone {
     }
 }
 
-static ROOT_CELL: spin::Once<Arc<RwLock<Zone>>> = spin::Once::new();
-static CELL_LIST: RwLock<Vec<Arc<RwLock<Zone>>>> = RwLock::new(vec![]);
+static ROOT_ZONE: spin::Once<Arc<RwLock<Zone>>> = spin::Once::new();
+static ZONE_LIST: RwLock<Vec<Arc<RwLock<Zone>>>> = RwLock::new(vec![]);
+
 /// Add zone to CELL_LIST
 pub fn add_zone(zone: Arc<RwLock<Zone>>) {
-    CELL_LIST.write().push(zone);
+    ZONE_LIST.write().push(zone);
 }
-/// Remove zone from CELL_LIST
+
+/// Remove zone from ZONE_LIST
 pub fn remove_zone(_zone_id: u32) {
     todo!();
-    // let mut zone_list = CELL_LIST.write();
+    // let mut zone_list = ZONE_LIST.write();
     // let (idx, _) = zone_list
     //     .iter()
     //     .enumerate()
@@ -124,12 +126,12 @@ pub fn remove_zone(_zone_id: u32) {
 }
 
 pub fn root_zone() -> Arc<RwLock<Zone>> {
-    ROOT_CELL.get().expect("Uninitialized root zone!").clone()
+    ROOT_ZONE.get().expect("Uninitialized root zone!").clone()
 }
 
 pub fn find_zone_by_id(_zone_id: u32) -> Option<Arc<RwLock<Zone>>> {
     todo!();
-    // CELL_LIST
+    // ZONE_LIST
     //     .read()
     //     .iter()
     //     .find(|zone| zone.read().config().id() == zone_id)
@@ -179,13 +181,3 @@ pub fn zone_create(vmid: usize, dtb_ptr: *const u8, dtb_ipa: usize) -> Arc<RwLoc
 
     new_zone_pointer
 }
-
-// pub fn init() -> HvResult {
-//     info!("Root zone initializing...");
-//     let root_zone = Arc::new(RwLock::new(Zone::new_root()?));
-//     info!("Root zone init end.");
-
-//     add_zone(root_zone.clone());
-//     ROOT_CELL.call_once(|| root_zone);
-//     Ok(())
-// }

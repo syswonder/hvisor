@@ -71,8 +71,12 @@ fn wait_for_counter(counter: &AtomicU32, max_value: u32) {
 }
 
 fn primary_init_early(dtb: usize) {
+    extern "C" {
+        fn __core_end();
+    }
     logging::init();
     info!("Logging is enabled.");
+    info!("__core_end = {:#x?}", __core_end as usize);
     // let system_config = HvSystemConfig::get();
     // let revision = system_config.revision;
     info!("Hypervisor initialization in progress...");

@@ -72,25 +72,6 @@ pub enum TrapReturn {
     TrapForbidden = -1,
 }
 
-#[repr(C)]
-#[derive(Debug)]
-pub struct TrapFrame<'a> {
-    pub regs: &'a mut GeneralRegisters,
-    pub esr: u64, //ESR_EL2 exception reason
-    pub spsr: u64, //SPSR_EL2 exception info
-                  //pub sp: u64,
-}
-impl<'a> TrapFrame<'a> {
-    pub fn new(regs: &'a mut GeneralRegisters) -> Self {
-        Self {
-            regs,
-            esr: ESR_EL2.get(),
-            spsr: SPSR_EL2.get(),
-            //sp: 0,
-        }
-    }
-}
-
 /*From hyp_vec->handle_vmexit x0:guest regs x1:exit_reason sp =stack_top-32*8*/
 pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> ! {
     let mpidr = MPIDR_EL1.get();
@@ -117,7 +98,6 @@ fn irqchip_handle_irq2() {
 }
 
 fn arch_handle_trap_el1(regs: &mut GeneralRegisters) {
-    let mut frame = TrapFrame::new(regs);
     let mut _ret = TrapReturn::TrapUnhandled;
 
     trace!(
@@ -127,11 +107,11 @@ fn arch_handle_trap_el1(regs: &mut GeneralRegisters) {
     );
 
     match ESR_EL2.read_as_enum(ESR_EL2::EC) {
-        Some(ESR_EL2::EC::Value::HVC64) => handle_hvc(&mut frame),
-        Some(ESR_EL2::EC::Value::SMC64) => handle_smc(&mut frame),
-        Some(ESR_EL2::EC::Value::TrappedMsrMrs) => handle_sysreg(&mut frame),
-        Some(ESR_EL2::EC::Value::DataAbortLowerEL) => handle_dabt(&mut frame),
-        Some(ESR_EL2::EC::Value::InstrAbortLowerEL) => handle_iabt(&mut frame),
+        Some(ESR_EL2::EC::Value::HVC64) => handle_hvc(regs),
+        Some(ESR_EL2::EC::Value::SMC64) => handle_smc(regs),
+        Some(ESR_EL2::EC::Value::TrappedMsrMrs) => handle_sysreg(regs),
+        Some(ESR_EL2::EC::Value::DataAbortLowerEL) => handle_dabt(regs),
+        Some(ESR_EL2::EC::Value::InstrAbortLowerEL) => handle_iabt(regs),
         _ => {
             error!(
                 "Unsupported Exception EC:{:#x?}!",
@@ -173,7 +153,7 @@ fn arch_handle_trap_el2(_regs: &mut GeneralRegisters) {
     loop {}
 }
 
-fn handle_iabt(_frame: &mut TrapFrame) {
+fn handle_iabt(regs: &mut GeneralRegisters) {
     let iss = ESR_EL2.read(ESR_EL2::ISS);
     let op = iss >> 6 & 0x1;
     let hpfar = read_sysreg!(HPFAR_EL2);
@@ -186,7 +166,7 @@ fn handle_iabt(_frame: &mut TrapFrame) {
     //TODO finish dabt handle
     // arch_skip_instruction(frame);
 }
-fn handle_dabt(frame: &mut TrapFrame) {
+fn handle_dabt(regs: &mut GeneralRegisters) {
     let iss = ESR_EL2.read(ESR_EL2::ISS);
     let is_write = (iss >> 6 & 0x1) != 0;
     let srt = iss >> 16 & 0x1f;
@@ -205,7 +185,7 @@ fn handle_dabt(frame: &mut TrapFrame) {
         value: if srt == 31 {
             0
         } else {
-            frame.regs.usr[srt as usize] as _
+            regs.usr[srt as usize] as _
         },
     };
 
@@ -218,7 +198,7 @@ fn handle_dabt(frame: &mut TrapFrame) {
                     mmio_access.value =
                         ((mmio_access.value << (32 - 8 * size)) as i32) as usize >> (32 - 8 * size);
                 }
-                frame.regs.usr[srt as usize] = mmio_access.value as _;
+                regs.usr[srt as usize] = mmio_access.value as _;
             }
         }
         Err(e) => {
@@ -226,15 +206,15 @@ fn handle_dabt(frame: &mut TrapFrame) {
         }
     }
     //TODO finish dabt handle
-    arch_skip_instruction(frame);
+    arch_skip_instruction(regs);
 }
 
-fn handle_sysreg(frame: &mut TrapFrame) {
+fn handle_sysreg(regs: &mut GeneralRegisters) {
     //TODO check sysreg type
     //send sgi
     trace!("esr_el2: iss {:#x?}", ESR_EL2.read(ESR_EL2::ISS));
     let rt = (ESR_EL2.get() >> 5) & 0x1f;
-    let val = frame.regs.usr[rt as usize];
+    let val = regs.usr[rt as usize];
     trace!("esr_el2 rt{}: {:#x?}", rt, val);
     let sgi_id: u64 = (val & (0xf << 24)) >> 24;
     if !this_cpu_data().arch_cpu.psci_on {
@@ -246,16 +226,16 @@ fn handle_sysreg(frame: &mut TrapFrame) {
         write_sysreg!(icc_sgi1r_el1, val);
     }
 
-    arch_skip_instruction(frame); //skip sgi write
+    arch_skip_instruction(regs); //skip sgi write
 }
 
-fn handle_hvc(frame: &mut TrapFrame) {
+fn handle_hvc(regs: &mut GeneralRegisters) {
     /*
     if ESR_EL2.read(ESR_EL2::ISS) != 0x4a48 {
         return;
     }
     */
-    let (code, arg0, arg1) = (frame.regs.usr[0], frame.regs.usr[1], frame.regs.usr[2]);
+    let (code, arg0, arg1) = (regs.usr[0], regs.usr[1], regs.usr[2]);
     let cpu_data = this_cpu_data();
 
     info!(
@@ -265,14 +245,15 @@ fn handle_hvc(frame: &mut TrapFrame) {
     let result = HyperCall::new(cpu_data)
         .hypercall(code as _, arg0, arg1)
         .unwrap();
-    frame.regs.usr[0] = result as _;
+    regs.usr[0] = result as _;
 }
-fn handle_smc(frame: &mut TrapFrame) {
+
+fn handle_smc(regs: &mut GeneralRegisters) {
     let (code, arg0, arg1, arg2) = (
-        frame.regs.usr[0],
-        frame.regs.usr[1],
-        frame.regs.usr[2],
-        frame.regs.usr[3],
+        regs.usr[0],
+        regs.usr[1],
+        regs.usr[2],
+        regs.usr[3],
     );
     let cpu_data = this_cpu_data() as &mut PerCpu;
     info!(
@@ -280,17 +261,17 @@ fn handle_smc(frame: &mut TrapFrame) {
         cpu_data.id, code, arg0, arg1, arg2
     );
     let result = match code & SMC_TYPE_MASK {
-        SmcType::ARCH_SC => handle_arch_smc(frame, code, arg0, arg1, arg2),
-        SmcType::STANDARD_SC => handle_psci_smc(frame, code, arg0, arg1, arg2),
+        SmcType::ARCH_SC => handle_arch_smc(regs, code, arg0, arg1, arg2),
+        SmcType::STANDARD_SC => handle_psci_smc(regs, code, arg0, arg1, arg2),
         _ => {
             error!("unsupported smc");
             0
         }
     };
 
-    frame.regs.usr[0] = result;
+    regs.usr[0] = result;
 
-    arch_skip_instruction(frame); //skip the smc ins
+    arch_skip_instruction(regs); //skip the smc ins
 }
 
 fn psci_emulate_features_info(code: u64) -> u64 {
@@ -309,16 +290,16 @@ fn psci_emulate_features_info(code: u64) -> u64 {
     }
 }
 
-fn psci_emulate_cpu_on(frame: &mut TrapFrame) -> u64 {
+fn psci_emulate_cpu_on(regs: &mut GeneralRegisters) -> u64 {
     // Todo: Check if `cpu` is in the cpuset of current zone
-    let cpu = mpidr_to_cpuid(frame.regs.usr[1]);
+    let cpu = mpidr_to_cpuid(regs.usr[1]);
     info!("psci: try to wake up cpu {}", cpu);
 
     let target_data = get_cpu_data(cpu as _);
     let _lock = target_data.ctrl_lock.lock();
 
     if !target_data.arch_cpu.psci_on {
-        target_data.cpu_on_entry = frame.regs.usr[2] as _;
+        target_data.cpu_on_entry = regs.usr[2] as _;
         target_data.arch_cpu.psci_on = true;
     } else {
         error!("psci: cpu {} already on", cpu);
@@ -329,7 +310,7 @@ fn psci_emulate_cpu_on(frame: &mut TrapFrame) -> u64 {
     0
 }
 
-fn handle_psci_smc(frame: &mut TrapFrame, code: u64, arg0: u64, _arg1: u64, _arg2: u64) -> u64 {
+fn handle_psci_smc(regs: &mut GeneralRegisters, code: u64, arg0: u64, _arg1: u64, _arg2: u64) -> u64 {
     match code {
         PsciFnId::PSCI_VERSION => PSCI_VERSION_1_1,
         PsciFnId::PSCI_CPU_OFF_32 | PsciFnId::PSCI_CPU_OFF_64 => {
@@ -341,8 +322,8 @@ fn handle_psci_smc(frame: &mut TrapFrame, code: u64, arg0: u64, _arg1: u64, _arg
             !get_cpu_data(arg0 as _).arch_cpu.psci_on as _
         }
         PsciFnId::PSCI_MIG_INFO_TYPE => PSCI_TOS_NOT_PRESENT_MP,
-        PsciFnId::PSCI_FEATURES => psci_emulate_features_info(frame.regs.usr[1]),
-        PsciFnId::PSCI_CPU_ON_32 | PsciFnId::PSCI_CPU_ON_64 => psci_emulate_cpu_on(frame),
+        PsciFnId::PSCI_FEATURES => psci_emulate_features_info(regs.usr[1]),
+        PsciFnId::PSCI_CPU_ON_32 | PsciFnId::PSCI_CPU_ON_64 => psci_emulate_cpu_on(regs),
         PsciFnId::PSCI_SYSTEM_OFF => {
             todo!();
             // this_zone().read().suspend();
@@ -360,7 +341,7 @@ fn handle_psci_smc(frame: &mut TrapFrame, code: u64, arg0: u64, _arg1: u64, _arg
     }
 }
 
-fn handle_arch_smc(_frame: &mut TrapFrame, code: u64, _arg0: u64, _arg1: u64, _arg2: u64) -> u64 {
+fn handle_arch_smc(regs: &mut GeneralRegisters, code: u64, _arg0: u64, _arg1: u64, _arg2: u64) -> u64 {
     match code {
         SMCccFnId::SMCCC_VERSION => ARM_SMCCC_VERSION_1_0,
         SMCccFnId::SMCCC_ARCH_FEATURES => !0,
@@ -371,7 +352,7 @@ fn handle_arch_smc(_frame: &mut TrapFrame, code: u64, _arg0: u64, _arg1: u64, _a
     }
 }
 
-fn arch_skip_instruction(_frame: &TrapFrame) {
+fn arch_skip_instruction(regs: &mut GeneralRegisters) {
     //ELR_EL2: ret address
     let mut pc = ELR_EL2.get();
     //ESR_EL2::IL exception instruction length

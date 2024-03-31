@@ -48,7 +48,7 @@ impl Zone {
             for bit_position in 0..32 {
                 if word & (1 << bit_position) != 0 {
                     let interrupt_number = index * 32 + bit_position;
-                    warn!("Found interrupt in irq_bitmap: {}", interrupt_number);
+                    info!("Found interrupt in Zone {} irq_bitmap: {}", self.id, interrupt_number);
                 }
             }
         }
