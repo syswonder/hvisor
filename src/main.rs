@@ -13,8 +13,9 @@
 // 不使用main入口，使用自己定义实际入口_start，因为我们还没有初始化堆栈指针
 #![feature(asm_const)]
 #![feature(naked_functions)] //  surpport naked function
+#![feature(core_panic)]
 // 支持内联汇编
-#![deny(warnings, missing_docs)] // 将warnings作为error
+// #![deny(warnings, missing_docs)] // 将warnings作为error
 #[macro_use]
 extern crate alloc;
 extern crate buddy_system_allocator;
@@ -26,82 +27,61 @@ extern crate log;
 extern crate lazy_static;
 #[macro_use]
 mod logging;
-mod control;
-//#[cfg(target_arch = "aarch64")]
-#[path = "arch/aarch64/mod.rs"]
 mod arch;
-mod cell;
-mod config;
 mod consts;
+mod control;
 mod device;
 mod hypercall;
 mod memory;
-mod num;
 mod panic;
 mod percpu;
+mod platform;
+mod zone;
 
-use crate::consts::nr1_config_ptr;
-use crate::consts::HV_BASE;
-use crate::control::do_cell_create;
-use crate::control::prepare_cell_start;
-use crate::control::wait_for_poweron;
-use crate::device::gicv3::enable_irqs;
-use crate::device::gicv3::gicd::enable_gic_are_ns;
-use crate::memory::addr;
-use crate::percpu::this_cell;
-use crate::percpu::this_cpu_data;
-use crate::{cell::root_cell, consts::MAX_CPU_NUM};
-use arch::entry::arch_entry;
-use config::HvSystemConfig;
+use crate::consts::{DTB_IPA, MAX_CPU_NUM};
+use crate::platform::qemu_aarch64::TENANTS;
+use crate::zone::zone_create;
+use arch::{cpu::cpu_start, entry::arch_entry};
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
-use device::gicv3::gicv3_cpu_init;
-use error::HvResult;
-use memory::addr::virt_to_phys;
 use percpu::PerCpu;
+
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
 static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
 static ACTIVATED_CPUS: AtomicU32 = AtomicU32::new(0);
 static INIT_EARLY_OK: AtomicU32 = AtomicU32::new(0);
 static INIT_LATE_OK: AtomicU32 = AtomicU32::new(0);
-static ERROR_NUM: AtomicI32 = AtomicI32::new(0);
-fn has_err() -> bool {
-    ERROR_NUM.load(Ordering::Acquire) != 0
+static MASTER_CPU: AtomicI32 = AtomicI32::new(-1);
+
+pub fn clear_bss() {
+    extern "C" {
+        fn sbss();
+        fn ebss();
+    }
+    (sbss as usize..ebss as usize).for_each(|a| unsafe { (a as *mut u8).write_volatile(0) });
 }
 
-fn wait_for(condition: impl Fn() -> bool) -> HvResult {
-    while !has_err() && condition() {
+fn wait_for(condition: impl Fn() -> bool) {
+    while condition() {
         core::hint::spin_loop();
     }
-    if has_err() {
-        hv_result_err!(EBUSY, "Other cpu init failed!")
-    } else {
-        Ok(())
-    }
 }
 
-fn wait_for_counter(counter: &AtomicU32, max_value: u32) -> HvResult {
+fn wait_for_counter(counter: &AtomicU32, max_value: u32) {
     wait_for(|| counter.load(Ordering::Acquire) < max_value)
 }
 
-fn primary_init_early() -> HvResult {
+fn primary_init_early(dtb: usize) {
+    extern "C" {
+        fn __core_end();
+    }
     logging::init();
     info!("Logging is enabled.");
-
-    let system_config = HvSystemConfig::get();
-    let revision = system_config.revision;
+    info!("__core_end = {:#x?}", __core_end as usize);
+    // let system_config = HvSystemConfig::get();
+    // let revision = system_config.revision;
+    info!("Hypervisor initialization in progress...");
     info!(
-        "\n\
-        Initializing hypervisor...\n\
-        config_signature = {:?}\n\
-        config_revision = {}\n\
-        build_mode = {}\n\
-        log_level = {}\n\
-        arch = {}\n\
-        vendor = {}\n\
-        stats = {}\n\
-        ",
-        core::str::from_utf8(&system_config.signature),
-        revision,
+        "build_mode: {}, log_level: {}, arch: {}, vendor: {}, stats: {}",
         option_env!("MODE").unwrap_or(""),
         option_env!("LOG").unwrap_or(""),
         option_env!("ARCH").unwrap_or(""),
@@ -109,122 +89,115 @@ fn primary_init_early() -> HvResult {
         option_env!("STATS").unwrap_or("off"),
     );
 
-    memory::init_heap();
-    system_config.check()?;
+    memory::heap::init();
+    memory::heap::test();
+    memory::frame::init();
+    memory::frame::test();
 
-    info!("System config: {:#x?}", system_config);
+    info!("host dtb: {:#x}", dtb);
+    let host_fdt = unsafe { fdt::Fdt::from_ptr(dtb as *const u8) }.unwrap();
 
-    memory::init_frame_allocator();
-    memory::init_hv_page_table()?;
-    cell::init()?;
+    device::irqchip::init_early(&host_fdt);
+    crate::arch::mm::init_hv_page_table(&host_fdt).unwrap();
 
-    // unsafe {
-    //     // We should activate new hv-pt here in advance,
-    //     // in case of triggering data aborts in `cell::init()`
-    //     memory::hv_page_table().read().activate();
-    // }
-
-    do_cell_create(unsafe { nr1_config_ptr().as_ref().unwrap() })?;
+    for zone_id in 0..TENANTS.len() {
+        info!(
+            "guest{} dtb addr: {:#x}",
+            zone_id, TENANTS[zone_id] as usize
+        );
+        zone_create(zone_id, TENANTS[zone_id] as _, DTB_IPA);
+    }
 
     INIT_EARLY_OK.store(1, Ordering::Release);
-    Ok(())
 }
 
 fn primary_init_late() {
     info!("Primary CPU init late...");
-    enable_gic_are_ns();
+    device::irqchip::init_late();
+
     INIT_LATE_OK.store(1, Ordering::Release);
 }
 
-fn per_cpu_init() {
-    let cpu_data = this_cpu_data();
-    
-    if cpu_data.cell.is_none() {
-        cpu_data.cell = Some(root_cell());
+fn per_cpu_mm_init(cpu: &mut PerCpu) {
+    if cpu.zone.is_none() {
+        warn!("zone is not created for cpu {}", cpu.id);
+    } else {
+        unsafe {
+            memory::hv_page_table().read().activate();
+            cpu.zone.clone().unwrap().read().gpm.activate();
+        };
     }
 
-    gicv3_cpu_init();
-
-    unsafe {
-        memory::hv_page_table().read().activate();
-        this_cell().read().gpm_activate();
-    };
-
-    // enable_ipi();
-    enable_irqs();
-
-    println!("CPU {} init OK.", cpu_data.id);
+    println!("CPU {} mm_init OK.", cpu.id);
 }
 
-fn wakeup_secondary_cpus(this_id: u64) {
+fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
     for cpu_id in 0..MAX_CPU_NUM {
         if cpu_id == this_id {
             continue;
         }
-        psci::cpu_on(cpu_id | 0x80000000, virt_to_phys(arch_entry as _) as _, 0).unwrap_or_else(
-            |err| {
-                if let psci::error::Error::AlreadyOn = err {
-                } else {
-                    panic!("can't wake up cpu {}", cpu_id);
-                }
-            },
-        );
+        cpu_start(cpu_id, arch_entry as _, host_dtb);
     }
 }
 
-fn rust_main(cpu_data: &'static mut PerCpu) -> HvResult {
-    println!("Hello");
+fn rust_main(cpuid: usize, host_dtb: usize) {
+    arch::trap::install_trap_vector();
+
+    let mut is_primary = false;
+    if MASTER_CPU.load(Ordering::Acquire) == -1 {
+        MASTER_CPU.store(cpuid as i32, Ordering::Release);
+        is_primary = true;
+        println!("Hello, HVISOR!");
+        #[cfg(target_arch = "riscv64")]
+        clear_bss();
+    }
+
+    let cpu = PerCpu::new(cpuid);
+
     println!(
-        "cpuid {} vaddr {:#x?} phyid {} &cpu_data {:#x?}",
-        cpu_data.id,
-        cpu_data.self_vaddr,
-        this_cpu_data().id,
-        cpu_data as *const _
+        "Booting CPU {}: {:p}, DTB: {:#x}",
+        cpu.id, cpu as *const _, host_dtb
     );
-    let is_primary = cpu_data.id == 0;
 
     if is_primary {
-        // Set PHYS_VIRT_OFFSET early.
-        unsafe {
-            addr::PHYS_VIRT_OFFSET =
-                HV_BASE - HvSystemConfig::get().hypervisor_memory.phys_start as usize
-        };
-        wakeup_secondary_cpus(cpu_data.id);
+        wakeup_secondary_cpus(cpu.id, host_dtb);
     }
-    wait_for(|| PerCpu::entered_cpus() < MAX_CPU_NUM as _)?;
+
+    ENTERED_CPUS.fetch_add(1, Ordering::SeqCst);
+    wait_for(|| PerCpu::entered_cpus() < MAX_CPU_NUM as _);
     assert_eq!(PerCpu::entered_cpus(), MAX_CPU_NUM as _);
 
     println!(
-        "{} CPU {} entered.",
+        "{} CPU {} has entered.",
         if is_primary { "Primary" } else { "Secondary" },
-        cpu_data.id
+        cpu.id
     );
 
     if is_primary {
-        primary_init_early()?; // create root cell here
+        primary_init_early(host_dtb); // create root zone here
     } else {
-        wait_for_counter(&INIT_EARLY_OK, 1)?
+        wait_for_counter(&INIT_EARLY_OK, 1);
     }
 
-    per_cpu_init();
+    per_cpu_mm_init(cpu);
+    device::irqchip::irqchip_cpu_init();
 
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
-    wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _)?;
+    wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _);
+    cpu.cpu_init(DTB_IPA);
 
     if is_primary {
         primary_init_late();
     } else {
-        wait_for_counter(&INIT_LATE_OK, 1)?
+        wait_for_counter(&INIT_LATE_OK, 1);
     }
 
-    cpu_data.activate_vmm();
-    wait_for_counter(&ACTIVATED_CPUS, MAX_CPU_NUM as _)?;
+    cpu.run_vm();
 
-    if cpu_data.id == 2 {
-        prepare_cell_start(this_cell())?;
-        cpu_data.start_vm();
-    } else {
-        wait_for_poweron();
-    }
+    // if cpu_data.id == 0 {
+    //     prepare_zone_start(this_zone())?;
+    //     cpu_data.start_zone();
+    // } else {
+    //     wait_for_poweron();
+    // }
 }
-

@@ -2,4 +2,5 @@
 /qemu-test
 /test-img
 /hvisor.S
-/imgs/dts/*.dtb
+/hvisor-elf.txt
+/images/aarch64/virtdisk/*

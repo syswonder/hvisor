@@ -1,16 +1,8 @@
 #![allow(dead_code)]
-use crate::cell::{find_cell_by_id, remove_cell, root_cell};
-use crate::config::{HvCellDesc, HvMemoryRegion};
-use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
-use crate::control::{cell_management_prologue, do_cell_create, park_cpu, prepare_cell_start};
 use crate::error::HvResult;
-use crate::memory::addr::{align_down, align_up};
-use crate::memory::{self, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion};
-use crate::percpu::{get_cpu_data, PerCpu};
-use alloc::sync::Arc;
-use alloc::vec::Vec;
+use crate::percpu::PerCpu;
+
 use core::convert::TryFrom;
-use core::mem::size_of;
 use core::sync::atomic::{AtomicU32, Ordering};
 use numeric_enum_macro::numeric_enum;
 
@@ -19,10 +11,10 @@ numeric_enum! {
     #[derive(Debug, Eq, PartialEq, Copy, Clone)]
     pub enum HyperCallCode {
         HypervisorDisable = 0,
-        HypervisorCellCreate = 1,
-        HypervisorCellStart = 2,
-        HypervisorCellSetLoadable = 3,
-        HypervisorCellDestroy = 4,
+        HypervisorZoneCreate = 1,
+        HypervisorZoneStart = 2,
+        HypervisorZoneSetLoadable = 3,
+        HypervisorZoneDestroy = 4,
     }
 }
 
@@ -52,10 +44,10 @@ impl<'a> HyperCall<'a> {
         };
         match code {
             HyperCallCode::HypervisorDisable => self.hypervisor_disable(),
-            HyperCallCode::HypervisorCellCreate => self.hypervisor_cell_create(arg0),
-            HyperCallCode::HypervisorCellSetLoadable => self.hypervisor_cell_set_loadable(arg0),
-            HyperCallCode::HypervisorCellStart => self.hypervisor_cell_start(arg0),
-            HyperCallCode::HypervisorCellDestroy => self.hypervisor_cell_destroy(arg0),
+            HyperCallCode::HypervisorZoneCreate => self.hypervisor_zone_create(arg0),
+            HyperCallCode::HypervisorZoneSetLoadable => self.hypervisor_zone_set_loadable(arg0),
+            HyperCallCode::HypervisorZoneStart => self.hypervisor_zone_start(arg0),
+            HyperCallCode::HypervisorZoneDestroy => self.hypervisor_zone_destroy(arg0),
         }
     }
 
@@ -68,126 +60,133 @@ impl<'a> HyperCall<'a> {
             core::hint::spin_loop();
         }
         info!("Handle hvc disable");
-        self.cpu_data.deactivate_vmm(0)?;
+        self.cpu_data.deactivate_vmm()?;
         unreachable!()
     }
 
-    fn hypervisor_cell_create(&mut self, config_address: u64) -> HyperCallResult {
-        info!(
-            "handle hvc cell create, config_address = {:#x?}",
-            config_address
-        );
+    fn hypervisor_zone_create(&mut self, _config_address: u64) -> HyperCallResult {
+        todo!();
+        // info!(
+        //     "handle hvc zone create, config_address = {:#x?}",
+        //     config_address
+        // );
 
-        let cell = self.cpu_data.cell.clone().unwrap();
-        if !Arc::ptr_eq(&cell, &root_cell()) {
-            return hv_result_err!(EPERM, "Creation over non-root cells: unsupported!");
+        // let zone = self.cpu_data.zone.clone().unwrap();
+        // if !Arc::ptr_eq(&zone, &root_zone()) {
+        //     return hv_result_err!(EPERM, "Creation over non-root zones: unsupported!");
+        // }
+        // info!("prepare to suspend root_zone");
+
+        // let root_zone = root_zone().clone();
+        // root_zone.read().suspend();
+
+        // // todo: 检查新zone是否和已有zone同id或同名
+        // let config_address = zone.write().gpm_query(config_address as _);
+
+        // let cfg_pages_offs = config_address as usize & (PAGE_SIZE - 1);
+        // todo!();
+        // let cfg_mapping = memory::hv_page_table().write().map_temporary(
+        //     align_down(config_address),
+        //     align_up(cfg_pages_offs + size_of::<HvZoneDesc>()),
+        //     MemFlags::READ,
+        // )?;
+
+        // let desc: &HvZoneDesc = unsafe {
+        //     ((cfg_mapping + cfg_pages_offs) as *const HvZoneDesc)
+        //         .as_ref()
+        //         .unwrap()
+        // };
+
+        // do_zone_create(desc)?;
+
+        // info!("zone create done!");
+        // HyperCallResult::Ok(0)
+    }
+
+    fn hypervisor_zone_set_loadable(&mut self, _zone_id: u64) -> HyperCallResult {
+        todo!();
+        // info!("handle hvc zone set loadable");
+        // let zone = zone_management_prologue(self.cpu_data, zone_id)?;
+        // let mut zone_w = zone.write();
+        // if zone_w.loadable {
+        //     root_zone().read().resume();
+        //     return HyperCallResult::Ok(0);
+        // }
+
+        // zone_w.cpu_set.iter().for_each(|cpu_id| park_cpu(cpu_id));
+        // zone_w.loadable = true;
+        // info!("zone.mem_regions() = {:#x?}", zone_w.config().mem_regions());
+        // let mem_regs: Vec<HvMemoryRegion> = zone_w.config().mem_regions().to_vec();
+
+        // // remap to rootzone
+        // let root_zone = root_zone();
+        // let mut root_zone_w = root_zone.write();
+
+        // mem_regs.iter().for_each(|mem| {
+        //     if mem.flags.contains(MemFlags::LOADABLE) {
+        //         root_zone_w.mem_region_map_partial(&MemoryRegion::new_with_offset_mapper(
+        //             mem.phys_start as GuestPhysAddr,
+        //             mem.phys_start as HostPhysAddr,
+        //             mem.size as _,
+        //             mem.flags,
+        //         ));
+        //     }
+        // });
+        // root_zone_w.resume();
+        // info!("set loadbable done!");
+        // HyperCallResult::Ok(0)
+    }
+
+    pub fn hypervisor_zone_start(&mut self, _zone_id: u64) -> HyperCallResult {
+        todo!();
+        // info!("handle hvc zone start");
+        // prepare_zone_start(find_zone_by_id(zone_id as _).unwrap())?;
+        // HyperCallResult::Ok(0)
+    }
+
+    fn hypervisor_zone_destroy(&mut self, _zone_id: u64) -> HyperCallResult {
+        #[cfg(target_arch = "invalid")]
+        {
+            info!("handle hvc zone destroy");
+            let zone = zone_management_prologue(self.cpu_data, zone_id)?;
+            let mut zone_w = zone.write();
+            let root_zone = root_zone();
+            let mut root_zone_w = root_zone.write();
+            // return zone's cpus to root_zone
+            zone_w.cpu_set.iter().for_each(|cpu_id| {
+                park_cpu(cpu_id);
+                root_zone_w.cpu_set.set_bit(cpu_id);
+                get_cpu_data(cpu_id).zone = Some(root_zone.clone());
+            });
+            // return loadable ram memory to root_zone
+            let mem_regs: Vec<HvMemoryRegion> = zone_w.config().mem_regions().to_vec();
+            mem_regs.iter().for_each(|mem| {
+                if !(mem.flags.contains(MemFlags::COMMUNICATION)
+                    || mem.flags.contains(MemFlags::ROOTSHARED))
+                {
+                    root_zone_w.mem_region_map_partial(&MemoryRegion::new_with_offset_mapper(
+                        mem.phys_start as _,
+                        mem.phys_start as _,
+                        mem.size as _,
+                        mem.flags,
+                    ));
+                }
+            });
+            // TODO：arm_zone_dcaches_flush， invalidate zone mems in cache
+            zone_w.cpu_set.iter().for_each(|id| {
+                get_cpu_data(id).cpu_on_entry = INVALID_ADDRESS;
+            });
+            drop(root_zone_w);
+            zone_w.gicv3_exit();
+            zone_w.adjust_irq_mappings();
+            drop(zone_w);
+            // Drop the zone will destroy zone's MemorySet so that all page tables will free
+            drop(zone);
+            remove_zone(zone_id as _);
+            root_zone.read().resume();
+            // TODO: config commit
+            info!("zone destroy succeed");
         }
-        info!("prepare to suspend root_cell");
-
-        let root_cell = root_cell().clone();
-        root_cell.read().suspend();
-
-        // todo: 检查新cell是否和已有cell同id或同名
-        let config_address = cell.write().gpm_query(config_address as _);
-
-        let cfg_pages_offs = config_address as usize & (PAGE_SIZE - 1);
-        let cfg_mapping = memory::hv_page_table().write().map_temporary(
-            align_down(config_address),
-            align_up(cfg_pages_offs + size_of::<HvCellDesc>()),
-            MemFlags::READ,
-        )?;
-
-        let desc: &HvCellDesc = unsafe {
-            ((cfg_mapping + cfg_pages_offs) as *const HvCellDesc)
-                .as_ref()
-                .unwrap()
-        };
-
-        do_cell_create(desc)?;
-
-        info!("cell create done!");
-        HyperCallResult::Ok(0)
-    }
-
-    fn hypervisor_cell_set_loadable(&mut self, cell_id: u64) -> HyperCallResult {
-        info!("handle hvc cell set loadable");
-        let cell = cell_management_prologue(self.cpu_data, cell_id)?;
-        let mut cell_w = cell.write();
-        if cell_w.loadable {
-            root_cell().read().resume();
-            return HyperCallResult::Ok(0);
-        }
-
-        cell_w.cpu_set.iter().for_each(|cpu_id| park_cpu(cpu_id));
-        cell_w.loadable = true;
-        info!("cell.mem_regions() = {:#x?}", cell_w.config().mem_regions());
-        let mem_regs: Vec<HvMemoryRegion> = cell_w.config().mem_regions().to_vec();
-
-        // remap to rootcell
-        let root_cell = root_cell();
-        let mut root_cell_w = root_cell.write();
-
-        mem_regs.iter().for_each(|mem| {
-            if mem.flags.contains(MemFlags::LOADABLE) {
-                root_cell_w.mem_region_map_partial(&MemoryRegion::new_with_offset_mapper(
-                    mem.phys_start as GuestPhysAddr,
-                    mem.phys_start as HostPhysAddr,
-                    mem.size as _,
-                    mem.flags,
-                ));
-            }
-        });
-        root_cell_w.resume();
-        info!("set loadbable done!");
-        HyperCallResult::Ok(0)
-    }
-
-    pub fn hypervisor_cell_start(&mut self, cell_id: u64) -> HyperCallResult {
-        info!("handle hvc cell start");
-        prepare_cell_start(find_cell_by_id(cell_id as _).unwrap())?;
-        HyperCallResult::Ok(0)
-    }
-
-    fn hypervisor_cell_destroy(&mut self, cell_id: u64) -> HyperCallResult {
-        info!("handle hvc cell destroy");
-        let cell = cell_management_prologue(self.cpu_data, cell_id)?;
-        let mut cell_w = cell.write();
-        let root_cell = root_cell();
-        let mut root_cell_w = root_cell.write();
-        // return cell's cpus to root_cell
-        cell_w.cpu_set.iter().for_each(|cpu_id| {
-            park_cpu(cpu_id);
-            root_cell_w.cpu_set.set_bit(cpu_id);
-            get_cpu_data(cpu_id).cell = Some(root_cell.clone());
-        });
-        // return loadable ram memory to root_cell
-        let mem_regs: Vec<HvMemoryRegion> = cell_w.config().mem_regions().to_vec();
-        mem_regs.iter().for_each(|mem| {
-            if !(mem.flags.contains(MemFlags::COMMUNICATION)
-                || mem.flags.contains(MemFlags::ROOTSHARED))
-            {
-                root_cell_w.mem_region_map_partial(&MemoryRegion::new_with_offset_mapper(
-                    mem.phys_start as _,
-                    mem.phys_start as _,
-                    mem.size as _,
-                    mem.flags,
-                ));
-            }
-        });
-        // TODO：arm_cell_dcaches_flush， invalidate cell mems in cache
-        cell_w.cpu_set.iter().for_each(|id| {
-            get_cpu_data(id).cpu_on_entry = INVALID_ADDRESS;
-        });
-        drop(root_cell_w);
-        cell_w.gicv3_exit();
-        cell_w.adjust_irq_mappings();
-        drop(cell_w);
-        // Drop the cell will destroy cell's MemorySet so that all page tables will free
-        drop(cell);
-        remove_cell(cell_id as _);
-        root_cell.read().resume();
-        // TODO: config commit
-        info!("cell destroy succeed");
         HyperCallResult::Ok(0)
     }
 }
