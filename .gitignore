@@ -3,5 +3,4 @@
 /test-img
 /hvisor.S
 /hvisor-elf.txt
-/imgs/dts/*.dtb
-images
+/images/aarch64/virtdisk/*
