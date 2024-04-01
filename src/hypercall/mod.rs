@@ -1,20 +1,27 @@
 #![allow(dead_code)]
+use crate::consts::DTB_IPA;
 use crate::error::HvResult;
-use crate::percpu::PerCpu;
+use crate::percpu::{get_cpu_data, PerCpu};
+use crate::zone::zone_create;
 
 use core::convert::TryFrom;
 use core::sync::atomic::{AtomicU32, Ordering};
 use numeric_enum_macro::numeric_enum;
 
+#[repr(C)]
+#[derive(Debug)]
+pub struct ZoneInfo {
+    id: u64,
+    image_phys_addr: u64,
+    dtb_phys_addr: u64,
+}
+
 numeric_enum! {
     #[repr(u64)]
     #[derive(Debug, Eq, PartialEq, Copy, Clone)]
     pub enum HyperCallCode {
-        HypervisorDisable = 0,
-        HypervisorZoneCreate = 1,
-        HypervisorZoneStart = 2,
-        HypervisorZoneSetLoadable = 3,
-        HypervisorZoneDestroy = 4,
+        HvZoneStart = 11,
+        HvZoneDestroy = 12,
     }
 }
 
@@ -42,109 +49,47 @@ impl<'a> HyperCall<'a> {
                 return Ok(0);
             }
         };
-        match code {
-            HyperCallCode::HypervisorDisable => self.hypervisor_disable(),
-            HyperCallCode::HypervisorZoneCreate => self.hypervisor_zone_create(arg0),
-            HyperCallCode::HypervisorZoneSetLoadable => self.hypervisor_zone_set_loadable(arg0),
-            HyperCallCode::HypervisorZoneStart => self.hypervisor_zone_start(arg0),
-            HyperCallCode::HypervisorZoneDestroy => self.hypervisor_zone_destroy(arg0),
+        unsafe {
+            match code {
+                HyperCallCode::HvZoneStart => self.hv_zone_start(&*(arg0 as *const ZoneInfo)),
+                HyperCallCode::HvZoneDestroy => self.hv_zone_destroy(arg0),
+            }
         }
     }
 
     fn hypervisor_disable(&mut self) -> HyperCallResult {
-        let cpus = PerCpu::activated_cpus();
-
-        static TRY_DISABLE_CPUS: AtomicU32 = AtomicU32::new(0);
-        TRY_DISABLE_CPUS.fetch_add(1, Ordering::SeqCst);
-        while TRY_DISABLE_CPUS.load(Ordering::Acquire) < cpus {
-            core::hint::spin_loop();
-        }
-        info!("Handle hvc disable");
-        self.cpu_data.deactivate_vmm()?;
-        unreachable!()
-    }
-
-    fn hypervisor_zone_create(&mut self, _config_address: u64) -> HyperCallResult {
         todo!();
-        // info!(
-        //     "handle hvc zone create, config_address = {:#x?}",
-        //     config_address
-        // );
+        // let cpus = PerCpu::activated_cpus();
 
-        // let zone = self.cpu_data.zone.clone().unwrap();
-        // if !Arc::ptr_eq(&zone, &root_zone()) {
-        //     return hv_result_err!(EPERM, "Creation over non-root zones: unsupported!");
+        // static TRY_DISABLE_CPUS: AtomicU32 = AtomicU32::new(0);
+        // TRY_DISABLE_CPUS.fetch_add(1, Ordering::SeqCst);
+        // while TRY_DISABLE_CPUS.load(Ordering::Acquire) < cpus {
+        //     core::hint::spin_loop();
         // }
-        // info!("prepare to suspend root_zone");
-
-        // let root_zone = root_zone().clone();
-        // root_zone.read().suspend();
-
-        // // todo: 检查新zone是否和已有zone同id或同名
-        // let config_address = zone.write().gpm_query(config_address as _);
-
-        // let cfg_pages_offs = config_address as usize & (PAGE_SIZE - 1);
-        // todo!();
-        // let cfg_mapping = memory::hv_page_table().write().map_temporary(
-        //     align_down(config_address),
-        //     align_up(cfg_pages_offs + size_of::<HvZoneDesc>()),
-        //     MemFlags::READ,
-        // )?;
-
-        // let desc: &HvZoneDesc = unsafe {
-        //     ((cfg_mapping + cfg_pages_offs) as *const HvZoneDesc)
-        //         .as_ref()
-        //         .unwrap()
-        // };
-
-        // do_zone_create(desc)?;
-
-        // info!("zone create done!");
-        // HyperCallResult::Ok(0)
+        // info!("Handle hvc disable");
+        // self.cpu_data.deactivate_vmm()?;
+        // unreachable!()
     }
 
-    fn hypervisor_zone_set_loadable(&mut self, _zone_id: u64) -> HyperCallResult {
-        todo!();
-        // info!("handle hvc zone set loadable");
-        // let zone = zone_management_prologue(self.cpu_data, zone_id)?;
-        // let mut zone_w = zone.write();
-        // if zone_w.loadable {
-        //     root_zone().read().resume();
-        //     return HyperCallResult::Ok(0);
-        // }
+    pub fn hv_zone_start(&mut self, zone_info: &ZoneInfo) -> HyperCallResult {
+        info!("handle hvc zone start");
+        let zone = zone_create(zone_info.id as _, zone_info.dtb_phys_addr as _, DTB_IPA)?;
+        let boot_cpu = zone.read().cpu_set.first_cpu().unwrap();
 
-        // zone_w.cpu_set.iter().for_each(|cpu_id| park_cpu(cpu_id));
-        // zone_w.loadable = true;
-        // info!("zone.mem_regions() = {:#x?}", zone_w.config().mem_regions());
-        // let mem_regs: Vec<HvMemoryRegion> = zone_w.config().mem_regions().to_vec();
+        let target_data = get_cpu_data(boot_cpu as _);
+        let _lock = target_data.ctrl_lock.lock();
 
-        // // remap to rootzone
-        // let root_zone = root_zone();
-        // let mut root_zone_w = root_zone.write();
+        if !target_data.arch_cpu.psci_on {
+            target_data.arch_cpu.psci_on = true;
+        } else {
+            error!("hv_zone_start: cpu {} already on", boot_cpu);
+            return hv_result_err!(EBUSY);
+        };
 
-        // mem_regs.iter().for_each(|mem| {
-        //     if mem.flags.contains(MemFlags::LOADABLE) {
-        //         root_zone_w.mem_region_map_partial(&MemoryRegion::new_with_offset_mapper(
-        //             mem.phys_start as GuestPhysAddr,
-        //             mem.phys_start as HostPhysAddr,
-        //             mem.size as _,
-        //             mem.flags,
-        //         ));
-        //     }
-        // });
-        // root_zone_w.resume();
-        // info!("set loadbable done!");
-        // HyperCallResult::Ok(0)
+        HyperCallResult::Ok(0)
     }
 
-    pub fn hypervisor_zone_start(&mut self, _zone_id: u64) -> HyperCallResult {
-        todo!();
-        // info!("handle hvc zone start");
-        // prepare_zone_start(find_zone_by_id(zone_id as _).unwrap())?;
-        // HyperCallResult::Ok(0)
-    }
-
-    fn hypervisor_zone_destroy(&mut self, _zone_id: u64) -> HyperCallResult {
+    fn hv_zone_destroy(&mut self, _zone_id: u64) -> HyperCallResult {
         #[cfg(target_arch = "invalid")]
         {
             info!("handle hvc zone destroy");

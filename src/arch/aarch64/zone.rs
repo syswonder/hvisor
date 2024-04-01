@@ -2,7 +2,6 @@ use alloc::vec::Vec;
 
 use crate::{
     consts::PAGE_SIZE,
-    device::irqchip::gicv3::Gic,
     error::HvResult,
     memory::{
         addr::{align_down, align_up},

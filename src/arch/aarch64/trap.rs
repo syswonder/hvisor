@@ -153,7 +153,7 @@ fn arch_handle_trap_el2(_regs: &mut GeneralRegisters) {
     loop {}
 }
 
-fn handle_iabt(regs: &mut GeneralRegisters) {
+fn handle_iabt(_regs: &mut GeneralRegisters) {
     let iss = ESR_EL2.read(ESR_EL2::ISS);
     let op = iss >> 6 & 0x1;
     let hpfar = read_sysreg!(HPFAR_EL2);
@@ -316,7 +316,7 @@ fn handle_psci_smc(regs: &mut GeneralRegisters, code: u64, arg0: u64, _arg1: u64
         PsciFnId::PSCI_CPU_OFF_32 | PsciFnId::PSCI_CPU_OFF_64 => {
             todo!();
             // park_current_cpu();
-            0
+            // 0
         }
         PsciFnId::PSCI_AFFINITY_INFO_32 | PsciFnId::PSCI_AFFINITY_INFO_64 => {
             !get_cpu_data(arg0 as _).arch_cpu.psci_on as _
@@ -331,7 +331,7 @@ fn handle_psci_smc(regs: &mut GeneralRegisters, code: u64, arg0: u64, _arg1: u64
             //     park_cpu(cpu);
             // }
             // park_current_cpu();
-            0
+            // 0
         }
 
         _ => {

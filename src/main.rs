@@ -39,7 +39,7 @@ mod platform;
 mod zone;
 
 use crate::consts::{DTB_IPA, MAX_CPU_NUM};
-use crate::platform::qemu_aarch64::TENANTS;
+use crate::platform::qemu_aarch64::ROOT_ZONE_DTB_ADDR;
 use crate::zone::zone_create;
 use arch::{cpu::cpu_start, entry::arch_entry};
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
@@ -47,7 +47,6 @@ use percpu::PerCpu;
 
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
 static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
-static ACTIVATED_CPUS: AtomicU32 = AtomicU32::new(0);
 static INIT_EARLY_OK: AtomicU32 = AtomicU32::new(0);
 static INIT_LATE_OK: AtomicU32 = AtomicU32::new(0);
 static MASTER_CPU: AtomicI32 = AtomicI32::new(-1);
@@ -100,14 +99,8 @@ fn primary_init_early(dtb: usize) {
     device::irqchip::init_early(&host_fdt);
     crate::arch::mm::init_hv_page_table(&host_fdt).unwrap();
 
-    for zone_id in 0..TENANTS.len() {
-        info!(
-            "guest{} dtb addr: {:#x}",
-            zone_id, TENANTS[zone_id] as usize
-        );
-        zone_create(zone_id, TENANTS[zone_id] as _, DTB_IPA);
-    }
-
+    zone_create(0, ROOT_ZONE_DTB_ADDR as _, DTB_IPA).unwrap();
+    
     INIT_EARLY_OK.store(1, Ordering::Release);
 }
 
@@ -184,7 +177,6 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
 
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
     wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _);
-    cpu.cpu_init(DTB_IPA);
 
     if is_primary {
         primary_init_late();

@@ -5,7 +5,7 @@ use spin::RwLock;
 use crate::{
     error::HvResult,
     percpu::PerCpu,
-    zone::{find_zone_by_id, root_zone, Zone},
+    zone::{find_zone, root_zone, Zone},
 };
 
 pub fn suspend_cpu(cpu_id: usize) {
@@ -46,28 +46,6 @@ pub fn reset_cpu(cpu_id: u64) {
     // let _lock = cpu_data.ctrl_lock.lock();
     // cpu_data.reset = true;
     // cpu_data.need_suspend = false;
-}
-
-/// check and suspend root_zone and new_zone.
-pub fn zone_management_prologue(
-    cpu_data: &mut PerCpu,
-    zone_id: u64,
-) -> HvResult<Arc<RwLock<Zone>>> {
-    let this_cpu_zone = cpu_data.zone.clone().unwrap();
-    let root_zone = root_zone();
-    if !Arc::ptr_eq(&this_cpu_zone, &root_zone) {
-        return hv_result_err!(EPERM, "Manage over non-root zones: unsupported!");
-    }
-    let zone = match find_zone_by_id(zone_id as _) {
-        Some(zone) => zone,
-        None => return hv_result_err!(ENOENT),
-    };
-    if Arc::ptr_eq(&zone, &root_zone) {
-        return hv_result_err!(EINVAL, "Manage root-zone is not allowed!");
-    }
-    root_zone.read().suspend();
-    zone.read().suspend();
-    HvResult::Ok(zone)
 }
 
 pub fn wait_for_poweron() -> ! {

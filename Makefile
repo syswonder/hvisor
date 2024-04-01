@@ -67,7 +67,6 @@ monitor:
 		-ex 'file $(hvisor_elf)' \
 		-ex 'set arch $(GDB_ARCH)' \
 		-ex 'target remote:1234' \
-		-ex 'add-symbol-file ~/packages/linux/vmlinux' \
 
 clean:
 	cargo clean

@@ -144,29 +144,6 @@ where
     ) -> PagingResult<(PhysAddr, MemFlags, PageSize)> {
         self.pt.query(vaddr)
     }
-    /// Map a physical address to a temporary virtual address.
-    /// It should only used when access an address in el2 but hypervisor doesn't have the mapping.
-    pub fn map_temporary(
-        &mut self,
-        _start_paddr: PhysAddr,
-        _size: usize,
-        _flags: MemFlags,
-    ) -> HvResult<VirtAddr> {
-        todo!();
-        //     if size > NUM_TEMPORARY_PAGES * PAGE_SIZE {
-        //         warn!("Trying to map a too big space in temporary area");
-        //         return hv_result_err!(EINVAL);
-        //     }
-        //     let region: MemoryRegion<PT::VA> = MemoryRegion::new_with_offset_mapper(
-        //         TEMPORARY_MAPPING_BASE.into(),
-        //         start_paddr,
-        //         size,
-        //         flags,
-        //     );
-        //     self.pt.map(&region)?;
-        //     self.regions.insert(region.start, region);
-        //     Ok(TEMPORARY_MAPPING_BASE)
-    }
 }
 
 impl<VA: Into<usize> + Copy> Debug for MemoryRegion<VA> {

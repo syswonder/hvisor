@@ -551,10 +551,3 @@ fn next_table_mut_or_create<'a, E: GenericPTE>(
     }
 }
 
-pub fn npages(sz: usize) -> usize {
-    if sz & 0xfff == 0 {
-        sz >> 12
-    } else {
-        (sz >> 12) + 1
-    }
-}

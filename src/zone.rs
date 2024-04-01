@@ -7,9 +7,11 @@ use crate::arch::s2pt::Stage2PageTable;
 use crate::consts::MAX_CPU_NUM;
 use crate::control::{resume_cpu, suspend_cpu};
 
+use crate::error::HvResult;
 use crate::memory::addr::GuestPhysAddr;
 use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemoryRegion, MemorySet};
 use crate::percpu::{get_cpu_data, CpuSet};
+use core::ops::Add;
 use core::panic;
 
 pub struct Zone {
@@ -108,37 +110,43 @@ impl Zone {
 static ROOT_ZONE: spin::Once<Arc<RwLock<Zone>>> = spin::Once::new();
 static ZONE_LIST: RwLock<Vec<Arc<RwLock<Zone>>>> = RwLock::new(vec![]);
 
-/// Add zone to CELL_LIST
-pub fn add_zone(zone: Arc<RwLock<Zone>>) {
-    ZONE_LIST.write().push(zone);
-}
-
-/// Remove zone from ZONE_LIST
-pub fn remove_zone(_zone_id: u32) {
-    todo!();
-    // let mut zone_list = ZONE_LIST.write();
-    // let (idx, _) = zone_list
-    //     .iter()
-    //     .enumerate()
-    //     .find(|(_, zone)| zone.read().config().id() == zone_id)
-    //     .unwrap();
-    // zone_list.remove(idx);
-}
-
 pub fn root_zone() -> Arc<RwLock<Zone>> {
     ROOT_ZONE.get().expect("Uninitialized root zone!").clone()
 }
 
-pub fn find_zone_by_id(_zone_id: u32) -> Option<Arc<RwLock<Zone>>> {
-    todo!();
-    // ZONE_LIST
-    //     .read()
-    //     .iter()
-    //     .find(|zone| zone.read().config().id() == zone_id)
-    //     .cloned()
+/// Add zone to CELL_LIST
+pub fn add_zone(zone: Arc<RwLock<Zone>>) {
+    ZONE_LIST.write().push(zone);
+    // todo: modify FREE_ZONE_IDS
 }
 
-pub fn zone_create(vmid: usize, dtb_ptr: *const u8, dtb_ipa: usize) -> Arc<RwLock<Zone>> {
+/// Remove zone from ZONE_LIST
+pub fn remove_zone(zone_id: usize) {
+    let mut zone_list = ZONE_LIST.write();
+    let (idx, _) = zone_list
+        .iter()
+        .enumerate()
+        .find(|(_, zone)| zone.read().id == zone_id)
+        .unwrap();
+    zone_list.remove(idx);
+        // todo: modify FREE_ZONE_IDS
+
+}
+
+pub fn find_zone(zone_id: usize) -> Option<Arc<RwLock<Zone>>> {
+    ZONE_LIST
+        .read()
+        .iter()
+        .find(|zone| zone.read().id == zone_id)
+        .cloned()
+}
+
+
+pub fn zone_create(
+    zone_id: usize,
+    dtb_ptr: *const u8,
+    dtb_ipa: usize,
+) -> HvResult<Arc<RwLock<Zone>>> {
     // we create the new zone here
     //TODO: create Zone with cpu_set
     let guest_fdt = unsafe { fdt::Fdt::from_ptr(dtb_ptr) }.unwrap();
@@ -151,7 +159,10 @@ pub fn zone_create(vmid: usize, dtb_ptr: *const u8, dtb_ipa: usize) -> Arc<RwLoc
 
     debug!("zone fdt guest_addr: {:#b}", guest_entry);
 
-    let mut zone = Zone::new(vmid);
+    if find_zone(zone_id).is_some() {
+        return hv_result_err!(EEXIST);
+    }
+    let mut zone = Zone::new(zone_id);
     zone.pt_init(guest_entry, &guest_fdt, dtb_ptr as usize, dtb_ipa)
         .unwrap();
     zone.mmio_init(&guest_fdt);
@@ -179,5 +190,5 @@ pub fn zone_create(vmid: usize, dtb_ptr: *const u8, dtb_ipa: usize) -> Arc<RwLoc
     }
     add_zone(new_zone_pointer.clone());
 
-    new_zone_pointer
+    Ok(new_zone_pointer)
 }

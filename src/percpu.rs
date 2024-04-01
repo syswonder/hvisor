@@ -6,7 +6,7 @@ use crate::consts::{INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::error::HvResult;
 use crate::memory::addr::VirtAddr;
 use crate::zone::Zone;
-use crate::{ACTIVATED_CPUS, ENTERED_CPUS};
+use crate::ENTERED_CPUS;
 use core::fmt::Debug;
 use core::sync::atomic::Ordering;
 
@@ -43,55 +43,19 @@ impl PerCpu {
         ret
     }
 
-    pub fn cpu_init(&mut self, dtb: usize) {
-        info!(
-            "activating cpu {:#x} {:#x} {:#x}",
-            self.id, self.cpu_on_entry, dtb
-        );
-        self.arch_cpu.init(self.cpu_on_entry, self.id, dtb);
-    }
-
     pub fn run_vm(&mut self) {
-        if self.boot_cpu {
-            info!("CPU{}: Starting up the virtual machine...", self.id);
-            self.arch_cpu.run();
-        } else {
+        if !self.boot_cpu {
             info!("CPU{}: Idling the CPU before starting VM...", self.id);
             self.arch_cpu.idle();
-
-            info!("CPU{}: Running the virtual machine...", self.id);
-            self.arch_cpu.run();
         }
+        info!("CPU{}: Running virtual machine...", self.id);
+        self.arch_cpu.run();
     }
 
     pub fn entered_cpus() -> u32 {
         ENTERED_CPUS.load(Ordering::Acquire)
     }
-    pub fn activated_cpus() -> u32 {
-        ACTIVATED_CPUS.load(Ordering::Acquire)
-    }
-    pub fn activate_vmm(&mut self) {
-        ACTIVATED_CPUS.fetch_add(1, Ordering::SeqCst);
-        info!("activating cpu {}", self.id);
 
-        #[cfg(target_arch = "aarch64")]
-        {
-            todo!("activate_vmm...");
-            // set_vtcr_flags();
-            // set_hcr_flags();
-        }
-        #[cfg(target_arch = "riscv64")]
-        {
-            todo!("activate_vmm...");
-        }
-    }
-    pub fn deactivate_vmm(&mut self) -> HvResult {
-        ACTIVATED_CPUS.fetch_sub(1, Ordering::SeqCst);
-        info!("Disabling cpu {}", self.id);
-        todo!();
-        // self.arch_shutdown_self()?;
-        // Ok(())
-    }
     /*should be in vcpu*/
     // pub fn arch_shutdown_self(&mut self) -> HvResult {
     //     /*irqchip reset*/

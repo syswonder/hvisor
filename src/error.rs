@@ -21,11 +21,11 @@ pub enum HvErrorNum {
 }
 
 pub struct HvError {
-    num: HvErrorNum,
-    loc_line: u32,
-    loc_col: u32,
-    loc_file: &'static str,
-    msg: Option<String>,
+    pub num: HvErrorNum,
+    pub loc_line: u32,
+    pub loc_col: u32,
+    pub loc_file: &'static str,
+    pub msg: Option<String>,
 }
 
 pub type HvResult<T = ()> = core::result::Result<T, HvError>;

@@ -1,6 +1,6 @@
 use crate::{
     arch::sysreg::write_sysreg,
-    consts::{PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
+    consts::{DTB_IPA, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
     memory::VirtAddr,
     percpu::this_cpu_data,
 };
@@ -48,7 +48,7 @@ impl ArchCpu {
         }
     }
 
-    pub fn init(&mut self, entry: usize, _cpu_id: usize, dtb: usize) {
+    pub fn reset(&mut self, entry: usize, _cpu_id: usize, dtb: usize) {
         ELR_EL2.set(entry as _);
         SPSR_EL2.set(0x3c5);
         let regs = self.guest_reg();
@@ -131,6 +131,8 @@ impl ArchCpu {
     }
 
     pub fn run(&mut self) {
+        assert!(this_cpu_id() == self.cpuid);
+        self.reset(this_cpu_data().cpu_on_entry, self.cpuid, DTB_IPA);
         self.psci_on = true;
         unsafe {
             vmreturn(self.guest_reg() as *mut _ as usize);
@@ -141,6 +143,7 @@ impl ArchCpu {
         // unsafe {
         //     core::arch::asm!("wfi");
         // }
+        assert!(this_cpu_id() == self.cpuid);
         info!("cpu {} idling", self.cpuid);
         let cpu_data = this_cpu_data();
         let mut _lock = Some(cpu_data.ctrl_lock.lock());
@@ -151,7 +154,6 @@ impl ArchCpu {
         }
         drop(_lock);
         info!("cpu {} wake up from idle", self.cpuid);
-        ELR_EL2.set(cpu_data.cpu_on_entry as _);
     }
 }
 
