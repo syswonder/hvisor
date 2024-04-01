@@ -5,11 +5,23 @@
 #define MMAP_SIZE 4096
 #define MAX_REQ 32
 #define MAX_CPUS 20
-// We use queue signal instead of flag signal to catch all signals, preventing some signals should be processed but ignored.
-#define SIGHVI 34
-#define HVISOR_INIT_VIRTIO  _IO(1, 0) // virtio device init
-#define HVISOR_GET_TASK _IO(1, 1)	
-#define HVISOR_FINISH _IO(1, 2)		  // finish one virtio req	
+
+// used when start a zone.
+struct hvisor_zone_info {
+	__u64 image_phys_addr;
+	__u64 dtb_phys_addr;
+};
+struct hvisor_zone_load {
+	__u32 images_num;
+	__u32 padding;
+	struct hvisor_image_desc* images;
+};
+
+struct hvisor_image_desc {
+	__u64 source_address; // image address in user space
+	__u64 target_address; // image physical address to load
+	__u64 size;
+};
 
 // receive request from el2
 struct device_req {
@@ -38,7 +50,10 @@ struct hvisor_device_region {
 	__u64 cfg_values[MAX_CPUS];
 };
 
-
+#define HVISOR_INIT_VIRTIO  _IO(1, 0) // virtio device init
+#define HVISOR_GET_TASK _IO(1, 1)	
+#define HVISOR_FINISH _IO(1, 2)		  // finish one virtio req	
+#define HVISOR_ZONE_START _IOW(1, 3, struct hvisor_zone_load*)
 
 // hypercall
 #define HVISOR_CALL_NUM_RESULT "x0"
@@ -47,6 +62,7 @@ struct hvisor_device_region {
 
 #define HVISOR_HC_INIT_VIRTIO 9
 #define HVISOR_HC_FINISH_REQ 10
+#define HVISOR_HC_START_ZONE 11
 
 static inline __u64 hvisor_call(__u64 num)
 {

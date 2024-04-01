@@ -16,3 +16,4 @@ daemon/hvisor
 *.cpp
 /.idea
 vmlinux
+*.ext4

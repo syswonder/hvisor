@@ -5,7 +5,6 @@
 #include<linux/mm.h>
 #include<linux/interrupt.h>
 #include<linux/slab.h>   
-// #include <linux/ioctl.h>
 #include <asm/io.h>
 #include "hvisor.h"
 #include <linux/sched/signal.h>
@@ -13,19 +12,13 @@
 #include <linux/of_irq.h>
 #include <asm/page.h>
 #include <linux/gfp.h>
-// #include <linux/fs.h>
-// #include <linux/err.h>
-static struct task_struct *task = NULL;
-
+#include <linux/vmalloc.h>
 struct hvisor_device_region *device_region; 
 
 // initial virtio el2 shared region
-int hvisor_init_virtio(void) 
+static int hvisor_init_virtio(void) 
 {
 	int err;
-    // unsigned long pa = __get_free_pages(GFP_KERNEL, 0);
-	// device_region = kmalloc(MMAP_SIZE, GFP_KERNEL);
-    // pr_info("device_region pa is %x\n", pa);
 	device_region = __get_free_pages(GFP_KERNEL, 0);
     SetPageReserved(virt_to_page(device_region));
     // init device region
@@ -42,7 +35,7 @@ int hvisor_init_virtio(void)
 }
 
 // finish virtio req and send result to el2
-int hvisor_finish_req(void) 
+static int hvisor_finish_req(void) 
 {
     pr_info("hvisor finish request\n");
     int err;
@@ -52,22 +45,87 @@ int hvisor_finish_req(void)
     return 0;
 }
 
+static int load_image(struct hvisor_image_desc __user *arg, __u64 *phys_addr) {
+    struct hvisor_image_desc image;
+    struct vm_struct *vma;
+    int err = 0;
+    __u64 phys_start, offset_in_page;
+    unsigned long size;
+    
+    if (copy_from_user(&image, arg, sizeof(image_desc)))
+        return -EFAULT;
+    *phys_addr = image.target_address;
+    phys_start = image.target_address & PAGE_MASK;
+    offset_in_page = image.target_address & ~PAGE_MASK;
+    size = PAGE_ALIGN(image.size + offset_in_page);
+
+    vma = __get_vm_area(size, VM_IOREMAP, VMALLOC_START, VMALLOC_END);
+    if (!vma) {
+        pr_err("hvisor: failed to allocate virtual kernel memory for image\n");
+        return -ENOMEM;
+    }
+    vma->phys_addr = phys_start;
+    if (ioremap_page_range(vma->addr, vma->addr + size, phys_start, PAGE_KERNEL_EXEC)) {
+        pr_err("hvisor: failed to ioremap image\n");
+        err = -EFAULT;
+        goto out_free_vma;
+    }
+
+    if(copy_from_user((void *)(vma->addr + offset_in_page), image.source_address, image.size)) {
+        err = -EFAULT;
+        goto out_unmap_vma;
+    }
+    // Make sure the data is in memory before we start executing it.
+    flush_icache_range(vma->addr + offset_in_page, vma->addr + offset_in_page + image.size);
+
+out_free_vma:
+    vunmap(vma->addr);
+    return err;
+}
+
+static int hvisor_zone_start(struct hvisor_zone_load __user* arg) {
+    struct hvior_zone_load zone_load;
+    struct hvisor_image_desc __user *images = arg->images;
+    struct hvisor_zone_info *zone_info;
+    zone_info = kmalloc(sizeof(struct hvisor_zone_info), GFP_KERNEL);
+
+    if (zone_info == NULL) {
+        pr_err("hvisor: failed to allocate memory for zone_info\n");
+        return -ENOMEM;
+    }
+    int err = 0;
+    if (copy_from_user(&zone_load, arg, sizeof(zone_load))) 
+        return -EFAULT;
+    // load image
+    err = load_image(images, &zone_info->image_phys_addr);
+    // load dtb
+    err = load_image(++images, &zone_info->dtb_phys_addr);
+    if (err)
+        return err;
+    err = hvisor_call_arg1(HVISOR_HC_START_ZONE, __pa(zone_info));
+    return err;
+}
+
 static long hvisor_ioctl(struct file *file, unsigned int ioctl,
 			    unsigned long arg)
 {
+    int err = 0;
     switch (ioctl)
     {
     case HVISOR_INIT_VIRTIO:
-        hvisor_init_virtio(); 
-        task = get_current(); // get hvisor user process
+        err = hvisor_init_virtio(); 
+        break;
+    case HVISOR_ZONE_START:
+        err = hvisor_zone_start((struct hvisor_zone_load __user*) arg);
         break;
     case HVISOR_FINISH:
-        hvisor_finish_req();
+        err = hvisor_finish_req();
         break;
     default:
+        err = -EINVAL;
         break;
     }
-    return 0;
+    return err;
 }
 
 // Kernel mmap handler
@@ -101,29 +159,6 @@ static struct miscdevice hvisor_misc_dev = {
 	.fops = &hvisor_fops,
 };
 
-// Interrupt handler for IRQ.
-static irqreturn_t irq_handler(int irq, void *dev_id) 
-{
-    if (dev_id != &hvisor_misc_dev) {
-        return IRQ_NONE;
-    }
-    struct siginfo info;
-    pr_info("el2 IRQ occurred\n");
-
-    memset(&info, 0, sizeof(struct siginfo));
-    info.si_signo = SIGHVI;
-    info.si_code = SI_QUEUE;
-    info.si_int = 1;
-    // Send signale SIGHVI to hvisor user task
-    if (task != NULL) {
-        pr_info("send signal to hvisor device\n");
-        if(send_sig_info(SIGHVI, (struct kernel_siginfo *)&info, task) < 0) {
-            pr_err("Unable to send signal\n");
-        }
-    }
-    return IRQ_HANDLED;
-}
-
 /*
 ** Module Init function
 */
@@ -135,27 +170,8 @@ static int __init hvisor_init(void)
         pr_err("hvisor_misc_register failed!!!\n");
         return err;
     }
-
-    // The irq number must be retrieved from dtb node, because it is different from GIC's IRQ number.
-//    struct device_node *node = NULL;
-//    node = of_find_node_by_path("/vm_service");
-//    if (!node) {
-//        pr_err("vm_service not found\n");
-//        return -1;
-//    }
-//
-//    int irq = of_irq_get(node, 0);
-//    err = request_irq(irq, irq_handler, IRQF_SHARED | IRQF_TRIGGER_RISING, "hvisor", &hvisor_misc_dev);
-//    if (err) {
-//        pr_err("hvisor cannot register IRQ, err is %d\n", err);
-//        goto irq;
-//    }
     printk("hvisor init done!!!\n");
     return 0;
-
-//irq:
-//    free_irq(irq,(void *)(irq_handler));
-//    return -1;
 }
 
 /*

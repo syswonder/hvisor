@@ -243,6 +243,8 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen);
 void virtio_inject_irq(uint32_t target_cell, uint32_t irq_id);
 void vq_retchain(VirtQueue *vq);
 void vq_endchains(VirtQueue *vq, int is_no_more);
+void handle_virtio_requests();
+int virtio_init();
 
 
 /* This marks a buffer as continuing via the next field. */
