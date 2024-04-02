@@ -53,6 +53,9 @@ disa:
 	rust-objdump --disassemble $(hvisor_elf) > hvisor.S
 
 # Run targets
+
+daemon: 
+	cd qemu-test/host && ./test-type1.sh
 run: all
 	$(QEMU) $(QEMU_ARGS)
 

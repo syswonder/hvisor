@@ -4,3 +4,13 @@
 /hvisor.S
 /hvisor-elf.txt
 /images/aarch64/virtdisk/*
+*.mod.[co]
+*.mod
+*.[oa]
+*.cmd
+Module.symvers
+modules.order
+driver/main.ko
+daemon/hvisor
+.gdb_history
+Image2
