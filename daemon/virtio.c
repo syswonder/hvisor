@@ -15,7 +15,7 @@
 #include "tools.h"
 /// hvisor kernel module fd
 int ko_fd;
-extern volatile struct hvisor_device_region *device_region;
+volatile struct hvisor_device_region *device_region;
 
 pthread_mutex_t RES_MUTEX = PTHREAD_MUTEX_INITIALIZER;
 VirtIODevice *vdevs[16];
@@ -42,7 +42,7 @@ int init_virtio_devices()
 
     int mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
     phys_addr = NON_ROOT_PHYS_START2;
-    virt_addr = mmap(NULL, NON_ROOT_PHYS_SIZE2, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, phys_addr);
+    virt_addr = mmap(NULL, NON_ROOT_PHYS_SIZE2, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, (off_t) phys_addr);
     log_info("mmap virt addr is %#x", virt_addr);
     dev = create_virtio_device(VirtioTBlock, 1);
     ((BlkDev *)dev->dev)->img_fd = img_fd;

@@ -35,7 +35,9 @@
         "unistd.h": "c",
         "errno.h": "c",
         "queue.h": "c",
-        "pthread.h": "c"
+        "pthread.h": "c",
+        "io.h": "c",
+        "err.h": "c"
     },
     "rust-analyzer.showUnlinkedFileNotification": false,
     // "rust-analyzer.cargo.features": [
