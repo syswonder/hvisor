@@ -23,8 +23,8 @@ QEMU_ARGS += -bios $(UBOOT)
 QEMU_ARGS += -device loader,file="$(hvisor_bin)",addr=0x40400000,force-raw=on
 QEMU_ARGS += -device loader,file="$(zone0_kernel)",addr=0x50000000,force-raw=on
 QEMU_ARGS += -device loader,file="$(zone0_dtb)",addr=0x90000000,force-raw=on
-QEMU_ARGS += -device loader,file="$(zone1_kernel)",addr=0x70000000,force-raw=on
-QEMU_ARGS += -device loader,file="$(zone1_dtb)",addr=0x91000000,force-raw=on
+# QEMU_ARGS += -device loader,file="$(zone1_kernel)",addr=0x70000000,force-raw=on
+# QEMU_ARGS += -device loader,file="$(zone1_dtb)",addr=0x91000000,force-raw=on
 
 QEMU_ARGS += -drive if=none,file=$(FSIMG1),id=Xa003e000,format=raw
 QEMU_ARGS += -device virtio-blk-device,drive=Xa003e000
@@ -34,7 +34,7 @@ QEMU_ARGS += -device virtio-blk-device,drive=Xa003c000
 
 # QEMU_ARGS += -netdev tap,id=Xa003a000,ifname=tap0,script=no,downscript=no
 # QEMU_ARGS += -device virtio-net-device,netdev=Xa003a000,mac=52:55:00:d1:55:01
-QEMU_ARGS += -netdev user,id=n0,hostfwd=tcp::5555-:22 -device virtio-net-device,bus=virtio-mmio-bus.24,netdev=n0 
+QEMU_ARGS += -netdev user,id=n0,hostfwd=tcp::5555-:22 -device virtio-net-device,bus=virtio-mmio-bus.30,netdev=n0 
 
 QEMU_ARGS += -chardev pty,id=Xa0038000
 QEMU_ARGS += -device virtio-serial-device -device virtconsole,chardev=Xa0038000

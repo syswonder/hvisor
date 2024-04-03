@@ -100,7 +100,6 @@ fn primary_init_early(dtb: usize) {
     crate::arch::mm::init_hv_page_table(&host_fdt).unwrap();
 
     zone_create(0, ROOT_ZONE_DTB_ADDR as _, DTB_IPA).unwrap();
-    
     INIT_EARLY_OK.store(1, Ordering::Release);
 }
 
@@ -111,17 +110,16 @@ fn primary_init_late() {
     INIT_LATE_OK.store(1, Ordering::Release);
 }
 
-fn per_cpu_mm_init(cpu: &mut PerCpu) {
+fn percpu_hv_pt_install(cpu: &mut PerCpu) {
     if cpu.zone.is_none() {
         warn!("zone is not created for cpu {}", cpu.id);
     } else {
         unsafe {
             memory::hv_page_table().read().activate();
-            cpu.zone.clone().unwrap().read().gpm.activate();
         };
     }
 
-    println!("CPU {} mm_init OK.", cpu.id);
+    info!("CPU {} hv_pt_install OK.", cpu.id);
 }
 
 fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
@@ -172,7 +170,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         wait_for_counter(&INIT_EARLY_OK, 1);
     }
 
-    per_cpu_mm_init(cpu);
+    percpu_hv_pt_install(cpu);
     device::irqchip::irqchip_cpu_init();
 
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);

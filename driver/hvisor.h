@@ -8,10 +8,12 @@
 
 // used when start a zone.
 struct hvisor_zone_info {
+	__u64 zone_id;
 	__u64 image_phys_addr;
 	__u64 dtb_phys_addr;
 };
 struct hvisor_zone_load {
+	__u64 zone_id;
 	__u32 images_num;
 	__u32 padding;
 	struct hvisor_image_desc* images;

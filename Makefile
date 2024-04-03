@@ -42,7 +42,7 @@ ifeq ($(MODE), release)
 endif
 
 # Targets
-.PHONY: all elf disa run gdb monitor clean
+.PHONY: all elf disa run gdb monitor clean daemon
 all: $(hvisor_bin)
 
 elf:

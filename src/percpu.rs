@@ -49,6 +49,7 @@ impl PerCpu {
             self.arch_cpu.idle();
         }
         info!("CPU{}: Running virtual machine...", self.id);
+        self.activate_gpm();
         self.arch_cpu.run();
     }
 
@@ -56,6 +57,9 @@ impl PerCpu {
         ENTERED_CPUS.load(Ordering::Acquire)
     }
 
+    pub fn activate_gpm(&self) {
+        unsafe { self.zone.clone().unwrap().read().gpm.activate(); }
+    }
     /*should be in vcpu*/
     // pub fn arch_shutdown_self(&mut self) -> HvResult {
     //     /*irqchip reset*/

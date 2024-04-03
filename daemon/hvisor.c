@@ -64,10 +64,10 @@ static int zone_start(int argc, char *argv[]) {
     struct hvisor_zone_load *zone_load;
     struct hvisor_image_desc *images;
     int fd, err;
-    if (argc < 6) {
+    if (argc < 8) {
         help(1);
     }
-    if (strcmp(argv[0], "-kernel") != 0 || strcmp(argv[3], "-dtb") != 0) {
+    if (strcmp(argv[0], "-kernel") != 0 || strcmp(argv[3], "-dtb") != 0 || strcmp(argv[6], "-id") != 0)  {
         help(1);
     }
     zone_load = malloc(sizeof(struct hvisor_zone_load));
@@ -78,6 +78,7 @@ static int zone_start(int argc, char *argv[]) {
     images[1].source_address = read_file(argv[4], &images[1].size);
     sscanf(argv[2], "%llx", &images[0].target_address);
     sscanf(argv[5], "%llx", &images[1].target_address);
+	sscanf(argv[7], "%llu", &zone_load->zone_id);
     zone_load->images = images;
     fd = open_dev();
     err = ioctl(fd, HVISOR_ZONE_START, zone_load);

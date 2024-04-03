@@ -53,13 +53,13 @@ static int load_image(struct hvisor_image_desc __user *arg, __u64 *phys_addr) {
     int err = 0;
     __u64 phys_start, offset_in_page;
     unsigned long size;
-    
     if (copy_from_user(&image, arg, sizeof(struct hvisor_image_desc)))
         return -EFAULT;
     *phys_addr = image.target_address;
     phys_start = image.target_address & PAGE_MASK;
     offset_in_page = image.target_address & ~PAGE_MASK;
     size = PAGE_ALIGN(image.size + offset_in_page);
+    pr_info("hvisor load image to %llx, offset_in_page: %llx, size: %llx\n", phys_start, offset_in_page, size);
 
     vma = __get_vm_area(size, VM_IOREMAP, VMALLOC_START, VMALLOC_END);
     if (!vma) {
@@ -98,6 +98,7 @@ static int hvisor_zone_start(struct hvisor_zone_load __user* arg) {
     int err = 0;
     if (copy_from_user(&zone_load, arg, sizeof(zone_load))) 
         return -EFAULT;
+	zone_info->zone_id = zone_load.zone_id;
     // load image
     err = load_image(images, &zone_info->image_phys_addr);
     // load dtb

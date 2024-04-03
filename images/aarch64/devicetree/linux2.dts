@@ -134,7 +134,7 @@
 	chosen {
 		bootargs = "earlycon console=hvc0 root=/dev/vda rw";
         // bootargs = "root=/dev/vda mem=768M";
-		stdout-path = "/pl011@9000000";
+		stdout-path = "/virtio_mmio@a003800";
 	};
 
 };
