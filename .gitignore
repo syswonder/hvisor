@@ -4,6 +4,8 @@
 /hvisor.S
 /hvisor-elf.txt
 /images/aarch64/virtdisk/*
+/images/aarch64/kernel/*
+/images/aarch64/devicetree/*.dtb
 *.mod.[co]
 *.mod
 *.[oa]
@@ -13,4 +15,3 @@ modules.order
 driver/main.ko
 daemon/hvisor
 .gdb_history
-Image2
