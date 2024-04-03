@@ -1,11 +1,18 @@
 #![allow(unused)]
-use aarch64_cpu::registers::TTBR0_EL2;
+use aarch64_cpu::registers::{SCTLR_EL2, TTBR0_EL2};
 use core::fmt;
 use numeric_enum_macro::numeric_enum;
 use tock_registers::interfaces::Writeable;
 
-use crate::memory::addr::{GuestPhysAddr, HostPhysAddr, PhysAddr};
-use crate::memory::{GenericPTE, Level4PageTable, MemFlags, PagingInstr, PAGE_SIZE};
+use crate::{
+    consts::PAGE_SIZE,
+    memory::{
+        addr::{GuestPhysAddr, HostPhysAddr, PhysAddr},
+        MemFlags,
+    },
+};
+
+use super::paging::{GenericPTE, Level4PageTable, PagingInstr};
 
 bitflags::bitflags! {
     /// Memory attribute fields in the VMSAv8-64 translation table format descriptors.
@@ -204,6 +211,7 @@ pub struct S1PTInstr;
 impl PagingInstr for S1PTInstr {
     unsafe fn activate(root_paddr: HostPhysAddr) {
         TTBR0_EL2.set(root_paddr as _);
+        super::cpu::enable_mmu();
     }
 
     fn flush(_vaddr: Option<usize>) {
