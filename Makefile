@@ -5,6 +5,7 @@ STATS ?= off
 PORT ?= 2333
 MODE ?= debug
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
+KDIR ?= ../../linux
 
 ifeq ($(ARCH),aarch64)
     RUSTC_TARGET := aarch64-unknown-none
@@ -21,6 +22,7 @@ endif
 export MODE
 export LOG
 export ARCH
+export KDIR
 
 # Build paths
 build_path := target/$(RUSTC_TARGET)/$(MODE)
@@ -42,7 +44,7 @@ ifeq ($(MODE), release)
 endif
 
 # Targets
-.PHONY: all elf disa run gdb monitor clean daemon
+.PHONY: all elf disa run gdb monitor clean tools rootfs
 all: $(hvisor_bin)
 
 elf:
@@ -52,10 +54,10 @@ disa:
 	aarch64-none-elf-readelf -a $(hvisor_elf) > hvisor-elf.txt
 	rust-objdump --disassemble $(hvisor_elf) > hvisor.S
 
-# Run targets
+tools: 
+	make -C tools && \
+	make -C driver
 
-daemon: 
-	cd qemu-test/host && ./test-type1.sh
 run: all
 	$(QEMU) $(QEMU_ARGS)
 
@@ -73,25 +75,7 @@ monitor:
 
 clean:
 	cargo clean
+	make -C tools clean
+	make -C driver clean
 
 include scripts/qemu-$(ARCH).mk
-
-# -drive if=none,file=fsimg1,id=hd1,format=raw
-
-# echo " go 0x7fc00000 " | \
-# -bios imgs/u-boot/u-boot.bin \
-# -append "root=/dev/vda mem=768M"
-# -device loader,file="$(hvisor_bin)",addr=0x7fc00000,force-raw=on\
-# -drive file=./qemu-test/host/rootfs.qcow2,discard=unmap,if=none,id=disk,format=qcow2 \
-# -drive if=none,file=fsimg,id=disk,format=raw \
-# -net nic \
-# -net user,hostfwd=tcp::$(PORT)-:22
-
-# dhcp
-# pci enum
-# virtio scan
-# virtio info
-
-# ext4ls virtio 1
-# ext4load virtio 1 0x7fc00000 hvisor.bin; go 0x7fc00000
-

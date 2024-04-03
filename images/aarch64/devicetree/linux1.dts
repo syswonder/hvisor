@@ -87,6 +87,7 @@
 	// 	compatible = "virtio,mmio";
 	// };
 
+
 	// virtio_mmio@a003400 {
 	// 	dma-coherent;
 	//  interrupt-parent = <0x01>;
@@ -95,9 +96,10 @@
 	// 	compatible = "virtio,mmio";
 	// };
 
+	// virtio 9p-pci
 	// virtio_mmio@a003600 {
 	// 	dma-coherent;
-	//  interrupt-parent = <0x01>;
+	// 	interrupt-parent = <0x01>;
 	// 	interrupts = <0x0 0x2b 0x1>;
 	// 	reg = <0x0 0xa003600 0x0 0x200>;
 	// 	compatible = "virtio,mmio";
