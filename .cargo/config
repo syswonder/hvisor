@@ -1,0 +1,12 @@
+[target.riscv64gc-unknown-none-elf]
+rustflags = [
+    "-Clink-arg=-Tscripts/qemu-riscv64.ld",
+    "-Cforce-frame-pointers=yes"
+]
+
+[target.aarch64-unknown-none]
+rustflags = [
+    "-Clink-arg=-Tscripts/qemu-aarch64.ld",
+    "-Ctarget-feature=+a57,+v8a,+strict-align,-neon,-fp-armv8",
+    "-Cforce-frame-pointers=yes",
+]

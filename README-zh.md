@@ -12,7 +12,7 @@
 
 README：[中文](./README-zh.md) | [English](README.md)
 
-基于Linux的Armv8 Rust Hypervisor，部分借鉴了[RVM1.5](https://github.com/rcore-os/RVM1.5)和[jailhouse](https://github.com/siemens/jailhouse)。
+一款轻量级Type-1虚拟机监控器，使用Rust语言编写。
 
 ## 进展
 
@@ -28,76 +28,52 @@ README：[中文](./README-zh.md) | [English](README.md)
 
 ## 如何运行
 
-详细的配置和运行教程，包括配置开发环境、制作根文件系统等，请参考：[详细配置流程](https://report.syswonder.org/#/2023/20230421_ARM64-QEMU-jailhouse)。
+**启动qemu**
 
-为了降低入门开发难度，[云盘](https://bhpan.buaa.edu.cn/link/AA1BF35BBB05DA40EB8A837C2B2B3C8277)（提取码：sysH）提供了已经编译好的Linux内核`Image`和根文件系统`ubuntu-20.04-rootfs_ext4.img`，用户名为arm64，密码为一个空格。其主目录下的目录组织如下：
-
-```
-├── home
-	├── arm64 
-		├── images: 包含一个Linux Image和内存文件系统
-		├── hvisor: 运行hvisor所需要的文件
-		├── jailhouse: 运行jailhouse所需要的文件
-```
-
-下面介绍基于`ubuntu-20.04-rootfs_ext4.img`，在jailhouse/hvisor上运行一个non-root-linux的方法：
-
-1. 在本项目目录下构建`hvisor.bin`：
-
-   ```makefile
-   make all
-   ```
-
-   并将`target/aarch64/debug/hvisor.bin`复制到`ubuntu-20.04-rootfs_ext4.img`中的`hvisor`目录下。
-
-2. 在本项目目录下启动qemu
-
-   ```bash
-   sudo qemu-system-aarch64 \
-       -machine virt,gic_version=3 \
-       -machine virtualization=true \
-       -cpu cortex-a57 \
-       -machine type=virt \
-       -nographic \
-       -smp 16  \
-       -m 1024 \
-       -kernel your-linux-Image-path/Image \
-       -append "console=ttyAMA0 root=/dev/vda rw mem=768m" \
-       -drive if=none,file=your-rootfs-path/ubuntu-20.04-rootfs_ext4.img,id=hd0,format=raw \
-       -device virtio-blk-device,drive=hd0 \
-       -net nic \
-       -net user,hostfwd=tcp::2333-:22
-   ```
-
-3. 启动后输入用户名`arm64`，密码为一个空格。
-
-4. 进入主目录，启动non-root-linux：
-
-   * hvisor：进入hvisor文件夹，依次执行：
-
-     ```
-     ./setup.sh
-     ./linux.sh
-     ```
-
-   * jailhouse：进入jailhouse文件夹，执行：
-
-     ```
-     ./linux.sh
-     ```
-
-### 运行双串口
-
-如果希望non-root-linux和root-linux处于两个不同的终端中，可以在qemu启动命令的最后加入：
+在 `hvisor` 目录下，执行：
 
 ```
--device virtio-serial-device -chardev pty,id=serial3 -device virtconsole,chardev=serial3
+make run
 ```
 
-启动qemu后，观察到终端输出的`char device redirected to /dev/pts/num (label serial3)`信息，在另一个终端中执行：
+**观察终端输出信息**
+
+```
+char device redirected to /dev/pts/num (label serial)
+```
+
+这里的 `num` 是一个具体的数字，记住它。
+
+**在uboot中输入启动命令**
+
+该启动命令会从物理地址`0x40400000`启动hvisor，设备树的地址为`0x40000000`
+
+```
+bootm 0x40400000 - 0x40000000
+```
+
+hvisor启动时，会自动启动root linux（用于管理的Linux），并进入root linux的shell界面。
+
+**启动non-root-linux**
+
+在root linux中，进入`/home`目录，执行脚本：
+
+```
+./start-linux.sh
+```
+
+在宿主机上输入以下指令，启动另一个终端，用于第二个Linux的输出：
 
 ```
 sudo screen /dev/pts/num
 ```
 
-其中num为一个具体的数字。
+`num` 是上一步在root终端中输出的具体数字。
+
+**验证地址空间的不同**
+
+现在启动了两个终端，可以通过以下命令验证两个内核使用了不同的地址空间。
+
+```shell
+cat /proc/iomem
+```
