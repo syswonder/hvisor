@@ -121,6 +121,9 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
     case HVISOR_ZONE_START:
         err = hvisor_zone_start((struct hvisor_zone_load __user*) arg);
         break;
+	case HVISOR_ZONE_SHUTDOWN:
+		err = hvisor_call_arg1(HVISOR_HC_SHUTDOWN_ZONE, arg);	
+		break;
     case HVISOR_FINISH:
         err = hvisor_finish_req();
         break;

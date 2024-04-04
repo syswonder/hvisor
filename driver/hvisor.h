@@ -56,7 +56,7 @@ struct hvisor_device_region {
 #define HVISOR_GET_TASK _IO(1, 1)	
 #define HVISOR_FINISH _IO(1, 2)		  // finish one virtio req	
 #define HVISOR_ZONE_START _IOW(1, 3, struct hvisor_zone_load*)
-
+#define HVISOR_ZONE_SHUTDOWN _IOW(1, 4, __u64)
 // hypercall
 #define HVISOR_CALL_NUM_RESULT "x0"
 #define HVISOR_CALL_ARG1       "x1"
@@ -65,6 +65,7 @@ struct hvisor_device_region {
 #define HVISOR_HC_INIT_VIRTIO 9
 #define HVISOR_HC_FINISH_REQ 10
 #define HVISOR_HC_START_ZONE 11
+#define HVISOR_HC_SHUTDOWN_ZONE 12
 
 static inline __u64 hvisor_call(__u64 num)
 {
