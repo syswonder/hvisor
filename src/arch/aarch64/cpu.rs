@@ -82,7 +82,7 @@ impl ArchCpu {
     }
 
     fn stack_top(&self) -> VirtAddr {
-        PER_CPU_ARRAY_PTR as VirtAddr + (self.cpuid + 1) as usize * PER_CPU_SIZE - 8
+        PER_CPU_ARRAY_PTR as VirtAddr + (self.cpuid + 1) as usize * PER_CPU_SIZE
     }
 
     fn guest_reg(&self) -> &mut GeneralRegisters {
@@ -143,7 +143,7 @@ impl ArchCpu {
         }
     }
 
-    pub fn idle(&mut self) {
+    pub fn idle(&mut self) -> ! {
         assert!(this_cpu_id() == self.cpuid);
         let cpu_data = this_cpu_data();
         let _lock = cpu_data.ctrl_lock.lock();

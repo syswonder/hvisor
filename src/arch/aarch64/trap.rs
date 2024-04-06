@@ -1,10 +1,19 @@
 use aarch64_cpu::registers::*;
+use alloc::sync::Arc;
 use core::arch::global_asm;
 
 use crate::{
     arch::{
-        cpu::mpidr_to_cpuid, ipi::arch_send_event, sysreg::{read_sysreg, write_sysreg}
-    }, device::irqchip::gicv3::gicv3_handle_irq_el1, hypercall::{HyperCall, SGI_IPI_ID}, event::IPI_EVENT_WAKEUP, memory::{mmio_handle_access, MMIOAccess}, percpu::{get_cpu_data, this_cpu_data, PerCpu}
+        cpu::mpidr_to_cpuid,
+        ipi::arch_send_event,
+        sysreg::{read_sysreg, write_sysreg},
+    },
+    device::irqchip::gicv3::gicv3_handle_irq_el1,
+    event::{IPI_EVENT_SHUTDOWN, IPI_EVENT_WAKEUP},
+    hypercall::{HyperCall, SGI_IPI_ID},
+    memory::{mmio_handle_access, MMIOAccess},
+    percpu::{get_cpu_data, this_cpu_data, this_zone, PerCpu},
+    zone::{is_this_root_zone, remove_zone, root_zone},
 };
 
 use super::cpu::GeneralRegisters;
@@ -244,9 +253,11 @@ fn handle_hvc(regs: &mut GeneralRegisters) {
         "HVC from CPU{},code:{:#x?},arg0:{:#x?},arg1:{:#x?}",
         cpu_data.id, code, arg0, arg1
     );
-    let result = HyperCall::new(cpu_data)
-        .hypercall(code as _, arg0, arg1)
-        .unwrap();
+    let result = match HyperCall::new(cpu_data).hypercall(code as _, arg0, arg1) {
+        Ok(ret) => ret as _,
+        Err(e) => e.code()
+    };
+    info!("HVC result = {}", result);
     regs.usr[0] = result as _;
 }
 
@@ -303,6 +314,7 @@ fn psci_emulate_cpu_on(regs: &mut GeneralRegisters) -> u64 {
         error!("psci: cpu {} already on", cpu);
         return u64::MAX - 3;
     };
+    drop(_lock);
 
     0
 }
@@ -318,8 +330,6 @@ fn handle_psci_smc(
         PsciFnId::PSCI_VERSION => PSCI_VERSION_1_1,
         PsciFnId::PSCI_CPU_OFF_32 | PsciFnId::PSCI_CPU_OFF_64 => {
             todo!();
-            // park_current_cpu();
-            // 0
         }
         PsciFnId::PSCI_AFFINITY_INFO_32 | PsciFnId::PSCI_AFFINITY_INFO_64 => {
             !get_cpu_data(arg0 as _).arch_cpu.psci_on as _
@@ -328,13 +338,26 @@ fn handle_psci_smc(
         PsciFnId::PSCI_FEATURES => psci_emulate_features_info(regs.usr[1]),
         PsciFnId::PSCI_CPU_ON_32 | PsciFnId::PSCI_CPU_ON_64 => psci_emulate_cpu_on(regs),
         PsciFnId::PSCI_SYSTEM_OFF => {
-            todo!();
-            // this_zone().read().suspend();
-            // for cpu in this_zone().read().cpu_set.iter_except(this_cpu_data().id) {
-            //     park_cpu(cpu);
-            // }
-            // park_current_cpu();
-            // 0
+            let zone = this_zone();
+            let zone_id = zone.read().id;
+            let is_root = is_this_root_zone();
+
+            for cpu_id in zone.read().cpu_set.iter_except(this_cpu_data().id) {
+                let target_cpu = get_cpu_data(cpu_id);
+                let _lock = target_cpu.ctrl_lock.lock();
+                target_cpu.zone = None;
+                arch_send_event(cpu_id as _, SGI_IPI_ID, IPI_EVENT_SHUTDOWN);
+            }
+
+            this_cpu_data().zone = None;
+            drop(zone);
+            remove_zone(zone_id);
+
+            if is_root {
+                psci::system_off().unwrap();
+            }
+
+            this_cpu_data().arch_cpu.idle();
         }
 
         _ => {
