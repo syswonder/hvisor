@@ -42,6 +42,9 @@ QEMU_ARGS += -device virtio-serial-device -device virtconsole,chardev=Xa0038000
 # QEMU_ARGS += --fsdev local,id=Xa0036000,path=./9p/,security_model=none
 # QEMU_ARGS += -device virtio-9p-pci,fsdev=Xa0036000,mount_tag=kmod_mount
 
+# trace-event gicv3_icc_generate_sgi on
+# trace-event gicv3_redist_send_sgi on
+
 $(hvisor_bin): elf
 	@if ! command -v mkimage > /dev/null; then \
 		sudo apt update && sudo apt install u-boot-tools; \

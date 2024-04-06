@@ -1,4 +1,4 @@
-pub mod control;
+pub mod ipi;
 pub mod cpu;
 pub mod entry;
 pub mod mm;

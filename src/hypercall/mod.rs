@@ -1,11 +1,12 @@
 #![allow(dead_code)]
+use crate::arch::ipi::arch_send_event;
 use crate::consts::DTB_IPA;
 use crate::error::HvResult;
+use crate::event::IPI_EVENT_WAKEUP;
 use crate::percpu::{get_cpu_data, PerCpu};
 use crate::zone::zone_create;
 
 use core::convert::TryFrom;
-use core::sync::atomic::{AtomicU32, Ordering};
 use numeric_enum_macro::numeric_enum;
 
 #[repr(C)]
@@ -25,10 +26,7 @@ numeric_enum! {
     }
 }
 
-pub const SGI_INJECT_ID: u64 = 0;
-pub const SGI_EVENT_ID: u64 = 15;
-pub const SGI_RESUME_ID: u64 = 14;
-pub const COMM_REGION_ABI_REVISION: u16 = 1;
+pub const SGI_IPI_ID: u64 = 7;
 
 pub type HyperCallResult = HvResult<usize>;
 
@@ -80,7 +78,8 @@ impl<'a> HyperCall<'a> {
         let _lock = target_data.ctrl_lock.lock();
 
         if !target_data.arch_cpu.psci_on {
-            target_data.arch_cpu.psci_on = true;
+            arch_send_event(boot_cpu as _, SGI_IPI_ID, IPI_EVENT_WAKEUP);
+            // target_data.arch_cpu.psci_on = true;
         } else {
             error!("hv_zone_start: cpu {} already on", boot_cpu);
             return hv_result_err!(EBUSY);
