@@ -2,7 +2,9 @@ use aarch64_cpu::registers::*;
 use core::arch::global_asm;
 
 use crate::{
-    arch::{cpu::mpidr_to_cpuid, sysreg::{read_sysreg, write_sysreg}}, device::irqchip::gicv3::gicv3_handle_irq_el1, hypercall::HyperCall, memory::{mmio_handle_access, MMIOAccess}, percpu::{get_cpu_data, this_cpu_data, PerCpu}
+    arch::{
+        cpu::mpidr_to_cpuid, ipi::arch_send_event, sysreg::{read_sysreg, write_sysreg}
+    }, device::irqchip::gicv3::gicv3_handle_irq_el1, hypercall::{HyperCall, SGI_IPI_ID}, event::IPI_EVENT_WAKEUP, memory::{mmio_handle_access, MMIOAccess}, percpu::{get_cpu_data, this_cpu_data, PerCpu}
 };
 
 use super::cpu::GeneralRegisters;
@@ -249,12 +251,7 @@ fn handle_hvc(regs: &mut GeneralRegisters) {
 }
 
 fn handle_smc(regs: &mut GeneralRegisters) {
-    let (code, arg0, arg1, arg2) = (
-        regs.usr[0],
-        regs.usr[1],
-        regs.usr[2],
-        regs.usr[3],
-    );
+    let (code, arg0, arg1, arg2) = (regs.usr[0], regs.usr[1], regs.usr[2], regs.usr[3]);
     let cpu_data = this_cpu_data() as &mut PerCpu;
     info!(
         "SMC from CPU{}, func_id:{:#x?}, arg0:{:#x?}, arg1:{:#x?}, arg2:{:#x?}",
@@ -301,16 +298,22 @@ fn psci_emulate_cpu_on(regs: &mut GeneralRegisters) -> u64 {
     if !target_data.arch_cpu.psci_on {
         target_data.cpu_on_entry = regs.usr[2] as _;
         target_data.arch_cpu.psci_on = true;
+        arch_send_event(cpu, SGI_IPI_ID, IPI_EVENT_WAKEUP);
     } else {
         error!("psci: cpu {} already on", cpu);
         return u64::MAX - 3;
     };
 
-    drop(_lock);
     0
 }
 
-fn handle_psci_smc(regs: &mut GeneralRegisters, code: u64, arg0: u64, _arg1: u64, _arg2: u64) -> u64 {
+fn handle_psci_smc(
+    regs: &mut GeneralRegisters,
+    code: u64,
+    arg0: u64,
+    _arg1: u64,
+    _arg2: u64,
+) -> u64 {
     match code {
         PsciFnId::PSCI_VERSION => PSCI_VERSION_1_1,
         PsciFnId::PSCI_CPU_OFF_32 | PsciFnId::PSCI_CPU_OFF_64 => {
@@ -341,7 +344,13 @@ fn handle_psci_smc(regs: &mut GeneralRegisters, code: u64, arg0: u64, _arg1: u64
     }
 }
 
-fn handle_arch_smc(regs: &mut GeneralRegisters, code: u64, _arg0: u64, _arg1: u64, _arg2: u64) -> u64 {
+fn handle_arch_smc(
+    _regs: &mut GeneralRegisters,
+    code: u64,
+    _arg0: u64,
+    _arg1: u64,
+    _arg2: u64,
+) -> u64 {
     match code {
         SMCccFnId::SMCCC_VERSION => ARM_SMCCC_VERSION_1_0,
         SMCccFnId::SMCCC_ARCH_FEATURES => !0,
@@ -352,7 +361,7 @@ fn handle_arch_smc(regs: &mut GeneralRegisters, code: u64, _arg0: u64, _arg1: u6
     }
 }
 
-fn arch_skip_instruction(regs: &mut GeneralRegisters) {
+fn arch_skip_instruction(_regs: &mut GeneralRegisters) {
     //ELR_EL2: ret address
     let mut pc = ELR_EL2.get();
     //ESR_EL2::IL exception instruction length
