@@ -59,29 +59,6 @@ impl PerCpu {
     pub fn activate_gpm(&self) {
         unsafe { self.zone.clone().unwrap().read().gpm.activate(); }
     }
-    /*should be in vcpu*/
-    // pub fn arch_shutdown_self(&mut self) -> HvResult {
-    //     /*irqchip reset*/
-    //     gicv3_cpu_shutdown();
-    //     /* Free the guest */
-    //     HCR_EL2.set(0x80000000);
-    //     VTCR_EL2.set(0x80000000);
-    //     /* Remove stage-2 mappings */
-    //     unsafe {
-    //         isb();
-    //         arm_paging_vcpu_flush_tlbs();
-    //     }
-    //     /* TLB flush needs the zone's VMID */
-    //     VTTBR_EL2.set(0);
-    //     /* we will restore the root zone state with the MMU turned off,
-    //      * so we need to make sure it has been committed to memory */
-    //     todo!();
-    //     // unsafe {
-    //     //     let page_offset: u64 = todo!();
-    //     //     virt2phys_el2(self.guest_reg(), page_offset);
-    //     // }
-    //     // Ok(())
-    // }
 }
 
 pub fn get_cpu_data<'a>(cpu_id: usize) -> &'a mut PerCpu {

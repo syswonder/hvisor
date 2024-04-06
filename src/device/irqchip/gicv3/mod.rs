@@ -81,16 +81,18 @@ pub mod gicr;
 pub mod vgic;
 
 use core::arch::asm;
+use core::ptr::write_volatile;
 
 use fdt::Fdt;
 use spin::Once;
 
+use self::gicd::{enable_gic_are_ns, GICD_ICACTIVER, GICD_ICENABLER};
+use self::gicr::enable_ipi;
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::consts::MAX_CPU_NUM;
-use crate::hypercall::SGI_IPI_ID;
 use crate::event::check_events;
-use self::gicd::enable_gic_are_ns;
-use self::gicr::enable_ipi;
+use crate::hypercall::SGI_IPI_ID;
+use crate::zone::Zone;
 
 //TODO: add Distributor init
 pub fn gicc_init() {
@@ -134,18 +136,6 @@ fn gicv3_clear_pending_irqs() {
         write_sysreg!(ICH_AP1R2_EL2, 0);
         write_sysreg!(ICH_AP1R3_EL2, 0);
     }
-}
-
-pub fn gicv3_cpu_shutdown() {
-    // unsafe {write_sysreg!(icc_sgi1r_el1, val);}
-    // let intid = unsafe { read_sysreg!(icc_iar1_el1) } as u32;
-    //arm_read_sysreg(ICC_CTLR_EL1, zone_icc_ctlr);
-    info!("gicv3 shutdown!");
-    let ctlr = read_sysreg!(icc_ctlr_el1);
-    let pmr = read_sysreg!(icc_pmr_el1);
-    let ich_hcr = read_sysreg!(ich_hcr_el2);
-    debug!("ctlr: {:#x?}, pmr:{:#x?},ich_hcr{:#x?}", ctlr, pmr, ich_hcr);
-    //TODO gicv3 reset
 }
 
 pub fn gicv3_handle_irq_el1() {
@@ -390,4 +380,19 @@ pub fn primary_init_late() {
 pub fn percpu_init() {
     gicc_init();
     enable_ipi();
+}
+
+impl Zone {
+    pub fn arch_irqchip_reset(&self) {
+        let gicd_base = host_gicd_base();
+        for (idx, &mask) in self.irq_bitmap.iter().enumerate() {
+            if idx == 0 {
+                continue;
+            }
+            unsafe {
+                write_volatile((gicd_base + GICD_ICENABLER + idx * 4) as *mut u32, mask);
+                write_volatile((gicd_base + GICD_ICACTIVER + idx * 4) as *mut u32, mask);
+            }
+        }
+    }
 }

@@ -8,7 +8,7 @@ use crate::consts::MAX_CPU_NUM;
 use crate::error::HvResult;
 use crate::memory::addr::GuestPhysAddr;
 use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
-use crate::percpu::{get_cpu_data, CpuSet};
+use crate::percpu::{get_cpu_data, this_zone, CpuSet};
 use core::panic;
 
 pub struct Zone {
@@ -98,17 +98,19 @@ impl Zone {
     }
 }
 
-static ROOT_ZONE: spin::Once<Arc<RwLock<Zone>>> = spin::Once::new();
 static ZONE_LIST: RwLock<Vec<Arc<RwLock<Zone>>>> = RwLock::new(vec![]);
 
 pub fn root_zone() -> Arc<RwLock<Zone>> {
-    ROOT_ZONE.get().expect("Uninitialized root zone!").clone()
+    ZONE_LIST.read().get(0).cloned().unwrap()
 }
+
+pub fn is_this_root_zone() -> bool {
+    Arc::ptr_eq(&this_zone(), &root_zone())
+} 
 
 /// Add zone to CELL_LIST
 pub fn add_zone(zone: Arc<RwLock<Zone>>) {
     ZONE_LIST.write().push(zone);
-    // todo: modify FREE_ZONE_IDS
 }
 
 /// Remove zone from ZONE_LIST
@@ -119,8 +121,8 @@ pub fn remove_zone(zone_id: usize) {
         .enumerate()
         .find(|(_, zone)| zone.read().id == zone_id)
         .unwrap();
-    zone_list.remove(idx);
-    // todo: modify FREE_ZONE_IDS
+    let removed_zone = zone_list.remove(idx);
+    assert_eq!(Arc::strong_count(&removed_zone), 1);
 }
 
 pub fn find_zone(zone_id: usize) -> Option<Arc<RwLock<Zone>>> {
