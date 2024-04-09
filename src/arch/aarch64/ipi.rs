@@ -1,7 +1,6 @@
 use super::sysreg::write_sysreg;
 
-pub fn send_event(cpu_id: u64, sgi_num: u64) {
-    // TODO: add more info
+pub fn arch_send_event(cpu_id: u64, sgi_num: u64) {
     let aff3: u64 = 0 << 48;
     let aff2: u64 = 0 << 32;
     let aff1: u64 = 0 << 16;
