@@ -30,13 +30,13 @@ mod logging;
 mod arch;
 mod consts;
 mod device;
+mod event;
 mod hypercall;
 mod memory;
 mod panic;
 mod percpu;
 mod platform;
 mod zone;
-mod event;
 
 use crate::consts::{DTB_IPA, MAX_CPU_NUM};
 use crate::platform::qemu_aarch64::ROOT_ZONE_DTB_ADDR;
@@ -92,6 +92,7 @@ fn primary_init_early(dtb: usize) {
     memory::heap::test();
     memory::frame::init();
     memory::frame::test();
+    event::init(MAX_CPU_NUM);
 
     info!("host dtb: {:#x}", dtb);
     let host_fdt = unsafe { fdt::Fdt::from_ptr(dtb as *const u8) }.unwrap();

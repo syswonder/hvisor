@@ -19,7 +19,6 @@ pub struct PerCpu {
     pub zone: Option<Arc<RwLock<Zone>>>,
     pub ctrl_lock: Mutex<()>,
     pub boot_cpu: bool,
-    pub pending_event: Option<usize>,
     // percpu stack
 }
 
@@ -34,7 +33,6 @@ impl PerCpu {
             zone: None,
             ctrl_lock: Mutex::new(()),
             boot_cpu: false,
-            pending_event: None,
         };
         #[cfg(target_arch = "riscv64")]
         {
@@ -57,7 +55,9 @@ impl PerCpu {
     }
 
     pub fn activate_gpm(&self) {
-        unsafe { self.zone.clone().unwrap().read().gpm.activate(); }
+        unsafe {
+            self.zone.clone().unwrap().read().gpm.activate();
+        }
     }
 }
 
