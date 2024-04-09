@@ -2,16 +2,13 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::RwLock;
 
-use crate::arch::cpu::this_cpu_id;
 use crate::arch::s2pt::Stage2PageTable;
 use crate::consts::MAX_CPU_NUM;
-use crate::control::{resume_cpu, suspend_cpu};
 
 use crate::error::HvResult;
 use crate::memory::addr::GuestPhysAddr;
-use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemoryRegion, MemorySet};
-use crate::percpu::{get_cpu_data, CpuSet};
-use core::ops::Add;
+use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
+use crate::percpu::{get_cpu_data, this_zone, CpuSet};
 use core::panic;
 
 pub struct Zone {
@@ -33,32 +30,26 @@ impl Zone {
         }
     }
 
-    pub fn suspend(&self) {
-        trace!("suspending cpu_set = {:#x?}", self.cpu_set);
-        self.cpu_set.iter_except(this_cpu_id()).for_each(|cpu_id| {
-            trace!("try to suspend cpu_id = {:#x?}", cpu_id);
-            suspend_cpu(cpu_id);
-        });
-        info!("send sgi done!");
-    }
+    // pub fn suspend(&self) {
+    //     trace!("suspending cpu_set = {:#x?}", self.cpu_set);
+    //     self.cpu_set.iter_except(this_cpu_id()).for_each(|cpu_id| {
+    //         trace!("try to suspend cpu_id = {:#x?}", cpu_id);
+    //         suspend_cpu(cpu_id);
+    //     });
+    //     info!("send sgi done!");
+    // }
 
-    pub fn resume(&self) {
-        trace!("resuming cpu_set = {:#x?}", self.cpu_set);
-        self.cpu_set.iter_except(this_cpu_id()).for_each(|cpu_id| {
-            trace!("try to resume cpu_id = {:#x?}", cpu_id);
-            resume_cpu(cpu_id);
-        });
-    }
+    // pub fn resume(&self) {
+    //     trace!("resuming cpu_set = {:#x?}", self.cpu_set);
+    //     self.cpu_set.iter_except(this_cpu_id()).for_each(|cpu_id| {
+    //         trace!("try to resume cpu_id = {:#x?}", cpu_id);
+    //         resume_cpu(cpu_id);
+    //     });
+    // }
 
-    pub fn owns_cpu(&self, id: usize) -> bool {
-        self.cpu_set.contains_cpu(id)
-    }
-
-    /// Query an ipa from zone's stage 2 page table to get pa.
-    pub fn gpm_query(&self, _gpa: GuestPhysAddr) -> usize {
-        todo!();
-        // unsafe { self.gpm.page_table_query(gpa).unwrap().0 }
-    }
+    // pub fn owns_cpu(&self, id: usize) -> bool {
+    //     self.cpu_set.contains_cpu(id)
+    // }
 
     /// Register a mmio region and its handler.
     pub fn mmio_region_register(
@@ -107,17 +98,19 @@ impl Zone {
     }
 }
 
-static ROOT_ZONE: spin::Once<Arc<RwLock<Zone>>> = spin::Once::new();
 static ZONE_LIST: RwLock<Vec<Arc<RwLock<Zone>>>> = RwLock::new(vec![]);
 
 pub fn root_zone() -> Arc<RwLock<Zone>> {
-    ROOT_ZONE.get().expect("Uninitialized root zone!").clone()
+    ZONE_LIST.read().get(0).cloned().unwrap()
 }
+
+pub fn is_this_root_zone() -> bool {
+    Arc::ptr_eq(&this_zone(), &root_zone())
+} 
 
 /// Add zone to CELL_LIST
 pub fn add_zone(zone: Arc<RwLock<Zone>>) {
     ZONE_LIST.write().push(zone);
-    // todo: modify FREE_ZONE_IDS
 }
 
 /// Remove zone from ZONE_LIST
@@ -128,9 +121,8 @@ pub fn remove_zone(zone_id: usize) {
         .enumerate()
         .find(|(_, zone)| zone.read().id == zone_id)
         .unwrap();
-    zone_list.remove(idx);
-        // todo: modify FREE_ZONE_IDS
-
+    let removed_zone = zone_list.remove(idx);
+    assert_eq!(Arc::strong_count(&removed_zone), 1);
 }
 
 pub fn find_zone(zone_id: usize) -> Option<Arc<RwLock<Zone>>> {
@@ -140,7 +132,6 @@ pub fn find_zone(zone_id: usize) -> Option<Arc<RwLock<Zone>>> {
         .find(|zone| zone.read().id == zone_id)
         .cloned()
 }
-
 
 pub fn zone_create(
     zone_id: usize,

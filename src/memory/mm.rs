@@ -3,11 +3,13 @@
 //! Memory management.
 
 use alloc::collections::btree_map::{BTreeMap, Entry};
+use spin::Once;
 use core::fmt::{Debug, Formatter, Result};
 
 use super::{mapper::Mapper, MemFlags};
-use super::{AlignedPage, VirtAddr};
+use super::AlignedPage;
 use crate::arch::paging::{GenericPageTable, PageSize, PagingResult};
+use crate::arch::Stage2PageTable;
 use crate::error::HvResult;
 use crate::memory::addr::is_aligned;
 use crate::memory::PhysAddr;
@@ -181,6 +183,6 @@ where
     }
 }
 
-// pub static PARKING_MEMORY_SET: Once<MemorySet<Stage2PageTable>> = Once::new();
+pub static PARKING_MEMORY_SET: Once<MemorySet<Stage2PageTable>> = Once::new();
 
 pub static mut PARKING_INST_PAGE: AlignedPage = AlignedPage::new();

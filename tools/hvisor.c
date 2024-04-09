@@ -58,7 +58,7 @@ int open_dev() {
     return fd;
 }
 
-// hvisor zone start -kernel image.bin 0x1000 -dtb image.dtb 0x2000 
+// ./hvisor zone start -kernel image.bin 0x1000 -dtb image.dtb 0x2000 -id 1
 static int zone_start(int argc, char *argv[]) {
     struct hvisor_zone_load *zone_load;
     struct hvisor_image_desc *images;
@@ -90,7 +90,20 @@ static int zone_start(int argc, char *argv[]) {
     free(zone_load);
     return err;
 }
-
+// ./hvisor zone shutdown -id 1
+static int zone_shutdown(int argc, char *argv[]) {
+	if (argc != 2 || strcmp(argv[0], "-id") != 0) {
+        help(1);
+	}
+	__u64 zone_id;
+	sscanf(argv[1], "%llu", &zone_id);
+	int fd = open_dev();
+	int err = ioctl(fd, HVISOR_ZONE_SHUTDOWN, zone_id);
+	if (err)
+		perror("zone_shutdown: ioctl failed");
+	close(fd);
+	return err;
+}
 int main(int argc, char *argv[])
 {
     int err;
@@ -100,7 +113,9 @@ int main(int argc, char *argv[])
 
     if (strcmp(argv[1], "zone") == 0 && strcmp(argv[2], "start") == 0) {
         err = zone_start(argc - 3, &argv[3]);
-    } else if (strcmp(argv[1], "virtio") == 0) {
+    } else if (strcmp(argv[1], "zone") == 0 && strcmp(argv[2], "shutdown") == 0){
+		err = zone_shutdown(argc - 3, &argv[3]);
+	}else if (strcmp(argv[1], "virtio") == 0) {
         err = virtio_init();
     } else {
         help(1);

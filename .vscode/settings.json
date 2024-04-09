@@ -11,6 +11,9 @@
     "rust-analyzer.cargo.target": "aarch64-unknown-none",
     "rust-analyzer.checkOnSave.allTargets": false,
     "rust-analyzer.checkOnSave": true,
+    "files.associations": {
+        "module.h": "c"
+    },
     // "rust-analyzer.cargo.features": [
     //     "board_qemu"
     // ]
