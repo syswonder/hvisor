@@ -1,8 +1,7 @@
 #![allow(dead_code)]
-use crate::arch::ipi::arch_send_event;
 use crate::consts::{DTB_IPA, INVALID_ADDRESS};
 use crate::error::HvResult;
-use crate::event::{IPI_EVENT_SHUTDOWN, IPI_EVENT_WAKEUP};
+use crate::event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_WAKEUP};
 use crate::percpu::{get_cpu_data, PerCpu};
 use crate::zone::{find_zone, remove_zone, zone_create};
 
@@ -55,19 +54,6 @@ impl<'a> HyperCall<'a> {
         }
     }
 
-    fn hypervisor_disable(&mut self) -> HyperCallResult {
-        todo!();
-        // let cpus = PerCpu::activated_cpus();
-
-        // static TRY_DISABLE_CPUS: AtomicU32 = AtomicU32::new(0);
-        // TRY_DISABLE_CPUS.fetch_add(1, Ordering::SeqCst);
-        // while TRY_DISABLE_CPUS.load(Ordering::Acquire) < cpus {
-        //     core::hint::spin_loop();
-        // }
-        // info!("Handle hvc disable");
-        // self.cpu_data.deactivate_vmm()?;
-        // unreachable!()
-    }
 
     pub fn hv_zone_start(&mut self, zone_info: &ZoneInfo) -> HyperCallResult {
         info!("handle hvc zone start");
@@ -78,7 +64,7 @@ impl<'a> HyperCall<'a> {
         let _lock = target_data.ctrl_lock.lock();
 
         if !target_data.arch_cpu.psci_on {
-            arch_send_event(boot_cpu as _, SGI_IPI_ID, IPI_EVENT_WAKEUP);
+            send_event(boot_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP);
         } else {
             error!("hv_zone_start: cpu {} already on", boot_cpu);
             return hv_result_err!(EBUSY);
@@ -94,7 +80,7 @@ impl<'a> HyperCall<'a> {
         }
         let zone = match find_zone(zone_id as _) {
             Some(zone) => zone,
-            _ => return hv_result_err!(EEXIST)
+            _ => return hv_result_err!(EEXIST),
         };
         let zone_r = zone.read();
 
@@ -103,7 +89,7 @@ impl<'a> HyperCall<'a> {
             let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
             get_cpu_data(cpu_id).zone = None;
             get_cpu_data(cpu_id).cpu_on_entry = INVALID_ADDRESS;
-            arch_send_event(cpu_id as _, SGI_IPI_ID, IPI_EVENT_SHUTDOWN);
+            send_event(cpu_id, SGI_IPI_ID as _, IPI_EVENT_SHUTDOWN);
         });
 
         zone_r.arch_irqchip_reset();

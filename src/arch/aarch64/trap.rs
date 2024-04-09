@@ -1,19 +1,17 @@
 use aarch64_cpu::registers::*;
-use alloc::sync::Arc;
 use core::arch::global_asm;
 
 use crate::{
     arch::{
         cpu::mpidr_to_cpuid,
-        ipi::arch_send_event,
         sysreg::{read_sysreg, write_sysreg},
     },
     device::irqchip::gicv3::gicv3_handle_irq_el1,
-    event::{IPI_EVENT_SHUTDOWN, IPI_EVENT_WAKEUP},
+    event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_WAKEUP},
     hypercall::{HyperCall, SGI_IPI_ID},
     memory::{mmio_handle_access, MMIOAccess},
     percpu::{get_cpu_data, this_cpu_data, this_zone, PerCpu},
-    zone::{is_this_root_zone, remove_zone, root_zone},
+    zone::{is_this_root_zone, remove_zone},
 };
 
 use super::cpu::GeneralRegisters;
@@ -255,7 +253,7 @@ fn handle_hvc(regs: &mut GeneralRegisters) {
     );
     let result = match HyperCall::new(cpu_data).hypercall(code as _, arg0, arg1) {
         Ok(ret) => ret as _,
-        Err(e) => e.code()
+        Err(e) => e.code(),
     };
     info!("HVC result = {}", result);
     regs.usr[0] = result as _;
@@ -309,7 +307,7 @@ fn psci_emulate_cpu_on(regs: &mut GeneralRegisters) -> u64 {
     if !target_data.arch_cpu.psci_on {
         target_data.cpu_on_entry = regs.usr[2] as _;
         target_data.arch_cpu.psci_on = true;
-        arch_send_event(cpu, SGI_IPI_ID, IPI_EVENT_WAKEUP);
+        send_event(cpu as _, SGI_IPI_ID as _, IPI_EVENT_WAKEUP);
     } else {
         error!("psci: cpu {} already on", cpu);
         return u64::MAX - 3;
@@ -346,7 +344,7 @@ fn handle_psci_smc(
                 let target_cpu = get_cpu_data(cpu_id);
                 let _lock = target_cpu.ctrl_lock.lock();
                 target_cpu.zone = None;
-                arch_send_event(cpu_id as _, SGI_IPI_ID, IPI_EVENT_SHUTDOWN);
+                send_event(cpu_id, SGI_IPI_ID as _, IPI_EVENT_SHUTDOWN);
             }
 
             this_cpu_data().zone = None;

@@ -1,12 +1,6 @@
-use crate::percpu::get_cpu_data;
-
 use super::sysreg::write_sysreg;
 
-pub fn arch_send_event(cpu_id: u64, sgi_num: u64, event_id: usize) {
-    // must hold target cpu's ctrl_lock;
-    let target_cpu = get_cpu_data(cpu_id as _);
-    assert!(target_cpu.ctrl_lock.is_locked());
-    target_cpu.pending_event = Some(event_id);
+pub fn arch_send_event(cpu_id: u64, sgi_num: u64) {
     let aff3: u64 = 0 << 48;
     let aff2: u64 = 0 << 32;
     let aff1: u64 = 0 << 16;
