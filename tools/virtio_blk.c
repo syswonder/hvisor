@@ -6,7 +6,7 @@
 #include <errno.h>
 #include "log.h"
 
-static void virtblk_done(BlkDev *dev, struct blkp_req *req, VirtQueue *vq, int err) {
+static void complete_block_operation(BlkDev *dev, struct blkp_req *req, VirtQueue *vq, int err) {
     uint8_t *vstatus = (uint8_t *)(req->iov[req->iovcnt-1].iov_base);
     if (err == EOPNOTSUPP)
         *vstatus = VIRTIO_BLK_S_UNSUPP;
@@ -19,7 +19,7 @@ static void virtblk_done(BlkDev *dev, struct blkp_req *req, VirtQueue *vq, int e
     }
     pthread_mutex_lock(&dev->mtx);
     update_used_ring(vq, req->idx, 1);
-    vq_endchains(vq, TAILQ_EMPTY(&dev->procq));
+    vq_finish_chain(vq, TAILQ_EMPTY(&dev->procq));
     pthread_mutex_unlock(&dev->mtx);
     free(req);
 }
@@ -60,7 +60,7 @@ static void blkproc(BlkDev *dev, struct blkp_req *req, VirtQueue *vq) {
         err = EINVAL;
         break;
     }
-    virtblk_done(dev, req, vq, err);
+    complete_block_operation(dev, req, vq, err);
 }
 
 // Every virtio-blk has a blkproc_thread that is used for reading and writing.
@@ -92,18 +92,18 @@ static void *blkproc_thread(void *arg)
 
 
 // create blk dev.
-BlkDev *init_blk_dev(VirtIODevice *vdev, uint64_t bsize)
+BlkDev *init_blk_dev(VirtIODevice *vdev, uint64_t bsize, int img_fd)
 {
     BlkDev *dev = malloc(sizeof(BlkDev));
     dev->config.capacity = bsize;
     dev->config.size_max = BLK_SIZE_MAX;
     dev->config.seg_max = BLK_SEG_MAX;
-    dev->img_fd = -1;
+    dev->img_fd = img_fd;
     dev->closing = 0;
+	// TODO: 修改为线程池
     pthread_mutex_init(&dev->mtx, NULL);
     pthread_cond_init(&dev->cond, NULL);
     TAILQ_INIT(&dev->procq);
-
     pthread_create(&dev->tid, NULL, blkproc_thread, vdev);
     return dev;
 }
@@ -121,7 +121,7 @@ static void virtq_blk_handle_one_request(VirtQueue *vq)
     int err = 0;
     breq = malloc(sizeof(struct blkp_req));
     iov = breq->iov;
-    n = vq_getchain(vq, &breq->idx, iov, BLK_SEG_MAX+2, flags);
+    n = process_descriptor_chain(vq, &breq->idx, iov, BLK_SEG_MAX+2, flags);
 
     if (n < 2 || n > BLK_SEG_MAX + 2) {
         log_error("iov's num is wrong");
@@ -176,7 +176,7 @@ static void virtq_blk_handle_one_request(VirtQueue *vq)
             err = EOPNOTSUPP;
             break;
     }
-    virtblk_done(blkDev, breq, vq, err);
+    complete_block_operation(blkDev, breq, vq, err);
 }
 
 int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq)

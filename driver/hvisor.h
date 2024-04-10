@@ -28,16 +28,16 @@ struct hvisor_image_desc {
 // receive request from el2
 struct device_req {
 	__u64 src_cpu;
-	__u64 address; // cell's ipa
+	__u64 address; // zone's ipa
 	__u64 size;
 	__u64 value;
-	__u32 src_cell;
+	__u32 src_zone;
 	__u8 is_write;
 	__u8 need_interrupt;
 };
 
 struct device_res {
-    __u32 target_cell;
+    __u32 target_zone;
     __u32 irq_id;
 };
 

@@ -2,7 +2,7 @@ QEMU := sudo qemu-system-aarch64
 
 UBOOT := $(image_dir)/bootloader/u-boot.bin
 
-FSIMG1 := $(image_dir)/virtdisk/rootfs1.ext4
+FSIMG1 := /home/lgw/study/hypervisor/images/rootfs1.img
 FSIMG2 := $(image_dir)/virtdisk/rootfs2.ext4
 
 zone0_kernel := $(image_dir)/kernel/Image
@@ -29,8 +29,8 @@ QEMU_ARGS += -device loader,file="$(zone0_dtb)",addr=0x90000000,force-raw=on
 QEMU_ARGS += -drive if=none,file=$(FSIMG1),id=Xa003e000,format=raw
 QEMU_ARGS += -device virtio-blk-device,drive=Xa003e000
 
-QEMU_ARGS += -drive if=none,file=$(FSIMG2),id=Xa003c000,format=raw
-QEMU_ARGS += -device virtio-blk-device,drive=Xa003c000
+# QEMU_ARGS += -drive if=none,file=$(FSIMG2),id=Xa003c000,format=raw
+# QEMU_ARGS += -device virtio-blk-device,drive=Xa003c000
 
 QEMU_ARGS += -netdev tap,id=Xa003a000,ifname=tap0,script=no,downscript=no
 QEMU_ARGS += -device virtio-net-device,netdev=Xa003a000,mac=52:55:00:d1:55:01

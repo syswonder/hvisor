@@ -12,20 +12,21 @@
 #include <unistd.h>
 #include <errno.h>
 #include <sys/ioctl.h>
+#include <getopt.h>
+
 /// hvisor kernel module fd
 int ko_fd;
 volatile struct hvisor_device_region *device_region;
 
 pthread_mutex_t RES_MUTEX = PTHREAD_MUTEX_INITIALIZER;
+// TODO: 改成链表
 VirtIODevice *vdevs[16];
 int vdevs_num;
-// 拥有整个non root mem区域的virt_addr
+
 void *virt_addr;
 void *phys_addr;
 #define NON_ROOT_PHYS_START 0x70000000
-#define NON_ROOT_PHYS_SIZE 0x8000000
-#define NON_ROOT_PHYS_START2 0x81000000
-#define NON_ROOT_PHYS_SIZE2 0x30000000
+#define NON_ROOT_PHYS_SIZE 0x20000000
 
 inline int is_queue_full(unsigned int front, unsigned int rear, unsigned int size)
 {
@@ -42,67 +43,52 @@ inline int is_queue_empty(unsigned int front, unsigned int rear)
     return rear == front;
 }
 
-// TODO: 根据配置文件初始化device. 可以参考rhyper的emu_virtio_mmio_init函数; 也可以命令行随时指定
-int init_virtio_devices()
-{
-    int img_fd;
-    VirtIODevice *dev;
-    img_fd = open("ubuntu-20.04-rootfs_ext4.img", O_RDWR);
-    // img_fd = open("virtio_ext4.img", O_RDWR);
-
-    if (img_fd == -1) {
-        log_error("cannot open virtio_blk.img, Error code is %d", errno);
-        return -1;
-    }
-
-    int mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
-    phys_addr = NON_ROOT_PHYS_START2;
-    virt_addr = mmap(NULL, NON_ROOT_PHYS_SIZE2, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, (off_t) phys_addr);
-    log_info("mmap virt addr is %#x", virt_addr);
-    dev = create_virtio_device(VirtioTBlock, 1);
-    ((BlkDev *)dev->dev)->img_fd = img_fd;
-    create_virtio_device(VirtioTNet, 1);
-    return 0;
-}
-
 // create a virtio device.
-VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t cell_id)
+static VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id, 
+						uint64_t base_addr, uint64_t len, uint32_t irq_id, void* arg)
 {
+	log_info("create virtio device type %d, zone id %d, base addr %lx, len %lx, irq id %d", 
+				dev_type, zone_id, base_addr, len, irq_id);
     VirtIODevice *vdev = NULL;
+	vdev = calloc(1, sizeof(VirtIODevice));
+	init_mmio_regs(&vdev->regs, dev_type);
+	vdev->base_addr = base_addr;
+	vdev->len = len;
+	vdev->zone_id = zone_id;
+	vdev->irq_id = irq_id;
+	vdev->type = dev_type;
     switch (dev_type)
     {
-    case VirtioTBlock:
-        vdev = calloc(1, sizeof(VirtIODevice));
-        init_mmio_regs(&vdev->regs, dev_type);
-        vdev->base_addr = 0xa003e00;
-        vdev->len = 0x200;
-        vdev->cell_id = cell_id;
-        vdev->irq_id = 67;
-        vdev->type = dev_type;
+    case VirtioTBlock: {
+		int img_fd = open((const char*)arg, O_RDWR);
+        if (img_fd == -1) {
+			log_error("cannot open %s, Error code is %d\n", (char*)arg, errno);
+			goto err;
+		}
         vdev->regs.dev_feature = VIRTIO_BLK_F_SEG_MAX | VIRTIO_BLK_F_SIZE_MAX | VIRTIO_F_VERSION_1;
-        vdev->dev = init_blk_dev(vdev, BLK_SIZE_MAX); // 256MB
+        vdev->dev = init_blk_dev(vdev, BLK_SIZE_MAX, img_fd); // 256MB
         init_virtio_queue(vdev, dev_type);
         break;
+	}
     case VirtioTNet:
-        vdev = calloc(1, sizeof(VirtIODevice));
-        init_mmio_regs(&vdev->regs, dev_type);
-        vdev->base_addr = 0xa003c00;
-        vdev->len = 0x200;
-        vdev->cell_id = cell_id;
-        vdev->irq_id = 68;
-        // TODO: 先按着acrn的来吧, 之后再试着弄CSUM之类的
-        vdev->regs.dev_feature = VIRTIO_NET_FEATURES;
+		// TODO: add VIRTIO_NET_F_MRG_RXBUF?
+        vdev->regs.dev_feature = VIRTIO_F_VERSION_1 | VIRTIO_NET_F_MAC | VIRTIO_NET_F_STATUS;
         vdev->type = dev_type;
         uint8_t mac[] = {0x00, 0x16, 0x3E, 0x10, 0x10, 0x10};
         vdev->dev = init_net_dev(mac);
         init_virtio_queue(vdev, dev_type);
-        virtio_net_init(vdev, "tap0");
+        virtio_net_init(vdev, (char *)arg);
         break;
-    default:
-        break;
+	default:
+		log_error("unsupported virtio device type\n");
+		goto err;
     }
     vdevs[vdevs_num++] = vdev;
     return vdev;
+
+err:
+	free(vdev);
+	return NULL;
 }
 
 void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type)
@@ -120,15 +106,15 @@ void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type)
         vdev->vqs = vq;
         break;
     case VirtioTNet:
-        vdev->vqs_len = VIRTIO_NET_MAXQ;
-        vq = malloc(sizeof(VirtQueue) * VIRTIO_NET_MAXQ);
-        for (int i = 0; i < VIRTIO_NET_MAXQ; ++i) {
+        vdev->vqs_len = NET_MAX_QUEUES;
+        vq = malloc(sizeof(VirtQueue) * NET_MAX_QUEUES);
+        for (int i = 0; i < NET_MAX_QUEUES; ++i) {
             virtqueue_reset(vq, i);
             vq[i].queue_num_max = VIRTQUEUE_NET_MAX_SIZE;
             vq[i].dev = vdev;
         }
-        vq[VIRTIO_NET_RXQ].notify_handler = virtio_net_rxq_notify_handler;
-        vq[VIRTIO_NET_TXQ].notify_handler = virtio_net_txq_notify_handler;
+        vq[NET_QUEUE_RX].notify_handler = virtio_net_rxq_notify_handler;
+        vq[NET_QUEUE_TX].notify_handler = virtio_net_txq_notify_handler;
         vdev->vqs = vq;
         break;
     default:
@@ -235,20 +221,13 @@ void virtqueue_set_used(VirtQueue *vq)
     vq->used_ring = (VirtqUsed *)(virt_addr + vq->used_addr - phys_addr);
 }
 
-/*
- * Helper inline for vq_getchain(): record the i'th "real"
- * descriptor.
- * Return 0 on success and -1 when i is out of range  or mapping
- *        fails.
- */
-static inline int
-_vq_record(int i, volatile VirtqDesc *vd,
-           struct iovec *iov, int n_iov, uint16_t *flags) {
-    // 将vd指向的描述符记录在iov中的第i个元素中
-    void *host_addr;
-
-    if (i >= n_iov)
+// record one descriptor to iov.
+static inline int _descriptor2iov(int i, volatile VirtqDesc *vd,
+           struct iovec *iov, int max_iov, uint16_t *flags) {
+	if (i >= max_iov)
         return -1;
+
+    void *host_addr;
     host_addr = get_virt_addr(vd->addr);
     iov[i].iov_base = host_addr;
     iov[i].iov_len = vd->len;
@@ -257,13 +236,14 @@ _vq_record(int i, volatile VirtqDesc *vd,
         flags[i] = vd->flags;
     return 0;
 }
+
 /// record one descriptor list to iov
-/// \param pidx the first descriptor's idx in descriptor list.
-/// \param n_iov the max num of iov
+/// \param desc_idx the first descriptor's idx in descriptor list.
+/// \param max_iov the max num of iov
 /// \param flags each descriptor's flags
 /// \return the valid num of iov
-int vq_getchain(VirtQueue *vq, uint16_t *pidx,
-                struct iovec *iov, int n_iov, uint16_t *flags)
+int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
+                struct iovec *iov, int max_iov, uint16_t *flags)
 {
     uint16_t next, idx;
     volatile VirtqDesc *vdesc;
@@ -271,11 +251,11 @@ int vq_getchain(VirtQueue *vq, uint16_t *pidx,
     if(idx == vq->avail_ring->idx)
         return 0;
     vq->last_avail_idx++;
-    *pidx = next = vq->avail_ring->ring[idx & (vq->num - 1)];
+    *desc_idx = next = vq->avail_ring->ring[idx & (vq->num - 1)];
 
     for (int i=0; i < vq->num; next = vdesc->next) {
         vdesc = &vq->desc_table[next];
-        if (_vq_record(i, vdesc, iov, n_iov, flags)) {
+        if (_descriptor2iov(i, vdesc, iov, max_iov, flags)) {
             log_error("vq record failed");
             return -1;
         }
@@ -302,25 +282,19 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
     log_debug("update used ring: used_idx is %d, elem->idx is %d", used_idx-1, idx);
 }
 
-/// restore last_avail_idx when you called vq_getchain()
-void vq_retchain(VirtQueue *vq) {
-    vq->last_avail_idx--;
-}
-
-/// If vq's used ring is changed, then inject interrupt to vq's cell
-void vq_endchains(VirtQueue *vq, int is_no_more)
+/// If vq's used ring is changed, then inject interrupt to vq's zone
+void vq_finish_chain(VirtQueue *vq, int no_more_chains)
 {
-    // TODO: think about if used_all_avail is false, do not inject irq.
-    if (!is_no_more) {
+    if (!no_more_chains) {
         return;
     }
     uint16_t new_idx, old_idx;
-    int intr;
+    int need_interrupt;
     old_idx = vq->last_used_idx;
     vq->last_used_idx = new_idx = vq->used_ring->idx;
-    intr = new_idx != old_idx && !(vq->avail_ring->flags & VRING_AVAIL_F_NO_INTERRUPT);
-    if (intr)
-        virtio_inject_irq(vq->dev->cell_id, vq->dev->irq_id);
+    need_interrupt = new_idx != old_idx && !(vq->avail_ring->flags & VRING_AVAIL_F_NO_INTERRUPT);
+    if (need_interrupt)
+        virtio_inject_irq(vq->dev->zone_id, vq->dev->irq_id);
 }
 
 static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size)
@@ -536,8 +510,8 @@ static inline void dmb_ishst(void) {
     asm volatile ("dmb ishst":: : "memory");
 }
 
-// Inject irq_id to target cell. It will add to res list, and notify hypervisor through ioctl.
-void virtio_inject_irq(uint32_t target_cell, uint32_t irq_id)
+// Inject irq_id to target zone. It will add to res list, and notify hypervisor through ioctl.
+void virtio_inject_irq(uint32_t target_zone, uint32_t irq_id)
 {
     volatile struct device_res *res;
     while (is_queue_full(device_region->res_front, device_region->res_rear, MAX_REQ));
@@ -545,7 +519,7 @@ void virtio_inject_irq(uint32_t target_cell, uint32_t irq_id)
     unsigned int res_rear = device_region->res_rear;
     res = &device_region->res_list[res_rear];
     res->irq_id = irq_id;
-    res->target_cell = target_cell;
+    res->target_zone = target_zone;
     dmb_ishst();
     device_region->res_rear = (res_rear + 1) & (MAX_REQ - 1);
     pthread_mutex_unlock(&RES_MUTEX);
@@ -564,7 +538,7 @@ int virtio_handle_req(volatile struct device_req *req)
     int i;
     uint64_t value = 0;
     for (i = 0; i < vdevs_num; ++i) {
-        if ((req->src_cell == vdevs[i]->cell_id) && in_range(req->address, vdevs[i]->base_addr, vdevs[i]->len))
+        if ((req->src_zone == vdevs[i]->zone_id) && in_range(req->address, vdevs[i]->base_addr, vdevs[i]->len))
             break;
     }
     if (i == vdevs_num) {
@@ -587,7 +561,7 @@ int virtio_handle_req(volatile struct device_req *req)
         // If a request is a control not a data request
         virtio_finish_cfg_req(req->src_cpu, value);
     } 
-    log_trace("src_cell is %d, src_cpu is %lld", req->src_cell, req->src_cpu);
+    log_trace("src_zone is %d, src_cpu is %lld", req->src_zone, req->src_cpu);
     return 0;
 }
 
@@ -610,12 +584,13 @@ int virtio_init()
 {
     // The higher log level is , faster virtio-blk will be.
     int err;
-    log_set_level(LOG_ERROR);
+
+    log_set_level(LOG_DEBUG);
     FILE *log_file = fopen("log.txt", "w+");
     if (log_file == NULL) {
         log_error("open log file failed");
     }
-    log_add_fp(log_file, LOG_ERROR);
+    log_add_fp(log_file, LOG_DEBUG);
     log_info("hvisor init");
     ko_fd = open("/dev/hvisor", O_RDWR);
     if (ko_fd < 0) {
@@ -637,12 +612,107 @@ int virtio_init()
         goto unmap;
     }
 
-    mevent_init();
-    init_virtio_devices();
-    log_info("hvisor init okay!");
-    handle_virtio_requests();
+	// mmap: map non root linux physical memory to virtual memory
+	// TODO：根据配置文件
+    int mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
+    phys_addr = NON_ROOT_PHYS_START;
+    virt_addr = mmap(NULL, NON_ROOT_PHYS_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, (off_t) phys_addr);
+	close(mem_fd);
+    log_info("mmap virt addr is %#x", virt_addr);
 
+    initialize_event_monitor();
+    log_info("hvisor init okay!");
 unmap:
     munmap((void *)device_region, MMAP_SIZE);
     return 0;
 }
+
+static int create_virtio_device_from_cmd(char *cmd) {
+	log_info("cmd is %s", cmd);
+	VirtioDeviceType dev_type = VirtioTNone;
+	uint64_t base_addr = 0, len = 0;
+	uint32_t zone_id = 0, irq_id = 0;
+	char *opt, *now, *arg = NULL;
+
+	opt = strdup(cmd);
+	now = strtok(opt, ",");
+
+	if (strcmp(now, "blk") == 0) {
+		dev_type = VirtioTBlock;
+	} else if (strcmp(now, "net") == 0) {
+		dev_type = VirtioTNet;
+	} else {
+		log_error("unknown device type %s", now);
+		return -1;
+	}
+
+	while ((now = strtok(NULL, "=")) != NULL) {
+		if (strcmp(now, "addr") == 0) {
+			now = strtok(NULL, ",");
+			base_addr = strtoul(now, NULL, 16);
+		} else if (strcmp(now, "len") == 0) {
+			now = strtok(NULL, ",");
+			len = strtoul(now, NULL, 16);
+		} else if (strcmp(now, "irq") == 0) {
+			now = strtok(NULL, ",");
+			irq_id = strtoul(now, NULL, 10);
+		} else if (strcmp(now, "zone_id") == 0) {
+			now = strtok(NULL, ",");
+			zone_id = strtoul(now, NULL, 10);
+		} else if (strcmp(now, "img") == 0) {
+			if (dev_type != VirtioTBlock) {
+				log_error("image path only for block device");
+				return -1;
+			}
+			arg = strtok(NULL, ",");
+		} else if (strcmp(now, "tap") == 0) {
+			if (dev_type != VirtioTNet) {
+				log_error("tap only for net device");
+				return -1;
+			}
+			arg = strtok(NULL, ",");
+		} else {
+			log_error("unknown option %s", now);
+			return -1;
+		}
+	}
+	free(opt);
+
+	if (base_addr == 0 || len == 0 || irq_id == 0 || zone_id == 0) {
+		printf("missing arguments");
+		return -1;
+	}
+	create_virtio_device(dev_type, zone_id, base_addr, len, irq_id, arg);
+	return 0;
+}
+
+int virtio_start(int argc, char *argv[]) {
+	static struct option long_options[] = {
+		{"device", required_argument, 0, 'd'},	
+		{0, 0, 0, 0}
+	};
+	char *optstring = "d:";
+	int opt, err = 0;
+
+	virtio_init();
+	while ( (opt = getopt_long(argc, argv, optstring, long_options, NULL)) != -1) {
+		switch (opt) {
+			case 'd':
+				err = create_virtio_device_from_cmd(optarg);
+				if (err) {
+					log_error("create virtio device failed");
+					goto err_out;
+				}
+				break;
+			default:
+				log_error("unknown option %c", opt);
+				goto err_out;
+		}
+	}
+    handle_virtio_requests();
+
+err_out:
+	// TODO: shutdown virtio devices
+	return err;
+}
+
