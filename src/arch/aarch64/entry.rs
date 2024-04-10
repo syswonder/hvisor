@@ -11,12 +11,12 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
             mov x1, x0
             mrs x0, mpidr_el1
             and x0, x0, #0xff
-            ldr x2, =__core_end          // x2 = &__core_end
+            adrp x2, __core_end          // x2 = &__core_end
             mov x3, {per_cpu_size}      // x3 = per_cpu_size
             madd x4, x0, x3, x3       // x4 = cpuid * per_cpu_size
             add x5, x2, x4
             mov sp, x5                // sp = &__core_end + (cpuid + 1) * per_cpu_size
-            b {rust_main}             // x0 = cpuid, x1 = dtbaddr
+            bl {rust_main}             // x0 = cpuid, x1 = dtbaddr
             ",
             options(noreturn),
             per_cpu_size=const PER_CPU_SIZE,

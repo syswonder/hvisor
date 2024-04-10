@@ -138,8 +138,8 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         MASTER_CPU.store(cpuid as i32, Ordering::Release);
         is_primary = true;
         println!("Hello, HVISOR!");
-        #[cfg(target_arch = "riscv64")]
-        clear_bss();
+        // #[cfg(target_arch = "riscv64")]
+        // clear_bss();
     }
 
     let cpu = PerCpu::new(cpuid);

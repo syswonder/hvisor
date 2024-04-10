@@ -6,6 +6,7 @@ PORT ?= 2333
 MODE ?= debug
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 KDIR ?= ../../linux
+FEATURES := platform_imx8mp
 
 ifeq ($(ARCH),aarch64)
     RUSTC_TARGET := aarch64-unknown-none
@@ -30,14 +31,13 @@ hvisor_elf := $(build_path)/hvisor
 hvisor_bin := $(build_path)/hvisor.bin
 image_dir  := images/$(ARCH)
 
-# Features based on STATS
-features := 
-
 # Build arguments
-build_args := --features "$(features)" 
-build_args := --target $(RUSTC_TARGET)
+build_args := 
+build_args += --features "$(FEATURES)" 
+build_args += --target $(RUSTC_TARGET)
 build_args += -Z build-std=core,alloc
 build_args += -Z build-std-features=compiler-builtins-mem
+
 
 ifeq ($(MODE), release)
   build_args += --release
@@ -72,6 +72,11 @@ monitor:
 		-ex 'file $(hvisor_elf)' \
 		-ex 'set arch $(GDB_ARCH)' \
 		-ex 'target remote:1234' \
+
+jlink:
+	gdb-multiarch \
+		-ex 'file $(hvisor_elf)' \
+		-ex 'target remote:2331'
 
 clean:
 	cargo clean
