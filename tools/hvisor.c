@@ -12,7 +12,7 @@
 #include "hvisor.h"
 #include "virtio.h"
 #include "log.h"
-#include "mevent.h"
+#include "event_monitor.h"
 #include <errno.h>
 
 static void __attribute__((noreturn)) help(int exit_status) {
@@ -20,7 +20,7 @@ static void __attribute__((noreturn)) help(int exit_status) {
     exit(exit_status);
 }
 
-static void* read_file(char* filename, int* filesize){
+static void* read_file(char* filename, unsigned long long* filesize){
     int fd;
     struct stat st;
     void *buf;
@@ -73,8 +73,8 @@ static int zone_start(int argc, char *argv[]) {
     zone_load->images_num = 2;
     images = malloc(sizeof(struct hvisor_image_desc)*2);
 
-    images[0].source_address = read_file(argv[1], &images[0].size);
-    images[1].source_address = read_file(argv[4], &images[1].size);
+    images[0].source_address = (unsigned long long) read_file(argv[1], &images[0].size);
+    images[1].source_address = (unsigned long long) read_file(argv[4], &images[1].size);
     sscanf(argv[2], "%llx", &images[0].target_address);
     sscanf(argv[5], "%llx", &images[1].target_address);
 	sscanf(argv[7], "%llu", &zone_load->zone_id);
@@ -85,11 +85,12 @@ static int zone_start(int argc, char *argv[]) {
         perror("zone_start: ioctl failed");
     close(fd);
     for (int i = 0; i < zone_load->images_num; i++)
-        free(images[i].source_address);
+        free((void*) images[i].source_address);
     free(images);
     free(zone_load);
     return err;
 }
+
 // ./hvisor zone shutdown -id 1
 static int zone_shutdown(int argc, char *argv[]) {
 	if (argc != 2 || strcmp(argv[0], "-id") != 0) {
@@ -104,6 +105,7 @@ static int zone_shutdown(int argc, char *argv[]) {
 	close(fd);
 	return err;
 }
+
 int main(int argc, char *argv[])
 {
     int err;
@@ -115,8 +117,8 @@ int main(int argc, char *argv[])
         err = zone_start(argc - 3, &argv[3]);
     } else if (strcmp(argv[1], "zone") == 0 && strcmp(argv[2], "shutdown") == 0){
 		err = zone_shutdown(argc - 3, &argv[3]);
-	}else if (strcmp(argv[1], "virtio") == 0) {
-        err = virtio_init();
+	}else if (strcmp(argv[1], "virtio") == 0 && strcmp(argv[2], "start") == 0) {
+        err = virtio_start(argc - 3, &argv[3]);
     } else {
         help(1);
     }

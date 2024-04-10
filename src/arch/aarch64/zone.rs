@@ -4,8 +4,7 @@ use crate::{
     consts::PAGE_SIZE,
     error::HvResult,
     memory::{
-        addr::{align_down, align_up},
-        GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
+        addr::{align_down, align_up}, mmio_generic_handler, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion
     },
     zone::Zone,
 };
@@ -42,16 +41,11 @@ impl Zone {
             let mut mapped_virtio = Vec::new();
             for node in fdt.find_all_nodes("/virtio_mmio") {
                 if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
-                    let paddr = align_down(reg.starting_address as _) as HostPhysAddr;
-                    let size = reg.size.unwrap().max(PAGE_SIZE);
+                    let paddr =reg.starting_address as HostPhysAddr;
+                    let size = reg.size.unwrap();
                     if !mapped_virtio.contains(&paddr) {
                         debug!("map virtio mmio addr: {:#x}, size: {:#x}", paddr, size);
-                        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-                            paddr as GuestPhysAddr,
-                            paddr,
-                            size,
-                            MemFlags::READ | MemFlags::WRITE,
-                        ))?;
+						self.mmio_region_register(paddr, size, mmio_generic_handler, paddr);
                         mapped_virtio.push(paddr);
                     }
                 }
