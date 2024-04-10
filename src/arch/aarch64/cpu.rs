@@ -1,7 +1,10 @@
 use crate::{
-    arch::sysreg::write_sysreg,
-    consts::{DTB_IPA, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
-    memory::VirtAddr,
+    arch::{sysreg::write_sysreg, Stage2PageTable},
+    consts::{DTB_IPA, PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
+    memory::{
+        addr::PHYS_VIRT_OFFSET, mm::PARKING_MEMORY_SET, GuestPhysAddr, HostPhysAddr, MemFlags,
+        MemoryRegion, MemorySet, VirtAddr, PARKING_INST_PAGE,
+    },
     percpu::this_cpu_data,
 };
 use aarch64_cpu::registers::{
@@ -48,7 +51,7 @@ impl ArchCpu {
         }
     }
 
-    pub fn reset(&mut self, entry: usize, _cpu_id: usize, dtb: usize) {
+    pub fn reset(&mut self, entry: usize, dtb: usize) {
         ELR_EL2.set(entry as _);
         SPSR_EL2.set(0x3c5);
         let regs = self.guest_reg();
@@ -79,7 +82,7 @@ impl ArchCpu {
     }
 
     fn stack_top(&self) -> VirtAddr {
-        PER_CPU_ARRAY_PTR as VirtAddr + (self.cpuid + 1) as usize * PER_CPU_SIZE - 8
+        PER_CPU_ARRAY_PTR as VirtAddr + (self.cpuid + 1) as usize * PER_CPU_SIZE
     }
 
     fn guest_reg(&self) -> &mut GeneralRegisters {
@@ -130,30 +133,45 @@ impl ArchCpu {
         SCTLR_EL1.set((1 << 11) | (1 << 20) | (3 << 22) | (3 << 28));
     }
 
-    pub fn run(&mut self) {
+    pub fn run(&mut self) -> ! {
         assert!(this_cpu_id() == self.cpuid);
-        self.reset(this_cpu_data().cpu_on_entry, self.cpuid, DTB_IPA);
+        this_cpu_data().activate_gpm();
+        self.reset(this_cpu_data().cpu_on_entry, DTB_IPA);
         self.psci_on = true;
         unsafe {
             vmreturn(self.guest_reg() as *mut _ as usize);
         }
     }
 
-    pub fn idle(&self) {
-        // unsafe {
-        //     core::arch::asm!("wfi");
-        // }
+    pub fn idle(&mut self) -> ! {
         assert!(this_cpu_id() == self.cpuid);
-        info!("cpu {} idling", self.cpuid);
         let cpu_data = this_cpu_data();
-        let mut _lock = Some(cpu_data.ctrl_lock.lock());
-        while !self.psci_on {
-            _lock = None;
-            while !self.psci_on {}
-            _lock = Some(cpu_data.ctrl_lock.lock());
-        }
+        let _lock = cpu_data.ctrl_lock.lock();
+        self.psci_on = false;
         drop(_lock);
-        info!("cpu {} wake up from idle", self.cpuid);
+
+        // reset current cpu -> pc = 0x0 (wfi)
+        PARKING_MEMORY_SET.call_once(|| {
+            let parking_code: [u8; 8] = [0x7f, 0x20, 0x03, 0xd5, 0xff, 0xff, 0xff, 0x17]; // 1: wfi; b 1b
+            unsafe {
+                PARKING_INST_PAGE[..8].copy_from_slice(&parking_code);
+            }
+
+            let mut gpm = MemorySet::<Stage2PageTable>::new();
+            gpm.insert(MemoryRegion::new_with_offset_mapper(
+                0 as GuestPhysAddr,
+                unsafe { &PARKING_INST_PAGE as *const _ as HostPhysAddr - PHYS_VIRT_OFFSET },
+                PAGE_SIZE,
+                MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+            ))
+            .unwrap();
+            gpm
+        });
+        self.reset(0, DTB_IPA);
+        unsafe {
+            PARKING_MEMORY_SET.get().unwrap().activate();
+            vmreturn(self.guest_reg() as *mut _ as usize);
+        }
     }
 }
 

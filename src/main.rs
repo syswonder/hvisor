@@ -29,8 +29,8 @@ extern crate lazy_static;
 mod logging;
 mod arch;
 mod consts;
-mod control;
 mod device;
+mod event;
 mod hypercall;
 mod memory;
 mod panic;
@@ -40,7 +40,7 @@ mod zone;
 
 use crate::consts::{DTB_IPA, MAX_CPU_NUM};
 use crate::platform::qemu_aarch64::ROOT_ZONE_DTB_ADDR;
-use crate::zone::{init_root_zone, zone_create};
+use crate::zone::zone_create;
 use arch::{cpu::cpu_start, entry::arch_entry};
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
@@ -92,21 +92,21 @@ fn primary_init_early(dtb: usize) {
     memory::heap::test();
     memory::frame::init();
     memory::frame::test();
+    event::init(MAX_CPU_NUM);
 
     info!("host dtb: {:#x}", dtb);
     let host_fdt = unsafe { fdt::Fdt::from_ptr(dtb as *const u8) }.unwrap();
 
-    device::irqchip::init_early(&host_fdt);
+    device::irqchip::primary_init_early(&host_fdt);
     crate::arch::mm::init_hv_page_table(&host_fdt).unwrap();
 
-    let root_zone = zone_create(0, ROOT_ZONE_DTB_ADDR as _, DTB_IPA).unwrap();
-	init_root_zone(root_zone);
+    zone_create(0, ROOT_ZONE_DTB_ADDR as _, DTB_IPA).unwrap();
     INIT_EARLY_OK.store(1, Ordering::Release);
 }
 
 fn primary_init_late() {
     info!("Primary CPU init late...");
-    device::irqchip::init_late();
+    device::irqchip::primary_init_late();
 
     INIT_LATE_OK.store(1, Ordering::Release);
 }
@@ -114,12 +114,10 @@ fn primary_init_late() {
 fn percpu_hv_pt_install(cpu: &mut PerCpu) {
     if cpu.zone.is_none() {
         warn!("zone is not created for cpu {}", cpu.id);
-    } else {
-        unsafe {
-            memory::hv_page_table().read().activate();
-        };
     }
-
+    unsafe {
+        memory::hv_page_table().read().activate();
+    };
     info!("CPU {} hv_pt_install OK.", cpu.id);
 }
 
@@ -172,7 +170,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     }
 
     percpu_hv_pt_install(cpu);
-    device::irqchip::irqchip_cpu_init();
+    device::irqchip::percpu_init();
 
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
     wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _);

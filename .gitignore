@@ -14,5 +14,4 @@
 Module.symvers
 modules.order
 driver/main.ko
-daemon/hvisor
 .gdb_history

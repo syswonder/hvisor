@@ -81,20 +81,23 @@ pub mod gicr;
 pub mod vgic;
 
 use core::arch::asm;
+use core::ptr::write_volatile;
 
 use fdt::Fdt;
 use spin::Once;
 
+use self::gicd::{enable_gic_are_ns, GICD_ICACTIVER, GICD_ICENABLER};
+use self::gicr::enable_ipi;
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::consts::MAX_CPU_NUM;
 use crate::device::virtio_trampoline::handle_virtio_irq;
-use crate::hypercall::{SGI_EVENT_ID, SGI_RESUME_ID, SGI_VIRTIO_IRQ_ID};
-use crate::percpu::check_events;
 
-use self::gicd::enable_gic_are_ns;
+use crate::event::check_events;
+use crate::hypercall::SGI_IPI_ID;
+use crate::zone::Zone;
 
 //TODO: add Distributor init
-pub fn irqchip_cpu_init() {
+pub fn gicc_init() {
     //TODO: add Redistributor init
     let sdei_ver = unsafe { smc_arg1!(0xc4000020) }; //sdei_check();
     info!("gicv3 init: sdei version: {}", sdei_ver);
@@ -107,7 +110,7 @@ pub fn irqchip_cpu_init() {
     let ctlr2 = read_sysreg!(icc_ctlr_el1);
     debug!("ctlr2: {:#x?}", ctlr2);
     let pmr = read_sysreg!(icc_pmr_el1);
-    write_sysreg!(icc_pmr_el1, 0xf0); // Interrupt Controller Interrupt Priority Mask Register
+    write_sysreg!(icc_pmr_el1, 0xff); // Interrupt Controller Interrupt Priority Mask Register
     let igrpen = read_sysreg!(icc_igrpen1_el1);
     write_sysreg!(icc_igrpen1_el1, 0x1); //group 1 irq
     debug!("ctlr: {:#x?}, pmr:{:#x?},igrpen{:#x?}", ctlr, pmr, igrpen);
@@ -137,18 +140,6 @@ fn gicv3_clear_pending_irqs() {
     }
 }
 
-pub fn gicv3_cpu_shutdown() {
-    // unsafe {write_sysreg!(icc_sgi1r_el1, val);}
-    // let intid = unsafe { read_sysreg!(icc_iar1_el1) } as u32;
-    //arm_read_sysreg(ICC_CTLR_EL1, zone_icc_ctlr);
-    info!("gicv3 shutdown!");
-    let ctlr = read_sysreg!(icc_ctlr_el1);
-    let pmr = read_sysreg!(icc_pmr_el1);
-    let ich_hcr = read_sysreg!(ich_hcr_el2);
-    debug!("ctlr: {:#x?}, pmr:{:#x?},ich_hcr{:#x?}", ctlr, pmr, ich_hcr);
-    //TODO gicv3 reset
-}
-
 pub fn gicv3_handle_irq_el1() {
     if let Some(irq_id) = pending_irq() {
         // enum ipi_msg_type {
@@ -171,25 +162,20 @@ pub fn gicv3_handle_irq_el1() {
         //      */
         // };
         //SGI
-        if irq_id < 16 {
-            if irq_id < 8 {
-                trace!("sgi get {},inject", irq_id);
-                deactivate_irq(irq_id);
-                inject_irq(irq_id, false);
-            } else if irq_id == SGI_EVENT_ID as usize {
-                info!("HV SGI EVENT {}", irq_id);
-                check_events();
-                deactivate_irq(irq_id);
-            } else if irq_id == SGI_RESUME_ID as usize {
-                info!("hv sgi got {}, resume", irq_id);
-                // let cpu_data = unsafe { this_cpu_data() as &mut PerCpu };
-                // cpu_data.suspend_cpu = false;
-            } else if irq_id == SGI_VIRTIO_IRQ_ID as usize {
-				handle_virtio_irq();
-				deactivate_irq(irq_id);
-			} else {
-                warn!("skip sgi {}", irq_id);
+        if irq_id < 8 {
+            deactivate_irq(irq_id);
+            let mut ipi_handled = false;
+            if irq_id == SGI_IPI_ID as _ {
+                trace!("SGI_IPI_ID");
+                ipi_handled = check_events();
             }
+            if !ipi_handled {
+                trace!("sgi get {}, inject", irq_id);
+                inject_irq(irq_id, false);
+            }
+        } else if irq_id < 16 {
+            warn!("skip sgi {}", irq_id);
+            deactivate_irq(irq_id);
         } else {
             trace!("spi/ppi get {}", irq_id);
             //inject phy irq
@@ -370,18 +356,39 @@ pub fn is_sgi(irqn: u32) -> bool {
 }
 
 pub fn enable_irqs() {
-    unsafe { asm!("msr daifclr, #0xf") };
+    unsafe { asm!("msr daifclr, #0x2") };
 }
 
 pub fn disable_irqs() {
-    unsafe { asm!("msr daifset, #0xf") };
+    unsafe { asm!("msr daifset, #0x2") };
 }
 
-pub fn init_early(host_fdt: &Fdt) {
+pub fn primary_init_early(host_fdt: &Fdt) {
     GIC.call_once(|| Gic::new(host_fdt));
     debug!("gic = {:#x?}", GIC.get().unwrap());
 }
 
-pub fn init_late() {
+pub fn primary_init_late() {
     enable_gic_are_ns();
+    enable_irqs();
+}
+
+pub fn percpu_init() {
+    gicc_init();
+    enable_ipi();
+}
+
+impl Zone {
+    pub fn arch_irqchip_reset(&self) {
+        let gicd_base = host_gicd_base();
+        for (idx, &mask) in self.irq_bitmap.iter().enumerate() {
+            if idx == 0 {
+                continue;
+            }
+            unsafe {
+                write_volatile((gicd_base + GICD_ICENABLER + idx * 4) as *mut u32, mask);
+                write_volatile((gicd_base + GICD_ICACTIVER + idx * 4) as *mut u32, mask);
+            }
+        }
+    }
 }
