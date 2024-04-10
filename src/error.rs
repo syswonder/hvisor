@@ -1,10 +1,10 @@
 use alloc::string::String;
 use core::fmt::{Debug, Formatter, Result};
 
-/// POSIX errno
 #[repr(u32)]
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[allow(dead_code, clippy::upper_case_acronyms)]
+/// POSIX errno
 pub enum HvErrorNum {
     EPERM = 1,
     ENOENT = 2,
@@ -67,8 +67,8 @@ impl HvError {
         }
     }
 
-    pub fn code(&self) -> i32 {
-        -(self.num as u32 as i32)
+    pub fn code(&self) -> isize {
+        -(self.num as usize as isize)
     }
 }
 
