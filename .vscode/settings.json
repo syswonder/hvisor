@@ -20,7 +20,8 @@
 		"string.h": "c",
 		"hvisor.h": "c",
 		"ioctl.h": "c",
-		"getopt.h": "c"
+		"getopt.h": "c",
+		"stdlib.h": "c"
 	},
     // "rust-analyzer.cargo.features": [
     //     "board_qemu"

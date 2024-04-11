@@ -9,8 +9,8 @@
 #define VIRTIO_BLK_F_SIZE_MAX	(1<<1)	/* Indicates maximum segment size */
 #define VIRTIO_BLK_F_SEG_MAX	(1<<2)	/* Indicates maximum # of segments */
 
-// #define BLK_SIZE_MAX 131072
-#define BLK_SIZE_MAX 126976 // 768MB, indicate how many of 512B
+
+#define BLK_SIZE_MAX 122880 // indicate how many of 512B
 #define BLK_SEG_MAX 256
 
 #define VIRTQUEUE_BLK_MAX_SIZE 512

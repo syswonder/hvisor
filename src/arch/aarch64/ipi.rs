@@ -9,5 +9,5 @@ pub fn arch_send_event(cpu_id: u64, sgi_num: u64) {
     let target_list: u64 = 1 << cpu_id;
     let val: u64 = aff1 | aff2 | aff3 | irm | sgi_id | target_list;
     write_sysreg!(icc_sgi1r_el1, val);
-    info!("write sgi sys value = {:#x}", val);
+    debug!("write sgi sys value = {:#x}", val);
 }

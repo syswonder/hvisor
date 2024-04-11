@@ -19,8 +19,8 @@ int ko_fd;
 volatile struct hvisor_device_region *device_region;
 
 pthread_mutex_t RES_MUTEX = PTHREAD_MUTEX_INITIALIZER;
-// TODO: 改成链表
-VirtIODevice *vdevs[16];
+// TODO: chang to tailq
+VirtIODevice *vdevs[MAX_DEVS];
 int vdevs_num;
 
 void *virt_addr;
@@ -66,7 +66,7 @@ static VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zo
 			goto err;
 		}
         vdev->regs.dev_feature = VIRTIO_BLK_F_SEG_MAX | VIRTIO_BLK_F_SIZE_MAX | VIRTIO_F_VERSION_1;
-        vdev->dev = init_blk_dev(vdev, BLK_SIZE_MAX, img_fd); // 256MB
+        vdev->dev = init_blk_dev(vdev, BLK_SIZE_MAX, img_fd);
         init_virtio_queue(vdev, dev_type);
         break;
 	}
@@ -279,7 +279,7 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
     elem->id = idx;
     elem->len = iolen;
     used_ring->idx = used_idx;
-    log_debug("update used ring: used_idx is %d, elem->idx is %d", used_idx-1, idx);
+    log_debug("update used ring: used_idx is %d, elem->idx is %d", used_idx, idx);
 }
 
 /// If vq's used ring is changed, then inject interrupt to vq's zone
@@ -587,9 +587,6 @@ int virtio_init()
 
     log_set_level(LOG_DEBUG);
     FILE *log_file = fopen("log.txt", "w+");
-    if (log_file == NULL) {
-        log_error("open log file failed");
-    }
     log_add_fp(log_file, LOG_DEBUG);
     log_info("hvisor init");
     ko_fd = open("/dev/hvisor", O_RDWR);
@@ -620,11 +617,12 @@ int virtio_init()
 	close(mem_fd);
     log_info("mmap virt addr is %#x", virt_addr);
 
-    initialize_event_monitor();
+    // initialize_event_monitor();
     log_info("hvisor init okay!");
+	return 0;
 unmap:
     munmap((void *)device_region, MMAP_SIZE);
-    return 0;
+    return -1;
 }
 
 static int create_virtio_device_from_cmd(char *cmd) {
@@ -679,7 +677,7 @@ static int create_virtio_device_from_cmd(char *cmd) {
 	free(opt);
 
 	if (base_addr == 0 || len == 0 || irq_id == 0 || zone_id == 0) {
-		printf("missing arguments");
+		log_error("missing arguments");
 		return -1;
 	}
 	create_virtio_device(dev_type, zone_id, base_addr, len, irq_id, arg);
@@ -689,11 +687,10 @@ static int create_virtio_device_from_cmd(char *cmd) {
 int virtio_start(int argc, char *argv[]) {
 	static struct option long_options[] = {
 		{"device", required_argument, 0, 'd'},	
-		{0, 0, 0, 0}
+		{0, 0, 0, 0},
 	};
 	char *optstring = "d:";
 	int opt, err = 0;
-
 	virtio_init();
 	while ( (opt = getopt_long(argc, argv, optstring, long_options, NULL)) != -1) {
 		switch (opt) {
@@ -709,6 +706,10 @@ int virtio_start(int argc, char *argv[]) {
 				goto err_out;
 		}
 	}
+	for (int i=0; i<vdevs_num; i++) {
+		device_region->mmio_addrs[i] = vdevs[i]->base_addr;	
+	}
+	dmb_ishst();
     handle_virtio_requests();
 
 err_out:

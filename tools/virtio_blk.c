@@ -84,7 +84,6 @@ static void *blkproc_thread(void *arg)
             break;
         pthread_cond_wait(&dev->cond, &dev->mtx);
     }
-    log_error("this shouldn't happen");
     pthread_mutex_unlock(&dev->mtx);
     pthread_exit(NULL);
     return NULL;
@@ -100,7 +99,7 @@ BlkDev *init_blk_dev(VirtIODevice *vdev, uint64_t bsize, int img_fd)
     dev->config.seg_max = BLK_SEG_MAX;
     dev->img_fd = img_fd;
     dev->closing = 0;
-	// TODO: 修改为线程池
+	// TODO: chang to thread poll
     pthread_mutex_init(&dev->mtx, NULL);
     pthread_cond_init(&dev->cond, NULL);
     TAILQ_INIT(&dev->procq);
@@ -182,14 +181,8 @@ static void virtq_blk_handle_one_request(VirtQueue *vq)
 int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
 {
     log_trace("virtio blk notify handler enter");
-    /*
-    1. 从可用环中取出请求,
-    2. 将请求池的各个请求映射为文件进行处理
-    */
     virtqueue_disable_notify(vq);
     while(!virtqueue_is_empty(vq)) {
-        // uint16_t desc_idx = virtqueue_pop_desc_chain_head(vq); //描述符链头
-        // log_debug("avail_idx is %d, last_avail_idx is %d, desc_head_idx is %d", vq->avail_ring->idx, vq->last_avail_idx, desc_idx);
         virtq_blk_handle_one_request(vq);
     }
     virtqueue_enable_notify(vq);
