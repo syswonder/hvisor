@@ -1,6 +1,6 @@
-pub mod ipi;
 pub mod cpu;
 pub mod entry;
+pub mod ipi;
 pub mod mm;
 pub mod paging;
 pub mod s1pt;

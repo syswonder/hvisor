@@ -5,6 +5,7 @@
 #define MMAP_SIZE 4096
 #define MAX_REQ 32
 #define MAX_CPUS 20
+#define MAX_DEVS 4
 
 // used when start a zone.
 struct hvisor_zone_info {
@@ -50,6 +51,8 @@ struct hvisor_device_region {
     struct device_res res_list[MAX_REQ];
 	__u8 cfg_flags[MAX_CPUS];
 	__u64 cfg_values[MAX_CPUS];
+	// When config is okay to use, remove these
+	__u64 mmio_addrs[MAX_DEVS];
 };
 
 #define HVISOR_INIT_VIRTIO  _IO(1, 0) // virtio device init

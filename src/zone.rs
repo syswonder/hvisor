@@ -63,18 +63,18 @@ impl Zone {
     ) {
         if let Some(mmio) = self.mmio.iter_mut().find(|mmio| mmio.region.start == start) {
             warn!("duplicated mmio region {:#x?}", mmio);
-			if mmio.region.size != size {
-				panic!("duplicated mmio region size not match");
-			}
-			mmio.handler = handler;
+            if mmio.region.size != size {
+                panic!("duplicated mmio region size not match");
+            }
+            mmio.handler = handler;
             mmio.arg = arg;
         } else {
-			self.mmio.push(MMIOConfig {
-				region: MMIORegion { start, size },
-				handler,
-				arg,
-			})
-		}
+            self.mmio.push(MMIOConfig {
+                region: MMIORegion { start, size },
+                handler,
+                arg,
+            })
+        }
     }
     /// Remove the mmio region beginning at `start`.
     pub fn mmio_region_remove(&mut self, start: GuestPhysAddr) {
@@ -114,7 +114,7 @@ pub fn root_zone() -> Arc<RwLock<Zone>> {
 
 pub fn is_this_root_zone() -> bool {
     Arc::ptr_eq(&this_zone(), &root_zone())
-} 
+}
 
 /// Add zone to CELL_LIST
 pub fn add_zone(zone: Arc<RwLock<Zone>>) {
@@ -168,9 +168,6 @@ pub fn zone_create(
     let mut zone = Zone::new(zone_id);
     zone.pt_init(guest_entry, &guest_fdt, dtb_ptr as usize, dtb_ipa)
         .unwrap();
-	if zone_id == 1 {
-		zone.mmio_region_register(0xa003c00, 0x200, mmio_virtio_handler, 0xa003c00);
-	}
     zone.mmio_init(&guest_fdt);
     zone.irq_bitmap_init(&guest_fdt);
 

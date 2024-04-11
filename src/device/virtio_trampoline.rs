@@ -9,9 +9,7 @@ use spin::Mutex;
 use crate::arch::cpu::this_cpu_id;
 use crate::device::irqchip::gicv3::inject_irq;
 use crate::zone::this_zone_id;
-use crate::{
-    error::HvResult, memory::MMIOAccess,
-};
+use crate::{error::HvResult, memory::MMIOAccess};
 
 /// Save the irqs the virtio-device wants to inject. The format is <cpu_id, List<irq_id>>, and the first elem of List<irq_id> is the valid len of it.
 pub static VIRTIO_IRQS: Mutex<BTreeMap<usize, [u64; MAX_DEVS + 1]>> = Mutex::new(BTreeMap::new());
@@ -54,7 +52,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     };
     let cpu_id = this_cpu_id() as usize;
     let old_cfg_flag = cfg_flags[cpu_id];
-	// TODO: send sgi to wake up root linux's virtio backend
+    // TODO: send sgi to wake up root linux's virtio backend
     dev.push_req(hreq);
     drop(dev);
     // if it is cfg request, current cpu should be blocked until gets the result
@@ -75,7 +73,6 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
 /// When virtio req type is notify, root zone will send sgi to non root, \
 /// and non root will call this function.
 pub fn handle_virtio_irq() {
-    debug!("notify resolved");
     let mut map = VIRTIO_IRQS.lock();
     let irq_list = map.get_mut(&this_cpu_id()).unwrap();
     let len = irq_list[0] as usize;
@@ -87,7 +84,7 @@ pub fn handle_virtio_irq() {
 
 pub struct HvisorDevice {
     base_address: usize, // el1 and el2 shared region addr, el2 virtual address
-    is_enable: bool,
+    pub is_enable: bool,
 }
 
 impl HvisorDevice {
@@ -116,7 +113,7 @@ impl HvisorDevice {
     pub fn set_base_addr(&mut self, base_addr: usize) {
         self.base_address = base_addr;
         self.is_enable = true;
-		let region = self.immut_region();
+        let region = self.immut_region();
     }
 
     pub fn is_req_list_full(&self) -> bool {
@@ -137,7 +134,7 @@ impl HvisorDevice {
             false
         }
     }
-	// push a req to hvisor's req list
+    // push a req to hvisor's req list
     pub fn push_req(&mut self, req: HvisorDeviceReq) {
         let region = self.region();
         region.req_list[(region.req_rear % MAX_REQ) as usize] = req;
@@ -174,16 +171,17 @@ pub struct HvisorDeviceRegion {
     pub res_list: [HvisorDeviceRes; MAX_REQ as usize], // irqs
     cfg_flags: [u8; MAX_CPUS],
     cfg_values: [u64; MAX_CPUS],
+    pub mmio_addrs: [u64; MAX_DEVS],
 }
 
 impl Debug for HvisorDeviceRegion {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("HvisorDeviceRegion")
-           .field("req_front", &self.req_front)
-           .field("req_rear", &self.req_rear)
-           .field("res_front", &self.res_front)
-           .field("res_rear", &self.res_rear)
-           .finish()
+            .field("req_front", &self.req_front)
+            .field("req_rear", &self.req_rear)
+            .field("res_front", &self.res_front)
+            .field("res_rear", &self.res_rear)
+            .finish()
     }
 }
 

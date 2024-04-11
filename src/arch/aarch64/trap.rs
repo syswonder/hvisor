@@ -247,7 +247,7 @@ fn handle_hvc(regs: &mut GeneralRegisters) {
     let (code, arg0, arg1) = (regs.usr[0], regs.usr[1], regs.usr[2]);
     let cpu_data = this_cpu_data();
 
-    info!(
+    debug!(
         "HVC from CPU{},code:{:#x?},arg0:{:#x?},arg1:{:#x?}",
         cpu_data.id, code, arg0, arg1
     );
@@ -255,7 +255,7 @@ fn handle_hvc(regs: &mut GeneralRegisters) {
         Ok(ret) => ret as _,
         Err(e) => e.code(),
     };
-    info!("HVC result = {}", result);
+    debug!("HVC result = {}", result);
     regs.usr[0] = result as _;
 }
 

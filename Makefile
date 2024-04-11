@@ -44,7 +44,7 @@ ifeq ($(MODE), release)
 endif
 
 # Targets
-.PHONY: all elf disa run gdb monitor clean tools rootfs transfer
+.PHONY: all elf disa run gdb monitor clean tools rootfs
 all: $(hvisor_bin)
 
 elf:
@@ -58,14 +58,10 @@ tools:
 	make -C tools && \
 	make -C driver
 
-transfer:
-	~/trans_file.sh ./tools/hvisor 
-	~/trans_file.sh ./driver/main.ko 
-
-run: all tools transfer
+run: all
 	$(QEMU) $(QEMU_ARGS)
 
-gdb: all tools transfer
+gdb: all
 	$(QEMU) $(QEMU_ARGS) -s -S
 
 show-features:

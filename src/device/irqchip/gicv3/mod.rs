@@ -90,7 +90,6 @@ use self::gicd::{enable_gic_are_ns, GICD_ICACTIVER, GICD_ICENABLER};
 use self::gicr::enable_ipi;
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::consts::MAX_CPU_NUM;
-use crate::device::virtio_trampoline::handle_virtio_irq;
 
 use crate::event::check_events;
 use crate::hypercall::SGI_IPI_ID;
@@ -102,18 +101,17 @@ pub fn gicc_init() {
     let sdei_ver = unsafe { smc_arg1!(0xc4000020) }; //sdei_check();
     info!("gicv3 init: sdei version: {}", sdei_ver);
 
-    //Identifier bits. Read-only and writes are ignored.
-    //Priority bits. Read-only and writes are ignored.
-    let ctlr = read_sysreg!(icc_ctlr_el1);
-    debug!("ctlr: {:#x?}", ctlr);
-    write_sysreg!(icc_ctlr_el1, 0x2); // ICC_EOIR1_EL1 provide priority drop functionality only. ICC_DIR_EL1 provides interrupt deactivation functionality.
-    let ctlr2 = read_sysreg!(icc_ctlr_el1);
-    debug!("ctlr2: {:#x?}", ctlr2);
+    // Make ICC_EOIR1_EL1 provide priority drop functionality only. ICC_DIR_EL1 provides interrupt deactivation functionality.
+    let _ctlr = read_sysreg!(icc_ctlr_el1);
+    write_sysreg!(icc_ctlr_el1, 0x2);
+    // Set Interrupt Controller Interrupt Priority Mask Register
     let pmr = read_sysreg!(icc_pmr_el1);
-    write_sysreg!(icc_pmr_el1, 0xff); // Interrupt Controller Interrupt Priority Mask Register
-    let igrpen = read_sysreg!(icc_igrpen1_el1);
-    write_sysreg!(icc_igrpen1_el1, 0x1); //group 1 irq
-    debug!("ctlr: {:#x?}, pmr:{:#x?},igrpen{:#x?}", ctlr, pmr, igrpen);
+    write_sysreg!(icc_pmr_el1, 0xf0);
+    // Enable group 1 irq
+    let _igrpen = read_sysreg!(icc_igrpen1_el1);
+    write_sysreg!(icc_igrpen1_el1, 0x1);
+
+    gicv3_clear_pending_irqs();
     let _vtr = read_sysreg!(ich_vtr_el2);
     let vmcr = ((pmr & 0xff) << 24) | (1 << 1) | (1 << 9); //VPMR|VENG1|VEOIM
     write_sysreg!(ich_vmcr_el2, vmcr);
