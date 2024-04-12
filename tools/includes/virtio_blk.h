@@ -9,8 +9,7 @@
 #define VIRTIO_BLK_F_SIZE_MAX	(1<<1)	/* Indicates maximum segment size */
 #define VIRTIO_BLK_F_SEG_MAX	(1<<2)	/* Indicates maximum # of segments */
 
-
-#define BLK_SIZE_MAX 122880 // indicate how many of 512B
+/// Maximum number of segments in a request.
 #define BLK_SEG_MAX 256
 
 #define VIRTQUEUE_BLK_MAX_SIZE 512
@@ -30,6 +29,7 @@
 #define VIRTIO_BLK_S_IOERR      1
 #define VIRTIO_BLK_S_UNSUPP     2
 
+#define BLK_SUPPORTED_FEATURES (VIRTIO_BLK_F_SEG_MAX | VIRTIO_BLK_F_SIZE_MAX | VIRTIO_F_VERSION_1)
 struct virtio_blk_req_head {
 	uint32_t req_type;
 	uint32_t reserved;
@@ -114,7 +114,7 @@ enum blkop {
 // A request needed to process by blk thread.
 struct blkp_req {
 	TAILQ_ENTRY(blkp_req) link;
-    struct iovec iov[BLK_SEG_MAX+2];
+    struct iovec *iov;
 	int iovcnt;
 	uint64_t offset;
 	uint16_t idx;

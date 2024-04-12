@@ -61,18 +61,26 @@ static VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zo
     {
     case VirtioTBlock: {
 		int img_fd = open((const char*)arg, O_RDWR);
+		struct stat st;
+		uint64_t blk_size;
         if (img_fd == -1) {
 			log_error("cannot open %s, Error code is %d\n", (char*)arg, errno);
+			close(img_fd);
 			goto err;
 		}
-        vdev->regs.dev_feature = VIRTIO_BLK_F_SEG_MAX | VIRTIO_BLK_F_SIZE_MAX | VIRTIO_F_VERSION_1;
-        vdev->dev = init_blk_dev(vdev, BLK_SIZE_MAX, img_fd);
+		if (fstat(img_fd, &st) == -1) {
+			log_error("cannot stat %s, Error code is %d\n", (char*)arg, errno);
+			close(img_fd);
+			goto err;
+		}
+		blk_size = st.st_size / 512; // 512 bytes per block
+        vdev->dev = init_blk_dev(vdev, blk_size, img_fd);
+        vdev->regs.dev_feature = BLK_SUPPORTED_FEATURES;
         init_virtio_queue(vdev, dev_type);
         break;
 	}
     case VirtioTNet:
-		// TODO: add VIRTIO_NET_F_MRG_RXBUF?
-        vdev->regs.dev_feature = VIRTIO_F_VERSION_1 | VIRTIO_NET_F_MAC | VIRTIO_NET_F_STATUS;
+        vdev->regs.dev_feature = NET_SUPPORTED_FEATURES;
         vdev->type = dev_type;
         uint8_t mac[] = {0x00, 0x16, 0x3E, 0x10, 0x10, 0x10};
         vdev->dev = init_net_dev(mac);
@@ -223,10 +231,7 @@ void virtqueue_set_used(VirtQueue *vq)
 
 // record one descriptor to iov.
 static inline int _descriptor2iov(int i, volatile VirtqDesc *vd,
-           struct iovec *iov, int max_iov, uint16_t *flags) {
-	if (i >= max_iov)
-        return -1;
-
+           struct iovec *iov, uint16_t *flags) {
     void *host_addr;
     host_addr = get_virt_addr(vd->addr);
     iov[i].iov_base = host_addr;
@@ -239,32 +244,39 @@ static inline int _descriptor2iov(int i, volatile VirtqDesc *vd,
 
 /// record one descriptor list to iov
 /// \param desc_idx the first descriptor's idx in descriptor list.
-/// \param max_iov the max num of iov
+/// \param iov the iov to record
 /// \param flags each descriptor's flags
-/// \return the valid num of iov
+/// \param append_len the number of iovs to append
+/// \return the len of iovs
 int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
-                struct iovec *iov, int max_iov, uint16_t *flags)
+                struct iovec **iov, uint16_t **flags, int append_len)
 {
     uint16_t next, idx;
     volatile VirtqDesc *vdesc;
+	int chain_len, i;
     idx = vq->last_avail_idx;
     if(idx == vq->avail_ring->idx)
         return 0;
     vq->last_avail_idx++;
     *desc_idx = next = vq->avail_ring->ring[idx & (vq->num - 1)];
-
-    for (int i=0; i < vq->num; next = vdesc->next) {
+	// record desc chain' len to chain_len
+	for (i=0; i<vq->num; i++, next = vdesc->next) {
         vdesc = &vq->desc_table[next];
-        if (_descriptor2iov(i, vdesc, iov, max_iov, flags)) {
-            log_error("vq record failed");
-            return -1;
-        }
-        i++;
-        if ((vdesc->flags & VRING_DESC_F_NEXT) == 0)
-            return i;
-    }
-    log_error("desc not end?");
-    return -1;
+		if ((vdesc->flags & VRING_DESC_F_NEXT) == 0)
+            break;
+	}
+
+	chain_len = i + 1, next = *desc_idx;
+	
+	*iov = malloc(sizeof(struct iovec) * ( chain_len + append_len));
+	if (flags != NULL)
+		*flags = malloc(sizeof(uint16_t) * ( chain_len + append_len));
+
+	for (i=0; i<chain_len; i++, next = vdesc->next) {
+		vdesc = &vq->desc_table[next];
+		_descriptor2iov(i, vdesc, *iov, flags == NULL ? NULL : *flags);
+	}
+    return chain_len;
 }
 
 void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
@@ -283,7 +295,7 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
 }
 
 /// If vq's used ring is changed, then inject interrupt to vq's zone
-void vq_finish_chain(VirtQueue *vq, int no_more_chains)
+void try_inject_irq(VirtQueue *vq, int no_more_chains)
 {
     if (!no_more_chains) {
         return;
@@ -584,10 +596,10 @@ int virtio_init()
 {
     // The higher log level is , faster virtio-blk will be.
     int err;
-
-    log_set_level(LOG_DEBUG);
+	int log_level = LOG_WARN;
+    log_set_level(log_level);
     FILE *log_file = fopen("log.txt", "w+");
-    log_add_fp(log_file, LOG_DEBUG);
+    log_add_fp(log_file, log_level);
     log_info("hvisor init");
     ko_fd = open("/dev/hvisor", O_RDWR);
     if (ko_fd < 0) {
@@ -617,7 +629,7 @@ int virtio_init()
 	close(mem_fd);
     log_info("mmap virt addr is %#x", virt_addr);
 
-    // initialize_event_monitor();
+    initialize_event_monitor();
     log_info("hvisor init okay!");
 	return 0;
 unmap:
@@ -709,6 +721,8 @@ int virtio_start(int argc, char *argv[]) {
 	for (int i=0; i<vdevs_num; i++) {
 		device_region->mmio_addrs[i] = vdevs[i]->base_addr;	
 	}
+	dmb_ishst();
+	device_region->mmio_avail = 1;
 	dmb_ishst();
     handle_virtio_requests();
 

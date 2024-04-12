@@ -19,8 +19,9 @@ static void complete_block_operation(BlkDev *dev, struct blkp_req *req, VirtQueu
     }
     pthread_mutex_lock(&dev->mtx);
     update_used_ring(vq, req->idx, 1);
-    vq_finish_chain(vq, TAILQ_EMPTY(&dev->procq));
+    try_inject_irq(vq, TAILQ_EMPTY(&dev->procq));
     pthread_mutex_unlock(&dev->mtx);
+	free(req->iov);
     free(req);
 }
 // get a blk req from procq
@@ -95,7 +96,7 @@ BlkDev *init_blk_dev(VirtIODevice *vdev, uint64_t bsize, int img_fd)
 {
     BlkDev *dev = malloc(sizeof(BlkDev));
     dev->config.capacity = bsize;
-    dev->config.size_max = BLK_SIZE_MAX;
+    dev->config.size_max = bsize;
     dev->config.seg_max = BLK_SEG_MAX;
     dev->img_fd = img_fd;
     dev->closing = 0;
@@ -112,34 +113,33 @@ BlkDev *init_blk_dev(VirtIODevice *vdev, uint64_t bsize, int img_fd)
 static void virtq_blk_handle_one_request(VirtQueue *vq)
 {
     struct blkp_req *breq;
-    struct iovec *iov;
+    struct iovec *iov = NULL;
+    uint16_t *flags;
     int i, n, type, writeop;
-    uint16_t flags[BLK_SEG_MAX+2];
     BlkReqHead *hdr;
     BlkDev *blkDev = vq->dev->dev;
     int err = 0;
     breq = malloc(sizeof(struct blkp_req));
-    iov = breq->iov;
-    n = process_descriptor_chain(vq, &breq->idx, iov, BLK_SEG_MAX+2, flags);
-
+    n = process_descriptor_chain(vq, &breq->idx, &iov, &flags, 0);
+	breq->iov = iov;
     if (n < 2 || n > BLK_SEG_MAX + 2) {
         log_error("iov's num is wrong");
-        return;
+        goto err_out;
     }
 
     if ((flags[0] & VRING_DESC_F_WRITE) != 0) {
         log_error("virt queue's desc chain header should not be writable!");
-        return ;
+        goto err_out;
     }
 
     if (iov[0].iov_len != sizeof(BlkReqHead)) {
         log_error("the size of blk header is %d, it should be %d!", iov[0].iov_len, sizeof(BlkReqHead));
-        return;
+		goto err_out;
     }
 
     if(iov[n-1].iov_len != 1 || ((flags[n-1] & VRING_DESC_F_WRITE) == 0)) {
         log_error("status iov is invalid!, status len is %d, flag is %d, n is %d", iov[n-1].iov_len, flags[n-1], n);
-        return;
+		goto err_out;
     }
 
     hdr = (BlkReqHead *) (iov[0].iov_base);
@@ -150,7 +150,7 @@ static void virtq_blk_handle_one_request(VirtQueue *vq)
     for (i=1; i<n-1; i++) 
         if (((flags[i] & VRING_DESC_F_WRITE) == 0) != writeop) {
             log_error("flag is conflict with operation");
-            return;
+			goto err_out;
         }
     switch (type)
     {
@@ -163,7 +163,7 @@ static void virtq_blk_handle_one_request(VirtQueue *vq)
             TAILQ_INSERT_TAIL(&blkDev->procq, breq, link);
             pthread_cond_signal(&blkDev->cond);
             pthread_mutex_unlock(&blkDev->mtx);
-            return;
+            goto free_flags;
         case VIRTIO_BLK_T_GET_ID:
         {
             char s[20] = "hvisor-virblk";
@@ -176,6 +176,14 @@ static void virtq_blk_handle_one_request(VirtQueue *vq)
             break;
     }
     complete_block_operation(blkDev, breq, vq, err);
+
+free_flags:
+    free(flags);
+	return;
+err_out:
+	free(flags);
+	free(iov);
+    free(breq);
 }
 
 int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
