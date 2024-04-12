@@ -90,6 +90,7 @@ use self::gicd::{enable_gic_are_ns, GICD_ICACTIVER, GICD_ICENABLER};
 use self::gicr::enable_ipi;
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::consts::MAX_CPU_NUM;
+
 use crate::event::check_events;
 use crate::hypercall::SGI_IPI_ID;
 use crate::zone::Zone;
@@ -100,18 +101,17 @@ pub fn gicc_init() {
     let sdei_ver = unsafe { smc_arg1!(0xc4000020) }; //sdei_check();
     info!("gicv3 init: sdei version: {}", sdei_ver);
 
-    //Identifier bits. Read-only and writes are ignored.
-    //Priority bits. Read-only and writes are ignored.
-    let ctlr = read_sysreg!(icc_ctlr_el1);
-    debug!("ctlr: {:#x?}", ctlr);
-    write_sysreg!(icc_ctlr_el1, 0x2); // ICC_EOIR1_EL1 provide priority drop functionality only. ICC_DIR_EL1 provides interrupt deactivation functionality.
-    let ctlr2 = read_sysreg!(icc_ctlr_el1);
-    debug!("ctlr2: {:#x?}", ctlr2);
+    // Make ICC_EOIR1_EL1 provide priority drop functionality only. ICC_DIR_EL1 provides interrupt deactivation functionality.
+    let _ctlr = read_sysreg!(icc_ctlr_el1);
+    write_sysreg!(icc_ctlr_el1, 0x2);
+    // Set Interrupt Controller Interrupt Priority Mask Register
     let pmr = read_sysreg!(icc_pmr_el1);
-    write_sysreg!(icc_pmr_el1, 0xff); // Interrupt Controller Interrupt Priority Mask Register
-    let igrpen = read_sysreg!(icc_igrpen1_el1);
-    write_sysreg!(icc_igrpen1_el1, 0x1); //group 1 irq
-    debug!("ctlr: {:#x?}, pmr:{:#x?},igrpen{:#x?}", ctlr, pmr, igrpen);
+    write_sysreg!(icc_pmr_el1, 0xf0);
+    // Enable group 1 irq
+    let _igrpen = read_sysreg!(icc_igrpen1_el1);
+    write_sysreg!(icc_igrpen1_el1, 0x1);
+
+    gicv3_clear_pending_irqs();
     let _vtr = read_sysreg!(ich_vtr_el2);
     let vmcr = ((pmr & 0xff) << 24) | (1 << 1) | (1 << 9); //VPMR|VENG1|VEOIM
     write_sysreg!(ich_vmcr_el2, vmcr);
@@ -169,7 +169,7 @@ pub fn gicv3_handle_irq_el1() {
             }
             if !ipi_handled {
                 trace!("sgi get {}, inject", irq_id);
-                inject_irq(irq_id);
+                inject_irq(irq_id, false);
             }
         } else if irq_id < 16 {
             warn!("skip sgi {}", irq_id);
@@ -181,7 +181,7 @@ pub fn gicv3_handle_irq_el1() {
                 trace!("*** get spi_irq id = {}", irq_id);
             }
             deactivate_irq(irq_id);
-            inject_irq(irq_id);
+            inject_irq(irq_id, true);
         }
     }
     trace!("handle done")
@@ -258,53 +258,43 @@ fn write_lr(id: usize, val: u64) {
     }
 }
 
-fn inject_irq(irq_id: usize) {
+pub fn inject_irq(irq_id: usize, is_hardware: bool) {
     // mask
-    const LR_VIRTIRQ_MASK: usize = 0x3ff;
-    // const LR_PHYSIRQ_MASK: usize = 0x3ff << 10;
+    const LR_VIRTIRQ_MASK: usize = (1 << 32) - 1;
 
-    // const LR_PENDING_BIT: usize = 1 << 28;
-    // const LR_HW_BIT: usize = 1 << 31;
-    let elsr = read_sysreg!(ich_elrsr_el2);
+    let elsr: u64 = read_sysreg!(ich_elrsr_el2);
     let vtr = read_sysreg!(ich_vtr_el2) as usize;
     let lr_num: usize = (vtr & 0xf) + 1;
-    let mut lr_idx = -1 as isize;
+    let mut free_ir = -1 as isize;
     for i in 0..lr_num {
+        // find a free list register
         if (1 << i) & elsr > 0 {
-            if lr_idx == -1 {
-                lr_idx = i as isize;
+            if free_ir == -1 {
+                free_ir = i as isize;
             }
             continue;
         }
-        // overlap
-        let _lr_val = read_lr(i) as usize;
-        if (i & LR_VIRTIRQ_MASK) == irq_id {
-            trace!("irq mask!{} {}", i, irq_id);
+        let lr_val = read_lr(i) as usize;
+        // if a virtual interrupt is enabled and equals to the physical interrupt irq_id
+        if (lr_val & LR_VIRTIRQ_MASK) == irq_id {
+            trace!("virtual irq {} enables again", irq_id);
             return;
         }
     }
-    debug!("To Inject IRQ {}, find lr {}", irq_id, lr_idx);
+    // debug!("To Inject IRQ {}, find lr {}", irq_id, free_ir);
 
-    if lr_idx == -1 {
-        error!("full lr");
-        loop {}
-        // return;
+    if free_ir == -1 {
+        panic!("full lr");
     } else {
-        // lr = irq_id;
-        // /* Only group 1 interrupts */
-        // lr |= ICH_LR_GROUP_BIT;
-        // lr |= ICH_LR_PENDING;
-        // if (!is_sgi(irq_id)) {
-        //     lr |= ICH_LR_HW_BIT;
-        //     lr |= (usize)irq_id << ICH_LR_PHYS_ID_SHIFT;
-        // }
-        let mut val = irq_id as usize; //v intid
+        let mut val = irq_id as u64; //v intid
         val |= 1 << 60; //group 1
         val |= 1 << 62; //state pending
-        val |= 1 << 61; //map hardware
-        val |= (irq_id as usize) << 32; //p intid
-                                        //debug!("To write lr {} val {}", lr_idx, val);
-        write_lr(lr_idx as usize, val as u64);
+
+        if !is_sgi(irq_id as _) && is_hardware {
+            val |= 1 << 61; //map hardware
+            val |= (irq_id as u64) << 32; //pINTID
+        }
+        write_lr(free_ir as usize, val);
     }
 }
 
@@ -357,6 +347,10 @@ pub fn host_gicr_size() -> usize {
 
 pub fn is_spi(irqn: u32) -> bool {
     irqn > 31 && irqn < 1020
+}
+
+pub fn is_sgi(irqn: u32) -> bool {
+    irqn < 16
 }
 
 pub fn enable_irqs() {

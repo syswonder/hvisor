@@ -7,10 +7,10 @@
                 "${workspaceFolder}/tools/**"
             ],
             "defines": [],
-            "compilerPath": "/usr/bin/gcc",
+            "compilerPath": "~/tools/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu/bin/aarch64-none-linux-gnu-gcc",
             "cStandard": "c17",
             "cppStandard": "gnu++14",
-            "intelliSenseMode": "linux-gcc-x64",
+            "intelliSenseMode": "linux-gcc-arm64",
             "configurationProvider": "ms-vscode.makefile-tools"
         }
     ],

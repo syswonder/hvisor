@@ -3,11 +3,11 @@
 //! Memory management.
 
 use alloc::collections::btree_map::{BTreeMap, Entry};
-use spin::Once;
 use core::fmt::{Debug, Formatter, Result};
+use spin::Once;
 
-use super::{mapper::Mapper, MemFlags};
 use super::AlignedPage;
+use super::{mapper::Mapper, MemFlags};
 use crate::arch::paging::{GenericPageTable, PageSize, PagingResult};
 use crate::arch::Stage2PageTable;
 use crate::error::HvResult;
