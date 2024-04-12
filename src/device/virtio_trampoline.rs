@@ -19,7 +19,7 @@ pub static HVISOR_DEVICE: Mutex<HvisorDevice> = Mutex::new(HvisorDevice::default
 const QUEUE_NOTIFY: usize = 0x50;
 pub const MAX_REQ: u32 = 32;
 pub const MAX_DEVS: usize = 4; // Attention: The max virtio-dev number for vm is 4.
-pub const MAX_CPUS: usize = 20;
+pub const MAX_CPUS: usize = 16;
 /// non root zone's virtio request handler
 pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     debug!("mmio virtio handler");
@@ -172,6 +172,7 @@ pub struct HvisorDeviceRegion {
     cfg_flags: [u8; MAX_CPUS],
     cfg_values: [u64; MAX_CPUS],
     pub mmio_addrs: [u64; MAX_DEVS],
+    pub mmio_avail: u8,
 }
 
 impl Debug for HvisorDeviceRegion {
@@ -195,6 +196,7 @@ pub struct HvisorDeviceReq {
     src_zone: u32,
     is_write: u8,
     pub need_interrupt: u8,
+    _padding: u16,
 }
 
 #[repr(C)]
@@ -222,6 +224,7 @@ impl HvisorDeviceReq {
             src_zone,
             is_write,
             need_interrupt,
+            _padding: 0,
         }
     }
 }

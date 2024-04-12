@@ -93,7 +93,7 @@ void virtio_net_rx_callback(int fd, int epoll_type, void *param)
     log_debug("virtio_net_rx_callback");
     VirtIODevice *vdev = param;
 	struct virtio_net_hdr *vnet_header;
-	struct iovec iov[VIRTQUEUE_NET_MAX_SIZE], *iov_packet;
+	struct iovec *iov, *iov_packet;
     NetDev *net = vdev->dev;
     VirtQueue *vq = &vdev->vqs[NET_QUEUE_RX];
     int n, len;
@@ -112,21 +112,21 @@ void virtio_net_rx_callback(int fd, int epoll_type, void *param)
 	// if rx_vq is empty, drop the packet
     if (virtqueue_is_empty(vq)) {
         read(net->tapfd, trashbuf, sizeof(trashbuf));
-        vq_finish_chain(vq, 1);
+        try_inject_irq(vq, 1);
         return;
     }
 
     while (!virtqueue_is_empty(vq)) {
-        n = process_descriptor_chain(vq, &idx, iov, VIRTQUEUE_NET_MAX_SIZE, NULL);
+        n = process_descriptor_chain(vq, &idx, &iov, NULL, 0);
         if (n < 1 || n > VIRTQUEUE_NET_MAX_SIZE) {
             log_error("process_descriptor_chain failed");
-            return;
+            goto free_iov;
         }
         vnet_header = iov[0].iov_base;
         iov_packet = rm_iov_header(iov, &n, sizeof(NetHdr));
         if(iov_packet == NULL)
-            return;
-		// TODO: one read from tap means reading one packet??? Maybe yes. We can test.
+            goto free_iov;
+		// Read a packet from tap device
         len = readv(net->tapfd, iov_packet, n);
 
         if (len < 0 && errno == EWOULDBLOCK) {
@@ -136,20 +136,22 @@ void virtio_net_rx_callback(int fd, int epoll_type, void *param)
 			break;
         }
 
-        log_debug("receive the data from tap device");
         memset(vnet_header, 0, sizeof(NetHdr));
-		// TODO: need to test VIRTIO_NET_F_MRG_RXBUF: see how n is changed when this feature is changed.
 		vnet_header->num_buffers = 1;
 
         update_used_ring(vq, idx, len + sizeof(NetHdr));
+		free(iov);
     }
 
-    vq_finish_chain(vq, 1);
+    try_inject_irq(vq, 1);
+	return ;
+free_iov:
+    free(iov);
 }
 
 static void virtq_tx_handle_one_request(NetDev *net, VirtQueue *vq)
 {
-    struct iovec iov[VIRTQUEUE_NET_MAX_SIZE + 1];
+    struct iovec *iov = NULL;
     int i, n;
     int packet_len, all_len; // all_len include the header length.
     uint16_t idx;
@@ -160,14 +162,16 @@ static void virtq_tx_handle_one_request(NetDev *net, VirtQueue *vq)
         return;
     }
 
-    n = process_descriptor_chain(vq, &idx, iov, VIRTQUEUE_NET_MAX_SIZE, NULL);
+    n = process_descriptor_chain(vq, &idx, &iov, NULL, 1);
     if (n < 1)
         return ;
 
-	for (i = 0; i < n; i++) 
+	for (i = 0, all_len = 0; i < n; i++) 
 		all_len += iov[i].iov_len;
+
 	packet_len = all_len - sizeof(NetHdr);
 	iov[0].iov_base += sizeof(NetHdr);
+	iov[0].iov_len -= sizeof(NetHdr);
     log_info("packet send: %d bytes", packet_len);
 
 	// The mininum packet for data link layer is 64 bytes.
@@ -178,6 +182,7 @@ static void virtq_tx_handle_one_request(NetDev *net, VirtQueue *vq)
     }
     writev(net->tapfd, iov, n);
     update_used_ring(vq, idx, all_len);
+	free(iov);
 }
 
 int virtio_net_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq)

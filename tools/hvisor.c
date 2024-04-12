@@ -83,7 +83,7 @@ static int zone_start(int argc, char *argv[]) {
     struct hvisor_zone_load *zone_load;
     struct hvisor_image_desc *images;
     int fd, err, opt, zone_id;
-	char *now, *image_path = NULL, *dtb_path = NULL;
+	char *image_path = NULL, *dtb_path = NULL;
 	unsigned long long image_address, dtb_address;
 	zone_id = 0;
 	image_address = dtb_address = 0;
