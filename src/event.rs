@@ -1,10 +1,12 @@
-use crate::{arch::ipi::arch_send_event, percpu::this_cpu_data};
+use crate::{
+    arch::ipi::arch_send_event, device::virtio_trampoline::handle_virtio_irq, percpu::this_cpu_data,
+};
 use alloc::{collections::VecDeque, vec::Vec};
 use spin::{Mutex, Once};
 
 pub const IPI_EVENT_WAKEUP: usize = 0;
 pub const IPI_EVENT_SHUTDOWN: usize = 1;
-
+pub const IPI_EVENT_VIRTIO_INJECT_IRQ: usize = 2;
 static EVENT_MANAGER: Once<EventManager> = Once::new();
 
 struct EventManager {
@@ -63,6 +65,10 @@ pub fn check_events() -> bool {
         }
         Some(IPI_EVENT_SHUTDOWN) => {
             cpu_data.arch_cpu.idle();
+        }
+        Some(IPI_EVENT_VIRTIO_INJECT_IRQ) => {
+            handle_virtio_irq();
+            true
         }
         _ => false,
     }

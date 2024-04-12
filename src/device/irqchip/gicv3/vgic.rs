@@ -43,17 +43,19 @@ impl Zone {
                 }
             }
         }
-        
+
         for (index, &word) in self.irq_bitmap.iter().enumerate() {
             for bit_position in 0..32 {
                 if word & (1 << bit_position) != 0 {
                     let interrupt_number = index * 32 + bit_position;
-                    info!("Found interrupt in Zone {} irq_bitmap: {}", self.id, interrupt_number);
+                    info!(
+                        "Found interrupt in Zone {} irq_bitmap: {}",
+                        self.id, interrupt_number
+                    );
                 }
             }
         }
     }
-    
 }
 
 fn restrict_bitmask_access(

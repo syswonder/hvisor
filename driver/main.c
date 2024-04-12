@@ -15,6 +15,7 @@
 #include <linux/gfp.h>
 #include <linux/vmalloc.h>
 #include <asm/cacheflush.h>
+#include <linux/string.h> 
 
 struct hvisor_device_region *device_region; 
 // initial virtio el2 shared region
@@ -22,14 +23,11 @@ static int hvisor_init_virtio(void)
 {
 	int err;
 	device_region = __get_free_pages(GFP_KERNEL, 0);
-    SetPageReserved(virt_to_page(device_region));
-    // init device region
-    device_region->req_front = 0;
-    device_region->req_rear = 0;
-    device_region->res_front = 0;
-    device_region->res_rear = 0;
 	if (device_region == NULL)
 		return -ENOMEM;
+    SetPageReserved(virt_to_page(device_region));
+    // init device region
+	memset(device_region, 0, sizeof(struct hvisor_device_region));
 	err = hvisor_call_arg1(HVISOR_HC_INIT_VIRTIO, __pa(device_region));
 	if (err)
 		return err;
@@ -39,7 +37,6 @@ static int hvisor_init_virtio(void)
 // finish virtio req and send result to el2
 static int hvisor_finish_req(void) 
 {
-    pr_info("hvisor finish request\n");
     int err;
     err = hvisor_call(HVISOR_HC_FINISH_REQ);
     if (err)

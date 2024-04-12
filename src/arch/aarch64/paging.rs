@@ -550,4 +550,3 @@ fn next_table_mut_or_create<'a, E: GenericPTE>(
         next_table_mut(entry)
     }
 }
-

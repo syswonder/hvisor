@@ -5,6 +5,7 @@
 #define MMAP_SIZE 4096
 #define MAX_REQ 32
 #define MAX_CPUS 20
+#define MAX_DEVS 4
 
 // used when start a zone.
 struct hvisor_zone_info {
@@ -28,16 +29,16 @@ struct hvisor_image_desc {
 // receive request from el2
 struct device_req {
 	__u64 src_cpu;
-	__u64 address; // cell's ipa
+	__u64 address; // zone's ipa
 	__u64 size;
 	__u64 value;
-	__u32 src_cell;
+	__u32 src_zone;
 	__u8 is_write;
 	__u8 need_interrupt;
 };
 
 struct device_res {
-    __u32 target_cell;
+    __u32 target_zone;
     __u32 irq_id;
 };
 
@@ -50,6 +51,8 @@ struct hvisor_device_region {
     struct device_res res_list[MAX_REQ];
 	__u8 cfg_flags[MAX_CPUS];
 	__u64 cfg_values[MAX_CPUS];
+	// When config is okay to use, remove these
+	__u64 mmio_addrs[MAX_DEVS];
 };
 
 #define HVISOR_INIT_VIRTIO  _IO(1, 0) // virtio device init

@@ -5,10 +5,12 @@ use spin::RwLock;
 use crate::arch::s2pt::Stage2PageTable;
 use crate::consts::MAX_CPU_NUM;
 
+use crate::device::virtio_trampoline::mmio_virtio_handler;
 use crate::error::HvResult;
 use crate::memory::addr::GuestPhysAddr;
-use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
+use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemoryRegion, MemorySet};
 use crate::percpu::{get_cpu_data, this_zone, CpuSet};
+use core::ops::Add;
 use core::panic;
 
 pub struct Zone {
@@ -59,14 +61,20 @@ impl Zone {
         handler: MMIOHandler,
         arg: usize,
     ) {
-        if let Some(mmio) = self.mmio.iter().find(|mmio| mmio.region.start == start) {
-            panic!("duplicated mmio region {:#x?}", mmio);
+        if let Some(mmio) = self.mmio.iter_mut().find(|mmio| mmio.region.start == start) {
+            warn!("duplicated mmio region {:#x?}", mmio);
+            if mmio.region.size != size {
+                panic!("duplicated mmio region size not match");
+            }
+            mmio.handler = handler;
+            mmio.arg = arg;
+        } else {
+            self.mmio.push(MMIOConfig {
+                region: MMIORegion { start, size },
+                handler,
+                arg,
+            })
         }
-        self.mmio.push(MMIOConfig {
-            region: MMIORegion { start, size },
-            handler,
-            arg,
-        })
     }
     /// Remove the mmio region beginning at `start`.
     pub fn mmio_region_remove(&mut self, start: GuestPhysAddr) {
@@ -106,7 +114,7 @@ pub fn root_zone() -> Arc<RwLock<Zone>> {
 
 pub fn is_this_root_zone() -> bool {
     Arc::ptr_eq(&this_zone(), &root_zone())
-} 
+}
 
 /// Add zone to CELL_LIST
 pub fn add_zone(zone: Arc<RwLock<Zone>>) {
@@ -131,6 +139,10 @@ pub fn find_zone(zone_id: usize) -> Option<Arc<RwLock<Zone>>> {
         .iter()
         .find(|zone| zone.read().id == zone_id)
         .cloned()
+}
+
+pub fn this_zone_id() -> usize {
+    this_zone().read().id
 }
 
 pub fn zone_create(

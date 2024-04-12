@@ -80,9 +80,9 @@ struct VirtIODevice
 {
     uint32_t id;
     uint32_t vqs_len;
-    uint32_t cell_id;
+    uint32_t zone_id;
     uint32_t irq_id;
-    uint64_t base_addr; // the virtio device's base addr in non root cell's memory
+    uint64_t base_addr; // the virtio device's base addr in non root zone's memory
     uint64_t len;       // mmio region's length
     VirtioDeviceType type;
     VirtMmioRegs regs;
@@ -129,15 +129,6 @@ struct VirtIODevice
 /* Activated features set selector - Write Only */
 #define VIRTIO_MMIO_DRIVER_FEATURES_SEL	0x024
 
-
-// #ifndef VIRTIO_MMIO_NO_LEGACY /* LEGACY DEVICES ONLY! */
-
-// /* Guest's memory page size in bytes - Write Only */
-// #define VIRTIO_MMIO_GUEST_PAGE_SIZE	0x028
-
-// #endif
-
-
 /* Queue selector - Write Only */
 #define VIRTIO_MMIO_QUEUE_SEL		0x030
 
@@ -146,18 +137,6 @@ struct VirtIODevice
 
 /* Queue size for the currently selected queue - Write Only */
 #define VIRTIO_MMIO_QUEUE_NUM		0x038
-
-
-// #ifndef VIRTIO_MMIO_NO_LEGACY /* LEGACY DEVICES ONLY! */
-
-// /* Used Ring alignment for the currently selected queue - Write Only */
-// #define VIRTIO_MMIO_QUEUE_ALIGN		0x03c
-
-// /* Guest's PFN for the currently selected queue - Read Write */
-// #define VIRTIO_MMIO_QUEUE_PFN		0x040
-
-// #endif
-
 
 /* Ready bit for the currently selected queue - Read Write */
 #define VIRTIO_MMIO_QUEUE_READY		0x044
@@ -204,8 +183,6 @@ struct VirtIODevice
  * the per-driver configuration space - Read Write */
 #define VIRTIO_MMIO_CONFIG		0x100
 
-
-
 /*
  * Interrupt flags (re: interrupt status & acknowledge registers)
  */
@@ -213,10 +190,6 @@ struct VirtIODevice
 #define VIRTIO_MMIO_INT_VRING		(1 << 0)
 #define VIRTIO_MMIO_INT_CONFIG		(1 << 1)
 
-
-
-int init_virtio_devices();
-VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t cell_id);
 void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type);
 
 void init_mmio_regs(VirtMmioRegs *regs, VirtioDeviceType type);
@@ -237,14 +210,15 @@ bool desc_is_writable(volatile VirtqDesc *desc_table, uint16_t idx);
 void* get_virt_addr(void *addr);
 void* get_phys_addr(void *addr);
 int virtio_handle_req(volatile struct device_req *req);
-int vq_getchain(VirtQueue *vq, uint16_t *pidx,
-                struct iovec *iov, int n_iov, uint16_t *flags);
+int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
+                struct iovec *iov, int max_iov, uint16_t *flags);
 void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen);
-void virtio_inject_irq(uint32_t target_cell, uint32_t irq_id);
-void vq_retchain(VirtQueue *vq);
-void vq_endchains(VirtQueue *vq, int is_no_more);
+void virtio_inject_irq(uint32_t target_zone, uint32_t irq_id);
+void vq_finish_chain(VirtQueue *vq, int no_more_chains);
 void handle_virtio_requests();
 int virtio_init();
+int virtio_start(int argc, char *argv[]);
+
 /// check circular queue is full. size must be a power of 2
 int is_queue_full(unsigned int front, unsigned int rear, unsigned int size);
 int is_queue_empty(unsigned int front, unsigned int rear);
