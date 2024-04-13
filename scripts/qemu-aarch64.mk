@@ -14,7 +14,7 @@ QEMU_ARGS := -machine virt,secure=on,gic-version=3,virtualization=on
 
 # QEMU_ARGS += -d int
 
-QEMU_ARGS += -cpu cortex-a57
+QEMU_ARGS += -cpu cortex-a53
 QEMU_ARGS += -smp 4
 QEMU_ARGS += -m 2G
 QEMU_ARGS += -nographic

@@ -16,11 +16,17 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
             madd x4, x0, x3, x3       // x4 = cpuid * per_cpu_size
             add x5, x2, x4
             mov sp, x5                // sp = &__core_end + (cpuid + 1) * per_cpu_size
+
+            cmp x0, 0
+            b.ne 1f
+            bl {clear_bss}
+        1:
             bl {rust_main}             // x0 = cpuid, x1 = dtbaddr
             ",
             options(noreturn),
             per_cpu_size=const PER_CPU_SIZE,
             rust_main = sym crate::rust_main,
+            clear_bss = sym crate::clear_bss,
         );
     }
 }

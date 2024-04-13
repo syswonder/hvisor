@@ -1,18 +1,23 @@
+use core::sync::atomic::AtomicU32;
+
 use spin::RwLock;
 
 use crate::{
-    arch::s1pt::Stage1PageTable,
-    consts::PAGE_SIZE,
+    arch::{s1pt::Stage1PageTable, Stage2PageTable},
+    consts::{MAX_CPU_NUM, PAGE_SIZE},
     device::irqchip::gicv3::{host_gicd_base, host_gicd_size, host_gicr_base, host_gicr_size},
     error::HvResult,
     memory::{
         addr::{align_down, align_up},
         GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet, HV_PT,
     },
+    wait_for,
 };
 
+use super::sysreg::read_sysreg;
+
 pub fn init_hv_page_table(fdt: &fdt::Fdt) -> HvResult {
-    let mut hv_pt: MemorySet<Stage1PageTable> = MemorySet::new();
+    let mut hv_pt: MemorySet<Stage1PageTable> = MemorySet::new(4);
     // let _ = hv_pt.insert(MemoryRegion::new_with_offset_mapper(
     //     0x8000_0000 as HostVirtAddr,
     //     hv_phys_start as HostPhysAddr,
@@ -104,4 +109,36 @@ pub fn init_hv_page_table(fdt: &fdt::Fdt) -> HvResult {
 
     HV_PT.call_once(|| RwLock::new(hv_pt));
     Ok(())
+}
+
+const PARANGE_TABLE: [usize; 6] = [32, 36, 40, 42, 44, 48];
+static MIN_PARANGE: RwLock<u64> = RwLock::new(0x7);
+static PARANGE_OK_CPUS: AtomicU32 = AtomicU32::new(0);
+
+pub fn setup_parange() {
+    let temp_parange = read_sysreg!(id_aa64mmfr0_el1) & 0xf;
+    let mut p = MIN_PARANGE.write();
+    *p = p.min(temp_parange);
+    drop(p);
+
+    PARANGE_OK_CPUS.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+    wait_for(|| PARANGE_OK_CPUS.load(core::sync::atomic::Ordering::SeqCst) < MAX_CPU_NUM as _);
+}
+
+pub fn get_parange() -> u64 {
+    assert!(PARANGE_OK_CPUS.load(core::sync::atomic::Ordering::SeqCst) == MAX_CPU_NUM as _);
+    *MIN_PARANGE.read()
+}
+
+pub fn get_parange_bits() -> usize {
+    assert!(PARANGE_OK_CPUS.load(core::sync::atomic::Ordering::SeqCst) == MAX_CPU_NUM as _);
+    PARANGE_TABLE[*MIN_PARANGE.read() as usize]
+}
+
+pub fn is_s2_pt_level3() -> bool {
+    get_parange_bits() < 44
+}
+
+pub fn new_s2_memory_set() -> MemorySet<Stage2PageTable> {
+    MemorySet::new(if is_s2_pt_level3() { 3 } else { 4 })
 }

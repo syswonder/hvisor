@@ -12,7 +12,7 @@ use crate::{
     },
 };
 
-use super::paging::{GenericPTE, Level4PageTable, PagingInstr};
+use super::paging::{GenericPTE, HvPageTable, PagingInstr};
 
 bitflags::bitflags! {
     /// Memory attribute fields in the VMSAv8-64 translation table format descriptors.
@@ -219,4 +219,4 @@ impl PagingInstr for S1PTInstr {
     }
 }
 
-pub type Stage1PageTable = Level4PageTable<GuestPhysAddr, PageTableEntry, S1PTInstr>;
+pub type Stage1PageTable = HvPageTable<GuestPhysAddr, PageTableEntry, S1PTInstr>;

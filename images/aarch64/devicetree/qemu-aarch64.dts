@@ -425,7 +425,7 @@
 			phandle = <0x8010>;
 			reg = <0x00>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 		};
 
@@ -433,7 +433,7 @@
 			phandle = <0x800f>;
 			reg = <0x01>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 		};
 
@@ -441,7 +441,7 @@
 			phandle = <0x800e>;
 			reg = <0x02>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 		};
 
@@ -449,7 +449,7 @@
 			phandle = <0x800d>;
 			reg = <0x03>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 		};
 
@@ -457,7 +457,7 @@
 			phandle = <0x800c>;
 			reg = <0x04>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 		};
 
@@ -465,7 +465,7 @@
 			phandle = <0x800b>;
 			reg = <0x05>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 		};
 
@@ -473,7 +473,7 @@
 			phandle = <0x800a>;
 			reg = <0x06>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 		};
 
@@ -481,7 +481,7 @@
 			phandle = <0x8009>;
 			reg = <0x07>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 		};
 
@@ -489,7 +489,7 @@
 			phandle = <0x8008>;
 			reg = <0x08>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 		};
 
@@ -497,7 +497,7 @@
 			phandle = <0x8007>;
 			reg = <0x09>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 		};
 
@@ -505,7 +505,7 @@
 			phandle = <0x8006>;
 			reg = <0x0a>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 		};
 
@@ -513,7 +513,7 @@
 			phandle = <0x8005>;
 			reg = <0x0b>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 		};
 
@@ -521,7 +521,7 @@
 			phandle = <0x8004>;
 			reg = <0x0c>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 		};
 
@@ -529,7 +529,7 @@
 			phandle = <0x8003>;
 			reg = <0x0d>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 		};
 
@@ -537,7 +537,7 @@
 			phandle = <0x8002>;
 			reg = <0x0e>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 		};
 
@@ -545,7 +545,7 @@
 			phandle = <0x8001>;
 			reg = <0x0f>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 		};
 	};

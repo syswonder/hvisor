@@ -55,10 +55,10 @@ impl<PT: GenericPageTable> MemorySet<PT>
 where
     PT::VA: Ord,
 {
-    pub fn new() -> Self {
+    pub fn new(pt_level: usize) -> Self {
         Self {
             regions: BTreeMap::new(),
-            pt: PT::new(),
+            pt: PT::new(pt_level),
         }
     }
 
@@ -117,16 +117,6 @@ where
                 )
             )
         }
-    }
-
-    pub fn map_partial(&mut self, mem: &MemoryRegion<PT::VA>) -> HvResult {
-        // Todo: Check if the memory area is included in the memory set.
-        self.pt.map(mem)
-    }
-
-    pub fn unmap_partial(&mut self, mem: &MemoryRegion<PT::VA>) -> HvResult {
-        // Todo: Check if the memory area is included in the memory set.
-        self.pt.unmap(mem)
     }
 
     pub fn clear(&mut self) {

@@ -95,14 +95,17 @@ pub trait PagingInstr {
 pub trait GenericPageTableImmut: Sized {
     type VA: From<usize> + Into<usize> + Copy;
 
-    unsafe fn from_root(root_paddr: PhysAddr) -> Self;
+    fn level(&self) -> usize;
+    fn starting_level(&self) -> usize;
+
+    unsafe fn from_root(root_paddr: PhysAddr, level: usize) -> Self;
     fn root_paddr(&self) -> PhysAddr;
     fn query(&self, vaddr: Self::VA) -> PagingResult<(PhysAddr, MemFlags, PageSize)>;
 }
 
 /// A extended mutable page table can change mappings.
 pub trait GenericPageTable: GenericPageTableImmut {
-    fn new() -> Self;
+    fn new(level: usize) -> Self;
 
     fn map(&mut self, region: &MemoryRegion<Self::VA>) -> HvResult;
     fn unmap(&mut self, region: &MemoryRegion<Self::VA>) -> HvResult;
@@ -119,32 +122,38 @@ pub trait GenericPageTable: GenericPageTableImmut {
     fn flush(&self, vaddr: Option<Self::VA>);
 }
 
-/// A immutable level-4 page table implements `GenericPageTableImmut`.
-pub struct Level4PageTableImmut<VA, PTE: GenericPTE> {
+/// A immutable level-3/4 page table implements `GenericPageTableImmut`.
+pub struct HvPageTableImmut<VA, PTE: GenericPTE> {
     /// Root table frame.
     root: Frame,
+    level: usize,
     /// Phantom data.
     _phantom: PhantomData<(VA, PTE)>,
 }
 
-impl<VA, PTE> Level4PageTableImmut<VA, PTE>
+impl<VA, PTE> HvPageTableImmut<VA, PTE>
 where
     VA: From<usize> + Into<usize> + Copy,
     PTE: GenericPTE,
 {
-    fn new() -> Self {
+    fn new(level: usize) -> Self {
+        assert!(level == 3 || level == 4);
         Self {
             root: Frame::new_zero().expect("failed to allocate root frame for host page table"),
+            level,
             _phantom: PhantomData,
         }
     }
 
     fn get_entry_mut(&self, vaddr: VA) -> PagingResult<(&mut PTE, PageSize)> {
         let vaddr = vaddr.into();
-        let p4 = table_of_mut::<PTE>(self.root_paddr());
-        let p4e = &mut p4[p4_index(vaddr)];
-
-        let p3 = next_table_mut(p4e)?;
+        let p3 = if self.level == 4 {
+            let p4 = table_of_mut::<PTE>(self.root_paddr());
+            let p4e = &mut p4[p4_index(vaddr)];
+            next_table_mut(p4e)?
+        } else {
+            table_of_mut::<PTE>(self.root_paddr())
+        };
         let p3e = &mut p3[p3_index(vaddr)];
         if p3e.is_huge() {
             return Ok((p3e, PageSize::Size1G));
@@ -196,7 +205,7 @@ where
         println!("Root: {:x?}", self.root_paddr());
         self.walk(
             table_of(self.root_paddr()),
-            0,
+            self.starting_level(),
             0,
             limit,
             &|level: usize, idx: usize, vaddr: usize, entry: &PTE| {
@@ -212,16 +221,17 @@ where
     }
 }
 
-impl<VA, PTE> GenericPageTableImmut for Level4PageTableImmut<VA, PTE>
+impl<VA, PTE> GenericPageTableImmut for HvPageTableImmut<VA, PTE>
 where
     VA: From<usize> + Into<usize> + Copy,
     PTE: GenericPTE,
 {
     type VA = VA;
 
-    unsafe fn from_root(root_paddr: PhysAddr) -> Self {
+    unsafe fn from_root(root_paddr: PhysAddr, level: usize) -> Self {
         Self {
             root: Frame::from_paddr(root_paddr),
+            level,
             _phantom: PhantomData,
         }
     }
@@ -238,35 +248,47 @@ where
         let off = size.page_offset(vaddr.into());
         Ok((entry.addr() + off, entry.flags(), size))
     }
+
+    fn level(&self) -> usize {
+        self.level
+    }
+
+    fn starting_level(&self) -> usize {
+        if self.level == 4 {
+            0
+        } else {
+            1
+        }
+    }
 }
 
-/// A extended level-4 page table that can change its mapping. It also tracks all intermediate
+/// A extended level-3/4 page table that can change its mapping. It also tracks all intermediate
 /// level tables. Locks need to be used if change the same page table concurrently.
-struct Level4PageTableUnlocked<VA, PTE: GenericPTE, I: PagingInstr> {
-    inner: Level4PageTableImmut<VA, PTE>,
+struct HvPageTableUnlocked<VA, PTE: GenericPTE, I: PagingInstr> {
+    inner: HvPageTableImmut<VA, PTE>,
     /// Intermediate level table frames.
     intrm_tables: Vec<Frame>,
     /// Phantom data.
     _phantom: PhantomData<(VA, PTE, I)>,
 }
 
-impl<VA, PTE, I> Level4PageTableUnlocked<VA, PTE, I>
+impl<VA, PTE, I> HvPageTableUnlocked<VA, PTE, I>
 where
     VA: From<usize> + Into<usize> + Copy,
     PTE: GenericPTE,
     I: PagingInstr,
 {
-    fn new() -> Self {
+    fn new(level: usize) -> Self {
         Self {
-            inner: Level4PageTableImmut::new(),
+            inner: HvPageTableImmut::new(level),
             intrm_tables: Vec::new(),
             _phantom: PhantomData,
         }
     }
 
-    unsafe fn from_root(root_paddr: PhysAddr) -> Self {
+    unsafe fn from_root(root_paddr: PhysAddr, level: usize) -> Self {
         Self {
-            inner: Level4PageTableImmut::from_root(root_paddr),
+            inner: HvPageTableImmut::from_root(root_paddr, level),
             intrm_tables: Vec::new(),
             _phantom: PhantomData,
         }
@@ -283,10 +305,14 @@ where
 
     fn get_entry_mut_or_create(&mut self, page: Page<VA>) -> PagingResult<&mut PTE> {
         let vaddr: usize = page.vaddr.into();
-        let p4 = table_of_mut::<PTE>(self.inner.root_paddr());
-        let p4e = &mut p4[p4_index(vaddr)];
+        let p3 = if self.inner.level == 4 {
+            let p4 = table_of_mut::<PTE>(self.inner.root_paddr());
+            let p4e = &mut p4[p4_index(vaddr)];
 
-        let p3 = next_table_mut_or_create(p4e, || self.alloc_intrm_table())?;
+            next_table_mut_or_create(p4e, || self.alloc_intrm_table())?
+        } else {
+            table_of_mut::<PTE>(self.inner.root_paddr())
+        };
         let p3e = &mut p3[p3_index(vaddr)];
         if page.size == PageSize::Size1G {
             return Ok(p3e);
@@ -336,15 +362,15 @@ where
     }
 }
 
-/// A extended level-4 page table implements `GenericPageTable`. It use locks to avoid data
+/// A extended level-3/4 page table implements `GenericPageTable`. It use locks to avoid data
 /// racing between it and its clonees.
-pub struct Level4PageTable<VA, PTE: GenericPTE, I: PagingInstr> {
-    inner: Level4PageTableUnlocked<VA, PTE, I>,
+pub struct HvPageTable<VA, PTE: GenericPTE, I: PagingInstr> {
+    inner: HvPageTableUnlocked<VA, PTE, I>,
     /// Make sure all accesses to the page table and its clonees is exclusive.
     clonee_lock: Arc<Mutex<()>>,
 }
 
-impl<VA, PTE, I> Level4PageTable<VA, PTE, I>
+impl<VA, PTE, I> HvPageTable<VA, PTE, I>
 where
     VA: From<usize> + Into<usize> + Copy,
     PTE: GenericPTE,
@@ -359,7 +385,7 @@ where
     pub fn clone_from(src: &impl GenericPageTableImmut) -> Self {
         // XXX: The clonee won't track intermediate tables, must ensure it lives shorter than the
         // original page table.
-        let pt = Self::new();
+        let pt = Self::new(src.level());
         let dst_p4_table =
             unsafe { slice::from_raw_parts_mut(pt.root_paddr() as *mut PTE, ENTRY_COUNT) };
         let src_p4_table =
@@ -369,7 +395,7 @@ where
     }
 }
 
-impl<VA, PTE, I> GenericPageTableImmut for Level4PageTable<VA, PTE, I>
+impl<VA, PTE, I> GenericPageTableImmut for HvPageTable<VA, PTE, I>
 where
     VA: From<usize> + Into<usize> + Copy,
     PTE: GenericPTE,
@@ -377,9 +403,9 @@ where
 {
     type VA = VA;
 
-    unsafe fn from_root(root_paddr: PhysAddr) -> Self {
+    unsafe fn from_root(root_paddr: PhysAddr, level: usize) -> Self {
         Self {
-            inner: Level4PageTableUnlocked::from_root(root_paddr),
+            inner: HvPageTableUnlocked::from_root(root_paddr, level),
             clonee_lock: Arc::new(Mutex::new(())),
         }
     }
@@ -392,17 +418,25 @@ where
         let _lock = self.clonee_lock.lock();
         self.inner.inner.query(vaddr)
     }
+
+    fn level(&self) -> usize {
+        self.inner.inner.level()
+    }
+
+    fn starting_level(&self) -> usize {
+        self.inner.inner.starting_level()
+    }
 }
 
-impl<VA, PTE, I> GenericPageTable for Level4PageTable<VA, PTE, I>
+impl<VA, PTE, I> GenericPageTable for HvPageTable<VA, PTE, I>
 where
     VA: From<usize> + Into<usize> + Copy,
     PTE: GenericPTE,
     I: PagingInstr,
 {
-    fn new() -> Self {
+    fn new(level: usize) -> Self {
         Self {
-            inner: Level4PageTableUnlocked::new(),
+            inner: HvPageTableUnlocked::new(level),
             clonee_lock: Arc::new(Mutex::new(())),
         }
     }

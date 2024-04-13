@@ -2,6 +2,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::RwLock;
 
+use crate::arch::mm::new_s2_memory_set;
 use crate::arch::s2pt::Stage2PageTable;
 use crate::consts::MAX_CPU_NUM;
 
@@ -25,7 +26,7 @@ impl Zone {
     pub fn new(zoneid: usize) -> Self {
         Self {
             id: zoneid,
-            gpm: MemorySet::new(),
+            gpm: new_s2_memory_set(),
             cpu_set: CpuSet::new(MAX_CPU_NUM as usize, 0),
             mmio: Vec::new(),
             irq_bitmap: [0; 1024 / 32],
