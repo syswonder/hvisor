@@ -6,7 +6,7 @@ PORT ?= 2333
 MODE ?= debug
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 KDIR ?= ../../linux
-FEATURES := platform_imx8mp
+FEATURES := platform_qemu
 
 ifeq ($(ARCH),aarch64)
     RUSTC_TARGET := aarch64-unknown-none
@@ -73,10 +73,13 @@ monitor:
 		-ex 'set arch $(GDB_ARCH)' \
 		-ex 'target remote:1234' \
 
-jlink:
+jlink-monitor:
 	gdb-multiarch \
 		-ex 'file $(hvisor_elf)' \
 		-ex 'target remote:2331'
+
+jlink-server:
+	JLinkGDBServer -select USB -if JTAG -device Cortex-A53
 
 clean:
 	cargo clean

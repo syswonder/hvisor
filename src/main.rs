@@ -38,6 +38,7 @@ mod percpu;
 mod platform;
 mod zone;
 
+use crate::arch::mm::setup_parange;
 use crate::consts::{DTB_IPA, MAX_CPU_NUM};
 use crate::platform::qemu_aarch64::ROOT_ZONE_DTB_ADDR;
 use crate::zone::zone_create;
@@ -56,7 +57,13 @@ pub fn clear_bss() {
         fn sbss();
         fn ebss();
     }
-    (sbss as usize..ebss as usize).for_each(|a| unsafe { (a as *mut u8).write_volatile(0) });
+    let mut p = sbss as *mut u8;
+    while p < ebss as _ {
+        unsafe {
+            *p = 0;
+            p = p.add(1);
+        };
+    }
 }
 
 fn wait_for(condition: impl Fn() -> bool) {
@@ -111,7 +118,7 @@ fn primary_init_late() {
     INIT_LATE_OK.store(1, Ordering::Release);
 }
 
-fn percpu_hv_pt_install(cpu: &mut PerCpu) {
+fn per_cpu_init(cpu: &mut PerCpu) {
     if cpu.zone.is_none() {
         warn!("zone is not created for cpu {}", cpu.id);
     }
@@ -163,13 +170,16 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         cpu.id
     );
 
+    #[cfg(target_arch = "aarch64")]
+    setup_parange();
+
     if is_primary {
         primary_init_early(host_dtb); // create root zone here
     } else {
         wait_for_counter(&INIT_EARLY_OK, 1);
     }
 
-    percpu_hv_pt_install(cpu);
+    per_cpu_init(cpu);
     device::irqchip::percpu_init();
 
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
