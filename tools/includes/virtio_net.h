@@ -11,14 +11,19 @@
 #define NET_MAX_QUEUES  2
 
 // Virtio net feature bits.
-#define	VIRTIO_NET_F_MAC	(1 <<  5) /* device provides MAC */
-#define	VIRTIO_NET_F_MRG_RXBUF	(1 << 15) /* driver can merge RX buffers */
-#define	VIRTIO_NET_F_STATUS	(1 << 16) /* status field in virtio_net_config is available */
+
+/// Device has given MAC address.
+#define	VIRTIO_NET_F_MAC	(1 <<  5) 
+/// Driver can merge receive buffers.
+#define	VIRTIO_NET_F_MRG_RXBUF	(1 << 15)
+/// Configuration status field is available.
+#define	VIRTIO_NET_F_STATUS	(1 << 16) 
 
 #define VIRTIO_NET_S_LINK_UP 1
 
 #define VIRTQUEUE_NET_MAX_SIZE 256
 
+#define NET_SUPPORTED_FEATURES (VIRTIO_F_VERSION_1 | VIRTIO_NET_F_MAC | VIRTIO_NET_F_STATUS)
 struct virtio_net_config {
     uint8_t  mac[6];
     uint16_t status;

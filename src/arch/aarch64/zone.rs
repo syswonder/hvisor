@@ -1,3 +1,5 @@
+use core::sync::atomic::{fence, Ordering};
+
 use alloc::vec::Vec;
 
 use crate::{
@@ -40,7 +42,6 @@ impl Zone {
 
         // probe virtio mmio device
         {
-            info!("come before");
             let mut mapped_virtio = Vec::new();
             let dev = HVISOR_DEVICE.lock();
             let region = if dev.is_enable {
@@ -48,18 +49,21 @@ impl Zone {
             } else {
                 None
             };
-            info!("come heee");
             for node in fdt.find_all_nodes("/virtio_mmio") {
                 if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
                     let paddr = reg.starting_address as HostPhysAddr;
                     let size = reg.size.unwrap();
                     if !mapped_virtio.contains(&paddr) {
                         info!("map virtio mmio addr: {:#x}, size: {:#x}", paddr, size);
-
-                        if region.is_some()
-                            && region.clone().unwrap().mmio_addrs.contains(&(paddr as u64))
-                        {
-                            self.mmio_region_register(paddr, size, mmio_virtio_handler, paddr);
+                        if region.is_some() {
+                            let dev_region = region.clone().unwrap();
+                            while dev_region.mmio_avail == 0 {}
+                            fence(Ordering::Acquire);
+                            if dev_region.mmio_addrs.contains(&(paddr as u64)) {
+                                self.mmio_region_register(paddr, size, mmio_virtio_handler, paddr);
+                            } else {
+                                self.mmio_region_register(paddr, size, mmio_generic_handler, paddr);
+                            }
                         } else {
                             self.mmio_region_register(paddr, size, mmio_generic_handler, paddr);
                         }
