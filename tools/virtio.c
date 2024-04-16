@@ -161,6 +161,7 @@ void virtqueue_reset(VirtQueue *vq, int idx)
     vq->notify_handler = addr;
     vq->dev = dev;
     vq->queue_num_max = queue_num_max;
+	pthread_mutex_init(&vq->used_ring_lock, NULL);
 }
 
 // check if virtqueue has new requests
@@ -284,6 +285,7 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
     volatile VirtqUsed *used_ring;
     volatile VirtqUsedElem *elem;
     uint16_t used_idx, mask;
+	pthread_mutex_lock(&vq->used_ring_lock);
     used_ring = vq->used_ring;
     used_idx = used_ring->idx;
     mask = vq->num - 1;
@@ -291,21 +293,18 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
     elem->id = idx;
     elem->len = iolen;
     used_ring->idx = used_idx;
+	vq->last_used_idx = used_idx;
+	pthread_mutex_unlock(&vq->used_ring_lock);
     log_debug("update used ring: used_idx is %d, elem->idx is %d", used_idx, idx);
 }
 
-/// If vq's used ring is changed, then inject interrupt to vq's zone
+// TODO: 和virtio_inject_irq合并
 void try_inject_irq(VirtQueue *vq, int no_more_chains)
 {
     if (!no_more_chains) {
         return;
     }
-    uint16_t new_idx, old_idx;
-    int need_interrupt;
-    old_idx = vq->last_used_idx;
-    vq->last_used_idx = new_idx = vq->used_ring->idx;
-    need_interrupt = new_idx != old_idx && !(vq->avail_ring->flags & VRING_AVAIL_F_NO_INTERRUPT);
-    if (need_interrupt)
+    if (!(vq->avail_ring->flags & VRING_AVAIL_F_NO_INTERRUPT))
         virtio_inject_irq(vq->dev->zone_id, vq->dev->irq_id);
 }
 
@@ -597,9 +596,10 @@ int virtio_init()
     // The higher log level is , faster virtio-blk will be.
     int err;
 	int log_level = LOG_WARN;
+	multithread_log_init();
     log_set_level(log_level);
-    FILE *log_file = fopen("log.txt", "w+");
-    log_add_fp(log_file, log_level);
+    // FILE *log_file = fopen("log.txt", "w+");
+    // log_add_fp(log_file, log_level);
     log_info("hvisor init");
     ko_fd = open("/dev/hvisor", O_RDWR);
     if (ko_fd < 0) {

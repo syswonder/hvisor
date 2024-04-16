@@ -115,7 +115,6 @@ void virtio_net_rx_callback(int fd, int epoll_type, void *param)
         try_inject_irq(vq, 1);
         return;
     }
-
     while (!virtqueue_is_empty(vq)) {
         n = process_descriptor_chain(vq, &idx, &iov, NULL, 0);
         if (n < 1 || n > VIRTQUEUE_NET_MAX_SIZE) {

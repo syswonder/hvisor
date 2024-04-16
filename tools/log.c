@@ -21,6 +21,7 @@
  */
 
 #include "log.h"
+#include <pthread.h>
 
 #define MAX_CALLBACKS 32
 
@@ -146,6 +147,9 @@ void log_log(int with_enter, int level, const char *file, int line, const char *
     .level = level,
   };
 
+  if(L.quiet || level < L.level) {
+	return ;
+  }
   lock();
 
   if (!L.quiet && level >= L.level) {
@@ -166,4 +170,20 @@ void log_log(int with_enter, int level, const char *file, int line, const char *
   }
 
   unlock();
+}
+
+pthread_mutex_t MUTEX_LOG;
+void log_lock(bool lock, void *udata);
+
+void multithread_log_init() {
+  pthread_mutex_init(&MUTEX_LOG, NULL);
+  log_set_lock(log_lock, &MUTEX_LOG);
+}
+
+void log_lock(bool lock, void* udata) {
+  pthread_mutex_t *LOCK = (pthread_mutex_t*)(udata);
+  if (lock)
+    pthread_mutex_lock(LOCK);
+  else
+    pthread_mutex_unlock(LOCK);
 }

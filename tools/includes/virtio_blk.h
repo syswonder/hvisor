@@ -117,8 +117,8 @@ struct blkp_req {
     struct iovec *iov;
 	int iovcnt;
 	uint64_t offset;
+	uint32_t type;
 	uint16_t idx;
-	enum blkop type; 
 };
 
 typedef struct virtio_blk_dev {
