@@ -17,10 +17,8 @@ static void complete_block_operation(BlkDev *dev, struct blkp_req *req, VirtQueu
     if (err != 0) {
         log_error("virt blk err, num is %d", err);
     }
-    pthread_mutex_lock(&dev->mtx);
     update_used_ring(vq, req->idx, 1);
     try_inject_irq(vq, TAILQ_EMPTY(&dev->procq));
-    pthread_mutex_unlock(&dev->mtx);
 	free(req->iov);
     free(req);
 }
@@ -40,25 +38,32 @@ static void blkproc(BlkDev *dev, struct blkp_req *req, VirtQueue *vq) {
     struct iovec *iov = req->iov;
     int n = req->iovcnt, err;
     ssize_t len; 
+	
     switch (req->type)
     {
-    case BLK_READ:
+    case VIRTIO_BLK_T_IN:
         len = preadv(dev->img_fd, &iov[1], n - 2, req->offset);
         if (len < 0) {
             log_error("pread failed");
             err = errno;
         }
         break;
-    case BLK_WRITE:
+    case VIRTIO_BLK_T_OUT:
         len = pwritev(dev->img_fd, &iov[1], n-2, req->offset);
         if (len < 0) {
             log_error("pwrite failed");
             err = errno;
         }
         break;
+	case VIRTIO_BLK_T_GET_ID: 
+	{
+		char s[20] = "hvisor-virblk";
+		strncpy(iov[1].iov_base, s, MIN(sizeof(s), iov[1].iov_len));
+		break;
+	}
     default:
         log_fatal("Operation is not supported");
-        err = EINVAL;
+        err = EOPNOTSUPP;
         break;
     }
     complete_block_operation(dev, req, vq, err);
@@ -110,12 +115,12 @@ BlkDev *init_blk_dev(VirtIODevice *vdev, uint64_t bsize, int img_fd)
 
 
 // handle one descriptor list
-static void virtq_blk_handle_one_request(VirtQueue *vq)
+static struct blkp_req* virtq_blk_handle_one_request(VirtQueue *vq)
 {
     struct blkp_req *breq;
     struct iovec *iov = NULL;
     uint16_t *flags;
-    int i, n, type, writeop;
+    int i, n;
     BlkReqHead *hdr;
     BlkDev *blkDev = vq->dev->dev;
     int err = 0;
@@ -143,56 +148,43 @@ static void virtq_blk_handle_one_request(VirtQueue *vq)
     }
 
     hdr = (BlkReqHead *) (iov[0].iov_base);
-    type = hdr->req_type;
-    writeop = (type == VIRTIO_BLK_T_OUT);
     uint64_t offset = hdr->sector * SECTOR_BSIZE; 
+    breq->type = hdr->req_type;
+	breq->iovcnt = n;
+	breq->offset = offset;
 
     for (i=1; i<n-1; i++) 
-        if (((flags[i] & VRING_DESC_F_WRITE) == 0) != writeop) {
+        if (((flags[i] & VRING_DESC_F_WRITE) == 0) != (breq->type == VIRTIO_BLK_T_OUT)) {
             log_error("flag is conflict with operation");
 			goto err_out;
         }
-    switch (type)
-    {
-        case VIRTIO_BLK_T_IN:
-        case VIRTIO_BLK_T_OUT:
-            breq->iovcnt = n;
-            breq->offset = offset;
-            breq->type = writeop ? BLK_WRITE : BLK_READ;
-            pthread_mutex_lock(&blkDev->mtx);
-            TAILQ_INSERT_TAIL(&blkDev->procq, breq, link);
-            pthread_cond_signal(&blkDev->cond);
-            pthread_mutex_unlock(&blkDev->mtx);
-            goto free_flags;
-        case VIRTIO_BLK_T_GET_ID:
-        {
-            char s[20] = "hvisor-virblk";
-            strncpy(iov[1].iov_base, s, MIN(sizeof(s), iov[1].iov_len));
-            break;
-        }
-        default:
-            log_error("unsupported virtqueue request type: %u", hdr->req_type);
-            err = EOPNOTSUPP;
-            break;
-    }
-    complete_block_operation(blkDev, breq, vq, err);
 
-free_flags:
     free(flags);
-	return;
+	return breq;
+
 err_out:
 	free(flags);
 	free(iov);
     free(breq);
+	return NULL;
 }
 
 int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
 {
     log_trace("virtio blk notify handler enter");
+	BlkDev *blkDev = (BlkDev *)vdev->dev;
+	struct blkp_req *breq;
+	TAILQ_HEAD(, blkp_req) procq;
+	TAILQ_INIT(&procq);
     virtqueue_disable_notify(vq);
     while(!virtqueue_is_empty(vq)) {
-        virtq_blk_handle_one_request(vq);
+        breq = virtq_blk_handle_one_request(vq);
+		TAILQ_INSERT_TAIL(&procq, breq, link);
     }
     virtqueue_enable_notify(vq);
+	pthread_mutex_lock(&blkDev->mtx);
+	TAILQ_CONCAT(&blkDev->procq, &procq, link);
+	pthread_cond_signal(&blkDev->cond);
+	pthread_mutex_unlock(&blkDev->mtx);
     return 0;
 }

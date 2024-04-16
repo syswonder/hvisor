@@ -70,10 +70,12 @@ struct VirtQueue {
     int (*notify_handler)(VirtIODevice *vdev, VirtQueue *vq);
 
     uint16_t last_avail_idx;
-    uint16_t last_used_idx; // TODO: 记得总体更新used ring后,更新这个
+    uint16_t last_used_idx;
     uint16_t used_flags;
 
     uint8_t ready;
+
+	pthread_mutex_t used_ring_lock;
 };
 // The highest representations of virtio device
 struct VirtIODevice
