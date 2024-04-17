@@ -12,7 +12,7 @@ zone1_dtb    := $(image_dir)/devicetree/linux2.dtb
 
 QEMU_ARGS := -machine virt,secure=on,gic-version=3,virtualization=on
 
-# QEMU_ARGS += -d int
+QEMU_ARGS += -d int
 
 QEMU_ARGS += -cpu cortex-a53
 QEMU_ARGS += -smp 4

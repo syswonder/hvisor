@@ -76,10 +76,14 @@ monitor:
 jlink-monitor:
 	gdb-multiarch \
 		-ex 'file $(hvisor_elf)' \
+		-ex 'set arch $(GDB_ARCH)' \
 		-ex 'target remote:2331'
 
 jlink-server:
 	JLinkGDBServer -select USB -if JTAG -device Cortex-A53
+
+cp: all
+	cp $(hvisor_bin) ~/tftp && sudo systemctl restart tftpd-hpa
 
 clean:
 	cargo clean

@@ -211,7 +211,6 @@ pub struct S1PTInstr;
 impl PagingInstr for S1PTInstr {
     unsafe fn activate(root_paddr: HostPhysAddr) {
         TTBR0_EL2.set(root_paddr as _);
-        super::cpu::enable_mmu();
     }
 
     fn flush(_vaddr: Option<usize>) {

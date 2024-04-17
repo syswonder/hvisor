@@ -1,1 +1,0 @@
-sudo cp target/aarch64-unknown-none/debug/hvisor.bin /media/clk/boot
