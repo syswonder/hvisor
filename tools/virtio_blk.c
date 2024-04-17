@@ -18,7 +18,8 @@ static void complete_block_operation(BlkDev *dev, struct blkp_req *req, VirtQueu
         log_error("virt blk err, num is %d", err);
     }
     update_used_ring(vq, req->idx, 1);
-    try_inject_irq(vq, TAILQ_EMPTY(&dev->procq));
+	if (TAILQ_EMPTY(&dev->procq))
+    	virtio_inject_irq(vq);
 	free(req->iov);
     free(req);
 }

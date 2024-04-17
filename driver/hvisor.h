@@ -7,6 +7,7 @@
 #define MAX_DEVS 4
 #define MAX_CPUS 16
 
+#define SIGHVI 10
 // used when start a zone.
 struct hvisor_zone_info {
 	__u64 zone_id;
@@ -55,6 +56,7 @@ struct hvisor_device_region {
 	// When config is okay to use, remove these
 	__u64 mmio_addrs[MAX_DEVS];
 	__u8 mmio_avail;
+	__u8 need_wakeup;
 };
 
 #define HVISOR_INIT_VIRTIO  _IO(1, 0) // virtio device init

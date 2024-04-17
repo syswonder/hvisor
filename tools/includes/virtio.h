@@ -215,8 +215,7 @@ int virtio_handle_req(volatile struct device_req *req);
 int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
                 struct iovec **iov, uint16_t **flags, int append_len);
 void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen);
-void virtio_inject_irq(uint32_t target_zone, uint32_t irq_id);
-void try_inject_irq(VirtQueue *vq, int no_more_chains);
+void virtio_inject_irq(VirtQueue *vq);
 void handle_virtio_requests();
 int virtio_init();
 int virtio_start(int argc, char *argv[]);

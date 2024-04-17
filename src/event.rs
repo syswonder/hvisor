@@ -1,5 +1,5 @@
 use crate::{
-    arch::ipi::arch_send_event, device::virtio_trampoline::handle_virtio_irq, percpu::this_cpu_data,
+    arch::ipi::arch_send_event, device::{irqchip::gicv3::inject_irq, virtio_trampoline::{handle_virtio_irq, IRQ_WAKEUP_VIRTIO_DEVICE}}, percpu::this_cpu_data,
 };
 use alloc::{collections::VecDeque, vec::Vec};
 use spin::{Mutex, Once};
@@ -7,6 +7,7 @@ use spin::{Mutex, Once};
 pub const IPI_EVENT_WAKEUP: usize = 0;
 pub const IPI_EVENT_SHUTDOWN: usize = 1;
 pub const IPI_EVENT_VIRTIO_INJECT_IRQ: usize = 2;
+pub const IPI_EVENT_WAKEUP_VIRTIO_DEVICE: usize = 3;
 static EVENT_MANAGER: Once<EventManager> = Once::new();
 
 struct EventManager {
@@ -70,6 +71,10 @@ pub fn check_events() -> bool {
             handle_virtio_irq();
             true
         }
+		Some(IPI_EVENT_WAKEUP_VIRTIO_DEVICE) => {
+			inject_irq(IRQ_WAKEUP_VIRTIO_DEVICE, false);
+			true
+		}
         _ => false,
     }
 }
