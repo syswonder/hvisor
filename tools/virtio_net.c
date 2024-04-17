@@ -112,7 +112,7 @@ void virtio_net_rx_callback(int fd, int epoll_type, void *param)
 	// if rx_vq is empty, drop the packet
     if (virtqueue_is_empty(vq)) {
         read(net->tapfd, trashbuf, sizeof(trashbuf));
-        try_inject_irq(vq, 1);
+        virtio_inject_irq(vq);
         return;
     }
     while (!virtqueue_is_empty(vq)) {
@@ -142,7 +142,7 @@ void virtio_net_rx_callback(int fd, int epoll_type, void *param)
 		free(iov);
     }
 
-    try_inject_irq(vq, 1);
+    virtio_inject_irq(vq);
 	return ;
 free_iov:
     free(iov);

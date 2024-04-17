@@ -147,4 +147,9 @@
 		stdout-path = "/pl011@9000000";
 	};
 
+	vm_service {
+		compatible = "hvisor";
+		interrupt-parent = <0x01>;
+		interrupts = <0x00 0x20 0x01>;
+	};
 };

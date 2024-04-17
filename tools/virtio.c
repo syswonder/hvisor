@@ -13,6 +13,9 @@
 #include <errno.h>
 #include <sys/ioctl.h>
 #include <getopt.h>
+#include <signal.h>
+#include <time.h>
+#include <sys/time.h>                                                                                           
 
 /// hvisor kernel module fd
 int ko_fd;
@@ -27,7 +30,7 @@ void *virt_addr;
 void *phys_addr;
 #define NON_ROOT_PHYS_START 0x70000000
 #define NON_ROOT_PHYS_SIZE 0x20000000
-
+#define WAIT_TIME 100 // 100ns
 inline int is_queue_full(unsigned int front, unsigned int rear, unsigned int size)
 {
     if (((rear + 1) & (size - 1)) == front) {
@@ -40,6 +43,7 @@ inline int is_queue_full(unsigned int front, unsigned int rear, unsigned int siz
 
 inline int is_queue_empty(unsigned int front, unsigned int rear)
 {
+	// TODO: add read barrier to ensure the correctness of front and rear
     return rear == front;
 }
 
@@ -298,16 +302,6 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
     log_debug("update used ring: used_idx is %d, elem->idx is %d", used_idx, idx);
 }
 
-// TODO: 和virtio_inject_irq合并
-void try_inject_irq(VirtQueue *vq, int no_more_chains)
-{
-    if (!no_more_chains) {
-        return;
-    }
-    if (!(vq->avail_ring->flags & VRING_AVAIL_F_NO_INTERRUPT))
-        virtio_inject_irq(vq->dev->zone_id, vq->dev->irq_id);
-}
-
 static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size)
 {
     log_debug("virtio mmio read at %#x", offset);
@@ -521,16 +515,24 @@ static inline void dmb_ishst(void) {
     asm volatile ("dmb ishst":: : "memory");
 }
 
+/// Read barrier.  
+static inline void dmb_ishld(void) {
+	asm volatile ("dmb ishld":: : "memory");
+}
+
 // Inject irq_id to target zone. It will add to res list, and notify hypervisor through ioctl.
-void virtio_inject_irq(uint32_t target_zone, uint32_t irq_id)
+void virtio_inject_irq(VirtQueue *vq)
 {
+    if (vq->avail_ring->flags & VRING_AVAIL_F_NO_INTERRUPT) {
+		return ;
+	}
     volatile struct device_res *res;
     while (is_queue_full(device_region->res_front, device_region->res_rear, MAX_REQ));
     pthread_mutex_lock(&RES_MUTEX);
     unsigned int res_rear = device_region->res_rear;
     res = &device_region->res_list[res_rear];
-    res->irq_id = irq_id;
-    res->target_zone = target_zone;
+    res->irq_id = vq->dev->irq_id;
+    res->target_zone = vq->dev->zone_id;
     dmb_ishst();
     device_region->res_rear = (res_rear + 1) & (MAX_REQ - 1);
     pthread_mutex_unlock(&RES_MUTEX);
@@ -578,17 +580,64 @@ int virtio_handle_req(volatile struct device_req *req)
 
 void handle_virtio_requests()
 {
+	int sig;
+	sigset_t wait_set;
+	struct timespec timeout;
     unsigned int req_front = device_region->req_front;
     volatile struct device_req *req;
-    while (1) {
-        if (!is_queue_empty(req_front, device_region->req_rear)) {
-            req = &device_region->req_list[req_front];
-            virtio_handle_req(req);
-            req_front = (req_front + 1) & (MAX_REQ - 1);
-            device_region->req_front = req_front;
-            // dmb_ishst(); 应该不需要
-        }
-    }
+	timeout.tv_sec = 0;
+	timeout.tv_nsec = WAIT_TIME;
+	sigemptyset(&wait_set);
+	sigaddset(&wait_set, SIGHVI);
+	device_region->need_wakeup = 1;
+	int signal_count = 0, proc_count = 0;
+    long seconds, useconds;    
+    double total_time;
+	struct timeval start, end;
+
+	int count = 0;
+	for (;;) {
+		log_warn("signal_count is %d, proc_count is %d", signal_count, proc_count);
+		sigwait(&wait_set, &sig);
+		signal_count++;
+		if (sig != SIGHVI) {
+			log_error("unknown signal %d", sig);
+			continue;
+		}
+		while(1) {
+			dmb_ishld();
+			if (!is_queue_empty(req_front, device_region->req_rear)) {
+				proc_count++;
+				req = &device_region->req_list[req_front];
+				device_region->need_wakeup = 0;
+				// gettimeofday(&start, NULL);
+				virtio_handle_req(req);
+				// gettimeofday(&end, NULL);
+				// seconds  = end.tv_sec  - start.tv_sec;
+				// useconds = end.tv_usec - start.tv_usec;
+				// total_time = seconds + useconds/1E6;
+				// log_warn("handle req time is %.6f seconds", total_time);
+
+				req_front = (req_front + 1) & (MAX_REQ - 1);
+				device_region->req_front = req_front;
+				dmb_ishst();
+			} else {
+				count++;
+				if (count < 10000) 
+					continue;
+				count = 0;
+				device_region->need_wakeup = 1;
+				dmb_ishst();
+				nanosleep(&timeout, NULL);
+				// device_region->need_wakeup = 1;
+				// dmb_ishst();
+				dmb_ishld();
+				if(is_queue_empty(req_front, device_region->req_rear)) {
+					break;
+				} 		
+			}
+		}
+	}
 }
 
 int virtio_init()
@@ -596,6 +645,11 @@ int virtio_init()
     // The higher log level is , faster virtio-blk will be.
     int err;
 	int log_level = LOG_WARN;
+
+	sigset_t block_mask;
+	sigfillset(&block_mask);
+	pthread_sigmask(SIG_BLOCK, &block_mask, NULL);
+
 	multithread_log_init();
     log_set_level(log_level);
     // FILE *log_file = fopen("log.txt", "w+");

@@ -18,6 +18,8 @@
 #include <linux/string.h> 
 
 struct hvisor_device_region *device_region; 
+static struct task_struct *task = NULL;
+
 // initial virtio el2 shared region
 static int hvisor_init_virtio(void) 
 {
@@ -114,6 +116,7 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
     {
     case HVISOR_INIT_VIRTIO:
         err = hvisor_init_virtio(); 
+		task = get_current(); // get hvisor user process
         break;
     case HVISOR_ZONE_START:
         err = hvisor_zone_start((struct hvisor_zone_load __user*) arg);
@@ -162,6 +165,30 @@ static struct miscdevice hvisor_misc_dev = {
 	.fops = &hvisor_fops,
 };
 
+// Interrupt handler for IRQ.
+static irqreturn_t irq_handler(int irq, void *dev_id) 
+{
+    if (dev_id != &hvisor_misc_dev) {
+        return IRQ_NONE;
+    }
+    struct siginfo info;
+    // pr_info("el2 IRQ occurred\n");
+
+    memset(&info, 0, sizeof(struct siginfo));
+    info.si_signo = SIGHVI;
+    info.si_code = SI_QUEUE;
+    info.si_int = 1;
+    // Send signale SIGHVI to hvisor user task
+    if (task != NULL) {
+        // pr_info("send signal to hvisor device\n");
+        if(send_sig_info(SIGHVI, (struct kernel_siginfo *)&info, task) < 0) {
+            pr_err("Unable to send signal\n");
+        }
+    }
+    return IRQ_HANDLED;
+}
+
+
 /*
 ** Module Init function
 */
@@ -172,6 +199,21 @@ static int __init hvisor_init(void)
     if (err) {
         pr_err("hvisor_misc_register failed!!!\n");
         return err;
+    }
+	// The irq number must be retrieved from dtb node, because it is different from GIC's IRQ number.
+    struct device_node *node = NULL;
+    node = of_find_node_by_path("/vm_service");
+    if (!node) {
+        pr_err("vm_service not found\n");
+        return -1;
+    }
+
+    int irq = of_irq_get(node, 0);
+    err = request_irq(irq, irq_handler, IRQF_SHARED | IRQF_TRIGGER_RISING, "hvisor", &hvisor_misc_dev);
+    if (err) {
+        pr_err("hvisor cannot register IRQ, err is %d\n", err);
+    	free_irq(irq,(void *)(irq_handler));
+        return -1;
     }
     printk("hvisor init done!!!\n");
     return 0;
