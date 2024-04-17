@@ -47,7 +47,8 @@ extern "C" {
 
 pub fn install_trap_vector() {
     // Set the trap vector.
-    VBAR_EL2.set(_hyp_trap_vector as _)
+    VBAR_EL2.set(_hyp_trap_vector as _);
+    println!("trap vector set to {:#x?}", VBAR_EL2.get());
 }
 
 // ----------------------------------------------
@@ -136,27 +137,27 @@ fn arch_handle_trap_el1(regs: &mut GeneralRegisters) {
 fn arch_handle_trap_el2(_regs: &mut GeneralRegisters) {
     match ESR_EL2.read_as_enum(ESR_EL2::EC) {
         Some(ESR_EL2::EC::Value::HVC64) => {
-            error!("EL2 Exception: HVC64 call, ELR_EL2: {:#x?}", ELR_EL2.get())
+            println!("EL2 Exception: HVC64 call, ELR_EL2: {:#x?}", ELR_EL2.get())
         }
         Some(ESR_EL2::EC::Value::SMC64) => {
-            error!("EL2 Exception: SMC64 call, ELR_EL2: {:#x?}", ELR_EL2.get())
+            println!("EL2 Exception: SMC64 call, ELR_EL2: {:#x?}", ELR_EL2.get())
         }
         Some(ESR_EL2::EC::Value::DataAbortCurrentEL) => {
-            error!(
+            println!(
                 "EL2 Exception: Data Abort, ELR_EL2: {:#x?}, FAR_EL2: {:#x?}",
                 ELR_EL2.get(),
                 FAR_EL2.get()
             )
         }
         Some(ESR_EL2::EC::Value::InstrAbortCurrentEL) => {
-            error!(
+            println!(
                 "EL2 Exception: Instruction Abort, ELR_EL2: {:#x?}, FAR_EL2: {:#x?}",
                 ELR_EL2.get(),
                 FAR_EL2.get()
             )
         }
         _ => {
-            error!("Unhandled EL2 Exception: EC={:#x?}", 1);
+            println!("Unhandled EL2 Exception: EC={:#x?}", 1);
         }
     }
     loop {}

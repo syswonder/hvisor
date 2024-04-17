@@ -26,6 +26,7 @@ impl PerCpu {
     pub fn new<'a>(cpu_id: usize) -> &'static mut PerCpu {
         let vaddr = PER_CPU_ARRAY_PTR as VirtAddr + cpu_id as usize * PER_CPU_SIZE;
         let ret = unsafe { &mut *(vaddr as *mut Self) };
+        println!("prepare to write to  {:#x?}", vaddr);
         *ret = PerCpu {
             id: cpu_id,
             cpu_on_entry: INVALID_ADDRESS,
@@ -34,6 +35,7 @@ impl PerCpu {
             ctrl_lock: Mutex::new(()),
             boot_cpu: false,
         };
+        println!("done");
         #[cfg(target_arch = "riscv64")]
         {
             use crate::arch::csr::CSR_SSCRATCH;

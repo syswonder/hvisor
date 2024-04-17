@@ -8,10 +8,14 @@ use crate::{
     percpu::this_cpu_data,
 };
 use aarch64_cpu::registers::{
-    Readable, Writeable, ELR_EL2, HCR_EL2, MPIDR_EL1, SCTLR_EL1, SPSR_EL2, VTCR_EL2,
+    Readable, Writeable, ELR_EL2, HCR_EL2, MAIR_EL2, MPIDR_EL1, SCTLR_EL1, SCTLR_EL2, SPSR_EL2,
+    TCR_EL2, VTCR_EL2,
 };
 
-use super::{mm::{get_parange, get_parange_bits, is_s2_pt_level3}, trap::vmreturn};
+use super::{
+    mm::{get_parange, get_parange_bits, is_s2_pt_level3},
+    trap::vmreturn,
+};
 
 pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
     psci::cpu_on(cpuid as u64 | 0x80000000, start_addr as _, opaque as _).unwrap_or_else(|err| {
@@ -70,7 +74,13 @@ impl ArchCpu {
                 + VTCR_EL2::SL0.val(if is_s2_pt_level3() { 1 } else { 2 })
                 + VTCR_EL2::ORGN0::NormalWBRAWA
                 + VTCR_EL2::IRGN0::NormalWBRAWA
-                + VTCR_EL2::T0SZ.val(64 - if is_s2_pt_level3() { 39 } else { get_parange_bits() as _}),
+                + VTCR_EL2::T0SZ.val(
+                    64 - if is_s2_pt_level3() {
+                        39
+                    } else {
+                        get_parange_bits() as _
+                    },
+                ),
         );
         HCR_EL2.write(
             HCR_EL2::RW::EL1IsAarch64
