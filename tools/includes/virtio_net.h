@@ -1,6 +1,7 @@
 #ifndef _HVISOR_VIRTIO_NET_H
 #define _HVISOR_VIRTIO_NET_H
 #include "virtio.h"
+#include <linux/virtio_net.h>
 #include "event_monitor.h"
 
 // Queue idx for virtio net.
@@ -10,37 +11,12 @@
 // Maximum number of queues for Virtio net
 #define NET_MAX_QUEUES  2
 
-// Virtio net feature bits.
-
-/// Device has given MAC address.
-#define	VIRTIO_NET_F_MAC	(1 <<  5) 
-/// Driver can merge receive buffers.
-#define	VIRTIO_NET_F_MRG_RXBUF	(1 << 15)
-/// Configuration status field is available.
-#define	VIRTIO_NET_F_STATUS	(1 << 16) 
-
-#define VIRTIO_NET_S_LINK_UP 1
-
 #define VIRTQUEUE_NET_MAX_SIZE 256
 
-#define NET_SUPPORTED_FEATURES (VIRTIO_F_VERSION_1 | VIRTIO_NET_F_MAC | VIRTIO_NET_F_STATUS)
-struct virtio_net_config {
-    uint8_t  mac[6];
-    uint16_t status;
-} __attribute__((packed));
-
-struct virtio_net_hdr {
-    uint8_t		flags;
-    uint8_t		gso_type;
-    uint16_t	hdr_len;
-    uint16_t	gso_size;
-    uint16_t	csum_start;
-    uint16_t	csum_offset;
-    uint16_t	num_buffers;
-} __attribute__((packed));
+#define NET_SUPPORTED_FEATURES ( (1ULL << VIRTIO_F_VERSION_1) | (1ULL << VIRTIO_NET_F_MAC) | (1ULL << VIRTIO_NET_F_STATUS) )
 
 typedef struct virtio_net_config NetConfig;
-typedef struct virtio_net_hdr NetHdr;
+typedef struct virtio_net_hdr_v1 NetHdr;
 
 typedef struct virtio_net_dev {
     NetConfig config;

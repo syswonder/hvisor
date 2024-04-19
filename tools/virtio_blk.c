@@ -150,7 +150,7 @@ static struct blkp_req* virtq_blk_handle_one_request(VirtQueue *vq)
 
     hdr = (BlkReqHead *) (iov[0].iov_base);
     uint64_t offset = hdr->sector * SECTOR_BSIZE; 
-    breq->type = hdr->req_type;
+    breq->type = hdr->type;
 	breq->iovcnt = n;
 	breq->offset = offset;
 

@@ -51,7 +51,9 @@
 		"streambuf": "c",
 		"system_error": "c",
 		"tuple": "c",
-		"typeinfo": "c"
+		"typeinfo": "c",
+		"virtio_ring.h": "c",
+		"virtio_blk.h": "c"
 	},
     // "rust-analyzer.cargo.features": [
     //     "board_qemu"

@@ -92,7 +92,7 @@ void virtio_net_rx_callback(int fd, int epoll_type, void *param)
 {
     log_debug("virtio_net_rx_callback");
     VirtIODevice *vdev = param;
-	struct virtio_net_hdr *vnet_header;
+	NetHdr *vnet_header;
 	struct iovec *iov, *iov_packet;
     NetDev *net = vdev->dev;
     VirtQueue *vq = &vdev->vqs[NET_QUEUE_RX];
@@ -155,7 +155,7 @@ static void virtq_tx_handle_one_request(NetDev *net, VirtQueue *vq)
     int packet_len, all_len; // all_len include the header length.
     uint16_t idx;
 	static char pad[64]; 
-
+	ssize_t len;
     if (net->tapfd == -1) {
         log_error("tap device is invalid");
         return;
@@ -179,8 +179,11 @@ static void virtq_tx_handle_one_request(NetDev *net, VirtQueue *vq)
         iov[n].iov_len = 64 - packet_len;
         n++;
     }
-    writev(net->tapfd, iov, n);
-    update_used_ring(vq, idx, all_len);
+    len = writev(net->tapfd, iov, n);
+    if (len < 0) {
+		log_error("write tap failed, errno %d", errno);
+	}
+	update_used_ring(vq, idx, all_len);
 	free(iov);
 }
 
@@ -192,6 +195,8 @@ int virtio_net_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
         virtq_tx_handle_one_request(vdev->dev, vq);
     }
     virtqueue_enable_notify(vq);
+	// TODO: Not sure if it is ok not to inject irq here.
+	// virtio_inject_irq(vq);
     return 0;
 }
 

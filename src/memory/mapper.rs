@@ -9,6 +9,7 @@ pub enum Mapper {
 }
 
 impl Mapper {
+    #[allow(dead_code)]
     pub fn offset(&self) -> usize {
         match self {
             Self::Offset(ref off) => *off,
