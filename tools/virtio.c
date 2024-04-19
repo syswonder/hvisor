@@ -43,7 +43,6 @@ inline int is_queue_full(unsigned int front, unsigned int rear, unsigned int siz
 
 inline int is_queue_empty(unsigned int front, unsigned int rear)
 {
-	// TODO: add read barrier to ensure the correctness of front and rear
     return rear == front;
 }
 
@@ -181,14 +180,6 @@ bool virtqueue_is_empty(VirtQueue *vq)
         return false;
 }
 
-// get the first descriptor chain's head idx in descriptor table.
-uint16_t virtqueue_pop_desc_chain_head(VirtQueue *vq)
-{
-    uint16_t ring_idx = vq->last_avail_idx % vq->num;
-    vq->last_avail_idx++;
-    return vq->avail_ring->ring[ring_idx];
-}
-
 bool desc_is_writable(volatile VirtqDesc *desc_table, uint16_t idx)
 {
     if (desc_table[idx].flags & VRING_DESC_F_WRITE)
@@ -209,11 +200,19 @@ void* get_phys_addr(void *addr)
 
 // When virtio device is processing virtqueue, driver adding an elem to virtqueue is no need to notify device.
 void virtqueue_disable_notify(VirtQueue *vq) {
-    vq->used_ring->flags |= (uint16_t)VRING_USED_F_NO_NOTIFY;
+	if (vq->event_idx_enabled) {
+		VQ_AVAIL_EVENT(vq) = vq->last_avail_idx - 1;
+	} else {
+    	vq->used_ring->flags |= (uint16_t)VRING_USED_F_NO_NOTIFY;
+	}
 }
 
 void virtqueue_enable_notify(VirtQueue *vq) {
-    vq->used_ring->flags &= !(uint16_t)VRING_USED_F_NO_NOTIFY;
+	if (vq->event_idx_enabled) {
+		VQ_AVAIL_EVENT(vq) = vq->avail_ring->idx;
+	} else {
+   		vq->used_ring->flags &= !(uint16_t)VRING_USED_F_NO_NOTIFY;
+	} 
 }
 
 void virtqueue_set_desc_table(VirtQueue *vq)
@@ -297,23 +296,14 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
     elem->id = idx;
     elem->len = iolen;
     used_ring->idx = used_idx;
-	vq->last_used_idx = used_idx;
 	pthread_mutex_unlock(&vq->used_ring_lock);
-    log_debug("update used ring: used_idx is %d, elem->idx is %d", used_idx, idx);
+    log_debug("update used ring: used_idx is %d, elem->idx is %d, vq->num is %d", used_idx, idx, vq->num);
 }
 
 static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size)
 {
     log_debug("virtio mmio read at %#x", offset);
     if (!vdev) {
-        /* If no backend is present, we treat most registers as
-         * read-as-zero, except for the magic number, version and
-         * vendor ID. This is not strictly sanctioned by the virtio
-         * spec, but it allows us to provide transports with no backend
-         * plugged in which don't confuse Linux's virtio code: the
-         * probe won't complain about the bad magic number, but the
-         * device ID of zero means no backend will claim it.
-         */
         switch (offset) {
         case VIRTIO_MMIO_MAGIC_VALUE:
             return VIRT_MAGIC;
@@ -362,14 +352,6 @@ static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned s
         return vdev->regs.status;
     case VIRTIO_MMIO_CONFIG_GENERATION:
         return vdev->regs.generation;
-   case VIRTIO_MMIO_SHM_LEN_LOW:
-   case VIRTIO_MMIO_SHM_LEN_HIGH:
-        /*
-         * VIRTIO_MMIO_SHM_SEL is unimplemented
-         * according to the linux driver, if region length is -1
-         * the shared memory doesn't exist
-         */
-        return -1;
     case VIRTIO_MMIO_DEVICE_FEATURES_SEL:
     case VIRTIO_MMIO_DRIVER_FEATURES:
     case VIRTIO_MMIO_DRIVER_FEATURES_SEL:
@@ -398,10 +380,6 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
     VirtMmioRegs *regs = &vdev->regs;
     VirtQueue *vqs = vdev->vqs;
     if (!vdev) {
-        /* If no backend is present, we just make all registers
-         * write-ignored. This allows us to provide transports with
-         * no backend plugged in.
-         */
         return;
     }
 
@@ -429,6 +407,11 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
         } else {
             regs->drv_feature |= value;
         }
+		if (regs->drv_feature & (1ULL << VIRTIO_RING_F_EVENT_IDX)) {
+			int len = vdev->vqs_len;
+			for (int i=0; i<len; i++) 
+				vqs[i].event_idx_enabled = 1;
+		}
         break;
     case VIRTIO_MMIO_DRIVER_FEATURES_SEL:
         if (value) {
@@ -523,8 +506,22 @@ static inline void dmb_ishld(void) {
 // Inject irq_id to target zone. It will add to res list, and notify hypervisor through ioctl.
 void virtio_inject_irq(VirtQueue *vq)
 {
-    if (vq->avail_ring->flags & VRING_AVAIL_F_NO_INTERRUPT) {
+	uint16_t last_used_idx, idx, event_idx;
+	last_used_idx = vq->last_used_idx;
+	vq->last_used_idx = idx = vq->used_ring->idx;
+
+	if (idx == last_used_idx) {
 		return ;
+	}
+    if (!vq->event_idx_enabled && (vq->avail_ring->flags & VRING_AVAIL_F_NO_INTERRUPT)) {
+		return ;
+	}
+	if (vq->event_idx_enabled) {
+		event_idx = VQ_USED_EVENT(vq);
+		log_debug("idx is %d, event_idx is %d, last_used_idx is %d", idx, event_idx, last_used_idx);
+		if(!vring_need_event(event_idx, idx, last_used_idx)) {
+			return;
+		}
 	}
     volatile struct device_res *res;
     while (is_queue_full(device_region->res_front, device_region->res_rear, MAX_REQ));
@@ -591,13 +588,10 @@ void handle_virtio_requests()
 	sigaddset(&wait_set, SIGHVI);
 	device_region->need_wakeup = 1;
 	int signal_count = 0, proc_count = 0;
-    long seconds, useconds;    
-    double total_time;
-	struct timeval start, end;
 
 	int count = 0;
 	for (;;) {
-		log_warn("signal_count is %d, proc_count is %d", signal_count, proc_count);
+		log_debug("signal_count is %d, proc_count is %d", signal_count, proc_count);
 		sigwait(&wait_set, &sig);
 		signal_count++;
 		if (sig != SIGHVI) {
@@ -607,17 +601,11 @@ void handle_virtio_requests()
 		while(1) {
 			dmb_ishld();
 			if (!is_queue_empty(req_front, device_region->req_rear)) {
+				count = 0;
 				proc_count++;
 				req = &device_region->req_list[req_front];
 				device_region->need_wakeup = 0;
-				// gettimeofday(&start, NULL);
 				virtio_handle_req(req);
-				// gettimeofday(&end, NULL);
-				// seconds  = end.tv_sec  - start.tv_sec;
-				// useconds = end.tv_usec - start.tv_usec;
-				// total_time = seconds + useconds/1E6;
-				// log_warn("handle req time is %.6f seconds", total_time);
-
 				req_front = (req_front + 1) & (MAX_REQ - 1);
 				device_region->req_front = req_front;
 				dmb_ishst();
