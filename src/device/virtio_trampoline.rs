@@ -8,6 +8,10 @@ use spin::Mutex;
 
 use crate::arch::cpu::this_cpu_id;
 use crate::device::irqchip::gicv3::inject_irq;
+use crate::event::send_event;
+use crate::event::IPI_EVENT_WAKEUP_VIRTIO_DEVICE;
+use crate::hypercall::SGI_IPI_ID;
+use crate::zone::root_zone;
 use crate::zone::this_zone_id;
 use crate::{error::HvResult, memory::MMIOAccess};
 
@@ -20,6 +24,8 @@ const QUEUE_NOTIFY: usize = 0x50;
 pub const MAX_REQ: u32 = 32;
 pub const MAX_DEVS: usize = 4; // Attention: The max virtio-dev number for vm is 4.
 pub const MAX_CPUS: usize = 16;
+pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;
+
 /// non root zone's virtio request handler
 pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     debug!("mmio virtio handler");
@@ -52,16 +58,26 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     };
     let cpu_id = this_cpu_id() as usize;
     let old_cfg_flag = cfg_flags[cpu_id];
-    // TODO: send sgi to wake up root linux's virtio backend
+    // If req list is empty, send sgi to root linux to wake up virtio device.
+    if dev.need_wakeup() {
+        let root_cpu = root_zone().read().cpu_set.first_cpu().unwrap();
+        send_event(root_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP_VIRTIO_DEVICE);
+    }
     dev.push_req(hreq);
     drop(dev);
+    let mut count = 0;
     // if it is cfg request, current cpu should be blocked until gets the result
     if need_interrupt == 0 {
         // when virtio backend finish the req, it will add 1 to cfg_flag.
-        while cfg_flags[cpu_id] == old_cfg_flag {}
+        while cfg_flags[cpu_id] == old_cfg_flag {
+            fence(Ordering::Acquire);
+            count += 1;
+            if count > 1000000 {
+                warn!("virtio backend is too slow, please check it!");
+            }
+        }
         if !mmio.is_write {
             // ensure cfg value is right.
-            fence(Ordering::Acquire);
             mmio.value = cfg_values[cpu_id] as _;
             debug!("non root receives value: {:#x?}", mmio.value);
         }
@@ -113,13 +129,23 @@ impl HvisorDevice {
     pub fn set_base_addr(&mut self, base_addr: usize) {
         self.base_address = base_addr;
         self.is_enable = true;
-        let region = self.immut_region();
     }
 
     pub fn is_req_list_full(&self) -> bool {
         let region = self.immut_region();
         if ((region.req_rear + 1) & (MAX_REQ - 1)) == region.req_front {
             debug!("hvisor req queue full");
+            true
+        } else {
+            false
+        }
+    }
+
+    #[allow(dead_code)]
+    pub fn is_req_list_empty(&self) -> bool {
+        let region = self.immut_region();
+        fence(Ordering::Acquire);
+        if region.req_rear == region.req_front {
             true
         } else {
             false
@@ -154,6 +180,16 @@ impl HvisorDevice {
         let region = self.immut_region();
         region.cfg_values.as_ptr()
     }
+
+    pub fn need_wakeup(&self) -> bool {
+        let region = self.immut_region();
+        fence(Ordering::Acquire);
+        if region.need_wakeup == 1 {
+            true
+        } else {
+            false
+        }
+    }
 }
 
 /// El1 and EL2 shared region for virtio requests and results.
@@ -173,6 +209,7 @@ pub struct HvisorDeviceRegion {
     cfg_values: [u64; MAX_CPUS],
     pub mmio_addrs: [u64; MAX_DEVS],
     pub mmio_avail: u8,
+    pub need_wakeup: u8,
 }
 
 impl Debug for HvisorDeviceRegion {

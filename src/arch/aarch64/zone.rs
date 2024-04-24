@@ -3,12 +3,10 @@ use core::sync::atomic::{fence, Ordering};
 use alloc::vec::Vec;
 
 use crate::{
-    consts::PAGE_SIZE,
     device::virtio_trampoline::{mmio_virtio_handler, HVISOR_DEVICE},
     error::HvResult,
     memory::{
-        addr::{align_down, align_up},
-        mmio_generic_handler, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
+        addr::align_up, mmio_generic_handler, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
     },
     zone::Zone,
 };

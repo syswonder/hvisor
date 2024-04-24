@@ -13,6 +13,9 @@
 #include <errno.h>
 #include <sys/ioctl.h>
 #include <getopt.h>
+#include <signal.h>
+#include <time.h>
+#include <sys/time.h>                                                                                           
 
 /// hvisor kernel module fd
 int ko_fd;
@@ -27,7 +30,7 @@ void *virt_addr;
 void *phys_addr;
 #define NON_ROOT_PHYS_START 0x70000000
 #define NON_ROOT_PHYS_SIZE 0x20000000
-
+#define WAIT_TIME 100 // 100ns
 inline int is_queue_full(unsigned int front, unsigned int rear, unsigned int size)
 {
     if (((rear + 1) & (size - 1)) == front) {
@@ -161,6 +164,7 @@ void virtqueue_reset(VirtQueue *vq, int idx)
     vq->notify_handler = addr;
     vq->dev = dev;
     vq->queue_num_max = queue_num_max;
+	pthread_mutex_init(&vq->used_ring_lock, NULL);
 }
 
 // check if virtqueue has new requests
@@ -174,14 +178,6 @@ bool virtqueue_is_empty(VirtQueue *vq)
         return true;
     else
         return false;
-}
-
-// get the first descriptor chain's head idx in descriptor table.
-uint16_t virtqueue_pop_desc_chain_head(VirtQueue *vq)
-{
-    uint16_t ring_idx = vq->last_avail_idx % vq->num;
-    vq->last_avail_idx++;
-    return vq->avail_ring->ring[ring_idx];
 }
 
 bool desc_is_writable(volatile VirtqDesc *desc_table, uint16_t idx)
@@ -204,11 +200,19 @@ void* get_phys_addr(void *addr)
 
 // When virtio device is processing virtqueue, driver adding an elem to virtqueue is no need to notify device.
 void virtqueue_disable_notify(VirtQueue *vq) {
-    vq->used_ring->flags |= (uint16_t)VRING_USED_F_NO_NOTIFY;
+	if (vq->event_idx_enabled) {
+		VQ_AVAIL_EVENT(vq) = vq->last_avail_idx - 1;
+	} else {
+    	vq->used_ring->flags |= (uint16_t)VRING_USED_F_NO_NOTIFY;
+	}
 }
 
 void virtqueue_enable_notify(VirtQueue *vq) {
-    vq->used_ring->flags &= !(uint16_t)VRING_USED_F_NO_NOTIFY;
+	if (vq->event_idx_enabled) {
+		VQ_AVAIL_EVENT(vq) = vq->avail_ring->idx;
+	} else {
+   		vq->used_ring->flags &= !(uint16_t)VRING_USED_F_NO_NOTIFY;
+	} 
 }
 
 void virtqueue_set_desc_table(VirtQueue *vq)
@@ -284,6 +288,7 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
     volatile VirtqUsed *used_ring;
     volatile VirtqUsedElem *elem;
     uint16_t used_idx, mask;
+	pthread_mutex_lock(&vq->used_ring_lock);
     used_ring = vq->used_ring;
     used_idx = used_ring->idx;
     mask = vq->num - 1;
@@ -291,36 +296,14 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
     elem->id = idx;
     elem->len = iolen;
     used_ring->idx = used_idx;
-    log_debug("update used ring: used_idx is %d, elem->idx is %d", used_idx, idx);
-}
-
-/// If vq's used ring is changed, then inject interrupt to vq's zone
-void try_inject_irq(VirtQueue *vq, int no_more_chains)
-{
-    if (!no_more_chains) {
-        return;
-    }
-    uint16_t new_idx, old_idx;
-    int need_interrupt;
-    old_idx = vq->last_used_idx;
-    vq->last_used_idx = new_idx = vq->used_ring->idx;
-    need_interrupt = new_idx != old_idx && !(vq->avail_ring->flags & VRING_AVAIL_F_NO_INTERRUPT);
-    if (need_interrupt)
-        virtio_inject_irq(vq->dev->zone_id, vq->dev->irq_id);
+	pthread_mutex_unlock(&vq->used_ring_lock);
+    log_debug("update used ring: used_idx is %d, elem->idx is %d, vq->num is %d", used_idx, idx, vq->num);
 }
 
 static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size)
 {
     log_debug("virtio mmio read at %#x", offset);
     if (!vdev) {
-        /* If no backend is present, we treat most registers as
-         * read-as-zero, except for the magic number, version and
-         * vendor ID. This is not strictly sanctioned by the virtio
-         * spec, but it allows us to provide transports with no backend
-         * plugged in which don't confuse Linux's virtio code: the
-         * probe won't complain about the bad magic number, but the
-         * device ID of zero means no backend will claim it.
-         */
         switch (offset) {
         case VIRTIO_MMIO_MAGIC_VALUE:
             return VIRT_MAGIC;
@@ -369,14 +352,6 @@ static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned s
         return vdev->regs.status;
     case VIRTIO_MMIO_CONFIG_GENERATION:
         return vdev->regs.generation;
-   case VIRTIO_MMIO_SHM_LEN_LOW:
-   case VIRTIO_MMIO_SHM_LEN_HIGH:
-        /*
-         * VIRTIO_MMIO_SHM_SEL is unimplemented
-         * according to the linux driver, if region length is -1
-         * the shared memory doesn't exist
-         */
-        return -1;
     case VIRTIO_MMIO_DEVICE_FEATURES_SEL:
     case VIRTIO_MMIO_DRIVER_FEATURES:
     case VIRTIO_MMIO_DRIVER_FEATURES_SEL:
@@ -405,10 +380,6 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
     VirtMmioRegs *regs = &vdev->regs;
     VirtQueue *vqs = vdev->vqs;
     if (!vdev) {
-        /* If no backend is present, we just make all registers
-         * write-ignored. This allows us to provide transports with
-         * no backend plugged in.
-         */
         return;
     }
 
@@ -436,6 +407,11 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
         } else {
             regs->drv_feature |= value;
         }
+		if (regs->drv_feature & (1ULL << VIRTIO_RING_F_EVENT_IDX)) {
+			int len = vdev->vqs_len;
+			for (int i=0; i<len; i++) 
+				vqs[i].event_idx_enabled = 1;
+		}
         break;
     case VIRTIO_MMIO_DRIVER_FEATURES_SEL:
         if (value) {
@@ -522,16 +498,38 @@ static inline void dmb_ishst(void) {
     asm volatile ("dmb ishst":: : "memory");
 }
 
+/// Read barrier.  
+static inline void dmb_ishld(void) {
+	asm volatile ("dmb ishld":: : "memory");
+}
+
 // Inject irq_id to target zone. It will add to res list, and notify hypervisor through ioctl.
-void virtio_inject_irq(uint32_t target_zone, uint32_t irq_id)
+void virtio_inject_irq(VirtQueue *vq)
 {
+	uint16_t last_used_idx, idx, event_idx;
+	last_used_idx = vq->last_used_idx;
+	vq->last_used_idx = idx = vq->used_ring->idx;
+
+	if (idx == last_used_idx) {
+		return ;
+	}
+    if (!vq->event_idx_enabled && (vq->avail_ring->flags & VRING_AVAIL_F_NO_INTERRUPT)) {
+		return ;
+	}
+	if (vq->event_idx_enabled) {
+		event_idx = VQ_USED_EVENT(vq);
+		log_debug("idx is %d, event_idx is %d, last_used_idx is %d", idx, event_idx, last_used_idx);
+		if(!vring_need_event(event_idx, idx, last_used_idx)) {
+			return;
+		}
+	}
     volatile struct device_res *res;
     while (is_queue_full(device_region->res_front, device_region->res_rear, MAX_REQ));
     pthread_mutex_lock(&RES_MUTEX);
     unsigned int res_rear = device_region->res_rear;
     res = &device_region->res_list[res_rear];
-    res->irq_id = irq_id;
-    res->target_zone = target_zone;
+    res->irq_id = vq->dev->irq_id;
+    res->target_zone = vq->dev->zone_id;
     dmb_ishst();
     device_region->res_rear = (res_rear + 1) & (MAX_REQ - 1);
     pthread_mutex_unlock(&RES_MUTEX);
@@ -579,17 +577,55 @@ int virtio_handle_req(volatile struct device_req *req)
 
 void handle_virtio_requests()
 {
+	int sig;
+	sigset_t wait_set;
+	struct timespec timeout;
     unsigned int req_front = device_region->req_front;
     volatile struct device_req *req;
-    while (1) {
-        if (!is_queue_empty(req_front, device_region->req_rear)) {
-            req = &device_region->req_list[req_front];
-            virtio_handle_req(req);
-            req_front = (req_front + 1) & (MAX_REQ - 1);
-            device_region->req_front = req_front;
-            // dmb_ishst(); 应该不需要
-        }
-    }
+	timeout.tv_sec = 0;
+	timeout.tv_nsec = WAIT_TIME;
+	sigemptyset(&wait_set);
+	sigaddset(&wait_set, SIGHVI);
+	device_region->need_wakeup = 1;
+	int signal_count = 0, proc_count = 0;
+
+	int count = 0;
+	for (;;) {
+		log_debug("signal_count is %d, proc_count is %d", signal_count, proc_count);
+		sigwait(&wait_set, &sig);
+		signal_count++;
+		if (sig != SIGHVI) {
+			log_error("unknown signal %d", sig);
+			continue;
+		}
+		while(1) {
+			dmb_ishld();
+			if (!is_queue_empty(req_front, device_region->req_rear)) {
+				count = 0;
+				proc_count++;
+				req = &device_region->req_list[req_front];
+				device_region->need_wakeup = 0;
+				virtio_handle_req(req);
+				req_front = (req_front + 1) & (MAX_REQ - 1);
+				device_region->req_front = req_front;
+				dmb_ishst();
+			} else {
+				count++;
+				if (count < 10000) 
+					continue;
+				count = 0;
+				device_region->need_wakeup = 1;
+				dmb_ishst();
+				nanosleep(&timeout, NULL);
+				// device_region->need_wakeup = 1;
+				// dmb_ishst();
+				dmb_ishld();
+				if(is_queue_empty(req_front, device_region->req_rear)) {
+					break;
+				} 		
+			}
+		}
+	}
 }
 
 int virtio_init()
@@ -597,9 +633,15 @@ int virtio_init()
     // The higher log level is , faster virtio-blk will be.
     int err;
 	int log_level = LOG_WARN;
+
+	sigset_t block_mask;
+	sigfillset(&block_mask);
+	pthread_sigmask(SIG_BLOCK, &block_mask, NULL);
+
+	multithread_log_init();
     log_set_level(log_level);
-    FILE *log_file = fopen("log.txt", "w+");
-    log_add_fp(log_file, log_level);
+    // FILE *log_file = fopen("log.txt", "w+");
+    // log_add_fp(log_file, log_level);
     log_info("hvisor init");
     ko_fd = open("/dev/hvisor", O_RDWR);
     if (ko_fd < 0) {

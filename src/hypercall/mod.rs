@@ -2,15 +2,12 @@
 use crate::consts::{DTB_IPA, INVALID_ADDRESS, PAGE_SIZE};
 use crate::device::virtio_trampoline::{HVISOR_DEVICE, MAX_DEVS, MAX_REQ, VIRTIO_IRQS};
 use crate::error::HvResult;
-use crate::memory::addr::align_down;
-use crate::memory::{self, MemFlags, MemoryRegion, HVISOR_DEVICE_REGION_BASE};
 use crate::percpu::{get_cpu_data, PerCpu};
-use crate::zone::{find_zone, is_this_root_zone, remove_zone, root_zone, zone_create};
+use crate::zone::{find_zone, is_this_root_zone, remove_zone, zone_create};
 
 use crate::event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_VIRTIO_INJECT_IRQ, IPI_EVENT_WAKEUP};
-use alloc::sync::Arc;
 use core::convert::TryFrom;
-use core::sync::atomic::{fence, AtomicU32, Ordering};
+use core::sync::atomic::{fence, Ordering};
 
 use numeric_enum_macro::numeric_enum;
 
@@ -69,8 +66,7 @@ impl<'a> HyperCall<'a> {
             "handle hvc init virtio, shared_region_addr = {:#x?}",
             shared_region_addr
         );
-        let zone = self.cpu_data.zone.clone().unwrap();
-        if !Arc::ptr_eq(&zone, &root_zone()) {
+        if !is_this_root_zone() {
             return hv_result_err!(EPERM, "Init virtio over non-root zones: unsupported!");
         }
         let shared_region_addr_pa = shared_region_addr as usize;
@@ -137,6 +133,12 @@ impl<'a> HyperCall<'a> {
 
     pub fn hv_zone_start(&mut self, zone_info: &ZoneInfo) -> HyperCallResult {
         info!("handle hvc zone start");
+        if !is_this_root_zone() {
+            return hv_result_err!(
+                EPERM,
+                "Start zone operation over non-root zones: unsupported!"
+            );
+        }
         let zone = zone_create(zone_info.id as _, zone_info.dtb_phys_addr as _, DTB_IPA)?;
         let boot_cpu = zone.read().cpu_set.first_cpu().unwrap();
 
@@ -155,6 +157,12 @@ impl<'a> HyperCall<'a> {
 
     fn hv_zone_shutdown(&mut self, zone_id: u64) -> HyperCallResult {
         info!("handle hvc zone shutdown, id={}", zone_id);
+        if !is_this_root_zone() {
+            return hv_result_err!(
+                EPERM,
+                "Shutdown zone operation over non-root zones: unsupported!"
+            );
+        }
         if zone_id == 0 {
             return hv_result_err!(EINVAL);
         }
