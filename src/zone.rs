@@ -5,12 +5,10 @@ use spin::RwLock;
 use crate::arch::s2pt::Stage2PageTable;
 use crate::consts::MAX_CPU_NUM;
 
-use crate::device::virtio_trampoline::mmio_virtio_handler;
 use crate::error::HvResult;
 use crate::memory::addr::GuestPhysAddr;
-use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemoryRegion, MemorySet};
+use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
 use crate::percpu::{get_cpu_data, this_zone, CpuSet};
-use core::ops::Add;
 use core::panic;
 
 pub struct Zone {
@@ -76,6 +74,7 @@ impl Zone {
             })
         }
     }
+    #[allow(dead_code)]
     /// Remove the mmio region beginning at `start`.
     pub fn mmio_region_remove(&mut self, start: GuestPhysAddr) {
         if let Some((idx, _)) = self

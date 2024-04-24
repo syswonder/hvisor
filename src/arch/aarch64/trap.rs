@@ -253,7 +253,10 @@ fn handle_hvc(regs: &mut GeneralRegisters) {
     );
     let result = match HyperCall::new(cpu_data).hypercall(code as _, arg0, arg1) {
         Ok(ret) => ret as _,
-        Err(e) => e.code(),
+        Err(e) => {
+            error!("hypercall error: {:#?}", e);
+            e.code()
+        }
     };
     debug!("HVC result = {}", result);
     regs.usr[0] = result as _;
