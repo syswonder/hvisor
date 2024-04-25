@@ -17,20 +17,21 @@
 #include <asm/cacheflush.h>
 #include <linux/string.h> 
 
-struct hvisor_device_region *device_region; 
+struct virtio_bridge *virtio_bridge; 
+int hvisor_irq;
 static struct task_struct *task = NULL;
 
 // initial virtio el2 shared region
 static int hvisor_init_virtio(void) 
 {
 	int err;
-	device_region = __get_free_pages(GFP_KERNEL, 0);
-	if (device_region == NULL)
+	virtio_bridge = __get_free_pages(GFP_KERNEL, 0);
+	if (virtio_bridge == NULL)
 		return -ENOMEM;
-    SetPageReserved(virt_to_page(device_region));
+    SetPageReserved(virt_to_page(virtio_bridge));
     // init device region
-	memset(device_region, 0, sizeof(struct hvisor_device_region));
-	err = hvisor_call_arg1(HVISOR_HC_INIT_VIRTIO, __pa(device_region));
+	memset(virtio_bridge, 0, sizeof(struct virtio_bridge));
+	err = hvisor_call_arg1(HVISOR_HC_INIT_VIRTIO, __pa(virtio_bridge));
 	if (err)
 		return err;
 	return 0;
@@ -124,7 +125,7 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
 	case HVISOR_ZONE_SHUTDOWN:
 		err = hvisor_call_arg1(HVISOR_HC_SHUTDOWN_ZONE, arg);	
 		break;
-    case HVISOR_FINISH:
+    case HVISOR_FINISH_REQ:
         err = hvisor_finish_req();
         break;
     default:
@@ -139,8 +140,8 @@ static int hvisor_map(struct file * filp, struct vm_area_struct *vma)
 {
     unsigned long phys;
     
-    // device_region must be aligned to one page.
-    phys = virt_to_phys(device_region);
+    // virtio_bridge must be aligned to one page.
+    phys = virt_to_phys(virtio_bridge);
     // vma->vm_flags |= (VM_IO | VM_LOCKED | (VM_DONTEXPAND | VM_DONTDUMP)); Not sure should we add this line.
     if(remap_pfn_range(vma, 
                     vma->vm_start,
@@ -172,7 +173,6 @@ static irqreturn_t irq_handler(int irq, void *dev_id)
         return IRQ_NONE;
     }
     struct siginfo info;
-    // pr_info("el2 IRQ occurred\n");
 
     memset(&info, 0, sizeof(struct siginfo));
     info.si_signo = SIGHVI;
@@ -202,17 +202,17 @@ static int __init hvisor_init(void)
     }
 	// The irq number must be retrieved from dtb node, because it is different from GIC's IRQ number.
     struct device_node *node = NULL;
-    node = of_find_node_by_path("/vm_service");
+    node = of_find_node_by_path("/hvisor_device");
     if (!node) {
-        pr_err("vm_service not found\n");
+        pr_err("hvisor_device not found\n");
         return -1;
     }
 
-    int irq = of_irq_get(node, 0);
-    err = request_irq(irq, irq_handler, IRQF_SHARED | IRQF_TRIGGER_RISING, "hvisor", &hvisor_misc_dev);
+    hvisor_irq = of_irq_get(node, 0);
+    err = request_irq(hvisor_irq, irq_handler, IRQF_SHARED | IRQF_TRIGGER_RISING, "hvisor", &hvisor_misc_dev);
     if (err) {
         pr_err("hvisor cannot register IRQ, err is %d\n", err);
-    	free_irq(irq,(void *)(irq_handler));
+    	free_irq(hvisor_irq,(void *)(irq_handler));
         return -1;
     }
     printk("hvisor init done!!!\n");
@@ -225,6 +225,13 @@ static int __init hvisor_init(void)
 static void __exit hvisor_exit(void)
 {
     misc_deregister(&hvisor_misc_dev);
+
+	free_irq(hvisor_irq,(void *)(irq_handler));
+
+	ClearPageReserved(virt_to_page(virtio_bridge));
+
+	free_pages((unsigned long)virtio_bridge, 0);
+	
     pr_info("hvisor exit!!!\n");
 }
  

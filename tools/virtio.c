@@ -16,10 +16,10 @@
 #include <signal.h>
 #include <time.h>
 #include <sys/time.h>                                                                                           
-
+#include <limits.h>
 /// hvisor kernel module fd
 int ko_fd;
-volatile struct hvisor_device_region *device_region;
+volatile struct virtio_bridge *virtio_bridge;
 
 pthread_mutex_t RES_MUTEX = PTHREAD_MUTEX_INITIALIZER;
 // TODO: chang to tailq
@@ -34,7 +34,6 @@ void *phys_addr;
 inline int is_queue_full(unsigned int front, unsigned int rear, unsigned int size)
 {
     if (((rear + 1) & (size - 1)) == front) {
-        log_trace("queue is full, front is %u, rear is %u", front, rear);
         return 1;
     } else {
         return 0;
@@ -205,6 +204,7 @@ void virtqueue_disable_notify(VirtQueue *vq) {
 	} else {
     	vq->used_ring->flags |= (uint16_t)VRING_USED_F_NO_NOTIFY;
 	}
+	dmb_ishst();
 }
 
 void virtqueue_enable_notify(VirtQueue *vq) {
@@ -213,6 +213,7 @@ void virtqueue_enable_notify(VirtQueue *vq) {
 	} else {
    		vq->used_ring->flags &= !(uint16_t)VRING_USED_F_NO_NOTIFY;
 	} 
+	dmb_ishst();
 }
 
 void virtqueue_set_desc_table(VirtQueue *vq)
@@ -288,6 +289,7 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
     volatile VirtqUsed *used_ring;
     volatile VirtqUsedElem *elem;
     uint16_t used_idx, mask;
+	// There is no need to worry about if used_ring is full, because used_ring's len is equal to descriptor table's. 
 	pthread_mutex_lock(&vq->used_ring_lock);
     used_ring = vq->used_ring;
     used_idx = used_ring->idx;
@@ -296,6 +298,7 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
     elem->id = idx;
     elem->len = iolen;
     used_ring->idx = used_idx;
+	dmb_ishst();
 	pthread_mutex_unlock(&vq->used_ring_lock);
     log_debug("update used ring: used_idx is %d, elem->idx is %d, vq->num is %d", used_idx, idx, vq->num);
 }
@@ -434,7 +437,6 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
         break;
     case VIRTIO_MMIO_QUEUE_NOTIFY:
         log_debug("queue notify begin");
-        regs->interrupt_status = VIRTIO_MMIO_INT_VRING;
         if (value < vdev->vqs_len) {
             log_trace("queue notify ready, handler addr is %#x", vqs[value].notify_handler);
             vqs[value].notify_handler(vdev, &vqs[value]);
@@ -494,7 +496,7 @@ static inline bool in_range(uint64_t value, uint64_t lower, uint64_t len)
 }
 
 /// Write barrier to make sure all write operations are finished before this operation
-static inline void dmb_ishst(void) {
+inline void dmb_ishst(void) {
     asm volatile ("dmb ishst":: : "memory");
 }
 
@@ -509,11 +511,13 @@ void virtio_inject_irq(VirtQueue *vq)
 	uint16_t last_used_idx, idx, event_idx;
 	last_used_idx = vq->last_used_idx;
 	vq->last_used_idx = idx = vq->used_ring->idx;
-
+	dmb_ishld();
 	if (idx == last_used_idx) {
+		log_debug("idx equals last_used_idx");
 		return ;
 	}
     if (!vq->event_idx_enabled && (vq->avail_ring->flags & VRING_AVAIL_F_NO_INTERRUPT)) {
+		log_debug("no interrupt");
 		return ;
 	}
 	if (vq->event_idx_enabled) {
@@ -524,22 +528,24 @@ void virtio_inject_irq(VirtQueue *vq)
 		}
 	}
     volatile struct device_res *res;
-    while (is_queue_full(device_region->res_front, device_region->res_rear, MAX_REQ));
+    while (is_queue_full(virtio_bridge->res_front, virtio_bridge->res_rear, MAX_REQ));
     pthread_mutex_lock(&RES_MUTEX);
-    unsigned int res_rear = device_region->res_rear;
-    res = &device_region->res_list[res_rear];
+    unsigned int res_rear = virtio_bridge->res_rear;
+    res = &virtio_bridge->res_list[res_rear];
     res->irq_id = vq->dev->irq_id;
     res->target_zone = vq->dev->zone_id;
     dmb_ishst();
-    device_region->res_rear = (res_rear + 1) & (MAX_REQ - 1);
+    virtio_bridge->res_rear = (res_rear + 1) & (MAX_REQ - 1);
+    dmb_ishst();
     pthread_mutex_unlock(&RES_MUTEX);
-    ioctl(ko_fd, HVISOR_FINISH);
+	vq->dev->regs.interrupt_status = VIRTIO_MMIO_INT_VRING;
+    ioctl(ko_fd, HVISOR_FINISH_REQ);
 }
 
 static void virtio_finish_cfg_req(uint32_t target_cpu, uint64_t value) {
-    device_region->cfg_values[target_cpu] = value;
+    virtio_bridge->cfg_values[target_cpu] = value;
     dmb_ishst();
-    device_region->cfg_flags[target_cpu]++;
+    virtio_bridge->cfg_flags[target_cpu]++;
     dmb_ishst();
 }
 
@@ -580,18 +586,18 @@ void handle_virtio_requests()
 	int sig;
 	sigset_t wait_set;
 	struct timespec timeout;
-    unsigned int req_front = device_region->req_front;
+    unsigned int req_front = virtio_bridge->req_front;
     volatile struct device_req *req;
 	timeout.tv_sec = 0;
 	timeout.tv_nsec = WAIT_TIME;
 	sigemptyset(&wait_set);
 	sigaddset(&wait_set, SIGHVI);
-	device_region->need_wakeup = 1;
+	virtio_bridge->need_wakeup = 1;
+	
 	int signal_count = 0, proc_count = 0;
-
-	int count = 0;
+	unsigned long long count = 0;
 	for (;;) {
-		log_debug("signal_count is %d, proc_count is %d", signal_count, proc_count);
+		log_warn("signal_count is %d, proc_count is %d", signal_count, proc_count);
 		sigwait(&wait_set, &sig);
 		signal_count++;
 		if (sig != SIGHVI) {
@@ -599,28 +605,28 @@ void handle_virtio_requests()
 			continue;
 		}
 		while(1) {
-			dmb_ishld();
-			if (!is_queue_empty(req_front, device_region->req_rear)) {
+			// dmb_ishld();
+			if (!is_queue_empty(req_front, virtio_bridge->req_rear)) {
 				count = 0;
 				proc_count++;
-				req = &device_region->req_list[req_front];
-				device_region->need_wakeup = 0;
+				req = &virtio_bridge->req_list[req_front];
+				virtio_bridge->need_wakeup = 0;
 				virtio_handle_req(req);
 				req_front = (req_front + 1) & (MAX_REQ - 1);
-				device_region->req_front = req_front;
+				virtio_bridge->req_front = req_front;
 				dmb_ishst();
-			} else {
+			} 
+			else {
 				count++;
-				if (count < 10000) 
+				if (count < 10000000) 
 					continue;
 				count = 0;
-				device_region->need_wakeup = 1;
+				virtio_bridge->need_wakeup = 1;
 				dmb_ishst();
 				nanosleep(&timeout, NULL);
-				// device_region->need_wakeup = 1;
 				// dmb_ishst();
-				dmb_ishld();
-				if(is_queue_empty(req_front, device_region->req_rear)) {
+				// dmb_ishld();
+				if(is_queue_empty(req_front, virtio_bridge->req_rear)) {
 					break;
 				} 		
 			}
@@ -657,8 +663,8 @@ int virtio_init()
     }
 
     // mmap: create shared memory
-    device_region = (struct hvisor_device_region *) mmap(NULL, MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, ko_fd, 0);
-    if (device_region == (void *)-1) {
+    virtio_bridge = (struct virtio_bridge *) mmap(NULL, MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, ko_fd, 0);
+    if (virtio_bridge == (void *)-1) {
         log_error("mmap failed");
         goto unmap;
     }
@@ -675,7 +681,7 @@ int virtio_init()
     log_info("hvisor init okay!");
 	return 0;
 unmap:
-    munmap((void *)device_region, MMAP_SIZE);
+    munmap((void *)virtio_bridge, MMAP_SIZE);
     return -1;
 }
 
@@ -761,10 +767,10 @@ int virtio_start(int argc, char *argv[]) {
 		}
 	}
 	for (int i=0; i<vdevs_num; i++) {
-		device_region->mmio_addrs[i] = vdevs[i]->base_addr;	
+		virtio_bridge->mmio_addrs[i] = vdevs[i]->base_addr;	
 	}
 	dmb_ishst();
-	device_region->mmio_avail = 1;
+	virtio_bridge->mmio_avail = 1;
 	dmb_ishst();
     handle_virtio_requests();
 

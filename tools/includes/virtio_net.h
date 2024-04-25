@@ -21,7 +21,7 @@ typedef struct virtio_net_hdr_v1 NetHdr;
 typedef struct virtio_net_dev {
     NetConfig config;
     int tapfd;
-    int rx_ready;   // If rxq has available empty buffers.
+    int rx_ready;   
     struct hvisor_event *event;
 } NetDev;
 
