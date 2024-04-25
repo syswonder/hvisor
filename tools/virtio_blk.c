@@ -6,8 +6,9 @@
 #include <errno.h>
 #include "log.h"
 
-static void complete_block_operation(BlkDev *dev, struct blkp_req *req, VirtQueue *vq, int err) {
+static void complete_block_operation(BlkDev *dev, struct blkp_req *req, VirtQueue *vq, int err, ssize_t written_len) {
     uint8_t *vstatus = (uint8_t *)(req->iov[req->iovcnt-1].iov_base);
+	int is_empty = 0;
     if (err == EOPNOTSUPP)
         *vstatus = VIRTIO_BLK_S_UNSUPP;
     else if (err != 0) 
@@ -17,9 +18,13 @@ static void complete_block_operation(BlkDev *dev, struct blkp_req *req, VirtQueu
     if (err != 0) {
         log_error("virt blk err, num is %d", err);
     }
-    update_used_ring(vq, req->idx, 1);
-	if (TAILQ_EMPTY(&dev->procq))
-    	virtio_inject_irq(vq);
+    update_used_ring(vq, req->idx, written_len + 1);
+	// 注释了就不能正常工作了，不知道为什么
+    pthread_mutex_lock(&dev->mtx);
+	is_empty = TAILQ_EMPTY(&dev->procq);
+	pthread_mutex_unlock(&dev->mtx);
+	if (is_empty)
+		virtio_inject_irq(vq);
 	free(req->iov);
     free(req);
 }
@@ -38,12 +43,12 @@ static int get_breq(BlkDev *dev, struct blkp_req **req) {
 static void blkproc(BlkDev *dev, struct blkp_req *req, VirtQueue *vq) {
     struct iovec *iov = req->iov;
     int n = req->iovcnt, err;
-    ssize_t len; 
+    ssize_t len, written_len = 0; 
 	
     switch (req->type)
     {
     case VIRTIO_BLK_T_IN:
-        len = preadv(dev->img_fd, &iov[1], n - 2, req->offset);
+        written_len = len = preadv(dev->img_fd, &iov[1], n - 2, req->offset);
         if (len < 0) {
             log_error("pread failed");
             err = errno;
@@ -67,7 +72,7 @@ static void blkproc(BlkDev *dev, struct blkp_req *req, VirtQueue *vq) {
         err = EOPNOTSUPP;
         break;
     }
-    complete_block_operation(dev, req, vq, err);
+    complete_block_operation(dev, req, vq, err, written_len);
 }
 
 // Every virtio-blk has a blkproc_thread that is used for reading and writing.
@@ -87,11 +92,12 @@ static void *blkproc_thread(void *arg)
             pthread_mutex_lock(&dev->mtx);
         }
 
-        if (dev->closing)
+        if (dev->close) {
+			pthread_mutex_unlock(&dev->mtx);
             break;
+		}
         pthread_cond_wait(&dev->cond, &dev->mtx);
     }
-    pthread_mutex_unlock(&dev->mtx);
     pthread_exit(NULL);
     return NULL;
 }
@@ -105,7 +111,7 @@ BlkDev *init_blk_dev(VirtIODevice *vdev, uint64_t bsize, int img_fd)
     dev->config.size_max = bsize;
     dev->config.seg_max = BLK_SEG_MAX;
     dev->img_fd = img_fd;
-    dev->closing = 0;
+    dev->close = 0;
 	// TODO: chang to thread poll
     pthread_mutex_init(&dev->mtx, NULL);
     pthread_cond_init(&dev->cond, NULL);
@@ -177,12 +183,16 @@ int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
 	struct blkp_req *breq;
 	TAILQ_HEAD(, blkp_req) procq;
 	TAILQ_INIT(&procq);
-    virtqueue_disable_notify(vq);
-    while(!virtqueue_is_empty(vq)) {
-        breq = virtq_blk_handle_one_request(vq);
-		TAILQ_INSERT_TAIL(&procq, breq, link);
-    }
-    virtqueue_enable_notify(vq);
+	while(!virtqueue_is_empty(vq)) {
+		virtqueue_disable_notify(vq);
+		while(!virtqueue_is_empty(vq)) {
+			breq = virtq_blk_handle_one_request(vq);
+			TAILQ_INSERT_TAIL(&procq, breq, link);
+		}
+		virtqueue_enable_notify(vq);
+	}
+	if (TAILQ_EMPTY(&procq)) 
+		return 0;
 	pthread_mutex_lock(&blkDev->mtx);
 	TAILQ_CONCAT(&blkDev->procq, &procq, link);
 	pthread_cond_signal(&blkDev->cond);
