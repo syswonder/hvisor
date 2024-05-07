@@ -135,26 +135,29 @@ fn arch_handle_trap_el1(regs: &mut GeneralRegisters) {
 }
 
 fn arch_handle_trap_el2(_regs: &mut GeneralRegisters) {
+    let elr = ELR_EL2.get();
+    let esr = ESR_EL2.get();
+    let far = FAR_EL2.get();
     match ESR_EL2.read_as_enum(ESR_EL2::EC) {
         Some(ESR_EL2::EC::Value::HVC64) => {
-            println!("EL2 Exception: HVC64 call, ELR_EL2: {:#x?}", ELR_EL2.get())
+            println!("EL2 Exception: HVC64 call, ELR_EL2: {:#x?}", ELR_EL2.get());
         }
         Some(ESR_EL2::EC::Value::SMC64) => {
-            println!("EL2 Exception: SMC64 call, ELR_EL2: {:#x?}", ELR_EL2.get())
+            println!("EL2 Exception: SMC64 call, ELR_EL2: {:#x?}", ELR_EL2.get());
         }
         Some(ESR_EL2::EC::Value::DataAbortCurrentEL) => {
+            loop {}
             println!(
                 "EL2 Exception: Data Abort, ELR_EL2: {:#x?}, FAR_EL2: {:#x?}",
-                ELR_EL2.get(),
-                FAR_EL2.get()
-            )
+                elr, esr
+            );
         }
         Some(ESR_EL2::EC::Value::InstrAbortCurrentEL) => {
             println!(
                 "EL2 Exception: Instruction Abort, ELR_EL2: {:#x?}, FAR_EL2: {:#x?}",
                 ELR_EL2.get(),
                 FAR_EL2.get()
-            )
+            );
         }
         _ => {
             println!("Unhandled EL2 Exception: EC={:#x?}", 1);
@@ -230,9 +233,7 @@ fn handle_sysreg(regs: &mut GeneralRegisters) {
     if !this_cpu_data().arch_cpu.psci_on {
         warn!("skip send sgi {:#x?}", sgi_id);
     } else {
-        if sgi_id != 0 {
-            trace!("send sgi {:#x?}", sgi_id);
-        }
+        trace!("send sgi {:#x?}", sgi_id);
         write_sysreg!(icc_sgi1r_el1, val);
     }
 

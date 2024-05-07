@@ -32,13 +32,15 @@ impl Zone {
             }
             if let Some(int_iter) = node.interrupts() {
                 for int_n in int_iter {
-                    let real_int_n = int_n + 32;
+                    // When interrupt cell-size = 3, the first cell is a flag indicating if the interrupt is an SPI
+                    // So we need to bitwise-and with u32::MAX to get the real interrupt number
+                    let real_int_n = (int_n & u32::MAX as usize) + 32;
                     if real_int_n < 1024 {
                         let index = real_int_n / 32;
                         let bit_position = real_int_n % 32;
                         self.irq_bitmap[index] |= 1 << bit_position;
                     } else {
-                        panic!("irq_id {} exceeds limit", int_n);
+                        panic!("node {:#x?}: irq_id {} exceeds limit", node.name, int_n);
                     }
                 }
             }

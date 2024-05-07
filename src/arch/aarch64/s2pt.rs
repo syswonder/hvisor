@@ -200,10 +200,11 @@ pub struct S2PTInstr;
 
 impl PagingInstr for S2PTInstr {
     unsafe fn activate(root_paddr: HostPhysAddr) {
+        debug!("activating stage 2 page table at {:#x}", root_paddr);
         VTTBR_EL2.set_baddr(root_paddr as _);
-        info!("activating stage 2 page table at {:#x}", root_paddr);
         core::arch::asm!("isb");
         core::arch::asm!("tlbi vmalls12e1is");
+        core::arch::asm!("dsb nsh");
     }
 
     fn flush(_vaddr: Option<usize>) {

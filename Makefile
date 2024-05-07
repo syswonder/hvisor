@@ -6,7 +6,7 @@ PORT ?= 2333
 MODE ?= debug
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 KDIR ?= ../../linux
-FEATURES := platform_qemu
+FEATURES := platform_imx8mp
 
 ifeq ($(ARCH),aarch64)
     RUSTC_TARGET := aarch64-unknown-none
@@ -71,19 +71,13 @@ monitor:
 	gdb-multiarch \
 		-ex 'file $(hvisor_elf)' \
 		-ex 'set arch $(GDB_ARCH)' \
-		-ex 'target remote:1234' \
-
-jlink-monitor:
-	gdb-multiarch \
-		-ex 'file $(hvisor_elf)' \
-		-ex 'set arch $(GDB_ARCH)' \
-		-ex 'target remote:2331'
+		-ex 'target remote:1234'
 
 jlink-server:
-	JLinkGDBServer -select USB -if JTAG -device Cortex-A53
+	JLinkGDBServer -select USB -if JTAG -device Cortex-A53 -port 1234
 
 cp: all
-	cp $(hvisor_bin) ~/tftp && sudo systemctl restart tftpd-hpa
+	cp $(hvisor_bin) ~/tftp
 
 clean:
 	cargo clean

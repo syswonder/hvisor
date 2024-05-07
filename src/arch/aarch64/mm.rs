@@ -83,7 +83,7 @@ pub fn init_hv_page_table(fdt: &fdt::Fdt) -> HvResult {
                 paddr as GuestPhysAddr,
                 paddr,
                 size,
-                MemFlags::READ | MemFlags::WRITE,
+                MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
             ))?;
         }
     }

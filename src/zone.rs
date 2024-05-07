@@ -152,7 +152,8 @@ pub fn zone_create(
     dtb_ipa: usize,
 ) -> HvResult<Arc<RwLock<Zone>>> {
     // we create the new zone here
-    //TODO: create Zone with cpu_set
+    // TODO: create Zone with cpu_set
+    debug!("zone_create: zone_id: {}, dtb_ptr: {:#x}, dtb_ipa: {:#x}", zone_id, dtb_ptr as usize, dtb_ipa);
     let guest_fdt = unsafe { fdt::Fdt::from_ptr(dtb_ptr) }.unwrap();
     let guest_entry = guest_fdt
         .memory()
