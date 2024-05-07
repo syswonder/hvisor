@@ -95,8 +95,6 @@ fn primary_init_early(dtb: usize) {
         option_env!("STATS").unwrap_or("off"),
     );
 
-    memory::heap::init();
-    memory::heap::test();
     memory::frame::init();
     memory::frame::test();
     event::init(MAX_CPU_NUM);
@@ -122,9 +120,9 @@ fn per_cpu_init(cpu: &mut PerCpu) {
     if cpu.zone.is_none() {
         warn!("zone is not created for cpu {}", cpu.id);
     }
-    unsafe {
-        memory::hv_page_table().read().activate();
-    };
+    // unsafe {
+    //     memory::hv_page_table().read().activate();
+    // };
     info!("CPU {} hv_pt_install OK.", cpu.id);
 }
 
@@ -140,12 +138,14 @@ fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
 fn rust_main(cpuid: usize, host_dtb: usize) {
     arch::trap::install_trap_vector();
 
-    let is_primary = false;
-    println!("Hello, imx HVISOR!");
-    // if MASTER_CPU.load(Ordering::Acquire) == -1 {
-    //     MASTER_CPU.store(cpuid as i32, Ordering::Release);
-    //     is_primary = true;
-    // }
+    let mut is_primary = false;
+    println!("Hello, HVISOR+!");
+    if MASTER_CPU.load(Ordering::Acquire) == -1 {
+        MASTER_CPU.store(cpuid as i32, Ordering::Release);
+        is_primary = true;
+        memory::heap::init();
+        memory::heap::test();
+    }
 
     let cpu = PerCpu::new(cpuid);
 
@@ -154,53 +154,40 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         cpu.id, cpu as *const _, host_dtb
     );
 
-    loop {}
-    // // println!(
-    // //     "Booting CPU {}: {:p}, DTB: {:#x}",
-    // //     cpu.id, cpu as *const _, host_dtb
-    // // );
+    if is_primary {
+        wakeup_secondary_cpus(cpu.id, host_dtb);
+    }
 
-    // if is_primary {
-    //     wakeup_secondary_cpus(cpu.id, host_dtb);
-    // }
+    ENTERED_CPUS.fetch_add(1, Ordering::SeqCst);
+    wait_for(|| PerCpu::entered_cpus() < MAX_CPU_NUM as _);
+    assert_eq!(PerCpu::entered_cpus(), MAX_CPU_NUM as _);
 
-    // ENTERED_CPUS.fetch_add(1, Ordering::SeqCst);
-    // wait_for(|| PerCpu::entered_cpus() < MAX_CPU_NUM as _);
-    // assert_eq!(PerCpu::entered_cpus(), MAX_CPU_NUM as _);
+    println!(
+        "{} CPU {} has entered.",
+        if is_primary { "Primary" } else { "Secondary" },
+        cpu.id
+    );
 
-    // println!(
-    //     "{} CPU {} has entered.",
-    //     if is_primary { "Primary" } else { "Secondary" },
-    //     cpu.id
-    // );
+    #[cfg(target_arch = "aarch64")]
+    setup_parange();
 
-    // #[cfg(target_arch = "aarch64")]
-    // setup_parange();
+    if is_primary {
+        primary_init_early(host_dtb); // create root zone here
+    } else {
+        wait_for_counter(&INIT_EARLY_OK, 1);
+    }
 
-    // if is_primary {
-    //     primary_init_early(host_dtb); // create root zone here
-    // } else {
-    //     wait_for_counter(&INIT_EARLY_OK, 1);
-    // }
+    per_cpu_init(cpu);
+    device::irqchip::percpu_init();
 
-    // per_cpu_init(cpu);
-    // device::irqchip::percpu_init();
+    INITED_CPUS.fetch_add(1, Ordering::SeqCst);
+    wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _);
 
-    // INITED_CPUS.fetch_add(1, Ordering::SeqCst);
-    // wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _);
+    if is_primary {
+        primary_init_late();
+    } else {
+        wait_for_counter(&INIT_LATE_OK, 1);
+    }
 
-    // if is_primary {
-    //     primary_init_late();
-    // } else {
-    //     wait_for_counter(&INIT_LATE_OK, 1);
-    // }
-
-    // cpu.run_vm();
-
-    // if cpu_data.id == 0 {
-    //     prepare_zone_start(this_zone())?;
-    //     cpu_data.start_zone();
-    // } else {
-    //     wait_for_poweron();
-    // }
+    cpu.run_vm();
 }

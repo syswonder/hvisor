@@ -99,7 +99,6 @@ use crate::zone::Zone;
 pub fn gicc_init() {
     //TODO: add Redistributor init
     let sdei_ver = unsafe { smc_arg1!(0xc4000020) }; //sdei_check();
-    info!("gicv3 init: sdei version: {}", sdei_ver);
 
     // Make ICC_EOIR1_EL1 provide priority drop functionality only. ICC_DIR_EL1 provides interrupt deactivation functionality.
     let _ctlr = read_sysreg!(icc_ctlr_el1);
@@ -116,6 +115,8 @@ pub fn gicc_init() {
     let vmcr = ((pmr & 0xff) << 24) | (1 << 1) | (1 << 9); //VPMR|VENG1|VEOIM
     write_sysreg!(ich_vmcr_el2, vmcr);
     write_sysreg!(ich_hcr_el2, 0x1); //enable virt cpu interface
+
+    info!("gicc init done, sdei_ver = {}", sdei_ver);
 }
 
 fn gicv3_clear_pending_irqs() {
@@ -311,9 +312,7 @@ pub struct Gic {
 
 impl Gic {
     pub fn new(fdt: &Fdt) -> Self {
-        let gic_info = fdt
-            .find_node("/gic")
-            .unwrap_or_else(|| fdt.find_node("/intc").unwrap());
+        let gic_info = fdt.find_compatible(&["arm,gic-v3"]).unwrap();
         let mut reg_iter = gic_info.reg().unwrap();
 
         let first_reg = reg_iter.next().unwrap();
@@ -354,11 +353,11 @@ pub fn is_sgi(irqn: u32) -> bool {
 }
 
 pub fn enable_irqs() {
-    unsafe { asm!("msr daifclr, #0x2") };
+    unsafe { asm!("msr daifclr, #0xf") };
 }
 
 pub fn disable_irqs() {
-    unsafe { asm!("msr daifset, #0x2") };
+    unsafe { asm!("msr daifset, #0xf") };
 }
 
 pub fn primary_init_early(host_fdt: &Fdt) {

@@ -2,15 +2,13 @@
 use crate::consts::{DTB_IPA, INVALID_ADDRESS, PAGE_SIZE};
 use crate::device::virtio_trampoline::{HVISOR_DEVICE, MAX_DEVS, MAX_REQ, VIRTIO_IRQS};
 use crate::error::HvResult;
-use crate::memory::addr::align_down;
-use crate::memory::{self, MemFlags, MemoryRegion, HVISOR_DEVICE_REGION_BASE};
 use crate::percpu::{get_cpu_data, PerCpu};
 use crate::zone::{find_zone, is_this_root_zone, remove_zone, root_zone, zone_create};
 
 use crate::event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_VIRTIO_INJECT_IRQ, IPI_EVENT_WAKEUP};
 use alloc::sync::Arc;
 use core::convert::TryFrom;
-use core::sync::atomic::{fence, AtomicU32, Ordering};
+use core::sync::atomic::{fence, Ordering};
 
 use numeric_enum_macro::numeric_enum;
 
