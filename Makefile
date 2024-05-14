@@ -28,7 +28,6 @@ export KDIR
 build_path := target/$(RUSTC_TARGET)/$(MODE)
 hvisor_elf := $(build_path)/hvisor
 hvisor_bin := $(build_path)/hvisor.bin
-daemon_elf := tools/hvisor
 image_dir  := images/$(ARCH)
 
 # Features based on STATS
@@ -45,7 +44,7 @@ ifeq ($(MODE), release)
 endif
 
 # Targets
-.PHONY: all elf disa run gdb monitor clean tools rootfs transfer
+.PHONY: all elf disa run gdb monitor clean tools rootfs
 all: $(hvisor_bin)
 
 elf:
@@ -59,14 +58,10 @@ tools:
 	make -C tools && \
 	make -C driver
 
-transfer:
-	~/trans_file.sh ./tools/hvisor 
-	~/trans_file.sh ./driver/main.ko 
-
-run: all tools transfer
+run: all
 	$(QEMU) $(QEMU_ARGS)
 
-gdb: all tools transfer
+gdb: all
 	$(QEMU) $(QEMU_ARGS) -s -S
 
 show-features:
@@ -75,9 +70,8 @@ show-features:
 monitor:
 	gdb-multiarch \
 		-ex 'file $(hvisor_elf)' \
-		-ex 'file $(daemon_elf)' \
 		-ex 'set arch $(GDB_ARCH)' \
-		-ex 'target remote:1234' 
+		-ex 'target remote:1234' \
 
 clean:
 	cargo clean

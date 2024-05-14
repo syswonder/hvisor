@@ -12,6 +12,7 @@
 // A blk sector size
 #define SECTOR_BSIZE 512
 
+// VIRTIO_RING_F_INDIRECT_DESC and VIRTIO_RING_F_EVENT_IDX are supported, for some reason we cancel them.
 #define BLK_SUPPORTED_FEATURES ( (1ULL << VIRTIO_BLK_F_SEG_MAX) | (1ULL << VIRTIO_BLK_F_SIZE_MAX) | (1ULL << VIRTIO_F_VERSION_1))
 
 typedef struct virtio_blk_config BlkConfig;

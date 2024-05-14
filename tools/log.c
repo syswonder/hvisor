@@ -140,16 +140,17 @@ static void init_event(log_Event *ev, void *udata) {
 
 
 void log_log(int with_enter, int level, const char *file, int line, const char *fmt, ...) {
+  if(L.quiet || level < L.level) {
+	return ;
+  }
+
   log_Event ev = {
     .fmt   = fmt,
     .file  = file,
     .line  = line,
     .level = level,
   };
-
-  if(L.quiet || level < L.level) {
-	return ;
-  }
+  
   lock();
 
   if (!L.quiet && level >= L.level) {

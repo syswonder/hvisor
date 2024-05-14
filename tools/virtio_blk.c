@@ -19,7 +19,6 @@ static void complete_block_operation(BlkDev *dev, struct blkp_req *req, VirtQueu
         log_error("virt blk err, num is %d", err);
     }
     update_used_ring(vq, req->idx, written_len + 1);
-	// 注释了就不能正常工作了，不知道为什么
     pthread_mutex_lock(&dev->mtx);
 	is_empty = TAILQ_EMPTY(&dev->procq);
 	pthread_mutex_unlock(&dev->mtx);
