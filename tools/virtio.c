@@ -257,8 +257,8 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
                 struct iovec **iov, uint16_t **flags, int append_len)
 {
     uint16_t next, idx;
-    volatile VirtqDesc *vdesc;
-	int chain_len, i;
+    volatile VirtqDesc *vdesc, *ind_table, *ind_desc;
+	int chain_len = 0, i, table_len;
     idx = vq->last_avail_idx;
     if(idx == vq->avail_ring->idx)
         return 0;
@@ -267,11 +267,16 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
 	// record desc chain' len to chain_len
 	for (i=0; i<vq->num; i++, next = vdesc->next) {
         vdesc = &vq->desc_table[next];
+		// TODO: vdesc->len may be not chain_len, virtio specification doesn't say it.
+		if (vdesc->flags & VRING_DESC_F_INDIRECT) {
+			chain_len += vdesc->len / 16;
+			i--;
+		}
 		if ((vdesc->flags & VRING_DESC_F_NEXT) == 0)
             break;
 	}
 
-	chain_len = i + 1, next = *desc_idx;
+	chain_len += i + 1, next = *desc_idx;
 	
 	*iov = malloc(sizeof(struct iovec) * ( chain_len + append_len));
 	if (flags != NULL)
@@ -279,7 +284,28 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
 
 	for (i=0; i<chain_len; i++, next = vdesc->next) {
 		vdesc = &vq->desc_table[next];
-		_descriptor2iov(i, vdesc, *iov, flags == NULL ? NULL : *flags);
+		if (vdesc->flags & VRING_DESC_F_INDIRECT) {
+			ind_table = (VirtqDesc *)(get_virt_addr(vdesc->addr));
+			table_len = vdesc->len / 16;
+			log_debug("table_len is %d", table_len);
+			next = 0;
+			for (;;) {
+				log_debug("next is %d", next);
+				ind_desc = &ind_table[next];
+				_descriptor2iov(i, ind_desc, *iov, flags == NULL ? NULL : *flags);
+				table_len--;
+				i++;
+				if ((ind_desc->flags & VRING_DESC_F_NEXT) == 0)
+            		break;
+				next = ind_desc->next;
+			}
+			if (table_len != 0) {
+				log_error("invalid indirect descriptor chain");
+				break;
+			}
+		} else {
+			_descriptor2iov(i, vdesc, *iov, flags == NULL ? NULL : *flags);
+		}
 	}
     return chain_len;
 }
@@ -597,7 +623,7 @@ void handle_virtio_requests()
 	int signal_count = 0, proc_count = 0;
 	unsigned long long count = 0;
 	for (;;) {
-		log_warn("signal_count is %d, proc_count is %d", signal_count, proc_count);
+		log_info("signal_count is %d, proc_count is %d", signal_count, proc_count);
 		sigwait(&wait_set, &sig);
 		signal_count++;
 		if (sig != SIGHVI) {
@@ -670,7 +696,6 @@ int virtio_init()
     }
 
 	// mmap: map non root linux physical memory to virtual memory
-	// TODO：根据配置文件
     int mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
     phys_addr = NON_ROOT_PHYS_START;
     virt_addr = mmap(NULL, NON_ROOT_PHYS_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, (off_t) phys_addr);
