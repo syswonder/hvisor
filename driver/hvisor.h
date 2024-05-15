@@ -44,7 +44,7 @@ struct device_res {
     __u32 irq_id;
 };
 
-struct hvisor_device_region {
+struct virtio_bridge {
 	__u32 req_front;
 	__u32 req_rear;
     __u32 res_front;
@@ -61,42 +61,40 @@ struct hvisor_device_region {
 
 #define HVISOR_INIT_VIRTIO  _IO(1, 0) // virtio device init
 #define HVISOR_GET_TASK _IO(1, 1)	
-#define HVISOR_FINISH _IO(1, 2)		  // finish one virtio req	
+#define HVISOR_FINISH_REQ _IO(1, 2)		  // finish one virtio req	
 #define HVISOR_ZONE_START _IOW(1, 3, struct hvisor_zone_load*)
 #define HVISOR_ZONE_SHUTDOWN _IOW(1, 4, __u64)
 // hypercall
-#define HVISOR_CALL_NUM_RESULT "x0"
-#define HVISOR_CALL_ARG1       "x1"
-#define HVISOR_CALL_INS        "hvc #0x4a48"
+#define HVISOR_CALL_HVC        "hvc #0x4856"
 
-#define HVISOR_HC_INIT_VIRTIO 9
-#define HVISOR_HC_FINISH_REQ 10
-#define HVISOR_HC_START_ZONE 11
-#define HVISOR_HC_SHUTDOWN_ZONE 12
+#define HVISOR_HC_INIT_VIRTIO 0
+#define HVISOR_HC_FINISH_REQ 1
+#define HVISOR_HC_START_ZONE 2
+#define HVISOR_HC_SHUTDOWN_ZONE 3
 
-static inline __u64 hvisor_call(__u64 num)
+static inline __u64 hvisor_call(__u64 code)
 {
-	register __u64 num_result asm(HVISOR_CALL_NUM_RESULT) = num;
+	register __u64 code_result asm("x0") = code;
 
 	asm volatile(
-		HVISOR_CALL_INS
-		: "=r" (num_result)
-		: "r" (num_result)
+		HVISOR_CALL_HVC
+		: "=r" (code_result)
+		: "r" (code_result)
 		: "memory");
-	return num_result;
+	return code_result;
 }
 
-static inline __u64 hvisor_call_arg1(__u64 num, __u64 arg1)
+static inline __u64 hvisor_call_arg1(__u64 code, __u64 arg0)
 {
-	register __u64 num_result asm(HVISOR_CALL_NUM_RESULT) = num;
-	register __u64 __arg1 asm(HVISOR_CALL_ARG1) = arg1;
+	register __u64 code_result asm("x0") = code;
+	register __u64 __arg0 asm("x1") = arg0;
 
 	asm volatile(
-		HVISOR_CALL_INS
-		: "=r" (num_result)
-		: "r" (num_result), "r" (__arg1)
+		HVISOR_CALL_HVC
+		: "=r" (code_result)
+		: "r" (code_result), "r" (__arg0)
 		: "memory");
-	return num_result;
+	return code_result;
 }
 
 

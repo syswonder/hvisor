@@ -12,15 +12,12 @@
 // A blk sector size
 #define SECTOR_BSIZE 512
 
+// VIRTIO_RING_F_INDIRECT_DESC and VIRTIO_RING_F_EVENT_IDX are supported, for some reason we cancel them.
 #define BLK_SUPPORTED_FEATURES ( (1ULL << VIRTIO_BLK_F_SEG_MAX) | (1ULL << VIRTIO_BLK_F_SIZE_MAX) | (1ULL << VIRTIO_F_VERSION_1))
 
 typedef struct virtio_blk_config BlkConfig;
 typedef struct virtio_blk_outhdr BlkReqHead;
 
-enum blkop {
-	BLK_READ,
-	BLK_WRITE
-};
 // A request needed to process by blk thread.
 struct blkp_req {
 	TAILQ_ENTRY(blkp_req) link;
@@ -34,12 +31,12 @@ struct blkp_req {
 typedef struct virtio_blk_dev {
     BlkConfig config;
     int img_fd;
-	// describe the thread executes read and write.
+	// describe the worker thread that executes read, write and ioctl.
 	pthread_t tid;
 	pthread_mutex_t mtx;
 	pthread_cond_t cond;
 	TAILQ_HEAD(, blkp_req) procq;
-	int closing;
+	int close;
 } BlkDev;
 
 BlkDev *init_blk_dev(VirtIODevice *vdev, uint64_t bsize, int img_fd);
