@@ -139,7 +139,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     arch::trap::install_trap_vector();
 
     let mut is_primary = false;
-    println!("Hello, HVISOR+!");
+    println!("Hello, HVISOR!");
     if MASTER_CPU.load(Ordering::Acquire) == -1 {
         MASTER_CPU.store(cpuid as i32, Ordering::Release);
         is_primary = true;

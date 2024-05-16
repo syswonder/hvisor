@@ -131,6 +131,7 @@ impl ArchCpu {
         write_sysreg!(VBAR_EL1, 0);
 
         /* wipe timer registers */
+        write_sysreg!(CNTVOFF_EL2, 0);
         write_sysreg!(CNTP_CTL_EL0, 0);
         write_sysreg!(CNTP_CVAL_EL0, 0);
         write_sysreg!(CNTP_TVAL_EL0, 0);

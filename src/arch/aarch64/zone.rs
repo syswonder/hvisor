@@ -69,9 +69,7 @@ impl Zone {
         }
 
         // probe uart device
-        for node in fdt
-            .find_all_nodes("/pl011")
-        {
+        for node in fdt.find_all_nodes("/pl011") {
             if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
                 let paddr = reg.starting_address as HostPhysAddr;
                 let size = align_up(reg.size.unwrap());
@@ -85,7 +83,41 @@ impl Zone {
             }
         }
 
-        for node in fdt.all_nodes().filter(|node| node.name.starts_with("serial")) {
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x30200000 as GuestPhysAddr,
+            0x30200000,
+            0x50000,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ))?;
+
+        // imx8mp pinctrl & analog
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x30330000 as GuestPhysAddr,
+            0x30330000,
+            0xa0000,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ))?;
+
+        // i2c
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x30a40000 as GuestPhysAddr,
+            0x30a40000,
+            0x10000,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ))?;
+
+        // mmc
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x30b40000 as GuestPhysAddr,
+            0x30b40000,
+            0x20000,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ))?;
+
+        for node in fdt
+            .all_nodes()
+            .filter(|node| node.name.starts_with("serial"))
+        {
             info!("ok, found! node={:#x?}", node.name);
             if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
                 let paddr = reg.starting_address as HostPhysAddr;
@@ -99,6 +131,7 @@ impl Zone {
                 ))?;
             }
         }
+
         info!("VM stage 2 memory set: {:#x?}", self.gpm);
         Ok(())
     }

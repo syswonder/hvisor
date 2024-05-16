@@ -35,17 +35,31 @@ impl Zone {
                     // When interrupt cell-size = 3, the first cell is a flag indicating if the interrupt is an SPI
                     // So we need to bitwise-and with u32::MAX to get the real interrupt number
                     let real_int_n = (int_n & u32::MAX as usize) + 32;
-                    if real_int_n < 1024 {
-                        let index = real_int_n / 32;
-                        let bit_position = real_int_n % 32;
-                        self.irq_bitmap[index] |= 1 << bit_position;
-                    } else {
-                        panic!("node {:#x?}: irq_id {} exceeds limit", node.name, int_n);
-                    }
+                    self.insert_irq_to_bitmap(real_int_n as u32);
                 }
             }
         }
+        self.insert_irq_to_bitmap(96);  // gpio 0
+        self.insert_irq_to_bitmap(97);  // gpio 0
+        self.insert_irq_to_bitmap(98);  // gpio 1
+        self.insert_irq_to_bitmap(99);  // gpio 1
+        self.insert_irq_to_bitmap(100); // gpio 2
+        self.insert_irq_to_bitmap(101); // gpio 2
+        self.insert_irq_to_bitmap(102); // gpio 3
+        self.insert_irq_to_bitmap(103); // gpio 3
+        self.insert_irq_to_bitmap(104); // gpio 4
+        self.insert_irq_to_bitmap(105); // gpio 4
 
+        self.insert_irq_to_bitmap(52);  // caam_secvio
+        self.insert_irq_to_bitmap(51);  // snvs-rtc-l
+        self.insert_irq_to_bitmap(36);  // snvs-powerkey
+        self.insert_irq_to_bitmap(54);  // mmc0
+        self.insert_irq_to_bitmap(55);  // mmc1
+        self.insert_irq_to_bitmap(43);  // serial@30890000
+
+        self.insert_irq_to_bitmap(69);  // i2c
+        self.insert_irq_to_bitmap(39);  // pmu
+    
         for (index, &word) in self.irq_bitmap.iter().enumerate() {
             for bit_position in 0..32 {
                 if word & (1 << bit_position) != 0 {
@@ -57,6 +71,13 @@ impl Zone {
                 }
             }
         }
+    }
+
+    fn insert_irq_to_bitmap(&mut self, irq: u32) {
+        assert!(irq < 1024); // 1024 is the maximum number of interrupts supported by GICv3 (GICD_TYPER.ITLinesNumber)  
+        let irq_index = irq / 32;
+        let irq_bit = irq % 32;
+        self.irq_bitmap[irq_index as usize] |= 1 << irq_bit;
     }
 }
 
@@ -81,7 +102,7 @@ fn restrict_bitmask_access(
 
     for irq in 0..irqs_per_reg {
         if zone_r.irq_in_zone((first_irq + irq) as _) {
-            debug!("restrict visit irq {}", first_irq + irq);
+            trace!("restrict visit irq {}", first_irq + irq);
             access_mask |= irq_bits << (irq * bits_per_irq);
         }
     }
@@ -126,7 +147,6 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
         GICR_TYPER => {
             mmio_perform_access(gicr_base, mmio);
             if cpu == MAX_CPU_NUM - 1 {
-                debug!("this is the last gicr");
                 mmio.value |= GICR_TYPER_LAST;
             }
         }

@@ -179,7 +179,7 @@ pub fn gicv3_handle_irq_el1() {
             trace!("spi/ppi get {}", irq_id);
             //inject phy irq
             if irq_id > 31 {
-                trace!("*** get spi_irq id = {}", irq_id);
+                debug!("*** get spi_irq id = {}", irq_id);
             }
             deactivate_irq(irq_id);
             inject_irq(irq_id, true);
