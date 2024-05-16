@@ -48,7 +48,6 @@ extern "C" {
 pub fn install_trap_vector() {
     // Set the trap vector.
     VBAR_EL2.set(_hyp_trap_vector as _);
-    println!("trap vector set to {:#x?}", VBAR_EL2.get());
 }
 
 // ----------------------------------------------
@@ -98,7 +97,7 @@ pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> ! {
 }
 
 fn irqchip_handle_irq1() {
-    debug!("irq from el1");
+    trace!("irq from el1");
     gicv3_handle_irq_el1();
 }
 
@@ -272,7 +271,7 @@ fn handle_smc(regs: &mut GeneralRegisters) {
         SmcType::ARCH_SC => handle_arch_smc(regs, code, arg0, arg1, arg2),
         SmcType::STANDARD_SC => handle_psci_smc(regs, code, arg0, arg1, arg2),
         _ => {
-            error!("unsupported smc");
+            warn!("unsupported smc");
             0
         }
     };
@@ -328,6 +327,10 @@ fn handle_psci_smc(
 ) -> u64 {
     match code {
         PsciFnId::PSCI_VERSION => PSCI_VERSION_1_1,
+        PsciFnId::PSCI_CPU_SUSPEND_32 | PsciFnId::PSCI_CPU_SUSPEND_64 => {
+            warn!("psci: cpu_suspend not supported");
+            0
+        },
         PsciFnId::PSCI_CPU_OFF_32 | PsciFnId::PSCI_CPU_OFF_64 => {
             todo!();
         }
@@ -361,7 +364,7 @@ fn handle_psci_smc(
         }
 
         _ => {
-            error!("unsupported smc standard service {}", code);
+            warn!("unsupported smc standard service {:#x?}", code);
             0
         }
     }
