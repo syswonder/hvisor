@@ -76,7 +76,7 @@ The following example starts both a Virtio block device and a network device sim
 ```
 nohup ./hvisor virtio start \
 	--device blk,addr=0xa003c00,len=0x200,irq=78,zone_id=1,img=rootfs2.ext4 \
-    --device net,addr=0xa003600,len=0x200,irq=75,zone_id=1,tap=tap0  &
+	--device net,addr=0xa003600,len=0x200,irq=75,zone_id=1,tap=tap0  &
 ```
 
 The meaning of the above command is:
