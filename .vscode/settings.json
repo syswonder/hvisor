@@ -53,7 +53,8 @@
 		"tuple": "c",
 		"typeinfo": "c",
 		"virtio_ring.h": "c",
-		"virtio_blk.h": "c"
+		"virtio_blk.h": "c",
+		"stdint.h": "c"
 	},
     // "rust-analyzer.cargo.features": [
     //     "board_qemu"
