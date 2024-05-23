@@ -75,8 +75,8 @@ Virtio守护进程可为虚拟机提供Virtio MMIO设备，目前支持两种设
 
 ```
 nohup ./hvisor virtio start \
-        --device blk,addr=0xa003c00,len=0x200,irq=78,zone_id=1,img=rootfs2.ext4 \
-       --device net,addr=0xa003600,len=0x200,irq=75,zone_id=1,tap=tap0  &
+	--device blk,addr=0xa003c00,len=0x200,irq=78,zone_id=1,img=rootfs2.ext4 \
+	--device net,addr=0xa003600,len=0x200,irq=75,zone_id=1,tap=tap0  &
 ```
 
 上述命令的具体含义为：
