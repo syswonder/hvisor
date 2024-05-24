@@ -1,4 +1,4 @@
-use aarch64_cpu::registers::*;
+use aarch64_cpu::{asm::wfi, registers::*};
 use core::arch::global_asm;
 
 use crate::{
@@ -328,7 +328,8 @@ fn handle_psci_smc(
     match code {
         PsciFnId::PSCI_VERSION => PSCI_VERSION_1_1,
         PsciFnId::PSCI_CPU_SUSPEND_32 | PsciFnId::PSCI_CPU_SUSPEND_64 => {
-            warn!("psci: cpu_suspend not supported");
+            wfi();
+            gicv3_handle_irq_el1();
             0
         },
         PsciFnId::PSCI_CPU_OFF_32 | PsciFnId::PSCI_CPU_OFF_64 => {

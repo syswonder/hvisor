@@ -55,7 +55,10 @@ impl Zone {
         self.insert_irq_to_bitmap(36);  // snvs-powerkey
         self.insert_irq_to_bitmap(54);  // mmc0
         self.insert_irq_to_bitmap(55);  // mmc1
-        self.insert_irq_to_bitmap(43);  // serial@30890000
+        self.insert_irq_to_bitmap(56);  // mmc2
+
+        self.insert_irq_to_bitmap(59);  // serial@30890000
+        self.insert_irq_to_bitmap(43);
 
         self.insert_irq_to_bitmap(69);  // i2c
         self.insert_irq_to_bitmap(39);  // pmu

@@ -98,25 +98,49 @@ impl Zone {
             MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
         ))?;
 
-        // i2c
+        // bus@30400000
         self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-            0x30a40000 as GuestPhysAddr,
-            0x30a40000,
-            0x10000,
+            0x30400000 as GuestPhysAddr,
+            0x30400000,
+            0x400000,
             MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
         ))?;
 
-        // mmc
+        // bus@30a00000
         self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-            0x30b40000 as GuestPhysAddr,
-            0x30b40000,
-            0x20000,
+            0x30a00000 as GuestPhysAddr,
+            0x30a00000,
+            0x200000,
             MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
         ))?;
 
+        // bus@30c00000
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x30c00000 as GuestPhysAddr,
+            0x30c00000,
+            0x400000,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ))?;
+        
+        // dma-apbh
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x33000000 as GuestPhysAddr,
+            0x33000000,
+            0x2000,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ))?;
+        
+        // bus@32c00000
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x32c00000 as GuestPhysAddr,
+            0x32c00000,
+            0x400000,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ))?;
+        
         for node in fdt
             .all_nodes()
-            .filter(|node| node.name.starts_with("serial"))
+            .filter(|node| node.name.starts_with("serial@308"))
         {
             info!("ok, found! node={:#x?}", node.name);
             if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {

@@ -82,7 +82,9 @@ pub mod vgic;
 
 use core::arch::asm;
 use core::ptr::write_volatile;
+use core::sync::atomic::AtomicU64;
 
+use aarch64_cpu::registers::SCTLR_EL3::A;
 use fdt::Fdt;
 use spin::Once;
 
@@ -139,6 +141,10 @@ fn gicv3_clear_pending_irqs() {
     }
 }
 
+static TIMER_INTERRUPT_COUNTER: AtomicU64 = AtomicU64::new(0);
+// how often to print timer interrupt counter
+const TIMER_INTERRUPT_PRINT_TIMES: u64 = 50;
+
 pub fn gicv3_handle_irq_el1() {
     if let Some(irq_id) = pending_irq() {
         // enum ipi_msg_type {
@@ -176,7 +182,14 @@ pub fn gicv3_handle_irq_el1() {
             warn!("skip sgi {}", irq_id);
             deactivate_irq(irq_id);
         } else {
-            trace!("spi/ppi get {}", irq_id);
+            if irq_id == 27 {
+                // virtual timer interrupt
+                TIMER_INTERRUPT_COUNTER.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+                if TIMER_INTERRUPT_COUNTER.load(core::sync::atomic::Ordering::SeqCst) % TIMER_INTERRUPT_PRINT_TIMES == 0 {
+                    debug!("Virtual timer interrupt, counter = {}", TIMER_INTERRUPT_COUNTER.load(core::sync::atomic::Ordering::SeqCst));
+                }
+            }
+            // debug!("spi/ppi get {}", irq_id);
             //inject phy irq
             if irq_id > 31 {
                 debug!("*** get spi_irq id = {}", irq_id);
