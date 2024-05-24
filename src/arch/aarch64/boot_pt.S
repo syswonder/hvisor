@@ -38,6 +38,10 @@ enable_boot_pt:
     adrp x1, boot_pt_l0
     msr ttbr0_el2, x1
 
+    isb
+	tlbi alle2
+    dsb	nsh
+
     // enable mmu...
     ldr	x1, =MAIR_FLAG     
     msr	mair_el2, x1       // memory attributes for pagetable
