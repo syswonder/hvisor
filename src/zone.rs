@@ -187,6 +187,11 @@ pub fn zone_create(
             if cpuid == cpu_set.first_cpu().unwrap() {
                 cpu_data.boot_cpu = true;
             }
+            #[cfg(target_arch = "riscv64")]
+            {
+                info!("set cpu{} first_cpu{}", cpuid, cpu_set.first_cpu().unwrap());
+                cpu_data.arch_cpu.first_cpu = cpu_set.first_cpu().unwrap();
+            }
             cpu_data.cpu_on_entry = guest_entry;
         });
     }

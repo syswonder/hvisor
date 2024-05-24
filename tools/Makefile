@@ -1,4 +1,4 @@
-CC = aarch64-none-linux-gnu-gcc
+CC = aarch64-linux-gnu-gcc
 CFLAGS = -Wall -Wextra -DLOG_USE_COLOR
 objects := $(wildcard *.c)
 all: 

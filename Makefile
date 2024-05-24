@@ -59,6 +59,12 @@ tools:
 	make -C driver
 
 run: all
+	make -C tools
+# sudo mount -t ext4 $(image_dir)/virtdisk/rootfs1.ext4 ../rootfs
+# sudo cp ../rootfs/home/arm64/hvisor ../rootfs/home/arm64/hvisor.b
+# sudo cp tools/hvisor ../rootfs/home/arm64
+# sudo cp $(image_dir)/devicetree/linux2.dtb ../rootfs/home/arm64/linux2.dtb
+# sudo umount ../rootfs
 	$(QEMU) $(QEMU_ARGS)
 
 gdb: all

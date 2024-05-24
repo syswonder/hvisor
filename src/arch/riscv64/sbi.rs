@@ -1,15 +1,31 @@
-#![allow(dead_code)]
+//! SBI call wrappers
 
-//use crate::arch::riscv::csr::*;
+#![allow(unused)]
+use crate::percpu::get_cpu_data;
+
+use super::cpu::ArchCpu;
+use crate::arch::csr::*;
+use crate::event::{send_event, IPI_EVENT_WAKEUP};
 use riscv::register::{hvip, sie};
 pub mod SBI_EID {
+    pub const BASE_EXTID: usize = 0x10;
     pub const SET_TIMER: usize = 0x54494D45;
     pub const EXTID_HSM: usize = 0x48534D;
     pub const SEND_IPI: usize = 0x735049;
+    pub const RFENCE: usize = 0x52464E43;
+    pub const PMU: usize = 0x504D55;
 }
-
-use super::cpu::ArchCpu;
-
+pub const SBI_SUCCESS: i64 = 0;
+pub const SBI_ERR_FAILURE: i64 = -1;
+pub const SBI_ERR_NOT_SUPPORTED: i64 = -2;
+pub const SBI_ERR_INVALID_PARAM: i64 = -3;
+pub const SBI_ERR_DENIED: i64 = -4;
+pub const SBI_ERR_INVALID_ADDRESS: i64 = -5;
+pub const SBI_ERR_ALREADY_AVAILABLE: i64 = -6;
+pub struct SbiRet {
+    error: i64,
+    value: i64,
+}
 /// use sbi call to putchar in console (qemu uart handler)
 pub fn console_putchar(c: u8) {
     #[allow(deprecated)]
@@ -40,21 +56,95 @@ pub fn shutdown(failure: bool) -> ! {
     }
     unreachable!()
 }
+
 pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
-    let ret = sbi_call_5(
-        current_cpu.x[17],
-        current_cpu.x[16],
-        current_cpu.x[10],
-        current_cpu.x[11],
-        current_cpu.x[12],
-        current_cpu.x[13],
-        current_cpu.x[14],
-    );
-    current_cpu.sepc += 4;
-    current_cpu.x[10] = ret.0;
-    current_cpu.x[11] = ret.1;
-    trace!("sbi_call_5: error:{:#x}, value:{:#x}", ret.0, ret.1);
+    let eid: usize = current_cpu.x[17];
+    let fid: usize = current_cpu.x[16];
+    let sbi_ret;
+    match eid {
+        //SBI_EXTID_BASE => sbi_ret = sbi_base_handler(fid, current_cpu),
+        SBI_EID::BASE_EXTID => {
+            trace!("SBI_EID::BASE,fid:{:#x}", fid);
+            sbi_ret = sbi_call_5(
+                eid,
+                fid,
+                current_cpu.x[10],
+                current_cpu.x[11],
+                current_cpu.x[12],
+                current_cpu.x[13],
+                current_cpu.x[14],
+            );
+        }
+        SBI_EID::SET_TIMER => {
+            //debug!("SBI_EID::SET_TIMER on CPU {}", current_cpu.cpuid);
+            sbi_ret = sbi_time_handler(fid, current_cpu);
+        }
+        SBI_EID::EXTID_HSM => {
+            info!("SBI_EID::EXTID_HSM on CPU {}", current_cpu.cpuid);
+            sbi_ret = sbi_hsm_handler(fid, current_cpu);
+        }
+        SBI_EID::SEND_IPI => {
+            trace!("SBI_EID::SEND_IPI on CPU {}", current_cpu.cpuid);
+            trace!(
+                "SBI_EID::SEND_IPI,cpuid:{:#x},mask:{:#x}",
+                current_cpu.x[10],
+                current_cpu.x[11]
+            );
+            sbi_ret = sbi_call_5(
+                eid,
+                fid,
+                current_cpu.x[10],
+                current_cpu.x[11],
+                current_cpu.x[12],
+                current_cpu.x[13],
+                current_cpu.x[14],
+            );
+        }
+        SBI_EID::RFENCE => {
+            trace!("SBI_EID::RFENCE,mask:{:#x}", current_cpu.x[10]);
+            sbi_ret = sbi_call_5(
+                eid,
+                fid,
+                current_cpu.x[10],
+                current_cpu.x[11],
+                current_cpu.x[12],
+                current_cpu.x[13],
+                current_cpu.x[14],
+            );
+        }
+        SBI_EID::PMU => {
+            trace!("SBI_EID::PMU,fid:{:#x}", fid);
+            sbi_ret = sbi_call_5(
+                eid,
+                fid,
+                current_cpu.x[10],
+                current_cpu.x[11],
+                current_cpu.x[12],
+                current_cpu.x[13],
+                current_cpu.x[14],
+            );
+        }
+        //_ => sbi_ret = sbi_dummy_handler(),
+        _ => {
+            warn!(
+                "Pass through SBI call eid {:#x} fid:{:#x} on CPU {}",
+                eid, fid, current_cpu.cpuid
+            );
+            sbi_ret = sbi_call_5(
+                eid,
+                fid,
+                current_cpu.x[10],
+                current_cpu.x[11],
+                current_cpu.x[12],
+                current_cpu.x[13],
+                current_cpu.x[14],
+            );
+        }
+    }
+    current_cpu.x[10] = sbi_ret.error as usize;
+    current_cpu.x[11] = sbi_ret.value as usize;
 }
+
 pub fn sbi_call_5(
     eid: usize,
     fid: usize,
@@ -63,27 +153,7 @@ pub fn sbi_call_5(
     arg2: usize,
     arg3: usize,
     arg4: usize,
-) -> (usize, usize) {
-    trace!("sbi_call_5: eid:{:#x}, fid:{:#x}", eid, fid);
-    match eid {
-        SBI_EID::SET_TIMER => {
-            {
-                info!("VS set timer");
-                // write_csr!(CSR_HVIP, 0); //VSTIP
-                // write_csr!(CSR_SIE, 1 << 9 | 1 << 5 | 1 << 1);
-                set_timer(arg0);
-                unsafe {
-                    // clear guest timer interrupt pending
-                    hvip::clear_vstip();
-                    // enable timer interrupt
-                    sie::set_stimer();
-                }
-                return (0, 0);
-            }
-        }
-        //_ => sbi_ret = sbi_dummy_handler(),
-        _ => debug!("Pass through SBI call eid {:#x} fid:{:#x}", eid, fid),
-    }
+) -> SbiRet {
     let (error, value);
     unsafe {
         core::arch::asm!(
@@ -97,181 +167,71 @@ pub fn sbi_call_5(
             in("a4") arg4,
         );
     }
-    (error, value)
-}
-
-//other
-pub const SBI_CONSOLE_PUTCHAR: usize = 1;
-pub const SBI_CONSOLE_GETCHAR: usize = 2;
-
-pub const SBI_SET_TIMER: usize = 0;
-
-pub const SBI_SUCCESS: usize = 0;
-pub const SBI_ERR_FAILUER: isize = -1;
-pub const SBI_ERR_NOT_SUPPORTED: isize = -2;
-pub const SBI_ERR_INAVLID_PARAM: isize = -3;
-pub const SBI_ERR_DENIED: isize = -4;
-pub const SBI_ERR_INVALID_ADDRESS: isize = -5;
-pub const SBI_ERR_ALREADY_AVAILABLE: isize = -6;
-
-pub const SBI_EXTID_BASE: usize = 0x10;
-pub const SBI_GET_SBI_SPEC_VERSION_FID: usize = 0;
-pub const SBI_GET_SBI_IMPL_ID_FID: usize = 1;
-pub const SBI_GET_SBI_IMPL_VERSION_FID: usize = 2;
-pub const SBI_PROBE_EXTENSION_FID: usize = 3;
-pub const SBI_GET_MVENDORID_FID: usize = 4;
-pub const SBI_GET_MARCHID_FID: usize = 5;
-pub const SBI_GET_MIMPID_FID: usize = 6;
-
-pub const SBI_EXTID_TIME: usize = 0x54494D45;
-pub const SBI_SET_TIMER_FID: usize = 0x0;
-
-pub const SBI_EXTID_IPI: usize = 0x735049;
-pub const SBI_SEND_IPI_FID: usize = 0x0;
-
-pub const SBI_EXTID_HSM: usize = 0x48534D;
-pub const SBI_HART_START_FID: usize = 0;
-pub const SBI_HART_STOP_FID: usize = 1;
-pub const SBI_HART_STATUS_FID: usize = 2;
-
-pub const SBI_EXTID_RFNC: usize = 0x52464E43;
-pub const SBI_REMOTE_FENCE_I_FID: usize = 0;
-pub const SBI_REMOTE_SFENCE_VMA_FID: usize = 1;
-pub const SBI_REMOTE_SFENCE_VMA_ASID_FID: usize = 2;
-pub const SBI_REMOTE_HFENCE_GVMA_FID: usize = 3;
-pub const SBI_REMOTE_HFENCE_GVMA_VMID_FID: usize = 4;
-pub const SBI_REMOTE_HFENCE_VVMA_FIDL: usize = 5;
-pub const SBI_REMOTE_HFENCE_VVMA_ASID_FID: usize = 6;
-pub struct SbiRet {
-    error: usize,
-    value: usize,
-}
-
-#[inline(always)]
-pub(crate) fn sbi_call_1(eid: usize, fid: usize, arg0: usize) -> SbiRet {
-    let (error, value);
-    unsafe {
-        core::arch::asm!(
-            "ecall",
-            in("a7") eid,
-            in("a6") fid,
-            inlateout("a0") arg0 => error,
-            lateout("a1") value,
-        );
-    }
     SbiRet { error, value }
 }
 
-// pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
-//     let ext_id: usize = current_cpu.x[17];
-//     let fid: usize = current_cpu.x[16];
-//     let sbi_ret;
+pub fn sbi_time_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
+    let mut sbi_ret = SbiRet {
+        error: SBI_SUCCESS,
+        value: 0,
+    };
+    let stime = current_cpu.x[10];
+    warn!("SBI_SET_TIMER stime: {:#x}", stime);
+    // if current_cpu.sstc {
+    write_csr!(CSR_VSTIMECMP, stime);
+    // } else {
+    //     set_timer(stime);
+    //     unsafe {
+    //         // clear guest timer interrupt pending
+    //         hvip::clear_vstip();
+    //         // enable timer interrupt
+    //         sie::set_stimer();
+    //     }
+    // }
+    //debug!("SBI_SET_TIMER stime: {:#x}", stime);
+    return sbi_ret;
+}
+pub fn sbi_hsm_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
+    let mut sbi_ret = SbiRet {
+        error: SBI_SUCCESS,
+        value: 0,
+    };
+    match fid {
+        0 => {
+            // hsm start
+            sbi_ret = sbi_hsm_start_handler(current_cpu);
+        }
+        _ => {
+            error!("Unsupported HSM function {:#x}", fid);
+        }
+    }
+    sbi_ret
+}
+pub fn sbi_hsm_start_handler(current_cpu: &mut ArchCpu) -> SbiRet {
+    let mut sbi_ret = SbiRet {
+        error: SBI_SUCCESS,
+        value: 0,
+    };
+    let cpuid = current_cpu.x[10];
 
-//     match ext_id {
-//         SBI_EXTID_BASE => sbi_ret = sbi_base_handler(fid, current_cpu),
-//         SBI_EXTID_TIME => sbi_ret = sbi_time_handler(current_cpu.x[10], fid),
-//         SBI_CONSOLE_PUTCHAR => sbi_ret = sbi_console_putchar_handler(current_cpu.x[10]),
-//         SBI_CONSOLE_GETCHAR => sbi_ret = sbi_console_getchar_handler(),
-//         SBI_SET_TIMER => sbi_ret = sbi_legacy_set_time(current_cpu.x[10]),
-//         //_ => sbi_ret = sbi_dummy_handler(),
-//         _ => panic!("Unsupported SBI call id {:#x}", ext_id),
-//     }
-//     current_cpu.x[10] = sbi_ret.error;
-//     current_cpu.x[11] = sbi_ret.value;
-// }
+    if (cpuid == current_cpu.cpuid) {
+        sbi_ret.error = SBI_ERR_ALREADY_AVAILABLE;
+    } else {
+        //TODO:add sbi conext in archcpu
+        let cpuid = current_cpu.x[10];
+        let start_addr = current_cpu.x[11];
+        let opaque = current_cpu.x[12];
 
-// pub fn sbi_base_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
-//     let mut sbi_ret = SbiRet {
-//         error: SBI_SUCCESS,
-//         value: 0,
-//     };
-//     match fid {
-//         SBI_GET_SBI_SPEC_VERSION_FID => {
-//             sbi_ret = sbi_call_1(SBI_EXTID_BASE, fid, 0);
-//             debug!("GetSepcificationVersion: {}", sbi_ret.value);
-//         }
-//         SBI_GET_SBI_IMPL_ID_FID => {
-//             sbi_ret.value = sbi_rt::get_sbi_impl_id();
-//             debug!("GetImplementationId: {}", sbi_ret.value);
-//         }
-//         SBI_GET_SBI_IMPL_VERSION_FID => {
-//             sbi_ret.value = sbi_rt::get_sbi_impl_version();
-//             debug!("GetImplementationVersion: {}", sbi_ret.value);
-//         }
-//         SBI_PROBE_EXTENSION_FID => {
-//             let extension = current_cpu.x[10];
-//             sbi_ret = sbi_call_1(SBI_EXTID_BASE, fid, extension);
-//             debug!("ProbeExtension: {}", sbi_ret.value);
-//         }
-//         SBI_GET_MVENDORID_FID => {
-//             sbi_ret.value = sbi_rt::get_mvendorid();
-//             debug!("GetVendorId: {}", sbi_ret.value);
-//         }
-//         SBI_GET_MARCHID_FID => {
-//             sbi_ret.value = sbi_rt::get_marchid();
-//             debug!("GetArchId: {}", sbi_ret.value);
-//         }
-//         SBI_GET_MIMPID_FID => {
-//             sbi_ret.value = sbi_rt::get_mimpid();
-//             debug!("GetMimpId: {}", sbi_ret.value);
-//         }
-//         _ => panic!("sbi base handler fid: {}", fid),
-//     }
-//     sbi_ret
-// }
+        info!("sbi: try to wake up cpu {}", cpuid);
+        let target_cpu = get_cpu_data(cpuid);
+        //todo add power_on check
+        let _lock = target_cpu.ctrl_lock.lock();
+        target_cpu.cpu_on_entry = start_addr;
+        target_cpu.arch_cpu.sepc = start_addr;
+        target_cpu.arch_cpu.x[11] = opaque;
+        send_event(cpuid, 0, IPI_EVENT_WAKEUP);
 
-// pub fn sbi_console_putchar_handler(c: usize) -> SbiRet {
-//     console_putchar(c);
-//     return SbiRet {
-//         error: SBI_SUCCESS,
-//         value: 0,
-//     };
-// }
-
-// pub fn sbi_console_getchar_handler() -> SbiRet {
-//     let c = console_getchar();
-//     return SbiRet {
-//         error: SBI_SUCCESS,
-//         value: c,
-//     };
-// }
-
-// pub fn sbi_time_handler(stime: usize, fid: usize) -> SbiRet {
-//     let mut sbi_ret = SbiRet {
-//         error: SBI_SUCCESS,
-//         value: 0,
-//     };
-//     if fid != SBI_SET_TIMER_FID {
-//         sbi_ret.error = SBI_ERR_NOT_SUPPORTED as usize;
-//         return sbi_ret;
-//     }
-
-//     // debug!("set timer: {}", stime);
-//     set_timer(stime);
-//     unsafe {
-//         // clear guest timer interrupt pending
-//         hvip::clear_vstip();
-//         // enable timer interrupt
-//         sie::set_stimer();
-//     }
-//     return sbi_ret;
-// }
-
-// pub fn sbi_rfence_handler(fid: usize) {
-
-// }
-
-// pub fn sbi_legacy_set_time(stime: usize) -> SbiRet {
-//     let sbi_ret = SbiRet {
-//         error: SBI_SUCCESS,
-//         value: 0,
-//     };
-//     set_timer(stime);
-//     unsafe {
-//         // clear guest timer interrupt pending
-//         hvip::clear_vstip();
-//         // enable timer interrupt
-//         sie::set_stimer();
-//     }
-//     return sbi_ret;
-// }
+        drop(_lock);
+    }
+    sbi_ret
+}

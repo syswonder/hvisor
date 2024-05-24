@@ -3,3 +3,7 @@ pub const PLIC_MAX_IRQ: usize = 1024;
 pub const PLIC_GLOBAL_SIZE: usize = 0x200000;
 pub const PLIC_TOTAL_SIZE: usize = 0x400000;
 pub const PLIC_MAX_CONTEXT: usize = 64;
+pub const ROOT_ZONE_DTB_ADDR: usize = 0x84000000;
+pub const PLIC_PRIORITY_BASE: usize = 0x0000;
+pub const PLIC_PENDING_BASE: usize = 0x1000;
+pub const PLIC_ENABLE_BASE: usize = 0x2000;

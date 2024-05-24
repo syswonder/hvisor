@@ -1,6 +1,7 @@
 use super::csr::*;
+use crate::percpu::this_cpu_data;
 use crate::{
-    consts::{PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
+    consts::{DTB_IPA, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
     memory::{PhysAddr, VirtAddr},
 };
 
@@ -13,18 +14,23 @@ pub struct ArchCpu {
     pub sepc: usize,
     pub stack_top: usize,
     pub cpuid: usize,
+    pub first_cpu: usize,
+    pub power_on: bool,
 }
 
 impl ArchCpu {
     pub fn new(cpuid: usize) -> Self {
-        ArchCpu {
+        let ret = ArchCpu {
             x: [0; 32],
             hstatus: 0,
             sstatus: 0,
             sepc: 0,
             stack_top: 0,
             cpuid,
-        }
+            first_cpu: 0,
+            power_on: false,
+        };
+        ret
     }
     pub fn get_cpuid(&self) -> usize {
         self.cpuid
@@ -41,7 +47,7 @@ impl ArchCpu {
         self.stack_top = self.stack_top() as usize;
         self.x[10] = cpu_id; //cpu id
         self.x[11] = dtb; //dtb addr
-        trace!("stack_top: {:#x}", self.stack_top);
+                          // trace!("stack_top: {:#x}", self.stack_top);
 
         // write_csr!(CSR_SSTATUS, self.sstatus);
         // write_csr!(CSR_HSTATUS, self.hstatus);
@@ -66,34 +72,56 @@ impl ArchCpu {
         write_csr!(CSR_VSTVAL, 0);
         write_csr!(CSR_HVIP, 0);
         write_csr!(CSR_VSATP, 0);
-        let mut value: usize;
-        value = read_csr!(CSR_SEPC);
-        info!("CSR_SEPC: {:#x}", value);
-        value = read_csr!(CSR_STVEC);
-        info!("CSR_STVEC: {:#x}", value);
-        value = read_csr!(CSR_VSATP);
-        info!("CSR_VSATP: {:#x}", value);
-        value = read_csr!(CSR_HGATP);
-        info!("CSR_HGATP: {:#x}", value);
+        // let mut value: usize;
+        // value = read_csr!(CSR_SEPC);
+        // info!("CSR_SEPC: {:#x}", value);
+        // value = read_csr!(CSR_STVEC);
+        // info!("CSR_STVEC: {:#x}", value);
+        // value = read_csr!(CSR_VSATP);
+        // info!("CSR_VSATP: {:#x}", value);
+        // value = read_csr!(CSR_HGATP);
+        // info!("CSR_HGATP: {:#x}", value);
         //unreachable!();
     }
-    pub fn run(&mut self) {
+    pub fn run(&mut self) -> ! {
         extern "C" {
-            fn vcpu_arch_entry();
+            fn vcpu_arch_entry() -> !;
         }
+
+        assert!(this_cpu_id() == self.cpuid);
+        //change power_on
+        if !self.power_on {
+            this_cpu_data().activate_gpm();
+            self.init(this_cpu_data().cpu_on_entry, this_cpu_data().id, DTB_IPA);
+            self.power_on = true;
+        }
+        info!("CPU{} run...", self.cpuid);
+        info!("CPU{:#x?}", self);
         unsafe {
             vcpu_arch_entry();
         }
     }
 
-    pub fn idle(&self) {
+    pub fn idle(&mut self) -> ! {
+        extern "C" {
+            fn vcpu_arch_entry() -> !;
+        }
+        this_cpu_data().activate_gpm();
+        self.init(this_cpu_data().cpu_on_entry, this_cpu_data().id, DTB_IPA);
+        // info!("cpu idle{:#x} {:#x}", this_cpu_data().cpu_on_entry, DTB_IPA);
+        info!("CPU{} sleep...", self.cpuid);
+        info!("CPU{:#x?}", self);
         unsafe {
             core::arch::asm!("wfi");
         }
-        println!("CPU{} weakup!", self.cpuid);
+        info!("CPU{} wakeup!", self.cpuid);
         debug!("sip: {:#x}", read_csr!(CSR_SIP));
-        clear_csr!(CSR_SIP, 1 << 1);
+        // clear_csr!(CSR_SIP, 1 << 1);
         debug!("sip*: {:#x}", read_csr!(CSR_SIP));
+        self.power_on = true;
+        unsafe {
+            vcpu_arch_entry();
+        }
     }
 }
 

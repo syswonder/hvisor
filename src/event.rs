@@ -1,7 +1,7 @@
 use crate::{
     arch::ipi::arch_send_event,
     device::{
-        irqchip::gicv3::inject_irq,
+        irqchip::inject_irq,
         virtio_trampoline::{handle_virtio_irq, IRQ_WAKEUP_VIRTIO_DEVICE},
     },
     percpu::this_cpu_data,
@@ -64,6 +64,7 @@ pub fn init(max_cpus: usize) {
 }
 
 pub fn check_events() -> bool {
+    trace!("check_events");
     let cpu_data = this_cpu_data();
     match fetch_event(cpu_data.id) {
         Some(IPI_EVENT_WAKEUP) => {
@@ -85,6 +86,7 @@ pub fn check_events() -> bool {
 }
 
 pub fn send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
+    info!("send_event");
     add_event(cpu_id, event_id);
     arch_send_event(cpu_id as _, ipi_int_id as _);
 }

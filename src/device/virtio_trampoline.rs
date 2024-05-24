@@ -7,7 +7,7 @@ use core::sync::atomic::Ordering;
 use spin::Mutex;
 
 use crate::arch::cpu::this_cpu_id;
-use crate::device::irqchip::gicv3::inject_irq;
+use crate::device::irqchip::inject_irq;
 use crate::event::send_event;
 use crate::event::IPI_EVENT_WAKEUP_VIRTIO_DEVICE;
 use crate::hypercall::SGI_IPI_ID;
