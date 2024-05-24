@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use crate::consts::{DTB_IPA, INVALID_ADDRESS, PAGE_SIZE};
-use crate::device::virtio_trampoline::{HVISOR_DEVICE, MAX_DEVS, MAX_REQ, VIRTIO_IRQS};
+use crate::device::virtio_trampoline::{VIRTIO_BRIDGE, MAX_DEVS, MAX_REQ, VIRTIO_IRQS};
 use crate::error::HvResult;
 use crate::percpu::{get_cpu_data, PerCpu};
 use crate::zone::{find_zone, is_this_root_zone, remove_zone, zone_create};
@@ -23,10 +23,10 @@ numeric_enum! {
     #[repr(u64)]
     #[derive(Debug, Eq, PartialEq, Copy, Clone)]
     pub enum HyperCallCode {
-        HvVirtioInit = 9,
-        HvVirtioInjectIrq = 10,
-        HvZoneStart = 11,
-        HvZoneShutdown = 12,
+        HvVirtioInit = 0,
+        HvVirtioInjectIrq = 1,
+        HvZoneStart = 2,
+        HvZoneShutdown = 3,
     }
 }
 pub const SGI_IPI_ID: u64 = 7;
@@ -81,7 +81,7 @@ impl<'a> HyperCall<'a> {
         // 		MemFlags::READ | MemFlags::WRITE,
         // 	))?;
         // TODO: flush tlb
-        HVISOR_DEVICE
+        VIRTIO_BRIDGE
             .lock()
             .set_base_addr(shared_region_addr_pa as _);
         info!("hvisor device region base is {:#x?}", shared_region_addr_pa);
@@ -96,7 +96,7 @@ impl<'a> HyperCall<'a> {
                 "Virtio send irq operation over non-root zones: unsupported!"
             );
         }
-        let dev = HVISOR_DEVICE.lock();
+        let dev = VIRTIO_BRIDGE.lock();
         let mut map_irq = VIRTIO_IRQS.lock();
         let region = dev.region();
         while !dev.is_res_list_empty() {

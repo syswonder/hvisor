@@ -18,7 +18,7 @@ use crate::{error::HvResult, memory::MMIOAccess};
 /// Save the irqs the virtio-device wants to inject. The format is <cpu_id, List<irq_id>>, and the first elem of List<irq_id> is the valid len of it.
 pub static VIRTIO_IRQS: Mutex<BTreeMap<usize, [u64; MAX_DEVS + 1]>> = Mutex::new(BTreeMap::new());
 // Controller of the shared memory the root linux's virtio device and hvisor shares.
-pub static HVISOR_DEVICE: Mutex<HvisorDevice> = Mutex::new(HvisorDevice::default());
+pub static VIRTIO_BRIDGE: Mutex<VirtioBridgeRegion> = Mutex::new(VirtioBridgeRegion::default());
 
 const QUEUE_NOTIFY: usize = 0x50;
 pub const MAX_REQ: u32 = 32;
@@ -34,12 +34,12 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
         debug!("notify !!!, cpu id is {}", this_cpu_id());
     }
     mmio.address += base;
-    let mut dev = HVISOR_DEVICE.lock();
+    let mut dev = VIRTIO_BRIDGE.lock();
     while dev.is_req_list_full() {
         // When root linux's cpu is in el2's finish req handler and is getting the dev lock,
         // if we don't release dev lock, it will cause a dead lock.
         drop(dev);
-        dev = HVISOR_DEVICE.lock();
+        dev = VIRTIO_BRIDGE.lock();
     }
     let hreq = HvisorDeviceReq::new(
         this_cpu_id() as _,
@@ -58,12 +58,12 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     };
     let cpu_id = this_cpu_id() as usize;
     let old_cfg_flag = cfg_flags[cpu_id];
+    dev.push_req(hreq);
     // If req list is empty, send sgi to root linux to wake up virtio device.
     if dev.need_wakeup() {
         let root_cpu = root_zone().read().cpu_set.first_cpu().unwrap();
         send_event(root_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP_VIRTIO_DEVICE);
     }
-    dev.push_req(hreq);
     drop(dev);
     let mut count = 0;
     // if it is cfg request, current cpu should be blocked until gets the result
@@ -98,29 +98,29 @@ pub fn handle_virtio_irq() {
     irq_list[0] = 0;
 }
 
-pub struct HvisorDevice {
+pub struct VirtioBridgeRegion {
     base_address: usize, // el1 and el2 shared region addr, el2 virtual address
     pub is_enable: bool,
 }
 
-impl HvisorDevice {
+impl VirtioBridgeRegion {
     // return a mut region
-    pub fn region(&self) -> &mut HvisorDeviceRegion {
+    pub fn region(&self) -> &mut VirtioBridge {
         if !self.is_enable {
             panic!("hvisor device region is not enabled!");
         }
-        unsafe { &mut *(self.base_address as *mut HvisorDeviceRegion) }
+        unsafe { &mut *(self.base_address as *mut VirtioBridge) }
     }
     // return a non mut region
-    pub fn immut_region(&self) -> &HvisorDeviceRegion {
+    pub fn immut_region(&self) -> &VirtioBridge {
         if !self.is_enable {
             panic!("hvisor device region is not enabled!");
         }
-        unsafe { &*(self.base_address as *const HvisorDeviceRegion) }
+        unsafe { &*(self.base_address as *const VirtioBridge) }
     }
 
     pub const fn default() -> Self {
-        HvisorDevice {
+        VirtioBridgeRegion {
             base_address: 0,
             is_enable: false,
         }
@@ -194,7 +194,7 @@ impl HvisorDevice {
 
 /// El1 and EL2 shared region for virtio requests and results.
 #[repr(C)]
-pub struct HvisorDeviceRegion {
+pub struct VirtioBridge {
     /// The first elem of req list, only virtio device updates
     pub req_front: u32,
     /// The last elem's next place of req list, only hvisor updates
@@ -212,9 +212,9 @@ pub struct HvisorDeviceRegion {
     pub need_wakeup: u8,
 }
 
-impl Debug for HvisorDeviceRegion {
+impl Debug for VirtioBridge {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
-        f.debug_struct("HvisorDeviceRegion")
+        f.debug_struct("VirtioBridge")
             .field("req_front", &self.req_front)
             .field("req_rear", &self.req_rear)
             .field("res_front", &self.res_front)

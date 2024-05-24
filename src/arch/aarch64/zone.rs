@@ -3,7 +3,7 @@ use core::sync::atomic::{fence, Ordering};
 use alloc::vec::Vec;
 
 use crate::{
-    device::virtio_trampoline::{mmio_virtio_handler, HVISOR_DEVICE},
+    device::virtio_trampoline::{mmio_virtio_handler, VIRTIO_BRIDGE},
     error::HvResult,
     memory::{
         addr::align_up, mmio_generic_handler, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
@@ -41,7 +41,7 @@ impl Zone {
         // probe virtio mmio device
         {
             let mut mapped_virtio = Vec::new();
-            let dev = HVISOR_DEVICE.lock();
+            let dev = VIRTIO_BRIDGE.lock();
             let region = if dev.is_enable {
                 Some(dev.immut_region())
             } else {
