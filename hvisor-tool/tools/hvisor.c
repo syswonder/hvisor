@@ -112,6 +112,7 @@ static int zone_start(int argc, char *argv[]) {
 
     images[0].source_address = (unsigned long long) read_file(image_path, &images[0].size);
     images[1].source_address = (unsigned long long) read_file(dtb_path, &images[1].size);
+	printf("image_address: 0x%llx, dtb_address: 0x%llx\n", images[0].source_address, images[1].source_address);
     images[0].target_address = image_address;
 	images[1].target_address = dtb_address;
 	zone_load->zone_id = zone_id;

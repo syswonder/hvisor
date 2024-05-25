@@ -66,20 +66,23 @@ static int load_image(struct hvisor_image_desc __user *arg, __u64 *phys_addr) {
         pr_err("hvisor: failed to allocate virtual kernel memory for image\n");
         return -ENOMEM;
     }
+	pr_info("hvisor get_vm_area succeed!\n");
     vma->phys_addr = phys_start;
     if (ioremap_page_range((unsigned long)vma->addr, (unsigned long)(vma->addr + size), phys_start, PAGE_KERNEL_EXEC)) {
         pr_err("hvisor: failed to ioremap image\n");
         err = -EFAULT;
         goto out_unmap_vma;
     }
-
-    if(copy_from_user((void *)(vma->addr + offset_in_page), (const void *)image.source_address, image.size)) {
+	pr_info("hvisor ioremap_page_range succeed!\n");
+	pr_info("image.source_address: %llx\n", image.source_address);
+    if(copy_from_user((void *)(vma->addr + offset_in_page), (void __user *)image.source_address, image.size)) {
         err = -EFAULT;
         goto out_unmap_vma;
     }
+	pr_info("hvisor copy_from_user succeed!\n");
     // Make sure the data is in memory before we start executing it.
     flush_icache_range((unsigned long)(vma->addr + offset_in_page), (unsigned long)(vma->addr + offset_in_page + image.size));
-
+	pr_info("hvisor flush_icache_range succeed!\n");
 out_unmap_vma:
     vunmap(vma->addr);
     return err;
@@ -103,6 +106,7 @@ static int hvisor_zone_start(struct hvisor_zone_load __user* arg) {
     zone_info->zone_id = zone_load.zone_id;
     // load image
     err = load_image(images, &zone_info->image_phys_addr);
+	pr_info("hvisor load image succeed!\n");
     // load dtb
     err = load_image(++images, &zone_info->dtb_phys_addr);
     if (err)
