@@ -29,8 +29,7 @@ int vdevs_num;
 
 void *virt_addr;
 void *phys_addr;
-#define NON_ROOT_PHYS_START 0x70000000
-#define NON_ROOT_PHYS_SIZE 0x20000000
+
 #define WAIT_TIME 100 // 100ns
 inline int is_queue_full(unsigned int front, unsigned int rear, unsigned int size)
 {

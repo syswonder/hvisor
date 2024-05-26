@@ -56,35 +56,35 @@ static int load_image(struct hvisor_image_desc __user *arg, __u64 *phys_addr) {
     if (copy_from_user(&image, arg, sizeof(struct hvisor_image_desc)))
         return -EFAULT;
     *phys_addr = image.target_address;
-    phys_start = image.target_address & PAGE_MASK;
-    offset_in_page = image.target_address & ~PAGE_MASK;
-    size = PAGE_ALIGN(image.size + offset_in_page);
-    pr_info("hvisor load image to %llx, offset_in_page: %llx, size: %lx\n", phys_start, offset_in_page, size);
+//     phys_start = image.target_address & PAGE_MASK;
+//     offset_in_page = image.target_address & ~PAGE_MASK;
+//     size = PAGE_ALIGN(image.size + offset_in_page);
+//     pr_info("hvisor load image to %llx, offset_in_page: %llx, size: %lx\n", phys_start, offset_in_page, size);
 
-    vma = __get_vm_area(size, VM_IOREMAP, VMALLOC_START, VMALLOC_END);
-    if (!vma) {
-        pr_err("hvisor: failed to allocate virtual kernel memory for image\n");
-        return -ENOMEM;
-    }
-	pr_info("hvisor get_vm_area succeed!\n");
-    vma->phys_addr = phys_start;
-    if (ioremap_page_range((unsigned long)vma->addr, (unsigned long)(vma->addr + size), phys_start, PAGE_KERNEL_EXEC)) {
-        pr_err("hvisor: failed to ioremap image\n");
-        err = -EFAULT;
-        goto out_unmap_vma;
-    }
-	pr_info("hvisor ioremap_page_range succeed!\n");
-	pr_info("image.source_address: %llx\n", image.source_address);
-    if(copy_from_user((void *)(vma->addr + offset_in_page), (void __user *)image.source_address, image.size)) {
-        err = -EFAULT;
-        goto out_unmap_vma;
-    }
-	pr_info("hvisor copy_from_user succeed!\n");
-    // Make sure the data is in memory before we start executing it.
-    flush_icache_range((unsigned long)(vma->addr + offset_in_page), (unsigned long)(vma->addr + offset_in_page + image.size));
-	pr_info("hvisor flush_icache_range succeed!\n");
-out_unmap_vma:
-    vunmap(vma->addr);
+//     vma = __get_vm_area(size, VM_IOREMAP, VMALLOC_START, VMALLOC_END);
+//     if (!vma) {
+//         pr_err("hvisor: failed to allocate virtual kernel memory for image\n");
+//         return -ENOMEM;
+//     }
+// 	pr_info("hvisor get_vm_area succeed!\n");
+//     vma->phys_addr = phys_start;
+//     if (ioremap_page_range((unsigned long)vma->addr, (unsigned long)(vma->addr + size), phys_start, PAGE_KERNEL_EXEC)) {
+//         pr_err("hvisor: failed to ioremap image\n");
+//         err = -EFAULT;
+//         goto out_unmap_vma;
+//     }
+// 	pr_info("hvisor ioremap_page_range succeed!\n");
+// 	pr_info("image.source_address: %llx\n", image.source_address);
+//     if(copy_from_user((void *)(vma->addr + offset_in_page), (void __user *)image.source_address, image.size)) {
+//         err = -EFAULT;
+//         goto out_unmap_vma;
+//     }
+// 	pr_info("hvisor copy_from_user succeed!\n");
+//     // Make sure the data is in memory before we start executing it.
+//     flush_icache_range((unsigned long)(vma->addr + offset_in_page), (unsigned long)(vma->addr + offset_in_page + image.size));
+// 	pr_info("hvisor flush_icache_range succeed!\n");
+// out_unmap_vma:
+//     vunmap(vma->addr);
     return err;
 }
 
@@ -112,6 +112,7 @@ static int hvisor_zone_start(struct hvisor_zone_load __user* arg) {
     if (err)
         return err;
     err = hvisor_call_arg1(HVISOR_HC_START_ZONE, __pa(zone_info));
+	kfree(zone_info);
     return err;
 }
 

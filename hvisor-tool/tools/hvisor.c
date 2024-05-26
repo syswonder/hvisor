@@ -79,6 +79,9 @@ static int zone_start(int argc, char *argv[]) {
 		{0, 0, 0, 0}
 	};
 	char *optstring = "k:d:i:";
+	printf("hello\n");
+	printf("hello\n");
+	printf("hello\n");
 
     struct hvisor_zone_load *zone_load;
     struct hvisor_image_desc *images;
@@ -106,15 +109,30 @@ static int zone_start(int argc, char *argv[]) {
 	if (image_path == NULL || dtb_path == NULL || zone_id == 0 || image_address == 0 || dtb_address == 0) {
 		help(1);
 	}
+
     zone_load = malloc(sizeof(struct hvisor_zone_load));
     zone_load->images_num = 2;
     images = malloc(sizeof(struct hvisor_image_desc)*2);
 
     images[0].source_address = (unsigned long long) read_file(image_path, &images[0].size);
     images[1].source_address = (unsigned long long) read_file(dtb_path, &images[1].size);
-	printf("image_address: 0x%llx, dtb_address: 0x%llx\n", images[0].source_address, images[1].source_address);
+
+	int mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
+	if(mem_fd < 0) {
+		printf("open /dev/mem failed\n");
+		exit(1);
+	}
+	void *virt_addr = mmap(NULL, NON_ROOT_PHYS_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, (off_t) NON_ROOT_PHYS_START);
     images[0].target_address = image_address;
 	images[1].target_address = dtb_address;
+	void * virt1 = virt_addr + images[0].target_address - NON_ROOT_PHYS_START;
+	void * virt2 = virt_addr + images[1].target_address - NON_ROOT_PHYS_START;
+	// printf("virt_addr is %lx\n", (uintptr_t)virt_addr);
+	printf("hello\n");
+	printf("virt1 is %p, virt2 is %p\n", virt1, virt2);
+	printf("image_address is %x, dtb_address is %x\n", image_address, dtb_address);
+	memcpy(virt1, (void *)images[0].source_address, images[0].size);
+	memcpy(virt2, (void *)images[1].source_address, images[1].size);
 	zone_load->zone_id = zone_id;
     zone_load->images = images;
     fd = open_dev();
@@ -122,6 +140,8 @@ static int zone_start(int argc, char *argv[]) {
     if (err)
         perror("zone_start: ioctl failed");
     close(fd);
+	munmap(virt_addr, NON_ROOT_PHYS_SIZE);
+	close(mem_fd);
     for (unsigned int i = 0; i < zone_load->images_num; i++)
         free((void*) images[i].source_address);
     free(images);
