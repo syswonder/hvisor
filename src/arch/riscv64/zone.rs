@@ -3,7 +3,7 @@ use core::sync::atomic::{fence, Ordering};
 use alloc::vec::Vec;
 
 use crate::{
-    device::virtio_trampoline::{mmio_virtio_handler, HVISOR_DEVICE},
+    device::virtio_trampoline::mmio_virtio_handler,
     error::HvResult,
     memory::{
         addr::align_up, mmio_generic_handler, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,

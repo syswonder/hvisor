@@ -222,13 +222,12 @@ pub fn sbi_hsm_start_handler(current_cpu: &mut ArchCpu) -> SbiRet {
         let start_addr = current_cpu.x[11];
         let opaque = current_cpu.x[12];
 
-        info!("sbi: try to wake up cpu {}", cpuid);
+        info!("sbi: try to wake up cpu {} run@{:#x}", cpuid, start_addr);
         let target_cpu = get_cpu_data(cpuid);
         //todo add power_on check
         let _lock = target_cpu.ctrl_lock.lock();
         target_cpu.cpu_on_entry = start_addr;
-        target_cpu.arch_cpu.sepc = start_addr;
-        target_cpu.arch_cpu.x[11] = opaque;
+        target_cpu.opaque = opaque;
         send_event(cpuid, 0, IPI_EVENT_WAKEUP);
 
         drop(_lock);

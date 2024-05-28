@@ -1,8 +1,13 @@
 use super::csr::*;
+use crate::arch::Stage2PageTable;
 use crate::percpu::this_cpu_data;
 use crate::{
-    consts::{DTB_IPA, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
-    memory::{PhysAddr, VirtAddr},
+    consts::{DTB_IPA, PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
+    memory::PhysAddr,
+    memory::{
+        addr::PHYS_VIRT_OFFSET, mm::PARKING_MEMORY_SET, GuestPhysAddr, HostPhysAddr, MemFlags,
+        MemoryRegion, MemorySet, VirtAddr, PARKING_INST_PAGE,
+    },
 };
 
 #[repr(C)]
@@ -14,8 +19,9 @@ pub struct ArchCpu {
     pub sepc: usize,
     pub stack_top: usize,
     pub cpuid: usize,
-    pub first_cpu: usize,
+    // pub first_cpu: usize,
     pub power_on: bool,
+    pub init: bool,
 }
 
 impl ArchCpu {
@@ -27,8 +33,9 @@ impl ArchCpu {
             sepc: 0,
             stack_top: 0,
             cpuid,
-            first_cpu: 0,
+            // first_cpu: 0,
             power_on: false,
+            init: false,
         };
         ret
     }
@@ -90,12 +97,18 @@ impl ArchCpu {
 
         assert!(this_cpu_id() == self.cpuid);
         //change power_on
-        if !self.power_on {
-            this_cpu_data().activate_gpm();
-            self.init(this_cpu_data().cpu_on_entry, this_cpu_data().id, DTB_IPA);
-            self.power_on = true;
+        this_cpu_data().activate_gpm();
+        if !self.init {
+            self.init(
+                this_cpu_data().cpu_on_entry,
+                this_cpu_data().id,
+                this_cpu_data().opaque, //dtb_ipa
+            );
+            self.init = true;
         }
-        info!("CPU{} run...", self.cpuid);
+
+        self.power_on = true;
+        info!("CPU{} run@{:#x}", self.cpuid, self.sepc);
         info!("CPU{:#x?}", self);
         unsafe {
             vcpu_arch_entry();
@@ -106,22 +119,46 @@ impl ArchCpu {
         extern "C" {
             fn vcpu_arch_entry() -> !;
         }
-        this_cpu_data().activate_gpm();
-        self.init(this_cpu_data().cpu_on_entry, this_cpu_data().id, DTB_IPA);
-        // info!("cpu idle{:#x} {:#x}", this_cpu_data().cpu_on_entry, DTB_IPA);
-        info!("CPU{} sleep...", self.cpuid);
-        info!("CPU{:#x?}", self);
+        assert!(this_cpu_id() == self.cpuid);
+        self.init(0, this_cpu_data().id, this_cpu_data().opaque);
+        // reset current cpu -> pc = 0x0 (wfi)
+        PARKING_MEMORY_SET.call_once(|| {
+            let parking_code: [u8; 4] = [0x73, 0x00, 0x50, 0x10]; // 1: wfi; b 1b
+            unsafe {
+                PARKING_INST_PAGE[..4].copy_from_slice(&parking_code);
+            }
+
+            let mut gpm = MemorySet::<Stage2PageTable>::new();
+            gpm.insert(MemoryRegion::new_with_offset_mapper(
+                0 as GuestPhysAddr,
+                unsafe { &PARKING_INST_PAGE as *const _ as HostPhysAddr - PHYS_VIRT_OFFSET },
+                PAGE_SIZE,
+                MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+            ))
+            .unwrap();
+            gpm
+        });
         unsafe {
-            core::arch::asm!("wfi");
-        }
-        info!("CPU{} wakeup!", self.cpuid);
-        debug!("sip: {:#x}", read_csr!(CSR_SIP));
-        // clear_csr!(CSR_SIP, 1 << 1);
-        debug!("sip*: {:#x}", read_csr!(CSR_SIP));
-        self.power_on = true;
-        unsafe {
+            PARKING_MEMORY_SET.get().unwrap().activate();
             vcpu_arch_entry();
         }
+        // info!("CPU{} sleep...", self.cpuid);
+        // info!("CPU{:#x?}", self);
+        // unsafe {
+        //     core::arch::asm!("wfi");
+        // }
+        // //according to riscv priv spec, after wfi, interrupt trap will be taken on the following instruction,then excute the code after wfi.
+        // //but in qemu, it seems that the interrupt trap will be taken after sret in vcpu_arch_entry().
+        // //this may cause error in hardware.
+        // info!("CPU{} wakeup!", self.cpuid);
+        // debug!("sip: {:#x}", read_csr!(CSR_SIP));
+        // // clear_csr!(CSR_SIP, 1 << 1);
+        // debug!("sip*: {:#x}", read_csr!(CSR_SIP));
+        // self.init = true;
+
+        // unsafe {
+        //     vcpu_arch_entry();
+        // }
     }
 }
 

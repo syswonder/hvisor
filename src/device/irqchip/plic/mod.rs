@@ -1,7 +1,7 @@
-use crate::arch::cpu::ArchCpu;
 use crate::memory::GuestPhysAddr;
 use crate::platform::qemu_riscv64::*;
 use crate::zone::Zone;
+use crate::{arch::cpu::ArchCpu, percpu::this_cpu_data};
 use fdt::Fdt;
 use riscv::register::{hvip, sie};
 use riscv_decode::Instruction;
@@ -109,7 +109,15 @@ pub fn vplic_global_emul_handler(
             Instruction::Lw(i) => {
                 // guest read
                 let vcontext = (offset - 0x002000) / 0x80;
-                let context = vcontext + current_cpu.first_cpu * 2;
+                let first_cpu = this_cpu_data()
+                    .zone
+                    .as_ref()
+                    .unwrap()
+                    .read()
+                    .cpu_set
+                    .first_cpu()
+                    .unwrap();
+                let context = vcontext + first_cpu * 2;
                 let irq_base = (offset - 0x002000) % 0x80;
                 let value = host_plic.read().read_enable(context, irq_base);
                 current_cpu.x[i.rd() as usize] = value as usize;
@@ -126,7 +134,15 @@ pub fn vplic_global_emul_handler(
             Instruction::Sw(i) => {
                 // guest write irq enable
                 let vcontext = (offset - 0x002000) / 0x80;
-                let context = vcontext + current_cpu.first_cpu * 2;
+                let first_cpu = this_cpu_data()
+                    .zone
+                    .as_ref()
+                    .unwrap()
+                    .read()
+                    .cpu_set
+                    .first_cpu()
+                    .unwrap();
+                let context = vcontext + first_cpu * 2;
                 let irq_base = (offset - 0x002000) % 0x80;
                 let value = current_cpu.x[i.rs2() as usize] as u32;
                 host_plic.write().set_enable(context, irq_base, value);
@@ -154,7 +170,15 @@ pub fn vplic_hart_emul_handler(current_cpu: &mut ArchCpu, addr: GuestPhysAddr, i
     // threshold/claim/complete
     if offset >= PLIC_GLOBAL_SIZE && offset < PLIC_TOTAL_SIZE {
         let vcontext = (offset - PLIC_GLOBAL_SIZE) / 0x1000;
-        let context = vcontext + current_cpu.first_cpu * 2;
+        let first_cpu = this_cpu_data()
+            .zone
+            .as_ref()
+            .unwrap()
+            .read()
+            .cpu_set
+            .first_cpu()
+            .unwrap();
+        let context = vcontext + first_cpu * 2;
         let index = ((offset - PLIC_GLOBAL_SIZE) & 0xfff);
         if index == 0 {
             // threshold

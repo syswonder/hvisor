@@ -1,5 +1,5 @@
 # Basic settings
-ARCH ?= aarch64
+ARCH ?= riscv64
 LOG ?= info
 STATS ?= off
 PORT ?= 2333
@@ -51,20 +51,10 @@ elf:
 	cargo build $(build_args)
 
 disa:
-	aarch64-none-elf-readelf -a $(hvisor_elf) > hvisor-elf.txt
+	readelf -a $(hvisor_elf) > hvisor-elf.txt
 	rust-objdump --disassemble $(hvisor_elf) > hvisor.S
 
-tools: 
-	make -C tools && \
-	make -C driver
-
 run: all
-	make -C tools
-# sudo mount -t ext4 $(image_dir)/virtdisk/rootfs1.ext4 ../rootfs
-# sudo cp ../rootfs/home/arm64/hvisor ../rootfs/home/arm64/hvisor.b
-# sudo cp tools/hvisor ../rootfs/home/arm64
-# sudo cp $(image_dir)/devicetree/linux2.dtb ../rootfs/home/arm64/linux2.dtb
-# sudo umount ../rootfs
 	$(QEMU) $(QEMU_ARGS)
 
 gdb: all
@@ -81,7 +71,5 @@ monitor:
 
 clean:
 	cargo clean
-	make -C tools clean
-	make -C driver clean
 
 include scripts/qemu-$(ARCH).mk
