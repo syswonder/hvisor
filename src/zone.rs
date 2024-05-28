@@ -169,7 +169,7 @@ pub fn zone_create(
         .unwrap();
     zone.mmio_init(&guest_fdt);
     zone.irq_bitmap_init(&guest_fdt);
-
+    zone.isa_init(&guest_fdt);
     guest_fdt.cpus().for_each(|cpu| {
         let cpu_id = cpu.ids().all().next().unwrap();
         zone.cpu_set.set_bit(cpu_id as usize);

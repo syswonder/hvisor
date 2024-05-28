@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use crate::consts::{DTB_IPA, INVALID_ADDRESS, PAGE_SIZE};
-use crate::device::virtio_trampoline::{VIRTIO_BRIDGE, MAX_DEVS, MAX_REQ, VIRTIO_IRQS};
+use crate::device::virtio_trampoline::{MAX_DEVS, MAX_REQ, VIRTIO_BRIDGE, VIRTIO_IRQS};
 use crate::error::HvResult;
 use crate::percpu::{get_cpu_data, PerCpu};
 use crate::zone::{find_zone, is_this_root_zone, remove_zone, zone_create};
@@ -14,9 +14,9 @@ use numeric_enum_macro::numeric_enum;
 #[repr(C)]
 #[derive(Debug)]
 pub struct ZoneInfo {
-    id: u64,
-    image_phys_addr: u64,
-    dtb_phys_addr: u64,
+    pub id: u64,
+    pub image_phys_addr: u64,
+    pub dtb_phys_addr: u64,
 }
 
 numeric_enum! {
@@ -139,6 +139,10 @@ impl<'a> HyperCall<'a> {
                 "Start zone operation over non-root zones: unsupported!"
             );
         }
+        info!(
+            "create zone:id {} dtb_phy:{:#x},dtb_ipa{:#x}",
+            zone_info.id, zone_info.dtb_phys_addr, DTB_IPA
+        );
         let zone = zone_create(zone_info.id as _, zone_info.dtb_phys_addr as _, DTB_IPA)?;
         let boot_cpu = zone.read().cpu_set.first_cpu().unwrap();
 

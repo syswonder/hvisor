@@ -8,6 +8,7 @@ use crate::{
     memory::{
         addr::align_up, mmio_generic_handler, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
     },
+    percpu::get_cpu_data,
     zone::Zone,
 };
 impl Zone {
@@ -134,4 +135,21 @@ impl Zone {
         //TODO
     }
     pub fn irq_bitmap_init(&mut self, fdt: &fdt::Fdt) {}
+    pub fn isa_init(&mut self, fdt: &fdt::Fdt) {
+        let cpu_set = self.cpu_set;
+        cpu_set.iter().for_each(|cpuid| {
+            let cpu_data = get_cpu_data(cpuid);
+            let cpu_isa = fdt
+                .cpus()
+                .find(|cpu| cpu.ids().all().next().unwrap() == cpuid)
+                .unwrap()
+                .properties()
+                .find(|p| p.name == "riscv,isa")
+                .unwrap();
+            if cpu_isa.as_str().unwrap().contains("sstc") {
+                println!("cpu{} support sstc", cpuid);
+                cpu_data.arch_cpu.sstc = true;
+            }
+        })
+    }
 }

@@ -1,7 +1,8 @@
 //! SBI call wrappers
 
 #![allow(unused)]
-use crate::percpu::get_cpu_data;
+use crate::hypercall::{HyperCall, ZoneInfo};
+use crate::percpu::{get_cpu_data, this_cpu_data};
 
 use super::cpu::ArchCpu;
 use crate::arch::csr::*;
@@ -14,6 +15,7 @@ pub mod SBI_EID {
     pub const SEND_IPI: usize = 0x735049;
     pub const RFENCE: usize = 0x52464E43;
     pub const PMU: usize = 0x504D55;
+    pub const HVISOR: usize = 0x114514;
 }
 pub const SBI_SUCCESS: i64 = 0;
 pub const SBI_ERR_FAILURE: i64 = -1;
@@ -81,6 +83,11 @@ pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
         }
         SBI_EID::EXTID_HSM => {
             info!("SBI_EID::EXTID_HSM on CPU {}", current_cpu.cpuid);
+            //test code without driver
+            if (current_cpu.cpuid == 0 && current_cpu.x[10] == 1) {
+                sbi_hvisor_handler(current_cpu);
+            }
+            //test code end
             sbi_ret = sbi_hsm_handler(fid, current_cpu);
         }
         SBI_EID::SEND_IPI => {
@@ -123,6 +130,10 @@ pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
                 current_cpu.x[13],
                 current_cpu.x[14],
             );
+        }
+        SBI_EID::HVISOR => {
+            trace!("SBI_EID::HVISOR,fid:{:#x}", fid);
+            sbi_ret = sbi_hvisor_handler(current_cpu);
         }
         //_ => sbi_ret = sbi_dummy_handler(),
         _ => {
@@ -177,17 +188,17 @@ pub fn sbi_time_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
     };
     let stime = current_cpu.x[10];
     warn!("SBI_SET_TIMER stime: {:#x}", stime);
-    // if current_cpu.sstc {
-    write_csr!(CSR_VSTIMECMP, stime);
-    // } else {
-    //     set_timer(stime);
-    //     unsafe {
-    //         // clear guest timer interrupt pending
-    //         hvip::clear_vstip();
-    //         // enable timer interrupt
-    //         sie::set_stimer();
-    //     }
-    // }
+    if current_cpu.sstc {
+        write_csr!(CSR_VSTIMECMP, stime);
+    } else {
+        set_timer(stime);
+        unsafe {
+            // clear guest timer interrupt pending
+            hvip::clear_vstip();
+            // enable timer interrupt
+            sie::set_stimer();
+        }
+    }
     //debug!("SBI_SET_TIMER stime: {:#x}", stime);
     return sbi_ret;
 }
@@ -231,6 +242,37 @@ pub fn sbi_hsm_start_handler(current_cpu: &mut ArchCpu) -> SbiRet {
         send_event(cpuid, 0, IPI_EVENT_WAKEUP);
 
         drop(_lock);
+    }
+    sbi_ret
+}
+pub fn sbi_hvisor_handler(current_cpu: &mut ArchCpu) -> SbiRet {
+    let mut sbi_ret = SbiRet {
+        error: SBI_SUCCESS,
+        value: 0,
+    };
+    // let (code, arg0, arg1) = (current_cpu.x[10], current_cpu.x[11], current_cpu.x[12]);
+    //test code without driver
+    let new_zone = ZoneInfo {
+        id: 1,
+        image_phys_addr: 0x84000000,
+        dtb_phys_addr: 0x83000000,
+    };
+    let zone_ptr = &new_zone as *const _ as usize;
+    let (code, arg0, arg1) = (2, zone_ptr, 0);
+    //test code end
+
+    let cpu_data = this_cpu_data();
+    info!(
+        "HVC from CPU{},code:{:#x?},arg0:{:#x?},arg1:{:#x?}",
+        cpu_data.id, code, arg0, arg1
+    );
+    let result = HyperCall::new(cpu_data).hypercall(code as _, arg0 as _, arg1 as _);
+    match result {
+        Ok(ret) => {}
+        Err(e) => {
+            sbi_ret.error = SBI_ERR_FAILURE;
+            sbi_ret.value = e.code() as _;
+        }
     }
     sbi_ret
 }

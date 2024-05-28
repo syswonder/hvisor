@@ -22,6 +22,7 @@ pub struct ArchCpu {
     // pub first_cpu: usize,
     pub power_on: bool,
     pub init: bool,
+    pub sstc: bool,
 }
 
 impl ArchCpu {
@@ -36,6 +37,7 @@ impl ArchCpu {
             // first_cpu: 0,
             power_on: false,
             init: false,
+            sstc: false,
         };
         ret
     }
