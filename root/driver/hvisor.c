@@ -93,7 +93,7 @@ static int hvisor_zone_start(struct hvisor_zone_load __user* arg) {
     struct hvisor_image_desc __user *images = arg->images;
     struct hvisor_zone_info *zone_info;
     int err = 0;
-
+	printk("hvisor_zone_start\n");
     zone_info = kmalloc(sizeof(struct hvisor_zone_info), GFP_KERNEL);
 
     if (zone_info == NULL) {

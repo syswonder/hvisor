@@ -37,9 +37,13 @@ static void* read_file(char* filename, unsigned long long* filesize){
         perror("read_file: fstat failed");
         exit(1);
     }
+	long page_size = sysconf(_SC_PAGESIZE);
+	ssize_t buf_size = (st.st_size + page_size - 1) & ~(page_size - 1);
+    buf = malloc(buf_size);
+    memset(buf, 0, buf_size);
+	len = read(fd, buf, st.st_size);
+	printf("len is %ld, st_size is %ld\n", len, st.st_size);
 
-    buf = malloc(st.st_size);
-    len = read(fd, buf, st.st_size);
     if (len < 0) {
         perror("read_file: read failed");
         exit(1);
@@ -116,23 +120,33 @@ static int zone_start(int argc, char *argv[]) {
 
     images[0].source_address = (unsigned long long) read_file(image_path, &images[0].size);
     images[1].source_address = (unsigned long long) read_file(dtb_path, &images[1].size);
-
+	long page_size = sysconf(_SC_PAGESIZE);
+    if (page_size == -1) {
+        perror("sysconf");
+        exit(EXIT_FAILURE);
+    }
+    images[0].target_address = image_address;
+	images[1].target_address = dtb_address;
 	int mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
 	if(mem_fd < 0) {
 		printf("open /dev/mem failed\n");
 		exit(1);
 	}
-	void *virt_addr = mmap(NULL, NON_ROOT_PHYS_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, (off_t) NON_ROOT_PHYS_START);
-    images[0].target_address = image_address;
-	images[1].target_address = dtb_address;
-	void * virt1 = virt_addr + images[0].target_address - NON_ROOT_PHYS_START;
-	void * virt2 = virt_addr + images[1].target_address - NON_ROOT_PHYS_START;
-	// printf("virt_addr is %lx\n", (uintptr_t)virt_addr);
-	printf("hello\n");
-	printf("virt1 is %p, virt2 is %p\n", virt1, virt2);
-	printf("image_address is %x, dtb_address is %x\n", image_address, dtb_address);
-	memcpy(virt1, (void *)images[0].source_address, images[0].size);
-	memcpy(virt2, (void *)images[1].source_address, images[1].size);
+	for(int i = 0; i < 2; i++) {
+		size_t map_size = (images[i].size + page_size - 1) & ~(page_size - 1);
+		printf("map_size is %lu, target_address is %p, source_address is %p\n", map_size, (void*)images[i].target_address, (void*)images[i].source_address);
+		void *virt_addr = mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, images[i].target_address);
+		printf("virt_addr is %p, errno is %s\n", virt_addr, strerror(errno));
+		memcpy(virt_addr, (void *)images[i].source_address, map_size);
+		printf("success to map to target address\n");
+		if(munmap(virt_addr, map_size) == -1) {
+			printf("munmap failed\n");
+		}
+        free((void*) images[i].source_address);
+	}
+	close(mem_fd);
+
+	printf("success to map kernel and dtb to target address\n");
 	zone_load->zone_id = zone_id;
     zone_load->images = images;
     fd = open_dev();
@@ -140,10 +154,6 @@ static int zone_start(int argc, char *argv[]) {
     if (err)
         perror("zone_start: ioctl failed");
     close(fd);
-	munmap(virt_addr, NON_ROOT_PHYS_SIZE);
-	close(mem_fd);
-    for (unsigned int i = 0; i < zone_load->images_num; i++)
-        free((void*) images[i].source_address);
     free(images);
     free(zone_load);
     return err;

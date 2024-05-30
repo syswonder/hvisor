@@ -6,8 +6,8 @@
 #define MAX_REQ 32
 #define MAX_DEVS 4
 #define MAX_CPUS 16
-#define NON_ROOT_PHYS_START 0x90000000
-#define NON_ROOT_PHYS_SIZE 0x20000000
+#define NON_ROOT_PHYS_START 0xa0000000
+#define NON_ROOT_PHYS_SIZE 0x30000000
 #define SIGHVI 10
 // used when start a zone.
 struct hvisor_zone_info {
