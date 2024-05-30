@@ -14,7 +14,7 @@ use crate::{
 impl Zone {
     pub fn pt_init(
         &mut self,
-        vm_paddr_start: usize,
+        _vm_paddr_start: usize,
         fdt: &fdt::Fdt,
         guest_dtb: usize,
         dtb_ipa: usize,
@@ -25,7 +25,7 @@ impl Zone {
         info!("map mem_region: {:#x?}", mem_region);
         self.gpm.insert(MemoryRegion::new_with_offset_mapper(
             mem_region.starting_address as GuestPhysAddr,
-            vm_paddr_start as HostPhysAddr,
+            mem_region.starting_address as HostPhysAddr,
             mem_region.size.unwrap(),
             MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
         ))?;

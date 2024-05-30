@@ -11,6 +11,7 @@ use crate::error::HvResult;
 use crate::memory::addr::GuestPhysAddr;
 use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemoryRegion, MemorySet};
 use crate::percpu::{get_cpu_data, this_zone, CpuSet};
+use crate::platform::qemu_aarch64::ROOT_ZONE_ENTRY;
 use core::ops::Add;
 use core::panic;
 
@@ -153,14 +154,9 @@ pub fn zone_create(
 ) -> HvResult<Arc<RwLock<Zone>>> {
     // we create the new zone here
     // TODO: create Zone with cpu_set
-    debug!("zone_create: zone_id: {}, dtb_ptr: {:#x}, dtb_ipa: {:#x}", zone_id, dtb_ptr as usize, dtb_ipa);
+    info!("zone_create: zone_id: {}, dtb_ptr: {:#x}, dtb_ipa: {:#x}", zone_id, dtb_ptr as usize, dtb_ipa);
     let guest_fdt = unsafe { fdt::Fdt::from_ptr(dtb_ptr) }.unwrap();
-    let guest_entry = guest_fdt
-        .memory()
-        .regions()
-        .next()
-        .unwrap()
-        .starting_address as usize;
+    let guest_entry = ROOT_ZONE_ENTRY;
 
     debug!("zone fdt guest_addr: {:#b}", guest_entry);
 

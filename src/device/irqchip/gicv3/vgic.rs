@@ -62,6 +62,7 @@ impl Zone {
 
         self.insert_irq_to_bitmap(69);  // i2c
         self.insert_irq_to_bitmap(39);  // pmu
+        self.insert_irq_to_bitmap(34);  // pmu
     
         for (index, &word) in self.irq_bitmap.iter().enumerate() {
             for bit_position in 0..32 {
