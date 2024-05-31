@@ -1,12 +1,12 @@
+use core::sync::atomic::{fence, Ordering};
+
 use alloc::vec::Vec;
 
 use crate::{
-    consts::PAGE_SIZE,
-    device::virtio_trampoline::{mmio_virtio_handler, HVISOR_DEVICE},
+    device::virtio_trampoline::{mmio_virtio_handler, VIRTIO_BRIDGE},
     error::HvResult,
     memory::{
-        addr::{align_down, align_up},
-        mmio_generic_handler, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
+        addr::align_up, mmio_generic_handler, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
     },
     zone::Zone,
 };
@@ -41,7 +41,7 @@ impl Zone {
         // probe virtio mmio device
         {
             let mut mapped_virtio = Vec::new();
-            let dev = HVISOR_DEVICE.lock();
+            let dev = VIRTIO_BRIDGE.lock();
             let region = if dev.is_enable {
                 Some(dev.immut_region())
             } else {
@@ -53,11 +53,15 @@ impl Zone {
                     let size = reg.size.unwrap();
                     if !mapped_virtio.contains(&paddr) {
                         info!("map virtio mmio addr: {:#x}, size: {:#x}", paddr, size);
-
-                        if region.is_some()
-                            && region.clone().unwrap().mmio_addrs.contains(&(paddr as u64))
-                        {
-                            self.mmio_region_register(paddr, size, mmio_virtio_handler, paddr);
+                        if region.is_some() {
+                            let dev_region = region.clone().unwrap();
+                            while dev_region.mmio_avail == 0 {}
+                            fence(Ordering::Acquire);
+                            if dev_region.mmio_addrs.contains(&(paddr as u64)) {
+                                self.mmio_region_register(paddr, size, mmio_virtio_handler, paddr);
+                            } else {
+                                self.mmio_region_register(paddr, size, mmio_generic_handler, paddr);
+                            }
                         } else {
                             self.mmio_region_register(paddr, size, mmio_generic_handler, paddr);
                         }
