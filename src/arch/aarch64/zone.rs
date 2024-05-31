@@ -1,12 +1,12 @@
+use core::sync::atomic::{fence, Ordering};
+
 use alloc::vec::Vec;
 
 use crate::{
-    consts::PAGE_SIZE,
-    device::virtio_trampoline::{mmio_virtio_handler, HVISOR_DEVICE},
+    device::virtio_trampoline::{mmio_virtio_handler, VIRTIO_BRIDGE},
     error::HvResult,
     memory::{
-        addr::{align_down, align_up},
-        mmio_generic_handler, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
+        addr::align_up, mmio_generic_handler, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
     },
     zone::Zone,
 };
@@ -14,7 +14,7 @@ use crate::{
 impl Zone {
     pub fn pt_init(
         &mut self,
-        vm_paddr_start: usize,
+        _vm_paddr_start: usize,
         fdt: &fdt::Fdt,
         guest_dtb: usize,
         dtb_ipa: usize,
@@ -25,7 +25,7 @@ impl Zone {
         info!("map mem_region: {:#x?}", mem_region);
         self.gpm.insert(MemoryRegion::new_with_offset_mapper(
             mem_region.starting_address as GuestPhysAddr,
-            vm_paddr_start as HostPhysAddr,
+            mem_region.starting_address as HostPhysAddr,
             mem_region.size.unwrap(),
             MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
         ))?;
@@ -41,7 +41,7 @@ impl Zone {
         // probe virtio mmio device
         {
             let mut mapped_virtio = Vec::new();
-            let dev = HVISOR_DEVICE.lock();
+            let dev = VIRTIO_BRIDGE.lock();
             let region = if dev.is_enable {
                 Some(dev.immut_region())
             } else {
@@ -53,11 +53,15 @@ impl Zone {
                     let size = reg.size.unwrap();
                     if !mapped_virtio.contains(&paddr) {
                         info!("map virtio mmio addr: {:#x}, size: {:#x}", paddr, size);
-
-                        if region.is_some()
-                            && region.clone().unwrap().mmio_addrs.contains(&(paddr as u64))
-                        {
-                            self.mmio_region_register(paddr, size, mmio_virtio_handler, paddr);
+                        if region.is_some() {
+                            let dev_region = region.clone().unwrap();
+                            while dev_region.mmio_avail == 0 {}
+                            fence(Ordering::Acquire);
+                            if dev_region.mmio_addrs.contains(&(paddr as u64)) {
+                                self.mmio_region_register(paddr, size, mmio_virtio_handler, paddr);
+                            } else {
+                                self.mmio_region_register(paddr, size, mmio_generic_handler, paddr);
+                            }
                         } else {
                             self.mmio_region_register(paddr, size, mmio_generic_handler, paddr);
                         }

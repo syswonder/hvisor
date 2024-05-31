@@ -6,11 +6,11 @@ use crate::arch::mm::new_s2_memory_set;
 use crate::arch::s2pt::Stage2PageTable;
 use crate::consts::MAX_CPU_NUM;
 
-use crate::device::virtio_trampoline::mmio_virtio_handler;
 use crate::error::HvResult;
 use crate::memory::addr::GuestPhysAddr;
-use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemoryRegion, MemorySet};
+use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
 use crate::percpu::{get_cpu_data, this_zone, CpuSet};
+use crate::platform::qemu_aarch64::ROOT_ZONE_ENTRY;
 use core::ops::Add;
 use core::panic;
 
@@ -77,6 +77,7 @@ impl Zone {
             })
         }
     }
+    #[allow(dead_code)]
     /// Remove the mmio region beginning at `start`.
     pub fn mmio_region_remove(&mut self, start: GuestPhysAddr) {
         if let Some((idx, _)) = self
@@ -148,19 +149,14 @@ pub fn this_zone_id() -> usize {
 
 pub fn zone_create(
     zone_id: usize,
+	guest_entry: usize,
     dtb_ptr: *const u8,
     dtb_ipa: usize,
 ) -> HvResult<Arc<RwLock<Zone>>> {
     // we create the new zone here
     // TODO: create Zone with cpu_set
-    debug!("zone_create: zone_id: {}, dtb_ptr: {:#x}, dtb_ipa: {:#x}", zone_id, dtb_ptr as usize, dtb_ipa);
+    info!("zone_create: zone_id: {}, dtb_ptr: {:#x}, dtb_ipa: {:#x}", zone_id, dtb_ptr as usize, dtb_ipa);
     let guest_fdt = unsafe { fdt::Fdt::from_ptr(dtb_ptr) }.unwrap();
-    let guest_entry = guest_fdt
-        .memory()
-        .regions()
-        .next()
-        .unwrap()
-        .starting_address as usize;
 
     debug!("zone fdt guest_addr: {:#b}", guest_entry);
 
