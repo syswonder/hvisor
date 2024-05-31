@@ -18,8 +18,6 @@ use spin::{Once, RwLock};
 use crate::arch::{paging, s1pt::Stage1PageTable};
 
 pub const PAGE_SIZE: usize = paging::PageSize::Size4K as usize;
-/// The shared memory base address for virtio device and hvisor.
-pub const HVISOR_DEVICE_REGION_BASE: usize = 0x80_0001_0000;
 
 bitflags! {
     #[derive(Clone, Copy, Debug)]
