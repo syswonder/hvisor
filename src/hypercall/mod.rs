@@ -1,12 +1,11 @@
 #![allow(dead_code)]
 use crate::consts::{DTB_IPA, INVALID_ADDRESS, PAGE_SIZE};
-use crate::device::virtio_trampoline::{HVISOR_DEVICE, MAX_DEVS, MAX_REQ, VIRTIO_IRQS};
+use crate::device::virtio_trampoline::{VIRTIO_BRIDGE, MAX_DEVS, MAX_REQ, VIRTIO_IRQS};
 use crate::error::HvResult;
 use crate::percpu::{get_cpu_data, PerCpu};
-use crate::zone::{find_zone, is_this_root_zone, remove_zone, root_zone, zone_create};
+use crate::zone::{find_zone, is_this_root_zone, remove_zone, zone_create};
 
 use crate::event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_VIRTIO_INJECT_IRQ, IPI_EVENT_WAKEUP};
-use alloc::sync::Arc;
 use core::convert::TryFrom;
 use core::sync::atomic::{fence, Ordering};
 
@@ -24,10 +23,10 @@ numeric_enum! {
     #[repr(u64)]
     #[derive(Debug, Eq, PartialEq, Copy, Clone)]
     pub enum HyperCallCode {
-        HvVirtioInit = 9,
-        HvVirtioInjectIrq = 10,
-        HvZoneStart = 11,
-        HvZoneShutdown = 12,
+        HvVirtioInit = 0,
+        HvVirtioInjectIrq = 1,
+        HvZoneStart = 2,
+        HvZoneShutdown = 3,
     }
 }
 pub const SGI_IPI_ID: u64 = 7;
@@ -67,8 +66,7 @@ impl<'a> HyperCall<'a> {
             "handle hvc init virtio, shared_region_addr = {:#x?}",
             shared_region_addr
         );
-        let zone = self.cpu_data.zone.clone().unwrap();
-        if !Arc::ptr_eq(&zone, &root_zone()) {
+        if !is_this_root_zone() {
             return hv_result_err!(EPERM, "Init virtio over non-root zones: unsupported!");
         }
         let shared_region_addr_pa = shared_region_addr as usize;
@@ -83,7 +81,7 @@ impl<'a> HyperCall<'a> {
         // 		MemFlags::READ | MemFlags::WRITE,
         // 	))?;
         // TODO: flush tlb
-        HVISOR_DEVICE
+        VIRTIO_BRIDGE
             .lock()
             .set_base_addr(shared_region_addr_pa as _);
         info!("hvisor device region base is {:#x?}", shared_region_addr_pa);
@@ -98,7 +96,7 @@ impl<'a> HyperCall<'a> {
                 "Virtio send irq operation over non-root zones: unsupported!"
             );
         }
-        let dev = HVISOR_DEVICE.lock();
+        let dev = VIRTIO_BRIDGE.lock();
         let mut map_irq = VIRTIO_IRQS.lock();
         let region = dev.region();
         while !dev.is_res_list_empty() {
@@ -135,7 +133,13 @@ impl<'a> HyperCall<'a> {
 
     pub fn hv_zone_start(&mut self, zone_info: &ZoneInfo) -> HyperCallResult {
         info!("handle hvc zone start");
-        let zone = zone_create(zone_info.id as _, zone_info.dtb_phys_addr as _, DTB_IPA)?;
+        if !is_this_root_zone() {
+            return hv_result_err!(
+                EPERM,
+                "Start zone operation over non-root zones: unsupported!"
+            );
+        }
+        let zone = zone_create(zone_info.id as _, zone_info.image_phys_addr as _, zone_info.dtb_phys_addr as _, DTB_IPA)?;
         let boot_cpu = zone.read().cpu_set.first_cpu().unwrap();
 
         let target_data = get_cpu_data(boot_cpu as _);
@@ -153,6 +157,12 @@ impl<'a> HyperCall<'a> {
 
     fn hv_zone_shutdown(&mut self, zone_id: u64) -> HyperCallResult {
         info!("handle hvc zone shutdown, id={}", zone_id);
+        if !is_this_root_zone() {
+            return hv_result_err!(
+                EPERM,
+                "Shutdown zone operation over non-root zones: unsupported!"
+            );
+        }
         if zone_id == 0 {
             return hv_result_err!(EINVAL);
         }
