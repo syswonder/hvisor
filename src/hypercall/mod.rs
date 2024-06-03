@@ -125,7 +125,7 @@ impl<'a> HyperCall<'a> {
 
             fence(Ordering::SeqCst);
             region.res_front = (region.res_front + 1) & (MAX_REQ - 1);
-            fence(Ordering::SeqCst);
+            // fence(Ordering::SeqCst);
         }
         drop(dev);
         HyperCallResult::Ok(0)
