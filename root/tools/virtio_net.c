@@ -199,7 +199,7 @@ int virtio_net_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
         virtq_tx_handle_one_request(vdev->dev, vq);
     }
     virtqueue_enable_notify(vq);
-	// To increase the performance, we don't inject irq when send packets. Linux will recycle the used ring when send packets.
+	// TODO: Can we don't inject irq when send packets to improve performance? Linux will recycle the used ring when send packets.
 	// virtio_inject_irq(vq);
     return 0;
 }

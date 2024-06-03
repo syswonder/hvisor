@@ -1,5 +1,5 @@
-# KDIR ?= ../../linux
-KDIR ?= ~/study/hypervisor/nxp/OK8MP-linux-kernel
+KDIR ?= ../../linux
+# KDIR ?= ~/study/hypervisor/nxp/OK8MP-linux-kernel
 DEV ?= /dev/sdb1
 export KDIR
 .PHONY: all tools driver clean

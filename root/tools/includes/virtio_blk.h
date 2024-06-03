@@ -7,7 +7,7 @@
 #include "virtio.h"
 
 /// Maximum number of segments in a request.
-#define BLK_SEG_MAX 256
+#define BLK_SEG_MAX 512
 #define VIRTQUEUE_BLK_MAX_SIZE 512
 // A blk sector size
 #define SECTOR_BSIZE 512
