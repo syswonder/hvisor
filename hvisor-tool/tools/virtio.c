@@ -54,6 +54,10 @@ static inline void dmb_ishst(void) {
 static inline void dmb_ishld(void) {
 	asm volatile ("dmb ishld":: : "memory");
 }
+// Read and write barrier.
+static inline void dmb_ish(void) {
+    asm volatile ("dmb ish":: : "memory");
+}
 
 // create a virtio device.
 static VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id, 
@@ -326,7 +330,7 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
     volatile VirtqUsedElem *elem;
     uint16_t used_idx, mask;
 	// There is no need to worry about if used_ring is full, because used_ring's len is equal to descriptor table's. 
-	pthread_mutex_lock(&vq->used_ring_lock);
+	// pthread_mutex_lock(&vq->used_ring_lock);
     used_ring = vq->used_ring;
     used_idx = used_ring->idx;
     mask = vq->num - 1;
@@ -335,7 +339,7 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
     elem->len = iolen;
     used_ring->idx = used_idx;
 	dmb_ishst();
-	pthread_mutex_unlock(&vq->used_ring_lock);
+	// pthread_mutex_unlock(&vq->used_ring_lock);
     log_debug("update used ring: used_idx is %d, elem->idx is %d, vq->num is %d", used_idx, idx, vq->num);
 }
 
@@ -386,6 +390,9 @@ static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned s
     case VIRTIO_MMIO_QUEUE_READY:
         return vdev->vqs[vdev->regs.queue_sel].ready;
     case VIRTIO_MMIO_INTERRUPT_STATUS:
+		if (vdev->regs.interrupt_status == 0) {
+			log_error("virtio-mmio-read: interrupt status is 0");
+		}
         return vdev->regs.interrupt_status;
     case VIRTIO_MMIO_STATUS:
         return vdev->regs.status;
@@ -652,7 +659,7 @@ void handle_virtio_requests()
 			continue;
 		}
 		while(1) {
-			// dmb_ishld();
+			dmb_ishld();
 			if (!is_queue_empty(req_front, virtio_bridge->req_rear)) {
 				count = 0;
 				proc_count++;
@@ -672,7 +679,7 @@ void handle_virtio_requests()
 				dmb_ishst();
 				nanosleep(&timeout, NULL);
 				// dmb_ishst();
-				// dmb_ishld();
+				dmb_ishld();
 				if(is_queue_empty(req_front, virtio_bridge->req_rear)) {
 					break;
 				} 		

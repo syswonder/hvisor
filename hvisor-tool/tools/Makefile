@@ -1,5 +1,5 @@
 CC = aarch64-linux-gnu-gcc
-CFLAGS = -Wall -Wextra -DLOG_USE_COLOR
+CFLAGS = -Wall -Wextra -DLOG_USE_COLOR -O2
 objects := $(wildcard *.c)
 
 .PHONY: all clean

@@ -48,6 +48,7 @@ static void blkproc(BlkDev *dev, struct blkp_req *req, VirtQueue *vq) {
     {
     case VIRTIO_BLK_T_IN:
         written_len = len = preadv(dev->img_fd, &iov[1], n - 2, req->offset);
+		// log_warn("preadv, len is %d, offset is %d", len, req->offset);
         if (len < 0) {
             log_error("pread failed");
             err = errno;
@@ -55,6 +56,7 @@ static void blkproc(BlkDev *dev, struct blkp_req *req, VirtQueue *vq) {
         break;
     case VIRTIO_BLK_T_OUT:
         len = pwritev(dev->img_fd, &iov[1], n-2, req->offset);
+		// log_warn("pwritev, len is %d, offset is %d", len, req->offset);
         if (len < 0) {
             log_error("pwrite failed");
             err = errno;
