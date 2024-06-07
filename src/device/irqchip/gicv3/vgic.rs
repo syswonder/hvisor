@@ -42,10 +42,12 @@ impl Zone {
 		if self.id == 1 {
 			self.insert_irq_to_bitmap(61); // serial3
 			self.insert_irq_to_bitmap(56);  // mmc2
+			self.insert_irq_to_bitmap(78);
 		} else if self.id == 0 { 
 			self.insert_irq_to_bitmap(55);  // mmc1
-			self.insert_irq_to_bitmap(59);  // serial@30890000
+			// self.insert_irq_to_bitmap(59);  // serial@30890000
 		}
+		self.insert_irq_to_bitmap(59);  // serial@30890000
         self.insert_irq_to_bitmap(96);  // gpio 0
         self.insert_irq_to_bitmap(97);  // gpio 0
         self.insert_irq_to_bitmap(98);  // gpio 1
