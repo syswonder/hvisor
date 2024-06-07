@@ -11,27 +11,29 @@
 #include <linux/sched/signal.h>
 #include <linux/of.h>
 #include <linux/of_irq.h>
-#include <asm/page.h>
 #include <linux/gfp.h>
 #include <linux/vmalloc.h>
-#include <asm/cacheflush.h>
 #include <linux/string.h> 
 
 struct virtio_bridge *virtio_bridge; 
-int hvisor_irq;
+int hvisor_irq = -1;
 static struct task_struct *task = NULL;
 
 // initial virtio el2 shared region
 static int hvisor_init_virtio(void) 
 {
 	int err;
+    if (hvisor_irq == -1) {
+        pr_err("virtio device is not available\n");
+        return ENOTTY;
+    }
 	virtio_bridge = (struct virtio_bridge *)__get_free_pages(GFP_KERNEL, 0);
 	if (virtio_bridge == NULL)
 		return -ENOMEM;
     SetPageReserved(virt_to_page(virtio_bridge));
     // init device region
 	memset(virtio_bridge, 0, sizeof(struct virtio_bridge));
-	err = hvisor_call_arg1(HVISOR_HC_INIT_VIRTIO, __pa(virtio_bridge));
+	err = hvisor_call(HVISOR_HC_INIT_VIRTIO, __pa(virtio_bridge), 0);
 	if (err)
 		return err;
 	return 0;
@@ -41,77 +43,26 @@ static int hvisor_init_virtio(void)
 static int hvisor_finish_req(void) 
 {
     int err;
-    err = hvisor_call(HVISOR_HC_FINISH_REQ);
+    err = hvisor_call(HVISOR_HC_FINISH_REQ, 0, 0);
     if (err)
         return err;
     return 0;
 }
 
-static int load_image(struct hvisor_image_desc __user *arg, __u64 *phys_addr) {
-    struct hvisor_image_desc image;
-    struct vm_struct *vma;
-    int err = 0;
-    __u64 phys_start, offset_in_page;
-    unsigned long size;
-    if (copy_from_user(&image, arg, sizeof(struct hvisor_image_desc)))
-        return -EFAULT;
-    *phys_addr = image.target_address;
-//     phys_start = image.target_address & PAGE_MASK;
-//     offset_in_page = image.target_address & ~PAGE_MASK;
-//     size = PAGE_ALIGN(image.size + offset_in_page);
-//     pr_info("hvisor load image to %llx, offset_in_page: %llx, size: %lx\n", phys_start, offset_in_page, size);
-
-//     vma = __get_vm_area(size, VM_IOREMAP, VMALLOC_START, VMALLOC_END);
-//     if (!vma) {
-//         pr_err("hvisor: failed to allocate virtual kernel memory for image\n");
-//         return -ENOMEM;
-//     }
-// 	pr_info("hvisor get_vm_area succeed!\n");
-//     vma->phys_addr = phys_start;
-//     if (ioremap_page_range((unsigned long)vma->addr, (unsigned long)(vma->addr + size), phys_start, PAGE_KERNEL_EXEC)) {
-//         pr_err("hvisor: failed to ioremap image\n");
-//         err = -EFAULT;
-//         goto out_unmap_vma;
-//     }
-// 	pr_info("hvisor ioremap_page_range succeed!\n");
-// 	pr_info("image.source_address: %llx\n", image.source_address);
-//     if(copy_from_user((void *)(vma->addr + offset_in_page), (void __user *)image.source_address, image.size)) {
-//         err = -EFAULT;
-//         goto out_unmap_vma;
-//     }
-// 	pr_info("hvisor copy_from_user succeed!\n");
-//     // Make sure the data is in memory before we start executing it.
-//     flush_icache_range((unsigned long)(vma->addr + offset_in_page), (unsigned long)(vma->addr + offset_in_page + image.size));
-// 	pr_info("hvisor flush_icache_range succeed!\n");
-// out_unmap_vma:
-//     vunmap(vma->addr);
-    return err;
-}
-
-static int hvisor_zone_start(struct hvisor_zone_load __user* arg) {
-    struct hvisor_zone_load zone_load;
-    struct hvisor_image_desc __user *images = arg->images;
+static int hvisor_zone_start(struct hvisor_zone_info __user* arg) {
     struct hvisor_zone_info *zone_info;
     int err = 0;
-	printk("hvisor_zone_start\n");
-    zone_info = kmalloc(sizeof(struct hvisor_zone_info), GFP_KERNEL);
 
+    zone_info = kmalloc(sizeof(struct hvisor_zone_info), GFP_KERNEL);
     if (zone_info == NULL) {
         pr_err("hvisor: failed to allocate memory for zone_info\n");
         return -ENOMEM;
     }
-    if (copy_from_user(&zone_load, arg, sizeof(zone_load))) 
+    if (copy_from_user(zone_info, arg, sizeof(struct hvisor_zone_info))) 
         return -EFAULT;
-
-    zone_info->zone_id = zone_load.zone_id;
-    // load image
-    err = load_image(images, &zone_info->image_phys_addr);
-	pr_info("hvisor load image succeed!\n");
-    // load dtb
-    err = load_image(++images, &zone_info->dtb_phys_addr);
     if (err)
         return err;
-    err = hvisor_call_arg1(HVISOR_HC_START_ZONE, __pa(zone_info));
+    err = hvisor_call(HVISOR_HC_START_ZONE, __pa(zone_info), 0);
 	kfree(zone_info);
     return err;
 }
@@ -127,10 +78,10 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
 		task = get_current(); // get hvisor user process
         break;
     case HVISOR_ZONE_START:
-        err = hvisor_zone_start((struct hvisor_zone_load __user*) arg);
+        err = hvisor_zone_start((struct hvisor_zone_info __user*) arg);
         break;
 	case HVISOR_ZONE_SHUTDOWN:
-		err = hvisor_call_arg1(HVISOR_HC_SHUTDOWN_ZONE, arg);	
+		err = hvisor_call(HVISOR_HC_SHUTDOWN_ZONE, arg, 0);	
 		break;
     case HVISOR_FINISH_REQ:
         err = hvisor_finish_req();
@@ -146,7 +97,10 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
 static int hvisor_map(struct file * filp, struct vm_area_struct *vma) 
 {
     unsigned long phys;
-    
+    if (hvisor_irq == -1) {
+        pr_err("virtio device is not available\n");
+        return -1;
+    }
     // virtio_bridge must be aligned to one page.
     phys = virt_to_phys(virtio_bridge);
     // vma->vm_flags |= (VM_IO | VM_LOCKED | (VM_DONTEXPAND | VM_DONTDUMP)); Not sure should we add this line.
@@ -210,20 +164,20 @@ static int __init hvisor_init(void)
     }
 	// The irq number must be retrieved from dtb node, because it is different from GIC's IRQ number.
     node = of_find_node_by_path("/hvisor_device");
-    if (!node) {
-        pr_err("hvisor_device node not found, can't register IRQ\n");
-        return -1;
-    }
 
-    hvisor_irq = of_irq_get(node, 0);
-    err = request_irq(hvisor_irq, irq_handler, IRQF_SHARED | IRQF_TRIGGER_RISING, "hvisor", &hvisor_misc_dev);
-    if (err) {
-        pr_err("hvisor cannot register IRQ, err is %d\n", err);
-    	free_irq(hvisor_irq,&hvisor_misc_dev);
-    	misc_deregister(&hvisor_misc_dev);
-        return -1;
+    if (!node) {
+        pr_info("hvisor_device node not found in dtb, can't use virtio devices\n");
+    } else {
+        hvisor_irq = of_irq_get(node, 0);
+        err = request_irq(hvisor_irq, irq_handler, IRQF_SHARED | IRQF_TRIGGER_RISING, "hvisor", &hvisor_misc_dev);
+        if (err) {
+            pr_err("hvisor cannot register IRQ, err is %d\n", err);
+            free_irq(hvisor_irq,&hvisor_misc_dev);
+            misc_deregister(&hvisor_misc_dev);
+            return -1;
+        }
     }
-    printk("hvisor init done!!!\n");
+    pr_info("hvisor init done!!!\n");
     return 0;
 }
 
@@ -232,7 +186,9 @@ static int __init hvisor_init(void)
 */
 static void __exit hvisor_exit(void)
 {
-	free_irq(hvisor_irq,&hvisor_misc_dev);
+    if (hvisor_irq != -1)
+	    free_irq(hvisor_irq,&hvisor_misc_dev);
+
 	if (virtio_bridge != NULL) {
 		ClearPageReserved(virt_to_page(virtio_bridge));
 		free_pages((unsigned long)virtio_bridge, 0);

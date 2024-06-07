@@ -1,6 +1,13 @@
 {
 	"files.associations": {
 		"hvisor.h": "c",
-		"ioctl.h": "c"
+		"ioctl.h": "c",
+		"string.h": "c",
+		"page.h": "c",
+		"processor.h": "c",
+		"vmalloc.h": "c",
+		"of.h": "c",
+		"types.h": "c",
+		"sbi.h": "c"
 	}
 }
