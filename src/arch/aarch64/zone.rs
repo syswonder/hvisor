@@ -86,11 +86,53 @@ impl Zone {
                 ))?;
             }
         }
-
+        
+        // gpio
         self.gpm.insert(MemoryRegion::new_with_offset_mapper(
             0x30200000 as GuestPhysAddr,
             0x30200000,
             0x50000,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ))?;
+
+        // iomuxc-gpr
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x30340000 as GuestPhysAddr,
+            0x30340000,
+            0x10000,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ))?;
+
+
+        // ocotp-ctrl
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x30350000 as GuestPhysAddr,
+            0x30350000,
+            0x10000,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ))?;
+
+        // anatop
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x30360000 as GuestPhysAddr,
+            0x30360000,
+            0x10000,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ))?;
+
+        // snvs
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x30370000 as GuestPhysAddr,
+            0x30370000,
+            0x10000,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ))?;
+
+        // clock-controller
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x30380000 as GuestPhysAddr,
+            0x30380000,
+            0x10000,
             MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
         ))?;
 
