@@ -59,6 +59,13 @@ impl Zone {
         self.insert_irq_to_bitmap(104); // gpio 4
         self.insert_irq_to_bitmap(105); // gpio 4
 
+        self.insert_irq_to_bitmap(150); // ethernet1
+        self.insert_irq_to_bitmap(151); // ethernet1
+        self.insert_irq_to_bitmap(152); // ethernet1
+
+        self.insert_irq_to_bitmap(166); // ethernet2
+        self.insert_irq_to_bitmap(167); // ethernet2
+
         self.insert_irq_to_bitmap(52);  // caam_secvio
         self.insert_irq_to_bitmap(51);  // snvs-rtc-l
         self.insert_irq_to_bitmap(36);  // snvs-powerkey
