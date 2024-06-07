@@ -18,7 +18,6 @@
 #include <sys/time.h>                                                                                           
 #include <limits.h>
 #include <sys/stat.h>
-
 /// hvisor kernel module fd
 int ko_fd;
 volatile struct virtio_bridge *virtio_bridge;
@@ -30,7 +29,7 @@ int vdevs_num;
 void *virt_addr;
 void *phys_addr;
 
-#define WAIT_TIME 100 // 100ns
+#define WAIT_TIME 1000 // 1ms
 inline int is_queue_full(unsigned int front, unsigned int rear, unsigned int size)
 {
     if (((rear + 1) & (size - 1)) == front) {
@@ -46,17 +45,31 @@ inline int is_queue_empty(unsigned int front, unsigned int rear)
 }
 
 /// Write barrier to make sure all write operations are finished before this operation
-static inline void dmb_ishst(void) {
-    asm volatile ("dmb ishst":: : "memory");
+static inline void write_barrier(void) {
+    #ifdef ARM64
+        asm volatile ("dmb ishst":: : "memory");
+    #endif
+    #ifdef RISCV64
+        asm volatile ("fence w,w"::: "memory");
+    #endif
 }
 
-/// Read barrier.  
-static inline void dmb_ishld(void) {
-	asm volatile ("dmb ishld":: : "memory");
+static inline void read_barrier(void) {
+    #ifdef ARM64
+        asm volatile ("dmb ishld":: : "memory");
+    #endif
+    #ifdef RISCV64
+        asm volatile ("fence r,r"::: "memory");
+    #endif
 }
-// Read and write barrier.
-static inline void dmb_ish(void) {
-    asm volatile ("dmb ish":: : "memory");
+
+static inline void rw_barrier(void) {
+    #ifdef ARM64
+        asm volatile ("dmb ish":: : "memory");
+    #endif
+    #ifdef RISCV64
+        asm volatile ("fence rw,rw"::: "memory");
+    #endif
 }
 
 // create a virtio device.
@@ -187,6 +200,8 @@ bool virtqueue_is_empty(VirtQueue *vq)
         log_error("virtqueue's avail ring is invalid");
         return true;
     }
+	read_barrier();
+	log_debug("vq->last_avail_idx is %d, vq->avail_ring->idx is %d", vq->last_avail_idx, vq->avail_ring->idx);
     if (vq->last_avail_idx == vq->avail_ring->idx)
         return true;
     else
@@ -218,7 +233,7 @@ void virtqueue_disable_notify(VirtQueue *vq) {
 	} else {
     	vq->used_ring->flags |= (uint16_t)VRING_USED_F_NO_NOTIFY;
 	}
-	dmb_ishst();
+	write_barrier();
 }
 
 void virtqueue_enable_notify(VirtQueue *vq) {
@@ -227,7 +242,7 @@ void virtqueue_enable_notify(VirtQueue *vq) {
 	} else {
    		vq->used_ring->flags &= !(uint16_t)VRING_USED_F_NO_NOTIFY;
 	} 
-	dmb_ishst();
+	write_barrier();
 }
 
 void virtqueue_set_desc_table(VirtQueue *vq)
@@ -330,6 +345,7 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
     volatile VirtqUsedElem *elem;
     uint16_t used_idx, mask;
 	// There is no need to worry about if used_ring is full, because used_ring's len is equal to descriptor table's. 
+    write_barrier();
 	// pthread_mutex_lock(&vq->used_ring_lock);
     used_ring = vq->used_ring;
     used_idx = used_ring->idx;
@@ -338,7 +354,7 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
     elem->id = idx;
     elem->len = iolen;
     used_ring->idx = used_idx;
-	dmb_ishst();
+	write_barrier();
 	// pthread_mutex_unlock(&vq->used_ring_lock);
     log_debug("update used ring: used_idx is %d, elem->idx is %d, vq->num is %d", used_idx, idx, vq->num);
 }
@@ -487,6 +503,9 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
         log_debug("queue notify end");
         break;
     case VIRTIO_MMIO_INTERRUPT_ACK:
+        if (value != regs->interrupt_status) {
+            log_error("interrupt_status is not equal to ack");
+        }
         regs->interrupt_status &= !value;
         regs->interrupt_ack = value;
         break;
@@ -544,7 +563,7 @@ void virtio_inject_irq(VirtQueue *vq)
 	uint16_t last_used_idx, idx, event_idx;
 	last_used_idx = vq->last_used_idx;
 	vq->last_used_idx = idx = vq->used_ring->idx;
-	dmb_ishld();
+	read_barrier();
 	if (idx == last_used_idx) {
 		log_debug("idx equals last_used_idx");
 		return ;
@@ -567,19 +586,20 @@ void virtio_inject_irq(VirtQueue *vq)
     res = &virtio_bridge->res_list[res_rear];
     res->irq_id = vq->dev->irq_id;
     res->target_zone = vq->dev->zone_id;
-    dmb_ishst();
+    write_barrier();
     virtio_bridge->res_rear = (res_rear + 1) & (MAX_REQ - 1);
-    dmb_ishst();
+    write_barrier();
     pthread_mutex_unlock(&RES_MUTEX);
 	vq->dev->regs.interrupt_status = VIRTIO_MMIO_INT_VRING;
+	log_debug("ioctl hvisor finish req");
     ioctl(ko_fd, HVISOR_FINISH_REQ);
 }
 
 static void virtio_finish_cfg_req(uint32_t target_cpu, uint64_t value) {
     virtio_bridge->cfg_values[target_cpu] = value;
-    dmb_ishst();
+    write_barrier();
     virtio_bridge->cfg_flags[target_cpu]++;
-    dmb_ishst();
+    write_barrier();
 }
 
 static int virtio_handle_req(volatile struct device_req *req)
@@ -648,8 +668,9 @@ void handle_virtio_requests()
 	int signal_count = 0, proc_count = 0;
 	unsigned long long count = 0;
 	for (;;) {
-		log_debug("signal_count is %d, proc_count is %d", signal_count, proc_count);
+		log_warn("signal_count is %d, proc_count is %d", signal_count, proc_count);
 		sigwait(&wait_set, &sig);
+		sig = SIGHVI;
 		signal_count++;
 		if (sig == SIGTERM) {
 			virtio_close();
@@ -659,7 +680,7 @@ void handle_virtio_requests()
 			continue;
 		}
 		while(1) {
-			dmb_ishld();
+			read_barrier();
 			if (!is_queue_empty(req_front, virtio_bridge->req_rear)) {
 				count = 0;
 				proc_count++;
@@ -668,7 +689,7 @@ void handle_virtio_requests()
 				virtio_handle_req(req);
 				req_front = (req_front + 1) & (MAX_REQ - 1);
 				virtio_bridge->req_front = req_front;
-				dmb_ishst();
+				write_barrier();
 			} 
 			else {
 				count++;
@@ -676,10 +697,9 @@ void handle_virtio_requests()
 					continue;
 				count = 0;
 				virtio_bridge->need_wakeup = 1;
-				dmb_ishst();
+				write_barrier();
 				nanosleep(&timeout, NULL);
-				// dmb_ishst();
-				dmb_ishld();
+				read_barrier();
 				if(is_queue_empty(req_front, virtio_bridge->req_rear)) {
 					break;
 				} 		
@@ -700,8 +720,8 @@ int virtio_init()
 
 	multithread_log_init();
     log_set_level(log_level);
-    // FILE *log_file = fopen("log.txt", "w+");
-    // log_add_fp(log_file, log_level);
+    FILE *log_file = fopen("log.txt", "w+");
+    log_add_fp(log_file, log_level);
     log_info("hvisor init");
     ko_fd = open("/dev/hvisor", O_RDWR);
     if (ko_fd < 0) {
@@ -726,7 +746,7 @@ int virtio_init()
 	// mmap: map non root linux physical memory to virtual memory
     int mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
     phys_addr = (void *)NON_ROOT_PHYS_START;
-    virt_addr = mmap(NULL, NON_ROOT_PHYS_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, (off_t) phys_addr);
+    virt_addr = mmap(NULL, NON_ROOT_PHYS_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_LOCKED, mem_fd, (off_t) phys_addr);
 	close(mem_fd);
     log_info("mmap virt addr is %#x", virt_addr);
 
@@ -822,9 +842,9 @@ int virtio_start(int argc, char *argv[]) {
 	for (int i=0; i<vdevs_num; i++) {
 		virtio_bridge->mmio_addrs[i] = vdevs[i]->base_addr;	
 	}
-	dmb_ishst();
+	write_barrier();
 	virtio_bridge->mmio_avail = 1;
-	dmb_ishst();
+	write_barrier();
     handle_virtio_requests();
 	return 0;
 err_out:

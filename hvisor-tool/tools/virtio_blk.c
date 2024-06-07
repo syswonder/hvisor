@@ -48,7 +48,14 @@ static void blkproc(BlkDev *dev, struct blkp_req *req, VirtQueue *vq) {
     {
     case VIRTIO_BLK_T_IN:
         written_len = len = preadv(dev->img_fd, &iov[1], n - 2, req->offset);
-		// log_warn("preadv, len is %d, offset is %d", len, req->offset);
+        // log_debug("readv data is ");
+        // for(int i = 1; i < n-1; i++) {
+        //     log_debug("n-1 is %d, iov[i].iov_len is %d", n-1, iov[i].iov_len);
+        //     for (int j = 0; j < iov[i].iov_len; j++) 
+        //         printf("%x", *(int*)(iov[i].iov_base + j));
+        //     printf("\n");
+        // }
+		log_debug("preadv, len is %d, offset is %d", len, req->offset);
         if (len < 0) {
             log_error("pread failed");
             err = errno;
@@ -56,7 +63,7 @@ static void blkproc(BlkDev *dev, struct blkp_req *req, VirtQueue *vq) {
         break;
     case VIRTIO_BLK_T_OUT:
         len = pwritev(dev->img_fd, &iov[1], n-2, req->offset);
-		// log_warn("pwritev, len is %d, offset is %d", len, req->offset);
+		log_debug("pwritev, len is %d, offset is %d", len, req->offset);
         if (len < 0) {
             log_error("pwrite failed");
             err = errno;
@@ -125,6 +132,7 @@ BlkDev *init_blk_dev(VirtIODevice *vdev, uint64_t bsize, int img_fd)
 // handle one descriptor list
 static struct blkp_req* virtq_blk_handle_one_request(VirtQueue *vq)
 {
+	log_debug("virtq_blk_handle_one_request enter");
     struct blkp_req *breq;
     struct iovec *iov = NULL;
     uint16_t *flags;
@@ -177,7 +185,7 @@ err_out:
 
 int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
 {
-    log_trace("virtio blk notify handler enter");
+    log_debug("virtio blk notify handler enter");
 	BlkDev *blkDev = (BlkDev *)vdev->dev;
 	struct blkp_req *breq;
 	TAILQ_HEAD(, blkp_req) procq;
@@ -190,8 +198,10 @@ int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
 		}
 		virtqueue_enable_notify(vq);
 	}
-	if (TAILQ_EMPTY(&procq)) 
-		return 0;
+	if (TAILQ_EMPTY(&procq)) {
+		log_debug("virtio blk notify handler exit, procq is empty");
+        return 0;
+	}
 	pthread_mutex_lock(&blkDev->mtx);
 	TAILQ_CONCAT(&blkDev->procq, &procq, link);
 	pthread_cond_signal(&blkDev->cond);

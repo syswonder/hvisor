@@ -6,7 +6,7 @@ if [ "$#" -ne 1 ]; then
 fi
 
 file_path=$1
-disk_path="../hvisor/images/aarch64/virtdisk/"
+disk_path="../hvisor/images/aarch64/virtdisk"
 # 检查文件是否存在
 if [ ! -f "$file_path" ]; then
     echo "Error: File '$file_path' not found."
@@ -14,7 +14,7 @@ if [ ! -f "$file_path" ]; then
 fi
 
 sudo mount "$disk_path"/rootfs1.ext4 "$disk_path"/rootfs
-sudo cp "$file_path" "$disk_path"/rootfs/home/arm64/
+sudo cp "$file_path" "$disk_path"/rootfs/home/arm64
 
 if [ $? -eq 0 ]; then
     echo "File has been successfully copied"
