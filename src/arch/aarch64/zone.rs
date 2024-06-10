@@ -140,7 +140,7 @@ impl Zone {
         self.gpm.insert(MemoryRegion::new_with_offset_mapper(
             0x30330000 as GuestPhysAddr,
             0x30330000,
-            0xa0000,
+            0x10000,
             MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
         ))?;
 
