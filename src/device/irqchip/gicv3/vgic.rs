@@ -43,9 +43,14 @@ impl Zone {
 			self.insert_irq_to_bitmap(61); // serial3
 			self.insert_irq_to_bitmap(56);  // mmc2
 			self.insert_irq_to_bitmap(78);  // virtio blk
+            self.insert_irq_to_bitmap(166); // ethernet2
+            self.insert_irq_to_bitmap(167); // ethernet2
 		} else if self.id == 0 { 
 			self.insert_irq_to_bitmap(55);  // mmc1
 			self.insert_irq_to_bitmap(59);  // serial@30890000
+            self.insert_irq_to_bitmap(150); // ethernet1
+            self.insert_irq_to_bitmap(151); // ethernet1
+            self.insert_irq_to_bitmap(152); // ethernet1
 		}
 		// self.insert_irq_to_bitmap(59);  // serial@30890000
         self.insert_irq_to_bitmap(96);  // gpio 0
@@ -58,13 +63,6 @@ impl Zone {
         self.insert_irq_to_bitmap(103); // gpio 3
         self.insert_irq_to_bitmap(104); // gpio 4
         self.insert_irq_to_bitmap(105); // gpio 4
-
-        self.insert_irq_to_bitmap(150); // ethernet1
-        self.insert_irq_to_bitmap(151); // ethernet1
-        self.insert_irq_to_bitmap(152); // ethernet1
-
-        self.insert_irq_to_bitmap(166); // ethernet2
-        self.insert_irq_to_bitmap(167); // ethernet2
 
         self.insert_irq_to_bitmap(52);  // caam_secvio
         self.insert_irq_to_bitmap(51);  // snvs-rtc-l

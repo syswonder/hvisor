@@ -15,3 +15,7 @@ Module.symvers
 modules.order
 driver/main.ko
 .gdb_history
+Image*
+*.ext4
+*.qcow2
+*.dtb
