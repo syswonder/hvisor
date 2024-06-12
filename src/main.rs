@@ -39,7 +39,7 @@ mod platform;
 mod zone;
 
 use crate::consts::{DTB_IPA, MAX_CPU_NUM};
-use crate::platform::qemu_aarch64::ROOT_ZONE_DTB_ADDR;
+use crate::platform::ROOT_ZONE_DTB_ADDR;
 use crate::zone::zone_create;
 use arch::{cpu::cpu_start, entry::arch_entry};
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
@@ -80,14 +80,12 @@ fn primary_init_early(dtb: usize) {
     // let revision = system_config.revision;
     info!("Hypervisor initialization in progress...");
     info!(
-        "build_mode: {}, log_level: {}, arch: {}, vendor: {}, stats: {}",
+        "build_mode: {}, log_level: {}, arch: {}, stats: {}",
         option_env!("MODE").unwrap_or(""),
         option_env!("LOG").unwrap_or(""),
         option_env!("ARCH").unwrap_or(""),
-        option_env!("VENDOR").unwrap_or(""),
         option_env!("STATS").unwrap_or("off"),
     );
-
     memory::heap::init();
     memory::heap::test();
     memory::frame::init();
@@ -100,6 +98,7 @@ fn primary_init_early(dtb: usize) {
     device::irqchip::primary_init_early(&host_fdt);
     crate::arch::mm::init_hv_page_table(&host_fdt).unwrap();
 
+    info!("Primary CPU init hv page table OK.");
     zone_create(0, ROOT_ZONE_DTB_ADDR as _, DTB_IPA).unwrap();
     INIT_EARLY_OK.store(1, Ordering::Release);
 }
@@ -145,8 +144,8 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     let cpu = PerCpu::new(cpuid);
 
     println!(
-        "Booting CPU {}: {:p}, DTB: {:#x}",
-        cpu.id, cpu as *const _, host_dtb
+        "Booting CPU {}: {:p} arch:{:p}, DTB: {:#x}",
+        cpu.id, cpu as *const _, &cpu.arch_cpu as *const _, host_dtb
     );
 
     if is_primary {

@@ -1,5 +1,5 @@
 # Basic settings
-ARCH ?= aarch64
+ARCH ?= riscv64
 LOG ?= info
 STATS ?= off
 PORT ?= 2333
@@ -51,12 +51,8 @@ elf:
 	cargo build $(build_args)
 
 disa:
-	aarch64-none-elf-readelf -a $(hvisor_elf) > hvisor-elf.txt
+	readelf -a $(hvisor_elf) > hvisor-elf.txt
 	rust-objdump --disassemble $(hvisor_elf) > hvisor.S
-
-tools: 
-	make -C tools && \
-	make -C driver
 
 run: all
 	$(QEMU) $(QEMU_ARGS)
@@ -75,7 +71,5 @@ monitor:
 
 clean:
 	cargo clean
-	make -C tools clean
-	make -C driver clean
 
 include scripts/qemu-$(ARCH).mk

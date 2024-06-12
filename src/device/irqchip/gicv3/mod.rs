@@ -164,7 +164,7 @@ pub fn gicv3_handle_irq_el1() {
             deactivate_irq(irq_id);
             let mut ipi_handled = false;
             if irq_id == SGI_IPI_ID as _ {
-                trace!("SGI_IPI_ID");
+                info!("SGI_IPI_ID");
                 ipi_handled = check_events();
             }
             if !ipi_handled {
