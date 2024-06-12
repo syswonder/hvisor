@@ -5,7 +5,7 @@ use spin::Mutex;
 
 use crate::error::{HvError, HvResult};
 use crate::memory::addr::{is_aligned, phys_to_virt, virt_to_phys};
-use crate::memory::{Frame, MemFlags, MemoryRegion, PhysAddr, VirtAddr, TEMPORARY_MAPPING_BASE};
+use crate::memory::{Frame, MemFlags, MemoryRegion, PhysAddr, VirtAddr};
 
 #[derive(Debug)]
 pub enum PagingError {
@@ -316,8 +316,7 @@ where
         mut flags: MemFlags,
     ) -> PagingResult<&mut PTE> {
         let entry: &mut PTE = self.get_entry_mut_or_create(page, &mut flags)?;
-        if !entry.is_unused() && page.vaddr.into() != TEMPORARY_MAPPING_BASE {
-            error!("AlreadyMapped");
+        if !entry.is_unused() {
             return Err(PagingError::AlreadyMapped);
         }
         entry.set_addr(page.size.align_down(paddr));

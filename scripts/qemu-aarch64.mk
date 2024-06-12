@@ -1,4 +1,4 @@
-QEMU := sudo qemu-system-aarch64
+QEMU :=qemu-system-aarch64
 
 UBOOT := $(image_dir)/bootloader/u-boot.bin
 
