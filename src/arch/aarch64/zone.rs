@@ -93,4 +93,7 @@ impl Zone {
     pub fn mmio_init(&mut self, fdt: &fdt::Fdt) {
         self.vgicv3_mmio_init(fdt);
     }
+    pub fn isa_init(&mut self, fdt: &fdt::Fdt) {
+        //nothing to do
+    }
 }

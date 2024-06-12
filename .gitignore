@@ -6,7 +6,11 @@
 /images/aarch64/virtdisk/*
 /images/aarch64/kernel/*
 /images/aarch64/devicetree/*.dtb
+/images/riscv64/virtdisk/*
+/images/riscv64/kernel/*
+/images/riscv64/devicetree/*.dtb
 /tools/hvisor
+/tmp
 *.mod.[co]
 *.mod
 *.[oa]

@@ -2,12 +2,15 @@ use super::cpu::ArchCpu;
 use crate::arch::csr::read_csr;
 use crate::arch::csr::*;
 use crate::arch::sbi::sbi_vs_handler;
+use crate::device::irqchip::plic::{host_plic, vplic_global_emul_handler, vplic_hart_emul_handler};
+use crate::event::check_events;
 use crate::memory::{GuestPhysAddr, HostPhysAddr};
+use crate::platform::qemu_riscv64::*;
 use core::arch::{asm, global_asm};
 use riscv::register::mtvec::TrapMode;
 use riscv::register::stvec;
+use riscv::register::{hvip, sie};
 use riscv_decode::Instruction;
-
 extern "C" {
     fn _hyp_trap_vector();
 }
@@ -27,21 +30,20 @@ pub mod InterruptType {
     pub const STI: usize = 5;
     pub const SEI: usize = 9;
 }
-pub fn init() {
+pub fn install_trap_vector() {
     unsafe {
         // Set the trap vector.
         stvec::write(_hyp_trap_vector as usize, TrapMode::Direct);
     }
 }
 pub fn sync_exception_handler(current_cpu: &mut ArchCpu) {
-    trace!("sync_exception_handler");
     trace!("current_cpu: stack{:#x}", current_cpu.stack_top);
     let trap_code = read_csr!(CSR_SCAUSE);
     trace!("CSR_SCAUSE: {}", trap_code);
     if (read_csr!(CSR_HSTATUS) & (1 << 7)) == 0 {
         //HSTATUS_SPV
         error!("exception from HS mode");
-        unreachable!();
+        //unreachable!();
     }
     let trap_value = read_csr!(CSR_HTVAL);
     trace!("CSR_HTVAL: {:#x}", trap_value);
@@ -76,47 +78,54 @@ pub fn sync_exception_handler(current_cpu: &mut ArchCpu) {
             let raw_inst = read_inst(trap_pc);
             let inst = riscv_decode::decode(raw_inst);
             warn!("trap ins: {:#x}  {:?}", raw_inst, inst);
-            current_cpu.sepc += 4;
-            panic!("unhandled trap");
+            // current_cpu.sepc += 4;
+            error!("unhandled trap");
             current_cpu.idle();
         }
     }
 }
 pub fn guest_page_fault_handler(current_cpu: &mut ArchCpu) {
-    todo!();
-    // let addr: HostPhysAddr = read_csr!(CSR_HTVAL) << 2;
-    // trace!("guest page fault at {:#x}", addr);
-    // //TODO: get plic addr range from dtb or vpliv object
-    // if addr >= 0x0c00_0000 && addr < 0x1000_0000 {
-    //     trace!("PLIC access");
-    //     let mut inst: u32 = read_csr!(CSR_HTINST) as u32;
-    //     if inst == 0 {
-    //         let inst_addr: GuestPhysAddr = current_cpu.sepc;
-    //         //load real ins from guest memmory
-    //         inst = read_inst(inst_addr);
-    //     } else if inst == 0x3020 || inst == 0x3000 {
-    //         // TODO: we should reinject this in the guest as a fault access
-    //         error!("fault on 1st stage page table walk");
-    //     } else {
-    //         // If htinst is valid and is not a pseudo instructon make sure
-    //         // the opcode is valid even if it was a compressed instruction,
-    //         // but before save the real instruction size.
-    //         error!("unhandled guest page fault at {:#x}", addr);
-    //     }
-    //     //TODO: decode inst to real instruction
-    //     let (len, inst) = decode_inst(inst);
-    //     if let Some(inst) = inst {
-    //         if addr >= host_plic().read().base + PLIC_GLOBAL_SIZE {
-    //             vplic_hart_emul_handler(current_cpu, addr, inst);
-    //         }
-    //         vplic_global_emul_handler(current_cpu, addr, inst);
-    //         current_cpu.sepc += len;
-    //     } else {
-    //         error!("Invalid instruction at {:#x}", current_cpu.sepc);
-    //     }
-    // } else {
-    //     panic!("unmaped memmory at {:#x}", addr);
-    // }
+    let addr: HostPhysAddr = read_csr!(CSR_HTVAL) << 2;
+    trace!("guest page fault at {:#x}", addr);
+    let host_plic_base = host_plic().read().base;
+    let mut ins_size: usize = 0;
+    //TODO: get plic addr range from dtb or vpliv object
+    if addr >= host_plic_base && addr < host_plic_base + PLIC_TOTAL_SIZE {
+        trace!("PLIC access");
+        let mut inst: u32 = read_csr!(CSR_HTINST) as u32;
+        if inst == 0 {
+            let inst_addr: GuestPhysAddr = current_cpu.sepc;
+            //load real ins from guest memmory
+            inst = read_inst(inst_addr);
+            ins_size = if inst & 0x3 == 3 { 4 } else { 2 };
+        } else if inst == 0x3020 || inst == 0x3000 {
+            // TODO: we should reinject this in the guest as a fault access
+            error!("fault on 1st stage page table walk");
+        } else {
+            // If htinst is valid and is not a pseudo instructon make sure
+            // the opcode is valid even if it was a compressed instruction,
+            // but before save the real instruction size.
+            ins_size = if (inst) & 0x2 == 0 { 2 } else { 4 };
+            inst = inst | 0b10;
+            // error!("unhandled guest page fault at {:#x}", addr);
+            // panic!("inst{:#x}", inst);
+        }
+        //TODO: decode inst to real instruction
+        let (len, inst) = decode_inst(inst);
+        if let Some(inst) = inst {
+            if addr >= host_plic_base + PLIC_GLOBAL_SIZE {
+                vplic_hart_emul_handler(current_cpu, addr, inst);
+            } else {
+                vplic_global_emul_handler(current_cpu, addr, inst);
+            }
+            current_cpu.sepc += ins_size;
+        } else {
+            error!("Invalid instruction at {:#x}", current_cpu.sepc);
+            panic!();
+        }
+    } else {
+        panic!("CPU {} unmaped memmory at {:#x}", current_cpu.cpuid, addr);
+    }
 }
 fn read_inst(addr: GuestPhysAddr) -> u32 {
     let mut ins: u32 = 0;
@@ -157,66 +166,65 @@ fn decode_inst(inst: u32) -> (usize, Option<Instruction>) {
 }
 /// handle external interrupt
 pub fn interrupts_arch_handle(current_cpu: &mut ArchCpu) {
-    todo!();
-    // trace!("interrupts_arch_handle @CPU{}", current_cpu.cpuid);
-    // let trap_code: usize;
-    // trap_code = read_csr!(CSR_SCAUSE);
-    // trace!("CSR_SCAUSE: {:#x}", trap_code);
-    // match trap_code & 0xfff {
-    //     InterruptType::STI => {
-    //         trace!("STI on CPU{}", current_cpu.cpuid);
-    //         unsafe {
-    //             hvip::set_vstip();
-    //             sie::clear_stimer();
-    //         }
-    //         trace!("sip{:#x}", read_csr!(CSR_SIP));
-    //         trace!("sie {:#x}", read_csr!(CSR_SIE));
-    //     }
-    //     InterruptType::SSI => {
-    //         debug!("SSI on CPU {}", current_cpu.cpuid);
-    //         handle_ssi(current_cpu);
-    //     }
-    //     InterruptType::SEI => {
-    //         debug!("SEI on CPU {}", current_cpu.cpuid);
-    //         handle_eirq(current_cpu)
-    //     }
-    //     _ => {
-    //         error!(
-    //             "unhandled trap {:#x},sepc: {:#x}",
-    //             trap_code, current_cpu.sepc
-    //         );
-    //         unreachable!();
-    //     }
-    // }
+    trace!("interrupts_arch_handle @CPU{}", current_cpu.cpuid);
+    let trap_code: usize;
+    trap_code = read_csr!(CSR_SCAUSE);
+    trace!("CSR_SCAUSE: {:#x}", trap_code);
+    match trap_code & 0xfff {
+        InterruptType::STI => {
+            trace!("STI on CPU{}", current_cpu.cpuid);
+            unsafe {
+                hvip::set_vstip();
+                sie::clear_stimer();
+            }
+            trace!("sip{:#x}", read_csr!(CSR_SIP));
+            trace!("sie {:#x}", read_csr!(CSR_SIE));
+        }
+        InterruptType::SSI => {
+            trace!("SSI on CPU {}", current_cpu.cpuid);
+            handle_ssi(current_cpu);
+        }
+        InterruptType::SEI => {
+            debug!("SEI on CPU {}", current_cpu.cpuid);
+            handle_eirq(current_cpu)
+        }
+        _ => {
+            error!(
+                "unhandled trap {:#x},sepc: {:#x}",
+                trap_code, current_cpu.sepc
+            );
+            unreachable!();
+        }
+    }
 }
 
 /// handle interrupt request(current only external interrupt)
 pub fn handle_eirq(current_cpu: &mut ArchCpu) {
-    todo!();
-    // // TODO: handle other irq
-    // // check external interrupt && handle
-    // // sifive plic: context0=>cpu0,M mode,context1=>cpu0,S mode...
-    // let context_id = 2 * current_cpu.cpuid + 1;
-    // let mut host_plic = host_plic();
-    // let claim_and_complete_addr =
-    //     host_plic.read().base + PLIC_GLOBAL_SIZE + 0x1000 * context_id + 0x4;
-    // let mut irq = unsafe { core::ptr::read_volatile(claim_and_complete_addr as *const u32) };
-    // debug!(
-    //     "CPU{} get external irq{}@{:#x}",
-    //     current_cpu.cpuid, irq, claim_and_complete_addr
-    // );
-    // host_plic.write().claim_complete[context_id] = irq;
-    // // set external interrupt pending, which trigger guest interrupt
-    // unsafe { hvip::set_vseip() };
+    // TODO: handle other irq
+    // check external interrupt && handle
+    // sifive plic: context0=>cpu0,M mode,context1=>cpu0,S mode...
+    let context_id = 2 * current_cpu.cpuid + 1;
+    let mut host_plic = host_plic();
+    let claim_and_complete_addr =
+        host_plic.read().base + PLIC_GLOBAL_SIZE + 0x1000 * context_id + 0x4;
+    let mut irq = unsafe { core::ptr::read_volatile(claim_and_complete_addr as *const u32) };
+    debug!(
+        "CPU{} get external irq{}@{:#x}",
+        current_cpu.cpuid, irq, claim_and_complete_addr
+    );
+    host_plic.write().claim_complete[context_id] = irq;
+    // set external interrupt pending, which trigger guest interrupt
+    unsafe { hvip::set_vseip() };
 }
 pub fn handle_ssi(current_cpu: &mut ArchCpu) {
-    todo!();
-    // let sip = read_csr!(CSR_SIP);
-    // debug!("CPU{} sip: {:#x}", current_cpu.cpuid, sip);
-    // clear_csr!(CSR_SIP, 1 << 1);
-    // let sip2 = read_csr!(CSR_SIP);
-    // debug!("CPU{} sip*: {:#x}", current_cpu.cpuid, sip2);
+    trace!("handle_ssi");
+    let sip = read_csr!(CSR_SIP);
+    trace!("CPU{} sip: {:#x}", current_cpu.cpuid, sip);
+    clear_csr!(CSR_SIP, 1 << 1);
+    let sip2 = read_csr!(CSR_SIP);
+    trace!("CPU{} sip*: {:#x}", current_cpu.cpuid, sip2);
 
-    // debug!("hvip: {:#x}", read_csr!(CSR_HVIP));
-    // set_csr!(CSR_HVIP, 1 << 2);
+    trace!("hvip: {:#x}", read_csr!(CSR_HVIP));
+    set_csr!(CSR_HVIP, 1 << 2);
+    check_events();
 }
