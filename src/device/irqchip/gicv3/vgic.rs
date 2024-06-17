@@ -44,6 +44,8 @@ impl Zone {
             }
         }
 
+        self.irq_bitmap[1] |= 0b111100;
+
         for (index, &word) in self.irq_bitmap.iter().enumerate() {
             for bit_position in 0..32 {
                 if word & (1 << bit_position) != 0 {

@@ -41,7 +41,7 @@ mod zone;
 use crate::consts::{DTB_IPA, MAX_CPU_NUM};
 use crate::platform::qemu_aarch64::ROOT_ZONE_DTB_ADDR;
 use crate::zone::zone_create;
-use arch::{cpu::cpu_start, entry::arch_entry};
+use arch::{cpu::cpu_start, entry::arch_entry,smmuv3};
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
 
@@ -100,6 +100,7 @@ fn primary_init_early(dtb: usize) {
     device::irqchip::primary_init_early(&host_fdt);
     crate::arch::mm::init_hv_page_table(&host_fdt).unwrap();
 
+    smmuv3::init();
     zone_create(0, ROOT_ZONE_DTB_ADDR as _, DTB_IPA).unwrap();
     INIT_EARLY_OK.store(1, Ordering::Release);
 }
