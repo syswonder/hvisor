@@ -69,6 +69,10 @@ where
         }
     }
 
+    pub fn root_paddr(&self) -> usize{
+        self.pt.root_paddr()
+    }
+
     fn test_free_area(&self, other: &MemoryRegion<PT::VA>) -> bool {
         if let Some((_, before)) = self.regions.range(..other.start).last() {
             if before.is_overlap_with(other) {

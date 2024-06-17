@@ -72,6 +72,50 @@ impl Zone {
             drop(dev);
         }
 
+        // probe pci host
+        // virt pcie pio
+        // 0x00 0x3eff0000 0x00 0x10000
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x3eff0000 as GuestPhysAddr,
+            0x3eff0000,
+            0x10000,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+        ))?;
+
+        // virt pcie mmio
+        // 0x00 0x10000000 0x00 0x2eff0000
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x10000000  as GuestPhysAddr,
+            0x10000000 ,
+            0x2eff0000,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+        ))?;
+
+        // virt pcie ecam
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x3f000000  as GuestPhysAddr,
+            0x3f000000 ,
+            0x01000000,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+        ))?;
+
+        // 0x80 0x00 0x80 0x00
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x8000000000 as GuestPhysAddr,
+            0x8000000000,
+            0x8000000000,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+        ))?;
+
+
+        // 0x40 0x10000000 0x00 0x10000000
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x4010000000 as GuestPhysAddr,
+            0x4010000000,
+            0x10000000,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+        ))?;
+
         // probe uart device
         for node in fdt.find_all_nodes("/pl011") {
             if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
