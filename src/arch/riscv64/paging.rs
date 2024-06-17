@@ -52,7 +52,7 @@ impl PageSize {
     pub const fn page_offset(self, addr: usize) -> usize {
         addr & (self as usize - 1)
     }
-
+    #[allow(unused)]
     pub const fn is_huge(self) -> bool {
         matches!(self, Self::Size1G | Self::Size2M)
     }
@@ -558,7 +558,7 @@ fn next_table_mut_or_create<'a, E: GenericPTE>(
         next_table_mut(entry)
     }
 }
-
+#[allow(unused)]
 pub fn npages(sz: usize) -> usize {
     if sz & 0xfff == 0 {
         sz >> 12

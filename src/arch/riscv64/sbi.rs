@@ -8,6 +8,7 @@ use super::cpu::ArchCpu;
 use crate::arch::csr::*;
 use crate::event::{send_event, IPI_EVENT_WAKEUP};
 use riscv::register::{hvip, sie};
+#[allow(non_snake_case)]
 pub mod SBI_EID {
     pub const BASE_EXTID: usize = 0x10;
     pub const SET_TIMER: usize = 0x54494D45;
@@ -83,11 +84,6 @@ pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
         }
         SBI_EID::EXTID_HSM => {
             info!("SBI_EID::EXTID_HSM on CPU {}", current_cpu.cpuid);
-            //test code without driver
-            if (current_cpu.cpuid == 0 && current_cpu.x[10] == 1) {
-                sbi_hvisor_handler(current_cpu);
-            }
-            //test code end
             sbi_ret = sbi_hsm_handler(fid, current_cpu);
         }
         SBI_EID::SEND_IPI => {
@@ -250,16 +246,7 @@ pub fn sbi_hvisor_handler(current_cpu: &mut ArchCpu) -> SbiRet {
         error: SBI_SUCCESS,
         value: 0,
     };
-    // let (code, arg0, arg1) = (current_cpu.x[10], current_cpu.x[11], current_cpu.x[12]);
-    //test code without driver
-    let new_zone = ZoneInfo {
-        id: 1,
-        image_phys_addr: 0x84000000,
-        dtb_phys_addr: 0x83000000,
-    };
-    let zone_ptr = &new_zone as *const _ as usize;
-    let (code, arg0, arg1) = (2, zone_ptr, 0);
-    //test code end
+    let (code, arg0, arg1) = (current_cpu.x[10], current_cpu.x[11], current_cpu.x[12]);
 
     let cpu_data = this_cpu_data();
     info!(
