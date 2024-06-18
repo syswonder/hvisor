@@ -10,3 +10,9 @@ rustflags = [
     "-Ctarget-feature=+a57,+v8a,+strict-align,-neon,-fp-armv8",
     "-Cforce-frame-pointers=yes",
 ]
+
+[target.loongarch64-unknown-none]
+rustflags = [
+    "-Clink-arg=-Tscripts/3a5000-loongarch64.ld",
+    "-Cforce-frame-pointers=yes",
+]
