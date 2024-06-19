@@ -146,19 +146,13 @@ pub fn this_zone_id() -> usize {
 
 pub fn zone_create(
     zone_id: usize,
+    guest_entry: usize,
     dtb_ptr: *const u8,
     dtb_ipa: usize,
 ) -> HvResult<Arc<RwLock<Zone>>> {
     // we create the new zone here
     //TODO: create Zone with cpu_set
     let guest_fdt = unsafe { fdt::Fdt::from_ptr(dtb_ptr) }.unwrap();
-    let guest_entry = guest_fdt
-        .memory()
-        .regions()
-        .next()
-        .unwrap()
-        .starting_address as usize;
-
     debug!("zone fdt guest_addr: {:#b}", guest_entry);
 
     if find_zone(zone_id).is_some() {

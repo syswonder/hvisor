@@ -2,7 +2,7 @@ use super::csr::*;
 use crate::arch::Stage2PageTable;
 use crate::percpu::this_cpu_data;
 use crate::{
-    consts::{DTB_IPA, PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
+    consts::{PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
     memory::PhysAddr,
     memory::{
         addr::PHYS_VIRT_OFFSET, mm::PARKING_MEMORY_SET, GuestPhysAddr, HostPhysAddr, MemFlags,
@@ -176,11 +176,8 @@ pub fn this_cpu_id() -> usize {
     this_cpu_arch().get_cpuid()
 }
 
-const HV_BASE: VirtAddr = 0x80200000;
-const HV_PHY_BASE: PhysAddr = 0x80200000;
-
 pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
-    if let Some(e) = sbi_rt::hart_start(cpuid, HV_PHY_BASE, opaque).err() {
+    if let Some(e) = sbi_rt::hart_start(cpuid, start_addr, opaque).err() {
         panic!("cpu_start error: {:#x?}", e);
     }
 }
