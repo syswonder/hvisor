@@ -39,7 +39,7 @@ mod platform;
 mod zone;
 
 use crate::consts::{DTB_IPA, MAX_CPU_NUM};
-use crate::platform::ROOT_ZONE_DTB_ADDR;
+use crate::platform::{ROOT_ZONE_DTB_ADDR, ROOT_ENTRY};
 use crate::zone::zone_create;
 use arch::{cpu::cpu_start, entry::arch_entry};
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
@@ -99,7 +99,7 @@ fn primary_init_early(dtb: usize) {
     crate::arch::mm::init_hv_page_table(&host_fdt).unwrap();
 
     info!("Primary CPU init hv page table OK.");
-    zone_create(0, ROOT_ZONE_DTB_ADDR as _, DTB_IPA).unwrap();
+    zone_create(0,ROOT_ENTRY,ROOT_ZONE_DTB_ADDR as _, DTB_IPA).unwrap();
     INIT_EARLY_OK.store(1, Ordering::Release);
 }
 

@@ -86,7 +86,6 @@ pub fn check_events() -> bool {
 }
 
 pub fn send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
-    info!("send_event");
     add_event(cpu_id, event_id);
     arch_send_event(cpu_id as _, ipi_int_id as _);
 }

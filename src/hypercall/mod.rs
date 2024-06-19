@@ -143,7 +143,7 @@ impl<'a> HyperCall<'a> {
             "create zone:id {} dtb_phy:{:#x},dtb_ipa{:#x}",
             zone_info.id, zone_info.dtb_phys_addr, DTB_IPA
         );
-        let zone = zone_create(zone_info.id as _, zone_info.dtb_phys_addr as _, DTB_IPA)?;
+        let zone = zone_create(zone_info.id as _, zone_info.image_phys_addr as _, zone_info.dtb_phys_addr as _, DTB_IPA)?;
         let boot_cpu = zone.read().cpu_set.first_cpu().unwrap();
 
         let target_data = get_cpu_data(boot_cpu as _);
