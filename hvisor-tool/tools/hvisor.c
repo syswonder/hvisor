@@ -130,8 +130,9 @@ static int zone_start(int argc, char *argv[]) {
 	}
 	for(int i = 0; i < 2; i++) {
 		size_t map_size = (image_sizes[i] + page_size - 1) & ~(page_size - 1);
-		void *virt_addr = mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, mem_fd, phys_addrs[i]);
+		void *virt_addr = mmap(NULL, map_size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED, mem_fd, phys_addrs[i]);
 		memcpy(virt_addr, (void *)virt_addrs[i], map_size);
+		asm volatile ("dmb ish":: : "memory");
 		if(munmap(virt_addr, map_size) == -1) {
 			printf("munmap failed\n");
 		}

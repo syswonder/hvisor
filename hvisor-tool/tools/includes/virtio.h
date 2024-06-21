@@ -17,7 +17,9 @@ typedef struct VirtMmioRegs {
     uint32_t drv_feature_sel;
     uint32_t queue_sel;
     uint32_t interrupt_status;
-    uint32_t interrupt_ack;
+    // interrupt_count doesn't exist in virtio specifiction, 
+    // only used for ensuring the correctness of interrupt_status.
+    uint32_t interrupt_count; 
     uint32_t status;
     uint32_t generation;
     uint64_t dev_feature;
@@ -27,7 +29,8 @@ typedef struct VirtMmioRegs {
 typedef enum {
     VirtioTNone,
     VirtioTNet,
-    VirtioTBlock
+    VirtioTBlock,
+    VirtioTConsole
 } VirtioDeviceType;
 
 typedef struct vring_desc VirtqDesc;

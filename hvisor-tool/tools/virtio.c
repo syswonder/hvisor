@@ -5,6 +5,7 @@
 #include "hvisor.h"
 #include "virtio_blk.h"
 #include "virtio_net.h"
+#include "virtio_console.h"
 #include "log.h"
 #include <sys/mman.h>
 #include <sys/uio.h>
@@ -79,6 +80,7 @@ static VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zo
 	log_info("create virtio device type %d, zone id %d, base addr %lx, len %lx, irq id %d", 
 				dev_type, zone_id, base_addr, len, irq_id);
     VirtIODevice *vdev = NULL;
+    int is_err;
 	vdev = calloc(1, sizeof(VirtIODevice));
 	init_mmio_regs(&vdev->regs, dev_type);
 	vdev->base_addr = base_addr;
@@ -88,38 +90,31 @@ static VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zo
 	vdev->type = dev_type;
     switch (dev_type)
     {
-    case VirtioTBlock: {
-		int img_fd = open((const char*)arg, O_RDWR);
-		struct stat st;
-		uint64_t blk_size;
-        if (img_fd == -1) {
-			log_error("cannot open %s, Error code is %d\n", (char*)arg, errno);
-			close(img_fd);
-			goto err;
-		}
-		if (fstat(img_fd, &st) == -1) {
-			log_error("cannot stat %s, Error code is %d\n", (char*)arg, errno);
-			close(img_fd);
-			goto err;
-		}
-		blk_size = st.st_size / 512; // 512 bytes per block
-        vdev->dev = init_blk_dev(vdev, blk_size, img_fd);
+    case VirtioTBlock: 
         vdev->regs.dev_feature = BLK_SUPPORTED_FEATURES;
+        vdev->dev = init_blk_dev(vdev);
         init_virtio_queue(vdev, dev_type);
+        is_err = virtio_blk_init(vdev, (const char*)arg);
         break;
-	}
     case VirtioTNet:
         vdev->regs.dev_feature = NET_SUPPORTED_FEATURES;
-        vdev->type = dev_type;
         uint8_t mac[] = {0x00, 0x16, 0x3E, 0x10, 0x10, 0x10};
         vdev->dev = init_net_dev(mac);
         init_virtio_queue(vdev, dev_type);
-        virtio_net_init(vdev, (char *)arg);
+        is_err = virtio_net_init(vdev, (char *)arg);
+        break;
+    case VirtioTConsole:
+        vdev->regs.dev_feature = CONSOLE_SUPPORTED_FEATURES;
+        vdev->dev = init_console_dev();
+        init_virtio_queue(vdev, dev_type);
+        is_err = virtio_console_init(vdev);
         break;
 	default:
 		log_error("unsupported virtio device type\n");
 		goto err;
     }
+    if (is_err) goto err;
+    log_info("create virtio device %d success", dev_type);
     vdevs[vdevs_num++] = vdev;
     return vdev;
 
@@ -154,6 +149,18 @@ void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type)
         vq[NET_QUEUE_TX].notify_handler = virtio_net_txq_notify_handler;
         vdev->vqs = vq;
         break;
+    case VirtioTConsole:
+        vdev->vqs_len = CONSOLE_MAX_QUEUES;
+        vq = malloc(sizeof(VirtQueue) * CONSOLE_MAX_QUEUES);
+        for (int i = 0; i < CONSOLE_MAX_QUEUES; ++i) {
+            virtqueue_reset(vq, i);
+            vq[i].queue_num_max = VIRTQUEUE_CONSOLE_MAX_SIZE;
+            vq[i].dev = vdev;
+        }
+        vq[CONSOLE_QUEUE_RX].notify_handler = virtio_console_rxq_notify_handler;
+        vq[CONSOLE_QUEUE_TX].notify_handler = virtio_console_txq_notify_handler;
+        vdev->vqs = vq;
+        break;
     default:
         break;
     }
@@ -171,6 +178,7 @@ void virtio_dev_reset(VirtIODevice *vdev)
     log_trace("virtio dev reset");
     vdev->regs.status = 0;
     vdev->regs.interrupt_status = 0;
+    vdev->regs.interrupt_count = 0;
     int idx = vdev->regs.queue_sel;
     vdev->vqs[idx].ready = 0;
     for(uint32_t i=0; i<vdev->vqs_len; i++) {
@@ -264,7 +272,7 @@ void virtqueue_set_used(VirtQueue *vq)
 }
 
 // record one descriptor to iov.
-static inline int _descriptor2iov(int i, volatile VirtqDesc *vd,
+static inline int descriptor2iov(int i, volatile VirtqDesc *vd,
            struct iovec *iov, uint16_t *flags) {
     void *host_addr;
     host_addr = get_virt_addr((void *)vd->addr);
@@ -321,7 +329,7 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
 			for (;;) {
 				log_debug("next is %d", next);
 				ind_desc = &ind_table[next];
-				_descriptor2iov(i, ind_desc, *iov, flags == NULL ? NULL : *flags);
+				descriptor2iov(i, ind_desc, *iov, flags == NULL ? NULL : *flags);
 				table_len--;
 				i++;
 				if ((ind_desc->flags & VRING_DESC_F_NEXT) == 0)
@@ -333,7 +341,7 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
 				break;
 			}
 		} else {
-			_descriptor2iov(i, vdesc, *iov, flags == NULL ? NULL : *flags);
+			descriptor2iov(i, vdesc, *iov, flags == NULL ? NULL : *flags);
 		}
 	}
     return chain_len;
@@ -407,7 +415,7 @@ static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned s
         return vdev->vqs[vdev->regs.queue_sel].ready;
     case VIRTIO_MMIO_INTERRUPT_STATUS:
 		if (vdev->regs.interrupt_status == 0) {
-			log_error("virtio-mmio-read: interrupt status is 0");
+			log_error("virtio-mmio-read: interrupt status is 0, type is %d", vdev->type);
 		}
         return vdev->regs.interrupt_status;
     case VIRTIO_MMIO_STATUS:
@@ -503,11 +511,13 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
         log_debug("queue notify end");
         break;
     case VIRTIO_MMIO_INTERRUPT_ACK:
-        if (value != regs->interrupt_status) {
-            log_error("interrupt_status is not equal to ack");
+        if (value == regs->interrupt_status && regs->interrupt_count > 0) {
+            regs->interrupt_count --;
+            break;
+        } else if (value != regs->interrupt_status) {
+            log_error("interrupt_status is not equal to ack, type is %d", vdev->type);
         }
         regs->interrupt_status &= !value;
-        regs->interrupt_ack = value;
         break;
     case VIRTIO_MMIO_STATUS:
         regs->status = value;
@@ -591,7 +601,8 @@ void virtio_inject_irq(VirtQueue *vq)
     write_barrier();
     pthread_mutex_unlock(&RES_MUTEX);
 	vq->dev->regs.interrupt_status = VIRTIO_MMIO_INT_VRING;
-	log_debug("ioctl hvisor finish req");
+    vq->dev->regs.interrupt_count ++;
+	log_debug("inject irq to device %d, vq is %d", vq->dev->type, vq->vq_idx);
     ioctl(ko_fd, HVISOR_FINISH_REQ);
 }
 
@@ -617,8 +628,10 @@ static int virtio_handle_req(volatile struct device_req *req)
     VirtIODevice *vdev = vdevs[i];
     if (vdev->type == VirtioTNet)
         log_debug("vdev type is net");
-    else
+    else if (vdev->type == VirtioTBlock)
         log_debug("vdev type is blk");
+    else if (vdev->type == VirtioTConsole)
+        log_debug("vdev type is con");
     uint64_t offs = req->address - vdev->base_addr;
     if (req->is_write) {
         virtio_mmio_write(vdev, offs, req->value, req->size);
@@ -746,7 +759,7 @@ int virtio_init()
 	// mmap: map non root linux physical memory to virtual memory
     int mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
     phys_addr = (void *)NON_ROOT_PHYS_START;
-    virt_addr = mmap(NULL, NON_ROOT_PHYS_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_LOCKED, mem_fd, (off_t) phys_addr);
+    virt_addr = mmap(NULL, NON_ROOT_PHYS_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_LOCKED , mem_fd, (off_t) phys_addr);
 	close(mem_fd);
     log_info("mmap virt addr is %#x", virt_addr);
 
@@ -772,7 +785,9 @@ static int create_virtio_device_from_cmd(char *cmd) {
 		dev_type = VirtioTBlock;
 	} else if (strcmp(now, "net") == 0) {
 		dev_type = VirtioTNet;
-	} else {
+	} else if (strcmp(now, "console") == 0) {
+        dev_type = VirtioTConsole;
+    } else {
 		log_error("unknown device type %s", now);
 		return -1;
 	}

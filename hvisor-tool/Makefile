@@ -19,7 +19,8 @@ transfer: all
 	./trans_file.sh ./tools/hvisor 
 	./trans_file.sh ./driver/hvisor.ko 
 
-transfer_nxp: all
+transfer_nxp: 
+	make all ARCH=arm64 KDIR=/home/lgw/study/hypervisor/nxp/OK8MP-linux-kernel
 	cp ./tools/hvisor /home/lgw/tftp
 	cp ./driver/hvisor.ko /home/lgw/tftp
 	# sudo mount $(DEV) /mnt/

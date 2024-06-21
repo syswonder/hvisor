@@ -8,6 +8,9 @@
 		"vmalloc.h": "c",
 		"of.h": "c",
 		"types.h": "c",
-		"sbi.h": "c"
+		"sbi.h": "c",
+		"errno.h": "c",
+		"stdlib.h": "c",
+		"pty.h": "c"
 	}
 }

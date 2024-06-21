@@ -60,11 +60,10 @@ int virtio_net_rxq_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
 {
     log_debug("virtio_net_rxq_notify_handler");
     NetDev *net = vdev->dev;
-    if (net->rx_ready == 0) {
+    if (net->rx_ready <= 0) {
         net->rx_ready = 1;
-        if (vq->used_ring != NULL) {
-            vq->used_ring->flags |= VRING_USED_F_NO_NOTIFY;
-        }
+        // When buffers are all used, virtio_net_event_handler will notify the driver.
+        virtqueue_disable_notify(vq);
     }
     return 0;
 }
@@ -88,9 +87,9 @@ static inline struct iovec *rm_iov_header(struct iovec *iov, int *niov, int head
 }
 
 /// Called when tap device received packets
-void virtio_net_rx_callback(int fd, int epoll_type, void *param)
+void virtio_net_event_handler(int fd, int epoll_type, void *param)
 {
-    log_debug("virtio_net_rx_callback");
+    log_debug("virtio_net_event_handler");
     VirtIODevice *vdev = param;
 	NetHdr *vnet_header;
 	struct iovec *iov, *iov_packet;
@@ -223,7 +222,7 @@ int virtio_net_init(VirtIODevice *vdev, char *devname)
         net->tapfd = -1;
     }
     // register an epoll read event for tap device
-    net->event = add_event(net->tapfd, EPOLLIN, virtio_net_rx_callback, vdev);
+    net->event = add_event(net->tapfd, EPOLLIN, virtio_net_event_handler, vdev);
     if (net->event == NULL) {
         log_error("Can't register net event");
         close(net->tapfd);
