@@ -5,6 +5,7 @@
 #include <sys/param.h>
 #include <errno.h>
 #include "log.h"
+#include <fcntl.h>
 
 static void complete_block_operation(BlkDev *dev, struct blkp_req *req, VirtQueue *vq, int err, ssize_t written_len) {
     uint8_t *vstatus = (uint8_t *)(req->iov[req->iovcnt-1].iov_base);
@@ -112,13 +113,13 @@ static void *blkproc_thread(void *arg)
 
 
 // create blk dev.
-BlkDev *init_blk_dev(VirtIODevice *vdev, uint64_t bsize, int img_fd)
+BlkDev *init_blk_dev(VirtIODevice *vdev)
 {
     BlkDev *dev = malloc(sizeof(BlkDev));
-    dev->config.capacity = bsize;
-    dev->config.size_max = bsize;
+    dev->config.capacity = -1;
+    dev->config.size_max = -1;
     dev->config.seg_max = BLK_SEG_MAX;
-    dev->img_fd = img_fd;
+    dev->img_fd = -1;
     dev->close = 0;
 	// TODO: chang to thread poll
     pthread_mutex_init(&dev->mtx, NULL);
@@ -128,6 +129,27 @@ BlkDev *init_blk_dev(VirtIODevice *vdev, uint64_t bsize, int img_fd)
     return dev;
 }
 
+int virtio_blk_init(VirtIODevice *vdev, const char *img_path) {
+    int img_fd = open(img_path, O_RDWR);
+    BlkDev *dev = vdev->dev;
+    struct stat st;
+    uint64_t blk_size;
+    if (img_fd == -1) {
+        log_error("cannot open %s, Error code is %d\n", img_path, errno);
+        close(img_fd);
+        return -1;
+    }
+    if (fstat(img_fd, &st) == -1) {
+        log_error("cannot stat %s, Error code is %d\n", img_path, errno);
+        close(img_fd);
+        return -1;
+    }
+    blk_size = st.st_size / 512; // 512 bytes per block
+    dev->config.capacity = blk_size;
+    dev->config.size_max = blk_size;
+    dev->img_fd = img_fd;
+    return 0;
+}
 
 // handle one descriptor list
 static struct blkp_req* virtq_blk_handle_one_request(VirtQueue *vq)

@@ -83,7 +83,8 @@ The meaning of the above command is:
 
 1. First, create a Virtio block device. The virtual machine with id 1 will communicate with this device through an MMIO region with a starting address of `0xa003c00` and a length of `0x200`. The device interrupt number is set to 78, and it corresponds to the disk image `rootfs2.ext4`.
 2. Next, create a Virtio network device. The MMIO region starts at `0xa003600` with a length of `0x200`, and the device interrupt number is set to 75. This device is used by the virtual machine with id 1 and is connected to a Tap device named `tap0`.
-3. `nohup ... &` indicates that this command will create a daemon process.
+3. Finally, create a Virtio console device for the output of the primary serial port of the virtual machine with ID 1. On the root Linux system, execute the command screen /dev/pts/x to access this virtual console, where x can be determined by checking the output information in nohup.out.
+4. `nohup ... &` indicates that this command will create a daemon process.
 
 * Shutting down Virtio devices
 
