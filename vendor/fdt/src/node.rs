@@ -173,6 +173,30 @@ impl<'b, 'a: 'b> FdtNode<'b, 'a> {
         reg
     }
 
+    pub fn ranges(self) -> Option<impl Iterator<Item = crate::MemoryRegion> + 'a> {
+        let sizes = self.cell_sizes();
+        if sizes.address_cells != 3 || sizes.size_cells != 2 {
+            return None;
+        }
+    
+        let mut ranges = None;
+        for prop in self.properties() {
+            if prop.name == "ranges" {
+                let mut stream = FdtData::new(prop.value);
+                ranges = Some(core::iter::from_fn(move || {
+                    stream.skip(12);
+                    let starting_address = stream.u64()?.get() as usize as *const u8;
+                    let size = Some(stream.u64()?.get() as usize);
+                    Some(MemoryRegion { starting_address, size })
+                }));
+                break;
+            }
+        }
+    
+        ranges
+    }
+
+
     /// Convenience method that provides an iterator over the raw bytes for the
     /// address and size values inside of the `reg` property
     pub fn raw_reg(self) -> Option<impl Iterator<Item = RawReg<'a>> + 'a> {
@@ -263,6 +287,27 @@ impl<'b, 'a: 'b> FdtNode<'b, 'a> {
                         }
                         _ => return None,
                     };
+
+                    Some(interrupt)
+                }));
+                break;
+            }
+        }
+        interrupt
+    }
+
+    // pcie node property:interrupt-map
+    pub fn interrupt_map(self) -> Option<impl Iterator<Item = usize> + 'a> {
+        let mut interrupt = None;
+        for prop in self.properties() {
+            if prop.name == "interrupt-map" {
+                let mut stream = FdtData::new(prop.value);
+                interrupt = Some(core::iter::from_fn(move || {
+                    stream.skip(4*8);
+
+                    let interrupt = stream.u32()?.get() as usize;
+
+                    stream.skip(4);
 
                     Some(interrupt)
                 }));

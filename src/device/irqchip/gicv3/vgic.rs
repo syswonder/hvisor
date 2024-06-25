@@ -42,6 +42,19 @@ impl Zone {
                     }
                 }
             }
+            if let Some(int_iter) = node.interrupt_map() {
+                for int_n in int_iter {
+                    let real_int_n = int_n + 32;
+                    if real_int_n < 1024 {
+                        info!("pcie intc map:{}",real_int_n);
+                        let index = real_int_n / 32;
+                        let bit_position = real_int_n % 32;
+                        self.irq_bitmap[index] |= 1 << bit_position;
+                    } else {
+                        panic!("irq_id {} exceeds limit", int_n);
+                    }
+                }
+            }
         }
 
         for (index, &word) in self.irq_bitmap.iter().enumerate() {
@@ -55,6 +68,8 @@ impl Zone {
                 }
             }
         }
+
+
     }
 }
 

@@ -1,7 +1,7 @@
 use spin::RwLock;
 
 use crate::{
-    arch::s1pt::Stage1PageTable,
+    arch::{s1pt::Stage1PageTable,smmuv3::{smmuv3_base,smmuv3_size}},
     consts::PAGE_SIZE,
     device::irqchip::gicv3::{host_gicd_base, host_gicd_size, host_gicr_base, host_gicr_size},
     error::HvResult,
@@ -96,6 +96,13 @@ pub fn init_hv_page_table(fdt: &fdt::Fdt) -> HvResult {
         host_gicr_base(0),
         host_gicr_base(0),
         host_gicr_size(),
+        MemFlags::READ | MemFlags::WRITE,
+    ))?;
+
+    hv_pt.insert(MemoryRegion::new_with_offset_mapper(
+        smmuv3_base(),
+        smmuv3_base(),
+        smmuv3_size(),
         MemFlags::READ | MemFlags::WRITE,
     ))?;
 

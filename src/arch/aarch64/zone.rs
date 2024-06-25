@@ -86,8 +86,41 @@ impl Zone {
                 ))?;
             }
         }
+
+        // probe pcie device
+        for node in fdt.find_all_nodes("/pcie") {
+            if let Some(reg_iter) = node.reg() {
+                for reg in reg_iter {
+                    let paddr = reg.starting_address as HostPhysAddr;
+                    let size = reg.size.unwrap();
+                    info!("map pcie addr: {:#x}, size: {:#x}", paddr, size);
+                    self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                        paddr as GuestPhysAddr,
+                        paddr,
+                        size,
+                        MemFlags::READ | MemFlags::WRITE,
+                    )).ok();
+                }
+            }
+            if let Some(ranges_iter) = node.ranges() {
+                for ranges in ranges_iter {
+                    let paddr = ranges.starting_address as HostPhysAddr;
+                    let size = ranges.size.unwrap();
+                    info!("map pcie addr: {:#x}, size: {:#x}", paddr, size);
+                    self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                        paddr as GuestPhysAddr,
+                        paddr,
+                        size,
+                        MemFlags::READ | MemFlags::WRITE,
+                    )).ok();
+                }
+            }
+        }
+
+
         info!("VM stage 2 memory set: {:#x?}", self.gpm);
         Ok(())
+
     }
 
     pub fn mmio_init(&mut self, fdt: &fdt::Fdt) {

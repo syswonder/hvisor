@@ -2,7 +2,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::RwLock;
 
-use crate::arch::s2pt::Stage2PageTable;
+use crate::arch::{s2pt::Stage2PageTable,smmuv3::init_vm};
 use crate::consts::MAX_CPU_NUM;
 
 use crate::error::HvResult;
@@ -171,6 +171,11 @@ pub fn zone_create(
 
     info!("zone cpu_set: {:#b}", zone.cpu_set.bitmap);
     let cpu_set = zone.cpu_set;
+
+    if zone_id==0{
+        // init_vm(0, 0x8, zone.gpm.root_paddr());
+        init_vm(0, 0x10, zone.gpm.root_paddr());
+    }
 
     let new_zone_pointer = Arc::new(RwLock::new(zone));
     {
