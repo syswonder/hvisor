@@ -1,6 +1,5 @@
 use loongArch64::register::cpuid;
 
-use crate::percpu::this_cpu_data;
 use crate::{
     consts::{PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
     memory::VirtAddr,
@@ -13,6 +12,7 @@ pub struct ArchCpu {
     pub sepc: usize,
     pub stack_top: usize,
     pub cpuid: usize,
+    pub power_on: bool,
 }
 
 impl ArchCpu {
@@ -22,6 +22,7 @@ impl ArchCpu {
             sepc: 0,
             stack_top: 0,
             cpuid,
+            power_on: false,
         }
     }
     pub fn get_cpuid(&self) -> usize {
@@ -33,14 +34,18 @@ impl ArchCpu {
     pub fn init(&mut self, entry: usize, cpu_id: usize, dtb: usize) {
         todo!("loongarch64 archcpu init");
     }
-    pub fn run(&self) {
+    pub fn run(&self) -> ! {
         todo!("loongarch64 archcpu run");
     }
-    pub fn idle(&self) {
+    pub fn idle(&self) -> ! {
         todo!("loongarch64 archcpu idle");
     }
 }
 
 pub fn this_cpu_id() -> usize {
     cpuid::read().core_id()
+}
+
+pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
+    todo!("loongarch64 cpu start");
 }

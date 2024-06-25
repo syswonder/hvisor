@@ -12,6 +12,7 @@ rustflags = [
 ]
 
 [target.loongarch64-unknown-none]
+linker = "loongarch64-unknown-linux-gnu-gcc"
 rustflags = [
     "-Clink-arg=-Tscripts/3a5000-loongarch64.ld",
     "-Cforce-frame-pointers=yes",
