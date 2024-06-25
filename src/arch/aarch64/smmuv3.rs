@@ -203,10 +203,9 @@ impl Smmuv3{
     fn check_env(&mut self){
         let idr0 = self.rp.IDR0.get() as usize;
 
-   
         info!("Smmuv3 IDR0:{:b}",idr0);
 
-        // 支持linear表 以及二级表
+        // supported types of stream tables.
         let stb_support = extract_bits(idr0, IDR0_ST_LEVEL_OFF, IDR0_ST_LEVEL_LEN);
         match stb_support{
             0 => info!("Smmuv3 Linear Stream Table Supported."),
@@ -216,7 +215,7 @@ impl Smmuv3{
             _ => info!("Smmuv3 don't support any stream table."),
         }
 
-        // 支持阶段转换
+        // supported address translation stages.
         let s1p_support = idr0 & IDR0_S1P_BIT;
         match s1p_support{
             0 => info!("Smmuv3 Stage-1 translation not supported."),
@@ -251,8 +250,7 @@ impl Smmuv3{
 
         self.sid_max_bits = sid_max_bits;
 
-        // sid_max_bis>=7时，必须允许使用二级表
-        // 硬件已经做了这样的规定，这里只是为了保险
+        // sid_max_bis>=7,must allow the use of secondary tables.
         if sid_max_bits>=7 && extract_bits(idr0, IDR0_ST_LEVEL_OFF, IDR0_ST_LEVEL_LEN)==0{
             error!("Smmuv3 the system must support for 2-level table");
         }
@@ -261,8 +259,6 @@ impl Smmuv3{
         if sid_max_bits <= 8{
             info!("Smmuv3 must use linear stream table!");
         }
-
-
     }
 
     fn init_structures(&mut self){
@@ -311,17 +307,15 @@ impl Smmuv3{
     }
 
     fn init_strtab(&mut self){
-
         // linear stream table is our priority
         self.init_linear_strtab();
-
     }
 
     // strtab
     fn init_linear_strtab(&mut self){
         info!("Smmuv3 init linear stream table");
 
-        // 低(5+self.sid_max_bits)位必须为0 目前无法做到这种分配方式
+        // The lower (5+self.sid_max_bits) bits must be 0.
         // let tab_size = (1 << self.sid_max_bits) * STRTAB_STE_SIZE;
         // let frame_count = tab_size / PAGE_SIZE;
         if let Ok(frame) = Frame::new_contiguous(100, 0){
@@ -354,7 +348,6 @@ impl Smmuv3{
 
         // init strtab entries
         self.init_bypass_stes();
-
     }
 
     fn init_bypass_stes(&mut self){
@@ -365,7 +358,7 @@ impl Smmuv3{
         }
     }
 
-    // 初始化 s1 s2 bypass
+    // init bypass ste
     fn init_bypass_ste(&mut self,sid:usize){
         let base = self.strtab_base + sid * STRTAB_STE_SIZE;
         let tab = unsafe{&mut *(base as *mut [u64;STRTAB_STE_DWORDS])};
@@ -377,7 +370,6 @@ impl Smmuv3{
 
         tab[0] = val as _;
         tab[1] = (STRTAB_STE_1_SHCFG_INCOMING << STRTAB_STE_1_SHCFG_OFF) as _;
-
     }
 
     fn device_reset(&mut self){
