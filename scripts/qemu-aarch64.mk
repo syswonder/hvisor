@@ -51,7 +51,7 @@ QEMU_ARGS += -device virtio-serial-device,bus=virtio-mmio-bus.28 -device virtcon
 # trace-event gicv3_icc_generate_sgi on
 # trace-event gicv3_redist_send_sgi on
 
-# QEMU_ARGS += -trace smmuv3_*
+QEMU_ARGS += -trace smmuv3_*
 
 $(hvisor_bin): elf
 	@if ! command -v mkimage > /dev/null; then \

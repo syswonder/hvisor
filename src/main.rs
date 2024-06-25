@@ -38,10 +38,13 @@ mod percpu;
 mod platform;
 mod zone;
 
+#[cfg(target_arch = "aarch64")]
+use arch::smmuv3;
+
 use crate::consts::{DTB_IPA, MAX_CPU_NUM};
 use crate::platform::{ROOT_ZONE_DTB_ADDR, ROOT_ENTRY};
 use crate::zone::zone_create;
-use arch::{cpu::cpu_start, entry::arch_entry,smmuv3};
+use arch::{cpu::cpu_start, entry::arch_entry};
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
 
@@ -100,6 +103,7 @@ fn primary_init_early(dtb: usize) {
 
     info!("Primary CPU init hv page table OK.");
 
+    #[cfg(target_arch = "aarch64")]
     smmuv3::init();
 
     zone_create(0,ROOT_ENTRY,ROOT_ZONE_DTB_ADDR as _, DTB_IPA).unwrap();
