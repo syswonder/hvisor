@@ -37,13 +37,13 @@ mod panic;
 mod percpu;
 mod platform;
 mod zone;
+mod config;
 
 use crate::arch::mm::setup_parange;
-use crate::consts::{DTB_IPA, MAX_CPU_NUM};
-use crate::platform::qemu_aarch64::ROOT_ZONE_DTB_ADDR;
-use crate::zone::zone_create;
+use crate::consts::MAX_CPU_NUM;
 use arch::{cpu::cpu_start, entry::arch_entry};
-use platform::qemu_aarch64::ROOT_ZONE_ENTRY;
+use config::root_zone_config;
+use zone::zone_create;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
 
@@ -77,7 +77,7 @@ fn wait_for_counter(counter: &AtomicU32, max_value: u32) {
     wait_for(|| counter.load(Ordering::Acquire) < max_value)
 }
 
-fn primary_init_early(dtb: usize) {
+fn primary_init_early() {
     extern "C" {
         fn __core_end();
     }
@@ -100,13 +100,10 @@ fn primary_init_early(dtb: usize) {
     memory::frame::test();
     event::init(MAX_CPU_NUM);
 
-    info!("host dtb: {:#x}", dtb);
-    let host_fdt = unsafe { fdt::Fdt::from_ptr(dtb as *const u8) }.unwrap();
+    device::irqchip::primary_init_early();
+    // crate::arch::mm::init_hv_page_table().unwrap();
 
-    device::irqchip::primary_init_early(&host_fdt);
-    crate::arch::mm::init_hv_page_table(&host_fdt).unwrap();
-
-    zone_create(0,ROOT_ZONE_ENTRY, ROOT_ZONE_DTB_ADDR as _, DTB_IPA).unwrap();
+    zone_create(root_zone_config()).unwrap();
     INIT_EARLY_OK.store(1, Ordering::Release);
 }
 
@@ -173,7 +170,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     setup_parange();
 
     if is_primary {
-        primary_init_early(host_dtb); // create root zone here
+        primary_init_early(); // create root zone here
     } else {
         wait_for_counter(&INIT_EARLY_OK, 1);
     }

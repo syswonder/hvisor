@@ -33,7 +33,18 @@
 		compatible = "arm,psci-0.2";
 		method = "smc";
 	};
-	
+
+	reserved-memory {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+
+		nonroot@50000000 {
+			no-map;
+			reg = <0x00 0x50000000 0x00 0x30000000>;
+		};
+	};
+
 	memory@50000000 {
 		device_type = "memory";
 		reg = <0x0 0x50000000 0x0 0x50000000>;
