@@ -39,7 +39,7 @@ mod platform;
 mod zone;
 
 #[cfg(target_arch = "aarch64")]
-use arch::smmuv3;
+use arch::iommu;
 
 use crate::consts::{DTB_IPA, MAX_CPU_NUM};
 use crate::platform::{ROOT_ZONE_DTB_ADDR, ROOT_ENTRY};
@@ -104,7 +104,7 @@ fn primary_init_early(dtb: usize) {
     info!("Primary CPU init hv page table OK.");
 
     #[cfg(target_arch = "aarch64")]
-    smmuv3::init();
+    iommu::init();
 
     zone_create(0,ROOT_ENTRY,ROOT_ZONE_DTB_ADDR as _, DTB_IPA).unwrap();
     INIT_EARLY_OK.store(1, Ordering::Release);

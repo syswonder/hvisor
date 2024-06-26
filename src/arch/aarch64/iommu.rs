@@ -444,7 +444,7 @@ pub fn smmuv3_size() -> usize{
 /// how to varify the sid?
 /// qemu_args += -trace smmuv3_*
 /// then you can see the output like: smmuv3_translate_success smmuv3-iommu-memory-region-16-2 sid=0x10 iova=0x8e041242 translated=0x8e041242 perm=0x3
-pub fn init_vm(vmid:usize,sid:usize,root_pt:usize){
+pub fn add_device(vmid:usize,sid:usize,root_pt:usize){
     let mut smmu = SMMUV3.get().unwrap().lock();
     smmu.write_ste(sid as _, vmid as _, root_pt);
     info!("wirte ste: vmid=0x{:x},sid=0x{:x},root_pt:0x{:x}",vmid,sid,root_pt);

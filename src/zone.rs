@@ -3,7 +3,7 @@ use alloc::vec::Vec;
 use spin::RwLock;
 
 #[cfg(target_arch = "aarch64")]
-use crate::arch::smmuv3::init_vm;
+use crate::arch::iommu::add_device;
 
 use crate::arch::s2pt::Stage2PageTable;
 use crate::consts::MAX_CPU_NUM;
@@ -177,8 +177,8 @@ pub fn zone_create(
 
     #[cfg(target_arch = "aarch64")]
     if zone_id==0{
-        // init_vm(0, 0x8, zone.gpm.root_paddr());
-        init_vm(0, 0x10, zone.gpm.root_paddr());
+        // add_device(0, 0x8, zone.gpm.root_paddr());
+        add_device(0, 0x10, zone.gpm.root_paddr());
     }
 
     let new_zone_pointer = Arc::new(RwLock::new(zone));

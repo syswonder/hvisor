@@ -1,7 +1,7 @@
 use spin::RwLock;
 
 use crate::{
-    arch::{s1pt::Stage1PageTable,smmuv3::{smmuv3_base,smmuv3_size}},
+    arch::{s1pt::Stage1PageTable,iommu::{smmuv3_base,smmuv3_size}},
     consts::PAGE_SIZE,
     device::irqchip::gicv3::{host_gicd_base, host_gicd_size, host_gicr_base, host_gicr_size},
     error::HvResult,
