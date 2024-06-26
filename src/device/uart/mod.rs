@@ -8,7 +8,7 @@ pub use pl011::{console_getchar, console_putchar};
 pub use crate::arch::riscv64::sbi::{console_getchar, console_putchar};
 
 #[cfg(target_arch = "loongarch64")]
-mod ns16550a;
+mod ns16440a;
 
 #[cfg(target_arch = "loongarch64")]
-pub use ns16550a::{console_getchar, console_putchar};
+pub use ns16440a::{console_getchar, console_putchar};

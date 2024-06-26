@@ -1,6 +1,8 @@
 use fdt::Fdt;
 use crate::zone::Zone;
 
+pub mod chip;
+
 pub fn primary_init_early(host_fdt: &Fdt) {
     todo!()
 }
