@@ -21,8 +21,8 @@ QEMU_ARGS += -nographic
 QEMU_ARGS += -bios $(UBOOT)
 
 QEMU_ARGS += -device loader,file="$(hvisor_bin)",addr=0x40400000,force-raw=on
-QEMU_ARGS += -device loader,file="$(zone0_kernel)",addr=0x50000000,force-raw=on
-QEMU_ARGS += -device loader,file="$(zone0_dtb)",addr=0x70000000,force-raw=on
+QEMU_ARGS += -device loader,file="$(zone0_kernel)",addr=0xa0000000,force-raw=on
+QEMU_ARGS += -device loader,file="$(zone0_dtb)",addr=0xb0000000,force-raw=on
 # QEMU_ARGS += -device loader,file="$(zone1_kernel)",addr=0x70000000,force-raw=on
 # QEMU_ARGS += -device loader,file="$(zone1_dtb)",addr=0x91000000,force-raw=on
 

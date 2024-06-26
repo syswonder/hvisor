@@ -15,6 +15,7 @@ use core::sync::atomic::Ordering;
 pub struct PerCpu {
     pub id: usize,
     pub cpu_on_entry: usize,
+    pub dtb_ipa: usize,
     pub arch_cpu: ArchCpu,
     pub zone: Option<Arc<RwLock<Zone>>>,
     pub ctrl_lock: Mutex<()>,
@@ -30,6 +31,7 @@ impl PerCpu {
             ret.write_volatile(PerCpu {
                 id: cpu_id,
                 cpu_on_entry: INVALID_ADDRESS,
+                dtb_ipa: INVALID_ADDRESS,
                 arch_cpu: ArchCpu::new(cpu_id),
                 zone: None,
                 ctrl_lock: Mutex::new(()),
