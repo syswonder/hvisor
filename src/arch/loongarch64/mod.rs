@@ -3,6 +3,7 @@ pub mod entry;
 pub mod ipi;
 pub mod mm;
 pub mod paging;
+pub mod register;
 pub mod s1pt;
 pub mod s2pt;
 pub mod trap;

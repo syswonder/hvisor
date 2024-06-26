@@ -2,7 +2,7 @@
 # wheatfox(enkerewpo@hotmail.com) 2024.6
 
 # HVISOR ENTRY
-HVISOR_ENTRY_PA := 0x9000000100000000
+HVISOR_ENTRY_PA := 0x9000000080000000
 
 # zone0_kernel := $(image_dir)/kernel/Image
 # zone0_dtb    := $(image_dir)/devicetree/linux.dtb
