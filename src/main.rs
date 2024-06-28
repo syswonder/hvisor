@@ -38,8 +38,7 @@ mod percpu;
 mod platform;
 mod zone;
 
-#[cfg(target_arch = "aarch64")]
-use arch::iommu;
+use arch::iommu_init;
 
 use crate::consts::{DTB_IPA, MAX_CPU_NUM};
 use crate::platform::{ROOT_ZONE_DTB_ADDR, ROOT_ENTRY};
@@ -103,8 +102,7 @@ fn primary_init_early(dtb: usize) {
 
     info!("Primary CPU init hv page table OK.");
 
-    #[cfg(target_arch = "aarch64")]
-    iommu::init();
+    iommu_init();
 
     zone_create(0,ROOT_ENTRY,ROOT_ZONE_DTB_ADDR as _, DTB_IPA).unwrap();
     INIT_EARLY_OK.store(1, Ordering::Release);
