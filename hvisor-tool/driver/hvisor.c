@@ -101,16 +101,27 @@ static int hvisor_map(struct file * filp, struct vm_area_struct *vma)
         pr_err("virtio device is not available\n");
         return -1;
     }
-    // virtio_bridge must be aligned to one page.
-    phys = virt_to_phys(virtio_bridge);
-    // vma->vm_flags |= (VM_IO | VM_LOCKED | (VM_DONTEXPAND | VM_DONTDUMP)); Not sure should we add this line.
-    if(remap_pfn_range(vma, 
-                    vma->vm_start,
-                    phys >> PAGE_SHIFT,
-                    vma->vm_end - vma->vm_start,
-                    vma->vm_page_prot))
-        return -1;
-    pr_info("hvisor mmap succeed!\n");
+    if (vma->vm_pgoff == 0) {
+        // virtio_bridge must be aligned to one page.
+        phys = virt_to_phys(virtio_bridge);
+        // vma->vm_flags |= (VM_IO | VM_LOCKED | (VM_DONTEXPAND | VM_DONTDUMP)); Not sure should we add this line.
+        if(remap_pfn_range(vma, 
+                        vma->vm_start,
+                        phys >> PAGE_SHIFT,
+                        vma->vm_end - vma->vm_start,
+                        vma->vm_page_prot))
+            return -1;
+        pr_info("virtio bridge mmap succeed!\n");
+    } else {
+	    size_t size = vma->vm_end - vma->vm_start;
+        if (remap_pfn_range(vma,
+                vma->vm_start,
+                vma->vm_pgoff,
+                size,
+                vma->vm_page_prot))
+            return -1;
+        pr_info("non root region mmap succeed!\n");
+    }
     return 0;
 }
 

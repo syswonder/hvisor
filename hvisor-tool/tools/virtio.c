@@ -210,6 +210,7 @@ bool virtqueue_is_empty(VirtQueue *vq)
     }
 	read_barrier();
 	log_debug("vq->last_avail_idx is %d, vq->avail_ring->idx is %d", vq->last_avail_idx, vq->avail_ring->idx);
+    log_debug("vq->availring->idx adddress is %x", get_phys_addr(&vq->avail_ring->idx));
     if (vq->last_avail_idx == vq->avail_ring->idx)
         return true;
     else
@@ -599,9 +600,9 @@ void virtio_inject_irq(VirtQueue *vq)
     write_barrier();
     virtio_bridge->res_rear = (res_rear + 1) & (MAX_REQ - 1);
     write_barrier();
-    pthread_mutex_unlock(&RES_MUTEX);
 	vq->dev->regs.interrupt_status = VIRTIO_MMIO_INT_VRING;
     vq->dev->regs.interrupt_count ++;
+    pthread_mutex_unlock(&RES_MUTEX);
 	log_debug("inject irq to device %d, vq is %d", vq->dev->type, vq->vq_idx);
     ioctl(ko_fd, HVISOR_FINISH_REQ);
 }
@@ -757,10 +758,8 @@ int virtio_init()
     }
 
 	// mmap: map non root linux physical memory to virtual memory
-    int mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
     phys_addr = (void *)NON_ROOT_PHYS_START;
-    virt_addr = mmap(NULL, NON_ROOT_PHYS_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED | MAP_LOCKED , mem_fd, (off_t) phys_addr);
-	close(mem_fd);
+    virt_addr = mmap(NULL, NON_ROOT_PHYS_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED , ko_fd, (off_t) phys_addr);
     log_info("mmap virt addr is %#x", virt_addr);
 
     initialize_event_monitor();

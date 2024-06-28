@@ -164,7 +164,7 @@ static struct blkp_req* virtq_blk_handle_one_request(VirtQueue *vq)
     n = process_descriptor_chain(vq, &breq->idx, &iov, &flags, 0);
 	breq->iov = iov;
     if (n < 2 || n > BLK_SEG_MAX + 2) {
-        log_error("iov's num is wrong");
+        log_error("iov's num is wrong, n is %d", n);
         goto err_out;
     }
 
