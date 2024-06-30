@@ -4,6 +4,7 @@ use aarch64_cpu::registers::{Readable, Writeable};
 use tock_registers::{register_structs, registers::{ReadOnly, ReadWrite}};
 use crate::memory::{Frame, VirtAddr};
 
+pub const BLK_PCI_ID: usize = 0x10;
 
 const SMMU_BASE_ADDR:VirtAddr = 0x09050000;
 

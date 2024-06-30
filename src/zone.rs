@@ -2,8 +2,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 use spin::RwLock;
 
-#[cfg(target_arch = "aarch64")]
-use crate::arch::iommu::add_device;
+use crate::arch::iommu::{iommu_add_device, BLK_PCI_ID};
 
 use crate::arch::s2pt::Stage2PageTable;
 use crate::consts::MAX_CPU_NUM;
@@ -175,10 +174,9 @@ pub fn zone_create(
     info!("zone cpu_set: {:#b}", zone.cpu_set.bitmap);
     let cpu_set = zone.cpu_set;
 
-    #[cfg(target_arch = "aarch64")]
     if zone_id==0{
         // add_device(0, 0x8, zone.gpm.root_paddr());
-        add_device(0, 0x10, zone.gpm.root_paddr());
+        iommu_add_device(zone_id, BLK_PCI_ID, zone.gpm.root_paddr());
     }
 
     let new_zone_pointer = Arc::new(RwLock::new(zone));

@@ -38,7 +38,7 @@ mod percpu;
 mod platform;
 mod zone;
 
-use arch::iommu_init;
+use arch::iommu::iommu_init;
 
 use crate::consts::{DTB_IPA, MAX_CPU_NUM};
 use crate::platform::{ROOT_ZONE_DTB_ADDR, ROOT_ENTRY};

@@ -1,6 +1,6 @@
 use crate::{
     error::HvResult,
-    arch::iommu::{iommu_add_device, BLK_PCI_ID, PCI_MAP_BEG, PCI_MAP_SIZE, PCIE_MMIO_BEG, PCIE_MMIO_SIZE},
+    arch::iommu::{BLK_PCI_ID, PCI_MAP_BEG, PCI_MAP_SIZE, PCIE_MMIO_BEG, PCIE_MMIO_SIZE},
     memory::{
         addr::align_up, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
     },
@@ -143,7 +143,6 @@ impl Zone {
                 size,
                 MemFlags::READ | MemFlags::WRITE,
             ))?;
-            iommu_add_device(self.id, BLK_PCI_ID, self.gpm.root_paddr());
         }
 
         info!("VM stage 2 memory set: {:#x?}", self.gpm);
