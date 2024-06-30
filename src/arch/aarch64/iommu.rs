@@ -4,6 +4,7 @@ use aarch64_cpu::registers::{Readable, Writeable};
 use tock_registers::{register_structs, registers::{ReadOnly, ReadWrite}};
 use crate::memory::{Frame, VirtAddr};
 
+pub const BLK_PCI_ID: usize = 0x10;
 
 const SMMU_BASE_ADDR:VirtAddr = 0x09050000;
 
@@ -421,7 +422,7 @@ impl Smmuv3{
 static SMMUV3: spin::Once<Mutex<Smmuv3>> = spin::Once::new();
 
 /// smmuv3 init
-pub fn init(){
+pub fn iommu_init(){
     info!("Smmuv3 init...");
     SMMUV3.call_once(|| Mutex::new(Smmuv3::new()));
 }
@@ -444,7 +445,7 @@ pub fn smmuv3_size() -> usize{
 /// how to varify the sid?
 /// qemu_args += -trace smmuv3_*
 /// then you can see the output like: smmuv3_translate_success smmuv3-iommu-memory-region-16-2 sid=0x10 iova=0x8e041242 translated=0x8e041242 perm=0x3
-pub fn add_device(vmid:usize,sid:usize,root_pt:usize){
+pub fn iommu_add_device(vmid:usize, sid:usize, root_pt:usize){
     let mut smmu = SMMUV3.get().unwrap().lock();
     smmu.write_ste(sid as _, vmid as _, root_pt);
     info!("wirte ste: vmid=0x{:x},sid=0x{:x},root_pt:0x{:x}",vmid,sid,root_pt);

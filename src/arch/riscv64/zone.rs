@@ -1,5 +1,6 @@
 use crate::{
     error::HvResult,
+    arch::iommu::{BLK_PCI_ID, PCI_MAP_BEG, PCI_MAP_SIZE, PCIE_MMIO_BEG, PCIE_MMIO_SIZE},
     memory::{
         addr::align_up, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
     },
@@ -110,6 +111,7 @@ impl Zone {
         // }
 
         for node in fdt.find_all_nodes("/soc/pci") {
+            // PCIE_ECAM
             if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
                 let paddr = reg.starting_address as HostPhysAddr;
                 let size = reg.size.unwrap();
@@ -121,6 +123,26 @@ impl Zone {
                     MemFlags::READ | MemFlags::WRITE,
                 ))?;
             }
+            // PCIE_MMIO
+            let paddr = PCIE_MMIO_BEG;
+            let size = PCIE_MMIO_SIZE;
+            println!("map pci addr: {:#x}, size: {:#x}", paddr, size);
+            self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                 paddr,
+                 paddr,
+                 size,
+                 MemFlags::READ | MemFlags::WRITE,
+             ))?;
+            // add another region
+            let paddr = PCI_MAP_BEG;
+            let size = PCI_MAP_SIZE;
+            println!("map pci addr: {:#x}, size: {:#x}", paddr, size);
+            self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                paddr,
+                paddr,
+                size,
+                MemFlags::READ | MemFlags::WRITE,
+            ))?;
         }
 
         info!("VM stage 2 memory set: {:#x?}", self.gpm);
