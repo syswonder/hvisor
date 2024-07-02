@@ -118,14 +118,16 @@ static int zone_start(int argc, char *argv[]) {
     virt_addrs[0] = (unsigned long long) read_file(image_path, &image_sizes[0]);
     virt_addrs[1] = (unsigned long long) read_file(dtb_path, &image_sizes[1]);
 	
+	zone_info->image_size = image_sizes[0];
+	zone_info->dtb_size = image_sizes[1];
 	long page_size = sysconf(_SC_PAGESIZE);
     if (page_size == -1) {
         perror("sysconf");
         exit(EXIT_FAILURE);
     }
-	int mem_fd = open("/dev/mem", O_RDWR | O_SYNC);
+	int mem_fd = open("/dev/hvisor", O_RDWR);
 	if(mem_fd < 0) {
-		printf("open /dev/mem failed\n");
+		printf("open hvisor failed\n");
 		exit(1);
 	}
 	for(int i = 0; i < 2; i++) {

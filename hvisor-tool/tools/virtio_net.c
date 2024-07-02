@@ -215,9 +215,7 @@ int virtio_net_init(VirtIODevice *vdev, char *devname)
         return -1;
     }
     // set tap device O_NONBLOCK. If io operation like readv blocks, then return errno EWOULDBLOCK
-    int opt = 1;
-    if (ioctl(net->tapfd, FIONBIO, &opt) < 0) {
-        log_error("tap device O_NONBLOCK failed");
+    if (set_nonblocking(net->tapfd) < 0) {
         close(net->tapfd);
         net->tapfd = -1;
     }

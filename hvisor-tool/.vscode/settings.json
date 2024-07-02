@@ -11,6 +11,8 @@
 		"sbi.h": "c",
 		"errno.h": "c",
 		"stdlib.h": "c",
-		"pty.h": "c"
+		"pty.h": "c",
+		"cachectl.h": "c",
+		"cacheflush.h": "c"
 	}
 }

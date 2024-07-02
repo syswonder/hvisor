@@ -14,7 +14,7 @@
 #include <linux/gfp.h>
 #include <linux/vmalloc.h>
 #include <linux/string.h> 
-
+#include <asm/cacheflush.h>
 struct virtio_bridge *virtio_bridge; 
 int hvisor_irq = -1;
 static struct task_struct *task = NULL;
@@ -49,6 +49,30 @@ static int hvisor_finish_req(void)
     return 0;
 }
 
+static int flush_cache(__u64 phys_start, __u64 size) {
+    struct vm_struct *vma;
+    int err = 0;
+    size = PAGE_ALIGN(size);
+    vma = __get_vm_area(size, VM_IOREMAP, VMALLOC_START, VMALLOC_END);
+    if (!vma) {
+        pr_err("hvisor: failed to allocate virtual kernel memory for image\n");
+        return -ENOMEM;
+    }
+    vma->phys_addr = phys_start;
+
+    if (ioremap_page_range((unsigned long)vma->addr, (unsigned long)(vma->addr + size), phys_start, PAGE_KERNEL_EXEC)) {
+        pr_err("hvisor: failed to ioremap image\n");
+        err = -EFAULT;
+        goto unmap_vma;
+    }
+    // flush icache will also flush dcache
+    flush_icache_range((unsigned long)(vma->addr), (unsigned long)(vma->addr + size));
+
+unmap_vma:
+    vunmap(vma->addr);
+    return err;
+}
+
 static int hvisor_zone_start(struct hvisor_zone_info __user* arg) {
     struct hvisor_zone_info *zone_info;
     int err = 0;
@@ -60,8 +84,10 @@ static int hvisor_zone_start(struct hvisor_zone_info __user* arg) {
     }
     if (copy_from_user(zone_info, arg, sizeof(struct hvisor_zone_info))) 
         return -EFAULT;
-    if (err)
-        return err;
+
+    flush_cache(zone_info->image_phys_addr, zone_info->image_size);
+    flush_cache(zone_info->dtb_phys_addr, zone_info->dtb_size);
+
     err = hvisor_call(HVISOR_HC_START_ZONE, __pa(zone_info), 0);
 	kfree(zone_info);
     return err;
@@ -97,29 +123,28 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
 static int hvisor_map(struct file * filp, struct vm_area_struct *vma) 
 {
     unsigned long phys;
-    if (hvisor_irq == -1) {
-        pr_err("virtio device is not available\n");
-        return -1;
-    }
+    int err;
     if (vma->vm_pgoff == 0) {
         // virtio_bridge must be aligned to one page.
         phys = virt_to_phys(virtio_bridge);
         // vma->vm_flags |= (VM_IO | VM_LOCKED | (VM_DONTEXPAND | VM_DONTDUMP)); Not sure should we add this line.
-        if(remap_pfn_range(vma, 
+        err = remap_pfn_range(vma, 
                         vma->vm_start,
                         phys >> PAGE_SHIFT,
                         vma->vm_end - vma->vm_start,
-                        vma->vm_page_prot))
-            return -1;
+                        vma->vm_page_prot);
+        if (err)
+            return err;
         pr_info("virtio bridge mmap succeed!\n");
     } else {
 	    size_t size = vma->vm_end - vma->vm_start;
-        if (remap_pfn_range(vma,
+        err = remap_pfn_range(vma,
                 vma->vm_start,
                 vma->vm_pgoff,
                 size,
-                vma->vm_page_prot))
-            return -1;
+                vma->vm_page_prot);
+        if (err)
+            return err;
         pr_info("non root region mmap succeed!\n");
     }
     return 0;
@@ -178,6 +203,7 @@ static int __init hvisor_init(void)
 
     if (!node) {
         pr_info("hvisor_device node not found in dtb, can't use virtio devices\n");
+        return -ENODEV;
     } else {
         hvisor_irq = of_irq_get(node, 0);
         err = request_irq(hvisor_irq, irq_handler, IRQF_SHARED | IRQF_TRIGGER_RISING, "hvisor", &hvisor_misc_dev);
@@ -185,7 +211,7 @@ static int __init hvisor_init(void)
             pr_err("hvisor cannot register IRQ, err is %d\n", err);
             free_irq(hvisor_irq,&hvisor_misc_dev);
             misc_deregister(&hvisor_misc_dev);
-            return -1;
+            return err;
         }
     }
     pr_info("hvisor init done!!!\n");
