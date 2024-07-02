@@ -52,10 +52,19 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
         }
         len = readv(dev->master_fd, iov, n);
         if (len < 0 && errno == EWOULDBLOCK) {
-            log_info("no more packets");
+            log_info("no more bytes");
 			vq->last_avail_idx--;
 			break;
-        }
+        } else if (len < 0) {
+            log_error("Failed to read from console, errno is %d", errno);
+			vq->last_avail_idx--;
+            break;
+        } 
+        // else {
+        //     log_info("len is %d, received data is ", len);
+        //     for(int i=0; i<len; i++) 
+        //         log_info("%c", *(char*)&iov->iov_base[i]);
+        // }
         update_used_ring(vq, idx, len);
         free(iov);
     }
@@ -78,17 +87,20 @@ int virtio_console_init(VirtIODevice *vdev) {
     if (unlockpt(master_fd) < 0) {
         log_error("Failed to unlock pty, errno is %d", errno);
     }
+    dev->master_fd = master_fd;
 
     slave_name = ptsname(master_fd);
     if (slave_name == NULL) {
         log_error("Failed to get slave name, errno is %d", errno);
     }
     log_warn("char device redirected to %s", slave_name);
-    flags = fcntl(master_fd, F_GETFL, 0);
-    fcntl(master_fd, F_SETFL, flags | O_NONBLOCK);
-    dev->master_fd = master_fd;
+    if (set_nonblocking(dev->master_fd) < 0) {
+        dev->master_fd = -1;
+        close(dev->master_fd);
+    }
 
     dev->event = add_event(dev->master_fd, EPOLLIN, virtio_console_event_handler, vdev);
+
     if (dev->event == NULL) {
         log_error("Can't register console event");
         close(master_fd);
@@ -113,13 +125,20 @@ static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq) {
     uint16_t idx;
     ssize_t len;
     struct iovec *iov = NULL;
+    static int count = 0;
+    count++;
     if (dev->master_fd <= 0) {
         log_error("Console master fd is not ready");
         return ;
     }
 
     n = process_descriptor_chain(vq, &idx, &iov, NULL, 0);
-    log_info("console txq: n is %d", n);
+    if (count % 100 == 0) {
+        log_info("console txq: n is %d, data is ", n);
+        for (int i=0; i<iov->iov_len; i++)
+            printf("%c", *(char*)&iov->iov_base[i]);
+        printf("\n");
+    }
     if (n < 1) {
         return ;
     }

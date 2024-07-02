@@ -31,6 +31,20 @@ void *virt_addr;
 void *phys_addr;
 
 #define WAIT_TIME 1000 // 1ms
+
+int set_nonblocking(int fd) {
+    int flags = fcntl(fd, F_GETFL, 0);
+    if (flags == -1) {
+        log_error("fcntl(F_GETFL) failed");
+        return -1;
+    }
+    if (fcntl(fd, F_SETFL, flags | O_NONBLOCK) == -1) {
+        log_error("fcntl(F_SETFL) failed");
+        return -1;
+    }
+    return 0;
+}
+
 inline int is_queue_full(unsigned int front, unsigned int rear, unsigned int size)
 {
     if (((rear + 1) & (size - 1)) == front) {
@@ -208,7 +222,7 @@ bool virtqueue_is_empty(VirtQueue *vq)
         log_error("virtqueue's avail ring is invalid");
         return true;
     }
-	read_barrier();
+	// read_barrier();
 	log_debug("vq->last_avail_idx is %d, vq->avail_ring->idx is %d", vq->last_avail_idx, vq->avail_ring->idx);
     log_debug("vq->availring->idx adddress is %x", get_phys_addr(&vq->avail_ring->idx));
     if (vq->last_avail_idx == vq->avail_ring->idx)
@@ -574,7 +588,7 @@ void virtio_inject_irq(VirtQueue *vq)
 	uint16_t last_used_idx, idx, event_idx;
 	last_used_idx = vq->last_used_idx;
 	vq->last_used_idx = idx = vq->used_ring->idx;
-	read_barrier();
+	// read_barrier();
 	if (idx == last_used_idx) {
 		log_debug("idx equals last_used_idx");
 		return ;
@@ -694,7 +708,7 @@ void handle_virtio_requests()
 			continue;
 		}
 		while(1) {
-			read_barrier();
+			// read_barrier();
 			if (!is_queue_empty(req_front, virtio_bridge->req_rear)) {
 				count = 0;
 				proc_count++;
@@ -726,7 +740,7 @@ int virtio_init()
 {
     // The higher log level is , faster virtio-blk will be.
     int err;
-	int log_level = LOG_WARN;
+	int log_level = LOG_DEBUG;
 
 	sigset_t block_mask;
 	sigfillset(&block_mask);

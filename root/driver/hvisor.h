@@ -25,6 +25,8 @@ struct hvisor_zone_info {
 	__u64 zone_id;
 	__u64 image_phys_addr;
 	__u64 dtb_phys_addr;
+	__u64 image_size;
+	__u64 dtb_size;
 };
 
 // receive request from el2
@@ -51,7 +53,7 @@ struct virtio_bridge {
     __u32 res_rear;
 	struct device_req req_list[MAX_REQ];
     struct device_res res_list[MAX_REQ];
-	__u8 cfg_flags[MAX_CPUS];
+	__u64 cfg_flags[MAX_CPUS]; // avoid false sharing, set cfg_flag to u64
 	__u64 cfg_values[MAX_CPUS];
 	// When config is okay to use, remove these
 	__u64 mmio_addrs[MAX_DEVS];
