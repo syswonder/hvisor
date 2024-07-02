@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 pub mod cpu;
 pub mod entry;
 pub mod ipi;

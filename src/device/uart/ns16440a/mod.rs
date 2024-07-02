@@ -3,7 +3,6 @@ use crate::device::common::MMIODerefWrapper;
 use crate::memory::addr::{PhysAddr, VirtAddr};
 use core::arch::global_asm;
 use spin::Mutex;
-use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_bitfields;
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite, WriteOnly};

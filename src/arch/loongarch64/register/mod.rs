@@ -3,6 +3,8 @@
 // Authors:       wheatfox(enkerewpo@hotmail.com)
 // Created:       2023-12-20
 
+#![allow(unused)]
+
 use bit_field::BitField;
 use log::*;
 use loongArch64::register::{tcfg, tval};

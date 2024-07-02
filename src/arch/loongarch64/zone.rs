@@ -16,16 +16,17 @@ impl Zone {
         guest_dtb: usize,
         dtb_ipa: usize,
     ) -> HvResult {
-        todo!()
+        info!("loongarch64: mm: pt_init");
+        Ok(())
     }
 
     pub fn mmio_init(&mut self, fdt: &fdt::Fdt) {
-        todo!()
+        warn!("loongarch64: mm: mmio_init do nothing");
     }
     pub fn isa_init(&mut self, fdt: &fdt::Fdt) {
-        todo!()
+        warn!("loongarch64: mm: isa_init do nothing");
     }
     pub fn irq_bitmap_init(&mut self, fdt: &fdt::Fdt) {
-        todo!()
+        warn!("loongarch64: mm: irq_bitmap_init do nothing");
     }
 }
