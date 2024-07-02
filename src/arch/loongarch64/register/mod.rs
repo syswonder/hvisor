@@ -6,7 +6,6 @@
 #![allow(unused)]
 
 use bit_field::BitField;
-use log::*;
 use loongArch64::register::{tcfg, tval};
 
 #[macro_use]

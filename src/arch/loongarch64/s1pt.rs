@@ -10,7 +10,7 @@ use loongArch64::register::MemoryAccessType;
 bitflags::bitflags! {
     /// Memory attribute fields in the LoongArch64 translation table format descriptors.
     #[derive(Clone, Copy, Debug)]
-    pub struct DescriptorAttr: u64 {
+    pub struct DescriptorAttr: usize {
         const V = 1 << 0; // Valid
         const D = 1 << 1; // Dirty
         const PLV = 0b11 << 2; // Privilege Level
@@ -58,10 +58,10 @@ impl From<MemFlags> for DescriptorAttr {
 
 #[derive(Clone, Copy, Debug)]
 #[repr(transparent)]
-pub struct PageTableEntry(u64);
+pub struct PageTableEntry(usize);
 
 // 12-47
-const PTE_PPN_MASK: u64 = 0x0000_ffff_ffff_f000;
+const PTE_PPN_MASK: usize = 0x0000_ffff_ffff_f000;
 
 impl PageTableEntry {
     pub const fn empty() -> Self {
@@ -80,10 +80,12 @@ impl GenericPTE for PageTableEntry {
         self.0 == 0
     }
     fn is_present(&self) -> bool {
-        todo!()
+        // check the P bit
+        self.0 & DescriptorAttr::P.bits() != 0
     }
     fn set_addr(&mut self, addr: HostPhysAddr) {
-        todo!()
+        // set the PPN range to the new address
+        self.0 = (self.0 & !PTE_PPN_MASK) | addr;
     }
     fn set_flags(&mut self, flags: MemFlags, is_huge: bool) {
         self.0 = DescriptorAttr::from(flags).bits();
@@ -105,19 +107,19 @@ impl GenericPTE for PageTableEntry {
 
 impl PageTableEntry {
     pub fn set_flags_and_mat(&mut self, flags: DescriptorAttr, mat: MemoryAccessType) {
-        self.0 = (self.0 & !DescriptorAttr::MAT.bits()) | flags.bits() | mat as u64;
+        self.0 = (self.0 & !DescriptorAttr::MAT.bits()) | flags.bits() | mat as usize;
     }
 }
 
-pub struct S2PTInstr;
+pub struct S1PTInstr;
 
-impl PagingInstr for S2PTInstr {
+impl PagingInstr for S1PTInstr {
     unsafe fn activate(root_pa: HostPhysAddr) {
-        todo!()
+        warn!("loongarch64: S1PTInstr::activate: root_pa: {:#x?}", root_pa);
     }
     fn flush(vaddr: Option<usize>) {
-        todo!()
+        warn!("loongarch64: S1PTInstr::flush: vaddr: {:#x?}", vaddr);
     }
 }
 
-pub type Stage1PageTable = Level4PageTable<GuestPhysAddr, PageTableEntry, S2PTInstr>;
+pub type Stage1PageTable = Level4PageTable<GuestPhysAddr, PageTableEntry, S1PTInstr>;

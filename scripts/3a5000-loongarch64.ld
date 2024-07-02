@@ -14,6 +14,11 @@ SECTIONS
     }
 
     . = ALIGN(4K);
+    .trap_entry : {
+        *(.trap_entry)
+    }
+
+    . = ALIGN(4K);
     etext = .;
     srodata = .;
     .rodata : {
