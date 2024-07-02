@@ -1,4 +1,9 @@
+use super::ipi::*;
+use crate::device::common::MMIODerefWrapper;
+use core::arch::asm;
 use loongArch64::register::cpuid;
+use loongArch64::register::pgdl;
+use tock_registers::interfaces::Writeable;
 
 use crate::{
     consts::{PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
@@ -32,13 +37,18 @@ impl ArchCpu {
         PER_CPU_ARRAY_PTR as VirtAddr + (self.get_cpuid() + 1) as usize * PER_CPU_SIZE - 8
     }
     pub fn init(&mut self, entry: usize, cpu_id: usize, dtb: usize) {
-        todo!("loongarch64 archcpu init");
+        println!(
+            "loongarch64: ArchCpu::init: entry={:#x}, cpu_id={}",
+            entry, cpu_id
+        );
     }
     pub fn run(&self) -> ! {
-        todo!("loongarch64 archcpu run");
+        println!("loongarch64: ArchCpu::run: cpuid={}", self.get_cpuid());
+        panic!("should not reach here");
     }
     pub fn idle(&self) -> ! {
-        todo!("loongarch64 archcpu idle");
+        println!("loongarch64: ArchCpu::idle: cpuid={}", self.get_cpuid());
+        panic!("should not reach here");
     }
 }
 
@@ -47,5 +57,21 @@ pub fn this_cpu_id() -> usize {
 }
 
 pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
-    todo!("loongarch64 cpu start");
+    println!(
+        "loongarch64: cpu_start: cpuid={}, start_addr={:#x}, opaque={:#x}",
+        cpuid, start_addr, opaque
+    );
+    let ipi: &MMIODerefWrapper<IpiRegisters> = match cpuid {
+        1 => &CORE1_IPI,
+        2 => &CORE2_IPI,
+        3 => &CORE3_IPI,
+        _ => {
+            error!("loongarch64: cpu_start: invalid cpuid={}", cpuid);
+            return;
+        }
+    };
+    ipi.ipi_enable.write(IpiEnable::IPIENABLE.val(0xffffffff));
+    let entry_addr = start_addr;
+    mail_send(entry_addr, cpuid, 0);
+    ipi_write_action(cpuid, SMP_BOOT_CPU);
 }
