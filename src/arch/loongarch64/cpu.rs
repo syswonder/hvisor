@@ -1,6 +1,7 @@
 use super::ipi::*;
 use crate::device::common::MMIODerefWrapper;
 use core::arch::asm;
+use core::fmt::{self, Debug, Formatter};
 use loongArch64::register::cpuid;
 use loongArch64::register::pgdl;
 use tock_registers::interfaces::Writeable;
@@ -11,13 +12,22 @@ use crate::{
 };
 
 #[repr(C)]
-#[derive(Debug)]
 pub struct ArchCpu {
     pub r: [usize; 32], // r0~r31
     pub sepc: usize,
     pub stack_top: usize,
     pub cpuid: usize,
     pub power_on: bool,
+}
+
+impl Debug for ArchCpu {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(
+            f,
+            "ArchCpu{{r:{:?},sepc:{:#x},stack_top:{:#x},cpuid:{},power_on:{}}}",
+            self.r, self.sepc, self.stack_top, self.cpuid, self.power_on
+        )
+    }
 }
 
 impl ArchCpu {
@@ -37,17 +47,19 @@ impl ArchCpu {
         PER_CPU_ARRAY_PTR as VirtAddr + (self.get_cpuid() + 1) as usize * PER_CPU_SIZE - 8
     }
     pub fn init(&mut self, entry: usize, cpu_id: usize, dtb: usize) {
-        println!(
+        info!(
             "loongarch64: ArchCpu::init: entry={:#x}, cpu_id={}",
             entry, cpu_id
         );
     }
     pub fn run(&self) -> ! {
-        println!("loongarch64: ArchCpu::run: cpuid={}", self.get_cpuid());
-        panic!("should not reach here");
+        info!("loongarch64: CPU{} run@{:#x}", self.get_cpuid(), self.sepc);
+        info!("loongarch64: @{:#x?}", self);
+        warn!("pause before running first vcpu");
+        loop {}
     }
     pub fn idle(&self) -> ! {
-        println!("loongarch64: ArchCpu::idle: cpuid={}", self.get_cpuid());
+        info!("loongarch64: ArchCpu::idle: cpuid={}", self.get_cpuid());
         panic!("should not reach here");
     }
 }
@@ -57,7 +69,7 @@ pub fn this_cpu_id() -> usize {
 }
 
 pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
-    println!(
+    info!(
         "loongarch64: cpu_start: cpuid={}, start_addr={:#x}, opaque={:#x}",
         cpuid, start_addr, opaque
     );

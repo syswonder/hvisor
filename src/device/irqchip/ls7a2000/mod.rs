@@ -12,7 +12,7 @@ pub fn primary_init_late() {
     warn!("loongarch64: irqchip: primary_init_late do nothing");
 }
 pub fn percpu_init() {
-    info!("percpu_init");
+    info!("percpu_init do nothing");
 }
 pub fn inject_irq(_irq: usize, is_hardware: bool) {
     warn!("loongarch64: irqchip: inject_irq do nothing");

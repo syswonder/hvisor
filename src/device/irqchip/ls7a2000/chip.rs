@@ -4,7 +4,6 @@
 use crate::device::common::MMIODerefWrapper;
 use alloc::string::String;
 use core::ptr::*;
-use log::*;
 use tock_registers::fields::FieldValue;
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 use tock_registers::register_bitfields;
