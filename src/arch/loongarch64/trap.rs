@@ -1,3 +1,4 @@
+use super::zone::ZoneContext;
 use core::arch;
 use core::arch::asm;
 use core::panic;
@@ -8,10 +9,20 @@ use loongArch64::register::tcfg;
 pub fn install_trap_vector() {
     // set CSR.EENTRY to _hyp_trap_vector
     // eentry::set_eentry(_hyp_trap_vector as usize);
-    println!(
-        "loongarch64: _hyp_trap_vector at 0x{:x}",
-        _hyp_trap_vector as usize
-    );
+    // println!(
+    //     "loongarch64: _hyp_trap_vector at 0x{:x}",
+    //     _hyp_trap_vector as usize
+    // );
+    extern "C" {
+        fn print_char(c: u8);
+    }
+    unsafe {
+        print_char('X' as u8);
+    }
+    // test CSR definition
+    use crate::arch::register::gstat;
+    let guest_mode = gstat::read().pgm();
+    println!("loongarch64: guest_mode = {}", guest_mode);
 }
 
 /// Translate exception code to string
@@ -595,5 +606,367 @@ fn _hyp_trap_return(trap_addr: usize) {
           "ertn",
           LOONGARCH_CSR_DESAVE = const 0x502
         );
+    }
+}
+
+fn extract_field(inst: usize, offset: usize, length: usize) -> usize {
+    let mask = (1 << length) - 1;
+    (inst >> offset) & mask
+}
+
+/// get the sign-extended imm12 to i64
+fn imm12toi64(imm12: usize) -> isize {
+    let imm12 = imm12 as isize;
+    let imm12 = imm12 << 52;
+    imm12 >> 52
+}
+
+const IPI_BIT: usize = 1 << 12;
+const TIMER_BIT: usize = 1 << 11;
+
+fn handle_interrupt(is: usize) {
+    match is {
+        _ if is & IPI_BIT != 0 => {
+            info!("ipi interrupt");
+        }
+        _ if is & TIMER_BIT != 0 => {
+            loongArch64::register::ticlr::clear_timer_interrupt();
+        }
+        _ => {
+            info!("not handled interrupt");
+        }
+    }
+}
+
+fn handle_hvc(ctx: &mut ZoneContext) {
+    // HVC
+    // hvcl's code should always be 0! we use a7 as hvc call code
+    // this convention should be followed by the guest os to properly use HVC call - wheatfox
+    // and a0 to a6 are the arguments, a0 is the return val
+    let hvc_id = ctx.get_a7();
+
+    info!("HVC exception, HVC call code: {:#x}", hvc_id);
+    // let retval = crate::hypercall::_hypercall(ctx, hvc_id);
+    // let retval = crate::hypercall::hypercall(hvc_id, [ctx.get_a0(), ctx.get_a1(), ctx.get_a2()]);
+    // ctx.set_a0(retval);
+    ctx.sepc += 4;
+    // jump to next instruction
+}
+
+fn emulate_cpucfg(ins: usize, ctx: &mut ZoneContext) {
+    // cpucfg
+    // now let get rd and rj, cpucfg rd[4:0], rj[9:5]
+    // let rd = ins & 0x1f;
+    // let rj = (ins >> 5) & 0x1f;
+    // let cpucfg_target_idx = ctx.x[rj];
+    let rd = extract_field(ins, 0, 5);
+    let rj = extract_field(ins, 5, 5);
+    let cpucfg_target_idx = ctx.x[rj];
+
+    const KVM_MAX_CPUCFG_REGS: usize = 21;
+
+    info!(
+        "cpucfg emulation, target cpucfg index is {:#x}",
+        cpucfg_target_idx
+    );
+
+    if cpucfg_target_idx >= KVM_MAX_CPUCFG_REGS {
+        // invalid cpucfg target
+
+        warn!("invalid cpucfg target");
+        ctx.x[rd] = 0;
+        // according to manual, we should set result to 0 if index is invalid
+    } else {
+        // just run cpucfg here
+        let result: usize;
+        unsafe {
+            asm!("cpucfg {}, {}", out(reg) result, in(reg) cpucfg_target_idx);
+        }
+        ctx.x[rd] = result;
+        // finish the emulation by tweaking the ZoneContext's registers
+        // as ctx.sepc is already added by 4 which means we will jump to next instruction - wheatfox
+    }
+}
+
+fn emulate_csrx(ins: usize, ctx: &mut ZoneContext) {
+    // csrrd csrwr csrxchg
+
+    // let ty = (ins >> 5) & 0x1f;
+    // let rd = ins & 0x1f;
+    // let csr = (ins >> 10) & 0x3fff;
+    let ty = extract_field(ins, 5, 5);
+    let rd = extract_field(ins, 0, 5);
+    let csr = extract_field(ins, 10, 14);
+    // ty: [9:5], 0 - csrrd, 1 - csrwr, else - csrxchg
+    // rd [4:0]
+    // csr [23:10] 14 bits
+    match ty {
+        0 => {
+            // csrrd
+
+            info!("csrrd emulation for CSR {:#x}", csr);
+            ctx.x[rd] = 0;
+            // just set it to 0
+        }
+        1 => {
+            // csrwr
+
+            info!("csrwr emulation for CSR {:#x}", csr);
+            ctx.x[rd] = 0;
+            // do nothing to GCSR, but we also need to set rd to 0
+        }
+        _ => {
+            // csrxchg
+
+            info!("csrxchg emulation for CSR {:#x}", csr);
+            ctx.x[rd] = 0;
+            // do nothing to GCSR, but we also need to set rd to 0
+        }
+    }
+}
+
+fn emulate_cacop(ins: usize, ctx: &mut ZoneContext) {
+    // cacop code,rj,si12   0000011000 si12 rj[9:5] code[4:0]
+    warn!("cacop emulation not implemented, skipped this instruction");
+}
+
+fn emulate_idle(ins: usize, ctx: &mut ZoneContext) {
+    // idle level           0000011001 0010001 level[14:0]
+    let level = extract_field(ins, 0, 15);
+    warn!("guest request an idle at level {:#x}", level);
+    ctx.sepc -= 4;
+}
+
+fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
+    // iocsrrd.b rd, rj     0000011001 001000000000 rj[9:5] rd[4:0]
+    // iocsrrd.h rd, rj     0000011001 001000000001 rj[9:5] rd[4:0]
+    // iocsrrd.w rd, rj     0000011001 001000000010 rj[9:5] rd[4:0]
+    // iocsrrd.d rd, rj     0000011001 001000000011 rj[9:5] rd[4:0]
+    // iocsrwr.b rd, rj     0000011001 001000000100 rj[9:5] rd[4:0]
+    // iocsrwr.h rd, rj     0000011001 001000000101 rj[9:5] rd[4:0]
+    // iocsrwr.w rd, rj     0000011001 001000000110 rj[9:5] rd[4:0]
+    // iocsrwr.d rd, rj     0000011001 001000000111 rj[9:5] rd[4:0]
+    // let ty = (ins >> 10) & 0x7;
+    // let rd = ins & 0x1f;
+    // let rj = (ins >> 5) & 0x1f;
+    let ty = extract_field(ins, 10, 3);
+    let rd = extract_field(ins, 0, 5);
+    let rj = extract_field(ins, 5, 5);
+    info!("iocsr emulation, ty = {}, rd = {}, rj = {}", ty, rd, rj);
+    info!("GPR[rd] = {:#x}, GPR[rj] = {:#x}", ctx.x[rd], ctx.x[rj]);
+    warn!("iocsr emulation not enabled for debugging purpose(just for now)");
+    panic!("wait!!!");
+}
+
+const UART0_BASE: usize = 0x1fe001e0;
+const UART0_END: usize = 0x1fe001e8;
+
+fn emulate_ld_b(ins: usize, ctx: &mut ZoneContext) {
+    // ld.b   rd, rj, si12  opcode[31:22]=0010100000 si12[21:10] rj[9:5] rd[4:0]
+    // let rd = ins & 0x1f;
+    // let rj = (ins >> 5) & 0x1f;
+    // let si12 = (ins >> 10) & 0x3ff; ??? should be 0xfff
+    let rd = extract_field(ins, 0, 5);
+    let rj = extract_field(ins, 5, 5);
+    let si12 = extract_field(ins, 10, 12);
+
+    info!("ld.b emulation, rd = {}, rj = {}, si12 = {}", rd, rj, si12);
+    // vaddr = GR[rj] + SignExt(si12, GRLEN(64))
+    // paddr = translate(vaddr)
+    // byte = load (paddr, BYTE)
+    // GR[rd] = byte
+    let vaddr = ctx.x[rj] as isize + imm12toi64(si12);
+    info!("vaddr = 0x{:x}", vaddr as usize);
+    let offset = (vaddr - UART0_BASE as isize) as usize; // minus the UART0 base address
+                                                         // let mut uart0 = UART_EMU.lock();
+                                                         // let byte = uart0.read(offset);
+                                                         // info!("byte = 0x{:x}", byte as usize);
+                                                         // ctx.x[rd] = byte as usize;
+}
+
+fn emulate_st_b(ins: usize, ctx: &mut ZoneContext) {
+    // st.b   rd, rj, si12  opcode[31:22]=0010100100 si12[21:10] rj[9:5] rd[4:0]
+    // let rd = ins & 0x1f;
+    // let rj = (ins >> 5) & 0x1f;
+    // let si12 = (ins >> 10) & 0x3ff;
+    let rd = extract_field(ins, 0, 5);
+    let rj = extract_field(ins, 5, 5);
+    let si12 = extract_field(ins, 10, 12);
+    // info!("st.b emulation, rd = {}, rj = {}, si12 = {}", rd, rj, si12);
+    // vaddr = GR[rj] + SignExt(si12, GRLEN(64))
+    // paddr = translate(vaddr)
+    // store (paddr, BYTE, GR[rd])
+    let vaddr = ctx.x[rj] as isize + imm12toi64(si12);
+    // info!("vaddr = 0x{:x}", vaddr as usize);
+    let offset = (vaddr - UART0_BASE as isize) as usize; // minus the UART0 base address
+                                                         // for VGA
+                                                         // let mut uart0 = UART_EMU.lock();
+                                                         // let byte = ctx.x[rd] as u8;
+                                                         // info!("byte = 0x{:x}", byte as usize);
+                                                         // let cur_zone = current_vcpu().unwrap().get_zone().unwrap();
+                                                         // let cur_zone_id = cur_zone.get_zone_id();
+                                                         // uart0.write(offset, byte, false, (cur_zone_id - 1) as i32);
+                                                         // drop(uart0); // !!!! very important
+                                                         // cur_zone.inner.lock().uart_emu.write(offset, byte, true, 0);
+}
+
+fn emulate_ld_bu(ins: usize, ctx: &mut ZoneContext) {
+    // ld.bu  rd, rj, si12  opcode[31:22]=0010101000 si12[21:10] rj[9:5] rd[4:0]
+    // let rd = ins & 0x1f;
+    // let rj = (ins >> 5) & 0x1f;
+    // let si12 = (ins >> 10) & 0x3ff;
+    let rd = extract_field(ins, 0, 5);
+    let rj = extract_field(ins, 5, 5);
+    let si12 = extract_field(ins, 10, 12);
+
+    // info!("ld.bu emulation, rd = {}, rj = {}, si12 = {}", rd, rj, si12);
+    // vaddr = GR[rj] + SignExt(si12, GRLEN(64))
+    // paddr = translate(vaddr)
+    // byte = load (paddr, BYTE)
+    // GR[rd] = byte
+    let vaddr = ctx.x[rj] as isize + imm12toi64(si12);
+    // info!("vaddr = 0x{:x}", vaddr as usize);
+    let offset = (vaddr - UART0_BASE as isize) as usize; // minus the UART0 base address
+                                                         // let mut uart0 = UART_EMU.lock();
+                                                         // let byte = uart0.read(offset);
+                                                         // info!("byte = 0x{:x}", byte as usize);
+                                                         // ctx.x[rd] = byte as usize;
+}
+
+fn check_op_type(inst: usize, opcode: usize, opcode_length: usize) -> bool {
+    let mask = (1 << opcode_length) - 1;
+    let shifted = inst >> (32 - opcode_length);
+    (shifted & mask) == opcode
+}
+
+const OPCODE_CPUCFG: usize = 0b0000000000000000011011;
+const OPCODE_CPUCFG_LENGTH: usize = 22;
+const OPCODE_CACOP: usize = 0b0000011000;
+const OPCODE_CACOP_LENGTH: usize = 10;
+const OPCODE_IDLE: usize = 0b00000_11001_0010001;
+const OPCODE_IDLE_LENGTH: usize = 17;
+const OPCODE_CSRX: usize = 0b00000100;
+const OPCODE_CSRX_LENGTH: usize = 8;
+const OPCODE_IOCSR: usize = 0b00000_11001_001000000;
+const OPCODE_IOCSR_LENGTH: usize = 19;
+const OPCODE_LD_B: usize = 0b0010100000;
+const OPCODE_LD_B_LENGTH: usize = 10;
+const OPCODE_ST_B: usize = 0b0010100100;
+const OPCODE_ST_B_LENGTH: usize = 10;
+const OPCODE_LD_BU: usize = 0b0010101000;
+const OPCODE_LD_BU_LENGTH: usize = 10;
+type OpcodeHandler = fn(usize, &mut ZoneContext);
+
+fn emulate_instruction(era: usize, ins: usize, ctx: &mut ZoneContext) {
+    let pc = era;
+    ctx.sepc = pc + 4;
+
+    // after we emulate the instruction, we should jump to next instruction
+    let opcodes = vec![
+        (
+            OPCODE_CPUCFG,
+            OPCODE_CPUCFG_LENGTH,
+            emulate_cpucfg as OpcodeHandler,
+        ),
+        (
+            OPCODE_CACOP,
+            OPCODE_CACOP_LENGTH,
+            emulate_cacop as OpcodeHandler,
+        ),
+        (
+            OPCODE_IDLE,
+            OPCODE_IDLE_LENGTH,
+            emulate_idle as OpcodeHandler,
+        ),
+        (
+            OPCODE_CSRX,
+            OPCODE_CSRX_LENGTH,
+            emulate_csrx as OpcodeHandler,
+        ),
+        (
+            OPCODE_IOCSR,
+            OPCODE_IOCSR_LENGTH,
+            emulate_iocsr as OpcodeHandler,
+        ),
+        (
+            OPCODE_LD_B,
+            OPCODE_LD_B_LENGTH,
+            emulate_ld_b as OpcodeHandler,
+        ),
+        (
+            OPCODE_ST_B,
+            OPCODE_ST_B_LENGTH,
+            emulate_st_b as OpcodeHandler,
+        ),
+        (
+            OPCODE_LD_BU,
+            OPCODE_LD_BU_LENGTH,
+            emulate_ld_bu as OpcodeHandler,
+        ),
+    ];
+    for &(code, length, handler) in &opcodes {
+        if check_op_type(ins, code, length) {
+            handler(ins, ctx);
+            return;
+        }
+    }
+
+    error!("Unexpected opcode encountered, ins = {:#x}", ins);
+    loop {}
+}
+
+const ECODE_INT: usize = 0x0;
+const ECODE_GSPR: usize = 0x16;
+const ECODE_PIL: usize = 0x1;
+const ECODE_PIS: usize = 0x2;
+const ECODE_HVC: usize = 0x17;
+
+fn handle_exception(
+    ecode: usize,
+    era: usize,
+    is: usize,
+    badi: usize,
+    badv: usize,
+    ctx: &mut ZoneContext,
+) {
+    match ecode {
+        ECODE_INT => {
+            // INT = 0x0,   Interrupt
+            handle_interrupt(is);
+        }
+        ECODE_GSPR => {
+            // according to kvm's code, we should emulate the instruction that cause the GSPR exception - wheatfox 2024.4.12
+            // GSPR = 0x16, Guest Sensitive Privileged Resource
+            info!("GSPR exception");
+            emulate_instruction(era, badi, ctx);
+        }
+        ECODE_PIL | ECODE_PIS => {
+            // PIL = 0x1,   Page Illegal Load
+            // PIS = 0x2,   Page Illegal Store
+            // info!("handling page invalid exception...");
+            if badv >= UART0_BASE && badv < UART0_END {
+                // info!("handling UART0 mmio emulation");
+                emulate_instruction(era, badi, ctx);
+            } else {
+                if ecode == ECODE_PIL {
+                    error!("Page Illegal Load");
+                } else {
+                    error!("Page Illegal Store");
+                }
+                loop {}
+            }
+        }
+        ECODE_HVC => {
+            // HVC = 0x17,  Hypervisor Call
+            info!("handling HVC exception...");
+            handle_hvc(ctx);
+        }
+        _ => {
+            error!(
+          "unhandled exception, ecode = {:#x}, era = {:#x}, is = {:#x}, badi = {:#x}, badv = {:#x}",
+          ecode, era, is, badi, badv
+        );
+            loop {}
+        }
     }
 }

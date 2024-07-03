@@ -489,3 +489,7 @@ impl LoongArch64ZoneContext {
     );
     gprs_setters!(set_a0, 4);
 }
+
+
+pub type ZoneContext = LoongArch64ZoneContext;
+pub type VcpuContext = LoongArch64VcpuContext;
