@@ -134,6 +134,7 @@ void virtio_net_event_handler(int fd, int epoll_type, void *param)
             // No more packets from tapfd, restore last_avail_idx.
             log_info("no more packets");
 			vq->last_avail_idx--;
+    		free(iov);
 			break;
         }
 
@@ -174,7 +175,7 @@ static void virtq_tx_handle_one_request(NetDev *net, VirtQueue *vq)
 	packet_len = all_len - sizeof(NetHdr);
 	iov[0].iov_base += sizeof(NetHdr);
 	iov[0].iov_len -= sizeof(NetHdr);
-    log_info("packet send: %d bytes", packet_len);
+    log_debug("packet send: %d bytes", packet_len);
 
 	// The mininum packet for data link layer is 64 bytes.
     if (packet_len < 64) {
@@ -227,6 +228,7 @@ int virtio_net_init(VirtIODevice *vdev, char *devname)
         net->tapfd = -1;
         return -1;
     }
+    vdev->virtio_close = virtio_net_close;
     return 0;
 }
 

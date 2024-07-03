@@ -78,7 +78,8 @@ struct VirtIODevice
     VirtioDeviceType type;
     VirtMmioRegs regs;
     VirtQueue *vqs;
-    void *dev;          // according to device type, blk is BlkDev, net is NetDev.
+    void *dev;          // according to device type, blk is BlkDev, net is NetDev, console is ConsoleDev
+    void (*virtio_close)(VirtIODevice *vdev);
     bool activated;
 };
 // used event idx for driver telling device when to notify driver.
