@@ -14,7 +14,7 @@ const UART_REF_CLK: usize = 100000000; // 100MHz for 3A5000's SYS_CLK
 const UART_DIV_HI: usize = ((UART_REF_CLK + (115200 * 8)) / (115200 * 16)) >> 8;
 const UART_DIV_LO: usize = ((UART_REF_CLK + (115200 * 8)) / (115200 * 16)) & 0xff;
 
-const BOARD_UART0_VADDR: usize = 0x8000_0000_1fe0_01e0;
+const BOARD_UART0_VADDR: usize = 0x1fe0_01e0;
 const BOARD_UART1_VADDR: usize = BOARD_UART0_VADDR + 0x100;
 const BOARD_UART2_VADDR: usize = BOARD_UART0_VADDR + 0x200;
 const BOARD_UART3_VADDR: usize = BOARD_UART0_VADDR + 0x300;

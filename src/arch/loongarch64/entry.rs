@@ -7,6 +7,8 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
     // a0/r4: CPU_ID read from CSR 0x20 CPUID
     core::arch::asm!(
         "
+        addi.d  $r4, $zero, 0x21
+        bl      print_char
         csrrd   $r4, {CSR_CPUID}
         la.pcrel $r12, __core_end
         li.d    $r13, {per_cpu_size}
