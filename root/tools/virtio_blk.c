@@ -148,6 +148,7 @@ int virtio_blk_init(VirtIODevice *vdev, const char *img_path) {
     dev->config.capacity = blk_size;
     dev->config.size_max = blk_size;
     dev->img_fd = img_fd;
+    vdev->virtio_close = virtio_blk_close;
     return 0;
 }
 

@@ -224,7 +224,6 @@ bool virtqueue_is_empty(VirtQueue *vq)
     }
 	// read_barrier();
 	log_debug("vq->last_avail_idx is %d, vq->avail_ring->idx is %d", vq->last_avail_idx, vq->avail_ring->idx);
-    log_debug("vq->availring->idx adddress is %x", get_phys_addr(&vq->avail_ring->idx));
     if (vq->last_avail_idx == vq->avail_ring->idx)
         return true;
     else
@@ -665,13 +664,8 @@ static int virtio_handle_req(volatile struct device_req *req)
 static void virtio_close() {
 	log_info("virtio devices will be closed");
 	destroy_event_monitor();
-	for(int i=0; i<vdevs_num; i++) { 
-		if(vdevs[i]->type == VirtioTBlock) {
-			virtio_blk_close(vdevs[i]);
-		} else if(vdevs[i]->type == VirtioTNet) {
-			virtio_net_close(vdevs[i]);
-		} 
-	}
+	for(int i=0; i<vdevs_num; i++)
+        vdevs[i]->virtio_close(vdevs[i]);
 	close(ko_fd);
 	munmap((void *)virtio_bridge, MMAP_SIZE);
 	munmap((void *)virt_addr, NON_ROOT_PHYS_SIZE);
@@ -740,7 +734,7 @@ int virtio_init()
 {
     // The higher log level is , faster virtio-blk will be.
     int err;
-	int log_level = LOG_DEBUG;
+	int log_level = LOG_WARN;
 
 	sigset_t block_mask;
 	sigfillset(&block_mask);
@@ -749,7 +743,7 @@ int virtio_init()
 	multithread_log_init();
     log_set_level(log_level);
     FILE *log_file = fopen("log.txt", "w+");
-    log_add_fp(log_file, log_level);
+    log_add_fp(log_file, LOG_WARN);
     log_info("hvisor init");
     ko_fd = open("/dev/hvisor", O_RDWR);
     if (ko_fd < 0) {

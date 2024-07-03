@@ -5,6 +5,7 @@
 #include<fcntl.h>
 #include "log.h"
 #include <errno.h>
+#include <termios.h>
 static uint8_t trashbuf[1024];
 
 ConsoleDev *init_console_dev() {
@@ -54,17 +55,14 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
         if (len < 0 && errno == EWOULDBLOCK) {
             log_info("no more bytes");
 			vq->last_avail_idx--;
+            free(iov);
 			break;
         } else if (len < 0) {
             log_error("Failed to read from console, errno is %d", errno);
 			vq->last_avail_idx--;
+            free(iov);
             break;
         } 
-        // else {
-        //     log_info("len is %d, received data is ", len);
-        //     for(int i=0; i<len; i++) 
-        //         log_info("%c", *(char*)&iov->iov_base[i]);
-        // }
         update_used_ring(vq, idx, len);
         free(iov);
     }
@@ -74,8 +72,9 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
 
 int virtio_console_init(VirtIODevice *vdev) {
     ConsoleDev *dev = (ConsoleDev *)vdev->dev;
-    int master_fd, flags;
+    int master_fd, slave_fd, flags;
     char *slave_name;
+    struct termios term_io;
 
     master_fd = posix_openpt(O_RDWR | O_NOCTTY);
     if (master_fd < 0) {
@@ -94,6 +93,13 @@ int virtio_console_init(VirtIODevice *vdev) {
         log_error("Failed to get slave name, errno is %d", errno);
     }
     log_warn("char device redirected to %s", slave_name);
+    // Disable line discipline to prevent the TTY 
+    // from echoing the characters sent from the master back to the master.
+    slave_fd = open(slave_name, O_RDWR);
+    tcgetattr(slave_fd, &term_io);
+    cfmakeraw(&term_io);
+    tcsetattr(slave_fd, TCSAFLUSH, &term_io); 
+
     if (set_nonblocking(dev->master_fd) < 0) {
         dev->master_fd = -1;
         close(dev->master_fd);
@@ -107,6 +113,8 @@ int virtio_console_init(VirtIODevice *vdev) {
         dev->master_fd = -1;
         return -1;
     }
+
+    vdev->virtio_close = virtio_console_close;
     return 0;
 }
 
@@ -136,8 +144,8 @@ static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq) {
     if (count % 100 == 0) {
         log_info("console txq: n is %d, data is ", n);
         for (int i=0; i<iov->iov_len; i++)
-            printf("%c", *(char*)&iov->iov_base[i]);
-        printf("\n");
+            log_printf("%c", *(char*)&iov->iov_base[i]);
+        log_printf("\n");
     }
     if (n < 1) {
         return ;
@@ -147,17 +155,23 @@ static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq) {
     if (len < 0) {
         log_error("Failed to write to console, errno is %d", errno);
     }
-    update_used_ring(vq, idx, len);
+    update_used_ring(vq, idx, 0);
     free(iov);
 }
 
 int virtio_console_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     log_debug("%s", __func__);
-    virtqueue_disable_notify(vq);
-    while(!virtqueue_is_empty(vq)) {
-        virtq_tx_handle_one_request(vdev->dev, vq);
+    while (!virtqueue_is_empty(vq)) {
+        virtqueue_disable_notify(vq);
+        while(!virtqueue_is_empty(vq)) {
+            virtq_tx_handle_one_request(vdev->dev, vq);
+        }
+        virtqueue_enable_notify(vq);
     }
-    virtqueue_enable_notify(vq);
     virtio_inject_irq(vq);
     return 0;
+}
+
+void virtio_console_close(VirtIODevice *vdev) {
+    // TODO
 }

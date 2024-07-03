@@ -13,6 +13,14 @@
 		"stdlib.h": "c",
 		"pty.h": "c",
 		"cachectl.h": "c",
-		"cacheflush.h": "c"
+		"cacheflush.h": "c",
+		"array": "c",
+		"deque": "c",
+		"string": "c",
+		"unordered_map": "c",
+		"vector": "c",
+		"string_view": "c",
+		"initializer_list": "c",
+		"ranges": "c"
 	}
 }
