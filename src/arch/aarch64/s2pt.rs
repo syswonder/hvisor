@@ -202,7 +202,7 @@ impl PagingInstr for S2PTInstr {
     unsafe fn activate(root_paddr: HostPhysAddr) {
         VTTBR_EL2.set_baddr(root_paddr as _);
         core::arch::asm!("tlbi vmalls12e1is");
-        warn!("Stage 2 page table activated {:#x}", root_paddr);
+        trace!("Stage 2 page table activated {:#x}", root_paddr);
     }
 
     fn flush(_vaddr: Option<usize>) {

@@ -1,12 +1,7 @@
-use core::sync::atomic::{fence, Ordering};
-
-use alloc::vec::Vec;
-
 use crate::{
-    device::virtio_trampoline::mmio_virtio_handler,
     error::HvResult,
     memory::{
-        addr::align_up, mmio_generic_handler, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
+        addr::align_up, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
     },
     percpu::get_cpu_data,
     zone::Zone,
@@ -14,7 +9,7 @@ use crate::{
 impl Zone {
     pub fn pt_init(
         &mut self,
-        vm_paddr_start: usize,
+        _vm_paddr_start: usize,
         fdt: &fdt::Fdt,
         guest_dtb: usize,
         dtb_ipa: usize,
@@ -25,7 +20,7 @@ impl Zone {
         info!("map mem_region: {:?}", mem_region);
         self.gpm.insert(MemoryRegion::new_with_offset_mapper(
             mem_region.starting_address as GuestPhysAddr,
-            vm_paddr_start as HostPhysAddr,
+            mem_region.starting_address as HostPhysAddr,
             mem_region.size.unwrap(),
             MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
         ))?;
@@ -131,10 +126,10 @@ impl Zone {
         info!("VM stage 2 memory set: {:#x?}", self.gpm);
         Ok(())
     }
-    pub fn mmio_init(&mut self, fdt: &fdt::Fdt) {
+    pub fn mmio_init(&mut self, _fdt: &fdt::Fdt) {
         //TODO
     }
-    pub fn irq_bitmap_init(&mut self, fdt: &fdt::Fdt) {}
+    pub fn irq_bitmap_init(&mut self, _fdt: &fdt::Fdt) {}
     pub fn isa_init(&mut self, fdt: &fdt::Fdt) {
         let cpu_set = self.cpu_set;
         cpu_set.iter().for_each(|cpuid| {

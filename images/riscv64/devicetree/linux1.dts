@@ -55,35 +55,52 @@
 
 	};
 
-	memory@90000000 {
+	memory@83000000 {
 		device_type = "memory";
-		reg = <0x0 0x90000000 0x0 0x10000000>;
+		reg = <0x0 0x83000000 0x0 0x1D000000>;
 	};
-soc{
-			#address-cells = <0x02>;
+
+	reserved-memory {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+
+		nonroot@83000000 {
+			no-map;
+			reg = <0x00 0x83000000 0x00 0x09000000>;
+		};
+
+		dtbfile@0x8f000000 {
+			no-map;
+			reg = <0x00 0x8f000000 0x00 0x01000000>;
+		};
+	};
+
+	soc{
+		#address-cells = <0x02>;
 		#size-cells = <0x02>;
 		compatible = "simple-bus";
 		ranges;
-	plic: interrupt-controller@c000000 {
-		riscv,ndev = <60>;
-		reg = <0x0 0xc000000 0x0 0x4000000>;
-		interrupts-extended = <
-			&cpu0_intc 11 &cpu0_intc 9 
-			&cpu1_intc 11 &cpu1_intc 9 
-			&cpu2_intc 11 &cpu2_intc 9
-		>;
-		interrupt-controller;
-		compatible = "riscv,plic0";
-		#interrupt-cells = <0x1>;
-	};
-			uart@10000000 {
+		plic: interrupt-controller@c000000 {
+			riscv,ndev = <60>;
+			reg = <0x0 0xc000000 0x0 0x4000000>;
+			interrupts-extended = <
+				&cpu0_intc 11 &cpu0_intc 9 
+				&cpu1_intc 11 &cpu1_intc 9 
+				&cpu2_intc 11 &cpu2_intc 9
+			>;
+			interrupt-controller;
+			compatible = "riscv,plic0";
+			#interrupt-cells = <0x1>;
+		};
+		uart@10000000 {
 			interrupts = <0x0a>;
 			interrupt-parent = <&plic>;
 			clock-frequency = "\08@";
 			reg = <0x00 0x10000000 0x00 0x100>;
 			compatible = "ns16550a";
 		};
-			pci@30000000 {
+		pci@30000000 {
 			interrupt-map-mask = <0x1800 0x00 0x00 0x07>;
 			interrupt-map = <0x00 0x00 0x00 0x01 0x09 0x20 0x00 0x00 0x00 0x02 0x09 0x21 0x00 0x00 0x00 0x03 0x09 0x22 0x00 0x00 0x00 0x04 0x09 0x23 0x800 0x00 0x00 0x01 0x09 0x21 0x800 0x00 0x00 0x02 0x09 0x22 0x800 0x00 0x00 0x03 0x09 0x23 0x800 0x00 0x00 0x04 0x09 0x20 0x1000 0x00 0x00 0x01 0x09 0x22 0x1000 0x00 0x00 0x02 0x09 0x23 0x1000 0x00 0x00 0x03 0x09 0x20 0x1000 0x00 0x00 0x04 0x09 0x21 0x1800 0x00 0x00 0x01 0x09 0x23 0x1800 0x00 0x00 0x02 0x09 0x20 0x1800 0x00 0x00 0x03 0x09 0x21 0x1800 0x00 0x00 0x04 0x09 0x22>;
 			ranges = <0x1000000 0x00 0x00 0x00 0x3000000 0x00 0x10000 0x2000000 0x00 0x40000000 0x00 0x40000000 0x00 0x40000000 0x3000000 0x04 0x00 0x04 0x00 0x04 0x00>;
@@ -103,58 +120,55 @@ soc{
 		interrupt-parent = <&plic>;
 		reg = <0x0 0x10008000 0x0 0x1000>;
 		compatible = "virtio,mmio";
+		};
+		//	virtio_mmio@10007000 {
+		//		interrupts = <0x7>;
+		//		interrupt-parent = <&plic>;
+		//		reg = <0x0 0x10007000 0x0 0x1000>;
+		//		compatible = "virtio,mmio";
+		//	};
+		// virtio_mmio@10006000 {
+		// 	interrupts = <0x6>;
+		// 	interrupt-parent = <&plic>;
+		// 	reg = <0x0 0x10006000 0x0 0x1000>;
+		// 	compatible = "virtio,mmio";
+		// };
+
+		virtio_mmio@10005000 {
+			interrupts = <0x5>;
+			interrupt-parent = <&plic>;
+			reg = <0x0 0x10005000 0x0 0x1000>;
+			compatible = "virtio,mmio";
+		};
+
+		virtio_mmio@10004000 {
+			interrupts = <0x4>;
+			interrupt-parent = <&plic>;
+			reg = <0x0 0x10004000 0x0 0x1000>;
+			compatible = "virtio,mmio";
+		};
+
+		virtio_mmio@10003000 {
+			interrupts = <0x3>;
+			interrupt-parent = <&plic>;
+			reg = <0x0 0x10003000 0x0 0x1000>;
+			compatible = "virtio,mmio";
+		};
+
+		virtio_mmio@10002000 {
+			interrupts = <0x2>;
+			interrupt-parent = <&plic>;
+			reg = <0x0 0x10002000 0x0 0x1000>;
+			compatible = "virtio,mmio";
+		};
+
+		virtio_mmio@10001000 {
+			interrupts = <0x1>;
+			interrupt-parent = <&plic>;
+			reg = <0x0 0x10001000 0x0 0x1000>;
+			compatible = "virtio,mmio";
+		};
 	};
-//	virtio_mmio@10007000 {
-//		interrupts = <0x7>;
-//		interrupt-parent = <&plic>;
-//		reg = <0x0 0x10007000 0x0 0x1000>;
-//		compatible = "virtio,mmio";
-//	};
-	// virtio_mmio@10006000 {
-	// 	interrupts = <0x6>;
-	// 	interrupt-parent = <&plic>;
-	// 	reg = <0x0 0x10006000 0x0 0x1000>;
-	// 	compatible = "virtio,mmio";
-	// };
-
-	virtio_mmio@10005000 {
-		interrupts = <0x5>;
-		interrupt-parent = <&plic>;
-		reg = <0x0 0x10005000 0x0 0x1000>;
-		compatible = "virtio,mmio";
-	};
-
-	virtio_mmio@10004000 {
-		interrupts = <0x4>;
-		interrupt-parent = <&plic>;
-		reg = <0x0 0x10004000 0x0 0x1000>;
-		compatible = "virtio,mmio";
-	};
-
-	virtio_mmio@10003000 {
-		interrupts = <0x3>;
-		interrupt-parent = <&plic>;
-		reg = <0x0 0x10003000 0x0 0x1000>;
-		compatible = "virtio,mmio";
-	};
-
-	virtio_mmio@10002000 {
-		interrupts = <0x2>;
-		interrupt-parent = <&plic>;
-		reg = <0x0 0x10002000 0x0 0x1000>;
-		compatible = "virtio,mmio";
-	};
-
-	virtio_mmio@10001000 {
-		interrupts = <0x1>;
-		interrupt-parent = <&plic>;
-		reg = <0x0 0x10001000 0x0 0x1000>;
-		compatible = "virtio,mmio";
-	};
-
-
-
-};
 	chosen {
 		bootargs = "root=/dev/vda rw earlycon console=ttyS0 ip=192.168.42.15";
 	};

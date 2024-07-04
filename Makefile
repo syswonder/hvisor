@@ -5,7 +5,6 @@ STATS ?= off
 PORT ?= 2333
 MODE ?= debug
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
-KDIR ?= ../../linux
 
 ifeq ($(ARCH),aarch64)
     RUSTC_TARGET := aarch64-unknown-none
@@ -23,7 +22,6 @@ endif
 export MODE
 export LOG
 export ARCH
-export KDIR
 
 # Build paths
 build_path := target/$(RUSTC_TARGET)/$(MODE)
