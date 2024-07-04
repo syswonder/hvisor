@@ -1,7 +1,7 @@
 use alloc::vec::Vec;
 use spin::Once;
 
-use crate::{arch::zone::HvArchZoneConfig, platform::qemu_aarch64};
+use crate::{arch::zone::HvArchZoneConfig, platform};
 
 pub const MEM_TYPE_RAM: u32 = 0;
 pub const MEM_TYPE_IO: u32 = 1;
@@ -43,7 +43,7 @@ pub struct HvZoneConfig {
     pub entry_point: u64,
     pub dtb_load_paddr: u64,
 
-    pub arch: HvArchZoneConfig
+    pub arch: HvArchZoneConfig,
 }
 
 impl HvZoneConfig {
@@ -99,7 +99,7 @@ impl HvZoneConfig {
 pub static mut HV_ROOT_ZONE_CONFIG: Once<HvZoneConfig> = Once::new();
 
 pub fn init() {
-    unsafe { HV_ROOT_ZONE_CONFIG.call_once(|| qemu_aarch64::platform_root_zone_config()) };
+    unsafe { HV_ROOT_ZONE_CONFIG.call_once(|| platform::platform_root_zone_config()) };
 }
 
 pub fn root_zone_config() -> &'static HvZoneConfig {
