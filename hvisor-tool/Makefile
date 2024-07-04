@@ -1,6 +1,6 @@
-# KDIR ?= ../../linux
-KDIR ?= ~/study/hypervisor/nxp/OK8MP-linux-kernel
-DEV ?= /dev/sdb1
+KDIR ?= ../OK8MP-linux-kernel
+DEV ?= /dev/sda1
+
 export KDIR
 .PHONY: all tools driver clean
 tools:
@@ -21,6 +21,7 @@ transfer_nxp: all
 	sudo cp ./driver/hvisor.ko /mnt/home/arm64
 	sudo umount /mnt
 	sudo umount $(DEV)
+
 clean:
-	-make -C tools clean
+	make -C tools clean
 	make -C driver clean

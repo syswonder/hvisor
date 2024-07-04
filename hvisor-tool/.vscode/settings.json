@@ -1,6 +1,0 @@
-{
-	"files.associations": {
-		"hvisor.h": "c",
-		"ioctl.h": "c"
-	}
-}

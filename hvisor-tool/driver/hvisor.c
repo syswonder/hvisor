@@ -7,7 +7,6 @@
 #include<linux/slab.h>   
 // #include <asm/io.h>
 #include <linux/io.h>
-#include "hvisor.h"
 #include <linux/sched/signal.h>
 #include <linux/of.h>
 #include <linux/of_irq.h>
@@ -16,6 +15,8 @@
 #include <linux/vmalloc.h>
 #include <asm/cacheflush.h>
 #include <linux/string.h> 
+#include "hvisor.h"
+#include "zone_config.h"
 
 struct virtio_bridge *virtio_bridge; 
 int hvisor_irq;
@@ -47,74 +48,29 @@ static int hvisor_finish_req(void)
     return 0;
 }
 
-static int load_image(struct hvisor_image_desc __user *arg, __u64 *phys_addr) {
-    struct hvisor_image_desc image;
-    struct vm_struct *vma;
+static int hvisor_zone_start(zone_config_t __user* arg) {
     int err = 0;
-    __u64 phys_start, offset_in_page;
-    unsigned long size;
-    if (copy_from_user(&image, arg, sizeof(struct hvisor_image_desc)))
-        return -EFAULT;
-    *phys_addr = image.target_address;
-//     phys_start = image.target_address & PAGE_MASK;
-//     offset_in_page = image.target_address & ~PAGE_MASK;
-//     size = PAGE_ALIGN(image.size + offset_in_page);
-//     pr_info("hvisor load image to %llx, offset_in_page: %llx, size: %lx\n", phys_start, offset_in_page, size);
+    printk("hvisor_zone_start\n");
+    zone_config_t *zone_config = kmalloc(sizeof(zone_config_t), GFP_KERNEL);
 
-//     vma = __get_vm_area(size, VM_IOREMAP, VMALLOC_START, VMALLOC_END);
-//     if (!vma) {
-//         pr_err("hvisor: failed to allocate virtual kernel memory for image\n");
-//         return -ENOMEM;
-//     }
-// 	pr_info("hvisor get_vm_area succeed!\n");
-//     vma->phys_addr = phys_start;
-//     if (ioremap_page_range((unsigned long)vma->addr, (unsigned long)(vma->addr + size), phys_start, PAGE_KERNEL_EXEC)) {
-//         pr_err("hvisor: failed to ioremap image\n");
-//         err = -EFAULT;
-//         goto out_unmap_vma;
-//     }
-// 	pr_info("hvisor ioremap_page_range succeed!\n");
-// 	pr_info("image.source_address: %llx\n", image.source_address);
-//     if(copy_from_user((void *)(vma->addr + offset_in_page), (void __user *)image.source_address, image.size)) {
-//         err = -EFAULT;
-//         goto out_unmap_vma;
-//     }
-// 	pr_info("hvisor copy_from_user succeed!\n");
-//     // Make sure the data is in memory before we start executing it.
-//     flush_icache_range((unsigned long)(vma->addr + offset_in_page), (unsigned long)(vma->addr + offset_in_page + image.size));
-// 	pr_info("hvisor flush_icache_range succeed!\n");
-// out_unmap_vma:
-//     vunmap(vma->addr);
-    return err;
-}
-
-static int hvisor_zone_start(struct hvisor_zone_load __user* arg) {
-    struct hvisor_zone_load zone_load;
-    struct hvisor_image_desc __user *images = arg->images;
-    struct hvisor_zone_info *zone_info;
-    int err = 0;
-	printk("hvisor_zone_start\n");
-    zone_info = kmalloc(sizeof(struct hvisor_zone_info), GFP_KERNEL);
-
-    if (zone_info == NULL) {
-        pr_err("hvisor: failed to allocate memory for zone_info\n");
+    if (zone_config == NULL) {
+        pr_err("hvisor: failed to allocate memory for zone_config\n");
         return -ENOMEM;
     }
-    if (copy_from_user(&zone_load, arg, sizeof(zone_load))) 
-        return -EFAULT;
 
-    zone_info->zone_id = zone_load.zone_id;
-    // load image
-    err = load_image(images, &zone_info->image_phys_addr);
-	pr_info("hvisor load image succeed!\n");
-    // load dtb
-    err = load_image(++images, &zone_info->dtb_phys_addr);
-    if (err)
-        return err;
-    err = hvisor_call_arg1(HVISOR_HC_START_ZONE, __pa(zone_info));
-	kfree(zone_info);
+    if (copy_from_user(zone_config, arg, sizeof(zone_config_t))) {
+        pr_err("hvisor: failed to copy from user\n");
+        kfree(zone_config);
+        return -EFAULT;
+    }
+
+    printk("zone_config->zone_id = %d\n", zone_config->zone_id);
+
+    err = hvisor_call_arg1(HVISOR_HC_START_ZONE, __pa(zone_config));
+    kfree(zone_config);
     return err;
 }
+
 
 static long hvisor_ioctl(struct file *file, unsigned int ioctl,
 			    unsigned long arg)
@@ -127,7 +83,7 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
 		task = get_current(); // get hvisor user process
         break;
     case HVISOR_ZONE_START:
-        err = hvisor_zone_start((struct hvisor_zone_load __user*) arg);
+        err = hvisor_zone_start((zone_config_t __user*) arg);
         break;
 	case HVISOR_ZONE_SHUTDOWN:
 		err = hvisor_call_arg1(HVISOR_HC_SHUTDOWN_ZONE, arg);	
