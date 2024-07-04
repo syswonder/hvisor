@@ -17,14 +17,14 @@ extern "C" {
 global_asm!(include_str!("trap.S"),
 sync_exception_handler=sym sync_exception_handler,
 interrupts_arch_handle=sym interrupts_arch_handle);
-
+#[allow(non_snake_case)]
 pub mod ExceptionType {
     pub const ECALL_VU: usize = 8;
     pub const ECALL_VS: usize = 10;
     pub const LOAD_GUEST_PAGE_FAULT: usize = 21;
     pub const STORE_GUEST_PAGE_FAULT: usize = 23;
 }
-
+#[allow(non_snake_case)]
 pub mod InterruptType {
     pub const SSI: usize = 1;
     pub const STI: usize = 5;
@@ -111,7 +111,7 @@ pub fn guest_page_fault_handler(current_cpu: &mut ArchCpu) {
             // panic!("inst{:#x}", inst);
         }
         //TODO: decode inst to real instruction
-        let (len, inst) = decode_inst(inst);
+        let (_len, inst) = decode_inst(inst);
         if let Some(inst) = inst {
             if addr >= host_plic_base + PLIC_GLOBAL_SIZE {
                 vplic_hart_emul_handler(current_cpu, addr, inst);
@@ -128,7 +128,7 @@ pub fn guest_page_fault_handler(current_cpu: &mut ArchCpu) {
     }
 }
 fn read_inst(addr: GuestPhysAddr) -> u32 {
-    let mut ins: u32 = 0;
+    let mut ins: u32;
     if addr & 0b1 != 0 {
         error!("trying to read guest unaligned instruction");
     }
@@ -204,10 +204,10 @@ pub fn handle_eirq(current_cpu: &mut ArchCpu) {
     // check external interrupt && handle
     // sifive plic: context0=>cpu0,M mode,context1=>cpu0,S mode...
     let context_id = 2 * current_cpu.cpuid + 1;
-    let mut host_plic = host_plic();
+    let host_plic = host_plic();
     let claim_and_complete_addr =
         host_plic.read().base + PLIC_GLOBAL_SIZE + 0x1000 * context_id + 0x4;
-    let mut irq = unsafe { core::ptr::read_volatile(claim_and_complete_addr as *const u32) };
+    let irq = unsafe { core::ptr::read_volatile(claim_and_complete_addr as *const u32) };
     debug!(
         "CPU{} get external irq{}@{:#x}",
         current_cpu.cpuid, irq, claim_and_complete_addr

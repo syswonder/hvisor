@@ -3,7 +3,7 @@ use crate::platform::qemu_riscv64::*;
 use crate::zone::Zone;
 use crate::{arch::cpu::ArchCpu, percpu::this_cpu_data};
 use fdt::Fdt;
-use riscv::register::{hvip, sie};
+use riscv::register::hvip;
 use riscv_decode::Instruction;
 use spin::{Once, RwLock};
 pub fn primary_init_early(host_fdt: &Fdt) {
@@ -19,7 +19,7 @@ pub fn primary_init_late() {
 pub fn percpu_init() {
     //nothing to do
 }
-pub fn inject_irq(_irq: usize, is_hardware: bool) {
+pub fn inject_irq(_irq: usize, _is_hardware: bool) {
     //nothing to do
 }
 pub static PLIC: Once<RwLock<Plic>> = Once::new();
@@ -179,7 +179,7 @@ pub fn vplic_hart_emul_handler(current_cpu: &mut ArchCpu, addr: GuestPhysAddr, i
             .first_cpu()
             .unwrap();
         let context = vcontext + first_cpu * 2;
-        let index = ((offset - PLIC_GLOBAL_SIZE) & 0xfff);
+        let index = (offset - PLIC_GLOBAL_SIZE) & 0xfff;
         if index == 0 {
             // threshold
             match inst {
