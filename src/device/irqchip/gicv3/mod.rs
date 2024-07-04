@@ -84,13 +84,12 @@ use core::arch::asm;
 use core::ptr::write_volatile;
 use core::sync::atomic::AtomicU64;
 
-use aarch64_cpu::registers::SCTLR_EL3::A;
-use fdt::Fdt;
 use spin::Once;
 
 use self::gicd::{enable_gic_are_ns, GICD_ICACTIVER, GICD_ICENABLER};
 use self::gicr::enable_ipi;
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
+use crate::config::root_zone_config;
 use crate::consts::MAX_CPU_NUM;
 
 use crate::event::check_events;
@@ -323,23 +322,6 @@ pub struct Gic {
     pub gicr_size: usize,
 }
 
-impl Gic {
-    pub fn new(fdt: &Fdt) -> Self {
-        let gic_info = fdt.find_compatible(&["arm,gic-v3"]).unwrap();
-        let mut reg_iter = gic_info.reg().unwrap();
-
-        let first_reg = reg_iter.next().unwrap();
-        let second_reg = reg_iter.next().unwrap();
-
-        Self {
-            gicd_base: first_reg.starting_address as usize,
-            gicr_base: second_reg.starting_address as usize,
-            gicd_size: first_reg.size.unwrap(),
-            gicr_size: second_reg.size.unwrap(),
-        }
-    }
-}
-
 pub fn host_gicd_base() -> usize {
     GIC.get().unwrap().gicd_base
 }
@@ -373,8 +355,15 @@ pub fn disable_irqs() {
     unsafe { asm!("msr daifset, #0xf") };
 }
 
-pub fn primary_init_early(host_fdt: &Fdt) {
-    GIC.call_once(|| Gic::new(host_fdt));
+pub fn primary_init_early() {
+    let root_config = root_zone_config();
+    
+    GIC.call_once(|| Gic {
+        gicd_base: root_config.arch.gicd_base,
+        gicr_base: root_config.arch.gicr_base,
+        gicd_size: root_config.arch.gicd_size,
+        gicr_size: root_config.arch.gicr_size,
+    });
     debug!("gic = {:#x?}", GIC.get().unwrap());
 }
 

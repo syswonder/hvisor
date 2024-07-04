@@ -1,13 +1,8 @@
 use alloc::sync::Arc;
 
-use super::{gicd::GICD_LOCK, is_spi, Gic};
+use super::{gicd::GICD_LOCK, host_gicd_size, is_spi};
 use crate::{
-    consts::MAX_CPU_NUM,
-    device::irqchip::gicv3::{gicd::*, gicr::*, host_gicd_base, host_gicr_base, PER_GICR_SIZE},
-    error::HvResult,
-    memory::{mmio_perform_access, MMIOAccess},
-    percpu::{get_cpu_data, this_zone},
-    zone::Zone,
+    arch::zone::HvArchZoneConfig, consts::MAX_CPU_NUM, device::irqchip::gicv3::{gicd::*, gicr::*, host_gicd_base, host_gicr_base, PER_GICR_SIZE}, error::HvResult, memory::{mmio_perform_access, MMIOAccess}, percpu::{get_cpu_data, this_zone}, zone::Zone
 };
 
 pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> {
@@ -15,68 +10,23 @@ pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> 
 }
 
 impl Zone {
-    pub fn vgicv3_mmio_init(&mut self, fdt: &fdt::Fdt) {
-        let gic = Gic::new(fdt);
-        self.mmio_region_register(gic.gicd_base, gic.gicd_size, vgicv3_dist_handler, 0);
+    pub fn vgicv3_mmio_init(&mut self, arch: &HvArchZoneConfig) {
+        let gicd_base = if arch.gicd_base == 0 {host_gicd_base()} else {arch.gicd_base};
+        let gicr_base = if arch.gicr_base == 0 {host_gicr_base(0)} else {arch.gicr_base};
+        let gicd_size = if arch.gicd_size == 0 {host_gicd_size()} else {arch.gicd_size};
+
+        self.mmio_region_register(gicd_base, gicd_size, vgicv3_dist_handler, 0);
         for cpu in 0..MAX_CPU_NUM {
-            let gicr_base = host_gicr_base(cpu);
+            let gicr_base = gicr_base + cpu * PER_GICR_SIZE;
             debug!("registering gicr {} at {:#x?}", cpu, gicr_base);
             self.mmio_region_register(gicr_base, PER_GICR_SIZE, vgicv3_redist_handler, cpu);
         }
     }
 
-    pub fn irq_bitmap_init(&mut self, fdt: &fdt::Fdt) {
-        for node in fdt.all_nodes() {
-            if node.name == "timer" {
-                continue;
-            }
-            if let Some(int_iter) = node.interrupts() {
-                for int_n in int_iter {
-                    // When interrupt cell-size = 3, the first cell is a flag indicating if the interrupt is an SPI
-                    // So we need to bitwise-and with u32::MAX to get the real interrupt number
-                    let real_int_n = (int_n & u32::MAX as usize) + 32;
-                    self.insert_irq_to_bitmap(real_int_n as u32);
-                }
-            }
+    pub fn irq_bitmap_init(&mut self, irqs: &[u32]) {
+        for irq in irqs {
+            self.insert_irq_to_bitmap(*irq);
         }
-		if self.id == 1 {
-			self.insert_irq_to_bitmap(61); // serial3
-			self.insert_irq_to_bitmap(56);  // mmc2
-			self.insert_irq_to_bitmap(78);  // virtio blk
-		} else if self.id == 0 { 
-			self.insert_irq_to_bitmap(55);  // mmc1
-			self.insert_irq_to_bitmap(59);  // serial@30890000
-		}
-		// self.insert_irq_to_bitmap(59);  // serial@30890000
-        self.insert_irq_to_bitmap(96);  // gpio 0
-        self.insert_irq_to_bitmap(97);  // gpio 0
-        self.insert_irq_to_bitmap(98);  // gpio 1
-        self.insert_irq_to_bitmap(99);  // gpio 1
-        self.insert_irq_to_bitmap(100); // gpio 2
-        self.insert_irq_to_bitmap(101); // gpio 2
-        self.insert_irq_to_bitmap(102); // gpio 3
-        self.insert_irq_to_bitmap(103); // gpio 3
-        self.insert_irq_to_bitmap(104); // gpio 4
-        self.insert_irq_to_bitmap(105); // gpio 4
-
-        self.insert_irq_to_bitmap(150); // ethernet1
-        self.insert_irq_to_bitmap(151); // ethernet1
-        self.insert_irq_to_bitmap(152); // ethernet1
-
-        self.insert_irq_to_bitmap(166); // ethernet2
-        self.insert_irq_to_bitmap(167); // ethernet2
-
-        self.insert_irq_to_bitmap(52);  // caam_secvio
-        self.insert_irq_to_bitmap(51);  // snvs-rtc-l
-        self.insert_irq_to_bitmap(36);  // snvs-powerkey
-        self.insert_irq_to_bitmap(54);  // mmc0
-
-        self.insert_irq_to_bitmap(43);
-
-        self.insert_irq_to_bitmap(69);  // i2c
-        self.insert_irq_to_bitmap(39);  // pmu
-        self.insert_irq_to_bitmap(34);  // pmu
-    
         for (index, &word) in self.irq_bitmap.iter().enumerate() {
             for bit_position in 0..32 {
                 if word & (1 << bit_position) != 0 {
@@ -91,7 +41,7 @@ impl Zone {
     }
 
     fn insert_irq_to_bitmap(&mut self, irq: u32) {
-        assert!(irq < 1024); // 1024 is the maximum number of interrupts supported by GICv3 (GICD_TYPER.ITLinesNumber)  
+        assert!(irq < 1024); // 1024 is the maximum number of interrupts supported by GICv3 (GICD_TYPER.ITLinesNumber)
         let irq_index = irq / 32;
         let irq_bit = irq % 32;
         self.irq_bitmap[irq_index as usize] |= 1 << irq_bit;
