@@ -1,6 +1,6 @@
 use crate::{
     arch::{mm::new_s2_memory_set, sysreg::write_sysreg},
-    consts::{DTB_IPA, PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
+    consts::{PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
     memory::{
         addr::PHYS_VIRT_OFFSET, mm::PARKING_MEMORY_SET, GuestPhysAddr, HostPhysAddr, MemFlags,
         MemoryRegion, VirtAddr, PARKING_INST_PAGE,
@@ -8,8 +8,7 @@ use crate::{
     percpu::this_cpu_data,
 };
 use aarch64_cpu::registers::{
-    Readable, Writeable, ELR_EL2, HCR_EL2, MAIR_EL2, MPIDR_EL1, SCTLR_EL1, SCTLR_EL2, SPSR_EL2,
-    TCR_EL2, VTCR_EL2,
+    Readable, Writeable, ELR_EL2, HCR_EL2, MPIDR_EL1, SCTLR_EL1, SPSR_EL2, VTCR_EL2,
 };
 
 use super::{
@@ -147,7 +146,7 @@ impl ArchCpu {
     pub fn run(&mut self) -> ! {
         assert!(this_cpu_id() == self.cpuid);
         this_cpu_data().activate_gpm();
-        self.reset(this_cpu_data().cpu_on_entry, DTB_IPA);
+        self.reset(this_cpu_data().cpu_on_entry, this_cpu_data().dtb_ipa);
         self.psci_on = true;
         unsafe {
             vmreturn(self.guest_reg() as *mut _ as usize);
@@ -178,7 +177,7 @@ impl ArchCpu {
             .unwrap();
             gpm
         });
-        self.reset(0, DTB_IPA);
+        self.reset(0, this_cpu_data().dtb_ipa);
         unsafe {
             PARKING_MEMORY_SET.get().unwrap().activate();
             vmreturn(self.guest_reg() as *mut _ as usize);
