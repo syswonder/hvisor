@@ -5,11 +5,15 @@ ARCH ?= arm64
 export KDIR
 export ARCH
 
-.PHONY: all tools driver clean
-tools:
+.PHONY: all env tools driver clean
+
+env:
+	git submodule update --init --recursive
+
+tools: env
 	make -C tools
 
-driver:
+driver: env
 	make -C driver
 
 all: tools driver
