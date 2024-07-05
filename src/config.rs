@@ -5,6 +5,8 @@ use crate::{arch::zone::HvArchZoneConfig, platform};
 
 pub const MEM_TYPE_RAM: u32 = 0;
 pub const MEM_TYPE_IO: u32 = 1;
+pub const MEM_TYPE_VIRTIO: u32 = 2;
+
 pub const CONFIG_MAX_MEMORY_REGIONS: usize = 16;
 pub const CONFIG_MAX_INTERRUPTS: usize = 32;
 
@@ -41,7 +43,10 @@ pub struct HvZoneConfig {
     num_interrupts: u32,
     interrupts: [u32; CONFIG_MAX_INTERRUPTS],
     pub entry_point: u64,
+    pub kernel_load_paddr: u64,
+    pub kernel_size: u64,
     pub dtb_load_paddr: u64,
+    pub dtb_size: u64,
 
     pub arch: HvArchZoneConfig,
 }
@@ -55,7 +60,10 @@ impl HvZoneConfig {
         num_interrupts: u32,
         interrupts: [u32; CONFIG_MAX_INTERRUPTS],
         entry_point: u64,
-        dtb_load_paddr: u64,
+        kernel_load_paddr: u64,
+        kernel_size:u64,
+        dtb_load_paddr:u64,
+        dtb_size: u64,
         arch: HvArchZoneConfig,
     ) -> Self {
         Self {
@@ -66,7 +74,10 @@ impl HvZoneConfig {
             num_interrupts,
             interrupts,
             entry_point,
+            kernel_load_paddr,
+            kernel_size,
             dtb_load_paddr,
+            dtb_size,
             arch,
         }
     }
