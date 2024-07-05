@@ -1,3 +1,4 @@
+.vscode/
 /tools/hvisor
 *.mod.[co]
 *.mod
@@ -7,3 +8,5 @@ Module.symvers
 modules.order
 driver/hvisor.ko
 *.s
+*_compile.sh
+/cJSON/

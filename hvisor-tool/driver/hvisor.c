@@ -7,7 +7,6 @@
 #include<linux/slab.h>   
 // #include <asm/io.h>
 #include <linux/io.h>
-#include "hvisor.h"
 #include <linux/sched/signal.h>
 #include <linux/of.h>
 #include <linux/of_irq.h>
@@ -15,6 +14,10 @@
 #include <linux/vmalloc.h>
 #include <linux/string.h> 
 #include <asm/cacheflush.h>
+#include <linux/string.h> 
+#include "hvisor.h"
+#include "zone_config.h"
+
 struct virtio_bridge *virtio_bridge; 
 int hvisor_irq = -1;
 static struct task_struct *task = NULL;
@@ -73,25 +76,30 @@ unmap_vma:
     return err;
 }
 
-static int hvisor_zone_start(struct hvisor_zone_info __user* arg) {
+static int hvisor_zone_start(zone_config_t __user* arg) {
     struct hvisor_zone_info *zone_info;
     int err = 0;
+    printk("hvisor_zone_start\n");
+    zone_config_t *zone_config = kmalloc(sizeof(zone_config_t), GFP_KERNEL);
 
-    zone_info = kmalloc(sizeof(struct hvisor_zone_info), GFP_KERNEL);
-    if (zone_info == NULL) {
-        pr_err("hvisor: failed to allocate memory for zone_info\n");
-        return -ENOMEM;
+    if (zone_config == NULL) {
+        pr_err("hvisor: failed to allocate memory for zone_config\n");
     }
-    if (copy_from_user(zone_info, arg, sizeof(struct hvisor_zone_info))) 
+
+    if (copy_from_user(zone_config, arg, sizeof(zone_config_t))) {
+        pr_err("hvisor: failed to copy from user\n");
+        kfree(zone_config);
         return -EFAULT;
+    }
 
-    flush_cache(zone_info->image_phys_addr, zone_info->image_size);
-    flush_cache(zone_info->dtb_phys_addr, zone_info->dtb_size);
+    flush_cache(zone_config->kernel_load_paddr, zone_config->kernel_size);
+    flush_cache(zone_config->dtb_load_paddr, zone_config->dtb_size);
 
-    err = hvisor_call(HVISOR_HC_START_ZONE, __pa(zone_info), 0);
+    err = hvisor_call(HVISOR_HC_START_ZONE, __pa(zone_config), 0);
 	kfree(zone_info);
     return err;
 }
+
 
 static long hvisor_ioctl(struct file *file, unsigned int ioctl,
 			    unsigned long arg)
@@ -104,7 +112,7 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
 		task = get_current(); // get hvisor user process
         break;
     case HVISOR_ZONE_START:
-        err = hvisor_zone_start((struct hvisor_zone_info __user*) arg);
+        err = hvisor_zone_start((zone_config_t __user*) arg);
         break;
 	case HVISOR_ZONE_SHUTDOWN:
 		err = hvisor_call(HVISOR_HC_SHUTDOWN_ZONE, arg, 0);	
