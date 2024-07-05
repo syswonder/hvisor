@@ -7,7 +7,7 @@
 #include "virtio.h"
 
 /// Maximum number of segments in a request.
-#define BLK_SEG_MAX 256
+#define BLK_SEG_MAX 512
 #define VIRTQUEUE_BLK_MAX_SIZE 512
 // A blk sector size
 #define SECTOR_BSIZE 512
@@ -39,7 +39,8 @@ typedef struct virtio_blk_dev {
 	int close;
 } BlkDev;
 
-BlkDev *init_blk_dev(VirtIODevice *vdev, uint64_t bsize, int img_fd);
+BlkDev *init_blk_dev(VirtIODevice *vdev);
+int virtio_blk_init(VirtIODevice *vdev, const char *img_path);
 int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq);
 void virtio_blk_close(VirtIODevice *vdev);
 

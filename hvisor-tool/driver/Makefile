@@ -1,6 +1,10 @@
 obj-m += hvisor.o
-COMPILE = aarch64-none-linux-gnu-
-ARCH = arm64
+
+ifeq ($(ARCH), arm64)
+	COMPILE := aarch64-none-linux-gnu-
+else ifeq ($(ARCH), riscv)
+	COMPILE := riscv64-unknown-linux-gnu-
+endif
 
 EXTRA_CFLAGS += -I$(PWD)/include
 

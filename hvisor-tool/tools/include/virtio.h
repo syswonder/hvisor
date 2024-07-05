@@ -17,7 +17,9 @@ typedef struct VirtMmioRegs {
     uint32_t drv_feature_sel;
     uint32_t queue_sel;
     uint32_t interrupt_status;
-    uint32_t interrupt_ack;
+    // interrupt_count doesn't exist in virtio specifiction, 
+    // only used for ensuring the correctness of interrupt_status.
+    uint32_t interrupt_count; 
     uint32_t status;
     uint32_t generation;
     uint64_t dev_feature;
@@ -27,7 +29,8 @@ typedef struct VirtMmioRegs {
 typedef enum {
     VirtioTNone,
     VirtioTNet,
-    VirtioTBlock
+    VirtioTBlock,
+    VirtioTConsole
 } VirtioDeviceType;
 
 typedef struct vring_desc VirtqDesc;
@@ -50,7 +53,7 @@ struct VirtQueue {
     uint64_t avail_addr;
     uint64_t used_addr;
 
-    volatile VirtqDesc *desc_table; // volatile tells compiler don't optimize it. 
+    volatile VirtqDesc *desc_table;
     volatile VirtqAvail *avail_ring;
     volatile VirtqUsed *used_ring;
     int (*notify_handler)(VirtIODevice *vdev, VirtQueue *vq);
@@ -75,7 +78,8 @@ struct VirtIODevice
     VirtioDeviceType type;
     VirtMmioRegs regs;
     VirtQueue *vqs;
-    void *dev;          // according to device type, blk is BlkDev, net is NetDev.
+    void *dev;          // according to device type, blk is BlkDev, net is NetDev, console is ConsoleDev
+    void (*virtio_close)(VirtIODevice *vdev);
     bool activated;
 };
 // used event idx for driver telling device when to notify driver.
@@ -117,5 +121,6 @@ int virtio_start(int argc, char *argv[]);
 int is_queue_full(unsigned int front, unsigned int rear, unsigned int size);
 int is_queue_empty(unsigned int front, unsigned int rear);
 
+int set_nonblocking(int fd);
 #endif /* __HVISOR_VIRTIO_H */
 

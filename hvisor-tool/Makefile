@@ -1,7 +1,10 @@
 KDIR ?= ../OK8MP-linux-kernel
 DEV ?= /dev/sda1
+ARCH ?= arm64
 
 export KDIR
+export ARCH
+
 .PHONY: all tools driver clean
 tools:
 	make -C tools
@@ -19,7 +22,6 @@ transfer_nxp: all
 	sudo mount $(DEV) /mnt/
 	sudo cp ./tools/hvisor /mnt/home/arm64
 	sudo cp ./driver/hvisor.ko /mnt/home/arm64
-	sudo umount /mnt
 	sudo umount $(DEV)
 
 clean:

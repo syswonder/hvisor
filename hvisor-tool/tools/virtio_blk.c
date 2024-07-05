@@ -5,6 +5,7 @@
 #include <sys/param.h>
 #include <errno.h>
 #include "log.h"
+#include <fcntl.h>
 
 static void complete_block_operation(BlkDev *dev, struct blkp_req *req, VirtQueue *vq, int err, ssize_t written_len) {
     uint8_t *vstatus = (uint8_t *)(req->iov[req->iovcnt-1].iov_base);
@@ -48,6 +49,14 @@ static void blkproc(BlkDev *dev, struct blkp_req *req, VirtQueue *vq) {
     {
     case VIRTIO_BLK_T_IN:
         written_len = len = preadv(dev->img_fd, &iov[1], n - 2, req->offset);
+        // log_debug("readv data is ");
+        // for(int i = 1; i < n-1; i++) {
+        //     log_debug("n-1 is %d, iov[i].iov_len is %d", n-1, iov[i].iov_len);
+        //     for (int j = 0; j < iov[i].iov_len; j++) 
+        //         printf("%x", *(int*)(iov[i].iov_base + j));
+        //     printf("\n");
+        // }
+		log_debug("preadv, len is %d, offset is %d", len, req->offset);
         if (len < 0) {
             log_error("pread failed");
             err = errno;
@@ -55,6 +64,7 @@ static void blkproc(BlkDev *dev, struct blkp_req *req, VirtQueue *vq) {
         break;
     case VIRTIO_BLK_T_OUT:
         len = pwritev(dev->img_fd, &iov[1], n-2, req->offset);
+		log_debug("pwritev, len is %d, offset is %d", len, req->offset);
         if (len < 0) {
             log_error("pwrite failed");
             err = errno;
@@ -103,13 +113,13 @@ static void *blkproc_thread(void *arg)
 
 
 // create blk dev.
-BlkDev *init_blk_dev(VirtIODevice *vdev, uint64_t bsize, int img_fd)
+BlkDev *init_blk_dev(VirtIODevice *vdev)
 {
     BlkDev *dev = malloc(sizeof(BlkDev));
-    dev->config.capacity = bsize;
-    dev->config.size_max = bsize;
+    dev->config.capacity = -1;
+    dev->config.size_max = -1;
     dev->config.seg_max = BLK_SEG_MAX;
-    dev->img_fd = img_fd;
+    dev->img_fd = -1;
     dev->close = 0;
 	// TODO: chang to thread poll
     pthread_mutex_init(&dev->mtx, NULL);
@@ -119,10 +129,33 @@ BlkDev *init_blk_dev(VirtIODevice *vdev, uint64_t bsize, int img_fd)
     return dev;
 }
 
+int virtio_blk_init(VirtIODevice *vdev, const char *img_path) {
+    int img_fd = open(img_path, O_RDWR);
+    BlkDev *dev = vdev->dev;
+    struct stat st;
+    uint64_t blk_size;
+    if (img_fd == -1) {
+        log_error("cannot open %s, Error code is %d\n", img_path, errno);
+        close(img_fd);
+        return -1;
+    }
+    if (fstat(img_fd, &st) == -1) {
+        log_error("cannot stat %s, Error code is %d\n", img_path, errno);
+        close(img_fd);
+        return -1;
+    }
+    blk_size = st.st_size / 512; // 512 bytes per block
+    dev->config.capacity = blk_size;
+    dev->config.size_max = blk_size;
+    dev->img_fd = img_fd;
+    vdev->virtio_close = virtio_blk_close;
+    return 0;
+}
 
 // handle one descriptor list
 static struct blkp_req* virtq_blk_handle_one_request(VirtQueue *vq)
 {
+	log_debug("virtq_blk_handle_one_request enter");
     struct blkp_req *breq;
     struct iovec *iov = NULL;
     uint16_t *flags;
@@ -132,7 +165,7 @@ static struct blkp_req* virtq_blk_handle_one_request(VirtQueue *vq)
     n = process_descriptor_chain(vq, &breq->idx, &iov, &flags, 0);
 	breq->iov = iov;
     if (n < 2 || n > BLK_SEG_MAX + 2) {
-        log_error("iov's num is wrong");
+        log_error("iov's num is wrong, n is %d", n);
         goto err_out;
     }
 
@@ -175,7 +208,7 @@ err_out:
 
 int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
 {
-    log_trace("virtio blk notify handler enter");
+    log_debug("virtio blk notify handler enter");
 	BlkDev *blkDev = (BlkDev *)vdev->dev;
 	struct blkp_req *breq;
 	TAILQ_HEAD(, blkp_req) procq;
@@ -188,8 +221,10 @@ int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
 		}
 		virtqueue_enable_notify(vq);
 	}
-	if (TAILQ_EMPTY(&procq)) 
-		return 0;
+	if (TAILQ_EMPTY(&procq)) {
+		log_debug("virtio blk notify handler exit, procq is empty");
+        return 0;
+	}
 	pthread_mutex_lock(&blkDev->mtx);
 	TAILQ_CONCAT(&blkDev->procq, &procq, link);
 	pthread_cond_signal(&blkDev->cond);

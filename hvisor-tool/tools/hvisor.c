@@ -23,7 +23,7 @@ static void __attribute__((noreturn)) help(int exit_status) {
     exit(exit_status);
 }
 
-static void* read_file(char* filename, unsigned long long* filesize){
+static void* read_file(char* filename, u64* filesize) {
     int fd;
     struct stat st;
     void *buf;
@@ -65,7 +65,7 @@ int open_dev() {
     return fd;
 }
 
-// static void get_info(char *optarg, char **path, unsigned long long *address) {
+// static void get_info(char *optarg, char **path, u64 *address) {
 // 	char *now;
 // 	*path = strtok(optarg, ",");
 // 	now = strtok(NULL, "=");
@@ -77,8 +77,8 @@ int open_dev() {
 // 	}
 // }
 
-static void load_image_to_memory(const char *path, unsigned long long load_paddr) {
-    unsigned long long size, page_size, map_size;
+static u64 load_image_to_memory(const char *path, u64 load_paddr) {
+    u64 size, page_size, map_size;
     int fd;
     void *image_content, *virt_addr;
 
@@ -97,7 +97,7 @@ static void load_image_to_memory(const char *path, unsigned long long load_paddr
     printf("mapping physical address 0x%llx, size 0x%llx\n", load_paddr, map_size);
 
     // Map the physical memory to virtual memory
-    virt_addr = (unsigned long long)mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, load_paddr);
+    virt_addr = (u64)mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, load_paddr);
 
     if (virt_addr == MAP_FAILED) {
         perror("Error mapping memory");
@@ -112,6 +112,7 @@ static void load_image_to_memory(const char *path, unsigned long long load_paddr
     munmap(virt_addr, map_size);
 
     close(fd);
+    return map_size;
 }
 
 static int zone_start_from_json(const char *json_config_path, zone_config_t *config) {
@@ -129,7 +130,6 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
     buffer[file_size] = '\0';
 
     // parse JSON
-    printf("ok1\n");
     cJSON *root = cJSON_Parse(buffer);
     cJSON *zone_id_json = cJSON_GetObjectItem(root, "zone_id");
     cJSON *cpus_json = cJSON_GetObjectItem(root, "cpus");
@@ -171,6 +171,8 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
             mem_region->type = MEM_TYPE_RAM;
         } else if (strcmp(type_str, "io") == 0) {
             mem_region->type = MEM_TYPE_IO;
+        } else if (strcmp(type_str, "virtio") == 0) {
+            mem_region->type = MEM_TYPE_VIRTIO;
         } else {
             printf("Unknown memory region type: %s\n", type_str);
             mem_region->type = -1; // invalid type
@@ -192,15 +194,19 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
     config->entry_point = strtoull(entry_point_json->valuestring, NULL, 16);
     printf("entry_point is %llx\n", config->entry_point);
 
+    config->kernel_load_paddr = strtoull(kernel_load_paddr_json->valuestring, NULL, 16);
+    printf("kernel_load_paddr is %llx\n", config->kernel_load_paddr);
+
     config->dtb_load_paddr = strtoull(dtb_load_paddr_json->valuestring, NULL, 16);
     printf("dtb_load_paddr is %llx\n", config->dtb_load_paddr);
-    // strncpy(config->kernel_args, kernel_args_json->valuestring, CONFIG_KERNEL_ARGS_MAXLEN);
 
     // Load kernel image to memory
-    load_image_to_memory(kernel_filepath_json->valuestring, strtoull(kernel_load_paddr_json->valuestring, NULL, 16));
+    config->kernel_size = load_image_to_memory(kernel_filepath_json->valuestring, strtoull(kernel_load_paddr_json->valuestring, NULL, 16));
 
     // Load dtb to memory
-    load_image_to_memory(dtb_filepath_json->valuestring, strtoull(dtb_load_paddr_json->valuestring, NULL, 16));
+    config->dtb_size = load_image_to_memory(dtb_filepath_json->valuestring, strtoull(dtb_load_paddr_json->valuestring, NULL, 16));
+
+    // strncpy(config->kernel_args, kernel_args_json->valuestring, CONFIG_KERNEL_ARGS_MAXLEN);
 
     cJSON_Delete(root);  // delete cJSON object
     free(buffer);
@@ -221,7 +227,7 @@ static int zone_start(int argc, char *argv[]) {
     int fd, err, opt, zone_id;
 	char *image_path = NULL, *dtb_filepath = NULL, *json_config_path = NULL;
     zone_config_t config;
-	unsigned long long image_address, dtb_address;
+	u64 image_address, dtb_address;
 
 	if (argc != 4) {
 		help(1);
