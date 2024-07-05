@@ -44,7 +44,6 @@ static void* read_file(char* filename, u64* filesize) {
     buf = malloc(buf_size);
     memset(buf, 0, buf_size);
 	len = read(fd, buf, st.st_size);
-	printf("len is %ld, st_size is %ld\n", len, st.st_size);
 
     if (len < 0) {
         perror("read_file: read failed");
@@ -82,7 +81,7 @@ static u64 load_image_to_memory(const char *path, u64 load_paddr) {
     int fd;
     void *image_content, *virt_addr;
 
-    fd = open("/dev/mem", O_RDWR | O_SYNC);
+    fd = open("/dev/hvisor", O_RDWR | O_SYNC);
     if (fd < 0) {
         perror("Error opening /dev/mem");
         exit(1);
@@ -94,8 +93,6 @@ static u64 load_image_to_memory(const char *path, u64 load_paddr) {
     page_size = sysconf(_SC_PAGESIZE);
     map_size = (size + page_size - 1) & ~(page_size - 1);
 
-    printf("mapping physical address 0x%llx, size 0x%llx\n", load_paddr, map_size);
-
     // Map the physical memory to virtual memory
     virt_addr = (u64)mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, load_paddr);
 
@@ -104,9 +101,7 @@ static u64 load_image_to_memory(const char *path, u64 load_paddr) {
         exit(1);
     }
 
-	printf("virt_addr is %p\n", virt_addr);
     memmove(virt_addr, image_content, map_size);
-    printf("memcpy done\n");
 
     free(image_content);
     munmap(virt_addr, map_size);
@@ -192,13 +187,10 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
     }
 
     config->entry_point = strtoull(entry_point_json->valuestring, NULL, 16);
-    printf("entry_point is %llx\n", config->entry_point);
 
     config->kernel_load_paddr = strtoull(kernel_load_paddr_json->valuestring, NULL, 16);
-    printf("kernel_load_paddr is %llx\n", config->kernel_load_paddr);
 
     config->dtb_load_paddr = strtoull(dtb_load_paddr_json->valuestring, NULL, 16);
-    printf("dtb_load_paddr is %llx\n", config->dtb_load_paddr);
 
     // Load kernel image to memory
     config->kernel_size = load_image_to_memory(kernel_filepath_json->valuestring, strtoull(kernel_load_paddr_json->valuestring, NULL, 16));
@@ -213,11 +205,9 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
 
     int fd = open_dev();
     int err = ioctl(fd, HVISOR_ZONE_START, config);
-    // if (err)
-    //     perror("zone_start: ioctl failed");
-    // close(fd);
-    // free(images);
-    // free(zone_load);
+    if (err)
+        perror("zone_start: ioctl failed");
+    close(fd);
 
     return 0;
 }
@@ -233,8 +223,6 @@ static int zone_start(int argc, char *argv[]) {
 		help(1);
 	}
 	json_config_path = argv[3];
-
-	printf("config_path is %s\n", json_config_path);
 
     memset(&config, 0, sizeof(zone_config_t));
 	zone_start_from_json(json_config_path, &config);
