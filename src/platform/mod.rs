@@ -1,6 +1,9 @@
-
-
-use crate::config::{HvConfigMemoryRegion, HvZoneConfig, CONFIG_MAX_INTERRUPTS, CONFIG_MAX_MEMORY_REGIONS};
+use crate::{
+    config::{
+        HvConfigMemoryRegion, HvZoneConfig, CONFIG_MAX_INTERRUPTS, CONFIG_MAX_MEMORY_REGIONS,
+    },
+    consts::INVALID_ADDRESS,
+};
 
 #[cfg(all(feature = "platform_qemu", target_arch = "riscv64"))]
 pub mod qemu_riscv64;
@@ -42,8 +45,11 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
         memory_regions,
         ROOT_ZONE_IRQS.len() as u32,
         interrupts,
-        ROOT_ZONE_ENTRY as u64,
-        ROOT_ZONE_DTB_ADDR as u64,
+        ROOT_ZONE_ENTRY,
+        ROOT_ZONE_KERNEL_ADDR,
+        INVALID_ADDRESS as _,
+        ROOT_ZONE_DTB_ADDR,
+        INVALID_ADDRESS as _,
         ROOT_ARCH_ZONE_CONFIG,
     )
 }
