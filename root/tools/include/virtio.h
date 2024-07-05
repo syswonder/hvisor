@@ -95,7 +95,6 @@ void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type);
 
 void init_mmio_regs(VirtMmioRegs *regs, VirtioDeviceType type);
 
-
 void virtio_dev_reset(VirtIODevice *vdev);
 
 void virtqueue_reset(VirtQueue *vq, int idx);

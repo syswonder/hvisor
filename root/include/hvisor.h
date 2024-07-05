@@ -20,14 +20,6 @@
 #define NON_ROOT_PHYS_START 0x50000000
 #define NON_ROOT_PHYS_SIZE 0x30000000
 #define SIGHVI 10
-// used when start a zone.
-struct hvisor_zone_info {
-	__u64 zone_id;
-	__u64 image_phys_addr;
-	__u64 dtb_phys_addr;
-	__u64 image_size;
-	__u64 dtb_size;
-};
 
 // receive request from el2
 struct device_req {

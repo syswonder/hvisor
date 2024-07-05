@@ -9,19 +9,21 @@
 #include <sys/mman.h>
 #include <signal.h>
 #include <pthread.h>
+#include <errno.h>
+#include <getopt.h>
 #include "hvisor.h"
 #include "virtio.h"
 #include "log.h"
 #include "event_monitor.h"
-#include <errno.h>
-#include <getopt.h>
+#include "cJSON.h"
+#include "zone_config.h"
 
 static void __attribute__((noreturn)) help(int exit_status) {
     printf("Invalid Parameters!\n");
     exit(exit_status);
 }
 
-static void* read_file(char* filename, unsigned long long* filesize){
+static void* read_file(char* filename, u64* filesize) {
     int fd;
     struct stat st;
     void *buf;
@@ -42,7 +44,6 @@ static void* read_file(char* filename, unsigned long long* filesize){
     buf = malloc(buf_size);
     memset(buf, 0, buf_size);
 	len = read(fd, buf, st.st_size);
-	printf("len is %ld, st_size is %ld\n", len, st.st_size);
 
     if (len < 0) {
         perror("read_file: read failed");
@@ -63,91 +64,170 @@ int open_dev() {
     return fd;
 }
 
-static void get_info(char *optarg, char **path, unsigned long long *address) {
-	char *now;
-	*path = strtok(optarg, ",");
-	now = strtok(NULL, "=");
-	if (strcmp(now, "addr") == 0) {
-		now = strtok(NULL, "=");
-		*address = strtoull(now, NULL, 16);
-	} else {
-		help(1);
-	}
-}
-// ./hvisor zone start -kernel image.bin 0x1000 -dtb image.dtb 0x2000 -id 1
-static int zone_start(int argc, char *argv[]) {
-	static struct option long_options[] = {
-		{"kernel", required_argument, 0, 'k'},
-		{"dtb", required_argument, 0, 'd'},
-		{"id", required_argument, 0, 'i'},
-		{0, 0, 0, 0}
-	};
-	char *optstring = "k:d:i:";
+// static void get_info(char *optarg, char **path, u64 *address) {
+// 	char *now;
+// 	*path = strtok(optarg, ",");
+// 	now = strtok(NULL, "=");
+// 	if (strcmp(now, "addr") == 0) {
+// 		now = strtok(NULL, "=");
+// 		*address = strtoull(now, NULL, 16);
+// 	} else {
+// 		help(1);
+// 	}
+// }
 
-	struct hvisor_zone_info *zone_info;
-    int fd, err, opt, zone_id;
-	char *image_path = NULL, *dtb_path = NULL;
-	unsigned long long image_address, dtb_address;
-	unsigned long long virt_addrs[2], phys_addrs[2], image_sizes[2];
-	zone_id = 0;
-	image_address = dtb_address = 0;
+static u64 load_image_to_memory(const char *path, u64 load_paddr) {
+    u64 size, page_size, map_size;
+    int fd;
+    void *image_content, *virt_addr;
 
-	while ((opt = getopt_long(argc, argv, optstring, long_options, NULL)) != -1) {
-		switch (opt) {
-			case 'k':
-				get_info(optarg, &image_path, &image_address);
-				break;
-			case 'd':
-				get_info(optarg, &dtb_path, &dtb_address);
-				break;
-			case 'i':
-				sscanf(optarg, "%d", &zone_id);
-				break;
-			default:
-				help(1);
-		}
-	}
-	if (image_path == NULL || dtb_path == NULL || zone_id == 0 || image_address == 0 || dtb_address == 0) {
-		help(1);
-	}
-	zone_info = malloc(sizeof(struct hvisor_zone_info));
-	zone_info->zone_id = zone_id;
-	zone_info->image_phys_addr = phys_addrs[0] = image_address;
-	zone_info->dtb_phys_addr = phys_addrs[1] = dtb_address;
-
-    virt_addrs[0] = (unsigned long long) read_file(image_path, &image_sizes[0]);
-    virt_addrs[1] = (unsigned long long) read_file(dtb_path, &image_sizes[1]);
-	
-	zone_info->image_size = image_sizes[0];
-	zone_info->dtb_size = image_sizes[1];
-	long page_size = sysconf(_SC_PAGESIZE);
-    if (page_size == -1) {
-        perror("sysconf");
-        exit(EXIT_FAILURE);
+    fd = open("/dev/hvisor", O_RDWR | O_SYNC);
+    if (fd < 0) {
+        perror("Error opening /dev/mem");
+        exit(1);
     }
-	int mem_fd = open("/dev/hvisor", O_RDWR);
-	if(mem_fd < 0) {
-		printf("open hvisor failed\n");
-		exit(1);
-	}
-	for(int i = 0; i < 2; i++) {
-		size_t map_size = (image_sizes[i] + page_size - 1) & ~(page_size - 1);
-		void *virt_addr = mmap(NULL, map_size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED, mem_fd, phys_addrs[i]);
-		memcpy(virt_addr, (void *)virt_addrs[i], map_size);
-		if(munmap(virt_addr, map_size) == -1) {
-			printf("munmap failed\n");
-		}
-        free((void*) virt_addrs[i]);
-	}
-	close(mem_fd);
+    
+    // Load image content into memory
+    image_content = read_file(path, &size);
 
-	printf("success to map kernel and dtb to target address\n");
-    fd = open_dev();
-    err = ioctl(fd, HVISOR_ZONE_START, zone_info);
+    page_size = sysconf(_SC_PAGESIZE);
+    map_size = (size + page_size - 1) & ~(page_size - 1);
+
+    // Map the physical memory to virtual memory
+    virt_addr = (u64)mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, load_paddr);
+
+    if (virt_addr == MAP_FAILED) {
+        perror("Error mapping memory");
+        exit(1);
+    }
+
+    memmove(virt_addr, image_content, map_size);
+
+    free(image_content);
+    munmap(virt_addr, map_size);
+
+    close(fd);
+    return map_size;
+}
+
+static int zone_start_from_json(const char *json_config_path, zone_config_t *config) {
+    FILE *file = fopen(json_config_path, "r");
+    if (file == NULL) {
+        perror("Error opening file");
+        exit(1);
+    }
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    char *buffer = malloc(file_size + 1);
+    fread(buffer, 1, file_size, file);
+    fclose(file);
+    buffer[file_size] = '\0';
+
+    // parse JSON
+    cJSON *root = cJSON_Parse(buffer);
+    cJSON *zone_id_json = cJSON_GetObjectItem(root, "zone_id");
+    cJSON *cpus_json = cJSON_GetObjectItem(root, "cpus");
+    cJSON *memory_regions_json = cJSON_GetObjectItem(root, "memory_regions");
+    cJSON *kernel_filepath_json = cJSON_GetObjectItem(root, "kernel_filepath");
+    cJSON *dtb_filepath_json = cJSON_GetObjectItem(root, "dtb_filepath");
+    cJSON *kernel_load_paddr_json = cJSON_GetObjectItem(root, "kernel_load_paddr");
+    cJSON *dtb_load_paddr_json = cJSON_GetObjectItem(root, "dtb_load_paddr");
+    cJSON *entry_point_json = cJSON_GetObjectItem(root, "entry_point");
+    cJSON *kernel_args_json = cJSON_GetObjectItem(root, "kernel_args");
+    cJSON *interrupts_json = cJSON_GetObjectItem(root, "interrupts");
+
+    config->zone_id = zone_id_json->valueint;
+
+    int num_cpus = cJSON_GetArraySize(cpus_json);
+
+    for (int i = 0; i < num_cpus; i++) {
+        config->cpus |= (1 << cJSON_GetArrayItem(cpus_json, i)->valueint);
+    }
+
+    int num_memory_regions = cJSON_GetArraySize(memory_regions_json);
+    int num_interrupts = cJSON_GetArraySize(interrupts_json);
+
+    if (num_memory_regions > CONFIG_MAX_MEMORY_REGIONS || num_interrupts > CONFIG_MAX_INTERRUPTS) {
+        fprintf(stderr, "Exceeded maximum allowed regions/interrupts.\n");
+        cJSON_Delete(root);
+        fclose(file);
+        free(buffer);
+        return -1;
+    }
+
+    config->num_memory_regions = num_memory_regions;
+    for (int i = 0; i < num_memory_regions; i++) {
+        cJSON *region = cJSON_GetArrayItem(memory_regions_json, i);
+        memory_region_t *mem_region = &config->memory_regions[i];
+
+        const char *type_str = cJSON_GetObjectItem(region, "type")->valuestring;
+        if (strcmp(type_str, "ram") == 0) {
+            mem_region->type = MEM_TYPE_RAM;
+        } else if (strcmp(type_str, "io") == 0) {
+            mem_region->type = MEM_TYPE_IO;
+        } else if (strcmp(type_str, "virtio") == 0) {
+            mem_region->type = MEM_TYPE_VIRTIO;
+        } else {
+            printf("Unknown memory region type: %s\n", type_str);
+            mem_region->type = -1; // invalid type
+        }
+
+        mem_region->physical_start = strtoull(cJSON_GetObjectItem(region, "physical_start")->valuestring, NULL, 16);
+        mem_region->virtual_start = strtoull(cJSON_GetObjectItem(region, "virtual_start")->valuestring, NULL, 16);
+        mem_region->size = strtoull(cJSON_GetObjectItem(region, "size")->valuestring, NULL, 16);
+
+        printf("memory_region %d: type %d, physical_start %llx, virtual_start %llx, size %llx\n",
+            i, mem_region->type, mem_region->physical_start, mem_region->virtual_start, mem_region->size);
+    }
+
+    config->num_interrupts = num_interrupts;
+    for (int i = 0; i < num_interrupts; i++) {
+        config->interrupts[i] = cJSON_GetArrayItem(interrupts_json, i)->valueint;
+    }
+
+    config->entry_point = strtoull(entry_point_json->valuestring, NULL, 16);
+
+    config->kernel_load_paddr = strtoull(kernel_load_paddr_json->valuestring, NULL, 16);
+
+    config->dtb_load_paddr = strtoull(dtb_load_paddr_json->valuestring, NULL, 16);
+
+    // Load kernel image to memory
+    config->kernel_size = load_image_to_memory(kernel_filepath_json->valuestring, strtoull(kernel_load_paddr_json->valuestring, NULL, 16));
+
+    // Load dtb to memory
+    config->dtb_size = load_image_to_memory(dtb_filepath_json->valuestring, strtoull(dtb_load_paddr_json->valuestring, NULL, 16));
+
+    // strncpy(config->kernel_args, kernel_args_json->valuestring, CONFIG_KERNEL_ARGS_MAXLEN);
+
+    cJSON_Delete(root);  // delete cJSON object
+    free(buffer);
+
+    int fd = open_dev();
+    int err = ioctl(fd, HVISOR_ZONE_START, config);
     if (err)
         perror("zone_start: ioctl failed");
     close(fd);
-    return err;
+
+    return 0;
+}
+
+// ./hvisor zone start <path_to_config_file>
+static int zone_start(int argc, char *argv[]) {
+    int fd, err, opt, zone_id;
+	char *image_path = NULL, *dtb_filepath = NULL, *json_config_path = NULL;
+    zone_config_t config;
+	u64 image_address, dtb_address;
+
+	if (argc != 4) {
+		help(1);
+	}
+	json_config_path = argv[3];
+
+    memset(&config, 0, sizeof(zone_config_t));
+	zone_start_from_json(json_config_path, &config);
+
+    return 0;
 }
 
 // ./hvisor zone shutdown -id 1
