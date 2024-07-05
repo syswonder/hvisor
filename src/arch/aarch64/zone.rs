@@ -1,5 +1,10 @@
+use core::panic;
+
+use alloc::vec::Vec;
+
 use crate::{
-    config::{HvConfigMemoryRegion, MEM_TYPE_IO},
+    config::*,
+    device::virtio_trampoline::{mmio_virtio_handler, VIRTIO_BRIDGE},
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion},
     zone::Zone,
@@ -14,23 +19,37 @@ impl Zone {
             if mem_region.mem_type == MEM_TYPE_IO {
                 flags |= MemFlags::IO;
             }
-            self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-                mem_region.virtual_start as GuestPhysAddr,
-                mem_region.physical_start as HostPhysAddr,
-                mem_region.size as _,
-                flags,
-            ))?;
+            match mem_region.mem_type {
+                MEM_TYPE_RAM | MEM_TYPE_IO => {
+                    self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                        mem_region.virtual_start as GuestPhysAddr,
+                        mem_region.physical_start as HostPhysAddr,
+                        mem_region.size as _,
+                        flags,
+                    ))?
+                }
+                MEM_TYPE_VIRTIO => {
+                    self.mmio_region_register(
+                        mem_region.physical_start as _,
+                        mem_region.size as _,
+                        mmio_virtio_handler,
+                        mem_region.physical_start as _,
+                    );
+                }
+                _ => {
+                    panic!("Unsupported memory type: {}", mem_region.mem_type)
+                }
+            }
         }
 
         info!("VM stage 2 memory set: {:#x?}", self.gpm);
-        Ok(()) 
+        Ok(())
     }
 
     pub fn mmio_init(&mut self, hv_config: &HvArchZoneConfig) {
         self.vgicv3_mmio_init(hv_config);
     }
 }
-
 
 #[repr(C)]
 #[derive(Debug, Clone)]
