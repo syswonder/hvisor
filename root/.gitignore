@@ -7,3 +7,5 @@
 Module.symvers
 modules.order
 driver/hvisor.ko
+*.s
+*_compile.sh

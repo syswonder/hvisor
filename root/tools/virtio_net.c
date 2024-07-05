@@ -60,11 +60,10 @@ int virtio_net_rxq_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
 {
     log_debug("virtio_net_rxq_notify_handler");
     NetDev *net = vdev->dev;
-    if (net->rx_ready == 0) {
+    if (net->rx_ready <= 0) {
         net->rx_ready = 1;
-        if (vq->used_ring != NULL) {
-            vq->used_ring->flags |= VRING_USED_F_NO_NOTIFY;
-        }
+        // When buffers are all used, virtio_net_event_handler will notify the driver.
+        virtqueue_disable_notify(vq);
     }
     return 0;
 }
@@ -88,9 +87,9 @@ static inline struct iovec *rm_iov_header(struct iovec *iov, int *niov, int head
 }
 
 /// Called when tap device received packets
-void virtio_net_rx_callback(int fd, int epoll_type, void *param)
+void virtio_net_event_handler(int fd, int epoll_type, void *param)
 {
-    log_debug("virtio_net_rx_callback");
+    log_debug("virtio_net_event_handler");
     VirtIODevice *vdev = param;
 	NetHdr *vnet_header;
 	struct iovec *iov, *iov_packet;
@@ -135,6 +134,7 @@ void virtio_net_rx_callback(int fd, int epoll_type, void *param)
             // No more packets from tapfd, restore last_avail_idx.
             log_info("no more packets");
 			vq->last_avail_idx--;
+    		free(iov);
 			break;
         }
 
@@ -175,7 +175,7 @@ static void virtq_tx_handle_one_request(NetDev *net, VirtQueue *vq)
 	packet_len = all_len - sizeof(NetHdr);
 	iov[0].iov_base += sizeof(NetHdr);
 	iov[0].iov_len -= sizeof(NetHdr);
-    log_info("packet send: %d bytes", packet_len);
+    log_debug("packet send: %d bytes", packet_len);
 
 	// The mininum packet for data link layer is 64 bytes.
     if (packet_len < 64) {
@@ -199,7 +199,7 @@ int virtio_net_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq)
         virtq_tx_handle_one_request(vdev->dev, vq);
     }
     virtqueue_enable_notify(vq);
-	// To increase the performance, we don't inject irq when send packets. Linux will recycle the used ring when send packets.
+	// TODO: Can we don't inject irq when send packets to improve performance? Linux will recycle the used ring when send packets.
 	// virtio_inject_irq(vq);
     return 0;
 }
@@ -216,20 +216,19 @@ int virtio_net_init(VirtIODevice *vdev, char *devname)
         return -1;
     }
     // set tap device O_NONBLOCK. If io operation like readv blocks, then return errno EWOULDBLOCK
-    int opt = 1;
-    if (ioctl(net->tapfd, FIONBIO, &opt) < 0) {
-        log_error("tap device O_NONBLOCK failed");
+    if (set_nonblocking(net->tapfd) < 0) {
         close(net->tapfd);
         net->tapfd = -1;
     }
     // register an epoll read event for tap device
-    net->event = add_event(net->tapfd, EPOLLIN, virtio_net_rx_callback, vdev);
+    net->event = add_event(net->tapfd, EPOLLIN, virtio_net_event_handler, vdev);
     if (net->event == NULL) {
         log_error("Can't register net event");
         close(net->tapfd);
         net->tapfd = -1;
         return -1;
     }
+    vdev->virtio_close = virtio_net_close;
     return 0;
 }
 

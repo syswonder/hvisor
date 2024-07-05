@@ -1,8 +1,9 @@
 #ifndef __HVISOR_ZONE_CONFIG_H
 #define __HVISOR_ZONE_CONFIG_H
 
-#define MEM_TYPE_RAM  0
-#define MEM_TYPE_IO   1
+#define MEM_TYPE_RAM     0
+#define MEM_TYPE_IO      1
+#define MEM_TYPE_VIRTIO  2
 
 #define CONFIG_MAX_MEMORY_REGIONS  16
 #define CONFIG_MAX_INTERRUPTS      32
@@ -29,7 +30,10 @@ struct zone_config {
     u32 num_interrupts;
     u32 interrupts[CONFIG_MAX_INTERRUPTS];
     u64 entry_point;
+    u64 kernel_load_paddr;
+    u64 kernel_size;
     u64 dtb_load_paddr;
+    u64 dtb_size;
 };
 
 typedef struct zone_config zone_config_t;
