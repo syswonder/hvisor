@@ -1,59 +1,87 @@
+# Basic settings
 ARCH ?= aarch64
-LOG ?=info
+LOG ?= info
 STATS ?= off
 PORT ?= 2333
+MODE ?= debug
+OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
+KDIR ?= ../../linux
+FEATURES ?= platform_imx8mp
 
-# default debug mode
-MODE ?=debug
+ifeq ($(ARCH),aarch64)
+    RUSTC_TARGET := aarch64-unknown-none
+	GDB_ARCH := aarch64
+else
+    ifeq ($(ARCH),riscv64)
+        RUSTC_TARGET := riscv64gc-unknown-none-elf
+		GDB_ARCH := riscv:rv64
+    else
+        $(error Unsupported ARCH value: $(ARCH))
+    endif
+endif
 
 export MODE
 export LOG
 export ARCH
-export STATS
+export KDIR
 
-OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
+# Build paths
+build_path := target/$(RUSTC_TARGET)/$(MODE)
+hvisor_elf := $(build_path)/hvisor
+hvisor_bin := $(build_path)/hvisor.bin
+image_dir  := images/$(ARCH)
 
-build_path := target/$(ARCH)/$(MODE)
-target_elf := $(build_path)/rvmarm
-target_bin := $(build_path)/rvmarm.bin
-guest_obj  := demo/helloworld_aarch64-qemu-virt.elf
-features :=
+# Build arguments
+build_args := 
+build_args += --features "$(FEATURES)" 
+build_args += --target $(RUSTC_TARGET)
+build_args += -Z build-std=core,alloc
+build_args += -Z build-std-features=compiler-builtins-mem
 
-ifeq ($(STATS), on)
-  features += --features stats
-endif
-
-build_args := --features "$(features)" --target $(ARCH).json -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem
 
 ifeq ($(MODE), release)
   build_args += --release
 endif
 
-# .PHONY: qemu-aarch64
-# qemu-aarch64:
-# 	cargo clean
-# 	cargo build $(build_args)
+# Targets
+.PHONY: all elf disa run gdb monitor clean tools rootfs
+all: $(hvisor_bin)
 
-.PHONY: all
-all: $(target_bin)
-
-.PHONY: elf
 elf:
 	cargo build $(build_args)
-.PHONY: scp
-scp: $(target_bin)
-	scp -P $(PORT) -r $(target_bin) qemu-test/guest/* scp root@localhost:~/
-.PHONY: disa
+
 disa:
-	rust-objdump --disassemble $(target_elf) > rvm.S
-$(target_bin): elf
-	$(OBJCOPY) $(target_elf) --strip-all -O binary $@
+	aarch64-none-elf-readelf -a $(hvisor_elf) > hvisor-elf.txt
+	rust-objdump --disassemble $(hvisor_elf) > hvisor.S
+
+tools: 
+	make -C tools && \
+	make -C driver
+
 run: all
-	cd qemu-test/host && ./test.sh
+	$(QEMU) $(QEMU_ARGS)
+
+gdb: all
+	$(QEMU) $(QEMU_ARGS) -s -S
+
+show-features:
+	rustc --print=target-features --target=$(RUSTC_TARGET)
 
 monitor:
 	gdb-multiarch \
-	-ex 'target remote:1234' \
-	-ex 'file $(target_elf)' \
-	-ex 'add-symbol-file $(guest_obj)' \
-	-ex 'continue'
+		-ex 'file $(hvisor_elf)' \
+		-ex 'set arch $(GDB_ARCH)' \
+		-ex 'target remote:1234'
+
+jlink-server:
+	JLinkGDBServer -select USB -if JTAG -device Cortex-A53 -port 1234
+
+cp: all
+	cp $(hvisor_bin) ~/tftp
+
+clean:
+	cargo clean
+	make -C tools clean
+	make -C driver clean
+
+include scripts/qemu-$(ARCH).mk

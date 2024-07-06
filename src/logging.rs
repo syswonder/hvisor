@@ -115,10 +115,10 @@ impl Log for SimpleLogger {
         };
         print(with_color!(
             ColorCode::White,
-            "[{} {} {} {}\n",
+            "[{} {}] {} {}\n",
             with_color!(level_color, "{:<5}", level),
-            with_color!(ColorCode::White, "{}]", cpu_id),
-            with_color!(ColorCode::White, "{}:{}]", target, line),
+            with_color!(ColorCode::White, "{}", cpu_id),
+            with_color!(ColorCode::White, "({}:{})", target, line),
             with_color!(args_color, "{}", record.args()),
         ));
     }

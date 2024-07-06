@@ -1,0 +1,62 @@
+/dts-v1/;
+
+/ {
+	#address-cells = <0x2>;
+	#size-cells = <0x2>;
+
+	cpus {
+		#address-cells = <0x1>;
+		#size-cells = <0x0>;
+		timebase-frequency = <10000000>;
+
+		cpu@3 {
+			device_type = "cpu";
+			reg = <0x3>;
+			status = "okay";
+			compatible = "riscv";
+			riscv,isa = "rv64imafdcsu";
+			mmu-type = "riscv,sv39";
+
+			cpu3_intc: interrupt-controller {
+				#interrupt-cells = <0x1>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+			};
+		};
+
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x0 0x80200000 0x0 0x1000000>;
+	};
+soc{
+			#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		compatible = "simple-bus";
+		ranges;
+	plic: interrupt-controller@c000000 {
+		riscv,ndev = <60>;
+		reg = <0x0 0xc000000 0x0 0x4000000>;
+		interrupts-extended = <
+			&cpu3_intc 11 &cpu3_intc 9
+		>;
+		interrupt-controller;
+		compatible = "riscv,plic0";
+		#interrupt-cells = <0x1>;
+	};
+
+	uart@10000000 {
+		interrupts = <0x0a>;
+		interrupt-parent = <&plic>;
+		clock-frequency = "\08@";
+		reg = <0x00 0x10000000 0x00 0x100>;
+		compatible = "ns16550a";
+	};
+
+};
+	chosen {
+		bootargs = "root=/dev/vda rw earlycon console=ttyS0";
+	};
+
+};

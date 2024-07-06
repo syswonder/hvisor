@@ -6,12 +6,12 @@ use alloc::collections::btree_map::{BTreeMap, Entry};
 use core::fmt::{Debug, Formatter, Result};
 use spin::Once;
 
-use super::{mapper::Mapper, paging::GenericPageTable, MemFlags};
-use super::{AlignedPage, VirtAddr, NUM_TEMPORARY_PAGES, PAGE_SIZE, TEMPORARY_MAPPING_BASE};
+use super::AlignedPage;
+use super::{mapper::Mapper, MemFlags};
+use crate::arch::paging::{GenericPageTable, PageSize, PagingResult};
 use crate::arch::Stage2PageTable;
 use crate::error::HvResult;
 use crate::memory::addr::is_aligned;
-use crate::memory::paging::{PageSize, PagingResult};
 use crate::memory::PhysAddr;
 
 #[derive(Clone)]
@@ -55,10 +55,10 @@ impl<PT: GenericPageTable> MemorySet<PT>
 where
     PT::VA: Ord,
 {
-    pub fn new() -> Self {
+    pub fn new(pt_level: usize) -> Self {
         Self {
             regions: BTreeMap::new(),
-            pt: PT::new(),
+            pt: PT::new(pt_level),
         }
     }
 
@@ -119,16 +119,6 @@ where
         }
     }
 
-    pub fn map_partial(&mut self, mem: &MemoryRegion<PT::VA>) -> HvResult {
-        // Todo: Check if the memory area is included in the memory set.
-        self.pt.map(mem)
-    }
-
-    pub fn unmap_partial(&mut self, mem: &MemoryRegion<PT::VA>) -> HvResult {
-        // Todo: Check if the memory area is included in the memory set.
-        self.pt.unmap(mem)
-    }
-
     pub fn clear(&mut self) {
         for region in self.regions.values() {
             self.pt.unmap(region).unwrap();
@@ -145,28 +135,6 @@ where
         vaddr: PT::VA,
     ) -> PagingResult<(PhysAddr, MemFlags, PageSize)> {
         self.pt.query(vaddr)
-    }
-    /// Map a physical address to a temporary virtual address.
-    /// It should only used when access an address in el2 but hypervisor doesn't have the mapping.
-    pub fn map_temporary(
-        &mut self,
-        start_paddr: PhysAddr,
-        size: usize,
-        flags: MemFlags,
-    ) -> HvResult<VirtAddr> {
-        if size > NUM_TEMPORARY_PAGES * PAGE_SIZE {
-            warn!("Trying to map a too big space in temporary area");
-            return hv_result_err!(EINVAL);
-        }
-        let region: MemoryRegion<PT::VA> = MemoryRegion::new_with_offset_mapper(
-            TEMPORARY_MAPPING_BASE.into(),
-            start_paddr,
-            size,
-            flags,
-        );
-        self.pt.map(&region)?;
-        self.regions.insert(region.start, region);
-        Ok(TEMPORARY_MAPPING_BASE)
     }
 }
 
