@@ -3,9 +3,11 @@ use aarch64_cpu::registers::VTTBR_EL2;
 use core::fmt;
 use numeric_enum_macro::numeric_enum;
 
+use crate::consts::PAGE_SIZE;
 use crate::memory::addr::{GuestPhysAddr, HostPhysAddr, PhysAddr};
-use crate::memory::{GenericPTE, Level4PageTable, MemFlags, PagingInstr, PAGE_SIZE};
-use crate::percpu::{arm_paging_vcpu_flush_tlbs, isb};
+use crate::memory::MemFlags;
+
+use super::paging::{GenericPTE, HvPageTable, PagingInstr};
 
 bitflags::bitflags! {
     /// Memory attribute fields in the VMSAv8-64 translation table format descriptors.
@@ -198,9 +200,11 @@ pub struct S2PTInstr;
 
 impl PagingInstr for S2PTInstr {
     unsafe fn activate(root_paddr: HostPhysAddr) {
+        debug!("activating stage 2 page table at {:#x}", root_paddr);
         VTTBR_EL2.set_baddr(root_paddr as _);
-        isb();
-        arm_paging_vcpu_flush_tlbs();
+        core::arch::asm!("isb");
+        core::arch::asm!("tlbi vmalls12e1is");
+        core::arch::asm!("dsb nsh");
     }
 
     fn flush(_vaddr: Option<usize>) {
@@ -208,4 +212,4 @@ impl PagingInstr for S2PTInstr {
     }
 }
 
-pub type Stage2PageTable = Level4PageTable<GuestPhysAddr, PageTableEntry, S2PTInstr>;
+pub type Stage2PageTable = HvPageTable<GuestPhysAddr, PageTableEntry, S2PTInstr>;
