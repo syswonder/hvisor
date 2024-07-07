@@ -4,7 +4,6 @@ use log::{self, Level, LevelFilter, Log, Metadata, Record};
 use spin::Mutex;
 
 use crate::device::uart;
-
 static PRINT_LOCK: Mutex<()> = Mutex::new(());
 struct Stdout;
 
@@ -27,14 +26,14 @@ pub fn print(args: fmt::Arguments) {
     let _locked = PRINT_LOCK.lock();
     Stdout.write_fmt(args).unwrap();
 }
-/// print without line breaks
+
 #[macro_export]
 macro_rules! print {
     ($fmt: literal $(, $($arg: tt)+)?) => {
         $crate::logging::print(format_args!($fmt $(, $($arg)+)?));
     }
 }
-/// print with line breaks
+
 #[macro_export]
 macro_rules! println {
     () => { print!("\n") };
@@ -98,7 +97,6 @@ impl Log for SimpleLogger {
         let level = record.level();
         let line = record.line().unwrap_or(0);
         let target = record.target();
-        let cpu_id = crate::percpu::this_cpu_data().id;
         let level_color = match level {
             Level::Error => ColorCode::BrightRed,
             Level::Warn => ColorCode::BrightYellow,
@@ -115,9 +113,8 @@ impl Log for SimpleLogger {
         };
         print(with_color!(
             ColorCode::White,
-            "[{} {} {} {}\n",
+            "[{} {} {}\n",
             with_color!(level_color, "{:<5}", level),
-            with_color!(ColorCode::White, "{}]", cpu_id),
             with_color!(ColorCode::White, "{}:{}]", target, line),
             with_color!(args_color, "{}", record.args()),
         ));

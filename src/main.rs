@@ -13,9 +13,8 @@
 // 不使用main入口，使用自己定义实际入口_start，因为我们还没有初始化堆栈指针
 #![feature(asm_const)]
 #![feature(naked_functions)] //  surpport naked function
-#![feature(core_panic)]
 // 支持内联汇编
-// #![deny(warnings, missing_docs)] // 将warnings作为error
+#![deny(warnings, missing_docs)] // 将warnings作为error
 #[macro_use]
 extern crate alloc;
 extern crate buddy_system_allocator;
@@ -27,68 +26,70 @@ extern crate log;
 extern crate lazy_static;
 #[macro_use]
 mod logging;
+mod control;
+//#[cfg(target_arch = "aarch64")]
+#[path = "arch/aarch64/mod.rs"]
 mod arch;
+mod cell;
+mod config;
 mod consts;
 mod device;
-mod event;
+mod header;
 mod hypercall;
 mod memory;
+mod num;
 mod panic;
 mod percpu;
-mod platform;
-mod zone;
-mod config;
 
-use crate::arch::mm::setup_parange;
-use crate::consts::MAX_CPU_NUM;
-use arch::{cpu::cpu_start, entry::arch_entry};
-use config::root_zone_config;
-use zone::zone_create;
+use crate::cell::root_cell;
+use crate::percpu::this_cpu_data;
+use config::HvSystemConfig;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+use device::gicv3::gicv3_cpu_init;
+use error::HvResult;
+use header::HvHeader;
 use percpu::PerCpu;
-
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
-static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
 static INIT_EARLY_OK: AtomicU32 = AtomicU32::new(0);
 static INIT_LATE_OK: AtomicU32 = AtomicU32::new(0);
-static MASTER_CPU: AtomicI32 = AtomicI32::new(-1);
-
-pub fn clear_bss() {
-    extern "C" {
-        fn sbss();
-        fn ebss();
-    }
-    let mut p = sbss as *mut u8;
-    while p < ebss as _ {
-        unsafe {
-            *p = 0;
-            p = p.add(1);
-        };
-    }
+static ERROR_NUM: AtomicI32 = AtomicI32::new(0);
+fn has_err() -> bool {
+    ERROR_NUM.load(Ordering::Acquire) != 0
 }
 
-fn wait_for(condition: impl Fn() -> bool) {
-    while condition() {
+fn wait_for(condition: impl Fn() -> bool) -> HvResult {
+    while !has_err() && condition() {
         core::hint::spin_loop();
     }
+    if has_err() {
+        hv_result_err!(EBUSY, "Other cpu init failed!")
+    } else {
+        Ok(())
+    }
 }
 
-fn wait_for_counter(counter: &AtomicU32, max_value: u32) {
+fn wait_for_counter(counter: &AtomicU32, max_value: u32) -> HvResult {
     wait_for(|| counter.load(Ordering::Acquire) < max_value)
 }
-
-fn primary_init_early() {
-    extern "C" {
-        fn __core_end();
-    }
+fn primary_init_early() -> HvResult {
     logging::init();
     info!("Logging is enabled.");
-    info!("__core_end = {:#x?}", __core_end as usize);
-    // let system_config = HvSystemConfig::get();
-    // let revision = system_config.revision;
-    info!("Hypervisor initialization in progress...");
+
+    let system_config = HvSystemConfig::get();
+    let revision = system_config.revision;
     info!(
-        "build_mode: {}, log_level: {}, arch: {}, vendor: {}, stats: {}",
+        "\n\
+        Initializing hypervisor...\n\
+        config_signature = {:?}\n\
+        config_revision = {}\n\
+        build_mode = {}\n\
+        log_level = {}\n\
+        arch = {}\n\
+        vendor = {}\n\
+        stats = {}\n\
+        ",
+        core::str::from_utf8(&system_config.signature),
+        revision,
         option_env!("MODE").unwrap_or(""),
         option_env!("LOG").unwrap_or(""),
         option_env!("ARCH").unwrap_or(""),
@@ -96,96 +97,72 @@ fn primary_init_early() {
         option_env!("STATS").unwrap_or("off"),
     );
 
-    memory::frame::init();
-    memory::frame::test();
-    event::init(MAX_CPU_NUM);
+    memory::init_heap();
+    system_config.check()?;
+    info!("Hypervisor header: {:#x?}", HvHeader::get());
+    // info!("System config: {:#x?}", system_config);
 
-    device::irqchip::primary_init_early();
-    // crate::arch::mm::init_hv_page_table().unwrap();
+    memory::init_frame_allocator();
+    memory::init_hv_page_table()?;
+    cell::init()?;
 
-    zone_create(root_zone_config()).unwrap();
     INIT_EARLY_OK.store(1, Ordering::Release);
+    Ok(())
 }
 
 fn primary_init_late() {
     info!("Primary CPU init late...");
-    device::irqchip::primary_init_late();
-
+    // Do nothing...
     INIT_LATE_OK.store(1, Ordering::Release);
 }
 
-fn per_cpu_init(cpu: &mut PerCpu) {
-    if cpu.zone.is_none() {
-        warn!("zone is not created for cpu {}", cpu.id);
-    }
-    // unsafe {
-    //     memory::hv_page_table().read().activate();
-    // };
-    info!("CPU {} hv_pt_install OK.", cpu.id);
+fn per_cpu_init() {
+    let cpu_data = this_cpu_data();
+    cpu_data.cell = Some(root_cell());
+    gicv3_cpu_init();
+    unsafe {
+        memory::hv_page_table().read().activate();
+        root_cell().read().gpm_activate();
+    };
+    println!("CPU {} init OK.", cpu_data.id);
 }
 
-fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
-    for cpu_id in 0..MAX_CPU_NUM {
-        if cpu_id == this_id {
-            continue;
-        }
-        cpu_start(cpu_id, arch_entry as _, host_dtb);
-    }
-}
-
-fn rust_main(cpuid: usize, host_dtb: usize) {
-    arch::trap::install_trap_vector();
-
-    let mut is_primary = false;
-    println!("Hello, HVISOR!");
-    if MASTER_CPU.load(Ordering::Acquire) == -1 {
-        MASTER_CPU.store(cpuid as i32, Ordering::Release);
-        is_primary = true;
-        memory::heap::init();
-        memory::heap::test();
-    }
-
-    let cpu = PerCpu::new(cpuid);
-
+fn main(cpu_data: &'static mut PerCpu) -> HvResult {
+    println!("Hello");
     println!(
-        "Booting CPU {}: {:p}, DTB: {:#x}",
-        cpu.id, cpu as *const _, host_dtb
+        "cpuid{} vaddr{:#x?} phyid{} &cpu_data{:#x?}",
+        cpu_data.id,
+        cpu_data.self_vaddr,
+        this_cpu_data().id,
+        cpu_data as *const _
     );
-
-    if is_primary {
-        wakeup_secondary_cpus(cpu.id, host_dtb);
-    }
-
-    ENTERED_CPUS.fetch_add(1, Ordering::SeqCst);
-    wait_for(|| PerCpu::entered_cpus() < MAX_CPU_NUM as _);
-    assert_eq!(PerCpu::entered_cpus(), MAX_CPU_NUM as _);
-
+    let is_primary = cpu_data.id == 0;
+    let online_cpus = HvHeader::get().online_cpus;
+    wait_for(|| PerCpu::entered_cpus() < online_cpus)?;
     println!(
-        "{} CPU {} has entered.",
+        "{} CPU {} entered.",
         if is_primary { "Primary" } else { "Secondary" },
-        cpu.id
+        cpu_data.id
     );
 
-    #[cfg(target_arch = "aarch64")]
-    setup_parange();
-
     if is_primary {
-        primary_init_early(); // create root zone here
+        primary_init_early()?;
     } else {
-        wait_for_counter(&INIT_EARLY_OK, 1);
+        wait_for_counter(&INIT_EARLY_OK, 1)?
     }
 
-    per_cpu_init(cpu);
-    device::irqchip::percpu_init();
+    per_cpu_init();
 
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
-    wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _);
+    wait_for_counter(&INITED_CPUS, online_cpus)?;
 
     if is_primary {
         primary_init_late();
     } else {
-        wait_for_counter(&INIT_LATE_OK, 1);
+        wait_for_counter(&INIT_LATE_OK, 1)?
     }
-
-    cpu.run_vm();
+    cpu_data.activate_vmm()
+}
+extern "C" fn entry(cpu_data: &'static mut PerCpu) -> () {
+    if let Err(_e) = main(cpu_data) {}
 }

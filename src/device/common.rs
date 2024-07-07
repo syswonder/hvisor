@@ -7,7 +7,6 @@ pub struct MMIODerefWrapper<T> {
 
 impl<T> MMIODerefWrapper<T> {
     /// Create an instance.
-    #[allow(unused)]
     pub const unsafe fn new(start_addr: usize) -> Self {
         Self {
             start_addr,

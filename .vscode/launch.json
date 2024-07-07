@@ -8,7 +8,7 @@
             "name": "(gdb-multiarch) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "${workspaceFolder}/target/aarch64/debug/hvisor",
+            "program": "${workspaceFolder}/target/aarch64/debug/rvmarm",
             "cwd": "${workspaceFolder}",
             "MIMode": "gdb",
             "miDebuggerPath": "/usr/bin/gdb-multiarch",

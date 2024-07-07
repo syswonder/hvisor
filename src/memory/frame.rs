@@ -1,11 +1,10 @@
 //! Physical memory allocation.
 
-use alloc::vec::Vec;
 use bitmap_allocator::BitAlloc;
 
 use spin::Mutex;
 
-use super::addr::{align_down, align_up, is_aligned, PhysAddr};
+use super::addr::{align_down, align_up, is_aligned, phys_to_virt, virt_to_phys, PhysAddr};
 use crate::consts::PAGE_SIZE;
 use crate::error::HvResult;
 
@@ -109,7 +108,7 @@ impl Frame {
     /// Allocate one physical frame and fill with zero.
     pub fn new_zero() -> HvResult<Self> {
         let mut f = Self::new()?;
-        f.clear();
+        f.zero();
         Ok(f)
     }
 
@@ -141,23 +140,6 @@ impl Frame {
         }
     }
 
-    pub fn new_16() -> HvResult<Self> {
-        let mut v: Vec<Frame> = Vec::new();
-        loop {
-            let f = Self::new_zero()?;
-            if f.start_paddr & 0b11_1111_1111_1111 == 0 {
-                v.push(f);
-                break;
-            }
-            v.push(f);
-        }
-        let f_16 = v.pop().unwrap();
-        drop(f_16);
-        let ret = Self::new_contiguous(4, 0)?;
-        drop(v);
-        Ok(ret)
-    }
-
     /// Get the start physical address of this frame.
     pub fn start_paddr(&self) -> PhysAddr {
         self.start_paddr
@@ -170,26 +152,21 @@ impl Frame {
 
     /// convert to raw a pointer.
     pub fn as_ptr(&self) -> *const u8 {
-        self.start_paddr as *const u8
+        phys_to_virt(self.start_paddr) as *const u8
     }
 
     /// convert to a mutable raw pointer.
     pub fn as_mut_ptr(&self) -> *mut u8 {
-        self.start_paddr as *mut u8
+        phys_to_virt(self.start_paddr) as *mut u8
     }
 
     /// Fill `self` with `byte`.
     pub fn fill(&mut self, byte: u8) {
-        let ptr = self.as_mut_ptr();
-        for i in 0..self.size() {
-            unsafe {
-                *ptr.add(i) = byte;
-            }
-        }
+        unsafe { core::ptr::write_bytes(self.as_mut_ptr(), byte, self.size()) }
     }
 
     /// Fill `self` with zero.
-    pub fn clear(&mut self) {
+    pub fn zero(&mut self) {
         self.fill(0)
     }
 
@@ -225,31 +202,16 @@ impl Drop for Frame {
 }
 
 /// Initialize the physical frame allocator.
-pub fn init() {
-    let mem_pool_start = crate::consts::mem_pool_start();
+pub(super) fn init() {
+    let mem_pool_start = crate::consts::free_memory_start();
     let mem_pool_end = align_down(crate::consts::hv_end());
     let mem_pool_size = mem_pool_end - mem_pool_start;
-    FRAME_ALLOCATOR.lock().init(mem_pool_start, mem_pool_size);
+    FRAME_ALLOCATOR
+        .lock()
+        .init(virt_to_phys(mem_pool_start), mem_pool_size);
 
     info!(
-        "Frame allocator initialization finished: {:#x?}",
+        "Frame allocator init end: {:#x?}",
         mem_pool_start..mem_pool_end
     );
-}
-
-pub fn test() {
-    let mut v: Vec<Frame> = Vec::new();
-    for _ in 0..5 {
-        let frame = Frame::new().unwrap();
-        // println!("{:x?}", frame);
-        v.push(frame);
-    }
-    v.clear();
-    for _ in 0..5 {
-        let frame = Frame::new().unwrap();
-        // println!("{:x?}", frame);
-        v.push(frame);
-    }
-    drop(v);
-    info!("frame_allocator_test passed!");
 }

@@ -1,10 +1,10 @@
 use core::ptr;
 
-use crate::{error::HvResult, percpu::this_zone};
+use crate::{error::HvResult, percpu::this_cell};
 
 use super::GuestPhysAddr;
 
-pub type MMIOHandler = fn(&mut MMIOAccess, usize) -> HvResult;
+pub type MMIOHandler = fn(&mut MMIOAccess, u64) -> HvResult;
 
 #[derive(Copy, Clone, Debug)]
 pub struct MMIOAccess {
@@ -12,33 +12,33 @@ pub struct MMIOAccess {
      * relative offset to region start. */
     pub address: GuestPhysAddr,
     /** Size of the access. */
-    pub size: usize,
+    pub size: u64,
     /** True if write access. */
     pub is_write: bool,
     /** The value to be written or the read value to return. */
-    pub value: usize,
+    pub value: u64,
 }
 
 #[derive(Copy, Clone, Debug)]
 pub struct MMIORegion {
     pub start: GuestPhysAddr,
-    pub size: usize,
+    pub size: u64,
 }
 
 #[derive(Debug)]
 pub struct MMIOConfig {
     pub region: MMIORegion,
     pub handler: MMIOHandler,
-    pub arg: usize,
+    pub arg: u64,
 }
 
 impl MMIORegion {
-    pub fn contains_region(&self, addr: GuestPhysAddr, sz: usize) -> bool {
+    pub fn contains_region(&self, addr: GuestPhysAddr, sz: u64) -> bool {
         addr >= self.start && addr + (sz as usize) <= self.start + (self.size as usize)
     }
 }
 
-pub fn mmio_perform_access(base: usize, mmio: &mut MMIOAccess) {
+pub fn mmio_perform_access(base: u64, mmio: &mut MMIOAccess) {
     let addr = base as usize + mmio.address;
 
     unsafe {
@@ -63,21 +63,30 @@ pub fn mmio_perform_access(base: usize, mmio: &mut MMIOAccess) {
 }
 
 pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
-    let zone = this_zone();
-    let res = zone.read().find_mmio_region(mmio.address, mmio.size);
+    let cell = this_cell();
+    let res = cell.read().find_mmio_region(mmio.address, mmio.size);
     match res {
         Some((region, handler, arg)) => {
             mmio.address -= region.start;
             handler(mmio, arg)
         }
         None => {
-            warn!("Zone {} unhandled mmio fault {:#x?}", zone.read().id, mmio);
+            warn!(
+                "Cell {} unhandled mmio fault {:#x?}",
+                cell.read().id(),
+                mmio
+            );
             hv_result_err!(EINVAL)
         }
     }
 }
 
-pub fn mmio_generic_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
+pub fn mmio_subpage_handler(mmio: &mut MMIOAccess, base: u64) -> HvResult {
+    mmio_perform_access(base, mmio);
+    Ok(())
+}
+
+pub fn mmio_generic_handler(mmio: &mut MMIOAccess, base: u64) -> HvResult {
     mmio_perform_access(base, mmio);
     Ok(())
 }

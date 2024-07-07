@@ -1,4 +1,5 @@
+pub mod pl011;
+pub use pl011 as uart;
 pub mod common;
-pub mod irqchip;
-pub mod uart;
-pub mod virtio_trampoline;
+pub mod gicv3;
+pub mod pci;
