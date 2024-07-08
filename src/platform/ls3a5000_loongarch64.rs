@@ -1,1 +1,2 @@
-pub const ROOT_ZONE_DTB_ADDR: usize = 0x90000000;
+pub const ROOT_ZONE_DTB_ADDR: usize = 0x9000000090000000;
+pub const ROOT_ENTRY: usize = 0x9000000080000000;

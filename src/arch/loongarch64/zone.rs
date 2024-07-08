@@ -343,7 +343,6 @@ impl LoongArch64ZoneContext {
         LoongArch64ZoneContext {
             x: [0; 32],
             sepc: 0,
-            // 初始化 GCSR 寄存器
             gcsr_crmd: 0,
             gcsr_prmd: 0,
             gcsr_euen: 0,

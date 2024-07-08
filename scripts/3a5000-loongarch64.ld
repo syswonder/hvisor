@@ -32,19 +32,20 @@ SECTIONS
     .data : {
         *(.data .data.*)
         *(.sdata .sdata.*)
-    }
 
-    . = ALIGN(4K);
-    edata = .;
-    .bss : {
+        /* .bss inside .data for UEFI environment */
+        /* TODO: dynamically clear .bss after boot for smaller image size */
         *(.bss.stack)
         sbss = .;
         *(.bss .bss.*)
         *(.sbss .sbss.*)
+        . = ALIGN(4K);
+        ebss = .;
     }
 
     . = ALIGN(4K);
-    ebss = .;
+    edata = .;
+
     ekernel = .;
 
     /DISCARD/ : {
