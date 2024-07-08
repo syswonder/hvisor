@@ -16,3 +16,5 @@ pub use qemu_aarch64::ROOT_ENTRY;
 pub mod ls3a5000_loongarch64;
 #[cfg(target_arch = "loongarch64")]
 pub use ls3a5000_loongarch64::ROOT_ZONE_DTB_ADDR;
+#[cfg(target_arch = "loongarch64")]
+pub use ls3a5000_loongarch64::ROOT_ENTRY;
