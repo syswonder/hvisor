@@ -44,7 +44,7 @@ pub fn timer_init() {
     // set timer
     tcfg::set_periodic(true);
     // let init_val = get_ms_counter(500);
-    let init_val = get_ms_counter(1000);
+    let init_val = get_ms_counter(2000);
     tcfg::set_init_val(init_val);
     println!("loongarch64: timer_init: timer init value = {}", init_val);
 
@@ -117,9 +117,18 @@ pub fn trap_handler(sp: usize) {
     let estat_ = estat::read();
     let ecode = estat_.ecode();
     let esubcode = estat_.esubcode();
+    let is = estat_.is();
     let badv_ = badv::read();
     let badi_ = badi::read();
-    warn!("loongarch64: trap_handler: {}", ecode2str(ecode, esubcode));
+    debug!(
+        "loongarch64: trap_handler: {}, ecode={:#x}, esubcode={:#x}, is={:#x}, badv=0x{:x}, badi=0x{:x}",
+        ecode2str(ecode, esubcode),
+        ecode,
+        esubcode,
+        is,
+        badv_.vaddr(),
+        badi_.inst()
+    );
     ticlr::clear_timer_interrupt();
     _hyp_trap_return(sp);
 }
@@ -1007,5 +1016,28 @@ fn handle_exception(
         );
             loop {}
         }
+    }
+}
+
+/* TLB REFILL HANDLER */
+#[no_mangle]
+#[naked]
+#[link_section = ".tlbrefill_entry"]
+pub fn tlb_refill_handler() {
+    unsafe {
+        asm!(
+        "csrwr   $r12, {LOONGARCH_CSR_TLBRSAVE}",
+        "csrrd   $r12, {LOONGARCH_CSR_PGD}",
+        "lddir   $r12, $r12, 3",
+        "lddir   $r12, $r12, 2",
+        "lddir   $r12, $r12, 1",
+        "ldpte   $r12, 0",
+        "ldpte   $r12, 1",
+        "tlbfill",
+        "ertn",
+        LOONGARCH_CSR_TLBRSAVE = const 0x8b,
+        LOONGARCH_CSR_PGD = const 0x1b,
+        options(noreturn)
+        );
     }
 }
