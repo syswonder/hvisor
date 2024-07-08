@@ -16,6 +16,8 @@ SECTIONS
     . = ALIGN(4K);
     .trap_entry : {
         *(.trap_entry)
+        . = ALIGN(4K);
+        *(.tlbrefill_entry)
     }
 
     . = ALIGN(4K);
@@ -33,18 +35,19 @@ SECTIONS
         *(.data .data.*)
         *(.sdata .sdata.*)
 
-        /* .bss inside .data for UEFI environment */
-        /* TODO: dynamically clear .bss after boot for smaller image size */
+    }
+    . = ALIGN(4K);
+    edata = .;
+
+    .bss : {
         *(.bss.stack)
         sbss = .;
         *(.bss .bss.*)
         *(.sbss .sbss.*)
-        . = ALIGN(4K);
-        ebss = .;
     }
 
     . = ALIGN(4K);
-    edata = .;
+    ebss = .;
 
     ekernel = .;
 
