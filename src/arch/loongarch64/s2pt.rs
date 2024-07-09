@@ -113,10 +113,32 @@ pub struct S2PTInstr;
 
 impl PagingInstr for S2PTInstr {
     unsafe fn activate(root_pa: HostPhysAddr) {
-        todo!()
+        info!("loongarch64: S2PTInstr::activate: root_pa: {:#x?}", root_pa);
+        extern "C" {
+            fn tlb_refill_handler();
+        }
+        use loongArch64::register::tlbrentry;
+        use loongArch64::register::{pgd, pgdh, pgdl};
+        pgdh::set_base(root_pa);
+        pgdl::set_base(root_pa);
+        debug!(
+            "loongarch64: S2PTInstr::activate: pgdh set to {:#x}",
+            pgdh::read().base()
+        );
+        debug!(
+            "loongarch64: S2PTInstr::activate: pgdl set to {:#x}",
+            pgdl::read().base()
+        );
+        unsafe {
+            tlbrentry::set_tlbrentry(tlb_refill_handler as usize);
+        }
+        info!(
+            "loongarch64: S2PTInstr::activate: set tlbrentry to {:#x?} done!",
+            tlbrentry::read().addr()
+        );
     }
     fn flush(vaddr: Option<usize>) {
-        todo!()
+        warn!("loongarch64: S2PTInstr::flush: vaddr: {:#x?}", vaddr);
     }
 }
 

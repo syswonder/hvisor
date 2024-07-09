@@ -15,7 +15,7 @@ pub fn install_trap_vector() {
     println!("loongarch64: force disabled interrupts");
 
     timer_init();
-    crmd::set_ie(true);
+    // crmd::set_ie(true);
 
     // set CSR.EENTRY to _hyp_trap_vector and int vector offset to 0
     ecfg::set_vs(0);
@@ -44,7 +44,7 @@ pub fn timer_init() {
     // set timer
     tcfg::set_periodic(true);
     // let init_val = get_ms_counter(500);
-    let init_val = get_ms_counter(2000);
+    let init_val = get_ms_counter(10000);
     tcfg::set_init_val(init_val);
     println!("loongarch64: timer_init: timer init value = {}", init_val);
 
@@ -134,8 +134,9 @@ pub fn trap_handler(sp: usize) {
 }
 
 #[no_mangle]
+#[naked]
 #[link_section = ".trap_entry"]
-fn _hyp_trap_vector() {
+extern "C" fn _hyp_trap_vector() {
     unsafe {
         asm!(
           //traps from geust mode start here
@@ -388,12 +389,13 @@ fn _hyp_trap_vector() {
         //   LOONGARCH_CSR_PGDH = const 0x1a,
         //   LOONGARCH_CSR_SAVE5 = const 0x35,
         //   LOONGARCH_CSR_SAVE6 = const 0x36,
+        options(noreturn)
         );
     }
 }
 
 #[no_mangle]
-fn _hyp_trap_return(trap_addr: usize) {
+extern "C" fn _hyp_trap_return(trap_addr: usize) {
     unsafe {
         asm!(
           // a0 -> sp
@@ -1023,17 +1025,18 @@ fn handle_exception(
 #[no_mangle]
 #[naked]
 #[link_section = ".tlbrefill_entry"]
-pub fn tlb_refill_handler() {
+extern "C" fn tlb_refill_handler() {
     unsafe {
         asm!(
-        "csrwr   $r12, {LOONGARCH_CSR_TLBRSAVE}",
-        "csrrd   $r12, {LOONGARCH_CSR_PGD}",
-        "lddir   $r12, $r12, 3",
-        "lddir   $r12, $r12, 2",
-        "lddir   $r12, $r12, 1",
-        "ldpte   $r12, 0",
-        "ldpte   $r12, 1",
+        "csrwr      $r12, {LOONGARCH_CSR_TLBRSAVE}",
+        "csrrd      $r12, {LOONGARCH_CSR_PGD}",
+        "lddir      $r12, $r12, 3",
+        "lddir      $r12, $r12, 2",
+        "lddir      $r12, $r12, 1",
+        "ldpte      $r12, 0",
+        "ldpte      $r12, 1",
         "tlbfill",
+        "csrrd      $r12, {LOONGARCH_CSR_TLBRSAVE}",
         "ertn",
         LOONGARCH_CSR_TLBRSAVE = const 0x8b,
         LOONGARCH_CSR_PGD = const 0x1b,
