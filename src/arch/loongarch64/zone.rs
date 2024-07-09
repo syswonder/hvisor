@@ -1,7 +1,8 @@
 use crate::{
     error::HvResult,
     memory::{
-        addr::align_up, mmio_generic_handler, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
+        addr::align_down, addr::align_up, mmio_generic_handler, GuestPhysAddr, HostPhysAddr,
+        MemFlags, MemoryRegion,
     },
     zone::Zone,
 };
@@ -17,7 +18,54 @@ impl Zone {
         guest_dtb: usize,
         dtb_ipa: usize,
     ) -> HvResult {
-        warn!("loongarch64: mm: pt init for zone do nothing, vm_paddr_start: {:#x?}, guest_dtb: {:#x?}, dtb_ipa: {:#x?}", vm_paddr_start, guest_dtb, dtb_ipa);
+        info!("loongarch64: mm: pt init for zone, vm_paddr_start: {:#x?}, guest_dtb: {:#x?}, dtb_ipa: {:#x?}", vm_paddr_start, guest_dtb, dtb_ipa);
+
+        // NOTES:
+        // vm_paddr_start is the start HPA mem range addr for this Zone
+        // fdt is the parsed info of the dtb, including a lot of useful stuff
+        // guest_dtb is the HPA addr for zone's dtb
+        // dtb_ipa is the GPA addr for zone's dtb
+
+        // for each region in /memory, map it
+        let mem = fdt.memory();
+        let mut iter = mem.regions();
+        loop {
+            if let Some(mem_region) = iter.next() {
+                info!("map mem_region: {:#x?}", mem_region);
+                self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                    mem_region.starting_address as GuestPhysAddr,
+                    vm_paddr_start as HostPhysAddr,
+                    mem_region.size.unwrap(),
+                    MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+                ))?;
+            } else {
+                break;
+            }
+        }
+
+        // map guest dtb
+        info!("map guest dtb: {:#x?}", dtb_ipa);
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            dtb_ipa as GuestPhysAddr,
+            guest_dtb as HostPhysAddr,
+            align_up(fdt.total_size()),
+            MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+        ))?;
+        // map zone's UART device
+        for node in fdt.find_all_nodes("/platform/serial") {
+            if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
+                let paddr = align_down(reg.starting_address as usize) as HostPhysAddr;
+                let size = align_up(reg.size.unwrap());
+                info!("map uart addr: {:#x}, size: {:#x}", paddr, size);
+                self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                    paddr as GuestPhysAddr,
+                    paddr,
+                    size,
+                    MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+                ))?;
+            }
+        }
+        debug!("zone stage-2 memory set: {:#x?}", self.gpm);
         Ok(())
     }
 

@@ -1031,8 +1031,14 @@ extern "C" fn tlb_refill_handler() {
         "csrwr      $r12, {LOONGARCH_CSR_TLBRSAVE}",
         "csrrd      $r12, {LOONGARCH_CSR_PGD}",
         "lddir      $r12, $r12, 3",
+        "ori        $r12, $r12, {PAGE_WALK_MASK}",
+        "xori       $r12, $r12, {PAGE_WALK_MASK}",
         "lddir      $r12, $r12, 2",
+        "ori        $r12, $r12, {PAGE_WALK_MASK}",
+        "xori       $r12, $r12, {PAGE_WALK_MASK}",
         "lddir      $r12, $r12, 1",
+        "ori        $r12, $r12, {PAGE_WALK_MASK}",
+        "xori       $r12, $r12, {PAGE_WALK_MASK}",
         "ldpte      $r12, 0",
         "ldpte      $r12, 1",
         "tlbfill",
@@ -1040,6 +1046,7 @@ extern "C" fn tlb_refill_handler() {
         "ertn",
         LOONGARCH_CSR_TLBRSAVE = const 0x8b,
         LOONGARCH_CSR_PGD = const 0x1b,
+        PAGE_WALK_MASK = const 0xfff,
         options(noreturn)
         );
     }

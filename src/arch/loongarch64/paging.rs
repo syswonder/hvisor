@@ -5,6 +5,16 @@ use alloc::{sync::Arc, vec::Vec};
 use core::{fmt::Debug, marker::PhantomData, slice};
 use spin::Mutex;
 
+use loongArch64::register::pwch::{set_dir3_base, set_dir3_width, set_dir4_base, set_dir4_width};
+use loongArch64::register::pwcl::{
+    set_dir1_base, set_dir1_width, set_dir2_base, set_dir2_width, set_ptbase, set_pte_width,
+    set_ptwidth,
+};
+use loongArch64::register::stlbps::set_ps;
+use loongArch64::register::MemoryAccessType;
+use loongArch64::register::{crmd, pwch, pwcl, tlbrentry};
+use loongArch64::register::{pgd, pgdh, pgdl};
+
 #[derive(Debug)]
 pub enum PagingError {
     NoMemory,
@@ -281,10 +291,17 @@ where
 
     fn _dealloc_intrm_table(&mut self, _paddr: PhysAddr) {}
 
+    /// Get the mutable entry for the given virtual address. If the entry is not present, create
     fn get_entry_mut_or_create(&mut self, page: Page<VA>) -> PagingResult<&mut PTE> {
         let vaddr: usize = page.vaddr.into();
         let p4 = table_of_mut::<PTE>(self.inner.root_paddr());
         let p4e = &mut p4[p4_index(vaddr)];
+
+        trace!(
+            "loongarch64: get_entry_mut_or_create: vaddr={:#x}, p4e={:#x?}",
+            vaddr,
+            p4e
+        );
 
         let p3 = next_table_mut_or_create(p4e, || self.alloc_intrm_table())?;
         let p3e = &mut p3[p3_index(vaddr)];
@@ -292,14 +309,33 @@ where
             return Ok(p3e);
         }
 
+        trace!(
+            "loongarch64: get_entry_mut_or_create: p3e={:#x?}, page.size={:#x?}",
+            p3e,
+            page.size
+        );
+
         let p2 = next_table_mut_or_create(p3e, || self.alloc_intrm_table())?;
         let p2e = &mut p2[p2_index(vaddr)];
         if page.size == PageSize::Size2M {
             return Ok(p2e);
         }
 
+        trace!(
+            "loongarch64: get_entry_mut_or_create: p2e={:#x?}, page.size={:#x?}",
+            p2e,
+            page.size
+        );
+
         let p1 = next_table_mut_or_create(p2e, || self.alloc_intrm_table())?;
         let p1e = &mut p1[p1_index(vaddr)];
+
+        trace!(
+            "loongarch64: get_entry_mut_or_create: p1e={:#x?}, page.size={:#x?}",
+            p1e,
+            page.size
+        );
+
         Ok(p1e)
     }
 
@@ -309,12 +345,27 @@ where
         paddr: PhysAddr,
         flags: MemFlags,
     ) -> PagingResult<&mut PTE> {
+        trace!(
+            "loongarch64: map_page: vaddr={:#x}, size={:?}, paddr={:#x}, flags={:?}",
+            page.vaddr.into(),
+            page.size,
+            paddr,
+            flags
+        );
         let entry: &mut PTE = self.get_entry_mut_or_create(page)?;
         if !entry.is_unused() {
             return Err(PagingError::AlreadyMapped);
         }
+        trace!("loongarch64: map_page: entry is unused, continue");
+
         entry.set_addr(page.size.align_down(paddr));
         entry.set_flags(flags, page.size.is_huge());
+
+        trace!(
+            "loongarch64: map_page: set addr and flags done, entry.addr={:#x?}, entry.flags={:?}",
+            entry.addr(),
+            entry.flags()
+        );
         Ok(entry)
     }
 
@@ -424,21 +475,29 @@ where
         let mut size = region.size;
         while size > 0 {
             let paddr = region.mapper.map_fn(vaddr);
-            let page_size = if PageSize::Size1G.is_aligned(vaddr)
-                && PageSize::Size1G.is_aligned(paddr)
-                && size >= PageSize::Size1G as usize
-                && !region.flags.contains(MemFlags::NO_HUGEPAGES)
-            {
-                PageSize::Size1G
-            } else if PageSize::Size2M.is_aligned(vaddr)
-                && PageSize::Size2M.is_aligned(paddr)
-                && size >= PageSize::Size2M as usize
-                && !region.flags.contains(MemFlags::NO_HUGEPAGES)
-            {
-                PageSize::Size2M
-            } else {
-                PageSize::Size4K
-            };
+            // let page_size = if PageSize::Size1G.is_aligned(vaddr)
+            //     && PageSize::Size1G.is_aligned(paddr)
+            //     && size >= PageSize::Size1G as usize
+            //     && !region.flags.contains(MemFlags::NO_HUGEPAGES)
+            // {
+            //     PageSize::Size1G
+            // } else if PageSize::Size2M.is_aligned(vaddr)
+            //     && PageSize::Size2M.is_aligned(paddr)
+            //     && size >= PageSize::Size2M as usize
+            //     && !region.flags.contains(MemFlags::NO_HUGEPAGES)
+            // {
+            //     PageSize::Size2M
+            // } else {
+            //     PageSize::Size4K
+            // };
+            let page_size = PageSize::Size4K; // now let's support STLB only
+            trace!(
+                "loongarch64: mapping page: {:#x?}({:?}) -> {:#x?}, {:?}",
+                vaddr,
+                page_size,
+                paddr,
+                region.flags
+            );
             let page = Page::new_aligned(vaddr.into(), page_size);
             self.inner
                 .map_page(page, paddr, region.flags)
@@ -529,15 +588,23 @@ fn table_of_mut<'a, E>(paddr: PhysAddr) -> &'a mut [E] {
 }
 
 fn next_table_mut<'a, E: GenericPTE>(entry: &E) -> PagingResult<&'a mut [E]> {
-    if !entry.is_present() {
-        Err(PagingError::NotMapped)
-    } else if entry.is_huge() {
-        Err(PagingError::MappedToHugePage)
-    } else {
-        Ok(table_of_mut(entry.addr()))
-    }
+    // if !entry.is_present() {
+    //     Err(PagingError::NotMapped)
+    // } else if entry.is_huge() {
+    //     Err(PagingError::MappedToHugePage)
+    // } else {
+    //     Ok(table_of_mut(entry.addr()))
+    // }
+    let next_pt_addr = entry.addr();
+    trace!(
+        "loongarch64: next_table_mut: next_pt_addr={:#x?}",
+        next_pt_addr
+    );
+    Ok(table_of_mut(next_pt_addr))
 }
 
+/// Get the next level table for the given entry.
+/// If the entry is not present, create a new table.
 fn next_table_mut_or_create<'a, E: GenericPTE>(
     entry: &mut E,
     mut allocator: impl FnMut() -> HvResult<PhysAddr>,
@@ -549,4 +616,17 @@ fn next_table_mut_or_create<'a, E: GenericPTE>(
     } else {
         next_table_mut(entry)
     }
+}
+
+/// set pagetable format in loongarch64 as 4-level pagetable
+pub fn set_pwcl_pwch() {
+    set_dir3_base(12 + 9 + 9 + 9);
+    set_dir3_width(9);
+    set_dir2_base(12 + 9 + 9);
+    set_dir2_width(9);
+    set_dir1_base(12 + 9);
+    set_dir1_width(9);
+    set_ptbase(12);
+    set_ptwidth(9);
+    set_pte_width(8); // 64 bits -> 8 bytes
 }
