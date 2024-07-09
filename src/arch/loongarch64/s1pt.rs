@@ -116,7 +116,9 @@ pub struct S1PTInstr;
 impl PagingInstr for S1PTInstr {
     unsafe fn activate(root_pa: HostPhysAddr) {
         info!("loongarch64: S1PTInstr::activate: root_pa: {:#x?}", root_pa);
-        use super::trap::tlb_refill_handler;
+        extern "C" {
+            fn tlb_refill_handler();
+        }
         use loongArch64::register::tlbrentry;
         use loongArch64::register::{pgd, pgdh, pgdl};
         pgdh::set_base(root_pa);
@@ -129,7 +131,9 @@ impl PagingInstr for S1PTInstr {
             "loongarch64: S1PTInstr::activate: pgdl set to {:#x}",
             pgdl::read().base()
         );
-        tlbrentry::set_tlbrentry(tlb_refill_handler as usize);
+        unsafe {
+            tlbrentry::set_tlbrentry(tlb_refill_handler as usize);
+        }
         info!(
             "loongarch64: S1PTInstr::activate: set tlbrentry to {:#x?} done!",
             tlbrentry::read().addr()
