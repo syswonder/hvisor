@@ -32,13 +32,14 @@ impl Debug for ArchCpu {
 
 impl ArchCpu {
     pub fn new(cpuid: usize) -> Self {
-        ArchCpu {
+        let ret = ArchCpu {
             r: [0; 32],
             sepc: 0,
             stack_top: 0,
             cpuid,
             power_on: false,
-        }
+        };
+        ret
     }
     pub fn get_cpuid(&self) -> usize {
         self.cpuid

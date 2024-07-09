@@ -119,6 +119,7 @@ impl PagingInstr for S1PTInstr {
         extern "C" {
             fn tlb_refill_handler();
         }
+        super::paging::set_pwcl_pwch();
         use loongArch64::register::tlbrentry;
         use loongArch64::register::{pgd, pgdh, pgdl};
         pgdh::set_base(root_pa);
