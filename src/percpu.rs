@@ -27,7 +27,7 @@ impl PerCpu {
     pub fn new<'a>(cpu_id: usize) -> &'static mut PerCpu {
         let vaddr = PER_CPU_ARRAY_PTR as VirtAddr + cpu_id as usize * PER_CPU_SIZE;
         let ret = unsafe { &mut *(vaddr as *mut Self) };
-        *ret = PerCpu {
+        let tmp_percpu = PerCpu {
             id: cpu_id,
             cpu_on_entry: INVALID_ADDRESS,
             arch_cpu: ArchCpu::new(cpu_id),
@@ -36,6 +36,7 @@ impl PerCpu {
             boot_cpu: false,
             opaque: DTB_IPA,
         };
+        *ret = tmp_percpu;
         #[cfg(target_arch = "riscv64")]
         {
             use crate::arch::csr::{write_csr, CSR_SSCRATCH};

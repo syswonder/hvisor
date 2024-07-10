@@ -1,14 +1,51 @@
 use crate::consts::PER_CPU_SIZE;
 
+const DMW_DA_BITS: usize = 48;
+const CSR_DMW0_PLV0: usize = 1 << 0;
+const CSR_DMW0_VSEG: usize = 0x8000;
+const CSR_DMW0_BASE: usize = CSR_DMW0_VSEG << DMW_DA_BITS;
+const CSR_DMW0_INIT: usize = CSR_DMW0_BASE | CSR_DMW0_PLV0;
+
+const CSR_DMW1_PLV0: usize = 1 << 0;
+const CSR_DMW1_MAT: usize = 1 << 4;
+const CSR_DMW1_VSEG: usize = 0x9000;
+const CSR_DMW1_BASE: usize = CSR_DMW1_VSEG << DMW_DA_BITS;
+const CSR_DMW1_INIT: usize = CSR_DMW1_BASE | CSR_DMW1_PLV0 | CSR_DMW1_MAT;
+
 #[naked]
 #[no_mangle]
 #[link_section = ".text.entry"]
 pub unsafe extern "C" fn arch_entry() -> i32 {
     // a0/r4: CPU_ID read from CSR 0x20 CPUID
+
+    // .macro JUMP_VIRT_ADDR temp1 temp2 (r12, r13)
+    //      li.d	\temp1, CACHE_BASE (0x9000_0000_0000_0000)
+    //      pcaddi	\temp2, 0
+    //      or		\temp1, \temp1, \temp2
+    //      jirl    zero, \temp1, 0xc // 0xc is beacuse the above pcaddi + 0xc will jump to exacly the next instruction after jirl - wheatfox
+    // .endm
     core::arch::asm!(
         "
-            addi.d      $r4, $zero, 0x21
-            bl          print_char
+        0:
+            li.d        $r12, {CSR_DMW0_INIT} // 0x8
+            csrwr       $r12, {LOONGARCH_CSR_DMW0}
+            li.d        $r12, {CSR_DMW1_INIT} // 0x9
+            csrwr       $r12, {LOONGARCH_CSR_DMW1}
+
+            // first JUMP_VIRT_ADDR
+            li.d        $r12, {CSR_DMW1_BASE}
+            pcaddi      $r13, 0
+            or          $r12, $r12, $r13
+            jirl        $zero, $r12, 0xc
+            // end of JUMP_VIRT_ADDR
+
+            li.w		$r12, 0xb0		    // PLV=0, IE=0, PG=1
+            csrwr		$r12, {LOONGARCH_CSR_CRMD}
+            li.w		$r12, 0x04		    // PLV=0, PIE=1, PWE=0
+            csrwr		$r12, {LOONGARCH_CSR_PRMD}
+            li.w		$r12, 0x00		    // FPE=0, SXE=0, ASXE=0, BTE=0
+            csrwr		$r12, {LOONGARCH_CSR_EUEN}
+
             csrrd       $r4, {CSR_CPUID}
             la.pcrel    $r12, __core_end
             li.d        $r13, {per_cpu_size}
@@ -26,6 +63,14 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
         2:
             bl          {rust_main}
         ",
+        CSR_DMW0_INIT = const CSR_DMW0_INIT,
+        CSR_DMW1_INIT = const CSR_DMW1_INIT,
+        LOONGARCH_CSR_CRMD = const 0x0,
+        LOONGARCH_CSR_PRMD = const 0x1,
+        LOONGARCH_CSR_EUEN = const 0x2,
+        LOONGARCH_CSR_DMW0 = const 0x180,
+        LOONGARCH_CSR_DMW1 = const 0x181,
+        CSR_DMW1_BASE = const 0x9000000000000000usize,
         rust_main = sym crate::rust_main,
         per_cpu_size = const PER_CPU_SIZE,
         CSR_CPUID = const 0x20,
