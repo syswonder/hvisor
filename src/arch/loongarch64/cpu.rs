@@ -1,5 +1,6 @@
 use super::ipi::*;
 use crate::device::common::MMIODerefWrapper;
+use crate::percpu::this_cpu_data;
 use core::arch::asm;
 use core::fmt::{self, Debug, Formatter};
 use loongArch64::register::cpuid;
@@ -18,6 +19,7 @@ pub struct ArchCpu {
     pub stack_top: usize,
     pub cpuid: usize,
     pub power_on: bool,
+    pub init: bool,
 }
 
 impl Debug for ArchCpu {
@@ -39,6 +41,7 @@ impl ArchCpu {
             stack_top: 0,
             cpuid,
             power_on: false,
+            init: false,
         };
         println!("loongarch64: ArchCpu::new: ok, cpuid={}", ret.cpuid);
         ret
@@ -54,11 +57,25 @@ impl ArchCpu {
             "loongarch64: ArchCpu::init: entry={:#x}, cpu_id={}",
             entry, cpu_id
         );
+        self.sepc = entry;
+        self.stack_top = self.stack_top() as usize;
+        self.r[4] = cpu_id; // cpu id in a0
+        self.r[5] = dtb; // dtb addr in a1
     }
-    pub fn run(&self) -> ! {
+    pub fn run(&mut self) -> ! {
+        assert!(this_cpu_id() == self.get_cpuid());
+        this_cpu_data().activate_gpm();
+        self.power_on = true;
+        if !self.init {
+            self.init(
+                this_cpu_data().cpu_on_entry,
+                this_cpu_data().id,
+                this_cpu_data().opaque,
+            );
+            self.init = true;
+        }
         info!("loongarch64: CPU{} run@{:#x}", self.get_cpuid(), self.sepc);
         info!("loongarch64: @{:#x?}", self);
-        warn!("pause before running first vcpu");
         loop {}
     }
     pub fn idle(&self) -> ! {
