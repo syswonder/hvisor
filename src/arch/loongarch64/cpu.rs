@@ -32,6 +32,7 @@ impl Debug for ArchCpu {
 
 impl ArchCpu {
     pub fn new(cpuid: usize) -> Self {
+        println!("loongarch64: ArchCpu::new: cpuid={}", cpuid);
         let ret = ArchCpu {
             r: [0; 32],
             sepc: 0,
@@ -39,6 +40,7 @@ impl ArchCpu {
             cpuid,
             power_on: false,
         };
+        println!("loongarch64: ArchCpu::new: ok, cpuid={}", ret.cpuid);
         ret
     }
     pub fn get_cpuid(&self) -> usize {
@@ -70,8 +72,8 @@ pub fn this_cpu_id() -> usize {
 }
 
 pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
-    info!(
-        "loongarch64: cpu_start: cpuid={}, start_addr={:#x}, opaque={:#x}",
+    println!(
+        "loongarch64: cpu_start: target cpuid={}, start_addr={:#x}, opaque={:#x}",
         cpuid, start_addr, opaque
     );
     let ipi: &MMIODerefWrapper<IpiRegisters> = match cpuid {
@@ -79,8 +81,7 @@ pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
         2 => &CORE2_IPI,
         3 => &CORE3_IPI,
         _ => {
-            error!("loongarch64: cpu_start: invalid cpuid={}", cpuid);
-            return;
+            panic!("loongarch64: cpu_start: invalid cpuid={}", cpuid);
         }
     };
     ipi.ipi_enable.write(IpiEnable::IPIENABLE.val(0xffffffff));
