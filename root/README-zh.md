@@ -13,27 +13,27 @@ hvisor-tool
 
 以下操作均在x86主机的目录`hvisor-tool`下，进行交叉编译。
 
-* 单独编译命令行工具
-
-```bash
-make tools
-```
-
-* 编译内核模块
-
-```bash
-make driver KDIR=/path/to/your linux
-```
-
 * 编译命令行工具及内核模块
 
 ```bash
-make all KDIR=/path/to/your linux
+make all ARCH=<arch> LOG=<log> KDIR=/path/to/your-linux 
 ```
 
-其中KDIR需要设置为root linux的kernel目录。
+其中，`<arch>`应该为`arm64`和`riscv`之一。
 
-## 如何使用
+`<log>`为`LOG_TRACE`、`LOG_DEBUG`、`LOG_INFO`、`LOG_WARN`、`LOG_ERROR`、`LOG_FATAL`之一。
+
+`/path/to/your-linux`为root linux的kernel源码目录。具体的编译选项请见[Makefile](./Makefile)、[tools/Makefile](./tools/Makefile)、[driver/Makefile](./driver/Makefile)。
+
+例如，要编译面向`arm64`的命令行工具，可以执行：
+
+```bash
+make all ARCH=arm64 LOG=LOG_WARN KDIR=~/linux
+```
+
+即可在`tools/hvisor`和`driver/hvisor.ko`，将其复制到root linux的根文件系统，使用即可。
+
+## 使用步骤
 
 ### 内核模块
 
@@ -51,15 +51,21 @@ rmmod hvisor.ko
 
 ### 命令行工具
 
-在root linux中，使用命令行工具可以创建、关闭其他虚拟机，例如：
+在root linux中，使用命令行工具可以创建、关闭其他虚拟机。
 
-创建一个id为1的虚拟机，该命令会将虚拟机的操作系统镜像文件`Image`加载到真实物理地址`0x70000000`处，将虚拟机的设备树文件`linux2.dtb`加载到真实物理地址`0x91000000`处：
+* 启动新的虚拟机
+
+hvisor-tool通过一个配置文件启动一个新的虚拟机：
 
 ```
-./hvisor zone start --kernel Image,addr=0x70000000 --dtb linux2.dtb,addr=0x91000000 --id 1
+./hvisor zone start <vm_config.json>
 ```
 
-关闭id为1的虚拟机：
+`<vm_config.json>`是描述一个虚拟机配置的文件，例如[nxp_linux.json](./examples/nxp_linux.json)。
+
+> **注意：如果想通过命令行而非配置文件启动新虚拟机，请转到[hvisor-tool_old](https://github.com/syswonder/hvisor-tool/commit/3478fc6720f89090c1b5aa913da168f49f95bca0)**。命令行的启动方式会逐渐被配置文件取代，请升级为最新的hvisor-tool。
+
+* 关闭id为1的虚拟机：
 
 ```
 ./hvisor zone shutdown -id 1

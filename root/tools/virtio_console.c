@@ -99,6 +99,7 @@ int virtio_console_init(VirtIODevice *vdev) {
     tcgetattr(slave_fd, &term_io);
     cfmakeraw(&term_io);
     tcsetattr(slave_fd, TCSAFLUSH, &term_io); 
+    close(slave_fd);
 
     if (set_nonblocking(dev->master_fd) < 0) {
         dev->master_fd = -1;

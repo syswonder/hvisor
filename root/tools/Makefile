@@ -1,4 +1,4 @@
-CFLAGS = -Wall -Wextra -DLOG_USE_COLOR
+CFLAGS = -Wall -Wextra -DLOG_USE_COLOR -DHLOG=$(LOG)
 objects = $(wildcard *.c) ../cJSON/cJSON.c
 
 ifeq ($(ARCH), arm64)
@@ -14,5 +14,4 @@ all:
 asm:
 	$(CC) $(CFLAGS) -S htool.s $(objects) -I../driver/ -I./includes/ -lpthread
 clean:
-	rm hvisor
-	rm *.s
+	rm -f hvisor

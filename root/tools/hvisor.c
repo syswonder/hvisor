@@ -64,29 +64,12 @@ int open_dev() {
     return fd;
 }
 
-// static void get_info(char *optarg, char **path, u64 *address) {
-// 	char *now;
-// 	*path = strtok(optarg, ",");
-// 	now = strtok(NULL, "=");
-// 	if (strcmp(now, "addr") == 0) {
-// 		now = strtok(NULL, "=");
-// 		*address = strtoull(now, NULL, 16);
-// 	} else {
-// 		help(1);
-// 	}
-// }
-
 static u64 load_image_to_memory(const char *path, u64 load_paddr) {
     u64 size, page_size, map_size;
     int fd;
     void *image_content, *virt_addr;
 
-    fd = open("/dev/hvisor", O_RDWR | O_SYNC);
-    if (fd < 0) {
-        perror("Error opening /dev/mem");
-        exit(1);
-    }
-    
+    fd = open_dev();
     // Load image content into memory
     image_content = read_file(path, &size);
 
