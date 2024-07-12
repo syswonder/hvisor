@@ -56,7 +56,7 @@ struct virtio_bridge {
 #define HVISOR_INIT_VIRTIO  _IO(1, 0) // virtio device init
 #define HVISOR_GET_TASK _IO(1, 1)	
 #define HVISOR_FINISH_REQ _IO(1, 2)		  // finish one virtio req	
-#define HVISOR_ZONE_START _IOW(1, 3, struct hvisor_zone_info*)
+#define HVISOR_ZONE_START _IOW(1, 3, zone_config_t *)
 #define HVISOR_ZONE_SHUTDOWN _IOW(1, 4, __u64)
 
 #define HVISOR_HC_INIT_VIRTIO 0

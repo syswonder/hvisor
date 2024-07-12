@@ -730,20 +730,31 @@ void handle_virtio_requests()
 	}
 }
 
+void initialize_log() {
+    int log_level;
+    #ifdef HLOG
+        log_level = HLOG;
+    #else 
+        log_level = LOG_WARN;
+    #endif
+    log_set_level(log_level);
+
+    FILE *log_file = fopen("log.txt", "w+");
+    log_add_fp(log_file, LOG_WARN);
+}
+
 int virtio_init()
 {
     // The higher log level is , faster virtio-blk will be.
     int err;
-	int log_level = LOG_WARN;
 
 	sigset_t block_mask;
 	sigfillset(&block_mask);
 	pthread_sigmask(SIG_BLOCK, &block_mask, NULL);
 
 	multithread_log_init();
-    log_set_level(log_level);
-    FILE *log_file = fopen("log.txt", "w+");
-    log_add_fp(log_file, LOG_WARN);
+    initialize_log();
+
     log_info("hvisor init");
     ko_fd = open("/dev/hvisor", O_RDWR);
     if (ko_fd < 0) {

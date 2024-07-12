@@ -77,7 +77,6 @@ unmap_vma:
 }
 
 static int hvisor_zone_start(zone_config_t __user* arg) {
-    struct hvisor_zone_info *zone_info;
     int err = 0;
     printk("hvisor_zone_start\n");
     zone_config_t *zone_config = kmalloc(sizeof(zone_config_t), GFP_KERNEL);
@@ -96,7 +95,7 @@ static int hvisor_zone_start(zone_config_t __user* arg) {
     flush_cache(zone_config->dtb_load_paddr, zone_config->dtb_size);
 
     err = hvisor_call(HVISOR_HC_START_ZONE, __pa(zone_config), 0);
-	kfree(zone_info);
+	kfree(zone_config);
     return err;
 }
 
