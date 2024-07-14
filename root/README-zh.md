@@ -53,6 +53,46 @@ rmmod hvisor.ko
 
 在root linux中，使用命令行工具可以创建、关闭其他虚拟机。
 
+* **前置条件**
+
+**注意：**由于Root Linux需要将Non root linux镜像和dtb文件加载到Non root linux所在的物理内存区域，因此需要对**Root Linux的设备树**进行修改：
+
+1. 内存节点要包含Non root linux的物理内存区域，例如：
+
+   ```c
+   // Root linux原先的设备树：
+   memory@50000000 {
+       device_type = "memory";
+       reg = <0x0 0x50000000 0x0 0x40000000>;
+   };
+   // Non Root linux的设备树
+   memory@90000000 {
+       device_type = "memory";
+       reg = <0x0 0x90000000 0x0 0x40000000>;
+   };
+   // 修改后的Root Linux的设备树：
+   memory@50000000 {
+       device_type = "memory";
+       reg = <0x0 0x50000000 0x0 0x80000000>;
+   };
+   ```
+
+2. 加入reserved-memory节点，将Non Root Linux的内存区域设置为保留内存，防止Root Linux进行使用，例如：
+
+   ```
+   reserved-memory {
+       #address-cells = <0x02>;
+       #size-cells = <0x02>;
+       ranges;
+       nonroot@90000000 {
+           no-map;
+           reg = <0x00 0x90000000 0x00 0x40000000>;
+       };
+   };
+   ```
+
+​	注意，加入reserved-memory节点后，Root Linux的内核启动参数bootargs不需要包含`mem=1G`这样的信息。
+
 * 启动新的虚拟机
 
 hvisor-tool通过一个配置文件启动一个新的虚拟机：
@@ -74,6 +114,20 @@ hvisor-tool通过一个配置文件启动一个新的虚拟机：
 ### Virtio守护进程
 
 Virtio守护进程可为虚拟机提供Virtio MMIO设备，目前支持两种设备：Virtio块设备和Virtio网络设备。
+
+* **前置条件**
+
+要使用Virtio守护进程，需要在**Root Linux的设备树**中增加一个名为`hvisor_device`的节点，例如：
+
+```dts
+hvisor_device {
+    compatible = "hvisor";
+    interrupt-parent = <0x01>;
+    interrupts = <0x00 0x20 0x01>;
+};
+```
+
+这样，当hvisor向Root Linux注入中断号为`32+0x20`的中断时，便会进入`hvisor.ko`中注册的中断处理函数，唤醒Virtio守护进程。
 
 * Virtio设备的启动和创建
 
