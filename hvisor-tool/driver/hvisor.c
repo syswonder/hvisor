@@ -210,7 +210,6 @@ static int __init hvisor_init(void)
 
     if (!node) {
         pr_info("hvisor_device node not found in dtb, can't use virtio devices\n");
-        return -ENODEV;
     } else {
         hvisor_irq = of_irq_get(node, 0);
         err = request_irq(hvisor_irq, irq_handler, IRQF_SHARED | IRQF_TRIGGER_RISING, "hvisor", &hvisor_misc_dev);
