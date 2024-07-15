@@ -396,8 +396,8 @@ static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned s
         default:
             return 0;
         }
-    }
-
+    } 
+    
     if (offset >= VIRTIO_MMIO_CONFIG) {
         offset -= VIRTIO_MMIO_CONFIG;
         // the first member of vdev->dev must be config.
@@ -638,6 +638,8 @@ static int virtio_handle_req(volatile struct device_req *req)
     }
     if (i == vdevs_num) {
         log_error("no matched virtio dev");
+        value = virtio_mmio_read(NULL, 0, 0);
+        virtio_finish_cfg_req(req->src_cpu, value);
         return -1;
     }
     VirtIODevice *vdev = vdevs[i];
