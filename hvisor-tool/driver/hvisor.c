@@ -15,6 +15,7 @@
 #include <linux/string.h> 
 #include <asm/cacheflush.h>
 #include <linux/string.h> 
+#include <linux/of_reserved_mem.h>
 #include "hvisor.h"
 #include "zone_config.h"
 
@@ -99,6 +100,25 @@ static int hvisor_zone_start(zone_config_t __user* arg) {
     return err;
 }
 
+static int is_reserved_memory(unsigned long phys, unsigned long size) {
+    struct device_node *parent, *child;
+    struct reserved_mem *rmem;
+    phys_addr_t mem_base;
+    size_t mem_size;
+    int count = 0;
+    parent = of_find_node_by_path("/reserved-memory");
+    count = of_get_child_count(parent);
+
+    for_each_child_of_node(parent, child) {
+        rmem = of_reserved_mem_lookup(child);
+        mem_base = rmem->base;
+        mem_size = rmem->size;
+        if (mem_base <= phys && (mem_base + mem_size) >= (phys + size)) {
+            return 1;
+        }
+    }
+    return 0;
+}
 
 static long hvisor_ioctl(struct file *file, unsigned int ioctl,
 			    unsigned long arg)
@@ -145,6 +165,11 @@ static int hvisor_map(struct file * filp, struct vm_area_struct *vma)
         pr_info("virtio bridge mmap succeed!\n");
     } else {
 	    size_t size = vma->vm_end - vma->vm_start;
+        // vm_pgoff is the physical page number.
+        if (!is_reserved_memory(vma->vm_pgoff << PAGE_SHIFT, size)) {
+            pr_err("The physical address to be mapped is not within the reserved memory\n");
+            return -EFAULT;
+        }
         err = remap_pfn_range(vma,
                 vma->vm_start,
                 vma->vm_pgoff,
