@@ -57,7 +57,7 @@ register_structs! {
   }
 }
 
-const MMIO_BASE: usize = 0x8000_0000_1fe0_0000; // DMW uncached
+const MMIO_BASE: usize = 0x1fe0_0000;
 const IPI_MMIO_BASE: usize = MMIO_BASE;
 
 pub static CORE0_IPI: MMIODerefWrapper<IpiRegisters> =
