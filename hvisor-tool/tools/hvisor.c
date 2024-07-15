@@ -23,7 +23,7 @@ static void __attribute__((noreturn)) help(int exit_status) {
     exit(exit_status);
 }
 
-static void* read_file(char* filename, u64* filesize) {
+void* read_file(char* filename, u_int64_t* filesize) {
     int fd;
     struct stat st;
     void *buf;
@@ -197,10 +197,9 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
 
 // ./hvisor zone start <path_to_config_file>
 static int zone_start(int argc, char *argv[]) {
-    int fd, err, opt, zone_id;
-	char *image_path = NULL, *dtb_filepath = NULL, *json_config_path = NULL;
+    int zone_id;
+	char *json_config_path = NULL;
     zone_config_t config;
-	u64 image_address, dtb_address;
 
 	if (argc != 4) {
 		help(1);

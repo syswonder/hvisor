@@ -1,0 +1,31 @@
+{
+    "devices": [
+        {
+            "type": "blk",
+            "addr": "0xa003c00",
+            "len": "0x200",
+            "irq": 78,
+            "zone_id": 1,
+            "img": "rootfs2.ext4",
+            "status": "enable"
+        },
+        {
+            "type": "console",
+            "addr": "0xa003800",
+            "len": "0x200",
+            "irq": 76,
+            "zone_id": 1,
+            "status": "enable"
+        },
+        {
+            "type": "net",
+            "addr": "0xa003600",
+            "len": "0x200",
+            "irq": 75,
+            "zone_id": 1,
+            "tap": "tap0",
+            "mac": ["0x00", "0x16", "0x3e", "0x10", "0x10", "0x10"],
+            "status": "disable"
+        }
+    ]
+}

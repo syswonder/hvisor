@@ -113,7 +113,7 @@ hvisor-tool通过一个配置文件启动一个新的虚拟机：
 
 ### Virtio守护进程
 
-Virtio守护进程可为虚拟机提供Virtio MMIO设备，目前支持两种设备：Virtio块设备和Virtio网络设备。
+Virtio守护进程可为虚拟机提供Virtio MMIO设备，目前支持三种设备：Virtio-blk、Virtio-net和Virtio-console设备。
 
 * **前置条件**
 
@@ -131,20 +131,17 @@ hvisor_device {
 
 * Virtio设备的启动和创建
 
-下面的示例会同时启动Virtio块设备、网络设备和控制台设备：
+在Root Linux上，执行以下示例指令：
 
 ```
-nohup ./hvisor virtio start \
-	--device blk,addr=0xa003c00,len=0x200,irq=78,zone_id=1,img=rootfs2.ext4 \
-	--device net,addr=0xa003600,len=0x200,irq=75,zone_id=1,tap=tap0 \
-	--device console,addr=0xa003800,len=0x200,irq=76,zone_id=1 &
+nohup ./hvisor virtio start virtio_cfg.json &
 ```
 
-上述命令的具体含义为：
+其中`virtio_cfg.json`是一个描述Virtio设备的JSON文件，例如[virtio_cfg.json](./examples/virtio_cfg.json)。该示例文件会依次执行：
 
-1. 首先创建一个Virtio块设备，id为1的虚拟机会通过一片MMIO区域与该设备通信，这片MMIO区域的起始地址为`0xa003c00`，长度为`0x200`。同时设置设备中断号为78，对应磁盘镜像为`rootfs2.ext4`。
-2. 之后再创建一个Virtio网络设备，MMIO区域的起始地址为`0xa003600`，长度为`0x200`，设备中断号为75，由id为1的虚拟机使用，连接到名为`tap0`的Tap设备。
-3. 最后创建一个Virtio控制台设备，用于id为1的虚拟机主串口的输出。root linux需要执行`screen /dev/pts/x`命令进入该虚拟控制台，其中`x`可通过nohup.out的输出信息查看。
+1. 首先创建一个Virtio-blk设备，id为1的虚拟机会通过一片MMIO区域与该设备通信，这片MMIO区域的起始地址为`0xa003c00`，长度为`0x200`。同时设置设备中断号为78，对应磁盘镜像为`rootfs2.ext4`。
+2. 之后创建一个Virtio-console设备，用于id为1的虚拟机主串口的输出。root linux需要执行`screen /dev/pts/x`命令进入该虚拟控制台，其中`x`可通过nohup.out的输出信息查看。
+3. 由于`net`设备的`status`属性为`disable`，因此不会创建Virtio-net设备。如果`net`设备的`status`属性为`enable`，那么会创建一个Virtio-net设备，MMIO区域的起始地址为`0xa003600`，长度为`0x200`，设备中断号为75，MAC地址为`00:16:3e:10:10:10`，由id为1的虚拟机使用，连接到名为`tap0`的Tap设备。
 4. `nohup ... &`说明该命令会创建一个守护进程。
 
 * 关闭Virtio设备
