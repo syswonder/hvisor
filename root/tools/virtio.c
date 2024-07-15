@@ -19,6 +19,8 @@
 #include <sys/time.h>                                                                                           
 #include <limits.h>
 #include <sys/stat.h>
+#include "cJSON.h"
+
 /// hvisor kernel module fd
 int ko_fd;
 volatile struct virtio_bridge *virtio_bridge;
@@ -89,7 +91,7 @@ static inline void rw_barrier(void) {
 
 // create a virtio device.
 static VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id, 
-						uint64_t base_addr, uint64_t len, uint32_t irq_id, void* arg)
+						uint64_t base_addr, uint64_t len, uint32_t irq_id, void* arg0, void *arg1)
 {
 	log_info("create virtio device type %d, zone id %d, base addr %lx, len %lx, irq id %d", 
 				dev_type, zone_id, base_addr, len, irq_id);
@@ -108,14 +110,13 @@ static VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zo
         vdev->regs.dev_feature = BLK_SUPPORTED_FEATURES;
         vdev->dev = init_blk_dev(vdev);
         init_virtio_queue(vdev, dev_type);
-        is_err = virtio_blk_init(vdev, (const char*)arg);
+        is_err = virtio_blk_init(vdev, (const char*)arg0);
         break;
     case VirtioTNet:
         vdev->regs.dev_feature = NET_SUPPORTED_FEATURES;
-        uint8_t mac[] = {0x00, 0x16, 0x3E, 0x10, 0x10, 0x10};
-        vdev->dev = init_net_dev(mac);
+        vdev->dev = init_net_dev(arg0);
         init_virtio_queue(vdev, dev_type);
-        is_err = virtio_net_init(vdev, (char *)arg);
+        is_err = virtio_net_init(vdev, (char *)arg1);
         break;
     case VirtioTConsole:
         vdev->regs.dev_feature = CONSOLE_SUPPORTED_FEATURES;
@@ -789,89 +790,94 @@ unmap:
     return -1;
 }
 
-static int create_virtio_device_from_cmd(char *cmd) {
-	log_info("cmd is %s", cmd);
-	VirtioDeviceType dev_type = VirtioTNone;
+static int create_virtio_device_from_json(cJSON* device_json) {
+    VirtioDeviceType dev_type = VirtioTNone;
 	uint64_t base_addr = 0, len = 0;
 	uint32_t zone_id = 0, irq_id = 0;
-	char *opt, *now, *arg = NULL;
+    char *status = cJSON_GetObjectItem(device_json, "status")->valuestring;
+    if (strcmp(status, "disable") == 0) 
+        return 0;
 
-	opt = strdup(cmd);
-	now = strtok(opt, ",");
+    char *type = cJSON_GetObjectItem(device_json, "type")->valuestring;
+    void *arg0, *arg1;
 
-	if (strcmp(now, "blk") == 0) {
+    if (strcmp(type, "blk") == 0) {
 		dev_type = VirtioTBlock;
-	} else if (strcmp(now, "net") == 0) {
+	} else if (strcmp(type, "net") == 0) {
 		dev_type = VirtioTNet;
-	} else if (strcmp(now, "console") == 0) {
+	} else if (strcmp(type, "console") == 0) {
         dev_type = VirtioTConsole;
     } else {
-		log_error("unknown device type %s", now);
+		log_error("unknown device type %s", type);
 		return -1;
 	}
-
-	while ((now = strtok(NULL, "=")) != NULL) {
-		if (strcmp(now, "addr") == 0) {
-			now = strtok(NULL, ",");
-			base_addr = strtoul(now, NULL, 16);
-		} else if (strcmp(now, "len") == 0) {
-			now = strtok(NULL, ",");
-			len = strtoul(now, NULL, 16);
-		} else if (strcmp(now, "irq") == 0) {
-			now = strtok(NULL, ",");
-			irq_id = strtoul(now, NULL, 10);
-		} else if (strcmp(now, "zone_id") == 0) {
-			now = strtok(NULL, ",");
-			zone_id = strtoul(now, NULL, 10);
-		} else if (strcmp(now, "img") == 0) {
-			if (dev_type != VirtioTBlock) {
-				log_error("image path only for block device");
-				return -1;
-			}
-			arg = strtok(NULL, ",");
-		} else if (strcmp(now, "tap") == 0) {
-			if (dev_type != VirtioTNet) {
-				log_error("tap only for net device");
-				return -1;
-			}
-			arg = strtok(NULL, ",");
-		} else {
-			log_error("unknown option %s", now);
-			return -1;
-		}
-	}
-	free(opt);
-
-	if (base_addr == 0 || len == 0 || irq_id == 0 || zone_id == 0) {
+    base_addr = strtoul(cJSON_GetObjectItem(device_json, "addr")->valuestring, NULL, 16);
+    len = strtoul(cJSON_GetObjectItem(device_json, "len")->valuestring, NULL, 16);
+    irq_id = cJSON_GetObjectItem(device_json, "irq")->valueint;
+    zone_id = cJSON_GetObjectItem(device_json, "zone_id")->valueint;
+    if (dev_type == VirtioTBlock) {
+        char *img = cJSON_GetObjectItem(device_json, "img")->valuestring;
+        arg0 = img, arg1 = NULL;
+    } else if (dev_type == VirtioTNet) {
+        char *tap = cJSON_GetObjectItem(device_json, "tap")->valuestring;
+        cJSON *mac_json = cJSON_GetObjectItem(device_json, "mac");
+        uint8_t mac[6];
+        for (int i=0; i<6; i++) {
+            mac[i] = strtoul(cJSON_GetArrayItem(mac_json, i)->valuestring, NULL, 16);
+        }
+        arg0 = mac, arg1 = tap;
+    } else if (dev_type == VirtioTConsole) {
+        arg0 = arg1 = NULL;
+    }
+    if (base_addr == 0 || len == 0 || irq_id == 0 || zone_id == 0) {
 		log_error("missing arguments");
 		return -1;
 	}
-	create_virtio_device(dev_type, zone_id, base_addr, len, irq_id, arg);
-	return 0;
+    if(!create_virtio_device(dev_type, zone_id, base_addr, len, irq_id, arg0, arg1)) {
+        log_error("create virtio device failed");
+        return -1;
+    }
+    return 0;
+}
+
+static int virtio_start_from_json(char* json_path) {
+    char *buffer = NULL;
+    u_int64_t file_size;
+    int num_devices = 0, err = 0;
+    buffer = read_file(json_path, &file_size);
+    buffer[file_size] = '\0';
+
+    cJSON *root = cJSON_Parse(buffer);
+    cJSON *devices_json = cJSON_GetObjectItem(root, "devices");
+    num_devices = cJSON_GetArraySize(devices_json);
+    if (num_devices > MAX_DEVS) {
+        log_error("Exceed maximum device number");
+        err = -1;
+        goto err_out;
+    }
+    for (int i=0; i < num_devices; i++) {
+        cJSON *device = cJSON_GetArrayItem(devices_json, i);
+        err = create_virtio_device_from_json(device);
+        if (err) {
+            log_error("create virtio device failed");
+            goto err_out;
+        }
+    }
+
+err_out:
+    cJSON_Delete(root);
+    free(buffer);
+    return err;
 }
 
 int virtio_start(int argc, char *argv[]) {
-	static struct option long_options[] = {
-		{"device", required_argument, 0, 'd'},	
-		{0, 0, 0, 0},
-	};
-	char *optstring = "d:";
 	int opt, err = 0;
-	virtio_init();
-	while ( (opt = getopt_long(argc, argv, optstring, long_options, NULL)) != -1) {
-		switch (opt) {
-			case 'd':
-				err = create_virtio_device_from_cmd(optarg);
-				if (err) {
-					log_error("create virtio device failed");
-					goto err_out;
-				}
-				break;
-			default:
-				log_error("unknown option %c", opt);
-				goto err_out;
-		}
-	}
+	err = virtio_init();
+    if (err) return -1;
+
+    err = virtio_start_from_json(argv[3]);
+    if (err) goto err_out;
+
 	for (int i=0; i<vdevs_num; i++) {
 		virtio_bridge->mmio_addrs[i] = vdevs[i]->base_addr;	
 	}
