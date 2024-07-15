@@ -61,6 +61,8 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
             addi.d      $r12, $r12, 8       // ptr += 8
             b           1b
         2:
+            ibar        0
+            dbar        0
             bl          {rust_main}
         ",
         CSR_DMW0_INIT = const CSR_DMW0_INIT,

@@ -89,6 +89,8 @@ pub fn this_cpu_id() -> usize {
 }
 
 pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
+    let start_addr = start_addr & 0x0000_ffff_ffff_ffff;
+    let opaque = opaque & 0x0000_ffff_ffff_ffff;
     println!(
         "loongarch64: cpu_start: target cpuid={}, start_addr={:#x}, opaque={:#x}",
         cpuid, start_addr, opaque

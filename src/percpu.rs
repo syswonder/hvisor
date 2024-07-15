@@ -27,16 +27,47 @@ impl PerCpu {
     pub fn new<'a>(cpu_id: usize) -> &'static mut PerCpu {
         let vaddr = PER_CPU_ARRAY_PTR as VirtAddr + cpu_id as usize * PER_CPU_SIZE;
         let ret = unsafe { &mut *(vaddr as *mut Self) };
-        let tmp_percpu = PerCpu {
-            id: cpu_id,
-            cpu_on_entry: INVALID_ADDRESS,
-            arch_cpu: ArchCpu::new(cpu_id),
-            zone: None,
-            ctrl_lock: Mutex::new(()),
-            boot_cpu: false,
-            opaque: DTB_IPA,
-        };
-        *ret = tmp_percpu;
+        #[cfg(target_arch = "loongarch64")]
+        {
+            // let _tmp = PerCpu {
+            //     id: cpu_id,
+            //     cpu_on_entry: INVALID_ADDRESS,
+            //     arch_cpu: ArchCpu::new(cpu_id),
+            //     zone: None,
+            //     ctrl_lock: Mutex::new(()),
+            //     boot_cpu: false,
+            //     opaque: DTB_IPA,
+            // };
+            println!("percpu: setting ret");
+            // *ret = _tmp; // cannot run on board? why?
+            (*ret).id = cpu_id;
+            (*ret).cpu_on_entry = INVALID_ADDRESS;
+            (*ret).arch_cpu = ArchCpu::new(cpu_id);
+            // (*ret).zone = None;
+            (*ret).ctrl_lock = Mutex::new(());
+            (*ret).boot_cpu = false;
+            (*ret).opaque = DTB_IPA;
+            println!("percpu: setting ret done, dump: ");
+            println!("percpu: ret.id: {:#x}", (*ret).id);
+            println!("percpu: ret.cpu_on_entry: {:#x}", (*ret).cpu_on_entry);
+            println!("percpu: ret.arch_cpu: {:?}", (*ret).arch_cpu);
+            println!("percpu: ret.ctrl_lock: {:?}", (*ret).ctrl_lock);
+            println!("percpu: ret.boot_cpu: {:?}", (*ret).boot_cpu);
+            println!("percpu: ret.opaque: {:#x}", (*ret).opaque);
+        }
+        #[cfg(not(target_arch = "loongarch64"))]
+        {
+            *ret = PerCpu {
+                id: cpu_id,
+                cpu_on_entry: INVALID_ADDRESS,
+                arch_cpu: ArchCpu::new(cpu_id),
+                zone: None,
+                ctrl_lock: Mutex::new(()),
+                boot_cpu: false,
+                opaque: DTB_IPA,
+            };
+        }
+
         #[cfg(target_arch = "riscv64")]
         {
             use crate::arch::csr::{write_csr, CSR_SSCRATCH};

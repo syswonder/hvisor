@@ -19,7 +19,7 @@ pub fn install_trap_vector() {
 
     // set CSR.EENTRY to _hyp_trap_vector and int vector offset to 0
     ecfg::set_vs(0);
-    eentry::set_eentry(_hyp_trap_vector as usize);
+    // eentry::set_eentry(_hyp_trap_vector as usize);
     println!(
         "loongarch64: _hyp_trap_vector at 0x{:x}",
         _hyp_trap_vector as usize
