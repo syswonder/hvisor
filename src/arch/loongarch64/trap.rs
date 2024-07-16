@@ -1,3 +1,4 @@
+use crate::percpu::this_cpu_data;
 use crate::zone::Zone;
 
 use super::register::*;
@@ -15,18 +16,17 @@ pub fn install_trap_vector() {
     // clear UEFI firmware's previous timer configs
     tcfg::set_en(false);
     ticlr::clear_timer_interrupt();
-    // println!("loongarch64: force disabled interrupts");
-
     timer_init();
     // crmd::set_ie(true);
 
     // set CSR.EENTRY to _hyp_trap_vector and int vector offset to 0
     ecfg::set_vs(0);
     eentry::set_eentry(_hyp_trap_vector as usize);
-    // println!(
-    //     "loongarch64: _hyp_trap_vector at 0x{:x}",
-    //     _hyp_trap_vector as usize
-    // );
+
+    // enable floating point
+    euen::set_fpe(true); // basic floating point
+    euen::set_sxe(true); // 128-bit SIMD
+    euen::set_asxe(true); // 256-bit SIMD
 }
 
 pub fn get_ms_counter(ms: usize) -> usize {
@@ -116,36 +116,56 @@ fn handle_page_modify_fault() {
 }
 
 #[no_mangle]
-pub fn trap_handler(sp: usize) {
+pub fn trap_handler(mut ctx: &mut ZoneContext) {
+    // print ctx addr
+    trace!("loongarch64: trap_handler: ctx addr = {:p}", &ctx);
+
     let estat_ = estat::read();
     let ecode = estat_.ecode();
     let esubcode = estat_.esubcode();
     let is = estat_.is();
     let badv_ = badv::read();
     let badi_ = badi::read();
+    let era_ = era::read();
     // TLB dump
     let tlbrera_ = tlbrera::read();
     let tlbrbadv_ = tlbrbadv::read();
     let tlbrelo0_ = tlbrelo0::read();
     let tlbrelo1_ = tlbrelo1::read();
     debug!(
-        "loongarch64: trap_handler: {}
-        ecode={:#x} esubcode={:#x} is={:#x} badv={:#x} badi={:#x},
-        tlbrera={:#x} tlbrbadv={:#x} tlbrlo0={:#x} tlbrlo1={:#x}",
+        "loongarch64: trap_handler: {} ecode={:#x} esubcode={:#x} is={:#x} badv={:#x} badi={:#x} era={:#x}", 
+        // tlbrera={:#x} tlbrbadv={:#x} tlbrlo0={:#x} tlbrlo1={:#x}",
         ecode2str(ecode, esubcode),
         ecode,
         esubcode,
         is,
         badv_.vaddr(),
         badi_.inst(),
-        tlbrera_.pc(),
-        tlbrbadv_.vaddr(),
-        tlbrelo0_.raw(),
-        tlbrelo1_.raw()
+        era_.raw(),
+        // tlbrera_.raw(),
+        // tlbrbadv_.vaddr(),
+        // tlbrelo0_.raw(),
+        // tlbrelo1_.raw()
     );
-    panic!("pause");
+
+    // dump percpu
+    trace!(
+        "loongarch64: trap_handler: percpu = {:#x?}",
+        this_cpu_data().arch_cpu
+    );
+
+    handle_exception(
+        ecode,
+        era_.raw(),
+        is,
+        badi_.inst() as usize,
+        badv_.vaddr(),
+        ctx,
+    );
+
     unsafe {
-        _hyp_trap_return(sp);
+        let _ctx_ptr = ctx as *mut ZoneContext;
+        _hyp_trap_return(_ctx_ptr as usize);
     }
 }
 
@@ -909,8 +929,10 @@ fn emulate_cacop(ins: usize, ctx: &mut ZoneContext) {
 fn emulate_idle(ins: usize, ctx: &mut ZoneContext) {
     // idle level           0000011001 0010001 level[14:0]
     let level = extract_field(ins, 0, 15);
-    warn!("guest request an idle at level {:#x}", level);
-    ctx.sepc -= 4;
+    panic!(
+        "guest request an idle at level {:#x}, but vcpu halt is not implmented yet",
+        level
+    );
 }
 
 fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
@@ -930,8 +952,76 @@ fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
     let rj = extract_field(ins, 5, 5);
     info!("iocsr emulation, ty = {}, rd = {}, rj = {}", ty, rd, rj);
     info!("GPR[rd] = {:#x}, GPR[rj] = {:#x}", ctx.x[rd], ctx.x[rj]);
-    warn!("iocsr emulation not enabled for debugging purpose(just for now)");
-    panic!("wait!!!");
+    match ty {
+        0 => {
+            // iocsrrd.b
+            // GPR[rd] = iocsrrd.b(GPR[rj])
+            let mut val = 0;
+            unsafe {
+                asm!("iocsrrd.b {}, {}", out(reg) val, in(reg) ctx.x[rj]);
+            }
+            ctx.x[rd] = val;
+        }
+        1 => {
+            // iocsrrd.h
+            // GPR[rd] = iocsrrd.h(GPR[rj])
+            let mut val = 0;
+            unsafe {
+                asm!("iocsrrd.h {}, {}", out(reg) val, in(reg) ctx.x[rj]);
+            }
+            ctx.x[rd] = val;
+        }
+        2 => {
+            // iocsrrd.w
+            // GPR[rd] = iocsrrd.w(GPR[rj])
+            let mut val = 0;
+            unsafe {
+                asm!("iocsrrd.w {}, {}", out(reg) val, in(reg) ctx.x[rj]);
+            }
+            ctx.x[rd] = val;
+        }
+        3 => {
+            // iocsrrd.d
+            // GPR[rd] = iocsrrd.d(GPR[rj])
+            let mut val = 0;
+            unsafe {
+                asm!("iocsrrd.d {}, {}", out(reg) val, in(reg) ctx.x[rj]);
+            }
+            ctx.x[rd] = val;
+        }
+        4 => {
+            // iocsrwr.b
+            // iocsrwr.b(GPR[rj], GPR[rd])
+            // unsafe {
+            //     asm!("iocsrwr.b {}, {}", in(reg) ctx.x[rj], in(reg) ctx.x[rd]);
+            // }
+        }
+        5 => {
+            // iocsrwr.h
+            // iocsrwr.h(GPR[rj], GPR[rd])
+            // unsafe {
+            //     asm!("iocsrwr.h {}, {}", in(reg) ctx.x[rj], in(reg) ctx.x[rd]);
+            // }
+        }
+        6 => {
+            // iocsrwr.w
+            // iocsrwr.w(GPR[rj], GPR[rd])
+            // unsafe {
+            //     asm!("iocsrwr.w {}, {}", in(reg) ctx.x[rj], in(reg) ctx.x[rd]);
+            // }
+        }
+        7 => {
+            // iocsrwr.d
+            // iocsrwr.d(GPR[rj], GPR[rd])
+            // unsafe {
+            //     asm!("iocsrwr.d {}, {}", in(reg) ctx.x[rj], in(reg) ctx.x[rd]);
+            // }
+        }
+        _ => {
+            // should not reach here
+            panic!("invalid iocsr type, this is impossible");
+        }
+    }
 }
 
 const UART0_BASE: usize = 0x1fe001e0;
@@ -1035,9 +1125,9 @@ type OpcodeHandler = fn(usize, &mut ZoneContext);
 
 fn emulate_instruction(era: usize, ins: usize, ctx: &mut ZoneContext) {
     let pc = era;
+    // after we emulate the instruction, we should jump to next instruction
     ctx.sepc = pc + 4;
 
-    // after we emulate the instruction, we should jump to next instruction
     let opcodes = vec![
         (
             OPCODE_CPUCFG,
@@ -1087,8 +1177,7 @@ fn emulate_instruction(era: usize, ins: usize, ctx: &mut ZoneContext) {
         }
     }
 
-    error!("Unexpected opcode encountered, ins = {:#x}", ins);
-    loop {}
+    panic!("Unexpected opcode encountered, ins = {:#x}", ins);
 }
 
 const ECODE_INT: usize = 0x0;
@@ -1113,7 +1202,10 @@ fn handle_exception(
         ECODE_GSPR => {
             // according to kvm's code, we should emulate the instruction that cause the GSPR exception - wheatfox 2024.4.12
             // GSPR = 0x16, Guest Sensitive Privileged Resource
-            info!("GSPR exception");
+            info!(
+                "This is a GSPR exception, badv={:#x}, badi={:#x}",
+                badv, badi
+            );
             emulate_instruction(era, badi, ctx);
         }
         ECODE_PIL | ECODE_PIS => {
@@ -1122,27 +1214,24 @@ fn handle_exception(
             // info!("handling page invalid exception...");
             if badv >= UART0_BASE && badv < UART0_END {
                 // info!("handling UART0 mmio emulation");
-                emulate_instruction(era, badi, ctx);
+                // emulate_instruction(era, badi, ctx);
+                panic!("UART0 mmio emulation not implemented");
             } else {
                 if ecode == ECODE_PIL {
-                    error!("Page Illegal Load");
+                    panic!("Page Illegal Load");
                 } else {
-                    error!("Page Illegal Store");
+                    panic!("Page Illegal Store");
                 }
-                loop {}
             }
         }
         ECODE_HVC => {
             // HVC = 0x17,  Hypervisor Call
-            info!("handling HVC exception...");
-            handle_hvc(ctx);
+            panic!("HVC exception not implemented");
         }
         _ => {
-            error!(
-          "unhandled exception, ecode = {:#x}, era = {:#x}, is = {:#x}, badi = {:#x}, badv = {:#x}",
-          ecode, era, is, badi, badv
-        );
-            loop {}
+            panic!("unhandled exception, ecode = {:#x}, era = {:#x}, is = {:#x}, badi = {:#x}, badv = {:#x}",
+                ecode, era, is, badi, badv
+            );
         }
     }
 }
