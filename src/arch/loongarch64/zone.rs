@@ -43,6 +43,27 @@ impl Zone {
             }
         }
 
+        // map special region
+        // 2024.4.12
+        // linux's strscpy called gpa at 0x9000_0000_0000_0000 which is ldx x, 0x9000_0000_0000_0000(a1) + 0x0(a0) why ?
+        // __memcpy_fromio 0xf0000 why?
+        // (0x0, 0x10000, ZONE_MEM_FLAG_R | ZONE_MEM_FLAG_W | ZONE_MEM_FLAG_X)
+        // (0xf0000, 0x10000, ZONE_MEM_FLAG_R | ZONE_MEM_FLAG_W | ZONE_MEM_FLAG_X)
+
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x0 as GuestPhysAddr,
+            0x0 as HostPhysAddr,
+            0x10000,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+        ))?;
+
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0xf0000 as GuestPhysAddr,
+            0xf0000 as HostPhysAddr,
+            0x10000,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+        ))?;
+        
         // map guest dtb
         info!("map guest dtb: {:#x?}", dtb_ipa);
         self.gpm.insert(MemoryRegion::new_with_offset_mapper(

@@ -41,25 +41,6 @@ impl PerCpu {
             use crate::arch::csr::{write_csr, CSR_SSCRATCH};
             write_csr!(CSR_SSCRATCH, &ret.arch_cpu as *const _ as usize); //arch cpu pointer
         }
-        #[cfg(target_arch = "loongarch64")]
-        {
-            use core::arch::asm;
-            let arch_cpu = &ret.arch_cpu;
-            let arch_ctx = arch_cpu.ctx;
-            let ctx_btm = &arch_ctx as *const _ as usize;
-            let ctx_top = ctx_btm + core::mem::size_of::<arch::zone::ZoneContext>();
-            let stack_top = arch_cpu.stack_top();
-            unsafe {
-                asm!(
-                    "csrwr {}, {LOONGARCH_CSR_SAVE3}",
-                    "csrwr {}, {LOONGARCH_CSR_SAVE4}",
-                    in(reg) ctx_top,
-                    in(reg) stack_top,
-                    LOONGARCH_CSR_SAVE3 = const 0x33,
-                    LOONGARCH_CSR_SAVE4 = const 0x34,
-                );
-            }
-        }
         ret
     }
 

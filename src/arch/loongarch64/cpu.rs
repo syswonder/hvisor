@@ -80,6 +80,17 @@ impl ArchCpu {
             self.stack_top()
         );
 
+        unsafe {
+            asm!(
+                "csrwr {}, {LOONGARCH_CSR_SAVE3}",
+                "csrwr {}, {LOONGARCH_CSR_SAVE4}",
+                in(reg) (ctx_addr as usize + core::mem::size_of::<ZoneContext>()),
+                in(reg) self.stack_top(),
+                LOONGARCH_CSR_SAVE3 = const 0x33,
+                LOONGARCH_CSR_SAVE4 = const 0x34,
+            );
+        }
+
         super::trap::_vcpu_return(ctx_addr as usize);
 
         panic!("loongarch64: ArchCpu::run: unreachable");
