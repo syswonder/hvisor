@@ -123,16 +123,27 @@ pub fn trap_handler(sp: usize) {
     let is = estat_.is();
     let badv_ = badv::read();
     let badi_ = badi::read();
+    // TLB dump
+    let tlbrera_ = tlbrera::read();
+    let tlbrbadv_ = tlbrbadv::read();
+    let tlbrelo0_ = tlbrelo0::read();
+    let tlbrelo1_ = tlbrelo1::read();
     debug!(
-        "loongarch64: trap_handler: {}, ecode={:#x}, esubcode={:#x}, is={:#x}, badv=0x{:x}, badi=0x{:x}",
+        "loongarch64: trap_handler: {}
+        ecode={:#x} esubcode={:#x} is={:#x} badv={:#x} badi={:#x},
+        tlbrera={:#x} tlbrbadv={:#x} tlbrlo0={:#x} tlbrlo1={:#x}",
         ecode2str(ecode, esubcode),
         ecode,
         esubcode,
         is,
         badv_.vaddr(),
-        badi_.inst()
+        badi_.inst(),
+        tlbrera_.pc(),
+        tlbrbadv_.vaddr(),
+        tlbrelo0_.raw(),
+        tlbrelo1_.raw()
     );
-    ticlr::clear_timer_interrupt();
+    panic!("pause");
     unsafe {
         _hyp_trap_return(sp);
     }
@@ -194,12 +205,8 @@ pub fn _vcpu_return(ctx: usize) {
 extern "C" fn _hyp_trap_vector() {
     unsafe {
         asm!(
-            //traps from geust mode start here
-            //in host mode, but with a vm page table
-            //save guest $r3 to DESAVE, and get kernel $r3 from DESAVE
-
             "csrwr $r3, {LOONGARCH_CSR_DESAVE}",
-
+            "csrrd $r3, {LOONGARCH_CSR_SAVE3}",
             //parpare VmContext for zone_trap_handler
             //save 32 GPRS except $r3
             //save gcsrs managed by guest
@@ -372,12 +379,16 @@ extern "C" fn _hyp_trap_vector() {
             // "csrwr $r12, {LOONGARCH_CSR_PGDL}",
             // "csrwr $r13, {LOONGARCH_CSR_PGDH}",
             // "invtlb 0, $r0, $r0",
-            // save $r3 (previously saved in DESAVE)
+            // save $r3 (previously saved in DESAVE) this is guest sp
             "csrrd $r12, {LOONGARCH_CSR_DESAVE}",
             "st.d $r12, $r3, 24",
             // $r3 -> a0, now the param of zone_trap_handler is ok
             "move $r4, $r3",
+            // rewind sp to PerCpu default stack top from KSAVE4
+            "csrrd $r3, {LOONGARCH_CSR_SAVE4}",
             "bl trap_handler",
+            LOONGARCH_CSR_SAVE3 = const 0x33,
+            LOONGARCH_CSR_SAVE4 = const 0x34,
             LOONGARCH_CSR_DESAVE = const 0x502,
             LOONGARCH_CSR_ERA = const 0x6,
             LOONGARCH_GCSR_CRMD = const 0x0,
@@ -700,14 +711,7 @@ pub unsafe extern "C" fn _hyp_trap_return(ctx: usize) {
             "ld.d $r29, $r3, 232",
             "ld.d $r30, $r3, 240",
             "ld.d $r31, $r3, 248",
-            // restore stack(16-byte alignment)
-            "addi.d $r3, $r3, 768",
-            LOONGARCH_CSR_DESAVE = const 0x502
-        );
-        asm!(
-            // now, we can store kernel stack $r3 to DESAVE
             "csrwr $r3, {LOONGARCH_CSR_DESAVE}",
-            // ret to guest mode using ertn
             "ertn",
             LOONGARCH_CSR_DESAVE = const 0x502
         );
