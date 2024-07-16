@@ -12,7 +12,7 @@ pub fn install_trap_vector() {
     // clear UEFI firmware's previous timer configs
     tcfg::set_en(false);
     ticlr::clear_timer_interrupt();
-    println!("loongarch64: force disabled interrupts");
+    // println!("loongarch64: force disabled interrupts");
 
     timer_init();
     // crmd::set_ie(true);
@@ -20,10 +20,10 @@ pub fn install_trap_vector() {
     // set CSR.EENTRY to _hyp_trap_vector and int vector offset to 0
     ecfg::set_vs(0);
     // eentry::set_eentry(_hyp_trap_vector as usize);
-    println!(
-        "loongarch64: _hyp_trap_vector at 0x{:x}",
-        _hyp_trap_vector as usize
-    );
+    // println!(
+    //     "loongarch64: _hyp_trap_vector at 0x{:x}",
+    //     _hyp_trap_vector as usize
+    // );
 }
 
 pub fn get_ms_counter(ms: usize) -> usize {
@@ -46,7 +46,7 @@ pub fn timer_init() {
     // let init_val = get_ms_counter(500);
     let init_val = get_ms_counter(10000);
     tcfg::set_init_val(init_val);
-    println!("loongarch64: timer_init: timer init value = {}", init_val);
+    // println!("loongarch64: timer_init: timer init value = {}", init_val);
 
     tcfg::set_en(true);
 

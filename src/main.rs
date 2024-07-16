@@ -137,7 +137,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         MASTER_CPU.store(cpuid as i32, Ordering::Release);
         is_primary = true;
         println!("Hello, HVISOR!");
-        #[cfg(any(target_arch = "riscv64", target_arch = "loongarch64"))]
+        #[cfg(target_arch = "riscv64")]
         clear_bss();
     }
 
@@ -153,9 +153,6 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     }
 
     ENTERED_CPUS.fetch_add(1, Ordering::SeqCst);
-    
-    println!("CPU {} has entered, now try to add ENTERED_CPUS, current value = {}", cpu.id, ENTERED_CPUS.load(Ordering::SeqCst));
-
     wait_for(|| PerCpu::entered_cpus() < MAX_CPU_NUM as _);
     assert_eq!(PerCpu::entered_cpus(), MAX_CPU_NUM as _);
 

@@ -34,7 +34,7 @@ impl Debug for ArchCpu {
 
 impl ArchCpu {
     pub fn new(cpuid: usize) -> Self {
-        println!("loongarch64: ArchCpu::new: cpuid={}", cpuid);
+        // println!("loongarch64: ArchCpu::new: cpuid={}", cpuid);
         let ret = ArchCpu {
             r: [0; 32],
             sepc: 0,
@@ -43,7 +43,7 @@ impl ArchCpu {
             power_on: false,
             init: false,
         };
-        println!("loongarch64: ArchCpu::new: ok, cpuid={}", ret.cpuid);
+        // println!("loongarch64: ArchCpu::new: ok, cpuid={}", ret.cpuid);
         ret
     }
     pub fn get_cpuid(&self) -> usize {
@@ -80,7 +80,7 @@ impl ArchCpu {
     }
     pub fn idle(&self) -> ! {
         info!("loongarch64: ArchCpu::idle: cpuid={}", self.get_cpuid());
-        panic!("should not reach here");
+        loop {}
     }
 }
 
@@ -91,10 +91,10 @@ pub fn this_cpu_id() -> usize {
 pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
     let start_addr = start_addr & 0x0000_ffff_ffff_ffff;
     let opaque = opaque & 0x0000_ffff_ffff_ffff;
-    println!(
-        "loongarch64: cpu_start: target cpuid={}, start_addr={:#x}, opaque={:#x}",
-        cpuid, start_addr, opaque
-    );
+    // println!(
+    //     "loongarch64: cpu_start: target cpuid={}, start_addr={:#x}, opaque={:#x}",
+    //     cpuid, start_addr, opaque
+    // );
     let ipi: &MMIODerefWrapper<IpiRegisters> = match cpuid {
         1 => &CORE1_IPI,
         2 => &CORE2_IPI,

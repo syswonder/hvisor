@@ -53,13 +53,13 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
             add.d       $r14, $r13, $r14
             add.d       $r15, $r12, $r14    // this is the stack top of CPU[CPU_ID]
             addi.d      $sp, $r15, 0        // set sp
-            la.pcrel    $r12, sbss          // bss start, t0 as ptr
-            la.pcrel    $r13, ebss          // bss end
-        1:
-            st.d        $zero, $r12, 0      // MEM[ptr] = 0
-            beq         $r12, $r13, 2f      // break if ptr == ebss, and we just set MEM[ebss] = 0
-            addi.d      $r12, $r12, 8       // ptr += 8
-            b           1b
+        //     la.pcrel    $r12, sbss          // bss start, t0 as ptr
+        //     la.pcrel    $r13, ebss          // bss end
+        // 1:
+        //     st.d        $zero, $r12, 0      // MEM[ptr] = 0
+        //     beq         $r12, $r13, 2f      // break if ptr == ebss, and we just set MEM[ebss] = 0
+        //     addi.d      $r12, $r12, 8       // ptr += 8
+        //     b           1b
         2:
             ibar        0
             dbar        0
