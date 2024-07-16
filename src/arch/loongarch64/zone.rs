@@ -219,26 +219,6 @@ fn prepare_vm_trapcontext(guest_entry_addr: usize, trap_addr: usize, vm_pagetabl
     }
 }
 
-// pub fn first_sched_callback_fn() {
-//     set_zone_trap_entry();
-//     let cur_vcpu = current_vcpu().unwrap();
-//     let trap_addr = cur_vcpu.get_kernel_stack_top();
-
-//     let cur_zone = current_vcpu().unwrap().get_zone().unwrap();
-//     let guest_entry_addr = cur_zone.get_sepc();
-
-//     unsafe {
-//         // gcsr_dump();
-//         // prepare trap context
-//         prepare_vm_trapcontext(guest_entry_addr, trap_addr, cur_zone.pagetable_dir());
-//         let start_time: usize;
-//         let counter_id = 0;
-//         asm!("rdtime.d {}, {}", out(reg) start_time, in(reg) counter_id);
-//         cur_zone.set_start_time(start_time);
-//         zone_trap_ret_rust(trap_addr);
-//     }
-// }
-
 pub fn first_sched_callback_fn() {
     // todo
 }

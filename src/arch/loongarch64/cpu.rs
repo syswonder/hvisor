@@ -1,4 +1,5 @@
 use super::ipi::*;
+use super::zone::ZoneContext;
 use crate::device::common::MMIODerefWrapper;
 use crate::percpu::this_cpu_data;
 use core::arch::asm;
@@ -13,54 +14,35 @@ use crate::{
 };
 
 #[repr(C)]
+#[derive(Debug)]
 pub struct ArchCpu {
-    pub r: [usize; 32], // r0~r31
-    pub sepc: usize,
+    pub ctx: ZoneContext,
     pub stack_top: usize,
     pub cpuid: usize,
     pub power_on: bool,
     pub init: bool,
 }
 
-impl Debug for ArchCpu {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        write!(
-            f,
-            "ArchCpu{{r:{:?},sepc:{:#x},stack_top:{:#x},cpuid:{},power_on:{}}}",
-            self.r, self.sepc, self.stack_top, self.cpuid, self.power_on
-        )
-    }
-}
-
 impl ArchCpu {
     pub fn new(cpuid: usize) -> Self {
-        // println!("loongarch64: ArchCpu::new: cpuid={}", cpuid);
         let ret = ArchCpu {
-            r: [0; 32],
-            sepc: 0,
+            ctx: super::trap::dump_reset_gcsrs(),
             stack_top: 0,
             cpuid,
             power_on: false,
             init: false,
         };
-        // println!("loongarch64: ArchCpu::new: ok, cpuid={}", ret.cpuid);
         ret
     }
     pub fn get_cpuid(&self) -> usize {
         self.cpuid
     }
     pub fn stack_top(&self) -> VirtAddr {
-        PER_CPU_ARRAY_PTR as VirtAddr + (self.get_cpuid() + 1) as usize * PER_CPU_SIZE - 8
+        PER_CPU_ARRAY_PTR as VirtAddr + (self.get_cpuid() + 1) as usize * PER_CPU_SIZE
     }
     pub fn init(&mut self, entry: usize, cpu_id: usize, dtb: usize) {
-        info!(
-            "loongarch64: ArchCpu::init: entry={:#x}, cpu_id={}",
-            entry, cpu_id
-        );
-        self.sepc = entry;
+        self.ctx.sepc = entry;
         self.stack_top = self.stack_top() as usize;
-        self.r[4] = cpu_id; // cpu id in a0
-        self.r[5] = dtb; // dtb addr in a1
     }
     pub fn run(&mut self) -> ! {
         assert!(this_cpu_id() == self.get_cpuid());
@@ -74,9 +56,33 @@ impl ArchCpu {
             );
             self.init = true;
         }
-        info!("loongarch64: CPU{} run@{:#x}", self.get_cpuid(), self.sepc);
+        info!(
+            "loongarch64: CPU{} run@{:#x}",
+            self.get_cpuid(),
+            self.ctx.sepc
+        );
         info!("loongarch64: @{:#x?}", self);
-        loop {}
+        // step 1: enable guest mode
+        // step 2: set guest entry to era
+        // step 3: run ertn and enter guest mode
+        let ctx_addr = &mut self.ctx as *mut ZoneContext;
+        debug!(
+            "loongarch64: ArchCpu::run: percpu_s={:#x}",
+            self.stack_top() - PER_CPU_SIZE
+        );
+        debug!(
+            "loongarch64: ArchCpu::run: ctx_addr={:#x}, size={}",
+            ctx_addr as usize,
+            core::mem::size_of::<ZoneContext>()
+        );
+        debug!(
+            "loongarch64: ArchCpu::run: stack_tp={:#x}",
+            self.stack_top()
+        );
+
+        super::trap::_vcpu_return(ctx_addr as usize);
+
+        panic!("loongarch64: ArchCpu::run: unreachable");
     }
     pub fn idle(&self) -> ! {
         info!("loongarch64: ArchCpu::idle: cpuid={}", self.get_cpuid());
@@ -90,11 +96,6 @@ pub fn this_cpu_id() -> usize {
 
 pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
     let start_addr = start_addr & 0x0000_ffff_ffff_ffff;
-    let opaque = opaque & 0x0000_ffff_ffff_ffff;
-    // println!(
-    //     "loongarch64: cpu_start: target cpuid={}, start_addr={:#x}, opaque={:#x}",
-    //     cpuid, start_addr, opaque
-    // );
     let ipi: &MMIODerefWrapper<IpiRegisters> = match cpuid {
         1 => &CORE1_IPI,
         2 => &CORE2_IPI,
