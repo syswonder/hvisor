@@ -124,14 +124,6 @@ impl PagingInstr for S1PTInstr {
         use loongArch64::register::{pgd, pgdh, pgdl};
         pgdh::set_base(root_pa);
         pgdl::set_base(root_pa);
-        debug!(
-            "loongarch64: S1PTInstr::activate: pgdh set to {:#x}",
-            pgdh::read().base()
-        );
-        debug!(
-            "loongarch64: S1PTInstr::activate: pgdl set to {:#x}",
-            pgdl::read().base()
-        );
         unsafe {
             tlbrentry::set_tlbrentry(tlb_refill_handler as usize);
         }

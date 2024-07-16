@@ -13,8 +13,18 @@ bitflags::bitflags! {
     pub struct DescriptorAttr: usize {
         const V = 1 << 0; // Valid
         const D = 1 << 1; // Dirty
-        const PLV = 0b11 << 2; // Privilege Level
-        const MAT = 0b11 << 4; // Memory Access Type
+
+        const PLV = 0b11 << 2; // Privilege Level Range
+        const PLV0 = 0b00 << 2; // PLV0
+        const PLV1 = 0b01 << 2; // PLV1
+        const PLV2 = 0b10 << 2; // PLV2
+        const PLV3 = 0b11 << 2; // PLV3
+
+        const MAT = 0b11 << 4; // Memory Access Type Range
+        const MAT_SUC = 0b00 << 4; // Strongly-Ordered Uncached
+        const MAT_CC = 0b01 << 4; // Coherent Cached
+        const MAT_WB = 0b10 << 4; // Weakly-Ordered Uncached
+
         const G = 1 << 6; // Global
         const P = 1 << 7; // Present
         const W = 1 << 8; // Writable
@@ -51,6 +61,16 @@ impl From<MemFlags> for DescriptorAttr {
         }
         if !flags.contains(MemFlags::EXECUTE) {
             attr |= Self::NX;
+        }
+        // default we should set the VALID=1 since we are using it
+        // DIRTY=1 to avoid Page Modified Exception
+        attr |= Self::V | Self::D;
+        // now let's handle MAT, if flags includes IO then we use StronglyUncached
+        // otherwise we use CoherentCached
+        if flags.contains(MemFlags::IO) {
+            attr |= DescriptorAttr::MAT_SUC; // Strongly-Ordered Uncached
+        } else {
+            attr |= DescriptorAttr::MAT_CC; // Coherent Cached
         }
         attr
     }
@@ -102,18 +122,10 @@ impl GenericPTE for PageTableEntry {
     fn set_flags(&mut self, flags: MemFlags, is_huge: bool) {
         let ppn = self.0 & PTE_PPN_MASK;
         self.0 = DescriptorAttr::from(flags).bits() | ppn;
-        // trace!(
-        //     "loongarch64: PageTableEntry::set_flags: flags: {:#x?}, self.0: {:#x?}",
-        //     flags,
-        //     self.0
-        // );
     }
     fn set_table(&mut self, pa: HostPhysAddr) {
         self.set_addr(pa);
-        self.set_flags_and_mat(
-            DescriptorAttr::V | DescriptorAttr::W,
-            MemoryAccessType::CoherentCached,
-        );
+        self.0 |= DescriptorAttr::V.bits();
     }
     fn clear(&mut self) {
         self.0 = 0;
@@ -142,14 +154,6 @@ impl PagingInstr for S2PTInstr {
         use loongArch64::register::{pgd, pgdh, pgdl};
         pgdh::set_base(root_pa);
         pgdl::set_base(root_pa);
-        debug!(
-            "loongarch64: S2PTInstr::activate: pgdh set to {:#x}",
-            pgdh::read().base()
-        );
-        debug!(
-            "loongarch64: S2PTInstr::activate: pgdl set to {:#x}",
-            pgdl::read().base()
-        );
         unsafe {
             tlbrentry::set_tlbrentry(tlb_refill_handler as usize);
         }
