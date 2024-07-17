@@ -132,7 +132,7 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
     let tlbrbadv_ = tlbrbadv::read();
     let tlbrelo0_ = tlbrelo0::read();
     let tlbrelo1_ = tlbrelo1::read();
-    debug!(
+    trace!(
         "loongarch64: trap_handler: {} ecode={:#x} esubcode={:#x} is={:#x} badv={:#x} badi={:#x} era={:#x}", 
         // tlbrera={:#x} tlbrbadv={:#x} tlbrlo0={:#x} tlbrlo1={:#x}",
         ecode2str(ecode, esubcode),
@@ -146,12 +146,6 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
         // tlbrbadv_.vaddr(),
         // tlbrelo0_.raw(),
         // tlbrelo1_.raw()
-    );
-
-    // dump percpu
-    trace!(
-        "loongarch64: trap_handler: percpu = {:#x?}",
-        this_cpu_data().arch_cpu
     );
 
     handle_exception(
@@ -929,10 +923,8 @@ fn emulate_cacop(ins: usize, ctx: &mut ZoneContext) {
 fn emulate_idle(ins: usize, ctx: &mut ZoneContext) {
     // idle level           0000011001 0010001 level[14:0]
     let level = extract_field(ins, 0, 15);
-    panic!(
-        "guest request an idle at level {:#x}, but vcpu halt is not implmented yet",
-        level
-    );
+    trace!("guest request an idle at level {:#x}", level);
+    ctx.sepc -= 4;
 }
 
 fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
@@ -1202,7 +1194,7 @@ fn handle_exception(
         ECODE_GSPR => {
             // according to kvm's code, we should emulate the instruction that cause the GSPR exception - wheatfox 2024.4.12
             // GSPR = 0x16, Guest Sensitive Privileged Resource
-            info!(
+            trace!(
                 "This is a GSPR exception, badv={:#x}, badi={:#x}",
                 badv, badi
             );
