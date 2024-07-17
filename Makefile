@@ -5,6 +5,7 @@ STATS ?= off
 PORT ?= 2333
 MODE ?= debug
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
+IRQ ?= plic
 
 ifeq ($(ARCH),aarch64)
     RUSTC_TARGET := aarch64-unknown-none
@@ -27,12 +28,13 @@ build_path := target/$(RUSTC_TARGET)/$(MODE)
 hvisor_elf := $(build_path)/hvisor
 hvisor_bin := $(build_path)/hvisor.bin
 image_dir  := images/$(ARCH)
+bios_elf := $(image_dir)/opensbi-1.2/build/platform/generic/firmware/fw_payload.elf
 
 # Features based on STATS
 features := 
 
 # Build arguments
-build_args := --features "$(features)" 
+build_args := --features "$(IRQ)" 
 build_args := --target $(RUSTC_TARGET)
 build_args += -Z build-std=core,alloc
 build_args += -Z build-std-features=compiler-builtins-mem
@@ -52,8 +54,16 @@ disa:
 	readelf -a $(hvisor_elf) > hvisor-elf.txt
 	rust-objdump --disassemble $(hvisor_elf) > hvisor.S
 
-run: all
+run: build
 	$(QEMU) $(QEMU_ARGS)
+
+$(hvisor_bin): elf
+	$(OBJCOPY) $(hvisor_elf) --strip-all -O binary $@
+
+build: $(hvisor_bin)
+	make -C $(image_dir)/opensbi-1.2 PLATFORM=generic \
+    	FW_PAYLOAD=y \
+    	FW_PAYLOAD_PATH= ../../../$(hvisor_bin)
 
 gdb: all
 	$(QEMU) $(QEMU_ARGS) -s -S

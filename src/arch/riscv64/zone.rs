@@ -5,6 +5,7 @@ use crate::{
     },
     percpu::get_cpu_data,
     zone::Zone,
+    consts::PAGE_SIZE
 };
 impl Zone {
     pub fn pt_init(
@@ -121,6 +122,43 @@ impl Zone {
                     MemFlags::READ | MemFlags::WRITE,
                 ))?;
             }
+        }
+        #[cfg(feature = "aia")]{
+        let paddr = 0x2800_0000 as HostPhysAddr;
+        let size = PAGE_SIZE;
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            paddr as GuestPhysAddr,
+            paddr + PAGE_SIZE * 1,
+            size,
+            MemFlags::READ | MemFlags::WRITE,
+        ))?;
+
+        let paddr = 0x2800_1000 as HostPhysAddr;
+        let size = PAGE_SIZE;
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            paddr as GuestPhysAddr,
+            paddr + PAGE_SIZE * 2,
+            size,
+            MemFlags::READ | MemFlags::WRITE,
+        ))?;
+
+        let paddr = 0x2800_2000 as HostPhysAddr;
+        let size = PAGE_SIZE;
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            paddr as GuestPhysAddr,
+            paddr + PAGE_SIZE * 3,
+            size,
+            MemFlags::READ | MemFlags::WRITE,
+        ))?;
+
+        let paddr = 0x2800_3000 as HostPhysAddr;
+        let size = PAGE_SIZE;
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            paddr as GuestPhysAddr,
+            paddr + PAGE_SIZE * 4,
+            size,
+            MemFlags::READ | MemFlags::WRITE,
+        ))?;
         }
 
         info!("VM stage 2 memory set: {:#x?}", self.gpm);

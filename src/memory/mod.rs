@@ -36,8 +36,9 @@ bitflags! {
 }
 
 /// Page table used for hypervisor.
+// #[cfg(feature = "plic")]
 pub static HV_PT: Once<RwLock<MemorySet<Stage1PageTable>>> = Once::new();
-
+// #[cfg(feature = "plic")]
 pub fn hv_page_table<'a>() -> &'a RwLock<MemorySet<Stage1PageTable>> {
     HV_PT.get().expect("Uninitialized hypervisor page table!")
 }

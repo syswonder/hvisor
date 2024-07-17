@@ -1,0 +1,59 @@
+/dts-v1/;
+
+/ {
+	#address-cells = <0x2>;
+	#size-cells = <0x2>;
+
+	cpus {
+		#address-cells = <0x1>;
+		#size-cells = <0x0>;
+		timebase-frequency = <10000000>;
+		cpu@3 {
+			device_type = "cpu";
+			reg = <0x3>;
+			status = "okay";
+			compatible = "riscv";
+			riscv,isa = "rv64imafdcsu_sstc";
+			mmu-type = "riscv,sv39";
+
+			cpu3_intc: interrupt-controller {
+				#interrupt-cells = <0x1>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+			};
+		};
+
+	};
+
+	memory@84000000 {
+		device_type = "memory";
+		reg = <0x0 0x84000000 0x0 0x08000000>;
+	};
+soc{
+			#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		compatible = "simple-bus";
+		ranges;
+	plic: interrupt-controller@c000000 {
+		riscv,ndev = <60>;
+		reg = <0x0 0xc000000 0x0 0x4000000>;
+		interrupts-extended = <
+			&cpu3_intc 11 &cpu3_intc 9
+		>;
+		interrupt-controller;
+		compatible = "riscv,plic0";
+		#interrupt-cells = <0x1>;
+	};
+
+	virtio_mmio@10007000 {
+		interrupts = <0x7>;
+		interrupt-parent = <&plic>;
+		reg = <0x0 0x10007000 0x0 0x1000>;
+		compatible = "virtio,mmio";
+	};
+};
+	chosen {
+		bootargs = "root=/dev/vda rw earlycon console=hvc0";
+	};
+
+};
