@@ -53,29 +53,29 @@ static int hvisor_finish_req(void)
     return 0;
 }
 
-static int flush_cache(__u64 phys_start, __u64 size) {
-    struct vm_struct *vma;
-    int err = 0;
-    size = PAGE_ALIGN(size);
-    vma = __get_vm_area(size, VM_IOREMAP, VMALLOC_START, VMALLOC_END);
-    if (!vma) {
-        pr_err("hvisor: failed to allocate virtual kernel memory for image\n");
-        return -ENOMEM;
-    }
-    vma->phys_addr = phys_start;
+// static int flush_cache(__u64 phys_start, __u64 size) {
+//     struct vm_struct *vma;
+//     int err = 0;
+//     size = PAGE_ALIGN(size);
+//     vma = __get_vm_area(size, VM_IOREMAP, VMALLOC_START, VMALLOC_END);
+//     if (!vma) {
+//         pr_err("hvisor: failed to allocate virtual kernel memory for image\n");
+//         return -ENOMEM;
+//     }
+//     vma->phys_addr = phys_start;
 
-    if (ioremap_page_range((unsigned long)vma->addr, (unsigned long)(vma->addr + size), phys_start, PAGE_KERNEL_EXEC)) {
-        pr_err("hvisor: failed to ioremap image\n");
-        err = -EFAULT;
-        goto unmap_vma;
-    }
-    // flush icache will also flush dcache
-    flush_icache_range((unsigned long)(vma->addr), (unsigned long)(vma->addr + size));
+//     if (ioremap_page_range((unsigned long)vma->addr, (unsigned long)(vma->addr + size), phys_start, PAGE_KERNEL_EXEC)) {
+//         pr_err("hvisor: failed to ioremap image\n");
+//         err = -EFAULT;
+//         goto unmap_vma;
+//     }
+//     // flush icache will also flush dcache
+//     flush_icache_range((unsigned long)(vma->addr), (unsigned long)(vma->addr + size));
 
-unmap_vma:
-    vunmap(vma->addr);
-    return err;
-}
+// unmap_vma:
+//     vunmap(vma->addr);
+//     return err;
+// }
 
 static int hvisor_zone_start(zone_config_t __user* arg) {
     int err = 0;
@@ -92,8 +92,8 @@ static int hvisor_zone_start(zone_config_t __user* arg) {
         return -EFAULT;
     }
 
-    flush_cache(zone_config->kernel_load_paddr, zone_config->kernel_size);
-    flush_cache(zone_config->dtb_load_paddr, zone_config->dtb_size);
+    // flush_cache(zone_config->kernel_load_paddr, zone_config->kernel_size);
+    // flush_cache(zone_config->dtb_load_paddr, zone_config->dtb_size);
 
     err = hvisor_call(HVISOR_HC_START_ZONE, __pa(zone_config), 0);
 	kfree(zone_config);
