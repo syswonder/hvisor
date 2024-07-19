@@ -77,9 +77,13 @@ static u64 load_image_to_memory(const char *path, u64 load_paddr) {
     map_size = (size + page_size - 1) & ~(page_size - 1);
 
     // Map the physical memory to virtual memory
+	#ifdef ARM64
     virt_addr = (u64)mmap(NULL, map_size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED, fd, load_paddr);
-
-    if (virt_addr == MAP_FAILED) {
+	#endif
+	#ifdef RISCV64
+    virt_addr = (u64)mmap(NULL, map_size, PROT_READ | PROT_WRITE , MAP_SHARED, fd, load_paddr);
+    #endif
+	if (virt_addr == MAP_FAILED) {
         perror("Error mapping memory");
         exit(1);
     }
