@@ -24,6 +24,7 @@ transfer: all
 
 transfer_nxp: all
 	sudo mount $(DEV) /mnt/
+	sudo rm -f /mnt/home/arm64/hvisor /mnt/home/arm64/hvisor.ko
 	sudo cp ./tools/hvisor /mnt/home/arm64
 	sudo cp ./driver/hvisor.ko /mnt/home/arm64
 	sudo umount $(DEV)

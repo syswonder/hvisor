@@ -7,35 +7,43 @@
 
 #define CONFIG_MAX_MEMORY_REGIONS  16
 #define CONFIG_MAX_INTERRUPTS      32
+#define CONFIG_MAX_ZONES           32
+#define CONFIG_NAME_MAXLEN         32
 
 // #define CONFIG_KERNEL_ARGS_MAXLEN    256
 
-typedef unsigned int u32;
-typedef unsigned long long u64;
-
 struct memory_region {
-    u32 type;
-    u64 physical_start;
-    u64 virtual_start;
-    u64 size;
+    __u32 type;
+    __u64 physical_start;
+    __u64 virtual_start;
+    __u64 size;
 };
 
 typedef struct memory_region memory_region_t;
        
 struct zone_config {
-    u32 zone_id;
-    u64 cpus;
-    u32 num_memory_regions;
+    __u32 zone_id;
+    __u64 cpus;
+    __u32 num_memory_regions;
     memory_region_t memory_regions[CONFIG_MAX_MEMORY_REGIONS];
-    u32 num_interrupts;
-    u32 interrupts[CONFIG_MAX_INTERRUPTS];
-    u64 entry_point;
-    u64 kernel_load_paddr;
-    u64 kernel_size;
-    u64 dtb_load_paddr;
-    u64 dtb_size;
+    __u32 num_interrupts;
+    __u32 interrupts[CONFIG_MAX_INTERRUPTS];
+    __u64 entry_point;
+    __u64 kernel_load_paddr;
+    __u64 kernel_size;
+    __u64 dtb_load_paddr;
+    __u64 dtb_size;
+    char name[CONFIG_NAME_MAXLEN];
 };
 
 typedef struct zone_config zone_config_t;
+
+struct zone_info {
+    __u32 zone_id;
+    __u64 cpus;
+    char name[CONFIG_NAME_MAXLEN];
+};
+
+typedef struct zone_info zone_info_t;
 
 #endif
