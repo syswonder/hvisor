@@ -9,13 +9,13 @@ FSIMG2 := $(image_dir)/virtdisk/rootfs-busybox.qcow2
 # HVISOR ENTRY
 HVISOR_ENTRY_PA := 0x80200000
 # plic
-zone0_kernel := $(image_dir)/kernel/Image-aia
+zone0_kernel := $(image_dir)/kernel/Image-aia-6.10
 zone0_dtb    := $(image_dir)/devicetree/linux1.dtb
 # zone1_kernel := $(image_dir)/kernel/Image
 # zone1_dtb    := $(image_dir)/devicetree/linux2.dtb
 
 # aia
-zone0_aia_kernel := $(image_dir)/kernel/Image-aia
+zone0_aia_kernel := $(image_dir)/kernel/Image-aia-6.10
 zone0_aia_dtb    := $(image_dir)/devicetree/linux1-aia.dtb
 # zone1_aia_kernel := $(image_dir)/kernel/Image-aia
 # zone1_aia_dtb    := $(image_dir)/devicetree/linux2-aia.dtb
