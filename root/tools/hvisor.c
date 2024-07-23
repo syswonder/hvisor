@@ -24,7 +24,7 @@ static void __attribute__((noreturn)) help(int exit_status)
     exit(exit_status);
 }
 
-static void *read_file(const char *filename, __u64 *filesize)
+void *read_file(char* filename, u_int64_t* filesize)
 {
     int fd;
     struct stat st;
@@ -89,13 +89,7 @@ static __u64 load_image_to_memory(const char *path, __u64 load_paddr)
     int fd;
     void *image_content, *virt_addr;
 
-    fd = open("/dev/hvisor", O_RDWR | O_SYNC);
-    if (fd < 0)
-    {
-        perror("Error opening /dev/mem");
-        exit(1);
-    }
-
+    fd = open_dev();
     // Load image content into memory
     image_content = read_file(path, &size);
 
@@ -103,10 +97,13 @@ static __u64 load_image_to_memory(const char *path, __u64 load_paddr)
     map_size = (size + page_size - 1) & ~(page_size - 1);
 
     // Map the physical memory to virtual memory
-    virt_addr = mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, load_paddr);
-
-    if (virt_addr == MAP_FAILED)
-    {
+	#ifdef ARM64
+    virt_addr = (__u64)mmap(NULL, map_size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED, fd, load_paddr);
+	#endif
+	#ifdef RISCV64
+    virt_addr = (__u64)mmap(NULL, map_size, PROT_READ | PROT_WRITE , MAP_SHARED, fd, load_paddr);
+    #endif
+	if (virt_addr == MAP_FAILED) {
         perror("Error mapping memory");
         exit(1);
     }
@@ -267,10 +264,9 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
 }
 
 // ./hvisor zone start <path_to_config_file>
-static int zone_start(int argc, char *argv[])
-{
-    int fd, err, opt, zone_id;
-    char *image_path = NULL, *dtb_filepath = NULL, *json_config_path = NULL;
+static int zone_start(int argc, char *argv[]) {
+    int zone_id;
+	char *json_config_path = NULL;
     zone_config_t config;
 
     if (argc != 4)

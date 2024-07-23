@@ -122,5 +122,6 @@ int is_queue_full(unsigned int front, unsigned int rear, unsigned int size);
 int is_queue_empty(unsigned int front, unsigned int rear);
 
 int set_nonblocking(int fd);
+void* read_file(char* filename, u_int64_t* filesize);
 #endif /* __HVISOR_VIRTIO_H */
 
