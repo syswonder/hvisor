@@ -1,10 +1,12 @@
 #![allow(dead_code)]
 use crate::config::HvZoneConfig;
 use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
-use crate::device::virtio_trampoline::{VIRTIO_BRIDGE, MAX_DEVS, MAX_REQ, VIRTIO_IRQS};
+use crate::device::virtio_trampoline::{MAX_DEVS, MAX_REQ, VIRTIO_BRIDGE, VIRTIO_IRQS};
 use crate::error::HvResult;
 use crate::percpu::{get_cpu_data, PerCpu};
-use crate::zone::{find_zone, is_this_root_zone, remove_zone, zone_create};
+use crate::zone::{
+    all_zones_info, find_zone, is_this_root_zone, remove_zone, zone_create, ZoneInfo,
+};
 
 use crate::event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_VIRTIO_INJECT_IRQ, IPI_EVENT_WAKEUP};
 use core::convert::TryFrom;
@@ -20,6 +22,7 @@ numeric_enum! {
         HvVirtioInjectIrq = 1,
         HvZoneStart = 2,
         HvZoneShutdown = 3,
+        HvZoneList = 4,
     }
 }
 pub const SGI_IPI_ID: u64 = 7;
@@ -35,7 +38,7 @@ impl<'a> HyperCall<'a> {
         Self { cpu_data }
     }
 
-    pub fn hypercall(&mut self, code: u64, arg0: u64, _arg1: u64) -> HyperCallResult {
+    pub fn hypercall(&mut self, code: u64, arg0: u64, arg1: u64) -> HyperCallResult {
         let code = match HyperCallCode::try_from(code) {
             Ok(code) => code,
             Err(_) => {
@@ -49,6 +52,7 @@ impl<'a> HyperCall<'a> {
                 HyperCallCode::HvVirtioInjectIrq => self.hv_virtio_inject_irq(),
                 HyperCallCode::HvZoneStart => self.hv_zone_start(&*(arg0 as *const HvZoneConfig)),
                 HyperCallCode::HvZoneShutdown => self.hv_zone_shutdown(arg0),
+                HyperCallCode::HvZoneList => self.hv_zone_list(&mut *(arg0 as *mut ZoneInfo), arg1),
             }
         }
     }
@@ -180,5 +184,21 @@ impl<'a> HyperCall<'a> {
         remove_zone(zone_id as _);
 
         HyperCallResult::Ok(0)
+    }
+
+    fn hv_zone_list(&self, zones: *mut ZoneInfo, cnt: u64) -> HyperCallResult {
+        if zones.is_null() {
+            return hv_result_err!(EINVAL, "hv_zone_list: zones is null");
+        }
+        let zones_info = all_zones_info();
+        let slice = unsafe { core::slice::from_raw_parts_mut(zones, cnt as usize) };
+        for (i, zone_info) in slice.iter_mut().enumerate() {
+            if i < zones_info.len() {
+                *zone_info = zones_info[i].clone();
+            } else {
+                break;
+            }
+        }
+        HyperCallResult::Ok(core::cmp::min(cnt as _, zones_info.len()))
     }
 }
