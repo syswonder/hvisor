@@ -7,6 +7,6 @@ rustflags = [
 [target.aarch64-unknown-none]
 rustflags = [
     "-Clink-arg=-Tscripts/qemu-aarch64.ld",
-    "-Ctarget-feature=+a57,+v8a,+strict-align,-neon,-fp-armv8",
+    "-Ctarget-feature=+a53,+v8a,+strict-align,-neon,-fp-armv8",
     "-Cforce-frame-pointers=yes",
 ]

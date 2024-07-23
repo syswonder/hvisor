@@ -26,6 +26,10 @@ sbi-rt = { version = "0.0.2", features = ["legacy"] }
 riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"] }
 riscv-decode = "0.2.1"
 
+[features]
+platform_qemu = []
+platform_imx8mp = []
+
 [profile.dev]
 panic = "abort"
 debug = 2

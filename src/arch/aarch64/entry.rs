@@ -1,4 +1,8 @@
+use core::arch::global_asm;
+
 use crate::consts::PER_CPU_SIZE;
+
+global_asm!(include_str!("boot_pt.S"));
 
 #[naked]
 #[no_mangle]
@@ -8,40 +12,33 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
         core::arch::asm!(
             "
             // x0 = dtbaddr
-            mov x1, x0
+            mov x18, x0
             mrs x0, mpidr_el1
             and x0, x0, #0xff
-            ldr x2, =__core_end          // x2 = &__core_end
+            adrp x2, __core_end          // x2 = &__core_end
             mov x3, {per_cpu_size}      // x3 = per_cpu_size
             madd x4, x0, x3, x3       // x4 = cpuid * per_cpu_size
             add x5, x2, x4
             mov sp, x5                // sp = &__core_end + (cpuid + 1) * per_cpu_size
-            b {rust_main}             // x0 = cpuid, x1 = dtbaddr
+
+            cmp x0, 0
+            b.ne 1f
+            bl {clear_bss}
+            bl boot_pt_init
+        1:
+            bl enable_boot_pt
+            mov x1, x18
+            mov x18, 0
+            bl {rust_main}            // x0 = cpuid, x1 = dtbaddr
             ",
             options(noreturn),
             per_cpu_size=const PER_CPU_SIZE,
             rust_main = sym crate::rust_main,
+            clear_bss = sym crate::clear_bss,
         );
     }
 }
 
-#[naked]
-#[no_mangle]
-#[link_section = ".trampoline"]
-pub unsafe extern "C" fn virt2phys_el2(_gu_regs: usize, page_offset: u64) -> i32 {
-    core::arch::asm!(
-        "
-	    adr	x30, {0}	/* set lr shutdown_el2 */
-	    sub x30, x30, x1 		/* virt2phys */
-        sub x0, x0, x1 		/* virt2phys */
-        ret
-    ",
-        sym shutdown_el2,
-
-        options(noreturn),
-
-    );
-}
 #[naked]
 #[no_mangle]
 #[link_section = ".trampoline"]
