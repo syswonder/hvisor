@@ -150,6 +150,7 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
 
     handle_exception(
         ecode,
+        esubcode,
         era_.raw(),
         is,
         badi_.inst() as usize,
@@ -923,8 +924,7 @@ fn emulate_cacop(ins: usize, ctx: &mut ZoneContext) {
 fn emulate_idle(ins: usize, ctx: &mut ZoneContext) {
     // idle level           0000011001 0010001 level[14:0]
     let level = extract_field(ins, 0, 15);
-    trace!("guest request an idle at level {:#x}", level);
-    ctx.sepc -= 4;
+    debug!("guest request an idle at level {:#x}", level);
 }
 
 fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
@@ -1180,6 +1180,7 @@ const ECODE_HVC: usize = 0x17;
 
 fn handle_exception(
     ecode: usize,
+    esubcode: usize,
     era: usize,
     is: usize,
     badi: usize,
@@ -1196,7 +1197,8 @@ fn handle_exception(
             // GSPR = 0x16, Guest Sensitive Privileged Resource
             trace!(
                 "This is a GSPR exception, badv={:#x}, badi={:#x}",
-                badv, badi
+                badv,
+                badi
             );
             emulate_instruction(era, badi, ctx);
         }
@@ -1221,9 +1223,8 @@ fn handle_exception(
             panic!("HVC exception not implemented");
         }
         _ => {
-            panic!("unhandled exception, ecode = {:#x}, era = {:#x}, is = {:#x}, badi = {:#x}, badv = {:#x}",
-                ecode, era, is, badi, badv
-            );
+            panic!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",  
+            ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv)
         }
     }
 }
