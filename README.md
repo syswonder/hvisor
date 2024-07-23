@@ -58,7 +58,7 @@ The following describes how to run a non-root-linux on jailhouse/hvisor based on
    sudo qemu-system-aarch64 \
        -machine virt,gic_version=3 \
        -machine virtualization=true \
-       -cpu cortex-a57 \
+       -cpu cortex-a53 \
        -machine type=virt \
        -nographic \
        -smp 16  \

@@ -1,3 +1,66 @@
+{
+    "rust-analyzer.linkedProjects": [
+        "./Cargo.toml"
+    ],
+    // Prevent "can't find crate for `test`" error on no_std
+    // Ref: https://github.com/rust-lang/vscode-rust/issues/729
+    // For vscode-rust plugin users:
+    "rust.target": "aarch64-unknown-none",
+    "rust.all_targets": false,
+    // For Rust Analyzer plugin users:
+    "rust-analyzer.cargo.target": "aarch64-unknown-none",
+    "rust-analyzer.checkOnSave.allTargets": false,
+	"rust-analyzer.checkOnSave": true,
+	"files.associations": {
+		"event_monitor.h": "c",
+		"log.h": "c",
+		"virtio.h": "c",
+		"compare": "c",
+		"type_traits": "c",
+		"string.h": "c",
+		"hvisor.h": "c",
+		"ioctl.h": "c",
+		"getopt.h": "c",
+		"stdlib.h": "c",
+		"pthread.h": "c",
+		"array": "c",
+		"atomic": "c",
+		"bit": "c",
+		"*.tcc": "c",
+		"chrono": "c",
+		"cmath": "c",
+		"concepts": "c",
+		"string": "c",
+		"unordered_map": "c",
+		"exception": "c",
+		"algorithm": "c",
+		"memory": "c",
+		"memory_resource": "c",
+		"optional": "c",
+		"random": "c",
+		"string_view": "c",
+		"utility": "c",
+		"functional": "c",
+		"iosfwd": "c",
+		"limits": "c",
+		"new": "c",
+		"numeric": "c",
+		"ostream": "c",
+		"ranges": "c",
+		"ratio": "c",
+		"streambuf": "c",
+		"system_error": "c",
+		"tuple": "c",
+		"typeinfo": "c",
+		"virtio_ring.h": "c",
+		"virtio_blk.h": "c",
+		"stdint.h": "c"
+	},
+    "rust-analyzer.cargo.features": [
+        "platform_imx8mp"
+    ]
+}
+
 // {
 //     "rust-analyzer.linkedProjects": [
 //         "./Cargo.toml"
@@ -5,74 +68,12 @@
 //     // Prevent "can't find crate for `test`" error on no_std
 //     // Ref: https://github.com/rust-lang/vscode-rust/issues/729
 //     // For vscode-rust plugin users:
-//     "rust.target": "aarch64-unknown-none",
+//     "rust.target": "riscv64gc-unknown-none-elf",
 //     "rust.all_targets": false,
 //     // For Rust Analyzer plugin users:
-//     "rust-analyzer.cargo.target": "aarch64-unknown-none",
+//     "rust-analyzer.cargo.target": "riscv64gc-unknown-none-elf",
 //     "rust-analyzer.checkOnSave.allTargets": false,
-// 	"rust-analyzer.checkOnSave": true,
-// 	"files.associations": {
-// 		"event_monitor.h": "c",
-// 		"log.h": "c",
-// 		"virtio.h": "c",
-// 		"compare": "c",
-// 		"type_traits": "c",
-// 		"string.h": "c",
-// 		"hvisor.h": "c",
-// 		"ioctl.h": "c",
-// 		"getopt.h": "c",
-// 		"stdlib.h": "c",
-// 		"pthread.h": "c",
-// 		"array": "c",
-// 		"atomic": "c",
-// 		"bit": "c",
-// 		"*.tcc": "c",
-// 		"chrono": "c",
-// 		"cmath": "c",
-// 		"concepts": "c",
-// 		"string": "c",
-// 		"unordered_map": "c",
-// 		"exception": "c",
-// 		"algorithm": "c",
-// 		"memory": "c",
-// 		"memory_resource": "c",
-// 		"optional": "c",
-// 		"random": "c",
-// 		"string_view": "c",
-// 		"utility": "c",
-// 		"functional": "c",
-// 		"iosfwd": "c",
-// 		"limits": "c",
-// 		"new": "c",
-// 		"numeric": "c",
-// 		"ostream": "c",
-// 		"ranges": "c",
-// 		"ratio": "c",
-// 		"streambuf": "c",
-// 		"system_error": "c",
-// 		"tuple": "c",
-// 		"typeinfo": "c",
-// 		"virtio_ring.h": "c",
-// 		"virtio_blk.h": "c",
-// 		"stdint.h": "c"
-// 	},
 //     // "rust-analyzer.cargo.features": [
 //     //     "board_qemu"
 //     // ]
 // }
-{
-	"rust-analyzer.linkedProjects": [
-		"./Cargo.toml"
-	],
-	// Prevent "can't find crate for `test`" error on no_std
-	// Ref: https://github.com/rust-lang/vscode-rust/issues/729
-	// For vscode-rust plugin users:
-	"rust.target": "riscv64gc-unknown-none-elf",
-	"rust.all_targets": false,
-	// For Rust Analyzer plugin users:
-	"rust-analyzer.cargo.target": "riscv64gc-unknown-none-elf",
-	"rust-analyzer.checkOnSave.allTargets": false,
-	// "rust-analyzer.cargo.features": [
-	//     "board_qemu"
-	// ]
-}

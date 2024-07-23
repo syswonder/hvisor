@@ -24,10 +24,10 @@ QEMU_ARGS += -device loader,file="$(zone0_dtb)",addr=0x8f000000,force-raw=on
 # QEMU_ARGS += -device loader,file="$(zone1_dtb)",addr=0x83000000,force-raw=on
 
 QEMU_ARGS += -drive if=none,file=$(FSIMG1),id=X10008000,format=raw
-QEMU_ARGS += -device virtio-blk-device,drive=X10008000
-QEMU_ARGS += -device virtio-serial-device -chardev pty,id=X10007000 -device virtconsole,chardev=X10007000 -S
+QEMU_ARGS += -device virtio-blk-device,drive=X10008000,bus=virtio-mmio-bus.7
+QEMU_ARGS += -device virtio-serial-device,bus=virtio-mmio-bus.6 -chardev pty,id=X10007000 -device virtconsole,chardev=X10007000 -S
 QEMU_ARGS += -drive if=none,file=$(FSIMG2),id=X10006000,format=qcow2
-QEMU_ARGS += -device virtio-blk-device,drive=X10006000
+QEMU_ARGS += -device virtio-blk-device,drive=X10006000,bus=virtio-mmio-bus.5
 # -------------------------------------------------------------------
 
 # QEMU_ARGS := -machine virt
