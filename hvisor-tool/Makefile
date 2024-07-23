@@ -1,10 +1,11 @@
-KDIR ?= ../OK8MP-linux-kernel
+KDIR ?= ../../nxp/OK8MP-linux-kernel
 DEV ?= /dev/sda1
 ARCH ?= arm64
+LOG ?= LOG_WARN
 
 export KDIR
 export ARCH
-
+export LOG
 .PHONY: all env tools driver clean
 
 env:
