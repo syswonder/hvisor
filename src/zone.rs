@@ -1,8 +1,12 @@
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+// use psci::error::INVALID_ADDRESS;
+use crate::consts::INVALID_ADDRESS;
 use spin::RwLock;
 
+use crate::arch::mm::new_s2_memory_set;
 use crate::arch::s2pt::Stage2PageTable;
+use crate::config::HvZoneConfig;
 use crate::consts::MAX_CPU_NUM;
 
 use crate::error::HvResult;
@@ -23,7 +27,7 @@ impl Zone {
     pub fn new(zoneid: usize) -> Self {
         Self {
             id: zoneid,
-            gpm: MemorySet::new(),
+            gpm: new_s2_memory_set(),
             cpu_set: CpuSet::new(MAX_CPU_NUM as usize, 0),
             mmio: Vec::new(),
             irq_bitmap: [0; 1024 / 32],
@@ -144,31 +148,52 @@ pub fn this_zone_id() -> usize {
     this_zone().read().id
 }
 
-pub fn zone_create(
-    zone_id: usize,
-    guest_entry: usize,
-    dtb_ptr: *const u8,
-    dtb_ipa: usize,
-) -> HvResult<Arc<RwLock<Zone>>> {
+// #[repr(C)]
+// #[derive(Debug, Clone)]
+// pub struct ZoneConfig {
+//     pub zone_id: u32,
+//     pub cpus: u64,
+//     pub num_memory_regions: u32,
+//     pub memory_regions: [MemoryRegion; CONFIG_MAX_MEMORY_REGIONS],
+//     pub num_interrupts: u32,
+//     pub interrupts: [u32; CONFIG_MAX_INTERRUPTS],
+//     pub entry_point: u64,
+//     pub dtb_load_paddr: u64,
+// }
+
+pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     // we create the new zone here
-    //TODO: create Zone with cpu_set
-    let guest_fdt = unsafe { fdt::Fdt::from_ptr(dtb_ptr) }.unwrap();
-    debug!("zone fdt guest_addr: {:#b}", guest_entry);
+    // TODO: create Zone with cpu_set
+    let zone_id = config.zone_id as usize;
 
     if find_zone(zone_id).is_some() {
         return hv_result_err!(EEXIST);
     }
+
     let mut zone = Zone::new(zone_id);
-    zone.pt_init(guest_entry, &guest_fdt, dtb_ptr as usize, dtb_ipa)
-        .unwrap();
-    zone.mmio_init(&guest_fdt);
-    zone.irq_bitmap_init(&guest_fdt);
-    zone.isa_init(&guest_fdt);
-    guest_fdt.cpus().for_each(|cpu| {
-        let cpu_id = cpu.ids().all().next().unwrap();
-        zone.cpu_set.set_bit(cpu_id as usize);
+    zone.pt_init(config.memory_regions()).unwrap();
+    zone.mmio_init(&config.arch);
+    zone.irq_bitmap_init(config.interrupts());
+
+    config.cpus().iter().for_each(|cpu_id| {
+        zone.cpu_set.set_bit(*cpu_id as _);
     });
 
+    // pub struct HvConfigMemoryRegion {
+    //     pub mem_type: u32,
+    //     pub physical_start: u64,
+    //     pub virtual_start: u64,
+    //     pub size: u64,
+    // }
+    let mut dtb_ipa = INVALID_ADDRESS as u64;
+    for region in config.memory_regions() {
+        // region contains config.dtb_load_paddr?
+        if region.physical_start <= config.dtb_load_paddr
+            && region.physical_start + region.size > config.dtb_load_paddr
+        {
+            dtb_ipa = region.virtual_start + config.dtb_load_paddr - region.physical_start;
+        }
+    }
     info!("zone cpu_set: {:#b}", zone.cpu_set.bitmap);
     let cpu_set = zone.cpu_set;
 
@@ -181,12 +206,8 @@ pub fn zone_create(
             if cpuid == cpu_set.first_cpu().unwrap() {
                 cpu_data.boot_cpu = true;
             }
-            // #[cfg(target_arch = "riscv64")]
-            // {
-            //     info!("set cpu{} first_cpu{}", cpuid, cpu_set.first_cpu().unwrap());
-            //     cpu_data.arch_cpu.first_cpu = cpu_set.first_cpu().unwrap();
-            // }
-            cpu_data.cpu_on_entry = guest_entry;
+            cpu_data.cpu_on_entry = config.entry_point as _;
+            cpu_data.dtb_ipa = dtb_ipa as _;
         });
     }
     add_zone(new_zone_pointer.clone());

@@ -82,13 +82,14 @@ pub mod vgic;
 
 use core::arch::asm;
 use core::ptr::write_volatile;
+use core::sync::atomic::AtomicU64;
 
-use fdt::Fdt;
 use spin::Once;
 
 use self::gicd::{enable_gic_are_ns, GICD_ICACTIVER, GICD_ICENABLER};
 use self::gicr::enable_ipi;
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
+use crate::config::root_zone_config;
 use crate::consts::MAX_CPU_NUM;
 
 use crate::event::check_events;
@@ -99,7 +100,6 @@ use crate::zone::Zone;
 pub fn gicc_init() {
     //TODO: add Redistributor init
     let sdei_ver = unsafe { smc_arg1!(0xc4000020) }; //sdei_check();
-    info!("gicv3 init: sdei version: {}", sdei_ver);
 
     // Make ICC_EOIR1_EL1 provide priority drop functionality only. ICC_DIR_EL1 provides interrupt deactivation functionality.
     let _ctlr = read_sysreg!(icc_ctlr_el1);
@@ -116,6 +116,8 @@ pub fn gicc_init() {
     let vmcr = ((pmr & 0xff) << 24) | (1 << 1) | (1 << 9); //VPMR|VENG1|VEOIM
     write_sysreg!(ich_vmcr_el2, vmcr);
     write_sysreg!(ich_hcr_el2, 0x1); //enable virt cpu interface
+
+    info!("gicc init done, sdei_ver = {}", sdei_ver);
 }
 
 fn gicv3_clear_pending_irqs() {
@@ -137,6 +139,10 @@ fn gicv3_clear_pending_irqs() {
         write_sysreg!(ICH_AP1R3_EL2, 0);
     }
 }
+
+static TIMER_INTERRUPT_COUNTER: AtomicU64 = AtomicU64::new(0);
+// how often to print timer interrupt counter
+const TIMER_INTERRUPT_PRINT_TIMES: u64 = 50;
 
 pub fn gicv3_handle_irq_el1() {
     if let Some(irq_id) = pending_irq() {
@@ -174,10 +180,17 @@ pub fn gicv3_handle_irq_el1() {
             warn!("skip sgi {}", irq_id);
             deactivate_irq(irq_id);
         } else {
-            trace!("spi/ppi get {}", irq_id);
+            if irq_id == 27 {
+                // virtual timer interrupt
+                TIMER_INTERRUPT_COUNTER.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
+                if TIMER_INTERRUPT_COUNTER.load(core::sync::atomic::Ordering::SeqCst) % TIMER_INTERRUPT_PRINT_TIMES == 0 {
+                    debug!("Virtual timer interrupt, counter = {}", TIMER_INTERRUPT_COUNTER.load(core::sync::atomic::Ordering::SeqCst));
+                }
+            }
+            // debug!("spi/ppi get {}", irq_id);
             //inject phy irq
             if irq_id > 31 {
-                trace!("*** get spi_irq id = {}", irq_id);
+                debug!("*** get spi_irq id = {}", irq_id);
             }
             deactivate_irq(irq_id);
             inject_irq(irq_id, true);
@@ -308,25 +321,6 @@ pub struct Gic {
     pub gicr_size: usize,
 }
 
-impl Gic {
-    pub fn new(fdt: &Fdt) -> Self {
-        let gic_info = fdt
-            .find_node("/gic")
-            .unwrap_or_else(|| fdt.find_node("/intc").unwrap());
-        let mut reg_iter = gic_info.reg().unwrap();
-
-        let first_reg = reg_iter.next().unwrap();
-        let second_reg = reg_iter.next().unwrap();
-
-        Self {
-            gicd_base: first_reg.starting_address as usize,
-            gicr_base: second_reg.starting_address as usize,
-            gicd_size: first_reg.size.unwrap(),
-            gicr_size: second_reg.size.unwrap(),
-        }
-    }
-}
-
 pub fn host_gicd_base() -> usize {
     GIC.get().unwrap().gicd_base
 }
@@ -353,15 +347,22 @@ pub fn is_sgi(irqn: u32) -> bool {
 }
 
 pub fn enable_irqs() {
-    unsafe { asm!("msr daifclr, #0x2") };
+    unsafe { asm!("msr daifclr, #0xf") };
 }
 
 pub fn disable_irqs() {
-    unsafe { asm!("msr daifset, #0x2") };
+    unsafe { asm!("msr daifset, #0xf") };
 }
 
-pub fn primary_init_early(host_fdt: &Fdt) {
-    GIC.call_once(|| Gic::new(host_fdt));
+pub fn primary_init_early() {
+    let root_config = root_zone_config();
+    
+    GIC.call_once(|| Gic {
+        gicd_base: root_config.arch.gicd_base,
+        gicr_base: root_config.arch.gicr_base,
+        gicd_size: root_config.arch.gicd_size,
+        gicr_size: root_config.arch.gicr_size,
+    });
     debug!("gic = {:#x?}", GIC.get().unwrap());
 }
 

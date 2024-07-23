@@ -1,6 +1,7 @@
 #![allow(dead_code)]
-use crate::consts::{DTB_IPA, INVALID_ADDRESS, PAGE_SIZE};
-use crate::device::virtio_trampoline::{MAX_DEVS, MAX_REQ, VIRTIO_BRIDGE, VIRTIO_IRQS};
+use crate::config::HvZoneConfig;
+use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
+use crate::device::virtio_trampoline::{VIRTIO_BRIDGE, MAX_DEVS, MAX_REQ, VIRTIO_IRQS};
 use crate::error::HvResult;
 use crate::percpu::{get_cpu_data, PerCpu};
 use crate::zone::{find_zone, is_this_root_zone, remove_zone, zone_create};
@@ -10,14 +11,6 @@ use core::convert::TryFrom;
 use core::sync::atomic::{fence, Ordering};
 
 use numeric_enum_macro::numeric_enum;
-
-#[repr(C)]
-#[derive(Debug)]
-pub struct ZoneInfo {
-    pub id: u64,
-    pub image_phys_addr: u64,
-    pub dtb_phys_addr: u64,
-}
 
 numeric_enum! {
     #[repr(u64)]
@@ -54,7 +47,7 @@ impl<'a> HyperCall<'a> {
             match code {
                 HyperCallCode::HvVirtioInit => self.hv_virtio_init(arg0),
                 HyperCallCode::HvVirtioInjectIrq => self.hv_virtio_inject_irq(),
-                HyperCallCode::HvZoneStart => self.hv_zone_start(&*(arg0 as *const ZoneInfo)),
+                HyperCallCode::HvZoneStart => self.hv_zone_start(&*(arg0 as *const HvZoneConfig)),
                 HyperCallCode::HvZoneShutdown => self.hv_zone_shutdown(arg0),
             }
         }
@@ -131,19 +124,15 @@ impl<'a> HyperCall<'a> {
         HyperCallResult::Ok(0)
     }
 
-    pub fn hv_zone_start(&mut self, zone_info: &ZoneInfo) -> HyperCallResult {
-        info!("handle hvc zone start");
+    pub fn hv_zone_start(&mut self, config: &HvZoneConfig) -> HyperCallResult {
+        info!("hv_zone_start: config: {:#x?}", config);
         if !is_this_root_zone() {
             return hv_result_err!(
                 EPERM,
                 "Start zone operation over non-root zones: unsupported!"
             );
         }
-        info!(
-            "create zone:id {} dtb_phy:{:#x},dtb_ipa{:#x}",
-            zone_info.id, zone_info.dtb_phys_addr, DTB_IPA
-        );
-        let zone = zone_create(zone_info.id as _, zone_info.image_phys_addr as _, zone_info.dtb_phys_addr as _, DTB_IPA)?;
+        let zone = zone_create(config)?;
         let boot_cpu = zone.read().cpu_set.first_cpu().unwrap();
 
         let target_data = get_cpu_data(boot_cpu as _);

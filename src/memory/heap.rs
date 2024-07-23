@@ -18,7 +18,7 @@ pub fn init() {
             .lock()
             .init(heap_start, HEAP_BLOCK * MACHINE_ALIGN);
     }
-    info!(
+    println!(
         "Heap allocator initialization finished: {:#x?}",
         heap_start..heap_start + HV_HEAP_SIZE
     );
@@ -45,5 +45,5 @@ pub fn test() {
     }
     assert!(bss_range.contains(&(v.as_ptr() as usize)));
     drop(v);
-    info!("heap_test passed!");
+    println!("heap_test passed!");
 }
