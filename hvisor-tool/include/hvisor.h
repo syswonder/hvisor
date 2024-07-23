@@ -2,15 +2,9 @@
 #define __HVISOR_H
 #include <linux/ioctl.h>
 #include <linux/types.h>
+
+#include "def.h"
 #include "zone_config.h"
-
-#ifdef __aarch64__
-#define ARM64
-#endif
-
-#if defined(__riscv) && (__riscv_xlen == 64)
-#define RISCV64
-#endif
 
 #define MMAP_SIZE 4096
 #define MAX_REQ 32
