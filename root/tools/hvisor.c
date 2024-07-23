@@ -120,6 +120,33 @@ static __u64 load_image_to_memory(const char *path, __u64 load_paddr)
     return map_size;
 }
 
+static int parse_arch_config(cJSON *root, zone_config_t *config) {
+    cJSON *arch_config_json = cJSON_GetObjectItem(root, "arch_config");
+    if (arch_config_json == NULL) {
+        fprintf(stderr, "No arch_config field found.\n");
+        return -1;
+    }
+
+#ifdef ARM64
+    cJSON *gicd_base_json = cJSON_GetObjectItem(arch_config_json, "gicd_base");
+    cJSON *gicr_base_json = cJSON_GetObjectItem(arch_config_json, "gicr_base");
+    cJSON *gicd_size_json = cJSON_GetObjectItem(arch_config_json, "gicd_size");
+    cJSON *gicr_size_json = cJSON_GetObjectItem(arch_config_json, "gicr_size");
+
+    if (gicd_base_json == NULL || gicr_base_json == NULL ||
+        gicd_size_json == NULL || gicr_size_json == NULL) {
+        fprintf(stderr, "Missing fields in arch_config.\n");
+        return -1;
+    }
+    config->arch_config.gicd_base = strtoull(gicd_base_json->valuestring, NULL, 16);
+    config->arch_config.gicr_base = strtoull(gicr_base_json->valuestring, NULL, 16);
+    config->arch_config.gicd_size = strtoull(gicd_size_json->valuestring, NULL, 16);
+    config->arch_config.gicr_size = strtoull(gicr_size_json->valuestring, NULL, 16);
+#endif
+
+    return 0;
+}
+
 static int zone_start_from_json(const char *json_config_path, zone_config_t *config)
 {
     FILE *file = fopen(json_config_path, "r");
@@ -225,6 +252,8 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
     // strncpy(config->kernel_args, kernel_args_json->valuestring, CONFIG_KERNEL_ARGS_MAXLEN);
     strncpy(config->name, name_json->valuestring, CONFIG_NAME_MAXLEN);
 
+    parse_arch_config(root, config);
+
     cJSON_Delete(root); // delete cJSON object
     free(buffer);
 
@@ -324,7 +353,7 @@ static int zone_list(int argc, char *argv[])
         char cpu_list_str[256]; // Assuming this buffer size is enough
         memset(cpu_list_str, 0, sizeof(cpu_list_str));
         print_cpu_list(zones[i].cpus, cpu_list_str, sizeof(cpu_list_str));
-        printf("| %15llu | %17s | %15s |\n",
+        printf("| %15u | %17s | %15s |\n",
                zones[i].zone_id,
                cpu_list_str,
                zones[i].name);

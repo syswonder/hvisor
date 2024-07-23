@@ -1,6 +1,8 @@
 #ifndef __HVISOR_ZONE_CONFIG_H
 #define __HVISOR_ZONE_CONFIG_H
 
+#include "def.h"
+
 #define MEM_TYPE_RAM     0
 #define MEM_TYPE_IO      1
 #define MEM_TYPE_VIRTIO  2
@@ -20,7 +22,21 @@ struct memory_region {
 };
 
 typedef struct memory_region memory_region_t;
-       
+
+#ifdef ARM64
+struct arch_zone_config {
+    __u64 gicd_base;
+    __u64 gicr_base;
+    __u64 gicd_size;
+    __u64 gicr_size;
+};
+#endif
+
+#ifdef RISCV64
+#endif
+
+typedef struct arch_zone_config arch_zone_config_t;
+
 struct zone_config {
     __u32 zone_id;
     __u64 cpus;
@@ -34,6 +50,8 @@ struct zone_config {
     __u64 dtb_load_paddr;
     __u64 dtb_size;
     char name[CONFIG_NAME_MAXLEN];
+
+    arch_zone_config_t arch_config;
 };
 
 typedef struct zone_config zone_config_t;
