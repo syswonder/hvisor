@@ -14,14 +14,14 @@
 		cpu@2 {
 			reg = <0x02>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 		};
 
 		cpu@3 {
 			reg = <0x03>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 		};
 
@@ -32,9 +32,9 @@
 		method = "smc";
 	};
 	
-	memory@90000000 {
+	memory@50000000 {
 		device_type = "memory";
-		reg = <0x0 0x90000000 0x0 0x40000000>;
+		reg = <0x0 0x50000000 0x0 0x30000000>;
 	};
 
 	gic@80000000 {

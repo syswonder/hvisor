@@ -1,7 +1,7 @@
 //! SBI call wrappers
 
 #![allow(unused)]
-use crate::hypercall::{HyperCall, ZoneInfo};
+use crate::hypercall::{HyperCall};
 use crate::percpu::{get_cpu_data, this_cpu_data};
 
 use super::cpu::ArchCpu;
@@ -234,7 +234,7 @@ pub fn sbi_hsm_start_handler(current_cpu: &mut ArchCpu) -> SbiRet {
         //todo add power_on check
         let _lock = target_cpu.ctrl_lock.lock();
         target_cpu.cpu_on_entry = start_addr;
-        target_cpu.opaque = opaque;
+        target_cpu.dtb_ipa = opaque;
         send_event(cpuid, 0, IPI_EVENT_WAKEUP);
 
         drop(_lock);

@@ -2,15 +2,15 @@ use crate::memory::GuestPhysAddr;
 use crate::platform::qemu_riscv64::*;
 use crate::zone::Zone;
 use crate::{arch::cpu::ArchCpu, percpu::this_cpu_data};
-use fdt::Fdt;
 use riscv::register::hvip;
 use riscv_decode::Instruction;
 use spin::{Once, RwLock};
-pub fn primary_init_early(host_fdt: &Fdt) {
-    let plic_info = host_fdt.find_node("/soc/plic").unwrap();
+use crate::config::root_zone_config;
+pub fn primary_init_early() {
+    let root_config = root_zone_config();
     init_plic(
-        plic_info.reg().unwrap().next().unwrap().starting_address as usize,
-        plic_info.reg().unwrap().next().unwrap().size.unwrap(),
+        root_config.arch.plic_base as usize,
+        root_config.arch.plic_size as usize,
     );
 }
 pub fn primary_init_late() {
