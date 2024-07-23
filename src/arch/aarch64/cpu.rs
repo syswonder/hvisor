@@ -147,7 +147,7 @@ impl ArchCpu {
         assert!(this_cpu_id() == self.cpuid);
         this_cpu_data().activate_gpm();
         self.reset(this_cpu_data().cpu_on_entry, this_cpu_data().dtb_ipa);
-        self.psci_on = true;
+        self.power_on = true;
         unsafe {
             vmreturn(self.guest_reg() as *mut _ as usize);
         }

@@ -153,11 +153,7 @@
 	};
 
 	chosen {
-<<<<<<< HEAD
-		bootargs = "earlycon console=ttyAMA0 root=/dev/vda mem=1G rw";
-=======
 		bootargs = "clk_ignore_unused earlycon console=ttyAMA0 root=/dev/vda iomem=relaxed rw";
->>>>>>> origin/main
         // bootargs = "root=/dev/vda mem=768M";
 		stdout-path = "/pl011@9000000";
 	};
