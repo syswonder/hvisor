@@ -5,6 +5,8 @@ pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0xa0400000;
 pub const ROOT_ZONE_ENTRY: u64 = 0xa0400000;
 pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1);
 
+pub const ROOT_ZONE_NAME: &str = "root-linux";
+
 pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 3] = [
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
