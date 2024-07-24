@@ -148,6 +148,7 @@ impl ArchCpu {
         this_cpu_data().activate_gpm();
         self.reset(this_cpu_data().cpu_on_entry, this_cpu_data().dtb_ipa);
         self.psci_on = true;
+        info!("cpu {} started", self.cpuid);
         unsafe {
             vmreturn(self.guest_reg() as *mut _ as usize);
         }
@@ -160,6 +161,7 @@ impl ArchCpu {
         self.psci_on = false;
         drop(_lock);
 
+        info!("cpu {} idle", self.cpuid);
         // reset current cpu -> pc = 0x0 (wfi)
         PARKING_MEMORY_SET.call_once(|| {
             let parking_code: [u8; 8] = [0x7f, 0x20, 0x03, 0xd5, 0xff, 0xff, 0xff, 0x17]; // 1: wfi; b 1b
@@ -180,6 +182,7 @@ impl ArchCpu {
         self.reset(0, this_cpu_data().dtb_ipa);
         unsafe {
             PARKING_MEMORY_SET.get().unwrap().activate();
+            info!("cpu {} started from parking", self.cpuid);
             vmreturn(self.guest_reg() as *mut _ as usize);
         }
     }
