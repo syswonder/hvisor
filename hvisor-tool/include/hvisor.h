@@ -2,14 +2,9 @@
 #define __HVISOR_H
 #include <linux/ioctl.h>
 #include <linux/types.h>
- 
-#ifdef __aarch64__
-#define ARM64
-#endif
 
-#if defined(__riscv) && (__riscv_xlen == 64)
-#define RISCV64
-#endif
+#include "def.h"
+#include "zone_config.h"
 
 #define MMAP_SIZE 4096
 #define MAX_REQ 32
@@ -53,16 +48,25 @@ struct virtio_bridge {
 	__u8 need_wakeup;
 };
 
-#define HVISOR_INIT_VIRTIO  _IO(1, 0) // virtio device init
-#define HVISOR_GET_TASK _IO(1, 1)	
-#define HVISOR_FINISH_REQ _IO(1, 2)		  // finish one virtio req	
-#define HVISOR_ZONE_START _IOW(1, 3, zone_config_t *)
-#define HVISOR_ZONE_SHUTDOWN _IOW(1, 4, __u64)
+struct ioctl_zone_list_args {
+	__u64 cnt;
+	zone_info_t* zones;
+};
 
-#define HVISOR_HC_INIT_VIRTIO 0
-#define HVISOR_HC_FINISH_REQ 1
-#define HVISOR_HC_START_ZONE 2
-#define HVISOR_HC_SHUTDOWN_ZONE 3
+typedef struct ioctl_zone_list_args zone_list_args_t;
+
+#define HVISOR_INIT_VIRTIO    _IO(1, 0) // virtio device init
+#define HVISOR_GET_TASK       _IO(1, 1)	
+#define HVISOR_FINISH_REQ     _IO(1, 2)		  // finish one virtio req	
+#define HVISOR_ZONE_START     _IOW(1, 3, zone_config_t*)
+#define HVISOR_ZONE_SHUTDOWN  _IOW(1, 4, __u64)
+#define HVISOR_ZONE_LIST      _IOR(1, 5, zone_list_args_t*)
+
+#define HVISOR_HC_INIT_VIRTIO    0
+#define HVISOR_HC_FINISH_REQ     1
+#define HVISOR_HC_START_ZONE     2
+#define HVISOR_HC_SHUTDOWN_ZONE  3
+#define HVISOR_HC_ZONE_LIST      4
 
 #ifdef RISCV64
 static inline __u64 hvisor_call(__u64 code,__u64 arg0, __u64 arg1) {
