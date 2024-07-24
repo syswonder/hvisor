@@ -155,7 +155,7 @@ nohup ./hvisor virtio start virtio_cfg.json &
 执行该命令即可关闭Virtio守护进程及所有创建的设备：
 
 ```
-pkill hvisor
+pkill hvisor-virtio
 ```
 
 更多信息，例如root linux的环境配置，可参考：[在hvisor上使用Virtio设备](https://report.syswonder.org/#/2024/20240415_Virtio_devices_tutorial)

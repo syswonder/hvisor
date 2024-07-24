@@ -19,6 +19,7 @@
 #include <sys/time.h>                                                                                           
 #include <limits.h>
 #include <sys/stat.h>
+#include <sys/prctl.h>
 #include "cJSON.h"
 
 /// hvisor kernel module fd
@@ -665,7 +666,7 @@ static int virtio_handle_req(volatile struct device_req *req)
 }
 
 static void virtio_close() {
-	log_info("virtio devices will be closed");
+	log_warn("virtio devices will be closed");
 	destroy_event_monitor();
 	for(int i=0; i<vdevs_num; i++)
         vdevs[i]->virtio_close(vdevs[i]);
@@ -695,7 +696,6 @@ void handle_virtio_requests()
 	for (;;) {
 		log_warn("signal_count is %d, proc_count is %d", signal_count, proc_count);
 		sigwait(&wait_set, &sig);
-		sig = SIGHVI;
 		signal_count++;
 		if (sig == SIGTERM) {
 			virtio_close();
@@ -705,7 +705,6 @@ void handle_virtio_requests()
 			continue;
 		}
 		while(1) {
-			// read_barrier();
 			if (!is_queue_empty(req_front, virtio_bridge->req_rear)) {
 				count = 0;
 				proc_count++;
@@ -724,7 +723,6 @@ void handle_virtio_requests()
 				virtio_bridge->need_wakeup = 1;
 				write_barrier();
 				nanosleep(&timeout, NULL);
-				read_barrier();
 				if(is_queue_empty(req_front, virtio_bridge->req_rear)) {
 					break;
 				} 		
@@ -755,6 +753,7 @@ int virtio_init()
 	sigfillset(&block_mask);
 	pthread_sigmask(SIG_BLOCK, &block_mask, NULL);
 
+    prctl(PR_SET_NAME, "hvisor-virtio", 0, 0, 0);
 	multithread_log_init();
     initialize_log();
 
