@@ -156,7 +156,7 @@ Where `virtio_cfg.json` is a JSON file describing Virtio devices, such as [virti
 Execute the following command to shut down the Virtio daemon and all created devices:
 
 ```
-pkill hvisor
+pkill hvisor-virtio
 ```
 
 For more information, such as configuring the root Linux environment, please refer to: [Using Virtio Devices on hvisor](https://report.syswonder.org/#/2024/20240415_Virtio_devices_tutorial).

@@ -174,6 +174,13 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
     cJSON *kernel_args_json = cJSON_GetObjectItem(root, "kernel_args");
     cJSON *interrupts_json = cJSON_GetObjectItem(root, "interrupts");
 
+    if (!zone_id_json || !cpus_json || !name_json || 
+        !memory_regions_json || !kernel_filepath_json || 
+        !dtb_filepath_json || !kernel_load_paddr_json || 
+        !dtb_load_paddr_json || !entry_point_json || !interrupts_json) {
+            fprintf(stderr, "Error: Missing fields in JSON.\n");
+            goto err_out;
+    }
     config->zone_id = zone_id_json->valueint;
 
     int num_cpus = cJSON_GetArraySize(cpus_json);
@@ -189,10 +196,7 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
     if (num_memory_regions > CONFIG_MAX_MEMORY_REGIONS || num_interrupts > CONFIG_MAX_INTERRUPTS)
     {
         fprintf(stderr, "Exceeded maximum allowed regions/interrupts.\n");
-        cJSON_Delete(root);
-        fclose(file);
-        free(buffer);
-        return -1;
+        goto err_out;
     }
 
     config->num_memory_regions = num_memory_regions;
@@ -259,8 +263,11 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
     if (err)
         perror("zone_start: ioctl failed");
     close(fd);
-
     return 0;
+err_out:
+    cJSON_Delete(root);
+    free(buffer);
+    return -1;
 }
 
 // ./hvisor zone start <path_to_config_file>
@@ -276,9 +283,7 @@ static int zone_start(int argc, char *argv[]) {
     json_config_path = argv[3];
 
     memset(&config, 0, sizeof(zone_config_t));
-    zone_start_from_json(json_config_path, &config);
-
-    return 0;
+    return zone_start_from_json(json_config_path, &config);
 }
 
 // ./hvisor zone shutdown -id 1
@@ -333,7 +338,7 @@ static int zone_list(int argc, char *argv[])
     __u64 cnt = CONFIG_MAX_ZONES;
     zone_info_t *zones = malloc(sizeof(zone_info_t) * cnt);
     zone_list_args_t args = {cnt, zones};
-    printf("zone_list: cnt %llu, zones %p\n", cnt, zones);
+    // printf("zone_list: cnt %llu, zones %p\n", cnt, zones);
     int fd = open_dev();
     int ret = ioctl(fd, HVISOR_ZONE_LIST, &args);
     if (ret < 0)

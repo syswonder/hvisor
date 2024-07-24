@@ -53,12 +53,12 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
         }
         len = readv(dev->master_fd, iov, n);
         if (len < 0 && errno == EWOULDBLOCK) {
-            log_info("no more bytes");
+            log_debug("no more bytes");
 			vq->last_avail_idx--;
             free(iov);
 			break;
         } else if (len < 0) {
-            log_error("Failed to read from console, errno is %d", errno);
+            log_trace("Failed to read from console, errno is %d", errno);
 			vq->last_avail_idx--;
             free(iov);
             break;
@@ -142,12 +142,12 @@ static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq) {
     }
 
     n = process_descriptor_chain(vq, &idx, &iov, NULL, 0);
-    if (count % 100 == 0) {
-        log_info("console txq: n is %d, data is ", n);
-        for (int i=0; i<iov->iov_len; i++)
-            log_printf("%c", *(char*)&iov->iov_base[i]);
-        log_printf("\n");
-    }
+    // if (count % 100 == 0) {
+    //     log_info("console txq: n is %d, data is ", n);
+    //     for (int i=0; i<iov->iov_len; i++)
+    //         log_printf("%c", *(char*)&iov->iov_base[i]);
+    //     log_printf("\n");
+    // }
     if (n < 1) {
         return ;
     }
@@ -174,5 +174,10 @@ int virtio_console_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
 }
 
 void virtio_console_close(VirtIODevice *vdev) {
-    // TODO
+    ConsoleDev *dev = vdev->dev;
+    close(dev->master_fd);
+    free(dev->event);
+    free(dev);
+    free(vdev->vqs);
+    free(vdev);
 }
