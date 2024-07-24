@@ -111,6 +111,12 @@ hvisor-tool通过一个配置文件启动一个新的虚拟机：
 ./hvisor zone shutdown -id 1
 ```
 
+* 打印当前所有虚拟机的信息：
+
+```
+./hvisor zone list
+```
+
 ### Virtio守护进程
 
 Virtio守护进程可为虚拟机提供Virtio MMIO设备，目前支持三种设备：Virtio-blk、Virtio-net和Virtio-console设备。

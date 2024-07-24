@@ -112,6 +112,12 @@ hvisor-tool starts a new virtual machine through a configuration file:
 ./hvisor zone shutdown -id 1
 ```
 
+* Print the details of all the virtual machines currently running:
+
+```
+./hvisor zone list
+```
+
 ### Virtio Daemon
 
 The Virtio daemon can provide Virtio MMIO devices for virtual machines, currently supporting three types of devices: Virtio-blk, Virtio-net, and Virtio-console devices.
