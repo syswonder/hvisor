@@ -1,4 +1,4 @@
-/images/riscv64/opensbi-1.2
+/images/riscv64/opensbi*
 /target
 /qemu-test
 /test-img

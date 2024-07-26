@@ -42,6 +42,12 @@ pub const CSR_HENVCFGH: u64 = 0x61A;
 pub const CSR_STIMECMP: u64 = 0x14D;
 pub const CSR_STIMECMPH: u64 = 0x15D;
 
+/* AIA Extension */
+pub const CSR_VSISELECT: usize = 0x250;
+pub const CSR_VSIREG: usize = 0x251;
+pub const CSR_VSTOPI: usize = 0xEB0;
+pub const CSR_VSTOPEI: usize = 0x25C;
+
 macro_rules! read_csr {
     ($csr_number:expr) => {
         {

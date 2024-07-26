@@ -5,7 +5,7 @@ use crate::arch::sbi::sbi_vs_handler;
 #[cfg(feature = "plic")]
 use crate::device::irqchip::plic::{host_plic, vplic_global_emul_handler, vplic_hart_emul_handler};
 #[cfg(feature = "aia")]
-use crate::device::irqchip::aplic::{host_aplic, vaplic_emul_handler};
+use crate::device::irqchip::aia::aplic::{host_aplic, vaplic_emul_handler};
 use crate::event::check_events;
 use crate::memory::{GuestPhysAddr, HostPhysAddr};
 use crate::platform::qemu_riscv64::*;
@@ -256,6 +256,7 @@ pub fn handle_eirq(current_cpu: &mut ArchCpu) {
     unsafe { hvip::set_vseip() };
     }
     #[cfg(feature = "aia")]{
+        panic!("HS extensional interrupt")
     }
 }
 pub fn handle_ssi(current_cpu: &mut ArchCpu) {

@@ -96,7 +96,6 @@ fn primary_init_early(dtb: usize) {
     let host_fdt = unsafe { fdt::Fdt::from_ptr(dtb as *const u8) }.unwrap();
 
     device::irqchip::primary_init_early(&host_fdt);
-    // #[cfg(feature = "plic")]
     crate::arch::mm::init_hv_page_table(&host_fdt).unwrap();
 
     info!("Primary CPU init hv page table OK.");

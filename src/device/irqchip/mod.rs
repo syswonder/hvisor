@@ -7,7 +7,7 @@ pub mod plic;
 
 #[cfg(target_arch = "riscv64")]
 #[cfg(feature = "aia")]
-pub mod aplic;
+pub mod aia;
 
 #[cfg(target_arch = "aarch64")]
 pub use gicv3::{inject_irq, percpu_init, primary_init_early, primary_init_late};
@@ -18,4 +18,4 @@ pub use plic::{inject_irq, percpu_init, primary_init_early, primary_init_late};
 
 #[cfg(target_arch = "riscv64")]
 #[cfg(feature = "aia")]
-pub use aplic::{inject_irq, percpu_init, primary_init_early, primary_init_late};
+pub use aia::aplic::{inject_irq, percpu_init, primary_init_early, primary_init_late};
