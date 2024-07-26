@@ -165,7 +165,7 @@
 		};
 	};
 	chosen {
-		bootargs = "root=/dev/vda rw earlycon console=ttyS0 ip=192.168.42.15";
+		bootargs = "root=/dev/vda rw earlycon console=ttyS0";
 	};
 
 };

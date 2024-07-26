@@ -114,10 +114,9 @@ fn percpu_hv_pt_install(cpu: &mut PerCpu) {
     if cpu.zone.is_none() {
         warn!("zone is not created for cpu {}", cpu.id);
     }
-    #[cfg(feature = "plic")]
-    unsafe {
-        memory::hv_page_table().read().activate();
-    };
+    // unsafe {
+    //     memory::hv_page_table().read().activate();
+    // };
     info!("CPU {} hv_pt_install OK.", cpu.id);
 }
 

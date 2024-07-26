@@ -7,9 +7,9 @@ use crate::{
         addr::align_up, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet
     },
 };
-// #[cfg(feature = "plic")]
+
 use crate::memory::HV_PT;
-// #[cfg(feature = "plic")]
+
 pub fn init_hv_page_table(fdt: &fdt::Fdt) -> HvResult {
     let mut hv_pt: MemorySet<Stage1PageTable> = MemorySet::new();
     // let _ = hv_pt.insert(MemoryRegion::new_with_offset_mapper(

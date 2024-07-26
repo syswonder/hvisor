@@ -41,11 +41,6 @@ fn imsic_read(reg: usize) -> usize {
 
 
 pub fn imsic_trigger(hart: u32, guest: u32, eiid: u32) {
-    // let eipbyte = EIP + XLEN_STRIDE * irq / XLEN;
-    // let bit = irq % XLEN;
-    // imsic_write(CSR_VSISELECT, eipbyte);
-    // let reg = imsic_read(CSR_VSIREG);
-    // imsic_write(CSR_VSIREG, reg | 1 << bit);
     if guest == 1{
         unsafe {
             core::ptr::write_volatile(imsic_vs(hart as usize) as *mut u32, eiid);

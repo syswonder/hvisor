@@ -284,6 +284,10 @@ pub fn vaplic_emul_handler(
                     );
                 }
             }
+            Instruction::Lw(i) => {
+                let value = host_aplic.read().get_domaincfg();
+                current_cpu.x[i.rd() as usize] = value as usize;
+            }
             _ => panic!("Unexpected instruction {:?}", inst),
         }
     }  
