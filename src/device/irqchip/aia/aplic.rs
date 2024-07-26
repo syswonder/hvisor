@@ -284,10 +284,6 @@ pub fn vaplic_emul_handler(
                     );
                 }
             }
-            Instruction::Lw(i) => {                                     // 直接读取对应的内容
-                let value = host_aplic.read().get_domaincfg();
-                current_cpu.x[i.rd() as usize] = value as usize;
-            }
             _ => panic!("Unexpected instruction {:?}", inst),
         }
     }  
@@ -377,7 +373,7 @@ pub fn vaplic_emul_handler(
         panic!("setie Unexpected instruction {:?}", inst);
     }  
     else if offset >= APLIC_ENABLE_NUM && offset < 0x1EE0 {
-        // enablenum
+        // setienum
         match inst {
             Instruction::Sw(i) => {
                 let value = current_cpu.x[i.rs2() as usize] as u32;
@@ -390,7 +386,7 @@ pub fn vaplic_emul_handler(
             _ => panic!("Unexpected instruction {:?}", inst),
         }
     } else if offset >= APLIC_CLRIE_BASE && offset < 0x1FDC {
-        // clrenable
+        // clrie
         match inst {
             Instruction::Sw(i) => {
                 let value = current_cpu.x[i.rs2() as usize] as u32;

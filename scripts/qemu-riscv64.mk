@@ -71,3 +71,10 @@ QEMU_ARGS += -device virtio-blk-device,drive=X10006000
 # #QEMU_ARGS +=		 -device virtio-serial-port -chardev pty,id=serial3 -device virtconsole,chardev=serial3
 # QEMU_ARGS +=		 -device virtio-serial-device -chardev pty,id=serial3 -device virtconsole,chardev=serial3
 
+$(hvisor_bin): elf
+	$(OBJCOPY) $(hvisor_elf) --strip-all -O binary $@
+
+build: $(hvisor_bin)
+	make -C $(image_dir)/opensbi-1.2 PLATFORM=generic \
+    	FW_PAYLOAD=y \
+    	FW_PAYLOAD_PATH= ../../../$(hvisor_bin)
