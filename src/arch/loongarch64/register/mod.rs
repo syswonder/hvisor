@@ -107,6 +107,9 @@ pub fn read_gcsr_ectl() -> usize {
 pub fn read_gcsr_estat() -> usize {
     read_gcsr_loong!(0x5)
 }
+pub fn write_gcsr_estat(value: usize) {
+    write_gcsr_loong!(0x5, value);
+}
 pub fn read_gcsr_era() -> usize {
     read_gcsr_loong!(0x6)
 }
@@ -221,14 +224,23 @@ pub fn read_gcsr_tid() -> usize {
 pub fn read_gcsr_tcfg() -> usize {
     read_gcsr_loong!(0x41)
 }
+pub fn write_gcsr_tcfg(value: usize) {
+    write_gcsr_loong!(0x41, value);
+}
 pub fn read_gcsr_tval() -> usize {
     read_gcsr_loong!(0x42)
+}
+pub fn write_gcsr_tval(value: usize) {
+    write_gcsr_loong!(0x42, value);
 }
 pub fn read_gcsr_cntc() -> usize {
     read_gcsr_loong!(0x43)
 }
 pub fn read_gcsr_ticlr() -> usize {
     read_gcsr_loong!(0x44)
+}
+pub fn write_gcsr_ticlr(value: usize) {
+    write_gcsr_loong!(0x44, value);
 }
 pub fn read_gcsr_llbctl() -> usize {
     read_gcsr_loong!(0x60)
