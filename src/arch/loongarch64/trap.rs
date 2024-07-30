@@ -6,6 +6,7 @@ use super::zone::ZoneContext;
 use core::arch;
 use core::arch::asm;
 use core::panic;
+use loongArch64::cpu;
 use loongArch64::register::ecfg::LineBasedInterrupt;
 use loongArch64::register::*;
 use loongArch64::time;
@@ -863,17 +864,26 @@ fn handle_interrupt(is: usize) {
 
 fn handle_hvc(ctx: &mut ZoneContext) {
     // HVC
-    // hvcl's code should always be 0! we use a7 as hvc call code
-    // this convention should be followed by the guest os to properly use HVC call - wheatfox
-    // and a0 to a6 are the arguments, a0 is the return val
-    let hvc_id = ctx.get_a7();
+    let code = ctx.get_a0();
+    let arg0 = ctx.get_a1();
+    let arg1 = ctx.get_a2();
 
-    info!("HVC exception, HVC call code: {:#x}", hvc_id);
-    // let retval = crate::hypercall::_hypercall(ctx, hvc_id);
-    // let retval = crate::hypercall::hypercall(hvc_id, [ctx.get_a0(), ctx.get_a1(), ctx.get_a2()]);
-    // ctx.set_a0(retval);
-    // ctx.sepc += 4;
-    // jump to next instruction
+    debug!(
+        "HVC exception, HVC call code: {:#x}, arg0: {:#x}, arg1: {:#x}",
+        code, arg0, arg1
+    );
+    use crate::hypercall::*;
+    let cpu_data = this_cpu_data();
+    let res = match HyperCall::new(cpu_data).hypercall(code as _, arg0 as _, arg1 as _) {
+        Ok(ret) => ret as _,
+        Err(e) => {
+            error!("HVC exception failed: {:?}", e);
+            e.code()
+        }
+    };
+    debug!("HVC result: {:#x}", res);
+    ctx.set_a0(res as _);
+    ctx.sepc += 4;
 }
 
 fn emulate_cpucfg(ins: usize, ctx: &mut ZoneContext) {
@@ -1258,7 +1268,8 @@ fn handle_exception(
         }
         ECODE_HVC => {
             // HVC = 0x17,  Hypervisor Call
-            panic!("HVC exception not implemented");
+            // code = a0(r4), arg0 = a1(r5), arg1 = a2(r6)
+            handle_hvc(ctx);
         }
         _ => {
             panic!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",  
