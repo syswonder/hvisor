@@ -37,6 +37,19 @@ pub fn get_us_counter(us: usize) -> usize {
     us * (time::get_timer_freq() / 1000_000)
 }
 
+/// read the current stable counter value
+pub fn ktime_get() -> usize {
+    let mut current_counter_time;
+    unsafe {
+        asm!(
+            "rdtime.d {}, {}",
+            out(reg) current_counter_time,
+            in(reg) 0,
+        );
+    }
+    current_counter_time
+}
+
 pub fn timer_init() {
     // uefi firmware leaves timer interrupt pending, we need to clear it manually
     ticlr::clear_timer_interrupt();
@@ -117,6 +130,7 @@ fn handle_page_modify_fault() {
 
 #[no_mangle]
 pub fn trap_handler(mut ctx: &mut ZoneContext) {
+    let cur = ktime_get();
     // print ctx addr
     trace!("loongarch64: trap_handler: ctx addr = {:p}", &ctx);
 
@@ -132,9 +146,9 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
     let tlbrbadv_ = tlbrbadv::read();
     let tlbrelo0_ = tlbrelo0::read();
     let tlbrelo1_ = tlbrelo1::read();
+
     trace!(
         "loongarch64: trap_handler: {} ecode={:#x} esubcode={:#x} is={:#x} badv={:#x} badi={:#x} era={:#x}", 
-        // tlbrera={:#x} tlbrbadv={:#x} tlbrlo0={:#x} tlbrlo1={:#x}",
         ecode2str(ecode, esubcode),
         ecode,
         esubcode,
@@ -142,10 +156,6 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
         badv_.vaddr(),
         badi_.inst(),
         era_.raw(),
-        // tlbrera_.raw(),
-        // tlbrbadv_.vaddr(),
-        // tlbrelo0_.raw(),
-        // tlbrelo1_.raw()
     );
 
     handle_exception(
@@ -158,36 +168,58 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
         ctx,
     );
 
+    // restore timer
+    let cfg = ctx.gcsr_tcfg;
+    write_gcsr_tcfg(0);
+    // restore GCSR_ESTAT and GCSR_TCFG
+    write_gcsr_estat(ctx.gcsr_estat);
+    write_gcsr_tcfg(ctx.gcsr_tcfg);
+    if cfg & (1 << 0) == 0 {
+        // guest has disabled timer, we just restore the tval
+        write_gcsr_tval(ctx.gcsr_tval);
+    } else {
+        // guest has enabled timer
+        let ticks = ctx.gcsr_tval;
+        let estat = ctx.gcsr_estat;
+        if !((cfg & 2) != 0 && (ticks > cfg)) {
+            write_gcsr_tval(0); // inject timer irq
+            if estat & 0x800 != 0 {
+                // set GCSR.TICLR[0] to 1
+                write_gcsr_ticlr(1);
+            }
+        }
+    }
+
+    let cur1 = ktime_get();
+    // calculate the time spent in trap_handler
+    let time_spent = cur1 - cur;
+    // set guest timer compensation
+    let gcntc = gcntc::read();
+    let gcntc_com = gcntc.compensation();
+    gcntc::set_compensation(gcntc_com.wrapping_sub(time_spent));
+
     unsafe {
         let _ctx_ptr = ctx as *mut ZoneContext;
-        _hyp_trap_return(_ctx_ptr as usize);
+        _vcpu_return(_ctx_ptr as usize);
     }
 }
 
 #[no_mangle]
 pub fn _vcpu_return(ctx: usize) {
-    assert!(
-        !loongArch64::register::tlbrera::read().is_tlbr(),
-        "loongarch64: _vcpu_return: TLBR should be empty"
-    );
-    assert!(
-        !merrctl::read().is_merr(),
-        "loongarch64: _vcpu_return: MERR should be empty"
-    );
     // Set the current guest ID to Zone's ID
     let vm_id = 1;
     gstat::set_gid(vm_id);
     gstat::set_pgm(true);
-    info!("loongarch64: _vcpu_return: set guest ID to {}", vm_id);
+    trace!("loongarch64: _vcpu_return: set guest ID to {}", vm_id);
     // Configure guest TLB control
     gtlbc::set_use_tgid(true);
     gtlbc::set_tgid(vm_id);
     let gtlbc_ = gtlbc::read();
-    info!(
+    trace!(
         "loongarch64: _vcpu_return: gtlbc.use_tgid = {}",
         gtlbc_.use_tgid()
     );
-    info!("loongarch64: _vcpu_return: gtlbc.tgid = {}", gtlbc_.tgid());
+    trace!("loongarch64: _vcpu_return: gtlbc.tgid = {}", gtlbc_.tgid());
     // Configure guest control
     gcfg::set_matc(0x1);
     let gcfg_ = gcfg::read();
@@ -205,7 +237,7 @@ pub fn _vcpu_return(ctx: usize) {
 
     // Enable interrupt
     prmd::set_pie(true);
-    info!(
+    trace!(
         "loongarch64: _vcpu_return: calling _hyp_trap_return with ctx = {:#x}",
         ctx
     );
@@ -495,8 +527,8 @@ pub unsafe extern "C" fn _hyp_trap_return(ctx: usize) {
             "gcsrwr $r12, {LOONGARCH_GCSR_MISC}",
             "ld.d $r12, $r3, 256+8*5",
             "gcsrwr $r12, {LOONGARCH_GCSR_ECTL}",
-            "ld.d $r12, $r3, 256+8*6",
-            "gcsrwr $r12, {LOONGARCH_GCSR_ESTAT}",
+            // "ld.d $r12, $r3, 256+8*6",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_ESTAT}",
             "ld.d $r12, $r3, 256+8*7",
             "gcsrwr $r12, {LOONGARCH_GCSR_ERA}",
             "ld.d $r12, $r3, 256+8*8",
@@ -569,16 +601,16 @@ pub unsafe extern "C" fn _hyp_trap_return(ctx: usize) {
             "gcsrwr $r12, {LOONGARCH_GCSR_SAVE14}",
             "ld.d $r12, $r3, 256+8*42",
             "gcsrwr $r12, {LOONGARCH_GCSR_SAVE15}",
-            "ld.d $r12, $r3, 256+8*43",
-            "gcsrwr $r12, {LOONGARCH_GCSR_TID}",
-            "ld.d $r12, $r3, 256+8*44",
-            "gcsrwr $r12, {LOONGARCH_GCSR_TCFG}",
-            "ld.d $r12, $r3, 256+8*45",
-            "gcsrwr $r12, {LOONGARCH_GCSR_TVAL}",
-            "ld.d $r12, $r3, 256+8*46",
-            "gcsrwr $r12, {LOONGARCH_GCSR_CNTC}",
-            "ld.d $r12, $r3, 256+8*47",
-            "gcsrwr $r12, {LOONGARCH_GCSR_TICLR}",
+            // "ld.d $r12, $r3, 256+8*43",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_TID}",
+            // "ld.d $r12, $r3, 256+8*44",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_TCFG}",
+            // "ld.d $r12, $r3, 256+8*45",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_TVAL}",
+            // "ld.d $r12, $r3, 256+8*46",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_CNTC}",
+            // "ld.d $r12, $r3, 256+8*47",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_TICLR}",
             "ld.d $r12, $r3, 256+8*48",
             "gcsrwr $r12, {LOONGARCH_GCSR_LLBCTL}",
             "ld.d $r12, $r3, 256+8*49",
@@ -611,7 +643,7 @@ pub unsafe extern "C" fn _hyp_trap_return(ctx: usize) {
             LOONGARCH_GCSR_EUEN = const 0x2,
             LOONGARCH_GCSR_MISC = const 0x3,
             LOONGARCH_GCSR_ECTL = const 0x4,
-            LOONGARCH_GCSR_ESTAT = const 0x5,
+            // LOONGARCH_GCSR_ESTAT = const 0x5,
             LOONGARCH_GCSR_ERA = const 0x6,
             LOONGARCH_GCSR_BADV = const 0x7,
             LOONGARCH_GCSR_BADI = const 0x8,
@@ -648,11 +680,11 @@ pub unsafe extern "C" fn _hyp_trap_return(ctx: usize) {
             LOONGARCH_GCSR_SAVE13 = const 0x3d,
             LOONGARCH_GCSR_SAVE14 = const 0x3e,
             LOONGARCH_GCSR_SAVE15 = const 0x3f,
-            LOONGARCH_GCSR_TID = const 0x40,
-            LOONGARCH_GCSR_TCFG = const 0x41,
-            LOONGARCH_GCSR_TVAL = const 0x42,
-            LOONGARCH_GCSR_CNTC = const 0x43,
-            LOONGARCH_GCSR_TICLR = const 0x44,
+            // LOONGARCH_GCSR_TID = const 0x40,
+            // LOONGARCH_GCSR_TCFG = const 0x41,
+            // LOONGARCH_GCSR_TVAL = const 0x42,
+            // LOONGARCH_GCSR_CNTC = const 0x43,
+            // LOONGARCH_GCSR_TICLR = const 0x44,
             LOONGARCH_GCSR_LLBCTL = const 0x60,
             LOONGARCH_GCSR_TLBRENTRY = const 0x88,
             LOONGARCH_GCSR_TLBRBADV = const 0x89,
@@ -840,7 +872,7 @@ fn handle_hvc(ctx: &mut ZoneContext) {
     // let retval = crate::hypercall::_hypercall(ctx, hvc_id);
     // let retval = crate::hypercall::hypercall(hvc_id, [ctx.get_a0(), ctx.get_a1(), ctx.get_a2()]);
     // ctx.set_a0(retval);
-    ctx.sepc += 4;
+    // ctx.sepc += 4;
     // jump to next instruction
 }
 
@@ -854,16 +886,15 @@ fn emulate_cpucfg(ins: usize, ctx: &mut ZoneContext) {
     let rj = extract_field(ins, 5, 5);
     let cpucfg_target_idx = ctx.x[rj];
 
-    const KVM_MAX_CPUCFG_REGS: usize = 21;
+    const MAX_CPUCFG_REGS: usize = 21;
 
     info!(
         "cpucfg emulation, target cpucfg index is {:#x}",
         cpucfg_target_idx
     );
 
-    if cpucfg_target_idx >= KVM_MAX_CPUCFG_REGS {
+    if cpucfg_target_idx >= MAX_CPUCFG_REGS {
         // invalid cpucfg target
-
         warn!("invalid cpucfg target");
         ctx.x[rd] = 0;
         // according to manual, we should set result to 0 if index is invalid
@@ -894,21 +925,18 @@ fn emulate_csrx(ins: usize, ctx: &mut ZoneContext) {
     match ty {
         0 => {
             // csrrd
-
             info!("csrrd emulation for CSR {:#x}", csr);
             ctx.x[rd] = 0;
             // just set it to 0
         }
         1 => {
             // csrwr
-
             info!("csrwr emulation for CSR {:#x}", csr);
             ctx.x[rd] = 0;
             // do nothing to GCSR, but we also need to set rd to 0
         }
         _ => {
             // csrxchg
-
             info!("csrxchg emulation for CSR {:#x}", csr);
             ctx.x[rd] = 0;
             // do nothing to GCSR, but we also need to set rd to 0
@@ -924,7 +952,17 @@ fn emulate_cacop(ins: usize, ctx: &mut ZoneContext) {
 fn emulate_idle(ins: usize, ctx: &mut ZoneContext) {
     // idle level           0000011001 0010001 level[14:0]
     let level = extract_field(ins, 0, 15);
-    debug!("guest request an idle at level {:#x}", level);
+    trace!("guest request an idle at level {:#x}", level);
+    // // wait until GCSR.ESTAT.IS != 0
+    // loop {
+    //     let estat = read_gcsr_estat();
+    //     // ESTAT[12:0] = IS
+    //     if estat & 0x1fff != 0 {
+    //         let is = estat & 0x1fff;
+    //         debug!("idle waited, interrupt status is {:#x}", is);
+    //         break;
+    //     }
+    // }
 }
 
 fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
