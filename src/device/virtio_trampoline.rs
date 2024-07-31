@@ -172,7 +172,7 @@ impl VirtioBridgeRegion {
         // fence(Ordering::SeqCst);
     }
 
-    pub fn get_cfg_flags(&self) -> *const u8 {
+    pub fn get_cfg_flags(&self) -> *const u64 {
         let region = self.immut_region();
         region.cfg_flags.as_ptr()
     }
@@ -206,7 +206,7 @@ pub struct VirtioBridge {
     res_rear: u32,
     pub req_list: [HvisorDeviceReq; MAX_REQ as usize],
     pub res_list: [HvisorDeviceRes; MAX_REQ as usize], // irqs
-    cfg_flags: [u8; MAX_CPUS],
+    cfg_flags: [u64; MAX_CPUS],
     cfg_values: [u64; MAX_CPUS],
     pub mmio_addrs: [u64; MAX_DEVS],
     pub mmio_avail: u8,

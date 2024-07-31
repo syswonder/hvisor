@@ -2,7 +2,7 @@ use alloc::sync::Arc;
 use spin::{Mutex, RwLock};
 
 use crate::arch::cpu::{this_cpu_id, ArchCpu};
-use crate::consts::{DTB_IPA, INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
+use crate::consts::{INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::memory::addr::VirtAddr;
 use crate::zone::Zone;
 use crate::{arch, ENTERED_CPUS};
@@ -15,33 +15,35 @@ use core::sync::atomic::Ordering;
 pub struct PerCpu {
     pub id: usize,
     pub cpu_on_entry: usize,
+    pub dtb_ipa: usize,
     pub arch_cpu: ArchCpu,
     pub zone: Option<Arc<RwLock<Zone>>>,
     pub ctrl_lock: Mutex<()>,
     pub boot_cpu: bool,
-    pub opaque: usize,
     // percpu stack
 }
 
 impl PerCpu {
     pub fn new<'a>(cpu_id: usize) -> &'static mut PerCpu {
         let vaddr = PER_CPU_ARRAY_PTR as VirtAddr + cpu_id as usize * PER_CPU_SIZE;
-        let ret = unsafe { &mut *(vaddr as *mut Self) };
-        *ret = PerCpu {
-            id: cpu_id,
-            cpu_on_entry: INVALID_ADDRESS,
-            arch_cpu: ArchCpu::new(cpu_id),
-            zone: None,
-            ctrl_lock: Mutex::new(()),
-            boot_cpu: false,
-            opaque: DTB_IPA,
+        let ret = vaddr as *mut Self;
+        unsafe {
+            ret.write_volatile(PerCpu {
+                id: cpu_id,
+                cpu_on_entry: INVALID_ADDRESS,
+                dtb_ipa: INVALID_ADDRESS,
+                arch_cpu: ArchCpu::new(cpu_id),
+                zone: None,
+                ctrl_lock: Mutex::new(()),
+                boot_cpu: false,
+            })
         };
         #[cfg(target_arch = "riscv64")]
         {
             use crate::arch::csr::{write_csr, CSR_SSCRATCH};
-            write_csr!(CSR_SSCRATCH, &ret.arch_cpu as *const _ as usize); //arch cpu pointer
+            write_csr!(CSR_SSCRATCH, &ret.as_mut().unwrap().arch_cpu as *const _ as usize); //arch cpu pointer
         }
-        ret
+        unsafe { ret.as_mut().unwrap() }
     }
 
     pub fn run_vm(&mut self) {
@@ -49,6 +51,7 @@ impl PerCpu {
             info!("CPU{}: Idling the CPU before starting VM...", self.id);
             self.arch_cpu.idle();
         }
+        info!("CPU{}: Running the VM...", self.id);
         self.arch_cpu.run();
     }
 

@@ -2,6 +2,7 @@ use super::csr::*;
 use crate::arch::Stage2PageTable;
 use crate::percpu::this_cpu_data;
 use crate::{
+    arch::mm::new_s2_memory_set,
     consts::{PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
     memory::PhysAddr,
     memory::{
@@ -104,7 +105,7 @@ impl ArchCpu {
             self.init(
                 this_cpu_data().cpu_on_entry,
                 this_cpu_data().id,
-                this_cpu_data().opaque, //dtb_ipa
+                this_cpu_data().dtb_ipa, //dtb_ipa
             );
             self.init = true;
         }
@@ -122,7 +123,7 @@ impl ArchCpu {
             fn vcpu_arch_entry() -> !;
         }
         assert!(this_cpu_id() == self.cpuid);
-        self.init(0, this_cpu_data().id, this_cpu_data().opaque);
+        self.init(0, this_cpu_data().id, this_cpu_data().dtb_ipa);
         // reset current cpu -> pc = 0x0 (wfi)
         PARKING_MEMORY_SET.call_once(|| {
             let parking_code: [u8; 4] = [0x73, 0x00, 0x50, 0x10]; // 1: wfi; b 1b
@@ -130,7 +131,7 @@ impl ArchCpu {
                 PARKING_INST_PAGE[..4].copy_from_slice(&parking_code);
             }
 
-            let mut gpm = MemorySet::<Stage2PageTable>::new();
+            let mut gpm = new_s2_memory_set();
             gpm.insert(MemoryRegion::new_with_offset_mapper(
                 0 as GuestPhysAddr,
                 unsafe { &PARKING_INST_PAGE as *const _ as HostPhysAddr - PHYS_VIRT_OFFSET },
