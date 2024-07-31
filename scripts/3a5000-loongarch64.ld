@@ -1,5 +1,5 @@
 ENTRY(arch_entry)
-BASE_ADDRESS = 0x9000000080000000;
+BASE_ADDRESS = 0x9000000100010000;
 
 
 SECTIONS
@@ -16,6 +16,8 @@ SECTIONS
     . = ALIGN(4K);
     .trap_entry : {
         *(.trap_entry)
+        . = ALIGN(4K);
+        *(.tlbrefill_entry)
     }
 
     . = ALIGN(4K);
@@ -32,10 +34,11 @@ SECTIONS
     .data : {
         *(.data .data.*)
         *(.sdata .sdata.*)
-    }
 
+    }
     . = ALIGN(4K);
     edata = .;
+
     .bss : {
         *(.bss.stack)
         sbss = .;
@@ -45,6 +48,7 @@ SECTIONS
 
     . = ALIGN(4K);
     ebss = .;
+
     ekernel = .;
 
     /DISCARD/ : {

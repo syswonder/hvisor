@@ -5,7 +5,7 @@ use crate::arch::cpu::{this_cpu_id, ArchCpu};
 use crate::consts::{DTB_IPA, INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::memory::addr::VirtAddr;
 use crate::zone::Zone;
-use crate::ENTERED_CPUS;
+use crate::{arch, ENTERED_CPUS};
 use core::fmt::Debug;
 use core::sync::atomic::Ordering;
 
