@@ -1,7 +1,8 @@
 use crate::{
     error::HvResult,
     memory::{
-        addr::align_up, mmio_generic_handler, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
+        addr::align_down, addr::align_up, mmio_generic_handler, GuestPhysAddr, HostPhysAddr,
+        MemFlags, MemoryRegion,
     },
     zone::Zone,
 };
@@ -18,6 +19,78 @@ impl Zone {
         dtb_ipa: usize,
     ) -> HvResult {
         info!("loongarch64: mm: pt init for zone, vm_paddr_start: {:#x?}, guest_dtb: {:#x?}, dtb_ipa: {:#x?}", vm_paddr_start, guest_dtb, dtb_ipa);
+
+        // NOTES:
+        // vm_paddr_start is the start HPA mem range addr for this Zone
+        // fdt is the parsed info of the dtb, including a lot of useful stuff
+        // guest_dtb is the HPA addr for zone's dtb
+        // dtb_ipa is the GPA addr for zone's dtb
+
+        // for each region in /memory, map it
+        let mem = fdt.memory();
+        let mut iter = mem.regions();
+        loop {
+            if let Some(mem_region) = iter.next() {
+                info!("map mem_region: {:#x?}", mem_region);
+                self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                    mem_region.starting_address as GuestPhysAddr,
+                    mem_region.starting_address as HostPhysAddr,
+                    mem_region.size.unwrap(),
+                    MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+                ))?;
+            } else {
+                break;
+            }
+        }
+
+        // map special region
+        // 2024.4.12
+        // linux's strscpy called gpa at 0x9000_0000_0000_0000 which is ldx x, 0x9000_0000_0000_0000(a1) + 0x0(a0) why ?
+        // __memcpy_fromio 0xf0000 why?
+        // (0x0, 0x10000, ZONE_MEM_FLAG_R | ZONE_MEM_FLAG_W | ZONE_MEM_FLAG_X)
+        // (0xf0000, 0x10000, ZONE_MEM_FLAG_R | ZONE_MEM_FLAG_W | ZONE_MEM_FLAG_X)
+
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0x0 as GuestPhysAddr,
+            0x0 as HostPhysAddr,
+            0x10000,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+        ))?;
+
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            0xf0000 as GuestPhysAddr,
+            0xf0000 as HostPhysAddr,
+            0x10000,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+        ))?;
+        
+        // map guest dtb
+        info!("map guest dtb: {:#x?}", dtb_ipa);
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            dtb_ipa as GuestPhysAddr,
+            guest_dtb as HostPhysAddr,
+            align_up(fdt.total_size()),
+            MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+        ))?;
+        // map zone's UART device
+        for node in fdt.find_all_nodes("/platform/serial") {
+            if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
+                let paddr = align_down(reg.starting_address as usize) as HostPhysAddr;
+                let size = align_up(reg.size.unwrap());
+                info!("map uart addr: {:#x}, size: {:#x}", paddr, size);
+                self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                    paddr as GuestPhysAddr,
+                    paddr as HostPhysAddr,
+                    size,
+                    MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+                ))?;
+            }
+        }
+        debug!("zone stage-2 memory set: {:#x?}", self.gpm);
+        unsafe {
+            let r = self.gpm.page_table_query(0x00200000 as GuestPhysAddr);
+            info!("query 0x00200000: {:#x?}", r);
+        }
         Ok(())
     }
 
@@ -29,201 +102,6 @@ impl Zone {
     }
     pub fn irq_bitmap_init(&mut self, fdt: &fdt::Fdt) {
         warn!("loongarch64: mm: irq_bitmap_init do nothing");
-    }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-pub struct LoongArch64VcpuContext {
-    pub ra: usize,
-    pub sp: usize,
-    pub s: [usize; 10],
-}
-
-fn prepare_vm_trapcontext(guest_entry_addr: usize, trap_addr: usize, vm_pagetable: usize) {
-    unsafe {
-        // guest entry address
-        asm!("st.d {}, {}, 256", in(reg) guest_entry_addr, in(reg) trap_addr);
-        // GCSRS
-        asm!("gcsrrd $r12, 0x0");
-        asm!("st.d $r12, {}, 256+8*1", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x1");
-        asm!("st.d $r12, {}, 256+8*2", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x2");
-        asm!("st.d $r12, {}, 256+8*3", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x3");
-        asm!("st.d $r12, {}, 256+8*4", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x4");
-        asm!("st.d $r12, {}, 256+8*5", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x5");
-        asm!("st.d $r12, {}, 256+8*6", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x6");
-        asm!("st.d $r12, {}, 256+8*7", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x7");
-        asm!("st.d $r12, {}, 256+8*8", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x8");
-        asm!("st.d $r12, {}, 256+8*9", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0xc");
-        asm!("st.d $r12, {}, 256+8*10", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x10");
-        asm!("st.d $r12, {}, 256+8*11", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x11");
-        asm!("st.d $r12, {}, 256+8*12", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x12");
-        asm!("st.d $r12, {}, 256+8*13", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x13");
-        asm!("st.d $r12, {}, 256+8*14", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x18");
-        asm!("st.d $r12, {}, 256+8*15", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x19");
-        asm!("st.d $r12, {}, 256+8*16", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x1a");
-        asm!("st.d $r12, {}, 256+8*17", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x1b");
-        asm!("st.d $r12, {}, 256+8*18", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x1c");
-        asm!("st.d $r12, {}, 256+8*19", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x1d");
-        asm!("st.d $r12, {}, 256+8*20", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x1e");
-        asm!("st.d $r12, {}, 256+8*21", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x1f");
-        asm!("st.d $r12, {}, 256+8*22", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x20");
-        asm!("st.d $r12, {}, 256+8*23", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x21");
-        asm!("st.d $r12, {}, 256+8*24", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x22");
-        asm!("st.d $r12, {}, 256+8*25", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x23");
-        asm!("st.d $r12, {}, 256+8*26", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x30");
-        asm!("st.d $r12, {}, 256+8*27", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x31");
-        asm!("st.d $r12, {}, 256+8*28", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x32");
-        asm!("st.d $r12, {}, 256+8*29", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x33");
-        asm!("st.d $r12, {}, 256+8*30", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x34");
-        asm!("st.d $r12, {}, 256+8*31", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x35");
-        asm!("st.d $r12, {}, 256+8*32", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x36");
-        asm!("st.d $r12, {}, 256+8*33", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x37");
-        asm!("st.d $r12, {}, 256+8*34", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x38");
-        asm!("st.d $r12, {}, 256+8*35", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x39");
-        asm!("st.d $r12, {}, 256+8*36", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x3a");
-        asm!("st.d $r12, {}, 256+8*37", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x3b");
-        asm!("st.d $r12, {}, 256+8*38", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x3c");
-        asm!("st.d $r12, {}, 256+8*39", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x3d");
-        asm!("st.d $r12, {}, 256+8*40", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x3e");
-        asm!("st.d $r12, {}, 256+8*41", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x3f");
-        asm!("st.d $r12, {}, 256+8*42", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x40");
-        asm!("st.d $r12, {}, 256+8*43", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x41");
-        asm!("st.d $r12, {}, 256+8*44", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x42");
-        asm!("st.d $r12, {}, 256+8*45", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x43");
-        asm!("st.d $r12, {}, 256+8*46", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x44");
-        asm!("st.d $r12, {}, 256+8*47", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x60");
-        asm!("st.d $r12, {}, 256+8*48", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x88");
-        asm!("st.d $r12, {}, 256+8*49", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x89");
-        asm!("st.d $r12, {}, 256+8*50", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x8a");
-        asm!("st.d $r12, {}, 256+8*51", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x8b");
-        asm!("st.d $r12, {}, 256+8*52", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x8c");
-        asm!("st.d $r12, {}, 256+8*53", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x8d");
-        asm!("st.d $r12, {}, 256+8*54", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x8e");
-        asm!("st.d $r12, {}, 256+8*55", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x8f");
-        asm!("st.d $r12, {}, 256+8*56", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x180");
-        asm!("st.d $r12, {}, 256+8*57", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x181");
-        asm!("st.d $r12, {}, 256+8*58", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x182");
-        asm!("st.d $r12, {}, 256+8*59", in(reg) trap_addr);
-        asm!("gcsrrd $r12, 0x183");
-        asm!("st.d $r12, {}, 256+8*60", in(reg) trap_addr);
-        // vm pagetable address
-        asm!("st.d {}, {}, 256+8*61", in(reg) vm_pagetable, in(reg) trap_addr);
-        asm!("st.d {}, {}, 256+8*62", in(reg) vm_pagetable, in(reg) trap_addr);
-    }
-}
-
-// pub fn first_sched_callback_fn() {
-//     set_zone_trap_entry();
-//     let cur_vcpu = current_vcpu().unwrap();
-//     let trap_addr = cur_vcpu.get_kernel_stack_top();
-
-//     let cur_zone = current_vcpu().unwrap().get_zone().unwrap();
-//     let guest_entry_addr = cur_zone.get_sepc();
-
-//     unsafe {
-//         // gcsr_dump();
-//         // prepare trap context
-//         prepare_vm_trapcontext(guest_entry_addr, trap_addr, cur_zone.pagetable_dir());
-//         let start_time: usize;
-//         let counter_id = 0;
-//         asm!("rdtime.d {}, {}", out(reg) start_time, in(reg) counter_id);
-//         cur_zone.set_start_time(start_time);
-//         zone_trap_ret_rust(trap_addr);
-//     }
-// }
-
-pub fn first_sched_callback_fn() {
-    // todo
-}
-
-impl LoongArch64VcpuContext {
-    pub const fn new() -> LoongArch64VcpuContext {
-        LoongArch64VcpuContext {
-            ra: 0,
-            sp: 0,
-            s: [0; 10],
-        }
-    }
-    pub fn first_sched_callback(kstack_ptr: usize) -> LoongArch64VcpuContext {
-        LoongArch64VcpuContext {
-            ra: first_sched_callback_fn as usize,
-            sp: kstack_ptr,
-            s: [0; 10],
-        }
-    }
-    pub fn print_vcpu_context(&self) {
-        info!("==============Vcpu Context============");
-        info!("ra: {:#x}", self.ra);
-        info!("sp: {:#x}", self.sp);
-        info!("s[0]: {:#x}", self.s[0]);
-        info!("s[1]: {:#x}", self.s[1]);
-        info!("s[2]: {:#x}", self.s[2]);
-        info!("s[3]: {:#x}", self.s[3]);
-        info!("s[4]: {:#x}", self.s[4]);
-        info!("s[5]: {:#x}", self.s[5]);
-        info!("s[6]: {:#x}", self.s[6]);
-        info!("s[7]: {:#x}", self.s[7]);
-        info!("s[8]: {:#x}", self.s[8]);
-        info!("s[9]: {:#x}", self.s[9]);
     }
 }
 
@@ -343,7 +221,6 @@ impl LoongArch64ZoneContext {
         LoongArch64ZoneContext {
             x: [0; 32],
             sepc: 0,
-            // 初始化 GCSR 寄存器
             gcsr_crmd: 0,
             gcsr_prmd: 0,
             gcsr_euen: 0,
@@ -490,6 +367,4 @@ impl LoongArch64ZoneContext {
     gprs_setters!(set_a0, 4);
 }
 
-
 pub type ZoneContext = LoongArch64ZoneContext;
-pub type VcpuContext = LoongArch64VcpuContext;

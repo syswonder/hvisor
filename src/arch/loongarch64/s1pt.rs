@@ -115,7 +115,22 @@ pub struct S1PTInstr;
 
 impl PagingInstr for S1PTInstr {
     unsafe fn activate(root_pa: HostPhysAddr) {
-        warn!("loongarch64: S1PTInstr::activate: root_pa: {:#x?}", root_pa);
+        info!("loongarch64: S1PTInstr::activate: root_pa: {:#x?}", root_pa);
+        extern "C" {
+            fn tlb_refill_handler();
+        }
+        super::paging::set_pwcl_pwch();
+        use loongArch64::register::tlbrentry;
+        use loongArch64::register::{pgd, pgdh, pgdl};
+        pgdh::set_base(root_pa);
+        pgdl::set_base(root_pa);
+        unsafe {
+            tlbrentry::set_tlbrentry(tlb_refill_handler as usize);
+        }
+        info!(
+            "loongarch64: S1PTInstr::activate: set tlbrentry to {:#x?} done!",
+            tlbrentry::read().addr()
+        );
     }
     fn flush(vaddr: Option<usize>) {
         warn!("loongarch64: S1PTInstr::flush: vaddr: {:#x?}", vaddr);

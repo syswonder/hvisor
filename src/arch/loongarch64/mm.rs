@@ -33,7 +33,7 @@ pub fn init_hv_page_table(fdt: &fdt::Fdt) -> HvResult {
         }
     }
     info!("loongarch64: mm: init_hv_page_table done");
-    info!("Hypervisor virtual memory set: {:#x?}", hv_pt);
+    debug!("Hypervisor virtual memory set: {:#x?}", hv_pt);
 
     HV_PT.call_once(|| RwLock::new(hv_pt));
     Ok(())
