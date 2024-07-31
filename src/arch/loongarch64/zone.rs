@@ -1,4 +1,5 @@
 use crate::{
+    config::*,
     error::HvResult,
     memory::{
         addr::align_down, addr::align_up, mmio_generic_handler, GuestPhysAddr, HostPhysAddr,
@@ -11,98 +12,88 @@ use core::arch::asm;
 use core::sync::atomic::{fence, Ordering};
 
 impl Zone {
-    pub fn pt_init(
-        &mut self,
-        vm_paddr_start: usize,
-        fdt: &fdt::Fdt,
-        guest_dtb: usize,
-        dtb_ipa: usize,
-    ) -> HvResult {
-        info!("loongarch64: mm: pt init for zone, vm_paddr_start: {:#x?}, guest_dtb: {:#x?}, dtb_ipa: {:#x?}", vm_paddr_start, guest_dtb, dtb_ipa);
+    pub fn pt_init(&mut self, mem_regions: &[HvConfigMemoryRegion]) -> HvResult {
+        // info!("loongarch64: mm: pt init for zone, vm_paddr_start: {:#x?}, guest_dtb: {:#x?}, dtb_ipa: {:#x?}", vm_paddr_start, guest_dtb, dtb_ipa);
 
-        // NOTES:
-        // vm_paddr_start is the start HPA mem range addr for this Zone
-        // fdt is the parsed info of the dtb, including a lot of useful stuff
-        // guest_dtb is the HPA addr for zone's dtb
-        // dtb_ipa is the GPA addr for zone's dtb
+        // // NOTES:
+        // // vm_paddr_start is the start HPA mem range addr for this Zone
+        // // fdt is the parsed info of the dtb, including a lot of useful stuff
+        // // guest_dtb is the HPA addr for zone's dtb
+        // // dtb_ipa is the GPA addr for zone's dtb
 
-        // for each region in /memory, map it
-        let mem = fdt.memory();
-        let mut iter = mem.regions();
-        loop {
-            if let Some(mem_region) = iter.next() {
-                info!("map mem_region: {:#x?}", mem_region);
-                self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-                    mem_region.starting_address as GuestPhysAddr,
-                    mem_region.starting_address as HostPhysAddr,
-                    mem_region.size.unwrap(),
-                    MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
-                ))?;
-            } else {
-                break;
-            }
-        }
+        // // for each region in /memory, map it
+        // let mem = fdt.memory();
+        // let mut iter = mem.regions();
+        // loop {
+        //     if let Some(mem_region) = iter.next() {
+        //         info!("map mem_region: {:#x?}", mem_region);
+        //         self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+        //             mem_region.starting_address as GuestPhysAddr,
+        //             mem_region.starting_address as HostPhysAddr,
+        //             mem_region.size.unwrap(),
+        //             MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+        //         ))?;
+        //     } else {
+        //         break;
+        //     }
+        // }
 
-        // map special region
-        // 2024.4.12
-        // linux's strscpy called gpa at 0x9000_0000_0000_0000 which is ldx x, 0x9000_0000_0000_0000(a1) + 0x0(a0) why ?
-        // __memcpy_fromio 0xf0000 why?
-        // (0x0, 0x10000, ZONE_MEM_FLAG_R | ZONE_MEM_FLAG_W | ZONE_MEM_FLAG_X)
-        // (0xf0000, 0x10000, ZONE_MEM_FLAG_R | ZONE_MEM_FLAG_W | ZONE_MEM_FLAG_X)
+        // // map special region
+        // // 2024.4.12
+        // // linux's strscpy called gpa at 0x9000_0000_0000_0000 which is ldx x, 0x9000_0000_0000_0000(a1) + 0x0(a0) why ?
+        // // __memcpy_fromio 0xf0000 why?
+        // // (0x0, 0x10000, ZONE_MEM_FLAG_R | ZONE_MEM_FLAG_W | ZONE_MEM_FLAG_X)
+        // // (0xf0000, 0x10000, ZONE_MEM_FLAG_R | ZONE_MEM_FLAG_W | ZONE_MEM_FLAG_X)
 
-        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-            0x0 as GuestPhysAddr,
-            0x0 as HostPhysAddr,
-            0x10000,
-            MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
-        ))?;
+        // self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+        //     0x0 as GuestPhysAddr,
+        //     0x0 as HostPhysAddr,
+        //     0x10000,
+        //     MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+        // ))?;
 
-        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-            0xf0000 as GuestPhysAddr,
-            0xf0000 as HostPhysAddr,
-            0x10000,
-            MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
-        ))?;
-        
-        // map guest dtb
-        info!("map guest dtb: {:#x?}", dtb_ipa);
-        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-            dtb_ipa as GuestPhysAddr,
-            guest_dtb as HostPhysAddr,
-            align_up(fdt.total_size()),
-            MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
-        ))?;
-        // map zone's UART device
-        for node in fdt.find_all_nodes("/platform/serial") {
-            if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
-                let paddr = align_down(reg.starting_address as usize) as HostPhysAddr;
-                let size = align_up(reg.size.unwrap());
-                info!("map uart addr: {:#x}, size: {:#x}", paddr, size);
-                self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-                    paddr as GuestPhysAddr,
-                    paddr as HostPhysAddr,
-                    size,
-                    MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-                ))?;
-            }
-        }
-        debug!("zone stage-2 memory set: {:#x?}", self.gpm);
-        unsafe {
-            let r = self.gpm.page_table_query(0x00200000 as GuestPhysAddr);
-            info!("query 0x00200000: {:#x?}", r);
-        }
+        // self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+        //     0xf0000 as GuestPhysAddr,
+        //     0xf0000 as HostPhysAddr,
+        //     0x10000,
+        //     MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+        // ))?;
+
+        // // map guest dtb
+        // info!("map guest dtb: {:#x?}", dtb_ipa);
+        // self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+        //     dtb_ipa as GuestPhysAddr,
+        //     guest_dtb as HostPhysAddr,
+        //     align_up(fdt.total_size()),
+        //     MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+        // ))?;
+        // // map zone's UART device
+        // for node in fdt.find_all_nodes("/platform/serial") {
+        //     if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
+        //         let paddr = align_down(reg.starting_address as usize) as HostPhysAddr;
+        //         let size = align_up(reg.size.unwrap());
+        //         info!("map uart addr: {:#x}, size: {:#x}", paddr, size);
+        //         self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+        //             paddr as GuestPhysAddr,
+        //             paddr as HostPhysAddr,
+        //             size,
+        //             MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        //         ))?;
+        //     }
+        // }
+        // debug!("zone stage-2 memory set: {:#x?}", self.gpm);
+        // unsafe {
+        //     let r = self.gpm.page_table_query(0x00200000 as GuestPhysAddr);
+        //     info!("query 0x00200000: {:#x?}", r);
+        // }
         Ok(())
     }
 
-    pub fn mmio_init(&mut self, fdt: &fdt::Fdt) {
-        warn!("loongarch64: mm: mmio_init do nothing");
-    }
+    pub fn mmio_init(&mut self, hv_config: &HvArchZoneConfig) {}
     pub fn isa_init(&mut self, fdt: &fdt::Fdt) {
         warn!("loongarch64: mm: isa_init do nothing");
     }
-    pub fn irq_bitmap_init(&mut self, fdt: &fdt::Fdt) {
-        warn!("loongarch64: mm: irq_bitmap_init do nothing");
-    }
+    pub fn irq_bitmap_init(&mut self, irqs: &[u32]) {}
 }
 
 #[repr(C)]
@@ -368,3 +359,9 @@ impl LoongArch64ZoneContext {
 }
 
 pub type ZoneContext = LoongArch64ZoneContext;
+
+#[repr(C)]
+#[derive(Debug, Clone)]
+pub struct HvArchZoneConfig {
+    pub dummy: usize,
+}

@@ -5,7 +5,7 @@ use fdt::Fdt;
 
 pub mod chip;
 
-pub fn primary_init_early(host_fdt: &Fdt) {
+pub fn primary_init_early() {
     warn!("loongarch64: irqchip: primary_init_early do nothing");
 }
 pub fn primary_init_late() {

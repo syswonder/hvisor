@@ -15,7 +15,7 @@
 			phandle = <0x8010>;
 			reg = <0x00>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 		};
 
@@ -23,7 +23,7 @@
 			phandle = <0x800f>;
 			reg = <0x01>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a53";
 			device_type = "cpu";
 		};
 
@@ -33,7 +33,18 @@
 		compatible = "arm,psci-0.2";
 		method = "smc";
 	};
-	
+
+	reserved-memory {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+
+		nonroot@50000000 {
+			no-map;
+			reg = <0x00 0x50000000 0x00 0x30000000>;
+		};
+	};
+
 	memory@50000000 {
 		device_type = "memory";
 		reg = <0x0 0x50000000 0x0 0x80000000>;
@@ -142,7 +153,7 @@
 	};
 
 	chosen {
-		bootargs = "earlycon console=ttyAMA0 root=/dev/vda mem=1G rw";
+		bootargs = "clk_ignore_unused earlycon console=ttyAMA0 root=/dev/vda iomem=relaxed rw";
         // bootargs = "root=/dev/vda mem=768M";
 		stdout-path = "/pl011@9000000";
 	};

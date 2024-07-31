@@ -52,7 +52,7 @@ impl ArchCpu {
             self.init(
                 this_cpu_data().cpu_on_entry,
                 this_cpu_data().id,
-                this_cpu_data().opaque,
+                0,
             );
             self.init = true;
         }

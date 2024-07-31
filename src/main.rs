@@ -37,11 +37,14 @@ mod panic;
 mod percpu;
 mod platform;
 mod zone;
+mod config;
 
-use crate::consts::{DTB_IPA, MAX_CPU_NUM};
-use crate::platform::{ROOT_ZONE_DTB_ADDR, ROOT_ENTRY};
-use crate::zone::zone_create;
+#[cfg(target_arch = "aarch64")]
+use crate::arch::mm::setup_parange;
+use crate::consts::MAX_CPU_NUM;
 use arch::{cpu::cpu_start, entry::arch_entry};
+use config::root_zone_config;
+use zone::zone_create;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
 
@@ -56,7 +59,13 @@ pub fn clear_bss() {
         fn sbss();
         fn ebss();
     }
-    (sbss as usize..ebss as usize).for_each(|a| unsafe { (a as *mut u8).write_volatile(0) });
+    let mut p = sbss as *mut u8;
+    while p < ebss as _ {
+        unsafe {
+            *p = 0;
+            p = p.add(1);
+        };
+    }
 }
 
 fn wait_for(condition: impl Fn() -> bool) {
@@ -69,7 +78,7 @@ fn wait_for_counter(counter: &AtomicU32, max_value: u32) {
     wait_for(|| counter.load(Ordering::Acquire) < max_value)
 }
 
-fn primary_init_early(dtb: usize) {
+fn primary_init_early() {
     extern "C" {
         fn __core_end();
     }
@@ -86,20 +95,14 @@ fn primary_init_early(dtb: usize) {
         option_env!("ARCH").unwrap_or(""),
         option_env!("STATS").unwrap_or("off"),
     );
-    memory::heap::init();
-    memory::heap::test();
     memory::frame::init();
     memory::frame::test();
     event::init(MAX_CPU_NUM);
 
-    info!("host dtb: {:#x}", dtb);
-    let host_fdt = unsafe { fdt::Fdt::from_ptr(dtb as *const u8) }.unwrap();
+    device::irqchip::primary_init_early();
+    // crate::arch::mm::init_hv_page_table().unwrap();
 
-    device::irqchip::primary_init_early(&host_fdt);
-    crate::arch::mm::init_hv_page_table(&host_fdt).unwrap();
-
-    info!("Primary CPU init hv page table OK.");
-    zone_create(0,ROOT_ENTRY,ROOT_ZONE_DTB_ADDR as _, DTB_IPA).unwrap();
+    zone_create(root_zone_config()).unwrap();
     INIT_EARLY_OK.store(1, Ordering::Release);
 }
 
@@ -110,13 +113,13 @@ fn primary_init_late() {
     INIT_LATE_OK.store(1, Ordering::Release);
 }
 
-fn percpu_hv_pt_install(cpu: &mut PerCpu) {
+fn per_cpu_init(cpu: &mut PerCpu) {
     if cpu.zone.is_none() {
         warn!("zone is not created for cpu {}", cpu.id);
     }
-    unsafe {
-        memory::hv_page_table().read().activate();
-    };
+    // unsafe {
+    //     memory::hv_page_table().read().activate();
+    // };
     info!("CPU {} hv_pt_install OK.", cpu.id);
 }
 
@@ -133,12 +136,15 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     arch::trap::install_trap_vector();
 
     let mut is_primary = false;
+    println!("Hello, HVISOR!");
     if MASTER_CPU.load(Ordering::Acquire) == -1 {
         MASTER_CPU.store(cpuid as i32, Ordering::Release);
         is_primary = true;
-        println!("Hello, HVISOR!");
         #[cfg(target_arch = "riscv64")]
         clear_bss();
+        memory::heap::init();
+        memory::heap::test();
+        
     }
 
     let cpu = PerCpu::new(cpuid);
@@ -162,13 +168,16 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         cpu.id
     );
 
+    #[cfg(target_arch = "aarch64")]
+    setup_parange();
+
     if is_primary {
-        primary_init_early(host_dtb); // create root zone here
+        primary_init_early(); // create root zone here
     } else {
         wait_for_counter(&INIT_EARLY_OK, 1);
     }
 
-    percpu_hv_pt_install(cpu);
+    per_cpu_init(cpu);
     device::irqchip::percpu_init();
 
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
@@ -181,11 +190,4 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     }
 
     cpu.run_vm();
-
-    // if cpu_data.id == 0 {
-    //     prepare_zone_start(this_zone())?;
-    //     cpu_data.start_zone();
-    // } else {
-    //     wait_for_poweron();
-    // }
 }

@@ -1,4 +1,4 @@
-use aarch64_cpu::registers::*;
+use aarch64_cpu::{asm::wfi, registers::*};
 use core::arch::global_asm;
 
 use crate::{
@@ -47,7 +47,7 @@ extern "C" {
 
 pub fn install_trap_vector() {
     // Set the trap vector.
-    VBAR_EL2.set(_hyp_trap_vector as _)
+    VBAR_EL2.set(_hyp_trap_vector as _);
 }
 
 // ----------------------------------------------
@@ -97,7 +97,7 @@ pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> ! {
 }
 
 fn irqchip_handle_irq1() {
-    debug!("irq from el1");
+    trace!("irq from el1");
     gicv3_handle_irq_el1();
 }
 
@@ -134,29 +134,32 @@ fn arch_handle_trap_el1(regs: &mut GeneralRegisters) {
 }
 
 fn arch_handle_trap_el2(_regs: &mut GeneralRegisters) {
+    let elr = ELR_EL2.get();
+    let esr = ESR_EL2.get();
+    let far = FAR_EL2.get();
     match ESR_EL2.read_as_enum(ESR_EL2::EC) {
         Some(ESR_EL2::EC::Value::HVC64) => {
-            error!("EL2 Exception: HVC64 call, ELR_EL2: {:#x?}", ELR_EL2.get())
+            println!("EL2 Exception: HVC64 call, ELR_EL2: {:#x?}", ELR_EL2.get());
         }
         Some(ESR_EL2::EC::Value::SMC64) => {
-            error!("EL2 Exception: SMC64 call, ELR_EL2: {:#x?}", ELR_EL2.get())
+            println!("EL2 Exception: SMC64 call, ELR_EL2: {:#x?}", ELR_EL2.get());
         }
         Some(ESR_EL2::EC::Value::DataAbortCurrentEL) => {
-            error!(
+            loop {}
+            println!(
                 "EL2 Exception: Data Abort, ELR_EL2: {:#x?}, FAR_EL2: {:#x?}",
-                ELR_EL2.get(),
-                FAR_EL2.get()
-            )
+                elr, esr
+            );
         }
         Some(ESR_EL2::EC::Value::InstrAbortCurrentEL) => {
-            error!(
+            println!(
                 "EL2 Exception: Instruction Abort, ELR_EL2: {:#x?}, FAR_EL2: {:#x?}",
                 ELR_EL2.get(),
                 FAR_EL2.get()
-            )
+            );
         }
         _ => {
-            error!("Unhandled EL2 Exception: EC={:#x?}", 1);
+            println!("Unhandled EL2 Exception: EC={:#x?}", 1);
         }
     }
     loop {}
@@ -229,9 +232,7 @@ fn handle_sysreg(regs: &mut GeneralRegisters) {
     if !this_cpu_data().arch_cpu.power_on {
         warn!("skip send sgi {:#x?}", sgi_id);
     } else {
-        if sgi_id != 0 {
-            trace!("send sgi {:#x?}", sgi_id);
-        }
+        trace!("send sgi {:#x?}", sgi_id);
         write_sysreg!(icc_sgi1r_el1, val);
     }
 
@@ -273,7 +274,7 @@ fn handle_smc(regs: &mut GeneralRegisters) {
         SmcType::ARCH_SC => handle_arch_smc(regs, code, arg0, arg1, arg2),
         SmcType::STANDARD_SC => handle_psci_smc(regs, code, arg0, arg1, arg2),
         _ => {
-            error!("unsupported smc");
+            warn!("unsupported smc");
             0
         }
     };
@@ -329,6 +330,11 @@ fn handle_psci_smc(
 ) -> u64 {
     match code {
         PsciFnId::PSCI_VERSION => PSCI_VERSION_1_1,
+        PsciFnId::PSCI_CPU_SUSPEND_32 | PsciFnId::PSCI_CPU_SUSPEND_64 => {
+            wfi();
+            gicv3_handle_irq_el1();
+            0
+        },
         PsciFnId::PSCI_CPU_OFF_32 | PsciFnId::PSCI_CPU_OFF_64 => {
             todo!();
         }
@@ -362,7 +368,7 @@ fn handle_psci_smc(
         }
 
         _ => {
-            error!("unsupported smc standard service {}", code);
+            warn!("unsupported smc standard service {:#x?}", code);
             0
         }
     }

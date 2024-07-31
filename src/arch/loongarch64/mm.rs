@@ -1,5 +1,6 @@
 use crate::{
     arch::s1pt::Stage1PageTable,
+    arch::s2pt::Stage2PageTable,
     consts::PAGE_SIZE,
     error::HvResult,
     memory::{
@@ -10,7 +11,7 @@ use crate::{
 use spin::*;
 
 pub fn init_hv_page_table(fdt: &fdt::Fdt) -> HvResult {
-    let mut hv_pt: MemorySet<Stage1PageTable> = MemorySet::new();
+    let mut hv_pt: MemorySet<Stage1PageTable> = MemorySet::new(4);
     // let mem_region = fdt.memory().regions().next().unwrap();
     // info!("loongarch64: mm: mem_region: {:#x?}", mem_region);
     // find all serial
@@ -37,4 +38,9 @@ pub fn init_hv_page_table(fdt: &fdt::Fdt) -> HvResult {
 
     HV_PT.call_once(|| RwLock::new(hv_pt));
     Ok(())
+}
+
+
+pub fn new_s2_memory_set() -> MemorySet<Stage2PageTable> {
+    MemorySet::new(4)
 }

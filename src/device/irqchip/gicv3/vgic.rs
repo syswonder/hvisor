@@ -1,13 +1,8 @@
 use alloc::sync::Arc;
 
-use super::{gicd::GICD_LOCK, is_spi, Gic};
+use super::{gicd::GICD_LOCK, host_gicd_size, is_spi};
 use crate::{
-    consts::MAX_CPU_NUM,
-    device::irqchip::gicv3::{gicd::*, gicr::*, host_gicd_base, host_gicr_base, PER_GICR_SIZE},
-    error::HvResult,
-    memory::{mmio_perform_access, MMIOAccess},
-    percpu::{get_cpu_data, this_zone},
-    zone::Zone,
+    arch::zone::HvArchZoneConfig, consts::MAX_CPU_NUM, device::irqchip::gicv3::{gicd::*, gicr::*, host_gicd_base, host_gicr_base, PER_GICR_SIZE}, error::HvResult, memory::{mmio_perform_access, MMIOAccess}, percpu::{get_cpu_data, this_zone}, zone::Zone
 };
 
 pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> {
@@ -15,35 +10,23 @@ pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> 
 }
 
 impl Zone {
-    pub fn vgicv3_mmio_init(&mut self, fdt: &fdt::Fdt) {
-        let gic = Gic::new(fdt);
-        self.mmio_region_register(gic.gicd_base, gic.gicd_size, vgicv3_dist_handler, 0);
+    pub fn vgicv3_mmio_init(&mut self, arch: &HvArchZoneConfig) {
+        let gicd_base = if arch.gicd_base == 0 {host_gicd_base()} else {arch.gicd_base};
+        let gicr_base = if arch.gicr_base == 0 {host_gicr_base(0)} else {arch.gicr_base};
+        let gicd_size = if arch.gicd_size == 0 {host_gicd_size()} else {arch.gicd_size};
+
+        self.mmio_region_register(gicd_base, gicd_size, vgicv3_dist_handler, 0);
         for cpu in 0..MAX_CPU_NUM {
-            let gicr_base = host_gicr_base(cpu);
+            let gicr_base = gicr_base + cpu * PER_GICR_SIZE;
             debug!("registering gicr {} at {:#x?}", cpu, gicr_base);
             self.mmio_region_register(gicr_base, PER_GICR_SIZE, vgicv3_redist_handler, cpu);
         }
     }
 
-    pub fn irq_bitmap_init(&mut self, fdt: &fdt::Fdt) {
-        for node in fdt.all_nodes() {
-            if node.name == "timer" {
-                continue;
-            }
-            if let Some(int_iter) = node.interrupts() {
-                for int_n in int_iter {
-                    let real_int_n = int_n + 32;
-                    if real_int_n < 1024 {
-                        let index = real_int_n / 32;
-                        let bit_position = real_int_n % 32;
-                        self.irq_bitmap[index] |= 1 << bit_position;
-                    } else {
-                        panic!("irq_id {} exceeds limit", int_n);
-                    }
-                }
-            }
+    pub fn irq_bitmap_init(&mut self, irqs: &[u32]) {
+        for irq in irqs {
+            self.insert_irq_to_bitmap(*irq);
         }
-
         for (index, &word) in self.irq_bitmap.iter().enumerate() {
             for bit_position in 0..32 {
                 if word & (1 << bit_position) != 0 {
@@ -55,6 +38,13 @@ impl Zone {
                 }
             }
         }
+    }
+
+    fn insert_irq_to_bitmap(&mut self, irq: u32) {
+        assert!(irq < 1024); // 1024 is the maximum number of interrupts supported by GICv3 (GICD_TYPER.ITLinesNumber)
+        let irq_index = irq / 32;
+        let irq_bit = irq % 32;
+        self.irq_bitmap[irq_index as usize] |= 1 << irq_bit;
     }
 }
 
@@ -79,7 +69,7 @@ fn restrict_bitmask_access(
 
     for irq in 0..irqs_per_reg {
         if zone_r.irq_in_zone((first_irq + irq) as _) {
-            debug!("restrict visit irq {}", first_irq + irq);
+            trace!("restrict visit irq {}", first_irq + irq);
             access_mask |= irq_bits << (irq * bits_per_irq);
         }
     }
@@ -124,7 +114,6 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
         GICR_TYPER => {
             mmio_perform_access(gicr_base, mmio);
             if cpu == MAX_CPU_NUM - 1 {
-                debug!("this is the last gicr");
                 mmio.value |= GICR_TYPER_LAST;
             }
         }

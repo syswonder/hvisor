@@ -29,6 +29,10 @@ riscv-decode = "0.2.1"
 [target.'cfg(target_arch = "loongarch64")'.dependencies]
 loongArch64 = "0.2.4"
 
+[features]
+platform_qemu = []
+platform_imx8mp = []
+
 [profile.dev]
 panic = "abort"
 debug = 2

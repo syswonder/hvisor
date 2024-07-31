@@ -1,9 +1,9 @@
 use crate::{
-    arch::{sysreg::write_sysreg, Stage2PageTable},
-    consts::{DTB_IPA, PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
+    arch::{mm::new_s2_memory_set, sysreg::write_sysreg},
+    consts::{PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
     memory::{
         addr::PHYS_VIRT_OFFSET, mm::PARKING_MEMORY_SET, GuestPhysAddr, HostPhysAddr, MemFlags,
-        MemoryRegion, MemorySet, VirtAddr, PARKING_INST_PAGE,
+        MemoryRegion, VirtAddr, PARKING_INST_PAGE,
     },
     percpu::this_cpu_data,
 };
@@ -11,7 +11,10 @@ use aarch64_cpu::registers::{
     Readable, Writeable, ELR_EL2, HCR_EL2, MPIDR_EL1, SCTLR_EL1, SPSR_EL2, VTCR_EL2,
 };
 
-use super::trap::vmreturn;
+use super::{
+    mm::{get_parange, get_parange_bits, is_s2_pt_level3},
+    trap::vmreturn,
+};
 
 pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
     psci::cpu_on(cpuid as u64 | 0x80000000, start_addr as _, opaque as _).unwrap_or_else(|err| {
@@ -64,13 +67,19 @@ impl ArchCpu {
     fn activate_vmm(&self) {
         VTCR_EL2.write(
             VTCR_EL2::TG0::Granule4KB
-                + VTCR_EL2::PS::PA_44B_16TB
+                + VTCR_EL2::PS.val(get_parange() as _)
                 + VTCR_EL2::SH0::Inner
                 + VTCR_EL2::HA::Enabled
-                + VTCR_EL2::SL0.val(2)
+                + VTCR_EL2::SL0.val(if is_s2_pt_level3() { 1 } else { 2 })
                 + VTCR_EL2::ORGN0::NormalWBRAWA
                 + VTCR_EL2::IRGN0::NormalWBRAWA
-                + VTCR_EL2::T0SZ.val(20),
+                + VTCR_EL2::T0SZ.val(
+                    64 - if is_s2_pt_level3() {
+                        39
+                    } else {
+                        get_parange_bits() as _
+                    },
+                ),
         );
         HCR_EL2.write(
             HCR_EL2::RW::EL1IsAarch64
@@ -137,7 +146,7 @@ impl ArchCpu {
     pub fn run(&mut self) -> ! {
         assert!(this_cpu_id() == self.cpuid);
         this_cpu_data().activate_gpm();
-        self.reset(this_cpu_data().cpu_on_entry, DTB_IPA);
+        self.reset(this_cpu_data().cpu_on_entry, this_cpu_data().dtb_ipa);
         self.power_on = true;
         unsafe {
             vmreturn(self.guest_reg() as *mut _ as usize);
@@ -158,7 +167,7 @@ impl ArchCpu {
                 PARKING_INST_PAGE[..8].copy_from_slice(&parking_code);
             }
 
-            let mut gpm = MemorySet::<Stage2PageTable>::new();
+            let mut gpm = new_s2_memory_set();
             gpm.insert(MemoryRegion::new_with_offset_mapper(
                 0 as GuestPhysAddr,
                 unsafe { &PARKING_INST_PAGE as *const _ as HostPhysAddr - PHYS_VIRT_OFFSET },
@@ -168,7 +177,7 @@ impl ArchCpu {
             .unwrap();
             gpm
         });
-        self.reset(0, DTB_IPA);
+        self.reset(0, this_cpu_data().dtb_ipa);
         unsafe {
             PARKING_MEMORY_SET.get().unwrap().activate();
             vmreturn(self.guest_reg() as *mut _ as usize);
