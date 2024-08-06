@@ -81,11 +81,37 @@ impl Zone {
         //         ))?;
         //     }
         // }
-        // debug!("zone stage-2 memory set: {:#x?}", self.gpm);
-        // unsafe {
-        //     let r = self.gpm.page_table_query(0x00200000 as GuestPhysAddr);
-        //     info!("query 0x00200000: {:#x?}", r);
-        // }
+
+        // use the new zone config type of init
+        for region in mem_regions {
+            let mem_type = region.mem_type;
+            match mem_type {
+                MEM_TYPE_RAM => {
+                    self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                        region.virtual_start as GuestPhysAddr,
+                        region.physical_start as HostPhysAddr,
+                        region.size as _,
+                        MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+                    ))?;
+                }
+                MEM_TYPE_IO => {
+                    self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                        region.virtual_start as GuestPhysAddr,
+                        region.physical_start as HostPhysAddr,
+                        region.size as _,
+                        MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+                    ))?;
+                }
+                _ => {
+                    return hv_result_err!(EINVAL);
+                }
+            }
+        }
+        debug!("zone stage-2 memory set: {:#x?}", self.gpm);
+        unsafe {
+            let r = self.gpm.page_table_query(0x00200000 as GuestPhysAddr);
+            info!("query 0x00200000: {:#x?}", r);
+        }
         Ok(())
     }
 
