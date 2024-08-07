@@ -1,6 +1,6 @@
 use alloc::sync::Arc;
 
-use super::{gicd::GICD_LOCK, host_gicd_size, is_spi};
+use super::{gicd::GICD_LOCK, is_spi};
 use crate::{
     arch::zone::HvArchZoneConfig, consts::MAX_CPU_NUM, device::irqchip::gicv3::{gicd::*, gicr::*, host_gicd_base, host_gicr_base, PER_GICR_SIZE}, error::HvResult, memory::{mmio_perform_access, MMIOAccess}, percpu::{get_cpu_data, this_zone}, zone::Zone
 };
@@ -11,13 +11,13 @@ pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> 
 
 impl Zone {
     pub fn vgicv3_mmio_init(&mut self, arch: &HvArchZoneConfig) {
-        let gicd_base = if arch.gicd_base == 0 {host_gicd_base()} else {arch.gicd_base};
-        let gicr_base = if arch.gicr_base == 0 {host_gicr_base(0)} else {arch.gicr_base};
-        let gicd_size = if arch.gicd_size == 0 {host_gicd_size()} else {arch.gicd_size};
+        if arch.gicd_base == 0 || arch.gicr_base == 0 {
+            panic!("vgicv3_mmio_init: gicd_base or gicr_base is null");
+        }
 
-        self.mmio_region_register(gicd_base, gicd_size, vgicv3_dist_handler, 0);
+        self.mmio_region_register(arch.gicd_base, arch.gicd_size, vgicv3_dist_handler, 0);
         for cpu in 0..MAX_CPU_NUM {
-            let gicr_base = gicr_base + cpu * PER_GICR_SIZE;
+            let gicr_base = arch.gicr_base + cpu * PER_GICR_SIZE;
             debug!("registering gicr {} at {:#x?}", cpu, gicr_base);
             self.mmio_region_register(gicr_base, PER_GICR_SIZE, vgicv3_redist_handler, cpu);
         }

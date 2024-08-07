@@ -6,7 +6,7 @@ use spin::RwLock;
 
 use crate::arch::mm::new_s2_memory_set;
 use crate::arch::s2pt::Stage2PageTable;
-use crate::config::HvZoneConfig;
+use crate::config::{HvZoneConfig, CONFIG_NAME_MAXLEN};
 use crate::consts::MAX_CPU_NUM;
 
 use crate::error::HvResult;
@@ -16,6 +16,7 @@ use crate::percpu::{get_cpu_data, this_zone, CpuSet};
 use core::panic;
 
 pub struct Zone {
+    pub name: [u8; CONFIG_NAME_MAXLEN],
     pub id: usize,
     pub mmio: Vec<MMIOConfig>,
     pub cpu_set: CpuSet,
@@ -24,8 +25,9 @@ pub struct Zone {
 }
 
 impl Zone {
-    pub fn new(zoneid: usize) -> Self {
+    pub fn new(zoneid: usize, name: &[u8]) -> Self {
         Self {
+            name: name.try_into().unwrap(),
             id: zoneid,
             gpm: new_s2_memory_set(),
             cpu_set: CpuSet::new(MAX_CPU_NUM as usize, 0),
@@ -144,6 +146,19 @@ pub fn find_zone(zone_id: usize) -> Option<Arc<RwLock<Zone>>> {
         .cloned()
 }
 
+pub fn all_zones_info() -> Vec<ZoneInfo> {
+    let zone_list = ZONE_LIST.read();
+
+    zone_list.iter().map(|zone| {
+        let zone_lock = zone.read();
+        ZoneInfo {
+            zone_id: zone_lock.id as u32,
+            cpus: zone_lock.cpu_set.bitmap,
+            name: zone_lock.name.clone(),
+        }
+    }).collect()
+}
+
 pub fn this_zone_id() -> usize {
     this_zone().read().id
 }
@@ -170,9 +185,9 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
         return hv_result_err!(EEXIST);
     }
 
-    let mut zone = Zone::new(zone_id);
+    let mut zone = Zone::new(zone_id, &config.name);
     zone.pt_init(config.memory_regions()).unwrap();
-    zone.mmio_init(&config.arch);
+    zone.mmio_init(&config.arch_config);
     zone.irq_bitmap_init(config.interrupts());
 
     config.cpus().iter().for_each(|cpu_id| {
@@ -213,4 +228,12 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     add_zone(new_zone_pointer.clone());
 
     Ok(new_zone_pointer)
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ZoneInfo {
+    zone_id: u32,
+    cpus: u64,
+    name: [u8; CONFIG_NAME_MAXLEN]
 }

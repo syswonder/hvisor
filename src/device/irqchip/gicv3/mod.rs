@@ -358,10 +358,10 @@ pub fn primary_init_early() {
     let root_config = root_zone_config();
     
     GIC.call_once(|| Gic {
-        gicd_base: root_config.arch.gicd_base,
-        gicr_base: root_config.arch.gicr_base,
-        gicd_size: root_config.arch.gicd_size,
-        gicr_size: root_config.arch.gicr_size,
+        gicd_base: root_config.arch_config.gicd_base,
+        gicr_base: root_config.arch_config.gicr_base,
+        gicd_size: root_config.arch_config.gicd_size,
+        gicr_size: root_config.arch_config.gicr_size,
     });
     debug!("gic = {:#x?}", GIC.get().unwrap());
 }

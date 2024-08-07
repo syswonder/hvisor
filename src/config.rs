@@ -9,7 +9,7 @@ pub const MEM_TYPE_VIRTIO: u32 = 2;
 
 pub const CONFIG_MAX_MEMORY_REGIONS: usize = 16;
 pub const CONFIG_MAX_INTERRUPTS: usize = 32;
-
+pub const CONFIG_NAME_MAXLEN: usize = 32;
 // pub const CONFIG_KERNEL_ARGS_MAXLEN: usize = 256;
 
 #[repr(C)]
@@ -47,8 +47,9 @@ pub struct HvZoneConfig {
     pub kernel_size: u64,
     pub dtb_load_paddr: u64,
     pub dtb_size: u64,
+    pub name: [u8; CONFIG_NAME_MAXLEN],
 
-    pub arch: HvArchZoneConfig,
+    pub arch_config: HvArchZoneConfig,
 }
 
 impl HvZoneConfig {
@@ -64,6 +65,7 @@ impl HvZoneConfig {
         kernel_size:u64,
         dtb_load_paddr:u64,
         dtb_size: u64,
+        name: [u8; CONFIG_NAME_MAXLEN],
         arch: HvArchZoneConfig,
     ) -> Self {
         Self {
@@ -78,7 +80,8 @@ impl HvZoneConfig {
             kernel_size,
             dtb_load_paddr,
             dtb_size,
-            arch,
+            name,
+            arch_config: arch,
         }
     }
 
