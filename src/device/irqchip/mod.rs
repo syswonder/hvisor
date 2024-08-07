@@ -5,7 +5,7 @@ pub mod gicv3;
 pub mod plic;
 
 #[cfg(target_arch = "aarch64")]
-pub use gicv3::{percpu_init, primary_init_early, primary_init_late};
+pub use gicv3::{inject_irq, percpu_init, primary_init_early, primary_init_late};
 
 #[cfg(target_arch = "riscv64")]
-pub use plic::{init_early, init_late, irqchip_cpu_init, per_cpu_init};
+pub use plic::{inject_irq, percpu_init, primary_init_early, primary_init_late};

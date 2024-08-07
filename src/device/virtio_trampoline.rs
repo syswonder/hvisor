@@ -7,7 +7,7 @@ use core::sync::atomic::Ordering;
 use spin::Mutex;
 
 use crate::arch::cpu::this_cpu_id;
-use crate::device::irqchip::gicv3::inject_irq;
+use crate::device::irqchip::inject_irq;
 use crate::event::send_event;
 use crate::event::IPI_EVENT_WAKEUP_VIRTIO_DEVICE;
 use crate::hypercall::SGI_IPI_ID;
@@ -70,10 +70,11 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     if need_interrupt == 0 {
         // when virtio backend finish the req, it will add 1 to cfg_flag.
         while cfg_flags[cpu_id] == old_cfg_flag {
-            fence(Ordering::Acquire);
+            // fence(Ordering::Acquire);
             count += 1;
             if count > 1000000 {
-                warn!("virtio backend is too slow, please check it!");
+                // warn!("virtio backend is too slow, please check it!");
+            	fence(Ordering::Acquire);
             }
         }
         if !mmio.is_write {
@@ -168,7 +169,7 @@ impl VirtioBridgeRegion {
         fence(Ordering::SeqCst);
         region.req_rear = (region.req_rear + 1) % MAX_REQ;
         // Write barrier so that device can see change after this method returns
-        fence(Ordering::SeqCst);
+        // fence(Ordering::SeqCst);
     }
 
     pub fn get_cfg_flags(&self) -> *const u64 {

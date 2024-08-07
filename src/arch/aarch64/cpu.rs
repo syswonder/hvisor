@@ -43,14 +43,14 @@ impl GeneralRegisters {
 #[derive(Debug)]
 pub struct ArchCpu {
     pub cpuid: usize,
-    pub psci_on: bool,
+    pub power_on: bool,
 }
 
 impl ArchCpu {
     pub fn new(cpuid: usize) -> Self {
         Self {
             cpuid,
-            psci_on: false,
+            power_on: false,
         }
     }
 
@@ -147,7 +147,7 @@ impl ArchCpu {
         assert!(this_cpu_id() == self.cpuid);
         this_cpu_data().activate_gpm();
         self.reset(this_cpu_data().cpu_on_entry, this_cpu_data().dtb_ipa);
-        self.psci_on = true;
+        self.power_on = true;
         info!("cpu {} started", self.cpuid);
         unsafe {
             vmreturn(self.guest_reg() as *mut _ as usize);
@@ -158,7 +158,7 @@ impl ArchCpu {
         assert!(this_cpu_id() == self.cpuid);
         let cpu_data = this_cpu_data();
         let _lock = cpu_data.ctrl_lock.lock();
-        self.psci_on = false;
+        self.power_on = false;
         drop(_lock);
 
         info!("cpu {} idle", self.cpuid);

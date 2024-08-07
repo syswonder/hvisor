@@ -40,8 +40,8 @@ impl PerCpu {
         };
         #[cfg(target_arch = "riscv64")]
         {
-            use crate::arch::csr::CSR_SSCRATCH;
-            write_csr!(CSR_SSCRATCH, &ret.arch_cpu as *const _ as usize); //arch cpu pointer
+            use crate::arch::csr::{write_csr, CSR_SSCRATCH};
+            write_csr!(CSR_SSCRATCH, &ret.as_mut().unwrap().arch_cpu as *const _ as usize); //arch cpu pointer
         }
         unsafe { ret.as_mut().unwrap() }
     }

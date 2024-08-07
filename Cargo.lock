@@ -77,6 +77,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "fdt"
+version = "0.1.5"
+
+[[package]]
 name = "hvisor"
 version = "0.1.0"
 dependencies = [
@@ -85,6 +89,7 @@ dependencies = [
  "bitflags 2.5.0",
  "bitmap-allocator",
  "buddy_system_allocator",
+ "fdt",
  "lazy_static",
  "log",
  "numeric-enum-macro",

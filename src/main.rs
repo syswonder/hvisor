@@ -39,6 +39,7 @@ mod platform;
 mod zone;
 mod config;
 
+#[cfg(target_arch = "aarch64")]
 use crate::arch::mm::setup_parange;
 use crate::consts::MAX_CPU_NUM;
 use arch::{cpu::cpu_start, entry::arch_entry};
@@ -88,14 +89,12 @@ fn primary_init_early() {
     // let revision = system_config.revision;
     info!("Hypervisor initialization in progress...");
     info!(
-        "build_mode: {}, log_level: {}, arch: {}, vendor: {}, stats: {}",
+        "build_mode: {}, log_level: {}, arch: {}, stats: {}",
         option_env!("MODE").unwrap_or(""),
         option_env!("LOG").unwrap_or(""),
         option_env!("ARCH").unwrap_or(""),
-        option_env!("VENDOR").unwrap_or(""),
         option_env!("STATS").unwrap_or("off"),
     );
-
     memory::frame::init();
     memory::frame::test();
     event::init(MAX_CPU_NUM);
@@ -141,15 +140,18 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     if MASTER_CPU.load(Ordering::Acquire) == -1 {
         MASTER_CPU.store(cpuid as i32, Ordering::Release);
         is_primary = true;
+        #[cfg(target_arch = "riscv64")]
+        clear_bss();
         memory::heap::init();
         memory::heap::test();
+        
     }
 
     let cpu = PerCpu::new(cpuid);
 
     println!(
-        "Booting CPU {}: {:p}, DTB: {:#x}",
-        cpu.id, cpu as *const _, host_dtb
+        "Booting CPU {}: {:p} arch:{:p}, DTB: {:#x}",
+        cpu.id, cpu as *const _, &cpu.arch_cpu as *const _, host_dtb
     );
 
     if is_primary {

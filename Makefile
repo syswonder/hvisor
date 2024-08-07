@@ -1,12 +1,12 @@
 # Basic settings
-ARCH ?= aarch64
+ARCH ?= riscv64
 LOG ?= info
 STATS ?= off
 PORT ?= 2333
 MODE ?= debug
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 KDIR ?= ../../linux
-FEATURES ?= platform_imx8mp
+FEATURES ?= platform_qemu
 
 ifeq ($(ARCH),aarch64)
     RUSTC_TARGET := aarch64-unknown-none
@@ -23,7 +23,6 @@ endif
 export MODE
 export LOG
 export ARCH
-export KDIR
 
 # Build paths
 build_path := target/$(RUSTC_TARGET)/$(MODE)
@@ -51,12 +50,8 @@ elf:
 	cargo build $(build_args)
 
 disa:
-	aarch64-none-elf-readelf -a $(hvisor_elf) > hvisor-elf.txt
+	readelf -a $(hvisor_elf) > hvisor-elf.txt
 	rust-objdump --disassemble $(hvisor_elf) > hvisor.S
-
-tools: 
-	make -C tools && \
-	make -C driver
 
 run: all
 	$(QEMU) $(QEMU_ARGS)
@@ -81,7 +76,5 @@ cp: all
 
 clean:
 	cargo clean
-	make -C tools clean
-	make -C driver clean
 
 include scripts/qemu-$(ARCH).mk

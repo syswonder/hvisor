@@ -49,6 +49,9 @@ impl Zone {
     pub fn mmio_init(&mut self, hv_config: &HvArchZoneConfig) {
         self.vgicv3_mmio_init(hv_config);
     }
+    pub fn isa_init(&mut self, fdt: &fdt::Fdt) {
+        //nothing to do
+    }
 }
 
 #[repr(C)]
