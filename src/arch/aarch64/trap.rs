@@ -229,7 +229,7 @@ fn handle_sysreg(regs: &mut GeneralRegisters) {
     let val = regs.usr[rt as usize];
     trace!("esr_el2 rt{}: {:#x?}", rt, val);
     let sgi_id: u64 = (val & (0xf << 24)) >> 24;
-    if !this_cpu_data().arch_cpu.psci_on {
+    if !this_cpu_data().arch_cpu.power_on {
         warn!("skip send sgi {:#x?}", sgi_id);
     } else {
         trace!("send sgi {:#x?}", sgi_id);
@@ -308,9 +308,9 @@ fn psci_emulate_cpu_on(regs: &mut GeneralRegisters) -> u64 {
     let target_data = get_cpu_data(cpu as _);
     let _lock = target_data.ctrl_lock.lock();
 
-    if !target_data.arch_cpu.psci_on {
+    if !target_data.arch_cpu.power_on {
         target_data.cpu_on_entry = regs.usr[2] as _;
-        target_data.arch_cpu.psci_on = true;
+        target_data.arch_cpu.power_on = true;
         send_event(cpu as _, SGI_IPI_ID as _, IPI_EVENT_WAKEUP);
     } else {
         error!("psci: cpu {} already on", cpu);
@@ -339,7 +339,7 @@ fn handle_psci_smc(
             todo!();
         }
         PsciFnId::PSCI_AFFINITY_INFO_32 | PsciFnId::PSCI_AFFINITY_INFO_64 => {
-            !get_cpu_data(arg0 as _).arch_cpu.psci_on as _
+            !get_cpu_data(arg0 as _).arch_cpu.power_on as _
         }
         PsciFnId::PSCI_MIG_INFO_TYPE => PSCI_TOS_NOT_PRESENT_MP,
         PsciFnId::PSCI_FEATURES => psci_emulate_features_info(regs.usr[1]),

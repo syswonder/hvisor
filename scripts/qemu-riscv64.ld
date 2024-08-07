@@ -1,6 +1,7 @@
 ENTRY(arch_entry)
 BASE_ADDRESS = 0x80200000;
 
+
 SECTIONS
 {
     . = BASE_ADDRESS;
@@ -41,25 +42,9 @@ SECTIONS
     ebss = .;
     ekernel = .;
 
-
     /DISCARD/ : {
         *(.eh_frame)
     }
     . = ALIGN(4K);
 	__core_end = .;
-    . = . + 0x2000000;
-
-    .dtb : {
-        *(.dtb)
-    }
-    . = ALIGN(4K);
-    .rcore : {
-        *(.rcore)
-    }
-    . = 0x90000000;
-    vmimg = .;
-    .initrd : {
-        *(.initrd)
-    }
-    
 }

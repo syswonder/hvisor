@@ -5,7 +5,7 @@ use spin::Mutex;
 
 use crate::error::{HvError, HvResult};
 use crate::memory::addr::{is_aligned, phys_to_virt, virt_to_phys};
-use crate::memory::{Frame, MemFlags, MemoryRegion, PhysAddr, VirtAddr, TEMPORARY_MAPPING_BASE};
+use crate::memory::{Frame, MemFlags, MemoryRegion, PhysAddr, VirtAddr};
 
 #[derive(Debug)]
 pub enum PagingError {
@@ -52,7 +52,7 @@ impl PageSize {
     pub const fn page_offset(self, addr: usize) -> usize {
         addr & (self as usize - 1)
     }
-
+    #[allow(unused)]
     pub const fn is_huge(self) -> bool {
         matches!(self, Self::Size1G | Self::Size2M)
     }
@@ -316,8 +316,7 @@ where
         mut flags: MemFlags,
     ) -> PagingResult<&mut PTE> {
         let entry: &mut PTE = self.get_entry_mut_or_create(page, &mut flags)?;
-        if !entry.is_unused() && page.vaddr.into() != TEMPORARY_MAPPING_BASE {
-            error!("AlreadyMapped");
+        if !entry.is_unused() {
             return Err(PagingError::AlreadyMapped);
         }
         entry.set_addr(page.size.align_down(paddr));
@@ -559,7 +558,7 @@ fn next_table_mut_or_create<'a, E: GenericPTE>(
         next_table_mut(entry)
     }
 }
-
+#[allow(unused)]
 pub fn npages(sz: usize) -> usize {
     if sz & 0xfff == 0 {
         sz >> 12

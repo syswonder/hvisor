@@ -1,6 +1,7 @@
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use psci::error::INVALID_ADDRESS;
+// use psci::error::INVALID_ADDRESS;
+use crate::consts::INVALID_ADDRESS;
 use spin::RwLock;
 
 use crate::arch::mm::new_s2_memory_set;
