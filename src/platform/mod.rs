@@ -1,6 +1,6 @@
 use crate::{
     config::{
-        HvConfigMemoryRegion, HvZoneConfig, CONFIG_MAX_INTERRUPTS, CONFIG_MAX_MEMORY_REGIONS,
+        HvConfigMemoryRegion, HvZoneConfig, CONFIG_MAX_INTERRUPTS, CONFIG_MAX_MEMORY_REGIONS, CONFIG_NAME_MAXLEN,
     },
     consts::INVALID_ADDRESS,
 };
@@ -44,6 +44,9 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
     let mut interrupts = [0; CONFIG_MAX_INTERRUPTS];
     interrupts[..ROOT_ZONE_IRQS.len()].copy_from_slice(&ROOT_ZONE_IRQS);
 
+    let mut name = [0; CONFIG_NAME_MAXLEN];
+    name[..ROOT_ZONE_NAME.len()].copy_from_slice(ROOT_ZONE_NAME.as_bytes());
+
     HvZoneConfig::new(
         0,
         ROOT_ZONE_CPUS,
@@ -56,6 +59,7 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
         INVALID_ADDRESS as _,
         ROOT_ZONE_DTB_ADDR,
         INVALID_ADDRESS as _,
+        name,
         ROOT_ARCH_ZONE_CONFIG,
     )
 }
