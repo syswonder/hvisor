@@ -23,6 +23,12 @@ pub mod imx8mp_aarch64;
 #[cfg(all(feature = "platform_imx8mp", target_arch = "aarch64"))]
 use imx8mp_aarch64::*;
 
+#[cfg(target_arch = "loongarch64")]
+pub mod ls3a5000_loongarch64;
+
+#[cfg(target_arch = "loongarch64")]
+pub use ls3a5000_loongarch64::*;
+
 pub fn platform_root_zone_config() -> HvZoneConfig {
     // fill zero for memory regions and interrupts
 

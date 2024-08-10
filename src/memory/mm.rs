@@ -62,6 +62,8 @@ where
             pt: PT::new(pt_level),
             #[cfg(target_arch = "riscv64")]
             pt: PT::new(),
+            #[cfg(target_arch = "loongarch64")]
+            pt: PT::new(),
         }
     }
 
