@@ -9,8 +9,8 @@ use crate::config::root_zone_config;
 pub fn primary_init_early() {
     let root_config = root_zone_config();
     init_plic(
-        root_config.arch.plic_base as usize,
-        root_config.arch.plic_size as usize,
+        root_config.arch_config.plic_base as usize,
+        root_config.arch_config.plic_size as usize,
     );
 }
 pub fn primary_init_late() {
