@@ -33,6 +33,10 @@ struct arch_zone_config {
 #endif
 
 #ifdef RISCV64
+struct arch_zone_config {
+    __u64 plic_base;
+    __u64 plic_size;
+};
 #endif
 
 typedef struct arch_zone_config arch_zone_config_t;
