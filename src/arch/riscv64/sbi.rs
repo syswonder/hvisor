@@ -255,7 +255,9 @@ pub fn sbi_hvisor_handler(current_cpu: &mut ArchCpu) -> SbiRet {
     );
     let result = HyperCall::new(cpu_data).hypercall(code as _, arg0 as _, arg1 as _);
     match result {
-        Ok(ret) => {}
+        Ok(ret) => {
+            sbi_ret.value = ret as _;
+        }
         Err(e) => {
             sbi_ret.error = SBI_ERR_FAILURE;
             sbi_ret.value = e.code() as _;

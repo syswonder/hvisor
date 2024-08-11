@@ -1,6 +1,6 @@
 # Basic settings
-ARCH ?= loongarch64
-LOG ?= debug
+ARCH ?= riscv64
+LOG ?= info
 STATS ?= off
 PORT ?= 2333
 MODE ?= debug
