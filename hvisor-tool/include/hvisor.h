@@ -69,6 +69,16 @@ typedef struct ioctl_zone_list_args zone_list_args_t;
 #define HVISOR_HC_ZONE_LIST      4
 
 #ifdef RISCV64
+
+// according to the riscv sbi spec
+// SBI return has the following format:
+// struct sbiret
+//  {
+//  long error;
+//  long value;
+// };
+
+// a0: error, a1: value
 static inline __u64 hvisor_call(__u64 code,__u64 arg0, __u64 arg1) {
 	register __u64 a0 asm("a0") = code;
 	register __u64 a1 asm("a1") = arg0;
@@ -78,7 +88,7 @@ static inline __u64 hvisor_call(__u64 code,__u64 arg0, __u64 arg1) {
 	        : "+r" (a0), "+r" (a1)
 			: "r" (a2), "r" (a7)
 			: "memory");
-	return a0;
+	return a1;
 }
 #endif
 
