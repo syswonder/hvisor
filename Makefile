@@ -1,12 +1,12 @@
 # Basic settings
-ARCH ?= loongarch64
-LOG ?= debug
+ARCH ?= aarch64
+LOG ?= info
 STATS ?= off
 PORT ?= 2333
 MODE ?= debug
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 KDIR ?= ../../linux
-FEATURES ?= platform_qemu
+FEATURES ?= platform_imx8mp
 
 ifeq ($(ARCH),aarch64)
     RUSTC_TARGET := aarch64-unknown-none

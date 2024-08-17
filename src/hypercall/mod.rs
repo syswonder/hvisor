@@ -100,13 +100,12 @@ impl<'a> HyperCall<'a> {
             let res_front = region.res_front as usize;
             let irq_id = region.res_list[res_front].irq_id as u64;
             let target_zone = region.res_list[res_front].target_zone;
-            // TODO: only the first cpu receives the irq, is that reasonable???
-            let target_cpu = find_zone(target_zone as _)
-                .unwrap()
-                .read()
-                .cpu_set
-                .first_cpu()
-                .unwrap();
+            let target_cpu = match find_zone(target_zone as _) {
+                Some(zone) => {
+                    zone.read().cpu_set.first_cpu().unwrap()
+                },
+                _ => continue
+            };
             let irq_list = map_irq.entry(target_cpu).or_insert([0; MAX_DEVS + 1]);
             if !irq_list[1..=irq_list[0] as usize].contains(&irq_id) {
                 let len = irq_list[0] as usize;
@@ -172,11 +171,18 @@ impl<'a> HyperCall<'a> {
         // // return zone's cpus to root_zone
         zone_r.cpu_set.iter().for_each(|cpu_id| {
             let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
-            get_cpu_data(cpu_id).zone = None;
             get_cpu_data(cpu_id).cpu_on_entry = INVALID_ADDRESS;
             send_event(cpu_id, SGI_IPI_ID as _, IPI_EVENT_SHUTDOWN);
         });
-
+        // wait all zone's cpus shutdown
+        while zone_r.cpu_set.iter().any(|cpu_id| {
+            let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
+            get_cpu_data(cpu_id).arch_cpu.power_on
+        }) {};
+        zone_r.cpu_set.iter().for_each(|cpu_id| {
+            let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
+            get_cpu_data(cpu_id).zone = None;
+        });
         zone_r.arch_irqchip_reset();
 
         drop(zone_r);

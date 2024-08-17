@@ -19,6 +19,7 @@ macro_rules! read_sysreg {
         }
     }
 }
+use psci::smccc::smc64;
 pub(crate) use read_sysreg;
 
 /// Writes the given value to the given aarch64 system register.
@@ -44,6 +45,11 @@ macro_rules! smc_arg1 {
     }};
 }
 pub(crate) use smc_arg1;
+
+pub fn smc_call(function: u64, args: &[u64]) -> u64 {
+    let args: [u64; 17] = args.try_into().expect("args length should be 17");
+    smc64(function as _, args)[0]
+}
 // macro_rules! read_lrreg {
 //     ($lr:expr) => {
 //         {
