@@ -65,9 +65,9 @@
 		#size-cells = <0x02>;
 		ranges;
 
-		nonroot@83000000 {
+		nonroot@0x83000000 {
 			no-map;
-			reg = <0x00 0x83000000 0x00 0x09000000>;
+			reg = <0x00 0x83000000 0x00 0x0C000000>;
 		};
 
 		dtbfile@0x8f000000 {
@@ -170,7 +170,7 @@
 		};
 	};
 	chosen {
-		bootargs = "root=/dev/vda rw earlycon console=ttyS0 init=/bin/bash ip=192.168.42.15";
+		bootargs = "root=/dev/vda rw earlycon console=ttyS0 init=/bin/bash";
 	};
 
 };
