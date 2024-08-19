@@ -129,6 +129,10 @@ impl<'a> HyperCall<'a> {
     }
 
     pub fn hv_zone_start(&mut self, config: &HvZoneConfig) -> HyperCallResult {
+        #[cfg(target_arch = "loongarch64")]
+        let config = unsafe { &*((config as *const HvZoneConfig as u64
+            | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX) as *const HvZoneConfig) };
+
         info!("hv_zone_start: config: {:#x?}", config);
         if !is_this_root_zone() {
             return hv_result_err!(
@@ -192,6 +196,15 @@ impl<'a> HyperCall<'a> {
         }
         let zones_info = all_zones_info();
         let slice = unsafe { core::slice::from_raw_parts_mut(zones, cnt as usize) };
+
+        #[cfg(target_arch = "loongarch64")]
+        let slice = unsafe {
+            core::slice::from_raw_parts_mut(
+                (zones as u64 | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX) as *mut ZoneInfo,
+                cnt as usize,
+            )
+        };
+
         for (i, zone_info) in slice.iter_mut().enumerate() {
             if i < zones_info.len() {
                 *zone_info = zones_info[i].clone();

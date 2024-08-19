@@ -8,19 +8,31 @@ pub const ROOT_ZONE_CPUS: u64 = 1 << 0;
 
 pub const ROOT_ZONE_NAME: &str = "root-linux-la64";
 
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 6] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 8] = [
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x00200000,
         virtual_start: 0x00200000,
         size: 0x0ee00000,
-    }, // ram1
+    }, // ram
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x90000000,
         virtual_start: 0x90000000,
         size: 0x10000000,
-    }, // ram2
+    }, // ram
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RAM,
+        physical_start: 0xe0000000,
+        virtual_start: 0xe0000000,
+        size: 0x10000000,
+    }, // ram
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RAM,
+        physical_start: 0xc0000000,
+        virtual_start: 0xc0000000,
+        size: 0x9f00000,
+    }, // ram
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x1fe00000,

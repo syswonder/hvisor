@@ -1,5 +1,6 @@
 use crate::error::{HvError, HvResult};
 use crate::memory::addr::is_aligned;
+use crate::memory::mapper::Mapper;
 use crate::memory::{Frame, MemFlags, MemoryRegion, PhysAddr, VirtAddr};
 use alloc::{sync::Arc, vec::Vec};
 use core::{fmt::Debug, marker::PhantomData, slice};
@@ -465,32 +466,29 @@ where
             region.start.into()
         );
         assert!(is_aligned(region.size), "region.size = {:#x?}", region.size);
-        trace!(
+        debug!(
             "create mapping in {}: {:#x?}",
             core::any::type_name::<Self>(),
             region
         );
+        let print_flag = region.mapper.offset() == 0xffffffffd0000000;
+        debug!("loongarch64: map: print_flag={:?}", print_flag);
+        if print_flag {
+            // change logger level to trace
+            // log::set_max_level(log::LevelFilter::Trace);
+        }
         let _lock = self.clonee_lock.lock();
         let mut vaddr = region.start.into();
         let mut size = region.size;
         while size > 0 {
+            trace!(
+                "loongarch64: mapping page: current remain size = {:#x?}",
+                size
+            );
+
             let paddr = region.mapper.map_fn(vaddr);
-            // let page_size = if PageSize::Size1G.is_aligned(vaddr)
-            //     && PageSize::Size1G.is_aligned(paddr)
-            //     && size >= PageSize::Size1G as usize
-            //     && !region.flags.contains(MemFlags::NO_HUGEPAGES)
-            // {
-            //     PageSize::Size1G
-            // } else if PageSize::Size2M.is_aligned(vaddr)
-            //     && PageSize::Size2M.is_aligned(paddr)
-            //     && size >= PageSize::Size2M as usize
-            //     && !region.flags.contains(MemFlags::NO_HUGEPAGES)
-            // {
-            //     PageSize::Size2M
-            // } else {
-            //     PageSize::Size4K
-            // };
             let page_size = PageSize::Size4K; // now let's support STLB only
+
             trace!(
                 "loongarch64: mapping page: {:#x?}({:?}) -> {:#x?}, {:?}",
                 vaddr,
@@ -498,6 +496,7 @@ where
                 paddr,
                 region.flags
             );
+
             let page = Page::new_aligned(vaddr.into(), page_size);
             self.inner
                 .map_page(page, paddr, region.flags)
@@ -508,6 +507,9 @@ where
                     );
                     e
                 })?;
+
+            trace!("loongarch64: mapping page: done");
+
             vaddr += page_size as usize;
             size -= page_size as usize;
         }
@@ -595,7 +597,7 @@ fn next_table_mut<'a, E: GenericPTE>(entry: &E) -> PagingResult<&'a mut [E]> {
     // } else {
     //     Ok(table_of_mut(entry.addr()))
     // }
-    let next_pt_addr = entry.addr();
+    let next_pt_addr = entry.addr() | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX as usize;
     trace!(
         "loongarch64: next_table_mut: next_pt_addr={:#x?}",
         next_pt_addr

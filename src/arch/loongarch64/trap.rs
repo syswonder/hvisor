@@ -1250,22 +1250,6 @@ fn handle_exception(
             );
             emulate_instruction(era, badi, ctx);
         }
-        ECODE_PIL | ECODE_PIS => {
-            // PIL = 0x1,   Page Illegal Load
-            // PIS = 0x2,   Page Illegal Store
-            // info!("handling page invalid exception...");
-            if badv >= UART0_BASE && badv < UART0_END {
-                // info!("handling UART0 mmio emulation");
-                // emulate_instruction(era, badi, ctx);
-                panic!("UART0 mmio emulation not implemented");
-            } else {
-                if ecode == ECODE_PIL {
-                    panic!("Page Illegal Load");
-                } else {
-                    panic!("Page Illegal Store");
-                }
-            }
-        }
         ECODE_HVC => {
             // HVC = 0x17,  Hypervisor Call
             // code = a0(r4), arg0 = a1(r5), arg1 = a2(r6)

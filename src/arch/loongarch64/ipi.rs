@@ -7,13 +7,17 @@ use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite, WriteOnly};
 
 pub fn arch_send_event(cpu_id: u64, sgi_num: u64) {
+    debug!(
+        "loongarch64: arch_send_event: sending event to cpu: {}, sgi_num: {}",
+        cpu_id, sgi_num
+    );
     let ipi: &MMIODerefWrapper<IpiRegisters> = match cpu_id {
         0 => &CORE0_IPI,
         1 => &CORE1_IPI,
         2 => &CORE2_IPI,
         3 => &CORE3_IPI,
         _ => {
-            error!("(arch_send_event) invalid cpu_id: {}", cpu_id);
+            error!("loongarch64: arch_send_event: invalid cpu_id: {}", cpu_id);
             return;
         }
     };
