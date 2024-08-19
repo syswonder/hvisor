@@ -466,29 +466,17 @@ where
             region.start.into()
         );
         assert!(is_aligned(region.size), "region.size = {:#x?}", region.size);
-        debug!(
+        trace!(
             "create mapping in {}: {:#x?}",
             core::any::type_name::<Self>(),
             region
         );
-        let print_flag = region.mapper.offset() == 0xffffffffd0000000;
-        debug!("loongarch64: map: print_flag={:?}", print_flag);
-        if print_flag {
-            // change logger level to trace
-            // log::set_max_level(log::LevelFilter::Trace);
-        }
         let _lock = self.clonee_lock.lock();
         let mut vaddr = region.start.into();
         let mut size = region.size;
         while size > 0 {
-            trace!(
-                "loongarch64: mapping page: current remain size = {:#x?}",
-                size
-            );
-
             let paddr = region.mapper.map_fn(vaddr);
             let page_size = PageSize::Size4K; // now let's support STLB only
-
             trace!(
                 "loongarch64: mapping page: {:#x?}({:?}) -> {:#x?}, {:?}",
                 vaddr,
@@ -496,7 +484,6 @@ where
                 paddr,
                 region.flags
             );
-
             let page = Page::new_aligned(vaddr.into(), page_size);
             self.inner
                 .map_page(page, paddr, region.flags)
@@ -507,9 +494,6 @@ where
                     );
                     e
                 })?;
-
-            trace!("loongarch64: mapping page: done");
-
             vaddr += page_size as usize;
             size -= page_size as usize;
         }

@@ -1,3 +1,4 @@
+use crate::arch::cpu::this_cpu_id;
 use crate::percpu::this_cpu_data;
 use crate::zone::Zone;
 
@@ -28,6 +29,18 @@ pub fn install_trap_vector() {
     euen::set_fpe(true); // basic floating point
     euen::set_sxe(true); // 128-bit SIMD
     euen::set_asxe(true); // 256-bit SIMD
+
+    enable_global_interrupt()
+}
+
+/// enable CRMD.IE
+pub fn enable_global_interrupt() {
+    crmd::set_ie(true);
+}
+
+/// disable CRMD.IE
+pub fn disable_global_interrupt() {
+    crmd::set_ie(false);
 }
 
 pub fn get_ms_counter(ms: usize) -> usize {
@@ -207,11 +220,22 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
 
 #[no_mangle]
 pub fn _vcpu_return(ctx: usize) {
-    // Set the current guest ID to Zone's ID
-    let vm_id = 1;
+    let z = this_cpu_data().zone.as_ref();
+    let vm_id;
+    if z.is_none() {
+        trace!("loongarch64: _vcpu_return: no zone found for cpu {}, maybe this is a kernel exception return", this_cpu_id());
+        vm_id = 0;
+    } else {
+        // since LVZ use GID=0 for hypervisor TLB, we cannot use zone id 0 here
+        // so we add it by 1 - wheatfox
+        vm_id = z.unwrap().read().id + 1;
+    }
     gstat::set_gid(vm_id);
     gstat::set_pgm(true);
-    trace!("loongarch64: _vcpu_return: set guest ID to {}", vm_id);
+    trace!(
+        "loongarch64: _vcpu_return: set hardware Guest ID to {}",
+        vm_id
+    );
     // Configure guest TLB control
     gtlbc::set_use_tgid(true);
     gtlbc::set_tgid(vm_id);
@@ -845,13 +869,30 @@ fn imm12toi64(imm12: usize) -> isize {
     imm12 >> 52
 }
 
+use crate::arch::ipi::*;
 const IPI_BIT: usize = 1 << 12;
 const TIMER_BIT: usize = 1 << 11;
 
+/// handle loongarch64 interrupts here
 fn handle_interrupt(is: usize) {
     match is {
         _ if is & IPI_BIT != 0 => {
-            info!("ipi interrupt");
+            let ipi_status = get_ipi_status(this_cpu_id());
+            info!("ipi interrupt, status = {:#x}", ipi_status);
+            clear_all_ipi(this_cpu_id());
+            // handle IPI
+            if ipi_status == 0x7 {
+                // 0x7 is for booting a zone on this CPU
+                let zone_id = this_cpu_data().zone.as_ref().unwrap().clone().read().id;
+                let cpu = this_cpu_data();
+                let zone_name = cpu.zone.as_ref().unwrap().read().name.clone();
+                // cast to string
+                let zone_name = core::str::from_utf8(&zone_name).unwrap();
+                info!("booting zone id = {}, name = {}", zone_id, zone_name);
+                cpu.run_vm();
+            } else {
+                warn!("ignored IPI status {:#x}", ipi_status);
+            }
         }
         _ if is & TIMER_BIT != 0 => {
             loongArch64::register::ticlr::clear_timer_interrupt();
@@ -862,6 +903,7 @@ fn handle_interrupt(is: usize) {
     }
 }
 
+/// hypercall handler
 fn handle_hvc(ctx: &mut ZoneContext) {
     // HVC
     let code = ctx.get_a0();

@@ -49,11 +49,7 @@ impl ArchCpu {
         this_cpu_data().activate_gpm();
         self.power_on = true;
         if !self.init {
-            self.init(
-                this_cpu_data().cpu_on_entry,
-                this_cpu_data().id,
-                0,
-            );
+            self.init(this_cpu_data().cpu_on_entry, this_cpu_data().id, 0);
             self.init = true;
         }
         info!(
@@ -95,7 +91,18 @@ impl ArchCpu {
 
         panic!("loongarch64: ArchCpu::run: unreachable");
     }
-    pub fn idle(&self) -> ! {
+    pub fn idle(&mut self) -> ! {
+        let ctx_addr = &mut self.ctx as *mut ZoneContext;
+        unsafe {
+            asm!(
+                "csrwr {}, {LOONGARCH_CSR_SAVE3}",
+                "csrwr {}, {LOONGARCH_CSR_SAVE4}",
+                in(reg) (ctx_addr as usize + core::mem::size_of::<ZoneContext>()),
+                in(reg) self.stack_top(),
+                LOONGARCH_CSR_SAVE3 = const 0x33,
+                LOONGARCH_CSR_SAVE4 = const 0x34,
+            );
+        }
         info!("loongarch64: ArchCpu::idle: cpuid={}", self.get_cpuid());
         loop {}
     }

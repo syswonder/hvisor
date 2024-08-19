@@ -11,22 +11,8 @@ pub fn arch_send_event(cpu_id: u64, sgi_num: u64) {
         "loongarch64: arch_send_event: sending event to cpu: {}, sgi_num: {}",
         cpu_id, sgi_num
     );
-    let ipi: &MMIODerefWrapper<IpiRegisters> = match cpu_id {
-        0 => &CORE0_IPI,
-        1 => &CORE1_IPI,
-        2 => &CORE2_IPI,
-        3 => &CORE3_IPI,
-        _ => {
-            error!("loongarch64: arch_send_event: invalid cpu_id: {}", cpu_id);
-            return;
-        }
-    };
-    let mut val: u32 = 1 << 31;
-    val |= sgi_num as u32;
-    val |= (cpu_id as u32) << 16;
-    unsafe {
-        asm!("iocsrwr.w {}, {}", in(reg) val, in(reg) 0x1040);
-    }
+    // just call ipi_write_action
+    ipi_write_action(cpu_id as usize, sgi_num as usize);
 }
 
 register_bitfields! [
@@ -100,7 +86,7 @@ pub fn mail_send(data: usize, cpu_id: usize, mailbox_id: usize) {
     val |= iocsr_mbuf_send_box_hi(mailbox_id) << 2;
     val |= cpu_id << 16;
     val |= high << 32;
-    // info!("(mail_send) sending high 32 bits, actual packed value: {:#x}", val);
+    // debug!("(mail_send) sending high 32 bits, actual packed value: {:#x}", val);
     unsafe {
         asm!("iocsrwr.d {}, {}", in(reg) val, in(reg) 0x1048);
     }
@@ -109,7 +95,7 @@ pub fn mail_send(data: usize, cpu_id: usize, mailbox_id: usize) {
     val |= iocsr_mbuf_send_box_lo(mailbox_id) << 2;
     val |= cpu_id << 16;
     val |= low << 32;
-    // info!("(mail_send) sending low 32 bits, actual packed value: {:#x}", val);
+    // debug!("(mail_send) sending low 32 bits, actual packed value: {:#x}", val);
     unsafe {
         asm!("iocsrwr.d {}, {}", in(reg) val, in(reg) 0x1048);
     }
@@ -134,6 +120,11 @@ fn ffs(a: usize) -> usize {
 pub fn ipi_write_action(cpu_id: usize, action: usize) {
     let mut irq: u32 = 0;
     let mut action = action;
+    trace!(
+        "(ipi_write_action) sending action: {:#x} to cpu: {}",
+        action,
+        cpu_id
+    );
     loop {
         irq = ffs(action) as u32;
         if irq == 0 {
@@ -142,7 +133,6 @@ pub fn ipi_write_action(cpu_id: usize, action: usize) {
         let mut val: u32 = 1 << 31;
         val |= irq - 1;
         val |= (cpu_id as u32) << 16;
-        // info!("(ipi_write_action) sending action: {:#x}", val);
         unsafe {
             asm!("iocsrwr.w {}, {}", in(reg) val, in(reg) 0x1040);
         }
@@ -157,13 +147,13 @@ pub fn clear_all_ipi(cpu_id: usize) {
         2 => &CORE2_IPI,
         3 => &CORE3_IPI,
         _ => {
-            error!("(clear_all_ipi) invalid cpu_id: {}", cpu_id);
+            error!("clear_all_ipi: invalid cpu_id: {}", cpu_id);
             return;
         }
     };
     ipi.ipi_clear.write(IpiClear::IPICLEAR.val(0xffffffff));
-    info!(
-        "(clear_all_ipi) IPI status for cpu {}: {:#x}",
+    trace!(
+        "clear_all_ipi: IPI status for cpu {}: {:#x}",
         cpu_id,
         ipi.ipi_status.read(IpiStatus::IPISTATUS)
     );
@@ -176,7 +166,7 @@ pub fn get_ipi_status(cpu_id: usize) -> u32 {
         2 => &CORE2_IPI,
         3 => &CORE3_IPI,
         _ => {
-            error!("(get_ipi_status) invalid cpu_id: {}", cpu_id);
+            error!("get_ipi_status: invalid cpu_id: {}", cpu_id);
             return 0;
         }
     };

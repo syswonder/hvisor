@@ -15,7 +15,7 @@ impl Zone {
     pub fn pt_init(&mut self, mem_regions: &[HvConfigMemoryRegion]) -> HvResult {
         // use the new zone config type of init
         for region in mem_regions {
-            debug!("loongarch64: pt_init: process region: {:#x?}", region);
+            trace!("loongarch64: pt_init: process region: {:#x?}", region);
             let mem_type = region.mem_type;
             match mem_type {
                 MEM_TYPE_RAM => {
@@ -46,7 +46,7 @@ impl Zone {
                 let r = self
                     .gpm
                     .page_table_query(mem_regions[0].virtual_start as GuestPhysAddr);
-                info!("query 0x{:x}: {:#x?}", mem_regions[0].virtual_start, r);
+                debug!("query 0x{:x}: {:#x?}", mem_regions[0].virtual_start, r);
                 // check whether the first page is mapped
                 let va = mem_regions[0].virtual_start as GuestPhysAddr;
                 let result_pa = r.unwrap().0;
