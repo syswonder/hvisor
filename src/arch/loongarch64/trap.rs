@@ -1267,6 +1267,7 @@ const ECODE_GSPR: usize = 0x16;
 const ECODE_PIL: usize = 0x1;
 const ECODE_PIS: usize = 0x2;
 const ECODE_HVC: usize = 0x17;
+const ECODE_PNR: usize = 0x5;
 
 fn handle_exception(
     ecode: usize,

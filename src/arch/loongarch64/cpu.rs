@@ -52,6 +52,10 @@ impl ArchCpu {
             self.init(this_cpu_data().cpu_on_entry, this_cpu_data().id, 0);
             self.init = true;
         }
+        // set x[] to all 0
+        for i in 0..32 {
+            self.ctx.x[i] = 0;
+        }
         info!(
             "loongarch64: CPU{} run@{:#x}",
             self.get_cpuid(),
