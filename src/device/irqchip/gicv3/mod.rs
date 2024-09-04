@@ -84,11 +84,16 @@ use core::arch::asm;
 use core::ptr::write_volatile;
 use core::sync::atomic::AtomicU64;
 
-use spin::Once;
+use alloc::collections::btree_map::BTreeMap;
+use alloc::collections::vec_deque::VecDeque;
+use alloc::vec::Vec;
+use gicr::{GICR_ISENABLER, GICR_SGI_BASE};
+use spin::{Mutex, Once};
 
 use self::gicd::{enable_gic_are_ns, GICD_ICACTIVER, GICD_ICENABLER};
 use self::gicr::enable_ipi;
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
+use crate::arch::cpu::this_cpu_id;
 use crate::config::root_zone_config;
 use crate::consts::MAX_CPU_NUM;
 
@@ -96,6 +101,7 @@ use crate::event::check_events;
 use crate::hypercall::SGI_IPI_ID;
 use crate::zone::Zone;
 
+const ICH_HCR_UIE: u64 = 1 << 1;
 //TODO: add Distributor init
 pub fn gicc_init() {
     //TODO: add Redistributor init
@@ -145,27 +151,7 @@ static TIMER_INTERRUPT_COUNTER: AtomicU64 = AtomicU64::new(0);
 const TIMER_INTERRUPT_PRINT_TIMES: u64 = 50;
 
 pub fn gicv3_handle_irq_el1() {
-    if let Some(irq_id) = pending_irq() {
-        // enum ipi_msg_type {
-        //     IPI_WAKEUP,
-        //     IPI_TIMER,
-        //     IPI_RESCHEDULE,
-        //     IPI_CALL_FUNC,
-        //     IPI_CPU_STOP,
-        //     IPI_IRQ_WORK,
-        //     IPI_COMPLETION,
-        //     /*
-        //      * CPU_BACKTRACE is special and not included in NR_IPI
-        //      * or tracable with trace_ipi_*
-        //      */
-        //     IPI_CPU_BACKTRACE,
-        //     /*
-        //      * SGI8-15 can be reserved by secure firmware, and thus may
-        //      * not be usable by the kernel. Please keep the above limited
-        //      * to at most 8 entries.
-        //      */
-        // };
-        //SGI
+    while let Some(irq_id) = pending_irq() {
         if irq_id < 8 {
             deactivate_irq(irq_id);
             let mut ipi_handled = false;
@@ -186,14 +172,19 @@ pub fn gicv3_handle_irq_el1() {
                 if TIMER_INTERRUPT_COUNTER.load(core::sync::atomic::Ordering::SeqCst) % TIMER_INTERRUPT_PRINT_TIMES == 0 {
                     debug!("Virtual timer interrupt, counter = {}", TIMER_INTERRUPT_COUNTER.load(core::sync::atomic::Ordering::SeqCst));
                 }
-            }
-            // debug!("spi/ppi get {}", irq_id);
-            //inject phy irq
-            if irq_id > 31 {
+            } else if irq_id == 25 {
+                // maintenace interrupt
+                handle_maintenace_interrupt();
+            } else if irq_id > 31 {
+                //inject phy irq
                 debug!("*** get spi_irq id = {}", irq_id);
+            } else {
+                warn!("not konw irq id = {}", irq_id);
+            }
+            if irq_id != 25 {
+                inject_irq(irq_id, true);
             }
             deactivate_irq(irq_id);
-            inject_irq(irq_id, true);
         }
     }
     trace!("handle done")
@@ -205,16 +196,15 @@ fn pending_irq() -> Option<usize> {
         // spurious
         None
     } else {
-        Some(iar as _)
+        Some(iar & 0xffffff)
     }
 }
 
 fn deactivate_irq(irq_id: usize) {
     write_sysreg!(icc_eoir1_el1, irq_id as u64);
-    if irq_id < 16 {
+    if irq_id < 16 || irq_id == 25 {
         write_sysreg!(icc_dir_el1, irq_id as u64);
     }
-    //write_sysreg!(icc_dir_el1, irq_id as usize);
 }
 
 fn read_lr(id: usize) -> u64 {
@@ -270,7 +260,77 @@ fn write_lr(id: usize, val: u64) {
     }
 }
 
-pub fn inject_irq(irq_id: usize, is_hardware: bool) {
+// virtual interrupts waiting to inject
+static PENDING_VIRQS: Once<PendingIrqs> = Once::new();
+pub const MAINTENACE_INTERRUPT: u64 = 25;
+struct PendingIrqs {
+    inner: Vec<Mutex<VecDeque<(usize, bool)>>>,
+}
+
+impl PendingIrqs {
+    fn new(max_cpus: usize) -> Self {
+        let mut vs = vec![];
+        for _ in 0..max_cpus {
+            let v = Mutex::new(VecDeque::new());
+            vs.push(v)
+        }
+        Self { inner: vs }
+    }
+
+    fn add_irq(&self, irq_id: usize, is_hardware: bool) -> Option<()> {
+        match self.inner.get(this_cpu_id()) {
+            Some(pending_irqs) => {
+                let mut irqs = pending_irqs.lock();
+                irqs.push_back((irq_id, is_hardware));
+                Some(())
+            },
+            _ => None,
+        }
+    }
+
+    fn fetch_irq(&self) -> Option<(usize, bool)> {
+        match self.inner.get(this_cpu_id()) {
+            Some(pending_irqs) => {
+                let mut irqs = pending_irqs.lock();
+                irqs.pop_front()
+            },
+            _ => None,
+        }
+    }
+}
+
+// Enable or disable an underflow maintenace interrupt.
+fn enable_maintenace_interrupt(is_enable: bool) {
+    trace!("enable_maintenace_interrupt, is_enable is {}", is_enable);
+    let mut hcr = read_sysreg!(ich_hcr_el2);
+    trace!("hcr is {}", hcr);
+    if (is_enable) {
+        hcr |= ICH_HCR_UIE;
+    } else {
+        hcr &= !ICH_HCR_UIE;
+    }
+    write_sysreg!(ich_hcr_el2, hcr);
+}
+
+fn handle_maintenace_interrupt() {
+    trace!("handle_maintenace_interrupt");
+    let pending_irqs = PENDING_VIRQS.get().unwrap();
+    while let Some((irq_id, is_hardware)) = pending_irqs.fetch_irq() {
+        let is_injected: bool = inject_irq(irq_id, is_hardware);
+        if is_injected {
+            trace!("inject pending irq in maintenace interrupt");
+        }
+        if !is_injected {
+            pending_irqs.add_irq(irq_id, is_hardware);
+            enable_maintenace_interrupt(true);
+            return ;
+        }
+    }
+    enable_maintenace_interrupt(false);
+}
+
+/// Inject virtual interrupt to vCPU, return whether it not needs to add pending queue.
+pub fn inject_irq(irq_id: usize, is_hardware: bool) -> bool{
     // mask
     const LR_VIRTIRQ_MASK: usize = (1 << 32) - 1;
 
@@ -290,13 +350,20 @@ pub fn inject_irq(irq_id: usize, is_hardware: bool) {
         // if a virtual interrupt is enabled and equals to the physical interrupt irq_id
         if (lr_val & LR_VIRTIRQ_MASK) == irq_id {
             trace!("virtual irq {} enables again", irq_id);
-            return;
+            return true;
         }
     }
-    // debug!("To Inject IRQ {}, find lr {}", irq_id, free_ir);
+    trace!("To Inject IRQ {}, find lr {}", irq_id, free_ir);
 
     if free_ir == -1 {
-        panic!("full lr");
+        trace!("all list registers are valid, add to pending queue");
+        // If all list registers are valid, add this virtual irq to pending queue,
+        // and enable an underflow maintenace interrupt. When list registers are 
+        // all invalid or only one is valid, the maintenace interrupt will occur,
+        // hvisor will execute handle_maintenace_interrupt function.
+        PENDING_VIRQS.get().unwrap().add_irq(irq_id, is_hardware).unwrap();
+        enable_maintenace_interrupt(true);
+        return false;
     } else {
         let mut val = irq_id as u64; //v intid
         val |= 1 << 60; //group 1
@@ -307,6 +374,7 @@ pub fn inject_irq(irq_id: usize, is_hardware: bool) {
             val |= (irq_id as u64) << 32; //pINTID
         }
         write_lr(free_ir as usize, val);
+        return true;
     }
 }
 
@@ -363,6 +431,8 @@ pub fn primary_init_early() {
         gicd_size: root_config.arch_config.gicd_size,
         gicr_size: root_config.arch_config.gicr_size,
     });
+
+    PENDING_VIRQS.call_once(|| PendingIrqs::new(MAX_CPU_NUM));
     debug!("gic = {:#x?}", GIC.get().unwrap());
 }
 

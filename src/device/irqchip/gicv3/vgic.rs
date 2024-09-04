@@ -2,7 +2,7 @@ use alloc::sync::Arc;
 
 use super::{gicd::GICD_LOCK, is_spi};
 use crate::{
-    arch::zone::HvArchZoneConfig, consts::MAX_CPU_NUM, device::irqchip::gicv3::{gicd::*, gicr::*, host_gicd_base, host_gicr_base, PER_GICR_SIZE}, error::HvResult, memory::{mmio_perform_access, MMIOAccess}, percpu::{get_cpu_data, this_zone}, zone::Zone
+    arch::zone::HvArchZoneConfig, consts::MAX_CPU_NUM, device::irqchip::gicv3::{gicd::*, gicr::*, host_gicd_base, host_gicr_base, MAINTENACE_INTERRUPT, PER_GICR_SIZE}, error::HvResult, memory::{mmio_perform_access, MMIOAccess}, percpu::{get_cpu_data, this_zone}, zone::Zone
 };
 
 pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> {
@@ -124,14 +124,29 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
         GICR_SYNCR => {
             mmio.value = 0;
         }
-        _ => {
+        reg if reg == GICR_CTLR
+        || reg == GICR_STATUSR
+        || reg == GICR_WAKER
+        || reg == GICR_SGI_BASE + GICR_ISENABLER
+        || reg == GICR_SGI_BASE + GICR_ICENABLER
+        || reg == GICR_SGI_BASE + GICR_ISPENDR
+        || reg == GICR_SGI_BASE + GICR_ICPENDR
+        || reg == GICR_SGI_BASE + GICR_ISACTIVER
+        || reg == GICR_SGI_BASE + GICR_ICACTIVER 
+        || reg_range(GICR_SGI_BASE + GICR_IPRIORITYR, 8, 4).contains(&reg) 
+        || reg_range(GICR_SGI_BASE + GICR_ICFGR, 2, 4).contains(&reg) => {
             if Arc::ptr_eq(&this_zone(), get_cpu_data(cpu).zone.as_ref().unwrap()) {
+                // avoid linux disable maintenance interrupt
+                if reg == GICR_SGI_BASE + GICR_ICENABLER {
+                    mmio.value &= !(1 << MAINTENACE_INTERRUPT);
+                }
                 // ignore access to foreign redistributors
                 mmio_perform_access(gicr_base, mmio);
             } else {
                 trace!("*** gicv3_gicr_mmio_handler: ignore access to foreign redistributors ***");
             }
         }
+        _ => {}
     }
     HvResult::Ok(())
 }
