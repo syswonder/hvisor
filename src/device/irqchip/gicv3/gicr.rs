@@ -11,7 +11,7 @@ use super::{
         GICD_ICACTIVER, GICD_ICENABLER, GICD_ICFGR, GICD_ICPENDR, GICD_IGROUPR, GICD_IPRIORITYR,
         GICD_ISACTIVER, GICD_ISENABLER, GICD_ISPENDR,
     },
-    host_gicr_base,
+    host_gicr_base, MAINTENACE_INTERRUPT,
 };
 
 pub const GICR_CTLR: usize = 0x0000;
@@ -46,12 +46,12 @@ pub fn enable_ipi() {
         gicr_igroupr0.write_volatile(gicr_igroupr0.read_volatile() | (1 << SGI_IPI_ID));
 
         let gicr_isenabler0 = (base + GICR_ISENABLER) as *mut u32;
-        gicr_isenabler0.write_volatile(1 << SGI_IPI_ID);
-
+        gicr_isenabler0.write_volatile(1 << SGI_IPI_ID | 1 << MAINTENACE_INTERRUPT);
+        trace!("gicr_isenabler0: {}", gicr_isenabler0.read_volatile());
         let gicr_ipriorityr0 = (base + GICR_IPRIORITYR) as *mut u32;
-        {
-            let reg = SGI_IPI_ID / 4;
-            let offset = SGI_IPI_ID % 4 * 8;
+        for irq_id in [SGI_IPI_ID, MAINTENACE_INTERRUPT] {
+            let reg = irq_id / 4;
+            let offset = irq_id % 4 * 8;
             let mask = ((1 << 8) - 1) << offset;
             let p = gicr_ipriorityr0.add(reg as _);
             let prio = p.read_volatile();
