@@ -25,7 +25,26 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 3] = [
         physical_start: 0x30800000,
         virtual_start: 0x30800000,
         size: 0x400000,
-    }, // bus@30800000
+    }, 
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0x38000000,
+    //     virtual_start: 0x38000000,
+    //     size: 0x8000,
+    // },
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0x38008000,
+    //     virtual_start: 0x38008000,
+    //     size: 0x8000,
+    // },
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0x38500000,
+    //     virtual_start: 0x38500000,
+    //     size: 0x20000,
+    // }
+    // bus@30800000
        // HvConfigMemoryRegion {
        //     mem_type: MEM_TYPE_IO,
        //     physical_start: 0x30890000,
