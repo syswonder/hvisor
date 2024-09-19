@@ -107,8 +107,6 @@ void virtqueue_disable_notify(VirtQueue *vq);
 void virtqueue_enable_notify(VirtQueue *vq);
 
 bool desc_is_writable(volatile VirtqDesc *desc_table, uint16_t idx);
-void* get_virt_addr(void *addr);
-void* get_phys_addr(void *addr);
 int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
                 struct iovec **iov, uint16_t **flags, int append_len);
 void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen);

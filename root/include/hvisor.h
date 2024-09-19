@@ -9,11 +9,9 @@
 #define MMAP_SIZE 4096
 #define MAX_REQ 32
 #define MAX_DEVS 4
-#define MAX_CPUS 16
-// #define NON_ROOT_PHYS_START 0x90000000
-// #define NON_ROOT_PHYS_SIZE 0x40000000
-#define NON_ROOT_PHYS_START 0x50000000
-#define NON_ROOT_PHYS_SIZE 0x30000000
+#define MAX_CPUS 4 
+#define MAX_ZONES MAX_CPUS
+
 #define SIGHVI 10
 
 // receive request from el2

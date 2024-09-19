@@ -21,7 +21,7 @@ make all ARCH=<arch> LOG=<log> KDIR=/path/to/your-linux
 
 其中，`<arch>`应该为`arm64`和`riscv`之一。
 
-`<log>`为`LOG_TRACE`、`LOG_DEBUG`、`LOG_INFO`、`LOG_WARN`、`LOG_ERROR`、`LOG_FATAL`之一。
+`<log>`为`LOG_TRACE`、`LOG_DEBUG`、`LOG_INFO`、`LOG_WARN`、`LOG_ERROR`、`LOG_FATAL`之一，用来控制Virtio守护进程的日志输出等级。
 
 `/path/to/your-linux`为root linux的kernel源码目录。具体的编译选项请见[Makefile](./Makefile)、[tools/Makefile](./tools/Makefile)、[driver/Makefile](./driver/Makefile)。
 
@@ -121,7 +121,7 @@ hvisor-tool通过一个配置文件启动一个新的虚拟机：
 
 Virtio守护进程可为虚拟机提供Virtio MMIO设备，目前支持三种设备：Virtio-blk、Virtio-net和Virtio-console设备。
 
-* **前置条件**
+#### 前置条件
 
 要使用Virtio守护进程，需要在**Root Linux的设备树**中增加一个名为`hvisor_device`的节点，例如：
 
@@ -135,7 +135,7 @@ hvisor_device {
 
 这样，当hvisor向Root Linux注入中断号为`32+0x20`的中断时，便会进入`hvisor.ko`中注册的中断处理函数，唤醒Virtio守护进程。
 
-* Virtio设备的启动和创建
+#### Virtio设备的启动和创建
 
 在Root Linux上，执行以下示例指令：
 
@@ -143,14 +143,29 @@ hvisor_device {
 nohup ./hvisor virtio start virtio_cfg.json &
 ```
 
-其中`virtio_cfg.json`是一个描述Virtio设备的JSON文件，例如[virtio_cfg.json](./examples/virtio_cfg.json)。该示例文件会依次执行：
+其中`nohup ... &`说明该命令会创建一个守护进程，且该进程的日志输出保存在当前文件夹下的nohup.out文件中。
 
-1. 首先创建一个Virtio-blk设备，id为1的虚拟机会通过一片MMIO区域与该设备通信，这片MMIO区域的起始地址为`0xa003c00`，长度为`0x200`。同时设置设备中断号为78，对应磁盘镜像为`rootfs2.ext4`。
-2. 之后创建一个Virtio-console设备，用于id为1的虚拟机主串口的输出。root linux需要执行`screen /dev/pts/x`命令进入该虚拟控制台，其中`x`可通过nohup.out的输出信息查看。
-3. 由于`net`设备的`status`属性为`disable`，因此不会创建Virtio-net设备。如果`net`设备的`status`属性为`enable`，那么会创建一个Virtio-net设备，MMIO区域的起始地址为`0xa003600`，长度为`0x200`，设备中断号为75，MAC地址为`00:16:3e:10:10:10`，由id为1的虚拟机使用，连接到名为`tap0`的Tap设备。
-4. `nohup ... &`说明该命令会创建一个守护进程。
+`virtio_cfg.json`则是一个描述Virtio设备的JSON文件，例如[virtio_cfg.json](./examples/virtio_cfg.json)。该示例文件会依次执行：
 
-* 关闭Virtio设备
+1. 地址空间映射
+
+首先将id为1的虚拟机`zone1`的RAM内存区域（起始地址`0x50000000`，大小为`0x30000000`）通过mmap映射到Virtio守护进程的地址空间。
+
+2. 创建Virtio-blk设备
+
+创建一个Virtio-blk设备，`zone1`会通过一片MMIO区域与该设备通信，这片MMIO区域的起始地址为`0xa003c00`，长度为`0x200`。同时设置设备中断号为78，对应磁盘镜像为`rootfs2.ext4`。
+
+3. 创建Virtio-console设备
+
+创建一个Virtio-console设备，用于`zone1`主串口的输出。root linux需要执行`screen /dev/pts/x`命令进入该虚拟控制台，其中`x`可通过nohup.out日志文件查看。
+
+如要退回到主控制台，按下快捷键`ctrl+a+d`。如要再次进入虚拟控制台，执行`screen -r [SID]`，其中SID为该screen会话的进程ID。
+
+4. 创建Virtio-net设备
+
+由于`net`设备的`status`属性为`disable`，因此不会创建Virtio-net设备。如果`net`设备的`status`属性为`enable`，那么会创建一个Virtio-net设备，MMIO区域的起始地址为`0xa003600`，长度为`0x200`，设备中断号为75，MAC地址为`00:16:3e:10:10:10`，由id为1的虚拟机使用，连接到名为`tap0`的Tap设备。
+
+#### 关闭Virtio设备
 
 执行该命令即可关闭Virtio守护进程及所有创建的设备：
 

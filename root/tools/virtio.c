@@ -30,8 +30,12 @@ pthread_mutex_t RES_MUTEX = PTHREAD_MUTEX_INITIALIZER;
 VirtIODevice *vdevs[MAX_DEVS];
 int vdevs_num;
 
-void *virt_addr;
-void *phys_addr;
+// the index of `zone_mem[i]`
+#define VIRT_ADDR 0
+#define PHYS_ADDR 1
+#define MEM_SIZE 2
+
+unsigned long long zone_mem[MAX_ZONES][3];
 
 #define WAIT_TIME 1000 // 1ms
 
@@ -130,6 +134,10 @@ static VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zo
 		goto err;
     }
     if (is_err) goto err;
+    if (vdevs_num == MAX_DEVS) {
+        log_error("virtio device num exceed max limit");
+        goto err;
+    }
     log_info("create virtio device %d success", dev_type);
     vdevs[vdevs_num++] = vdev;
     return vdev;
@@ -239,15 +247,9 @@ bool desc_is_writable(volatile VirtqDesc *desc_table, uint16_t idx)
     return false;
 }
 
-void* get_virt_addr(void *addr)
+static void* get_virt_addr(void *addr, int zone_id)
 {
-    return virt_addr - phys_addr + addr;
-}
-
-// get non root linux's ipa
-void* get_phys_addr(void *addr)
-{
-    return addr - virt_addr + phys_addr;
+    return zone_mem[zone_id][VIRT_ADDR] - zone_mem[zone_id][PHYS_ADDR] + addr;
 }
 
 // When virtio device is processing virtqueue, driver adding an elem to virtqueue is no need to notify device.
@@ -271,27 +273,30 @@ void virtqueue_enable_notify(VirtQueue *vq) {
 
 void virtqueue_set_desc_table(VirtQueue *vq)
 {
+    int zone_id = vq->dev->zone_id;
     log_trace("desc table ipa is %#x", vq->desc_table_addr);
-    vq->desc_table = (VirtqDesc *)(virt_addr + vq->desc_table_addr - phys_addr);
+    vq->desc_table = (VirtqDesc *)(zone_mem[zone_id][VIRT_ADDR] + vq->desc_table_addr - zone_mem[zone_id][PHYS_ADDR]);
 }
 
 void virtqueue_set_avail(VirtQueue *vq)
 {
+    int zone_id = vq->dev->zone_id;
     log_trace("avail ring ipa is %#x", vq->avail_addr);
-    vq->avail_ring = (VirtqAvail *)(virt_addr + vq->avail_addr - phys_addr);
+    vq->avail_ring = (VirtqAvail *)(zone_mem[zone_id][VIRT_ADDR] + vq->avail_addr - zone_mem[zone_id][PHYS_ADDR]);
 }
 
 void virtqueue_set_used(VirtQueue *vq)
 {
+    int zone_id = vq->dev->zone_id;
     log_trace("used ring ipa is %#x", vq->used_addr);
-    vq->used_ring = (VirtqUsed *)(virt_addr + vq->used_addr - phys_addr);
+    vq->used_ring = (VirtqUsed *)(zone_mem[zone_id][VIRT_ADDR] + vq->used_addr - zone_mem[zone_id][PHYS_ADDR]);
 }
 
 // record one descriptor to iov.
 static inline int descriptor2iov(int i, volatile VirtqDesc *vd,
-           struct iovec *iov, uint16_t *flags) {
+           struct iovec *iov, uint16_t *flags, int zone_id) {
     void *host_addr;
-    host_addr = get_virt_addr((void *)vd->addr);
+    host_addr = get_virt_addr((void *)vd->addr, zone_id);
     iov[i].iov_base = host_addr;
     iov[i].iov_len = vd->len;
     // log_debug("vd->addr ipa is %x, iov_base is %x, iov_len is %d", vd->addr, host_addr, vd->len);
@@ -338,14 +343,14 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
 	for (i=0; i<chain_len; i++, next = vdesc->next) {
 		vdesc = &vq->desc_table[next];
 		if (vdesc->flags & VRING_DESC_F_INDIRECT) {
-			ind_table = (VirtqDesc *)(get_virt_addr((void *)vdesc->addr));
+			ind_table = (VirtqDesc *)(get_virt_addr((void *)vdesc->addr, vq->dev->zone_id));
 			table_len = vdesc->len / 16;
 			log_debug("table_len is %d", table_len);
 			next = 0;
 			for (;;) {
 				log_debug("next is %d", next);
 				ind_desc = &ind_table[next];
-				descriptor2iov(i, ind_desc, *iov, flags == NULL ? NULL : *flags);
+				descriptor2iov(i, ind_desc, *iov, flags == NULL ? NULL : *flags, vq->dev->zone_id);
 				table_len--;
 				i++;
 				if ((ind_desc->flags & VRING_DESC_F_NEXT) == 0)
@@ -357,7 +362,7 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
 				break;
 			}
 		} else {
-			descriptor2iov(i, vdesc, *iov, flags == NULL ? NULL : *flags);
+			descriptor2iov(i, vdesc, *iov, flags == NULL ? NULL : *flags, vq->dev->zone_id);
 		}
 	}
     return chain_len;
@@ -672,7 +677,11 @@ static void virtio_close() {
         vdevs[i]->virtio_close(vdevs[i]);
 	close(ko_fd);
 	munmap((void *)virtio_bridge, MMAP_SIZE);
-	munmap((void *)virt_addr, NON_ROOT_PHYS_SIZE);
+    for(int i=0; i<MAX_ZONES; i++) {
+        if (zone_mem[i][VIRT_ADDR] != 0) {
+            munmap((void *)zone_mem[i][VIRT_ADDR], zone_mem[i][MEM_SIZE]);
+        }
+    }
 	mutithread_log_exit();
 	log_warn("virtio daemon exit successfully");
 }
@@ -778,11 +787,6 @@ int virtio_init()
         goto unmap;
     }
 
-	// mmap: map non root linux physical memory to virtual memory
-    phys_addr = (void *)NON_ROOT_PHYS_START;
-    virt_addr = mmap(NULL, NON_ROOT_PHYS_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED , ko_fd, (off_t) phys_addr);
-    log_info("mmap virt addr is %#x", virt_addr);
-
     initialize_event_monitor();
     log_info("hvisor init okay!");
 	return 0;
@@ -791,10 +795,10 @@ unmap:
     return -1;
 }
 
-static int create_virtio_device_from_json(cJSON* device_json) {
+static int create_virtio_device_from_json(cJSON* device_json, int zone_id) {
     VirtioDeviceType dev_type = VirtioTNone;
 	uint64_t base_addr = 0, len = 0;
-	uint32_t zone_id = 0, irq_id = 0;
+	uint32_t irq_id = 0;
     char *status = cJSON_GetObjectItem(device_json, "status")->valuestring;
     if (strcmp(status, "disable") == 0) 
         return 0;
@@ -815,7 +819,6 @@ static int create_virtio_device_from_json(cJSON* device_json) {
     base_addr = strtoul(cJSON_GetObjectItem(device_json, "addr")->valuestring, NULL, 16);
     len = strtoul(cJSON_GetObjectItem(device_json, "len")->valuestring, NULL, 16);
     irq_id = cJSON_GetObjectItem(device_json, "irq")->valueint;
-    zone_id = cJSON_GetObjectItem(device_json, "zone_id")->valueint;
     if (dev_type == VirtioTBlock) {
         char *img = cJSON_GetObjectItem(device_json, "img")->valuestring;
         arg0 = img, arg1 = NULL;
@@ -830,7 +833,7 @@ static int create_virtio_device_from_json(cJSON* device_json) {
     } else if (dev_type == VirtioTConsole) {
         arg0 = arg1 = NULL;
     }
-    if (base_addr == 0 || len == 0 || irq_id == 0 || zone_id == 0) {
+    if (base_addr == 0 || len == 0 || irq_id == 0) {
 		log_error("missing arguments");
 		return -1;
 	}
@@ -844,24 +847,52 @@ static int create_virtio_device_from_json(cJSON* device_json) {
 static int virtio_start_from_json(char* json_path) {
     char *buffer = NULL;
     u_int64_t file_size;
-    int num_devices = 0, err = 0;
+    int zone_id, num_devices = 0, err = 0, num_zones = 0;
+    void *phys_addr, *virt_addr;
+    unsigned long long mem_size;
     buffer = read_file(json_path, &file_size);
     buffer[file_size] = '\0';
 
     cJSON *root = cJSON_Parse(buffer);
-    cJSON *devices_json = cJSON_GetObjectItem(root, "devices");
-    num_devices = cJSON_GetArraySize(devices_json);
-    if (num_devices > MAX_DEVS) {
-        log_error("Exceed maximum device number");
+    cJSON *zones_json = cJSON_GetObjectItem(root, "zones"); 
+    num_zones = cJSON_GetArraySize(zones_json);
+    if (num_zones > MAX_ZONES) {
+        log_error("Exceed maximum zone number");
         err = -1;
         goto err_out;
     }
-    for (int i=0; i < num_devices; i++) {
-        cJSON *device = cJSON_GetArrayItem(devices_json, i);
-        err = create_virtio_device_from_json(device);
-        if (err) {
-            log_error("create virtio device failed");
+
+    for(int i=0; i<num_zones; i++) {
+        cJSON *zone_json = cJSON_GetArrayItem(zones_json, i);
+        cJSON *zone_id_json = cJSON_GetObjectItem(zone_json, "id");
+        cJSON *memory_region_json = cJSON_GetObjectItem(zone_json, "memory_region");
+        cJSON *devices_json = cJSON_GetObjectItem(zone_json, "devices");
+        zone_id = zone_id_json->valueint;
+        if (zone_id >= MAX_ZONES) {
+            log_error("Exceed maximum zone number");
+            err = -1;
             goto err_out;
+        }
+        phys_addr = strtoull(cJSON_GetArrayItem(memory_region_json, 0)->valuestring, NULL, 16);
+        mem_size = strtoull(cJSON_GetArrayItem(memory_region_json, 1)->valuestring, NULL, 16);
+        virt_addr = mmap(NULL, mem_size, PROT_READ | PROT_WRITE, MAP_SHARED, ko_fd, (off_t) phys_addr);
+        if (virt_addr == (void *)-1) {
+            log_error("mmap failed");
+            err = -1;
+            goto err_out;
+        }
+        zone_mem[zone_id][VIRT_ADDR] = virt_addr;
+        zone_mem[zone_id][PHYS_ADDR] = phys_addr;
+        zone_mem[zone_id][MEM_SIZE] = mem_size;
+        
+        num_devices = cJSON_GetArraySize(devices_json);
+        for (int j=0; j < num_devices; j++) {
+            cJSON *device = cJSON_GetArrayItem(devices_json, j);
+            err = create_virtio_device_from_json(device, zone_id);
+            if (err) {
+                log_error("create virtio device failed");
+                goto err_out;
+            }
         }
     }
 
