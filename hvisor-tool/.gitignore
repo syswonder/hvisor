@@ -10,3 +10,4 @@ driver/hvisor.ko
 *.s
 *_compile.sh
 /cJSON/
+/.github/
