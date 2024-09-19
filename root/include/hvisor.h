@@ -40,7 +40,7 @@ struct virtio_bridge {
     struct device_res res_list[MAX_REQ];
 	__u64 cfg_flags[MAX_CPUS]; // avoid false sharing, set cfg_flag to u64
 	__u64 cfg_values[MAX_CPUS];
-	// When config is okay to use, remove these
+	// TODO: When config is okay to use, remove these. It's ok to remove.
 	__u64 mmio_addrs[MAX_DEVS];
 	__u8 mmio_avail;
 	__u8 need_wakeup;

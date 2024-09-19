@@ -140,8 +140,10 @@ This way, when hvisor injects an interrupt with number `32+0x20` into Root Linux
 
 On root Linux, execute the following command:
 
-```
+```c
+// Start virtio daemon first, then start each zone
 nohup ./hvisor virtio start virtio_cfg.json &
+./hvisor zone start <vm_config.json>
 ```
 
 Here, `nohup ... &` means the command will create a daemon process, and its log output will be saved in the `nohup.out` file in the current directory.

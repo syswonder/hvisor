@@ -139,8 +139,10 @@ hvisor_device {
 
 在Root Linux上，执行以下示例指令：
 
-```
+```c
+// 注意要先启动守护进程，再启动各个zones
 nohup ./hvisor virtio start virtio_cfg.json &
+./hvisor zone start <vm_config.json>
 ```
 
 其中`nohup ... &`说明该命令会创建一个守护进程，且该进程的日志输出保存在当前文件夹下的nohup.out文件中。
