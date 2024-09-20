@@ -2,25 +2,37 @@ use crate::{arch::zone::HvArchZoneConfig, config::*};
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x10000f000;
 pub const ROOT_ENTRY: u64 = 0x9000000000cb5000; // vmlinux's entry addr
-pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x20000;
+pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x200000;
 pub const ROOT_ZONE_ENTRY: u64 = 0x9000000000cb5000;
 pub const ROOT_ZONE_CPUS: u64 = 1 << 0;
 
 pub const ROOT_ZONE_NAME: &str = "root-linux-la64";
 
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 6] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 8] = [
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x00200000,
         virtual_start: 0x00200000,
         size: 0x0ee00000,
-    }, // ram1
+    }, // ram
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x90000000,
         virtual_start: 0x90000000,
         size: 0x10000000,
-    }, // ram2
+    }, // ram
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RAM,
+        physical_start: 0xf0000000,
+        virtual_start: 0xf0000000,
+        size: 0x10000000, // 0xf0000000 - 0xffffffff, 256M
+    }, // ram
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RAM,
+        physical_start: 0xc0000000,
+        virtual_start: 0xc0000000,
+        size: 0x30000000, // 0xc0000000 - 0xefffffff, 768M
+    }, // ram
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x1fe00000,
