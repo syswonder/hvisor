@@ -39,6 +39,13 @@ struct arch_zone_config {
 };
 #endif
 
+#ifdef LOONGARCH64
+struct arch_zone_config {
+    __u64 dummy;
+};
+#endif
+
+
 typedef struct arch_zone_config arch_zone_config_t;
 
 struct zone_config {

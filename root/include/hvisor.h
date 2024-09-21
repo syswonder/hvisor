@@ -104,5 +104,16 @@ static inline __u64 hvisor_call(__u64 code, __u64 arg0, __u64 arg1) {
 }
 #endif /* ARM64 */
 
+#ifdef LOONGARCH64
+static inline __u64 hvisor_call(__u64 code, __u64 arg0, __u64 arg1) {
+	register __u64 a0 asm("a0") = code;
+	register __u64 a1 asm("a1") = arg0;
+	register __u64 a2 asm("a2") = arg1;
+	// asm volatile ("hvcl"); // not supported by loongarch gcc now
+	// hvcl 0 is 0x002b8000
+	__asm__ (".word 0x002b8000" : "+r" (a0), "+r" (a1), "+r" (a2));
+	return a0;
+}
+#endif /* LOONGARCH64 */
 
 #endif /* __HVISOR_H */

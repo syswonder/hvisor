@@ -1,12 +1,24 @@
 obj-m += hvisor.o
 
+EXTRA_CFLAGS += "
+
 ifeq ($(ARCH), arm64)
 	COMPILE := aarch64-none-linux-gnu-
+	OBJDUMP := aarch64-none-linux-gnu-objdump
 else ifeq ($(ARCH), riscv)
 	COMPILE := riscv64-unknown-linux-gnu-
+	OBJDUMP := riscv64-unknown-linux-gnu-objdump
+else ifeq ($(ARCH), loongarch)
+	COMPILE := loongarch64-unknown-linux-gnu-
+	OBJDUMP := loongarch64-unknown-linux-gnu-objdump
+	EXTRA_CFLAGS += -DLOONGARCH64
+else
+	COMPILE := 
 endif
 
 EXTRA_CFLAGS += -I$(PWD)/include
+
+EXTRA_CFLAGS += "
 
 .PHONY: all clean
 all:

@@ -103,6 +103,10 @@ static __u64 load_image_to_memory(const char *path, __u64 load_paddr)
 	#ifdef RISCV64
     virt_addr = (__u64)mmap(NULL, map_size, PROT_READ | PROT_WRITE , MAP_SHARED, fd, load_paddr);
     #endif
+    #ifdef LOONGARCH64
+    virt_addr = (__u64)mmap(NULL, map_size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED, fd, load_paddr);
+    #endif
+
 	if (virt_addr == MAP_FAILED) {
         perror("Error mapping memory");
         exit(1);

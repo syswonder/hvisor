@@ -9,4 +9,8 @@
 #define RISCV64
 #endif
 
+#ifdef __loongarch64__
+#define LOONGARCH64
+#endif
+
 #endif /* __HVISOR_DEF_H */
