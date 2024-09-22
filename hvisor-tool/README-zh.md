@@ -1,7 +1,7 @@
 # README
 README：[中文](./README-zh.md) | [English](./README.md)
 
-本仓库包含附属于[hvisor](https://github.com/syswonder/hvisor)的命令行工具及内核模块，命令行工具中还包含了Virtio守护进程，用于提供Virtio设备。命令行工具以及内核模块需要单独编译后，在管理虚拟机root linux上使用。整个仓库结构为：
+本仓库包含附属于[hvisor](https://github.com/syswonder/hvisor)的命令行工具及内核模块，命令行工具中还包含了Virtio守护进程，用于提供Virtio设备。命令行工具以及内核模块需要单独编译后，在管理虚拟机root linux-zone0上使用。整个仓库结构为：
 
 ```
 hvisor-tool
@@ -37,7 +37,7 @@ make all ARCH=arm64 LOG=LOG_WARN KDIR=~/linux
 
 ### 内核模块
 
-使用命令行工具、Virtio守护进程之前，需要加载内核模块，便于用户态程序与Hyperviosr进行交互：
+使用命令行工具、Virtio守护进程之前，需要在zone0上加载内核模块，便于用户态程序与Hypervisor进行交互：
 
 ```
 insmod hvisor.ko
@@ -51,59 +51,21 @@ rmmod hvisor.ko
 
 ### 命令行工具
 
-在root linux中，使用命令行工具可以创建、关闭其他虚拟机。
-
-* **前置条件**
-
-**注意：**由于Root Linux需要将Non root linux镜像和dtb文件加载到Non root linux所在的物理内存区域，因此需要对**Root Linux的设备树**进行修改：
-
-1. 内存节点要包含Non root linux的物理内存区域，例如：
-
-   ```c
-   // Root linux原先的设备树：
-   memory@50000000 {
-       device_type = "memory";
-       reg = <0x0 0x50000000 0x0 0x40000000>;
-   };
-   // Non Root linux的设备树
-   memory@90000000 {
-       device_type = "memory";
-       reg = <0x0 0x90000000 0x0 0x40000000>;
-   };
-   // 修改后的Root Linux的设备树：
-   memory@50000000 {
-       device_type = "memory";
-       reg = <0x0 0x50000000 0x0 0x80000000>;
-   };
-   ```
-
-2. 加入reserved-memory节点，将Non Root Linux的内存区域设置为保留内存，防止Root Linux进行使用，例如：
-
-   ```
-   reserved-memory {
-       #address-cells = <0x02>;
-       #size-cells = <0x02>;
-       ranges;
-       nonroot@90000000 {
-           no-map;
-           reg = <0x00 0x90000000 0x00 0x40000000>;
-       };
-   };
-   ```
-
-​	注意，加入reserved-memory节点后，Root Linux的内核启动参数bootargs不需要包含`mem=1G`这样的信息。
+在root linux-zone0中，使用命令行工具可以创建、关闭其他虚拟机。
 
 * 启动新的虚拟机
 
-hvisor-tool通过一个配置文件启动一个新的虚拟机：
+  hvisor-tool通过一个配置文件启动一个新的虚拟机：
 
-```
-./hvisor zone start <vm_config.json>
-```
+  ```
+  ./hvisor zone start <vm_config.json>
+  ```
 
-`<vm_config.json>`是描述一个虚拟机配置的文件，例如[nxp_linux.json](./examples/nxp_linux.json)。
+  `<vm_config.json>`是描述一个虚拟机配置的文件，例如：
 
-> **注意：如果想通过命令行而非配置文件启动新虚拟机，请转到[hvisor-tool_old](https://github.com/syswonder/hvisor-tool/commit/3478fc6720f89090c1b5aa913da168f49f95bca0)**。命令行的启动方式会逐渐被配置文件取代，请升级为最新的hvisor-tool。
+  * [在QEMU-aarch64上启动zone1](./examples/qemu-aarch64/zone1_linux.json)：使用该文件直接启动zone1时，需首先启动Virtio守护进程，对应的配置文件为[virtio_cfg.json](./examples/qemu-aarch64/virtio_cfg.json)。
+
+  * [在NXP-aarch64上启动zone1](./examples/nxp-aarch64/zone1_linux.json)：使用该文件直接启动zone1时，需首先启动Virtio守护进程，对应的配置文件为[virtio_cfg.json](./examples/nxp-aarch64/virtio_cfg.json)。
 
 * 关闭id为1的虚拟机：
 
@@ -147,7 +109,7 @@ nohup ./hvisor virtio start virtio_cfg.json &
 
 其中`nohup ... &`说明该命令会创建一个守护进程，且该进程的日志输出保存在当前文件夹下的nohup.out文件中。
 
-`virtio_cfg.json`则是一个描述Virtio设备的JSON文件，例如[virtio_cfg.json](./examples/virtio_cfg.json)。该示例文件会依次执行：
+`virtio_cfg.json`则是一个描述Virtio设备的JSON文件，例如[virtio_cfg.json](./examples/nxp-aarch64/virtio_cfg.json)。该示例文件会依次执行：
 
 1. 地址空间映射
 
