@@ -66,7 +66,11 @@ impl<'a> HyperCall<'a> {
         if !is_this_root_zone() {
             return hv_result_err!(EPERM, "Init virtio over non-root zones: unsupported!");
         }
+        
         let shared_region_addr_pa = shared_region_addr as usize;
+        #[cfg(target_arch = "loongarch64")]
+        let shared_region_addr_pa = shared_region_addr_pa | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX as usize;
+
         assert!(shared_region_addr_pa % PAGE_SIZE == 0);
         // let offset = shared_region_addr_pa & (PAGE_SIZE - 1);
         // memory::hv_page_table()

@@ -23,7 +23,7 @@ pub static VIRTIO_BRIDGE: Mutex<VirtioBridgeRegion> = Mutex::new(VirtioBridgeReg
 const QUEUE_NOTIFY: usize = 0x50;
 pub const MAX_REQ: u32 = 32;
 pub const MAX_DEVS: usize = 4; // Attention: The max virtio-dev number for vm is 4.
-pub const MAX_CPUS: usize = 16;
+pub const MAX_CPUS: usize = 4;
 pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;
 
 /// non root zone's virtio request handler
@@ -41,6 +41,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
         drop(dev);
         dev = VIRTIO_BRIDGE.lock();
     }
+    debug!("get virtio bridge dev lock");
     let hreq = HvisorDeviceReq::new(
         this_cpu_id() as _,
         mmio.address as _,
@@ -50,20 +51,25 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
         mmio.is_write,
         need_interrupt,
     );
+    debug!("non root sends req: {:#x?}", hreq);
     let (cfg_flags, cfg_values) = unsafe {
         (
             core::slice::from_raw_parts(dev.get_cfg_flags(), MAX_CPUS),
             core::slice::from_raw_parts(dev.get_cfg_values(), MAX_CPUS),
         )
     };
+    debug!("cfg flags: {:#x?}", cfg_flags);
+    debug!("cfg values: {:#x?}", cfg_values);
     let cpu_id = this_cpu_id() as usize;
     let old_cfg_flag = cfg_flags[cpu_id];
+    debug!("old cfg flag: {:#x?}", old_cfg_flag);
     dev.push_req(hreq);
     // If req list is empty, send sgi to root linux to wake up virtio device.
-    if dev.need_wakeup() {
-        let root_cpu = root_zone().read().cpu_set.first_cpu().unwrap();
-        send_event(root_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP_VIRTIO_DEVICE);
-    }
+    // if dev.need_wakeup() {
+    //     debug!("need wakeup, sending ipi to wake up virtio device");
+    //     let root_cpu = root_zone().read().cpu_set.first_cpu().unwrap();
+    //     send_event(root_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP_VIRTIO_DEVICE);
+    // }
     drop(dev);
     let mut count = 0;
     // if it is cfg request, current cpu should be blocked until gets the result
@@ -226,6 +232,7 @@ impl Debug for VirtioBridge {
 
 /// Hvisor device requests
 #[repr(C)]
+#[derive(Debug)]
 pub struct HvisorDeviceReq {
     pub src_cpu: u64,
     address: u64,

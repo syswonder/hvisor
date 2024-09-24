@@ -1,4 +1,7 @@
 use crate::arch::cpu::this_cpu_id;
+use crate::memory::addr;
+use crate::memory::mmio_handle_access;
+use crate::memory::MMIOAccess;
 use crate::percpu::this_cpu_data;
 use crate::zone::Zone;
 
@@ -1297,6 +1300,109 @@ fn handle_exception(
             // HVC = 0x17,  Hypervisor Call
             // code = a0(r4), arg0 = a1(r5), arg1 = a2(r6)
             handle_hvc(ctx);
+        }
+        ECODE_PIL | ECODE_PIS => {
+            // we first assume this lies in virtio region
+            // since we didn't add these regions into VMM Pages
+            /*
+                LD.B   rd, rj, si12   0010100000   si12   rj5  rd5
+                LD.H   rd, rj, si12   0010100001   si12   rj5  rd5
+                LD.W   rd, rj, si12   0010100010   si12   rj5  rd5
+                LD.D   rd, rj, si12   0010100011   si12   rj5  rd5
+                ST.B   rd, rj, si12   0010100100   si12   rj5  rd5
+                ST.H   rd, rj, si12   0010100101   si12   rj5  rd5
+                ST.W   rd, rj, si12   0010100110   si12   rj5  rd5
+                ST.D   rd, rj, si12   0010100111   si12   rj5  rd5
+                LD.BU  rd, rj, si12   0010101000   si12   rj5  rd5
+                LD.HU  rd, rj, si12   0010101001   si12   rj5  rd5
+                LD.WU  rd, rj, si12   0010101010   si12   rj5  rd5
+             */
+            let ins = badi;
+            let mut is_write = false;
+            let mut value = 0;
+            let mut size = 0;
+            let mut addr = 0;
+            let prefix8 = extract_field(ins, 24, 8);
+            let si12 = extract_field(ins, 10, 12);
+            let rj = extract_field(ins, 5, 5);
+            let rd = extract_field(ins, 0, 5);
+            debug!("decode instruction {:#b}: prefix8={:#b}, si12={:#x}, rj={:#x}, rd={:#x}", ins, prefix8, si12, rj, rd);
+            if prefix8 == 0b00101001 {
+                is_write = true; // this is a st instruction
+                let ty = extract_field(ins, 22, 2);
+                match ty {
+                    0 => {
+                        // ST.B
+                        size = 1;
+                        value = ctx.x[rd] & 0xff;
+                    }
+                    1 => {
+                        // ST.H
+                        size = 2;
+                        value = ctx.x[rd] & 0xffff;
+                    }
+                    2 => {
+                        // ST.W
+                        size = 4;
+                        value = ctx.x[rd] & 0xffffffff;
+                    }
+                    3 => {
+                        // ST.D
+                        size = 8;
+                        value = ctx.x[rd];
+                    }
+                    _ => {
+                        panic!("invalid st instruction");
+                    }
+                }
+            } else {
+                let ty = extract_field(ins, 22, 2);
+                match ty {
+                    0 => {
+                        // LD.B
+                        size = 1;
+                    }
+                    1 => {
+                        // LD.H
+                        size = 2;
+                    }
+                    2 => {
+                        // LD.W
+                        size = 4;
+                    }
+                    3 => {
+                        // LD.D
+                        size = 8;
+                    }
+                    _ => {
+                        panic!("invalid ld instruction");
+                    }
+                }
+            }
+            let mut mmio_access = MMIOAccess {
+                address: badv,
+                size,
+                is_write,
+                value,
+            };
+            debug!(
+                "mmio_access, addr={:#x}, size={:#x}, is_write={}, value={:#x}",
+                mmio_access.address, mmio_access.size, mmio_access.is_write, mmio_access.value
+            );
+            let res = mmio_handle_access(&mut mmio_access);
+            match res {
+                Ok(_) => {
+                    todo!("handle mmio access success");
+                }
+                Err(e) => {
+                    error!(
+                        "mmio access failed, error = {:?}, this is a real page fault",
+                        e
+                    );
+                    panic!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",
+                    ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv)
+                }
+            }
         }
         _ => {
             panic!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",  

@@ -1,11 +1,8 @@
 use crate::{
-    config::*,
-    error::HvResult,
-    memory::{
-        addr::align_down, addr::align_up, mmio_generic_handler, GuestPhysAddr, HostPhysAddr,
+    config::*, device::virtio_trampoline::mmio_virtio_handler, error::HvResult, memory::{
+        addr::{align_down, align_up}, mmio_generic_handler, GuestPhysAddr, HostPhysAddr,
         MemFlags, MemoryRegion,
-    },
-    zone::Zone,
+    }, zone::Zone
 };
 use alloc::vec::Vec;
 use core::arch::asm;
@@ -34,7 +31,17 @@ impl Zone {
                         MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
                     ))?;
                 }
+                MEM_TYPE_VIRTIO => {
+                    info!("loongarch64: pt_init: register virtio mmio region: {:#x?}", region);
+                    self.mmio_region_register(
+                        region.physical_start as _,
+                        region.size as _,
+                        mmio_virtio_handler,
+                        region.physical_start as _,
+                    );
+                }
                 _ => {
+                    error!("loongarch64: pt_init: unknown mem type: {}", mem_type);
                     return hv_result_err!(EINVAL);
                 }
             }
@@ -51,6 +58,10 @@ impl Zone {
                 let va = mem_regions[0].virtual_start as GuestPhysAddr;
                 let result_pa = r.unwrap().0;
                 if result_pa != mem_regions[0].physical_start as HostPhysAddr {
+                    error!(
+                        "loongarch64: pt_init: page table test failed: va: {:#x}, pa: {:#x}, expected pa: {:#x}",
+                        va, result_pa, mem_regions[0].physical_start
+                    );
                     return hv_result_err!(EINVAL, "page table test failed");
                 }
             }
