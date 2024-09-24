@@ -74,6 +74,9 @@ static inline void write_barrier(void) {
     #ifdef RISCV64
         asm volatile ("fence w,w"::: "memory");
     #endif
+    #ifdef LOONGARCH64
+        asm volatile ("dbar 0"::: "memory");
+    #endif
 }
 
 static inline void read_barrier(void) {
@@ -83,6 +86,9 @@ static inline void read_barrier(void) {
     #ifdef RISCV64
         asm volatile ("fence r,r"::: "memory");
     #endif
+    #ifdef LOONGARCH64
+        asm volatile ("dbar 0"::: "memory");
+    #endif
 }
 
 static inline void rw_barrier(void) {
@@ -91,6 +97,9 @@ static inline void rw_barrier(void) {
     #endif
     #ifdef RISCV64
         asm volatile ("fence rw,rw"::: "memory");
+    #endif
+    #ifdef LOONGARCH64
+        asm volatile ("dbar 0"::: "memory");
     #endif
 }
 
@@ -254,12 +263,16 @@ static void* get_virt_addr(void *addr, int zone_id)
 
 // When virtio device is processing virtqueue, driver adding an elem to virtqueue is no need to notify device.
 void virtqueue_disable_notify(VirtQueue *vq) {
+    log_info("[WHEATFOX] (%s) start, vq@%#x, vq_idx=%d, desc_table@%#x, avail_ring@%#x, used_ring@%#x",
+                __func__, vq, vq->vq_idx, vq->desc_table, vq->avail_ring, vq->used_ring);
+    log_info("[WHEATFOX] (%s) vq->event_idx_enabled is %d", __func__, vq->event_idx_enabled);
 	if (vq->event_idx_enabled) {
 		VQ_AVAIL_EVENT(vq) = vq->last_avail_idx - 1;
 	} else {
     	vq->used_ring->flags |= (uint16_t)VRING_USED_F_NO_NOTIFY;
 	}
 	write_barrier();
+    log_info("[WHEATFOX] (%s) end", __func__);
 }
 
 void virtqueue_enable_notify(VirtQueue *vq) {
@@ -296,12 +309,22 @@ void virtqueue_set_used(VirtQueue *vq)
 static inline int descriptor2iov(int i, volatile VirtqDesc *vd,
            struct iovec *iov, uint16_t *flags, int zone_id) {
     void *host_addr;
+
+    log_info("[WHEATFOX] (%s) i is %d, iov@%#x, vd@%#x, flags@%#x, zone_id is %d",
+                __func__, i, iov, vd, flags, zone_id);
+
     host_addr = get_virt_addr((void *)vd->addr, zone_id);
+
+    log_info("[WHEATFOX] (%s) host_addr is %x", __func__, host_addr);
+
     iov[i].iov_base = host_addr;
     iov[i].iov_len = vd->len;
     // log_debug("vd->addr ipa is %x, iov_base is %x, iov_len is %d", vd->addr, host_addr, vd->len);
     if (flags != NULL)
         flags[i] = vd->flags;
+
+    log_info("[WHEATFOX] (%s) iov[%d].iov_base is %x, iov[%d].iov_len is %d",
+                __func__, i, iov[i].iov_base, i, iov[i].iov_len);
     return 0;
 }
 
@@ -317,14 +340,27 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
     uint16_t next, idx;
     volatile VirtqDesc *vdesc, *ind_table, *ind_desc;
 	int chain_len = 0, i, table_len;
+
+    log_info("[WHEATFOX] (%s) start, vq@%#x, desc_idx is %d, iov@%#x, flags@%#x, append_len is %d",
+                __func__, vq, *desc_idx, *iov, flags == NULL ? 0 : *flags, append_len);
+
     idx = vq->last_avail_idx;
+
+    log_info("[WHEATFOX] (%s) idx is %d", __func__, idx);
+    log_info("[WHEATFOX] (%s) vq->avail_ring->idx is %d", __func__, vq->avail_ring->idx);
+
     if(idx == vq->avail_ring->idx)
         return 0;
     vq->last_avail_idx++;
     *desc_idx = next = vq->avail_ring->ring[idx & (vq->num - 1)];
+
 	// record desc chain' len to chain_len
 	for (i=0; i<(int)vq->num; i++, next = vdesc->next) {
         vdesc = &vq->desc_table[next];
+
+        log_info("[WHEATFOX] (%s) i is %d, next is %d, vdesc->addr is %d, vdesc->len is %d, vdesc->flags is %d",
+                    __func__, i, next, vdesc->addr, vdesc->len, vdesc->flags);
+
 		// TODO: vdesc->len may be not chain_len, virtio specification doesn't say it.
 		if (vdesc->flags & VRING_DESC_F_INDIRECT) {
 			chain_len += vdesc->len / 16;
@@ -336,16 +372,29 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
 
 	chain_len += i + 1, next = *desc_idx;
 	
+    log_info("[WHEATFOX] (%s) chain_len is %d, next is %d", __func__, chain_len, next);
+
 	*iov = malloc(sizeof(struct iovec) * ( chain_len + append_len));
-	if (flags != NULL)
+
+    log_info("[WHEATFOX] (%s) iov@%#x after malloc", __func__, *iov);
+
+	if (flags != NULL) {
 		*flags = malloc(sizeof(uint16_t) * ( chain_len + append_len));
+        log_info("[WHEATFOX] (%s) flags@%#x after malloc", __func__, *flags);
+    }
 
 	for (i=0; i<chain_len; i++, next = vdesc->next) {
 		vdesc = &vq->desc_table[next];
+
+        log_info("[WHEATFOX] (%s) i is %d, next is %d, vdesc->addr is %d, vdesc->len is %d, vdesc->flags is %d",
+                    __func__, i, next, vdesc->addr, vdesc->len, vdesc->flags);
+
 		if (vdesc->flags & VRING_DESC_F_INDIRECT) {
+            log_info("[WHEATFOX] (%s) indirect descriptor", __func__);
 			ind_table = (VirtqDesc *)(get_virt_addr((void *)vdesc->addr, vq->dev->zone_id));
 			table_len = vdesc->len / 16;
 			log_debug("table_len is %d", table_len);
+            log_info("[WHEATFOX] (%s) table_len is %d", __func__, table_len);
 			next = 0;
 			for (;;) {
 				log_debug("next is %d", next);
@@ -362,9 +411,13 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
 				break;
 			}
 		} else {
+            log_info("[WHEATFOX] (%s) not indirect descriptor", __func__);
 			descriptor2iov(i, vdesc, *iov, flags == NULL ? NULL : *flags, vq->dev->zone_id);
 		}
 	}
+
+    log_info("[WHEATFOX] (%s) end, chain_len is %d", __func__, chain_len);
+
     return chain_len;
 }
 
@@ -388,9 +441,87 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
     log_debug("update used ring: used_idx is %d, elem->idx is %d, vq->num is %d", used_idx, idx, vq->num);
 }
 
+// function for translating virtio offset to meaning string
+static const char *virtio_mmio_reg_name(uint64_t offset)
+{
+    switch (offset) {
+    case VIRTIO_MMIO_MAGIC_VALUE:
+        return "VIRTIO_MMIO_MAGIC_VALUE";
+    case VIRTIO_MMIO_VERSION:
+        return "VIRTIO_MMIO_VERSION";
+    case VIRTIO_MMIO_DEVICE_ID:
+        return "VIRTIO_MMIO_DEVICE_ID";
+    case VIRTIO_MMIO_VENDOR_ID:
+        return "VIRTIO_MMIO_VENDOR_ID";
+    case VIRTIO_MMIO_DEVICE_FEATURES:
+        return "VIRTIO_MMIO_DEVICE_FEATURES";
+    case VIRTIO_MMIO_DEVICE_FEATURES_SEL:
+        return "VIRTIO_MMIO_DEVICE_FEATURES_SEL";
+    case VIRTIO_MMIO_DRIVER_FEATURES:
+        return "VIRTIO_MMIO_DRIVER_FEATURES";
+    case VIRTIO_MMIO_DRIVER_FEATURES_SEL:
+        return "VIRTIO_MMIO_DRIVER_FEATURES_SEL";
+    case VIRTIO_MMIO_GUEST_PAGE_SIZE:
+        return "VIRTIO_MMIO_GUEST_PAGE_SIZE";
+    case VIRTIO_MMIO_QUEUE_SEL:
+        return "VIRTIO_MMIO_QUEUE_SEL";
+    case VIRTIO_MMIO_QUEUE_NUM_MAX:
+        return "VIRTIO_MMIO_QUEUE_NUM_MAX";
+    case VIRTIO_MMIO_QUEUE_NUM:
+        return "VIRTIO_MMIO_QUEUE_NUM";
+    case VIRTIO_MMIO_QUEUE_ALIGN:
+        return "VIRTIO_MMIO_QUEUE_ALIGN";
+    case VIRTIO_MMIO_QUEUE_PFN:
+        return "VIRTIO_MMIO_QUEUE_PFN";
+    case VIRTIO_MMIO_QUEUE_READY:
+        return "VIRTIO_MMIO_QUEUE_READY";
+    case VIRTIO_MMIO_QUEUE_NOTIFY:
+        return "VIRTIO_MMIO_QUEUE_NOTIFY";
+    case VIRTIO_MMIO_INTERRUPT_STATUS:
+        return "VIRTIO_MMIO_INTERRUPT_STATUS";
+    case VIRTIO_MMIO_INTERRUPT_ACK:
+        return "VIRTIO_MMIO_INTERRUPT_ACK";
+    case VIRTIO_MMIO_STATUS:
+        return "VIRTIO_MMIO_STATUS";
+    case VIRTIO_MMIO_QUEUE_DESC_LOW:
+        return "VIRTIO_MMIO_QUEUE_DESC_LOW";
+    case VIRTIO_MMIO_QUEUE_DESC_HIGH:
+        return "VIRTIO_MMIO_QUEUE_DESC_HIGH";
+    case VIRTIO_MMIO_QUEUE_AVAIL_LOW:
+        return "VIRTIO_MMIO_QUEUE_AVAIL_LOW";
+    case VIRTIO_MMIO_QUEUE_AVAIL_HIGH:
+        return "VIRTIO_MMIO_QUEUE_AVAIL_HIGH";
+    case VIRTIO_MMIO_QUEUE_USED_LOW:
+        return "VIRTIO_MMIO_QUEUE_USED_LOW";
+    case VIRTIO_MMIO_QUEUE_USED_HIGH:
+        return "VIRTIO_MMIO_QUEUE_USED_HIGH";
+    case VIRTIO_MMIO_SHM_SEL:
+        return "VIRTIO_MMIO_SHM_SEL";
+    case VIRTIO_MMIO_SHM_LEN_LOW:
+        return "VIRTIO_MMIO_SHM_LEN_LOW";
+    case VIRTIO_MMIO_SHM_LEN_HIGH:
+        return "VIRTIO_MMIO_SHM_LEN_HIGH";
+    case VIRTIO_MMIO_SHM_BASE_LOW:
+        return "VIRTIO_MMIO_SHM_BASE_LOW";
+    case VIRTIO_MMIO_SHM_BASE_HIGH:
+        return "VIRTIO_MMIO_SHM_BASE_HIGH";
+    case VIRTIO_MMIO_CONFIG_GENERATION:
+        return "VIRTIO_MMIO_CONFIG_GENERATION";
+    case VIRTIO_MMIO_CONFIG:
+        return "VIRTIO_MMIO_CONFIG";
+    default:
+        return "UNKNOWN";
+    }
+}
+    
+
 static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size)
 {
     log_debug("virtio mmio read at %#x", offset);
+
+    // log_info("virtio mmio read at offset=%#x, size=%d, vdev=%p, [%s]", offset, size, vdev, virtio_mmio_reg_name(offset));
+    log_info("READ  virtio mmio at offset=%#x[%s], size=%d, vdev=%p", offset, virtio_mmio_reg_name(offset), size, vdev);
+
     if (!vdev) {
         switch (offset) {
         case VIRTIO_MMIO_MAGIC_VALUE:
@@ -468,6 +599,10 @@ static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned s
 static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t value, unsigned size)
 {
     log_debug("virtio mmio write at %#x, value is %#x\n", offset, value);
+
+    // log_info("virtio mmio write at offset=%#x, value=%#x, size=%d, vdev=%p, [%s]", offset, value, size, vdev, virtio_mmio_reg_name(offset));
+    log_info("WRITE virtio mmio at offset=%#x[%s], value=%#x, size=%d, vdev=%p", offset, virtio_mmio_reg_name(offset), value, size, vdev);
+
     VirtMmioRegs *regs = &vdev->regs;
     VirtQueue *vqs = vdev->vqs;
     if (!vdev) {
@@ -525,11 +660,14 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
         break;
     case VIRTIO_MMIO_QUEUE_NOTIFY:
         log_debug("queue notify begin");
+        log_info("[WHEATFOX] (%s) queue notify, value is %d, vdev->vqs_len is %d", __func__, value, vdev->vqs_len);
         if (value < vdev->vqs_len) {
             log_trace("queue notify ready, handler addr is %#x", vqs[value].notify_handler);
+            log_info("[WHEATFOX] (%s) queue notify ready, handler addr is %#x", __func__, vqs[value].notify_handler);
             vqs[value].notify_handler(vdev, &vqs[value]);
         }
         log_debug("queue notify end");
+        log_info("[WHEATFOX] (%s) queue notify end", __func__);
         break;
     case VIRTIO_MMIO_INTERRUPT_ACK:
         if (value == regs->interrupt_status && regs->interrupt_count > 0) {
@@ -703,8 +841,9 @@ void handle_virtio_requests()
 	int signal_count = 0, proc_count = 0;
 	unsigned long long count = 0;
 	for (;;) {
+#ifndef LOONGARCH64
 		log_warn("signal_count is %d, proc_count is %d", signal_count, proc_count);
-		sigwait(&wait_set, &sig);
+		sigwait(&wait_set, &sig); // change to no signal irq
 		signal_count++;
 		if (sig == SIGTERM) {
 			virtio_close();
@@ -713,6 +852,7 @@ void handle_virtio_requests()
 			log_error("unknown signal %d", sig);
 			continue;
 		}
+#endif
 		while(1) {
 			if (!is_queue_empty(req_front, virtio_bridge->req_rear)) {
 				count = 0;
@@ -724,6 +864,7 @@ void handle_virtio_requests()
 				virtio_bridge->req_front = req_front;
 				write_barrier();
 			} 
+#ifndef LOONGARCH64
 			else {
 				count++;
 				if (count < 10000000) 
@@ -736,6 +877,7 @@ void handle_virtio_requests()
 					break;
 				} 		
 			}
+#endif
 		}
 	}
 }

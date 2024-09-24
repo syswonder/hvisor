@@ -294,6 +294,7 @@ static int __init hvisor_init(void)
     else
     {
         hvisor_irq = of_irq_get(node, 0);
+        pr_info("hvisor_irq in dtb is %d\n", hvisor_irq);
         err = request_irq(hvisor_irq, irq_handler, IRQF_SHARED | IRQF_TRIGGER_RISING, "hvisor", &hvisor_misc_dev);
         if (err)
         {

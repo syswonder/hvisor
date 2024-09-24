@@ -11,3 +11,5 @@ driver/hvisor.ko
 *_compile.sh
 /cJSON/
 /.github/
+__loongarch*
+.vscode-ctags
