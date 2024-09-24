@@ -1,7 +1,7 @@
 KDIR ?= ../../nxp/OK8MP-linux-kernel
 DEV ?= /dev/sda1
 ARCH ?= arm64
-LOG ?= LOG_WARN
+LOG ?= LOG_INFO
 
 export KDIR
 export ARCH

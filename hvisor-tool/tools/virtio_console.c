@@ -121,11 +121,20 @@ int virtio_console_init(VirtIODevice *vdev) {
 
 int virtio_console_rxq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     log_debug("%s", __func__);
+    
+    log_info("[WHEATFOX] (%s) start, vq@%#x", __func__, vq);
+    
     ConsoleDev *dev = (ConsoleDev *)vdev->dev;
+
+    log_info("[WHEATFOX] (%s) dev@%#x, dev->rx_ready is %d", __func__, dev, dev->rx_ready);
+
     if (dev->rx_ready <= 0) {
         dev->rx_ready = 1;
+        log_info("[WHEATFOX] (%s) calling virtqueue_disable_notify", __func__);
         virtqueue_disable_notify(vq);
+        log_info("[WHEATFOX] (%s) virtqueue_disable_notify done", __func__);
     }
+    log_info("[WHEATFOX] (%s) end, vq@%#x", __func__, vq);
     return 0;
 }
 
@@ -141,6 +150,8 @@ static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq) {
         return ;
     }
 
+    log_info("[WHEATFOX] (%s) calling process_descriptor_chain", __func__);
+
     n = process_descriptor_chain(vq, &idx, &iov, NULL, 0);
     // if (count % 100 == 0) {
     //     log_info("console txq: n is %d, data is ", n);
@@ -148,6 +159,9 @@ static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq) {
     //         log_printf("%c", *(char*)&iov->iov_base[i]);
     //     log_printf("\n");
     // }
+
+    log_info("[WHEATFOX] (%s) process_descriptor_chain done, n is %d", __func__, n);
+
     if (n < 1) {
         return ;
     }
@@ -162,14 +176,16 @@ static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq) {
 
 int virtio_console_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     log_debug("%s", __func__);
+    log_info("[WHEATFOX] (%s) start, vq@%#x", __func__, vq);
     while (!virtqueue_is_empty(vq)) {
         virtqueue_disable_notify(vq);
         while(!virtqueue_is_empty(vq)) {
             virtq_tx_handle_one_request(vdev->dev, vq);
         }
         virtqueue_enable_notify(vq);
-    }
+    }    
     virtio_inject_irq(vq);
+    log_info("[WHEATFOX] (%s) end, vq@%#x", __func__, vq);
     return 0;
 }
 
