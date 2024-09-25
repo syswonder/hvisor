@@ -108,6 +108,8 @@ impl ArchCpu {
             );
         }
         info!("loongarch64: ArchCpu::idle: cpuid={}", self.get_cpuid());
+        // enable ipi on ecfg
+        ecfg_ipi_enable();
         loop {}
     }
 }

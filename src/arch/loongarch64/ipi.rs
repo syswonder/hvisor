@@ -1,5 +1,10 @@
+use crate::arch::cpu::this_cpu_id;
 use crate::device::common::MMIODerefWrapper;
 use core::arch::asm;
+use loongArch64::cpu;
+use loongArch64::register::ecfg::LineBasedInterrupt;
+use loongArch64::register::*;
+use loongArch64::time;
 use tock_registers::fields::FieldValue;
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 use tock_registers::register_bitfields;
@@ -171,4 +176,26 @@ pub fn get_ipi_status(cpu_id: usize) -> u32 {
         }
     };
     ipi.ipi_status.read(IpiStatus::IPISTATUS)
+}
+
+pub fn ecfg_ipi_enable() {
+    let mut lie_ = ecfg::read().lie();
+    lie_ = lie_ | LineBasedInterrupt::IPI;
+    ecfg::set_lie(lie_);
+    info!(
+        "ecfg ipi enabled on cpu {}, current lie: {:?}",
+        this_cpu_id(),
+        lie_
+    );
+}
+
+pub fn ecfg_ipi_disable() {
+    let mut lie_ = ecfg::read().lie();
+    lie_ = lie_ & !LineBasedInterrupt::IPI;
+    ecfg::set_lie(lie_);
+    info!(
+        "ecfg ipi disabled on cpu {}, current lie: {:?}",
+        this_cpu_id(),
+        lie_
+    );
 }

@@ -21,9 +21,7 @@ pub fn install_trap_vector() {
     // clear UEFI firmware's previous timer configs
     tcfg::set_en(false);
     ticlr::clear_timer_interrupt();
-    timer_init();
-    // crmd::set_ie(true);
-
+    // timer_init();
     // set CSR.EENTRY to _hyp_trap_vector and int vector offset to 0
     ecfg::set_vs(0);
     eentry::set_eentry(_hyp_trap_vector as usize);
@@ -77,7 +75,7 @@ pub fn timer_init() {
     // set timer
     tcfg::set_periodic(true);
     // let init_val = get_ms_counter(500);
-    let init_val = get_ms_counter(10000);
+    let init_val = get_ms_counter(6000);
     tcfg::set_init_val(init_val);
     // println!("loongarch64: timer_init: timer init value = {}", init_val);
 
@@ -85,6 +83,13 @@ pub fn timer_init() {
 
     let mut lie_ = ecfg::read().lie();
     lie_ = lie_ | LineBasedInterrupt::TIMER;
+    ecfg::set_lie(lie_);
+}
+
+pub fn ipi_init() {
+    // enable IPI
+    let mut lie_ = ecfg::read().lie();
+    lie_ = lie_ | LineBasedInterrupt::IPI;
     ecfg::set_lie(lie_);
 }
 
@@ -139,10 +144,10 @@ pub fn ecode2str(ecode: usize, esubcode: usize) -> &'static str {
 fn handle_page_modify_fault() {
     let badv_ = badv::read();
     info!(
-        "(page_modify_fault) handling page modify exception, vaddr = 0x{:x}",
+        "loongarch64: handling page modify exception, vaddr = 0x{:x}",
         badv_.vaddr()
     );
-    info!("(page_modify_fault) ignoring this exception, todo: set dirty bit in page table entry");
+    info!("loongarch64: ignoring this exception, todo: set dirty bit in page table entry");
 }
 
 #[no_mangle]
@@ -218,6 +223,168 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
     unsafe {
         let _ctx_ptr = ctx as *mut ZoneContext;
         _vcpu_return(_ctx_ptr as usize);
+    }
+}
+
+const ECODE_INT: usize = 0x0;
+const ECODE_GSPR: usize = 0x16;
+const ECODE_PIL: usize = 0x1;
+const ECODE_PIS: usize = 0x2;
+const ECODE_HVC: usize = 0x17;
+const ECODE_PNR: usize = 0x5;
+
+fn handle_exception(
+    ecode: usize,
+    esubcode: usize,
+    era: usize,
+    is: usize,
+    badi: usize,
+    badv: usize,
+    ctx: &mut ZoneContext,
+) {
+    match ecode {
+        ECODE_INT => {
+            debug!(
+                "This is an interrupt exception, is={:#x}, ecfg.lie={:?}",
+                is,
+                ecfg::read().lie()
+            );
+            // INT = 0x0,   Interrupt
+            handle_interrupt(is);
+        }
+        ECODE_GSPR => {
+            // according to kvm's code, we should emulate the instruction that cause the GSPR exception - wheatfox 2024.4.12
+            // GSPR = 0x16, Guest Sensitive Privileged Resource
+            trace!(
+                "This is a GSPR exception, badv={:#x}, badi={:#x}",
+                badv,
+                badi
+            );
+            emulate_instruction(era, badi, ctx);
+        }
+        ECODE_HVC => {
+            // HVC = 0x17,  Hypervisor Call
+            // code = a0(r4), arg0 = a1(r5), arg1 = a2(r6)
+            handle_hvc(ctx);
+        }
+        ECODE_PIL | ECODE_PIS => {
+            // we first assume this lies in virtio region
+            // since we didn't add these regions into VMM Pages
+            /*
+               LD.B   rd, rj, si12   0010100000   si12   rj5  rd5
+               LD.H   rd, rj, si12   0010100001   si12   rj5  rd5
+               LD.W   rd, rj, si12   0010100010   si12   rj5  rd5
+               LD.D   rd, rj, si12   0010100011   si12   rj5  rd5
+               ST.B   rd, rj, si12   0010100100   si12   rj5  rd5
+               ST.H   rd, rj, si12   0010100101   si12   rj5  rd5
+               ST.W   rd, rj, si12   0010100110   si12   rj5  rd5
+               ST.D   rd, rj, si12   0010100111   si12   rj5  rd5
+               LD.BU  rd, rj, si12   0010101000   si12   rj5  rd5
+               LD.HU  rd, rj, si12   0010101001   si12   rj5  rd5
+               LD.WU  rd, rj, si12   0010101010   si12   rj5  rd5
+            */
+            let ins = badi;
+            let mut is_write = false;
+            let mut value = 0;
+            let mut size = 0;
+            let mut addr = 0;
+            let prefix8 = extract_field(ins, 24, 8);
+            let si12 = extract_field(ins, 10, 12);
+            let rj = extract_field(ins, 5, 5);
+            let rd = extract_field(ins, 0, 5);
+            debug!(
+                "decode instruction {:#b}: prefix8={:#b}, si12={:#x}, rj={:#x}, rd={:#x}",
+                ins, prefix8, si12, rj, rd
+            );
+            if prefix8 == 0b00101001 {
+                is_write = true; // this is a st instruction
+                let ty = extract_field(ins, 22, 2);
+                match ty {
+                    0 => {
+                        // ST.B
+                        size = 1;
+                        value = ctx.x[rd] & 0xff;
+                    }
+                    1 => {
+                        // ST.H
+                        size = 2;
+                        value = ctx.x[rd] & 0xffff;
+                    }
+                    2 => {
+                        // ST.W
+                        size = 4;
+                        value = ctx.x[rd] & 0xffffffff;
+                    }
+                    3 => {
+                        // ST.D
+                        size = 8;
+                        value = ctx.x[rd];
+                    }
+                    _ => {
+                        panic!("invalid st instruction");
+                    }
+                }
+            } else {
+                let ty = extract_field(ins, 22, 2);
+                match ty {
+                    0 => {
+                        // LD.B
+                        size = 1;
+                    }
+                    1 => {
+                        // LD.H
+                        size = 2;
+                    }
+                    2 => {
+                        // LD.W
+                        size = 4;
+                    }
+                    3 => {
+                        // LD.D
+                        size = 8;
+                    }
+                    _ => {
+                        panic!("invalid ld instruction");
+                    }
+                }
+            }
+            let mut mmio_access = MMIOAccess {
+                address: badv,
+                size,
+                is_write,
+                value,
+            };
+            debug!(
+                "mmio_access, addr={:#x}, size={:#x}, is_write={}, value={:#x}",
+                mmio_access.address, mmio_access.size, mmio_access.is_write, mmio_access.value
+            );
+            let res = mmio_handle_access(&mut mmio_access);
+            match res {
+                Ok(_) => {
+                    debug!(
+                        "handle mmio access success, value = {:#x}",
+                        mmio_access.value
+                    );
+                    if !is_write {
+                        ctx.x[rd] = mmio_access.value;
+                    }
+                    // we should jump to next instruction because we 'emulated' the instruction
+                    ctx.sepc += 4;
+                }
+                Err(e) => {
+                    error!(
+                        "mmio access failed, error = {:?}, this is a real page fault",
+                        e
+                    );
+                    panic!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",
+                    ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv)
+                }
+            }
+        }
+        _ => {
+            panic!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",  
+            ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv)
+        }
     }
 }
 
@@ -898,7 +1065,8 @@ fn handle_interrupt(is: usize) {
             }
         }
         _ if is & TIMER_BIT != 0 => {
-            loongArch64::register::ticlr::clear_timer_interrupt();
+            use loongArch64::register;
+            register::ticlr::clear_timer_interrupt();
         }
         _ => {
             info!("not handled interrupt");
@@ -1263,152 +1431,6 @@ fn emulate_instruction(era: usize, ins: usize, ctx: &mut ZoneContext) {
     }
 
     panic!("Unexpected opcode encountered, ins = {:#x}", ins);
-}
-
-const ECODE_INT: usize = 0x0;
-const ECODE_GSPR: usize = 0x16;
-const ECODE_PIL: usize = 0x1;
-const ECODE_PIS: usize = 0x2;
-const ECODE_HVC: usize = 0x17;
-const ECODE_PNR: usize = 0x5;
-
-fn handle_exception(
-    ecode: usize,
-    esubcode: usize,
-    era: usize,
-    is: usize,
-    badi: usize,
-    badv: usize,
-    ctx: &mut ZoneContext,
-) {
-    match ecode {
-        ECODE_INT => {
-            // INT = 0x0,   Interrupt
-            handle_interrupt(is);
-        }
-        ECODE_GSPR => {
-            // according to kvm's code, we should emulate the instruction that cause the GSPR exception - wheatfox 2024.4.12
-            // GSPR = 0x16, Guest Sensitive Privileged Resource
-            trace!(
-                "This is a GSPR exception, badv={:#x}, badi={:#x}",
-                badv,
-                badi
-            );
-            emulate_instruction(era, badi, ctx);
-        }
-        ECODE_HVC => {
-            // HVC = 0x17,  Hypervisor Call
-            // code = a0(r4), arg0 = a1(r5), arg1 = a2(r6)
-            handle_hvc(ctx);
-        }
-        ECODE_PIL | ECODE_PIS => {
-            // we first assume this lies in virtio region
-            // since we didn't add these regions into VMM Pages
-            /*
-                LD.B   rd, rj, si12   0010100000   si12   rj5  rd5
-                LD.H   rd, rj, si12   0010100001   si12   rj5  rd5
-                LD.W   rd, rj, si12   0010100010   si12   rj5  rd5
-                LD.D   rd, rj, si12   0010100011   si12   rj5  rd5
-                ST.B   rd, rj, si12   0010100100   si12   rj5  rd5
-                ST.H   rd, rj, si12   0010100101   si12   rj5  rd5
-                ST.W   rd, rj, si12   0010100110   si12   rj5  rd5
-                ST.D   rd, rj, si12   0010100111   si12   rj5  rd5
-                LD.BU  rd, rj, si12   0010101000   si12   rj5  rd5
-                LD.HU  rd, rj, si12   0010101001   si12   rj5  rd5
-                LD.WU  rd, rj, si12   0010101010   si12   rj5  rd5
-             */
-            let ins = badi;
-            let mut is_write = false;
-            let mut value = 0;
-            let mut size = 0;
-            let mut addr = 0;
-            let prefix8 = extract_field(ins, 24, 8);
-            let si12 = extract_field(ins, 10, 12);
-            let rj = extract_field(ins, 5, 5);
-            let rd = extract_field(ins, 0, 5);
-            debug!("decode instruction {:#b}: prefix8={:#b}, si12={:#x}, rj={:#x}, rd={:#x}", ins, prefix8, si12, rj, rd);
-            if prefix8 == 0b00101001 {
-                is_write = true; // this is a st instruction
-                let ty = extract_field(ins, 22, 2);
-                match ty {
-                    0 => {
-                        // ST.B
-                        size = 1;
-                        value = ctx.x[rd] & 0xff;
-                    }
-                    1 => {
-                        // ST.H
-                        size = 2;
-                        value = ctx.x[rd] & 0xffff;
-                    }
-                    2 => {
-                        // ST.W
-                        size = 4;
-                        value = ctx.x[rd] & 0xffffffff;
-                    }
-                    3 => {
-                        // ST.D
-                        size = 8;
-                        value = ctx.x[rd];
-                    }
-                    _ => {
-                        panic!("invalid st instruction");
-                    }
-                }
-            } else {
-                let ty = extract_field(ins, 22, 2);
-                match ty {
-                    0 => {
-                        // LD.B
-                        size = 1;
-                    }
-                    1 => {
-                        // LD.H
-                        size = 2;
-                    }
-                    2 => {
-                        // LD.W
-                        size = 4;
-                    }
-                    3 => {
-                        // LD.D
-                        size = 8;
-                    }
-                    _ => {
-                        panic!("invalid ld instruction");
-                    }
-                }
-            }
-            let mut mmio_access = MMIOAccess {
-                address: badv,
-                size,
-                is_write,
-                value,
-            };
-            debug!(
-                "mmio_access, addr={:#x}, size={:#x}, is_write={}, value={:#x}",
-                mmio_access.address, mmio_access.size, mmio_access.is_write, mmio_access.value
-            );
-            let res = mmio_handle_access(&mut mmio_access);
-            match res {
-                Ok(_) => {
-                    todo!("handle mmio access success");
-                }
-                Err(e) => {
-                    error!(
-                        "mmio access failed, error = {:?}, this is a real page fault",
-                        e
-                    );
-                    panic!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",
-                    ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv)
-                }
-            }
-        }
-        _ => {
-            panic!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",  
-            ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv)
-        }
-    }
 }
 
 /* TLB REFILL HANDLER */

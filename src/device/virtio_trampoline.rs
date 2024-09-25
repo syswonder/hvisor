@@ -58,18 +58,17 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
             core::slice::from_raw_parts(dev.get_cfg_values(), MAX_CPUS),
         )
     };
-    debug!("cfg flags: {:#x?}", cfg_flags);
-    debug!("cfg values: {:#x?}", cfg_values);
     let cpu_id = this_cpu_id() as usize;
     let old_cfg_flag = cfg_flags[cpu_id];
     debug!("old cfg flag: {:#x?}", old_cfg_flag);
     dev.push_req(hreq);
     // If req list is empty, send sgi to root linux to wake up virtio device.
-    // if dev.need_wakeup() {
-    //     debug!("need wakeup, sending ipi to wake up virtio device");
-    //     let root_cpu = root_zone().read().cpu_set.first_cpu().unwrap();
-    //     send_event(root_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP_VIRTIO_DEVICE);
-    // }
+    #[cfg(not(target_arch="loongarch64"))]
+    if dev.need_wakeup() {
+        debug!("need wakeup, sending ipi to wake up virtio device");
+        let root_cpu = root_zone().read().cpu_set.first_cpu().unwrap();
+        send_event(root_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP_VIRTIO_DEVICE);
+    }
     drop(dev);
     let mut count = 0;
     // if it is cfg request, current cpu should be blocked until gets the result
