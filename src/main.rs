@@ -38,6 +38,7 @@ mod percpu;
 mod platform;
 mod zone;
 mod config;
+mod ivc;
 
 #[cfg(target_arch = "aarch64")]
 use crate::arch::mm::setup_parange;
