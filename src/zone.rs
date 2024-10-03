@@ -163,19 +163,6 @@ pub fn this_zone_id() -> usize {
     this_zone().read().id
 }
 
-// #[repr(C)]
-// #[derive(Debug, Clone)]
-// pub struct ZoneConfig {
-//     pub zone_id: u32,
-//     pub cpus: u64,
-//     pub num_memory_regions: u32,
-//     pub memory_regions: [MemoryRegion; CONFIG_MAX_MEMORY_REGIONS],
-//     pub num_interrupts: u32,
-//     pub interrupts: [u32; CONFIG_MAX_INTERRUPTS],
-//     pub entry_point: u64,
-//     pub dtb_load_paddr: u64,
-// }
-
 pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     // we create the new zone here
     // TODO: create Zone with cpu_set
@@ -189,17 +176,12 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     zone.pt_init(config.memory_regions()).unwrap();
     zone.mmio_init(&config.arch_config);
     zone.irq_bitmap_init(config.interrupts());
-
+    zone.ivc_init(config.ivc_config());
+    
     config.cpus().iter().for_each(|cpu_id| {
         zone.cpu_set.set_bit(*cpu_id as _);
     });
 
-    // pub struct HvConfigMemoryRegion {
-    //     pub mem_type: u32,
-    //     pub physical_start: u64,
-    //     pub virtual_start: u64,
-    //     pub size: u64,
-    // }
     let mut dtb_ipa = INVALID_ADDRESS as u64;
     for region in config.memory_regions() {
         // region contains config.dtb_load_paddr?
