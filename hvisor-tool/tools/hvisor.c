@@ -173,7 +173,8 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
     cJSON *entry_point_json = cJSON_GetObjectItem(root, "entry_point");
     cJSON *kernel_args_json = cJSON_GetObjectItem(root, "kernel_args");
     cJSON *interrupts_json = cJSON_GetObjectItem(root, "interrupts");
-
+    cJSON *ivc_configs_json = cJSON_GetObjectItem(root, "ivc_configs");
+    
     if (!zone_id_json || !cpus_json || !name_json || 
         !memory_regions_json || !kernel_filepath_json || 
         !dtb_filepath_json || !kernel_load_paddr_json || 
@@ -238,6 +239,30 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
         config->interrupts[i] = cJSON_GetArrayItem(interrupts_json, i)->valueint;
     }
 
+    int num_ivc_configs = cJSON_GetArraySize(ivc_configs_json);
+    config->num_ivc_configs = num_ivc_configs;
+    printf("num_ivc_configs %d\n", num_ivc_configs);
+    for (int i=0; i < num_ivc_configs; i++) {
+        cJSON *ivc_config_json = cJSON_GetArrayItem(ivc_configs_json, i);
+        ivc_config_t * ivc_config = &config->ivc_configs[i];
+        ivc_config->ivc_id = cJSON_GetObjectItem(ivc_config_json, "ivc_id")->valueint;
+        printf("id: %d\n", ivc_config->ivc_id);
+        const char *protocol_str = cJSON_GetObjectItem(ivc_config_json, "protocol")->valuestring;
+        if (strcmp(protocol_str, "IVC_PROTOCOL_HVISOR") == 0) {
+            ivc_config->protocol = IVC_PROTOCOL_HVISOR;
+        } else if (strcmp(protocol_str, "IVC_PROTOCOL_USER") == 0) {
+            ivc_config->protocol = IVC_PROTOCOL_USER;
+        } else {
+            printf("Unknown protocol: %s\n", protocol_str);
+            ivc_config->protocol = -1;
+        }
+        ivc_config->shared_mem_ipa = strtoull(cJSON_GetObjectItem(ivc_config_json, "shared_mem_ipa")->valuestring, NULL, 16);
+        ivc_config->mem_size = strtoull(cJSON_GetObjectItem(ivc_config_json, "mem_size")->valuestring, NULL, 16);
+        ivc_config->interrupt_num = cJSON_GetObjectItem(ivc_config_json, "interrupt_num")->valueint;
+        ivc_config->max_peers = cJSON_GetObjectItem(ivc_config_json, "max_peers")->valueint;
+        printf("ivc_config %d: ivc_id %d, protocol %d, shared_mem_ipa %llx, mem_size %llx, interrupt_num %d, max_peers %d\n",
+               i, ivc_config->ivc_id, ivc_config->protocol, ivc_config->shared_mem_ipa, ivc_config->mem_size, ivc_config->interrupt_num, ivc_config->max_peers);
+    }
     config->entry_point = strtoull(entry_point_json->valuestring, NULL, 16);
 
     config->kernel_load_paddr = strtoull(kernel_load_paddr_json->valuestring, NULL, 16);
@@ -364,9 +389,41 @@ static int zone_list(int argc, char *argv[])
     return ret;
 }
 
+static void ivc_demo_send() {
+    int fd;
+    printf("ivc_demo: starting\n");
+    fd = open_dev();
+    void* addr = mmap(NULL, 0x3000, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0xd0000000);
+    char *s = "hello zone1! I'm zone0.";
+    char *d = (char *)addr;
+    strcpy(d, s);
+    printf("ivc_demo: zone0 sent: %s\n", s);
+    while (*d == 'h') {};
+    printf("ivc_demo: zone0 received: %s\n", d);
+    printf("ivc_demo finished\n");
+    close(fd);
+    munmap(addr, 0x3000);
+    return ;
+}
+
+static void ivc_demo_receive() {
+    int fd;
+    printf("ivc_demo: starting\n");
+    fd = open_dev();
+    void* addr = mmap(NULL, 0x3000, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0xd0000000);
+    char *s = (char *) addr;
+    printf("ivc_demo: zone1 received: %s\n", s);
+    strcpy(s, "I'm zone1. hello zone0! ");
+    printf("ivc_demo: zone1 sent: %s\n", s);
+    printf("ivc_demo finished\n");
+    close(fd);
+    munmap(addr, 0x3000);
+    return ;
+}
+
 int main(int argc, char *argv[])
 {
-    int err;
+    int err = 0;
 
     if (argc < 2)
         help(1);
@@ -400,6 +457,13 @@ int main(int argc, char *argv[])
         {
             help(1);
         }
+    }
+    else if (strcmp(argv[1], "ivc_demo") == 0) {
+        if (strcmp(argv[2], "send") == 0)
+            ivc_demo_send();
+        else if (strcmp(argv[2], "receive") == 0)
+            ivc_demo_receive();
+        else help(1);
     }
     else
     {
