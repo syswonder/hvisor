@@ -1,9 +1,9 @@
 use crate::{arch::zone::HvArchZoneConfig, config::*};
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x10000f000;
-pub const ROOT_ENTRY: u64 = 0x9000000000cb6000; // vmlinux's entry addr, please manually modify it according to your vmlinux ELF info!
+pub const ROOT_ENTRY: u64 = 0x9000000000cb5000; // vmlinux's entry addr, please manually modify it according to your vmlinux ELF info!
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x200000;
-pub const ROOT_ZONE_ENTRY: u64 = 0x9000000000cb6000;
+pub const ROOT_ZONE_ENTRY: u64 = 0x9000000000cb5000;
 pub const ROOT_ZONE_CPUS: u64 = 1 << 0;
 
 pub const ROOT_ZONE_NAME: &str = "root-linux-la64";

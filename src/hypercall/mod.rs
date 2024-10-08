@@ -1,4 +1,5 @@
 #![allow(dead_code)]
+use crate::arch::cpu::this_cpu_id;
 use crate::config::HvZoneConfig;
 use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
 use crate::device::virtio_trampoline::{MAX_DEVS, MAX_REQ, VIRTIO_BRIDGE, VIRTIO_IRQS};
@@ -156,6 +157,14 @@ impl<'a> HyperCall<'a> {
             error!("hv_zone_start: cpu {} already on", boot_cpu);
             return hv_result_err!(EBUSY);
         };
+        #[cfg(target_arch = "loongarch64")]
+        {
+            // assert this is cpu 0
+            let cpuid = this_cpu_id();
+            assert_eq!(cpuid, 0);
+            // stop guest HWI through for debug purpose
+            crate::arch::zone::disable_hwi_through();
+        }
         drop(_lock);
         HyperCallResult::Ok(0)
     }

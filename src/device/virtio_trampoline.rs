@@ -28,7 +28,7 @@ pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;
 
 /// non root zone's virtio request handler
 pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
-    debug!("mmio virtio handler");
+    // debug!("mmio virtio handler");
     let need_interrupt = if mmio.address == QUEUE_NOTIFY { 1 } else { 0 };
     if need_interrupt == 1 {
         debug!("notify !!!, cpu id is {}", this_cpu_id());
@@ -41,7 +41,6 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
         drop(dev);
         dev = VIRTIO_BRIDGE.lock();
     }
-    debug!("get virtio bridge dev lock");
     let hreq = HvisorDeviceReq::new(
         this_cpu_id() as _,
         mmio.address as _,
@@ -51,7 +50,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
         mmio.is_write,
         need_interrupt,
     );
-    debug!("non root sends req: {:#x?}", hreq);
+    // debug!("non root sends req: {:#x?}", hreq);
     let (cfg_flags, cfg_values) = unsafe {
         (
             core::slice::from_raw_parts(dev.get_cfg_flags(), MAX_CPUS),
@@ -60,7 +59,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     };
     let cpu_id = this_cpu_id() as usize;
     let old_cfg_flag = cfg_flags[cpu_id];
-    debug!("old cfg flag: {:#x?}", old_cfg_flag);
+    // debug!("old cfg flag: {:#x?}", old_cfg_flag);
     dev.push_req(hreq);
     // If req list is empty, send sgi to root linux to wake up virtio device.
     #[cfg(not(target_arch="loongarch64"))]
@@ -85,10 +84,10 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
         if !mmio.is_write {
             // ensure cfg value is right.
             mmio.value = cfg_values[cpu_id] as _;
-            debug!("non root receives value: {:#x?}", mmio.value);
+            // debug!("non root receives value: {:#x?}", mmio.value);
         }
     }
-    debug!("non root returns");
+    // debug!("non root returns");
     Ok(())
 }
 

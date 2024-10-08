@@ -76,6 +76,12 @@ impl Zone {
     pub fn irq_bitmap_init(&mut self, irqs: &[u32]) {}
 }
 
+pub fn disable_hwi_through() {
+    info!("loongarch64: disable_hwi_through");
+    use crate::arch::register::*;
+    gintc::set_hwip(0x0); // stop passing through all 8 HWIs
+}
+
 #[repr(C)]
 #[repr(align(16))]
 #[derive(Debug, Copy, Clone)]

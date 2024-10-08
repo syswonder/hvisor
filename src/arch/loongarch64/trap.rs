@@ -268,105 +268,185 @@ fn handle_exception(
             handle_hvc(ctx);
         }
         ECODE_PIL | ECODE_PIS => {
+            debug!("exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",
+                    ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv);
             // we first assume this lies in virtio region
             // since we didn't add these regions into VMM Pages
             /*
-               LD.B   rd, rj, si12   0010100000   si12   rj5  rd5
-               LD.H   rd, rj, si12   0010100001   si12   rj5  rd5
-               LD.W   rd, rj, si12   0010100010   si12   rj5  rd5
-               LD.D   rd, rj, si12   0010100011   si12   rj5  rd5
-               ST.B   rd, rj, si12   0010100100   si12   rj5  rd5
-               ST.H   rd, rj, si12   0010100101   si12   rj5  rd5
-               ST.W   rd, rj, si12   0010100110   si12   rj5  rd5
-               ST.D   rd, rj, si12   0010100111   si12   rj5  rd5
-               LD.BU  rd, rj, si12   0010101000   si12   rj5  rd5
-               LD.HU  rd, rj, si12   0010101001   si12   rj5  rd5
-               LD.WU  rd, rj, si12   0010101010   si12   rj5  rd5
+                LD.B    rd, rj, si12    0010100000  si12    rj5   rd5
+                LD.H    rd, rj, si12    0010100001  si12    rj5   rd5
+                LD.W    rd, rj, si12    0010100010  si12    rj5   rd5
+                LD.D    rd, rj, si12    0010100011  si12    rj5   rd5
+                ST.B    rd, rj, si12    0010100100  si12    rj5   rd5
+                ST.H    rd, rj, si12    0010100101  si12    rj5   rd5
+                ST.W    rd, rj, si12    0010100110  si12    rj5   rd5
+                ST.D    rd, rj, si12    0010100111  si12    rj5   rd5
+                LD.BU   rd, rj, si12    0010101000  si12    rj5   rd5
+                LD.HU   rd, rj, si12    0010101001  si12    rj5   rd5
+                LD.WU   rd, rj, si12    0010101010  si12    rj5   rd5
+                LDPTR.W rd, rj, si14    00100100    si14    rj5   rd5
+                STPTR.W rd, rj, si14    00100101    si14    rj5   rd5
+                LDPTR.D rd, rj, si14    00100110    si14    rj5   rd5
+                STPTR.D rd, rj, si14    00100111    si14    rj5   rd5
+                LDX.B   rd, rj, rk      00111000000000 000 rk rj  rd5
+                LDX.H   rd, rj, rk      00111000000001 000 rk rj  rd5
+                LDX.W   rd, rj, rk      00111000000010 000 rk rj  rd5
+                LDX.D   rd, rj, rk      00111000000011 000 rk rj  rd5
+                STX.B   rd, rj, rk      00111000000100 000 rk rj  rd5
+                STX.H   rd, rj, rk      00111000000101 000 rk rj  rd5
+                STX.W   rd, rj, rk      00111000000110 000 rk rj  rd5
+                STX.D   rd, rj, rk      00111000000111 000 rk rj  rd5
+                LDX.BU  rd, rj, rk      00111000001000 000 rk rj  rd5
+                LDX.HU  rd, rj, rk      00111000001001 000 rk rj  rd5
+                LDX.WU  rd, rj, rk      00111000001010 000 rk rj  rd5
             */
             let ins = badi;
             let mut is_write = false;
+            let mut is_u = false;
             let mut value = 0;
             let mut size = 0;
             let mut addr = 0;
-            let prefix8 = extract_field(ins, 24, 8);
-            let si12 = extract_field(ins, 10, 12);
-            let rj = extract_field(ins, 5, 5);
-            let rd = extract_field(ins, 0, 5);
-            debug!(
-                "decode instruction {:#b}: prefix8={:#b}, si12={:#x}, rj={:#x}, rd={:#x}",
-                ins, prefix8, si12, rj, rd
-            );
-            if prefix8 == 0b00101001 {
-                is_write = true; // this is a st instruction
-                let ty = extract_field(ins, 22, 2);
+            let mut target_rd_idx = 0;
+            let prefix6 = extract_field(ins, 26, 6);
+            if prefix6 == 0b001010 {
+                // load/store
+                let rd = extract_field(ins, 0, 5);
+                target_rd_idx = rd;
+                let rj = extract_field(ins, 5, 5);
+                let si12 = extract_field(ins, 10, 12);
+                let ty = extract_field(ins, 24, 2); // ld/st/ldu - 0b00/0b01/0b10
+                let sz = extract_field(ins, 22, 2); // 0b00=byte, 0b01=half, 0b10=word, 0b11=double
                 match ty {
-                    0 => {
-                        // ST.B
-                        size = 1;
-                        value = ctx.x[rd] & 0xff;
+                    0b00 => {
+                        // LD
+                        is_write = false;
                     }
-                    1 => {
-                        // ST.H
-                        size = 2;
-                        value = ctx.x[rd] & 0xffff;
+                    0b01 => {
+                        // ST
+                        is_write = true;
+                        value = ctx.x[rd];
                     }
-                    2 => {
-                        // ST.W
+                    0b10 => {
+                        // LDU
+                        is_write = false;
+                        is_u = true;
+                    }
+                    _ => panic!("unhandled type"),
+                }
+                size = match sz {
+                    0b00 => 1,
+                    0b01 => 2,
+                    0b10 => 4,
+                    0b11 => 8,
+                    _ => panic!("unhandled size"),
+                };
+            } else if prefix6 == 0b001001 {
+                // load/store pointer
+                let rd = extract_field(ins, 0, 5);
+                target_rd_idx = rd;
+                let rj = extract_field(ins, 5, 5);
+                let si14 = extract_field(ins, 10, 14);
+                let mem_addr = ctx.x[rj] as usize + si14 as usize;
+                let ty = extract_field(ins, 24, 2);
+                match ty {
+                    0b00 => {
+                        // LDPTR.W
+                        is_write = false;
                         size = 4;
-                        value = ctx.x[rd] & 0xffffffff;
                     }
-                    3 => {
-                        // ST.D
+                    0b01 => {
+                        // STPTR.W
+                        is_write = true;
+                        size = 4;
+                        value = ctx.x[rd];
+                    }
+                    0b10 => {
+                        // LDPTR.D
+                        is_write = false;
+                        size = 8;
+                    }
+                    0b11 => {
+                        // STPTR.D
+                        is_write = true;
                         size = 8;
                         value = ctx.x[rd];
                     }
-                    _ => {
-                        panic!("invalid st instruction");
-                    }
+                    _ => panic!("unhandled size"),
                 }
-            } else {
-                let ty = extract_field(ins, 22, 2);
+            } else if prefix6 == 0b001110 {
+                // load/store extended
+                let rd = extract_field(ins, 0, 5);
+                target_rd_idx = rd;
+                let rj = extract_field(ins, 5, 5);
+                let rk = extract_field(ins, 10, 5);
+                let sz = extract_field(ins, 18, 2);
+                let ty = extract_field(ins, 20, 2);
                 match ty {
-                    0 => {
-                        // LD.B
-                        size = 1;
+                    0b00 => {
+                        // LDX
+                        is_write = false;
                     }
-                    1 => {
-                        // LD.H
-                        size = 2;
+                    0b01 => {
+                        // STX
+                        is_write = true;
+                        value = ctx.x[rd];
                     }
-                    2 => {
-                        // LD.W
-                        size = 4;
+                    0b10 => {
+                        // LDXU
+                        is_write = false;
+                        is_u = true;
                     }
-                    3 => {
-                        // LD.D
-                        size = 8;
-                    }
-                    _ => {
-                        panic!("invalid ld instruction");
-                    }
+                    _ => panic!("unhandled type"),
                 }
+                size = match sz {
+                    0b00 => 1,
+                    0b01 => 2,
+                    0b10 => 4,
+                    0b11 => 8,
+                    _ => panic!("unhandled size"),
+                };
+            } else {
+                panic!("unhandled instruction: {:#b}/{:#x}", ins, ins);
             }
+
             let mut mmio_access = MMIOAccess {
                 address: badv,
                 size,
                 is_write,
                 value,
             };
-            debug!(
-                "mmio_access, addr={:#x}, size={:#x}, is_write={}, value={:#x}",
-                mmio_access.address, mmio_access.size, mmio_access.is_write, mmio_access.value
+            // debug!(
+            //     "mmio_access, addr={:#x}, size={:#x}, is_write={}, value={:#x}",
+            //     mmio_access.address, mmio_access.size, mmio_access.is_write, mmio_access.value
+            // );
+            info!(
+                "{} mmio_access@{:#x} s={:#x} v={:#x}",
+                if is_write { "->write" } else { "<- read" },
+                mmio_access.address,
+                mmio_access.size,
+                mmio_access.value
             );
             let res = mmio_handle_access(&mut mmio_access);
             match res {
                 Ok(_) => {
-                    debug!(
-                        "handle mmio access success, value = {:#x}",
-                        mmio_access.value
-                    );
+                    debug!("handle mmio success, v={:#x}", mmio_access.value);
                     if !is_write {
-                        ctx.x[rd] = mmio_access.value;
+                        // we read an usize from our zone0 virtio-daemon
+                        // need to trim and extend it to 64-bit reg according to is_u and size
+                        // ctx.x[target_rd_idx] = mmio_access.value;
+                        let trimmed_by_size = mmio_access.value & ((1 << (mmio_access.size * 8)) - 1);
+                        let extended = if !is_u {
+                            // normal instruction with no .u use sign extension
+                            signed_ext(trimmed_by_size, mmio_access.size * 8)
+                        } else {
+                            // .u instruction zero extend
+                            trimmed_by_size
+                        };
+                        debug!(
+                            "read from mmio, raw={:#x}, trimmed={:#x}, extended={:#x}",
+                            mmio_access.value, trimmed_by_size, extended
+                        );
+                        ctx.x[target_rd_idx] = extended;
                     }
                     // we should jump to next instruction because we 'emulated' the instruction
                     ctx.sepc += 4;
@@ -385,6 +465,15 @@ fn handle_exception(
             panic!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",  
             ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv)
         }
+    }
+}
+
+fn signed_ext(value: usize, size: usize) -> usize {
+    let sign_bit = 1 << (size - 1);
+    if value & sign_bit != 0 {
+        value | !((1 << size) - 1)
+    } else {
+        value
     }
 }
 
