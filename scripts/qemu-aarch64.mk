@@ -1,4 +1,4 @@
-QEMU :=qemu-system-aarch64
+QEMU := sudo /home/xzk/packages/qemu-7.2.1/build/qemu-system-aarch64
 
 UBOOT := $(image_dir)/bootloader/u-boot.bin
 
@@ -32,8 +32,8 @@ QEMU_ARGS += -device virtio-blk-device,drive=Xa003e000,bus=virtio-mmio-bus.31
 # QEMU_ARGS += -drive if=none,file=$(FSIMG2),id=Xa003c000,format=raw
 # QEMU_ARGS += -device virtio-blk-device,drive=Xa003c000
 
-# QEMU_ARGS += -netdev tap,id=Xa003a000,ifname=tap0,script=no,downscript=no
-# QEMU_ARGS += -device virtio-net-device,netdev=Xa003a000,mac=52:55:00:d1:55:01
+QEMU_ARGS += -netdev tap,id=Xa003a000,ifname=tap0,script=no,downscript=no
+QEMU_ARGS += -device virtio-net-device,netdev=Xa003a000,mac=52:55:00:d1:55:01
 # QEMU_ARGS += -netdev user,id=n0,hostfwd=tcp::5555-:22 -device virtio-net-device,bus=virtio-mmio-bus.29,netdev=n0 
 
 # QEMU_ARGS += -chardev pty,id=Xa0038000

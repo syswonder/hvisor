@@ -6,7 +6,7 @@ PORT ?= 2333
 MODE ?= debug
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 KDIR ?= ../../linux
-FEATURES ?= platform_imx8mp
+FEATURES ?= platform_qemu
 
 ifeq ($(ARCH),aarch64)
     RUSTC_TARGET := aarch64-unknown-none
@@ -55,6 +55,15 @@ disa:
 	rust-objdump --disassemble $(hvisor_elf) > hvisor.S
 
 run: all
+	sudo mount ~/workspace/hvisor_demo/hvisor/images/aarch64/virtdisk/rootfs1.ext4 ~/workspace/hvisor_demo/hvisor/images/aarch64/virtdisk/rootfs
+	sudo cp ~/workspace/hvisor-tool/tools/hvisor ~/workspace/hvisor_demo/hvisor/images/aarch64/virtdisk/rootfs/home/arm64/
+	sudo cp ~/workspace/hvisor-tool/driver/hvisor.ko ~/workspace/hvisor_demo/hvisor/images/aarch64/virtdisk/rootfs/home/arm64/
+	sudo cp ~/workspace/hvisor_demo/hvisor/images/aarch64/devicetree/linux2.dtb ~/workspace/hvisor_demo/hvisor/images/aarch64/virtdisk/rootfs/home/arm64/
+	sudo cp ~/workspace/hvisor_demo/hvisor/images/aarch64/devicetree/linux2.json ~/workspace/hvisor_demo/hvisor/images/aarch64/virtdisk/rootfs/home/arm64/
+	sudo cp ~/workspace/hvisor_demo/hvisor/images/aarch64/devicetree/virtio_cfg.json ~/workspace/hvisor_demo/hvisor/images/aarch64/virtdisk/rootfs/home/arm64/
+	sudo cp ~/packages/linux-5.4.277/arch/arm64/boot/Image ~/workspace/hvisor_demo/hvisor/images/aarch64/kernel/
+	sudo cp ~/packages/linux-5.4.277/arch/arm64/boot/Image ~/workspace/hvisor_demo/hvisor/images/aarch64/virtdisk/rootfs/home/arm64/
+	sudo umount ~/workspace/hvisor_demo/hvisor/images/aarch64/virtdisk/rootfs
 	$(QEMU) $(QEMU_ARGS)
 
 gdb: all
