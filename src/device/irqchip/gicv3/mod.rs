@@ -192,9 +192,8 @@ pub fn gicv3_handle_irq_el1() {
 
 fn pending_irq() -> Option<usize> {
     let iar = read_sysreg!(icc_iar1_el1) as usize;
-    if iar >= 0x3fe {
-        // spurious
-        None
+    if iar == 0x3ff {
+            None        
     } else {
         Some(iar & 0xffffff)
     }
@@ -304,7 +303,7 @@ fn enable_maintenace_interrupt(is_enable: bool) {
     trace!("enable_maintenace_interrupt, is_enable is {}", is_enable);
     let mut hcr = read_sysreg!(ich_hcr_el2);
     trace!("hcr is {}", hcr);
-    if (is_enable) {
+    if is_enable {
         hcr |= ICH_HCR_UIE;
     } else {
         hcr &= !ICH_HCR_UIE;
