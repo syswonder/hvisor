@@ -1,6 +1,6 @@
-QEMU := sudo /home/xzk/packages/qemu-7.2.1/build/qemu-system-aarch64
+QEMU := sudo ~/packages/qemu-9.0.1/build/qemu-system-aarch64
 
-UBOOT := $(image_dir)/bootloader/u-boot.bin
+UBOOT := $(image_dir)/bootloader/u-boot-atf.bin
 
 FSIMG1 := $(image_dir)/virtdisk/rootfs1.ext4
 FSIMG2 := $(image_dir)/virtdisk/rootfs2.ext4
@@ -10,7 +10,8 @@ zone1_kernel := $(image_dir)/kernel/Image
 zone0_dtb    := $(image_dir)/devicetree/linux1.dtb
 zone1_dtb    := $(image_dir)/devicetree/linux2.dtb
 
-QEMU_ARGS := -machine virt,secure=on,gic-version=3,virtualization=on
+QEMU_ARGS := -machine virt,secure=on,gic-version=3,virtualization=on,iommu=smmuv3
+QEMU_ARGS += -global arm-smmuv3.stage=2
 
 # QEMU_ARGS += -d int
 
@@ -32,8 +33,8 @@ QEMU_ARGS += -device virtio-blk-device,drive=Xa003e000,bus=virtio-mmio-bus.31
 # QEMU_ARGS += -drive if=none,file=$(FSIMG2),id=Xa003c000,format=raw
 # QEMU_ARGS += -device virtio-blk-device,drive=Xa003c000
 
-QEMU_ARGS += -netdev tap,id=Xa003a000,ifname=tap0,script=no,downscript=no
-QEMU_ARGS += -device virtio-net-device,netdev=Xa003a000,mac=52:55:00:d1:55:01
+# QEMU_ARGS += -netdev tap,id=Xa003a000,ifname=tap0,script=no,downscript=no
+# QEMU_ARGS += -device virtio-net-device,netdev=Xa003a000,mac=52:55:00:d1:55:01
 # QEMU_ARGS += -netdev user,id=n0,hostfwd=tcp::5555-:22 -device virtio-net-device,bus=virtio-mmio-bus.29,netdev=n0 
 
 # QEMU_ARGS += -chardev pty,id=Xa0038000
@@ -44,6 +45,11 @@ QEMU_ARGS += -device virtio-net-device,netdev=Xa003a000,mac=52:55:00:d1:55:01
 
 # trace-event gicv3_icc_generate_sgi on
 # trace-event gicv3_redist_send_sgi on
+
+QEMU_ARGS += -netdev type=user,id=net1
+QEMU_ARGS += -device virtio-net-pci,netdev=net1,disable-legacy=on,disable-modern=off,iommu_platform=on
+
+QEMU_ARGS += -device pci-testdev
 
 $(hvisor_bin): elf
 	@if ! command -v mkimage > /dev/null; then \

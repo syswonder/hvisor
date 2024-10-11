@@ -38,6 +38,7 @@ mod percpu;
 mod platform;
 mod zone;
 mod config;
+mod pci;
 
 #[cfg(target_arch = "aarch64")]
 use crate::arch::mm::setup_parange;
@@ -47,6 +48,9 @@ use config::root_zone_config;
 use zone::zone_create;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
+
+#[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
+use crate::arch::iommu::iommu_init;
 
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
 static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
@@ -101,6 +105,9 @@ fn primary_init_early() {
 
     device::irqchip::primary_init_early();
     // crate::arch::mm::init_hv_page_table().unwrap();
+
+    #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
+    iommu_init();
 
     zone_create(root_zone_config()).unwrap();
     INIT_EARLY_OK.store(1, Ordering::Release);

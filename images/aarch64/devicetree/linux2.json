@@ -11,15 +11,19 @@
             "size": "0x30000000"
         },
         {
-            "type": "io",
-            "physical_start": "0xa003000",
-            "virtual_start":  "0xa003000",
-            "size": "0x1000"            
+            "type": "virtio",
+            "physical_start": "0xa003c00",
+            "virtual_start": "0xa003c00",
+            "size": "0x200"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0xa003800",
+            "virtual_start": "0xa003800",
+            "size": "0x200"
         }
     ],
-    "interrupts": [75, 76, 78],
-    "num_ivc_configs": 0,
-    "ivc_configs": [],
+    "interrupts": [75, 76, 78, 35, 36, 37, 38],
     "kernel_filepath": "./Image",
     "dtb_filepath": "./linux2.dtb",
     "kernel_load_paddr": "0x50400000",
@@ -32,5 +36,17 @@
         "gicr_size": "0xf60000",
         "gits_base": "0x8080000",
         "gits_size": "0x20000"
-    }
+    },
+    "pci_config": {
+        "ecam_base": "0x4010000000",
+        "ecam_size": "0x10000000",
+        "io_base": "0x3eff0000",
+        "io_size": "0x10000",
+        "mem32_base": "0x10000000",
+        "mem32_size": "0x2eff0000",
+        "mem64_base": "0x8000000000",
+        "mem64_size": "0x8000000000"
+    },
+    "num_pci_devs": 2,
+    "alloc_pci_devs": [0, 16]
 }

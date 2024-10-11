@@ -10,7 +10,7 @@ pub const MEM_TYPE_VIRTIO: u32 = 2;
 pub const CONFIG_MAX_MEMORY_REGIONS: usize = 16;
 pub const CONFIG_MAX_INTERRUPTS: usize = 32;
 pub const CONFIG_NAME_MAXLEN: usize = 32;
-pub const CONFIG_MAX_IVC_CONFIGS: usize = 2;
+pub const CONFIG_MAX_PCI_DEV: usize = 16;
 // pub const CONFIG_KERNEL_ARGS_MAXLEN: usize = 256;
 
 #[repr(C)]
@@ -36,24 +36,28 @@ impl HvConfigMemoryRegion {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
-pub struct IvcConfig {
-    ivc_id: u32,
-    protocol: u32,
-    shared_mem_ipa: u64,
-    mem_size: u64,
-    interrupt_num: u32,
-    max_peers: u32,
+pub struct HvPciConfig{
+    pub ecam_base: u64,
+    pub ecam_size: u64,
+    pub io_base: u64,
+    pub io_size: u64,
+    pub mem32_base: u64,
+    pub mem32_size: u64,
+    pub mem64_base: u64,
+    pub mem64_size: u64,
 }
 
-impl IvcConfig{
-    pub fn new_empty() -> Self{
+impl HvPciConfig {
+    pub fn new_empty() -> Self {
         Self {
-            ivc_id: 0,
-            protocol: 0,
-            shared_mem_ipa: 0,
-            mem_size: 0,
-            interrupt_num: 0,
-            max_peers: 0,
+            ecam_base: 0,
+            ecam_size: 0,
+            io_base: 0,
+            io_size: 0,
+            mem32_base: 0,
+            mem32_size: 0,
+            mem64_base: 0,
+            mem64_size: 0,
         }
     }
 }
@@ -67,8 +71,6 @@ pub struct HvZoneConfig {
     memory_regions: [HvConfigMemoryRegion; CONFIG_MAX_MEMORY_REGIONS],
     num_interrupts: u32,
     interrupts: [u32; CONFIG_MAX_INTERRUPTS],
-    num_ivc_configs: u32,
-    ivc_configs: [IvcConfig;CONFIG_MAX_IVC_CONFIGS],
     pub entry_point: u64,
     pub kernel_load_paddr: u64,
     pub kernel_size: u64,
@@ -77,6 +79,9 @@ pub struct HvZoneConfig {
     pub name: [u8; CONFIG_NAME_MAXLEN],
 
     pub arch_config: HvArchZoneConfig,
+    pub pci_config: HvPciConfig,
+    pub num_pci_devs: u64,
+    pub alloc_pci_devs: [u64; CONFIG_MAX_PCI_DEV],
 }
 
 impl HvZoneConfig {
@@ -87,8 +92,6 @@ impl HvZoneConfig {
         memory_regions: [HvConfigMemoryRegion; CONFIG_MAX_MEMORY_REGIONS],
         num_interrupts: u32,
         interrupts: [u32; CONFIG_MAX_INTERRUPTS],
-        num_ivc_configs: u32,
-        ivc_configs: [IvcConfig;CONFIG_MAX_IVC_CONFIGS],
         entry_point: u64,
         kernel_load_paddr: u64,
         kernel_size:u64,
@@ -96,6 +99,9 @@ impl HvZoneConfig {
         dtb_size: u64,
         name: [u8; CONFIG_NAME_MAXLEN],
         arch: HvArchZoneConfig,
+        pci: HvPciConfig,
+        num_pci_devs: u64,
+        alloc_pci_devs: [u64; CONFIG_MAX_PCI_DEV]
     ) -> Self {
         Self {
             zone_id,
@@ -104,8 +110,6 @@ impl HvZoneConfig {
             memory_regions,
             num_interrupts,
             interrupts,
-            num_ivc_configs,
-            ivc_configs,
             entry_point,
             kernel_load_paddr,
             kernel_size,
@@ -113,6 +117,9 @@ impl HvZoneConfig {
             dtb_size,
             name,
             arch_config: arch,
+            pci_config: pci,
+            num_pci_devs: num_pci_devs,
+            alloc_pci_devs: alloc_pci_devs
         }
     }
 
