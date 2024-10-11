@@ -32,10 +32,12 @@ int vdevs_num;
 
 // the index of `zone_mem[i]`
 #define VIRT_ADDR 0
-#define PHYS_ADDR 1
-#define MEM_SIZE 2
+#define ZONE0_IPA 1
+#define ZONEX_IPA 2
+#define MEM_SIZE 3
 
-unsigned long long zone_mem[MAX_ZONES][3];
+#define MAX_RAMS 4
+unsigned long long zone_mem[MAX_ZONES][MAX_RAMS][4];
 
 #define WAIT_TIME 1000 // 1ms
 
@@ -50,6 +52,18 @@ int set_nonblocking(int fd) {
         return -1;
     }
     return 0;
+}
+
+static int get_zone_ram_index(void* zonex_ipa, int zone_id) {
+    for(int i=0; i<MAX_RAMS; i++) {
+        if (zone_mem[zone_id][i][MEM_SIZE] == 0) 
+            continue;;
+        if (zonex_ipa >= zone_mem[zone_id][i][ZONEX_IPA] && zonex_ipa < zone_mem[zone_id][i][ZONEX_IPA] + zone_mem[zone_id][i][MEM_SIZE]) {
+           return i; 
+        }
+    }
+    log_error("can't find zone mem index for zonex ipa %#x", zonex_ipa);
+    return -1;
 }
 
 inline int is_queue_full(unsigned int front, unsigned int rear, unsigned int size)
@@ -256,9 +270,11 @@ bool desc_is_writable(volatile VirtqDesc *desc_table, uint16_t idx)
     return false;
 }
 
-static void* get_virt_addr(void *addr, int zone_id)
+
+static void* get_virt_addr(void *zonex_ipa, int zone_id)
 {
-    return zone_mem[zone_id][VIRT_ADDR] - zone_mem[zone_id][PHYS_ADDR] + addr;
+    int ram_idx = get_zone_ram_index(zonex_ipa, zone_id);
+    return zone_mem[zone_id][ram_idx][VIRT_ADDR] - zone_mem[zone_id][ram_idx][ZONEX_IPA] + zonex_ipa;
 }
 
 // When virtio device is processing virtqueue, driver adding an elem to virtqueue is no need to notify device.
@@ -288,21 +304,22 @@ void virtqueue_set_desc_table(VirtQueue *vq)
 {
     int zone_id = vq->dev->zone_id;
     log_trace("desc table ipa is %#x", vq->desc_table_addr);
-    vq->desc_table = (VirtqDesc *)(zone_mem[zone_id][VIRT_ADDR] + vq->desc_table_addr - zone_mem[zone_id][PHYS_ADDR]);
+    vq->desc_table = (VirtqDesc *)get_virt_addr(vq->desc_table_addr, zone_id);
+
 }
 
 void virtqueue_set_avail(VirtQueue *vq)
 {
     int zone_id = vq->dev->zone_id;
     log_trace("avail ring ipa is %#x", vq->avail_addr);
-    vq->avail_ring = (VirtqAvail *)(zone_mem[zone_id][VIRT_ADDR] + vq->avail_addr - zone_mem[zone_id][PHYS_ADDR]);
+    vq->avail_ring = (VirtqAvail *)get_virt_addr(vq->avail_addr, zone_id);
 }
 
 void virtqueue_set_used(VirtQueue *vq)
 {
     int zone_id = vq->dev->zone_id;
     log_trace("used ring ipa is %#x", vq->used_addr);
-    vq->used_ring = (VirtqUsed *)(zone_mem[zone_id][VIRT_ADDR] + vq->used_addr - zone_mem[zone_id][PHYS_ADDR]);
+    vq->used_ring = (VirtqUsed *)get_virt_addr(vq->used_addr, zone_id);
 }
 
 // record one descriptor to iov.
@@ -781,7 +798,7 @@ static int virtio_handle_req(volatile struct device_req *req)
             break;
     }
     if (i == vdevs_num) {
-        log_error("no matched virtio dev");
+        log_error("no matched virtio dev in zone %d, address is 0x%x", req->src_zone, req->address);
         value = virtio_mmio_read(NULL, 0, 0);
         virtio_finish_cfg_req(req->src_cpu, value);
         return -1;
@@ -816,9 +833,10 @@ static void virtio_close() {
 	close(ko_fd);
 	munmap((void *)virtio_bridge, MMAP_SIZE);
     for(int i=0; i<MAX_ZONES; i++) {
-        if (zone_mem[i][VIRT_ADDR] != 0) {
-            munmap((void *)zone_mem[i][VIRT_ADDR], zone_mem[i][MEM_SIZE]);
-        }
+        for(int j=0; j< MAX_RAMS; j++)
+            if (zone_mem[i][j][MEM_SIZE] != 0) {
+                munmap((void *)zone_mem[i][j][VIRT_ADDR], zone_mem[i][j][MEM_SIZE]);
+            }
     }
 	mutithread_log_exit();
 	log_warn("virtio daemon exit successfully");
@@ -990,7 +1008,7 @@ static int virtio_start_from_json(char* json_path) {
     char *buffer = NULL;
     u_int64_t file_size;
     int zone_id, num_devices = 0, err = 0, num_zones = 0;
-    void *phys_addr, *virt_addr;
+    void *zone0_ipa, *zonex_ipa, *virt_addr;
     unsigned long long mem_size;
     buffer = read_file(json_path, &file_size);
     buffer[file_size] = '\0';
@@ -1015,20 +1033,27 @@ static int virtio_start_from_json(char* json_path) {
             err = -1;
             goto err_out;
         }
-        phys_addr = strtoull(cJSON_GetArrayItem(memory_region_json, 0)->valuestring, NULL, 16);
-        mem_size = strtoull(cJSON_GetArrayItem(memory_region_json, 1)->valuestring, NULL, 16);
-        virt_addr = mmap(NULL, mem_size, PROT_READ | PROT_WRITE, MAP_SHARED, ko_fd, (off_t) phys_addr);
-
-        log_info("[WHEATFOX] zone_id is %d, phys_addr is %p, virt_addr is %p, mem_size is %lld\n", zone_id, phys_addr, virt_addr, mem_size);
-
-        if (virt_addr == (void *)-1) {
-            log_error("mmap failed");
-            err = -1;
-            goto err_out;
+        int num_mems = cJSON_GetArraySize(memory_region_json);
+        for(int j=0; j<num_mems; j++) {
+            cJSON *mem_region = cJSON_GetArrayItem(memory_region_json, j);
+            zone0_ipa = strtoull(cJSON_GetObjectItem(mem_region, "zone0_ipa")->valuestring, NULL, 16);
+            zonex_ipa = strtoull(cJSON_GetObjectItem(mem_region, "zonex_ipa")->valuestring, NULL, 16);
+            mem_size = strtoull(cJSON_GetObjectItem(mem_region, "size")->valuestring, NULL, 16);
+            if (mem_size == 0) {
+                log_error("Invalid memory size");
+                continue;
+            }
+            virt_addr = mmap(NULL, mem_size, PROT_READ | PROT_WRITE, MAP_SHARED, ko_fd, (off_t) zone0_ipa);
+            if (virt_addr == (void *)-1) {
+                log_error("mmap failed");
+                err = -1;
+                goto err_out;
+            }
+            zone_mem[zone_id][j][VIRT_ADDR] = virt_addr;
+            zone_mem[zone_id][j][ZONE0_IPA] = zone0_ipa;
+            zone_mem[zone_id][j][ZONEX_IPA] = zonex_ipa;
+            zone_mem[zone_id][j][MEM_SIZE] = mem_size;
         }
-        zone_mem[zone_id][VIRT_ADDR] = virt_addr;
-        zone_mem[zone_id][PHYS_ADDR] = phys_addr;
-        zone_mem[zone_id][MEM_SIZE] = mem_size;
         
         num_devices = cJSON_GetArraySize(devices_json);
         for (int j=0; j < num_devices; j++) {
