@@ -1018,6 +1018,9 @@ static int virtio_start_from_json(char* json_path) {
         phys_addr = strtoull(cJSON_GetArrayItem(memory_region_json, 0)->valuestring, NULL, 16);
         mem_size = strtoull(cJSON_GetArrayItem(memory_region_json, 1)->valuestring, NULL, 16);
         virt_addr = mmap(NULL, mem_size, PROT_READ | PROT_WRITE, MAP_SHARED, ko_fd, (off_t) phys_addr);
+
+        log_info("[WHEATFOX] zone_id is %d, phys_addr is %p, virt_addr is %p, mem_size is %lld\n", zone_id, phys_addr, virt_addr, mem_size);
+
         if (virt_addr == (void *)-1) {
             log_error("mmap failed");
             err = -1;
