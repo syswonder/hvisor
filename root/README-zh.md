@@ -113,7 +113,7 @@ nohup ./hvisor virtio start virtio_cfg.json &
 
 1. 地址空间映射
 
-首先将id为1的虚拟机`zone1`的RAM内存区域（起始地址`0x50000000`，大小为`0x30000000`）通过mmap映射到Virtio守护进程的地址空间。
+首先将id为1的虚拟机`zone1`的RAM内存区域通过mmap映射到Virtio守护进程的地址空间。
 
 2. 创建Virtio-blk设备
 
