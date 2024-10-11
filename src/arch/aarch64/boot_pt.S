@@ -29,8 +29,12 @@ boot_pt_init:
     str x2, [x1, #8]
 
     adrp x6, boot_pt_l1
-    mov x2, #0 
-    ldr x5, =PAGE_DEVICE_FLAG   // fill the l1 pte with type block(1G)
+
+    ldr x4, =(0x0 | PAGE_DEVICE_FLAG) // device memory at 0x0 ~ 0x40000000
+    str x4, [x6], #8
+
+    mov x2, #1
+    ldr x5, =PAGE_DEFAULT_FLAG   // fill the l1 pte with type block(1G)
 
 loop:
     cmp x2, #1024               // 40 bit array
@@ -38,10 +42,9 @@ loop:
 
     lsl x4, x2, #30
     orr x4, x4, x5  
-    str x4, [x6] 
+    str x4, [x6], #8
 
     add x2, x2, #1 
-    add x6, x6, #0x8            // pte lenth
     
     b loop
 

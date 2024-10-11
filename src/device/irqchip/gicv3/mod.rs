@@ -195,14 +195,7 @@ pub fn gicv3_handle_irq_el1() {
 fn pending_irq() -> Option<usize> {
     let iar = read_sysreg!(icc_iar1_el1) as usize;
     if iar == 0x3ff {
-        // spurious
-        // if iar >= 0x2000 {
-        //     // lpi
-        //     Some(iar as _)
-        // }else{
-        //     None
-        // }
-        None
+        None        
     } else {
         Some(iar as _)
     }
