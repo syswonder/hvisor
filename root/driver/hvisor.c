@@ -212,17 +212,13 @@ static int hvisor_map(struct file *filp, struct vm_area_struct *vma)
         pr_info("virtio bridge mmap succeed!\n");
     } else {
 	    size_t size = vma->vm_end - vma->vm_start;
-#ifdef LOONGARCH64
-        // according to embeded fdt restriction, the reserved memory check is 
-        // disabled for loongarch64. please make sure your region in JSON
-        // is strictly inside root linux's reserved memory!!!
-#else
+        // TODO: add check for non root memory region.
+        // memremap(0x50000000, 0x30000000, MEMREMAP_WB);
         // vm_pgoff is the physical page number.
-        if (!is_reserved_memory(vma->vm_pgoff << PAGE_SHIFT, size)) {
-            pr_err("The physical address to be mapped is not within the reserved memory\n");
-            return -EFAULT;
-        }
-#endif
+        // if (!is_reserved_memory(vma->vm_pgoff << PAGE_SHIFT, size)) {
+        //     pr_err("The physical address to be mapped is not within the reserved memory\n");
+        //     return -EFAULT;
+        // }
         err = remap_pfn_range(vma,
                               vma->vm_start,
                               vma->vm_pgoff,
