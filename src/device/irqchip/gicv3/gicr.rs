@@ -4,7 +4,11 @@
 
 //! GICC Driver - GIC CPU interface.
 
-use crate::{arch::cpu::this_cpu_id, hypercall::SGI_IPI_ID};
+use core::ptr;
+
+use spin::{mutex::Mutex, Once};
+
+use crate::{arch::cpu::this_cpu_id, consts::MAX_CPU_NUM, hypercall::SGI_IPI_ID, memory::Frame, zone::this_zone_id};
 
 use super::{
     gicd::{
@@ -34,6 +38,9 @@ pub const GICR_IPRIORITYR: usize = GICD_IPRIORITYR;
 pub const GICR_ICFGR: usize = GICD_ICFGR;
 pub const GICR_TYPER_LAST: usize = 1 << 4;
 
+pub const GICR_PROPBASER:usize = 0x0070;
+pub const GICR_PENDBASER:usize = 0x0078;
+
 pub fn enable_ipi() {
     let base = host_gicr_base(this_cpu_id()) + GICR_SGI_BASE;
 
@@ -60,3 +67,76 @@ pub fn enable_ipi() {
         }
     }
 }
+
+pub struct LpiPropTable{
+    phy_addr: usize,
+    frame: Frame,
+    zone0_baser: usize,
+    zone1_baser: usize,
+}
+
+impl LpiPropTable{
+    fn new() -> Self{
+        let f = Frame::new_zero().unwrap();
+        let propreg = f.start_paddr() | 0x78f;
+        for id in 0..MAX_CPU_NUM{
+            let propbaser = host_gicr_base(id) + GICR_PROPBASER;
+            unsafe {
+                ptr::write_volatile(propbaser as *mut u64, propreg as _);
+            }
+        }
+        Self {
+            phy_addr: f.start_paddr(),
+            frame: f,
+            zone0_baser: 0,
+            zone1_baser: 0,
+        }
+    }
+
+    fn set_prop_baser(&mut self, zone_id: usize, value: usize){
+        match zone_id {
+            0 => self.zone0_baser = value,
+            1 => self.zone1_baser = value,
+            _ => error!("errr!")
+        }
+    }
+
+    fn read_prop_baser(&self, zone_id: usize) -> usize{
+        match zone_id {
+            0 => self.zone0_baser,
+            1 => self.zone1_baser,
+            _ => 0
+        }
+    }
+
+    fn enable_one_lpi(&self, lpi: usize){
+        let addr = self.phy_addr + lpi;
+        let val:u8 = 0b1;
+        // no priority
+        unsafe {
+            ptr::write_volatile(addr as *mut u8, val as _);
+        }
+    }
+}
+
+pub static LPT: Once<Mutex<LpiPropTable>> = Once::new();
+
+pub fn init_lpi_prop(){
+    LPT.call_once(|| Mutex::new(LpiPropTable::new()));
+}
+
+pub fn set_prop_baser(value: usize){
+    let mut lpt = LPT.get().unwrap().lock();
+    lpt.set_prop_baser(this_zone_id(), value);
+}
+
+pub fn read_prop_baser() -> usize{
+    let lpt = LPT.get().unwrap().lock();
+    lpt.read_prop_baser(this_zone_id())
+}
+
+pub fn enable_one_lpi(lpi: usize){
+    let lpt = LPT.get().unwrap().lock();
+    lpt.enable_one_lpi(lpi);
+}
+

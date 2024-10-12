@@ -1,6 +1,6 @@
-QEMU :=qemu-system-aarch64
+QEMU := sudo qemu-system-aarch64
 
-UBOOT := $(image_dir)/bootloader/u-boot.bin
+UBOOT := $(image_dir)/bootloader/u-boot-atf.bin
 
 FSIMG1 := $(image_dir)/virtdisk/rootfs1.ext4
 FSIMG2 := $(image_dir)/virtdisk/rootfs2.ext4
@@ -10,7 +10,8 @@ zone1_kernel := $(image_dir)/kernel/Image
 zone0_dtb    := $(image_dir)/devicetree/linux1.dtb
 zone1_dtb    := $(image_dir)/devicetree/linux2.dtb
 
-QEMU_ARGS := -machine virt,secure=on,gic-version=3,virtualization=on
+QEMU_ARGS := -machine virt,secure=on,gic-version=3,virtualization=on,iommu=smmuv3
+QEMU_ARGS += -global arm-smmuv3.stage=2
 
 # QEMU_ARGS += -d int
 
@@ -44,6 +45,11 @@ QEMU_ARGS += -device virtio-blk-device,drive=Xa003e000,bus=virtio-mmio-bus.31
 
 # trace-event gicv3_icc_generate_sgi on
 # trace-event gicv3_redist_send_sgi on
+
+QEMU_ARGS += -netdev type=user,id=net1
+QEMU_ARGS += -device virtio-net-pci,netdev=net1,disable-legacy=on,disable-modern=off,iommu_platform=on
+
+QEMU_ARGS += -device pci-testdev
 
 $(hvisor_bin): elf
 	@if ! command -v mkimage > /dev/null; then \
