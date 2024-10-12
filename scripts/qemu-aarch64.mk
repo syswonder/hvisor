@@ -1,4 +1,4 @@
-QEMU := sudo ~/packages/qemu-9.0.1/build/qemu-system-aarch64
+QEMU := sudo qemu-system-aarch64
 
 UBOOT := $(image_dir)/bootloader/u-boot-atf.bin
 
