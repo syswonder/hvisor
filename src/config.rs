@@ -10,6 +10,7 @@ pub const MEM_TYPE_VIRTIO: u32 = 2;
 pub const CONFIG_MAX_MEMORY_REGIONS: usize = 16;
 pub const CONFIG_MAX_INTERRUPTS: usize = 32;
 pub const CONFIG_NAME_MAXLEN: usize = 32;
+pub const CONFIG_MAX_PCI_DEV: usize = 16;
 // pub const CONFIG_KERNEL_ARGS_MAXLEN: usize = 256;
 
 #[repr(C)]
@@ -34,6 +35,34 @@ impl HvConfigMemoryRegion {
 }
 
 #[repr(C)]
+#[derive(Debug, Clone, Copy)]
+pub struct HvPciConfig{
+    pub ecam_base: u64,
+    pub ecam_size: u64,
+    pub io_base: u64,
+    pub io_size: u64,
+    pub mem32_base: u64,
+    pub mem32_size: u64,
+    pub mem64_base: u64,
+    pub mem64_size: u64,
+}
+
+impl HvPciConfig {
+    pub fn new_empty() -> Self {
+        Self {
+            ecam_base: 0,
+            ecam_size: 0,
+            io_base: 0,
+            io_size: 0,
+            mem32_base: 0,
+            mem32_size: 0,
+            mem64_base: 0,
+            mem64_size: 0,
+        }
+    }
+}
+
+#[repr(C)]
 #[derive(Debug, Clone)]
 pub struct HvZoneConfig {
     pub zone_id: u32,
@@ -50,6 +79,9 @@ pub struct HvZoneConfig {
     pub name: [u8; CONFIG_NAME_MAXLEN],
 
     pub arch_config: HvArchZoneConfig,
+    pub pci_config: HvPciConfig,
+    pub num_pci_devs: u64,
+    pub alloc_pci_devs: [u64; CONFIG_MAX_PCI_DEV],
 }
 
 impl HvZoneConfig {
@@ -67,6 +99,9 @@ impl HvZoneConfig {
         dtb_size: u64,
         name: [u8; CONFIG_NAME_MAXLEN],
         arch: HvArchZoneConfig,
+        pci: HvPciConfig,
+        num_pci_devs: u64,
+        alloc_pci_devs: [u64; CONFIG_MAX_PCI_DEV]
     ) -> Self {
         Self {
             zone_id,
@@ -82,6 +117,9 @@ impl HvZoneConfig {
             dtb_size,
             name,
             arch_config: arch,
+            pci_config: pci,
+            num_pci_devs: num_pci_devs,
+            alloc_pci_devs: alloc_pci_devs
         }
     }
 
