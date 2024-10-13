@@ -67,9 +67,10 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 1] = [
     HvIvcConfig {
         ivc_id: 0,
-        protocol: IVC_PROTOCOL_HVISOR,
+        peer_id: 0,
         shared_mem_ipa: 0xd000_0000,
-        mem_size: 0x3000,
+        rw_sec_size: 0,
+        out_sec_size: 0x1000,
         interrupt_num: 0x21 + 32,
         max_peers: 2,
     }

@@ -50,7 +50,7 @@ impl<'a> HyperCall<'a> {
             match code {
                 HyperCallCode::HvVirtioInit => self.hv_virtio_init(arg0),
                 HyperCallCode::HvVirtioInjectIrq => self.hv_virtio_inject_irq(),
-                HyperCallCode::HvZoneStart => self.hv_zone_start(&*(arg0 as *const HvZoneConfig)),
+                HyperCallCode::HvZoneStart => self.hv_zone_start(&*(arg0 as *const HvZoneConfig), arg1),
                 HyperCallCode::HvZoneShutdown => self.hv_zone_shutdown(arg0),
                 HyperCallCode::HvZoneList => self.hv_zone_list(&mut *(arg0 as *mut ZoneInfo), arg1),
             }
@@ -127,12 +127,17 @@ impl<'a> HyperCall<'a> {
         HyperCallResult::Ok(0)
     }
 
-    pub fn hv_zone_start(&mut self, config: &HvZoneConfig) -> HyperCallResult {
+    pub fn hv_zone_start(&mut self, config: &HvZoneConfig, config_size: u64) -> HyperCallResult {
         info!("hv_zone_start: config: {:#x?}", config);
         if !is_this_root_zone() {
             return hv_result_err!(
                 EPERM,
                 "Start zone operation over non-root zones: unsupported!"
+            );
+        }
+        if config_size != core::mem::size_of::<HvZoneConfig>() as _ {
+            return hv_result_err!(
+                EINVAL,"Invalid config!"
             );
         }
         let zone = zone_create(config)?;

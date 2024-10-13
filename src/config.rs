@@ -138,9 +138,10 @@ pub const IVC_PROTOCOL_HVISOR: u32 = 0x1;
 #[derive(Debug, Copy, Clone, Default)]
 pub struct HvIvcConfig {
     pub ivc_id: u32,
-    pub protocol: u32,
+    pub peer_id: u32,
     pub shared_mem_ipa: u64,
-    pub mem_size: u64,
+    pub rw_sec_size: u32,
+    pub out_sec_size: u32,
     pub interrupt_num: u32,
     pub max_peers: u32,
 }
