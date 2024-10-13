@@ -102,7 +102,7 @@ static int hvisor_zone_start(zone_config_t __user *arg)
     // flush_cache(zone_config->kernel_load_paddr, zone_config->kernel_size);
     // flush_cache(zone_config->dtb_load_paddr, zone_config->dtb_size);
 
-    err = hvisor_call(HVISOR_HC_START_ZONE, __pa(zone_config), 0);
+    err = hvisor_call(HVISOR_HC_START_ZONE, __pa(zone_config), sizeof(zone_config_t));
     kfree(zone_config);
     return err;
 }
