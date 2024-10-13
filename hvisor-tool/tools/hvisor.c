@@ -241,27 +241,18 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
 
     int num_ivc_configs = cJSON_GetArraySize(ivc_configs_json);
     config->num_ivc_configs = num_ivc_configs;
-    printf("num_ivc_configs %d\n", num_ivc_configs);
     for (int i=0; i < num_ivc_configs; i++) {
         cJSON *ivc_config_json = cJSON_GetArrayItem(ivc_configs_json, i);
         ivc_config_t * ivc_config = &config->ivc_configs[i];
         ivc_config->ivc_id = cJSON_GetObjectItem(ivc_config_json, "ivc_id")->valueint;
-        printf("id: %d\n", ivc_config->ivc_id);
-        const char *protocol_str = cJSON_GetObjectItem(ivc_config_json, "protocol")->valuestring;
-        if (strcmp(protocol_str, "IVC_PROTOCOL_HVISOR") == 0) {
-            ivc_config->protocol = IVC_PROTOCOL_HVISOR;
-        } else if (strcmp(protocol_str, "IVC_PROTOCOL_USER") == 0) {
-            ivc_config->protocol = IVC_PROTOCOL_USER;
-        } else {
-            printf("Unknown protocol: %s\n", protocol_str);
-            ivc_config->protocol = -1;
-        }
+        ivc_config->peer_id = cJSON_GetObjectItem(ivc_config_json, "peer_id")->valueint;        
         ivc_config->shared_mem_ipa = strtoull(cJSON_GetObjectItem(ivc_config_json, "shared_mem_ipa")->valuestring, NULL, 16);
-        ivc_config->mem_size = strtoull(cJSON_GetObjectItem(ivc_config_json, "mem_size")->valuestring, NULL, 16);
+        ivc_config->rw_sec_size = strtoull(cJSON_GetObjectItem(ivc_config_json, "rw_sec_size")->valuestring, NULL, 16);
+        ivc_config->out_sec_size = strtoull(cJSON_GetObjectItem(ivc_config_json, "out_sec_size")->valuestring, NULL, 16);
         ivc_config->interrupt_num = cJSON_GetObjectItem(ivc_config_json, "interrupt_num")->valueint;
         ivc_config->max_peers = cJSON_GetObjectItem(ivc_config_json, "max_peers")->valueint;
-        printf("ivc_config %d: ivc_id %d, protocol %d, shared_mem_ipa %llx, mem_size %llx, interrupt_num %d, max_peers %d\n",
-               i, ivc_config->ivc_id, ivc_config->protocol, ivc_config->shared_mem_ipa, ivc_config->mem_size, ivc_config->interrupt_num, ivc_config->max_peers);
+        printf("ivc_config %d: ivc_id %d, peer_id %d, shared_mem_ipa %llx, interrupt_num %d, max_peers %d\n",
+               i, ivc_config->ivc_id, ivc_config->peer_id, ivc_config->shared_mem_ipa, ivc_config->interrupt_num, ivc_config->max_peers);
     }
     config->entry_point = strtoull(entry_point_json->valuestring, NULL, 16);
 
@@ -393,16 +384,17 @@ static void ivc_demo_send() {
     int fd;
     printf("ivc_demo: starting\n");
     fd = open_dev();
-    void* addr = mmap(NULL, 0x3000, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0xd0000000);
-    char *s = "hello zone1! I'm zone0.";
-    char *d = (char *)addr;
-    strcpy(d, s);
-    printf("ivc_demo: zone0 sent: %s\n", s);
-    while (*d == 'h') {};
-    printf("ivc_demo: zone0 received: %s\n", d);
+    void* addr = mmap(NULL, 0x2000, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0xd0000000);
+    char *msg = "hello zone1! I'm zone0.";
+    char *out1 = (char *)addr;
+    char *out2 = addr + 0x1000;
+    strcpy(out1, msg);
+    printf("ivc_demo: zone0 sent: %s\n", out1);
+    sleep(20);
+    printf("ivc_demo: zone0 received: %s\n", out2);
     printf("ivc_demo finished\n");
     close(fd);
-    munmap(addr, 0x3000);
+    munmap(addr, 0x2000);
     return ;
 }
 
@@ -410,14 +402,15 @@ static void ivc_demo_receive() {
     int fd;
     printf("ivc_demo: starting\n");
     fd = open_dev();
-    void* addr = mmap(NULL, 0x3000, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0xd0000000);
-    char *s = (char *) addr;
-    printf("ivc_demo: zone1 received: %s\n", s);
-    strcpy(s, "I'm zone1. hello zone0! ");
-    printf("ivc_demo: zone1 sent: %s\n", s);
+    void* addr = mmap(NULL, 0x2000, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0xd0000000);
+    char *out1 = (char *)addr;
+    char *out2 = addr + 0x1000;
+    printf("ivc_demo: zone1 received: %s\n", out1);
+    strcpy(out2, "I'm zone1. hello zone0! ");
+    printf("ivc_demo: zone1 sent: %s\n", out2);
     printf("ivc_demo finished\n");
     close(fd);
-    munmap(addr, 0x3000);
+    munmap(addr, 0x2000);
     return ;
 }
 

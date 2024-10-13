@@ -46,9 +46,10 @@ typedef struct arch_zone_config arch_zone_config_t;
 
 struct ivc_config {
     __u32 ivc_id;
-    __u32 protocol;
+    __u32 peer_id;
     __u64 shared_mem_ipa;
-    __u64 mem_size;
+    __u32 rw_sec_size;
+    __u32 out_sec_size;
     __u32 interrupt_num;
     __u32 max_peers;
 };
