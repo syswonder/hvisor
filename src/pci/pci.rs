@@ -123,7 +123,9 @@ impl Zone {
             info!("PCIe device assigned to zone {}: {:#x}", self.id, alloc_pci_devs[idx]);
             self.pciroot.alloc_devs.push(alloc_pci_devs[idx] as _);
             #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
-            iommu_add_device(self.id, alloc_pci_devs[idx] as _, 0);
+            if alloc_pci_devs[idx] != 0{
+                iommu_add_device(self.id, alloc_pci_devs[idx] as _, 0);
+            }
         }
 
         if self.id == 0 {

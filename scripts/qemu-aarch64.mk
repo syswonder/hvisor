@@ -51,6 +51,8 @@ QEMU_ARGS += -device virtio-net-pci,netdev=net1,disable-legacy=on,disable-modern
 
 QEMU_ARGS += -device pci-testdev
 
+QEMU_ARGS += -device dma_engine
+
 $(hvisor_bin): elf
 	@if ! command -v mkimage > /dev/null; then \
 		sudo apt update && sudo apt install u-boot-tools; \

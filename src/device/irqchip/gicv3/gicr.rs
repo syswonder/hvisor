@@ -73,6 +73,7 @@ pub struct LpiPropTable{
     frame: Frame,
     zone0_baser: usize,
     zone1_baser: usize,
+    zone2_baser: usize,
 }
 
 impl LpiPropTable{
@@ -90,6 +91,7 @@ impl LpiPropTable{
             frame: f,
             zone0_baser: 0,
             zone1_baser: 0,
+            zone2_baser: 0,
         }
     }
 
@@ -97,6 +99,7 @@ impl LpiPropTable{
         match zone_id {
             0 => self.zone0_baser = value,
             1 => self.zone1_baser = value,
+            2 => self.zone2_baser = value,
             _ => error!("errr!")
         }
     }
@@ -105,6 +108,7 @@ impl LpiPropTable{
         match zone_id {
             0 => self.zone0_baser,
             1 => self.zone1_baser,
+            2 => self.zone2_baser,
             _ => 0
         }
     }

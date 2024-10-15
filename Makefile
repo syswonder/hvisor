@@ -55,6 +55,7 @@ disa:
 	rust-objdump --disassemble $(hvisor_elf) > hvisor.S
 
 run: all
+
 	$(QEMU) $(QEMU_ARGS)
 
 gdb: all
