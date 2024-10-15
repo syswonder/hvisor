@@ -92,6 +92,7 @@ impl<'a> HyperCall<'a> {
 
     // Inject virtio device's irq to non root when a virtio device finishes one IO request. Only root zone calls.
     fn hv_virtio_inject_irq(&self) -> HyperCallResult {
+        debug!("hv_virtio_inject_irq: hypercall for trigger target cpu to inject irq");
         if !is_this_root_zone() {
             return hv_result_err!(
                 EPERM,

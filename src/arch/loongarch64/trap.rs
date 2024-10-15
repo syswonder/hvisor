@@ -1,4 +1,6 @@
 use crate::arch::cpu::this_cpu_id;
+use crate::event::check_events;
+use crate::hypercall::SGI_IPI_ID;
 use crate::memory::addr;
 use crate::memory::mmio_handle_access;
 use crate::memory::MMIOAccess;
@@ -419,8 +421,8 @@ fn handle_exception(
             //     "mmio_access, addr={:#x}, size={:#x}, is_write={}, value={:#x}",
             //     mmio_access.address, mmio_access.size, mmio_access.is_write, mmio_access.value
             // );
-            info!(
-                "{} mmio_access@{:#x} s={:#x} v={:#x}",
+            debug!(
+                "!!!! {} mmio_access@{:#x} s={:#x} v={:#x}",
                 if is_write { "->write" } else { "<- read" },
                 mmio_access.address,
                 mmio_access.size,
@@ -434,7 +436,8 @@ fn handle_exception(
                         // we read an usize from our zone0 virtio-daemon
                         // need to trim and extend it to 64-bit reg according to is_u and size
                         // ctx.x[target_rd_idx] = mmio_access.value;
-                        let trimmed_by_size = mmio_access.value & ((1 << (mmio_access.size * 8)) - 1);
+                        let trimmed_by_size =
+                            mmio_access.value & ((1 << (mmio_access.size * 8)) - 1);
                         let extended = if !is_u {
                             // normal instruction with no .u use sign extension
                             signed_ext(trimmed_by_size, mmio_access.size * 8)
@@ -1137,18 +1140,18 @@ fn handle_interrupt(is: usize) {
     match is {
         _ if is & IPI_BIT != 0 => {
             let ipi_status = get_ipi_status(this_cpu_id());
-            info!("ipi interrupt, status = {:#x}", ipi_status);
+            debug!("ipi interrupt, status = {:#x}", ipi_status);
             clear_all_ipi(this_cpu_id());
             // handle IPI
-            if ipi_status == 0x7 {
-                // 0x7 is for booting a zone on this CPU
-                let zone_id = this_cpu_data().zone.as_ref().unwrap().clone().read().id;
-                let cpu = this_cpu_data();
-                let zone_name = cpu.zone.as_ref().unwrap().read().name.clone();
-                // cast to string
-                let zone_name = core::str::from_utf8(&zone_name).unwrap();
-                info!("booting zone id = {}, name = {}", zone_id, zone_name);
-                cpu.run_vm();
+            if ipi_status == SGI_IPI_ID as _ {
+                // 0x7 is a SGI in hvisor, but we still need ot know which event it is
+                // use src/event.rs to handle events
+                let result = check_events();
+                if result {
+                    debug!("ipi event handled :)");
+                } else {
+                    panic!("ipi event not handled !!!");
+                }
             } else {
                 warn!("ignored IPI status {:#x}", ipi_status);
             }
