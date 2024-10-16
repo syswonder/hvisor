@@ -279,16 +279,16 @@ static void* get_virt_addr(void *zonex_ipa, int zone_id)
 
 // When virtio device is processing virtqueue, driver adding an elem to virtqueue is no need to notify device.
 void virtqueue_disable_notify(VirtQueue *vq) {
-    log_info("[WHEATFOX] (%s) start, vq@%#x, vq_idx=%d, desc_table@%#x, avail_ring@%#x, used_ring@%#x",
-                __func__, vq, vq->vq_idx, vq->desc_table, vq->avail_ring, vq->used_ring);
-    log_info("[WHEATFOX] (%s) vq->event_idx_enabled is %d", __func__, vq->event_idx_enabled);
+    // log_info("[WHEATFOX] (%s) start, vq@%#x, vq_idx=%d, desc_table@%#x, avail_ring@%#x, used_ring@%#x",
+    //             __func__, vq, vq->vq_idx, vq->desc_table, vq->avail_ring, vq->used_ring);
+    // log_info("[WHEATFOX] (%s) vq->event_idx_enabled is %d", __func__, vq->event_idx_enabled);
 	if (vq->event_idx_enabled) {
 		VQ_AVAIL_EVENT(vq) = vq->last_avail_idx - 1;
 	} else {
     	vq->used_ring->flags |= (uint16_t)VRING_USED_F_NO_NOTIFY;
 	}
 	write_barrier();
-    log_info("[WHEATFOX] (%s) end", __func__);
+    // log_info("[WHEATFOX] (%s) end", __func__);
 }
 
 void virtqueue_enable_notify(VirtQueue *vq) {
@@ -327,12 +327,12 @@ static inline int descriptor2iov(int i, volatile VirtqDesc *vd,
            struct iovec *iov, uint16_t *flags, int zone_id) {
     void *host_addr;
 
-    log_info("[WHEATFOX] (%s) i is %d, iov@%#x, vd@%#x, flags@%#x, zone_id is %d",
-                __func__, i, iov, vd, flags, zone_id);
+    // log_info("[WHEATFOX] (%s) i is %d, iov@%#x, vd@%#x, flags@%#x, zone_id is %d",
+    //             __func__, i, iov, vd, flags, zone_id);
 
     host_addr = get_virt_addr((void *)vd->addr, zone_id);
 
-    log_info("[WHEATFOX] (%s) host_addr is %x", __func__, host_addr);
+    // log_info("[WHEATFOX] (%s) host_addr is %x", __func__, host_addr);
 
     iov[i].iov_base = host_addr;
     iov[i].iov_len = vd->len;
@@ -340,8 +340,8 @@ static inline int descriptor2iov(int i, volatile VirtqDesc *vd,
     if (flags != NULL)
         flags[i] = vd->flags;
 
-    log_info("[WHEATFOX] (%s) iov[%d].iov_base is %x, iov[%d].iov_len is %d",
-                __func__, i, iov[i].iov_base, i, iov[i].iov_len);
+    // log_info("[WHEATFOX] (%s) iov[%d].iov_base is %x, iov[%d].iov_len is %d",
+    //             __func__, i, iov[i].iov_base, i, iov[i].iov_len);
     return 0;
 }
 
@@ -358,13 +358,12 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
     volatile VirtqDesc *vdesc, *ind_table, *ind_desc;
 	int chain_len = 0, i, table_len;
 
-    log_info("[WHEATFOX] (%s) start, vq@%#x, desc_idx is %d, iov@%#x, flags@%#x, append_len is %d",
-                __func__, vq, *desc_idx, *iov, flags == NULL ? 0 : *flags, append_len);
+    // log_info("[WHEATFOX] (%s) start, vq@%#x", __func__, vq);
 
     idx = vq->last_avail_idx;
 
-    log_info("[WHEATFOX] (%s) idx is %d", __func__, idx);
-    log_info("[WHEATFOX] (%s) vq->avail_ring->idx is %d", __func__, vq->avail_ring->idx);
+    // log_info("[WHEATFOX] (%s) idx is %d", __func__, idx);
+    // log_info("[WHEATFOX] (%s) vq->avail_ring->idx is %d", __func__, vq->avail_ring->idx);
 
     if(idx == vq->avail_ring->idx)
         return 0;
@@ -375,8 +374,8 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
 	for (i=0; i<(int)vq->num; i++, next = vdesc->next) {
         vdesc = &vq->desc_table[next];
 
-        log_info("[WHEATFOX] (%s) i is %d, next is %d, vdesc->addr is %d, vdesc->len is %d, vdesc->flags is %d",
-                    __func__, i, next, vdesc->addr, vdesc->len, vdesc->flags);
+        // log_info("[WHEATFOX] (%s) i is %d, next is %d, vdesc->addr is %d, vdesc->len is %d, vdesc->flags is %d",
+        //             __func__, i, next, vdesc->addr, vdesc->len, vdesc->flags);
 
 		// TODO: vdesc->len may be not chain_len, virtio specification doesn't say it.
 		if (vdesc->flags & VRING_DESC_F_INDIRECT) {
@@ -389,29 +388,29 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
 
 	chain_len += i + 1, next = *desc_idx;
 	
-    log_info("[WHEATFOX] (%s) chain_len is %d, next is %d", __func__, chain_len, next);
+    // log_info("[WHEATFOX] (%s) chain_len is %d, next is %d", __func__, chain_len, next);
 
 	*iov = malloc(sizeof(struct iovec) * ( chain_len + append_len));
 
-    log_info("[WHEATFOX] (%s) iov@%#x after malloc", __func__, *iov);
+    // log_info("[WHEATFOX] (%s) iov@%#x after malloc", __func__, *iov);
 
 	if (flags != NULL) {
 		*flags = malloc(sizeof(uint16_t) * ( chain_len + append_len));
-        log_info("[WHEATFOX] (%s) flags@%#x after malloc", __func__, *flags);
+        // log_info("[WHEATFOX] (%s) flags@%#x after malloc", __func__, *flags);
     }
 
 	for (i=0; i<chain_len; i++, next = vdesc->next) {
 		vdesc = &vq->desc_table[next];
 
-        log_info("[WHEATFOX] (%s) i is %d, next is %d, vdesc->addr is %d, vdesc->len is %d, vdesc->flags is %d",
-                    __func__, i, next, vdesc->addr, vdesc->len, vdesc->flags);
+        // log_info("[WHEATFOX] (%s) i is %d, next is %d, vdesc->addr is %d, vdesc->len is %d, vdesc->flags is %d",
+        //             __func__, i, next, vdesc->addr, vdesc->len, vdesc->flags);
 
 		if (vdesc->flags & VRING_DESC_F_INDIRECT) {
-            log_info("[WHEATFOX] (%s) indirect descriptor", __func__);
+            // log_info("[WHEATFOX] (%s) indirect descriptor", __func__);
 			ind_table = (VirtqDesc *)(get_virt_addr((void *)vdesc->addr, vq->dev->zone_id));
 			table_len = vdesc->len / 16;
 			log_debug("table_len is %d", table_len);
-            log_info("[WHEATFOX] (%s) table_len is %d", __func__, table_len);
+            // log_info("[WHEATFOX] (%s) table_len is %d", __func__, table_len);
 			next = 0;
 			for (;;) {
 				log_debug("next is %d", next);
@@ -428,12 +427,12 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
 				break;
 			}
 		} else {
-            log_info("[WHEATFOX] (%s) not indirect descriptor", __func__);
+            // log_info("[WHEATFOX] (%s) not indirect descriptor", __func__);
 			descriptor2iov(i, vdesc, *iov, flags == NULL ? NULL : *flags, vq->dev->zone_id);
 		}
 	}
 
-    log_info("[WHEATFOX] (%s) end, chain_len is %d", __func__, chain_len);
+    // log_info("[WHEATFOX] (%s) end, chain_len is %d", __func__, chain_len);
 
     return chain_len;
 }
@@ -537,7 +536,7 @@ static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned s
     log_debug("virtio mmio read at %#x", offset);
 
     // log_info("virtio mmio read at offset=%#x, size=%d, vdev=%p, [%s]", offset, size, vdev, virtio_mmio_reg_name(offset));
-    log_info("READ  virtio mmio at offset=%#x[%s], size=%d, vdev=%p", offset, virtio_mmio_reg_name(offset), size, vdev);
+    // log_info("READ  virtio mmio at offset=%#x[%s], size=%d, vdev=%p", offset, virtio_mmio_reg_name(offset), size, vdev);
 
     if (!vdev) {
         switch (offset) {
@@ -618,7 +617,7 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
     log_debug("virtio mmio write at %#x, value is %#x\n", offset, value);
 
     // log_info("virtio mmio write at offset=%#x, value=%#x, size=%d, vdev=%p, [%s]", offset, value, size, vdev, virtio_mmio_reg_name(offset));
-    log_info("WRITE virtio mmio at offset=%#x[%s], value=%#x, size=%d, vdev=%p", offset, virtio_mmio_reg_name(offset), value, size, vdev);
+    // log_info("WRITE virtio mmio at offset=%#x[%s], value=%#x, size=%d, vdev=%p", offset, virtio_mmio_reg_name(offset), value, size, vdev);
 
     VirtMmioRegs *regs = &vdev->regs;
     VirtQueue *vqs = vdev->vqs;
@@ -676,15 +675,16 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
         vqs[regs->queue_sel].ready = value;
         break;
     case VIRTIO_MMIO_QUEUE_NOTIFY:
+        // system("poweroff");
         log_debug("queue notify begin");
-        log_info("[WHEATFOX] (%s) queue notify, value is %d, vdev->vqs_len is %d", __func__, value, vdev->vqs_len);
+        // log_info("[WHEATFOX] (%s) queue notify, value is %d, vdev->vqs_len is %d", __func__, value, vdev->vqs_len);
         if (value < vdev->vqs_len) {
             log_trace("queue notify ready, handler addr is %#x", vqs[value].notify_handler);
-            log_info("[WHEATFOX] (%s) queue notify ready, handler addr is %#x", __func__, vqs[value].notify_handler);
+            // log_info("[WHEATFOX] (%s) queue notify ready, handler addr is %#x", __func__, vqs[value].notify_handler);
             vqs[value].notify_handler(vdev, &vqs[value]);
         }
         log_debug("queue notify end");
-        log_info("[WHEATFOX] (%s) queue notify end", __func__);
+        // log_info("[WHEATFOX] (%s) queue notify end", __func__);
         break;
     case VIRTIO_MMIO_INTERRUPT_ACK:
         if (value == regs->interrupt_status && regs->interrupt_count > 0) {
