@@ -232,8 +232,8 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
         mem_region->virtual_start = strtoull(cJSON_GetObjectItem(region, "virtual_start")->valuestring, NULL, 16);
         mem_region->size = strtoull(cJSON_GetObjectItem(region, "size")->valuestring, NULL, 16);
 
-        printf("memory_region %d: type %d, physical_start %llx, virtual_start %llx, size %llx\n",
-               i, mem_region->type, mem_region->physical_start, mem_region->virtual_start, mem_region->size);
+        // printf("memory_region %d: type %d, physical_start %llx, virtual_start %llx, size %llx\n",
+        //        i, mem_region->type, mem_region->physical_start, mem_region->virtual_start, mem_region->size);
     }
 
     config->num_interrupts = num_interrupts;
