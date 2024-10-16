@@ -68,7 +68,8 @@ pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 1] = [
     HvIvcConfig {
         ivc_id: 0,
         peer_id: 0,
-        shared_mem_ipa: 0xd000_0000,
+        control_table_ipa: 0xd000_0000,
+        shared_mem_ipa: 0xd000_1000,
         rw_sec_size: 0,
         out_sec_size: 0x1000,
         interrupt_num: 0x21 + 32,

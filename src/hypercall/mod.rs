@@ -3,9 +3,10 @@ use crate::config::HvZoneConfig;
 use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
 use crate::device::virtio_trampoline::{MAX_DEVS, MAX_REQ, VIRTIO_BRIDGE, VIRTIO_IRQS};
 use crate::error::HvResult;
-use crate::percpu::{get_cpu_data, PerCpu};
+use crate::ivc::{IvcInfo, IVC_INFOS};
+use crate::percpu::{get_cpu_data, this_zone, PerCpu};
 use crate::zone::{
-    all_zones_info, find_zone, is_this_root_zone, remove_zone, zone_create, ZoneInfo,
+    all_zones_info, find_zone, is_this_root_zone, remove_zone, this_zone_id, zone_create, ZoneInfo
 };
 
 use crate::event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_VIRTIO_INJECT_IRQ, IPI_EVENT_WAKEUP};
@@ -23,6 +24,7 @@ numeric_enum! {
         HvZoneStart = 2,
         HvZoneShutdown = 3,
         HvZoneList = 4,
+        HvIvcInfo = 5,
     }
 }
 pub const SGI_IPI_ID: u64 = 7;
@@ -53,10 +55,31 @@ impl<'a> HyperCall<'a> {
                 HyperCallCode::HvZoneStart => self.hv_zone_start(&*(arg0 as *const HvZoneConfig), arg1),
                 HyperCallCode::HvZoneShutdown => self.hv_zone_shutdown(arg0),
                 HyperCallCode::HvZoneList => self.hv_zone_list(&mut *(arg0 as *mut ZoneInfo), arg1),
+                HyperCallCode::HvIvcInfo => self.hv_ivc_info(arg0)
             }
         }
     }
 
+    fn hv_ivc_info(&mut self, ivc_info_ipa: u64) -> HyperCallResult {
+        let zone_id = this_zone_id();
+        let zone = this_zone();
+        // ipa->hpa->hva
+        let hpa = unsafe {
+            zone.read().gpm.page_table_query(ivc_info_ipa as _).unwrap().0        
+        };
+        // hva == hpa
+        let ivc_info = unsafe {
+            &mut *(hpa as *mut IvcInfo)
+        };
+        let ivc_infos = IVC_INFOS.lock();
+        let zone_ivc_info = ivc_infos.get(&(zone_id as _));
+        match zone_ivc_info {
+            Some(zone_ivc_info) => *ivc_info = *zone_ivc_info,
+            None => return hv_result_err!(ENODEV, "Zone {zone_id} has no ivc config!"),
+        }
+        HyperCallResult::Ok(0)
+    }
+    
     // only root zone calls the function and set virtio shared region between el1 and el2.
     fn hv_virtio_init(&mut self, shared_region_addr: u64) -> HyperCallResult {
         info!(

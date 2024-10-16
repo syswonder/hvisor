@@ -139,6 +139,7 @@ pub const IVC_PROTOCOL_HVISOR: u32 = 0x1;
 pub struct HvIvcConfig {
     pub ivc_id: u32,
     pub peer_id: u32,
+    pub control_table_ipa: u64,
     pub shared_mem_ipa: u64,
     pub rw_sec_size: u32,
     pub out_sec_size: u32,
