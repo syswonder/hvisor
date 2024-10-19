@@ -58,7 +58,7 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
         }
         // log_info("[WHEATFOX] (%s) calling readv(fd=%d, iov@%#x, n=%d), fd name is %s", __func__, dev->master_fd, iov, n, ptsname(dev->master_fd));
         len = readv(dev->master_fd, iov, n);
-        // log_info("[WHEATFOX] (%s) readv done, len is %d, vq->last_avail_idx is %d", __func__, len, vq->last_avail_idx);
+        log_info("[WHEATFOX] (%s) readv done, len is %d, vq->last_avail_idx is %d", __func__, len, vq->last_avail_idx);
         if (len < 0 && errno == EWOULDBLOCK) {
             log_debug("no more bytes");
 			vq->last_avail_idx--;
@@ -68,7 +68,7 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
         } else if (len < 0) {
             log_trace("Failed to read from console, errno is %d", errno);
 			vq->last_avail_idx--;
-            // log_info("[WHEATFOX] (%s) Failed to read from console, errno is %d[%s], vq->last_avail_idx --> %d", __func__, errno, strerror(errno), vq->last_avail_idx);
+            log_error("[WHEATFOX] (%s) Failed to read from console, errno is %d[%s], vq->last_avail_idx --> %d", __func__, errno, strerror(errno), vq->last_avail_idx);
             free(iov);
             break;
         } 
@@ -77,7 +77,7 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
         free(iov);
     }
     virtio_inject_irq(vq);
-    // log_info("[WHEATFOX] (%s) virtio_inject_irq done", __func__);
+    log_info("[WHEATFOX] (%s) virtio_inject_irq done", __func__);
     return ;
 }
 
