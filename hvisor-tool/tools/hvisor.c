@@ -247,6 +247,7 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
         ivc_config->ivc_id = cJSON_GetObjectItem(ivc_config_json, "ivc_id")->valueint;
         ivc_config->peer_id = cJSON_GetObjectItem(ivc_config_json, "peer_id")->valueint;        
         ivc_config->shared_mem_ipa = strtoull(cJSON_GetObjectItem(ivc_config_json, "shared_mem_ipa")->valuestring, NULL, 16);
+        ivc_config->control_table_ipa = strtoull(cJSON_GetObjectItem(ivc_config_json, "control_table_ipa")->valuestring, NULL, 16);
         ivc_config->rw_sec_size = strtoull(cJSON_GetObjectItem(ivc_config_json, "rw_sec_size")->valuestring, NULL, 16);
         ivc_config->out_sec_size = strtoull(cJSON_GetObjectItem(ivc_config_json, "out_sec_size")->valuestring, NULL, 16);
         ivc_config->interrupt_num = cJSON_GetObjectItem(ivc_config_json, "interrupt_num")->valueint;
@@ -380,40 +381,6 @@ static int zone_list(int argc, char *argv[])
     return ret;
 }
 
-static void ivc_demo_send() {
-    int fd;
-    printf("ivc_demo: starting\n");
-    fd = open_dev();
-    void* addr = mmap(NULL, 0x2000, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0xd0000000);
-    char *msg = "hello zone1! I'm zone0.";
-    char *out1 = (char *)addr;
-    char *out2 = addr + 0x1000;
-    strcpy(out1, msg);
-    printf("ivc_demo: zone0 sent: %s\n", out1);
-    sleep(20);
-    printf("ivc_demo: zone0 received: %s\n", out2);
-    printf("ivc_demo finished\n");
-    close(fd);
-    munmap(addr, 0x2000);
-    return ;
-}
-
-static void ivc_demo_receive() {
-    int fd;
-    printf("ivc_demo: starting\n");
-    fd = open_dev();
-    void* addr = mmap(NULL, 0x2000, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0xd0000000);
-    char *out1 = (char *)addr;
-    char *out2 = addr + 0x1000;
-    printf("ivc_demo: zone1 received: %s\n", out1);
-    strcpy(out2, "I'm zone1. hello zone0! ");
-    printf("ivc_demo: zone1 sent: %s\n", out2);
-    printf("ivc_demo finished\n");
-    close(fd);
-    munmap(addr, 0x2000);
-    return ;
-}
-
 int main(int argc, char *argv[])
 {
     int err = 0;
@@ -450,15 +417,7 @@ int main(int argc, char *argv[])
         {
             help(1);
         }
-    }
-    else if (strcmp(argv[1], "ivc_demo") == 0) {
-        if (strcmp(argv[2], "send") == 0)
-            ivc_demo_send();
-        else if (strcmp(argv[2], "receive") == 0)
-            ivc_demo_receive();
-        else help(1);
-    }
-    else
+    } else
     {
         help(1);
     }

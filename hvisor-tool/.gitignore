@@ -1,12 +1,13 @@
 .vscode/
 /tools/hvisor
+/tools/ivc_demo
 *.mod.[co]
 *.mod
 *.[oa]
 *.cmd
 Module.symvers
 modules.order
-driver/hvisor.ko
+driver/*.ko
 *.s
 *_compile.sh
 /cJSON/
