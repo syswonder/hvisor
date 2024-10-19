@@ -182,6 +182,11 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
     case HVISOR_FINISH_REQ:
         err = hvisor_finish_req();
         break;
+#ifdef LOONGARCH64
+    case HVISOR_CLEAR_INJECT_IRQ:
+        err = hvisor_call(HVISOR_HC_CLEAR_INJECT_IRQ, 0, 0);
+        break;
+#endif
     default:
         err = -EINVAL;
         break;

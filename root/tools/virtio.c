@@ -535,8 +535,7 @@ static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned s
 {
     log_debug("virtio mmio read at %#x", offset);
 
-    // log_info("virtio mmio read at offset=%#x, size=%d, vdev=%p, [%s]", offset, size, vdev, virtio_mmio_reg_name(offset));
-    // log_info("READ  virtio mmio at offset=%#x[%s], size=%d, vdev=%p", offset, virtio_mmio_reg_name(offset), size, vdev);
+    log_info("READ  virtio mmio at offset=%#x[%s], size=%d, vdev=%p", offset, virtio_mmio_reg_name(offset), size, vdev);
 
     if (!vdev) {
         switch (offset) {
@@ -582,6 +581,12 @@ static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned s
     case VIRTIO_MMIO_QUEUE_READY:
         return vdev->vqs[vdev->regs.queue_sel].ready;
     case VIRTIO_MMIO_INTERRUPT_STATUS:
+        log_info("[WHEATFOX] (%s) current interrupt status is %d", __func__, vdev->regs.interrupt_status);
+#ifdef LOONGARCH64
+        // clear lvz gintc irq injection bit to avoid endless interrupt...
+        log_warn("clear lvz gintc irq injection bit to avoid endless interrupt...");
+        ioctl(ko_fd, HVISOR_CLEAR_INJECT_IRQ);
+#endif
 		if (vdev->regs.interrupt_status == 0) {
 			log_error("virtio-mmio-read: interrupt status is 0, type is %d", vdev->type);
 		}
@@ -616,8 +621,7 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
 {
     log_debug("virtio mmio write at %#x, value is %#x\n", offset, value);
 
-    // log_info("virtio mmio write at offset=%#x, value=%#x, size=%d, vdev=%p, [%s]", offset, value, size, vdev, virtio_mmio_reg_name(offset));
-    // log_info("WRITE virtio mmio at offset=%#x[%s], value=%#x, size=%d, vdev=%p", offset, virtio_mmio_reg_name(offset), value, size, vdev);
+    log_info("WRITE virtio mmio at offset=%#x[%s], value=%#x, size=%d, vdev=%p", offset, virtio_mmio_reg_name(offset), value, size, vdev);
 
     VirtMmioRegs *regs = &vdev->regs;
     VirtQueue *vqs = vdev->vqs;
@@ -675,7 +679,7 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
         vqs[regs->queue_sel].ready = value;
         break;
     case VIRTIO_MMIO_QUEUE_NOTIFY:
-        // system("poweroff");
+        // system("poweroff");ioctl
         log_debug("queue notify begin");
         // log_info("[WHEATFOX] (%s) queue notify, value is %d, vdev->vqs_len is %d", __func__, value, vdev->vqs_len);
         if (value < vdev->vqs_len) {
@@ -687,13 +691,16 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
         // log_info("[WHEATFOX] (%s) queue notify end", __func__);
         break;
     case VIRTIO_MMIO_INTERRUPT_ACK:
+        log_info("[WHEATFOX] (%s) interrupt ack, value is %d, interrupt_status is %d, interrupt_count is %d", __func__, value, regs->interrupt_status, regs->interrupt_count);
         if (value == regs->interrupt_status && regs->interrupt_count > 0) {
             regs->interrupt_count --;
+            log_info("[WHEATFOX] (%s) irq count -> %d", __func__, regs->interrupt_count);
             break;
         } else if (value != regs->interrupt_status) {
             log_error("interrupt_status is not equal to ack, type is %d", vdev->type);
         }
         regs->interrupt_status &= !value;
+        log_info("[WHEATFOX] (%s) clearing! interrupt_status -> %d", __func__, regs->interrupt_status);
         break;
     case VIRTIO_MMIO_STATUS:
         regs->status = value;
@@ -746,15 +753,18 @@ static inline bool in_range(uint64_t value, uint64_t lower, uint64_t len)
 // Inject irq_id to target zone. It will add to res list, and notify hypervisor through ioctl.
 void virtio_inject_irq(VirtQueue *vq)
 {
-	uint16_t last_used_idx, idx, event_idx;
+	log_info("[WHEATFOX] (%s) start, vq@%#x, vq->last_used_idx is %d", __func__, vq, vq->last_used_idx);
+    uint16_t last_used_idx, idx, event_idx;
 	last_used_idx = vq->last_used_idx;
 	vq->last_used_idx = idx = vq->used_ring->idx;
 	// read_barrier();
 	if (idx == last_used_idx) {
 		log_debug("idx equals last_used_idx");
+        log_info("[WHEATFOX] (%s) idx equals last_used_idx", __func__);
 		return ;
 	}
     if (!vq->event_idx_enabled && (vq->avail_ring->flags & VRING_AVAIL_F_NO_INTERRUPT)) {
+        log_info("[WHEATFOX] (%s) no interrupt", __func__);
 		log_debug("no interrupt");
 		return ;
 	}
@@ -762,6 +772,7 @@ void virtio_inject_irq(VirtQueue *vq)
 		event_idx = VQ_USED_EVENT(vq);
 		log_debug("idx is %d, event_idx is %d, last_used_idx is %d", idx, event_idx, last_used_idx);
 		if(!vring_need_event(event_idx, idx, last_used_idx)) {
+            log_info("[WHEATFOX] (%s) no need event", __func__);
 			return;
 		}
 	}
@@ -779,6 +790,7 @@ void virtio_inject_irq(VirtQueue *vq)
     vq->dev->regs.interrupt_count ++;
     pthread_mutex_unlock(&RES_MUTEX);
 	log_debug("inject irq to device %d, vq is %d", vq->dev->type, vq->vq_idx);
+    // log_info("[WHEATFOX] (%s) inject irq to device %d, vq is %d", __func__, vq->dev->type, vq->vq_idx);
     ioctl(ko_fd, HVISOR_FINISH_REQ);
 }
 
