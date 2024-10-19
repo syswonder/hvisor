@@ -1,5 +1,5 @@
 obj-m += hvisor.o
-
+obj-m += ivc.o
 ifeq ($(ARCH), arm64)
 	COMPILE := aarch64-none-linux-gnu-
 else ifeq ($(ARCH), riscv)
