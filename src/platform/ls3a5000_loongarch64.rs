@@ -37,7 +37,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 8] = [
         mem_type: MEM_TYPE_IO,
         physical_start: 0x1fe00000,
         virtual_start: 0x1fe00000,
-        size: 0x1000,
+        size: 0x4000,
     }, // serial
     // map special region
     // 2024.4.12
@@ -65,5 +65,5 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 8] = [
     }, // 0x10000
 ];
 
-pub const ROOT_ZONE_IRQS: [u32; 32] = [0; 32];
+pub const ROOT_ZONE_IRQS: [u32; 1] = [4];
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig { dummy: 0 };

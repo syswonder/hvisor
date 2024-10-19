@@ -1,7 +1,7 @@
 use crate::{
     arch::ipi::arch_send_event,
     device::{
-        irqchip::inject_irq,
+        irqchip::{self, inject_irq},
         virtio_trampoline::{handle_virtio_irq, IRQ_WAKEUP_VIRTIO_DEVICE},
     },
     percpu::this_cpu_data,
@@ -13,6 +13,9 @@ pub const IPI_EVENT_WAKEUP: usize = 0;
 pub const IPI_EVENT_SHUTDOWN: usize = 1;
 pub const IPI_EVENT_VIRTIO_INJECT_IRQ: usize = 2;
 pub const IPI_EVENT_WAKEUP_VIRTIO_DEVICE: usize = 3;
+#[cfg(target_arch = "loongarch64")]
+pub const IPI_EVENT_CLEAR_INJECT_IRQ: usize = 4;
+
 static EVENT_MANAGER: Once<EventManager> = Once::new();
 
 struct EventManager {
@@ -79,6 +82,11 @@ pub fn check_events() -> bool {
         }
         Some(IPI_EVENT_WAKEUP_VIRTIO_DEVICE) => {
             inject_irq(IRQ_WAKEUP_VIRTIO_DEVICE, false);
+            true
+        }
+        #[cfg(target_arch = "loongarch64")]
+        Some(IPI_EVENT_CLEAR_INJECT_IRQ) => {
+            irqchip::ls7a2000::clear_hwi_injected_irq();
             true
         }
         _ => false,

@@ -1,5 +1,6 @@
 use super::ipi::*;
 use super::zone::ZoneContext;
+use crate::arch::zone::disable_hwi_through;
 use crate::device::common::MMIODerefWrapper;
 use crate::percpu::this_cpu_data;
 use core::arch::asm;
@@ -79,6 +80,14 @@ impl ArchCpu {
             "loongarch64: ArchCpu::run: stack_tp={:#x}",
             self.stack_top()
         );
+
+        let cpuid = self.get_cpuid();
+        if cpuid != 0 {
+            // on loongarch64 we only allow direct interrupt through on cpu0 with rootlinux
+            // root linux use cpuintc->liointc->uart0 for IO irqs, we put it through to use uart0
+            // on nonroot, we only need to inject virtio irq so let's disable it - wheatfox
+            disable_hwi_through();
+        }
 
         unsafe {
             asm!(

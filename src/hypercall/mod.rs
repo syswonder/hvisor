@@ -1,7 +1,8 @@
 #![allow(dead_code)]
 use crate::arch::cpu::this_cpu_id;
 use crate::config::HvZoneConfig;
-use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
+use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, PAGE_SIZE};
+use crate::device::irqchip::inject_irq;
 use crate::device::virtio_trampoline::{MAX_DEVS, MAX_REQ, VIRTIO_BRIDGE, VIRTIO_IRQS};
 use crate::error::HvResult;
 use crate::percpu::{get_cpu_data, PerCpu};
@@ -24,6 +25,8 @@ numeric_enum! {
         HvZoneStart = 2,
         HvZoneShutdown = 3,
         HvZoneList = 4,
+        #[cfg(target_arch = "loongarch64")]
+        HvClearInjectIrq = 5,
     }
 }
 pub const SGI_IPI_ID: u64 = 7;
@@ -54,6 +57,15 @@ impl<'a> HyperCall<'a> {
                 HyperCallCode::HvZoneStart => self.hv_zone_start(&*(arg0 as *const HvZoneConfig)),
                 HyperCallCode::HvZoneShutdown => self.hv_zone_shutdown(arg0),
                 HyperCallCode::HvZoneList => self.hv_zone_list(&mut *(arg0 as *mut ZoneInfo), arg1),
+                #[cfg(target_arch = "loongarch64")]
+                HyperCallCode::HvClearInjectIrq => {
+                    // send_event to all nonroot cpus to clear injected irq
+                    use crate::event::IPI_EVENT_CLEAR_INJECT_IRQ;
+                    for i in 1..MAX_CPU_NUM {
+                        send_event(i, SGI_IPI_ID as _, IPI_EVENT_CLEAR_INJECT_IRQ);
+                    }
+                    HyperCallResult::Ok(0)
+                }
             }
         }
     }
@@ -163,8 +175,6 @@ impl<'a> HyperCall<'a> {
             // assert this is cpu 0
             let cpuid = this_cpu_id();
             assert_eq!(cpuid, 0);
-            // stop guest HWI through for debug purpose
-            crate::arch::zone::disable_hwi_through();
         }
         drop(_lock);
         HyperCallResult::Ok(0)
@@ -218,6 +228,9 @@ impl<'a> HyperCall<'a> {
                 cnt as usize,
             )
         };
+
+        #[cfg(target_arch = "loongarch64")]
+        inject_irq(4, false); // only for testing the loongarch irq injection - wheatfox :)
 
         for (i, zone_info) in slice.iter_mut().enumerate() {
             if i < zones_info.len() {

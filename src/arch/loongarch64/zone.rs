@@ -1,8 +1,12 @@
 use crate::{
-    config::*, device::virtio_trampoline::mmio_virtio_handler, error::HvResult, memory::{
-        addr::{align_down, align_up}, mmio_generic_handler, GuestPhysAddr, HostPhysAddr,
-        MemFlags, MemoryRegion,
-    }, zone::Zone
+    config::*,
+    device::virtio_trampoline::mmio_virtio_handler,
+    error::HvResult,
+    memory::{
+        addr::{align_down, align_up},
+        mmio_generic_handler, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
+    },
+    zone::Zone,
 };
 use alloc::vec::Vec;
 use core::arch::asm;
@@ -32,7 +36,10 @@ impl Zone {
                     ))?;
                 }
                 MEM_TYPE_VIRTIO => {
-                    info!("loongarch64: pt_init: register virtio mmio region: {:#x?}", region);
+                    info!(
+                        "loongarch64: pt_init: register virtio mmio region: {:#x?}",
+                        region
+                    );
                     self.mmio_region_register(
                         region.physical_start as _,
                         region.size as _,
@@ -80,6 +87,12 @@ pub fn disable_hwi_through() {
     info!("loongarch64: disable_hwi_through");
     use crate::arch::register::*;
     gintc::set_hwip(0x0); // stop passing through all 8 HWIs
+}
+
+pub fn enable_hwi_through() {
+    info!("loongarch64: enable_hwi_through");
+    use crate::arch::register::*;
+    gintc::set_hwip(0xff); // pass through all HWI7-0
 }
 
 #[repr(C)]
