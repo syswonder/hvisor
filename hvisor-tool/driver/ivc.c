@@ -95,7 +95,6 @@ static irqreturn_t ivc_irq_handler(int irq, void *dev_id)
     info.si_signo = SIGIVC;
     info.si_code = SI_QUEUE;
     info.si_int = 1;
-    pr_info("ivc irq handler called\n");
     if (task != NULL)
     {
         // pr_info("send signal to hvisor device\n");
