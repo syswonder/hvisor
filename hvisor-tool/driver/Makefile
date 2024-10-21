@@ -9,6 +9,7 @@ endif
 EXTRA_CFLAGS += -I$(PWD)/include
 
 .PHONY: all clean
+
 all:
 	make ARCH=$(ARCH) CROSS_COMPILE=$(COMPILE) -C $(KDIR) M=$(shell pwd) EXTRA_CFLAGS=$(EXTRA_CFLAGS) modules
  
