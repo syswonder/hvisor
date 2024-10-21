@@ -8,16 +8,16 @@ export ARCH
 export LOG
 .PHONY: all env tools driver clean
 
+all: tools driver
+
 env:
 	git submodule update --init --recursive
 
 tools: env
-	make -C tools
+	$(MAKE) -C tools all
 
 driver: env
-	make -C driver
-
-all: tools driver
+	$(MAKE) -C driver all
 
 transfer: all
 	./trans_file.sh ./tools/hvisor 

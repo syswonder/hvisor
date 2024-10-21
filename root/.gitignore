@@ -9,6 +9,7 @@ Module.symvers
 modules.order
 driver/*.ko
 *.s
+*.d
 *_compile.sh
 /cJSON/
 /.github/

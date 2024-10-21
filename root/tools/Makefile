@@ -1,5 +1,12 @@
-CFLAGS = -Wall -Wextra -DLOG_USE_COLOR -DHLOG=$(LOG)
-objects = $(filter-out ivc_demo.c, $(wildcard *.c) ../cJSON/cJSON.c)
+sources := $(wildcard *.c) ../cJSON/cJSON.c
+objects := $(sources:.c=.o)
+ivc_demo_objects := ivc_demo.o
+hvisor_objects := $(filter-out $(ivc_demo_objects), $(objects))
+
+CFLAGS := -Wall -Wextra -g -DLOG_USE_COLOR -DHLOG=$(LOG)
+include_dirs := -I../include -I./include -I../cJSON/
+
+include $(sources:.c=.d)
 
 ifeq ($(ARCH), arm64)
 	CC := aarch64-linux-gnu-gcc
@@ -8,15 +15,23 @@ else ifeq ($(ARCH), riscv)
 endif
 
 .PHONY: all clean
-all: hvisor ivc
 
-hvisor: 
-	$(CC) $(CFLAGS) -g -o hvisor $(objects) -I./include/ -I../include/ -I../cJSON/ -lpthread
+all: hvisor ivc_demo
 
-ivc:
-	$(CC) -Wall -Wextra -g -o ivc_demo ivc_demo.c  -I../include/
+%.d: %.c
+	@set -e; rm -f $@; \
+	$(CC) -MM $(include_dirs) $< > $@.$$$$; \
+	sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; \
+	rm -f $@.$$$$
 
-asm:
-	$(CC) $(CFLAGS) -S htool.s $(objects) -I../driver/ -I./includes/ -lpthread
+$(objects): %.o: %.c
+	$(CC) $(CFLAGS) $(include_dirs) -c -o $@ $<
+
+hvisor: $(hvisor_objects)
+	$(CC) -o $@ $^ $(include_dirs)
+
+ivc_demo: $(ivc_demo_objects)
+	$(CC) -o $@ $^ $(include_dirs)
+	
 clean:
-	rm -f hvisor
+	rm -f hvisor ivc_demo *.o *.d *.d.* 
