@@ -315,6 +315,7 @@ pub struct Smmuv3{
     strtab: LinearStreamTable,
     zone0_pt: MemorySet<Stage2PageTable>,
     zone1_pt: MemorySet<Stage2PageTable>,
+    zone2_pt: MemorySet<Stage2PageTable>,
     cmdq: CmdQueue,
 }
 
@@ -328,10 +329,11 @@ impl Smmuv3{
             strtab: LinearStreamTable::new(),
             zone0_pt: new_s2_memory_set(),
             zone1_pt: new_s2_memory_set(),
+            zone2_pt: new_s2_memory_set(),
             cmdq: CmdQueue::new(),
         };
 
-        info!("zone0 root pt : 0x{:x}",r.zone0_pt.root_paddr());
+        info!("pagetables for iommu, init done!");
 
         r.check_env();
         r.init_limited_pt();
@@ -393,6 +395,13 @@ impl Smmuv3{
             MemFlags::READ | MemFlags::WRITE,
         )).ok();
 
+        self.zone2_pt.insert(MemoryRegion::new_with_offset_mapper(
+            0x80000000 as GuestPhysAddr,
+            0x80000000,
+            0x10000000,
+            MemFlags::READ | MemFlags::WRITE,
+        )).ok();
+
         // its
         self.zone0_pt.insert(MemoryRegion::new_with_offset_mapper(
             0x8080000 as GuestPhysAddr,
@@ -402,6 +411,13 @@ impl Smmuv3{
         )).ok();
 
         self.zone1_pt.insert(MemoryRegion::new_with_offset_mapper(
+            0x8080000 as GuestPhysAddr,
+            0x8080000,
+            0x20000,
+            MemFlags::READ | MemFlags::WRITE,
+        )).ok();
+
+        self.zone2_pt.insert(MemoryRegion::new_with_offset_mapper(
             0x8080000 as GuestPhysAddr,
             0x8080000,
             0x20000,
@@ -496,10 +512,11 @@ impl Smmuv3{
     // s1 bypass and s2 translate
     fn write_ste(&mut self, sid: usize, vmid: usize, _root_pt: usize){
         self.sync_ste(sid);
-        if vmid == 0{
-            self.strtab.write_ste(sid, vmid, self.zone0_pt.root_paddr());
-        }else{
-            self.strtab.write_ste(sid, vmid, self.zone1_pt.root_paddr());
+        match vmid {
+            0 => self.strtab.write_ste(sid, vmid, self.zone0_pt.root_paddr()),
+            1 => self.strtab.write_ste(sid, vmid, self.zone1_pt.root_paddr()),
+            2 => self.strtab.write_ste(sid, vmid, self.zone2_pt.root_paddr()),
+            _ => error!("bad vmid for iommu ste!")
         }
     }
 

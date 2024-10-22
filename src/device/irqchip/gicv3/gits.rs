@@ -98,6 +98,11 @@ pub struct Cmdq{
     zone1_cbaser: usize,
     zone1_creadr: usize,
     zone1_cwriter: usize,
+
+    zone2_phy_base: usize,
+    zone2_cbaser: usize,
+    zone2_creadr: usize,
+    zone2_cwriter: usize,
 }
 
 impl Cmdq {
@@ -117,6 +122,10 @@ impl Cmdq {
             zone1_cbaser: 0,
             zone1_creadr: 0,
             zone1_cwriter: 0,
+            zone2_phy_base: 0,
+            zone2_cbaser: 0,
+            zone2_creadr: 0,
+            zone2_cwriter: 0,
         };
         r.init_real_cbaser();
         r
@@ -147,6 +156,11 @@ impl Cmdq {
                 self.zone1_phy_base = value & 0xffffffffff000;
                 trace!("zone 1 cmdq base: 0x{:x}", self.zone1_phy_base);
             },
+            2 => {
+                self.zone2_cbaser = value;
+                self.zone2_phy_base = value & 0xffffffffff000;
+                trace!("zone 2 cmdq base: 0x{:x}", self.zone2_phy_base);
+            },
             _ => {
                 error!("err!");
             }
@@ -157,6 +171,7 @@ impl Cmdq {
         match zone_id {
             0 => self.zone0_cbaser,
             1 => self.zone1_cbaser,
+            2 => self.zone2_cbaser,
             _ => 0
         }
     }
@@ -171,6 +186,7 @@ impl Cmdq {
         match zone_id {
             0 => self.zone0_cwriter = value,
             1 => self.zone1_cwriter = value,
+            2 => self.zone2_cwriter = value,
             _ => error!("err"),
         }
     }
@@ -179,6 +195,7 @@ impl Cmdq {
         match zone_id {
             0 => self.zone0_cwriter,
             1 => self.zone1_cwriter,
+            2 => self.zone2_cwriter,
             _ => 0
         }
     }
@@ -187,6 +204,7 @@ impl Cmdq {
         match zone_id {
             0 => self.zone0_creadr,
             1 => self.zone1_creadr,
+            2 => self.zone2_creadr,
             _ => 0
         }
     }
@@ -195,6 +213,7 @@ impl Cmdq {
         match zone_id {
             0 => self.zone0_creadr = writer,
             1 => self.zone1_creadr = writer,
+            2 => self.zone2_creadr = writer,
             _ => error!("err!")
         }
     }
@@ -256,12 +275,14 @@ impl Cmdq {
         let zone_addr = match zone_id {
             0 => self.zone0_phy_base,
             1 => self.zone1_phy_base,
+            2 => self.zone2_phy_base,
             _ => 0
         };
 
         let origin_readr = match zone_id {
             0 => self.zone0_creadr,
             1 => self.zone1_creadr,
+            2 => self.zone2_creadr,
             _ => 0
         };
 
