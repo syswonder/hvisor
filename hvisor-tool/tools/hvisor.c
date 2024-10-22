@@ -172,8 +172,11 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
 #ifdef ARM64
     cJSON *ecam_base_json = cJSON_GetObjectItem(pci_config_json, "ecam_base");
     cJSON *io_base_json = cJSON_GetObjectItem(pci_config_json, "io_base");
+    cJSON *pci_io_base_json = cJSON_GetObjectItem(pci_config_json, "pci_io_base");
     cJSON *mem32_base_json = cJSON_GetObjectItem(pci_config_json, "mem32_base");
+    cJSON *pci_mem32_base_json = cJSON_GetObjectItem(pci_config_json, "pci_mem32_base");
     cJSON *mem64_base_json = cJSON_GetObjectItem(pci_config_json, "mem64_base");
+    cJSON *pci_mem64_base_json = cJSON_GetObjectItem(pci_config_json, "pci_mem64_base");
     cJSON *ecam_size_json = cJSON_GetObjectItem(pci_config_json, "ecam_size");
     cJSON *io_size_json = cJSON_GetObjectItem(pci_config_json, "io_size");
     cJSON *mem32_size_json = cJSON_GetObjectItem(pci_config_json, "mem32_size");
@@ -182,7 +185,9 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
     if (ecam_base_json == NULL || io_base_json == NULL ||
         mem32_base_json == NULL || mem64_base_json == NULL ||
         ecam_size_json == NULL || io_size_json == NULL ||
-        mem32_size_json == NULL || mem64_size_json == NULL) {
+        mem32_size_json == NULL || mem64_size_json == NULL ||
+        pci_io_base_json == NULL || pci_mem32_base_json == NULL ||
+        pci_mem64_base_json == NULL) {
         fprintf(stderr, "Missing fields in pci_config.\n");
         return -1;
     }
@@ -190,6 +195,9 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
     config->pci_config.io_base = strtoull(io_base_json->valuestring, NULL, 16);
     config->pci_config.mem32_base = strtoull(mem32_base_json->valuestring, NULL, 16);
     config->pci_config.mem64_base = strtoull(mem64_base_json->valuestring, NULL, 16);
+    config->pci_config.pci_io_base = strtoull(pci_io_base_json->valuestring, NULL, 16);
+    config->pci_config.pci_mem32_base = strtoull(pci_mem32_base_json->valuestring, NULL, 16);
+    config->pci_config.pci_mem64_base = strtoull(pci_mem64_base_json->valuestring, NULL, 16);
     config->pci_config.ecam_size = strtoull(ecam_size_json->valuestring, NULL, 16);
     config->pci_config.io_size = strtoull(io_size_json->valuestring, NULL, 16);
     config->pci_config.mem32_size = strtoull(mem32_size_json->valuestring, NULL, 16);
@@ -206,8 +214,11 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
 #ifdef RISCV64
     cJSON *ecam_base_json = cJSON_GetObjectItem(pci_config_json, "ecam_base");
     cJSON *io_base_json = cJSON_GetObjectItem(pci_config_json, "io_base");
+    cJSON *pci_io_base_json = cJSON_GetObjectItem(pci_config_json, "pci_io_base");
     cJSON *mem32_base_json = cJSON_GetObjectItem(pci_config_json, "mem32_base");
+    cJSON *pci_mem32_base_json = cJSON_GetObjectItem(pci_config_json, "pci_mem32_base");
     cJSON *mem64_base_json = cJSON_GetObjectItem(pci_config_json, "mem64_base");
+    cJSON *pci_mem64_base_json = cJSON_GetObjectItem(pci_config_json, "pci_mem64_base");
     cJSON *ecam_size_json = cJSON_GetObjectItem(pci_config_json, "ecam_size");
     cJSON *io_size_json = cJSON_GetObjectItem(pci_config_json, "io_size");
     cJSON *mem32_size_json = cJSON_GetObjectItem(pci_config_json, "mem32_size");
@@ -216,7 +227,9 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
     if (ecam_base_json == NULL || io_base_json == NULL ||
         mem32_base_json == NULL || mem64_base_json == NULL ||
         ecam_size_json == NULL || io_size_json == NULL ||
-        mem32_size_json == NULL || mem64_size_json == NULL) {
+        mem32_size_json == NULL || mem64_size_json == NULL ||
+        pci_io_base_json == NULL || pci_mem32_base_json == NULL ||
+        pci_mem64_base_json == NULL) {
         fprintf(stderr, "Missing fields in pci_config.\n");
         return -1;
     }
@@ -224,6 +237,9 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
     config->pci_config.io_base = strtoull(io_base_json->valuestring, NULL, 16);
     config->pci_config.mem32_base = strtoull(mem32_base_json->valuestring, NULL, 16);
     config->pci_config.mem64_base = strtoull(mem64_base_json->valuestring, NULL, 16);
+    config->pci_config.pci_io_base = strtoull(pci_io_base_json->valuestring, NULL, 16);
+    config->pci_config.pci_mem32_base = strtoull(pci_mem32_base_json->valuestring, NULL, 16);
+    config->pci_config.pci_mem64_base = strtoull(pci_mem64_base_json->valuestring, NULL, 16);
     config->pci_config.ecam_size = strtoull(ecam_size_json->valuestring, NULL, 16);
     config->pci_config.io_size = strtoull(io_size_json->valuestring, NULL, 16);
     config->pci_config.mem32_size = strtoull(mem32_size_json->valuestring, NULL, 16);

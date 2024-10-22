@@ -28,10 +28,13 @@ struct pci_config {
     __u64 ecam_size;
     __u64 io_base;
     __u64 io_size;
+    __u64 pci_io_base;
     __u64 mem32_base;
     __u64 mem32_size;
+    __u64 pci_mem32_base;
     __u64 mem64_base;
     __u64 mem64_size;
+    __u64 pci_mem64_base;
 };
 
 typedef struct pci_config pci_config_t;
