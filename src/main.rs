@@ -105,7 +105,6 @@ fn primary_init_early() {
 
     device::irqchip::primary_init_early();
     // crate::arch::mm::init_hv_page_table().unwrap();
-
     #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
     iommu_init();
 

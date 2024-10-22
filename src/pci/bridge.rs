@@ -25,7 +25,7 @@ impl BridgeConfig {
         let mut bar_id = 0;
         while bar_id < NUM_BAR_REGS_TYPE1{
             if self.bars[bar_id].is_mutable(){
-                if self.bars[bar_id].mem_type_32(){
+                if !self.bars[bar_id].mem_type_64(){
                     regions.push(self.bars[bar_id].get_32b_region());
                     bar_id += 1;
                 }else{

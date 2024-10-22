@@ -1,5 +1,5 @@
 # Basic settings
-ARCH ?= aarch64
+ARCH ?= riscv64
 LOG ?= info
 STATS ?= off
 PORT ?= 2333

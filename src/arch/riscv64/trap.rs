@@ -4,7 +4,7 @@ use crate::arch::csr::*;
 use crate::arch::sbi::sbi_vs_handler;
 use crate::device::irqchip::plic::{host_plic, vplic_global_emul_handler, vplic_hart_emul_handler};
 use crate::event::check_events;
-use crate::memory::{GuestPhysAddr, HostPhysAddr};
+use crate::memory::{mmio_handle_access, GuestPhysAddr, HostPhysAddr, MMIOAccess};
 use crate::platform::qemu_riscv64::*;
 use core::arch::{asm, global_asm};
 use riscv::register::mtvec::TrapMode;
@@ -63,11 +63,11 @@ pub fn sync_exception_handler(current_cpu: &mut ArchCpu) {
         }
         ExceptionType::LOAD_GUEST_PAGE_FAULT => {
             trace!("LOAD_GUEST_PAGE_FAULT");
-            guest_page_fault_handler(current_cpu);
+            guest_page_fault_handler(current_cpu, false);
         }
         ExceptionType::STORE_GUEST_PAGE_FAULT => {
             debug!("STORE_GUEST_PAGE_FAULT");
-            guest_page_fault_handler(current_cpu);
+            guest_page_fault_handler(current_cpu, true);
         }
         _ => {
             warn!(
@@ -84,47 +84,107 @@ pub fn sync_exception_handler(current_cpu: &mut ArchCpu) {
         }
     }
 }
-pub fn guest_page_fault_handler(current_cpu: &mut ArchCpu) {
+
+pub fn arch_skip_instruction(current_cpu: &mut ArchCpu, ins_size: usize){
+    current_cpu.sepc += ins_size;
+}
+
+pub fn guest_page_fault_handler(current_cpu: &mut ArchCpu, is_write: bool) {
     let addr: HostPhysAddr = read_csr!(CSR_HTVAL) << 2;
     trace!("guest page fault at {:#x}", addr);
     let host_plic_base = host_plic().read().base;
     let mut ins_size: usize = 0;
     //TODO: get plic addr range from dtb or vpliv object
+    let mut inst: u32 = read_csr!(CSR_HTINST) as u32;
+    if inst == 0 {
+        let inst_addr: GuestPhysAddr = current_cpu.sepc;
+        //load real ins from guest memmory
+        inst = read_inst(inst_addr);
+        ins_size = if inst & 0x3 == 3 { 4 } else { 2 };
+    } else if inst == 0x3020 || inst == 0x3000 {
+        // TODO: we should reinject this in the guest as a fault access
+        error!("fault on 1st stage page table walk");
+    } else {
+        // If htinst is valid and is not a pseudo instructon make sure
+        // the opcode is valid even if it was a compressed instruction,
+        // but before save the real instruction size.
+        ins_size = if (inst) & 0x2 == 0 { 2 } else { 4 };
+        inst = inst | 0b10;
+        // error!("unhandled guest page fault at {:#x}", addr);
+        // panic!("inst{:#x}", inst);
+    }
+    //TODO: decode inst to real instruction
+    let (_len, inst) = decode_inst(inst);
     if addr >= host_plic_base && addr < host_plic_base + PLIC_TOTAL_SIZE {
         trace!("PLIC access");
-        let mut inst: u32 = read_csr!(CSR_HTINST) as u32;
-        if inst == 0 {
-            let inst_addr: GuestPhysAddr = current_cpu.sepc;
-            //load real ins from guest memmory
-            inst = read_inst(inst_addr);
-            ins_size = if inst & 0x3 == 3 { 4 } else { 2 };
-        } else if inst == 0x3020 || inst == 0x3000 {
-            // TODO: we should reinject this in the guest as a fault access
-            error!("fault on 1st stage page table walk");
-        } else {
-            // If htinst is valid and is not a pseudo instructon make sure
-            // the opcode is valid even if it was a compressed instruction,
-            // but before save the real instruction size.
-            ins_size = if (inst) & 0x2 == 0 { 2 } else { 4 };
-            inst = inst | 0b10;
-            // error!("unhandled guest page fault at {:#x}", addr);
-            // panic!("inst{:#x}", inst);
-        }
-        //TODO: decode inst to real instruction
-        let (_len, inst) = decode_inst(inst);
         if let Some(inst) = inst {
             if addr >= host_plic_base + PLIC_GLOBAL_SIZE {
                 vplic_hart_emul_handler(current_cpu, addr, inst);
             } else {
                 vplic_global_emul_handler(current_cpu, addr, inst);
             }
-            current_cpu.sepc += ins_size;
+            arch_skip_instruction(current_cpu, ins_size);
         } else {
             error!("Invalid instruction at {:#x}", current_cpu.sepc);
             panic!();
         }
     } else {
-        panic!("CPU {} unmaped memmory at {:#x}", current_cpu.cpuid, addr);
+
+        let mut dst_reg:usize = 0;
+
+        let mut mmio_access = MMIOAccess {
+            address: addr as _,
+            size: 0,
+            is_write,
+            value: 0
+        };
+
+        if let Some(inst) = inst {
+            match inst {
+                Instruction::Lb(i) | Instruction::Lbu(i)=> {
+                    mmio_access.size = 1;
+                    dst_reg = i.rd() as _;
+                }
+                Instruction::Lh(i) | Instruction::Lhu(i)=> {
+                    mmio_access.size = 2;
+                    dst_reg = i.rd() as _;
+                }
+                Instruction::Lw(i) => {
+                    mmio_access.size = 4;
+                    dst_reg = i.rd() as _;
+                }
+                Instruction::Sb(i) => {
+                    mmio_access.value = (current_cpu.x[i.rs2() as usize] & 0xff) as _;
+                    mmio_access.size = 1;
+                }
+                Instruction::Sh(i) => {
+                    mmio_access.value = (current_cpu.x[i.rs2() as usize] & 0xffff) as _;
+                    mmio_access.size = 2;
+                }
+                Instruction::Sw(i) => {
+                    mmio_access.value = (current_cpu.x[i.rs2() as usize] & 0xffffffff) as _;
+                    mmio_access.size = 4;
+                }
+                _ => {
+                    error!("Unexpected instruction: {:?}", inst);
+                }
+            }
+        }
+
+        match mmio_handle_access(&mut mmio_access) {
+            Ok(_) => {
+                if !is_write {
+                    current_cpu.x[dst_reg] = mmio_access.value;
+                }
+            }
+            Err(e) => {
+                warn!("handle_dabt: {:#x?}", mmio_access);
+                panic!("mmio_handle_access: {:#x?}", e);
+            }
+        }
+
+        arch_skip_instruction(current_cpu, ins_size);
+
     }
 }
 fn read_inst(addr: GuestPhysAddr) -> u32 {

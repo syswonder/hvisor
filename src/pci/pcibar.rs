@@ -9,6 +9,7 @@ pub struct PciBar {
 pub struct BarRegion{
     pub start: usize,
     pub size: usize,
+    pub bar_type: BarType
 }
 
 #[derive(Default, Debug, Copy, Clone)]
@@ -58,25 +59,36 @@ impl PciBar{
         }
     }
 
-    pub fn mem_type_32(&self) -> bool{
+    pub fn mem_type_64(&self) -> bool{
         match self.bar_type{
-            BarType::Mem64 => false,
-            _ => true
+            BarType::Mem64 => true,
+            _ => false
         }
     }
 
     pub fn get_32b_region(&self) -> BarRegion{
         BarRegion{
             start: (self.val & 0xfffffff0) as _,
-            size: self.size
+            size: self.size,
+            bar_type: self.bar_type,
+        }
+    }
+
+    pub fn get_upper_mem64_32b(&self) -> BarRegion{
+        BarRegion{
+            start: self.val as _, // upper 32bits are all mutable
+            size: self.size,
+            bar_type: self.bar_type,
         }
     }
 
     pub fn get_64b_region(&self, lower_region: BarRegion) -> BarRegion{
-        let higher_region = self.get_32b_region();
+        let higher_region = self.get_upper_mem64_32b();
+        // info!("mm64, high: {:#x}, low: {:#x}", higher_region.start, lower_region.start);
         BarRegion {
             start: (higher_region.start << 32) + lower_region.start,
             size: higher_region.size * lower_region.size,
+            bar_type: BarType::Mem64
         }
     }
 }

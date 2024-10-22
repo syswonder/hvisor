@@ -65,12 +65,12 @@
 		#size-cells = <0x02>;
 		ranges;
 
-		nonroot@0x83000000 {
+		nonroot@83000000 {
 			no-map;
 			reg = <0x00 0x83000000 0x00 0x0C000000>;
 		};
 
-		dtbfile@0x8f000000 {
+		dtbfile@8f000000 {
 			no-map;
 			reg = <0x00 0x8f000000 0x00 0x01000000>;
 		};
@@ -82,7 +82,8 @@
 		compatible = "simple-bus";
 		ranges;
 		plic: interrupt-controller@c000000 {
-			riscv,ndev = <60>;
+			phandle = <0x09>;
+			riscv,ndev = <0x5f>;
 			reg = <0x0 0xc000000 0x0 0x4000000>;
 			interrupts-extended = <
 				&cpu0_intc 11 &cpu0_intc 9 

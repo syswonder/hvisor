@@ -101,14 +101,14 @@ impl ArchCpu {
         assert!(this_cpu_id() == self.cpuid);
         //change power_on
         this_cpu_data().activate_gpm();
-        if !self.init {
+        // if !self.init {
             self.init(
                 this_cpu_data().cpu_on_entry,
                 this_cpu_data().id,
                 this_cpu_data().dtb_ipa, //dtb_ipa
             );
             self.init = true;
-        }
+        // }
 
         self.power_on = true;
         info!("CPU{} run@{:#x}", self.cpuid, self.sepc);
