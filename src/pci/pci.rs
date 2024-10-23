@@ -126,7 +126,7 @@ impl Zone {
             self.pciroot.alloc_devs.push(alloc_pci_devs[idx] as _);
             #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
             if alloc_pci_devs[idx] != 0{
-                iommu_add_device(self.id, alloc_pci_devs[idx] as _, 0);
+                iommu_add_device(self.id, alloc_pci_devs[idx] as _);
             }
         }
 
@@ -214,7 +214,7 @@ impl Zone {
             region.start = cpu_base + region.start - pci_base;
             region.start = align_down(region.start);
 
-            info!("pci bar region init, type: {:?}, base: {:#x}, size:{:#x}", region.bar_type, region.start, region.size);
+            info!("pci bar region: type: {:?}, base: {:#x}, size:{:#x}", region.bar_type, region.start, region.size);
 
             self.gpm.insert(MemoryRegion::new_with_offset_mapper(
                 region.start as GuestPhysAddr,

@@ -6,9 +6,10 @@
 
 use core::ptr;
 
+use alloc::vec::Vec;
 use spin::{mutex::Mutex, Once};
 
-use crate::{arch::cpu::this_cpu_id, consts::MAX_CPU_NUM, hypercall::SGI_IPI_ID, memory::Frame, zone::this_zone_id};
+use crate::{arch::cpu::this_cpu_id, consts::{MAX_CPU_NUM, MAX_ZONE_NUM}, hypercall::SGI_IPI_ID, memory::Frame, zone::this_zone_id};
 
 use super::{
     gicd::{
@@ -71,9 +72,7 @@ pub fn enable_ipi() {
 pub struct LpiPropTable{
     phy_addr: usize,
     frame: Frame,
-    zone0_baser: usize,
-    zone1_baser: usize,
-    zone2_baser: usize,
+    baser_list: [usize; MAX_ZONE_NUM],
 }
 
 impl LpiPropTable{
@@ -89,28 +88,18 @@ impl LpiPropTable{
         Self {
             phy_addr: f.start_paddr(),
             frame: f,
-            zone0_baser: 0,
-            zone1_baser: 0,
-            zone2_baser: 0,
+            baser_list: [0; MAX_ZONE_NUM],
         }
     }
 
     fn set_prop_baser(&mut self, zone_id: usize, value: usize){
-        match zone_id {
-            0 => self.zone0_baser = value,
-            1 => self.zone1_baser = value,
-            2 => self.zone2_baser = value,
-            _ => error!("errr!")
-        }
+        assert!(zone_id < MAX_ZONE_NUM, "Invalid zone id!");
+        self.baser_list[zone_id] = value;
     }
 
     fn read_prop_baser(&self, zone_id: usize) -> usize{
-        match zone_id {
-            0 => self.zone0_baser,
-            1 => self.zone1_baser,
-            2 => self.zone2_baser,
-            _ => 0
-        }
+        assert!(zone_id < MAX_ZONE_NUM, "Invalid zone id!");
+        self.baser_list[zone_id]
     }
 
     fn enable_one_lpi(&self, lpi: usize){
