@@ -4,6 +4,11 @@ pub mod pci;
 pub mod pcibar;
 pub mod endpoint;
 pub mod bridge;
+pub mod phantom_cfg;
+
+pub const CFG_CMD_OFF: usize = 0x4; //status
+pub const CFG_CAP_PTR_OFF: usize = 0x34; // capabilities pointer
+pub const CFG_CLASS_CODE_OFF: usize = 0x8; // 4 bytes, include revision and class code
 
 pub const NUM_BAR_REGS_TYPE0: usize = 6;
 pub const NUM_BAR_REGS_TYPE1: usize = 2;
