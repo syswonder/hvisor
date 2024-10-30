@@ -49,7 +49,13 @@ QEMU_ARGS += -device virtio-blk-device,drive=Xa003e000,bus=virtio-mmio-bus.31
 QEMU_ARGS += -netdev type=user,id=net1
 QEMU_ARGS += -device virtio-net-pci,netdev=net1,disable-legacy=on,disable-modern=off,iommu_platform=on
 
-QEMU_ARGS += -device pci-testdev
+# QEMU_ARGS += -device pci-testdev
+
+QEMU_ARGS += -netdev type=user,id=net2
+QEMU_ARGS += -device virtio-net-pci,netdev=net2,disable-legacy=on,disable-modern=off,iommu_platform=on
+
+QEMU_ARGS += -netdev type=user,id=net3
+QEMU_ARGS += -device virtio-net-pci,netdev=net3,disable-legacy=on,disable-modern=off,iommu_platform=on
 
 $(hvisor_bin): elf
 	@if ! command -v mkimage > /dev/null; then \

@@ -2,7 +2,7 @@ use core::ptr;
 
 use spin::{mutex::Mutex,Once};
 
-use crate::{device::irqchip::gicv3::gicr::enable_one_lpi, memory::Frame, zone::this_zone_id};
+use crate::{consts::MAX_ZONE_NUM, device::irqchip::gicv3::gicr::enable_one_lpi, memory::Frame, zone::this_zone_id};
 
 use super::host_gits_base;
 
@@ -89,15 +89,10 @@ pub struct Cmdq{
     writer: usize,
     frame: Frame,
 
-    zone0_phy_base: usize,
-    zone0_cbaser: usize,
-    zone0_creadr: usize,
-    zone0_cwriter: usize,
-
-    zone1_phy_base: usize,
-    zone1_cbaser: usize,
-    zone1_creadr: usize,
-    zone1_cwriter: usize,
+    phy_base_list: [usize; MAX_ZONE_NUM],
+    cbaser_list: [usize; MAX_ZONE_NUM],
+    creadr_list: [usize; MAX_ZONE_NUM],
+    cwriter_list: [usize; MAX_ZONE_NUM],
 }
 
 impl Cmdq {
@@ -109,14 +104,10 @@ impl Cmdq {
             readr: 0,
             writer: 0,
             frame: f,
-            zone0_phy_base:0,
-            zone0_cbaser: 0,
-            zone0_creadr: 0,
-            zone0_cwriter: 0,
-            zone1_phy_base: 0,
-            zone1_cbaser: 0,
-            zone1_creadr: 0,
-            zone1_cwriter: 0,
+            phy_base_list: [0; MAX_ZONE_NUM],
+            cbaser_list: [0; MAX_ZONE_NUM],
+            creadr_list: [0; MAX_ZONE_NUM],
+            cwriter_list: [0; MAX_ZONE_NUM],
         };
         r.init_real_cbaser();
         r
@@ -136,67 +127,40 @@ impl Cmdq {
     }
 
     fn set_cbaser(&mut self, zone_id: usize, value: usize){
-        match zone_id {
-            0 => {
-                self.zone0_cbaser = value;
-                self.zone0_phy_base = value & 0xffffffffff000;
-                trace!("zone 0 cmdq base: 0x{:x}", self.zone0_phy_base);
-            },
-            1 => {
-                self.zone1_cbaser = value;
-                self.zone1_phy_base = value & 0xffffffffff000;
-                trace!("zone 1 cmdq base: 0x{:x}", self.zone1_phy_base);
-            },
-            _ => {
-                error!("err!");
-            }
-        }
+        assert!(zone_id < MAX_ZONE_NUM, "Invalid zone id!");
+        self.cbaser_list[zone_id] = value;
+        self.phy_base_list[zone_id] = value & 0xffffffffff000;
     }
 
     fn read_baser(&self, zone_id: usize) -> usize{
-        match zone_id {
-            0 => self.zone0_cbaser,
-            1 => self.zone1_cbaser,
-            _ => 0
-        }
+        assert!(zone_id < MAX_ZONE_NUM, "Invalid zone id!");
+        self.cbaser_list[zone_id]
     }
 
     fn set_cwriter(&mut self, zone_id: usize, value: usize){
+        assert!(zone_id < MAX_ZONE_NUM, "Invalid zone id!");
         if value == 0{
             trace!("ignore first write");
         }else{
             self.insert_cmd(zone_id, value);
         }
 
-        match zone_id {
-            0 => self.zone0_cwriter = value,
-            1 => self.zone1_cwriter = value,
-            _ => error!("err"),
-        }
+        self.cwriter_list[zone_id] = value;
     }
 
     fn read_cwriter(&mut self, zone_id: usize) -> usize{
-        match zone_id {
-            0 => self.zone0_cwriter,
-            1 => self.zone1_cwriter,
-            _ => 0
-        }
+        assert!(zone_id < MAX_ZONE_NUM, "Invalid zone id!");
+        self.cwriter_list[zone_id]
     }
 
     fn read_creadr(&mut self, zone_id: usize) -> usize{
-        match zone_id {
-            0 => self.zone0_creadr,
-            1 => self.zone1_creadr,
-            _ => 0
-        }
+        assert!(zone_id < MAX_ZONE_NUM, "Invalid zone id!");
+        self.creadr_list[zone_id]
     }
 
     fn update_creadr(&mut self, zone_id: usize, writer: usize){
-        match zone_id {
-            0 => self.zone0_creadr = writer,
-            1 => self.zone1_creadr = writer,
-            _ => error!("err!")
-        }
+        assert!(zone_id < MAX_ZONE_NUM, "Invalid zone id!");
+        self.creadr_list[zone_id] = writer;
     }
 
     // it's ok to add qemu-args: -trace gicv3_gits_cmd_*, remember to remain `enable one lpi`
@@ -253,17 +217,11 @@ impl Cmdq {
     }
 
     fn insert_cmd(&mut self, zone_id: usize, writer: usize){
-        let zone_addr = match zone_id {
-            0 => self.zone0_phy_base,
-            1 => self.zone1_phy_base,
-            _ => 0
-        };
+        assert!(zone_id < MAX_ZONE_NUM, "Invalid zone id");
 
-        let origin_readr = match zone_id {
-            0 => self.zone0_creadr,
-            1 => self.zone1_creadr,
-            _ => 0
-        };
+        let zone_addr = self.phy_base_list[zone_id];
+
+        let origin_readr = self.creadr_list[zone_id];
 
         let cmd_size = writer - origin_readr;
         let cmd_num = cmd_size / PER_CMD_BYTES;
