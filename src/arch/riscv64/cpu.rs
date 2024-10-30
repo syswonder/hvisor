@@ -52,7 +52,7 @@ impl ArchCpu {
         //self.sepc = guest_test as usize as u64;
         write_csr!(CSR_SSCRATCH, self as *const _ as usize); //arch cpu pointer
         self.sepc = entry;
-        self.hstatus = 1 << 7 | 2 << 32; //HSTATUS_SPV | HSTATUS_VSXL_64
+        self.hstatus = 1 << 7 | 2 << 32 | 1 << 12; //HSTATUS_SPV | HSTATUS_VSXL_64 | HSTATUS_VGEIN
         self.sstatus = 1 << 8 | 1 << 63 | 3 << 13 | 3 << 15; //SPP
         self.stack_top = self.stack_top() as usize;
         self.x[10] = cpu_id; //cpu id

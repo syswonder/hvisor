@@ -32,6 +32,9 @@ loongArch64 = "0.2.4"
 [features]
 platform_qemu = []
 platform_imx8mp = []
+default = ["aia"]
+plic = []
+aia = []
 
 [profile.dev]
 panic = "abort"
