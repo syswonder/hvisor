@@ -41,10 +41,13 @@ pub struct HvPciConfig{
     pub ecam_size: u64,
     pub io_base: u64,
     pub io_size: u64,
+    pub pci_io_base: u64,
     pub mem32_base: u64,
     pub mem32_size: u64,
+    pub pci_mem32_base: u64,
     pub mem64_base: u64,
     pub mem64_size: u64,
+    pub pci_mem64_base: u64,
 }
 
 impl HvPciConfig {
@@ -54,10 +57,13 @@ impl HvPciConfig {
             ecam_size: 0,
             io_base: 0,
             io_size: 0,
+            pci_io_base: 0,
             mem32_base: 0,
             mem32_size: 0,
+            pci_mem32_base: 0,
             mem64_base: 0,
             mem64_size: 0,
+            pci_mem64_base: 0,
         }
     }
 }
