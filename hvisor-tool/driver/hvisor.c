@@ -290,7 +290,7 @@ static int __init hvisor_init(void)
         err = request_irq(virtio_irq, virtio_irq_handler, IRQF_SHARED | IRQF_TRIGGER_RISING, "hvisor_virtio_device", &hvisor_misc_dev);
         if (err) goto err_out;
     }
-    
+    of_node_put(node);
     pr_info("hvisor init done!!!\n");
     return 0;
 err_out:
