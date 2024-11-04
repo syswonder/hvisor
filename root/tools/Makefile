@@ -3,10 +3,16 @@ objects := $(sources:.c=.o)
 ivc_demo_objects := ivc_demo.o
 hvisor_objects := $(filter-out $(ivc_demo_objects), $(objects))
 
-CFLAGS := -Wall -Wextra -g -DLOG_USE_COLOR -DHLOG=$(LOG)
+CFLAGS := -Wall -Wextra -DLOG_USE_COLOR -DHLOG=$(LOG)
 include_dirs := -I../include -I./include -I../cJSON/
 
 include $(sources:.c=.d)
+
+ifeq ($(DEBUG), y)
+	CFLAGS += -g -O0
+else 
+	CFLAGS += -O2
+endif
 
 ifeq ($(ARCH), arm64)
 	CC := aarch64-linux-gnu-gcc

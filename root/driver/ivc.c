@@ -11,24 +11,46 @@
 #include <linux/interrupt.h>
 
 #include "ivc.h"
-int ivc_len;
-__u64 ivc_ct_ipas[CONFIG_MAX_IVC_CONFIGS];
+struct ivc_info {
+	__u64 len;
+	__u64 ivc_ct_ipas[CONFIG_MAX_IVC_CONFIGS];
+    __u64 ivc_shmem_ipas[CONFIG_MAX_IVC_CONFIGS];
+	__u32 ivc_ids[CONFIG_MAX_IVC_CONFIGS];
+}__attribute__((packed));
+typedef struct ivc_info ivc_info_t;
+
+ivc_info_t *ivc_info;
 int ivc_irq = -1;
 
 static struct task_struct *task = NULL;
 
-static int hvisor_ivc_info(ivc_info_t __user *arg)
+static int hvisor_ivc_info(void)
 {
     int err = 0, i;
-    ivc_info_t *ivc_info;
-    ivc_info = kmalloc(sizeof(ivc_info_t), GFP_KERNEL);
-
+    if(ivc_info == NULL)
+        ivc_info = kmalloc(sizeof(ivc_info_t), GFP_KERNEL);
     err = hvisor_call(HVISOR_HC_IVC_INFO, __pa(ivc_info), sizeof(ivc_info_t));
-    ivc_len = ivc_info->len;
-    for(i=0; i<ivc_len; i++) 
-        ivc_ct_ipas[i] = ivc_info->ivc_ct_ipas[i];
-    copy_to_user(arg, ivc_info, sizeof(ivc_info_t));
+    if (ivc_info->len > 1) {
+        pr_warn("Now we can only support 1 ivc_id\n");
+    }
     return err;
+}
+
+static int ivc_open(struct inode *inode, struct file *file) {
+    int err;
+    if (ivc_info == NULL)
+        err = hvisor_ivc_info();
+    task = get_current();
+    return 0;
+}
+
+static int hvisor_user_ivc_info(ivc_uinfo_t __user* uinfo) {
+    int err = 0, i;
+    uinfo->len = ivc_info->len;
+    for(i = 0; i < ivc_info->len; i++) {
+        uinfo->ivc_ids[i] = ivc_info->ivc_ids[i];
+    }
+    return 0;
 }
 
 static long ivc_ioctl(struct file *file, unsigned int ioctl,
@@ -37,9 +59,8 @@ static long ivc_ioctl(struct file *file, unsigned int ioctl,
     int err = 0;
     switch (ioctl)
     {
-    case HVISOR_IVC_INFO:
-        err = hvisor_ivc_info((ivc_info_t __user *)arg);
-        task = get_current();
+    case HVISOR_IVC_USER_INFO:
+        err = hvisor_user_ivc_info((ivc_uinfo_t __user*)arg);
         break;
     default:
         err = -EINVAL;
@@ -50,24 +71,32 @@ static long ivc_ioctl(struct file *file, unsigned int ioctl,
 
 static int ivc_map(struct file *filp, struct vm_area_struct *vma)
 {
-    unsigned long long phys;
+    unsigned long long phys, offset;
     int i, err = 0, is_control_table = 0;
     size_t size = vma->vm_end - vma->vm_start;
-    phys = vma->vm_pgoff;
-    for(i=0; i<ivc_len; i++) {
-        if (phys == ivc_ct_ipas[i]) {
-            is_control_table = true;
-            break;
+    phys = vma->vm_pgoff << PAGE_SHIFT;
+    // TODO: Now we can only support ivc_id is 0.
+    if (phys == 0) {
+        // control table
+        if(size != 0x1000) {
+            pr_err("Invalid size for control table\n");
+            return -EINVAL;
         }
-    }
-    if (is_control_table)
         vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
-    // TODO: add check for memory
-    err = remap_pfn_range(vma,
-                        vma->vm_start,
-                        vma->vm_pgoff,
-                        size,
-                        vma->vm_page_prot);
+        err = remap_pfn_range(vma,
+                    vma->vm_start,
+                    ivc_info->ivc_ct_ipas[0] >> PAGE_SHIFT,
+                    size,
+                    vma->vm_page_prot);
+    } else {
+        // TODO: add check for memory
+        offset = phys - 0x1000;
+        err = remap_pfn_range(vma,
+            vma->vm_start,
+            (ivc_info->ivc_shmem_ipas[0] + offset) >> PAGE_SHIFT,
+            size,
+            vma->vm_page_prot);
+    }
     if (err)
         return err;
     pr_info("ivc region mmap succeed!\n");
@@ -75,6 +104,7 @@ static int ivc_map(struct file *filp, struct vm_area_struct *vma)
 }
 static const struct file_operations ivc_fops = {
     .owner = THIS_MODULE,
+    .open = ivc_open,
     .unlocked_ioctl = ivc_ioctl,
     .compat_ioctl = ivc_ioctl,
     .mmap = ivc_map,
@@ -120,7 +150,7 @@ static int __init ivc_init(void) {
         err = request_irq(ivc_irq, ivc_irq_handler, IRQF_SHARED | IRQF_TRIGGER_RISING, "hvisor_ivc_device", &ivc_dev);
         if (err) goto err_out;
     }
-    
+    of_node_put(node);
     pr_info("ivc init!!!\n");
     return 0;
 err_out:
