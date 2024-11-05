@@ -8,6 +8,12 @@ endif
 
 EXTRA_CFLAGS += -I$(PWD)/include
 
+ivc-y := ivc_driver.o hivc_template.dtb.o
+
+.SECONDARY: \
+        $(obj)/hivc_template.dtb.S \
+        $(obj)/hivc_template.dtb
+
 .PHONY: all clean
 
 all:

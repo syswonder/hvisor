@@ -5,6 +5,9 @@
 *.mod
 *.[oa]
 *.cmd
+*.dtb
+*.dtb.S
+*.tmp
 Module.symvers
 modules.order
 driver/*.ko
