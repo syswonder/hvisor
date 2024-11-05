@@ -17,23 +17,33 @@ pub struct IvcInfo {
     pub len: u64,
     /// The ivc control table ipa of each ivc region
     ivc_ct_ipas: [u64; CONFIG_MAX_IVC_CONGIGS],
+    /// The ivc shared memory ipa of each ivc region
+    ivc_shmem_ipas: [u64; CONFIG_MAX_IVC_CONGIGS],
     /// The ivc_id of each ivc region
-    ivc_ids: [u32; CONFIG_MAX_IVC_CONGIGS], 
+    ivc_ids: [u32; CONFIG_MAX_IVC_CONGIGS],
+    /// The irq number of each ivc region 
+    ivc_irqs: [u32; CONFIG_MAX_IVC_CONGIGS]
 }
 
 impl From<&[HvIvcConfig]> for IvcInfo {
     fn from(configs: &[HvIvcConfig]) -> Self {
         let mut ivc_ids = [0; CONFIG_MAX_IVC_CONGIGS];
         let mut ivc_ct_ipas = [0; CONFIG_MAX_IVC_CONGIGS];
+        let mut ivc_shmem_ipas = [0; CONFIG_MAX_IVC_CONGIGS];
+        let mut ivc_irqs = [0; CONFIG_MAX_IVC_CONGIGS];
         for i in 0..configs.len() {
             let config = &configs[i];
             ivc_ids[i] = config.ivc_id;
             ivc_ct_ipas[i] = config.control_table_ipa;
+            ivc_shmem_ipas[i] = config.shared_mem_ipa;
+            ivc_irqs[i] = config.interrupt_num;
         }
         Self {
             len: configs.len() as u64,
             ivc_ids,
+            ivc_shmem_ipas,
             ivc_ct_ipas,
+            ivc_irqs,
         }
     }
 }
@@ -134,11 +144,10 @@ impl Zone {
 
 const CT_IVC_ID: GuestPhysAddr = 0x00;
 const CT_MAX_PEERS: GuestPhysAddr = 0x04;
-const CT_SHARED_MEM_IPA: GuestPhysAddr = 0x08;
-const CT_RW_SEC_SIZE: GuestPhysAddr = 0x10;
-const CT_OUT_SEC_SIZE: GuestPhysAddr = 0x14;
-const CT_PEER_ID: GuestPhysAddr = 0x18;
-const CT_IPI_INVOKE: GuestPhysAddr = 0x1C;
+const CT_RW_SEC_SIZE: GuestPhysAddr = 0x08;
+const CT_OUT_SEC_SIZE: GuestPhysAddr = 0x0C;
+const CT_PEER_ID: GuestPhysAddr = 0x10;
+const CT_IPI_INVOKE: GuestPhysAddr = 0x14;
 
 pub fn mmio_ivc_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     let zone_id = this_zone_id();
@@ -156,13 +165,6 @@ pub fn mmio_ivc_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     mmio.value = match mmio.address {
         CT_IVC_ID => ivc_id as usize,
         CT_MAX_PEERS => rec.max_peers as usize,
-        CT_SHARED_MEM_IPA => {
-            let shared_mem_ipa = rec.peer_infos.iter()
-            .find(|&(peer_id, info)| info.zone_id == zone_id as _)
-            .map(|(_, info)| info.shared_mem_ipa)
-            .unwrap();
-            shared_mem_ipa as usize
-        },
         CT_RW_SEC_SIZE => rec.rw_sec_size as usize,
         CT_OUT_SEC_SIZE => rec.out_sec_size as usize,
         CT_PEER_ID => {
