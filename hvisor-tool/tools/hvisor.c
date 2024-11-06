@@ -178,7 +178,7 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
     if (!zone_id_json || !cpus_json || !name_json || 
         !memory_regions_json || !kernel_filepath_json || 
         !dtb_filepath_json || !kernel_load_paddr_json || 
-        !dtb_load_paddr_json || !entry_point_json || !interrupts_json) {
+        !dtb_load_paddr_json || !entry_point_json || !interrupts_json || !ivc_configs_json) {
             fprintf(stderr, "Error: Missing fields in JSON.\n");
             goto err_out;
     }
