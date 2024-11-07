@@ -20,6 +20,8 @@ pub const MAX_CPU_NUM: usize = 4;
 #[cfg(target_arch = "riscv64")]
 pub const MAX_CPU_NUM: usize = 4;
 
+pub const MAX_ZONE_NUM: usize = 3;
+
 pub fn core_end() -> VirtAddr {
     __core_end as _
 }
