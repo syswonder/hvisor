@@ -2,6 +2,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 // use psci::error::INVALID_ADDRESS;
 use crate::consts::INVALID_ADDRESS;
+use crate::pci::pci::PciRoot;
 use spin::RwLock;
 
 use crate::arch::mm::new_s2_memory_set;
@@ -22,6 +23,7 @@ pub struct Zone {
     pub cpu_set: CpuSet,
     pub irq_bitmap: [u32; 1024 / 32],
     pub gpm: MemorySet<Stage2PageTable>,
+    pub pciroot: PciRoot,
 }
 
 impl Zone {
@@ -33,6 +35,7 @@ impl Zone {
             cpu_set: CpuSet::new(MAX_CPU_NUM as usize, 0),
             mmio: Vec::new(),
             irq_bitmap: [0; 1024 / 32],
+            pciroot: PciRoot::new(),
         }
     }
 
@@ -177,7 +180,9 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     zone.mmio_init(&config.arch_config);
     zone.irq_bitmap_init(config.interrupts());
     zone.ivc_init(config.ivc_config());
-    
+    #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
+    zone.pci_init(&config.pci_config, config.num_pci_devs as _, &config.alloc_pci_devs);
+
     config.cpus().iter().for_each(|cpu_id| {
         zone.cpu_set.set_bit(*cpu_id as _);
     });

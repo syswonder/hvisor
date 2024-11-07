@@ -79,6 +79,7 @@
 pub mod gicd;
 pub mod gicr;
 pub mod vgic;
+pub mod gits;
 
 use core::arch::asm;
 use core::ptr::write_volatile;
@@ -87,7 +88,8 @@ use core::sync::atomic::AtomicU64;
 use alloc::collections::btree_map::BTreeMap;
 use alloc::collections::vec_deque::VecDeque;
 use alloc::vec::Vec;
-use gicr::{GICR_ISENABLER, GICR_SGI_BASE};
+use gicr::{init_lpi_prop, GICR_ISENABLER, GICR_SGI_BASE};
+use gits::gits_init;
 use spin::{Mutex, Once};
 
 use self::gicd::{enable_gic_are_ns, GICD_ICACTIVER, GICD_ICENABLER};
@@ -192,11 +194,10 @@ pub fn gicv3_handle_irq_el1() {
 
 fn pending_irq() -> Option<usize> {
     let iar = read_sysreg!(icc_iar1_el1) as usize;
-    if iar >= 0x3fe {
-        // spurious
-        None
+    if iar == 0x3ff {
+        None        
     } else {
-        Some(iar & 0xffffff)
+        Some(iar as _)
     }
 }
 
@@ -304,7 +305,7 @@ fn enable_maintenace_interrupt(is_enable: bool) {
     trace!("enable_maintenace_interrupt, is_enable is {}", is_enable);
     let mut hcr = read_sysreg!(ich_hcr_el2);
     trace!("hcr is {}", hcr);
-    if (is_enable) {
+    if is_enable {
         hcr |= ICH_HCR_UIE;
     } else {
         hcr &= !ICH_HCR_UIE;
@@ -387,6 +388,8 @@ pub struct Gic {
     pub gicr_base: usize,
     pub gicd_size: usize,
     pub gicr_size: usize,
+    pub gits_base: usize,
+    pub gits_size: usize,
 }
 
 pub fn host_gicd_base() -> usize {
@@ -398,12 +401,20 @@ pub fn host_gicr_base(id: usize) -> usize {
     GIC.get().unwrap().gicr_base + id * PER_GICR_SIZE
 }
 
+pub fn host_gits_base() -> usize{
+    GIC.get().unwrap().gits_base
+}
+
 pub fn host_gicd_size() -> usize {
     GIC.get().unwrap().gicd_size
 }
 
 pub fn host_gicr_size() -> usize {
     GIC.get().unwrap().gicr_size
+}
+
+pub fn host_gits_size() -> usize{
+    GIC.get().unwrap().gits_size
 }
 
 pub fn is_spi(irqn: u32) -> bool {
@@ -430,7 +441,13 @@ pub fn primary_init_early() {
         gicr_base: root_config.arch_config.gicr_base,
         gicd_size: root_config.arch_config.gicd_size,
         gicr_size: root_config.arch_config.gicr_size,
+        gits_base: root_config.arch_config.gits_base,
+        gits_size: root_config.arch_config.gits_size,
     });
+
+    init_lpi_prop();
+
+    gits_init();
 
     PENDING_VIRQS.call_once(|| PendingIrqs::new(MAX_CPU_NUM));
     debug!("gic = {:#x?}", GIC.get().unwrap());
