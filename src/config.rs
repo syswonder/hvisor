@@ -51,7 +51,7 @@ pub struct HvPciConfig{
 }
 
 impl HvPciConfig {
-    pub fn new_empty() -> Self {
+    pub const fn new_empty() -> Self {
         Self {
             ecam_base: 0,
             ecam_size: 0,
