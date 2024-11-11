@@ -20,14 +20,14 @@
 #include "zone_config.h"
 
 struct virtio_bridge *virtio_bridge;
-int hvisor_irq = -1;
+int virtio_irq = -1;
 static struct task_struct *task = NULL;
 
 // initial virtio el2 shared region
 static int hvisor_init_virtio(void)
 {
     int err;
-    if (hvisor_irq == -1)
+    if (virtio_irq == -1)
     {
         pr_err("virtio device is not available\n");
         return ENOTTY;
@@ -102,7 +102,7 @@ static int hvisor_zone_start(zone_config_t __user *arg)
     // flush_cache(zone_config->kernel_load_paddr, zone_config->kernel_size);
     // flush_cache(zone_config->dtb_load_paddr, zone_config->dtb_size);
 
-    err = hvisor_call(HVISOR_HC_START_ZONE, __pa(zone_config), 0);
+    err = hvisor_call(HVISOR_HC_START_ZONE, __pa(zone_config), sizeof(zone_config_t));
     kfree(zone_config);
     return err;
 }
@@ -241,8 +241,8 @@ static struct miscdevice hvisor_misc_dev = {
     .fops = &hvisor_fops,
 };
 
-// Interrupt handler for IRQ.
-static irqreturn_t irq_handler(int irq, void *dev_id)
+// Interrupt handler for Virtio device.
+static irqreturn_t virtio_irq_handler(int irq, void *dev_id)
 {
     struct siginfo info;
     if (dev_id != &hvisor_misc_dev)
@@ -254,7 +254,7 @@ static irqreturn_t irq_handler(int irq, void *dev_id)
     info.si_signo = SIGHVI;
     info.si_code = SI_QUEUE;
     info.si_int = 1;
-    // Send signale SIGHVI to hvisor user task
+    // Send signal SIGHVI to hvisor user task
     if (task != NULL)
     {
         // pr_info("send signal to hvisor device\n");
@@ -279,28 +279,26 @@ static int __init hvisor_init(void)
         pr_err("hvisor_misc_register failed!!!\n");
         return err;
     }
+    // probe hvisor virtio device.
     // The irq number must be retrieved from dtb node, because it is different from GIC's IRQ number.
-    node = of_find_node_by_path("/hvisor_device");
-
-    if (!node)
-    {
-        pr_info("hvisor_device node not found in dtb, can't use virtio devices\n");
-        // return -ENODEV;
+    node = of_find_node_by_path("/hvisor_virtio_device");
+    if (!node) {
+        pr_info("hvisor_virtio_device node not found in dtb, can't use virtio devices\n");
     }
-    else
-    {
-        hvisor_irq = of_irq_get(node, 0);
-        err = request_irq(hvisor_irq, irq_handler, IRQF_SHARED | IRQF_TRIGGER_RISING, "hvisor", &hvisor_misc_dev);
-        if (err)
-        {
-            pr_err("hvisor cannot register IRQ, err is %d\n", err);
-            free_irq(hvisor_irq, &hvisor_misc_dev);
-            misc_deregister(&hvisor_misc_dev);
-            return err;
-        }
+    else {
+        virtio_irq = of_irq_get(node, 0);
+        err = request_irq(virtio_irq, virtio_irq_handler, IRQF_SHARED | IRQF_TRIGGER_RISING, "hvisor_virtio_device", &hvisor_misc_dev);
+        if (err) goto err_out;
     }
+    of_node_put(node);
     pr_info("hvisor init done!!!\n");
     return 0;
+err_out:
+    pr_err("hvisor cannot register IRQ, err is %d\n", err);
+    if (virtio_irq != -1)
+        free_irq(virtio_irq, &hvisor_misc_dev);
+    misc_deregister(&hvisor_misc_dev);
+    return err;
 }
 
 /*
@@ -308,9 +306,8 @@ static int __init hvisor_init(void)
 */
 static void __exit hvisor_exit(void)
 {
-    if (hvisor_irq != -1)
-        free_irq(hvisor_irq, &hvisor_misc_dev);
-
+    if (virtio_irq != -1)
+        free_irq(virtio_irq, &hvisor_misc_dev);
     if (virtio_bridge != NULL)
     {
         ClearPageReserved(virt_to_page(virtio_bridge));

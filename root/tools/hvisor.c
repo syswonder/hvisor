@@ -133,17 +133,21 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
     cJSON *gits_size_json = cJSON_GetObjectItem(arch_config_json, "gits_size");
 
     if (gicd_base_json == NULL || gicr_base_json == NULL ||
-        gicd_size_json == NULL || gicr_size_json == NULL ||
-        gits_size_json == NULL || gits_size_json == NULL) {
+        gicd_size_json == NULL || gicr_size_json == NULL) {
         fprintf(stderr, "Missing fields in arch_config.\n");
         return -1;
     }
+    if (gits_base_json == NULL || gits_size_json == NULL) {
+        printf("No gits fields in arch_config.\n");
+    } else {
+        config->arch_config.gits_base = strtoull(gits_base_json->valuestring, NULL, 16);
+        config->arch_config.gits_size = strtoull(gits_size_json->valuestring, NULL, 16);
+    }
+
     config->arch_config.gicd_base = strtoull(gicd_base_json->valuestring, NULL, 16);
     config->arch_config.gicr_base = strtoull(gicr_base_json->valuestring, NULL, 16);
-    config->arch_config.gits_base = strtoull(gits_base_json->valuestring, NULL, 16);
     config->arch_config.gicd_size = strtoull(gicd_size_json->valuestring, NULL, 16);
     config->arch_config.gicr_size = strtoull(gicr_size_json->valuestring, NULL, 16);
-    config->arch_config.gits_size = strtoull(gits_size_json->valuestring, NULL, 16);
 #endif
 
 #ifdef RISCV64
@@ -285,11 +289,12 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
     cJSON *entry_point_json = cJSON_GetObjectItem(root, "entry_point");
     cJSON *kernel_args_json = cJSON_GetObjectItem(root, "kernel_args");
     cJSON *interrupts_json = cJSON_GetObjectItem(root, "interrupts");
-
+    cJSON *ivc_configs_json = cJSON_GetObjectItem(root, "ivc_configs");
+    
     if (!zone_id_json || !cpus_json || !name_json || 
         !memory_regions_json || !kernel_filepath_json || 
         !dtb_filepath_json || !kernel_load_paddr_json || 
-        !dtb_load_paddr_json || !entry_point_json || !interrupts_json) {
+        !dtb_load_paddr_json || !entry_point_json || !interrupts_json || !ivc_configs_json) {
             fprintf(stderr, "Error: Missing fields in JSON.\n");
             goto err_out;
     }
@@ -350,6 +355,22 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
         config->interrupts[i] = cJSON_GetArrayItem(interrupts_json, i)->valueint;
     }
 
+    int num_ivc_configs = cJSON_GetArraySize(ivc_configs_json);
+    config->num_ivc_configs = num_ivc_configs;
+    for (int i=0; i < num_ivc_configs; i++) {
+        cJSON *ivc_config_json = cJSON_GetArrayItem(ivc_configs_json, i);
+        ivc_config_t * ivc_config = &config->ivc_configs[i];
+        ivc_config->ivc_id = cJSON_GetObjectItem(ivc_config_json, "ivc_id")->valueint;
+        ivc_config->peer_id = cJSON_GetObjectItem(ivc_config_json, "peer_id")->valueint;        
+        ivc_config->shared_mem_ipa = strtoull(cJSON_GetObjectItem(ivc_config_json, "shared_mem_ipa")->valuestring, NULL, 16);
+        ivc_config->control_table_ipa = strtoull(cJSON_GetObjectItem(ivc_config_json, "control_table_ipa")->valuestring, NULL, 16);
+        ivc_config->rw_sec_size = strtoull(cJSON_GetObjectItem(ivc_config_json, "rw_sec_size")->valuestring, NULL, 16);
+        ivc_config->out_sec_size = strtoull(cJSON_GetObjectItem(ivc_config_json, "out_sec_size")->valuestring, NULL, 16);
+        ivc_config->interrupt_num = cJSON_GetObjectItem(ivc_config_json, "interrupt_num")->valueint;
+        ivc_config->max_peers = cJSON_GetObjectItem(ivc_config_json, "max_peers")->valueint;
+        printf("ivc_config %d: ivc_id %d, peer_id %d, shared_mem_ipa %llx, interrupt_num %d, max_peers %d\n",
+               i, ivc_config->ivc_id, ivc_config->peer_id, ivc_config->shared_mem_ipa, ivc_config->interrupt_num, ivc_config->max_peers);
+    }
     config->entry_point = strtoull(entry_point_json->valuestring, NULL, 16);
 
     config->kernel_load_paddr = strtoull(kernel_load_paddr_json->valuestring, NULL, 16);
@@ -480,7 +501,7 @@ static int zone_list(int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
-    int err;
+    int err = 0;
 
     if (argc < 2)
         help(1);
@@ -514,8 +535,7 @@ int main(int argc, char *argv[])
         {
             help(1);
         }
-    }
-    else
+    } else
     {
         help(1);
     }

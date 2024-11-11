@@ -2,22 +2,23 @@ KDIR ?= ../../nxp/OK8MP-linux-kernel
 DEV ?= /dev/sda1
 ARCH ?= arm64
 LOG ?= LOG_WARN
+DEBUG ?= n
 
 export KDIR
 export ARCH
 export LOG
 .PHONY: all env tools driver clean
 
+all: tools driver
+
 env:
 	git submodule update --init --recursive
 
 tools: env
-	make -C tools
+	$(MAKE) -C tools all
 
 driver: env
-	make -C driver
-
-all: tools driver
+	$(MAKE) -C driver all
 
 transfer: all
 	./trans_file.sh ./tools/hvisor 
@@ -32,7 +33,9 @@ transfer: all
 
 transfer_nxp: all
 	sudo cp ./tools/hvisor ~/tftp
+	sudo cp ./tools/ivc_demo ~/tftp
 	sudo cp ./driver/hvisor.ko ~/tftp
+	sudo cp ./driver/ivc.ko ~/tftp
 
 clean:
 	make -C tools clean
