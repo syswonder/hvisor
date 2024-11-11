@@ -12,7 +12,7 @@ use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite, WriteOnly};
 
 pub fn arch_send_event(cpu_id: u64, sgi_num: u64) {
-    debug!(
+    info!(
         "loongarch64: arch_send_event: sending event to cpu: {}, sgi_num: {}",
         cpu_id, sgi_num
     );
