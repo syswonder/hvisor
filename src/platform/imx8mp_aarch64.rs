@@ -1,5 +1,5 @@
 use crate::{arch::zone::HvArchZoneConfig, config::*};
-
+// gpu on non root linux
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0xa0000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0xa0400000;
 pub const ROOT_ZONE_ENTRY: u64 = 0xa0400000;
@@ -53,8 +53,8 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 3] = [
        // }, // serial
 ];
 
-pub const ROOT_ZONE_IRQS: [u32; 19] = [
-    36, 52, 55, 59, 64, 67, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 150, 151, 152,
+pub const ROOT_ZONE_IRQS: [u32; 20] = [
+    36, 52, 55, 59, 64, 65, 67, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 150, 151, 152,
 ];
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
@@ -62,4 +62,19 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     gicd_size: 0x10000,
     gicr_base: 0x38880000,
     gicr_size: 0xc0000,
+    gits_base: 0,
+    gits_size: 0,
 };
+
+pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 1] = [
+    HvIvcConfig {
+        ivc_id: 0,
+        peer_id: 0,
+        control_table_ipa: 0xd000_0000,
+        shared_mem_ipa: 0xd000_1000,
+        rw_sec_size: 0,
+        out_sec_size: 0x1000,
+        interrupt_num: 0x21 + 32,
+        max_peers: 2,
+    }
+];

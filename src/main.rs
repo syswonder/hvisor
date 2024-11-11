@@ -38,6 +38,7 @@ mod percpu;
 mod platform;
 mod zone;
 mod config;
+mod ivc;
 mod pci;
 
 #[cfg(target_arch = "aarch64")]
