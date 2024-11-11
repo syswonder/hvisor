@@ -133,17 +133,21 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
     cJSON *gits_size_json = cJSON_GetObjectItem(arch_config_json, "gits_size");
 
     if (gicd_base_json == NULL || gicr_base_json == NULL ||
-        gicd_size_json == NULL || gicr_size_json == NULL ||
-        gits_size_json == NULL || gits_size_json == NULL) {
+        gicd_size_json == NULL || gicr_size_json == NULL) {
         fprintf(stderr, "Missing fields in arch_config.\n");
         return -1;
     }
+    if (gits_base_json == NULL || gits_size_json == NULL) {
+        printf("No gits fields in arch_config.\n");
+    } else {
+        config->arch_config.gits_base = strtoull(gits_base_json->valuestring, NULL, 16);
+        config->arch_config.gits_size = strtoull(gits_size_json->valuestring, NULL, 16);
+    }
+
     config->arch_config.gicd_base = strtoull(gicd_base_json->valuestring, NULL, 16);
     config->arch_config.gicr_base = strtoull(gicr_base_json->valuestring, NULL, 16);
-    config->arch_config.gits_base = strtoull(gits_base_json->valuestring, NULL, 16);
     config->arch_config.gicd_size = strtoull(gicd_size_json->valuestring, NULL, 16);
     config->arch_config.gicr_size = strtoull(gicr_size_json->valuestring, NULL, 16);
-    config->arch_config.gits_size = strtoull(gits_size_json->valuestring, NULL, 16);
 #endif
 
 #ifdef RISCV64
