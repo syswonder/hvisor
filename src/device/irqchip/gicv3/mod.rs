@@ -445,9 +445,10 @@ pub fn primary_init_early() {
         gits_size: root_config.arch_config.gits_size,
     });
 
-    init_lpi_prop();
-
-    gits_init();
+    if host_gits_base() != 0 && host_gits_size() != 0 {
+        init_lpi_prop();
+        gits_init();
+    }
 
     PENDING_VIRQS.call_once(|| PendingIrqs::new(MAX_CPU_NUM));
     debug!("gic = {:#x?}", GIC.get().unwrap());
