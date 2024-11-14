@@ -753,7 +753,7 @@ static inline bool in_range(uint64_t value, uint64_t lower, uint64_t len)
 // Inject irq_id to target zone. It will add to res list, and notify hypervisor through ioctl.
 void virtio_inject_irq(VirtQueue *vq)
 {
-	log_info("[WHEATFOX] (%s) start, vq@%#x, vq->last_used_idx is %d", __func__, vq, vq->last_used_idx);
+	// log_info("[WHEATFOX] (%s) start, vq@%#x, vq->last_used_idx is %d", __func__, vq, vq->last_used_idx);
     uint16_t last_used_idx, idx, event_idx;
 	last_used_idx = vq->last_used_idx;
 	vq->last_used_idx = idx = vq->used_ring->idx;

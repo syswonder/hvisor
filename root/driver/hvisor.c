@@ -84,8 +84,9 @@ static int hvisor_finish_req(void)
 static int hvisor_zone_start(zone_config_t __user *arg)
 {
     int err = 0;
-    printk("hvisor_zone_start\n");
     zone_config_t *zone_config = kmalloc(sizeof(zone_config_t), GFP_KERNEL);
+
+    pr_info("debug: hvisor_zone_start\n");
 
     if (zone_config == NULL)
     {
@@ -102,7 +103,12 @@ static int hvisor_zone_start(zone_config_t __user *arg)
     // flush_cache(zone_config->kernel_load_paddr, zone_config->kernel_size);
     // flush_cache(zone_config->dtb_load_paddr, zone_config->dtb_size);
 
+    pr_info("debug: hvisor_zone_start calling hvisor_call\n");
+    
     err = hvisor_call(HVISOR_HC_START_ZONE, __pa(zone_config), 0);
+
+    pr_info("debug: hvisor_zone_start hvcall done, err: %d\n", err);
+
     kfree(zone_config);
     return err;
 }
@@ -133,6 +139,8 @@ static int hvisor_zone_list(zone_list_args_t __user *arg)
     zone_info_t *zones;
     zone_list_args_t args;
 
+    pr_info("debug: hvisor_zone_list start, args.cnt: %d\n", args.cnt);
+
     /* Copy user provided arguments to kernel space */
     if (copy_from_user(&args, arg, sizeof(zone_list_args_t)))
     {
@@ -143,7 +151,12 @@ static int hvisor_zone_list(zone_list_args_t __user *arg)
     zones = kmalloc(args.cnt * sizeof(zone_info_t), GFP_KERNEL);
     memset(zones, 0, args.cnt * sizeof(zone_info_t));
 
+    pr_info("debug: hvisor_zone_list calling hvisor_call\n");
+
     ret = hvisor_call(HVISOR_HC_ZONE_LIST, __pa(zones), args.cnt);
+
+    pr_info("debug: hvisor_zone_list hvcall done, ret: %d\n", ret);
+
     if (ret < 0)
     {
         pr_err("hvisor: failed to get zone list\n");
