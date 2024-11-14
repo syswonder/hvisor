@@ -1,21 +1,44 @@
 #![allow(unused)]
 
 use crate::{
-    arch::register::{read_gcsr_estat, write_gcsr_estat},
+    arch::{
+        cpu::this_cpu_id,
+        ipi::*,
+        register::{read_gcsr_estat, write_gcsr_estat},
+    },
     zone::Zone,
 };
-use fdt::Fdt;
+use chip::*;
 
 pub mod chip;
 
 pub fn primary_init_early() {
-    warn!("loongarch64: irqchip: primary_init_early do nothing");
+    if this_cpu_id() != 0 {
+        info!("loongarch64: irqchip: primary_init_early do nothing on secondary cpus");
+        return;
+    }
+    info!("loongarch64: irqchip: primary_init_early checking iochip configs");
+    print_chip_info();
+    csr_disable_new_codec();
+    legacy_int_enable_all();
+    extioi_mode_disable();
+    info!("loongarch64: irqchip: testing percore IPI feature");
+    let is_ipi_percore = get_ipi_percore();
+    info!(
+        "loongarch64: irqchip: percore IPI feature: {}",
+        is_ipi_percore
+    );
 }
 pub fn primary_init_late() {
     warn!("loongarch64: irqchip: primary_init_late do nothing");
 }
 pub fn percpu_init() {
-    warn!("percpu_init do nothing");
+    info!("loongarch64: irqchip: running percpu_init");
+    clear_all_ipi(this_cpu_id());
+    enable_ipi(this_cpu_id());
+    ecfg_ipi_enable();
+    info!("loongarch64: irqchip: dumping ipi registers");
+    dump_ipi_registers();
 }
 
 const INT_SWI0: usize = 0;

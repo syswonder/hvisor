@@ -100,6 +100,8 @@ impl ArchCpu {
             );
         }
 
+        // arch_send_event(2, 0x8);
+
         super::trap::_vcpu_return(ctx_addr as usize);
 
         panic!("loongarch64: ArchCpu::run: unreachable");

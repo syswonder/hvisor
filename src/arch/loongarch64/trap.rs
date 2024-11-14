@@ -171,16 +171,23 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
     let tlbrelo0_ = tlbrelo0::read();
     let tlbrelo1_ = tlbrelo1::read();
 
-    trace!(
-        "loongarch64: trap_handler: {} ecode={:#x} esubcode={:#x} is={:#x} badv={:#x} badi={:#x} era={:#x}", 
-        ecode2str(ecode, esubcode),
-        ecode,
-        esubcode,
-        is,
-        badv_.vaddr(),
-        badi_.inst(),
-        era_.raw(),
-    );
+    let mut is_idle = false;
+    if ecode == ECODE_GSPR && badi_.inst() == 0b0000_0110_0100_1000_1000_0000_0000_0000 {
+        is_idle = true;
+    }
+
+    if !is_idle {
+        debug!(
+            "loongarch64: trap_handler: {} ecode={:#x} esubcode={:#x} is={:#x} badv={:#x} badi={:#x} era={:#x}", 
+            ecode2str(ecode, esubcode),
+            ecode,
+            esubcode,
+            is,
+            badv_.vaddr(),
+            badi_.inst(),
+            era_.raw(),
+        );
+    }
 
     handle_exception(
         ecode,
@@ -222,6 +229,10 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
     let gcntc_com = gcntc.compensation();
     gcntc::set_compensation(gcntc_com.wrapping_sub(time_spent));
 
+    if !is_idle {
+        debug!("loongarch64: trap_handler: return");
+    }
+
     unsafe {
         let _ctx_ptr = ctx as *mut ZoneContext;
         _vcpu_return(_ctx_ptr as usize);
@@ -262,6 +273,7 @@ fn handle_exception(
                 badv,
                 badi
             );
+            // arch_send_event(1, 0x7);
             emulate_instruction(era, badi, ctx);
         }
         ECODE_HVC => {
@@ -1301,38 +1313,38 @@ fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
         0 => {
             // iocsrrd.b
             // GPR[rd] = iocsrrd.b(GPR[rj])
-            let mut val = 0;
-            unsafe {
-                asm!("iocsrrd.b {}, {}", out(reg) val, in(reg) ctx.x[rj]);
-            }
-            ctx.x[rd] = val;
+            // let mut val = 0;
+            // unsafe {
+            //     asm!("iocsrrd.b {}, {}", out(reg) val, in(reg) ctx.x[rj]);
+            // }
+            // ctx.x[rd] = val;
         }
         1 => {
             // iocsrrd.h
             // GPR[rd] = iocsrrd.h(GPR[rj])
-            let mut val = 0;
-            unsafe {
-                asm!("iocsrrd.h {}, {}", out(reg) val, in(reg) ctx.x[rj]);
-            }
-            ctx.x[rd] = val;
+            // let mut val = 0;
+            // unsafe {
+            //     asm!("iocsrrd.h {}, {}", out(reg) val, in(reg) ctx.x[rj]);
+            // }
+            // ctx.x[rd] = val;
         }
         2 => {
             // iocsrrd.w
             // GPR[rd] = iocsrrd.w(GPR[rj])
-            let mut val = 0;
-            unsafe {
-                asm!("iocsrrd.w {}, {}", out(reg) val, in(reg) ctx.x[rj]);
-            }
-            ctx.x[rd] = val;
+            // let mut val = 0;
+            // unsafe {
+            //     asm!("iocsrrd.w {}, {}", out(reg) val, in(reg) ctx.x[rj]);
+            // }
+            // ctx.x[rd] = val;
         }
         3 => {
             // iocsrrd.d
             // GPR[rd] = iocsrrd.d(GPR[rj])
-            let mut val = 0;
-            unsafe {
-                asm!("iocsrrd.d {}, {}", out(reg) val, in(reg) ctx.x[rj]);
-            }
-            ctx.x[rd] = val;
+            // let mut val = 0;
+            // unsafe {
+            //     asm!("iocsrrd.d {}, {}", out(reg) val, in(reg) ctx.x[rj]);
+            // }
+            // ctx.x[rd] = val;
         }
         4 => {
             // iocsrwr.b

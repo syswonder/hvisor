@@ -50,6 +50,7 @@ impl<'a> HyperCall<'a> {
                 return Ok(0);
             }
         };
+        debug!("hypercall: code={:?}, arg0={:#x}, arg1={:#x}", code, arg0, arg1);
         unsafe {
             match code {
                 HyperCallCode::HvVirtioInit => self.hv_virtio_init(arg0),
@@ -228,9 +229,6 @@ impl<'a> HyperCall<'a> {
                 cnt as usize,
             )
         };
-
-        #[cfg(target_arch = "loongarch64")]
-        inject_irq(4, false); // only for testing the loongarch irq injection - wheatfox :)
 
         for (i, zone_info) in slice.iter_mut().enumerate() {
             if i < zones_info.len() {
