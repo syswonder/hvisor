@@ -68,7 +68,7 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
         } else if (len < 0) {
             log_trace("Failed to read from console, errno is %d", errno);
 			vq->last_avail_idx--;
-            log_error("[WHEATFOX] (%s) Failed to read from console, errno is %d[%s], vq->last_avail_idx --> %d", __func__, errno, strerror(errno), vq->last_avail_idx);
+            log_warn("[WHEATFOX] (%s) Failed to read from console, errno is %d[%s], vq->last_avail_idx --> %d", __func__, errno, strerror(errno), vq->last_avail_idx);
             free(iov);
             break;
         } 
@@ -169,18 +169,19 @@ static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq) {
     //         log_printf("%c", *(char*)&iov->iov_base[i]);
     //     log_printf("\n");
     // }
-
-    log_info("[WHEATFOX] (%s) console txq: n is %d, iov at", __func__, n);
+    log_printf("[WHEATFOX] (%s) console txq: n is %d, iov at ", __func__, n);
     for (int i = 0; i < n; i++) {
-        log_printf("[%d:%#x|%d]", i, iov[i].iov_base, iov[i].iov_len);
+        log_printf("[%d:%#x|%d] ", i, iov[i].iov_base, iov[i].iov_len);
     }
     log_printf("\n");
+#if 0
     for (int i = 0; i < n; i++) {
         log_printf("RAW:[");
         for (int j = 0; j < iov[i].iov_len; j++)
             log_printf("%c", *(char*)&iov[i].iov_base[j]);
         log_printf("]\n");
     }
+#endif
 
     if (n < 1) {
         return ;
