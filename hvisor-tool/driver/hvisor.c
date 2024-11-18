@@ -103,11 +103,11 @@ static int hvisor_zone_start(zone_config_t __user *arg)
     // flush_cache(zone_config->kernel_load_paddr, zone_config->kernel_size);
     // flush_cache(zone_config->dtb_load_paddr, zone_config->dtb_size);
 
-    pr_info("debug: hvisor_zone_start calling hvisor_call\n");
+    // pr_info("debug: hvisor_zone_start calling hvisor_call\n");
     
     err = hvisor_call(HVISOR_HC_START_ZONE, __pa(zone_config), 0);
 
-    pr_info("debug: hvisor_zone_start hvcall done, err: %d\n", err);
+    // pr_info("debug: hvisor_zone_start hvcall done, err: %d\n", err);
 
     kfree(zone_config);
     return err;
