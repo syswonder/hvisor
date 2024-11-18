@@ -760,19 +760,19 @@ void virtio_inject_irq(VirtQueue *vq)
 	// read_barrier();
 	if (idx == last_used_idx) {
 		log_debug("idx equals last_used_idx");
-        log_info("[WHEATFOX] (%s) idx equals last_used_idx", __func__);
+        log_trace("[WHEATFOX] (%s) idx equals last_used_idx", __func__);
 		return ;
 	}
     if (!vq->event_idx_enabled && (vq->avail_ring->flags & VRING_AVAIL_F_NO_INTERRUPT)) {
-        log_info("[WHEATFOX] (%s) no interrupt", __func__);
 		log_debug("no interrupt");
+        log_trace("[WHEATFOX] (%s) no interrupt", __func__);
 		return ;
 	}
 	if (vq->event_idx_enabled) {
 		event_idx = VQ_USED_EVENT(vq);
 		log_debug("idx is %d, event_idx is %d, last_used_idx is %d", idx, event_idx, last_used_idx);
 		if(!vring_need_event(event_idx, idx, last_used_idx)) {
-            log_info("[WHEATFOX] (%s) no need event", __func__);
+            log_trace("[WHEATFOX] (%s) no need event", __func__);
 			return;
 		}
 	}
