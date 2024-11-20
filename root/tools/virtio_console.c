@@ -37,38 +37,43 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
     } 
     if (dev->rx_ready <= 0) {
         read(dev->master_fd, trashbuf, sizeof(trashbuf));
+        // log_error("console rxq is not ready, your input data which is %s will be discarded", trashbuf);
         return ;
     }
     if (virtqueue_is_empty(vq)) {
         read(dev->master_fd, trashbuf, sizeof(trashbuf));
         virtio_inject_irq(vq);
+        // log_error("virtqueue is empty, your input data which is %s will be discarded", trashbuf);
         return ;
     }
     
     while (!virtqueue_is_empty(vq)) {
         n = process_descriptor_chain(vq, &idx, &iov, NULL, 0);
-        // log_info("[WHEATFOX] (%s) process_descriptor_chain done, n is %d", __func__, n);
-        // dump iov data
-        // for (int i = 0; i < n; i++) {
-        //     log_info("[WHEATFOX] (%s) iov[%d] is [%c](%d)", __func__, i, *(char*)&iov[i].iov_base, *(char*)&iov[i].iov_base);
-        // }
         if (n < 1) {
             log_error("process_descriptor_chain failed");
             break;
         }
-        // log_info("[WHEATFOX] (%s) calling readv(fd=%d, iov@%#x, n=%d), fd name is %s", __func__, dev->master_fd, iov, n, ptsname(dev->master_fd));
         len = readv(dev->master_fd, iov, n);
-        log_trace("[WHEATFOX] (%s) readv done, len is %d, vq->last_avail_idx is %d", __func__, len, vq->last_avail_idx);
+        // log_info("[WHEATFOX] (%s) readv done, len is %d, vq->last_avail_idx is %d", __func__, len, vq->last_avail_idx);
+        // if len is not 0, print the data
+        if (len > 0) {
+            log_info("[WHEATFOX] (%s) readv done, len is %d, data is at iov@%#x, dump:\nRAW:[", __func__, len, iov);
+            // now starting from iov base, print exactly len bytes
+            for (int i = 0; i < len; i++) {
+                log_printf("%c", *(char*)&iov->iov_base[i]);
+            }
+            log_printf("] vq->last_avail_idx is %d\n", vq->last_avail_idx);
+        }
         if (len < 0 && errno == EWOULDBLOCK) {
             log_debug("no more bytes");
 			vq->last_avail_idx--;
-            // log_info("[WHEATFOX] (%s) no more bytes, vq->last_avail_idx --> %d", __func__, vq->last_avail_idx);
+            // log_error("[WHEATFOX] (%s) no more bytes, vq->last_avail_idx --> %d", __func__, vq->last_avail_idx);
             free(iov);
 			break;
         } else if (len < 0) {
             log_trace("Failed to read from console, errno is %d", errno);
 			vq->last_avail_idx--;
-            log_trace("[WHEATFOX] (%s) Failed to read from console, errno is %d[%s], vq->last_avail_idx --> %d", __func__, errno, strerror(errno), vq->last_avail_idx);
+            // log_error("[WHEATFOX] (%s) Failed to read from console, errno is %d[%s], vq->last_avail_idx --> %d", __func__, errno, strerror(errno), vq->last_avail_idx);
             free(iov);
             break;
         } 
@@ -178,8 +183,14 @@ static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq) {
 #if 1
     for (int i = 0; i < n; i++) {
         log_printf("RAW:[");
-        for (int j = 0; j < iov[i].iov_len; j++)
-            log_printf("%c", *(char*)&iov[i].iov_base[j]);
+        for (int j = 0; j < iov[i].iov_len; j++) {
+            char x = *(char*)&iov[i].iov_base[j];
+            // if x == \t or \n or \r, replace it with space
+            if (x == '\t' || x == '\n' || x == '\r') {
+                x = ' ';
+            }
+            log_printf("%c", x);
+        }
         log_printf("]\n");
     }
 #endif
