@@ -55,6 +55,7 @@ const INT_PERF: usize = 10;
 const INT_TIMER: usize = 11;
 const INT_IPI: usize = 12;
 
+/// inject irq to THIS cpu
 pub fn inject_irq(_irq: usize, is_hardware: bool) {
     debug!(
         "loongarch64: inject_irq, _irq: {}, is_hardware: {}",
@@ -77,6 +78,7 @@ pub fn inject_irq(_irq: usize, is_hardware: bool) {
     }
 }
 
+/// clear the injecting irq ctrl bit on THIS cpu
 pub fn clear_hwi_injected_irq() {
     use crate::arch::register::gintc;
     gintc::set_hwis(0);

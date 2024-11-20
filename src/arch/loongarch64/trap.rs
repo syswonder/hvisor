@@ -1,4 +1,5 @@
 use crate::arch::cpu::this_cpu_id;
+use crate::device::irqchip::inject_irq;
 use crate::event::check_events;
 use crate::hypercall::SGI_IPI_ID;
 use crate::memory::addr;
@@ -281,7 +282,7 @@ fn handle_exception(
             // code = a0(r4), arg0 = a1(r5), arg1 = a2(r6)
             handle_hvc(ctx);
         }
-        ECODE_PIL | ECODE_PIS => {
+        ECODE_PIL | ECODE_PIS | ECODE_PNR => {
             debug!("exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",
                     ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv);
             // we first assume this lies in virtio region
@@ -1144,6 +1145,7 @@ fn imm12toi64(imm12: usize) -> isize {
 }
 
 use crate::arch::ipi::*;
+const INT_IPI: usize = 12;
 const IPI_BIT: usize = 1 << 12;
 const TIMER_BIT: usize = 1 << 11;
 
@@ -1153,7 +1155,6 @@ fn handle_interrupt(is: usize) {
         _ if is & IPI_BIT != 0 => {
             let ipi_status = get_ipi_status(this_cpu_id());
             debug!("ipi interrupt, status = {:#x}", ipi_status);
-            clear_all_ipi(this_cpu_id());
             // handle IPI
             if ipi_status == SGI_IPI_ID as _ {
                 // 0x7 is a SGI in hvisor, but we still need ot know which event it is
@@ -1162,11 +1163,18 @@ fn handle_interrupt(is: usize) {
                 if result {
                     debug!("ipi event handled :)");
                 } else {
-                    panic!("ipi event not handled !!!");
+                    error!("ipi event not handled !!!");
                 }
+            } else if ipi_status == 0x8 {
+                // this one is used to wake up nonroot virtio hvc0 read
+                // since this is actually sent by zone and notify the zone itself, we should inject this to the zone
+                // and let the zone handle it
+                // inject_irq(INT_IPI, false);
+                warn!("not handled IPI status {:#x} for now", ipi_status);
             } else {
                 warn!("ignored IPI status {:#x}", ipi_status);
             }
+            reset_ipi(this_cpu_id());
         }
         _ if is & TIMER_BIT != 0 => {
             use loongArch64::register;
@@ -1313,66 +1321,66 @@ fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
         0 => {
             // iocsrrd.b
             // GPR[rd] = iocsrrd.b(GPR[rj])
-            // let mut val = 0;
-            // unsafe {
-            //     asm!("iocsrrd.b {}, {}", out(reg) val, in(reg) ctx.x[rj]);
-            // }
-            // ctx.x[rd] = val;
+            let mut val = 0;
+            unsafe {
+                asm!("iocsrrd.b {}, {}", out(reg) val, in(reg) ctx.x[rj]);
+            }
+            ctx.x[rd] = val;
         }
         1 => {
             // iocsrrd.h
             // GPR[rd] = iocsrrd.h(GPR[rj])
-            // let mut val = 0;
-            // unsafe {
-            //     asm!("iocsrrd.h {}, {}", out(reg) val, in(reg) ctx.x[rj]);
-            // }
-            // ctx.x[rd] = val;
+            let mut val = 0;
+            unsafe {
+                asm!("iocsrrd.h {}, {}", out(reg) val, in(reg) ctx.x[rj]);
+            }
+            ctx.x[rd] = val;
         }
         2 => {
             // iocsrrd.w
             // GPR[rd] = iocsrrd.w(GPR[rj])
-            // let mut val = 0;
-            // unsafe {
-            //     asm!("iocsrrd.w {}, {}", out(reg) val, in(reg) ctx.x[rj]);
-            // }
-            // ctx.x[rd] = val;
+            let mut val = 0;
+            unsafe {
+                asm!("iocsrrd.w {}, {}", out(reg) val, in(reg) ctx.x[rj]);
+            }
+            ctx.x[rd] = val;
         }
         3 => {
             // iocsrrd.d
             // GPR[rd] = iocsrrd.d(GPR[rj])
-            // let mut val = 0;
-            // unsafe {
-            //     asm!("iocsrrd.d {}, {}", out(reg) val, in(reg) ctx.x[rj]);
-            // }
-            // ctx.x[rd] = val;
+            let mut val = 0;
+            unsafe {
+                asm!("iocsrrd.d {}, {}", out(reg) val, in(reg) ctx.x[rj]);
+            }
+            ctx.x[rd] = val;
         }
         4 => {
             // iocsrwr.b
-            // iocsrwr.b(GPR[rj], GPR[rd])
-            // unsafe {
-            //     asm!("iocsrwr.b {}, {}", in(reg) ctx.x[rj], in(reg) ctx.x[rd]);
-            // }
+            // iocsrwr.b(GPR[rd], GPR[rj])
+            unsafe {
+                asm!("iocsrwr.b {}, {}", in(reg) ctx.x[rd], in(reg) ctx.x[rj]);
+            }
         }
         5 => {
             // iocsrwr.h
-            // iocsrwr.h(GPR[rj], GPR[rd])
-            // unsafe {
-            //     asm!("iocsrwr.h {}, {}", in(reg) ctx.x[rj], in(reg) ctx.x[rd]);
-            // }
+            // iocsrwr.h(GPR[rd], GPR[rj])
+            unsafe {
+                asm!("iocsrwr.h {}, {}", in(reg) ctx.x[rd], in(reg) ctx.x[rj]);
+            }
         }
         6 => {
             // iocsrwr.w
-            // iocsrwr.w(GPR[rj], GPR[rd])
-            // unsafe {
-            //     asm!("iocsrwr.w {}, {}", in(reg) ctx.x[rj], in(reg) ctx.x[rd]);
-            // }
+            // iocsrwr.w(GPR[rd], GPR[rj])
+            unsafe {
+                asm!("iocsrwr.w {}, {}", in(reg) ctx.x[rd], in(reg) ctx.x[rj]);
+            }
         }
         7 => {
             // iocsrwr.d
-            // iocsrwr.d(GPR[rj], GPR[rd])
-            // unsafe {
-            //     asm!("iocsrwr.d {}, {}", in(reg) ctx.x[rj], in(reg) ctx.x[rd]);
-            // }
+            // iocsrwr.d(GPR[rd], GPR[rj])
+            unsafe {
+                asm!("iocsrwr.d {}, {}", in(reg) ctx.x[rd], in(reg) ctx.x[rj]);
+            }
         }
         _ => {
             // should not reach here

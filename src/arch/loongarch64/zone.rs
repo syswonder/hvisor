@@ -1,12 +1,8 @@
 use crate::{
-    config::*,
-    device::virtio_trampoline::mmio_virtio_handler,
-    error::HvResult,
-    memory::{
+    config::*, consts::PAGE_SIZE, device::virtio_trampoline::mmio_virtio_handler, error::HvResult, memory::{
         addr::{align_down, align_up},
         mmio_generic_handler, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
-    },
-    zone::Zone,
+    }, zone::Zone
 };
 use alloc::vec::Vec;
 use core::arch::asm;
@@ -40,6 +36,12 @@ impl Zone {
                         "loongarch64: pt_init: register virtio mmio region: {:#x?}",
                         region
                     );
+                    self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                        region.virtual_start as GuestPhysAddr,
+                        region.physical_start as HostPhysAddr,
+                        PAGE_SIZE, // since we only need 0x200 size for virtio mmio, but the minimal size is PAGE_SIZE
+                        MemFlags::USER, // we use the USER as a hint flag for invalidating this stage-2 PTE
+                    ))?;
                     self.mmio_region_register(
                         region.physical_start as _,
                         region.size as _,

@@ -5,7 +5,8 @@ use crate::device::common::MMIODerefWrapper;
 use crate::percpu::this_cpu_data;
 use core::arch::asm;
 use core::fmt::{self, Debug, Formatter};
-use loongArch64::register::cpuid;
+use loongArch64::register::{cpuid, crmd};
+use loongArch64::register::crmd::Crmd;
 use loongArch64::register::pgdl;
 use tock_registers::interfaces::Writeable;
 
@@ -100,7 +101,9 @@ impl ArchCpu {
             );
         }
 
-        // arch_send_event(2, 0x8);
+        unsafe {
+            asm!("invtlb 0, $r0, $r0"); // flush TLBs
+        }
 
         super::trap::_vcpu_return(ctx_addr as usize);
 

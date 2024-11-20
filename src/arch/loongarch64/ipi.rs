@@ -13,7 +13,7 @@ use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite, WriteOnly};
 
 pub fn arch_send_event(cpu_id: u64, sgi_num: u64) {
-    info!(
+    debug!(
         "loongarch64: arch_send_event: sending event to cpu: {}, sgi_num: {}",
         cpu_id, sgi_num
     );
@@ -132,7 +132,7 @@ const IPI_MMIO_MAIL_SEND: usize = MMIO_BASE + 0x1048; // 64 bits Write Only
 pub fn ipi_write_action_percore(cpu_id: usize, _action: usize) {
     let mut irq: u32 = 0;
     let mut action = _action;
-    println!(
+    debug!(
         "loongarch64::ipi_write_action sending action: {:#x} to cpu: {}",
         action, cpu_id
     );
@@ -144,7 +144,7 @@ pub fn ipi_write_action_percore(cpu_id: usize, _action: usize) {
         let mut val: u32 = 1 << 31;
         val |= irq - 1;
         val |= (cpu_id as u32) << 16;
-        println!(
+        debug!(
             "loongarch64::ipi_write_action writing value {:#x} to MMIO address: {:#x}",
             val, IPI_MMIO_IPI_SEND
         );
@@ -152,13 +152,13 @@ pub fn ipi_write_action_percore(cpu_id: usize, _action: usize) {
             //     asm!("iocsrwr.w {}, {}", in(reg) val, in(reg) 0x1040);
             write_volatile(IPI_MMIO_IPI_SEND as *mut u32, val);
         }
-        println!(
+        debug!(
             "loongarch64::ipi_write_action sent irq: {} to cpu: {} !",
             irq, cpu_id
         );
         action &= !(1 << (irq - 1));
     }
-    println!(
+    debug!(
         "loongarch64::ipi_write_action finished sending to cpu: {}",
         cpu_id
     );
@@ -167,7 +167,7 @@ pub fn ipi_write_action_percore(cpu_id: usize, _action: usize) {
 pub fn ipi_write_action(cpu_id: usize, _action: usize) {
     // just write _action directly to the target cpu legacy IPI registers
     // which is the IPI_SET register
-    info!(
+    debug!(
         "ipi_write_action_legacy: sending action: {:#x} to cpu: {}",
         _action, cpu_id
     );
@@ -182,7 +182,7 @@ pub fn ipi_write_action(cpu_id: usize, _action: usize) {
         }
     };
     ipi.ipi_set.write(IpiSet::IPISET.val(_action as u32));
-    info!(
+    debug!(
         "ipi_write_action_legacy: finished sending action: {:#x} to cpu: {}",
         _action, cpu_id
     );
@@ -191,7 +191,7 @@ pub fn ipi_write_action(cpu_id: usize, _action: usize) {
 pub fn mail_send(data: usize, cpu_id: usize, mailbox_id: usize) {
     // just write data to the target cpu mailbox registers
     // which is the mailbox0 register
-    info!(
+    debug!(
         "mail_send: sending data: {:#x} to cpu: {}, mailbox_id: {}",
         data, cpu_id, mailbox_id
     );
@@ -215,7 +215,7 @@ pub fn mail_send(data: usize, cpu_id: usize, mailbox_id: usize) {
             return;
         }
     }
-    info!(
+    debug!(
         "mail_send: finished sending data: {:#x} to cpu: {}, mailbox_id: {}",
         data, cpu_id, mailbox_id
     );
@@ -233,7 +233,7 @@ pub fn enable_ipi(cpu_id: usize) {
         }
     };
     ipi.ipi_enable.write(IpiEnable::IPIENABLE.val(0xffffffff));
-    info!("enable_ipi: IPI enabled for cpu {}", cpu_id);
+    debug!("enable_ipi: IPI enabled for cpu {}", cpu_id);
 }
 
 pub fn clear_all_ipi(cpu_id: usize) {
@@ -248,11 +248,17 @@ pub fn clear_all_ipi(cpu_id: usize) {
         }
     };
     ipi.ipi_clear.write(IpiClear::IPICLEAR.val(0xffffffff));
-    trace!(
+    debug!(
         "clear_all_ipi: IPI status for cpu {}: {:#x}",
         cpu_id,
         ipi.ipi_status.read(IpiStatus::IPISTATUS)
     );
+}
+
+pub fn reset_ipi(cpu_id: usize) {
+    // clear all IPIs and enable all IPIs
+    clear_all_ipi(cpu_id);
+    enable_ipi(cpu_id);
 }
 
 pub fn get_ipi_status(cpu_id: usize) -> u32 {
