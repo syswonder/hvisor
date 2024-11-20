@@ -178,7 +178,7 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
     }
 
     if !is_idle {
-        debug!(
+        info!(
             "loongarch64: trap_handler: {} ecode={:#x} esubcode={:#x} is={:#x} badv={:#x} badi={:#x} era={:#x}", 
             ecode2str(ecode, esubcode),
             ecode,
@@ -231,7 +231,7 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
     gcntc::set_compensation(gcntc_com.wrapping_sub(time_spent));
 
     if !is_idle {
-        debug!("loongarch64: trap_handler: return");
+        info!("loongarch64: trap_handler: return");
     }
 
     unsafe {
@@ -1170,7 +1170,7 @@ fn handle_interrupt(is: usize) {
                 // since this is actually sent by zone and notify the zone itself, we should inject this to the zone
                 // and let the zone handle it
                 // inject_irq(INT_IPI, false);
-                warn!("not handled IPI status {:#x} for now", ipi_status);
+                debug!("not handled IPI status {:#x} for now", ipi_status);
             } else {
                 warn!("ignored IPI status {:#x}", ipi_status);
             }
