@@ -18,6 +18,11 @@ ConsoleDev *init_console_dev() {
     return dev;
 }
 
+#ifdef LOONGARCH64
+double last_process_timestamp = -1;
+const int LOONGARCH64_CONSOLE_PROCESS_INTERVAL_MS = 500;
+#endif
+
 static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
     log_debug("%s", __func__);
     VirtIODevice *vdev = (VirtIODevice *)param;
@@ -35,6 +40,25 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
         log_error("console event handler should not be called");
         return ;
     } 
+
+#ifdef LOONGARCH64
+    // we wait until current timestamp - last_process_timestamp > LOONGARCH64_CONSOLE_PROCESS_INTERVAL_MS
+    // to avoid too frequent ipi sending that cause ipi failure on loongson 3A5000 board
+    struct timeval tv;
+    double current_timestamp;
+    while(1) {
+        if (last_process_timestamp < 0) {
+            break;
+        }
+        gettimeofday(&tv, NULL);
+        current_timestamp = (tv.tv_sec) * 1000 + (tv.tv_usec) / 1000 ; // convert tv_sec & tv_usec to millisecond
+        if (current_timestamp - last_process_timestamp > LOONGARCH64_CONSOLE_PROCESS_INTERVAL_MS) {
+            break;
+        }
+    }
+    last_process_timestamp = current_timestamp;
+#endif
+
     if (dev->rx_ready <= 0) {
         read(dev->master_fd, trashbuf, sizeof(trashbuf));
         // log_error("console rxq is not ready, your input data which is %s will be discarded", trashbuf);
