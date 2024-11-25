@@ -57,10 +57,11 @@ const INT_IPI: usize = 12;
 
 /// inject irq to THIS cpu
 pub fn inject_irq(_irq: usize, is_hardware: bool) {
-    info!(
+    debug!(
         "loongarch64: inject_irq, _irq: {}, is_hardware: {}",
         _irq, is_hardware
     );
+    print!("\0");
     if _irq > INT_IPI {
         error!("loongarch64: inject_irq: _irq > {}, not valid", INT_IPI);
         return;
@@ -89,10 +90,11 @@ pub fn clear_hwi_injected_irq() {
     unsafe {
         asm!("csrrd {0}, 0x52", out(reg) gintc_raw);
     }
-    info!(
+    debug!(
         "loongarch64: clear_hwi_injected_irq, current gintc: {:#x}",
         gintc_raw
     );
+    print!("\0");
 }
 
 impl Zone {

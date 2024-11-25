@@ -178,7 +178,7 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
     }
 
     if !is_idle {
-        info!(
+        debug!(
             "loongarch64: trap_handler: {} ecode={:#x} esubcode={:#x} is={:#x} badv={:#x} badi={:#x} era={:#x}", 
             ecode2str(ecode, esubcode),
             ecode,
@@ -188,6 +188,7 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
             badi_.inst(),
             era_.raw(),
         );
+        print!("\0");
     }
 
     handle_exception(
@@ -231,7 +232,8 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
     gcntc::set_compensation(gcntc_com.wrapping_sub(time_spent));
 
     if !is_idle {
-        info!("loongarch64: trap_handler: return");
+        debug!("loongarch64: trap_handler: return");
+        print!("\0");
     }
 
     unsafe {
