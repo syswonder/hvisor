@@ -113,6 +113,19 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
     trace!("gicr({}) mmio = {:#x?}", cpu, mmio);
     let gicr_base = host_gicr_base(cpu);
     match mmio.address {
+        GICR_CTLR => {
+            if get_cpu_data(cpu).zone.is_none() {
+                if !mmio.is_write {
+                    mmio_perform_access(gicr_base, mmio);
+                }
+            }else if Arc::ptr_eq(&this_zone(), get_cpu_data(cpu).zone.as_ref().unwrap()) {
+                mmio_perform_access(gicr_base, mmio);
+            }else{
+                if !mmio.is_write {
+                    mmio_perform_access(gicr_base, mmio);
+                }
+            }
+        }
         GICR_TYPER => {
             mmio_perform_access(gicr_base, mmio);
             if cpu == MAX_CPU_NUM - 1 {
@@ -134,7 +147,6 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
         }
         GICR_PROPBASER => {
             // all the redist share one prop tbl
-            // mmio_perform_access(gicr_base, mmio);
             if mmio.is_write{
                 set_prop_baser(mmio.value);
                 trace!("write prop tbl base : 0x{:x}!", mmio.value);
@@ -146,8 +158,18 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
         GICR_SYNCR => {
             mmio.value = 0;
         }
-        reg if reg == GICR_CTLR
-        || reg == GICR_STATUSR
+        GICR_SETLPIR => {
+            mmio_perform_access(gicr_base, mmio);
+        }
+        reg if reg == GICR_CLRLPIR || reg == GICR_INVALLR => {
+            mmio_perform_access(gicr_base, mmio);
+        }
+        GICR_INVLPIR => {
+            // Presume that this write is to enable an LPI.
+            // Or we need to check all the proptbl created by vm.
+            enable_one_lpi((mmio.value & 0xffffffff) - 8192);
+        }
+        reg if reg == GICR_STATUSR
         || reg == GICR_WAKER
         || reg == GICR_SGI_BASE + GICR_ISENABLER
         || reg == GICR_SGI_BASE + GICR_ICENABLER
@@ -199,13 +221,14 @@ fn vgicv3_dist_misc_access(mmio: &mut MMIOAccess, gicd_base: usize) -> HvResult 
         || reg == GICD_CTLR
         || reg == GICD_TYPER
         || reg == GICD_IIDR
+        || reg == GICD_TYPER2
     {
         if !mmio.is_write {
             // ignore write
             mmio_perform_access(gicd_base, mmio);
         }
     } else {
-        todo!()
+        todo!("unsupported reg, offset: {:#x}", reg);
     }
 
     Ok(())

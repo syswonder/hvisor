@@ -9,14 +9,13 @@ use core::ptr;
 use alloc::vec::Vec;
 use spin::{mutex::Mutex, Once};
 
-use crate::{arch::cpu::this_cpu_id, consts::{MAX_CPU_NUM, MAX_ZONE_NUM}, hypercall::SGI_IPI_ID, memory::Frame, zone::this_zone_id};
+use crate::{arch::cpu::this_cpu_id, consts::{MAX_CPU_NUM, MAX_ZONE_NUM, PAGE_SIZE}, hypercall::SGI_IPI_ID, memory::Frame, zone::this_zone_id};
 
 use super::{
     gicd::{
         GICD_ICACTIVER, GICD_ICENABLER, GICD_ICFGR, GICD_ICPENDR, GICD_IGROUPR, GICD_IPRIORITYR,
-        GICD_ISACTIVER, GICD_ISENABLER, GICD_ISPENDR,
-    },
-    host_gicr_base, MAINTENACE_INTERRUPT,
+        GICD_ISACTIVER, GICD_ISENABLER, GICD_ISPENDR, GICD_TYPER,
+    }, host_gicd_base, host_gicr_base, MAINTENACE_INTERRUPT
 };
 
 pub const GICR_CTLR: usize = 0x0000;
@@ -24,6 +23,10 @@ pub const GICR_IIDR: usize = 0x0004;
 pub const GICR_TYPER: usize = 0x0008;
 pub const GICR_STATUSR: usize = 0x0010;
 pub const GICR_WAKER: usize = 0x0014;
+pub const GICR_SETLPIR: usize = 0x0040;
+pub const GICR_CLRLPIR: usize = 0x0048;
+pub const GICR_INVLPIR: usize = 0x00a0;
+pub const GICR_INVALLR: usize = 0x00b0;
 pub const GICR_SYNCR: usize = 0x00c0;
 pub const GICR_PIDR2: usize = 0xffe8;
 pub const GICR_SGI_BASE: usize = 0x10000;
@@ -77,7 +80,10 @@ pub struct LpiPropTable{
 
 impl LpiPropTable{
     fn new() -> Self{
-        let f = Frame::new_zero().unwrap();
+        let gicd_typer = unsafe {ptr::read_volatile((host_gicd_base() + GICD_TYPER) as *const u32)};
+        let id_bits = (gicd_typer >> 19) & 0x1f;
+        let page_num:usize = ((1 << (id_bits + 1)) - 8192) / PAGE_SIZE;
+        let f = Frame::new_contiguous(page_num, 0).unwrap();
         let propreg = f.start_paddr() | 0x78f;
         for id in 0..MAX_CPU_NUM{
             let propbaser = host_gicr_base(id) + GICR_PROPBASER;
@@ -102,6 +108,8 @@ impl LpiPropTable{
         self.baser_list[zone_id]
     }
 
+    // enable one lpi
+    // `lpi` is (lpi - 8192) actually
     fn enable_one_lpi(&self, lpi: usize){
         let addr = self.phy_addr + lpi;
         let val:u8 = 0b1;

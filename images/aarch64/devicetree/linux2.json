@@ -24,6 +24,7 @@
         }
     ],
     "interrupts": [75, 76, 78, 35, 36, 37, 38],
+    "ivc_config": [],
     "kernel_filepath": "./Image",
     "dtb_filepath": "./linux2.dtb",
     "kernel_load_paddr": "0x50400000",
