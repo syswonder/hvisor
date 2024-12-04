@@ -5,7 +5,6 @@ STATS ?= off
 PORT ?= 2333
 MODE ?= debug
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
-KDIR ?= ../../linux
 FEATURES ?= platform_qemu
 
 ifeq ($(ARCH),aarch64)
@@ -44,15 +43,16 @@ ifeq ($(MODE), release)
 endif
 
 # Targets
-.PHONY: all elf disa run gdb monitor clean tools rootfs
+.PHONY: all elf disa run gdb monitor show-features jlink-server cp clean 
 all: $(hvisor_bin)
 
 elf:
 	cargo build $(build_args)
 
 disa:
-	readelf -a $(hvisor_elf) > hvisor-elf.txt
-	rust-objdump --disassemble $(hvisor_elf) > hvisor.S
+	mkdir disa
+	readelf -a $(hvisor_elf) > disa/hvisor-elf.txt
+	rust-objdump --disassemble $(hvisor_elf) > disa/hvisor.S
 
 run: all
 	$(QEMU) $(QEMU_ARGS)

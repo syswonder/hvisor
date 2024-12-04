@@ -55,3 +55,5 @@ pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
 };
 
 pub const ROOT_PCI_DEVS: [u64; 2] = [0, 1 << 3];
+
+pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
