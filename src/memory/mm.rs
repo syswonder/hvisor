@@ -64,6 +64,8 @@ where
             pt: PT::new(),
             #[cfg(target_arch = "loongarch64")]
             pt: PT::new(),
+            #[cfg(target_arch = "x86_64")]
+            pt: PT::new(),
         }
     }
 

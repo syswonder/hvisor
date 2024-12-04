@@ -18,3 +18,9 @@ mod ns16440a;
 
 #[cfg(target_arch = "loongarch64")]
 pub use ns16440a::{console_getchar, console_putchar};
+
+#[cfg(target_arch = "x86_64")]
+mod uart16550;
+
+#[cfg(target_arch = "x86_64")]
+pub use uart16550::{console_getchar, console_putchar};

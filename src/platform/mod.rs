@@ -1,6 +1,7 @@
 use crate::{
     config::{
-        HvConfigMemoryRegion, HvZoneConfig, CONFIG_MAX_INTERRUPTS, CONFIG_MAX_MEMORY_REGIONS, CONFIG_NAME_MAXLEN,
+        HvConfigMemoryRegion, HvZoneConfig, CONFIG_MAX_INTERRUPTS, CONFIG_MAX_MEMORY_REGIONS,
+        CONFIG_NAME_MAXLEN,
     },
     consts::INVALID_ADDRESS,
 };
@@ -28,6 +29,12 @@ pub mod ls3a5000_loongarch64;
 
 #[cfg(target_arch = "loongarch64")]
 pub use ls3a5000_loongarch64::*;
+
+#[cfg(all(target_arch = "x86_64"))]
+pub mod qemu_x86_64;
+
+#[cfg(all(target_arch = "x86_64"))]
+use qemu_x86_64::*;
 
 pub fn platform_root_zone_config() -> HvZoneConfig {
     // fill zero for memory regions and interrupts

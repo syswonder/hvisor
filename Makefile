@@ -1,12 +1,12 @@
 # Basic settings
-ARCH ?= aarch64
+ARCH ?= x86_64
 LOG ?= info
 STATS ?= off
 PORT ?= 2333
 MODE ?= debug
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 KDIR ?= ../../linux
-FEATURES ?= platform_imx8mp
+FEATURES ?= platform_qemu
 
 ifeq ($(ARCH),aarch64)
     RUSTC_TARGET := aarch64-unknown-none
@@ -17,6 +17,9 @@ else ifeq ($(ARCH),riscv64)
 else ifeq ($(ARCH),loongarch64)
 	RUSTC_TARGET := loongarch64-unknown-none
 	GDB_ARCH := loongarch64
+else ifeq ($(ARCH),x86_64)
+	RUSTC_TARGET := x86_64-unknown-none
+	GDB_ARCH := i386:x86-64
 else
 	$(error Unsupported ARCH value: $(ARCH))
 endif

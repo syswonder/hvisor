@@ -28,6 +28,7 @@ extern crate lazy_static;
 #[macro_use]
 mod logging;
 mod arch;
+mod config;
 mod consts;
 mod device;
 mod event;
@@ -37,16 +38,15 @@ mod panic;
 mod percpu;
 mod platform;
 mod zone;
-mod config;
 
 #[cfg(target_arch = "aarch64")]
 use crate::arch::mm::setup_parange;
 use crate::consts::MAX_CPU_NUM;
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
-use zone::zone_create;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
+use zone::zone_create;
 
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
 static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
@@ -133,6 +133,9 @@ fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
 }
 
 fn rust_main(cpuid: usize, host_dtb: usize) {
+    #[cfg(target_arch = "x86_64")]
+    loop {}
+
     arch::trap::install_trap_vector();
 
     let mut is_primary = false;
@@ -144,7 +147,6 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         clear_bss();
         memory::heap::init();
         memory::heap::test();
-        
     }
 
     let cpu = PerCpu::new(cpuid);
