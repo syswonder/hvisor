@@ -2,7 +2,7 @@ use spin::Once;
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite, WriteOnly};
-use crate::device::irqchip::gicv2::device_refs::DeviceRef;
+use crate::device::irqchip::gicv2::gic_ref::GicRef;
 use crate::device::irqchip::gicv2::gicd::GICD;
 use crate::device::irqchip::gicv2::gich::{GicHypervisorInterface, GICH, GICV2_GICH_HCR_EN, GICV2_GICH_VMCR_PMR_SHIFT, GICV2_GICH_VMCR_VEM, GICV2_GICH_VMCR_VMGRP0EN};
 use crate::device::irqchip::gicv2::{Gicv2, GICV2};
@@ -13,7 +13,6 @@ pub const GICV2_GICC_APR_REGS_NUM: usize = GICV2_PREEMPPTION_MAX / 32;
 
 pub const GICV2_GICC_CTRL_GRPEN1: u32 = 0x1;
 pub const GICV2_GICC_CTRL_EOIMODES: u32 = 0x1 << 9;
-
 pub const GICV2_GICC_CTLR_REG_OFFSET: usize = 0x0000;
 pub const GICV2_GICC_PMR_REG_OFFSET: usize = 0x0004;
 pub const GICV2_GICC_BPR_REG_OFFSET: usize = 0x0008;
@@ -60,15 +59,13 @@ register_structs! {
     }
 }
 unsafe impl Sync for GicCpuInterface {}
-// Each CPU holds one GICC.
-// pub static GICC: Once<&GicCpuInterface> = Once::new();
 
-pub static GICC: DeviceRef<GicCpuInterface> = unsafe { DeviceRef::new(GICV2.gicc_base as *const GicCpuInterface) };
+// Each CPU holds one GICC.
+pub static GICC: GicRef<GicCpuInterface> = unsafe { GicRef::new(GICV2.gicc_base as *const GicCpuInterface) };
 
 impl GicCpuInterface {
     // init GICC for each CPU.
     pub fn init(&self) {
-        info!("GICC_init");
         // Ensure all SGIs enabled
         GICD.set_isenabler(0, 0x0000FFFF);
         // get ctrl and pmr value
@@ -95,7 +92,7 @@ impl GicCpuInterface {
         // Deactivate all active SGIS
         let gicd_isactive = GICD.get_isactiver(0);
         GICD.set_icactiver(0, gicd_isactive & 0xffff);
-        // to do: foward all pending SGIs to the CPU.
+        info!("GICV2: GICC init done.");
     }
 
     pub fn get_iar(&self) -> u32 {

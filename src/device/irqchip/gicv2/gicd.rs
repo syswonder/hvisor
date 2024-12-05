@@ -2,7 +2,7 @@ use spin::{Mutex, Once};
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite};
-use crate::device::irqchip::gicv2::device_refs::DeviceRef;
+use crate::device::irqchip::gicv2::gic_ref::GicRef;
 use crate::device::irqchip::gicv2::gicc::GicCpuInterface;
 use crate::device::irqchip::gicv2::gich::GicHypervisorInterface;
 use crate::device::irqchip::gicv2::GICV2;
@@ -81,35 +81,18 @@ register_structs! {
     }
 }
 unsafe impl Sync for GicDistributer {}
+
 // GICD is globally unique.
-// pub static GICD: Once<&GicDistributer> = Once::new();
-pub static GICD: DeviceRef<GicDistributer> = unsafe { DeviceRef::new(GICV2.gicd_base as *const GicDistributer) };
+pub static GICD: GicRef<GicDistributer> = unsafe { GicRef::new(GICV2.gicd_base as *const GicDistributer) };
 pub static GICD_LOCK: Mutex<()> = Mutex::new(());
 
 impl GicDistributer {
     // init GICD globally and enable it.
     pub fn global_init(&self) {
-        // Query the maximum number of interrupt IDs that the GIC supports.
-        // let int_num = get_max_int_num();
-        // // Reset spi
-        // for i in GICV2_PRIVATE_INTS_NUM / 32..int_num / 32 {
-        //     // Disable all spi.
-        //     self.ICENABLER[i].set(u32::MAX);
-        //     // Clear all pending spi.
-        //     self.ICPENDR[i].set(u32::MAX);
-        //     // Clear all active spi.
-        //     self.ICACTIVER[i].set(u32::MAX);
-        // }
-        // for i in GICV2_PRIVATE_INTS_NUM / 4 .. int_num / 4 {
-        //     // Set all spi has the lowest priority.
-        //     self.IPRIORITYR[i].set(u32::MAX);
-        //     // Set all spi has no target.
-        //     self.ITARGETSR[i].set(0);
-        // }
         let prev = self.CTRL.get();
         // Enable the distributor.
         self.CTRL.set(prev | GICD_CTLR_EN_BIT as u32);
-        info!("GICD global init done");
+        info!("GICV2: GICD global init done");
     }
 
     // because some registers are banked, we need every cpu call this function to reset their own interrupt.
@@ -132,7 +115,6 @@ impl GicDistributer {
     }
 
     pub fn set_isenabler(&self, index: usize, value: u32) {
-        error!("index: {}, value: {:#x}", index, value);
         self.ISENABLER[index].set(value);
     }
 

@@ -23,7 +23,9 @@ pub mod gich;
 
 // GIC Virtual CPU Interface Definition.
 pub mod gicv;
-mod device_refs;
+
+// GIC Reference warp.
+mod gic_ref;
 
 pub struct Gicv2 {
     gicd_base: usize,
@@ -38,31 +40,9 @@ pub static GICV2: Gicv2 = Gicv2 {
     gich_base: ROOT_ARCH_ZONE_CONFIG.gich_base,
     gicv_base: ROOT_ARCH_ZONE_CONFIG.gicv_base,
 };
-// pub static GICV2: Once<Gicv2> = Once::new();
 
 // get base address of GIC and initialize GIC Structs.
 pub fn primary_init_early() {
-    let root_config = root_zone_config();
-    // GICV2.call_once(|| {
-    //     Gicv2 {
-    //         gicd_base: root_config.arch_config.gicd_base,
-    //         gicc_base: root_config.arch_config.gicc_base,
-    //         gich_base: root_config.arch_config.gich_base,
-    //         gicv_base: root_config.arch_config.gicv_base,
-    //     }
-    // });
-    // GICD.call_once(|| {
-    //     unsafe { &*root_config.arch_config.gicd_base as *const GicDistributer }
-    // });
-    // GICH.call_once(|| {
-    //     unsafe { &*root_config.arch_config.gich_base as *const GicHypervisorInterface }
-    // });
-    // GICC.call_once(|| {
-    //     unsafe { &*root_config.arch_config.gicc_base as *const GicCpuInterface }
-    // });
-    // GICV.call_once(|| {
-    //     unsafe { &*root_config.arch_config.gicv_base as *const GicCpuInterface }
-    // });
     info!("GicDistributer = {:#x?}", GICV2.gicd_base);
     info!("GicCpuInterface = {:#x?}", GICV2.gicc_base);
     info!("GicHypervisorInterface = {:#x?}", GICV2.gich_base);
@@ -80,6 +60,6 @@ pub fn primary_init_late() {
 impl Zone {
     pub fn arch_irqchip_reset(&self) {
         // todo
-        info!("todo: arch_irqchip_reset")
+        panic!("todo: arch_irqchip_reset")
     }
 }

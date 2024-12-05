@@ -2,6 +2,7 @@ use tock_registers::interfaces::Readable;
 use crate::zone::Zone;
 use crate::arch::zone::HvArchZoneConfig;
 use crate::device::irqchip::gicv2::{gicd, GICV2};
+use crate::device::irqchip::gicv2::gicc::GICC;
 use crate::memory::{mmio_perform_access, MMIOAccess, MemFlags, MemoryRegion};
 use crate::device::irqchip::gicv2::gicd::{get_max_int_num, is_spi, GICD, GICD_SGIR_REG_OFFSET, GICD_CTRL_REG_OFFSET, GICD_ICACTIVER_REG_OFFSET, GICD_ICENABLER_REG_OFFSET, GICD_ICFGR_REG_OFFSET, GICD_ICPENDR_REG_OFFSET, GICD_IDENTIFICATION_NUM, GICD_IDENTIFICATION_OFFSET, GICD_IGROUPR_REG_OFFSET, GICD_IIDR_REG_OFFSET, GICD_IPRIORITYR_REG_OFFSET, GICD_ISACTIVER_REG_OFFSET, GICD_ISENABLER_REG_OFFSET, GICD_ISPENDR_REG_OFFSET, GICD_ITARGETSR_REG_OFFSET, GICD_LOCK, GICD_TYPER_REG_OFFSET, GICV2_CONFIG_REGS_NUM, GICV2_INT_REGS_NUM, GICV2_PRIO_REGS_NUM, GICV2_TARGET_REGS_NUM, GICD_SGIR_ROUTING_SHIFT, GICD_SGIR_TARGET_LIST_FILTER_SHIFT};
 use crate::error::HvResult;
@@ -22,7 +23,6 @@ impl Zone {
 
     // remap the GIC CPU interface register address space to point to the GIC virtual CPU interface registers.
     pub fn vgicv2_remap_init(&mut self, arch:&HvArchZoneConfig) {
-        info!("let's do vgicv2_remap_init");
         if arch.gicc_base == 0 || arch.gicv_base == 0 || arch.gicc_size == 0 || arch.gicv_size == 0 {
             panic!("vgicv2_remap_init: gic related address is null");
         }
@@ -66,45 +66,7 @@ pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> 
     base..(base + (n - 1) * size)
 }
 
-fn handle_irq_target(mmio: &mut MMIOAccess, irq: usize) -> HvResult {
-    error!("handle_irq_target: irq: {}", irq);
-    if !is_spi(irq) {
-        mmio_perform_access(GICV2.gicd_base, mmio);
-        return Ok(());
-    }
-    let offset = irq % 4;
-    let irq_base = irq & 0xfffffffc;
-    let mut access_mask: usize = 0;
-    mmio.address = mmio.address & 0xfffffffc;
-    mmio.value <<= 8 * offset;
-    let zone = this_zone();
-    let zone_r = zone.read();
-    for i in offset..mmio.size + offset {
-        if zone_r.irq_in_zone(irq as u32) {
-            access_mask |= 0xff << (8 * i);
-        } else {
-            continue;
-        }
-        if !mmio.is_write {
-            continue;
-        }
-        //todo: restrict target cpu only in the same zone.
-    };
-    mmio.size = 4;
-    if mmio.is_write {
-        let _lock = GICD_LOCK.lock();
-        let reg_value = GICD.get_itargetsr(irq_base / 4) as usize;
-        mmio.value = (reg_value & !access_mask) | (mmio.value & access_mask);
-        mmio_perform_access(GICV2.gicd_base, mmio);
-    } else {
-        mmio_perform_access(GICV2.gicd_base, mmio);
-        mmio.value = mmio.value & access_mask;
-        mmio.value >>= 8 * offset;
-    }
-    Ok(())
-}
-
-
+// extend from gicv3, support half-word and byte access.
 fn restrict_bitmask_access(
     mmio: &mut MMIOAccess,
     reg_index: usize,
@@ -147,8 +109,7 @@ fn restrict_bitmask_access(
     let value = mmio.value << (offset * 8);
     let real_mask = access_mask & other_mask;
     trace!("address: {:#x}, size: {:#x}, value: {:#x}, real_mask: {:#x}", address, size, value, real_mask);
-    // access_mask = access_mask & other_mask;
-    // let offset = mmio.address & 0x3;
+
     let offset = mmio.address & 0x3;
     mmio.address = mmio.address & 0xfffffffc;
     mmio.size = 4;
@@ -209,15 +170,10 @@ fn vgicv2_dist_misc_access(mmio: &mut MMIOAccess, gicd_base: usize) -> HvResult 
     Ok(())
 }
 
-fn handle_sgir_write(mmio: &mut MMIOAccess, gicd_base: usize) -> HvResult {
-    mmio_perform_access(gicd_base,mmio);
-    Ok(())
-}
-
 pub fn set_sgi_irq(irq_id: usize, target_list: usize, routing_mode: usize) {
     let val = irq_id | target_list << GICD_SGIR_TARGET_LIST_FILTER_SHIFT | routing_mode << GICD_SGIR_ROUTING_SHIFT;
-    info!("set_sgi_irq: irq_id: {}, target_list: {}, routing_mode: {}", irq_id, target_list, routing_mode);
-    warn!("ISENABLER: {:#x}", GICD.get_isenabler(0));
+    trace!("set_sgi_irq: irq_id: {}, target_list: {}, routing_mode: {}", irq_id, target_list, routing_mode);
+    trace!("ISENABLER: {:#x}", GICD.get_isenabler(0));
     GICD.set_sgir(val as u32);
 }
 
@@ -231,7 +187,8 @@ pub fn vgicv2_dist_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
             if !mmio.is_write {
                 return Ok(());
             }
-            handle_sgir_write(mmio, gicd_base)
+            mmio_perform_access(gicd_base,mmio);
+            Ok(())
         }
         reg if reg_range(GICD_ITARGETSR_REG_OFFSET, GICV2_TARGET_REGS_NUM, GICV2_REG_WIDTH).contains(&reg) => {
             restrict_bitmask_access(mmio, (reg & 0x3ff) / 4, 8, true, gicd_base)

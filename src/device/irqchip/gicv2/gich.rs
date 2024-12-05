@@ -1,9 +1,7 @@
-use spin::Once;
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite};
-use crate::device::irqchip::gicv2::device_refs::DeviceRef;
-use crate::device::irqchip::gicv2::gicd::GicDistributer;
+use crate::device::irqchip::gicv2::gic_ref::GicRef;
 use crate::device::irqchip::gicv2::GICV2;
 
 pub const GICV2_MAX_LIST_REGS_NUM: usize = 64;
@@ -50,7 +48,7 @@ register_structs! {
 }
 unsafe impl Sync for GicHypervisorInterface {}
 // Each CPU holds one GICH.
-pub static GICH: DeviceRef<GicHypervisorInterface> = unsafe { DeviceRef::new(GICV2.gich_base as *const GicHypervisorInterface) };
+pub static GICH: GicRef<GicHypervisorInterface> = unsafe { GicRef::new(GICV2.gich_base as *const GicHypervisorInterface) };
 
 impl GicHypervisorInterface {
     // init GICH for each CPU.

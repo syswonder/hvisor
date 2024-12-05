@@ -39,6 +39,8 @@ build_args += --target $(RUSTC_TARGET)
 build_args += -Z build-std=core,alloc
 build_args += -Z build-std-features=compiler-builtins-mem
 
+# platform arguments
+gic_version := 2
 
 ifeq ($(MODE), release)
   build_args += --release

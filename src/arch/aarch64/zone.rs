@@ -59,8 +59,8 @@ impl Zone {
 #[derive(Debug, Clone)]
 pub struct HvArchZoneConfig {
     pub gicd_base: usize,
-    pub gicr_base: usize,
     pub gicd_size: usize,
+    pub gicr_base: usize,
     pub gicr_size: usize,
     pub gits_base: usize,
     pub gits_size: usize,

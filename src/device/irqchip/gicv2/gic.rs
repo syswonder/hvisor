@@ -7,59 +7,29 @@ use crate::hypercall::SGI_IPI_ID;
 use crate::event::check_events;
 use crate::percpu::this_zone;
 
-static TIMER_INTERRUPT_COUNTER: AtomicU64 = AtomicU64::new(0);
-// how often to print timer interrupt counter
-const TIMER_INTERRUPT_PRINT_TIMES: u64 = 5;
-
-static mut count: usize = 0;
-
 pub fn gicv2_handle_irq() {
-    // if this_cpu_id() == 0 {
-    //     unsafe {
-    //         count += 1;
-    //         info!("enter gicv2_handle_irq, count {}",count);
-    //     }
-    // }
     if let Some(irq_id) = get_pending_irq() {
-        // SGI
         if irq_id < 8 {
             deactivate_irq(irq_id);
             let mut ipi_handled = false;
             if irq_id == SGI_IPI_ID as _ {
-                // info!("SGI_IPI_ID");
                 ipi_handled = check_events();
             }
             if !ipi_handled {
-                // info!("sgi get {}, inject", irq_id);
                 inject_irq(irq_id, true);
             }
         } else if irq_id < GICV2_SGIS_NUM {
-            // warn!("skip sgi {}", irq_id);
             deactivate_irq(irq_id);
         } else {
-            // if irq_id == 27 {
-            //     // virtual timer interrupt
-            //     TIMER_INTERRUPT_COUNTER.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
-            //     if TIMER_INTERRUPT_COUNTER.load(core::sync::atomic::Ordering::SeqCst) % TIMER_INTERRUPT_PRINT_TIMES == 0 {
-            //         warn!("ISENABLER: {:#x}", GICD.get_isenabler(0));
-            //         warn!("Virtual timer interrupt, counter = {}", TIMER_INTERRUPT_COUNTER.load(core::sync::atomic::Ordering::SeqCst));
-            //     }
-            // }
             deactivate_irq(irq_id);
             inject_irq(irq_id, false);
         }
     }
-    // if this_cpu_id() == 0 {
-    //     unsafe {
-    //         info!("exit gicv2_handle_irq, count {}",count);
-    //         count -= 1;
-    //     }
-    // }
 }
 
 
 pub fn get_pending_irq() -> Option<usize> {
-    let iar = GICC.get_iar() as usize;;
+    let iar = GICC.get_iar() as usize;
     let irq = iar & 0x3ff;
     if irq >= 1023 {
         None
@@ -98,13 +68,12 @@ pub fn inject_irq(irq_id: usize, is_sgi: bool) {
     if free_lr == -1 {
         for i in 0..lr_num {
             let lr = GICH.get_lr(i as usize) as usize;
-            info!("lr[{}]: {:#x}", i, lr);
+            warn!("lr[{}]: {:#x}", i, lr);
         }
-        info!("elrsr: {:#x}", elrsr);
+        warn!("elrsr: {:#x}", elrsr);
         panic!("no free lr");
     } else {
         /* inject gruop 0 irq */
-
         // config vint bit 0-9
         let mut val = irq_id;
         // config pending state bit 31
