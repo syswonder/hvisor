@@ -16,7 +16,7 @@ use qemu_riscv64::*;
 pub mod qemu_aarch64;
 
 #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
-use qemu_aarch64::*;
+pub use qemu_aarch64::*;
 
 #[cfg(all(feature = "platform_imx8mp", target_arch = "aarch64"))]
 pub mod imx8mp_aarch64;

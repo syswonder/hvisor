@@ -60,13 +60,6 @@ impl ArchCpu {
         regs.usr[0] = dtb as _; // dtb addr
         self.reset_vm_regs();
         self.activate_vmm();
-        // unsafe {
-        //     let base = host_gicr_base(this_cpu_id()) + GICR_SGI_BASE;
-        //     let gicr_isenabler0 = (base + GICR_ISENABLER) as *mut u32;
-        //     gicr_isenabler0.write_volatile(0xffff | 1 << MAINTENACE_INTERRUPT);
-        //     let gicr_icenabler0 = (base + GICR_ICENABLER) as *mut u32;
-        //     gicr_icenabler0.write_volatile(0xffff0000 & !(1 << MAINTENACE_INTERRUPT));
-        // }
     }
 
     fn activate_vmm(&self) {

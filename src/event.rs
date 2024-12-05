@@ -68,6 +68,7 @@ pub fn check_events() -> bool {
     let cpu_data = this_cpu_data();
     match fetch_event(cpu_data.id) {
         Some(IPI_EVENT_WAKEUP) => {
+            info!("cpu {} wakeup", cpu_data.id);
             cpu_data.arch_cpu.run();
         }
         Some(IPI_EVENT_SHUTDOWN) => {

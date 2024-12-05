@@ -186,7 +186,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     }
 
     per_cpu_init(cpu);
-    // device::irqchip::percpu_init();
+    device::irqchip::percpu_init();
 
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
     wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _);

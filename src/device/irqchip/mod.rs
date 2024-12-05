@@ -1,5 +1,5 @@
 #[cfg(target_arch = "aarch64")]
-pub mod gicv3;
+pub mod gicv2;
 
 #[cfg(target_arch = "riscv64")]
 pub mod plic;

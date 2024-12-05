@@ -37,6 +37,12 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     gicd_size: 0x10000,
     gicr_base: 0x80a0000,
     gicr_size: 0xf60000,
+    gicc_base: 0x8010000,
+    gicc_size: 0x10000,
+    gich_base: 0x8030000,
+    gich_size: 0x10000,
+    gicv_base: 0x8040000,
+    gicv_size: 0x10000,
     gits_base: 0x8080000,
     gits_size: 0x20000,
 };
