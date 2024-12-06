@@ -9,7 +9,6 @@ use spin::Mutex;
 use crate::arch::cpu::this_cpu_id;
 use crate::consts::MAX_CPU_NUM;
 use crate::device::irqchip::inject_irq;
-use crate::device::irqchip::gicv2::gic::inject_irq;
 use crate::event::send_event;
 use crate::event::IPI_EVENT_WAKEUP_VIRTIO_DEVICE;
 use crate::hypercall::SGI_IPI_ID;

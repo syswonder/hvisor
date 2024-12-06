@@ -45,14 +45,6 @@ impl Zone {
         info!("VM stage 2 memory set: {:#x?}", self.gpm);
         Ok(())
     }
-
-    pub fn mmio_init(&mut self, hv_config: &HvArchZoneConfig) {
-        self.vgicv2_mmio_init(hv_config);
-        self.vgicv2_remap_init(hv_config);
-    }
-    pub fn isa_init(&mut self, fdt: &fdt::Fdt) {
-        //nothing to do
-    }
 }
 
 #[repr(C)]

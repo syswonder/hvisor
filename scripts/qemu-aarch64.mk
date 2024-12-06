@@ -13,8 +13,8 @@ endif
 FSIMG1 := $(image_dir)/virtdisk/rootfs1.ext4
 FSIMG2 := $(image_dir)/virtdisk/rootfs2.ext4
 
-zone0_kernel := $(image_dir)/kernel/Image-6.1
-zone1_kernel := $(image_dir)/kernel/Image-6.1
+zone0_kernel := $(image_dir)/kernel/Image-5.4
+zone1_kernel := $(image_dir)/kernel/Image-5.4
 zone1_dtb    := $(image_dir)/devicetree/linux2.dtb
 
 QEMU_ARGS := -machine virt,secure=on,gic-version=3,virtualization=on,iommu=smmuv3

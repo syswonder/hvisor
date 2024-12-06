@@ -1,11 +1,8 @@
-use core::sync::atomic::AtomicU64;
-use crate::arch::cpu::this_cpu_id;
 use crate::device::irqchip::gicv2::gicc::GICC;
-use crate::device::irqchip::gicv2::gicd::{GICD, GICV2_SGIS_NUM};
+use crate::device::irqchip::gicv2::gicd::GICV2_SGIS_NUM;
 use crate::device::irqchip::gicv2::gich::{GICH, GICV2_GICH_LR_CPUID_SHIFT, GICV2_GICH_LR_HW, GICV2_GICH_LR_PENDING_STATE, GICV2_GICH_LR_PHYSID_SHIFT};
 use crate::hypercall::SGI_IPI_ID;
 use crate::event::check_events;
-use crate::percpu::this_zone;
 
 pub fn gicv2_handle_irq() {
     if let Some(irq_id) = get_pending_irq() {

@@ -1,10 +1,12 @@
-use spin::{Mutex, Once};
+#![allow(unused_variables)]
+#![allow(dead_code)]
+
+
+use spin::Mutex;
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite};
 use crate::device::irqchip::gicv2::gic_ref::GicRef;
-use crate::device::irqchip::gicv2::gicc::GicCpuInterface;
-use crate::device::irqchip::gicv2::gich::GicHypervisorInterface;
 use crate::device::irqchip::gicv2::GICV2;
 // Hypervisor running in non-secure mode，can only access non-secure registers.
 

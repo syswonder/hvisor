@@ -1,11 +1,13 @@
-use spin::Once;
+#![allow(unused_variables)]
+#![allow(dead_code)]
+
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite, WriteOnly};
 use crate::device::irqchip::gicv2::gic_ref::GicRef;
 use crate::device::irqchip::gicv2::gicd::GICD;
-use crate::device::irqchip::gicv2::gich::{GicHypervisorInterface, GICH, GICV2_GICH_HCR_EN, GICV2_GICH_VMCR_PMR_SHIFT, GICV2_GICH_VMCR_VEM, GICV2_GICH_VMCR_VMGRP0EN};
-use crate::device::irqchip::gicv2::{Gicv2, GICV2};
+use crate::device::irqchip::gicv2::gich::{GICH, GICV2_GICH_HCR_EN, GICV2_GICH_VMCR_PMR_SHIFT, GICV2_GICH_VMCR_VEM, GICV2_GICH_VMCR_VMGRP0EN};
+use crate::device::irqchip::gicv2::GICV2;
 
 pub const GICV2_PREEMPPTION_MAX: usize = 128;
 

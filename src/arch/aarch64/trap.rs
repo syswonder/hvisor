@@ -6,7 +6,7 @@ use crate::{
         cpu::mpidr_to_cpuid,
         sysreg::{read_sysreg, smc_call, write_sysreg},
     },
-    device::irqchip::gicv2::gic::gicv2_handle_irq,
+    device::irqchip::gic_handle_irq,
     event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_WAKEUP},
     hypercall::{HyperCall, SGI_IPI_ID},
     memory::{mmio_handle_access, MMIOAccess},
@@ -99,7 +99,7 @@ pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> ! {
 
 fn irqchip_handle_irq1() {
     trace!("irq from el1");
-    gicv2_handle_irq();
+    gic_handle_irq();
 }
 
 fn irqchip_handle_irq2() {
@@ -146,11 +146,11 @@ fn arch_handle_trap_el2(_regs: &mut GeneralRegisters) {
             println!("EL2 Exception: SMC64 call, ELR_EL2: {:#x?}", ELR_EL2.get());
         }
         Some(ESR_EL2::EC::Value::DataAbortCurrentEL) => {
-            loop {}
             println!(
                 "EL2 Exception: Data Abort, ELR_EL2: {:#x?}, FAR_EL2: {:#x?}",
                 elr, esr
             );
+            loop {}
         }
         Some(ESR_EL2::EC::Value::InstrAbortCurrentEL) => {
             println!(
@@ -167,7 +167,6 @@ fn arch_handle_trap_el2(_regs: &mut GeneralRegisters) {
 }
 
 fn handle_iabt(_regs: &mut GeneralRegisters) {
-    info!("handle_iabt");
     let iss = ESR_EL2.read(ESR_EL2::ISS);
     let op = iss >> 6 & 0x1;
     let hpfar = read_sysreg!(HPFAR_EL2);
@@ -224,7 +223,6 @@ fn handle_dabt(regs: &mut GeneralRegisters) {
 }
 
 fn handle_sysreg(regs: &mut GeneralRegisters) {
-    info!("handle_sysreg");
     //TODO check sysreg type
     //send sgi
     trace!("esr_el2: iss {:#x?}", ESR_EL2.read(ESR_EL2::ISS));
@@ -235,7 +233,7 @@ fn handle_sysreg(regs: &mut GeneralRegisters) {
     if !this_cpu_data().arch_cpu.power_on {
         warn!("skip send sgi {:#x?}", sgi_id);
     } else {
-        info!("send sgi {:#x?}", sgi_id);
+        trace!("send sgi {:#x?}", sgi_id);
         write_sysreg!(icc_sgi1r_el1, val);
     }
 
@@ -336,7 +334,7 @@ fn handle_psci_smc(
         PsciFnId::PSCI_VERSION => PSCI_VERSION_1_1,
         PsciFnId::PSCI_CPU_SUSPEND_32 | PsciFnId::PSCI_CPU_SUSPEND_64 => {
             wfi();
-            gicv2_handle_irq();
+            gic_handle_irq();
             0
         },
         PsciFnId::PSCI_CPU_OFF_32 | PsciFnId::PSCI_CPU_OFF_64 => {

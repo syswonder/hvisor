@@ -1,8 +1,5 @@
-use crate::config::root_zone_config;
 use crate::device::irqchip::gicv2::gicc::GICC;
-use crate::device::irqchip::gicv2::gicd::{GicDistributer, GICD};
-use crate::device::irqchip::gicv2::gich::{GicHypervisorInterface, GICH};
-use crate::device::irqchip::gicv2::gicv::GICV;
+use crate::device::irqchip::gicv2::gicd::GICD;
 use crate::platform::ROOT_ARCH_ZONE_CONFIG;
 use crate::zone::Zone;
 

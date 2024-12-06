@@ -32,6 +32,8 @@ loongArch64 = "0.2.4"
 [features]
 platform_qemu = []
 platform_imx8mp = []
+gicv3 = []
+gicv2 = []
 platform_zcu102 = []
 
 [profile.dev]

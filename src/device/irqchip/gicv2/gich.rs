@@ -1,9 +1,11 @@
+#![allow(unused_variables)]
+#![allow(dead_code)]
+
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite};
 use crate::device::irqchip::gicv2::gic_ref::GicRef;
 use crate::device::irqchip::gicv2::GICV2;
-
 pub const GICV2_MAX_LIST_REGS_NUM: usize = 64;
 pub const GICV2_GICH_HCR_EN: u32 = 0x1;
 pub const GICV2_GICH_VMCR_VEM: u32 = 0x1 << 9;
@@ -68,16 +70,8 @@ impl GicHypervisorInterface {
         self.HCR.set(value);
     }
 
-    pub fn get_hcr(&self) -> u32 {
-        self.HCR.get()
-    }
-
     pub fn set_vmcr(&self, value: u32) {
         self.VMCR.set(value);
-    }
-
-    pub fn get_vmcr(&self) -> u32 {
-        self.VMCR.get()
     }
 
     pub fn get_lr_num(&self) -> u32 {
