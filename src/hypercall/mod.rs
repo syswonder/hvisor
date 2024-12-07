@@ -5,6 +5,7 @@ use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, PAGE_SIZE};
 use crate::device::irqchip::inject_irq;
 use crate::device::virtio_trampoline::{MAX_DEVS, MAX_REQ, VIRTIO_BRIDGE, VIRTIO_IRQS};
 use crate::error::HvResult;
+#[cfg(target_arch = "aarch64")]
 use crate::ivc::{IvcInfo, IVC_INFOS};
 use crate::percpu::{get_cpu_data, this_zone, PerCpu};
 use crate::zone::{
@@ -70,11 +71,19 @@ impl<'a> HyperCall<'a> {
                     // send_event(3, SGI_IPI_ID as _, IPI_EVENT_CLEAR_INJECT_IRQ); // testing only
                     HyperCallResult::Ok(0)
                 },
-                HyperCallCode::HvIvcInfo => self.hv_ivc_info(arg0)
+                HyperCallCode::HvIvcInfo => {
+                    #[cfg(not(target_arch = "aarch64"))]
+                    {
+                        hv_result_err!(ENODEV, "Unsupported hypercall!")
+                    }
+                    #[cfg(target_arch = "aarch64")]
+                    self.hv_ivc_info(arg0)
+                }
             }
         }
     }
 
+    #[cfg(target_arch = "aarch64")]
     fn hv_ivc_info(&mut self, ivc_info_ipa: u64) -> HyperCallResult {
         let zone_id = this_zone_id();
         let zone = this_zone();
