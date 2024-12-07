@@ -29,7 +29,8 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 3] = [
 ];
 
 // 35 36 37 38 -> pcie intx#
-pub const ROOT_ZONE_IRQS: [u32; 8] = [33, 64, 77, 79, 35, 36, 37, 38];
+// 65 -> ivc
+pub const ROOT_ZONE_IRQS: [u32; 9] = [33, 64, 77, 79, 35, 36, 37, 38, 65];
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     gicd_base: 0x8000000,
@@ -55,3 +56,16 @@ pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
 };
 
 pub const ROOT_PCI_DEVS: [u64; 2] = [0, 1 << 3];
+
+pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 1] = [
+    HvIvcConfig {
+        ivc_id: 0,
+        peer_id: 0,
+        control_table_ipa: 0xd000_0000,
+        shared_mem_ipa: 0xd000_1000,
+        rw_sec_size: 0,
+        out_sec_size: 0x1000,
+        interrupt_num: 0x21 + 32,
+        max_peers: 2,
+    }
+];
