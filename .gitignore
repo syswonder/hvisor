@@ -24,3 +24,4 @@ Image*
 *.ext4
 *.qcow2
 *.dtb
+.DS_Store
