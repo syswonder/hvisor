@@ -7,6 +7,7 @@ use core::sync::atomic::Ordering;
 use spin::Mutex;
 
 use crate::arch::cpu::this_cpu_id;
+use crate::consts::MAX_CPU_NUM;
 use crate::device::irqchip::inject_irq;
 use crate::event::send_event;
 use crate::event::IPI_EVENT_WAKEUP_VIRTIO_DEVICE;
@@ -53,8 +54,8 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     // debug!("non root sends req: {:#x?}", hreq);
     let (cfg_flags, cfg_values) = unsafe {
         (
-            core::slice::from_raw_parts(dev.get_cfg_flags(), MAX_CPUS),
-            core::slice::from_raw_parts(dev.get_cfg_values(), MAX_CPUS),
+            core::slice::from_raw_parts(dev.get_cfg_flags(), MAX_CPU_NUM),
+            core::slice::from_raw_parts(dev.get_cfg_values(), MAX_CPU_NUM),
         )
     };
     let cpu_id = this_cpu_id() as usize;
@@ -79,6 +80,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
             if count > 1000000 {
                 // warn!("virtio backend is too slow, please check it!");
             	fence(Ordering::Acquire);
+                count = 0;
             }
         }
         if !mmio.is_write {
@@ -210,8 +212,8 @@ pub struct VirtioBridge {
     res_rear: u32,
     pub req_list: [HvisorDeviceReq; MAX_REQ as usize],
     pub res_list: [HvisorDeviceRes; MAX_REQ as usize], // irqs
-    cfg_flags: [u64; MAX_CPUS],
-    cfg_values: [u64; MAX_CPUS],
+    cfg_flags: [u64; MAX_CPU_NUM],
+    cfg_values: [u64; MAX_CPU_NUM],
     pub mmio_addrs: [u64; MAX_DEVS],
     pub mmio_avail: u8,
     pub need_wakeup: u8,

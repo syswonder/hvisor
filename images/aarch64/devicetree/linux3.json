@@ -1,34 +1,34 @@
 {
     "arch": "arm64",
-    "name": "linux2",
-    "zone_id": 1,
-    "cpus": [2],
+    "name": "linux3",
+    "zone_id": 2,
+    "cpus": [3],
     "memory_regions": [
         {
             "type": "ram",
-            "physical_start": "0x50000000",
-            "virtual_start":  "0x50000000",
-            "size": "0x30000000"
+            "physical_start": "0x80000000",
+            "virtual_start":  "0x80000000",
+            "size": "0x10000000"
         },
         {
             "type": "virtio",
-            "physical_start": "0xa003c00",
-            "virtual_start": "0xa003c00",
+            "physical_start": "0xa003600",
+            "virtual_start": "0xa003600",
             "size": "0x200"
         },
         {
             "type": "virtio",
-            "physical_start": "0xa003800",
-            "virtual_start": "0xa003800",
+            "physical_start": "0xa003400",
+            "virtual_start": "0xa003400",
             "size": "0x200"
         }
     ],
-    "interrupts": [75, 76, 78, 35, 36, 37, 38],
+    "interrupts": [75, 76, 78],
     "kernel_filepath": "./Image",
-    "dtb_filepath": "./linux2.dtb",
-    "kernel_load_paddr": "0x50400000",
-    "dtb_load_paddr":   "0x50000000",
-    "entry_point":      "0x50400000",
+    "dtb_filepath": "./linux3.dtb",
+    "kernel_load_paddr": "0x80400000",
+    "dtb_load_paddr":   "0x80000000",
+    "entry_point":      "0x80400000",
     "arch_config": {
         "gicd_base": "0x8000000",
         "gicd_size": "0x10000",
@@ -50,6 +50,6 @@
         "mem64_size": "0x8000000000",
         "pci_mem64_base": "0x8000000000"
     },
-    "num_pci_devs": 2,
-    "alloc_pci_devs": [0, 16]
+    "num_pci_devs": 1,
+    "alloc_pci_devs": [0, 24]
 }

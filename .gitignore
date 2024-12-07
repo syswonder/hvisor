@@ -21,3 +21,7 @@ driver/main.ko
 .gdb_history
 .vscode-ctags
 .DS_Store
+Image*
+*.ext4
+*.qcow2
+*.dtb
