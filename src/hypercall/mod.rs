@@ -62,10 +62,10 @@ impl<'a> HyperCall<'a> {
                 HyperCallCode::HvClearInjectIrq => {
                     // send_event to all nonroot cpus to clear injected irq
                     use crate::event::IPI_EVENT_CLEAR_INJECT_IRQ;
-                    // for i in 1..MAX_CPU_NUM {
-                    //     send_event(i, SGI_IPI_ID as _, IPI_EVENT_CLEAR_INJECT_IRQ);
-                    // }
-                    send_event(3, SGI_IPI_ID as _, IPI_EVENT_CLEAR_INJECT_IRQ); // testing only
+                    for i in 1..MAX_CPU_NUM {
+                        send_event(i, SGI_IPI_ID as _, IPI_EVENT_CLEAR_INJECT_IRQ);
+                    }
+                    // send_event(3, SGI_IPI_ID as _, IPI_EVENT_CLEAR_INJECT_IRQ); // testing only
                     HyperCallResult::Ok(0)
                 }
             }
