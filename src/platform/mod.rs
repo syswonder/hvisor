@@ -71,7 +71,7 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
         root_pci_cfg = ROOT_PCI_CONFIG;
         num_pci_devs = ROOT_PCI_DEVS.len() as _;
     }
-    
+
     HvZoneConfig::new(
         0,
         ROOT_ZONE_CPUS,

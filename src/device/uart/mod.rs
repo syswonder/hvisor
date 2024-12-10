@@ -6,6 +6,11 @@ pub use pl011::{console_getchar, console_putchar};
 
 #[cfg(all(feature = "platform_imx8mp", target_arch = "aarch64"))]
 mod imx_uart;
+#[cfg(all(feature = "platform_zcu102", target_arch = "aarch64"))]
+mod xuartps;
+
+#[cfg(all(feature = "platform_zcu102", target_arch = "aarch64"))]
+pub use xuartps::{console_getchar, console_putchar};
 
 #[cfg(all(feature = "platform_imx8mp", target_arch = "aarch64"))]
 pub use imx_uart::{console_getchar, console_putchar};
