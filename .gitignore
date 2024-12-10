@@ -25,3 +25,5 @@ Image*
 *.qcow2
 *.dtb
 .DS_Store
+temp-fit.its
+fitImage
