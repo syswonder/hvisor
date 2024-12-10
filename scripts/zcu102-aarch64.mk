@@ -25,14 +25,20 @@ HVISOR_BIN_FULL_PATH = $(shell readlink -f $(hvisor_bin))
 DEFAULT_PETALINUX_PROJECT_PATH = /home/wheatfox/Documents/Code/petalinux_projects/wheatfox_hw0
 DEFAULT_PETALINUX_SDK_PATH = /home/wheatfox/petalinux_sdk
 
-ROOT_LINUX_IMAGE = $(PETALINUX_PROJECT_PATH)/images/linux/Image
+ROOT_LINUX_IMAGE = $(PETALINUX_PROJECT_PATH)/images/linux/vmlinux
 ROOT_LINUX_ROOTFS = $(PETALINUX_PROJECT_PATH)/images/linux/rootfs.cpio.gz.u-boot
 ROOT_LINUX_DTB = $(PETALINUX_PROJECT_PATH)/images/linux/system.dtb
 
+# notes on uboot FIT:
+# please pass the raw vmlinux and hvisor stripped binary in uboot's its
+# because when generating FIT image, uboot will create the "Image" format binary and embed it in the FIT image
+# so, don't pass the "Image" format binary or hvisor.bin to uboot's its because
+# this will cause double wrapping of the binary ! - wheatfox
 TARGET_FIT_IMAGE = fitImage
 TARGET_FIT_IMAGE_PATH = $(shell readlink -f $(TARGET_FIT_IMAGE))
 
 GDB ?= aarch64-linux-gnu-gdb
+READELF ?= aarch64-linux-gnu-readelf
 
 ifndef PETALINUX_SDK_ROOT
 	PETALINUX_SDK_ROOT = $(DEFAULT_PETALINUX_SDK_PATH)
@@ -70,7 +76,7 @@ gen-fit:
 # "pl" is short for "petalinux"
 # args passed to xilinx's qemu
 EXTRA_QEMU_ARGS =
-EXTRA_QEMU_ARGS += -device loader,file=$(TARGET_FIT_IMAGE_PATH),addr=0x50000000,force-raw=on
+EXTRA_QEMU_ARGS += -device loader,file=$(TARGET_FIT_IMAGE_PATH),addr=0x10000000,force-raw=on
 
 .PHONY: run-pl-qemu
 run-pl-qemu: $(hvisor_bin) gen-fit
@@ -84,16 +90,21 @@ run-pl-qemu: $(hvisor_bin) gen-fit
 		"
 
 # uboot cmds:
-# bootm 0x50000000
+# bootm 0x10000000
 
 .PHONY: debug-pl-qemu
 debug-pl-qemu:
 	@echo "Starting gdb client..."
 	$(GDB) -ex "target remote localhost:9000" -ex "layout asm"
 
-# below are some quick commands to trigger petalinux commands
+# below are some quick commands
 .PHONY: pl-build
 pl-build:
 	@echo "Building petalinux project..."
 	bash -c "source $(PETALINUX_SDK_ROOT)/settings.sh && \
 		cd $(PETALINUX_PROJECT_PATH) && petalinux-build"
+
+.PHONY: vmlinux-info
+vmlinux-info:
+	@$(READELF) -h $(ROOT_LINUX_IMAGE) | grep "Entry point address" | awk '{print $$0}'
+	@$(READELF) -l $(ROOT_LINUX_IMAGE) | awk '{print $$0}'

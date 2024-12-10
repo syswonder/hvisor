@@ -26,7 +26,7 @@ pub const UART_BAUDRATE_BDIV: u32 = 6;
 lazy_static! {
     static ref UART0: Mutex<ZynqUart> = {
         let mut uart = ZynqUart::new(UART0_BASE);
-        // uart.init();
+        uart.init();
         Mutex::new(uart)
     };
 }
@@ -34,7 +34,7 @@ lazy_static! {
 lazy_static! {
     static ref UART1: Mutex<ZynqUart> = {
         let mut uart = ZynqUart::new(UART1_BASE);
-        // uart.init();
+        uart.init();
         Mutex::new(uart)
     };
 }
@@ -154,15 +154,15 @@ impl ZynqUart {
     /// the baudrate is set to 115200, 8bit data, no parity, 1 stop bit
     fn init(&mut self) {
         // read clock_select from MR, assert it to 0 because we don't use 9600 baudrate
-        assert_eq!(
-            self.regs().mr.read(MR::clock_select),
-            MR::clock_select::Normal.into()
-        );
-        self.regs()
-            .cr
-            .modify(CR::tx_disable::SET + CR::rx_disable::SET);
-        self.regs().baudgen.set(UART_BAUDRATE_ACTUAL_CD);
-        self.regs().bauddiv.set(UART_BAUDRATE_BDIV);
+        // assert_eq!(
+        //     self.regs().mr.read(MR::clock_select),
+        //     MR::clock_select::Normal.into()
+        // );
+        // self.regs()
+        //     .cr
+        //     .modify(CR::tx_disable::SET + CR::rx_disable::SET);
+        // self.regs().baudgen.set(UART_BAUDRATE_ACTUAL_CD);
+        // self.regs().bauddiv.set(UART_BAUDRATE_BDIV);
         self.regs().cr.modify(CR::tx_reset::SET + CR::rx_reset::SET);
         self.regs()
             .cr

@@ -1,35 +1,23 @@
 use crate::{arch::zone::HvArchZoneConfig, config::*};
 
-pub const ROOT_ZONE_DTB_ADDR: u64 = 0xa0000000;
-pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0xa0400000;
-pub const ROOT_ZONE_ENTRY: u64 = 0xa0400000;
+pub const ROOT_ZONE_DTB_ADDR: u64 = 0x100000;
+pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x200000;
+pub const ROOT_ZONE_ENTRY: u64 = 0x200000;
 pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 3] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 1] = [
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
-        physical_start: 0x50000000,
-        virtual_start: 0x50000000,
+        physical_start: 0x200000,
+        virtual_start: 0x200000,
         size: 0x80000000,
     }, // ram
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0x9000000,
-        virtual_start: 0x9000000,
-        size: 0x1000,
-    }, // serial
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0xa000000,
-        virtual_start: 0xa000000,
-        size: 0x4000,
-    }, // virtio
 ];
 
 // 35 36 37 38 -> pcie intx#
-pub const ROOT_ZONE_IRQS: [u32; 8] = [33, 64, 77, 79, 35, 36, 37, 38];
+pub const ROOT_ZONE_IRQS: [u32; 1] = [0];
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     gicd_base: 0x8000000,
@@ -54,7 +42,7 @@ pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
     pci_mem64_base: 0x8000000000,
 };
 
-pub const ROOT_PCI_DEVS: [u64; 2] = [0, 1 << 3];
+pub const ROOT_PCI_DEVS: [u64; 1] = [0];
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 1] = [
     HvIvcConfig {
