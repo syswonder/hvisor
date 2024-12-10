@@ -26,7 +26,7 @@ pub const UART_BAUDRATE_BDIV: u32 = 6;
 lazy_static! {
     static ref UART0: Mutex<ZynqUart> = {
         let mut uart = ZynqUart::new(UART0_BASE);
-        uart.init();
+        // uart.init();
         Mutex::new(uart)
     };
 }
@@ -34,7 +34,7 @@ lazy_static! {
 lazy_static! {
     static ref UART1: Mutex<ZynqUart> = {
         let mut uart = ZynqUart::new(UART1_BASE);
-        uart.init();
+        // uart.init();
         Mutex::new(uart)
     };
 }

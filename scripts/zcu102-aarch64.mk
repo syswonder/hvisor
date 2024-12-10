@@ -47,9 +47,13 @@ HVISOR_BIN_FULL_PATH = $(shell readlink -f $(hvisor_bin))
 DEFAULT_PETALINUX_PROJECT_PATH = /home/wheatfox/Documents/Code/petalinux_projects/wheatfox_hw0
 DEFAULT_PETALINUX_SDK_PATH = /home/wheatfox/petalinux_sdk
 
+FAKE_DTB = $(PETALINUX_PROJECT_PATH)/images/linux/system.dtb
+FAKE_DTB_PATH = $(shell readlink -f $(FAKE_DTB))
+
 # args passed to xilinx's qemu
 EXTRA_QEMU_ARGS =
 EXTRA_QEMU_ARGS += -device loader,file=$(HVISOR_BIN_FULL_PATH),addr=0x40400000,force-raw=on
+EXTRA_QEMU_ARGS += -device loader,file=$(FAKE_DTB_PATH),addr=0x100000,force-raw=on
 
 ifndef PETALINUX_SDK_ROOT
 	PETALINUX_SDK_ROOT = $(DEFAULT_PETALINUX_SDK_PATH)
@@ -70,10 +74,18 @@ endif
 run-petalinux-qemu: $(hvisor_bin)
 	@echo "Running petalinux qemu..."
 # petalinux only works in bash
+# it will open a gdb server on tcp:localhost:9000
 	bash -c "source $(PETALINUX_SDK_ROOT)/settings.sh && \
 		cd $(PETALINUX_PROJECT_PATH) && petalinux-boot qemu \
 		--prebuilt 2 \
 		--qemu-args '$(EXTRA_QEMU_ARGS)' \
 		"
 
-# manual uboot boot: bootm 0x40400000
+GDB ?= aarch64-linux-gnu-gdb
+
+.PHONY: debug-petalinux-qemu
+debug-petalinux-qemu:
+	@echo "Starting gdb client..."
+	$(GDB) -ex "target remote localhost:9000" -ex "layout asm"
+
+# manual uboot boot: bootm 0x40400000 - 0x100000
