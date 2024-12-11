@@ -52,6 +52,7 @@ impl ArchCpu {
     }
 
     pub fn reset(&mut self, entry: usize, dtb: usize) {
+        debug!("cpu {} reset, entry: {:#x}, dtb: {:#x}", self.cpuid, entry, dtb);
         ELR_EL2.set(entry as _);
         SPSR_EL2.set(0x3c5);
         let regs = self.guest_reg();

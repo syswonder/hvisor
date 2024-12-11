@@ -7,18 +7,30 @@ pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 1] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 3] = [
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
-        physical_start: 0x200000,
-        virtual_start: 0x200000,
-        size: 0x80000000,
+        physical_start: 0x0,
+        virtual_start: 0x0,
+        size: 0x8000_0000,
     }, // ram
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xff00_0000,
+        virtual_start: 0xff00_0000,
+        size: 0x1_0000,
+    }, // uart0
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xff01_0000,
+        virtual_start: 0xff01_0000,
+        size: 0x1_0000,
+    }, // uart1
 ];
 
-// 35 36 37 38 -> pcie intx#
 pub const ROOT_ZONE_IRQS: [u32; 1] = [0];
 
+// need port to gicv2 on ZCU102
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     gicd_base: 0x8000000,
     gicd_size: 0x10000,
@@ -44,15 +56,4 @@ pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
 
 pub const ROOT_PCI_DEVS: [u64; 1] = [0];
 
-pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 1] = [
-    HvIvcConfig {
-        ivc_id: 0,
-        peer_id: 0,
-        control_table_ipa: 0xd000_0000,
-        shared_mem_ipa: 0xd000_1000,
-        rw_sec_size: 0,
-        out_sec_size: 0x1000,
-        interrupt_num: 0x21 + 32,
-        max_peers: 2,
-    }
-];
+pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
