@@ -1,14 +1,16 @@
+include $(DEV_DIR)/platform/common.mk
+
 QEMU := sudo qemu-system-aarch64
 
-UBOOT := $(image_dir)/bootloader/u-boot-atf.bin
+# DEV_DIR, IMG_DIR, PLAT_DIR are defined in hvisor Makefile
 
-FSIMG1 := $(image_dir)/virtdisk/rootfs1.ext4
-FSIMG2 := $(image_dir)/virtdisk/rootfs2.ext4
+UBOOT := $(IMG_DIR)/uboot.bin
 
-zone0_kernel := $(image_dir)/kernel/Image
-zone1_kernel := $(image_dir)/kernel/Image
-zone0_dtb    := $(image_dir)/devicetree/linux1.dtb
-zone1_dtb    := $(image_dir)/devicetree/linux2.dtb
+FSIMG1 := $(IMG_DIR)/rootfs1.ext4
+FSIMG2 := $(IMG_DIR)/rootfs2.ext4
+
+zone0_kernel := $(IMG_DIR)/Image
+zone0_dtb    := $(PLAT_DIR)/dts/zone0.dtb
 
 QEMU_ARGS := -machine virt,secure=on,gic-version=3,virtualization=on,iommu=smmuv3
 QEMU_ARGS += -global arm-smmuv3.stage=2
@@ -65,3 +67,5 @@ $(hvisor_bin): elf
 	mkimage -n hvisor_img -A arm64 -O linux -C none -T kernel -a 0x40400000 \
 	-e 0x40400000 -d $(hvisor_bin).tmp $(hvisor_bin) && \
 	rm -rf $(hvisor_bin).tmp
+
+images: dtb
