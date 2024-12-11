@@ -160,7 +160,7 @@ fn arch_handle_trap_el2(_regs: &mut GeneralRegisters) {
             );
         }
         _ => {
-            println!("Unhandled EL2 Exception: EC={:#x?}", 1);
+            println!("Unhandled EL2 Exception: EC={:#x?}", ESR_EL2.read(ESR_EL2::EC));
         }
     }
     loop {}

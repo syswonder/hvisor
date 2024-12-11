@@ -26,6 +26,7 @@ DEFAULT_PETALINUX_PROJECT_PATH = /home/wheatfox/Documents/Code/petalinux_project
 DEFAULT_PETALINUX_SDK_PATH = /home/wheatfox/petalinux_sdk
 
 ROOT_LINUX_IMAGE = $(PETALINUX_PROJECT_PATH)/images/linux/vmlinux
+ROOT_LINUX_IMAGE_BIN = $(ROOT_LINUX_IMAGE).bin
 ROOT_LINUX_ROOTFS = $(PETALINUX_PROJECT_PATH)/images/linux/rootfs.cpio.gz.u-boot
 ROOT_LINUX_DTB = $(PETALINUX_PROJECT_PATH)/images/linux/system.dtb
 
@@ -56,6 +57,7 @@ else
 endif
 
 HVISOR_TMP_PATH = $(shell readlink -f $(hvisor_bin).tmp)
+GCC_OBJCOPY = aarch64-linux-gnu-objcopy
 
 .PHONY: gen-fit
 gen-fit:
@@ -64,8 +66,10 @@ gen-fit:
 		exit 1; \
 	fi
 	$(OBJCOPY) $(hvisor_elf) --strip-all -O binary $(HVISOR_TMP_PATH)
+# now we need to create the vmlinux.bin
+	$(GCC_OBJCOPY) $(ROOT_LINUX_IMAGE) --strip-all -O binary $(ROOT_LINUX_IMAGE_BIN)
 	@sed \
-		-e "s|__ROOT_LINUX_IMAGE__|$(ROOT_LINUX_IMAGE)|g" \
+		-e "s|__ROOT_LINUX_IMAGE__|$(ROOT_LINUX_IMAGE_BIN)|g" \
 		-e "s|__ROOT_LINUX_ROOTFS__|$(ROOT_LINUX_ROOTFS)|g" \
 		-e "s|__ROOT_LINUX_DTB__|$(ROOT_LINUX_DTB)|g" \
 		-e "s|__HVISOR_TMP_PATH__|$(HVISOR_TMP_PATH)|g" \
@@ -90,7 +94,10 @@ run-pl-qemu: $(hvisor_bin) gen-fit
 		"
 
 # uboot cmds:
-# bootm 0x10000000
+# setenv fit_addr 0x10000000;setenv root_linux_load 0x200000;setenv root_rootfs_load 0x4000000;
+# imxtract ${fit_addr} root_linux ${root_linux_load};imxtract ${fit_addr} root_rootfs ${root_rootfs_load};
+# md ${root_linux_load} 20;
+# bootm ${fit_addr};
 
 .PHONY: debug-pl-qemu
 debug-pl-qemu:
