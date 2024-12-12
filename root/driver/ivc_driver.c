@@ -173,34 +173,34 @@ static struct property* alloc_property(const char *name, int len)
     return prop;
 }
 
-static int add_ivc_device_node(void)
-{
-    int err, i, j, overlay_id;
-    struct device_node *node = NULL;
-    struct property *prop;
-    u32* values;
-    err = of_overlay_fdt_apply(__dtb_hivc_template_begin,
-        __dtb_hivc_template_end - __dtb_hivc_template_begin,
-        &overlay_id);
-    if (err) return err;
+// static int add_ivc_device_node(void)
+// {
+//     int err, i, j, overlay_id;
+//     struct device_node *node = NULL;
+//     struct property *prop;
+//     u32* values;
+//     err = of_overlay_fdt_apply(__dtb_hivc_template_begin,
+//         __dtb_hivc_template_end - __dtb_hivc_template_begin,
+//         &overlay_id);
+//     if (err) return err;
 
-    struct of_changeset overlay_changeset;
-    of_changeset_init(&overlay_changeset);
-	node = of_find_node_by_path("/hvisor_ivc_device");
+//     struct of_changeset overlay_changeset;
+//     of_changeset_init(&overlay_changeset);
+// 	node = of_find_node_by_path("/hvisor_ivc_device");
 
-    // TODO: 加入对gic interrupt cell的探测，以及错误处理
-    prop = alloc_property("interrupts", sizeof(u32)*3*dev_len);
-    values = prop->value;
-    for(i=0; i<dev_len; i++) {
-        j = i * 3;
-        values[j++] = 0x00;
-        values[j++] = ivc_info->ivc_irqs[i] - 32;
-        values[j++] = 0x01;
-    }
-    of_changeset_add_property(&overlay_changeset, node, prop);
-    of_changeset_apply(&overlay_changeset);
-    return 0;
-}
+//     // TODO: 加入对gic interrupt cell的探测，以及错误处理
+//     prop = alloc_property("interrupts", sizeof(u32)*3*dev_len);
+//     values = prop->value;
+//     for(i=0; i<dev_len; i++) {
+//         j = i * 3;
+//         values[j++] = 0x00;
+//         values[j++] = ivc_info->ivc_irqs[i] - 32;
+//         values[j++] = 0x01;
+//     }
+//     of_changeset_add_property(&overlay_changeset, node, prop);
+//     of_changeset_apply(&overlay_changeset);
+//     return 0;
+// }
 
 static int __init ivc_init(void) {
     int err, i, soft_irq;
@@ -237,16 +237,18 @@ static int __init ivc_init(void) {
     }
     node = of_find_node_by_path("/hvisor_ivc_device");
     if (!node) {
-        add_ivc_device_node();
-    }
-    for(i=0; i<dev_len; i++) {
-        soft_irq = of_irq_get(node, i);
-        err = request_irq(soft_irq, ivc_irq_handler, IRQF_SHARED | IRQF_TRIGGER_RISING, "hvisor_ivc_device", &ivc_devs[i]);
-        if (err) {
-            pr_err("request irq failed\n");
-            goto err2;
+        // add_ivc_device_node();
+        pr_info("hvisor_ivc_device node not found in dtb, can't use ivc\n");
+    } else {
+        for(i=0; i<dev_len; i++) {
+            soft_irq = of_irq_get(node, i);
+            err = request_irq(soft_irq, ivc_irq_handler, IRQF_SHARED | IRQF_TRIGGER_RISING, "hvisor_ivc_device", &ivc_devs[i]);
+            if (err) {
+                pr_err("request irq failed\n");
+                goto err2;
+            }
         }
-    }
+    } 
     of_node_put(node);
     pr_info("ivc init!!!\n");
     return 0;

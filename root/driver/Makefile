@@ -8,7 +8,7 @@ endif
 
 EXTRA_CFLAGS += -I$(PWD)/include
 
-ivc-y := ivc_driver.o hivc_template.dtb.o
+ivc-y := ivc_driver.o 
 
 .SECONDARY: \
         $(obj)/hivc_template.dtb.S \

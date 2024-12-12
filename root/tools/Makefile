@@ -4,7 +4,7 @@ ivc_demo_objects := ivc_demo.o
 hvisor_objects := $(filter-out $(ivc_demo_objects), $(objects))
 
 CFLAGS := -Wall -Wextra -DLOG_USE_COLOR -DHLOG=$(LOG)
-include_dirs := -I../include -I./include -I../cJSON/
+include_dirs := -I../include -I./include -I../cJSON/ -lpthread
 
 include $(sources:.c=.d)
 
