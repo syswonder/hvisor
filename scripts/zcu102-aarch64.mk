@@ -28,7 +28,8 @@ DEFAULT_PETALINUX_SDK_PATH = /home/wheatfox/petalinux_sdk
 ROOT_LINUX_IMAGE = $(PETALINUX_PROJECT_PATH)/images/linux/vmlinux
 ROOT_LINUX_IMAGE_BIN = $(ROOT_LINUX_IMAGE).bin
 ROOT_LINUX_ROOTFS = $(PETALINUX_PROJECT_PATH)/images/linux/rootfs.cpio.gz.u-boot
-ROOT_LINUX_DTB = $(PETALINUX_PROJECT_PATH)/images/linux/system.dtb
+# ROOT_LINUX_DTB = $(PETALINUX_PROJECT_PATH)/images/linux/system.dtb
+ROOT_LINUX_DTB = $(shell readlink -f ./images/aarch64/devicetree/zcu102-root-aarch64.dtb)
 
 # notes on uboot FIT:
 # please pass the raw vmlinux and hvisor stripped binary in uboot's its
@@ -59,8 +60,12 @@ endif
 HVISOR_TMP_PATH = $(shell readlink -f $(hvisor_bin).tmp)
 GCC_OBJCOPY = aarch64-linux-gnu-objcopy
 
+.PHONY: dtb
+dtb:
+	make -C ./images/aarch64/devicetree
+
 .PHONY: gen-fit
-gen-fit:
+gen-fit: $(hvisor_bin) dtb
 	@if [ ! -f scripts/zcu102-aarch64-fit.its ]; then \
 		echo "Error: ITS file scripts/zcu102-aarch64-fit.its not found."; \
 		exit 1; \

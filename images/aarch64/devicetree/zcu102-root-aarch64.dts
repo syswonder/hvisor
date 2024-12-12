@@ -42,38 +42,38 @@
 			phandle = <0x06>;
 		};
 
-		cpu@1 {
-			compatible = "arm,cortex-a53";
-			device_type = "cpu";
-			enable-method = "psci";
-			reg = <0x01>;
-			operating-points-v2 = <0x01>;
-			cpu-idle-states = <0x02>;
-			next-level-cache = <0x03>;
-			phandle = <0x07>;
-		};
+		// cpu@1 {
+		// 	compatible = "arm,cortex-a53";
+		// 	device_type = "cpu";
+		// 	enable-method = "psci";
+		// 	reg = <0x01>;
+		// 	operating-points-v2 = <0x01>;
+		// 	cpu-idle-states = <0x02>;
+		// 	next-level-cache = <0x03>;
+		// 	phandle = <0x07>;
+		// };
 
-		cpu@2 {
-			compatible = "arm,cortex-a53";
-			device_type = "cpu";
-			enable-method = "psci";
-			reg = <0x02>;
-			operating-points-v2 = <0x01>;
-			cpu-idle-states = <0x02>;
-			next-level-cache = <0x03>;
-			phandle = <0x08>;
-		};
+		// cpu@2 {
+		// 	compatible = "arm,cortex-a53";
+		// 	device_type = "cpu";
+		// 	enable-method = "psci";
+		// 	reg = <0x02>;
+		// 	operating-points-v2 = <0x01>;
+		// 	cpu-idle-states = <0x02>;
+		// 	next-level-cache = <0x03>;
+		// 	phandle = <0x08>;
+		// };
 
-		cpu@3 {
-			compatible = "arm,cortex-a53";
-			device_type = "cpu";
-			enable-method = "psci";
-			reg = <0x03>;
-			operating-points-v2 = <0x01>;
-			cpu-idle-states = <0x02>;
-			next-level-cache = <0x03>;
-			phandle = <0x09>;
-		};
+		// cpu@3 {
+		// 	compatible = "arm,cortex-a53";
+		// 	device_type = "cpu";
+		// 	enable-method = "psci";
+		// 	reg = <0x03>;
+		// 	operating-points-v2 = <0x01>;
+		// 	cpu-idle-states = <0x02>;
+		// 	next-level-cache = <0x03>;
+		// 	phandle = <0x09>;
+		// };
 
 		l2-cache {
 			compatible = "cache";

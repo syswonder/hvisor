@@ -3,7 +3,7 @@ use crate::{arch::zone::HvArchZoneConfig, config::*};
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x100000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x200000;
 pub const ROOT_ZONE_ENTRY: u64 = 0x200000;
-pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1);
+pub const ROOT_ZONE_CPUS: u64 = (1 << 0);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 
@@ -38,11 +38,11 @@ pub const ROOT_ZONE_IRQS: [u32; 1] = [0];
 
 // need port to gicv2 on ZCU102
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
-    gicd_base: 0x8000000,
+    gicd_base: 0xf9010000,
     gicd_size: 0x10000,
-    gicr_base: 0x80a0000,
-    gicr_size: 0xf60000,
-    gits_base: 0x8080000,
+    gicr_base: 0xf9020000,
+    gicr_size: 0x20000,
+    gits_base: 0xf9040000,
     gits_size: 0x20000,
 };
 
