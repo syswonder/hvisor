@@ -7,11 +7,17 @@ pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 3] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 4] = [
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
-        physical_start: 0x0,
-        virtual_start: 0x0,
+        physical_start: 0x0000_0000,
+        virtual_start: 0x0000_0000,
+        size: 0x7ff0_0000,
+    }, // ram
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RAM,
+        physical_start: 0x8_0000_0000,
+        virtual_start: 0x8_0000_0000,
         size: 0x8000_0000,
     }, // ram
     HvConfigMemoryRegion {

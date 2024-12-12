@@ -93,9 +93,8 @@ run-pl-qemu: $(hvisor_bin) gen-fit
 		--qemu-args '$(EXTRA_QEMU_ARGS)' \
 		"
 
-# uboot cmds:
-# setenv fit_addr 0x10000000;setenv root_linux_load 0x200000;setenv root_rootfs_load 0x4000000;
-# imxtract ${fit_addr} root_linux ${root_linux_load};imxtract ${fit_addr} root_rootfs ${root_rootfs_load};md ${root_linux_load} 20;bootm ${fit_addr};
+# uboot cmds:\
+setenv fit_addr 0x10000000;setenv root_linux_load 0x200000;setenv root_rootfs_load 0x4000000;imxtract ${fit_addr} root_linux ${root_linux_load};imxtract ${fit_addr} root_rootfs ${root_rootfs_load};md ${root_linux_load} 20;bootm ${fit_addr};
 
 .PHONY: debug-pl-qemu
 debug-pl-qemu:

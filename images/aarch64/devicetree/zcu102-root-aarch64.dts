@@ -14,6 +14,18 @@
 		};
 	};
 
+	chosen {
+		bootargs = "earlycon console=ttyPS0,115200 root=/dev/ram0 rw";
+		stdout-path = "serial0:115200n8";
+	};
+
+	memory@0 {
+		device_type = "memory";
+		reg = <0x00 0x00 0x00 0x7ff00000 0x08 0x00 0x00 0x80000000>;
+		// mem start=0x0000_0000 size=0x7ff0_0000, range=[0x0000_0000, 0x7ff0_0000]
+		// mem start=0x8_0000_0000 size=0x8000_0000, range=[0x8_0000_0000, 0x8_8000_0000]
+	};
+
 	cpus {
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
@@ -2418,16 +2430,6 @@
 			xlnx,tri-default-2 = <0xffffffff>;
 			phandle = <0xa8>;
 		};
-	};
-
-	chosen {
-		bootargs = "earlycon console=ttyPS0,115200 root=/dev/ram0 rw";
-		stdout-path = "serial0:115200n8";
-	};
-
-	memory@0 {
-		device_type = "memory";
-		reg = <0x00 0x00 0x00 0x7ff00000 0x08 0x00 0x00 0x80000000>;
 	};
 
 	__symbols__ {
