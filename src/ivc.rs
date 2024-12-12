@@ -3,7 +3,9 @@ use core::ptr::write_volatile;
 use alloc::{collections::{btree_map::BTreeMap, btree_set::BTreeSet}, vec::Vec};
 use spin::Mutex;
 
-use crate::{config::{HvIvcConfig, CONFIG_MAX_IVC_CONGIGS}, consts::PAGE_SIZE, device::irqchip::gicv3::{gicd::{GICD_ICPENDR, GICD_ISPENDR}, host_gicd_base}, error::HvResult, hypercall::SGI_IPI_ID, memory::{Frame, GuestPhysAddr, MMIOAccess, MemFlags, MemoryRegion}, zone::{find_zone, this_zone_id, Zone}};
+#[cfg(target_arch = "aarch64")]
+use crate::device::irqchip::gicv3::{gicd::{GICD_ICPENDR, GICD_ISPENDR}, host_gicd_base};
+use crate::{config::{HvIvcConfig, CONFIG_MAX_IVC_CONGIGS}, consts::PAGE_SIZE, error::HvResult, hypercall::SGI_IPI_ID, memory::{Frame, GuestPhysAddr, MMIOAccess, MemFlags, MemoryRegion}, zone::{find_zone, this_zone_id, Zone}};
 // ivc_id -> ivc_record
 static IVC_RECORDS: Mutex<BTreeMap<u32, IvcRecord>> = Mutex::new(BTreeMap::new());
 // zone id -> zone's IvcInfo
@@ -183,9 +185,12 @@ pub fn mmio_ivc_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
                     return hv_result_err!(EINVAL);
                 } 
             } as usize;
+            #[cfg(target_arch = "aarch64")]
             unsafe {
                 write_volatile((host_gicd_base() + GICD_ISPENDR + (irq_num / 32) * 4) as *mut u32, 1 << (irq_num % 32))
             }
+            #[cfg(not(target_arch = "aarch64"))]
+            todo!();
             return Ok(())
         },
         _ => return hv_result_err!(EFAULT), 
