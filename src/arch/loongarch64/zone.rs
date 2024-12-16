@@ -116,9 +116,7 @@ impl Zone {
     }
 
     pub fn mmio_init(&mut self, hv_config: &HvArchZoneConfig) {}
-    pub fn isa_init(&mut self, fdt: &fdt::Fdt) {
-        warn!("loongarch64: mm: isa_init do nothing");
-    }
+
     pub fn irq_bitmap_init(&mut self, irqs: &[u32]) {}
 }
 
