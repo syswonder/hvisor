@@ -15,7 +15,6 @@ buddy_system_allocator = "0.8"
 tock-registers = "0.8"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "03bd9909" }
-fdt = { path = "./vendor/fdt" }
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 aarch64-cpu = "9.4.0"
