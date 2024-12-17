@@ -76,7 +76,7 @@
 	// "rust-analyzer.cargo.target": "riscv64gc-unknown-none-elf",
 	// "rust-analyzer.cargo.target": "loongarch64-unknown-none",
 	"rust-analyzer.checkOnSave.allTargets": false,
-	// "rust-analyzer.cargo.features": [
-	//     "board_qemu"
-	// ]
+	"rust-analyzer.cargo.features": [
+	    "platform_qemu"
+	]
 }

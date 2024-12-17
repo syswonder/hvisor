@@ -1,0 +1,44 @@
+name: CI
+on:
+  push:
+    branches: [dev-unittest]
+  pull_request:
+    branches: [dev-unittest]
+env:
+  ARCH: aarch64
+  RUSTC_TARGET: aarch64-unknown-none
+  QEMU_ARGS: -machine virt,secure=on,gic-version=3,virtualization=on,iommu=smmuv3 -global arm-smmuv3.stage=2 -cpu cortex-a57 -smp 1 -m 3G -nographic -semihosting -kernel
+  MODE: debug
+  FEATURES: platform_qemu
+jobs:
+  test:
+    name: Build and Test hvisor on QEMU for aarch64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-none
+          components: rust-src
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-aarch64 gdb-multiarch llvm-dev libclang-dev
+          cargo install cargo-binutils
+          cargo install cargo-xbuild
+
+      - name: Build hvisor
+        run: |
+          cargo build --target ${{ env.RUSTC_TARGET }} \
+                      --features "${{ env.FEATURES }}" \
+                      -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem
+
+      - name: Run Tests
+        run: |
+          cargo test --target ${{ env.RUSTC_TARGET }} \
+                     --features "${{ env.FEATURES }}" \
+                     -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem

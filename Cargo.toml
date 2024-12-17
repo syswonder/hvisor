@@ -20,6 +20,7 @@ fdt = { path = "./vendor/fdt" }
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 aarch64-cpu = "9.4.0"
 psci = { version = "0.1.0", default-features = false, features = ["smc"]}
+qemu-exit = "3.0.2"
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
 sbi-rt = { version = "0.0.2", features = ["legacy"] }

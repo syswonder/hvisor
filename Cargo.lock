@@ -95,6 +95,7 @@ dependencies = [
  "loongArch64",
  "numeric-enum-macro",
  "psci",
+ "qemu-exit",
  "riscv",
  "riscv-decode",
  "sbi-rt",
@@ -154,6 +155,12 @@ name = "psci"
 version = "0.1.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3b6fb7be1022539b1ea394ff4bcbad807a55c93841bb12c733f0be1048ea3e53"
+
+[[package]]
+name = "qemu-exit"
+version = "3.0.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8bb0fd6580eeed0103c054e3fba2c2618ff476943762f28a645b63b8692b21c9"
 
 [[package]]
 name = "regex"

@@ -16,8 +16,12 @@
 #![feature(core_panic)]
 // 支持内联汇编
 // #![deny(warnings, missing_docs)] // 将warnings作为error
+
+// unittest
 #![feature(custom_test_frameworks)]
-#![test_runner(crate::test_runner)]
+#![test_runner(crate::tests::test_main)]
+#![reexport_test_harness_main = "test_main"]
+
 #[macro_use]
 extern crate alloc;
 extern crate buddy_system_allocator;
@@ -43,6 +47,8 @@ mod config;
 mod ivc;
 mod pci;
 
+mod tests;
+
 #[cfg(target_arch = "aarch64")]
 use crate::arch::mm::setup_parange;
 use crate::consts::MAX_CPU_NUM;
@@ -60,14 +66,6 @@ static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
 static INIT_EARLY_OK: AtomicU32 = AtomicU32::new(0);
 static INIT_LATE_OK: AtomicU32 = AtomicU32::new(0);
 static MASTER_CPU: AtomicI32 = AtomicI32::new(-1);
-
-#[cfg(test)]
-pub fn test_runner(tests: &[&dyn Fn()]) {
-    println!("Running {} tests", tests.len());
-    for test in tests {
-        test();
-    }
-}
 
 pub fn clear_bss() {
     extern "C" {
@@ -120,7 +118,9 @@ fn primary_init_early() {
     #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
     iommu_init();
 
+    #[cfg(not(test))]
     zone_create(root_zone_config()).unwrap();
+    
     INIT_EARLY_OK.store(1, Ordering::Release);
 }
 
@@ -185,27 +185,33 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         if is_primary { "Primary" } else { "Secondary" },
         cpu.id
     );
-
+    
     #[cfg(target_arch = "aarch64")]
     setup_parange();
-
+    
     if is_primary {
         primary_init_early(); // create root zone here
     } else {
         wait_for_counter(&INIT_EARLY_OK, 1);
     }
-
+    
     per_cpu_init(cpu);
-    device::irqchip::percpu_init();
-
+    // device::irqchip::percpu_init();
+    
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
-    wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _);
 
+    wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _);
+    
     if is_primary {
         primary_init_late();
     } else {
         wait_for_counter(&INIT_LATE_OK, 1);
     }
+
+    // run all unit tests before starting the root zone
+    // CAUTION: test_main will quit qemu after all tests are done
+    #[cfg(test)]
+    test_main();
 
     cpu.run_vm();
 }
