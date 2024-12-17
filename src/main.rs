@@ -16,6 +16,8 @@
 #![feature(core_panic)]
 // 支持内联汇编
 // #![deny(warnings, missing_docs)] // 将warnings作为error
+#![feature(custom_test_frameworks)]
+#![test_runner(crate::test_runner)]
 #[macro_use]
 extern crate alloc;
 extern crate buddy_system_allocator;
@@ -58,6 +60,14 @@ static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
 static INIT_EARLY_OK: AtomicU32 = AtomicU32::new(0);
 static INIT_LATE_OK: AtomicU32 = AtomicU32::new(0);
 static MASTER_CPU: AtomicI32 = AtomicI32::new(-1);
+
+#[cfg(test)]
+pub fn test_runner(tests: &[&dyn Fn()]) {
+    println!("Running {} tests", tests.len());
+    for test in tests {
+        test();
+    }
+}
 
 pub fn clear_bss() {
     extern "C" {

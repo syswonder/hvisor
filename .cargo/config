@@ -5,6 +5,7 @@ rustflags = [
 ]
 
 [target.aarch64-unknown-none]
+runner = "qemu-system-aarch64 -machine virt,secure=on,gic-version=3,virtualization=on,iommu=smmuv3 -global arm-smmuv3.stage=2 -cpu cortex-a57 -smp 1 -m 3G -nographic -kernel"
 rustflags = [
     "-Clink-arg=-Tscripts/qemu-aarch64.ld",
     "-Ctarget-feature=+a53,+v8a,+strict-align,-neon,-fp-armv8",

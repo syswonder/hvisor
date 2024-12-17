@@ -4,7 +4,7 @@ use buddy_system_allocator::LockedHeap;
 
 use crate::consts::HV_HEAP_SIZE;
 
-#[cfg_attr(not(test), global_allocator)]
+#[global_allocator]
 static HEAP_ALLOCATOR: LockedHeap<32> = LockedHeap::<32>::new();
 
 /// Initialize the global heap allocator.

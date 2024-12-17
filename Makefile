@@ -75,6 +75,12 @@ jlink-server:
 cp: all
 	cp $(hvisor_bin) ~/tftp
 
+cargo-run:
+	cargo run $(build_args)
+
+test:
+	cargo test $(build_args)
+
 clean:
 	cargo clean
 

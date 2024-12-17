@@ -34,8 +34,12 @@ platform_qemu = []
 platform_imx8mp = []
 
 [profile.dev]
-panic = "abort"
+# panic = "abort" # avoid test compiler erros(still a bug for rust)
 debug = 2
 
 [profile.release]
-panic = "abort"
+# panic = "abort"
+
+[unstable]
+build-std-features = ["compiler-builtins-mem"]
+build-std = ["core", "compiler_builtins"]
