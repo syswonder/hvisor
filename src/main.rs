@@ -13,7 +13,7 @@
 // 不使用main入口，使用自己定义实际入口_start，因为我们还没有初始化堆栈指针
 #![feature(asm_const)]
 #![feature(naked_functions)] //  surpport naked function
-#![feature(core_panic)]
+// #![feature(core_panic)]
 // 支持内联汇编
 // #![deny(warnings, missing_docs)] // 将warnings作为error
 
