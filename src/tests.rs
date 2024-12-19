@@ -10,7 +10,7 @@ fn simple_test() {
     assert_eq!(1, 1);
 }
 
-// base trait for hvisor unittests
+/// base trait for hvisor unittests
 pub trait HvUnitTest {
     fn run(&self);
 }
@@ -34,6 +34,7 @@ where
     }
 }
 
+/// The result of a unit test
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HvUnitTestResult {
     Success,
