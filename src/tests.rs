@@ -20,22 +20,32 @@ where
     T: Fn(),
 {
     fn run(&self) {
-        print!("    unittest: {:?}...", core::any::type_name::<T>());
+        // Get the test name
+        let test_name = core::any::type_name::<T>();
+
+        // Print a clean start message with a header and test name
+        print!("\n--- Running test: {} ---\n", test_name);
+
+        // Execute the test function
         self();
-        println!("[OK]");
+
+        // Print a success message after the test
+        println!("Result: PASSED");
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HvUnitTestResult {
-    Passed,
+    Success,
     Failed,
 }
 
 pub fn quit_qemu(result: HvUnitTestResult) {
+    warn!("quitting qemu, result: {:?}", result);
     #[cfg(target_arch = "aarch64")]
     let qemu_exit_handle = qemu_exit::AArch64::new();
     match result {
-        HvUnitTestResult::Passed => qemu_exit_handle.exit_success(),
+        HvUnitTestResult::Success => qemu_exit_handle.exit_success(),
         HvUnitTestResult::Failed => qemu_exit_handle.exit_failure(),
     }
 }
@@ -44,10 +54,11 @@ pub fn quit_qemu(result: HvUnitTestResult) {
 #[no_mangle]
 pub fn test_main(tests: &[&dyn HvUnitTest]) {
     info!("Running {} unit tests", tests.len());
+    println!("\nTotal {} tests to run", tests.len());
     for test in tests {
         test.run();
     }
-    info!("All tests passed without panic! [ALL OK]");
-    quit_qemu(HvUnitTestResult::Passed);
+    println!("\nAll tests passed without panic which is good");
+    quit_qemu(HvUnitTestResult::Success);
     loop {}
 }
