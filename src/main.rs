@@ -42,7 +42,10 @@ mod zone;
 #[cfg(target_arch = "aarch64")]
 use crate::arch::mm::setup_parange;
 use crate::consts::MAX_CPU_NUM;
-use arch::{cpu::cpu_start, entry::arch_entry};
+use arch::{
+    cpu::{self, cpu_start, ArchCpu},
+    entry::arch_entry,
+};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
@@ -124,6 +127,9 @@ fn per_cpu_init(cpu: &mut PerCpu) {
 }
 
 fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
+    #[cfg(target_arch = "x86_64")]
+    arch::lapic::init_primary();
+
     for cpu_id in 0..MAX_CPU_NUM {
         if cpu_id == this_id {
             continue;
@@ -132,9 +138,40 @@ fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
     }
 }
 
+fn x86_rust_main_tmp(cpuid: usize, host_dtb: usize) {
+    arch::trap::install_trap_vector(); // load idt
+
+    let mut is_primary = false;
+    println!("Hello, HVISOR!");
+    if MASTER_CPU.load(Ordering::Acquire) == -1 {
+        MASTER_CPU.store(cpuid as i32, Ordering::Release);
+        is_primary = true;
+        memory::heap::init();
+        memory::heap::test();
+    }
+
+    let cpu = PerCpu::new(cpuid);
+    println!(
+        "Booting CPU {}: {:p} arch:{:p}, DTB: {:#x}",
+        cpu.id, cpu as *const _, &cpu.arch_cpu as *const _, host_dtb
+    );
+
+    #[cfg(target_arch = "x86_64")]
+    cpu.arch_cpu.per_cpu_init(); // load gdt and tss
+
+    if is_primary {
+        wakeup_secondary_cpus(cpu.id, host_dtb);
+    }
+
+    // x86_64::instructions::interrupts::int3();
+    println!("END OF MAIN");
+
+    loop {}
+}
+
 fn rust_main(cpuid: usize, host_dtb: usize) {
     #[cfg(target_arch = "x86_64")]
-    loop {}
+    x86_rust_main_tmp(cpuid, host_dtb);
 
     arch::trap::install_trap_vector();
 

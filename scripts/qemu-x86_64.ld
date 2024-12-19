@@ -34,11 +34,7 @@ SECTIONS
     . = ALIGN(4K);
     edata = .;
     .bss : {
-        boot_stack = .;
         *(.bss.stack)
-        . = ALIGN(4K);
-        boot_stack_top = .;
-        
         sbss = .;
         *(.bss .bss.*)
         *(.sbss .sbss.*)

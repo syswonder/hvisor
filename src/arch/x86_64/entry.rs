@@ -1,11 +1,15 @@
+use super::cpu::this_cpu_id;
+use crate::arch::cpu;
+use crate::consts::PER_CPU_SIZE;
+use crate::rust_main;
 use core::arch::global_asm;
-
 use x86::msr::IA32_EFER;
 use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 use x86_64::registers::model_specific::EferFlags;
 
+const MULTIBOOT_HEADER_MAGIC: i32 = 0x1BADB002;
+const MULTIBOOT_HEADER_FLAGS: i32 = 0x00010002;
 const PHYS_VIRT_OFFSET: usize = 0xffff_ff80_0000_0000;
-const BOOT_KERNEL_STACK_SIZE: usize = 4096 * 4;
 
 const CR0: u64 = Cr0Flags::PROTECTED_MODE_ENABLE.bits()
     | Cr0Flags::MONITOR_COPROCESSOR.bits()
@@ -18,9 +22,12 @@ const EFER: u64 = EferFlags::LONG_MODE_ENABLE.bits() | EferFlags::NO_EXECUTE_ENA
 
 global_asm!(
     include_str!("multiboot.S"),
-    main_entry = sym crate::rust_main,
+    multiboot_header_magic = const MULTIBOOT_HEADER_MAGIC,
+    multiboot_header_flags = const MULTIBOOT_HEADER_FLAGS,
+    rust_entry = sym rust_entry,
+    rust_entry_secondary = sym rust_entry_secondary,
     offset = const PHYS_VIRT_OFFSET,
-    boot_stack_size = const BOOT_KERNEL_STACK_SIZE,
+    per_cpu_size = const PER_CPU_SIZE,
     cr0 = const CR0,
     cr4 = const CR4,
     efer_msr = const IA32_EFER,
@@ -36,8 +43,19 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
         .code32
         mov edi, eax    // magic
         mov esi, ebx    // multiboot info
-        jmp entry32
+        jmp bsp_entry32
         ",
         options(noreturn),
     );
+}
+
+fn rust_entry() {
+    crate::clear_bss();
+    println!("");
+    rust_main(this_cpu_id(), 0);
+}
+
+fn rust_entry_secondary() {
+    println!("CPUID: {}", this_cpu_id());
+    loop {}
 }

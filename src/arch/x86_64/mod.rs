@@ -1,7 +1,10 @@
 #![allow(unused)]
 pub mod cpu;
 pub mod entry;
+pub mod gdt;
+pub mod idt;
 pub mod ipi;
+pub mod lapic;
 pub mod mm;
 pub mod paging;
 pub mod s1pt;

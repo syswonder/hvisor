@@ -1,6 +1,4 @@
-.equ MULTIBOOT_HEADER_MAGIC, 0x1BADB002
-.equ MULTIBOOT_HEADER_FLAGS, 0x00010002
-.equ MULTIBOOT_CHECKSUM, -(MULTIBOOT_HEADER_MAGIC + MULTIBOOT_HEADER_FLAGS)
+.equ boot_stack_top, __core_end + {per_cpu_size}
 
 .section .text.entry
 
@@ -10,19 +8,18 @@
 .balign 4
 .type multiboot_header, STT_OBJECT
 multiboot_header:
-    .int    MULTIBOOT_HEADER_MAGIC
-    .int    MULTIBOOT_HEADER_FLAGS
-    .int    MULTIBOOT_CHECKSUM
+    .int    {multiboot_header_magic}
+    .int    {multiboot_header_flags}
+    .int    -({multiboot_header_magic} + {multiboot_header_flags})
     .int    multiboot_header - {offset}        // header_addr
     .int    skernel - {offset}                 // load_addr
     .int    edata - {offset}                   // load_end
     .int    ebss - {offset}                    // bss_end_addr
     .int    arch_entry - {offset}              // entry_addrs
 
-entry32:
-    // load the temporary GDT
-    lgdt    [.Ltmp_gdt_desc_phys - {offset}]
-    mov     ax, 0x18    // data segment selector
+.macro ENTRY32_COMMON
+    // set data segment selectors
+    mov     ax, 0x18
     mov     ss, ax
     mov     ds, ax
     mov     es, ax
@@ -46,21 +43,9 @@ entry32:
     // set protected mode, write protect, paging bit in CR0
     mov     eax, {cr0}
     mov     cr0, eax
+.endm
 
-    // long return to the 64-bit entry
-    push    0x10    // code64 segment selector
-    lea     eax, [entry64 - {offset}]
-    push    eax
-    retf
-
-.section .text.entry64
-.code64
-
-entry64:
-    // reload GDT by high address
-    movabs  rax, offset .Ltmp_gdt_desc
-    lgdt    [rax]
-
+.macro ENTRY64_COMMON
     // clear segment selectors
     xor     ax, ax
     mov     ss, ax
@@ -68,12 +53,60 @@ entry64:
     mov     es, ax
     mov     fs, ax
     mov     gs, ax
+.endm
 
-    // set stack and jump to rust_main
+bsp_entry32:
+    // load the temporary GDT
+    lgdt    [.Ltmp_gdt_desc_phys - {offset}]
+    ENTRY32_COMMON
+
+    // long return to the 64-bit entry
+    push    0x10    // code64 segment selector
+    lea     eax, [bsp_entry64 - {offset}]
+    push    eax
+    retf
+
+.global ap_entry32
+ap_entry32:
+    ENTRY32_COMMON
+
+    // long return to the 64-bit entry
+    push    0x10    // code64 segment selector
+    lea     eax, [ap_entry64 - {offset}]
+    push    eax
+    retf
+
+.section .text.entry64
+.code64
+
+bsp_entry64:
+    // reload GDT by high address
+    movabs  rax, offset .Ltmp_gdt_desc
+    lgdt    [rax]
+
+    ENTRY64_COMMON
+
+    // set stack and jump to rust_entry
     movabs  rsp, offset boot_stack_top
-    movabs  rax, offset {main_entry}
+    movabs  rax, offset {rust_entry}
     call    rax
-1:  jmp     1b
+    jmp     .Lhlt
+
+ap_entry64:
+    ENTRY64_COMMON
+
+    // set rsp to high address
+    mov     rax, {offset}
+    add     rsp, rax
+
+    // jump to rust_entry_secondary
+    movabs  rax, offset {rust_entry_secondary}
+    call    rax
+    jmp     .Lhlt
+
+.Lhlt:
+    hlt
+    jmp     .Lhlt
 
 .section .rodata
 .balign 8
@@ -104,17 +137,11 @@ entry64:
     .quad .Ltmp_pdpt_high - {offset} + 0x3  // PRESENT | WRITABLE | paddr(tmp_pdpt)
 
 .Ltmp_pdpt_low:
-    .quad 0x0000 | 0x83                 // PRESENT | WRITABLE | HUGE_PAGE | paddr(0x0)
-    .quad 0x40000000 | 0x83             // PRESENT | WRITABLE | HUGE_PAGE | paddr(0x0)
+    .quad 0x0000 | 0x83         // PRESENT | WRITABLE | HUGE_PAGE | paddr(0x0)
+    .quad 0x40000000 | 0x83     // PRESENT | WRITABLE | HUGE_PAGE | paddr(0x4000_0000)
     .zero 8 * 510
 
 .Ltmp_pdpt_high:
-    .quad 0x0000 | 0x83                 // PRESENT | WRITABLE | HUGE_PAGE | paddr(0x0)
-    .quad 0x40000000 | 0x83             // PRESENT | WRITABLE | HUGE_PAGE | paddr(0x0)
+    .quad 0x0000 | 0x83         // PRESENT | WRITABLE | HUGE_PAGE | paddr(0x0)
+    .quad 0x40000000 | 0x83     // PRESENT | WRITABLE | HUGE_PAGE | paddr(0x4000_0000)
     .zero 8 * 510
-
-.section .bss.stack
-.balign 4096
-boot_stack:
-    .space {boot_stack_size}
-boot_stack_top:

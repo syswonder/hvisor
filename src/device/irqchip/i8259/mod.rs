@@ -1,4 +1,13 @@
 use crate::zone::Zone;
+use core::arch::asm;
+
+pub fn enable_irq() {
+    unsafe { asm!("sti") };
+}
+
+pub fn disable_irq() {
+    unsafe { asm!("cli") };
+}
 
 pub fn inject_irq(_irq: usize, _is_hardware: bool) {}
 
