@@ -1,12 +1,12 @@
 [target.riscv64gc-unknown-none-elf]
 rustflags = [
-    "-Clink-arg=-Thvisor-dev/platform/riscv64/qemu/linker.ld",
+    "-Clink-arg=-T../platform/riscv64/qemu/linker.ld",
     "-Cforce-frame-pointers=yes"
 ]
 
 [target.aarch64-unknown-none]
 rustflags = [
-    "-Clink-arg=-Thvisor-dev/platform/aarch64/qemu/linker.ld",
+    "-Clink-arg=-T../platform/aarch64/qemu/linker.ld",
     "-Ctarget-feature=+a53,+v8a,+strict-align,-neon,-fp-armv8",
     "-Cforce-frame-pointers=yes",
 ]
@@ -14,6 +14,6 @@ rustflags = [
 [target.loongarch64-unknown-none]
 linker = "loongarch64-unknown-linux-gnu-gcc"
 rustflags = [
-    "-Clink-arg=-Thvisor-dev/platform/loongarch64/3a5000/linker.ld",
+    "-Clink-arg=-T../platform/loongarch64/3a5000/linker.ld",
     "-Cforce-frame-pointers=yes",
 ]

@@ -8,10 +8,6 @@ MODE ?= debug
 
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 
-DEV_DIR = hvisor-dev
-IMG_DIR = $(DEV_DIR)/images/$(ARCH)/$(PLATFORM)
-PLAT_DIR = $(DEV_DIR)/platform/$(ARCH)/$(PLATFORM)
-
 # Check the value of ARCH and set corresponding RUSTC_TARGET and GDB_ARCH values.
 ifeq ($(ARCH),aarch64)
 	RUSTC_TARGET := aarch64-unknown-none
@@ -36,7 +32,18 @@ export PLATFORM
 # Build paths
 build_path := target/$(RUSTC_TARGET)/$(MODE)
 hvisor_elf := $(build_path)/hvisor
-hvisor_bin := $(build_path)/hvisor.bin
+hvisor_bin := $(shell pwd)/hvisor.bin
+
+ifeq ($(ARCH),aarch64)
+	hvisor_bin_command := if ! command -v mkimage > /dev/null; then \
+		sudo apt update; sudo apt install u-boot-tools; \
+		fi && \
+		$(OBJCOPY) $(hvisor_elf) --strip-all -O binary $(hvisor_bin).tmp && \
+		mkimage -n hvisor_img -A arm64 -O linux -C none -a 0x40400000 -e 0x40400000 \
+		-T kernel -d $(hvisor_bin).tmp $(hvisor_bin) && rm -rf $(hvisor_bin).tmp
+else
+	hvisor_bin_command := $(OBJCOPY) $(hvisor_elf) --strip-all -O binary $@
+endif
 
 # Build arguments
 build_args := 
@@ -53,32 +60,24 @@ endif
 
 # Targets
 # Declare these targets asphony to avoid conflicts with actual files (if any).
-.PHONY: all elf disa run gdb monitor show-features jlink-server cp clean images
+.PHONY: all elf disa run gdb monitor show-features jlink-server cp clean
 
-all: $(hvisor_bin) images
+all: $(hvisor_bin)
+
+$(hvisor_bin): elf
+	$(hvisor_bin_command)
 
 elf:
 	cargo build $(build_args)
 
 disa:
-# Create a 'disa' directory.
-	mkdir disa
-# Generate information about the ELF file and save it to a text file.
+	mkdir -p disa
 	readelf -a $(hvisor_elf) > disa/hvisor-elf.txt
-# Disassemble the ELF file and save the result as an assembly file.
 	rust-objdump --disassemble $(hvisor_elf) > disa/hvisor.S
 
 show-features:
 # Print the target features for the specified RUSTC_TARGET using rustc.
 	rustc --print=target-features --target=$(RUSTC_TARGET)
-
-run: all
-# Run the QEMU emulator with specified arguments (QEMU_ARGS should be defined elsewhere).
-	$(QEMU) $(QEMU_ARGS)
-
-gdb: all
-# Run the QEMU emulator with additional debugging options (-s for listening on a port, -S for pausing on startup).
-	$(QEMU) $(QEMU_ARGS) -s -S
 
 monitor:
 # Use gdb-multiarch to set up a debugging session for the hvisor ELF file.
@@ -100,4 +99,3 @@ clean:
 # Clean the build artifacts using cargo clean command.
 	cargo clean
 
-include $(PLAT_DIR)/platform.mk
