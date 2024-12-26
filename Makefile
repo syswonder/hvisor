@@ -76,6 +76,7 @@ cp: all
 	cp $(hvisor_bin) ~/tftp
 
 test-pre: download-test-img
+	chmod +x _cargo_test.sh
 	@echo "pass"
 
 flash-img:
