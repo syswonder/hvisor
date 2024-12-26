@@ -117,6 +117,18 @@ static __u64 load_image_to_memory(const char *path, __u64 load_paddr)
     return map_size;
 }
 
+#define CHECK_JSON_NULL(json_ptr, json_name) \
+    if (json_ptr == NULL) { \
+        fprintf(stderr, "%s is missing in pci_config.\n", json_name); \
+        return -1; \
+    }
+
+#define CHECK_JSON_NULL_ERR_OUT(json_ptr, json_name) \
+    if (json_ptr == NULL) { \
+        fprintf(stderr, "%s is missing in pci_config.\n", json_name); \
+        goto err_out; \
+    }
+
 static int parse_arch_config(cJSON *root, zone_config_t *config) {
     cJSON *arch_config_json = cJSON_GetObjectItem(root, "arch_config");
     if (arch_config_json == NULL) {
@@ -132,11 +144,11 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
     cJSON *gicr_size_json = cJSON_GetObjectItem(arch_config_json, "gicr_size");
     cJSON *gits_size_json = cJSON_GetObjectItem(arch_config_json, "gits_size");
 
-    if (gicd_base_json == NULL || gicr_base_json == NULL ||
-        gicd_size_json == NULL || gicr_size_json == NULL) {
-        fprintf(stderr, "Missing fields in arch_config.\n");
-        return -1;
-    }
+    CHECK_JSON_NULL(gicd_base_json, "gicd_base_json")
+    CHECK_JSON_NULL(gicr_base_json, "gicr_base_json")
+    CHECK_JSON_NULL(gicd_size_json, "gicd_size_json")
+    CHECK_JSON_NULL(gicr_size_json, "gicr_size_json")
+
     if (gits_base_json == NULL || gits_size_json == NULL) {
         printf("No gits fields in arch_config.\n");
     } else {
@@ -186,15 +198,18 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
     cJSON *mem32_size_json = cJSON_GetObjectItem(pci_config_json, "mem32_size");
     cJSON *mem64_size_json = cJSON_GetObjectItem(pci_config_json, "mem64_size");
 
-    if (ecam_base_json == NULL || io_base_json == NULL ||
-        mem32_base_json == NULL || mem64_base_json == NULL ||
-        ecam_size_json == NULL || io_size_json == NULL ||
-        mem32_size_json == NULL || mem64_size_json == NULL ||
-        pci_io_base_json == NULL || pci_mem32_base_json == NULL ||
-        pci_mem64_base_json == NULL) {
-        fprintf(stderr, "Missing fields in pci_config.\n");
-        return -1;
-    }
+    CHECK_JSON_NULL(ecam_base_json, "ecam_base_json")
+    CHECK_JSON_NULL(io_base_json, "io_base_json")
+    CHECK_JSON_NULL(mem32_base_json, "mem32_base_json")
+    CHECK_JSON_NULL(mem64_base_json, "mem64_base_json")
+    CHECK_JSON_NULL(ecam_size_json, "ecam_size_json")
+    CHECK_JSON_NULL(io_size_json, "io_size_json")
+    CHECK_JSON_NULL(mem32_size_json, "mem32_size_json")
+    CHECK_JSON_NULL(mem64_size_json, "mem64_size_json")
+    CHECK_JSON_NULL(pci_io_base_json, "pci_io_base_json")
+    CHECK_JSON_NULL(pci_mem32_base_json, "pci_mem32_base_json")
+    CHECK_JSON_NULL(pci_mem64_base_json, "pci_mem64_base_json")
+
     config->pci_config.ecam_base = strtoull(ecam_base_json->valuestring, NULL, 16);
     config->pci_config.io_base = strtoull(io_base_json->valuestring, NULL, 16);
     config->pci_config.mem32_base = strtoull(mem32_base_json->valuestring, NULL, 16);
@@ -228,15 +243,18 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
     cJSON *mem32_size_json = cJSON_GetObjectItem(pci_config_json, "mem32_size");
     cJSON *mem64_size_json = cJSON_GetObjectItem(pci_config_json, "mem64_size");
 
-    if (ecam_base_json == NULL || io_base_json == NULL ||
-        mem32_base_json == NULL || mem64_base_json == NULL ||
-        ecam_size_json == NULL || io_size_json == NULL ||
-        mem32_size_json == NULL || mem64_size_json == NULL ||
-        pci_io_base_json == NULL || pci_mem32_base_json == NULL ||
-        pci_mem64_base_json == NULL) {
-        fprintf(stderr, "Missing fields in pci_config.\n");
-        return -1;
-    }
+    CHECK_JSON_NULL(ecam_base_json, "ecam_base_json")
+    CHECK_JSON_NULL(io_base_json, "io_base_json")
+    CHECK_JSON_NULL(mem32_base_json, "mem32_base_json")
+    CHECK_JSON_NULL(mem64_base_json, "mem64_base_json")
+    CHECK_JSON_NULL(ecam_size_json, "ecam_size_json")
+    CHECK_JSON_NULL(io_size_json, "io_size_json")
+    CHECK_JSON_NULL(mem32_size_json, "mem32_size_json")
+    CHECK_JSON_NULL(mem64_size_json, "mem64_size_json")
+    CHECK_JSON_NULL(pci_io_base_json, "pci_io_base_json")
+    CHECK_JSON_NULL(pci_mem32_base_json, "pci_mem32_base_json")
+    CHECK_JSON_NULL(pci_mem64_base_json, "pci_mem64_base_json")
+
     config->pci_config.ecam_base = strtoull(ecam_base_json->valuestring, NULL, 16);
     config->pci_config.io_base = strtoull(io_base_json->valuestring, NULL, 16);
     config->pci_config.mem32_base = strtoull(mem32_base_json->valuestring, NULL, 16);
@@ -291,13 +309,19 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
     cJSON *interrupts_json = cJSON_GetObjectItem(root, "interrupts");
     cJSON *ivc_configs_json = cJSON_GetObjectItem(root, "ivc_configs");
     
-    if (!zone_id_json || !cpus_json || !name_json || 
-        !memory_regions_json || !kernel_filepath_json || 
-        !dtb_filepath_json || !kernel_load_paddr_json || 
-        !dtb_load_paddr_json || !entry_point_json || !interrupts_json || !ivc_configs_json) {
-            fprintf(stderr, "Error: Missing fields in JSON.\n");
-            goto err_out;
-    }
+    CHECK_JSON_NULL_ERR_OUT(zone_id_json, "zone_id_json")
+    CHECK_JSON_NULL_ERR_OUT(cpus_json, "cpus_json")
+    CHECK_JSON_NULL_ERR_OUT(name_json, "name_json")
+    CHECK_JSON_NULL_ERR_OUT(memory_regions_json, "memory_regions_json")
+    CHECK_JSON_NULL_ERR_OUT(kernel_filepath_json, "kernel_filepath_json")
+    CHECK_JSON_NULL_ERR_OUT(dtb_filepath_json, "dtb_filepath_json")
+    CHECK_JSON_NULL_ERR_OUT(kernel_load_paddr_json, "kernel_load_paddr_json")
+    CHECK_JSON_NULL_ERR_OUT(dtb_load_paddr_json, "dtb_load_paddr_json")
+    CHECK_JSON_NULL_ERR_OUT(entry_point_json, "entry_point_json")
+    CHECK_JSON_NULL_ERR_OUT(kernel_args_json, "kernel_args_json")
+    CHECK_JSON_NULL_ERR_OUT(interrupts_json, "interrupts_json")
+    CHECK_JSON_NULL_ERR_OUT(ivc_configs_json, "ivc_configs_json")
+
     config->zone_id = zone_id_json->valueint;
 
     int num_cpus = cJSON_GetArraySize(cpus_json);
