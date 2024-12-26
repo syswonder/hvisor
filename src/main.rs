@@ -46,7 +46,6 @@ mod zone;
 mod config;
 mod ivc;
 mod pci;
-
 mod tests;
 
 #[cfg(target_arch = "aarch64")]
@@ -185,7 +184,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         if is_primary { "Primary" } else { "Secondary" },
         cpu.id
     );
-    
+
     #[cfg(target_arch = "aarch64")]
     setup_parange();
     
@@ -196,7 +195,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     }
     
     per_cpu_init(cpu);
-    // device::irqchip::percpu_init();
+    device::irqchip::percpu_init();
     
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
 
@@ -211,7 +210,9 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     // run all unit tests before starting the root zone
     // CAUTION: test_main will quit qemu after all tests are done
     #[cfg(test)]
-    test_main();
+    if is_primary {
+        test_main();
+    }
 
     cpu.run_vm();
 }

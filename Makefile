@@ -75,11 +75,14 @@ jlink-server:
 cp: all
 	cp $(hvisor_bin) ~/tftp
 
-cargo-run:
-	cargo run $(build_args)
+test-pre:
+	qemu-img create -f raw _cargo_test_uboot_flash.img 16M
 
 test:
-	cargo test $(build_args)
+	@cp .cargo/config .cargo/config.bak
+	@sed "s|___HVISOR_SRC___|$(shell pwd)|g" .cargo/config.bak > .cargo/config
+	cargo test $(build_args) -vv
+	@mv .cargo/config.bak .cargo/config
 
 clean:
 	cargo clean

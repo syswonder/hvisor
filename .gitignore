@@ -25,3 +25,4 @@ Image*
 *.qcow2
 *.dtb
 .DS_Store
+flash.img
