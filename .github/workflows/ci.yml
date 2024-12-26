@@ -10,7 +10,6 @@ on:
 env:
   ARCH: aarch64
   RUSTC_TARGET: aarch64-unknown-none
-  QEMU_ARGS: -machine virt,secure=on,gic-version=3,virtualization=on,iommu=smmuv3 -global arm-smmuv3.stage=2 -cpu cortex-a57 -smp 1 -m 3G -nographic -semihosting -kernel
   MODE: debug
   FEATURES: platform_qemu
 jobs:
@@ -30,18 +29,14 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-aarch64 gdb-multiarch llvm-dev libclang-dev
+          sudo apt-get install -y qemu-system-aarch64 gdb-multiarch llvm-dev libclang-dev wget
           cargo install cargo-binutils
           cargo install cargo-xbuild
 
       - name: Build hvisor
         run: |
-          cargo build --target ${{ env.RUSTC_TARGET }} \
-                      --features "${{ env.FEATURES }}" \
-                      -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem
+          make
 
       - name: Run Tests
         run: |
-          cargo test --target ${{ env.RUSTC_TARGET }} \
-                     --features "${{ env.FEATURES }}" \
-                     -Z build-std=core,alloc -Z build-std-features=compiler-builtins-mem
+          make test

@@ -9,7 +9,8 @@ THIS=$(basename $0)
 CARGO_BUILD_INPUT_ARG0=$1
 
 ARCH=aarch64
-UBOOT=images/aarch64/bootloader/u-boot.bin
+UBOOT=images/aarch64/bootloader/u-boot-atf.bin
+# UBOOT=u-boot.bin
 
 HVISOR_ELF=$CARGO_BUILD_INPUT_ARG0
 HVISOR_BIN_TMP=$HVISOR_ELF.bin.tmp
@@ -31,7 +32,9 @@ mkimage -n hvisor_img -A arm64 -O linux -C none -T kernel -a 0x40400000 \
 	-e 0x40400000 -d $HVISOR_BIN_TMP $HVISOR_BIN
 
 info "Running QEUM with $HVISOR_BIN"
-qemu-system-aarch64 -machine virt,secure=on,gic-version=3,virtualization=on,iommu=smmuv3 \
+
+qemu-system-aarch64 \
+    -machine virt,secure=on,gic-version=3,virtualization=on,iommu=smmuv3 \
     -global arm-smmuv3.stage=2 \
     -cpu cortex-a57 -smp 4 -m 3G -nographic \
     -semihosting \
