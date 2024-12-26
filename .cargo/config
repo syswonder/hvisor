@@ -5,7 +5,7 @@ rustflags = [
 ]
 
 [target.aarch64-unknown-none]
-runner = "/Users/wheatfox/Code/hvisor/_cargo_test.sh"
+runner = "___HVISOR_SRC___/_cargo_test.sh"
 rustflags = [
     "-Clink-arg=-Tscripts/qemu-aarch64.ld",
     "-Ctarget-feature=+a53,+v8a,+strict-align,-neon,-fp-armv8",
