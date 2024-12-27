@@ -24,7 +24,7 @@ YELLOW='\033[1;33m'
 END='\033[0m'
 
 info() {
-    echo -e "${YELLOW}[INFO | $THIS] $1${END}"
+    echo "${YELLOW}[INFO | $THIS] $1${END}"
 }
 
 info "Building hvisor with $CARGO_BUILD_INPUT_ARGS"
