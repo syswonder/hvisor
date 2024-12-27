@@ -1,3 +1,5 @@
+#!/bin/sh
+
 # for hvisor's unit test when running cargo test
 # passed to .cargo/config
 # runner = "___HVISOR_SRC___/_cargo_test.sh"
@@ -19,9 +21,9 @@ HVISOR_BIN=$HVISOR_ELF.bin
 OBJCOPY=rust-objcopy
 
 YELLOW='\033[1;33m'
-END='\033[0m'·
+END='\033[0m'
 
-function info() {
+info() {
     echo -e "${YELLOW}[INFO | $THIS] $1${END}"
 }
 
