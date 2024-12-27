@@ -27,7 +27,7 @@ info() {
     echo "${YELLOW}[INFO | $THIS] $1${END}"
 }
 
-info "Building hvisor with $CARGO_BUILD_INPUT_ARGS"
+info "Building hvisor with $CARGO_BUILD_INPUT_ARG0"
 info "PWD=$PWD, running cargo test"
 $OBJCOPY $HVISOR_ELF --strip-all -O binary $HVISOR_BIN_TMP
 mkimage -n hvisor_img -A arm64 -O linux -C none -T kernel -a 0x40400000 \
