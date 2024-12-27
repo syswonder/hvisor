@@ -43,3 +43,5 @@ qemu-system-aarch64 \
     -bios $UBOOT \
     -drive if=pflash,format=raw,index=1,file=flash.img \
     -device loader,file=$HVISOR_BIN,addr=0x40400000,force-raw=on
+
+mv .cargo/config.bak .cargo/config

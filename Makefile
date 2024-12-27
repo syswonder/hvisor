@@ -86,13 +86,16 @@ flash-img:
 
 download-test-img:
 # first check whether the file exists
-	@if [ ! -f "flash.img" ]; then echo "\nflash.img not found, downloading...\n" && wget https://github.com/enkerewpo/hvisor-uboot-env-img/releases/download/v20241226/flash.img ; else echo "\nflash.img found\n"; fi
+	@if [ ! -f "flash.img" ]; then echo "\nflash.img not found, downloading...\n" && \
+		wget https://github.com/enkerewpo/hvisor-uboot-env-img/releases/download/v20241227/flash.img.partial && \
+		./_extract.sh ; \
+	else echo "\nflash.img found\n"; \
+	fi
 
 test: test-pre
-	@cp .cargo/config .cargo/config.bak
-	@sed "s|___HVISOR_SRC___|$(shell pwd)|g" .cargo/config.bak > .cargo/config
+	cp .cargo/config .cargo/config.bak
+	sed "s|___HVISOR_SRC___|$(shell pwd)|g" .cargo/config.bak > .cargo/config
 	cargo test $(build_args) -vv
-	@mv .cargo/config.bak .cargo/config
 
 clean:
 	cargo clean
