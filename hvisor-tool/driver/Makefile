@@ -6,7 +6,7 @@ else ifeq ($(ARCH), riscv)
 	COMPILE := riscv64-unknown-linux-gnu-
 endif
 
-EXTRA_CFLAGS += -I$(shell pwd)/../include
+EXTRA_CFLAGS += -I$(shell pwd)/../include -Werror -Wall
 
 ivc-y := ivc_driver.o 
 
