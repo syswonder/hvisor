@@ -119,13 +119,13 @@ static __u64 load_image_to_memory(const char *path, __u64 load_paddr)
 
 #define CHECK_JSON_NULL(json_ptr, json_name) \
     if (json_ptr == NULL) { \
-        fprintf(stderr, "%s is missing in pci_config.\n", json_name); \
+        fprintf(stderr, "\'%s\' is missing in json file.\n", json_name); \
         return -1; \
     }
 
 #define CHECK_JSON_NULL_ERR_OUT(json_ptr, json_name) \
     if (json_ptr == NULL) { \
-        fprintf(stderr, "%s is missing in pci_config.\n", json_name); \
+        fprintf(stderr, "\'%s\' is missing in json file.\n", json_name); \
         goto err_out; \
     }
 
