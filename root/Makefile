@@ -1,4 +1,4 @@
-KDIR ?= ../../nxp/OK8MP-linux-kernel
+KDIR ?= ~/linux
 DEV ?= /dev/sda1
 ARCH ?= arm64
 LOG ?= LOG_WARN
@@ -8,6 +8,11 @@ export KDIR
 export ARCH
 export LOG
 .PHONY: all env tools driver clean
+
+# check if KDIR is set
+ifeq ($(KDIR),)
+$(error Linux kernel directory is not set. Please set environment variable 'KDIR')
+endif
 
 all: tools driver
 

@@ -8,7 +8,7 @@
 #include <stdint.h>
 #include <signal.h>
 #include <poll.h>
-
+#include <unistd.h>
 #include "ivc.h"
 volatile char *out, *in;
 struct pollfd pfd;
@@ -31,6 +31,11 @@ int main(int argc, char *argv[]) {
     void *tb_virt, *mem_virt;
     unsigned long long ct_ipa, offset;
     
+    if (argc != 2) {
+        printf("Usage: ivc_demo send|receive\n");
+        return -1;
+    }
+
     if (strcmp(argv[1], "send") == 0) {
         is_send = 1;
     } else if (strcmp(argv[1], "receive") == 0) {
