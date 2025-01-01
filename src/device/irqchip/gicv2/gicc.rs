@@ -68,8 +68,8 @@ pub static GICC: GicRef<GicCpuInterface> = unsafe { GicRef::new(GICV2.gicc_base 
 impl GicCpuInterface {
     // init GICC for each CPU.
     pub fn init(&self) {
-        // Ensure all SGIs enabled
-        GICD.set_isenabler(0, 0x0000FFFF);
+        // Ensure all SGIs disabled.
+        GICD.set_icenabler(0, 0x0000FFFF);
         // get ctrl and pmr value
         let gicc_ctrl = self.CTLR.get();
         let gicc_pmr = self.PMR.get();
@@ -91,9 +91,13 @@ impl GicCpuInterface {
         GICH.set_hcr(GICV2_GICH_HCR_EN);
         // Clear all lr registers in GICH.
         GICH.clear_all_lr();
-        // Deactivate all active SGIS
+        // Deactivate all active and pending SGIS
         let gicd_isactive = GICD.get_isactiver(0);
+        let gicd_ispend = GICD.get_spendsgir(0);
         GICD.set_icactiver(0, gicd_isactive & 0xffff);
+        GICD.set_cpendsgir(0, gicd_ispend & 0xffff);
+        // re-enable all SGIs
+        GICD.set_isenabler(0, 0x0000FFFF);
         info!("GICV2: GICC init done.");
     }
 

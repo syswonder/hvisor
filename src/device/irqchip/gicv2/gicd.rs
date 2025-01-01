@@ -145,6 +145,23 @@ impl GicDistributer {
     }
 
     pub fn get_isenabler(&self, index: usize) -> u32 { self.ISENABLER[index].get() }
+
+    pub fn set_icpender(&self, index: usize, value: u32) {
+        self.ICPENDR[index].set(value);
+    }
+
+    pub fn get_ispendr(&self, index: usize) -> u32 {
+        self.ISPENDR[index].get()
+    }
+
+    pub fn get_spendsgir(&self, index: usize) -> u32 {
+        self.SPENDSGIR[index].get()
+    }
+
+    pub fn set_cpendsgir(&self, index: usize, value: u32) {
+        self.CPENDSGIR[index].set(value);
+    }
+
 }
 
 // Get the maximum number of interrupt IDs that the GIC supports.

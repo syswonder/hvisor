@@ -33,7 +33,12 @@ pub struct Gicv2 {
 
 pub static GICV2: Gicv2 = Gicv2 {
     gicd_base: ROOT_ARCH_ZONE_CONFIG.gicd_base,
-    gicc_base: ROOT_ARCH_ZONE_CONFIG.gicc_base,
+    /*
+     * Some boards have the GIC CPU interface registers alias, which will overlap DIR register, so we need to add an offset to
+     * find the last gic cpu alias region.
+     * ref: https://github.com/Xilinx/qemu-devicetrees/commit/09d4c3200538dc90082fbda9289e2af9794b9a28
+     */
+    gicc_base: ROOT_ARCH_ZONE_CONFIG.gicc_base + ROOT_ARCH_ZONE_CONFIG.gicc_offset,
     gich_base: ROOT_ARCH_ZONE_CONFIG.gich_base,
     gicv_base: ROOT_ARCH_ZONE_CONFIG.gicv_base,
 };

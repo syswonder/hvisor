@@ -57,6 +57,7 @@ pub struct HvArchZoneConfig {
     pub gits_base: usize,
     pub gits_size: usize,
     pub gicc_base: usize,
+    pub gicc_offset: usize,
     pub gicc_size: usize,
     pub gich_base: usize,
     pub gich_size: usize,
