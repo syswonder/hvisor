@@ -3,7 +3,9 @@ use core::ptr::write_volatile;
 use alloc::{collections::{btree_map::BTreeMap, btree_set::BTreeSet}, vec::Vec};
 use spin::Mutex;
 
-use crate::{config::{HvIvcConfig, CONFIG_MAX_IVC_CONGIGS}, consts::PAGE_SIZE, device::irqchip::gicv3::{gicd::{GICD_ICPENDR, GICD_ISPENDR}, host_gicd_base}, error::HvResult, hypercall::SGI_IPI_ID, memory::{Frame, GuestPhysAddr, MMIOAccess, MemFlags, MemoryRegion}, zone::{find_zone, this_zone_id, Zone}};
+use crate::{config::{HvIvcConfig, CONFIG_MAX_IVC_CONGIGS}, consts::PAGE_SIZE, error::HvResult, hypercall::SGI_IPI_ID, memory::{Frame, GuestPhysAddr, MMIOAccess, MemFlags, MemoryRegion}, zone::{find_zone, this_zone_id, Zone}};
+use crate::device::irqchip::set_ispender;
+
 // ivc_id -> ivc_record
 static IVC_RECORDS: Mutex<BTreeMap<u32, IvcRecord>> = Mutex::new(BTreeMap::new());
 // zone id -> zone's IvcInfo
@@ -21,7 +23,7 @@ pub struct IvcInfo {
     ivc_shmem_ipas: [u64; CONFIG_MAX_IVC_CONGIGS],
     /// The ivc_id of each ivc region
     ivc_ids: [u32; CONFIG_MAX_IVC_CONGIGS],
-    /// The irq number of each ivc region 
+    /// The irq number of each ivc region
     ivc_irqs: [u32; CONFIG_MAX_IVC_CONGIGS]
 }
 
@@ -53,9 +55,9 @@ fn insert_ivc_record(ivc_config: &HvIvcConfig, zone_id: u32) -> Result<(bool, us
     if let Some(rec) = recs.get_mut(&ivc_id) {
         if rec.max_peers != ivc_config.max_peers || rec.rw_sec_size != ivc_config.rw_sec_size ||
             rec.out_sec_size != ivc_config.out_sec_size {
-                error!("ivc config conflicts!!!");
-                return Err(());
-            }
+            error!("ivc config conflicts!!!");
+            return Err(());
+        }
         if rec.peer_infos.len() == rec.max_peers as _{
             error!("can't add more peers to ivc_id {}", ivc_id);
             return Err(());
@@ -130,9 +132,9 @@ impl Zone {
                         flags)).unwrap();
                 }
                 self.mmio_region_register(
-                    ivc_config.control_table_ipa as _, 
-                    PAGE_SIZE, 
-                    mmio_ivc_handler, 
+                    ivc_config.control_table_ipa as _,
+                    PAGE_SIZE,
+                    mmio_ivc_handler,
                     ivc_config.control_table_ipa as _);
             } else {
                 return ;
@@ -156,9 +158,9 @@ pub fn mmio_ivc_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     let ivc_infos = IVC_INFOS.lock();
     let ivc_info = ivc_infos.get(&zone_id).unwrap();
     let ivc_id = (0..ivc_info.len as usize)
-                        .find(|&i| ivc_info.ivc_ct_ipas[i] == base as _)
-                        .map(|i| ivc_info.ivc_ids[i])
-                        .unwrap();
+        .find(|&i| ivc_info.ivc_ct_ipas[i] == base as _)
+        .map(|i| ivc_info.ivc_ids[i])
+        .unwrap();
     drop(ivc_infos);
     let recs = IVC_RECORDS.lock();
     let rec = recs.get(&ivc_id).unwrap();
@@ -169,9 +171,9 @@ pub fn mmio_ivc_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
         CT_OUT_SEC_SIZE => rec.out_sec_size as usize,
         CT_PEER_ID => {
             let peer_id = rec.peer_infos.iter()
-            .find(|&(peer_id, info)| info.zone_id == zone_id as _)
-            .map(|(peer_id, _)| *peer_id)
-            .unwrap();
+                .find(|&(peer_id, info)| info.zone_id == zone_id as _)
+                .map(|(peer_id, _)| *peer_id)
+                .unwrap();
             peer_id as usize
         },
         CT_IPI_INVOKE if is_write => {
@@ -181,14 +183,12 @@ pub fn mmio_ivc_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
                 None => {
                     error!("zone {} has no peer {}", zone_id, peer_id);
                     return hv_result_err!(EINVAL);
-                } 
+                }
             } as usize;
-            unsafe {
-                write_volatile((host_gicd_base() + GICD_ISPENDR + (irq_num / 32) * 4) as *mut u32, 1 << (irq_num % 32))
-            }
+            set_ispender(irq_num / 32, 1 << (irq_num % 32));
             return Ok(())
         },
-        _ => return hv_result_err!(EFAULT), 
+        _ => return hv_result_err!(EFAULT),
     };
     Ok(())
 }

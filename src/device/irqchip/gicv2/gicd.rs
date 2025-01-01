@@ -162,6 +162,7 @@ impl GicDistributer {
         self.CPENDSGIR[index].set(value);
     }
 
+    pub fn set_ispender(&self, index: usize, value: u32) { self.ISPENDR[index].set(value); }
 }
 
 // Get the maximum number of interrupt IDs that the GIC supports.
@@ -180,3 +181,6 @@ pub fn host_gicd_base() -> usize {
     GICV2.gicd_base
 }
 
+pub fn set_ispender(index:usize, value:u32) {
+    GICD.set_ispender(index,value);
+}
