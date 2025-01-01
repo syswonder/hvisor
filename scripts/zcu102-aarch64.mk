@@ -30,6 +30,7 @@ ROOT_LINUX_IMAGE_BIN = $(ROOT_LINUX_IMAGE).bin
 ROOT_LINUX_ROOTFS = $(PETALINUX_PROJECT_PATH)/images/linux/rootfs.cpio.gz.u-boot
 # ROOT_LINUX_DTB = $(PETALINUX_PROJECT_PATH)/images/linux/system.dtb
 ROOT_LINUX_DTB = $(shell readlink -f ./images/aarch64/devicetree/zcu102-root-aarch64.dtb)
+ROOT_LINUX_SD_IMG = $(shell readlink -f ./sd.img)
 
 # notes on uboot FIT:
 # please pass the raw vmlinux and hvisor stripped binary in uboot's its
@@ -41,6 +42,7 @@ TARGET_FIT_IMAGE_PATH = $(shell readlink -f $(TARGET_FIT_IMAGE))
 
 GDB ?= aarch64-linux-gnu-gdb
 READELF ?= aarch64-linux-gnu-readelf
+OBJDUMP = aarch64-linux-gnu-objdump
 
 ifndef PETALINUX_SDK_ROOT
 	PETALINUX_SDK_ROOT = $(DEFAULT_PETALINUX_SDK_PATH)
@@ -86,6 +88,8 @@ gen-fit: $(hvisor_bin) dtb
 # args passed to xilinx's qemu
 EXTRA_QEMU_ARGS =
 EXTRA_QEMU_ARGS += -device loader,file=$(TARGET_FIT_IMAGE_PATH),addr=0x10000000,force-raw=on
+# add SD
+EXTRA_QEMU_ARGS += -drive file=$(ROOT_LINUX_SD_IMG),format=raw,if=sd
 
 .PHONY: run-pl-qemu
 run-pl-qemu: $(hvisor_bin) gen-fit
@@ -117,3 +121,19 @@ pl-build:
 vmlinux-info:
 	@$(READELF) -h $(ROOT_LINUX_IMAGE) | grep "Entry point address" | awk '{print $$0}'
 	@$(READELF) -l $(ROOT_LINUX_IMAGE) | awk '{print $$0}'
+
+.PHONY: disasm-vmlinux
+disasm-vmlinux:
+	@$(OBJDUMP) -d $(ROOT_LINUX_IMAGE) > target/petalinux-vmlinux-disasm.txt
+
+.PHONY: pl-config
+pl-config:
+	@echo "Configuring petalinux project..."
+	bash -c "source $(PETALINUX_SDK_ROOT)/settings.sh && \
+		cd $(PETALINUX_PROJECT_PATH) && petalinux-config"
+
+.PHONY: sd-image
+# you can customized the real rootfs by changing the content of this sd.img
+sd-image:
+	@echo "Creating SD card image..."
+	qemu-img create -f raw sd.img 1G

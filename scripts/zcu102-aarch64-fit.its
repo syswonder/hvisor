@@ -30,7 +30,7 @@
             type = "flat_dt";
             arch = "arm64";
             compression = "none";
-            load = <0x100000>;
+            load = <0x04000000>;
         };
 
         hvisor {
