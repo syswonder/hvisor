@@ -1,5 +1,5 @@
 use crate::{
-    arch::{mm::new_s2_memory_set, sysreg::write_sysreg}, consts::{PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE}, device::irqchip::gicv3::{gicr::{GICR_ICACTIVER, GICR_ICENABLER, GICR_ISENABLER, GICR_SGI_BASE}, host_gicr_base, MAINTENACE_INTERRUPT}, memory::{
+    arch::{mm::new_s2_memory_set, sysreg::write_sysreg}, consts::{PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE}, memory::{
         addr::PHYS_VIRT_OFFSET, mm::PARKING_MEMORY_SET, GuestPhysAddr, HostPhysAddr, MemFlags,
         MemoryRegion, VirtAddr, PARKING_INST_PAGE,
     }, percpu::this_cpu_data

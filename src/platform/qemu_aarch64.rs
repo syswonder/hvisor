@@ -39,6 +39,7 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     gicr_size: 0xf60000,
     gicc_base: 0x8010000,
     gicc_size: 0x10000,
+    gicc_offset: 0x0,
     gich_base: 0x8030000,
     gich_size: 0x10000,
     gicv_base: 0x8040000,
@@ -61,8 +62,6 @@ pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
     pci_mem64_base: 0x8000000000,
 };
 
-pub const ROOT_PCI_DEVS: [u64; 2] = [0, 1 << 3];
-
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 1] = [
     HvIvcConfig {
         ivc_id: 0,
@@ -75,3 +74,5 @@ pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 1] = [
         max_peers: 2,
     }
 ];
+
+pub const ROOT_PCI_DEVS: [u64; 2] = [0, 1 << 3];

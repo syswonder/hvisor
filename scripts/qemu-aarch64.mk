@@ -1,13 +1,13 @@
-QEMU := sudo qemu-system-aarch64
+QEMU := qemu-system-aarch64
 
 ifeq ($(gic_version), 3)
     UBOOT := $(image_dir)/bootloader/u-boot-atf.bin
     zone0_dtb := $(image_dir)/devicetree/linux1.dtb
-    QEMU_ARGS := -machine virt,secure=on,gic-version=3,virtualization=on
+    QEMU_ARGS := -machine virt,secure=on,gic-version=3,virtualization=on,iommu=smmuv3
 else
     UBOOT := $(image_dir)/bootloader/u-boot-v2.bin
     zone0_dtb := $(image_dir)/devicetree/linux1-v2.dtb
-    QEMU_ARGS := -machine virt,secure=on,gic-version=2,virtualization=on
+    QEMU_ARGS := -machine virt,secure=on,gic-version=2,virtualization=on,iommu=smmuv3
 endif
 
 FSIMG1 := $(image_dir)/virtdisk/rootfs1.ext4
@@ -17,10 +17,10 @@ zone0_kernel := $(image_dir)/kernel/Image-5.4
 zone1_kernel := $(image_dir)/kernel/Image-5.4
 zone1_dtb    := $(image_dir)/devicetree/linux2.dtb
 
-QEMU_ARGS := -machine virt,secure=on,gic-version=3,virtualization=on,iommu=smmuv3
 QEMU_ARGS += -global arm-smmuv3.stage=2
 
 # QEMU_ARGS += -d int
+
 
 QEMU_ARGS += -cpu cortex-a53
 QEMU_ARGS += -smp 4

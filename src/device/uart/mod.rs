@@ -15,12 +15,6 @@ pub use xuartps::{console_getchar, console_putchar};
 #[cfg(all(feature = "platform_imx8mp", target_arch = "aarch64"))]
 pub use imx_uart::{console_getchar, console_putchar};
 
-#[cfg(all(feature = "platform_zcu102", target_arch = "aarch64"))]
-mod xuartps;
-
-#[cfg(all(feature = "platform_zcu102", target_arch = "aarch64"))]
-pub use xuartps::{console_getchar, console_putchar};
-
 #[cfg(target_arch = "riscv64")]
 pub use crate::arch::riscv64::sbi::{console_getchar, console_putchar};
 

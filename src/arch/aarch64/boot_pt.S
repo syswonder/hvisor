@@ -36,6 +36,7 @@ boot_pt_init:
     str x2, [x1, #0x18]
     ret
 
+
 enable_boot_pt:
     adrp x1, boot_pt_l0
     msr ttbr0_el2, x1
@@ -45,7 +46,7 @@ enable_boot_pt:
     dsb	nsh
 
     // enable mmu...
-    ldr	x1, =MAIR_FLAG     
+    ldr	x1, =MAIR_FLAG
     msr	mair_el2, x1       // memory attributes for pagetable
     ldr	x1, =TCR_FLAG
 	msr	tcr_el2, x1        // translate control, virt range = [0, 2^48)
