@@ -4,7 +4,7 @@ use core::arch::global_asm;
 use crate::{
     arch::{
         cpu::mpidr_to_cpuid,
-        sysreg::{read_sysreg, smc_call, write_sysreg},
+        sysreg::{read_sysreg, write_sysreg},
     },
     device::irqchip::gic_handle_irq,
     event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_WAKEUP},
@@ -13,7 +13,7 @@ use crate::{
     percpu::{get_cpu_data, this_cpu_data, this_zone, PerCpu},
     zone::{is_this_root_zone, remove_zone},
 };
-
+use crate::arch::sysreg::smc_call;
 use super::cpu::GeneralRegisters;
 
 global_asm!(
@@ -34,13 +34,14 @@ const SMC_TYPE_MASK: u64 = 0x3F000000;
 #[allow(non_snake_case)]
 pub mod SmcType {
     pub const ARCH_SC: u64 = 0x0;
-    pub const SIP_SC: u64 = 0x02000000;
-    pub const STANDARD_SC: u64 = 0x04000000;
+    pub const STANDARD_SC: u64 = 0x4000000;
+    pub const SIP_SC: u64 = 0x2000000;
 }
 
 const PSCI_VERSION_1_1: u64 = 0x10001;
 const PSCI_TOS_NOT_PRESENT_MP: u64 = 2;
 const ARM_SMCCC_VERSION_1_0: u64 = 0x10000;
+const ARM_SMCCC_NOT_SUPPORTED: i64 = -1;
 
 extern "C" {
     fn _hyp_trap_vector();
@@ -147,8 +148,8 @@ fn arch_handle_trap_el2(_regs: &mut GeneralRegisters) {
         }
         Some(ESR_EL2::EC::Value::DataAbortCurrentEL) => {
             println!(
-                "EL2 Exception: Data Abort, ELR_EL2: {:#x?}, FAR_EL2: {:#x?}",
-                elr, esr
+                "EL2 Exception: Data Abort, ELR_EL2: {:#x?}, ESR_EL2: {:#x?}, FAR_EL2: {:#x?}",
+                elr, esr, far
             );
             loop {}
         }
@@ -268,14 +269,17 @@ fn handle_hvc(regs: &mut GeneralRegisters) {
 fn handle_smc(regs: &mut GeneralRegisters) {
     let (code, arg0, arg1, arg2) = (regs.usr[0], regs.usr[1], regs.usr[2], regs.usr[3]);
     let cpu_data = this_cpu_data() as &mut PerCpu;
-    info!(
-        "SMC from CPU{}, func_id:{:#x?}, arg0:{:#x?}, arg1:{:#x?}, arg2:{:#x?}",
-        cpu_data.id, code, arg0, arg1, arg2
-    );
+    //info!(
+    //    "SMC from CPU{}, func_id:{:#x?}, arg0:{:#x?}, arg1:{:#x?}, arg2:{:#x?}",
+    //    cpu_data.id, code, arg0, arg1, arg2
+    //);
     let result = match code & SMC_TYPE_MASK {
         SmcType::ARCH_SC => handle_arch_smc(regs, code, arg0, arg1, arg2),
         SmcType::STANDARD_SC => handle_psci_smc(regs, code, arg0, arg1, arg2),
-        SmcType::SIP_SC => smc_call(code, &regs.usr[1..18]),
+        SmcType::SIP_SC => unsafe {
+            (regs.usr[0], regs.usr[1], regs.usr[2], regs.usr[3]) = smc_call!(code, arg0, arg1, arg2);
+            regs.usr[0]
+        },
         _ => {
             warn!("unsupported smc");
             0
