@@ -16,6 +16,9 @@ use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
 use crate::percpu::{get_cpu_data, this_zone, CpuSet};
 use core::panic;
 
+#[cfg(test)]
+pub mod tests;
+
 pub struct Zone {
     pub name: [u8; CONFIG_NAME_MAXLEN],
     pub id: usize,

@@ -13,9 +13,15 @@
 // 不使用main入口，使用自己定义实际入口_start，因为我们还没有初始化堆栈指针
 #![feature(asm_const)]
 #![feature(naked_functions)] //  surpport naked function
-#![feature(core_panic)]
+// #![feature(core_panic)]
 // 支持内联汇编
 // #![deny(warnings, missing_docs)] // 将warnings作为error
+
+// unittest
+#![feature(custom_test_frameworks)]
+#![test_runner(crate::tests::test_main)]
+#![reexport_test_harness_main = "test_main"]
+
 #[macro_use]
 extern crate alloc;
 extern crate buddy_system_allocator;
@@ -40,6 +46,7 @@ mod zone;
 mod config;
 mod ivc;
 mod pci;
+mod tests;
 
 #[cfg(target_arch = "aarch64")]
 use crate::arch::mm::setup_parange;
@@ -110,7 +117,9 @@ fn primary_init_early() {
     #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
     iommu_init();
 
+    #[cfg(not(test))]
     zone_create(root_zone_config()).unwrap();
+    
     INIT_EARLY_OK.store(1, Ordering::Release);
 }
 
@@ -178,23 +187,31 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
 
     #[cfg(target_arch = "aarch64")]
     setup_parange();
-
+    
     if is_primary {
         primary_init_early(); // create root zone here
     } else {
         wait_for_counter(&INIT_EARLY_OK, 1);
     }
-
+    
     per_cpu_init(cpu);
     device::irqchip::percpu_init();
-
+    
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
-    wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _);
 
+    wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _);
+    
     if is_primary {
         primary_init_late();
     } else {
         wait_for_counter(&INIT_LATE_OK, 1);
+    }
+
+    // run all unit tests before starting the root zone
+    // CAUTION: test_main will quit qemu after all tests are done
+    #[cfg(test)]
+    if is_primary {
+        test_main();
     }
 
     cpu.run_vm();
