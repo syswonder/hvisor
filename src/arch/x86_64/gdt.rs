@@ -45,15 +45,10 @@ impl GdtStruct {
         }
     }
 
-    pub fn load(&'static self) {
+    pub fn load(&self) {
         unsafe {
             lgdt(&self.pointer());
             CS::set_reg(GdtStruct::KCODE64_SELECTOR);
-        }
-    }
-
-    pub fn load_tss(&'static self) {
-        unsafe {
             load_tss(GdtStruct::TSS_SELECTOR);
         }
     }

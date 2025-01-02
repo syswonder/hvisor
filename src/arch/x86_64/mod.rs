@@ -10,6 +10,7 @@ pub mod paging;
 pub mod s1pt;
 pub mod s2pt;
 pub mod trap;
+pub mod vmx;
 pub mod zone;
 
 pub use s1pt::Stage1PageTable;

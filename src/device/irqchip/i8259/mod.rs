@@ -13,7 +13,9 @@ pub fn inject_irq(_irq: usize, _is_hardware: bool) {}
 
 pub fn percpu_init() {}
 
-pub fn primary_init_early() {}
+pub fn primary_init_early() {
+    warn!("x86_64: irqchip: primary_init_early do nothing");
+}
 
 pub fn primary_init_late() {}
 

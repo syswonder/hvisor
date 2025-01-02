@@ -1,6 +1,7 @@
 use super::cpu::this_cpu_id;
 use crate::arch::cpu;
 use crate::consts::PER_CPU_SIZE;
+use crate::memory::addr::PHYS_VIRT_OFFSET;
 use crate::rust_main;
 use core::arch::global_asm;
 use x86::msr::IA32_EFER;
@@ -9,7 +10,7 @@ use x86_64::registers::model_specific::EferFlags;
 
 const MULTIBOOT_HEADER_MAGIC: i32 = 0x1BADB002;
 const MULTIBOOT_HEADER_FLAGS: i32 = 0x00010002;
-const PHYS_VIRT_OFFSET: usize = 0xffff_ff80_0000_0000;
+const X86_PHYS_VIRT_OFFSET: usize = 0xffff_ff80_0000_0000;
 
 const CR0: u64 = Cr0Flags::PROTECTED_MODE_ENABLE.bits()
     | Cr0Flags::MONITOR_COPROCESSOR.bits()
@@ -26,7 +27,7 @@ global_asm!(
     multiboot_header_flags = const MULTIBOOT_HEADER_FLAGS,
     rust_entry = sym rust_entry,
     rust_entry_secondary = sym rust_entry_secondary,
-    offset = const PHYS_VIRT_OFFSET,
+    offset = const X86_PHYS_VIRT_OFFSET,
     per_cpu_size = const PER_CPU_SIZE,
     cr0 = const CR0,
     cr4 = const CR4,
@@ -51,11 +52,12 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
 
 fn rust_entry() {
     crate::clear_bss();
+    unsafe { PHYS_VIRT_OFFSET = X86_PHYS_VIRT_OFFSET };
     println!("");
     rust_main(this_cpu_id(), 0);
 }
 
 fn rust_entry_secondary() {
-    println!("CPUID: {}", this_cpu_id());
-    loop {}
+    // println!("CPUID: {}", this_cpu_id());
+    rust_main(this_cpu_id(), 0);
 }

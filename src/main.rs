@@ -14,6 +14,7 @@
 #![feature(asm_const)]
 #![feature(naked_functions)] //  surpport naked function
 #![feature(core_panic)]
+#![feature(concat_idents)]
 // 支持内联汇编
 // #![deny(warnings, missing_docs)] // 将warnings作为error
 #[macro_use]
@@ -105,7 +106,8 @@ fn primary_init_early() {
     device::irqchip::primary_init_early();
     // crate::arch::mm::init_hv_page_table().unwrap();
 
-    zone_create(root_zone_config()).unwrap();
+    // TODO:
+    // zone_create(root_zone_config()).unwrap();
     INIT_EARLY_OK.store(1, Ordering::Release);
 }
 
@@ -157,15 +159,35 @@ fn x86_rust_main_tmp(cpuid: usize, host_dtb: usize) {
     );
 
     #[cfg(target_arch = "x86_64")]
-    cpu.arch_cpu.per_cpu_init(); // load gdt and tss
+    cpu.arch_cpu.gdt.load(); // load gdt and tss
 
     if is_primary {
         wakeup_secondary_cpus(cpu.id, host_dtb);
     }
 
-    // x86_64::instructions::interrupts::int3();
-    println!("END OF MAIN");
+    ENTERED_CPUS.fetch_add(1, Ordering::SeqCst);
+    wait_for(|| PerCpu::entered_cpus() < MAX_CPU_NUM as _);
+    assert_eq!(PerCpu::entered_cpus(), MAX_CPU_NUM as _);
 
+    println!(
+        "{} CPU {} has entered.",
+        if is_primary { "Primary" } else { "Secondary" },
+        cpu.id
+    );
+
+    if is_primary {
+        primary_init_early(); // create root zone here
+
+        // TODO: tmp
+        cpu.boot_cpu = true;
+    } else {
+        wait_for_counter(&INIT_EARLY_OK, 1);
+    }
+
+    // x86_64::instructions::interrupts::int3();
+    // info!("END OF MAIN");
+
+    cpu.run_vm();
     loop {}
 }
 
