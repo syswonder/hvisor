@@ -76,7 +76,7 @@ cp: all
 	cp $(hvisor_bin) ~/tftp
 
 test-pre: download-test-img
-	chmod +x _cargo_test.sh
+	chmod +x ./tools/cargo_test.sh
 	@echo "pass"
 
 flash-img:
@@ -88,7 +88,7 @@ download-test-img:
 # first check whether the file exists
 	@if [ ! -f "flash.img" ]; then echo "\nflash.img not found, downloading...\n" && \
 		wget https://github.com/enkerewpo/hvisor-uboot-env-img/releases/download/v20241227/flash.img.partial && \
-		./_extract.sh ; \
+		./tools/extract.sh ; \
 	else echo "\nflash.img found\n"; \
 	fi
 
