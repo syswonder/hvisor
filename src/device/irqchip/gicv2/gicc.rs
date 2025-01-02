@@ -1,5 +1,10 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
+/// gicc layout definition and functions for gicc operations.
+/// author : ForeverYolo
+/// reference:
+/// 1. gicv2 spec : https://www.cl.cam.ac.uk/research/srg/han/ACS-P35/zynq/arm_gic_architecture_specification.pdf
+
 
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;

@@ -1,3 +1,9 @@
+
+/// This file defines and implements the functional functions of physical gicv2.
+/// author: ForeverYolo
+/// reference:
+/// 1. gicv2 spec : https://www.cl.cam.ac.uk/research/srg/han/ACS-P35/zynq/arm_gic_architecture_specification.pdf
+
 use crate::device::irqchip::gicv2::gicc::GICC;
 use crate::device::irqchip::gicv2::gicd::GICV2_SGIS_NUM;
 use crate::device::irqchip::gicv2::gich::{GICH, GICV2_GICH_LR_CPUID_SHIFT, GICV2_GICH_LR_HW, GICV2_GICH_LR_PENDING_STATE, GICV2_GICH_LR_PHYSID_SHIFT};

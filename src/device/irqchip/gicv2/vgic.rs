@@ -1,3 +1,8 @@
+/// This file defines and implements the functional functions of virtual gicv2.
+/// author: ForeverYolo
+/// reference:
+/// 1. gicv2 spec : https://www.cl.cam.ac.uk/research/srg/han/ACS-P35/zynq/arm_gic_architecture_specification.pdf
+
 use crate::zone::Zone;
 use crate::arch::zone::HvArchZoneConfig;
 use crate::device::irqchip::gicv2::GICV2;
@@ -5,7 +10,6 @@ use crate::memory::{mmio_perform_access, MMIOAccess, MemFlags, MemoryRegion};
 use crate::device::irqchip::gicv2::gicd::{get_max_int_num, GICD, GICD_SGIR_REG_OFFSET, GICD_CTRL_REG_OFFSET, GICD_ICACTIVER_REG_OFFSET, GICD_ICENABLER_REG_OFFSET, GICD_ICFGR_REG_OFFSET, GICD_ICPENDR_REG_OFFSET, GICD_IDENTIFICATION_NUM, GICD_IDENTIFICATION_OFFSET, GICD_IGROUPR_REG_OFFSET, GICD_IIDR_REG_OFFSET, GICD_IPRIORITYR_REG_OFFSET, GICD_ISACTIVER_REG_OFFSET, GICD_ISENABLER_REG_OFFSET, GICD_ISPENDR_REG_OFFSET, GICD_ITARGETSR_REG_OFFSET, GICD_LOCK, GICD_TYPER_REG_OFFSET, GICV2_CONFIG_REGS_NUM, GICV2_INT_REGS_NUM, GICV2_PRIO_REGS_NUM, GICV2_TARGET_REGS_NUM, GICD_SGIR_ROUTING_SHIFT, GICD_SGIR_TARGET_LIST_FILTER_SHIFT};
 use crate::error::HvResult;
 use crate::percpu::this_zone;
-
 
 const GICV2_REG_WIDTH: usize = 4;
 

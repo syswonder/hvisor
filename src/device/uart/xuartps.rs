@@ -1,9 +1,12 @@
+#![allow(unused_variables)]
+#![allow(dead_code)]
 /// UART driver for Xilinx Zynq Ultrascale+ MPSoC ZCU102 board.
 /// author: wheatfox (enkerewpo@hotmail.com)
 /// references:
 /// 1. Zynq UltraScale+ Device TRM UG1085 (v2.4) December 21, 2023 Chapter 21
 /// 2. https://github.com/Xilinx/linux-xlnx :: drivers/tty/serial/xilinx_uartps.c
 /// 3. https://github.com/torvalds/linux/blob/master/drivers/tty/serial/xilinx_uartps.c
+
 use crate::memory::addr::{PhysAddr, VirtAddr};
 use spin::Mutex;
 use tock_registers::{

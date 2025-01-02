@@ -1,5 +1,8 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
+/// gich layout definition and functions for gich operations.
+/// author : ForeverYolo
+
 
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;

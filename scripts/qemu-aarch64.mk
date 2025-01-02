@@ -1,13 +1,15 @@
 QEMU := qemu-system-aarch64
 
-ifeq ($(gic_version), 3)
+ifeq ($(findstring gicv3, $(FEATURES)),gicv3)
     UBOOT := $(image_dir)/bootloader/u-boot-atf.bin
     zone0_dtb := $(image_dir)/devicetree/linux1.dtb
     QEMU_ARGS := -machine virt,secure=on,gic-version=3,virtualization=on,iommu=smmuv3
+    MESSAGE := "Note: Feature contains gicv3"
 else
     UBOOT := $(image_dir)/bootloader/u-boot-v2.bin
     zone0_dtb := $(image_dir)/devicetree/linux1-v2.dtb
     QEMU_ARGS := -machine virt,secure=on,gic-version=2,virtualization=on,iommu=smmuv3
+    MESSAGE := "Note: Feature contains gicv2"
 endif
 
 FSIMG1 := $(image_dir)/virtdisk/rootfs1.ext4
