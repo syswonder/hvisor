@@ -13,6 +13,39 @@ hvisor-tool
 
 以下操作均在x86主机的目录`hvisor-tool`下，进行交叉编译。
 
+* 安装libdrm
+
+我们需要安装libdrm来编译Virtio-gpu，假设目标平台为**arm64**。
+
+```shell
+wget https://dri.freedesktop.org/libdrm/libdrm-2.4.100.tar.gz
+tar -xzvf libdrm-2.4.100.tar.gz
+cd libdrm-2.4.100
+```
+
+tips: 2.4.100以上的libdrm需要使用meson等进行编译，较为麻烦，https://dri.freedesktop.org/libdrm有更多版本。
+
+```shell
+# 安装到你的aarch64-linux-gnu编译器
+./configure --host=aarch64-linux-gnu --prefix=/usr/aarch64-linux-gnu && make && make install
+
+# 安装到libdrm目录下的`install`文件夹
+mkdir install
+./configure --host=aarch64-linux-gnu --prefix=/path_to_install/install && make && make install
+
+# `prefix`必须是一个绝对路径
+```
+
+如果需要使用语言服务器的语法支持，那么需要将安装地址的include和lib文件夹链到相关的配置文件中。
+
+最后，我们需要修改hvisor-tool/tools/Makefiles的`include_dirs`字段。
+
+```
+include_dirs := -I../include -I./include -I../cJSON/ -I/usr/aarch64-linux-gnu/include -I/usr/aarch64-linux-gnu/include/libdrm -L/usr/aarch64-linux-gnu/lib -ldrm -pthread
+```
+
+tips: 上面的路径应该是你的安装路径。
+
 * 编译命令行工具及内核模块
 
 ```bash
@@ -128,6 +161,16 @@ nohup ./hvisor virtio start virtio_cfg.json &
 4. 创建Virtio-net设备
 
 由于`net`设备的`status`属性为`disable`，因此不会创建Virtio-net设备。如果`net`设备的`status`属性为`enable`，那么会创建一个Virtio-net设备，MMIO区域的起始地址为`0xa003600`，长度为`0x200`，设备中断号为75，MAC地址为`00:16:3e:10:10:10`，由id为1的虚拟机使用，连接到名为`tap0`的Tap设备。
+
+5. 创建Virtio-gpu设备
+
+创建一个 Virtio-gpu 设备，其 MMIO 区域从 `0xa003400` 开始，长度为 `0x200`，中断号为 74。默认的扫描输出(scanout)尺寸为宽度 `1280px`，高度 `800px`。
+
+#### 为Root Linux探测物理GPU设备
+
+要在`Root Linux`中探测物理GPU设备，你需要编辑`hvisor/src/platform`目录下的文件，以便在PCI总线上探测GPU设备。需要将Virtio-gpu设备的中断号添加到`ROOT_ZONE_IRQS`中。
+
+启动`Root Linux`后，你可以通过运行`dmesg | grep drm`或`lspci`来检查你的 GPU 设备是否正常工作。要查看 libdrm 支持的设备，可以安装`libdrm-tests`包，使用命令`apt install libdrm-tests`，然后运行`modetest`
 
 #### 关闭Virtio设备
 
