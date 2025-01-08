@@ -6,6 +6,7 @@
 use crate::device::irqchip::gicv2::gicc::GICC;
 use crate::device::irqchip::gicv2::gicd::GICD;
 use crate::platform::ROOT_ARCH_ZONE_CONFIG;
+use crate::device::irqchip::gicv2::gic::MAX_CPU_NUM;
 use crate::zone::Zone;
 
 // GIC Distributor Definition.
@@ -54,6 +55,7 @@ pub fn primary_init_early() {
     info!("GicCpuInterface = {:#x?}", GICV2.gicc_base);
     info!("GicHypervisorInterface = {:#x?}", GICV2.gich_base);
     info!("GicVCpuInterface = {:#x?}", GICV2.gicv_base);
+    gic::PENDING_VIRQS.call_once(|| gic::PendingIrqs::new(MAX_CPU_NUM));
 }
 
 pub fn percpu_init() {

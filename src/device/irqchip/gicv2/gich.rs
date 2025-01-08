@@ -29,6 +29,7 @@ pub const GICV2_GICH_END: usize = 0x1000;
 pub const GICV2_GICH_VMCR_PMR_SHIFT: u32 = 27;
 pub const GICV2_GICH_LR_CPUID_SHIFT: u32 = 10;
 pub const GICV2_GICH_LR_PHYSID_SHIFT: u32 = 10;
+pub const GICV2_GICH_HCR_UIE: u32 = 0x1 << 1;
 
 // GICH Register layout.
 register_structs! {
@@ -91,5 +92,9 @@ impl GicHypervisorInterface {
 
     pub fn set_lr(&self, index: usize, value: u32) {
         self.LR[index].set(value);
+    }
+
+    pub fn get_hcr(&self) -> u32 {
+        self.HCR.get()
     }
 }
