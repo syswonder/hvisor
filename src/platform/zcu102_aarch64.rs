@@ -4,11 +4,11 @@ use crate::config::HvConfigMemoryRegion;
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x04000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x00200000;
 pub const ROOT_ZONE_ENTRY: u64 = 0x00200000;
-pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3);
+pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 4] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 5] = [
     // HvConfigMemoryRegion {
     //     mem_type: MEM_TYPE_RAM,
     //     physical_start: 0x800000000,
@@ -20,6 +20,12 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 4] = [
         physical_start: 0x00000000,
         virtual_start: 0x00000000,
         size: 0x40000000,
+    }, // ram
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RAM,
+        physical_start: 0x50000000,
+        virtual_start: 0x50000000,
+        size: 0x25000000,
     }, // ram
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
@@ -41,7 +47,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 4] = [
     }, // mmc0
 ];
 
-pub const ROOT_ZONE_IRQS: [u32; 7] = [53, 81, 67, 175, 176, 177, 178];
+pub const ROOT_ZONE_IRQS: [u32; 8] = [53, 81, 67, 175, 176, 177, 178, 64];
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     gicd_base: 0xf9010000,
