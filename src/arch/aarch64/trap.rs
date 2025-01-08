@@ -242,7 +242,6 @@ fn handle_sysreg(regs: &mut GeneralRegisters) {
 }
 
 fn handle_hvc(regs: &mut GeneralRegisters) {
-    info!("handle_hvc");
     /*
     if ESR_EL2.read(ESR_EL2::ISS) != 0x4a48 {
         return;

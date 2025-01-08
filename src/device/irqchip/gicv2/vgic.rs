@@ -110,6 +110,7 @@ fn restrict_bitmask_access(
     let offset = mmio.address & 0x3;
     let value = mmio.value << (offset * 8);
     let real_mask = access_mask & other_mask;
+    trace!("mmio.iswrite: {}", mmio.is_write);
     trace!("address: {:#x}, size: {:#x}, value: {:#x}, real_mask: {:#x}", address, size, value, real_mask);
 
     let offset = mmio.address & 0x3;
@@ -127,6 +128,7 @@ fn restrict_bitmask_access(
     }
 
     if !is_poke {
+        trace!("is_poke is false");
         /*
          * Modify the existing value of this register by first reading
          * it into mmio->value
@@ -146,6 +148,7 @@ fn restrict_bitmask_access(
 
         // drop lock automatically here
     } else {
+        trace!("poke is true");
         mmio.value &= access_mask;
         mmio_perform_access(gicd_base, mmio);
     }
@@ -193,7 +196,7 @@ pub fn vgicv2_dist_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
             Ok(())
         }
         reg if reg_range(GICD_ITARGETSR_REG_OFFSET, GICV2_TARGET_REGS_NUM, GICV2_REG_WIDTH).contains(&reg) => {
-            restrict_bitmask_access(mmio, (reg & 0x3ff) / 4, 8, true, gicd_base)
+            restrict_bitmask_access(mmio, (reg & 0x3ff) / 4, 8, false, gicd_base)
         }
         reg if reg_range(GICD_ICENABLER_REG_OFFSET, GICV2_INT_REGS_NUM, GICV2_REG_WIDTH).contains(&reg)
             || reg_range(GICD_ISENABLER_REG_OFFSET, GICV2_INT_REGS_NUM, GICV2_REG_WIDTH).contains(&reg)
