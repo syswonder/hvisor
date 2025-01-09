@@ -117,6 +117,10 @@ impl PciRoot{
 
 impl Zone {
     pub fn pci_init(&mut self, pci_config: &HvPciConfig, num_pci_devs: usize, alloc_pci_devs: &[u64; CONFIG_MAX_PCI_DEV]){
+        if num_pci_devs == 0{
+            return ;
+        }
+
         info!("PCIe init!");
 
         init_ecam_base(pci_config.ecam_base as _);
@@ -143,42 +147,50 @@ impl Zone {
         
         self.mmio_region_register(pci_config.ecam_base as _, pci_config.ecam_size as _, mmio_pci_handler, pci_config.ecam_base as _);
 
-        // self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-        //     pci_config.ecam_base as GuestPhysAddr, 
-        //     pci_config.ecam_base as _, 
-        //     pci_config.ecam_size as _, 
-        //     MemFlags::READ | MemFlags::WRITE,
-        // )).ok();
+        if pci_config.io_size != 0{
+            self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                pci_config.io_base as GuestPhysAddr, 
+                pci_config.io_base as _, 
+                pci_config.io_size as _, 
+                MemFlags::READ | MemFlags::WRITE,
+            )).ok();
+        }
 
-        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-            pci_config.io_base as GuestPhysAddr, 
-            pci_config.io_base as _, 
-            pci_config.io_size as _, 
-            MemFlags::READ | MemFlags::WRITE,
-        )).ok();
+        if pci_config.mem32_size != 0{    
+            self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                pci_config.mem32_base as GuestPhysAddr, 
+                pci_config.mem32_base as _, 
+                pci_config.mem32_size as _, 
+                MemFlags::READ | MemFlags::WRITE,
+            )).ok();
+        }
 
-        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-            pci_config.mem32_base as GuestPhysAddr, 
-            pci_config.mem32_base as _, 
-            pci_config.mem32_size as _, 
-            MemFlags::READ | MemFlags::WRITE,
-        )).ok();
-
-        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-            pci_config.mem64_base as GuestPhysAddr, 
-            pci_config.mem64_base as _, 
-            pci_config.mem64_size as _, 
-            MemFlags::READ | MemFlags::WRITE,
-        )).ok();
+        if pci_config.mem64_size != 0{
+            self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                pci_config.mem64_base as GuestPhysAddr, 
+                pci_config.mem64_base as _, 
+                pci_config.mem64_size as _, 
+                MemFlags::READ | MemFlags::WRITE,
+            )).ok();
+        }
 
     }
 
     //probe pci mmio
     pub fn virtual_pci_mmio_init(&mut self, pci_config: &HvPciConfig){
         self.mmio_region_register(pci_config.ecam_base as _, pci_config.ecam_size as _, mmio_pci_handler, pci_config.ecam_base as _);
-        self.mmio_region_register(pci_config.io_base as _, pci_config.io_size as _, mmio_pci_handler, pci_config.io_base as _);
-        self.mmio_region_register(pci_config.mem32_base as _, pci_config.mem32_size as _, mmio_pci_handler, pci_config.mem32_base as _);
-        self.mmio_region_register(pci_config.mem64_base as _, pci_config.mem64_size as _, mmio_pci_handler, pci_config.mem64_base as _);
+
+        if pci_config.io_size != 0{
+            self.mmio_region_register(pci_config.io_base as _, pci_config.io_size as _, mmio_pci_handler, pci_config.io_base as _);
+        }
+        
+        if pci_config.mem32_size != 0{
+            self.mmio_region_register(pci_config.mem32_base as _, pci_config.mem32_size as _, mmio_pci_handler, pci_config.mem32_base as _);
+        }
+        
+        if pci_config.mem64_size != 0{
+            self.mmio_region_register(pci_config.mem64_base as _, pci_config.mem64_size as _, mmio_pci_handler, pci_config.mem64_base as _);
+        }
     }
 
     pub fn virtual_pci_device_init(&mut self, pci_config: &HvPciConfig){
