@@ -78,8 +78,8 @@
 #![allow(dead_code)]
 pub mod gicd;
 pub mod gicr;
-pub mod vgic;
 pub mod gits;
+pub mod vgic;
 
 use core::arch::asm;
 use core::ptr::write_volatile;
@@ -171,8 +171,14 @@ pub fn gicv3_handle_irq_el1() {
             if irq_id == 27 {
                 // virtual timer interrupt
                 TIMER_INTERRUPT_COUNTER.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
-                if TIMER_INTERRUPT_COUNTER.load(core::sync::atomic::Ordering::SeqCst) % TIMER_INTERRUPT_PRINT_TIMES == 0 {
-                    debug!("Virtual timer interrupt, counter = {}", TIMER_INTERRUPT_COUNTER.load(core::sync::atomic::Ordering::SeqCst));
+                if TIMER_INTERRUPT_COUNTER.load(core::sync::atomic::Ordering::SeqCst)
+                    % TIMER_INTERRUPT_PRINT_TIMES
+                    == 0
+                {
+                    debug!(
+                        "Virtual timer interrupt, counter = {}",
+                        TIMER_INTERRUPT_COUNTER.load(core::sync::atomic::Ordering::SeqCst)
+                    );
                 }
             } else if irq_id == 25 {
                 // maintenace interrupt
@@ -195,7 +201,7 @@ pub fn gicv3_handle_irq_el1() {
 fn pending_irq() -> Option<usize> {
     let iar = read_sysreg!(icc_iar1_el1) as usize;
     if iar == 0x3ff {
-        None        
+        None
     } else {
         Some(iar as _)
     }
@@ -284,7 +290,7 @@ impl PendingIrqs {
                 let mut irqs = pending_irqs.lock();
                 irqs.push_back((irq_id, is_hardware));
                 Some(())
-            },
+            }
             _ => None,
         }
     }
@@ -294,7 +300,7 @@ impl PendingIrqs {
             Some(pending_irqs) => {
                 let mut irqs = pending_irqs.lock();
                 irqs.pop_front()
-            },
+            }
             _ => None,
         }
     }
@@ -324,14 +330,14 @@ fn handle_maintenace_interrupt() {
         if !is_injected {
             pending_irqs.add_irq(irq_id, is_hardware);
             enable_maintenace_interrupt(true);
-            return ;
+            return;
         }
     }
     enable_maintenace_interrupt(false);
 }
 
 /// Inject virtual interrupt to vCPU, return whether it not needs to add pending queue.
-pub fn inject_irq(irq_id: usize, is_hardware: bool) -> bool{
+pub fn inject_irq(irq_id: usize, is_hardware: bool) -> bool {
     // mask
     const LR_VIRTIRQ_MASK: usize = (1 << 32) - 1;
 
@@ -359,10 +365,14 @@ pub fn inject_irq(irq_id: usize, is_hardware: bool) -> bool{
     if free_ir == -1 {
         trace!("all list registers are valid, add to pending queue");
         // If all list registers are valid, add this virtual irq to pending queue,
-        // and enable an underflow maintenace interrupt. When list registers are 
+        // and enable an underflow maintenace interrupt. When list registers are
         // all invalid or only one is valid, the maintenace interrupt will occur,
         // hvisor will execute handle_maintenace_interrupt function.
-        PENDING_VIRQS.get().unwrap().add_irq(irq_id, is_hardware).unwrap();
+        PENDING_VIRQS
+            .get()
+            .unwrap()
+            .add_irq(irq_id, is_hardware)
+            .unwrap();
         enable_maintenace_interrupt(true);
         return false;
     } else {
@@ -401,7 +411,7 @@ pub fn host_gicr_base(id: usize) -> usize {
     GIC.get().unwrap().gicr_base + id * PER_GICR_SIZE
 }
 
-pub fn host_gits_base() -> usize{
+pub fn host_gits_base() -> usize {
     GIC.get().unwrap().gits_base
 }
 
@@ -413,7 +423,7 @@ pub fn host_gicr_size() -> usize {
     GIC.get().unwrap().gicr_size
 }
 
-pub fn host_gits_size() -> usize{
+pub fn host_gits_size() -> usize {
     GIC.get().unwrap().gits_size
 }
 
@@ -435,7 +445,7 @@ pub fn disable_irqs() {
 
 pub fn primary_init_early() {
     let root_config = root_zone_config();
-    
+
     GIC.call_once(|| Gic {
         gicd_base: root_config.arch_config.gicd_base,
         gicr_base: root_config.arch_config.gicr_base,
@@ -445,8 +455,9 @@ pub fn primary_init_early() {
         gits_size: root_config.arch_config.gits_size,
     });
 
+    init_lpi_prop();
+
     if host_gits_base() != 0 && host_gits_size() != 0 {
-        init_lpi_prop();
         gits_init();
     }
 

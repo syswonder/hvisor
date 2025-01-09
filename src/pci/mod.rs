@@ -1,9 +1,9 @@
 use spin::Once;
 
+pub mod bridge;
+pub mod endpoint;
 pub mod pci;
 pub mod pcibar;
-pub mod endpoint;
-pub mod bridge;
 pub mod phantom_cfg;
 
 pub const CFG_CMD_OFF: usize = 0x4; //status
@@ -16,14 +16,14 @@ pub const PHANTOM_DEV_HEADER: u32 = 0x77777777u32;
 
 pub static ECAM_BASE: Once<usize> = Once::new();
 
-pub fn init_ecam_base(ecam_base: usize){
+pub fn init_ecam_base(ecam_base: usize) {
     ECAM_BASE.call_once(|| ecam_base);
 }
 
-pub fn get_ecam_base() -> usize{
+pub fn get_ecam_base() -> usize {
     *ECAM_BASE.get().unwrap() as _
 }
 
-pub fn cfg_base(bdf: usize) -> usize{
+pub fn cfg_base(bdf: usize) -> usize {
     get_ecam_base() + (bdf << 12)
 }
