@@ -1,0 +1,14 @@
+/dts-v1/;
+/ {
+	fragment {
+		target-path = "/";
+		__overlay__ {
+			hvisor_ivc_device {
+				compatible = "hvisor";
+				/* added dynamically
+				interrupts = <0x00 0x22 0x01>;				
+				*/
+			};
+		};
+	};
+};
