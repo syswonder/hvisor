@@ -41,6 +41,8 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
         return ;
     } 
 
+    log_warn("[WHEATFOX] (%s) in console event handler, fd=%d, epoll_type=%d, vdev->type=%d", __func__, fd, epoll_type, vdev->type);
+
 #ifdef LOONGARCH64
     // we wait until current timestamp - last_process_timestamp > LOONGARCH64_CONSOLE_PROCESS_INTERVAL_MS
     // to avoid too frequent ipi sending that cause ipi failure on loongson 3A5000 board
