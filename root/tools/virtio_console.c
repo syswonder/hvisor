@@ -112,7 +112,7 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
 
 int virtio_console_init(VirtIODevice *vdev) {
     ConsoleDev *dev = (ConsoleDev *)vdev->dev;
-    int master_fd, slave_fd, flags;
+    int master_fd, slave_fd;
     char *slave_name;
     struct termios term_io;
 
@@ -180,7 +180,7 @@ int virtio_console_rxq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
 }
 
 static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq) {
-    int i, n;
+    int n;
     uint16_t idx;
     ssize_t len;
     struct iovec *iov = NULL;

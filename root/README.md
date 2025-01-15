@@ -1,92 +1,88 @@
-# README
+# README  
+README: [中文](./README-zh.md) | [English](./README.md)  
 
-README: [中文](./README-zh.md) | [English](./README.md)
-
-This repository contains command-line tools and kernel modules associated with [hvisor](https://github.com/syswonder/hvisor). The command-line tools also include the Virtio daemon, which provides Virtio devices. The command-line tools and kernel modules need to be compiled separately and used in the root Linux zone0 of the virtual machine manager. The structure of the repository is as follows:
+This repository contains the command-line tools and kernel modules associated with [hvisor](https://github.com/syswonder/hvisor). It includes the Virtio daemon to provide Virtio devices. Both the command-line tools and kernel modules need to be compiled separately and used on the root Linux of the virtual machine (zone0). The repository structure is as follows:  
 
 ```
 hvisor-tool
-	-tools: Contains command-line tools and the Virtio daemon
-	-driver: Kernel module corresponding to hvisor
-```
+	-tools: Includes the command-line tools and Virtio daemon
+	-driver: Kernel module for hvisor
+```  
 
-## Compilation Steps
+## Compilation Steps  
 
-The following operations are performed under the `hvisor-tool` directory on an x86 host for cross-compilation.
+The following operations are performed in the `hvisor-tool` directory of an x86 host, using cross-compilation.  
 
-* Compile command-line tools and kernel modules
+### Compile the command-line tools and kernel module  
 
 ```bash
 make all ARCH=<arch> LOG=<log> KDIR=/path/to/your-linux 
-```
+```  
 
-Where `<arch>` should be one of `arm64` or `riscv`.
+- `<arch>` should be one of `arm64` or `riscv`.  
+- `<log>` can be one of `LOG_TRACE`, `LOG_DEBUG`, `LOG_INFO`, `LOG_WARN`, `LOG_ERROR`, or `LOG_FATAL`, controlling the log level of the Virtio daemon.  
+- `/path/to/your-linux` is the kernel source directory of the root Linux. Specific compilation options can be found in the [Makefile](./Makefile), [tools/Makefile](./tools/Makefile), and [driver/Makefile](./driver/Makefile).  
 
-`<log>` can be one of `LOG_TRACE`, `LOG_DEBUG`, `LOG_INFO`, `LOG_WARN`, `LOG_ERROR`, or `LOG_FATAL`, which controls the log level of the Virtio daemon.
-
-`/path/to/your-linux` is the kernel source directory for root Linux. For specific compilation options, refer to the [Makefile](./Makefile), [tools/Makefile](./tools/Makefile), and [driver/Makefile](./driver/Makefile).
-
-For example, to compile command-line tools for `arm64`, you can run:
+For example, to compile the command-line tools for `arm64`, execute:  
 
 ```bash
 make all ARCH=arm64 LOG=LOG_WARN KDIR=~/linux
-```
+```  
 
-This will generate the `tools/hvisor` binary and `driver/hvisor.ko` module, which can be copied to the root Linux file system for use.
+This generates `tools/hvisor` and `driver/hvisor.ko`. Copy them to the root filesystem of root Linux to use them.  
 
-## Usage Steps
+## Usage Steps  
 
-### Kernel Module
+### Kernel Module  
 
-Before using the command-line tools and Virtio daemon, you need to load the kernel module on zone0 to enable interaction between user-space programs and the hypervisor:
+Before using the command-line tools or Virtio daemon, load the kernel module on zone0 to enable user-space programs to interact with the Hypervisor:  
 
-```
+```bash
 insmod hvisor.ko
-```
+```  
 
-To unload the kernel module, use the following command:
+To unload the kernel module:  
 
-```
+```bash
 rmmod hvisor.ko
-```
+```  
 
-### Command-Line Tools
+### Command-Line Tools  
 
-In root Linux-zone0, the command-line tool can be used to create and shut down other virtual machines.
+In the root Linux-zone0, the command-line tools can be used to create and shut down other virtual machines.  
 
-* Start a new virtual machine
+- Start a new virtual machine  
 
-  hvisor-tool can start a new virtual machine using a configuration file:
+  hvisor-tool starts a new virtual machine using a configuration file:  
 
-  ```
+  ```bash
   ./hvisor zone start <vm_config.json>
-  ```
+  ```  
 
-  `<vm_config.json>` is a file that describes the configuration of a virtual machine. For example:
+  `<vm_config.json>` describes the virtual machine's configuration. For example:  
 
-  * [Start zone1 on QEMU-aarch64](./examples/qemu-aarch64/zone1_linux.json): When using this file to directly start zone1, you must first start the Virtio daemon, with the corresponding configuration file being [virtio_cfg.json](./examples/qemu-aarch64/virtio_cfg.json).
+  - [Start zone1 on QEMU-aarch64](./examples/qemu-aarch64/zone1_linux.json): Before starting zone1 with this file, start the Virtio daemon using the corresponding configuration file [virtio_cfg.json](./examples/qemu-aarch64/virtio_cfg.json).  
+  - [Start zone1 on NXP-aarch64](./examples/nxp-aarch64/zone1_linux.json): Similar steps apply using the corresponding configuration file [virtio_cfg.json](./examples/nxp-aarch64/virtio_cfg.json).  
 
-  * [Start zone1 on NXP-aarch64](./examples/nxp-aarch64/zone1_linux.json): Similar to the QEMU example, first start the Virtio daemon with [virtio_cfg.json](./examples/nxp-aarch64/virtio_cfg.json).
+- Shut down a virtual machine with ID 1:  
 
-* To shut down a virtual machine with ID 1:
-
-```
+```bash
 ./hvisor zone shutdown -id 1
-```
+```  
 
-* To list all currently running virtual machines:
+- List all running virtual machines:  
 
-```
+```bash
 ./hvisor zone list
-```
+```  
 
-### Virtio Daemon
+### Virtio Daemon  
 
-The Virtio daemon provides Virtio MMIO devices for virtual machines. Currently, it supports three types of devices: Virtio-blk, Virtio-net, and Virtio-console.
+The Virtio daemon provides Virtio MMIO devices to virtual machines. It currently supports Virtio-blk, Virtio-net, and Virtio-console devices.  
 
-#### Prerequisites
+#### Prerequisites  
 
-To use the Virtio daemon, a node named `hvisor_device` must be added to the **device tree of Root Linux**, for example:
+To use the Virtio daemon, add an `hvisor_device` node to the **Root Linux device tree**, for example:  
 
 ```dts
 hvisor_device {
@@ -94,48 +90,58 @@ hvisor_device {
     interrupt-parent = <0x01>;
     interrupts = <0x00 0x20 0x01>;
 };
-```
+```  
 
-This ensures that when the hypervisor injects interrupt number `32+0x20` into Root Linux, the interrupt handler registered in `hvisor.ko` will be invoked, waking up the Virtio daemon.
+This setup ensures that when hvisor injects an interrupt with the number `32+0x20` into Root Linux, the interrupt handler registered in `hvisor.ko` is triggered to wake up the Virtio daemon.  
 
-#### Starting and Creating Virtio Devices
+#### Starting and Creating Virtio Devices  
 
-On Root Linux, execute the following example commands:
+On Root Linux, execute the following commands:  
 
 ```bash
-// Ensure the daemon is started before launching the zones
+// Start the daemon first, then start zones
 nohup ./hvisor virtio start virtio_cfg.json &
 ./hvisor zone start <vm_config.json>
-```
+```  
 
-The command `nohup ... &` starts a daemon process, with its log output saved to the `nohup.out` file in the current directory.
+The `nohup ... &` command creates a daemon process, with logs saved in `nohup.out` in the current folder.  
 
-`virtio_cfg.json` is a JSON file that describes Virtio devices, such as [virtio_cfg.json](./examples/nxp-aarch64/virtio_cfg.json). This example file performs the following steps:
+`virtio_cfg.json` is a JSON file describing Virtio devices, such as [virtio_cfg.json](./examples/nxp-aarch64/virtio_cfg.json). The example performs:  
 
-1. Address space mapping
+1. **Address Space Mapping**  
 
-Maps the RAM region of virtual machine `zone1` (ID 1) (starting at address `0x50000000`, size `0x30000000`) into the Virtio daemon's address space using `mmap`.
+   Maps the RAM memory region of virtual machine `zone1` (ID=1) into the address space of the Virtio daemon using `mmap`.  
 
-2. Create Virtio-blk device
+2. **Creating Virtio-blk Device**  
 
-Creates a Virtio-blk device, with `zone1` communicating with this device through an MMIO region starting at `0xa003c00` and a length of `0x200`. The device interrupt number is set to 78, and the disk image used is `rootfs2.ext4`.
+   Creates a Virtio-blk device with an MMIO region starting at `0xa003c00`, length `0x200`, interrupt number 78, and backing disk image `rootfs2.ext4`.  
 
-3. Create Virtio-console device
+3. **Creating Virtio-console Device**  
 
-Creates a Virtio-console device for `zone1`'s primary serial output. Root Linux can access this virtual console using the `screen /dev/pts/x` command, where `x` can be found in the `nohup.out` log file.
+   Creates a Virtio-console device for the primary serial output of `zone1`. Access the virtual console on root Linux using:  
 
-To return to the main console, press the shortcut `ctrl+a+d`. To re-enter the virtual console, run `screen -r [SID]`, where SID is the screen session ID.
+   ```bash
+   screen /dev/pts/x
+   ```  
 
-4. Create Virtio-net device
+   Replace `x` with the appropriate value from `nohup.out`. Exit the console with `ctrl+a+d`. Re-enter with:  
 
-Since the `status` attribute of the `net` device is set to `disable`, a Virtio-net device is not created. If the `status` attribute is set to `enable`, a Virtio-net device would be created with an MMIO region starting at `0xa003600`, length `0x200`, interrupt number 75, and MAC address `00:16:3e:10:10:10`, which would be used by the virtual machine with ID 1 and connected to the `tap0` Tap device.
+   ```bash
+   screen -r [SID]
+   ```  
 
-#### Shutting Down Virtio Devices
+   Replace `[SID]` with the session ID of the screen process.  
 
-To shut down the Virtio daemon and all created devices, run the following command:
+4. **Creating Virtio-net Device**  
 
-```
+   If the `status` attribute of the `net` device is `disable`, no Virtio-net device is created. If set to `enable`, a Virtio-net device is created with an MMIO region starting at `0xa003600`, length `0x200`, interrupt number 75, MAC address `00:16:3e:10:10:10`, and connected to a Tap device named `tap0`.  
+
+#### Shutting Down Virtio Devices  
+
+To shut down the Virtio daemon and all devices it created, execute:  
+
+```bash
 pkill hvisor-virtio
-```
+```  
 
-For more information, such as configuring the root Linux environment, refer to: [Using Virtio Devices on hvisor](https://report.syswonder.org/#/2024/20240415_Virtio_devices_tutorial).
+For more information, such as configuring the root Linux environment, see: [Using Virtio devices on hvisor](https://report.syswonder.org/#/2024/20240415_Virtio_devices_tutorial)

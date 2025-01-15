@@ -24,7 +24,7 @@ static void __attribute__((noreturn)) help(int exit_status)
     exit(exit_status);
 }
 
-void *read_file(char* filename, u_int64_t* filesize)
+void *read_file(const char* filename, __u64* filesize)
 {
     int fd;
     struct stat st;
@@ -97,12 +97,8 @@ static __u64 load_image_to_memory(const char *path, __u64 load_paddr)
     map_size = (size + page_size - 1) & ~(page_size - 1);
 
     // Map the physical memory to virtual memory
-	#ifdef ARM64
-    virt_addr = (__u64)mmap(NULL, map_size, PROT_READ | PROT_WRITE , MAP_SHARED, fd, load_paddr);
-	#endif
-	#ifdef RISCV64
-    virt_addr = (__u64)mmap(NULL, map_size, PROT_READ | PROT_WRITE , MAP_SHARED, fd, load_paddr);
-    #endif
+    virt_addr = mmap(NULL, map_size, PROT_READ | PROT_WRITE , MAP_SHARED, fd, load_paddr);
+
     #ifdef LOONGARCH64
     virt_addr = (__u64)mmap(NULL, map_size, PROT_READ | PROT_WRITE | PROT_EXEC, MAP_SHARED, fd, load_paddr);
     #endif
@@ -121,6 +117,18 @@ static __u64 load_image_to_memory(const char *path, __u64 load_paddr)
     return map_size;
 }
 
+#define CHECK_JSON_NULL(json_ptr, json_name) \
+    if (json_ptr == NULL) { \
+        fprintf(stderr, "\'%s\' is missing in json file.\n", json_name); \
+        return -1; \
+    }
+
+#define CHECK_JSON_NULL_ERR_OUT(json_ptr, json_name) \
+    if (json_ptr == NULL) { \
+        fprintf(stderr, "\'%s\' is missing in json file.\n", json_name); \
+        goto err_out; \
+    }
+
 static int parse_arch_config(cJSON *root, zone_config_t *config) {
     cJSON *arch_config_json = cJSON_GetObjectItem(root, "arch_config");
     if (arch_config_json == NULL) {
@@ -131,41 +139,120 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
 #ifdef ARM64
     cJSON *gicd_base_json = cJSON_GetObjectItem(arch_config_json, "gicd_base");
     cJSON *gicr_base_json = cJSON_GetObjectItem(arch_config_json, "gicr_base");
+    cJSON *gits_base_json = cJSON_GetObjectItem(arch_config_json, "gits_base");
     cJSON *gicd_size_json = cJSON_GetObjectItem(arch_config_json, "gicd_size");
     cJSON *gicr_size_json = cJSON_GetObjectItem(arch_config_json, "gicr_size");
+    cJSON *gits_size_json = cJSON_GetObjectItem(arch_config_json, "gits_size");
 
-    if (gicd_base_json == NULL || gicr_base_json == NULL ||
-        gicd_size_json == NULL || gicr_size_json == NULL) {
-        fprintf(stderr, "Missing fields in arch_config.\n");
-        return -1;
+    CHECK_JSON_NULL(gicd_base_json, "gicd_base")
+    CHECK_JSON_NULL(gicr_base_json, "gicr_base")
+    CHECK_JSON_NULL(gicd_size_json, "gicd_size")
+    CHECK_JSON_NULL(gicr_size_json, "gicr_size")
+
+    if (gits_base_json == NULL || gits_size_json == NULL) {
+        printf("No gits fields in arch_config.\n");
+    } else {
+        config->arch_config.gits_base = strtoull(gits_base_json->valuestring, NULL, 16);
+        config->arch_config.gits_size = strtoull(gits_size_json->valuestring, NULL, 16);
     }
+
     config->arch_config.gicd_base = strtoull(gicd_base_json->valuestring, NULL, 16);
     config->arch_config.gicr_base = strtoull(gicr_base_json->valuestring, NULL, 16);
     config->arch_config.gicd_size = strtoull(gicd_size_json->valuestring, NULL, 16);
     config->arch_config.gicr_size = strtoull(gicr_size_json->valuestring, NULL, 16);
 #endif
 
+#ifdef RISCV64
+    cJSON *plic_base_json = cJSON_GetObjectItem(arch_config_json, "plic_base");
+    cJSON *plic_size_json = cJSON_GetObjectItem(arch_config_json, "plic_size");
+
+    if (plic_base_json == NULL || plic_size_json == NULL) {
+        fprintf(stderr, "Missing fields in arch_config.\n");
+        return -1;
+    }
+
+    config->arch_config.plic_base = strtoull(plic_base_json->valuestring, NULL, 16);
+    config->arch_config.plic_size = strtoull(plic_size_json->valuestring, NULL, 16);
+#endif
+
+    return 0;
+}
+
+static int parse_pci_config(cJSON *root, zone_config_t *config) {
+    cJSON *pci_config_json = cJSON_GetObjectItem(root, "pci_config");
+    if (pci_config_json == NULL) {
+        fprintf(stderr, "No pci_config field found.\n");
+        return -1;
+    }
+
+    cJSON *ecam_base_json = cJSON_GetObjectItem(pci_config_json, "ecam_base");
+    cJSON *io_base_json = cJSON_GetObjectItem(pci_config_json, "io_base");
+    cJSON *pci_io_base_json = cJSON_GetObjectItem(pci_config_json, "pci_io_base");
+    cJSON *mem32_base_json = cJSON_GetObjectItem(pci_config_json, "mem32_base");
+    cJSON *pci_mem32_base_json = cJSON_GetObjectItem(pci_config_json, "pci_mem32_base");
+    cJSON *mem64_base_json = cJSON_GetObjectItem(pci_config_json, "mem64_base");
+    cJSON *pci_mem64_base_json = cJSON_GetObjectItem(pci_config_json, "pci_mem64_base");
+    cJSON *ecam_size_json = cJSON_GetObjectItem(pci_config_json, "ecam_size");
+    cJSON *io_size_json = cJSON_GetObjectItem(pci_config_json, "io_size");
+    cJSON *mem32_size_json = cJSON_GetObjectItem(pci_config_json, "mem32_size");
+    cJSON *mem64_size_json = cJSON_GetObjectItem(pci_config_json, "mem64_size");
+
+    CHECK_JSON_NULL(ecam_base_json, "ecam_base")
+    CHECK_JSON_NULL(io_base_json, "io_base")
+    CHECK_JSON_NULL(mem32_base_json, "mem32_base")
+    CHECK_JSON_NULL(mem64_base_json, "mem64_base")
+    CHECK_JSON_NULL(ecam_size_json, "ecam_size")
+    CHECK_JSON_NULL(io_size_json, "io_size")
+    CHECK_JSON_NULL(mem32_size_json, "mem32_size")
+    CHECK_JSON_NULL(mem64_size_json, "mem64_size")
+    CHECK_JSON_NULL(pci_io_base_json, "pci_io_base")
+    CHECK_JSON_NULL(pci_mem32_base_json, "pci_mem32_base")
+    CHECK_JSON_NULL(pci_mem64_base_json, "pci_mem64_base")
+
+    config->pci_config.ecam_base = strtoull(ecam_base_json->valuestring, NULL, 16);
+    config->pci_config.io_base = strtoull(io_base_json->valuestring, NULL, 16);
+    config->pci_config.mem32_base = strtoull(mem32_base_json->valuestring, NULL, 16);
+    config->pci_config.mem64_base = strtoull(mem64_base_json->valuestring, NULL, 16);
+    config->pci_config.pci_io_base = strtoull(pci_io_base_json->valuestring, NULL, 16);
+    config->pci_config.pci_mem32_base = strtoull(pci_mem32_base_json->valuestring, NULL, 16);
+    config->pci_config.pci_mem64_base = strtoull(pci_mem64_base_json->valuestring, NULL, 16);
+    config->pci_config.ecam_size = strtoull(ecam_size_json->valuestring, NULL, 16);
+    config->pci_config.io_size = strtoull(io_size_json->valuestring, NULL, 16);
+    config->pci_config.mem32_size = strtoull(mem32_size_json->valuestring, NULL, 16);
+    config->pci_config.mem64_size = strtoull(mem64_size_json->valuestring, NULL, 16);
+    cJSON *alloc_pci_devs_json = cJSON_GetObjectItem(root, "alloc_pci_devs");
+    int num_pci_devs = cJSON_GetArraySize(alloc_pci_devs_json);
+    config->num_pci_devs = num_pci_devs;
+    for (int i = 0; i < num_pci_devs; i++)
+    {
+        config->alloc_pci_devs[i] = cJSON_GetArrayItem(alloc_pci_devs_json, i)->valueint;
+    }
     return 0;
 }
 
 static int zone_start_from_json(const char *json_config_path, zone_config_t *config)
 {
+    cJSON *root = NULL;
+
     FILE *file = fopen(json_config_path, "r");
     if (file == NULL)
     {
-        perror("Error opening file");
+        fprintf(stderr, "Error opening json file: %s\n", json_config_path);
         exit(1);
     }
     fseek(file, 0, SEEK_END);
     long file_size = ftell(file);
     fseek(file, 0, SEEK_SET);
     char *buffer = malloc(file_size + 1);
-    fread(buffer, 1, file_size, file);
+    if (fread(buffer, 1, file_size, file) == 0) {
+        fprintf(stderr, "Error reading json file: %s\n", json_config_path);
+        goto err_out;
+    }
     fclose(file);
     buffer[file_size] = '\0';
 
     // parse JSON
-    cJSON *root = cJSON_Parse(buffer);
+    root = cJSON_Parse(buffer);
     cJSON *zone_id_json = cJSON_GetObjectItem(root, "zone_id");
     cJSON *cpus_json = cJSON_GetObjectItem(root, "cpus");
     cJSON *name_json = cJSON_GetObjectItem(root, "name");
@@ -177,14 +264,21 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
     cJSON *entry_point_json = cJSON_GetObjectItem(root, "entry_point");
     cJSON *kernel_args_json = cJSON_GetObjectItem(root, "kernel_args");
     cJSON *interrupts_json = cJSON_GetObjectItem(root, "interrupts");
+    cJSON *ivc_configs_json = cJSON_GetObjectItem(root, "ivc_configs");
+    
+    CHECK_JSON_NULL_ERR_OUT(zone_id_json, "zone_id")
+    CHECK_JSON_NULL_ERR_OUT(cpus_json, "cpus")
+    CHECK_JSON_NULL_ERR_OUT(name_json, "name")
+    CHECK_JSON_NULL_ERR_OUT(memory_regions_json, "memory_regions")
+    CHECK_JSON_NULL_ERR_OUT(kernel_filepath_json, "kernel_filepath")
+    CHECK_JSON_NULL_ERR_OUT(dtb_filepath_json, "dtb_filepath")
+    CHECK_JSON_NULL_ERR_OUT(kernel_load_paddr_json, "kernel_load_paddr")
+    CHECK_JSON_NULL_ERR_OUT(dtb_load_paddr_json, "dtb_load_paddr")
+    CHECK_JSON_NULL_ERR_OUT(entry_point_json, "entry_point")
+    CHECK_JSON_NULL_ERR_OUT(kernel_args_json, "kernel_args")
+    CHECK_JSON_NULL_ERR_OUT(interrupts_json, "interrupts")
+    CHECK_JSON_NULL_ERR_OUT(ivc_configs_json, "ivc_configs")
 
-    if (!zone_id_json || !cpus_json || !name_json || 
-        !memory_regions_json || !kernel_filepath_json || 
-        !dtb_filepath_json || !kernel_load_paddr_json || 
-        !dtb_load_paddr_json || !entry_point_json || !interrupts_json) {
-            fprintf(stderr, "Error: Missing fields in JSON.\n");
-            goto err_out;
-    }
     config->zone_id = zone_id_json->valueint;
 
     int num_cpus = cJSON_GetArraySize(cpus_json);
@@ -242,6 +336,22 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
         config->interrupts[i] = cJSON_GetArrayItem(interrupts_json, i)->valueint;
     }
 
+    int num_ivc_configs = cJSON_GetArraySize(ivc_configs_json);
+    config->num_ivc_configs = num_ivc_configs;
+    for (int i=0; i < num_ivc_configs; i++) {
+        cJSON *ivc_config_json = cJSON_GetArrayItem(ivc_configs_json, i);
+        ivc_config_t * ivc_config = &config->ivc_configs[i];
+        ivc_config->ivc_id = cJSON_GetObjectItem(ivc_config_json, "ivc_id")->valueint;
+        ivc_config->peer_id = cJSON_GetObjectItem(ivc_config_json, "peer_id")->valueint;        
+        ivc_config->shared_mem_ipa = strtoull(cJSON_GetObjectItem(ivc_config_json, "shared_mem_ipa")->valuestring, NULL, 16);
+        ivc_config->control_table_ipa = strtoull(cJSON_GetObjectItem(ivc_config_json, "control_table_ipa")->valuestring, NULL, 16);
+        ivc_config->rw_sec_size = strtoull(cJSON_GetObjectItem(ivc_config_json, "rw_sec_size")->valuestring, NULL, 16);
+        ivc_config->out_sec_size = strtoull(cJSON_GetObjectItem(ivc_config_json, "out_sec_size")->valuestring, NULL, 16);
+        ivc_config->interrupt_num = cJSON_GetObjectItem(ivc_config_json, "interrupt_num")->valueint;
+        ivc_config->max_peers = cJSON_GetObjectItem(ivc_config_json, "max_peers")->valueint;
+        printf("ivc_config %d: ivc_id %d, peer_id %d, shared_mem_ipa %llx, interrupt_num %d, max_peers %d\n",
+               i, ivc_config->ivc_id, ivc_config->peer_id, ivc_config->shared_mem_ipa, ivc_config->interrupt_num, ivc_config->max_peers);
+    }
     config->entry_point = strtoull(entry_point_json->valuestring, NULL, 16);
 
     config->kernel_load_paddr = strtoull(kernel_load_paddr_json->valuestring, NULL, 16);
@@ -255,12 +365,21 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
     config->dtb_size = load_image_to_memory(dtb_filepath_json->valuestring, strtoull(dtb_load_paddr_json->valuestring, NULL, 16));
 
     // strncpy(config->kernel_args, kernel_args_json->valuestring, CONFIG_KERNEL_ARGS_MAXLEN);
+    
+    // check name length
+    if (strlen(name_json->valuestring) > CONFIG_NAME_MAXLEN)
+    {
+        fprintf(stderr, "Zone name too long: %s\n", name_json->valuestring);
+        goto err_out;
+    }
     strncpy(config->name, name_json->valuestring, CONFIG_NAME_MAXLEN);
 
     parse_arch_config(root, config);
 
-    cJSON_Delete(root); // delete cJSON object
-    free(buffer);
+    parse_pci_config(root, config);
+
+    if (root) cJSON_Delete(root);
+    if (buffer) free(buffer);
 
     int fd = open_dev();
     int err = ioctl(fd, HVISOR_ZONE_START, config);
@@ -269,14 +388,13 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
     close(fd);
     return 0;
 err_out:
-    cJSON_Delete(root);
-    free(buffer);
+    if (root) cJSON_Delete(root);
+    if (buffer) free(buffer);
     return -1;
 }
 
 // ./hvisor zone start <path_to_config_file>
 static int zone_start(int argc, char *argv[]) {
-    int zone_id;
 	char *json_config_path = NULL;
     zone_config_t config;
 
@@ -312,7 +430,7 @@ static void print_cpu_list(__u64 cpu_mask, char *outbuf, size_t bufsize)
     int found_cpu = 0;
     char *buf = outbuf;
 
-    for (int i = 0; i < MAX_CPUS && buf - outbuf < bufsize; i++)
+    for (int i = 0; i < MAX_CPUS && buf - outbuf < (long int)bufsize; i++)
     {
         if ((cpu_mask & (1ULL << i)) != 0)
         {
@@ -333,7 +451,7 @@ static void print_cpu_list(__u64 cpu_mask, char *outbuf, size_t bufsize)
 }
 
 // ./hvisor zone list
-static int zone_list(int argc, char *argv[])
+static int zone_list(int argc)
 {
     if (argc != 0)
     {
@@ -370,7 +488,7 @@ static int zone_list(int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
-    int err;
+    int err = 0;
 
     if (argc < 2)
         help(1);
@@ -387,7 +505,7 @@ int main(int argc, char *argv[])
         }
         else if (strcmp(argv[2], "list") == 0)
         {
-            err = zone_list(argc - 3, &argv[3]);
+            err = zone_list(argc - 3);
         }
         else
         {
@@ -404,8 +522,7 @@ int main(int argc, char *argv[])
         {
             help(1);
         }
-    }
-    else
+    } else
     {
         help(1);
     }
