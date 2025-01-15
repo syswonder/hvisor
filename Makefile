@@ -52,7 +52,8 @@ elf:
 
 disa:
 	readelf -a $(hvisor_elf) > hvisor-elf.txt
-	rust-objdump --disassemble $(hvisor_elf) > hvisor.S
+# rust-objdump --disassemble $(hvisor_elf) > hvisor.S
+	rust-objdump --disassemble --source $(hvisor_elf) > hvisor.S
 
 run: all
 	$(QEMU) $(QEMU_ARGS)
