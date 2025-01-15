@@ -74,6 +74,10 @@ where
         }
     }
 
+    pub fn root_paddr(&self) -> usize{
+        self.pt.root_paddr()
+    }
+
     fn test_free_area(&self, other: &MemoryRegion<PT::VA>) -> bool {
         if let Some((_, before)) = self.regions.range(..other.start).last() {
             if before.is_overlap_with(other) {
@@ -90,6 +94,7 @@ where
 
     /// Add a memory region to this set.
     pub fn insert(&mut self, region: MemoryRegion<PT::VA>) -> HvResult {
+        info!("region.start: {:#X}", region.start.into());
         assert!(is_aligned(region.start.into()));
         assert!(is_aligned(region.size));
         if region.size == 0 {

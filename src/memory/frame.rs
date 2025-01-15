@@ -127,6 +127,28 @@ impl Frame {
         }
     }
 
+    /// allocate contigugous frames, and you can specify the alignment, set the lower `align_log2` bits to 0.
+    pub fn new_contiguous_with_base(
+        frame_count: usize,
+        align_log2: usize,
+    ) -> HvResult<Self> {
+        // Create a vector to keep track of attempted frames
+        let mut attempted_frames = Vec::new();
+        loop{
+            if let Ok(frame) = Frame::new_contiguous(frame_count, 0){
+                if frame.start_paddr() & ((1 << align_log2) - 1) == 0{
+                    info!("new contiguous success!!! start_paddr:0x{:x}",frame.start_paddr());
+                    return Ok(frame);
+                }else{
+                    drop(frame);
+                    attempted_frames.push(Frame::new_zero());
+                }
+            }else{
+                return Err(hv_err!(ENOMEM));
+            }
+        }
+    }
+
     /// Constructs a frame from a raw physical address without automatically calling the destructor.
     ///
     /// # Safety

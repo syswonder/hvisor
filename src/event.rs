@@ -9,6 +9,9 @@ use crate::{
 use alloc::{collections::VecDeque, vec::Vec};
 use spin::{Mutex, Once};
 
+#[cfg(test)]
+mod tests;
+
 pub const IPI_EVENT_WAKEUP: usize = 0;
 pub const IPI_EVENT_SHUTDOWN: usize = 1;
 pub const IPI_EVENT_VIRTIO_INJECT_IRQ: usize = 2;

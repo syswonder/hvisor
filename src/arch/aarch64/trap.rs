@@ -4,7 +4,7 @@ use core::arch::global_asm;
 use crate::{
     arch::{
         cpu::mpidr_to_cpuid,
-        sysreg::{read_sysreg, write_sysreg},
+        sysreg::{read_sysreg, smc_call, write_sysreg},
     },
     device::irqchip::gicv3::gicv3_handle_irq_el1,
     event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_WAKEUP},
@@ -34,7 +34,8 @@ const SMC_TYPE_MASK: u64 = 0x3F000000;
 #[allow(non_snake_case)]
 pub mod SmcType {
     pub const ARCH_SC: u64 = 0x0;
-    pub const STANDARD_SC: u64 = 0x4000000;
+    pub const SIP_SC: u64 = 0x02000000;
+    pub const STANDARD_SC: u64 = 0x04000000;
 }
 
 const PSCI_VERSION_1_1: u64 = 0x10001;
@@ -273,12 +274,12 @@ fn handle_smc(regs: &mut GeneralRegisters) {
     let result = match code & SMC_TYPE_MASK {
         SmcType::ARCH_SC => handle_arch_smc(regs, code, arg0, arg1, arg2),
         SmcType::STANDARD_SC => handle_psci_smc(regs, code, arg0, arg1, arg2),
+        SmcType::SIP_SC => smc_call(code, &regs.usr[1..18]),
         _ => {
             warn!("unsupported smc");
             0
         }
     };
-
     regs.usr[0] = result;
 
     arch_skip_instruction(regs); //skip the smc ins

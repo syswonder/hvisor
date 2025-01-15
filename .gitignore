@@ -20,4 +20,10 @@ modules.order
 driver/main.ko
 .gdb_history
 .vscode-ctags
+Image*
+*.ext4
+*.qcow2
+*.dtb
+.DS_Store
+flash.img*
 .DS_Store

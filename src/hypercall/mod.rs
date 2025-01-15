@@ -5,9 +5,10 @@ use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, PAGE_SIZE};
 use crate::device::irqchip::inject_irq;
 use crate::device::virtio_trampoline::{MAX_DEVS, MAX_REQ, VIRTIO_BRIDGE, VIRTIO_IRQS};
 use crate::error::HvResult;
-use crate::percpu::{get_cpu_data, PerCpu};
+use crate::ivc::{IvcInfo, IVC_INFOS};
+use crate::percpu::{get_cpu_data, this_zone, PerCpu};
 use crate::zone::{
-    all_zones_info, find_zone, is_this_root_zone, remove_zone, zone_create, ZoneInfo,
+    all_zones_info, find_zone, is_this_root_zone, remove_zone, this_zone_id, zone_create, ZoneInfo
 };
 
 use crate::event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_VIRTIO_INJECT_IRQ, IPI_EVENT_WAKEUP};
@@ -26,7 +27,8 @@ numeric_enum! {
         HvZoneShutdown = 3,
         HvZoneList = 4,
         #[cfg(target_arch = "loongarch64")]
-        HvClearInjectIrq = 5,
+        HvClearInjectIrq = 20,
+        HvIvcInfo = 5,
     }
 }
 pub const SGI_IPI_ID: u64 = 7;
@@ -55,7 +57,7 @@ impl<'a> HyperCall<'a> {
             match code {
                 HyperCallCode::HvVirtioInit => self.hv_virtio_init(arg0),
                 HyperCallCode::HvVirtioInjectIrq => self.hv_virtio_inject_irq(),
-                HyperCallCode::HvZoneStart => self.hv_zone_start(&*(arg0 as *const HvZoneConfig)),
+                HyperCallCode::HvZoneStart => self.hv_zone_start(&*(arg0 as *const HvZoneConfig), arg1),
                 HyperCallCode::HvZoneShutdown => self.hv_zone_shutdown(arg0),
                 HyperCallCode::HvZoneList => self.hv_zone_list(&mut *(arg0 as *mut ZoneInfo), arg1),
                 #[cfg(target_arch = "loongarch64")]
@@ -67,9 +69,30 @@ impl<'a> HyperCall<'a> {
                     }
                     // send_event(3, SGI_IPI_ID as _, IPI_EVENT_CLEAR_INJECT_IRQ); // testing only
                     HyperCallResult::Ok(0)
-                }
+                },
+                HyperCallCode::HvIvcInfo => self.hv_ivc_info(arg0)
             }
         }
+    }
+
+    fn hv_ivc_info(&mut self, ivc_info_ipa: u64) -> HyperCallResult {
+        let zone_id = this_zone_id();
+        let zone = this_zone();
+        // ipa->hpa->hva
+        let hpa = unsafe {
+            zone.read().gpm.page_table_query(ivc_info_ipa as _).unwrap().0        
+        };
+        // hva == hpa
+        let ivc_info = unsafe {
+            &mut *(hpa as *mut IvcInfo)
+        };
+        let ivc_infos = IVC_INFOS.lock();
+        let zone_ivc_info = ivc_infos.get(&(zone_id as _));
+        match zone_ivc_info {
+            Some(zone_ivc_info) => *ivc_info = *zone_ivc_info,
+            None => return hv_result_err!(ENODEV, "Zone {zone_id} has no ivc config!"),
+        }
+        HyperCallResult::Ok(0)
     }
 
     // only root zone calls the function and set virtio shared region between el1 and el2.
@@ -120,13 +143,12 @@ impl<'a> HyperCall<'a> {
             let res_front = region.res_front as usize;
             let irq_id = region.res_list[res_front].irq_id as u64;
             let target_zone = region.res_list[res_front].target_zone;
-            // TODO: only the first cpu receives the irq, is that reasonable???
-            let target_cpu = find_zone(target_zone as _)
-                .unwrap()
-                .read()
-                .cpu_set
-                .first_cpu()
-                .unwrap();
+            let target_cpu = match find_zone(target_zone as _) {
+                Some(zone) => {
+                    zone.read().cpu_set.first_cpu().unwrap()
+                },
+                _ => continue
+            };
             let irq_list = map_irq.entry(target_cpu).or_insert([0; MAX_DEVS + 1]);
             if !irq_list[1..=irq_list[0] as usize].contains(&irq_id) {
                 let len = irq_list[0] as usize;
@@ -148,7 +170,7 @@ impl<'a> HyperCall<'a> {
         HyperCallResult::Ok(0)
     }
 
-    pub fn hv_zone_start(&mut self, config: &HvZoneConfig) -> HyperCallResult {
+    pub fn hv_zone_start(&mut self, config: &HvZoneConfig, config_size: u64) -> HyperCallResult {
         #[cfg(target_arch = "loongarch64")]
         let config = unsafe { &*((config as *const HvZoneConfig as u64
             | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX) as *const HvZoneConfig) };
@@ -158,6 +180,11 @@ impl<'a> HyperCall<'a> {
             return hv_result_err!(
                 EPERM,
                 "Start zone operation over non-root zones: unsupported!"
+            );
+        }
+        if config_size != core::mem::size_of::<HvZoneConfig>() as _ {
+            return hv_result_err!(
+                EINVAL,"Invalid config!"
             );
         }
         let zone = zone_create(config)?;
@@ -202,11 +229,18 @@ impl<'a> HyperCall<'a> {
         // // return zone's cpus to root_zone
         zone_r.cpu_set.iter().for_each(|cpu_id| {
             let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
-            get_cpu_data(cpu_id).zone = None;
             get_cpu_data(cpu_id).cpu_on_entry = INVALID_ADDRESS;
             send_event(cpu_id, SGI_IPI_ID as _, IPI_EVENT_SHUTDOWN);
         });
-
+        // wait all zone's cpus shutdown
+        while zone_r.cpu_set.iter().any(|cpu_id| {
+            let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
+            get_cpu_data(cpu_id).arch_cpu.power_on
+        }) {};
+        zone_r.cpu_set.iter().for_each(|cpu_id| {
+            let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
+            get_cpu_data(cpu_id).zone = None;
+        });
         zone_r.arch_irqchip_reset();
 
         drop(zone_r);
