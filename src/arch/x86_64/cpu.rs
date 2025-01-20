@@ -4,17 +4,20 @@ use crate::arch::vmx::*;
 use crate::consts::{core_end, PER_CPU_SIZE};
 use crate::error::{HvError, HvResult};
 use crate::memory::{addr::phys_to_virt, Frame, PhysAddr, PAGE_SIZE};
+use crate::memory::{GuestPhysAddr, HostPhysAddr};
 use crate::percpu::this_cpu_data;
+use crate::platform::qemu_x86_64::*;
 use alloc::boxed::Box;
 use core::arch::{asm, global_asm};
+use core::fmt::{Debug, Formatter, Result};
 use core::mem::size_of;
+use core::panicking::panic;
 use core::time::Duration;
 use raw_cpuid::CpuId;
 use x86_64::structures::tss::TaskStateSegment;
 
 const AP_START_PAGE_IDX: u8 = 6;
 const AP_START_PAGE_PADDR: PhysAddr = AP_START_PAGE_IDX as usize * PAGE_SIZE;
-const VM_EXIT_INSTR_LEN_VMCALL: u8 = 3;
 
 global_asm!(
     include_str!("ap_start.S"),
@@ -137,7 +140,6 @@ pub struct GeneralRegisters {
 }
 
 #[repr(C)]
-#[derive(Debug)]
 pub struct ArchCpu {
     // guest_regs and host_stack_top should always be at the first.
     guest_regs: GeneralRegisters,
@@ -166,54 +168,61 @@ impl ArchCpu {
         }
     }
 
-    pub unsafe fn init(&mut self, entry: usize, dtb: usize) {
-        self.activate_vmx();
-        self.setup_vmcs(entry);
+    pub fn init(&mut self, entry: GuestPhysAddr, dtb: usize) -> HvResult {
+        self.activate_vmx()?;
+        self.setup_vmcs(entry)?;
+        Ok(())
     }
 
-    unsafe fn activate_vmx(&mut self) {
+    fn activate_vmx(&mut self) -> HvResult {
         assert!(check_vmx_support());
         assert!(!is_vmx_enabled());
 
         // enable VMXON
-        enable_vmxon().unwrap();
+        unsafe { enable_vmxon()? };
 
         // TODO: check related registers
 
         // get VMCS revision identifier in IA32_VMX_BASIC MSR
         self.vmcs_revision_id = get_vmcs_revision_id();
-        self.vmxon_region = VmxRegion::new(self.vmcs_revision_id, false).unwrap();
+        self.vmxon_region = VmxRegion::new(self.vmcs_revision_id, false)?;
 
-        execute_vmxon(self.vmxon_region.start_paddr() as u64).unwrap();
+        unsafe { execute_vmxon(self.vmxon_region.start_paddr() as u64)? };
 
         info!(
             "VMX enabled, region: 0x{:x}",
             self.vmxon_region.start_paddr(),
         );
+        Ok(())
     }
 
-    unsafe fn setup_vmcs(&mut self, entry: usize) {
-        self.vmcs_region = VmxRegion::new(self.vmcs_revision_id, false).unwrap();
+    fn setup_vmcs(&mut self, entry: GuestPhysAddr) -> HvResult {
+        self.vmcs_region = VmxRegion::new(self.vmcs_revision_id, false)?;
 
-        enable_vmcs(self.vmcs_region.start_paddr() as u64).unwrap();
-        setup_vmcs_host(Self::vmx_exit as usize).unwrap();
-        setup_vmcs_guest(entry).unwrap();
-        setup_vmcs_control().unwrap();
+        unsafe { enable_vmcs(self.vmcs_region.start_paddr() as u64)? };
+        setup_vmcs_host(Self::vmx_exit as usize)?;
+        setup_vmcs_guest(entry)?;
+        setup_vmcs_control()?;
 
         info!(
             "VMCS enabled, region: 0x{:x}",
             self.vmcs_region.start_paddr(),
         );
+
+        Ok(())
     }
 
     pub fn run(&mut self) -> ! {
         assert!(this_cpu_id() == self.cpuid);
         // TODO: this_cpu_data().cpu_on_entry
-        unsafe {
-            self.init(test_guest as usize, this_cpu_data().dtb_ipa);
-            set_host_rsp(&self.host_stack_top as *const _ as usize).unwrap();
-            self.vmx_launch();
-        }
+        self.init(GUEST_ENTRY, this_cpu_data().dtb_ipa).unwrap();
+
+        this_cpu_data().activate_gpm();
+        set_host_rsp(&self.host_stack_top as *const _ as usize).unwrap();
+        set_guest_page_table(GUEST_PT1).unwrap();
+        set_guest_stack_pointer(GUEST_STACK_TOP).unwrap();
+
+        unsafe { self.vmx_launch() };
         loop {}
     }
 
@@ -260,10 +269,12 @@ impl ArchCpu {
         panic!("VMX instruction error: {}", instruction_error());
     }
 
-    unsafe fn vmexit_handler(&mut self) {
-        let exit_info = exit_info().unwrap();
-        debug!("vmexit rax:{} {:#x?}", self.guest_regs.rax, exit_info);
-        advance_guest_rip(VM_EXIT_INSTR_LEN_VMCALL).unwrap();
+    fn vmexit_handler(&mut self) {
+        crate::arch::trap::handle_vmexit(self).unwrap();
+    }
+
+    pub fn regs(&self) -> &GeneralRegisters {
+        &self.guest_regs
     }
 }
 
@@ -274,19 +285,16 @@ pub fn this_cpu_id() -> usize {
     }
 }
 
-#[naked]
-unsafe extern "C" fn test_guest() -> ! {
-    core::arch::asm!(
-        "
-        mov     rax, 0
-        mov     rdi, 2
-        mov     rsi, 3
-        mov     rdx, 3
-        mov     rcx, 3
-    2:
-        vmcall
-        add     rax, 1
-        jmp     2b",
-        options(noreturn),
-    );
+impl Debug for ArchCpu {
+    fn fmt(&self, f: &mut Formatter) -> Result {
+        (|| -> HvResult<Result> {
+            Ok(f.debug_struct("ArchCpu")
+                .field("guest_regs", &self.guest_regs)
+                .field("rip", &guest_rip())
+                .field("rsp", &guest_rsp())
+                .field("cr3", &guest_cr3())
+                .finish())
+        })()
+        .unwrap()
+    }
 }

@@ -104,10 +104,11 @@ fn primary_init_early() {
     event::init(MAX_CPU_NUM);
 
     device::irqchip::primary_init_early();
-    // crate::arch::mm::init_hv_page_table().unwrap();
+    // TODO: tmp
+    crate::arch::mm::init_hv_page_table().unwrap();
 
     // TODO:
-    // zone_create(root_zone_config()).unwrap();
+    zone_create(root_zone_config()).unwrap();
     INIT_EARLY_OK.store(1, Ordering::Release);
 }
 

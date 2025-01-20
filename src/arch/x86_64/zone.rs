@@ -14,6 +14,37 @@ pub struct HvArchZoneConfig {}
 
 impl Zone {
     pub fn pt_init(&mut self, mem_regions: &[HvConfigMemoryRegion]) -> HvResult {
+        // The first memory region is used to map the guest physical memory.
+
+        for mem_region in mem_regions.iter() {
+            let mut flags = MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE;
+            if mem_region.mem_type == MEM_TYPE_IO {
+                flags |= MemFlags::IO;
+            }
+            match mem_region.mem_type {
+                MEM_TYPE_RAM | MEM_TYPE_IO => {
+                    self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                        mem_region.virtual_start as GuestPhysAddr,
+                        mem_region.physical_start as HostPhysAddr,
+                        mem_region.size as _,
+                        flags,
+                    ))?
+                }
+                /*TODO: MEM_TYPE_VIRTIO => {
+                    self.mmio_region_register(
+                        mem_region.physical_start as _,
+                        mem_region.size as _,
+                        mmio_virtio_handler,
+                        mem_region.physical_start as _,
+                    );
+                }*/
+                _ => {
+                    panic!("Unsupported memory type: {}", mem_region.mem_type)
+                }
+            }
+        }
+
+        info!("VM stage 2 memory set: {:#x?}", self.gpm);
         Ok(())
     }
 

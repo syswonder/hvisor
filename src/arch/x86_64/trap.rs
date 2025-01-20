@@ -1,8 +1,11 @@
-use alloc::vec;
-
-use super::{cpu::TrapFrame, lapic::vectors::APIC_TIMER_VECTOR};
+use super::{
+    cpu::{ArchCpu, TrapFrame},
+    lapic::vectors::APIC_TIMER_VECTOR,
+};
 use crate::arch::{idt::IdtStruct, lapic::local_apic};
-use core::arch::global_asm;
+use crate::{arch::vmx::*, error::HvResult};
+use alloc::vec;
+use core::arch::{self, global_asm};
 
 global_asm!(
     include_str!("trap.S"),
@@ -11,6 +14,7 @@ global_asm!(
 
 const IRQ_VECTOR_START: u8 = 0x20;
 const IRQ_VECTOR_END: u8 = 0xff;
+const VM_EXIT_INSTR_LEN_VMCALL: u8 = 3;
 
 #[allow(dead_code)]
 #[allow(non_snake_case)]
@@ -69,4 +73,52 @@ fn handle_irq(vector: u8) {
             println!("Unhandled irq {}", vector);
         }
     }
+}
+
+fn handle_hypercall(arch_cpu: &mut ArchCpu) -> HvResult {
+    let regs = arch_cpu.regs();
+    debug!(
+        "VM exit: VMCALL({:#x}): {:?}",
+        regs.rax,
+        [regs.rdi, regs.rsi, regs.rdx, regs.rcx]
+    );
+    advance_guest_rip(VM_EXIT_INSTR_LEN_VMCALL)?;
+    Ok(())
+}
+
+fn handle_ept_violation(guest_rip: usize, arch_cpu: &mut ArchCpu) -> HvResult {
+    let fault_info = ept_violation_info()?;
+    panic!(
+        "VM exit: EPT violation @ {:#x}, fault_paddr={:#x}, access_flags=({:?}), arch_cpu: {:#x?}",
+        guest_rip, fault_info.fault_guest_paddr, fault_info.access_flags, arch_cpu
+    );
+}
+
+pub fn handle_vmexit(arch_cpu: &mut ArchCpu) -> HvResult {
+    let exit_info = exit_info()?;
+    debug!("VM exit: {:#x?}", exit_info);
+
+    if exit_info.entry_failure {
+        panic!("VM entry failed: {:#x?}", exit_info);
+    }
+
+    let res = match exit_info.exit_reason {
+        VmxExitReason::VMCALL => handle_hypercall(arch_cpu),
+        VmxExitReason::EPT_VIOLATION => handle_ept_violation(exit_info.guest_rip, arch_cpu),
+        _ => panic!(
+            "Unhandled VM-Exit reason {:?}:\n{:#x?}",
+            exit_info.exit_reason,
+            arch_cpu.regs()
+        ),
+    };
+
+    if res.is_err() {
+        panic!(
+            "Failed to handle VM-exit {:?}:\n{:#x?}",
+            exit_info.exit_reason,
+            arch_cpu.regs()
+        );
+    }
+
+    Ok(())
 }

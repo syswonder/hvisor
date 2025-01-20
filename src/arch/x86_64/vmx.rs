@@ -1,8 +1,9 @@
 #![allow(non_camel_case_types)]
 #![allow(clippy::upper_case_acronyms)]
-
+use crate::arch::s2pt::Stage2PageFaultInfo;
+use crate::consts::PAGE_SIZE;
 use crate::error::{HvError, HvResult};
-use crate::memory::{Frame, PhysAddr};
+use crate::memory::{Frame, GuestPhysAddr, HostPhysAddr, MemFlags, PhysAddr};
 use bit_field::BitField;
 use bitflags::{bitflags, Flags};
 use raw_cpuid::CpuId;
@@ -189,9 +190,9 @@ pub unsafe fn enable_vmxon() -> HvResult {
     Ok(())
 }
 
-pub unsafe fn get_vmcs_revision_id() -> u32 {
+pub fn get_vmcs_revision_id() -> u32 {
     let vmx_basic_reg = Msr::new(IA32_VMX_BASIC);
-    let vmx_basic_flag = vmx_basic_reg.read();
+    let vmx_basic_flag = unsafe { vmx_basic_reg.read() };
     vmx_basic_flag.get_bits(0..=30) as u32
 }
 
@@ -214,9 +215,9 @@ pub unsafe fn enable_vmcs(start_paddr: u64) -> HvResult {
 // natural-width
 type unw = u64;
 
-pub unsafe fn setup_vmcs_host(vmx_exit: usize) -> HvResult {
-    vmwrite::<u64>(host::IA32_PAT_FULL, Msr::new(IA32_PAT).read())?;
-    vmwrite::<u64>(host::IA32_EFER_FULL, Msr::new(IA32_EFER).read())?;
+pub fn setup_vmcs_host(vmx_exit: usize) -> HvResult {
+    vmwrite::<u64>(host::IA32_PAT_FULL, unsafe { Msr::new(IA32_PAT).read() })?;
+    vmwrite::<u64>(host::IA32_EFER_FULL, unsafe { Msr::new(IA32_EFER).read() })?;
 
     vmwrite::<unw>(host::CR0, Cr0::read_raw())?;
     vmwrite::<unw>(host::CR3, Cr3::read_raw().0.start_address().as_u64())?;
@@ -229,8 +230,8 @@ pub unsafe fn setup_vmcs_host(vmx_exit: usize) -> HvResult {
     vmwrite::<u16>(host::FS_SELECTOR, x86::segmentation::fs().bits())?;
     vmwrite::<u16>(host::GS_SELECTOR, x86::segmentation::gs().bits())?;
 
-    vmwrite::<unw>(host::FS_BASE, Msr::new(IA32_FS_BASE).read())?;
-    vmwrite::<unw>(host::GS_BASE, Msr::new(IA32_GS_BASE).read())?;
+    vmwrite::<unw>(host::FS_BASE, unsafe { Msr::new(IA32_FS_BASE).read() })?;
+    vmwrite::<unw>(host::GS_BASE, unsafe { Msr::new(IA32_GS_BASE).read() })?;
 
     let tr = unsafe { x86::task::tr() };
     let mut gdtp = DescriptorTablePointer::<u64>::default();
@@ -254,7 +255,7 @@ pub unsafe fn setup_vmcs_host(vmx_exit: usize) -> HvResult {
     Ok(())
 }
 
-pub unsafe fn setup_vmcs_guest(entry: usize) -> HvResult {
+pub fn setup_vmcs_guest(entry: usize) -> HvResult {
     // Enable protected mode and paging.
     let cr0_guest = Cr0Flags::PROTECTED_MODE_ENABLE
         | Cr0Flags::EXTENSION_TYPE
@@ -301,7 +302,7 @@ pub unsafe fn setup_vmcs_guest(entry: usize) -> HvResult {
     vmwrite::<unw>(guest::IDTR_BASE, 0)?;
     vmwrite::<u32>(guest::IDTR_LIMIT, 0xffff)?;
 
-    vmwrite::<unw>(guest::CR3, Cr3::read_raw().0.start_address().as_u64())?;
+    vmwrite::<unw>(guest::CR3, 0)?;
     vmwrite::<unw>(guest::DR7, 0x400)?;
     vmwrite::<unw>(guest::RSP, 0)?;
     vmwrite::<unw>(guest::RIP, entry as unw)?;
@@ -317,18 +318,18 @@ pub unsafe fn setup_vmcs_guest(entry: usize) -> HvResult {
 
     vmwrite::<u64>(guest::LINK_PTR_FULL, u64::MAX)?;
     vmwrite::<u64>(guest::IA32_DEBUGCTL_FULL, 0)?;
-    vmwrite::<u64>(guest::IA32_PAT_FULL, Msr::new(IA32_PAT).read())?;
-    vmwrite::<u64>(guest::IA32_EFER_FULL, Msr::new(IA32_EFER).read())?;
+    vmwrite::<u64>(guest::IA32_PAT_FULL, unsafe { Msr::new(IA32_PAT).read() })?;
+    vmwrite::<u64>(guest::IA32_EFER_FULL, unsafe { Msr::new(IA32_EFER).read() })?;
 
     Ok(())
 }
 
-pub unsafe fn setup_vmcs_control() -> HvResult {
+pub fn setup_vmcs_control() -> HvResult {
     // Intercept NMI, pass-through external interrupts.
     set_control(
         control::PINBASED_EXEC_CONTROLS,
         Msr::new(IA32_VMX_TRUE_PINBASED_CTLS),
-        Msr::new(IA32_VMX_PINBASED_CTLS).read() as u32,
+        unsafe { Msr::new(IA32_VMX_PINBASED_CTLS).read() } as u32,
         PinbasedControls::NMI_EXITING.bits(),
         0,
     )?;
@@ -337,17 +338,20 @@ pub unsafe fn setup_vmcs_control() -> HvResult {
     set_control(
         control::PRIMARY_PROCBASED_EXEC_CONTROLS,
         Msr::new(IA32_VMX_TRUE_PROCBASED_CTLS),
-        Msr::new(IA32_VMX_PROCBASED_CTLS).read() as u32,
+        unsafe { Msr::new(IA32_VMX_PROCBASED_CTLS).read() } as u32,
         PrimaryControls::SECONDARY_CONTROLS.bits(),
         (PrimaryControls::CR3_LOAD_EXITING | PrimaryControls::CR3_STORE_EXITING).bits(),
     )?;
 
-    // Enable RDTSCP, INVPCID.
+    // Enable EPT, RDTSCP, INVPCID.
     set_control(
         control::SECONDARY_PROCBASED_EXEC_CONTROLS,
         Msr::new(IA32_VMX_PROCBASED_CTLS2),
         0,
-        (SecondaryControls::ENABLE_RDTSCP | SecondaryControls::ENABLE_INVPCID).bits(),
+        (SecondaryControls::ENABLE_EPT
+            | SecondaryControls::ENABLE_RDTSCP
+            | SecondaryControls::ENABLE_INVPCID)
+            .bits(),
         0,
     )?;
 
@@ -355,7 +359,7 @@ pub unsafe fn setup_vmcs_control() -> HvResult {
     set_control(
         control::VMEXIT_CONTROLS,
         Msr::new(IA32_VMX_TRUE_EXIT_CTLS),
-        Msr::new(IA32_VMX_EXIT_CTLS).read() as u32,
+        unsafe { Msr::new(IA32_VMX_EXIT_CTLS).read() } as u32,
         (ExitControls::HOST_ADDRESS_SPACE_SIZE
             | ExitControls::SAVE_IA32_PAT
             | ExitControls::LOAD_IA32_PAT
@@ -369,7 +373,7 @@ pub unsafe fn setup_vmcs_control() -> HvResult {
     set_control(
         control::VMENTRY_CONTROLS,
         Msr::new(IA32_VMX_TRUE_ENTRY_CTLS),
-        Msr::new(IA32_VMX_ENTRY_CTLS).read() as u32,
+        unsafe { Msr::new(IA32_VMX_ENTRY_CTLS).read() } as u32,
         (EntryControls::IA32E_MODE_GUEST
             | EntryControls::LOAD_IA32_PAT
             | EntryControls::LOAD_IA32_EFER)
@@ -457,22 +461,36 @@ impl From<VmFail> for HvError {
     }
 }
 
-pub unsafe fn advance_guest_rip(instr_len: u8) -> HvResult {
-    Ok(vmwrite::<unw>(
-        guest::RIP,
-        (vmread(guest::RIP)? + instr_len as u64),
-    )?)
+pub fn advance_guest_rip(instr_len: u8) -> HvResult {
+    unsafe {
+        Ok(vmwrite::<unw>(
+            guest::RIP,
+            (vmread(guest::RIP)? + instr_len as u64),
+        )?)
+    }
 }
 
-pub unsafe fn instruction_error() -> u32 {
+pub fn instruction_error() -> u32 {
     vmread(ro::VM_INSTRUCTION_ERROR).unwrap() as u32
 }
 
-pub unsafe fn set_host_rsp(paddr: usize) -> HvResult {
-    Ok(vmwrite::<unw>(host::RSP, paddr as unw)?)
+pub fn set_host_rsp(rsp: HostPhysAddr) -> HvResult {
+    Ok(vmwrite::<unw>(host::RSP, rsp as unw)?)
 }
 
-pub unsafe fn exit_info() -> HvResult<VmxExitInfo> {
+pub fn set_guest_page_table(cr3: GuestPhysAddr) -> HvResult {
+    Ok(vmwrite::<unw>(guest::CR3, cr3 as unw)?)
+}
+
+pub fn set_guest_stack_pointer(rsp: GuestPhysAddr) -> HvResult {
+    Ok(vmwrite::<unw>(guest::RSP, rsp as unw)?)
+}
+
+pub fn set_s2ptp(s2ptp: u64) -> HvResult {
+    Ok(vmwrite::<u64>(control::EPTP_FULL, s2ptp as u64)?)
+}
+
+pub fn exit_info() -> HvResult<VmxExitInfo> {
     let full_reason = vmread(ro::EXIT_REASON)? as u32;
     Ok(VmxExitInfo {
         exit_reason: full_reason
@@ -483,4 +501,36 @@ pub unsafe fn exit_info() -> HvResult<VmxExitInfo> {
         exit_instruction_length: vmread(ro::VMEXIT_INSTRUCTION_LEN)? as u32,
         guest_rip: vmread(guest::RIP)? as usize,
     })
+}
+
+pub fn ept_violation_info() -> HvResult<Stage2PageFaultInfo> {
+    // SDM Vol. 3C, Section 27.2.1, Table 27-7
+    let qualification = vmread(ro::EXIT_QUALIFICATION)? as u64;
+    let fault_guest_paddr = vmread(ro::GUEST_PHYSICAL_ADDR_FULL)? as usize;
+    let mut access_flags = MemFlags::empty();
+    if qualification.get_bit(0) {
+        access_flags |= MemFlags::READ;
+    }
+    if qualification.get_bit(1) {
+        access_flags |= MemFlags::WRITE;
+    }
+    if qualification.get_bit(2) {
+        access_flags |= MemFlags::EXECUTE;
+    }
+    Ok(Stage2PageFaultInfo {
+        access_flags,
+        fault_guest_paddr,
+    })
+}
+
+pub fn guest_rip() -> unw {
+    vmread(guest::RIP).unwrap() as unw
+}
+
+pub fn guest_rsp() -> unw {
+    vmread(guest::RSP).unwrap() as unw
+}
+
+pub fn guest_cr3() -> unw {
+    vmread(guest::CR3).unwrap() as unw
 }

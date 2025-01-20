@@ -1,5 +1,4 @@
-use super::cpu::this_cpu_id;
-use crate::arch::cpu;
+use crate::arch::cpu::this_cpu_id;
 use crate::consts::PER_CPU_SIZE;
 use crate::memory::addr::PHYS_VIRT_OFFSET;
 use crate::rust_main;

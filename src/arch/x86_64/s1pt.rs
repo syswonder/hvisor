@@ -1,4 +1,4 @@
-use super::paging::{GenericPTE, HvPageTable, PagingInstr};
+use super::paging::{GenericPTE, Level4PageTable, PagingInstr};
 use crate::{
     consts::PAGE_SIZE,
     memory::{
@@ -57,4 +57,4 @@ impl PagingInstr for S1PTInstr {
     fn flush(_vaddr: Option<usize>) {}
 }
 
-pub type Stage1PageTable = HvPageTable<GuestPhysAddr, PageTableEntry, S1PTInstr>;
+pub type Stage1PageTable = Level4PageTable<GuestPhysAddr, PageTableEntry, S1PTInstr>;
