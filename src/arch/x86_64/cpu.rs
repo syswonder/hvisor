@@ -1,20 +1,29 @@
-use crate::arch::gdt::GdtStruct;
-use crate::arch::lapic::{busy_wait, local_apic};
-use crate::arch::vmx::*;
-use crate::consts::{core_end, PER_CPU_SIZE};
-use crate::error::{HvError, HvResult};
-use crate::memory::{addr::phys_to_virt, Frame, PhysAddr, PAGE_SIZE};
-use crate::memory::{GuestPhysAddr, HostPhysAddr};
-use crate::percpu::this_cpu_data;
-use crate::platform::qemu_x86_64::*;
-use alloc::boxed::Box;
-use core::arch::{asm, global_asm};
-use core::fmt::{Debug, Formatter, Result};
-use core::mem::size_of;
-use core::panicking::panic;
-use core::time::Duration;
+use crate::{
+    arch::{
+        gdt::GdtStruct,
+        lapic::{busy_wait, local_apic},
+        msr::Msr::*,
+        msr::MsrBitmap,
+        vmx::*,
+    },
+    consts::{core_end, PER_CPU_SIZE},
+    device::irqchip::pic::lapic::VirtApicTimer,
+    error::{HvError, HvResult},
+    memory::{addr::phys_to_virt, GuestPhysAddr, PhysAddr, PAGE_SIZE},
+    percpu::this_cpu_data,
+    platform::qemu_x86_64::*,
+};
+use alloc::{boxed::Box, collections::vec_deque::VecDeque};
+use core::{
+    arch::{asm, global_asm},
+    fmt::{Debug, Formatter, Result},
+    mem::size_of,
+    time::Duration,
+};
 use raw_cpuid::CpuId;
 use x86_64::structures::tss::TaskStateSegment;
+
+use super::msr::Msr;
 
 const AP_START_PAGE_IDX: u8 = 6;
 const AP_START_PAGE_PADDR: PhysAddr = AP_START_PAGE_IDX as usize * PAGE_SIZE;
@@ -100,23 +109,6 @@ pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
     unsafe { lapic.send_sipi(AP_START_PAGE_IDX, cpuid as u32) };
 }
 
-#[repr(C)]
-#[derive(Debug, Default, Clone, Copy)]
-pub struct TrapFrame {
-    pub usr: [u64; 15],
-
-    // pushed by 'trap.S'
-    pub vector: u64,
-    pub error_code: u64,
-
-    // pushed by CPU
-    pub rip: u64,
-    pub cs: u64,
-    pub rflags: u64,
-    pub rsp: u64,
-    pub ss: u64,
-}
-
 /// General-Purpose Registers for 64-bit x86 architecture.
 #[repr(C)]
 #[derive(Debug, Default, Clone)]
@@ -141,7 +133,7 @@ pub struct GeneralRegisters {
 
 #[repr(C)]
 pub struct ArchCpu {
-    // guest_regs and host_stack_top should always be at the first.
+    // guest_regs and host_stack_top should always be at first.
     guest_regs: GeneralRegisters,
     host_stack_top: u64,
     pub cpuid: usize,
@@ -150,6 +142,9 @@ pub struct ArchCpu {
     vmcs_revision_id: u32,
     vmxon_region: VmxRegion,
     vmcs_region: VmxRegion,
+    msr_bitmap: MsrBitmap,
+    apic_timer: VirtApicTimer,
+    pending_events: VecDeque<(u8, Option<u32>)>,
 }
 
 impl ArchCpu {
@@ -165,50 +160,15 @@ impl ArchCpu {
             vmcs_region: VmxRegion::uninit(),
             guest_regs: GeneralRegisters::default(),
             host_stack_top: 0,
+            msr_bitmap: MsrBitmap::uninit(),
+            apic_timer: VirtApicTimer::new(),
+            pending_events: VecDeque::with_capacity(8),
         }
     }
 
     pub fn init(&mut self, entry: GuestPhysAddr, dtb: usize) -> HvResult {
         self.activate_vmx()?;
         self.setup_vmcs(entry)?;
-        Ok(())
-    }
-
-    fn activate_vmx(&mut self) -> HvResult {
-        assert!(check_vmx_support());
-        assert!(!is_vmx_enabled());
-
-        // enable VMXON
-        unsafe { enable_vmxon()? };
-
-        // TODO: check related registers
-
-        // get VMCS revision identifier in IA32_VMX_BASIC MSR
-        self.vmcs_revision_id = get_vmcs_revision_id();
-        self.vmxon_region = VmxRegion::new(self.vmcs_revision_id, false)?;
-
-        unsafe { execute_vmxon(self.vmxon_region.start_paddr() as u64)? };
-
-        info!(
-            "VMX enabled, region: 0x{:x}",
-            self.vmxon_region.start_paddr(),
-        );
-        Ok(())
-    }
-
-    fn setup_vmcs(&mut self, entry: GuestPhysAddr) -> HvResult {
-        self.vmcs_region = VmxRegion::new(self.vmcs_revision_id, false)?;
-
-        unsafe { enable_vmcs(self.vmcs_region.start_paddr() as u64)? };
-        setup_vmcs_host(Self::vmx_exit as usize)?;
-        setup_vmcs_guest(entry)?;
-        setup_vmcs_control()?;
-
-        info!(
-            "VMCS enabled, region: 0x{:x}",
-            self.vmcs_region.start_paddr(),
-        );
-
         Ok(())
     }
 
@@ -230,6 +190,59 @@ impl ArchCpu {
         assert!(this_cpu_id() == self.cpuid);
         unsafe { self.init(0, this_cpu_data().dtb_ipa) };
         loop {}
+    }
+
+    /// Guest general-purpose registers.
+    pub fn regs(&self) -> &GeneralRegisters {
+        &self.guest_regs
+    }
+
+    /// Mutable reference of guest general-purpose registers.
+    pub fn regs_mut(&mut self) -> &mut GeneralRegisters {
+        &mut self.guest_regs
+    }
+
+    /// Returns the mutable reference of [`VirtApicTimer`].
+    pub fn apic_timer_mut(&mut self) -> &mut VirtApicTimer {
+        &mut self.apic_timer
+    }
+
+    /// Add a virtual interrupt or exception to the pending events list,
+    /// and try to inject it before later VM entries.
+    pub fn inject_event(&mut self, vector: u8, err_code: Option<u32>) {
+        self.pending_events.push_back((vector, err_code));
+    }
+
+    fn activate_vmx(&mut self) -> HvResult {
+        assert!(check_vmx_support());
+        assert!(!is_vmx_enabled());
+
+        // enable VMXON
+        unsafe { enable_vmxon()? };
+
+        // TODO: check related registers
+
+        // get VMCS revision identifier in IA32_VMX_BASIC MSR
+        self.vmcs_revision_id = get_vmcs_revision_id();
+        self.vmxon_region = VmxRegion::new(self.vmcs_revision_id, false)?;
+
+        unsafe { execute_vmxon(self.vmxon_region.start_paddr() as u64)? };
+
+        Ok(())
+    }
+
+    fn setup_vmcs(&mut self, entry: GuestPhysAddr) -> HvResult {
+        self.vmcs_region = VmxRegion::new(self.vmcs_revision_id, false)?;
+
+        self.msr_bitmap = MsrBitmap::init()?;
+        self.setup_msr_bitmap()?;
+
+        unsafe { enable_vmcs(self.vmcs_region.start_paddr() as u64)? };
+        setup_vmcs_host(Self::vmx_exit as usize)?;
+        setup_vmcs_guest(entry)?;
+        setup_vmcs_control(self.msr_bitmap.phys_addr())?;
+
+        Ok(())
     }
 
     #[naked]
@@ -271,10 +284,42 @@ impl ArchCpu {
 
     fn vmexit_handler(&mut self) {
         crate::arch::trap::handle_vmexit(self).unwrap();
+        // Check if there is an APIC timer interrupt
+        if self.apic_timer.check_interrupt() {
+            self.inject_event(self.apic_timer.vector(), None);
+        }
+        self.check_pending_events().unwrap();
     }
 
-    pub fn regs(&self) -> &GeneralRegisters {
-        &self.guest_regs
+    /// Try to inject a pending event before next VM entry.
+    fn check_pending_events(&mut self) -> HvResult {
+        if let Some(event) = self.pending_events.front() {
+            let allow_interrupt = allow_interrupt()?;
+            if event.0 < 32 || allow_interrupt {
+                // if it's an exception, or an interrupt that is not blocked, inject it directly.
+                inject_event(event.0, event.1)?;
+                self.pending_events.pop_front();
+            } else {
+                // interrupts are blocked, enable interrupt-window exiting.
+                set_interrupt_window(true)?;
+            }
+        }
+        Ok(())
+    }
+
+    fn setup_msr_bitmap(&mut self) -> HvResult {
+        // Intercept IA32_APIC_BASE MSR accesses
+        let msr = IA32_APIC_BASE;
+        self.msr_bitmap.set_read_intercept(msr, true);
+        self.msr_bitmap.set_write_intercept(msr, true);
+        // Intercept all x2APIC MSR accesses
+        for addr in 0x800_u32..=0x83f_u32 {
+            if let Ok(msr) = Msr::try_from(addr) {
+                self.msr_bitmap.set_read_intercept(msr, true);
+                self.msr_bitmap.set_write_intercept(msr, true);
+            }
+        }
+        Ok(())
     }
 }
 

@@ -105,7 +105,7 @@ fn primary_init_early() {
 
     device::irqchip::primary_init_early();
     // TODO: tmp
-    crate::arch::mm::init_hv_page_table().unwrap();
+    // crate::arch::mm::init_hv_page_table().unwrap();
 
     // TODO:
     zone_create(root_zone_config()).unwrap();

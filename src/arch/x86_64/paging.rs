@@ -1,10 +1,13 @@
-#![allow(unused)]
-use alloc::vec::Vec;
-
-use crate::consts::PAGE_SIZE;
-use crate::error::{HvError, HvResult};
-use crate::memory::{addr::is_aligned, Frame, MemFlags, MemoryRegion, PhysAddr, VirtAddr};
+use crate::{
+    error::{HvError, HvResult},
+    memory::{addr::is_aligned, Frame, MemFlags, MemoryRegion, PhysAddr, VirtAddr},
+};
+use alloc::{sync::Arc, vec::Vec};
 use core::{fmt::Debug, marker::PhantomData, slice};
+use spin::Mutex;
+
+const LEVELS: usize = 4;
+const ENTRY_COUNT: usize = 512;
 
 #[derive(Debug)]
 pub enum PagingError {
@@ -118,207 +121,27 @@ pub trait GenericPageTable: GenericPageTableImmut {
     fn flush(&self, vaddr: Option<Self::VA>);
 }
 
-// TODO: lock
-pub struct Level4PageTable<VA, PTE: GenericPTE, I: PagingInstr> {
+/// A immutable level-4 page table implements `GenericPageTableImmut`.
+pub struct Level4PageTableImmut<VA, PTE: GenericPTE> {
+    // Root table frame.
     root: Frame,
-    // Intermediate level table frames.
-    intrm_tables: Vec<Frame>,
-    _phantom: PhantomData<(VA, PTE, I)>,
+    // Phantom data.
+    _phantom: PhantomData<(VA, PTE)>,
 }
 
-impl<VA, PTE, I> Level4PageTable<VA, PTE, I>
+impl<VA, PTE> Level4PageTableImmut<VA, PTE>
 where
     VA: From<usize> + Into<usize> + Copy,
     PTE: GenericPTE,
-    I: PagingInstr,
-{
-    #[allow(dead_code)]
-    pub fn dump(&self, limit: usize) {
-        // TODO: lock
-        // static LOCK: Mutex<()> = Mutex::new(());
-        // let _lock = LOCK.lock();
-
-        println!("Root: {:x?}", self.root_paddr());
-        self.walk(
-            table_of(self.root_paddr()),
-            0,
-            0,
-            limit,
-            &|level: usize, idx: usize, vaddr: usize, entry: &PTE| {
-                for _ in 0..level * 2 {
-                    print!(" ");
-                }
-                println!(
-                    "[ADDR:{:#x?} level:{} - idx:{:03}], vaddr:{:08x?}: {:x?}",
-                    entry as *const _ as VirtAddr, level, idx, vaddr, entry
-                );
-            },
-        );
-    }
-
-    /// Clone only the top level page table mapping from `src`.
-    pub fn clone_from(src: &impl GenericPageTableImmut) -> Self {
-        // XXX: The clonee won't track intermediate tables, must ensure it lives shorter than the
-        // original page table.
-        let pt = Self::new();
-        let dst_p4_table =
-            unsafe { slice::from_raw_parts_mut(pt.root_paddr() as *mut PTE, ENTRY_COUNT) };
-        let src_p4_table =
-            unsafe { slice::from_raw_parts(src.root_paddr() as *const PTE, ENTRY_COUNT) };
-        dst_p4_table.clone_from_slice(src_p4_table);
-        pt
-    }
-}
-
-impl<VA, PTE, I> GenericPageTableImmut for Level4PageTable<VA, PTE, I>
-where
-    VA: From<usize> + Into<usize> + Copy,
-    PTE: GenericPTE,
-    I: PagingInstr,
-{
-    type VA = VA;
-
-    unsafe fn from_root(root_paddr: PhysAddr) -> Self {
-        Self {
-            root: Frame::from_paddr(root_paddr),
-            intrm_tables: Vec::new(),
-            _phantom: PhantomData,
-        }
-    }
-
-    fn root_paddr(&self) -> PhysAddr {
-        self.root.start_paddr()
-    }
-
-    fn query(&self, vaddr: VA) -> PagingResult<(PhysAddr, MemFlags, PageSize)> {
-        // TODO: lock
-        let (entry, size) = self.get_entry_mut(vaddr)?;
-        if entry.is_unused() {
-            return Err(PagingError::NotMapped);
-        }
-        let off = size.page_offset(vaddr.into());
-        Ok((entry.addr() + off, entry.flags(), size))
-    }
-}
-
-impl<VA, PTE, I> GenericPageTable for Level4PageTable<VA, PTE, I>
-where
-    VA: From<usize> + Into<usize> + Copy,
-    PTE: GenericPTE,
-    I: PagingInstr,
 {
     fn new() -> Self {
         let frame = Frame::new_zero().expect("failed to allocate root frame for host page table");
         Self {
             root: frame,
-            intrm_tables: Vec::new(),
             _phantom: PhantomData,
         }
     }
 
-    fn map(&mut self, region: &MemoryRegion<VA>) -> HvResult {
-        assert!(
-            is_aligned(region.start.into()),
-            "region.start = {:#x?}",
-            region.start.into()
-        );
-        assert!(is_aligned(region.size), "region.size = {:#x?}", region.size);
-        trace!(
-            "create mapping in {}: {:#x?}",
-            core::any::type_name::<Self>(),
-            region
-        );
-        // TODO: lock
-        let mut vaddr = region.start.into();
-        let mut size = region.size;
-        while size > 0 {
-            let paddr = region.mapper.map_fn(vaddr);
-            let page_size = if PageSize::Size1G.is_aligned(vaddr)
-                && PageSize::Size1G.is_aligned(paddr)
-                && size >= PageSize::Size1G as usize
-                && !region.flags.contains(MemFlags::NO_HUGEPAGES)
-            {
-                PageSize::Size1G
-            } else if PageSize::Size2M.is_aligned(vaddr)
-                && PageSize::Size2M.is_aligned(paddr)
-                && size >= PageSize::Size2M as usize
-                && !region.flags.contains(MemFlags::NO_HUGEPAGES)
-            {
-                PageSize::Size2M
-            } else {
-                PageSize::Size4K
-            };
-            let page = Page::new_aligned(vaddr.into(), page_size);
-            self.map_page(page, paddr, region.flags)
-                .map_err(|e: PagingError| {
-                    error!(
-                        "failed to map page: {:#x?}({:?}) -> {:#x?}, {:?}",
-                        vaddr, page_size, paddr, e
-                    );
-                    e
-                })?;
-            vaddr += page_size as usize;
-            size -= page_size as usize;
-        }
-        Ok(())
-    }
-
-    fn unmap(&mut self, region: &MemoryRegion<VA>) -> HvResult {
-        trace!(
-            "destroy mapping in {}: {:#x?}",
-            core::any::type_name::<Self>(),
-            region
-        );
-        // TODO: lock
-        let mut vaddr = region.start.into();
-        let mut size = region.size;
-        while size > 0 {
-            let (_, page_size) = self.unmap_page(vaddr.into()).map_err(|e| {
-                error!("failed to unmap page: {:#x?}, {:?}", vaddr, e);
-                e
-            })?;
-            if !page_size.is_aligned(vaddr) {
-                error!("error vaddr={:#x?}", vaddr);
-                loop {}
-            }
-            assert!(page_size.is_aligned(vaddr));
-            assert!(page_size as usize <= size);
-            vaddr += page_size as usize;
-            size -= page_size as usize;
-        }
-        Ok(())
-    }
-
-    fn update(&mut self, vaddr: VA, paddr: PhysAddr, flags: MemFlags) -> PagingResult<PageSize> {
-        let (entry, size) = self.get_entry_mut(vaddr)?;
-        entry.set_addr(paddr);
-        entry.set_flags(flags, size.is_huge());
-        Ok(size)
-    }
-
-    fn clone(&self) -> Self {
-        let mut pt = Self::clone_from(self);
-        // clone with lock to avoid data racing between it and its clonees.
-        // TODO: pt.clonee_lock = self.clonee_lock.clone();
-        pt
-    }
-
-    unsafe fn activate(&self) {
-        I::activate(self.root_paddr())
-    }
-
-    fn flush(&self, vaddr: Option<Self::VA>) {
-        I::flush(vaddr.map(Into::into))
-    }
-}
-
-// TODO: temp
-impl<VA, PTE, I> Level4PageTable<VA, PTE, I>
-where
-    VA: From<usize> + Into<usize> + Copy,
-    PTE: GenericPTE,
-    I: PagingInstr,
-{
     fn get_entry_mut(&self, vaddr: VA) -> PagingResult<(&mut PTE, PageSize)> {
         let vaddr = vaddr.into();
 
@@ -342,6 +165,117 @@ where
         Ok((p1e, PageSize::Size4K))
     }
 
+    fn walk(
+        &self,
+        table: &[PTE],
+        level: usize,
+        start_vaddr: usize,
+        limit: usize,
+        func: &impl Fn(usize, usize, usize, &PTE),
+    ) {
+        let mut n = 0;
+        for (i, entry) in table.iter().enumerate() {
+            let vaddr = start_vaddr + (i << (12 + (3 - level) * 9));
+            if entry.is_present() {
+                func(level, i, vaddr, entry);
+                if level < 3 {
+                    match next_table_mut(entry) {
+                        Ok(entry) => self.walk(entry, level + 1, vaddr, limit, func),
+                        Err(PagingError::MappedToHugePage) => {}
+                        _ => unreachable!(),
+                    }
+                }
+                n += 1;
+                if n >= limit {
+                    break;
+                }
+            }
+        }
+    }
+
+    pub fn dump(&self, limit: usize) {
+        static LOCK: Mutex<()> = Mutex::new(());
+        let _lock = LOCK.lock();
+
+        println!("Root: {:x?}", self.root_paddr());
+        self.walk(
+            table_of(self.root_paddr()),
+            0,
+            0,
+            limit,
+            &|level: usize, idx: usize, vaddr: usize, entry: &PTE| {
+                for _ in 0..level * 2 {
+                    print!(" ");
+                }
+                println!(
+                    "[ADDR:{:#x?} level:{} - idx:{:03}], vaddr:{:08x?}: {:x?}",
+                    entry as *const _ as VirtAddr, level, idx, vaddr, entry
+                );
+            },
+        );
+    }
+}
+
+impl<VA, PTE> GenericPageTableImmut for Level4PageTableImmut<VA, PTE>
+where
+    VA: From<usize> + Into<usize> + Copy,
+    PTE: GenericPTE,
+{
+    type VA = VA;
+
+    unsafe fn from_root(root_paddr: PhysAddr) -> Self {
+        Self {
+            root: Frame::from_paddr(root_paddr),
+            _phantom: PhantomData,
+        }
+    }
+
+    fn root_paddr(&self) -> PhysAddr {
+        self.root.start_paddr()
+    }
+
+    fn query(&self, vaddr: Self::VA) -> PagingResult<(PhysAddr, MemFlags, PageSize)> {
+        let (entry, size) = self.get_entry_mut(vaddr)?;
+        if entry.is_unused() {
+            return Err(PagingError::NotMapped);
+        }
+        let off = size.page_offset(vaddr.into());
+        Ok((entry.addr() + off, entry.flags(), size))
+    }
+}
+
+/// A extended level-3/4 page table that can change its mapping. It also tracks all intermediate
+/// level tables. Locks need to be used if change the same page table concurrently.
+struct Level4PageTableUnlocked<VA, PTE: GenericPTE, I: PagingInstr> {
+    inner: Level4PageTableImmut<VA, PTE>,
+    /// Intermediate level table frames.
+    intrm_tables: Vec<Frame>,
+    /// Phantom data.
+    _phantom: PhantomData<(VA, PTE, I)>,
+}
+
+impl<VA, PTE, I> Level4PageTableUnlocked<VA, PTE, I>
+where
+    VA: From<usize> + Into<usize> + Copy,
+    PTE: GenericPTE,
+    I: PagingInstr,
+{
+    fn new() -> Self {
+        Self {
+            inner: Level4PageTableImmut::new(),
+            intrm_tables: Vec::new(),
+            _phantom: PhantomData,
+        }
+    }
+
+    unsafe fn from_root(root_paddr: PhysAddr) -> Self {
+        Self {
+            inner: Level4PageTableImmut::from_root(root_paddr),
+            intrm_tables: Vec::new(),
+            _phantom: PhantomData,
+        }
+    }
+
     fn alloc_intrm_table(&mut self) -> HvResult<PhysAddr> {
         let frame = Frame::new_zero()?;
         let paddr = frame.start_paddr();
@@ -349,10 +283,12 @@ where
         Ok(paddr)
     }
 
+    fn _dealloc_intrm_table(&mut self, _paddr: PhysAddr) {}
+
     fn get_entry_mut_or_create(&mut self, page: Page<VA>) -> PagingResult<&mut PTE> {
         let vaddr: usize = page.vaddr.into();
 
-        let p4 = table_of_mut::<PTE>(self.root_paddr());
+        let p4 = table_of_mut::<PTE>(self.inner.root_paddr());
         let p4e = &mut p4[p4_index(vaddr)];
 
         let p3 = next_table_mut_or_create(p4e, || self.alloc_intrm_table())?;
@@ -388,7 +324,7 @@ where
     }
 
     fn unmap_page(&mut self, vaddr: VA) -> PagingResult<(PhysAddr, PageSize)> {
-        let (entry, size) = self.get_entry_mut(vaddr)?;
+        let (entry, size) = self.inner.get_entry_mut(vaddr)?;
         if entry.is_unused() {
             return Err(PagingError::NotMapped);
         }
@@ -397,37 +333,178 @@ where
         Ok((paddr, size))
     }
 
-    fn walk(
-        &self,
-        table: &[PTE],
-        level: usize,
-        start_vaddr: usize,
-        limit: usize,
-        func: &impl Fn(usize, usize, usize, &PTE),
-    ) {
-        let mut n = 0;
-        for (i, entry) in table.iter().enumerate() {
-            let vaddr = start_vaddr + (i << (12 + (3 - level) * 9));
-            if entry.is_present() {
-                func(level, i, vaddr, entry);
-                if level < 3 {
-                    match next_table_mut(entry) {
-                        Ok(entry) => self.walk(entry, level + 1, vaddr, limit, func),
-                        Err(PagingError::MappedToHugePage) => {}
-                        _ => unreachable!(),
-                    }
-                }
-                n += 1;
-                if n >= limit {
-                    break;
-                }
-            }
-        }
+    fn update(&mut self, vaddr: VA, paddr: PhysAddr, flags: MemFlags) -> PagingResult<PageSize> {
+        let (entry, size) = self.inner.get_entry_mut(vaddr)?;
+        entry.set_addr(paddr);
+        entry.set_flags(flags, size.is_huge());
+        Ok(size)
     }
 }
 
-const LEVELS: usize = 4;
-const ENTRY_COUNT: usize = 512;
+/// A extended level-4 page table implements `GenericPageTable`. It use locks to avoid data
+/// racing between it and its clonees.
+pub struct Level4PageTable<VA, PTE: GenericPTE, I: PagingInstr> {
+    inner: Level4PageTableUnlocked<VA, PTE, I>,
+    /// Make sure all accesses to the page table and its clonees is exclusive.
+    clonee_lock: Arc<Mutex<()>>,
+}
+
+impl<VA, PTE, I> Level4PageTable<VA, PTE, I>
+where
+    VA: From<usize> + Into<usize> + Copy,
+    PTE: GenericPTE,
+    I: PagingInstr,
+{
+    pub fn dump(&self, limit: usize) {
+        self.inner.inner.dump(limit)
+    }
+
+    /// Clone only the top level page table mapping from `src`.
+    pub fn clone_from(src: &impl GenericPageTableImmut) -> Self {
+        // XXX: The clonee won't track intermediate tables, must ensure it lives shorter than the
+        // original page table.
+        let pt = Self::new();
+        let dst_p4_table =
+            unsafe { slice::from_raw_parts_mut(pt.root_paddr() as *mut PTE, ENTRY_COUNT) };
+        let src_p4_table =
+            unsafe { slice::from_raw_parts(src.root_paddr() as *const PTE, ENTRY_COUNT) };
+        dst_p4_table.clone_from_slice(src_p4_table);
+        pt
+    }
+}
+
+impl<VA, PTE, I> GenericPageTableImmut for Level4PageTable<VA, PTE, I>
+where
+    VA: From<usize> + Into<usize> + Copy,
+    PTE: GenericPTE,
+    I: PagingInstr,
+{
+    type VA = VA;
+
+    unsafe fn from_root(root_paddr: PhysAddr) -> Self {
+        Self {
+            inner: Level4PageTableUnlocked::from_root(root_paddr),
+            clonee_lock: Arc::new(Mutex::new(())),
+        }
+    }
+
+    fn root_paddr(&self) -> PhysAddr {
+        self.inner.inner.root_paddr()
+    }
+
+    fn query(&self, vaddr: VA) -> PagingResult<(PhysAddr, MemFlags, PageSize)> {
+        let _lock = self.clonee_lock.lock();
+        self.inner.inner.query(vaddr)
+    }
+}
+
+impl<VA, PTE, I> GenericPageTable for Level4PageTable<VA, PTE, I>
+where
+    VA: From<usize> + Into<usize> + Copy,
+    PTE: GenericPTE,
+    I: PagingInstr,
+{
+    fn new() -> Self {
+        Self {
+            inner: Level4PageTableUnlocked::new(),
+            clonee_lock: Arc::new(Mutex::new(())),
+        }
+    }
+
+    fn map(&mut self, region: &MemoryRegion<VA>) -> HvResult {
+        assert!(
+            is_aligned(region.start.into()),
+            "region.start = {:#x?}",
+            region.start.into()
+        );
+        assert!(is_aligned(region.size), "region.size = {:#x?}", region.size);
+        trace!(
+            "create mapping in {}: {:#x?}",
+            core::any::type_name::<Self>(),
+            region
+        );
+        let _lock = self.clonee_lock.lock();
+        let mut vaddr = region.start.into();
+        let mut size = region.size;
+        while size > 0 {
+            let paddr = region.mapper.map_fn(vaddr);
+            let page_size = if PageSize::Size1G.is_aligned(vaddr)
+                && PageSize::Size1G.is_aligned(paddr)
+                && size >= PageSize::Size1G as usize
+                && !region.flags.contains(MemFlags::NO_HUGEPAGES)
+            {
+                PageSize::Size1G
+            } else if PageSize::Size2M.is_aligned(vaddr)
+                && PageSize::Size2M.is_aligned(paddr)
+                && size >= PageSize::Size2M as usize
+                && !region.flags.contains(MemFlags::NO_HUGEPAGES)
+            {
+                PageSize::Size2M
+            } else {
+                PageSize::Size4K
+            };
+            let page = Page::new_aligned(vaddr.into(), page_size);
+            self.inner
+                .map_page(page, paddr, region.flags)
+                .map_err(|e: PagingError| {
+                    error!(
+                        "failed to map page: {:#x?}({:?}) -> {:#x?}, {:?}",
+                        vaddr, page_size, paddr, e
+                    );
+                    e
+                })?;
+            vaddr += page_size as usize;
+            size -= page_size as usize;
+        }
+        Ok(())
+    }
+
+    fn unmap(&mut self, region: &MemoryRegion<VA>) -> HvResult {
+        trace!(
+            "destroy mapping in {}: {:#x?}",
+            core::any::type_name::<Self>(),
+            region
+        );
+        let _lock = self.clonee_lock.lock();
+        let mut vaddr = region.start.into();
+        let mut size = region.size;
+        while size > 0 {
+            let (_, page_size) = self.inner.unmap_page(vaddr.into()).map_err(|e| {
+                error!("failed to unmap page: {:#x?}, {:?}", vaddr, e);
+                e
+            })?;
+            if !page_size.is_aligned(vaddr) {
+                error!("error vaddr={:#x?}", vaddr);
+                loop {}
+            }
+            assert!(page_size.is_aligned(vaddr));
+            assert!(page_size as usize <= size);
+            vaddr += page_size as usize;
+            size -= page_size as usize;
+        }
+        Ok(())
+    }
+
+    fn update(&mut self, vaddr: VA, paddr: PhysAddr, flags: MemFlags) -> PagingResult<PageSize> {
+        let _lock = self.clonee_lock.lock();
+        self.inner.update(vaddr, paddr, flags)
+    }
+
+    fn clone(&self) -> Self {
+        let mut pt = Self::clone_from(self);
+        // clone with lock to avoid data racing between it and its clonees.
+        pt.clonee_lock = self.clonee_lock.clone();
+        pt
+    }
+
+    unsafe fn activate(&self) {
+        I::activate(self.root_paddr())
+    }
+
+    fn flush(&self, vaddr: Option<Self::VA>) {
+        I::flush(vaddr.map(Into::into))
+    }
+}
 
 const fn p4_index(vaddr: usize) -> usize {
     (vaddr >> (12 + 27)) & (ENTRY_COUNT - 1)

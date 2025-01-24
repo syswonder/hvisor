@@ -9,6 +9,7 @@
 /images/riscv64/virtdisk/*
 /images/riscv64/kernel/*
 /images/riscv64/devicetree/*.dtb
+/images/x86_64/*
 /tools/hvisor
 /tmp
 *.mod.[co]

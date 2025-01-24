@@ -1,11 +1,12 @@
-use crate::arch::cpu::this_cpu_id;
-use crate::consts::PER_CPU_SIZE;
-use crate::memory::addr::PHYS_VIRT_OFFSET;
-use crate::rust_main;
+use crate::{
+    arch::cpu::this_cpu_id, consts::PER_CPU_SIZE, memory::addr::PHYS_VIRT_OFFSET, rust_main,
+};
 use core::arch::global_asm;
 use x86::msr::IA32_EFER;
-use x86_64::registers::control::{Cr0Flags, Cr4Flags};
-use x86_64::registers::model_specific::EferFlags;
+use x86_64::registers::{
+    control::{Cr0Flags, Cr4Flags},
+    model_specific::EferFlags,
+};
 
 const MULTIBOOT_HEADER_MAGIC: i32 = 0x1BADB002;
 const MULTIBOOT_HEADER_FLAGS: i32 = 0x00010002;

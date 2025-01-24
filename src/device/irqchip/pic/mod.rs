@@ -1,3 +1,6 @@
+pub mod i8259;
+pub mod lapic;
+
 use crate::zone::Zone;
 use core::arch::asm;
 

@@ -1,12 +1,5 @@
 use crate::{
-    arch::s1pt::Stage1PageTable,
-    arch::s2pt::Stage2PageTable,
-    consts::PAGE_SIZE,
-    error::HvResult,
-    memory::{
-        addr::{align_down, align_up},
-        GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet, HV_PT,
-    },
+    arch::s1pt::Stage1PageTable, arch::s2pt::Stage2PageTable, error::HvResult, memory::MemorySet,
     platform::qemu_x86_64::*,
 };
 

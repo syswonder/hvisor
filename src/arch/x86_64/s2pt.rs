@@ -229,10 +229,6 @@ pub struct S2PTInstr;
 impl PagingInstr for S2PTInstr {
     unsafe fn activate(root_paddr: HostPhysAddr) {
         let s2ptp = S2PTPointer::from_table_phys(root_paddr).bits();
-        info!(
-            "s2pt activate, root paddr: 0x{:x}, s2ptp: 0x{:x}",
-            root_paddr, s2ptp
-        );
         crate::arch::vmx::set_s2ptp(s2ptp).unwrap();
         unsafe { invs2pt(InvS2PTType::SingleContext, s2ptp) };
     }

@@ -1,12 +1,17 @@
 use crate::arch::cpu::{self, this_cpu_id};
-use alloc::boxed::Box;
-use alloc::collections::btree_map::BTreeMap;
+use alloc::{boxed::Box, collections::btree_map::BTreeMap};
 use spin::Mutex;
-use x86_64::instructions::tables::{lgdt, load_tss};
-use x86_64::registers::segmentation::{Segment, SegmentSelector, CS};
-use x86_64::structures::gdt::{Descriptor, DescriptorFlags};
-use x86_64::structures::{tss::TaskStateSegment, DescriptorTablePointer};
-use x86_64::{addr::VirtAddr, PrivilegeLevel};
+use x86_64::{
+    addr::VirtAddr,
+    instructions::tables::{lgdt, load_tss},
+    registers::segmentation::{Segment, SegmentSelector, CS},
+    structures::{
+        gdt::{Descriptor, DescriptorFlags},
+        tss::TaskStateSegment,
+        DescriptorTablePointer,
+    },
+    PrivilegeLevel,
+};
 
 #[repr(align(16))]
 #[derive(Debug)]

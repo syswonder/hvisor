@@ -1,10 +1,7 @@
 use crate::{
     config::*,
     error::HvResult,
-    memory::{
-        addr::align_down, addr::align_up, mmio_generic_handler, GuestPhysAddr, HostPhysAddr,
-        MemFlags, MemoryRegion,
-    },
+    memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion},
     zone::Zone,
 };
 

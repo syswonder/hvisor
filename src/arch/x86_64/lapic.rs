@@ -1,5 +1,5 @@
 use self::vectors::*;
-use crate::device::irqchip::i8259::enable_irq;
+use crate::device::irqchip::pic::enable_irq;
 use core::time::Duration;
 use raw_cpuid::CpuId;
 use x2apic::lapic::{LocalApic, LocalApicBuilder, TimerDivide, TimerMode};
@@ -16,7 +16,7 @@ pub mod vectors {
 static mut LOCAL_APIC: Option<LocalApic> = None;
 static mut CPU_FREQ_MHZ: u64 = 4_000;
 const LAPIC_TICKS_PER_SEC: u64 = 1_000_000_000; // TODO: need to calibrate
-const TICKS_PER_SEC: u64 = 1;
+const TICKS_PER_SEC: u64 = 100;
 
 pub fn local_apic<'a>() -> &'a mut LocalApic {
     // It's safe as LAPIC is per-cpu.
@@ -31,8 +31,12 @@ pub fn ticks_to_nanos(ticks: u64) -> u64 {
     ticks * 1_000 / unsafe { CPU_FREQ_MHZ }
 }
 
+pub fn current_time_nanos() -> u64 {
+    ticks_to_nanos(current_ticks())
+}
+
 pub fn current_time() -> TimeValue {
-    TimeValue::from_nanos(ticks_to_nanos(current_ticks()))
+    TimeValue::from_nanos(current_time_nanos())
 }
 
 pub fn busy_wait(duration: Duration) {
