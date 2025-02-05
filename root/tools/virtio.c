@@ -279,16 +279,16 @@ static void* get_virt_addr(void *zonex_ipa, int zone_id)
 
 // When virtio device is processing virtqueue, driver adding an elem to virtqueue is no need to notify device.
 void virtqueue_disable_notify(VirtQueue *vq) {
-    // log_info("[WHEATFOX] (%s) start, vq@%#x, vq_idx=%d, desc_table@%#x, avail_ring@%#x, used_ring@%#x",
+    // log_info("wheatfox: (%s) start, vq@%#x, vq_idx=%d, desc_table@%#x, avail_ring@%#x, used_ring@%#x",
     //             __func__, vq, vq->vq_idx, vq->desc_table, vq->avail_ring, vq->used_ring);
-    // log_info("[WHEATFOX] (%s) vq->event_idx_enabled is %d", __func__, vq->event_idx_enabled);
+    // log_info("wheatfox: (%s) vq->event_idx_enabled is %d", __func__, vq->event_idx_enabled);
 	if (vq->event_idx_enabled) {
 		VQ_AVAIL_EVENT(vq) = vq->last_avail_idx - 1;
 	} else {
     	vq->used_ring->flags |= (uint16_t)VRING_USED_F_NO_NOTIFY;
 	}
 	write_barrier();
-    // log_info("[WHEATFOX] (%s) end", __func__);
+    // log_info("wheatfox: (%s) end", __func__);
 }
 
 void virtqueue_enable_notify(VirtQueue *vq) {
@@ -327,12 +327,12 @@ static inline int descriptor2iov(int i, volatile VirtqDesc *vd,
            struct iovec *iov, uint16_t *flags, int zone_id) {
     void *host_addr;
 
-    // log_info("[WHEATFOX] (%s) i is %d, iov@%#x, vd@%#x, flags@%#x, zone_id is %d",
+    // log_info("wheatfox: (%s) i is %d, iov@%#x, vd@%#x, flags@%#x, zone_id is %d",
     //             __func__, i, iov, vd, flags, zone_id);
 
     host_addr = get_virt_addr((void *)vd->addr, zone_id);
 
-    // log_info("[WHEATFOX] (%s) host_addr is %x", __func__, host_addr);
+    // log_info("wheatfox: (%s) host_addr is %x", __func__, host_addr);
 
     iov[i].iov_base = host_addr;
     iov[i].iov_len = vd->len;
@@ -340,7 +340,7 @@ static inline int descriptor2iov(int i, volatile VirtqDesc *vd,
     if (flags != NULL)
         flags[i] = vd->flags;
 
-    // log_info("[WHEATFOX] (%s) iov[%d].iov_base is %x, iov[%d].iov_len is %d",
+    // log_info("wheatfox: (%s) iov[%d].iov_base is %x, iov[%d].iov_len is %d",
     //             __func__, i, iov[i].iov_base, i, iov[i].iov_len);
     return 0;
 }
@@ -358,12 +358,12 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
     volatile VirtqDesc *vdesc, *ind_table, *ind_desc;
 	int chain_len = 0, i, table_len;
 
-    // log_info("[WHEATFOX] (%s) start, vq@%#x", __func__, vq);
+    // log_info("wheatfox: (%s) start, vq@%#x", __func__, vq);
 
     idx = vq->last_avail_idx;
 
-    // log_info("[WHEATFOX] (%s) idx is %d", __func__, idx);
-    // log_info("[WHEATFOX] (%s) vq->avail_ring->idx is %d", __func__, vq->avail_ring->idx);
+    // log_info("wheatfox: (%s) idx is %d", __func__, idx);
+    // log_info("wheatfox: (%s) vq->avail_ring->idx is %d", __func__, vq->avail_ring->idx);
 
     if(idx == vq->avail_ring->idx)
         return 0;
@@ -374,7 +374,7 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
 	for (i=0; i<(int)vq->num; i++, next = vdesc->next) {
         vdesc = &vq->desc_table[next];
 
-        // log_info("[WHEATFOX] (%s) i is %d, next is %d, vdesc->addr is %d, vdesc->len is %d, vdesc->flags is %d",
+        // log_info("wheatfox: (%s) i is %d, next is %d, vdesc->addr is %d, vdesc->len is %d, vdesc->flags is %d",
         //             __func__, i, next, vdesc->addr, vdesc->len, vdesc->flags);
 
 		// TODO: vdesc->len may be not chain_len, virtio specification doesn't say it.
@@ -388,29 +388,29 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
 
 	chain_len += i + 1, next = *desc_idx;
 	
-    // log_info("[WHEATFOX] (%s) chain_len is %d, next is %d", __func__, chain_len, next);
+    // log_info("wheatfox: (%s) chain_len is %d, next is %d", __func__, chain_len, next);
 
 	*iov = malloc(sizeof(struct iovec) * ( chain_len + append_len));
 
-    // log_info("[WHEATFOX] (%s) iov@%#x after malloc", __func__, *iov);
+    // log_info("wheatfox: (%s) iov@%#x after malloc", __func__, *iov);
 
 	if (flags != NULL) {
 		*flags = malloc(sizeof(uint16_t) * ( chain_len + append_len));
-        // log_info("[WHEATFOX] (%s) flags@%#x after malloc", __func__, *flags);
+        // log_info("wheatfox: (%s) flags@%#x after malloc", __func__, *flags);
     }
 
 	for (i=0; i<chain_len; i++, next = vdesc->next) {
 		vdesc = &vq->desc_table[next];
 
-        // log_info("[WHEATFOX] (%s) i is %d, next is %d, vdesc->addr is %d, vdesc->len is %d, vdesc->flags is %d",
+        // log_info("wheatfox: (%s) i is %d, next is %d, vdesc->addr is %d, vdesc->len is %d, vdesc->flags is %d",
         //             __func__, i, next, vdesc->addr, vdesc->len, vdesc->flags);
 
 		if (vdesc->flags & VRING_DESC_F_INDIRECT) {
-            // log_info("[WHEATFOX] (%s) indirect descriptor", __func__);
+            // log_info("wheatfox: (%s) indirect descriptor", __func__);
 			ind_table = (VirtqDesc *)(get_virt_addr((void *)vdesc->addr, vq->dev->zone_id));
 			table_len = vdesc->len / 16;
 			log_debug("table_len is %d", table_len);
-            // log_info("[WHEATFOX] (%s) table_len is %d", __func__, table_len);
+            // log_info("wheatfox: (%s) table_len is %d", __func__, table_len);
 			next = 0;
 			for (;;) {
 				log_debug("next is %d", next);
@@ -427,12 +427,12 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
 				break;
 			}
 		} else {
-            // log_info("[WHEATFOX] (%s) not indirect descriptor", __func__);
+            // log_info("wheatfox: (%s) not indirect descriptor", __func__);
 			descriptor2iov(i, vdesc, *iov, flags == NULL ? NULL : *flags, vq->dev->zone_id);
 		}
 	}
 
-    // log_info("[WHEATFOX] (%s) end, chain_len is %d", __func__, chain_len);
+    // log_info("wheatfox: (%s) end, chain_len is %d", __func__, chain_len);
 
     return chain_len;
 }
@@ -581,7 +581,7 @@ static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned s
     case VIRTIO_MMIO_QUEUE_READY:
         return vdev->vqs[vdev->regs.queue_sel].ready;
     case VIRTIO_MMIO_INTERRUPT_STATUS:
-        log_info("[WHEATFOX] (%s) current interrupt status is %d", __func__, vdev->regs.interrupt_status);
+        log_info("wheatfox: (%s) current interrupt status is %d", __func__, vdev->regs.interrupt_status);
 #ifdef LOONGARCH64
         // clear lvz gintc irq injection bit to avoid endless interrupt...
         log_warn("clear lvz gintc irq injection bit to avoid endless interrupt...");
@@ -681,26 +681,26 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
     case VIRTIO_MMIO_QUEUE_NOTIFY:
         // system("poweroff");ioctl
         log_debug("queue notify begin");
-        // log_info("[WHEATFOX] (%s) queue notify, value is %d, vdev->vqs_len is %d", __func__, value, vdev->vqs_len);
+        // log_info("wheatfox: (%s) queue notify, value is %d, vdev->vqs_len is %d", __func__, value, vdev->vqs_len);
         if (value < vdev->vqs_len) {
             log_trace("queue notify ready, handler addr is %#x", vqs[value].notify_handler);
-            // log_info("[WHEATFOX] (%s) queue notify ready, handler addr is %#x", __func__, vqs[value].notify_handler);
+            // log_info("wheatfox: (%s) queue notify ready, handler addr is %#x", __func__, vqs[value].notify_handler);
             vqs[value].notify_handler(vdev, &vqs[value]);
         }
         log_debug("queue notify end");
-        // log_info("[WHEATFOX] (%s) queue notify end", __func__);
+        // log_info("wheatfox: (%s) queue notify end", __func__);
         break;
     case VIRTIO_MMIO_INTERRUPT_ACK:
-        log_info("[WHEATFOX] (%s) interrupt ack, value is %d, interrupt_status is %d, interrupt_count is %d", __func__, value, regs->interrupt_status, regs->interrupt_count);
+        log_info("wheatfox: (%s) interrupt ack, value is %d, interrupt_status is %d, interrupt_count is %d", __func__, value, regs->interrupt_status, regs->interrupt_count);
         if (value == regs->interrupt_status && regs->interrupt_count > 0) {
             regs->interrupt_count --;
-            log_info("[WHEATFOX] (%s) irq count -> %d", __func__, regs->interrupt_count);
+            log_info("wheatfox: (%s) irq count -> %d", __func__, regs->interrupt_count);
             break;
         } else if (value != regs->interrupt_status) {
             log_error("interrupt_status is not equal to ack, type is %d", vdev->type);
         }
         regs->interrupt_status &= !value;
-        log_info("[WHEATFOX] (%s) clearing! interrupt_status -> %d", __func__, regs->interrupt_status);
+        log_info("wheatfox: (%s) clearing! interrupt_status -> %d", __func__, regs->interrupt_status);
         break;
     case VIRTIO_MMIO_STATUS:
         regs->status = value;
@@ -753,26 +753,26 @@ static inline bool in_range(uint64_t value, uint64_t lower, uint64_t len)
 // Inject irq_id to target zone. It will add to res list, and notify hypervisor through ioctl.
 void virtio_inject_irq(VirtQueue *vq)
 {
-	// log_info("[WHEATFOX] (%s) start, vq@%#x, vq->last_used_idx is %d", __func__, vq, vq->last_used_idx);
+	// log_info("wheatfox: (%s) start, vq@%#x, vq->last_used_idx is %d", __func__, vq, vq->last_used_idx);
     uint16_t last_used_idx, idx, event_idx;
 	last_used_idx = vq->last_used_idx;
 	vq->last_used_idx = idx = vq->used_ring->idx;
 	// read_barrier();
 	if (idx == last_used_idx) {
 		log_debug("idx equals last_used_idx");
-        log_trace("[WHEATFOX] (%s) idx equals last_used_idx", __func__);
+        log_trace("wheatfox: (%s) idx equals last_used_idx", __func__);
 		return ;
 	}
     if (!vq->event_idx_enabled && (vq->avail_ring->flags & VRING_AVAIL_F_NO_INTERRUPT)) {
 		log_debug("no interrupt");
-        log_trace("[WHEATFOX] (%s) no interrupt", __func__);
+        log_trace("wheatfox: (%s) no interrupt", __func__);
 		return ;
 	}
 	if (vq->event_idx_enabled) {
 		event_idx = VQ_USED_EVENT(vq);
 		log_debug("idx is %d, event_idx is %d, last_used_idx is %d", idx, event_idx, last_used_idx);
 		if(!vring_need_event(event_idx, idx, last_used_idx)) {
-            log_trace("[WHEATFOX] (%s) no need event", __func__);
+            log_trace("wheatfox: (%s) no need event", __func__);
 			return;
 		}
 	}
@@ -790,7 +790,7 @@ void virtio_inject_irq(VirtQueue *vq)
     vq->dev->regs.interrupt_count ++;
     pthread_mutex_unlock(&RES_MUTEX);
 	log_debug("inject irq to device %d, vq is %d", vq->dev->type, vq->vq_idx);
-    // log_info("[WHEATFOX] (%s) inject irq to device %d, vq is %d", __func__, vq->dev->type, vq->vq_idx);
+    // log_info("wheatfox: (%s) inject irq to device %d, vq is %d", __func__, vq->dev->type, vq->vq_idx);
     ioctl(ko_fd, HVISOR_FINISH_REQ);
 }
 

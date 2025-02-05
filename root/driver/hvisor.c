@@ -209,7 +209,7 @@ static int hvisor_map(struct file *filp, struct vm_area_struct *vma)
     unsigned long phys;
     int err;
 
-    pr_info("[WHEATFOX] hvior mmap handler, vmarea start: %lx, end: %lx, pgoff: %lx\n", vma->vm_start, vma->vm_end, vma->vm_pgoff);
+    pr_info("wheatfox: hvior mmap handler, vmarea start: %lx, end: %lx, pgoff: %lx\n", vma->vm_start, vma->vm_end, vma->vm_pgoff);
 
     if (vma->vm_pgoff == 0)
     {
