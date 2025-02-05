@@ -41,24 +41,29 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
         return ;
     } 
 
-    log_warn("[WHEATFOX] (%s) in console event handler, fd=%d, epoll_type=%d, vdev->type=%d", __func__, fd, epoll_type, vdev->type);
+    // log_warn("wheatfox: (%s) in console event handler, fd=%d, epoll_type=%d, vdev->type=%d", __func__, fd, epoll_type, vdev->type);
 
 #ifdef LOONGARCH64
+    // TODO: gettimeofday on loongarch linux on 3A5000 board return error values! thus 
+    // the below code is commented out for now in order to use screen to connect nonroot bash successfully - wheatfox 2025.2.5
+
     // we wait until current timestamp - last_process_timestamp > LOONGARCH64_CONSOLE_PROCESS_INTERVAL_MS
     // to avoid too frequent ipi sending that cause ipi failure on loongson 3A5000 board
-    struct timeval tv;
-    double current_timestamp;
-    while(1) {
-        if (last_process_timestamp < 0) {
-            break;
-        }
-        gettimeofday(&tv, NULL);
-        current_timestamp = (tv.tv_sec) * 1000 + (tv.tv_usec) / 1000 ; // convert tv_sec & tv_usec to millisecond
-        if (current_timestamp - last_process_timestamp > LOONGARCH64_CONSOLE_PROCESS_INTERVAL_MS) {
-            break;
-        }
-    }
-    last_process_timestamp = current_timestamp;
+    // struct timeval tv;
+    // double current_timestamp;
+    // log_warn("wheatfox: (%s) start blocking...", __func__);
+    // while(1) {
+    //     if (last_process_timestamp < 0) {
+    //         break;
+    //     }
+    //     gettimeofday(&tv, NULL);
+    //     current_timestamp = (tv.tv_sec) * 1000 + (tv.tv_usec) / 1000 ; // convert tv_sec & tv_usec to millisecond
+    //     if (current_timestamp - last_process_timestamp > LOONGARCH64_CONSOLE_PROCESS_INTERVAL_MS) {
+    //         break;
+    //     }
+    // }
+    // log_warn("wheatfox: (%s) while 1 done, current_timestamp is %f, last_process_timestamp is %f", __func__, current_timestamp, last_process_timestamp);
+    // last_process_timestamp = current_timestamp;
 #endif
 
     if (dev->rx_ready <= 0) {
@@ -80,10 +85,10 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
             break;
         }
         len = readv(dev->master_fd, iov, n);
-        // log_info("[WHEATFOX] (%s) readv done, len is %d, vq->last_avail_idx is %d", __func__, len, vq->last_avail_idx);
+        // log_info("wheatfox: (%s) readv done, len is %d, vq->last_avail_idx is %d", __func__, len, vq->last_avail_idx);
         // if len is not 0, print the data
         if (len > 0) {
-            log_info("[WHEATFOX] (%s) readv done, len is %d, data is at iov@%#x, dump:\nRAW:[", __func__, len, iov);
+            // log_info("wheatfox: (%s) readv done, len is %d, data is at iov@%#x, dump:\nRAW:[", __func__, len, iov);
             // now starting from iov base, print exactly len bytes
             for (int i = 0; i < len; i++) {
                 log_printf("%c", *(char*)&iov->iov_base[i]);
@@ -93,22 +98,22 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
         if (len < 0 && errno == EWOULDBLOCK) {
             log_debug("no more bytes");
 			vq->last_avail_idx--;
-            // log_error("[WHEATFOX] (%s) no more bytes, vq->last_avail_idx --> %d", __func__, vq->last_avail_idx);
+            // log_error("wheatfox: (%s) no more bytes, vq->last_avail_idx --> %d", __func__, vq->last_avail_idx);
             free(iov);
 			break;
         } else if (len < 0) {
             log_trace("Failed to read from console, errno is %d", errno);
 			vq->last_avail_idx--;
-            // log_error("[WHEATFOX] (%s) Failed to read from console, errno is %d[%s], vq->last_avail_idx --> %d", __func__, errno, strerror(errno), vq->last_avail_idx);
+            // log_error("wheatfox: (%s) Failed to read from console, errno is %d[%s], vq->last_avail_idx --> %d", __func__, errno, strerror(errno), vq->last_avail_idx);
             free(iov);
             break;
         } 
         update_used_ring(vq, idx, len);
-        // log_info("[WHEATFOX] (%s) update_used_ring done", __func__);
+        // log_info("wheatfox: (%s) update_used_ring done", __func__);
         free(iov);
     }
     virtio_inject_irq(vq);
-    log_trace("[WHEATFOX] (%s) virtio_inject_irq done", __func__);
+    // log_trace("wheatfox: (%s) ok, finish handling console event", __func__);
     return ;
 }
 
@@ -165,19 +170,19 @@ int virtio_console_init(VirtIODevice *vdev) {
 int virtio_console_rxq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     log_debug("%s", __func__);
     
-    // log_info("[WHEATFOX] (%s) start, vq@%#x", __func__, vq);
+    // log_info("wheatfox: (%s) start, vq@%#x", __func__, vq);
     
     ConsoleDev *dev = (ConsoleDev *)vdev->dev;
 
-    // log_info("[WHEATFOX] (%s) dev@%#x, dev->rx_ready is %d", __func__, dev, dev->rx_ready);
+    // log_info("wheatfox: (%s) dev@%#x, dev->rx_ready is %d", __func__, dev, dev->rx_ready);
 
     if (dev->rx_ready <= 0) {
         dev->rx_ready = 1;
-        // log_info("[WHEATFOX] (%s) calling virtqueue_disable_notify", __func__);
+        // log_info("wheatfox: (%s) calling virtqueue_disable_notify", __func__);
         virtqueue_disable_notify(vq);
-        // log_info("[WHEATFOX] (%s) virtqueue_disable_notify done", __func__);
+        // log_info("wheatfox: (%s) virtqueue_disable_notify done", __func__);
     }
-    // log_info("[WHEATFOX] (%s) end, vq@%#x", __func__, vq);
+    // log_info("wheatfox: (%s) end, vq@%#x", __func__, vq);
     return 0;
 }
 
@@ -201,7 +206,7 @@ static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq) {
     //     log_printf("\n");
     // }
 
-    log_printf("[WHEATFOX] (%s) console txq: n is %d, iov at ", __func__, n);
+    log_printf("wheatfox: (%s) console txq: n is %d, iov at ", __func__, n);
     for (int i = 0; i < n; i++) {
         log_printf("[%d:%#x|%d] ", i, iov[i].iov_base, iov[i].iov_len);
     }
@@ -235,7 +240,7 @@ static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq) {
 
 int virtio_console_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     log_debug("%s", __func__);
-    // log_info("[WHEATFOX] (%s) start, vq@%#x", __func__, vq);
+    // log_info("wheatfox: (%s) start, vq@%#x", __func__, vq);
     while (!virtqueue_is_empty(vq)) {
         virtqueue_disable_notify(vq);
         while(!virtqueue_is_empty(vq)) {
@@ -244,7 +249,7 @@ int virtio_console_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
         virtqueue_enable_notify(vq);
     }    
     virtio_inject_irq(vq);
-    // log_info("[WHEATFOX] (%s) end, vq@%#x", __func__, vq);
+    // log_info("wheatfox: (%s) end, vq@%#x", __func__, vq);
     return 0;
 }
 
