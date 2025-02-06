@@ -1,17 +1,19 @@
 #ifndef _HVISOR_VIRTIO_CONSOLE_H
 #define _HVISOR_VIRTIO_CONSOLE_H
-#include <linux/virtio_console.h>
 #include "event_monitor.h"
 #include "virtio.h"
+#include <linux/virtio_console.h>
 
-#define CONSOLE_SUPPORTED_FEATURES ((1ULL << VIRTIO_F_VERSION_1) | (1ULL << VIRTIO_CONSOLE_F_SIZE))
+#define CONSOLE_SUPPORTED_FEATURES                                             \
+    ((1ULL << VIRTIO_F_VERSION_1) | (1ULL << VIRTIO_CONSOLE_F_SIZE))
 #define CONSOLE_MAX_QUEUES 2
 #define VIRTQUEUE_CONSOLE_MAX_SIZE 64
 #define CONSOLE_QUEUE_RX 0
 #define CONSOLE_QUEUE_TX 1
 
 typedef struct virtio_console_config ConsoleConfig;
-typedef struct virtio_console_dev {
+typedef struct virtio_console_dev
+{
     ConsoleConfig config;
     int master_fd;
     int rx_ready;
