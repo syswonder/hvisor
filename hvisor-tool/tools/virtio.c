@@ -1,26 +1,27 @@
+#include <errno.h>
+#include <fcntl.h>
+#include <getopt.h>
+#include <limits.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "virtio.h"
-#include "hvisor.h"
-#include "virtio_blk.h"
-#include "virtio_net.h"
-#include "virtio_console.h"
-#include "log.h"
-#include <sys/mman.h>
-#include <sys/uio.h>
-#include <fcntl.h>
-#include <unistd.h>
-#include <errno.h>
 #include <sys/ioctl.h>
-#include <getopt.h>
-#include <signal.h>
-#include <time.h>
-#include <sys/time.h>                                                                                           
-#include <limits.h>
-#include <sys/stat.h>
+#include <sys/mman.h>
 #include <sys/prctl.h>
+#include <sys/stat.h>
+#include <sys/time.h>
+#include <sys/uio.h>
+#include <time.h>
+#include <unistd.h>
+
 #include "cJSON.h"
+#include "hvisor.h"
+#include "log.h"
+#include "virtio.h"
+#include "virtio_blk.h"
+#include "virtio_console.h"
+#include "virtio_net.h"
 
 /// hvisor kernel module fd
 int ko_fd;
@@ -41,7 +42,8 @@ unsigned long long zone_mem[MAX_ZONES][MAX_RAMS][4];
 
 #define WAIT_TIME 1000 // 1ms
 
-int set_nonblocking(int fd) {
+int set_nonblocking(int fd)
+{
     int flags = fcntl(fd, F_GETFL, 0);
     if (flags == -1) {
         log_error("fcntl(F_GETFL) failed");
@@ -54,19 +56,24 @@ int set_nonblocking(int fd) {
     return 0;
 }
 
-static int get_zone_ram_index(void* zonex_ipa, int zone_id) {
-    for(int i=0; i<MAX_RAMS; i++) {
-        if (zone_mem[zone_id][i][MEM_SIZE] == 0) 
-            continue;;
-        if (zonex_ipa >= zone_mem[zone_id][i][ZONEX_IPA] && zonex_ipa < zone_mem[zone_id][i][ZONEX_IPA] + zone_mem[zone_id][i][MEM_SIZE]) {
-           return i; 
+static int get_zone_ram_index(void *zonex_ipa, int zone_id)
+{
+    for (int i = 0; i < MAX_RAMS; i++) {
+        if (zone_mem[zone_id][i][MEM_SIZE] == 0)
+            continue;
+        ;
+        if (zonex_ipa >= zone_mem[zone_id][i][ZONEX_IPA] &&
+            zonex_ipa < zone_mem[zone_id][i][ZONEX_IPA] +
+                            zone_mem[zone_id][i][MEM_SIZE]) {
+            return i;
         }
     }
     log_error("can't find zone mem index for zonex ipa %#x", zonex_ipa);
     return -1;
 }
 
-inline int is_queue_full(unsigned int front, unsigned int rear, unsigned int size)
+inline int is_queue_full(unsigned int front, unsigned int rear,
+                         unsigned int size)
 {
     if (((rear + 1) & (size - 1)) == front) {
         return 1;
@@ -80,65 +87,71 @@ inline int is_queue_empty(unsigned int front, unsigned int rear)
     return rear == front;
 }
 
-/// Write barrier to make sure all write operations are finished before this operation
-static inline void write_barrier(void) {
-    #ifdef ARM64
-        asm volatile ("dmb ishst":: : "memory");
-    #endif
-    #ifdef RISCV64
-        asm volatile ("fence w,w"::: "memory");
-    #endif
-    #ifdef LOONGARCH64
-        asm volatile ("dbar 0"::: "memory");
-    #endif
+/// Write barrier to make sure all write operations are finished before this
+/// operation
+static inline void write_barrier(void)
+{
+#ifdef ARM64
+    asm volatile("dmb ishst" ::: "memory");
+#endif
+#ifdef RISCV64
+    asm volatile("fence w,w" ::: "memory");
+#endif
+#ifdef LOONGARCH64
+    asm volatile("dbar 0" ::: "memory");
+#endif
 }
 
-static inline void read_barrier(void) {
-    #ifdef ARM64
-        asm volatile ("dmb ishld":: : "memory");
-    #endif
-    #ifdef RISCV64
-        asm volatile ("fence r,r"::: "memory");
-    #endif
-    #ifdef LOONGARCH64
-        asm volatile ("dbar 0"::: "memory");
-    #endif
+static inline void read_barrier(void)
+{
+#ifdef ARM64
+    asm volatile("dmb ishld" ::: "memory");
+#endif
+#ifdef RISCV64
+    asm volatile("fence r,r" ::: "memory");
+#endif
+#ifdef LOONGARCH64
+    asm volatile("dbar 0" ::: "memory");
+#endif
 }
 
-static inline void rw_barrier(void) {
-    #ifdef ARM64
-        asm volatile ("dmb ish":: : "memory");
-    #endif
-    #ifdef RISCV64
-        asm volatile ("fence rw,rw"::: "memory");
-    #endif
-    #ifdef LOONGARCH64
-        asm volatile ("dbar 0"::: "memory");
-    #endif
+static inline void rw_barrier(void)
+{
+#ifdef ARM64
+    asm volatile("dmb ish" ::: "memory");
+#endif
+#ifdef RISCV64
+    asm volatile("fence rw,rw" ::: "memory");
+#endif
+#ifdef LOONGARCH64
+    asm volatile("dbar 0" ::: "memory");
+#endif
 }
 
 // create a virtio device.
-static VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id, 
-						uint64_t base_addr, uint64_t len, uint32_t irq_id, void* arg0, void *arg1)
+static VirtIODevice *create_virtio_device(VirtioDeviceType dev_type,
+                                          uint32_t zone_id, uint64_t base_addr,
+                                          uint64_t len, uint32_t irq_id,
+                                          void *arg0, void *arg1)
 {
-	log_info("create virtio device type %d, zone id %d, base addr %lx, len %lx, irq id %d", 
-				dev_type, zone_id, base_addr, len, irq_id);
+    log_info("create virtio device type %d, zone id %d, base addr %lx, len "
+             "%lx, irq id %d",
+             dev_type, zone_id, base_addr, len, irq_id);
     VirtIODevice *vdev = NULL;
     int is_err;
-	vdev = calloc(1, sizeof(VirtIODevice));
-	init_mmio_regs(&vdev->regs, dev_type);
-	vdev->base_addr = base_addr;
-	vdev->len = len;
-	vdev->zone_id = zone_id;
-	vdev->irq_id = irq_id;
-	vdev->type = dev_type;
-    switch (dev_type)
-    {
-    case VirtioTBlock: 
+    vdev = calloc(1, sizeof(VirtIODevice));
+    init_mmio_regs(&vdev->regs, dev_type);
+    vdev->base_addr = base_addr;
+    vdev->len = len;
+    vdev->zone_id = zone_id;
+    vdev->irq_id = irq_id;
+    vdev->type = dev_type;
+    switch (dev_type) {
+    case VirtioTBlock:
         vdev->regs.dev_feature = BLK_SUPPORTED_FEATURES;
         vdev->dev = init_blk_dev(vdev);
         init_virtio_queue(vdev, dev_type);
-        is_err = virtio_blk_init(vdev, (const char*)arg0);
+        is_err = virtio_blk_init(vdev, (const char *)arg0);
         break;
     case VirtioTNet:
         vdev->regs.dev_feature = NET_SUPPORTED_FEATURES;
@@ -152,11 +165,12 @@ static VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zo
         init_virtio_queue(vdev, dev_type);
         is_err = virtio_console_init(vdev);
         break;
-	default:
-		log_error("unsupported virtio device type\n");
-		goto err;
+    default:
+        log_error("unsupported virtio device type\n");
+        goto err;
     }
-    if (is_err) goto err;
+    if (is_err)
+        goto err;
     if (vdevs_num == MAX_DEVS) {
         log_error("virtio device num exceed max limit");
         goto err;
@@ -166,15 +180,14 @@ static VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zo
     return vdev;
 
 err:
-	free(vdev);
-	return NULL;
+    free(vdev);
+    return NULL;
 }
 
 void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type)
 {
     VirtQueue *vq = NULL;
-    switch (type)
-    {
+    switch (type) {
     case VirtioTBlock:
         vdev->vqs_len = 1;
         vq = malloc(sizeof(VirtQueue));
@@ -228,7 +241,7 @@ void virtio_dev_reset(VirtIODevice *vdev)
     vdev->regs.interrupt_count = 0;
     int idx = vdev->regs.queue_sel;
     vdev->vqs[idx].ready = 0;
-    for(uint32_t i=0; i<vdev->vqs_len; i++) {
+    for (uint32_t i = 0; i < vdev->vqs_len; i++) {
         virtqueue_reset(&vdev->vqs[i], i);
     }
     vdev->activated = false;
@@ -245,18 +258,19 @@ void virtqueue_reset(VirtQueue *vq, int idx)
     vq->notify_handler = addr;
     vq->dev = dev;
     vq->queue_num_max = queue_num_max;
-	pthread_mutex_init(&vq->used_ring_lock, NULL);
+    pthread_mutex_init(&vq->used_ring_lock, NULL);
 }
 
 // check if virtqueue has new requests
 bool virtqueue_is_empty(VirtQueue *vq)
 {
-    if(vq->avail_ring == NULL) {
+    if (vq->avail_ring == NULL) {
         log_error("virtqueue's avail ring is invalid");
         return true;
     }
-	// read_barrier();
-	log_debug("vq->last_avail_idx is %d, vq->avail_ring->idx is %d", vq->last_avail_idx, vq->avail_ring->idx);
+    // read_barrier();
+    log_debug("vq->last_avail_idx is %d, vq->avail_ring->idx is %d",
+              vq->last_avail_idx, vq->avail_ring->idx);
     if (vq->last_avail_idx == vq->avail_ring->idx)
         return true;
     else
@@ -270,34 +284,33 @@ bool desc_is_writable(volatile VirtqDesc *desc_table, uint16_t idx)
     return false;
 }
 
-
-static void* get_virt_addr(void *zonex_ipa, int zone_id)
+static void *get_virt_addr(void *zonex_ipa, int zone_id)
 {
     int ram_idx = get_zone_ram_index(zonex_ipa, zone_id);
-    return zone_mem[zone_id][ram_idx][VIRT_ADDR] - zone_mem[zone_id][ram_idx][ZONEX_IPA] + zonex_ipa;
+    return zone_mem[zone_id][ram_idx][VIRT_ADDR] -
+           zone_mem[zone_id][ram_idx][ZONEX_IPA] + zonex_ipa;
 }
 
-// When virtio device is processing virtqueue, driver adding an elem to virtqueue is no need to notify device.
-void virtqueue_disable_notify(VirtQueue *vq) {
-    // log_info("wheatfox: (%s) start, vq@%#x, vq_idx=%d, desc_table@%#x, avail_ring@%#x, used_ring@%#x",
-    //             __func__, vq, vq->vq_idx, vq->desc_table, vq->avail_ring, vq->used_ring);
-    // log_info("wheatfox: (%s) vq->event_idx_enabled is %d", __func__, vq->event_idx_enabled);
-	if (vq->event_idx_enabled) {
-		VQ_AVAIL_EVENT(vq) = vq->last_avail_idx - 1;
-	} else {
-    	vq->used_ring->flags |= (uint16_t)VRING_USED_F_NO_NOTIFY;
-	}
-	write_barrier();
-    // log_info("wheatfox: (%s) end", __func__);
+// When virtio device is processing virtqueue, driver adding an elem to
+// virtqueue is no need to notify device.
+void virtqueue_disable_notify(VirtQueue *vq)
+{
+    if (vq->event_idx_enabled) {
+        VQ_AVAIL_EVENT(vq) = vq->last_avail_idx - 1;
+    } else {
+        vq->used_ring->flags |= (uint16_t)VRING_USED_F_NO_NOTIFY;
+    }
+    write_barrier();
 }
 
-void virtqueue_enable_notify(VirtQueue *vq) {
-	if (vq->event_idx_enabled) {
-		VQ_AVAIL_EVENT(vq) = vq->avail_ring->idx;
-	} else {
-   		vq->used_ring->flags &= !(uint16_t)VRING_USED_F_NO_NOTIFY;
-	} 
-	write_barrier();
+void virtqueue_enable_notify(VirtQueue *vq)
+{
+    if (vq->event_idx_enabled) {
+        VQ_AVAIL_EVENT(vq) = vq->avail_ring->idx;
+    } else {
+        vq->used_ring->flags &= !(uint16_t)VRING_USED_F_NO_NOTIFY;
+    }
+    write_barrier();
 }
 
 void virtqueue_set_desc_table(VirtQueue *vq)
@@ -305,7 +318,6 @@ void virtqueue_set_desc_table(VirtQueue *vq)
     int zone_id = vq->dev->zone_id;
     log_trace("desc table ipa is %#x", vq->desc_table_addr);
     vq->desc_table = (VirtqDesc *)get_virt_addr(vq->desc_table_addr, zone_id);
-
 }
 
 void virtqueue_set_avail(VirtQueue *vq)
@@ -324,24 +336,19 @@ void virtqueue_set_used(VirtQueue *vq)
 
 // record one descriptor to iov.
 static inline int descriptor2iov(int i, volatile VirtqDesc *vd,
-           struct iovec *iov, uint16_t *flags, int zone_id) {
+                                 struct iovec *iov, uint16_t *flags,
+                                 int zone_id)
+{
     void *host_addr;
 
-    // log_info("wheatfox: (%s) i is %d, iov@%#x, vd@%#x, flags@%#x, zone_id is %d",
-    //             __func__, i, iov, vd, flags, zone_id);
-
     host_addr = get_virt_addr((void *)vd->addr, zone_id);
-
-    // log_info("wheatfox: (%s) host_addr is %x", __func__, host_addr);
-
     iov[i].iov_base = host_addr;
     iov[i].iov_len = vd->len;
-    // log_debug("vd->addr ipa is %x, iov_base is %x, iov_len is %d", vd->addr, host_addr, vd->len);
+    // log_debug("vd->addr ipa is %x, iov_base is %x, iov_len is %d", vd->addr,
+    // host_addr, vd->len);
     if (flags != NULL)
         flags[i] = vd->flags;
 
-    // log_info("wheatfox: (%s) iov[%d].iov_base is %x, iov[%d].iov_len is %d",
-    //             __func__, i, iov[i].iov_base, i, iov[i].iov_len);
     return 0;
 }
 
@@ -352,88 +359,71 @@ static inline int descriptor2iov(int i, volatile VirtqDesc *vd,
 /// \param append_len the number of iovs to append
 /// \return the len of iovs
 int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
-                struct iovec **iov, uint16_t **flags, int append_len)
+                             struct iovec **iov, uint16_t **flags,
+                             int append_len)
 {
     uint16_t next, idx;
     volatile VirtqDesc *vdesc, *ind_table, *ind_desc;
-	int chain_len = 0, i, table_len;
-
-    // log_info("wheatfox: (%s) start, vq@%#x", __func__, vq);
+    int chain_len = 0, i, table_len;
 
     idx = vq->last_avail_idx;
 
-    // log_info("wheatfox: (%s) idx is %d", __func__, idx);
-    // log_info("wheatfox: (%s) vq->avail_ring->idx is %d", __func__, vq->avail_ring->idx);
-
-    if(idx == vq->avail_ring->idx)
+    if (idx == vq->avail_ring->idx)
         return 0;
     vq->last_avail_idx++;
     *desc_idx = next = vq->avail_ring->ring[idx & (vq->num - 1)];
 
-	// record desc chain' len to chain_len
-	for (i=0; i<(int)vq->num; i++, next = vdesc->next) {
+    // record desc chain' len to chain_len
+    for (i = 0; i < (int)vq->num; i++, next = vdesc->next) {
         vdesc = &vq->desc_table[next];
 
-        // log_info("wheatfox: (%s) i is %d, next is %d, vdesc->addr is %d, vdesc->len is %d, vdesc->flags is %d",
-        //             __func__, i, next, vdesc->addr, vdesc->len, vdesc->flags);
-
-		// TODO: vdesc->len may be not chain_len, virtio specification doesn't say it.
-		if (vdesc->flags & VRING_DESC_F_INDIRECT) {
-			chain_len += vdesc->len / 16;
-			i--;
-		}
-		if ((vdesc->flags & VRING_DESC_F_NEXT) == 0)
+        // TODO: vdesc->len may be not chain_len, virtio specification doesn't
+        // say it.
+        if (vdesc->flags & VRING_DESC_F_INDIRECT) {
+            chain_len += vdesc->len / 16;
+            i--;
+        }
+        if ((vdesc->flags & VRING_DESC_F_NEXT) == 0)
             break;
-	}
-
-	chain_len += i + 1, next = *desc_idx;
-	
-    // log_info("wheatfox: (%s) chain_len is %d, next is %d", __func__, chain_len, next);
-
-	*iov = malloc(sizeof(struct iovec) * ( chain_len + append_len));
-
-    // log_info("wheatfox: (%s) iov@%#x after malloc", __func__, *iov);
-
-	if (flags != NULL) {
-		*flags = malloc(sizeof(uint16_t) * ( chain_len + append_len));
-        // log_info("wheatfox: (%s) flags@%#x after malloc", __func__, *flags);
     }
 
-	for (i=0; i<chain_len; i++, next = vdesc->next) {
-		vdesc = &vq->desc_table[next];
+    chain_len += i + 1, next = *desc_idx;
 
-        // log_info("wheatfox: (%s) i is %d, next is %d, vdesc->addr is %d, vdesc->len is %d, vdesc->flags is %d",
-        //             __func__, i, next, vdesc->addr, vdesc->len, vdesc->flags);
+    *iov = malloc(sizeof(struct iovec) * (chain_len + append_len));
 
-		if (vdesc->flags & VRING_DESC_F_INDIRECT) {
-            // log_info("wheatfox: (%s) indirect descriptor", __func__);
-			ind_table = (VirtqDesc *)(get_virt_addr((void *)vdesc->addr, vq->dev->zone_id));
-			table_len = vdesc->len / 16;
-			log_debug("table_len is %d", table_len);
-            // log_info("wheatfox: (%s) table_len is %d", __func__, table_len);
-			next = 0;
-			for (;;) {
-				log_debug("next is %d", next);
-				ind_desc = &ind_table[next];
-				descriptor2iov(i, ind_desc, *iov, flags == NULL ? NULL : *flags, vq->dev->zone_id);
-				table_len--;
-				i++;
-				if ((ind_desc->flags & VRING_DESC_F_NEXT) == 0)
-            		break;
-				next = ind_desc->next;
-			}
-			if (table_len != 0) {
-				log_error("invalid indirect descriptor chain");
-				break;
-			}
-		} else {
-            // log_info("wheatfox: (%s) not indirect descriptor", __func__);
-			descriptor2iov(i, vdesc, *iov, flags == NULL ? NULL : *flags, vq->dev->zone_id);
-		}
-	}
+    if (flags != NULL) {
+        *flags = malloc(sizeof(uint16_t) * (chain_len + append_len));
+    }
 
-    // log_info("wheatfox: (%s) end, chain_len is %d", __func__, chain_len);
+    for (i = 0; i < chain_len; i++, next = vdesc->next) {
+        vdesc = &vq->desc_table[next];
 
+        if (vdesc->flags & VRING_DESC_F_INDIRECT) {
+            ind_table = (VirtqDesc *)(get_virt_addr((void *)vdesc->addr,
+                                                    vq->dev->zone_id));
+            table_len = vdesc->len / 16;
+            log_debug("table_len is %d", table_len);
+            next = 0;
+            for (;;) {
+                log_debug("next is %d", next);
+                ind_desc = &ind_table[next];
+                descriptor2iov(i, ind_desc, *iov, flags == NULL ? NULL : *flags,
+                               vq->dev->zone_id);
+                table_len--;
+                i++;
+                if ((ind_desc->flags & VRING_DESC_F_NEXT) == 0)
+                    break;
+                next = ind_desc->next;
+            }
+            if (table_len != 0) {
+                log_error("invalid indirect descriptor chain");
+                break;
+            }
+        } else {
+            descriptor2iov(i, vdesc, *iov, flags == NULL ? NULL : *flags,
+                           vq->dev->zone_id);
+        }
+    }
     return chain_len;
 }
 
@@ -442,9 +432,10 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
     volatile VirtqUsed *used_ring;
     volatile VirtqUsedElem *elem;
     uint16_t used_idx, mask;
-	// There is no need to worry about if used_ring is full, because used_ring's len is equal to descriptor table's. 
+    // There is no need to worry about if used_ring is full, because used_ring's
+    // len is equal to descriptor table's.
     write_barrier();
-	// pthread_mutex_lock(&vq->used_ring_lock);
+    // pthread_mutex_lock(&vq->used_ring_lock);
     used_ring = vq->used_ring;
     used_idx = used_ring->idx;
     mask = vq->num - 1;
@@ -452,9 +443,11 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen)
     elem->id = idx;
     elem->len = iolen;
     used_ring->idx = used_idx;
-	write_barrier();
-	// pthread_mutex_unlock(&vq->used_ring_lock);
-    log_debug("update used ring: used_idx is %d, elem->idx is %d, vq->num is %d", used_idx, idx, vq->num);
+    write_barrier();
+    // pthread_mutex_unlock(&vq->used_ring_lock);
+    log_debug(
+        "update used ring: used_idx is %d, elem->idx is %d, vq->num is %d",
+        used_idx, idx, vq->num);
 }
 
 // function for translating virtio offset to meaning string
@@ -529,13 +522,14 @@ static const char *virtio_mmio_reg_name(uint64_t offset)
         return "UNKNOWN";
     }
 }
-    
 
-static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size)
+static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset,
+                                 unsigned size)
 {
     log_debug("virtio mmio read at %#x", offset);
 
-    log_info("READ  virtio mmio at offset=%#x[%s], size=%d, vdev=%p", offset, virtio_mmio_reg_name(offset), size, vdev);
+    log_info("READ  virtio mmio at offset=%#x[%s], size=%d, vdev=%p", offset,
+             virtio_mmio_reg_name(offset), size, vdev);
 
     if (!vdev) {
         switch (offset) {
@@ -548,8 +542,8 @@ static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned s
         default:
             return 0;
         }
-    } 
-    
+    }
+
     if (offset >= VIRTIO_MMIO_CONFIG) {
         offset -= VIRTIO_MMIO_CONFIG;
         // the first member of vdev->dev must be config.
@@ -581,15 +575,18 @@ static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned s
     case VIRTIO_MMIO_QUEUE_READY:
         return vdev->vqs[vdev->regs.queue_sel].ready;
     case VIRTIO_MMIO_INTERRUPT_STATUS:
-        log_info("wheatfox: (%s) current interrupt status is %d", __func__, vdev->regs.interrupt_status);
+        log_info("debug: (%s)current interrupt status is %d", __func__,
+                 vdev->regs.interrupt_status);
 #ifdef LOONGARCH64
         // clear lvz gintc irq injection bit to avoid endless interrupt...
-        log_warn("clear lvz gintc irq injection bit to avoid endless interrupt...");
+        log_warn(
+            "clear lvz gintc irq injection bit to avoid endless interrupt...");
         ioctl(ko_fd, HVISOR_CLEAR_INJECT_IRQ);
 #endif
-		if (vdev->regs.interrupt_status == 0) {
-			log_error("virtio-mmio-read: interrupt status is 0, type is %d", vdev->type);
-		}
+        if (vdev->regs.interrupt_status == 0) {
+            log_error("virtio-mmio-read: interrupt status is 0, type is %d",
+                      vdev->type);
+        }
         return vdev->regs.interrupt_status;
     case VIRTIO_MMIO_STATUS:
         return vdev->regs.status;
@@ -617,11 +614,13 @@ static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned s
     return 0;
 }
 
-static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t value, unsigned size)
+static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset,
+                              uint64_t value, unsigned size)
 {
     log_debug("virtio mmio write at %#x, value is %#x\n", offset, value);
 
-    log_info("WRITE virtio mmio at offset=%#x[%s], value=%#x, size=%d, vdev=%p", offset, virtio_mmio_reg_name(offset), value, size, vdev);
+    log_info("WRITE virtio mmio at offset=%#x[%s], value=%#x, size=%d, vdev=%p",
+             offset, virtio_mmio_reg_name(offset), value, size, vdev);
 
     VirtMmioRegs *regs = &vdev->regs;
     VirtQueue *vqs = vdev->vqs;
@@ -653,11 +652,11 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
         } else {
             regs->drv_feature |= value;
         }
-		if (regs->drv_feature & (1ULL << VIRTIO_RING_F_EVENT_IDX)) {
-			int len = vdev->vqs_len;
-			for (int i=0; i<len; i++) 
-				vqs[i].event_idx_enabled = 1;
-		}
+        if (regs->drv_feature & (1ULL << VIRTIO_RING_F_EVENT_IDX)) {
+            int len = vdev->vqs_len;
+            for (int i = 0; i < len; i++)
+                vqs[i].event_idx_enabled = 1;
+        }
         break;
     case VIRTIO_MMIO_DRIVER_FEATURES_SEL:
         if (value) {
@@ -679,28 +678,31 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t valu
         vqs[regs->queue_sel].ready = value;
         break;
     case VIRTIO_MMIO_QUEUE_NOTIFY:
-        // system("poweroff");ioctl
         log_debug("queue notify begin");
-        // log_info("wheatfox: (%s) queue notify, value is %d, vdev->vqs_len is %d", __func__, value, vdev->vqs_len);
         if (value < vdev->vqs_len) {
-            log_trace("queue notify ready, handler addr is %#x", vqs[value].notify_handler);
-            // log_info("wheatfox: (%s) queue notify ready, handler addr is %#x", __func__, vqs[value].notify_handler);
+            log_trace("queue notify ready, handler addr is %#x",
+                      vqs[value].notify_handler);
             vqs[value].notify_handler(vdev, &vqs[value]);
         }
         log_debug("queue notify end");
-        // log_info("wheatfox: (%s) queue notify end", __func__);
         break;
     case VIRTIO_MMIO_INTERRUPT_ACK:
-        log_info("wheatfox: (%s) interrupt ack, value is %d, interrupt_status is %d, interrupt_count is %d", __func__, value, regs->interrupt_status, regs->interrupt_count);
+        log_info("debug: (%s)interrupt ack, value is %d, interrupt_status "
+                 "is %d, interrupt_count is %d",
+                 __func__, value, regs->interrupt_status,
+                 regs->interrupt_count);
         if (value == regs->interrupt_status && regs->interrupt_count > 0) {
-            regs->interrupt_count --;
-            log_info("wheatfox: (%s) irq count -> %d", __func__, regs->interrupt_count);
+            regs->interrupt_count--;
+            log_info("debug: (%s)irq count -> %d", __func__,
+                     regs->interrupt_count);
             break;
         } else if (value != regs->interrupt_status) {
-            log_error("interrupt_status is not equal to ack, type is %d", vdev->type);
+            log_error("interrupt_status is not equal to ack, type is %d",
+                      vdev->type);
         }
         regs->interrupt_status &= !value;
-        log_info("wheatfox: (%s) clearing! interrupt_status -> %d", __func__, regs->interrupt_status);
+        log_info("debug: (%s)clearing! interrupt_status -> %d", __func__,
+                 regs->interrupt_status);
         break;
     case VIRTIO_MMIO_STATUS:
         regs->status = value;
@@ -750,34 +752,35 @@ static inline bool in_range(uint64_t value, uint64_t lower, uint64_t len)
     return ((value >= lower) && (value < (lower + len)));
 }
 
-// Inject irq_id to target zone. It will add to res list, and notify hypervisor through ioctl.
+// Inject irq_id to target zone. It will add to res list, and notify hypervisor
+// through ioctl.
 void virtio_inject_irq(VirtQueue *vq)
 {
-	// log_info("wheatfox: (%s) start, vq@%#x, vq->last_used_idx is %d", __func__, vq, vq->last_used_idx);
     uint16_t last_used_idx, idx, event_idx;
-	last_used_idx = vq->last_used_idx;
-	vq->last_used_idx = idx = vq->used_ring->idx;
-	// read_barrier();
-	if (idx == last_used_idx) {
-		log_debug("idx equals last_used_idx");
-        log_trace("wheatfox: (%s) idx equals last_used_idx", __func__);
-		return ;
-	}
-    if (!vq->event_idx_enabled && (vq->avail_ring->flags & VRING_AVAIL_F_NO_INTERRUPT)) {
-		log_debug("no interrupt");
-        log_trace("wheatfox: (%s) no interrupt", __func__);
-		return ;
-	}
-	if (vq->event_idx_enabled) {
-		event_idx = VQ_USED_EVENT(vq);
-		log_debug("idx is %d, event_idx is %d, last_used_idx is %d", idx, event_idx, last_used_idx);
-		if(!vring_need_event(event_idx, idx, last_used_idx)) {
-            log_trace("wheatfox: (%s) no need event", __func__);
-			return;
-		}
-	}
+    last_used_idx = vq->last_used_idx;
+    vq->last_used_idx = idx = vq->used_ring->idx;
+    // read_barrier();
+    if (idx == last_used_idx) {
+        log_debug("idx equals last_used_idx");
+        return;
+    }
+    if (!vq->event_idx_enabled &&
+        (vq->avail_ring->flags & VRING_AVAIL_F_NO_INTERRUPT)) {
+        log_debug("no interrupt");
+        return;
+    }
+    if (vq->event_idx_enabled) {
+        event_idx = VQ_USED_EVENT(vq);
+        log_debug("idx is %d, event_idx is %d, last_used_idx is %d", idx,
+                  event_idx, last_used_idx);
+        if (!vring_need_event(event_idx, idx, last_used_idx)) {
+            return;
+        }
+    }
     volatile struct device_res *res;
-    while (is_queue_full(virtio_bridge->res_front, virtio_bridge->res_rear, MAX_REQ));
+    while (is_queue_full(virtio_bridge->res_front, virtio_bridge->res_rear,
+                         MAX_REQ))
+        ;
     pthread_mutex_lock(&RES_MUTEX);
     unsigned int res_rear = virtio_bridge->res_rear;
     res = &virtio_bridge->res_list[res_rear];
@@ -786,15 +789,15 @@ void virtio_inject_irq(VirtQueue *vq)
     write_barrier();
     virtio_bridge->res_rear = (res_rear + 1) & (MAX_REQ - 1);
     write_barrier();
-	vq->dev->regs.interrupt_status = VIRTIO_MMIO_INT_VRING;
-    vq->dev->regs.interrupt_count ++;
+    vq->dev->regs.interrupt_status = VIRTIO_MMIO_INT_VRING;
+    vq->dev->regs.interrupt_count++;
     pthread_mutex_unlock(&RES_MUTEX);
-	log_debug("inject irq to device %d, vq is %d", vq->dev->type, vq->vq_idx);
-    // log_info("wheatfox: (%s) inject irq to device %d, vq is %d", __func__, vq->dev->type, vq->vq_idx);
+    log_debug("inject irq to device %d, vq is %d", vq->dev->type, vq->vq_idx);
     ioctl(ko_fd, HVISOR_FINISH_REQ);
 }
 
-static void virtio_finish_cfg_req(uint32_t target_cpu, uint64_t value) {
+static void virtio_finish_cfg_req(uint32_t target_cpu, uint64_t value)
+{
     virtio_bridge->cfg_values[target_cpu] = value;
     write_barrier();
     virtio_bridge->cfg_flags[target_cpu]++;
@@ -806,11 +809,13 @@ static int virtio_handle_req(volatile struct device_req *req)
     int i;
     uint64_t value = 0;
     for (i = 0; i < vdevs_num; ++i) {
-        if ((req->src_zone == vdevs[i]->zone_id) && in_range(req->address, vdevs[i]->base_addr, vdevs[i]->len))
+        if ((req->src_zone == vdevs[i]->zone_id) &&
+            in_range(req->address, vdevs[i]->base_addr, vdevs[i]->len))
             break;
     }
     if (i == vdevs_num) {
-        log_error("no matched virtio dev in zone %d, address is 0x%x", req->src_zone, req->address);
+        log_error("no matched virtio dev in zone %d, address is 0x%x",
+                  req->src_zone, req->address);
         value = virtio_mmio_read(NULL, 0, 0);
         virtio_finish_cfg_req(req->src_cpu, value);
         return -1;
@@ -832,93 +837,97 @@ static int virtio_handle_req(volatile struct device_req *req)
     if (!req->need_interrupt) {
         // If a request is a control not a data request
         virtio_finish_cfg_req(req->src_cpu, value);
-    } 
+    }
     log_trace("src_zone is %d, src_cpu is %lld", req->src_zone, req->src_cpu);
     return 0;
 }
 
-static void virtio_close() {
-	log_warn("virtio devices will be closed");
-	destroy_event_monitor();
-	for(int i=0; i<vdevs_num; i++)
+static void virtio_close()
+{
+    log_warn("virtio devices will be closed");
+    destroy_event_monitor();
+    for (int i = 0; i < vdevs_num; i++)
         vdevs[i]->virtio_close(vdevs[i]);
-	close(ko_fd);
-	munmap((void *)virtio_bridge, MMAP_SIZE);
-    for(int i=0; i<MAX_ZONES; i++) {
-        for(int j=0; j< MAX_RAMS; j++)
+    close(ko_fd);
+    munmap((void *)virtio_bridge, MMAP_SIZE);
+    for (int i = 0; i < MAX_ZONES; i++) {
+        for (int j = 0; j < MAX_RAMS; j++)
             if (zone_mem[i][j][MEM_SIZE] != 0) {
-                munmap((void *)zone_mem[i][j][VIRT_ADDR], zone_mem[i][j][MEM_SIZE]);
+                munmap((void *)zone_mem[i][j][VIRT_ADDR],
+                       zone_mem[i][j][MEM_SIZE]);
             }
     }
-	mutithread_log_exit();
-	log_warn("virtio daemon exit successfully");
+    mutithread_log_exit();
+    log_warn("virtio daemon exit successfully");
 }
 
 void handle_virtio_requests()
 {
-	int sig;
-	sigset_t wait_set;
-	struct timespec timeout;
+    int sig;
+    sigset_t wait_set;
+    struct timespec timeout;
     unsigned int req_front = virtio_bridge->req_front;
     volatile struct device_req *req;
-	timeout.tv_sec = 0;
-	timeout.tv_nsec = WAIT_TIME;
-	sigemptyset(&wait_set);
-	sigaddset(&wait_set, SIGHVI);
-	sigaddset(&wait_set, SIGTERM);
-	virtio_bridge->need_wakeup = 1;
-	
-	int signal_count = 0, proc_count = 0;
-	unsigned long long count = 0;
-	for (;;) {
+    timeout.tv_sec = 0;
+    timeout.tv_nsec = WAIT_TIME;
+    sigemptyset(&wait_set);
+    sigaddset(&wait_set, SIGHVI);
+    sigaddset(&wait_set, SIGTERM);
+    virtio_bridge->need_wakeup = 1;
+
+    int signal_count = 0, proc_count = 0;
+    unsigned long long count = 0;
+    for (;;) {
 #ifndef LOONGARCH64
-		log_warn("signal_count is %d, proc_count is %d", signal_count, proc_count);
-		sigwait(&wait_set, &sig); // change to no signal irq
-		signal_count++;
-		if (sig == SIGTERM) {
-			virtio_close();
-			break;
-		} else if (sig != SIGHVI) {
-			log_error("unknown signal %d", sig);
-			continue;
-		}
+        log_warn("signal_count is %d, proc_count is %d", signal_count,
+                 proc_count);
+        sigwait(&wait_set, &sig); // change to no signal irq
+        signal_count++;
+        if (sig == SIGTERM) {
+            virtio_close();
+            break;
+        } else if (sig != SIGHVI) {
+            log_error("unknown signal %d", sig);
+            continue;
+        }
 #endif
-		while(1) {
-			if (!is_queue_empty(req_front, virtio_bridge->req_rear)) {
-				count = 0;
-				proc_count++;
-				req = &virtio_bridge->req_list[req_front];
-				virtio_bridge->need_wakeup = 0;
-				virtio_handle_req(req);
-				req_front = (req_front + 1) & (MAX_REQ - 1);
-				virtio_bridge->req_front = req_front;
-				write_barrier();
-			} 
+        while (1) {
+            if (!is_queue_empty(req_front, virtio_bridge->req_rear)) {
+                count = 0;
+                proc_count++;
+                req = &virtio_bridge->req_list[req_front];
+                virtio_bridge->need_wakeup = 0;
+                virtio_handle_req(req);
+                req_front = (req_front + 1) & (MAX_REQ - 1);
+                virtio_bridge->req_front = req_front;
+                write_barrier();
+            }
 #ifndef LOONGARCH64
-			else {
-				count++;
-				if (count < 10000000) 
-					continue;
-				count = 0;
-				virtio_bridge->need_wakeup = 1;
-				write_barrier();
-				nanosleep(&timeout, NULL);
-				if(is_queue_empty(req_front, virtio_bridge->req_rear)) {
-					break;
-				} 		
-			}
+            else {
+                count++;
+                if (count < 10000000)
+                    continue;
+                count = 0;
+                virtio_bridge->need_wakeup = 1;
+                write_barrier();
+                nanosleep(&timeout, NULL);
+                if (is_queue_empty(req_front, virtio_bridge->req_rear)) {
+                    break;
+                }
+            }
 #endif
-		}
-	}
+        }
+    }
 }
 
-void initialize_log() {
+void initialize_log()
+{
     int log_level;
-    #ifdef HLOG
-        log_level = HLOG;
-    #else 
-        log_level = LOG_WARN;
-    #endif
+#ifdef HLOG
+    log_level = HLOG;
+#else
+    log_level = LOG_WARN;
+#endif
     log_set_level(log_level);
 
     FILE *log_file = fopen("log.txt", "w+");
@@ -930,12 +939,12 @@ int virtio_init()
     // The higher log level is , faster virtio-blk will be.
     int err;
 
-	sigset_t block_mask;
-	sigfillset(&block_mask);
-	pthread_sigmask(SIG_BLOCK, &block_mask, NULL);
+    sigset_t block_mask;
+    sigfillset(&block_mask);
+    pthread_sigmask(SIG_BLOCK, &block_mask, NULL);
 
     prctl(PR_SET_NAME, "hvisor-virtio", 0, 0, 0);
-	multithread_log_init();
+    multithread_log_init();
     initialize_log();
 
     log_info("hvisor init");
@@ -953,7 +962,8 @@ int virtio_init()
     }
 
     // mmap: create shared memory
-    virtio_bridge = (struct virtio_bridge *) mmap(NULL, MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, ko_fd, 0);
+    virtio_bridge = (struct virtio_bridge *)mmap(
+        NULL, MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, ko_fd, 0);
     if (virtio_bridge == (void *)-1) {
         log_error("mmap failed");
         goto unmap;
@@ -961,35 +971,38 @@ int virtio_init()
 
     initialize_event_monitor();
     log_info("hvisor init okay!");
-	return 0;
+    return 0;
 unmap:
     munmap((void *)virtio_bridge, MMAP_SIZE);
     return -1;
 }
 
-static int create_virtio_device_from_json(cJSON* device_json, int zone_id) {
+static int create_virtio_device_from_json(cJSON *device_json, int zone_id)
+{
     VirtioDeviceType dev_type = VirtioTNone;
-	uint64_t base_addr = 0, len = 0;
-	uint32_t irq_id = 0;
+    uint64_t base_addr = 0, len = 0;
+    uint32_t irq_id = 0;
     char *status = cJSON_GetObjectItem(device_json, "status")->valuestring;
-    if (strcmp(status, "disable") == 0) 
+    if (strcmp(status, "disable") == 0)
         return 0;
 
     char *type = cJSON_GetObjectItem(device_json, "type")->valuestring;
     void *arg0, *arg1;
 
     if (strcmp(type, "blk") == 0) {
-		dev_type = VirtioTBlock;
-	} else if (strcmp(type, "net") == 0) {
-		dev_type = VirtioTNet;
-	} else if (strcmp(type, "console") == 0) {
+        dev_type = VirtioTBlock;
+    } else if (strcmp(type, "net") == 0) {
+        dev_type = VirtioTNet;
+    } else if (strcmp(type, "console") == 0) {
         dev_type = VirtioTConsole;
     } else {
-		log_error("unknown device type %s", type);
-		return -1;
-	}
-    base_addr = strtoul(cJSON_GetObjectItem(device_json, "addr")->valuestring, NULL, 16);
-    len = strtoul(cJSON_GetObjectItem(device_json, "len")->valuestring, NULL, 16);
+        log_error("unknown device type %s", type);
+        return -1;
+    }
+    base_addr = strtoul(cJSON_GetObjectItem(device_json, "addr")->valuestring,
+                        NULL, 16);
+    len =
+        strtoul(cJSON_GetObjectItem(device_json, "len")->valuestring, NULL, 16);
     irq_id = cJSON_GetObjectItem(device_json, "irq")->valueint;
     if (dev_type == VirtioTBlock) {
         char *img = cJSON_GetObjectItem(device_json, "img")->valuestring;
@@ -998,25 +1011,28 @@ static int create_virtio_device_from_json(cJSON* device_json, int zone_id) {
         char *tap = cJSON_GetObjectItem(device_json, "tap")->valuestring;
         cJSON *mac_json = cJSON_GetObjectItem(device_json, "mac");
         uint8_t mac[6];
-        for (int i=0; i<6; i++) {
-            mac[i] = strtoul(cJSON_GetArrayItem(mac_json, i)->valuestring, NULL, 16);
+        for (int i = 0; i < 6; i++) {
+            mac[i] =
+                strtoul(cJSON_GetArrayItem(mac_json, i)->valuestring, NULL, 16);
         }
         arg0 = mac, arg1 = tap;
     } else if (dev_type == VirtioTConsole) {
         arg0 = arg1 = NULL;
     }
     if (base_addr == 0 || len == 0 || irq_id == 0) {
-		log_error("missing arguments");
-		return -1;
-	}
-    if(!create_virtio_device(dev_type, zone_id, base_addr, len, irq_id, arg0, arg1)) {
+        log_error("missing arguments");
+        return -1;
+    }
+    if (!create_virtio_device(dev_type, zone_id, base_addr, len, irq_id, arg0,
+                              arg1)) {
         log_error("create virtio device failed");
         return -1;
     }
     return 0;
 }
 
-static int virtio_start_from_json(char* json_path) {
+static int virtio_start_from_json(char *json_path)
+{
     char *buffer = NULL;
     u_int64_t file_size;
     int zone_id, num_devices = 0, err = 0, num_zones = 0;
@@ -1026,7 +1042,7 @@ static int virtio_start_from_json(char* json_path) {
     buffer[file_size] = '\0';
 
     cJSON *root = cJSON_Parse(buffer);
-    cJSON *zones_json = cJSON_GetObjectItem(root, "zones"); 
+    cJSON *zones_json = cJSON_GetObjectItem(root, "zones");
     num_zones = cJSON_GetArraySize(zones_json);
     if (num_zones > MAX_ZONES) {
         log_error("Exceed maximum zone number");
@@ -1034,10 +1050,11 @@ static int virtio_start_from_json(char* json_path) {
         goto err_out;
     }
 
-    for(int i=0; i<num_zones; i++) {
+    for (int i = 0; i < num_zones; i++) {
         cJSON *zone_json = cJSON_GetArrayItem(zones_json, i);
         cJSON *zone_id_json = cJSON_GetObjectItem(zone_json, "id");
-        cJSON *memory_region_json = cJSON_GetObjectItem(zone_json, "memory_region");
+        cJSON *memory_region_json =
+            cJSON_GetObjectItem(zone_json, "memory_region");
         cJSON *devices_json = cJSON_GetObjectItem(zone_json, "devices");
         zone_id = zone_id_json->valueint;
         if (zone_id >= MAX_ZONES) {
@@ -1046,16 +1063,22 @@ static int virtio_start_from_json(char* json_path) {
             goto err_out;
         }
         int num_mems = cJSON_GetArraySize(memory_region_json);
-        for(int j=0; j<num_mems; j++) {
+        for (int j = 0; j < num_mems; j++) {
             cJSON *mem_region = cJSON_GetArrayItem(memory_region_json, j);
-            zone0_ipa = strtoull(cJSON_GetObjectItem(mem_region, "zone0_ipa")->valuestring, NULL, 16);
-            zonex_ipa = strtoull(cJSON_GetObjectItem(mem_region, "zonex_ipa")->valuestring, NULL, 16);
-            mem_size = strtoull(cJSON_GetObjectItem(mem_region, "size")->valuestring, NULL, 16);
+            zone0_ipa = strtoull(
+                cJSON_GetObjectItem(mem_region, "zone0_ipa")->valuestring, NULL,
+                16);
+            zonex_ipa = strtoull(
+                cJSON_GetObjectItem(mem_region, "zonex_ipa")->valuestring, NULL,
+                16);
+            mem_size = strtoull(
+                cJSON_GetObjectItem(mem_region, "size")->valuestring, NULL, 16);
             if (mem_size == 0) {
                 log_error("Invalid memory size");
                 continue;
             }
-            virt_addr = mmap(NULL, mem_size, PROT_READ | PROT_WRITE, MAP_SHARED, ko_fd, (off_t) zone0_ipa);
+            virt_addr = mmap(NULL, mem_size, PROT_READ | PROT_WRITE, MAP_SHARED,
+                             ko_fd, (off_t)zone0_ipa);
             if (virt_addr == (void *)-1) {
                 log_error("mmap failed");
                 err = -1;
@@ -1066,9 +1089,9 @@ static int virtio_start_from_json(char* json_path) {
             zone_mem[zone_id][j][ZONEX_IPA] = zonex_ipa;
             zone_mem[zone_id][j][MEM_SIZE] = mem_size;
         }
-        
+
         num_devices = cJSON_GetArraySize(devices_json);
-        for (int j=0; j < num_devices; j++) {
+        for (int j = 0; j < num_devices; j++) {
             cJSON *device = cJSON_GetArrayItem(devices_json, j);
             err = create_virtio_device_from_json(device, zone_id);
             if (err) {
@@ -1084,24 +1107,26 @@ err_out:
     return err;
 }
 
-int virtio_start(int argc, char *argv[]) {
-	int opt, err = 0;
-	err = virtio_init();
-    if (err) return -1;
+int virtio_start(int argc, char *argv[])
+{
+    int opt, err = 0;
+    err = virtio_init();
+    if (err)
+        return -1;
 
     err = virtio_start_from_json(argv[3]);
-    if (err) goto err_out;
+    if (err)
+        goto err_out;
 
-	for (int i=0; i<vdevs_num; i++) {
-		virtio_bridge->mmio_addrs[i] = vdevs[i]->base_addr;	
-	}
-	write_barrier();
-	virtio_bridge->mmio_avail = 1;
-	write_barrier();
+    for (int i = 0; i < vdevs_num; i++) {
+        virtio_bridge->mmio_addrs[i] = vdevs[i]->base_addr;
+    }
+    write_barrier();
+    virtio_bridge->mmio_avail = 1;
+    write_barrier();
     handle_virtio_requests();
-	return 0;
+    return 0;
 err_out:
-	virtio_close();
-	return err;
+    virtio_close();
+    return err;
 }
-

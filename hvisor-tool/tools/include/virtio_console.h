@@ -12,8 +12,7 @@
 #define CONSOLE_QUEUE_TX 1
 
 typedef struct virtio_console_config ConsoleConfig;
-typedef struct virtio_console_dev
-{
+typedef struct virtio_console_dev {
     ConsoleConfig config;
     int master_fd;
     int rx_ready;
