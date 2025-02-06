@@ -1,0 +1,3 @@
+BreakBeforeBraces: Allman
+IndentWidth: 4
+SpacesBeforeTrailingComments: 1
