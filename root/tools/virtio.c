@@ -575,7 +575,7 @@ static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset,
     case VIRTIO_MMIO_QUEUE_READY:
         return vdev->vqs[vdev->regs.queue_sel].ready;
     case VIRTIO_MMIO_INTERRUPT_STATUS:
-        log_info("debug: (%s)current interrupt status is %d", __func__,
+        log_info("debug: (%s) current interrupt status is %d", __func__,
                  vdev->regs.interrupt_status);
 #ifdef LOONGARCH64
         // clear lvz gintc irq injection bit to avoid endless interrupt...
@@ -687,13 +687,13 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset,
         log_debug("queue notify end");
         break;
     case VIRTIO_MMIO_INTERRUPT_ACK:
-        log_info("debug: (%s)interrupt ack, value is %d, interrupt_status "
+        log_info("debug: (%s) interrupt ack, value is %d, interrupt_status "
                  "is %d, interrupt_count is %d",
                  __func__, value, regs->interrupt_status,
                  regs->interrupt_count);
         if (value == regs->interrupt_status && regs->interrupt_count > 0) {
             regs->interrupt_count--;
-            log_info("debug: (%s)irq count -> %d", __func__,
+            log_info("debug: (%s) irq count -> %d", __func__,
                      regs->interrupt_count);
             break;
         } else if (value != regs->interrupt_status) {
@@ -701,7 +701,7 @@ static void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset,
                       vdev->type);
         }
         regs->interrupt_status &= !value;
-        log_info("debug: (%s)clearing! interrupt_status -> %d", __func__,
+        log_info("debug: (%s) clearing! interrupt_status -> %d", __func__,
                  regs->interrupt_status);
         break;
     case VIRTIO_MMIO_STATUS:

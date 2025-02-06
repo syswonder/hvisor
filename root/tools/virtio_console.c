@@ -35,10 +35,10 @@ void __loongarch64_handler_blocking()
     uint64_t current_timestamp;
     static uint64_t last_process_timestamp = 0;
 
-    log_warn("debug: (%s)start blocking...", __func__);
+    log_warn("debug: (%s) start blocking...", __func__);
     while (1) {
         if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0) {
-            log_warn("debug: (%s)clock_gettime failed", __func__);
+            log_warn("debug: (%s) clock_gettime failed", __func__);
             break;
         }
         current_timestamp =
@@ -51,7 +51,7 @@ void __loongarch64_handler_blocking()
             break;
         }
     }
-    log_warn("debug: (%s)while 1 done, current_timestamp is %lu, "
+    log_warn("debug: (%s) while 1 done, current_timestamp is %lu, "
              "last_process_timestamp is %lu",
              __func__, current_timestamp, last_process_timestamp);
     last_process_timestamp = current_timestamp;
@@ -78,7 +78,7 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param)
         return;
     }
 
-    // log_warn("debug: (%s)in console event handler, fd=%d,
+    // log_warn("debug: (%s) in console event handler, fd=%d,
     // epoll_type=%d, vdev->type=%d", __func__, fd, epoll_type,
     // vdev->type);
 
@@ -106,11 +106,11 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param)
             break;
         }
         len = readv(dev->master_fd, iov, n);
-        // log_info("debug: (%s)readv done, len is %d,
+        // log_info("debug: (%s) readv done, len is %d,
         // vq->last_avail_idx is %d", __func__, len, vq->last_avail_idx);
         // if len is not 0, print the data
         if (len > 0) {
-            // log_info("debug: (%s)readv done, len is %d, data is
+            // log_info("debug: (%s) readv done, len is %d, data is
             // at iov@%#x, dump:\nRAW:[", __func__, len, iov); now
             // starting from iov base, print exactly len bytes
             for (int i = 0; i < len; i++) {
@@ -121,7 +121,7 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param)
         if (len < 0 && errno == EWOULDBLOCK) {
             log_debug("no more bytes");
             vq->last_avail_idx--;
-            // log_error("debug: (%s)no more bytes,
+            // log_error("debug: (%s) no more bytes,
             // vq->last_avail_idx --> %d", __func__,
             // vq->last_avail_idx);
             free(iov);
@@ -129,18 +129,18 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param)
         } else if (len < 0) {
             log_trace("Failed to read from console, errno is %d", errno);
             vq->last_avail_idx--;
-            // log_error("debug: (%s)Failed to read from console,
+            // log_error("debug: (%s) Failed to read from console,
             // errno is %d[%s], vq->last_avail_idx --> %d", __func__,
             // errno, strerror(errno), vq->last_avail_idx);
             free(iov);
             break;
         }
         update_used_ring(vq, idx, len);
-        // log_info("debug: (%s)update_used_ring done", __func__);
+        // log_info("debug: (%s) update_used_ring done", __func__);
         free(iov);
     }
     virtio_inject_irq(vq);
-    // log_trace("debug: (%s)ok, finish handling console event", __func__);
+    // log_trace("debug: (%s) ok, finish handling console event", __func__);
     return;
 }
 
@@ -228,7 +228,7 @@ static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq)
     //     log_printf("\n");
     // }
 
-    log_printf("debug: (%s)console txq: n is %d, iov at ", __func__, n);
+    log_printf("debug: (%s) console txq: n is %d, iov at ", __func__, n);
     for (int i = 0; i < n; i++) {
         log_printf("[%d:%#x|%d] ", i, iov[i].iov_base, iov[i].iov_len);
     }
