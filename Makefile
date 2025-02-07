@@ -6,8 +6,8 @@ PORT ?= 2333
 MODE ?= debug
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 KDIR ?= ../../linux
-FEATURES ?= platform_zcu102,gicv2
-BOARD ?= zcu102
+FEATURES ?= platform_qemu,gicv3
+BOARD ?= qemu
 
 ifeq ($(ARCH),aarch64)
     RUSTC_TARGET := aarch64-unknown-none
