@@ -44,10 +44,12 @@ pub enum HvUnitTestResult {
 pub fn quit_qemu(result: HvUnitTestResult) {
     warn!("quitting qemu, result: {:?}", result);
     #[cfg(target_arch = "aarch64")]
-    let qemu_exit_handle = qemu_exit::AArch64::new();
-    match result {
-        HvUnitTestResult::Success => qemu_exit_handle.exit_success(),
-        HvUnitTestResult::Failed => qemu_exit_handle.exit_failure(),
+    {
+        let qemu_exit_handle = qemu_exit::AArch64::new();
+        match result {
+            HvUnitTestResult::Success => qemu_exit_handle.exit_success(),
+            HvUnitTestResult::Failed => qemu_exit_handle.exit_failure(),
+        }
     }
 }
 

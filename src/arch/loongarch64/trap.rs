@@ -1,3 +1,10 @@
+use crate::arch::cpu::this_cpu_id;
+use crate::device::irqchip::inject_irq;
+use crate::event::check_events;
+use crate::hypercall::SGI_IPI_ID;
+use crate::memory::addr;
+use crate::memory::mmio_handle_access;
+use crate::memory::MMIOAccess;
 use crate::percpu::this_cpu_data;
 use crate::zone::Zone;
 
@@ -17,9 +24,7 @@ pub fn install_trap_vector() {
     // clear UEFI firmware's previous timer configs
     tcfg::set_en(false);
     ticlr::clear_timer_interrupt();
-    timer_init();
-    // crmd::set_ie(true);
-
+    // timer_init();
     // set CSR.EENTRY to _hyp_trap_vector and int vector offset to 0
     ecfg::set_vs(0);
     eentry::set_eentry(_hyp_trap_vector as usize);
@@ -28,6 +33,18 @@ pub fn install_trap_vector() {
     euen::set_fpe(true); // basic floating point
     euen::set_sxe(true); // 128-bit SIMD
     euen::set_asxe(true); // 256-bit SIMD
+
+    enable_global_interrupt()
+}
+
+/// enable CRMD.IE
+pub fn enable_global_interrupt() {
+    crmd::set_ie(true);
+}
+
+/// disable CRMD.IE
+pub fn disable_global_interrupt() {
+    crmd::set_ie(false);
 }
 
 pub fn get_ms_counter(ms: usize) -> usize {
@@ -61,7 +78,7 @@ pub fn timer_init() {
     // set timer
     tcfg::set_periodic(true);
     // let init_val = get_ms_counter(500);
-    let init_val = get_ms_counter(10000);
+    let init_val = get_ms_counter(6000);
     tcfg::set_init_val(init_val);
     // println!("loongarch64: timer_init: timer init value = {}", init_val);
 
@@ -69,6 +86,13 @@ pub fn timer_init() {
 
     let mut lie_ = ecfg::read().lie();
     lie_ = lie_ | LineBasedInterrupt::TIMER;
+    ecfg::set_lie(lie_);
+}
+
+pub fn ipi_init() {
+    // enable IPI
+    let mut lie_ = ecfg::read().lie();
+    lie_ = lie_ | LineBasedInterrupt::IPI;
     ecfg::set_lie(lie_);
 }
 
@@ -123,10 +147,10 @@ pub fn ecode2str(ecode: usize, esubcode: usize) -> &'static str {
 fn handle_page_modify_fault() {
     let badv_ = badv::read();
     info!(
-        "(page_modify_fault) handling page modify exception, vaddr = 0x{:x}",
+        "loongarch64: handling page modify exception, vaddr = 0x{:x}",
         badv_.vaddr()
     );
-    info!("(page_modify_fault) ignoring this exception, todo: set dirty bit in page table entry");
+    info!("loongarch64: ignoring this exception, todo: set dirty bit in page table entry");
 }
 
 #[no_mangle]
@@ -148,16 +172,24 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
     let tlbrelo0_ = tlbrelo0::read();
     let tlbrelo1_ = tlbrelo1::read();
 
-    trace!(
-        "loongarch64: trap_handler: {} ecode={:#x} esubcode={:#x} is={:#x} badv={:#x} badi={:#x} era={:#x}", 
-        ecode2str(ecode, esubcode),
-        ecode,
-        esubcode,
-        is,
-        badv_.vaddr(),
-        badi_.inst(),
-        era_.raw(),
-    );
+    let mut is_idle = false;
+    if ecode == ECODE_GSPR && badi_.inst() == 0b0000_0110_0100_1000_1000_0000_0000_0000 {
+        is_idle = true;
+    }
+
+    if !is_idle {
+        debug!(
+            "loongarch64: trap_handler: {} ecode={:#x} esubcode={:#x} is={:#x} badv={:#x} badi={:#x} era={:#x}", 
+            ecode2str(ecode, esubcode),
+            ecode,
+            esubcode,
+            is,
+            badv_.vaddr(),
+            badi_.inst(),
+            era_.raw(),
+        );
+        print!("\0");
+    }
 
     handle_exception(
         ecode,
@@ -199,19 +231,288 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
     let gcntc_com = gcntc.compensation();
     gcntc::set_compensation(gcntc_com.wrapping_sub(time_spent));
 
+    if !is_idle {
+        debug!("loongarch64: trap_handler: return");
+        print!("\0");
+    }
+
     unsafe {
         let _ctx_ptr = ctx as *mut ZoneContext;
         _vcpu_return(_ctx_ptr as usize);
     }
 }
 
+const ECODE_INT: usize = 0x0;
+const ECODE_GSPR: usize = 0x16;
+const ECODE_PIL: usize = 0x1;
+const ECODE_PIS: usize = 0x2;
+const ECODE_HVC: usize = 0x17;
+const ECODE_PNR: usize = 0x5;
+
+fn handle_exception(
+    ecode: usize,
+    esubcode: usize,
+    era: usize,
+    is: usize,
+    badi: usize,
+    badv: usize,
+    ctx: &mut ZoneContext,
+) {
+    match ecode {
+        ECODE_INT => {
+            debug!(
+                "This is an interrupt exception, is={:#x}, ecfg.lie={:?}",
+                is,
+                ecfg::read().lie()
+            );
+            // INT = 0x0,   Interrupt
+            handle_interrupt(is);
+        }
+        ECODE_GSPR => {
+            // according to kvm's code, we should emulate the instruction that cause the GSPR exception - wheatfox 2024.4.12
+            // GSPR = 0x16, Guest Sensitive Privileged Resource
+            trace!(
+                "This is a GSPR exception, badv={:#x}, badi={:#x}",
+                badv,
+                badi
+            );
+            // arch_send_event(1, 0x7);
+            emulate_instruction(era, badi, ctx);
+        }
+        ECODE_HVC => {
+            // HVC = 0x17,  Hypervisor Call
+            // code = a0(r4), arg0 = a1(r5), arg1 = a2(r6)
+            handle_hvc(ctx);
+        }
+        ECODE_PIL | ECODE_PIS | ECODE_PNR => {
+            debug!("exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",
+                    ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv);
+            // we first assume this lies in virtio region
+            // since we didn't add these regions into VMM Pages
+            /*
+                LD.B    rd, rj, si12    0010100000  si12    rj5   rd5
+                LD.H    rd, rj, si12    0010100001  si12    rj5   rd5
+                LD.W    rd, rj, si12    0010100010  si12    rj5   rd5
+                LD.D    rd, rj, si12    0010100011  si12    rj5   rd5
+                ST.B    rd, rj, si12    0010100100  si12    rj5   rd5
+                ST.H    rd, rj, si12    0010100101  si12    rj5   rd5
+                ST.W    rd, rj, si12    0010100110  si12    rj5   rd5
+                ST.D    rd, rj, si12    0010100111  si12    rj5   rd5
+                LD.BU   rd, rj, si12    0010101000  si12    rj5   rd5
+                LD.HU   rd, rj, si12    0010101001  si12    rj5   rd5
+                LD.WU   rd, rj, si12    0010101010  si12    rj5   rd5
+                LDPTR.W rd, rj, si14    00100100    si14    rj5   rd5
+                STPTR.W rd, rj, si14    00100101    si14    rj5   rd5
+                LDPTR.D rd, rj, si14    00100110    si14    rj5   rd5
+                STPTR.D rd, rj, si14    00100111    si14    rj5   rd5
+                LDX.B   rd, rj, rk      00111000000000 000 rk rj  rd5
+                LDX.H   rd, rj, rk      00111000000001 000 rk rj  rd5
+                LDX.W   rd, rj, rk      00111000000010 000 rk rj  rd5
+                LDX.D   rd, rj, rk      00111000000011 000 rk rj  rd5
+                STX.B   rd, rj, rk      00111000000100 000 rk rj  rd5
+                STX.H   rd, rj, rk      00111000000101 000 rk rj  rd5
+                STX.W   rd, rj, rk      00111000000110 000 rk rj  rd5
+                STX.D   rd, rj, rk      00111000000111 000 rk rj  rd5
+                LDX.BU  rd, rj, rk      00111000001000 000 rk rj  rd5
+                LDX.HU  rd, rj, rk      00111000001001 000 rk rj  rd5
+                LDX.WU  rd, rj, rk      00111000001010 000 rk rj  rd5
+            */
+            let ins = badi;
+            let mut is_write = false;
+            let mut is_u = false;
+            let mut value = 0;
+            let mut size = 0;
+            let mut addr = 0;
+            let mut target_rd_idx = 0;
+            let prefix6 = extract_field(ins, 26, 6);
+            if prefix6 == 0b001010 {
+                // load/store
+                let rd = extract_field(ins, 0, 5);
+                target_rd_idx = rd;
+                let rj = extract_field(ins, 5, 5);
+                let si12 = extract_field(ins, 10, 12);
+                let ty = extract_field(ins, 24, 2); // ld/st/ldu - 0b00/0b01/0b10
+                let sz = extract_field(ins, 22, 2); // 0b00=byte, 0b01=half, 0b10=word, 0b11=double
+                match ty {
+                    0b00 => {
+                        // LD
+                        is_write = false;
+                    }
+                    0b01 => {
+                        // ST
+                        is_write = true;
+                        value = ctx.x[rd];
+                    }
+                    0b10 => {
+                        // LDU
+                        is_write = false;
+                        is_u = true;
+                    }
+                    _ => panic!("unhandled type"),
+                }
+                size = match sz {
+                    0b00 => 1,
+                    0b01 => 2,
+                    0b10 => 4,
+                    0b11 => 8,
+                    _ => panic!("unhandled size"),
+                };
+            } else if prefix6 == 0b001001 {
+                // load/store pointer
+                let rd = extract_field(ins, 0, 5);
+                target_rd_idx = rd;
+                let rj = extract_field(ins, 5, 5);
+                let si14 = extract_field(ins, 10, 14);
+                let mem_addr = ctx.x[rj] as usize + si14 as usize;
+                let ty = extract_field(ins, 24, 2);
+                match ty {
+                    0b00 => {
+                        // LDPTR.W
+                        is_write = false;
+                        size = 4;
+                    }
+                    0b01 => {
+                        // STPTR.W
+                        is_write = true;
+                        size = 4;
+                        value = ctx.x[rd];
+                    }
+                    0b10 => {
+                        // LDPTR.D
+                        is_write = false;
+                        size = 8;
+                    }
+                    0b11 => {
+                        // STPTR.D
+                        is_write = true;
+                        size = 8;
+                        value = ctx.x[rd];
+                    }
+                    _ => panic!("unhandled size"),
+                }
+            } else if prefix6 == 0b001110 {
+                // load/store extended
+                let rd = extract_field(ins, 0, 5);
+                target_rd_idx = rd;
+                let rj = extract_field(ins, 5, 5);
+                let rk = extract_field(ins, 10, 5);
+                let sz = extract_field(ins, 18, 2);
+                let ty = extract_field(ins, 20, 2);
+                match ty {
+                    0b00 => {
+                        // LDX
+                        is_write = false;
+                    }
+                    0b01 => {
+                        // STX
+                        is_write = true;
+                        value = ctx.x[rd];
+                    }
+                    0b10 => {
+                        // LDXU
+                        is_write = false;
+                        is_u = true;
+                    }
+                    _ => panic!("unhandled type"),
+                }
+                size = match sz {
+                    0b00 => 1,
+                    0b01 => 2,
+                    0b10 => 4,
+                    0b11 => 8,
+                    _ => panic!("unhandled size"),
+                };
+            } else {
+                panic!("unhandled instruction: {:#b}/{:#x}", ins, ins);
+            }
+
+            let mut mmio_access = MMIOAccess {
+                address: badv,
+                size,
+                is_write,
+                value,
+            };
+            // debug!(
+            //     "mmio_access, addr={:#x}, size={:#x}, is_write={}, value={:#x}",
+            //     mmio_access.address, mmio_access.size, mmio_access.is_write, mmio_access.value
+            // );
+            debug!(
+                "!!!! {} mmio_access@{:#x} s={:#x} v={:#x}",
+                if is_write { "->write" } else { "<- read" },
+                mmio_access.address,
+                mmio_access.size,
+                mmio_access.value
+            );
+            let res = mmio_handle_access(&mut mmio_access);
+            match res {
+                Ok(_) => {
+                    debug!("handle mmio success, v={:#x}", mmio_access.value);
+                    if !is_write {
+                        // we read an usize from our zone0 virtio-daemon
+                        // need to trim and extend it to 64-bit reg according to is_u and size
+                        // ctx.x[target_rd_idx] = mmio_access.value;
+                        let trimmed_by_size =
+                            mmio_access.value & ((1 << (mmio_access.size * 8)) - 1);
+                        let extended = if !is_u {
+                            // normal instruction with no .u use sign extension
+                            signed_ext(trimmed_by_size, mmio_access.size * 8)
+                        } else {
+                            // .u instruction zero extend
+                            trimmed_by_size
+                        };
+                        debug!(
+                            "read from mmio, raw={:#x}, trimmed={:#x}, extended={:#x}",
+                            mmio_access.value, trimmed_by_size, extended
+                        );
+                        ctx.x[target_rd_idx] = extended;
+                    }
+                    // we should jump to next instruction because we 'emulated' the instruction
+                    ctx.sepc += 4;
+                }
+                Err(e) => {
+                    error!(
+                        "mmio access failed, error = {:?}, this is a real page fault",
+                        e
+                    );
+                    panic!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",
+                    ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv)
+                }
+            }
+        }
+        _ => {
+            panic!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",  
+            ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv)
+        }
+    }
+}
+
+fn signed_ext(value: usize, size: usize) -> usize {
+    let sign_bit = 1 << (size - 1);
+    if value & sign_bit != 0 {
+        value | !((1 << size) - 1)
+    } else {
+        value
+    }
+}
+
 #[no_mangle]
 pub fn _vcpu_return(ctx: usize) {
-    // Set the current guest ID to Zone's ID
-    let vm_id = 1;
+    let z = this_cpu_data().zone.as_ref();
+    let vm_id;
+    if z.is_none() {
+        trace!("loongarch64: _vcpu_return: no zone found for cpu {}, maybe this is a kernel exception return", this_cpu_id());
+        vm_id = 0;
+    } else {
+        // since LVZ use GID=0 for hypervisor TLB, we cannot use zone id 0 here
+        // so we add it by 1 - wheatfox
+        vm_id = z.unwrap().read().id + 1;
+    }
     gstat::set_gid(vm_id);
     gstat::set_pgm(true);
-    trace!("loongarch64: _vcpu_return: set guest ID to {}", vm_id);
+    trace!(
+        "loongarch64: _vcpu_return: set hardware Guest ID to {}",
+        vm_id
+    );
     // Configure guest TLB control
     gtlbc::set_use_tgid(true);
     gtlbc::set_tgid(vm_id);
@@ -845,16 +1146,41 @@ fn imm12toi64(imm12: usize) -> isize {
     imm12 >> 52
 }
 
+use crate::arch::ipi::*;
+const INT_IPI: usize = 12;
 const IPI_BIT: usize = 1 << 12;
 const TIMER_BIT: usize = 1 << 11;
 
+/// handle loongarch64 interrupts here
 fn handle_interrupt(is: usize) {
     match is {
         _ if is & IPI_BIT != 0 => {
-            info!("ipi interrupt");
+            let ipi_status = get_ipi_status(this_cpu_id());
+            debug!("ipi interrupt, status = {:#x}", ipi_status);
+            // handle IPI
+            if ipi_status == SGI_IPI_ID as _ {
+                // 0x7 is a SGI in hvisor, but we still need ot know which event it is
+                // use src/event.rs to handle events
+                let result = check_events();
+                if result {
+                    debug!("ipi event handled :)");
+                } else {
+                    error!("ipi event not handled !!!");
+                }
+            } else if ipi_status == 0x8 {
+                // this one is used to wake up nonroot virtio hvc0 read
+                // since this is actually sent by zone and notify the zone itself, we should inject this to the zone
+                // and let the zone handle it
+                // inject_irq(INT_IPI, false);
+                debug!("not handled IPI status {:#x} for now", ipi_status);
+            } else {
+                warn!("ignored IPI status {:#x}", ipi_status);
+            }
+            reset_ipi(this_cpu_id());
         }
         _ if is & TIMER_BIT != 0 => {
-            loongArch64::register::ticlr::clear_timer_interrupt();
+            use loongArch64::register;
+            register::ticlr::clear_timer_interrupt();
         }
         _ => {
             info!("not handled interrupt");
@@ -862,6 +1188,7 @@ fn handle_interrupt(is: usize) {
     }
 }
 
+/// hypercall handler
 fn handle_hvc(ctx: &mut ZoneContext) {
     // HVC
     let code = ctx.get_a0();
@@ -1031,31 +1358,31 @@ fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
         }
         4 => {
             // iocsrwr.b
-            // iocsrwr.b(GPR[rj], GPR[rd])
-            // unsafe {
-            //     asm!("iocsrwr.b {}, {}", in(reg) ctx.x[rj], in(reg) ctx.x[rd]);
-            // }
+            // iocsrwr.b(GPR[rd], GPR[rj])
+            unsafe {
+                asm!("iocsrwr.b {}, {}", in(reg) ctx.x[rd], in(reg) ctx.x[rj]);
+            }
         }
         5 => {
             // iocsrwr.h
-            // iocsrwr.h(GPR[rj], GPR[rd])
-            // unsafe {
-            //     asm!("iocsrwr.h {}, {}", in(reg) ctx.x[rj], in(reg) ctx.x[rd]);
-            // }
+            // iocsrwr.h(GPR[rd], GPR[rj])
+            unsafe {
+                asm!("iocsrwr.h {}, {}", in(reg) ctx.x[rd], in(reg) ctx.x[rj]);
+            }
         }
         6 => {
             // iocsrwr.w
-            // iocsrwr.w(GPR[rj], GPR[rd])
-            // unsafe {
-            //     asm!("iocsrwr.w {}, {}", in(reg) ctx.x[rj], in(reg) ctx.x[rd]);
-            // }
+            // iocsrwr.w(GPR[rd], GPR[rj])
+            unsafe {
+                asm!("iocsrwr.w {}, {}", in(reg) ctx.x[rd], in(reg) ctx.x[rj]);
+            }
         }
         7 => {
             // iocsrwr.d
-            // iocsrwr.d(GPR[rj], GPR[rd])
-            // unsafe {
-            //     asm!("iocsrwr.d {}, {}", in(reg) ctx.x[rj], in(reg) ctx.x[rd]);
-            // }
+            // iocsrwr.d(GPR[rd], GPR[rj])
+            unsafe {
+                asm!("iocsrwr.d {}, {}", in(reg) ctx.x[rd], in(reg) ctx.x[rj]);
+            }
         }
         _ => {
             // should not reach here
@@ -1218,64 +1545,6 @@ fn emulate_instruction(era: usize, ins: usize, ctx: &mut ZoneContext) {
     }
 
     panic!("Unexpected opcode encountered, ins = {:#x}", ins);
-}
-
-const ECODE_INT: usize = 0x0;
-const ECODE_GSPR: usize = 0x16;
-const ECODE_PIL: usize = 0x1;
-const ECODE_PIS: usize = 0x2;
-const ECODE_HVC: usize = 0x17;
-
-fn handle_exception(
-    ecode: usize,
-    esubcode: usize,
-    era: usize,
-    is: usize,
-    badi: usize,
-    badv: usize,
-    ctx: &mut ZoneContext,
-) {
-    match ecode {
-        ECODE_INT => {
-            // INT = 0x0,   Interrupt
-            handle_interrupt(is);
-        }
-        ECODE_GSPR => {
-            // according to kvm's code, we should emulate the instruction that cause the GSPR exception - wheatfox 2024.4.12
-            // GSPR = 0x16, Guest Sensitive Privileged Resource
-            trace!(
-                "This is a GSPR exception, badv={:#x}, badi={:#x}",
-                badv,
-                badi
-            );
-            emulate_instruction(era, badi, ctx);
-        }
-        ECODE_PIL | ECODE_PIS => {
-            // PIL = 0x1,   Page Illegal Load
-            // PIS = 0x2,   Page Illegal Store
-            // info!("handling page invalid exception...");
-            if badv >= UART0_BASE && badv < UART0_END {
-                // info!("handling UART0 mmio emulation");
-                // emulate_instruction(era, badi, ctx);
-                panic!("UART0 mmio emulation not implemented");
-            } else {
-                if ecode == ECODE_PIL {
-                    panic!("Page Illegal Load");
-                } else {
-                    panic!("Page Illegal Store");
-                }
-            }
-        }
-        ECODE_HVC => {
-            // HVC = 0x17,  Hypervisor Call
-            // code = a0(r4), arg0 = a1(r5), arg1 = a2(r6)
-            handle_hvc(ctx);
-        }
-        _ => {
-            panic!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",  
-            ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv)
-        }
-    }
 }
 
 /* TLB REFILL HANDLER */

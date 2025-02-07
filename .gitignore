@@ -26,3 +26,4 @@ Image*
 *.dtb
 .DS_Store
 flash.img*
+.DS_Store

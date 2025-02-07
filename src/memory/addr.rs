@@ -2,6 +2,8 @@
 
 #![allow(dead_code)]
 
+use core::fmt::Debug;
+
 use crate::consts::PAGE_SIZE;
 
 pub type VirtAddr = usize;

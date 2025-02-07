@@ -63,8 +63,12 @@ impl From<MemFlags> for DescriptorAttr {
             attr |= Self::NX;
         }
         // default we should set the VALID=1 since we are using it
+        // we set MemFlag::USER as NULL for invaliding this PTE
         // DIRTY=1 to avoid Page Modified Exception
-        attr |= Self::V | Self::D;
+        // attr |= Self::V | Self::D;
+        if !flags.contains(MemFlags::USER) {
+            attr |= Self::V | Self::D;
+        }
         // now let's handle MAT, if flags includes IO then we use StronglyUncached
         // otherwise we use CoherentCached
         if flags.contains(MemFlags::IO) {

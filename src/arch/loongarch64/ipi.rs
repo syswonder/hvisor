@@ -1,5 +1,11 @@
+use crate::arch::cpu::this_cpu_id;
 use crate::device::common::MMIODerefWrapper;
 use core::arch::asm;
+use core::ptr::write_volatile;
+use loongArch64::cpu;
+use loongArch64::register::ecfg::LineBasedInterrupt;
+use loongArch64::register::*;
+use loongArch64::time;
 use tock_registers::fields::FieldValue;
 use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
 use tock_registers::register_bitfields;
@@ -7,22 +13,12 @@ use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite, WriteOnly};
 
 pub fn arch_send_event(cpu_id: u64, sgi_num: u64) {
-    let ipi: &MMIODerefWrapper<IpiRegisters> = match cpu_id {
-        0 => &CORE0_IPI,
-        1 => &CORE1_IPI,
-        2 => &CORE2_IPI,
-        3 => &CORE3_IPI,
-        _ => {
-            error!("(arch_send_event) invalid cpu_id: {}", cpu_id);
-            return;
-        }
-    };
-    let mut val: u32 = 1 << 31;
-    val |= sgi_num as u32;
-    val |= (cpu_id as u32) << 16;
-    unsafe {
-        asm!("iocsrwr.w {}, {}", in(reg) val, in(reg) 0x1040);
-    }
+    debug!(
+        "loongarch64: arch_send_event: sending event to cpu: {}, sgi_num: {}",
+        cpu_id, sgi_num
+    );
+    // just call ipi_write_action
+    ipi_write_action(cpu_id as usize, sgi_num as usize);
 }
 
 register_bitfields! [
@@ -60,6 +56,7 @@ register_structs! {
 const MMIO_BASE: usize = 0x8000_0000_1fe0_0000;
 const IPI_MMIO_BASE: usize = MMIO_BASE;
 
+// IPI registers, use this if you don't want to use the percore-IPI feature
 pub static CORE0_IPI: MMIODerefWrapper<IpiRegisters> =
     unsafe { MMIODerefWrapper::new(IPI_MMIO_BASE + 0x1000) };
 pub static CORE1_IPI: MMIODerefWrapper<IpiRegisters> =
@@ -85,7 +82,7 @@ fn iocsr_mbuf_send_box_hi(a: usize) -> usize {
 
 // allow unused for now
 #[allow(unused_assignments)]
-pub fn mail_send(data: usize, cpu_id: usize, mailbox_id: usize) {
+pub fn mail_send_percore(data: usize, cpu_id: usize, mailbox_id: usize) {
     // the high and low 32 bits should be sent separately
     // first high 32 bits, then low 32 bits
     let mut high = data >> 32;
@@ -96,18 +93,20 @@ pub fn mail_send(data: usize, cpu_id: usize, mailbox_id: usize) {
     val |= iocsr_mbuf_send_box_hi(mailbox_id) << 2;
     val |= cpu_id << 16;
     val |= high << 32;
-    // info!("(mail_send) sending high 32 bits, actual packed value: {:#x}", val);
+    // debug!("(mail_send) sending high 32 bits, actual packed value: {:#x}", val);
     unsafe {
-        asm!("iocsrwr.d {}, {}", in(reg) val, in(reg) 0x1048);
+        // asm!("iocsrwr.d {}, {}", in(reg) val, in(reg) 0x1048);
+        write_volatile(IPI_MMIO_MAIL_SEND as *mut u64, val as u64);
     }
     // send low 32 bits
     val = 1 << 31;
     val |= iocsr_mbuf_send_box_lo(mailbox_id) << 2;
     val |= cpu_id << 16;
     val |= low << 32;
-    // info!("(mail_send) sending low 32 bits, actual packed value: {:#x}", val);
+    // debug!("(mail_send) sending low 32 bits, actual packed value: {:#x}", val);
     unsafe {
-        asm!("iocsrwr.d {}, {}", in(reg) val, in(reg) 0x1048);
+        // asm!("iocsrwr.d {}, {}", in(reg) val, in(reg) 0x1048);
+        write_volatile(IPI_MMIO_MAIL_SEND as *mut u64, val as u64);
     }
 }
 
@@ -126,10 +125,17 @@ fn ffs(a: usize) -> usize {
     i + 1
 }
 
+const IPI_MMIO_IPI_SEND: usize = MMIO_BASE + 0x1040; // 32 bits Write Only
+const IPI_MMIO_MAIL_SEND: usize = MMIO_BASE + 0x1048; // 64 bits Write Only
+
 #[allow(unused_assignments)]
-pub fn ipi_write_action(cpu_id: usize, action: usize) {
+pub fn ipi_write_action_percore(cpu_id: usize, _action: usize) {
     let mut irq: u32 = 0;
-    let mut action = action;
+    let mut action = _action;
+    debug!(
+        "loongarch64::ipi_write_action sending action: {:#x} to cpu: {}",
+        action, cpu_id
+    );
     loop {
         irq = ffs(action) as u32;
         if irq == 0 {
@@ -138,12 +144,96 @@ pub fn ipi_write_action(cpu_id: usize, action: usize) {
         let mut val: u32 = 1 << 31;
         val |= irq - 1;
         val |= (cpu_id as u32) << 16;
-        // info!("(ipi_write_action) sending action: {:#x}", val);
+        debug!(
+            "loongarch64::ipi_write_action writing value {:#x} to MMIO address: {:#x}",
+            val, IPI_MMIO_IPI_SEND
+        );
         unsafe {
-            asm!("iocsrwr.w {}, {}", in(reg) val, in(reg) 0x1040);
+            //     asm!("iocsrwr.w {}, {}", in(reg) val, in(reg) 0x1040);
+            write_volatile(IPI_MMIO_IPI_SEND as *mut u32, val);
         }
+        debug!(
+            "loongarch64::ipi_write_action sent irq: {} to cpu: {} !",
+            irq, cpu_id
+        );
         action &= !(1 << (irq - 1));
     }
+    debug!(
+        "loongarch64::ipi_write_action finished sending to cpu: {}",
+        cpu_id
+    );
+}
+
+pub fn ipi_write_action(cpu_id: usize, _action: usize) {
+    // just write _action directly to the target cpu legacy IPI registers
+    // which is the IPI_SET register
+    debug!(
+        "ipi_write_action_legacy: sending action: {:#x} to cpu: {}",
+        _action, cpu_id
+    );
+    let ipi: &MMIODerefWrapper<IpiRegisters> = match cpu_id {
+        0 => &CORE0_IPI,
+        1 => &CORE1_IPI,
+        2 => &CORE2_IPI,
+        3 => &CORE3_IPI,
+        _ => {
+            error!("ipi_write_action_legacy: invalid cpu_id: {}", cpu_id);
+            return;
+        }
+    };
+    ipi.ipi_set.write(IpiSet::IPISET.val(_action as u32));
+    debug!(
+        "ipi_write_action_legacy: finished sending action: {:#x} to cpu: {}",
+        _action, cpu_id
+    );
+}
+
+pub fn mail_send(data: usize, cpu_id: usize, mailbox_id: usize) {
+    // just write data to the target cpu mailbox registers
+    // which is the mailbox0 register
+    debug!(
+        "mail_send: sending data: {:#x} to cpu: {}, mailbox_id: {}",
+        data, cpu_id, mailbox_id
+    );
+    let ipi: &MMIODerefWrapper<IpiRegisters> = match cpu_id {
+        0 => &CORE0_IPI,
+        1 => &CORE1_IPI,
+        2 => &CORE2_IPI,
+        3 => &CORE3_IPI,
+        _ => {
+            error!("mail_send: invalid cpu_id: {}", cpu_id);
+            return;
+        }
+    };
+    match mailbox_id {
+        0 => ipi.mailbox0.write(Mailbox0::MAILBOX0.val(data as u64)),
+        1 => ipi.mailbox1.write(Mailbox1::MAILBOX1.val(data as u64)),
+        2 => ipi.mailbox2.write(Mailbox2::MAILBOX2.val(data as u64)),
+        3 => ipi.mailbox3.write(Mailbox3::MAILBOX3.val(data as u64)),
+        _ => {
+            error!("mail_send: invalid mailbox_id: {}", mailbox_id);
+            return;
+        }
+    }
+    debug!(
+        "mail_send: finished sending data: {:#x} to cpu: {}, mailbox_id: {}",
+        data, cpu_id, mailbox_id
+    );
+}
+
+pub fn enable_ipi(cpu_id: usize) {
+    let ipi: &MMIODerefWrapper<IpiRegisters> = match cpu_id {
+        0 => &CORE0_IPI,
+        1 => &CORE1_IPI,
+        2 => &CORE2_IPI,
+        3 => &CORE3_IPI,
+        _ => {
+            error!("enable_ipi: invalid cpu_id: {}", cpu_id);
+            return;
+        }
+    };
+    ipi.ipi_enable.write(IpiEnable::IPIENABLE.val(0xffffffff));
+    debug!("enable_ipi: IPI enabled for cpu {}", cpu_id);
 }
 
 pub fn clear_all_ipi(cpu_id: usize) {
@@ -153,16 +243,22 @@ pub fn clear_all_ipi(cpu_id: usize) {
         2 => &CORE2_IPI,
         3 => &CORE3_IPI,
         _ => {
-            error!("(clear_all_ipi) invalid cpu_id: {}", cpu_id);
+            error!("clear_all_ipi: invalid cpu_id: {}", cpu_id);
             return;
         }
     };
     ipi.ipi_clear.write(IpiClear::IPICLEAR.val(0xffffffff));
-    info!(
-        "(clear_all_ipi) IPI status for cpu {}: {:#x}",
+    debug!(
+        "clear_all_ipi: IPI status for cpu {}: {:#x}",
         cpu_id,
         ipi.ipi_status.read(IpiStatus::IPISTATUS)
     );
+}
+
+pub fn reset_ipi(cpu_id: usize) {
+    // clear all IPIs and enable all IPIs
+    clear_all_ipi(cpu_id);
+    enable_ipi(cpu_id);
 }
 
 pub fn get_ipi_status(cpu_id: usize) -> u32 {
@@ -172,9 +268,60 @@ pub fn get_ipi_status(cpu_id: usize) -> u32 {
         2 => &CORE2_IPI,
         3 => &CORE3_IPI,
         _ => {
-            error!("(get_ipi_status) invalid cpu_id: {}", cpu_id);
+            error!("get_ipi_status: invalid cpu_id: {}", cpu_id);
             return 0;
         }
     };
     ipi.ipi_status.read(IpiStatus::IPISTATUS)
+}
+
+pub fn ecfg_ipi_enable() {
+    let mut lie_ = ecfg::read().lie();
+    lie_ = lie_ | LineBasedInterrupt::IPI;
+    ecfg::set_lie(lie_);
+    info!(
+        "ecfg ipi enabled on cpu {}, current lie: {:?}",
+        this_cpu_id(),
+        lie_
+    );
+}
+
+pub fn ecfg_ipi_disable() {
+    let mut lie_ = ecfg::read().lie();
+    lie_ = lie_ & !LineBasedInterrupt::IPI;
+    ecfg::set_lie(lie_);
+    info!(
+        "ecfg ipi disabled on cpu {}, current lie: {:?}",
+        this_cpu_id(),
+        lie_
+    );
+}
+
+pub fn dump_ipi_registers() {
+    info!(
+        "dump_ipi_registers: dumping IPI registers for this cpu {}",
+        this_cpu_id()
+    );
+    let ipi: &MMIODerefWrapper<IpiRegisters> = match this_cpu_id() {
+        0 => &CORE0_IPI,
+        1 => &CORE1_IPI,
+        2 => &CORE2_IPI,
+        3 => &CORE3_IPI,
+        _ => {
+            error!("dump_ipi_registers: invalid cpu_id: {}", this_cpu_id());
+            return;
+        }
+    };
+    println!(
+        "ipi_status: {:#x}, ipi_enable: {:#x}",
+        ipi.ipi_status.read(IpiStatus::IPISTATUS),
+        ipi.ipi_enable.read(IpiEnable::IPIENABLE),
+    );
+    println!(
+        "mailbox0: {:#x}, mailbox1: {:#x}, mailbox2: {:#x}, mailbox3: {:#x}",
+        ipi.mailbox0.read(Mailbox0::MAILBOX0),
+        ipi.mailbox1.read(Mailbox1::MAILBOX1),
+        ipi.mailbox2.read(Mailbox2::MAILBOX2),
+        ipi.mailbox3.read(Mailbox3::MAILBOX3)
+    );
 }
