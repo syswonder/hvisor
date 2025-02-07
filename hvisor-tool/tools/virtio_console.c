@@ -86,7 +86,7 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param)
     // we wait until current timestamp - last_process_timestamp >
     // LOONGARCH64_CONSOLE_PROCESS_INTERVAL_MS to avoid too frequent ipi
     // sending that cause ipi failure on loongson 3A5000 board
-    __loongarch64_handler_blocking();
+    // __loongarch64_handler_blocking();
 #endif // LOONGARCH64
 
     if (dev->rx_ready <= 0) {
