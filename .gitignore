@@ -25,5 +25,8 @@ Image*
 *.qcow2
 *.dtb
 .DS_Store
+temp-fit.its
+fitImage
+sd.img
 flash.img*
-.DS_Store
+
