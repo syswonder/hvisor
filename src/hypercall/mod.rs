@@ -28,7 +28,6 @@ numeric_enum! {
         HvZoneStart = 2,
         HvZoneShutdown = 3,
         HvZoneList = 4,
-        #[cfg(target_arch = "loongarch64")]
         HvClearInjectIrq = 20,
         HvIvcInfo = 5,
     }
