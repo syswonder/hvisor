@@ -2,7 +2,13 @@
     "zones": [
         {
             "id": 2,
-            "memory_region": ["0x80000000", "0x10000000"],
+            "memory_region": [
+                {
+                    "zone0_ipa": "0x80000000",
+                    "zonex_ipa": "0x80000000",
+                    "size": "0x10000000"
+                }
+            ],
             "devices": [
                     {
                         "type": "blk",
