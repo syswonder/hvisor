@@ -1,18 +1,18 @@
 #[derive(Debug)]
 pub struct PhantomCfg {
     pub bdf: usize,
-    command: u16
+    command: u16,
 }
 
 impl PhantomCfg {
-    pub fn new(bdf: usize, command: u16) -> Self{
+    pub fn new(bdf: usize, command: u16) -> Self {
         Self {
             bdf,
             command: command & !0x400, // set disable-intx to 0, the origin state
         }
     }
 
-    pub fn set_cmd(&mut self, command: u16){
+    pub fn set_cmd(&mut self, command: u16) {
         self.command = command;
     }
 
@@ -20,4 +20,3 @@ impl PhantomCfg {
         self.command
     }
 }
-

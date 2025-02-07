@@ -16,6 +16,7 @@ tock-registers = "0.8"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "03bd9909" }
 fdt = { path = "./vendor/fdt" }
+qemu-exit = "3.0.2"
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 aarch64-cpu = "9.4.0"
@@ -37,8 +38,12 @@ gicv3 = []
 gicv2 = []
 
 [profile.dev]
-panic = "abort"
+# panic = "abort" # avoid test compiler erros(still a bug for rust)
 debug = 2
 
 [profile.release]
-panic = "abort"
+# panic = "abort"
+
+[unstable]
+build-std-features = ["compiler-builtins-mem"]
+build-std = ["core", "compiler_builtins"]

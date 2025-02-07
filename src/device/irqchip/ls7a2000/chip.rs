@@ -511,6 +511,26 @@ pub fn debug_set_extioi_intvec(irq: u8) {
     }
 }
 
+pub fn get_ipi_percore() -> bool {
+    CHIP_CONFIG.chip_feature.read(ChipFeature::IPI_PERCORE) != 0
+}
+
+pub fn get_guest_mode() -> bool {
+    CHIP_CONFIG.chip_feature.read(ChipFeature::GUEST_MODE) != 0
+}
+
+pub fn set_guest_mode() {
+    CHIP_CONFIG
+        .chip_feature
+        .modify(ChipFeature::GUEST_MODE::SET);
+}
+
+pub fn clear_guest_mode() {
+    CHIP_CONFIG
+        .chip_feature
+        .modify(ChipFeature::GUEST_MODE::CLEAR);
+}
+
 fn u64tostr(x: u64) -> String {
     // 0x00003030_30354133 to 3A5000
     let mut s = String::new();
@@ -527,19 +547,19 @@ fn u64tostr(x: u64) -> String {
 #[no_mangle]
 pub fn print_chip_info() {
     info!(
-        "(print_chip_info) chip config version: {:#x}",
+        "loongarch64:: irqchip:: chip config version: {:#x}",
         get_chip_conf_ver()
     );
     info!(
-        "(print_chip_info) chip feature extioi support: {}",
+        "loongarch64:: irqchip:: chip feature extioi support: {}",
         CHIP_CONFIG.chip_feature.read(ChipFeature::EXTIOI_SUPPORT) != 0
     );
     info!(
-        "(print_chip_info) manufacturer name: {}",
+        "loongarch64:: irqchip:: manufacturer name: {}",
         u64tostr(CHIP_CONFIG.manufacturer_name.read(ManufacturerName::VENDOR))
     );
     info!(
-        "(print_chip_info) chip name: {}",
+        "loongarch64:: irqchip:: chip name: {}",
         u64tostr(CHIP_CONFIG.chip_name.read(ChipName::ID))
     );
 }

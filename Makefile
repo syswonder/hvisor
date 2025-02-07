@@ -52,7 +52,8 @@ elf:
 
 disa:
 	readelf -a $(hvisor_elf) > hvisor-elf.txt
-	rust-objdump --disassemble $(hvisor_elf) > hvisor.S
+# rust-objdump --disassemble $(hvisor_elf) > hvisor.S
+	rust-objdump --disassemble --source $(hvisor_elf) > hvisor.S
 
 run: all
 	$(QEMU) $(QEMU_ARGS)
@@ -74,6 +75,28 @@ jlink-server:
 
 cp: all
 	cp $(hvisor_bin) ~/tftp
+
+test-pre: download-test-img
+	chmod +x ./tools/cargo_test.sh
+	@echo "pass"
+
+flash-img:
+# run this will erase all environment for uboot, be careful
+# the flash.img in repo will contains the correct bootcmd
+	qemu-img create -f raw flash.img 64M
+
+download-test-img:
+# first check whether the file exists
+	@if [ ! -f "flash.img" ]; then echo "\nflash.img not found, downloading...\n" && \
+		wget https://github.com/enkerewpo/hvisor-uboot-env-img/releases/download/v20241227/flash.img.partial && \
+		./tools/extract.sh ; \
+	else echo "\nflash.img found\n"; \
+	fi
+
+test: test-pre
+	cp .cargo/config .cargo/config.bak
+	sed "s|___HVISOR_SRC___|$(shell pwd)|g" .cargo/config.bak > .cargo/config
+	cargo test $(build_args) -vv
 
 clean:
 	cargo clean

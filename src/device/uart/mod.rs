@@ -19,7 +19,7 @@ pub use imx_uart::{console_getchar, console_putchar};
 pub use crate::arch::riscv64::sbi::{console_getchar, console_putchar};
 
 #[cfg(target_arch = "loongarch64")]
-mod ns16440a;
+mod loongson_uart;
 
 #[cfg(target_arch = "loongarch64")]
-pub use ns16440a::{console_getchar, console_putchar};
+pub use loongson_uart::{console_getchar, console_putchar};

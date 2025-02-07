@@ -16,6 +16,9 @@ use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
 use crate::percpu::{get_cpu_data, this_zone, CpuSet};
 use core::panic;
 
+#[cfg(test)]
+pub mod tests;
+
 pub struct Zone {
     pub name: [u8; CONFIG_NAME_MAXLEN],
     pub id: usize,
@@ -179,6 +182,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     zone.pt_init(config.memory_regions()).unwrap();
     zone.mmio_init(&config.arch_config);
     zone.irq_bitmap_init(config.interrupts());
+    #[cfg(target_arch = "aarch64")]
     zone.ivc_init(config.ivc_config());
     #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
     zone.pci_init(&config.pci_config, config.num_pci_devs as _, &config.alloc_pci_devs);
