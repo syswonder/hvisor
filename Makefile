@@ -6,7 +6,8 @@ PORT ?= 2333
 MODE ?= debug
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 KDIR ?= ../../linux
-FEATURES ?= platform_qemu
+FEATURES ?= platform_zcu102,gicv2
+BOARD ?= zcu102
 
 ifeq ($(ARCH),aarch64)
     RUSTC_TARGET := aarch64-unknown-none
@@ -37,7 +38,6 @@ build_args += --features "$(FEATURES)"
 build_args += --target $(RUSTC_TARGET)
 build_args += -Z build-std=core,alloc
 build_args += -Z build-std-features=compiler-builtins-mem
-
 
 ifeq ($(MODE), release)
   build_args += --release
@@ -101,8 +101,6 @@ test: test-pre
 clean:
 	cargo clean
 
-ifeq ($(ARCH),loongarch64)
-include scripts/3a5000-loongarch64.mk
-else
-include scripts/qemu-$(ARCH).mk
-endif
+# set the BOARD variable to "3a5000"/qemu/zcu102/imx8mp to
+# include the corresponding script under the ./scripts directory
+include scripts/${BOARD}-${ARCH}.mk

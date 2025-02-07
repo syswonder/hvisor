@@ -16,13 +16,19 @@ use qemu_riscv64::*;
 pub mod qemu_aarch64;
 
 #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
-use qemu_aarch64::*;
+pub use qemu_aarch64::*;
 
 #[cfg(all(feature = "platform_imx8mp", target_arch = "aarch64"))]
 pub mod imx8mp_aarch64;
 
 #[cfg(all(feature = "platform_imx8mp", target_arch = "aarch64"))]
 use imx8mp_aarch64::*;
+
+#[cfg(all(feature = "platform_zcu102", target_arch = "aarch64"))]
+pub mod zcu102_aarch64;
+
+#[cfg(all(feature = "platform_zcu102", target_arch = "aarch64"))]
+pub use zcu102_aarch64::*;
 
 #[cfg(target_arch = "loongarch64")]
 pub mod ls3a5000_loongarch64;
@@ -65,7 +71,7 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
         root_pci_cfg = ROOT_PCI_CONFIG;
         num_pci_devs = ROOT_PCI_DEVS.len() as _;
     }
-    
+
     HvZoneConfig::new(
         0,
         ROOT_ZONE_CPUS,

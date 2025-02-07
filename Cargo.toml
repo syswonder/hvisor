@@ -33,6 +33,9 @@ loongArch64 = "0.2.4"
 [features]
 platform_qemu = []
 platform_imx8mp = []
+platform_zcu102 = []
+gicv3 = []
+gicv2 = []
 
 [profile.dev]
 # panic = "abort" # avoid test compiler erros(still a bug for rust)
