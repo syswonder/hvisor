@@ -55,6 +55,22 @@ impl EventManager {
             None => None,
         }
     }
+
+    fn dump(&self) {
+        for (cpu, events) in self.inner.iter().enumerate() {
+            let e = events.lock();
+            debug!("event manager: cpu: {}, events: {:?}", cpu, e);
+        }
+    }
+
+    fn dump_cpu(&self, cpu: usize) -> Vec<usize> {
+        let mut res = Vec::new();
+        let e = self.inner[cpu].lock();
+        for i in e.iter() {
+            res.push(*i);
+        }
+        res
+    }
 }
 
 fn add_event(cpu: usize, event_id: usize) -> Option<()> {
@@ -67,6 +83,14 @@ fn fetch_event(cpu: usize) -> Option<usize> {
 
 pub fn init(max_cpus: usize) {
     EVENT_MANAGER.call_once(|| EventManager::new(max_cpus));
+}
+
+pub fn dump_events() {
+    EVENT_MANAGER.get().unwrap().dump();
+}
+
+pub fn dump_cpu_events(cpu: usize) -> Vec<usize> {
+    EVENT_MANAGER.get().unwrap().dump_cpu(cpu)
 }
 
 pub fn check_events() -> bool {

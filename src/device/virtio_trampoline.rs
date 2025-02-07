@@ -63,7 +63,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     // debug!("old cfg flag: {:#x?}", old_cfg_flag);
     dev.push_req(hreq);
     // If req list is empty, send sgi to root linux to wake up virtio device.
-    #[cfg(not(target_arch="loongarch64"))]
+    #[cfg(not(target_arch = "loongarch64"))]
     if dev.need_wakeup() {
         debug!("need wakeup, sending ipi to wake up virtio device");
         let root_cpu = root_zone().read().cpu_set.first_cpu().unwrap();
@@ -79,7 +79,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
             count += 1;
             if count > 1000000 {
                 // warn!("virtio backend is too slow, please check it!");
-            	fence(Ordering::Acquire);
+                fence(Ordering::Acquire);
                 count = 0;
             }
         }
@@ -209,7 +209,7 @@ pub struct VirtioBridge {
     /// The first elem of res list, only hvisor updates
     pub res_front: u32,
     /// The last elem's next place of res list, only virtio device updates
-    res_rear: u32,
+    pub res_rear: u32,
     pub req_list: [HvisorDeviceReq; MAX_REQ as usize],
     pub res_list: [HvisorDeviceRes; MAX_REQ as usize], // irqs
     cfg_flags: [u64; MAX_CPU_NUM],
