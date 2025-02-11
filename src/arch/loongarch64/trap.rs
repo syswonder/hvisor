@@ -1165,8 +1165,9 @@ fn handle_interrupt(is: usize) {
                 // use src/event.rs to handle events
                 // dump_events();
                 let events = dump_cpu_events(this_cpu_id());
-                debug!("this cpu's events: {:?}", events);
-                for _ in 0..events.len() {
+                warn!("this cpu's events: {:?}", events);
+                let count = events.len();
+                for _ in 0..count {
                     let result = check_events();
                     if result {
                         debug!("ipi event handled :)");

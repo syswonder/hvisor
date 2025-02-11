@@ -16,7 +16,6 @@ pub const IPI_EVENT_WAKEUP: usize = 0;
 pub const IPI_EVENT_SHUTDOWN: usize = 1;
 pub const IPI_EVENT_VIRTIO_INJECT_IRQ: usize = 2;
 pub const IPI_EVENT_WAKEUP_VIRTIO_DEVICE: usize = 3;
-#[cfg(target_arch = "loongarch64")]
 pub const IPI_EVENT_CLEAR_INJECT_IRQ: usize = 4;
 
 static EVENT_MANAGER: Once<EventManager> = Once::new();
@@ -122,6 +121,16 @@ pub fn check_events() -> bool {
 }
 
 pub fn send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
+    #[cfg(target_arch = "loongarch64")]
+    {
+        // block until the previous event is processed, which means
+        // the target queue is empty
+        while !fetch_event(cpu_id).is_none() {}
+        warn!(
+            "loongarch64:: send_event: cpu_id: {}, ipi_int_id: {}, event_id: {}",
+            cpu_id, ipi_int_id, event_id
+        );
+    }
     add_event(cpu_id, event_id);
     arch_send_event(cpu_id as _, ipi_int_id as _);
 }
