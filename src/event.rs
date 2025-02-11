@@ -126,7 +126,7 @@ pub fn send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
         // block until the previous event is processed, which means
         // the target queue is empty
         while !fetch_event(cpu_id).is_none() {}
-        warn!(
+        debug!(
             "loongarch64:: send_event: cpu_id: {}, ipi_int_id: {}, event_id: {}",
             cpu_id, ipi_int_id, event_id
         );

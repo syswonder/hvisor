@@ -69,6 +69,10 @@ impl<'a> HyperCall<'a> {
                 HyperCallCode::HvClearInjectIrq => {
                     use crate::event::IPI_EVENT_CLEAR_INJECT_IRQ;
                     for i in 1..MAX_CPU_NUM {
+                        // if target cpu status is not running, we skip it
+                        if !get_cpu_data(i).arch_cpu.power_on {
+                            continue;
+                        }
                         send_event(i, SGI_IPI_ID as _, IPI_EVENT_CLEAR_INJECT_IRQ);
                     }
                     HyperCallResult::Ok(0)
@@ -167,8 +171,7 @@ impl<'a> HyperCall<'a> {
                 let status = GLOBAL_IRQ_INJECT_STATUS.lock();
                 debug!(
                     "hv_virtio_inject_irq: cpu {} status: {:?}",
-                    target_cpu,
-                    status.cpu_status[target_cpu].status
+                    target_cpu, status.cpu_status[target_cpu].status
                 );
                 drop(status);
                 irq_list[0] = 0; // CAUTION: this is a workaround for loongarch64
