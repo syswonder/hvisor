@@ -1,7 +1,11 @@
-# hvisor 
+<!-- # hvisor  -->
+
 <p align = "center">
 <br><br>
-<img src="https://img.shields.io/badge/hvisor-orange" />
+<img src="https://www.syswonder.org/_media/hvisor-logo.svg">
+<br><br>
+<!-- <img src="https://img.shields.io/badge/hvisor-orange" /> -->
+<img src="https://img.shields.io/github/stars/syswonder/hvisor?color=yellow" />
 <img src="https://img.shields.io/github/license/syswonder/hvisor?color=red" />
 <img src="https://img.shields.io/github/contributors/syswonder/hvisor?color=blue" />
 <img src="https://img.shields.io/github/languages/code-size/syswonder/hvisor?color=green">
@@ -12,94 +16,66 @@
 
 README：[中文](./README-zh.md) | [English](./README.md)
 
-Armv8 hypervisor based on Linux & implemented in Rust，porting from [RVM1.5](https://github.com/rcore-os/RVM1.5) & [jailhouse](https://github.com/siemens/jailhouse).
+hvisor is a Type-1 bare-metal hypervisor implemented in Rust, leveraging the separation kernel design to offer robust hardware resource virtualization and isolation. The hypervisor allows for strict separation of system environments across different zones, ensuring both performance and security in a virtualized environment.
 
-🚧 Working In Progress.
+🚧 This project is work in progress
 
-## Progress
+## Features
 
-- [x] Architecture: aarch64
-- [x] Platform: Qemu virt aarch64
-- [x] Exception
-- [x] Gicv3
-- [x] Memory
-- [x] Enable non root linux
-- [ ] VirtIO device: block, net
-- [ ] Architecture: riscv64
-- [ ] Platform: nxp
+- **Separation Kernel Design**: Virtual machines are classified into three zones: zone0 (management), zoneU (user), and zoneR (real-time), with strict isolation between them.
+- **Multi-Platform Support**: Works on a variety of architectures, including aarch64, riscv64, and loongarch64.
+- **Virtual Machine Management**: VMs are managed through a Linux environment in zone0 (root-linux), where administrative tasks are performed using [hvisor-tool](https://github.com/syswonder/hvisor-tool).
+- **Device Support**: Includes virtio devices, serial devices, interrupt controllers, PCIe support, etc.
+  - virtio-blk (aarch64, riscv64), virtio-net (aarch64, riscv64), virtio-console (aarch64, riscv64, loongarch64)
+  - Serial devices/UARTs:
+    - PL011 (aarch64)
+    - imx-uart (NXP i.MX8MP, aarch64)
+    - NS16550A (loongarch64)
+    - xuartps (Xilinx Ultrascale+ MPSoC ZCU102, aarch64)
+  - Interrupt controllers:
+    - GIC irq controller (aarch64)
+    - 7A2000 irq controller (loongarch64)
+    - PLIC (riscv64)
+    - APIC (now only support msi mode) (riscv64)
+  - PCIe passthrough (aarch64, riscv64)
+  - GPU passthrough (NXP i.MX8MP, aarch64)
+- **Architecture Hardware Features Support**: 
+  - GICv2, GICv3 (aarch64)
+  - ARM Virtualization (aarch64)
+  - LVZ(Loongson Virtualization) Extension (loongarch64)
+  - H extension (riscv64)
+  - SMMUv3 (aarch64)
 
-## Build & Run
 
-For detailed build and running tutorials, including building the development environment and creating a file system, please refer to [here](https://report.syswonder.org/#/2023/20230421_ARM64-QEMU-jailhouse).
+## Supported Platforms
 
-To make it easy to get started, [here](https://bhpan.buaa.edu.cn/link/AA1BF35BBB05DA40EB8A837C2B2B3C8277) (extraction code: `sysH`) provides a  Linux kernel `Image` and a file system `ubuntu-20.04-rootfs_ext4.img` with the username `arm64` and the password as a whitespace. The directories are organized as follows:
+### aarch64
 
-```
-├── home
-	├── arm64 
-		├── images: Contains a Linux Image and ramfs.
-		├── hvisor: Files required to run hvisor.
-		├── jailhouse: Files required to run jailhouse.
-```
+- [x] QEMU virt aarch64
+- [x] NXP i.MX8MP
+- [x] Raspberry Pi 4B
+- [x] Xilinx Ultrascale+ MPSoC ZCU102
+- [ ] Rockchip RK3588
 
-The following describes how to run a non-root-linux on jailhouse/hvisor based on `ubuntu-20.04-rootfs_ext4.img`:
+### riscv64
 
-1. Build `hvisor.bin`:
+- [x] QEMU virt riscv64
+- [ ] FPGA RocketChip
 
-   ```bash
-   make all
-   ```
+### loongarch64
 
-   Then copy `target/aarch64/debug/hvisor.bin` to `~/hvisor/` in `ubuntu-20.04-rootfs_ext4.img`.
+- [x] Loongson 3A5000 with 7A2000 bridge
+- [ ] Loongson 3A6000
 
-2. Start QEMU:
+## Getting Started
 
-   ```bash
-   sudo qemu-system-aarch64 \
-       -machine virt,gic_version=3 \
-       -machine virtualization=true \
-       -cpu cortex-a53 \
-       -machine type=virt \
-       -nographic \
-       -smp 16  \
-       -m 1024 \
-       -kernel your-linux-Image-path/Image \
-       -append "console=ttyAMA0 root=/dev/vda rw mem=768m" \
-       -drive if=none,file=your-rootfs-path/ubuntu-20.04-rootfs_ext4.img,id=hd0,format=raw \
-       -device virtio-blk-device,drive=hd0 \
-       -net nic \
-       -net user,hostfwd=tcp::2333-:22
-   ```
+Please refer to the Quick Start Guide section of the hvisor documentation for detailed build and running tutorials for all supported platforms: [hvisor documentation](https://hvisor.syswonder.org/)
 
-3. Enter the username `arm64` and the password as a whitespace after startup.
+## Roadmap
 
-4. Go to the home directory and start non-root-linux:
+- To support Android nonroot zone on NXP i.MX8MP hardware platform
+- To support hvisor on x86_64 architecture
 
-   * For hvisor: go to the `hvisor` folder and run:
+## Acknowledgement
 
-     ```
-     ./setup.sh
-     ./linux.sh
-     ```
-
-   * For Jailhouse: go to the `jailhouse` folder and run:
-
-     ```
-     ./linux.sh
-     ```
-
-### Enable a second serial console
-
-If someone wants non-root-linux and root-linux in two different terminals, add this line at the end of the qemu startup command:
-
-```
--device virtio-serial-device -chardev pty,id=serial3 -device virtconsole,chardev=serial3
-```
-
-After starting qemu, the `char device redirected to /dev/pts/num (label serial3)` message will output by the first terminal, execute this in another terminal:
-
-```
-sudo screen /dev/pts/num
-```
-
-where num is a specific number.
+This project is based on [RVM1.5](https://github.com/rcore-os/RVM1.5) and [jailhouse](https://github.com/siemens/jailhouse).
