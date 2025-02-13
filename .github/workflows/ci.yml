@@ -1,0 +1,42 @@
+name: CI
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+  # enable manual trigger
+  workflow_dispatch:
+
+env:
+  ARCH: aarch64
+  RUSTC_TARGET: aarch64-unknown-none
+  MODE: debug
+  FEATURES: platform_qemu
+jobs:
+  test:
+    name: Build and Test hvisor on QEMU for aarch64
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-none
+          components: rust-src
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-aarch64 gdb-multiarch llvm-dev libclang-dev wget
+          cargo install cargo-binutils
+          cargo install cargo-xbuild
+
+      - name: Build hvisor
+        run: |
+          make
+
+      - name: Run Tests
+        run: |
+          make test

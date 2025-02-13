@@ -46,10 +46,26 @@ macro_rules! smc_arg1 {
 }
 pub(crate) use smc_arg1;
 
-pub fn smc_call(function: u64, args: &[u64]) -> u64 {
-    let args: [u64; 17] = args.try_into().expect("args length should be 17");
-    smc64(function as _, args)[0]
+macro_rules! smc_call {
+    ($x0:expr, $x1:expr, $x2:expr, $x3:expr) => {{
+        let mut x0_val: u64 = $x0;
+        let mut x1_val: u64 = $x1;
+        let mut x2_val: u64 = $x2;
+        let mut x3_val: u64 = $x3;
+
+        ::core::arch::asm!(
+            "smc #0",
+            inout("x0") x0_val,
+            inout("x1") x1_val,
+            inout("x2") x2_val,
+            inout("x3") x3_val,
+            options(nomem, nostack),
+        );
+        (x0_val,x1_val,x2_val,x3_val)
+    }};
 }
+pub(crate) use smc_call;
+
 // macro_rules! read_lrreg {
 //     ($lr:expr) => {
 //         {

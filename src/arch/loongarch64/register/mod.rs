@@ -281,12 +281,9 @@ pub fn read_gcsr_dmw2() -> usize {
 pub fn read_gcsr_dmw3() -> usize {
     read_gcsr_loong!(0x183)
 }
-
-// WRITE GCSR
 pub fn write_gcsr_ectl(range: core::ops::RangeInclusive<usize>, value: usize) {
     set_gcsr_loong_bits!(0x4, range, value);
 }
-
 pub fn write_gcsr_eentry(range: core::ops::RangeInclusive<usize>, value: usize) {
     set_gcsr_loong_bits!(0xc, range, value);
 }

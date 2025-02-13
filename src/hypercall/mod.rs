@@ -1,16 +1,21 @@
 #![allow(dead_code)]
+use crate::arch::cpu::this_cpu_id;
 use crate::config::HvZoneConfig;
-use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
+use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, PAGE_SIZE};
+use crate::device::irqchip::inject_irq;
 use crate::device::virtio_trampoline::{MAX_DEVS, MAX_REQ, VIRTIO_BRIDGE, VIRTIO_IRQS};
 use crate::error::HvResult;
-use crate::percpu::{get_cpu_data, PerCpu};
+use crate::percpu::{get_cpu_data, this_zone, PerCpu};
 use crate::zone::{
-    all_zones_info, find_zone, is_this_root_zone, remove_zone, zone_create, ZoneInfo,
+    all_zones_info, find_zone, is_this_root_zone, remove_zone, this_zone_id, zone_create, ZoneInfo
 };
 
 use crate::event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_VIRTIO_INJECT_IRQ, IPI_EVENT_WAKEUP};
 use core::convert::TryFrom;
 use core::sync::atomic::{fence, Ordering};
+
+#[cfg(target_arch = "aarch64")]
+use crate::ivc::{IvcInfo, IVC_INFOS};
 
 use numeric_enum_macro::numeric_enum;
 
@@ -23,6 +28,9 @@ numeric_enum! {
         HvZoneStart = 2,
         HvZoneShutdown = 3,
         HvZoneList = 4,
+        #[cfg(target_arch = "loongarch64")]
+        HvClearInjectIrq = 20,
+        HvIvcInfo = 5,
     }
 }
 pub const SGI_IPI_ID: u64 = 7;
@@ -46,15 +54,53 @@ impl<'a> HyperCall<'a> {
                 return Ok(0);
             }
         };
+        debug!("hypercall: code={:?}, arg0={:#x}, arg1={:#x}", code, arg0, arg1);
         unsafe {
             match code {
                 HyperCallCode::HvVirtioInit => self.hv_virtio_init(arg0),
                 HyperCallCode::HvVirtioInjectIrq => self.hv_virtio_inject_irq(),
-                HyperCallCode::HvZoneStart => self.hv_zone_start(&*(arg0 as *const HvZoneConfig)),
+                HyperCallCode::HvZoneStart => self.hv_zone_start(&*(arg0 as *const HvZoneConfig), arg1),
                 HyperCallCode::HvZoneShutdown => self.hv_zone_shutdown(arg0),
                 HyperCallCode::HvZoneList => self.hv_zone_list(&mut *(arg0 as *mut ZoneInfo), arg1),
+                #[cfg(target_arch = "loongarch64")]
+                HyperCallCode::HvClearInjectIrq => {
+                    // send_event to all nonroot cpus to clear injected irq
+                    use crate::event::IPI_EVENT_CLEAR_INJECT_IRQ;
+                    for i in 1..MAX_CPU_NUM {
+                        send_event(i, SGI_IPI_ID as _, IPI_EVENT_CLEAR_INJECT_IRQ);
+                    }
+                    // send_event(3, SGI_IPI_ID as _, IPI_EVENT_CLEAR_INJECT_IRQ); // testing only
+                    HyperCallResult::Ok(0)
+                },
+                #[cfg(target_arch = "aarch64")]
+                HyperCallCode::HvIvcInfo => self.hv_ivc_info(arg0),
+                _ => {
+                    warn!("hypercall id={} unsupported!", code as u64);
+                    Ok(0)
+                }
             }
         }
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    fn hv_ivc_info(&mut self, ivc_info_ipa: u64) -> HyperCallResult {
+        let zone_id = this_zone_id();
+        let zone = this_zone();
+        // ipa->hpa->hva
+        let hpa = unsafe {
+            zone.read().gpm.page_table_query(ivc_info_ipa as _).unwrap().0        
+        };
+        // hva == hpa
+        let ivc_info = unsafe {
+            &mut *(hpa as *mut IvcInfo)
+        };
+        let ivc_infos = IVC_INFOS.lock();
+        let zone_ivc_info = ivc_infos.get(&(zone_id as _));
+        match zone_ivc_info {
+            Some(zone_ivc_info) => *ivc_info = *zone_ivc_info,
+            None => return hv_result_err!(ENODEV, "Zone {zone_id} has no ivc config!"),
+        }
+        HyperCallResult::Ok(0)
     }
 
     // only root zone calls the function and set virtio shared region between el1 and el2.
@@ -66,7 +112,11 @@ impl<'a> HyperCall<'a> {
         if !is_this_root_zone() {
             return hv_result_err!(EPERM, "Init virtio over non-root zones: unsupported!");
         }
+        
         let shared_region_addr_pa = shared_region_addr as usize;
+        #[cfg(target_arch = "loongarch64")]
+        let shared_region_addr_pa = shared_region_addr_pa | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX as usize;
+
         assert!(shared_region_addr_pa % PAGE_SIZE == 0);
         // let offset = shared_region_addr_pa & (PAGE_SIZE - 1);
         // memory::hv_page_table()
@@ -87,6 +137,7 @@ impl<'a> HyperCall<'a> {
 
     // Inject virtio device's irq to non root when a virtio device finishes one IO request. Only root zone calls.
     fn hv_virtio_inject_irq(&self) -> HyperCallResult {
+        debug!("hv_virtio_inject_irq: hypercall for trigger target cpu to inject irq");
         if !is_this_root_zone() {
             return hv_result_err!(
                 EPERM,
@@ -127,12 +178,21 @@ impl<'a> HyperCall<'a> {
         HyperCallResult::Ok(0)
     }
 
-    pub fn hv_zone_start(&mut self, config: &HvZoneConfig) -> HyperCallResult {
+    pub fn hv_zone_start(&mut self, config: &HvZoneConfig, config_size: u64) -> HyperCallResult {
+        #[cfg(target_arch = "loongarch64")]
+        let config = unsafe { &*((config as *const HvZoneConfig as u64
+            | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX) as *const HvZoneConfig) };
+
         info!("hv_zone_start: config: {:#x?}", config);
         if !is_this_root_zone() {
             return hv_result_err!(
                 EPERM,
                 "Start zone operation over non-root zones: unsupported!"
+            );
+        }
+        if config_size != core::mem::size_of::<HvZoneConfig>() as _ {
+            return hv_result_err!(
+                EINVAL,"Invalid config!"
             );
         }
         let zone = zone_create(config)?;
@@ -147,6 +207,12 @@ impl<'a> HyperCall<'a> {
             error!("hv_zone_start: cpu {} already on", boot_cpu);
             return hv_result_err!(EBUSY);
         };
+        #[cfg(target_arch = "loongarch64")]
+        {
+            // assert this is cpu 0
+            let cpuid = this_cpu_id();
+            assert_eq!(cpuid, 0);
+        }
         drop(_lock);
         HyperCallResult::Ok(0)
     }
@@ -198,6 +264,15 @@ impl<'a> HyperCall<'a> {
         }
         let zones_info = all_zones_info();
         let slice = unsafe { core::slice::from_raw_parts_mut(zones, cnt as usize) };
+
+        #[cfg(target_arch = "loongarch64")]
+        let slice = unsafe {
+            core::slice::from_raw_parts_mut(
+                (zones as u64 | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX) as *mut ZoneInfo,
+                cnt as usize,
+            )
+        };
+
         for (i, zone_info) in slice.iter_mut().enumerate() {
             if i < zones_info.len() {
                 *zone_info = zones_info[i].clone();

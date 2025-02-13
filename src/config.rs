@@ -3,6 +3,9 @@ use spin::Once;
 
 use crate::{arch::zone::HvArchZoneConfig, platform};
 
+#[cfg(test)]
+mod tests;
+
 pub const MEM_TYPE_RAM: u32 = 0;
 pub const MEM_TYPE_IO: u32 = 1;
 pub const MEM_TYPE_VIRTIO: u32 = 2;
@@ -10,8 +13,8 @@ pub const MEM_TYPE_VIRTIO: u32 = 2;
 pub const CONFIG_MAX_MEMORY_REGIONS: usize = 16;
 pub const CONFIG_MAX_INTERRUPTS: usize = 32;
 pub const CONFIG_NAME_MAXLEN: usize = 32;
+pub const CONFIG_MAX_IVC_CONGIGS: usize = 2;
 pub const CONFIG_MAX_PCI_DEV: usize = 16;
-// pub const CONFIG_KERNEL_ARGS_MAXLEN: usize = 256;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -36,7 +39,7 @@ impl HvConfigMemoryRegion {
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
-pub struct HvPciConfig{
+pub struct HvPciConfig {
     pub ecam_base: u64,
     pub ecam_size: u64,
     pub io_base: u64,
@@ -51,7 +54,7 @@ pub struct HvPciConfig{
 }
 
 impl HvPciConfig {
-    pub fn new_empty() -> Self {
+    pub const fn new_empty() -> Self {
         Self {
             ecam_base: 0,
             ecam_size: 0,
@@ -77,13 +80,14 @@ pub struct HvZoneConfig {
     memory_regions: [HvConfigMemoryRegion; CONFIG_MAX_MEMORY_REGIONS],
     num_interrupts: u32,
     interrupts: [u32; CONFIG_MAX_INTERRUPTS],
+    num_ivc_configs: u32,
+    ivc_configs: [HvIvcConfig; CONFIG_MAX_IVC_CONGIGS],
     pub entry_point: u64,
     pub kernel_load_paddr: u64,
     pub kernel_size: u64,
     pub dtb_load_paddr: u64,
     pub dtb_size: u64,
     pub name: [u8; CONFIG_NAME_MAXLEN],
-
     pub arch_config: HvArchZoneConfig,
     pub pci_config: HvPciConfig,
     pub num_pci_devs: u64,
@@ -98,16 +102,18 @@ impl HvZoneConfig {
         memory_regions: [HvConfigMemoryRegion; CONFIG_MAX_MEMORY_REGIONS],
         num_interrupts: u32,
         interrupts: [u32; CONFIG_MAX_INTERRUPTS],
+        num_ivc_configs: u32,
+        ivc_configs: [HvIvcConfig; CONFIG_MAX_IVC_CONGIGS],
         entry_point: u64,
         kernel_load_paddr: u64,
-        kernel_size:u64,
-        dtb_load_paddr:u64,
+        kernel_size: u64,
+        dtb_load_paddr: u64,
         dtb_size: u64,
         name: [u8; CONFIG_NAME_MAXLEN],
         arch: HvArchZoneConfig,
         pci: HvPciConfig,
         num_pci_devs: u64,
-        alloc_pci_devs: [u64; CONFIG_MAX_PCI_DEV]
+        alloc_pci_devs: [u64; CONFIG_MAX_PCI_DEV],
     ) -> Self {
         Self {
             zone_id,
@@ -116,6 +122,8 @@ impl HvZoneConfig {
             memory_regions,
             num_interrupts,
             interrupts,
+            num_ivc_configs,
+            ivc_configs,
             entry_point,
             kernel_load_paddr,
             kernel_size,
@@ -125,7 +133,7 @@ impl HvZoneConfig {
             arch_config: arch,
             pci_config: pci,
             num_pci_devs: num_pci_devs,
-            alloc_pci_devs: alloc_pci_devs
+            alloc_pci_devs: alloc_pci_devs,
         }
     }
 
@@ -152,6 +160,10 @@ impl HvZoneConfig {
         }
         v
     }
+
+    pub fn ivc_config(&self) -> &[HvIvcConfig] {
+        &self.ivc_configs[..self.num_ivc_configs as usize]
+    }
 }
 
 pub static mut HV_ROOT_ZONE_CONFIG: Once<HvZoneConfig> = Once::new();
@@ -163,4 +175,20 @@ pub fn init() {
 pub fn root_zone_config() -> &'static HvZoneConfig {
     init();
     unsafe { HV_ROOT_ZONE_CONFIG.get().unwrap() }
+}
+
+pub const IVC_PROTOCOL_USER: u32 = 0x0;
+pub const IVC_PROTOCOL_HVISOR: u32 = 0x1;
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone, Default)]
+pub struct HvIvcConfig {
+    pub ivc_id: u32,
+    pub peer_id: u32,
+    pub control_table_ipa: u64,
+    pub shared_mem_ipa: u64,
+    pub rw_sec_size: u32,
+    pub out_sec_size: u32,
+    pub interrupt_num: u32,
+    pub max_peers: u32,
 }

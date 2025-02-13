@@ -17,14 +17,6 @@
 			compatible = "arm,cortex-a57";
 			device_type = "cpu";
 		};
-
-		cpu@3 {
-			reg = <0x03>;
-			enable-method = "psci";
-			compatible = "arm,cortex-a57";
-			device_type = "cpu";
-		};
-
 	};
 
 	psci {
@@ -162,4 +154,9 @@
 		stdout-path = "/virtio_mmio@a003800";
 	};
 
+	hvisor_ivc_device {
+        compatible = "hvisor";
+        interrupt-parent = <0x01>;
+        interrupts = <0x00 0x22 0x01>;
+    };
 };

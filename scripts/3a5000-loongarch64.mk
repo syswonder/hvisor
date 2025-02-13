@@ -11,13 +11,12 @@ HVISOR_ENTRY_PA := 0x9000000080000000
 # so no qemu related stuff here, we have to debug it on 
 # REAL hardware with UEFI firmware interface
 
-# QEMU := qemu-system-loongarch64
-# QEMU_ARGS := -machine virt
-# QEMU_ARGS += -bios default
-# QEMU_ARGS += -smp 4
-# QEMU_ARGS += -m 2G
-# QEMU_ARGS += -nographic
-# QEMU_ARGS += -kernel $(hvisor_bin)
+QEMU := qemu-system-loongarch64
+QEMU_ARGS := -machine virt
+QEMU_ARGS += -smp 4
+QEMU_ARGS += -m 2G
+QEMU_ARGS += -nographic
+QEMU_ARGS += -kernel $(hvisor_elf)
 # QEMU_ARGS += -device loader,file="$(zone0_kernel)",addr=0x90000000,force-raw=on
 # QEMU_ARGS += -device loader,file="$(zone0_dtb)",addr=0x8f000000,force-raw=on
 

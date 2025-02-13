@@ -1,10 +1,12 @@
 use super::ipi::*;
 use super::zone::ZoneContext;
+use crate::arch::zone::disable_hwi_through;
 use crate::device::common::MMIODerefWrapper;
 use crate::percpu::this_cpu_data;
 use core::arch::asm;
 use core::fmt::{self, Debug, Formatter};
-use loongArch64::register::cpuid;
+use loongArch64::register::{cpuid, crmd};
+use loongArch64::register::crmd::Crmd;
 use loongArch64::register::pgdl;
 use tock_registers::interfaces::Writeable;
 
@@ -49,12 +51,12 @@ impl ArchCpu {
         this_cpu_data().activate_gpm();
         self.power_on = true;
         if !self.init {
-            self.init(
-                this_cpu_data().cpu_on_entry,
-                this_cpu_data().id,
-                0,
-            );
+            self.init(this_cpu_data().cpu_on_entry, this_cpu_data().id, 0);
             self.init = true;
+        }
+        // set x[] to all 0
+        for i in 0..32 {
+            self.ctx.x[i] = 0;
         }
         info!(
             "loongarch64: CPU{} run@{:#x}",
@@ -80,6 +82,14 @@ impl ArchCpu {
             self.stack_top()
         );
 
+        let cpuid = self.get_cpuid();
+        if cpuid != 0 {
+            // on loongarch64 we only allow direct interrupt through on cpu0 with rootlinux
+            // root linux use cpuintc->liointc->uart0 for IO irqs, we put it through to use uart0
+            // on nonroot, we only need to inject virtio irq so let's disable it - wheatfox
+            disable_hwi_through();
+        }
+
         unsafe {
             asm!(
                 "csrwr {}, {LOONGARCH_CSR_SAVE3}",
@@ -91,12 +101,29 @@ impl ArchCpu {
             );
         }
 
+        unsafe {
+            asm!("invtlb 0, $r0, $r0"); // flush TLBs
+        }
+
         super::trap::_vcpu_return(ctx_addr as usize);
 
         panic!("loongarch64: ArchCpu::run: unreachable");
     }
-    pub fn idle(&self) -> ! {
+    pub fn idle(&mut self) -> ! {
+        let ctx_addr = &mut self.ctx as *mut ZoneContext;
+        unsafe {
+            asm!(
+                "csrwr {}, {LOONGARCH_CSR_SAVE3}",
+                "csrwr {}, {LOONGARCH_CSR_SAVE4}",
+                in(reg) (ctx_addr as usize + core::mem::size_of::<ZoneContext>()),
+                in(reg) self.stack_top(),
+                LOONGARCH_CSR_SAVE3 = const 0x33,
+                LOONGARCH_CSR_SAVE4 = const 0x34,
+            );
+        }
         info!("loongarch64: ArchCpu::idle: cpuid={}", self.get_cpuid());
+        // enable ipi on ecfg
+        ecfg_ipi_enable();
         loop {}
     }
 }
