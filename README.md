@@ -26,7 +26,7 @@ hvisor is a Type-1 bare-metal hypervisor implemented in Rust, leveraging the sep
 - **Multi-Platform Support**: Works on a variety of architectures, including aarch64, riscv64, and loongarch64.
 - **Virtual Machine Management**: VMs are managed through a Linux environment in zone0 (root-linux), where administrative tasks are performed using [hvisor-tool](https://github.com/syswonder/hvisor-tool).
 - **Device Support**: Includes virtio devices, serial devices, interrupt controllers, PCIe support, etc.
-  - virtio-blk (aarch64, riscv64), virtio-net (aarch64, riscv64), virtio-console (aarch64, riscv64, loongarch64)
+  - virtio-blk (aarch64), virtio-net (aarch64), virtio-console (aarch64, loongarch64)
   - Serial devices/UARTs:
     - PL011 (aarch64)
     - imx-uart (NXP i.MX8MP, aarch64)

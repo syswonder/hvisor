@@ -26,7 +26,7 @@ hvisor 是一个用 Rust 实现的 Type-1 裸机虚拟机监控程序，采用�
 - **多平台支持**：支持多种架构，包括 aarch64、riscv64 和 loongarch64。
 - **虚拟机管理**：虚拟机通过 zone0（root-linux）中的 Linux 环境进行管理，使用 [hvisor-tool](https://github.com/syswonder/hvisor-tool) 执行管理任务。
 - **设备支持**：包括 virtio 设备、串口设备、中断控制器、PCIe 支持等。
-  - virtio-blk (aarch64, riscv64), virtio-net (aarch64, riscv64), virtio-console (aarch64, riscv64, loongarch64)
+  - virtio-blk (aarch64), virtio-net (aarch64), virtio-console (aarch64, loongarch64)
   - 串口设备/UART：
     - PL011 (aarch64)
     - imx-uart (NXP i.MX8MP, aarch64)
