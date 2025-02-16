@@ -258,7 +258,6 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
     cJSON *kernel_load_paddr_json = cJSON_GetObjectItem(root, "kernel_load_paddr");
     cJSON *dtb_load_paddr_json = cJSON_GetObjectItem(root, "dtb_load_paddr");
     cJSON *entry_point_json = cJSON_GetObjectItem(root, "entry_point");
-    cJSON *kernel_args_json = cJSON_GetObjectItem(root, "kernel_args");
     cJSON *interrupts_json = cJSON_GetObjectItem(root, "interrupts");
     cJSON *ivc_configs_json = cJSON_GetObjectItem(root, "ivc_configs");
     
@@ -271,7 +270,6 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
     CHECK_JSON_NULL_ERR_OUT(kernel_load_paddr_json, "kernel_load_paddr")
     CHECK_JSON_NULL_ERR_OUT(dtb_load_paddr_json, "dtb_load_paddr")
     CHECK_JSON_NULL_ERR_OUT(entry_point_json, "entry_point")
-    CHECK_JSON_NULL_ERR_OUT(kernel_args_json, "kernel_args")
     CHECK_JSON_NULL_ERR_OUT(interrupts_json, "interrupts")
     CHECK_JSON_NULL_ERR_OUT(ivc_configs_json, "ivc_configs")
 
@@ -360,7 +358,6 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
     // Load dtb to memory
     config->dtb_size = load_image_to_memory(dtb_filepath_json->valuestring, strtoull(dtb_load_paddr_json->valuestring, NULL, 16));
 
-    // strncpy(config->kernel_args, kernel_args_json->valuestring, CONFIG_KERNEL_ARGS_MAXLEN);
     
     // check name length
     if (strlen(name_json->valuestring) > CONFIG_NAME_MAXLEN)

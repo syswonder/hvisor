@@ -1,7 +1,8 @@
 sources := $(wildcard *.c) ../cJSON/cJSON.c
 objects := $(sources:.c=.o)
-ivc_demo_objects := ivc_demo.o
-hvisor_objects := $(filter-out $(ivc_demo_objects), $(objects))
+ivc_demo_object := ivc_demo.o
+rpmsg_demo_object := rpmsg_demo.o
+hvisor_objects := $(filter-out $(ivc_demo_object) $(rpmsg_demo_object), $(objects))
 
 CFLAGS := -Wall -Wextra -DLOG_USE_COLOR -DHLOG=$(LOG)
 include_dirs := -I../include -I./include -I../cJSON/ -lpthread
@@ -22,7 +23,7 @@ endif
 
 .PHONY: all clean
 
-all: hvisor ivc_demo
+all: hvisor ivc_demo rpmsg_demo
 
 %.d: %.c
 	@set -e; rm -f $@; \
@@ -36,8 +37,11 @@ $(objects): %.o: %.c
 hvisor: $(hvisor_objects)
 	$(CC) -o $@ $^ $(include_dirs)
 
-ivc_demo: $(ivc_demo_objects)
+ivc_demo: $(ivc_demo_object)
 	$(CC) -o $@ $^ $(include_dirs)
-	
+
+rpmsg_demo: $(rpmsg_demo_object)
+	$(CC) -o $@ $^ $(include_dirs)
+
 clean:
 	rm -f hvisor ivc_demo *.o *.d *.d.* 

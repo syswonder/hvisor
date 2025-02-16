@@ -1,4 +1,4 @@
-KDIR ?= ~/linux
+KDIR ?= ../../nxp/OK8MP-linux-kernel
 DEV ?= /dev/sda1
 ARCH ?= arm64
 LOG ?= LOG_WARN
@@ -39,6 +39,7 @@ transfer: all
 transfer_nxp: all
 	sudo cp ./tools/hvisor ~/tftp
 	sudo cp ./tools/ivc_demo ~/tftp
+	sudo cp ./tools/rpmsg_demo ~/tftp
 	sudo cp ./driver/hvisor.ko ~/tftp
 	sudo cp ./driver/ivc.ko ~/tftp
 
