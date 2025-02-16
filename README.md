@@ -18,13 +18,13 @@ README：[中文](./README-zh.md) | [English](./README.md)
 
 hvisor is a Type-1 bare-metal hypervisor implemented in Rust, leveraging the separation kernel design to offer robust hardware resource virtualization and isolation. The hypervisor allows for strict separation of system environments across different zones, ensuring both performance and security in a virtualized environment.
 
-🚧 This project is work in progress
+<!-- 🚧 This project is work in progress -->
 
 ## Features
 
 - **Separation Kernel Design**: Virtual machines are classified into three zones: zone0 (management), zoneU (user), and zoneR (real-time), with strict isolation between them.
 - **Multi-Platform Support**: Works on a variety of architectures, including aarch64, riscv64, and loongarch64.
-- **Virtual Machine Management**: VMs are managed through a Linux environment in zone0 (root-linux), where administrative tasks are performed using [hvisor-tool](https://github.com/syswonder/hvisor-tool).
+- **Virtual Machine Management**: VMs are managed through a Linux environment in zone0 (root-linux), where administrative tasks are performed using command-line tool [hvisor-tool](https://github.com/syswonder/hvisor-tool).
 - **Device Support**: Includes virtio devices, serial devices, interrupt controllers, PCIe support, etc.
   - virtio-blk (aarch64), virtio-net (aarch64), virtio-console (aarch64, loongarch64)
   - Serial devices/UARTs:
@@ -36,7 +36,7 @@ hvisor is a Type-1 bare-metal hypervisor implemented in Rust, leveraging the sep
     - GIC irq controller (aarch64)
     - 7A2000 irq controller (loongarch64)
     - PLIC (riscv64)
-    - APIC (now only support msi mode) (riscv64)
+    - AIA-APIC (hvisor now only support msi mode) (riscv64)
   - PCIe passthrough (aarch64, riscv64)
   - GPU passthrough (NXP i.MX8MP, aarch64)
 - **Architecture Hardware Features Support**: 
