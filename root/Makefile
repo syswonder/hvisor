@@ -1,7 +1,7 @@
-KDIR ?= ~/linux
+KDIR ?= /usr/local/bin/linux
 DEV ?= /dev/sda1
 ARCH ?= arm64
-LOG ?= LOG_WARN
+LOG ?= LOG_INFO
 DEBUG ?= n
 
 export KDIR
@@ -9,15 +9,10 @@ export ARCH
 export LOG
 .PHONY: all env tools driver clean
 
-# check if KDIR is set
-ifeq ($(KDIR),)
-$(error Linux kernel directory is not set. Please set environment variable 'KDIR')
-endif
-
 all: tools driver
 
 env:
-	git submodule update --init --recursive
+	# git submodule update --init --recursive
 
 tools: env
 	$(MAKE) -C tools all
