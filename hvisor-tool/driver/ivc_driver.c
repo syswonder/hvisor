@@ -1,32 +1,31 @@
-#include <linux/kernel.h>
-#include <linux/init.h>
-#include <linux/module.h>
-#include <linux/slab.h>
-#include <linux/uaccess.h>
-#include <linux/mm.h>
-#include <linux/miscdevice.h>
-#include <linux/sched/signal.h>
-#include <linux/of.h>
-#include <linux/of_irq.h>
-#include <linux/interrupt.h>
-#include <linux/types.h>
-#include <linux/device.h>
-#include <linux/kdev_t.h>
 #include <linux/cdev.h>
-#include <linux/of_fdt.h>
+#include <linux/device.h>
+#include <linux/init.h>
+#include <linux/interrupt.h>
+#include <linux/kdev_t.h>
+#include <linux/kernel.h>
+#include <linux/miscdevice.h>
+#include <linux/mm.h>
+#include <linux/module.h>
 #include <linux/of.h>
-#include <linux/wait.h>
+#include <linux/of_fdt.h>
+#include <linux/of_irq.h>
 #include <linux/poll.h>
+#include <linux/sched/signal.h>
+#include <linux/slab.h>
+#include <linux/types.h>
+#include <linux/uaccess.h>
+#include <linux/wait.h>
 
 #include "ivc.h"
 
 struct ivc_info {
-	__u64 len;
-	__u64 ivc_ct_ipas[CONFIG_MAX_IVC_CONFIGS];
+    __u64 len;
+    __u64 ivc_ct_ipas[CONFIG_MAX_IVC_CONFIGS];
     __u64 ivc_shmem_ipas[CONFIG_MAX_IVC_CONFIGS];
-	__u32 ivc_ids[CONFIG_MAX_IVC_CONFIGS];
+    __u32 ivc_ids[CONFIG_MAX_IVC_CONFIGS];
     __u32 ivc_irqs[CONFIG_MAX_IVC_CONFIGS];
-}__attribute__((packed));
+} __attribute__((packed));
 typedef struct ivc_info ivc_info_t;
 
 struct ivc_dev {
@@ -50,10 +49,9 @@ static struct class *ivc_class;
 
 extern u8 __dtb_hivc_template_begin[], __dtb_hivc_template_end[];
 
-static int hvisor_ivc_info(void)
-{
+static int hvisor_ivc_info(void) {
     int err = 0, i;
-    if(ivc_info == NULL)
+    if (ivc_info == NULL)
         ivc_info = kmalloc(sizeof(ivc_info_t), GFP_KERNEL);
     err = hvisor_call(HVISOR_HC_IVC_INFO, __pa(ivc_info), sizeof(ivc_info_t));
     return err;
@@ -67,23 +65,21 @@ static int ivc_open(struct inode *inode, struct file *file) {
     return 0;
 }
 
-static int hvisor_user_ivc_info(ivc_uinfo_t __user* uinfo) {
+static int hvisor_user_ivc_info(ivc_uinfo_t __user *uinfo) {
     int err = 0, i;
     uinfo->len = ivc_info->len;
-    for(i = 0; i < ivc_info->len; i++) {
+    for (i = 0; i < ivc_info->len; i++) {
         uinfo->ivc_ids[i] = ivc_info->ivc_ids[i];
     }
     return 0;
 }
 
 static long ivc_ioctl(struct file *file, unsigned int ioctl,
-                         unsigned long arg)
-{
+                      unsigned long arg) {
     int err = 0;
-    switch (ioctl)
-    {
+    switch (ioctl) {
     case HVISOR_IVC_USER_INFO:
-        err = hvisor_user_ivc_info((ivc_uinfo_t __user*)arg);
+        err = hvisor_user_ivc_info((ivc_uinfo_t __user *)arg);
         break;
     default:
         err = -EINVAL;
@@ -92,8 +88,7 @@ static long ivc_ioctl(struct file *file, unsigned int ioctl,
     return err;
 }
 
-static int ivc_map(struct file *filp, struct vm_area_struct *vma)
-{
+static int ivc_map(struct file *filp, struct vm_area_struct *vma) {
     unsigned long long phys, offset;
     int i, err = 0, is_control_table = 0, idx;
     size_t size = vma->vm_end - vma->vm_start;
@@ -103,24 +98,21 @@ static int ivc_map(struct file *filp, struct vm_area_struct *vma)
 
     if (phys == 0) {
         // control table
-        if(size != 0x1000) {
+        if (size != 0x1000) {
             pr_err("Invalid size for control table\n");
             return -EINVAL;
         }
         vma->vm_page_prot = pgprot_noncached(vma->vm_page_prot);
-        err = remap_pfn_range(vma,
-                    vma->vm_start,
-                    ivc_info->ivc_ct_ipas[idx] >> PAGE_SHIFT,
-                    size,
-                    vma->vm_page_prot);
+        err = remap_pfn_range(vma, vma->vm_start,
+                              ivc_info->ivc_ct_ipas[idx] >> PAGE_SHIFT, size,
+                              vma->vm_page_prot);
     } else {
         // TODO: add check for memory
         offset = phys - 0x1000;
-        err = remap_pfn_range(vma,
-            vma->vm_start,
-            (ivc_info->ivc_shmem_ipas[idx] + offset) >> PAGE_SHIFT,
-            size,
-            vma->vm_page_prot);
+        err = remap_pfn_range(vma, vma->vm_start,
+                              (ivc_info->ivc_shmem_ipas[idx] + offset) >>
+                                  PAGE_SHIFT,
+                              size, vma->vm_page_prot);
     }
     if (err)
         return err;
@@ -128,15 +120,15 @@ static int ivc_map(struct file *filp, struct vm_area_struct *vma)
     return 0;
 }
 
-static unsigned int ivc_poll(struct file *filp, struct poll_table_struct *wait)
-{
+static unsigned int ivc_poll(struct file *filp,
+                             struct poll_table_struct *wait) {
     __poll_t mask = 0;
-    struct ivc_dev* this_dev = (struct ivc_dev *)filp->private_data;
+    struct ivc_dev *this_dev = (struct ivc_dev *)filp->private_data;
     poll_wait(filp, &this_dev->wq, wait);
     if (this_dev->received_irq) {
         mask |= POLLIN;
         this_dev->received_irq = 0;
-    } 
+    }
     return mask;
 }
 
@@ -149,12 +141,12 @@ static const struct file_operations ivc_fops = {
     .poll = ivc_poll,
 };
 
-static irqreturn_t ivc_irq_handler(int irq, void *dev_id)
-{
+static irqreturn_t ivc_irq_handler(int irq, void *dev_id) {
     int i;
-    struct ivc_dev* this_dev = NULL;
-    for(i=0; i<dev_len; i++) 
-        if (dev_id == &ivc_devs[i]) this_dev = (struct ivc_dev *)dev_id;
+    struct ivc_dev *this_dev = NULL;
+    for (i = 0; i < dev_len; i++)
+        if (dev_id == &ivc_devs[i])
+            this_dev = (struct ivc_dev *)dev_id;
     if (!this_dev)
         return IRQ_NONE;
     this_dev->received_irq++;
@@ -162,9 +154,7 @@ static irqreturn_t ivc_irq_handler(int irq, void *dev_id)
     return IRQ_HANDLED;
 }
 
-
-static struct property* alloc_property(const char *name, int len)
-{
+static struct property *alloc_property(const char *name, int len) {
     struct property *prop;
     prop = kzalloc(sizeof(struct property), GFP_KERNEL);
     prop->name = kstrdup(name, GFP_KERNEL);
@@ -210,7 +200,8 @@ static int __init ivc_init(void) {
 
     ivc_devs = kmalloc(sizeof(struct ivc_dev) * dev_len, GFP_KERNEL);
     err = alloc_chrdev_region(&mdev_id, 0, dev_len, "hivc");
-    if (err) goto err1;
+    if (err)
+        goto err1;
     pr_info("ivc get major id: %d\n", MAJOR(mdev_id));
 
     ivc_class = class_create(THIS_MODULE, "hivc");
@@ -219,7 +210,7 @@ static int __init ivc_init(void) {
         goto err1;
     }
 
-    for(i=0; i<dev_len; i++) {
+    for (i = 0; i < dev_len; i++) {
         ivc_devs[i].ivc_id = ivc_info->ivc_ids[i];
         ivc_devs[i].dev_id = MKDEV(MAJOR(mdev_id), i);
         ivc_devs[i].idx = i;
@@ -228,33 +219,37 @@ static int __init ivc_init(void) {
         init_waitqueue_head(&ivc_devs[i].wq);
         cdev_init(&ivc_devs[i].cdev, &ivc_fops);
         err = cdev_add(&ivc_devs[i].cdev, ivc_devs[i].dev_id, 1);
-        if (err) goto err2;
-        ivc_devs[i].device = device_create(ivc_class, NULL, ivc_devs[i].dev_id, NULL, "hivc%d", ivc_devs[i].ivc_id);
+        if (err)
+            goto err2;
+        ivc_devs[i].device = device_create(ivc_class, NULL, ivc_devs[i].dev_id,
+                                           NULL, "hivc%d", ivc_devs[i].ivc_id);
         if (IS_ERR(ivc_devs[i].device)) {
             err = PTR_ERR(ivc_devs[i].device);
             goto err2;
-        }        
+        }
     }
     node = of_find_node_by_path("/hvisor_ivc_device");
     if (!node) {
         // add_ivc_device_node();
         pr_info("hvisor_ivc_device node not found in dtb, can't use ivc\n");
     } else {
-        for(i=0; i<dev_len; i++) {
+        for (i = 0; i < dev_len; i++) {
             soft_irq = of_irq_get(node, i);
-            err = request_irq(soft_irq, ivc_irq_handler, IRQF_SHARED | IRQF_TRIGGER_RISING, "hvisor_ivc_device", &ivc_devs[i]);
+            err = request_irq(soft_irq, ivc_irq_handler,
+                              IRQF_SHARED | IRQF_TRIGGER_RISING,
+                              "hvisor_ivc_device", &ivc_devs[i]);
             if (err) {
                 pr_err("request irq failed\n");
                 goto err2;
             }
         }
-    } 
+    }
     of_node_put(node);
     pr_info("ivc init!!!\n");
     return 0;
 
 err2:
-    for(i=0; i<dev_len; i++) {
+    for (i = 0; i < dev_len; i++) {
         cdev_del(&ivc_devs[i].cdev);
         device_destroy(ivc_class, ivc_devs[i].dev_id);
     }
@@ -266,8 +261,7 @@ err1:
     return err;
 }
 
-static void __exit ivc_exit(void)
-{
+static void __exit ivc_exit(void) {
     // TODO
     pr_info("ivc exit done!!!\n");
 }
