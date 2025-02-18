@@ -129,24 +129,57 @@ static __u64 load_image_to_memory(const char *path, __u64 load_paddr) {
 
 static int parse_arch_config(cJSON *root, zone_config_t *config) {
     cJSON *arch_config_json = cJSON_GetObjectItem(root, "arch_config");
-    if (arch_config_json == NULL) {
-        fprintf(stderr, "No arch_config field found.\n");
-        return -1;
-    }
-
+    CHECK_JSON_NULL(arch_config_json, "arch_config");
 #ifdef ARM64
+    cJSON *gic_version_json =
+        cJSON_GetObjectItem(arch_config_json, "gic_version");
     cJSON *gicd_base_json = cJSON_GetObjectItem(arch_config_json, "gicd_base");
     cJSON *gicr_base_json = cJSON_GetObjectItem(arch_config_json, "gicr_base");
     cJSON *gits_base_json = cJSON_GetObjectItem(arch_config_json, "gits_base");
+    cJSON *gicc_base_json = cJSON_GetObjectItem(arch_config_json, "gicc_base");
+    cJSON *gich_base_json = cJSON_GetObjectItem(arch_config_json, "gich_base");
+    cJSON *gicv_base_json = cJSON_GetObjectItem(arch_config_json, "gicv_base");
+    cJSON *gicc_offset_json =
+        cJSON_GetObjectItem(arch_config_json, "gicc_offset");
+    cJSON *gicv_size_json = cJSON_GetObjectItem(arch_config_json, "gicv_size");
+    cJSON *gich_size_json = cJSON_GetObjectItem(arch_config_json, "gich_size");
+    cJSON *gicc_size_json = cJSON_GetObjectItem(arch_config_json, "gicc_size");
     cJSON *gicd_size_json = cJSON_GetObjectItem(arch_config_json, "gicd_size");
     cJSON *gicr_size_json = cJSON_GetObjectItem(arch_config_json, "gicr_size");
     cJSON *gits_size_json = cJSON_GetObjectItem(arch_config_json, "gits_size");
-
+    CHECK_JSON_NULL(gic_version_json, "gic_version");
     CHECK_JSON_NULL(gicd_base_json, "gicd_base")
     CHECK_JSON_NULL(gicr_base_json, "gicr_base")
     CHECK_JSON_NULL(gicd_size_json, "gicd_size")
     CHECK_JSON_NULL(gicr_size_json, "gicr_size")
 
+    char *gic_version = gic_version_json->valuestring;
+    if (!strcmp(gic_version, "v2")) {
+        CHECK_JSON_NULL(gicc_base_json, "gicc_base")
+        CHECK_JSON_NULL(gich_base_json, "gich_base")
+        CHECK_JSON_NULL(gicv_base_json, "gicv_base")
+        CHECK_JSON_NULL(gicc_offset_json, "gicc_offset")
+        CHECK_JSON_NULL(gicv_size_json, "gicv_size")
+        CHECK_JSON_NULL(gich_size_json, "gich_size")
+        CHECK_JSON_NULL(gicc_size_json, "gicc_size")
+        config->arch_config.gicc_base =
+            strtoull(gicc_base_json->valuestring, NULL, 16);
+        config->arch_config.gich_base =
+            strtoull(gich_base_json->valuestring, NULL, 16);
+        config->arch_config.gicv_base =
+            strtoull(gicv_base_json->valuestring, NULL, 16);
+        config->arch_config.gicc_offset =
+            strtoull(gicc_offset_json->valuestring, NULL, 16);
+        config->arch_config.gicv_size =
+            strtoull(gicv_size_json->valuestring, NULL, 16);
+        config->arch_config.gich_size =
+            strtoull(gich_size_json->valuestring, NULL, 16);
+        config->arch_config.gicc_size =
+            strtoull(gicc_size_json->valuestring, NULL, 16);
+    } else if (strcmp(gic_version, "v3") != 0) {
+        printf("Invalid GIC version. It should be either of v2 or v3\n");
+        return -1;
+    }
     if (gits_base_json == NULL || gits_size_json == NULL) {
         printf("No gits fields in arch_config.\n");
     } else {
@@ -283,7 +316,6 @@ static int zone_start_from_json(const char *json_config_path,
         cJSON_GetObjectItem(root, "kernel_load_paddr");
     cJSON *dtb_load_paddr_json = cJSON_GetObjectItem(root, "dtb_load_paddr");
     cJSON *entry_point_json = cJSON_GetObjectItem(root, "entry_point");
-    cJSON *kernel_args_json = cJSON_GetObjectItem(root, "kernel_args");
     cJSON *interrupts_json = cJSON_GetObjectItem(root, "interrupts");
     cJSON *ivc_configs_json = cJSON_GetObjectItem(root, "ivc_configs");
 
@@ -296,7 +328,6 @@ static int zone_start_from_json(const char *json_config_path,
     CHECK_JSON_NULL_ERR_OUT(kernel_load_paddr_json, "kernel_load_paddr")
     CHECK_JSON_NULL_ERR_OUT(dtb_load_paddr_json, "dtb_load_paddr")
     CHECK_JSON_NULL_ERR_OUT(entry_point_json, "entry_point")
-    CHECK_JSON_NULL_ERR_OUT(kernel_args_json, "kernel_args")
     CHECK_JSON_NULL_ERR_OUT(interrupts_json, "interrupts")
     CHECK_JSON_NULL_ERR_OUT(ivc_configs_json, "ivc_configs")
 
@@ -410,9 +441,6 @@ static int zone_start_from_json(const char *json_config_path,
         dtb_filepath_json->valuestring,
         strtoull(dtb_load_paddr_json->valuestring, NULL, 16));
 
-    // strncpy(config->kernel_args, kernel_args_json->valuestring,
-    // CONFIG_KERNEL_ARGS_MAXLEN);
-
     // check name length
     if (strlen(name_json->valuestring) > CONFIG_NAME_MAXLEN) {
         fprintf(stderr, "Zone name too long: %s\n", name_json->valuestring);
@@ -421,7 +449,8 @@ static int zone_start_from_json(const char *json_config_path,
     strncpy(config->name, name_json->valuestring, CONFIG_NAME_MAXLEN);
 
     // Parse architecture-specific configurations (interrupts for each platform)
-    parse_arch_config(root, config);
+    if (!parse_arch_config(root, config))
+        goto err_out;
 
     parse_pci_config(root, config);
 
