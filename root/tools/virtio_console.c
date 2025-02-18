@@ -46,7 +46,7 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
     }
     
     while (!virtqueue_is_empty(vq)) {
-        n = process_descriptor_chain(vq, &idx, &iov, NULL, 0);
+        n = process_descriptor_chain(vq, &idx, &iov, NULL, 0, false);
         if (n < 1) {
             log_error("process_descriptor_chain failed");
             break;
@@ -141,7 +141,7 @@ static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq) {
         return ;
     }
 
-    n = process_descriptor_chain(vq, &idx, &iov, NULL, 0);
+    n = process_descriptor_chain(vq, &idx, &iov, NULL, 0, false);
     // if (count % 100 == 0) {
     //     log_info("console txq: n is %d, data is ", n);
     //     for (int i=0; i<iov->iov_len; i++)
