@@ -1,62 +1,64 @@
+#include "hvisor.h"
+#include "cJSON.h"
+#include "event_monitor.h"
+#include "log.h"
+#include "virtio.h"
+#include "zone_config.h"
+#include <errno.h>
+#include <fcntl.h>
+#include <getopt.h>
+#include <pthread.h>
+#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
-#include <unistd.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
-#include <signal.h>
-#include <pthread.h>
-#include <errno.h>
-#include <getopt.h>
-#include "hvisor.h"
-#include "virtio.h"
-#include "log.h"
-#include "event_monitor.h"
-#include "cJSON.h"
-#include "zone_config.h"
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
-static void __attribute__((noreturn)) help(int exit_status)
-{
+static void __attribute__((noreturn)) help(int exit_status) {
     printf("Invalid Parameters!\n");
     exit(exit_status);
 }
 
-void *read_file(const char* filename, __u64* filesize)
-{
+void *read_file(char *filename, u_int64_t *filesize) {
     int fd;
     struct stat st;
     void *buf;
     ssize_t len;
-    fd = open(filename, O_RDONLY);
 
-    if (fd < 0)
-    {
+    fd = open(filename, O_RDONLY);
+    if (fd < 0) {
         perror("read_file: open file failed");
         exit(1);
     }
 
-    if (fstat(fd, &st) < 0)
-    {
+    if (fstat(fd, &st) < 0) {
         perror("read_file: fstat failed");
         exit(1);
     }
+
     long page_size = sysconf(_SC_PAGESIZE);
+
+    // Calculate buffer size, ensuring alignment to page boundary
     ssize_t buf_size = (st.st_size + page_size - 1) & ~(page_size - 1);
+
     buf = malloc(buf_size);
     memset(buf, 0, buf_size);
-    len = read(fd, buf, st.st_size);
 
-    if (len < 0)
-    {
+    len = read(fd, buf, st.st_size);
+    if (len < 0) {
         perror("read_file: read failed");
         exit(1);
     }
+
     if (filesize)
         *filesize = len;
+
     close(fd);
+
     return buf;
 }
 
@@ -83,11 +85,12 @@ int open_dev()
 // 	}
 // }
 
-static __u64 load_image_to_memory(const char *path, __u64 load_paddr)
-{
-    __u64 size, page_size, map_size;
-    int fd;
-    void *image_content, *virt_addr;
+static __u64 load_image_to_memory(const char *path, __u64 load_paddr) {
+    __u64 size, page_size,
+        map_size; // Define variables: image size, page size, and map size
+    int fd;       // File descriptor
+    void *image_content,
+        *virt_addr; // Pointers to image content and virtual address
 
     fd = open_dev();
     // Load image content into memory
@@ -99,7 +102,7 @@ static __u64 load_image_to_memory(const char *path, __u64 load_paddr)
     // Map the physical memory to virtual memory
     virt_addr = mmap(NULL, map_size, PROT_READ | PROT_WRITE , MAP_SHARED, fd, load_paddr);
 
-	if (virt_addr == MAP_FAILED) {
+    if (virt_addr == MAP_FAILED) {
         perror("Error mapping memory");
         exit(1);
     }
@@ -123,7 +126,7 @@ static __u64 load_image_to_memory(const char *path, __u64 load_paddr)
     if (json_ptr == NULL) { \
         fprintf(stderr, "\'%s\' is missing in json file.\n", json_name); \
         goto err_out; \
-    }
+}
 
 static int parse_arch_config(cJSON *root, zone_config_t *config) {
     cJSON *arch_config_json = cJSON_GetObjectItem(root, "arch_config");
@@ -167,8 +170,10 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         return -1;
     }
 
-    config->arch_config.plic_base = strtoull(plic_base_json->valuestring, NULL, 16);
-    config->arch_config.plic_size = strtoull(plic_size_json->valuestring, NULL, 16);
+    config->arch_config.plic_base =
+        strtoull(plic_base_json->valuestring, NULL, 16);
+    config->arch_config.plic_size =
+        strtoull(plic_size_json->valuestring, NULL, 16);
 #endif
 
     return 0;
@@ -181,13 +186,17 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
         return -1;
     }
 
+#ifdef ARM64
     cJSON *ecam_base_json = cJSON_GetObjectItem(pci_config_json, "ecam_base");
     cJSON *io_base_json = cJSON_GetObjectItem(pci_config_json, "io_base");
-    cJSON *pci_io_base_json = cJSON_GetObjectItem(pci_config_json, "pci_io_base");
+    cJSON *pci_io_base_json =
+        cJSON_GetObjectItem(pci_config_json, "pci_io_base");
     cJSON *mem32_base_json = cJSON_GetObjectItem(pci_config_json, "mem32_base");
-    cJSON *pci_mem32_base_json = cJSON_GetObjectItem(pci_config_json, "pci_mem32_base");
+    cJSON *pci_mem32_base_json =
+        cJSON_GetObjectItem(pci_config_json, "pci_mem32_base");
     cJSON *mem64_base_json = cJSON_GetObjectItem(pci_config_json, "mem64_base");
-    cJSON *pci_mem64_base_json = cJSON_GetObjectItem(pci_config_json, "pci_mem64_base");
+    cJSON *pci_mem64_base_json =
+        cJSON_GetObjectItem(pci_config_json, "pci_mem64_base");
     cJSON *ecam_size_json = cJSON_GetObjectItem(pci_config_json, "ecam_size");
     cJSON *io_size_json = cJSON_GetObjectItem(pci_config_json, "io_size");
     cJSON *mem32_size_json = cJSON_GetObjectItem(pci_config_json, "mem32_size");
@@ -219,10 +228,12 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
     cJSON *alloc_pci_devs_json = cJSON_GetObjectItem(root, "alloc_pci_devs");
     int num_pci_devs = cJSON_GetArraySize(alloc_pci_devs_json);
     config->num_pci_devs = num_pci_devs;
-    for (int i = 0; i < num_pci_devs; i++)
-    {
-        config->alloc_pci_devs[i] = cJSON_GetArrayItem(alloc_pci_devs_json, i)->valueint;
+    for (int i = 0; i < num_pci_devs; i++) {
+        config->alloc_pci_devs[i] =
+            cJSON_GetArrayItem(alloc_pci_devs_json, i)->valueint;
     }
+#endif
+
     return 0;
 }
 
@@ -261,7 +272,7 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
     cJSON *kernel_args_json = cJSON_GetObjectItem(root, "kernel_args");
     cJSON *interrupts_json = cJSON_GetObjectItem(root, "interrupts");
     cJSON *ivc_configs_json = cJSON_GetObjectItem(root, "ivc_configs");
-    
+
     CHECK_JSON_NULL_ERR_OUT(zone_id_json, "zone_id")
     CHECK_JSON_NULL_ERR_OUT(cpus_json, "cpus")
     CHECK_JSON_NULL_ERR_OUT(name_json, "name")
@@ -279,62 +290,65 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
 
     int num_cpus = cJSON_GetArraySize(cpus_json);
 
-    for (int i = 0; i < num_cpus; i++)
-    {
+    for (int i = 0; i < num_cpus; i++) {
         config->cpus |= (1 << cJSON_GetArrayItem(cpus_json, i)->valueint);
     }
 
     int num_memory_regions = cJSON_GetArraySize(memory_regions_json);
     int num_interrupts = cJSON_GetArraySize(interrupts_json);
 
-    if (num_memory_regions > CONFIG_MAX_MEMORY_REGIONS || num_interrupts > CONFIG_MAX_INTERRUPTS)
-    {
+    if (num_memory_regions > CONFIG_MAX_MEMORY_REGIONS ||
+        num_interrupts > CONFIG_MAX_INTERRUPTS) {
         fprintf(stderr, "Exceeded maximum allowed regions/interrupts.\n");
         goto err_out;
     }
 
+    // Iterate through each memory region of the zone
+    // Including memory and MMIO regions of the zone
     config->num_memory_regions = num_memory_regions;
-    for (int i = 0; i < num_memory_regions; i++)
-    {
+    for (int i = 0; i < num_memory_regions; i++) {
         cJSON *region = cJSON_GetArrayItem(memory_regions_json, i);
         memory_region_t *mem_region = &config->memory_regions[i];
 
         const char *type_str = cJSON_GetObjectItem(region, "type")->valuestring;
-        if (strcmp(type_str, "ram") == 0)
-        {
+        if (strcmp(type_str, "ram") == 0) {
             mem_region->type = MEM_TYPE_RAM;
-        }
-        else if (strcmp(type_str, "io") == 0)
-        {
+        } else if (strcmp(type_str, "io") == 0) {
+            // io device
             mem_region->type = MEM_TYPE_IO;
-        }
-        else if (strcmp(type_str, "virtio") == 0)
-        {
+        } else if (strcmp(type_str, "virtio") == 0) {
+            // virtio device
             mem_region->type = MEM_TYPE_VIRTIO;
-        }
-        else
-        {
+        } else {
             printf("Unknown memory region type: %s\n", type_str);
             mem_region->type = -1; // invalid type
         }
 
-        mem_region->physical_start = strtoull(cJSON_GetObjectItem(region, "physical_start")->valuestring, NULL, 16);
-        mem_region->virtual_start = strtoull(cJSON_GetObjectItem(region, "virtual_start")->valuestring, NULL, 16);
-        mem_region->size = strtoull(cJSON_GetObjectItem(region, "size")->valuestring, NULL, 16);
+        mem_region->physical_start =
+            strtoull(cJSON_GetObjectItem(region, "physical_start")->valuestring,
+                     NULL, 16);
+        mem_region->virtual_start =
+            strtoull(cJSON_GetObjectItem(region, "virtual_start")->valuestring,
+                     NULL, 16);
+        mem_region->size = strtoull(
+            cJSON_GetObjectItem(region, "size")->valuestring, NULL, 16);
 
-        printf("memory_region %d: type %d, physical_start %llx, virtual_start %llx, size %llx\n",
-               i, mem_region->type, mem_region->physical_start, mem_region->virtual_start, mem_region->size);
+        log_debug("memory_region %d: type %d, physical_start %llx, "
+                  "virtual_start %llx, size %llx\n",
+                  i, mem_region->type, mem_region->physical_start,
+                  mem_region->virtual_start, mem_region->size);
     }
 
     config->num_interrupts = num_interrupts;
-    for (int i = 0; i < num_interrupts; i++)
-    {
-        config->interrupts[i] = cJSON_GetArrayItem(interrupts_json, i)->valueint;
+    for (int i = 0; i < num_interrupts; i++) {
+        config->interrupts[i] =
+            cJSON_GetArrayItem(interrupts_json, i)->valueint;
     }
 
+    // ivc
     int num_ivc_configs = cJSON_GetArraySize(ivc_configs_json);
     config->num_ivc_configs = num_ivc_configs;
-    for (int i=0; i < num_ivc_configs; i++) {
+    for (int i = 0; i < num_ivc_configs; i++) {
         cJSON *ivc_config_json = cJSON_GetArrayItem(ivc_configs_json, i);
         ivc_config_t * ivc_config = &config->ivc_configs[i];
         ivc_config->ivc_id = cJSON_GetObjectItem(ivc_config_json, "ivc_id")->valueint;
@@ -350,15 +364,21 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
     }
     config->entry_point = strtoull(entry_point_json->valuestring, NULL, 16);
 
-    config->kernel_load_paddr = strtoull(kernel_load_paddr_json->valuestring, NULL, 16);
+    config->kernel_load_paddr =
+        strtoull(kernel_load_paddr_json->valuestring, NULL, 16);
 
-    config->dtb_load_paddr = strtoull(dtb_load_paddr_json->valuestring, NULL, 16);
+    config->dtb_load_paddr =
+        strtoull(dtb_load_paddr_json->valuestring, NULL, 16);
 
     // Load kernel image to memory
-    config->kernel_size = load_image_to_memory(kernel_filepath_json->valuestring, strtoull(kernel_load_paddr_json->valuestring, NULL, 16));
+    config->kernel_size = load_image_to_memory(
+        kernel_filepath_json->valuestring,
+        strtoull(kernel_load_paddr_json->valuestring, NULL, 16));
 
     // Load dtb to memory
-    config->dtb_size = load_image_to_memory(dtb_filepath_json->valuestring, strtoull(dtb_load_paddr_json->valuestring, NULL, 16));
+    config->dtb_size = load_image_to_memory(
+        dtb_filepath_json->valuestring,
+        strtoull(dtb_load_paddr_json->valuestring, NULL, 16));
 
     // strncpy(config->kernel_args, kernel_args_json->valuestring, CONFIG_KERNEL_ARGS_MAXLEN);
     
@@ -370,6 +390,7 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
     }
     strncpy(config->name, name_json->valuestring, CONFIG_NAME_MAXLEN);
 
+    // Parse architecture-specific configurations (interrupts for each platform)
     parse_arch_config(root, config);
 
     parse_pci_config(root, config);
@@ -377,11 +398,14 @@ static int zone_start_from_json(const char *json_config_path, zone_config_t *con
     if (root) cJSON_Delete(root);
     if (buffer) free(buffer);
 
-    int fd = open_dev();
+    int fd = open_dev_hvisor();
     int err = ioctl(fd, HVISOR_ZONE_START, config);
+
     if (err)
         perror("zone_start: ioctl failed");
+
     close(fd);
+
     return 0;
 err_out:
     if (root) cJSON_Delete(root);
@@ -391,7 +415,8 @@ err_out:
 
 // ./hvisor zone start <path_to_config_file>
 static int zone_start(int argc, char *argv[]) {
-	char *json_config_path = NULL;
+    int zone_id;
+    char *json_config_path = NULL;
     zone_config_t config;
 
     if (argc != 4)
@@ -426,12 +451,9 @@ static void print_cpu_list(__u64 cpu_mask, char *outbuf, size_t bufsize)
     int found_cpu = 0;
     char *buf = outbuf;
 
-    for (int i = 0; i < MAX_CPUS && buf - outbuf < (long int)bufsize; i++)
-    {
-        if ((cpu_mask & (1ULL << i)) != 0)
-        {
-            if (found_cpu)
-            {
+    for (int i = 0; i < MAX_CPUS && buf - outbuf < bufsize; i++) {
+        if ((cpu_mask & (1ULL << i)) != 0) {
+            if (found_cpu) {
                 *buf++ = ',';
                 *buf++ = ' ';
             }
@@ -440,17 +462,14 @@ static void print_cpu_list(__u64 cpu_mask, char *outbuf, size_t bufsize)
             found_cpu = 1;
         }
     }
-    if (!found_cpu)
-    {
+    if (!found_cpu) {
         memcpy(outbuf, "none", 5);
     }
 }
 
 // ./hvisor zone list
-static int zone_list(int argc)
-{
-    if (argc != 0)
-    {
+static int zone_list(int argc, char *argv[]) {
+    if (argc != 0) {
         help(1);
     }
     __u64 cnt = CONFIG_MAX_ZONES;
@@ -462,19 +481,14 @@ static int zone_list(int argc)
     if (ret < 0)
         perror("zone_list: ioctl failed");
 
-    printf("| %11s     | %10s        | %9s       |\n",
-           "zone_id",
-           "cpus",
+    printf("| %11s     | %10s        | %9s       |\n", "zone_id", "cpus",
            "name");
 
-    for (int i = 0; i < ret; i++)
-    {
+    for (int i = 0; i < ret; i++) {
         char cpu_list_str[256]; // Assuming this buffer size is enough
         memset(cpu_list_str, 0, sizeof(cpu_list_str));
         print_cpu_list(zones[i].cpus, cpu_list_str, sizeof(cpu_list_str));
-        printf("| %15u | %17s | %15s |\n",
-               zones[i].zone_id,
-               cpu_list_str,
+        printf("| %15u | %17s | %15s |\n", zones[i].zone_id, cpu_list_str,
                zones[i].name);
     }
     free(zones);
@@ -482,44 +496,29 @@ static int zone_list(int argc)
     return ret;
 }
 
-int main(int argc, char *argv[])
-{
+int main(int argc, char *argv[]) {
     int err = 0;
 
     if (argc < 2)
         help(1);
 
-    if (strcmp(argv[1], "zone") == 0)
-    {
-        if (strcmp(argv[2], "start") == 0)
-        {
+    if (strcmp(argv[1], "zone") == 0) {
+        if (strcmp(argv[2], "start") == 0) {
             err = zone_start(argc, argv);
-        }
-        else if (strcmp(argv[2], "shutdown") == 0)
-        {
+        } else if (strcmp(argv[2], "shutdown") == 0) {
             err = zone_shutdown(argc - 3, &argv[3]);
-        }
-        else if (strcmp(argv[2], "list") == 0)
-        {
-            err = zone_list(argc - 3);
-        }
-        else
-        {
+        } else if (strcmp(argv[2], "list") == 0) {
+            err = zone_list(argc - 3, &argv[3]);
+        } else {
             help(1);
         }
-    }
-    else if (strcmp(argv[1], "virtio") == 0)
-    {
-        if (strcmp(argv[2], "start") == 0)
-        {
+    } else if (strcmp(argv[1], "virtio") == 0) {
+        if (strcmp(argv[2], "start") == 0) {
             err = virtio_start(argc, argv);
-        }
-        else
-        {
+        } else {
             help(1);
         }
-    } else
-    {
+    } else {
         help(1);
     }
 

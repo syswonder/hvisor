@@ -118,7 +118,7 @@ void virtio_net_event_handler(int fd, int epoll_type, void *param)
         return;
     }
     while (!virtqueue_is_empty(vq)) {
-        n = process_descriptor_chain(vq, &idx, &iov, NULL, 0);
+        n = process_descriptor_chain(vq, &idx, &iov, NULL, 0, false);
         if (n < 1 || n > VIRTQUEUE_NET_MAX_SIZE) {
             log_error("process_descriptor_chain failed");
             goto free_iov;
@@ -164,7 +164,7 @@ static void virtq_tx_handle_one_request(NetDev *net, VirtQueue *vq)
         return;
     }
 
-    n = process_descriptor_chain(vq, &idx, &iov, NULL, 1);
+    n = process_descriptor_chain(vq, &idx, &iov, NULL, 1, false);
     if (n < 1) {
         return ;
 	}
