@@ -13,6 +13,39 @@ hvisor-tool
 
 The following operations are performed in the `hvisor-tool` directory of an x86 host, using cross-compilation.  
 
+### Install libdrm
+
+We need libdrm to compile Virtio-gpu, considering **arm64** as target platform
+
+```shell
+wget https://dri.freedesktop.org/libdrm/libdrm-2.4.100.tar.gz
+tar -xzvf libdrm-2.4.100.tar.gz
+cd libdrm-2.4.100
+```
+
+tips: Versions beyond 2.4.100 will be compiled in a different way, check https://dri.freedesktop.org/libdrm for more versions
+
+```shell
+# install to your aarch64-linux-gnu compiler
+./configure --host=aarch64-linux-gnu --prefix=/usr/aarch64-linux-gnu && make && make install
+
+# install to `install` folder under libdrm
+mkdir install
+./configure --host=aarch64-linux-gnu --prefix=/path_to_install/install && make && make install
+
+# notice that `prefix` must be an absolute path
+```
+
+To support libdrm in your language server, just link include path to your setting files
+
+And finally, we need to edit `include_dirs` under hvisor-tool/tools/Makefiles
+
+```
+include_dirs := -I../include -I./include -I../cJSON/ -I/usr/aarch64-linux-gnu/include -I/usr/aarch64-linux-gnu/include/libdrm -L/usr/aarch64-linux-gnu/lib -ldrm -pthread
+```
+
+tips: You should edit it with your own install path
+
 ### Compile the command-line tools and kernel module  
 
 ```bash
@@ -135,6 +168,16 @@ The `nohup ... &` command creates a daemon process, with logs saved in `nohup.ou
 4. **Creating Virtio-net Device**  
 
    If the `status` attribute of the `net` device is `disable`, no Virtio-net device is created. If set to `enable`, a Virtio-net device is created with an MMIO region starting at `0xa003600`, length `0x200`, interrupt number 75, MAC address `00:16:3e:10:10:10`, and connected to a Tap device named `tap0`.  
+
+5. **Creating Virtio-gpu Device**
+
+   Creates a Virtio-gpu device with an MMIO region starting at `0xa003400` with length `0x200`, interrupt number 74. Default scanout size `width=1280px, height=800px`.
+
+#### Probing Physical GPU Device in Root Linux
+
+To probe physical GPU device in `Root Linux`, you should edit files under `hvisor/src/platform` to probe GPU device on PCI bus.Add your interrupt number of Virtio-gpu device to `ROOT_ZONE_IRQS`
+
+After booting Root Linux, you can do `dmesg | grep drm` or `lspci` to check if your GPU device is working. To check the devices supported by libdrm, do `apt install libdrm-tests` and `modetest`. 
 
 #### Shutting Down Virtio Devices  
 
