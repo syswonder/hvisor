@@ -16,3 +16,5 @@ driver/*.ko
 *_compile.sh
 /cJSON/
 /.github/
+cp.sh
+rpmsg_demo
