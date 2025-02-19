@@ -17,7 +17,10 @@
 #include <linux/uaccess.h>
 #include <linux/wait.h>
 
+#include "hvisor.h"
 #include "ivc.h"
+
+#ifdef ARM64
 
 struct ivc_info {
     __u64 len;
@@ -265,6 +268,16 @@ static void __exit ivc_exit(void) {
     // TODO
     pr_info("ivc exit done!!!\n");
 }
+
+#else
+// for other architecture we implement empty functions
+// because different linux versions has different kernel interfaces
+// TODO: add support for other architectures
+static int __init ivc_init(void) { return 0; }
+static void __exit ivc_exit(void) { return; }
+
+#endif
+
 module_init(ivc_init);
 module_exit(ivc_exit);
 

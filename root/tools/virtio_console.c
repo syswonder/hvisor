@@ -1,11 +1,16 @@
 #define _GNU_SOURCE
+
 #include "virtio_console.h"
 #include "log.h"
 #include "virtio.h"
 #include <errno.h>
 #include <fcntl.h>
+#include <math.h>
+#include <stdio.h>
 #include <stdlib.h>
+#include <sys/time.h>
 #include <termios.h>
+
 static uint8_t trashbuf[1024];
 
 ConsoleDev *init_console_dev() {
@@ -19,7 +24,7 @@ ConsoleDev *init_console_dev() {
 }
 
 static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
-    log_debug("%s", __func__);
+    // log_debug("%s", __func__);
     VirtIODevice *vdev = (VirtIODevice *)param;
     ConsoleDev *dev = (ConsoleDev *)vdev->dev;
     VirtQueue *vq = &vdev->vqs[CONSOLE_QUEUE_RX];
@@ -27,6 +32,7 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
     ssize_t len;
     struct iovec *iov = NULL;
     uint16_t idx;
+
     if (epoll_type != EPOLLIN || fd != dev->master_fd) {
         log_error("Invalid console event");
         return;
@@ -52,6 +58,12 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
             break;
         }
         len = readv(dev->master_fd, iov, n);
+        if (len > 0) {
+            for (int i = 0; i < len; i++) {
+                log_printf("%c", *(char *)&iov->iov_base[i]);
+            }
+            log_printf("] vq->last_avail_idx is %d\n", vq->last_avail_idx);
+        }
         if (len < 0 && errno == EWOULDBLOCK) {
             log_debug("no more bytes");
             vq->last_avail_idx--;
@@ -104,6 +116,7 @@ int virtio_console_init(VirtIODevice *vdev) {
     if (set_nonblocking(dev->master_fd) < 0) {
         dev->master_fd = -1;
         close(dev->master_fd);
+        log_error("Failed to set nonblocking mode, fd closed!");
     }
 
     dev->event =
@@ -149,6 +162,19 @@ static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq) {
     //         log_printf("%c", *(char*)&iov->iov_base[i]);
     //     log_printf("\n");
     // }
+
+    for (int i = 0; i < n; i++) {
+        log_printf("RAW:[");
+        for (int j = 0; j < iov[i].iov_len; j++) {
+            char x = *(char *)&iov[i].iov_base[j];
+            if (x == '\t' || x == '\n' || x == '\r') {
+                x = ' ';
+            }
+            log_printf("%c", x);
+        }
+        log_printf("]\n");
+    }
+
     if (n < 1) {
         return;
     }

@@ -1,11 +1,3 @@
-#include "virtio.h"
-#include "cJSON.h"
-#include "hvisor.h"
-#include "log.h"
-#include "virtio_blk.h"
-#include "virtio_console.h"
-#include "virtio_gpu.h"
-#include "virtio_net.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
@@ -22,6 +14,15 @@
 #include <sys/uio.h>
 #include <time.h>
 #include <unistd.h>
+
+#include "cJSON.h"
+#include "hvisor.h"
+#include "log.h"
+#include "virtio.h"
+#include "virtio_blk.h"
+#include "virtio_console.h"
+#include "virtio_gpu.h"
+#include "virtio_net.h"
 
 /// hvisor kernel module fd
 int ko_fd;
@@ -109,6 +110,9 @@ inline void write_barrier(void) {
 #ifdef RISCV64
     asm volatile("fence w,w" ::: "memory");
 #endif
+#ifdef LOONGARCH64
+    asm volatile("dbar 0" ::: "memory");
+#endif
 }
 
 inline void read_barrier(void) {
@@ -118,6 +122,9 @@ inline void read_barrier(void) {
 #ifdef RISCV64
     asm volatile("fence r,r" ::: "memory");
 #endif
+#ifdef LOONGARCH64
+    asm volatile("dbar 0" ::: "memory");
+#endif
 }
 
 inline void rw_barrier(void) {
@@ -126,6 +133,9 @@ inline void rw_barrier(void) {
 #endif
 #ifdef RISCV64
     asm volatile("fence rw,rw" ::: "memory");
+#endif
+#ifdef LOONGARCH64
+    asm volatile("dbar 0" ::: "memory");
 #endif
 }
 
@@ -147,8 +157,6 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
     vdev->zone_id = zone_id;
     vdev->irq_id = irq_id;
     vdev->type = dev_type;
-
-    // 根据设备类型进行初始化
     switch (dev_type) {
     case VirtioTBlock:
         vdev->regs.dev_feature = BLK_SUPPORTED_FEATURES;
@@ -185,6 +193,7 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
     }
 
     if (is_err)
+
         goto err;
 
     // If reaches max number of virtual devices
@@ -379,6 +388,7 @@ void virtqueue_set_used(VirtQueue *vq) {
 inline int descriptor2iov(int i, volatile VirtqDesc *vd, struct iovec *iov,
                           uint16_t *flags, int zone_id, bool copy_flags) {
     void *host_addr;
+
     host_addr = get_virt_addr((void *)vd->addr, zone_id);
     iov[i].iov_base = host_addr;
     iov[i].iov_len = vd->len;
@@ -386,6 +396,7 @@ inline int descriptor2iov(int i, volatile VirtqDesc *vd, struct iovec *iov,
     // host_addr, vd->len);
     if (copy_flags)
         flags[i] = vd->flags;
+
     return 0;
 }
 
@@ -460,8 +471,8 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
             for (;;) {
                 // log_debug("indirect desc next is %d", next);
                 ind_desc = &ind_table[next];
-                descriptor2iov(i, ind_desc, *iov, *flags, vq->dev->zone_id,
-                               copy_flags);
+                descriptor2iov(i, ind_desc, *iov, flags == NULL ? NULL : *flags,
+                               vq->dev->zone_id, copy_flags);
                 table_len--;
                 i++;
                 // No more next descriptor
@@ -475,8 +486,8 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
             }
         } else {
             // For a normal descriptor, copy it directly to iov
-            descriptor2iov(i, vdesc, *iov, *flags, vq->dev->zone_id,
-                           copy_flags);
+            descriptor2iov(i, vdesc, *iov, flags == NULL ? NULL : *flags,
+                           vq->dev->zone_id, copy_flags);
         }
     }
     return chain_len;
@@ -504,8 +515,82 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen) {
         used_idx, idx, vq->num);
 }
 
+// function for translating virtio offset to meaning string
+static const char *virtio_mmio_reg_name(uint64_t offset) {
+    switch (offset) {
+    case VIRTIO_MMIO_MAGIC_VALUE:
+        return "VIRTIO_MMIO_MAGIC_VALUE";
+    case VIRTIO_MMIO_VERSION:
+        return "VIRTIO_MMIO_VERSION";
+    case VIRTIO_MMIO_DEVICE_ID:
+        return "VIRTIO_MMIO_DEVICE_ID";
+    case VIRTIO_MMIO_VENDOR_ID:
+        return "VIRTIO_MMIO_VENDOR_ID";
+    case VIRTIO_MMIO_DEVICE_FEATURES:
+        return "VIRTIO_MMIO_DEVICE_FEATURES";
+    case VIRTIO_MMIO_DEVICE_FEATURES_SEL:
+        return "VIRTIO_MMIO_DEVICE_FEATURES_SEL";
+    case VIRTIO_MMIO_DRIVER_FEATURES:
+        return "VIRTIO_MMIO_DRIVER_FEATURES";
+    case VIRTIO_MMIO_DRIVER_FEATURES_SEL:
+        return "VIRTIO_MMIO_DRIVER_FEATURES_SEL";
+    case VIRTIO_MMIO_GUEST_PAGE_SIZE:
+        return "VIRTIO_MMIO_GUEST_PAGE_SIZE";
+    case VIRTIO_MMIO_QUEUE_SEL:
+        return "VIRTIO_MMIO_QUEUE_SEL";
+    case VIRTIO_MMIO_QUEUE_NUM_MAX:
+        return "VIRTIO_MMIO_QUEUE_NUM_MAX";
+    case VIRTIO_MMIO_QUEUE_NUM:
+        return "VIRTIO_MMIO_QUEUE_NUM";
+    case VIRTIO_MMIO_QUEUE_ALIGN:
+        return "VIRTIO_MMIO_QUEUE_ALIGN";
+    case VIRTIO_MMIO_QUEUE_PFN:
+        return "VIRTIO_MMIO_QUEUE_PFN";
+    case VIRTIO_MMIO_QUEUE_READY:
+        return "VIRTIO_MMIO_QUEUE_READY";
+    case VIRTIO_MMIO_QUEUE_NOTIFY:
+        return "VIRTIO_MMIO_QUEUE_NOTIFY";
+    case VIRTIO_MMIO_INTERRUPT_STATUS:
+        return "VIRTIO_MMIO_INTERRUPT_STATUS";
+    case VIRTIO_MMIO_INTERRUPT_ACK:
+        return "VIRTIO_MMIO_INTERRUPT_ACK";
+    case VIRTIO_MMIO_STATUS:
+        return "VIRTIO_MMIO_STATUS";
+    case VIRTIO_MMIO_QUEUE_DESC_LOW:
+        return "VIRTIO_MMIO_QUEUE_DESC_LOW";
+    case VIRTIO_MMIO_QUEUE_DESC_HIGH:
+        return "VIRTIO_MMIO_QUEUE_DESC_HIGH";
+    case VIRTIO_MMIO_QUEUE_AVAIL_LOW:
+        return "VIRTIO_MMIO_QUEUE_AVAIL_LOW";
+    case VIRTIO_MMIO_QUEUE_AVAIL_HIGH:
+        return "VIRTIO_MMIO_QUEUE_AVAIL_HIGH";
+    case VIRTIO_MMIO_QUEUE_USED_LOW:
+        return "VIRTIO_MMIO_QUEUE_USED_LOW";
+    case VIRTIO_MMIO_QUEUE_USED_HIGH:
+        return "VIRTIO_MMIO_QUEUE_USED_HIGH";
+    case VIRTIO_MMIO_SHM_SEL:
+        return "VIRTIO_MMIO_SHM_SEL";
+    case VIRTIO_MMIO_SHM_LEN_LOW:
+        return "VIRTIO_MMIO_SHM_LEN_LOW";
+    case VIRTIO_MMIO_SHM_LEN_HIGH:
+        return "VIRTIO_MMIO_SHM_LEN_HIGH";
+    case VIRTIO_MMIO_SHM_BASE_LOW:
+        return "VIRTIO_MMIO_SHM_BASE_LOW";
+    case VIRTIO_MMIO_SHM_BASE_HIGH:
+        return "VIRTIO_MMIO_SHM_BASE_HIGH";
+    case VIRTIO_MMIO_CONFIG_GENERATION:
+        return "VIRTIO_MMIO_CONFIG_GENERATION";
+    case VIRTIO_MMIO_CONFIG:
+        return "VIRTIO_MMIO_CONFIG";
+    default:
+        return "UNKNOWN";
+    }
+}
+
 uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size) {
     log_debug("virtio mmio read at %#x", offset);
+    log_info("READ virtio mmio at offset=%#x[%s], size=%d, vdev=%p", offset,
+             virtio_mmio_reg_name(offset), size, vdev);
 
     if (!vdev) {
         switch (offset) {
@@ -563,7 +648,14 @@ uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size) {
         log_debug("read VIRTIO_MMIO_QUEUE_READY");
         return vdev->vqs[vdev->regs.queue_sel].ready;
     case VIRTIO_MMIO_INTERRUPT_STATUS:
-        log_debug("read VIRTIO_MMIO_INTERRUPT_STATUS");
+        log_info("debug: (%s) current interrupt status is %d", __func__,
+                 vdev->regs.interrupt_status);
+#ifdef LOONGARCH64
+        // clear lvz gintc irq injection bit to avoid endless interrupt...
+        log_warn(
+            "clear lvz gintc irq injection bit to avoid endless interrupt...");
+        ioctl(ko_fd, HVISOR_CLEAR_INJECT_IRQ);
+#endif
         if (vdev->regs.interrupt_status == 0) {
             log_error("virtio-mmio-read: interrupt status is 0, type is %d",
                       vdev->type);
@@ -600,6 +692,10 @@ uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size) {
 void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t value,
                        unsigned size) {
     log_debug("virtio mmio write at %#x, value is %#x\n", offset, value);
+
+    log_info("WRITE virtio mmio at offset=%#x[%s], value=%#x, size=%d, vdev=%p",
+             offset, virtio_mmio_reg_name(offset), value, size, vdev);
+
     VirtMmioRegs *regs = &vdev->regs;
     VirtQueue *vqs = vdev->vqs;
     if (!vdev) {
@@ -700,6 +796,8 @@ void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t value,
                       vdev->type);
         }
         regs->interrupt_status &= !value;
+        log_info("debug: (%s) clearing! interrupt_status -> %d", __func__,
+                 regs->interrupt_status);
         break;
     case VIRTIO_MMIO_STATUS:
         log_debug("write VIRTIO_MMIO_STATUS");
@@ -900,9 +998,10 @@ void handle_virtio_requests() {
     int signal_count = 0, proc_count = 0;
     unsigned long long count = 0;
     for (;;) {
+#ifndef LOONGARCH64
         log_warn("signal_count is %d, proc_count is %d", signal_count,
                  proc_count);
-        sigwait(&wait_set, &sig);
+        sigwait(&wait_set, &sig); // change to no signal irq
         signal_count++;
         if (sig == SIGTERM) {
             virtio_close();
@@ -911,6 +1010,7 @@ void handle_virtio_requests() {
             log_error("unknown signal %d", sig);
             continue;
         }
+#endif
         while (1) {
             if (!is_queue_empty(req_front, virtio_bridge->req_rear)) {
                 count = 0;
@@ -921,7 +1021,9 @@ void handle_virtio_requests() {
                 req_front = (req_front + 1) & (MAX_REQ - 1);
                 virtio_bridge->req_front = req_front;
                 write_barrier();
-            } else {
+            }
+#ifndef LOONGARCH64
+            else {
                 count++;
                 if (count < 10000000)
                     continue;
@@ -933,6 +1035,7 @@ void handle_virtio_requests() {
                     break;
                 }
             }
+#endif
         }
     }
 }

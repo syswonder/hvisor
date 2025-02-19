@@ -98,8 +98,13 @@ static __u64 load_image_to_memory(const char *path, __u64 load_paddr) {
     map_size = (size + page_size - 1) & ~(page_size - 1);
 
     // Map the physical memory to virtual memory
+#ifdef LOONGARCH64
+    virt_addr = (__u64)mmap(NULL, map_size, PROT_READ | PROT_WRITE | PROT_EXEC,
+                            MAP_SHARED, fd, load_paddr);
+#else
     virt_addr = mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
                      load_paddr);
+#endif
 
     if (virt_addr == MAP_FAILED) {
         perror("Error mapping memory");
@@ -441,6 +446,9 @@ static int zone_start_from_json(const char *json_config_path,
         dtb_filepath_json->valuestring,
         strtoull(dtb_load_paddr_json->valuestring, NULL, 16));
 
+    printf("Kernel size: %llu, DTB size: %llu\n", config->kernel_size,
+           config->dtb_size);
+
     // check name length
     if (strlen(name_json->valuestring) > CONFIG_NAME_MAXLEN) {
         fprintf(stderr, "Zone name too long: %s\n", name_json->valuestring);
@@ -448,11 +456,17 @@ static int zone_start_from_json(const char *json_config_path,
     }
     strncpy(config->name, name_json->valuestring, CONFIG_NAME_MAXLEN);
 
+    printf("Zone name: %s\n", config->name);
+
+#ifndef LOONGARCH64
+
     // Parse architecture-specific configurations (interrupts for each platform)
     if (!parse_arch_config(root, config))
         goto err_out;
 
     parse_pci_config(root, config);
+
+#endif
 
     if (root)
         cJSON_Delete(root);
@@ -460,6 +474,13 @@ static int zone_start_from_json(const char *json_config_path,
         free(buffer);
 
     int fd = open_dev();
+    if (fd < 0) {
+        perror("zone_start: open hvisor failed");
+        goto err_out;
+    }
+
+    printf("Calling ioctl to start zone: [%s]\n", config->name);
+
     int err = ioctl(fd, HVISOR_ZONE_START, config);
 
     if (err)

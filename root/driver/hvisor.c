@@ -81,7 +81,6 @@ static int hvisor_finish_req(void) {
 
 static int hvisor_zone_start(zone_config_t __user *arg) {
     int err = 0;
-    printk("hvisor_zone_start\n");
     zone_config_t *zone_config = kmalloc(sizeof(zone_config_t), GFP_KERNEL);
 
     if (zone_config == NULL) {
@@ -97,12 +96,15 @@ static int hvisor_zone_start(zone_config_t __user *arg) {
     // flush_cache(zone_config->kernel_load_paddr, zone_config->kernel_size);
     // flush_cache(zone_config->dtb_load_paddr, zone_config->dtb_size);
 
+    pr_info("hvisor: calling hypercall to start zone\n");
+
     err = hvisor_call(HVISOR_HC_START_ZONE, __pa(zone_config),
                       sizeof(zone_config_t));
     kfree(zone_config);
     return err;
 }
 
+#ifndef LOONGARCH64
 static int is_reserved_memory(unsigned long phys, unsigned long size) {
     struct device_node *parent, *child;
     struct reserved_mem *rmem;
@@ -122,6 +124,7 @@ static int is_reserved_memory(unsigned long phys, unsigned long size) {
     }
     return 0;
 }
+#endif
 
 static int hvisor_zone_list(zone_list_args_t __user *arg) {
     int ret;
@@ -172,6 +175,11 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
     case HVISOR_FINISH_REQ:
         err = hvisor_finish_req();
         break;
+#ifdef LOONGARCH64
+    case HVISOR_CLEAR_INJECT_IRQ:
+        err = hvisor_call(HVISOR_HC_CLEAR_INJECT_IRQ, 0, 0);
+        break;
+#endif
     default:
         err = -EINVAL;
         break;
