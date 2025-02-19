@@ -1,11 +1,3 @@
-#include "virtio.h"
-#include "cJSON.h"
-#include "hvisor.h"
-#include "log.h"
-#include "virtio_blk.h"
-#include "virtio_console.h"
-#include "virtio_gpu.h"
-#include "virtio_net.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
@@ -22,6 +14,15 @@
 #include <sys/uio.h>
 #include <time.h>
 #include <unistd.h>
+
+#include "cJSON.h"
+#include "hvisor.h"
+#include "log.h"
+#include "virtio.h"
+#include "virtio_blk.h"
+#include "virtio_console.h"
+#include "virtio_gpu.h"
+#include "virtio_net.h"
 
 /// hvisor kernel module fd
 int ko_fd;
@@ -102,7 +103,7 @@ inline int is_queue_empty(unsigned int front, unsigned int rear) {
 
 /// Write barrier to make sure all write operations are finished before this
 /// operation
-static inline void write_barrier(void) {
+inline void write_barrier(void) {
 #ifdef ARM64
     asm volatile("dmb ishst" ::: "memory");
 #endif
@@ -114,7 +115,7 @@ static inline void write_barrier(void) {
 #endif
 }
 
-static inline void read_barrier(void) {
+inline void read_barrier(void) {
 #ifdef ARM64
     asm volatile("dmb ishld" ::: "memory");
 #endif
@@ -126,7 +127,7 @@ static inline void read_barrier(void) {
 #endif
 }
 
-static inline void rw_barrier(void) {
+inline void rw_barrier(void) {
 #ifdef ARM64
     asm volatile("dmb ish" ::: "memory");
 #endif
@@ -161,7 +162,7 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
         vdev->regs.dev_feature = BLK_SUPPORTED_FEATURES;
         vdev->dev = init_blk_dev(vdev);
         init_virtio_queue(vdev, dev_type);
-        is_err = virtio_blk_init(vdev, (const char  *)arg0);
+        is_err = virtio_blk_init(vdev, (const char *)arg0);
         break;
 
     case VirtioTNet:
@@ -192,7 +193,7 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
     }
 
     if (is_err)
-       
+
         goto err;
 
     // If reaches max number of virtual devices
@@ -586,8 +587,6 @@ static const char *virtio_mmio_reg_name(uint64_t offset) {
     }
 }
 
-static uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset,
-                                 unsigned size) {
 uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size) {
     log_debug("virtio mmio read at %#x", offset);
 

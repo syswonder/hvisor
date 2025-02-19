@@ -23,6 +23,12 @@ tar -xzvf libdrm-2.4.100.tar.gz
 cd libdrm-2.4.100
 ```
 
+for loongarch64 you need this configuration:
+
+```shell
+./configure --host=loongarch64-unknown-linux-gnu --disable-nouveau --disable-intel --prefix=/opt/libdrm-install && make && sudo make install
+```
+
 tips: Versions beyond 2.4.100 will be compiled in a different way, check https://dri.freedesktop.org/libdrm for more versions
 
 ```shell
