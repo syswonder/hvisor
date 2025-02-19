@@ -1,5 +1,7 @@
 #include <linux/init.h>
 #include <linux/interrupt.h>
+#include <linux/init.h>
+#include <linux/interrupt.h>
 #include <linux/kernel.h>
 #include <linux/miscdevice.h>
 #include <linux/mm.h>
@@ -83,8 +85,6 @@ static int hvisor_zone_start(zone_config_t __user *arg) {
     int err = 0;
     zone_config_t *zone_config = kmalloc(sizeof(zone_config_t), GFP_KERNEL);
 
-    pr_info("debug: hvisor_zone_start\n");
-
     if (zone_config == NULL) {
         pr_err("hvisor: failed to allocate memory for zone_config\n");
     }
@@ -98,13 +98,8 @@ static int hvisor_zone_start(zone_config_t __user *arg) {
     // flush_cache(zone_config->kernel_load_paddr, zone_config->kernel_size);
     // flush_cache(zone_config->dtb_load_paddr, zone_config->dtb_size);
 
-    // pr_info("debug: hvisor_zone_start calling hvisor_call\n");
-
     err = hvisor_call(HVISOR_HC_START_ZONE, __pa(zone_config),
                       sizeof(zone_config_t));
-
-    // pr_info("debug: hvisor_zone_start hvcall done, err: %d\n", err);
-
     kfree(zone_config);
     return err;
 }
@@ -146,7 +141,6 @@ static int hvisor_zone_list(zone_list_args_t __user *arg) {
     memset(zones, 0, args.cnt * sizeof(zone_info_t));
 
     ret = hvisor_call(HVISOR_HC_ZONE_LIST, __pa(zones), args.cnt);
-
     if (ret < 0) {
         pr_err("hvisor: failed to get zone list\n");
         goto out;
@@ -197,10 +191,6 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
 static int hvisor_map(struct file *filp, struct vm_area_struct *vma) {
     unsigned long phys;
     int err;
-
-    pr_info("hvior mmap handler, vmarea start: %lx, end: %lx, pgoff: %lx\n",
-            vma->vm_start, vma->vm_end, vma->vm_pgoff);
-
     if (vma->vm_pgoff == 0) {
         // virtio_bridge must be aligned to one page.
         phys = virt_to_phys(virtio_bridge);

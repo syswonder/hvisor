@@ -16,9 +16,9 @@ else
 	COMPILE := 
 endif
 
-EXTRA_CFLAGS += -I$(shell pwd)/../include -Werror -Wall
+EXTRA_CFLAGS += -I$(PWD)/include -Werror -Walla
 
-ivc-y := ivc_driver.o 
+ivc-y := ivc_driver.o
 
 .SECONDARY: \
         $(obj)/hivc_template.dtb.S \

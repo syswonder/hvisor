@@ -15,6 +15,7 @@ driver/*.ko
 *.d
 *_compile.sh
 /cJSON/
-/.github/
+cp.sh
+rpmsg_demo
 __loongarch*
 .vscode-ctags
