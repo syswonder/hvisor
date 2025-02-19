@@ -1,0 +1,24 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  code-check:
+    name: code style check
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+      
+      - name: Check code style
+        shell: bash
+        run: |
+          set -e
+          sudo apt-get install -y clang-format
+          find ./tools/ ./include/ ./driver/ -name "*.c" ! -name "*.mod.c" -o -name "*.h" | xargs clang-format -n --Werror
+          echo "Code style check passed"
+
