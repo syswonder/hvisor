@@ -1,4 +1,4 @@
-KDIR ?= ~/linux
+KDIR ?= 
 DEV ?= /dev/sda1
 ARCH ?= arm64
 LOG ?= LOG_INFO

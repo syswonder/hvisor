@@ -9,9 +9,13 @@
 #include <termios.h>
 
 #include "log.h"
-#include "virtio.h"
 #include "virtio_console.h"
-
+#include "log.h"
+#include "virtio.h"
+#include <errno.h>
+#include <fcntl.h>
+#include <stdlib.h>
+#include <termios.h>
 static uint8_t trashbuf[1024];
 
 ConsoleDev *init_console_dev() {
@@ -42,7 +46,6 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
         log_error("console event handler should not be called");
         return;
     }
-
     if (dev->rx_ready <= 0) {
         read(dev->master_fd, trashbuf, sizeof(trashbuf));
         return;
@@ -54,7 +57,7 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
     }
 
     while (!virtqueue_is_empty(vq)) {
-        n = process_descriptor_chain(vq, &idx, &iov, NULL, 0);
+        n = process_descriptor_chain(vq, &idx, &iov, NULL, 0, false);
         if (n < 1) {
             log_error("process_descriptor_chain failed");
             break;
@@ -106,7 +109,7 @@ int virtio_console_init(VirtIODevice *vdev) {
     if (slave_name == NULL) {
         log_error("Failed to get slave name, errno is %d", errno);
     }
-    log_warn("char device redirected to %s, fd=%d", slave_name, master_fd);
+    log_warn("char device redirected to %s", slave_name);
     // Disable line discipline to prevent the TTY
     // from echoing the characters sent from the master back to the master.
     slave_fd = open(slave_name, O_RDWR);
@@ -157,7 +160,7 @@ static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq) {
         return;
     }
 
-    n = process_descriptor_chain(vq, &idx, &iov, NULL, 0);
+    n = process_descriptor_chain(vq, &idx, &iov, NULL, 0, false);
     // if (count % 100 == 0) {
     //     log_info("console txq: n is %d, data is ", n);
     //     for (int i=0; i<iov->iov_len; i++)

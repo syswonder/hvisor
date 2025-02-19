@@ -1,4 +1,5 @@
 #include <errno.h>
+#include <errno.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -10,10 +11,8 @@ static int epoll_fd;
 static int events_num;
 pthread_t emonitor_tid;
 int closing;
-
 #define MAX_EVENTS 16
 struct hvisor_event *events[MAX_EVENTS];
-
 static void *epoll_loop() {
     struct epoll_event events[MAX_EVENTS];
     struct hvisor_event *hevent;
