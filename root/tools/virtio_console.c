@@ -1,5 +1,8 @@
 #define _GNU_SOURCE
 
+#include "virtio_console.h"
+#include "log.h"
+#include "virtio.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <math.h>
@@ -7,9 +10,6 @@
 #include <stdlib.h>
 #include <sys/time.h>
 #include <termios.h>
-#include "log.h"
-#include "virtio_console.h"
-#include "virtio.h"
 
 static uint8_t trashbuf[1024];
 
