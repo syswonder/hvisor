@@ -26,7 +26,7 @@ QEMU_ARGS += -global arm-smmuv3.stage=2
 
 QEMU_ARGS += -cpu cortex-a53
 QEMU_ARGS += -smp 4
-QEMU_ARGS += -m 2G
+QEMU_ARGS += -m 3G
 QEMU_ARGS += -nographic
 QEMU_ARGS += -bios $(UBOOT)
 
