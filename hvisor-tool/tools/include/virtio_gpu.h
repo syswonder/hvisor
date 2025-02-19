@@ -1,5 +1,6 @@
 #ifndef _HVISOR_VIRTIO_GPU_H
 #define _HVISOR_VIRTIO_GPU_H
+
 #include "bits/pthreadtypes.h"
 #include "linux/types.h"
 #include "sys/queue.h"

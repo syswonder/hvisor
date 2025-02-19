@@ -17,3 +17,9 @@ driver/*.ko
 /cJSON/
 cp.sh
 rpmsg_demo
+__loongarch*
+.vscode-ctags
+
+# kbuild
+.config
+.config.old

@@ -9,6 +9,10 @@
 #define RISCV64
 #endif
 
+#ifdef __loongarch64__
+#define LOONGARCH64
+#endif
+
 #ifdef RISCV64
 
 // according to the riscv sbi spec

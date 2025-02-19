@@ -1,9 +1,11 @@
-#include "event_monitor.h"
-#include "log.h"
 #include <errno.h>
 #include <pthread.h>
 #include <stdlib.h>
 #include <unistd.h>
+
+#include "event_monitor.h"
+#include "log.h"
+
 static int epoll_fd;
 static int events_num;
 pthread_t emonitor_tid;
@@ -16,7 +18,7 @@ static void *epoll_loop() {
     int ret, i;
     for (;;) {
         ret = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
-        log_debug("ret is %d, errno is %d", ret, errno);
+        // log_debug("ret is %d, errno is %d", ret, errno);
         if (ret < 0 && errno != EINTR)
             log_error("epoll_wait failed, errno is %d", errno);
         for (i = 0; i < ret; ++i) {

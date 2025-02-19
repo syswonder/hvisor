@@ -36,6 +36,12 @@ mkdir install
 # `prefix`必须是一个绝对路径
 ```
 
+对于 loongarch64 需要使用：
+
+```shell
+./configure --host=loongarch64-unknown-linux-gnu --disable-nouveau --disable-intel --prefix=/opt/libdrm-install && make && sudo make install
+```
+
 如果需要使用语言服务器的语法支持，那么需要将安装地址的include和lib文件夹链到相关的配置文件中。
 
 最后，我们需要修改hvisor-tool/tools/Makefiles的`include_dirs`字段。
