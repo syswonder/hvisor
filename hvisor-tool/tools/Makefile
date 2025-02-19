@@ -28,7 +28,7 @@ else ifeq ($(ARCH), loongarch)
 	READELF := loongarch64-unknown-linux-gnu-readelf
 	OBJDUMP := loongarch64-unknown-linux-gnu-objdump
 	CFLAGS += -DLOONGARCH64 -static
-	include_dirs += -I/opt/libdrm-install/include -L/opt/libdrm-install/lib -ldrm -pthread -I/opt/libdrm-install/include/libdrm
+	include_dirs += -I/opt/libdrm-install/include -L/opt/libdrm-install/lib -I/opt/libdrm-install/include/libdrm -ldrm -pthread
 else
 	CC := gcc
 endif

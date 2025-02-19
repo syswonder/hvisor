@@ -471,8 +471,8 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
             for (;;) {
                 // log_debug("indirect desc next is %d", next);
                 ind_desc = &ind_table[next];
-                descriptor2iov(i, ind_desc, *iov, *flags, vq->dev->zone_id,
-                               copy_flags);
+                descriptor2iov(i, ind_desc, *iov, flags == NULL ? NULL : *flags,
+                               vq->dev->zone_id, copy_flags);
                 table_len--;
                 i++;
                 // No more next descriptor
@@ -486,8 +486,8 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
             }
         } else {
             // For a normal descriptor, copy it directly to iov
-            descriptor2iov(i, vdesc, *iov, *flags, vq->dev->zone_id,
-                           copy_flags);
+            descriptor2iov(i, vdesc, *iov, flags == NULL ? NULL : *flags,
+                           vq->dev->zone_id, copy_flags);
         }
     }
     return chain_len;
@@ -589,6 +589,8 @@ static const char *virtio_mmio_reg_name(uint64_t offset) {
 
 uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size) {
     log_debug("virtio mmio read at %#x", offset);
+    log_info("READ virtio mmio at offset=%#x[%s], size=%d, vdev=%p", offset,
+             virtio_mmio_reg_name(offset), size, vdev);
 
     if (!vdev) {
         switch (offset) {

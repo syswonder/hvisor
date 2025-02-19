@@ -24,7 +24,7 @@ ConsoleDev *init_console_dev() {
 }
 
 static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
-    log_debug("%s", __func__);
+    // log_debug("%s", __func__);
     VirtIODevice *vdev = (VirtIODevice *)param;
     ConsoleDev *dev = (ConsoleDev *)vdev->dev;
     VirtQueue *vq = &vdev->vqs[CONSOLE_QUEUE_RX];
