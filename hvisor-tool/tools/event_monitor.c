@@ -14,19 +14,16 @@ int closing;
 #define MAX_EVENTS 16
 struct hvisor_event *events[MAX_EVENTS];
 
-static void *epoll_loop()
-{
+static void *epoll_loop() {
     struct epoll_event events[MAX_EVENTS];
     struct hvisor_event *hevent;
     int ret, i;
-    for (;;)
-    {
+    for (;;) {
         ret = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         log_debug("ret is %d, errno is %d", ret, errno);
         if (ret < 0 && errno != EINTR)
             log_error("epoll_wait failed, errno is %d", errno);
-        for (i = 0; i < ret; ++i)
-        {
+        for (i = 0; i < ret; ++i) {
             // handle active hvisor_event
             hevent = events[i].data.ptr;
             if (hevent == NULL)
@@ -39,18 +36,15 @@ static void *epoll_loop()
 }
 
 struct hvisor_event *add_event(int fd, int epoll_type,
-                               void (*handler)(int, int, void *), void *param)
-{
+                               void (*handler)(int, int, void *), void *param) {
     struct hvisor_event *hevent;
     struct epoll_event eevent;
     int ret;
-    if (events_num >= MAX_EVENTS)
-    {
+    if (events_num >= MAX_EVENTS) {
         log_error("events are full");
         return NULL;
     }
-    if (fd < 0 || handler == NULL)
-    {
+    if (fd < 0 || handler == NULL) {
         log_error("invalid fd or handler");
         return NULL;
     }
@@ -63,14 +57,11 @@ struct hvisor_event *add_event(int fd, int epoll_type,
     eevent.events = epoll_type;
     eevent.data.ptr = hevent;
     ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, hevent->fd, &eevent);
-    if (ret < 0)
-    {
+    if (ret < 0) {
         log_error("epoll_ctl failed, errno is %d", errno);
         free(hevent);
         return NULL;
-    }
-    else
-    {
+    } else {
         events[events_num] = hevent;
         events_num++;
         return hevent;
@@ -78,22 +69,19 @@ struct hvisor_event *add_event(int fd, int epoll_type,
 }
 
 // Create a thread monitoring events.
-int initialize_event_monitor()
-{
+int initialize_event_monitor() {
     epoll_fd = epoll_create1(0);
     log_debug("create epoll_fd is %d", epoll_fd);
     pthread_create(&emonitor_tid, NULL, epoll_loop, NULL);
     if (epoll_fd >= 0)
         return 0;
-    else
-    {
+    else {
         log_error("hvisor_event init failed");
         return -1;
     }
 }
 
-void destroy_event_monitor()
-{
+void destroy_event_monitor() {
     int i;
     for (i = 0; i < events_num; i++)
         epoll_ctl(epoll_fd, EPOLL_CTL_DEL, events[i]->fd, NULL);
