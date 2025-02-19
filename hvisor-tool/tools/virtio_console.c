@@ -163,12 +163,6 @@ static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq) {
     //     log_printf("\n");
     // }
 
-    log_printf("debug: (%s) console txq: n is %d, iov at ", __func__, n);
-    for (int i = 0; i < n; i++) {
-        log_printf("[%d:%#x|%d] ", i, iov[i].iov_base, iov[i].iov_len);
-    }
-    log_printf("\n");
-#if 1
     for (int i = 0; i < n; i++) {
         log_printf("RAW:[");
         for (int j = 0; j < iov[i].iov_len; j++) {
@@ -180,7 +174,6 @@ static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq) {
         }
         log_printf("]\n");
     }
-#endif
 
     if (n < 1) {
         return;

@@ -16,7 +16,7 @@ else
 	COMPILE := 
 endif
 
-EXTRA_CFLAGS += -I$(PWD)/include -Werror -Wall
+EXTRA_CFLAGS += -I$(PWD)/include -Wall
 
 ivc-y := ivc_driver.o
 
