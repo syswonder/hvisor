@@ -1,9 +1,9 @@
 #ifndef __IVC_H
 #define __IVC_H
-#include "def.h"
 #include <linux/ioctl.h>
 #include <linux/types.h>
 
+#include "def.h"
 #define HVISOR_IVC_USER_INFO _IOR('I', 0, ivc_uinfo_t *)
 
 #define CONFIG_MAX_IVC_CONFIGS 2
