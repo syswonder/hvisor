@@ -14,7 +14,7 @@
 
 README：[中文](./README-zh.md) | [English](./README.md)
 
-hvisor 是一个用 Rust 实现的 Type-1 本地裸机虚拟机监控器，采用分离内核设计，提供高效的硬件资源虚拟化和隔离能力。该虚拟机监控器允许严格的系统环境分离，通过不同的区域确保虚拟化环境的性能和安全性。
+hvisor 是一个用 Rust 实现的 Type-1 裸机虚拟机监控器，采用分离内核（Separation Kernel）设计，提供高效的硬件资源虚拟化和隔离能力。该虚拟机监控器实现了严格的虚拟机环境分离，通过不同的区域（zone）确保虚拟化环境的性能和安全性。
 
 ## 特性
 
@@ -52,18 +52,20 @@ hvisor 是一个用 Rust 实现的 Type-1 本地裸机虚拟机监控器，采�
 
 - [x] QEMU virt aarch64
 - [x] NXP i.MX8MP
-- [x] Raspberry Pi 4B
 - [x] Xilinx Ultrascale+ MPSoC ZCU102
 - [ ] Rockchip RK3588
+- [ ] Rockchip RK3568
+- [ ] Forlinx OK6254-C
 
 ### riscv64
 
 - [x] QEMU virt riscv64
-- [ ] FPGA RocketChip
+- [ ] FPGA 香山（昆明湖）on S2C Prodigy S7-19PS-2
+- [ ] FPGA  RocketChip on Xilinx Ultrascale+ MPSoC ZCU102
 
 ### loongarch64
 
-- [x] Loongson 3A5000 与 7A2000 桥片
+- [x] Loongson 3A5000+7A2000
 - [ ] Loongson 3A6000
 
 ## 开始使用
