@@ -1,5 +1,3 @@
-<!-- # hvisor  -->
-
 <p align = "center">
 <br><br>
 <img src="https://www.syswonder.org/_media/hvisor-logo.svg">
@@ -14,44 +12,41 @@
 <br><br>
 </p>
 
-README：[中文](./README-zh.md) | [English](./README.md)
+README: [中文](./README-zh.md) | [English](./README.md)
 
-hvisor is a Type-1 bare-metal hypervisor implemented in Rust, leveraging the separation kernel design to offer robust hardware resource virtualization and isolation. The hypervisor allows for strict separation of system environments across different zones, ensuring both performance and security in a virtualized environment.
-
-<!-- 🚧 This project is work in progress -->
+hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featuring a separation kernel design to provide efficient hardware resource virtualization and isolation. This virtual machine monitor allows strict system environment separation, ensuring performance and security of the virtualized environments through distinct regions.
 
 ## Features
 
-- **Separation Kernel Design**: Virtual machines are classified into three zones: zone0 (management), zoneU (user), and zoneR (real-time), with strict isolation between them.
-- **Multi-Platform Support**: Works on a variety of architectures, including aarch64, riscv64, and loongarch64.
-- **Virtual Machine Management**: VMs are managed through a Linux environment in zone0 (root-linux), where administrative tasks are performed using command-line tool [hvisor-tool](https://github.com/syswonder/hvisor-tool).
-- **Device Support**: Includes virtio devices, serial devices, interrupt controllers, PCIe support, etc.
-  - Virtio devices:
-    - virtio-blk (aarch64)
-    - virtio-net (aarch64)
-    - virtio-console (aarch64, loongarch64)
-    - virtio-gpu (aarch64)
-  - Serial devices/UARTs:
-    - PL011 (aarch64)
-    - imx-uart (NXP i.MX8MP aarch64)
-    - NS16550A (loongarch64)
-    - xuartps (Xilinx Ultrascale+ MPSoC ZCU102 aarch64)
-  - Interrupt controllers:
-    - GIC irq controller (aarch64)
-    - 7A2000 irq controller (loongarch64)
-    - PLIC (riscv64)
-    - AIA-APIC (hvisor now only support msi mode) (riscv64)
-  - PCIe passthrough (aarch64, riscv)
-  - GPU passthrough (NXP i.MX8MP aarch64)
-- **Architecture Hardware Features Support**: 
-  - GICv2, GICv3 (aarch64)
-  - ARM Virtualization (aarch64)
-  - LVZ(Loongson Virtualization) Extension (loongarch64)
-  - H extension (riscv64)
-  - SMMUv3 (aarch64)
+- **Separation Kernel Design**: The virtual machine is divided into three regions: zone0 (management zone), zoneU (user zone), and zoneR (real-time zone), with strict isolation between them.
+- **Simple and Lightweight**: hvisor is implemented in Rust with a minimal design.
+  - CPU Virtualization: Static partitioning of physical CPUs (pCPUs), without dynamic scheduling.
+  - Memory Virtualization: Pre-allocated virtual machine memory space via configuration files.
+  - I/O Virtualization: Supports device passthrough and virtio paravirtualization.
+- **Multi-platform Support**: Supports various architectures, including `aarch64`, `riscv64`, and `loongarch64`.
+- **Virtual Machine Management**: Virtual machines are managed through a Linux environment in zone0 (root-linux), with basic management tasks (create, start, stop, delete) handled via the command-line tool [hvisor-tool](https://github.com/syswonder/hvisor-tool).
+- **Formal Verification**: Part of the virtual machine monitor code is undergoing formal verification using the [verus](https://github.com/verus-lang/verus) tool.
 
+## Device Support
 
-## Supported Platforms
+| **Category**              | **Device**            | **Supported Architectures** | **Notes**                       |
+| ------------------------- | --------------------- | --------------------------- | ------------------------------- |
+| **Virtio Devices**        | virtio-blk            | `aarch64`                   |                                 |
+|                           | virtio-net            | `aarch64`                   |                                 |
+|                           | virtio-console        | `aarch64`, `loongarch64`    |                                 |
+|                           | virtio-gpu            | `aarch64`                   | Only supports QEMU              |
+| **Serial Devices/UARTs**  | PL011                 | `aarch64`                   |                                 |
+|                           | imx-uart              | `aarch64`                   | NXP i.MX8MP                     |
+|                           | NS16550A              | `loongarch64`               |                                 |
+|                           | xuartps               | `aarch64`                   | Xilinx Ultrascale+ MPSoC ZCU102 |
+| **Interrupt Controllers** | GIC irq controller    | `aarch64`                   |                                 |
+|                           | 7A2000 irq controller | `loongarch64`               |                                 |
+|                           | PLIC                  | `riscv64`                   |                                 |
+|                           | AIA-APIC              | `riscv64`                   | Only supports MSI mode          |
+| **PCIe Passthrough**      | PCIe                  | `aarch64`, `riscv`          |                                 |
+| **GPU Passthrough**       | GPU                   | `aarch64`                   | NXP i.MX8MP                     |
+
+## Supported Boards
 
 ### aarch64
 
@@ -68,18 +63,18 @@ hvisor is a Type-1 bare-metal hypervisor implemented in Rust, leveraging the sep
 
 ### loongarch64
 
-- [x] Loongson 3A5000 with 7A2000 bridge
+- [x] Loongson 3A5000 and 7A2000 bridge chip
 - [ ] Loongson 3A6000
 
 ## Getting Started
 
-Please refer to the Quick Start Guide section of the hvisor documentation for detailed build and running tutorials for all supported platforms: [hvisor documentation](https://hvisor.syswonder.org/)
+Please refer to the hvisor documentation for the quick start guide, which includes build and run instructions for all supported platforms: [hvisor Documentation](https://hvisor.syswonder.org/)
 
 ## Roadmap
 
-- To support Android nonroot zone on NXP i.MX8MP hardware platform
-- To support hvisor on x86_64 architecture
+- Support for Android non-root on the NXP i.MX8MP hardware platform
+- Support for running hvisor on the `x86_64` architecture
 
-## Acknowledgement
+## Acknowledgments
 
 This project is based on [RVM1.5](https://github.com/rcore-os/RVM1.5) and [jailhouse](https://github.com/siemens/jailhouse).
