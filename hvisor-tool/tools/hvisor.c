@@ -1,9 +1,3 @@
-#include "hvisor.h"
-#include "cJSON.h"
-#include "event_monitor.h"
-#include "log.h"
-#include "virtio.h"
-#include "zone_config.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
@@ -18,6 +12,12 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "cJSON.h"
+#include "event_monitor.h"
+#include "hvisor.h"
+#include "log.h"
+#include "virtio.h"
+#include "zone_config.h"
 static void __attribute__((noreturn)) help(int exit_status) {
     printf("Invalid Parameters!\n");
     exit(exit_status);

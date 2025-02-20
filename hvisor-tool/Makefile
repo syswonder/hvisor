@@ -39,6 +39,7 @@ transfer: all
 transfer_nxp: all
 	sudo cp ./tools/hvisor ~/tftp
 	sudo cp ./tools/ivc_demo ~/tftp
+	sudo cp ./tools/rpmsg_demo ~/tftp
 	sudo cp ./driver/hvisor.ko ~/tftp
 	sudo cp ./driver/ivc.ko ~/tftp
 

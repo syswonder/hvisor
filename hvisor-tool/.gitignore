@@ -1,6 +1,7 @@
 .vscode/
 /tools/hvisor
 /tools/ivc_demo
+/tools/rpmsg_demo
 *.mod.[co]
 *.mod
 *.[oa]
