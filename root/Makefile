@@ -3,10 +3,12 @@ DEV ?= /dev/sda1
 ARCH ?= arm64
 LOG ?= LOG_INFO
 DEBUG ?= n
+VIRTIO_GPU ?= n
 
 export KDIR
 export ARCH
 export LOG
+export VIRTIO_GPU
 .PHONY: all env tools driver clean
 
 # check if KDIR is set
