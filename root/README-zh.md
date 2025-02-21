@@ -7,55 +7,17 @@ README：[中文](./README-zh.md) | [English](./README.md)
 hvisor-tool
 	-tools: 包含命令行工具以及Virtio守护进程
 	-driver: hvisor对应的内核模块
+	-examples: 不同运行环境下的配置文件示例
 ```
 
 ## 编译步骤
 
 以下操作均在x86主机的目录`hvisor-tool`下，进行交叉编译。
 
-* 安装libdrm
-
-我们需要安装libdrm来编译Virtio-gpu，假设目标平台为**arm64**。
-
-```shell
-wget https://dri.freedesktop.org/libdrm/libdrm-2.4.100.tar.gz
-tar -xzvf libdrm-2.4.100.tar.gz
-cd libdrm-2.4.100
-```
-
-tips: 2.4.100以上的libdrm需要使用meson等进行编译，较为麻烦，https://dri.freedesktop.org/libdrm有更多版本。
-
-```shell
-# 安装到你的aarch64-linux-gnu编译器
-./configure --host=aarch64-linux-gnu --prefix=/usr/aarch64-linux-gnu && make && make install
-
-# 安装到libdrm目录下的`install`文件夹
-mkdir install
-./configure --host=aarch64-linux-gnu --prefix=/path_to_install/install && make && make install
-
-# `prefix`必须是一个绝对路径
-```
-
-对于 loongarch64 需要使用：
-
-```shell
-./configure --host=loongarch64-unknown-linux-gnu --disable-nouveau --disable-intel --prefix=/opt/libdrm-install && make && sudo make install
-```
-
-如果需要使用语言服务器的语法支持，那么需要将安装地址的include和lib文件夹链到相关的配置文件中。
-
-最后，我们需要修改hvisor-tool/tools/Makefiles的`include_dirs`字段。
-
-```
-include_dirs := -I../include -I./include -I../cJSON/ -I/usr/aarch64-linux-gnu/include -I/usr/aarch64-linux-gnu/include/libdrm -L/usr/aarch64-linux-gnu/lib -ldrm -pthread
-```
-
-tips: 上面的路径应该是你的安装路径。
-
 * 编译命令行工具及内核模块
 
 ```bash
-make all ARCH=<arch> LOG=<log> KDIR=/path/to/your-linux 
+make all ARCH=<arch> LOG=<log> KDIR=/path/to/your-linux VIRTIO_GPU=[y/n]
 ```
 
 其中，`<arch>`应该为`arm64`和`riscv`之一。
@@ -102,7 +64,7 @@ rmmod hvisor.ko
 
   `<vm_config.json>`是描述一个虚拟机配置的文件，例如：
 
-  * [在QEMU-aarch64上启动zone1](./examples/qemu-aarch64/zone1_linux.json)：使用该文件直接启动zone1时，需首先启动Virtio守护进程，对应的配置文件为[virtio_cfg.json](./examples/qemu-aarch64/virtio_cfg.json)。
+  * [在QEMU-aarch64上启动zone1](./examples/qemu-aarch64/with_virtio_blk_console/zone1_linux.json)：可参考[这里](./examples/qemu-aarch64/with_virtio_blk_console/README.md)了解如何配置并在zone1上启动一个linux。
 
   * [在NXP-aarch64上启动zone1](./examples/nxp-aarch64/zone1_linux.json)：使用该文件直接启动zone1时，需首先启动Virtio守护进程，对应的配置文件为[virtio_cfg.json](./examples/nxp-aarch64/virtio_cfg.json)。
 
@@ -120,14 +82,14 @@ rmmod hvisor.ko
 
 ### Virtio守护进程
 
-Virtio守护进程可为虚拟机提供Virtio MMIO设备，目前支持三种设备：Virtio-blk、Virtio-net和Virtio-console设备。
+Virtio守护进程可为虚拟机提供Virtio MMIO设备，目前支持四种设备：Virtio-blk、Virtio-net、Virtio-console和Virtio-gpu设备。
 
 #### 前置条件
 
-要使用Virtio守护进程，需要在**Root Linux的设备树**中增加一个名为`hvisor_device`的节点，例如：
+要使用Virtio守护进程，需要在**Root Linux的设备树**中增加一个名为`hvisor_virtio_device`的节点，例如：
 
 ```dts
-hvisor_device {
+hvisor_virtio_device {
     compatible = "hvisor";
     interrupt-parent = <0x01>;
     interrupts = <0x00 0x20 0x01>;
@@ -162,7 +124,7 @@ nohup ./hvisor virtio start virtio_cfg.json &
 
 创建一个Virtio-console设备，用于`zone1`主串口的输出。root linux需要执行`screen /dev/pts/x`命令进入该虚拟控制台，其中`x`可通过nohup.out日志文件查看。
 
-如要退回到主控制台，按下快捷键`ctrl+a+d`。如要再次进入虚拟控制台，执行`screen -r [SID]`，其中SID为该screen会话的进程ID。
+如要退回到主控制台，按下快捷键`ctrl+a+d`。如果在qemu中，则需要按下`ctrl+a ctrl+a+d`。如要再次进入虚拟控制台，执行`screen -r [SID]`，其中SID为该screen会话的进程ID。
 
 4. 创建Virtio-net设备
 
@@ -170,13 +132,7 @@ nohup ./hvisor virtio start virtio_cfg.json &
 
 5. 创建Virtio-gpu设备
 
-创建一个 Virtio-gpu 设备，其 MMIO 区域从 `0xa003400` 开始，长度为 `0x200`，中断号为 74。默认的扫描输出(scanout)尺寸为宽度 `1280px`，高度 `800px`。
-
-#### 为Root Linux探测物理GPU设备
-
-要在`Root Linux`中探测物理GPU设备，你需要编辑`hvisor/src/platform`目录下的文件，以便在PCI总线上探测GPU设备。需要将Virtio-gpu设备的中断号添加到`ROOT_ZONE_IRQS`中。
-
-启动`Root Linux`后，你可以通过运行`dmesg | grep drm`或`lspci`来检查你的 GPU 设备是否正常工作。要查看 libdrm 支持的设备，可以安装`libdrm-tests`包，使用命令`apt install libdrm-tests`，然后运行`modetest`
+要使用virtio-gpu设备，需要在hvisor-tool编译命令中加入`VIRTIO_GPU=y`字段，同时还需安装`libdrm`并进行其他配置，具体请见[hvisor-book](https://hvisor.syswonder.org/chap04/subchap03/VirtIO/GPUDevice.html)和[配置文件示例](./examples/qemu-aarch64/with_virtio_gpu/README.md)。配置文件中如果`gpu`设备`status`属性为`enable`，则会创建一个 Virtio-gpu 设备，其 MMIO 区域从 `0xa003400` 开始，长度为 `0x200`，中断号为 74。默认的扫描输出(scanout)尺寸为宽度 `1280px`，高度 `800px`。
 
 #### 关闭Virtio设备
 
@@ -185,5 +141,3 @@ nohup ./hvisor virtio start virtio_cfg.json &
 ```
 pkill hvisor-virtio
 ```
-
-更多信息，例如root linux的环境配置，可参考：[在hvisor上使用Virtio设备](https://report.syswonder.org/#/2024/20240415_Virtio_devices_tutorial)

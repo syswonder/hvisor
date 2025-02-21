@@ -1,0 +1,79 @@
+{
+    "arch": "arm64",
+    "name": "ruxos_display",
+    "zone_id": 1,
+    "cpus": [
+        2
+    ],
+    "memory_regions": [
+        {
+            "type": "ram",
+            "physical_start": "0x50000000",
+            "virtual_start": "0x40000000",
+            "size": "0x30000000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x9000000",
+            "virtual_start": "0x9000000",
+            "size": "0x1000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x9010000",
+            "virtual_start": "0x9010000",
+            "size": "0x1000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x8060000",
+            "virtual_start": "0x8060000",
+            "size": "0x20000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x8000000",
+            "virtual_start": "0x8000000",
+            "size": "0x40000"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0xa000000",
+            "virtual_start": "0xa000000",
+            "size": "0x4000"
+        }
+    ],
+    "interrupts": [
+        74,
+        75,
+        76,
+        78,
+        66
+    ],
+    "ivc_configs": [
+        {
+            "ivc_id": 0,
+            "peer_id": 1,
+            "control_table_ipa": "0x70000000",
+            "shared_mem_ipa": "0x70001000",
+            "rw_sec_size": "0",
+            "out_sec_size": "0x1000",
+            "interrupt_num": 66,
+            "max_peers": 2
+        }
+    ],
+    "kernel_filepath": "./basic_painting_aarch64-qemu-virt.bin",
+    "dtb_filepath": "./qemu-ruxos.dtb",
+    "kernel_load_paddr": "0x50080000",
+    "dtb_load_paddr": "0x50000000",
+    "entry_point": "0x40080000",
+    "arch_config": {
+        "gic_version": "v3",
+        "gicd_base": "0x8000000",
+        "gicd_size": "0x10000",
+        "gicr_base": "0x80a0000",
+        "gicr_size": "0xf60000",
+        "gits_base": "0x8080000",
+        "gits_size": "0x20000"
+    }
+}

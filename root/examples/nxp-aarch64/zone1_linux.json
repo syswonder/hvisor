@@ -37,6 +37,7 @@
     "dtb_load_paddr":   "0x50000000",
     "entry_point":      "0x50400000",
     "arch_config": {
+        "gic_version": "v3",
         "gicd_base": "0x38800000",
         "gicd_size": "0x10000",
         "gicr_base": "0x38880000",

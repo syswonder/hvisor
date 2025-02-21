@@ -1,0 +1,25 @@
+{
+    "zones": [
+        {
+            "id": 1,
+            "memory_region": [
+                {
+                    "zone0_ipa": "0x50000000",
+                    "zonex_ipa": "0x40000000",
+                    "size": "0x30000000"
+                }
+            ],
+            "devices": [
+                {
+                    "type": "gpu",
+                    "addr": "0xa003400",
+                    "len": "0x200",
+                    "irq": 74,
+                    "width": 1280,
+                    "height": 800,
+                    "status": "enable"
+                }
+            ]
+        }
+    ]
+}

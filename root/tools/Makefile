@@ -1,10 +1,16 @@
-sources := $(wildcard *.c) ../cJSON/cJSON.c
-objects := $(sources:.c=.o)
-ivc_demo_objects := ivc_demo.o
-hvisor_objects := $(filter-out $(ivc_demo_objects), $(objects))
+sources ?= $(wildcard *.c) ../cJSON/cJSON.c
+objects ?= $(sources:.c=.o)
+ivc_demo_object ?= ivc_demo.o
+rpmsg_demo_object ?= rpmsg_demo.o
+hvisor_objects ?= $(filter-out $(ivc_demo_object) $(rpmsg_demo_object), $(objects))
 
-CFLAGS := -Wall -Wextra -DLOG_USE_COLOR -DHLOG=$(LOG)
-include_dirs := -I../include -I./include -I../cJSON/ # -I/usr/aarch64-linux-gnu/include -I/usr/aarch64-linux-gnu/include/libdrm -L/usr/aarch64-linux-gnu/lib -ldrm -pthread
+CFLAGS := -Wall -Wextra -DLOG_USE_COLOR -DHLOG=$(LOG) -pthread
+include_dirs := -I../include -I./include -I../cJSON/ 
+
+ifeq ($(VIRTIO_GPU), y)
+	sources += $(wildcard ./virtio_gpu/*.c)
+	CFLAGS += -DENABLE_VIRTIO_GPU
+endif
 
 include $(sources:.c=.d)
 
@@ -18,7 +24,9 @@ ifeq ($(ARCH), arm64)
 	CC := aarch64-linux-gnu-gcc
 	READELF := aarch64-linux-gnu-readelf
 	OBJDUMP := aarch64-linux-gnu-objdump
-	include_dirs += -I/usr/aarch64-linux-gnu/include -I/usr/aarch64-linux-gnu/include/libdrm -L/usr/aarch64-linux-gnu/lib -ldrm -pthread
+	ifeq ($(VIRTIO_GPU), y)
+		include_dirs += -I/usr/aarch64-linux-gnu/include -I/usr/aarch64-linux-gnu/include/libdrm -L/usr/aarch64-linux-gnu/lib -ldrm 
+	endif
 else ifeq ($(ARCH), riscv)
 	CC := riscv64-linux-gnu-gcc
 	READELF := riscv64-linux-gnu-readelf
@@ -28,14 +36,16 @@ else ifeq ($(ARCH), loongarch)
 	READELF := loongarch64-unknown-linux-gnu-readelf
 	OBJDUMP := loongarch64-unknown-linux-gnu-objdump
 	CFLAGS += -DLOONGARCH64 -static
-	include_dirs += -I/opt/libdrm-install/include -L/opt/libdrm-install/lib -I/opt/libdrm-install/include/libdrm -ldrm -pthread
+	ifeq ($(VIRTIO_GPU), y)
+		include_dirs += -I/opt/libdrm-install/include -L/opt/libdrm-install/lib -I/opt/libdrm-install/include/libdrm -ldrm
+	endif
 else
 	CC := gcc
 endif
 
 .PHONY: all clean
 
-all: hvisor ivc_demo
+all: hvisor ivc_demo rpmsg_demo
 
 %.d: %.c
 	@set -e; rm -f $@; \
@@ -49,8 +59,11 @@ $(objects): %.o: %.c
 hvisor: $(hvisor_objects)
 	$(CC) -o $@ $^ $(include_dirs)
 
-ivc_demo: $(ivc_demo_objects)
+ivc_demo: $(ivc_demo_object)
 	$(CC) -o $@ $^ $(include_dirs)
-	
+
+rpmsg_demo: $(rpmsg_demo_object)
+	$(CC) -o $@ $^ $(include_dirs)
+
 clean:
 	rm -f hvisor ivc_demo *.o *.d *.d.* 

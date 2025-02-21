@@ -24,24 +24,6 @@
                         "len": "0x200",
                         "irq": 76,
                         "status": "enable"
-                    },
-                    {
-                        "type": "net",
-                        "addr": "0xa003600",
-                        "len": "0x200",
-                        "irq": 75,
-                        "tap": "tap0",
-                        "mac": ["0x00", "0x16", "0x3e", "0x10", "0x10", "0x10"],
-                        "status": "disable"
-                    },
-                    {
-                        "type": "gpu",
-                        "addr": "0xa003400",
-                        "len": "0x200",
-                        "irq": 74,
-                        "width": 1280,
-                        "height": 800,
-                        "status": "enable"
                     }
                 ]
         }

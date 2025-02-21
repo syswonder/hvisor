@@ -180,11 +180,16 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
         break;
 
     case VirtioTGPU:
+#ifdef ENABLE_VIRTIO_GPU
         vdev->regs.dev_feature = GPU_SUPPORTED_FEATURES;
         vdev->dev = init_gpu_dev((GPURequestedState *)arg0);
         free(arg0);
         init_virtio_queue(vdev, dev_type);
         is_err = virtio_gpu_init(vdev);
+#else
+        log_error("virtio gpu is not enabled");
+        goto err;
+#endif
         break;
 
     default:
@@ -263,6 +268,7 @@ void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type) {
         break;
 
     case VirtioTGPU:
+#ifdef ENABLE_VIRTIO_GPU
         vdev->vqs_len = GPU_MAX_QUEUES;
         vqs = malloc(sizeof(VirtQueue) * GPU_MAX_QUEUES);
         for (int i = 0; i < GPU_MAX_QUEUES; ++i) {
@@ -273,6 +279,9 @@ void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type) {
         vqs[GPU_CONTROL_QUEUE].notify_handler = virtio_gpu_ctrl_notify_handler;
         vqs[GPU_CURSOR_QUEUE].notify_handler = virtio_gpu_cursor_notify_handler;
         vdev->vqs = vqs;
+#else
+        log_error("virtio gpu is not enabled");
+#endif
         break;
 
     default:
@@ -933,16 +942,6 @@ int virtio_handle_req(volatile struct device_req *req) {
 
     VirtIODevice *vdev = vdevs[i];
 
-    // if (vdev->type == VirtioTNet) {
-    //   log_info("handling request to net from zone %d", vdev->zone_id);
-    // } else if (vdev->type == VirtioTBlock) {
-    //   log_info("handling request to blk from zone %d", vdev->zone_id);
-    // } else if (vdev->type == VirtioTConsole) {
-    //   log_info("handling request to console from zone %d", vdev->zone_id);
-    // } else if (vdev->type == VirtioTGPU) {
-    //   log_info("handling request to gpu from zone %d", vdev->zone_id);
-    // }
-
     uint64_t offs = req->address - vdev->base_addr;
 
     // Write or read the device's MMIO register
@@ -1107,8 +1106,6 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
     uint64_t base_addr = 0, len = 0;
     uint32_t irq_id = 0;
 
-    GPURequestedState *requested_state = NULL;
-
     char *status = cJSON_GetObjectItem(device_json, "status")->valuestring;
     if (strcmp(status, "disable") == 0)
         return 0;
@@ -1158,8 +1155,10 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
         // virtio-console
         arg0 = arg1 = NULL;
     } else if (dev_type == VirtioTGPU) {
-        // virtio-gpu
+// virtio-gpu
+#ifdef ENABLE_VIRTIO_GPU
         // TODO: Add display device settings
+        GPURequestedState *requested_state = NULL;
         requested_state =
             (GPURequestedState *)malloc(sizeof(GPURequestedState));
         memset(requested_state, 0, sizeof(GPURequestedState));
@@ -1169,6 +1168,11 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
             cJSON_GetObjectItem(device_json, "height")->valueint;
         arg0 = requested_state;
         arg1 = NULL;
+#else
+        log_error(
+            "virtio-gpu is not enabled, please add VIRTIO_GPU=y in make cmd");
+        return -1;
+#endif
     }
 
     // Check for missing fields

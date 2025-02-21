@@ -1,5 +1,6 @@
 #ifndef _HVISOR_VIRTIO_GPU_H
 #define _HVISOR_VIRTIO_GPU_H
+#ifdef ENABLE_VIRTIO_GPU
 
 #include "bits/pthreadtypes.h"
 #include "linux/types.h"
@@ -388,4 +389,5 @@ void virtio_gpu_simple_process_cmd(GPUCommand *gcmd, VirtIODevice *vdev);
 // Processing thread
 void *virtio_gpu_handler(void *vdev);
 
+#endif
 #endif /* _HVISOR_VIRTIO_GPU_H */
