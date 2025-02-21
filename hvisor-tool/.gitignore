@@ -1,6 +1,7 @@
 .vscode/
 /tools/hvisor
 /tools/ivc_demo
+/tools/rpmsg_demo
 *.mod.[co]
 *.mod
 *.[oa]
@@ -19,7 +20,8 @@ cp.sh
 rpmsg_demo
 __loongarch*
 .vscode-ctags
-
 # kbuild
 .config
 .config.old
+.cache
+compile_commands.json

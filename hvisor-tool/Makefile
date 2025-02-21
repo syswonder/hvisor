@@ -3,10 +3,12 @@ DEV ?= /dev/sda1
 ARCH ?= arm64
 LOG ?= LOG_INFO
 DEBUG ?= n
+VIRTIO_GPU ?= n
 
 export KDIR
 export ARCH
 export LOG
+export VIRTIO_GPU
 .PHONY: all env tools driver clean
 
 # check if KDIR is set
@@ -39,6 +41,7 @@ transfer: all
 transfer_nxp: all
 	sudo cp ./tools/hvisor ~/tftp
 	sudo cp ./tools/ivc_demo ~/tftp
+	sudo cp ./tools/rpmsg_demo ~/tftp
 	sudo cp ./driver/hvisor.ko ~/tftp
 	sudo cp ./driver/ivc.ko ~/tftp
 

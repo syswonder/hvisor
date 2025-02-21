@@ -1,9 +1,3 @@
-#include "hvisor.h"
-#include "cJSON.h"
-#include "event_monitor.h"
-#include "log.h"
-#include "virtio.h"
-#include "zone_config.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
@@ -18,6 +12,12 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include "cJSON.h"
+#include "event_monitor.h"
+#include "hvisor.h"
+#include "log.h"
+#include "virtio.h"
+#include "zone_config.h"
 static void __attribute__((noreturn)) help(int exit_status) {
     printf("Invalid Parameters!\n");
     exit(exit_status);
@@ -461,7 +461,7 @@ static int zone_start_from_json(const char *json_config_path,
 #ifndef LOONGARCH64
 
     // Parse architecture-specific configurations (interrupts for each platform)
-    if (!parse_arch_config(root, config))
+    if (parse_arch_config(root, config))
         goto err_out;
 
     parse_pci_config(root, config);
