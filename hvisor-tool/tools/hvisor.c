@@ -461,7 +461,7 @@ static int zone_start_from_json(const char *json_config_path,
 #ifndef LOONGARCH64
 
     // Parse architecture-specific configurations (interrupts for each platform)
-    if (!parse_arch_config(root, config))
+    if (parse_arch_config(root, config))
         goto err_out;
 
     parse_pci_config(root, config);
