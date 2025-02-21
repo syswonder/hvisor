@@ -5,9 +5,8 @@ STATS ?= off
 PORT ?= 2333
 MODE ?= debug
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
-KDIR ?= ../../linux
-FEATURES ?= platform_qemu,gicv3
-BOARD ?= qemu
+FEATURES ?= platform_zcu102,gicv2
+BOARD ?= zcu102
 
 ifeq ($(ARCH),aarch64)
     RUSTC_TARGET := aarch64-unknown-none
@@ -19,7 +18,7 @@ else ifeq ($(ARCH),loongarch64)
 	RUSTC_TARGET := loongarch64-unknown-none
 	GDB_ARCH := loongarch64
 else
-	$(error Unsupported ARCH value: $(ARCH))
+$(error Unsupported ARCH value: $(ARCH))
 endif
 
 export MODE
