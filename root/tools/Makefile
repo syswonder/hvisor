@@ -4,8 +4,8 @@ ivc_demo_object ?= ivc_demo.o
 rpmsg_demo_object ?= rpmsg_demo.o
 hvisor_objects ?= $(filter-out $(ivc_demo_object) $(rpmsg_demo_object), $(objects))
 
-CFLAGS := -Wall -Wextra -DLOG_USE_COLOR -DHLOG=$(LOG) -pthread
-include_dirs := -I../include -I./include -I../cJSON/ 
+CFLAGS := -Wall -Wextra -DLOG_USE_COLOR -DHLOG=$(LOG)
+include_dirs := -I../include -I./include -I../cJSON/ -pthread
 
 ifeq ($(VIRTIO_GPU), y)
 	sources += $(wildcard ./virtio_gpu/*.c)
