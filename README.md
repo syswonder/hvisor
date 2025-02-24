@@ -1,7 +1,9 @@
-# hvisor 
 <p align = "center">
 <br><br>
-<img src="https://img.shields.io/badge/hvisor-orange" />
+<img src="https://www.syswonder.org/_media/hvisor-logo.svg">
+<br><br>
+<!-- <img src="https://img.shields.io/badge/hvisor-orange" /> -->
+<img src="https://img.shields.io/github/stars/syswonder/hvisor?color=yellow" />
 <img src="https://img.shields.io/github/license/syswonder/hvisor?color=red" />
 <img src="https://img.shields.io/github/contributors/syswonder/hvisor?color=blue" />
 <img src="https://img.shields.io/github/languages/code-size/syswonder/hvisor?color=green">
@@ -10,96 +12,71 @@
 <br><br>
 </p>
 
-README：[中文](./README-zh.md) | [English](./README.md)
+README: [中文](./README-zh.md) | [English](./README.md)
 
-Armv8 hypervisor based on Linux & implemented in Rust，porting from [RVM1.5](https://github.com/rcore-os/RVM1.5) & [jailhouse](https://github.com/siemens/jailhouse).
+hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featuring a separation kernel design to provide efficient hardware resource virtualization and isolation. This virtual machine monitor allows strict system environment separation, ensuring performance and security of the virtualized environments through distinct regions.
 
-🚧 Working In Progress.
+## Features
 
-## Progress
+- **Separation Kernel Design**: The virtual machine is divided into three regions: zone0 (management zone), zoneU (user zone), and zoneR (real-time zone), with strict isolation between them.
+- **Simple and Lightweight**: hvisor is implemented in Rust with a minimal design.
+  - CPU Virtualization: Static partitioning of physical CPUs (pCPUs), without dynamic scheduling.
+  - Memory Virtualization: Pre-allocated virtual machine memory space via configuration files.
+  - I/O Virtualization: Supports device passthrough and virtio paravirtualization.
+- **Multi-platform Support**: Supports various architectures, including `aarch64`, `riscv64`, and `loongarch64`.
+- **Virtual Machine Management**: Virtual machines are managed through a Linux environment in zone0 (root-linux), with basic management tasks (create, start, stop, delete) handled via the command-line tool [hvisor-tool](https://github.com/syswonder/hvisor-tool).
+- **Formal Verification**: Part of the virtual machine monitor code is undergoing formal verification using the [verus](https://github.com/verus-lang/verus) tool.
 
-- [x] Architecture: aarch64
-- [x] Platform: Qemu virt aarch64
-- [x] Exception
-- [x] Gicv3
-- [x] Memory
-- [x] Enable non root linux
-- [ ] VirtIO device: block, net
-- [ ] Architecture: riscv64
-- [ ] Platform: nxp
+## Device Support
 
-## Build & Run
+| **Category**              | **Device**            | **Supported Architectures** | **Notes**                       |
+| ------------------------- | --------------------- | --------------------------- | ------------------------------- |
+| **Virtio Devices**        | virtio-blk            | `aarch64`                   |                                 |
+|                           | virtio-net            | `aarch64`                   |                                 |
+|                           | virtio-console        | `aarch64`, `loongarch64`    |                                 |
+|                           | virtio-gpu            | `aarch64`                   | Only supports QEMU              |
+| **Serial Devices/UARTs**  | PL011                 | `aarch64`                   |                                 |
+|                           | imx-uart              | `aarch64`                   | NXP i.MX8MP                     |
+|                           | NS16550A              | `loongarch64`               |                                 |
+|                           | xuartps               | `aarch64`                   | Xilinx Ultrascale+ MPSoC ZCU102 |
+| **Interrupt Controllers** | GIC irq controller    | `aarch64`                   |                                 |
+|                           | 7A2000 irq controller | `loongarch64`               |                                 |
+|                           | PLIC                  | `riscv64`                   |                                 |
+|                           | AIA-APIC              | `riscv64`                   | Only supports MSI mode          |
+| **PCIe Passthrough**      | PCIe                  | `aarch64`, `riscv`          |                                 |
+| **GPU Passthrough**       | GPU                   | `aarch64`                   | NXP i.MX8MP                     |
 
-For detailed build and running tutorials, including building the development environment and creating a file system, please refer to [here](https://report.syswonder.org/#/2023/20230421_ARM64-QEMU-jailhouse).
+## Supported Boards
 
-To make it easy to get started, [here](https://bhpan.buaa.edu.cn/link/AA1BF35BBB05DA40EB8A837C2B2B3C8277) (extraction code: `sysH`) provides a  Linux kernel `Image` and a file system `ubuntu-20.04-rootfs_ext4.img` with the username `arm64` and the password as a whitespace. The directories are organized as follows:
+### aarch64
 
-```
-├── home
-	├── arm64 
-		├── images: Contains a Linux Image and ramfs.
-		├── hvisor: Files required to run hvisor.
-		├── jailhouse: Files required to run jailhouse.
-```
+- [x] QEMU virt aarch64
+- [x] NXP i.MX8MP
+- [x] Xilinx Ultrascale+ MPSoC ZCU102
+- [ ] Rockchip RK3588
+- [ ] Rockchip RK3568
+- [ ] Forlinx OK6254-C
 
-The following describes how to run a non-root-linux on jailhouse/hvisor based on `ubuntu-20.04-rootfs_ext4.img`:
+### riscv64
 
-1. Build `hvisor.bin`:
+- [x] QEMU virt riscv64
+- [ ] FPGA 香山（昆明湖）on S2C Prodigy S7-19PS-2
+- [ ] FPGA  RocketChip on Xilinx Ultrascale+ MPSoC ZCU102
 
-   ```bash
-   make all
-   ```
+### loongarch64
 
-   Then copy `target/aarch64/debug/hvisor.bin` to `~/hvisor/` in `ubuntu-20.04-rootfs_ext4.img`.
+- [x] Loongson 3A5000 and 7A2000 bridge chip
+- [ ] Loongson 3A6000
 
-2. Start QEMU:
+## Getting Started
 
-   ```bash
-   sudo qemu-system-aarch64 \
-       -machine virt,gic_version=3 \
-       -machine virtualization=true \
-       -cpu cortex-a53 \
-       -machine type=virt \
-       -nographic \
-       -smp 16  \
-       -m 1024 \
-       -kernel your-linux-Image-path/Image \
-       -append "console=ttyAMA0 root=/dev/vda rw mem=768m" \
-       -drive if=none,file=your-rootfs-path/ubuntu-20.04-rootfs_ext4.img,id=hd0,format=raw \
-       -device virtio-blk-device,drive=hd0 \
-       -net nic \
-       -net user,hostfwd=tcp::2333-:22
-   ```
+Please refer to the hvisor documentation for the quick start guide, which includes build and run instructions for all supported platforms: [hvisor Documentation](https://hvisor.syswonder.org/)
 
-3. Enter the username `arm64` and the password as a whitespace after startup.
+## Roadmap
 
-4. Go to the home directory and start non-root-linux:
+- Support for Android non-root on the NXP i.MX8MP hardware platform
+- Support for running hvisor on the `x86_64` architecture
 
-   * For hvisor: go to the `hvisor` folder and run:
+## Acknowledgments
 
-     ```
-     ./setup.sh
-     ./linux.sh
-     ```
-
-   * For Jailhouse: go to the `jailhouse` folder and run:
-
-     ```
-     ./linux.sh
-     ```
-
-### Enable a second serial console
-
-If someone wants non-root-linux and root-linux in two different terminals, add this line at the end of the qemu startup command:
-
-```
--device virtio-serial-device -chardev pty,id=serial3 -device virtconsole,chardev=serial3
-```
-
-After starting qemu, the `char device redirected to /dev/pts/num (label serial3)` message will output by the first terminal, execute this in another terminal:
-
-```
-sudo screen /dev/pts/num
-```
-
-where num is a specific number.
+This project is based on [RVM1.5](https://github.com/rcore-os/RVM1.5) and [jailhouse](https://github.com/siemens/jailhouse).
