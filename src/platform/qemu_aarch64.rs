@@ -12,7 +12,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 3] = [
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x50000000,
         virtual_start: 0x50000000,
-        size: 0x80000000,
+        size: 0x70000000,
     }, // ram
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
@@ -62,17 +62,6 @@ pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
     pci_mem64_base: 0x8000000000,
 };
 
-pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 1] = [
-    HvIvcConfig {
-        ivc_id: 0,
-        peer_id: 0,
-        control_table_ipa: 0xd000_0000,
-        shared_mem_ipa: 0xd000_1000,
-        rw_sec_size: 0,
-        out_sec_size: 0x1000,
-        interrupt_num: 0x21 + 32,
-        max_peers: 2,
-    }
-];
+pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
 
 pub const ROOT_PCI_DEVS: [u64; 2] = [0, 1 << 3];

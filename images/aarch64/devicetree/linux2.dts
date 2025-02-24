@@ -14,7 +14,7 @@
 		cpu@2 {
 			reg = <0x02>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a72";
 			device_type = "cpu";
 		};
 	};
@@ -150,13 +150,6 @@
 
 	chosen {
 		bootargs = "earlycon=virtio,mmio,0xa003800 console=hvc0 root=/dev/vda rw";
-        // bootargs = "root=/dev/vda mem=768M";
 		stdout-path = "/virtio_mmio@a003800";
 	};
-
-	hvisor_ivc_device {
-        compatible = "hvisor";
-        interrupt-parent = <0x01>;
-        interrupts = <0x00 0x22 0x01>;
-    };
 };
