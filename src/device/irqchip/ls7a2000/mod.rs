@@ -6,9 +6,11 @@ use crate::{
         ipi::*,
         register::{read_gcsr_estat, write_gcsr_estat},
     },
+    consts::MAX_CPU_NUM,
     zone::Zone,
 };
 use chip::*;
+use spin::Mutex;
 
 pub mod chip;
 
@@ -77,6 +79,9 @@ pub fn inject_irq(_irq: usize, is_hardware: bool) {
         gcsr_estat |= bit;
         write_gcsr_estat(gcsr_estat);
     }
+    let mut status = GLOBAL_IRQ_INJECT_STATUS.lock();
+    status.cpu_status[this_cpu_id()].status = InjectionStatus::Injecting;
+    drop(status);
 }
 
 /// clear the injecting irq ctrl bit on THIS cpu
@@ -95,6 +100,9 @@ pub fn clear_hwi_injected_irq() {
         gintc_raw
     );
     print!("\0");
+    let mut status = GLOBAL_IRQ_INJECT_STATUS.lock();
+    status.cpu_status[this_cpu_id()].status = InjectionStatus::Idle;
+    drop(status);
 }
 
 impl Zone {
@@ -102,3 +110,28 @@ impl Zone {
         warn!("loongarch64: irqchip: arch_irqchip_reset do nothing");
     }
 }
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum InjectionStatus {
+    Injecting,
+    Idle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct PercpuInjectionStatus {
+    pub status: InjectionStatus,
+    pub irqs: [u32; 32],
+}
+
+#[derive(Debug)]
+pub struct GlobalInjectionStatus {
+    pub cpu_status: [PercpuInjectionStatus; MAX_CPU_NUM],
+}
+
+pub static GLOBAL_IRQ_INJECT_STATUS: Mutex<GlobalInjectionStatus> =
+    Mutex::new(GlobalInjectionStatus {
+        cpu_status: [PercpuInjectionStatus {
+            status: InjectionStatus::Idle,
+            irqs: [0; 32],
+        }; MAX_CPU_NUM],
+    });

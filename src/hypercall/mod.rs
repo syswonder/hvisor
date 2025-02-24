@@ -7,7 +7,7 @@ use crate::device::virtio_trampoline::{MAX_DEVS, MAX_REQ, VIRTIO_BRIDGE, VIRTIO_
 use crate::error::HvResult;
 use crate::percpu::{get_cpu_data, this_zone, PerCpu};
 use crate::zone::{
-    all_zones_info, find_zone, is_this_root_zone, remove_zone, this_zone_id, zone_create, ZoneInfo
+    all_zones_info, find_zone, is_this_root_zone, remove_zone, this_zone_id, zone_create, ZoneInfo,
 };
 
 use crate::event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_VIRTIO_INJECT_IRQ, IPI_EVENT_WAKEUP};
@@ -53,24 +53,30 @@ impl<'a> HyperCall<'a> {
                 return Ok(0);
             }
         };
-        debug!("hypercall: code={:?}, arg0={:#x}, arg1={:#x}", code, arg0, arg1);
+        debug!(
+            "hypercall: code={:?}, arg0={:#x}, arg1={:#x}",
+            code, arg0, arg1
+        );
         unsafe {
             match code {
                 HyperCallCode::HvVirtioInit => self.hv_virtio_init(arg0),
                 HyperCallCode::HvVirtioInjectIrq => self.hv_virtio_inject_irq(),
-                HyperCallCode::HvZoneStart => self.hv_zone_start(&*(arg0 as *const HvZoneConfig), arg1),
+                HyperCallCode::HvZoneStart => {
+                    self.hv_zone_start(&*(arg0 as *const HvZoneConfig), arg1)
+                }
                 HyperCallCode::HvZoneShutdown => self.hv_zone_shutdown(arg0),
                 HyperCallCode::HvZoneList => self.hv_zone_list(&mut *(arg0 as *mut ZoneInfo), arg1),
-                #[cfg(target_arch = "loongarch64")]
                 HyperCallCode::HvClearInjectIrq => {
-                    // send_event to all nonroot cpus to clear injected irq
                     use crate::event::IPI_EVENT_CLEAR_INJECT_IRQ;
                     for i in 1..MAX_CPU_NUM {
+                        // if target cpu status is not running, we skip it
+                        if !get_cpu_data(i).arch_cpu.power_on {
+                            continue;
+                        }
                         send_event(i, SGI_IPI_ID as _, IPI_EVENT_CLEAR_INJECT_IRQ);
                     }
-                    // send_event(3, SGI_IPI_ID as _, IPI_EVENT_CLEAR_INJECT_IRQ); // testing only
                     HyperCallResult::Ok(0)
-                },
+                }
                 #[cfg(target_arch = "aarch64")]
                 HyperCallCode::HvIvcInfo => self.hv_ivc_info(arg0),
                 _ => {
@@ -87,12 +93,14 @@ impl<'a> HyperCall<'a> {
         let zone = this_zone();
         // ipa->hpa->hva
         let hpa = unsafe {
-            zone.read().gpm.page_table_query(ivc_info_ipa as _).unwrap().0        
+            zone.read()
+                .gpm
+                .page_table_query(ivc_info_ipa as _)
+                .unwrap()
+                .0
         };
         // hva == hpa
-        let ivc_info = unsafe {
-            &mut *(hpa as *mut IvcInfo)
-        };
+        let ivc_info = unsafe { &mut *(hpa as *mut IvcInfo) };
         let ivc_infos = IVC_INFOS.lock();
         let zone_ivc_info = ivc_infos.get(&(zone_id as _));
         match zone_ivc_info {
@@ -111,10 +119,11 @@ impl<'a> HyperCall<'a> {
         if !is_this_root_zone() {
             return hv_result_err!(EPERM, "Init virtio over non-root zones: unsupported!");
         }
-        
+
         let shared_region_addr_pa = shared_region_addr as usize;
         #[cfg(target_arch = "loongarch64")]
-        let shared_region_addr_pa = shared_region_addr_pa | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX as usize;
+        let shared_region_addr_pa =
+            shared_region_addr_pa | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX as usize;
 
         assert!(shared_region_addr_pa % PAGE_SIZE == 0);
         // let offset = shared_region_addr_pa & (PAGE_SIZE - 1);
@@ -151,12 +160,22 @@ impl<'a> HyperCall<'a> {
             let irq_id = region.res_list[res_front].irq_id as u64;
             let target_zone = region.res_list[res_front].target_zone;
             let target_cpu = match find_zone(target_zone as _) {
-                Some(zone) => {
-                    zone.read().cpu_set.first_cpu().unwrap()
-                },
-                _ => continue
+                Some(zone) => zone.read().cpu_set.first_cpu().unwrap(),
+                _ => continue,
             };
+
             let irq_list = map_irq.entry(target_cpu).or_insert([0; MAX_DEVS + 1]);
+            #[cfg(target_arch = "loongarch64")]
+            {
+                use crate::device::irqchip::ls7a2000::*;
+                let status = GLOBAL_IRQ_INJECT_STATUS.lock();
+                debug!(
+                    "hv_virtio_inject_irq: cpu {} status: {:?}",
+                    target_cpu, status.cpu_status[target_cpu].status
+                );
+                drop(status);
+                irq_list[0] = 0; // CAUTION: this is a workaround for loongarch64
+            }
             if !irq_list[1..=irq_list[0] as usize].contains(&irq_id) {
                 let len = irq_list[0] as usize;
                 assert!(len + 1 < MAX_DEVS);
@@ -179,8 +198,11 @@ impl<'a> HyperCall<'a> {
 
     pub fn hv_zone_start(&mut self, config: &HvZoneConfig, config_size: u64) -> HyperCallResult {
         #[cfg(target_arch = "loongarch64")]
-        let config = unsafe { &*((config as *const HvZoneConfig as u64
-            | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX) as *const HvZoneConfig) };
+        let config = unsafe {
+            &*((config as *const HvZoneConfig as u64
+                | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX)
+                as *const HvZoneConfig)
+        };
 
         info!("hv_zone_start: config: {:#x?}", config);
         if !is_this_root_zone() {
@@ -190,9 +212,7 @@ impl<'a> HyperCall<'a> {
             );
         }
         if config_size != core::mem::size_of::<HvZoneConfig>() as _ {
-            return hv_result_err!(
-                EINVAL,"Invalid config!"
-            );
+            return hv_result_err!(EINVAL, "Invalid config!");
         }
         let zone = zone_create(config)?;
         let boot_cpu = zone.read().cpu_set.first_cpu().unwrap();
@@ -243,7 +263,7 @@ impl<'a> HyperCall<'a> {
         while zone_r.cpu_set.iter().any(|cpu_id| {
             let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
             get_cpu_data(cpu_id).arch_cpu.power_on
-        }) {};
+        }) {}
         zone_r.cpu_set.iter().for_each(|cpu_id| {
             let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
             get_cpu_data(cpu_id).zone = None;

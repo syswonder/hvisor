@@ -1,6 +1,8 @@
 use crate::arch::cpu::this_cpu_id;
 use crate::device::irqchip::inject_irq;
 use crate::event::check_events;
+use crate::event::dump_cpu_events;
+use crate::event::dump_events;
 use crate::hypercall::SGI_IPI_ID;
 use crate::memory::addr;
 use crate::memory::mmio_handle_access;
@@ -1160,18 +1162,18 @@ fn handle_interrupt(is: usize) {
             // handle IPI
             if ipi_status == SGI_IPI_ID as _ {
                 // 0x7 is a SGI in hvisor, but we still need ot know which event it is
-                // use src/event.rs to handle events
-                let result = check_events();
-                if result {
-                    debug!("ipi event handled :)");
-                } else {
-                    error!("ipi event not handled !!!");
-                }
+                let events = dump_cpu_events(this_cpu_id());
+                debug!("this cpu's events: {:?}", events);
+                // for _ in 0..count {
+                //     let result = check_events();
+                //     if result {
+                //         debug!("ipi event handled :)");
+                //     } else {
+                //         error!("ipi event not handled !!!");
+                //     }
+                // }
+                while check_events() {}
             } else if ipi_status == 0x8 {
-                // this one is used to wake up nonroot virtio hvc0 read
-                // since this is actually sent by zone and notify the zone itself, we should inject this to the zone
-                // and let the zone handle it
-                // inject_irq(INT_IPI, false);
                 debug!("not handled IPI status {:#x} for now", ipi_status);
             } else {
                 warn!("ignored IPI status {:#x}", ipi_status);

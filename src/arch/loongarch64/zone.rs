@@ -77,8 +77,6 @@ impl Zone {
         }
         Ok(())
     }
-
-    pub fn mmio_init(&mut self, hv_config: &HvArchZoneConfig) {}
     pub fn isa_init(&mut self, fdt: &fdt::Fdt) {
         warn!("loongarch64: mm: isa_init do nothing");
     }
