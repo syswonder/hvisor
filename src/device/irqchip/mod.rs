@@ -44,14 +44,6 @@ impl Zone {
 
 #[cfg(target_arch = "riscv64")]
 #[cfg(feature = "plic")]
-pub mod plic;
-
-#[cfg(target_arch = "riscv64")]
-#[cfg(feature = "aia")]
-pub mod aia;
-
-#[cfg(target_arch = "riscv64")]
-#[cfg(feature = "plic")]
 pub use plic::{inject_irq, percpu_init, primary_init_early, primary_init_late, 
     host_plic, vplic_global_emul_handler, vplic_hart_emul_handler};
 
