@@ -16,7 +16,7 @@
 - [platform] Xilinx Ultrascale+ ZCU102 PS processor support ([Ren HangQi](https://github.com/ForeverYolo))
 - [platform] Loongson 3A5000+7A2000 support ([wheatfox](https://github.com/enkerewpo))
 - [feature] SMMUv3 support ([Zhongkai Xu](https://github.com/ZhongkaiXu))
-- [feature] PCIe support ([Zhongkai Xu](https://github.com/ZhongkaiXu))
+- [feature] PCIe support ([Zhongkai Xu](https://github.com/ZhongkaiXu), [dallasxy](https://github.com/dallasxy), [Ren HangQi](https://github.com/ForeverYolo))
 - [feature] network interface card support ([Ren HangQi](https://github.com/ForeverYolo))
 - [feature] riscv64: IOMMU support ([Jingyu Liu](https://github.com/liulog))
 - [feature] aarch64: GICv2 support ([Ren HangQi](https://github.com/ForeverYolo))
@@ -29,7 +29,7 @@
 
 ### hvisor v0.0.3
 
-- [platform] basic support for riscv64 ([Jingyu Liu](https://github.com/liulog))
+- [platform] basic support for riscv64 ([likey99](https://github.com/likey99))
 
 ### hvisor v0.0.2
 
