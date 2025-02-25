@@ -79,6 +79,15 @@ test-pre: download-test-img
 	chmod +x ./tools/cargo_test.sh
 	@echo "pass"
 
+fmt-test:
+	cargo fmt --all -- --check
+
+fmt:
+	cargo fmt --all
+
+clippy:
+	cargo clippy $(build_args)
+
 flash-img:
 # run this will erase all environment for uboot, be careful
 # the flash.img in repo will contains the correct bootcmd
