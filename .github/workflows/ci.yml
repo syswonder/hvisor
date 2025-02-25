@@ -22,7 +22,7 @@ jobs:
         with:
           components: rustfmt
       - name: linter
-        run: make fmt-check
+        run: make fmt-test
   clippy:
     name: clippy
     runs-on: ubuntu-latest
