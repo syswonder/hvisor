@@ -5,12 +5,17 @@ FSIMG1 := $(image_dir)/virtdisk/rootfs1.ext4
 FSIMG2 := $(image_dir)/virtdisk/rootfs-busybox.qcow2
 # HVISOR ENTRY
 HVISOR_ENTRY_PA := 0x80200000
-zone0_kernel := $(image_dir)/kernel/Image
+zone0_kernel := $(image_dir)/kernel/Image-aia-6.10
 zone0_dtb    := $(image_dir)/devicetree/linux1.dtb
+zone0_aia_dtb    := $(image_dir)/devicetree/linux1-aia.dtb
 # zone1_kernel := $(image_dir)/kernel/Image
 # zone1_dtb    := $(image_dir)/devicetree/linux.dtb
 
-QEMU_ARGS := -machine virt
+ifeq ($(IRQ),aia)
+    QEMU_ARGS := -machine virt,aclint=on,aia=aplic-imsic,aia-guests=1
+else ifeq ($(IRQ),plic)
+    QEMU_ARGS := -machine virt
+endif
 QEMU_ARGS += -bios default
 QEMU_ARGS += -cpu rv64
 QEMU_ARGS += -smp 4
@@ -18,10 +23,17 @@ QEMU_ARGS += -m 2G
 QEMU_ARGS += -nographic
 
 QEMU_ARGS += -kernel $(hvisor_bin)
+ifeq ($(IRQ),aia)
+QEMU_ARGS += -device loader,file="$(zone0_kernel)",addr=0x90000000,force-raw=on
+QEMU_ARGS += -device loader,file="$(zone0_aia_dtb)",addr=0x8f000000,force-raw=on
+# QEMU_ARGS += -device loader,file="$(zone1_aia_kernel)",addr=0x84000000,force-raw=on
+# QEMU_ARGS += -device loader,file="$(zone1_aia_dtb)",addr=0x83000000,force-raw=on
+else ifeq ($(IRQ),plic)
 QEMU_ARGS += -device loader,file="$(zone0_kernel)",addr=0x90000000,force-raw=on
 QEMU_ARGS += -device loader,file="$(zone0_dtb)",addr=0x8f000000,force-raw=on
 # QEMU_ARGS += -device loader,file="$(zone1_kernel)",addr=0x84000000,force-raw=on
 # QEMU_ARGS += -device loader,file="$(zone1_dtb)",addr=0x83000000,force-raw=on
+endif
 
 QEMU_ARGS += -drive if=none,file=$(FSIMG1),id=X10008000,format=raw
 QEMU_ARGS += -device virtio-blk-device,drive=X10008000,bus=virtio-mmio-bus.7

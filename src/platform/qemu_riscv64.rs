@@ -1,6 +1,7 @@
 use crate::{arch::zone::HvArchZoneConfig, config::*};
 
 pub const PLIC_BASE: usize = 0xc000000;
+pub const APLIC_BASE: usize = 0xc000000;
 pub const PLIC_MAX_IRQ: usize = 1024;
 pub const PLIC_GLOBAL_SIZE: usize = 0x200000;
 pub const PLIC_TOTAL_SIZE: usize = 0x400000;
@@ -78,4 +79,6 @@ pub const ROOT_ZONE_IRQS: [u32; 11] = [1,2,3,4,5,8,10,33,34,35,36];    // riscv 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     plic_base: 0xc000000,
     plic_size: 0x4000000,
+    aplic_base: 0xd000000,
+    aplic_size: 0x8000,
 };
