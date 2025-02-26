@@ -1,4 +1,4 @@
-KDIR ?= 
+KDIR ?= ~/fdisk/linux-6.10
 DEV ?= /dev/sda1
 ARCH ?= arm64
 LOG ?= LOG_INFO
