@@ -11,10 +11,14 @@ zone0_aia_dtb    := $(image_dir)/devicetree/linux1-aia.dtb
 # zone1_kernel := $(image_dir)/kernel/Image
 # zone1_dtb    := $(image_dir)/devicetree/linux.dtb
 
-ifeq ($(IRQ),aia)
+ifeq ($(findstring aia, $(FEATURES)),aia)
     QEMU_ARGS := -machine virt,aclint=on,aia=aplic-imsic,aia-guests=1
-else ifeq ($(IRQ),plic)
+    QEMU_ARGS += -device loader,file="$(zone0_aia_dtb)",addr=0x8f000000,force-raw=on
+    MESSAGE := "Note: Feature contains AIA"
+else 
     QEMU_ARGS := -machine virt
+    QEMU_ARGS += -device loader,file="$(zone0_dtb)",addr=0x8f000000,force-raw=on
+    MESSAGE := "Note: Feature contains PLIC"
 endif
 QEMU_ARGS += -bios default
 QEMU_ARGS += -cpu rv64
@@ -23,17 +27,11 @@ QEMU_ARGS += -m 2G
 QEMU_ARGS += -nographic
 
 QEMU_ARGS += -kernel $(hvisor_bin)
-ifeq ($(IRQ),aia)
 QEMU_ARGS += -device loader,file="$(zone0_kernel)",addr=0x90000000,force-raw=on
-QEMU_ARGS += -device loader,file="$(zone0_aia_dtb)",addr=0x8f000000,force-raw=on
 # QEMU_ARGS += -device loader,file="$(zone1_aia_kernel)",addr=0x84000000,force-raw=on
 # QEMU_ARGS += -device loader,file="$(zone1_aia_dtb)",addr=0x83000000,force-raw=on
-else ifeq ($(IRQ),plic)
-QEMU_ARGS += -device loader,file="$(zone0_kernel)",addr=0x90000000,force-raw=on
-QEMU_ARGS += -device loader,file="$(zone0_dtb)",addr=0x8f000000,force-raw=on
 # QEMU_ARGS += -device loader,file="$(zone1_kernel)",addr=0x84000000,force-raw=on
 # QEMU_ARGS += -device loader,file="$(zone1_dtb)",addr=0x83000000,force-raw=on
-endif
 
 QEMU_ARGS += -drive if=none,file=$(FSIMG1),id=X10008000,format=raw
 QEMU_ARGS += -device virtio-blk-device,drive=X10008000,bus=virtio-mmio-bus.7

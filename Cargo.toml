@@ -33,7 +33,6 @@ riscv-decode = "0.2.1"
 loongArch64 = "0.2.4"
 
 [features]
-default = ["aia"]
 platform_qemu = []
 platform_imx8mp = []
 platform_zcu102 = []

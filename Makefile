@@ -7,7 +7,6 @@ MODE ?= debug
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 FEATURES ?= platform_zcu102,gicv2
 BOARD ?= zcu102
-IRQ ?= aia
 
 ifeq ($(ARCH),aarch64)
     RUSTC_TARGET := aarch64-unknown-none
