@@ -63,6 +63,8 @@ struct arch_zone_config {
 struct arch_zone_config {
     __u64 plic_base;
     __u64 plic_size;
+    __u64 aplic_base;
+    __u64 aplic_size;
 };
 #endif
 

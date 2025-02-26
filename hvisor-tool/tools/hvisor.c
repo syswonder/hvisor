@@ -207,8 +207,14 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
 #ifdef RISCV64
     cJSON *plic_base_json = cJSON_GetObjectItem(arch_config_json, "plic_base");
     cJSON *plic_size_json = cJSON_GetObjectItem(arch_config_json, "plic_size");
+    cJSON *aplic_base_json = cJSON_GetObjectItem(arch_config_json, "aplic_base");
+    cJSON *aplic_size_json = cJSON_GetObjectItem(arch_config_json, "aplic_size");
 
     if (plic_base_json == NULL || plic_size_json == NULL) {
+        fprintf(stderr, "Missing fields in arch_config.\n");
+        return -1;
+    }
+    if (aplic_base_json == NULL || aplic_size_json == NULL) {
         fprintf(stderr, "Missing fields in arch_config.\n");
         return -1;
     }
@@ -217,6 +223,10 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         strtoull(plic_base_json->valuestring, NULL, 16);
     config->arch_config.plic_size =
         strtoull(plic_size_json->valuestring, NULL, 16);
+    config->arch_config.aplic_base =
+        strtoull(aplic_base_json->valuestring, NULL, 16);
+    config->arch_config.aplic_size =
+        strtoull(aplic_size_json->valuestring, NULL, 16);
 #endif
 
     return 0;
