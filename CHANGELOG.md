@@ -1,8 +1,8 @@
 # Changelog
 
-> ⚠️ Please update this file along with your pull request or your code change will NOT be merged. You should write your change in the `Unreleased` section with a brief description of the change and the link to your GitHub profile.
+> ⚠️ Please update this file for any changes to the hvisor project along with your name and GitHub profile link under the CURRENT section.
 
-## Unreleased
+## CURRENT-hvisor v0.1.1
 
 - 
 
