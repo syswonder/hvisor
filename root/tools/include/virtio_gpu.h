@@ -54,27 +54,16 @@
 #define MIN(a, b) ((a) < (b) ? (a) : (b))
 
 // Conversion between virtio_gpu_formats and drm formats
-#define VIRTIO_GPU_FORMAT_TO_DRM_FORMAT(format)                                   \
-    ((format == VIRTIO_GPU_FORMAT_X8R8G8B8_UNORM)                                 \
-         ? DRM_FORMAT_XRGB8888                                                    \
-         : (format == VIRTIO_GPU_FORMAT_X8B8G8R8_UNORM)                           \
-               ? DRM_FORMAT_XBGR8888                                              \
-               : (format == VIRTIO_GPU_FORMAT_R8G8B8X8_UNORM)                     \
-                     ? DRM_FORMAT_RGBX8888                                        \
-                     : (format == VIRTIO_GPU_FORMAT_B8G8R8X8_UNORM)               \
-                           ? DRM_FORMAT_BGRX8888                                  \
-                           : (format == VIRTIO_GPU_FORMAT_A8R8G8B8_UNORM)         \
-                                 ? DRM_FORMAT_ARGB8888                            \
-                                 : (format ==                                     \
-                                    VIRTIO_GPU_FORMAT_A8B8G8R8_UNORM)             \
-                                       ? DRM_FORMAT_ABGR8888                      \
-                                       : (format ==                               \
-                                          VIRTIO_GPU_FORMAT_R8G8B8A8_UNORM)       \
-                                             ? DRM_FORMAT_RGBA8888                \
-                                             : (format ==                         \
-                                                VIRTIO_GPU_FORMAT_B8G8R8A8_UNORM) \
-                                                   ? DRM_FORMAT_BGRA8888          \
-                                                   : 0 /* Unknown format */)
+#define VIRTIO_GPU_FORMAT_TO_DRM_FORMAT(format)                                \
+    ((format == VIRTIO_GPU_FORMAT_X8R8G8B8_UNORM)   ? DRM_FORMAT_XRGB8888      \
+     : (format == VIRTIO_GPU_FORMAT_X8B8G8R8_UNORM) ? DRM_FORMAT_XBGR8888      \
+     : (format == VIRTIO_GPU_FORMAT_R8G8B8X8_UNORM) ? DRM_FORMAT_RGBX8888      \
+     : (format == VIRTIO_GPU_FORMAT_B8G8R8X8_UNORM) ? DRM_FORMAT_BGRX8888      \
+     : (format == VIRTIO_GPU_FORMAT_A8R8G8B8_UNORM) ? DRM_FORMAT_ARGB8888      \
+     : (format == VIRTIO_GPU_FORMAT_A8B8G8R8_UNORM) ? DRM_FORMAT_ABGR8888      \
+     : (format == VIRTIO_GPU_FORMAT_R8G8B8A8_UNORM) ? DRM_FORMAT_RGBA8888      \
+     : (format == VIRTIO_GPU_FORMAT_B8G8R8A8_UNORM) ? DRM_FORMAT_BGRA8888      \
+                                                    : 0 /* Unknown format */)
 
 /*********************************************************************
     Structures
