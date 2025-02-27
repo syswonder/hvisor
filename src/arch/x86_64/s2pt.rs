@@ -1,11 +1,18 @@
-use super::paging::{GenericPTE, Level4PageTable, PagingInstr};
-use crate::consts::PAGE_SIZE;
-use crate::memory::addr::{GuestPhysAddr, HostPhysAddr, PhysAddr};
-use crate::memory::MemFlags;
+use crate::{
+    arch::{
+        paging::{GenericPTE, Level4PageTable, PagingInstr},
+        vmcs::*,
+    },
+    consts::PAGE_SIZE,
+    error::HvResult,
+    memory::{
+        addr::{GuestPhysAddr, HostPhysAddr, PhysAddr},
+        MemFlags,
+    },
+};
 use bit_field::BitField;
 use bitflags::bitflags;
-use core::arch::asm;
-use core::fmt;
+use core::{arch::asm, fmt};
 
 bitflags! {
     /// EPT entry flags. (SDM Vol. 3C, Section 28.3.2)
@@ -132,10 +139,12 @@ impl From<MemFlags> for DescriptorAttr {
             attr |= Self::WRITE;
         }
         if flags.contains(MemFlags::EXECUTE) {
-            attr |= Self::EXECUTE;
+            attr |= Self::EXECUTE | Self::EXECUTE_FOR_USER;
         }
         if !flags.contains(MemFlags::IO) {
             attr.set_mem_type(MemType::WriteBack);
+        } else {
+            //  attr &= !Self::READ;
         }
         attr
     }
@@ -229,7 +238,7 @@ pub struct S2PTInstr;
 impl PagingInstr for S2PTInstr {
     unsafe fn activate(root_paddr: HostPhysAddr) {
         let s2ptp = S2PTPointer::from_table_phys(root_paddr).bits();
-        crate::arch::vmx::set_s2ptp(s2ptp).unwrap();
+        crate::arch::vmcs::VmcsControl64::EPTP.write(s2ptp).unwrap();
         unsafe { invs2pt(InvS2PTType::SingleContext, s2ptp) };
     }
 
@@ -243,6 +252,28 @@ pub struct Stage2PageFaultInfo {
     pub access_flags: MemFlags,
     /// Guest physical address that caused the nested page fault.
     pub fault_guest_paddr: GuestPhysAddr,
+}
+
+impl Stage2PageFaultInfo {
+    pub fn new() -> HvResult<Self> {
+        // SDM Vol. 3C, Section 27.2.1, Table 27-7
+        let qualification = VmcsReadOnlyNW::EXIT_QUALIFICATION.read()?;
+        let fault_guest_paddr = VmcsReadOnly64::GUEST_PHYSICAL_ADDR.read()? as usize;
+        let mut access_flags = MemFlags::empty();
+        if qualification.get_bit(0) {
+            access_flags |= MemFlags::READ;
+        }
+        if qualification.get_bit(1) {
+            access_flags |= MemFlags::WRITE;
+        }
+        if qualification.get_bit(2) {
+            access_flags |= MemFlags::EXECUTE;
+        }
+        Ok(Stage2PageFaultInfo {
+            access_flags,
+            fault_guest_paddr,
+        })
+    }
 }
 
 pub type Stage2PageTable = Level4PageTable<GuestPhysAddr, PageTableEntry, S2PTInstr>;

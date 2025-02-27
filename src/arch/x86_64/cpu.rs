@@ -1,15 +1,16 @@
 use crate::{
     arch::{
-        gdt::GdtStruct,
+        boot::BootParams,
+        gdt::{get_tr_base, GdtStruct},
         lapic::{busy_wait, local_apic},
-        msr::Msr::*,
-        msr::MsrBitmap,
+        msr::{Msr, Msr::*, MsrBitmap},
+        vmcs::*,
         vmx::*,
     },
     consts::{core_end, PER_CPU_SIZE},
     device::irqchip::pic::lapic::VirtApicTimer,
     error::{HvError, HvResult},
-    memory::{addr::phys_to_virt, GuestPhysAddr, PhysAddr, PAGE_SIZE},
+    memory::{addr::phys_to_virt, GuestPhysAddr, HostPhysAddr, PhysAddr, PAGE_SIZE},
     percpu::this_cpu_data,
     platform::qemu_x86_64::*,
 };
@@ -18,12 +19,20 @@ use core::{
     arch::{asm, global_asm},
     fmt::{Debug, Formatter, Result},
     mem::size_of,
+    ptr::copy_nonoverlapping,
     time::Duration,
 };
 use raw_cpuid::CpuId;
-use x86_64::structures::tss::TaskStateSegment;
-
-use super::msr::Msr;
+use x86::{
+    dtables::{self, DescriptorTablePointer},
+    vmx::vmcs::control::{
+        EntryControls, ExitControls, PinbasedControls, PrimaryControls, SecondaryControls,
+    },
+};
+use x86_64::{
+    registers::control::{Cr0, Cr0Flags, Cr3, Cr4, Cr4Flags},
+    structures::tss::TaskStateSegment,
+};
 
 const AP_START_PAGE_IDX: u8 = 6;
 const AP_START_PAGE_PADDR: PhysAddr = AP_START_PAGE_IDX as usize * PAGE_SIZE;
@@ -166,30 +175,38 @@ impl ArchCpu {
         }
     }
 
-    pub fn init(&mut self, entry: GuestPhysAddr, dtb: usize) -> HvResult {
-        self.activate_vmx()?;
-        self.setup_vmcs(entry)?;
-        Ok(())
+    /// Advance guest `RIP` by `instr_len` bytes.
+    pub fn advance_guest_rip(&mut self, instr_len: u8) -> HvResult {
+        Ok(VmcsGuestNW::RIP.write(VmcsGuestNW::RIP.read()? + instr_len as usize)?)
     }
 
-    pub fn run(&mut self) -> ! {
-        assert!(this_cpu_id() == self.cpuid);
-        // TODO: this_cpu_data().cpu_on_entry
-        self.init(GUEST_ENTRY, this_cpu_data().dtb_ipa).unwrap();
+    /// Returns the mutable reference of [`VirtApicTimer`].
+    pub fn apic_timer_mut(&mut self) -> &mut VirtApicTimer {
+        &mut self.apic_timer
+    }
 
-        this_cpu_data().activate_gpm();
-        set_host_rsp(&self.host_stack_top as *const _ as usize).unwrap();
-        set_guest_page_table(GUEST_PT1).unwrap();
-        set_guest_stack_pointer(GUEST_STACK_TOP).unwrap();
-
-        unsafe { self.vmx_launch() };
-        loop {}
+    pub fn cr(&self, cr_idx: usize) -> usize {
+        (|| -> HvResult<usize> {
+            Ok(match cr_idx {
+                4 => {
+                    let host_mask = VmcsControlNW::CR4_GUEST_HOST_MASK.read()?;
+                    (VmcsControlNW::CR4_READ_SHADOW.read()? & host_mask)
+                        | (VmcsGuestNW::CR4.read()? & !host_mask)
+                }
+                _ => unreachable!(),
+            })
+        })()
+        .expect("Failed to read guest control register")
     }
 
     pub fn idle(&mut self) -> ! {
         assert!(this_cpu_id() == self.cpuid);
-        unsafe { self.init(0, this_cpu_data().dtb_ipa) };
+        // unsafe { self.reset(0, this_cpu_data().dtb_ipa) };
         loop {}
+    }
+
+    pub fn inject_fault(&mut self) -> HvResult {
+        Ok(())
     }
 
     /// Guest general-purpose registers.
@@ -202,15 +219,38 @@ impl ArchCpu {
         &mut self.guest_regs
     }
 
-    /// Returns the mutable reference of [`VirtApicTimer`].
-    pub fn apic_timer_mut(&mut self) -> &mut VirtApicTimer {
-        &mut self.apic_timer
+    pub fn reset(&mut self, entry: GuestPhysAddr) -> HvResult {
+        self.activate_vmx()?;
+        self.setup_vmcs(entry)?;
+        Ok(())
     }
 
-    /// Add a virtual interrupt or exception to the pending events list,
-    /// and try to inject it before later VM entries.
-    pub fn inject_event(&mut self, vector: u8, err_code: Option<u32>) {
-        self.pending_events.push_back((vector, err_code));
+    pub fn run(&mut self) -> ! {
+        assert!(this_cpu_id() == self.cpuid);
+
+        // this_cpu_data().cpu_on_entry
+        self.reset(this_cpu_data().cpu_on_entry).unwrap();
+
+        self.setup_boot_params().unwrap();
+        this_cpu_data().activate_gpm();
+
+        unsafe { self.vmx_launch() };
+        loop {}
+    }
+
+    /// If enable, a VM exit occurs at the beginning of any instruction if
+    /// `RFLAGS.IF` = 1 and there are no other blocking of interrupts.
+    /// (see SDM, Vol. 3C, Section 24.4.2)
+    pub fn set_interrupt_window(&mut self, enable: bool) -> HvResult {
+        let mut ctrl: u32 = VmcsControl32::PRIMARY_PROCBASED_EXEC_CONTROLS.read()?;
+        let bits = PrimaryControls::INTERRUPT_WINDOW_EXITING.bits();
+        if enable {
+            ctrl |= bits
+        } else {
+            ctrl &= !bits
+        }
+        VmcsControl32::PRIMARY_PROCBASED_EXEC_CONTROLS.write(ctrl)?;
+        Ok(())
     }
 
     fn activate_vmx(&mut self) -> HvResult {
@@ -231,32 +271,278 @@ impl ArchCpu {
         Ok(())
     }
 
+    /// Whether the guest interrupts are blocked. (SDM Vol. 3C, Section 24.4.2, Table 24-3)
+    fn allow_interrupt(&self) -> bool {
+        let rflags = VmcsGuestNW::RFLAGS.read().unwrap();
+        let block_state = VmcsGuest32::INTERRUPTIBILITY_STATE.read().unwrap();
+        rflags as u64 & x86_64::registers::rflags::RFlags::INTERRUPT_FLAG.bits() != 0
+            && block_state == 0
+    }
+
+    /// Try to inject a pending event before next VM entry.
+    fn check_pending_events(&mut self) -> HvResult {
+        if let Some(event) = self.pending_events.front() {
+            let allow_interrupt = self.allow_interrupt();
+            if event.0 < 32 || allow_interrupt {
+                // if it's an exception, or an interrupt that is not blocked, inject it directly.
+                Vmcs::inject_interrupt(event.0, event.1)?;
+                self.pending_events.pop_front();
+            } else {
+                // interrupts are blocked, enable interrupt-window exiting.
+                self.set_interrupt_window(true)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Add a virtual interrupt or exception to the pending events list,
+    /// and try to inject it before later VM entries.
+    fn inject_interrupt(&mut self, vector: u8, err_code: Option<u32>) {
+        self.pending_events.push_back((vector, err_code));
+    }
+
+    fn setup_boot_params(&mut self) -> HvResult {
+        BootParams::fill(
+            ROOT_ZONE_SETUP_ADDR,
+            ROOT_ZONE_INITRD_ADDR,
+            ROOT_ZONE_CMDLINE_ADDR,
+            "console=ttyS0 earlyprintk=serial rdinit=/init nokaslr\0",
+            // "console=ttyS0 earlyprintk=serial nokaslr\0"
+        )?;
+        self.guest_regs.rax = this_cpu_data().cpu_on_entry as u64;
+        self.guest_regs.rsi = ROOT_ZONE_SETUP_ADDR as u64;
+        Ok(())
+    }
+
+    fn set_cr(&mut self, cr_idx: usize, val: u64) -> HvResult {
+        match cr_idx {
+            0 => {
+                // Retrieve/validate restrictions on CR0
+                //
+                // In addition to what the VMX MSRs tell us, make sure that
+                // - NW and CD are kept off as they are not updated on VM exit and we
+                //   don't want them enabled for performance reasons while in root mode
+                // - PE and PG can be freely chosen (by the guest) because we demand
+                //   unrestricted guest mode support anyway
+                // - ET is ignored
+                let must0 = Msr::IA32_VMX_CR0_FIXED1.read();
+                // & !(Cr0Flags::NOT_WRITE_THROUGH | Cr0Flags::CACHE_DISABLE).bits();
+                let must1 = Msr::IA32_VMX_CR0_FIXED0.read()
+                    & !(Cr0Flags::PAGING | Cr0Flags::PROTECTED_MODE_ENABLE).bits();
+                VmcsGuestNW::CR0.write(((val & must0) | must1) as _)?;
+                VmcsControlNW::CR0_READ_SHADOW.write(val as _)?;
+                VmcsControlNW::CR0_GUEST_HOST_MASK.write((must1 | !must0) as _)?;
+            }
+            3 => VmcsGuestNW::CR3.write(val as _)?,
+            4 => {
+                let cr4_host_owned = Cr4Flags::VIRTUAL_MACHINE_EXTENSIONS;
+                let cr4_read_shadow = 0;
+                let val = val | Cr4Flags::VIRTUAL_MACHINE_EXTENSIONS.bits();
+                VmcsGuestNW::CR4.write(val as _)?;
+                VmcsControlNW::CR4_GUEST_HOST_MASK.write(cr4_host_owned.bits() as _)?;
+                VmcsControlNW::CR4_READ_SHADOW.write(cr4_read_shadow)?;
+            }
+            _ => unreachable!(),
+        }
+        Ok(())
+    }
+
     fn setup_vmcs(&mut self, entry: GuestPhysAddr) -> HvResult {
         self.vmcs_region = VmxRegion::new(self.vmcs_revision_id, false)?;
+        self.msr_bitmap = MsrBitmap::intercept_def()?;
 
-        self.msr_bitmap = MsrBitmap::init()?;
-        self.setup_msr_bitmap()?;
+        let start_paddr = self.vmcs_region.start_paddr() as usize;
+        Vmcs::clear(start_paddr)?;
+        Vmcs::load(start_paddr)?;
 
-        unsafe { enable_vmcs(self.vmcs_region.start_paddr() as u64)? };
-        setup_vmcs_host(Self::vmx_exit as usize)?;
-        setup_vmcs_guest(entry)?;
-        setup_vmcs_control(self.msr_bitmap.phys_addr())?;
+        self.setup_vmcs_host(&self.host_stack_top as *const _ as usize)?;
+        self.setup_vmcs_guest(entry, ROOT_ZONE_BOOT_STACK)?;
+        self.setup_vmcs_control()?;
 
         Ok(())
     }
 
-    #[naked]
-    unsafe extern "C" fn vmx_launch(&mut self) -> ! {
-        asm!(
-            "mov    [rdi + {host_stack_top}], rsp", // save current RSP to host_stack_top
-            "mov    rsp, rdi",                      // set RSP to guest regs area
-            restore_regs_from_stack!(),
-            "vmlaunch",
-            "jmp    {failed}",
-            host_stack_top = const size_of::<GeneralRegisters>(),
-            failed = sym Self::vmx_entry_failed,
-            options(noreturn),
-        )
+    fn setup_vmcs_control(&mut self) -> HvResult {
+        // Intercept NMI and external interrupts.
+        use PinbasedControls as PinCtrl;
+        Vmcs::set_control(
+            VmcsControl32::PINBASED_EXEC_CONTROLS,
+            Msr::IA32_VMX_TRUE_PINBASED_CTLS,
+            Msr::IA32_VMX_PINBASED_CTLS.read() as u32,
+            (PinCtrl::NMI_EXITING | PinCtrl::EXTERNAL_INTERRUPT_EXITING).bits(),
+            0,
+        )?;
+
+        // Intercept all I/O instructions, use MSR bitmaps, activate secondary controls,
+        // disable CR3 load/store interception.
+        use PrimaryControls as CpuCtrl;
+        Vmcs::set_control(
+            VmcsControl32::PRIMARY_PROCBASED_EXEC_CONTROLS,
+            Msr::IA32_VMX_TRUE_PROCBASED_CTLS,
+            Msr::IA32_VMX_PROCBASED_CTLS.read() as u32,
+            (
+                // CpuCtrl::RDTSC_EXITING |
+                CpuCtrl::UNCOND_IO_EXITING | CpuCtrl::USE_MSR_BITMAPS | CpuCtrl::SECONDARY_CONTROLS
+            )
+                .bits(),
+            (CpuCtrl::CR3_LOAD_EXITING | CpuCtrl::CR3_STORE_EXITING).bits(),
+        )?;
+
+        // Enable EPT, RDTSCP, INVPCID, and unrestricted guest.
+        use SecondaryControls as CpuCtrl2;
+        Vmcs::set_control(
+            VmcsControl32::SECONDARY_PROCBASED_EXEC_CONTROLS,
+            Msr::IA32_VMX_PROCBASED_CTLS2,
+            0,
+            (CpuCtrl2::ENABLE_EPT
+                | CpuCtrl2::ENABLE_RDTSCP
+                | CpuCtrl2::ENABLE_INVPCID
+                | CpuCtrl2::UNRESTRICTED_GUEST)
+                .bits(),
+            0,
+        )?;
+
+        // Load guest IA32_PAT/IA32_EFER on VM entry.
+        use EntryControls as EntryCtrl;
+        Vmcs::set_control(
+            VmcsControl32::VMENTRY_CONTROLS,
+            Msr::IA32_VMX_TRUE_ENTRY_CTLS,
+            Msr::IA32_VMX_ENTRY_CTLS.read() as u32,
+            (EntryCtrl::LOAD_IA32_PAT | EntryCtrl::LOAD_IA32_EFER).bits(),
+            0,
+        )?;
+
+        // Switch to 64-bit host, acknowledge interrupt info, switch IA32_PAT/IA32_EFER on VM exit.
+        use ExitControls as ExitCtrl;
+        Vmcs::set_control(
+            VmcsControl32::VMEXIT_CONTROLS,
+            Msr::IA32_VMX_TRUE_EXIT_CTLS,
+            Msr::IA32_VMX_EXIT_CTLS.read() as u32,
+            (ExitCtrl::HOST_ADDRESS_SPACE_SIZE
+                | ExitCtrl::ACK_INTERRUPT_ON_EXIT
+                | ExitCtrl::SAVE_IA32_PAT
+                | ExitCtrl::LOAD_IA32_PAT
+                | ExitCtrl::SAVE_IA32_EFER
+                | ExitCtrl::LOAD_IA32_EFER)
+                .bits(),
+            0,
+        )?;
+
+        // No MSR switches if hypervisor doesn't use and there is only one vCPU.
+        VmcsControl32::VMEXIT_MSR_STORE_COUNT.write(0)?;
+        VmcsControl32::VMEXIT_MSR_LOAD_COUNT.write(0)?;
+        VmcsControl32::VMENTRY_MSR_LOAD_COUNT.write(0)?;
+
+        // Pass-through exceptions, don't use I/O bitmap, set MSR bitmaps.
+        VmcsControl32::EXCEPTION_BITMAP.write(0)?;
+        VmcsControl64::IO_BITMAP_A_ADDR.write(0)?;
+        VmcsControl64::IO_BITMAP_B_ADDR.write(0)?;
+        VmcsControl64::MSR_BITMAPS_ADDR.write(self.msr_bitmap.phys_addr() as _)?;
+        Ok(())
+    }
+
+    fn setup_vmcs_guest(&mut self, entry: GuestPhysAddr, rsp: GuestPhysAddr) -> HvResult {
+        let cr0_guest = Cr0Flags::EXTENSION_TYPE | Cr0Flags::NUMERIC_ERROR;
+        let cr4_guest = Cr4Flags::VIRTUAL_MACHINE_EXTENSIONS;
+
+        self.set_cr(0, cr0_guest.bits());
+        self.set_cr(3, 0);
+        self.set_cr(4, cr4_guest.bits());
+
+        macro_rules! set_guest_segment {
+            ($seg: ident, $access_rights: expr) => {{
+                use VmcsGuest16::*;
+                use VmcsGuest32::*;
+                use VmcsGuestNW::*;
+                concat_idents!($seg, _SELECTOR).write(0)?;
+                concat_idents!($seg, _BASE).write(0)?;
+                concat_idents!($seg, _LIMIT).write(0xffff)?;
+                concat_idents!($seg, _ACCESS_RIGHTS).write($access_rights)?;
+            }};
+        }
+
+        set_guest_segment!(ES, 0x93); // 16-bit, present, data, read/write, accessed
+        set_guest_segment!(CS, 0x9b); // 16-bit, present, code, exec/read, accessed
+        set_guest_segment!(SS, 0x93);
+        set_guest_segment!(DS, 0x93);
+        set_guest_segment!(FS, 0x93);
+        set_guest_segment!(GS, 0x93);
+        set_guest_segment!(TR, 0x8b); // present, system, 32-bit TSS busy
+        set_guest_segment!(LDTR, 0x82); // present, system, LDT
+
+        VmcsGuestNW::GDTR_BASE.write(0)?;
+        VmcsGuest32::GDTR_LIMIT.write(0xffff)?;
+        VmcsGuestNW::IDTR_BASE.write(0)?;
+        VmcsGuest32::IDTR_LIMIT.write(0xffff)?;
+
+        VmcsGuestNW::DR7.write(0x400)?;
+        VmcsGuestNW::RSP.write(rsp)?;
+        VmcsGuestNW::RIP.write(entry)?;
+        VmcsGuestNW::RFLAGS.write(0x2)?;
+        VmcsGuestNW::PENDING_DBG_EXCEPTIONS.write(0)?;
+        VmcsGuestNW::IA32_SYSENTER_ESP.write(0)?;
+        VmcsGuestNW::IA32_SYSENTER_EIP.write(0)?;
+        VmcsGuest32::IA32_SYSENTER_CS.write(0)?;
+
+        VmcsGuest32::INTERRUPTIBILITY_STATE.write(0)?;
+        VmcsGuest32::ACTIVITY_STATE.write(0)?;
+        VmcsGuest32::VMX_PREEMPTION_TIMER_VALUE.write(0)?;
+
+        VmcsGuest64::LINK_PTR.write(u64::MAX)?; // SDM Vol. 3C, Section 24.4.2
+        VmcsGuest64::IA32_DEBUGCTL.write(0)?;
+        VmcsGuest64::IA32_PAT.write(Msr::IA32_PAT.read())?;
+        VmcsGuest64::IA32_EFER.write(0)?;
+        Ok(())
+    }
+
+    fn setup_vmcs_host(&mut self, rsp: GuestPhysAddr) -> HvResult {
+        VmcsHost64::IA32_PAT.write(Msr::IA32_PAT.read())?;
+        VmcsHost64::IA32_EFER.write(Msr::IA32_EFER.read())?;
+
+        VmcsHostNW::CR0.write(Cr0::read_raw() as _)?;
+        VmcsHostNW::CR3.write(Cr3::read_raw().0.start_address().as_u64() as _)?;
+        VmcsHostNW::CR4.write(Cr4::read_raw() as _)?;
+
+        VmcsHost16::ES_SELECTOR.write(x86::segmentation::es().bits())?;
+        VmcsHost16::CS_SELECTOR.write(x86::segmentation::cs().bits())?;
+        VmcsHost16::SS_SELECTOR.write(x86::segmentation::ss().bits())?;
+        VmcsHost16::DS_SELECTOR.write(x86::segmentation::ds().bits())?;
+        VmcsHost16::FS_SELECTOR.write(x86::segmentation::fs().bits())?;
+        VmcsHost16::GS_SELECTOR.write(x86::segmentation::gs().bits())?;
+        VmcsHostNW::FS_BASE.write(Msr::IA32_FS_BASE.read() as _)?;
+        VmcsHostNW::GS_BASE.write(Msr::IA32_GS_BASE.read() as _)?;
+
+        let tr = unsafe { x86::task::tr() };
+        let mut gdtp = DescriptorTablePointer::<u64>::default();
+        let mut idtp = DescriptorTablePointer::<u64>::default();
+        unsafe {
+            dtables::sgdt(&mut gdtp);
+            dtables::sidt(&mut idtp);
+        }
+        VmcsHost16::TR_SELECTOR.write(tr.bits())?;
+        VmcsHostNW::TR_BASE.write(get_tr_base(tr, &gdtp) as _)?;
+        VmcsHostNW::GDTR_BASE.write(gdtp.base as _)?;
+        VmcsHostNW::IDTR_BASE.write(idtp.base as _)?;
+        VmcsHostNW::RSP.write(rsp)?;
+        VmcsHostNW::RIP.write(Self::vmx_exit as usize)?;
+
+        VmcsHostNW::IA32_SYSENTER_ESP.write(0)?;
+        VmcsHostNW::IA32_SYSENTER_EIP.write(0)?;
+        VmcsHost32::IA32_SYSENTER_CS.write(0)?;
+        Ok(())
+    }
+
+    fn vmexit_handler(&mut self) {
+        crate::arch::trap::handle_vmexit(self).unwrap();
+        // Check if there is an APIC timer interrupt
+        if self.apic_timer.check_interrupt() {
+            self.inject_interrupt(self.apic_timer.vector(), None);
+        }
+        self.check_pending_events().unwrap();
+    }
+
+    unsafe fn vmx_entry_failed() -> ! {
+        panic!("{}", Vmcs::instruction_error().unwrap().as_str());
     }
 
     #[naked]
@@ -278,48 +564,18 @@ impl ArchCpu {
         );
     }
 
-    unsafe fn vmx_entry_failed() -> ! {
-        panic!("VMX instruction error: {}", instruction_error());
-    }
-
-    fn vmexit_handler(&mut self) {
-        crate::arch::trap::handle_vmexit(self).unwrap();
-        // Check if there is an APIC timer interrupt
-        if self.apic_timer.check_interrupt() {
-            self.inject_event(self.apic_timer.vector(), None);
-        }
-        self.check_pending_events().unwrap();
-    }
-
-    /// Try to inject a pending event before next VM entry.
-    fn check_pending_events(&mut self) -> HvResult {
-        if let Some(event) = self.pending_events.front() {
-            let allow_interrupt = allow_interrupt()?;
-            if event.0 < 32 || allow_interrupt {
-                // if it's an exception, or an interrupt that is not blocked, inject it directly.
-                inject_event(event.0, event.1)?;
-                self.pending_events.pop_front();
-            } else {
-                // interrupts are blocked, enable interrupt-window exiting.
-                set_interrupt_window(true)?;
-            }
-        }
-        Ok(())
-    }
-
-    fn setup_msr_bitmap(&mut self) -> HvResult {
-        // Intercept IA32_APIC_BASE MSR accesses
-        let msr = IA32_APIC_BASE;
-        self.msr_bitmap.set_read_intercept(msr, true);
-        self.msr_bitmap.set_write_intercept(msr, true);
-        // Intercept all x2APIC MSR accesses
-        for addr in 0x800_u32..=0x83f_u32 {
-            if let Ok(msr) = Msr::try_from(addr) {
-                self.msr_bitmap.set_read_intercept(msr, true);
-                self.msr_bitmap.set_write_intercept(msr, true);
-            }
-        }
-        Ok(())
+    #[naked]
+    unsafe extern "C" fn vmx_launch(&mut self) -> ! {
+        asm!(
+            "mov    [rdi + {host_stack_top}], rsp", // save current RSP to host_stack_top
+            "mov    rsp, rdi",                      // set RSP to guest regs area
+            restore_regs_from_stack!(),
+            "vmlaunch",
+            "jmp    {failed}",
+            host_stack_top = const size_of::<GeneralRegisters>(),
+            failed = sym Self::vmx_entry_failed,
+            options(noreturn),
+        )
     }
 }
 
@@ -335,9 +591,16 @@ impl Debug for ArchCpu {
         (|| -> HvResult<Result> {
             Ok(f.debug_struct("ArchCpu")
                 .field("guest_regs", &self.guest_regs)
-                .field("rip", &guest_rip())
-                .field("rsp", &guest_rsp())
-                .field("cr3", &guest_cr3())
+                .field("rip", &VmcsGuestNW::RIP.read()?)
+                .field("rsp", &VmcsGuestNW::RSP.read()?)
+                .field("rflags", &VmcsGuestNW::RFLAGS.read()?)
+                .field("cr0", &VmcsGuestNW::CR0.read()?)
+                .field("cr3", &VmcsGuestNW::CR3.read()?)
+                .field("cr4", &VmcsGuestNW::CR4.read()?)
+                .field("cs", &VmcsGuest16::CS_SELECTOR.read()?)
+                .field("fs_base", &VmcsGuestNW::FS_BASE.read()?)
+                .field("gs_base", &VmcsGuestNW::GS_BASE.read()?)
+                .field("tss", &VmcsGuest16::TR_SELECTOR.read()?)
                 .finish())
         })()
         .unwrap()

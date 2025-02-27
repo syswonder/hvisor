@@ -1,9 +1,9 @@
-use x86::msr::{rdmsr, wrmsr};
-
 use crate::{
+    arch::msr::Msr::*,
     error::HvResult,
     memory::{Frame, HostPhysAddr},
 };
+use x86::msr::{rdmsr, wrmsr};
 
 numeric_enum_macro::numeric_enum! {
 #[repr(u32)]
@@ -11,7 +11,7 @@ numeric_enum_macro::numeric_enum! {
 #[allow(non_camel_case_types)]
 /// X86 model-specific registers. (SDM Vol. 4)
 pub enum Msr {
-    /// APIC Location and Status (R/W) See Table 35-2. See Section 10.4.4, Local APIC  Status and Location.
+    /// APIC Location and Status (R/W) See Table 35-2. See Section 10.4.4, Local APIC Status and Location.
     IA32_APIC_BASE = 0x1b,
     IA32_FEATURE_CONTROL = 0x3a,
     IA32_PAT = 0x277,
@@ -33,38 +33,38 @@ pub enum Msr {
     IA32_VMX_TRUE_EXIT_CTLS = 0x48f,
     IA32_VMX_TRUE_ENTRY_CTLS = 0x490,
 
-    /// x2APIC Msr
+    /// X2APIC Msr
 
     /// ID register.
-    APICID = 0x802,
+    IA32_X2APIC_APICID = 0x802,
     /// Version register.
-    VERSION = 0x803,
+    IA32_X2APIC_VERSION = 0x803,
     /// End-Of-Interrupt register.
-    EOI = 0x80B,
+    IA32_X2APIC_EOI = 0x80B,
     /// Logical Destination Register.
-    LDR = 0x80D,
+    IA32_X2APIC_LDR = 0x80D,
     /// Spurious Interrupt Vector register.
-    SIVR = 0x80F,
+    IA32_X2APIC_SIVR = 0x80F,
     /// Interrupt Command register.
-    ICR = 0x830,
+    IA32_X2APIC_ICR = 0x830,
     /// LVT Timer Interrupt register.
-    LVT_TIMER = 0x832,
+    IA32_X2APIC_LVT_TIMER = 0x832,
     /// LVT Thermal Sensor Interrupt register.
-    LVT_THERMAL = 0x833,
+    IA32_X2APIC_LVT_THERMAL = 0x833,
     /// LVT Performance Monitor register.
-    LVT_PMI = 0x834,
+    IA32_X2APIC_LVT_PMI = 0x834,
     /// LVT LINT0 register.
-    LVT_LINT0 = 0x835,
+    IA32_X2APIC_LVT_LINT0 = 0x835,
     /// LVT LINT1 register.
-    LVT_LINT1 = 0x836,
+    IA32_X2APIC_LVT_LINT1 = 0x836,
     /// LVT Error register.
-    LVT_ERR = 0x837,
-    ///  Initial Count register.
-    INIT_COUNT = 0x838,
+    IA32_X2APIC_LVT_ERROR = 0x837,
+    /// Initial Count register.
+    IA32_X2APIC_INIT_COUNT = 0x838,
     /// Current Count register.
-    CUR_COUNT = 0x839,
+    IA32_X2APIC_CUR_COUNT = 0x839,
     /// Divide Configuration register.
-    DIV_CONF = 0x83E,
+    IA32_X2APIC_DIV_CONF = 0x83E,
 
     IA32_EFER = 0xc000_0080,
     IA32_STAR = 0xc000_0081,
@@ -109,12 +109,6 @@ impl MsrBitmap {
         }
     }
 
-    pub fn init() -> HvResult<Self> {
-        Ok(Self {
-            frame: Frame::new_zero()?,
-        })
-    }
-
     pub fn passthrough_all() -> HvResult<Self> {
         Ok(Self {
             frame: Frame::new_zero()?,
@@ -125,6 +119,24 @@ impl MsrBitmap {
         let mut frame = Frame::new()?;
         frame.fill(u8::MAX);
         Ok(Self { frame })
+    }
+
+    pub fn intercept_def() -> HvResult<Self> {
+        // Intercept IA32_APIC_BASE MSR accesses
+        let mut bitmap = Self {
+            frame: Frame::new_zero()?,
+        };
+        let msr = IA32_APIC_BASE;
+        bitmap.set_read_intercept(msr, true);
+        bitmap.set_write_intercept(msr, true);
+        // Intercept all x2APIC MSR accesses
+        for addr in 0x800_u32..=0x83f_u32 {
+            if let Ok(msr) = Msr::try_from(addr) {
+                bitmap.set_read_intercept(msr, true);
+                bitmap.set_write_intercept(msr, true);
+            }
+        }
+        Ok(bitmap)
     }
 
     pub fn phys_addr(&self) -> HostPhysAddr {

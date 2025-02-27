@@ -1,7 +1,4 @@
-use crate::{
-    arch::device::PortIoDevice,
-    error::{HvError, HvResult},
-};
+use crate::{arch::device::PortIoDevice, error::HvResult};
 use spin::Mutex;
 use x86_64::instructions::port::{PortReadOnly, PortWriteOnly};
 
@@ -29,10 +26,9 @@ lazy_static::lazy_static! {
 bitflags::bitflags! {
     /// Line status flags
     struct LineStatusFlags: u8 {
-        const INPUT_FULL = 1;
-        // 1 to 4 unknown
-        const OUTPUT_EMPTY = 1 << 5;
-        // 6 and 7 unknown
+        const RECEIVER_DATA_READY = 1;
+        const TRANSMIT_HOLD_REG_EMPTY = 1 << 5;
+        const TRANSMITTER_EMPTY = 1 << 6;
     }
 }
 
@@ -86,11 +82,6 @@ struct Uart16550 {
     lsr: PortReadOnly<u8>,  // line status
 }
 
-pub struct VirtUart16550 {
-    base_port: u16,
-    fifo: Mutex<Fifo<UART_FIFO_CAPACITY>>,
-}
-
 impl Uart16550 {
     const fn new(base_port: u16) -> Self {
         Self {
@@ -130,20 +121,25 @@ impl Uart16550 {
 
     fn putchar(&mut self, c: u8) {
         unsafe {
-            while self.lsr.read() & LineStatusFlags::OUTPUT_EMPTY.bits() == 0 {}
+            while self.lsr.read() & LineStatusFlags::TRANSMIT_HOLD_REG_EMPTY.bits() == 0 {}
             self.thr.write(c);
         }
     }
 
     fn getchar(&mut self) -> Option<u8> {
         unsafe {
-            if self.lsr.read() & LineStatusFlags::INPUT_FULL.bits() != 0 {
+            if self.lsr.read() & LineStatusFlags::RECEIVER_DATA_READY.bits() != 0 {
                 Some(self.rhr.read())
             } else {
                 None
             }
         }
     }
+}
+
+pub struct VirtUart16550 {
+    base_port: u16,
+    fifo: Mutex<Fifo<UART_FIFO_CAPACITY>>,
 }
 
 impl VirtUart16550 {
@@ -183,15 +179,18 @@ impl PortIoDevice for VirtUart16550 {
                         fifo.push(c);
                     }
                 }
-                let mut lsr = LineStatusFlags::OUTPUT_EMPTY;
+                let mut lsr =
+                    LineStatusFlags::TRANSMIT_HOLD_REG_EMPTY | LineStatusFlags::TRANSMITTER_EMPTY;
                 if !fifo.is_empty() {
-                    lsr |= LineStatusFlags::INPUT_FULL;
+                    lsr |= LineStatusFlags::RECEIVER_DATA_READY;
                 }
                 lsr.bits()
             }
-            INT_EN_REG | FIFO_CTRL_REG | LINE_CTRL_REG | MODEM_CTRL_REG | MODEM_STATUS_REG
-            | SCRATCH_REG => {
-                info!("Unimplemented serial port I/O read: {:#x}", port); // unimplemented
+            FIFO_CTRL_REG => {
+                0xc0 // FIFO enabled
+            }
+            INT_EN_REG | LINE_CTRL_REG | MODEM_CTRL_REG | MODEM_STATUS_REG | SCRATCH_REG => {
+                debug!("Unimplemented serial port I/O read: {:#x}", port); // unimplemented
                 0
             }
             _ => unreachable!(),
@@ -207,7 +206,7 @@ impl PortIoDevice for VirtUart16550 {
         match port - self.base_port {
             DATA_REG => console_putchar(value as u8),
             INT_EN_REG | FIFO_CTRL_REG | LINE_CTRL_REG | MODEM_CTRL_REG | SCRATCH_REG => {
-                info!("Unimplemented serial port I/O write: {:#x}", port); // unimplemented
+                debug!("Unimplemented serial port I/O write: {:#x}", port); // unimplemented
             }
             LINE_STATUS_REG => {} // ignore
             _ => unreachable!(),

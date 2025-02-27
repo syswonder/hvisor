@@ -1,5 +1,6 @@
 use crate::arch::cpu::{self, this_cpu_id};
 use alloc::{boxed::Box, collections::btree_map::BTreeMap};
+use bit_field::BitField;
 use spin::Mutex;
 use x86_64::{
     addr::VirtAddr,
@@ -77,3 +78,22 @@ pub fn load_gdt_tss() {
         gdt.insert(cpuid, GdtStruct::new(tss));
     }
 }*/
+
+pub fn get_tr_base(
+    tr: x86::segmentation::SegmentSelector,
+    gdt: &x86::dtables::DescriptorTablePointer<u64>,
+) -> u64 {
+    let index = tr.index() as usize;
+    let table_len = (gdt.limit as usize + 1) / core::mem::size_of::<u64>();
+    let table = unsafe { core::slice::from_raw_parts(gdt.base, table_len) };
+    let entry = table[index];
+    if entry & (1 << 47) != 0 {
+        // present
+        let base_low = entry.get_bits(16..40) | entry.get_bits(56..64) << 24;
+        let base_high = table[index + 1] & 0xffff_ffff;
+        base_low | base_high << 32
+    } else {
+        // no present
+        0
+    }
+}

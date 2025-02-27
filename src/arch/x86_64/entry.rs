@@ -50,11 +50,11 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
     );
 }
 
-fn rust_entry() {
+extern "C" fn rust_entry(magic: u32, info_addr: usize) {
     crate::clear_bss();
     unsafe { PHYS_VIRT_OFFSET = X86_PHYS_VIRT_OFFSET };
     println!("");
-    rust_main(this_cpu_id(), 0);
+    rust_main(this_cpu_id(), info_addr);
 }
 
 fn rust_entry_secondary() {

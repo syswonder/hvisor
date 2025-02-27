@@ -1,15 +1,19 @@
 use crate::{
     arch::{
         cpu::ArchCpu,
+        cpuid::{CpuIdEax, ExtendedFeaturesEcx, FeatureInfoFlags},
         device::all_virt_devices,
         idt::IdtStruct,
         lapic::{local_apic, vectors::*},
         msr::Msr::{self, *},
-        vmx::*,
+        s2pt::Stage2PageFaultInfo,
+        vmcs::*,
+        vmx::{VmxCrAccessInfo, VmxExitInfo, VmxExitReason, VmxInterruptInfo, VmxIoExitInfo},
     },
     device::irqchip::pic::lapic::VirtLocalApic,
-    error::{HvError, HvResult},
+    error::HvResult,
 };
+use x86_64::registers::control::Cr4Flags;
 
 core::arch::global_asm!(
     include_str!("trap.S"),
@@ -77,73 +81,108 @@ fn handle_irq(vector: u8) {
 
 fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
     use raw_cpuid::{cpuid, CpuIdResult};
-
-    const LEAF_FEATURE_INFO: u32 = 0x1;
-    const LEAF_HYPERVISOR_INFO: u32 = 0x4000_0000;
-    const LEAF_HYPERVISOR_FEATURE: u32 = 0x4000_0001;
-    const VENDOR_STR: &[u8; 12] = b"HVISORHVISOR";
-    let vendor_regs = unsafe { &*(VENDOR_STR.as_ptr() as *const [u32; 3]) };
-
+    // FIXME: temporary hypervisor hack
+    let signature = unsafe { &*("ACRNACRNACRN".as_ptr() as *const [u32; 3]) };
+    let cr4_flags = Cr4Flags::from_bits_truncate(arch_cpu.cr(4) as _);
     let regs = arch_cpu.regs_mut();
-    let function = regs.rax as u32;
-    let res = match function {
-        LEAF_FEATURE_INFO => {
-            const FEATURE_VMX: u32 = 1 << 5;
-            const FEATURE_HYPERVISOR: u32 = 1 << 31;
-            let mut res = cpuid!(regs.rax, regs.rcx);
-            res.ecx &= !FEATURE_VMX;
-            res.ecx |= FEATURE_HYPERVISOR;
-            res
-        }
-        LEAF_HYPERVISOR_INFO => CpuIdResult {
-            eax: LEAF_HYPERVISOR_FEATURE,
-            ebx: vendor_regs[0],
-            ecx: vendor_regs[1],
-            edx: vendor_regs[2],
-        },
-        LEAF_HYPERVISOR_FEATURE => CpuIdResult {
-            eax: 0,
-            ebx: 0,
-            ecx: 0,
-            edx: 0,
-        },
-        _ => cpuid!(regs.rax, regs.rcx),
-    };
+    let rax: Result<CpuIdEax, u32> = (regs.rax as u32).try_into();
+    let mut res: CpuIdResult = cpuid!(regs.rax, regs.rcx);
 
-    debug!(
+    if let Ok(function) = rax {
+        res = match function {
+            CpuIdEax::FeatureInfo => {
+                let mut res = cpuid!(regs.rax, regs.rcx);
+                let mut ecx = FeatureInfoFlags::from_bits_truncate(res.ecx as _);
+
+                ecx.remove(FeatureInfoFlags::VMX);
+                ecx.remove(FeatureInfoFlags::TSC_DEADLINE);
+                ecx.remove(FeatureInfoFlags::XSAVE);
+
+                ecx.insert(FeatureInfoFlags::X2APIC);
+                ecx.insert(FeatureInfoFlags::HYPERVISOR);
+                res.ecx = ecx.bits() as _;
+
+                let mut edx = FeatureInfoFlags::from_bits_truncate((res.edx as u64) << 32);
+                // edx.remove(FeatureInfoFlags::TSC);
+                res.edx = (edx.bits() >> 32) as _;
+
+                res
+            }
+            CpuIdEax::StructuredExtendedFeatureInfo => {
+                let mut res = cpuid!(regs.rax, regs.rcx);
+                let mut ecx = ExtendedFeaturesEcx::from_bits_truncate(res.ecx as _);
+                ecx.remove(ExtendedFeaturesEcx::WAITPKG);
+                res.ecx = ecx.bits() as _;
+
+                res
+            }
+            CpuIdEax::HypervisorInfo => CpuIdResult {
+                eax: CpuIdEax::HypervisorFeatures as u32,
+                ebx: signature[0],
+                ecx: signature[1],
+                edx: signature[2],
+            },
+            CpuIdEax::HypervisorFeatures => CpuIdResult {
+                eax: 0,
+                ebx: 0,
+                ecx: 0,
+                edx: 0,
+            },
+            _ => cpuid!(regs.rax, regs.rcx),
+        };
+    }
+
+    trace!(
         "VM exit: CPUID({:#x}, {:#x}): {:?}",
-        regs.rax, regs.rcx, res
+        regs.rax,
+        regs.rcx,
+        res
     );
     regs.rax = res.eax as _;
     regs.rbx = res.ebx as _;
     regs.rcx = res.ecx as _;
     regs.rdx = res.edx as _;
 
-    advance_guest_rip(VM_EXIT_INSTR_LEN_CPUID)?;
+    arch_cpu.advance_guest_rip(VM_EXIT_INSTR_LEN_CPUID)?;
+    Ok(())
+}
+
+fn handle_cr_access(arch_cpu: &mut ArchCpu) -> HvResult {
+    let cr_access_info = VmxCrAccessInfo::new()?;
+    panic!(
+        "VM-exit: CR{} access:\n{:#x?}",
+        cr_access_info.cr_n, arch_cpu
+    );
+
+    match cr_access_info.cr_n {
+        0 => {}
+        _ => {}
+    }
+
     Ok(())
 }
 
 fn handle_external_interrupt() -> HvResult {
-    let int_info = interrupt_exit_info()?;
+    let int_info = VmxInterruptInfo::new()?;
     trace!("VM-exit: external interrupt: {:#x?}", int_info);
     assert!(int_info.valid);
     handle_irq(int_info.vector);
     Ok(())
 }
 
-fn handle_hypercall(arch_cpu: &ArchCpu) -> HvResult {
+fn handle_hypercall(arch_cpu: &mut ArchCpu) -> HvResult {
     let regs = arch_cpu.regs();
     debug!(
         "VM exit: VMCALL({:#x}): {:?}",
         regs.rax,
         [regs.rdi, regs.rsi, regs.rdx, regs.rcx]
     );
-    advance_guest_rip(VM_EXIT_INSTR_LEN_VMCALL)?;
+    arch_cpu.advance_guest_rip(VM_EXIT_INSTR_LEN_VMCALL)?;
     Ok(())
 }
 
 fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvResult {
-    let io_info = io_exit_info()?;
+    let io_info = VmxIoExitInfo::new()?;
     trace!(
         "VM exit: I/O instruction @ {:#x}: {:#x?}",
         exit_info.guest_rip,
@@ -185,37 +224,42 @@ fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
             dev.write(io_info.port, io_info.access_size, value)?;
         }
     } else {
-        panic!(
-            "Unsupported I/O port {:#x} access: {:#x?}",
-            io_info.port, io_info
+        debug!(
+            "Unsupported I/O port {:#x} access: {:#x?} \n {:#x?}",
+            io_info.port, io_info, arch_cpu
         )
     }
-    advance_guest_rip(exit_info.exit_instruction_length as _)?;
+
+    arch_cpu.advance_guest_rip(exit_info.exit_instruction_length as _)?;
     Ok(())
 }
 
 fn handle_msr_read(arch_cpu: &mut ArchCpu) -> HvResult {
     let rcx = arch_cpu.regs().rcx as u32;
-    let msr = Msr::try_from(rcx).unwrap();
 
-    let res = if msr == IA32_APIC_BASE {
-        let mut apic_base = unsafe { IA32_APIC_BASE.read() };
-        apic_base |= 1 << 11 | 1 << 10; // enable xAPIC and x2APIC
-        Ok(apic_base)
-    } else if VirtLocalApic::msr_range().contains(&rcx) {
-        VirtLocalApic::rdmsr(arch_cpu, msr)
-    } else {
-        hv_result_err!(ENOSYS)
-    };
+    if let Ok(msr) = Msr::try_from(rcx) {
+        let res = if msr == IA32_APIC_BASE {
+            let mut apic_base = unsafe { IA32_APIC_BASE.read() };
+            apic_base |= 1 << 11 | 1 << 10; // enable xAPIC and x2APIC
+            Ok(apic_base)
+        } else if VirtLocalApic::msr_range().contains(&rcx) {
+            VirtLocalApic::rdmsr(arch_cpu, msr)
+        } else {
+            hv_result_err!(ENOSYS)
+        };
 
-    if let Ok(value) = res {
-        debug!("VM exit: RDMSR({:#x}) -> {:#x}", rcx, value);
-        arch_cpu.regs_mut().rax = value & 0xffff_ffff;
-        arch_cpu.regs_mut().rdx = value >> 32;
+        if let Ok(value) = res {
+            debug!("VM exit: RDMSR({:#x}) -> {:#x}", rcx, value);
+            arch_cpu.regs_mut().rax = value & 0xffff_ffff;
+            arch_cpu.regs_mut().rdx = value >> 32;
+        } else {
+            warn!("Failed to handle RDMSR({:#x}): {:?}", rcx, res);
+        }
     } else {
-        panic!("Failed to handle RDMSR({:#x}): {:?}", rcx, res);
+        warn!("Unrecognized RDMSR({:#x})", rcx);
     }
-    advance_guest_rip(VM_EXIT_INSTR_LEN_RDMSR)?;
+
+    arch_cpu.advance_guest_rip(VM_EXIT_INSTR_LEN_RDMSR)?;
     Ok(())
 }
 
@@ -234,25 +278,30 @@ fn handle_msr_write(arch_cpu: &mut ArchCpu) -> HvResult {
     };
 
     if res.is_err() {
-        panic!(
-            "Failed to handle WRMSR({:#x}) <- {:#x}: {:?}",
-            rcx, value, res
+        warn!(
+            "Failed to handle WRMSR({:#x}) <- {:#x}: {:?}\n{:#x?}",
+            rcx, value, res, arch_cpu
         );
     }
-    advance_guest_rip(VM_EXIT_INSTR_LEN_WRMSR)?;
+    arch_cpu.advance_guest_rip(VM_EXIT_INSTR_LEN_WRMSR)?;
     Ok(())
 }
 
 fn handle_s2pt_violation(arch_cpu: &mut ArchCpu, guest_rip: usize) -> HvResult {
-    let fault_info = s2pt_violation_info()?;
+    let fault_info = Stage2PageFaultInfo::new()?;
     panic!(
         "VM exit: S2PT violation @ {:#x}, fault_paddr={:#x}, access_flags=({:?}), {:#x?}",
         guest_rip, fault_info.fault_guest_paddr, fault_info.access_flags, arch_cpu
     );
 }
 
+fn handle_triple_fault(arch_cpu: &mut ArchCpu, guest_rip: usize) -> HvResult {
+    panic!("VM exit: Triple fault @ {:#x}", guest_rip);
+    Ok(())
+}
+
 pub fn handle_vmexit(arch_cpu: &mut ArchCpu) -> HvResult {
-    let exit_info = exit_info()?;
+    let exit_info = VmxExitInfo::new()?;
     debug!("VM exit: {:#x?}", exit_info);
 
     if exit_info.entry_failure {
@@ -260,14 +309,32 @@ pub fn handle_vmexit(arch_cpu: &mut ArchCpu) -> HvResult {
     }
 
     let res = match exit_info.exit_reason {
-        VmxExitReason::CPUID => handle_cpuid(arch_cpu),
-        VmxExitReason::EPT_VIOLATION => handle_s2pt_violation(arch_cpu, exit_info.guest_rip),
         VmxExitReason::EXTERNAL_INTERRUPT => handle_external_interrupt(),
-        VmxExitReason::INTERRUPT_WINDOW => set_interrupt_window(false),
+        VmxExitReason::TRIPLE_FAULT => handle_triple_fault(arch_cpu, exit_info.guest_rip),
+        VmxExitReason::INTERRUPT_WINDOW => arch_cpu.set_interrupt_window(false),
+        VmxExitReason::CPUID => handle_cpuid(arch_cpu),
+        VmxExitReason::RDTSC => {
+            // FIXME: temp!
+            let current_ticks = crate::arch::lapic::current_ticks();
+            let regs = arch_cpu.regs_mut();
+            regs.rdx = (current_ticks >> 32) & (u32::MAX as u64);
+            regs.rax = current_ticks & (u32::MAX as u64);
+            /*info!(
+                "RDTSC: {:x} rdx: {:x}, rax: {:x}, rip: {:x}",
+                crate::arch::lapic::current_ticks(),
+                regs.rdx,
+                regs.rax,
+                VmcsGuestNW::RIP.read()?,
+            );*/
+            arch_cpu.advance_guest_rip(2)?;
+            Ok(())
+        }
+        VmxExitReason::VMCALL => handle_hypercall(arch_cpu),
+        VmxExitReason::CR_ACCESS => handle_cr_access(arch_cpu),
         VmxExitReason::IO_INSTRUCTION => handle_io_instruction(arch_cpu, &exit_info),
         VmxExitReason::MSR_READ => handle_msr_read(arch_cpu),
         VmxExitReason::MSR_WRITE => handle_msr_write(arch_cpu),
-        VmxExitReason::VMCALL => handle_hypercall(arch_cpu),
+        VmxExitReason::EPT_VIOLATION => handle_s2pt_violation(arch_cpu, exit_info.guest_rip),
         _ => panic!(
             "Unhandled VM-Exit reason {:?}:\n{:#x?}",
             exit_info.exit_reason, arch_cpu

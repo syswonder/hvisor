@@ -40,6 +40,8 @@ mod percpu;
 mod platform;
 mod zone;
 
+#[cfg(target_arch = "x86_64")]
+use crate::arch::boot::MultibootInfo;
 #[cfg(target_arch = "aarch64")]
 use crate::arch::mm::setup_parange;
 use crate::consts::MAX_CPU_NUM;
@@ -151,6 +153,8 @@ fn x86_rust_main_tmp(cpuid: usize, host_dtb: usize) {
         is_primary = true;
         memory::heap::init();
         memory::heap::test();
+        #[cfg(target_arch = "x86_64")]
+        MultibootInfo::init(host_dtb);
     }
 
     let cpu = PerCpu::new(cpuid);
@@ -163,6 +167,7 @@ fn x86_rust_main_tmp(cpuid: usize, host_dtb: usize) {
     cpu.arch_cpu.gdt.load(); // load gdt and tss
 
     if is_primary {
+        // cpu.arch_cpu.cmdline = Some(&cmdline);
         wakeup_secondary_cpus(cpu.id, host_dtb);
     }
 
@@ -178,9 +183,6 @@ fn x86_rust_main_tmp(cpuid: usize, host_dtb: usize) {
 
     if is_primary {
         primary_init_early(); // create root zone here
-
-        // TODO: tmp
-        cpu.boot_cpu = true;
     } else {
         wait_for_counter(&INIT_EARLY_OK, 1);
     }

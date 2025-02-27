@@ -10,7 +10,8 @@ impl PortIoDevice for VirtI8259Pic {
     }
 
     fn read(&self, port: u16, access_size: u8) -> HvResult<u32> {
-        hv_result_err!(EIO) // report error for read
+        Ok(0)
+        // hv_result_err!(EIO) report error for read
     }
 
     fn write(&self, port: u16, access_size: u8, value: u32) -> HvResult {

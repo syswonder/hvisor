@@ -23,10 +23,9 @@ pub enum TimerMode {
     TscDeadline = 0b10,
 }
 
-pub struct VirtLocalApic;
-
 /// A virtual local APIC timer. (SDM Vol. 3C, Section 10.5.4)
 pub struct VirtApicTimer {
+    is_enabled: u8,
     lvt_timer_bits: u32,
     divide_shift: u8,
     initial_count: u32,
@@ -34,53 +33,10 @@ pub struct VirtApicTimer {
     deadline_ns: u64,
 }
 
-impl VirtLocalApic {
-    pub const fn msr_range() -> core::ops::Range<u32> {
-        0x800..0x840
-    }
-
-    pub fn rdmsr(arch_cpu: &mut ArchCpu, msr: Msr) -> HvResult<u64> {
-        let apic_timer = arch_cpu.apic_timer_mut();
-        match msr {
-            SIVR => Ok(0x1ff), // SDM Vol. 3A, Section 10.9, Figure 10-23 (with Software Enable bit)
-            LVT_THERMAL | LVT_PMI | LVT_LINT0 | LVT_LINT1 | LVT_ERR => {
-                Ok(0x1_0000) // SDM Vol. 3A, Section 10.5.1, Figure 10-8 (with Mask bit)
-            }
-            LVT_TIMER => Ok(apic_timer.lvt_timer() as u64),
-            INIT_COUNT => Ok(apic_timer.initial_count() as u64),
-            DIV_CONF => Ok(apic_timer.divide() as u64),
-            CUR_COUNT => Ok(apic_timer.current_counter() as u64),
-            _ => hv_result_err!(ENOSYS),
-        }
-    }
-
-    pub fn wrmsr(arch_cpu: &mut ArchCpu, msr: Msr, value: u64) -> HvResult {
-        if msr != ICR && (value >> 32) != 0 {
-            return hv_result_err!(EINVAL); // all registers except ICR are 32-bits
-        }
-        let apic_timer = arch_cpu.apic_timer_mut();
-        match msr {
-            EOI => {
-                if value != 0 {
-                    hv_result_err!(EINVAL) // write a non-zero value causes #GP
-                } else {
-                    Ok(())
-                }
-            }
-            SIVR | LVT_THERMAL | LVT_PMI | LVT_LINT0 | LVT_LINT1 | LVT_ERR => {
-                Ok(()) // ignore these register writes
-            }
-            LVT_TIMER => apic_timer.set_lvt_timer(value as u32),
-            INIT_COUNT => apic_timer.set_initial_count(value as u32),
-            DIV_CONF => apic_timer.set_divide(value as u32),
-            _ => hv_result_err!(ENOSYS),
-        }
-    }
-}
-
 impl VirtApicTimer {
     pub const fn new() -> Self {
         Self {
+            is_enabled: 1,
             lvt_timer_bits: 0x1_0000, // masked
             divide_shift: 0,
             initial_count: 0,
@@ -89,20 +45,25 @@ impl VirtApicTimer {
         }
     }
 
+    pub fn set_enable(&mut self, is_enabled: u8) {
+        self.is_enabled = is_enabled;
+    }
+
     /// Check if an interrupt generated. if yes, update it's states.
     pub fn check_interrupt(&mut self) -> bool {
         if self.deadline_ns == 0 {
-            false
+            return false;
         } else if current_time_nanos() >= self.deadline_ns {
             if self.is_periodic() {
                 self.deadline_ns += self.interval_ns();
             } else {
                 self.deadline_ns = 0;
             }
-            !self.is_masked()
-        } else {
-            false
+            if self.is_enabled != 0 {
+                return !self.is_masked();
+            }
         }
+        false
     }
 
     /// Whether the timer interrupt is masked.
@@ -153,9 +114,10 @@ impl VirtApicTimer {
     /// Set LVT Timer Register.
     pub fn set_lvt_timer(&mut self, bits: u32) -> HvResult {
         let timer_mode = bits.get_bits(17..19);
-        if timer_mode == TimerMode::TscDeadline as _ {
+        /*if timer_mode == TimerMode::TscDeadline as _ {
             return hv_result_err!(EINVAL); // TSC deadline mode was not supported
-        } else if timer_mode == 0b11 {
+        } else */
+        if timer_mode == 0b11 {
             return hv_result_err!(EINVAL); // reserved
         }
         self.lvt_timer_bits = bits;
@@ -188,6 +150,69 @@ impl VirtApicTimer {
             self.deadline_ns = self.last_start_ns + self.interval_ns();
         } else {
             self.deadline_ns = 0;
+        }
+    }
+}
+
+pub struct VirtLocalApic;
+
+impl VirtLocalApic {
+    pub const fn msr_range() -> core::ops::Range<u32> {
+        0x800..0x840
+    }
+
+    pub fn rdmsr(arch_cpu: &mut ArchCpu, msr: Msr) -> HvResult<u64> {
+        let apic_timer = arch_cpu.apic_timer_mut();
+        trace!("lapic rdmsr: {:?}", msr,);
+        match msr {
+            IA32_X2APIC_APICID => Ok(arch_cpu.cpuid as u64),
+            IA32_X2APIC_VERSION => Ok(0x50014), // Max LVT Entry: 0x5, Version: 0x14
+            IA32_X2APIC_LDR => Ok(0x0),         // TODO: IPI
+            IA32_X2APIC_SIVR => Ok(((apic_timer.is_enabled as u64 & 0x1) << 8) | 0xff), // SDM Vol. 3A, Section 10.9, Figure 10-23 (with Software Enable bit)
+            IA32_X2APIC_LVT_TIMER => Ok(apic_timer.lvt_timer() as u64),
+            IA32_X2APIC_LVT_THERMAL
+            | IA32_X2APIC_LVT_PMI
+            | IA32_X2APIC_LVT_LINT0
+            | IA32_X2APIC_LVT_LINT1
+            | IA32_X2APIC_LVT_ERROR => {
+                Ok(0x1_0000) // SDM Vol. 3A, Section 10.5.1, Figure 10-8 (with Mask bit)
+            }
+            IA32_X2APIC_INIT_COUNT => Ok(apic_timer.initial_count() as u64),
+            IA32_X2APIC_CUR_COUNT => Ok(apic_timer.current_counter() as u64),
+            IA32_X2APIC_DIV_CONF => Ok(apic_timer.divide() as u64),
+            _ => hv_result_err!(ENOSYS),
+        }
+    }
+
+    pub fn wrmsr(arch_cpu: &mut ArchCpu, msr: Msr, value: u64) -> HvResult {
+        if msr != IA32_X2APIC_ICR && (value >> 32) != 0 {
+            return hv_result_err!(EINVAL); // all registers except ICR are 32-bits
+        }
+        let apic_timer = arch_cpu.apic_timer_mut();
+        trace!("lapic wrmsr: {:?}, value: {:x}", msr, value);
+        match msr {
+            IA32_X2APIC_EOI => {
+                if value != 0 {
+                    hv_result_err!(EINVAL) // write a non-zero value causes #GP
+                } else {
+                    Ok(())
+                }
+            }
+            IA32_X2APIC_SIVR => {
+                apic_timer.set_enable(((value >> 8) & 1) as _);
+                Ok(())
+            }
+            IA32_X2APIC_LVT_THERMAL
+            | IA32_X2APIC_LVT_PMI
+            | IA32_X2APIC_LVT_LINT0
+            | IA32_X2APIC_LVT_LINT1
+            | IA32_X2APIC_LVT_ERROR => {
+                Ok(()) // ignore these register writes
+            }
+            IA32_X2APIC_LVT_TIMER => apic_timer.set_lvt_timer(value as u32),
+            IA32_X2APIC_INIT_COUNT => apic_timer.set_initial_count(value as u32),
+            IA32_X2APIC_DIV_CONF => apic_timer.set_divide(value as u32),
+            _ => hv_result_err!(ENOSYS),
         }
     }
 }
