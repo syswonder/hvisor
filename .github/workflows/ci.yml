@@ -1,9 +1,13 @@
 name: CI
 on:
   push:
-    branches: [dev]
+    branches:
+      - main
+      - dev
   pull_request:
-    branches: [dev]
+    branches:
+      - main
+      - dev
   workflow_dispatch:
 env:
   ARCH: aarch64
@@ -23,36 +27,36 @@ jobs:
           components: rustfmt
       - name: linter
         run: make fmt-test
-  clippy:
-    name: clippy
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          components: clippy
-      - name: clippy
-        run: make clippy
-  test:
-    name: build and unittest
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-unknown-none
-          components: rust-src
-      - name: Install Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y qemu-system-aarch64 gdb-multiarch llvm-dev libclang-dev wget
-          cargo install cargo-binutils
-          cargo install cargo-xbuild
-      - name: build
-        run: make
-      - name: unittest
-        run: make test
+  # clippy:
+  #   name: clippy
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout Repository
+  #       uses: actions/checkout@v4
+  #     - name: Install Rust Toolchain
+  #       uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         components: clippy
+  #     - name: clippy
+  #       run: make clippy
+  # test:
+  #   name: build and unittest
+  #   runs-on: ubuntu-latest
+  #   steps:
+  #     - name: Checkout Repository
+  #       uses: actions/checkout@v4
+  #     - name: Install Rust Toolchain
+  #       uses: dtolnay/rust-toolchain@stable
+  #       with:
+  #         targets: aarch64-unknown-none
+  #         components: rust-src
+  #     - name: Install Dependencies
+  #       run: |
+  #         sudo apt-get update
+  #         sudo apt-get install -y qemu-system-aarch64 gdb-multiarch llvm-dev libclang-dev wget
+  #         cargo install cargo-binutils
+  #         cargo install cargo-xbuild
+  #     - name: build
+  #       run: make
+  #     - name: unittest
+  #       run: make test

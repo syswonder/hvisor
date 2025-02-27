@@ -60,7 +60,7 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
 ### riscv64
 
 - [x] QEMU virt riscv64
-- [ ] FPGA 香山（昆明湖）on S2C Prodigy S7-19PS-2
+- [ ] FPGA XiangShan(KunMingHu) on S2C Prodigy S7-19PS-2
 - [ ] FPGA  RocketChip on Xilinx Ultrascale+ MPSoC ZCU102
 
 ### loongarch64
