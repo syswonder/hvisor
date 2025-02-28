@@ -577,6 +577,7 @@ static const char *virtio_mmio_reg_name(uint64_t offset) {
         return "VIRTIO_MMIO_QUEUE_USED_LOW";
     case VIRTIO_MMIO_QUEUE_USED_HIGH:
         return "VIRTIO_MMIO_QUEUE_USED_HIGH";
+#ifndef RISCV64
     case VIRTIO_MMIO_SHM_SEL:
         return "VIRTIO_MMIO_SHM_SEL";
     case VIRTIO_MMIO_SHM_LEN_LOW:
@@ -586,6 +587,7 @@ static const char *virtio_mmio_reg_name(uint64_t offset) {
     case VIRTIO_MMIO_SHM_BASE_LOW:
         return "VIRTIO_MMIO_SHM_BASE_LOW";
     case VIRTIO_MMIO_SHM_BASE_HIGH:
+#endif
         return "VIRTIO_MMIO_SHM_BASE_HIGH";
     case VIRTIO_MMIO_CONFIG_GENERATION:
         return "VIRTIO_MMIO_CONFIG_GENERATION";
