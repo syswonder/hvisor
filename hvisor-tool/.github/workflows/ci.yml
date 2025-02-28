@@ -18,7 +18,7 @@ jobs:
         shell: bash
         run: |
           set -e
-          sudo apt-get install -y clang-format
+          sudo apt-get install -y clang-format-14
           find ./tools/ ./include/ ./driver/ -name "*.c" ! -name "*.mod.c" -o -name "*.h" | xargs clang-format -n --Werror
           echo "Code style check passed"
 
