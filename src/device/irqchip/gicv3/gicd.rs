@@ -7,6 +7,8 @@
 //! # Glossary
 //!   - SPI - Shared Peripheral Interrupt.
 #![allow(dead_code)]
+
+use core::ptr::write_volatile;
 use spin::Mutex;
 
 use super::host_gicd_base;
@@ -19,6 +21,7 @@ pub const GICD_CTLR_GRP1NS_ENA: usize = 1 << 1;
 
 pub const GICD_TYPER: usize = 0x0004;
 pub const GICD_IIDR: usize = 0x0008;
+pub const GICD_TYPER2: usize = 0x000c;
 pub const GICD_IGROUPR: usize = 0x0080;
 pub const GICD_ISENABLER: usize = 0x0100;
 pub const GICD_ICENABLER: usize = 0x0180;
@@ -44,5 +47,14 @@ pub fn enable_gic_are_ns() {
     unsafe {
         ((host_gicd_base() + GICD_CTLR) as *mut u32)
             .write_volatile(GICD_CTLR_ARE_NS as u32 | GICD_CTLR_GRP1NS_ENA as u32);
+    }
+}
+
+pub fn set_ispender(index: usize, value: u32) {
+    unsafe {
+        write_volatile(
+            (host_gicd_base() + GICD_ISPENDR + index * 4) as *mut u32,
+            value,
+        );
     }
 }

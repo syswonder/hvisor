@@ -43,18 +43,22 @@ impl GeneralRegisters {
 #[derive(Debug)]
 pub struct ArchCpu {
     pub cpuid: usize,
-    pub psci_on: bool,
+    pub power_on: bool,
 }
 
 impl ArchCpu {
     pub fn new(cpuid: usize) -> Self {
         Self {
             cpuid,
-            psci_on: false,
+            power_on: false,
         }
     }
 
     pub fn reset(&mut self, entry: usize, dtb: usize) {
+        debug!(
+            "cpu {} reset, entry: {:#x}, dtb: {:#x}",
+            self.cpuid, entry, dtb
+        );
         ELR_EL2.set(entry as _);
         SPSR_EL2.set(0x3c5);
         let regs = self.guest_reg();
@@ -147,7 +151,8 @@ impl ArchCpu {
         assert!(this_cpu_id() == self.cpuid);
         this_cpu_data().activate_gpm();
         self.reset(this_cpu_data().cpu_on_entry, this_cpu_data().dtb_ipa);
-        self.psci_on = true;
+        self.power_on = true;
+        info!("cpu {} started", self.cpuid);
         unsafe {
             vmreturn(self.guest_reg() as *mut _ as usize);
         }
@@ -157,9 +162,10 @@ impl ArchCpu {
         assert!(this_cpu_id() == self.cpuid);
         let cpu_data = this_cpu_data();
         let _lock = cpu_data.ctrl_lock.lock();
-        self.psci_on = false;
+        self.power_on = false;
         drop(_lock);
 
+        info!("cpu {} idle", self.cpuid);
         // reset current cpu -> pc = 0x0 (wfi)
         PARKING_MEMORY_SET.call_once(|| {
             let parking_code: [u8; 8] = [0x7f, 0x20, 0x03, 0xd5, 0xff, 0xff, 0xff, 0x17]; // 1: wfi; b 1b
@@ -180,6 +186,7 @@ impl ArchCpu {
         self.reset(0, this_cpu_data().dtb_ipa);
         unsafe {
             PARKING_MEMORY_SET.get().unwrap().activate();
+            info!("cpu {} started from parking", self.cpuid);
             vmreturn(self.guest_reg() as *mut _ as usize);
         }
     }

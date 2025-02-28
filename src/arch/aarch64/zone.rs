@@ -1,10 +1,8 @@
 use core::panic;
 
-use alloc::vec::Vec;
-
 use crate::{
     config::*,
-    device::virtio_trampoline::{mmio_virtio_handler, VIRTIO_BRIDGE},
+    device::virtio_trampoline::mmio_virtio_handler,
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion},
     zone::Zone,
@@ -45,17 +43,22 @@ impl Zone {
         info!("VM stage 2 memory set: {:#x?}", self.gpm);
         Ok(())
     }
-
-    pub fn mmio_init(&mut self, hv_config: &HvArchZoneConfig) {
-        self.vgicv3_mmio_init(hv_config);
-    }
 }
 
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct HvArchZoneConfig {
     pub gicd_base: usize,
-    pub gicr_base: usize,
     pub gicd_size: usize,
+    pub gicr_base: usize,
     pub gicr_size: usize,
+    pub gits_base: usize,
+    pub gits_size: usize,
+    pub gicc_base: usize,
+    pub gicc_offset: usize,
+    pub gicc_size: usize,
+    pub gich_base: usize,
+    pub gich_size: usize,
+    pub gicv_base: usize,
+    pub gicv_size: usize,
 }

@@ -12,10 +12,17 @@
 #![no_main]
 // 不使用main入口，使用自己定义实际入口_start，因为我们还没有初始化堆栈指针
 #![feature(asm_const)]
-#![feature(naked_functions)] //  surpport naked function
-#![feature(core_panic)]
+#![feature(naked_functions)]
+//  surpport naked function
+// #![feature(core_panic)]
 // 支持内联汇编
 // #![deny(warnings, missing_docs)] // 将warnings作为error
+
+// unittest
+#![feature(custom_test_frameworks)]
+#![test_runner(crate::tests::test_main)]
+#![reexport_test_harness_main = "test_main"]
+
 #[macro_use]
 extern crate alloc;
 extern crate buddy_system_allocator;
@@ -28,6 +35,7 @@ extern crate lazy_static;
 #[macro_use]
 mod logging;
 mod arch;
+mod config;
 mod consts;
 mod device;
 mod event;
@@ -37,15 +45,24 @@ mod panic;
 mod percpu;
 mod platform;
 mod zone;
-mod config;
 
+#[cfg(target_arch = "aarch64")]
+mod ivc;
+
+mod pci;
+mod tests;
+
+#[cfg(target_arch = "aarch64")]
 use crate::arch::mm::setup_parange;
 use crate::consts::MAX_CPU_NUM;
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
-use zone::zone_create;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
+use zone::zone_create;
+
+#[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
+use crate::arch::iommu::iommu_init;
 
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
 static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
@@ -88,14 +105,12 @@ fn primary_init_early() {
     // let revision = system_config.revision;
     info!("Hypervisor initialization in progress...");
     info!(
-        "build_mode: {}, log_level: {}, arch: {}, vendor: {}, stats: {}",
+        "build_mode: {}, log_level: {}, arch: {}, stats: {}",
         option_env!("MODE").unwrap_or(""),
         option_env!("LOG").unwrap_or(""),
         option_env!("ARCH").unwrap_or(""),
-        option_env!("VENDOR").unwrap_or(""),
         option_env!("STATS").unwrap_or("off"),
     );
-
     memory::frame::init();
     memory::frame::test();
     event::init(MAX_CPU_NUM);
@@ -103,7 +118,12 @@ fn primary_init_early() {
     device::irqchip::primary_init_early();
     // crate::arch::mm::init_hv_page_table().unwrap();
 
+    #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
+    iommu_init();
+
+    #[cfg(not(test))]
     zone_create(root_zone_config()).unwrap();
+
     INIT_EARLY_OK.store(1, Ordering::Release);
 }
 
@@ -141,6 +161,8 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     if MASTER_CPU.load(Ordering::Acquire) == -1 {
         MASTER_CPU.store(cpuid as i32, Ordering::Release);
         is_primary = true;
+        #[cfg(target_arch = "riscv64")]
+        clear_bss();
         memory::heap::init();
         memory::heap::test();
     }
@@ -148,8 +170,8 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     let cpu = PerCpu::new(cpuid);
 
     println!(
-        "Booting CPU {}: {:p}, DTB: {:#x}",
-        cpu.id, cpu as *const _, host_dtb
+        "Booting CPU {}: {:p} arch:{:p}, DTB: {:#x}",
+        cpu.id, cpu as *const _, &cpu.arch_cpu as *const _, host_dtb
     );
 
     if is_primary {
@@ -179,12 +201,20 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     device::irqchip::percpu_init();
 
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
+
     wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _);
 
     if is_primary {
         primary_init_late();
     } else {
         wait_for_counter(&INIT_LATE_OK, 1);
+    }
+
+    // run all unit tests before starting the root zone
+    // CAUTION: test_main will quit qemu after all tests are done
+    #[cfg(test)]
+    if is_primary {
+        test_main();
     }
 
     cpu.run_vm();

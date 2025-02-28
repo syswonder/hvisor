@@ -1,11 +1,13 @@
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-use psci::error::INVALID_ADDRESS;
+// use psci::error::INVALID_ADDRESS;
+use crate::consts::INVALID_ADDRESS;
+use crate::pci::pci::PciRoot;
 use spin::RwLock;
 
 use crate::arch::mm::new_s2_memory_set;
 use crate::arch::s2pt::Stage2PageTable;
-use crate::config::HvZoneConfig;
+use crate::config::{HvZoneConfig, CONFIG_NAME_MAXLEN};
 use crate::consts::MAX_CPU_NUM;
 
 use crate::error::HvResult;
@@ -14,22 +16,29 @@ use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
 use crate::percpu::{get_cpu_data, this_zone, CpuSet};
 use core::panic;
 
+#[cfg(test)]
+pub mod tests;
+
 pub struct Zone {
+    pub name: [u8; CONFIG_NAME_MAXLEN],
     pub id: usize,
     pub mmio: Vec<MMIOConfig>,
     pub cpu_set: CpuSet,
     pub irq_bitmap: [u32; 1024 / 32],
     pub gpm: MemorySet<Stage2PageTable>,
+    pub pciroot: PciRoot,
 }
 
 impl Zone {
-    pub fn new(zoneid: usize) -> Self {
+    pub fn new(zoneid: usize, name: &[u8]) -> Self {
         Self {
+            name: name.try_into().unwrap(),
             id: zoneid,
             gpm: new_s2_memory_set(),
             cpu_set: CpuSet::new(MAX_CPU_NUM as usize, 0),
             mmio: Vec::new(),
             irq_bitmap: [0; 1024 / 32],
+            pciroot: PciRoot::new(),
         }
     }
 
@@ -143,22 +152,25 @@ pub fn find_zone(zone_id: usize) -> Option<Arc<RwLock<Zone>>> {
         .cloned()
 }
 
+pub fn all_zones_info() -> Vec<ZoneInfo> {
+    let zone_list = ZONE_LIST.read();
+
+    zone_list
+        .iter()
+        .map(|zone| {
+            let zone_lock = zone.read();
+            ZoneInfo {
+                zone_id: zone_lock.id as u32,
+                cpus: zone_lock.cpu_set.bitmap,
+                name: zone_lock.name.clone(),
+            }
+        })
+        .collect()
+}
+
 pub fn this_zone_id() -> usize {
     this_zone().read().id
 }
-
-// #[repr(C)]
-// #[derive(Debug, Clone)]
-// pub struct ZoneConfig {
-//     pub zone_id: u32,
-//     pub cpus: u64,
-//     pub num_memory_regions: u32,
-//     pub memory_regions: [MemoryRegion; CONFIG_MAX_MEMORY_REGIONS],
-//     pub num_interrupts: u32,
-//     pub interrupts: [u32; CONFIG_MAX_INTERRUPTS],
-//     pub entry_point: u64,
-//     pub dtb_load_paddr: u64,
-// }
 
 pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     // we create the new zone here
@@ -169,21 +181,23 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
         return hv_result_err!(EEXIST);
     }
 
-    let mut zone = Zone::new(zone_id);
+    let mut zone = Zone::new(zone_id, &config.name);
     zone.pt_init(config.memory_regions()).unwrap();
-    zone.mmio_init(&config.arch);
+    zone.mmio_init(&config.arch_config);
     zone.irq_bitmap_init(config.interrupts());
+    #[cfg(target_arch = "aarch64")]
+    zone.ivc_init(config.ivc_config());
+    #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
+    zone.pci_init(
+        &config.pci_config,
+        config.num_pci_devs as _,
+        &config.alloc_pci_devs,
+    );
 
     config.cpus().iter().for_each(|cpu_id| {
         zone.cpu_set.set_bit(*cpu_id as _);
     });
 
-    // pub struct HvConfigMemoryRegion {
-    //     pub mem_type: u32,
-    //     pub physical_start: u64,
-    //     pub virtual_start: u64,
-    //     pub size: u64,
-    // }
     let mut dtb_ipa = INVALID_ADDRESS as u64;
     for region in config.memory_regions() {
         // region contains config.dtb_load_paddr?
@@ -212,4 +226,12 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     add_zone(new_zone_pointer.clone());
 
     Ok(new_zone_pointer)
+}
+
+#[repr(C)]
+#[derive(Clone, Copy, Debug)]
+pub struct ZoneInfo {
+    zone_id: u32,
+    cpus: u64,
+    name: [u8; CONFIG_NAME_MAXLEN],
 }

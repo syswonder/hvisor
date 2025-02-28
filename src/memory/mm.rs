@@ -58,7 +58,12 @@ where
     pub fn new(pt_level: usize) -> Self {
         Self {
             regions: BTreeMap::new(),
+            #[cfg(target_arch = "aarch64")]
             pt: PT::new(pt_level),
+            #[cfg(target_arch = "riscv64")]
+            pt: PT::new(),
+            #[cfg(target_arch = "loongarch64")]
+            pt: PT::new(),
         }
     }
 
@@ -67,6 +72,10 @@ where
             regions: self.regions.clone(),
             pt: self.pt.clone(),
         }
+    }
+
+    pub fn root_paddr(&self) -> usize {
+        self.pt.root_paddr()
     }
 
     fn test_free_area(&self, other: &MemoryRegion<PT::VA>) -> bool {
@@ -85,6 +94,7 @@ where
 
     /// Add a memory region to this set.
     pub fn insert(&mut self, region: MemoryRegion<PT::VA>) -> HvResult {
+        info!("region.start: {:#X}", region.start.into());
         assert!(is_aligned(region.start.into()));
         assert!(is_aligned(region.size));
         if region.size == 0 {

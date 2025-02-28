@@ -1,7 +1,9 @@
 pub mod cpu;
 pub mod entry;
+pub mod iommu;
 pub mod ipi;
 pub mod mm;
+pub mod mmu;
 pub mod paging;
 pub mod s1pt;
 pub mod s2pt;

@@ -1,8 +1,18 @@
 use alloc::sync::Arc;
 
-use super::{gicd::GICD_LOCK, host_gicd_size, is_spi};
+use super::{gicd::GICD_LOCK, is_spi};
 use crate::{
-    arch::zone::HvArchZoneConfig, consts::MAX_CPU_NUM, device::irqchip::gicv3::{gicd::*, gicr::*, host_gicd_base, host_gicr_base, PER_GICR_SIZE}, error::HvResult, memory::{mmio_perform_access, MMIOAccess}, percpu::{get_cpu_data, this_zone}, zone::Zone
+    arch::zone::HvArchZoneConfig,
+    consts::MAX_CPU_NUM,
+    device::irqchip::gicv3::{
+        gicd::*, gicr::*, gits::*, host_gicd_base, host_gicr_base, host_gits_base,
+        MAINTENACE_INTERRUPT, PER_GICR_SIZE,
+    },
+    error::HvResult,
+    hypercall::SGI_IPI_ID,
+    memory::{mmio_perform_access, MMIOAccess},
+    percpu::{get_cpu_data, this_zone},
+    zone::{this_zone_id, Zone},
 };
 
 pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> {
@@ -11,13 +21,15 @@ pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> 
 
 impl Zone {
     pub fn vgicv3_mmio_init(&mut self, arch: &HvArchZoneConfig) {
-        let gicd_base = if arch.gicd_base == 0 {host_gicd_base()} else {arch.gicd_base};
-        let gicr_base = if arch.gicr_base == 0 {host_gicr_base(0)} else {arch.gicr_base};
-        let gicd_size = if arch.gicd_size == 0 {host_gicd_size()} else {arch.gicd_size};
+        if arch.gicd_base == 0 || arch.gicr_base == 0 {
+            panic!("vgicv3_mmio_init: gicd_base or gicr_base is null");
+        }
 
-        self.mmio_region_register(gicd_base, gicd_size, vgicv3_dist_handler, 0);
+        self.mmio_region_register(arch.gicd_base, arch.gicd_size, vgicv3_dist_handler, 0);
+        self.mmio_region_register(arch.gits_base, arch.gits_size, vgicv3_its_handler, 0);
+
         for cpu in 0..MAX_CPU_NUM {
-            let gicr_base = gicr_base + cpu * PER_GICR_SIZE;
+            let gicr_base = arch.gicr_base + cpu * PER_GICR_SIZE;
             debug!("registering gicr {} at {:#x?}", cpu, gicr_base);
             self.mmio_region_register(gicr_base, PER_GICR_SIZE, vgicv3_redist_handler, cpu);
         }
@@ -111,6 +123,19 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
     trace!("gicr({}) mmio = {:#x?}", cpu, mmio);
     let gicr_base = host_gicr_base(cpu);
     match mmio.address {
+        GICR_CTLR => {
+            if get_cpu_data(cpu).zone.is_none() {
+                if !mmio.is_write {
+                    mmio_perform_access(gicr_base, mmio);
+                }
+            } else if Arc::ptr_eq(&this_zone(), get_cpu_data(cpu).zone.as_ref().unwrap()) {
+                mmio_perform_access(gicr_base, mmio);
+            } else {
+                if !mmio.is_write {
+                    mmio_perform_access(gicr_base, mmio);
+                }
+            }
+        }
         GICR_TYPER => {
             mmio_perform_access(gicr_base, mmio);
             if cpu == MAX_CPU_NUM - 1 {
@@ -121,17 +146,64 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
             // Read-only registers that might be used by a zone to find the redistributor corresponding to a CPU. Keep them accessible.
             mmio_perform_access(gicr_base, mmio);
         }
+        GICR_PENDBASER => {
+            // every redist have its own pending tbl
+            mmio_perform_access(gicr_base, mmio);
+            if mmio.is_write {
+                trace!("write pending tbl base : 0x{:x}", mmio.value);
+            } else {
+                trace!("read pending tbl base : 0x{:x}", mmio.value);
+            }
+        }
+        GICR_PROPBASER => {
+            // all the redist share one prop tbl
+            // mmio_perform_access(gicr_base, mmio);
+            if mmio.is_write {
+                set_prop_baser(mmio.value);
+                trace!("write prop tbl base : 0x{:x}!", mmio.value);
+            } else {
+                mmio.value = read_prop_baser();
+                trace!("read prop tbl base : 0x{:x}", mmio.value);
+            }
+        }
         GICR_SYNCR => {
             mmio.value = 0;
         }
-        _ => {
+        GICR_SETLPIR => {
+            mmio_perform_access(gicr_base, mmio);
+        }
+        reg if reg == GICR_CLRLPIR || reg == GICR_INVALLR => {
+            mmio_perform_access(gicr_base, mmio);
+        }
+        GICR_INVLPIR => {
+            // Presume that this write is to enable an LPI.
+            // Or we need to check all the proptbl created by vm.
+            enable_one_lpi((mmio.value & 0xffffffff) - 8192);
+        }
+        reg if reg == GICR_STATUSR
+            || reg == GICR_WAKER
+            || reg == GICR_SGI_BASE + GICR_ISENABLER
+            || reg == GICR_SGI_BASE + GICR_ICENABLER
+            || reg == GICR_SGI_BASE + GICR_ISPENDR
+            || reg == GICR_SGI_BASE + GICR_ICPENDR
+            || reg == GICR_SGI_BASE + GICR_ISACTIVER
+            || reg == GICR_SGI_BASE + GICR_ICACTIVER
+            || reg_range(GICR_SGI_BASE + GICR_IPRIORITYR, 8, 4).contains(&reg)
+            || reg_range(GICR_SGI_BASE + GICR_ICFGR, 2, 4).contains(&reg) =>
+        {
             if Arc::ptr_eq(&this_zone(), get_cpu_data(cpu).zone.as_ref().unwrap()) {
+                // avoid linux disable maintenance interrupt
+                if reg == GICR_SGI_BASE + GICR_ICENABLER {
+                    mmio.value &= !(1 << MAINTENACE_INTERRUPT);
+                    mmio.value &= !(1 << SGI_IPI_ID);
+                }
                 // ignore access to foreign redistributors
                 mmio_perform_access(gicr_base, mmio);
             } else {
                 trace!("*** gicv3_gicr_mmio_handler: ignore access to foreign redistributors ***");
             }
         }
+        _ => {}
     }
     HvResult::Ok(())
 }
@@ -162,6 +234,7 @@ fn vgicv3_dist_misc_access(mmio: &mut MMIOAccess, gicd_base: usize) -> HvResult 
         || reg == GICD_CTLR
         || reg == GICD_TYPER
         || reg == GICD_IIDR
+        || reg == GICD_TYPER2
     {
         if !mmio.is_write {
             // ignore write
@@ -206,4 +279,96 @@ pub fn vgicv3_dist_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
         }
         _ => vgicv3_dist_misc_access(mmio, gicd_base),
     }
+}
+
+pub fn vgicv3_its_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
+    let gits_base = host_gits_base();
+    let reg = mmio.address;
+
+    // mmio_perform_access(gits_base, mmio);
+    match reg {
+        GITS_CTRL => {
+            mmio_perform_access(gits_base, mmio);
+            if mmio.is_write {
+                trace!("write GITS_CTRL: {:#x}", mmio.value);
+            } else {
+                trace!("read GITS_CTRL: {:#x}", mmio.value);
+            }
+        }
+        GITS_CBASER => {
+            if mmio.is_write {
+                set_cbaser(mmio.value);
+                trace!("write GITS_CBASER: {:#x}", mmio.value);
+            } else {
+                mmio.value = read_cbaser();
+                trace!("read GITS_CBASER: {:#x}", mmio.value);
+            }
+        }
+        GITS_BASER => {
+            if this_zone_id() == 0 {
+                mmio_perform_access(gits_base, mmio);
+            } else {
+                if mmio.is_write {
+                    set_dt_baser(mmio.value);
+                } else {
+                    mmio.value = read_dt_baser();
+                }
+            }
+            if mmio.is_write {
+                trace!("write GITS_BASER: 0x{:016x}", mmio.value);
+            } else {
+                trace!("read GITS_BASER: 0x{:016x}", mmio.value);
+            }
+        }
+        GITS_COLLECTION_BASER => {
+            if this_zone_id() == 0 {
+                mmio_perform_access(gits_base, mmio);
+            } else {
+                if mmio.is_write {
+                    set_ct_baser(mmio.value);
+                } else {
+                    mmio.value = read_ct_baser();
+                }
+            }
+            if mmio.is_write {
+                trace!("write GITS_COLL_BASER: 0x{:016x}", mmio.value);
+            } else {
+                trace!("read GITS_COLL_BASER: 0x{:016x}", mmio.value);
+            }
+        }
+        GITS_CWRITER => {
+            if mmio.is_write {
+                trace!("write GITS_CWRITER: {:#x}", mmio.value);
+                set_cwriter(mmio.value);
+            } else {
+                mmio.value = read_cwriter();
+                trace!("read GITS_CWRITER: {:#x}", mmio.value);
+            }
+        }
+        GITS_CREADR => {
+            mmio.value = read_creadr();
+            trace!("read GITS_CREADER: {:#x}", mmio.value);
+        }
+        GITS_TYPER => {
+            mmio_perform_access(gits_base, mmio);
+            trace!("GITS_TYPER: {:#x}", mmio.value);
+        }
+        _ => {
+            mmio_perform_access(gits_base, mmio);
+            if mmio.is_write {
+                trace!(
+                    "write GITS offset: {:#x}, 0x{:016x}",
+                    mmio.address,
+                    mmio.value
+                );
+            } else {
+                trace!(
+                    "read GITS offset: {:#x}, 0x{:016x}",
+                    mmio.address,
+                    mmio.value
+                );
+            }
+        }
+    }
+    Ok(())
 }

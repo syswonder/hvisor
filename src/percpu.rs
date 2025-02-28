@@ -1,15 +1,19 @@
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use spin::{Mutex, RwLock};
 
 use crate::arch::cpu::{this_cpu_id, ArchCpu};
 use crate::consts::{INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::memory::addr::VirtAddr;
 use crate::zone::Zone;
-use crate::ENTERED_CPUS;
+use crate::{arch, ENTERED_CPUS};
 use core::fmt::Debug;
 use core::sync::atomic::Ordering;
 
 // global_asm!(include_str!("./arch/aarch64/page_table.S"),);
+
+#[cfg(test)]
+mod tests;
 
 #[repr(C)]
 pub struct PerCpu {
@@ -40,8 +44,11 @@ impl PerCpu {
         };
         #[cfg(target_arch = "riscv64")]
         {
-            use crate::arch::csr::CSR_SSCRATCH;
-            write_csr!(CSR_SSCRATCH, &ret.arch_cpu as *const _ as usize); //arch cpu pointer
+            use crate::arch::csr::{write_csr, CSR_SSCRATCH};
+            write_csr!(
+                CSR_SSCRATCH,
+                &ret.as_mut().unwrap().arch_cpu as *const _ as usize
+            ); //arch cpu pointer
         }
         unsafe { ret.as_mut().unwrap() }
     }
