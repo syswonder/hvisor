@@ -1,7 +1,5 @@
 use core::panic;
 
-
-
 use crate::{
     config::*,
     device::virtio_trampoline::mmio_virtio_handler,

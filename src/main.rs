@@ -12,7 +12,8 @@
 #![no_main]
 // 不使用main入口，使用自己定义实际入口_start，因为我们还没有初始化堆栈指针
 #![feature(asm_const)]
-#![feature(naked_functions)] //  surpport naked function
+#![feature(naked_functions)]
+//  surpport naked function
 // #![feature(core_panic)]
 // 支持内联汇编
 // #![deny(warnings, missing_docs)] // 将warnings作为error
@@ -34,6 +35,7 @@ extern crate lazy_static;
 #[macro_use]
 mod logging;
 mod arch;
+mod config;
 mod consts;
 mod device;
 mod event;
@@ -43,7 +45,6 @@ mod panic;
 mod percpu;
 mod platform;
 mod zone;
-mod config;
 
 #[cfg(target_arch = "aarch64")]
 mod ivc;
@@ -56,9 +57,9 @@ use crate::arch::mm::setup_parange;
 use crate::consts::MAX_CPU_NUM;
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
-use zone::zone_create;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
+use zone::zone_create;
 
 #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
 use crate::arch::iommu::iommu_init;
@@ -122,7 +123,7 @@ fn primary_init_early() {
 
     #[cfg(not(test))]
     zone_create(root_zone_config()).unwrap();
-    
+
     INIT_EARLY_OK.store(1, Ordering::Release);
 }
 
@@ -164,7 +165,6 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         clear_bss();
         memory::heap::init();
         memory::heap::test();
-        
     }
 
     let cpu = PerCpu::new(cpuid);
@@ -190,20 +190,20 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
 
     #[cfg(target_arch = "aarch64")]
     setup_parange();
-    
+
     if is_primary {
         primary_init_early(); // create root zone here
     } else {
         wait_for_counter(&INIT_EARLY_OK, 1);
     }
-    
+
     per_cpu_init(cpu);
     device::irqchip::percpu_init();
-    
+
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
 
     wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _);
-    
+
     if is_primary {
         primary_init_late();
     } else {

@@ -1,8 +1,11 @@
 use crate::{
-    arch::{mm::new_s2_memory_set, sysreg::write_sysreg}, consts::{PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE}, memory::{
+    arch::{mm::new_s2_memory_set, sysreg::write_sysreg},
+    consts::{PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
+    memory::{
         addr::PHYS_VIRT_OFFSET, mm::PARKING_MEMORY_SET, GuestPhysAddr, HostPhysAddr, MemFlags,
         MemoryRegion, VirtAddr, PARKING_INST_PAGE,
-    }, percpu::this_cpu_data
+    },
+    percpu::this_cpu_data,
 };
 use aarch64_cpu::registers::{
     Readable, Writeable, ELR_EL2, HCR_EL2, MPIDR_EL1, SCTLR_EL1, SPSR_EL2, VTCR_EL2,
@@ -52,7 +55,10 @@ impl ArchCpu {
     }
 
     pub fn reset(&mut self, entry: usize, dtb: usize) {
-        debug!("cpu {} reset, entry: {:#x}, dtb: {:#x}", self.cpuid, entry, dtb);
+        debug!(
+            "cpu {} reset, entry: {:#x}, dtb: {:#x}",
+            self.cpuid, entry, dtb
+        );
         ELR_EL2.set(entry as _);
         SPSR_EL2.set(0x3c5);
         let regs = self.guest_reg();

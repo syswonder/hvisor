@@ -4,12 +4,17 @@ use crate::zone::Zone;
 #[cfg(all(feature = "gicv2", target_arch = "aarch64"))]
 pub mod gicv2;
 #[cfg(all(feature = "gicv2", target_arch = "aarch64"))]
-pub use gicv2::{gic::inject_irq, primary_init_late, primary_init_early, percpu_init, vgic::set_sgi_irq, gicd::set_ispender};
+pub use gicv2::{
+    gic::inject_irq, gicd::set_ispender, percpu_init, primary_init_early, primary_init_late,
+    vgic::set_sgi_irq,
+};
 
 #[cfg(all(feature = "gicv3", target_arch = "aarch64"))]
 pub mod gicv3;
 #[cfg(all(feature = "gicv3", target_arch = "aarch64"))]
-pub use gicv3::{percpu_init, primary_init_early, primary_init_late, inject_irq, gicd::set_ispender};
+pub use gicv3::{
+    gicd::set_ispender, inject_irq, percpu_init, primary_init_early, primary_init_late,
+};
 
 #[cfg(target_arch = "riscv64")]
 #[cfg(feature = "plic")]
@@ -22,7 +27,6 @@ pub mod aia;
 #[cfg(target_arch = "loongarch64")]
 pub mod ls7a2000;
 
-
 pub fn gic_handle_irq() {
     #[cfg(all(feature = "gicv2", target_arch = "aarch64"))]
     gicv2::gic::gicv2_handle_irq();
@@ -32,11 +36,13 @@ pub fn gic_handle_irq() {
 
 impl Zone {
     pub fn mmio_init(&mut self, hv_config: &HvArchZoneConfig) {
-        #[cfg(all(feature = "gicv2", target_arch = "aarch64"))] {
+        #[cfg(all(feature = "gicv2", target_arch = "aarch64"))]
+        {
             self.vgicv2_mmio_init(hv_config);
             self.vgicv2_remap_init(hv_config);
         }
-        #[cfg(all(feature = "gicv3", target_arch = "aarch64"))] {
+        #[cfg(all(feature = "gicv3", target_arch = "aarch64"))]
+        {
             self.vgicv3_mmio_init(hv_config);
         }
     }
@@ -44,13 +50,16 @@ impl Zone {
 
 #[cfg(target_arch = "riscv64")]
 #[cfg(feature = "plic")]
-pub use plic::{inject_irq, percpu_init, primary_init_early, primary_init_late, 
-    host_plic, vplic_global_emul_handler, vplic_hart_emul_handler};
+pub use plic::{
+    host_plic, inject_irq, percpu_init, primary_init_early, primary_init_late,
+    vplic_global_emul_handler, vplic_hart_emul_handler,
+};
 
 #[cfg(target_arch = "riscv64")]
 #[cfg(feature = "aia")]
-pub use aia::aplic::{inject_irq, percpu_init, primary_init_early, primary_init_late, 
-    host_aplic, vaplic_emul_handler};
+pub use aia::aplic::{
+    host_aplic, inject_irq, percpu_init, primary_init_early, primary_init_late, vaplic_emul_handler,
+};
 
 #[cfg(target_arch = "loongarch64")]
 pub mod ls7a2000;

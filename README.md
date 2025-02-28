@@ -25,7 +25,7 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
   - I/O Virtualization: Supports device passthrough and virtio paravirtualization.
 - **Multi-platform Support**: Supports various architectures, including `aarch64`, `riscv64`, and `loongarch64`.
 - **Virtual Machine Management**: Virtual machines are managed through a Linux environment in zone0 (root-linux), with basic management tasks (create, start, stop, delete) handled via the command-line tool [hvisor-tool](https://github.com/syswonder/hvisor-tool).
-- **Formal Verification**: Part of the virtual machine monitor code is undergoing formal verification using the [verus](https://github.com/verus-lang/verus) tool.
+- **Formal Verification**: Part of the hvisor code is undergoing formal verification using the [verus](https://github.com/verus-lang/verus) tool.
 
 ## Device Support
 
@@ -60,7 +60,7 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
 ### riscv64
 
 - [x] QEMU virt riscv64
-- [ ] FPGA 香山（昆明湖）on S2C Prodigy S7-19PS-2
+- [ ] FPGA XiangShan(KunMingHu) on S2C Prodigy S7-19PS-2
 - [ ] FPGA  RocketChip on Xilinx Ultrascale+ MPSoC ZCU102
 
 ### loongarch64
@@ -79,4 +79,4 @@ Please refer to the hvisor documentation for the quick start guide, which includ
 
 ## Acknowledgments
 
-This project is based on [RVM1.5](https://github.com/rcore-os/RVM1.5) and [jailhouse](https://github.com/siemens/jailhouse).
+Some implementations of this project reference [RVM1.5](https://github.com/rcore-os/RVM1.5) and [jailhouse](https://github.com/siemens/jailhouse).

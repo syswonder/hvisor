@@ -3,7 +3,8 @@ use crate::arch::sysreg::write_sysreg;
 #[cfg(feature = "gicv2")]
 use crate::device::irqchip::set_sgi_irq;
 pub fn arch_send_event(cpu_id: u64, sgi_num: u64) {
-    #[cfg(feature = "gicv3")] {
+    #[cfg(feature = "gicv3")]
+    {
         let aff3: u64 = 0 << 48;
         let aff2: u64 = 0 << 32;
         let aff1: u64 = 0 << 16;
@@ -14,7 +15,8 @@ pub fn arch_send_event(cpu_id: u64, sgi_num: u64) {
         write_sysreg!(icc_sgi1r_el1, val);
         debug!("write sgi sys value = {:#x}", val);
     }
-    #[cfg(feature = "gicv2")] {
+    #[cfg(feature = "gicv2")]
+    {
         let sgi_id: u64 = sgi_num;
         let target_list: u64 = 1 << cpu_id;
         set_sgi_irq(sgi_id as usize, target_list as usize, 0);

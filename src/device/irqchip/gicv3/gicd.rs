@@ -50,8 +50,11 @@ pub fn enable_gic_are_ns() {
     }
 }
 
-pub fn set_ispender(index:usize,value:u32) {
+pub fn set_ispender(index: usize, value: u32) {
     unsafe {
-        write_volatile((host_gicd_base() + GICD_ISPENDR + index * 4) as *mut u32, value);
+        write_volatile(
+            (host_gicd_base() + GICD_ISPENDR + index * 4) as *mut u32,
+            value,
+        );
     }
 }

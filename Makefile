@@ -5,8 +5,16 @@ STATS ?= off
 PORT ?= 2333
 MODE ?= debug
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
-FEATURES ?= platform_zcu102,gicv2
-BOARD ?= zcu102
+
+# AVAIABLE "FEATURES" VALUES:
+# - platform_qemu, platform_zcu102, platform_imx8mp
+# - gicv2, gicv3 (for aarch64)
+# - plic, aia (for riscv64)
+FEATURES ?= platform_qemu,gicv3
+
+# AVAIABLE "BOARD" VALUES:
+# - qemu, zcu102, imx8mp, 3a5000
+BOARD ?= qemu
 
 ifeq ($(ARCH),aarch64)
     RUSTC_TARGET := aarch64-unknown-none
@@ -24,6 +32,9 @@ endif
 export MODE
 export LOG
 export ARCH
+export RUSTC_TARGET
+export FEATURES
+export BOARD
 
 # Build paths
 build_path := target/$(RUSTC_TARGET)/$(MODE)
@@ -78,6 +89,15 @@ cp:
 test-pre: download-test-img
 	chmod +x ./tools/cargo_test.sh
 	@echo "pass"
+
+fmt-test:
+	cargo fmt --all -- --check
+
+fmt:
+	cargo fmt --all
+
+clippy:
+	cargo clippy $(build_args)
 
 flash-img:
 # run this will erase all environment for uboot, be careful
