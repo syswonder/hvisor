@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # for hvisor's unit test when running cargo test
 # passed to .cargo/config
@@ -30,7 +30,8 @@ YELLOW='\033[1;33m'
 END='\033[0m'
 
 info() {
-    echo "${YELLOW}[INFO | $THIS] $1${END}"
+    # echo "${YELLOW}[INFO | $THIS] $1${END}"
+    echo "[INFO | $THIS] $1"
 }
 
 info "Running cargo test with env: ARCH=$ARCH, FEATURES=$FEATURES, BOARD=$BOARD"
@@ -39,7 +40,7 @@ info "Building hvisor with $CARGO_BUILD_INPUT_ARG0"
 info "PWD=$PWD, running cargo test"
 $OBJCOPY $HVISOR_ELF --strip-all -O binary $HVISOR_BIN_TMP
 
-if [ "$ARCH" = "aarch64" ]; then
+if [ "$ARCH" == "aarch64" ]; then
     mkimage -n hvisor_img -A arm64 -O linux -C none -T kernel -a 0x40400000 \
         -e 0x40400000 -d $HVISOR_BIN_TMP $HVISOR_BIN
 
@@ -47,7 +48,7 @@ if [ "$ARCH" = "aarch64" ]; then
 
     # if we have gicv2,gicv3 in FEATURES, we get the number from it
     AARCH64_GIC_TEST_VERSION=3
-    if [[ $FEATURES = *"gicv2"* ]]; then
+    if [[ $FEATURES == *"gicv2"* ]]; then
         AARCH64_GIC_TEST_VERSION=2
     fi
     info "Using GIC version: $AARCH64_GIC_TEST_VERSION"
@@ -69,7 +70,7 @@ if [ "$ARCH" = "aarch64" ]; then
 
     mv .cargo/config.bak .cargo/config
     exit 0
-elif [ "$ARCH" = "riscv64" ]; then
+elif [ "$ARCH" == "riscv64" ]; then
     info "riscv64 auto test is not supported yet"
     mv .cargo/config.bak .cargo/config
     exit 1
