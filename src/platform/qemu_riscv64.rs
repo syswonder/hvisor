@@ -74,7 +74,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [
     }, // virtio
 ];
 
-pub const ROOT_ZONE_IRQS: [u32; 11] = [1,2,3,4,5,8,10,33,34,35,36];    // riscv 版本, 这个暂时不影响
+pub const ROOT_ZONE_IRQS: [u32; 11] = [1,2,3,4,5,8,10,33,34,35,36];    // ARCH= riscv .It doesn't matter temporarily.
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     plic_base: 0xc000000,
