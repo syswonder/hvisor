@@ -147,14 +147,14 @@ pub extern "C" fn boot_pt_init(l0_pt: &mut PageTables, l1_pt: &mut PageTables) {
         if #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))] {
             l0_pt.entry[0] = PTEDescriptor::new(0x0, MemoryType::Device, PTEType::Block);
             for i in 1..ENTRY_PER_PAGE {
-                l0_pt.entry[i] = PTEDescriptor::new(0x40000000*i, MemoryType::Device, PTEType::Block);
+                l0_pt.entry[i] = PTEDescriptor::new(0x40000000*i, MemoryType::Normal, PTEType::Block);
             }
         } else {
             l0_pt.entry[0] = PTEDescriptor::new(0x0, MemoryType::Device, PTEType::Block);
             for i in 1..7 {
-                l0_pt.entry[i] = PTEDescriptor::new(0x40000000*i, MemoryType::Device, PTEType::Block);
+                l0_pt.entry[i] = PTEDescriptor::new(0x40000000*i, MemoryType::Normal, PTEType::Block);
             }
-            for i in 1..ENTRY_PER_PAGE {
+            for i in 8..ENTRY_PER_PAGE {
                 l0_pt.entry[i] = PTEDescriptor::invalid();
             }
         }
