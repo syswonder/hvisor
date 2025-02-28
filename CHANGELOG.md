@@ -14,7 +14,7 @@
 - [tool] adapting hvisor-tool virtio-gpu, virtio-console ([KouweiLee](https://github.com/KouweiLee), [Roxy](https://github.com/Misaka19986), [wheatfox](https://github.com/enkerewpo))
 - [bugfix] refactor aarch64 pagetable code ([dallasxy](https://github.com/dallasxy))
 - [platform] Xilinx Ultrascale+ ZCU102 PS processor support ([Ren HangQi](https://github.com/ForeverYolo))
-- [platform] Loongson 3A5000+7A2000 support ([wheatfox](https://github.com/enkerewpo))
+- [platform] Loongson 3A5000+7A2000 support ([wheatfox](https://github.com/enkerewpo), [BoneInscri](https://github.com/BoneInscri)
 - [feature] SMMUv3 support ([Zhongkai Xu](https://github.com/ZhongkaiXu))
 - [feature] PCIe support ([Zhongkai Xu](https://github.com/ZhongkaiXu), [dallasxy](https://github.com/dallasxy), [Ren HangQi](https://github.com/ForeverYolo))
 - [feature] network interface card support ([Ren HangQi](https://github.com/ForeverYolo))
