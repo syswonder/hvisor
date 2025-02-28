@@ -155,14 +155,17 @@ pub fn find_zone(zone_id: usize) -> Option<Arc<RwLock<Zone>>> {
 pub fn all_zones_info() -> Vec<ZoneInfo> {
     let zone_list = ZONE_LIST.read();
 
-    zone_list.iter().map(|zone| {
-        let zone_lock = zone.read();
-        ZoneInfo {
-            zone_id: zone_lock.id as u32,
-            cpus: zone_lock.cpu_set.bitmap,
-            name: zone_lock.name.clone(),
-        }
-    }).collect()
+    zone_list
+        .iter()
+        .map(|zone| {
+            let zone_lock = zone.read();
+            ZoneInfo {
+                zone_id: zone_lock.id as u32,
+                cpus: zone_lock.cpu_set.bitmap,
+                name: zone_lock.name.clone(),
+            }
+        })
+        .collect()
 }
 
 pub fn this_zone_id() -> usize {
@@ -185,7 +188,11 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     #[cfg(target_arch = "aarch64")]
     zone.ivc_init(config.ivc_config());
     #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
-    zone.pci_init(&config.pci_config, config.num_pci_devs as _, &config.alloc_pci_devs);
+    zone.pci_init(
+        &config.pci_config,
+        config.num_pci_devs as _,
+        &config.alloc_pci_devs,
+    );
 
     config.cpus().iter().for_each(|cpu_id| {
         zone.cpu_set.set_bit(*cpu_id as _);
@@ -226,5 +233,5 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
 pub struct ZoneInfo {
     zone_id: u32,
     cpus: u64,
-    name: [u8; CONFIG_NAME_MAXLEN]
+    name: [u8; CONFIG_NAME_MAXLEN],
 }

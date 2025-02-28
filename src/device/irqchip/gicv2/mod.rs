@@ -1,12 +1,11 @@
+use crate::device::irqchip::gicv2::gic::MAX_CPU_NUM;
 /// The outer layer is defined using gicv2.
 /// author: ForeverYolo
 /// reference:
 /// 1. gicv2 spec : https://www.cl.cam.ac.uk/research/srg/han/ACS-P35/zynq/arm_gic_architecture_specification.pdf
-
 use crate::device::irqchip::gicv2::gicc::GICC;
 use crate::device::irqchip::gicv2::gicd::GICD;
 use crate::platform::ROOT_ARCH_ZONE_CONFIG;
-use crate::device::irqchip::gicv2::gic::MAX_CPU_NUM;
 use crate::zone::Zone;
 
 // GIC Distributor Definition.

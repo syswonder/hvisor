@@ -2,15 +2,12 @@ use crate::{
     config::*,
     device::virtio_trampoline::{mmio_virtio_handler, VIRTIO_BRIDGE},
     error::HvResult,
-    memory::{
-        addr::align_up, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
-    },
+    memory::{addr::align_up, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion},
     percpu::get_cpu_data,
     zone::Zone,
 };
 impl Zone {
-    pub fn pt_init( &mut self, mem_regions: &[HvConfigMemoryRegion],
-    ) -> HvResult {
+    pub fn pt_init(&mut self, mem_regions: &[HvConfigMemoryRegion]) -> HvResult {
         for mem_region in mem_regions.iter() {
             let mut flags = MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE;
             if mem_region.mem_type == MEM_TYPE_IO {
@@ -38,7 +35,8 @@ impl Zone {
                 }
             }
         }
-        #[cfg(feature = "aia")]{
+        #[cfg(feature = "aia")]
+        {
             use crate::memory::PAGE_SIZE;
             let paddr = 0x2800_0000 as HostPhysAddr;
             let size = PAGE_SIZE;
@@ -48,7 +46,7 @@ impl Zone {
                 size,
                 MemFlags::READ | MemFlags::WRITE,
             ))?;
-    
+
             let paddr = 0x2800_1000 as HostPhysAddr;
             let size = PAGE_SIZE;
             self.gpm.insert(MemoryRegion::new_with_offset_mapper(
@@ -57,7 +55,7 @@ impl Zone {
                 size,
                 MemFlags::READ | MemFlags::WRITE,
             ))?;
-    
+
             let paddr = 0x2800_2000 as HostPhysAddr;
             let size = PAGE_SIZE;
             self.gpm.insert(MemoryRegion::new_with_offset_mapper(
@@ -66,7 +64,7 @@ impl Zone {
                 size,
                 MemFlags::READ | MemFlags::WRITE,
             ))?;
-    
+
             let paddr = 0x2800_3000 as HostPhysAddr;
             let size = PAGE_SIZE;
             self.gpm.insert(MemoryRegion::new_with_offset_mapper(

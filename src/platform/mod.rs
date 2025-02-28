@@ -1,7 +1,7 @@
 use crate::{
     config::{
-        HvConfigMemoryRegion, HvIvcConfig, HvZoneConfig, CONFIG_MAX_INTERRUPTS, CONFIG_MAX_IVC_CONGIGS, CONFIG_MAX_MEMORY_REGIONS, CONFIG_NAME_MAXLEN,
-        HvPciConfig, CONFIG_MAX_PCI_DEV
+        HvConfigMemoryRegion, HvIvcConfig, HvPciConfig, HvZoneConfig, CONFIG_MAX_INTERRUPTS,
+        CONFIG_MAX_IVC_CONGIGS, CONFIG_MAX_MEMORY_REGIONS, CONFIG_MAX_PCI_DEV, CONFIG_NAME_MAXLEN,
     },
     consts::INVALID_ADDRESS,
 };
@@ -64,7 +64,7 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
 
     let mut pci_devs = [0; CONFIG_MAX_PCI_DEV];
     let mut root_pci_cfg = HvPciConfig::new_empty();
-    let mut num_pci_devs:u64 = 0;
+    let mut num_pci_devs: u64 = 0;
     #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
     {
         pci_devs[..ROOT_PCI_DEVS.len()].copy_from_slice(&ROOT_PCI_DEVS);
@@ -90,6 +90,6 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
         ROOT_ARCH_ZONE_CONFIG,
         root_pci_cfg,
         num_pci_devs,
-        pci_devs
+        pci_devs,
     )
 }

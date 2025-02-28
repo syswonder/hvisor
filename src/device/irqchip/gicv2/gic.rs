@@ -1,19 +1,21 @@
+use crate::arch::cpu::this_cpu_id;
+use crate::device::irqchip::gicv2::gicc::GICC;
+use crate::device::irqchip::gicv2::gicd::GICV2_SGIS_NUM;
+use crate::device::irqchip::gicv2::gich::{
+    GICH, GICV2_GICH_HCR_UIE, GICV2_GICH_LR_CPUID_SHIFT, GICV2_GICH_LR_HW,
+    GICV2_GICH_LR_PENDING_STATE, GICV2_GICH_LR_PHYSID_SHIFT,
+};
+use crate::event::check_events;
+use crate::hypercall::SGI_IPI_ID;
 /// This file defines and implements the functional functions of physical gicv2.
 /// author: ForeverYolo
 /// reference:
 /// 1. gicv2 spec : https://www.cl.cam.ac.uk/research/srg/han/ACS-P35/zynq/arm_gic_architecture_specification.pdf
-
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use spin::{Mutex, Once};
-use crate::arch::cpu::this_cpu_id;
-use crate::device::irqchip::gicv2::gicc::GICC;
-use crate::device::irqchip::gicv2::gicd::GICV2_SGIS_NUM;
-use crate::device::irqchip::gicv2::gich::{GICH, GICV2_GICH_HCR_UIE, GICV2_GICH_LR_CPUID_SHIFT, GICV2_GICH_LR_HW, GICV2_GICH_LR_PENDING_STATE, GICV2_GICH_LR_PHYSID_SHIFT};
-use crate::hypercall::SGI_IPI_ID;
-use crate::event::check_events;
 
-pub const MAX_CPU_NUM : usize = 8;
+pub const MAX_CPU_NUM: usize = 8;
 pub const MAINTENACE_INTERRUPT: u64 = 25;
 
 pub fn gicv2_handle_irq() {
@@ -38,7 +40,6 @@ pub fn gicv2_handle_irq() {
     }
 }
 
-
 pub fn get_pending_irq() -> Option<usize> {
     let iar = GICC.get_iar() as usize;
     let irq = iar & 0x3ff;
@@ -48,7 +49,6 @@ pub fn get_pending_irq() -> Option<usize> {
         Some(irq)
     }
 }
-
 
 // deactivate irq: GIC doesn't care CPU ID.
 pub fn deactivate_irq(irq_id: usize) {
@@ -70,7 +70,6 @@ pub fn change_underflow_maintenance(is_enable: bool) {
     GICH.set_hcr(hcr);
 }
 
-
 fn handle_maintenace_interrupt() {
     info!("handle_maintenace_interrupt");
     while let Some((irq_id, is_sgi)) = PENDING_VIRQS.get().unwrap().fetch_irq() {
@@ -81,7 +80,7 @@ fn handle_maintenace_interrupt() {
         if !is_injected {
             PENDING_VIRQS.get().unwrap().add_irq(irq_id, is_sgi);
             change_underflow_maintenance(true);
-            return ;
+            return;
         }
     }
     change_underflow_maintenance(false);
@@ -110,7 +109,11 @@ pub fn inject_irq(irq_id: usize, is_sgi: bool) -> bool {
             let lr = GICH.get_lr(i as usize) as usize;
             warn!("lr[{}]: {:#x}", i, lr);
         }
-        PENDING_VIRQS.get().unwrap().add_irq(irq_id, is_sgi).unwrap();
+        PENDING_VIRQS
+            .get()
+            .unwrap()
+            .add_irq(irq_id, is_sgi)
+            .unwrap();
         change_underflow_maintenance(true);
         false
     } else {
@@ -121,7 +124,7 @@ pub fn inject_irq(irq_id: usize, is_sgi: bool) -> bool {
         val = val | GICV2_GICH_LR_PENDING_STATE;
         if is_sgi {
             // config cpu bit 10-12
-                val |= 1 << GICV2_GICH_LR_CPUID_SHIFT;
+            val |= 1 << GICV2_GICH_LR_CPUID_SHIFT;
         } else {
             // config pint bit 10-19
             val = val | (irq_id << GICV2_GICH_LR_PHYSID_SHIFT);
@@ -132,7 +135,6 @@ pub fn inject_irq(irq_id: usize, is_sgi: bool) -> bool {
         true
     }
 }
-
 
 // virtual interrupts waiting to inject
 pub static PENDING_VIRQS: Once<PendingIrqs> = Once::new();
@@ -156,7 +158,7 @@ impl PendingIrqs {
                 let mut irqs = pending_irqs.lock();
                 irqs.push_back((irq_id, is_sgi));
                 Some(())
-            },
+            }
             _ => None,
         }
     }
@@ -166,11 +168,8 @@ impl PendingIrqs {
             Some(pending_irqs) => {
                 let mut irqs = pending_irqs.lock();
                 irqs.pop_front()
-            },
+            }
             _ => None,
         }
     }
 }
-
-
-

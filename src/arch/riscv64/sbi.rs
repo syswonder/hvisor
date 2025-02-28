@@ -1,7 +1,7 @@
 //! SBI call wrappers
 
 #![allow(unused)]
-use crate::hypercall::{HyperCall};
+use crate::hypercall::HyperCall;
 use crate::percpu::{get_cpu_data, this_cpu_data};
 
 use super::cpu::ArchCpu;

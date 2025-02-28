@@ -1,6 +1,8 @@
 use aarch64_cpu::{asm::wfi, registers::*};
 use core::arch::global_asm;
 
+use super::cpu::GeneralRegisters;
+use crate::arch::sysreg::smc_call;
 use crate::{
     arch::{
         cpu::mpidr_to_cpuid,
@@ -13,8 +15,6 @@ use crate::{
     percpu::{get_cpu_data, this_cpu_data, this_zone, PerCpu},
     zone::{is_this_root_zone, remove_zone},
 };
-use crate::arch::sysreg::smc_call;
-use super::cpu::GeneralRegisters;
 
 global_asm!(
     include_str!("./trap.S"),
@@ -161,7 +161,10 @@ fn arch_handle_trap_el2(_regs: &mut GeneralRegisters) {
             );
         }
         _ => {
-            println!("Unhandled EL2 Exception: EC={:#x?}", ESR_EL2.read(ESR_EL2::EC));
+            println!(
+                "Unhandled EL2 Exception: EC={:#x?}",
+                ESR_EL2.read(ESR_EL2::EC)
+            );
         }
     }
     loop {}
@@ -276,7 +279,8 @@ fn handle_smc(regs: &mut GeneralRegisters) {
         SmcType::ARCH_SC => handle_arch_smc(regs, code, arg0, arg1, arg2),
         SmcType::STANDARD_SC => handle_psci_smc(regs, code, arg0, arg1, arg2),
         SmcType::SIP_SC => unsafe {
-            (regs.usr[0], regs.usr[1], regs.usr[2], regs.usr[3]) = smc_call!(code, arg0, arg1, arg2);
+            (regs.usr[0], regs.usr[1], regs.usr[2], regs.usr[3]) =
+                smc_call!(code, arg0, arg1, arg2);
             regs.usr[0]
         },
         _ => {
@@ -339,7 +343,7 @@ fn handle_psci_smc(
             wfi();
             gic_handle_irq();
             0
-        },
+        }
         PsciFnId::PSCI_CPU_OFF_32 | PsciFnId::PSCI_CPU_OFF_64 => {
             todo!();
         }

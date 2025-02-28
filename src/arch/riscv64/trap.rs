@@ -2,10 +2,10 @@ use super::cpu::ArchCpu;
 use crate::arch::csr::read_csr;
 use crate::arch::csr::*;
 use crate::arch::sbi::sbi_vs_handler;
-#[cfg(feature = "plic")]
-use crate::device::irqchip::plic::{host_plic, vplic_global_emul_handler, vplic_hart_emul_handler};
 #[cfg(feature = "aia")]
 use crate::device::irqchip::aia::aplic::{host_aplic, vaplic_emul_handler};
+#[cfg(feature = "plic")]
+use crate::device::irqchip::plic::{host_plic, vplic_global_emul_handler, vplic_hart_emul_handler};
 use crate::event::check_events;
 use crate::memory::{GuestPhysAddr, HostPhysAddr};
 use crate::platform::qemu_riscv64::*;
@@ -90,7 +90,8 @@ pub fn sync_exception_handler(current_cpu: &mut ArchCpu) {
 pub fn guest_page_fault_handler(current_cpu: &mut ArchCpu) {
     let addr: HostPhysAddr = read_csr!(CSR_HTVAL) << 2;
     trace!("guest page fault at {:#x}", addr);
-    #[cfg(feature = "plic")]{
+    #[cfg(feature = "plic")]
+    {
         let host_plic_base = host_plic().read().base;
         let mut ins_size: usize = 0;
         //TODO: get plic addr range from dtb or vpliv object
@@ -131,10 +132,11 @@ pub fn guest_page_fault_handler(current_cpu: &mut ArchCpu) {
             panic!("CPU {} unmaped memmory at {:#x}", current_cpu.cpuid, addr);
         }
     }
-    #[cfg(feature = "aia")]{
+    #[cfg(feature = "aia")]
+    {
         let host_aplic_base = host_aplic().read().base;
         let host_aplic_size = host_aplic().read().size;
-    
+
         if addr >= host_aplic_base && addr < host_aplic_base + host_aplic_size {
             trace!("APLIC access");
             let mut inst: u32 = read_csr!(CSR_HTINST) as u32;
@@ -151,8 +153,8 @@ pub fn guest_page_fault_handler(current_cpu: &mut ArchCpu) {
                 // error!("unhandled guest page fault at {:#x}", addr);
             }
             // let (len, inst) = decode_inst(inst);
-            let (_, inst) = decode_inst(inst); 
-            
+            let (_, inst) = decode_inst(inst);
+
             if let Some(inst) = inst {
                 vaplic_emul_handler(current_cpu, addr, inst);
                 current_cpu.sepc += ins_size;
@@ -237,24 +239,26 @@ pub fn interrupts_arch_handle(current_cpu: &mut ArchCpu) {
 
 /// handle interrupt request(current only external interrupt)
 pub fn handle_eirq(current_cpu: &mut ArchCpu) {
-    #[cfg(feature = "plic")]{
-    // TODO: handle other irq
-    // check external interrupt && handle
-    // sifive plic: context0=>cpu0,M mode,context1=>cpu0,S mode...
-    let context_id = 2 * current_cpu.cpuid + 1;
-    let host_plic = host_plic();
-    let claim_and_complete_addr =
-        host_plic.read().base + PLIC_GLOBAL_SIZE + 0x1000 * context_id + 0x4;
-    let irq = unsafe { core::ptr::read_volatile(claim_and_complete_addr as *const u32) };
-    debug!(
-        "CPU{} get external irq{}@{:#x}",
-        current_cpu.cpuid, irq, claim_and_complete_addr
-    );
-    host_plic.write().claim_complete[context_id] = irq;
-    // set external interrupt pending, which trigger guest interrupt
-    unsafe { hvip::set_vseip() };
+    #[cfg(feature = "plic")]
+    {
+        // TODO: handle other irq
+        // check external interrupt && handle
+        // sifive plic: context0=>cpu0,M mode,context1=>cpu0,S mode...
+        let context_id = 2 * current_cpu.cpuid + 1;
+        let host_plic = host_plic();
+        let claim_and_complete_addr =
+            host_plic.read().base + PLIC_GLOBAL_SIZE + 0x1000 * context_id + 0x4;
+        let irq = unsafe { core::ptr::read_volatile(claim_and_complete_addr as *const u32) };
+        debug!(
+            "CPU{} get external irq{}@{:#x}",
+            current_cpu.cpuid, irq, claim_and_complete_addr
+        );
+        host_plic.write().claim_complete[context_id] = irq;
+        // set external interrupt pending, which trigger guest interrupt
+        unsafe { hvip::set_vseip() };
     }
-    #[cfg(feature = "aia")]{
+    #[cfg(feature = "aia")]
+    {
         panic!("HS extensional interrupt")
     }
 }

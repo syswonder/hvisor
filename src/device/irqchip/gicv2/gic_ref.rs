@@ -1,11 +1,10 @@
+use core::marker::PhantomData;
 /// A struct definition that wraps around a bare pointer
 /// author: ForeverYolo
 /// references:
 /// rust_shyper: https://gitee.com/openeuler/rust_shyper
-
 use core::ops::Deref;
 use core::ptr::NonNull;
-use core::marker::PhantomData;
 
 #[derive(Debug)]
 pub struct GicRef<'a, T> {

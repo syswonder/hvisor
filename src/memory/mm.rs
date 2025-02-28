@@ -74,7 +74,7 @@ where
         }
     }
 
-    pub fn root_paddr(&self) -> usize{
+    pub fn root_paddr(&self) -> usize {
         self.pt.root_paddr()
     }
 

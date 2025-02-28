@@ -1,5 +1,5 @@
 # hvisor for loongarch64 makefile
-# wheatfox(enkerewpo@hotmail.com) 2024.6
+# wheatfox(wheatfox17@icloud.com) 2024.6
 
 # HVISOR ENTRY
 HVISOR_ENTRY_PA := 0x9000000080000000

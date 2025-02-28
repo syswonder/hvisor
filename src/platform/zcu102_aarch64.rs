@@ -1,5 +1,5 @@
-use crate::{arch::zone::HvArchZoneConfig, config::*};
 use crate::config::HvConfigMemoryRegion;
+use crate::{arch::zone::HvArchZoneConfig, config::*};
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x04000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x00200000;
@@ -64,6 +64,5 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     gicv_base: 0xf9060000,
     gicv_size: 0x20000,
 };
-
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];

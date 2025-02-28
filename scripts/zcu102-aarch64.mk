@@ -1,5 +1,5 @@
 # Makefile for Xilinx ZCU102 AArch64 platform
-# created on 2024.12.2, wheatfox(enkerewpo@hotmail.com)
+# created on 2024.12.2, wheatfox(wheatfox17@icloud.com)
 
 # according to petalinux-boot qemu
 # however we must use petalinux-boot qemu to use it because it need some background servers ?
