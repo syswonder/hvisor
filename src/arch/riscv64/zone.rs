@@ -38,13 +38,50 @@ impl Zone {
                 }
             }
         }
-
+        #[cfg(feature = "aia")]{
+            use crate::memory::PAGE_SIZE;
+            let paddr = 0x2800_0000 as HostPhysAddr;
+            let size = PAGE_SIZE;
+            self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                paddr as GuestPhysAddr,
+                paddr + PAGE_SIZE * 1,
+                size,
+                MemFlags::READ | MemFlags::WRITE,
+            ))?;
+    
+            let paddr = 0x2800_1000 as HostPhysAddr;
+            let size = PAGE_SIZE;
+            self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                paddr as GuestPhysAddr,
+                paddr + PAGE_SIZE * 2,
+                size,
+                MemFlags::READ | MemFlags::WRITE,
+            ))?;
+    
+            let paddr = 0x2800_2000 as HostPhysAddr;
+            let size = PAGE_SIZE;
+            self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                paddr as GuestPhysAddr,
+                paddr + PAGE_SIZE * 3,
+                size,
+                MemFlags::READ | MemFlags::WRITE,
+            ))?;
+    
+            let paddr = 0x2800_3000 as HostPhysAddr;
+            let size = PAGE_SIZE;
+            self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                paddr as GuestPhysAddr,
+                paddr + PAGE_SIZE * 4,
+                size,
+                MemFlags::READ | MemFlags::WRITE,
+            ))?;
+        }
         info!("VM stage 2 memory set: {:#x?}", self.gpm);
         Ok(())
     }
-    pub fn mmio_init(&mut self, hv_config: &HvArchZoneConfig) {
-        //TODO
-    }
+    // pub fn mmio_init(&mut self, hv_config: &HvArchZoneConfig) {
+    //     //TODO
+    // }
     pub fn irq_bitmap_init(&mut self, irqs: &[u32]) {}
     pub fn isa_init(&mut self, fdt: &fdt::Fdt) {
         let cpu_set = self.cpu_set;
@@ -70,4 +107,6 @@ impl Zone {
 pub struct HvArchZoneConfig {
     pub plic_base: usize,
     pub plic_size: usize,
+    pub aplic_base: usize,
+    pub aplic_size: usize,
 }
