@@ -8,7 +8,7 @@
 
 ## History Release
 
-### hvisor v0.1.0-rc1
+### hvisor v0.1.0
 
 - [platform] architecture officially supported: riscv64, loongarch64 ([Jingyu Liu](https://github.com/liulog), [wheatfox](https://github.com/enkerewpo))
 - [tool] adapting hvisor-tool virtio-gpu, virtio-console ([KouweiLee](https://github.com/KouweiLee), [Roxy](https://github.com/Misaka19986), [wheatfox](https://github.com/enkerewpo))
