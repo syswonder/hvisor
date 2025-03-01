@@ -24,9 +24,6 @@ pub mod plic;
 #[cfg(feature = "aia")]
 pub mod aia;
 
-#[cfg(target_arch = "loongarch64")]
-pub mod ls7a2000;
-
 pub fn gic_handle_irq() {
     #[cfg(all(feature = "gicv2", target_arch = "aarch64"))]
     gicv2::gic::gicv2_handle_irq();
