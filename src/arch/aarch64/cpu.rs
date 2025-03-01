@@ -1,3 +1,6 @@
+#![allow(dead_code)]
+#![allow(unused_imports)]
+
 use crate::{
     arch::{mm::new_s2_memory_set, sysreg::write_sysreg},
     consts::{PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},

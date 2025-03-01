@@ -1,7 +1,9 @@
+#![allow(unused)]
+
 use crate::{
     arch::ipi::arch_send_event,
     device::{
-        irqchip::{self, inject_irq},
+        irqchip::inject_irq,
         virtio_trampoline::{handle_virtio_irq, IRQ_WAKEUP_VIRTIO_DEVICE},
     },
     percpu::this_cpu_data,

@@ -39,7 +39,7 @@ hvisor 是一个用 Rust 实现的 Type-1 裸机虚拟机监控器，采用分�
 |                    | imx-uart              | `aarch64`                | NXP i.MX8MP                     |
 |                    | NS16550A              | `loongarch64`            |                                 |
 |                    | xuartps               | `aarch64`                | Xilinx Ultrascale+ MPSoC ZCU102 |
-| **中断控制器**     | GIC irq controller    | `aarch64`                |                                 |
+| **中断控制器**     | GIC irq controller    | `aarch64`                | GICv2, GICv3                    |
 |                    | 7A2000 irq controller | `loongarch64`            |                                 |
 |                    | PLIC                  | `riscv64`                |                                 |
 |                    | AIA-APIC              | `riscv64`                | 仅支持 MSI 模式                 |

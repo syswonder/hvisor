@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 /// this module is for unittests of hvisor
 /// since this is a baremetal program
 /// all unittests are performed when running hvisor on qemu

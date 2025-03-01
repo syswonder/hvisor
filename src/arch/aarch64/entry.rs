@@ -1,8 +1,7 @@
-use core::arch::global_asm;
+#![allow(unused)]
 
 use crate::consts::PER_CPU_SIZE;
-
-//global_asm!(include_str!("boot_pt.S"));
+use core::arch::global_asm;
 
 #[naked]
 #[no_mangle]

@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 pub mod cpu;
 pub mod entry;
 pub mod iommu;

@@ -3,10 +3,10 @@
 // Copyright (c) 2020-2022 Andre Richter <andre.o.richter@gmail.com>
 
 //! GICC Driver - GIC CPU interface.
-
-use core::ptr;
+#![allow(unused)]
 
 use alloc::vec::Vec;
+use core::ptr;
 use spin::{mutex::Mutex, Once};
 
 use crate::{

@@ -1,3 +1,5 @@
+#![allow(unused_imports)]
+
 #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
 mod pl011;
 

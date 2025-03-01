@@ -1,4 +1,8 @@
+#![allow(unused_imports)]
+
+#[cfg(test)]
 use crate::tests::*;
+
 use core::panic::PanicInfo;
 
 #[panic_handler]
