@@ -13,7 +13,7 @@ OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 FEATURES ?= platform_qemu,gicv3
 
 # AVAIABLE "BOARD" VALUES:
-# - qemu, zcu102, imx8mp, 3a5000
+# - qemu, zcu102, 3a5000
 BOARD ?= qemu
 
 ifeq ($(ARCH),aarch64)
