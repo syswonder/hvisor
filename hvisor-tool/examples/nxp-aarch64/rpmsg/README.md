@@ -1,0 +1,1 @@
+本目录下的文件，用于在nxp imx8mp上运行hvisor，并启动root linux，通过rpmsg_demo例程与M核通过RPMsg通信。

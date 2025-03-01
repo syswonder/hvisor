@@ -1,0 +1,1 @@
+本目录存放在nxp imx8mp上运行hvisor所需的各样配置文件。其中Root Linux设备树为linux1.dts，设备树中包含hdmi、gpu等用于显示的节点。
