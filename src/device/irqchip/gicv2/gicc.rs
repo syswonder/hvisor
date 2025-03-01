@@ -1,18 +1,19 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
+use crate::device::irqchip::gicv2::gic_ref::GicRef;
+use crate::device::irqchip::gicv2::gicd::GICD;
+use crate::device::irqchip::gicv2::gich::{
+    GICH, GICV2_GICH_HCR_EN, GICV2_GICH_VMCR_PMR_SHIFT, GICV2_GICH_VMCR_VEM,
+    GICV2_GICH_VMCR_VMGRP0EN,
+};
+use crate::device::irqchip::gicv2::GICV2;
 /// gicc layout definition and functions for gicc operations.
 /// author : ForeverYolo
 /// reference:
 /// 1. gicv2 spec : https://www.cl.cam.ac.uk/research/srg/han/ACS-P35/zynq/arm_gic_architecture_specification.pdf
-
-
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite, WriteOnly};
-use crate::device::irqchip::gicv2::gic_ref::GicRef;
-use crate::device::irqchip::gicv2::gicd::GICD;
-use crate::device::irqchip::gicv2::gich::{GICH, GICV2_GICH_HCR_EN, GICV2_GICH_VMCR_PMR_SHIFT, GICV2_GICH_VMCR_VEM, GICV2_GICH_VMCR_VMGRP0EN};
-use crate::device::irqchip::gicv2::GICV2;
 
 pub const GICV2_PREEMPPTION_MAX: usize = 128;
 
@@ -37,7 +38,6 @@ pub const GICV2_GICC_IIDR_REG_OFFSET: usize = 0x00FC;
 pub const GICV2_GICC_DIR_REG_OFFSET: usize = 0x1000;
 pub const GICV2_GICC_END: usize = 0x2000;
 pub const GICV2_GICC_PMR_DEFAULT: u32 = 0xf0;
-
 
 // GICC Register layout.
 register_structs! {
@@ -68,7 +68,8 @@ register_structs! {
 unsafe impl Sync for GicCpuInterface {}
 
 // Each CPU holds one GICC.
-pub static GICC: GicRef<GicCpuInterface> = unsafe { GicRef::new(GICV2.gicc_base as *const GicCpuInterface) };
+pub static GICC: GicRef<GicCpuInterface> =
+    unsafe { GicRef::new(GICV2.gicc_base as *const GicCpuInterface) };
 
 impl GicCpuInterface {
     // init GICC for each CPU.
@@ -79,11 +80,12 @@ impl GicCpuInterface {
         let gicc_ctrl = self.CTLR.get();
         let gicc_pmr = self.PMR.get();
         // interrupt completion is divided into two steps to improve hypervisor performance.
-        self.CTLR.set(GICV2_GICC_CTRL_GRPEN1 | GICV2_GICC_CTRL_EOIMODES);
+        self.CTLR
+            .set(GICV2_GICC_CTRL_GRPEN1 | GICV2_GICC_CTRL_EOIMODES);
         // Set the priority mask register to default value
         self.PMR.set(GICV2_GICC_PMR_DEFAULT);
         // VMCR only conyains 5 bits of priority
-        let mut vmcr =(gicc_pmr >> 3) << GICV2_GICH_VMCR_PMR_SHIFT;
+        let mut vmcr = (gicc_pmr >> 3) << GICV2_GICH_VMCR_PMR_SHIFT;
         // GICV layout equal to GICC without security extensions.
         if gicc_ctrl & GICV2_GICC_CTRL_GRPEN1 != 0 {
             vmcr |= GICV2_GICH_VMCR_VMGRP0EN;

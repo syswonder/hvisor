@@ -1,16 +1,15 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
+use crate::device::irqchip::gicv2::gic_ref::GicRef;
+use crate::device::irqchip::gicv2::GICV2;
 /// gicd layout definition and functions for gicd operations.
 /// author : ForeverYolo
 /// reference:
 /// 1. gicv2 spec : https://www.cl.cam.ac.uk/research/srg/han/ACS-P35/zynq/arm_gic_architecture_specification.pdf
-
 use spin::Mutex;
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite};
-use crate::device::irqchip::gicv2::gic_ref::GicRef;
-use crate::device::irqchip::gicv2::GICV2;
 // Hypervisor running in non-secure mode，can only access non-secure registers.
 
 // GICV2 interrupt layout.
@@ -18,7 +17,6 @@ pub const GICV2_INTS_MAX: usize = 1024;
 pub const GICV2_SGIS_NUM: usize = 16;
 pub const GICV2_PPIS_NUM: usize = 16;
 pub const GICV2_PRIVATE_INTS_NUM: usize = GICV2_SGIS_NUM + GICV2_PPIS_NUM;
-
 
 // GICD Register numbers;
 pub const GICV2_INT_REGS_NUM: usize = GICV2_INTS_MAX / 32;
@@ -28,7 +26,6 @@ pub const GICV2_CONFIG_REGS_NUM: usize = GICV2_INTS_MAX / 16;
 pub const GICV2_SGI_REGS_NUM: usize = GICV2_SGIS_NUM * 8 / 32;
 /* OPTIONAL */
 pub const GICV2_NSACR_REGS_NUM: usize = GICV2_INTS_MAX * 2 / 32;
-
 
 // GICD BITS
 pub const GICD_CTLR_EN_BIT: usize = 0x1;
@@ -88,7 +85,8 @@ register_structs! {
 unsafe impl Sync for GicDistributer {}
 
 // GICD is globally unique.
-pub static GICD: GicRef<GicDistributer> = unsafe { GicRef::new(GICV2.gicd_base as *const GicDistributer) };
+pub static GICD: GicRef<GicDistributer> =
+    unsafe { GicRef::new(GICV2.gicd_base as *const GicDistributer) };
 pub static GICD_LOCK: Mutex<()> = Mutex::new(());
 
 impl GicDistributer {
@@ -147,7 +145,9 @@ impl GicDistributer {
         self.SGIR.set(value);
     }
 
-    pub fn get_isenabler(&self, index: usize) -> u32 { self.ISENABLER[index].get() }
+    pub fn get_isenabler(&self, index: usize) -> u32 {
+        self.ISENABLER[index].get()
+    }
 
     pub fn set_icpender(&self, index: usize, value: u32) {
         self.ICPENDR[index].set(value);
@@ -165,7 +165,9 @@ impl GicDistributer {
         self.CPENDSGIR[index].set(value);
     }
 
-    pub fn set_ispender(&self, index: usize, value: u32) { self.ISPENDR[index].set(value); }
+    pub fn set_ispender(&self, index: usize, value: u32) {
+        self.ISPENDR[index].set(value);
+    }
 }
 
 // Get the maximum number of interrupt IDs that the GIC supports.
@@ -184,6 +186,6 @@ pub fn host_gicd_base() -> usize {
     GICV2.gicd_base
 }
 
-pub fn set_ispender(index:usize, value:u32) {
-    GICD.set_ispender(index,value);
+pub fn set_ispender(index: usize, value: u32) {
+    GICD.set_ispender(index, value);
 }

@@ -25,13 +25,13 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 8] = [
         physical_start: 0x30c00000,
         virtual_start: 0x30c00000,
         size: 0x400000,
-    }, 
+    },
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x30800000,
         virtual_start: 0x30800000,
         size: 0x400000,
-    }, 
+    },
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x38000000,
@@ -56,7 +56,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 8] = [
         virtual_start: 0x32c00000,
         size: 0x400000,
     }, // hdmi
-    // bus@30800000
+       // bus@30800000
        // HvConfigMemoryRegion {
        //     mem_type: MEM_TYPE_IO,
        //     physical_start: 0x30890000,
@@ -66,7 +66,8 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 8] = [
 ];
 
 pub const ROOT_ZONE_IRQS: [u32; 28] = [
-    35, 36, 37, 38, 45, 52, 55, 56, 57, 59, 64, 67, 75, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 135, 150, 151, 152, 162
+    35, 36, 37, 38, 45, 52, 55, 56, 57, 59, 64, 67, 75, 96, 97, 98, 99, 100, 101, 102, 103, 104,
+    105, 135, 150, 151, 152, 162,
 ];
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {

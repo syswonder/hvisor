@@ -1,3 +1,4 @@
+use crate::config::root_zone_config;
 use crate::memory::GuestPhysAddr;
 use crate::platform::qemu_riscv64::*;
 use crate::zone::Zone;
@@ -5,7 +6,6 @@ use crate::{arch::cpu::ArchCpu, percpu::this_cpu_data};
 use riscv::register::hvip;
 use riscv_decode::Instruction;
 use spin::{Once, RwLock};
-use crate::config::root_zone_config;
 pub fn primary_init_early() {
     let root_config = root_zone_config();
     init_plic(

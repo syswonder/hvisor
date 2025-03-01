@@ -1,8 +1,13 @@
 use crate::{
-    config::*, consts::PAGE_SIZE, device::virtio_trampoline::mmio_virtio_handler, error::HvResult, memory::{
+    config::*,
+    consts::PAGE_SIZE,
+    device::virtio_trampoline::mmio_virtio_handler,
+    error::HvResult,
+    memory::{
         addr::{align_down, align_up},
         mmio_generic_handler, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
-    }, zone::Zone
+    },
+    zone::Zone,
 };
 use alloc::vec::Vec;
 use core::arch::asm;

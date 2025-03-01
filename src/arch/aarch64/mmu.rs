@@ -1,7 +1,7 @@
+use cfg_if::cfg_if;
 use cortex_a::registers::{MAIR_EL1, SCTLR_EL2};
 use tock_registers::interfaces::*;
 use tock_registers::*;
-use cfg_if::cfg_if;
 
 register_bitfields! {u64,
     pub S1PageAndBlockDescriptor [
@@ -159,7 +159,6 @@ pub extern "C" fn boot_pt_init(l0_pt: &mut PageTables, l1_pt: &mut PageTables) {
             }
         }
     }
-
 }
 
 // init mmu

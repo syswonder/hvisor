@@ -1,13 +1,12 @@
-
 use riscv::use_sv32;
-use spin::RwLock;
 use spin::Once;
+use spin::RwLock;
 // use crate::device::irqchip::aia::imsic::imsic_trigger;
-use crate::{arch::cpu::ArchCpu, percpu::this_cpu_data, memory::GuestPhysAddr};
-use riscv_decode::Instruction;
-use fdt::Fdt;
-use crate::zone::Zone;
 use crate::config::root_zone_config;
+use crate::zone::Zone;
+use crate::{arch::cpu::ArchCpu, memory::GuestPhysAddr, percpu::this_cpu_data};
+use fdt::Fdt;
+use riscv_decode::Instruction;
 // S-mode interrupt delivery controller
 const APLIC_S_IDC: usize = 0xd00_4000;
 pub const APLIC_DOMAINCFG_BASE: usize = 0x0000;
@@ -29,7 +28,7 @@ pub const APLIC_IDC_BASE: usize = 0x4000;
 
 #[repr(u32)]
 #[allow(dead_code)]
-pub enum SourceModes { 
+pub enum SourceModes {
     Inactive = 0,
     Detached = 1,
     RisingEdge = 4,
@@ -106,178 +105,173 @@ pub struct Aplic {
 #[allow(dead_code)]
 impl Aplic {
     pub fn new(base: usize, size: usize) -> Self {
-        Self {
-            base,
-            size,
-        }
+        Self { base, size }
     }
-    pub fn set_domaincfg(&self, bigendian: bool, msimode: bool, enabled: bool){
+    pub fn set_domaincfg(&self, bigendian: bool, msimode: bool, enabled: bool) {
         let enabled = u32::from(enabled);
         let msimode = u32::from(msimode);
         let bigendian = u32::from(bigendian);
         let addr = self.base + APLIC_DOMAINCFG_BASE;
-        let bigendian = 0 ;
+        let bigendian = 0;
         let src = (enabled << 8) | (msimode << 2) | bigendian;
         unsafe {
             core::ptr::write_volatile(addr as *mut u32, src);
         }
     }
-    pub fn get_domaincfg(&self) -> u32{
+    pub fn get_domaincfg(&self) -> u32 {
         let addr = self.base + APLIC_DOMAINCFG_BASE;
         unsafe { core::ptr::read_volatile(addr as *const u32) }
     }
-    pub fn get_msimode(&self) -> bool{
+    pub fn get_msimode(&self) -> bool {
         let addr = self.base + APLIC_DOMAINCFG_BASE;
-        let value= unsafe { core::ptr::read_volatile(addr as *const u32) };
+        let value = unsafe { core::ptr::read_volatile(addr as *const u32) };
         ((value >> 2) & 0b11) != 0
     }
-    pub fn set_sourcecfg(&self, irq: u32, mode: SourceModes){
+    pub fn set_sourcecfg(&self, irq: u32, mode: SourceModes) {
         assert!(irq > 0 && irq < 1024);
         let addr = self.base + APLIC_SOURCECFG_BASE + (irq as usize - 1) * 4;
         let src = mode as u32;
-        unsafe{
-            core:: ptr::write_volatile(addr as *mut u32, src);
+        unsafe {
+            core::ptr::write_volatile(addr as *mut u32, src);
         }
-    } 
-    pub fn set_sourcecfg_delegate(&self, irq: u32, child: u32){
+    }
+    pub fn set_sourcecfg_delegate(&self, irq: u32, child: u32) {
         assert!(irq > 0 && irq < 1024);
         let addr = self.base + APLIC_SOURCECFG_BASE + (irq as usize - 1) * 4;
         let src = 1 << 10 | child & 0x3ff;
-        unsafe{
-            core:: ptr::write_volatile(addr as *mut u32, src);
+        unsafe {
+            core::ptr::write_volatile(addr as *mut u32, src);
         }
-    } 
-    pub fn get_sourcecfg(&self, irq: u32) -> u32{
+    }
+    pub fn get_sourcecfg(&self, irq: u32) -> u32 {
         assert!(irq > 0 && irq < 1024);
         let addr = self.base + APLIC_SOURCECFG_BASE + (irq as usize - 1) * 4;
         unsafe { core::ptr::read_volatile(addr as *const u32) }
     }
-    pub fn set_msiaddr(&self, address: usize){
+    pub fn set_msiaddr(&self, address: usize) {
         let addr = self.base + APLIC_MSIADDR_BASE;
         let src = (address >> 12) as u32;
-        unsafe{
-            core:: ptr::write_volatile(addr as *mut u32, src);
-            core:: ptr::write_volatile((addr + 4) as *mut u32, 0);
+        unsafe {
+            core::ptr::write_volatile(addr as *mut u32, src);
+            core::ptr::write_volatile((addr + 4) as *mut u32, 0);
         }
     }
-    pub fn get_ip(&self, irqidx: usize) -> u32{
+    pub fn get_ip(&self, irqidx: usize) -> u32 {
         assert!(irqidx < 32);
         let addr = self.base + APLIC_PENDING_BASE + irqidx * 4;
         unsafe { core::ptr::read_volatile(addr as *const u32) }
     }
-    pub fn get_clrip(&self, irqidx: usize) -> u32{
+    pub fn get_clrip(&self, irqidx: usize) -> u32 {
         assert!(irqidx < 32);
         let addr = self.base + APLIC_CLRIP_BASE + irqidx * 4;
         unsafe { core::ptr::read_volatile(addr as *const u32) }
     }
-    pub fn set_ip(&self, irqidx: usize, src: u32, pending: bool){
+    pub fn set_ip(&self, irqidx: usize, src: u32, pending: bool) {
         assert!(irqidx < 32);
         let addr = self.base + APLIC_PENDING_BASE + irqidx * 4;
         let clr_addr = self.base + APLIC_CLRIP_BASE + irqidx * 4;
         if pending {
-            unsafe{
-                core:: ptr::write_volatile(addr as *mut u32, src);
+            unsafe {
+                core::ptr::write_volatile(addr as *mut u32, src);
             }
         } else {
-            unsafe{
-                core:: ptr::write_volatile(clr_addr as *mut u32, src);
+            unsafe {
+                core::ptr::write_volatile(clr_addr as *mut u32, src);
             }
         }
-    } 
-    pub fn set_ipnum(&self, value: u32){
+    }
+    pub fn set_ipnum(&self, value: u32) {
         let addr = self.base + APLIC_IPNUM_BASE;
-        unsafe{
-            core:: ptr::write_volatile(addr as *mut u32, value);
+        unsafe {
+            core::ptr::write_volatile(addr as *mut u32, value);
         }
     }
-    pub fn get_in_clrip(&self, irqidx: usize) -> u32{
+    pub fn get_in_clrip(&self, irqidx: usize) -> u32 {
         assert!(irqidx < 32);
         let addr = self.base + APLIC_CLRIP_BASE + irqidx * 4;
         unsafe { core::ptr::read_volatile(addr as *const u32) }
     }
-    pub fn get_ie(&self, irqidx: usize) -> u32{
+    pub fn get_ie(&self, irqidx: usize) -> u32 {
         assert!(irqidx < 32);
         let addr = self.base + APLIC_ENABLE_BASE + irqidx * 4;
         unsafe { core::ptr::read_volatile(addr as *const u32) }
     }
-    pub fn get_clrie(&self, irqidx: usize) -> u32{
+    pub fn get_clrie(&self, irqidx: usize) -> u32 {
         assert!(irqidx < 32);
         let addr = self.base + APLIC_CLRIE_BASE + irqidx * 4;
         unsafe { core::ptr::read_volatile(addr as *const u32) }
     }
-    pub fn setie(&self, irqidx: usize, value: u32, enabled: bool){
+    pub fn setie(&self, irqidx: usize, value: u32, enabled: bool) {
         assert!(irqidx < 32);
         let addr = self.base + APLIC_ENABLE_BASE + irqidx * 4;
         let clr_addr = self.base + APLIC_CLRIE_BASE + irqidx * 4;
         if enabled {
-            unsafe{
-                core:: ptr::write_volatile(addr as *mut u32, value);
+            unsafe {
+                core::ptr::write_volatile(addr as *mut u32, value);
             }
         } else {
-            unsafe{
-                core:: ptr::write_volatile(clr_addr as *mut u32, value);
+            unsafe {
+                core::ptr::write_volatile(clr_addr as *mut u32, value);
             }
         }
-    } 
-    pub fn setienum(&self, value: u32){
+    }
+    pub fn setienum(&self, value: u32) {
         let addr = self.base + APLIC_ENABLE_NUM;
-        unsafe{
-            core:: ptr::write_volatile(addr as *mut u32, value);
+        unsafe {
+            core::ptr::write_volatile(addr as *mut u32, value);
         }
     }
-    pub fn clrienum(&self, value: u32){
+    pub fn clrienum(&self, value: u32) {
         let addr = self.base + APLIC_CLRIE_NUM_BASE;
-        unsafe{
-            core:: ptr::write_volatile(addr as *mut u32, value);
+        unsafe {
+            core::ptr::write_volatile(addr as *mut u32, value);
         }
     }
-    pub fn setipnum_le(&self, value: u32){
+    pub fn setipnum_le(&self, value: u32) {
         let addr = self.base + APLIC_IPNUM_LE_BASE;
-        unsafe{
-            core:: ptr::write_volatile(addr as *mut u32, value);
+        unsafe {
+            core::ptr::write_volatile(addr as *mut u32, value);
         }
     }
-    pub fn set_target_msi(&self, irq: u32, hart: u32, guest: u32, eiid: u32){
+    pub fn set_target_msi(&self, irq: u32, hart: u32, guest: u32, eiid: u32) {
         let addr = self.base + APLIC_TARGET_BASE + (irq as usize - 1) * 4;
         let src = (hart << 18) | (guest << 12) | eiid;
-        unsafe{
-            core:: ptr::write_volatile(addr as *mut u32, src);
+        unsafe {
+            core::ptr::write_volatile(addr as *mut u32, src);
         }
     }
-    pub fn set_target_direct(&self, irq: u32, hart: u32, prio: u32){
+    pub fn set_target_direct(&self, irq: u32, hart: u32, prio: u32) {
         let addr = self.base + APLIC_TARGET_BASE + (irq as usize - 1) * 4;
-        let src =  (hart << 18) | (prio & 0xFF);
-        unsafe{
-            core:: ptr::write_volatile(addr as *mut u32, src);
+        let src = (hart << 18) | (prio & 0xFF);
+        unsafe {
+            core::ptr::write_volatile(addr as *mut u32, src);
         }
     }
     pub fn get_target_info(&self, irq: u32) -> (u32, u32, u32) {
         let addr = self.base + APLIC_TARGET_BASE + (irq as usize - 1) * 4;
         unsafe {
             let src = core::ptr::read_volatile(addr as *const u32);
-            let hart = (src >> 18) & 0x3F; 
+            let hart = (src >> 18) & 0x3F;
             let guest = (src >> 12) & 0x3F;
             let eiid = src & 0xFFF;
             (hart, guest, eiid)
         }
     }
 }
-pub fn vaplic_emul_handler(
-    current_cpu: &mut ArchCpu,
-    addr: GuestPhysAddr,
-    inst: Instruction,
-) {
+pub fn vaplic_emul_handler(current_cpu: &mut ArchCpu, addr: GuestPhysAddr, inst: Instruction) {
     let host_aplic = host_aplic();
     let offset = addr.wrapping_sub(host_aplic.read().base);
     if offset >= APLIC_DOMAINCFG_BASE && offset < APLIC_SOURCECFG_BASE {
         match inst {
             Instruction::Sw(i) => {
-                let value = current_cpu.x[i.rs2() as usize] as u32;      // 要写入的 value
-                let enabled = ((value >> 8) & 0x1) != 0;                // IE
-                let msimode = ((value >> 2) & 0b1) != 0;                // DM / MSI
-                let bigendian = (value & 0b1) != 0;                     // 大小端
-                if this_cpu_data().id != 3{
-                    host_aplic.write().set_domaincfg(bigendian, msimode, enabled);
+                let value = current_cpu.x[i.rs2() as usize] as u32; // 要写入的 value
+                let enabled = ((value >> 8) & 0x1) != 0; // IE
+                let msimode = ((value >> 2) & 0b1) != 0; // DM / MSI
+                let bigendian = (value & 0b1) != 0; // 大小端
+                if this_cpu_data().id != 3 {
+                    host_aplic
+                        .write()
+                        .set_domaincfg(bigendian, msimode, enabled);
                     debug!(
                         "APLIC set domaincfg write addr@{:#x} bigendian {} msimode {} enabled {}",
                         addr, bigendian, msimode, enabled
@@ -290,8 +284,7 @@ pub fn vaplic_emul_handler(
             }
             _ => panic!("Unexpected instruction {:?}", inst),
         }
-    }  
-    else if offset >= APLIC_SOURCECFG_BASE && offset < APLIC_SOURCECFG_TOP {
+    } else if offset >= APLIC_SOURCECFG_BASE && offset < APLIC_SOURCECFG_TOP {
         //sourcecfg
         match inst {
             Instruction::Sw(i) => {
@@ -303,11 +296,9 @@ pub fn vaplic_emul_handler(
                     host_aplic.write().set_sourcecfg_delegate(irq as u32, child);
                     debug!(
                         "APLIC set sourcecfg_delegate write addr@{:#x} irq {} child {}",
-                        addr,
-                        irq,
-                        child
+                        addr, irq, child
                     );
-                } else {    
+                } else {
                     let mode = match value {
                         0 => SourceModes::Inactive,
                         1 => SourceModes::Detached,
@@ -317,14 +308,12 @@ pub fn vaplic_emul_handler(
                         7 => SourceModes::LevelLow,
                         _ => panic!("Unknown sourcecfg mode"),
                     };
-                    if this_cpu_data().id != 3 || 
-                    this_cpu_data().id == 3 && (irq == 6 || irq == 7){
+                    if this_cpu_data().id != 3 || this_cpu_data().id == 3 && (irq == 6 || irq == 7)
+                    {
                         host_aplic.write().set_sourcecfg(irq as u32, mode);
                         debug!(
                             "APLIC set sourcecfg write addr@{:#x} irq {} mode {}",
-                            addr,
-                            irq,
-                            value
+                            addr, irq, value
                         );
                     }
                 }
@@ -333,7 +322,7 @@ pub fn vaplic_emul_handler(
         }
     } else if offset >= APLIC_MSIADDR_BASE && offset <= 0x1BCC {
         // msia
-         match inst {
+        match inst {
             Instruction::Sw(i) => {
                 let value = current_cpu.x[i.rs2() as usize] as u32;
                 let address = (value as usize) << 12;
@@ -348,12 +337,11 @@ pub fn vaplic_emul_handler(
     } else if offset >= APLIC_PENDING_BASE && offset < APLIC_PENDING_TOP {
         // pending
         panic!("setip Unexpected instruction {:?}", inst);
-    } 
+    }
     // setipnum 区域        0x1CDC  -  0x1CE0
     else if offset >= 0x1CDC && offset < 0x1CE0 {
         panic!("setipnum Unexpected instruction {:?}", inst)
-    }
-    else if offset >= APLIC_CLRIP_BASE && offset < 0x1D80 {
+    } else if offset >= APLIC_CLRIP_BASE && offset < 0x1D80 {
         // panic!("addr@{:#x} in_clrip Unexpected instruction {:?}", offset ,inst);
         match inst {
             Instruction::Lw(i) => {
@@ -375,17 +363,13 @@ pub fn vaplic_emul_handler(
     // setie
     else if offset >= APLIC_ENABLE_BASE && offset < 0x1E80 {
         panic!("setie Unexpected instruction {:?}", inst);
-    }  
-    else if offset >= APLIC_ENABLE_NUM && offset < 0x1EE0 {
+    } else if offset >= APLIC_ENABLE_NUM && offset < 0x1EE0 {
         // setienum
         match inst {
             Instruction::Sw(i) => {
                 let value = current_cpu.x[i.rs2() as usize] as u32;
                 host_aplic.write().setienum(value);
-                debug!(
-                    "APLIC setienum write addr@{:#x} value {}",
-                    addr, value
-                );
+                debug!("APLIC setienum write addr@{:#x} value {}", addr, value);
             }
             _ => panic!("Unexpected instruction {:?}", inst),
         }
@@ -395,7 +379,7 @@ pub fn vaplic_emul_handler(
             Instruction::Sw(i) => {
                 let value = current_cpu.x[i.rs2() as usize] as u32;
                 let irqidx = (offset - APLIC_CLRIE_BASE) / 4;
-                if this_cpu_data().id != 3{
+                if this_cpu_data().id != 3 {
                     host_aplic.write().setie(irqidx, value, false);
                 }
                 debug!(
@@ -405,21 +389,17 @@ pub fn vaplic_emul_handler(
             }
             _ => panic!("Unexpected instruction {:?}", inst),
         }
-    }  
+    }
     // clrienum
     else if offset >= 0x1FDC && offset < 0x1FE0 {
         match inst {
             Instruction::Sw(i) => {
                 let value = current_cpu.x[i.rs2() as usize] as u32;
                 host_aplic.write().clrienum(value);
-                debug!(
-                    "APLIC set clrienum write addr@{:#x} value{}",
-                    offset, value
-                );
+                debug!("APLIC set clrienum write addr@{:#x} value{}", offset, value);
             }
             _ => panic!("Unexpected instruction {:?}", inst),
         }
-        
     }
     // setipnum_le
     else if offset >= 0x2000 && offset < 0x2004 {
@@ -431,35 +411,34 @@ pub fn vaplic_emul_handler(
             }
             _ => panic!("Unexpected instruction {:?}", inst),
         }
-    }    
+    }
     // setipnum_be
     else if offset >= 0x2004 && offset < 0x2008 {
         panic!("setipnum_be Unexpected instruction {:?}", inst)
     }
-    // genmsi 
+    // genmsi
     else if offset >= 0x3000 && offset < 0x3004 {
         panic!("genmsi Unexpected instruction {:?}", inst)
-    }
-    else if offset >= APLIC_TARGET_BASE && offset < APLIC_IDC_BASE {
+    } else if offset >= APLIC_TARGET_BASE && offset < APLIC_IDC_BASE {
         // target
         match inst {
             Instruction::Sw(i) => {
                 let first_cpu = this_cpu_data()
-                .zone
-                .as_ref()
-                .unwrap()
-                .read()
-                .cpu_set
-                .first_cpu()
-                .unwrap();
+                    .zone
+                    .as_ref()
+                    .unwrap()
+                    .read()
+                    .cpu_set
+                    .first_cpu()
+                    .unwrap();
                 let value = current_cpu.x[i.rs2() as usize] as u32;
                 let irq = ((offset - APLIC_TARGET_BASE) / 4) as u32 + 1;
                 let hart = ((value >> 18) & 0x3F) + first_cpu as u32;
                 if host_aplic.read().get_msimode() {
                     let guest = ((value >> 12) & 0x3F) + 1;
                     let eiid = value & 0xFFF;
-                    if this_cpu_data().id != 3 || 
-                    this_cpu_data().id == 3 && (irq == 6 || irq == 7){
+                    if this_cpu_data().id != 3 || this_cpu_data().id == 3 && (irq == 6 || irq == 7)
+                    {
                         host_aplic.write().set_target_msi(irq, hart, guest, eiid);
                         debug!(
                             "APLIC set msi target write addr@{:#x} irq {} hart {} guest {} eiid {}",

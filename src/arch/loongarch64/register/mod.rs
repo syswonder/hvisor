@@ -1,6 +1,6 @@
 // File:          mod.rs
 // Description:   this is the register file of loongarch64's LVZ extension
-// Authors:       wheatfox(enkerewpo@hotmail.com)
+// Authors:       wheatfox(wheatfox17@icloud.com)
 // Created:       2023-12-20
 
 #![allow(unused)]

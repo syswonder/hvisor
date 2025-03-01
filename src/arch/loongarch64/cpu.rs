@@ -5,9 +5,9 @@ use crate::device::common::MMIODerefWrapper;
 use crate::percpu::this_cpu_data;
 use core::arch::asm;
 use core::fmt::{self, Debug, Formatter};
-use loongArch64::register::{cpuid, crmd};
 use loongArch64::register::crmd::Crmd;
 use loongArch64::register::pgdl;
+use loongArch64::register::{cpuid, crmd};
 use tock_registers::interfaces::Writeable;
 
 use crate::{

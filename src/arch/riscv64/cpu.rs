@@ -52,10 +52,12 @@ impl ArchCpu {
         //self.sepc = guest_test as usize as u64;
         write_csr!(CSR_SSCRATCH, self as *const _ as usize); //arch cpu pointer
         self.sepc = entry;
-        #[cfg(feature = "plic")]{
+        #[cfg(feature = "plic")]
+        {
             self.hstatus = 1 << 7 | 2 << 32; //HSTATUS_SPV | HSTATUS_VSXL_64
         }
-        #[cfg(feature = "aia")]{
+        #[cfg(feature = "aia")]
+        {
             self.hstatus = 1 << 7 | 2 << 32 | 1 << 12; //HSTATUS_SPV | HSTATUS_VSXL_64 | HSTATUS_VGEIN
         }
         self.sstatus = 1 << 8 | 1 << 63 | 3 << 13 | 3 << 15; //SPP
