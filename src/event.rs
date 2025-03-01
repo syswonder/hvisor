@@ -115,7 +115,7 @@ pub fn check_events() -> bool {
         }
         #[cfg(target_arch = "loongarch64")]
         Some(IPI_EVENT_CLEAR_INJECT_IRQ) => {
-            irqchip::ls7a2000::clear_hwi_injected_irq();
+            crate::device::irqchip::ls7a2000::clear_hwi_injected_irq();
             true
         }
         _ => false,
