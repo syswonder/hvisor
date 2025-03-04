@@ -1,16 +1,13 @@
 use alloc::sync::Arc;
-use alloc::vec::Vec;
 use spin::{Mutex, RwLock};
 
 use crate::arch::cpu::{this_cpu_id, ArchCpu};
 use crate::consts::{INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::memory::addr::VirtAddr;
 use crate::zone::Zone;
-use crate::{arch, ENTERED_CPUS};
+use crate::ENTERED_CPUS;
 use core::fmt::Debug;
 use core::sync::atomic::Ordering;
-
-// global_asm!(include_str!("./arch/aarch64/page_table.S"),);
 
 #[cfg(test)]
 mod tests;

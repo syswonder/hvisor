@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use aarch64_cpu::{asm::wfi, registers::*};
 use core::arch::global_asm;
 
@@ -395,7 +397,7 @@ fn handle_arch_smc(
         SMCccFnId::SMCCC_ARCH_FEATURES => !0,
         _ => {
             error!("unsupported ARM smc service");
-            return !0;
+            !0
         }
     }
 }

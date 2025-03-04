@@ -1,3 +1,6 @@
+#![allow(unused_imports)]
+
+use alloc::vec::Vec;
 use core::{ptr, usize};
 
 use crate::config::{HvPciConfig, CONFIG_MAX_PCI_DEV};
@@ -12,7 +15,6 @@ use crate::{
     memory::{mmio_perform_access, GuestPhysAddr, MemFlags, MemoryRegion},
     zone::Zone,
 };
-use alloc::vec::Vec;
 
 use super::bridge::BridgeConfig;
 use super::endpoint::EndpointConfig;

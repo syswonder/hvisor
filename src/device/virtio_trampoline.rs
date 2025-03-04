@@ -24,6 +24,7 @@ pub static VIRTIO_BRIDGE: Mutex<VirtioBridgeRegion> = Mutex::new(VirtioBridgeReg
 const QUEUE_NOTIFY: usize = 0x50;
 pub const MAX_REQ: u32 = 32;
 pub const MAX_DEVS: usize = 4; // Attention: The max virtio-dev number for vm is 4.
+#[allow(unused)]
 pub const MAX_CPUS: usize = 4;
 pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;
 
@@ -75,6 +76,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     if need_interrupt == 0 {
         // when virtio backend finish the req, it will add 1 to cfg_flag.
         while cfg_flags[cpu_id] == old_cfg_flag {
+            // TODO: fix the clippy: this may lead to an infinite or to a never running loop
             // fence(Ordering::Acquire);
             count += 1;
             if count > 1000000 {

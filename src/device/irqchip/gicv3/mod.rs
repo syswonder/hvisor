@@ -76,29 +76,29 @@
 //!           - 00..15 SGIs
 //!           - 16..31 PPIs
 #![allow(dead_code)]
+#![allow(unused_imports)]
+
 pub mod gicd;
 pub mod gicr;
 pub mod gits;
 pub mod vgic;
 
+use alloc::collections::vec_deque::VecDeque;
+use alloc::vec::Vec;
 use core::arch::asm;
 use core::ptr::write_volatile;
 use core::sync::atomic::AtomicU64;
-
-use alloc::collections::btree_map::BTreeMap;
-use alloc::collections::vec_deque::VecDeque;
-use alloc::vec::Vec;
 use gicr::{init_lpi_prop, GICR_ISENABLER, GICR_SGI_BASE};
 use gits::gits_init;
 use spin::{Mutex, Once};
 
 use self::gicd::{enable_gic_are_ns, GICD_ICACTIVER, GICD_ICENABLER};
 use self::gicr::enable_ipi;
+
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::arch::cpu::this_cpu_id;
 use crate::config::root_zone_config;
 use crate::consts::MAX_CPU_NUM;
-
 use crate::event::check_events;
 use crate::hypercall::SGI_IPI_ID;
 use crate::zone::Zone;
@@ -374,7 +374,7 @@ pub fn inject_irq(irq_id: usize, is_hardware: bool) -> bool {
             .add_irq(irq_id, is_hardware)
             .unwrap();
         enable_maintenace_interrupt(true);
-        return false;
+        false
     } else {
         let mut val = irq_id as u64; //v intid
         val |= 1 << 60; //group 1
@@ -385,7 +385,7 @@ pub fn inject_irq(irq_id: usize, is_hardware: bool) -> bool {
             val |= (irq_id as u64) << 32; //pINTID
         }
         write_lr(free_ir as usize, val);
-        return true;
+        true
     }
 }
 

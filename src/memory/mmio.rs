@@ -1,8 +1,6 @@
-use core::ptr;
-
-use crate::{error::HvResult, percpu::this_zone};
-
 use super::GuestPhysAddr;
+use crate::{error::HvResult, percpu::this_zone};
+use core::ptr;
 
 pub type MMIOHandler = fn(&mut MMIOAccess, usize) -> HvResult;
 
@@ -77,6 +75,7 @@ pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
     }
 }
 
+#[allow(unused)]
 pub fn mmio_generic_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     mmio_perform_access(base, mmio);
     Ok(())

@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use alloc::vec::Vec;
 use spin::Once;
 

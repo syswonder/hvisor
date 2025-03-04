@@ -1,16 +1,16 @@
 #![allow(dead_code)]
+#![allow(unused_imports)]
 use crate::arch::cpu::this_cpu_id;
 use crate::config::HvZoneConfig;
 use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, PAGE_SIZE};
 use crate::device::irqchip::inject_irq;
 use crate::device::virtio_trampoline::{MAX_DEVS, MAX_REQ, VIRTIO_BRIDGE, VIRTIO_IRQS};
 use crate::error::HvResult;
+use crate::event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_VIRTIO_INJECT_IRQ, IPI_EVENT_WAKEUP};
 use crate::percpu::{get_cpu_data, this_zone, PerCpu};
 use crate::zone::{
     all_zones_info, find_zone, is_this_root_zone, remove_zone, this_zone_id, zone_create, ZoneInfo,
 };
-
-use crate::event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_VIRTIO_INJECT_IRQ, IPI_EVENT_WAKEUP};
 use core::convert::TryFrom;
 use core::sync::atomic::{fence, Ordering};
 
@@ -79,6 +79,7 @@ impl<'a> HyperCall<'a> {
                 }
                 #[cfg(target_arch = "aarch64")]
                 HyperCallCode::HvIvcInfo => self.hv_ivc_info(arg0),
+                #[allow(unreachable_patterns)]
                 _ => {
                     warn!("hypercall id={} unsupported!", code as u64);
                     Ok(0)

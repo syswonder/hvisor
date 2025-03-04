@@ -50,6 +50,8 @@ mod zone;
 mod ivc;
 
 mod pci;
+
+#[cfg(test)]
 mod tests;
 
 #[cfg(target_arch = "aarch64")]

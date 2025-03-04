@@ -14,8 +14,7 @@ pub struct EndpointConfig {
 impl EndpointConfig {
     pub fn new(bdf: usize) -> Self {
         let (bars, bdf) = { ([PciBar::default(); NUM_BAR_REGS_TYPE0], bdf) };
-        let r = EndpointConfig { bars, bdf };
-        r
+        EndpointConfig { bars, bdf }
     }
 
     pub fn bars_init(&mut self, bar_id: usize, origin_val: u32, val: u32) {

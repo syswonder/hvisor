@@ -1,9 +1,7 @@
-use core::ptr::write_volatile;
+#![allow(unused)]
 
-use alloc::{
-    collections::{btree_map::BTreeMap, btree_set::BTreeSet},
-    vec::Vec,
-};
+use alloc::collections::btree_map::BTreeMap;
+use core::ptr::write_volatile;
 use spin::Mutex;
 
 use crate::device::irqchip::set_ispender;

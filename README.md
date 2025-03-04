@@ -39,7 +39,7 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
 |                           | imx-uart              | `aarch64`                   | NXP i.MX8MP                     |
 |                           | NS16550A              | `loongarch64`               |                                 |
 |                           | xuartps               | `aarch64`                   | Xilinx Ultrascale+ MPSoC ZCU102 |
-| **Interrupt Controllers** | GIC irq controller    | `aarch64`                   |                                 |
+| **Interrupt Controllers** | GIC irq controller    | `aarch64`                   | GICv2, GICv3                    |
 |                           | 7A2000 irq controller | `loongarch64`               |                                 |
 |                           | PLIC                  | `riscv64`                   |                                 |
 |                           | AIA-APIC              | `riscv64`                   | Only supports MSI mode          |

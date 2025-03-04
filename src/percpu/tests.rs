@@ -1,4 +1,5 @@
 use super::*;
+use alloc::vec::Vec;
 
 #[test_case]
 fn test_cpuset() {

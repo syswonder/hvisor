@@ -1,3 +1,5 @@
+#![allow(unused_assignments)]
+
 use crate::{
     config::{
         HvConfigMemoryRegion, HvIvcConfig, HvPciConfig, HvZoneConfig, CONFIG_MAX_INTERRUPTS,

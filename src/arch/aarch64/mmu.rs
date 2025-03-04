@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 use cfg_if::cfg_if;
 use cortex_a::registers::{MAIR_EL1, SCTLR_EL2};
 use tock_registers::interfaces::*;

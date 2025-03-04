@@ -1,12 +1,12 @@
-use core::sync::atomic::AtomicU32;
+#![allow(unused)]
 
+use core::sync::atomic::AtomicU32;
 use spin::RwLock;
 
+use super::sysreg::read_sysreg;
 use crate::{
     arch::Stage2PageTable, consts::MAX_CPU_NUM, error::HvResult, memory::MemorySet, wait_for,
 };
-
-use super::sysreg::read_sysreg;
 
 pub fn init_hv_page_table() -> HvResult {
     todo!();
