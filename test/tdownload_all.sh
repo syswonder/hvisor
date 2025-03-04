@@ -4,7 +4,7 @@
 # Usage: ./download_all.sh
 
 # Configuration parameters
-RELEASE_NAME="v2025.03.01"
+RELEASE_NAME="v2025.03.04"
 BASE_URL="https://github.com/CHonghaohao/hvisor_env_img/releases/download/$RELEASE_NAME"
 
 # Split archive configuration (must be in order)
