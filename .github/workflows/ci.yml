@@ -77,7 +77,7 @@ jobs:
       - name: Unit Test
         run: make test
 
-  # this job is for compilation test, it will make sure all aaarch64, riscv64, loongarch64 can be compiled successfully
+  # this job is for compilation test, it will make sure all aarch64, riscv64, loongarch64 can be compiled successfully
   # there is no actual running in this job
   build:
     name: build
@@ -143,6 +143,45 @@ jobs:
         run: make
 
   # this job is for booting root and nonroot inside qemu for system test
-  # curently waiting for another person to add his system test here
-  # systemtest:
-  #   ...
+  systemtest:
+    name: systemtest
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # aarch64
+          - arch: aarch64
+            rustc_target: aarch64-unknown-none
+            features: "platform_qemu,gicv3"
+            board: "qemu"
+          # currently supports only "platform_qemu,gicv3"
+          # Because other features need to be customized scripts
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rustc_target }}
+          components: rust-src
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget expect device-tree-compiler p7zip-full
+          cargo install --version 0.3.0 cargo-binutils
+          cargo install cargo-xbuild
+      - name: Set up environment variables
+        run: |
+          echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+          echo "FEATURES=${{ matrix.features }}" >> $GITHUB_ENV
+          echo "BOARD=${{ matrix.board }}" >> $GITHUB_ENV
+      - name: Compile DTB
+        run: |
+          ./test/tcompiledtb.sh
+      - name: Download rootfs and image
+        run: |
+          ./test/tdownload_all.sh
+      - name: Run Tests
+        run: |
+          ./test/tstart.sh
