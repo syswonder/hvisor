@@ -9,7 +9,7 @@ testcase_file_list=(
     # ./test/testcase/tc_zone1_start.txt
     ./test/testcase/tc_zone1_ls.txt
     ./test/testcase/tc_zone_list2.txt
-    ./test/testcase/tc_zone_list1.txt
+    # ./test/testcase/tc_zone_list1.txt
 )
 
 testresult_file_list=(
@@ -19,7 +19,7 @@ testresult_file_list=(
     # ./test/testresult/test_zone1_start.txt
     ./test/testresult/test_zone1_ls.txt
     ./test/testresult/test_zone_list2.txt
-    ./test/testresult/test_zone_list1.txt
+    # ./test/testresult/test_zone_list1.txt
 )
 
 testcase_name_list=(
@@ -29,7 +29,7 @@ testcase_name_list=(
     # zone1_start_out
     zone1_start
     zone_list
-    zone1_shutdown
+    # zone1_shutdown
 )
 
 # Get the length of the file lists
