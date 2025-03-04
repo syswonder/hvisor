@@ -1,0 +1,300 @@
+/dts-v1/;
+
+/ {
+	compatible = "forlinx,ok8mp-c\0fsl,imx8mp-evk\0fsl,/home/lgw/Documents/xwechat_files/wxid_ugo1mwfw18zq12_d8dd/msg/file/2024-07/linux2.json";
+	model = "Forlinx OK8MPlus-C board";
+	interrupt-parent = <0x01>;
+	#address-cells = <0x02>;
+	#size-cells = <0x02>;
+
+	aliases {
+		// serial1 = "/soc@0/bus@30800000/serial@30890000";
+		serial3 = "/soc@0/bus@30800000/serial@30a60000";
+	    // mmc3 = "/soc@0/bus@30800000/mmc@30b60000";
+		ethernet0 = "/soc@0/bus@30800000/ethernet@30bf0000";
+	};
+
+	memory@50000000 {
+		device_type = "memory";
+		reg = <0x00 0x50000000 0x00 0x30000000>;
+	};
+
+	cpus {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+		
+		cpu@2 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a53";
+			reg = <0x02>;
+			clock-latency = <0xee6c>;
+			next-level-cache = <0x02>;
+			clocks = <0x03 0x11f>;
+			operating-points-v2 = <0x04>;
+			enable-method = "psci";
+			#cooling-cells = <0x02>;
+			cpu-idle-states = <0x06>;
+			phandle = <0x13>;
+		};
+
+		cpu@3 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a53";
+			reg = <0x03>;
+			clock-latency = <0xee6c>;
+			next-level-cache = <0x02>;
+			clocks = <0x03 0x11f>;
+			operating-points-v2 = <0x04>;
+			enable-method = "psci";
+			#cooling-cells = <0x02>;
+			cpu-idle-states = <0x06>;
+			phandle = <0x14>;
+		};
+
+		l2-cache0 {
+			compatible = "cache";
+			phandle = <0x02>;
+		};
+	};
+
+	psci {
+		compatible = "arm,psci-1.0";
+		method = "smc";
+	};
+
+	pmu {
+		compatible = "arm,cortex-a53-pmu";
+		interrupts = <0x01 0x07 0x04>;
+		interrupt-parent = <0x01>;
+		interrupt-affinity = <0x03 0x04>;
+	};
+
+	interrupt-controller@38800000 {
+		compatible = "arm,gic-v3";
+		reg = <0x00 0x38800000 0x00 0x10000 0x00 0x38880000 0x00 0xc0000>;
+		#interrupt-cells = <0x03>;
+		interrupt-controller;
+		interrupts = <0x01 0x09 0x04>;
+		interrupt-parent = <0x01>;
+		phandle = <0x01>;
+	};
+
+	timer {
+		compatible = "arm,armv8-timer";
+		interrupts = <0x01 0x0d 0x3f08 0x01 0x0e 0x3f08 0x01 0x0b 0x3f08 0x01 0x0a 0x3f08>;
+		clock-frequency = <0x7f2815>;
+	};
+
+	clock@1 {
+		compatible = "fixed-clock";
+		#clock-cells = <0x00>;
+		clock-frequency = <0x16e3600>;
+		clock-output-names = "osc_24m";
+		phandle = <0x05>;
+	};
+
+
+	clock@7 {
+		compatible = "fixed-clock";
+		#clock-cells = <0x00>;
+		clock-frequency = <0x00>;
+		clock-output-names = "clk_dummy";
+		phandle = <0x06>;
+	};
+
+	clock@9 {
+		compatible = "fixed-clock";
+		#clock-cells = <0x00>;
+		clock-frequency = <0xfdad680>;
+		clock-output-names = "266m";
+		phandle = <0x07>;
+	};
+	
+	clock@8 {
+		compatible = "fixed-clock";
+		#clock-cells = <0x00>;
+		clock-frequency = <0xbebc200>;
+		clock-output-names = "200m";
+		phandle = <0x08>;
+	};
+
+	clock@12 {
+		compatible = "fixed-clock";
+		#clock-cells = <0x00>;
+		clock-frequency = <0x5f5e100>;
+		clock-output-names = "100m";
+		phandle = <0x09>;
+	};
+
+	clock@11 {
+		compatible = "fixed-clock";
+		#clock-cells = <0x00>;
+		clock-frequency = <0x7735940>;
+		clock-output-names = "125m";
+		phandle = <0x0a>;
+	};
+
+	clock@10 {
+		compatible = "fixed-clock";
+		#clock-cells = <0x00>;
+		clock-frequency = <0x3F940AB>;
+		clock-output-names = "80m";
+		phandle = <0x0b>;
+	};
+
+
+
+
+	soc@0 {
+		compatible = "simple-bus";
+		#address-cells = <0x01>;
+		#size-cells = <0x01>;
+		ranges = <0x00 0x00 0x00 0x3e000000>;
+		// dma-ranges = <0x40000000 0x00 0x40000000 0xc0000000>;
+
+		bus@30000000 {
+			compatible = "simple-bus";
+			reg = <0x30000000 0x400000>;
+			#address-cells = <0x01>;
+			#size-cells = <0x01>;
+			ranges;
+			
+			iomuxc-gpr@30340000 {
+			 	compatible = "fsl,imx8mp-iomuxc-gpr\0fsl,imx7d-iomuxc-gpr\0fsl,imx6q-iomuxc-gpr\0syscon";
+			 	reg = <0x30340000 0x10000>;
+			 	phandle = <0x29>;
+			};
+		};
+
+		bus@30800000 {
+			compatible = "simple-bus";
+			#address-cells = <0x01>;
+			#size-cells = <0x01>;
+			reg = <0x30800000 0x400000>;
+			ranges;
+
+			// serial@30890000 {
+			// 	compatible = "fsl,imx8mq-uart\0fsl,imx6q-uart";
+			// 	reg = <0x30890000 0x10000>;
+			// 	interrupts = <0x00 0x1b 0x04>;
+			// 	status = "okay";
+			// 	clocks = <0x05 0x05>;
+			// 	clock-names = "ipg\0per";
+			// };
+
+			serial@30a60000 {
+				compatible = "fsl,imx8mp-uart\0fsl,imx6q-uart";
+				reg = <0x30a60000 0x10000>;
+				interrupts = <0x00 0x1d 0x04>;
+				clocks = <0x05 0x05>;
+				clock-names = "ipg\0per";
+				status = "okay";
+				// dmas = <0x22 0x1c 0x04 0x00 0x22 0x1d 0x04 0x00>;
+				// dma-names = "rx\0tx";
+				// status = "disabled";
+			};
+			// sd card
+			// mmc@30b50000 {
+			// 	compatible = "fsl,imx8mm-usdhc\0fsl,imx7d-usdhc";
+			// 	reg = <0x30b50000 0x10000>;
+			// 	interrupts = <0x00 0x17 0x04>;
+			// 	clocks = <0x06 0x07 0x08>;
+			// 	clock-names = "ipg\0ahb\0per";
+			// 	fsl,tuning-start-tap = <0x14>;
+			// 	fsl,tuning-step = <0x02>;
+			// 	bus-width = <0x04>;
+			// 	status = "okay";
+			// };
+			// emmc
+			// mmc@30b60000 {
+			// 	compatible = "fsl,imx8mm-usdhc\0fsl,imx7d-usdhc";
+			// 	reg = <0x30b60000 0x10000>;
+			// 	interrupts = <0x00 0x18 0x04>;
+			// 	fsl,tuning-start-tap = <0x14>;
+			// 	fsl,tuning-step = <0x02>;
+			// 	status = "okay";
+			// 	clocks = <0x06 0x07 0x08>;
+			// 	clock-names = "ipg\0ahb\0per";
+			// 	bus-width = <0x08>;
+			// 	non-removable;
+			// };
+
+
+			// ethernet@30bf0000 {
+			// 	compatible = "nxp,imx8mp-dwmac-eqos\0snps,dwmac-5.10a";
+			// 	reg = <0x30bf0000 0x10000>;
+			// 	interrupts = <0x00 0x86 0x04 0x00 0x87 0x04>;
+			// 	interrupt-names = "eth_wake_irq\0macirq";
+			// 	clocks = <0x07 0x0b 0x09 0x0a>;
+			// 	clock-names = "stmmaceth\0pclk\0ptp_ref\0tx";
+			// 	// assigned-clocks = <0x03 0x5e 0x03 0x82 0x03 0x81>;
+			// 	// assigned-clock-parents = <0x03 0x36 0x03 0x3a 0x03 0x3b>;
+			// 	// assigned-clock-rates = <0x00 0x5f5e100 0x7735940>;
+			// 	// nvmem-cells = <0x52>;
+			// 	// nvmem-cell-names = "mac-address";
+			// 	// nvmem_macaddr_swap;
+			// 	intf_mode = <0x29 0x04>;
+			// 	status = "okay";
+			// 	// pinctrl-names = "default";
+			// 	// pinctrl-0 = <0x53>;
+			// 	reset-gpio = <0x25 0x05 0x01>;
+			// 	phy-mode = "rgmii-id";
+			// 	phy-handle = <0x54>;
+
+			// 	mdio {
+			// 		compatible = "snps,dwmac-mdio";
+			// 		#address-cells = <0x01>;
+			// 		#size-cells = <0x00>;
+
+			// 		ethernet-phy@1 {
+			// 			compatible = "ethernet-phy-ieee802.3-c22";
+			// 			reg = <0x01>;
+			// 			eee-broken-1000t;
+			// 			at803x,vddio-1p8v;
+			// 			at803x,hibernate-disable;
+			// 			phandle = <0x54>;
+			// 		};
+			// 	};
+			// };
+		};
+	};
+	// virtio blk
+	virtio_mmio@a003c00 {
+		dma-coherent;
+		interrupt-parent = <0x01>;
+		interrupts = <0x0 0x2e 0x1>;
+		reg = <0x0 0xa003c00 0x0 0x200>;
+		compatible = "virtio,mmio";
+	};
+	// virtio net
+	virtio_mmio@a003600 {
+		dma-coherent;
+		interrupt-parent = <0x01>;
+		interrupts = <0x0 0x2b 0x1>;
+		reg = <0x0 0xa003600 0x0 0x200>;
+		compatible = "virtio,mmio";
+	};
+
+	// virtio serial
+	virtio_mmio@a003800 {
+		dma-coherent;
+		interrupt-parent = <0x01>;
+		interrupts = <0x0 0x2c 0x1>;
+		reg = <0x0 0xa003800 0x0 0x200>;
+		compatible = "virtio,mmio";
+	};
+	
+	chosen {
+		// real blk and real console:
+		// bootargs = "clk_ignore_unused console=ttymxc3,115200 earlycon=ec_imx6q3,0x30a60000,115200 root=/dev/mmcblk3p2 rootwait rw";
+		// stdout-path = "/soc@0/bus@30800000/serial@30a60000";
+
+		// virtio blk and real console:
+		// bootargs = "clk_ignore_unused console=ttymxc3,115200 earlycon=ec_imx6q3,0x30a60000,115200 root=/dev/vda rootwait rw";
+		// stdout-path = "/soc@0/bus@30800000/serial@30a60000";
+
+		// virtio blk and virtio console:
+		bootargs = "clk_ignore_unused earlycon=virtio,mmio,0xa003800 console=hvc0 root=/dev/vda rootwait rw";
+		stdout-path = "/virtio_mmio@a003800";
+	};
+};
