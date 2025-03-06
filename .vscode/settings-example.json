@@ -15,6 +15,6 @@
 	// "rust-analyzer.cargo.target": "loongarch64-unknown-none",
 	"rust-analyzer.checkOnSave.allTargets": false,
 	"rust-analyzer.cargo.features": [
-	    "platform_qemu"
+	    "gicv3,pl011"
 	]
 }

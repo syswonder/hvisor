@@ -6,15 +6,14 @@ PORT ?= 2333
 MODE ?= debug
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 
-# AVAIABLE "FEATURES" VALUES:
-# - platform_qemu, platform_zcu102, platform_imx8mp
-# - gicv2, gicv3 (for aarch64)
-# - plic, aia (for riscv64)
-FEATURES ?= platform_qemu,gicv3
 
-# AVAIABLE "BOARD" VALUES:
-# - qemu, zcu102, 3a5000
-BOARD ?= qemu
+BOARD ?= qemu-gicv3
+FEATURES=
+# if user add FEATURES in environment, we use it
+# else we use the default FEATURES in platform/$(ARCH)/$(BOARD)/cargo/features
+ifeq ($(FEATURES),)
+	FEATURES := $(shell cat platform/$(ARCH)/$(BOARD)/cargo/features)
+endif
 
 ifeq ($(ARCH),aarch64)
     RUSTC_TARGET := aarch64-unknown-none
@@ -34,7 +33,6 @@ export LOG
 export ARCH
 export RUSTC_TARGET
 export FEATURES
-export BOARD
 
 # Build paths
 build_path := target/$(RUSTC_TARGET)/$(MODE)
@@ -55,7 +53,10 @@ endif
 
 # Targets
 .PHONY: all elf disa run gdb monitor clean tools rootfs
-all: $(hvisor_bin)
+all: gen_cargo_config $(hvisor_bin)
+
+gen_cargo_config:
+	./tools/gen_cargo_config.sh
 
 elf:
 	cargo build $(build_args)
@@ -113,13 +114,9 @@ download-test-img:
 	fi
 
 test: test-pre
-	cp .cargo/config .cargo/config.bak
-	sed "s|___HVISOR_SRC___|$(shell pwd)|g" .cargo/config.bak > .cargo/config
 	cargo test $(build_args) -vv
 
 clean:
 	cargo clean
 
-# set the BOARD variable to "3a5000"/qemu/zcu102/imx8mp to
-# include the corresponding script under the ./scripts directory
-include scripts/${BOARD}-${ARCH}.mk
+include platform/$(ARCH)/$(BOARD)/platform.mk

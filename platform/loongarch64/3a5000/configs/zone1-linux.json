@@ -1,0 +1,45 @@
+{
+    "arch": "loongarch64",
+    "name": "linux2",
+    "zone_id": 3,
+    "cpus": [
+        3
+    ],
+    "memory_regions": [
+        {
+            "type": "ram",
+            "physical_start": "0xc0000000",
+            "virtual_start": "0x00000000",
+            "size": "0x10000000"
+        },
+        {
+            "type": "ram",
+            "physical_start": "0xd0000000",
+            "virtual_start": "0x90000000",
+            "size": "0x10000000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x1fe00000",
+            "virtual_start": "0x1fe00000",
+            "size": "0x4000"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0x30001000",
+            "virtual_start": "0x30001000",
+            "size": "0x200"
+        }
+    ],
+    "interrupts": [
+        4
+    ],
+    "kernel_filepath": "/tool/vmlinux.bin",
+    "dtb_filepath": "/tool/test.bin",
+    "kernel_load_paddr": "0xc0200000",
+    "dtb_load_paddr": "0xc0000000",
+    "entry_point": "0x9000000000e75000",
+    "arch_config": {
+        "dummy": "0x1234"
+    }
+}

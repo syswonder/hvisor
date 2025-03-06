@@ -33,16 +33,27 @@ riscv-decode = "0.2.1"
 loongArch64 = "0.2.4"
 
 [features]
-platform_qemu = []
-platform_imx8mp = []
-platform_zcu102 = []
-gicv3 = []
+############# aarch64 ##############
+# irqchip driver
 gicv2 = []
+gicv3 = []
+# uart driver
+pl011 = []
+xuartps = []
+imx_uart = []
+############## riscv64 #############
+# irqchip driver
 plic = []
 aia = []
+########### loongarch64 ############
+# irqchip driver
+loongson_7a2000 = []
+# uart driver
+loongson_uart = []
+
 
 [profile.dev]
-# panic = "abort" # avoid test compiler erros(still a bug for rust)
+# panic = "abort" # avoid cargo test failure, this is a bug of cargo
 debug = 2
 
 [profile.release]
