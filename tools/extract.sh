@@ -1,5 +1,7 @@
 #!/bin/sh
 
+set -e
+
 # first find hvisor src dir by searching for README.md
 # find in current dir and parent dir
 HVISOR_SRC_DIR=.

@@ -1,5 +1,7 @@
 #!/bin/bash
 
+set -e
+
 # for hvisor's unit test when running cargo test
 # passed to .cargo/config
 # runner = "___HVISOR_SRC___/_cargo_test.sh"
@@ -34,6 +36,18 @@ info() {
     echo "[INFO | $THIS] $1"
 }
 
+# check if mkimage is installed
+if ! command -v mkimage &>/dev/null; then
+    if command -v apt &>/dev/null; then
+        sudo apt update && sudo apt install -y u-boot-tools
+    elif command -v brew &>/dev/null; then
+        brew install u-boot-tools
+    else
+        info "You need to install u-boot-tools to run this script (mkimage)"
+        exit 1
+    fi
+fi
+
 info "Running cargo test with env: ARCH=$ARCH, FEATURES=$FEATURES, BOARD=$BOARD"
 
 info "Building hvisor with $CARGO_BUILD_INPUT_ARG0"
@@ -66,7 +80,7 @@ if [ "$ARCH" == "aarch64" ]; then
         -semihosting \
         -bios $UBOOT \
         -drive if=pflash,format=raw,index=1,file=flash.img \
-        -device loader,file=$HVISOR_BIN,addr=0x40400000,force-raw=on  
+        -device loader,file=$HVISOR_BIN,addr=0x40400000,force-raw=on
 
     mv .cargo/config.bak .cargo/config
     exit 0

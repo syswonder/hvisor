@@ -1,6 +1,6 @@
-# wheatfox <wheatfox17@icloud.com>
 # hvisor Github Actions CI
-# version: 2025.2.28
+# wheatfox <wheatfox17@icloud.com>
+
 name: CI
 on:
   push:
@@ -14,9 +14,9 @@ on:
   workflow_dispatch:
 env:
   MODE: debug
-  BOARD: qemu # we can only run auto tests in emulator...
 jobs:
-  fmt:
+
+  linter:
     name: linter
     runs-on: ubuntu-latest
     steps:
@@ -26,10 +26,12 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt
-      - name: linter
+      - name: Format Check
         run: make fmt-test
-  test:
-    name: test
+
+  # this job uses `cargo test` semantics to run unit test exclusively in QEMU
+  unittest:
+    name: unittest
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false # continue to run all jobs even if some fail
@@ -39,12 +41,14 @@ jobs:
           - arch: aarch64
             rustc_target: aarch64-unknown-none
             features: "platform_qemu,gicv3"
+            board: "qemu"
           - arch: aarch64
             rustc_target: aarch64-unknown-none
             features: "platform_qemu,gicv2"
-          
-            # riscv64 will be supported in the future but not now,
-          # let's first focus on unittest and system test(root linux) in aarch64 qemu...
+            board: "qemu"
+          # riscv64 will be supported in the future but not now,
+          # because our `make test` uses customized script to run tests, which need extra efforts to
+          # support riscv64
 
           # - arch: riscv64
           #   rustc_target: riscv64gc-unknown-none-elf
@@ -52,7 +56,6 @@ jobs:
           # - arch: riscv64
           #   rustc_target: riscv64gc-unknown-none-elf
           #   features: "platform_qemu,aia"
-
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -71,7 +74,114 @@ jobs:
         run: |
           echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
           echo "FEATURES=${{ matrix.features }}" >> $GITHUB_ENV
-      - name: build
-        run: make
-      - name: unittest
+      - name: Unit Test
         run: make test
+
+  # this job is for compilation test, it will make sure all aarch64, riscv64, loongarch64 can be compiled successfully
+  # there is no actual running in this job
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # aarch64
+          - arch: aarch64
+            rustc_target: aarch64-unknown-none
+            features: "platform_qemu,gicv3"
+            board: "qemu"
+          - arch: aarch64
+            rustc_target: aarch64-unknown-none
+            features: "platform_qemu,gicv2"
+            board: "qemu"
+          - arch: aarch64
+            rustc_target: aarch64-unknown-none
+            features: "platform_zcu102,gicv2"
+            board: "zcu102"
+          - arch: aarch64
+            rustc_target: aarch64-unknown-none
+            features: "platform_imx8mp,gicv3"
+            board: "qemu"
+          # riscv64
+          - arch: riscv64
+            rustc_target: riscv64gc-unknown-none-elf
+            features: "platform_qemu,plic"
+            board: "qemu"
+          - arch: riscv64
+            rustc_target: riscv64gc-unknown-none-elf
+            features: "platform_qemu,aia"
+            board: "qemu"
+          # loongarch64
+          - arch: loongarch64
+            rustc_target: loongarch64-unknown-none
+            features: ""
+            board: "3a5000"
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rustc_target }}
+          components: rust-src
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget
+          cargo install --version 0.3.0 cargo-binutils
+          cargo install cargo-xbuild
+          wget -q https://github.com/sunhaiyong1978/CLFS-for-LoongArch/releases/download/8.0/loongarch64-clfs-8.0-cross-tools-gcc-full.tar.xz
+          tar -xf loongarch64-clfs-8.0-cross-tools-gcc-full.tar.xz
+          echo "$GITHUB_WORKSPACE/cross-tools/bin" >> $GITHUB_PATH
+      - name: Set up environment variables
+        run: |
+          echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+          echo "FEATURES=${{ matrix.features }}" >> $GITHUB_ENV
+          echo "BOARD=${{ matrix.board }}" >> $GITHUB_ENV
+      - name: Build
+        run: make
+
+  # this job is for booting root and nonroot inside qemu for system test
+  systemtest:
+    name: systemtest
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # aarch64
+          - arch: aarch64
+            rustc_target: aarch64-unknown-none
+            features: "platform_qemu,gicv3"
+            board: "qemu"
+          # currently supports only "platform_qemu,gicv3"
+          # Because other features need to be customized scripts
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rustc_target }}
+          components: rust-src
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget expect device-tree-compiler p7zip-full
+          cargo install --version 0.3.0 cargo-binutils
+          cargo install cargo-xbuild
+      - name: Set up environment variables
+        run: |
+          echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+          echo "FEATURES=${{ matrix.features }}" >> $GITHUB_ENV
+          echo "BOARD=${{ matrix.board }}" >> $GITHUB_ENV
+      - name: Compile DTB
+        run: |
+          ./test/tcompiledtb.sh
+      - name: Download rootfs and image
+        run: |
+          ./test/tdownload_all.sh
+      - name: Run Tests
+        run: |
+          ./test/tstart.sh
