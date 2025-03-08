@@ -36,6 +36,7 @@ echo "# HOST_ARCH    = $HOST_ARCH" >> $CONFIG_TOML
 echo "# OS_INFO      = $OS $OS_VERSION $DISTRO" >> $CONFIG_TOML
 echo "# ARCH         = $ARCH" >> $CONFIG_TOML
 echo "# BOARD        = $BOARD" >> $CONFIG_TOML
+echo "# FEATURES     = $FEATURES" >> $CONFIG_TOML
 echo "# HVISOR_SRC   = $HVISOR_SRC" >> $CONFIG_TOML
 echo "# LD_SCRIPT    = $LD_SCRIPT" >> $CONFIG_TOML
 echo "# RUSTFLAGS    = $RUSTFLAGS" >> $CONFIG_TOML
