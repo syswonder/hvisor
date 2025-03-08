@@ -55,8 +55,6 @@ loongson_uart = []
 [profile.dev]
 # panic = "abort" # avoid cargo test failure, this is a bug of cargo
 debug = 2
-
-[profile.release]
 # panic = "abort"
 
 [unstable]

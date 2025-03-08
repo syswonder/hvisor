@@ -6,40 +6,6 @@ use crate::{
     consts::INVALID_ADDRESS,
 };
 
-// #[cfg(all(feature = "platform_qemu", target_arch = "riscv64"))]
-// pub mod qemu_riscv64;
-
-// #[cfg(all(feature = "platform_qemu", target_arch = "riscv64"))]
-// use qemu_riscv64::*;
-
-// #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
-// pub mod qemu_aarch64;
-
-// #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
-// pub use qemu_aarch64::*;
-
-// #[cfg(all(feature = "platform_imx8mp", target_arch = "aarch64"))]
-// pub mod imx8mp_aarch64;
-
-// #[cfg(all(feature = "platform_imx8mp", target_arch = "aarch64"))]
-// use imx8mp_aarch64::*;
-
-// #[cfg(all(feature = "platform_zcu102", target_arch = "aarch64"))]
-// pub mod zcu102_aarch64;
-
-// #[cfg(all(feature = "platform_zcu102", target_arch = "aarch64"))]
-// pub use zcu102_aarch64::*;
-
-// #[cfg(target_arch = "loongarch64")]
-// pub mod ls3a5000_loongarch64;
-
-// #[cfg(target_arch = "loongarch64")]
-// pub use ls3a5000_loongarch64::*;
-
-// this is a temporary file that is excluded from git
-// you should edit the file under platform/ARCH/BOARD/board.rs
-// and run `cargo build` to generate this file
-
 mod __board;
 pub use __board::*;
 

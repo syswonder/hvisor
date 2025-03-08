@@ -1,18 +1,18 @@
-# Basic settings
 ARCH ?= aarch64
 LOG ?= info
 STATS ?= off
 PORT ?= 2333
 MODE ?= debug
-OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
-
-
-BOARD ?= qemu-gicv3
+BOARD ?= qemu-gicv3 
 FEATURES=
+
 # if user add FEATURES in environment, we use it
 # else we use the default FEATURES in platform/$(ARCH)/$(BOARD)/cargo/features
 ifeq ($(FEATURES),)
-	FEATURES := $(shell cat platform/$(ARCH)/$(BOARD)/cargo/features)
+    FEATURES := $(shell cat platform/$(ARCH)/$(BOARD)/cargo/features 2>/dev/null || echo "ERROR")
+    ifeq ($(FEATURES),ERROR)
+        $(error ERROR: Read FEATURES failed. Please check if ARCH="$(ARCH)" and BOARD="$(BOARD)" are correct.)
+    endif
 endif
 
 ifeq ($(ARCH),aarch64)
@@ -28,11 +28,7 @@ else
 $(error Unsupported ARCH value: $(ARCH))
 endif
 
-export MODE
-export LOG
-export ARCH
-export RUSTC_TARGET
-export FEATURES
+OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 
 # Build paths
 build_path := target/$(RUSTC_TARGET)/$(MODE)
@@ -51,12 +47,45 @@ ifeq ($(MODE), release)
   build_args += --release
 endif
 
+$(info ARCH is "$(ARCH)")
+$(info BOARD is "$(BOARD)")
+$(info FEATURES is "$(FEATURES)")
+
+# color code
+COLOR_GREEN := $(shell tput setaf 2)
+COLOR_RED := $(shell tput setaf 1)
+COLOR_YELLOW := $(shell tput setaf 3)
+COLOR_BLUE := $(shell tput setaf 4)
+COLOR_BOLD := $(shell tput bold)
+COLOR_RESET := $(shell tput sgr0)
+
+export MODE
+export LOG
+export ARCH
+export BOARD
+export RUSTC_TARGET
+export FEATURES
+
 # Targets
 .PHONY: all elf disa run gdb monitor clean tools rootfs
 all: gen_cargo_config $(hvisor_bin)
+	@printf "\n"
+	@printf "$(COLOR_GREEN)$(COLOR_BOLD)hvisor build summary:$(COLOR_RESET)\n"
+	@printf "%-10s %s\n" "ARCH            =" "$(COLOR_BOLD)$(ARCH)$(COLOR_RESET)"
+	@printf "%-10s %s\n" "BOARD           =" "$(COLOR_BOLD)$(BOARD)$(COLOR_RESET)"
+	@printf "%-10s %s\n" "LOG             =" "$(COLOR_BOLD)$(LOG)$(COLOR_RESET)"
+	@printf "%-10s %s\n" "FEATURES        =" "$(COLOR_BOLD)$(FEATURES)$(COLOR_RESET)"
+	@printf "%-10s %s\n" "RUSTC_TARGET    =" "$(COLOR_BOLD)$(RUSTC_TARGET)$(COLOR_RESET)"
+	@printf "%-10s %s\n" "BUILD_PATH      =" "$(COLOR_BOLD)$(build_path)$(COLOR_RESET)"
+	@printf "%-10s %s\n" "HVISON_BIN_SIZE =" "$(COLOR_BOLD)$(shell du -h $(hvisor_bin) | cut -f1)$(COLOR_RESET)"
+	@printf "%-10s %s\n" "BUILD TIME      =" "$(COLOR_BOLD)$(shell date)$(COLOR_RESET)"
+	@printf "\n"
+	@printf "$(COLOR_GREEN)$(COLOR_BOLD)hvisor build success!$(COLOR_RESET)\n"
 
 gen_cargo_config:
+	@printf "$(COLOR_GREEN)$(COLOR_BOLD)Generating .cargo/config.toml...$(COLOR_RESET)\n"
 	./tools/gen_cargo_config.sh
+	@printf "$(COLOR_GREEN)$(COLOR_BOLD)Generating .cargo/config.toml success!$(COLOR_RESET)\n"
 
 elf:
 	cargo build $(build_args)

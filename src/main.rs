@@ -8,16 +8,13 @@
 //! - [`device`]: Device management
 //! - [`arch`]: Architecture's related
 
-#![no_std] // 禁用标准库链接
+#![no_std]
 #![no_main]
-// 不使用main入口，使用自己定义实际入口_start，因为我们还没有初始化堆栈指针
 #![feature(asm_const)]
 #![feature(naked_functions)]
-//  surpport naked function
 // #![feature(core_panic)]
-// 支持内联汇编
-// #![deny(warnings, missing_docs)] // 将warnings作为error
-
+// #![deny(warnings, missing_docs)]
+#![feature(proc_macro_hygiene)]
 // unittest
 #![feature(custom_test_frameworks)]
 #![test_runner(crate::tests::test_main)]
@@ -50,6 +47,8 @@ mod zone;
 mod ivc;
 
 mod pci;
+
+#[cfg(test)]
 mod tests;
 
 #[cfg(target_arch = "aarch64")]

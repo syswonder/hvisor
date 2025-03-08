@@ -39,7 +39,7 @@ fn main() {
     ));
 
     log(&format!(
-        "Copying {} to {}",
+        "Linking board.rs from {} to {}",
         source_path_str,
         target_path.display()
     ));
@@ -52,15 +52,12 @@ fn main() {
         );
     }
 
-    // copy the board.rs file to __board.rs
-    let r = fs::copy(source_path, target_path);
-    if let Err(e) = r {
-        log(&format!("Failed to copy board.rs: {}", e));
-        panic!(
-            "Failed to copy board.rs, please check the log file({}) for more details",
-            BUILD_LOG_FILE
-        );
+    // soft link the board.rs to __board.rs
+    if target_path.exists() {
+        fs::remove_file(target_path).expect("Failed to remove existing __board.rs");
     }
+    std::os::unix::fs::symlink(source_path, target_path).expect("Failed to create symlink");
+    log(&format!("Linking successful"));
 
     println!("cargo:rerun-if-env-changed=ARCH");
     println!("cargo:rerun-if-env-changed=BOARD");
