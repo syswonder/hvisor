@@ -60,7 +60,7 @@ use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
 use zone::zone_create;
 
-#[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
+#[cfg(all(feature = "iommu", target_arch = "aarch64"))]
 use crate::arch::iommu::iommu_init;
 
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
@@ -117,7 +117,7 @@ fn primary_init_early() {
     device::irqchip::primary_init_early();
     // crate::arch::mm::init_hv_page_table().unwrap();
 
-    #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
+    #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
     iommu_init();
 
     #[cfg(not(test))]

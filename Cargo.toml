@@ -41,6 +41,11 @@ gicv3 = []
 pl011 = []
 xuartps = []
 imx_uart = []
+# functionality
+iommu = []
+pci = []
+# pagetable layout
+pt_layout_qemu = []
 ############## riscv64 #############
 # irqchip driver
 plic = []

@@ -40,11 +40,9 @@ jobs:
           # aarch64
           - arch: aarch64
             rustc_target: aarch64-unknown-none
-            features: "platform_qemu,gicv3"
             board: "qemu"
           - arch: aarch64
             rustc_target: aarch64-unknown-none
-            features: "platform_qemu,gicv2"
             board: "qemu"
           # riscv64 will be supported in the future but not now,
           # because our `make test` uses customized script to run tests, which need extra efforts to
@@ -52,10 +50,8 @@ jobs:
 
           # - arch: riscv64
           #   rustc_target: riscv64gc-unknown-none-elf
-          #   features: "platform_qemu,plic"
           # - arch: riscv64
           #   rustc_target: riscv64gc-unknown-none-elf
-          #   features: "platform_qemu,aia"
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -73,7 +69,6 @@ jobs:
       - name: Set up environment variables
         run: |
           echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
-          echo "FEATURES=${{ matrix.features }}" >> $GITHUB_ENV
       - name: Unit Test
         run: make test
 
@@ -89,33 +84,26 @@ jobs:
           # aarch64
           - arch: aarch64
             rustc_target: aarch64-unknown-none
-            features: "platform_qemu,gicv3"
             board: "qemu"
           - arch: aarch64
             rustc_target: aarch64-unknown-none
-            features: "platform_qemu,gicv2"
             board: "qemu"
           - arch: aarch64
             rustc_target: aarch64-unknown-none
-            features: "platform_zcu102,gicv2"
             board: "zcu102"
           - arch: aarch64
             rustc_target: aarch64-unknown-none
-            features: "platform_imx8mp,gicv3"
             board: "qemu"
           # riscv64
           - arch: riscv64
             rustc_target: riscv64gc-unknown-none-elf
-            features: "platform_qemu,plic"
             board: "qemu"
           - arch: riscv64
             rustc_target: riscv64gc-unknown-none-elf
-            features: "platform_qemu,aia"
             board: "qemu"
           # loongarch64
           - arch: loongarch64
             rustc_target: loongarch64-unknown-none
-            features: ""
             board: "3a5000"
     steps:
       - name: Checkout Repository
@@ -137,7 +125,6 @@ jobs:
       - name: Set up environment variables
         run: |
           echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
-          echo "FEATURES=${{ matrix.features }}" >> $GITHUB_ENV
           echo "BOARD=${{ matrix.board }}" >> $GITHUB_ENV
       - name: Build
         run: make
@@ -153,9 +140,7 @@ jobs:
           # aarch64
           - arch: aarch64
             rustc_target: aarch64-unknown-none
-            features: "platform_qemu,gicv3"
-            board: "qemu"
-          # currently supports only "platform_qemu,gicv3"
+            board: "qemu-gicv3"
           # Because other features need to be customized scripts
     steps:
       - name: Checkout Repository
@@ -174,7 +159,6 @@ jobs:
       - name: Set up environment variables
         run: |
           echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
-          echo "FEATURES=${{ matrix.features }}" >> $GITHUB_ENV
           echo "BOARD=${{ matrix.board }}" >> $GITHUB_ENV
       - name: Compile DTB
         run: |

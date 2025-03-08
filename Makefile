@@ -3,13 +3,13 @@ LOG ?= info
 STATS ?= off
 PORT ?= 2333
 MODE ?= debug
-BOARD ?= qemu-gicv3 
+BOARD ?= qemu-gicv3
 FEATURES=
 
 # if user add FEATURES in environment, we use it
 # else we use the default FEATURES in platform/$(ARCH)/$(BOARD)/cargo/features
 ifeq ($(FEATURES),)
-    FEATURES := $(shell cat platform/$(ARCH)/$(BOARD)/cargo/features 2>/dev/null || echo "ERROR")
+    FEATURES := $(shell ./tools/read_features.sh $(ARCH) $(BOARD) || echo ERROR)
     ifeq ($(FEATURES),ERROR)
         $(error ERROR: Read FEATURES failed. Please check if ARCH="$(ARCH)" and BOARD="$(BOARD)" are correct.)
     endif

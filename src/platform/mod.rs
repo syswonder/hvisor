@@ -38,7 +38,7 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
     let mut pci_devs = [0; CONFIG_MAX_PCI_DEV];
     let mut root_pci_cfg = HvPciConfig::new_empty();
     let mut num_pci_devs: u64 = 0;
-    #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
+    #[cfg(all(feature = "pci", target_arch = "aarch64"))]
     {
         pci_devs[..ROOT_PCI_DEVS.len()].copy_from_slice(&ROOT_PCI_DEVS);
         root_pci_cfg = ROOT_PCI_CONFIG;

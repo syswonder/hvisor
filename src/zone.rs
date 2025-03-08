@@ -184,7 +184,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     zone.irq_bitmap_init(config.interrupts());
     #[cfg(target_arch = "aarch64")]
     zone.ivc_init(config.ivc_config());
-    #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
+    #[cfg(all(feature = "pci", target_arch = "aarch64"))]
     zone.pci_init(
         &config.pci_config,
         config.num_pci_devs as _,
