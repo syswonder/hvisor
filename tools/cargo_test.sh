@@ -2,12 +2,6 @@
 
 set -e
 
-# for hvisor's unit test when running cargo test
-# passed to .cargo/config
-# runner = "___HVISOR_SRC___/_cargo_test.sh"
-# ___HVISOR_SRC___ will be replaced dynamically by the Makefile and restored after the test
-# wheatfox(wheatfox17@icloud.com) 2024.12
-
 PWD=$(pwd)
 THIS=$(basename $0)
 CARGO_BUILD_INPUT_ARG0=$1
@@ -20,7 +14,6 @@ BOARD=${BOARD}
 
 UBOOT_GICV3=u-boot-atf.bin
 UBOOT_GICV2=u-boot-v2.bin
-# UBOOT=u-boot.bin
 
 HVISOR_ELF=$CARGO_BUILD_INPUT_ARG0
 HVISOR_BIN_TMP=$HVISOR_ELF.bin.tmp
