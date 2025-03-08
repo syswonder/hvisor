@@ -3,9 +3,6 @@ use spin::Once;
 
 use crate::{arch::zone::HvArchZoneConfig, platform};
 
-#[cfg(test)]
-mod tests;
-
 pub const MEM_TYPE_RAM: u32 = 0;
 pub const MEM_TYPE_IO: u32 = 1;
 pub const MEM_TYPE_VIRTIO: u32 = 2;

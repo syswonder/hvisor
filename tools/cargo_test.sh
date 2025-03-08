@@ -18,8 +18,8 @@ ARCH=${ARCH}
 FEATURES=${FEATURES}
 BOARD=${BOARD}
 
-UBOOT_GICV3=images/aarch64/bootloader/u-boot-atf.bin
-UBOOT_GICV2=images/aarch64/bootloader/u-boot-v2.bin
+UBOOT_GICV3=u-boot-atf.bin
+UBOOT_GICV2=u-boot-v2.bin
 # UBOOT=u-boot.bin
 
 HVISOR_ELF=$CARGO_BUILD_INPUT_ARG0
@@ -71,25 +71,24 @@ if [ "$ARCH" == "aarch64" ]; then
     if [ $AARCH64_GIC_TEST_VERSION -eq 2 ]; then
         UBOOT=$UBOOT_GICV2
     fi
+    UBOOT=$PWD/platform/$ARCH/$BOARD/bootloader/$UBOOT
     info "Using U-Boot: $UBOOT"
+
 
     qemu-system-aarch64 \
         -machine virt,secure=on,gic-version=${AARCH64_GIC_TEST_VERSION},virtualization=on,iommu=smmuv3 \
-        -global arm-smmuv3.stage=2 \
         -cpu cortex-a57 -smp 4 -m 3G -nographic \
         -semihosting \
         -bios $UBOOT \
         -drive if=pflash,format=raw,index=1,file=flash.img \
-        -device loader,file=$HVISOR_BIN,addr=0x40400000,force-raw=on
+        -device loader,file=$HVISOR_BIN,addr=0x40400000,force-raw=on \
+        -global arm-smmuv3.stage=2
 
-    mv .cargo/config.bak .cargo/config
     exit 0
 elif [ "$ARCH" == "riscv64" ]; then
     info "riscv64 auto test is not supported yet"
-    mv .cargo/config.bak .cargo/config
     exit 1
 else
     info "Unsupported ARCH: $ARCH"
-    mv .cargo/config.bak .cargo/config
     exit 1
 fi
