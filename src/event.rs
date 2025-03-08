@@ -134,3 +134,10 @@ pub fn send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
     add_event(cpu_id, event_id);
     arch_send_event(cpu_id as _, ipi_int_id as _);
 }
+
+#[test_case]
+fn test_simple_send_event() {
+    init(1);
+    send_event(0, 0, IPI_EVENT_WAKEUP);
+    assert_eq!(fetch_event(0), Some(IPI_EVENT_WAKEUP));
+}
