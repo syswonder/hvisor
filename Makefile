@@ -6,6 +6,17 @@ MODE ?= debug
 BOARD ?= qemu-gicv3
 FEATURES=
 
+BID=
+
+# if user uses `make ID=aarch64/qemu-gicv2`, we parse it into ARCH and BOARD
+ifeq ($(BID),)
+	ARCH := $(ARCH)
+	BOARD := $(BOARD)
+else
+	ARCH := $(shell echo $(BID) | cut -d'/' -f1)
+	BOARD := $(shell echo $(BID) | cut -d'/' -f2)
+endif
+
 # if user add FEATURES in environment, we use it
 # else we use the default FEATURES in platform/$(ARCH)/$(BOARD)/cargo/features
 ifeq ($(FEATURES),)
