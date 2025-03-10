@@ -156,7 +156,7 @@ download-test-img:
 	else echo "\nflash.img found\n"; \
 	fi
 
-test: test-pre gen_cargo_config
+test: clean test-pre gen_cargo_config
 	cargo test $(build_args) -vv
 
 clean:
