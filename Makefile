@@ -24,8 +24,11 @@ else ifeq ($(ARCH),riscv64)
 else ifeq ($(ARCH),loongarch64)
 	RUSTC_TARGET := loongarch64-unknown-none
 	GDB_ARCH := loongarch64
+else ifeq ($(ARCH),x86_64)
+	RUSTC_TARGET := x86_64-unknown-none
+	GDB_ARCH := i386:x86-64
 else
-$(error Unsupported ARCH value: $(ARCH))
+	$(error ERROR: Unsupported ARCH value: $(ARCH))
 endif
 
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
@@ -34,7 +37,7 @@ OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 build_path := target/$(RUSTC_TARGET)/$(MODE)
 hvisor_elf := $(build_path)/hvisor
 hvisor_bin := $(build_path)/hvisor.bin
-image_dir  := images/$(ARCH)
+image_dir  := platform/$(ARCH)/$(BOARD)/image
 
 # Build arguments
 build_args := 
@@ -117,8 +120,8 @@ cp:
 	cp $(hvisor_bin) ~/tftp
 
 test-pre: download-test-img
-	chmod +x ./tools/cargo_test.sh
-	@echo "pass"
+	chmod +x platform/$(ARCH)/$(BOARD)/test/runner.sh
+	@echo "added execute permission to test runner.sh for board $(BOARD)"
 
 fmt-test:
 	cargo fmt --all -- --check
@@ -142,7 +145,7 @@ download-test-img:
 	else echo "\nflash.img found\n"; \
 	fi
 
-test: test-pre
+test: test-pre gen_cargo_config
 	cargo test $(build_args) -vv
 
 clean:

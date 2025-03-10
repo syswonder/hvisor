@@ -1,13 +1,14 @@
-
 QEMU := qemu-system-riscv64
 
-FSIMG1 := $(IMG_DIR)/rootfs1.ext4
-FSIMG2 := $(IMG_DIR)/rootfs-busybox.qcow2
 
+FSIMG1 := $(image_dir)/virtdisk/rootfs1.ext4
+FSIMG2 := $(image_dir)/virtdisk/rootfs-busybox.qcow2
 # HVISOR ENTRY
 HVISOR_ENTRY_PA := 0x80200000
-zone0_kernel := $(IMG_DIR)/Image
-zone0_dtb    := $(PLAT_DIR)/dts/zone0.dtb
+zone0_kernel := $(image_dir)/kernel/Image
+zone0_dtb    := $(image_dir)/devicetree/linux1.dtb
+# zone1_kernel := $(image_dir)/kernel/Image
+# zone1_dtb    := $(image_dir)/devicetree/linux.dtb
 
 QEMU_ARGS := -machine virt
 QEMU_ARGS += -bios default
@@ -47,4 +48,5 @@ QEMU_ARGS += -device virtio-blk-device,drive=X10006000,bus=virtio-mmio-bus.5
 # #QEMU_ARGS +=		 -device virtio-serial-port -chardev pty,id=serial3 -device virtconsole,chardev=serial3
 # QEMU_ARGS +=		 -device virtio-serial-device -chardev pty,id=serial3 -device virtconsole,chardev=serial3
 
-HVISOR_RUNCMD := $(QEMU) $(QEMU_ARGS)
+$(hvisor_bin): elf
+	$(OBJCOPY) $(hvisor_elf) --strip-all -O binary $@

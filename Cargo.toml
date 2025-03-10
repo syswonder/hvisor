@@ -32,6 +32,12 @@ riscv-decode = "0.2.1"
 [target.'cfg(target_arch = "loongarch64")'.dependencies]
 loongArch64 = "0.2.4"
 
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+x86 = "0.52.0"
+x86_64 = "=0.14.10"
+x2apic = "0.4.3"
+raw-cpuid = "10.7.0"
+
 [features]
 ############# aarch64 ##############
 # irqchip driver

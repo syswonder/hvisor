@@ -6,7 +6,7 @@ use crate::{
     consts::INVALID_ADDRESS,
 };
 
-mod __board;
+pub mod __board; // riscv64 uses some private PLIC constants in board.rs ... so we have to `pub` it - wheatfox
 pub use __board::*;
 
 pub fn platform_root_zone_config() -> HvZoneConfig {

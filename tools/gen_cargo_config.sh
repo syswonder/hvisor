@@ -16,9 +16,9 @@ function find_hvisor_src {
     echo $(dirname $ret)
 }
 
-RUSTFLAGS="platform/$ARCH/$BOARD/cargo/rustflags"
-RUSTFLAGS=$(realpath $RUSTFLAGS)
-rustflags=$(cat $RUSTFLAGS)
+CONFIG_TOML_TEMPLATE="platform/$ARCH/$BOARD/cargo/config.template.toml"
+CONFIG_TOML_TEMPLATE=$(realpath $CONFIG_TOML_TEMPLATE)
+TEMPLATE=$(cat $CONFIG_TOML_TEMPLATE)
 LD_SCRIPT="platform/$ARCH/$BOARD/linker.ld"
 LD_SCRIPT=$(realpath $LD_SCRIPT)
 HVISOR_SRC=$(realpath $(find_hvisor_src))
@@ -39,17 +39,11 @@ echo "# BOARD        = $BOARD" >> $CONFIG_TOML
 echo "# FEATURES     = $FEATURES" >> $CONFIG_TOML
 echo "# HVISOR_SRC   = $HVISOR_SRC" >> $CONFIG_TOML
 echo "# LD_SCRIPT    = $LD_SCRIPT" >> $CONFIG_TOML
-echo "# RUSTFLAGS    = $RUSTFLAGS" >> $CONFIG_TOML
+echo "# TEMPLATE     = $CONFIG_TOML_TEMPLATE" >> $CONFIG_TOML
 echo "" >> $CONFIG_TOML
-echo "[target.$RUSTC_TARGET]" >> $CONFIG_TOML
-echo "runner = \"$HVISOR_SRC/tools/cargo_test.sh\"" >> $CONFIG_TOML
-# for each line in rustflags file, append to $CONFIG_TOML
-echo "rustflags = [" >> $CONFIG_TOML
-echo "\"-Clink-arg=-T$LD_SCRIPT\"," >> $CONFIG_TOML
-# iterate over each line in rustflags file
-IFS=$'\n'
-for line in $rustflags; do
-    echo "adding $line"
-    echo "\"$line\"," >> $CONFIG_TOML
-done
-echo "]" >> $CONFIG_TOML
+
+# place holders: __XXX__ -> XXX
+TEMPLATE=$(echo "$TEMPLATE" | sed -e 's/__ARCH__/'"$ARCH"'/g')
+TEMPLATE=$(echo "$TEMPLATE" | sed -e 's/__BOARD__/'"$BOARD"'/g')
+
+echo "$TEMPLATE" >> $CONFIG_TOML
