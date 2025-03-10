@@ -1,7 +1,7 @@
 use crate::{
     arch::{
+        apic::current_time_nanos,
         cpu::ArchCpu,
-        lapic::current_time_nanos,
         msr::Msr::{self, *},
     },
     error::HvResult,

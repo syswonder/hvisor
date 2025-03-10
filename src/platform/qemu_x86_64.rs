@@ -14,6 +14,8 @@ pub const ROOT_ZONE_CMDLINE_ADDR: GuestPhysAddr = 0xc000;
 pub const ROOT_ZONE_CPUS: u64 = (1 << 0);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
+pub const ROOT_ZONE_CMDLINE: &str =
+    "console=ttyS0 earlyprintk=serial rdinit=/init nokaslr noapic\0";
 
 pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 7] = [
     HvConfigMemoryRegion {

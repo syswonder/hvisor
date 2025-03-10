@@ -133,7 +133,9 @@ fn per_cpu_init(cpu: &mut PerCpu) {
 
 fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
     #[cfg(target_arch = "x86_64")]
-    arch::lapic::init_primary();
+    arch::apic::init_lapic();
+    #[cfg(target_arch = "x86_64")]
+    arch::apic::init_ioapic();
 
     for cpu_id in 0..MAX_CPU_NUM {
         if cpu_id == this_id {

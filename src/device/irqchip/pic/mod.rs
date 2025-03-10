@@ -1,4 +1,4 @@
-pub mod i8259;
+pub mod i8259a;
 pub mod lapic;
 
 use crate::zone::Zone;

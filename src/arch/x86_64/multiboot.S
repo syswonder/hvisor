@@ -130,7 +130,7 @@ ap_entry64:
 
 .balign 4096
 .Ltmp_pml4:
-    // 0x0000_0000 ~ 0x8000_0000
+    // 0x0000_0000 ~ 0x1_0000_0000
     .quad .Ltmp_pdpt_low - {offset} + 0x3   // PRESENT | WRITABLE | paddr(tmp_pdpt)
     .zero 8 * 510
     // 0xffff_ff80_0000_0000 ~ 0xffff_ff80_8000_0000
@@ -139,7 +139,9 @@ ap_entry64:
 .Ltmp_pdpt_low:
     .quad 0x0000 | 0x83         // PRESENT | WRITABLE | HUGE_PAGE | paddr(0x0)
     .quad 0x40000000 | 0x83     // PRESENT | WRITABLE | HUGE_PAGE | paddr(0x4000_0000)
-    .zero 8 * 510
+    .quad 0x80000000 | 0x83     // PRESENT | WRITABLE | HUGE_PAGE | paddr(0x4000_0000)
+    .quad 0xc0000000 | 0x83     // PRESENT | WRITABLE | HUGE_PAGE | paddr(0x4000_0000)
+    .zero 8 * 508
 
 .Ltmp_pdpt_high:
     .quad 0x0000 | 0x83         // PRESENT | WRITABLE | HUGE_PAGE | paddr(0x0)

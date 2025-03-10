@@ -1,5 +1,6 @@
 #![allow(unused)]
 pub mod acpi;
+pub mod apic;
 pub mod boot;
 pub mod cpu;
 pub mod cpuid;
@@ -8,7 +9,6 @@ pub mod entry;
 pub mod gdt;
 pub mod idt;
 pub mod ipi;
-pub mod lapic;
 pub mod mm;
 pub mod msr;
 pub mod paging;

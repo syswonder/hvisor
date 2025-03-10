@@ -44,11 +44,11 @@
     Trigger Mode : 0 */
 
 /* Local APIC NMI Structure */
-/* Connected to LINT1 on all CPUs */
+/* Connected to LINT1 on all CPUs 
 [0001] Subtable Type : 04
 [0001] Length : 06
 [0001] Processor ID : ff
 [0002] Flags (decoded below) : 0000
     Polarity : 0
     Trigger Mode : 0
-[0001] Interrupt Input LINT : 01
+[0001] Interrupt Input LINT : 01 */

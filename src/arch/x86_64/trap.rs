@@ -1,19 +1,21 @@
 use crate::{
     arch::{
+        apic::{local_apic, vectors::*},
         cpu::ArchCpu,
         cpuid::{CpuIdEax, ExtendedFeaturesEcx, FeatureInfoFlags},
         device::all_virt_devices,
         idt::IdtStruct,
-        lapic::{local_apic, vectors::*},
         msr::Msr::{self, *},
         s2pt::Stage2PageFaultInfo,
         vmcs::*,
         vmx::{VmxCrAccessInfo, VmxExitInfo, VmxExitReason, VmxInterruptInfo, VmxIoExitInfo},
     },
-    device::irqchip::pic::lapic::VirtLocalApic,
+    device::{irqchip::pic::lapic::VirtLocalApic, uart::UartReg},
     error::HvResult,
 };
 use x86_64::registers::control::Cr4Flags;
+
+use super::device::UART_COM1_BASE_PORT;
 
 core::arch::global_asm!(
     include_str!("trap.S"),
@@ -69,14 +71,17 @@ pub fn arch_handle_trap(tf: &mut TrapFrame) {
 
 fn handle_irq(vector: u8) {
     match vector {
-        APIC_TIMER_VECTOR => {
-            // println!("Timer");
-            unsafe { local_apic().end_of_interrupt() };
+        APIC_TIMER_VECTOR => {}
+        UART_COM1_VECTOR => {
+            if let Some(device) = all_virt_devices().find_port_io_device(UART_COM1_BASE_PORT) {
+                device.read(UART_COM1_BASE_PORT + UartReg::LINE_STATUS, 0);
+            }
         }
         _ => {
             println!("Unhandled irq {}", vector);
         }
     }
+    unsafe { local_apic().end_of_interrupt() };
 }
 
 fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
@@ -199,7 +204,7 @@ fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
 
     if let Some(dev) = all_virt_devices().find_port_io_device(io_info.port) {
         if io_info.is_in {
-            let value = dev.read(io_info.port, io_info.access_size)?;
+            let value = dev.read(io_info.port, 0)?;
             let rax = &mut arch_cpu.regs_mut().rax;
             // SDM Vol. 1, Section 3.4.1.1:
             // * 32-bit operands generate a 32-bit result, zero-extended to a 64-bit result in the
@@ -221,7 +226,7 @@ fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
                 4 => rax,
                 _ => unreachable!(),
             } as u32;
-            dev.write(io_info.port, io_info.access_size, value)?;
+            dev.write(io_info.port, value, 0)?;
         }
     } else {
         debug!(
@@ -315,7 +320,7 @@ pub fn handle_vmexit(arch_cpu: &mut ArchCpu) -> HvResult {
         VmxExitReason::CPUID => handle_cpuid(arch_cpu),
         VmxExitReason::RDTSC => {
             // FIXME: temp!
-            let current_ticks = crate::arch::lapic::current_ticks();
+            let current_ticks = crate::arch::apic::current_ticks();
             let regs = arch_cpu.regs_mut();
             regs.rdx = (current_ticks >> 32) & (u32::MAX as u64);
             regs.rax = current_ticks & (u32::MAX as u64);

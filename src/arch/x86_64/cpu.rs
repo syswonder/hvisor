@@ -1,8 +1,8 @@
 use crate::{
     arch::{
+        apic::{busy_wait, local_apic},
         boot::BootParams,
         gdt::{get_tr_base, GdtStruct},
-        lapic::{busy_wait, local_apic},
         msr::{Msr, Msr::*, MsrBitmap},
         vmcs::*,
         vmx::*,
@@ -205,8 +205,10 @@ impl ArchCpu {
         loop {}
     }
 
-    pub fn inject_fault(&mut self) -> HvResult {
-        Ok(())
+    /// Add a virtual interrupt or exception to the pending events list,
+    /// and try to inject it before later VM entries.
+    pub fn inject_interrupt(&mut self, vector: u8, err_code: Option<u32>) {
+        self.pending_events.push_back((vector, err_code));
     }
 
     /// Guest general-purpose registers.
@@ -295,18 +297,12 @@ impl ArchCpu {
         Ok(())
     }
 
-    /// Add a virtual interrupt or exception to the pending events list,
-    /// and try to inject it before later VM entries.
-    fn inject_interrupt(&mut self, vector: u8, err_code: Option<u32>) {
-        self.pending_events.push_back((vector, err_code));
-    }
-
     fn setup_boot_params(&mut self) -> HvResult {
         BootParams::fill(
             ROOT_ZONE_SETUP_ADDR,
             ROOT_ZONE_INITRD_ADDR,
             ROOT_ZONE_CMDLINE_ADDR,
-            "console=ttyS0 earlyprintk=serial rdinit=/init nokaslr\0",
+            ROOT_ZONE_CMDLINE,
             // "console=ttyS0 earlyprintk=serial nokaslr\0"
         )?;
         self.guest_regs.rax = this_cpu_data().cpu_on_entry as u64;
