@@ -15,7 +15,6 @@ on:
 env:
   MODE: debug
 jobs:
-
   linter:
     name: linter
     runs-on: ubuntu-latest
@@ -25,7 +24,14 @@ jobs:
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
+          targets: aarch64-unknown-none
+          components: rust-src rustfmt
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget
+          cargo install --version 0.3.0 cargo-binutils
+          cargo install cargo-xbuild
       - name: Format Check
         run: make fmt-test
 
