@@ -131,11 +131,13 @@ test-pre: download-test-img
 	chmod +x platform/$(ARCH)/$(BOARD)/test/runner.sh
 	@echo "added execute permission to test runner.sh for board $(BOARD)"
 
-fmt-test:
+fmt-test: all
 	cargo fmt --all -- --check
+	@echo "cargo fmt check passed!"
 
-fmt:
+fmt: all
 	cargo fmt --all
+	@echo "your code has been formatted"
 
 clippy:
 	cargo clippy $(build_args)
