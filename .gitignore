@@ -32,3 +32,4 @@ flash.img*
 .vscode/settings.json
 compile.sh
 src/platform/__board.rs
+.config

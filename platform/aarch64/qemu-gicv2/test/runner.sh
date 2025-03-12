@@ -64,7 +64,7 @@ if [ "$ARCH" == "aarch64" ]; then
     if [ $AARCH64_GIC_TEST_VERSION -eq 2 ]; then
         UBOOT=$UBOOT_GICV2
     fi
-    UBOOT=$PWD/platform/$ARCH/$BOARD/bootloader/$UBOOT
+    UBOOT=$PWD/platform/$ARCH/$BOARD/image/bootloader/$UBOOT
     info "Using U-Boot: $UBOOT"
 
 

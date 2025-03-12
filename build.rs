@@ -13,6 +13,43 @@ fn log(output: &str) {
     writeln!(file, "{}", output).expect("Failed to write to log file");
 }
 
+// .config
+// ARCH=...
+// BOARD=...
+struct BuildEnv {
+    arch: String,
+    board: String,
+    bid: String,
+    features: String,
+}
+
+fn parse_build_env(file_path: &str) -> BuildEnv {
+    let file = fs::read_to_string(file_path).expect("Failed to read .config file");
+    let mut arch = String::new();
+    let mut board = String::new();
+    let mut bid = String::new();
+    let mut features = String::new();
+    for line in file.lines() {
+        let parts: Vec<&str> = line.split('=').collect();
+        if parts.len() != 2 {
+            continue;
+        }
+        match parts[0] {
+            "ARCH" => arch = parts[1].to_string(),
+            "BOARD" => board = parts[1].to_string(),
+            "BID" => bid = parts[1].to_string(),
+            "FEATURES" => features = parts[1].to_string(),
+            _ => {}
+        }
+    }
+    BuildEnv {
+        arch,
+        board,
+        bid,
+        features,
+    }
+}
+
 fn main() {
     // cleanup the log file
     let log_path = Path::new(BUILD_LOG_FILE);
@@ -20,10 +57,41 @@ fn main() {
         fs::remove_file(log_path).expect("Failed to remove log file");
     }
 
-    let arch = env::var("ARCH").expect("ARCH environment variable not set");
-    let board = env::var("BOARD").expect("BOARD environment variable not set");
-    let features = env::var("FEATURES").expect("FEATURES environment variable not set");
-    let rustc_target = env::var("RUSTC_TARGET").expect("RUSTC_TARGET environment variable not set");
+    let project_toml_root = env::var("CARGO_MANIFEST_DIR").unwrap();
+    // read the .config file at the project root
+    let config_path = format!("{}/.config", project_toml_root);
+    let mut build_env = parse_build_env(&config_path);
+
+    if !build_env.bid.is_empty() {
+        // BID=$ARCH/$BOARD, parse it
+        // update the build_env with the parsed values
+        let parts: Vec<&str> = build_env.bid.split('/').collect();
+        if parts.len() != 2 {
+            log(&format!("Invalid BID format: {}", build_env.bid));
+            panic!(
+                "Invalid BID format, please check the log file({}) for more details",
+                BUILD_LOG_FILE
+            );
+        }
+        build_env.arch = parts[0].to_string();
+        build_env.board = parts[1].to_string();
+    } else {
+        log(&format!(
+            "BID environment variable not found, using ARCH and BOARD"
+        ));
+        if build_env.arch.is_empty() || build_env.board.is_empty() {
+            log(&format!("ARCH or BOARD environment variable not found"));
+            panic!(
+                "ARCH or BOARD environment variable not found, please check the log file({}) for more details",
+                BUILD_LOG_FILE
+            );
+        }
+    }
+
+    let arch = build_env.arch;
+    let board = build_env.board;
+    let bid = build_env.bid;
+    let features = build_env.features;
 
     let pwd = env::current_dir().unwrap();
     log(&format!("Current directory: {}", pwd.display()));
@@ -34,8 +102,8 @@ fn main() {
     let source_path = Path::new(&source_path_str);
 
     log(&format!(
-        "Building for ARCH={} BOARD={}, FEATURES={}, RUSTC_TARGET={}",
-        arch, board, features, rustc_target
+        "Building for ARCH={} BOARD={}, BID={}, FEATURES={}",
+        arch, board, bid, features
     ));
 
     log(&format!(

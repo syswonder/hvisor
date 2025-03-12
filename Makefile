@@ -5,8 +5,7 @@ PORT ?= 2333
 MODE ?= debug
 BOARD ?= qemu-gicv3
 FEATURES=
-
-BID=
+BID ?=
 
 # if user uses `make ID=aarch64/qemu-gicv2`, we parse it into ARCH and BOARD
 ifeq ($(BID),)
@@ -44,6 +43,14 @@ endif
 
 OBJCOPY ?= rust-objcopy --binary-architecture=$(ARCH)
 
+export MODE
+export LOG
+export ARCH
+export BOARD
+export BID
+export RUSTC_TARGET
+export FEATURES
+
 # Build paths
 build_path := target/$(RUSTC_TARGET)/$(MODE)
 hvisor_elf := $(build_path)/hvisor
@@ -61,10 +68,6 @@ ifeq ($(MODE), release)
   build_args += --release
 endif
 
-$(info ARCH is "$(ARCH)")
-$(info BOARD is "$(BOARD)")
-$(info FEATURES is "$(FEATURES)")
-
 # color code
 COLOR_GREEN := $(shell tput setaf 2)
 COLOR_RED := $(shell tput setaf 1)
@@ -73,13 +76,6 @@ COLOR_BLUE := $(shell tput setaf 4)
 COLOR_BOLD := $(shell tput bold)
 COLOR_RESET := $(shell tput sgr0)
 
-export MODE
-export LOG
-export ARCH
-export BOARD
-export RUSTC_TARGET
-export FEATURES
-
 # Targets
 .PHONY: all elf disa run gdb monitor clean tools rootfs
 all: gen_cargo_config $(hvisor_bin)
@@ -87,6 +83,7 @@ all: gen_cargo_config $(hvisor_bin)
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)hvisor build summary:$(COLOR_RESET)\n"
 	@printf "%-10s %s\n" "ARCH            =" "$(COLOR_BOLD)$(ARCH)$(COLOR_RESET)"
 	@printf "%-10s %s\n" "BOARD           =" "$(COLOR_BOLD)$(BOARD)$(COLOR_RESET)"
+	@printf "%-10s %s\n" "BID             =" "$(COLOR_BOLD)$(BID)$(COLOR_RESET)"
 	@printf "%-10s %s\n" "LOG             =" "$(COLOR_BOLD)$(LOG)$(COLOR_RESET)"
 	@printf "%-10s %s\n" "FEATURES        =" "$(COLOR_BOLD)$(FEATURES)$(COLOR_RESET)"
 	@printf "%-10s %s\n" "RUSTC_TARGET    =" "$(COLOR_BOLD)$(RUSTC_TARGET)$(COLOR_RESET)"

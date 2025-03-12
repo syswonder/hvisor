@@ -39,19 +39,11 @@ jobs:
         include:
           # aarch64
           - arch: aarch64
+            board: "qemu-gicv3"
             rustc_target: aarch64-unknown-none
-            board: "qemu"
           - arch: aarch64
+            board: "qemu-gicv2"
             rustc_target: aarch64-unknown-none
-            board: "qemu"
-          # riscv64 will be supported in the future but not now,
-          # because our `make test` uses customized script to run tests, which need extra efforts to
-          # support riscv64
-
-          # - arch: riscv64
-          #   rustc_target: riscv64gc-unknown-none-elf
-          # - arch: riscv64
-          #   rustc_target: riscv64gc-unknown-none-elf
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -69,6 +61,7 @@ jobs:
       - name: Set up environment variables
         run: |
           echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+          echo "BOARD=${{ matrix.board }}" >> $GITHUB_ENV
       - name: Unit Test
         run: make test
 
@@ -83,28 +76,28 @@ jobs:
         include:
           # aarch64
           - arch: aarch64
+            board: "qemu-gicv3"
             rustc_target: aarch64-unknown-none
-            board: "qemu"
           - arch: aarch64
+            board: "qemu-gicv2"
             rustc_target: aarch64-unknown-none
-            board: "qemu"
           - arch: aarch64
-            rustc_target: aarch64-unknown-none
             board: "zcu102"
-          - arch: aarch64
             rustc_target: aarch64-unknown-none
-            board: "qemu"
+          - arch: aarch64
+            board: "imx8mp"
+            rustc_target: aarch64-unknown-none
           # riscv64
           - arch: riscv64
+            board: "qemu-aia"
             rustc_target: riscv64gc-unknown-none-elf
-            board: "qemu"
           - arch: riscv64
+            board: "qemu-plic"
             rustc_target: riscv64gc-unknown-none-elf
-            board: "qemu"
           # loongarch64
           - arch: loongarch64
+            board: "ls3a5000"
             rustc_target: loongarch64-unknown-none
-            board: "3a5000"
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4

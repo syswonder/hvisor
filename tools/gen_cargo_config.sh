@@ -47,3 +47,19 @@ TEMPLATE=$(echo "$TEMPLATE" | sed -e 's/__ARCH__/'"$ARCH"'/g')
 TEMPLATE=$(echo "$TEMPLATE" | sed -e 's/__BOARD__/'"$BOARD"'/g')
 
 echo "$TEMPLATE" >> $CONFIG_TOML
+
+# also generate a .config file in the HVISOR_SRC directory
+# contains something like:
+# ARCH=aarch64
+# BOARD=imx8mp
+# BID=aarch64/imx8mp
+# FEATURES=uart,mmio
+
+CONFIG_FILE="$HVISOR_SRC/.config"
+echo "ARCH=$ARCH" > $CONFIG_FILE
+echo "BOARD=$BOARD" >> $CONFIG_FILE
+echo "BID=$ARCH/$BOARD" >> $CONFIG_FILE
+echo "FEATURES=$FEATURES" >> $CONFIG_FILE
+echo "HVISOR_SRC=$HVISOR_SRC" >> $CONFIG_FILE
+echo "LD_SCRIPT=$LD_SCRIPT" >> $CONFIG_FILE
+echo "TEMPLATE=$CONFIG_TOML_TEMPLATE" >> $CONFIG_FILE
