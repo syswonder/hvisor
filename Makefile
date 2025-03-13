@@ -158,6 +158,11 @@ download-test-img:
 test: clean test-pre gen_cargo_config
 	cargo test $(build_args) -vv
 
+stest: clean test-pre gen_cargo_config
+	./platform/$(ARCH)/$(BOARD)/test/systemtest/tcompiledtb.sh
+	./platform/$(ARCH)/$(BOARD)/test/systemtest/tdownload_all.sh
+	./platform/$(ARCH)/$(BOARD)/test/systemtest/tstart.sh
+
 dtb:
 	@echo "Building device tree at platform/$(ARCH)/$(BOARD)/image/dts"
 	@if [ ! -d "platform/$(ARCH)/$(BOARD)/image/dts" ]; then echo "ERROR: dts directory not found"; exit 1; fi

@@ -14,10 +14,10 @@ ZIP_PARTS=(
   "rootfs1.zip.003"
 )
 ZIP_OUTPUT="rootfs1.zip"
-UNZIP_DIR="images/aarch64/virtdisk"          # Extraction directory
-
+UNZIP_DIR="platform/aarch64/qemu-gicv3/image/virtdisk"          # Extraction directory
+``
 # Independent image configuration
-TARGET_DIR="images/aarch64/kernel"   # Target directory path
+TARGET_DIR="platform/aarch64/qemu-gicv3/image/kernel"   # Target directory path
 IMAGE_FILE="${TARGET_DIR}/Image"     # Full image file path
 IMAGE_URL="$BASE_URL/Image"
 
@@ -79,7 +79,7 @@ download_file() {
 main() {
   check_dependencies
 
-  # Check if final files exist
+  # Check if final files exist # TODO: check the files, not the directory - wheatfox
   if [ -d "$UNZIP_DIR" ] && [ -f "$IMAGE_FILE" ]; then
     echo -e "${GREEN}All files already exist:\n- Image file: $IMAGE_FILE\n- Extracted directory: $UNZIP_DIR${NC}"
     exit 0

@@ -2,24 +2,28 @@
 
 # set -x
 # Define two arrays to store filenames from two lists
+
+TESTCASE_DIR="./platform/aarch64/qemu-gicv3/test/systemtest/testcase"
+TESTRESULT_DIR="./platform/aarch64/qemu-gicv3/test/systemtest/testresult"
+
 testcase_file_list=(
-    ./test/testcase/tc_ls.txt
-    ./test/testcase/tc_pwd.txt
-    ./test/testcase/tc_insmod.txt
-    # ./test/testcase/tc_zone1_start.txt
-    ./test/testcase/tc_zone1_ls.txt
-    ./test/testcase/tc_zone_list2.txt
-    # ./test/testcase/tc_zone_list1.txt
+    $TESTCASE_DIR/tc_ls.txt
+    $TESTCASE_DIR/tc_pwd.txt
+    $TESTCASE_DIR/tc_insmod.txt
+    # $TESTCASE_DIR/tc_zone1_start.txt
+    $TESTCASE_DIR/tc_zone1_ls.txt
+    $TESTCASE_DIR/tc_zone_list2.txt
+    # $TESTCASE_DIR/tc_zone_list1.txt
 )
 
 testresult_file_list=(
-    ./test/testresult/test_ls.txt
-    ./test/testresult/test_pwd.txt
-    ./test/testresult/test_insmod.txt
-    # ./test/testresult/test_zone1_start.txt
-    ./test/testresult/test_zone1_ls.txt
-    ./test/testresult/test_zone_list2.txt
-    # ./test/testresult/test_zone_list1.txt
+    $TESTRESULT_DIR/test_ls.txt
+    $TESTRESULT_DIR/test_pwd.txt
+    $TESTRESULT_DIR/test_insmod.txt
+    # $TESTRESULT_DIR/test_zone1_start.txt
+    $TESTRESULT_DIR/test_zone1_ls.txt
+    $TESTRESULT_DIR/test_zone_list2.txt
+    # $TESTRESULT_DIR/test_zone_list1.txt
 )
 
 testcase_name_list=(
@@ -56,15 +60,15 @@ for ((i = 0; i < testcase_file_list_len; i++)); do
 
     # Output the result based on the exit status
     if [ "$exit_status" -eq 0 ]; then
-        echo "$testcase_name $testresult_file PASS" >> ./test/result.txt
+        echo "$testcase_name $testresult_file PASS" >> ./result.txt
     else
         fail_count=$((fail_count+1))  # Increment fail_count
-        echo "$testcase_name $testresult_file FAIL" >> ./test/result.txt
+        echo "$testcase_name $testresult_file FAIL" >> ./result.txt
     fi
 done
 
 
-cat ./test/result.txt
+cat ./result.txt
 # Format the output file content
 printf "\n%-17s | %-40s | %s\n" "test name" "test result file" "result"
 # Read the file content
@@ -78,12 +82,12 @@ while IFS= read -r line; do
         # Format the output
         printf "%-17s | %-40s | %s\n" "$testname" "$testcase" "$result"
     fi
-done < "./test/result.txt"
+done < "./result.txt"
 printf "\n"
 
 # Delete the generated files
-rm -v ./test/testresult/test_*.txt
-rm -v ./test/result.txt
+rm -v $TESTRESULT_DIR/test_*.txt
+rm -v ./result.txt
 
 # Check if failcount is greater than 0
 if [ "$fail_count" -gt 0 ]; then

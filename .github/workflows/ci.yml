@@ -130,7 +130,7 @@ jobs:
 
   # this job is for booting root and nonroot inside qemu for system test
   systemtest:
-    if: false # we need to update corresponding scripts for the new board abstraction
+    # if: false # we need to update corresponding scripts for the new board abstraction
     name: systemtest
     runs-on: ubuntu-latest
     strategy:
@@ -160,12 +160,5 @@ jobs:
         run: |
           echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
           echo "BOARD=${{ matrix.board }}" >> $GITHUB_ENV
-      - name: Compile DTB
-        run: |
-          ./test/tcompiledtb.sh
-      - name: Download rootfs and image
-        run: |
-          ./test/tdownload_all.sh
-      - name: Run Tests
-        run: |
-          ./test/tstart.sh
+      - name: Run System Test
+        run: make stest
