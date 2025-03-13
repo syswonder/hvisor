@@ -29,7 +29,7 @@ ROOT_LINUX_IMAGE = $(PETALINUX_PROJECT_PATH)/images/linux/vmlinux
 ROOT_LINUX_IMAGE_BIN = $(ROOT_LINUX_IMAGE).bin
 ROOT_LINUX_ROOTFS = $(PETALINUX_PROJECT_PATH)/images/linux/rootfs.cpio.gz.u-boot
 # ROOT_LINUX_DTB = $(PETALINUX_PROJECT_PATH)/images/linux/system.dtb
-ROOT_LINUX_DTB = $(shell readlink -f ./images/aarch64/devicetree/zcu102-root-aarch64.dtb)
+ROOT_LINUX_DTB = $(shell readlink -f $(image_dir)/dts/zone0.dtb)
 ROOT_LINUX_SD_IMG = $(shell readlink -f ./sd.img)
 
 # notes on uboot FIT:
@@ -64,12 +64,12 @@ GCC_OBJCOPY = aarch64-linux-gnu-objcopy
 
 .PHONY: dtb
 dtb:
-	make -C ./images/aarch64/devicetree
+	make -C $(image_dir)/dts
 
 .PHONY: gen-fit
 gen-fit: $(hvisor_bin) dtb
-	@if [ ! -f scripts/zcu102-aarch64-fit.its ]; then \
-		echo "Error: ITS file scripts/zcu102-aarch64-fit.its not found."; \
+	@if [ ! -f $(image_dir)/its/fitImage.its ]; then \
+		echo "Error: ITS file not found at $(image_dir)/its/fitImage.its"; \
 		exit 1; \
 	fi
 	$(OBJCOPY) $(hvisor_elf) --strip-all -O binary $(HVISOR_TMP_PATH)
@@ -80,8 +80,8 @@ gen-fit: $(hvisor_bin) dtb
 		-e "s|__ROOT_LINUX_ROOTFS__|$(ROOT_LINUX_ROOTFS)|g" \
 		-e "s|__ROOT_LINUX_DTB__|$(ROOT_LINUX_DTB)|g" \
 		-e "s|__HVISOR_TMP_PATH__|$(HVISOR_TMP_PATH)|g" \
-		scripts/zcu102-aarch64-fit.its > temp-fit.its
-	@mkimage -f temp-fit.its $(TARGET_FIT_IMAGE)
+		$(image_dir)/its/fitImage.its > temp-fit.its
+	mkimage -f temp-fit.its $(TARGET_FIT_IMAGE)
 	@echo "Generated FIT image: $(TARGET_FIT_IMAGE)"
 
 # "pl" is short for "petalinux"
