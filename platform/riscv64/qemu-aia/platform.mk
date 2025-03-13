@@ -6,11 +6,11 @@ FSIMG2 := $(image_dir)/virtdisk/rootfs-busybox.qcow2
 # HVISOR ENTRY
 HVISOR_ENTRY_PA := 0x80200000
 zone0_kernel := $(image_dir)/kernel/Image
-zone0_dtb    := $(image_dir)/devicetree/linux1.dtb
+zone0_dtb    := $(image_dir)/dts/zone0.dtb
 # zone1_kernel := $(image_dir)/kernel/Image
 # zone1_dtb    := $(image_dir)/devicetree/linux.dtb
 
-QEMU_ARGS := -machine virt
+QEMU_ARGS := -machine virt,aia=aplic-imsic,aia-guests=1
 QEMU_ARGS += -bios default
 QEMU_ARGS += -cpu rv64
 QEMU_ARGS += -smp 4
