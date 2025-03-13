@@ -158,6 +158,11 @@ download-test-img:
 test: clean test-pre gen_cargo_config
 	cargo test $(build_args) -vv
 
+dtb:
+	@echo "Building device tree at platform/$(ARCH)/$(BOARD)/image/dts"
+	@if [ ! -d "platform/$(ARCH)/$(BOARD)/image/dts" ]; then echo "ERROR: dts directory not found"; exit 1; fi
+	make -C platform/$(ARCH)/$(BOARD)/image/dts
+
 clean:
 	cargo clean
 

@@ -1,7 +1,7 @@
 QEMU := qemu-system-aarch64
 
 UBOOT := $(image_dir)/bootloader/u-boot-atf.bin
-zone0_dtb := $(image_dir)/devicetree/linux1.dtb
+zone0_dtb := $(image_dir)/dts/zone0.dtb
 QEMU_ARGS := -machine virt,secure=on,gic-version=3,virtualization=on,iommu=smmuv3
 MESSAGE := "Note: Feature contains gicv3"
 
