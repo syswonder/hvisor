@@ -4,7 +4,7 @@
 
 ## CURRENT-hvisor v0.1.1
 
-- 
+- [platform] seperate board definitions into `platform` folder with re-designed cargo feature system for hvisor ([wheatfox](https://github.com/enkerewpo))
 
 ## History Release
 
