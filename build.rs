@@ -129,6 +129,7 @@ fn main() {
 
     println!("cargo:rerun-if-env-changed=ARCH");
     println!("cargo:rerun-if-env-changed=BOARD");
+    println!("cargo:rerun-if-env-changed=BID");
     println!("cargo:rerun-if-env-changed=FEATURES");
     println!("cargo:rerun-if-changed={}", source_path_str);
     println!("cargo:rerun-if-changed={}", target_path_str);
