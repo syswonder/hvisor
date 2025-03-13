@@ -16,9 +16,6 @@ use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
 use crate::percpu::{get_cpu_data, this_zone, CpuSet};
 use core::panic;
 
-#[cfg(test)]
-pub mod tests;
-
 pub struct Zone {
     pub name: [u8; CONFIG_NAME_MAXLEN],
     pub id: usize,
@@ -187,7 +184,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     zone.irq_bitmap_init(config.interrupts());
     #[cfg(target_arch = "aarch64")]
     zone.ivc_init(config.ivc_config());
-    #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
+    #[cfg(all(feature = "pci", target_arch = "aarch64"))]
     zone.pci_init(
         &config.pci_config,
         config.num_pci_devs as _,
@@ -234,4 +231,19 @@ pub struct ZoneInfo {
     zone_id: u32,
     cpus: u64,
     name: [u8; CONFIG_NAME_MAXLEN],
+}
+
+#[test_case]
+fn test_add_and_remove_zone() {
+    let zone_count = 50;
+    let zone_count_before = ZONE_LIST.read().len();
+    for i in 0..zone_count {
+        let u8name_array = [i as u8; CONFIG_NAME_MAXLEN];
+        let zone = Zone::new(i, &u8name_array);
+        ZONE_LIST.write().push(Arc::new(RwLock::new(zone)));
+    }
+    for i in 0..zone_count {
+        remove_zone(i);
+    }
+    assert_eq!(ZONE_LIST.read().len(), zone_count_before);
 }

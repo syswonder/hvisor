@@ -1,0 +1,126 @@
+/dts-v1/;
+
+/ {
+	compatible = "xlnx,zynqmp-zcu102-revB\0xlnx,zynqmp-zcu102\0xlnx,zynqmp";
+	#address-cells = <0x02>;
+	#size-cells = <0x02>;
+	model = "ZynqMP ZCU102 RevB";
+
+    cpus {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+
+		cpu@2 {
+			compatible = "arm,cortex-a53";
+			device_type = "cpu";
+			enable-method = "psci";
+			reg = <0x02>;
+			operating-points-v2 = <0x01>;
+			cpu-idle-states = <0x02>;
+			next-level-cache = <0x03>;
+			phandle = <0x08>;
+		};
+
+		cpu@3 {
+			compatible = "arm,cortex-a53";
+			device_type = "cpu";
+			enable-method = "psci";
+			reg = <0x03>;
+			operating-points-v2 = <0x01>;
+			cpu-idle-states = <0x02>;
+			next-level-cache = <0x03>;
+			phandle = <0x09>;
+		};
+
+		l2-cache {
+			compatible = "cache";
+			cache-level = <0x02>;
+			phandle = <0x03>;
+		};
+
+		idle-states {
+			entry-method = "psci";
+
+			cpu-sleep-0 {
+				compatible = "arm,idle-state";
+				arm,psci-suspend-param = <0x40000000>;
+				local-timer-stop;
+				entry-latency-us = <0x12c>;
+				exit-latency-us = <0x258>;
+				min-residency-us = <0x2710>;
+				phandle = <0x02>;
+			};
+		};
+	};
+
+	pmu {
+		compatible = "arm,armv8-pmuv3";
+		interrupt-parent = <0x05>;
+		interrupts = <0x00 0x8f 0x04 0x00 0x90 0x04 0x00 0x91 0x04 0x00 0x92 0x04>;
+		interrupt-affinity = <0x06 0x07 0x08 0x09>;
+	};
+
+	psci {
+		compatible = "arm,psci-0.2";
+		method = "smc";
+	};
+
+    memory@0 {
+		device_type = "memory";
+		reg = <0x00 0x50000000 0x00 0x25000000>;
+	};
+
+    timer {
+		compatible = "arm,armv8-timer";
+		interrupt-parent = <0x05>;
+		interrupts = <0x01 0x0d 0xf08 0x01 0x0e 0xf08 0x01 0x0b 0xf08 0x01 0x0a 0xf08>;
+	};
+
+    axi {
+		compatible = "simple-bus";
+		bootph-all;
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+		phandle = <0x58>;
+
+		interrupt-controller@f9010000 {
+			compatible = "arm,gic-400";
+			#interrupt-cells = <0x03>;
+			reg = <0x00 0xf9010000 0x00 0x10000 0x00 0xf9020000 0x00 0x20000 0x00 0xf9040000 0x00 0x20000 0x00 0xf9060000 0x00 0x20000>;
+			interrupt-controller;
+			interrupt-parent = <0x05>;
+			interrupts = <0x01 0x09 0xf04>;
+			num_cpus = <0x02>;
+			num_interrupts = <0x60>;
+			phandle = <0x05>;
+		};
+    };
+
+
+    aliases {
+	};
+
+	// virtio blk
+	virtio_mmio@ff9d0000 {
+		dma-coherent;
+		interrupt-parent = <0x05>;
+		interrupts = <0x0 0x2e 0x1>;
+		reg = <0x0 0xff9d0000 0x0 0x200>;
+		compatible = "virtio,mmio";
+	};
+
+	// virtio serial
+	virtio_mmio@ff9e0000 {
+		dma-coherent;
+		interrupt-parent = <0x05>;
+		interrupts = <0x0 0x2c 0x1>;
+		reg = <0x0 0xff9e0000 0x0 0x200>;
+		compatible = "virtio,mmio";
+	};
+
+    chosen {
+		bootargs = "earlycon=virtio,mmio,0xff9e0000 console=hvc0 root=/dev/vda rootwait rw";
+		stdout-path = "/virtio_mmio@0xff9e0000";
+	};
+};

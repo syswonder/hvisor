@@ -23,7 +23,7 @@ use super::{
     NUM_BAR_REGS_TYPE1, PHANTOM_DEV_HEADER,
 };
 
-#[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
+#[cfg(all(feature = "iommu", target_arch = "aarch64"))]
 use crate::arch::iommu::iommu_add_device;
 
 #[derive(Debug)]
@@ -138,7 +138,7 @@ impl Zone {
                 self.id, alloc_pci_devs[idx]
             );
             self.pciroot.alloc_devs.push(alloc_pci_devs[idx] as _);
-            #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
+            #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
             if alloc_pci_devs[idx] != 0 {
                 iommu_add_device(self.id, alloc_pci_devs[idx] as _);
             }

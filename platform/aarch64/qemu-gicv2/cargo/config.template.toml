@@ -1,0 +1,7 @@
+[target.aarch64-unknown-none]
+runner = "platform/__ARCH__/__BOARD__/test/runner.sh"
+rustflags = [
+    "-Clink-arg=-Tplatform/__ARCH__/__BOARD__/linker.ld",
+    "-Ctarget-feature=+a53,+v8a,+strict-align,-neon,-fp-armv8",
+    "-Cforce-frame-pointers=yes",
+]

@@ -8,7 +8,7 @@ use crate::device::irqchip::aia::aplic::{host_aplic, vaplic_emul_handler};
 use crate::device::irqchip::plic::{host_plic, vplic_global_emul_handler, vplic_hart_emul_handler};
 use crate::event::check_events;
 use crate::memory::{GuestPhysAddr, HostPhysAddr};
-use crate::platform::qemu_riscv64::*;
+use crate::platform::__board::*;
 use core::arch::{asm, global_asm};
 use riscv::register::mtvec::TrapMode;
 use riscv::register::stvec;
