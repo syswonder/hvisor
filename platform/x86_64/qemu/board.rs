@@ -4,6 +4,8 @@ use crate::{
     memory::{GuestPhysAddr, HostPhysAddr},
 };
 
+pub const BOARD_NAME: &str = "qemu";
+
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x00000000;
 pub const ROOT_ZONE_ENTRY: u64 = 0x8000; // 0x10_0000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x500_0000; // 0x500_0000;

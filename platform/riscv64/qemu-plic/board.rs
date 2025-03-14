@@ -1,6 +1,6 @@
 use crate::{arch::zone::HvArchZoneConfig, config::*};
 
-pub const BOARD_NAME: &str = "qemu";
+pub const BOARD_NAME: &str = "qem-plic";
 
 pub const PLIC_BASE: usize = 0xc000000;
 pub const APLIC_BASE: usize = 0xc000000;
