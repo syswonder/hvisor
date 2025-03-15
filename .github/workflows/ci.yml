@@ -15,7 +15,6 @@ on:
 env:
   MODE: debug
 jobs:
-
   linter:
     name: linter
     runs-on: ubuntu-latest
@@ -25,7 +24,14 @@ jobs:
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          components: rustfmt
+          targets: aarch64-unknown-none
+          components: rust-src rustfmt
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget
+          cargo install --version 0.3.0 cargo-binutils
+          cargo install cargo-xbuild
       - name: Format Check
         run: make fmt-test
 
@@ -39,23 +45,11 @@ jobs:
         include:
           # aarch64
           - arch: aarch64
+            board: "qemu-gicv3"
             rustc_target: aarch64-unknown-none
-            features: "platform_qemu,gicv3"
-            board: "qemu"
           - arch: aarch64
+            board: "qemu-gicv2"
             rustc_target: aarch64-unknown-none
-            features: "platform_qemu,gicv2"
-            board: "qemu"
-          # riscv64 will be supported in the future but not now,
-          # because our `make test` uses customized script to run tests, which need extra efforts to
-          # support riscv64
-
-          # - arch: riscv64
-          #   rustc_target: riscv64gc-unknown-none-elf
-          #   features: "platform_qemu,plic"
-          # - arch: riscv64
-          #   rustc_target: riscv64gc-unknown-none-elf
-          #   features: "platform_qemu,aia"
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -73,11 +67,11 @@ jobs:
       - name: Set up environment variables
         run: |
           echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
-          echo "FEATURES=${{ matrix.features }}" >> $GITHUB_ENV
+          echo "BOARD=${{ matrix.board }}" >> $GITHUB_ENV
       - name: Unit Test
         run: make test
 
-  # this job is for compilation test, it will make sure all aaarch64, riscv64, loongarch64 can be compiled successfully
+  # this job is for compilation test, it will make sure all aarch64, riscv64, loongarch64 can be compiled successfully
   # there is no actual running in this job
   build:
     name: build
@@ -88,35 +82,28 @@ jobs:
         include:
           # aarch64
           - arch: aarch64
+            board: "qemu-gicv3"
             rustc_target: aarch64-unknown-none
-            features: "platform_qemu,gicv3"
-            board: "qemu"
           - arch: aarch64
+            board: "qemu-gicv2"
             rustc_target: aarch64-unknown-none
-            features: "platform_qemu,gicv2"
-            board: "qemu"
           - arch: aarch64
-            rustc_target: aarch64-unknown-none
-            features: "platform_zcu102,gicv2"
             board: "zcu102"
-          - arch: aarch64
             rustc_target: aarch64-unknown-none
-            features: "platform_imx8mp,gicv3"
-            board: "qemu"
+          - arch: aarch64
+            board: "imx8mp"
+            rustc_target: aarch64-unknown-none
           # riscv64
           - arch: riscv64
+            board: "qemu-aia"
             rustc_target: riscv64gc-unknown-none-elf
-            features: "platform_qemu,plic"
-            board: "qemu"
           - arch: riscv64
+            board: "qemu-plic"
             rustc_target: riscv64gc-unknown-none-elf
-            features: "platform_qemu,aia"
-            board: "qemu"
           # loongarch64
           - arch: loongarch64
+            board: "ls3a5000"
             rustc_target: loongarch64-unknown-none
-            features: ""
-            board: "3a5000"
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -137,12 +124,41 @@ jobs:
       - name: Set up environment variables
         run: |
           echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
-          echo "FEATURES=${{ matrix.features }}" >> $GITHUB_ENV
           echo "BOARD=${{ matrix.board }}" >> $GITHUB_ENV
       - name: Build
         run: make
 
   # this job is for booting root and nonroot inside qemu for system test
-  # curently waiting for another person to add his system test here
-  # systemtest:
-  #   ...
+  systemtest:
+    # if: false # we need to update corresponding scripts for the new board abstraction
+    name: systemtest
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # aarch64
+          - arch: aarch64
+            rustc_target: aarch64-unknown-none
+            board: "qemu-gicv3"
+          # Because other features need to be customized scripts
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.rustc_target }}
+          components: rust-src
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget expect device-tree-compiler p7zip-full
+          cargo install --version 0.3.0 cargo-binutils
+          cargo install cargo-xbuild
+      - name: Set up environment variables
+        run: |
+          echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
+          echo "BOARD=${{ matrix.board }}" >> $GITHUB_ENV
+      - name: Run System Test
+        run: make stest

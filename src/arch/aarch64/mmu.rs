@@ -144,7 +144,7 @@ pub extern "C" fn boot_pt_init(l0_pt: &mut PageTables, l1_pt: &mut PageTables) {
         memset(l1_pt_entry as *mut u8, 0, PAGE_SIZE);
     }
     cfg_if! {
-        if #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))] {
+        if #[cfg(feature = "pt_layout_qemu")] {
             l0_pt.entry[0] = PTEDescriptor::new(0x0, MemoryType::Device, PTEType::Block);
             for i in 1..ENTRY_PER_PAGE {
                 l0_pt.entry[i] = PTEDescriptor::new(0x40000000*i, MemoryType::Normal, PTEType::Block);

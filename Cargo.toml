@@ -32,22 +32,38 @@ riscv-decode = "0.2.1"
 [target.'cfg(target_arch = "loongarch64")'.dependencies]
 loongArch64 = "0.2.4"
 
+[target.'cfg(target_arch = "x86_64")'.dependencies]
+x86 = "0.52.0"
+x86_64 = "=0.14.10"
+x2apic = "0.4.3"
+raw-cpuid = "10.7.0"
+
 [features]
-platform_qemu = []
-platform_imx8mp = []
-platform_zcu102 = []
-gicv3 = []
+############# aarch64 ##############
+# irqchip driver
 gicv2 = []
+gicv3 = []
+# uart driver
+pl011 = []
+xuartps = []
+imx_uart = []
+# functionality
+iommu = []
+pci = []
+# pagetable layout
+pt_layout_qemu = []
+############## riscv64 #############
+# irqchip driver
 plic = []
 aia = []
+########### loongarch64 ############
+# irqchip driver
+loongson_7a2000 = []
+# uart driver
+loongson_uart = []
+
 
 [profile.dev]
-# panic = "abort" # avoid test compiler erros(still a bug for rust)
+# panic = "abort" # avoid cargo test failure, this is a bug of cargo
 debug = 2
-
-[profile.release]
 # panic = "abort"
-
-[unstable]
-build-std-features = ["compiler-builtins-mem"]
-build-std = ["core", "compiler_builtins"]

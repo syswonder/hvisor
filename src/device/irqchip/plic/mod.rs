@@ -1,6 +1,6 @@
 use crate::config::root_zone_config;
 use crate::memory::GuestPhysAddr;
-use crate::platform::qemu_riscv64::*;
+use crate::platform::__board::*;
 use crate::zone::Zone;
 use crate::{arch::cpu::ArchCpu, percpu::this_cpu_data};
 use riscv::register::hvip;

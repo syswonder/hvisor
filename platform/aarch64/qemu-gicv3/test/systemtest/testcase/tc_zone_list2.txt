@@ -1,0 +1,3 @@
+|     zone_id     |       cpus        |      name       |
+|               0 |              0, 1 |      root-linux |
+|               1 |              2, 3 |          linux2 |

@@ -1,0 +1,46 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+* Copyright (C) 2023 Loongson Technology Corporation Limited
+* Modified for hvisor by wheatfox(enkerewpo@hotmail.com) syswonder.org 2024
+*/
+
+/dts-v1/;
+
+#include "loongson-3a5000.dtsi"
+
+/ {
+	compatible = "loongson,ls3a5000-root", "loongson,ls3a5000";
+	model = "Loongson-3A5000 hvisor nonroot zone board";
+	
+	aliases {
+		serial0 = &uart0;
+	};
+	
+	chosen {
+		// stdout-path = "serial0:115200n8";
+		bootargs = "earlycon console=ttyS0,115200n8 initramfs_async=false rootwait debug";
+		// stdout-path = "/virtio_mmio@30001000";
+		// bootargs = "earlycon console=hvc0 rootwait debug";
+	};
+	
+	memory@200000 {
+		device_type = "memory";
+		reg = <0 0x00200000 0 0x0ee00000
+		0 0x90000000 0 0x10000000
+		>;
+	};
+	
+	// virtio console
+	virtio_mmio@30001000 {
+		dma-coherent;
+		compatible = "virtio,mmio";
+		interrupt-parent = <&cpuintc>;
+		interrupts = <4>;// = hwirq
+		reg = <0x0 0x30001000 0x0 0x200>;
+		status = "okay";
+	};
+};
+
+&uart0 {
+	status = "okay";
+};
