@@ -26,7 +26,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x83000000,
         virtual_start: 0x83000000,
-        size: 0x1D000000,
+        size: 0x7D000000,
     }, // ram
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,

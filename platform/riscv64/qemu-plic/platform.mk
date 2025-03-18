@@ -14,7 +14,7 @@ QEMU_ARGS := -machine virt,aclint=on
 QEMU_ARGS += -bios default
 QEMU_ARGS += -cpu rv64
 QEMU_ARGS += -smp 4
-QEMU_ARGS += -m 2G
+QEMU_ARGS += -m 4G
 QEMU_ARGS += -nographic
 
 QEMU_ARGS += -kernel $(hvisor_bin)
