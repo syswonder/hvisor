@@ -1,25 +1,32 @@
 use crate::{
     arch::{
-        apic::{busy_wait, local_apic},
         boot::BootParams,
         gdt::{get_tr_base, GdtStruct},
-        msr::{Msr, Msr::*, MsrBitmap},
+        ipi,
+        msr::{
+            Msr::{self, *},
+            MsrBitmap,
+        },
         vmcs::*,
         vmx::*,
     },
-    consts::{core_end, PER_CPU_SIZE},
-    device::irqchip::pic::lapic::VirtApicTimer,
+    consts::{core_end, MAX_CPU_NUM, PER_CPU_SIZE},
+    device::irqchip::pic::{
+        check_pending_vectors, hpet,
+        lapic::{VirtLocalApic, VirtLocalApicTimer},
+    },
     error::{HvError, HvResult},
     memory::{addr::phys_to_virt, GuestPhysAddr, HostPhysAddr, PhysAddr, PAGE_SIZE},
     percpu::this_cpu_data,
     platform::qemu_x86_64::*,
 };
-use alloc::{boxed::Box, collections::vec_deque::VecDeque};
+use alloc::boxed::Box;
 use core::{
     arch::{asm, global_asm},
     fmt::{Debug, Formatter, Result},
     mem::size_of,
     ptr::copy_nonoverlapping,
+    sync::atomic::{AtomicU32, Ordering},
     time::Duration,
 };
 use raw_cpuid::CpuId;
@@ -36,6 +43,8 @@ use x86_64::{
 
 const AP_START_PAGE_IDX: u8 = 6;
 const AP_START_PAGE_PADDR: PhysAddr = AP_START_PAGE_IDX as usize * PAGE_SIZE;
+
+static VM_LAUNCH_READY: AtomicU32 = AtomicU32::new(0);
 
 global_asm!(
     include_str!("ap_start.S"),
@@ -108,13 +117,13 @@ unsafe fn setup_ap_start_page(cpuid: usize) {
 pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
     unsafe { setup_ap_start_page(cpuid) };
 
-    let lapic = local_apic();
+    let lapic = VirtLocalApic::phys_local_apic();
 
     // Intel SDM Vol 3C, Section 8.4.4, MP Initialization Example
     unsafe { lapic.send_init_ipi(cpuid as u32) };
-    busy_wait(Duration::from_millis(10)); // 10ms
+    hpet::busy_wait(Duration::from_millis(10)); // 10ms
     unsafe { lapic.send_sipi(AP_START_PAGE_IDX, cpuid as u32) };
-    busy_wait(Duration::from_micros(200)); // 200us
+    hpet::busy_wait(Duration::from_micros(200)); // 200us
     unsafe { lapic.send_sipi(AP_START_PAGE_IDX, cpuid as u32) };
 }
 
@@ -148,12 +157,11 @@ pub struct ArchCpu {
     pub cpuid: usize,
     pub power_on: bool,
     pub gdt: GdtStruct,
+    pub virt_lapic: VirtLocalApic,
     vmcs_revision_id: u32,
     vmxon_region: VmxRegion,
     vmcs_region: VmxRegion,
     msr_bitmap: MsrBitmap,
-    apic_timer: VirtApicTimer,
-    pending_events: VecDeque<(u8, Option<u32>)>,
 }
 
 impl ArchCpu {
@@ -161,28 +169,22 @@ impl ArchCpu {
         let boxed = Box::new(TaskStateSegment::new());
         let tss = Box::leak(boxed);
         Self {
+            guest_regs: GeneralRegisters::default(),
+            host_stack_top: 0,
             cpuid,
             power_on: false,
             gdt: GdtStruct::new(tss),
+            virt_lapic: VirtLocalApic::new(),
             vmcs_revision_id: 0,
             vmxon_region: VmxRegion::uninit(),
             vmcs_region: VmxRegion::uninit(),
-            guest_regs: GeneralRegisters::default(),
-            host_stack_top: 0,
             msr_bitmap: MsrBitmap::uninit(),
-            apic_timer: VirtApicTimer::new(),
-            pending_events: VecDeque::with_capacity(8),
         }
     }
 
     /// Advance guest `RIP` by `instr_len` bytes.
     pub fn advance_guest_rip(&mut self, instr_len: u8) -> HvResult {
         Ok(VmcsGuestNW::RIP.write(VmcsGuestNW::RIP.read()? + instr_len as usize)?)
-    }
-
-    /// Returns the mutable reference of [`VirtApicTimer`].
-    pub fn apic_timer_mut(&mut self) -> &mut VirtApicTimer {
-        &mut self.apic_timer
     }
 
     pub fn cr(&self, cr_idx: usize) -> usize {
@@ -201,14 +203,11 @@ impl ArchCpu {
 
     pub fn idle(&mut self) -> ! {
         assert!(this_cpu_id() == self.cpuid);
-        // unsafe { self.reset(0, this_cpu_data().dtb_ipa) };
-        loop {}
-    }
 
-    /// Add a virtual interrupt or exception to the pending events list,
-    /// and try to inject it before later VM entries.
-    pub fn inject_interrupt(&mut self, vector: u8, err_code: Option<u32>) {
-        self.pending_events.push_back((vector, err_code));
+        self.activate_vmx().unwrap();
+        VM_LAUNCH_READY.fetch_add(1, Ordering::SeqCst);
+
+        loop {}
     }
 
     /// Guest general-purpose registers.
@@ -221,79 +220,52 @@ impl ArchCpu {
         &mut self.guest_regs
     }
 
-    pub fn reset(&mut self, entry: GuestPhysAddr) -> HvResult {
-        self.activate_vmx()?;
-        self.setup_vmcs(entry)?;
-        Ok(())
-    }
-
     pub fn run(&mut self) -> ! {
         assert!(this_cpu_id() == self.cpuid);
 
-        // this_cpu_data().cpu_on_entry
-        self.reset(this_cpu_data().cpu_on_entry).unwrap();
+        let mut per_cpu = this_cpu_data();
 
-        self.setup_boot_params().unwrap();
-        this_cpu_data().activate_gpm();
+        if per_cpu.boot_cpu {
+            // only bsp does this
+            self.activate_vmx().unwrap();
+            self.setup_boot_params().unwrap();
+        } else {
+            // ap start up never returns to irq handler
+            unsafe { self.virt_lapic.phys_lapic.end_of_interrupt() };
+            if let Some(ipi_info) = ipi::get_ipi_info(self.cpuid) {
+                per_cpu.cpu_on_entry = ipi_info.lock().start_up_addr;
+            }
+            // VmcsGuestNW::RIP.write(per_cpu.cpu_on_entry).unwrap();
+            // info!("AP start up! addr: {:x}", per_cpu.cpu_on_entry);
+        }
+
+        self.setup_vmcs(per_cpu.cpu_on_entry, per_cpu.boot_cpu)
+            .unwrap();
+        per_cpu.activate_gpm();
+
+        while VM_LAUNCH_READY.load(Ordering::Acquire) < MAX_CPU_NUM as u32 - 1 {
+            core::hint::spin_loop();
+        }
 
         unsafe { self.vmx_launch() };
         loop {}
     }
 
-    /// If enable, a VM exit occurs at the beginning of any instruction if
-    /// `RFLAGS.IF` = 1 and there are no other blocking of interrupts.
-    /// (see SDM, Vol. 3C, Section 24.4.2)
-    pub fn set_interrupt_window(&mut self, enable: bool) -> HvResult {
-        let mut ctrl: u32 = VmcsControl32::PRIMARY_PROCBASED_EXEC_CONTROLS.read()?;
-        let bits = PrimaryControls::INTERRUPT_WINDOW_EXITING.bits();
-        if enable {
-            ctrl |= bits
-        } else {
-            ctrl &= !bits
-        }
-        VmcsControl32::PRIMARY_PROCBASED_EXEC_CONTROLS.write(ctrl)?;
-        Ok(())
-    }
-
     fn activate_vmx(&mut self) -> HvResult {
         assert!(check_vmx_support());
-        assert!(!is_vmx_enabled());
+        // assert!(!is_vmx_enabled());
 
         // enable VMXON
-        unsafe { enable_vmxon()? };
+        unsafe { enable_vmxon().unwrap() };
 
         // TODO: check related registers
 
         // get VMCS revision identifier in IA32_VMX_BASIC MSR
         self.vmcs_revision_id = get_vmcs_revision_id();
-        self.vmxon_region = VmxRegion::new(self.vmcs_revision_id, false)?;
+        self.vmxon_region = VmxRegion::new(self.vmcs_revision_id, false).unwrap();
 
-        unsafe { execute_vmxon(self.vmxon_region.start_paddr() as u64)? };
+        unsafe { execute_vmxon(self.vmxon_region.start_paddr() as u64).unwrap() };
 
-        Ok(())
-    }
-
-    /// Whether the guest interrupts are blocked. (SDM Vol. 3C, Section 24.4.2, Table 24-3)
-    fn allow_interrupt(&self) -> bool {
-        let rflags = VmcsGuestNW::RFLAGS.read().unwrap();
-        let block_state = VmcsGuest32::INTERRUPTIBILITY_STATE.read().unwrap();
-        rflags as u64 & x86_64::registers::rflags::RFlags::INTERRUPT_FLAG.bits() != 0
-            && block_state == 0
-    }
-
-    /// Try to inject a pending event before next VM entry.
-    fn check_pending_events(&mut self) -> HvResult {
-        if let Some(event) = self.pending_events.front() {
-            let allow_interrupt = self.allow_interrupt();
-            if event.0 < 32 || allow_interrupt {
-                // if it's an exception, or an interrupt that is not blocked, inject it directly.
-                Vmcs::inject_interrupt(event.0, event.1)?;
-                self.pending_events.pop_front();
-            } else {
-                // interrupts are blocked, enable interrupt-window exiting.
-                self.set_interrupt_window(true)?;
-            }
-        }
         Ok(())
     }
 
@@ -343,7 +315,7 @@ impl ArchCpu {
         Ok(())
     }
 
-    fn setup_vmcs(&mut self, entry: GuestPhysAddr) -> HvResult {
+    fn setup_vmcs(&mut self, entry: GuestPhysAddr, set_rip: bool) -> HvResult {
         self.vmcs_region = VmxRegion::new(self.vmcs_revision_id, false)?;
         self.msr_bitmap = MsrBitmap::intercept_def()?;
 
@@ -352,7 +324,7 @@ impl ArchCpu {
         Vmcs::load(start_paddr)?;
 
         self.setup_vmcs_host(&self.host_stack_top as *const _ as usize)?;
-        self.setup_vmcs_guest(entry, ROOT_ZONE_BOOT_STACK)?;
+        self.setup_vmcs_guest(entry, set_rip, ROOT_ZONE_BOOT_STACK)?;
         self.setup_vmcs_control()?;
 
         Ok(())
@@ -378,7 +350,10 @@ impl ArchCpu {
             Msr::IA32_VMX_PROCBASED_CTLS.read() as u32,
             (
                 // CpuCtrl::RDTSC_EXITING |
-                CpuCtrl::UNCOND_IO_EXITING | CpuCtrl::USE_MSR_BITMAPS | CpuCtrl::SECONDARY_CONTROLS
+                CpuCtrl::HLT_EXITING
+                    | CpuCtrl::UNCOND_IO_EXITING
+                    | CpuCtrl::USE_MSR_BITMAPS
+                    | CpuCtrl::SECONDARY_CONTROLS
             )
                 .bits(),
             (CpuCtrl::CR3_LOAD_EXITING | CpuCtrl::CR3_STORE_EXITING).bits(),
@@ -437,7 +412,12 @@ impl ArchCpu {
         Ok(())
     }
 
-    fn setup_vmcs_guest(&mut self, entry: GuestPhysAddr, rsp: GuestPhysAddr) -> HvResult {
+    fn setup_vmcs_guest(
+        &mut self,
+        entry: GuestPhysAddr,
+        set_rip: bool,
+        rsp: GuestPhysAddr,
+    ) -> HvResult {
         let cr0_guest = Cr0Flags::EXTENSION_TYPE | Cr0Flags::NUMERIC_ERROR;
         let cr4_guest = Cr4Flags::VIRTUAL_MACHINE_EXTENSIONS;
 
@@ -488,6 +468,13 @@ impl ArchCpu {
         VmcsGuest64::IA32_DEBUGCTL.write(0)?;
         VmcsGuest64::IA32_PAT.write(Msr::IA32_PAT.read())?;
         VmcsGuest64::IA32_EFER.write(0)?;
+
+        // for AP start up, set CS_BASE to entry address, and RIP to 0.
+        if !set_rip {
+            VmcsGuestNW::RIP.write(0)?;
+            VmcsGuestNW::CS_BASE.write(entry)?;
+        }
+
         Ok(())
     }
 
@@ -530,11 +517,8 @@ impl ArchCpu {
 
     fn vmexit_handler(&mut self) {
         crate::arch::trap::handle_vmexit(self).unwrap();
-        // Check if there is an APIC timer interrupt
-        if self.apic_timer.check_interrupt() {
-            self.inject_interrupt(self.apic_timer.vector(), None);
-        }
-        self.check_pending_events().unwrap();
+        self.virt_lapic.check_timer_interrupt();
+        check_pending_vectors(this_cpu_id());
     }
 
     unsafe fn vmx_entry_failed() -> ! {

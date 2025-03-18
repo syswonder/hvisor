@@ -11,7 +11,10 @@ use crate::{
     memory::MemFlags,
 };
 use bit_field::BitField;
-use x86::{bits64::vmx, vmx::Result as VmResult, vmx::VmFail};
+use x86::{
+    bits64::vmx,
+    vmx::{vmcs::control::PrimaryControls, Result as VmResult, VmFail},
+};
 
 macro_rules! vmcs_read {
     ($field_enum: ident, u64) => {
@@ -491,6 +494,16 @@ impl Vmcs {
         unsafe { vmx::vmclear(paddr as _) }
     }
 
+    /// Whether the guest interrupts are blocked. (SDM Vol. 3C, Section 24.4.2, Table 24-3)
+    pub fn allow_interrupt() -> HvResult<bool> {
+        let rflags = VmcsGuestNW::RFLAGS.read().unwrap();
+        let block_state = VmcsGuest32::INTERRUPTIBILITY_STATE.read().unwrap();
+        Ok(
+            rflags as u64 & x86_64::registers::rflags::RFlags::INTERRUPT_FLAG.bits() != 0
+                && block_state == 0,
+        )
+    }
+
     pub fn inject_interrupt(vector: u8, err_code: Option<u32>) -> HvResult {
         // SDM Vol. 3C, Section 24.8.3
         let err_code = if VmxInterruptionType::vector_has_error_code(vector) {
@@ -512,6 +525,21 @@ impl Vmcs {
 
     pub fn instruction_error() -> HvResult<VmxInstructionError> {
         Ok(VmcsReadOnly32::VM_INSTRUCTION_ERROR.read()?.into())
+    }
+
+    /// If enable, a VM exit occurs at the beginning of any instruction if
+    /// `RFLAGS.IF` = 1 and there are no other blocking of interrupts.
+    /// (see SDM, Vol. 3C, Section 24.4.2)
+    pub fn set_interrupt_window(enable: bool) -> HvResult {
+        let mut ctrl: u32 = VmcsControl32::PRIMARY_PROCBASED_EXEC_CONTROLS.read()?;
+        let bits = PrimaryControls::INTERRUPT_WINDOW_EXITING.bits();
+        if enable {
+            ctrl |= bits
+        } else {
+            ctrl &= !bits
+        }
+        VmcsControl32::PRIMARY_PROCBASED_EXEC_CONTROLS.write(ctrl)?;
+        Ok(())
     }
 
     pub fn set_control(

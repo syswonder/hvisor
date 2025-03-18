@@ -1,21 +1,24 @@
 use crate::{
     arch::{
-        apic::{local_apic, vectors::*},
         cpu::ArchCpu,
         cpuid::{CpuIdEax, ExtendedFeaturesEcx, FeatureInfoFlags},
         device::all_virt_devices,
         idt::IdtStruct,
+        ipi,
         msr::Msr::{self, *},
         s2pt::Stage2PageFaultInfo,
         vmcs::*,
         vmx::{VmxCrAccessInfo, VmxExitInfo, VmxExitReason, VmxInterruptInfo, VmxIoExitInfo},
     },
-    device::{irqchip::pic::lapic::VirtLocalApic, uart::UartReg},
+    device::{
+        irqchip::pic::{hpet, lapic::VirtLocalApic},
+        uart::UartReg,
+    },
     error::HvResult,
 };
 use x86_64::registers::control::Cr4Flags;
 
-use super::device::UART_COM1_BASE_PORT;
+use super::{device::UART_COM1_BASE_PORT, idt::IdtVector};
 
 core::arch::global_asm!(
     include_str!("trap.S"),
@@ -26,6 +29,7 @@ const IRQ_VECTOR_START: u8 = 0x20;
 const IRQ_VECTOR_END: u8 = 0xff;
 
 const VM_EXIT_INSTR_LEN_CPUID: u8 = 2;
+const VM_EXIT_INSTR_LEN_HLT: u8 = 1;
 const VM_EXIT_INSTR_LEN_RDMSR: u8 = 2;
 const VM_EXIT_INSTR_LEN_WRMSR: u8 = 2;
 const VM_EXIT_INSTR_LEN_VMCALL: u8 = 3;
@@ -71,8 +75,9 @@ pub fn arch_handle_trap(tf: &mut TrapFrame) {
 
 fn handle_irq(vector: u8) {
     match vector {
-        APIC_TIMER_VECTOR => {}
-        UART_COM1_VECTOR => {
+        IdtVector::VIRT_IPI_VECTOR => ipi::handle_virt_ipi(),
+        IdtVector::APIC_TIMER_VECTOR => {}
+        IdtVector::UART_COM1_VECTOR => {
             if let Some(device) = all_virt_devices().find_port_io_device(UART_COM1_BASE_PORT) {
                 device.read(UART_COM1_BASE_PORT + UartReg::LINE_STATUS, 0);
             }
@@ -81,7 +86,7 @@ fn handle_irq(vector: u8) {
             println!("Unhandled irq {}", vector);
         }
     }
-    unsafe { local_apic().end_of_interrupt() };
+    unsafe { VirtLocalApic::phys_local_apic().end_of_interrupt() };
 }
 
 fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
@@ -100,7 +105,7 @@ fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
                 let mut ecx = FeatureInfoFlags::from_bits_truncate(res.ecx as _);
 
                 ecx.remove(FeatureInfoFlags::VMX);
-                ecx.remove(FeatureInfoFlags::TSC_DEADLINE);
+                // ecx.remove(FeatureInfoFlags::TSC_DEADLINE);
                 ecx.remove(FeatureInfoFlags::XSAVE);
 
                 ecx.insert(FeatureInfoFlags::X2APIC);
@@ -120,6 +125,18 @@ fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
                 res.ecx = ecx.bits() as _;
 
                 res
+            }
+            CpuIdEax::ProcessorFrequencyInfo => {
+                if let Some(freq_mhz) = hpet::get_tsc_freq_mhz() {
+                    CpuIdResult {
+                        eax: freq_mhz,
+                        ebx: freq_mhz,
+                        ecx: freq_mhz,
+                        edx: 0,
+                    }
+                } else {
+                    cpuid!(regs.rax, regs.rcx)
+                }
             }
             CpuIdEax::HypervisorInfo => CpuIdResult {
                 eax: CpuIdEax::HypervisorFeatures as u32,
@@ -248,7 +265,7 @@ fn handle_msr_read(arch_cpu: &mut ArchCpu) -> HvResult {
             apic_base |= 1 << 11 | 1 << 10; // enable xAPIC and x2APIC
             Ok(apic_base)
         } else if VirtLocalApic::msr_range().contains(&rcx) {
-            VirtLocalApic::rdmsr(arch_cpu, msr)
+            arch_cpu.virt_lapic.rdmsr(msr)
         } else {
             hv_result_err!(ENOSYS)
         };
@@ -276,8 +293,8 @@ fn handle_msr_write(arch_cpu: &mut ArchCpu) -> HvResult {
 
     let res = if msr == IA32_APIC_BASE {
         Ok(()) // ignore
-    } else if VirtLocalApic::msr_range().contains(&rcx) {
-        VirtLocalApic::wrmsr(arch_cpu, msr, value)
+    } else if VirtLocalApic::msr_range().contains(&rcx) || msr == IA32_TSC_DEADLINE {
+        arch_cpu.virt_lapic.wrmsr(msr, value)
     } else {
         hv_result_err!(ENOSYS)
     };
@@ -300,8 +317,12 @@ fn handle_s2pt_violation(arch_cpu: &mut ArchCpu, guest_rip: usize) -> HvResult {
     );
 }
 
-fn handle_triple_fault(arch_cpu: &mut ArchCpu, guest_rip: usize) -> HvResult {
-    panic!("VM exit: Triple fault @ {:#x}", guest_rip);
+fn handle_triple_fault(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvResult {
+    panic!(
+        "VM exit: Triple fault @ {:#x}, instr length: {:x}",
+        exit_info.guest_rip, exit_info.exit_instruction_length
+    );
+    // arch_cpu.advance_guest_rip(exit_info.exit_instruction_length as _)?;
     Ok(())
 }
 
@@ -315,23 +336,11 @@ pub fn handle_vmexit(arch_cpu: &mut ArchCpu) -> HvResult {
 
     let res = match exit_info.exit_reason {
         VmxExitReason::EXTERNAL_INTERRUPT => handle_external_interrupt(),
-        VmxExitReason::TRIPLE_FAULT => handle_triple_fault(arch_cpu, exit_info.guest_rip),
-        VmxExitReason::INTERRUPT_WINDOW => arch_cpu.set_interrupt_window(false),
+        VmxExitReason::TRIPLE_FAULT => handle_triple_fault(arch_cpu, &exit_info),
+        VmxExitReason::INTERRUPT_WINDOW => Vmcs::set_interrupt_window(false),
         VmxExitReason::CPUID => handle_cpuid(arch_cpu),
-        VmxExitReason::RDTSC => {
-            // FIXME: temp!
-            let current_ticks = crate::arch::apic::current_ticks();
-            let regs = arch_cpu.regs_mut();
-            regs.rdx = (current_ticks >> 32) & (u32::MAX as u64);
-            regs.rax = current_ticks & (u32::MAX as u64);
-            /*info!(
-                "RDTSC: {:x} rdx: {:x}, rax: {:x}, rip: {:x}",
-                crate::arch::lapic::current_ticks(),
-                regs.rdx,
-                regs.rax,
-                VmcsGuestNW::RIP.read()?,
-            );*/
-            arch_cpu.advance_guest_rip(2)?;
+        VmxExitReason::HLT => {
+            arch_cpu.advance_guest_rip(VM_EXIT_INSTR_LEN_HLT)?;
             Ok(())
         }
         VmxExitReason::VMCALL => handle_hypercall(arch_cpu),

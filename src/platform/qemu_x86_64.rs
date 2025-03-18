@@ -11,7 +11,7 @@ pub const ROOT_ZONE_SETUP_ADDR: GuestPhysAddr = 0xd000;
 pub const ROOT_ZONE_BOOT_STACK: GuestPhysAddr = 0x7000;
 pub const ROOT_ZONE_INITRD_ADDR: GuestPhysAddr = 0x1500_0000;
 pub const ROOT_ZONE_CMDLINE_ADDR: GuestPhysAddr = 0xc000;
-pub const ROOT_ZONE_CPUS: u64 = (1 << 0);
+pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1) | (1 << 2);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 pub const ROOT_ZONE_CMDLINE: &str =

@@ -178,7 +178,6 @@ pub struct VirtUart16550aUnlocked {
     ier: u8,
     lcr: u8,
     lsr: u8,
-    irq_state: u8,
     fifo: Fifo<UART_FIFO_CAPACITY>,
 }
 
@@ -189,7 +188,6 @@ impl VirtUart16550aUnlocked {
             ier: 0,
             lcr: 0,
             lsr: (LineStatusFlags::XMIT_HOLD_REG_EMPTY | LineStatusFlags::XMIT_EMPTY).bits(),
-            irq_state: 0,
             fifo: Fifo::new(),
         }
     }
@@ -204,31 +202,21 @@ impl VirtUart16550aUnlocked {
         }
 
         if self.ier & InterruptEnableFlags::ENABLE_XMIT_HOLD_REG_EMPTY_INTR.bits() != 0
-            && self.lsr & LineStatusFlags::XMIT_EMPTY.bits() != 0
+            && self.lsr & LineStatusFlags::XMIT_HOLD_REG_EMPTY.bits() != 0
         {
             iir |= InterruptIdentFlags::XMIT_HOLD_REG_EMPTY.bits();
         }
 
         if iir == 0 {
             self.iir = InterruptIdentFlags::NO_INTR_IS_PENDING.bits();
-            if self.irq_state != 0 {
-                all_virt_devices().send_msg(
-                    PIC_MASTER_BASE_PORT,
-                    UART_COM1_IRQ,
-                    DeviceMsg::UPDATE_IRQ_LOW,
-                );
-            }
         } else {
             self.iir = iir;
-            if self.irq_state == 0 {
-                all_virt_devices().send_msg(
-                    PIC_MASTER_BASE_PORT,
-                    UART_COM1_IRQ,
-                    DeviceMsg::UPDATE_IRQ_HIGH,
-                );
-            }
+            all_virt_devices().send_msg(
+                PIC_MASTER_BASE_PORT,
+                UART_COM1_IRQ,
+                DeviceMsg::UPDATE_IRQ_HIGH,
+            );
         }
-        self.irq_state = iir;
     }
 }
 
@@ -271,7 +259,7 @@ impl PortIoDevice for VirtUart16550a {
             }
             UartReg::INTR_ENABLE => {
                 if uart.lcr & LineControlFlags::DIVISOR_LATCH_ACCESS_BIT.bits() != 0 {
-                    0 //dlm
+                    0 // dlm
                 } else {
                     uart.ier
                 }
@@ -317,13 +305,16 @@ impl PortIoDevice for VirtUart16550a {
                 } else {
                     uart.lsr |=
                         (LineStatusFlags::XMIT_HOLD_REG_EMPTY | LineStatusFlags::XMIT_EMPTY).bits();
-                    console_putchar(value as u8);
+                    if value != 0xff {
+                        console_putchar(value as u8);
+                    }
                 }
             }
             UartReg::INTR_ENABLE => {
                 if uart.lcr & LineControlFlags::DIVISOR_LATCH_ACCESS_BIT.bits() != 0 {
                     // dlm
                 } else {
+                    // info!("ier: {:x}", uart.ier);
                     uart.ier = value & 0x0f;
                 }
             }

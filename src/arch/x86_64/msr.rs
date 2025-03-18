@@ -1,5 +1,6 @@
 use crate::{
     arch::msr::Msr::*,
+    device::irqchip::pic::lapic::VirtLocalApic,
     error::HvResult,
     memory::{Frame, HostPhysAddr},
 };
@@ -35,6 +36,9 @@ pub enum Msr {
 
     /// X2APIC Msr
 
+    /// TSC Target of Local APIC s TSC Deadline Mode (R/W)  See Table 35-2
+    IA32_TSC_DEADLINE = 0x6e0,
+
     /// ID register.
     IA32_X2APIC_APICID = 0x802,
     /// Version register.
@@ -45,6 +49,43 @@ pub enum Msr {
     IA32_X2APIC_LDR = 0x80D,
     /// Spurious Interrupt Vector register.
     IA32_X2APIC_SIVR = 0x80F,
+
+    /// In-Service register bits [31:0].
+    IA32_X2APIC_ISR0 = 0x810,
+    /// In-Service register bits [63:32].
+    IA32_X2APIC_ISR1 = 0x811,
+    /// In-Service register bits [95:64].
+    IA32_X2APIC_ISR2 = 0x812,
+    /// In-Service register bits [127:96].
+    IA32_X2APIC_ISR3 = 0x813,
+    /// In-Service register bits [159:128].
+    IA32_X2APIC_ISR4 = 0x814,
+    /// In-Service register bits [159:128].
+    IA32_X2APIC_ISR5 = 0x815,
+    /// In-Service register bits [191:160].
+    IA32_X2APIC_ISR6 = 0x816,
+    /// In-Service register bits [223:192].
+    IA32_X2APIC_ISR7 = 0x817,
+
+    /// Interrupt Request register bits [31:0].
+    IA32_X2APIC_IRR0 = 0x820,
+    /// Interrupt Request register bits [63:32].
+    IA32_X2APIC_IRR1 = 0x821,
+    /// Interrupt Request register bits [95:64].
+    IA32_X2APIC_IRR2 = 0x822,
+    /// Interrupt Request register bits [127:96].
+    IA32_X2APIC_IRR3 = 0x823,
+    /// Interrupt Request register bits [159:128].
+    IA32_X2APIC_IRR4 = 0x824,
+    /// Interrupt Request register bits [159:128].
+    IA32_X2APIC_IRR5 = 0x825,
+    /// Interrupt Request register bits [191:160].
+    IA32_X2APIC_IRR6 = 0x826,
+    /// Interrupt Request register bits [223:192].
+    IA32_X2APIC_IRR7 = 0x827,
+
+    /// Error Status register.
+    IA32_X2APIC_ESR = 0x828,
     /// Interrupt Command register.
     IA32_X2APIC_ICR = 0x830,
     /// LVT Timer Interrupt register.
@@ -126,11 +167,15 @@ impl MsrBitmap {
         let mut bitmap = Self {
             frame: Frame::new_zero()?,
         };
-        let msr = IA32_APIC_BASE;
-        bitmap.set_read_intercept(msr, true);
-        bitmap.set_write_intercept(msr, true);
+
+        bitmap.set_read_intercept(IA32_APIC_BASE, true);
+        bitmap.set_write_intercept(IA32_APIC_BASE, true);
+
+        bitmap.set_read_intercept(IA32_TSC_DEADLINE, true);
+        bitmap.set_write_intercept(IA32_TSC_DEADLINE, true);
+
         // Intercept all x2APIC MSR accesses
-        for addr in 0x800_u32..=0x83f_u32 {
+        for addr in VirtLocalApic::msr_range() {
             if let Ok(msr) = Msr::try_from(addr) {
                 bitmap.set_read_intercept(msr, true);
                 bitmap.set_write_intercept(msr, true);

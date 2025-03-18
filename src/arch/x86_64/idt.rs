@@ -2,6 +2,15 @@ use x86_64::structures::idt::{Entry, HandlerFunc, InterruptDescriptorTable};
 
 const NUM_INT: usize = 256;
 
+#[allow(non_snake_case)]
+pub mod IdtVector {
+    pub const VIRT_IPI_VECTOR: u8 = 0xe0;
+    pub const APIC_TIMER_VECTOR: u8 = 0xf0;
+    pub const APIC_SPURIOUS_VECTOR: u8 = 0xf1;
+    pub const APIC_ERROR_VECTOR: u8 = 0xf2;
+    pub const UART_COM1_VECTOR: u8 = 0xf3;
+}
+
 pub struct IdtStruct {
     table: InterruptDescriptorTable,
 }

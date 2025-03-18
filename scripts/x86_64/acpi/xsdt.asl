@@ -15,4 +15,4 @@
 /* MADT */
 [0004] ACPI Table Address : 000f2500
 /* HPET */
-[0004] ACPI Table Address : 000f2740 
+// [0004] ACPI Table Address : 000f2740 

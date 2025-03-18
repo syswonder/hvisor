@@ -1,11 +1,16 @@
 use crate::{
-    device::{irqchip::pic::i8259a::VirtDualI8259a, uart::VirtUart16550a},
+    device::{
+        irqchip::pic::{i8254::VirtI8254, i8259a::VirtDualI8259a},
+        uart::VirtUart16550a,
+    },
     error::HvResult,
 };
 use alloc::{sync::Arc, vec, vec::Vec};
 
 pub const PIC_MASTER_BASE_PORT: u16 = 0x20;
 pub const PIC_SLAVE_BASE_PORT: u16 = 0xa0;
+pub const PIT_BASE_PORT: u16 = 0x40;
+pub const PIT_SPEAKER_PORT: u16 = 0x61;
 pub const UART_COM1_BASE_PORT: u16 = 0x3f8;
 
 #[allow(non_snake_case)]
@@ -49,6 +54,7 @@ lazy_static::lazy_static! {
     static ref VIRT_DEVICES : VirtDeviceList = VirtDeviceList {
         port_io_devices: vec![
             Arc::new(VirtDualI8259a::new(PIC_MASTER_BASE_PORT, PIC_SLAVE_BASE_PORT)), // Dual PIC
+            Arc::new(VirtI8254::new(PIT_BASE_PORT, PIT_SPEAKER_PORT)),
             Arc::new(VirtUart16550a::new(UART_COM1_BASE_PORT)), // COM1
         ],
     };

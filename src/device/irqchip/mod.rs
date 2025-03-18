@@ -20,4 +20,4 @@ pub use plic::{inject_irq, percpu_init, primary_init_early, primary_init_late};
 pub use ls7a2000::{inject_irq, percpu_init, primary_init_early, primary_init_late};
 
 #[cfg(target_arch = "x86_64")]
-pub use pic::{inject_irq, percpu_init, primary_init_early, primary_init_late};
+pub use pic::{inject_irq, inject_vector, percpu_init, primary_init_early, primary_init_late};

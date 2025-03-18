@@ -132,11 +132,6 @@ fn per_cpu_init(cpu: &mut PerCpu) {
 }
 
 fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
-    #[cfg(target_arch = "x86_64")]
-    arch::apic::init_lapic();
-    #[cfg(target_arch = "x86_64")]
-    arch::apic::init_ioapic();
-
     for cpu_id in 0..MAX_CPU_NUM {
         if cpu_id == this_id {
             continue;
@@ -157,9 +152,14 @@ fn x86_rust_main_tmp(cpuid: usize, host_dtb: usize) {
         memory::heap::test();
         #[cfg(target_arch = "x86_64")]
         MultibootInfo::init(host_dtb);
+        #[cfg(target_arch = "x86_64")]
+        arch::apic::init_ioapic();
     }
 
     let cpu = PerCpu::new(cpuid);
+    #[cfg(target_arch = "x86_64")]
+    crate::device::irqchip::pic::enable_irq();
+
     println!(
         "Booting CPU {}: {:p} arch:{:p}, DTB: {:#x}",
         cpu.id, cpu as *const _, &cpu.arch_cpu as *const _, host_dtb

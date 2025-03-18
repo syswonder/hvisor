@@ -19,7 +19,7 @@ aml_rsdt := $(acpi_aml_dir)/rsdt.aml
 aml_xsdt := $(acpi_aml_dir)/xsdt.aml
 
 QEMU_ARGS := -machine q35
-QEMU_ARGS += -cpu host,+x2apic -accel kvm
+QEMU_ARGS += -cpu host,+x2apic,+invtsc -accel kvm
 QEMU_ARGS += -smp 4
 QEMU_ARGS += -serial mon:stdio
 QEMU_ARGS += -m 2G

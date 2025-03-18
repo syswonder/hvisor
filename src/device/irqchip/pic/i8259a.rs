@@ -2,8 +2,9 @@ use crate::{
     arch::device::{
         all_virt_devices, DeviceMsg, PortIoDevice, PIC_MASTER_BASE_PORT, PIC_SLAVE_BASE_PORT,
     },
+    device::irqchip::inject_vector,
     error::HvResult,
-    percpu::this_cpu_data,
+    percpu::{get_cpu_data, this_cpu_data},
 };
 use alloc::vec::Vec;
 use core::ops::Range;
@@ -118,7 +119,10 @@ impl VirtDualI8259aUnlocked {
 
     fn set_irq(&mut self, irq: i32, id: usize) {
         self.pics[id].set_irq(irq);
-        self.update_irq(id);
+        // isr bit empty, can serve
+        if self.pics[id].isr & (1 << irq) == 0 {
+            self.update_irq(id);
+        }
     }
 
     fn update_irq(&mut self, id: usize) {
@@ -140,8 +144,8 @@ impl VirtDualI8259aUnlocked {
                 vector = self.pics[1].vector_base + (irq2 as u8);
             }
             self.ack_irq(irq, 0);
-            // TODO: inject irq
-            this_cpu_data().arch_cpu.inject_interrupt(vector, None);
+            // TODO: single core? smp?
+            inject_vector(0, vector, None, true);
         } else {
             self.set_irq(2, 0);
         }
@@ -237,7 +241,7 @@ impl VirtDualI8259aUnlocked {
                 1 => {
                     // ICW2
                     pic.vector_base = value & 0xf8;
-                    info!("I8259A: vector base: {:x}", pic.vector_base);
+                    // info!("I8259A: vector base: {:x}", pic.vector_base);
                     pic.init_state = 2;
                 }
                 2 => {

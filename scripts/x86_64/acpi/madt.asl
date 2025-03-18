@@ -24,6 +24,22 @@
     Processor Enabled : 1
     Runtime Online Capable : 0
 
+[0001] Subtable Type : 00
+[0001] Length : 08
+[0001] Processor ID : 01
+[0001] Local Apic ID : 01
+[0004] Flags (decoded below) : 00000001
+    Processor Enabled : 1
+    Runtime Online Capable : 0
+
+[0001] Subtable Type : 00
+[0001] Length : 08
+[0001] Processor ID : 02
+[0001] Local Apic ID : 02
+[0004] Flags (decoded below) : 00000001
+    Processor Enabled : 1
+    Runtime Online Capable : 0
+
 /* IO APIC */
 [0001] Subtable Type : 01
 [0001] Length : 0C
