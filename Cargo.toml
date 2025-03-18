@@ -25,9 +25,11 @@ aarch64-cpu = "9.4.0"
 psci = { version = "0.1.0", default-features = false, features = ["smc"]}
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
-sbi-rt = { version = "0.0.2", features = ["legacy"] }
+sbi-rt = { version = "0.0.3", features = ["legacy"] }
 riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"] }
 riscv-decode = "0.2.1"
+riscv-peripheral = "0.2.1"
+riscv-pac = "0.2.0"
 
 [target.'cfg(target_arch = "loongarch64")'.dependencies]
 loongArch64 = "0.2.4"
@@ -56,6 +58,7 @@ pt_layout_qemu = []
 # irqchip driver
 plic = []
 aia = []
+aclint = []
 ########### loongarch64 ############
 # irqchip driver
 loongson_7a2000 = []

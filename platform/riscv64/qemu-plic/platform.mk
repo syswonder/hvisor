@@ -10,7 +10,7 @@ zone0_dtb    := $(image_dir)/dts/zone0.dtb
 # zone1_kernel := $(image_dir)/kernel/Image
 # zone1_dtb    := $(image_dir)/devicetree/linux.dtb
 
-QEMU_ARGS := -machine virt
+QEMU_ARGS := -machine virt,aclint=on
 QEMU_ARGS += -bios default
 QEMU_ARGS += -cpu rv64
 QEMU_ARGS += -smp 4
