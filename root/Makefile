@@ -1,5 +1,4 @@
 KDIR ?= 
-DEV ?= /dev/sda1
 ARCH ?= arm64
 LOG ?= LOG_INFO
 DEBUG ?= n
@@ -10,7 +9,7 @@ export ARCH
 export LOG
 export VIRTIO_GPU
 
-.PHONY: all env tools driver clean transfer tftp transfer_nxp check-kdir
+.PHONY: all help env tools driver clean transfer tftp transfer_nxp check-kdir
 
 OUTPUT_DIR ?= output
 TFTP_DIR ?= ~/tftp
@@ -18,6 +17,19 @@ TFTP_DIR ?= ~/tftp
 all: tools driver
 	mkdir -p $(OUTPUT_DIR)
 	cp driver/hvisor.ko tools/hvisor $(OUTPUT_DIR)
+
+help:
+	@echo "Compilation targets:"
+	@echo "  all          - Build tools and drivers (default)"
+	@echo "  tools        - Build command-line tools"
+	@echo "  driver       - Build kernel modules"
+	@echo "  clean        - Clean build artifacts"
+	@echo ""
+	@echo "Environment variables:"
+	@echo "  ARCH=arm64|riscv  Target architecture (required)"
+	@echo "  LOG=LEVEL        Log level (default: LOG_INFO)"
+	@echo "  KDIR=path        Linux kernel source path (required)"
+	@echo "  VIRTIO_GPU=y|n   Enable GPU support (default: n)"
 
 env:
 	git submodule update --init --recursive
