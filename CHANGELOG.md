@@ -2,11 +2,15 @@
 
 > ⚠️ Please update this file for any changes to the hvisor project along with your name and GitHub profile link under the CURRENT section.
 
-## CURRENT-hvisor v0.1.1
+## CURRENT-hvisor v0.1.2
 
-- [platform] seperate board definitions into `platform` folder with re-designed cargo feature system for hvisor ([wheatfox](https://github.com/enkerewpo))
+- [platform] update aarch64 board definitions ([Nehckl](https://github.com/Inquisitor-201))
 
 ## History Release
+
+### hvisor v0.1.1
+
+- [platform] seperate board definitions into `platform` folder with re-designed cargo feature system for hvisor ([wheatfox](https://github.com/enkerewpo))
 
 ### hvisor v0.1.0
 
