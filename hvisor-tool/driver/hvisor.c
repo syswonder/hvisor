@@ -287,16 +287,22 @@ static int __init hvisor_init(void) {
     // from GIC's IRQ number.
     node = of_find_node_by_path("/hvisor_virtio_device");
     if (!node) {
-        pr_info("hvisor_virtio_device node not found in dtb, can't use virtio "
-                "devices\n");
-    } else {
-        virtio_irq = of_irq_get(node, 0);
-        err = request_irq(virtio_irq, virtio_irq_handler,
-                          IRQF_SHARED | IRQF_TRIGGER_RISING,
-                          "hvisor_virtio_device", &hvisor_misc_dev);
-        if (err)
-            goto err_out;
+        pr_err("Critical: Missing device tree node!\n");
+        pr_err("   Please add the following to your device tree:\n");
+        pr_err("   hvisor_virtio_device {\n");
+        pr_err("       compatible = \"hvisor\";\n");
+        pr_err("       interrupts = <0x00 0x20 0x01>;\n");
+        pr_err("   };\n");
+        return -ENODEV;
     }
+
+    virtio_irq = of_irq_get(node, 0);
+    err = request_irq(virtio_irq, virtio_irq_handler,
+                      IRQF_SHARED | IRQF_TRIGGER_RISING, "hvisor_virtio_device",
+                      &hvisor_misc_dev);
+    if (err)
+        goto err_out;
+
     of_node_put(node);
     pr_info("hvisor init done!!!\n");
     return 0;
