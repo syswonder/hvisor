@@ -22,7 +22,7 @@
 
 		cpu@2 {
 			device_type = "cpu";
-			compatible = "arm,cortex-a53";
+			compatible = "arm,cortex-a72";
 			reg = <0x02>;
 			clock-latency = <0xee6c>;
 			next-level-cache = <0x02>;
@@ -41,7 +41,7 @@
 	};
 
 	pmu {
-		compatible = "arm,cortex-a53-pmu";
+		compatible = "arm,cortex-a72-pmu";
 		interrupts = <0x01 0x07 0x04>;
 		interrupt-parent = <0x01>;
 		interrupt-affinity = <0x03 0x04>;

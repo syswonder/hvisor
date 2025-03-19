@@ -14,14 +14,14 @@
 		cpu@2 {
 			reg = <0x02>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a72";
 			device_type = "cpu";
 		};
 
 		cpu@3 {
 			reg = <0x03>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a57";
+			compatible = "arm,cortex-a72";
 			device_type = "cpu";
 		};
 

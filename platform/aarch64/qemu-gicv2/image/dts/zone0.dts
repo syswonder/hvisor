@@ -15,7 +15,7 @@
 			phandle = <0x8010>;
 			reg = <0x00>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a53";
+			compatible = "arm,cortex-a72";
 			device_type = "cpu";
 		};
 
@@ -23,7 +23,7 @@
 			phandle = <0x800f>;
 			reg = <0x01>;
 			enable-method = "psci";
-			compatible = "arm,cortex-a53";
+			compatible = "arm,cortex-a72";
 			device_type = "cpu";
 		};
 	};
