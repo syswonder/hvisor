@@ -2,6 +2,8 @@ use crate::{arch::zone::HvArchZoneConfig, config::*};
 
 pub const BOARD_NAME: &str = "qemu-aia";
 
+pub const ACLINT_SSWI_BASE: usize = 0x2F00000;
+
 pub const PLIC_BASE: usize = 0xc000000;
 pub const APLIC_BASE: usize = 0xc000000;
 pub const PLIC_MAX_IRQ: usize = 1024;
