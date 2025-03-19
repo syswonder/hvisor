@@ -1,6 +1,4 @@
-
 // This used for transfering the software interrupt to the target hart
-
 
 //  Offset	    Width	Attr	Name	    Description
 //  0x0000_0000 4B      RW      SETSSIP0    HART index 0 set supervisor-level IPI register
@@ -8,12 +6,12 @@
 //  ...
 //  0x0000_3FFC 4B              RESERVED    Reserved for future use.
 
-use spin::Once;
-use riscv_peripheral::aclint::sswi::SSWI;
-use riscv_pac::HartIdNumber;
 use crate::consts::MAX_CPU_NUM;
 use log::info;
 use riscv_pac::result::{Error, Result};
+use riscv_pac::HartIdNumber;
+use riscv_peripheral::aclint::sswi::SSWI;
+use spin::Once;
 
 // Only init at boot time.
 // Don't spend more time considering the concurrency.
@@ -31,7 +29,7 @@ unsafe impl HartIdNumber for HartId {
         self.0
     }
     #[inline]
-    fn from_number(number: usize) -> Result<Self>{
+    fn from_number(number: usize) -> Result<Self> {
         if number > Self::MAX_HART_ID_NUMBER {
             return Err(Error::InvalidVariant(number));
         }
@@ -40,20 +38,23 @@ unsafe impl HartIdNumber for HartId {
 }
 
 /// Init the aclint's base address.
-pub fn aclint_init(base_addr: usize){
+pub fn aclint_init(base_addr: usize) {
     info!("ACLINT: base address is {:#x?}", base_addr);
     ACLINT_BASE.call_once(|| base_addr);
 }
 
 /// Send a software interrupt to the target hart.
-pub fn aclint_send_ipi(hart_id: usize){
-    assert!(hart_id >= 0 && hart_id < MAX_CPU_NUM, "hart_id is out of range");
+pub fn aclint_send_ipi(hart_id: usize) {
+    assert!(
+        hart_id >= 0 && hart_id < MAX_CPU_NUM,
+        "hart_id is out of range"
+    );
 
     info!("ACLINT: addr {:#x}", *ACLINT_BASE.get().unwrap());
 
     let sswi = unsafe { SSWI::new(*ACLINT_BASE.get().unwrap() as usize) };
     let setssip = sswi.setssip(HartId::from_number(hart_id).unwrap());
-    
+
     // Write the software interrupt to the target hart.
     setssip.pend();
 }
