@@ -13,7 +13,7 @@ export VIRTIO_GPU
 .PHONY: all env tools driver clean transfer tftp transfer_nxp check-kdir
 
 OUTPUT_DIR ?= output
-TFTP_DIR ?= tftp
+TFTP_DIR ?= ~/tftp
 
 all: tools driver
 	mkdir -p $(OUTPUT_DIR)

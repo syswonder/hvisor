@@ -29,7 +29,39 @@
 #include "virtio.h"
 #include "zone_config.h"
 static void __attribute__((noreturn)) help(int exit_status) {
-    printf("Invalid Parameters!\n");
+    printf("Hypervisor Management Tool\n\n");
+
+    printf("Usage:\n");
+    printf("  ./hvisor <command> [subcommand] [options]\n\n");
+
+    printf("Command Structure:\n");
+    printf("  zone\n");
+    printf("    |-- start    <config.json>    Initialize isolation zone\n");
+    printf("    |-- shutdown -id <zone_id>    Terminate target zone\n");
+    printf("    |-- list                     List active zones\n\n");
+
+    printf("  virtio\n");
+    printf("    |-- start    <virtio.json>   Activate virtio devices\n\n");
+
+    printf("Operation Specifications:\n");
+    printf("  zone start:\n");
+    printf(
+        "    <config.json>   Define memory mappings and system parameters\n\n");
+
+    printf("  zone shutdown:\n");
+    printf("    -id <zone_id>        Target zone ID from active list\n\n");
+
+    printf("  virtio start:\n");
+    printf("    <virtio.json>    Configure virtio device mappings for target "
+           "zones\n\n");
+
+    printf("Examples:\n");
+    printf("  Start zone:        ./hvisor zone start /path/to/vm.json\n");
+    printf("  Shutdown zone:     ./hvisor zone shutdown -id 1\n");
+    printf("  List zones:        ./hvisor zone list\n");
+    printf(
+        "  Start virtio:      ./hvisor virtio start /path/to/virtio.json\n\n");
+
     exit(exit_status);
 }
 

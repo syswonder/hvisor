@@ -16,7 +16,7 @@ else
 	COMPILE := 
 endif
 
-EXTRA_CFLAGS += -I$(PWD)/include -Wall
+EXTRA_CFLAGS += -I$(PWD)/include -Wno-unused-variable -Wno-unused-function -fno-stack-protector
 
 ivc-y := ivc_driver.o
 
