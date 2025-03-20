@@ -78,7 +78,7 @@ COLOR_RESET := $(shell tput sgr0)
 
 # Targets
 .PHONY: all elf disa run gdb monitor clean tools rootfs
-all: gen_cargo_config $(hvisor_bin)
+all: clean_check gen_cargo_config $(hvisor_bin)
 	@printf "\n"
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)hvisor build summary:$(COLOR_RESET)\n"
 	@printf "%-10s %s\n" "ARCH            =" "$(COLOR_BOLD)$(ARCH)$(COLOR_RESET)"
@@ -92,6 +92,21 @@ all: gen_cargo_config $(hvisor_bin)
 	@printf "%-10s %s\n" "BUILD TIME      =" "$(COLOR_BOLD)$(shell date)$(COLOR_RESET)"
 	@printf "\n"
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)hvisor build success!$(COLOR_RESET)\n"
+
+clean_check:
+# if .config not exist, then everything is fine
+# else we read .config and parse ARCH and BOARD, if they are different, we clean the build
+	@if [ -f ".config" ]; then \
+		CONFIG_ARCH=$$(cat .config | grep "ARCH" | cut -d'=' -f2); \
+		CONFIG_BOARD=$$(cat .config | grep "BOARD" | cut -d'=' -f2); \
+		if [ "$$CONFIG_ARCH" != "$(ARCH)" ] || [ "$$CONFIG_BOARD" != "$(BOARD)" ]; then \
+			echo "$(COLOR_YELLOW)$(COLOR_BOLD)ARCH or BOARD changed(OLD: $$CONFIG_ARCH/$$CONFIG_BOARD, NEW: $(ARCH)/$(BOARD)), cleaning...$(COLOR_RESET)"; \
+			cargo clean; \
+			rm .config; \
+			rm .cargo/config.toml; \
+			rm src/platform/__board.rs; \
+		fi; \
+	fi
 
 gen_cargo_config:
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)Generating .cargo/config.toml...$(COLOR_RESET)\n"
@@ -170,5 +185,8 @@ dtb:
 
 clean:
 	cargo clean
+	rm .config
+	rm .cargo/config.toml
+	rm src/platform/__board.rs
 
 include platform/$(ARCH)/$(BOARD)/platform.mk
