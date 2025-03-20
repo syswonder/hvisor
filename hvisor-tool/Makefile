@@ -15,8 +15,6 @@ OUTPUT_DIR ?= output
 TFTP_DIR ?= ~/tftp
 
 all: tools driver
-	mkdir -p $(OUTPUT_DIR)
-	cp driver/hvisor.ko tools/hvisor $(OUTPUT_DIR)
 
 help:
 	@echo "Compilation targets:"
@@ -41,9 +39,13 @@ endif
 
 tools: env
 	$(MAKE) -C tools all
-
+	@mkdir -p $(OUTPUT_DIR)
+	cp tools/hvisor $(OUTPUT_DIR)
+	
 driver: env check-kdir
 	$(MAKE) -C driver all
+	@mkdir -p $(OUTPUT_DIR)
+	cp driver/hvisor.ko $(OUTPUT_DIR)
 
 transfer: all
 	./trans_file.sh ./tools/hvisor 
@@ -67,3 +69,4 @@ transfer_nxp: all
 clean: check-kdir
 	make -C tools clean
 	make -C driver clean
+	rm -rf $(OUTPUT_DIR)

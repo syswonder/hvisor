@@ -203,7 +203,7 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
         break;
 
     default:
-        log_error("unsupported virtio device type\n");
+        log_error("unsupported virtio device type");
         goto err;
     }
 
@@ -700,7 +700,7 @@ uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size) {
 
 void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t value,
                        unsigned size) {
-    log_debug("virtio mmio write at %#x, value is %#x\n", offset, value);
+    log_debug("virtio mmio write at %#x, value is %#x", offset, value);
 
     log_info("WRITE virtio mmio at offset=%#x[%s], value=%#x, size=%d, vdev=%p",
              offset, virtio_mmio_reg_name(offset), value, size, vdev);
@@ -949,7 +949,7 @@ int virtio_handle_req(volatile struct device_req *req) {
         virtio_mmio_write(vdev, offs, req->value, req->size);
     } else {
         value = virtio_mmio_read(vdev, offs, req->size);
-        log_debug("read value is 0x%x\n", value);
+        log_debug("read value is 0x%x", value);
     }
 
     // Control instructions do not require interrupts to return data
