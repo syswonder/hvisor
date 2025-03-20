@@ -30,38 +30,20 @@
 #include "zone_config.h"
 static void __attribute__((noreturn)) help(int exit_status) {
     printf("Hypervisor Management Tool\n\n");
-
     printf("Usage:\n");
-    printf("  ./hvisor <command> [subcommand] [options]\n\n");
-
-    printf("Command Structure:\n");
-    printf("  zone\n");
-    printf("    |-- start    <config.json>    Initialize isolation zone\n");
-    printf("    |-- shutdown -id <zone_id>    Terminate target zone\n");
-    printf("    |-- list                     List active zones\n\n");
-
-    printf("  virtio\n");
-    printf("    |-- start    <virtio.json>   Activate virtio devices\n\n");
-
-    printf("Operation Specifications:\n");
-    printf("  zone start:\n");
-    printf(
-        "    <config.json>   Define memory mappings and system parameters\n\n");
-
-    printf("  zone shutdown:\n");
-    printf("    -id <zone_id>        Target zone ID from active list\n\n");
-
-    printf("  virtio start:\n");
-    printf("    <virtio.json>    Configure virtio device mappings for target "
-           "zones\n\n");
-
+    printf("  hvisor <command> [options]\n\n");
+    printf("Commands:\n");
+    printf("  zone start    <config.json>    Initialize an isolation zone\n");
+    printf("  zone shutdown --id <zone_id>   Terminate a zone by ID\n");
+    printf("  zone list                      List all active zones\n");
+    printf("  virtio start  <virtio.json>    Activate virtio devices\n\n");
+    printf("Options:\n");
+    printf("  --id <zone_id>    Specify zone ID for shutdown\n");
+    printf("  --help            Show this help message\n\n");
     printf("Examples:\n");
-    printf("  Start zone:        ./hvisor zone start /path/to/vm.json\n");
-    printf("  Shutdown zone:     ./hvisor zone shutdown -id 1\n");
-    printf("  List zones:        ./hvisor zone list\n");
-    printf(
-        "  Start virtio:      ./hvisor virtio start /path/to/virtio.json\n\n");
-
+    printf("  Start zone:    hvisor zone start /path/to/vm.json\n");
+    printf("  Shutdown zone: hvisor zone shutdown --id 1\n");
+    printf("  List zones:    hvisor zone list\n");
     exit(exit_status);
 }
 
@@ -73,12 +55,12 @@ void *read_file(char *filename, u_int64_t *filesize) {
 
     fd = open(filename, O_RDONLY);
     if (fd < 0) {
-        perror("read_file: open file failed");
+        log_error("read_file: open file %s failed", filename);
         exit(1);
     }
 
     if (fstat(fd, &st) < 0) {
-        perror("read_file: fstat failed");
+        log_error("read_file: fstat %s failed", filename);
         exit(1);
     }
 
@@ -107,7 +89,7 @@ void *read_file(char *filename, u_int64_t *filesize) {
 int open_dev() {
     int fd = open("/dev/hvisor", O_RDWR);
     if (fd < 0) {
-        perror("open hvisor failed");
+        log_error("Failed to open /dev/hvisor. Please ensure hvisor.ko is loaded.");
         exit(1);
     }
     return fd;
@@ -164,13 +146,13 @@ static __u64 load_image_to_memory(const char *path, __u64 load_paddr) {
 
 #define CHECK_JSON_NULL(json_ptr, json_name)                                   \
     if (json_ptr == NULL) {                                                    \
-        fprintf(stderr, "\'%s\' is missing in json file.\n", json_name);       \
+        log_error("\'%s\' is missing in json file.", json_name);       \
         return -1;                                                             \
     }
 
 #define CHECK_JSON_NULL_ERR_OUT(json_ptr, json_name)                           \
     if (json_ptr == NULL) {                                                    \
-        fprintf(stderr, "\'%s\' is missing in json file.\n", json_name);       \
+        log_error("\'%s\' is missing in json file.", json_name);       \
         goto err_out;                                                          \
     }
 
@@ -255,11 +237,11 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         cJSON_GetObjectItem(arch_config_json, "aplic_size");
 
     if (plic_base_json == NULL || plic_size_json == NULL) {
-        fprintf(stderr, "Missing fields in arch_config.\n");
+        log_warn("Missing fields in arch_config.");
         return -1;
     }
     if (aplic_base_json == NULL || aplic_size_json == NULL) {
-        fprintf(stderr, "Missing fields in arch_config.\n");
+        log_warn("Missing fields in arch_config.");
         return -1;
     }
 
@@ -279,7 +261,7 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
 static int parse_pci_config(cJSON *root, zone_config_t *config) {
     cJSON *pci_config_json = cJSON_GetObjectItem(root, "pci_config");
     if (pci_config_json == NULL) {
-        fprintf(stderr, "No pci_config field found.\n");
+        log_warn("No pci_config field found.");
         return -1;
     }
 
@@ -349,7 +331,7 @@ static int zone_start_from_json(const char *json_config_path,
 
     FILE *file = fopen(json_config_path, "r");
     if (file == NULL) {
-        fprintf(stderr, "Error opening json file: %s\n", json_config_path);
+        log_error("Error opening json file: %s", json_config_path);
         exit(1);
     }
     fseek(file, 0, SEEK_END);
@@ -357,7 +339,7 @@ static int zone_start_from_json(const char *json_config_path,
     fseek(file, 0, SEEK_SET);
     char *buffer = malloc(file_size + 1);
     if (fread(buffer, 1, file_size, file) == 0) {
-        fprintf(stderr, "Error reading json file: %s\n", json_config_path);
+        log_error("Error reading json file: %s", json_config_path);
         goto err_out;
     }
     fclose(file);
@@ -403,7 +385,7 @@ static int zone_start_from_json(const char *json_config_path,
 
     if (num_memory_regions > CONFIG_MAX_MEMORY_REGIONS ||
         num_interrupts > CONFIG_MAX_INTERRUPTS) {
-        fprintf(stderr, "Exceeded maximum allowed regions/interrupts.\n");
+        log_error("Exceeded maximum allowed regions/interrupts.");
         goto err_out;
     }
 
@@ -424,7 +406,7 @@ static int zone_start_from_json(const char *json_config_path,
             // virtio device
             mem_region->type = MEM_TYPE_VIRTIO;
         } else {
-            printf("Unknown memory region type: %s\n", type_str);
+            log_warn("Unknown memory region type: %s", type_str);
             mem_region->type = -1; // invalid type
         }
 
@@ -438,7 +420,7 @@ static int zone_start_from_json(const char *json_config_path,
             cJSON_GetObjectItem(region, "size")->valuestring, NULL, 16);
 
         log_debug("memory_region %d: type %d, physical_start %llx, "
-                  "virtual_start %llx, size %llx\n",
+                  "virtual_start %llx, size %llx",
                   i, mem_region->type, mem_region->physical_start,
                   mem_region->virtual_start, mem_region->size);
     }
@@ -476,7 +458,7 @@ static int zone_start_from_json(const char *json_config_path,
             cJSON_GetObjectItem(ivc_config_json, "interrupt_num")->valueint;
         ivc_config->max_peers =
             cJSON_GetObjectItem(ivc_config_json, "max_peers")->valueint;
-        printf("ivc_config %d: ivc_id %d, peer_id %d, shared_mem_ipa %llx, "
+        log_info("ivc_config %d: ivc_id %d, peer_id %d, shared_mem_ipa %llx, "
                "interrupt_num %d, max_peers %d\n",
                i, ivc_config->ivc_id, ivc_config->peer_id,
                ivc_config->shared_mem_ipa, ivc_config->interrupt_num,
@@ -500,17 +482,17 @@ static int zone_start_from_json(const char *json_config_path,
         dtb_filepath_json->valuestring,
         strtoull(dtb_load_paddr_json->valuestring, NULL, 16));
 
-    printf("Kernel size: %llu, DTB size: %llu\n", config->kernel_size,
+    log_info("Kernel size: %llu, DTB size: %llu", config->kernel_size,
            config->dtb_size);
 
     // check name length
     if (strlen(name_json->valuestring) > CONFIG_NAME_MAXLEN) {
-        fprintf(stderr, "Zone name too long: %s\n", name_json->valuestring);
+        log_error("Zone name too long: %s", name_json->valuestring);
         goto err_out;
     }
     strncpy(config->name, name_json->valuestring, CONFIG_NAME_MAXLEN);
 
-    printf("Zone name: %s\n", config->name);
+    log_info("Zone name: %s", config->name);
 
 #ifndef LOONGARCH64
 
@@ -533,7 +515,7 @@ static int zone_start_from_json(const char *json_config_path,
         goto err_out;
     }
 
-    printf("Calling ioctl to start zone: [%s]\n", config->name);
+    log_info("Calling ioctl to start zone: [%s]", config->name);
 
     int err = ioctl(fd, HVISOR_ZONE_START, config);
 
