@@ -17,7 +17,7 @@ All operations should be performed in the `hvisor-tool` directory on an x86 host
 * Compile the command-line tools and kernel modules
 
 ```bash
-make all ARCH=<arch> LOG=<log> KDIR=/path/to/your-linux VIRTIO_GPU=[y/n]
+make all ARCH=<arch> LOG=<log> KDIR=/path/to/your-linux VIRTIO_GPU=[y/n] ROOT=/path/to/target_rootfs
 ```
 
 Where `<arch>` should be either `arm64` or `riscv`.
