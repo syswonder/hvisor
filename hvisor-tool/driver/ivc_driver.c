@@ -53,7 +53,7 @@ static struct class *ivc_class;
 extern u8 __dtb_hivc_template_begin[], __dtb_hivc_template_end[];
 
 static int hvisor_ivc_info(void) {
-    int err = 0, i;
+    int err = 0;
     if (ivc_info == NULL)
         ivc_info = kmalloc(sizeof(ivc_info_t), GFP_KERNEL);
     err = hvisor_call(HVISOR_HC_IVC_INFO, __pa(ivc_info), sizeof(ivc_info_t));
@@ -61,7 +61,6 @@ static int hvisor_ivc_info(void) {
 }
 
 static int ivc_open(struct inode *inode, struct file *file) {
-    int err;
     struct ivc_dev *dev = container_of(inode->i_cdev, struct ivc_dev, cdev);
     dev->task = get_current();
     file->private_data = dev;
@@ -69,7 +68,7 @@ static int ivc_open(struct inode *inode, struct file *file) {
 }
 
 static int hvisor_user_ivc_info(ivc_uinfo_t __user *uinfo) {
-    int err = 0, i;
+    int i;
     uinfo->len = ivc_info->len;
     for (i = 0; i < ivc_info->len; i++) {
         uinfo->ivc_ids[i] = ivc_info->ivc_ids[i];
@@ -93,7 +92,7 @@ static long ivc_ioctl(struct file *file, unsigned int ioctl,
 
 static int ivc_map(struct file *filp, struct vm_area_struct *vma) {
     unsigned long long phys, offset;
-    int i, err = 0, is_control_table = 0, idx;
+    int err = 0, idx;
     size_t size = vma->vm_end - vma->vm_start;
     struct ivc_dev *dev = filp->private_data;
     idx = dev->idx;
@@ -157,14 +156,14 @@ static irqreturn_t ivc_irq_handler(int irq, void *dev_id) {
     return IRQ_HANDLED;
 }
 
-static struct property *alloc_property(const char *name, int len) {
-    struct property *prop;
-    prop = kzalloc(sizeof(struct property), GFP_KERNEL);
-    prop->name = kstrdup(name, GFP_KERNEL);
-    prop->length = len;
-    prop->value = kzalloc(len, GFP_KERNEL);
-    return prop;
-}
+// static struct property *alloc_property(const char *name, int len) {
+//     struct property *prop;
+//     prop = kzalloc(sizeof(struct property), GFP_KERNEL);
+//     prop->name = kstrdup(name, GFP_KERNEL);
+//     prop->length = len;
+//     prop->value = kzalloc(len, GFP_KERNEL);
+//     return prop;
+// }
 
 // static int add_ivc_device_node(void)
 // {

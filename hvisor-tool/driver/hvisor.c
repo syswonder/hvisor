@@ -1,22 +1,24 @@
+#include <asm/cacheflush.h>
+#include <linux/gfp.h>
 #include <linux/init.h>
 #include <linux/interrupt.h>
+#include <linux/io.h>
 #include <linux/kernel.h>
 #include <linux/miscdevice.h>
 #include <linux/mm.h>
 #include <linux/module.h>
-#include <linux/slab.h>
-// #include <asm/io.h>
-#include "hvisor.h"
-#include "zone_config.h"
-#include <asm/cacheflush.h>
-#include <linux/gfp.h>
-#include <linux/io.h>
 #include <linux/of.h>
 #include <linux/of_irq.h>
 #include <linux/of_reserved_mem.h>
 #include <linux/sched/signal.h>
+#include <linux/slab.h>
 #include <linux/string.h>
+#include <linux/uaccess.h>
+#include <linux/version.h>
 #include <linux/vmalloc.h>
+
+#include "hvisor.h"
+#include "zone_config.h"
 
 struct virtio_bridge *virtio_bridge;
 int virtio_irq = -1;
@@ -104,27 +106,27 @@ static int hvisor_zone_start(zone_config_t __user *arg) {
     return err;
 }
 
-#ifndef LOONGARCH64
-static int is_reserved_memory(unsigned long phys, unsigned long size) {
-    struct device_node *parent, *child;
-    struct reserved_mem *rmem;
-    phys_addr_t mem_base;
-    size_t mem_size;
-    int count = 0;
-    parent = of_find_node_by_path("/reserved-memory");
-    count = of_get_child_count(parent);
+// #ifndef LOONGARCH64
+// static int is_reserved_memory(unsigned long phys, unsigned long size) {
+//     struct device_node *parent, *child;
+//     struct reserved_mem *rmem;
+//     phys_addr_t mem_base;
+//     size_t mem_size;
+//     int count = 0;
+//     parent = of_find_node_by_path("/reserved-memory");
+//     count = of_get_child_count(parent);
 
-    for_each_child_of_node(parent, child) {
-        rmem = of_reserved_mem_lookup(child);
-        mem_base = rmem->base;
-        mem_size = rmem->size;
-        if (mem_base <= phys && (mem_base + mem_size) >= (phys + size)) {
-            return 1;
-        }
-    }
-    return 0;
-}
-#endif
+//     for_each_child_of_node(parent, child) {
+//         rmem = of_reserved_mem_lookup(child);
+//         mem_base = rmem->base;
+//         mem_size = rmem->size;
+//         if (mem_base <= phys && (mem_base + mem_size) >= (phys + size)) {
+//             return 1;
+//         }
+//     }
+//     return 0;
+// }
+// #endif
 
 static int hvisor_zone_list(zone_list_args_t __user *arg) {
     int ret;
@@ -246,9 +248,15 @@ static irqreturn_t virtio_irq_handler(int irq, void *dev_id) {
     // Send signal SIGHVI to hvisor user task
     if (task != NULL) {
         // pr_info("send signal to hvisor device\n");
+#if (LINUX_VERSION_CODE <= KERNEL_VERSION(4, 20, 0))
+        if (send_sig_info(SIGHVI, (struct siginfo *)&info, task) < 0) {
+            pr_err("Unable to send signal\n");
+        }
+#else
         if (send_sig_info(SIGHVI, (struct kernel_siginfo *)&info, task) < 0) {
             pr_err("Unable to send signal\n");
         }
+#endif
     }
     return IRQ_HANDLED;
 }
