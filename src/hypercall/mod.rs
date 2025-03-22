@@ -212,7 +212,14 @@ impl<'a> HyperCall<'a> {
             );
         }
         if config_size != core::mem::size_of::<HvZoneConfig>() as _ {
-            return hv_result_err!(EINVAL, "Invalid config!");
+            return hv_result_err!(
+                EINVAL,
+                format!(
+                    "hv_zone_start: config size should be {} bytes, but got {}",
+                    core::mem::size_of::<HvZoneConfig>(),
+                    config_size
+                )
+            );
         }
         let zone = zone_create(config)?;
         let boot_cpu = zone.read().cpu_set.first_cpu().unwrap();

@@ -1,0 +1,81 @@
+{
+    "arch": "arm64",
+    "name": "linux2",
+    "zone_id": 1,
+    "cpus": [2, 3],
+    "memory_regions": [
+        {
+            "type": "ram",
+            "physical_start": "0x50000000",
+            "virtual_start":  "0x50000000",
+            "size": "0x30000000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x30a60000",
+            "virtual_start":  "0x30a60000",
+            "size": "0x10000"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0xa003c00",
+            "virtual_start":  "0xa003c00",
+            "size": "0x200"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0xa003800",
+            "virtual_start":  "0xa003800",
+            "size": "0x200"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0xa003600",
+            "virtual_start":  "0xa003600",
+            "size": "0x200"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x38000000",
+            "virtual_start":  "0x38000000",
+            "size": "0x10000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x38500000",
+            "virtual_start":  "0x38500000",
+            "size": "0x20000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x32e80000",
+            "virtual_start":  "0x32e80000",
+            "size": "0x20000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x30c00000",
+            "virtual_start":  "0x30c00000",
+            "size": "0x400000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x32fc0000",
+            "virtual_start":  "0x32fc0000",
+            "size": "0x20000"
+        }
+    ],
+    "interrupts": [35, 37, 38, 45, 56, 57, 61, 75, 76, 78, 135, 162],
+    "ivc_configs": [],
+    "kernel_filepath": "./Image",
+    "dtb_filepath": "./linux2.dtb",
+    "kernel_load_paddr": "0x50400000",
+    "dtb_load_paddr":   "0x50000000",
+    "entry_point":      "0x50400000",
+    "arch_config": {
+        "gicd_base": "0x38800000",
+        "gicd_size": "0x10000",
+        "gicr_base": "0x38880000",
+        "gicr_size": "0xc0000"
+    }
+}

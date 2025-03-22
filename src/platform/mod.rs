@@ -6,35 +6,8 @@ use crate::{
     consts::INVALID_ADDRESS,
 };
 
-#[cfg(all(feature = "platform_qemu", target_arch = "riscv64"))]
-pub mod qemu_riscv64;
-
-#[cfg(all(feature = "platform_qemu", target_arch = "riscv64"))]
-use qemu_riscv64::*;
-
-#[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
-pub mod qemu_aarch64;
-
-#[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
-pub use qemu_aarch64::*;
-
-#[cfg(all(feature = "platform_imx8mp", target_arch = "aarch64"))]
-pub mod imx8mp_aarch64;
-
-#[cfg(all(feature = "platform_imx8mp", target_arch = "aarch64"))]
-use imx8mp_aarch64::*;
-
-#[cfg(all(feature = "platform_zcu102", target_arch = "aarch64"))]
-pub mod zcu102_aarch64;
-
-#[cfg(all(feature = "platform_zcu102", target_arch = "aarch64"))]
-pub use zcu102_aarch64::*;
-
-#[cfg(target_arch = "loongarch64")]
-pub mod ls3a5000_loongarch64;
-
-#[cfg(target_arch = "loongarch64")]
-pub use ls3a5000_loongarch64::*;
+pub mod __board; // riscv64 uses some private PLIC constants in board.rs ... so we have to `pub` it - wheatfox
+pub use __board::*;
 
 pub fn platform_root_zone_config() -> HvZoneConfig {
     // fill zero for memory regions and interrupts
@@ -65,7 +38,7 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
     let mut pci_devs = [0; CONFIG_MAX_PCI_DEV];
     let mut root_pci_cfg = HvPciConfig::new_empty();
     let mut num_pci_devs: u64 = 0;
-    #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
+    #[cfg(all(feature = "pci", target_arch = "aarch64"))]
     {
         pci_devs[..ROOT_PCI_DEVS.len()].copy_from_slice(&ROOT_PCI_DEVS);
         root_pci_cfg = ROOT_PCI_CONFIG;

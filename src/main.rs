@@ -8,16 +8,13 @@
 //! - [`device`]: Device management
 //! - [`arch`]: Architecture's related
 
-#![no_std] // 禁用标准库链接
+#![no_std]
 #![no_main]
-// 不使用main入口，使用自己定义实际入口_start，因为我们还没有初始化堆栈指针
 #![feature(asm_const)]
 #![feature(naked_functions)]
-//  surpport naked function
 // #![feature(core_panic)]
-// 支持内联汇编
-// #![deny(warnings, missing_docs)] // 将warnings作为error
-
+// #![deny(warnings, missing_docs)]
+#![feature(proc_macro_hygiene)]
 // unittest
 #![feature(custom_test_frameworks)]
 #![test_runner(crate::tests::test_main)]
@@ -50,6 +47,8 @@ mod zone;
 mod ivc;
 
 mod pci;
+
+#[cfg(test)]
 mod tests;
 
 #[cfg(target_arch = "aarch64")]
@@ -61,7 +60,7 @@ use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
 use zone::zone_create;
 
-#[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
+#[cfg(all(feature = "iommu", target_arch = "aarch64"))]
 use crate::arch::iommu::iommu_init;
 
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
@@ -118,7 +117,7 @@ fn primary_init_early() {
     device::irqchip::primary_init_early();
     // crate::arch::mm::init_hv_page_table().unwrap();
 
-    #[cfg(all(feature = "platform_qemu", target_arch = "aarch64"))]
+    #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
     iommu_init();
 
     #[cfg(not(test))]
