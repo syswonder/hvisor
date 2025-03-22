@@ -26,3 +26,4 @@ __loongarch*
 .cache
 compile_commands.json
 output/
+script.py
