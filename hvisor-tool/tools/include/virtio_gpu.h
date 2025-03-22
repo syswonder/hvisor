@@ -1,3 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/**
+ * Copyright (c) 2025 Syswonder
+ *
+ * Syswonder Website:
+ *      https://www.syswonder.org
+ *
+ * Authors:
+ *      
+ */
 #ifndef _HVISOR_VIRTIO_GPU_H
 #define _HVISOR_VIRTIO_GPU_H
 #ifdef ENABLE_VIRTIO_GPU
