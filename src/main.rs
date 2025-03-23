@@ -153,7 +153,7 @@ fn x86_rust_main_tmp(cpuid: usize, host_dtb: usize) {
         #[cfg(target_arch = "x86_64")]
         MultibootInfo::init(host_dtb);
         #[cfg(target_arch = "x86_64")]
-        arch::apic::init_ioapic();
+        device::irqchip::pic::ioapic::init_ioapic();
     }
 
     let cpu = PerCpu::new(cpuid);

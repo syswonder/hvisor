@@ -7,14 +7,12 @@ use crate::{
             Msr::{self, *},
             MsrBitmap,
         },
+        pio::PortIoBitmap,
         vmcs::*,
         vmx::*,
     },
     consts::{core_end, MAX_CPU_NUM, PER_CPU_SIZE},
-    device::irqchip::pic::{
-        check_pending_vectors, hpet,
-        lapic::{VirtLocalApic, VirtLocalApicTimer},
-    },
+    device::irqchip::pic::{check_pending_vectors, hpet, lapic::VirtLocalApic},
     error::{HvError, HvResult},
     memory::{addr::phys_to_virt, GuestPhysAddr, HostPhysAddr, PhysAddr, PAGE_SIZE},
     percpu::this_cpu_data,
@@ -162,6 +160,7 @@ pub struct ArchCpu {
     vmxon_region: VmxRegion,
     vmcs_region: VmxRegion,
     msr_bitmap: MsrBitmap,
+    pio_bitmap: PortIoBitmap,
 }
 
 impl ArchCpu {
@@ -179,6 +178,7 @@ impl ArchCpu {
             vmxon_region: VmxRegion::uninit(),
             vmcs_region: VmxRegion::uninit(),
             msr_bitmap: MsrBitmap::uninit(),
+            pio_bitmap: PortIoBitmap::uninit(),
         }
     }
 
@@ -318,6 +318,7 @@ impl ArchCpu {
     fn setup_vmcs(&mut self, entry: GuestPhysAddr, set_rip: bool) -> HvResult {
         self.vmcs_region = VmxRegion::new(self.vmcs_revision_id, false)?;
         self.msr_bitmap = MsrBitmap::intercept_def()?;
+        self.pio_bitmap = PortIoBitmap::intercept_def()?;
 
         let start_paddr = self.vmcs_region.start_paddr() as usize;
         Vmcs::clear(start_paddr)?;
@@ -341,7 +342,7 @@ impl ArchCpu {
             0,
         )?;
 
-        // Intercept all I/O instructions, use MSR bitmaps, activate secondary controls,
+        // Use I/O bitmaps and MSR bitmaps, activate secondary controls,
         // disable CR3 load/store interception.
         use PrimaryControls as CpuCtrl;
         Vmcs::set_control(
@@ -351,7 +352,7 @@ impl ArchCpu {
             (
                 // CpuCtrl::RDTSC_EXITING |
                 CpuCtrl::HLT_EXITING
-                    | CpuCtrl::UNCOND_IO_EXITING
+                    | CpuCtrl::USE_IO_BITMAPS
                     | CpuCtrl::USE_MSR_BITMAPS
                     | CpuCtrl::SECONDARY_CONTROLS
             )
@@ -406,8 +407,8 @@ impl ArchCpu {
 
         // Pass-through exceptions, don't use I/O bitmap, set MSR bitmaps.
         VmcsControl32::EXCEPTION_BITMAP.write(0)?;
-        VmcsControl64::IO_BITMAP_A_ADDR.write(0)?;
-        VmcsControl64::IO_BITMAP_B_ADDR.write(0)?;
+        VmcsControl64::IO_BITMAP_A_ADDR.write(self.pio_bitmap.bitmap_a_addr() as _)?;
+        VmcsControl64::IO_BITMAP_B_ADDR.write(self.pio_bitmap.bitmap_b_addr() as _)?;
         VmcsControl64::MSR_BITMAPS_ADDR.write(self.msr_bitmap.phys_addr() as _)?;
         Ok(())
     }
@@ -517,7 +518,6 @@ impl ArchCpu {
 
     fn vmexit_handler(&mut self) {
         crate::arch::trap::handle_vmexit(self).unwrap();
-        self.virt_lapic.check_timer_interrupt();
         check_pending_vectors(this_cpu_id());
     }
 

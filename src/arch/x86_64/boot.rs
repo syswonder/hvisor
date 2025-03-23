@@ -141,10 +141,6 @@ impl BootParams {
                 }
                 _ => {}
             }
-            // FIXME: very dirty!
-            if index == 3 {
-                break;
-            }
         }
         self.e820_entries = index as _;
     }

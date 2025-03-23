@@ -1,6 +1,5 @@
 pub mod hpet;
-pub mod i8254;
-pub mod i8259a;
+pub mod ioapic;
 pub mod lapic;
 
 use crate::{
@@ -32,9 +31,9 @@ impl PendingVectors {
         match self.inner.get(cpu_id) {
             Some(pending_vectors) => {
                 let mut vectors = pending_vectors.lock();
-                if vectors.len() > 2 {
+                /*if vectors.len() > 2 {
                     info!("len: {:x}", vectors.len());
-                }
+                }*/
                 if allow_repeat || !vectors.contains(&(vector, err_code)) {
                     vectors.push_back((vector, err_code));
                 }

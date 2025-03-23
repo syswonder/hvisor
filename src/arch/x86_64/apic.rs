@@ -1,4 +1,4 @@
-use self::irqs::*;
+/*use self::irqs::*;
 use crate::device::irqchip::pic::enable_irq;
 use crate::device::irqchip::pic::hpet;
 use core::time::Duration;
@@ -19,7 +19,7 @@ pub mod irqs {
 static mut IO_APIC: Option<IoApic> = None;
 const IO_APIC_BASE: u64 = 0xfec00000;
 
-/*pub mod vectors {
+pub mod vectors {
     pub const APIC_TIMER_VECTOR: u8 = 0xf0;
     pub const APIC_SPURIOUS_VECTOR: u8 = 0xf1;
     pub const APIC_ERROR_VECTOR: u8 = 0xf2;
@@ -61,7 +61,7 @@ fn busy_wait_until(deadline: TimeValue) {
     while current_time() < deadline {
         core::hint::spin_loop();
     }
-}*/
+}
 
 // FIXME: temporary
 unsafe fn configure_gsi(io_apic: &mut IoApic, gsi: u8, vector: u8) {
@@ -152,3 +152,4 @@ pub fn init_ioapic() {
 
     enable_irq();
 }*/
+*/

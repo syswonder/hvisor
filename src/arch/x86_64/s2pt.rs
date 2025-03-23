@@ -16,7 +16,7 @@ use core::{arch::asm, fmt};
 
 bitflags! {
     /// EPT entry flags. (SDM Vol. 3C, Section 28.3.2)
-    struct DescriptorAttr: u64 {
+    pub struct DescriptorAttr: u64 {
         /// Read access.
         const READ =                1 << 0;
         /// Write access.

@@ -14,21 +14,16 @@ pub const ROOT_ZONE_CMDLINE_ADDR: GuestPhysAddr = 0xc000;
 pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1) | (1 << 2);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
-pub const ROOT_ZONE_CMDLINE: &str =
-    "console=ttyS0 earlyprintk=serial rdinit=/init nokaslr noapic\0";
+pub const ROOT_ZONE_CMDLINE: &str = "console=ttyS0 earlyprintk=serial rdinit=/init nokaslr\0"; // noapic
 
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 7] = [
+pub const MEM_TYPE_ROM: u32 = 3;
+
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 3] = [
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x500_0000,
         virtual_start: 0x0,
-        size: 0x1_0000,
-    }, // ram
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_RAM,
-        physical_start: 0x501_0000,
-        virtual_start: 0x1_0000,
-        size: 0x14ff_0000,
+        size: 0x1500_0000,
     }, // ram
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
@@ -37,33 +32,19 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 7] = [
         size: 0x4000_0000,
     }, // ram
     HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_RAM,
+        mem_type: MEM_TYPE_ROM,
         physical_start: 0x2000_0000,
         virtual_start: 0x1500_0000,
         size: 0x20_0000,
-    }, // ram
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0xfec0_0000,
-        virtual_start: 0xfec0_0000,
-        size: 0x1000,
-    }, // io apic
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0xfed0_0000,
-        virtual_start: 0xfed0_0000,
-        size: 0x1000,
-    }, // hpet
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0xfee0_0000,
-        virtual_start: 0xfee0_0000,
-        size: 0x1000,
-    }, // local apic
+    }, // initrd
 ];
 
 pub const ROOT_ZONE_IRQS: [u32; 32] = [0; 32];
-pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {};
+pub const ROOT_IOAPIC_BASE: usize = 0xfec0_0000;
+pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
+    ioapic_base: ROOT_IOAPIC_BASE,
+    ioapic_size: 0x1000,
+};
 
 // TODO: temp
 pub const GUEST_PT1: GuestPhysAddr = 0x1000;

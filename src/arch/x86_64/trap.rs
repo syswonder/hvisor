@@ -1,9 +1,8 @@
 use crate::{
     arch::{
-        cpu::ArchCpu,
+        cpu::{this_cpu_id, ArchCpu},
         cpuid::{CpuIdEax, ExtendedFeaturesEcx, FeatureInfoFlags},
-        device::all_virt_devices,
-        idt::IdtStruct,
+        idt::{IdtStruct, IdtVector},
         ipi,
         msr::Msr::{self, *},
         s2pt::Stage2PageFaultInfo,
@@ -11,14 +10,21 @@ use crate::{
         vmx::{VmxCrAccessInfo, VmxExitInfo, VmxExitReason, VmxInterruptInfo, VmxIoExitInfo},
     },
     device::{
-        irqchip::pic::{hpet, lapic::VirtLocalApic},
+        irqchip::{
+            inject_vector,
+            pic::{
+                hpet,
+                ioapic::{ioapic_inject_irq, irqs},
+                lapic::VirtLocalApic,
+            },
+        },
         uart::UartReg,
     },
     error::HvResult,
+    memory::{mmio_handle_access, MMIOAccess, MemFlags},
+    percpu::this_cpu_data,
 };
 use x86_64::registers::control::Cr4Flags;
-
-use super::{device::UART_COM1_BASE_PORT, idt::IdtVector};
 
 core::arch::global_asm!(
     include_str!("trap.S"),
@@ -76,14 +82,17 @@ pub fn arch_handle_trap(tf: &mut TrapFrame) {
 fn handle_irq(vector: u8) {
     match vector {
         IdtVector::VIRT_IPI_VECTOR => ipi::handle_virt_ipi(),
-        IdtVector::APIC_TIMER_VECTOR => {}
+        IdtVector::APIC_TIMER_VECTOR => inject_vector(
+            this_cpu_id(),
+            this_cpu_data().arch_cpu.virt_lapic.virt_timer_vector,
+            None,
+            true,
+        ),
         IdtVector::UART_COM1_VECTOR => {
-            if let Some(device) = all_virt_devices().find_port_io_device(UART_COM1_BASE_PORT) {
-                device.read(UART_COM1_BASE_PORT + UartReg::LINE_STATUS, 0);
-            }
+            ioapic_inject_irq(irqs::UART_COM1_IRQ);
         }
         _ => {
-            println!("Unhandled irq {}", vector);
+            // println!("Unhandled irq {}", vector);
         }
     }
     unsafe { VirtLocalApic::phys_local_apic().end_of_interrupt() };
@@ -219,7 +228,7 @@ fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
         return hv_result_err!(ENOSYS);
     }
 
-    if let Some(dev) = all_virt_devices().find_port_io_device(io_info.port) {
+    /*if let Some(dev) = all_virt_devices().find_port_io_device(io_info.port) {
         if io_info.is_in {
             let value = dev.read(io_info.port, 0)?;
             let rax = &mut arch_cpu.regs_mut().rax;
@@ -250,7 +259,7 @@ fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
             "Unsupported I/O port {:#x} access: {:#x?} \n {:#x?}",
             io_info.port, io_info, arch_cpu
         )
-    }
+    }*/
 
     arch_cpu.advance_guest_rip(exit_info.exit_instruction_length as _)?;
     Ok(())
@@ -261,7 +270,9 @@ fn handle_msr_read(arch_cpu: &mut ArchCpu) -> HvResult {
 
     if let Ok(msr) = Msr::try_from(rcx) {
         let res = if msr == IA32_APIC_BASE {
+            // FIXME: non root linux
             let mut apic_base = unsafe { IA32_APIC_BASE.read() };
+            // info!("APIC BASE: {:x}", apic_base);
             apic_base |= 1 << 11 | 1 << 10; // enable xAPIC and x2APIC
             Ok(apic_base)
         } else if VirtLocalApic::msr_range().contains(&rcx) {
@@ -309,12 +320,23 @@ fn handle_msr_write(arch_cpu: &mut ArchCpu) -> HvResult {
     Ok(())
 }
 
-fn handle_s2pt_violation(arch_cpu: &mut ArchCpu, guest_rip: usize) -> HvResult {
+fn handle_s2pt_violation(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvResult {
     let fault_info = Stage2PageFaultInfo::new()?;
-    panic!(
+    mmio_handle_access(&mut MMIOAccess {
+        address: fault_info.fault_guest_paddr,
+        size: 0,
+        is_write: fault_info.access_flags.contains(MemFlags::WRITE),
+        value: 0,
+    })?;
+
+    // FIXME: do advance_guest_rip in mmio handler, for the inst len is not correct
+    // arch_cpu.advance_guest_rip(exit_info.exit_instruction_length as _)?;
+    Ok(())
+
+    /*panic!(
         "VM exit: S2PT violation @ {:#x}, fault_paddr={:#x}, access_flags=({:?}), {:#x?}",
-        guest_rip, fault_info.fault_guest_paddr, fault_info.access_flags, arch_cpu
-    );
+        exit_info.guest_rip, fault_info.fault_guest_paddr, fault_info.access_flags, arch_cpu
+    );*/
 }
 
 fn handle_triple_fault(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvResult {
@@ -348,7 +370,7 @@ pub fn handle_vmexit(arch_cpu: &mut ArchCpu) -> HvResult {
         VmxExitReason::IO_INSTRUCTION => handle_io_instruction(arch_cpu, &exit_info),
         VmxExitReason::MSR_READ => handle_msr_read(arch_cpu),
         VmxExitReason::MSR_WRITE => handle_msr_write(arch_cpu),
-        VmxExitReason::EPT_VIOLATION => handle_s2pt_violation(arch_cpu, exit_info.guest_rip),
+        VmxExitReason::EPT_VIOLATION => handle_s2pt_violation(arch_cpu, &exit_info),
         _ => panic!(
             "Unhandled VM-Exit reason {:?}:\n{:#x?}",
             exit_info.exit_reason, arch_cpu
@@ -357,8 +379,10 @@ pub fn handle_vmexit(arch_cpu: &mut ArchCpu) -> HvResult {
 
     if res.is_err() {
         panic!(
-            "Failed to handle VM-exit {:?}:\n{:#x?}",
-            exit_info.exit_reason, arch_cpu
+            "Failed to handle VM-exit {:?}:\n{:#x?}\n{:?}",
+            exit_info.exit_reason,
+            arch_cpu,
+            res.err()
         );
     }
 

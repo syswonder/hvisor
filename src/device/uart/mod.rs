@@ -23,4 +23,4 @@ pub use ns16440a::{console_getchar, console_putchar};
 mod uart16550a;
 
 #[cfg(target_arch = "x86_64")]
-pub use uart16550a::{console_getchar, console_putchar, UartReg, VirtUart16550a};
+pub use uart16550a::{console_getchar, console_putchar, UartReg};
