@@ -22,3 +22,8 @@ pub use crate::arch::riscv64::sbi::{console_getchar, console_putchar};
 mod loongson_uart;
 #[cfg(all(feature = "loongson_uart", target_arch = "loongarch64"))]
 pub use loongson_uart::{console_getchar, console_putchar};
+
+#[cfg(all(feature = "uart_16550", target_arch = "aarch64"))]
+pub mod uart_16550;
+#[cfg(all(feature = "uart_16550", target_arch = "aarch64"))]
+pub use uart_16550::{console_getchar, console_putchar};

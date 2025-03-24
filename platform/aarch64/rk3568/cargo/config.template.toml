@@ -1,0 +1,7 @@
+[target.aarch64-unknown-none]
+runner = "___HVISOR_SRC___/tools/cargo_test.sh"
+rustflags = [
+    "-Clink-arg=-Tplatform/__ARCH__/__BOARD__/linker.ld",
+    "-Ctarget-feature=+a55,+v8a,+strict-align,-neon,-fp-armv8",
+    "-Cforce-frame-pointers=yes",
+]

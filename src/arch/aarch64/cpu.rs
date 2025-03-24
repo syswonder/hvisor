@@ -192,8 +192,14 @@ impl ArchCpu {
     }
 }
 
+#[cfg(not(feature = "a55"))]
 pub fn mpidr_to_cpuid(mpidr: u64) -> u64 {
     mpidr & 0xff00ffffff
+}
+
+#[cfg(feature = "a55")]
+pub fn mpidr_to_cpuid(mpidr: u64) -> u64 {
+    (mpidr >> 8) & 0xff
 }
 
 pub fn this_cpu_id() -> usize {
