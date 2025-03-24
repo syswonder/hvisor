@@ -20,12 +20,12 @@ pub const BOARD_NAME: &str = "ls3a5000";
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x10000f000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x200000;
-pub const ROOT_ZONE_ENTRY: u64 = 0x9000000000e71000;
+pub const ROOT_ZONE_ENTRY: u64 = 0x9000000000E98000;
 pub const ROOT_ZONE_CPUS: u64 = 1 << 0;
 
 pub const ROOT_ZONE_NAME: &str = "root-linux-la64";
 
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 7] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 11] = [
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x00200000,
@@ -74,18 +74,42 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 7] = [
         virtual_start: 0xf0000,
         size: 0x10000,
     }, // 0xf0000
-       // HvConfigMemoryRegion {
-       //     mem_type: MEM_TYPE_RAM,
-       //     physical_start: 0x10000,
-       //     virtual_start: 0x10000,
-       //     size: 0x10000,
-       // }, // 0x10000
-       // HvConfigMemoryRegion {
-       //     mem_type: MEM_TYPE_RAM,
-       //     physical_start: 0xf000000,
-       //     virtual_start: 0xf000000,
-       //     size: 0x1000,
-       // },
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_RAM,
+    //     physical_start: 0x10000,
+    //     virtual_start: 0x10000,
+    //     size: 0x10000,
+    // }, // 0x10000
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_RAM,
+    //     physical_start: 0xf000000,
+    //     virtual_start: 0xf000000,
+    //     size: 0x1000,
+    // },
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x10000000,
+        virtual_start: 0x10000000,
+        size: 0x1000,
+    }, // pic
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x100d0000,
+        virtual_start: 0x100d0000,
+        size: 0x4000,
+    }, // rtc
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x20000000,
+        virtual_start: 0x20000000,
+        size: 0x20000000,
+    }, // pci controller
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xfe00000000,
+        virtual_start: 0xfe00000000,
+        size: 0x10000000,
+    }, // pci?
 ];
 
 pub const ROOT_ZONE_IRQS: [u32; 0] = [];
