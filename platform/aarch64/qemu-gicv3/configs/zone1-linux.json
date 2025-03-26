@@ -11,13 +11,19 @@
             "size": "0x30000000"
         },
         {
-            "type": "io",
-            "physical_start": "0xa003000",
-            "virtual_start":  "0xa003000",
-            "size": "0x1000"            
+            "type": "virtio",
+            "physical_start": "0xa003800",
+            "virtual_start": "0xa003800",
+            "size": "0x200"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0xa003c00",
+            "virtual_start": "0xa003c00",
+            "size": "0x200"
         }
     ],
-    "interrupts": [75, 76, 78],
+    "interrupts": [76, 78],
     "ivc_configs": [],
     "kernel_filepath": "Image",
     "kernel_args": "",
