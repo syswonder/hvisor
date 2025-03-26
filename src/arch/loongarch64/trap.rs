@@ -32,6 +32,7 @@ use core::arch;
 use core::arch::asm;
 use core::panic;
 use loongArch64::cpu;
+use loongArch64::register;
 use loongArch64::register::ecfg::LineBasedInterrupt;
 use loongArch64::register::*;
 use loongArch64::time;
@@ -1180,21 +1181,15 @@ fn handle_interrupt(is: usize) {
                 // 0x7 is a SGI in hvisor, but we still need ot know which event it is
                 let events = dump_cpu_events(this_cpu_id());
                 debug!("this cpu's events: {:?}", events);
-                // for _ in 0..count {
-                //     let result = check_events();
-                //     if result {
-                //         debug!("ipi event handled :)");
-                //     } else {
-                //         error!("ipi event not handled !!!");
-                //     }
-                // }
                 while check_events() {}
+                reset_ipi(this_cpu_id());
             } else if ipi_status == 0x8 {
-                debug!("not handled IPI status {:#x} for now", ipi_status);
+                debug!("not handled IPI status {:#x} for hvisor!", ipi_status);
+                reset_ipi(this_cpu_id());
             } else {
                 warn!("ignored IPI status {:#x}", ipi_status);
+                reset_ipi(this_cpu_id());
             }
-            reset_ipi(this_cpu_id());
         }
         _ if is & TIMER_BIT != 0 => {
             use loongArch64::register;
@@ -1335,8 +1330,8 @@ fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
     let ty = extract_field(ins, 10, 3);
     let rd = extract_field(ins, 0, 5);
     let rj = extract_field(ins, 5, 5);
-    info!("iocsr emulation, ty = {}, rd = {}, rj = {}", ty, rd, rj);
-    info!("GPR[rd] = {:#x}, GPR[rj] = {:#x}", ctx.x[rd], ctx.x[rj]);
+    debug!("iocsr emulation, ty = {}, rd = {}, rj = {}", ty, rd, rj);
+    debug!("GPR[rd] = {:#x}, GPR[rj] = {:#x}", ctx.x[rd], ctx.x[rj]);
     match ty {
         0 => {
             // iocsrrd.b
@@ -1391,8 +1386,38 @@ fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
         6 => {
             // iocsrwr.w
             // iocsrwr.w(GPR[rd], GPR[rj])
-            unsafe {
-                asm!("iocsrwr.w {}, {}", in(reg) ctx.x[rd], in(reg) ctx.x[rj]);
+
+            // hack: since guest linux will use iocsrwr.w [xxx] 0x1014 to send IPI to itself (ACTION_IRQ_WORK)
+            // we need to check if ctx.x[rj] is 0x1014, if so, we should parse ctx.x[rd][31:0]
+            // then inject IPI bit to GCSR_ESTAT, and prepare the 7A2000's IPI register to have the exact target status
+            // using the debug ANY_SEND register (TODO)
+
+            let target_io = ctx.x[rj];
+            let target_write_data = ctx.x[rd];
+
+            match target_io {
+                0x1014 => {
+                    // IPI send issued from guest is tricky ...
+                    // IPI_send is 32 bit, we ignore the upper 32 bits
+                    // bit [31]: wait for completion
+                    // bit [25:16] target cpu id
+                    // bit [4:0] ipi id (IPI_status, 32 bit) indicates the IPI type (0-31)
+                    let ipi_send = target_write_data as u32;
+                    let ipi_id = ipi_send & 0x1f;
+                    let target_cpu_id = (ipi_send >> 16) & 0x3ff;
+                    let wait_for_completion = (ipi_send >> 31) & 0x1;
+                    warn!("IPI send issued from guest, ipi_id = {:#x}, target_cpu_id = {:#x}, wait_for_completion = {:#x}", ipi_id, target_cpu_id, wait_for_completion);
+                    if target_cpu_id == this_cpu_id() as u32 {
+                        warn!("send IPI to itself, injecting IPI to GCSR_ESTAT");
+                        inject_irq(INT_IPI, false);
+                    } else {
+                        // TODO
+                        panic!("send IPI from guest to other cpu is not supported yet!");
+                    }
+                }
+                _ => unsafe {
+                    asm!("iocsrwr.w {}, {}", in(reg) ctx.x[rd], in(reg) ctx.x[rj]);
+                },
             }
         }
         7 => {

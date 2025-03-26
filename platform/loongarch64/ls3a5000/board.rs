@@ -20,7 +20,7 @@ pub const BOARD_NAME: &str = "ls3a5000";
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x10000f000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x200000;
-pub const ROOT_ZONE_ENTRY: u64 = 0x9000000000E98000;
+pub const ROOT_ZONE_ENTRY: u64 = 0x9000000000e27000;
 pub const ROOT_ZONE_CPUS: u64 = 1 << 0;
 
 pub const ROOT_ZONE_NAME: &str = "root-linux-la64";
@@ -58,12 +58,12 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
         virtual_start: 0x1fe00000,
         size: 0x2000,
     }, // uart0
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0x100d0000,
-        virtual_start: 0x100d0000,
-        size: 0x4000,
-    }, // rtc
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0x100d0000,
+    //     virtual_start: 0x100d0000,
+    //     size: 0x1000,
+    // }, // rtc
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x10000000,
@@ -75,14 +75,14 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
         mem_type: MEM_TYPE_IO,
         physical_start: 0x1a000000,
         virtual_start: 0x1a000000,
-        size: 0x20000000,
-    }, // pci config space
+        size: 0x02000000,
+    }, // pci
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0xfe00000000,
         virtual_start: 0xfe00000000,
-        size: 0x10000000,
-    }, // pci?
+        size: 0x20000000,
+    }, // pci config space (HT)
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x18408000,
@@ -94,7 +94,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
         physical_start: 0x60000000,
         virtual_start: 0x60000000,
         size: 0x20000000,
-    }, // pci mem32 resource
+    }, // pci mem resource
     /* map special regions - 2024.4.12 */
     // linux's strscpy called gpa at 0x9000_0000_0000_0000 which is ldx x, 0x9000_0000_0000_0000(a1) + 0x0(a0) why ?
     // __memcpy_fromio 0xf0000 why?
