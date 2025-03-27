@@ -70,7 +70,7 @@ static int hvisor_finish_req(void) {
 //     vma = __get_vm_area(size, VM_IOREMAP, VMALLOC_START, VMALLOC_END);
 //     if (!vma)
 //     {
-//         pr_err("hvisor: failed to allocate virtual kernel memory for
+//         pr_err("hvisor.ko: failed to allocate virtual kernel memory for
 //         image\n"); return -ENOMEM;
 //     }
 //     vma->phys_addr = phys_start;
@@ -78,7 +78,7 @@ static int hvisor_finish_req(void) {
 //     if (ioremap_page_range((unsigned long)vma->addr, (unsigned
 //     long)(vma->addr + size), phys_start, PAGE_KERNEL_EXEC))
 //     {
-//         pr_err("hvisor: failed to ioremap image\n");
+//         pr_err("hvisor.ko: failed to ioremap image\n");
 //         err = -EFAULT;
 //         goto unmap_vma;
 //     }
@@ -96,11 +96,11 @@ static int hvisor_zone_start(zone_config_t __user *arg) {
     zone_config_t *zone_config = kmalloc(sizeof(zone_config_t), GFP_KERNEL);
 
     if (zone_config == NULL) {
-        pr_err("hvisor: failed to allocate memory for zone_config\n");
+        pr_err("hvisor.ko: failed to allocate memory for zone_config\n");
     }
 
     if (copy_from_user(zone_config, arg, sizeof(zone_config_t))) {
-        pr_err("hvisor: failed to copy from user\n");
+        pr_err("hvisor.ko: failed to copy from user\n");
         kfree(zone_config);
         return -EFAULT;
     }
@@ -108,7 +108,7 @@ static int hvisor_zone_start(zone_config_t __user *arg) {
     // flush_cache(zone_config->kernel_load_paddr, zone_config->kernel_size);
     // flush_cache(zone_config->dtb_load_paddr, zone_config->dtb_size);
 
-    pr_info("hvisor: calling hypercall to start zone\n");
+    pr_info("hvisor.ko: invoking hypercall to start the zone\n");
 
     err = hvisor_call(HVISOR_HC_START_ZONE, __pa(zone_config),
                       sizeof(zone_config_t));
@@ -145,7 +145,7 @@ static int hvisor_zone_list(zone_list_args_t __user *arg) {
 
     /* Copy user provided arguments to kernel space */
     if (copy_from_user(&args, arg, sizeof(zone_list_args_t))) {
-        pr_err("hvisor: failed to copy from user\n");
+        pr_err("hvisor.ko: failed to copy from user\n");
         return -EFAULT;
     }
 
@@ -154,12 +154,12 @@ static int hvisor_zone_list(zone_list_args_t __user *arg) {
 
     ret = hvisor_call(HVISOR_HC_ZONE_LIST, __pa(zones), args.cnt);
     if (ret < 0) {
-        pr_err("hvisor: failed to get zone list\n");
+        pr_err("hvisor.ko: failed to get zone list\n");
         goto out;
     }
     // copy result back to user space
     if (copy_to_user(args.zones, zones, ret * sizeof(zone_info_t))) {
-        pr_err("hvisor: failed to copy to user\n");
+        pr_err("hvisor.ko: failed to copy to user\n");
         goto out;
     }
 out:
@@ -287,16 +287,22 @@ static int __init hvisor_init(void) {
     // from GIC's IRQ number.
     node = of_find_node_by_path("/hvisor_virtio_device");
     if (!node) {
-        pr_info("hvisor_virtio_device node not found in dtb, can't use virtio "
-                "devices\n");
-    } else {
-        virtio_irq = of_irq_get(node, 0);
-        err = request_irq(virtio_irq, virtio_irq_handler,
-                          IRQF_SHARED | IRQF_TRIGGER_RISING,
-                          "hvisor_virtio_device", &hvisor_misc_dev);
-        if (err)
-            goto err_out;
+        pr_err("Critical: Missing device tree node!\n");
+        pr_err("   Please add the following to your device tree:\n");
+        pr_err("   hvisor_virtio_device {\n");
+        pr_err("       compatible = \"hvisor\";\n");
+        pr_err("       interrupts = <0x00 0x20 0x01>;\n");
+        pr_err("   };\n");
+        return -ENODEV;
     }
+
+    virtio_irq = of_irq_get(node, 0);
+    err = request_irq(virtio_irq, virtio_irq_handler,
+                      IRQF_SHARED | IRQF_TRIGGER_RISING, "hvisor_virtio_device",
+                      &hvisor_misc_dev);
+    if (err)
+        goto err_out;
+
     of_node_put(node);
     pr_info("hvisor init done!!!\n");
     return 0;

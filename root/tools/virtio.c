@@ -25,9 +25,9 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "cJSON.h"
 #include "hvisor.h"
 #include "log.h"
+#include "safe_cjson.h"
 #include "virtio.h"
 #include "virtio_blk.h"
 #include "virtio_console.h"
@@ -203,7 +203,7 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
         break;
 
     default:
-        log_error("unsupported virtio device type\n");
+        log_error("unsupported virtio device type");
         goto err;
     }
 
@@ -700,7 +700,7 @@ uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size) {
 
 void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t value,
                        unsigned size) {
-    log_debug("virtio mmio write at %#x, value is %#x\n", offset, value);
+    log_debug("virtio mmio write at %#x, value is %#x", offset, value);
 
     log_info("WRITE virtio mmio at offset=%#x[%s], value=%#x, size=%d, vdev=%p",
              offset, virtio_mmio_reg_name(offset), value, size, vdev);
@@ -949,7 +949,7 @@ int virtio_handle_req(volatile struct device_req *req) {
         virtio_mmio_write(vdev, offs, req->value, req->size);
     } else {
         value = virtio_mmio_read(vdev, offs, req->size);
-        log_debug("read value is 0x%x\n", value);
+        log_debug("read value is 0x%x", value);
     }
 
     // Control instructions do not require interrupts to return data
@@ -1106,12 +1106,13 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
     uint64_t base_addr = 0, len = 0;
     uint32_t irq_id = 0;
 
-    char *status = cJSON_GetObjectItem(device_json, "status")->valuestring;
+    char *status =
+        SAFE_CJSON_GET_OBJECT_ITEM(device_json, "status")->valuestring;
     if (strcmp(status, "disable") == 0)
         return 0;
 
     // Get device type
-    char *type = cJSON_GetObjectItem(device_json, "type")->valuestring;
+    char *type = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "type")->valuestring;
     void *arg0, *arg1;
 
     // Match the device type field in json
@@ -1130,25 +1131,25 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
 
     // Get base_addr, len, irq_id (mmio region base address and length, device
     // interrupt number)
-    base_addr = strtoul(cJSON_GetObjectItem(device_json, "addr")->valuestring,
-                        NULL, 16);
-    len =
-        strtoul(cJSON_GetObjectItem(device_json, "len")->valuestring, NULL, 16);
-    irq_id = cJSON_GetObjectItem(device_json, "irq")->valueint;
+    base_addr = strtoul(
+        SAFE_CJSON_GET_OBJECT_ITEM(device_json, "addr")->valuestring, NULL, 16);
+    len = strtoul(SAFE_CJSON_GET_OBJECT_ITEM(device_json, "len")->valuestring,
+                  NULL, 16);
+    irq_id = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "irq")->valueint;
 
     // Handle other fields according to the device type
     if (dev_type == VirtioTBlock) {
         // virtio-blk
-        char *img = cJSON_GetObjectItem(device_json, "img")->valuestring;
+        char *img = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "img")->valuestring;
         arg0 = img, arg1 = NULL;
     } else if (dev_type == VirtioTNet) {
         // virtio-net
-        char *tap = cJSON_GetObjectItem(device_json, "tap")->valuestring;
-        cJSON *mac_json = cJSON_GetObjectItem(device_json, "mac");
+        char *tap = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "tap")->valuestring;
+        cJSON *mac_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "mac");
         uint8_t mac[6];
         for (int i = 0; i < 6; i++) {
-            mac[i] =
-                strtoul(cJSON_GetArrayItem(mac_json, i)->valuestring, NULL, 16);
+            mac[i] = strtoul(
+                SAFE_CJSON_GET_ARRAY_ITEM(mac_json, i)->valuestring, NULL, 16);
         }
         arg0 = mac, arg1 = tap;
     } else if (dev_type == VirtioTConsole) {
@@ -1163,9 +1164,9 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
             (GPURequestedState *)malloc(sizeof(GPURequestedState));
         memset(requested_state, 0, sizeof(GPURequestedState));
         requested_state->width =
-            cJSON_GetObjectItem(device_json, "width")->valueint;
+            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "width")->valueint;
         requested_state->height =
-            cJSON_GetObjectItem(device_json, "height")->valueint;
+            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "height")->valueint;
         arg0 = requested_state;
         arg1 = NULL;
 #else
@@ -1200,9 +1201,9 @@ int virtio_start_from_json(char *json_path) {
     buffer[file_size] = '\0';
 
     // Read zones
-    cJSON *root = cJSON_Parse(buffer);
-    cJSON *zones_json = cJSON_GetObjectItem(root, "zones");
-    num_zones = cJSON_GetArraySize(zones_json);
+    cJSON *root = SAFE_CJSON_PARSE(buffer);
+    cJSON *zones_json = SAFE_CJSON_GET_OBJECT_ITEM(root, "zones");
+    num_zones = SAFE_CJSON_GET_ARRAY_SIZE(zones_json);
     if (num_zones > MAX_ZONES) {
         log_error("Exceed maximum zone number");
         err = -1;
@@ -1211,30 +1212,34 @@ int virtio_start_from_json(char *json_path) {
 
     // Match zone information
     for (int i = 0; i < num_zones; i++) {
-        cJSON *zone_json = cJSON_GetArrayItem(zones_json, i);
-        cJSON *zone_id_json = cJSON_GetObjectItem(zone_json, "id");
+        cJSON *zone_json = SAFE_CJSON_GET_ARRAY_ITEM(zones_json, i);
+        cJSON *zone_id_json = SAFE_CJSON_GET_OBJECT_ITEM(zone_json, "id");
         cJSON *memory_region_json =
-            cJSON_GetObjectItem(zone_json, "memory_region");
-        cJSON *devices_json = cJSON_GetObjectItem(zone_json, "devices");
+            SAFE_CJSON_GET_OBJECT_ITEM(zone_json, "memory_region");
+        cJSON *devices_json = SAFE_CJSON_GET_OBJECT_ITEM(zone_json, "devices");
         zone_id = zone_id_json->valueint;
         if (zone_id >= MAX_ZONES) {
             log_error("Exceed maximum zone number");
             err = -1;
             goto err_out;
         }
-        int num_mems = cJSON_GetArraySize(memory_region_json);
+        int num_mems = SAFE_CJSON_GET_ARRAY_SIZE(memory_region_json);
 
         // Memory regions
         for (int j = 0; j < num_mems; j++) {
-            cJSON *mem_region = cJSON_GetArrayItem(memory_region_json, j);
-            zone0_ipa = strtoull(
-                cJSON_GetObjectItem(mem_region, "zone0_ipa")->valuestring, NULL,
-                16);
-            zonex_ipa = strtoull(
-                cJSON_GetObjectItem(mem_region, "zonex_ipa")->valuestring, NULL,
-                16);
+            cJSON *mem_region =
+                SAFE_CJSON_GET_ARRAY_ITEM(memory_region_json, j);
+            zone0_ipa =
+                strtoull(SAFE_CJSON_GET_OBJECT_ITEM(mem_region, "zone0_ipa")
+                             ->valuestring,
+                         NULL, 16);
+            zonex_ipa =
+                strtoull(SAFE_CJSON_GET_OBJECT_ITEM(mem_region, "zonex_ipa")
+                             ->valuestring,
+                         NULL, 16);
             mem_size = strtoull(
-                cJSON_GetObjectItem(mem_region, "size")->valuestring, NULL, 16);
+                SAFE_CJSON_GET_OBJECT_ITEM(mem_region, "size")->valuestring,
+                NULL, 16);
             if (mem_size == 0) {
                 log_error("Invalid memory size");
                 continue;
@@ -1253,9 +1258,9 @@ int virtio_start_from_json(char *json_path) {
             zone_mem[zone_id][j][MEM_SIZE] = mem_size;
         }
 
-        num_devices = cJSON_GetArraySize(devices_json);
+        num_devices = SAFE_CJSON_GET_ARRAY_SIZE(devices_json);
         for (int j = 0; j < num_devices; j++) {
-            cJSON *device = cJSON_GetArrayItem(devices_json, j);
+            cJSON *device = SAFE_CJSON_GET_ARRAY_ITEM(devices_json, j);
             err = create_virtio_device_from_json(device, zone_id);
             if (err) {
                 log_error("create virtio device failed");
