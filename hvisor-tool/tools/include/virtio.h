@@ -10,8 +10,8 @@
  */
 #ifndef __HVISOR_VIRTIO_H
 #define __HVISOR_VIRTIO_H
-#include "cJSON.h"
 #include "hvisor.h"
+#include "safe_cjson.h"
 #include <linux/virtio_config.h>
 #include <linux/virtio_mmio.h>
 #include <linux/virtio_ring.h>

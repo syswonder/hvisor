@@ -142,12 +142,12 @@ int virtio_blk_init(VirtIODevice *vdev, const char *img_path) {
     struct stat st;
     uint64_t blk_size;
     if (img_fd == -1) {
-        log_error("cannot open %s, Error code is %d\n", img_path, errno);
+        log_error("cannot open %s, Error code is %d", img_path, errno);
         close(img_fd);
         return -1;
     }
     if (fstat(img_fd, &st) == -1) {
-        log_error("cannot stat %s, Error code is %d\n", img_path, errno);
+        log_error("cannot stat %s, Error code is %d", img_path, errno);
         close(img_fd);
         return -1;
     }
