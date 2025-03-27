@@ -6,7 +6,7 @@
  *      https://www.syswonder.org
  *
  * Authors:
- *      Guowei Li <2401213322@stu.pku.edu.cn>
+ *      Linkun Chen <lkchen01@foxmail.com>
  */
 
 #include "safe_cjson.h"
