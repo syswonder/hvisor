@@ -18,6 +18,7 @@ use core::arch::global_asm;
 
 use super::cpu::GeneralRegisters;
 use crate::arch::sysreg::smc_call;
+use crate::zone::zone_error;
 use crate::{
     arch::{
         cpu::mpidr_to_cpuid,
@@ -234,7 +235,8 @@ fn handle_dabt(regs: &mut GeneralRegisters) {
             }
         }
         Err(e) => {
-            panic!("mmio_handle_access: {:#x?}", e);
+            error!("mmio_handle_access: {:#x?}", e);
+            zone_error();
         }
     }
     //TODO finish dabt handle

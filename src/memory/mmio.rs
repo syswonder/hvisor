@@ -13,9 +13,9 @@
 //
 // Authors:
 //
-use core::ptr;
+use core::{ptr, usize};
 
-use crate::{error::HvResult, percpu::this_zone};
+use crate::{error::HvResult, percpu::this_zone, zone::zone_error};
 
 use super::GuestPhysAddr;
 
@@ -63,7 +63,10 @@ pub fn mmio_perform_access(base: usize, mmio: &mut MMIOAccess) {
                 2 => ptr::write_volatile(addr as *mut u16, mmio.value as u16),
                 4 => ptr::write_volatile(addr as *mut u32, mmio.value as u32),
                 8 => ptr::write_volatile(addr as *mut u64, mmio.value as u64),
-                _ => panic!("invalid mmio size"),
+                _ => {
+                    error!("invalid mmio size");
+                    zone_error();
+                }
             }
         } else {
             mmio.value = match mmio.size {
@@ -71,7 +74,11 @@ pub fn mmio_perform_access(base: usize, mmio: &mut MMIOAccess) {
                 2 => ptr::read_volatile(addr as *mut u16) as _,
                 4 => ptr::read_volatile(addr as *mut u32) as _,
                 8 => ptr::read_volatile(addr as *mut u64) as _,
-                _ => panic!("invalid mmio size"),
+                _ => {
+                    error!("invalid mmio size");
+                    zone_error();
+                    usize::MAX
+                }
             }
         }
     }

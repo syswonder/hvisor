@@ -29,6 +29,7 @@ use crate::event::IPI_EVENT_WAKEUP_VIRTIO_DEVICE;
 use crate::hypercall::SGI_IPI_ID;
 use crate::zone::root_zone;
 use crate::zone::this_zone_id;
+use crate::zone::zone_error;
 use crate::{error::HvResult, memory::MMIOAccess};
 
 /// Save the irqs the virtio-device wants to inject. The format is <cpu_id, List<irq_id>>, and the first elem of List<irq_id> is the valid len of it.
@@ -129,14 +130,16 @@ impl VirtioBridgeRegion {
     // return a mut region
     pub fn region(&self) -> &mut VirtioBridge {
         if !self.is_enable {
-            panic!("hvisor device region is not enabled!");
+            error!("hvisor device region is not enabled!");
+            zone_error();
         }
         unsafe { &mut *(self.base_address as *mut VirtioBridge) }
     }
     // return a non mut region
     pub fn immut_region(&self) -> &VirtioBridge {
         if !self.is_enable {
-            panic!("hvisor device region is not enabled!");
+            error!("hvisor device region is not enabled!");
+            zone_error();
         }
         unsafe { &*(self.base_address as *const VirtioBridge) }
     }

@@ -151,16 +151,11 @@ impl HvZoneConfig {
     }
 
     pub fn memory_regions(&self) -> &[HvConfigMemoryRegion] {
-        if self.num_memory_regions > CONFIG_MAX_MEMORY_REGIONS as u32 {
-            panic!("Too many memory regions");
-        }
+        // hvisor tool will check the length of memory regions, so we can uncheck here.
         &self.memory_regions[..self.num_memory_regions as usize]
     }
 
     pub fn interrupts(&self) -> &[u32] {
-        if self.num_interrupts > CONFIG_MAX_INTERRUPTS as u32 {
-            panic!("Too many interrupts");
-        }
         &self.interrupts[..self.num_interrupts as usize]
     }
 

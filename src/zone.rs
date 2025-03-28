@@ -17,6 +17,8 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 // use psci::error::INVALID_ADDRESS;
 use crate::consts::INVALID_ADDRESS;
+use crate::event::{send_event, IPI_EVENT_SHUTDOWN};
+use crate::hypercall::SGI_IPI_ID;
 use crate::pci::pci::PciRoot;
 use spin::RwLock;
 
@@ -39,6 +41,7 @@ pub struct Zone {
     pub irq_bitmap: [u32; 1024 / 32],
     pub gpm: MemorySet<Stage2PageTable>,
     pub pciroot: PciRoot,
+    pub is_err: bool,
 }
 
 impl Zone {
@@ -51,6 +54,7 @@ impl Zone {
             mmio: Vec::new(),
             irq_bitmap: [0; 1024 / 32],
             pciroot: PciRoot::new(),
+            is_err: false,
         }
     }
 
@@ -86,7 +90,7 @@ impl Zone {
         if let Some(mmio) = self.mmio.iter_mut().find(|mmio| mmio.region.start == start) {
             warn!("duplicated mmio region {:#x?}", mmio);
             if mmio.region.size != size {
-                panic!("duplicated mmio region size not match");
+                error!("duplicated mmio region size not match, PLEASE CHECK!!!");
             }
             mmio.handler = handler;
             mmio.arg = arg;
@@ -175,6 +179,7 @@ pub fn all_zones_info() -> Vec<ZoneInfo> {
                 zone_id: zone_lock.id as u32,
                 cpus: zone_lock.cpu_set.bitmap,
                 name: zone_lock.name.clone(),
+                is_err: zone_lock.is_err as u8,
             }
         })
         .collect()
@@ -246,6 +251,23 @@ pub struct ZoneInfo {
     zone_id: u32,
     cpus: u64,
     name: [u8; CONFIG_NAME_MAXLEN],
+    is_err: u8,
+}
+// Be careful about dead lock for zone.write()
+pub fn zone_error() {
+    if(is_this_root_zone()) {
+        panic!("root zone has some error");
+    }
+    let zone = this_zone();
+    let zone_id = zone.read().id;
+    error!("zone {} has some error, please shut down it", zone_id);
+
+    let mut zone_w = zone.write();
+    zone_w.is_err = true;
+    zone_w.cpu_set.iter().for_each(|cpu_id| {
+        send_event(cpu_id, SGI_IPI_ID as _, IPI_EVENT_SHUTDOWN);
+    });
+    drop(zone_w)
 }
 
 #[test_case]

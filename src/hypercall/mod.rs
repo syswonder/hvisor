@@ -95,7 +95,7 @@ impl<'a> HyperCall<'a> {
                 }
                 #[cfg(target_arch = "aarch64")]
                 HyperCallCode::HvIvcInfo => self.hv_ivc_info(arg0),
-                HyperCallCode::HvConfigCheck => self.hv_zone_config_check(arg0),
+                HyperCallCode::HvConfigCheck => self.hv_zone_config_check(arg0 as *mut u64),
                 _ => {
                     warn!("hypercall id={} unsupported!", code as u64);
                     Ok(0)
@@ -213,9 +213,9 @@ impl<'a> HyperCall<'a> {
         HyperCallResult::Ok(0)
     }
 
-    pub fn hv_zone_config_check(&self, magic_version: *mut usize) {
+    pub fn hv_zone_config_check(&self, magic_version: *mut u64) -> HyperCallResult {
         unsafe {
-            *magic_version = CONFIG_MAGIC_VERSION; 
+            *magic_version = CONFIG_MAGIC_VERSION as _; 
         }
         HyperCallResult::Ok(0)
     }
