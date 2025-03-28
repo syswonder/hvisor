@@ -22,6 +22,7 @@ pub const MEM_TYPE_RAM: u32 = 0;
 pub const MEM_TYPE_IO: u32 = 1;
 pub const MEM_TYPE_VIRTIO: u32 = 2;
 
+pub const CONFIG_MAGIC_VERSION: usize = 0x1;
 pub const CONFIG_MAX_MEMORY_REGIONS: usize = 16;
 pub const CONFIG_MAX_INTERRUPTS: usize = 32;
 pub const CONFIG_NAME_MAXLEN: usize = 32;
@@ -82,7 +83,7 @@ impl HvPciConfig {
         }
     }
 }
-
+// Every time you change the HvZoneConfig, you need to change the `CONFIG_MAGIC_VERSION`
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct HvZoneConfig {

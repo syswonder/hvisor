@@ -15,7 +15,7 @@
 //
 #![allow(dead_code)]
 use crate::arch::cpu::this_cpu_id;
-use crate::config::HvZoneConfig;
+use crate::config::{HvZoneConfig, CONFIG_MAGIC_VERSION};
 use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, PAGE_SIZE};
 use crate::device::irqchip::inject_irq;
 use crate::device::virtio_trampoline::{MAX_DEVS, MAX_REQ, VIRTIO_BRIDGE, VIRTIO_IRQS};
@@ -45,6 +45,7 @@ numeric_enum! {
         HvZoneList = 4,
         HvClearInjectIrq = 20,
         HvIvcInfo = 5,
+        HvConfigCheck = 6,
     }
 }
 pub const SGI_IPI_ID: u64 = 7;
@@ -94,6 +95,7 @@ impl<'a> HyperCall<'a> {
                 }
                 #[cfg(target_arch = "aarch64")]
                 HyperCallCode::HvIvcInfo => self.hv_ivc_info(arg0),
+                HyperCallCode::HvConfigCheck => self.hv_zone_config_check(arg0),
                 _ => {
                     warn!("hypercall id={} unsupported!", code as u64);
                     Ok(0)
@@ -208,6 +210,13 @@ impl<'a> HyperCall<'a> {
             fence(Ordering::SeqCst);
         }
         drop(dev);
+        HyperCallResult::Ok(0)
+    }
+
+    pub fn hv_zone_config_check(&self, magic_version: *mut usize) {
+        unsafe {
+            *magic_version = CONFIG_MAGIC_VERSION; 
+        }
         HyperCallResult::Ok(0)
     }
 
