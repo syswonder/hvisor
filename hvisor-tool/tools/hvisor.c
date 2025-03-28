@@ -567,9 +567,10 @@ err_out:
 
 // ./hvisor zone start <path_to_config_file>
 static int zone_start(int argc, char *argv[]) {
-    int zone_id;
     char *json_config_path = NULL;
     zone_config_t config;
+    int fd, ret;
+    u_int64_t hvisor_config_version;
 
     if (argc != 4) {
         help(1);
@@ -577,6 +578,25 @@ static int zone_start(int argc, char *argv[]) {
     json_config_path = argv[3];
 
     memset(&config, 0, sizeof(zone_config_t));
+
+    fd = open_dev();
+    ret = ioctl(fd, HVISOR_CONFIG_CHECK, &hvisor_config_version);
+    close(fd);
+
+    if (ret) {
+        log_error("ioctl: hvisor config check failed");
+        return -1;
+    }
+
+    if (hvisor_config_version != CONFIG_MAGIC_VERSION) {
+        log_error("zone start failed because config versions mismatch, "
+                  "hvisor-tool is 0x%x, hvisor is 0x%x",
+                  CONFIG_MAGIC_VERSION, hvisor_config_version);
+        return -1;
+    } else {
+        log_info("zone config check pass");
+    }
+
     return zone_start_from_json(json_config_path, &config);
 }
 

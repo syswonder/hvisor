@@ -67,4 +67,4 @@ rpmsg_demo: $(rpmsg_demo_object)
 	$(CC) -o $@ $^ $(CFLAGS) $(include_dirs) $(LIBS)
 
 clean:
-	rm -f hvisor ivc_demo *.o *.d *.d.* 
+	rm -f hvisor ivc_demo rpmsg_demo *.o *.d *.d.* virtio_gpu/*.o virtio_gpu/*.d virtio_gpu/*.d.*
