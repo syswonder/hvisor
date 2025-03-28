@@ -138,6 +138,27 @@ static int hvisor_zone_start(zone_config_t __user *arg) {
 // }
 // #endif
 
+static int hvisor_config_check(u64 __user *arg) {
+    int err = 0;
+    u64 *config;
+
+    config = kmalloc(sizeof(u64), GFP_KERNEL);
+    err = hvisor_call(HVISOR_HC_CONFIG_CHECK, __pa(config), 0);
+
+    if (err != 0) {
+        pr_err("hvisor.ko: failed to get hvisor config\n");
+    }
+
+    if (copy_to_user(arg, config, sizeof(u64))) {
+        pr_err("hvisor.ko: failed to copy to user\n");
+        kfree(config);
+        return -EFAULT;
+    }
+
+    kfree(config);
+    return err;
+}
+
 static int hvisor_zone_list(zone_list_args_t __user *arg) {
     int ret;
     zone_info_t *zones;
@@ -187,6 +208,8 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
     case HVISOR_FINISH_REQ:
         err = hvisor_finish_req();
         break;
+    case HVISOR_CONFIG_CHECK:
+        err = hvisor_config_check((u64 __user *)arg);
 #ifdef LOONGARCH64
     case HVISOR_CLEAR_INJECT_IRQ:
         err = hvisor_call(HVISOR_HC_CLEAR_INJECT_IRQ, 0, 0);

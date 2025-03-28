@@ -98,6 +98,10 @@ struct ivc_config {
 };
 typedef struct ivc_config ivc_config_t;
 
+#define CONFIG_MAGIC_VERSION 0x01
+
+// Every time you change the struct, you should also change the
+// `CONFIG_MAGIC_VERSION`
 struct zone_config {
     __u32 zone_id;
     __u64 cpus;
