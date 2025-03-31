@@ -563,19 +563,19 @@ fn u64tostr(x: u64) -> String {
 #[no_mangle]
 pub fn print_chip_info() {
     info!(
-        "loongarch64:: irqchip:: chip config version: {:#x}",
+        "loongarch64: print_chip_info: chip config version: {:#x}",
         get_chip_conf_ver()
     );
     info!(
-        "loongarch64:: irqchip:: chip feature extioi support: {}",
+        "loongarch64: print_chip_info: chip feature extioi support: {}",
         CHIP_CONFIG.chip_feature.read(ChipFeature::EXTIOI_SUPPORT) != 0
     );
     info!(
-        "loongarch64:: irqchip:: manufacturer name: {}",
+        "loongarch64: print_chip_info: manufacturer name: {}",
         u64tostr(CHIP_CONFIG.manufacturer_name.read(ManufacturerName::VENDOR))
     );
     info!(
-        "loongarch64:: irqchip:: chip name: {}",
+        "loongarch64: print_chip_info: chip name: {}",
         u64tostr(CHIP_CONFIG.chip_name.read(ChipName::ID))
     );
 }
@@ -788,4 +788,153 @@ pub fn extioi_dump() {
         "(extioi_dump) extioi_sr3=0x{:x}",
         CHIP_EXTIOI_STATUS.extioi_sr3.get()
     );
+}
+
+/******************************************** */
+/*             PCI STUFFS :)                  */
+/******************************************** */
+
+const PCI_STANDARD_CONFIG_BASE_ALT: usize = 0x8000_0000_1a00_0000;
+const PCI_STANDARD_CONFIG_BASE: usize = 0x8000_0efd_fe00_0000;
+const PCI_RESERVED_CONFIG_BASE: usize = 0x8000_0efe_0000_0000;
+
+/**
+
+Standard PCI config space:
+TYPE0: [15:11] Device Number, [10:8] Function Number, [7:0] Offset
+TYPE1: [23:16] Bus Number, [15:11] Device Number, [10:8] Function Number, [7:0] Offset
+
+Reserved PCI config space:
+TYPE0: [27:24] Offset[11:8], [15:11] Device Number, [10:8] Function Number, [7:0] Offset[7:0]
+TYPE1: [27:24] Offset[11:8], [23:16] Bus Number, [15:11] Device Number, [10:8] Function Number, [7:0] Offset[7:0]
+
+*/
+
+pub fn probe_pci_config_standard_ecam(
+    bus: u8,
+    device: u8,
+    function: u8,
+    offset: u8,
+    size: u8,
+) -> usize {
+    let mut addr: usize;
+    let mut data: usize;
+    addr = PCI_STANDARD_CONFIG_BASE_ALT
+        | ((bus as usize) << 16)
+        | ((device as usize) << 11)
+        | ((function as usize) << 8)
+        | (offset as usize);
+    data = 0;
+    for i in 0..size {
+        let byte_addr = addr + i as usize;
+        let byte_data: u8;
+        unsafe {
+            byte_data = read_volatile(byte_addr as *const u8);
+        }
+        data |= (byte_data as usize) << (i * 8);
+    }
+    data
+}
+
+pub fn probe_pci_config_standard(bus: u8, device: u8, function: u8, offset: u8, size: u8) -> usize {
+    let mut addr: usize;
+    let mut data: usize;
+    addr = PCI_STANDARD_CONFIG_BASE
+        | ((bus as usize) << 16)
+        | ((device as usize) << 11)
+        | ((function as usize) << 8)
+        | (offset as usize);
+    data = 0;
+    for i in 0..size {
+        let byte_addr = addr + i as usize;
+        let byte_data: u8;
+        unsafe {
+            byte_data = read_volatile(byte_addr as *const u8);
+        }
+        data |= (byte_data as usize) << (i * 8);
+    }
+    data
+}
+pub fn probe_pci_config_reserved(
+    bus: u8,
+    device: u8,
+    function: u8,
+    offset: usize,
+    size: u8,
+) -> usize {
+    let mut addr: usize;
+    let mut data: usize;
+    let offset_low = offset & 0xff;
+    let offset_high = (offset >> 8) & 0xf;
+    addr = PCI_RESERVED_CONFIG_BASE
+        | ((bus as usize) << 16)
+        | ((device as usize) << 11)
+        | ((function as usize) << 8)
+        | (offset_low as usize)
+        | (offset_high << 24);
+    data = 0;
+    for i in 0..size {
+        let byte_addr = addr + i as usize;
+        let byte_data: u8;
+        unsafe {
+            byte_data = read_volatile(byte_addr as *const u8);
+        }
+        data |= (byte_data as usize) << (i * 8);
+    }
+    data
+}
+
+pub fn probe_pci() {
+    // probe 12 devices using standard config space
+    warn!(
+        "loongarch64: probe_pci: probing PCI devices @ 0x{:x}",
+        PCI_STANDARD_CONFIG_BASE_ALT
+    );
+    let mut num = 64;
+    for i in 0..num {
+        // dump vendor id and device id
+        let vendor_id = probe_pci_config_standard_ecam(0, i, 0, 0, 2);
+        let device_id = probe_pci_config_standard_ecam(0, i, 0, 2, 2);
+        if vendor_id == 0xffff && device_id == 0xffff {
+            continue;
+        }
+        info!(
+            "loongarch64: probe_pci: device {}: vendor id = {:#x}, device id = {:#x}",
+            i, vendor_id, device_id
+        );
+    }
+    // probe 12 devices using standard config space
+    warn!(
+        "loongarch64: probe_pci: probing PCI devices @ 0x{:x}",
+        PCI_STANDARD_CONFIG_BASE
+    );
+    for i in 0..num {
+        // dump vendor id and device id
+        let vendor_id = probe_pci_config_standard(0, i, 0, 0, 2);
+        let device_id = probe_pci_config_standard(0, i, 0, 2, 2);
+        if vendor_id == 0xffff && device_id == 0xffff {
+            continue;
+        }
+        info!(
+            "loongarch64: probe_pci: device {}: vendor id = {:#x}, device id = {:#x}",
+            i, vendor_id, device_id
+        );
+    }
+    // probe 12 devices using reserved config space
+    warn!(
+        "loongarch64: probe_pci: probing PCI devices @ 0x{:x}",
+        PCI_RESERVED_CONFIG_BASE
+    );
+    for i in 0..num {
+        // dump vendor id and device id
+        let vendor_id = probe_pci_config_reserved(0, i, 0, 0, 2);
+        let device_id = probe_pci_config_reserved(0, i, 0, 2, 2);
+        if vendor_id == 0xffff && device_id == 0xffff {
+            continue;
+        }
+        info!(
+            "loongarch64: probe_pci: device {}: vendor id = {:#x}, device id = {:#x}",
+            i, vendor_id, device_id
+        );
+    }
 }

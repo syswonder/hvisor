@@ -48,7 +48,9 @@ pub fn primary_init_early() {
     );
 }
 pub fn primary_init_late() {
-    warn!("loongarch64: irqchip: primary_init_late do nothing");
+    info!("loongarch64: irqchip: primary_init_late: probing pci");
+    probe_pci();
+    info!("loongarch64: irqchip: primary_init_late finished");
 }
 pub fn percpu_init() {
     info!("loongarch64: irqchip: running percpu_init");

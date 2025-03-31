@@ -20,7 +20,7 @@ pub const BOARD_NAME: &str = "ls3a5000";
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x10000f000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x200000;
-pub const ROOT_ZONE_ENTRY: u64 = 0x9000000000e27000;
+pub const ROOT_ZONE_ENTRY: u64 = 0x9000000000e28000;
 pub const ROOT_ZONE_CPUS: u64 = 1 << 0;
 
 pub const ROOT_ZONE_NAME: &str = "root-linux-la64";
