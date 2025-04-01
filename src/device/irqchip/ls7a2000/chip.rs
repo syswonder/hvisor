@@ -884,6 +884,82 @@ pub fn probe_pci_config_reserved(
     data
 }
 
+// https://admin.pci-ids.ucw.cz/read/PC/0014
+
+const PCI_VENDOR_ID_LOONGSON: usize = 0x0014;
+const PCI_DEVICE_ID_HT_BRIDGE: usize = 0x7a00;
+const PCI_DEVICE_ID_APB: usize = 0x7a02;
+const PCI_DEVICE_ID_GIGE: usize = 0x7a03;
+const PCI_DEVICE_ID_OTG_USB: usize = 0x7a04;
+const PCI_DEVICE_ID_GPU: usize = 0x7a05;
+const PCI_DEVICE_ID_DC: usize = 0x7a06;
+const PCI_DEVICE_ID_HDA: usize = 0x7a07;
+const PCI_DEVICE_ID_SATA: usize = 0x7a08;
+const PCI_DEVICE_ID_PCI_BRIDGE: usize = 0x7a09;
+const PCI_DEVICE_ID_SPI: usize = 0x7a0b;
+const PCI_DEVICE_ID_LPC: usize = 0x7a0c;
+const PCI_DEVICE_ID_DMA: usize = 0x7a0f;
+const PCI_DEVICE_ID_HT_BRIDGE2: usize = 0x7a10;
+const PCI_DEVICE_ID_PCH_GIGE: usize = 0x7a13;
+const PCI_DEVICE_ID_EHCI_USB: usize = 0x7a14;
+const PCI_DEVICE_ID_GPU2: usize = 0x7a15;
+const PCI_DEVICE_ID_SATA3: usize = 0x7a18;
+const PCI_DEVICE_ID_PCI_BRIDGE2: usize = 0x7a19;
+const PCI_DEVICE_ID_SPI2: usize = 0x7a1b;
+const PCI_DEVICE_ID_OHCI_USB: usize = 0x7a24;
+const PCI_DEVICE_ID_LG100_GPU: usize = 0x7a25;
+const PCI_DEVICE_ID_I2S: usize = 0x7a27;
+const PCI_DEVICE_ID_PCI_BRIDGE3: usize = 0x7a29;
+const PCI_DEVICE_ID_XHCI_USB: usize = 0x7a34;
+const PCI_DEVICE_ID_DC2: usize = 0x7a36;
+const PCI_DEVICE_ID_PCIE_X1: usize = 0x7a39;
+const PCI_DEVICE_ID_PCIE_X4: usize = 0x7a49;
+const PCI_DEVICE_ID_PCIE_X8: usize = 0x7a59;
+const PCI_DEVICE_ID_PCIE_X16: usize = 0x7a69;
+
+pub fn parse_vendor_device_id(vendor_id: usize, device_id: usize) -> String {
+    let mut name = String::new();
+    if vendor_id == PCI_VENDOR_ID_LOONGSON {
+        name.push_str(format!("[{}] ", "Loongson Technology LLC").as_str());
+        match device_id {
+            PCI_DEVICE_ID_HT_BRIDGE => name.push_str("Hyper Transport Bridge Controller	"),
+            PCI_DEVICE_ID_APB => name.push_str("APB (Advanced Peripheral Bus) Controller"),
+            PCI_DEVICE_ID_GIGE => name.push_str("Gigabit Ethernet Controller"),
+            PCI_DEVICE_ID_OTG_USB => name.push_str("OTG USB Controller"),
+            PCI_DEVICE_ID_GPU => name.push_str("Vivante GPU"),
+            PCI_DEVICE_ID_DC => name.push_str("Display Controller"),
+            PCI_DEVICE_ID_HDA => name.push_str("HDA (High Definition Audio) Controller"),
+            PCI_DEVICE_ID_SATA => name.push_str("SATA AHCI Controller"),
+            PCI_DEVICE_ID_PCI_BRIDGE => name.push_str("PCI-to-PCI Bridge"),
+            PCI_DEVICE_ID_SPI => name.push_str("SPI Controller"),
+            PCI_DEVICE_ID_LPC => name.push_str("LPC Controller"),
+            PCI_DEVICE_ID_DMA => name.push_str("DMA (Direct Memory Access) Controller"),
+            PCI_DEVICE_ID_HT_BRIDGE2 => name.push_str("Hyper Transport Bridge Controller"),
+            PCI_DEVICE_ID_PCH_GIGE => name.push_str("7A2000 PCH Gigabit Ethernet Controller"),
+            PCI_DEVICE_ID_EHCI_USB => name.push_str("EHCI USB Controller"),
+            PCI_DEVICE_ID_GPU2 => name.push_str("Vivante GPU"),
+            PCI_DEVICE_ID_SATA3 => name.push_str("SATA 3 AHCI Controller"),
+            PCI_DEVICE_ID_PCI_BRIDGE2 => name.push_str("PCI-to-PCI Bridge"),
+            PCI_DEVICE_ID_SPI2 => name.push_str("SPI Controller"),
+            PCI_DEVICE_ID_OHCI_USB => name.push_str("OHCI USB Controller"),
+            PCI_DEVICE_ID_LG100_GPU => name.push_str("LG100 GPU"),
+            PCI_DEVICE_ID_I2S => name.push_str("7A2000 PCH I2S Controller"),
+            PCI_DEVICE_ID_PCI_BRIDGE3 => name.push_str("PCI-to-PCI Bridge"),
+            PCI_DEVICE_ID_XHCI_USB => name.push_str("xHCI USB Controller"),
+            PCI_DEVICE_ID_DC2 => name.push_str("Display Controller"),
+            PCI_DEVICE_ID_PCIE_X1 => name.push_str("PCIe x1 Root Port"),
+            PCI_DEVICE_ID_PCIE_X4 => name.push_str("PCIe x4 Root Port"),
+            PCI_DEVICE_ID_PCIE_X8 => name.push_str("PCIe x8 Root Port"),
+            PCI_DEVICE_ID_PCIE_X16 => name.push_str("PCIe x16 Root Port"),
+            _ => name.push_str("Unknown Device"),
+        }
+    }
+    if name.is_empty() {
+        name.push_str("Unknown");
+    }
+    name
+}
+
 pub fn probe_pci() {
     // probe 12 devices using standard config space
     warn!(
@@ -899,8 +975,11 @@ pub fn probe_pci() {
             continue;
         }
         info!(
-            "loongarch64: probe_pci: device {}: vendor id = {:#x}, device id = {:#x}",
-            i, vendor_id, device_id
+            "loongarch64: probe_pci: device {}: vendor id = {:#x}, device id = {:#x}, name = {}",
+            i,
+            vendor_id,
+            device_id,
+            parse_vendor_device_id(vendor_id, device_id)
         );
     }
     // probe 12 devices using standard config space
@@ -916,8 +995,11 @@ pub fn probe_pci() {
             continue;
         }
         info!(
-            "loongarch64: probe_pci: device {}: vendor id = {:#x}, device id = {:#x}",
-            i, vendor_id, device_id
+            "loongarch64: probe_pci: device {}: vendor id = {:#x}, device id = {:#x}, name = {}",
+            i,
+            vendor_id,
+            device_id,
+            parse_vendor_device_id(vendor_id, device_id)
         );
     }
     // probe 12 devices using reserved config space
@@ -933,8 +1015,11 @@ pub fn probe_pci() {
             continue;
         }
         info!(
-            "loongarch64: probe_pci: device {}: vendor id = {:#x}, device id = {:#x}",
-            i, vendor_id, device_id
+            "loongarch64: probe_pci: device {}: vendor id = {:#x}, device id = {:#x}, name = {}",
+            i,
+            vendor_id,
+            device_id,
+            parse_vendor_device_id(vendor_id, device_id)
         );
     }
 }
