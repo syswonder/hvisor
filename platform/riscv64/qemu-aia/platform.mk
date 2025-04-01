@@ -1,11 +1,11 @@
 QEMU := qemu-system-riscv64
 
 
-FSIMG1 := /home/jingyu/workspace/pr/hvisor/platform/riscv64/qemu-plic/image/virtdisk/rootfs1.ext4
-FSIMG2 := /home/jingyu/workspace/pr/hvisor/platform/riscv64/qemu-plic/image/virtdisk/rootfs-busybox.qcow2
+FSIMG1 := $(image_dir)/virtdisk/rootfs1.ext4
+FSIMG2 := $(image_dir)/virtdisk/rootfs-busybox.qcow2
 # HVISOR ENTRY
 HVISOR_ENTRY_PA := 0x80200000
-zone0_kernel := /home/jingyu/workspace/pr/hvisor/platform/riscv64/qemu-plic/image/kernel/Image
+zone0_kernel := $(image_dir)/kernel/Image
 zone0_dtb    := $(image_dir)/dts/zone0.dtb
 # zone1_kernel := $(image_dir)/kernel/Image
 # zone1_dtb    := $(image_dir)/devicetree/linux.dtb
