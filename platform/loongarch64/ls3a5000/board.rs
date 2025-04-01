@@ -71,16 +71,16 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
         size: 0x1000,
     }, // pch-pic irq controller
     /* PCI related stuffs ... */
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0x1a000000,
+    //     virtual_start: 0x1a000000,
+    //     size: 0x02000000,
+    // }, // pci
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
-        physical_start: 0x1a000000,
-        virtual_start: 0x1a000000,
-        size: 0x02000000,
-    }, // pci
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0xfe00000000,
-        virtual_start: 0xfe00000000,
+        physical_start: 0xefe_0000_0000,
+        virtual_start: 0xfe_0000_0000,
         size: 0x20000000,
     }, // pci config space (HT)
     HvConfigMemoryRegion {
@@ -95,6 +95,12 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
         virtual_start: 0x60000000,
         size: 0x20000000,
     }, // pci mem resource
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x1001_0000,
+        virtual_start: 0x1001_0000,
+        size: 0x0001_0000,
+    }, // ?
     /* map special regions - 2024.4.12 */
     // linux's strscpy called gpa at 0x9000_0000_0000_0000 which is ldx x, 0x9000_0000_0000_0000(a1) + 0x0(a0) why ?
     // __memcpy_fromio 0xf0000 why?

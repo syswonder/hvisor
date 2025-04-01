@@ -563,19 +563,19 @@ fn u64tostr(x: u64) -> String {
 #[no_mangle]
 pub fn print_chip_info() {
     info!(
-        "loongarch64:: irqchip:: chip config version: {:#x}",
+        "loongarch64: print_chip_info: chip config version: {:#x}",
         get_chip_conf_ver()
     );
     info!(
-        "loongarch64:: irqchip:: chip feature extioi support: {}",
+        "loongarch64: print_chip_info: chip feature extioi support: {}",
         CHIP_CONFIG.chip_feature.read(ChipFeature::EXTIOI_SUPPORT) != 0
     );
     info!(
-        "loongarch64:: irqchip:: manufacturer name: {}",
+        "loongarch64: print_chip_info: manufacturer name: {}",
         u64tostr(CHIP_CONFIG.manufacturer_name.read(ManufacturerName::VENDOR))
     );
     info!(
-        "loongarch64:: irqchip:: chip name: {}",
+        "loongarch64: print_chip_info: chip name: {}",
         u64tostr(CHIP_CONFIG.chip_name.read(ChipName::ID))
     );
 }
@@ -788,4 +788,238 @@ pub fn extioi_dump() {
         "(extioi_dump) extioi_sr3=0x{:x}",
         CHIP_EXTIOI_STATUS.extioi_sr3.get()
     );
+}
+
+/******************************************** */
+/*             PCI STUFFS :)                  */
+/******************************************** */
+
+const PCI_STANDARD_CONFIG_BASE_ALT: usize = 0x8000_0000_1a00_0000;
+const PCI_STANDARD_CONFIG_BASE: usize = 0x8000_0efd_fe00_0000;
+const PCI_RESERVED_CONFIG_BASE: usize = 0x8000_0efe_0000_0000;
+
+/**
+
+Standard PCI config space:
+TYPE0: [15:11] Device Number, [10:8] Function Number, [7:0] Offset
+TYPE1: [23:16] Bus Number, [15:11] Device Number, [10:8] Function Number, [7:0] Offset
+
+Reserved PCI config space:
+TYPE0: [27:24] Offset[11:8], [15:11] Device Number, [10:8] Function Number, [7:0] Offset[7:0]
+TYPE1: [27:24] Offset[11:8], [23:16] Bus Number, [15:11] Device Number, [10:8] Function Number, [7:0] Offset[7:0]
+
+*/
+
+pub fn probe_pci_config_standard_ecam(
+    bus: u8,
+    device: u8,
+    function: u8,
+    offset: u8,
+    size: u8,
+) -> usize {
+    let mut addr: usize;
+    let mut data: usize;
+    addr = PCI_STANDARD_CONFIG_BASE_ALT
+        | ((bus as usize) << 16)
+        | ((device as usize) << 11)
+        | ((function as usize) << 8)
+        | (offset as usize);
+    data = 0;
+    for i in 0..size {
+        let byte_addr = addr + i as usize;
+        let byte_data: u8;
+        unsafe {
+            byte_data = read_volatile(byte_addr as *const u8);
+        }
+        data |= (byte_data as usize) << (i * 8);
+    }
+    data
+}
+
+pub fn probe_pci_config_standard(bus: u8, device: u8, function: u8, offset: u8, size: u8) -> usize {
+    let mut addr: usize;
+    let mut data: usize;
+    addr = PCI_STANDARD_CONFIG_BASE
+        | ((bus as usize) << 16)
+        | ((device as usize) << 11)
+        | ((function as usize) << 8)
+        | (offset as usize);
+    data = 0;
+    for i in 0..size {
+        let byte_addr = addr + i as usize;
+        let byte_data: u8;
+        unsafe {
+            byte_data = read_volatile(byte_addr as *const u8);
+        }
+        data |= (byte_data as usize) << (i * 8);
+    }
+    data
+}
+pub fn probe_pci_config_reserved(
+    bus: u8,
+    device: u8,
+    function: u8,
+    offset: usize,
+    size: u8,
+) -> usize {
+    let mut addr: usize;
+    let mut data: usize;
+    let offset_low = offset & 0xff;
+    let offset_high = (offset >> 8) & 0xf;
+    addr = PCI_RESERVED_CONFIG_BASE
+        | ((bus as usize) << 16)
+        | ((device as usize) << 11)
+        | ((function as usize) << 8)
+        | (offset_low as usize)
+        | (offset_high << 24);
+    data = 0;
+    for i in 0..size {
+        let byte_addr = addr + i as usize;
+        let byte_data: u8;
+        unsafe {
+            byte_data = read_volatile(byte_addr as *const u8);
+        }
+        data |= (byte_data as usize) << (i * 8);
+    }
+    data
+}
+
+// https://admin.pci-ids.ucw.cz/read/PC/0014
+
+const PCI_VENDOR_ID_LOONGSON: usize = 0x0014;
+const PCI_DEVICE_ID_HT_BRIDGE: usize = 0x7a00;
+const PCI_DEVICE_ID_APB: usize = 0x7a02;
+const PCI_DEVICE_ID_GIGE: usize = 0x7a03;
+const PCI_DEVICE_ID_OTG_USB: usize = 0x7a04;
+const PCI_DEVICE_ID_GPU: usize = 0x7a05;
+const PCI_DEVICE_ID_DC: usize = 0x7a06;
+const PCI_DEVICE_ID_HDA: usize = 0x7a07;
+const PCI_DEVICE_ID_SATA: usize = 0x7a08;
+const PCI_DEVICE_ID_PCI_BRIDGE: usize = 0x7a09;
+const PCI_DEVICE_ID_SPI: usize = 0x7a0b;
+const PCI_DEVICE_ID_LPC: usize = 0x7a0c;
+const PCI_DEVICE_ID_DMA: usize = 0x7a0f;
+const PCI_DEVICE_ID_HT_BRIDGE2: usize = 0x7a10;
+const PCI_DEVICE_ID_PCH_GIGE: usize = 0x7a13;
+const PCI_DEVICE_ID_EHCI_USB: usize = 0x7a14;
+const PCI_DEVICE_ID_GPU2: usize = 0x7a15;
+const PCI_DEVICE_ID_SATA3: usize = 0x7a18;
+const PCI_DEVICE_ID_PCI_BRIDGE2: usize = 0x7a19;
+const PCI_DEVICE_ID_SPI2: usize = 0x7a1b;
+const PCI_DEVICE_ID_OHCI_USB: usize = 0x7a24;
+const PCI_DEVICE_ID_LG100_GPU: usize = 0x7a25;
+const PCI_DEVICE_ID_I2S: usize = 0x7a27;
+const PCI_DEVICE_ID_PCI_BRIDGE3: usize = 0x7a29;
+const PCI_DEVICE_ID_XHCI_USB: usize = 0x7a34;
+const PCI_DEVICE_ID_DC2: usize = 0x7a36;
+const PCI_DEVICE_ID_PCIE_X1: usize = 0x7a39;
+const PCI_DEVICE_ID_PCIE_X4: usize = 0x7a49;
+const PCI_DEVICE_ID_PCIE_X8: usize = 0x7a59;
+const PCI_DEVICE_ID_PCIE_X16: usize = 0x7a69;
+
+pub fn parse_vendor_device_id(vendor_id: usize, device_id: usize) -> String {
+    let mut name = String::new();
+    if vendor_id == PCI_VENDOR_ID_LOONGSON {
+        name.push_str(format!("[{}] ", "Loongson Technology LLC").as_str());
+        match device_id {
+            PCI_DEVICE_ID_HT_BRIDGE => name.push_str("Hyper Transport Bridge Controller	"),
+            PCI_DEVICE_ID_APB => name.push_str("APB (Advanced Peripheral Bus) Controller"),
+            PCI_DEVICE_ID_GIGE => name.push_str("Gigabit Ethernet Controller"),
+            PCI_DEVICE_ID_OTG_USB => name.push_str("OTG USB Controller"),
+            PCI_DEVICE_ID_GPU => name.push_str("Vivante GPU"),
+            PCI_DEVICE_ID_DC => name.push_str("Display Controller"),
+            PCI_DEVICE_ID_HDA => name.push_str("HDA (High Definition Audio) Controller"),
+            PCI_DEVICE_ID_SATA => name.push_str("SATA AHCI Controller"),
+            PCI_DEVICE_ID_PCI_BRIDGE => name.push_str("PCI-to-PCI Bridge"),
+            PCI_DEVICE_ID_SPI => name.push_str("SPI Controller"),
+            PCI_DEVICE_ID_LPC => name.push_str("LPC Controller"),
+            PCI_DEVICE_ID_DMA => name.push_str("DMA (Direct Memory Access) Controller"),
+            PCI_DEVICE_ID_HT_BRIDGE2 => name.push_str("Hyper Transport Bridge Controller"),
+            PCI_DEVICE_ID_PCH_GIGE => name.push_str("7A2000 PCH Gigabit Ethernet Controller"),
+            PCI_DEVICE_ID_EHCI_USB => name.push_str("EHCI USB Controller"),
+            PCI_DEVICE_ID_GPU2 => name.push_str("Vivante GPU"),
+            PCI_DEVICE_ID_SATA3 => name.push_str("SATA 3 AHCI Controller"),
+            PCI_DEVICE_ID_PCI_BRIDGE2 => name.push_str("PCI-to-PCI Bridge"),
+            PCI_DEVICE_ID_SPI2 => name.push_str("SPI Controller"),
+            PCI_DEVICE_ID_OHCI_USB => name.push_str("OHCI USB Controller"),
+            PCI_DEVICE_ID_LG100_GPU => name.push_str("LG100 GPU"),
+            PCI_DEVICE_ID_I2S => name.push_str("7A2000 PCH I2S Controller"),
+            PCI_DEVICE_ID_PCI_BRIDGE3 => name.push_str("PCI-to-PCI Bridge"),
+            PCI_DEVICE_ID_XHCI_USB => name.push_str("xHCI USB Controller"),
+            PCI_DEVICE_ID_DC2 => name.push_str("Display Controller"),
+            PCI_DEVICE_ID_PCIE_X1 => name.push_str("PCIe x1 Root Port"),
+            PCI_DEVICE_ID_PCIE_X4 => name.push_str("PCIe x4 Root Port"),
+            PCI_DEVICE_ID_PCIE_X8 => name.push_str("PCIe x8 Root Port"),
+            PCI_DEVICE_ID_PCIE_X16 => name.push_str("PCIe x16 Root Port"),
+            _ => name.push_str("Unknown Device"),
+        }
+    }
+    if name.is_empty() {
+        name.push_str("Unknown");
+    }
+    name
+}
+
+pub fn probe_pci() {
+    // probe 12 devices using standard config space
+    warn!(
+        "loongarch64: probe_pci: probing PCI devices @ 0x{:x}",
+        PCI_STANDARD_CONFIG_BASE_ALT
+    );
+    let mut num = 64;
+    for i in 0..num {
+        // dump vendor id and device id
+        let vendor_id = probe_pci_config_standard_ecam(0, i, 0, 0, 2);
+        let device_id = probe_pci_config_standard_ecam(0, i, 0, 2, 2);
+        if vendor_id == 0xffff && device_id == 0xffff {
+            continue;
+        }
+        info!(
+            "loongarch64: probe_pci: device {}: vendor id = {:#x}, device id = {:#x}, name = {}",
+            i,
+            vendor_id,
+            device_id,
+            parse_vendor_device_id(vendor_id, device_id)
+        );
+    }
+    // probe 12 devices using standard config space
+    warn!(
+        "loongarch64: probe_pci: probing PCI devices @ 0x{:x}",
+        PCI_STANDARD_CONFIG_BASE
+    );
+    for i in 0..num {
+        // dump vendor id and device id
+        let vendor_id = probe_pci_config_standard(0, i, 0, 0, 2);
+        let device_id = probe_pci_config_standard(0, i, 0, 2, 2);
+        if vendor_id == 0xffff && device_id == 0xffff {
+            continue;
+        }
+        info!(
+            "loongarch64: probe_pci: device {}: vendor id = {:#x}, device id = {:#x}, name = {}",
+            i,
+            vendor_id,
+            device_id,
+            parse_vendor_device_id(vendor_id, device_id)
+        );
+    }
+    // probe 12 devices using reserved config space
+    warn!(
+        "loongarch64: probe_pci: probing PCI devices @ 0x{:x}",
+        PCI_RESERVED_CONFIG_BASE
+    );
+    for i in 0..num {
+        // dump vendor id and device id
+        let vendor_id = probe_pci_config_reserved(0, i, 0, 0, 2);
+        let device_id = probe_pci_config_reserved(0, i, 0, 2, 2);
+        if vendor_id == 0xffff && device_id == 0xffff {
+            continue;
+        }
+        info!(
+            "loongarch64: probe_pci: device {}: vendor id = {:#x}, device id = {:#x}, name = {}",
+            i,
+            vendor_id,
+            device_id,
+            parse_vendor_device_id(vendor_id, device_id)
+        );
+    }
 }
