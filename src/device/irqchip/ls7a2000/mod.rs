@@ -32,10 +32,10 @@ pub mod chip;
 
 pub fn primary_init_early() {
     if this_cpu_id() != 0 {
-        info!("loongarch64: irqchip: primary_init_early do nothing on secondary cpus");
+        info!("loongarch64: irqchip: primary_init_early: do nothing on secondary cpus");
         return;
     }
-    info!("loongarch64: irqchip: primary_init_early checking iochip configs");
+    info!("loongarch64: irqchip: primary_init_early: checking iochip configs");
     print_chip_info();
     csr_disable_new_codec();
     legacy_int_enable_all();
@@ -53,11 +53,11 @@ pub fn primary_init_late() {
     info!("loongarch64: irqchip: primary_init_late finished");
 }
 pub fn percpu_init() {
-    info!("loongarch64: irqchip: running percpu_init");
+    info!("loongarch64: irqchip: percpu_init: running percpu_init");
     clear_all_ipi(this_cpu_id());
     enable_ipi(this_cpu_id());
     ecfg_ipi_enable();
-    info!("loongarch64: irqchip: dumping ipi registers");
+    info!("loongarch64: irqchip: percpu_init: dumping ipi registers");
     dump_ipi_registers();
 }
 
@@ -78,7 +78,7 @@ const INT_IPI: usize = 12;
 /// inject irq to THIS cpu
 pub fn inject_irq(_irq: usize, is_hardware: bool) {
     debug!(
-        "loongarch64: inject_irq, _irq: {}, is_hardware: {}",
+        "loongarch64: inject_irq: _irq: {}, is_hardware: {}",
         _irq, is_hardware
     );
     print!("\0");
@@ -114,7 +114,7 @@ pub fn clear_hwi_injected_irq() {
         asm!("csrrd {0}, 0x52", out(reg) gintc_raw);
     }
     debug!(
-        "loongarch64: clear_hwi_injected_irq, current gintc: {:#x}",
+        "loongarch64: clear_hwi_injected_irq: current gintc: {:#x}",
         gintc_raw
     );
     print!("\0");
@@ -125,7 +125,7 @@ pub fn clear_hwi_injected_irq() {
 
 impl Zone {
     pub fn arch_irqchip_reset(&self) {
-        warn!("loongarch64: irqchip: arch_irqchip_reset do nothing");
+        warn!("loongarch64: irqchip: arch_irqchip_reset: do nothing");
     }
 }
 
