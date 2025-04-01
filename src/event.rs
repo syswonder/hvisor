@@ -29,6 +29,7 @@ pub const IPI_EVENT_SHUTDOWN: usize = 1;
 pub const IPI_EVENT_VIRTIO_INJECT_IRQ: usize = 2;
 pub const IPI_EVENT_WAKEUP_VIRTIO_DEVICE: usize = 3;
 pub const IPI_EVENT_CLEAR_INJECT_IRQ: usize = 4;
+pub const IPI_EVENT_UPDATE_HART_LINE: usize = 5;  
 
 static EVENT_MANAGER: Once<EventManager> = Once::new();
 
@@ -126,6 +127,12 @@ pub fn check_events() -> bool {
         #[cfg(target_arch = "loongarch64")]
         Some(IPI_EVENT_CLEAR_INJECT_IRQ) => {
             irqchip::ls7a2000::clear_hwi_injected_irq();
+            true
+        }
+        #[cfg(target_arch = "riscv64")]
+        Some(IPI_EVENT_UPDATE_HART_LINE) => {
+            info!("cpu {} update hart line", cpu_data.id);
+            irqchip::plic::update_hart_line();
             true
         }
         _ => false,

@@ -30,6 +30,10 @@ use crate::memory::addr::GuestPhysAddr;
 use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
 use crate::percpu::{get_cpu_data, this_zone, CpuSet};
 use core::panic;
+#[cfg(all(feature = "plic", target_arch = "riscv64"))]
+use crate::platform::BOARD_PLIC_INTERRUPTS_NUM;
+#[cfg(all(target_arch = "riscv64", feature = "plic"))]
+use crate::device::irqchip::plic::vplic;
 
 pub struct Zone {
     pub name: [u8; CONFIG_NAME_MAXLEN],
@@ -39,6 +43,8 @@ pub struct Zone {
     pub irq_bitmap: [u32; 1024 / 32],
     pub gpm: MemorySet<Stage2PageTable>,
     pub pciroot: PciRoot,
+    #[cfg(all(target_arch = "riscv64", feature = "plic"))]
+    pub vplic: Option<vplic::VirtualPLIC>,
 }
 
 impl Zone {
@@ -51,6 +57,8 @@ impl Zone {
             mmio: Vec::new(),
             irq_bitmap: [0; 1024 / 32],
             pciroot: PciRoot::new(),
+            #[cfg(all(target_arch = "riscv64", feature = "plic"))]
+            vplic: None,
         }
     }
 
@@ -196,7 +204,6 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     let mut zone = Zone::new(zone_id, &config.name);
     zone.pt_init(config.memory_regions()).unwrap();
     zone.mmio_init(&config.arch_config);
-    zone.irq_bitmap_init(config.interrupts());
     #[cfg(target_arch = "aarch64")]
     zone.ivc_init(config.ivc_config());
     #[cfg(all(feature = "pci", target_arch = "aarch64"))]
@@ -206,9 +213,22 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
         &config.alloc_pci_devs,
     );
 
+    let mut cpu_num = 0;
     config.cpus().iter().for_each(|cpu_id| {
         zone.cpu_set.set_bit(*cpu_id as _);
+        cpu_num += 1;
     });
+
+    #[cfg(feature="plic")]
+    {
+        zone.vplic = Some(vplic::VirtualPLIC::new(
+            config.arch_config.plic_base,
+            BOARD_PLIC_INTERRUPTS_NUM,
+            cpu_num * 2,
+        ));
+    }
+
+    zone.irq_bitmap_init(config.interrupts());
 
     let mut dtb_ipa = INVALID_ADDRESS as u64;
     for region in config.memory_regions() {
