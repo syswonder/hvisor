@@ -412,31 +412,33 @@ pub fn interrupts_arch_handle(current_cpu: &mut ArchCpu) {
 
 /// handle interrupt request(current only external interrupt)
 pub fn handle_eirq(current_cpu: &mut ArchCpu) {
+    #[cfg(feature = "plic")]
+    {
+        // 1. claim hw irq.
+        let context_id = 2 * current_cpu.cpuid + 1;
+        let addr = PLIC_BASE + PLIC_CLAIM_OFFSET + context_id * 0x1000;
+        let irq_id = unsafe {
+            core::ptr::read_volatile(addr as *const u32)
+        };
+        // let irq_id = host_plic().claim(context_id);
+
+        if irq_id == 0 {
+            return;
+        }
+
+        // 2. check if this zone belongs this irq.
+        if this_cpu_data().zone.as_ref().unwrap().read().irq_in_zone(irq_id as u32) == false {
+            error!("irq {} is not belongs to this zone", irq_id);
+            return;
+        }
+
+        // 3. inject hw irq to zone.
+        this_cpu_data().zone.as_ref().unwrap().read().vplic.as_ref().unwrap().inject_irq(pcontext_to_vcontext(context_id), irq_id as usize, true);
+    }
     #[cfg(feature = "aia")]
     {
         panic!("HS extensional interrupt")
     }
-
-    // 1. claim hw irq.
-    let context_id = 2 * current_cpu.cpuid + 1;
-    let addr = PLIC_BASE + PLIC_CLAIM_OFFSET + context_id * 0x1000;
-    let irq_id = unsafe {
-        core::ptr::read_volatile(addr as *const u32)
-    };
-    // let irq_id = host_plic().claim(context_id);
-
-    if irq_id == 0 {
-        return;
-    }
-    
-    // 2. check if this zone belongs this irq.
-    if this_cpu_data().zone.as_ref().unwrap().read().irq_in_zone(irq_id as u32) == false {
-        error!("irq {} is not belongs to this zone", irq_id);
-        return;
-    }
-
-    // 3. inject hw irq to zone.
-    this_cpu_data().zone.as_ref().unwrap().read().vplic.as_ref().unwrap().inject_irq(pcontext_to_vcontext(context_id), irq_id as usize, true);
 }
 
 pub fn handle_ssi(current_cpu: &mut ArchCpu) {

@@ -129,7 +129,7 @@ pub fn check_events() -> bool {
             irqchip::ls7a2000::clear_hwi_injected_irq();
             true
         }
-        #[cfg(target_arch = "riscv64")]
+        #[cfg(all(target_arch = "riscv64", feature = "plic"))]
         Some(IPI_EVENT_UPDATE_HART_LINE) => {
             info!("cpu {} update hart line", cpu_data.id);
             irqchip::plic::update_hart_line();
