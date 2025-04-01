@@ -17,30 +17,29 @@
 pub mod plic;
 pub mod vplic;
 
+pub use self::plic::*;
+use self::vplic::*;
+use crate::arch::zone::HvArchZoneConfig;
 use crate::config::root_zone_config;
+use crate::consts::MAX_CPU_NUM;
+use crate::error::HvResult;
+use crate::memory::mmio::MMIOAccess;
 use crate::memory::GuestPhysAddr;
+use crate::percpu::this_zone;
 use crate::platform::__board::*;
 use crate::zone::Zone;
 use crate::{arch::cpu::ArchCpu, percpu::this_cpu_data};
+use alloc::vec::Vec;
 use riscv::register::hvip;
 use riscv_decode::Instruction;
 use spin::Once;
-use crate::percpu::this_zone;
-use crate::memory::mmio::MMIOAccess;
-use crate::error::HvResult;
-use crate::arch::zone::HvArchZoneConfig;
-use alloc::vec::Vec;
-use crate::consts::MAX_CPU_NUM;
-use self::vplic::*;
-pub use self::plic::*;
-
 
 /*
-    Due to hvisor is a static partitioning hypervisor.
-    The irq is assigned to a specific zone, a zone has its own harts.
-    So we assume different harts will don't access the same plic register.
-    For physical plic, we don't add lock for it.
- */
+   Due to hvisor is a static partitioning hypervisor.
+   The irq is assigned to a specific zone, a zone has its own harts.
+   So we assume different harts will don't access the same plic register.
+   For physical plic, we don't add lock for it.
+*/
 
 pub static PLIC: Once<Plic> = Once::new();
 
@@ -55,9 +54,7 @@ pub fn host_plic<'a>() -> &'a Plic {
 pub fn primary_init_early() {
     // Init the physical PLIC global part
     let root_config = root_zone_config();
-    init_plic(
-        root_config.arch_config.plic_base as usize,
-    );
+    init_plic(root_config.arch_config.plic_base as usize);
     host_plic().init_global(BOARD_PLIC_INTERRUPTS_NUM, MAX_CPU_NUM * 2);
 }
 
@@ -74,8 +71,15 @@ pub fn inject_irq(irq: usize, is_hardware: bool) {
 }
 
 /// Convert vcontext id to pcontext id.
-pub fn vcontext_to_pcontext(vcontext_id: usize) -> usize{
-    let pcpu_set = this_cpu_data().zone.as_ref().unwrap().read().cpu_set.iter().collect::<Vec<_>>();
+pub fn vcontext_to_pcontext(vcontext_id: usize) -> usize {
+    let pcpu_set = this_cpu_data()
+        .zone
+        .as_ref()
+        .unwrap()
+        .read()
+        .cpu_set
+        .iter()
+        .collect::<Vec<_>>();
     let index = vcontext_id / 2;
     // convert to physical hart S-mode
     pcpu_set[index] * 2 + 1
@@ -83,8 +87,15 @@ pub fn vcontext_to_pcontext(vcontext_id: usize) -> usize{
 
 /// Convert pcontext id to vcontext id.
 pub fn pcontext_to_vcontext(pcontext_id: usize) -> usize {
-    // vcpu is the pcpus index of the pcpu_set 
-    let pcpu_set = this_cpu_data().zone.as_ref().unwrap().read().cpu_set.iter().collect::<Vec<_>>();
+    // vcpu is the pcpus index of the pcpu_set
+    let pcpu_set = this_cpu_data()
+        .zone
+        .as_ref()
+        .unwrap()
+        .read()
+        .cpu_set
+        .iter()
+        .collect::<Vec<_>>();
     let pcpu_id = this_cpu_data().id;
     let mut index = 0;
     for (i, &id) in pcpu_set.iter().enumerate() {
@@ -99,8 +110,17 @@ pub fn pcontext_to_vcontext(pcontext_id: usize) -> usize {
 
 /// handle Zone's plic mmio access.
 pub fn vplic_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
-    let value = this_cpu_data().zone.as_ref().unwrap().read().vplic.as_ref().unwrap().vplic_emul_access(mmio.address, mmio.size, mmio.value, mmio.is_write);
-    if !mmio.is_write {     // read from vplic
+    let value = this_cpu_data()
+        .zone
+        .as_ref()
+        .unwrap()
+        .read()
+        .vplic
+        .as_ref()
+        .unwrap()
+        .vplic_emul_access(mmio.address, mmio.size, mmio.value, mmio.is_write);
+    if !mmio.is_write {
+        // read from vplic
         mmio.value = value as usize;
     }
     Ok(())
@@ -110,14 +130,22 @@ pub fn vplic_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
 pub fn update_hart_line() {
     let pcontext_id = this_cpu_data().id * 2 + 1;
     let vcontext_id = pcontext_to_vcontext(pcontext_id);
-    this_cpu_data().zone.as_ref().unwrap().read().vplic.as_ref().unwrap().update_hart_line(vcontext_id);
+    this_cpu_data()
+        .zone
+        .as_ref()
+        .unwrap()
+        .read()
+        .vplic
+        .as_ref()
+        .unwrap()
+        .update_hart_line(vcontext_id);
 }
 
 impl Zone {
     pub fn arch_irqchip_reset(&self) {
         /*
-            Reset priority, threshold, enable, and so on related to this zone.
-         */
+           Reset priority, threshold, enable, and so on related to this zone.
+        */
         todo!();
     }
 
@@ -133,7 +161,10 @@ impl Zone {
         for irq in irqs {
             let irq_id = *irq;
             // They are hardware interrupts.
-            self.vplic.as_ref().unwrap().vplic_set_hw(irq_id as usize, true);
+            self.vplic
+                .as_ref()
+                .unwrap()
+                .vplic_set_hw(irq_id as usize, true);
             info!("Set irq {} to hardware interrupt", irq_id);
             self.insert_irq_to_bitmap(irq_id);
         }
@@ -151,7 +182,7 @@ impl Zone {
         }
     }
 
-    pub fn vplic_mmio_init(&mut self, arch: &HvArchZoneConfig){
+    pub fn vplic_mmio_init(&mut self, arch: &HvArchZoneConfig) {
         if arch.plic_base == 0 {
             panic!("vplic_mmio_init: plic_base is null");
         }

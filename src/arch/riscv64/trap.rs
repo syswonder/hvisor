@@ -22,15 +22,15 @@ use crate::device::irqchip::aia::aplic::{host_aplic, vaplic_emul_handler};
 #[cfg(feature = "plic")]
 use crate::device::irqchip::plic::*;
 use crate::event::check_events;
+use crate::memory::{mmio_handle_access, MMIOAccess};
 use crate::memory::{GuestPhysAddr, HostPhysAddr};
+use crate::percpu::this_cpu_data;
 use crate::platform::__board::*;
 use core::arch::{asm, global_asm};
 use riscv::register::mtvec::TrapMode;
 use riscv::register::stvec;
 use riscv::register::{hvip, sie};
 use riscv_decode::Instruction;
-use crate::memory::{mmio_handle_access, MMIOAccess};
-use crate::percpu::this_cpu_data;
 
 extern "C" {
     fn _hyp_trap_vector();
@@ -64,7 +64,7 @@ pub const CAUSE_STRINGS: [&str; 24] = [
     "Instruction page fault",
     "Load page fault",
     "Reserved (14)",
-    "Store/AMO page fault", 
+    "Store/AMO page fault",
     "Reserved (16)",
     "Reserved (17)",
     "Reserved (18)",
@@ -72,7 +72,7 @@ pub const CAUSE_STRINGS: [&str; 24] = [
     "Instruction guest-page fault",
     "Load guest-page fault",
     "Virtual instruction",
-    "Store/AMO guest-page fault"
+    "Store/AMO guest-page fault",
 ];
 
 #[allow(non_snake_case)]
@@ -99,7 +99,6 @@ pub const INS_C_SW: usize = 0xc000;
 pub const INS_RS1_MASK: usize = 0x000f8000;
 pub const INS_RS2_MASK: usize = 0x01f00000;
 pub const INS_RD_MASK: usize = 0x00000f80;
-
 
 pub fn install_trap_vector() {
     unsafe {
@@ -177,7 +176,7 @@ pub fn ins_ldst_decode(ins: usize) -> (usize, bool, bool) {
     /*
      * For htinst
      * Standard compressed instruction will expand to 32-bit equivalent instruction.
-     * Due to we don't read instruction from guest memory, 
+     * Due to we don't read instruction from guest memory,
      * So it will never be compressed instruction here.
      */
 
@@ -217,34 +216,34 @@ pub fn ins_ldst_decode(ins: usize) -> (usize, bool, bool) {
 pub fn guest_page_fault_handler(current_cpu: &mut ArchCpu) {
     #[cfg(feature = "plic")]
     {
-        use riscv::register::{stval, htval, htinst};
+        use riscv::register::{htinst, htval, stval};
         // htval: Hypervisor bad guest physical address.
         let addr: usize = (htval::read() << 2) | (stval::read() & 0x3);
         // htinst: Hypervisor trap instruction (transformed).
-        let mut trap_ins = htinst::read();    
-        
+        let mut trap_ins = htinst::read();
+
         /*
          * For a standard compressed instruction (16-bit size), the transformed instruction is found as follows:
          * 1. Expand the compressed instruction to its 32-bit equivalent.
          * 2. Transform the 32-bit equivalent instruction.
          * 3. Replace bit 1 with a 0.
-         * 
-         * Bits[1:0] of a transformed standard instruction will be binary 01 
+         *
+         * Bits[1:0] of a transformed standard instruction will be binary 01
          * if the trapping instruction is compressed and 11 if not.
          */
-        let ins_size = match trap_ins & 0x3{
+        let ins_size = match trap_ins & 0x3 {
             0x1 => 2,
             0x3 => 4,
             _ => panic!("Invalid instruction size."),
         };
         current_cpu.sepc += ins_size;
-    
+
         /* Determine trapped instruction */
         if trap_ins & 0x1 == 0x1 {
-	    	/*
-	    	 * Bit[0] == 1, and replacing bit 1 with 1 makes the value
+            /*
+             * Bit[0] == 1, and replacing bit 1 with 1 makes the value
              * into a valid encoding of a standard instruction.
-	    	 */
+             */
             trap_ins = trap_ins | 0x2;
         } else if ins_is_preudo(trap_ins) {
             /*
@@ -254,41 +253,46 @@ pub fn guest_page_fault_handler(current_cpu: &mut ArchCpu) {
             panic!("No support for htinst pseudo instruction.");
         } else {
             /*
-	    	 * Bit[0] == 0 implies trapped instruction value is
-	    	 * zero or special value.
-	    	 */
+             * Bit[0] == 0 implies trapped instruction value is
+             * zero or special value.
+             */
             panic!("No support for reading instruction from guest memory.");
         }
-    
+
         // decode instruction to get size, is_write and sign_ext.
         let (size, is_write, sign_ext) = ins_ldst_decode(trap_ins);
         let ins_rd = (INS_RD_MASK & trap_ins) >> 7;
         let ins_rs2 = (INS_RS2_MASK & trap_ins) >> 20;
-    
+
         // warn!("guest page fault at {:#x}, trap_ins: {:08x}, size: {}, is_write: {}, sign_ext: {}", addr, trap_ins, size, is_write, sign_ext);
-    
+
         // create mmio access struct.
         let mut mmio_access = MMIOAccess {
             address: addr as _,
             size: size as _,
             is_write: is_write as _,
-            value: if is_write {  // for store instruction, x[rs2] will be written into memory.
+            value: if is_write {
+                // for store instruction, x[rs2] will be written into memory.
                 if ins_rs2 == 0 {
                     0
                 } else {
                     current_cpu.x[ins_rs2] as _
                 }
-            } else { // for load instruction, value is used to store the result.
+            } else {
+                // for load instruction, value is used to store the result.
                 0
             },
         };
-        
+
         match mmio_handle_access(&mut mmio_access) {
             Ok(_) => {
-                if !is_write && ins_rd != 0 { // for load instruction, x[rd] will be written.
+                if !is_write && ins_rd != 0 {
+                    // for load instruction, x[rd] will be written.
                     if sign_ext {
                         // note: this is used for 64bit system.
-                        mmio_access.value = (((mmio_access.value << (64 - 8 * size)) as i64) >> (64 - 8 * size)) as usize;
+                        mmio_access.value = (((mmio_access.value << (64 - 8 * size)) as i64)
+                            >> (64 - 8 * size))
+                            as usize;
                     }
                     current_cpu.x[ins_rd] = mmio_access.value as _;
                 }
@@ -417,9 +421,7 @@ pub fn handle_eirq(current_cpu: &mut ArchCpu) {
         // 1. claim hw irq.
         let context_id = 2 * current_cpu.cpuid + 1;
         let addr = PLIC_BASE + PLIC_CLAIM_OFFSET + context_id * 0x1000;
-        let irq_id = unsafe {
-            core::ptr::read_volatile(addr as *const u32)
-        };
+        let irq_id = unsafe { core::ptr::read_volatile(addr as *const u32) };
         // let irq_id = host_plic().claim(context_id);
 
         if irq_id == 0 {
@@ -427,13 +429,28 @@ pub fn handle_eirq(current_cpu: &mut ArchCpu) {
         }
 
         // 2. check if this zone belongs this irq.
-        if this_cpu_data().zone.as_ref().unwrap().read().irq_in_zone(irq_id as u32) == false {
+        if this_cpu_data()
+            .zone
+            .as_ref()
+            .unwrap()
+            .read()
+            .irq_in_zone(irq_id as u32)
+            == false
+        {
             error!("irq {} is not belongs to this zone", irq_id);
             return;
         }
 
         // 3. inject hw irq to zone.
-        this_cpu_data().zone.as_ref().unwrap().read().vplic.as_ref().unwrap().inject_irq(pcontext_to_vcontext(context_id), irq_id as usize, true);
+        this_cpu_data()
+            .zone
+            .as_ref()
+            .unwrap()
+            .read()
+            .vplic
+            .as_ref()
+            .unwrap()
+            .inject_irq(pcontext_to_vcontext(context_id), irq_id as usize, true);
     }
     #[cfg(feature = "aia")]
     {

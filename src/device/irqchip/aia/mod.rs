@@ -19,8 +19,8 @@ use crate::zone::Zone;
 impl Zone {
     pub fn arch_irqchip_reset(&self) {
         /*
-            Reset priority, threshold, enable, and so on related to this zone.
-         */
+           Reset priority, threshold, enable, and so on related to this zone.
+        */
         todo!();
     }
 

@@ -29,7 +29,7 @@ pub const IPI_EVENT_SHUTDOWN: usize = 1;
 pub const IPI_EVENT_VIRTIO_INJECT_IRQ: usize = 2;
 pub const IPI_EVENT_WAKEUP_VIRTIO_DEVICE: usize = 3;
 pub const IPI_EVENT_CLEAR_INJECT_IRQ: usize = 4;
-pub const IPI_EVENT_UPDATE_HART_LINE: usize = 5;  
+pub const IPI_EVENT_UPDATE_HART_LINE: usize = 5;
 
 static EVENT_MANAGER: Once<EventManager> = Once::new();
 

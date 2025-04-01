@@ -67,7 +67,7 @@ pub const PLIC_THRESHOLD_OFFSET: usize = 0x200000;
 pub const PLIC_CLAIM_OFFSET: usize = 0x200004;
 pub const PLIC_COMPLETE_OFFSET: usize = 0x200004;
 
-pub const PLIC_MAX_IRQ: usize = 1023;       // 1-1023, in PLIC, irq 0 does not exist.
+pub const PLIC_MAX_IRQ: usize = 1023; // 1-1023, in PLIC, irq 0 does not exist.
 pub const PLIC_MAX_CONTEXT: usize = 15872;
 
 /// Plic struct
@@ -78,9 +78,7 @@ pub struct Plic {
 #[allow(unused)]
 impl Plic {
     pub fn new(base: usize) -> Self {
-        Self {
-            base,
-        }
+        Self { base }
     }
 
     /// Plic init global
@@ -91,7 +89,10 @@ impl Plic {
         if num_contexts > PLIC_MAX_CONTEXT {
             panic!("PLIC: num_contexts is too large");
         }
-        info!("PLIC init global: num_interrupts = {}, num_contexts = {}", num_interrupts, num_contexts);
+        info!(
+            "PLIC init global: num_interrupts = {}, num_contexts = {}",
+            num_interrupts, num_contexts
+        );
         // set priority to 0
         for i in 1..=num_interrupts {
             self.set_priority(i, 0);
@@ -123,11 +124,9 @@ impl Plic {
     /// Plic get priority
     pub fn get_priority(&self, irq_id: usize) -> u32 {
         let addr = self.base + PLIC_PRIORITY_OFFSET + irq_id * 4;
-        unsafe {
-            core::ptr::read_volatile(addr as *const u32)
-        }
+        unsafe { core::ptr::read_volatile(addr as *const u32) }
     }
-    
+
     /// Plic set enable
     pub fn set_enable(&self, context: usize, irq_base: usize, value: u32) {
         let addr = self.base + PLIC_ENABLE_OFFSET + context * 0x80 + irq_base;
@@ -157,9 +156,7 @@ impl Plic {
     /// Plic claim
     pub fn claim(&self, context: usize) -> u32 {
         let addr = self.base + PLIC_CLAIM_OFFSET + context * 0x1000;
-        unsafe {
-            core::ptr::read_volatile(addr as *const u32)
-        }
+        unsafe { core::ptr::read_volatile(addr as *const u32) }
     }
 
     /// Plic complete

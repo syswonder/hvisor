@@ -25,15 +25,15 @@ use crate::arch::s2pt::Stage2PageTable;
 use crate::config::{HvZoneConfig, CONFIG_NAME_MAXLEN};
 use crate::consts::MAX_CPU_NUM;
 
+#[cfg(all(target_arch = "riscv64", feature = "plic"))]
+use crate::device::irqchip::plic::vplic;
 use crate::error::HvResult;
 use crate::memory::addr::GuestPhysAddr;
 use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
 use crate::percpu::{get_cpu_data, this_zone, CpuSet};
-use core::panic;
 #[cfg(all(feature = "plic", target_arch = "riscv64"))]
 use crate::platform::BOARD_PLIC_INTERRUPTS_NUM;
-#[cfg(all(target_arch = "riscv64", feature = "plic"))]
-use crate::device::irqchip::plic::vplic;
+use core::panic;
 
 pub struct Zone {
     pub name: [u8; CONFIG_NAME_MAXLEN],
@@ -219,7 +219,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
         cpu_num += 1;
     });
 
-    #[cfg(feature="plic")]
+    #[cfg(feature = "plic")]
     {
         zone.vplic = Some(vplic::VirtualPLIC::new(
             config.arch_config.plic_base,
