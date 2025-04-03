@@ -98,6 +98,8 @@ hvisor_virtio_device {
 
 这样，当hvisor向Root Linux注入中断号为`32+0x20`的中断时，便会进入`hvisor.ko`中注册的中断处理函数，唤醒Virtio守护进程。
 
+如果`32+0x20`号中断已经被某个设备占用了，除了修改上述设备树节点，还需要修改hvisor主仓库中`IRQ_WAKEUP_VIRTIO_DEVICE`变量。对arm来说，如果`interrupts`中填写的值为`0xa`则`IRQ_WAKEUP_VIRTIO_DEVICE`需要为`32+0xa`；如果是riscv架构，则不需要增加32，使二者相等即可。
+
 #### Virtio设备的启动和创建
 
 在Root Linux上，执行以下示例指令：
