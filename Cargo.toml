@@ -34,6 +34,7 @@ x86 = "0.52.0"
 x86_64 = "=0.14.10"
 x2apic = "0.4.3"
 raw-cpuid = "10.7.0"
+acpi = "5.2.0"
 
 [features]
 platform_qemu = []

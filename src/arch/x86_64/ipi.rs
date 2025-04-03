@@ -99,6 +99,7 @@ pub fn send_ipi(value: u64) -> HvResult {
     dest_set.iter().for_each(|dest| {
         match delivery_mode {
             IpiDeliveryMode::FIXED => {
+                // info!("dest: {:x}, vector: {:x}", dest, vector);
                 inject_vector(dest, vector, None, true);
                 arch_send_event(dest as _, IdtVector::VIRT_IPI_VECTOR as _);
             }
@@ -143,20 +144,4 @@ pub fn handle_virt_ipi() {
     if event::check_events() {
         return;
     }
-
-    // inject ipi
-    /*let mut vectors = &mut get_ipi_info(this_cpu_id()).unwrap().lock().fixed_vectors;
-    if vectors.len() > 1 {
-        // info!("handle_virt_ipi vectors len: {:x}", vectors.len());
-    }
-
-    while vectors.len() != 0 {
-        if let Some(vector) = vectors.pop_front() {
-            // info!("handle_virt_ipi vector: {:x}", vector);
-            this_cpu_data()
-                .arch_cpu
-                .virt_lapic
-                .inject_event((vector & 0xff) as u8, None);
-        }
-    }*/
 }

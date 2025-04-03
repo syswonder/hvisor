@@ -2,7 +2,8 @@ use crate::{
     arch::{
         cpu::{this_cpu_id, ArchCpu},
         cpuid::{CpuIdEax, ExtendedFeaturesEcx, FeatureInfoFlags},
-        idt::{IdtStruct, IdtVector},
+        hpet,
+        idt::{get_guest_vector, get_host_vector, IdtStruct, IdtVector},
         ipi,
         msr::Msr::{self, *},
         s2pt::Stage2PageFaultInfo,
@@ -13,7 +14,6 @@ use crate::{
         irqchip::{
             inject_vector,
             pic::{
-                hpet,
                 ioapic::{ioapic_inject_irq, irqs},
                 lapic::VirtLocalApic,
             },
@@ -88,11 +88,14 @@ fn handle_irq(vector: u8) {
             None,
             true,
         ),
-        IdtVector::UART_COM1_VECTOR => {
-            ioapic_inject_irq(irqs::UART_COM1_IRQ);
-        }
         _ => {
-            // println!("Unhandled irq {}", vector);
+            inject_vector(
+                this_cpu_id(),
+                vector as _,
+                //get_guest_vector(vector).unwrap() as _,
+                None,
+                false,
+            );
         }
     }
     unsafe { VirtLocalApic::phys_local_apic().end_of_interrupt() };
@@ -214,11 +217,12 @@ fn handle_hypercall(arch_cpu: &mut ArchCpu) -> HvResult {
 
 fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvResult {
     let io_info = VmxIoExitInfo::new()?;
-    trace!(
+
+    /*info!(
         "VM exit: I/O instruction @ {:#x}: {:#x?}",
-        exit_info.guest_rip,
-        io_info,
-    );
+        exit_info.guest_rip, io_info,
+    );*/
+
     if io_info.is_string {
         error!("INS/OUTS instructions are not supported!");
         return hv_result_err!(ENOSYS);

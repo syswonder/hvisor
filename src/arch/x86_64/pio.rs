@@ -1,4 +1,5 @@
 use crate::{
+    device::irqchip::pic::vtd::{PCI_CONFIG_ADDR, PCI_CONFIG_DATA},
     error::HvResult,
     memory::{Frame, HostPhysAddr},
 };
@@ -24,12 +25,19 @@ impl PortIoBitmap {
             a: Frame::new_zero()?,
             b: Frame::new_zero()?,
         };
-        bitmap.a.fill(0xff);
-        bitmap.b.fill(0xff);
 
-        for port in UART_COM1_BASE_PORT..UART_COM1_BASE_PORT + 8 {
-            bitmap.set_intercept(port, false);
-        }
+        bitmap.a.fill(0);
+        bitmap.b.fill(0);
+
+        // ban i8259a ports
+        bitmap.set_intercept(0x20, true);
+        bitmap.set_intercept(0x21, true);
+        bitmap.set_intercept(0xa0, true);
+        bitmap.set_intercept(0xa1, true);
+
+        // ban pci config ports
+        // bitmap.set_intercept(PCI_CONFIG_ADDR, true);
+        // bitmap.set_intercept(PCI_CONFIG_DATA, true);
 
         Ok(bitmap)
     }
@@ -44,10 +52,10 @@ impl PortIoBitmap {
 
     fn set_intercept(&mut self, mut port: u16, intercept: bool) {
         let bitmap = match port <= 0x7fff {
-            true => unsafe { core::slice::from_raw_parts_mut(self.a.as_mut_ptr(), 1024) },
+            true => unsafe { core::slice::from_raw_parts_mut(self.a.as_mut_ptr(), 0x1000) },
             false => {
                 port -= 0x8000;
-                unsafe { core::slice::from_raw_parts_mut(self.b.as_mut_ptr(), 1024) }
+                unsafe { core::slice::from_raw_parts_mut(self.b.as_mut_ptr(), 0x1000) }
             }
         };
 

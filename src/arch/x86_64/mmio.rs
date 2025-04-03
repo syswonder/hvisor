@@ -90,7 +90,7 @@ impl RmReg {
         let mut gen_regs = this_cpu_data().arch_cpu.regs_mut();
 
         let mut value = self.read().unwrap();
-        value.set_bits(0..(size * 4), new_value.get_bits(0..(size * 4)));
+        value.set_bits(0..(size * 8), new_value.get_bits(0..(size * 8)));
 
         match self {
             RmReg::AX => gen_regs.rax = value,

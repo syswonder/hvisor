@@ -2,7 +2,7 @@ use crate::{
     arch::{
         boot::BootParams,
         gdt::{get_tr_base, GdtStruct},
-        ipi,
+        hpet, ipi,
         msr::{
             Msr::{self, *},
             MsrBitmap,
@@ -12,7 +12,7 @@ use crate::{
         vmx::*,
     },
     consts::{core_end, MAX_CPU_NUM, PER_CPU_SIZE},
-    device::irqchip::pic::{check_pending_vectors, hpet, lapic::VirtLocalApic},
+    device::irqchip::pic::{check_pending_vectors, lapic::VirtLocalApic, vtd},
     error::{HvError, HvResult},
     memory::{addr::phys_to_virt, GuestPhysAddr, HostPhysAddr, PhysAddr, PAGE_SIZE},
     percpu::this_cpu_data,
@@ -38,6 +38,8 @@ use x86_64::{
     registers::control::{Cr0, Cr0Flags, Cr3, Cr4, Cr4Flags},
     structures::tss::TaskStateSegment,
 };
+
+use super::acpi::RootAcpi;
 
 const AP_START_PAGE_IDX: u8 = 6;
 const AP_START_PAGE_PADDR: PhysAddr = AP_START_PAGE_IDX as usize * PAGE_SIZE;
@@ -242,6 +244,9 @@ impl ArchCpu {
         self.setup_vmcs(per_cpu.cpu_on_entry, per_cpu.boot_cpu)
             .unwrap();
         per_cpu.activate_gpm();
+
+        // must be called after activate_gpm()
+        vtd::activate();
 
         while VM_LAUNCH_READY.load(Ordering::Acquire) < MAX_CPU_NUM as u32 - 1 {
             core::hint::spin_loop();

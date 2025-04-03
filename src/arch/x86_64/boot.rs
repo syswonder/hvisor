@@ -2,7 +2,7 @@ use crate::{
     config::{root_zone_config, HvZoneConfig, MEM_TYPE_RAM},
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr},
-    platform::qemu_x86_64::gpa_as_mut_ptr,
+    platform::qemu_x86_64::root_zone_gpa_as_mut_ptr,
 };
 use alloc::string::{String, ToString};
 use core::{
@@ -83,7 +83,7 @@ impl BootParams {
         root_cmdline_addr: GuestPhysAddr,
         root_cmdline: &str,
     ) -> HvResult {
-        let boot_params_hpa = gpa_as_mut_ptr(setup_addr) as HostPhysAddr;
+        let boot_params_hpa = root_zone_gpa_as_mut_ptr(setup_addr) as HostPhysAddr;
         let boot_params = unsafe { &mut *(boot_params_hpa as *mut BootParams) };
 
         // TODO: get kernel version
@@ -101,7 +101,7 @@ impl BootParams {
         unsafe {
             copy_nonoverlapping(
                 root_cmdline.as_ptr(),
-                gpa_as_mut_ptr(root_cmdline_addr),
+                root_zone_gpa_as_mut_ptr(root_cmdline_addr),
                 root_cmdline.len(),
             )
         };
@@ -139,6 +139,15 @@ impl BootParams {
                     };
                     index += 1;
                 }
+                /* FIXME: reserved?
+                _ => {
+                    self.e820_table[index] = BootE820Entry {
+                        addr: mem_region.virtual_start,
+                        size: mem_region.size,
+                        _type: E820Type::E820_RESERVED,
+                    };
+                    index += 1;
+                }*/
                 _ => {}
             }
         }
@@ -146,6 +155,8 @@ impl BootParams {
     }
 
     fn set_initrd(&mut self, ramdisk_image: u32, ramdisk_size: u32) {
+        // FIXME:
+        return;
         self.ramdisk_image = ramdisk_image;
         self.ramdisk_size = ramdisk_size;
         info!("initrd size: {}", self.ramdisk_size);

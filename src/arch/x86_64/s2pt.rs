@@ -4,6 +4,7 @@ use crate::{
         vmcs::*,
     },
     consts::PAGE_SIZE,
+    device::irqchip::pic::vtd,
     error::HvResult,
     memory::{
         addr::{GuestPhysAddr, HostPhysAddr, PhysAddr},
@@ -144,6 +145,7 @@ impl From<MemFlags> for DescriptorAttr {
         if !flags.contains(MemFlags::IO) {
             attr.set_mem_type(MemType::WriteBack);
         } else {
+            attr.set_mem_type(MemType::WriteThrough);
             //  attr &= !Self::READ;
         }
         attr
@@ -240,6 +242,8 @@ impl PagingInstr for S2PTInstr {
         let s2ptp = S2PTPointer::from_table_phys(root_paddr).bits();
         crate::arch::vmcs::VmcsControl64::EPTP.write(s2ptp).unwrap();
         unsafe { invs2pt(InvS2PTType::SingleContext, s2ptp) };
+
+        vtd::update_dma_translation_tables(root_paddr);
     }
 
     fn flush(_vaddr: Option<usize>) {}

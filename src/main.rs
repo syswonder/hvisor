@@ -151,9 +151,10 @@ fn x86_rust_main_tmp(cpuid: usize, host_dtb: usize) {
         memory::heap::init();
         memory::heap::test();
         #[cfg(target_arch = "x86_64")]
-        MultibootInfo::init(host_dtb);
-        #[cfg(target_arch = "x86_64")]
-        device::irqchip::pic::ioapic::init_ioapic();
+        {
+            MultibootInfo::init(host_dtb);
+            device::irqchip::pic::ioapic::init_ioapic();
+        }
     }
 
     let cpu = PerCpu::new(cpuid);
@@ -189,9 +190,16 @@ fn x86_rust_main_tmp(cpuid: usize, host_dtb: usize) {
         wait_for_counter(&INIT_EARLY_OK, 1);
     }
 
-    // x86_64::instructions::interrupts::int3();
-    // info!("END OF MAIN");
+    device::irqchip::percpu_init();
 
+    INITED_CPUS.fetch_add(1, Ordering::SeqCst);
+    wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _);
+
+    if is_primary {
+        primary_init_late();
+    } else {
+        wait_for_counter(&INIT_LATE_OK, 1);
+    }
     cpu.run_vm();
     loop {}
 }

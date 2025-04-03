@@ -1,5 +1,5 @@
 use crate::arch::cpu::{self, this_cpu_id};
-use alloc::{boxed::Box, collections::btree_map::BTreeMap};
+use alloc::boxed::Box;
 use bit_field::BitField;
 use spin::Mutex;
 use x86_64::{
@@ -20,11 +20,6 @@ pub struct GdtStruct {
     table: [u64; 16],
     tss: &'static TaskStateSegment,
 }
-
-/*lazy_static! {
-    static ref TSS: Mutex<BTreeMap<usize, TaskStateSegment>> = Mutex::new(BTreeMap::new());
-    static ref GDT: Mutex<BTreeMap<usize, GdtStruct>> = Mutex::new(BTreeMap::new());
-}*/
 
 impl GdtStruct {
     pub const KCODE32_SELECTOR: SegmentSelector = SegmentSelector::new(1, PrivilegeLevel::Ring0);

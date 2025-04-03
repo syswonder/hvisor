@@ -2,18 +2,16 @@ use crate::{
     arch::{
         cpu::{this_cpu_id, ArchCpu},
         idt::IdtVector,
-        ipi::{self, IpiDeliveryMode},
+        ipi,
         msr::Msr::{self, *},
         vmcs::Vmcs,
     },
-    device::irqchip::{inject_vector, pic::hpet},
     error::HvResult,
     percpu::{this_cpu_data, this_zone, CpuSet},
 };
-use alloc::collections::vec_deque::VecDeque;
 use bit_field::BitField;
-use core::{arch::x86_64::_rdtsc, ops::Range, u32};
-use x2apic::lapic::{LocalApic, LocalApicBuilder, TimerDivide, TimerMode};
+use core::{ops::Range, u32};
+use x2apic::lapic::{LocalApic, LocalApicBuilder, TimerMode};
 
 pub struct VirtLocalApic {
     pub phys_lapic: LocalApic,
