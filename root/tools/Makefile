@@ -6,7 +6,7 @@ hvisor_objects ?= $(filter-out $(ivc_demo_object) $(rpmsg_demo_object), $(object
 ROOT ?= /
 
 CFLAGS := -Wall -Wextra -DLOG_USE_COLOR -DHLOG=$(LOG) --sysroot=$(ROOT)
-include_dirs := -I../include -I./include -I../cJSON -l:libpthread.so.0
+include_dirs := -I../include -I./include -I../cJSON -lpthread -static
 LIBS := -L$(ROOT)/usr/lib/aarch64-linux-gnu -L$(ROOT)/lib
 ifeq ($(VIRTIO_GPU), y)
 	sources += $(wildcard ./virtio_gpu/*.c)
