@@ -1,11 +1,13 @@
+use crate::memory::addr::{PhysAddr, VirtAddr};
+use core::ptr;
+use spin::Mutex;
 use tock_registers::interfaces::*;
 use tock_registers::register_bitfields;
 use tock_registers::register_structs;
 use tock_registers::registers::*;
-use spin::Mutex;
-use crate::memory::addr::{PhysAddr, VirtAddr};
-use core::ptr;
 
+#[cfg(all(feature = "rk3568_uart_base"))]
+pub const UART_BASE: PhysAddr = 0xfe660000;
 
 /// Register struct representing the UART registers.
 register_structs! {
@@ -29,14 +31,11 @@ pub struct Uart16550 {
     base_addr: usize,
 }
 
-
 impl Uart16550 {
     pub const fn new(base_addr: VirtAddr) -> Self {
-        Self {
-            base_addr
-        }
+        Self { base_addr }
     }
-    
+
     #[inline]
     pub const fn regs(&self) -> &Ns16550a {
         unsafe { &*(self.base_addr as *const _) }
@@ -56,7 +55,6 @@ impl Uart16550 {
     pub fn putchar(&mut self, c: u8) {
         while self.regs().LSR.get() & (1 << 5) == 0 {}
         self.regs().THR_RBR_DLL.set(c as u32);
-
     }
     #[inline]
     fn getchar(&mut self) -> Option<u8> {
@@ -64,9 +62,7 @@ impl Uart16550 {
     }
 }
 
-static mut UART: Uart16550 = {
-    Uart16550::new(0xfe660000)
-};
+static mut UART: Uart16550 = { Uart16550::new(UART_BASE) };
 
 #[inline]
 pub fn console_putchar(c: u8) {

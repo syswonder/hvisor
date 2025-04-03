@@ -9,7 +9,25 @@ pub const ROOT_ZONE_ENTRY: u64 = 0x60080000 ;
 pub const ROOT_ZONE_CPUS: u64 = (1 << 0)|(1 << 1);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 16] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 21] = [
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xfd400000,
+        virtual_start: 0xfd400000,
+        size: 0x10000,
+    }, // gic
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xfd460000,
+        virtual_start: 0xfd460000,
+        size: 0xc0000,
+    }, // gic
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xfe000000,
+        virtual_start: 0xfe000000,
+        size: 0x4000,
+    }, // dwmmc
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x200000,
@@ -22,24 +40,24 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 16] = [
         virtual_start: 0x9400000,
         size: 0xe6c00000,
     }, // memory
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_RAM,
-        physical_start: 0x0,
-        virtual_start: 0x0,
-        size: 0x200000,
-    }, // ram
     // HvConfigMemoryRegion {
     //     mem_type: MEM_TYPE_RAM,
-    //     physical_start: 0x110000,
-    //     virtual_start: 0x110000,
-    //     size: 0xf0000,
-    // }, // ramoops
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0x10f000,
-    //     virtual_start: 0x10f000,
-    //     size: 0x1000,
-    // }, //scmi-shmem
+    //     physical_start: 0x0,
+    //     virtual_start: 0x0,
+    //     size: 0x200000,
+    // }, // ram
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RAM,
+        physical_start: 0x110000,
+        virtual_start: 0x110000,
+        size: 0xf0000,
+    }, // ramoops
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x10f000,
+        virtual_start: 0x10f000,
+        size: 0x1000,
+    }, //scmi-shmem
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x1f0000000,
@@ -50,6 +68,12 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 16] = [
         mem_type: MEM_TYPE_IO,
         physical_start: 0xFE660000,
         virtual_start: 0xFE660000,
+        size: 0x10000,
+    }, //serial
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xFE680000,
+        virtual_start: 0xFE680000,
         size: 0x10000,
     }, //serial
     HvConfigMemoryRegion {
@@ -120,8 +144,8 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 16] = [
     }, //sdhci
 ];
 
-pub const ROOT_ZONE_IRQS: [u32; 18] = [
-   0x46, 0x104, 0x105, 0x106, 0x107, 0x2d, 0x2e, 0x2b, 0x2a, 0x29, 0x33, 0x96, 0x11c, 0x44, 0x43, 0x42, 0x41, 0x8d];
+pub const ROOT_ZONE_IRQS: [u32; 20] = [
+   0x84, 0x98, 0x40, 0x104, 0x105, 0x106, 0x107, 0x2d, 0x2e, 0x2b, 0x2a, 0x29, 0x33, 0x96, 0x11c, 0x44, 0x43, 0x42, 0x41, 0x8d];
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     gicd_base: 0xfd400000,
@@ -135,8 +159,8 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     gich_size: 0,
     gicv_base: 0,
     gicv_size: 0,
-    gits_base: 0xfd440000,
-    gits_size: 0x20000,
+    gits_base: 0,
+    gits_size: 0,
 };
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
 

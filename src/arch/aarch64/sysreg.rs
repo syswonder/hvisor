@@ -46,9 +46,11 @@ macro_rules! smc_arg1 {
 }
 pub(crate) use smc_arg1;
 
-pub fn smc_call(function: u64, args: &[u64]) -> [u64;4] {
+pub fn smc_call(function: u64, args: &[u64]) -> [u64; 4] {
     let args: [u64; 17] = args.try_into().expect("args length should be 17");
-    smc64(function as _, args)[0..4].try_into().expect("smc64 ret err")
+    smc64(function as _, args)[0..4]
+        .try_into()
+        .expect("smc64 ret err")
 }
 
 // macro_rules! read_lrreg {

@@ -12,54 +12,24 @@
         },
         {
             "type": "io",
-            "physical_start": "0xfe680000",
-            "virtual_start":  "0xfe680000",
-            "size": "0x10000"
-        },
-        {
-            "type": "io",
-            "physical_start": "0xfd440000",
-            "virtual_start":  "0xfd440000",
-            "size": "0x10000"
-        },
-        {
-            "type": "io",
             "physical_start": "0xfdc20000",
             "virtual_start":  "0xfdc20000",
             "size": "0x10000"
         },
         {
-            "type": "io",
-            "physical_start": "0xfdd00000",
-            "virtual_start":  "0xfdd00000",
-            "size": "0x10000"
-        },
-        {
-            "type": "io",
-            "physical_start": "0xfd904000",
-            "virtual_start":  "0xfd904000",
-            "size": "0x10000"
-        },
-        {
             "type": "virtio",
-            "physical_start": "0xa003c00",
-            "virtual_start":  "0xa003c00",
+            "physical_start": "0xff9d0000",
+            "virtual_start":  "0xff9d0000",
             "size": "0x200"
         },
         {
             "type": "virtio",
-            "physical_start": "0xa003800",
-            "virtual_start":  "0xa003800",
-            "size": "0x200"
-        },
-        {
-            "type": "virtio",
-            "physical_start": "0xa003600",
-            "virtual_start":  "0xa003600",
+            "physical_start": "0xff9e0000",
+            "virtual_start":  "0xff9e0000",
             "size": "0x200"
         }
     ],
-    "interrupts": [61, 75, 76, 78],
+    "interrupts": [76, 78],
     "ivc_configs": [],
     "kernel_filepath": "./Image",
     "dtb_filepath": "./rk3568_limit_zone1.dtb",
@@ -71,6 +41,8 @@
         "gicd_base": "0xfd400000",
         "gicd_size": "0x10000",
         "gicr_base": "0xfd460000",
-        "gicr_size": "0xc0000"
+        "gicr_size": "0xc0000",
+        "gits_base": "0x0",
+        "gits_size": "0x0"
     }
 }

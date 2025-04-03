@@ -20,12 +20,12 @@ use crate::device::irqchip::set_sgi_irq;
 pub fn arch_send_event(cpu_id: u64, sgi_num: u64) {
     #[cfg(feature = "gicv3")]
     {
-        /*Actually, the value passed to ICC_SGI1R_EL1 should be derived from 
-        the MPIDR of the target CPU. However, since we cannot access this 
-        register on the sender side, we have reverse-engineered a value 
-        here using the cpu_id. 
-        Therefore, we must differentiate the MPIDR format of the A55 architecture 
-        from that of other CPUs. Here, we directly use conditional compilation 
+        /*Actually, the value passed to ICC_SGI1R_EL1 should be derived from
+        the MPIDR of the target CPU. However, since we cannot access this
+        register on the sender side, we have reverse-engineered a value
+        here using the cpu_id.
+        Therefore, we must differentiate the MPIDR format of the A55 architecture
+        from that of other CPUs. Here, we directly use conditional compilation
         to handle this in a straightforward manner.
         */
         let aff3: u64 = 0 << 48;

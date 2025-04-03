@@ -59,6 +59,7 @@ pt_layout_rk3568 = []
 # cpu 
 a55 = []
 a53 = []
+rk3568_uart_base = []
 ############## riscv64 #############
 # irqchip driver
 plic = []

@@ -11,6 +11,8 @@
 	aliases {
 		mmc0 = "/sdhci@fe310000";
 		serial2 = "/serial@fe660000";
+		sdmmc2 = "/dwmmc@fe000000";
+		serial4 = "/serial@fe680000";
 	};
     
     memory {
@@ -42,6 +44,11 @@
         hvisor@480000 {
 			no-map;
 			reg = <0x00 0x480000 0x00 0x400000>;
+		};
+
+		nonroot {
+			no-map;
+			reg = <0x00 0x40000000 0x00 0x20000000>;
 		};
     };
 
@@ -1174,6 +1181,31 @@
 		supports-emmc;
 	};
 
+	dwmmc@fe000000 {
+		fifo-depth = <0x100>;
+		pinctrl-names = "default";
+		supports-sdio;
+		pinctrl-0 = <0xa0 0xa1 0xa2>;
+		clock-names = "biu\0ciu\0ciu-drive\0ciu-sample";
+		cap-sd-highspeed;
+		bus-width = <0x04>;
+		non-removable;
+		resets = <0x20 0xeb>;
+		cap-sdio-irq;
+		interrupts = <0x00 0x64 0x04>;
+		clocks = <0x20 0xc1 0x20 0xc2 0x20 0x18e 0x20 0x18f>;
+		keep-power-in-suspend;
+		compatible = "rockchip,rk3568-dw-mshc\0rockchip,rk3288-dw-mshc";
+		status = "okay";
+		disable-wp;
+		mmc-pwrseq = <0x9f>;
+		reg = <0x00 0xfe000000 0x00 0x4000>;
+		phandle = <0x19a>;
+		sd-uhs-sdr104;
+		max-frequency = <0x8f0d180>;
+		reset-names = "reset";
+	};
+
 	scmi-shmem@10f000 {
 		compatible = "arm,scmi-shmem";
 		reg = <0x00 0x10f000 0x00 0x100>;
@@ -1238,7 +1270,7 @@
 		interrupts = <0x00 0x76 0x04>;
 		clocks = <0x20 0x123 0x20 0x120>;
 		compatible = "rockchip,rk3568-uart\0snps,dw-apb-uart";
-		status = "disabled";
+		status = "disable";
 		reg = <0x00 0xfe660000 0x00 0x100>;
 		phandle = <0x1bd>;
 		dmas = <0x41 0x04 0x41 0x05>;
@@ -1257,6 +1289,21 @@
 		rockchip,serial-id = <0x02>;
 	};
 
+	uart4: serial@fe680000 {
+		reg-io-width = <0x04>;
+		pinctrl-names = "default";
+		pinctrl-0 = <0xf1>;
+		clock-names = "baudclk\0apb_pclk";
+		interrupts = <0x00 0x78 0x04>;
+		clocks = <0x20 0x12b 0x20 0x128>;
+		compatible = "rockchip,rk3568-uart\0snps,dw-apb-uart";
+		status = "disable";
+		reg = <0x00 0xfe680000 0x00 0x100>;
+		phandle = <0x1bf>;
+		dmas = <0x41 0x08 0x41 0x09>;
+		reg-shift = <0x02>;
+	};
+
 	chosen {
 		bootargs = "storagemedia=emmc rw rootwait earlycon=uart8250,mmio32,0xfe660000 console=ttyFIQ0 root=PARTUUID=614e0000-0000";
 		phandle = <0x1eb>;
@@ -1265,6 +1312,6 @@
     hvisor_virtio_device {
         compatible = "hvisor";
         interrupt-parent = <0x01>;
-        interrupts = <0x00 0x26 0x01>;
+        interrupts = <0x00 0x20 0x01>;
     };
 };

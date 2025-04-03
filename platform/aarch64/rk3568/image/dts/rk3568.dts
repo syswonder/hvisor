@@ -4479,7 +4479,7 @@
 	};
 
 	chosen {
-		bootargs = "storagemedia=emmc rw rootwait earlycon=uart8250,mmio32,0xfe660000 console=ttyFIQ0 root=PARTUUID=614e0000-0000";
+		bootargs = "storagemedia=emmc rw rootwait earlycon=uart8250,mmio32,0xfe680000 console=ttyFIQ0 root=PARTUUID=614e0000-0000";
 		phandle = <0x1eb>;
 	};
 
@@ -4678,7 +4678,7 @@
 		rockchip,wake-irq = <0x00>;
 		compatible = "rockchip,fiq-debugger";
 		status = "okay";
-		rockchip,serial-id = <0x02>;
+		rockchip,serial-id = <0x04>;
 	};
 
 	rkisp-vir0 {

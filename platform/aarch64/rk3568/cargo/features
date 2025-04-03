@@ -1,4 +1,5 @@
 gicv3
 uart_16550
 pt_layout_rk3568
+rk3568_uart_base
 a55
