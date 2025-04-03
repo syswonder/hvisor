@@ -50,7 +50,7 @@ impl Zone {
                     );
                 }
                 _ => {
-                    panic!("Unsupported memory type: {}", mem_region.mem_type)
+                    warn!("Unsupported memory type: {}", mem_region.mem_type)
                 }
             }
         }
