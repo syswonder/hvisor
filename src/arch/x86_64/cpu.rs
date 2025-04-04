@@ -16,7 +16,10 @@ use crate::{
     error::{HvError, HvResult},
     memory::{addr::phys_to_virt, GuestPhysAddr, HostPhysAddr, PhysAddr, PAGE_SIZE},
     percpu::this_cpu_data,
-    platform::qemu_x86_64::*,
+    platform::{
+        ROOT_ZONE_BOOT_STACK, ROOT_ZONE_CMDLINE, ROOT_ZONE_CMDLINE_ADDR, ROOT_ZONE_INITRD_ADDR,
+        ROOT_ZONE_SETUP_ADDR,
+    },
 };
 use alloc::boxed::Box;
 use core::{

@@ -1,4 +1,20 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 use alloc::sync::Arc;
+use alloc::vec::Vec;
 use spin::{Mutex, RwLock};
 
 use crate::arch::cpu::{this_cpu_id, ArchCpu};
@@ -41,7 +57,10 @@ impl PerCpu {
         #[cfg(target_arch = "riscv64")]
         {
             use crate::arch::csr::{write_csr, CSR_SSCRATCH};
-            write_csr!(CSR_SSCRATCH, &ret.as_mut().unwrap().arch_cpu as *const _ as usize); //arch cpu pointer
+            write_csr!(
+                CSR_SSCRATCH,
+                &ret.as_mut().unwrap().arch_cpu as *const _ as usize
+            ); //arch cpu pointer
         }
         unsafe { ret.as_mut().unwrap() }
     }
@@ -114,4 +133,26 @@ impl CpuSet {
     pub fn iter_except<'a>(&'a self, id: usize) -> impl Iterator<Item = usize> + 'a {
         (0..=self.max_cpu_id).filter(move |&i| self.contains_cpu(i) && i != id)
     }
+}
+
+#[test_case]
+fn test_cpuset() {
+    let mut cpuset = CpuSet::new(3, 0b1010);
+    assert_eq!(cpuset.contains_cpu(0), false);
+    assert_eq!(cpuset.contains_cpu(1), true);
+    assert_eq!(cpuset.contains_cpu(2), false);
+    assert_eq!(cpuset.contains_cpu(3), true);
+    cpuset.set_bit(0);
+    assert_eq!(cpuset.contains_cpu(0), true);
+    assert_eq!(cpuset.contains_cpu(1), true);
+    assert_eq!(cpuset.contains_cpu(2), false);
+    assert_eq!(cpuset.contains_cpu(3), true);
+    cpuset.clear_bit(1);
+    assert_eq!(cpuset.contains_cpu(0), true);
+    assert_eq!(cpuset.contains_cpu(1), false);
+    assert_eq!(cpuset.contains_cpu(2), false);
+    assert_eq!(cpuset.contains_cpu(3), true);
+    assert_eq!(cpuset.first_cpu(), Some(0));
+    assert_eq!(cpuset.iter().collect::<Vec<_>>(), vec![0, 3]);
+    assert_eq!(cpuset.iter_except(0).collect::<Vec<_>>(), vec![3]);
 }

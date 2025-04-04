@@ -1,9 +1,27 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//      Yulong Han <wheatfox17@icloud.com>
+//
 use crate::{
     config::*,
+    consts::PAGE_SIZE,
+    device::virtio_trampoline::mmio_virtio_handler,
     error::HvResult,
     memory::{
-        addr::align_down, addr::align_up, mmio_generic_handler, GuestPhysAddr, HostPhysAddr,
-        MemFlags, MemoryRegion,
+        addr::{align_down, align_up},
+        mmio_generic_handler, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
     },
     zone::Zone,
 };
@@ -13,77 +31,9 @@ use core::sync::atomic::{fence, Ordering};
 
 impl Zone {
     pub fn pt_init(&mut self, mem_regions: &[HvConfigMemoryRegion]) -> HvResult {
-        // info!("loongarch64: mm: pt init for zone, vm_paddr_start: {:#x?}, guest_dtb: {:#x?}, dtb_ipa: {:#x?}", vm_paddr_start, guest_dtb, dtb_ipa);
-
-        // // NOTES:
-        // // vm_paddr_start is the start HPA mem range addr for this Zone
-        // // fdt is the parsed info of the dtb, including a lot of useful stuff
-        // // guest_dtb is the HPA addr for zone's dtb
-        // // dtb_ipa is the GPA addr for zone's dtb
-
-        // // for each region in /memory, map it
-        // let mem = fdt.memory();
-        // let mut iter = mem.regions();
-        // loop {
-        //     if let Some(mem_region) = iter.next() {
-        //         info!("map mem_region: {:#x?}", mem_region);
-        //         self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-        //             mem_region.starting_address as GuestPhysAddr,
-        //             mem_region.starting_address as HostPhysAddr,
-        //             mem_region.size.unwrap(),
-        //             MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
-        //         ))?;
-        //     } else {
-        //         break;
-        //     }
-        // }
-
-        // // map special region
-        // // 2024.4.12
-        // // linux's strscpy called gpa at 0x9000_0000_0000_0000 which is ldx x, 0x9000_0000_0000_0000(a1) + 0x0(a0) why ?
-        // // __memcpy_fromio 0xf0000 why?
-        // // (0x0, 0x10000, ZONE_MEM_FLAG_R | ZONE_MEM_FLAG_W | ZONE_MEM_FLAG_X)
-        // // (0xf0000, 0x10000, ZONE_MEM_FLAG_R | ZONE_MEM_FLAG_W | ZONE_MEM_FLAG_X)
-
-        // self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-        //     0x0 as GuestPhysAddr,
-        //     0x0 as HostPhysAddr,
-        //     0x10000,
-        //     MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
-        // ))?;
-
-        // self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-        //     0xf0000 as GuestPhysAddr,
-        //     0xf0000 as HostPhysAddr,
-        //     0x10000,
-        //     MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
-        // ))?;
-
-        // // map guest dtb
-        // info!("map guest dtb: {:#x?}", dtb_ipa);
-        // self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-        //     dtb_ipa as GuestPhysAddr,
-        //     guest_dtb as HostPhysAddr,
-        //     align_up(fdt.total_size()),
-        //     MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
-        // ))?;
-        // // map zone's UART device
-        // for node in fdt.find_all_nodes("/platform/serial") {
-        //     if let Some(reg) = node.reg().and_then(|mut reg| reg.next()) {
-        //         let paddr = align_down(reg.starting_address as usize) as HostPhysAddr;
-        //         let size = align_up(reg.size.unwrap());
-        //         info!("map uart addr: {:#x}, size: {:#x}", paddr, size);
-        //         self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-        //             paddr as GuestPhysAddr,
-        //             paddr as HostPhysAddr,
-        //             size,
-        //             MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-        //         ))?;
-        //     }
-        // }
-
         // use the new zone config type of init
         for region in mem_regions {
+            trace!("loongarch64: pt_init: process region: {:#x?}", region);
             let mem_type = region.mem_type;
             match mem_type {
                 MEM_TYPE_RAM => {
@@ -102,24 +52,68 @@ impl Zone {
                         MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
                     ))?;
                 }
+                MEM_TYPE_VIRTIO => {
+                    info!(
+                        "loongarch64: pt_init: register virtio mmio region: {:#x?}",
+                        region
+                    );
+                    self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                        region.virtual_start as GuestPhysAddr,
+                        region.physical_start as HostPhysAddr,
+                        PAGE_SIZE, // since we only need 0x200 size for virtio mmio, but the minimal size is PAGE_SIZE
+                        MemFlags::USER, // we use the USER as a hint flag for invalidating this stage-2 PTE
+                    ))?;
+                    self.mmio_region_register(
+                        region.physical_start as _,
+                        region.size as _,
+                        mmio_virtio_handler,
+                        region.physical_start as _,
+                    );
+                }
                 _ => {
+                    error!("loongarch64: pt_init: unknown mem type: {}", mem_type);
                     return hv_result_err!(EINVAL);
                 }
             }
         }
         debug!("zone stage-2 memory set: {:#x?}", self.gpm);
         unsafe {
-            let r = self.gpm.page_table_query(0x00200000 as GuestPhysAddr);
-            info!("query 0x00200000: {:#x?}", r);
+            // test the page table by querying the first page
+            if mem_regions.len() > 0 {
+                let r = self
+                    .gpm
+                    .page_table_query(mem_regions[0].virtual_start as GuestPhysAddr);
+                debug!("query 0x{:x}: {:#x?}", mem_regions[0].virtual_start, r);
+                // check whether the first page is mapped
+                let va = mem_regions[0].virtual_start as GuestPhysAddr;
+                let result_pa = r.unwrap().0;
+                if result_pa != mem_regions[0].physical_start as HostPhysAddr {
+                    error!(
+                        "loongarch64: pt_init: page table test failed: va: {:#x}, pa: {:#x}, expected pa: {:#x}",
+                        va, result_pa, mem_regions[0].physical_start
+                    );
+                    return hv_result_err!(EINVAL, "page table test failed");
+                }
+            }
         }
         Ok(())
     }
-
-    pub fn mmio_init(&mut self, hv_config: &HvArchZoneConfig) {}
     pub fn isa_init(&mut self, fdt: &fdt::Fdt) {
         warn!("loongarch64: mm: isa_init do nothing");
     }
     pub fn irq_bitmap_init(&mut self, irqs: &[u32]) {}
+}
+
+pub fn disable_hwi_through() {
+    info!("loongarch64: disable_hwi_through");
+    use crate::arch::register::*;
+    gintc::set_hwip(0x0); // stop passing through all 8 HWIs
+}
+
+pub fn enable_hwi_through() {
+    info!("loongarch64: enable_hwi_through");
+    use crate::arch::register::*;
+    gintc::set_hwip(0xff); // pass through all HWI7-0
 }
 
 #[repr(C)]

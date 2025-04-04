@@ -2,7 +2,7 @@ use crate::{
     config::{root_zone_config, HvZoneConfig, MEM_TYPE_RAM},
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr},
-    platform::qemu_x86_64::root_zone_gpa_as_mut_ptr,
+    platform::root_zone_gpa_as_mut_ptr,
 };
 use alloc::string::{String, ToString};
 use core::{

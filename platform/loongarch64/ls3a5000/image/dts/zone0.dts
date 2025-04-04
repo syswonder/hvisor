@@ -1,0 +1,52 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+* Copyright (C) 2023 Loongson Technology Corporation Limited
+* Modified for hvisor by wheatfox(enkerewpo@hotmail.com) syswonder.org 2024
+*/
+
+/dts-v1/;
+
+#include "loongson-3a5000.dtsi"
+
+/ {
+	compatible = "loongson,ls3a5000-root", "loongson,ls3a5000";
+	model = "Loongson-3A5000 hvisor root zone board";
+	
+	aliases {
+		serial0 = &uart0;
+	};
+	
+	chosen {
+		stdout-path = "serial0:115200n8";
+		bootargs = "earlycon console=ttyS0,115200n8 initramfs_async=false rootwait debug";
+	};
+	
+	memory@200000 {
+		device_type = "memory";
+		reg = <0 0x00200000 0 0x0ee00000
+		0 0x90000000 0 0x10000000
+		0 0xf0000000 0 0x10000000
+		0 0xc0000000 0 0x30000000
+		>;
+	};
+	
+	hvisor_device {
+		compatible = "hvisor";
+		interrupt-parent = <&cpuintc>;
+		interrupts = <4>;
+	};
+	
+	reserved-memory {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+		nonroot0xc0000000 {
+			no-map;
+			reg = <0x00 0xc0000000 0x00 0x30000000>;
+		};
+	};
+};
+
+&uart0 {
+	status = "okay";
+};

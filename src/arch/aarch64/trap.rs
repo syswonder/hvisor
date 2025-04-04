@@ -1,20 +1,35 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 use aarch64_cpu::{asm::wfi, registers::*};
 use core::arch::global_asm;
 
+use super::cpu::GeneralRegisters;
+use crate::arch::sysreg::smc_call;
 use crate::{
     arch::{
         cpu::mpidr_to_cpuid,
-        sysreg::{read_sysreg, smc_call, write_sysreg},
+        sysreg::{read_sysreg, write_sysreg},
     },
-    device::irqchip::gicv3::gicv3_handle_irq_el1,
+    device::irqchip::gic_handle_irq,
     event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_WAKEUP},
     hypercall::{HyperCall, SGI_IPI_ID},
     memory::{mmio_handle_access, MMIOAccess},
     percpu::{get_cpu_data, this_cpu_data, this_zone, PerCpu},
     zone::{is_this_root_zone, remove_zone},
 };
-
-use super::cpu::GeneralRegisters;
 
 global_asm!(
     include_str!("./trap.S"),
@@ -34,13 +49,14 @@ const SMC_TYPE_MASK: u64 = 0x3F000000;
 #[allow(non_snake_case)]
 pub mod SmcType {
     pub const ARCH_SC: u64 = 0x0;
-    pub const SIP_SC: u64 = 0x02000000;
-    pub const STANDARD_SC: u64 = 0x04000000;
+    pub const STANDARD_SC: u64 = 0x4000000;
+    pub const SIP_SC: u64 = 0x2000000;
 }
 
 const PSCI_VERSION_1_1: u64 = 0x10001;
 const PSCI_TOS_NOT_PRESENT_MP: u64 = 2;
 const ARM_SMCCC_VERSION_1_0: u64 = 0x10000;
+const ARM_SMCCC_NOT_SUPPORTED: i64 = -1;
 
 extern "C" {
     fn _hyp_trap_vector();
@@ -99,7 +115,7 @@ pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> ! {
 
 fn irqchip_handle_irq1() {
     trace!("irq from el1");
-    gicv3_handle_irq_el1();
+    gic_handle_irq();
 }
 
 fn irqchip_handle_irq2() {
@@ -146,11 +162,11 @@ fn arch_handle_trap_el2(_regs: &mut GeneralRegisters) {
             println!("EL2 Exception: SMC64 call, ELR_EL2: {:#x?}", ELR_EL2.get());
         }
         Some(ESR_EL2::EC::Value::DataAbortCurrentEL) => {
-            loop {}
             println!(
-                "EL2 Exception: Data Abort, ELR_EL2: {:#x?}, FAR_EL2: {:#x?}",
-                elr, esr
+                "EL2 Exception: Data Abort, ELR_EL2: {:#x?}, ESR_EL2: {:#x?}, FAR_EL2: {:#x?}",
+                elr, esr, far
             );
+            loop {}
         }
         Some(ESR_EL2::EC::Value::InstrAbortCurrentEL) => {
             println!(
@@ -160,7 +176,10 @@ fn arch_handle_trap_el2(_regs: &mut GeneralRegisters) {
             );
         }
         _ => {
-            println!("Unhandled EL2 Exception: EC={:#x?}", 1);
+            println!(
+                "Unhandled EL2 Exception: EC={:#x?}",
+                ESR_EL2.read(ESR_EL2::EC)
+            );
         }
     }
     loop {}
@@ -267,14 +286,18 @@ fn handle_hvc(regs: &mut GeneralRegisters) {
 fn handle_smc(regs: &mut GeneralRegisters) {
     let (code, arg0, arg1, arg2) = (regs.usr[0], regs.usr[1], regs.usr[2], regs.usr[3]);
     let cpu_data = this_cpu_data() as &mut PerCpu;
-    info!(
-        "SMC from CPU{}, func_id:{:#x?}, arg0:{:#x?}, arg1:{:#x?}, arg2:{:#x?}",
-        cpu_data.id, code, arg0, arg1, arg2
-    );
+    //info!(
+    //    "SMC from CPU{}, func_id:{:#x?}, arg0:{:#x?}, arg1:{:#x?}, arg2:{:#x?}",
+    //    cpu_data.id, code, arg0, arg1, arg2
+    //);
     let result = match code & SMC_TYPE_MASK {
         SmcType::ARCH_SC => handle_arch_smc(regs, code, arg0, arg1, arg2),
         SmcType::STANDARD_SC => handle_psci_smc(regs, code, arg0, arg1, arg2),
-        SmcType::SIP_SC => smc_call(code, &regs.usr[1..18]),
+        SmcType::SIP_SC => unsafe {
+            (regs.usr[0], regs.usr[1], regs.usr[2], regs.usr[3]) =
+                smc_call!(code, arg0, arg1, arg2);
+            regs.usr[0]
+        },
         _ => {
             warn!("unsupported smc");
             0
@@ -333,9 +356,9 @@ fn handle_psci_smc(
         PsciFnId::PSCI_VERSION => PSCI_VERSION_1_1,
         PsciFnId::PSCI_CPU_SUSPEND_32 | PsciFnId::PSCI_CPU_SUSPEND_64 => {
             wfi();
-            gicv3_handle_irq_el1();
+            gic_handle_irq();
             0
-        },
+        }
         PsciFnId::PSCI_CPU_OFF_32 | PsciFnId::PSCI_CPU_OFF_64 => {
             todo!();
         }
@@ -440,5 +463,5 @@ pub unsafe extern "C" fn vmreturn(_gu_regs: usize) -> ! {
         
     ",
         options(noreturn),
-    );
+    )
 }

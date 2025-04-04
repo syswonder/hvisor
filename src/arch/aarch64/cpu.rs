@@ -1,8 +1,26 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 use crate::{
-    arch::{mm::new_s2_memory_set, sysreg::write_sysreg}, consts::{PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE}, device::irqchip::gicv3::{gicr::{GICR_ICACTIVER, GICR_ICENABLER, GICR_ISENABLER, GICR_SGI_BASE}, host_gicr_base, MAINTENACE_INTERRUPT}, memory::{
+    arch::{mm::new_s2_memory_set, sysreg::write_sysreg},
+    consts::{PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
+    memory::{
         addr::PHYS_VIRT_OFFSET, mm::PARKING_MEMORY_SET, GuestPhysAddr, HostPhysAddr, MemFlags,
         MemoryRegion, VirtAddr, PARKING_INST_PAGE,
-    }, percpu::this_cpu_data
+    },
+    percpu::this_cpu_data,
 };
 use aarch64_cpu::registers::{
     Readable, Writeable, ELR_EL2, HCR_EL2, MPIDR_EL1, SCTLR_EL1, SPSR_EL2, VTCR_EL2,
@@ -52,6 +70,10 @@ impl ArchCpu {
     }
 
     pub fn reset(&mut self, entry: usize, dtb: usize) {
+        debug!(
+            "cpu {} reset, entry: {:#x}, dtb: {:#x}",
+            self.cpuid, entry, dtb
+        );
         ELR_EL2.set(entry as _);
         SPSR_EL2.set(0x3c5);
         let regs = self.guest_reg();
@@ -59,13 +81,6 @@ impl ArchCpu {
         regs.usr[0] = dtb as _; // dtb addr
         self.reset_vm_regs();
         self.activate_vmm();
-        // unsafe {
-        //     let base = host_gicr_base(this_cpu_id()) + GICR_SGI_BASE;
-        //     let gicr_isenabler0 = (base + GICR_ISENABLER) as *mut u32;
-        //     gicr_isenabler0.write_volatile(0xffff | 1 << MAINTENACE_INTERRUPT);
-        //     let gicr_icenabler0 = (base + GICR_ICENABLER) as *mut u32;
-        //     gicr_icenabler0.write_volatile(0xffff0000 & !(1 << MAINTENACE_INTERRUPT));
-        // }
     }
 
     fn activate_vmm(&self) {

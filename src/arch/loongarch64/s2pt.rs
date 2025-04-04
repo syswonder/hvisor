@@ -1,3 +1,19 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//      Yulong Han <wheatfox17@icloud.com>
+//
 use super::paging::PagingInstr;
 use crate::arch::paging::GenericPTE;
 use crate::arch::paging::Level4PageTable;
@@ -63,8 +79,12 @@ impl From<MemFlags> for DescriptorAttr {
             attr |= Self::NX;
         }
         // default we should set the VALID=1 since we are using it
+        // we set MemFlag::USER as NULL for invaliding this PTE
         // DIRTY=1 to avoid Page Modified Exception
-        attr |= Self::V | Self::D;
+        // attr |= Self::V | Self::D;
+        if !flags.contains(MemFlags::USER) {
+            attr |= Self::V | Self::D;
+        }
         // now let's handle MAT, if flags includes IO then we use StronglyUncached
         // otherwise we use CoherentCached
         if flags.contains(MemFlags::IO) {

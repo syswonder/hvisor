@@ -1,3 +1,18 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 use crate::memory::addr::VirtAddr;
 pub use crate::memory::PAGE_SIZE;
 
@@ -21,6 +36,8 @@ pub const MAX_CPU_NUM: usize = 4;
 pub const MAX_CPU_NUM: usize = 4;
 #[cfg(target_arch = "x86_64")]
 pub const MAX_CPU_NUM: usize = 4;
+
+pub const MAX_ZONE_NUM: usize = 3;
 
 pub fn core_end() -> VirtAddr {
     __core_end as _

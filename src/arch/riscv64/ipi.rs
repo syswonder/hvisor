@@ -1,3 +1,25 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
+use sbi_rt::HartMask;
+
+// arch_send_event
 pub fn arch_send_event(cpu_id: u64, _sgi_num: u64) {
-    sbi_rt::send_ipi(1 << cpu_id, 0);
+    info!("arch_send_event: cpu_id: {}", cpu_id);
+    #[cfg(feature = "aclint")]
+    crate::device::irqchip::aclint::aclint_send_ipi(cpu_id as usize);
+    #[cfg(not(feature = "aclint"))]
+    sbi_rt::send_ipi(HartMask::from_mask_base(1 << cpu_id, 0));
 }

@@ -1,3 +1,18 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 use super::csr::*;
 use crate::arch::Stage2PageTable;
 use crate::percpu::this_cpu_data;
@@ -52,7 +67,14 @@ impl ArchCpu {
         //self.sepc = guest_test as usize as u64;
         write_csr!(CSR_SSCRATCH, self as *const _ as usize); //arch cpu pointer
         self.sepc = entry;
-        self.hstatus = 1 << 7 | 2 << 32; //HSTATUS_SPV | HSTATUS_VSXL_64
+        #[cfg(feature = "plic")]
+        {
+            self.hstatus = 1 << 7 | 2 << 32; //HSTATUS_SPV | HSTATUS_VSXL_64
+        }
+        #[cfg(feature = "aia")]
+        {
+            self.hstatus = 1 << 7 | 2 << 32 | 1 << 12; //HSTATUS_SPV | HSTATUS_VSXL_64 | HSTATUS_VGEIN
+        }
         self.sstatus = 1 << 8 | 1 << 63 | 3 << 13 | 3 << 15; //SPP
         self.stack_top = self.stack_top() as usize;
         self.x[10] = cpu_id; //cpu id

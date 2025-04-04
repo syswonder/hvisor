@@ -1,25 +1,19 @@
-use self::{irqs::*, IoApicReg::*};
 use crate::{
     arch::{
-        idt::{get_host_vector, IdtVector},
         mmio::{mmio_handler, MMIoDevice},
         zone::HvArchZoneConfig,
     },
-    device::irqchip::pic::{enable_irq, inject_vector},
+    device::irqchip::pic::inject_vector,
     error::HvResult,
     memory::{GuestPhysAddr, MMIOAccess},
-    platform::qemu_x86_64::ROOT_ZONE_IOAPIC_BASE,
+    platform::ROOT_ZONE_IOAPIC_BASE,
     zone::Zone,
 };
 use alloc::{sync::Arc, vec::Vec};
 use bit_field::BitField;
-use core::{ops::Range, time::Duration, u32};
-use raw_cpuid::CpuId;
+use core::{ops::Range, u32};
 use spin::Mutex;
-use x2apic::{
-    ioapic::{IoApic, IrqFlags, IrqMode, RedirectionTableEntry},
-    lapic::{LocalApic, LocalApicBuilder, TimerDivide, TimerMode},
-};
+use x2apic::ioapic::IoApic;
 use x86_64::instructions::port::Port;
 
 pub mod irqs {

@@ -1,6 +1,22 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//      Yulong Han <wheatfox17@icloud.com>
+//
 // File:          mod.rs
 // Description:   this is the register file of loongarch64's LVZ extension
-// Authors:       wheatfox(enkerewpo@hotmail.com)
+// Authors:       wheatfox(wheatfox17@icloud.com)
 // Created:       2023-12-20
 
 #![allow(unused)]
@@ -281,12 +297,9 @@ pub fn read_gcsr_dmw2() -> usize {
 pub fn read_gcsr_dmw3() -> usize {
     read_gcsr_loong!(0x183)
 }
-
-// WRITE GCSR
 pub fn write_gcsr_ectl(range: core::ops::RangeInclusive<usize>, value: usize) {
     set_gcsr_loong_bits!(0x4, range, value);
 }
-
 pub fn write_gcsr_eentry(range: core::ops::RangeInclusive<usize>, value: usize) {
     set_gcsr_loong_bits!(0xc, range, value);
 }

@@ -16,15 +16,20 @@ tock-registers = "0.8"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "03bd9909" }
 fdt = { path = "./vendor/fdt" }
+qemu-exit = "3.0.2"
+cortex-a = "8.1.1"
+cfg-if = "1.0"
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 aarch64-cpu = "9.4.0"
 psci = { version = "0.1.0", default-features = false, features = ["smc"] }
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
-sbi-rt = { version = "0.0.2", features = ["legacy"] }
+sbi-rt = { version = "0.0.3", features = ["legacy"] }
 riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"] }
 riscv-decode = "0.2.1"
+riscv-peripheral = "0.2.1"
+riscv-pac = "0.2.0"
 
 [target.'cfg(target_arch = "loongarch64")'.dependencies]
 loongArch64 = "0.2.4"
@@ -37,12 +42,32 @@ raw-cpuid = "10.7.0"
 acpi = "5.2.0"
 
 [features]
-platform_qemu = []
-platform_imx8mp = []
+############# aarch64 ##############
+# irqchip driver
+gicv2 = []
+gicv3 = []
+# uart driver
+pl011 = []
+xuartps = []
+imx_uart = []
+# functionality
+iommu = []
+pci = []
+# pagetable layout
+pt_layout_qemu = []
+############## riscv64 #############
+# irqchip driver
+plic = []
+aia = []
+aclint = []
+########### loongarch64 ############
+# irqchip driver
+loongson_7a2000 = []
+# uart driver
+loongson_uart = []
+
 
 [profile.dev]
-panic = "abort"
+# panic = "abort" # avoid cargo test failure, this is a bug of cargo
 debug = 2
-
-[profile.release]
-panic = "abort"
+# panic = "abort"

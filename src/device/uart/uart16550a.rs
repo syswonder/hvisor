@@ -1,6 +1,4 @@
-use crate::{arch::pio::UART_COM1_BASE_PORT, error::HvResult};
-use alloc::vec::Vec;
-use core::ops::Range;
+use crate::arch::pio::UART_COM1_BASE_PORT;
 use spin::Mutex;
 use x86_64::instructions::port::{PortReadOnly, PortWriteOnly};
 

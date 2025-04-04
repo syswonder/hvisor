@@ -1,3 +1,19 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
+
 	PTE_TABLE_FLAGS =0x3 //11
 	PAGE_DEFAULT_FLAG=0x741 //11101000001
 	PAGE_DEVICE_FLAG=0x745 //11101000101
@@ -5,7 +21,8 @@
     MAIR_FLAG=0x004404ff //10001000000010011111111
     SCTLR_FLAG=0x30c51835 //110000110001010001100000110101
     TCR_FLAG=0x80853510 //10000000100001010011010100010000
-
+    .extern uart_puts_1
+    .extern uart_puts_2
     .section .bss
     .align 12 // 对齐到页边界
 boot_pt_l0:
@@ -13,44 +30,28 @@ boot_pt_l0:
 
     .align 12
 boot_pt_l1:
-    .zero 0x2000
+    .zero 0x1000
 
     .section .text
     .global set_boot_pt
 boot_pt_init:
-    // TODO: re-enable hvisor pt when system boot success 
+    // TODO: re-enable hvisor pt when system boot success
     adrp x1, boot_pt_l0
     adrp x2, boot_pt_l1
     add x2, x2, PTE_TABLE_FLAGS
     str x2, [x1]                // set boot_pt_l0, index=0 -> boot_pt_l1
 
-    ldr x3, =0x1000
-    add x2, x2, x3
-    str x2, [x1, #8]
-
-    adrp x6, boot_pt_l1
-
-    ldr x4, =(0x0 | PAGE_DEVICE_FLAG) // device memory at 0x0 ~ 0x40000000
-    str x4, [x6], #8
-
-    mov x2, #1
-    ldr x5, =PAGE_DEFAULT_FLAG   // fill the l1 pte with type block(1G)
-
-loop:
-    cmp x2, #1024               // 40 bit array
-    bge end_loop
-
-    lsl x4, x2, #30
-    orr x4, x4, x5  
-    str x4, [x6], #8
-
-    add x2, x2, #1 
-    
-    b loop
-
-end_loop:
-
+    adrp x1, boot_pt_l1
+    ldr x2, =(0x0 | PAGE_DEFAULT_FLAG) // device memory at 0x0 ~ 0x40000000
+    str x2, [x1]
+    ldr x2, =(0x40000000 | PAGE_DEFAULT_FLAG) // RAM at 0x40000000 ~ 0x80000000
+    str x2, [x1, #0x8]
+    ldr x2, =(0x80000000 | PAGE_DEFAULT_FLAG) // RAM at 0x80000000 ~ 0xC0000000
+    str x2, [x1, #0x10]
+    ldr x2, =(0xC0000000 | PAGE_DEVICE_FLAG) // RAM at 0xC0000000 ~ 0x100000000
+    str x2, [x1, #0x18]
     ret
+
 
 enable_boot_pt:
     adrp x1, boot_pt_l0
@@ -61,7 +62,7 @@ enable_boot_pt:
     dsb	nsh
 
     // enable mmu...
-    ldr	x1, =MAIR_FLAG     
+    ldr	x1, =MAIR_FLAG
     msr	mair_el2, x1       // memory attributes for pagetable
     ldr	x1, =TCR_FLAG
 	msr	tcr_el2, x1        // translate control, virt range = [0, 2^48)

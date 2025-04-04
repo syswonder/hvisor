@@ -1,0 +1,376 @@
+/dts-v1/;
+
+/ {
+	compatible = "xlnx,zynqmp-zcu102-revB\0xlnx,zynqmp-zcu102\0xlnx,zynqmp";
+	#address-cells = <0x02>;
+	#size-cells = <0x02>;
+	model = "ZynqMP ZCU102 RevB";
+
+    cpus {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+
+		cpu@0 {
+			compatible = "arm,cortex-a53";
+			device_type = "cpu";
+			enable-method = "psci";
+			operating-points-v2 = <0x01>;
+			reg = <0x00>;
+			cpu-idle-states = <0x02>;
+			next-level-cache = <0x03>;
+			clocks = <0x04 0x0a>;
+			phandle = <0x06>;
+		};
+
+		cpu@1 {
+			compatible = "arm,cortex-a53";
+			device_type = "cpu";
+			enable-method = "psci";
+			reg = <0x01>;
+			operating-points-v2 = <0x01>;
+			cpu-idle-states = <0x02>;
+			next-level-cache = <0x03>;
+			phandle = <0x07>;
+		};
+
+		cpu@2 {
+			compatible = "arm,cortex-a53";
+			device_type = "cpu";
+			enable-method = "psci";
+			reg = <0x02>;
+			operating-points-v2 = <0x01>;
+			cpu-idle-states = <0x02>;
+			next-level-cache = <0x03>;
+			phandle = <0x08>;
+		};
+
+		cpu@3 {
+			compatible = "arm,cortex-a53";
+			device_type = "cpu";
+			enable-method = "psci";
+			reg = <0x03>;
+			operating-points-v2 = <0x01>;
+			cpu-idle-states = <0x02>;
+			next-level-cache = <0x03>;
+			phandle = <0x09>;
+		};
+
+		l2-cache {
+			compatible = "cache";
+			cache-level = <0x02>;
+			phandle = <0x03>;
+		};
+
+		idle-states {
+			entry-method = "psci";
+
+			cpu-sleep-0 {
+				compatible = "arm,idle-state";
+				arm,psci-suspend-param = <0x40000000>;
+				local-timer-stop;
+				entry-latency-us = <0x12c>;
+				exit-latency-us = <0x258>;
+				min-residency-us = <0x2710>;
+				phandle = <0x02>;
+			};
+		};
+	};
+
+    zynqmp-ipi {
+		bootph-all;
+		compatible = "xlnx,zynqmp-ipi-mailbox";
+		interrupt-parent = <0x05>;
+		interrupts = <0x00 0x23 0x04>;
+		xlnx,ipi-id = <0x00>;
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+		phandle = <0x40>;
+
+		mailbox@ff9905c0 {
+			bootph-all;
+			reg = <0x00 0xff9905c0 0x00 0x20 0x00 0xff9905e0 0x00 0x20 0x00 0xff990e80 0x00 0x20 0x00 0xff990ea0 0x00 0x20>;
+			reg-names = "local_request_region\0local_response_region\0remote_request_region\0remote_response_region";
+			#mbox-cells = <0x01>;
+			xlnx,ipi-id = <0x04>;
+			phandle = <0x0a>;
+		};
+	};
+
+	pmu {
+		compatible = "arm,armv8-pmuv3";
+		interrupt-parent = <0x05>;
+		interrupts = <0x00 0x8f 0x04 0x00 0x90 0x04 0x00 0x91 0x04 0x00 0x92 0x04>;
+		interrupt-affinity = <0x06 0x07 0x08 0x09>;
+	};
+
+	psci {
+		compatible = "arm,psci-0.2";
+		method = "smc";
+	};
+
+    memory@0 {
+		device_type = "memory";
+		// reg = <0x00 0x00 0x00 0x7ff00000 0x08 0x00 0x00 0x80000000>;
+		reg = <0x00 0x00 0x00 0x40000000>;
+	};
+
+
+    timer {
+		compatible = "arm,armv8-timer";
+		interrupt-parent = <0x05>;
+		interrupts = <0x01 0x0d 0xf08 0x01 0x0e 0xf08 0x01 0x0b 0xf08 0x01 0x0a 0xf08>;
+	};
+
+    reset-controller {
+			compatible = "xlnx,zynqmp-reset";
+			#reset-cells = <0x01>;
+			phandle = <0x11>;
+	};
+
+	fpga-region {
+		compatible = "fpga-region";
+		fpga-mgr = <0x10>;
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+		phandle = <0x57>;
+	};
+
+    axi {
+		compatible = "simple-bus";
+		bootph-all;
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+		phandle = <0x58>;
+
+		interrupt-controller@f9010000 {
+			compatible = "arm,gic-400";
+			#interrupt-cells = <0x03>;
+			reg = <0x00 0xf9010000 0x00 0x10000 0x00 0xf9020000 0x00 0x20000 0x00 0xf9040000 0x00 0x20000 0x00 0xf9060000 0x00 0x20000>;
+			interrupt-controller;
+			interrupt-parent = <0x05>;
+			interrupts = <0x01 0x09 0xf04>;
+			num_cpus = <0x02>;
+			num_interrupts = <0x60>;
+			phandle = <0x05>;
+		};
+
+        serial@ff000000 {
+			bootph-all;
+			compatible = "xlnx,zynqmp-uart\0cdns,uart-r1p12";
+			status = "okay";
+			interrupt-parent = <0x05>;
+			interrupts = <0x00 0x15 0x04>;
+			reg = <0x00 0xff000000 0x00 0x1000>;
+			clock-names = "uart_clk\0pclk";
+			power-domains = <0x12 0x21>;
+			clocks = <0x04 0x38 0x04 0x1f>;
+			pinctrl-names = "default";
+			pinctrl-0 = <0x25>;
+			cts-override;
+			device_type = "serial";
+			port-number = <0x00>;
+			u-boot,dm-pre-reloc;
+			phandle = <0x95>;
+		};
+
+
+        mmc@ff170000 {
+			bootph-all;
+			compatible = "xlnx,zynqmp-8.9a\0arasan,sdhci-8.9a";
+			status = "okay";
+			interrupt-parent = <0x05>;
+			interrupts = <0x00 0x31 0x04>;
+			reg = <0x00 0xff170000 0x00 0x1000>;
+			clock-names = "clk_xin\0clk_ahb";
+			iommus = <0x14 0x871>;
+			power-domains = <0x12 0x28>;
+			#clock-cells = <0x01>;
+			clock-output-names = "clk_out_sd1\0clk_in_sd1";
+			resets = <0x11 0x27>;
+			clocks = <0x04 0x37 0x04 0x1f>;
+			assigned-clocks = <0x04 0x37>;
+			no-1-8-v;
+			pinctrl-names = "default";
+			pinctrl-0 = <0x24>;
+			clock-frequency = <0xa98a581>;
+			xlnx,mio-bank = <0x01>;
+			phandle = <0x8e>;
+		};
+		
+		smmu@fd800000 {
+			compatible = "arm,mmu-500";
+			reg = <0x00 0xfd800000 0x00 0x20000>;
+			#iommu-cells = <0x01>;
+			status = "disabled";
+			#global-interrupts = <0x01>;
+			interrupt-parent = <0x05>;
+			interrupts = <0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04>;
+			phandle = <0x14>;
+		};
+    };
+
+    pss_ref_clk {
+		bootph-all;
+		compatible = "fixed-clock";
+		#clock-cells = <0x00>;
+		clock-frequency = <0x1fca055>;
+		phandle = <0x0b>;
+	};
+
+	video_clk {
+		bootph-all;
+		compatible = "fixed-clock";
+		#clock-cells = <0x00>;
+		clock-frequency = <0x19bfcc0>;
+		phandle = <0x0c>;
+	};
+
+	pss_alt_ref_clk {
+		bootph-all;
+		compatible = "fixed-clock";
+		#clock-cells = <0x00>;
+		clock-frequency = <0x00>;
+		phandle = <0x0d>;
+	};
+
+	gt_crx_ref_clk {
+		bootph-all;
+		compatible = "fixed-clock";
+		#clock-cells = <0x00>;
+		clock-frequency = <0x66ff300>;
+		phandle = <0x0f>;
+	};
+
+	aux_ref_clk {
+		bootph-all;
+		compatible = "fixed-clock";
+		#clock-cells = <0x00>;
+		clock-frequency = <0x19bfcc0>;
+		phandle = <0x0e>;
+	};
+
+    aliases {
+		mmc0 = "/axi/mmc@ff170000";
+		serial0 = "/axi/serial@ff000000";
+	};
+
+    firmware {
+
+		zynqmp-firmware {
+			compatible = "xlnx,zynqmp-firmware";
+			bootph-all;
+			method = "smc";
+			#power-domain-cells = <0x01>;
+			phandle = <0x12>;
+
+            zynqmp-power {
+				bootph-all;
+				compatible = "xlnx,zynqmp-power";
+				interrupt-parent = <0x05>;
+				interrupts = <0x00 0x23 0x04>;
+				mboxes = <0x0a 0x00 0x0a 0x01>;
+				mbox-names = "tx\0rx";
+				phandle = <0x42>;
+			};
+
+			pcap {
+				compatible = "xlnx,zynqmp-pcap-fpga";
+				phandle = <0x10>;
+			};
+
+            pinctrl {
+				compatible = "xlnx,zynqmp-pinctrl";
+				status = "okay";
+				phandle = <0x56>;
+
+				uart0-default {
+					phandle = <0x25>;
+
+					mux {
+						groups = "uart0_4_grp";
+						function = "uart0";
+					};
+
+					conf {
+						groups = "uart0_4_grp";
+						slew-rate = <0x01>;
+						power-source = <0x01>;
+					};
+
+					conf-rx {
+						pins = "MIO18";
+						bias-high-impedance;
+					};
+
+					conf-tx {
+						pins = "MIO19";
+						bias-disable;
+					};
+				};
+
+				sdhci1-default {
+					phandle = <0x24>;
+
+					mux {
+						groups = "sdio1_0_grp";
+						function = "sdio1";
+					};
+
+					conf {
+						groups = "sdio1_0_grp";
+						slew-rate = <0x01>;
+						power-source = <0x01>;
+						bias-disable;
+					};
+
+					mux-cd {
+						groups = "sdio1_cd_0_grp";
+						function = "sdio1_cd";
+					};
+
+					conf-cd {
+						groups = "sdio1_cd_0_grp";
+						bias-high-impedance;
+						bias-pull-up;
+						slew-rate = <0x01>;
+						power-source = <0x01>;
+					};
+
+					mux-wp {
+						groups = "sdio1_wp_0_grp";
+						function = "sdio1_wp";
+					};
+
+					conf-wp {
+						groups = "sdio1_wp_0_grp";
+						bias-high-impedance;
+						bias-pull-up;
+						slew-rate = <0x01>;
+						power-source = <0x01>;
+					};
+				};
+			};
+
+
+			clock-controller {
+				bootph-all;
+				#clock-cells = <0x01>;
+				compatible = "xlnx,zynqmp-clk";
+				clocks = <0x0b 0x0c 0x0d 0x0e 0x0f>;
+				clock-names = "pss_ref_clk\0video_clk\0pss_alt_ref_clk\0aux_ref_clk\0gt_crx_ref_clk";
+				phandle = <0x04>;
+			};
+		};
+	};
+
+    chosen {
+		bootargs = "earlycon console=ttyPS0,115200 root=/dev/mmcblk0p2 rootwait rw";
+		// linux,initrd-start = <0x4000000>;
+		// linux,initrd-end = <0x4536393>;
+		// linux,initrd-end = <0x4800000>;
+		stdout-path = "serial0:115200n8";
+	};
+};

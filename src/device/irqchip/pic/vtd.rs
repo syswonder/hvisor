@@ -1,13 +1,12 @@
 use crate::{
     arch::acpi,
     memory::{Frame, HostPhysAddr},
-    percpu::this_zone,
     zone::this_zone_id,
 };
 use ::acpi::{mcfg::Mcfg, sdt::Signature};
 use alloc::{collections::btree_map::BTreeMap, vec::Vec};
 use bit_field::BitField;
-use core::{arch::asm, default, hint::spin_loop, mem::size_of, usize};
+use core::{arch::asm, hint::spin_loop, mem::size_of, usize};
 use dma_remap_reg::*;
 use spin::{Mutex, Once};
 use x86_64::instructions::port::Port;
@@ -275,12 +274,11 @@ impl Drhd {
     }
 
     fn wait(&mut self, mask: GstsFlags, cond: bool) {
-        let mut status = GstsFlags::empty();
         loop {
             spin_loop();
-            status = GstsFlags::from_bits_truncate(self.mmio_read_u32(DMAR_GSTS_REG));
-
-            if status.contains(mask) != cond {
+            if GstsFlags::from_bits_truncate(self.mmio_read_u32(DMAR_GSTS_REG)).contains(mask)
+                != cond
+            {
                 break;
             }
         }
@@ -410,7 +408,7 @@ pub fn activate() {
 
 fn flush_cache_range(hpa: usize, size: usize) {
     let mut i = 0usize;
-    while (i < size) {
+    while i < size {
         unsafe { asm!("clflushopt [{addr}]", addr = in(reg) hpa + i) };
         i += 64;
     }

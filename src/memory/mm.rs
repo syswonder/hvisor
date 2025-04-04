@@ -1,3 +1,18 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 #![allow(dead_code)]
 
 //! Memory management.
@@ -76,6 +91,10 @@ where
         }
     }
 
+    pub fn root_paddr(&self) -> usize {
+        self.pt.root_paddr()
+    }
+
     fn test_free_area(&self, other: &MemoryRegion<PT::VA>) -> bool {
         if let Some((_, before)) = self.regions.range(..other.start).last() {
             if before.is_overlap_with(other) {
@@ -92,6 +111,7 @@ where
 
     /// Add a memory region to this set.
     pub fn insert(&mut self, region: MemoryRegion<PT::VA>) -> HvResult {
+        info!("region.start: {:#X}", region.start.into());
         assert!(is_aligned(region.start.into()));
         assert!(is_aligned(region.size));
         if region.size == 0 {

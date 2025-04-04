@@ -1,3 +1,18 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 //! Physical memory allocation.
 
 use alloc::vec::Vec;
@@ -125,6 +140,39 @@ impl Frame {
                     frame_count,
                 })
                 .ok_or(hv_err!(ENOMEM))
+        }
+    }
+
+    /// allocate contigugous frames, and you can specify the alignment, set the lower `align_log2` bits to 0.
+    pub fn new_contiguous_with_base(frame_count: usize, align_log2: usize) -> HvResult<Self> {
+        let align_mask = (1 << align_log2) - 1;
+        // Create a vector to keep track of attempted frames
+        let mut attempted_frames = Vec::new();
+        loop {
+            if let Ok(frame) = Frame::new_contiguous(frame_count, 0) {
+                if frame.start_paddr() & align_mask == 0 {
+                    info!(
+                        "new contiguous success!!! start_paddr:0x{:x}",
+                        frame.start_paddr()
+                    );
+                    return Ok(frame);
+                } else {
+                    let start_paddr = frame.start_paddr();
+                    let next_aligned_addr = (start_paddr + align_mask) & !align_mask;
+                    let temp_frame_count = (next_aligned_addr - start_paddr) / PAGE_SIZE;
+                    drop(frame);
+                    attempted_frames.push(Frame::new_contiguous(temp_frame_count, 0));
+                    if let Ok(frame) = Frame::new_contiguous(frame_count, 0) {
+                        info!(
+                            "new contiguous success!!! start_paddr:0x{:x}",
+                            frame.start_paddr()
+                        );
+                        return Ok(frame);
+                    }
+                }
+            } else {
+                return Err(hv_err!(ENOMEM));
+            }
         }
     }
 

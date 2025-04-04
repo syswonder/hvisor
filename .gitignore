@@ -3,13 +3,9 @@
 /test-img
 /hvisor.S
 /hvisor-elf.txt
-/images/aarch64/virtdisk/*
-/images/aarch64/kernel/*
-/images/aarch64/devicetree/*.dtb
-/images/riscv64/virtdisk/*
-/images/riscv64/kernel/*
-/images/riscv64/devicetree/*.dtb
-/images/x86_64/*
+/images/*
+/platform/*/*/image/kernel/*
+/platform/*/*/image/virtdisk/*
 /tools/hvisor
 /tmp
 *.mod.[co]
@@ -25,3 +21,15 @@ Image*
 *.ext4
 *.qcow2
 *.dtb
+.DS_Store
+temp-fit.its
+fitImage
+sd.img
+flash.img*
+.vscode/settings.json
+compile.sh
+src/platform/__board.rs
+.config
+
+# systemtest
+rootfs1.zip*

@@ -1,10 +1,23 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 use core::panic;
-
-use alloc::vec::Vec;
 
 use crate::{
     config::*,
-    device::virtio_trampoline::{mmio_virtio_handler, VIRTIO_BRIDGE},
+    device::virtio_trampoline::mmio_virtio_handler,
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion},
     zone::Zone,
@@ -37,7 +50,7 @@ impl Zone {
                     );
                 }
                 _ => {
-                    panic!("Unsupported memory type: {}", mem_region.mem_type)
+                    warn!("Unsupported memory type: {}", mem_region.mem_type)
                 }
             }
         }
@@ -45,20 +58,22 @@ impl Zone {
         info!("VM stage 2 memory set: {:#x?}", self.gpm);
         Ok(())
     }
-
-    pub fn mmio_init(&mut self, hv_config: &HvArchZoneConfig) {
-        self.vgicv3_mmio_init(hv_config);
-    }
-    pub fn isa_init(&mut self, fdt: &fdt::Fdt) {
-        //nothing to do
-    }
 }
 
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct HvArchZoneConfig {
     pub gicd_base: usize,
-    pub gicr_base: usize,
     pub gicd_size: usize,
+    pub gicr_base: usize,
     pub gicr_size: usize,
+    pub gits_base: usize,
+    pub gits_size: usize,
+    pub gicc_base: usize,
+    pub gicc_offset: usize,
+    pub gicc_size: usize,
+    pub gich_base: usize,
+    pub gich_size: usize,
+    pub gicv_base: usize,
+    pub gicv_size: usize,
 }

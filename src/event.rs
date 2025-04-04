@@ -1,7 +1,22 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 use crate::{
     arch::ipi::arch_send_event,
     device::{
-        irqchip::inject_irq,
+        irqchip::{self, inject_irq},
         virtio_trampoline::{handle_virtio_irq, IRQ_WAKEUP_VIRTIO_DEVICE},
     },
     percpu::this_cpu_data,
@@ -13,6 +28,8 @@ pub const IPI_EVENT_WAKEUP: usize = 0;
 pub const IPI_EVENT_SHUTDOWN: usize = 1;
 pub const IPI_EVENT_VIRTIO_INJECT_IRQ: usize = 2;
 pub const IPI_EVENT_WAKEUP_VIRTIO_DEVICE: usize = 3;
+pub const IPI_EVENT_CLEAR_INJECT_IRQ: usize = 4;
+
 static EVENT_MANAGER: Once<EventManager> = Once::new();
 
 struct EventManager {
@@ -49,6 +66,22 @@ impl EventManager {
             None => None,
         }
     }
+
+    fn dump(&self) {
+        for (cpu, events) in self.inner.iter().enumerate() {
+            let e = events.lock();
+            debug!("event manager: cpu: {}, events: {:?}", cpu, e);
+        }
+    }
+
+    fn dump_cpu(&self, cpu: usize) -> Vec<usize> {
+        let mut res = Vec::new();
+        let e = self.inner[cpu].lock();
+        for i in e.iter() {
+            res.push(*i);
+        }
+        res
+    }
 }
 
 fn add_event(cpu: usize, event_id: usize) -> Option<()> {
@@ -63,11 +96,20 @@ pub fn init(max_cpus: usize) {
     EVENT_MANAGER.call_once(|| EventManager::new(max_cpus));
 }
 
+pub fn dump_events() {
+    EVENT_MANAGER.get().unwrap().dump();
+}
+
+pub fn dump_cpu_events(cpu: usize) -> Vec<usize> {
+    EVENT_MANAGER.get().unwrap().dump_cpu(cpu)
+}
+
 pub fn check_events() -> bool {
     trace!("check_events");
     let cpu_data = this_cpu_data();
     match fetch_event(cpu_data.id) {
         Some(IPI_EVENT_WAKEUP) => {
+            info!("cpu {} wakeup", cpu_data.id);
             cpu_data.arch_cpu.run();
         }
         Some(IPI_EVENT_SHUTDOWN) => {
@@ -81,11 +123,33 @@ pub fn check_events() -> bool {
             inject_irq(IRQ_WAKEUP_VIRTIO_DEVICE, false);
             true
         }
+        #[cfg(target_arch = "loongarch64")]
+        Some(IPI_EVENT_CLEAR_INJECT_IRQ) => {
+            irqchip::ls7a2000::clear_hwi_injected_irq();
+            true
+        }
         _ => false,
     }
 }
 
 pub fn send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
+    #[cfg(target_arch = "loongarch64")]
+    {
+        // block until the previous event is processed, which means
+        // the target queue is empty
+        while !fetch_event(cpu_id).is_none() {}
+        debug!(
+            "loongarch64:: send_event: cpu_id: {}, ipi_int_id: {}, event_id: {}",
+            cpu_id, ipi_int_id, event_id
+        );
+    }
     add_event(cpu_id, event_id);
     arch_send_event(cpu_id as _, ipi_int_id as _);
+}
+
+#[test_case]
+fn test_simple_send_event() {
+    init(1);
+    send_event(0, 0, IPI_EVENT_WAKEUP);
+    assert_eq!(fetch_event(0), Some(IPI_EVENT_WAKEUP));
 }

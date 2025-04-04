@@ -1,5 +1,22 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//      Yulong Han <wheatfox17@icloud.com>
+//
 use crate::error::{HvError, HvResult};
 use crate::memory::addr::is_aligned;
+use crate::memory::mapper::Mapper;
 use crate::memory::{Frame, MemFlags, MemoryRegion, PhysAddr, VirtAddr};
 use alloc::{sync::Arc, vec::Vec};
 use core::{fmt::Debug, marker::PhantomData, slice};
@@ -475,21 +492,6 @@ where
         let mut size = region.size;
         while size > 0 {
             let paddr = region.mapper.map_fn(vaddr);
-            // let page_size = if PageSize::Size1G.is_aligned(vaddr)
-            //     && PageSize::Size1G.is_aligned(paddr)
-            //     && size >= PageSize::Size1G as usize
-            //     && !region.flags.contains(MemFlags::NO_HUGEPAGES)
-            // {
-            //     PageSize::Size1G
-            // } else if PageSize::Size2M.is_aligned(vaddr)
-            //     && PageSize::Size2M.is_aligned(paddr)
-            //     && size >= PageSize::Size2M as usize
-            //     && !region.flags.contains(MemFlags::NO_HUGEPAGES)
-            // {
-            //     PageSize::Size2M
-            // } else {
-            //     PageSize::Size4K
-            // };
             let page_size = PageSize::Size4K; // now let's support STLB only
             trace!(
                 "loongarch64: mapping page: {:#x?}({:?}) -> {:#x?}, {:?}",
@@ -595,7 +597,7 @@ fn next_table_mut<'a, E: GenericPTE>(entry: &E) -> PagingResult<&'a mut [E]> {
     // } else {
     //     Ok(table_of_mut(entry.addr()))
     // }
-    let next_pt_addr = entry.addr();
+    let next_pt_addr = entry.addr() | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX as usize;
     trace!(
         "loongarch64: next_table_mut: next_pt_addr={:#x?}",
         next_pt_addr

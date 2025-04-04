@@ -1,13 +1,12 @@
 use crate::{
     arch::{
-        cpu::{this_cpu_id, ArchCpu},
+        cpu::this_cpu_id,
         idt::IdtVector,
         ipi,
         msr::Msr::{self, *},
-        vmcs::Vmcs,
     },
     error::HvResult,
-    percpu::{this_cpu_data, this_zone, CpuSet},
+    percpu::this_cpu_data,
 };
 use bit_field::BitField;
 use core::{ops::Range, u32};

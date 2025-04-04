@@ -1,0 +1,97 @@
+/dts-v1/;
+
+/ {
+	#size-cells = <0x02>;
+	#address-cells = <0x02>;
+	interrupt-parent = <0x01>;
+	model = "linux,dummy-virt";
+	compatible = "linux,dummy-virt";
+
+	cpus {
+		#size-cells = <0x00>;
+		#address-cells = <0x01>;
+
+		cpu@0 {
+			phandle = <0x8010>;
+			reg = <0x00>;
+			enable-method = "psci";
+			compatible = "arm,cortex-a72";
+			device_type = "cpu";
+		};
+
+		cpu@1 {
+			phandle = <0x800f>;
+			reg = <0x01>;
+			enable-method = "psci";
+			compatible = "arm,cortex-a72";
+			device_type = "cpu";
+		};
+	};
+
+	psci {
+		compatible = "arm,psci-0.2";
+		method = "smc";
+	};
+
+	memory@50000000 {
+		device_type = "memory";
+		reg = <0x00 0x50000000 0x00 0x80000000>;
+	};
+
+	intc@8000000 {
+		phandle = <0x01>;
+		interrupts = <0x01 0x09 0x04>;
+		reg = <0x00 0x8000000 0x00 0x10000 0x00 0x8010000 0x00 0x10000 0x00 0x8030000 0x00 0x10000 0x00 0x8040000 0x00 0x10000>;
+		compatible = "arm,cortex-a15-gic";
+		ranges;
+		#size-cells = <0x02>;
+		#address-cells = <0x02>;
+		interrupt-controller;
+		#interrupt-cells = <0x03>;
+	};
+
+	apb-pclk {
+		phandle = <0x8000>;
+		clock-output-names = "clk24mhz";
+		clock-frequency = <0x16e3600>;
+		#clock-cells = <0x00>;
+		compatible = "fixed-clock";
+	};
+
+	pl011@9000000 {
+		clock-names = "uartclk\0apb_pclk";
+		clocks = <0x8000 0x8000>;
+		interrupt-parent = <0x01>;
+		interrupts = <0x00 0x01 0x04>;
+		reg = <0x00 0x9000000 0x00 0x1000>;
+		compatible = "arm,pl011\0arm,primecell";
+	};
+
+	timer {
+		interrupt-parent = <0x01>;
+		interrupts = <0x01 0x0d 0xf04 0x01 0x0e 0xf04 0x01 0x0b 0xf04 0x01 0x0a 0xf04>;
+		always-on;
+		compatible = "arm,armv8-timer\0arm,armv7-timer";
+	};
+
+	virtio_mmio@a003a00 {
+		dma-coherent;
+		interrupt-parent = <0x01>;
+		interrupts = <0x00 0x2d 0x01>;
+		reg = <0x00 0xa003a00 0x00 0x200>;
+		compatible = "virtio,mmio";
+	};
+
+	virtio_mmio@a003e00 {
+		dma-coherent;
+		interrupt-parent = <0x01>;
+		interrupts = <0x00 0x2f 0x01>;
+		reg = <0x00 0xa003e00 0x00 0x200>;
+		compatible = "virtio,mmio";
+	};
+
+	chosen {
+		bootargs = "earlycon console=ttyAMA0 root=/dev/vda mem=768M rw";
+		stdout-path = "/pl011@9000000";
+	};
+};

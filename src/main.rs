@@ -1,3 +1,19 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
+
 //! The main module and entrypoint
 //!
 //! Various facilities of hvisor are implemented as submodules. The most
@@ -8,15 +24,19 @@
 //! - [`device`]: Device management
 //! - [`arch`]: Architecture's related
 
-#![no_std] // 禁用标准库链接
+#![no_std]
 #![no_main]
-// 不使用main入口，使用自己定义实际入口_start，因为我们还没有初始化堆栈指针
 #![feature(asm_const)]
-#![feature(naked_functions)] //  surpport naked function
-#![feature(core_panic)]
+#![feature(naked_functions)]
 #![feature(concat_idents)]
-// 支持内联汇编
-// #![deny(warnings, missing_docs)] // 将warnings作为error
+// #![feature(core_panic)]
+// #![deny(warnings, missing_docs)]
+#![feature(proc_macro_hygiene)]
+// unittest
+#![feature(custom_test_frameworks)]
+#![test_runner(crate::tests::test_main)]
+#![reexport_test_harness_main = "test_main"]
+
 #[macro_use]
 extern crate alloc;
 extern crate buddy_system_allocator;
@@ -40,19 +60,27 @@ mod percpu;
 mod platform;
 mod zone;
 
+#[cfg(target_arch = "aarch64")]
+mod ivc;
+
+mod pci;
+
+#[cfg(test)]
+mod tests;
+
 #[cfg(target_arch = "x86_64")]
 use crate::arch::boot::MultibootInfo;
 #[cfg(target_arch = "aarch64")]
 use crate::arch::mm::setup_parange;
 use crate::consts::MAX_CPU_NUM;
-use arch::{
-    cpu::{self, cpu_start, ArchCpu},
-    entry::arch_entry,
-};
+use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
 use zone::zone_create;
+
+#[cfg(all(feature = "iommu", target_arch = "aarch64"))]
+use crate::arch::iommu::iommu_init;
 
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
 static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
@@ -109,8 +137,12 @@ fn primary_init_early() {
     // TODO: tmp
     // crate::arch::mm::init_hv_page_table().unwrap();
 
-    // TODO:
+    #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
+    iommu_init();
+
+    #[cfg(not(test))]
     zone_create(root_zone_config()).unwrap();
+
     INIT_EARLY_OK.store(1, Ordering::Release);
 }
 
@@ -255,12 +287,20 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     device::irqchip::percpu_init();
 
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
+
     wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _);
 
     if is_primary {
         primary_init_late();
     } else {
         wait_for_counter(&INIT_LATE_OK, 1);
+    }
+
+    // run all unit tests before starting the root zone
+    // CAUTION: test_main will quit qemu after all tests are done
+    #[cfg(test)]
+    if is_primary {
+        test_main();
     }
 
     cpu.run_vm();

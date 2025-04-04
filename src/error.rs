@@ -1,3 +1,18 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 use alloc::string::String;
 use core::fmt::{Debug, Formatter, Result};
 
@@ -6,18 +21,18 @@ use core::fmt::{Debug, Formatter, Result};
 #[allow(dead_code, clippy::upper_case_acronyms)]
 /// POSIX errno
 pub enum HvErrorNum {
-    EPERM = 1,
-    ENOENT = 2,
-    EIO = 5,
-    E2BIG = 7,
-    ENOMEM = 12,
-    EFAULT = 14,
-    EBUSY = 16,
-    EEXIST = 17,
-    ENODEV = 19,
-    EINVAL = 22,
-    ERANGE = 34,
-    ENOSYS = 38,
+    EPERM = 1,   // Operation not permitted.
+    ENOENT = 2,  // No such file or directory.
+    EIO = 5,     // I/O error.
+    E2BIG = 7,   // Argument list too long.
+    ENOMEM = 12, // Not enough space.
+    EFAULT = 14, // Bad address.
+    EBUSY = 16,  // Device or resource busy.
+    EEXIST = 17, // File exists.
+    ENODEV = 19, // No such device.
+    EINVAL = 22, // Invalid argument.
+    ERANGE = 34, // Result too large.
+    ENOSYS = 38, // Function not implemented.
 }
 
 pub struct HvError {

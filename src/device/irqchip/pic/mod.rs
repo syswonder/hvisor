@@ -3,7 +3,7 @@ pub mod lapic;
 pub mod vtd;
 
 use crate::{
-    arch::{acpi, cpu::this_cpu_id, ipi, vmcs::Vmcs},
+    arch::{acpi, ipi, vmcs::Vmcs},
     consts::MAX_CPU_NUM,
     zone::Zone,
 };

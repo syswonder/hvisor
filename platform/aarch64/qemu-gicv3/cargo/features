@@ -1,0 +1,5 @@
+gicv3
+pl011
+iommu
+pci
+pt_layout_qemu

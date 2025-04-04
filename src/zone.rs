@@ -1,7 +1,23 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 // use psci::error::INVALID_ADDRESS;
 use crate::consts::INVALID_ADDRESS;
+use crate::pci::pci::PciRoot;
 use spin::RwLock;
 
 use crate::arch::mm::new_s2_memory_set;
@@ -22,6 +38,7 @@ pub struct Zone {
     pub cpu_set: CpuSet,
     pub irq_bitmap: [u32; 1024 / 32],
     pub gpm: MemorySet<Stage2PageTable>,
+    pub pciroot: PciRoot,
 }
 
 impl Zone {
@@ -33,6 +50,7 @@ impl Zone {
             cpu_set: CpuSet::new(MAX_CPU_NUM as usize, 0),
             mmio: Vec::new(),
             irq_bitmap: [0; 1024 / 32],
+            pciroot: PciRoot::new(),
         }
     }
 
@@ -149,32 +167,22 @@ pub fn find_zone(zone_id: usize) -> Option<Arc<RwLock<Zone>>> {
 pub fn all_zones_info() -> Vec<ZoneInfo> {
     let zone_list = ZONE_LIST.read();
 
-    zone_list.iter().map(|zone| {
-        let zone_lock = zone.read();
-        ZoneInfo {
-            zone_id: zone_lock.id as u32,
-            cpus: zone_lock.cpu_set.bitmap,
-            name: zone_lock.name.clone(),
-        }
-    }).collect()
+    zone_list
+        .iter()
+        .map(|zone| {
+            let zone_lock = zone.read();
+            ZoneInfo {
+                zone_id: zone_lock.id as u32,
+                cpus: zone_lock.cpu_set.bitmap,
+                name: zone_lock.name.clone(),
+            }
+        })
+        .collect()
 }
 
 pub fn this_zone_id() -> usize {
     this_zone().read().id
 }
-
-// #[repr(C)]
-// #[derive(Debug, Clone)]
-// pub struct ZoneConfig {
-//     pub zone_id: u32,
-//     pub cpus: u64,
-//     pub num_memory_regions: u32,
-//     pub memory_regions: [MemoryRegion; CONFIG_MAX_MEMORY_REGIONS],
-//     pub num_interrupts: u32,
-//     pub interrupts: [u32; CONFIG_MAX_INTERRUPTS],
-//     pub entry_point: u64,
-//     pub dtb_load_paddr: u64,
-// }
 
 pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     // we create the new zone here
@@ -189,17 +197,19 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     zone.pt_init(config.memory_regions()).unwrap();
     zone.mmio_init(&config.arch_config);
     zone.irq_bitmap_init(config.interrupts());
+    #[cfg(target_arch = "aarch64")]
+    zone.ivc_init(config.ivc_config());
+    #[cfg(all(feature = "pci", target_arch = "aarch64"))]
+    zone.pci_init(
+        &config.pci_config,
+        config.num_pci_devs as _,
+        &config.alloc_pci_devs,
+    );
 
     config.cpus().iter().for_each(|cpu_id| {
         zone.cpu_set.set_bit(*cpu_id as _);
     });
 
-    // pub struct HvConfigMemoryRegion {
-    //     pub mem_type: u32,
-    //     pub physical_start: u64,
-    //     pub virtual_start: u64,
-    //     pub size: u64,
-    // }
     let mut dtb_ipa = INVALID_ADDRESS as u64;
     for region in config.memory_regions() {
         // region contains config.dtb_load_paddr?
@@ -235,5 +245,20 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
 pub struct ZoneInfo {
     zone_id: u32,
     cpus: u64,
-    name: [u8; CONFIG_NAME_MAXLEN]
+    name: [u8; CONFIG_NAME_MAXLEN],
+}
+
+#[test_case]
+fn test_add_and_remove_zone() {
+    let zone_count = 50;
+    let zone_count_before = ZONE_LIST.read().len();
+    for i in 0..zone_count {
+        let u8name_array = [i as u8; CONFIG_NAME_MAXLEN];
+        let zone = Zone::new(i, &u8name_array);
+        ZONE_LIST.write().push(Arc::new(RwLock::new(zone)));
+    }
+    for i in 0..zone_count {
+        remove_zone(i);
+    }
+    assert_eq!(ZONE_LIST.read().len(), zone_count_before);
 }

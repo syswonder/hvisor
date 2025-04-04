@@ -1,16 +1,28 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 use crate::{
     config::*,
     device::virtio_trampoline::{mmio_virtio_handler, VIRTIO_BRIDGE},
     error::HvResult,
-    memory::{
-        addr::align_up, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
-    },
+    memory::{addr::align_up, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion},
     percpu::get_cpu_data,
     zone::Zone,
 };
 impl Zone {
-    pub fn pt_init( &mut self, mem_regions: &[HvConfigMemoryRegion],
-    ) -> HvResult {
+    pub fn pt_init(&mut self, mem_regions: &[HvConfigMemoryRegion]) -> HvResult {
         for mem_region in mem_regions.iter() {
             let mut flags = MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE;
             if mem_region.mem_type == MEM_TYPE_IO {
@@ -38,13 +50,51 @@ impl Zone {
                 }
             }
         }
+        #[cfg(feature = "aia")]
+        {
+            use crate::memory::PAGE_SIZE;
+            let paddr = 0x2800_0000 as HostPhysAddr;
+            let size = PAGE_SIZE;
+            self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                paddr as GuestPhysAddr,
+                paddr + PAGE_SIZE * 1,
+                size,
+                MemFlags::READ | MemFlags::WRITE,
+            ))?;
 
+            let paddr = 0x2800_1000 as HostPhysAddr;
+            let size = PAGE_SIZE;
+            self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                paddr as GuestPhysAddr,
+                paddr + PAGE_SIZE * 2,
+                size,
+                MemFlags::READ | MemFlags::WRITE,
+            ))?;
+
+            let paddr = 0x2800_2000 as HostPhysAddr;
+            let size = PAGE_SIZE;
+            self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                paddr as GuestPhysAddr,
+                paddr + PAGE_SIZE * 3,
+                size,
+                MemFlags::READ | MemFlags::WRITE,
+            ))?;
+
+            let paddr = 0x2800_3000 as HostPhysAddr;
+            let size = PAGE_SIZE;
+            self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                paddr as GuestPhysAddr,
+                paddr + PAGE_SIZE * 4,
+                size,
+                MemFlags::READ | MemFlags::WRITE,
+            ))?;
+        }
         info!("VM stage 2 memory set: {:#x?}", self.gpm);
         Ok(())
     }
-    pub fn mmio_init(&mut self, hv_config: &HvArchZoneConfig) {
-        //TODO
-    }
+    // pub fn mmio_init(&mut self, hv_config: &HvArchZoneConfig) {
+    //     //TODO
+    // }
     pub fn irq_bitmap_init(&mut self, irqs: &[u32]) {}
     pub fn isa_init(&mut self, fdt: &fdt::Fdt) {
         let cpu_set = self.cpu_set;
@@ -70,4 +120,6 @@ impl Zone {
 pub struct HvArchZoneConfig {
     pub plic_base: usize,
     pub plic_size: usize,
+    pub aplic_base: usize,
+    pub aplic_size: usize,
 }

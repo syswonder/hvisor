@@ -3,7 +3,7 @@ use crate::{
     config::*,
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion},
-    platform::qemu_x86_64::{MEM_TYPE_RAM_NOT_ALLOC, MEM_TYPE_ROM},
+    platform::{MEM_TYPE_RAM_NOT_ALLOC, MEM_TYPE_ROM},
     zone::Zone,
 };
 
@@ -49,11 +49,6 @@ impl Zone {
 
         // info!("VM stage 2 memory set: {:#x?}", self.gpm);
         Ok(())
-    }
-
-    pub fn mmio_init(&mut self, hv_config: &HvArchZoneConfig) {
-        self.ioapic_mmio_init(hv_config);
-        self.pci_config_space_mmio_init(hv_config);
     }
 
     pub fn isa_init(&mut self, fdt: &fdt::Fdt) {}

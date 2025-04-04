@@ -2,7 +2,7 @@ use crate::{
     config::HvConfigMemoryRegion,
     error::HvResult,
     percpu::this_zone,
-    platform::qemu_x86_64::{ROOT_ZONE_ACPI_REGION, ROOT_ZONE_RSDP_REGION},
+    platform::{ROOT_ZONE_ACPI_REGION, ROOT_ZONE_RSDP_REGION},
 };
 use acpi::{
     fadt::Fadt,
