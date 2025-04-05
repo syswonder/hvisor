@@ -215,7 +215,7 @@ impl<'a> HyperCall<'a> {
 
     pub fn hv_zone_config_check(&self, magic_version: *mut u64) -> HyperCallResult {
         unsafe {
-            *magic_version = CONFIG_MAGIC_VERSION as _; 
+            *magic_version = CONFIG_MAGIC_VERSION as _;
         }
         HyperCallResult::Ok(0)
     }
@@ -298,7 +298,7 @@ impl<'a> HyperCall<'a> {
             let power_on = get_cpu_data(cpu_id).arch_cpu.power_on;
             count += 1;
             if count > 10000000 {
-                if(power_on) {
+                if (power_on) {
                     error!("cpu {} cannot be shut down", cpu_id);
                     return false;
                 }

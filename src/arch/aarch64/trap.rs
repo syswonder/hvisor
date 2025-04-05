@@ -272,7 +272,10 @@ fn handle_hvc(regs: &mut GeneralRegisters) {
 
     trace!(
         "HVC from CPU{},code:{:#x?},arg0:{:#x?},arg1:{:#x?}",
-        cpu_data.id, code, arg0, arg1
+        cpu_data.id,
+        code,
+        arg0,
+        arg1
     );
     let result = match HyperCall::new(cpu_data).hypercall(code as _, arg0, arg1) {
         Ok(ret) => ret as _,

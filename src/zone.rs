@@ -275,7 +275,7 @@ pub struct ZoneInfo {
 }
 // Be careful about dead lock for zone.write()
 pub fn zone_error() {
-    if(is_this_root_zone()) {
+    if (is_this_root_zone()) {
         panic!("root zone has some error");
     }
     let zone = this_zone();
