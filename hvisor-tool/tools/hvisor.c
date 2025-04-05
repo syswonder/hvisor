@@ -34,7 +34,7 @@ static void __attribute__((noreturn)) help(int exit_status) {
     printf("  hvisor <command> [options]\n\n");
     printf("Commands:\n");
     printf("  zone start    <config.json>    Initialize an isolation zone\n");
-    printf("  zone shutdown --id <zone_id>   Terminate a zone by ID\n");
+    printf("  zone shutdown -id <zone_id>   Terminate a zone by ID\n");
     printf("  zone list                      List all active zones\n");
     printf("  virtio start  <virtio.json>    Activate virtio devices\n\n");
     printf("Options:\n");
@@ -42,7 +42,7 @@ static void __attribute__((noreturn)) help(int exit_status) {
     printf("  --help            Show this help message\n\n");
     printf("Examples:\n");
     printf("  Start zone:    hvisor zone start /path/to/vm.json\n");
-    printf("  Shutdown zone: hvisor zone shutdown --id 1\n");
+    printf("  Shutdown zone: hvisor zone shutdown -id 1\n");
     printf("  List zones:    hvisor zone list\n");
     exit(exit_status);
 }
@@ -222,7 +222,7 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         return -1;
     }
     if (gits_base_json == NULL || gits_size_json == NULL) {
-        log_error("No gits fields in arch_config.\n");
+        log_warn("No gits fields in arch_config.\n");
     } else {
         config->arch_config.gits_base =
             strtoull(gits_base_json->valuestring, NULL, 16);
@@ -434,8 +434,8 @@ static int zone_start_from_json(const char *json_config_path,
             // virtio device
             mem_region->type = MEM_TYPE_VIRTIO;
         } else {
-            log_warn("Unknown memory region type: %s", type_str);
-            mem_region->type = -1; // invalid type
+            log_error("Unknown memory region type: %s", type_str);
+            goto err_out;
         }
 
         mem_region->physical_start = strtoull(
@@ -461,6 +461,11 @@ static int zone_start_from_json(const char *json_config_path,
 
     // ivc
     int num_ivc_configs = SAFE_CJSON_GET_ARRAY_SIZE(ivc_configs_json);
+    if (num_ivc_configs > CONFIG_MAX_IVC_CONFIGS) {
+        log_error("Exceeded maximum allowed ivc configs.");
+        goto err_out;
+    }
+
     config->num_ivc_configs = num_ivc_configs;
     for (int i = 0; i < num_ivc_configs; i++) {
         cJSON *ivc_config_json = SAFE_CJSON_GET_ARRAY_ITEM(ivc_configs_json, i);
@@ -567,9 +572,10 @@ err_out:
 
 // ./hvisor zone start <path_to_config_file>
 static int zone_start(int argc, char *argv[]) {
-    int zone_id;
     char *json_config_path = NULL;
     zone_config_t config;
+    int fd, ret;
+    u_int64_t hvisor_config_version;
 
     if (argc != 4) {
         help(1);
@@ -577,6 +583,25 @@ static int zone_start(int argc, char *argv[]) {
     json_config_path = argv[3];
 
     memset(&config, 0, sizeof(zone_config_t));
+
+    fd = open_dev();
+    ret = ioctl(fd, HVISOR_CONFIG_CHECK, &hvisor_config_version);
+    close(fd);
+
+    if (ret) {
+        log_error("ioctl: hvisor config check failed, ret %d", ret);
+        return -1;
+    }
+
+    if (hvisor_config_version != CONFIG_MAGIC_VERSION) {
+        log_error("zone start failed because config versions mismatch, "
+                  "hvisor-tool is 0x%x, hvisor is 0x%x",
+                  CONFIG_MAGIC_VERSION, hvisor_config_version);
+        return -1;
+    } else {
+        log_info("zone config check pass");
+    }
+
     return zone_start_from_json(json_config_path, &config);
 }
 
@@ -629,15 +654,16 @@ static int zone_list(int argc, char *argv[]) {
     if (ret < 0)
         perror("zone_list: ioctl failed");
 
-    printf("| %11s     | %10s        | %9s       |\n", "zone_id", "cpus",
-           "name");
+    printf("| %11s     | %10s        | %9s       | %10s |\n", "zone_id", "cpus",
+           "name", "status");
 
     for (int i = 0; i < ret; i++) {
         char cpu_list_str[256]; // Assuming this buffer size is enough
         memset(cpu_list_str, 0, sizeof(cpu_list_str));
         print_cpu_list(zones[i].cpus, cpu_list_str, sizeof(cpu_list_str));
-        printf("| %15u | %17s | %15s |\n", zones[i].zone_id, cpu_list_str,
-               zones[i].name);
+        printf("| %15u | %17s | %15s | %10s |\n", zones[i].zone_id,
+               cpu_list_str, zones[i].name,
+               zones[i].is_err ? "error" : "running");
     }
     free(zones);
     close(fd);
@@ -647,7 +673,7 @@ static int zone_list(int argc, char *argv[]) {
 int main(int argc, char *argv[]) {
     int err = 0;
 
-    if (argc < 2)
+    if (argc < 3)
         help(1);
 
     if (strcmp(argv[1], "zone") == 0) {
