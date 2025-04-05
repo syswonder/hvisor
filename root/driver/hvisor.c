@@ -141,7 +141,6 @@ static int hvisor_zone_start(zone_config_t __user *arg) {
 static int hvisor_config_check(u64 __user *arg) {
     int err = 0;
     u64 *config;
-
     config = kmalloc(sizeof(u64), GFP_KERNEL);
     err = hvisor_call(HVISOR_HC_CONFIG_CHECK, __pa(config), 0);
 
@@ -210,6 +209,7 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
         break;
     case HVISOR_CONFIG_CHECK:
         err = hvisor_config_check((u64 __user *)arg);
+        break;
 #ifdef LOONGARCH64
     case HVISOR_CLEAR_INJECT_IRQ:
         err = hvisor_call(HVISOR_HC_CLEAR_INJECT_IRQ, 0, 0);

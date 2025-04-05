@@ -131,6 +131,7 @@ struct zone_info {
     __u32 zone_id;
     __u64 cpus;
     char name[CONFIG_NAME_MAXLEN];
+    __u8 is_err;
 };
 
 typedef struct zone_info zone_info_t;

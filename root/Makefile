@@ -55,16 +55,11 @@ tftp:
 	@mkdir -p $(OUTPUT_DIR)
 	@if [ -n "$(wildcard $(OUTPUT_DIR)/*)" ]; then \
 		cp $(OUTPUT_DIR)/* $(TFTP_DIR); \
+		echo "Copied files to $(TFTP_DIR):"; \
+		ls -1 $(OUTPUT_DIR); \
 	else \
 		echo "No files found in $(OUTPUT_DIR), skipping copy."; \
 	fi
-
-transfer_nxp: all
-	sudo cp ./tools/hvisor ~/tftp
-	sudo cp ./tools/ivc_demo ~/tftp
-	sudo cp ./tools/rpmsg_demo ~/tftp
-	sudo cp ./driver/hvisor.ko ~/tftp
-	sudo cp ./driver/ivc.ko ~/tftp
 
 clean: check-kdir
 	make -C tools clean

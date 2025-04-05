@@ -114,7 +114,7 @@ int virtio_console_init(VirtIODevice *vdev) {
     if (slave_name == NULL) {
         log_error("Failed to get slave name, errno is %d", errno);
     }
-    log_warn("char device redirected to %s", slave_name);
+    log_info("char device redirected to %s", slave_name);
     // Disable line discipline to prevent the TTY
     // from echoing the characters sent from the master back to the master.
     slave_fd = open(slave_name, O_RDWR);
