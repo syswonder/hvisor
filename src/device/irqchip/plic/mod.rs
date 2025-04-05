@@ -13,241 +13,179 @@
 //
 // Authors:
 //
+
+pub mod plic;
+pub mod vplic;
+
+pub use self::plic::*;
+use self::vplic::*;
+use crate::arch::zone::HvArchZoneConfig;
 use crate::config::root_zone_config;
+use crate::consts::MAX_CPU_NUM;
+use crate::error::HvResult;
+use crate::memory::mmio::MMIOAccess;
 use crate::memory::GuestPhysAddr;
+use crate::percpu::this_zone;
 use crate::platform::__board::*;
 use crate::zone::Zone;
 use crate::{arch::cpu::ArchCpu, percpu::this_cpu_data};
+use alloc::vec::Vec;
 use riscv::register::hvip;
 use riscv_decode::Instruction;
-use spin::{Once, RwLock};
-pub fn primary_init_early() {
-    let root_config = root_zone_config();
-    init_plic(
-        root_config.arch_config.plic_base as usize,
-        root_config.arch_config.plic_size as usize,
-    );
+use spin::Once;
+
+/*
+   Due to hvisor is a static partitioning hypervisor.
+   The irq is assigned to a specific zone, a zone has its own harts.
+   So we assume different harts will don't access the same plic register.
+   For physical plic, we don't add lock for it.
+*/
+
+pub static PLIC: Once<Plic> = Once::new();
+
+pub fn init_plic(plic_base: usize) {
+    PLIC.call_once(|| Plic::new(plic_base));
 }
-pub fn primary_init_late() {
-    //nothing to do
-}
-pub fn percpu_init() {
-    //nothing to do
-}
-pub fn inject_irq(_irq: usize, _is_hardware: bool) {
-    //nothing to do
-}
-pub static PLIC: Once<RwLock<Plic>> = Once::new();
-pub fn host_plic<'a>() -> &'a RwLock<Plic> {
+
+pub fn host_plic<'a>() -> &'a Plic {
     PLIC.get().expect("Uninitialized hypervisor plic!")
 }
-pub struct Plic {
-    pub base: usize,
-    pub size: usize,
-    pub claim_complete: [u32; PLIC_MAX_CONTEXT],
+
+pub fn primary_init_early() {
+    // Init the physical PLIC global part
+    let root_config = root_zone_config();
+    init_plic(root_config.arch_config.plic_base as usize);
+    host_plic().init_global(BOARD_PLIC_INTERRUPTS_NUM, MAX_CPU_NUM * 2);
 }
 
-impl Plic {
-    pub fn new(base: usize, size: usize) -> Self {
-        Self {
-            base,
-            size,
-            claim_complete: [0u32; PLIC_MAX_CONTEXT],
-        }
-    }
-    pub fn set_priority(&self, irq_id: usize, priority: u32) {
-        let addr = self.base + PLIC_PRIORITY_BASE + irq_id * 4;
-        unsafe {
-            core::ptr::write_volatile(addr as *mut u32, priority);
-        }
-    }
-    pub fn read_enable(&self, context: usize, irq_base: usize) -> u32 {
-        let addr = self.base + PLIC_ENABLE_BASE + context * 0x80 + irq_base;
-        unsafe { core::ptr::read_volatile(addr as *const u32) }
-    }
-    pub fn set_enable(&self, context: usize, irq_base: usize, value: u32) {
-        let addr = self.base + PLIC_ENABLE_BASE + context * 0x80 + irq_base;
-        unsafe {
-            core::ptr::write_volatile(addr as *mut u32, value);
-        }
-    }
-    pub fn set_threshold(&self, context: usize, value: u32) {
-        let addr = self.base + PLIC_GLOBAL_SIZE + context * 0x1000;
-        unsafe {
-            core::ptr::write_volatile(addr as *mut u32, value);
-        }
-    }
-    ///TODO:move to vplic
-    pub fn emul_claim(&self, context: usize) -> u32 {
-        self.claim_complete[context]
-    }
-    pub fn emul_complete(&mut self, context: usize, irq_id: u32) {
-        let addr = self.base + PLIC_GLOBAL_SIZE + 0x1000 * context + 0x4;
-        unsafe {
-            core::ptr::write_volatile(addr as *mut u32, irq_id as u32);
-        }
+pub fn primary_init_late() {
+    info!("PLIC do nothing in primary_init_late");
+}
 
-        self.claim_complete[context] = 0;
-        unsafe {
-            hvip::clear_vseip();
-        }
-    }
+pub fn percpu_init() {
+    host_plic().init_per_hart(this_cpu_data().id);
 }
-pub fn vplic_global_emul_handler(
-    current_cpu: &mut ArchCpu,
-    addr: GuestPhysAddr,
-    inst: Instruction,
-) {
-    //TODO:check irq id for vm
-    let host_plic = host_plic();
-    let offset = addr.wrapping_sub(host_plic.read().base);
-    // priority/pending/enable
-    if offset >= PLIC_PRIORITY_BASE && offset < PLIC_ENABLE_BASE {
-        // priority/pending
-        match inst {
-            Instruction::Sw(i) => {
-                // guest write irq priority
-                //TODO:check irq id for vm
-                let irq_id = offset / 4;
-                let value = current_cpu.x[i.rs2() as usize] as u32;
-                host_plic.write().set_priority(irq_id, value);
-                debug!(
-                    "PLIC set priority write addr@{:#x} irq id {} valuse{:#x}",
-                    addr, irq_id, value
-                );
-            }
-            _ => panic!("Unexpected instruction {:?}", inst),
-        }
-    } else if offset >= PLIC_ENABLE_BASE && offset < PLIC_GLOBAL_SIZE {
-        //enable
-        match inst {
-            Instruction::Lw(i) => {
-                // guest read
-                let vcontext = (offset - 0x002000) / 0x80;
-                let first_cpu = this_cpu_data()
-                    .zone
-                    .as_ref()
-                    .unwrap()
-                    .read()
-                    .cpu_set
-                    .first_cpu()
-                    .unwrap();
-                let context = vcontext + first_cpu * 2;
-                let irq_base = (offset - 0x002000) % 0x80;
-                let value = host_plic.read().read_enable(context, irq_base);
-                current_cpu.x[i.rd() as usize] = value as usize;
-                debug!(
-                    "PLIC set enable read addr@{:#x} -> context {}=>{}  irq_base {}~{} value {:#x}",
-                    addr,
-                    vcontext,
-                    context,
-                    irq_base * 8,
-                    irq_base * 8 + 31,
-                    value
-                );
-            }
-            Instruction::Sw(i) => {
-                // guest write irq enable
-                let vcontext = (offset - 0x002000) / 0x80;
-                let first_cpu = this_cpu_data()
-                    .zone
-                    .as_ref()
-                    .unwrap()
-                    .read()
-                    .cpu_set
-                    .first_cpu()
-                    .unwrap();
-                let context = vcontext + first_cpu * 2;
-                let irq_base = (offset - 0x002000) % 0x80;
-                let value = current_cpu.x[i.rs2() as usize] as u32;
-                host_plic.write().set_enable(context, irq_base, value);
 
-                debug!(
-                    "PLIC set enable write addr@{:#x} -> context{}=>{}  irq_base {}~{} value {:#x}",
-                    addr,
-                    vcontext,
-                    context,
-                    irq_base * 8,
-                    irq_base * 8 + 31,
-                    value
-                );
-            }
-            _ => panic!("Unexpected instruction {:?}", inst),
+pub fn inject_irq(irq: usize, is_hardware: bool) {
+    warn!("plic no implement inject_irq");
+}
+
+/// Convert vcontext id to pcontext id.
+pub fn vcontext_to_pcontext(vcontext_id: usize) -> usize {
+    let pcpu_set = this_cpu_data()
+        .zone
+        .as_ref()
+        .unwrap()
+        .read()
+        .cpu_set
+        .iter()
+        .collect::<Vec<_>>();
+    let index = vcontext_id / 2;
+    // convert to physical hart S-mode
+    pcpu_set[index] * 2 + 1
+}
+
+/// Convert pcontext id to vcontext id.
+pub fn pcontext_to_vcontext(pcontext_id: usize) -> usize {
+    // vcpu is the pcpus index of the pcpu_set
+    let pcpu_set = this_cpu_data()
+        .zone
+        .as_ref()
+        .unwrap()
+        .read()
+        .cpu_set
+        .iter()
+        .collect::<Vec<_>>();
+    let pcpu_id = this_cpu_data().id;
+    let mut index = 0;
+    for (i, &id) in pcpu_set.iter().enumerate() {
+        if id == pcpu_id {
+            index = i;
+            break;
         }
-    } else {
-        panic!("Invalid address: {:#x}", addr);
     }
+    // convert to virtual hart S-mode
+    index * 2 + 1
 }
-pub fn vplic_hart_emul_handler(current_cpu: &mut ArchCpu, addr: GuestPhysAddr, inst: Instruction) {
-    trace!("handle PLIC access addr@{:#x}", addr);
-    let host_plic = host_plic();
-    let offset = addr.wrapping_sub(host_plic.read().base);
-    // threshold/claim/complete
-    if offset >= PLIC_GLOBAL_SIZE && offset < PLIC_TOTAL_SIZE {
-        let vcontext = (offset - PLIC_GLOBAL_SIZE) / 0x1000;
-        let first_cpu = this_cpu_data()
-            .zone
-            .as_ref()
-            .unwrap()
-            .read()
-            .cpu_set
-            .first_cpu()
-            .unwrap();
-        let context = vcontext + first_cpu * 2;
-        let index = (offset - PLIC_GLOBAL_SIZE) & 0xfff;
-        if index == 0 {
-            // threshold
-            match inst {
-                Instruction::Sw(i) => {
-                    // guest write threshold register to plic core
-                    let value = current_cpu.x[i.rs2() as usize] as u32;
-                    host_plic.write().set_threshold(context, value);
-                    debug!(
-                        "PLIC set threshold write addr@{:#x} context{} -> {:#x}",
-                        addr, context, value
-                    );
-                }
-                _ => panic!("Unexpected instruction threshold {:?}", inst),
-            }
-        } else if index == 0x4 {
-            // claim/complete
-            // htracking!("claim/complete");
-            match inst {
-                Instruction::Lw(i) => {
-                    // guest read claim from plic core
-                    current_cpu.x[i.rd() as usize] = host_plic.read().emul_claim(context) as usize;
-                    debug!(
-                        "PLIC claim read addr@{:#x} context{} -> {:#x}",
-                        addr,
-                        context,
-                        host_plic.read().claim_complete[context]
-                    );
-                }
-                Instruction::Sw(i) => {
-                    // guest write complete to plic core
-                    let value = current_cpu.x[i.rs2() as usize] as u32;
-                    host_plic.write().emul_complete(context, value);
-                    // todo: guest pa -> host pa
-                    debug!(
-                        "PLIC complete write addr@:{:#x} context {} -> {:#x}",
-                        addr, context, value
-                    );
-                }
-                _ => panic!("Unexpected instruction claim/complete {:?}", inst),
-            }
-        } else {
-            panic!("Invalid address: {:#x}", addr);
-        }
-    } else {
-        panic!("Invalid address: {:#x}", addr);
+
+/// handle Zone's plic mmio access.
+pub fn vplic_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
+    let value = this_cpu_data()
+        .zone
+        .as_ref()
+        .unwrap()
+        .read()
+        .vplic
+        .as_ref()
+        .unwrap()
+        .vplic_emul_access(mmio.address, mmio.size, mmio.value, mmio.is_write);
+    if !mmio.is_write {
+        // read from vplic
+        mmio.value = value as usize;
     }
+    Ok(())
 }
-pub fn init_plic(plic_base: usize, plic_size: usize) {
-    let plic = Plic::new(plic_base, plic_size);
-    PLIC.call_once(|| RwLock::new(plic));
+
+/// Update hart line handler.
+pub fn update_hart_line() {
+    let pcontext_id = this_cpu_data().id * 2 + 1;
+    let vcontext_id = pcontext_to_vcontext(pcontext_id);
+    this_cpu_data()
+        .zone
+        .as_ref()
+        .unwrap()
+        .read()
+        .vplic
+        .as_ref()
+        .unwrap()
+        .update_hart_line(vcontext_id);
 }
+
 impl Zone {
     pub fn arch_irqchip_reset(&self) {
-        //TODO
+        /*
+           Reset priority, threshold, enable, and so on related to this zone.
+        */
+        todo!();
+    }
+
+    fn insert_irq_to_bitmap(&mut self, irq: u32) {
+        let irq_index = irq / 32;
+        let irq_bit = irq % 32;
+        self.irq_bitmap[irq_index as usize] |= 1 << irq_bit;
+    }
+
+    /// irq_bitmap_init, and set these irqs' hw bit in vplic to true.
+    pub fn irq_bitmap_init(&mut self, irqs: &[u32]) {
+        // insert to zone.irq_bitmap
+        for irq in irqs {
+            let irq_id = *irq;
+            // They are hardware interrupts.
+            self.vplic
+                .as_ref()
+                .unwrap()
+                .vplic_set_hw(irq_id as usize, true);
+            info!("Set irq {} to hardware interrupt", irq_id);
+            self.insert_irq_to_bitmap(irq_id);
+        }
+        // print irq_bitmap
+        for (index, &word) in self.irq_bitmap.iter().enumerate() {
+            for bit_position in 0..32 {
+                if word & (1 << bit_position) != 0 {
+                    let interrupt_number = index * 32 + bit_position;
+                    info!(
+                        "Found interrupt in Zone {} irq_bitmap: {}",
+                        self.id, interrupt_number
+                    );
+                }
+            }
+        }
+    }
+
+    pub fn vplic_mmio_init(&mut self, arch: &HvArchZoneConfig) {
+        if arch.plic_base == 0 {
+            panic!("vplic_mmio_init: plic_base is null");
+        }
+        self.mmio_region_register(arch.plic_base, arch.plic_size, vplic_handler, 0);
     }
 }
