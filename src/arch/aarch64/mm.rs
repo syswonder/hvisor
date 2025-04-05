@@ -108,23 +108,26 @@ const PARANGE_TABLE: [usize; 6] = [32, 36, 40, 42, 44, 48];
 static MIN_PARANGE: RwLock<u64> = RwLock::new(0x7);
 static PARANGE_OK_CPUS: AtomicU32 = AtomicU32::new(0);
 
-pub fn setup_parange() {
+static mut NCPU: usize = 0;
+
+pub fn setup_parange(ncpu: usize) {
+    unsafe {NCPU = ncpu;}
     let temp_parange = read_sysreg!(id_aa64mmfr0_el1) & 0xf;
     let mut p = MIN_PARANGE.write();
     *p = p.min(temp_parange);
     drop(p);
 
     PARANGE_OK_CPUS.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
-    wait_for(|| PARANGE_OK_CPUS.load(core::sync::atomic::Ordering::SeqCst) < MAX_CPU_NUM as _);
+    wait_for(|| PARANGE_OK_CPUS.load(core::sync::atomic::Ordering::SeqCst) < unsafe {NCPU} as _);
 }
 
 pub fn get_parange() -> u64 {
-    assert!(PARANGE_OK_CPUS.load(core::sync::atomic::Ordering::SeqCst) == MAX_CPU_NUM as _);
+    assert!(PARANGE_OK_CPUS.load(core::sync::atomic::Ordering::SeqCst) == unsafe {NCPU} as _);
     *MIN_PARANGE.read()
 }
 
 pub fn get_parange_bits() -> usize {
-    assert!(PARANGE_OK_CPUS.load(core::sync::atomic::Ordering::SeqCst) == MAX_CPU_NUM as _);
+    assert!(PARANGE_OK_CPUS.load(core::sync::atomic::Ordering::SeqCst) == unsafe {NCPU} as _);
     PARANGE_TABLE[*MIN_PARANGE.read() as usize]
 }
 
