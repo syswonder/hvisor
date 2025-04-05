@@ -264,10 +264,9 @@ pub fn zone_error() {
 
     let mut zone_w = zone.write();
     zone_w.is_err = true;
-    zone_w.cpu_set.iter().for_each(|cpu_id| {
-        send_event(cpu_id, SGI_IPI_ID as _, IPI_EVENT_SHUTDOWN);
-    });
-    drop(zone_w)
+
+    drop(zone_w);
+    drop(zone);
 }
 
 #[test_case]

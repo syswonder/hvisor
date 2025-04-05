@@ -48,7 +48,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     // debug!("mmio virtio handler");
     let need_interrupt = if mmio.address == QUEUE_NOTIFY { 1 } else { 0 };
     if need_interrupt == 1 {
-        debug!("notify !!!, cpu id is {}", this_cpu_id());
+        trace!("notify !!!, cpu id is {}", this_cpu_id());
     }
     mmio.address += base;
     let mut dev = VIRTIO_BRIDGE.lock();
@@ -86,16 +86,20 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
         send_event(root_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP_VIRTIO_DEVICE);
     }
     drop(dev);
-    let mut count = 0;
+    let mut count: u32 = 0;
+    let threshold = 1000000;
     // if it is cfg request, current cpu should be blocked until gets the result
     if need_interrupt == 0 {
         // when virtio backend finish the req, it will add 1 to cfg_flag.
         while cfg_flags[cpu_id] == old_cfg_flag {
             // fence(Ordering::Acquire);
             count += 1;
-            if count > 1000000 {
-                // warn!("virtio backend is too slow, please check it!");
+            if count == threshold {
+                warn!("virtio backend is too slow, please check it!");
                 fence(Ordering::Acquire);
+            }
+            if count == threshold * 10 {
+                error!("virtio backend may have some problem, please check it!");
                 count = 0;
             }
         }
@@ -130,16 +134,14 @@ impl VirtioBridgeRegion {
     // return a mut region
     pub fn region(&self) -> &mut VirtioBridge {
         if !self.is_enable {
-            error!("hvisor device region is not enabled!");
-            zone_error();
+            panic!("hvisor device region is not enabled!");
         }
         unsafe { &mut *(self.base_address as *mut VirtioBridge) }
     }
     // return a non mut region
     pub fn immut_region(&self) -> &VirtioBridge {
         if !self.is_enable {
-            error!("hvisor device region is not enabled!");
-            zone_error();
+            panic!("hvisor device region is not enabled!");
         }
         unsafe { &*(self.base_address as *const VirtioBridge) }
     }

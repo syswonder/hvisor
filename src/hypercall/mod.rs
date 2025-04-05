@@ -14,7 +14,7 @@
 // Authors:
 //
 #![allow(dead_code)]
-use crate::arch::cpu::this_cpu_id;
+use crate::arch::cpu::{self, this_cpu_id};
 use crate::config::{HvZoneConfig, CONFIG_MAGIC_VERSION};
 use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, PAGE_SIZE};
 use crate::device::irqchip::inject_irq;
@@ -162,7 +162,7 @@ impl<'a> HyperCall<'a> {
 
     // Inject virtio device's irq to non root when a virtio device finishes one IO request. Only root zone calls.
     fn hv_virtio_inject_irq(&self) -> HyperCallResult {
-        debug!("hv_virtio_inject_irq: hypercall for trigger target cpu to inject irq");
+        trace!("hv_virtio_inject_irq: hypercall for trigger target cpu to inject irq");
         if !is_this_root_zone() {
             return hv_result_err!(
                 EPERM,
@@ -284,17 +284,28 @@ impl<'a> HyperCall<'a> {
         };
         let zone_r = zone.read();
 
-        // // return zone's cpus to root_zone
         zone_r.cpu_set.iter().for_each(|cpu_id| {
             let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
             get_cpu_data(cpu_id).cpu_on_entry = INVALID_ADDRESS;
             send_event(cpu_id, SGI_IPI_ID as _, IPI_EVENT_SHUTDOWN);
         });
+
+        let mut count: u32 = 0;
+
         // wait all zone's cpus shutdown
         while zone_r.cpu_set.iter().any(|cpu_id| {
             let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
-            get_cpu_data(cpu_id).arch_cpu.power_on
+            let power_on = get_cpu_data(cpu_id).arch_cpu.power_on;
+            count += 1;
+            if count > 10000000 {
+                if(power_on) {
+                    error!("cpu {} cannot be shut down", cpu_id);
+                    return false;
+                }
+            }
+            power_on
         }) {}
+
         zone_r.cpu_set.iter().for_each(|cpu_id| {
             let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
             get_cpu_data(cpu_id).zone = None;
@@ -304,7 +315,7 @@ impl<'a> HyperCall<'a> {
         drop(zone_r);
         drop(zone);
         remove_zone(zone_id as _);
-
+        info!("zone {} has been shutdown", zone_id);
         HyperCallResult::Ok(0)
     }
 

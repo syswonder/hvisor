@@ -270,7 +270,7 @@ fn handle_hvc(regs: &mut GeneralRegisters) {
     let (code, arg0, arg1) = (regs.usr[0], regs.usr[1], regs.usr[2]);
     let cpu_data = this_cpu_data();
 
-    debug!(
+    trace!(
         "HVC from CPU{},code:{:#x?},arg0:{:#x?},arg1:{:#x?}",
         cpu_data.id, code, arg0, arg1
     );

@@ -87,13 +87,15 @@ pub fn mmio_perform_access(base: usize, mmio: &mut MMIOAccess) {
 pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
     let zone = this_zone();
     let res = zone.read().find_mmio_region(mmio.address, mmio.size);
+    let zone_id = zone.read().id;
+    drop(zone);
     match res {
         Some((region, handler, arg)) => {
             mmio.address -= region.start;
             handler(mmio, arg)
         }
         None => {
-            warn!("Zone {} unhandled mmio fault {:#x?}", zone.read().id, mmio);
+            warn!("Zone {} unhandled mmio fault {:#x?}", zone_id, mmio);
             hv_result_err!(EINVAL)
         }
     }
