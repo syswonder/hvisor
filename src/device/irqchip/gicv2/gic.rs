@@ -22,6 +22,7 @@ use crate::device::irqchip::gicv2::gich::{
 };
 use crate::event::check_events;
 use crate::hypercall::SGI_IPI_ID;
+use crate::consts;
 /// This file defines and implements the functional functions of physical gicv2.
 /// author: ForeverYolo
 /// reference:
@@ -30,7 +31,7 @@ use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use spin::{Mutex, Once};
 
-pub const MAX_CPU_NUM: usize = 8;
+pub const MAX_CPU_NUM: usize = consts::MAX_CPU_NUM;
 pub const MAINTENACE_INTERRUPT: u64 = 25;
 
 pub fn gicv2_handle_irq() {

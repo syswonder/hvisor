@@ -22,6 +22,7 @@ use core::sync::atomic::Ordering;
 use spin::Mutex;
 
 use crate::arch::cpu::this_cpu_id;
+use crate::consts;
 use crate::consts::MAX_CPU_NUM;
 use crate::device::irqchip::inject_irq;
 use crate::event::send_event;
@@ -69,8 +70,8 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     // debug!("non root sends req: {:#x?}", hreq);
     let (cfg_flags, cfg_values) = unsafe {
         (
-            core::slice::from_raw_parts(dev.get_cfg_flags(), MAX_CPU_NUM),
-            core::slice::from_raw_parts(dev.get_cfg_values(), MAX_CPU_NUM),
+            core::slice::from_raw_parts(dev.get_cfg_flags(), unsafe {consts::NCPU}),
+            core::slice::from_raw_parts(dev.get_cfg_values(), unsafe {consts::NCPU}),
         )
     };
     let cpu_id = this_cpu_id() as usize;

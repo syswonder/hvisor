@@ -23,7 +23,7 @@ use spin::RwLock;
 use crate::arch::mm::new_s2_memory_set;
 use crate::arch::s2pt::Stage2PageTable;
 use crate::config::{HvZoneConfig, CONFIG_NAME_MAXLEN};
-use crate::consts::MAX_CPU_NUM;
+use crate::consts;
 
 #[cfg(all(target_arch = "riscv64", feature = "plic"))]
 use crate::device::irqchip::plic::vplic;
@@ -53,7 +53,7 @@ impl Zone {
             name: name.try_into().unwrap(),
             id: zoneid,
             gpm: new_s2_memory_set(),
-            cpu_set: CpuSet::new(MAX_CPU_NUM as usize, 0),
+            cpu_set: CpuSet::new(unsafe {consts::NCPU} as usize, 0),
             mmio: Vec::new(),
             irq_bitmap: [0; 1024 / 32],
             pciroot: PciRoot::new(),

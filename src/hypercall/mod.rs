@@ -16,7 +16,8 @@
 #![allow(dead_code)]
 use crate::arch::cpu::this_cpu_id;
 use crate::config::HvZoneConfig;
-use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, PAGE_SIZE};
+use crate::consts;
+use crate::consts::{INVALID_ADDRESS, PAGE_SIZE};
 use crate::device::irqchip::inject_irq;
 use crate::device::virtio_trampoline::{MAX_DEVS, MAX_REQ, VIRTIO_BRIDGE, VIRTIO_IRQS};
 use crate::error::HvResult;
@@ -83,7 +84,7 @@ impl<'a> HyperCall<'a> {
                 HyperCallCode::HvZoneList => self.hv_zone_list(&mut *(arg0 as *mut ZoneInfo), arg1),
                 HyperCallCode::HvClearInjectIrq => {
                     use crate::event::IPI_EVENT_CLEAR_INJECT_IRQ;
-                    for i in 1..MAX_CPU_NUM {
+                    for i in 1..unsafe {consts::NCPU} {
                         // if target cpu status is not running, we skip it
                         if !get_cpu_data(i).arch_cpu.power_on {
                             continue;
