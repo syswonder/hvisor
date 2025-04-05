@@ -661,8 +661,9 @@ static int zone_list(int argc, char *argv[]) {
         char cpu_list_str[256]; // Assuming this buffer size is enough
         memset(cpu_list_str, 0, sizeof(cpu_list_str));
         print_cpu_list(zones[i].cpus, cpu_list_str, sizeof(cpu_list_str));
-        printf("| %15u | %17s | %15s | %10s |\n", zones[i].zone_id, cpu_list_str,
-               zones[i].name, zones[i].is_err ? "error" : "running");
+        printf("| %15u | %17s | %15s | %10s |\n", zones[i].zone_id,
+               cpu_list_str, zones[i].name,
+               zones[i].is_err ? "error" : "running");
     }
     free(zones);
     close(fd);
