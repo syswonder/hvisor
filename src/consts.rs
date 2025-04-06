@@ -44,7 +44,7 @@ pub fn core_end() -> VirtAddr {
 }
 
 pub fn mem_pool_start() -> VirtAddr {
-    core_end() + unsafe {NCPU} * PER_CPU_SIZE
+    core_end() + unsafe { NCPU } * PER_CPU_SIZE
 }
 
 pub fn hv_end() -> VirtAddr {
