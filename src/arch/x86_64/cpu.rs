@@ -10,12 +10,13 @@ use crate::{
         pio::PortIoBitmap,
         vmcs::*,
         vmx::*,
+        vtd,
     },
     consts::{core_end, MAX_CPU_NUM, PER_CPU_SIZE},
-    device::irqchip::pic::{check_pending_vectors, lapic::VirtLocalApic, vtd},
+    device::irqchip::pic::{check_pending_vectors, lapic::VirtLocalApic},
     error::{HvError, HvResult},
     memory::{addr::phys_to_virt, GuestPhysAddr, HostPhysAddr, PhysAddr, PAGE_SIZE},
-    percpu::this_cpu_data,
+    percpu::{this_cpu_data, this_zone},
     platform::{
         ROOT_ZONE_BOOT_STACK, ROOT_ZONE_CMDLINE, ROOT_ZONE_CMDLINE_ADDR, ROOT_ZONE_INITRD_ADDR,
         ROOT_ZONE_SETUP_ADDR,
@@ -164,8 +165,6 @@ pub struct ArchCpu {
     vmcs_revision_id: u32,
     vmxon_region: VmxRegion,
     vmcs_region: VmxRegion,
-    msr_bitmap: MsrBitmap,
-    pio_bitmap: PortIoBitmap,
 }
 
 impl ArchCpu {
@@ -180,10 +179,8 @@ impl ArchCpu {
             gdt: GdtStruct::new(tss),
             virt_lapic: VirtLocalApic::new(),
             vmcs_revision_id: 0,
-            vmxon_region: VmxRegion::uninit(),
-            vmcs_region: VmxRegion::uninit(),
-            msr_bitmap: MsrBitmap::uninit(),
-            pio_bitmap: PortIoBitmap::uninit(),
+            vmxon_region: VmxRegion::fake_init(),
+            vmcs_region: VmxRegion::fake_init(),
         }
     }
 
@@ -270,7 +267,7 @@ impl ArchCpu {
 
         // get VMCS revision identifier in IA32_VMX_BASIC MSR
         self.vmcs_revision_id = get_vmcs_revision_id();
-        self.vmxon_region = VmxRegion::new(self.vmcs_revision_id, false).unwrap();
+        self.vmxon_region = VmxRegion::new(self.vmcs_revision_id, false);
 
         unsafe { execute_vmxon(self.vmxon_region.start_paddr() as u64).unwrap() };
 
@@ -324,9 +321,7 @@ impl ArchCpu {
     }
 
     fn setup_vmcs(&mut self, entry: GuestPhysAddr, set_rip: bool) -> HvResult {
-        self.vmcs_region = VmxRegion::new(self.vmcs_revision_id, false)?;
-        self.msr_bitmap = MsrBitmap::intercept_def()?;
-        self.pio_bitmap = PortIoBitmap::intercept_def()?;
+        self.vmcs_region = VmxRegion::new(self.vmcs_revision_id, false);
 
         let start_paddr = self.vmcs_region.start_paddr() as usize;
         Vmcs::clear(start_paddr)?;
@@ -415,9 +410,9 @@ impl ArchCpu {
 
         // Pass-through exceptions, don't use I/O bitmap, set MSR bitmaps.
         VmcsControl32::EXCEPTION_BITMAP.write(0)?;
-        VmcsControl64::IO_BITMAP_A_ADDR.write(self.pio_bitmap.bitmap_a_addr() as _)?;
-        VmcsControl64::IO_BITMAP_B_ADDR.write(self.pio_bitmap.bitmap_b_addr() as _)?;
-        VmcsControl64::MSR_BITMAPS_ADDR.write(self.msr_bitmap.phys_addr() as _)?;
+        VmcsControl64::IO_BITMAP_A_ADDR.write(this_zone().read().pio_bitmap.bitmap_a_addr() as _)?;
+        VmcsControl64::IO_BITMAP_B_ADDR.write(this_zone().read().pio_bitmap.bitmap_b_addr() as _)?;
+        VmcsControl64::MSR_BITMAPS_ADDR.write(this_zone().read().msr_bitmap.phys_addr() as _)?;
         Ok(())
     }
 

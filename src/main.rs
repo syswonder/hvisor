@@ -134,7 +134,6 @@ fn primary_init_early() {
     event::init(MAX_CPU_NUM);
 
     device::irqchip::primary_init_early();
-    // TODO: tmp
     // crate::arch::mm::init_hv_page_table().unwrap();
 
     #[cfg(all(feature = "iommu", target_arch = "aarch64"))]

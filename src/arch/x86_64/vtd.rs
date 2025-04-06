@@ -42,7 +42,7 @@ mod dma_remap_reg {
     pub const DMAR_IRTA_REG: usize = 0xb8;
 }
 
-static DRHD_UNITS: Once<Vec<Mutex<Drhd>>> = Once::new();
+static VTD: Once<Mutex<Vtd>> = Once::new();
 
 bitflags::bitflags! {
     #[derive(Clone, Copy, Debug)]
@@ -84,7 +84,7 @@ bitflags::bitflags! {
     }
 }
 
-numeric_enum_macro::numeric_enum! {
+/*numeric_enum_macro::numeric_enum! {
 #[repr(u8)]
 #[derive(Clone, Debug, PartialEq)]
 pub enum DeviceScopeType {
@@ -95,22 +95,19 @@ pub enum DeviceScopeType {
     MsiCapableHpet = 0x04,
     AcpiNamespaceDevice = 0x05
 }
-}
+}*/
 
 #[derive(Clone, Debug)]
-struct DeviceScope {
-    scope_type: DeviceScopeType,
-    id: u8,
+struct VtdDevice {
+    zone_id: usize,
     bus: u8,
     dev_func: u8,
 }
 
 #[derive(Debug)]
-struct Drhd {
-    flags: u8,
-    segment: u16,
-    reg_hpa: usize,
-    scopes: Vec<DeviceScope>,
+struct Vtd {
+    reg_base_hpa: usize,
+    devices: BTreeMap<u64, usize>,
 
     root_table: Frame,
     context_tables: BTreeMap<u8, Frame>,
@@ -120,7 +117,7 @@ struct Drhd {
     gcmd: GcmdFlags,
 }
 
-impl Drhd {
+impl Vtd {
     fn activate(&mut self) {
         self.activate_dma_translation();
     }
@@ -194,6 +191,10 @@ impl Drhd {
         }
     }
 
+    fn add_device(&mut self, zone_id: usize, bdf: u64) {
+        self.devices.insert(bdf, zone_id);
+    }
+
     fn add_interrupt_table_entry(&mut self, irq: u32) {
         assert!(irq < (IR_ENTRY_CNT as u32));
 
@@ -229,11 +230,11 @@ impl Drhd {
         self.set_root_table();
         self.activate_qi();
 
-        // self.set_interrupt_remap_table();
-        /* for irq in 0..IR_ENTRY_CNT {
+        /* self.set_interrupt_remap_table();
+        for irq in 0..IR_ENTRY_CNT {
             self.add_interrupt_table_entry(irq as _);
-        } */
-        // self.activate_interrupt_remapping();
+        }
+        self.activate_interrupt_remapping(); */
     }
 
     fn set_interrupt(&mut self) {
@@ -260,12 +261,12 @@ impl Drhd {
         self.wait(GstsFlags::RTPS, false);
     }
 
-    fn update_dma_translation_tables(&mut self, zone_s2pt_hpa: HostPhysAddr) {
+    fn update_dma_translation_tables(&mut self, zone_id: usize, zone_s2pt_hpa: HostPhysAddr) {
         let bdfs: Vec<(u8, u8)> = self
-            .scopes
+            .devices
             .iter()
-            .filter(|scope| scope.scope_type == DeviceScopeType::PciEndpointDevice)
-            .map(|scope| (scope.bus, scope.dev_func))
+            .filter(|&(_, &dev_zone_id)| dev_zone_id == zone_id)
+            .map(|(&bdf, _)| (bdf.get_bits(8..=15) as u8, bdf.get_bits(0..=7) as u8))
             .collect();
 
         for (bus, dev_func) in bdfs {
@@ -285,19 +286,19 @@ impl Drhd {
     }
 
     fn mmio_read_u32(&self, reg: usize) -> u32 {
-        unsafe { *((self.reg_hpa + reg) as *const u32) }
+        unsafe { *((self.reg_base_hpa + reg) as *const u32) }
     }
 
     fn mmio_read_u64(&self, reg: usize) -> u64 {
-        unsafe { *((self.reg_hpa + reg) as *const u64) }
+        unsafe { *((self.reg_base_hpa + reg) as *const u64) }
     }
 
     fn mmio_write_u32(&self, reg: usize, value: u32) {
-        unsafe { *((self.reg_hpa + reg) as *mut u32) = value };
+        unsafe { *((self.reg_base_hpa + reg) as *mut u32) = value };
     }
 
     fn mmio_write_u64(&self, reg: usize, value: u64) {
-        unsafe { *((self.reg_hpa + reg) as *mut u64) = value };
+        unsafe { *((self.reg_base_hpa + reg) as *mut u64) = value };
     }
 }
 
@@ -315,95 +316,62 @@ fn get_secondary_bus(bus: u8, dev: u8, func: u8) -> u8 {
     }
 }
 
-pub fn parse_root_drhds() -> Vec<Mutex<Drhd>> {
-    let mut drhds: Vec<Mutex<Drhd>> = Vec::new();
-
+pub fn parse_root_dmar() -> Mutex<Vtd> {
     let dmar = acpi::root_get_table(&Signature::DMAR).unwrap();
     let mut cur: usize = 48; // start offset of remapping structures
     let len = dmar.get_len();
+
+    let mut reg_base_hpa: usize = 0;
 
     while cur < len {
         let struct_type = dmar.get_u16(cur);
         let struct_len = dmar.get_u16(cur + 2) as usize;
 
-        // drhd
         if struct_type == 0 {
-            let mut drhd = Drhd {
-                flags: dmar.get_u8(cur + 4),
-                segment: dmar.get_u16(cur + 6),
-                reg_hpa: dmar.get_u64(cur + 8) as usize,
-                scopes: Vec::new(),
+            let segment = dmar.get_u16(cur + 6);
 
-                root_table: Frame::new_zero().unwrap(),
-                context_tables: BTreeMap::new(),
-                qi_queue: Frame::new_zero().unwrap(),
-                ir_table: Frame::new_zero().unwrap(),
-                gcmd: GcmdFlags::empty(),
-            };
-
-            let mut scope_cur = cur + 16; // start offset of device scopes
-                                          // device scopes
-            while scope_cur < cur + struct_len {
-                let scope_len = dmar.get_u8(scope_cur + 1) as usize;
-
-                let mut bus = dmar.get_u8(scope_cur + 5);
-                let mut path_cur = scope_cur + 6;
-                let mut dev = dmar.get_u8(path_cur);
-                let mut func = dmar.get_u8(path_cur + 1);
-
-                // info!("bdf: {:x} {:x} {:x}", bus, dev, func);
-
-                path_cur += 2;
-                while path_cur < scope_cur + scope_len {
-                    bus = get_secondary_bus(bus, dev, func);
-                    dev = dmar.get_u8(path_cur);
-                    func = dmar.get_u8(path_cur + 1);
-                    // info!("bdf: {:x} {:x} {:x}", bus, dev, func);
-                    path_cur += 2;
-                }
-
-                let mut scope = DeviceScope {
-                    scope_type: DeviceScopeType::try_from(dmar.get_u8(scope_cur + 0)).unwrap(),
-                    id: dmar.get_u8(scope_cur + 4),
-                    bus,
-                    dev_func: (dev << 3) | func,
-                };
-                info!("{:x?}", scope);
-                drhd.scopes.push(scope);
-
-                scope_cur += scope_len;
+            // we only support segment 0
+            if segment == 0 {
+                reg_base_hpa = dmar.get_u64(cur + 8) as usize;
             }
-
-            drhds.push(Mutex::new(drhd));
-        } else {
         }
-
         cur += struct_len;
     }
 
-    drhds
+    assert!(reg_base_hpa != 0);
+
+    Mutex::new(Vtd {
+        reg_base_hpa,
+        devices: BTreeMap::new(),
+        root_table: Frame::new_zero().unwrap(),
+        context_tables: BTreeMap::new(),
+        qi_queue: Frame::new().unwrap(),
+        ir_table: Frame::new().unwrap(),
+        gcmd: GcmdFlags::empty(),
+    })
 }
 
+// called after acpi init
 pub fn init() {
-    DRHD_UNITS.call_once(|| parse_root_drhds());
-    for unit in DRHD_UNITS.get().unwrap().iter() {
-        unit.lock().init();
-    }
-
-    init_msi_cap_hpa_space();
+    VTD.call_once(|| parse_root_dmar());
+    VTD.get().unwrap().lock().init();
+    // init_msi_cap_hpa_space();
 }
 
-pub fn update_dma_translation_tables(zone_s2pt_hpa: HostPhysAddr) {
-    for unit in DRHD_UNITS.get().unwrap().iter() {
-        unit.lock().update_dma_translation_tables(zone_s2pt_hpa);
-    }
+pub fn add_device(zone_id: usize, bdf: u64) {
+    VTD.get().unwrap().lock().add_device(zone_id, bdf);
+}
+
+pub fn update_dma_translation_tables(zone_id: usize, zone_s2pt_hpa: HostPhysAddr) {
+    VTD.get()
+        .unwrap()
+        .lock()
+        .update_dma_translation_tables(zone_id, zone_s2pt_hpa);
 }
 
 /// should be called after gpm is activated
 pub fn activate() {
-    for unit in DRHD_UNITS.get().unwrap().iter() {
-        unit.lock().activate();
-    }
+    VTD.get().unwrap().lock().activate();
 }
 
 fn flush_cache_range(hpa: usize, size: usize) {
@@ -414,6 +382,7 @@ fn flush_cache_range(hpa: usize, size: usize) {
     }
 }
 
+/*
 fn init_msi_cap_hpa_space() {
     let bytes = acpi::root_get_table(&Signature::MCFG)
         .unwrap()
@@ -421,7 +390,7 @@ fn init_msi_cap_hpa_space() {
         .clone();
     let mcfg = unsafe { &*(bytes.as_ptr() as *const Mcfg) };
 
-    for unit in DRHD_UNITS.get().unwrap().iter() {
+    for unit in VTD.get().unwrap().iter() {
         let drhd = unit.lock();
 
         for entry in mcfg.entries() {
@@ -455,4 +424,4 @@ fn init_msi_cap_hpa_space() {
             }
         }
     }
-}
+}*/

@@ -83,7 +83,13 @@ pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
     match res {
         Some((region, handler, arg)) => {
             mmio.address -= region.start;
-            handler(mmio, arg)
+
+            if cfg!(target_arch = "x86_64") {
+                #[cfg(target_arch = "x86_64")]
+                crate::arch::mmio::instruction_emulator(&handler, mmio, arg)
+            } else {
+                handler(mmio, arg)
+            }
         }
         None => {
             warn!("Zone {} unhandled mmio fault {:#x?}", zone.read().id, mmio);

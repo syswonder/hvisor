@@ -1,5 +1,7 @@
+use core::ops::Range;
+
 use crate::{
-    device::irqchip::pic::vtd::{PCI_CONFIG_ADDR, PCI_CONFIG_DATA},
+    arch::vtd::{PCI_CONFIG_ADDR, PCI_CONFIG_DATA},
     error::HvResult,
     memory::{Frame, HostPhysAddr},
 };
@@ -13,21 +15,14 @@ pub struct PortIoBitmap {
 }
 
 impl PortIoBitmap {
-    pub fn uninit() -> Self {
-        Self {
-            a: unsafe { Frame::from_paddr(0) },
-            b: unsafe { Frame::from_paddr(0) },
-        }
-    }
-
-    pub fn intercept_def() -> HvResult<Self> {
+    pub fn new(zoneid: usize) -> Self {
         let mut bitmap = Self {
-            a: Frame::new_zero()?,
-            b: Frame::new_zero()?,
+            a: Frame::new_zero().unwrap(),
+            b: Frame::new_zero().unwrap(),
         };
 
-        bitmap.a.fill(0);
-        bitmap.b.fill(0);
+        bitmap.a.fill(0xff);
+        bitmap.b.fill(0xff);
 
         // ban i8259a ports
         bitmap.set_intercept(0x20, true);
@@ -36,10 +31,20 @@ impl PortIoBitmap {
         bitmap.set_intercept(0xa1, true);
 
         // ban pci config ports
-        // bitmap.set_intercept(PCI_CONFIG_ADDR, true);
-        // bitmap.set_intercept(PCI_CONFIG_DATA, true);
+        // TODO: handle config space operations from io ports
+        bitmap.set_intercept(PCI_CONFIG_ADDR, true);
+        bitmap.set_intercept(PCI_CONFIG_DATA, true);
+        // bitmap.set_range_intercept(0xcf8..0xd00, true);
 
-        Ok(bitmap)
+        if zoneid == 0 {
+            // passthrough uart com1
+            bitmap.set_range_intercept(0x3f8..0x400, false);
+            // FIXME: get port info from ACPI FACP table
+            bitmap.set_intercept(0xb2, false);
+            bitmap.set_range_intercept(0x600..0x630, false);
+        }
+
+        bitmap
     }
 
     pub fn bitmap_a_addr(&self) -> HostPhysAddr {
@@ -50,7 +55,13 @@ impl PortIoBitmap {
         self.b.start_paddr()
     }
 
-    fn set_intercept(&mut self, mut port: u16, intercept: bool) {
+    pub fn set_range_intercept(&mut self, mut ports: Range<u16>, intercept: bool) {
+        for port in ports {
+            self.set_intercept(port, intercept);
+        }
+    }
+
+    pub fn set_intercept(&mut self, mut port: u16, intercept: bool) {
         let bitmap = match port <= 0x7fff {
             true => unsafe { core::slice::from_raw_parts_mut(self.a.as_mut_ptr(), 0x1000) },
             false => {

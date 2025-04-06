@@ -1,9 +1,8 @@
 pub mod ioapic;
 pub mod lapic;
-pub mod vtd;
 
 use crate::{
-    arch::{acpi, ipi, vmcs::Vmcs},
+    arch::{acpi, ipi, vmcs::Vmcs, vtd},
     consts::MAX_CPU_NUM,
     zone::Zone,
 };
@@ -90,11 +89,11 @@ pub fn primary_init_early() {
     ipi::init(MAX_CPU_NUM);
     PENDING_VECTORS.call_once(|| PendingVectors::new(MAX_CPU_NUM));
     acpi::root_init();
+    vtd::init();
 }
 
 pub fn primary_init_late() {
     acpi::copy_to_root_zone_region();
-    vtd::init();
 }
 
 impl Zone {

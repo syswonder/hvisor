@@ -17,7 +17,7 @@ QEMU_ARGS += -device intel-iommu,intremap=on,eim=on,caching-mode=on,device-iotlb
 
 QEMU_ARGS += -device ioh3420,id=pcie.1,chassis=1
 QEMU_ARGS += -drive if=none,file="$(zone0_rootfs)",id=X10008000,format=raw
-QEMU_ARGS += -device virtio-blk-pci,drive=X10008000,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on
+QEMU_ARGS += -device virtio-blk-pci,bus=pcie.1,drive=X10008000,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on # bus=pcie.1,
 # QEMU_ARGS += --trace "virtio_*" --trace "virtqueue_*" --trace "vtd_dma*" --trace "iommu_*"
 
 QEMU_ARGS += -kernel $(hvisor_elf)

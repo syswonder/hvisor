@@ -1,4 +1,5 @@
 use crate::{
+    arch::pci::probe_root_pci_devices,
     config::HvConfigMemoryRegion,
     error::HvResult,
     percpu::this_zone,
@@ -7,7 +8,7 @@ use crate::{
 use acpi::{
     fadt::Fadt,
     madt::{LocalApicEntry, Madt, MadtEntry},
-    mcfg::Mcfg,
+    mcfg::{Mcfg, McfgEntry},
     rsdp::Rsdp,
     sdt::{SdtHeader, Signature},
     AcpiHandler, AcpiTables, AmlTable, PciConfigRegions,
@@ -16,7 +17,7 @@ use alloc::{
     collections::{btree_map::BTreeMap, btree_set::BTreeSet},
     vec::Vec,
 };
-use core::{pin::Pin, ptr::NonNull};
+use core::{mem::size_of, pin::Pin, ptr::NonNull};
 use spin::Mutex;
 
 const RSDP_V1_SIZE: usize = 20;
@@ -391,10 +392,18 @@ impl RootAcpi {
                 mcfg.physical_start() as *const u8,
                 mcfg.region_length(),
             );
+            let new_mcfg = self.get_mut_table(Signature::MCFG).unwrap();
 
             info!("-------------------------------- MCFG --------------------------------");
+            let mut offset = size_of::<Mcfg>() + 0xb;
             for entry in mcfg.entries() {
                 info!("{:x?}", entry);
+                // we don't have such many buses, probe devices to get the max_bus we have
+                let (_, _, max_bus) = probe_root_pci_devices(entry.base_address as _);
+
+                // update bus_number_end
+                new_mcfg.set_u8(max_bus, offset);
+                offset += size_of::<McfgEntry>();
             }
 
             self.add_pointer(Signature::RSDT, rsdt_offset, Signature::MCFG, RSDT_PTR_SIZE);

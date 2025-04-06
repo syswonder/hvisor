@@ -27,7 +27,7 @@ pub struct BarRegion {
     pub bar_type: BarType,
 }
 
-#[derive(Default, Debug, Copy, Clone)]
+#[derive(Default, Debug, Copy, Clone, PartialEq)]
 pub enum BarType {
     Mem32,
     Mem64,

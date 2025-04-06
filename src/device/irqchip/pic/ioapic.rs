@@ -1,8 +1,5 @@
 use crate::{
-    arch::{
-        mmio::{mmio_handler, MMIoDevice},
-        zone::HvArchZoneConfig,
-    },
+    arch::{mmio::MMIoDevice, zone::HvArchZoneConfig},
     device::irqchip::pic::inject_vector,
     error::HvResult,
     memory::{GuestPhysAddr, MMIOAccess},
@@ -70,10 +67,10 @@ impl MMIoDevice for VirtIoApic {
     fn read(&self, gpa: GuestPhysAddr) -> HvResult<u64> {
         // info!("ioapic read! gpa: {:x}", gpa,);
 
-        if gpa == self.base_gpa {
+        if gpa == 0 {
             return Ok(self.inner.lock().cur_reg as _);
         }
-        assert!(gpa - self.base_gpa == 0x10);
+        assert!(gpa == 0x10);
 
         let inner = self.inner.lock();
         match inner.cur_reg {
@@ -101,13 +98,12 @@ impl MMIoDevice for VirtIoApic {
             "ioapic write! gpa: {:x}, value: {:x}, size: {:x}",
             gpa, value, size,
         );*/
-        assert!(size == 4);
 
-        if gpa == self.base_gpa {
+        if gpa == 0 {
             self.inner.lock().cur_reg = value as _;
             return Ok(());
         }
-        assert!(gpa - self.base_gpa == 0x10);
+        assert!(gpa == 0x10);
 
         let mut inner = self.inner.lock();
         match inner.cur_reg {
@@ -152,12 +148,24 @@ impl MMIoDevice for VirtIoApic {
 
 impl Zone {
     pub fn ioapic_mmio_init(&mut self, arch: &HvArchZoneConfig) {
-        self.mmio_region_register(arch.ioapic_base, arch.ioapic_size, ioapic_mmio_handler, 0);
+        self.mmio_region_register(
+            arch.ioapic_base,
+            arch.ioapic_size,
+            ioapic_mmio_handler,
+            arch.ioapic_base,
+        );
     }
 }
 
-fn ioapic_mmio_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
-    mmio_handler(mmio, &VIRT_IOAPIC.0)
+fn ioapic_mmio_handler(mmio: &mut MMIOAccess, _: usize) -> HvResult {
+    if mmio.is_write {
+        VIRT_IOAPIC
+            .0
+            .write(mmio.address, mmio.value as _, mmio.size)
+    } else {
+        mmio.value = VIRT_IOAPIC.0.read(mmio.address).unwrap() as _;
+        Ok(())
+    }
 }
 
 unsafe fn configure_gsi_from_raw(irq: u8, raw: u64) {

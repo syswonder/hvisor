@@ -4,7 +4,7 @@ use crate::{
         vmcs::{VmcsGuest16, VmcsGuestNW},
     },
     error::HvResult,
-    memory::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, MMIOAccess},
+    memory::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, MMIOAccess, MMIOHandler},
     percpu::{this_cpu_data, this_zone},
 };
 use alloc::{sync::Arc, vec::Vec};
@@ -134,8 +134,10 @@ numeric_enum_macro::numeric_enum! {
 #[derive(Debug)]
 pub enum OpCode {
     // move r to r/m
+    MovEbGb = 0x88,
     MovEvGv = 0x89,
     // move r/m to r
+    MovGbEb = 0x8a,
     MovGvEv = 0x8b,
 }
 }
@@ -150,6 +152,8 @@ bitflags::bitflags! {
     }
 }
 const REX_PREFIX_HIGH: u8 = 0x4;
+
+const OPERAND_SIZE_OVERRIDE_PREFIX: u8 = 0x66;
 
 // len stands for instruction len
 enum OprandType {
@@ -294,10 +298,53 @@ fn gva_to_gpa(gva: GuestVirtAddr) -> HvResult<GuestPhysAddr> {
     Ok(page_gpa | (gva & 0xfff))
 }
 
-fn emulate_inst(inst: &Vec<u8>, dev: &Arc<dyn MMIoDevice>) -> HvResult<usize> {
+fn get_default_operand_size() -> HvResult<usize> {
+    let cr0 = VmcsGuestNW::CR0.read()?;
+    let mut size = size_of::<u16>();
+
+    // in protection mode
+    if cr0 & Cr0::CR0_PROTECTED_MODE.bits() != 0 {
+        let gdtr_hpa = gpa_to_hpa(gva_to_gpa(VmcsGuestNW::GDTR_BASE.read()?)?)?;
+        let cs_sel = VmcsGuest16::CS_SELECTOR.read()? as usize;
+        // info!("gdtr: {:x}", gdtr_hpa);
+        let cs_desc = unsafe { *((gdtr_hpa + (cs_sel & !(0x7))) as *const u64) };
+        // info!("cs_desc: {:x}", cs_desc);
+
+        // default operation size
+        let cs_d = cs_desc.get_bit(54);
+        // long mode
+        let cs_l = cs_desc.get_bit(53);
+
+        // in 64-bit long mode or set CS.D to 1
+        if (!cs_d && cs_l) || cs_d {
+            size = size_of::<u32>();
+        }
+    }
+
+    Ok(size)
+}
+
+fn emulate_inst(
+    inst: &Vec<u8>,
+    handler: &MMIOHandler,
+    mmio: &mut MMIOAccess,
+    base: usize,
+) -> HvResult<usize> {
     assert!(inst.len() > 0);
 
+    let mut size = get_default_operand_size()?;
+    let mut size_override = false;
     let mut cur_id = 0;
+
+    if inst[cur_id] == OPERAND_SIZE_OVERRIDE_PREFIX {
+        if size == size_of::<u32>() {
+            size = size_of::<u16>();
+        } else {
+            size = size_of::<u32>();
+        }
+        cur_id += 1;
+        size_override = true;
+    }
 
     let mut rex = RexPrefixLow::from_bits_truncate(0);
     if inst[cur_id].get_bits(4..=7) == REX_PREFIX_HIGH {
@@ -309,8 +356,15 @@ fn emulate_inst(inst: &Vec<u8>, dev: &Arc<dyn MMIoDevice>) -> HvResult<usize> {
     let opcode: OpCode = inst[cur_id].try_into().unwrap();
     cur_id += 1;
 
+    if !size_override {
+        size = match opcode {
+            OpCode::MovEbGb | OpCode::MovGbEb => size_of::<u8>(),
+            _ => size,
+        };
+    }
+
     match opcode {
-        OpCode::MovEvGv => {
+        OpCode::MovEbGb | OpCode::MovEvGv => {
             let mod_rm = ModRM::new(inst[cur_id], &rex);
             cur_id += 1;
 
@@ -321,18 +375,24 @@ fn emulate_inst(inst: &Vec<u8>, dev: &Arc<dyn MMIoDevice>) -> HvResult<usize> {
             match dst {
                 OprandType::Reg { reg, len } => {
                     cur_id += len;
-                    reg.write(src_val, size_of::<u32>()).unwrap();
+                    reg.write(src_val, size).unwrap();
                 }
                 OprandType::Gpa { gpa, len } => {
                     cur_id += len;
-                    dev.write(gpa, src_val, size_of::<u32>()).unwrap();
+
+                    mmio.address = gpa - base;
+                    mmio.is_write = true;
+                    mmio.size = size;
+                    mmio.value = src_val as _;
+
+                    handler(mmio, base);
                 }
                 _ => {}
             }
 
             Ok(cur_id)
         }
-        OpCode::MovGvEv => {
+        OpCode::MovGbEb | OpCode::MovGvEv => {
             let mod_rm = ModRM::new(inst[cur_id], &rex);
             cur_id += 1;
 
@@ -346,12 +406,19 @@ fn emulate_inst(inst: &Vec<u8>, dev: &Arc<dyn MMIoDevice>) -> HvResult<usize> {
                 }
                 OprandType::Gpa { gpa, len } => {
                     cur_id += len;
-                    dev.read(gpa).unwrap()
+
+                    mmio.address = gpa - base;
+                    mmio.is_write = false;
+                    mmio.size = size;
+                    mmio.value = 0;
+                    // info!("src_val: {:x}", gpa);
+
+                    handler(mmio, base);
+                    mmio.value as u64
                 }
             };
-            // info!("src_val: {:x}", src_val);
 
-            dst.write(src_val, size_of::<u32>()).unwrap();
+            dst.write(src_val, size).unwrap();
             Ok(cur_id)
         }
         _ => {
@@ -363,13 +430,13 @@ fn emulate_inst(inst: &Vec<u8>, dev: &Arc<dyn MMIoDevice>) -> HvResult<usize> {
     }
 }
 
-pub fn mmio_handler(mmio: &mut MMIOAccess, dev: &Arc<dyn MMIoDevice>) -> HvResult {
+pub fn instruction_emulator(handler: &MMIOHandler, mmio: &mut MMIOAccess, base: usize) -> HvResult {
     let rip_hpa = gpa_to_hpa(gva_to_gpa(VmcsGuestNW::RIP.read()?)?)? as *const u8;
     let inst = unsafe { from_raw_parts(rip_hpa, 15) }.to_vec();
 
-    // info!("rip_hpa: {:?}, inst: {:x?}", rip_hpa, inst);
+    let len = emulate_inst(&inst, handler, mmio, base).unwrap();
+    // info!("rip_hpa: {:?}, inst: {:x?}, len: {:x}", rip_hpa, inst, len);
 
-    let len = emulate_inst(&inst, dev).unwrap();
     this_cpu_data().arch_cpu.advance_guest_rip(len as _)?;
 
     Ok(())

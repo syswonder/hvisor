@@ -50,7 +50,7 @@ pub const ROOT_ZONE_CMDLINE: &str =
     "console=ttyS0 earlyprintk=serial nointremap root=/dev/vda rw init=/bin/sh\0";
 //"console=ttyS0 earlyprintk=serial rdinit=/init nokaslr nointremap\0"; // noapic
 
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 7] = [
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x500_0000,
@@ -83,24 +83,6 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [
         virtual_start: 0xfed0_0000,
         size: 0x1000,
     }, // hpet
-    /*HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0xb000_0000,
-        virtual_start: 0xb000_0000,
-        size: 0x1000_0000,
-    }, // TODO: pci config*/
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0xfea0_0000,
-        virtual_start: 0xfea0_0000,
-        size: 0x20_0000,
-    }, // TODO: pci
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0x70_0000_0000,
-        virtual_start: 0x70_0000_0000,
-        size: 0x1000_4000,
-    }, // FIXME: pci 0000:00:03.0
 ];
 
 pub const ROOT_ZONE_IRQS: [u32; 32] = [0; 32];
@@ -109,6 +91,8 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     ioapic_base: ROOT_ZONE_IOAPIC_BASE,
     ioapic_size: 0x1000,
 };
+
+pub const ROOT_PCI_DEVS: [u64; 7] = [0x0, 0x8, 0x18, 0xf8, 0xfa, 0xfb, 0x100]; // 0x10,
 
 pub fn root_zone_gpa_as_mut_ptr(guest_paddr: GuestPhysAddr) -> *mut u8 {
     let offset = ROOT_ZONE_KERNEL_ADDR as usize;

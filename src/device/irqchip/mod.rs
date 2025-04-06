@@ -70,10 +70,10 @@ impl Zone {
         {
             self.vgicv3_mmio_init(hv_config);
         }
-        #[cfg(all(target_arch = "x86_64"))]
+        #[cfg(target_arch = "x86_64")]
         {
             self.ioapic_mmio_init(hv_config);
-            self.pci_config_space_mmio_init(hv_config);
+            // self.pci_config_space_mmio_init(hv_config);
         }
     }
 }

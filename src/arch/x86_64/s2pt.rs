@@ -2,14 +2,15 @@ use crate::{
     arch::{
         paging::{GenericPTE, Level4PageTable, PagingInstr},
         vmcs::*,
+        vtd,
     },
     consts::PAGE_SIZE,
-    device::irqchip::pic::vtd,
     error::HvResult,
     memory::{
         addr::{GuestPhysAddr, HostPhysAddr, PhysAddr},
         MemFlags,
     },
+    zone::this_zone_id,
 };
 use bit_field::BitField;
 use bitflags::bitflags;
@@ -243,7 +244,7 @@ impl PagingInstr for S2PTInstr {
         crate::arch::vmcs::VmcsControl64::EPTP.write(s2ptp).unwrap();
         unsafe { invs2pt(InvS2PTType::SingleContext, s2ptp) };
 
-        vtd::update_dma_translation_tables(root_paddr);
+        vtd::update_dma_translation_tables(this_zone_id(), root_paddr);
     }
 
     fn flush(_vaddr: Option<usize>) {}

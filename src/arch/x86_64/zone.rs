@@ -1,5 +1,4 @@
 use crate::{
-    arch::mmio::mmio_handler,
     config::*,
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion},

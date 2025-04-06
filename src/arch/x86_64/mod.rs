@@ -20,6 +20,7 @@ pub mod s2pt;
 pub mod trap;
 pub mod vmcs;
 pub mod vmx;
+pub mod vtd;
 pub mod zone;
 
 pub use s1pt::Stage1PageTable;

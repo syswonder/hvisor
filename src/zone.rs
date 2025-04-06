@@ -31,6 +31,11 @@ use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
 use crate::percpu::{get_cpu_data, this_zone, CpuSet};
 use core::panic;
 
+#[cfg(target_arch = "x86_64")]
+use crate::arch::msr::MsrBitmap;
+#[cfg(target_arch = "x86_64")]
+use crate::arch::pio::PortIoBitmap;
+
 pub struct Zone {
     pub name: [u8; CONFIG_NAME_MAXLEN],
     pub id: usize,
@@ -39,6 +44,12 @@ pub struct Zone {
     pub irq_bitmap: [u32; 1024 / 32],
     pub gpm: MemorySet<Stage2PageTable>,
     pub pciroot: PciRoot,
+
+    #[cfg(target_arch = "x86_64")]
+    pub msr_bitmap: MsrBitmap,
+    // x86_64 io port is quite different, and has to be seperate from gpm
+    #[cfg(target_arch = "x86_64")]
+    pub pio_bitmap: PortIoBitmap,
 }
 
 impl Zone {
@@ -51,6 +62,11 @@ impl Zone {
             mmio: Vec::new(),
             irq_bitmap: [0; 1024 / 32],
             pciroot: PciRoot::new(),
+
+            #[cfg(target_arch = "x86_64")]
+            msr_bitmap: MsrBitmap::new(),
+            #[cfg(target_arch = "x86_64")]
+            pio_bitmap: PortIoBitmap::new(zoneid),
         }
     }
 
@@ -200,6 +216,12 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     #[cfg(target_arch = "aarch64")]
     zone.ivc_init(config.ivc_config());
     #[cfg(all(feature = "pci", target_arch = "aarch64"))]
+    zone.pci_init(
+        &config.pci_config,
+        config.num_pci_devs as _,
+        &config.alloc_pci_devs,
+    );
+    #[cfg(target_arch = "x86_64")]
     zone.pci_init(
         &config.pci_config,
         config.num_pci_devs as _,

@@ -144,27 +144,9 @@ pub struct MsrBitmap {
 }
 
 impl MsrBitmap {
-    pub fn uninit() -> Self {
-        Self {
-            frame: unsafe { Frame::from_paddr(0) },
-        }
-    }
-
-    pub fn passthrough_all() -> HvResult<Self> {
-        Ok(Self {
-            frame: Frame::new_zero()?,
-        })
-    }
-
-    pub fn intercept_all() -> HvResult<Self> {
-        let mut frame = Frame::new()?;
-        frame.fill(u8::MAX);
-        Ok(Self { frame })
-    }
-
-    pub fn intercept_def() -> HvResult<Self> {
+    pub fn new() -> Self {
         let mut bitmap = Self {
-            frame: Frame::new_zero()?,
+            frame: Frame::new_zero().unwrap(),
         };
 
         bitmap.set_read_intercept(IA32_APIC_BASE, true);
@@ -190,7 +172,7 @@ impl MsrBitmap {
             }
         }*/
 
-        Ok(bitmap)
+        bitmap
     }
 
     pub fn phys_addr(&self) -> HostPhysAddr {

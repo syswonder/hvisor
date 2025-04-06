@@ -40,6 +40,8 @@ use super::{
 
 #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
 use crate::arch::iommu::iommu_add_device;
+#[cfg(target_arch = "x86_64")]
+use crate::arch::vtd;
 
 #[derive(Debug)]
 pub struct PciRoot {
@@ -79,8 +81,11 @@ impl PciRoot {
         for ep in self.endpoints.iter() {
             let regions = ep.get_regions();
             for mut region in regions {
-                if region.size < 0x1000 {
-                    region.size = 0x1000;
+                // in x86_64, we allow io port region size not aligned to 4K
+                if cfg!(not(target_arch = "x86_64")) || region.bar_type != BarType::IO {
+                    if region.size < 0x1000 {
+                        region.size = 0x1000;
+                    }
                 }
                 self.bar_regions.push(region);
             }
@@ -88,8 +93,11 @@ impl PciRoot {
         for bridge in self.bridges.iter() {
             let regions = bridge.get_regions();
             for mut region in regions {
-                if region.size < 0x1000 {
-                    region.size = 0x1000;
+                // in x86_64, we allow io port region size not aligned to 4K
+                if cfg!(not(target_arch = "x86_64")) || region.bar_type != BarType::IO {
+                    if region.size < 0x1000 {
+                        region.size = 0x1000;
+                    }
                 }
                 self.bar_regions.push(region);
             }
@@ -144,6 +152,7 @@ impl Zone {
         }
 
         info!("PCIe init!");
+        // info!("{:#x?}", pci_config);
 
         init_ecam_base(pci_config.ecam_base as _);
 
@@ -157,10 +166,21 @@ impl Zone {
             if alloc_pci_devs[idx] != 0 {
                 iommu_add_device(self.id, alloc_pci_devs[idx] as _);
             }
+            #[cfg(target_arch = "x86_64")]
+            vtd::add_device(self.id, alloc_pci_devs[idx]);
         }
 
         if self.id == 0 {
-            self.root_pci_init(pci_config);
+            #[cfg(target_arch = "x86_64")]
+            {
+                // crate::arch::pci::probe_root_pci_devices(pci_config.ecam_base as usize);
+                self.virtual_pci_mmio_init(pci_config);
+                self.virtual_pci_device_init(pci_config);
+            }
+            #[cfg(not(target_arch = "x86_64"))]
+            {
+                self.root_pci_init(pci_config);
+            }
         } else {
             self.virtual_pci_mmio_init(pci_config);
             self.virtual_pci_device_init(pci_config);
@@ -284,21 +304,32 @@ impl Zone {
             };
 
             region.start = cpu_base + region.start - pci_base;
-            region.start = align_down(region.start);
+            // in x86_64, we allow io port region size not aligned to 4K
+            if cfg!(not(target_arch = "x86_64")) || region.bar_type != BarType::IO {
+                region.start = align_down(region.start);
+            }
 
             info!(
                 "pci bar region: type: {:?}, base: {:#x}, size:{:#x}",
                 region.bar_type, region.start, region.size
             );
 
-            self.gpm
-                .insert(MemoryRegion::new_with_offset_mapper(
-                    region.start as GuestPhysAddr,
-                    region.start,
-                    region.size,
-                    MemFlags::READ | MemFlags::WRITE,
-                ))
-                .ok();
+            if cfg!(not(target_arch = "x86_64")) || region.bar_type != BarType::IO {
+                self.gpm
+                    .insert(MemoryRegion::new_with_offset_mapper(
+                        region.start as GuestPhysAddr,
+                        region.start,
+                        region.size,
+                        MemFlags::READ | MemFlags::WRITE,
+                    ))
+                    .ok();
+            } else {
+                #[cfg(target_arch = "x86_64")]
+                self.pio_bitmap.set_range_intercept(
+                    (region.start as u16)..((region.start + region.size) as u16),
+                    false,
+                );
+            }
         }
     }
 }

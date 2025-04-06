@@ -59,6 +59,13 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
         root_pci_cfg = ROOT_PCI_CONFIG;
         num_pci_devs = ROOT_PCI_DEVS.len() as _;
     }
+    #[cfg(target_arch = "x86_64")]
+    {
+        pci_devs[..ROOT_PCI_DEVS.len()].copy_from_slice(&ROOT_PCI_DEVS);
+        (root_pci_cfg.ecam_base, root_pci_cfg.ecam_size) =
+            crate::arch::pci::get_config_space_info().unwrap();
+        num_pci_devs = ROOT_PCI_DEVS.len() as _;
+    }
 
     HvZoneConfig::new(
         0,

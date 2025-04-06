@@ -333,14 +333,7 @@ fn handle_s2pt_violation(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
         value: 0,
     })?;
 
-    // FIXME: do advance_guest_rip in mmio handler, for the inst len is not correct
-    // arch_cpu.advance_guest_rip(exit_info.exit_instruction_length as _)?;
     Ok(())
-
-    /*panic!(
-        "VM exit: S2PT violation @ {:#x}, fault_paddr={:#x}, access_flags=({:?}), {:#x?}",
-        exit_info.guest_rip, fault_info.fault_guest_paddr, fault_info.access_flags, arch_cpu
-    );*/
 }
 
 fn handle_triple_fault(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvResult {

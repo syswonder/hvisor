@@ -369,20 +369,20 @@ pub struct VmxRegion {
 }
 
 impl VmxRegion {
-    pub fn uninit() -> Self {
+    pub fn fake_init() -> Self {
         Self {
             frame: unsafe { Frame::from_paddr(0) },
         }
     }
 
-    pub fn new(revision_id: u32, shadow_indicator: bool) -> HvResult<Self> {
-        let frame = Frame::new_zero()?;
+    pub fn new(revision_id: u32, shadow_indicator: bool) -> Self {
+        let frame = Frame::new_zero().unwrap();
         unsafe {
             (*(frame.start_paddr() as *mut u32))
                 .set_bits(0..=30, revision_id)
                 .set_bit(31, shadow_indicator);
         }
-        Ok(Self { frame })
+        Self { frame }
     }
 
     pub fn start_paddr(&self) -> PhysAddr {
