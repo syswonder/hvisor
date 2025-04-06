@@ -209,21 +209,24 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
             }
         }
     }
-
+    
+        
+    // If we failed to detect, just use default value.
+    if ncpu == 0 {
+        if is_primary {
+            println!("Failed to count cpu(s) from devicetree. Using default value {}.", MAX_CPU_NUM);
+        }
+        ncpu = MAX_CPU_NUM;
+    }
+    else if ncpu > MAX_CPU_NUM {
+        if is_primary {
+            println!("{} cpu(s) detected, but using only {}.", ncpu, MAX_CPU_NUM);
+        }
+        ncpu = MAX_CPU_NUM;
+    }
 
 
     if is_primary {
-        // If we failed to detect, just use default value.
-        if ncpu == 0 {
-            println!("Failed to count cpu(s) from devicetree. Using default value {}.", MAX_CPU_NUM);
-            ncpu = MAX_CPU_NUM;
-        }
-        else if ncpu > MAX_CPU_NUM {
-            println!("{} cpu(s) detected, but using only {}.", ncpu, MAX_CPU_NUM);
-            ncpu = MAX_CPU_NUM;
-        }
-
-
         #[cfg(target_arch = "aarch64")]
         {
             println!("Using {} cpu(s) on this system.", ncpu);
