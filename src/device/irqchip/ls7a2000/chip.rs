@@ -887,6 +887,7 @@ pub fn probe_pci_config_reserved(
 // https://admin.pci-ids.ucw.cz/read/PC/0014
 
 const PCI_VENDOR_ID_LOONGSON: usize = 0x0014;
+
 const PCI_DEVICE_ID_HT_BRIDGE: usize = 0x7a00;
 const PCI_DEVICE_ID_APB: usize = 0x7a02;
 const PCI_DEVICE_ID_GIGE: usize = 0x7a03;
