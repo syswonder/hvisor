@@ -17,6 +17,8 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 // use psci::error::INVALID_ADDRESS;
 use crate::consts::INVALID_ADDRESS;
+use crate::event::{send_event, IPI_EVENT_SHUTDOWN};
+use crate::hypercall::SGI_IPI_ID;
 use crate::pci::pci::PciRoot;
 use spin::RwLock;
 
@@ -25,10 +27,14 @@ use crate::arch::s2pt::Stage2PageTable;
 use crate::config::{HvZoneConfig, CONFIG_NAME_MAXLEN};
 use crate::consts::MAX_CPU_NUM;
 
+#[cfg(all(target_arch = "riscv64", feature = "plic"))]
+use crate::device::irqchip::plic::vplic;
 use crate::error::HvResult;
 use crate::memory::addr::GuestPhysAddr;
 use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
 use crate::percpu::{get_cpu_data, this_zone, CpuSet};
+#[cfg(all(feature = "plic", target_arch = "riscv64"))]
+use crate::platform::BOARD_PLIC_INTERRUPTS_NUM;
 use core::panic;
 
 pub struct Zone {
@@ -39,6 +45,9 @@ pub struct Zone {
     pub irq_bitmap: [u32; 1024 / 32],
     pub gpm: MemorySet<Stage2PageTable>,
     pub pciroot: PciRoot,
+    #[cfg(all(target_arch = "riscv64", feature = "plic"))]
+    pub vplic: Option<vplic::VirtualPLIC>,
+    pub is_err: bool,
 }
 
 impl Zone {
@@ -51,6 +60,9 @@ impl Zone {
             mmio: Vec::new(),
             irq_bitmap: [0; 1024 / 32],
             pciroot: PciRoot::new(),
+            is_err: false,
+            #[cfg(all(target_arch = "riscv64", feature = "plic"))]
+            vplic: None,
         }
     }
 
@@ -86,7 +98,7 @@ impl Zone {
         if let Some(mmio) = self.mmio.iter_mut().find(|mmio| mmio.region.start == start) {
             warn!("duplicated mmio region {:#x?}", mmio);
             if mmio.region.size != size {
-                panic!("duplicated mmio region size not match");
+                error!("duplicated mmio region size not match, PLEASE CHECK!!!");
             }
             mmio.handler = handler;
             mmio.arg = arg;
@@ -175,6 +187,7 @@ pub fn all_zones_info() -> Vec<ZoneInfo> {
                 zone_id: zone_lock.id as u32,
                 cpus: zone_lock.cpu_set.bitmap,
                 name: zone_lock.name.clone(),
+                is_err: zone_lock.is_err as u8,
             }
         })
         .collect()
@@ -196,7 +209,6 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     let mut zone = Zone::new(zone_id, &config.name);
     zone.pt_init(config.memory_regions()).unwrap();
     zone.mmio_init(&config.arch_config);
-    zone.irq_bitmap_init(config.interrupts());
     #[cfg(target_arch = "aarch64")]
     zone.ivc_init(config.ivc_config());
     #[cfg(all(feature = "pci", target_arch = "aarch64"))]
@@ -206,9 +218,22 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
         &config.alloc_pci_devs,
     );
 
+    let mut cpu_num = 0;
     config.cpus().iter().for_each(|cpu_id| {
         zone.cpu_set.set_bit(*cpu_id as _);
+        cpu_num += 1;
     });
+
+    #[cfg(feature = "plic")]
+    {
+        zone.vplic = Some(vplic::VirtualPLIC::new(
+            config.arch_config.plic_base,
+            BOARD_PLIC_INTERRUPTS_NUM,
+            cpu_num * 2,
+        ));
+    }
+
+    zone.irq_bitmap_init(config.interrupts());
 
     let mut dtb_ipa = INVALID_ADDRESS as u64;
     for region in config.memory_regions() {
@@ -246,6 +271,22 @@ pub struct ZoneInfo {
     zone_id: u32,
     cpus: u64,
     name: [u8; CONFIG_NAME_MAXLEN],
+    is_err: u8,
+}
+// Be careful about dead lock for zone.write()
+pub fn zone_error() {
+    if (is_this_root_zone()) {
+        panic!("root zone has some error");
+    }
+    let zone = this_zone();
+    let zone_id = zone.read().id;
+    error!("zone {} has some error, please shut down it", zone_id);
+
+    let mut zone_w = zone.write();
+    zone_w.is_err = true;
+
+    drop(zone_w);
+    drop(zone);
 }
 
 #[test_case]

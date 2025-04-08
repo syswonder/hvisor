@@ -479,8 +479,3 @@ pub fn init_aplic(aplic_base: usize, aplic_size: usize) {
     let aplic = Aplic::new(aplic_base, aplic_size);
     APLIC.call_once(|| RwLock::new(aplic));
 }
-impl Zone {
-    pub fn arch_irqchip_reset(&self) {
-        //TODO
-    }
-}

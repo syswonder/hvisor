@@ -37,6 +37,8 @@ pub const MAX_CPU_NUM: usize = 4;
 
 pub const MAX_ZONE_NUM: usize = 3;
 
+pub const MAX_WAIT_TIMES: usize = 10000000;
+
 pub fn core_end() -> VirtAddr {
     __core_end as _
 }

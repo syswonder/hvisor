@@ -174,13 +174,13 @@ impl ArchCpu {
     }
 
     pub fn idle(&mut self) -> ! {
+        debug!("cpu {} begin to be idle", self.cpuid);
         assert!(this_cpu_id() == self.cpuid);
         let cpu_data = this_cpu_data();
         let _lock = cpu_data.ctrl_lock.lock();
         self.power_on = false;
         drop(_lock);
 
-        info!("cpu {} idle", self.cpuid);
         // reset current cpu -> pc = 0x0 (wfi)
         PARKING_MEMORY_SET.call_once(|| {
             let parking_code: [u8; 8] = [0x7f, 0x20, 0x03, 0xd5, 0xff, 0xff, 0xff, 0x17]; // 1: wfi; b 1b
@@ -201,7 +201,7 @@ impl ArchCpu {
         self.reset(0, this_cpu_data().dtb_ipa);
         unsafe {
             PARKING_MEMORY_SET.get().unwrap().activate();
-            info!("cpu {} started from parking", self.cpuid);
+            info!("cpu {} start parking", self.cpuid);
             vmreturn(self.guest_reg() as *mut _ as usize);
         }
     }
