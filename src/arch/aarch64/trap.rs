@@ -18,6 +18,7 @@ use core::arch::global_asm;
 
 use super::cpu::GeneralRegisters;
 use crate::arch::sysreg::smc_call;
+use crate::zone::zone_error;
 use crate::{
     arch::{
         cpu::mpidr_to_cpuid,
@@ -234,7 +235,8 @@ fn handle_dabt(regs: &mut GeneralRegisters) {
             }
         }
         Err(e) => {
-            panic!("mmio_handle_access: {:#x?}", e);
+            error!("mmio_handle_access: {:#x?}", e);
+            zone_error();
         }
     }
     //TODO finish dabt handle
@@ -268,9 +270,12 @@ fn handle_hvc(regs: &mut GeneralRegisters) {
     let (code, arg0, arg1) = (regs.usr[0], regs.usr[1], regs.usr[2]);
     let cpu_data = this_cpu_data();
 
-    debug!(
+    trace!(
         "HVC from CPU{},code:{:#x?},arg0:{:#x?},arg1:{:#x?}",
-        cpu_data.id, code, arg0, arg1
+        cpu_data.id,
+        code,
+        arg0,
+        arg1
     );
     let result = match HyperCall::new(cpu_data).hypercall(code as _, arg0, arg1) {
         Ok(ret) => ret as _,

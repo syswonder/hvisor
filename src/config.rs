@@ -22,7 +22,8 @@ pub const MEM_TYPE_RAM: u32 = 0;
 pub const MEM_TYPE_IO: u32 = 1;
 pub const MEM_TYPE_VIRTIO: u32 = 2;
 
-pub const CONFIG_MAX_MEMORY_REGIONS: usize = 16;
+pub const CONFIG_MAGIC_VERSION: usize = 0x1;
+pub const CONFIG_MAX_MEMORY_REGIONS: usize = 64;
 pub const CONFIG_MAX_INTERRUPTS: usize = 32;
 pub const CONFIG_NAME_MAXLEN: usize = 32;
 pub const CONFIG_MAX_IVC_CONGIGS: usize = 2;
@@ -82,7 +83,7 @@ impl HvPciConfig {
         }
     }
 }
-
+// Every time you change the HvZoneConfig, you need to change the `CONFIG_MAGIC_VERSION`
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct HvZoneConfig {
@@ -150,16 +151,11 @@ impl HvZoneConfig {
     }
 
     pub fn memory_regions(&self) -> &[HvConfigMemoryRegion] {
-        if self.num_memory_regions > CONFIG_MAX_MEMORY_REGIONS as u32 {
-            panic!("Too many memory regions");
-        }
+        // hvisor tool will check the length of memory regions, so we can uncheck here.
         &self.memory_regions[..self.num_memory_regions as usize]
     }
 
     pub fn interrupts(&self) -> &[u32] {
-        if self.num_interrupts > CONFIG_MAX_INTERRUPTS as u32 {
-            panic!("Too many interrupts");
-        }
         &self.interrupts[..self.num_interrupts as usize]
     }
 
