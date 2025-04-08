@@ -16,7 +16,7 @@
 #![allow(dead_code)]
 use crate::arch::cpu::{self, this_cpu_id};
 use crate::config::{HvZoneConfig, CONFIG_MAGIC_VERSION};
-use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, PAGE_SIZE};
+use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, MAX_WAIT_TIMES, PAGE_SIZE};
 use crate::device::irqchip::inject_irq;
 use crate::device::virtio_trampoline::{MAX_DEVS, MAX_REQ, VIRTIO_BRIDGE, VIRTIO_IRQS};
 use crate::error::HvResult;
@@ -303,14 +303,14 @@ impl<'a> HyperCall<'a> {
             }
         });
 
-        let mut count: u32 = 0;
+        let mut count: usize = 0;
 
         // wait all zone's cpus shutdown
         while zone_w.cpu_set.iter().any(|cpu_id| {
             let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
             let power_on = get_cpu_data(cpu_id).arch_cpu.power_on;
             count += 1;
-            if count > 10000000 {
+            if count > MAX_WAIT_TIMES {
                 if (power_on) {
                     error!("cpu {} cannot be shut down", cpu_id);
                     return false;

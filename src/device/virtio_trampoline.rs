@@ -23,6 +23,7 @@ use spin::Mutex;
 
 use crate::arch::cpu::this_cpu_id;
 use crate::consts::MAX_CPU_NUM;
+use crate::consts::MAX_WAIT_TIMES;
 use crate::device::irqchip::inject_irq;
 use crate::event::send_event;
 use crate::event::IPI_EVENT_WAKEUP_VIRTIO_DEVICE;
@@ -86,19 +87,18 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
         send_event(root_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP_VIRTIO_DEVICE);
     }
     drop(dev);
-    let mut count: u32 = 0;
-    let threshold = 1000000;
+    let mut count: usize = 0;
     // if it is cfg request, current cpu should be blocked until gets the result
     if need_interrupt == 0 {
         // when virtio backend finish the req, it will add 1 to cfg_flag.
         while cfg_flags[cpu_id] == old_cfg_flag {
             // fence(Ordering::Acquire);
             count += 1;
-            if count == threshold {
+            if count == MAX_WAIT_TIMES {
                 warn!("virtio backend is too slow, please check it!");
                 fence(Ordering::Acquire);
             }
-            if count == threshold * 10 {
+            if count == MAX_WAIT_TIMES * 10 {
                 error!("virtio backend may have some problem, please check it!");
                 count = 0;
             }

@@ -49,6 +49,15 @@ macro_rules! print {
         $crate::logging::print(format_args!($fmt $(, $($arg)+)?));
     }
 }
+
+#[macro_export]
+macro_rules! zone_error {
+    ($($arg:tt)*) => {{
+        error!($($arg)*);
+        zone_error();
+    }};
+}
+
 /// print with line breaks
 #[macro_export]
 macro_rules! println {

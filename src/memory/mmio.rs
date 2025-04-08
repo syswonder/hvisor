@@ -64,8 +64,7 @@ pub fn mmio_perform_access(base: usize, mmio: &mut MMIOAccess) {
                 4 => ptr::write_volatile(addr as *mut u32, mmio.value as u32),
                 8 => ptr::write_volatile(addr as *mut u64, mmio.value as u64),
                 _ => {
-                    error!("invalid mmio size");
-                    zone_error();
+                    zone_error!("invalid mmio size: {}", mmio.size);
                 }
             }
         } else {
@@ -75,8 +74,7 @@ pub fn mmio_perform_access(base: usize, mmio: &mut MMIOAccess) {
                 4 => ptr::read_volatile(addr as *mut u32) as _,
                 8 => ptr::read_volatile(addr as *mut u64) as _,
                 _ => {
-                    error!("invalid mmio size");
-                    zone_error();
+                    zone_error!("invalid mmio size: {}", mmio.size);
                     usize::MAX
                 }
             }
