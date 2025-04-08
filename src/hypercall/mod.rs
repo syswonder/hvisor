@@ -184,7 +184,7 @@ impl<'a> HyperCall<'a> {
                     region.res_front = (region.res_front + 1) & (MAX_REQ - 1);
                     fence(Ordering::SeqCst);
                     continue;
-                },
+                }
             };
 
             let irq_list = map_irq.entry(target_cpu).or_insert([0; MAX_DEVS + 1]);
