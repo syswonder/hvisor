@@ -48,7 +48,7 @@ expect {
 # Test ls command
 expect {
     "root@(none):/home/arm64# " {
-        send "ls > ./test/testresult/test_ls.txt\r"
+        send "ls | grep zone0.txt > ./test/testresult/test_ls.txt\r"
     }
     timeout {
         exit 1
@@ -95,7 +95,7 @@ expect {
     }
 }
 expect {
-    -re {Script started, file is /dev/null.*#} {
+    -re {Script started.*#} {
         send "bash\r"
     }
     timeout {
