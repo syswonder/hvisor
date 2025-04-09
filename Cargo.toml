@@ -61,6 +61,8 @@ pt_layout_qemu = []
 plic = []
 aia = []
 aclint = []
+# extensions
+sstc = []
 ########### loongarch64 ############
 # irqchip driver
 loongson_7a2000 = []

@@ -53,7 +53,7 @@ impl ArchCpu {
             // first_cpu: 0,
             power_on: false,
             init: false,
-            sstc: false,
+            sstc: cfg!(feature = "sstc"),
         };
         ret
     }
