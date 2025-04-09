@@ -48,7 +48,6 @@ pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;
 #[cfg(target_arch = "riscv64")]
 pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 0x20;
 
-
 /// non root zone's virtio request handler
 pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     // debug!("mmio virtio handler");
