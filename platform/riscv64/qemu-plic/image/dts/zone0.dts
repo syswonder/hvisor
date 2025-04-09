@@ -38,21 +38,6 @@
 				compatible = "riscv,cpu-intc";
 			};
 		};
-		cpu@2 {
-			device_type = "cpu";
-			reg = <0x2>;
-			status = "okay";
-			compatible = "riscv";
-			riscv,isa = "rv64imafdcsu_sstc";
-			mmu-type = "riscv,sv39";
-
-			cpu2_intc: interrupt-controller {
-				#interrupt-cells = <0x1>;
-				interrupt-controller;
-				compatible = "riscv,cpu-intc";
-			};
-		};
-
 	};
 
 	memory@80000000 {
@@ -99,7 +84,6 @@
 			interrupts-extended = <
 				&cpu0_intc 11 &cpu0_intc 9 
 				&cpu1_intc 11 &cpu1_intc 9 
-				&cpu2_intc 11 &cpu2_intc 9
 			>;
 			interrupt-controller;
 			compatible = "riscv,plic0";
@@ -156,6 +140,13 @@
 			compatible = "virtio,mmio";
 		};
 	};
+
+	hvisor_virtio_device {
+		compatible = "hvisor";
+    	interrupt-parent = <&plic>;
+    	interrupts = <0x20>;
+	};
+
 	chosen {
 		bootargs = "root=/dev/vda rw earlycon console=ttyS0";
 	};

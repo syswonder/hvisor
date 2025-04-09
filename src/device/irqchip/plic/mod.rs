@@ -67,7 +67,17 @@ pub fn percpu_init() {
 }
 
 pub fn inject_irq(irq: usize, is_hardware: bool) {
-    warn!("plic no implement inject_irq");
+    // warn!("inject_irq: {} is_hardware: {}", irq, is_hardware);
+    let vcontext_id = pcontext_to_vcontext(this_cpu_data().id * 2 + 1);
+    this_cpu_data()
+        .zone
+        .as_ref()
+        .unwrap()
+        .read()
+        .vplic
+        .as_ref()
+        .unwrap()
+        .inject_irq(vcontext_id, irq, is_hardware);
 }
 
 /// Convert vcontext id to pcontext id.
@@ -161,11 +171,13 @@ impl Zone {
         for irq in irqs {
             let irq_id = *irq;
             // They are hardware interrupts.
-            self.vplic
-                .as_ref()
-                .unwrap()
-                .vplic_set_hw(irq_id as usize, true);
-            info!("Set irq {} to hardware interrupt", irq_id);
+            if HW_IRQS.iter().any(|&x| x == irq_id) {
+                self.vplic
+                    .as_ref()
+                    .unwrap()
+                    .vplic_set_hw(irq_id as usize, true);
+                info!("Set irq {} to hardware interrupt", irq_id);
+            }
             self.insert_irq_to_bitmap(irq_id);
         }
         // print irq_bitmap
