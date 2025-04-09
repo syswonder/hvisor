@@ -126,7 +126,9 @@ static PARANGE_OK_CPUS: AtomicU32 = AtomicU32::new(0);
 static mut NCPU: usize = 0;
 
 pub fn setup_parange(ncpu: usize) {
-    unsafe { NCPU = ncpu; }
+    unsafe {
+        NCPU = ncpu;
+    }
     let temp_parange = read_sysreg!(id_aa64mmfr0_el1) & 0xf;
     let mut p = MIN_PARANGE.write();
     *p = p.min(temp_parange);

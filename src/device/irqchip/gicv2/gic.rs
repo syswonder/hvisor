@@ -14,6 +14,7 @@
 // Authors:
 //
 use crate::arch::cpu::this_cpu_id;
+use crate::consts;
 use crate::device::irqchip::gicv2::gicc::GICC;
 use crate::device::irqchip::gicv2::gicd::GICV2_SGIS_NUM;
 use crate::device::irqchip::gicv2::gich::{
@@ -22,7 +23,6 @@ use crate::device::irqchip::gicv2::gich::{
 };
 use crate::event::check_events;
 use crate::hypercall::SGI_IPI_ID;
-use crate::consts;
 /// This file defines and implements the functional functions of physical gicv2.
 /// author: ForeverYolo
 /// reference:

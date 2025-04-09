@@ -461,7 +461,7 @@ pub fn primary_init_early() {
         gits_init();
     }
 
-    PENDING_VIRQS.call_once(|| PendingIrqs::new(unsafe {consts::NCPU}));
+    PENDING_VIRQS.call_once(|| PendingIrqs::new(unsafe { consts::NCPU }));
     debug!("gic = {:#x?}", GIC.get().unwrap());
 }
 

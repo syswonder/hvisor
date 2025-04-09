@@ -75,8 +75,8 @@ use crate::arch::mm::setup_parange;
 use crate::consts::MAX_CPU_NUM;
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
-use fdt_rs::{base::DevTree, prelude::FallibleIterator};
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+use fdt_rs::{base::DevTree, prelude::FallibleIterator};
 use percpu::PerCpu;
 use zone::zone_create;
 
@@ -193,14 +193,11 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         cpu.id, cpu as *const _, &cpu.arch_cpu as *const _, host_dtb
     );
 
-
     // Don't you wanna know how many cpu(s) on board? :D
     let mut ncpu: usize = 0;
     #[cfg(target_arch = "aarch64")]
     {
-        let devtree = unsafe {
-            DevTree::from_raw_pointer(host_dtb as *const u8).unwrap()
-        };
+        let devtree = unsafe { DevTree::from_raw_pointer(host_dtb as *const u8).unwrap() };
 
         let mut node_iter = devtree.nodes();
         while let Some(node) = node_iter.next().unwrap() {
@@ -209,30 +206,32 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
             }
         }
     }
-    
-        
+
     // If we failed to detect, just use default value.
     if ncpu == 0 {
         if is_primary {
-            println!("Failed to count cpu(s) from devicetree. Using default value {}.", MAX_CPU_NUM);
+            println!(
+                "Failed to count cpu(s) from devicetree. Using default value {}.",
+                MAX_CPU_NUM
+            );
         }
         ncpu = MAX_CPU_NUM;
-    }
-    else if ncpu > MAX_CPU_NUM {
+    } else if ncpu > MAX_CPU_NUM {
         if is_primary {
             println!("{} cpu(s) detected, but using only {}.", ncpu, MAX_CPU_NUM);
         }
         ncpu = MAX_CPU_NUM;
     }
 
-
     if is_primary {
         #[cfg(target_arch = "aarch64")]
         {
             println!("Using {} cpu(s) on this system.", ncpu);
         }
-        
-        unsafe {consts::NCPU = ncpu;}
+
+        unsafe {
+            consts::NCPU = ncpu;
+        }
         wakeup_secondary_cpus(cpu.id, host_dtb, ncpu);
     }
 
