@@ -29,11 +29,11 @@ pub const PER_CPU_ARRAY_PTR: *mut VirtAddr = __core_end as _;
 pub const INVALID_ADDRESS: usize = usize::MAX;
 
 #[cfg(target_arch = "loongarch64")]
-pub const MAX_CPU_NUM: usize = 4;
+pub const MAX_CPU_NUM: usize = 32;
 #[cfg(target_arch = "aarch64")]
 pub const MAX_CPU_NUM: usize = 32;
 #[cfg(target_arch = "riscv64")]
-pub const MAX_CPU_NUM: usize = 4;
+pub const MAX_CPU_NUM: usize = 32;
 
 pub const MAX_ZONE_NUM: usize = 3;
 
