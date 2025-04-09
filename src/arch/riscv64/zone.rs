@@ -92,10 +92,7 @@ impl Zone {
         info!("VM stage 2 memory set: {:#x?}", self.gpm);
         Ok(())
     }
-    // pub fn mmio_init(&mut self, hv_config: &HvArchZoneConfig) {
-    //     //TODO
-    // }
-    pub fn irq_bitmap_init(&mut self, irqs: &[u32]) {}
+
     pub fn isa_init(&mut self, fdt: &fdt::Fdt) {
         let cpu_set = self.cpu_set;
         cpu_set.iter().for_each(|cpuid| {

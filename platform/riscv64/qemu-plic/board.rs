@@ -15,19 +15,13 @@
 //
 use crate::{arch::zone::HvArchZoneConfig, config::*};
 
+#[allow(unused)]
 pub const BOARD_NAME: &str = "qem-plic";
 
 pub const ACLINT_SSWI_BASE: usize = 0x2F00000;
 
 pub const PLIC_BASE: usize = 0xc000000;
-pub const APLIC_BASE: usize = 0xc000000;
-pub const PLIC_MAX_IRQ: usize = 1024;
-pub const PLIC_GLOBAL_SIZE: usize = 0x200000;
-pub const PLIC_TOTAL_SIZE: usize = 0x400000;
-pub const PLIC_MAX_CONTEXT: usize = 64;
-pub const PLIC_PRIORITY_BASE: usize = 0x0000;
-pub const PLIC_PENDING_BASE: usize = 0x1000;
-pub const PLIC_ENABLE_BASE: usize = 0x2000;
+pub const BOARD_PLIC_INTERRUPTS_NUM: usize = 1023;  // except irq 0
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x8f000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x90000000;
