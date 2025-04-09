@@ -2,9 +2,10 @@
 
 > ⚠️ Please update this file for any changes to the hvisor project along with your name and GitHub profile link under the CURRENT section.
 
-## CURRENT-hvisor v0.1.2
+## CURRENT - v0.1.2
 
-- [platform] update aarch64 board definitions ([Nehckl](https://github.com/Inquisitor-201))
+- [feature] riscv64: add vplic struct ([Jingyu Liu](https://github.com/liulog))
+- [feature] riscv64: add aclint support ([Jingyu Liu](https://github.com/liulog))
 
 ## History Release
 
