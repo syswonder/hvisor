@@ -305,7 +305,7 @@ fn handle_smc(regs: &mut GeneralRegisters) {
             regs.usr[0] = ret[0];
             regs.usr[1] = ret[1];
             regs.usr[2] = ret[2];
-            regs.usr[2] = ret[3];
+            regs.usr[3] = ret[3];
             ret[0]
         },
         _ => {

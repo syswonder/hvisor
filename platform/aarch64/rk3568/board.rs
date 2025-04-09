@@ -9,19 +9,19 @@ pub const ROOT_ZONE_ENTRY: u64 = 0x60080000 ;
 pub const ROOT_ZONE_CPUS: u64 = (1 << 0)|(1 << 1);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 21] = [
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0xfd400000,
-        virtual_start: 0xfd400000,
-        size: 0x10000,
-    }, // gic
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0xfd460000,
-        virtual_start: 0xfd460000,
-        size: 0xc0000,
-    }, // gic
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 19] = [
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0xfd400000,
+    //     virtual_start: 0xfd400000,
+    //     size: 0x10000,
+    // }, // gic
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0xfd460000,
+    //     virtual_start: 0xfd460000,
+    //     size: 0xc0000,
+    // }, // gic
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0xfe000000,
