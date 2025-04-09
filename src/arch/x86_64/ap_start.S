@@ -11,6 +11,7 @@
 .global ap_start16
 ap_start16:
     cli
+    cld
     // clear cache
     wbinvd
 

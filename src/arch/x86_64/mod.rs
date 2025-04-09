@@ -1,6 +1,5 @@
 #![allow(unused)]
 pub mod acpi;
-pub mod apic;
 pub mod boot;
 pub mod cpu;
 pub mod cpuid;

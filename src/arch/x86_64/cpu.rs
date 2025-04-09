@@ -19,7 +19,7 @@ use crate::{
     percpu::{this_cpu_data, this_zone},
     platform::{
         ROOT_ZONE_BOOT_STACK, ROOT_ZONE_CMDLINE, ROOT_ZONE_CMDLINE_ADDR, ROOT_ZONE_INITRD_ADDR,
-        ROOT_ZONE_SETUP_ADDR,
+        ROOT_ZONE_SETUP_ADDR, ROOT_ZONE_VMLINUX_ENTRY_ADDR,
     },
 };
 use alloc::boxed::Box;
@@ -105,17 +105,17 @@ unsafe fn setup_ap_start_page(cpuid: usize) {
         fn ap_end();
         fn ap_entry32();
     }
-    const U64_PER_PAGE: usize = PAGE_SIZE / 8;
+    const U64_PER_PAGE: usize = PAGE_SIZE / size_of::<u64>();
 
-    let ap_start_page_ptr = phys_to_virt(AP_START_PAGE_PADDR) as *mut usize;
+    let ap_start_page_ptr = AP_START_PAGE_PADDR as *mut u64;
     let ap_start_page = core::slice::from_raw_parts_mut(ap_start_page_ptr, U64_PER_PAGE);
     core::ptr::copy_nonoverlapping(
-        ap_start16 as *const usize,
+        ap_start16 as *const u64,
         ap_start_page_ptr,
         (ap_end as usize - ap_start16 as usize) / 8,
     );
-    ap_start_page[U64_PER_PAGE - 2] = core_end() as usize + (cpuid + 1) * PER_CPU_SIZE;
-    ap_start_page[U64_PER_PAGE - 1] = ap_entry32 as usize;
+    ap_start_page[U64_PER_PAGE - 2] = (core_end() + (cpuid + 1) * PER_CPU_SIZE) as u64;
+    ap_start_page[U64_PER_PAGE - 1] = ap_entry32 as u64;
 }
 
 pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
@@ -280,9 +280,9 @@ impl ArchCpu {
             ROOT_ZONE_INITRD_ADDR,
             ROOT_ZONE_CMDLINE_ADDR,
             ROOT_ZONE_CMDLINE,
-            // "console=ttyS0 earlyprintk=serial nokaslr\0"
+            &this_zone().read().gpm, // "console=ttyS0 earlyprintk=serial nokaslr\0"
         )?;
-        self.guest_regs.rax = this_cpu_data().cpu_on_entry as u64;
+        self.guest_regs.rax = ROOT_ZONE_VMLINUX_ENTRY_ADDR as u64;
         self.guest_regs.rsi = ROOT_ZONE_SETUP_ADDR as u64;
         Ok(())
     }
@@ -580,10 +580,8 @@ impl Debug for ArchCpu {
                 .field("cr0", &VmcsGuestNW::CR0.read()?)
                 .field("cr3", &VmcsGuestNW::CR3.read()?)
                 .field("cr4", &VmcsGuestNW::CR4.read()?)
-                .field("cs", &VmcsGuest16::CS_SELECTOR.read()?)
-                .field("fs_base", &VmcsGuestNW::FS_BASE.read()?)
-                .field("gs_base", &VmcsGuestNW::GS_BASE.read()?)
-                .field("tss", &VmcsGuest16::TR_SELECTOR.read()?)
+                .field("gdtr_base", &VmcsGuestNW::GDTR_BASE.read()?)
+                .field("cs_selector", &VmcsGuest16::CS_SELECTOR.read()?)
                 .finish())
         })()
         .unwrap()

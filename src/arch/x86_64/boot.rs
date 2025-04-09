@@ -1,13 +1,15 @@
 use crate::{
+    arch::Stage2PageTable,
     config::{root_zone_config, HvZoneConfig, MEM_TYPE_RAM},
     error::HvResult,
-    memory::{GuestPhysAddr, HostPhysAddr},
-    platform::root_zone_gpa_as_mut_ptr,
+    memory::{GuestPhysAddr, HostPhysAddr, MemorySet},
+    percpu::this_zone,
 };
 use alloc::string::{String, ToString};
 use core::{
+    arch::global_asm,
     ffi::{c_char, CStr},
-    ptr::copy_nonoverlapping,
+    ptr::{copy, copy_nonoverlapping},
 };
 use spin::Mutex;
 
@@ -54,7 +56,11 @@ pub struct BootParams {
     e820_entries: u8,
     pad1: [u8; 0x8],
     setup_sects: u8,
-    pad2: [u8; 0x1b],
+    root_flags: u16,
+    syssize: u32,
+    pad2: [u8; 0xd],
+    boot_proto_version: u16,
+    pad3: [u8; 0x6],
     kernel_version: u16,
     type_of_loader: u8,
     loadflags: BootLoadFlags,
@@ -64,16 +70,16 @@ pub struct BootParams {
     ramdisk_size: u32,
     bootsect_kludge: u32,
     heap_end_ptr: u16,
-    pad3: [u8; 2],
+    pad4: [u8; 2],
     cmd_line_ptr: u32,
-    pad4: [u8; 12],
-    cmdline_size: u32,
     pad5: [u8; 12],
+    cmdline_size: u32,
+    pad6: [u8; 12],
     payload_offset: u32,
     payload_length: u32,
-    pad6: [u8; 128],
+    pad7: [u8; 128],
     e820_table: [BootE820Entry; E820_MAX_ENTRIES_ZEROPAGE],
-    pad7: [u8; 0x330],
+    pad8: [u8; 0x330],
 }
 
 impl BootParams {
@@ -82,11 +88,35 @@ impl BootParams {
         initrd_addr: GuestPhysAddr,
         root_cmdline_addr: GuestPhysAddr,
         root_cmdline: &str,
+        gpm: &MemorySet<Stage2PageTable>,
     ) -> HvResult {
-        let boot_params_hpa = root_zone_gpa_as_mut_ptr(setup_addr) as HostPhysAddr;
+        let boot_params_hpa =
+            unsafe { gpm.page_table_query(setup_addr).unwrap().0 } as HostPhysAddr;
         let boot_params = unsafe { &mut *(boot_params_hpa as *mut BootParams) };
 
-        // TODO: get kernel version
+        if boot_params.boot_proto_version < 0x0204 {
+            panic!("kernel boot protocol version older than 2.04 not supported!");
+        }
+
+        /*
+        let setup_size = ((boot_params.setup_sects + 1) as usize) * 0x200;
+        let vmlinux_size = (boot_params.syssize as usize) * 0x10;
+        let kernel_hpa = unsafe { gpm.page_table_query(kernel_addr).unwrap().0 } as HostPhysAddr;
+
+        // copy vmlinux to the right place
+        info!(
+            "{:x}, {:x}, {:x}",
+            boot_params_hpa + setup_size,
+            kernel_hpa,
+            vmlinux_size
+        );
+        unsafe {
+            copy(
+                (boot_params_hpa + setup_size) as *const u8,
+                kernel_hpa as *mut u8,
+                vmlinux_size,
+            )
+        };*/
 
         // set bootloader type as undefined
         boot_params.type_of_loader = 0xff;
@@ -101,7 +131,7 @@ impl BootParams {
         unsafe {
             copy_nonoverlapping(
                 root_cmdline.as_ptr(),
-                root_zone_gpa_as_mut_ptr(root_cmdline_addr),
+                unsafe { gpm.page_table_query(root_cmdline_addr).unwrap().0 } as *mut u8,
                 root_cmdline.len(),
             )
         };

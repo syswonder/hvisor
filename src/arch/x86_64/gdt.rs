@@ -39,7 +39,7 @@ impl GdtStruct {
         Self { table, tss }
     }
 
-    fn pointer(&self) -> DescriptorTablePointer {
+    pub fn pointer(&self) -> DescriptorTablePointer {
         DescriptorTablePointer {
             base: VirtAddr::new(self.table.as_ptr() as u64),
             limit: (core::mem::size_of_val(&self.table) - 1) as u16,

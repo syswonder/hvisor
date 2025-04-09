@@ -21,6 +21,7 @@ use crate::{
         uart::UartReg,
     },
     error::HvResult,
+    hypercall::HyperCall,
     memory::{mmio_handle_access, MMIOAccess, MemFlags},
     percpu::this_cpu_data,
 };
@@ -205,12 +206,24 @@ fn handle_external_interrupt() -> HvResult {
 }
 
 fn handle_hypercall(arch_cpu: &mut ArchCpu) -> HvResult {
-    let regs = arch_cpu.regs();
+    let regs = arch_cpu.regs_mut();
     debug!(
-        "VM exit: VMCALL({:#x}): {:?}",
+        "VM exit: VMCALL({:#x}): {:x?}",
         regs.rax,
-        [regs.rdi, regs.rsi, regs.rdx, regs.rcx]
+        [regs.rdi, regs.rsi]
     );
+    let (code, arg0, arg1) = (regs.rax, regs.rdi, regs.rsi);
+    let cpu_data = this_cpu_data();
+    let result = match HyperCall::new(cpu_data).hypercall(code as _, arg0, arg1) {
+        Ok(ret) => ret as _,
+        Err(e) => {
+            error!("hypercall error: {:#?}", e);
+            e.code()
+        }
+    };
+    debug!("HVC result = {}", result);
+    regs.rax = result as _;
+
     arch_cpu.advance_guest_rip(VM_EXIT_INSTR_LEN_VMCALL)?;
     Ok(())
 }
@@ -338,8 +351,8 @@ fn handle_s2pt_violation(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
 
 fn handle_triple_fault(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvResult {
     panic!(
-        "VM exit: Triple fault @ {:#x}, instr length: {:x}",
-        exit_info.guest_rip, exit_info.exit_instruction_length
+        "VM exit: Triple fault @ {:#x}, instr length: {:x}\n {:#x?}",
+        exit_info.guest_rip, exit_info.exit_instruction_length, arch_cpu
     );
     // arch_cpu.advance_guest_rip(exit_info.exit_instruction_length as _)?;
     Ok(())

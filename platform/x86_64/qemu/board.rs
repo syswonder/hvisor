@@ -1,3 +1,5 @@
+use cortex_a::registers::DAIF::D;
+
 // Copyright (c) 2025 Syswonder
 // hvisor is licensed under Mulan PSL v2.
 // You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -27,9 +29,10 @@ pub const ROOT_ZONE_BOOT_STACK: GuestPhysAddr = 0x7000;
 pub const ROOT_ZONE_ENTRY: u64 = 0x8000;
 pub const ROOT_ZONE_CMDLINE_ADDR: GuestPhysAddr = 0xc000;
 pub const ROOT_ZONE_SETUP_ADDR: GuestPhysAddr = 0xd000;
-pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x500_0000;
+pub const ROOT_ZONE_VMLINUX_ENTRY_ADDR: GuestPhysAddr = 0x10_0000;
+pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x500_0000; // hpa
 pub const ROOT_ZONE_INITRD_ADDR: GuestPhysAddr = 0x1500_0000;
-pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1) | (1 << 2);
+pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1);
 
 pub const ROOT_ZONE_RSDP_REGION: HvConfigMemoryRegion = HvConfigMemoryRegion {
     mem_type: MEM_TYPE_ROM,
@@ -93,9 +96,3 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
 };
 
 pub const ROOT_PCI_DEVS: [u64; 7] = [0x0, 0x8, 0x18, 0xf8, 0xfa, 0xfb, 0x100]; // 0x10,
-
-pub fn root_zone_gpa_as_mut_ptr(guest_paddr: GuestPhysAddr) -> *mut u8 {
-    let offset = ROOT_ZONE_KERNEL_ADDR as usize;
-    let host_vaddr = guest_paddr + offset;
-    host_vaddr as *mut u8
-}

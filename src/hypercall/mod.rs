@@ -300,6 +300,16 @@ impl<'a> HyperCall<'a> {
     }
 
     fn hv_zone_list(&self, zones: *mut ZoneInfo, cnt: u64) -> HyperCallResult {
+        #[cfg(target_arch = "x86_64")]
+        let zones = unsafe {
+            this_zone()
+                .read()
+                .gpm
+                .page_table_query(zones as usize)
+                .unwrap()
+                .0
+        } as *mut ZoneInfo;
+
         if zones.is_null() {
             return hv_result_err!(EINVAL, "hv_zone_list: zones is null");
         }

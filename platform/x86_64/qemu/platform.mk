@@ -1,9 +1,9 @@
 QEMU := /home/sora/qemu/build/qemu-system-x86_64
 # /home/sora/qemu/build/qemu-system-x86_64
 
+zone0_boot := $(image_dir)/bootloader/out/boot.bin
 zone0_setup := $(image_dir)/kernel/setup.bin
 zone0_vmlinux := $(image_dir)/kernel/vmlinux.bin
-zone0_boot16 := $(image_dir)/bootloader/boot16.bin
 zone0_initrd := $(image_dir)/virtdisk/initramfs.cpio.gz
 zone0_rootfs := $(image_dir)/virtdisk/rootfs1.img
 
@@ -21,11 +21,13 @@ QEMU_ARGS += -device virtio-blk-pci,bus=pcie.1,drive=X10008000,disable-legacy=on
 # QEMU_ARGS += --trace "virtio_*" --trace "virtqueue_*" --trace "vtd_dma*" --trace "iommu_*"
 
 QEMU_ARGS += -kernel $(hvisor_elf)
-QEMU_ARGS += -device loader,file="$(zone0_boot16)",addr=0x5008000,force-raw=on
+QEMU_ARGS += -device loader,file="$(zone0_boot)",addr=0x5008000,force-raw=on
 QEMU_ARGS += -device loader,file="$(zone0_setup)",addr=0x500d000,force-raw=on
 QEMU_ARGS += -device loader,file="$(zone0_vmlinux)",addr=0x5100000,force-raw=on
 QEMU_ARGS += -device loader,file="$(zone0_initrd)",addr=0x20000000,force-raw=on
 QEMU_ARGS += -append "initrd_size=$(shell stat -c%s $(zone0_initrd))"
 
-$(hvisor_bin): elf
+$(hvisor_bin): elf boot
 	$(OBJCOPY) $(hvisor_elf) --strip-all -O binary $@
+
+include $(image_dir)/bootloader/boot.mk
