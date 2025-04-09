@@ -24,12 +24,14 @@ use spin::Mutex;
 use crate::arch::cpu::this_cpu_id;
 use crate::consts;
 use crate::consts::MAX_CPU_NUM;
+use crate::consts::MAX_WAIT_TIMES;
 use crate::device::irqchip::inject_irq;
 use crate::event::send_event;
 use crate::event::IPI_EVENT_WAKEUP_VIRTIO_DEVICE;
 use crate::hypercall::SGI_IPI_ID;
 use crate::zone::root_zone;
 use crate::zone::this_zone_id;
+use crate::zone::zone_error;
 use crate::{error::HvResult, memory::MMIOAccess};
 
 /// Save the irqs the virtio-device wants to inject. The format is <cpu_id, List<irq_id>>, and the first elem of List<irq_id> is the valid len of it.
@@ -48,7 +50,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     // debug!("mmio virtio handler");
     let need_interrupt = if mmio.address == QUEUE_NOTIFY { 1 } else { 0 };
     if need_interrupt == 1 {
-        debug!("notify !!!, cpu id is {}", this_cpu_id());
+        trace!("notify !!!, cpu id is {}", this_cpu_id());
     }
     mmio.address += base;
     let mut dev = VIRTIO_BRIDGE.lock();
@@ -86,16 +88,19 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
         send_event(root_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP_VIRTIO_DEVICE);
     }
     drop(dev);
-    let mut count = 0;
+    let mut count: usize = 0;
     // if it is cfg request, current cpu should be blocked until gets the result
     if need_interrupt == 0 {
         // when virtio backend finish the req, it will add 1 to cfg_flag.
         while cfg_flags[cpu_id] == old_cfg_flag {
             // fence(Ordering::Acquire);
             count += 1;
-            if count > 1000000 {
-                // warn!("virtio backend is too slow, please check it!");
+            if count == MAX_WAIT_TIMES {
+                warn!("virtio backend is too slow, please check it!");
                 fence(Ordering::Acquire);
+            }
+            if count == MAX_WAIT_TIMES * 10 {
+                error!("virtio backend may have some problem, please check it!");
                 count = 0;
             }
         }

@@ -51,6 +51,9 @@ impl EventManager {
         match self.inner.get(cpu) {
             Some(events) => {
                 let mut e = events.lock();
+                if event_id == IPI_EVENT_SHUTDOWN {
+                    e.clear();
+                }
                 e.push_back(event_id);
                 Some(())
             }

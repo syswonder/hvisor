@@ -175,7 +175,7 @@ pub fn gicv3_handle_irq_el1() {
                     % TIMER_INTERRUPT_PRINT_TIMES
                     == 0
                 {
-                    debug!(
+                    trace!(
                         "Virtual timer interrupt, counter = {}",
                         TIMER_INTERRUPT_COUNTER.load(core::sync::atomic::Ordering::SeqCst)
                     );
@@ -185,7 +185,7 @@ pub fn gicv3_handle_irq_el1() {
                 handle_maintenace_interrupt();
             } else if irq_id > 31 {
                 //inject phy irq
-                debug!("*** get spi_irq id = {}", irq_id);
+                trace!("*** get spi_irq id = {}", irq_id);
             } else {
                 warn!("not konw irq id = {}", irq_id);
             }
