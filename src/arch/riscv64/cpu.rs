@@ -79,22 +79,25 @@ impl ArchCpu {
         self.stack_top = self.stack_top() as usize;
         self.x[10] = cpu_id; //cpu id
         self.x[11] = dtb; //dtb addr
-                          // trace!("stack_top: {:#x}", self.stack_top);
 
-        // write_csr!(CSR_SSTATUS, self.sstatus);
-        // write_csr!(CSR_HSTATUS, self.hstatus);
-        // write_csr!(CSR_SEPC, self.sepc);
         set_csr!(CSR_HIDELEG, 1 << 2 | 1 << 6 | 1 << 10); //HIDELEG_VSSI | HIDELEG_VSTI | HIDELEG_VSEI
         set_csr!(CSR_HEDELEG, 1 << 8 | 1 << 12 | 1 << 13 | 1 << 15); //HEDELEG_ECU | HEDELEG_IPF | HEDELEG_LPF | HEDELEG_SPF
-        set_csr!(CSR_HCOUNTEREN, 1 << 1); //HCOUNTEREN_TM
-                                          //In VU-mode, a counter is not readable unless the applicable bits are set in both hcounteren and scounteren.
+
+        if self.sstc {
+            set_csr!(CSR_HENVCFG, 1 << 63);
+            set_csr!(CSR_VSTIMECMP, usize::MAX);
+        } else {
+            info!("sstc -> false");
+        }
+
+        set_csr!(CSR_HCOUNTEREN, 1 << 1); // HCOUNTEREN_TM
+                                          // In VU-mode, a counter is not readable unless the applicable bits are set in both hcounteren and scounteren.
         set_csr!(CSR_SCOUNTEREN, 1 << 1);
         write_csr!(CSR_HTIMEDELTA, 0);
-        set_csr!(CSR_HENVCFG, 1 << 63);
-        //write_csr!(CSR_VSSTATUS, 1 << 63 | 3 << 13 | 3 << 15); //SSTATUS_SD | SSTATUS_FS_DIRTY | SSTATUS_XS_DIRTY
+        write_csr!(CSR_VSSTATUS, 1 << 63 | 3 << 13 | 3 << 15); //SSTATUS_SD | SSTATUS_FS_DIRTY | SSTATUS_XS_DIRTY
 
         // enable all interupts
-        set_csr!(CSR_SIE, 1 << 9 | 1 << 5 | 1 << 1); //SEIE STIE SSIE
+        set_csr!(CSR_SIE, 1 << 9 | 1 << 5 | 1 << 1); // SEIE STIE SSIE
                                                      // write_csr!(CSR_HIE, 1 << 12 | 1 << 10 | 1 << 6 | 1 << 2); //SGEIE VSEIE VSTIE VSSIE
         write_csr!(CSR_HIE, 0);
         write_csr!(CSR_VSTVEC, 0);
@@ -104,17 +107,8 @@ impl ArchCpu {
         write_csr!(CSR_VSTVAL, 0);
         write_csr!(CSR_HVIP, 0);
         write_csr!(CSR_VSATP, 0);
-        // let mut value: usize;
-        // value = read_csr!(CSR_SEPC);
-        // info!("CSR_SEPC: {:#x}", value);
-        // value = read_csr!(CSR_STVEC);
-        // info!("CSR_STVEC: {:#x}", value);
-        // value = read_csr!(CSR_VSATP);
-        // info!("CSR_VSATP: {:#x}", value);
-        // value = read_csr!(CSR_HGATP);
-        // info!("CSR_HGATP: {:#x}", value);
-        //unreachable!();
     }
+
     pub fn run(&mut self) -> ! {
         extern "C" {
             fn vcpu_arch_entry() -> !;
