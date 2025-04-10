@@ -55,6 +55,11 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
             adrp x0, {BOOT_PT_L0}
             bl {mmu_init}
             bl {mmu_enable}
+
+            tlbi alle2
+            dsb	nsh
+            isb
+
             mov x1, x18
             mov x0, x17
             mov x18, 0
@@ -110,6 +115,11 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
             adrp x0, {BOOT_PT_L0}
             bl {mmu_init}
             bl {mmu_enable}
+
+            tlbi alle2
+            dsb	nsh
+            isb
+
             mov x1, x18
             mov x0, x17
             mov x18, 0
