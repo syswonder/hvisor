@@ -50,8 +50,10 @@ const SMC_TYPE_MASK: u64 = 0x3F000000;
 #[allow(non_snake_case)]
 pub mod SmcType {
     pub const ARCH_SC: u64 = 0x0;
-    pub const STANDARD_SC: u64 = 0x4000000;
-    pub const SIP_SC: u64 = 0x2000000;
+    pub const SIP_SC: u64 = 0x02000000;
+    pub const STANDARD_SC: u64 = 0x04000000;
+    pub const TOS_SC_START: u64 = 0x32000000;
+    pub const TOS_SC_END: u64 = 0x3F000000;
 }
 
 const PSCI_VERSION_1_1: u64 = 0x10001;
@@ -298,13 +300,16 @@ fn handle_smc(regs: &mut GeneralRegisters) {
     let result = match code & SMC_TYPE_MASK {
         SmcType::ARCH_SC => handle_arch_smc(regs, code, arg0, arg1, arg2),
         SmcType::STANDARD_SC => handle_psci_smc(regs, code, arg0, arg1, arg2),
-        SmcType::SIP_SC => unsafe {
-            (regs.usr[0], regs.usr[1], regs.usr[2], regs.usr[3]) =
-                smc_call!(code, arg0, arg1, arg2);
-            regs.usr[0]
+        SmcType::TOS_SC_START..=SmcType::TOS_SC_END | SmcType::SIP_SC => unsafe {
+            let ret = smc_call(code, &regs.usr[1..18]);
+            regs.usr[0] = ret[0];
+            regs.usr[1] = ret[1];
+            regs.usr[2] = ret[2];
+            regs.usr[3] = ret[3];
+            ret[0]
         },
         _ => {
-            warn!("unsupported smc");
+            warn!("unsupported smc {:#x?}", code);
             0
         }
     };
