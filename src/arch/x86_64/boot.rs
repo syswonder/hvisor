@@ -4,14 +4,17 @@ use crate::{
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MemorySet},
     percpu::this_zone,
+    platform::MEM_TYPE_OTHER_ZONES,
 };
 use alloc::string::{String, ToString};
 use core::{
-    arch::global_asm,
+    arch::{self, global_asm},
     ffi::{c_char, CStr},
     ptr::{copy, copy_nonoverlapping},
 };
 use spin::Mutex;
+
+use super::zone::HvArchZoneConfig;
 
 const E820_MAX_ENTRIES_ZEROPAGE: usize = 128;
 
@@ -39,6 +42,7 @@ numeric_enum_macro::numeric_enum! {
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 #[allow(non_camel_case_types)]
 pub enum E820Type {
+    E820_DEFAULT = 0,
     E820_RAM = 1,
     E820_RESERVED = 2,
     E820_ACPI = 3,
@@ -83,43 +87,26 @@ pub struct BootParams {
 }
 
 impl BootParams {
-    pub fn fill(
-        setup_addr: GuestPhysAddr,
-        initrd_addr: GuestPhysAddr,
-        root_cmdline_addr: GuestPhysAddr,
-        root_cmdline: &str,
-        gpm: &MemorySet<Stage2PageTable>,
-    ) -> HvResult {
-        let boot_params_hpa =
-            unsafe { gpm.page_table_query(setup_addr).unwrap().0 } as HostPhysAddr;
+    pub fn fill(config: &HvZoneConfig, gpm: &MemorySet<Stage2PageTable>) -> HvResult {
+        if config.arch_config.setup_load_gpa == 0 {
+            panic!("setup addr not set yet!");
+        }
+
+        let boot_params_hpa = unsafe {
+            gpm.page_table_query(config.arch_config.setup_load_gpa)
+                .unwrap()
+                .0
+        } as HostPhysAddr;
         let boot_params = unsafe { &mut *(boot_params_hpa as *mut BootParams) };
 
+        // info!("boot_proto_version: {:x?}", boot_params.boot_proto_version);
         if boot_params.boot_proto_version < 0x0204 {
             panic!("kernel boot protocol version older than 2.04 not supported!");
         }
 
-        /*
-        let setup_size = ((boot_params.setup_sects + 1) as usize) * 0x200;
-        let vmlinux_size = (boot_params.syssize as usize) * 0x10;
-        let kernel_hpa = unsafe { gpm.page_table_query(kernel_addr).unwrap().0 } as HostPhysAddr;
-
-        // copy vmlinux to the right place
-        info!(
-            "{:x}, {:x}, {:x}",
-            boot_params_hpa + setup_size,
-            kernel_hpa,
-            vmlinux_size
-        );
-        unsafe {
-            copy(
-                (boot_params_hpa + setup_size) as *const u8,
-                kernel_hpa as *mut u8,
-                vmlinux_size,
-            )
-        };*/
-
         // set bootloader type as undefined
         boot_params.type_of_loader = 0xff;
+
         let mut loadflags = boot_params.loadflags;
         // print early messages
         loadflags &= !BootLoadFlags::QUIET_FLAG;
@@ -127,66 +114,64 @@ impl BootParams {
         loadflags &= !BootLoadFlags::CAN_USE_HEAP;
         boot_params.loadflags = loadflags;
 
-        // TODO: tmp command
-        unsafe {
-            copy_nonoverlapping(
-                root_cmdline.as_ptr(),
-                unsafe { gpm.page_table_query(root_cmdline_addr).unwrap().0 } as *mut u8,
-                root_cmdline.len(),
-            )
-        };
-        boot_params.cmd_line_ptr = root_cmdline_addr as _;
+        boot_params.cmd_line_ptr = config.arch_config.cmdline_load_gpa as _;
+        // copy cmdline manually for root zone
+        if config.zone_id == 0 {
+            unsafe {
+                core::ptr::copy_nonoverlapping(
+                    crate::platform::ROOT_ZONE_CMDLINE.as_ptr(),
+                    gpm.page_table_query(config.arch_config.cmdline_load_gpa)
+                        .unwrap()
+                        .0 as *mut u8,
+                    crate::platform::ROOT_ZONE_CMDLINE.len(),
+                )
+            };
+        }
 
         // set e820
         // TODO: zone config
-        boot_params.set_e820_entries(&root_zone_config());
+        boot_params.set_e820_entries(&config);
 
-        // parse cmdline
-        let hv_cmdline = CMDLINE.lock().clone();
-        for param in hv_cmdline.split_whitespace() {
-            let mut parts = param.splitn(2, '=');
-            let key = parts.next().unwrap().to_string();
-            let value = parts.next().map(|s| s.to_string());
-            match key.as_str() {
-                "initrd_size" => {
-                    boot_params.set_initrd(initrd_addr as _, value.unwrap().parse::<u32>().unwrap())
-                }
-                _ => {}
-            }
+        if config.arch_config.initrd_load_gpa != 0 {
+            boot_params.set_initrd(
+                config.arch_config.initrd_load_gpa as _,
+                config.arch_config.initrd_size as _,
+            );
         }
         Ok(())
     }
 
     fn set_e820_entries(&mut self, config: &HvZoneConfig) {
         let mut index = 0;
-        for mem_region in config.memory_regions().iter() {
-            match mem_region.mem_type {
-                MEM_TYPE_RAM => {
-                    self.e820_table[index] = BootE820Entry {
-                        addr: mem_region.virtual_start,
-                        size: mem_region.size,
-                        _type: E820Type::E820_RAM,
-                    };
-                    index += 1;
-                }
-                /* FIXME: reserved?
-                _ => {
-                    self.e820_table[index] = BootE820Entry {
-                        addr: mem_region.virtual_start,
-                        size: mem_region.size,
-                        _type: E820Type::E820_RESERVED,
-                    };
-                    index += 1;
-                }*/
-                _ => {}
+        for i in 0..config.memory_regions().len() {
+            let mem_region = config.memory_regions()[i];
+            let mut e820_type = E820Type::E820_DEFAULT;
+
+            if i == config.arch_config.rsdp_memory_region_id
+                || i == config.arch_config.acpi_memory_region_id
+            {
+                e820_type = E820Type::E820_ACPI;
+            } else if config.arch_config.initrd_load_gpa != 0
+                && i == config.arch_config.initrd_memory_region_id
+            {
+            } else if mem_region.mem_type == MEM_TYPE_RAM {
+                e820_type = E820Type::E820_RAM;
+            }
+
+            if e820_type != E820Type::E820_DEFAULT {
+                self.e820_table[index] = BootE820Entry {
+                    addr: mem_region.virtual_start,
+                    size: mem_region.size,
+                    _type: e820_type,
+                };
+                index += 1;
             }
         }
+
         self.e820_entries = index as _;
     }
 
     fn set_initrd(&mut self, ramdisk_image: u32, ramdisk_size: u32) {
-        // FIXME:
-        return;
         self.ramdisk_image = ramdisk_image;
         self.ramdisk_size = ramdisk_size;
         info!("initrd size: {}", self.ramdisk_size);

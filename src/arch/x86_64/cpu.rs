@@ -17,10 +17,7 @@ use crate::{
     error::{HvError, HvResult},
     memory::{addr::phys_to_virt, GuestPhysAddr, HostPhysAddr, PhysAddr, PAGE_SIZE},
     percpu::{this_cpu_data, this_zone},
-    platform::{
-        ROOT_ZONE_BOOT_STACK, ROOT_ZONE_CMDLINE, ROOT_ZONE_CMDLINE_ADDR, ROOT_ZONE_INITRD_ADDR,
-        ROOT_ZONE_SETUP_ADDR, ROOT_ZONE_VMLINUX_ENTRY_ADDR,
-    },
+    platform::{ROOT_ZONE_BOOT_STACK, ROOT_ZONE_CMDLINE},
 };
 use alloc::boxed::Box;
 use core::{
@@ -162,6 +159,7 @@ pub struct ArchCpu {
     pub power_on: bool,
     pub gdt: GdtStruct,
     pub virt_lapic: VirtLocalApic,
+    vmx_on: bool,
     vmcs_revision_id: u32,
     vmxon_region: VmxRegion,
     vmcs_region: VmxRegion,
@@ -178,6 +176,7 @@ impl ArchCpu {
             power_on: false,
             gdt: GdtStruct::new(tss),
             virt_lapic: VirtLocalApic::new(),
+            vmx_on: false,
             vmcs_revision_id: 0,
             vmxon_region: VmxRegion::fake_init(),
             vmcs_region: VmxRegion::fake_init(),
@@ -224,14 +223,13 @@ impl ArchCpu {
 
     pub fn run(&mut self) -> ! {
         assert!(this_cpu_id() == self.cpuid);
-
         let mut per_cpu = this_cpu_data();
 
-        if per_cpu.boot_cpu {
-            // only bsp does this
-            self.activate_vmx().unwrap();
-            self.setup_boot_params().unwrap();
-        } else {
+        self.power_on = true;
+
+        self.activate_vmx().unwrap();
+
+        if !per_cpu.boot_cpu {
             // ap start up never returns to irq handler
             unsafe { self.virt_lapic.phys_lapic.end_of_interrupt() };
             if let Some(ipi_info) = ipi::get_ipi_info(self.cpuid) {
@@ -256,7 +254,16 @@ impl ArchCpu {
         loop {}
     }
 
+    pub fn set_boot_cpu_regs(&mut self, rax: u64, rsi: u64) {
+        self.guest_regs.rax = rax;
+        self.guest_regs.rsi = rsi;
+    }
+
+    /// only activate once
     fn activate_vmx(&mut self) -> HvResult {
+        if self.vmx_on {
+            return Ok(());
+        }
         assert!(check_vmx_support());
         // assert!(!is_vmx_enabled());
 
@@ -271,19 +278,7 @@ impl ArchCpu {
 
         unsafe { execute_vmxon(self.vmxon_region.start_paddr() as u64).unwrap() };
 
-        Ok(())
-    }
-
-    fn setup_boot_params(&mut self) -> HvResult {
-        BootParams::fill(
-            ROOT_ZONE_SETUP_ADDR,
-            ROOT_ZONE_INITRD_ADDR,
-            ROOT_ZONE_CMDLINE_ADDR,
-            ROOT_ZONE_CMDLINE,
-            &this_zone().read().gpm, // "console=ttyS0 earlyprintk=serial nokaslr\0"
-        )?;
-        self.guest_regs.rax = ROOT_ZONE_VMLINUX_ENTRY_ADDR as u64;
-        self.guest_regs.rsi = ROOT_ZONE_SETUP_ADDR as u64;
+        self.vmx_on = true;
         Ok(())
     }
 

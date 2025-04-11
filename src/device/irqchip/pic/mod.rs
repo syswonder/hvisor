@@ -92,9 +92,7 @@ pub fn primary_init_early() {
     vtd::init();
 }
 
-pub fn primary_init_late() {
-    acpi::copy_to_root_zone_region();
-}
+pub fn primary_init_late() {}
 
 impl Zone {
     pub fn arch_irqchip_reset(&self) {}

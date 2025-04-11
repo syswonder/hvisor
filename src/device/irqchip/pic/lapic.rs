@@ -49,7 +49,10 @@ impl VirtLocalApic {
 
     pub fn rdmsr(&mut self, msr: Msr) -> HvResult<u64> {
         match msr {
-            IA32_X2APIC_APICID => Ok(this_cpu_id() as u64),
+            IA32_X2APIC_APICID => {
+                // info!("apicid: {:x}", this_cpu_id());
+                Ok(this_cpu_id() as u64)
+            }
             IA32_X2APIC_LDR => Ok(this_cpu_id() as u64), // logical apic id
             IA32_X2APIC_LVT_TIMER => Ok(self.virt_lvt_timer_bits as _),
             _ => hv_result_err!(ENOSYS),

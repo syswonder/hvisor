@@ -220,6 +220,16 @@ impl<'a> HyperCall<'a> {
     }
 
     pub fn hv_zone_config_check(&self, magic_version: *mut u64) -> HyperCallResult {
+        #[cfg(target_arch = "x86_64")]
+        let magic_version = unsafe {
+            this_zone()
+                .read()
+                .gpm
+                .page_table_query(magic_version as usize)
+                .unwrap()
+                .0 as *mut u64
+        };
+
         unsafe {
             *magic_version = CONFIG_MAGIC_VERSION as _;
         }
@@ -232,6 +242,15 @@ impl<'a> HyperCall<'a> {
             &*((config as *const HvZoneConfig as u64
                 | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX)
                 as *const HvZoneConfig)
+        };
+        #[cfg(target_arch = "x86_64")]
+        let config = unsafe {
+            &*(this_zone()
+                .read()
+                .gpm
+                .page_table_query(config as *const HvZoneConfig as usize)
+                .unwrap()
+                .0 as *mut HvZoneConfig)
         };
 
         info!("hv_zone_start: config: {:#x?}", config);
@@ -258,6 +277,13 @@ impl<'a> HyperCall<'a> {
         let _lock = target_data.ctrl_lock.lock();
 
         if !target_data.arch_cpu.power_on {
+            #[cfg(target_arch = "x86_64")]
+            send_event(
+                boot_cpu,
+                crate::arch::idt::IdtVector::VIRT_IPI_VECTOR as _,
+                IPI_EVENT_WAKEUP,
+            );
+            #[cfg(not(target_arch = "x86_64"))]
             send_event(boot_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP);
         } else {
             error!("hv_zone_start: cpu {} already on", boot_cpu);

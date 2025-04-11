@@ -109,18 +109,18 @@ pub fn send_ipi(value: u64) -> HvResult {
             }
             IpiDeliveryMode::INIT => {}
             IpiDeliveryMode::START_UP => {
-                // TODO: target
+                // FIXME: start up once?
                 let mut ipi_info = get_ipi_info(dest).unwrap().lock();
-                if !ipi_info.has_start_up {
-                    // we only start up once
-                    ipi_info.has_start_up = true;
-                    ipi_info.start_up_addr = (vector as usize) << 12;
-                    event::send_event(
-                        dest,
-                        IdtVector::VIRT_IPI_VECTOR as _,
-                        event::IPI_EVENT_WAKEUP,
-                    );
-                }
+                //if !ipi_info.has_start_up {
+                // we only start up once
+                //ipi_info.has_start_up = true;
+                ipi_info.start_up_addr = (vector as usize) << 12;
+                event::send_event(
+                    dest,
+                    IdtVector::VIRT_IPI_VECTOR as _,
+                    event::IPI_EVENT_WAKEUP,
+                );
+                //}
             }
             _ => {}
         }

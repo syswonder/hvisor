@@ -173,9 +173,12 @@ impl Zone {
         if self.id == 0 {
             #[cfg(target_arch = "x86_64")]
             {
-                // crate::arch::pci::probe_root_pci_devices(pci_config.ecam_base as usize);
+                let root_zone_alloc_devs = self.pciroot.alloc_devs.clone();
+                // self.pciroot.alloc_devs = crate::arch::acpi::root_get_devices();
+                info!("probe devices: {:x?}", self.pciroot.alloc_devs);
                 self.virtual_pci_mmio_init(pci_config);
                 self.virtual_pci_device_init(pci_config);
+                self.pciroot.alloc_devs = root_zone_alloc_devs;
             }
             #[cfg(not(target_arch = "x86_64"))]
             {

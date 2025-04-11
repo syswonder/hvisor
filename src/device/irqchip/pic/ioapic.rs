@@ -148,6 +148,9 @@ impl MMIoDevice for VirtIoApic {
 
 impl Zone {
     pub fn ioapic_mmio_init(&mut self, arch: &HvArchZoneConfig) {
+        if arch.ioapic_base == 0 || arch.ioapic_size == 0 {
+            return;
+        }
         self.mmio_region_register(
             arch.ioapic_base,
             arch.ioapic_size,

@@ -83,8 +83,8 @@ pub fn get_config_space_info() -> HvResult<(u64, u64)> {
     hv_result_err!(ENODEV)
 }
 
-pub fn probe_root_pci_devices(config_base_hpa: usize) -> (Vec<u16>, usize, u8) {
-    let mut bdfs: Vec<u16> = Vec::new();
+pub fn probe_root_pci_devices(config_base_hpa: usize) -> (Vec<usize>, usize, u8) {
+    let mut bdfs: Vec<usize> = Vec::new();
     let mut config_space_size = 0usize;
 
     // info!("entry start: {:x} size: {:x}", start, size);
@@ -114,7 +114,7 @@ pub fn probe_root_pci_devices(config_base_hpa: usize) -> (Vec<u16>, usize, u8) {
                     bdf, bus, dev_func, vendor_id, device_id, header_type
                 );
 
-            bdfs.push(bdf);
+            bdfs.push(bdf as _);
             bus_empty = false;
 
             // pci bridge

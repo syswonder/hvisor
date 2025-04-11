@@ -2,7 +2,7 @@ use crate::{
     config::*,
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion},
-    platform::{MEM_TYPE_RAM_NOT_ALLOC, MEM_TYPE_ROM},
+    platform::MEM_TYPE_OTHER_ZONES,
     zone::Zone,
 };
 
@@ -11,6 +11,14 @@ use crate::{
 pub struct HvArchZoneConfig {
     pub ioapic_base: usize,
     pub ioapic_size: usize,
+    pub kernel_entry_gpa: usize,
+    pub cmdline_load_gpa: usize,
+    pub setup_load_gpa: usize,
+    pub initrd_load_gpa: usize,
+    pub initrd_size: usize,
+    pub rsdp_memory_region_id: usize,
+    pub acpi_memory_region_id: usize,
+    pub initrd_memory_region_id: usize,
 }
 
 impl Zone {
@@ -19,11 +27,9 @@ impl Zone {
             let mut flags = MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE;
             if mem_region.mem_type == MEM_TYPE_IO {
                 flags |= MemFlags::IO;
-            } else if mem_region.mem_type == MEM_TYPE_ROM {
-                flags &= !MemFlags::WRITE;
             }
             match mem_region.mem_type {
-                MEM_TYPE_RAM | MEM_TYPE_ROM | MEM_TYPE_RAM_NOT_ALLOC | MEM_TYPE_IO => {
+                MEM_TYPE_RAM | MEM_TYPE_IO | MEM_TYPE_OTHER_ZONES => {
                     self.gpm.insert(MemoryRegion::new_with_offset_mapper(
                         mem_region.virtual_start as GuestPhysAddr,
                         mem_region.physical_start as HostPhysAddr,

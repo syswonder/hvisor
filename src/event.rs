@@ -113,7 +113,11 @@ pub fn check_events() -> bool {
     let cpu_data = this_cpu_data();
     match fetch_event(cpu_data.id) {
         Some(IPI_EVENT_WAKEUP) => {
-            // info!("cpu {} wakeup", cpu_data.id);
+            #[cfg(target_arch = "x86_64")]
+            if cpu_data.arch_cpu.power_on {
+                // x86 wake up cpu will send ipi twice, but we only want once
+                return false;
+            }
             cpu_data.arch_cpu.run();
         }
         Some(IPI_EVENT_SHUTDOWN) => {

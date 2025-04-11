@@ -24,8 +24,8 @@ QEMU_ARGS += -kernel $(hvisor_elf)
 QEMU_ARGS += -device loader,file="$(zone0_boot)",addr=0x5008000,force-raw=on
 QEMU_ARGS += -device loader,file="$(zone0_setup)",addr=0x500d000,force-raw=on
 QEMU_ARGS += -device loader,file="$(zone0_vmlinux)",addr=0x5100000,force-raw=on
-QEMU_ARGS += -device loader,file="$(zone0_initrd)",addr=0x20000000,force-raw=on
-QEMU_ARGS += -append "initrd_size=$(shell stat -c%s $(zone0_initrd))"
+# QEMU_ARGS += -device loader,file="$(zone0_initrd)",addr=0x20000000,force-raw=on
+# QEMU_ARGS += -append "initrd_size=$(shell stat -c%s $(zone0_initrd))"
 
 $(hvisor_bin): elf boot
 	$(OBJCOPY) $(hvisor_elf) --strip-all -O binary $@

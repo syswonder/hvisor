@@ -1,9 +1,8 @@
 use crate::{
     arch::pci::probe_root_pci_devices,
-    config::HvConfigMemoryRegion,
+    config::{HvConfigMemoryRegion, HvZoneConfig},
     error::HvResult,
-    percpu::this_zone,
-    platform::{ROOT_ZONE_ACPI_REGION, ROOT_ZONE_RSDP_REGION},
+    percpu::{this_zone, CpuSet},
 };
 use acpi::{
     fadt::Fadt,
@@ -207,6 +206,7 @@ pub struct RootAcpi {
     rsdp: AcpiTable,
     tables: BTreeMap<Signature, AcpiTable>,
     pointers: Vec<AcpiPointer>,
+    devices: Vec<usize>,
 }
 
 impl RootAcpi {
@@ -247,6 +247,8 @@ impl RootAcpi {
         &self,
         rsdp_zone_region: &HvConfigMemoryRegion,
         acpi_zone_region: &HvConfigMemoryRegion,
+        banned_tables: &BTreeSet<Signature>,
+        cpu_set: &CpuSet,
     ) {
         let mut rsdp = self.rsdp.clone();
         let mut tables = self.tables.clone();
@@ -257,7 +259,6 @@ impl RootAcpi {
             rsdp_zone_region.virtual_start as _,
         );
 
-        let cpu_set = this_zone().read().cpu_set;
         let mut madt_cur: usize = SDT_HEADER_SIZE + 8;
         let mut madt = tables.get_mut(&Signature::MADT).unwrap();
 
@@ -304,12 +305,17 @@ impl RootAcpi {
                 to.set_addr(hpa_start + cur, gpa_start + cur);
                 cur += to.get_len();
             }
-            let to_gpa = to.gpa;
+
+            let to_gpa = match banned_tables.contains(&pointer.to_sig) {
+                true => 0,
+                false => to.gpa,
+            };
 
             let from = match pointer.from_sig == pointer.to_sig {
                 true => &mut rsdp,
                 false => tables.get_mut(&pointer.from_sig).unwrap(),
             };
+
             match pointer.pointer_size {
                 4 => {
                     from.set_u32(to_gpa as _, pointer.from_offset);
@@ -392,18 +398,20 @@ impl RootAcpi {
                 mcfg.physical_start() as *const u8,
                 mcfg.region_length(),
             );
-            let new_mcfg = self.get_mut_table(Signature::MCFG).unwrap();
 
             info!("-------------------------------- MCFG --------------------------------");
             let mut offset = size_of::<Mcfg>() + 0xb;
             for entry in mcfg.entries() {
                 info!("{:x?}", entry);
                 // we don't have such many buses, probe devices to get the max_bus we have
-                let (_, _, max_bus) = probe_root_pci_devices(entry.base_address as _);
+                let (mut devices, _, max_bus) = probe_root_pci_devices(entry.base_address as _);
 
                 // update bus_number_end
-                new_mcfg.set_u8(max_bus, offset);
+                self.get_mut_table(Signature::MCFG)
+                    .unwrap()
+                    .set_u8(max_bus, offset);
                 offset += size_of::<McfgEntry>();
+                self.devices.append(&mut devices);
             }
 
             self.add_pointer(Signature::RSDT, rsdt_offset, Signature::MCFG, RSDT_PTR_SIZE);
@@ -472,12 +480,24 @@ pub fn root_init() {
     ROOT_ACPI.lock().init();
 }
 
-pub fn copy_to_root_zone_region() {
-    ROOT_ACPI
-        .lock()
-        .copy_to_zone_region(&ROOT_ZONE_RSDP_REGION, &ROOT_ZONE_ACPI_REGION);
+pub fn copy_to_guest_memory_region(config: &HvZoneConfig, cpu_set: &CpuSet) {
+    let mut banned: BTreeSet<Signature> = BTreeSet::new();
+    // FIXME: temp
+    if config.zone_id != 0 {
+        banned.insert(Signature::FADT);
+    }
+    ROOT_ACPI.lock().copy_to_zone_region(
+        &config.memory_regions()[config.arch_config.rsdp_memory_region_id],
+        &config.memory_regions()[config.arch_config.acpi_memory_region_id],
+        &banned,
+        cpu_set,
+    );
 }
 
 pub fn root_get_table(sig: &Signature) -> Option<AcpiTable> {
     ROOT_ACPI.lock().get_table(sig)
+}
+
+pub fn root_get_devices() -> Vec<usize> {
+    ROOT_ACPI.lock().devices.clone()
 }

@@ -233,12 +233,6 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
         config.num_pci_devs as _,
         &config.alloc_pci_devs,
     );
-    #[cfg(target_arch = "x86_64")]
-    zone.pci_init(
-        &config.pci_config,
-        config.num_pci_devs as _,
-        &config.alloc_pci_devs,
-    );
 
     let mut cpu_num = 0;
     config.cpus().iter().for_each(|cpu_id| {
@@ -269,6 +263,17 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     info!("zone cpu_set: {:#b}", zone.cpu_set.bitmap);
     let cpu_set = zone.cpu_set;
 
+    #[cfg(target_arch = "x86_64")]
+    {
+        zone.pci_init(
+            &config.pci_config,
+            config.num_pci_devs as _,
+            &config.alloc_pci_devs,
+        );
+        crate::arch::boot::BootParams::fill(&config, &zone.gpm);
+        crate::arch::acpi::copy_to_guest_memory_region(&config, &cpu_set);
+    }
+
     let new_zone_pointer = Arc::new(RwLock::new(zone));
     {
         cpu_set.iter().for_each(|cpuid| {
@@ -277,6 +282,12 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
             //chose boot cpu
             if cpuid == cpu_set.first_cpu().unwrap() {
                 cpu_data.boot_cpu = true;
+
+                #[cfg(target_arch = "x86_64")]
+                cpu_data.arch_cpu.set_boot_cpu_regs(
+                    config.arch_config.kernel_entry_gpa as _,
+                    config.arch_config.setup_load_gpa as _,
+                );
             }
             cpu_data.cpu_on_entry = config.entry_point as _;
             cpu_data.dtb_ipa = dtb_ipa as _;
