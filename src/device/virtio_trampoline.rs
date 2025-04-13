@@ -71,8 +71,8 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     // debug!("non root sends req: {:#x?}", hreq);
     let (cfg_flags, cfg_values) = unsafe {
         (
-            core::slice::from_raw_parts(dev.get_cfg_flags(), unsafe { consts::NCPU }),
-            core::slice::from_raw_parts(dev.get_cfg_values(), unsafe { consts::NCPU }),
+            core::slice::from_raw_parts(dev.get_cfg_flags(), MAX_CPU_NUM),
+            core::slice::from_raw_parts(dev.get_cfg_values(), MAX_CPU_NUM),
         )
     };
     let cpu_id = this_cpu_id() as usize;
