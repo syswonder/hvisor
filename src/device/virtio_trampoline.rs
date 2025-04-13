@@ -13,15 +13,8 @@
 //
 // Authors:
 //
-use alloc::collections::BTreeMap;
-use core::fmt::Debug;
-use core::fmt::Formatter;
-use core::fmt::Result;
-use core::sync::atomic::fence;
-use core::sync::atomic::Ordering;
-use spin::Mutex;
-
 use crate::arch::cpu::this_cpu_id;
+use crate::consts;
 use crate::consts::MAX_CPU_NUM;
 use crate::consts::MAX_WAIT_TIMES;
 use crate::device::irqchip::inject_irq;
@@ -32,6 +25,13 @@ use crate::zone::root_zone;
 use crate::zone::this_zone_id;
 use crate::zone::zone_error;
 use crate::{error::HvResult, memory::MMIOAccess};
+use alloc::collections::BTreeMap;
+use core::fmt::Debug;
+use core::fmt::Formatter;
+use core::fmt::Result;
+use core::sync::atomic::fence;
+use core::sync::atomic::Ordering;
+use spin::Mutex;
 
 /// Save the irqs the virtio-device wants to inject. The format is <cpu_id, List<irq_id>>, and the first elem of List<irq_id> is the valid len of it.
 pub static VIRTIO_IRQS: Mutex<BTreeMap<usize, [u64; MAX_DEVS + 1]>> = Mutex::new(BTreeMap::new());
