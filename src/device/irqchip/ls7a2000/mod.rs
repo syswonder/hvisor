@@ -48,17 +48,25 @@ pub fn primary_init_early() {
     );
 }
 pub fn primary_init_late() {
+    info!("loongarch64: irqchip: primary_init_late: running primary_init_late");
+
+    info!("loongarch64: irqchip: primary_init_late: testing UART1");
+    crate::device::uart::loongson_uart::__test_uart1();
+
     info!("loongarch64: irqchip: primary_init_late: probing pci");
     probe_pci();
+
     info!("loongarch64: irqchip: primary_init_late finished");
 }
 pub fn percpu_init() {
     info!("loongarch64: irqchip: percpu_init: running percpu_init");
+
     clear_all_ipi(this_cpu_id());
     enable_ipi(this_cpu_id());
     ecfg_ipi_enable();
-    info!("loongarch64: irqchip: percpu_init: dumping ipi registers");
-    dump_ipi_registers();
+
+    // info!("loongarch64: irqchip: percpu_init: dumping ipi registers");
+    // dump_ipi_registers();
 }
 
 const INT_SWI0: usize = 0;
