@@ -84,6 +84,21 @@ struct arch_zone_config {
 };
 #endif
 
+#ifdef X86_64
+struct arch_zone_config {
+    __u64 ioapic_base;
+    __u64 ioapic_size;
+    __u64 kernel_entry_gpa;
+    __u64 cmdline_load_gpa;
+    __u64 setup_load_gpa;
+    __u64 initrd_load_gpa;
+    __u64 initrd_size;
+    __u64 rsdp_memory_region_id;
+    __u64 acpi_memory_region_id;
+    __u64 initrd_memory_region_id;
+};
+#endif
+
 typedef struct arch_zone_config arch_zone_config_t;
 
 struct ivc_config {

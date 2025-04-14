@@ -1,0 +1,90 @@
+{
+    "arch": "x86_64",
+    "name": "linux2",
+    "zone_id": 1,
+    "cpus": [
+        2,
+        3
+    ],
+    "memory_regions": [
+        {
+            "type": "ram",
+            "physical_start": "0x40300000",
+            "virtual_start": "0x0",
+            "size": "0xe0000"
+        },
+        {
+            "type": "ram",
+            "physical_start": "0x403e0000",
+            "virtual_start": "0xe0000",
+            "size": "0x20000"
+        },
+        {
+            "type": "ram",
+            "physical_start": "0x40400000",
+            "virtual_start": "0x100000",
+            "size": "0x14f00000"
+        },
+        {
+            "type": "ram",
+            "physical_start": "0x55300000",
+            "virtual_start": "0x15000000",
+            "size": "0xf000"
+        },
+        {
+            "type": "ram",
+            "physical_start": "0x5530f000",
+            "virtual_start": "0x1500f000",
+            "size": "0x200000"
+        },
+        {
+            "type": "ram",
+            "physical_start": "0x5550f000",
+            "virtual_start": "0x1520f000",
+            "size": "0x4000000"
+        }
+    ],
+    "interrupts": [],
+    "ivc_configs": [],
+    "kernel_filepath": "./vmlinux.bin",
+    "dtb_filepath": "",
+    "kernel_load_paddr": "0x40400000",
+    "dtb_load_paddr": "0x0",
+    "entry_point": "0x8000",
+    "arch_config": {
+        "ioapic_base": "0x0",
+        "ioapic_size": "0x0",
+        "boot_filepath": "./boot.bin",
+        "boot_load_paddr": "0x40308000",
+        "cmdline": "console=ttyS0 earlyprintk=serial rdinit=/init nointremap noapic",
+        "cmdline_load_hpa": "0x4030c000",
+        "cmdline_load_gpa": "0xc000",
+        "kernel_entry_gpa": "0x100000",
+        "setup_filepath": "./setup.bin",
+        "setup_load_hpa": "0x4030d000",
+        "setup_load_gpa": "0xd000",
+        "initrd_filepath": "./initramfs.cpio.gz",
+        "initrd_load_hpa": "0x5530f000",
+        "initrd_load_gpa": "0x1500f000",
+        "rsdp_memory_region_id": "0x1",
+        "acpi_memory_region_id": "0x3",
+        "initrd_memory_region_id": "0x4"
+    },
+    "pci_config": {
+        "ecam_base": "0x0",
+        "ecam_size": "0x0",
+        "io_base": "0x0",
+        "io_size": "0x0",
+        "pci_io_base": "0x0",
+        "mem32_base": "0x0",
+        "mem32_size": "0x0",
+        "pci_mem32_base": "0x0",
+        "mem64_base": "0x0",
+        "mem64_size": "0x0",
+        "pci_mem64_base": "0x0"
+    },
+    "num_pci_devs": 1,
+    "alloc_pci_devs": [
+        0
+    ]
+}

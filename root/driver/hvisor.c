@@ -305,6 +305,7 @@ static int __init hvisor_init(void) {
         pr_err("hvisor_misc_register failed!!!\n");
         return err;
     }
+#ifndef X86_64
     // probe hvisor virtio device.
     // The irq number must be retrieved from dtb node, because it is different
     // from GIC's IRQ number.
@@ -327,6 +328,7 @@ static int __init hvisor_init(void) {
         goto err_out;
 
     of_node_put(node);
+#endif
     pr_info("hvisor init done!!!\n");
     return 0;
 err_out:
