@@ -6,8 +6,8 @@
  * Simple character printing routine used before full initialization
  */
 
-.globl init_serial
-init_serial:
+.globl uart0_init
+uart0_init:
     or     $a4, $ra, $zero
 
 	li.d	$a0, {CONSOLE_BASE_ADDR}
@@ -41,8 +41,8 @@ init_serial:
 	or      $ra, $a4, $zero
 	jirl	$zero, $ra, 0
     
-.globl print_char
-print_char:
+.globl uart0_putchar
+uart0_putchar:
 	li.d	$r18, {CONSOLE_BASE_ADDR}
 1:
 	ld.bu	$r17, $r18, 0x5 // [UART0_BASE+5, LSR]
@@ -66,8 +66,8 @@ print_char:
 
 // after enabled uart confregs's interrupt, we can use this function to get char from uart.
 // wheatfox 2024.3.11
-.globl get_char
-get_char:
+.globl uart0_getchar
+uart0_getchar:
 	li.d	$r18, {CONSOLE_BASE_ADDR}
 
 1:

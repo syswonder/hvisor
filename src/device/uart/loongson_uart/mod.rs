@@ -49,9 +49,9 @@ global_asm!(
 
 extern "C" {
     // UART0
-    fn init_serial();
-    fn print_char(c: u8);
-    fn get_char() -> u8;
+    fn uart0_init();
+    fn uart0_putchar(c: u8);
+    fn uart0_getchar() -> u8;
     // UART1
     fn uart1_init();
     fn uart1_putchar(c: u8);
@@ -185,14 +185,14 @@ impl Uart {
     }
     pub fn init(&mut self) {
         match self.port {
-            0 => unsafe { init_serial() },
+            0 => unsafe { uart0_init() },
             1 => unsafe { uart1_init() },
             _ => panic!("Invalid UART port"),
         }
     }
     pub fn putchar(&mut self, c: u8) {
         match self.port {
-            0 => unsafe { print_char(c) },
+            0 => unsafe { uart0_putchar(c) },
             1 => unsafe { uart1_putchar(c) },
             _ => panic!("Invalid UART port"),
         }
@@ -207,7 +207,7 @@ impl Uart {
     }
     pub fn getchar(&mut self) -> u8 {
         match self.port {
-            0 => unsafe { get_char() },
+            0 => unsafe { uart0_getchar() },
             1 => unsafe { uart1_getchar() },
             _ => panic!("Invalid UART port"),
         }
