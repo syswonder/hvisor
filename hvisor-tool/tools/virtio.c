@@ -123,6 +123,9 @@ inline void write_barrier(void) {
 #ifdef LOONGARCH64
     asm volatile("dbar 0" ::: "memory");
 #endif
+#ifdef X86_64
+    asm volatile("" ::: "memory");
+#endif
 }
 
 inline void read_barrier(void) {
@@ -135,6 +138,9 @@ inline void read_barrier(void) {
 #ifdef LOONGARCH64
     asm volatile("dbar 0" ::: "memory");
 #endif
+#ifdef X86_64
+    asm volatile("" ::: "memory");
+#endif
 }
 
 inline void rw_barrier(void) {
@@ -146,6 +152,9 @@ inline void rw_barrier(void) {
 #endif
 #ifdef LOONGARCH64
     asm volatile("dbar 0" ::: "memory");
+#endif
+#ifdef X86_64
+    asm volatile("" ::: "memory");
 #endif
 }
 
