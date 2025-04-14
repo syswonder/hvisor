@@ -27,11 +27,11 @@ impl PhantomCfg {
         }
     }
 
-    pub fn set_cmd(&mut self, command: u16) {
+    pub fn write_cmd(&mut self, command: u16) {
         self.command = command;
     }
 
-    pub fn get_cmd(&self) -> u16 {
+    pub fn read_cmd(&self) -> u16 {
         self.command
     }
 }

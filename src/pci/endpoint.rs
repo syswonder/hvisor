@@ -16,8 +16,8 @@
 use alloc::vec::Vec;
 
 use super::{
-    pcibar::{BarRegion, PciBar},
-    NUM_BAR_REGS_TYPE0,
+    pcibar::{BarRegion, PciBar, VirtPciBar},
+    VirtPciDev, NUM_BAR_REGS_TYPE0, NUM_BAR_REGS_TYPE1,
 };
 
 #[derive(Debug)]
@@ -58,23 +58,45 @@ impl EndpointConfig {
         regions
     }
 
-    // pub fn ep_cfg_access(&mut self, mmio: &mut MMIOAccess){
-    //     let bar_id = match mmio.address & 0xfff {
-    //         0x10 => 0,
-    //         0x14 => 1,
-    //         0x18 => 2,
-    //         0x1c => 3,
-    //         0x20 => 4,
-    //         0x24 => 5,
-    //         _ => 0,
-    //     };
-    //     match mmio.is_write {
-    //         true => {
-    //             self.bars[bar_id].write(mmio.value as _);
-    //         },
-    //         false => {
-    //             mmio.value = self.bars[bar_id].read() as _;
-    //         }
-    //     }
-    // }
+    // after we get bar regions, we should generate a virtual device instance that mirrors this device for use by other VMs
+    pub fn generate_vep(&self) -> VirtEndpointConfig {
+        let mut v_bars: [VirtPciBar; NUM_BAR_REGS_TYPE0] =
+            [VirtPciBar::default(); NUM_BAR_REGS_TYPE0];
+        for i in 0..NUM_BAR_REGS_TYPE0 {
+            v_bars[i] = self.bars[i].generate_vbar();
+        }
+        VirtEndpointConfig::new(self.bdf, v_bars)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct VirtEndpointConfig {
+    pub bdf: usize,
+    command: u16,
+    v_bars: [VirtPciBar; NUM_BAR_REGS_TYPE0],
+}
+
+impl VirtEndpointConfig {
+    pub fn new(bdf: usize, v_bars: [VirtPciBar; NUM_BAR_REGS_TYPE0]) -> Self {
+        Self {
+            bdf,
+            command: 0,
+            v_bars: v_bars,
+        }
+    }
+}
+
+impl VirtPciDev for VirtEndpointConfig {
+    fn read_bar(&self, bar_id: usize) -> u32 {
+        self.v_bars[bar_id].read()
+    }
+    fn write_bar(&mut self, bar_id: usize, val: u32) {
+        self.v_bars[bar_id].write(val as _);
+    }
+    fn read_cmd(&self) -> u16 {
+        self.command
+    }
+    fn write_cmd(&mut self, command: u16) {
+        self.command = command;
+    }
 }

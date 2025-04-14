@@ -1,3 +1,5 @@
+use alloc::collections::btree_map::BTreeMap;
+use endpoint::VirtEndpointConfig;
 // Copyright (c) 2025 Syswonder
 // hvisor is licensed under Mulan PSL v2.
 // You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -29,6 +31,13 @@ pub const NUM_BAR_REGS_TYPE0: usize = 6;
 pub const NUM_BAR_REGS_TYPE1: usize = 2;
 pub const PHANTOM_DEV_HEADER: u32 = 0x77777777u32;
 
+pub trait VirtPciDev {
+    fn read_bar(&self, bar_id: usize) -> u32;
+    fn write_bar(&mut self, bar_id: usize, val: u32);
+    fn write_cmd(&mut self, val: u16);
+    fn read_cmd(&self) -> u16;
+}
+
 pub static ECAM_BASE: Once<usize> = Once::new();
 
 pub fn init_ecam_base(ecam_base: usize) {
@@ -39,6 +48,28 @@ pub fn get_ecam_base() -> usize {
     *ECAM_BASE.get().unwrap() as _
 }
 
-pub fn cfg_base(bdf: usize) -> usize {
-    get_ecam_base() + (bdf << 12)
+pub fn cfg_base(bdf: usize, shift: usize) -> usize {
+    if cfg!(all(target_arch = "loongarch64", feature = "pci")) && ((bdf >> 8) != 0){
+        get_ecam_base() + (bdf << shift) + 0x1000_0000
+    }else{
+        get_ecam_base() + (bdf << shift)
+    }
+}
+
+pub static mut VIRT_PCI_EPS: BTreeMap<usize, VirtEndpointConfig> = BTreeMap::new();
+
+// In fact, if the vdev corresponding to the given BDF cannot be found, 
+// it indicates that the device will only be used by subsequent VMs. 
+// Therefore, minimal handling is required, 
+// and it's not an issue if no further actions are taken.
+pub fn add_virt_ep(bdf: usize, vep: VirtEndpointConfig) {
+    unsafe {
+        match VIRT_PCI_EPS.get(&bdf) {
+            Some(_vep) => warn!("The BDF already has a virt config struct"),
+            None => {
+                VIRT_PCI_EPS.insert(bdf, vep.clone());
+                info!("add a virt ep: {:#x?}", vep.clone());
+            },
+        }
+    }
 }

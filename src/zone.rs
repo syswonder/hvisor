@@ -199,12 +199,18 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     zone.irq_bitmap_init(config.interrupts());
     #[cfg(target_arch = "aarch64")]
     zone.ivc_init(config.ivc_config());
-    #[cfg(all(feature = "pci", target_arch = "aarch64"))]
+
+    /* loongarch page table emergency */
+    zone.page_table_emergency(config.pci_config.ecam_base as _, config.pci_config.ecam_size as _)?;
+
+    #[cfg(all(feature = "pci"))]
     zone.pci_init(
         &config.pci_config,
         config.num_pci_devs as _,
         &config.alloc_pci_devs,
     );
+
+    
 
     config.cpus().iter().for_each(|cpu_id| {
         zone.cpu_set.set_bit(*cpu_id as _);
@@ -262,3 +268,4 @@ fn test_add_and_remove_zone() {
     }
     assert_eq!(ZONE_LIST.read().len(), zone_count_before);
 }
+

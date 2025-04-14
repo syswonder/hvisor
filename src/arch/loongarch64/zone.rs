@@ -385,3 +385,15 @@ pub type ZoneContext = LoongArch64ZoneContext;
 pub struct HvArchZoneConfig {
     pub dummy: usize,
 }
+
+impl Zone {
+    pub fn page_table_emergency(&mut self, vaddr: usize, size: usize) -> HvResult{
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            vaddr as GuestPhysAddr,
+            vaddr as HostPhysAddr,
+            size as _,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ))?;
+        self.gpm.delete(vaddr as GuestPhysAddr)
+    }
+}

@@ -26,7 +26,7 @@ pub const CONFIG_MAX_MEMORY_REGIONS: usize = 32;
 pub const CONFIG_MAX_INTERRUPTS: usize = 32;
 pub const CONFIG_NAME_MAXLEN: usize = 32;
 pub const CONFIG_MAX_IVC_CONFIGS: usize = 2;
-pub const CONFIG_MAX_PCI_DEV: usize = 16;
+pub const CONFIG_MAX_PCI_DEV: usize = 32;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]

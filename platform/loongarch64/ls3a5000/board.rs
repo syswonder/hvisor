@@ -20,7 +20,7 @@ pub const BOARD_NAME: &str = "ls3a5000";
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x10000f000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x200000;
-pub const ROOT_ZONE_ENTRY: u64 = 0x9000000000e4b000;
+pub const ROOT_ZONE_ENTRY: u64 = 0x9000000000e94000;
 pub const ROOT_ZONE_CPUS: u64 = 1 << 0;
 
 pub const ROOT_ZONE_NAME: &str = "root-linux-la64";
@@ -77,24 +77,24 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
     //     virtual_start: 0x1a000000,
     //     size: 0x02000000,
     // }, // pci
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0xefe_0000_0000,
-        virtual_start: 0xfe_0000_0000,
-        size: 0x20000000,
-    }, // pci config space (HT)
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0x18408000,
-        virtual_start: 0x18408000,
-        size: 0x00008000,
-    }, // pci io resource
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0x60000000,
-        virtual_start: 0x60000000,
-        size: 0x20000000,
-    }, // pci mem resource
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0xefe_0000_0000,
+    //     virtual_start: 0xcf_0000_0000,
+    //     size: 0x20000000,
+    // }, // pci config space (HT)
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0x18408000,
+    //     virtual_start: 0x18408000,
+    //     size: 0x00008000,
+    // }, // pci io resource
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0x60000000,
+    //     virtual_start: 0x60000000,
+    //     size: 0x20000000,
+    // }, // pci mem resource
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x1001_0000,
@@ -120,3 +120,30 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
 
 pub const ROOT_ZONE_IRQS: [u32; 0] = [];
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig { dummy: 0 };
+
+pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
+    ecam_base: 0xfe00000000,
+    ecam_size: 0x20000000,
+    io_base: 0x18408000,
+    io_size: 0x8000,
+    pci_io_base: 0x00008000,
+    mem32_base: 0x0,
+    mem32_size: 0x0,
+    pci_mem32_base: 0x0,
+    mem64_base: 0x60000000,
+    mem64_size: 0x20000000,
+    pci_mem64_base: 0x60000000,
+};
+
+/* 00:00.0, 00:00.1, 00:00.2, 00:00.3, 00:04.0, 00:04.1*/
+/* 00:05.0, 00:05.1, 00:06.0, 00:06.1, 00:06.2 */
+/* 00:07.0, 00:08.0, 00:09.0, 00:0a.0, 00:0b.0 */
+/* 00:0c.0, 00:0d.0, 00:0f.0, 00:10.0, 00:13.0 */
+/* 00:16.0, 00:19.0, 02:00.0, 05:00.0 */
+/* 08:00.0, 08:00.1, 08:00.2, 08:00.3 net*/
+pub const ROOT_PCI_DEVS: [u64; 26] = [0, 1, 2, 3, 4 << 3, (4 << 3) + 1,
+5 << 3, (5 << 3) + 1, 6 << 3, (6 << 3) + 1, (6 << 3) + 2,
+7 << 3, 8 << 3, 9 << 3, 0xa << 3, 0xb << 3,
+0xc << 3, 0xd << 3, 0xf << 3, 0x10 << 3, 0x13 << 3,
+0x16 << 3, 0x19 << 3, 2 << 8, 5 << 8,
+(8 << 8) + 0];
