@@ -10,6 +10,7 @@ use crate::{
         addr::{GuestPhysAddr, HostPhysAddr, PhysAddr},
         MemFlags,
     },
+    percpu::this_cpu_data,
     zone::this_zone_id,
 };
 use bit_field::BitField;
@@ -244,7 +245,10 @@ impl PagingInstr for S2PTInstr {
         crate::arch::vmcs::VmcsControl64::EPTP.write(s2ptp).unwrap();
         unsafe { invs2pt(InvS2PTType::SingleContext, s2ptp) };
 
-        vtd::update_dma_translation_tables(this_zone_id(), root_paddr);
+        // if this cpu is boot cpu and it is running
+        if this_cpu_data().arch_cpu.power_on && this_cpu_data().boot_cpu {
+            vtd::update_dma_translation_tables(this_zone_id(), root_paddr);
+        }
     }
 
     fn flush(_vaddr: Option<usize>) {}

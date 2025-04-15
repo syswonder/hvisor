@@ -284,7 +284,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
                 cpu_data.boot_cpu = true;
 
                 #[cfg(target_arch = "x86_64")]
-                cpu_data.arch_cpu.set_boot_cpu_regs(
+                cpu_data.arch_cpu.set_boot_cpu_vm_launch_regs(
                     config.arch_config.kernel_entry_gpa as _,
                     config.arch_config.setup_load_gpa as _,
                 );

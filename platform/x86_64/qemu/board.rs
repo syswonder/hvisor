@@ -41,7 +41,7 @@ const ROOT_ZONE_ACPI_REGION: HvConfigMemoryRegion = HvConfigMemoryRegion {
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 pub const ROOT_ZONE_CMDLINE: &str =
-    "console=ttyS0 earlyprintk=serial nointremap root=/dev/vda rw init=/init\0";
+    "console=ttyS0 earlyprintk=serial nointremap no_timer_check root=/dev/vda rw init=/init\0";
 //"console=ttyS0 earlyprintk=serial rdinit=/init nokaslr nointremap\0"; // noapic
 
 pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 8] = [

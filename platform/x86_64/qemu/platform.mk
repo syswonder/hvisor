@@ -1,5 +1,5 @@
 QEMU := /home/sora/qemu/build/qemu-system-x86_64
-# /home/sora/qemu/build/qemu-system-x86_64
+# FIXME: /home/sora/qemu/build/qemu-system-x86_64
 
 zone0_boot := $(image_dir)/bootloader/out/boot.bin
 zone0_setup := $(image_dir)/kernel/setup.bin
@@ -8,7 +8,7 @@ zone0_initrd := $(image_dir)/virtdisk/initramfs.cpio.gz
 zone0_rootfs := $(image_dir)/virtdisk/rootfs1.img
 
 QEMU_ARGS := -machine q35,kernel-irqchip=split
-QEMU_ARGS += -cpu host,+x2apic,+invtsc -accel kvm
+QEMU_ARGS += -cpu host,+x2apic,+invtsc,+vmx -accel kvm # cpu: host Broadwell YongFeng
 QEMU_ARGS += -smp 4
 QEMU_ARGS += -serial mon:stdio
 QEMU_ARGS += -m 4G

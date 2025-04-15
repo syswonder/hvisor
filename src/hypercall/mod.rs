@@ -277,13 +277,6 @@ impl<'a> HyperCall<'a> {
         let _lock = target_data.ctrl_lock.lock();
 
         if !target_data.arch_cpu.power_on {
-            #[cfg(target_arch = "x86_64")]
-            send_event(
-                boot_cpu,
-                crate::arch::idt::IdtVector::VIRT_IPI_VECTOR as _,
-                IPI_EVENT_WAKEUP,
-            );
-            #[cfg(not(target_arch = "x86_64"))]
             send_event(boot_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP);
         } else {
             error!("hv_zone_start: cpu {} already on", boot_cpu);

@@ -1,10 +1,10 @@
 use crate::{
-    arch::{mmio::MMIoDevice, zone::HvArchZoneConfig},
+    arch::{idt, mmio::MMIoDevice, zone::HvArchZoneConfig},
     device::irqchip::pic::inject_vector,
     error::HvResult,
     memory::{GuestPhysAddr, MMIOAccess},
     platform::ROOT_ZONE_IOAPIC_BASE,
-    zone::Zone,
+    zone::{this_zone_id, Zone},
 };
 use alloc::{sync::Arc, vec::Vec};
 use bit_field::BitField;
@@ -118,10 +118,11 @@ impl MMIoDevice for VirtIoApic {
                         entry.set_bits(32..=63, value.get_bits(0..=31));
 
                         // use host vector instead of guest vector
-                        /* entry.set_bits(
+                        entry.set_bits(
                             0..=7,
-                            get_host_vector(entry.get_bits(0..=7) as u32).unwrap() as _,
-                        ); */
+                            idt::get_host_vector(entry.get_bits(0..=7) as u32, this_zone_id())
+                                .unwrap() as _,
+                        );
                         unsafe {
                             configure_gsi_from_raw(index as _, *entry);
                         };

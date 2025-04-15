@@ -24,6 +24,7 @@ use crate::{
     hypercall::HyperCall,
     memory::{mmio_handle_access, MMIOAccess, MemFlags},
     percpu::this_cpu_data,
+    zone::this_zone_id,
 };
 use x86_64::registers::control::Cr4Flags;
 
@@ -82,7 +83,11 @@ pub fn arch_handle_trap(tf: &mut TrapFrame) {
 
 fn handle_irq(vector: u8) {
     match vector {
-        IdtVector::VIRT_IPI_VECTOR => ipi::handle_virt_ipi(),
+        IdtVector::VIRT_IPI_VECTOR => {
+            ipi::handle_virt_ipi();
+            // send eoi inside handler, so return directly
+            return;
+        }
         IdtVector::APIC_TIMER_VECTOR => inject_vector(
             this_cpu_id(),
             this_cpu_data().arch_cpu.virt_lapic.virt_timer_vector,
@@ -92,8 +97,7 @@ fn handle_irq(vector: u8) {
         _ => {
             inject_vector(
                 this_cpu_id(),
-                vector as _,
-                //get_guest_vector(vector).unwrap() as _,
+                get_guest_vector(vector, this_zone_id()).unwrap() as _,
                 None,
                 false,
             );

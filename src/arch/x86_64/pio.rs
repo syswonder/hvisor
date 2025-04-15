@@ -36,10 +36,12 @@ impl PortIoBitmap {
         bitmap.set_intercept(PCI_CONFIG_DATA, true);
         // bitmap.set_range_intercept(0xcf8..0xd00, true);
 
-        // FIXME: temp passthrough uart com1
+        // FIXME: i8254
+        // bitmap.set_range_intercept(0x300..0x310, false);
         bitmap.set_range_intercept(0x3f8..0x400, false);
 
         if zoneid == 0 {
+            // passthrough uart com1
             // FIXME: get port info from ACPI FACP table
             bitmap.set_intercept(0xb2, false);
             bitmap.set_range_intercept(0x600..0x630, false);

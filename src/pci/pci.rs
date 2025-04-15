@@ -292,6 +292,9 @@ impl Zone {
     }
 
     fn pci_bars_register(&mut self, pci_config: &HvPciConfig) {
+        #[cfg(target_arch = "x86_64")]
+        let mut msix_bar_regions: Vec<BarRegion> = Vec::new();
+
         for region in self.pciroot.bar_regions.iter_mut() {
             let (cpu_base, pci_base) = match region.bar_type {
                 BarType::IO => (pci_config.io_base as usize, pci_config.pci_io_base as usize),
@@ -317,6 +320,19 @@ impl Zone {
                 region.bar_type, region.start, region.size
             );
 
+            #[cfg(target_arch = "x86_64")]
+            {
+                // check whether this bar is msi-x table
+                // if true, use msi-x table handler instead
+                if region.bar_type != BarType::IO {
+                    if let Some(bdf) = crate::arch::acpi::is_msix_bar(region.start) {
+                        info!("msi-x bar! hpa: {:x} bdf: {:x}", region.start, bdf);
+                        msix_bar_regions.push(region.clone());
+                        continue;
+                    }
+                }
+            }
+
             if cfg!(not(target_arch = "x86_64")) || region.bar_type != BarType::IO {
                 self.gpm
                     .insert(MemoryRegion::new_with_offset_mapper(
@@ -334,6 +350,18 @@ impl Zone {
                 );
             }
         }
+
+        #[cfg(target_arch = "x86_64")]
+        {
+            for region in msix_bar_regions.iter() {
+                self.mmio_region_register(
+                    region.start,
+                    region.size,
+                    crate::arch::x86_64::pci::mmio_msix_table_handler,
+                    region.start,
+                );
+            }
+        }
     }
 }
 
@@ -345,11 +373,21 @@ pub fn mmio_pci_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     let bus = bdf >> 8;
 
     let zone = this_zone();
+    let zone_id = zone.read().id;
     let mut binding = zone.write();
     let is_assigned = binding.pciroot.is_assigned_device(bdf);
 
     match is_assigned {
         true => {
+            #[cfg(target_arch = "x86_64")]
+            {
+                if let Some(bdf) = crate::arch::acpi::is_msi_data_reg(base + mmio.address) {
+                    crate::arch::pci::mmio_msi_data_reg_handler(mmio, base, bdf, zone_id);
+                } else {
+                    mmio_perform_access(base, mmio);
+                }
+            }
+            #[cfg(not(target_arch = "x86_64"))]
             mmio_perform_access(base, mmio);
         }
         false => {

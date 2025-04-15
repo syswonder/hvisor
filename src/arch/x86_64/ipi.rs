@@ -2,6 +2,7 @@ use crate::{
     device::irqchip::inject_vector,
     error::HvResult,
     event,
+    hypercall::SGI_IPI_ID,
     percpu::{this_cpu_data, this_zone, CpuSet},
 };
 use alloc::{collections::vec_deque::VecDeque, vec::Vec};
@@ -28,15 +29,11 @@ pub mod IpiDestShorthand {
 
 pub struct IpiInfo {
     pub start_up_addr: usize,
-    pub has_start_up: bool,
 }
 
 impl IpiInfo {
     fn new() -> Self {
-        Self {
-            start_up_addr: 0,
-            has_start_up: false,
-        }
+        Self { start_up_addr: 0 }
     }
 }
 
@@ -101,26 +98,18 @@ pub fn send_ipi(value: u64) -> HvResult {
             IpiDeliveryMode::FIXED => {
                 // info!("dest: {:x}, vector: {:x}", dest, vector);
                 inject_vector(dest, vector, None, true);
-                arch_send_event(dest as _, IdtVector::VIRT_IPI_VECTOR as _);
+                arch_send_event(dest as _, SGI_IPI_ID as _);
             }
             IpiDeliveryMode::NMI => {
                 inject_vector(dest, 2, None, true);
-                arch_send_event(dest as _, IdtVector::VIRT_IPI_VECTOR as _);
+                arch_send_event(dest as _, SGI_IPI_ID as _);
             }
             IpiDeliveryMode::INIT => {}
             IpiDeliveryMode::START_UP => {
                 // FIXME: start up once?
                 let mut ipi_info = get_ipi_info(dest).unwrap().lock();
-                //if !ipi_info.has_start_up {
-                // we only start up once
-                //ipi_info.has_start_up = true;
                 ipi_info.start_up_addr = (vector as usize) << 12;
-                event::send_event(
-                    dest,
-                    IdtVector::VIRT_IPI_VECTOR as _,
-                    event::IPI_EVENT_WAKEUP,
-                );
-                //}
+                event::send_event(dest, SGI_IPI_ID as _, event::IPI_EVENT_WAKEUP);
             }
             _ => {}
         }
@@ -129,19 +118,24 @@ pub fn send_ipi(value: u64) -> HvResult {
     Ok(())
 }
 
-pub fn arch_send_event(dest: u64, vector: u64) {
+pub fn arch_send_event(dest: u64, _: u64) {
     unsafe {
         this_cpu_data()
             .arch_cpu
             .virt_lapic
             .phys_lapic
-            .send_ipi(vector as _, dest as _)
+            .send_ipi(IdtVector::VIRT_IPI_VECTOR, dest as _)
     };
 }
 
 pub fn handle_virt_ipi() {
+    unsafe {
+        this_cpu_data()
+            .arch_cpu
+            .virt_lapic
+            .phys_lapic
+            .end_of_interrupt()
+    };
     // this may never return!
-    if event::check_events() {
-        return;
-    }
+    event::check_events();
 }

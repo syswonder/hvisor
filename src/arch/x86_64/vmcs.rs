@@ -565,6 +565,7 @@ impl Vmcs {
         }
         if (allowed1 & set) != set {
             // failed if set 0-bits in allowed1
+            warn!("allow1: {:x}", allowed1);
             return hv_result_err!(
                 EINVAL,
                 format!("can not set bits {:#x} in {:?}", set, control)

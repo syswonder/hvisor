@@ -1,6 +1,6 @@
 use core::u32;
 
-use crate::error::HvResult;
+use crate::{error::HvResult, zone::this_zone_id};
 use alloc::collections::btree_map::BTreeMap;
 use spin::{Mutex, Once};
 use x86_64::structures::idt::{Entry, HandlerFunc, InterruptDescriptorTable};
@@ -25,14 +25,16 @@ lazy_static::lazy_static! {
 }
 
 struct AllocVectors {
-    hv_to_gv: [u32; VECTOR_CNT],
-    gv_to_hv: BTreeMap<u32, u8>,
+    // key: (zone_id, host vector) value: guest vector
+    hv_to_gv: BTreeMap<(usize, u8), u32>,
+    // key: (zone_id, guest vector) value: host vector
+    gv_to_hv: BTreeMap<(usize, u32), u8>,
 }
 
 impl AllocVectors {
     fn new() -> Self {
         Self {
-            hv_to_gv: [u32::MAX; VECTOR_CNT],
+            hv_to_gv: BTreeMap::new(),
             gv_to_hv: BTreeMap::new(),
         }
     }
@@ -68,35 +70,44 @@ impl IdtStruct {
     }
 }
 
-pub fn get_host_vector(gv: u32) -> HvResult<u8> {
+pub fn get_host_vector(gv: u32, zone_id: usize) -> Option<u8> {
     let mut alloc_vectors = ALLOC_VECTORS.lock();
 
-    if alloc_vectors.gv_to_hv.contains_key(&gv) {
-        return Ok(*alloc_vectors.gv_to_hv.get(&gv).unwrap());
+    if let Some(&hv) = alloc_vectors.gv_to_hv.get(&(zone_id, gv)) {
+        return Some(hv);
     }
 
     for hv in IdtVector::ALLOC_START..=IdtVector::ALLOC_END {
-        if alloc_vectors.hv_to_gv[hv as usize] == u32::MAX {
-            alloc_vectors.hv_to_gv[hv as usize] = gv;
-            alloc_vectors.gv_to_hv.insert(gv, hv);
+        if !alloc_vectors.hv_to_gv.contains_key(&(zone_id, hv)) {
+            alloc_vectors.hv_to_gv.insert((zone_id, hv), gv);
+            alloc_vectors.gv_to_hv.insert((zone_id, gv), hv);
 
-            info!("gv: {:x}, hv: {:x}", gv, hv);
+            // info!("gv: {:x}, hv: {:x}", gv, hv);
 
-            return Ok(hv);
+            return Some(hv);
         }
     }
 
-    hv_result_err!(EPERM)
+    None
 }
 
-pub fn get_guest_vector(hv: u8) -> HvResult<u32> {
+pub fn get_guest_vector(hv: u8, zone_id: usize) -> Option<u32> {
     let alloc_vectors = ALLOC_VECTORS.lock();
 
-    if let Some(&gv) = alloc_vectors.hv_to_gv.get(hv as usize) {
+    if let Some(&gv) = alloc_vectors.hv_to_gv.get(&(zone_id, hv)) {
         if gv != u32::MAX {
-            return Ok(gv);
+            return Some(gv);
         }
     }
 
-    hv_result_err!(EPERM)
+    None
+}
+
+pub fn clear_vectors(hv: u8, zone_id: usize) {
+    let mut alloc_vectors = ALLOC_VECTORS.lock();
+
+    if let Some(&gv) = alloc_vectors.hv_to_gv.get(&(zone_id, hv)) {
+        alloc_vectors.hv_to_gv.remove_entry(&(zone_id, hv));
+        alloc_vectors.gv_to_hv.remove_entry(&(zone_id, gv));
+    }
 }

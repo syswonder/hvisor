@@ -207,6 +207,10 @@ pub struct RootAcpi {
     tables: BTreeMap<Signature, AcpiTable>,
     pointers: Vec<AcpiPointer>,
     devices: Vec<usize>,
+    // key: data reg hpa, value: bdf
+    msi_data_reg_map: BTreeMap<usize, usize>,
+    // key: msi-x table bar, value: bdf
+    msix_bar_map: BTreeMap<usize, usize>,
 }
 
 impl RootAcpi {
@@ -404,14 +408,18 @@ impl RootAcpi {
             for entry in mcfg.entries() {
                 info!("{:x?}", entry);
                 // we don't have such many buses, probe devices to get the max_bus we have
-                let (mut devices, _, max_bus) = probe_root_pci_devices(entry.base_address as _);
+                let (mut devices, mut msi_data_reg_map, mut msix_bar_map, _, max_bus) =
+                    probe_root_pci_devices(entry.base_address as _);
 
                 // update bus_number_end
                 self.get_mut_table(Signature::MCFG)
                     .unwrap()
                     .set_u8(max_bus, offset);
                 offset += size_of::<McfgEntry>();
+
                 self.devices.append(&mut devices);
+                self.msi_data_reg_map.append(&mut msi_data_reg_map);
+                self.msix_bar_map.append(&mut msix_bar_map);
             }
 
             self.add_pointer(Signature::RSDT, rsdt_offset, Signature::MCFG, RSDT_PTR_SIZE);
@@ -500,4 +508,20 @@ pub fn root_get_table(sig: &Signature) -> Option<AcpiTable> {
 
 pub fn root_get_devices() -> Vec<usize> {
     ROOT_ACPI.lock().devices.clone()
+}
+
+pub fn is_msi_data_reg(hpa: usize) -> Option<usize> {
+    if let Some(&bdf) = ROOT_ACPI.lock().msi_data_reg_map.get(&hpa) {
+        Some(bdf)
+    } else {
+        None
+    }
+}
+
+pub fn is_msix_bar(hpa: usize) -> Option<usize> {
+    if let Some(&bdf) = ROOT_ACPI.lock().msix_bar_map.get(&hpa) {
+        Some(bdf)
+    } else {
+        None
+    }
 }

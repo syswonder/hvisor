@@ -3,6 +3,7 @@ use crate::{
         boot::BootParams,
         gdt::{get_tr_base, GdtStruct},
         hpet, ipi,
+        mm::new_s2_memory_set,
         msr::{
             Msr::{self, *},
             MsrBitmap,
@@ -15,7 +16,12 @@ use crate::{
     consts::{core_end, MAX_CPU_NUM, PER_CPU_SIZE},
     device::irqchip::pic::{check_pending_vectors, lapic::VirtLocalApic},
     error::{HvError, HvResult},
-    memory::{addr::phys_to_virt, GuestPhysAddr, HostPhysAddr, PhysAddr, PAGE_SIZE},
+    memory::{
+        addr::{phys_to_virt, PHYS_VIRT_OFFSET},
+        mm::PARKING_MEMORY_SET,
+        Frame, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, PhysAddr, PAGE_SIZE,
+        PARKING_INST_PAGE,
+    },
     percpu::{this_cpu_data, this_zone},
     platform::{ROOT_ZONE_BOOT_STACK, ROOT_ZONE_CMDLINE},
 };
@@ -30,6 +36,7 @@ use core::{
 };
 use raw_cpuid::CpuId;
 use x86::{
+    bits64::vmx,
     dtables::{self, DescriptorTablePointer},
     vmx::vmcs::control::{
         EntryControls, ExitControls, PinbasedControls, PrimaryControls, SecondaryControls,
@@ -45,7 +52,7 @@ use super::acpi::RootAcpi;
 const AP_START_PAGE_IDX: u8 = 6;
 const AP_START_PAGE_PADDR: PhysAddr = AP_START_PAGE_IDX as usize * PAGE_SIZE;
 
-static VM_LAUNCH_READY: AtomicU32 = AtomicU32::new(0);
+static VMXON_DONE: AtomicU32 = AtomicU32::new(0);
 
 global_asm!(
     include_str!("ap_start.S"),
@@ -163,6 +170,7 @@ pub struct ArchCpu {
     vmcs_revision_id: u32,
     vmxon_region: VmxRegion,
     vmcs_region: VmxRegion,
+    vm_launch_guest_regs: GeneralRegisters,
 }
 
 impl ArchCpu {
@@ -180,6 +188,7 @@ impl ArchCpu {
             vmcs_revision_id: 0,
             vmxon_region: VmxRegion::fake_init(),
             vmcs_region: VmxRegion::fake_init(),
+            vm_launch_guest_regs: GeneralRegisters::default(),
         }
     }
 
@@ -205,10 +214,35 @@ impl ArchCpu {
     pub fn idle(&mut self) -> ! {
         assert!(this_cpu_id() == self.cpuid);
 
+        self.power_on = false;
         self.activate_vmx().unwrap();
-        VM_LAUNCH_READY.fetch_add(1, Ordering::SeqCst);
 
-        loop {}
+        // info!("idle! cpuid: {:x}", self.cpuid);
+
+        PARKING_MEMORY_SET.call_once(|| {
+            let parking_code: [u8; 2] = [0xeb, 0xfe]; // jump short -3
+            unsafe {
+                PARKING_INST_PAGE[..2].copy_from_slice(&parking_code);
+            }
+
+            let mut gpm = new_s2_memory_set();
+            gpm.insert(MemoryRegion::new_with_offset_mapper(
+                0 as GuestPhysAddr,
+                unsafe { &PARKING_INST_PAGE as *const _ as HostPhysAddr - PHYS_VIRT_OFFSET },
+                PAGE_SIZE,
+                MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+            ))
+            .unwrap();
+            gpm
+        });
+
+        self.setup_vmcs(0, true).unwrap();
+        self.host_stack_top = (core_end() + (self.cpuid + 1) * PER_CPU_SIZE) as _;
+
+        unsafe {
+            PARKING_MEMORY_SET.get().unwrap().activate();
+            self.vmx_launch();
+        }
     }
 
     /// Guest general-purpose registers.
@@ -225,13 +259,12 @@ impl ArchCpu {
         assert!(this_cpu_id() == self.cpuid);
         let mut per_cpu = this_cpu_data();
 
-        self.power_on = true;
+        // info!("run! cpuid: {:x}", self.cpuid);
 
+        self.power_on = true;
         self.activate_vmx().unwrap();
 
         if !per_cpu.boot_cpu {
-            // ap start up never returns to irq handler
-            unsafe { self.virt_lapic.phys_lapic.end_of_interrupt() };
             if let Some(ipi_info) = ipi::get_ipi_info(self.cpuid) {
                 per_cpu.cpu_on_entry = ipi_info.lock().start_up_addr;
             }
@@ -239,27 +272,28 @@ impl ArchCpu {
             // info!("AP start up! addr: {:x}", per_cpu.cpu_on_entry);
         }
 
-        self.setup_vmcs(per_cpu.cpu_on_entry, per_cpu.boot_cpu)
-            .unwrap();
+        self.setup_vmcs(per_cpu.cpu_on_entry, false).unwrap();
         per_cpu.activate_gpm();
 
-        // must be called after activate_gpm()
-        vtd::activate();
+        if per_cpu.boot_cpu {
+            // must be called after activate_gpm()
+            vtd::activate();
+            self.guest_regs = self.vm_launch_guest_regs.clone();
+        }
 
-        while VM_LAUNCH_READY.load(Ordering::Acquire) < MAX_CPU_NUM as u32 - 1 {
+        while VMXON_DONE.load(Ordering::Acquire) < MAX_CPU_NUM as u32 - 1 {
             core::hint::spin_loop();
         }
 
+        self.host_stack_top = (core_end() + (self.cpuid + 1) * PER_CPU_SIZE) as _;
         unsafe { self.vmx_launch() };
-        loop {}
     }
 
-    pub fn set_boot_cpu_regs(&mut self, rax: u64, rsi: u64) {
-        self.guest_regs.rax = rax;
-        self.guest_regs.rsi = rsi;
+    pub fn set_boot_cpu_vm_launch_regs(&mut self, rax: u64, rsi: u64) {
+        self.vm_launch_guest_regs.rax = rax;
+        self.vm_launch_guest_regs.rsi = rsi;
     }
 
-    /// only activate once
     fn activate_vmx(&mut self) -> HvResult {
         if self.vmx_on {
             return Ok(());
@@ -279,6 +313,7 @@ impl ArchCpu {
         unsafe { execute_vmxon(self.vmxon_region.start_paddr() as u64).unwrap() };
 
         self.vmx_on = true;
+        VMXON_DONE.fetch_add(1, Ordering::SeqCst);
         Ok(())
     }
 
@@ -315,7 +350,8 @@ impl ArchCpu {
         Ok(())
     }
 
-    fn setup_vmcs(&mut self, entry: GuestPhysAddr, set_rip: bool) -> HvResult {
+    // after activate_vmx
+    fn setup_vmcs(&mut self, entry: GuestPhysAddr, is_idle: bool) -> HvResult {
         self.vmcs_region = VmxRegion::new(self.vmcs_revision_id, false);
 
         let start_paddr = self.vmcs_region.start_paddr() as usize;
@@ -323,14 +359,14 @@ impl ArchCpu {
         Vmcs::load(start_paddr)?;
 
         self.setup_vmcs_host(&self.host_stack_top as *const _ as usize)?;
-        self.setup_vmcs_guest(entry, set_rip, ROOT_ZONE_BOOT_STACK)?;
+        self.setup_vmcs_guest(entry, ROOT_ZONE_BOOT_STACK)?;
         self.setup_vmcs_control()?;
 
         Ok(())
     }
 
     fn setup_vmcs_control(&mut self) -> HvResult {
-        // Intercept NMI and external interrupts.
+        // intercept NMI and external interrupts
         use PinbasedControls as PinCtrl;
         Vmcs::set_control(
             VmcsControl32::PINBASED_EXEC_CONTROLS,
@@ -340,25 +376,23 @@ impl ArchCpu {
             0,
         )?;
 
-        // Use I/O bitmaps and MSR bitmaps, activate secondary controls,
-        // disable CR3 load/store interception.
+        // use I/O bitmaps and MSR bitmaps, activate secondary controls,
+        // disable CR3 load/store interception
         use PrimaryControls as CpuCtrl;
         Vmcs::set_control(
             VmcsControl32::PRIMARY_PROCBASED_EXEC_CONTROLS,
             Msr::IA32_VMX_TRUE_PROCBASED_CTLS,
             Msr::IA32_VMX_PROCBASED_CTLS.read() as u32,
-            (
-                // CpuCtrl::RDTSC_EXITING |
-                CpuCtrl::HLT_EXITING
-                    | CpuCtrl::USE_IO_BITMAPS
-                    | CpuCtrl::USE_MSR_BITMAPS
-                    | CpuCtrl::SECONDARY_CONTROLS
-            )
+            (CpuCtrl::HLT_EXITING
+                // | CpuCtrl::RDTSC_EXITING 
+                | CpuCtrl::USE_IO_BITMAPS
+                | CpuCtrl::USE_MSR_BITMAPS
+                | CpuCtrl::SECONDARY_CONTROLS)
                 .bits(),
             (CpuCtrl::CR3_LOAD_EXITING | CpuCtrl::CR3_STORE_EXITING).bits(),
         )?;
 
-        // Enable EPT, RDTSCP, INVPCID, and unrestricted guest.
+        // enable EPT, RDTSCP, INVPCID, and unrestricted guest
         use SecondaryControls as CpuCtrl2;
         Vmcs::set_control(
             VmcsControl32::SECONDARY_PROCBASED_EXEC_CONTROLS,
@@ -366,13 +400,14 @@ impl ArchCpu {
             0,
             (CpuCtrl2::ENABLE_EPT
                 | CpuCtrl2::ENABLE_RDTSCP
+                // | CpuCtrl2::VIRTUALIZE_X2APIC
                 | CpuCtrl2::ENABLE_INVPCID
                 | CpuCtrl2::UNRESTRICTED_GUEST)
                 .bits(),
             0,
         )?;
 
-        // Load guest IA32_PAT/IA32_EFER on VM entry.
+        // load guest IA32_PAT/IA32_EFER on VM entry
         use EntryControls as EntryCtrl;
         Vmcs::set_control(
             VmcsControl32::VMENTRY_CONTROLS,
@@ -382,7 +417,7 @@ impl ArchCpu {
             0,
         )?;
 
-        // Switch to 64-bit host, acknowledge interrupt info, switch IA32_PAT/IA32_EFER on VM exit.
+        // switch to 64-bit host, acknowledge interrupt info, switch IA32_PAT/IA32_EFER on VM exit
         use ExitControls as ExitCtrl;
         Vmcs::set_control(
             VmcsControl32::VMEXIT_CONTROLS,
@@ -398,25 +433,29 @@ impl ArchCpu {
             0,
         )?;
 
-        // No MSR switches if hypervisor doesn't use and there is only one vCPU.
+        // no MSR switches if hypervisor doesn't use and there is only one vCPU
         VmcsControl32::VMEXIT_MSR_STORE_COUNT.write(0)?;
         VmcsControl32::VMEXIT_MSR_LOAD_COUNT.write(0)?;
         VmcsControl32::VMENTRY_MSR_LOAD_COUNT.write(0)?;
 
-        // Pass-through exceptions, don't use I/O bitmap, set MSR bitmaps.
+        // pass-through exceptions, set I/O bitmap and MSR bitmaps
         VmcsControl32::EXCEPTION_BITMAP.write(0)?;
-        VmcsControl64::IO_BITMAP_A_ADDR.write(this_zone().read().pio_bitmap.bitmap_a_addr() as _)?;
-        VmcsControl64::IO_BITMAP_B_ADDR.write(this_zone().read().pio_bitmap.bitmap_b_addr() as _)?;
-        VmcsControl64::MSR_BITMAPS_ADDR.write(this_zone().read().msr_bitmap.phys_addr() as _)?;
+
+        if self.power_on {
+            VmcsControl64::IO_BITMAP_A_ADDR
+                .write(this_zone().read().pio_bitmap.bitmap_a_addr() as _)?;
+            VmcsControl64::IO_BITMAP_B_ADDR
+                .write(this_zone().read().pio_bitmap.bitmap_b_addr() as _)?;
+            VmcsControl64::MSR_BITMAPS_ADDR.write(this_zone().read().msr_bitmap.phys_addr() as _)?;
+        }
+
+        // set virtual-APIC page address
+        // self.virt_lapic.vapic_page = Frame::new_zero().unwrap();
+        // VmcsControl64::VIRT_APIC_ADDR.write(self.virt_lapic.vapic_page.start_paddr() as _);
         Ok(())
     }
 
-    fn setup_vmcs_guest(
-        &mut self,
-        entry: GuestPhysAddr,
-        set_rip: bool,
-        rsp: GuestPhysAddr,
-    ) -> HvResult {
+    fn setup_vmcs_guest(&mut self, entry: GuestPhysAddr, rsp: GuestPhysAddr) -> HvResult {
         let cr0_guest = Cr0Flags::EXTENSION_TYPE | Cr0Flags::NUMERIC_ERROR;
         let cr4_guest = Cr4Flags::VIRTUAL_MACHINE_EXTENSIONS;
 
@@ -469,7 +508,7 @@ impl ArchCpu {
         VmcsGuest64::IA32_EFER.write(0)?;
 
         // for AP start up, set CS_BASE to entry address, and RIP to 0.
-        if !set_rip {
+        if self.power_on && !this_cpu_data().boot_cpu {
             VmcsGuestNW::RIP.write(0)?;
             VmcsGuestNW::CS_BASE.write(entry)?;
         }
@@ -545,12 +584,12 @@ impl ArchCpu {
     #[naked]
     unsafe extern "C" fn vmx_launch(&mut self) -> ! {
         asm!(
-            "mov    [rdi + {host_stack_top}], rsp", // save current RSP to host_stack_top
+            // "mov    [rdi + {host_stack_top}], rsp", // save current RSP to host_stack_top
             "mov    rsp, rdi",                      // set RSP to guest regs area
             restore_regs_from_stack!(),
             "vmlaunch",
             "jmp    {failed}",
-            host_stack_top = const size_of::<GeneralRegisters>(),
+            // host_stack_top = const size_of::<GeneralRegisters>(),
             failed = sym Self::vmx_entry_failed,
             options(noreturn),
         )

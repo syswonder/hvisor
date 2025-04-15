@@ -6,6 +6,7 @@ use crate::{
         msr::Msr::{self, *},
     },
     error::HvResult,
+    memory::Frame,
     percpu::this_cpu_data,
 };
 use bit_field::BitField;
