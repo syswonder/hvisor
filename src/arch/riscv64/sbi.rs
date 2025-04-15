@@ -264,7 +264,7 @@ pub fn sbi_hvisor_handler(current_cpu: &mut ArchCpu) -> SbiRet {
     let (code, arg0, arg1) = (current_cpu.x[10], current_cpu.x[11], current_cpu.x[12]);
 
     let cpu_data = this_cpu_data();
-    info!(
+    debug!(
         "HVC from CPU{},code:{:#x?},arg0:{:#x?},arg1:{:#x?}",
         cpu_data.id, code, arg0, arg1
     );
