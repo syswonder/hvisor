@@ -98,14 +98,6 @@ impl ArchCpu {
             self.stack_top()
         );
 
-        let cpuid = self.get_cpuid();
-        if cpuid != 0 {
-            // on loongarch64 we only allow direct interrupt through on cpu0 with rootlinux
-            // root linux use cpuintc->liointc->uart0 for IO irqs, we put it through to use uart0
-            // on nonroot, we only need to inject virtio irq so let's disable it - wheatfox
-            disable_hwi_through();
-        }
-
         unsafe {
             asm!(
                 "csrwr {}, {LOONGARCH_CSR_SAVE3}",
