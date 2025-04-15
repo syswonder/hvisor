@@ -78,8 +78,8 @@ impl ArchCpu {
         for i in 0..32 {
             self.x[i] = 0;
         }
-        self.x[10] = cpu_id;    // cpu id
-        self.x[11] = dtb;       // dtb addr
+        self.x[10] = cpu_id; // cpu id
+        self.x[11] = dtb; // dtb addr
 
         if self.sstc {
             set_csr!(CSR_HENVCFG, 1 << 63);
@@ -100,15 +100,15 @@ impl ArchCpu {
         write_csr!(CSR_VSATP, 0);
     }
 
-    pub fn init_interrupt(&self){
+    pub fn init_interrupt(&self) {
         // Used before enter into VM.
         set_csr!(CSR_HIDELEG, 1 << 2 | 1 << 6 | 1 << 10); //HIDELEG_VSSI | HIDELEG_VSTI | HIDELEG_VSEI
         set_csr!(CSR_HEDELEG, 1 << 8 | 1 << 12 | 1 << 13 | 1 << 15); //HEDELEG_ECU | HEDELEG_IPF | HEDELEG_LPF | HEDELEG_SPF
-        // Enable all interupts.
+                                                                     // Enable all interupts.
         set_csr!(CSR_SIE, 1 << 9 | 1 << 5 | 1 << 1); // SEIE STIE SSIE
     }
 
-    pub fn reset_interrupt(&self){
+    pub fn reset_interrupt(&self) {
         // Only support software interrupt, cpus could receive software interrupt to wake up into VM.
         write_csr!(CSR_HIDELEG, 0); //HIDELEG_VSSI | HIDELEG_VSTI | HIDELEG_VSEI
         write_csr!(CSR_HEDELEG, 0); //HEDELEG_ECU | HEDELEG_IPF | HEDELEG_LPF | HEDELEG_SPF
