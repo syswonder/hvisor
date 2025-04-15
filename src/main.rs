@@ -195,7 +195,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
 
     // Don't you wanna know how many cpu(s) on board? :D
     let mut ncpu: usize = 0;
-    #[cfg(target_arch = "aarch64")]
+    #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
     {
         let devtree = unsafe { DevTree::from_raw_pointer(host_dtb as *const u8).unwrap() };
 
