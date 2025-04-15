@@ -58,6 +58,12 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
         virtual_start: 0x1fe00000,
         size: 0x2000,
     }, // uart0
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x10080000,
+        virtual_start: 0x10080000,
+        size: 0x1000,
+    }, // uart1
     // HvConfigMemoryRegion {
     //     mem_type: MEM_TYPE_IO,
     //     physical_start: 0x100d0000,

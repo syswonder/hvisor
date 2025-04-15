@@ -23,28 +23,31 @@ use tock_registers::register_bitfields;
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite, WriteOnly};
 
-pub const UART_BASE_PHYS: PhysAddr = 0x1fe001e0;
-pub const UART_BASE_VIRT: VirtAddr = 0x80000000_1fe001e0;
+const UART_CPU_REF_CLK: usize = 100000000; // 100MHz for 3A5000's SYS_CLK
+const UART_CPU_DIV_HI: usize = ((UART_CPU_REF_CLK + (115200 * 8)) / (115200 * 16)) >> 8;
+const UART_CPU_DIV_LO: usize = ((UART_CPU_REF_CLK + (115200 * 8)) / (115200 * 16)) & 0xff;
 
-const UART_REF_CLK: usize = 100000000; // 100MHz for 3A5000's SYS_CLK
-const UART_DIV_HI: usize = ((UART_REF_CLK + (115200 * 8)) / (115200 * 16)) >> 8;
-const UART_DIV_LO: usize = ((UART_REF_CLK + (115200 * 8)) / (115200 * 16)) & 0xff;
+const UART_COM_REF_CLK: usize = 50000000; // 50MHz for 7A2000 COM DB9 RS232 (115200 8n1)
+const UART_COM_DIV_HI: usize = ((UART_COM_REF_CLK + (115200 * 8)) / (115200 * 16)) >> 8;
+const UART_COM_DIV_LO: usize = ((UART_COM_REF_CLK + (115200 * 8)) / (115200 * 16)) & 0xff;
 
-const BOARD_UART0_VADDR: usize = UART_BASE_VIRT;
-const BOARD_UART1_VADDR: usize = BOARD_UART0_VADDR + 0x8;
+const BOARD_UART0_VADDR: usize = 0x8000_0000_1fe0_01e0;
+const BOARD_UART1_VADDR: usize = 0x8000_0000_1008_0000;
+const BOARD_UART2_VADDR: usize = 0x8000_0000_1008_0100;
+const BOARD_UART3_VADDR: usize = 0x8000_0000_1008_0200;
 
 global_asm!(
   include_str!("uart0.S"),
   CONSOLE_BASE_ADDR = const BOARD_UART0_VADDR,
-  UART_DIV_HI = const UART_DIV_HI,
-  UART_DIV_LO = const UART_DIV_LO
+  UART_DIV_HI = const UART_CPU_DIV_HI,
+  UART_DIV_LO = const UART_CPU_DIV_LO
 );
 
 global_asm!(
   include_str!("uart1.S"),
   CONSOLE_BASE_ADDR = const BOARD_UART1_VADDR,
-  UART_DIV_HI = const UART_DIV_HI,
-  UART_DIV_LO = const UART_DIV_LO
+  UART_DIV_HI = const UART_COM_DIV_HI,
+  UART_DIV_LO = const UART_COM_DIV_LO
 );
 
 extern "C" {
