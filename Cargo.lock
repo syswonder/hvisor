@@ -180,6 +180,7 @@ dependencies = [
  "psci",
  "qemu-exit",
  "raw-cpuid",
+ "riscv 0.13.0",
  "riscv 0.6.0",
  "riscv-decode",
  "riscv-pac",

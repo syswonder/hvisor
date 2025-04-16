@@ -30,6 +30,7 @@ pub const IPI_EVENT_VIRTIO_INJECT_IRQ: usize = 2;
 pub const IPI_EVENT_WAKEUP_VIRTIO_DEVICE: usize = 3;
 pub const IPI_EVENT_CLEAR_INJECT_IRQ: usize = 4;
 pub const IPI_EVENT_UPDATE_HART_LINE: usize = 5;
+pub const IPI_EVENT_SEND_IPI: usize = 6;
 
 static EVENT_MANAGER: Once<EventManager> = Once::new();
 
@@ -140,6 +141,14 @@ pub fn check_events() -> bool {
         Some(IPI_EVENT_UPDATE_HART_LINE) => {
             info!("cpu {} update hart line", cpu_data.id);
             irqchip::plic::update_hart_line();
+            true
+        }
+        #[cfg(target_arch = "riscv64")]
+        Some(IPI_EVENT_SEND_IPI) => {
+            // This event is different form events above, it is used to inject software interrupt.
+            // While events above will inject external interrupt.
+            use crate::arch::ipi::arch_ipi_handler;
+            arch_ipi_handler();
             true
         }
         _ => false,

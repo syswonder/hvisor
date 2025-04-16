@@ -27,10 +27,10 @@ use crate::memory::{GuestPhysAddr, HostPhysAddr};
 use crate::percpu::this_cpu_data;
 use crate::platform::__board::*;
 use core::arch::{asm, global_asm};
-use riscv::register::mtvec::TrapMode;
-use riscv::register::stvec;
-use riscv::register::{hvip, sie};
+use riscv::register::stvec::TrapMode;
+use riscv::register::{sie, stvec};
 use riscv_decode::Instruction;
+use riscv_h::register::hvip;
 
 extern "C" {
     fn _hyp_trap_vector();
@@ -101,19 +101,24 @@ pub const INS_RS2_MASK: usize = 0x01f00000;
 pub const INS_RD_MASK: usize = 0x00000f80;
 
 pub fn install_trap_vector() {
+    // Set the trap vector.
+    use riscv::register::stvec::Stvec;
+    let mut stvec = Stvec::from_bits(0);
+    stvec.set_address(_hyp_trap_vector as usize);
+    stvec.set_trap_mode(TrapMode::Direct);
     unsafe {
-        // Set the trap vector.
-        stvec::write(_hyp_trap_vector as usize, TrapMode::Direct);
+        stvec::write(stvec);
     }
 }
+
 pub fn sync_exception_handler(current_cpu: &mut ArchCpu) {
     trace!("current_cpu: stack{:#x}", current_cpu.stack_top);
     let trap_code = read_csr!(CSR_SCAUSE);
     trace!("CSR_SCAUSE: {}", trap_code);
     if (read_csr!(CSR_HSTATUS) & (1 << 7)) == 0 {
-        //HSTATUS_SPV
+        // HSTATUS_SPV
         error!("exception from HS mode");
-        //unreachable!();
+        unreachable!();
     }
     let trap_value = read_csr!(CSR_HTVAL);
     trace!("CSR_HTVAL: {:#x}", trap_value);
@@ -141,16 +146,14 @@ pub fn sync_exception_handler(current_cpu: &mut ArchCpu) {
         }
         _ => {
             warn!(
-                "CPU {} trap {},sepc: {:#x}",
-                current_cpu.cpuid, trap_code, current_cpu.sepc
+                "CPU {} sync exception, sepc: {:#x}",
+                current_cpu.cpuid, current_cpu.sepc
             );
             warn!("trap info: {} {:#x} {:#x}", trap_code, trap_value, trap_ins);
             let raw_inst = read_inst(trap_pc);
             let inst = riscv_decode::decode(raw_inst);
             warn!("trap ins: {:#x}  {:?}", raw_inst, inst);
-            // current_cpu.sepc += 4;
-            error!("unhandled trap");
-            current_cpu.idle();
+            panic!("Unhandled sync exception");
         }
     }
 }
@@ -216,7 +219,7 @@ pub fn ins_ldst_decode(ins: usize) -> (usize, bool, bool) {
 pub fn guest_page_fault_handler(current_cpu: &mut ArchCpu) {
     #[cfg(feature = "plic")]
     {
-        use riscv::register::{htinst, htval, stval};
+        use riscv_h::register::{htinst, htval, stval};
         // htval: Hypervisor bad guest physical address.
         let addr: usize = (htval::read() << 2) | (stval::read() & 0x3);
         // htinst: Hypervisor trap instruction (transformed).
@@ -340,6 +343,7 @@ pub fn guest_page_fault_handler(current_cpu: &mut ArchCpu) {
     }
 }
 
+/// Read instruction from guest memory.
 fn read_inst(addr: GuestPhysAddr) -> u32 {
     let mut ins: u32;
     if addr & 0b1 != 0 {
@@ -356,6 +360,8 @@ fn read_inst(addr: GuestPhysAddr) -> u32 {
     ins
 }
 
+/// Hypervisor Virtual-Machine Load and Store Instruction.
+/// HLVX.HU emulate VS load instruction.
 fn hlvxhu(addr: GuestPhysAddr) -> u64 {
     let mut value: u64;
     unsafe {
@@ -383,27 +389,19 @@ fn decode_inst(inst: u32) -> (usize, Option<Instruction>) {
 /// handle external interrupt
 pub fn interrupts_arch_handle(current_cpu: &mut ArchCpu) {
     trace!("interrupts_arch_handle @CPU{}", current_cpu.cpuid);
-    let trap_code: usize;
-    trap_code = read_csr!(CSR_SCAUSE);
-    trace!("CSR_SCAUSE: {:#x}", trap_code);
-    match trap_code & 0xfff {
-        InterruptType::STI => {
-            trace!("STI on CPU{}", current_cpu.cpuid);
-            unsafe {
-                hvip::set_vstip();
-                sie::clear_stimer();
-            }
-            trace!("sip{:#x}", read_csr!(CSR_SIP));
-            trace!("sie {:#x}", read_csr!(CSR_SIE));
-        }
+    let trap_code = unsafe { riscv::register::scause::read().code() };
+    match trap_code {
+        InterruptType::STI => unsafe {
+            hvip::set_vstip();
+            sie::clear_stimer();
+        },
         InterruptType::SSI => {
-            trace!("SSI on CPU {}", current_cpu.cpuid);
             handle_ssi(current_cpu);
+            unsafe {
+                riscv::register::sip::clear_ssoft();
+            }
         }
-        InterruptType::SEI => {
-            debug!("SEI on CPU {}", current_cpu.cpuid);
-            handle_eirq(current_cpu)
-        }
+        InterruptType::SEI => handle_eirq(current_cpu),
         _ => {
             error!(
                 "unhandled trap {:#x},sepc: {:#x}",
@@ -429,28 +427,19 @@ pub fn handle_eirq(current_cpu: &mut ArchCpu) {
         }
 
         // 2. check if this zone belongs this irq.
-        if this_cpu_data()
+        if !this_cpu_data()
             .zone
             .as_ref()
             .unwrap()
             .read()
             .irq_in_zone(irq_id as u32)
-            == false
         {
             error!("irq {} is not belongs to this zone", irq_id);
             return;
         }
 
         // 3. inject hw irq to zone.
-        this_cpu_data()
-            .zone
-            .as_ref()
-            .unwrap()
-            .read()
-            .vplic
-            .as_ref()
-            .unwrap()
-            .inject_irq(pcontext_to_vcontext(context_id), irq_id as usize, true);
+        inject_irq(irq_id as usize, true);
     }
     #[cfg(feature = "aia")]
     {
@@ -458,15 +447,8 @@ pub fn handle_eirq(current_cpu: &mut ArchCpu) {
     }
 }
 
+/// Handle supervisor software interrupt.
 pub fn handle_ssi(current_cpu: &mut ArchCpu) {
-    trace!("handle_ssi");
-    let sip = read_csr!(CSR_SIP);
-    trace!("CPU{} sip: {:#x}", current_cpu.cpuid, sip);
-    clear_csr!(CSR_SIP, 1 << 1);
-    let sip2 = read_csr!(CSR_SIP);
-    trace!("CPU{} sip*: {:#x}", current_cpu.cpuid, sip2);
-
-    trace!("hvip: {:#x}", read_csr!(CSR_HVIP));
-    set_csr!(CSR_HVIP, 1 << 2);
-    check_events();
+    // Get next event to handle.
+    while check_events() {}
 }
