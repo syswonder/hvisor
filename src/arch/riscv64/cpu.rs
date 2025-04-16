@@ -102,17 +102,16 @@ impl ArchCpu {
 
     pub fn init_interrupt(&self) {
         // Used before enter into VM.
-        set_csr!(CSR_HIDELEG, 1 << 2 | 1 << 6 | 1 << 10); //HIDELEG_VSSI | HIDELEG_VSTI | HIDELEG_VSEI
-        set_csr!(CSR_HEDELEG, 1 << 8 | 1 << 12 | 1 << 13 | 1 << 15); //HEDELEG_ECU | HEDELEG_IPF | HEDELEG_LPF | HEDELEG_SPF
-                                                                     // Enable all interupts.
-        set_csr!(CSR_SIE, 1 << 9 | 1 << 5 | 1 << 1); // SEIE STIE SSIE
+        set_csr!(CSR_HIDELEG, 1 << 2 | 1 << 6 | 1 << 10); // HIDELEG_VSSI | HIDELEG_VSTI | HIDELEG_VSEI
+        set_csr!(CSR_HEDELEG, 1 << 8 | 1 << 12 | 1 << 13 | 1 << 15); // HEDELEG_ECU | HEDELEG_IPF | HEDELEG_LPF | HEDELEG_SPF
+        set_csr!(CSR_SIE, 1 << 9 | 1 << 5 | 1 << 1); // Enable all interrupts (SEIE STIE SSIE).
     }
 
     pub fn reset_interrupt(&self) {
         // Only support software interrupt, cpus could receive software interrupt to wake up into VM.
-        write_csr!(CSR_HIDELEG, 0); //HIDELEG_VSSI | HIDELEG_VSTI | HIDELEG_VSEI
-        write_csr!(CSR_HEDELEG, 0); //HEDELEG_ECU | HEDELEG_IPF | HEDELEG_LPF | HEDELEG_SPF
-        set_csr!(CSR_SIE, 1 << 1); // SSIE
+        write_csr!(CSR_HIDELEG, 0);
+        write_csr!(CSR_HEDELEG, 0);
+        set_csr!(CSR_SIE, 1 << 1); // Enable software interrupt.
     }
 
     pub fn run(&mut self) -> ! {
