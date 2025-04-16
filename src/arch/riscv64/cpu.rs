@@ -63,42 +63,33 @@ impl ArchCpu {
     pub fn stack_top(&self) -> VirtAddr {
         PER_CPU_ARRAY_PTR as VirtAddr + (self.get_cpuid() + 1) as usize * PER_CPU_SIZE - 8
     }
-    pub fn init(&mut self, entry: usize, cpu_id: usize, dtb: usize) {
+
+    pub fn reset_regs(&mut self, entry: usize, cpu_id: usize, dtb: usize) {
         //self.sepc = guest_test as usize as u64;
         write_csr!(CSR_SSCRATCH, self as *const _ as usize); //arch cpu pointer
         self.sepc = entry;
-        #[cfg(feature = "plic")]
-        {
-            self.hstatus = 1 << 7 | 2 << 32; //HSTATUS_SPV | HSTATUS_VSXL_64
-        }
+        self.hstatus = 1 << 7 | 2 << 32; // HSTATUS_SPV | HSTATUS_VSXL_64
         #[cfg(feature = "aia")]
         {
-            self.hstatus = 1 << 7 | 2 << 32 | 1 << 12; //HSTATUS_SPV | HSTATUS_VSXL_64 | HSTATUS_VGEIN
+            self.hstatus |= 1 << 12; // HSTATUS_VGEIN
         }
         self.sstatus = 1 << 8 | 1 << 63 | 3 << 13 | 3 << 15; //SPP
         self.stack_top = self.stack_top() as usize;
-        self.x[10] = cpu_id; //cpu id
-        self.x[11] = dtb; //dtb addr
-
-        set_csr!(CSR_HIDELEG, 1 << 2 | 1 << 6 | 1 << 10); //HIDELEG_VSSI | HIDELEG_VSTI | HIDELEG_VSEI
-        set_csr!(CSR_HEDELEG, 1 << 8 | 1 << 12 | 1 << 13 | 1 << 15); //HEDELEG_ECU | HEDELEG_IPF | HEDELEG_LPF | HEDELEG_SPF
+        for i in 0..32 {
+            self.x[i] = 0;
+        }
+        self.x[10] = cpu_id; // cpu id
+        self.x[11] = dtb; // dtb addr
 
         if self.sstc {
             set_csr!(CSR_HENVCFG, 1 << 63);
             set_csr!(CSR_VSTIMECMP, usize::MAX);
         } else {
-            info!("sstc -> false");
+            set_csr!(CSR_HENVCFG, 0);
         }
-
         set_csr!(CSR_HCOUNTEREN, 1 << 1); // HCOUNTEREN_TM
                                           // In VU-mode, a counter is not readable unless the applicable bits are set in both hcounteren and scounteren.
-        set_csr!(CSR_SCOUNTEREN, 1 << 1);
         write_csr!(CSR_HTIMEDELTA, 0);
-        write_csr!(CSR_VSSTATUS, 1 << 63 | 3 << 13 | 3 << 15); //SSTATUS_SD | SSTATUS_FS_DIRTY | SSTATUS_XS_DIRTY
-
-        // enable all interupts
-        set_csr!(CSR_SIE, 1 << 9 | 1 << 5 | 1 << 1); // SEIE STIE SSIE
-                                                     // write_csr!(CSR_HIE, 1 << 12 | 1 << 10 | 1 << 6 | 1 << 2); //SGEIE VSEIE VSTIE VSSIE
         write_csr!(CSR_HIE, 0);
         write_csr!(CSR_VSTVEC, 0);
         write_csr!(CSR_VSSCRATCH, 0);
@@ -109,24 +100,42 @@ impl ArchCpu {
         write_csr!(CSR_VSATP, 0);
     }
 
+    pub fn init_interrupt(&self) {
+        // Used before enter into VM.
+        set_csr!(CSR_HIDELEG, 1 << 2 | 1 << 6 | 1 << 10); // HIDELEG_VSSI | HIDELEG_VSTI | HIDELEG_VSEI
+        set_csr!(CSR_HEDELEG, 1 << 8 | 1 << 12 | 1 << 13 | 1 << 15); // HEDELEG_ECU | HEDELEG_IPF | HEDELEG_LPF | HEDELEG_SPF
+        set_csr!(CSR_SIE, 1 << 9 | 1 << 5 | 1 << 1); // Enable all interrupts (SEIE STIE SSIE).
+    }
+
+    pub fn reset_interrupt(&self) {
+        // Only support software interrupt, cpus could receive software interrupt to wake up into VM.
+        write_csr!(CSR_HIDELEG, 0);
+        write_csr!(CSR_HEDELEG, 0);
+        set_csr!(CSR_SIE, 1 << 1); // Enable software interrupt.
+    }
+
     pub fn run(&mut self) -> ! {
         extern "C" {
             fn vcpu_arch_entry() -> !;
         }
 
         assert!(this_cpu_id() == self.cpuid);
-        //change power_on
-        this_cpu_data().activate_gpm();
+        // change power_on
+        self.power_on = true;
+
         if !self.init {
-            self.init(
-                this_cpu_data().cpu_on_entry,
-                this_cpu_data().id,
-                this_cpu_data().dtb_ipa, //dtb_ipa
-            );
             self.init = true;
         }
+        self.init_interrupt();
 
-        self.power_on = true;
+        // reset all registers related
+        self.reset_regs(
+            this_cpu_data().cpu_on_entry,
+            this_cpu_data().id,
+            this_cpu_data().dtb_ipa,
+        );
+        this_cpu_data().activate_gpm();
+
         info!("CPU{} run@{:#x}", self.cpuid, self.sepc);
         info!("CPU{:#x?}", self);
         unsafe {
@@ -139,8 +148,8 @@ impl ArchCpu {
             fn vcpu_arch_entry() -> !;
         }
         assert!(this_cpu_id() == self.cpuid);
-        self.init(0, this_cpu_data().id, this_cpu_data().dtb_ipa);
-        // reset current cpu -> pc = 0x0 (wfi)
+        self.power_on = false;
+
         PARKING_MEMORY_SET.call_once(|| {
             let parking_code: [u8; 4] = [0x73, 0x00, 0x50, 0x10]; // 1: wfi; b 1b
             unsafe {
@@ -157,6 +166,10 @@ impl ArchCpu {
             .unwrap();
             gpm
         });
+
+        // reset current cpu -> pc = 0x0 (wfi)
+        self.reset_regs(0, this_cpu_data().id, this_cpu_data().dtb_ipa);
+        self.reset_interrupt();
         unsafe {
             PARKING_MEMORY_SET.get().unwrap().activate();
             vcpu_arch_entry();

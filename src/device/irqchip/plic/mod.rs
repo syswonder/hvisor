@@ -153,10 +153,28 @@ pub fn update_hart_line() {
 
 impl Zone {
     pub fn arch_irqchip_reset(&self) {
-        /*
-           Reset priority, threshold, enable, and so on related to this zone.
-        */
-        todo!();
+        let host_plic = host_plic();
+        for (index, &word) in self.irq_bitmap.iter().enumerate() {
+            for bit_position in 0..32 {
+                if word & (1 << bit_position) != 0 {
+                    let irq_id = index * 32 + bit_position;
+                    // Reset priority
+                    host_plic.set_priority(irq_id, 0);
+                    // Reset enable
+                    self.cpu_set.iter().for_each(|cpuid| {
+                        let pcontext_id = cpuid * 2 + 1;
+                        host_plic.set_enable_num(pcontext_id, irq_id, false);
+                    });
+                }
+            }
+        }
+        self.cpu_set.iter().for_each(|cpuid| {
+            // Reset threshold
+            let pcontext_id = cpuid * 2 + 1;
+            host_plic.set_threshold(pcontext_id, 0);
+            // At the same time, clear the events related to this cpu.
+            crate::event::clear_events(cpuid);
+        });
     }
 
     fn insert_irq_to_bitmap(&mut self, irq: u32) {
