@@ -13,7 +13,7 @@ use crate::{
         vmx::*,
         vtd,
     },
-    consts::{core_end, MAX_CPU_NUM, PER_CPU_SIZE},
+    consts::{self, core_end, PER_CPU_SIZE},
     device::irqchip::pic::{check_pending_vectors, lapic::VirtLocalApic},
     error::{HvError, HvResult},
     memory::{
@@ -281,7 +281,7 @@ impl ArchCpu {
             self.guest_regs = self.vm_launch_guest_regs.clone();
         }
 
-        while VMXON_DONE.load(Ordering::Acquire) < MAX_CPU_NUM as u32 - 1 {
+        while VMXON_DONE.load(Ordering::Acquire) < unsafe { consts::NCPU } as u32 - 1 {
             core::hint::spin_loop();
         }
 

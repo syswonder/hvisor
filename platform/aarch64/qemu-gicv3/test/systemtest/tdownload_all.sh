@@ -4,14 +4,12 @@
 # Usage: ./download_all.sh
 
 # Configuration parameters
-RELEASE_NAME="v2025.03.04"
+RELEASE_NAME="v2025.04.11"
 BASE_URL="https://github.com/CHonghaohao/hvisor_env_img/releases/download/$RELEASE_NAME"
 
 # Split archive configuration (must be in order)
 ZIP_PARTS=(
-  "rootfs1.zip.001"
-  "rootfs1.zip.002"
-  "rootfs1.zip.003"
+  "rootfs1.zip"
 )
 ZIP_OUTPUT="rootfs1.zip"
 UNZIP_DIR="platform/aarch64/qemu-gicv3/image/virtdisk"          # Extraction directory
@@ -98,6 +96,7 @@ main() {
 
     ((i=i%PARALLEL_DOWNLOADS)); ((i++==0)) && wait
     (
+      echo -e "${GREEN}ROOTFS_URL: $url${NC}"
       if download_file "$url" "$output"; then
         echo -e "${GREEN}Download completed: $output${NC}"
       else
@@ -116,15 +115,15 @@ main() {
   done
 
   # Merge split files
-  if [ ! -f "$ZIP_OUTPUT" ]; then
-    echo -e "${YELLOW}Merging split files -> $ZIP_OUTPUT ...${NC}"
-    cat "${ZIP_PARTS[@]}" > "$ZIP_OUTPUT" || {
-      echo -e "${RED}Merge failed!${NC}"
-      exit 1
-    }
-  else
-    echo -e "${GREEN}Using existing merged file: $ZIP_OUTPUT${NC}"
-  fi
+  # if [ ! -f "$ZIP_OUTPUT" ]; then
+  #   echo -e "${YELLOW}Merging split files -> $ZIP_OUTPUT ...${NC}"
+  #   cat "${ZIP_PARTS[@]}" > "$ZIP_OUTPUT" || {
+  #     echo -e "${RED}Merge failed!${NC}"
+  #     exit 1
+  #   }
+  # else
+  #   echo -e "${GREEN}Using existing merged file: $ZIP_OUTPUT${NC}"
+  # fi
 
   # Unzip files
   if [ ! -d "$UNZIP_DIR" ]; then
@@ -145,6 +144,7 @@ main() {
   if [ -f "$IMAGE_FILE" ]; then
     echo -e "${GREEN}Image already exists: $IMAGE_FILE${NC}"
   else
+    echo -e "${GREEN}IMAGE_URL: $IMAGE_URL${NC}"
     download_file "$IMAGE_URL" "$IMAGE_FILE" || {
         echo -e "${RED}Download failed: $IMAGE_FILE${NC}"
         exit 1

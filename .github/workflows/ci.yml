@@ -93,6 +93,9 @@ jobs:
           - arch: aarch64
             board: "imx8mp"
             rustc_target: aarch64-unknown-none
+          - arch: aarch64
+            board: "rk3568"
+            rustc_target: aarch64-unknown-none
           # riscv64
           - arch: riscv64
             board: "qemu-aia"
@@ -132,7 +135,7 @@ jobs:
   systemtest:
     # if: false # we need to update corresponding scripts for the new board abstraction
     name: systemtest
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
@@ -150,12 +153,26 @@ jobs:
         with:
           targets: ${{ matrix.rustc_target }}
           components: rust-src
+
+      - name: Setup QEMU from Source
+        uses: ./.github/actions/setup-qemu
+        with:
+          qemu-version: '9.0.2'
+          install-path: '/opt/qemu'
+
+      - name: Setup ARM aarch64-none-linux-gnu
+        uses: ./.github/actions/setup-aarch64-none-linux-gnu
+        with:
+          version: '10.3-2021.07' 
+          install-path: '/opt/aarch64-none-linux-gnu'
+
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget expect device-tree-compiler p7zip-full
+          sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget expect device-tree-compiler p7zip-full gcc-aarch64-linux-gnu
           cargo install --version 0.3.0 cargo-binutils
           cargo install cargo-xbuild
+
       - name: Set up environment variables
         run: |
           echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV

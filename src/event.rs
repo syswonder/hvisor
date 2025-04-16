@@ -108,6 +108,10 @@ pub fn dump_cpu_events(cpu: usize) -> Vec<usize> {
     EVENT_MANAGER.get().unwrap().dump_cpu(cpu)
 }
 
+pub fn clear_events(cpu: usize) {
+    EVENT_MANAGER.get().unwrap().inner[cpu].lock().clear();
+}
+
 pub fn check_events() -> bool {
     trace!("check_events");
     let cpu_data = this_cpu_data();

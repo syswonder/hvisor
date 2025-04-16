@@ -46,6 +46,9 @@ mod error;
 extern crate log;
 #[macro_use]
 extern crate lazy_static;
+
+extern crate fdt_rs;
+
 #[macro_use]
 mod logging;
 mod arch;
@@ -76,6 +79,7 @@ use crate::consts::MAX_CPU_NUM;
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+use fdt_rs::{base::DevTree, prelude::FallibleIterator};
 use percpu::PerCpu;
 use zone::zone_create;
 
@@ -112,7 +116,7 @@ fn wait_for_counter(counter: &AtomicU32, max_value: u32) {
     wait_for(|| counter.load(Ordering::Acquire) < max_value)
 }
 
-fn primary_init_early() {
+fn primary_init_early(ncpu: usize) {
     extern "C" {
         fn __core_end();
     }
@@ -131,7 +135,7 @@ fn primary_init_early() {
     );
     memory::frame::init();
     memory::frame::test();
-    event::init(MAX_CPU_NUM);
+    event::init(ncpu);
 
     device::irqchip::primary_init_early();
     // crate::arch::mm::init_hv_page_table().unwrap();
@@ -162,8 +166,8 @@ fn per_cpu_init(cpu: &mut PerCpu) {
     info!("CPU {} hv_pt_install OK.", cpu.id);
 }
 
-fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
-    for cpu_id in 0..MAX_CPU_NUM {
+fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize, ncpu: usize) {
+    for cpu_id in 0..ncpu {
         if cpu_id == this_id {
             continue;
         }
@@ -171,14 +175,16 @@ fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
     }
 }
 
-fn x86_rust_main_tmp(cpuid: usize, host_dtb: usize) {
-    arch::trap::install_trap_vector(); // load idt
+fn rust_main(cpuid: usize, host_dtb: usize) {
+    arch::trap::install_trap_vector();
 
     let mut is_primary = false;
     println!("Hello, HVISOR!");
     if MASTER_CPU.load(Ordering::Acquire) == -1 {
         MASTER_CPU.store(cpuid as i32, Ordering::Release);
         is_primary = true;
+        #[cfg(target_arch = "riscv64")]
+        clear_bss();
         memory::heap::init();
         memory::heap::test();
         #[cfg(target_arch = "x86_64")]
@@ -200,72 +206,56 @@ fn x86_rust_main_tmp(cpuid: usize, host_dtb: usize) {
     #[cfg(target_arch = "x86_64")]
     cpu.arch_cpu.gdt.load(); // load gdt and tss
 
-    if is_primary {
-        // cpu.arch_cpu.cmdline = Some(&cmdline);
-        wakeup_secondary_cpus(cpu.id, host_dtb);
+    // Don't you wanna know how many cpu(s) on board? :D
+    let mut ncpu: usize = 0;
+    #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+    {
+        let devtree = unsafe { DevTree::from_raw_pointer(host_dtb as *const u8).unwrap() };
+
+        let mut node_iter = devtree.nodes();
+        while let Some(node) = node_iter.next().unwrap() {
+            if node.name().unwrap().starts_with("cpu@") {
+                ncpu += 1;
+            }
+        }
     }
-
-    ENTERED_CPUS.fetch_add(1, Ordering::SeqCst);
-    wait_for(|| PerCpu::entered_cpus() < MAX_CPU_NUM as _);
-    assert_eq!(PerCpu::entered_cpus(), MAX_CPU_NUM as _);
-
-    println!(
-        "{} CPU {} has entered.",
-        if is_primary { "Primary" } else { "Secondary" },
-        cpu.id
-    );
-
-    if is_primary {
-        primary_init_early(); // create root zone here
-    } else {
-        wait_for_counter(&INIT_EARLY_OK, 1);
-    }
-
-    device::irqchip::percpu_init();
-
-    INITED_CPUS.fetch_add(1, Ordering::SeqCst);
-    wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _);
-
-    if is_primary {
-        primary_init_late();
-    } else {
-        wait_for_counter(&INIT_LATE_OK, 1);
-    }
-    cpu.run_vm();
-    loop {}
-}
-
-fn rust_main(cpuid: usize, host_dtb: usize) {
+    // FIXME:
     #[cfg(target_arch = "x86_64")]
-    x86_rust_main_tmp(cpuid, host_dtb);
-
-    arch::trap::install_trap_vector();
-
-    let mut is_primary = false;
-    println!("Hello, HVISOR!");
-    if MASTER_CPU.load(Ordering::Acquire) == -1 {
-        MASTER_CPU.store(cpuid as i32, Ordering::Release);
-        is_primary = true;
-        #[cfg(target_arch = "riscv64")]
-        clear_bss();
-        memory::heap::init();
-        memory::heap::test();
+    {
+        ncpu = 4;
     }
 
-    let cpu = PerCpu::new(cpuid);
-
-    println!(
-        "Booting CPU {}: {:p} arch:{:p}, DTB: {:#x}",
-        cpu.id, cpu as *const _, &cpu.arch_cpu as *const _, host_dtb
-    );
+    // If we failed to detect, just use default value.
+    if ncpu == 0 {
+        if is_primary {
+            println!(
+                "Failed to count cpu(s) from devicetree. Using default value {}.",
+                MAX_CPU_NUM
+            );
+        }
+        ncpu = MAX_CPU_NUM;
+    } else if ncpu > MAX_CPU_NUM {
+        if is_primary {
+            println!("{} cpu(s) detected, but using only {}.", ncpu, MAX_CPU_NUM);
+        }
+        ncpu = MAX_CPU_NUM;
+    }
 
     if is_primary {
-        wakeup_secondary_cpus(cpu.id, host_dtb);
+        #[cfg(target_arch = "aarch64")]
+        {
+            println!("Using {} cpu(s) on this system.", ncpu);
+        }
+
+        unsafe {
+            consts::NCPU = ncpu;
+        }
+        wakeup_secondary_cpus(cpu.id, host_dtb, ncpu);
     }
 
     ENTERED_CPUS.fetch_add(1, Ordering::SeqCst);
-    wait_for(|| PerCpu::entered_cpus() < MAX_CPU_NUM as _);
-    assert_eq!(PerCpu::entered_cpus(), MAX_CPU_NUM as _);
+    wait_for(|| PerCpu::entered_cpus() < ncpu as _);
+    assert_eq!(PerCpu::entered_cpus(), ncpu as _);
 
     println!(
         "{} CPU {} has entered.",
@@ -274,10 +264,10 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     );
 
     #[cfg(target_arch = "aarch64")]
-    setup_parange();
+    setup_parange(ncpu);
 
     if is_primary {
-        primary_init_early(); // create root zone here
+        primary_init_early(ncpu); // create root zone here
     } else {
         wait_for_counter(&INIT_EARLY_OK, 1);
     }
@@ -287,7 +277,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
 
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
 
-    wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _);
+    wait_for_counter(&INITED_CPUS, ncpu as _);
 
     if is_primary {
         primary_init_late();

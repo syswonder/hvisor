@@ -67,7 +67,17 @@ pub fn percpu_init() {
 }
 
 pub fn inject_irq(irq: usize, is_hardware: bool) {
-    warn!("plic no implement inject_irq");
+    // warn!("inject_irq: {} is_hardware: {}", irq, is_hardware);
+    let vcontext_id = pcontext_to_vcontext(this_cpu_data().id * 2 + 1);
+    this_cpu_data()
+        .zone
+        .as_ref()
+        .unwrap()
+        .read()
+        .vplic
+        .as_ref()
+        .unwrap()
+        .inject_irq(vcontext_id, irq, is_hardware);
 }
 
 /// Convert vcontext id to pcontext id.
@@ -143,10 +153,28 @@ pub fn update_hart_line() {
 
 impl Zone {
     pub fn arch_irqchip_reset(&self) {
-        /*
-           Reset priority, threshold, enable, and so on related to this zone.
-        */
-        todo!();
+        let host_plic = host_plic();
+        for (index, &word) in self.irq_bitmap.iter().enumerate() {
+            for bit_position in 0..32 {
+                if word & (1 << bit_position) != 0 {
+                    let irq_id = index * 32 + bit_position;
+                    // Reset priority
+                    host_plic.set_priority(irq_id, 0);
+                    // Reset enable
+                    self.cpu_set.iter().for_each(|cpuid| {
+                        let pcontext_id = cpuid * 2 + 1;
+                        host_plic.set_enable_num(pcontext_id, irq_id, false);
+                    });
+                }
+            }
+        }
+        self.cpu_set.iter().for_each(|cpuid| {
+            // Reset threshold
+            let pcontext_id = cpuid * 2 + 1;
+            host_plic.set_threshold(pcontext_id, 0);
+            // At the same time, clear the events related to this cpu.
+            crate::event::clear_events(cpuid);
+        });
     }
 
     fn insert_irq_to_bitmap(&mut self, irq: u32) {
@@ -161,11 +189,13 @@ impl Zone {
         for irq in irqs {
             let irq_id = *irq;
             // They are hardware interrupts.
-            self.vplic
-                .as_ref()
-                .unwrap()
-                .vplic_set_hw(irq_id as usize, true);
-            info!("Set irq {} to hardware interrupt", irq_id);
+            if HW_IRQS.iter().any(|&x| x == irq_id) {
+                self.vplic
+                    .as_ref()
+                    .unwrap()
+                    .vplic_set_hw(irq_id as usize, true);
+                info!("Set irq {} to hardware interrupt", irq_id);
+            }
             self.insert_irq_to_bitmap(irq_id);
         }
         // print irq_bitmap

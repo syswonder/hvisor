@@ -29,15 +29,17 @@ pub const PER_CPU_ARRAY_PTR: *mut VirtAddr = __core_end as _;
 pub const INVALID_ADDRESS: usize = usize::MAX;
 
 #[cfg(target_arch = "loongarch64")]
-pub const MAX_CPU_NUM: usize = 4;
+pub const MAX_CPU_NUM: usize = 32;
 #[cfg(target_arch = "aarch64")]
-pub const MAX_CPU_NUM: usize = 4;
+pub const MAX_CPU_NUM: usize = 32;
 #[cfg(target_arch = "riscv64")]
-pub const MAX_CPU_NUM: usize = 4;
+pub const MAX_CPU_NUM: usize = 32;
 #[cfg(target_arch = "x86_64")]
-pub const MAX_CPU_NUM: usize = 4;
+pub const MAX_CPU_NUM: usize = 32;
 
 pub const MAX_ZONE_NUM: usize = 3;
+
+pub static mut NCPU: usize = MAX_CPU_NUM;
 
 pub const MAX_WAIT_TIMES: usize = 10000000;
 
@@ -46,7 +48,7 @@ pub fn core_end() -> VirtAddr {
 }
 
 pub fn mem_pool_start() -> VirtAddr {
-    core_end() + MAX_CPU_NUM * PER_CPU_SIZE
+    core_end() + unsafe { NCPU } * PER_CPU_SIZE
 }
 
 pub fn hv_end() -> VirtAddr {
