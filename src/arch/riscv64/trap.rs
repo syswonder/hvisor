@@ -134,7 +134,7 @@ pub fn sync_exception_handler(current_cpu: &mut ArchCpu) {
         ExceptionType::ECALL_VS => {
             trace!("ECALL_VS");
             sbi_vs_handler(current_cpu);
-            current_cpu.sepc += 4;          // For ecall, skip the ecall instruction.
+            current_cpu.sepc += 4; // For ecall, skip the ecall instruction.
         }
         ExceptionType::LOAD_GUEST_PAGE_FAULT => {
             trace!("LOAD_GUEST_PAGE_FAULT");
@@ -147,7 +147,10 @@ pub fn sync_exception_handler(current_cpu: &mut ArchCpu) {
         _ => {
             let raw_inst = read_inst(trap_pc);
             let inst = riscv_decode::decode(raw_inst);
-            warn!("CPU {} sync exception, sepc: {:#x}", current_cpu.cpuid, current_cpu.sepc);
+            warn!(
+                "CPU {} sync exception, sepc: {:#x}",
+                current_cpu.cpuid, current_cpu.sepc
+            );
             warn!("Trap cause code: {}", trap_code);
             warn!("htval: {:#x}, htinst: {:#x}", trap_value, trap_ins);
             warn!("trap instruction: {:?}", inst);
@@ -393,7 +396,7 @@ pub fn interrupts_arch_handle(current_cpu: &mut ArchCpu) {
         InterruptType::STI => {
             // Inject timer interrupt to VS.
             handle_timer_interrupt(current_cpu);
-        },
+        }
         InterruptType::SSI => {
             // Get event to handle and clear software interrupt pending bit.
             handle_software_interrupt(current_cpu);
@@ -421,10 +424,12 @@ pub fn handle_timer_interrupt(current_cpu: &mut ArchCpu) {
 
 /// Handle supervisor software interrupt.
 pub fn handle_software_interrupt(current_cpu: &mut ArchCpu) {
-    while check_events() { 
+    while check_events() {
         // Get next event to handle, it is handled in check_events function.
     }
-    unsafe { riscv::register::sip::clear_ssoft(); }
+    unsafe {
+        riscv::register::sip::clear_ssoft();
+    }
 }
 
 /// Handle supervisor external interrupt.
@@ -437,7 +442,9 @@ pub fn handle_external_interrupt(current_cpu: &mut ArchCpu) {
         let irq_id = host_plic().claim(context_id);
 
         // If this irq has been claimed, it will be 0.
-        if irq_id == 0 { return; }
+        if irq_id == 0 {
+            return;
+        }
 
         // 2. inject hw irq to zone.
         inject_irq(irq_id as usize, true);
@@ -447,5 +454,3 @@ pub fn handle_external_interrupt(current_cpu: &mut ArchCpu) {
         panic!("HS extensional interrupt")
     }
 }
-
-
