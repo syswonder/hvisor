@@ -311,12 +311,18 @@ pub fn vgicv3_its_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
             }
         }
         GITS_CBASER => {
+            if this_zone_id() == 0 {
+                mmio_perform_access(gits_base, mmio);
+            }
             if mmio.is_write {
                 set_cbaser(mmio.value);
-                trace!("write GITS_CBASER: {:#x}", mmio.value);
             } else {
                 mmio.value = read_cbaser();
-                trace!("read GITS_CBASER: {:#x}", mmio.value);
+            }
+            if mmio.is_write {
+                info!("write GITS_CBASER: {:#x}", mmio.value);
+            } else {
+                info!("read GITS_CBASER: {:#x}", mmio.value);
             }
         }
         GITS_BASER => {
