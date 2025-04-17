@@ -3,12 +3,13 @@
 <img src="https://www.syswonder.org/_media/hvisor-logo.svg">
 <br><br>
 <!-- <img src="https://img.shields.io/badge/hvisor-orange" /> -->
-<img src="https://img.shields.io/github/stars/syswonder/hvisor?color=yellow" />
+<a href="https://github.com/syswonder/hvisor/actions/workflows/ci.yml"><img src="https://github.com/syswonder/hvisor/actions/workflows/ci.yml/badge.svg?branch=dev" alt="CI" style="max-width: 100%;"></a>
 <img src="https://img.shields.io/github/license/syswonder/hvisor?color=red" />
 <img src="https://img.shields.io/github/contributors/syswonder/hvisor?color=blue" />
 <img src="https://img.shields.io/github/languages/code-size/syswonder/hvisor?color=green">
 <img src="https://img.shields.io/github/repo-size/syswonder/hvisor?color=white">
 <img src="https://img.shields.io/github/languages/top/syswonder/hvisor?color=orange">
+<img src="https://img.shields.io/github/stars/syswonder/hvisor?color=yellow" />
 <br><br>
 </p>
 

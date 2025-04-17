@@ -97,7 +97,7 @@ use self::gicr::enable_ipi;
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::arch::cpu::this_cpu_id;
 use crate::config::root_zone_config;
-use crate::consts::MAX_CPU_NUM;
+use crate::consts;
 
 use crate::event::check_events;
 use crate::hypercall::SGI_IPI_ID;
@@ -407,7 +407,7 @@ pub fn host_gicd_base() -> usize {
 }
 
 pub fn host_gicr_base(id: usize) -> usize {
-    assert!(id < MAX_CPU_NUM);
+    assert!(id < consts::MAX_CPU_NUM);
     GIC.get().unwrap().gicr_base + id * PER_GICR_SIZE
 }
 
@@ -461,7 +461,7 @@ pub fn primary_init_early() {
         gits_init();
     }
 
-    PENDING_VIRQS.call_once(|| PendingIrqs::new(MAX_CPU_NUM));
+    PENDING_VIRQS.call_once(|| PendingIrqs::new(unsafe { consts::NCPU }));
     debug!("gic = {:#x?}", GIC.get().unwrap());
 }
 
