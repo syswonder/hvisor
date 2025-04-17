@@ -145,7 +145,7 @@ pub fn check_events() -> bool {
         }
         #[cfg(target_arch = "riscv64")]
         Some(IPI_EVENT_SEND_IPI) => {
-            // This event is different form events above, it is used to inject software interrupt.
+            // This event is different from events above, it is used to inject software interrupt.
             // While events above will inject external interrupt.
             use crate::arch::ipi::arch_ipi_handler;
             arch_ipi_handler();
