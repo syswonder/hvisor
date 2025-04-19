@@ -42,6 +42,18 @@
             "physical_start": "0x5550f000",
             "virtual_start": "0x1520f000",
             "size": "0x4000000"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0x5950f000",
+            "virtual_start": "0x5950f000",
+            "size": "0x4000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0xfed00000",
+            "virtual_start": "0xfed00000",
+            "size": "0x1000"
         }
     ],
     "interrupts": [],
@@ -52,11 +64,11 @@
     "dtb_load_paddr": "0x0",
     "entry_point": "0x8000",
     "arch_config": {
-        "ioapic_base": "0x0",
-        "ioapic_size": "0x0",
+        "ioapic_base": "0xfec00000",
+        "ioapic_size": "0x1000",
         "boot_filepath": "./boot.bin",
         "boot_load_paddr": "0x40308000",
-        "cmdline": "console=ttyS0 earlyprintk=serial rdinit=/init nointremap noapic",
+        "cmdline": "console=hvc0 pci=pcie_scan_all,lastbus=1 rdinit=/init nointremap virtio_mmio.device=0x200@0x5950f000:10",
         "cmdline_load_hpa": "0x4030c000",
         "cmdline_load_gpa": "0xc000",
         "kernel_entry_gpa": "0x100000",
@@ -71,8 +83,8 @@
         "initrd_memory_region_id": "0x4"
     },
     "pci_config": {
-        "ecam_base": "0x0",
-        "ecam_size": "0x0",
+        "ecam_base": "0xb0000000",
+        "ecam_size": "0x200000",
         "io_base": "0x0",
         "io_size": "0x0",
         "pci_io_base": "0x0",
