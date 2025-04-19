@@ -1,6 +1,6 @@
 use crate::{
     arch::Stage2PageTable,
-    config::{root_zone_config, HvZoneConfig, MEM_TYPE_RAM},
+    config::{root_zone_config, HvPciConfig, HvZoneConfig, MEM_TYPE_RAM},
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MemorySet},
     percpu::this_zone,
@@ -167,6 +167,13 @@ impl BootParams {
                 index += 1;
             }
         }
+
+        self.e820_table[index] = BootE820Entry {
+            addr: config.pci_config.ecam_base as _,
+            size: config.pci_config.ecam_size as _,
+            _type: E820Type::E820_RESERVED,
+        };
+        index += 1;
 
         self.e820_entries = index as _;
     }

@@ -13,11 +13,6 @@ use x86_64::instructions::port::Port;
 
 const IR_ENTRY_CNT: usize = 256;
 
-// I/O ports
-pub const PCI_CONFIG_ADDR: u16 = 0xcf8;
-pub const PCI_CONFIG_DATA: u16 = 0xcfc;
-const PCI_CONFIG_ENABLE: u32 = 0x80000000;
-
 const ROOT_TABLE_ENTRY_SIZE: usize = 16;
 const CONTEXT_TABLE_ENTRY_SIZE: usize = 16;
 
@@ -302,20 +297,6 @@ impl Vtd {
     }
 }
 
-fn get_secondary_bus(bus: u8, dev: u8, func: u8) -> u8 {
-    unsafe {
-        Port::<u32>::new(PCI_CONFIG_ADDR).write(
-            PCI_CONFIG_ENABLE
-                | ((bus as u32) << 16)
-                | ((dev as u32) << 11)
-                | ((func as u32) << 8)
-                | 0x18,
-        );
-        let data = Port::<u32>::new(PCI_CONFIG_DATA).read();
-        ((data >> 8) & 0xff) as u8
-    }
-}
-
 pub fn parse_root_dmar() -> Mutex<Vtd> {
     let dmar = acpi::root_get_table(&Signature::DMAR).unwrap();
     let mut cur: usize = 48; // start offset of remapping structures
@@ -381,47 +362,3 @@ fn flush_cache_range(hpa: usize, size: usize) {
         i += 64;
     }
 }
-
-/*
-fn init_msi_cap_hpa_space() {
-    let bytes = acpi::root_get_table(&Signature::MCFG)
-        .unwrap()
-        .get_bytes()
-        .clone();
-    let mcfg = unsafe { &*(bytes.as_ptr() as *const Mcfg) };
-
-    for unit in VTD.get().unwrap().iter() {
-        let drhd = unit.lock();
-
-        for entry in mcfg.entries() {
-            if entry.pci_segment_group != drhd.segment {
-                break;
-            }
-            let bus_range = entry.bus_number_start..=entry.bus_number_end;
-
-            for scope in drhd.scopes.iter() {
-                if scope.scope_type != DeviceScopeType::PciEndpointDevice {
-                    continue;
-                }
-
-                if !bus_range.contains(&scope.bus) {
-                    continue;
-                }
-
-                let config_space_hpa = (entry.base_address as usize)
-                    + ((scope.bus as usize) << 20)
-                    + ((scope.dev_func as usize) << 12);
-                let mut cap_pointer = unsafe { *((config_space_hpa + 0x34) as *const u8) } as usize;
-
-                info!("dev_fun: {:x}", scope.dev_func);
-                while cap_pointer != 0 {
-                    let cap_hpa = config_space_hpa + cap_pointer;
-                    let cap_id = unsafe { *(cap_hpa as *const u8) };
-
-                    info!("cap id: {:x}, hpa: {:x}", cap_id, cap_hpa);
-                    cap_pointer = unsafe { *((cap_hpa + 1) as *const u8) } as usize;
-                }
-            }
-        }
-    }
-}*/

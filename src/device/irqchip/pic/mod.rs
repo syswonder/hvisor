@@ -2,12 +2,13 @@ pub mod ioapic;
 pub mod lapic;
 
 use crate::{
-    arch::{acpi, ipi, vmcs::Vmcs, vtd},
-    consts::MAX_CPU_NUM,
+    arch::{acpi, idt, ipi, vmcs::Vmcs, vtd},
+    consts::{MAX_CPU_NUM, MAX_ZONE_NUM},
     zone::Zone,
 };
 use alloc::{collections::vec_deque::VecDeque, vec::Vec};
 use core::arch::asm;
+use ioapic::ioapic_inject_irq;
 use spin::{Mutex, Once};
 
 static PENDING_VECTORS: Once<PendingVectors> = Once::new();
@@ -48,6 +49,9 @@ impl PendingVectors {
                 if let Some(vector) = vectors.front() {
                     let allow_interrupt = Vmcs::allow_interrupt().unwrap();
                     if vector.0 < 32 || allow_interrupt {
+                        if vectors.len() == 10 {
+                            warn!("too many pending vectors!");
+                        }
                         // if it's an exception, or an interrupt that is not blocked, inject it directly.
                         Vmcs::inject_interrupt(vector.0, vector.1).unwrap();
                         vectors.pop_front();
@@ -81,13 +85,17 @@ pub fn disable_irq() {
     unsafe { asm!("cli") };
 }
 
-pub fn inject_irq(_irq: usize, _is_hardware: bool) {}
+pub fn inject_irq(_irq: usize, _is_hardware: bool) {
+    ioapic_inject_irq(_irq as _);
+}
 
 pub fn percpu_init() {}
 
 pub fn primary_init_early() {
     ipi::init(MAX_CPU_NUM);
     PENDING_VECTORS.call_once(|| PendingVectors::new(MAX_CPU_NUM));
+    idt::init(MAX_ZONE_NUM);
+    ioapic::init_virt_ioapic(MAX_ZONE_NUM);
     acpi::root_init();
     vtd::init();
 }

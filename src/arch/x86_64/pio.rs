@@ -1,24 +1,28 @@
 use core::ops::Range;
 
 use crate::{
-    arch::vtd::{PCI_CONFIG_ADDR, PCI_CONFIG_DATA},
     error::HvResult,
     memory::{Frame, HostPhysAddr},
+    zone::this_zone_id,
 };
 
 pub const UART_COM1_BASE_PORT: u16 = 0x3f8;
+pub const PCI_CONFIG_ADDR_PORT: Range<u16> = 0xcf8..0xcfc;
+pub const PCI_CONFIG_DATA_PORT: Range<u16> = 0xcfc..0xd00;
 
 #[derive(Debug)]
 pub struct PortIoBitmap {
-    a: Frame,
-    b: Frame,
+    pub a: Frame,
+    pub b: Frame,
+    pub pci_config_addr: u32,
 }
 
 impl PortIoBitmap {
-    pub fn new(zoneid: usize) -> Self {
+    pub fn new(zone_id: usize) -> Self {
         let mut bitmap = Self {
             a: Frame::new_zero().unwrap(),
             b: Frame::new_zero().unwrap(),
+            pci_config_addr: 0,
         };
 
         bitmap.a.fill(0xff);
@@ -32,30 +36,20 @@ impl PortIoBitmap {
 
         // ban pci config ports
         // TODO: handle config space operations from io ports
-        bitmap.set_intercept(PCI_CONFIG_ADDR, true);
-        bitmap.set_intercept(PCI_CONFIG_DATA, true);
-        // bitmap.set_range_intercept(0xcf8..0xd00, true);
+        bitmap.set_range_intercept(PCI_CONFIG_ADDR_PORT, true);
+        bitmap.set_range_intercept(PCI_CONFIG_DATA_PORT, true);
 
-        // FIXME: i8254
-        // bitmap.set_range_intercept(0x300..0x310, false);
-        bitmap.set_range_intercept(0x3f8..0x400, false);
-
-        if zoneid == 0 {
-            // passthrough uart com1
-            // FIXME: get port info from ACPI FACP table
-            bitmap.set_intercept(0xb2, false);
-            bitmap.set_range_intercept(0x600..0x630, false);
+        // FIXME: uart & i8254
+        if zone_id == 0 {
+            bitmap.set_range_intercept(0x60..0x65, false);
+            bitmap.set_range_intercept(0x3f8..0x400, false);
         }
 
+        // FIXME: get port info from ACPI FACP table
+        bitmap.set_intercept(0xb2, false);
+        bitmap.set_range_intercept(0x600..0x630, false);
+
         bitmap
-    }
-
-    pub fn bitmap_a_addr(&self) -> HostPhysAddr {
-        self.a.start_paddr()
-    }
-
-    pub fn bitmap_b_addr(&self) -> HostPhysAddr {
-        self.b.start_paddr()
     }
 
     pub fn set_range_intercept(&mut self, mut ports: Range<u16>, intercept: bool) {

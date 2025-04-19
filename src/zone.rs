@@ -270,6 +270,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
             config.num_pci_devs as _,
             &config.alloc_pci_devs,
         );
+        info!("{:#x?}", config.pci_config);
         crate::arch::boot::BootParams::fill(&config, &zone.gpm);
         crate::arch::acpi::copy_to_guest_memory_region(&config, &cpu_set);
     }

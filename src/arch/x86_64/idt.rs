@@ -1,7 +1,6 @@
-use core::u32;
-
 use crate::{error::HvResult, zone::this_zone_id};
-use alloc::collections::btree_map::BTreeMap;
+use alloc::{collections::btree_map::BTreeMap, vec::Vec};
+use core::u32;
 use spin::{Mutex, Once};
 use x86_64::structures::idt::{Entry, HandlerFunc, InterruptDescriptorTable};
 
@@ -19,19 +18,77 @@ pub mod IdtVector {
 }
 
 lazy_static::lazy_static! {
-    static ref ALLOC_VECTORS: Mutex<AllocVectors> = {
-        Mutex::new(AllocVectors::new())
+    static ref ALLOC_VECTORS: Mutex<RemapVectorsUnlocked> = {
+        Mutex::new(RemapVectorsUnlocked::new())
     };
 }
 
-struct AllocVectors {
-    // key: (zone_id, host vector) value: guest vector
-    hv_to_gv: BTreeMap<(usize, u8), u32>,
-    // key: (zone_id, guest vector) value: host vector
-    gv_to_hv: BTreeMap<(usize, u32), u8>,
+static REMAP_VECTORS: Once<RemapVectors> = Once::new();
+
+struct RemapVectors {
+    inner: Vec<Mutex<RemapVectorsUnlocked>>,
 }
 
-impl AllocVectors {
+impl RemapVectors {
+    fn new(max_zones: usize) -> Self {
+        let mut vs = vec![];
+        for _ in 0..max_zones {
+            let v = Mutex::new(RemapVectorsUnlocked::new());
+            vs.push(v)
+        }
+        Self { inner: vs }
+    }
+
+    fn get_host_vector(&self, gv: u32, zone_id: usize) -> Option<u8> {
+        let mut vectors = self.inner.get(zone_id).unwrap().lock();
+
+        if let Some(&hv) = vectors.gv_to_hv.get(&gv) {
+            return Some(hv);
+        }
+
+        for hv in IdtVector::ALLOC_START..=IdtVector::ALLOC_END {
+            if !vectors.hv_to_gv.contains_key(&hv) {
+                vectors.hv_to_gv.insert(hv, gv);
+                vectors.gv_to_hv.insert(gv, hv);
+
+                // info!("gv: {:x}, hv: {:x}", gv, hv);
+                return Some(hv);
+            }
+        }
+
+        None
+    }
+
+    fn get_guest_vector(&self, hv: u8, zone_id: usize) -> Option<u32> {
+        let mut vectors = self.inner.get(zone_id).unwrap().lock();
+
+        if let Some(&gv) = vectors.hv_to_gv.get(&hv) {
+            if gv != u32::MAX {
+                return Some(gv);
+            }
+        }
+
+        None
+    }
+
+    fn clear_vectors(&self, hv: u8, zone_id: usize) {
+        let mut vectors = self.inner.get(zone_id).unwrap().lock();
+
+        if let Some(&gv) = vectors.hv_to_gv.get(&hv) {
+            vectors.hv_to_gv.remove_entry(&hv);
+            vectors.gv_to_hv.remove_entry(&gv);
+        }
+    }
+}
+
+struct RemapVectorsUnlocked {
+    // key: host vector value: guest vector
+    hv_to_gv: BTreeMap<u8, u32>,
+    // key: guest vector value: host vector
+    gv_to_hv: BTreeMap<u32, u8>,
+}
+
+impl RemapVectorsUnlocked {
     fn new() -> Self {
         Self {
             hv_to_gv: BTreeMap::new(),
@@ -71,43 +128,17 @@ impl IdtStruct {
 }
 
 pub fn get_host_vector(gv: u32, zone_id: usize) -> Option<u8> {
-    let mut alloc_vectors = ALLOC_VECTORS.lock();
-
-    if let Some(&hv) = alloc_vectors.gv_to_hv.get(&(zone_id, gv)) {
-        return Some(hv);
-    }
-
-    for hv in IdtVector::ALLOC_START..=IdtVector::ALLOC_END {
-        if !alloc_vectors.hv_to_gv.contains_key(&(zone_id, hv)) {
-            alloc_vectors.hv_to_gv.insert((zone_id, hv), gv);
-            alloc_vectors.gv_to_hv.insert((zone_id, gv), hv);
-
-            // info!("gv: {:x}, hv: {:x}", gv, hv);
-
-            return Some(hv);
-        }
-    }
-
-    None
+    REMAP_VECTORS.get().unwrap().get_host_vector(gv, zone_id)
 }
 
 pub fn get_guest_vector(hv: u8, zone_id: usize) -> Option<u32> {
-    let alloc_vectors = ALLOC_VECTORS.lock();
-
-    if let Some(&gv) = alloc_vectors.hv_to_gv.get(&(zone_id, hv)) {
-        if gv != u32::MAX {
-            return Some(gv);
-        }
-    }
-
-    None
+    REMAP_VECTORS.get().unwrap().get_guest_vector(hv, zone_id)
 }
 
 pub fn clear_vectors(hv: u8, zone_id: usize) {
-    let mut alloc_vectors = ALLOC_VECTORS.lock();
+    REMAP_VECTORS.get().unwrap().clear_vectors(hv, zone_id);
+}
 
-    if let Some(&gv) = alloc_vectors.hv_to_gv.get(&(zone_id, hv)) {
-        alloc_vectors.hv_to_gv.remove_entry(&(zone_id, hv));
-        alloc_vectors.gv_to_hv.remove_entry(&(zone_id, gv));
-    }
+pub fn init(max_zones: usize) {
+    REMAP_VECTORS.call_once(|| RemapVectors::new(max_zones));
 }

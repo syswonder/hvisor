@@ -207,6 +207,8 @@ pub struct RootAcpi {
     tables: BTreeMap<Signature, AcpiTable>,
     pointers: Vec<AcpiPointer>,
     devices: Vec<usize>,
+    config_space_base: usize,
+    config_space_size: usize,
     // key: data reg hpa, value: bdf
     msi_data_reg_map: BTreeMap<usize, usize>,
     // key: msi-x table bar, value: bdf
@@ -286,6 +288,20 @@ impl RootAcpi {
             }
             madt_cur += entry_len;
         }
+
+        // FIXME: temp clear dsdt
+        // let mut dsdt = tables.get_mut(&Signature::DSDT).unwrap();
+        // dsdt.set_u32(SDT_HEADER_SIZE as _, 0x4);
+
+        // FIXME: temp add mcfg entry
+        /*let mut mcfg = tables.get_mut(&Signature::MCFG).unwrap();
+        let mcfg_len = mcfg.get_u32(0x4) as usize;
+        let mut entry = vec![
+            0x00u8, 0x00, 0x00, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0xff, 0x00, 0x00,
+            0x00, 0x00,
+        ];
+        mcfg.set_u32(mcfg_len as u32 + entry.len() as u32, 0x4);
+        mcfg.bytes.append(&mut entry);*/
 
         // set pointers
         let hpa_start = acpi_zone_region.physical_start as usize;
@@ -405,8 +421,15 @@ impl RootAcpi {
 
             info!("-------------------------------- MCFG --------------------------------");
             let mut offset = size_of::<Mcfg>() + 0xb;
-            for entry in mcfg.entries() {
+
+            if let Some(entry) = mcfg
+                .entries()
+                .iter()
+                .find(|&entry| entry.pci_segment_group == 0)
+            {
+                // we only support segment group 0
                 info!("{:x?}", entry);
+
                 // we don't have such many buses, probe devices to get the max_bus we have
                 let (mut devices, mut msi_data_reg_map, mut msix_bar_map, _, max_bus) =
                     probe_root_pci_devices(entry.base_address as _);
@@ -418,6 +441,11 @@ impl RootAcpi {
                 offset += size_of::<McfgEntry>();
 
                 self.devices.append(&mut devices);
+
+                self.config_space_base = entry.base_address as _;
+                self.config_space_size =
+                    (((max_bus as u64 - entry.bus_number_start as u64) + 1) << 20) as usize;
+
                 self.msi_data_reg_map.append(&mut msi_data_reg_map);
                 self.msix_bar_map.append(&mut msix_bar_map);
             }
@@ -491,9 +519,9 @@ pub fn root_init() {
 pub fn copy_to_guest_memory_region(config: &HvZoneConfig, cpu_set: &CpuSet) {
     let mut banned: BTreeSet<Signature> = BTreeSet::new();
     // FIXME: temp
-    if config.zone_id != 0 {
-        banned.insert(Signature::FADT);
-    }
+    // if config.zone_id != 0 {
+    // banned.insert(Signature::FADT);
+    // }
     ROOT_ACPI.lock().copy_to_zone_region(
         &config.memory_regions()[config.arch_config.rsdp_memory_region_id],
         &config.memory_regions()[config.arch_config.acpi_memory_region_id],
@@ -506,8 +534,9 @@ pub fn root_get_table(sig: &Signature) -> Option<AcpiTable> {
     ROOT_ACPI.lock().get_table(sig)
 }
 
-pub fn root_get_devices() -> Vec<usize> {
-    ROOT_ACPI.lock().devices.clone()
+pub fn root_get_config_space_info() -> Option<(usize, usize)> {
+    let acpi = ROOT_ACPI.lock();
+    Some((acpi.config_space_base, acpi.config_space_size))
 }
 
 pub fn is_msi_data_reg(hpa: usize) -> Option<usize> {

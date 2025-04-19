@@ -9,7 +9,7 @@ use crate::{
 use alloc::{sync::Arc, vec::Vec};
 use bit_field::BitField;
 use core::{ops::Range, u32};
-use spin::Mutex;
+use spin::{Mutex, Once};
 use x2apic::ioapic::IoApic;
 use x86_64::instructions::port::Port;
 
@@ -33,9 +33,7 @@ lazy_static::lazy_static! {
     };
 }
 
-lazy_static::lazy_static! {
-    static ref VIRT_IOAPIC: (Arc<dyn MMIoDevice>,) = (Arc::new(VirtIoApic::new(ROOT_ZONE_IOAPIC_BASE)),);
-}
+static VIRT_IOAPIC: Once<VirtIoApic> = Once::new();
 
 #[derive(Default)]
 struct VirtIoApicUnlocked {
@@ -44,35 +42,30 @@ struct VirtIoApicUnlocked {
 }
 
 pub struct VirtIoApic {
-    base_gpa: usize,
-    gpa_range: Vec<Range<usize>>,
-    inner: Mutex<VirtIoApicUnlocked>,
+    inner: Vec<Mutex<VirtIoApicUnlocked>>,
 }
 
 impl VirtIoApic {
-    pub fn new(base_gpa: GuestPhysAddr) -> Self {
-        Self {
-            base_gpa,
-            gpa_range: vec![base_gpa..base_gpa + 0x1000],
-            inner: Mutex::new(VirtIoApicUnlocked::default()),
+    pub fn new(max_zones: usize) -> Self {
+        let mut vs = vec![];
+        for _ in 0..max_zones {
+            let v = Mutex::new(VirtIoApicUnlocked::default());
+            vs.push(v)
         }
-    }
-}
-
-impl MMIoDevice for VirtIoApic {
-    fn gpa_range(&self) -> &Vec<Range<usize>> {
-        &self.gpa_range
+        Self { inner: vs }
     }
 
     fn read(&self, gpa: GuestPhysAddr) -> HvResult<u64> {
         // info!("ioapic read! gpa: {:x}", gpa,);
+        let zone_id = this_zone_id();
+        let ioapic = self.inner.get(zone_id).unwrap();
 
         if gpa == 0 {
-            return Ok(self.inner.lock().cur_reg as _);
+            return Ok(ioapic.lock().cur_reg as _);
         }
         assert!(gpa == 0x10);
 
-        let inner = self.inner.lock();
+        let inner = ioapic.lock();
         match inner.cur_reg {
             IoApicReg::ID => Ok(0),
             IoApicReg::VERSION => Ok(IOAPIC_MAX_REDIRECT_ENTRIES << 16 | 0x11), // max redirect entries: 0x17, version: 0x11
@@ -82,7 +75,13 @@ impl MMIoDevice for VirtIoApic {
                 let index = (reg >> 1) as usize;
                 if let Some(entry) = inner.rte.get(index) {
                     if reg % 2 == 0 {
-                        Ok((*entry).get_bits(0..=31))
+                        let mut lower = (*entry).get_bits(0..=31);
+                        if let Some(gv) =
+                            idt::get_guest_vector(lower.get_bits(0..=7) as u8, zone_id)
+                        {
+                            lower.set_bits(0..=7, gv as _);
+                        }
+                        Ok(lower.get_bits(0..=31))
                     } else {
                         Ok((*entry).get_bits(32..=63))
                     }
@@ -99,13 +98,15 @@ impl MMIoDevice for VirtIoApic {
             gpa, value, size,
         );*/
 
+        let zone_id = this_zone_id();
+        let ioapic = self.inner.get(zone_id).unwrap();
         if gpa == 0 {
-            self.inner.lock().cur_reg = value as _;
+            ioapic.lock().cur_reg = value as _;
             return Ok(());
         }
         assert!(gpa == 0x10);
 
-        let mut inner = self.inner.lock();
+        let mut inner = ioapic.lock();
         match inner.cur_reg {
             IoApicReg::ID | IoApicReg::VERSION | IoApicReg::ARBITRATION => {}
             mut reg => {
@@ -114,18 +115,19 @@ impl MMIoDevice for VirtIoApic {
                 if let Some(entry) = inner.rte.get_mut(index) {
                     if reg % 2 == 0 {
                         entry.set_bits(0..=31, value.get_bits(0..=31));
-                    } else {
-                        entry.set_bits(32..=63, value.get_bits(0..=31));
-
                         // use host vector instead of guest vector
                         entry.set_bits(
                             0..=7,
-                            idt::get_host_vector(entry.get_bits(0..=7) as u32, this_zone_id())
-                                .unwrap() as _,
+                            idt::get_host_vector(entry.get_bits(0..=7) as u32, zone_id).unwrap()
+                                as _,
                         );
-                        unsafe {
-                            configure_gsi_from_raw(index as _, *entry);
-                        };
+                    } else {
+                        entry.set_bits(32..=63, value.get_bits(0..=31));
+
+                        if zone_id == 0 {
+                            // only root zone modify the real I/O APIC
+                            unsafe { configure_gsi_from_raw(index as _, *entry) };
+                        }
                     }
                 }
             }
@@ -134,13 +136,25 @@ impl MMIoDevice for VirtIoApic {
     }
 
     fn trigger(&self, signal: usize) -> HvResult {
-        if let Some(entry) = self.inner.lock().rte.get(signal) {
+        let zone_id = this_zone_id();
+        let ioapic = self.inner.get(zone_id).unwrap();
+        if let Some(entry) = ioapic.lock().rte.get(signal) {
             // TODO: physical & logical mode
             let dest = entry.get_bits(56..=63) as usize;
             let masked = entry.get_bit(16);
             let vector = entry.get_bits(0..=7) as u8;
+            /*info!(
+                "trigger gv: {:x} zone: {:x}",
+                idt::get_guest_vector(vector as _, zone_id).unwrap(),
+                zone_id
+            );*/
             if !masked {
-                inject_vector(dest, vector, None, true);
+                inject_vector(
+                    dest,
+                    idt::get_guest_vector(vector as _, zone_id).unwrap() as _,
+                    None,
+                    false,
+                );
             }
         }
         Ok(())
@@ -164,10 +178,11 @@ impl Zone {
 fn ioapic_mmio_handler(mmio: &mut MMIOAccess, _: usize) -> HvResult {
     if mmio.is_write {
         VIRT_IOAPIC
-            .0
+            .get()
+            .unwrap()
             .write(mmio.address, mmio.value as _, mmio.size)
     } else {
-        mmio.value = VIRT_IOAPIC.0.read(mmio.address).unwrap() as _;
+        mmio.value = VIRT_IOAPIC.get().unwrap().read(mmio.address).unwrap() as _;
         Ok(())
     }
 }
@@ -185,6 +200,10 @@ pub fn init_ioapic() {
     }
 }
 
+pub fn init_virt_ioapic(max_zones: usize) {
+    VIRT_IOAPIC.call_once(|| VirtIoApic::new(max_zones));
+}
+
 pub fn ioapic_inject_irq(irq: u8) {
-    VIRT_IOAPIC.0.trigger(irq as _);
+    VIRT_IOAPIC.get().unwrap().trigger(irq as _);
 }

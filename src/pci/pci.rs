@@ -152,7 +152,6 @@ impl Zone {
         }
 
         info!("PCIe init!");
-        // info!("{:#x?}", pci_config);
 
         init_ecam_base(pci_config.ecam_base as _);
 

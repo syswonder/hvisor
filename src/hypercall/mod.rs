@@ -43,6 +43,7 @@ numeric_enum! {
     pub enum HyperCallCode {
         HvVirtioInit = 0,
         HvVirtioInjectIrq = 1,
+        HvVirtioGetIrq = 86,
         HvZoneStart = 2,
         HvZoneShutdown = 3,
         HvZoneList = 4,
@@ -80,6 +81,8 @@ impl<'a> HyperCall<'a> {
             match code {
                 HyperCallCode::HvVirtioInit => self.hv_virtio_init(arg0),
                 HyperCallCode::HvVirtioInjectIrq => self.hv_virtio_inject_irq(),
+                #[cfg(target_arch = "x86_64")]
+                HyperCallCode::HvVirtioGetIrq => self.hv_virtio_get_irq(arg0 as *mut u32),
                 HyperCallCode::HvZoneStart => {
                     self.hv_zone_start(&*(arg0 as *const HvZoneConfig), arg1)
                 }
@@ -144,6 +147,15 @@ impl<'a> HyperCall<'a> {
         #[cfg(target_arch = "loongarch64")]
         let shared_region_addr_pa =
             shared_region_addr_pa | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX as usize;
+        #[cfg(target_arch = "x86_64")]
+        let shared_region_addr_pa = unsafe {
+            this_zone()
+                .read()
+                .gpm
+                .page_table_query(shared_region_addr_pa)
+                .unwrap()
+                .0
+        };
 
         assert!(shared_region_addr_pa % PAGE_SIZE == 0);
         // let offset = shared_region_addr_pa & (PAGE_SIZE - 1);
@@ -160,6 +172,8 @@ impl<'a> HyperCall<'a> {
             .lock()
             .set_base_addr(shared_region_addr_pa as _);
         info!("hvisor device region base is {:#x?}", shared_region_addr_pa);
+
+        // FIXME:
         HyperCallResult::Ok(0)
     }
 
@@ -219,6 +233,22 @@ impl<'a> HyperCall<'a> {
             fence(Ordering::SeqCst);
         }
         drop(dev);
+        HyperCallResult::Ok(0)
+    }
+
+    #[cfg(target_arch = "x86_64")]
+    fn hv_virtio_get_irq(&self, virtio_irq: *mut u32) -> HyperCallResult {
+        let virtio_irq = unsafe {
+            this_zone()
+                .read()
+                .gpm
+                .page_table_query(virtio_irq as usize)
+                .unwrap()
+                .0 as *mut u32
+        };
+        unsafe {
+            (*virtio_irq) = crate::device::virtio_trampoline::IRQ_WAKEUP_VIRTIO_DEVICE as _;
+        };
         HyperCallResult::Ok(0)
     }
 

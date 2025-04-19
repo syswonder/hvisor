@@ -1,5 +1,6 @@
 use crate::{
     config::*,
+    device::virtio_trampoline::mmio_virtio_handler,
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion},
     platform::MEM_TYPE_OTHER_ZONES,
@@ -37,7 +38,6 @@ impl Zone {
                         flags,
                     ))?
                 }
-                /*
                 MEM_TYPE_VIRTIO => {
                     self.mmio_region_register(
                         mem_region.physical_start as _,
@@ -45,7 +45,7 @@ impl Zone {
                         mmio_virtio_handler,
                         mem_region.physical_start as _,
                     );
-                }*/
+                }
                 _ => {
                     panic!("Unsupported memory type: {}", mem_region.mem_type)
                 }

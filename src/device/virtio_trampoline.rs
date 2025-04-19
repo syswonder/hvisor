@@ -43,10 +43,12 @@ pub const MAX_REQ: u32 = 32;
 pub const MAX_DEVS: usize = 4; // Attention: The max virtio-dev number for vm is 4.
 pub const MAX_CPUS: usize = 4;
 
-#[cfg(not(target_arch = "riscv64"))]
+#[cfg(all(not(target_arch = "riscv64"), not(target_arch = "x86_64")))]
 pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;
 #[cfg(target_arch = "riscv64")]
 pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 0x20;
+#[cfg(target_arch = "x86_64")]
+pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 0x6;
 
 /// non root zone's virtio request handler
 pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {

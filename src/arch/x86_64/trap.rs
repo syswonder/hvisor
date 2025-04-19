@@ -1,3 +1,5 @@
+use core::mem::size_of;
+
 use crate::{
     arch::{
         cpu::{this_cpu_id, ArchCpu},
@@ -23,10 +25,16 @@ use crate::{
     error::HvResult,
     hypercall::HyperCall,
     memory::{mmio_handle_access, MMIOAccess, MemFlags},
-    percpu::this_cpu_data,
+    percpu::{this_cpu_data, this_zone},
     zone::this_zone_id,
 };
+use bit_field::BitField;
 use x86_64::registers::control::Cr4Flags;
+
+use super::{
+    pci::{handle_pci_config_port_read, handle_pci_config_port_write},
+    pio::{PCI_CONFIG_ADDR_PORT, PCI_CONFIG_DATA_PORT},
+};
 
 core::arch::global_asm!(
     include_str!("trap.S"),
@@ -94,14 +102,14 @@ fn handle_irq(vector: u8) {
             None,
             true,
         ),
-        _ => {
-            inject_vector(
-                this_cpu_id(),
-                get_guest_vector(vector, this_zone_id()).unwrap() as _,
-                None,
-                false,
-            );
-        }
+        _ => match get_guest_vector(vector, this_zone_id()) {
+            Some(gv) => {
+                inject_vector(this_cpu_id(), gv as _, None, false);
+            }
+            None => {
+                warn!("can't find guest vector with host vector {:x}", vector);
+            }
+        },
     }
     unsafe { VirtLocalApic::phys_local_apic().end_of_interrupt() };
 }
@@ -249,38 +257,41 @@ fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
         return hv_result_err!(ENOSYS);
     }
 
-    /*if let Some(dev) = all_virt_devices().find_port_io_device(io_info.port) {
-        if io_info.is_in {
-            let value = dev.read(io_info.port, 0)?;
-            let rax = &mut arch_cpu.regs_mut().rax;
-            // SDM Vol. 1, Section 3.4.1.1:
-            // * 32-bit operands generate a 32-bit result, zero-extended to a 64-bit result in the
-            //   destination general-purpose register.
-            // * 8-bit and 16-bit operands generate an 8-bit or 16-bit result. The upper 56 bits or
-            //   48 bits (respectively) of the destination general-purpose register are not modified
-            //   by the operation.
-            match io_info.access_size {
-                1 => *rax = (*rax & !0xff) | (value & 0xff) as u64,
-                2 => *rax = (*rax & !0xffff) | (value & 0xffff) as u64,
-                4 => *rax = value as u64,
-                _ => unreachable!(),
-            }
-        } else {
-            let rax = arch_cpu.regs().rax;
-            let value = match io_info.access_size {
-                1 => rax & 0xff,
-                2 => rax & 0xffff,
-                4 => rax,
-                _ => unreachable!(),
-            } as u32;
-            dev.write(io_info.port, value, 0)?;
+    let mut value: u32 = 0;
+    if !io_info.is_in {
+        let rax = arch_cpu.regs().rax;
+        value = match io_info.access_size {
+            1 => rax & 0xff,
+            2 => rax & 0xffff,
+            4 => rax,
+            _ => unreachable!(),
+        } as _;
+
+        if PCI_CONFIG_ADDR_PORT.contains(&io_info.port)
+            || PCI_CONFIG_DATA_PORT.contains(&io_info.port)
+        {
+            handle_pci_config_port_write(&io_info, value);
         }
     } else {
-        debug!(
-            "Unsupported I/O port {:#x} access: {:#x?} \n {:#x?}",
-            io_info.port, io_info, arch_cpu
-        )
-    }*/
+        if PCI_CONFIG_ADDR_PORT.contains(&io_info.port)
+            || PCI_CONFIG_DATA_PORT.contains(&io_info.port)
+        {
+            value = handle_pci_config_port_read(&io_info);
+        }
+        let rax = &mut arch_cpu.regs_mut().rax;
+        // SDM Vol. 1, Section 3.4.1.1:
+        // * 32-bit operands generate a 32-bit result, zero-extended to a 64-bit result in the
+        //   destination general-purpose register.
+        // * 8-bit and 16-bit operands generate an 8-bit or 16-bit result. The upper 56 bits or
+        //   48 bits (respectively) of the destination general-purpose register are not modified
+        //   by the operation.
+        match io_info.access_size {
+            1 => *rax = (*rax & !0xff) | (value & 0xff) as u64,
+            2 => *rax = (*rax & !0xffff) | (value & 0xffff) as u64,
+            4 => *rax = value as u64,
+            _ => unreachable!(),
+        }
+    }
 
     arch_cpu.advance_guest_rip(exit_info.exit_instruction_length as _)?;
     Ok(())

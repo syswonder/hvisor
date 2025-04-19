@@ -92,8 +92,12 @@ pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
             mmio.address -= region.start;
 
             if cfg!(target_arch = "x86_64") {
-                #[cfg(target_arch = "x86_64")]
-                crate::arch::mmio::instruction_emulator(&handler, mmio, arg)
+                if mmio.size == 0 {
+                    #[cfg(target_arch = "x86_64")]
+                    crate::arch::mmio::instruction_emulator(&handler, mmio, arg)
+                } else {
+                    handler(mmio, arg)
+                }
             } else {
                 handler(mmio, arg)
             }

@@ -443,9 +443,9 @@ impl ArchCpu {
 
         if self.power_on {
             VmcsControl64::IO_BITMAP_A_ADDR
-                .write(this_zone().read().pio_bitmap.bitmap_a_addr() as _)?;
+                .write(this_zone().read().pio_bitmap.a.start_paddr() as _)?;
             VmcsControl64::IO_BITMAP_B_ADDR
-                .write(this_zone().read().pio_bitmap.bitmap_b_addr() as _)?;
+                .write(this_zone().read().pio_bitmap.b.start_paddr() as _)?;
             VmcsControl64::MSR_BITMAPS_ADDR.write(this_zone().read().msr_bitmap.phys_addr() as _)?;
         }
 

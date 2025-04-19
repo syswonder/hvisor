@@ -1,7 +1,9 @@
 use crate::{
     arch::{acpi, idt, mmio::MMIoDevice, zone::HvArchZoneConfig},
     error::HvResult,
-    memory::{mmio_generic_handler, mmio_perform_access, GuestPhysAddr, MMIOAccess},
+    memory::{
+        mmio_generic_handler, mmio_handle_access, mmio_perform_access, GuestPhysAddr, MMIOAccess,
+    },
     percpu::this_zone,
     zone::Zone,
 };
@@ -14,42 +16,10 @@ use alloc::{
 use bit_field::BitField;
 use core::{mem::size_of, ops::Range, panic};
 
-lazy_static::lazy_static! {
-    static ref VIRT_PCI_CONFIG_SPACE: (Arc<dyn MMIoDevice>,) = (Arc::new(VirtPciConfigSpace::new()),);
-}
-
-pub struct VirtPciConfigSpace {}
-
-impl VirtPciConfigSpace {
-    fn new() -> Self {
-        Self {}
-    }
-}
-
-impl MMIoDevice for VirtPciConfigSpace {
-    fn gpa_range(&self) -> &Vec<Range<usize>> {
-        todo!()
-    }
-
-    fn read(&self, gpa: GuestPhysAddr) -> HvResult<u64> {
-        let value = unsafe { core::ptr::read_unaligned(gpa as *const u64) };
-        // info!("pci config read! gpa: {:x}, value: {:x}", gpa, value);
-        Ok(value)
-    }
-
-    fn write(&self, gpa: GuestPhysAddr, value: u64, size: usize) -> HvResult {
-        info!(
-            "pci config write! gpa: {:x}, value: {:x}, size: {:x}",
-            gpa, value, size,
-        );
-
-        todo!()
-    }
-
-    fn trigger(&self, signal: usize) -> HvResult {
-        todo!()
-    }
-}
+use super::{
+    pio::{PCI_CONFIG_ADDR_PORT, PCI_CONFIG_DATA_PORT},
+    vmx::VmxIoExitInfo,
+};
 
 impl Zone {
     pub fn pci_config_space_mmio_init(&mut self, arch: &HvArchZoneConfig) {
@@ -67,26 +37,6 @@ impl Zone {
             self.mmio_region_register(start, size, mmio_generic_handler, 0);
         }
     }
-}
-
-/*fn pci_config_space_mmio_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
-    mmio_handler(mmio, &VIRT_PCI_CONFIG_SPACE.0)
-}*/
-
-pub fn get_config_space_info() -> HvResult<(u64, u64)> {
-    let bytes = acpi::root_get_table(&Signature::MCFG)
-        .unwrap()
-        .get_bytes()
-        .clone();
-    let mcfg = unsafe { &*(bytes.as_ptr() as *const Mcfg) };
-
-    for entry in mcfg.entries() {
-        assert!(entry.pci_segment_group == 0);
-        let size = ((entry.bus_number_end as u64 - entry.bus_number_start as u64) + 1) << 20;
-        return Ok((entry.base_address, size));
-    }
-
-    hv_result_err!(ENODEV)
 }
 
 pub fn probe_root_pci_devices(
@@ -258,13 +208,85 @@ pub fn mmio_msi_data_reg_handler(
             mmio.value = host_vector as _;
         }
     }
-    /*info!(
+    trace!(
         "mmio_msi_data_reg_handler! hpa: {:x}, bdf: {:x}, is write: {:x?}, read value: {:x}, write value: {:x}",
         base + mmio.address,
         bdf,
         mmio.is_write,
         host_vector,
         mmio.value
-    );*/
+    );
     Ok(())
+}
+
+fn get_pci_mmio_addr() -> Option<usize> {
+    let addr = this_zone().read().pio_bitmap.pci_config_addr as usize;
+    let (base, _) = crate::arch::acpi::root_get_config_space_info().unwrap();
+
+    let enable = addr.get_bit(31);
+    let bdf = addr.get_bits(8..=23);
+    let reg = addr.get_bits(2..=7);
+
+    if enable {
+        // info!("pio: {:x}, bdf: {:x}", base + (bdf << 12) + (reg << 2), bdf);
+        Some(base + (bdf << 12) + (reg << 2))
+    } else {
+        None
+    }
+}
+
+pub fn handle_pci_config_port_read(io_info: &VmxIoExitInfo) -> u32 {
+    let mut value = 0u32;
+    if PCI_CONFIG_ADDR_PORT.contains(&io_info.port) {
+        value = this_zone().read().pio_bitmap.pci_config_addr;
+
+        let offset_bit = 8 * (io_info.port - PCI_CONFIG_ADDR_PORT.start) as usize;
+        value = value.get_bits(offset_bit..offset_bit + (8 * io_info.access_size) as usize);
+    } else {
+        if let Some(mmio_addr) = get_pci_mmio_addr() {
+            let offset: usize = (io_info.port - PCI_CONFIG_DATA_PORT.start) as usize;
+            if this_zone()
+                .read()
+                .find_mmio_region(mmio_addr + offset, io_info.access_size as _)
+                .is_some()
+            {
+                let mut mmio_access = MMIOAccess {
+                    address: mmio_addr + offset,
+                    size: io_info.access_size as _,
+                    is_write: false,
+                    value: 0,
+                };
+                mmio_handle_access(&mut mmio_access);
+                value = mmio_access.value as _;
+                // info!("value: {:x}", value);
+            }
+        }
+    }
+    value
+}
+
+pub fn handle_pci_config_port_write(io_info: &VmxIoExitInfo, value: u32) {
+    if PCI_CONFIG_ADDR_PORT.contains(&io_info.port) {
+        let offset_bit = 8 * (io_info.port - PCI_CONFIG_ADDR_PORT.start) as usize;
+        this_zone().write().pio_bitmap.pci_config_addr.set_bits(
+            offset_bit..offset_bit + (8 * (io_info.access_size as usize)),
+            value,
+        );
+    } else {
+        if let Some(mmio_addr) = get_pci_mmio_addr() {
+            let offset: usize = (io_info.port - PCI_CONFIG_DATA_PORT.start) as usize;
+            if this_zone()
+                .read()
+                .find_mmio_region(mmio_addr + offset, io_info.access_size as _)
+                .is_some()
+            {
+                mmio_handle_access(&mut MMIOAccess {
+                    address: mmio_addr + offset,
+                    size: io_info.access_size as _,
+                    is_write: true,
+                    value: value as _,
+                });
+            }
+        }
+    }
 }
