@@ -18,7 +18,7 @@ use core::sync::atomic::AtomicU32;
 use spin::RwLock;
 
 use crate::{
-    arch::Stage2PageTable, consts, consts::MAX_CPU_NUM, error::HvResult, memory::MemorySet,
+    arch::Stage2PageTable, consts, error::HvResult, memory::MemorySet,
     wait_for,
 };
 

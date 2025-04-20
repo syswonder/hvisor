@@ -157,7 +157,7 @@ impl Zone {
     pub fn ivc_init(&mut self, ivc_configs: &[HvIvcConfig]) {
         for ivc_config in ivc_configs {
             // is_new is ok to remove
-            if let Ok((is_new, start_paddr)) = insert_ivc_record(ivc_config, self.id as _) {
+            if let Ok((_is_new, start_paddr)) = insert_ivc_record(ivc_config, self.id as _) {
                 info!(
                     "ivc init: zone {}'s shared mem begins at {:x}, ipa is {:x}",
                     self.id, start_paddr, ivc_config.shared_mem_ipa
@@ -231,7 +231,7 @@ pub fn mmio_ivc_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
             let peer_id = rec
                 .peer_infos
                 .iter()
-                .find(|&(peer_id, info)| info.zone_id == zone_id as _)
+                .find(|&(_peer_id, info)| info.zone_id == zone_id as _)
                 .map(|(peer_id, _)| *peer_id)
                 .unwrap();
             peer_id as usize
