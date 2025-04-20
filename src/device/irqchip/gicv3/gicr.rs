@@ -94,7 +94,7 @@ impl LpiPropTable {
         let page_num: usize = ((1 << (id_bits + 1)) - 8192) / PAGE_SIZE;
         let f = Frame::new_contiguous(page_num, 0).unwrap();
         let propreg = f.start_paddr() | 0x78f;
-        for id in 0..unsafe { consts::NCPU } {
+        for id in 0..consts::ncpu() {
             let propbaser = host_gicr_base(id) + GICR_PROPBASER;
             unsafe {
                 ptr::write_volatile(propbaser as *mut u64, propreg as _);

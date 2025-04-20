@@ -229,9 +229,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
             println!("Using {} cpu(s) on this system.", ncpu);
         }
 
-        unsafe {
-            consts::NCPU = ncpu;
-        }
+        consts::set_ncpu(ncpu);
         wakeup_secondary_cpus(cpu.id, host_dtb, ncpu);
     }
 
@@ -246,7 +244,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     );
 
     #[cfg(target_arch = "aarch64")]
-    setup_parange(ncpu);
+    setup_parange();
 
     if is_primary {
         primary_init_early(ncpu); // create root zone here

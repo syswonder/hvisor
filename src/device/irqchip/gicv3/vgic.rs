@@ -43,7 +43,7 @@ impl Zone {
         self.mmio_region_register(arch.gicd_base, arch.gicd_size, vgicv3_dist_handler, 0);
         self.mmio_region_register(arch.gits_base, arch.gits_size, vgicv3_its_handler, 0);
 
-        for cpu in 0..unsafe { consts::NCPU } {
+        for cpu in 0..consts::ncpu() {
             let gicr_base = arch.gicr_base + cpu * PER_GICR_SIZE;
             debug!("registering gicr {} at {:#x?}", cpu, gicr_base);
             self.mmio_region_register(gicr_base, PER_GICR_SIZE, vgicv3_redist_handler, cpu);
@@ -153,7 +153,7 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
         }
         GICR_TYPER => {
             mmio_perform_access(gicr_base, mmio);
-            if cpu == unsafe { consts::NCPU } - 1 {
+            if cpu == consts::ncpu() - 1 {
                 mmio.value |= GICR_TYPER_LAST;
             }
         }
