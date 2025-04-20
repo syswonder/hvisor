@@ -17,10 +17,7 @@ use core::sync::atomic::AtomicU32;
 
 use spin::RwLock;
 
-use crate::{
-    arch::Stage2PageTable, consts, error::HvResult, memory::MemorySet,
-    wait_for,
-};
+use crate::{arch::Stage2PageTable, consts, error::HvResult, memory::MemorySet, wait_for};
 
 use super::sysreg::read_sysreg;
 
