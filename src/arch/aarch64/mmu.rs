@@ -164,7 +164,7 @@ pub extern "C" fn boot_pt_init(l0_pt: &mut PageTables, l1_pt: &mut PageTables) {
             for i in 1..ENTRY_PER_PAGE {
                 l0_pt.entry[i] = PTEDescriptor::new(0x40000000*i, MemoryType::Normal, PTEType::Block);
             }
-        } else if #[cfg(feature = "pt_layout_rk3568")]{
+        } else if #[cfg(any(feature = "pt_layout_rk3568", feature = "pt_layout_rk3588"))] {
             // EMMC fe310000    0xfe200000-0xfe400000
             // GIC  fd400000    0xfd400000-0xfd600000
             // UART fe660000    0xfe600000-0xfe800000

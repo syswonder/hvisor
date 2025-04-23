@@ -75,10 +75,11 @@ use crate::arch::mm::setup_parange;
 use crate::consts::MAX_CPU_NUM;
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
+use platform::BOARD_NCPUS;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use fdt_rs::{base::DevTree, prelude::FallibleIterator};
 use percpu::PerCpu;
-use zone::zone_create;
+use zone::{add_zone, zone_create};
 
 #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
 use crate::arch::iommu::iommu_init;
@@ -141,8 +142,10 @@ fn primary_init_early(ncpu: usize) {
     iommu_init();
 
     #[cfg(not(test))]
-    zone_create(root_zone_config()).unwrap();
-
+    {
+        let zone = zone_create(root_zone_config()).unwrap();
+        add_zone(zone);
+    }
     INIT_EARLY_OK.store(1, Ordering::Release);
 }
 
@@ -176,7 +179,10 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     arch::trap::install_trap_vector();
 
     let mut is_primary = false;
-    println!("Hello, HVISOR!");
+    extern "C" {
+        fn skernel();
+    }
+    println!("Hello, start HVISOR at {:#x?}!", skernel as usize);
     if MASTER_CPU.load(Ordering::Acquire) == -1 {
         MASTER_CPU.store(cpuid as i32, Ordering::Release);
         is_primary = true;
@@ -195,7 +201,10 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
 
     // Don't you wanna know how many cpu(s) on board? :D
     let mut ncpu: usize = 0;
-    #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+    #[cfg(all(
+        any(target_arch = "aarch64", target_arch = "riscv64"),
+        not(feature = "no_autodetect_ncpus")
+    ))]
     {
         let devtree = unsafe { DevTree::from_raw_pointer(host_dtb as *const u8).unwrap() };
 
@@ -212,10 +221,10 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         if is_primary {
             println!(
                 "Failed to count cpu(s) from devicetree. Using default value {}.",
-                MAX_CPU_NUM
+                BOARD_NCPUS
             );
         }
-        ncpu = MAX_CPU_NUM;
+        ncpu = BOARD_NCPUS;
     } else if ncpu > MAX_CPU_NUM {
         if is_primary {
             println!("{} cpu(s) detected, but using only {}.", ncpu, MAX_CPU_NUM);

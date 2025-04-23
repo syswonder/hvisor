@@ -2,6 +2,8 @@ use crate::{arch::zone::HvArchZoneConfig, config::*};
 
 pub const BOARD_NAME: &str = "rk3568";
 
+pub const BOARD_NCPUS: usize = 4;
+
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0xa0000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x60080000 ;
 pub const ROOT_ZONE_ENTRY: u64 = 0x60080000 ;

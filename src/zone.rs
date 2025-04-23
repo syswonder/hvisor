@@ -203,7 +203,10 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     let zone_id = config.zone_id as usize;
 
     if find_zone(zone_id).is_some() {
-        return hv_result_err!(EEXIST);
+        return hv_result_err!(
+            EINVAL,
+            format!("Failed to create zone: zone_id {} already exists", zone_id)
+        );
     }
 
     let mut zone = Zone::new(zone_id, &config.name);
@@ -219,10 +222,21 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     );
 
     let mut cpu_num = 0;
-    config.cpus().iter().for_each(|cpu_id| {
+
+    for cpu_id in config.cpus().iter() {
+        if let Some(zone) = get_cpu_data(*cpu_id as _).zone.clone() {
+            return hv_result_err!(
+                EBUSY,
+                format!(
+                    "Failed to create zone: cpu {} already belongs to zone {}",
+                    cpu_id,
+                    zone.read().id
+                )
+            );
+        }
         zone.cpu_set.set_bit(*cpu_id as _);
         cpu_num += 1;
-    });
+    };
 
     #[cfg(feature = "plic")]
     {
@@ -260,7 +274,6 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
             cpu_data.dtb_ipa = dtb_ipa as _;
         });
     }
-    add_zone(new_zone_pointer.clone());
 
     Ok(new_zone_pointer)
 }
@@ -275,7 +288,7 @@ pub struct ZoneInfo {
 }
 // Be careful about dead lock for zone.write()
 pub fn zone_error() {
-    if (is_this_root_zone()) {
+    if is_this_root_zone() {
         panic!("root zone has some error");
     }
     let zone = this_zone();

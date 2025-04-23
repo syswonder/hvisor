@@ -41,7 +41,7 @@ pub static VIRTIO_BRIDGE: Mutex<VirtioBridgeRegion> = Mutex::new(VirtioBridgeReg
 const QUEUE_NOTIFY: usize = 0x50;
 pub const MAX_REQ: u32 = 32;
 pub const MAX_DEVS: usize = 4; // Attention: The max virtio-dev number for vm is 4.
-pub const MAX_CPUS: usize = 4;
+pub const MAX_CPUS: usize = 32;
 
 #[cfg(not(target_arch = "riscv64"))]
 pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;
@@ -236,8 +236,8 @@ pub struct VirtioBridge {
     pub res_rear: u32,
     pub req_list: [HvisorDeviceReq; MAX_REQ as usize],
     pub res_list: [HvisorDeviceRes; MAX_REQ as usize], // irqs
-    cfg_flags: [u64; MAX_CPU_NUM],
-    cfg_values: [u64; MAX_CPU_NUM],
+    cfg_flags: [u64; MAX_CPUS],
+    cfg_values: [u64; MAX_CPUS],
     pub mmio_addrs: [u64; MAX_DEVS],
     pub mmio_avail: u8,
     pub need_wakeup: u8,

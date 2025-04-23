@@ -51,23 +51,30 @@ raw-cpuid = "10.7.0"
 ############# general ##############
 iommu = [] # supported by: aarch64
 pci = [] # supported by: aarch64
+no_autodetect_ncpus = []
+
 ############# aarch64 ##############
 # irqchip driver
 gicv2 = []
 gicv3 = []
+
 # uart driver
 pl011 = []
 xuartps = []
 imx_uart = []
 uart_16550 = []
+uart_base_rk3568 = []
+uart_base_rk3588 = []
+
 # pagetable layout
 pt_layout_qemu = []
 pt_layout_rk3568 = []
+pt_layout_rk3588 = []
+
 # cpu 
 a55 = []
 a53 = []
-# uart infos
-rk3568_uart_base = []
+
 ############## riscv64 #############
 # irqchip driver
 plic = []
@@ -85,4 +92,3 @@ loongson_uart = []
 [profile.dev]
 # panic = "abort" # avoid cargo test failure, this is a bug of cargo
 debug = 2
-# panic = "abort"

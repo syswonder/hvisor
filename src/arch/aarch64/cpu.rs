@@ -167,7 +167,7 @@ impl ArchCpu {
         this_cpu_data().activate_gpm();
         self.reset(this_cpu_data().cpu_on_entry, this_cpu_data().dtb_ipa);
         self.power_on = true;
-        info!("cpu {} started", self.cpuid);
+        info!("cpu {} started at {:#x?}", self.cpuid, this_cpu_data().cpu_on_entry);
         unsafe {
             vmreturn(self.guest_reg() as *mut _ as usize);
         }
