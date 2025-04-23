@@ -20,7 +20,7 @@ pub const BOARD_NAME: &str = "ls3a5000";
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x10000f000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x200000;
-pub const ROOT_ZONE_ENTRY: u64 = 0x9000000000e71000;
+pub const ROOT_ZONE_ENTRY: u64 = 0x9000000000da4000;
 pub const ROOT_ZONE_CPUS: u64 = 1 << 0;
 
 pub const ROOT_ZONE_NAME: &str = "root-linux-la64";
@@ -63,13 +63,13 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
         physical_start: 0x10080000,
         virtual_start: 0x10080000,
         size: 0x1000,
-    }, // uart1
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0x100d0000,
-    //     virtual_start: 0x100d0000,
-    //     size: 0x1000,
-    // }, // rtc
+    }, // uart1, passthrough now
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x100d0000,
+        virtual_start: 0x100d0000,
+        size: 0x1000,
+    }, // rtc, passthrough now
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x10000000,

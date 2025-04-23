@@ -25,6 +25,7 @@ use crate::memory::mmio_handle_access;
 use crate::memory::MMIOAccess;
 use crate::percpu::this_cpu_data;
 use crate::zone::Zone;
+use crate::PHY_TO_DMW_UNCACHED;
 
 use super::register::*;
 use super::zone::ZoneContext;
@@ -469,9 +470,14 @@ fn handle_exception(
                     if !is_write {
                         // we read an usize from our zone0 virtio-daemon
                         // need to trim and extend it to 64-bit reg according to is_u and size
-                        // ctx.x[target_rd_idx] = mmio_access.value;
-                        let trimmed_by_size =
-                            mmio_access.value & ((1 << (mmio_access.size * 8)) - 1);
+                        let mask = match mmio_access.size {
+                            1 => 0xff,
+                            2 => 0xffff,
+                            4 => 0xffffffff,
+                            8 => 0xffffffffffffffff,
+                            _ => panic!("invalid mmio access size: {}", mmio_access.size),
+                        };
+                        let trimmed_by_size = mmio_access.value & mask;
                         let extended = if !is_u {
                             // normal instruction with no .u use sign extension
                             signed_ext(trimmed_by_size, mmio_access.size * 8)
@@ -1315,7 +1321,152 @@ fn emulate_idle(ins: usize, ctx: &mut ZoneContext) {
     // }
 }
 
+fn ty2str(ty: usize) -> &'static str {
+    match ty {
+        0 => "iocsrrd.b",
+        1 => "iocsrrd.h",
+        2 => "iocsrrd.w",
+        3 => "iocsrrd.d",
+        4 => "iocsrwr.b",
+        5 => "iocsrwr.h",
+        6 => "iocsrwr.w",
+        7 => "iocsrwr.d",
+        _ => "unknown",
+    }
+}
+
 fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
+    // iocsrrd.b rd, rj     0000011001 001000000000 rj[9:5] rd[4:0]
+    // iocsrrd.h rd, rj     0000011001 001000000001 rj[9:5] rd[4:0]
+    // iocsrrd.w rd, rj     0000011001 001000000010 rj[9:5] rd[4:0]
+    // iocsrrd.d rd, rj     0000011001 001000000011 rj[9:5] rd[4:0]
+    // iocsrwr.b rd, rj     0000011001 001000000100 rj[9:5] rd[4:0]
+    // iocsrwr.h rd, rj     0000011001 001000000101 rj[9:5] rd[4:0]
+    // iocsrwr.w rd, rj     0000011001 001000000110 rj[9:5] rd[4:0]
+    // iocsrwr.d rd, rj     0000011001 001000000111 rj[9:5] rd[4:0]
+    let ty = extract_field(ins, 10, 3);
+    let rd = extract_field(ins, 0, 5);
+    let rj = extract_field(ins, 5, 5);
+    debug!("iocsr emulation, ty = {}, rd = {}, rj = {}", ty, rd, rj);
+    debug!("GPR[rd] = {:#x}, GPR[rj] = {:#x}", ctx.x[rd], ctx.x[rj]);
+
+    const IOCSR_BASE_ADDR_PHY: usize = 0x1fe0_0000;
+    let mut mmio_access = MMIOAccess {
+        address: IOCSR_BASE_ADDR_PHY + ctx.x[rj], // iocsr only issues an offset from IOCSR_BASE_ADDR_PHY, so we need the calculate the real phy addr
+        size: 0,
+        is_write: false,
+        value: ctx.x[rd],
+    };
+
+    match ty {
+        0 => {
+            // iocsrrd.b
+            mmio_access.size = 1;
+            mmio_access.is_write = false;
+        }
+        1 => {
+            // iocsrrd.h
+            mmio_access.size = 2;
+            mmio_access.is_write = false;
+        }
+        2 => {
+            // iocsrrd.w
+            mmio_access.size = 4;
+            mmio_access.is_write = false;
+        }
+        3 => {
+            // iocsrrd.d
+            mmio_access.size = 8;
+            mmio_access.is_write = false;
+        }
+        4 => {
+            // iocsrwr.b
+            mmio_access.size = 1;
+            mmio_access.is_write = true;
+        }
+        5 => {
+            // iocsrwr.h
+            mmio_access.size = 2;
+            mmio_access.is_write = true;
+        }
+        6 => {
+            // iocsrwr.w
+            mmio_access.size = 4;
+            mmio_access.is_write = true;
+
+            // Special handling for IPI
+            if mmio_access.address == 0x1014 {
+                // IPI send issued from guest is tricky ...
+                // IPI_send is 32 bit, we ignore the upper 32 bits
+                // bit [31]: wait for completion
+                // bit [25:16] target cpu id
+                // bit [4:0] ipi id (IPI_status, 32 bit) indicates the IPI type (0-31)
+                let ipi_send = mmio_access.value as u32;
+                let ipi_id = ipi_send & 0x1f;
+                let target_cpu_id = (ipi_send >> 16) & 0x3ff;
+                let wait_for_completion = (ipi_send >> 31) & 0x1;
+                warn!("IPI send issued from guest, ipi_id = {:#x}, target_cpu_id = {:#x}, wait_for_completion = {:#x}", ipi_id, target_cpu_id, wait_for_completion);
+                if target_cpu_id == this_cpu_id() as u32 {
+                    warn!("send IPI to itself, injecting IPI to GCSR_ESTAT");
+                    inject_irq(INT_IPI, false);
+                    ctx.sepc += 4;
+                    return;
+                } else {
+                    // TODO
+                    panic!("send IPI from guest to other cpu is not supported yet!");
+                }
+            }
+        }
+        7 => {
+            // iocsrwr.d
+            mmio_access.size = 8;
+            mmio_access.is_write = true;
+        }
+        _ => {
+            // should not reach here
+            panic!("invalid iocsr type, this is impossible");
+        }
+    }
+
+    debug!(
+        "iocsr issues a mmio access: {}, target address: {:#x}, size: {}, {}",
+        ty2str(ty),
+        mmio_access.address,
+        mmio_access.size,
+        if mmio_access.is_write { "W" } else { "R" }
+    );
+
+    let res = mmio_handle_access(&mut mmio_access);
+    match res {
+        Ok(_) => {
+            debug!("handle mmio success, v={:#x}", mmio_access.value);
+            if !mmio_access.is_write {
+                let mask = match mmio_access.size {
+                    1 => 0xff,
+                    2 => 0xffff,
+                    4 => 0xffffffff,
+                    8 => 0xffffffffffffffff,
+                    _ => panic!("invalid mmio access size: {}", mmio_access.size),
+                };
+                let trimmed_by_size = mmio_access.value & mask;
+                let extended = if ty < 4 {
+                    signed_ext(trimmed_by_size, mmio_access.size * 8)
+                } else {
+                    trimmed_by_size
+                };
+                ctx.x[rd] = extended;
+            }
+        }
+        Err(e) => {
+            panic!(
+                "mmio access failed, error = {:?}, this is a real page fault",
+                e
+            );
+        }
+    }
+}
+
+fn emulate_iocsr_legacy(ins: usize, ctx: &mut ZoneContext) {
     // iocsrrd.b rd, rj     0000011001 001000000000 rj[9:5] rd[4:0]
     // iocsrrd.h rd, rj     0000011001 001000000001 rj[9:5] rd[4:0]
     // iocsrrd.w rd, rj     0000011001 001000000010 rj[9:5] rd[4:0]
@@ -1340,7 +1491,7 @@ fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
             unsafe {
                 asm!("iocsrrd.b {}, {}", out(reg) val, in(reg) ctx.x[rj]);
             }
-            ctx.x[rd] = val;
+            ctx.x[rd] = val & 0xff;
         }
         1 => {
             // iocsrrd.h
@@ -1349,7 +1500,7 @@ fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
             unsafe {
                 asm!("iocsrrd.h {}, {}", out(reg) val, in(reg) ctx.x[rj]);
             }
-            ctx.x[rd] = val;
+            ctx.x[rd] = val & 0xffff;
         }
         2 => {
             // iocsrrd.w
@@ -1358,7 +1509,7 @@ fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
             unsafe {
                 asm!("iocsrrd.w {}, {}", out(reg) val, in(reg) ctx.x[rj]);
             }
-            ctx.x[rd] = val;
+            ctx.x[rd] = val & 0xffffffff;
         }
         3 => {
             // iocsrrd.d

@@ -21,13 +21,19 @@ use crate::{
     error::HvResult,
     memory::{
         addr::{align_down, align_up},
-        mmio_generic_handler, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion,
+        mmio_generic_handler, mmio_perform_access, GuestPhysAddr, HostPhysAddr, MMIOAccess,
+        MemFlags, MemoryRegion,
     },
     zone::Zone,
+    PHY_TO_DMW_UNCACHED,
 };
+use alloc::boxed::Box;
+use alloc::collections::BTreeMap;
 use alloc::vec::Vec;
 use core::arch::asm;
-use core::sync::atomic::{fence, Ordering};
+use core::sync::atomic::{fence, AtomicU64, Ordering};
+use spin::lazy::Lazy;
+use spin::Mutex;
 
 impl Zone {
     pub fn pt_init(&mut self, mem_regions: &[HvConfigMemoryRegion]) -> HvResult {
@@ -76,6 +82,15 @@ impl Zone {
                 }
             }
         }
+
+        // add mmio handler for 0x1fe0_xxxx region
+        // 1. uart
+        // 2. interrupt controller
+        // 3. chip configuration
+
+        info!("loongarch64: pt_init: add mmio handler for 0x1fe0_xxxx mmio region");
+        self.mmio_region_register(0x1fe0_0000, 0x3000, loongarch_generic_mmio_handler, 0x1234);
+
         debug!("zone stage-2 memory set: {:#x?}", self.gpm);
         unsafe {
             // test the page table by querying the first page
@@ -357,7 +372,10 @@ impl LoongArch64ZoneContext {
         info!("gcsr_llbctl: {:#x}", self.gcsr_llbctl);
         info!("gcsr_tlbrentry: {:#x}", self.gcsr_tlbrentry);
         info!("gcsr_tlbrbadv: {:#x}", self.gcsr_tlbrbadv);
-        info!("gcsr_tlbrera: {:#x}", self.gcsr_tlbrera);
+        info!("gcsr_tlbrera: {:#x}", self.gcsr_tlbrera); // mmio handlers
+                                                         // because when root and nonroot sharing the same physical interrupt controllers will cause the
+                                                         // irqs failed to reach nonroot which is booted after root's first init
+                                                         // so we need to trap and trace the mmio access to the 0x1fe0_xxxx region and arbitrate the access
         info!("gcsr_tlbrsave: {:#x}", self.gcsr_tlbrsave);
         info!("gcsr_tlbrelo0: {:#x}", self.gcsr_tlbrelo0);
         info!("gcsr_tlbrelo1: {:#x}", self.gcsr_tlbrelo1);
@@ -384,4 +402,137 @@ pub type ZoneContext = LoongArch64ZoneContext;
 #[derive(Debug, Clone)]
 pub struct HvArchZoneConfig {
     pub dummy: usize,
+}
+
+// mmio handlers
+// because when root and nonroot sharing the same physical interrupt controllers will cause the
+// irqs failed to reach nonroot which is booted after root's first init
+// so we need to trap and trace the mmio access to the 0x1fe0_xxxx region and arbitrate the access
+
+const BASE_ADDR: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_0000);
+const UART0_BASE_ADDR: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_01e0);
+const UART0_SIZE: usize = 0x8;
+const UART0_END_ADDR: usize = UART0_BASE_ADDR + UART0_SIZE;
+
+pub fn offset(addr: usize) -> usize {
+    addr - BASE_ADDR
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+struct MMIOAccessKey {
+    offset: usize,
+    size: usize,
+    is_write: bool,
+}
+
+#[derive(Debug)]
+struct MMIOAccessStats {
+    count: AtomicU64,
+    last_value: AtomicU64,
+    is_compressed: AtomicU64,
+}
+
+impl MMIOAccessStats {
+    const fn new() -> Self {
+        Self {
+            count: AtomicU64::new(0),
+            last_value: AtomicU64::new(0),
+            is_compressed: AtomicU64::new(0),
+        }
+    }
+}
+
+struct MMIOAccessTracker {
+    entries: BTreeMap<MMIOAccessKey, MMIOAccessStats>,
+}
+
+impl MMIOAccessTracker {
+    const fn new() -> Self {
+        Self {
+            entries: BTreeMap::new(),
+        }
+    }
+
+    fn find_or_insert(&mut self, key: MMIOAccessKey) -> &mut MMIOAccessStats {
+        self.entries.entry(key).or_insert_with(MMIOAccessStats::new)
+    }
+}
+
+static MMIO_ACCESS_STATS: Lazy<Mutex<MMIOAccessTracker>> =
+    Lazy::new(|| Mutex::new(MMIOAccessTracker::new()));
+
+const COMPRESSION_THRESHOLD: u64 = 40;
+const LOG_INTERVAL: u64 = 10000;
+
+pub fn loongarch_generic_mmio_handler(mmio: &mut MMIOAccess, arg: usize) -> HvResult {
+    // if in uart0 region 0x1fe0_0000-0x1fe0_0008, we don't print it
+    if mmio.address >= offset(UART0_BASE_ADDR) && mmio.address < offset(UART0_END_ADDR) {
+        return Ok(());
+    }
+
+    mmio_perform_access(BASE_ADDR, mmio);
+
+    let key = MMIOAccessKey {
+        offset: mmio.address,
+        size: mmio.size,
+        is_write: mmio.is_write,
+    };
+
+    let mut tracker = MMIO_ACCESS_STATS.lock();
+    let stats = tracker.find_or_insert(key);
+
+    let count = stats.count.fetch_add(1, Ordering::SeqCst);
+    let last_value = stats.last_value.load(Ordering::SeqCst);
+    let is_compressed = stats.is_compressed.load(Ordering::SeqCst);
+
+    let msg = if count == 0 {
+        // First access, always log
+        format!(
+            "loongarch64: generic mmio handler#{:x} offset={:#x}, addr={:#x}, size={}, {} {:#x}",
+            BASE_ADDR,
+            mmio.address,
+            BASE_ADDR + mmio.address,
+            mmio.size,
+            if mmio.is_write { "W -> " } else { "R <- " },
+            mmio.value
+        )
+    } else if count >= COMPRESSION_THRESHOLD {
+        // Enable compression if threshold reached
+        stats.is_compressed.store(1, Ordering::SeqCst);
+
+        // Log every LOG_INTERVAL accesses
+        if count % LOG_INTERVAL == 0 {
+            format!(
+                "loongarch64: generic mmio handler#{:x} offset={:#x}, addr={:#x}, size={}, {} {:#x} (compressed, repeated {} times)",
+                BASE_ADDR,
+                mmio.address,
+                BASE_ADDR + mmio.address,
+                mmio.size,
+                if mmio.is_write { "W -> " } else { "R <- " },
+                mmio.value,
+                count
+            )
+        } else {
+            return Ok(());
+        }
+    } else if mmio.value as u64 != last_value {
+        // Log if value changed
+        format!(
+            "loongarch64: generic mmio handler#{:x} offset={:#x}, addr={:#x}, size={}, {} {:#x}",
+            BASE_ADDR,
+            mmio.address,
+            BASE_ADDR + mmio.address,
+            mmio.size,
+            if mmio.is_write { "W -> " } else { "R <- " },
+            mmio.value
+        )
+    } else {
+        return Ok(());
+    };
+
+    debug!("{}", msg);
+
+    stats.last_value.store(mmio.value as u64, Ordering::SeqCst);
+
+    Ok(())
 }
