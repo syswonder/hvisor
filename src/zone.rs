@@ -236,7 +236,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
         }
         zone.cpu_set.set_bit(*cpu_id as _);
         cpu_num += 1;
-    };
+    }
 
     #[cfg(feature = "plic")]
     {

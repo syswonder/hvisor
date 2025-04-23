@@ -75,10 +75,10 @@ use crate::arch::mm::setup_parange;
 use crate::consts::MAX_CPU_NUM;
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
-use platform::BOARD_NCPUS;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use fdt_rs::{base::DevTree, prelude::FallibleIterator};
 use percpu::PerCpu;
+use platform::BOARD_NCPUS;
 use zone::{add_zone, zone_create};
 
 #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
