@@ -15,7 +15,7 @@
 //
 use crate::{arch::zone::HvArchZoneConfig, config::*};
 
-pub const BOARD_NAME: &str = "qemu-givc3";
+pub const BOARD_NAME: &str = "qemu-gicv3";
 
 pub const BOARD_NCPUS: usize = 4;
 
