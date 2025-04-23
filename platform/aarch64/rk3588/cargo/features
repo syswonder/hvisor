@@ -3,4 +3,4 @@ uart_16550
 uart_base_rk3588
 pt_layout_rk3588
 no_autodetect_ncpus
-a55
+mpidr_rk35x8

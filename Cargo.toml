@@ -71,9 +71,8 @@ pt_layout_qemu = []
 pt_layout_rk3568 = []
 pt_layout_rk3588 = []
 
-# cpu 
-a55 = []
-a53 = []
+# cpu
+mpidr_rk35x8 = []
 
 ############## riscv64 #############
 # irqchip driver

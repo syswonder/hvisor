@@ -19,7 +19,7 @@ use crate::consts::PER_CPU_SIZE;
 
 //global_asm!(include_str!("boot_pt.S"));
 
-#[cfg(feature = "a55")]
+#[cfg(feature = "mpidr_rk35x8")]
 #[naked]
 #[no_mangle]
 #[link_section = ".text.entry"]
@@ -94,7 +94,7 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
     }
 }
 
-#[cfg(not(feature = "a55"))]
+#[cfg(not(feature = "mpidr_rk35x8"))]
 #[naked]
 #[no_mangle]
 #[link_section = ".text.entry"]

@@ -2,4 +2,4 @@ gicv3
 uart_16550
 pt_layout_rk3568
 boarduart_base_rk3568
-a55
+mpidr_rk35x8
