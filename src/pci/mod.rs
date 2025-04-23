@@ -1,5 +1,3 @@
-use alloc::collections::btree_map::BTreeMap;
-use endpoint::VirtEndpointConfig;
 // Copyright (c) 2025 Syswonder
 // hvisor is licensed under Mulan PSL v2.
 // You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -26,19 +24,33 @@ pub mod phantom_cfg;
 pub const CFG_CMD_OFF: usize = 0x4; //status
 pub const CFG_CAP_PTR_OFF: usize = 0x34; // capabilities pointer
 pub const CFG_CLASS_CODE_OFF: usize = 0x8; // 4 bytes, include revision and class code
+pub const CFG_BAR0: usize = 0x10;
+pub const CFG_BAR1: usize = 0x14;
+pub const CFG_BAR2: usize = 0x18;
+pub const CFG_BAR3: usize = 0x1c;
+pub const CFG_BAR4: usize = 0x20;
+pub const CFG_BAR5: usize = 0x24;
+pub const CFG_PRIMARY_BUS: usize = 0x18;
+pub const CFG_SECONDARY_BUS: usize = 0x19;
+pub const CFG_IO_BASE: usize = 0x1c;
+pub const CFG_IO_LIMIT: usize = 0x1d;
+pub const CFG_MEM_BASE: usize = 0x20;
+pub const CFG_MEM_LIMIT: usize = 0x22;
+pub const CFG_PREF_MEM_BASE: usize = 0x24;
+pub const CFG_PREF_MEM_LIMIT: usize = 0x26;
+pub const CFG_PREF_BASE_UPPER32: usize = 0x28;
+pub const CFG_PREF_LIMIT_UPPER32: usize = 0x2c;
+pub const CFG_IO_BASE_UPPER16: usize = 0x30;
+pub const CFG_IO_LIMIT_UPPER16: usize = 0x32;
 
 pub const NUM_BAR_REGS_TYPE0: usize = 6;
 pub const NUM_BAR_REGS_TYPE1: usize = 2;
+pub const NUM_MAX_BARS: usize = 6;
 pub const PHANTOM_DEV_HEADER: u32 = 0x77777777u32;
 
-pub trait VirtPciDev {
-    fn read_bar(&self, bar_id: usize) -> u32;
-    fn write_bar(&mut self, bar_id: usize, val: u32);
-    fn write_cmd(&mut self, val: u16);
-    fn read_cmd(&self) -> u16;
-}
-
 pub static ECAM_BASE: Once<usize> = Once::new();
+
+pub static BDF_SHIFT: Once<usize> = Once::new();
 
 pub fn init_ecam_base(ecam_base: usize) {
     ECAM_BASE.call_once(|| ecam_base);
@@ -48,28 +60,33 @@ pub fn get_ecam_base() -> usize {
     *ECAM_BASE.get().unwrap() as _
 }
 
-pub fn cfg_base(bdf: usize, shift: usize) -> usize {
-    if cfg!(all(target_arch = "loongarch64", feature = "pci")) && ((bdf >> 8) != 0){
+pub fn init_bdf_shift(bdf_shift: usize) {
+    BDF_SHIFT.call_once(|| bdf_shift);
+}
+
+pub fn get_bdf_shift() -> usize {
+    *BDF_SHIFT.get().unwrap() as _
+}
+
+pub fn cfg_base(bdf: usize) -> usize {
+    let shift = get_bdf_shift();
+    if cfg!(all(target_arch = "loongarch64", feature = "pci")) && ((bdf >> 8) != 0) {
         get_ecam_base() + (bdf << shift) + 0x1000_0000
-    }else{
+    } else {
         get_ecam_base() + (bdf << shift)
     }
 }
 
-pub static mut VIRT_PCI_EPS: BTreeMap<usize, VirtEndpointConfig> = BTreeMap::new();
+/// Extracts the PCI config space register offset, compatible with architectures where the offset layout is split (e.g., LoongArch).
+/// Low bits are taken from address[0..bdf_shift), high bits from address[(bdf_shift + 16)..).
+fn extract_reg_addr(addr: usize) -> usize {
+    let bdf_shift = get_bdf_shift();
+    let low_mask = (1usize << bdf_shift) - 1;
+    let low_bits = addr & low_mask;
 
-// In fact, if the vdev corresponding to the given BDF cannot be found, 
-// it indicates that the device will only be used by subsequent VMs. 
-// Therefore, minimal handling is required, 
-// and it's not an issue if no further actions are taken.
-pub fn add_virt_ep(bdf: usize, vep: VirtEndpointConfig) {
-    unsafe {
-        match VIRT_PCI_EPS.get(&bdf) {
-            Some(_vep) => warn!("The BDF already has a virt config struct"),
-            None => {
-                VIRT_PCI_EPS.insert(bdf, vep.clone());
-                info!("add a virt ep: {:#x?}", vep.clone());
-            },
-        }
-    }
+    let high_shift = bdf_shift + 16;
+    let high_mask = (1usize << (12 - bdf_shift)) - 1;
+    let high_bits = ((addr >> high_shift) & high_mask) << bdf_shift;
+
+    high_bits | low_bits
 }

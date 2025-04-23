@@ -17,13 +17,15 @@ use core::{ptr, usize};
 
 use crate::config::{HvPciConfig, CONFIG_MAX_PCI_DEV};
 use crate::memory::addr::align_down;
+use crate::memory::mmio_perform_access;
 use crate::pci::pcibar::BarType;
-use crate::pci::{get_ecam_base, init_ecam_base};
+use crate::pci::phantom_cfg::find_phantom_dev;
+use crate::pci::{get_ecam_base, init_bdf_shift, init_ecam_base};
 use crate::percpu::this_zone;
 use crate::{
     error::HvResult,
     memory::MMIOAccess,
-    memory::{mmio_perform_access, GuestPhysAddr, MemFlags, MemoryRegion},
+    memory::{GuestPhysAddr, MemFlags, MemoryRegion},
     zone::Zone,
 };
 use alloc::vec::Vec;
@@ -31,11 +33,8 @@ use alloc::vec::Vec;
 use super::bridge::BridgeConfig;
 use super::endpoint::EndpointConfig;
 use super::pcibar::BarRegion;
-use super::phantom_cfg::PhantomCfg;
-use super::{
-    add_virt_ep, cfg_base, VirtPciDev, CFG_CAP_PTR_OFF, CFG_CLASS_CODE_OFF, CFG_CMD_OFF, ECAM_BASE,
-    NUM_BAR_REGS_TYPE0, NUM_BAR_REGS_TYPE1, PHANTOM_DEV_HEADER,
-};
+use super::phantom_cfg::{add_phantom_devices, generate_vep_by_bdf, PhantomCfg};
+use super::{cfg_base, extract_reg_addr, get_bdf_shift, NUM_BAR_REGS_TYPE0, NUM_BAR_REGS_TYPE1};
 
 #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
 use crate::arch::iommu::iommu_add_device;
@@ -47,7 +46,6 @@ pub struct PciRoot {
     alloc_devs: Vec<usize>, // include host bridge
     phantom_devs: Vec<PhantomCfg>,
     bar_regions: Vec<BarRegion>,
-    bdf_shift: usize,
 }
 impl PciRoot {
     pub fn new() -> Self {
@@ -57,17 +55,8 @@ impl PciRoot {
             alloc_devs: Vec::new(),
             phantom_devs: Vec::new(),
             bar_regions: Vec::new(),
-            bdf_shift: 12,
         };
         r
-    }
-
-    pub fn set_bdf_shift(&mut self, bdf_shift: usize) {
-        self.bdf_shift = bdf_shift;
-    }
-
-    pub fn get_bdf_shift(&self) -> usize {
-        self.bdf_shift
     }
 
     pub fn is_assigned_device(&self, bdf: usize) -> bool {
@@ -86,7 +75,7 @@ impl PciRoot {
 
     pub fn generate_vdevs(&self) {
         for ep in self.endpoints.iter() {
-            add_virt_ep(ep.bdf, ep.generate_vep());
+            add_phantom_devices(ep.generate_vep());
         }
     }
 
@@ -115,7 +104,7 @@ impl PciRoot {
 
     fn ep_bars_init(&mut self) {
         for ep in self.endpoints.iter_mut() {
-            let cfg_base = cfg_base(ep.bdf, self.bdf_shift);
+            let cfg_base = cfg_base(ep.bdf);
             let offsets: [usize; NUM_BAR_REGS_TYPE0] = [0x10, 0x14, 0x18, 0x1c, 0x20, 0x24];
             for bar_id in 0..NUM_BAR_REGS_TYPE0 {
                 unsafe {
@@ -132,7 +121,7 @@ impl PciRoot {
 
     fn bridge_bars_init(&mut self) {
         for bridge in self.bridges.iter_mut() {
-            let cfg_base = cfg_base(bridge.bdf, self.bdf_shift);
+            let cfg_base = cfg_base(bridge.bdf);
             let offsets: [usize; NUM_BAR_REGS_TYPE1] = [0x10, 0x14];
             for bar_id in 0..NUM_BAR_REGS_TYPE1 {
                 unsafe {
@@ -162,16 +151,21 @@ impl Zone {
         info!("PCIe init!");
 
         let mut hv_addr_prefix: u64 = 0;
+        let mut loong_ht_prefix: u64 = 0;
+        let mut bdf_shift: usize = 12;
 
         #[cfg(all(target_arch = "loongarch64"))]
         {
-            self.pciroot.set_bdf_shift(8);
             info!("change bdf shift to 8 for loongson");
+            bdf_shift = 8;
             /* turn to virtual address and add 0xe prefix for HT accessing */
-            hv_addr_prefix = 0x8000_0e00_0000_0000;
+            hv_addr_prefix = 0x8000_0000_0000_0000;
+            loong_ht_prefix = 0xe00_0000_0000
         }
 
-        init_ecam_base((pci_config.ecam_base + hv_addr_prefix) as _);
+        init_bdf_shift(bdf_shift);
+
+        init_ecam_base((pci_config.ecam_base + hv_addr_prefix + loong_ht_prefix) as _);
 
         info!("PCIe ECAM base: {:#x}", get_ecam_base());
 
@@ -188,21 +182,26 @@ impl Zone {
         }
 
         if self.id == 0 {
-            self.root_pci_init(pci_config, hv_addr_prefix);
+            self.root_pci_init(pci_config, hv_addr_prefix, loong_ht_prefix);
         } else {
-            self.virtual_pci_mmio_init(pci_config, hv_addr_prefix);
+            self.virtual_pci_mmio_init(pci_config, hv_addr_prefix, loong_ht_prefix);
         }
         self.virtual_pci_device_init(pci_config);
     }
 
-    pub fn root_pci_init(&mut self, pci_config: &HvPciConfig, hv_addr_prefix: u64) {
+    pub fn root_pci_init(
+        &mut self,
+        pci_config: &HvPciConfig,
+        hv_addr_prefix: u64,
+        loong_ht_prefix: u64,
+    ) {
         // Virtual ECAM
 
         self.mmio_region_register(
             pci_config.ecam_base as _,
             pci_config.ecam_size as _,
             mmio_pci_handler,
-            (pci_config.ecam_base + hv_addr_prefix) as _,
+            (pci_config.ecam_base + hv_addr_prefix + loong_ht_prefix) as _,
         );
 
         info!(
@@ -242,15 +241,29 @@ impl Zone {
                 ))
                 .ok();
         }
+        // if pci_config.mem64_size != 0 {
+        //     self.mmio_region_register(
+        //         pci_config.mem64_base as _,
+        //         pci_config.mem64_size as _,
+        //         mmio_pci_bar_handler,
+        //         (pci_config.mem64_base + 0x8000_0000_0000_0000) as _,
+        //     );
+        //     info!("pci bar handler args : {:#x}", pci_config.mem64_base + 0x8000_0000_0000_0000);
+        // }
     }
 
     //probe pci mmio
-    pub fn virtual_pci_mmio_init(&mut self, pci_config: &HvPciConfig, hv_addr_prefix: u64) {
+    pub fn virtual_pci_mmio_init(
+        &mut self,
+        pci_config: &HvPciConfig,
+        hv_addr_prefix: u64,
+        loong_ht_prefix: u64,
+    ) {
         self.mmio_region_register(
             pci_config.ecam_base as _,
             pci_config.ecam_size as _,
             mmio_pci_handler,
-            (pci_config.ecam_base + hv_addr_prefix) as _,
+            (pci_config.ecam_base + hv_addr_prefix + loong_ht_prefix) as _,
         );
 
         if pci_config.io_size != 0 {
@@ -284,12 +297,16 @@ impl Zone {
     pub fn virtual_pci_device_init(&mut self, pci_config: &HvPciConfig) {
         for bdf in self.pciroot.alloc_devs.clone() {
             if bdf != 0 {
-                let base = cfg_base(bdf, self.pciroot.get_bdf_shift()) + 0xe;
+                let base = cfg_base(bdf) + 0xe;
                 let header_val = unsafe { ptr::read_volatile(base as *mut u8) };
                 match header_val & 0b1111111 {
                     0b0 => self.pciroot.endpoints.push(EndpointConfig::new(bdf)),
                     0b1 => self.pciroot.bridges.push(BridgeConfig::new(bdf)),
-                    _ => error!("bdf {:#x} unsupported device type: {}!", bdf, header_val & 0b1111111),
+                    _ => error!(
+                        "bdf {:#x} unsupported device type: {}!",
+                        bdf,
+                        header_val & 0b1111111
+                    ),
                 };
             } else {
                 // host bridge
@@ -339,117 +356,60 @@ impl Zone {
     }
 }
 
-/// Extracts the PCI config space register offset, compatible with architectures where the offset layout is split (e.g., LoongArch).
-/// Low bits are taken from address[0..bdf_shift), high bits from address[(bdf_shift + 16)..).
-fn extract_reg_addr(addr: usize, bdf_shift: usize) -> usize {
-    let low_mask = (1usize << bdf_shift) - 1;
-    let low_bits = addr & low_mask;
-
-    let high_shift = bdf_shift + 16;
-    let high_mask = (1usize << (12 - bdf_shift)) - 1;
-    let high_bits = ((addr >> high_shift) & high_mask) << bdf_shift;
-
-    high_bits | low_bits
-}
-
 pub fn mmio_pci_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     // mmio_perform_access(base, mmio);
     // return Ok(());
     let zone = this_zone();
     let mut binding = zone.write();
 
-    let bdf_shift = binding.pciroot.get_bdf_shift();
-    let reg_addr = extract_reg_addr(mmio.address, bdf_shift);
+    let reg_addr = extract_reg_addr(mmio.address);
+    let bdf_shift = get_bdf_shift();
     let bdf = (mmio.address >> bdf_shift) & 0xffff;
-    let function = bdf & 0x7;
-    let device = (bdf >> 3) & 0b11111;
-    let bus = bdf >> 8;
 
     let is_assigned = binding.pciroot.is_assigned_device(bdf);
 
     match is_assigned {
         true => {
             mmio_perform_access(base, mmio);
+            return Ok(());
         }
         false => {
-            match reg_addr {
-                0 => {
-                    let header_addr = base + mmio.address;
-                    let header_val = unsafe { ptr::read_volatile(header_addr as *mut u32) };
-                    if header_val == 0xffffffffu32 || header_val == 0 {
-                        // empty device
-                        // warn!(
-                        //     "empty device hdr access {:x}:{:x}.{:x}!",
-                        //     bus, device, function
-                        // );
-                        mmio.value = header_val as _;
-                    } else {
-                        // phantom device
-                        warn!(
-                            "{:x}:{:x}.{:x} exits but we don't show it to vm {:x}:{:x}",
-                            bus,
-                            device,
-                            function,
-                            header_val & 0xffff,
-                            (header_val >> 16) & 0xffff
-                        );
-                        let command_addr = CFG_CMD_OFF + header_addr;
-                        let command = unsafe { ptr::read_volatile(command_addr as *mut u16) };
+            let header_addr = cfg_base(bdf);
+            let header_val = unsafe { ptr::read_volatile(header_addr as *mut u32) };
+            if header_val == 0xffffffffu32 || header_val == 0 {
+                if reg_addr == 0 && mmio.is_write == false {
+                    mmio.value = header_val as _;
+                    return Ok(());
+                } else {
+                    panic!("invalid access to empty device!");
+                }
+            } else {
+                // device exists, so we try to get the phantom device
+                let pdev = match binding
+                    .pciroot
+                    .phantom_devs
+                    .iter_mut()
+                    .find(|dev| dev.bdf == bdf)
+                {
+                    Some(dev) => dev,
+                    None => {
+                        let new_dev = find_phantom_dev(bdf);
+                        binding.pciroot.phantom_devs.push(new_dev);
                         binding
                             .pciroot
                             .phantom_devs
-                            .push(PhantomCfg::new(bdf, command)); // add phantom devs, for accessing virtual command register
-                        mmio.value = PHANTOM_DEV_HEADER as _;
+                            .iter_mut()
+                            .find(|dev| dev.bdf == bdf)
+                            .unwrap()
                     }
-                }
-                CFG_CMD_OFF => {
-                    if let Some(pdev) = binding
-                        .pciroot
-                        .phantom_devs
-                        .iter_mut()
-                        .find(|pdev| pdev.bdf == bdf)
-                    {
-                        if mmio.is_write {
-                            pdev.write_cmd(mmio.value as _);
-                        } else {
-                            mmio.value = pdev.read_cmd() as _;
-                        }
-                    }
-                }
-                CFG_CLASS_CODE_OFF => {
-                    if !mmio.is_write {
-                        mmio.value = 0x1f000010;
-                    }
-                }
-                CFG_CAP_PTR_OFF => {
-                    // can't see any capabilities
-                    mmio.value = 0x0;
-                }
-                _ => {
-                    // error!("other offset access @ off : {:#x}!", reg_addr);
-                    mmio_perform_access(base, mmio);
-                }
+                };
+                pdev.phantom_mmio_handler(mmio, base)
             }
         }
     }
-    // if device == 0x13 {
-    //     if mmio.is_write == true {
-    //         info!(
-    //             "ecam write {} bytes, {:x}:{:x}:{:x} off:{:#x} -> {:#x}",
-    //             mmio.size, bus, device, function, reg_addr, mmio.value
-    //         );
-    //     } else {
-    //         info!(
-    //             "ecam read  {} bytes, {:x}:{:x}:{:x} off:{:#x} -> {:#x}",
-    //             mmio.size, bus, device, function, reg_addr, mmio.value
-    //         );
-    //     }
-    // }
-
-    Ok(())
 }
 
-pub fn mmio_pci_bar_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult{
+pub fn mmio_pci_bar_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     mmio_perform_access(base, mmio);
     Ok(())
 }

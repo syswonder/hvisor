@@ -17,7 +17,8 @@ use alloc::vec::Vec;
 
 use super::{
     pcibar::{BarRegion, PciBar, VirtPciBar},
-    VirtPciDev, NUM_BAR_REGS_TYPE0, NUM_BAR_REGS_TYPE1,
+    phantom_cfg::{PhantomCfg, PhantomCfgType},
+    NUM_BAR_REGS_TYPE0, NUM_MAX_BARS,
 };
 
 #[derive(Debug)]
@@ -59,44 +60,11 @@ impl EndpointConfig {
     }
 
     // after we get bar regions, we should generate a virtual device instance that mirrors this device for use by other VMs
-    pub fn generate_vep(&self) -> VirtEndpointConfig {
-        let mut v_bars: [VirtPciBar; NUM_BAR_REGS_TYPE0] =
-            [VirtPciBar::default(); NUM_BAR_REGS_TYPE0];
+    pub fn generate_vep(&self) -> PhantomCfg {
+        let mut v_bars: [VirtPciBar; NUM_MAX_BARS] = [VirtPciBar::default(); NUM_MAX_BARS];
         for i in 0..NUM_BAR_REGS_TYPE0 {
             v_bars[i] = self.bars[i].generate_vbar();
         }
-        VirtEndpointConfig::new(self.bdf, v_bars)
-    }
-}
-
-#[derive(Clone, Debug)]
-pub struct VirtEndpointConfig {
-    pub bdf: usize,
-    command: u16,
-    v_bars: [VirtPciBar; NUM_BAR_REGS_TYPE0],
-}
-
-impl VirtEndpointConfig {
-    pub fn new(bdf: usize, v_bars: [VirtPciBar; NUM_BAR_REGS_TYPE0]) -> Self {
-        Self {
-            bdf,
-            command: 0,
-            v_bars: v_bars,
-        }
-    }
-}
-
-impl VirtPciDev for VirtEndpointConfig {
-    fn read_bar(&self, bar_id: usize) -> u32 {
-        self.v_bars[bar_id].read()
-    }
-    fn write_bar(&mut self, bar_id: usize, val: u32) {
-        self.v_bars[bar_id].write(val as _);
-    }
-    fn read_cmd(&self) -> u16 {
-        self.command
-    }
-    fn write_cmd(&mut self, command: u16) {
-        self.command = command;
+        PhantomCfg::new(self.bdf, v_bars, PhantomCfgType::ENDPOINT)
     }
 }

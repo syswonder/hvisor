@@ -117,7 +117,7 @@ impl PciBar {
             },
             _ => VirtPciBar {
                 val: self.val,
-                mask: (self.size - 1) as _,
+                mask: !((self.size - 1) as u64) as _,
             },
         }
     }

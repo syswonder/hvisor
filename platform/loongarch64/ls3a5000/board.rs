@@ -77,24 +77,24 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
     //     virtual_start: 0x1a000000,
     //     size: 0x02000000,
     // }, // pci
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0xefe_0000_0000,
-    //     virtual_start: 0xcf_0000_0000,
-    //     size: 0x20000000,
-    // }, // pci config space (HT)
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0x18408000,
-    //     virtual_start: 0x18408000,
-    //     size: 0x00008000,
-    // }, // pci io resource
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0x60000000,
-    //     virtual_start: 0x60000000,
-    //     size: 0x20000000,
-    // }, // pci mem resource
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xefe_0000_0000,
+        virtual_start: 0xfe_0000_0000,
+        size: 0x20000000,
+    }, // pci config space (HT)
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x18408000,
+        virtual_start: 0x18408000,
+        size: 0x00008000,
+    }, // pci io resource
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x60000000,
+        virtual_start: 0x60000000,
+        size: 0x20000000,
+    }, // pci mem resource
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x1001_0000,
@@ -141,9 +141,11 @@ pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
 /* 00:0c.0, 00:0d.0, 00:0f.0, 00:10.0, 00:13.0 */
 /* 00:16.0, 00:19.0, 02:00.0, 05:00.0 */
 /* 08:00.0, 08:00.1, 08:00.2, 08:00.3 net*/
-pub const ROOT_PCI_DEVS: [u64; 26] = [0, 1, 2, 3, 4 << 3, (4 << 3) + 1,
-5 << 3, (5 << 3) + 1, 6 << 3, (6 << 3) + 1, (6 << 3) + 2,
-7 << 3, 8 << 3, 9 << 3, 0xa << 3, 0xb << 3,
-0xc << 3, 0xd << 3, 0xf << 3, 0x10 << 3, 0x13 << 3,
-0x16 << 3, 0x19 << 3, 2 << 8, 5 << 8,
-(8 << 8) + 0];
+// pub const ROOT_PCI_DEVS: [u64; 24] = [0, 1, 2, 3, 4 << 3, (4 << 3) + 1,
+// 5 << 3, (5 << 3) + 1,0x30,
+// 7 << 3, 8 << 3, 9 << 3, 0xa << 3, 0xb << 3,
+// 0xc << 3, 0xd << 3, 0xf << 3, 0x10 << 3, 0x13 << 3,
+// 0x16 << 3, 0x19 << 3, 2 << 8, 5 << 8,
+// (8 << 8) + 3];
+
+pub const ROOT_PCI_DEVS: [u64; 1] = [(8 << 8) + 3];

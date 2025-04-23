@@ -58,23 +58,4 @@ impl BridgeConfig {
         }
         regions
     }
-
-    // // the offset must be valid, to access the reg in hvisor
-    // pub fn bridge_cfg_access(&mut self, mmio: &mut MMIOAccess){
-    //     match mmio.address & 0xfff{
-    //         0x10 => {
-    //             match mmio.is_write{
-    //                 true => self.bars[0].write(mmio.value as _),
-    //                 false => mmio.value = self.bars[0].read() as _,
-    //             }
-    //         },
-    //         0x14 => {
-    //             match mmio.is_write{
-    //                 true => self.bars[1].write(mmio.value as _),
-    //                 false => mmio.value = self.bars[1].read() as _,
-    //             }
-    //         },
-    //         _ => unreachable!("invaild bridge cfg offset!!!"),
-    //     }
-    // }
 }
