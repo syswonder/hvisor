@@ -595,6 +595,9 @@ int main(int argc, char *argv[]) {
         help(1);
 
     if (strcmp(argv[1], "zone") == 0) {
+        if (argc < 3)
+            help(1);
+            
         if (strcmp(argv[2], "start") == 0) {
             err = zone_start(argc, argv);
         } else if (strcmp(argv[2], "shutdown") == 0) {
@@ -605,6 +608,9 @@ int main(int argc, char *argv[]) {
             help(1);
         }
     } else if (strcmp(argv[1], "virtio") == 0) {
+        if (argc < 3)
+            help(1);
+            
         if (strcmp(argv[2], "start") == 0) {
             err = virtio_start(argc, argv);
         } else {

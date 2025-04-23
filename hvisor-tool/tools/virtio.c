@@ -151,18 +151,32 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
     VirtIODevice *vdev = NULL;
     int is_err;
     vdev = calloc(1, sizeof(VirtIODevice));
+    if (vdev == NULL) {
+        log_error("failed to allocate virtio device");
+        return NULL;
+    }
     init_mmio_regs(&vdev->regs, dev_type);
     vdev->base_addr = base_addr;
     vdev->len = len;
     vdev->zone_id = zone_id;
     vdev->irq_id = irq_id;
     vdev->type = dev_type;
+
+    log_info("wheatfox: vdev->base_addr is %lx, vdev->len is %lx, vdev->zone_id "
+             "is %d, vdev->irq_id is %d",
+             vdev->base_addr, vdev->len, vdev->zone_id, vdev->irq_id);
+
     switch (dev_type) {
     case VirtioTBlock:
         vdev->regs.dev_feature = BLK_SUPPORTED_FEATURES;
         vdev->dev = init_blk_dev(vdev);
+        if (vdev->dev == NULL) {
+            log_error("failed to init blk dev");
+            free(vdev);
+            return NULL;
+        }
         init_virtio_queue(vdev, dev_type);
-        printf("(wheatfox) init_blk_dev and init_virtio_queue finished\n");
+        log_info("wheatfox: init_blk_dev and init_virtio_queue finished\n");
         is_err = virtio_blk_init(vdev, (const char *)arg0);
         break;
 
@@ -601,8 +615,8 @@ static const char *virtio_mmio_reg_name(uint64_t offset) {
 
 uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size) {
     log_debug("virtio mmio read at %#x", offset);
-    log_info("READ virtio mmio at offset=%#x[%s], size=%d, vdev=%p", offset,
-             virtio_mmio_reg_name(offset), size, vdev);
+    log_info("READ virtio mmio at offset=%#x[%s], size=%d, vdev=%p, type=%d",
+             offset, virtio_mmio_reg_name(offset), size, vdev, vdev->type);
 
     if (!vdev) {
         switch (offset) {
@@ -705,8 +719,8 @@ void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t value,
                        unsigned size) {
     log_debug("virtio mmio write at %#x, value is %#x\n", offset, value);
 
-    log_info("WRITE virtio mmio at offset=%#x[%s], value=%#x, size=%d, vdev=%p",
-             offset, virtio_mmio_reg_name(offset), value, size, vdev);
+    log_info("WRITE virtio mmio at offset=%#x[%s], value=%#x, size=%d, vdev=%p, type=%d",
+             offset, virtio_mmio_reg_name(offset), value, size, vdev, vdev->type);
 
     VirtMmioRegs *regs = &vdev->regs;
     VirtQueue *vqs = vdev->vqs;
@@ -938,8 +952,24 @@ int virtio_handle_req(volatile struct device_req *req) {
     if (i == vdevs_num) {
         log_warn("no matched virtio dev in zone %d, address is 0x%x",
                  req->src_zone, req->address);
-        value = virtio_mmio_read(NULL, 0, 0);
-        virtio_finish_cfg_req(req->src_cpu, value);
+        // Return 0 for read-only registers when no device is found
+        if (!req->is_write) {
+            switch (req->address & 0xff) {
+            case VIRTIO_MMIO_MAGIC_VALUE:
+                value = VIRT_MAGIC;
+                break;
+            case VIRTIO_MMIO_VERSION:
+                value = VIRT_VERSION;
+                break;
+            case VIRTIO_MMIO_VENDOR_ID:
+                value = VIRT_VENDOR;
+                break;
+            default:
+                value = 0;
+                break;
+            }
+            virtio_finish_cfg_req(req->src_cpu, value);
+        }
         return -1;
     }
 
@@ -1109,6 +1139,8 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
     uint64_t base_addr = 0, len = 0;
     uint32_t irq_id = 0;
 
+    log_info("wheatfox: in create_virtio_device_from_json");
+
     char *status = cJSON_GetObjectItem(device_json, "status")->valuestring;
     if (strcmp(status, "disable") == 0)
         return 0;
@@ -1131,6 +1163,8 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
         return -1;
     }
 
+    log_info("wheatfox: dev_type is %d", dev_type);
+
     // Get base_addr, len, irq_id (mmio region base address and length, device
     // interrupt number)
     base_addr = strtoul(cJSON_GetObjectItem(device_json, "addr")->valuestring,
@@ -1139,11 +1173,15 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
         strtoul(cJSON_GetObjectItem(device_json, "len")->valuestring, NULL, 16);
     irq_id = cJSON_GetObjectItem(device_json, "irq")->valueint;
 
+    log_info("wheatfox: base_addr is %lx, len is %lx, irq_id is %d",
+           base_addr, len, irq_id);
+
     // Handle other fields according to the device type
     if (dev_type == VirtioTBlock) {
         // virtio-blk
         char *img = cJSON_GetObjectItem(device_json, "img")->valuestring;
         arg0 = img, arg1 = NULL;
+        log_info("wheatfox: img is %s", img);
     } else if (dev_type == VirtioTNet) {
         // virtio-net
         char *tap = cJSON_GetObjectItem(device_json, "tap")->valuestring;
@@ -1227,6 +1265,8 @@ int virtio_start_from_json(char *json_path) {
         }
         int num_mems = cJSON_GetArraySize(memory_region_json);
 
+        log_info("wheatfox: num_regions is %d", num_mems);
+
         // Memory regions
         for (int j = 0; j < num_mems; j++) {
             cJSON *mem_region = cJSON_GetArrayItem(memory_region_json, j);
@@ -1242,9 +1282,19 @@ int virtio_start_from_json(char *json_path) {
                 log_error("Invalid memory size");
                 continue;
             }
+
+            log_info(
+                "wheatfox: zone0_ipa is %lx, zonex_ipa is %lx, mem_size is %lx",
+                zone0_ipa, zonex_ipa, mem_size);
+
             // Map from zone0_ipa
             virt_addr = mmap(NULL, mem_size, PROT_READ | PROT_WRITE, MAP_SHARED,
                              ko_fd, (off_t)zone0_ipa);
+                             
+            log_info(
+                "wheatfox: mmap zone0_ipa is %lx, zonex_ipa is %lx, mem_size is %lx finished",
+                zone0_ipa, zonex_ipa, mem_size);
+
             if (virt_addr == (void *)-1) {
                 log_error("mmap failed");
                 err = -1;
