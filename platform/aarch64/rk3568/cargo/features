@@ -1,5 +1,5 @@
 gicv3
 uart_16550
+uart_base_rk3568
 pt_layout_rk3568
-boarduart_base_rk3568
-mpidr_rk35x8
+mpidr_rockchip

@@ -34,9 +34,9 @@ pub fn arch_send_event(cpu_id: u64, sgi_num: u64) {
         let aff1: u64;
         let target_list: u64;
 
-        if cfg!(feature = "mpidr_rk35x8") {
+        if cfg!(feature = "mpidr_rockchip") {
             aff1 = cpu_id << 16;
-            target_list = 1;
+            target_list = 1 << 0;
         } else {
             aff1 = 0 << 16;
             target_list = 1 << cpu_id;

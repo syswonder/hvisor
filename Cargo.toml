@@ -72,7 +72,7 @@ pt_layout_rk3568 = []
 pt_layout_rk3588 = []
 
 # cpu
-mpidr_rk35x8 = []
+mpidr_rockchip = []
 
 ############## riscv64 #############
 # irqchip driver

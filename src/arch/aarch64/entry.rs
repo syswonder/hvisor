@@ -18,8 +18,6 @@ use core::arch::global_asm;
 use crate::consts::PER_CPU_SIZE;
 
 //global_asm!(include_str!("boot_pt.S"));
-
-#[cfg(feature = "mpidr_rk35x8")]
 #[naked]
 #[no_mangle]
 #[link_section = ".text.entry"]
@@ -29,14 +27,21 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
             "
             // x0 = dtbaddr
             mov x18, x0
-            mrs x17, mpidr_el1
-            lsr x17, x17, #0x8
-            and x17, x17, #0xff
+
+            /* Insert nop instruction to ensure byte at offset 10 in hvisor binary is non-zero.
+            * Rockchip U-Boot (arch_preboot_os@arch/arm/mach-rockchip/board.c:670) performs 
+            * forced relocation if this byte is zero, causing boot failure. This padding
+            * prevents unintended relocation by maintaining non-zero value at this critical
+            * offset in the binary layout. */
+
+            nop
+            bl {boot_cpuid_get}
+
             adrp x2, __core_end          // x2 = &__core_end
-            mov x3, {per_cpu_size}      // x3 = per_cpu_size
-            madd x4, x17, x3, x3       // x4 = cpuid * per_cpu_size
+            mov x3, {per_cpu_size}       // x3 = per_cpu_size
+            madd x4, x17, x3, x3        // x4 = cpuid * per_cpu_size
             add x5, x2, x4
-            mov sp, x5                // sp = &__core_end + (cpuid + 1) * per_cpu_size
+            mov sp, x5                 // sp = &__core_end + (cpuid + 1) * per_cpu_size
 
             // disable cache and MMU
             mrs x1, sctlr_el2
@@ -70,7 +75,7 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
             bl {mmu_enable}
 
             tlbi alle2
-            dsb	nsh
+            dsb nsh
             isb
 
             mov x1, x18
@@ -80,8 +85,9 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
             bl {rust_main}            // x0 = cpuid, x1 = dtbaddr
             ",
             options(noreturn),
+            boot_cpuid_get = sym boot_cpuid_get,
             cache_invalidate = sym cache_invalidate,
-            per_cpu_size=const PER_CPU_SIZE,
+            per_cpu_size = const PER_CPU_SIZE,
             rust_main = sym crate::rust_main,
             clear_bss = sym crate::clear_bss,
             BOOT_PT_L0 = sym super::mmu::BOOT_PT_L0,
@@ -89,101 +95,39 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
             boot_pt_init = sym super::mmu::boot_pt_init,
             mmu_init = sym super::mmu::mmu_init,
             mmu_enable = sym super::mmu::mmu_enable,
-            // boot_cpuid_get = sym boot_cpuid_get,
         );
     }
 }
 
-#[cfg(not(feature = "mpidr_rk35x8"))]
+#[cfg(feature = "mpidr_rockchip")]
 #[naked]
 #[no_mangle]
-#[link_section = ".text.entry"]
-pub unsafe extern "C" fn arch_entry() -> i32 {
-    unsafe {
-        core::arch::asm!(
-            "
-            // x0 = dtbaddr
-            mov x18, x0
-            mrs x17, mpidr_el1
-            and x17, x17, #0xff
-            adrp x2, __core_end          // x2 = &__core_end
-            mov x3, {per_cpu_size}      // x3 = per_cpu_size
-            madd x4, x17, x3, x3       // x4 = cpuid * per_cpu_size
-            add x5, x2, x4
-            mov sp, x5                // sp = &__core_end + (cpuid + 1) * per_cpu_size
-
-            // disable cache and MMU
-            mrs x1, sctlr_el2
-            bic x1, x1, #0xf
-            msr sctlr_el2, x1
-
-            // cache_invalidate(0): clear dl1$
-            mov x0, #0
-            bl  {cache_invalidate}
-
-            ic  iallu
-
-            cmp x17, 0
-            b.ne 1f
-           // if (cpu_id == 0) cache_invalidate(2): clear l2$
-            mov x0, #2
-            bl  {cache_invalidate}
-
-            // ic  iallu
-
-            bl {clear_bss}
-
-            cmp x17, 0
-            b.ne 1f
-
-            bl {clear_bss}
-            //bl boot_pt_init
-            adrp x0, {BOOT_PT_L0}
-            adrp x1, {BOOT_PT_L1}
-            bl {boot_pt_init}
-        1:
-            adrp x0, {BOOT_PT_L0}
-            bl {mmu_init}
-            bl {mmu_enable}
-
-            tlbi alle2
-            dsb	nsh
-            isb
-
-            mov x1, x18
-            mov x0, x17
-            mov x18, 0
-            mov x17, 0
-            bl {rust_main}            // x0 = cpuid, x1 = dtbaddr
-            ",
-            options(noreturn),
-            cache_invalidate = sym cache_invalidate,
-            per_cpu_size=const PER_CPU_SIZE,
-            rust_main = sym crate::rust_main,
-            clear_bss = sym crate::clear_bss,
-            BOOT_PT_L0 = sym super::mmu::BOOT_PT_L0,
-            BOOT_PT_L1 = sym super::mmu::BOOT_PT_L1,
-            boot_pt_init = sym super::mmu::boot_pt_init,
-            mmu_init = sym super::mmu::mmu_init,
-            mmu_enable = sym super::mmu::mmu_enable,
-            // boot_cpuid_get = sym boot_cpuid_get,
-        );
-    }
+pub unsafe extern "C" fn boot_cpuid_get() {
+    core::arch::asm!(
+        "
+        mrs x17, mpidr_el1
+        lsr x17, x17, #0x8
+        and x17, x17, #0xff
+        ret
+    ",
+        options(noreturn)
+    )
 }
 
-// #[naked]
-// #[no_mangle]
-// #[link_section = ".text.entry"]
-// pub unsafe extern "C" fn boot_cpuid_get() {
-//     core::arch::asm!("
-//         mrs x17, mpidr_el1
-//         lsr x17, x17, #0x8
-//         and x17, x17, #0xff
-//         ret
-//     "
-//     ,options(noreturn)
-//     )
-// }
+#[cfg(not(feature = "mpidr_rockchip"))]
+#[naked]
+#[no_mangle]
+pub unsafe extern "C" fn boot_cpuid_get() {
+    core::arch::asm!(
+        "
+        mrs x17, mpidr_el1
+        and x17, x17, #0xff
+        ret
+    ",
+        options(noreturn)
+    )
+}
+
 #[naked]
 #[no_mangle]
 #[link_section = ".trampoline"]
