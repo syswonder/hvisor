@@ -26,6 +26,7 @@ use crate::{
     zone::Zone,
 };
 use chip::*;
+use loongArch64::register::tcfg;
 use spin::Mutex;
 
 pub mod chip;
@@ -85,11 +86,10 @@ const INT_IPI: usize = 12;
 
 /// inject irq to THIS cpu
 pub fn inject_irq(_irq: usize, is_hardware: bool) {
-    debug!(
+    warn!(
         "loongarch64: inject_irq: _irq: {}, is_hardware: {}",
         _irq, is_hardware
     );
-    print!("\0");
     if _irq > INT_IPI {
         error!("loongarch64: inject_irq: _irq > {}, not valid", INT_IPI);
         return;
@@ -107,7 +107,9 @@ pub fn inject_irq(_irq: usize, is_hardware: bool) {
     }
     let mut status = GLOBAL_IRQ_INJECT_STATUS.lock();
     status.cpu_status[this_cpu_id()].status = InjectionStatus::Injecting;
-    drop(status);
+
+    tcfg::set_en(true); // start timer to avoid endless timer injection
+                        // please only enable this for debugging because it may cause overheads for realtime nonroots
 }
 
 /// clear the injecting irq ctrl bit on THIS cpu
@@ -121,14 +123,14 @@ pub fn clear_hwi_injected_irq() {
     unsafe {
         asm!("csrrd {0}, 0x52", out(reg) gintc_raw);
     }
-    debug!(
+    warn!(
         "loongarch64: clear_hwi_injected_irq: current gintc: {:#x}",
         gintc_raw
     );
-    print!("\0");
     let mut status = GLOBAL_IRQ_INJECT_STATUS.lock();
     status.cpu_status[this_cpu_id()].status = InjectionStatus::Idle;
-    drop(status);
+
+    tcfg::set_en(false); // stop timer
 }
 
 impl Zone {

@@ -42,9 +42,12 @@ pub fn install_trap_vector() {
     // force disable INT here
     crmd::set_ie(false);
     // clear UEFI firmware's previous timer configs
-    tcfg::set_en(false);
     ticlr::clear_timer_interrupt();
-    // timer_init();
+
+    timer_init();
+    tcfg::set_en(false); // we may need to use timer irq to trap for our virtio clear injection
+                         // only enable timer irq trap for debugging, because it may cause overheads for realtime nonroots
+
     // set CSR.EENTRY to _hyp_trap_vector and int vector offset to 0
     ecfg::set_vs(0);
     eentry::set_eentry(_hyp_trap_vector as usize);
@@ -91,16 +94,10 @@ pub fn ktime_get() -> usize {
 pub fn timer_init() {
     // uefi firmware leaves timer interrupt pending, we need to clear it manually
     ticlr::clear_timer_interrupt();
-    // get timer frequency
     let timer_freq = time::get_timer_freq();
-    // 100_000_000
-    // 1s = 1000 ms = 1000_000 us
-    // set timer
     tcfg::set_periodic(true);
-    // let init_val = get_ms_counter(500);
-    let init_val = get_ms_counter(6000);
+    let init_val = get_ms_counter(200);
     tcfg::set_init_val(init_val);
-    // println!("loongarch64: timer_init: timer init value = {}", init_val);
 
     tcfg::set_en(true);
 
@@ -110,7 +107,6 @@ pub fn timer_init() {
 }
 
 pub fn ipi_init() {
-    // enable IPI
     let mut lie_ = ecfg::read().lie();
     lie_ = lie_ | LineBasedInterrupt::IPI;
     ecfg::set_lie(lie_);
@@ -535,8 +531,9 @@ pub fn _vcpu_return(ctx: usize) {
     gstat::set_gid(vm_id);
     gstat::set_pgm(true);
     trace!(
-        "loongarch64: _vcpu_return: set hardware Guest ID to {}",
-        vm_id
+        "loongarch64: _vcpu_return: set hardware Guest ID to {} for zone {}",
+        vm_id,
+        z.unwrap().read().id
     );
     // Configure guest TLB control
     gtlbc::set_use_tgid(true);
@@ -1198,11 +1195,12 @@ fn handle_interrupt(is: usize) {
             }
         }
         _ if is & TIMER_BIT != 0 => {
-            use loongArch64::register;
-            register::ticlr::clear_timer_interrupt();
+            warn!("timer interrupt, clear timer interrupt");
+            loongArch64::register::ticlr::clear_timer_interrupt();
+            crate::device::irqchip::ls7a2000::clear_hwi_injected_irq();
         }
         _ => {
-            info!("not handled interrupt");
+            info!("not handled interrupt, status = {:#x}", is);
         }
     }
 }
