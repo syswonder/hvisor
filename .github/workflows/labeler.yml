@@ -7,6 +7,109 @@ jobs:
   triage:
     runs-on: ubuntu-latest
     steps:
+    - name: Create labels if they don't exist
+      uses: actions/github-script@v7
+      with:
+        github-token: ${{ secrets.GITHUB_TOKEN }}
+        script: |
+          const labels = [
+            {
+              name: 'aarch64',
+              color: '0052CC',
+              description: 'Changes related to AArch64 architecture'
+            },
+            {
+              name: 'loongarch64',
+              color: '0052CC',
+              description: 'Changes related to LoongArch64 architecture'
+            },
+            {
+              name: 'riscv64',
+              color: '0052CC',
+              description: 'Changes related to RISC-V 64 architecture'
+            },
+            {
+              name: 'x86_64',
+              color: '0052CC',
+              description: 'Changes related to x86_64 architecture'
+            },
+            {
+              name: 'documentation',
+              color: '0075CA',
+              description: 'Documentation changes'
+            },
+            {
+              name: 'ci',
+              color: 'D93F0B',
+              description: 'CI/CD changes'
+            },
+            {
+              name: 'security',
+              color: 'D73A4A',
+              description: 'Security related changes'
+            },
+            {
+              name: 'bug',
+              color: 'D73A4A',
+              description: 'Bug fixes'
+            },
+            {
+              name: 'feature',
+              color: 'A2EEEF',
+              description: 'New features'
+            },
+            {
+              name: 'good first issue',
+              color: '7057FF',
+              description: 'Good for newcomers'
+            },
+            {
+              name: 'help wanted',
+              color: '008672',
+              description: 'Extra attention is needed'
+            },
+            {
+              name: 'question',
+              color: 'D876E3',
+              description: 'Further information is requested'
+            },
+            {
+              name: 'invalid',
+              color: 'E4E669',
+              description: 'This doesn\'t seem right'
+            },
+            {
+              name: 'wontfix',
+              color: 'FFFFFF',
+              description: 'This will not be worked on'
+            },
+            {
+              name: 'duplicate',
+              color: 'CFD3D7',
+              description: 'This issue or pull request already exists'
+            }
+          ];
+
+          for (const label of labels) {
+            try {
+              await github.rest.issues.getLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                name: label.name
+              });
+            } catch (error) {
+              if (error.status === 404) {
+                await github.rest.issues.createLabel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  name: label.name,
+                  color: label.color,
+                  description: label.description
+                });
+              }
+            }
+          }
+
     - uses: actions/labeler@v5
       with:
         repo-token: "${{ secrets.GITHUB_TOKEN }}"
@@ -29,7 +132,7 @@ jobs:
           if (title.includes('docs') || title.includes('documentation')) {
             labels.push('documentation');
           }
-          if (title.includes('ci') {
+          if (title.includes('ci')) {
             labels.push('ci');
           }
           if (title.includes('aarch64') || title.includes('aarch')) {

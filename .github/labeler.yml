@@ -1,40 +1,29 @@
-# Label PRs based on the files that are changed
-# Documentation: https://github.com/actions/labeler
-
-# Architecture-specific labels
 aarch64:
-  - '**/aarch64/**/*'
-  - '**/arm64/**/*'
-  - '**/*.dts'
-  - '**/*.dtsi'
+- changed-files:
+  - any-glob-to-any-file: ['src/arch/aarch64/**/*']
+  - any-glob-to-all-files: ['src/arch/aarch64/**/*']
+  - all-globs-to-any-file: ['src/arch/aarch64/**/*']
+  - all-globs-to-all-files: ['src/arch/aarch64/**/*']
+
 
 loongarch64:
-  - '**/loongarch64/**/*'
-  - '**/loongarch/**/*'
-  - '**/*.dts'
-  - '**/*.dtsi'
+- changed-files:
+  - any-glob-to-any-file: ['src/arch/loongarch64/**/*']
+  - any-glob-to-all-files: ['src/arch/loongarch64/**/*']
+  - all-globs-to-any-file: ['src/arch/loongarch64/**/*']
+  - all-globs-to-all-files: ['src/arch/loongarch64/**/*']
 
 riscv64:
-  - '**/riscv64/**/*'
-  - '**/riscv/**/*'
-  - '**/*.dts'
-  - '**/*.dtsi'
+- changed-files:
+  - any-glob-to-any-file: ['src/arch/riscv64/**/*']
+  - any-glob-to-all-files: ['src/arch/riscv64/**/*']
+  - all-globs-to-any-file: ['src/arch/riscv64/**/*']
+  - all-globs-to-all-files: ['src/arch/riscv64/**/*']
 
-# Documentation changes
-documentation:
-  - 'docs/**/*'
-  - '*.md'
-  - '*.rst'
-  - '*.txt'
-  - 'README*'
+x86_64:
+- changed-files:
+  - any-glob-to-any-file: ['src/arch/x86_64/**/*']
+  - any-glob-to-all-files: ['src/arch/x86_64/**/*']
+  - all-globs-to-any-file: ['src/arch/x86_64/**/*']
+  - all-globs-to-all-files: ['src/arch/x86_64/**/*']
 
-# CI/CD changes
-ci:
-  - '.github/**/*'
-  - '.gitlab-ci.yml'
-  - 'Dockerfile*'
-  - 'docker-compose*.yml'
-  - '*.yaml'
-  - '*.yml'
-  - '*.sh'
-  - 'scripts/**/*.sh'
