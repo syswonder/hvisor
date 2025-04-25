@@ -1,29 +1,19 @@
 aarch64:
 - changed-files:
-  - any-glob-to-any-file: ['src/arch/aarch64/**/*']
-  - any-glob-to-all-files: ['src/arch/aarch64/**/*']
-  - all-globs-to-any-file: ['src/arch/aarch64/**/*']
-  - all-globs-to-all-files: ['src/arch/aarch64/**/*']
-
+  - any-glob-to-any-file: src/arch/aarch64/**/*
 
 loongarch64:
 - changed-files:
-  - any-glob-to-any-file: ['src/arch/loongarch64/**/*']
-  - any-glob-to-all-files: ['src/arch/loongarch64/**/*']
-  - all-globs-to-any-file: ['src/arch/loongarch64/**/*']
-  - all-globs-to-all-files: ['src/arch/loongarch64/**/*']
+  - any-glob-to-any-file: src/arch/loongarch64/**/*
 
 riscv64:
 - changed-files:
-  - any-glob-to-any-file: ['src/arch/riscv64/**/*']
-  - any-glob-to-all-files: ['src/arch/riscv64/**/*']
-  - all-globs-to-any-file: ['src/arch/riscv64/**/*']
-  - all-globs-to-all-files: ['src/arch/riscv64/**/*']
+  - any-glob-to-any-file: src/arch/riscv64/**/*
 
 x86_64:
 - changed-files:
-  - any-glob-to-any-file: ['src/arch/x86_64/**/*']
-  - any-glob-to-all-files: ['src/arch/x86_64/**/*']
-  - all-globs-to-any-file: ['src/arch/x86_64/**/*']
-  - all-globs-to-all-files: ['src/arch/x86_64/**/*']
+  - any-glob-to-any-file: src/arch/x86_64/**/*
+
+
+
 
