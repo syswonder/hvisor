@@ -4,6 +4,10 @@
 
 ## CURRENT - v0.1.2
 
+- [ci] support running CI with the latest hvisor-tool and the configuration files in hvisor ([CHonghao](https://github.com/CHonghaohao))
+- [feature] enable dynamic CPU detection for ARM platforms via device tree ([GuanTouYu](https://github.com/FlowerBlackG))
+- [platform] support for rk3568 ([dallasxy](https://github.com/dallasxy))
+- [feature] riscv64: add virtio support ([Jingyu Liu](https://github.com/liulog))
 - [feature] riscv64: add vplic struct ([Jingyu Liu](https://github.com/liulog))
 - [feature] riscv64: add aclint support ([Jingyu Liu](https://github.com/liulog))
 

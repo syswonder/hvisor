@@ -1,0 +1,40 @@
+name: 'ARM GCC Toolchain Setup'
+description: 'Install ARM GCC cross-compiler with caching support'
+inputs:
+  version:
+    description: 'Toolchain version'
+    required: false
+    default: '10.3-2021.07'
+  install-path:
+    description: 'Installation directory'
+    required: false
+    default: '/opt/aarch64-none-linux-gnu'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Create Installation Directory
+      shell: bash
+      run: |
+        mkdir -p "${{ inputs.install-path }}"
+      env:
+        INSTALL_DIR: ${{ inputs.install-path }}
+
+    - name: Download & Extract
+      shell: bash
+      run: |
+        wget https://armkeil.blob.core.windows.net/developer/Files/downloads/gnu-a/${{ inputs.version }}/binrel/gcc-arm-${{ inputs.version }}-x86_64-aarch64-none-linux-gnu.tar.xz
+        tar xJf gcc-arm-${{ inputs.version }}-x86_64-aarch64-none-linux-gnu.tar.xz \
+          -C "${{ inputs.install-path }}" \
+          --strip-components=1
+
+    - name: Set Environment
+      shell: bash
+      run: |
+        echo "${{ inputs.install-path }}/bin" >> $GITHUB_PATH
+
+    - name: Verify Installation
+      shell: bash
+      run: |
+        aarch64-none-linux-gnu-gcc --version
+        echo "Toolchain path: ${{ inputs.install-path }}"

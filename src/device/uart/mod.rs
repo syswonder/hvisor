@@ -31,7 +31,9 @@ mod xuartps;
 pub use xuartps::{console_getchar, console_putchar};
 
 #[cfg(target_arch = "riscv64")]
-pub use crate::arch::riscv64::sbi::{console_getchar, console_putchar};
+pub use crate::arch::riscv64::sbi::{
+    sbi_console_getchar as console_getchar, sbi_console_putchar as console_putchar,
+};
 
 #[cfg(all(feature = "loongson_uart", target_arch = "loongarch64"))]
 mod loongson_uart;

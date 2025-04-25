@@ -13,14 +13,13 @@
 //
 // Authors:
 //
-use riscv::use_sv32;
+
 use spin::Once;
 use spin::RwLock;
 // use crate::device::irqchip::aia::imsic::imsic_trigger;
 use crate::config::root_zone_config;
 use crate::zone::Zone;
 use crate::{arch::cpu::ArchCpu, memory::GuestPhysAddr, percpu::this_cpu_data};
-use fdt::Fdt;
 use riscv_decode::Instruction;
 // S-mode interrupt delivery controller
 const APLIC_S_IDC: usize = 0xd00_4000;
