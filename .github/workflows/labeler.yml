@@ -7,14 +7,12 @@
   jobs:
     triage:
       name: Label triage
-  
       permissions:
         contents: read
         pull-requests: write
-  
-      runs-on: ubuntu-22.04
-  
+        issues: write
+      runs-on: ubuntu-latest
       steps:
-        - uses: actions/labeler@v5.0.0
+        - uses: actions/labeler@v5
           with:
             sync-labels: true
