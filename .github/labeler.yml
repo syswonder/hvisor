@@ -1,0 +1,40 @@
+# Label PRs based on the files that are changed
+# Documentation: https://github.com/actions/labeler
+
+# Architecture-specific labels
+aarch64:
+  - '**/aarch64/**/*'
+  - '**/arm64/**/*'
+  - '**/*.dts'
+  - '**/*.dtsi'
+
+loongarch64:
+  - '**/loongarch64/**/*'
+  - '**/loongarch/**/*'
+  - '**/*.dts'
+  - '**/*.dtsi'
+
+riscv64:
+  - '**/riscv64/**/*'
+  - '**/riscv/**/*'
+  - '**/*.dts'
+  - '**/*.dtsi'
+
+# Documentation changes
+documentation:
+  - 'docs/**/*'
+  - '*.md'
+  - '*.rst'
+  - '*.txt'
+  - 'README*'
+
+# CI/CD changes
+ci:
+  - '.github/**/*'
+  - '.gitlab-ci.yml'
+  - 'Dockerfile*'
+  - 'docker-compose*.yml'
+  - '*.yaml'
+  - '*.yml'
+  - '*.sh'
+  - 'scripts/**/*.sh'
