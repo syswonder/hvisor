@@ -48,11 +48,17 @@ jobs:
           if (title.includes('aarch64') || body.includes('aarch64')) {
             labels.push('aarch64');
           }
+          if (title.includes('aarch') || body.includes('aarch')) {
+            labels.push('aarch64');
+          }
           
           if (title.includes('loongarch64') || body.includes('loongarch64')) {
             labels.push('loongarch64');
           }
-          
+          if (title.includes('loongarch') || body.includes('loongarch')) {
+            labels.push('loongarch64');
+          }
+        
           if (title.includes('riscv64') || body.includes('riscv64')) {
             labels.push('riscv64');
           }
@@ -70,6 +76,7 @@ jobs:
           
           // Help wanted
           if (title.includes('help wanted') || body.includes('help wanted') ||
+              title.includes('help') || body.includes('help') ||
               title.includes('help needed') || body.includes('help needed')) {
             labels.push('help wanted');
           }
