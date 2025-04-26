@@ -2,7 +2,7 @@ pub mod ioapic;
 pub mod lapic;
 
 use crate::{
-    arch::{acpi, idt, ipi, vmcs::Vmcs, vtd},
+    arch::{acpi, cpu::this_cpu_id, idt, ipi, vmcs::Vmcs, vtd},
     consts::{MAX_CPU_NUM, MAX_ZONE_NUM},
     zone::Zone,
 };
@@ -28,41 +28,37 @@ impl PendingVectors {
     }
 
     fn add_vector(&self, cpu_id: usize, vector: u8, err_code: Option<u32>, allow_repeat: bool) {
-        match self.inner.get(cpu_id) {
-            Some(pending_vectors) => {
-                let mut vectors = pending_vectors.lock();
-                /*if vectors.len() > 2 {
-                    info!("len: {:x}", vectors.len());
-                }*/
-                if allow_repeat || !vectors.contains(&(vector, err_code)) {
-                    vectors.push_back((vector, err_code));
-                }
-            }
-            _ => {}
+        let mut vectors = self.inner.get(cpu_id).unwrap().lock();
+        if vectors.len() > 10 {
+            warn!("too many pending vectors! cnt: {:x?}", vectors.len());
+        }
+        if allow_repeat || !vectors.contains(&(vector, err_code)) {
+            vectors.push_back((vector, err_code));
         }
     }
 
-    fn check_pending_vectors(&self, cpu_id: usize) {
-        match self.inner.get(cpu_id) {
-            Some(pending_vectors) => {
-                let mut vectors = pending_vectors.lock();
-                if let Some(vector) = vectors.front() {
-                    let allow_interrupt = Vmcs::allow_interrupt().unwrap();
-                    if vector.0 < 32 || allow_interrupt {
-                        if vectors.len() == 10 {
-                            warn!("too many pending vectors!");
-                        }
-                        // if it's an exception, or an interrupt that is not blocked, inject it directly.
-                        Vmcs::inject_interrupt(vector.0, vector.1).unwrap();
-                        vectors.pop_front();
-                    } else {
-                        // interrupts are blocked, enable interrupt-window exiting.
-                        Vmcs::set_interrupt_window(true).unwrap();
-                    }
+    fn check_pending_vectors(&self, cpu_id: usize) -> bool {
+        let mut vectors = self.inner.get(cpu_id).unwrap().lock();
+        if let Some(vector) = vectors.front() {
+            let allow_interrupt = Vmcs::allow_interrupt().unwrap();
+            if vector.0 < 32 || allow_interrupt {
+                if vectors.len() > 10 {
+                    warn!("too many pending vectors!");
                 }
+                // if it's an exception, or an interrupt that is not blocked, inject it directly.
+                Vmcs::inject_interrupt(vector.0, vector.1).unwrap();
+                // vectors.pop_front();
+                return true;
+            } else {
+                // interrupts are blocked, enable interrupt-window exiting.
+                Vmcs::set_interrupt_window(true).unwrap();
             }
-            _ => {}
         }
+        false
+    }
+
+    fn pop_vector(&self, cpu_id: usize) {
+        self.inner.get(cpu_id).unwrap().lock().pop_front();
     }
 }
 
@@ -71,10 +67,18 @@ pub fn inject_vector(cpu_id: usize, vector: u8, err_code: Option<u32>, allow_rep
         .get()
         .unwrap()
         .add_vector(cpu_id, vector, err_code, allow_repeat);
+    if cpu_id != this_cpu_id() {
+        // wake up dest
+        ipi::arch_send_event(cpu_id as _, 0);
+    }
 }
 
-pub fn check_pending_vectors(cpu_id: usize) {
-    PENDING_VECTORS.get().unwrap().check_pending_vectors(cpu_id);
+pub fn check_pending_vectors(cpu_id: usize) -> bool {
+    PENDING_VECTORS.get().unwrap().check_pending_vectors(cpu_id)
+}
+
+pub fn pop_vector(cpu_id: usize) {
+    PENDING_VECTORS.get().unwrap().pop_vector(cpu_id);
 }
 
 pub fn enable_irq() {
@@ -85,8 +89,8 @@ pub fn disable_irq() {
     unsafe { asm!("cli") };
 }
 
-pub fn inject_irq(_irq: usize, _is_hardware: bool) {
-    ioapic_inject_irq(_irq as _);
+pub fn inject_irq(_irq: usize, allow_repeat: bool) {
+    ioapic_inject_irq(_irq as _, allow_repeat);
 }
 
 pub fn percpu_init() {}

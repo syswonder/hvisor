@@ -6,7 +6,13 @@ use crate::{
 use ::acpi::{mcfg::Mcfg, sdt::Signature};
 use alloc::{collections::btree_map::BTreeMap, vec::Vec};
 use bit_field::BitField;
-use core::{arch::asm, hint::spin_loop, mem::size_of, usize};
+use core::{
+    arch::asm,
+    hint::spin_loop,
+    mem::size_of,
+    ptr::{read_volatile, write_volatile},
+    usize,
+};
 use dma_remap_reg::*;
 use spin::{Mutex, Once};
 use x86_64::instructions::port::Port;
@@ -281,19 +287,19 @@ impl Vtd {
     }
 
     fn mmio_read_u32(&self, reg: usize) -> u32 {
-        unsafe { *((self.reg_base_hpa + reg) as *const u32) }
+        unsafe { read_volatile((self.reg_base_hpa + reg) as *const u32) }
     }
 
     fn mmio_read_u64(&self, reg: usize) -> u64 {
-        unsafe { *((self.reg_base_hpa + reg) as *const u64) }
+        unsafe { read_volatile((self.reg_base_hpa + reg) as *const u64) }
     }
 
     fn mmio_write_u32(&self, reg: usize, value: u32) {
-        unsafe { *((self.reg_base_hpa + reg) as *mut u32) = value };
+        unsafe { write_volatile((self.reg_base_hpa + reg) as *mut u32, value) };
     }
 
     fn mmio_write_u64(&self, reg: usize, value: u64) {
-        unsafe { *((self.reg_base_hpa + reg) as *mut u64) = value };
+        unsafe { write_volatile((self.reg_base_hpa + reg) as *mut u64, value) };
     }
 }
 

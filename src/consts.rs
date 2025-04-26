@@ -41,7 +41,7 @@ pub const MAX_ZONE_NUM: usize = 3;
 
 pub static mut NCPU: usize = MAX_CPU_NUM;
 
-pub const MAX_WAIT_TIMES: usize = 10000000;
+pub const MAX_WAIT_TIMES: usize = 50000000;
 
 pub fn core_end() -> VirtAddr {
     __core_end as _

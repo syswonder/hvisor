@@ -1,5 +1,5 @@
 use crate::{
-    arch::{idt, mmio::MMIoDevice, zone::HvArchZoneConfig},
+    arch::{cpu::this_cpu_id, idt, ipi, mmio::MMIoDevice, zone::HvArchZoneConfig},
     device::irqchip::pic::inject_vector,
     error::HvResult,
     memory::{GuestPhysAddr, MMIOAccess},
@@ -135,10 +135,19 @@ impl VirtIoApic {
         Ok(())
     }
 
-    fn trigger(&self, signal: usize) -> HvResult {
+    fn get_irq_cpu(&self, irq: usize, zone_id: usize) -> Option<usize> {
+        let ioapic = self.inner.get(zone_id).unwrap();
+        if let Some(entry) = ioapic.lock().rte.get(irq) {
+            let dest = entry.get_bits(56..=63) as usize;
+            return Some(dest);
+        }
+        None
+    }
+
+    fn trigger(&self, irq: usize, allow_repeat: bool) -> HvResult {
         let zone_id = this_zone_id();
         let ioapic = self.inner.get(zone_id).unwrap();
-        if let Some(entry) = ioapic.lock().rte.get(signal) {
+        if let Some(entry) = ioapic.lock().rte.get(irq) {
             // TODO: physical & logical mode
             let dest = entry.get_bits(56..=63) as usize;
             let masked = entry.get_bit(16);
@@ -153,7 +162,7 @@ impl VirtIoApic {
                     dest,
                     idt::get_guest_vector(vector as _, zone_id).unwrap() as _,
                     None,
-                    false,
+                    allow_repeat,
                 );
             }
         }
@@ -204,6 +213,14 @@ pub fn init_virt_ioapic(max_zones: usize) {
     VIRT_IOAPIC.call_once(|| VirtIoApic::new(max_zones));
 }
 
-pub fn ioapic_inject_irq(irq: u8) {
-    VIRT_IOAPIC.get().unwrap().trigger(irq as _);
+pub fn ioapic_inject_irq(irq: u8, allow_repeat: bool) {
+    VIRT_IOAPIC.get().unwrap().trigger(irq as _, allow_repeat);
+}
+
+pub fn get_irq_cpu(irq: usize, zone_id: usize) -> usize {
+    VIRT_IOAPIC
+        .get()
+        .unwrap()
+        .get_irq_cpu(irq, zone_id)
+        .unwrap()
 }

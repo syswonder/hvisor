@@ -44,6 +44,7 @@ impl PortIoBitmap {
             bitmap.set_range_intercept(0x60..0x65, false);
             bitmap.set_range_intercept(0x3f8..0x400, false);
         }
+        // bitmap.set_range_intercept(0x3f8..0x400, false);
 
         // FIXME: get port info from ACPI FACP table
         bitmap.set_intercept(0xb2, false);

@@ -1,3 +1,4 @@
+use core::ptr::{read_volatile, write_volatile};
 // Copyright (c) 2025 Syswonder
 // hvisor is licensed under Mulan PSL v2.
 // You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -112,11 +113,11 @@ impl PciRoot {
             for bar_id in 0..NUM_BAR_REGS_TYPE0 {
                 unsafe {
                     let reg_ptr = (cfg_base + offsets[bar_id]) as *mut u32;
-                    let origin_val = *reg_ptr;
-                    *reg_ptr = 0xffffffffu32;
-                    let new_val = *reg_ptr;
+                    let origin_val = read_volatile(reg_ptr);
+                    write_volatile(reg_ptr, 0xffffffffu32);
+                    let new_val = read_volatile(reg_ptr);
                     ep.bars_init(bar_id, origin_val, new_val);
-                    *reg_ptr = origin_val;
+                    write_volatile(reg_ptr, origin_val);
                 }
             }
         }
@@ -129,11 +130,11 @@ impl PciRoot {
             for bar_id in 0..NUM_BAR_REGS_TYPE1 {
                 unsafe {
                     let reg_ptr = (cfg_base + offsets[bar_id]) as *mut u32;
-                    let origin_val = *reg_ptr;
-                    *reg_ptr = 0xffffffffu32;
-                    let new_val = *reg_ptr;
+                    let origin_val = read_volatile(reg_ptr);
+                    write_volatile(reg_ptr, 0xffffffffu32);
+                    let new_val = read_volatile(reg_ptr);
                     bridge.bars_init(bar_id, origin_val, new_val);
-                    *reg_ptr = origin_val;
+                    write_volatile(reg_ptr, origin_val);
                 }
             }
         }
@@ -315,7 +316,7 @@ impl Zone {
             }
 
             info!(
-                "pci bar region: type: {:?}, base: {:#x}, size:{:#x}",
+                "pci bar region: type: {:?}, base: {:#x}, size: {:#x}",
                 region.bar_type, region.start, region.size
             );
 

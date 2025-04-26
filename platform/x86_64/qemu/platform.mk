@@ -6,6 +6,7 @@ zone0_setup := $(image_dir)/kernel/setup.bin
 zone0_vmlinux := $(image_dir)/kernel/vmlinux.bin
 zone0_initrd := $(image_dir)/virtdisk/initramfs.cpio.gz
 zone0_rootfs := $(image_dir)/virtdisk/rootfs1.img
+zone1_rootfs := $(image_dir)/virtdisk/rootfs2.img
 
 QEMU_ARGS := -machine q35,kernel-irqchip=split
 QEMU_ARGS += -cpu host,+x2apic,+invtsc,+vmx -accel kvm # cpu: host Broadwell YongFeng
@@ -18,6 +19,12 @@ QEMU_ARGS += -device intel-iommu,intremap=on,eim=on,caching-mode=on,device-iotlb
 QEMU_ARGS += -device ioh3420,id=pcie.1,chassis=1
 QEMU_ARGS += -drive if=none,file="$(zone0_rootfs)",id=X10008000,format=raw
 QEMU_ARGS += -device virtio-blk-pci,bus=pcie.1,drive=X10008000,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on # bus=pcie.1,
+# QEMU_ARGS += -drive if=none,file="$(zone1_rootfs)",id=X10009000,format=raw
+# QEMU_ARGS += -device virtio-blk-pci,bus=pcie.1,drive=X10009000,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on
+# QEMU_ARGS += -netdev tap,id=net0,ifname=tap0,script=no,downscript=no
+# QEMU_ARGS += -device virtio-net-pci,bus=pcie.1,netdev=net0,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on
+# QEMU_ARGS += -netdev tap,id=net0,vhostforce=on
+# QEMU_ARGS += -device virtio-net-pci,bus=pcie.1,netdev=net0,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on
 # QEMU_ARGS += --trace "virtio_*" --trace "virtqueue_*" --trace "vtd_dma*" --trace "iommu_*"
 
 QEMU_ARGS += -kernel $(hvisor_elf)

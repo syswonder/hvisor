@@ -5,6 +5,7 @@ use crate::{
         ipi,
         msr::Msr::{self, *},
     },
+    device::irqchip::pic::pop_vector,
     error::HvResult,
     memory::Frame,
     percpu::this_cpu_data,
@@ -16,6 +17,7 @@ use x2apic::lapic::{LocalApic, LocalApicBuilder, TimerMode};
 pub struct VirtLocalApic {
     pub phys_lapic: LocalApic,
     pub virt_timer_vector: u8,
+    pub has_eoi: bool,
     virt_lvt_timer_bits: u32,
 }
 
@@ -36,6 +38,7 @@ impl VirtLocalApic {
         Self {
             phys_lapic: lapic,
             virt_timer_vector: 0,
+            has_eoi: true,
             virt_lvt_timer_bits: (1 << 16) as _, // masked
         }
     }
@@ -55,6 +58,16 @@ impl VirtLocalApic {
                 Ok(this_cpu_id() as u64)
             }
             IA32_X2APIC_LDR => Ok(this_cpu_id() as u64), // logical apic id
+            IA32_X2APIC_ISR0 | IA32_X2APIC_ISR1 | IA32_X2APIC_ISR2 | IA32_X2APIC_ISR3
+            | IA32_X2APIC_ISR4 | IA32_X2APIC_ISR5 | IA32_X2APIC_ISR6 | IA32_X2APIC_ISR7 => {
+                // info!("isr!");
+                Ok(0)
+            }
+            IA32_X2APIC_IRR0 | IA32_X2APIC_IRR1 | IA32_X2APIC_IRR2 | IA32_X2APIC_IRR3
+            | IA32_X2APIC_IRR4 | IA32_X2APIC_IRR5 | IA32_X2APIC_IRR6 | IA32_X2APIC_IRR7 => {
+                // info!("irr!");
+                Ok(0)
+            }
             IA32_X2APIC_LVT_TIMER => Ok(self.virt_lvt_timer_bits as _),
             _ => hv_result_err!(ENOSYS),
         }
@@ -62,6 +75,12 @@ impl VirtLocalApic {
 
     pub fn wrmsr(&mut self, msr: Msr, value: u64) -> HvResult {
         match msr {
+            IA32_X2APIC_EOI => {
+                // info!("eoi");
+                pop_vector(this_cpu_id());
+                self.has_eoi = true;
+                Ok(())
+            }
             IA32_X2APIC_ICR => {
                 // info!("ICR value: {:x}", value);
                 ipi::send_ipi(value);

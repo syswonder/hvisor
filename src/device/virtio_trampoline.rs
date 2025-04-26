@@ -89,7 +89,11 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     #[cfg(not(target_arch = "loongarch64"))]
     if dev.need_wakeup() {
         debug!("need wakeup, sending ipi to wake up virtio device");
+        #[cfg(not(target_arch = "x86_64"))]
         let root_cpu = root_zone().read().cpu_set.first_cpu().unwrap();
+        #[cfg(target_arch = "x86_64")]
+        let root_cpu =
+            crate::device::irqchip::pic::ioapic::get_irq_cpu(IRQ_WAKEUP_VIRTIO_DEVICE, 0);
         send_event(root_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP_VIRTIO_DEVICE);
     }
     drop(dev);
@@ -101,11 +105,17 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
             // fence(Ordering::Acquire);
             count += 1;
             if count == MAX_WAIT_TIMES {
-                warn!("virtio backend is too slow, please check it!");
+                warn!(
+                    "virtio backend is too slow, please check it! addr: {:x} is_write: {:x?}",
+                    mmio.address, mmio.is_write
+                );
                 fence(Ordering::Acquire);
             }
             if count == MAX_WAIT_TIMES * 10 {
-                error!("virtio backend may have some problem, please check it!");
+                error!(
+                    "virtio backend may have some problem, please check it! addr: {:x} is_write: {:x?}",
+                    mmio.address, mmio.is_write
+                );
                 count = 0;
             }
         }

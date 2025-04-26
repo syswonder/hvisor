@@ -129,9 +129,9 @@ pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
 
     // Intel SDM Vol 3C, Section 8.4.4, MP Initialization Example
     unsafe { lapic.send_init_ipi(cpuid as u32) };
-    hpet::busy_wait(Duration::from_millis(10)); // 10ms
+    hpet::busy_wait(Duration::from_millis(50)); // 10ms
     unsafe { lapic.send_sipi(AP_START_PAGE_IDX, cpuid as u32) };
-    hpet::busy_wait(Duration::from_micros(200)); // 200us
+    hpet::busy_wait(Duration::from_micros(2000)); // 200us
     unsafe { lapic.send_sipi(AP_START_PAGE_IDX, cpuid as u32) };
 }
 
@@ -212,6 +212,8 @@ impl ArchCpu {
     }
 
     pub fn idle(&mut self) -> ! {
+        unsafe { self.virt_lapic.phys_lapic.end_of_interrupt() };
+
         assert!(this_cpu_id() == self.cpuid);
 
         self.power_on = false;
@@ -256,6 +258,8 @@ impl ArchCpu {
     }
 
     pub fn run(&mut self) -> ! {
+        unsafe { self.virt_lapic.phys_lapic.end_of_interrupt() };
+
         assert!(this_cpu_id() == self.cpuid);
         let mut per_cpu = this_cpu_data();
 
@@ -555,7 +559,9 @@ impl ArchCpu {
 
     fn vmexit_handler(&mut self) {
         crate::arch::trap::handle_vmexit(self).unwrap();
-        check_pending_vectors(this_cpu_id());
+        if self.virt_lapic.has_eoi && check_pending_vectors(this_cpu_id()) {
+            self.virt_lapic.has_eoi = false;
+        }
     }
 
     unsafe fn vmx_entry_failed() -> ! {

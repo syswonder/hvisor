@@ -15,10 +15,7 @@ use crate::{
     device::{
         irqchip::{
             inject_vector,
-            pic::{
-                ioapic::{ioapic_inject_irq, irqs},
-                lapic::VirtLocalApic,
-            },
+            pic::{ioapic::irqs, lapic::VirtLocalApic},
         },
         uart::UartReg,
     },
@@ -93,14 +90,12 @@ fn handle_irq(vector: u8) {
     match vector {
         IdtVector::VIRT_IPI_VECTOR => {
             ipi::handle_virt_ipi();
-            // send eoi inside handler, so return directly
-            return;
         }
         IdtVector::APIC_TIMER_VECTOR => inject_vector(
             this_cpu_id(),
             this_cpu_data().arch_cpu.virt_lapic.virt_timer_vector,
             None,
-            true,
+            false,
         ),
         _ => match get_guest_vector(vector, this_zone_id()) {
             Some(gv) => {
@@ -321,7 +316,7 @@ fn handle_msr_read(arch_cpu: &mut ArchCpu) -> HvResult {
             warn!("Failed to handle RDMSR({:#x}): {:?}", rcx, res);
         }
     } else {
-        warn!("Unrecognized RDMSR({:#x})", rcx);
+        // warn!("Unrecognized RDMSR({:#x})", rcx);
     }
 
     arch_cpu.advance_guest_rip(VM_EXIT_INSTR_LEN_RDMSR)?;

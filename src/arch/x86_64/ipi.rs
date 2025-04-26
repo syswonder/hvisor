@@ -97,12 +97,10 @@ pub fn send_ipi(value: u64) -> HvResult {
         match delivery_mode {
             IpiDeliveryMode::FIXED => {
                 // info!("dest: {:x}, vector: {:x}", dest, vector);
-                inject_vector(dest, vector, None, true);
-                arch_send_event(dest as _, SGI_IPI_ID as _);
+                inject_vector(dest, vector, None, false);
             }
             IpiDeliveryMode::NMI => {
-                inject_vector(dest, 2, None, true);
-                arch_send_event(dest as _, SGI_IPI_ID as _);
+                inject_vector(dest, 2, None, false);
             }
             IpiDeliveryMode::INIT => {}
             IpiDeliveryMode::START_UP => {
@@ -129,13 +127,11 @@ pub fn arch_send_event(dest: u64, _: u64) {
 }
 
 pub fn handle_virt_ipi() {
-    unsafe {
-        this_cpu_data()
-            .arch_cpu
-            .virt_lapic
-            .phys_lapic
-            .end_of_interrupt()
-    };
     // this may never return!
-    event::check_events();
+    loop {
+        let ret = event::check_events();
+        if !ret {
+            break;
+        }
+    }
 }

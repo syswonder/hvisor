@@ -195,7 +195,20 @@ impl<'a> HyperCall<'a> {
             let irq_id = region.res_list[res_front].irq_id as u64;
             let target_zone = region.res_list[res_front].target_zone;
             let target_cpu = match find_zone(target_zone as _) {
-                Some(zone) => zone.read().cpu_set.first_cpu().unwrap(),
+                Some(zone) => {
+                    #[cfg(not(target_arch = "x86_64"))]
+                    {
+                        zone.read().cpu_set.first_cpu().unwrap()
+                    }
+                    #[cfg(target_arch = "x86_64")]
+                    {
+                        // we use I/O APIC remap table to decide target cpu in x86_64
+                        crate::device::irqchip::pic::ioapic::get_irq_cpu(
+                            irq_id as _,
+                            target_zone as _,
+                        )
+                    }
+                }
                 _ => {
                     fence(Ordering::SeqCst);
                     region.res_front = (region.res_front + 1) & (MAX_REQ - 1);

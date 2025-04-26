@@ -155,22 +155,21 @@ impl MsrBitmap {
         bitmap.set_read_intercept(IA32_X2APIC_LVT_TIMER, true);
 
         bitmap.set_write_intercept(IA32_APIC_BASE, true);
+        bitmap.set_write_intercept(IA32_X2APIC_EOI, true);
         bitmap.set_write_intercept(IA32_X2APIC_ICR, true);
         bitmap.set_write_intercept(IA32_X2APIC_LVT_TIMER, true);
 
-        /*bitmap.set_read_intercept(IA32_APIC_BASE, true);
-        bitmap.set_write_intercept(IA32_APIC_BASE, true);
-
-        bitmap.set_read_intercept(IA32_TSC_DEADLINE, true);
-        bitmap.set_write_intercept(IA32_TSC_DEADLINE, true);
-
-        // Intercept all x2APIC MSR accesses
-        for addr in VirtLocalApic::msr_range() {
+        for addr in (IA32_X2APIC_ISR0 as u32)..(IA32_X2APIC_ISR7 as u32 + 1) {
             if let Ok(msr) = Msr::try_from(addr) {
                 bitmap.set_read_intercept(msr, true);
-                bitmap.set_write_intercept(msr, true);
             }
-        }*/
+        }
+
+        for addr in (IA32_X2APIC_IRR0 as u32)..(IA32_X2APIC_IRR7 as u32 + 1) {
+            if let Ok(msr) = Msr::try_from(addr) {
+                bitmap.set_read_intercept(msr, true);
+            }
+        }
 
         bitmap
     }
