@@ -48,6 +48,9 @@ x2apic = "0.4.3"
 raw-cpuid = "10.7.0"
 
 [features]
+############# general ##############
+iommu = [] # supported by: aarch64
+pci = [] # supported by: aarch64
 ############# aarch64 ##############
 # irqchip driver
 gicv2 = []
@@ -57,15 +60,13 @@ pl011 = []
 xuartps = []
 imx_uart = []
 uart_16550 = []
-# functionality
-iommu = []
-pci = []
 # pagetable layout
 pt_layout_qemu = []
 pt_layout_rk3568 = []
 # cpu 
 a55 = []
 a53 = []
+# uart infos
 rk3568_uart_base = []
 ############## riscv64 #############
 # irqchip driver
