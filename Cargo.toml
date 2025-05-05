@@ -63,8 +63,6 @@ pl011 = []
 xuartps = []
 imx_uart = []
 uart_16550 = []
-uart_base_rk3568 = []
-uart_base_rk3588 = []
 
 # pagetable layout
 pt_layout_qemu = []
@@ -73,6 +71,10 @@ pt_layout_rk3588 = []
 
 # cpu
 mpidr_rockchip = []
+
+# uart infos
+uart_base_rk3568 = []
+uart_base_rk3588 = []
 
 ############## riscv64 #############
 # irqchip driver
