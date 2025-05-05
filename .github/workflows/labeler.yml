@@ -55,10 +55,13 @@
                 labels.push('x86_64');
               }
                 
-              await github.rest.issues.addLabels({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: context.issue.number,
-                labels: labels
+              const pr_number = context.payload.pull_request?.number;
+
+              if (pr_number && labels.length > 0) {
+                await github.rest.issues.addLabels({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  issue_number: pr_number,
+                  labels: labels
               });
             
