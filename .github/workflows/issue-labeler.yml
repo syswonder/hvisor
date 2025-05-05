@@ -94,13 +94,17 @@ jobs:
               title.includes('cve') || body.includes('cve')) {
             labels.push('security');
           }
-          
-          // Add labels if any were found
-          if (labels.length > 0) {
+              
+          const issue_number = context.payload.issue?.number;
+
+          console.log(`Issue title: ${title}`);
+          console.log(`Computed labels: ${labels}`);
+
+          if (issue_number && labels.length > 0) {
             await github.rest.issues.addLabels({
               owner: context.repo.owner,
               repo: context.repo.repo,
-              issue_number: context.issue.number,
-              labels: labels
+              issue_number,
+              labels
             });
-          } 
+          }
