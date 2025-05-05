@@ -1,0 +1,78 @@
+{
+    "arch": "arm64",
+    "name": "ruxos_display",
+    "zone_id": 1,
+    "cpus": [
+        2
+    ],
+    "memory_regions": [
+        {
+            "type": "ram",
+            "physical_start": "0x50000000",
+            "virtual_start": "0x40000000",
+            "size": "0x30000000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x9000000",
+            "virtual_start": "0x9000000",
+            "size": "0x1000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x3d000000",
+            "virtual_start": "0x3d000000",
+            "size": "0x3000000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x30000000",
+            "virtual_start": "0x30000000",
+            "size": "0x400000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x30800000",
+            "virtual_start": "0x30800000",
+            "size": "0x400000"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0xa003800",
+            "virtual_start": "0xa003800",
+            "size": "0x200"
+        }
+    ],
+    "interrupts": [
+        61,
+        74,
+        76,
+        78
+    ],
+    "ivc_configs": [],
+    "kernel_filepath": "./helloworld_aarch64-qemu-virt.bin",
+    "dtb_filepath": "./zone1-ruxos.dtb",
+    "kernel_load_paddr": "0x50080000",
+    "dtb_load_paddr": "0x50000000",
+    "entry_point": "0x40080000",
+    "kernel_args": "",
+    "arch_config": {
+        "gic_version": "v3",
+        "gicd_base": "0x38800000",
+        "gicd_size": "0x10000",
+        "gicr_base": "0x38880000",
+        "gicr_size": "0xc0000",
+        "gits_base": "0",
+        "gits_size": "0",
+        "gicc_base": "0",
+        "gicc_size": "0",
+        "gich_base": "0",
+        "gich_size": "0",
+        "gicv_base": "0",
+        "gicv_size": "0",
+        "gicc_offset": "0"
+    },
+    "num_pci_devs": 0,
+    "alloc_pci_devs": [],
+    "pci_config": {}
+}
