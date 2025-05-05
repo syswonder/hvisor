@@ -63,5 +63,6 @@
                   repo: context.repo.repo,
                   issue_number: pr_number,
                   labels: labels
-              });
+                });
+              }
             
