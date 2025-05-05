@@ -41,6 +41,6 @@ mod loongson_uart;
 pub use loongson_uart::{console_getchar, console_putchar};
 
 #[cfg(all(feature = "uart_16550", target_arch = "aarch64"))]
-pub mod uart_16550;
+mod uart_16550;
 #[cfg(all(feature = "uart_16550", target_arch = "aarch64"))]
 pub use uart_16550::{console_getchar, console_putchar};

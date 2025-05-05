@@ -1,0 +1,50 @@
+{
+    "arch": "arm64",
+    "name": "linux2",
+    "zone_id": 1,
+    "cpus": [2, 3],
+    "memory_regions": [
+        {
+            "type": "ram",
+            "physical_start": "0x50000000",
+            "virtual_start":  "0x50000000",
+            "size": "0x25000000"
+        },
+	    {
+	        "type": "ram",
+	        "physical_start": "0x0",
+	        "virtual_start": "0x0",
+	        "size": "0x200000"
+	    },
+        {
+            "type": "virtio",
+            "physical_start": "0xff9d0000",
+            "virtual_start":  "0xff9d0000",
+            "size": "0x1000"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0xff9e0000",
+            "virtual_start":  "0xff9e0000",
+            "size": "0x1000"
+        }
+    ],
+    "interrupts": [76, 78],
+    "ivc_configs": [],
+    "kernel_filepath": "./Image-5.4",
+    "dtb_filepath": "./zone1-linux.dtb",
+    "kernel_load_paddr": "0x50400000",
+    "dtb_load_paddr":   "0x50000000",
+    "entry_point":      "0x50400000",
+    "kernel_args": "",
+    "arch_config": {
+        "gic_version": "v3",
+        "gicd_base": "0xfe600000",
+        "gicd_size": "0x10000",
+        "gicr_base": "0xfe680000",
+        "gicr_size": "0x100000",
+	    "gits_base": "0x0",
+        "gits_size": "0x0"
+    }
+}
+

@@ -6,8 +6,11 @@ use tock_registers::register_bitfields;
 use tock_registers::register_structs;
 use tock_registers::registers::*;
 
-#[cfg(all(feature = "rk3568_uart_base"))]
+#[cfg(feature = "uart_base_rk3568")]
 pub const UART_BASE: PhysAddr = 0xfe660000;
+
+#[cfg(feature = "uart_base_rk3588")]
+pub const UART_BASE: PhysAddr = 0xfeb50000;
 
 /// Register struct representing the UART registers.
 register_structs! {
@@ -51,18 +54,20 @@ impl Uart16550 {
 
         self.regs().IIR_FCR.set(0x1 << 0);
     }
+
     #[inline]
     pub fn putchar(&mut self, c: u8) {
         while self.regs().LSR.get() & (1 << 5) == 0 {}
         self.regs().THR_RBR_DLL.set(c as u32);
     }
+
     #[inline]
     fn getchar(&mut self) -> Option<u8> {
         todo!()
     }
 }
 
-static mut UART: Uart16550 = { Uart16550::new(UART_BASE) };
+static mut UART: Uart16550 = Uart16550::new(UART_BASE);
 
 #[inline]
 pub fn console_putchar(c: u8) {

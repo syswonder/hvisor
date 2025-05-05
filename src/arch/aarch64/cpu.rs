@@ -167,7 +167,11 @@ impl ArchCpu {
         this_cpu_data().activate_gpm();
         self.reset(this_cpu_data().cpu_on_entry, this_cpu_data().dtb_ipa);
         self.power_on = true;
-        info!("cpu {} started", self.cpuid);
+        info!(
+            "cpu {} started at {:#x?}",
+            self.cpuid,
+            this_cpu_data().cpu_on_entry
+        );
         unsafe {
             vmreturn(self.guest_reg() as *mut _ as usize);
         }
@@ -207,14 +211,12 @@ impl ArchCpu {
     }
 }
 
-#[cfg(not(feature = "a55"))]
 pub fn mpidr_to_cpuid(mpidr: u64) -> u64 {
-    mpidr & 0xff00ffffff
-}
-
-#[cfg(feature = "a55")]
-pub fn mpidr_to_cpuid(mpidr: u64) -> u64 {
-    (mpidr >> 8) & 0xff
+    if cfg!(feature = "mpidr_rockchip") {
+        (mpidr >> 8) & 0xff
+    } else {
+        mpidr & 0xff00ffffff
+    }
 }
 
 pub fn this_cpu_id() -> usize {

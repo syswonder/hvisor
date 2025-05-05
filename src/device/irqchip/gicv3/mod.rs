@@ -150,11 +150,12 @@ fn gicv3_clear_pending_irqs() {
 
 static TIMER_INTERRUPT_COUNTER: AtomicU64 = AtomicU64::new(0);
 // how often to print timer interrupt counter
-const TIMER_INTERRUPT_PRINT_TIMES: u64 = 50;
+const TIMER_INTERRUPT_PRINT_INTERVAL: u64 = 50;
 
 pub fn gicv3_handle_irq_el1() {
     while let Some(irq_id) = pending_irq() {
         if irq_id < 8 {
+            trace!("sgi get {}, try to handle...", irq_id);
             deactivate_irq(irq_id);
             let mut ipi_handled = false;
             if irq_id == SGI_IPI_ID as _ {
@@ -172,7 +173,7 @@ pub fn gicv3_handle_irq_el1() {
                 // virtual timer interrupt
                 TIMER_INTERRUPT_COUNTER.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
                 if TIMER_INTERRUPT_COUNTER.load(core::sync::atomic::Ordering::SeqCst)
-                    % TIMER_INTERRUPT_PRINT_TIMES
+                    % TIMER_INTERRUPT_PRINT_INTERVAL
                     == 0
                 {
                     trace!(
