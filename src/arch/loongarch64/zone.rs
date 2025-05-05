@@ -467,6 +467,7 @@ const LOG_INTERVAL: u64 = 10000;
 pub fn loongarch_generic_mmio_handler(mmio: &mut MMIOAccess, arg: usize) -> HvResult {
     // if in uart0 region 0x1fe0_0000-0x1fe0_0008, we don't print it
     if mmio.address >= offset(UART0_BASE_ADDR) && mmio.address < offset(UART0_END_ADDR) {
+        mmio_perform_access(BASE_ADDR, mmio);
         return Ok(());
     }
 
