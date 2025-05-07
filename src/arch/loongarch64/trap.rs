@@ -14,6 +14,8 @@
 // Authors:
 //      Yulong Han <wheatfox17@icloud.com>
 //
+use super::register::*;
+use super::zone::ZoneContext;
 use crate::arch::cpu::this_cpu_id;
 use crate::device::irqchip::inject_irq;
 use crate::event::check_events;
@@ -25,9 +27,7 @@ use crate::memory::mmio_handle_access;
 use crate::memory::MMIOAccess;
 use crate::percpu::this_cpu_data;
 use crate::zone::Zone;
-
-use super::register::*;
-use super::zone::ZoneContext;
+use crate::PHY_TO_DMW_UNCACHED;
 use core::arch;
 use core::arch::asm;
 use core::panic;
@@ -36,14 +36,60 @@ use loongArch64::register;
 use loongArch64::register::ecfg::LineBasedInterrupt;
 use loongArch64::register::*;
 use loongArch64::time;
+use spin::Mutex;
+
+pub struct TrapContextHelper {
+    pub ecode: usize,
+    pub esubcode: usize,
+    pub is: usize,
+    pub badv: usize,
+    pub badi: usize,
+    pub era: usize,
+}
+
+impl TrapContextHelper {
+    pub const fn new() -> Self {
+        Self {
+            ecode: 0,
+            esubcode: 0,
+            is: 0,
+            badv: 0,
+            badi: 0,
+            era: 0,
+        }
+    }
+
+    pub fn update(
+        &mut self,
+        ecode: usize,
+        esubcode: usize,
+        is: usize,
+        badv: usize,
+        badi: usize,
+        era: usize,
+    ) {
+        self.ecode = ecode;
+        self.esubcode = esubcode;
+        self.is = is;
+        self.badv = badv;
+        self.badi = badi;
+        self.era = era;
+    }
+}
+
+pub static GLOBAL_TRAP_CONTEXT_HELPER: Mutex<TrapContextHelper> =
+    Mutex::new(TrapContextHelper::new());
 
 pub fn install_trap_vector() {
     // force disable INT here
     crmd::set_ie(false);
     // clear UEFI firmware's previous timer configs
-    tcfg::set_en(false);
     ticlr::clear_timer_interrupt();
-    // timer_init();
+
+    timer_init();
+    tcfg::set_en(false); // we may need to use timer irq to trap for our virtio clear injection
+                         // only enable timer irq trap for debugging, because it may cause overheads for realtime nonroots
+
     // set CSR.EENTRY to _hyp_trap_vector and int vector offset to 0
     ecfg::set_vs(0);
     eentry::set_eentry(_hyp_trap_vector as usize);
@@ -90,16 +136,10 @@ pub fn ktime_get() -> usize {
 pub fn timer_init() {
     // uefi firmware leaves timer interrupt pending, we need to clear it manually
     ticlr::clear_timer_interrupt();
-    // get timer frequency
     let timer_freq = time::get_timer_freq();
-    // 100_000_000
-    // 1s = 1000 ms = 1000_000 us
-    // set timer
     tcfg::set_periodic(true);
-    // let init_val = get_ms_counter(500);
-    let init_val = get_ms_counter(6000);
+    let init_val = get_ms_counter(200);
     tcfg::set_init_val(init_val);
-    // println!("loongarch64: timer_init: timer init value = {}", init_val);
 
     tcfg::set_en(true);
 
@@ -109,7 +149,6 @@ pub fn timer_init() {
 }
 
 pub fn ipi_init() {
-    // enable IPI
     let mut lie_ = ecfg::read().lie();
     lie_ = lie_ | LineBasedInterrupt::IPI;
     ecfg::set_lie(lie_);
@@ -190,6 +229,16 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
     let tlbrbadv_ = tlbrbadv::read();
     let tlbrelo0_ = tlbrelo0::read();
     let tlbrelo1_ = tlbrelo1::read();
+
+    // update global trap context helper
+    GLOBAL_TRAP_CONTEXT_HELPER.lock().update(
+        ecode,
+        esubcode,
+        is,
+        badv_.vaddr(),
+        badi_.inst() as usize,
+        era_.raw(),
+    );
 
     let mut is_idle = false;
     if ecode == ECODE_GSPR && badi_.inst() == 0b0000_0110_0100_1000_1000_0000_0000_0000 {
@@ -469,9 +518,14 @@ fn handle_exception(
                     if !is_write {
                         // we read an usize from our zone0 virtio-daemon
                         // need to trim and extend it to 64-bit reg according to is_u and size
-                        // ctx.x[target_rd_idx] = mmio_access.value;
-                        let trimmed_by_size =
-                            mmio_access.value & ((1 << (mmio_access.size * 8)) - 1);
+                        let mask = match mmio_access.size {
+                            1 => 0xff,
+                            2 => 0xffff,
+                            4 => 0xffffffff,
+                            8 => 0xffffffffffffffff,
+                            _ => panic!("invalid mmio access size: {}", mmio_access.size),
+                        };
+                        let trimmed_by_size = mmio_access.value & mask;
                         let extended = if !is_u {
                             // normal instruction with no .u use sign extension
                             signed_ext(trimmed_by_size, mmio_access.size * 8)
@@ -529,8 +583,9 @@ pub fn _vcpu_return(ctx: usize) {
     gstat::set_gid(vm_id);
     gstat::set_pgm(true);
     trace!(
-        "loongarch64: _vcpu_return: set hardware Guest ID to {}",
-        vm_id
+        "loongarch64: _vcpu_return: set hardware Guest ID to {} for zone {}",
+        vm_id,
+        z.unwrap().read().id
     );
     // Configure guest TLB control
     gtlbc::set_use_tgid(true);
@@ -1192,11 +1247,12 @@ fn handle_interrupt(is: usize) {
             }
         }
         _ if is & TIMER_BIT != 0 => {
-            use loongArch64::register;
-            register::ticlr::clear_timer_interrupt();
+            warn!("timer interrupt, clear timer interrupt");
+            loongArch64::register::ticlr::clear_timer_interrupt();
+            crate::device::irqchip::ls7a2000::clear_hwi_injected_irq();
         }
         _ => {
-            info!("not handled interrupt");
+            info!("not handled interrupt, status = {:#x}", is);
         }
     }
 }
@@ -1315,7 +1371,152 @@ fn emulate_idle(ins: usize, ctx: &mut ZoneContext) {
     // }
 }
 
+fn ty2str(ty: usize) -> &'static str {
+    match ty {
+        0 => "iocsrrd.b",
+        1 => "iocsrrd.h",
+        2 => "iocsrrd.w",
+        3 => "iocsrrd.d",
+        4 => "iocsrwr.b",
+        5 => "iocsrwr.h",
+        6 => "iocsrwr.w",
+        7 => "iocsrwr.d",
+        _ => "unknown",
+    }
+}
+
 fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
+    // iocsrrd.b rd, rj     0000011001 001000000000 rj[9:5] rd[4:0]
+    // iocsrrd.h rd, rj     0000011001 001000000001 rj[9:5] rd[4:0]
+    // iocsrrd.w rd, rj     0000011001 001000000010 rj[9:5] rd[4:0]
+    // iocsrrd.d rd, rj     0000011001 001000000011 rj[9:5] rd[4:0]
+    // iocsrwr.b rd, rj     0000011001 001000000100 rj[9:5] rd[4:0]
+    // iocsrwr.h rd, rj     0000011001 001000000101 rj[9:5] rd[4:0]
+    // iocsrwr.w rd, rj     0000011001 001000000110 rj[9:5] rd[4:0]
+    // iocsrwr.d rd, rj     0000011001 001000000111 rj[9:5] rd[4:0]
+    let ty = extract_field(ins, 10, 3);
+    let rd = extract_field(ins, 0, 5);
+    let rj = extract_field(ins, 5, 5);
+    debug!("iocsr emulation, ty = {}, rd = {}, rj = {}", ty, rd, rj);
+    debug!("GPR[rd] = {:#x}, GPR[rj] = {:#x}", ctx.x[rd], ctx.x[rj]);
+
+    const IOCSR_BASE_ADDR_PHY: usize = 0x1fe0_0000;
+    let mut mmio_access = MMIOAccess {
+        address: IOCSR_BASE_ADDR_PHY + ctx.x[rj], // iocsr only issues an offset from IOCSR_BASE_ADDR_PHY, so we need the calculate the real phy addr
+        size: 0,
+        is_write: false,
+        value: ctx.x[rd],
+    };
+
+    match ty {
+        0 => {
+            // iocsrrd.b
+            mmio_access.size = 1;
+            mmio_access.is_write = false;
+        }
+        1 => {
+            // iocsrrd.h
+            mmio_access.size = 2;
+            mmio_access.is_write = false;
+        }
+        2 => {
+            // iocsrrd.w
+            mmio_access.size = 4;
+            mmio_access.is_write = false;
+        }
+        3 => {
+            // iocsrrd.d
+            mmio_access.size = 8;
+            mmio_access.is_write = false;
+        }
+        4 => {
+            // iocsrwr.b
+            mmio_access.size = 1;
+            mmio_access.is_write = true;
+        }
+        5 => {
+            // iocsrwr.h
+            mmio_access.size = 2;
+            mmio_access.is_write = true;
+        }
+        6 => {
+            // iocsrwr.w
+            mmio_access.size = 4;
+            mmio_access.is_write = true;
+
+            // Special handling for IPI
+            if mmio_access.address == 0x1014 {
+                // IPI send issued from guest is tricky ...
+                // IPI_send is 32 bit, we ignore the upper 32 bits
+                // bit [31]: wait for completion
+                // bit [25:16] target cpu id
+                // bit [4:0] ipi id (IPI_status, 32 bit) indicates the IPI type (0-31)
+                let ipi_send = mmio_access.value as u32;
+                let ipi_id = ipi_send & 0x1f;
+                let target_cpu_id = (ipi_send >> 16) & 0x3ff;
+                let wait_for_completion = (ipi_send >> 31) & 0x1;
+                warn!("IPI send issued from guest, ipi_id = {:#x}, target_cpu_id = {:#x}, wait_for_completion = {:#x}", ipi_id, target_cpu_id, wait_for_completion);
+                if target_cpu_id == this_cpu_id() as u32 {
+                    warn!("send IPI to itself, injecting IPI to GCSR_ESTAT");
+                    inject_irq(INT_IPI, false);
+                    ctx.sepc += 4;
+                    return;
+                } else {
+                    // TODO
+                    panic!("send IPI from guest to other cpu is not supported yet!");
+                }
+            }
+        }
+        7 => {
+            // iocsrwr.d
+            mmio_access.size = 8;
+            mmio_access.is_write = true;
+        }
+        _ => {
+            // should not reach here
+            panic!("invalid iocsr type, this is impossible");
+        }
+    }
+
+    debug!(
+        "iocsr issues a mmio access: {}, target address: {:#x}, size: {}, {}",
+        ty2str(ty),
+        mmio_access.address,
+        mmio_access.size,
+        if mmio_access.is_write { "W" } else { "R" }
+    );
+
+    let res = mmio_handle_access(&mut mmio_access);
+    match res {
+        Ok(_) => {
+            debug!("handle mmio success, v={:#x}", mmio_access.value);
+            if !mmio_access.is_write {
+                let mask = match mmio_access.size {
+                    1 => 0xff,
+                    2 => 0xffff,
+                    4 => 0xffffffff,
+                    8 => 0xffffffffffffffff,
+                    _ => panic!("invalid mmio access size: {}", mmio_access.size),
+                };
+                let trimmed_by_size = mmio_access.value & mask;
+                let extended = if ty < 4 {
+                    signed_ext(trimmed_by_size, mmio_access.size * 8)
+                } else {
+                    trimmed_by_size
+                };
+                ctx.x[rd] = extended;
+            }
+        }
+        Err(e) => {
+            panic!(
+                "mmio access failed, error = {:?}, this is a real page fault",
+                e
+            );
+        }
+    }
+}
+
+fn emulate_iocsr_legacy(ins: usize, ctx: &mut ZoneContext) {
     // iocsrrd.b rd, rj     0000011001 001000000000 rj[9:5] rd[4:0]
     // iocsrrd.h rd, rj     0000011001 001000000001 rj[9:5] rd[4:0]
     // iocsrrd.w rd, rj     0000011001 001000000010 rj[9:5] rd[4:0]
@@ -1340,7 +1541,7 @@ fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
             unsafe {
                 asm!("iocsrrd.b {}, {}", out(reg) val, in(reg) ctx.x[rj]);
             }
-            ctx.x[rd] = val;
+            ctx.x[rd] = val & 0xff;
         }
         1 => {
             // iocsrrd.h
@@ -1349,7 +1550,7 @@ fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
             unsafe {
                 asm!("iocsrrd.h {}, {}", out(reg) val, in(reg) ctx.x[rj]);
             }
-            ctx.x[rd] = val;
+            ctx.x[rd] = val & 0xffff;
         }
         2 => {
             // iocsrrd.w
@@ -1358,7 +1559,7 @@ fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
             unsafe {
                 asm!("iocsrrd.w {}, {}", out(reg) val, in(reg) ctx.x[rj]);
             }
-            ctx.x[rd] = val;
+            ctx.x[rd] = val & 0xffffffff;
         }
         3 => {
             // iocsrrd.d

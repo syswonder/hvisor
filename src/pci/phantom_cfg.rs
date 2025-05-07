@@ -5,7 +5,7 @@ use alloc::collections::btree_map::BTreeMap;
 use crate::{
     error::HvResult,
     memory::{mmio_perform_access, MMIOAccess},
-    pci::PHANTOM_DEV_HEADER,
+    pci::PHANTOM_DEV_HEADER, zone::this_zone_id,
 };
 
 use super::{
@@ -254,6 +254,9 @@ impl PhantomCfg {
                 mmio.value = 0x0;
             }
             CFG_BAR0 => {
+                if this_zone_id() == 0{
+                    mmio_perform_access(base, mmio);
+                }
                 if mmio.is_write {
                     self.write_bar(0, mmio.value as _);
                 } else {
@@ -261,6 +264,9 @@ impl PhantomCfg {
                 }
             }
             CFG_BAR1 => {
+                if this_zone_id() == 0{
+                    mmio_perform_access(base, mmio);
+                }
                 if mmio.is_write {
                     self.write_bar(1, mmio.value as _);
                 } else {
@@ -268,6 +274,9 @@ impl PhantomCfg {
                 }
             }
             CFG_BAR2 => {
+                if this_zone_id() == 0{
+                    mmio_perform_access(base, mmio);
+                }
                 if mmio.is_write {
                     self.write_bar(2, mmio.value as _);
                 } else {
@@ -275,6 +284,9 @@ impl PhantomCfg {
                 }
             }
             CFG_BAR3 => {
+                if this_zone_id() == 0{
+                    mmio_perform_access(base, mmio);
+                }
                 if mmio.is_write {
                     self.write_bar(3, mmio.value as _);
                 } else {
@@ -282,6 +294,9 @@ impl PhantomCfg {
                 }
             }
             CFG_BAR4 => {
+                if this_zone_id() == 0{
+                    mmio_perform_access(base, mmio);
+                }
                 if mmio.is_write {
                     self.write_bar(4, mmio.value as _);
                 } else {
@@ -289,6 +304,9 @@ impl PhantomCfg {
                 }
             }
             CFG_BAR5 => {
+                if this_zone_id() == 0{
+                    mmio_perform_access(base, mmio);
+                }
                 if mmio.is_write {
                     self.write_bar(5, mmio.value as _);
                 } else {
@@ -450,7 +468,7 @@ pub fn add_phantom_devices(phantom_dev: PhantomCfg) {
     unsafe {
         let bdf = phantom_dev.bdf;
         if !PHANTOM_DEVS.contains_key(&bdf) {
-            info!("Add a new virt pci device: {:#x?}", &phantom_dev);
+            info!("Add a new virt pci device: {:x}:{:x}.{:x}", &phantom_dev.bdf >> 8, (&phantom_dev.bdf >> 3) & 0b11111, &phantom_dev.bdf & 0b111);
             PHANTOM_DEVS.insert(bdf, phantom_dev);
             
         } else {
@@ -466,7 +484,7 @@ pub fn find_phantom_dev(bdf: usize) -> PhantomCfg {
     unsafe {
         match PHANTOM_DEVS.get(&bdf) {
             Some(device) => device.clone(),
-            None => generate_vep_by_bdf(bdf),
+            None => generate_vep_by_bdf(bdf), // root will generate all virt bridges so we don't need to actively generate vbridges
         }
     }
 }
@@ -486,6 +504,7 @@ pub fn generate_vep_by_bdf(bdf: usize) -> PhantomCfg {
         }
     }
     let pdev = tmp_ep.generate_vep();
-    info!("generate a pdev: {:#x?}", &pdev);
+    add_phantom_devices(pdev);
+    // info!("generate a pdev: {:#x?}", &pdev);
     pdev
 }

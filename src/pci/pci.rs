@@ -77,6 +77,9 @@ impl PciRoot {
         for ep in self.endpoints.iter() {
             add_phantom_devices(ep.generate_vep());
         }
+        for bridge in self.bridges.iter(){
+            add_phantom_devices(bridge.generate_vbridge());
+        }
     }
 
     fn get_bars_regions(&mut self) {
@@ -181,12 +184,12 @@ impl Zone {
             }
         }
 
-        if self.id == 0 {
+        // if self.id == 0 {
             self.root_pci_init(pci_config, hv_addr_prefix, loong_ht_prefix);
-        } else {
-            self.virtual_pci_mmio_init(pci_config, hv_addr_prefix, loong_ht_prefix);
-        }
-        self.virtual_pci_device_init(pci_config);
+        // } else {
+            // self.virtual_pci_mmio_init(pci_config, hv_addr_prefix, loong_ht_prefix);
+        // }
+        // self.virtual_pci_device_init(pci_config);
     }
 
     pub fn root_pci_init(
@@ -197,12 +200,21 @@ impl Zone {
     ) {
         // Virtual ECAM
 
-        self.mmio_region_register(
-            pci_config.ecam_base as _,
-            pci_config.ecam_size as _,
-            mmio_pci_handler,
-            (pci_config.ecam_base + hv_addr_prefix + loong_ht_prefix) as _,
-        );
+        // self.mmio_region_register(
+        //     pci_config.ecam_base as _,
+        //     pci_config.ecam_size as _,
+        //     mmio_pci_handler,
+        //     (pci_config.ecam_base + hv_addr_prefix + loong_ht_prefix) as _,
+        // );
+
+        self.gpm
+                .insert(MemoryRegion::new_with_offset_mapper(
+                    pci_config.ecam_base as GuestPhysAddr,
+                    pci_config.ecam_base as _,
+                    pci_config.ecam_size as _,
+                    MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+                ))
+                .ok();
 
         info!(
             "pci handler args : {:#x}",

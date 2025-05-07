@@ -16,8 +16,7 @@
 use alloc::vec::Vec;
 
 use super::{
-    pcibar::{BarRegion, PciBar},
-    NUM_BAR_REGS_TYPE1,
+    pcibar::{BarRegion, PciBar, VirtPciBar}, phantom_cfg::{PhantomCfg, PhantomCfgType}, NUM_BAR_REGS_TYPE1, NUM_MAX_BARS
 };
 
 #[derive(Debug)]
@@ -57,5 +56,14 @@ impl BridgeConfig {
             }
         }
         regions
+    }
+
+    // after we get bar regions, we should generate a virtual device instance that mirrors this device for use by other VMs
+    pub fn generate_vbridge(&self) -> PhantomCfg {
+        let mut v_bars: [VirtPciBar; NUM_MAX_BARS] = [VirtPciBar::default(); NUM_MAX_BARS];
+        for i in 0..NUM_BAR_REGS_TYPE1 {
+            v_bars[i] = self.bars[i].generate_vbar();
+        }
+        PhantomCfg::new(self.bdf, v_bars, PhantomCfgType::BRIDGE)
     }
 }

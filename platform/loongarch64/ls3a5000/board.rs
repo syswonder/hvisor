@@ -20,7 +20,7 @@ pub const BOARD_NAME: &str = "ls3a5000";
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x10000f000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x200000;
-pub const ROOT_ZONE_ENTRY: u64 = 0x9000000000e94000;
+pub const ROOT_ZONE_ENTRY: u64 = 0x9000000000da4000;
 pub const ROOT_ZONE_CPUS: u64 = 1 << 0;
 
 pub const ROOT_ZONE_NAME: &str = "root-linux-la64";
@@ -56,20 +56,26 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
         mem_type: MEM_TYPE_IO,
         physical_start: 0x1fe00000,
         virtual_start: 0x1fe00000,
-        size: 0x2000,
+        size: 0x1000,
     }, // uart0
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0x100d0000,
-    //     virtual_start: 0x100d0000,
-    //     size: 0x1000,
-    // }, // rtc
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
-        physical_start: 0x10000000,
-        virtual_start: 0x10000000,
+        physical_start: 0x10080000,
+        virtual_start: 0x10080000,
         size: 0x1000,
-    }, // pch-pic irq controller
+    }, // uart1, passthrough now
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x100d0000,
+        virtual_start: 0x100d0000,
+        size: 0x1000,
+    }, // rtc, passthrough now
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0x10000000,
+    //     virtual_start: 0x10000000,
+    //     size: 0x1000,
+    // }, // pch-pic irq controller
     /* PCI related stuffs ... */
     // HvConfigMemoryRegion {
     //     mem_type: MEM_TYPE_IO,
@@ -77,24 +83,24 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
     //     virtual_start: 0x1a000000,
     //     size: 0x02000000,
     // }, // pci
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0xefe_0000_0000,
-        virtual_start: 0xfe_0000_0000,
-        size: 0x20000000,
-    }, // pci config space (HT)
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0x18408000,
-        virtual_start: 0x18408000,
-        size: 0x00008000,
-    }, // pci io resource
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0x60000000,
-        virtual_start: 0x60000000,
-        size: 0x20000000,
-    }, // pci mem resource
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0xefe_0000_0000,
+    //     virtual_start: 0xfe_0000_0000,
+    //     size: 0x20000000,
+    // }, // pci config space (HT)
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0x18408000,
+    //     virtual_start: 0x18408000,
+    //     size: 0x00008000,
+    // }, // pci io resource
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0x60000000,
+    //     virtual_start: 0x60000000,
+    //     size: 0x20000000,
+    // }, // pci mem resource
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x1001_0000,
@@ -148,4 +154,6 @@ pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
 // 0x16 << 3, 0x19 << 3, 2 << 8, 5 << 8,
 // (8 << 8) + 3];
 
-pub const ROOT_PCI_DEVS: [u64; 1] = [(8 << 8) + 3];
+pub const ROOT_PCI_DEVS: [u64; 0] = [];
+
+// "alloc_pci_devs": [0,1,2,3,32,33,40,41,56,64,72,80,88,96,104,120,128,152,176,200,512,1280,2051]

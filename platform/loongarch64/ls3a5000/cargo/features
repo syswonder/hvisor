@@ -2,3 +2,4 @@ loongson_7a2000
 loongson_uart
 iommu
 pci
+extioi_debug

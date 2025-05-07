@@ -45,6 +45,7 @@ raw-cpuid = "10.7.0"
 # irqchip driver
 gicv2 = []
 gicv3 = []
+extioi_debug = []
 # uart driver
 pl011 = []
 xuartps = []
