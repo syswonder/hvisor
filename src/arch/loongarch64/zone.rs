@@ -15,6 +15,7 @@
 //      Yulong Han <wheatfox17@icloud.com>
 //
 use crate::{
+    arch::trap::GLOBAL_TRAP_CONTEXT_HELPER,
     config::*,
     consts::PAGE_SIZE,
     device::virtio_trampoline::mmio_virtio_handler,
@@ -486,13 +487,14 @@ pub fn loongarch_generic_mmio_handler(mmio: &mut MMIOAccess, arg: usize) -> HvRe
     let last_value = stats.last_value.load(Ordering::SeqCst);
     let is_compressed = stats.is_compressed.load(Ordering::SeqCst);
 
+    let trap_context_helper = GLOBAL_TRAP_CONTEXT_HELPER.lock();
+
     let msg = if count == 0 {
         // First access, always log
         format!(
-            "loongarch64: generic mmio handler#{:x} offset={:#x}, addr={:#x}, size={}, {} {:#x}",
-            BASE_ADDR,
+            "loongarch64: generic mmio handler, zone_era={:#x}, offset={:#x}, size={}, {} {:#x}",
+            trap_context_helper.era,
             mmio.address,
-            BASE_ADDR + mmio.address,
             mmio.size,
             if mmio.is_write { "W -> " } else { "R <- " },
             mmio.value
@@ -504,10 +506,9 @@ pub fn loongarch_generic_mmio_handler(mmio: &mut MMIOAccess, arg: usize) -> HvRe
         // Log every LOG_INTERVAL accesses
         if count % LOG_INTERVAL == 0 {
             format!(
-                "loongarch64: generic mmio handler#{:x} offset={:#x}, addr={:#x}, size={}, {} {:#x} (compressed, repeated {} times)",
-                BASE_ADDR,
+                "loongarch64: generic mmio handler, zone_era={:#x}, offset={:#x}, size={}, {} {:#x} (compressed, repeated {} times)",
+                trap_context_helper.era,
                 mmio.address,
-                BASE_ADDR + mmio.address,
                 mmio.size,
                 if mmio.is_write { "W -> " } else { "R <- " },
                 mmio.value,
@@ -519,10 +520,9 @@ pub fn loongarch_generic_mmio_handler(mmio: &mut MMIOAccess, arg: usize) -> HvRe
     } else if mmio.value as u64 != last_value {
         // Log if value changed
         format!(
-            "loongarch64: generic mmio handler#{:x} offset={:#x}, addr={:#x}, size={}, {} {:#x}",
-            BASE_ADDR,
+            "loongarch64: generic mmio handler, zone_era={:#x}, offset={:#x}, size={}, {} {:#x}",
+            trap_context_helper.era,
             mmio.address,
-            BASE_ADDR + mmio.address,
             mmio.size,
             if mmio.is_write { "W -> " } else { "R <- " },
             mmio.value
@@ -531,7 +531,7 @@ pub fn loongarch_generic_mmio_handler(mmio: &mut MMIOAccess, arg: usize) -> HvRe
         return Ok(());
     };
 
-    debug!("{}", msg);
+    warn!("{}", msg);
 
     stats.last_value.store(mmio.value as u64, Ordering::SeqCst);
 

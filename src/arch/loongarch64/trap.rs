@@ -14,6 +14,8 @@
 // Authors:
 //      Yulong Han <wheatfox17@icloud.com>
 //
+use super::register::*;
+use super::zone::ZoneContext;
 use crate::arch::cpu::this_cpu_id;
 use crate::device::irqchip::inject_irq;
 use crate::event::check_events;
@@ -26,9 +28,6 @@ use crate::memory::MMIOAccess;
 use crate::percpu::this_cpu_data;
 use crate::zone::Zone;
 use crate::PHY_TO_DMW_UNCACHED;
-
-use super::register::*;
-use super::zone::ZoneContext;
 use core::arch;
 use core::arch::asm;
 use core::panic;
@@ -37,6 +36,49 @@ use loongArch64::register;
 use loongArch64::register::ecfg::LineBasedInterrupt;
 use loongArch64::register::*;
 use loongArch64::time;
+use spin::Mutex;
+
+pub struct TrapContextHelper {
+    pub ecode: usize,
+    pub esubcode: usize,
+    pub is: usize,
+    pub badv: usize,
+    pub badi: usize,
+    pub era: usize,
+}
+
+impl TrapContextHelper {
+    pub const fn new() -> Self {
+        Self {
+            ecode: 0,
+            esubcode: 0,
+            is: 0,
+            badv: 0,
+            badi: 0,
+            era: 0,
+        }
+    }
+
+    pub fn update(
+        &mut self,
+        ecode: usize,
+        esubcode: usize,
+        is: usize,
+        badv: usize,
+        badi: usize,
+        era: usize,
+    ) {
+        self.ecode = ecode;
+        self.esubcode = esubcode;
+        self.is = is;
+        self.badv = badv;
+        self.badi = badi;
+        self.era = era;
+    }
+}
+
+pub static GLOBAL_TRAP_CONTEXT_HELPER: Mutex<TrapContextHelper> =
+    Mutex::new(TrapContextHelper::new());
 
 pub fn install_trap_vector() {
     // force disable INT here
@@ -187,6 +229,16 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
     let tlbrbadv_ = tlbrbadv::read();
     let tlbrelo0_ = tlbrelo0::read();
     let tlbrelo1_ = tlbrelo1::read();
+
+    // update global trap context helper
+    GLOBAL_TRAP_CONTEXT_HELPER.lock().update(
+        ecode,
+        esubcode,
+        is,
+        badv_.vaddr(),
+        badi_.inst() as usize,
+        era_.raw(),
+    );
 
     let mut is_idle = false;
     if ecode == ECODE_GSPR && badi_.inst() == 0b0000_0110_0100_1000_1000_0000_0000_0000 {
