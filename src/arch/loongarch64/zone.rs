@@ -15,6 +15,7 @@
 //      Yulong Han <wheatfox17@icloud.com>
 //
 use crate::{
+    arch::trap::GLOBAL_TRAP_CONTEXT_HELPER,
     config::*,
     consts::PAGE_SIZE,
     device::virtio_trampoline::mmio_virtio_handler,
@@ -89,10 +90,7 @@ impl Zone {
         // 3. chip configuration
 
         info!("loongarch64: pt_init: add mmio handler for 0x1fe0_xxxx mmio region");
-        self.mmio_region_register(0x1fe0_0000, 0x3000, loongarch_generic_mmio_handler, PHY_TO_DMW_UNCACHED!(0x1fe0_0000));
-        
-        info!("loongarch64: pt_init: add mmio handler for 0x1f00_xxxx mmio region");
-        self.mmio_region_register(0x1000_0000, 0x1000, loongarch_generic_mmio_handler, PHY_TO_DMW_UNCACHED!(0x1000_0000));
+        self.mmio_region_register(0x1fe0_0000, 0x3000, loongarch_generic_mmio_handler, 0x1234);
 
         debug!("zone stage-2 memory set: {:#x?}", self.gpm);
         unsafe {
@@ -407,17 +405,6 @@ pub struct HvArchZoneConfig {
     pub dummy: usize,
 }
 
-impl Zone {
-    pub fn page_table_emergency(&mut self, vaddr: usize, size: usize) -> HvResult{
-        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-            vaddr as GuestPhysAddr,
-            vaddr as HostPhysAddr,
-            size as _,
-            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-        ))?;
-        self.gpm.delete(vaddr as GuestPhysAddr)
-    }
-}
 // mmio handlers
 // because when root and nonroot sharing the same physical interrupt controllers will cause the
 // irqs failed to reach nonroot which is booted after root's first init
@@ -478,13 +465,14 @@ static MMIO_ACCESS_STATS: Lazy<Mutex<MMIOAccessTracker>> =
 const COMPRESSION_THRESHOLD: u64 = 40;
 const LOG_INTERVAL: u64 = 10000;
 
-pub fn loongarch_generic_mmio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
+pub fn loongarch_generic_mmio_handler(mmio: &mut MMIOAccess, arg: usize) -> HvResult {
     // if in uart0 region 0x1fe0_0000-0x1fe0_0008, we don't print it
-    mmio_perform_access(base, mmio);
-
-    if (mmio.address + base) >= UART0_BASE_ADDR && (mmio.address + base) < UART0_END_ADDR {
+    if mmio.address >= offset(UART0_BASE_ADDR) && mmio.address < offset(UART0_END_ADDR) {
+        mmio_perform_access(BASE_ADDR, mmio);
         return Ok(());
     }
+
+    mmio_perform_access(BASE_ADDR, mmio);
 
     let key = MMIOAccessKey {
         offset: mmio.address,
@@ -499,13 +487,14 @@ pub fn loongarch_generic_mmio_handler(mmio: &mut MMIOAccess, base: usize) -> HvR
     let last_value = stats.last_value.load(Ordering::SeqCst);
     let is_compressed = stats.is_compressed.load(Ordering::SeqCst);
 
+    let trap_context_helper = GLOBAL_TRAP_CONTEXT_HELPER.lock();
+
     let msg = if count == 0 {
         // First access, always log
         format!(
-            "loongarch64: generic mmio handler#{:x} offset={:#x}, addr={:#x}, size={}, {} {:#x}",
-            base,
+            "loongarch64: generic mmio handler, zone_era={:#x}, offset={:#x}, size={}, {} {:#x}",
+            trap_context_helper.era,
             mmio.address,
-            base + mmio.address,
             mmio.size,
             if mmio.is_write { "W -> " } else { "R <- " },
             mmio.value
@@ -517,10 +506,9 @@ pub fn loongarch_generic_mmio_handler(mmio: &mut MMIOAccess, base: usize) -> HvR
         // Log every LOG_INTERVAL accesses
         if count % LOG_INTERVAL == 0 {
             format!(
-                "loongarch64: generic mmio handler#{:x} offset={:#x}, addr={:#x}, size={}, {} {:#x} (compressed, repeated {} times)",
-                base,
+                "loongarch64: generic mmio handler, zone_era={:#x}, offset={:#x}, size={}, {} {:#x} (compressed, repeated {} times)",
+                trap_context_helper.era,
                 mmio.address,
-                base + mmio.address,
                 mmio.size,
                 if mmio.is_write { "W -> " } else { "R <- " },
                 mmio.value,
@@ -532,10 +520,9 @@ pub fn loongarch_generic_mmio_handler(mmio: &mut MMIOAccess, base: usize) -> HvR
     } else if mmio.value as u64 != last_value {
         // Log if value changed
         format!(
-            "loongarch64: generic mmio handler#{:x} offset={:#x}, addr={:#x}, size={}, {} {:#x}",
-            base,
+            "loongarch64: generic mmio handler, zone_era={:#x}, offset={:#x}, size={}, {} {:#x}",
+            trap_context_helper.era,
             mmio.address,
-            base + mmio.address,
             mmio.size,
             if mmio.is_write { "W -> " } else { "R <- " },
             mmio.value
@@ -544,10 +531,21 @@ pub fn loongarch_generic_mmio_handler(mmio: &mut MMIOAccess, base: usize) -> HvR
         return Ok(());
     };
 
-    debug!("{}", msg);
+    warn!("{}", msg);
 
     stats.last_value.store(mmio.value as u64, Ordering::SeqCst);
 
     Ok(())
 }
 
+impl Zone {
+    pub fn page_table_emergency(&mut self, vaddr: usize, size: usize) -> HvResult {
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            vaddr as GuestPhysAddr,
+            vaddr as HostPhysAddr,
+            size as _,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ))?;
+        self.gpm.delete(vaddr as GuestPhysAddr)
+    }
+}
