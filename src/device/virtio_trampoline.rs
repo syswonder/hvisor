@@ -53,8 +53,8 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     // debug!("mmio virtio handler");
     let need_interrupt = if mmio.address == QUEUE_NOTIFY { 1 } else { 0 };
     if need_interrupt == 1 {
-        info!("notify !!!, cpu id is {}", this_cpu_id());
-        
+        //trace!("notify !!!, cpu id is {}", this_cpu_id());
+        ;
     }
     mmio.address += base;
     let mut dev = VIRTIO_BRIDGE.lock();

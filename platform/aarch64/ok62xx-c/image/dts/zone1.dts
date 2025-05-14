@@ -29,10 +29,10 @@
 	};
 	
 	firmware {
-		optee {
-			compatible = "linaro,optee-tz";
-			method = "smc";
-		};
+		// optee {
+		// 	compatible = "linaro,optee-tz";
+		// 	method = "smc";
+		// };
 		
 		// PSCI 是 ARM 定义的标准接口，用于管理多核处理器的电源状态
 		psci {
@@ -44,12 +44,12 @@
 	
 	memory@b0000000 {
 		device_type = "memory";
-		reg = <0x00 0xb0000000 0x00 0x20000000>;
+		reg = <0x00 0xb0000000 0x00 0x2f000000>;
 	};
 	
 	aliases {
 		serial2 = "serial@2800000";
-		serial3 = "serial@2810000";
+		// serial3 = "serial@2810000";
 	};
 	
 	// virtio blk

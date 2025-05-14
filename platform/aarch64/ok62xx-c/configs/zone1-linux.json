@@ -8,25 +8,19 @@
             "type": "ram",
             "physical_start": "0xb0000000",
             "virtual_start":  "0xb0000000",
-            "size": "0x20000000"
+            "size": "0x2f000000"
         },
         {
             "type": "io",
-            "physical_start": "0x1880000",
-            "virtual_start": "0x1880000",
-            "size": "0xC0000"
+            "physical_start": "0xf4000",
+            "virtual_start": "0xf4000",
+            "size": "0x1000"
         },
         {
             "type": "io",
             "physical_start": "0x2800000",
             "virtual_start": "0x2800000",
             "size": "0x20000"
-        },
-        {
-            "type": "io",
-            "physical_start": "0xfa00000",
-            "virtual_start":  "0xfa00000",
-            "size": "0x30000"
         },
         {
             "type": "io",

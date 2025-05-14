@@ -6,7 +6,7 @@
                 {
                     "zone0_ipa": "0xb0000000",
                     "zonex_ipa": "0xb0000000",
-                    "size": "0x20000000"
+                    "size": "0x2f000000"
                 }
             ],
             "devices": [
