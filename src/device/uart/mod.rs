@@ -25,6 +25,12 @@ mod imx_uart;
 #[cfg(all(feature = "imx_uart", target_arch = "aarch64"))]
 pub use imx_uart::{console_getchar, console_putchar};
 
+#[cfg(all(feature = "ok62xx_uart", target_arch = "aarch64"))]
+mod ok62xx_uart;
+#[cfg(all(feature = "ok62xx_uart", target_arch = "aarch64"))]
+pub use ok62xx_uart::{console_getchar, console_putchar};
+
+
 #[cfg(all(feature = "xuartps", target_arch = "aarch64"))]
 mod xuartps;
 #[cfg(all(feature = "xuartps", target_arch = "aarch64"))]

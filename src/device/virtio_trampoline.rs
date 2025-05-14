@@ -53,7 +53,8 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     // debug!("mmio virtio handler");
     let need_interrupt = if mmio.address == QUEUE_NOTIFY { 1 } else { 0 };
     if need_interrupt == 1 {
-        trace!("notify !!!, cpu id is {}", this_cpu_id());
+        info!("notify !!!, cpu id is {}", this_cpu_id());
+        
     }
     mmio.address += base;
     let mut dev = VIRTIO_BRIDGE.lock();
@@ -72,7 +73,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
         mmio.is_write,
         need_interrupt,
     );
-    // debug!("non root sends req: {:#x?}", hreq);
+    //info!("non root sends req: {:#x?}", hreq);
     let (cfg_flags, cfg_values) = unsafe {
         (
             core::slice::from_raw_parts(dev.get_cfg_flags(), MAX_CPU_NUM),
@@ -86,7 +87,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     // If req list is empty, send sgi to root linux to wake up virtio device.
     #[cfg(not(target_arch = "loongarch64"))]
     if dev.need_wakeup() {
-        debug!("need wakeup, sending ipi to wake up virtio device");
+        info!("need wakeup, sending ipi to wake up virtio device");
         let root_cpu = root_zone().read().cpu_set.first_cpu().unwrap();
         send_event(root_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP_VIRTIO_DEVICE);
     }

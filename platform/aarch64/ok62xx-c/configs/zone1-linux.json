@@ -1,0 +1,60 @@
+{
+    "arch": "arm64",
+    "name": "linux2",
+    "zone_id": 1,
+    "cpus": [2,3],
+    "memory_regions": [
+        {
+            "type": "ram",
+            "physical_start": "0xb0000000",
+            "virtual_start":  "0xb0000000",
+            "size": "0x20000000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x1880000",
+            "virtual_start": "0x1880000",
+            "size": "0xC0000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x2800000",
+            "virtual_start": "0x2800000",
+            "size": "0x20000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0xfa00000",
+            "virtual_start":  "0xfa00000",
+            "size": "0x30000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x44043000",
+            "virtual_start": "0x44043000",
+            "size": "0x1000"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0xa003c00",
+            "virtual_start":  "0xa003c00",
+            "size": "0x200"
+        }
+    ],
+    "interrupts": [0,1,7,78],
+    "ivc_configs": [],
+    "kernel_filepath": "./Image",
+    "dtb_filepath": "./OK6254-C-1.dtb",
+    "kernel_load_paddr": "0xb0400000",
+    "dtb_load_paddr":   "0xb0000000",
+    "entry_point":      "0xb0400000",
+    "arch_config": {
+        "gic_version": "v3",
+        "gicd_base": "0x1800000",
+        "gicd_size": "0x10000",
+        "gicr_base": "0x1880000",
+        "gicr_size": "0xc0000",
+        "gits_base": "0x1820000",
+        "gits_size": "0x10000"
+    }
+}

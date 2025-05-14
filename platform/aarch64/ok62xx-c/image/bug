@@ -1,0 +1,340 @@
+    0.000000] Booting Linux on physical CPU 0x0000000000 [0x410fd034]
+[    0.000000] Linux version 5.10.87 (root@ubuntu) (aarch64-none-linux-gnu-gcc (GNU Toolchain for the A-profile Architecture 9.2-2019.12 (arm-9.10)) 9.2.1 20191025, GNU ld (GNU Toolchain for the A-profile Architecture 9.2-2019.12 (arm-9.10)) 2.33.1.20191209) #8 SMP PREEMPT Thu Apr 3 10:16:37 CST 2025
+[    0.000000] Machine model: Forlinx AM62xx
+[    0.000000] earlycon: ns16550a0 at MMIO32 0x0000000002800000 (options '')
+[    0.000000] printk: bootconsole [ns16550a0] enabled
+[    0.000000] efi: UEFI not found.
+[    0.000000] Reserved memory: created DMA memory pool at 0x00000000a0000000, size 2 MiB
+[    0.000000] OF: reserved mem: initialized node r5f-dma-memory@a0000000, compatible id shared-dma-pool
+[    0.000000] Reserved memory: created DMA memory pool at 0x00000000a4000000, size 1 MiB
+[    0.000000] OF: reserved mem: initialized node m4f-dma-memory@a4000000, compatible id shared-dma-pool
+[    0.000000] Reserved memory: created DMA memory pool at 0x00000000a4100000, size 15 MiB
+[    0.000000] OF: reserved mem: initialized node m4f-memory@a4100000, compatible id shared-dma-pool
+[    0.000000] Zone ranges:
+[    0.000000]   DMA      [mem 0x0000000080000000-0x00000000ffffffff]
+[    0.000000]   DMA32    empty
+[    0.000000]   Normal   empty
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000080000000-0x000000009e77ffff]
+[    0.000000]   node   0: [mem 0x000000009e780000-0x00000000a01fffff]
+[    0.000000]   node   0: [mem 0x00000000a0200000-0x00000000a0ffffff]
+[    0.000000]   node   0: [mem 0x00000000a1000000-0x00000000a103ffff]
+[    0.000000]   node   0: [mem 0x00000000a1040000-0x00000000a3ffffff]
+[    0.000000]   node   0: [mem 0x00000000a4000000-0x00000000a4ffffff]
+[    0.000000]   node   0: [mem 0x00000000a5000000-0x00000000afffffff]
+[    0.000000]   node   0: [mem 0x00000000b0000000-0x00000000cfffffff]
+[    0.000000]   node   0: [mem 0x00000000d0000000-0x00000000ffffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000080000000-0x00000000ffffffff]
+[    0.000000] cma: Failed to reserve 512 MiB
+[    0.000000] psci: probing for conduit method from DT.
+[    0.000000] psci: PSCIv1.1 detected in firmware.
+[    0.000000] psci: Using standard PSCI v0.2 function IDs
+[    0.000000] psci: Trusted OS migration not required
+[    0.000000] psci: SMC Calling Convention v1.0
+[    0.000000] percpu: Embedded 2 pages/cpu s49880 r8192 d73000 u131072
+[    0.000000] Detected VIPT I-cache on CPU0
+[    0.000000] CPU features: detected: ARM erratum 845719
+[    0.000000] CPU features: detected: GIC system register CPU interface
+[    0.000000] Built 1 zonelists, mobility grouping off.  Total pages: 32736
+[    0.000000] Kernel command line: console=ttyS2,115200n8 eth0addr=56:e4:e9:b5:66:da earlycon=ns16550a,mmio32,0x02800000 root=PARTUUID=0fdd04ca-02 rw rootfstype=ext4 rootwait
+[    0.000000] Dentry cache hash table entries: 262144 (order: 5, 2097152 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 131072 (order: 4, 1048576 bytes, linear)
+[    0.000000] mem auto-init: stack:off, heap alloc:off, heap free:off
+[    0.000000] Memory: 1502400K/2097152K available (11392K kernel code, 1364K rwdata, 4544K rodata, 1984K init, 747K bss, 594752K reserved, 0K cma-reserved)
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=2, Nodes=1
+[    0.000000] rcu: Preemptible hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU event tracing is enabled.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=256 to nr_cpu_ids=2.
+[    0.000000] 	Trampoline variant of Tasks RCU enabled.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 25 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=2
+[    0.000000] NR_IRQS: 64, nr_irqs: 64, preallocated irqs: 0
+[    0.000000] GICv3: 256 SPIs implemented
+[    0.000000] GICv3: 0 Extended SPIs implemented
+[    0.000000] GICv3: Distributor has no Range Selector support
+[    0.000000] GICv3: 16 PPIs implemented
+[    0.000000] GICv3: CPU0: found redistributor 0 region 0:0x0000000001880000
+[    0.000000] ITS [mem 0x01820000-0x0182ffff]
+[    0.000000] GIC: enabling workaround for ITS: Socionext Synquacer pre-ITS
+[    0.000000] ITS@0x0000000001820000: allocated 1048576 Devices @d0800000 (flat, esz 8, psz 64K, shr 0)
+[    0.000000] GICv3: using LPI property table @0x00000000d00c0000
+[    0.000000] GICv3: CPU0: using allocated LPI pending table @0x00000000d00d0000
+[    0.000000] random: get_random_bytes called from start_kernel+0x31c/0x4c4 with crng_init=0
+[    0.000000] arch_timer: cp15 timer(s) running at 200.00MHz (virt).
+[    0.000000] clocksource: arch_sys_counter: mask: 0xffffffffffffff max_cycles: 0x2e2049d3e8, max_idle_ns: 440795210634 ns
+[    0.000005] sched_clock: 56 bits at 200MHz, resolution 5ns, wraps every 4398046511102ns
+[    0.008479] Console: colour dummy device 80x25
+[    0.013068] Calibrating delay loop (skipped), value calculated using timer frequency.. 400.00 BogoMIPS (lpj=800000)
+[    0.023751] pid_max: default: 32768 minimum: 301
+[    0.028546] LSM: Security Framework initializing
+[    0.033352] Mount-cache hash table entries: 8192 (order: 0, 65536 bytes, linear)
+[    0.040948] Mountpoint-cache hash table entries: 8192 (order: 0, 65536 bytes, linear)
+[    0.051133] rcu: Hierarchical SRCU implementation.
+[    0.056359] Platform MSI: msi-controller@1820000 domain created
+[    0.062670] PCI/MSI: /bus@f0000/interrupt-controller@1800000/msi-controller@1820000 domain created
+[    0.071911] EFI services will not be available.
+[    0.076830] smp: Bringing up secondary CPUs ...
+[INFO  0] (hvisor::arch::aarch64::trap:340) psci: try to wake up cpu 1
+[INFO  0] (hvisor::event:159) send_event: cpu_id: 1, ipi_int_id: 7, event_id: 0
+[INFO  1] (hvisor::event:114) cpu 1 wakeup virtio device
+[INFO  1] (hvisor::event:117) cpu 1 wakeup
+[INFO  1] (hvisor::arch::aarch64::cpu:170) cpu 1 started
+[    0.126349] Detected VIPT I-cache on CPU1
+[    0.126428] GICv3: CPU1: found redistributor 1 region 0:0x00000000018a0000
+[    0.126577] GICv3: CPU1: using allocated LPI pending table @0x00000000d00e0000
+[    0.126788] CPU1: Booted secondary processor 0x0000000001 [0x410fd034]
+[    0.126934] smp: Brought up 1 node, 2 CPUs
+[    0.156334] SMP: Total of 2 processors activated.
+[    0.161149] CPU features: detected: 32-bit EL0 Support
+[    0.166420] CPU features: detected: CRC32 instructions
+[    0.179293] CPU: All CPU(s) started at EL1
+[    0.183502] alternatives: patching kernel code
+[    0.189180] devtmpfs: initialized
+[    0.199133] KASLR disabled due to lack of seed
+[    0.203952] clocksource: jiffies: mask: 0xffffffff max_cycles: 0xffffffff, max_idle_ns: 7645041785100000 ns
+[    0.213928] futex hash table entries: 512 (order: -1, 32768 bytes, linear)
+[    0.221197] pinctrl core: initialized pinctrl subsystem
+[    0.227036] DMI not present or invalid.
+[    0.231563] NET: Registered protocol family 16
+[    0.236637] DMA: preallocated 128 KiB GFP_KERNEL pool for atomic allocations
+[    0.243902] DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA pool for atomic allocations
+[    0.251868] DMA: preallocated 128 KiB GFP_KERNEL|GFP_DMA32 pool for atomic allocations
+[    0.260440] thermal_sys: Registered thermal governor 'step_wise'
+[    0.260444] thermal_sys: Registered thermal governor 'power_allocator'
+[    0.267170] hw-breakpoint: found 6 breakpoint and 4 watchpoint registers.
+[    0.280860] ASID allocator initialised with 65536 entries
+[    0.311983] HugeTLB registered 16.0 GiB page size, pre-allocated 0 pages
+[    0.318861] HugeTLB registered 512 MiB page size, pre-allocated 0 pages
+[    0.325625] HugeTLB registered 2.00 MiB page size, pre-allocated 0 pages
+[    0.334360] cryptd: max_cpu_qlen set to 1000
+[    0.342526] k3-chipinfo 43000014.chipid: Family:AM62X rev:SR1.0 JTAGID[0x0bb7e02f] Detected
+[    0.351583] vcc_5v0: supplied by vcc_12v0
+[    0.356068] vcc_3v3: supplied by vcc_5v0
+[    0.360457] vdd_mmc1: supplied by vcc_3v3
+[    0.365577] iommu: Default domain type: Translated 
+[    0.370926] SCSI subsystem initialized
+[    0.374963] usbcore: registered new interface driver usbfs
+[    0.380607] usbcore: registered new interface driver hub
+[    0.386068] usbcore: registered new device driver usb
+[    0.391711] mc: Linux media interface: v0.10
+[    0.396101] videodev: Linux video capture interface: v2.00
+[    0.401792] pps_core: LinuxPPS API ver. 1 registered
+[    0.406870] pps_core: Software ver. 5.3.6 - Copyright 2005-2007 Rodolfo Giometti <giometti@linux.it>
+[    0.416220] PTP clock support registered
+[    0.420260] EDAC MC: Ver: 3.0.0
+[    0.424130] omap-mailbox 29000000.mailbox: omap mailbox rev 0x66fc9100
+[    0.431373] FPGA manager framework
+[    0.434946] Advanced Linux Sound Architecture Driver Initialized.
+[    0.442229] clocksource: Switched to clocksource arch_sys_counter
+[    0.448940] VFS: Disk quotas dquot_6.6.0
+[    0.453082] VFS: Dquot-cache hash table entries: 8192 (order 0, 65536 bytes)
+[    0.466519] NET: Registered protocol family 2
+[    0.471212] IP idents hash table entries: 32768 (order: 2, 262144 bytes, linear)
+[    0.480065] tcp_listen_portaddr_hash hash table entries: 4096 (order: 0, 65536 bytes, linear)
+[    0.488928] TCP established hash table entries: 16384 (order: 1, 131072 bytes, linear)
+[    0.497136] TCP bind hash table entries: 16384 (order: 2, 262144 bytes, linear)
+[    0.504864] TCP: Hash tables configured (established 16384 bind 16384)
+[    0.511741] UDP hash table entries: 2048 (order: 0, 65536 bytes, linear)
+[    0.518670] UDP-Lite hash table entries: 2048 (order: 0, 65536 bytes, linear)
+[    0.526177] NET: Registered protocol family 1
+[    0.531203] RPC: Registered named UNIX socket transport module.
+[    0.537283] RPC: Registered udp transport module.
+[    0.542118] RPC: Registered tcp transport module.
+[    0.546929] RPC: Registered tcp NFSv4.1 backchannel transport module.
+[    0.553527] PCI: CLS 0 bytes, default 64
+[    0.558420] hw perfevents: enabled with armv8_cortex_a53 PMU driver, 7 counters available
+[    0.571615] Initialise system trusted keyrings
+[    0.576407] workingset: timestamp_bits=46 max_order=15 bucket_order=0
+[    0.587254] squashfs: version 4.0 (2009/01/31) Phillip Lougher
+[    0.593886] NFS: Registering the id_resolver key type
+[    0.599096] Key type id_resolver registered
+[    0.603376] Key type id_legacy registered
+[    0.607530] nfs4filelayout_init: NFSv4 File Layout Driver Registering...
+[    0.614386] nfs4flexfilelayout_init: NFSv4 Flexfile Layout Driver Registering...
+[    0.621972] jffs2: version 2.2. (NAND) © 2001-2006 Red Hat, Inc.
+[    0.628566] 9p: Installing v9fs 9p2000 file system support
+[    0.671662] Key type asymmetric registered
+[    0.675862] Asymmetric key parser 'x509' registered
+[    0.680892] Block layer SCSI generic (bsg) driver version 0.4 loaded (major 242)
+[    0.688465] io scheduler mq-deadline registered
+[    0.693097] io scheduler kyber registered
+[    0.700017] pinctrl-single 4084000.pinctrl: 34 pins, size 136
+[    0.706340] pinctrl-single f4000.pinctrl: 171 pins, size 684
+[    0.720352] Serial: 8250/16550 driver, 16 ports, IRQ sharing enabled
+[    0.735846] brd: module loaded
+[    0.745567] loop: module loaded
+[    0.749215] esm 420000.esm: invalid format for forlinx,esm-pin, ret = -22
+[    0.756757] megasas: 07.714.04.00-rc1
+[    0.762912] libphy: Fixed MDIO Bus: probed
+[    0.768232] tun: Universal TUN/TAP device driver, 1.6
+[    0.773987] igbvf: Intel(R) Gigabit Virtual Function Network Driver
+[    0.780424] igbvf: Copyright (c) 2009 - 2012 Intel Corporation.
+[    0.786537] sky2: driver version 1.30
+[    0.791211] VFIO - User Level meta-driver version: 0.3
+[    0.797691] ehci_hcd: USB 2.0 'Enhanced' Host Controller (EHCI) Driver
+[    0.804429] ehci-pci: EHCI PCI platform driver
+[    0.809008] ehci-platform: EHCI generic platform driver
+[    0.814497] ohci_hcd: USB 1.1 'Open' Host Controller (OHCI) Driver
+[    0.820850] ohci-pci: OHCI PCI platform driver
+[    0.825419] ohci-platform: OHCI generic platform driver
+[    0.831247] usbcore: registered new interface driver usb-storage
+[    0.837701] i2c /dev entries driver
+[    0.842343] sdhci: Secure Digital Host Controller Interface driver
+[    0.848679] sdhci: Copyright(c) Pierre Ossman
+[    0.853643] sdhci-pltfm: SDHCI platform and OF driver helper
+[    0.860562] ledtrig-cpu: registered to indicate activity on CPUs
+[    0.867170] usbcore: registered new interface driver usbhid
+[    0.872901] usbhid: USB HID core driver
+[    0.877808] optee: probing for conduit method.
+[    0.882420] optee: revision 3.12
+[    0.883029] optee: initialized driver
+[    0.892077] NET: Registered protocol family 17
+[    0.896782] 9pnet: Installing 9P2000 support
+[    0.901210] Key type dns_resolver registered
+[    0.905796] Loading compiled-in X.509 certificates
+[    0.922517] ti-sci 44043000.dmsc: Loading FS Stub directly to ATCM with no wait
+[    0.930035] ti-sci 44043000.dmsc: ABI: 3.1 (firmware rev 0x0015 '21.5.1--w2022.07-am62x (Terrifi')
+[    0.948069] ti-sci 44043000.dmsc: Direct firmware load for ti-sysfw/ti-fs-stub-firmware-am62x-gp.signed.bin failed with error -2
+[    0.959989] load_fw: TISCI LPM firmware cannot be loaded, file missing.
+[    1.528715] davinci-mcasp 2b00000.mcasp: IRQ common not found
+[    1.578795] omap_i2c 4900000.i2c: bus 0 rev0.12 at 100 kHz
+[    1.588159] random: fast init done
+[    1.592647] omap_i2c 2b200000.i2c: bus 1 rev0.12 at 100 kHz
+[    1.600113] ov5645 2-003c: supply vdddo not found, using dummy regulator
+[    1.607217] ov5645 2-003c: supply vdda not found, using dummy regulator
+[    1.614021] ov5645 2-003c: supply vddd not found, using dummy regulator
+[    1.620831] ov5645 2-003c: cannot get enable gpio
+[    1.626476] omap_i2c 20010000.i2c: bus 2 rev0.12 at 400 kHz
+[    1.634315] omap_i2c 20020000.i2c: bus 3 rev0.12 at 400 kHz
+[    1.641435] omap_i2c 20030000.i2c: bus 4 rev0.12 at 100 kHz
+[    1.652992] ti-sci-intr 4210000.interrupt-controller: Interrupt Router 5 domain created
+[    1.666849] ti-sci-intr bus@f0000:interrupt-controller@a00000: Interrupt Router 3 domain created
+[    1.691921] ti-sci-inta 48000000.interrupt-controller: Interrupt Aggregator domain 28 created
+[    1.738835] ti-bcdma 485c0100.dma-controller: Number of rings: 82
+[    1.783456] ti-bcdma 485c0100.dma-controller: Channels: 48 (bchan: 18, tchan: 12, rchan: 18)
+[    1.794685] ti-pktdma 485c0000.dma-controller: Number of rings: 150
+[    1.961199] ti-pktdma 485c0000.dma-controller: Channels: 35 (tchan: 20, rchan: 15)
+[    1.971868] 4a00000.serial: ttyS1 at MMIO 0x4a00000 (irq = 15, base_baud = 3000000) is a 8250
+[    1.982163] 2b300000.serial: ttyS0 at MMIO 0x2b300000 (irq = 17, base_baud = 3000000) is a 8250
+[    1.992495] 2800000.serial: ttyS2 at MMIO 0x2800000 (irq = 20, base_baud = 3000000) is a 8250
+[    2.001269] printk: console [ttyS2] enabled
+[    2.001269] printk: console [ttyS2] enabled
+[    2.009715] printk: bootconsole [ns16550a0] disabled
+[    2.009715] printk: bootconsole [ns16550a0] disabled
+[    2.021107] 2810000.serial: ttyS3 at MMIO 0x2810000 (irq = 21, base_baud = 3000000) is a 8250
+[    2.030993] 2850000.serial: ttyS7 at MMIO 0x2850000 (irq = 22, base_baud = 3000000) is a 8250
+[    2.143785] spi spi0.0: setup: ignoring unsupported mode bits 200
+[    2.150164] spi-nor spi0.0: w25q128 (16384 Kbytes)
+[    2.165723] davinci_mdio 8000f00.mdio: Configuring MDIO in manual mode
+[    2.172502] am65-cpsw-nuss 8000000.ethernet: initializing am65 cpsw nuss version 0x6BA01103, cpsw version 0x6BA81103 Ports: 3 quirks:00000002
+[    2.231430] am65-cpsw-nuss 8000000.ethernet: set new flow-id-base 19
+[    2.264925] am65-cpsw-nuss 8000000.ethernet: Use random MAC address
+[    2.271213] am65-cpsw-nuss 8000000.ethernet: initialized cpsw ale version 1.5
+[    2.278340] am65-cpsw-nuss 8000000.ethernet: ALE Table size 512
+[    2.289009] am65-cpsw-nuss 8000000.ethernet: CPTS ver 0x4e8a010c, freq:500000000, add_val:1 pps:0
+[    2.372393] dwc3-ti f900000.dwc3-usb: error reading id-gpio property
+[    2.388705] xhci-hcd xhci-hcd.0.auto: xHCI Host Controller
+[    2.394264] xhci-hcd xhci-hcd.0.auto: new USB bus registered, assigned bus number 1
+[    2.402454] xhci-hcd xhci-hcd.0.auto: hcc params 0x0258fe6d hci version 0x110 quirks 0x0000000000010010
+[    2.411960] xhci-hcd xhci-hcd.0.auto: irq 251, io mem 0x31100000
+[    2.418228] usb usb1: New USB device found, idVendor=1d6b, idProduct=0002, bcdDevice= 5.10
+[    2.426483] usb usb1: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[    2.433697] usb usb1: Product: xHCI Host Controller
+[    2.438578] usb usb1: Manufacturer: Linux 5.10.87 xhci-hcd
+[    2.444057] usb usb1: SerialNumber: xhci-hcd.0.auto
+[    2.449401] hub 1-0:1.0: USB hub found
+[    2.453174] hub 1-0:1.0: 1 port detected
+[    2.457340] xhci-hcd xhci-hcd.0.auto: xHCI Host Controller
+[    2.462833] xhci-hcd xhci-hcd.0.auto: new USB bus registered, assigned bus number 2
+[    2.470493] xhci-hcd xhci-hcd.0.auto: Host supports USB 3.0 SuperSpeed
+[    2.477055] usb usb2: We don't know the algorithms for LPM for this host, disabling LPM.
+[    2.485267] usb usb2: New USB device found, idVendor=1d6b, idProduct=0003, bcdDevice= 5.10
+[    2.493522] usb usb2: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[    2.500735] usb usb2: Product: xHCI Host Controller
+[    2.505606] usb usb2: Manufacturer: Linux 5.10.87 xhci-hcd
+[    2.511089] usb usb2: SerialNumber: xhci-hcd.0.auto
+[    2.516320] hub 2-0:1.0: USB hub found
+[    2.520087] hub 2-0:1.0: config failed, hub doesn't have any ports! (err -19)
+[    2.560247] davinci-mcasp 2b00000.mcasp: IRQ common not found
+[    2.570418] mmc0: CQHCI version 5.10
+[    2.615405] mmc0: SDHCI controller on fa10000.mmc [fa10000.mmc] using ADMA 64-bit
+[    3.147650] genirq: Setting trigger mode 1 for irq 252 failed (irq_chip_set_type_parent+0x0/0x38)
+[    3.156634] genirq: Setting trigger mode 1 for irq 253 failed (irq_chip_set_type_parent+0x0/0x38)
+[    3.255364] genirq: Setting trigger mode 1 for irq 277 failed (irq_chip_set_type_parent+0x0/0x38)
+[    3.264322] genirq: Setting trigger mode 1 for irq 278 failed (irq_chip_set_type_parent+0x0/0x38)
+[    3.273352] genirq: Setting trigger mode 1 for irq 280 failed (irq_chip_set_type_parent+0x0/0x38)
+[    3.282283] genirq: Setting trigger mode 1 for irq 281 failed (irq_chip_set_type_parent+0x0/0x38)
+[    3.291214] genirq: Setting trigger mode 1 for irq 282 failed (irq_chip_set_type_parent+0x0/0x38)
+[    3.390033] genirq: Setting trigger mode 1 for irq 370 failed (irq_chip_set_type_parent+0x0/0x38)
+[    3.399044] genirq: Setting trigger mode 1 for irq 371 failed (irq_chip_set_type_parent+0x0/0x38)
+[    3.407976] genirq: Setting trigger mode 1 for irq 372 failed (irq_chip_set_type_parent+0x0/0x38)
+[    3.416906] genirq: Setting trigger mode 1 for irq 373 failed (irq_chip_set_type_parent+0x0/0x38)
+[    3.425847] genirq: Setting trigger mode 1 for irq 374 failed (irq_chip_set_type_parent+0x0/0x38)
+[    3.434779] genirq: Setting trigger mode 1 for irq 375 failed (irq_chip_set_type_parent+0x0/0x38)
+[    3.449398] ov5645 2-003c: supply vdddo not found, using dummy regulator
+[    3.456259] ov5645 2-003c: supply vdda not found, using dummy regulator
+[    3.462923] ov5645 2-003c: supply vddd not found, using dummy regulator
+[    4.546234] omap_i2c 20010000.i2c: controller timed out
+[    4.551476] ov5645 2-003c: ov5645_write_reg: write reg error -110: reg=3103, val=11
+[    4.559123] ov5645 2-003c: could not set init registers
+[    4.564350] ov5645 2-003c: could not power up OV5645
+[    4.569543] ov5645: probe of 2-003c failed with error -110
+[    4.575579] davinci_mdio 8000f00.mdio: Configuring MDIO in manual mode
+[    4.714238] davinci_mdio 8000f00.mdio: davinci mdio revision 9.7, bus freq 1000000
+[    4.721817] libphy: 8000f00.mdio: probed
+[    4.728775] davinci_mdio 8000f00.mdio: phy[1]: device 8000f00.mdio:01, driver unknown
+[    4.736625] davinci_mdio 8000f00.mdio: phy[2]: device 8000f00.mdio:02, driver unknown
+[    4.749195] dwc3-ti f900000.dwc3-usb: Unbalanced pm_runtime_enable!
+[    4.759198] debugfs: Directory 'pd:182' with parent 'pm_genpd' already present!
+[    4.767548] mmc1: CQHCI version 5.10
+[    4.812728] mmc1: SDHCI controller on fa00000.mmc [fa00000.mmc] using ADMA 64-bit
+[    4.866673] xhci-hcd xhci-hcd.1.auto: xHCI Host Controller
+[    4.872242] xhci-hcd xhci-hcd.1.auto: new USB bus registered, assigned bus number 3
+[    4.880423] xhci-hcd xhci-hcd.1.auto: hcc params 0x0258fe6d hci version 0x110 quirks 0x0000000000010010
+[    4.889955] xhci-hcd xhci-hcd.1.auto: irq 464, io mem 0x31000000
+[    4.896268] usb usb3: New USB device found, idVendor=1d6b, idProduct=0002, bcdDevice= 5.10
+[    4.904550] usb usb3: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[    4.911788] usb usb3: Product: xHCI Host Controller
+[    4.916710] usb usb3: Manufacturer: Linux 5.10.87 xhci-hcd
+[    4.922222] usb usb3: SerialNumber: xhci-hcd.1.auto
+[    4.927609] hub 3-0:1.0: USB hub found
+[    4.931425] hub 3-0:1.0: 1 port detected
+[    4.935624] xhci-hcd xhci-hcd.1.auto: xHCI Host Controller
+[    4.941141] xhci-hcd xhci-hcd.1.auto: new USB bus registered, assigned bus number 4
+[    4.948824] xhci-hcd xhci-hcd.1.auto: Host supports USB 3.0 SuperSpeed
+[    4.955403] usb usb4: We don't know the algorithms for LPM for this host, disabling LPM.
+[    4.963604] usb usb4: New USB device found, idVendor=1d6b, idProduct=0003, bcdDevice= 5.10
+[    4.971882] usb usb4: New USB device strings: Mfr=3, Product=2, SerialNumber=1
+[    4.979107] usb usb4: Product: xHCI Host Controller
+[    4.983991] usb usb4: Manufacturer: Linux 5.10.87 xhci-hcd
+[    4.989485] usb usb4: SerialNumber: xhci-hcd.1.auto
+[    4.994768] hub 4-0:1.0: USB hub found
+[    4.998567] hub 4-0:1.0: config failed, hub doesn't have any ports! (err -19)
+[    5.021617] ALSA device list:
+[    5.022100] mmc2: CQHCI version 5.10
+[    5.024603]   No soundcards found.
+[    5.064021] mmc2: SDHCI controller on fa20000.mmc [fa20000.mmc] using ADMA 64-bit
+[    5.072090] Waiting for root device PARTUUID=0fdd04ca-02...
+[    9.794252] xhci-hcd xhci-hcd.0.auto: Error while assigning device slot ID
+[    9.801143] xhci-hcd xhci-hcd.0.auto: Max number of devices this xHCI host supports is 64.
+[    9.809403] usb usb1-port1: couldn't allocate usb_device
+[   12.642220] debug sdhci_timeout_timer fa10000.mmc
+[   12.646913] mmc0: Timeout waiting for hardware cmd interrupt.4
+[   12.652731] mmc0: sdhci: ============ SDHCI REGISTER DUMP ===========
+[   12.659157] mmc0: sdhci: Sys addr:  0x00000000 | Version:  0x00001004
+[   12.665582] mmc0: sdhci: Blk size:  0x00000000 | Blk cnt:  0x00000000
+[   12.672006] mmc0: sdhci: Argument:  0x00000c00 | Trn mode: 0x00000000
+[   12.678431] mmc0: sdhci: Present:   0x01ff00f0 | Host ctl: 0x00000001
+[   12.684856] mmc0: sdhci: Power:     0x0000000f | Blk gap:  0x00000080
+[   12.691280] mmc0: sdhci: Wake-up:   0x00000000 | Clock:    0x0000fa07
+[   12.697704] mmc0: sdhci: Timeout:   0x00000000 | Int stat: 0x00018000
+[   12.704129] mmc0: sdhci: Int enab:  0x00ff0083 | Sig enab: 0x00ff0083
+[   12.710553] mmc0: sdhci: ACmd stat: 0x00000000 | Slot int: 0x00000001
+[   12.716977] mmc0: sdhci: Caps:      0x3decc801 | Caps_1:   0x18002407
+[   12.723402] mmc0: sdhci: Cmd:       0x0000341a | Max curr: 0x00000000
+[   12.729826] mmc0: sdhci: Resp[0]:   0x00000000 | Resp[1]:  0x00000000
+[   12.736250] mmc0: sdhci: Resp[2]:   0x00000000 | Resp[3]:  0x00000000
+[   12.742673] mmc0: sdhci: Host ctl2: 0x00000000
+[   12.747104] mmc0: sdhci: ADMA Err:  0x00000000 | ADMA Ptr: 0x0000000000000000
+[   12.754220] mmc0: sdhci: ============================================

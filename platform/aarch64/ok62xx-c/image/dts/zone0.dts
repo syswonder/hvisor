@@ -1,0 +1,246 @@
+/dts-v1/;
+
+/ {
+    model = "Forlinx AM62xx";
+    compatible = "forlinx,am625x\0ti,am625-sk\0ti,am625";
+    interrupt-parent = <0x01>;
+    #address-cells = <0x02>;
+    #size-cells = <0x02>;
+
+    /* 内存配置 */
+    memory@80000000 {
+        device_type = "memory";
+        reg = <0x00 0x80000000 0x00 0x80000000>;
+    };
+
+    /* CPU配置 */
+    cpus {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+
+		cpu-map {
+
+			cluster0 {
+				phandle = <0xb5>;
+
+				core0 {
+					cpu = <0x3f>;
+				};
+
+				core1 {
+					cpu = <0x40>;
+				};
+
+			};
+		};
+
+		cpu@0 {
+			compatible = "arm,cortex-a53";
+			reg = <0x00>;
+			device_type = "cpu";
+			enable-method = "psci";
+			i-cache-size = <0x8000>;
+			i-cache-line-size = <0x40>;
+			i-cache-sets = <0x100>;
+			d-cache-size = <0x8000>;
+			d-cache-line-size = <0x40>;
+			d-cache-sets = <0x80>;
+			next-level-cache = <0x43>;
+			phandle = <0x3f>;
+		};
+
+		cpu@1 {
+			compatible = "arm,cortex-a53";
+			reg = <0x01>;
+			device_type = "cpu";
+			enable-method = "psci";
+			i-cache-size = <0x8000>;
+			i-cache-line-size = <0x40>;
+			i-cache-sets = <0x100>;
+			d-cache-size = <0x8000>;
+			d-cache-line-size = <0x40>;
+			d-cache-sets = <0x80>;
+			next-level-cache = <0x43>;
+			phandle = <0x40>;
+		};
+	};
+
+
+    /* 中断控制器 */
+    interrupt-controller@1800000 {
+        compatible = "arm,gic-v3";
+        reg = <0x00 0x1800000 0x00 0x10000>,
+              <0x00 0x1880000 0x00 0xc0000>;
+        #interrupt-cells = <0x03>;
+        #size-cells = <0x02>;
+        #address-cells = <0x02>;
+        interrupt-controller;
+        interrupts = <0x01 0x09 0x04>;
+        phandle = <0x01>;
+
+        msi-controller@1820000 {
+            compatible = "arm,gic-v3-its";
+            reg = <0x00 0x1820000 0x00 0x10000>;
+            socionext,synquacer-pre-its = <0x1000000 0x400000>;
+            msi-controller;
+            #msi-cells = <0x01>;
+            phandle = <0x63>;
+        };
+    };
+
+    /* 定时器 */
+    timer-cl0-cpu0 {
+        compatible = "arm,armv8-timer";
+        interrupts = <0x01 0x0d 0x08>,
+                     <0x01 0x0e 0x08>,
+                     <0x01 0x0b 0x08>,
+                     <0x01 0x0a 0x08>;
+        phandle = <0x4e>;
+    };
+
+    dmsc@44043000 {
+        compatible = "ti,k2g-sci";
+        ti,host-id = <0x0c>;
+        mbox-names = "rx\0tx";
+        mboxes = <0x12 0x0c 0x12 0x0d>;
+        reg-names = "debug_messages";
+        reg = <0x00 0x44043000 0x00 0xfe0>;
+        ti,system-suspend-controller;
+        ti,ctx-memory-region = <0x13>;
+        phandle = <0x05>;
+
+        power-controller {
+            compatible = "ti,sci-pm-domain";
+            #power-domain-cells = <0x02>;
+            phandle = <0x02>;
+        };
+
+        clocks {
+            compatible = "ti,k2g-sci-clk";
+            #clock-cells = <0x02>;
+            phandle = <0x03>;
+        };
+
+        reset-controller {
+            compatible = "ti,sci-reset";
+            #reset-cells = <0x02>;
+            phandle = <0x08>;
+        };
+    };
+
+    /* 电源管理 */
+    psci {
+        compatible = "arm,psci-1.0";
+        method = "smc";
+        phandle = <0x4d>;
+    };
+
+    /* 保留内存 */
+    reserved-memory {
+        #address-cells = <0x02>;
+        #size-cells = <0x02>;
+        ranges;
+
+        /* Hypervisor保留区域 */
+        hvisor@90000000 {
+            reg = <0x00 0x90000000 0x00 0x10000000>;
+            no-map;
+        };
+    };
+
+    /* 串口配置 */
+    chosen {
+		stdout-path = "serial2:115200n8";
+		bootargs = "console=ttyS2,115200n8 earlycon=ns16550a,mmio32,0x02800000 root=PARTUUID=0fdd04ca-02 rw rootfstype=ext4 rootwait";
+	};
+
+    /* 主串口 */
+
+
+    // UART2
+    serial@2800000 {
+        compatible = "ti,am64-uart\0ti,am654-uart";
+        reg = <0x00 0x2800000 0x00 0x100>;       // 寄存器地址范围：0x2800000-0x28000FF
+        reg-shift = <0x02>;                     // 寄存器地址偏移量：2^2=4字节步进
+        reg-io-width = <0x04>;                  // 寄存器访问宽度：4字节
+        interrupts = <0x00 0xb2 0x04>;          // 中断号：GIC SPI 178 (0xb2=178)
+        clock-frequency = <0x2dc6c00>;           // 时钟频率：48MHz
+        current-speed = <0x1c200>;               // 波特率：115200
+        power-domains = <0x02 0x92 0x01>;
+        clocks = <0x03 0x92 0x00>;
+        clock-names = "fclk";
+        pinctrl-names = "default";
+        pinctrl-0 = <0x14>;
+        phandle = <0x6b>;
+        status = "okay";
+    };
+
+    serial@2810000 {
+        compatible = "ti,am64-uart\0ti,am654-uart";
+        reg = <0x00 0x2810000 0x00 0x100>;
+        reg-shift = <0x02>;
+        reg-io-width = <0x04>;
+        interrupts = <0x00 0xb3 0x04>;
+        clock-frequency = <0x2dc6c00>;
+        current-speed = <0x1c200>;
+        power-domains = <0x02 0x98 0x01>;
+        clocks = <0x03 0x98 0x00>;
+        clock-names = "fclk";
+        pinctrl-names = "default";
+        pinctrl-0 = <0x15>;
+        status = "okay";
+        phandle = <0x6c>;
+    };
+
+    
+
+    
+
+    /* HVISOR虚拟化设备 */
+    hvisor_virtio_device {
+        compatible = "hvisor";
+        interrupts = <0x00 0x20 0x01>;
+    };
+
+    /* 系统时钟 */
+    clocks {
+        #address-cells = <0x01>;
+        #size-cells = <0x00>;
+        
+        osc_25m: clock@0 {
+            compatible = "fixed-clock";
+            #clock-cells = <0x00>;
+            clock-frequency = <25000000>;
+        };
+    };
+
+    /* 引脚控制 */
+    pinctrl@f4000 {
+        compatible = "pinctrl-single";
+        reg = <0x00 0xf4000 0x00 0x2ac>;
+        #pinctrl-cells = <0x01>;
+        pinctrl-single,register-width = <0x20>;
+        pinctrl-single,function-mask = <0xffffffff>;
+        phandle = <0x68>;
+
+        main-uart0-pins-default {
+            pinctrl-single,pins = <0x1c8 0x50000 0x1cc 0x10000>;
+            phandle = <0x14>;
+        };
+
+        main-uart1-pins-default {
+            pinctrl-single,pins = <0x1ac 0x50002 0x1b0 0x10002>;
+            phandle = <0x15>;
+        };
+    };
+
+    /* MMC控制器 */
+    mmc@fa10000 {
+        compatible = "ti,am62-sdhci";
+        reg = <0x00 0xfa10000 0x00 0x260>;
+        interrupts = <0x00 0x85 0x04>;
+        clocks = <0x03 0x39 0x05>;
+        bus-width = <0x08>;
+        status = "okay";
+    };
+};
