@@ -751,6 +751,16 @@ pub fn extioi_dump() {
     info!("extioi_sr3={:#x}", CHIP_EXTIOI_STATUS.extioi_sr3.get());
 }
 
+pub fn extioi_dump_sr() -> String {
+    let mut sr = String::new();
+    // in one line, compact style
+    sr.push_str(format!("sr0={:#x},", CHIP_EXTIOI_STATUS.extioi_sr0.get()).as_str());
+    sr.push_str(format!("sr1={:#x},", CHIP_EXTIOI_STATUS.extioi_sr1.get()).as_str());
+    sr.push_str(format!("sr2={:#x},", CHIP_EXTIOI_STATUS.extioi_sr2.get()).as_str());
+    sr.push_str(format!("sr3={:#x}", CHIP_EXTIOI_STATUS.extioi_sr3.get()).as_str());
+    sr
+}
+
 /******************************************** */
 /*             PCI STUFFS :)                  */
 /******************************************** */

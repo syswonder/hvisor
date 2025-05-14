@@ -14,17 +14,16 @@
 // Authors:
 //      Yulong Han <wheatfox17@icloud.com>
 //
+
 use super::register::*;
 use super::zone::ZoneContext;
 use crate::arch::cpu::this_cpu_id;
+use crate::arch::ipi::*;
 use crate::device::irqchip::inject_irq;
-use crate::event::check_events;
-use crate::event::dump_cpu_events;
-use crate::event::dump_events;
-use crate::hypercall::SGI_IPI_ID;
-use crate::memory::addr;
-use crate::memory::mmio_handle_access;
-use crate::memory::MMIOAccess;
+use crate::device::irqchip::ls7a2000::chip::*;
+use crate::event::{check_events, dump_cpu_events, dump_events};
+use crate::hypercall::{SGI_IPI_ID, *};
+use crate::memory::{addr, mmio_handle_access, MMIOAccess};
 use crate::percpu::this_cpu_data;
 use crate::zone::Zone;
 use crate::PHY_TO_DMW_UNCACHED;
@@ -606,10 +605,12 @@ pub fn _vcpu_return(ctx: usize) {
     gcfg::set_top(false);
     gcfg::set_tohu(false);
     gcfg::set_toci(0x2);
+
     // when booting linux, linux is waiting for a HWI, but it never really comes
     // to guest vm, in JTAG it's already in host CSR: ESTATE=0000000000000004,which is HWI0(UART...)
     // so we need to relay host HWI to guest - wheatfox 2024.4.15
-    gintc::set_hwip(0xff); // HWI7-HWI0
+
+    // gintc::set_hwip(0xff); // HWI7-HWI0
 
     // Enable interrupt
     prmd::set_pie(true);
@@ -1220,10 +1221,17 @@ fn imm12toi64(imm12: usize) -> isize {
     imm12 >> 52
 }
 
-use crate::arch::ipi::*;
 const INT_IPI: usize = 12;
 const IPI_BIT: usize = 1 << 12;
 const TIMER_BIT: usize = 1 << 11;
+const HWI0: usize = 1 << 2;
+const HWI1: usize = 1 << 3;
+const HWI2: usize = 1 << 4;
+const HWI3: usize = 1 << 5;
+const HWI4: usize = 1 << 6;
+const HWI5: usize = 1 << 7;
+const HWI6: usize = 1 << 8;
+const HWI7: usize = 1 << 9;
 
 /// handle loongarch64 interrupts here
 fn handle_interrupt(is: usize) {
@@ -1251,6 +1259,13 @@ fn handle_interrupt(is: usize) {
             loongArch64::register::ticlr::clear_timer_interrupt();
             crate::device::irqchip::ls7a2000::clear_hwi_injected_irq();
         }
+        // if in HWI range, we log it and maybe inject it to guest on this or other cpu
+        _ if is & (HWI0 | HWI1 | HWI2 | HWI3 | HWI4 | HWI5 | HWI6 | HWI7) != 0 => {
+            info!("HWI interrupt, status = {:#x}", is);
+            // dump eiointc status
+            let sr = extioi_dump_sr();
+            info!("extioi status: {}", sr);
+        }
         _ => {
             info!("not handled interrupt, status = {:#x}", is);
         }
@@ -1268,7 +1283,6 @@ fn handle_hvc(ctx: &mut ZoneContext) {
         "HVC exception, HVC call code: {:#x}, arg0: {:#x}, arg1: {:#x}",
         code, arg0, arg1
     );
-    use crate::hypercall::*;
     let cpu_data = this_cpu_data();
     let res = match HyperCall::new(cpu_data).hypercall(code as _, arg0 as _, arg1 as _) {
         Ok(ret) => ret as _,
