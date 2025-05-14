@@ -507,7 +507,7 @@ fn handle_extioi_mmio(mmio: &mut MMIOAccess, base_addr: usize, size: usize) -> H
         }
     }
 
-    let base_ioi_number = mmio.address - base_addr;
+    let base_ioi_number = mmio.address - offset(base_addr);
     for i in 0..mmio.size {
         let target_ioi_number = base_ioi_number + i;
         if target_ioi_number >= size {
