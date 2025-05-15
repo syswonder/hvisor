@@ -454,6 +454,8 @@ const UART0_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_01e0);
 const UART0_SIZE: usize = 0x8;
 const EXTIOI_MAP_CORE_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_1c00);
 const EXTIOI_MAP_CORE_SIZE: usize = 0x100;
+const EXTIOI_SR_CORE_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_1800);
+const EXTIOI_SR_CORE_SIZE: usize = 0x400; // core0 0x1800-0x18ff, core1 0x1900-0x19ff, core2 0x1a00-0x1aff, core3 0x1b00-0x1bff
 
 pub fn offset(addr: usize) -> usize {
     addr - BASE_ADDR
@@ -470,7 +472,21 @@ fn handle_uart_mmio(mmio: &mut MMIOAccess, base_addr: usize) -> HvResult {
     Ok(())
 }
 
-fn handle_extioi_mmio(mmio: &mut MMIOAccess, base_addr: usize, size: usize) -> HvResult {
+fn handle_extioi_status_mmio(mmio: &mut MMIOAccess, base_addr: usize, size: usize) -> HvResult {
+    // write 0 to clear, so all SR regs are RW
+    // since nonroot runs on cpu2(for example), but it still thinks it's on cpu0, and read SR regs from cpu0
+    // we need to return the correct SR regs to nonroot according to this cpu id
+    let this_cpu_id = this_cpu_id();
+    let target_cpu_sr_start = EXTIOI_SR_CORE_BASE + this_cpu_id * 0x100;
+    let guest_fake_cpu_id = (mmio.address - offset(EXTIOI_SR_CORE_BASE)) / 0x100;
+    let guest_cpu_sr_start = EXTIOI_SR_CORE_BASE + guest_fake_cpu_id * 0x100;
+    let compensation_offset = target_cpu_sr_start - guest_cpu_sr_start;
+    mmio.address += compensation_offset; // since inside each cpu's SR regs region, the "inner offset" should be retained!
+    mmio_perform_access(base_addr, mmio);
+    Ok(())
+}
+
+fn handle_extioi_mapping_mmio(mmio: &mut MMIOAccess, base_addr: usize, size: usize) -> HvResult {
     if !mmio.is_write {
         error!("should not happen, extioi core regs read makes no sense");
         return hv_result_err!(EIO, "extioi core regs read makes no sense");
@@ -515,8 +531,10 @@ fn handle_extioi_mmio(mmio: &mut MMIOAccess, base_addr: usize, size: usize) -> H
             return hv_result_err!(EIO, "wrong ioi number when writing extioi core regs");
         }
         let target_ioi_write_value = vecs[i];
-        let target_ioi_node_selection = target_ioi_write_value & 0xf;
-        let target_ioi_irq_target = target_ioi_write_value & 0xf0;
+        // caution: high 4 bits are node selection, low 4 bits are irq target cpu
+        // we don't change the node selection here - wheatfox
+        let target_ioi_node_selection = target_ioi_write_value & 0xf0;
+        let target_ioi_irq_target = target_ioi_write_value & 0xf;
         let this_cpu_id = this_cpu_id();
         warn!(
             "found extioi[{}], node_selection={}, irq_target={}, changed cpu routing to {}",
@@ -585,7 +603,7 @@ fn handle_mmio_stats(mmio: &mut MMIOAccess) {
     };
 
     if !msg.is_empty() {
-        warn!("{}", msg);
+        info!("{}", msg);
     }
 
     stats.last_value.store(mmio.value as u64, Ordering::SeqCst);
@@ -597,11 +615,18 @@ pub fn loongarch_generic_mmio_handler(mmio: &mut MMIOAccess, arg: usize) -> HvRe
         return handle_uart_mmio(mmio, BASE_ADDR);
     }
 
-    handle_mmio_stats(mmio);
+    let ret;
 
     if is_in_mmio_range!(mmio.address, EXTIOI_MAP_CORE_BASE, EXTIOI_MAP_CORE_SIZE) {
-        return handle_extioi_mmio(mmio, EXTIOI_MAP_CORE_BASE, EXTIOI_MAP_CORE_SIZE);
+        ret = handle_extioi_mapping_mmio(mmio, EXTIOI_MAP_CORE_BASE, EXTIOI_MAP_CORE_SIZE);
+    } else if is_in_mmio_range!(mmio.address, EXTIOI_SR_CORE_BASE, EXTIOI_SR_CORE_SIZE) {
+        ret = handle_extioi_status_mmio(mmio, EXTIOI_SR_CORE_BASE, EXTIOI_SR_CORE_SIZE);
+    } else {
+        ret = handle_generic_mmio(mmio, BASE_ADDR);
     }
 
-    handle_generic_mmio(mmio, BASE_ADDR)
+    // since our mmio can be altered inside the handler, we update the stats here
+    handle_mmio_stats(mmio);
+
+    ret
 }

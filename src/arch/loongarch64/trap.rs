@@ -610,7 +610,7 @@ pub fn _vcpu_return(ctx: usize) {
     // to guest vm, in JTAG it's already in host CSR: ESTATE=0000000000000004,which is HWI0(UART...)
     // so we need to relay host HWI to guest - wheatfox 2024.4.15
 
-    // gintc::set_hwip(0xff); // HWI7-HWI0
+    gintc::set_hwip(0xff); // HWI7-HWI0 pass to guest
 
     // Enable interrupt
     prmd::set_pie(true);
@@ -1235,41 +1235,54 @@ const HWI7: usize = 1 << 9;
 
 /// handle loongarch64 interrupts here
 fn handle_interrupt(is: usize) {
-    match is {
-        _ if is & IPI_BIT != 0 => {
-            let ipi_status = get_ipi_status(this_cpu_id());
-            debug!("ipi interrupt, status = {:#x}", ipi_status);
-            // handle IPI
-            if ipi_status == SGI_IPI_ID as _ {
-                // 0x7 is a SGI in hvisor, but we still need ot know which event it is
-                let events = dump_cpu_events(this_cpu_id());
-                debug!("this cpu's events: {:?}", events);
+    // Handle IPI interrupts
+    if is & IPI_BIT != 0 {
+        let cpu_id = this_cpu_id();
+        let ipi_status = get_ipi_status(cpu_id);
+        warn!(
+            "CPU {} received IPI interrupt, status = {:#x}",
+            cpu_id, ipi_status
+        );
+
+        match ipi_status {
+            status if status == SGI_IPI_ID as _ => {
+                let events = dump_cpu_events(cpu_id);
+                debug!("CPU {} events: {:?}", cpu_id, events);
                 while check_events() {}
-                reset_ipi(this_cpu_id());
-            } else if ipi_status == 0x8 {
-                debug!("not handled IPI status {:#x} for hvisor!", ipi_status);
-                reset_ipi(this_cpu_id());
-            } else {
-                warn!("ignored IPI status {:#x}", ipi_status);
-                reset_ipi(this_cpu_id());
+            }
+            status if status == 0x8 => {
+                debug!("CPU {} received unhandled IPI status {:#x}", cpu_id, status);
+            }
+            status => {
+                warn!("CPU {} received unknown IPI status {:#x}", cpu_id, status);
             }
         }
-        _ if is & TIMER_BIT != 0 => {
-            warn!("timer interrupt, clear timer interrupt");
-            loongArch64::register::ticlr::clear_timer_interrupt();
-            crate::device::irqchip::ls7a2000::clear_hwi_injected_irq();
-        }
-        // if in HWI range, we log it and maybe inject it to guest on this or other cpu
-        _ if is & (HWI0 | HWI1 | HWI2 | HWI3 | HWI4 | HWI5 | HWI6 | HWI7) != 0 => {
-            info!("HWI interrupt, status = {:#x}", is);
-            // dump eiointc status
-            let sr = extioi_dump_sr();
-            info!("extioi status: {}", sr);
-        }
-        _ => {
-            info!("not handled interrupt, status = {:#x}", is);
-        }
+        reset_ipi(cpu_id);
+        return;
     }
+
+    // Handle timer interrupts
+    if is & TIMER_BIT != 0 {
+        warn!("Timer interrupt received");
+        loongArch64::register::ticlr::clear_timer_interrupt();
+        crate::device::irqchip::ls7a2000::clear_hwi_injected_irq();
+        return;
+    }
+
+    // Handle hardware interrupts (HWI)
+    let hwi_mask = HWI0 | HWI1 | HWI2 | HWI3 | HWI4 | HWI5 | HWI6 | HWI7;
+    if is & hwi_mask != 0 {
+        let cpu_id = this_cpu_id();
+        let sr = extioi_dump_sr();
+        warn!(
+            "CPU {} received HWI interrupt, status = {:#x}, extioi status: {}",
+            cpu_id, is, sr
+        );
+        return;
+    }
+
+    // Handle unknown interrupts
+    error!("Received unhandled interrupt, status = {:#x}", is);
 }
 
 /// hypercall handler
