@@ -184,12 +184,12 @@ impl Zone {
             }
         }
 
-        // if self.id == 0 {
+        if self.id == 0 {
             self.root_pci_init(pci_config, hv_addr_prefix, loong_ht_prefix);
-        // } else {
-            // self.virtual_pci_mmio_init(pci_config, hv_addr_prefix, loong_ht_prefix);
-        // }
-        // self.virtual_pci_device_init(pci_config);
+        } else {
+            self.virtual_pci_mmio_init(pci_config, hv_addr_prefix, loong_ht_prefix);
+        }
+        self.virtual_pci_device_init(pci_config);
     }
 
     pub fn root_pci_init(
@@ -200,21 +200,20 @@ impl Zone {
     ) {
         // Virtual ECAM
 
-        // self.mmio_region_register(
-        //     pci_config.ecam_base as _,
-        //     pci_config.ecam_size as _,
-        //     mmio_pci_handler,
-        //     (pci_config.ecam_base + hv_addr_prefix + loong_ht_prefix) as _,
-        // );
+        self.mmio_region_register(
+            pci_config.ecam_base as _,
+            pci_config.ecam_size as _,
+            mmio_pci_handler,
+            (pci_config.ecam_base + hv_addr_prefix + loong_ht_prefix) as _,
+        );
 
-        self.gpm
-                .insert(MemoryRegion::new_with_offset_mapper(
-                    pci_config.ecam_base as GuestPhysAddr,
-                    pci_config.ecam_base as _,
-                    pci_config.ecam_size as _,
-                    MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-                ))
-                .ok();
+        // self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+        //             pci_config.ecam_base as GuestPhysAddr,
+        //             pci_config.ecam_base as _,
+        //             pci_config.ecam_size as _,
+        //             MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        //         ))
+        //         .ok();
 
         info!(
             "pci handler args : {:#x}",
@@ -253,15 +252,6 @@ impl Zone {
                 ))
                 .ok();
         }
-        // if pci_config.mem64_size != 0 {
-        //     self.mmio_region_register(
-        //         pci_config.mem64_base as _,
-        //         pci_config.mem64_size as _,
-        //         mmio_pci_bar_handler,
-        //         (pci_config.mem64_base + 0x8000_0000_0000_0000) as _,
-        //     );
-        //     info!("pci bar handler args : {:#x}", pci_config.mem64_base + 0x8000_0000_0000_0000);
-        // }
     }
 
     //probe pci mmio
@@ -373,6 +363,7 @@ pub fn mmio_pci_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     // return Ok(());
     let zone = this_zone();
     let mut binding = zone.write();
+    let zone_id = binding.id;
 
     let reg_addr = extract_reg_addr(mmio.address);
     let bdf_shift = get_bdf_shift();
@@ -415,7 +406,7 @@ pub fn mmio_pci_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
                             .unwrap()
                     }
                 };
-                pdev.phantom_mmio_handler(mmio, base)
+                pdev.phantom_mmio_handler(mmio, base, zone_id)
             }
         }
     }

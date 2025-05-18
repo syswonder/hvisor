@@ -1,4 +1,4 @@
-use core::ptr;
+use core::{ptr, usize};
 
 use alloc::collections::btree_map::BTreeMap;
 
@@ -209,14 +209,14 @@ impl PhantomCfg {
         self.status = val;
     }
 
-    pub fn phantom_mmio_handler(&mut self, mmio: &mut MMIOAccess, base: usize) -> HvResult {
+    pub fn phantom_mmio_handler(&mut self, mmio: &mut MMIOAccess, base: usize, zone_id: usize) -> HvResult {
         match self.cfg_type {
-            PhantomCfgType::ENDPOINT => self.phantom_ep_handler(mmio, base),
-            PhantomCfgType::BRIDGE => self.phantom_bridge_handler(mmio, base),
+            PhantomCfgType::ENDPOINT => self.phantom_ep_handler(mmio, base, zone_id),
+            PhantomCfgType::BRIDGE => self.phantom_bridge_handler(mmio, base, zone_id),
         }
     }
 
-    fn phantom_ep_handler(&mut self, mmio: &mut MMIOAccess, base: usize) -> HvResult {
+    fn phantom_ep_handler(&mut self, mmio: &mut MMIOAccess, base: usize, zone_id: usize) -> HvResult {
         let reg_addr = extract_reg_addr(mmio.address);
         match reg_addr {
             0 => {
@@ -264,7 +264,7 @@ impl PhantomCfg {
                 }
             }
             CFG_BAR1 => {
-                if this_zone_id() == 0{
+                if zone_id == 0{
                     mmio_perform_access(base, mmio);
                 }
                 if mmio.is_write {
@@ -274,7 +274,7 @@ impl PhantomCfg {
                 }
             }
             CFG_BAR2 => {
-                if this_zone_id() == 0{
+                if zone_id == 0{
                     mmio_perform_access(base, mmio);
                 }
                 if mmio.is_write {
@@ -284,7 +284,7 @@ impl PhantomCfg {
                 }
             }
             CFG_BAR3 => {
-                if this_zone_id() == 0{
+                if zone_id == 0{
                     mmio_perform_access(base, mmio);
                 }
                 if mmio.is_write {
@@ -294,7 +294,7 @@ impl PhantomCfg {
                 }
             }
             CFG_BAR4 => {
-                if this_zone_id() == 0{
+                if zone_id == 0{
                     mmio_perform_access(base, mmio);
                 }
                 if mmio.is_write {
@@ -304,7 +304,7 @@ impl PhantomCfg {
                 }
             }
             CFG_BAR5 => {
-                if this_zone_id() == 0{
+                if zone_id == 0{
                     mmio_perform_access(base, mmio);
                 }
                 if mmio.is_write {
@@ -321,7 +321,7 @@ impl PhantomCfg {
         Ok(())
     }
 
-    fn phantom_bridge_handler(&mut self, mmio: &mut MMIOAccess, base: usize) -> HvResult {
+    fn phantom_bridge_handler(&mut self, mmio: &mut MMIOAccess, base: usize, _zone_id: usize) -> HvResult {
         let reg_addr = extract_reg_addr(mmio.address);
         match reg_addr {
             0 => {
