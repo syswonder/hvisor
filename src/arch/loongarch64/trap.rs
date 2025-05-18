@@ -14,17 +14,16 @@
 // Authors:
 //      Yulong Han <wheatfox17@icloud.com>
 //
+
 use super::register::*;
 use super::zone::ZoneContext;
 use crate::arch::cpu::this_cpu_id;
+use crate::arch::ipi::*;
 use crate::device::irqchip::inject_irq;
-use crate::event::check_events;
-use crate::event::dump_cpu_events;
-use crate::event::dump_events;
-use crate::hypercall::SGI_IPI_ID;
-use crate::memory::addr;
-use crate::memory::mmio_handle_access;
-use crate::memory::MMIOAccess;
+use crate::device::irqchip::ls7a2000::chip::*;
+use crate::event::{check_events, dump_cpu_events, dump_events};
+use crate::hypercall::{SGI_IPI_ID, *};
+use crate::memory::{addr, mmio_handle_access, MMIOAccess};
 use crate::percpu::this_cpu_data;
 use crate::zone::Zone;
 use crate::PHY_TO_DMW_UNCACHED;
@@ -606,10 +605,12 @@ pub fn _vcpu_return(ctx: usize) {
     gcfg::set_top(false);
     gcfg::set_tohu(false);
     gcfg::set_toci(0x2);
+
     // when booting linux, linux is waiting for a HWI, but it never really comes
     // to guest vm, in JTAG it's already in host CSR: ESTATE=0000000000000004,which is HWI0(UART...)
     // so we need to relay host HWI to guest - wheatfox 2024.4.15
-    gintc::set_hwip(0xff); // HWI7-HWI0
+
+    gintc::set_hwip(0xff); // HWI7-HWI0 pass to guest
 
     // Enable interrupt
     prmd::set_pie(true);
@@ -1220,41 +1221,68 @@ fn imm12toi64(imm12: usize) -> isize {
     imm12 >> 52
 }
 
-use crate::arch::ipi::*;
 const INT_IPI: usize = 12;
 const IPI_BIT: usize = 1 << 12;
 const TIMER_BIT: usize = 1 << 11;
+const HWI0: usize = 1 << 2;
+const HWI1: usize = 1 << 3;
+const HWI2: usize = 1 << 4;
+const HWI3: usize = 1 << 5;
+const HWI4: usize = 1 << 6;
+const HWI5: usize = 1 << 7;
+const HWI6: usize = 1 << 8;
+const HWI7: usize = 1 << 9;
 
 /// handle loongarch64 interrupts here
 fn handle_interrupt(is: usize) {
-    match is {
-        _ if is & IPI_BIT != 0 => {
-            let ipi_status = get_ipi_status(this_cpu_id());
-            debug!("ipi interrupt, status = {:#x}", ipi_status);
-            // handle IPI
-            if ipi_status == SGI_IPI_ID as _ {
-                // 0x7 is a SGI in hvisor, but we still need ot know which event it is
-                let events = dump_cpu_events(this_cpu_id());
-                debug!("this cpu's events: {:?}", events);
+    // Handle IPI interrupts
+    if is & IPI_BIT != 0 {
+        let cpu_id = this_cpu_id();
+        let ipi_status = get_ipi_status(cpu_id);
+        warn!(
+            "CPU {} received IPI interrupt, status = {:#x}",
+            cpu_id, ipi_status
+        );
+
+        match ipi_status {
+            status if status == SGI_IPI_ID as _ => {
+                let events = dump_cpu_events(cpu_id);
+                debug!("CPU {} events: {:?}", cpu_id, events);
                 while check_events() {}
-                reset_ipi(this_cpu_id());
-            } else if ipi_status == 0x8 {
-                debug!("not handled IPI status {:#x} for hvisor!", ipi_status);
-                reset_ipi(this_cpu_id());
-            } else {
-                warn!("ignored IPI status {:#x}", ipi_status);
-                reset_ipi(this_cpu_id());
+            }
+            status if status == 0x8 => {
+                debug!("CPU {} received unhandled IPI status {:#x}", cpu_id, status);
+            }
+            status => {
+                warn!("CPU {} received unknown IPI status {:#x}", cpu_id, status);
             }
         }
-        _ if is & TIMER_BIT != 0 => {
-            warn!("timer interrupt, clear timer interrupt");
-            loongArch64::register::ticlr::clear_timer_interrupt();
-            crate::device::irqchip::ls7a2000::clear_hwi_injected_irq();
-        }
-        _ => {
-            info!("not handled interrupt, status = {:#x}", is);
-        }
+        reset_ipi(cpu_id);
+        return;
     }
+
+    // Handle timer interrupts
+    if is & TIMER_BIT != 0 {
+        warn!("Timer interrupt received");
+        loongArch64::register::ticlr::clear_timer_interrupt();
+        crate::device::irqchip::ls7a2000::clear_hwi_injected_irq();
+        return;
+    }
+
+    // Handle hardware interrupts (HWI)
+    let hwi_mask = HWI0 | HWI1 | HWI2 | HWI3 | HWI4 | HWI5 | HWI6 | HWI7;
+    if is & hwi_mask != 0 {
+        let cpu_id = this_cpu_id();
+        let sr = extioi_dump_sr();
+        warn!(
+            "CPU {} received HWI interrupt, status = {:#x}, extioi status: {}",
+            cpu_id, is, sr
+        );
+        return;
+    }
+
+    // Handle unknown interrupts
+    error!("Received unhandled interrupt, status = {:#x}", is);
 }
 
 /// hypercall handler
@@ -1268,7 +1296,6 @@ fn handle_hvc(ctx: &mut ZoneContext) {
         "HVC exception, HVC call code: {:#x}, arg0: {:#x}, arg1: {:#x}",
         code, arg0, arg1
     );
-    use crate::hypercall::*;
     let cpu_data = this_cpu_data();
     let res = match HyperCall::new(cpu_data).hypercall(code as _, arg0 as _, arg1 as _) {
         Ok(ret) => ret as _,

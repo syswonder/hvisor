@@ -15,11 +15,11 @@
 //      Yulong Han <wheatfox17@icloud.com>
 //
 use crate::{
-    arch::trap::GLOBAL_TRAP_CONTEXT_HELPER,
+    arch::{cpu::this_cpu_id, trap::GLOBAL_TRAP_CONTEXT_HELPER},
     config::*,
     consts::PAGE_SIZE,
     device::virtio_trampoline::mmio_virtio_handler,
-    error::HvResult,
+    error::{HvError, HvResult},
     memory::{
         addr::{align_down, align_up},
         mmio_generic_handler, mmio_perform_access, GuestPhysAddr, HostPhysAddr, MMIOAccess,
@@ -30,9 +30,10 @@ use crate::{
 };
 use alloc::boxed::Box;
 use alloc::collections::BTreeMap;
+use alloc::string::String;
 use alloc::vec::Vec;
-use core::arch::asm;
 use core::sync::atomic::{fence, AtomicU64, Ordering};
+use core::{arch::asm, ptr::write_volatile};
 use spin::lazy::Lazy;
 use spin::Mutex;
 
@@ -373,10 +374,7 @@ impl LoongArch64ZoneContext {
         info!("gcsr_llbctl: {:#x}", self.gcsr_llbctl);
         info!("gcsr_tlbrentry: {:#x}", self.gcsr_tlbrentry);
         info!("gcsr_tlbrbadv: {:#x}", self.gcsr_tlbrbadv);
-        info!("gcsr_tlbrera: {:#x}", self.gcsr_tlbrera); // mmio handlers
-                                                         // because when root and nonroot sharing the same physical interrupt controllers will cause the
-                                                         // irqs failed to reach nonroot which is booted after root's first init
-                                                         // so we need to trap and trace the mmio access to the 0x1fe0_xxxx region and arbitrate the access
+        info!("gcsr_tlbrera: {:#x}", self.gcsr_tlbrera);
         info!("gcsr_tlbrsave: {:#x}", self.gcsr_tlbrsave);
         info!("gcsr_tlbrelo0: {:#x}", self.gcsr_tlbrelo0);
         info!("gcsr_tlbrelo1: {:#x}", self.gcsr_tlbrelo1);
@@ -403,20 +401,6 @@ pub type ZoneContext = LoongArch64ZoneContext;
 #[derive(Debug, Clone)]
 pub struct HvArchZoneConfig {
     pub dummy: usize,
-}
-
-// mmio handlers
-// because when root and nonroot sharing the same physical interrupt controllers will cause the
-// irqs failed to reach nonroot which is booted after root's first init
-// so we need to trap and trace the mmio access to the 0x1fe0_xxxx region and arbitrate the access
-
-const BASE_ADDR: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_0000);
-const UART0_BASE_ADDR: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_01e0);
-const UART0_SIZE: usize = 0x8;
-const UART0_END_ADDR: usize = UART0_BASE_ADDR + UART0_SIZE;
-
-pub fn offset(addr: usize) -> usize {
-    addr - BASE_ADDR
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
@@ -462,18 +446,121 @@ impl MMIOAccessTracker {
 static MMIO_ACCESS_STATS: Lazy<Mutex<MMIOAccessTracker>> =
     Lazy::new(|| Mutex::new(MMIOAccessTracker::new()));
 
-const COMPRESSION_THRESHOLD: u64 = 40;
+const COMPRESSION_THRESHOLD: u64 = 20;
 const LOG_INTERVAL: u64 = 10000;
 
-pub fn loongarch_generic_mmio_handler(mmio: &mut MMIOAccess, arg: usize) -> HvResult {
-    // if in uart0 region 0x1fe0_0000-0x1fe0_0008, we don't print it
-    if mmio.address >= offset(UART0_BASE_ADDR) && mmio.address < offset(UART0_END_ADDR) {
-        mmio_perform_access(BASE_ADDR, mmio);
-        return Ok(());
+const BASE_ADDR: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_0000);
+const UART0_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_01e0);
+const UART0_SIZE: usize = 0x8;
+const EXTIOI_MAP_CORE_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_1c00);
+const EXTIOI_MAP_CORE_SIZE: usize = 0x100;
+const EXTIOI_SR_CORE_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_1800);
+const EXTIOI_SR_CORE_SIZE: usize = 0x400; // core0 0x1800-0x18ff, core1 0x1900-0x19ff, core2 0x1a00-0x1aff, core3 0x1b00-0x1bff
+
+pub fn offset(addr: usize) -> usize {
+    addr - BASE_ADDR
+}
+
+macro_rules! is_in_mmio_range {
+    ($addr:expr, $base:expr, $size:expr) => {
+        $addr >= offset($base) && $addr < offset($base + $size)
+    };
+}
+
+fn handle_uart_mmio(mmio: &mut MMIOAccess, base_addr: usize) -> HvResult {
+    mmio_perform_access(base_addr, mmio);
+    Ok(())
+}
+
+fn handle_extioi_status_mmio(mmio: &mut MMIOAccess, base_addr: usize, size: usize) -> HvResult {
+    // write 0 to clear, so all SR regs are RW
+    // since nonroot runs on cpu2(for example), but it still thinks it's on cpu0, and read SR regs from cpu0
+    // we need to return the correct SR regs to nonroot according to this cpu id
+    let this_cpu_id = this_cpu_id();
+    let target_cpu_sr_start = EXTIOI_SR_CORE_BASE + this_cpu_id * 0x100;
+    let guest_fake_cpu_id = (mmio.address - offset(EXTIOI_SR_CORE_BASE)) / 0x100;
+    let guest_cpu_sr_start = EXTIOI_SR_CORE_BASE + guest_fake_cpu_id * 0x100;
+    let compensation_offset = target_cpu_sr_start - guest_cpu_sr_start;
+    mmio.address += compensation_offset; // since inside each cpu's SR regs region, the "inner offset" should be retained!
+    mmio_perform_access(base_addr, mmio);
+    Ok(())
+}
+
+fn handle_extioi_mapping_mmio(mmio: &mut MMIOAccess, base_addr: usize, size: usize) -> HvResult {
+    if !mmio.is_write {
+        error!("should not happen, extioi core regs read makes no sense");
+        return hv_result_err!(EIO, "extioi core regs read makes no sense");
     }
 
-    mmio_perform_access(BASE_ADDR, mmio);
+    let mut vecs = [0u8; 8];
+    match mmio.size {
+        1 => {
+            vecs[0] = mmio.value as u8;
+        }
+        2 => {
+            vecs[0] = (mmio.value & 0xff) as u8;
+            vecs[1] = ((mmio.value >> 8) & 0xff) as u8;
+        }
+        4 => {
+            vecs[0] = (mmio.value & 0xff) as u8;
+            vecs[1] = ((mmio.value >> 8) & 0xff) as u8;
+            vecs[2] = ((mmio.value >> 16) & 0xff) as u8;
+            vecs[3] = ((mmio.value >> 24) & 0xff) as u8;
+        }
+        8 => {
+            vecs[0] = (mmio.value & 0xff) as u8;
+            vecs[1] = ((mmio.value >> 8) & 0xff) as u8;
+            vecs[2] = ((mmio.value >> 16) & 0xff) as u8;
+            vecs[3] = ((mmio.value >> 24) & 0xff) as u8;
+            vecs[4] = ((mmio.value >> 32) & 0xff) as u8;
+            vecs[5] = ((mmio.value >> 40) & 0xff) as u8;
+            vecs[6] = ((mmio.value >> 48) & 0xff) as u8;
+            vecs[7] = ((mmio.value >> 56) & 0xff) as u8;
+        }
+        _ => {
+            error!("should not happen, wrong size: {}", mmio.size);
+            return hv_result_err!(EIO, "wrong size when writing extioi core regs");
+        }
+    }
 
+    let base_ioi_number = mmio.address - offset(base_addr);
+    for i in 0..mmio.size {
+        let target_ioi_number = base_ioi_number + i;
+        if target_ioi_number >= size {
+            error!("should not happen, wrong ioi number: {}", target_ioi_number);
+            return hv_result_err!(EIO, "wrong ioi number when writing extioi core regs");
+        }
+        let target_ioi_write_value = vecs[i];
+        // caution: high 4 bits are node selection, low 4 bits are irq target cpu
+        // we don't change the node selection here - wheatfox
+        let target_ioi_node_selection = target_ioi_write_value & 0xf0;
+        let target_ioi_irq_target = target_ioi_write_value & 0xf;
+        let this_cpu_id = this_cpu_id();
+        warn!(
+            "found extioi[{}], node_selection={}, irq_target={}, changed cpu routing to {}",
+            target_ioi_number, target_ioi_node_selection, target_ioi_irq_target, this_cpu_id
+        );
+        let mut new_data = target_ioi_node_selection;
+        new_data |= (1 << this_cpu_id);
+        let target_write_phyaddr = base_addr + target_ioi_number as usize;
+        let target_write_value = new_data as u8;
+        warn!(
+            "write core mapping for extioi[{}], value=0x{:x}",
+            target_ioi_number, target_write_value
+        );
+        unsafe {
+            write_volatile(target_write_phyaddr as *mut u8, target_write_value);
+        }
+    }
+    Ok(())
+}
+
+fn handle_generic_mmio(mmio: &mut MMIOAccess, base_addr: usize) -> HvResult {
+    mmio_perform_access(base_addr, mmio);
+    Ok(())
+}
+
+fn handle_mmio_stats(mmio: &mut MMIOAccess) {
     let key = MMIOAccessKey {
         offset: mmio.address,
         size: mmio.size,
@@ -488,54 +575,60 @@ pub fn loongarch_generic_mmio_handler(mmio: &mut MMIOAccess, arg: usize) -> HvRe
     let is_compressed = stats.is_compressed.load(Ordering::SeqCst);
 
     let trap_context_helper = GLOBAL_TRAP_CONTEXT_HELPER.lock();
+    let mut msg1 = format!(
+        "loongarch64: generic mmio handler, zone_era={:#x}, offset={:#x}, size={}, {} {:#x}",
+        trap_context_helper.era,
+        mmio.address,
+        mmio.size,
+        if mmio.is_write { "W -> " } else { "R <- " },
+        mmio.value
+    );
+    let mut msg2 = msg1.clone();
+    msg2.push_str(" __COMPRESSED__");
 
-    let msg = if count == 0 {
-        // First access, always log
-        format!(
-            "loongarch64: generic mmio handler, zone_era={:#x}, offset={:#x}, size={}, {} {:#x}",
-            trap_context_helper.era,
-            mmio.address,
-            mmio.size,
-            if mmio.is_write { "W -> " } else { "R <- " },
-            mmio.value
-        )
-    } else if count >= COMPRESSION_THRESHOLD {
-        // Enable compression if threshold reached
+    let msg = if count >= COMPRESSION_THRESHOLD {
         stats.is_compressed.store(1, Ordering::SeqCst);
-
-        // Log every LOG_INTERVAL accesses
         if count % LOG_INTERVAL == 0 {
-            format!(
-                "loongarch64: generic mmio handler, zone_era={:#x}, offset={:#x}, size={}, {} {:#x} (compressed, repeated {} times)",
-                trap_context_helper.era,
-                mmio.address,
-                mmio.size,
-                if mmio.is_write { "W -> " } else { "R <- " },
-                mmio.value,
-                count
-            )
+            msg2.replace_range(
+                msg2.find("__COMPRESSED__").unwrap()
+                    ..msg2.find("__COMPRESSED__").unwrap() + "__COMPRESSED__".len(),
+                &format!("(compressed, repeated {} times)", count),
+            );
+            msg2
         } else {
-            return Ok(());
+            String::new()
         }
-    } else if mmio.value as u64 != last_value {
-        // Log if value changed
-        format!(
-            "loongarch64: generic mmio handler, zone_era={:#x}, offset={:#x}, size={}, {} {:#x}",
-            trap_context_helper.era,
-            mmio.address,
-            mmio.size,
-            if mmio.is_write { "W -> " } else { "R <- " },
-            mmio.value
-        )
     } else {
-        return Ok(());
+        msg1
     };
 
-    warn!("{}", msg);
+    if !msg.is_empty() {
+        info!("{}", msg);
+    }
 
     stats.last_value.store(mmio.value as u64, Ordering::SeqCst);
+}
 
-    Ok(())
+pub fn loongarch_generic_mmio_handler(mmio: &mut MMIOAccess, arg: usize) -> HvResult {
+    // if in uart0 region 0x1fe0_0000-0x1fe0_0008, we don't print it
+    if is_in_mmio_range!(mmio.address, UART0_BASE, UART0_SIZE) {
+        return handle_uart_mmio(mmio, BASE_ADDR);
+    }
+
+    let ret;
+
+    if is_in_mmio_range!(mmio.address, EXTIOI_MAP_CORE_BASE, EXTIOI_MAP_CORE_SIZE) {
+        ret = handle_extioi_mapping_mmio(mmio, EXTIOI_MAP_CORE_BASE, EXTIOI_MAP_CORE_SIZE);
+    } else if is_in_mmio_range!(mmio.address, EXTIOI_SR_CORE_BASE, EXTIOI_SR_CORE_SIZE) {
+        ret = handle_extioi_status_mmio(mmio, EXTIOI_SR_CORE_BASE, EXTIOI_SR_CORE_SIZE);
+    } else {
+        ret = handle_generic_mmio(mmio, BASE_ADDR);
+    }
+
+    // since our mmio can be altered inside the handler, we update the stats here
+    handle_mmio_stats(mmio);
+
+    ret
 }
 
 impl Zone {
