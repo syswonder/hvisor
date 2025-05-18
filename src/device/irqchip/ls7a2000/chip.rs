@@ -425,10 +425,12 @@ register_structs! {
 register_structs! {
   #[allow(non_snake_case)]
   pub ChipExtioiStatusRegs {
-    (0x0000 => pub extioi_sr0: ReadOnly<u64, Extioi_sr0::Register>),
-    (0x0008 => pub extioi_sr1: ReadOnly<u64, Extioi_sr1::Register>),
-    (0x0010 => pub extioi_sr2: ReadOnly<u64, Extioi_sr2::Register>),
-    (0x0018 => pub extioi_sr3: ReadOnly<u64, Extioi_sr3::Register>),
+    (0x0000 => pub extioi_sr0: ReadWrite<u64, Extioi_sr0::Register>),
+    // according to loongson's linux driver, writing to this register [with a bitmask] will clear the corresponding SR reg,
+    // so we first check the SR regs, then clear them
+    (0x0008 => pub extioi_sr1: ReadWrite<u64, Extioi_sr1::Register>),
+    (0x0010 => pub extioi_sr2: ReadWrite<u64, Extioi_sr2::Register>),
+    (0x0018 => pub extioi_sr3: ReadWrite<u64, Extioi_sr3::Register>),
     (0x0020 => @END),
   }
 }
@@ -484,8 +486,17 @@ pub static CHIP_LEGACY_INT_ROUTE: MMIODerefWrapper<ChipLegacyIntRouteRegs> =
 pub static CHIP_EXTIOI_ENABLE: MMIODerefWrapper<ChipExtioiEnableRegs> =
     unsafe { MMIODerefWrapper::new(CHIP_EXTIOI_ENABLE_BASE as usize) };
 
-pub static CHIP_EXTIOI_STATUS: MMIODerefWrapper<ChipExtioiStatusRegs> =
-    unsafe { MMIODerefWrapper::new(CHIP_EXTIOI_STATUS_BASE as usize) };
+pub static CHIP_EXTIOI_CORE0_STATUS: MMIODerefWrapper<ChipExtioiStatusRegs> =
+    unsafe { MMIODerefWrapper::new(CHIP_EXTIOI_CORE0_STATUS_BASE as usize) };
+
+pub static CHIP_EXTIOI_CORE1_STATUS: MMIODerefWrapper<ChipExtioiStatusRegs> =
+    unsafe { MMIODerefWrapper::new(CHIP_EXTIOI_CORE1_STATUS_BASE as usize) };
+
+pub static CHIP_EXTIOI_CORE2_STATUS: MMIODerefWrapper<ChipExtioiStatusRegs> =
+    unsafe { MMIODerefWrapper::new(CHIP_EXTIOI_CORE2_STATUS_BASE as usize) };
+
+pub static CHIP_EXTIOI_CORE3_STATUS: MMIODerefWrapper<ChipExtioiStatusRegs> =
+    unsafe { MMIODerefWrapper::new(CHIP_EXTIOI_CORE3_STATUS_BASE as usize) };
 
 // this indicates the configs for irq routing to which INT pin, not target cpu core
 // the 256 irqs are grouped into 8 group to control the target INT pin - wheatfox
@@ -724,41 +735,117 @@ pub fn extioi_int_route_core_all() {
     }
 }
 
-pub fn extioi_dump() {
-    info!("extioi_en0={:#x}", CHIP_EXTIOI_ENABLE.extioi_en0.get());
-    info!("extioi_en1={:#x}", CHIP_EXTIOI_ENABLE.extioi_en1.get());
-    info!("extioi_en2={:#x}", CHIP_EXTIOI_ENABLE.extioi_en2.get());
-    info!("extioi_en3={:#x}", CHIP_EXTIOI_ENABLE.extioi_en3.get());
-    info!(
-        "extioi_bounce0={:#x}",
-        CHIP_EXTIOI_BOUNCE.extioi_bounce0.get()
-    );
-    info!(
-        "extioi_bounce1={:#x}",
-        CHIP_EXTIOI_BOUNCE.extioi_bounce1.get()
-    );
-    info!(
-        "extioi_bounce2={:#x}",
-        CHIP_EXTIOI_BOUNCE.extioi_bounce2.get()
-    );
-    info!(
-        "extioi_bounce3={:#x}",
-        CHIP_EXTIOI_BOUNCE.extioi_bounce3.get()
-    );
-    info!("extioi_sr0={:#x}", CHIP_EXTIOI_STATUS.extioi_sr0.get());
-    info!("extioi_sr1={:#x}", CHIP_EXTIOI_STATUS.extioi_sr1.get());
-    info!("extioi_sr2={:#x}", CHIP_EXTIOI_STATUS.extioi_sr2.get());
-    info!("extioi_sr3={:#x}", CHIP_EXTIOI_STATUS.extioi_sr3.get());
-}
-
-pub fn extioi_dump_sr() -> String {
+pub fn get_extioi_sr() -> String {
     let mut sr = String::new();
     // in one line, compact style
-    sr.push_str(format!("sr0={:#x},", CHIP_EXTIOI_STATUS.extioi_sr0.get()).as_str());
-    sr.push_str(format!("sr1={:#x},", CHIP_EXTIOI_STATUS.extioi_sr1.get()).as_str());
-    sr.push_str(format!("sr2={:#x},", CHIP_EXTIOI_STATUS.extioi_sr2.get()).as_str());
-    sr.push_str(format!("sr3={:#x}", CHIP_EXTIOI_STATUS.extioi_sr3.get()).as_str());
+    // core0: u64,u64,u64,u64; core1: u64,u64,u64,u64; core2: u64,u64,u64,u64; core3: u64,u64,u64,u64;
+    // so we need to read 4 * 4 = 16 u64
+    for core_id in 0..4 {
+        let (sr0, sr1, sr2, sr3) = match core_id {
+            0 => (
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr0.get(),
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr1.get(),
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr2.get(),
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr3.get(),
+            ),
+            1 => (
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr0.get(),
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr1.get(),
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr2.get(),
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr3.get(),
+            ),
+            2 => (
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr0.get(),
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr1.get(),
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr2.get(),
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr3.get(),
+            ),
+            3 => (
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr0.get(),
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr1.get(),
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr2.get(),
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr3.get(),
+            ),
+            _ => panic!("get_extioi_sr: invalid core id: {}", core_id),
+        };
+        sr.push_str(
+            format!(
+                "core{}: {:#x},{:#x},{:#x},{:#x}; ",
+                core_id, sr0, sr1, sr2, sr3
+            )
+            .as_str(),
+        );
+    }
     sr
+}
+
+pub fn clear_extioi_sr() {
+    warn!(
+        "clear_extioi_sr: clearing extioi SR regs, before: {}",
+        get_extioi_sr()
+    );
+    // step one, for each sr reg, we read it and find any pending bit
+    for core_id in 0..4 {
+        let (sr0, sr1, sr2, sr3) = match core_id {
+            0 => (
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr0.get(),
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr1.get(),
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr2.get(),
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr3.get(),
+            ),
+            1 => (
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr0.get(),
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr1.get(),
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr2.get(),
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr3.get(),
+            ),
+            2 => (
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr0.get(),
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr1.get(),
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr2.get(),
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr3.get(),
+            ),
+            3 => (
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr0.get(),
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr1.get(),
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr2.get(),
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr3.get(),
+            ),
+            _ => panic!("clear_extioi_sr: invalid core id: {}", core_id),
+        };
+        // then we directly write them back to clear the status
+        match core_id {
+            0 => {
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr0.set(sr0);
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr1.set(sr1);
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr2.set(sr2);
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr3.set(sr3);
+            }
+            1 => {
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr0.set(sr0);
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr1.set(sr1);
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr2.set(sr2);
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr3.set(sr3);
+            }
+            2 => {
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr0.set(sr0);
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr1.set(sr1);
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr2.set(sr2);
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr3.set(sr3);
+            }
+            3 => {
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr0.set(sr0);
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr1.set(sr1);
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr2.set(sr2);
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr3.set(sr3);
+            }
+            _ => panic!("clear_extioi_sr: invalid core id: {}", core_id),
+        }
+    }
+    warn!(
+        "clear_extioi_sr: clearing extioi SR regs, after: {}",
+        get_extioi_sr()
+    );
 }
 
 /******************************************** */

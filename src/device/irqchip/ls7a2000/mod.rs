@@ -39,8 +39,8 @@ pub fn primary_init_early() {
     info!("loongarch64: irqchip: primary_init_early: checking iochip configs");
     print_chip_info();
     csr_disable_new_codec();
-    legacy_int_enable_all();
-    extioi_mode_disable();
+    // legacy_int_enable_all();
+    // extioi_mode_disable();
     info!("loongarch64: irqchip: testing percore IPI feature");
     let is_ipi_percore = get_ipi_percore();
     info!(
@@ -57,6 +57,14 @@ pub fn primary_init_late() {
     info!("loongarch64: irqchip: primary_init_late: probing pci");
     probe_pci();
 
+    info!("loongarch64: irqchip: primary_init_late: clearing extioi SR regs");
+    clear_extioi_sr();
+    let extioi_sr = get_extioi_sr();
+    info!(
+        "loongarch64: irqchip: primary_init_late: extioi_sr: {}",
+        extioi_sr
+    );
+
     info!("loongarch64: irqchip: primary_init_late finished");
 }
 pub fn percpu_init() {
@@ -65,9 +73,6 @@ pub fn percpu_init() {
     clear_all_ipi(this_cpu_id());
     enable_ipi(this_cpu_id());
     ecfg_ipi_enable();
-
-    // info!("loongarch64: irqchip: percpu_init: dumping ipi registers");
-    // dump_ipi_registers();
 }
 
 const INT_SWI0: usize = 0;
@@ -135,7 +140,13 @@ pub fn clear_hwi_injected_irq() {
 
 impl Zone {
     pub fn arch_irqchip_reset(&self) {
-        warn!("loongarch64: irqchip: arch_irqchip_reset: do nothing");
+        // clear all SR regs
+        clear_extioi_sr();
+        let extioi_sr = get_extioi_sr();
+        info!(
+            "loongarch64: irqchip: arch_irqchip_reset: extioi_sr: {}",
+            extioi_sr
+        );
     }
 }
 

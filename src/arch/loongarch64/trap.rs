@@ -1273,7 +1273,7 @@ fn handle_interrupt(is: usize) {
     let hwi_mask = HWI0 | HWI1 | HWI2 | HWI3 | HWI4 | HWI5 | HWI6 | HWI7;
     if is & hwi_mask != 0 {
         let cpu_id = this_cpu_id();
-        let sr = extioi_dump_sr();
+        let sr = get_extioi_sr();
         warn!(
             "CPU {} received HWI interrupt, status = {:#x}, extioi status: {}",
             cpu_id, is, sr

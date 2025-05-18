@@ -14,6 +14,7 @@
 // Authors:
 //      Yulong Han <wheatfox17@icloud.com>
 //
+use crate::device::irqchip::ls7a2000::chip::get_extioi_sr;
 use crate::{
     arch::{cpu::this_cpu_id, trap::GLOBAL_TRAP_CONTEXT_HELPER},
     config::*,
@@ -473,6 +474,10 @@ fn handle_uart_mmio(mmio: &mut MMIOAccess, base_addr: usize) -> HvResult {
 }
 
 fn handle_extioi_status_mmio(mmio: &mut MMIOAccess, base_addr: usize, size: usize) -> HvResult {
+    // first dump all 256 SR regs
+    let extioi_sr = get_extioi_sr();
+    info!("extioi_sr: {}", extioi_sr);
+
     // write 0 to clear, so all SR regs are RW
     // since nonroot runs on cpu2(for example), but it still thinks it's on cpu0, and read SR regs from cpu0
     // we need to return the correct SR regs to nonroot according to this cpu id
@@ -482,7 +487,7 @@ fn handle_extioi_status_mmio(mmio: &mut MMIOAccess, base_addr: usize, size: usiz
     let guest_cpu_sr_start = EXTIOI_SR_CORE_BASE + guest_fake_cpu_id * 0x100;
     let compensation_offset = target_cpu_sr_start - guest_cpu_sr_start;
     mmio.address += compensation_offset; // since inside each cpu's SR regs region, the "inner offset" should be retained!
-    mmio_perform_access(base_addr, mmio);
+    mmio_perform_access(BASE_ADDR, mmio); // 1fe0_0000, do not use anything else - wheatfox
     Ok(())
 }
 
