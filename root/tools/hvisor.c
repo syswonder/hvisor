@@ -239,9 +239,10 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
     if (pci_config_json == NULL) {
         fprintf(stderr, "No pci_config field found.\n");
         return -1;
+    }else{
+        printf("pci_config field found.\n");
     }
 
-#ifdef ARM64
     cJSON *ecam_base_json = cJSON_GetObjectItem(pci_config_json, "ecam_base");
     cJSON *io_base_json = cJSON_GetObjectItem(pci_config_json, "io_base");
     cJSON *pci_io_base_json =
@@ -296,7 +297,6 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
         config->alloc_pci_devs[i] =
             cJSON_GetArrayItem(alloc_pci_devs_json, i)->valueint;
     }
-#endif
 
     return 0;
 }
@@ -471,14 +471,15 @@ static int zone_start_from_json(const char *json_config_path,
     printf("Zone name: %s\n", config->name);
 
 #ifndef LOONGARCH64
-
     // Parse architecture-specific configurations (interrupts for each platform)
     if (parse_arch_config(root, config))
         goto err_out;
 
-    parse_pci_config(root, config);
+    // parse_pci_config(root, config);
 
 #endif
+
+    parse_pci_config(root, config);
 
     if (root)
         cJSON_Delete(root);
