@@ -476,7 +476,7 @@ fn handle_uart_mmio(mmio: &mut MMIOAccess, base_addr: usize) -> HvResult {
 fn handle_extioi_status_mmio(mmio: &mut MMIOAccess, base_addr: usize, size: usize) -> HvResult {
     // first dump all 256 SR regs
     let extioi_sr = get_extioi_sr();
-    info!("extioi_sr: {}", extioi_sr);
+    debug!("extioi_sr: {}", extioi_sr);
 
     // write 0 to clear, so all SR regs are RW
     // since nonroot runs on cpu2(for example), but it still thinks it's on cpu0, and read SR regs from cpu0
