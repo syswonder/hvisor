@@ -207,12 +207,12 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
         zone.page_table_emergency(0x1000_0000 as _, 0x1000 as _)?;
     }
 
-    #[cfg(all(feature = "pci"))]
-    zone.pci_init(
-        &config.pci_config,
-        config.num_pci_devs as _,
-        &config.alloc_pci_devs,
-    );
+    // #[cfg(all(feature = "pci"))]
+    // zone.pci_init(
+    //     &config.pci_config,
+    //     config.num_pci_devs as _,
+    //     &config.alloc_pci_devs,
+    // );
 
     config.cpus().iter().for_each(|cpu_id| {
         zone.cpu_set.set_bit(*cpu_id as _);

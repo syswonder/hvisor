@@ -200,20 +200,20 @@ impl Zone {
     ) {
         // Virtual ECAM
 
-        self.mmio_region_register(
-            pci_config.ecam_base as _,
-            pci_config.ecam_size as _,
-            mmio_pci_handler,
-            (pci_config.ecam_base + hv_addr_prefix + loong_ht_prefix) as _,
-        );
+        // self.mmio_region_register(
+        //     pci_config.ecam_base as _,
+        //     pci_config.ecam_size as _,
+        //     mmio_pci_handler,
+        //     (pci_config.ecam_base + hv_addr_prefix + loong_ht_prefix) as _,
+        // );
 
-        // self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-        //             pci_config.ecam_base as GuestPhysAddr,
-        //             pci_config.ecam_base as _,
-        //             pci_config.ecam_size as _,
-        //             MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-        //         ))
-        //         .ok();
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+                    pci_config.ecam_base as GuestPhysAddr,
+                    (pci_config.ecam_base + loong_ht_prefix) as _,
+                    pci_config.ecam_size as _,
+                    MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+                ))
+                .ok();
 
         info!(
             "pci handler args : {:#x}",

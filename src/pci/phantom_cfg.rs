@@ -254,7 +254,7 @@ impl PhantomCfg {
                 mmio.value = 0x0;
             }
             CFG_BAR0 => {
-                if this_zone_id() == 0{
+                if zone_id == 0{
                     mmio_perform_access(base, mmio);
                 }
                 if mmio.is_write {
