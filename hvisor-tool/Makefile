@@ -1,6 +1,6 @@
 KDIR ?= 
 DEV ?= /dev/sda1
-ARCH ?= arm64
+ARCH ?= loongarch64
 LOG ?= LOG_INFO
 DEBUG ?= n
 VIRTIO_GPU ?= n
