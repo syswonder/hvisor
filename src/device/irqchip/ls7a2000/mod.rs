@@ -91,7 +91,7 @@ const INT_IPI: usize = 12;
 
 /// inject irq to THIS cpu
 pub fn inject_irq(_irq: usize, is_hardware: bool) {
-    warn!(
+    debug!(
         "loongarch64: inject_irq: _irq: {}, is_hardware: {}",
         _irq, is_hardware
     );
@@ -128,7 +128,7 @@ pub fn clear_hwi_injected_irq() {
     unsafe {
         asm!("csrrd {0}, 0x52", out(reg) gintc_raw);
     }
-    warn!(
+    debug!(
         "loongarch64: clear_hwi_injected_irq: current gintc: {:#x}",
         gintc_raw
     );

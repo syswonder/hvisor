@@ -1239,7 +1239,7 @@ fn handle_interrupt(is: usize) {
     if is & IPI_BIT != 0 {
         let cpu_id = this_cpu_id();
         let ipi_status = get_ipi_status(cpu_id);
-        warn!(
+        debug!(
             "CPU {} received IPI interrupt, status = {:#x}",
             cpu_id, ipi_status
         );
