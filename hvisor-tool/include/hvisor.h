@@ -8,7 +8,7 @@
 
 #define MMAP_SIZE 4096
 #define MAX_REQ 32
-#define MAX_DEVS 4
+#define MAX_DEVS 8
 #define MAX_CPUS 4
 #define MAX_ZONES MAX_CPUS
 

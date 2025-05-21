@@ -146,8 +146,8 @@ int virtio_blk_init(VirtIODevice *vdev, const char *img_path) {
     dev->config.size_max = blk_size;
     dev->img_fd = img_fd;
     vdev->virtio_close = virtio_blk_close;
-    printf("(wheatfox) virtio_blk_init: %s, size is %lld\n", img_path,
-           dev->config.capacity);
+    log_info("wheatfox: virtio_blk_init: %s, size is %lld", img_path,
+             dev->config.capacity);
     return 0;
 }
 
