@@ -43,14 +43,14 @@ pub struct ArchCpu {
 
 impl ArchCpu {
     pub fn new(cpuid: usize) -> Self {
-        let ret = ArchCpu {
+        let mut ret = ArchCpu {
             ctx: super::trap::dump_reset_gcsrs(),
             stack_top: 0,
             cpuid,
             power_on: false,
             init: false,
         };
-        ret
+        return ret;
     }
     pub fn get_cpuid(&self) -> usize {
         self.cpuid
@@ -74,6 +74,9 @@ impl ArchCpu {
         for i in 0..32 {
             self.ctx.x[i] = 0;
         }
+        // set all zone's GCSR.CPUID to 0 beacuse linux running on it will believe it's CPU0
+        // - wheatfox 2025.5.20
+        self.ctx.gcsr_cpuid = 0;
         info!(
             "loongarch64: CPU{} run@{:#x}",
             self.get_cpuid(),

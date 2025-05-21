@@ -38,7 +38,7 @@ pub static VIRTIO_BRIDGE: Mutex<VirtioBridgeRegion> = Mutex::new(VirtioBridgeReg
 
 const QUEUE_NOTIFY: usize = 0x50;
 pub const MAX_REQ: u32 = 32;
-pub const MAX_DEVS: usize = 4; // Attention: The max virtio-dev number for vm is 4.
+pub const MAX_DEVS: usize = 8;
 pub const MAX_CPUS: usize = 4;
 pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;
 
