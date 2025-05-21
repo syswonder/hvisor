@@ -47,6 +47,12 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
     }, // ram
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
+        physical_start: 0x1_6000_0000,
+        virtual_start: 0x1_6000_0000,
+        size: 0x1000_0000,
+    }, // linux0
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RAM,
         physical_start: 0xc000_0000,
         virtual_start: 0xc000_0000,
         size: 0x3000_0000,
@@ -57,6 +63,13 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
         virtual_start: 0xa000_0000,
         size: 0x2000_0000,
     }, // linux2
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RAM,
+        physical_start: 0x1_0000_0000,
+        virtual_start: 0x1_0000_0000,
+        size: 0x2000_0000,
+    }, // linux3
+    
     /* devices and controllers */
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
