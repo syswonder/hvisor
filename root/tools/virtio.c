@@ -162,9 +162,10 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
     vdev->irq_id = irq_id;
     vdev->type = dev_type;
 
-    log_info("wheatfox: vdev->base_addr is %lx, vdev->len is %lx, vdev->zone_id "
-             "is %d, vdev->irq_id is %d",
-             vdev->base_addr, vdev->len, vdev->zone_id, vdev->irq_id);
+    log_info(
+        "wheatfox: vdev->base_addr is %lx, vdev->len is %lx, vdev->zone_id "
+        "is %d, vdev->irq_id is %d",
+        vdev->base_addr, vdev->len, vdev->zone_id, vdev->irq_id);
 
     switch (dev_type) {
     case VirtioTBlock:
@@ -719,8 +720,10 @@ void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t value,
                        unsigned size) {
     log_debug("virtio mmio write at %#x, value is %#x\n", offset, value);
 
-    log_info("WRITE virtio mmio at offset=%#x[%s], value=%#x, size=%d, vdev=%p, type=%d",
-             offset, virtio_mmio_reg_name(offset), value, size, vdev, vdev->type);
+    log_info("WRITE virtio mmio at offset=%#x[%s], value=%#x, size=%d, "
+             "vdev=%p, type=%d",
+             offset, virtio_mmio_reg_name(offset), value, size, vdev,
+             vdev->type);
 
     VirtMmioRegs *regs = &vdev->regs;
     VirtQueue *vqs = vdev->vqs;
@@ -1173,8 +1176,8 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
         strtoul(cJSON_GetObjectItem(device_json, "len")->valuestring, NULL, 16);
     irq_id = cJSON_GetObjectItem(device_json, "irq")->valueint;
 
-    log_info("wheatfox: base_addr is %lx, len is %lx, irq_id is %d",
-           base_addr, len, irq_id);
+    log_info("wheatfox: base_addr is %lx, len is %lx, irq_id is %d", base_addr,
+             len, irq_id);
 
     // Handle other fields according to the device type
     if (dev_type == VirtioTBlock) {
@@ -1290,10 +1293,10 @@ int virtio_start_from_json(char *json_path) {
             // Map from zone0_ipa
             virt_addr = mmap(NULL, mem_size, PROT_READ | PROT_WRITE, MAP_SHARED,
                              ko_fd, (off_t)zone0_ipa);
-                             
-            log_info(
-                "wheatfox: mmap zone0_ipa is %lx, zonex_ipa is %lx, mem_size is %lx finished",
-                zone0_ipa, zonex_ipa, mem_size);
+
+            log_info("wheatfox: mmap zone0_ipa is %lx, zonex_ipa is %lx, "
+                     "mem_size is %lx finished",
+                     zone0_ipa, zonex_ipa, mem_size);
 
             if (virt_addr == (void *)-1) {
                 log_error("mmap failed");
