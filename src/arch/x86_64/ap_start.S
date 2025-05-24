@@ -35,6 +35,9 @@ ap_start16:
 
 .code32
 ap_start32:
+    mov     ax, 0x20
+    ltr     ax
+
     mov     esp, [stack_ptr]
     mov     eax, [entry_ptr]
     jmp     eax
@@ -50,6 +53,8 @@ ap_start32:
     .quad 0x00cf9b000000ffff        // 0x08: code segment (base=0, limit=0xfffff, type=32bit code exec/read, DPL=0, 4k)
     .quad 0x00af9b000000ffff        // 0x10: code segment (base=0, limit=0xfffff, type=64bit code exec/read, DPL=0, 4k)
     .quad 0x00cf93000000ffff        // 0x18: data segment (base=0, limit=0xfffff, type=32bit data read/write, DPL=0, 4k)
+    .quad 0x00008934ee800067        // 0x20: tss low
+    .quad 0x00000000ffffff80        // 0x28: tss high
 .Lap_tmp_gdt_end:
 
 // 0x7000

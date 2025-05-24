@@ -195,16 +195,11 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     }
 
     let cpu = PerCpu::new(cpuid);
-    #[cfg(target_arch = "x86_64")]
-    crate::device::irqchip::pic::enable_irq();
 
     println!(
         "Booting CPU {}: {:p} arch:{:p}, DTB: {:#x}",
         cpu.id, cpu as *const _, &cpu.arch_cpu as *const _, host_dtb
     );
-
-    #[cfg(target_arch = "x86_64")]
-    cpu.arch_cpu.gdt.load(); // load gdt and tss
 
     // Don't you wanna know how many cpu(s) on board? :D
     let mut ncpu: usize = 0;

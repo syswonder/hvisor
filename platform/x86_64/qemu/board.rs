@@ -32,7 +32,7 @@ const ROOT_ZONE_RSDP_REGION: HvConfigMemoryRegion = HvConfigMemoryRegion {
 
 const ROOT_ZONE_ACPI_REGION: HvConfigMemoryRegion = HvConfigMemoryRegion {
     mem_type: MEM_TYPE_RAM,
-    physical_start: 0x4020_0000, // hpa
+    physical_start: 0x3a20_0000, // hpa
     virtual_start: 0x3520_0000,  // gpa
     size: 0xf000,                // modify size accordingly
 };
@@ -58,13 +58,13 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 8] = [
     }, // ram
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
-        physical_start: 0x2000_0000,
+        physical_start: 0x1a00_0000,
         virtual_start: 0x1500_0000,
         size: 0x20_0000,
     }, // ram
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
-        physical_start: 0x2020_0000,
+        physical_start: 0x1a20_0000,
         virtual_start: 0x1520_0000,
         size: 0x2000_0000,
     }, // ram

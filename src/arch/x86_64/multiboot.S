@@ -83,6 +83,8 @@ bsp_entry64:
     // reload GDT by high address
     movabs  rax, offset .Ltmp_gdt_desc
     lgdt    [rax]
+    mov     ax, 0x20
+    ltr     ax
 
     ENTRY64_COMMON
 
@@ -126,6 +128,8 @@ ap_entry64:
     .quad 0x00cf9b000000ffff    // 0x08: code segment (base=0, limit=0xfffff, type=32bit code exec/read, DPL=0, 4k)
     .quad 0x00af9b000000ffff    // 0x10: code segment (base=0, limit=0xfffff, type=64bit code exec/read, DPL=0, 4k)
     .quad 0x00cf93000000ffff    // 0x18: data segment (base=0, limit=0xfffff, type=32bit data read/write, DPL=0, 4k)
+    .quad 0x00008934ee800067    // 0x20: tss low
+    .quad 0x00000000ffffff80    // 0x28: tss high
 .Ltmp_gdt_end:
 
 .balign 4096

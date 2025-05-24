@@ -121,6 +121,12 @@ impl VirtIoApic {
                             idt::get_host_vector(entry.get_bits(0..=7) as u32, zone_id).unwrap()
                                 as _,
                         );
+                        /*info!(
+                            "write {:x} is edge: {:x?}, {:x}",
+                            index,
+                            value.get_bit(15),
+                            value
+                        );*/
                     } else {
                         entry.set_bits(32..=63, value.get_bits(0..=31));
 
@@ -178,13 +184,13 @@ impl Zone {
         self.mmio_region_register(
             arch.ioapic_base,
             arch.ioapic_size,
-            ioapic_mmio_handler,
+            mmio_ioapic_handler,
             arch.ioapic_base,
         );
     }
 }
 
-fn ioapic_mmio_handler(mmio: &mut MMIOAccess, _: usize) -> HvResult {
+fn mmio_ioapic_handler(mmio: &mut MMIOAccess, _: usize) -> HvResult {
     if mmio.is_write {
         VIRT_IOAPIC
             .get()

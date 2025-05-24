@@ -105,6 +105,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
             // fence(Ordering::Acquire);
             count += 1;
             if count == MAX_WAIT_TIMES {
+                #[cfg(not(target_arch = "x86_64"))]
                 warn!(
                     "virtio backend is too slow, please check it! addr: {:x} is_write: {:x?}",
                     mmio.address, mmio.is_write

@@ -17,7 +17,6 @@ use x2apic::lapic::{LocalApic, LocalApicBuilder, TimerMode};
 pub struct VirtLocalApic {
     pub phys_lapic: LocalApic,
     pub virt_timer_vector: u8,
-    pub has_eoi: bool,
     virt_lvt_timer_bits: u32,
 }
 
@@ -38,7 +37,6 @@ impl VirtLocalApic {
         Self {
             phys_lapic: lapic,
             virt_timer_vector: 0,
-            has_eoi: true,
             virt_lvt_timer_bits: (1 << 16) as _, // masked
         }
     }
@@ -78,7 +76,6 @@ impl VirtLocalApic {
             IA32_X2APIC_EOI => {
                 // info!("eoi");
                 pop_vector(this_cpu_id());
-                self.has_eoi = true;
                 Ok(())
             }
             IA32_X2APIC_ICR => {

@@ -1,7 +1,6 @@
 use crate::{
     arch::{
         boot::BootParams,
-        gdt::{get_tr_base, GdtStruct},
         hpet, ipi,
         mm::new_s2_memory_set,
         msr::{
@@ -26,6 +25,7 @@ use crate::{
     platform::{ROOT_ZONE_BOOT_STACK, ROOT_ZONE_CMDLINE},
 };
 use alloc::boxed::Box;
+use bit_field::BitField;
 use core::{
     arch::{asm, global_asm},
     fmt::{Debug, Formatter, Result},
@@ -42,10 +42,7 @@ use x86::{
         EntryControls, ExitControls, PinbasedControls, PrimaryControls, SecondaryControls,
     },
 };
-use x86_64::{
-    registers::control::{Cr0, Cr0Flags, Cr3, Cr4, Cr4Flags},
-    structures::tss::TaskStateSegment,
-};
+use x86_64::registers::control::{Cr0, Cr0Flags, Cr3, Cr4, Cr4Flags};
 
 use super::acpi::RootAcpi;
 
@@ -164,7 +161,6 @@ pub struct ArchCpu {
     host_stack_top: u64,
     pub cpuid: usize,
     pub power_on: bool,
-    pub gdt: GdtStruct,
     pub virt_lapic: VirtLocalApic,
     vmx_on: bool,
     vmcs_revision_id: u32,
@@ -175,14 +171,11 @@ pub struct ArchCpu {
 
 impl ArchCpu {
     pub fn new(cpuid: usize) -> Self {
-        let boxed = Box::new(TaskStateSegment::new());
-        let tss = Box::leak(boxed);
         Self {
             guest_regs: GeneralRegisters::default(),
             host_stack_top: 0,
             cpuid,
             power_on: false,
-            gdt: GdtStruct::new(tss),
             virt_lapic: VirtLocalApic::new(),
             vmx_on: false,
             vmcs_revision_id: 0,
@@ -222,7 +215,7 @@ impl ArchCpu {
         // info!("idle! cpuid: {:x}", self.cpuid);
 
         PARKING_MEMORY_SET.call_once(|| {
-            let parking_code: [u8; 2] = [0xeb, 0xfe]; // jump short -3
+            let parking_code: [u8; 2] = [0xeb, 0xfe]; // jump short -2
             unsafe {
                 PARKING_INST_PAGE[..2].copy_from_slice(&parking_code);
             }
@@ -559,9 +552,7 @@ impl ArchCpu {
 
     fn vmexit_handler(&mut self) {
         crate::arch::trap::handle_vmexit(self).unwrap();
-        if self.virt_lapic.has_eoi && check_pending_vectors(this_cpu_id()) {
-            self.virt_lapic.has_eoi = false;
-        }
+        check_pending_vectors(this_cpu_id());
     }
 
     unsafe fn vmx_entry_failed() -> ! {
@@ -606,6 +597,25 @@ pub fn this_cpu_id() -> usize {
     match CpuId::new().get_feature_info() {
         Some(info) => info.initial_local_apic_id() as usize,
         None => 0,
+    }
+}
+
+fn get_tr_base(
+    tr: x86::segmentation::SegmentSelector,
+    gdt: &x86::dtables::DescriptorTablePointer<u64>,
+) -> u64 {
+    let index = tr.index() as usize;
+    let table_len = (gdt.limit as usize + 1) / core::mem::size_of::<u64>();
+    let table = unsafe { core::slice::from_raw_parts(gdt.base, table_len) };
+    let entry = table[index];
+    if entry & (1 << 47) != 0 {
+        // present
+        let base_low = entry.get_bits(16..40) | entry.get_bits(56..64) << 24;
+        let base_high = table[index + 1] & 0xffff_ffff;
+        base_low | base_high << 32
+    } else {
+        // no present
+        0
     }
 }
 
