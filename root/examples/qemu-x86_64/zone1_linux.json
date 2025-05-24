@@ -46,7 +46,7 @@
         {
             "type": "virtio",
             "physical_start": "0x5950f000",
-            "virtual_start": "0x5950f000",
+            "virtual_start": "0x1920f000",
             "size": "0x4000"
         },
         {
@@ -68,19 +68,15 @@
         "ioapic_size": "0x1000",
         "boot_filepath": "./boot.bin",
         "boot_load_paddr": "0x40308000",
-        "cmdline": "console=hvc0 pci=pcie_scan_all,lastbus=1 rdinit=/init nointremap virtio_mmio.device=0x200@0x5950f000:10",
+        "cmdline": "console=hvc0 pci=pcie_scan_all,lastbus=1 root=/dev/vda rw init=/init nointremap virtio_mmio.device=0x200@0x5950f000:10 virtio_mmio.device=0x200@0x5950f200:14 virtio_mmio.device=0x200@0x5950f400:11",
         "cmdline_load_hpa": "0x4030c000",
         "cmdline_load_gpa": "0xc000",
         "kernel_entry_gpa": "0x100000",
         "setup_filepath": "./setup.bin",
         "setup_load_hpa": "0x4030d000",
         "setup_load_gpa": "0xd000",
-        "initrd_filepath": "./initramfs.cpio.gz",
-        "initrd_load_hpa": "0x5530f000",
-        "initrd_load_gpa": "0x1500f000",
         "rsdp_memory_region_id": "0x1",
-        "acpi_memory_region_id": "0x3",
-        "initrd_memory_region_id": "0x4"
+        "acpi_memory_region_id": "0x3"
     },
     "pci_config": {
         "ecam_base": "0xb0000000",
@@ -95,8 +91,9 @@
         "mem64_size": "0x0",
         "pci_mem64_base": "0x0"
     },
-    "num_pci_devs": 1,
+    "num_pci_devs": 2,
     "alloc_pci_devs": [
-        0
+        0,
+        264
     ]
 }

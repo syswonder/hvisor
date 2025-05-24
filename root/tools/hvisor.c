@@ -373,6 +373,8 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         config->arch_config.initrd_size = load_image_to_memory(
             initrd_filepath_json->valuestring,
             strtoull(initrd_load_hpa_json->valuestring, NULL, 16));
+        config->arch_config.initrd_memory_region_id =
+            strtoull(initrd_memory_region_id_json->valuestring, NULL, 16);
 
         log_info("initrd size: %llu", config->arch_config.initrd_size);
     }
@@ -381,8 +383,6 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         strtoull(rsdp_memory_region_id_json->valuestring, NULL, 16);
     config->arch_config.acpi_memory_region_id =
         strtoull(acpi_memory_region_id_json->valuestring, NULL, 16);
-    config->arch_config.initrd_memory_region_id =
-        strtoull(initrd_memory_region_id_json->valuestring, NULL, 16);
 #endif
 
     return 0;

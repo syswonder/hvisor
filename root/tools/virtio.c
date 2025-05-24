@@ -810,8 +810,8 @@ void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t value,
             regs->interrupt_count--;
             break;
         } else if (value != regs->interrupt_status) {
-            log_error("interrupt_status is not equal to ack, type is %d",
-                      vdev->type);
+            log_error("interrupt_status %d is not equal to ack %d, type is %d",
+                      regs->interrupt_status, value, vdev->type);
         }
         regs->interrupt_status &= !value;
         log_info("debug: (%s) clearing! interrupt_status -> %d", __func__,
