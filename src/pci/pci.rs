@@ -13,7 +13,7 @@
 //
 // Authors:
 //
-use core::{ptr, usize};
+use core::{panic, ptr, usize};
 
 use crate::config::{HvPciConfig, CONFIG_MAX_PCI_DEV};
 use crate::memory::addr::align_down;
@@ -34,7 +34,10 @@ use super::bridge::BridgeConfig;
 use super::endpoint::EndpointConfig;
 use super::pcibar::BarRegion;
 use super::phantom_cfg::{add_phantom_devices, generate_vep_by_bdf, PhantomCfg};
-use super::{cfg_base, extract_reg_addr, get_bdf_shift, NUM_BAR_REGS_TYPE0, NUM_BAR_REGS_TYPE1};
+use super::{
+    cfg_base, extract_reg_addr, get_bdf_shift, CFG_EXT_CAP_PTR_OFF, NUM_BAR_REGS_TYPE0,
+    NUM_BAR_REGS_TYPE1,
+};
 
 #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
 use crate::arch::iommu::iommu_add_device;
@@ -67,6 +70,13 @@ impl PciRoot {
         }
     }
 
+    pub fn is_bridge(&self, bdf: usize) -> bool {
+        match self.bridges.iter().find(|&b| b.bdf == bdf){
+            Some(b) => true,
+            None => false
+        }
+    }
+
     pub fn bars_register(&mut self) {
         self.ep_bars_init();
         self.bridge_bars_init();
@@ -77,7 +87,7 @@ impl PciRoot {
         for ep in self.endpoints.iter() {
             add_phantom_devices(ep.generate_vep());
         }
-        for bridge in self.bridges.iter(){
+        for bridge in self.bridges.iter() {
             add_phantom_devices(bridge.generate_vbridge());
         }
     }
@@ -174,8 +184,11 @@ impl Zone {
 
         for idx in 0..num_pci_devs {
             info!(
-                "PCIe device assigned to zone {}: {:#x}",
-                self.id, alloc_pci_devs[idx]
+                "PCIe device assigned to zone {}: {:#x}:{:#x}.{:#x}",
+                self.id,
+                alloc_pci_devs[idx] >> 8,
+                (alloc_pci_devs[idx] >> 3) & 0b11111,
+                alloc_pci_devs[idx] & 0b111
             );
             self.pciroot.alloc_devs.push(alloc_pci_devs[idx] as _);
             #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
@@ -200,24 +213,24 @@ impl Zone {
     ) {
         // Virtual ECAM
 
-        // self.mmio_region_register(
-        //     pci_config.ecam_base as _,
-        //     pci_config.ecam_size as _,
-        //     mmio_pci_handler,
-        //     (pci_config.ecam_base + hv_addr_prefix + loong_ht_prefix) as _,
-        // );
+        self.mmio_region_register(
+            pci_config.ecam_base as _,
+            pci_config.ecam_size as _,
+            mmio_pci_handler,
+            (pci_config.ecam_base + hv_addr_prefix + loong_ht_prefix) as _,
+        );
 
-        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-                    pci_config.ecam_base as GuestPhysAddr,
-                    (pci_config.ecam_base + loong_ht_prefix) as _,
-                    pci_config.ecam_size as _,
-                    MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-                ))
-                .ok();
+        // self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+        //             pci_config.ecam_base as GuestPhysAddr,
+        //             (pci_config.ecam_base + loong_ht_prefix) as _,
+        //             pci_config.ecam_size as _,
+        //             MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        //         ))
+        //         .ok();
 
         info!(
             "pci handler args : {:#x}",
-            pci_config.ecam_base + hv_addr_prefix
+            pci_config.ecam_base + hv_addr_prefix + loong_ht_prefix
         );
 
         if pci_config.io_size != 0 {
@@ -272,7 +285,7 @@ impl Zone {
             self.mmio_region_register(
                 pci_config.io_base as _,
                 pci_config.io_size as _,
-                mmio_pci_handler,
+                mmio_pci_bar_handler,
                 (pci_config.io_base + hv_addr_prefix) as _,
             );
         }
@@ -281,7 +294,7 @@ impl Zone {
             self.mmio_region_register(
                 pci_config.mem32_base as _,
                 pci_config.mem32_size as _,
-                mmio_pci_handler,
+                mmio_pci_bar_handler,
                 (pci_config.mem32_base + hv_addr_prefix) as _,
             );
         }
@@ -290,10 +303,12 @@ impl Zone {
             self.mmio_region_register(
                 pci_config.mem64_base as _,
                 pci_config.mem64_size as _,
-                mmio_pci_handler,
+                mmio_pci_bar_handler,
                 (pci_config.mem64_base + hv_addr_prefix) as _,
             );
         }
+
+        info!("PCIe MMIO init done!");
     }
 
     pub fn virtual_pci_device_init(&mut self, pci_config: &HvPciConfig) {
@@ -312,6 +327,7 @@ impl Zone {
                 };
             } else {
                 // host bridge
+                self.pciroot.bridges.push(BridgeConfig::new(bdf));
             }
         }
 
@@ -359,8 +375,7 @@ impl Zone {
 }
 
 pub fn mmio_pci_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
-    // mmio_perform_access(base, mmio);
-    // return Ok(());
+    // info!("mmio pci: {:#x}", mmio.address);
     let zone = this_zone();
     let mut binding = zone.write();
     let zone_id = binding.id;
@@ -370,10 +385,24 @@ pub fn mmio_pci_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     let bdf = (mmio.address >> bdf_shift) & 0xffff;
 
     let is_assigned = binding.pciroot.is_assigned_device(bdf);
+    let is_bridge = binding.pciroot.is_bridge(bdf);
 
     match is_assigned {
         true => {
             mmio_perform_access(base, mmio);
+            if reg_addr == 0x150{
+                mmio.value = mmio.value & 0x00ffffff;
+                mmio.value += 0x1a000000;
+            }
+            // if (reg_addr >= CFG_EXT_CAP_PTR_OFF) && !is_bridge {
+            //     mmio.value = match binding.pciroot.endpoints.iter().find(|&ep| ep.bdf == bdf) {
+            //         Some(ep) => ep.skip_sriov(mmio.value),
+            //         None => {
+            //             error!("Endpoint {:x}:{:x}.{:x} doesn't exist!", bdf >> 8, (bdf >> 3) &0b11111, bdf & 0b111);
+            //             mmio.value
+            //         }
+            //     }
+            // }
             return Ok(());
         }
         false => {
@@ -384,7 +413,7 @@ pub fn mmio_pci_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
                     mmio.value = header_val as _;
                     return Ok(());
                 } else {
-                    panic!("invalid access to empty device!");
+                    panic!("invalid access to empty device {:x}:{:x}.{:x}, addr: {:#x}, reg_addr: {:#x}!", bdf >> 8, (bdf >> 3) & 0b11111, bdf & 0b111, mmio.address, reg_addr);
                 }
             } else {
                 // device exists, so we try to get the phantom device
@@ -413,6 +442,7 @@ pub fn mmio_pci_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
 }
 
 pub fn mmio_pci_bar_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
+    panic!("mmio pci bar: {:#x}", mmio.address + base);
     mmio_perform_access(base, mmio);
     Ok(())
 }

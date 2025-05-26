@@ -201,18 +201,15 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     zone.ivc_init(config.ivc_config());
 
     /* loongarch page table emergency */
-    if zone.id == 0 {
-        zone.page_table_emergency(config.pci_config.ecam_base as _, config.pci_config.ecam_size as _)?;
-        // zone.page_table_emergency(0x1fe0_0000 as _, 0x3000 as _)?;
-        zone.page_table_emergency(0x1000_0000 as _, 0x1000 as _)?;
-    }
+    /* Kai: Maybe unnecessary but i can't boot vms on my 3A6000 PC without this function. */
+    zone.page_table_emergency(config.pci_config.ecam_base as _, config.pci_config.ecam_size as _)?;
 
-    // #[cfg(all(feature = "pci"))]
-    // zone.pci_init(
-    //     &config.pci_config,
-    //     config.num_pci_devs as _,
-    //     &config.alloc_pci_devs,
-    // );
+    #[cfg(all(feature = "pci"))]
+    zone.pci_init(
+        &config.pci_config,
+        config.num_pci_devs as _,
+        &config.alloc_pci_devs,
+    );
 
     config.cpus().iter().for_each(|cpu_id| {
         zone.cpu_set.set_bit(*cpu_id as _);

@@ -5,16 +5,12 @@ use alloc::collections::btree_map::BTreeMap;
 use crate::{
     error::HvResult,
     memory::{mmio_perform_access, MMIOAccess},
-    pci::PHANTOM_DEV_HEADER, zone::this_zone_id,
+    pci::PHANTOM_DEV_HEADER,
+    zone::this_zone_id,
 };
 
 use super::{
-    cfg_base, endpoint::EndpointConfig, extract_reg_addr, pcibar::VirtPciBar, CFG_BAR0, CFG_BAR1,
-    CFG_BAR2, CFG_BAR3, CFG_BAR4, CFG_BAR5, CFG_CAP_PTR_OFF, CFG_CLASS_CODE_OFF, CFG_CMD_OFF,
-    CFG_IO_BASE, CFG_IO_BASE_UPPER16, CFG_IO_LIMIT, CFG_IO_LIMIT_UPPER16, CFG_MEM_BASE,
-    CFG_MEM_LIMIT, CFG_PREF_BASE_UPPER32, CFG_PREF_LIMIT_UPPER32, CFG_PREF_MEM_BASE,
-    CFG_PREF_MEM_LIMIT, CFG_PRIMARY_BUS, CFG_SECONDARY_BUS, NUM_BAR_REGS_TYPE0, NUM_BAR_REGS_TYPE1,
-    NUM_MAX_BARS,
+    cfg_base, endpoint::EndpointConfig, extract_reg_addr, pcibar::VirtPciBar, CFG_BAR0, CFG_BAR1, CFG_BAR2, CFG_BAR3, CFG_BAR4, CFG_BAR5, CFG_CAP_PTR_OFF, CFG_CLASS_CODE_OFF, CFG_CMD_OFF, CFG_EXT_CAP_PTR_OFF, CFG_INT_LINE, CFG_INT_PIN, CFG_IO_BASE, CFG_IO_BASE_UPPER16, CFG_IO_LIMIT, CFG_IO_LIMIT_UPPER16, CFG_MEM_BASE, CFG_MEM_LIMIT, CFG_PREF_BASE_UPPER32, CFG_PREF_LIMIT_UPPER32, CFG_PREF_MEM_BASE, CFG_PREF_MEM_LIMIT, CFG_PRIMARY_BUS, CFG_SECONDARY_BUS, NUM_BAR_REGS_TYPE0, NUM_BAR_REGS_TYPE1, NUM_MAX_BARS
 };
 
 // Copyright (c) 2025 Syswonder
@@ -32,124 +28,10 @@ use super::{
 //
 // Authors:
 //
-#[derive(Debug,Copy, Clone, PartialEq, Eq)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PhantomCfgType {
     ENDPOINT,
     BRIDGE,
-}
-
-#[derive(Debug, Copy, Clone, Default)]
-pub struct BridgeExtra {
-    primary_bus: u8,
-    secondary_bus: u8,
-    io_base: u8,
-    io_limit: u8,
-    mem_base: u16,
-    mem_limit: u16,
-    pref_mem_base: u16,
-    pref_mem_limit: u16,
-    pref_base_upper32: u32,
-    pref_limit_upper32: u32,
-    io_base_upper16: u16,
-    io_limit_upper16: u16,
-}
-
-impl BridgeExtra {
-    pub fn read_primary_bus(&self) -> u8 {
-        self.primary_bus
-    }
-
-    pub fn write_primary_bus(&mut self, val: u8) {
-        self.primary_bus = val;
-    }
-
-    pub fn read_secondary_bus(&self) -> u8 {
-        self.secondary_bus
-    }
-
-    pub fn write_secondary_bus(&mut self, val: u8) {
-        self.secondary_bus = val;
-    }
-
-    pub fn read_io_base(&self) -> u8 {
-        self.io_base
-    }
-
-    pub fn write_io_base(&mut self, val: u8) {
-        self.io_base = val;
-    }
-
-    pub fn read_io_limit(&self) -> u8 {
-        self.io_limit
-    }
-
-    pub fn write_io_limit(&mut self, val: u8) {
-        self.io_limit = val;
-    }
-
-    pub fn read_mem_base(&self) -> u16 {
-        self.mem_base
-    }
-
-    pub fn write_mem_base(&mut self, val: u16) {
-        self.mem_base = val;
-    }
-
-    pub fn read_mem_limit(&self) -> u16 {
-        self.mem_limit
-    }
-
-    pub fn write_mem_limit(&mut self, val: u16) {
-        self.mem_limit = val;
-    }
-
-    pub fn read_pref_mem_base(&self) -> u16 {
-        self.pref_mem_base
-    }
-
-    pub fn write_pref_mem_base(&mut self, val: u16) {
-        self.pref_mem_base = val;
-    }
-
-    pub fn read_pref_mem_limit(&self) -> u16 {
-        self.pref_mem_limit
-    }
-
-    pub fn write_pref_mem_limit(&mut self, val: u16) {
-        self.pref_mem_limit = val;
-    }
-
-    pub fn read_pref_base_upper32(&self) -> u32 {
-        self.pref_base_upper32
-    }
-
-    pub fn write_pref_base_upper32(&mut self, val: u32) {
-        self.pref_base_upper32 = val;
-    }
-
-    pub fn read_pref_limit_upper32(&self) -> u32 {
-        self.pref_limit_upper32
-    }
-
-    pub fn write_pref_limit_upper32(&mut self, val: u32) {
-        self.pref_limit_upper32 = val;
-    }
-
-    pub fn read_io_base_upper16(&self) -> u16 {
-        self.io_base_upper16
-    }
-
-    pub fn write_io_base_upper16(&mut self, val: u16) {
-        self.io_base_upper16 = val;
-    }
-
-    pub fn read_io_limit_upper16(&self) -> u16 {
-        self.io_limit_upper16
-    }
-
-    pub fn write_io_limit_upper16(&mut self, val: u16) {
-        self.io_limit_upper16 = val;
-    }
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -157,10 +39,10 @@ pub struct PhantomCfg {
     pub bdf: usize,
     command: u16,
     status: u16,
+    int_line: u8,
     v_bars: [VirtPciBar; NUM_MAX_BARS],
     bar_num: usize,
     cfg_type: PhantomCfgType,
-    extra: Option<BridgeExtra>,
 }
 
 impl PhantomCfg {
@@ -169,6 +51,7 @@ impl PhantomCfg {
             bdf,
             command: 0,
             status: 0,
+            int_line: 0,
             v_bars: v_bars,
             bar_num: if cfg_type == PhantomCfgType::ENDPOINT {
                 NUM_BAR_REGS_TYPE0
@@ -176,11 +59,6 @@ impl PhantomCfg {
                 NUM_BAR_REGS_TYPE1
             },
             cfg_type: cfg_type,
-            extra: if cfg_type == PhantomCfgType::ENDPOINT {
-                None
-            } else {
-                Some(BridgeExtra::default())
-            },
         }
     }
 
@@ -208,15 +86,31 @@ impl PhantomCfg {
     pub fn write_stats(&mut self, val: u16) {
         self.status = val;
     }
+    pub fn read_int_line(&self) -> u8 {
+        self.int_line
+    }
+    pub fn write_int_line(&mut self, val: u8) {
+        self.int_line = val;
+    }
 
-    pub fn phantom_mmio_handler(&mut self, mmio: &mut MMIOAccess, base: usize, zone_id: usize) -> HvResult {
+    pub fn phantom_mmio_handler(
+        &mut self,
+        mmio: &mut MMIOAccess,
+        base: usize,
+        zone_id: usize,
+    ) -> HvResult {
         match self.cfg_type {
             PhantomCfgType::ENDPOINT => self.phantom_ep_handler(mmio, base, zone_id),
             PhantomCfgType::BRIDGE => self.phantom_bridge_handler(mmio, base, zone_id),
         }
     }
 
-    fn phantom_ep_handler(&mut self, mmio: &mut MMIOAccess, base: usize, zone_id: usize) -> HvResult {
+    fn phantom_ep_handler(
+        &mut self,
+        mmio: &mut MMIOAccess,
+        base: usize,
+        zone_id: usize,
+    ) -> HvResult {
         let reg_addr = extract_reg_addr(mmio.address);
         match reg_addr {
             0 => {
@@ -226,7 +120,7 @@ impl PhantomCfg {
                 let function = bdf & 0x7;
                 let device = (bdf >> 3) & 0b11111;
                 let bus = bdf >> 8;
-                let header_val = unsafe { ptr::read_volatile(header_addr as *mut u32) };       
+                let header_val = unsafe { ptr::read_volatile(header_addr as *mut u32) };
                 warn!(
                     "{:x}:{:x}.{:x} exists but we don't show it to vm {:x}:{:x}",
                     bus,
@@ -244,17 +138,18 @@ impl PhantomCfg {
                     mmio.value = self.read_cmd() as _;
                 }
             }
-            CFG_CLASS_CODE_OFF => {
-                if !mmio.is_write {
-                    mmio.value = 0x1f000010;
-                }
-            }
             CFG_CAP_PTR_OFF => {
                 // can't see any capabilities
                 mmio.value = 0x0;
             }
+            CFG_EXT_CAP_PTR_OFF => {
+                mmio.value = 0x0;
+            }
+            CFG_CLASS_CODE_OFF => {
+                mmio.value = 0x1f0000;
+            }
             CFG_BAR0 => {
-                if zone_id == 0{
+                if zone_id == 0 {
                     mmio_perform_access(base, mmio);
                 }
                 if mmio.is_write {
@@ -264,7 +159,7 @@ impl PhantomCfg {
                 }
             }
             CFG_BAR1 => {
-                if zone_id == 0{
+                if zone_id == 0 {
                     mmio_perform_access(base, mmio);
                 }
                 if mmio.is_write {
@@ -274,7 +169,7 @@ impl PhantomCfg {
                 }
             }
             CFG_BAR2 => {
-                if zone_id == 0{
+                if zone_id == 0 {
                     mmio_perform_access(base, mmio);
                 }
                 if mmio.is_write {
@@ -284,7 +179,7 @@ impl PhantomCfg {
                 }
             }
             CFG_BAR3 => {
-                if zone_id == 0{
+                if zone_id == 0 {
                     mmio_perform_access(base, mmio);
                 }
                 if mmio.is_write {
@@ -294,7 +189,7 @@ impl PhantomCfg {
                 }
             }
             CFG_BAR4 => {
-                if zone_id == 0{
+                if zone_id == 0 {
                     mmio_perform_access(base, mmio);
                 }
                 if mmio.is_write {
@@ -304,7 +199,7 @@ impl PhantomCfg {
                 }
             }
             CFG_BAR5 => {
-                if zone_id == 0{
+                if zone_id == 0 {
                     mmio_perform_access(base, mmio);
                 }
                 if mmio.is_write {
@@ -313,15 +208,41 @@ impl PhantomCfg {
                     mmio.value = self.read_bar(5) as _;
                 }
             }
+            CFG_INT_PIN => {
+                mmio.value = 0;
+            }
+            CFG_INT_LINE => {
+                if mmio.is_write {
+                    self.write_int_line(mmio.value as _);
+                } else {
+                    mmio.value = self.read_int_line() as _;
+                }
+            }
             _ => {
-                // error!("other offset access @ off : {:#x}!", reg_addr);
                 mmio_perform_access(base, mmio);
+                // if self.bdf >> 8 == 8 {
+                //     info!(
+                //         "{:x}:{:x}.{:x} access {:#x} {:?} {} -> {:#x}",
+                //         self.bdf >> 8,
+                //         (self.bdf >> 3) & 0b11111,
+                //         self.bdf & 0b111,
+                //         reg_addr,
+                //         if mmio.is_write {"W"} else {"R"},
+                //         mmio.size,
+                //         mmio.value
+                //     );
+                // }
             }
         }
         Ok(())
     }
 
-    fn phantom_bridge_handler(&mut self, mmio: &mut MMIOAccess, base: usize, _zone_id: usize) -> HvResult {
+    fn phantom_bridge_handler(
+        &mut self,
+        mmio: &mut MMIOAccess,
+        base: usize,
+        _zone_id: usize,
+    ) -> HvResult {
         let reg_addr = extract_reg_addr(mmio.address);
         match reg_addr {
             0 => {
@@ -353,6 +274,9 @@ impl PhantomCfg {
                 // can't see any capabilities
                 mmio.value = 0x0;
             }
+            CFG_EXT_CAP_PTR_OFF => {
+                mmio.value = 0x0;
+            }
             CFG_BAR0 => {
                 if mmio.is_write {
                     self.write_bar(0, mmio.value as _);
@@ -367,95 +291,20 @@ impl PhantomCfg {
                     mmio.value = self.read_bar(1) as _;
                 }
             }
-            CFG_PRIMARY_BUS => {
-                if mmio.is_write {
-                    self.extra.unwrap().write_primary_bus(mmio.value as _);
-                } else {
-                    mmio.value = self.extra.unwrap().read_primary_bus() as _;
-                }
+            CFG_INT_PIN => {
+                mmio.value = 0;
             }
-            CFG_SECONDARY_BUS => {
+            CFG_INT_LINE => {
                 if mmio.is_write {
-                    self.extra.unwrap().write_secondary_bus(mmio.value as _);
+                    self.write_int_line(mmio.value as _);
                 } else {
-                    mmio.value = self.extra.unwrap().read_secondary_bus() as _;
-                }
-            }
-            CFG_IO_BASE => {
-                if mmio.is_write {
-                    self.extra.unwrap().write_io_base(mmio.value as _);
-                } else {
-                    mmio.value = self.extra.unwrap().read_io_base() as _;
-                }
-            }
-            CFG_IO_LIMIT => {
-                if mmio.is_write {
-                    self.extra.unwrap().write_io_limit(mmio.value as _);
-                } else {
-                    mmio.value = self.extra.unwrap().read_io_limit() as _;
-                }
-            }
-            CFG_MEM_BASE => {
-                if mmio.is_write {
-                    self.extra.unwrap().write_mem_base(mmio.value as _);
-                } else {
-                    mmio.value = self.extra.unwrap().read_mem_base() as _;
-                }
-            }
-            CFG_MEM_LIMIT => {
-                if mmio.is_write {
-                    self.extra.unwrap().write_mem_limit(mmio.value as _);
-                } else {
-                    mmio.value = self.extra.unwrap().read_mem_base() as _;
-                }
-            }
-            CFG_PREF_MEM_BASE => {
-                if mmio.is_write {
-                    self.extra.unwrap().write_pref_mem_base(mmio.value as _);
-                } else {
-                    mmio.value = self.extra.unwrap().read_pref_mem_base() as _;
-                }
-            }
-            CFG_PREF_MEM_LIMIT => {
-                if mmio.is_write {
-                    self.extra.unwrap().write_pref_mem_limit(mmio.value as _);
-                } else {
-                    mmio.value = self.extra.unwrap().read_pref_mem_limit() as _;
-                }
-            }
-            CFG_PREF_BASE_UPPER32 => {
-                if mmio.is_write {
-                    self.extra.unwrap().write_pref_base_upper32(mmio.value as _);
-                } else {
-                    mmio.value = self.extra.unwrap().read_pref_base_upper32() as _;
-                }
-            }
-            CFG_PREF_LIMIT_UPPER32 => {
-                if mmio.is_write {
-                    self.extra
-                        .unwrap()
-                        .write_pref_limit_upper32(mmio.value as _);
-                } else {
-                    mmio.value = self.extra.unwrap().read_pref_limit_upper32() as _;
-                }
-            }
-            CFG_IO_BASE_UPPER16 => {
-                if mmio.is_write {
-                    self.extra.unwrap().write_io_base_upper16(mmio.value as _);
-                } else {
-                    mmio.value = self.extra.unwrap().read_io_base_upper16() as _;
-                }
-            }
-            CFG_IO_LIMIT_UPPER16 => {
-                if mmio.is_write {
-                    self.extra.unwrap().write_io_limit_upper16(mmio.value as _);
-                } else {
-                    mmio.value = self.extra.unwrap().read_io_limit_upper16() as _;
+                    mmio.value = self.read_int_line() as _;
                 }
             }
             _ => {
-                // error!("other offset access @ off : {:#x}!", reg_addr);
+                // if !mmio.is_write {
                 mmio_perform_access(base, mmio);
+                // }
             }
         }
         Ok(())
@@ -468,9 +317,13 @@ pub fn add_phantom_devices(phantom_dev: PhantomCfg) {
     unsafe {
         let bdf = phantom_dev.bdf;
         if !PHANTOM_DEVS.contains_key(&bdf) {
-            info!("Add a new virt pci device: {:x}:{:x}.{:x}", &phantom_dev.bdf >> 8, (&phantom_dev.bdf >> 3) & 0b11111, &phantom_dev.bdf & 0b111);
+            info!(
+                "Add a new virt pci device: {:x}:{:x}.{:x}",
+                &phantom_dev.bdf >> 8,
+                (&phantom_dev.bdf >> 3) & 0b11111,
+                &phantom_dev.bdf & 0b111
+            );
             PHANTOM_DEVS.insert(bdf, phantom_dev);
-            
         } else {
             warn!(
                 "Phantom device with BDF {:#x} already exists, skipping",

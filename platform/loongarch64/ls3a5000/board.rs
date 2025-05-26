@@ -89,12 +89,12 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
         virtual_start: 0x100d0000,
         size: 0x1000,
     }, // rtc, passthrough now
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0x10000000,
-    //     virtual_start: 0x10000000,
-    //     size: 0x1000,
-    // }, // pch-pic irq controller
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x10000000,
+        virtual_start: 0x10000000,
+        size: 0x1000,
+    }, // pch-pic irq controller
     /* PCI related stuffs ... */
     // HvConfigMemoryRegion {
     //     mem_type: MEM_TYPE_IO,
@@ -165,14 +165,14 @@ pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
 /* 00:07.0, 00:08.0, 00:09.0, 00:0a.0, 00:0b.0 */
 /* 00:0c.0, 00:0d.0, 00:0f.0, 00:10.0, 00:13.0 */
 /* 00:16.0, 00:19.0, 02:00.0, 05:00.0 */
-/* 08:00.0, 08:00.1, 08:00.2, 08:00.3 net*/
-// pub const ROOT_PCI_DEVS: [u64; 24] = [0, 1, 2, 3, 4 << 3, (4 << 3) + 1,
-// 5 << 3, (5 << 3) + 1,0x30,
-// 7 << 3, 8 << 3, 9 << 3, 0xa << 3, 0xb << 3,
-// 0xc << 3, 0xd << 3, 0xf << 3, 0x10 << 3, 0x13 << 3,
-// 0x16 << 3, 0x19 << 3, 2 << 8, 5 << 8,
-// (8 << 8) + 3];
+/* 08:00.0*, 08:00.1, 08:00.2, 08:00.3 net*/
+pub const ROOT_PCI_DEVS: [u64; 24] = [0, 1, 2, 3, 4 << 3, (4 << 3) + 1,
+5 << 3, (5 << 3) + 1,0x30,
+7 << 3, 8 << 3, 9 << 3, 0xa << 3, 0xb << 3,
+0xc << 3, 0xd << 3, 0xf << 3, 0x10 << 3, 0x13 << 3,
+0x16 << 3, 0x19 << 3, 2 << 8, 5 << 8,
+(8 << 8)];
 
-pub const ROOT_PCI_DEVS: [u64; 0] = [];
+// pub const ROOT_PCI_DEVS: [u64; 0] = [];
 
 // "alloc_pci_devs": [0,1,2,3,32,33,40,41,56,64,72,80,88,96,104,120,128,152,176,200,512,1280,2051]

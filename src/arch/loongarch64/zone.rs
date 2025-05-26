@@ -530,7 +530,7 @@ fn handle_extioi_mapping_mmio(mmio: &mut MMIOAccess, base_addr: usize, size: usi
 
     let base_ioi_number = mmio.address - offset(base_addr);
     for i in 0..mmio.size {
-        let target_ioi_number = base_ioi_number + i;
+        let target_ioi_number = base_ioi_number + i; // 0 - 255
         if target_ioi_number >= size {
             error!("should not happen, wrong ioi number: {}", target_ioi_number);
             return hv_result_err!(EIO, "wrong ioi number when writing extioi core regs");
@@ -540,13 +540,16 @@ fn handle_extioi_mapping_mmio(mmio: &mut MMIOAccess, base_addr: usize, size: usi
         // we don't change the node selection here - wheatfox
         let target_ioi_node_selection = target_ioi_write_value & 0xf0;
         let target_ioi_irq_target = target_ioi_write_value & 0xf;
-        let this_cpu_id = this_cpu_id();
+        let mut target_cpu_id = this_cpu_id();
+        if target_ioi_number >= 64 {
+            target_cpu_id = (target_ioi_number - 64) / 48;
+        }
         warn!(
             "found extioi[{}], node_selection={}, irq_target={}, changed cpu routing to {}",
-            target_ioi_number, target_ioi_node_selection, target_ioi_irq_target, this_cpu_id
+            target_ioi_number, target_ioi_node_selection, target_ioi_irq_target, target_cpu_id
         );
         let mut new_data = target_ioi_node_selection;
-        new_data |= (1 << this_cpu_id);
+        new_data |= (1 << target_cpu_id);
         let target_write_phyaddr = base_addr + target_ioi_number as usize;
         let target_write_value = new_data as u8;
         warn!(

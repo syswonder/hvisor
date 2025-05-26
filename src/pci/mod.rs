@@ -23,7 +23,11 @@ pub mod phantom_cfg;
 
 pub const CFG_CMD_OFF: usize = 0x4; //status
 pub const CFG_CAP_PTR_OFF: usize = 0x34; // capabilities pointer
+pub const CFG_EXT_CAP_PTR_OFF: usize = 0x100; // extended capabilities pointer
+pub const CFG_NEXT_EXT_CAP_OFF: usize = 20;
 pub const CFG_CLASS_CODE_OFF: usize = 0x8; // 4 bytes, include revision and class code
+pub const CFG_SRIOV_CAP_ID: usize = 0x0010;
+pub const CFG_EXT_CAP_ID: usize = 0x10;
 pub const CFG_BAR0: usize = 0x10;
 pub const CFG_BAR1: usize = 0x14;
 pub const CFG_BAR2: usize = 0x18;
@@ -42,6 +46,8 @@ pub const CFG_PREF_BASE_UPPER32: usize = 0x28;
 pub const CFG_PREF_LIMIT_UPPER32: usize = 0x2c;
 pub const CFG_IO_BASE_UPPER16: usize = 0x30;
 pub const CFG_IO_LIMIT_UPPER16: usize = 0x32;
+pub const CFG_INT_LINE: usize = 0x3d;
+pub const CFG_INT_PIN: usize = 0x3d;
 
 pub const NUM_BAR_REGS_TYPE0: usize = 6;
 pub const NUM_BAR_REGS_TYPE1: usize = 2;
@@ -75,6 +81,16 @@ pub fn cfg_base(bdf: usize) -> usize {
     } else {
         get_ecam_base() + (bdf << shift)
     }
+}
+
+// generate addr with reg addr, example off = 0x123, shift = 0x8
+pub fn cfg_reg_addr(bdf: usize, off: usize) -> usize{
+    let base = cfg_base(bdf);
+    let shift = get_bdf_shift();
+    let upper_off = off >> shift; // 0x1
+    let lower_off = off & ((1 << shift) - 1); // 0x23
+    let addr = (upper_off << (shift + 16)) + base + lower_off;
+    addr
 }
 
 /// Extracts the PCI config space register offset, compatible with architectures where the offset layout is split (e.g., LoongArch).
