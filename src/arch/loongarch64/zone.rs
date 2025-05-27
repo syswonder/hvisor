@@ -544,17 +544,13 @@ fn handle_extioi_mapping_mmio(mmio: &mut MMIOAccess, base_addr: usize, size: usi
         if target_ioi_number >= 64 {
             target_cpu_id = (target_ioi_number - 64) / 48;
         }
-        warn!(
-            "found extioi[{}], node_selection={}, irq_target={}, changed cpu routing to {}",
-            target_ioi_number, target_ioi_node_selection, target_ioi_irq_target, target_cpu_id
-        );
         let mut new_data = target_ioi_node_selection;
         new_data |= (1 << target_cpu_id);
         let target_write_phyaddr = base_addr + target_ioi_number as usize;
         let target_write_value = new_data as u8;
-        warn!(
-            "write core mapping for extioi[{}], value=0x{:x}",
-            target_ioi_number, target_write_value
+        debug!(
+            "extioi[{}], node_selection={:#x}, irq_target={:#x}, changed cpu routing to {}, value={:#x}",
+            target_ioi_number, target_ioi_node_selection, target_ioi_irq_target, target_cpu_id, target_write_value
         );
         unsafe {
             write_volatile(target_write_phyaddr as *mut u8, target_write_value);
@@ -611,7 +607,7 @@ fn handle_mmio_stats(mmio: &mut MMIOAccess) {
     };
 
     if !msg.is_empty() {
-        info!("{}", msg);
+        debug!("{}", msg);
     }
 
     stats.last_value.store(mmio.value as u64, Ordering::SeqCst);

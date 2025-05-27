@@ -202,7 +202,10 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
 
     /* loongarch page table emergency */
     /* Kai: Maybe unnecessary but i can't boot vms on my 3A6000 PC without this function. */
-    zone.page_table_emergency(config.pci_config.ecam_base as _, config.pci_config.ecam_size as _)?;
+    zone.page_table_emergency(
+        config.pci_config.ecam_base as _,
+        config.pci_config.ecam_size as _,
+    )?;
 
     #[cfg(all(feature = "pci"))]
     zone.pci_init(
@@ -267,4 +270,3 @@ fn test_add_and_remove_zone() {
     }
     assert_eq!(ZONE_LIST.read().len(), zone_count_before);
 }
-

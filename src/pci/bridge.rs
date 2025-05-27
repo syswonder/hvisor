@@ -16,7 +16,9 @@
 use alloc::vec::Vec;
 
 use super::{
-    pcibar::{BarRegion, PciBar, VirtPciBar}, phantom_cfg::{PhantomCfg, PhantomCfgType}, NUM_BAR_REGS_TYPE1, NUM_MAX_BARS
+    pcibar::{BarRegion, PciBar, VirtPciBar},
+    phantom_cfg::{PhantomCfg, PhantomCfgType},
+    NUM_BAR_REGS_TYPE1, NUM_MAX_BARS,
 };
 
 #[derive(Debug)]

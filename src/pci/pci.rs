@@ -71,9 +71,9 @@ impl PciRoot {
     }
 
     pub fn is_bridge(&self, bdf: usize) -> bool {
-        match self.bridges.iter().find(|&b| b.bdf == bdf){
+        match self.bridges.iter().find(|&b| b.bdf == bdf) {
             Some(b) => true,
-            None => false
+            None => false,
         }
     }
 
@@ -390,7 +390,7 @@ pub fn mmio_pci_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     match is_assigned {
         true => {
             mmio_perform_access(base, mmio);
-            if reg_addr == 0x150{
+            if reg_addr == 0x150 {
                 mmio.value = mmio.value & 0x00ffffff;
                 mmio.value += 0x1a000000;
             }

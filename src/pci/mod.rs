@@ -84,7 +84,7 @@ pub fn cfg_base(bdf: usize) -> usize {
 }
 
 // generate addr with reg addr, example off = 0x123, shift = 0x8
-pub fn cfg_reg_addr(bdf: usize, off: usize) -> usize{
+pub fn cfg_reg_addr(bdf: usize, off: usize) -> usize {
     let base = cfg_base(bdf);
     let shift = get_bdf_shift();
     let upper_off = off >> shift; // 0x1

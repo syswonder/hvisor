@@ -1076,7 +1076,18 @@ pub fn probe_pci() {
             parse_vendor_device_id(vendor_id, device_id)
         );
     }
-    unsafe {warn!("given to linux @ 0xcf00000000: {:#x}", read_volatile(0x800000cf00000000 as *const u32));
-    warn!("given to linux @ 0xcf00000800: {:#x}", read_volatile(0x800000cf00000800 as *const u32));
-    warn!("given to linux @ 0xcf00000800: {:#x}", read_volatile(0x800000cf00001000 as *const u32));}
+    unsafe {
+        warn!(
+            "given to linux @ 0xcf00000000: {:#x}",
+            read_volatile(0x800000cf00000000 as *const u32)
+        );
+        warn!(
+            "given to linux @ 0xcf00000800: {:#x}",
+            read_volatile(0x800000cf00000800 as *const u32)
+        );
+        warn!(
+            "given to linux @ 0xcf00000800: {:#x}",
+            read_volatile(0x800000cf00001000 as *const u32)
+        );
+    }
 }
