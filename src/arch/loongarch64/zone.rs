@@ -542,6 +542,7 @@ fn handle_extioi_mapping_mmio(mmio: &mut MMIOAccess, base_addr: usize, size: usi
         let target_ioi_irq_target = target_ioi_write_value & 0xf;
         let mut target_cpu_id = this_cpu_id();
         if target_ioi_number >= 64 {
+            // msi hwirqs
             target_cpu_id = (target_ioi_number - 64) / 48;
         }
         let mut new_data = target_ioi_node_selection;
