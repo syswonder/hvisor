@@ -126,7 +126,7 @@ impl PhantomCfg {
                 let device = (bdf >> 3) & 0b11111;
                 let bus = bdf >> 8;
                 let header_val = unsafe { ptr::read_volatile(header_addr as *mut u32) };
-                warn!(
+                debug!(
                     "{:x}:{:x}.{:x} exists but we don't show it to vm {:x}:{:x}",
                     bus,
                     device,
@@ -258,7 +258,7 @@ impl PhantomCfg {
                 let function = bdf & 0x7;
                 let device = (bdf >> 3) & 0b11111;
                 let bus = bdf >> 8;
-                warn!(
+                debug!(
                     "{:x}:{:x}.{:x} exists but we don't show it to vm {:x}:{:x}",
                     bdf >> 8,
                     device,
