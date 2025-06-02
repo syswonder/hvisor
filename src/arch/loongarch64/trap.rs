@@ -1471,28 +1471,30 @@ fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
             mmio_access.size = 4;
             mmio_access.is_write = true;
 
+            // TODO: move these to mmio handler in arch/loongarch64/zone.rs
+            //
             // Special handling for IPI
-            if mmio_access.address == 0x1014 {
-                // IPI send issued from guest is tricky ...
-                // IPI_send is 32 bit, we ignore the upper 32 bits
-                // bit [31]: wait for completion
-                // bit [25:16] target cpu id
-                // bit [4:0] ipi id (IPI_status, 32 bit) indicates the IPI type (0-31)
-                let ipi_send = mmio_access.value as u32;
-                let ipi_id = ipi_send & 0x1f;
-                let target_cpu_id = (ipi_send >> 16) & 0x3ff;
-                let wait_for_completion = (ipi_send >> 31) & 0x1;
-                warn!("IPI send issued from guest, ipi_id = {:#x}, target_cpu_id = {:#x}, wait_for_completion = {:#x}", ipi_id, target_cpu_id, wait_for_completion);
-                if target_cpu_id == this_cpu_id() as u32 {
-                    warn!("send IPI to itself, injecting IPI to GCSR_ESTAT");
-                    inject_irq(INT_IPI, false);
-                    ctx.sepc += 4;
-                    return;
-                } else {
-                    // TODO
-                    panic!("send IPI from guest to other cpu is not supported yet!");
-                }
-            }
+            // if mmio_access.address == 0x1014 {
+            //     // IPI send issued from guest is tricky ...
+            //     // IPI_send is 32 bit, we ignore the upper 32 bits
+            //     // bit [31]: wait for completion
+            //     // bit [25:16] target cpu id
+            //     // bit [4:0] ipi id (IPI_status, 32 bit) indicates the IPI type (0-31)
+            //     let ipi_send = mmio_access.value as u32;
+            //     let ipi_id = ipi_send & 0x1f;
+            //     let target_cpu_id = (ipi_send >> 16) & 0x3ff;
+            //     let wait_for_completion = (ipi_send >> 31) & 0x1;
+            //     warn!("IPI send issued from guest, ipi_id = {:#x}, target_cpu_id = {:#x}, wait_for_completion = {:#x}", ipi_id, target_cpu_id, wait_for_completion);
+            //     if target_cpu_id == this_cpu_id() as u32 {
+            //         warn!("send IPI to itself, injecting IPI to GCSR_ESTAT");
+            //         inject_irq(INT_IPI, false);
+            //         ctx.sepc += 4;
+            //         return;
+            //     } else {
+            //         // TODO
+            //         panic!("send IPI from guest to other cpu is not supported yet!");
+            //     }
+            // }
         }
         7 => {
             // iocsrwr.d
