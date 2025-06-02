@@ -604,21 +604,22 @@
 			};
 		};
 
-		// serial@2800000 {
-		// 	compatible = "ti,am64-uart\0ti,am654-uart";
-		// 	reg = <0x00 0x2800000 0x00 0x100>;
-		// 	reg-shift = <0x02>;
-		// 	reg-io-width = <0x04>;
-		// 	interrupts = <0x00 0xb2 0x04>;
-		// 	clock-frequency = <0x2dc6c00>;
-		// 	current-speed = <0x1c200>;
-		// 	power-domains = <0x02 0x92 0x01>;
-		// 	clocks = <0x03 0x92 0x00>;
-		// 	clock-names = "fclk";
-		// 	pinctrl-names = "default";
-		// 	pinctrl-0 = <0x14>;
-		// 	phandle = <0x6b>;
-		// };
+		serial@2800000 {
+			compatible = "ti,am64-uart\0ti,am654-uart";
+			reg = <0x00 0x2800000 0x00 0x100>;
+			reg-shift = <0x02>;
+			reg-io-width = <0x04>;
+			interrupts = <0x00 0xb2 0x04>;
+			clock-frequency = <0x2dc6c00>;
+			current-speed = <0x1c200>;
+			power-domains = <0x02 0x92 0x01>;
+			clocks = <0xbf 0x92 0x00>;
+			clock-names = "fclk";
+			pinctrl-names = "default";
+			pinctrl-0 = <0x14>;
+			phandle = <0x6b>;
+			status = "disable";
+		};
 
 		serial@2810000 {
 			compatible = "ti,am64-uart\0ti,am654-uart";
@@ -1981,6 +1982,13 @@
 		phandle = <0x1a>;
 	};
 
+	clk_uart_fixed {
+		compatible = "fixed-clock";
+		#clock-cells = <0x00>;
+		clock-frequency = <0x2dc6c00>;
+		phandle = <0xbf>;
+	};
+
 	clk_es8388_fixed {
 		compatible = "fixed-clock";
 		#clock-cells = <0x00>;
@@ -2062,8 +2070,8 @@
 		net_5g_rst_gpio_default = "/bus@f0000/pinctrl@f4000/net-5g-rst-gpio-default";
 		main_mcan0_pins_default = "/bus@f0000/pinctrl@f4000/main-mcan0-pins-default";
 		ov5640_pins_default = "/bus@f0000/pinctrl@f4000/ov5640-pins-default";
-		main_uart0 = "/bus@f0000/serial@2800000";
-		main_uart1 = "/bus@f0000/serial@2810000";
+		main_uart0 = "/bus@f0000/serial@2810000";
+		main_uart1 = "/bus@f0000/serial@2800000";
 		main_uart2 = "/bus@f0000/serial@2820000";
 		main_uart3 = "/bus@f0000/serial@2830000";
 		main_uart4 = "/bus@f0000/serial@2840000";

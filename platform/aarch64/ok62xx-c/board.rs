@@ -10,7 +10,7 @@ pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1) ; // 2个cpu
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 11] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 12] = [
     // RAM区域：覆盖DTS中memory节点定义的物理内存，排除保留区域
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
@@ -26,8 +26,8 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 11] = [
     },
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
-        physical_start: 0x2810000,  
-        virtual_start: 0x2810000,    
+        physical_start: 0x2800000,  // 0x2800000包括serial2
+        virtual_start: 0x2800000,    
         size: 0x1000000,      
     }, // serial@2810000-serial@2860000
     HvConfigMemoryRegion {
@@ -72,7 +72,12 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 11] = [
         virtual_start: 0xfd00000,
         size: 0x20000,    // gpu 0xfd00000 0x20000
     },
-    
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xa003000,  
+        virtual_start: 0xa003000,
+        size: 0x1000,    // gpu 0xfd00000 0x20000
+    },
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x10000000,  

@@ -17,10 +17,17 @@
             "size": "0x1000"
         },
         {
+            
+            "type": "io",
+            "physical_start": "0x600000",
+            "virtual_start": "0x600000",
+            "size": "0x2000"
+        },
+        {
             "type": "io",
             "physical_start": "0x2800000",
             "virtual_start": "0x2800000",
-            "size": "0x20000"
+            "size": "0x1000"
         },
         {
             "type": "io",
@@ -29,13 +36,38 @@
             "size": "0x1000"
         },
         {
+            "type": "io",
+            "physical_start": "0x4a600000",
+            "virtual_start": "0x4a600000",
+            "size": "0x80000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x4a400000",
+            "virtual_start": "0x4a400000",
+            "size": "0x80000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x4d000000",
+            "virtual_start": "0x4d000000",
+            "size": "0x80000"
+        },
+        {
             "type": "virtio",
             "physical_start": "0xa003c00",
             "virtual_start":  "0xa003c00",
             "size": "0x200"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0xa003800",
+            "virtual_start":  "0xa003800",
+            "size": "0x200"
         }
+
     ],
-    "interrupts": [0,1,7,78],
+    "interrupts": [0,1,7,78,76,210],
     "ivc_configs": [],
     "kernel_filepath": "./Image",
     "dtb_filepath": "./OK6254-C-1.dtb",
