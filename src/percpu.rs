@@ -108,12 +108,10 @@ pub struct CpuSet {
 
 impl CpuSet {
     pub fn new(max_cpu_id: usize, bitmap: u64) -> Self {
-        info!("new cpuset: max_cpu_id: {}, bitmap: {:#b}", max_cpu_id, bitmap);
         Self { max_cpu_id, bitmap }
     }
     #[allow(unused)]
     pub fn set_bit(&mut self, id: usize) {
-        info!("set cpuset: id: {}", id);
         assert!(id <= self.max_cpu_id);
         self.bitmap |= 1 << id;
     }

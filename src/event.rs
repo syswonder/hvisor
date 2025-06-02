@@ -114,11 +114,11 @@ pub fn clear_events(cpu: usize) {
 }
 
 pub fn check_events() -> bool {
+    trace!("check_events");
     let cpu_data = this_cpu_data();
-    // info!("cpu {} check_events", cpu_data.id);
     match fetch_event(cpu_data.id) {
         Some(IPI_EVENT_WAKEUP) => {
-            //info!("cpu {} wakeup", cpu_data.id);
+            info!("cpu {} wakeup", cpu_data.id);
             cpu_data.arch_cpu.run();
         }
         Some(IPI_EVENT_SHUTDOWN) => {
@@ -129,8 +129,6 @@ pub fn check_events() -> bool {
             true
         }
         Some(IPI_EVENT_WAKEUP_VIRTIO_DEVICE) => {
-            // 这里注入中断，linux处理
-            //info!("cpu {} wakeup virtio device", cpu_data.id);
             inject_irq(IRQ_WAKEUP_VIRTIO_DEVICE, false);
             true
         }
@@ -168,7 +166,6 @@ pub fn send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
             cpu_id, ipi_int_id, event_id
         );
     }
-    // info!("send_event: cpu_id: {}, ipi_int_id: {}, event_id: {}",cpu_id, ipi_int_id, event_id);
     add_event(cpu_id, event_id);
     arch_send_event(cpu_id as _, ipi_int_id as _);
 }

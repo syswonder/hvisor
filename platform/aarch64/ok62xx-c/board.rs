@@ -1,3 +1,19 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
+
 use crate::{arch::zone::HvArchZoneConfig, config::*};
 
 pub const BOARD_NAME: &str = "ok6254";
@@ -90,13 +106,7 @@ pub const ROOT_ZONE_IRQS: [u32; 17] = [
     0,1,27,66,114,115,165,194,210,228,258,266,195,118,
     211,5,
     0x20+0x20, // hvisor
-
-    // 15+0x20,19+0x20,22+0x20,23+0x20,24+0x20,30+0x20,0x22,0x22+0x20,64+0x20,66+0x20,114+0x20,115+0x20,116+0x20,118+0x20,139+0x20,165+0x20,171+0x20,194+0x20,195+0x20,196+0x20,197+0x20,204+0x20,205+0x20,206+0x20,208+0x20,209+0x20,210+0x20,228+0x20,266
-    // ,252,253,277,278,280,281,282,370,371,372,373,374,375
-    // ,133,82,83
 ];
-
-// int irq_list[12] = {0,1,27,66,114,115,165,194,210,228,258,266};
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig { 
     gicd_base: 0x1800000,  
