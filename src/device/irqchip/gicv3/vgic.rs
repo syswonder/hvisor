@@ -256,7 +256,7 @@ fn vgicv3_dist_misc_access(mmio: &mut MMIOAccess, gicd_base: usize) -> HvResult 
             mmio_perform_access(gicd_base, mmio);
         }
     } else {
-        todo!()
+        todo!("vgicv3_dist_misc_access: MMIO.Address = {:#x?}", reg)
     }
 
     Ok(())
@@ -312,6 +312,9 @@ pub fn vgicv3_its_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
         }
         GITS_CBASER => {
             if mmio.is_write {
+                if this_zone_id() == 0 {
+                    mmio_perform_access(gits_base, mmio);
+                }
                 set_cbaser(mmio.value);
                 trace!("write GITS_CBASER: {:#x}", mmio.value);
             } else {

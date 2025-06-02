@@ -15,43 +15,42 @@
 //
 //! SBI call wrappers
 
-#![allow(unused)]
-use crate::hypercall::HyperCall;
-use crate::percpu::{get_cpu_data, this_cpu_data};
-
 use super::cpu::ArchCpu;
 use crate::arch::csr::*;
-use crate::event::{send_event, IPI_EVENT_WAKEUP};
-use riscv::register::{hvip, sie};
-#[allow(non_snake_case)]
-pub mod SBI_EID {
-    pub const BASE_EXTID: usize = 0x10;
-    pub const SET_TIMER: usize = 0x54494D45;
-    pub const EXTID_HSM: usize = 0x48534D;
-    pub const SEND_IPI: usize = 0x735049;
-    pub const RFENCE: usize = 0x52464E43;
-    pub const PMU: usize = 0x504D55;
-    pub const HVISOR: usize = 0x114514;
-}
-pub const SBI_SUCCESS: i64 = 0;
-pub const SBI_ERR_FAILURE: i64 = -1;
-pub const SBI_ERR_NOT_SUPPORTED: i64 = -2;
-pub const SBI_ERR_INVALID_PARAM: i64 = -3;
-pub const SBI_ERR_DENIED: i64 = -4;
-pub const SBI_ERR_INVALID_ADDRESS: i64 = -5;
-pub const SBI_ERR_ALREADY_AVAILABLE: i64 = -6;
-pub struct SbiRet {
-    error: i64,
-    value: i64,
-}
-/// use sbi call to putchar in console (qemu uart handler)
-pub fn console_putchar(c: u8) {
+use crate::event::{send_event, IPI_EVENT_SEND_IPI, IPI_EVENT_WAKEUP};
+use crate::hypercall::HyperCall;
+use crate::percpu::{get_cpu_data, this_cpu_data};
+use core::sync::atomic::{self, Ordering};
+use riscv::register::sie;
+use riscv_h::register::hvip;
+use sbi_rt::{HartMask, SbiRet};
+use sbi_spec::binary::{
+    RET_ERR_ALREADY_AVAILABLE, RET_ERR_FAILED, RET_ERR_NOT_SUPPORTED, RET_SUCCESS,
+};
+use sbi_spec::{base, hsm, rfnc, spi, time};
+
+// Reserved for hvisor-tool.
+pub const EID_HVISOR: usize = 0x114514;
+
+// Hvisor supported SBI extensions.
+pub const NUM_EXT: usize = 6;
+pub const EXT_TABLE: [usize; NUM_EXT] = [
+    base::EID_BASE,
+    time::EID_TIME,
+    hsm::EID_HSM,
+    spi::EID_SPI,
+    rfnc::EID_RFNC,
+    EID_HVISOR,
+];
+
+/// Use sbi call to putchar in console (qemu uart handler)
+pub fn sbi_console_putchar(c: u8) {
     #[allow(deprecated)]
     sbi_rt::legacy::console_putchar(c as _);
 }
 
-/// use sbi call to getchar from console (qemu uart handler)
-pub fn console_getchar() -> Option<u8> {
+/// Use sbi call to getchar from console (qemu uart handler)
+pub fn sbi_console_getchar() -> Option<u8> {
     #[allow(deprecated)]
     match sbi_rt::legacy::console_getchar() {
         x if x <= 0xff => Some(x as _),
@@ -59,150 +58,112 @@ pub fn console_getchar() -> Option<u8> {
     }
 }
 
-/// use sbi call to set timer
-pub fn set_timer(timer: usize) {
-    sbi_rt::set_timer(timer as _);
-}
-
-/// use sbi call to shutdown the kernel
-pub fn shutdown(failure: bool) -> ! {
-    use sbi_rt::{system_reset, NoReason, Shutdown, SystemFailure};
-    if !failure {
-        system_reset(Shutdown, NoReason);
-    } else {
-        system_reset(Shutdown, SystemFailure);
-    }
-    unreachable!()
-}
-
+/// Handle SBI calls form VS mode, sscratch -> current_cpu
 pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
+    // a7 encodes the SBI extension ID (EID)
+    // a6 encodes the SBI function ID (FID)
     let eid: usize = current_cpu.x[17];
     let fid: usize = current_cpu.x[16];
     let sbi_ret;
     match eid {
-        //SBI_EXTID_BASE => sbi_ret = sbi_base_handler(fid, current_cpu),
-        SBI_EID::BASE_EXTID => {
-            trace!("SBI_EID::BASE,fid:{:#x}", fid);
-            sbi_ret = sbi_call_5(
-                eid,
-                fid,
-                current_cpu.x[10],
-                current_cpu.x[11],
-                current_cpu.x[12],
-                current_cpu.x[13],
-                current_cpu.x[14],
-            );
+        // Base Extension (SBI Spec Chapter 4)
+        base::EID_BASE => {
+            sbi_ret = sbi_base_handler(fid, current_cpu);
         }
-        SBI_EID::SET_TIMER => {
-            //debug!("SBI_EID::SET_TIMER on CPU {}", current_cpu.cpuid);
+        // Timer Extension (SBI Spec Chapter 6)
+        time::EID_TIME => {
             sbi_ret = sbi_time_handler(fid, current_cpu);
         }
-        SBI_EID::EXTID_HSM => {
-            info!("SBI_EID::EXTID_HSM on CPU {}", current_cpu.cpuid);
+        // Hart State Management (SBI Spec Chapter 9)
+        hsm::EID_HSM => {
             sbi_ret = sbi_hsm_handler(fid, current_cpu);
         }
-        SBI_EID::SEND_IPI => {
-            trace!("SBI_EID::SEND_IPI on CPU {}", current_cpu.cpuid);
-            trace!(
-                "SBI_EID::SEND_IPI,cpuid:{:#x},mask:{:#x}",
-                current_cpu.x[10],
-                current_cpu.x[11]
-            );
-            sbi_ret = sbi_call_5(
-                eid,
-                fid,
-                current_cpu.x[10],
-                current_cpu.x[11],
-                current_cpu.x[12],
-                current_cpu.x[13],
-                current_cpu.x[14],
-            );
+        // IPI Extension (SBI Spec Chapter 7)
+        spi::EID_SPI => {
+            sbi_ret = sbi_ipi_handler(fid, current_cpu);
         }
-        SBI_EID::RFENCE => {
-            trace!("SBI_EID::RFENCE,mask:{:#x}", current_cpu.x[10]);
-            sbi_ret = sbi_call_5(
-                eid,
-                fid,
-                current_cpu.x[10],
-                current_cpu.x[11],
-                current_cpu.x[12],
-                current_cpu.x[13],
-                current_cpu.x[14],
-            );
+        // RFENCE Extension (SBI Spec Chapter 8)
+        rfnc::EID_RFNC => {
+            sbi_ret = sbi_rfence_handler(fid, current_cpu);
         }
-        SBI_EID::PMU => {
-            trace!("SBI_EID::PMU,fid:{:#x}", fid);
-            sbi_ret = sbi_call_5(
-                eid,
-                fid,
-                current_cpu.x[10],
-                current_cpu.x[11],
-                current_cpu.x[12],
-                current_cpu.x[13],
-                current_cpu.x[14],
-            );
-        }
-        SBI_EID::HVISOR => {
-            trace!("SBI_EID::HVISOR,fid:{:#x}", fid);
+        // Hvisor Extension (Hvisor Defined)
+        EID_HVISOR => {
             sbi_ret = sbi_hvisor_handler(current_cpu);
         }
-        //_ => sbi_ret = sbi_dummy_handler(),
         _ => {
-            warn!(
-                "Pass through SBI call eid {:#x} fid:{:#x} on CPU {}",
-                eid, fid, current_cpu.cpuid
-            );
-            sbi_ret = sbi_call_5(
-                eid,
-                fid,
-                current_cpu.x[10],
-                current_cpu.x[11],
-                current_cpu.x[12],
-                current_cpu.x[13],
-                current_cpu.x[14],
-            );
+            // Pass through SBI call
+            warn!("Unsupported SBI extension {:#x} function {:#x}", eid, fid);
+            sbi_ret = SbiRet {
+                error: RET_ERR_NOT_SUPPORTED,
+                value: 0,
+            };
         }
     }
+    // Write the return value back to the current_cpu
     current_cpu.x[10] = sbi_ret.error as usize;
     current_cpu.x[11] = sbi_ret.value as usize;
 }
 
-pub fn sbi_call_5(
-    eid: usize,
-    fid: usize,
-    arg0: usize,
-    arg1: usize,
-    arg2: usize,
-    arg3: usize,
-    arg4: usize,
-) -> SbiRet {
-    let (error, value);
-    unsafe {
-        core::arch::asm!(
-            "ecall",
-            in("a7") eid,
-            in("a6") fid,
-            inlateout("a0") arg0 => error,
-            inlateout("a1") arg1 => value,
-            in("a2") arg2,
-            in("a3") arg3,
-            in("a4") arg4,
-        );
-    }
-    SbiRet { error, value }
-}
-
-pub fn sbi_time_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
+/// Handle SBI Base Extension calls.
+pub fn sbi_base_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
     let mut sbi_ret = SbiRet {
-        error: SBI_SUCCESS,
+        error: RET_SUCCESS,
         value: 0,
     };
-    let stime = current_cpu.x[10];
-    warn!("SBI_SET_TIMER stime: {:#x}", stime);
+    match fid {
+        base::GET_SBI_SPEC_VERSION => {
+            // The minor number of the SBI specification is encoded in the low 24 bits
+            // with the major number encoded in the next 7 bits.
+            // Bit 31 must be 0 and is reserved for future expansion.
+            sbi_ret.value = 0x0200_0000; // spec version 2.0
+        }
+        base::GET_SBI_IMPL_VERSION => {
+            // The implementation ID is a 32-bit value that identifies the SBI implementation.
+            // The implementation ID is defined by the SBI implementer.
+            sbi_ret.value = sbi_rt::get_sbi_impl_version();
+        }
+        base::GET_SBI_IMPL_ID => {
+            sbi_ret.value = sbi_rt::get_sbi_impl_id();
+        }
+        base::PROBE_EXTENSION => {
+            // This function needs one arg(extesion_id).
+            let ext_id = current_cpu.x[10];
+            // Returns 0 if the given SBI extension ID (EID) is not available or 1 if it is available
+            // unless defined as any other non-zero value by the implementation.
+            if EXT_TABLE.contains(&ext_id) {
+                sbi_ret.value = ext_id;
+            }
+        }
+        base::GET_MVENDORID | base::GET_MARCHID | base::GET_MIMPID => {
+            // Return a value that is legal for the mvendorid CSR and 0 is always a legal value for this CSR.
+            // Return a value that is legal for the marchid CSR and 0 is always a legal value for this CSR.
+            // Return a value that is legal for the mimpid CSR and 0 is always a legal value for this CSR.
+            sbi_ret.value = 0;
+        }
+        _ => {
+            sbi_ret.error = RET_ERR_NOT_SUPPORTED;
+            warn!("SBI: unsupported sbi_base_extension fid {:#x}", fid);
+        }
+    }
+    sbi_ret
+}
+
+/// SBI Set Timer handler
+pub fn sbi_time_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
+    if fid != time::SET_TIMER {
+        warn!("SBI: unsupported sbi_time_extension fid {:#x}", fid);
+        return SbiRet {
+            error: RET_ERR_NOT_SUPPORTED,
+            value: 0,
+        };
+    }
+    let stime_value = current_cpu.x[10];
     if current_cpu.sstc {
-        write_csr!(CSR_VSTIMECMP, stime);
+        // Set the vstimecmp, and don't need to inject timer interrupt.
+        write_csr!(CSR_VSTIMECMP, stime_value);
     } else {
-        set_timer(stime);
+        // Hvisor should receive timer interrupt and inject it to guest.
+        sbi_rt::set_timer(stime_value as _);
         unsafe {
             // clear guest timer interrupt pending
             hvip::clear_vstip();
@@ -210,73 +171,178 @@ pub fn sbi_time_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
             sie::set_stimer();
         }
     }
-    //debug!("SBI_SET_TIMER stime: {:#x}", stime);
-    return sbi_ret;
+    SbiRet {
+        error: RET_SUCCESS,
+        value: 0,
+    }
 }
+
+#[allow(unused)]
+#[derive(Debug, PartialEq)]
+pub enum HSM_STATUS {
+    STARTED,
+    STOPPED,
+    START_PENDING,
+    STOP_PENDING,
+    SUSPENDED,
+    SUSPEND_PENDING,
+    RESUMING_PENDING,
+}
+
+/// SBI Hart State Management handler.
 pub fn sbi_hsm_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
     let mut sbi_ret = SbiRet {
-        error: SBI_SUCCESS,
+        error: RET_SUCCESS,
         value: 0,
     };
     match fid {
-        0 => {
+        hsm::HART_START => {
             // hsm start
             sbi_ret = sbi_hsm_start_handler(current_cpu);
         }
+        hsm::HART_STOP => {
+            // Todo: support hart stop.
+            sbi_ret.error = RET_ERR_NOT_SUPPORTED;
+            warn!("SBI: unsupported sbi_hsm_hart_stop");
+        }
+        hsm::HART_GET_STATUS => {
+            // Todo: support hart get status.
+            sbi_ret.error = RET_ERR_NOT_SUPPORTED;
+            warn!("SBI: unsupported sbi_hsm_hart_get_status");
+        }
+        hsm::HART_SUSPEND => {
+            // Todo: support hart suspend.
+            sbi_ret.error = RET_ERR_NOT_SUPPORTED;
+            warn!("SBI: unsupported sbi_hsm_hart_suspend");
+        }
         _ => {
-            error!("Unsupported HSM function {:#x}", fid);
+            sbi_ret.error = RET_ERR_NOT_SUPPORTED;
+            warn!("SBI: unsupported sbi_hsm_extension fid {:#x}", fid);
         }
     }
     sbi_ret
 }
+
+/// SBI Hart State Management start handler.
 pub fn sbi_hsm_start_handler(current_cpu: &mut ArchCpu) -> SbiRet {
     let mut sbi_ret = SbiRet {
-        error: SBI_SUCCESS,
+        error: RET_SUCCESS,
         value: 0,
     };
-    let cpuid = current_cpu.x[10];
-
-    if (cpuid == current_cpu.cpuid) {
-        sbi_ret.error = SBI_ERR_ALREADY_AVAILABLE;
+    let cpuid = current_cpu.x[10]; // In hvisor, it is physical cpu id.
+    let start_addr = current_cpu.x[11];
+    let opaque = current_cpu.x[12];
+    if cpuid == current_cpu.cpuid {
+        sbi_ret.error = RET_ERR_ALREADY_AVAILABLE;
     } else {
-        //TODO:add sbi conext in archcpu
-        let cpuid = current_cpu.x[10];
-        let start_addr = current_cpu.x[11];
-        let opaque = current_cpu.x[12];
-
-        info!("sbi: try to wake up cpu {} run@{:#x}", cpuid, start_addr);
+        info!(
+            "SBI: try to wake up cpu {} run@ {:#x}, opaque@ {:#x}",
+            cpuid, start_addr, opaque
+        );
         let target_cpu = get_cpu_data(cpuid);
-        //todo add power_on check
         let _lock = target_cpu.ctrl_lock.lock();
-        target_cpu.cpu_on_entry = start_addr;
-        target_cpu.dtb_ipa = opaque;
-        send_event(cpuid, 0, IPI_EVENT_WAKEUP);
-
+        // Todo: use hsm status, not just hvisor defined power_on.
+        if target_cpu.arch_cpu.power_on {
+            sbi_ret.error = RET_ERR_FAILED;
+        } else {
+            // Set the target cpu to start-pending.
+            target_cpu.cpu_on_entry = start_addr;
+            target_cpu.dtb_ipa = opaque;
+            // Insert memory fence.
+            atomic::fence(atomic::Ordering::SeqCst);
+            send_event(cpuid, 0, IPI_EVENT_WAKEUP);
+        }
         drop(_lock);
     }
     sbi_ret
 }
-pub fn sbi_hvisor_handler(current_cpu: &mut ArchCpu) -> SbiRet {
+
+/// SBI IPI handler.
+pub fn sbi_ipi_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
+    if fid != spi::SEND_IPI {
+        warn!("SBI: unsupported sbi_ipi_extension fid {:#x}", fid);
+        return SbiRet {
+            error: RET_ERR_NOT_SUPPORTED,
+            value: 0,
+        };
+    }
+    // unsigned long hart_mask is a scalar bit-vector containing hartids
+    // unsigned long hart_mask_base is the starting hartid from which the bit-vector must be computed.
+    let hart_mask = current_cpu.x[10];
+    let hart_mask_base = current_cpu.x[11];
+    let hart_mask_bits = HartMask::from_mask_base(hart_mask, hart_mask_base);
+    for cpu_id in 0..64 {
+        // hart_mask is 64 bits
+        if hart_mask_bits.has_bit(cpu_id) {
+            // the second parameter is ignored is riscv64.
+            send_event(cpu_id, 0, IPI_EVENT_SEND_IPI);
+        }
+    }
+    SbiRet {
+        error: RET_SUCCESS,
+        value: 0,
+    }
+}
+
+/// SBI RFENCE handler.
+pub fn sbi_rfence_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
     let mut sbi_ret = SbiRet {
-        error: SBI_SUCCESS,
+        error: RET_SUCCESS,
         value: 0,
     };
-    let (code, arg0, arg1) = (current_cpu.x[10], current_cpu.x[11], current_cpu.x[12]);
-
-    let cpu_data = this_cpu_data();
-    debug!(
-        "HVC from CPU{},code:{:#x?},arg0:{:#x?},arg1:{:#x?}",
-        cpu_data.id, code, arg0, arg1
-    );
-    let result = HyperCall::new(cpu_data).hypercall(code as _, arg0 as _, arg1 as _);
-    match result {
-        Ok(ret) => {
-            sbi_ret.value = ret as _;
+    let hart_mask = current_cpu.x[10];
+    let hart_mask_base = current_cpu.x[11];
+    let start_addr = current_cpu.x[12];
+    let size = current_cpu.x[13];
+    let asid = current_cpu.x[14];
+    let hart_mask_bits = HartMask::from_mask_base(hart_mask, hart_mask_base);
+    match fid {
+        rfnc::REMOTE_FENCE_I => {
+            // Instructs remote harts to execute FENCE.I instruction.
+            sbi_ret = sbi_rt::remote_fence_i(hart_mask_bits);
         }
-        Err(e) => {
-            sbi_ret.error = SBI_ERR_FAILURE;
-            sbi_ret.value = e.code() as _;
+        rfnc::REMOTE_SFENCE_VMA => {
+            // Instruct the remote harts to execute one or more HFENCE.VVMA instructions, covering the range of
+            // guest virtual addresses between start_addr and start_addr + size for current VMID (in hgatp CSR) of
+            // calling hart.
+            sbi_ret = sbi_rt::remote_hfence_vvma(hart_mask_bits, start_addr, size);
+        }
+        rfnc::REMOTE_SFENCE_VMA_ASID => {
+            // Instruct the remote harts to execute one or more HFENCE.VVMA instructions, covering the range of
+            // guest virtual addresses between start_addr and start_addr + size for the given ASID and current
+            // VMID (in hgatp CSR) of calling hart.
+            sbi_ret = sbi_rt::remote_hfence_vvma_asid(hart_mask_bits, start_addr, size, asid);
+        }
+        _ => {
+            sbi_ret.error = RET_ERR_NOT_SUPPORTED;
+            warn!("SBI: unsupported sbi_rfence_extension fid {:#x}", fid);
         }
     }
     sbi_ret
+}
+
+/// SBI hvisor handler.
+pub fn sbi_hvisor_handler(current_cpu: &mut ArchCpu) -> SbiRet {
+    // Todo: according SBI spec, use a6 instead of a0 to tranfer code is more reasonable.
+    let (code, arg0, arg1) = (current_cpu.x[10], current_cpu.x[11], current_cpu.x[12]);
+    let cpu_data = this_cpu_data();
+    debug!(
+        "Hvisor ecall from CPU{},code: {:#x?}, arg0: {:#x?}, arg1: {:#x?}",
+        cpu_data.id, code, arg0, arg1
+    );
+    // Handle hvisor related hypercall.
+    let result = HyperCall::new(cpu_data).hypercall(code as _, arg0 as _, arg1 as _);
+    match result {
+        Ok(ret) => SbiRet {
+            error: RET_SUCCESS,
+            value: ret as _,
+        },
+        Err(e) => {
+            error!("Hvisor ecall error: {:#x?}", e);
+            SbiRet {
+                error: RET_ERR_FAILED,
+                value: e.code() as _,
+            }
+        }
+    }
 }

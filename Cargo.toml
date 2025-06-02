@@ -32,7 +32,8 @@ psci = { version = "0.1.0", default-features = false, features = ["smc"]}
 [target.'cfg(target_arch = "riscv64")'.dependencies]
 sbi-rt = { version = "0.0.3", features = ["legacy"] }
 sbi-spec = "0.0.8"
-riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"] }
+riscv = "0.13.0"
+riscv_h = { package = "riscv", git = "https://github.com/rcore-os/riscv", features = ["inline-asm"] }
 riscv-decode = "0.2.1"
 riscv-peripheral = "0.2.1"
 riscv-pac = "0.2.0"
@@ -47,26 +48,35 @@ x2apic = "0.4.3"
 raw-cpuid = "10.7.0"
 
 [features]
+############# general ##############
+iommu = [] # supported by: aarch64
+pci = [] # supported by: aarch64
+no_autodetect_ncpus = []
+
 ############# aarch64 ##############
 # irqchip driver
 gicv2 = []
 gicv3 = []
+
 # uart driver
 pl011 = []
 xuartps = []
 imx_uart = []
 ok62xx_uart = []
 uart_16550 = []
-# functionality
-iommu = []
-pci = []
+
 # pagetable layout
 pt_layout_qemu = []
 pt_layout_rk3568 = []
-# cpu 
-a55 = []
-a53 = []
-rk3568_uart_base = []
+pt_layout_rk3588 = []
+
+# cpu
+mpidr_rockchip = []
+
+# uart infos
+uart_base_rk3568 = []
+uart_base_rk3588 = []
+
 ############## riscv64 #############
 # irqchip driver
 plic = []
@@ -84,4 +94,3 @@ loongson_uart = []
 [profile.dev]
 # panic = "abort" # avoid cargo test failure, this is a bug of cargo
 debug = 2
-# panic = "abort"

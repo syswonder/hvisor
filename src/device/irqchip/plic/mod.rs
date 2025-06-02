@@ -30,8 +30,8 @@ use crate::platform::__board::*;
 use crate::zone::Zone;
 use crate::{arch::cpu::ArchCpu, percpu::this_cpu_data};
 use alloc::vec::Vec;
-use riscv::register::hvip;
 use riscv_decode::Instruction;
+use riscv_h::register::hvip;
 use spin::Once;
 
 /*
@@ -67,7 +67,7 @@ pub fn percpu_init() {
 }
 
 pub fn inject_irq(irq: usize, is_hardware: bool) {
-    // warn!("inject_irq: {} is_hardware: {}", irq, is_hardware);
+    debug!("inject_irq: {} is_hardware: {}", irq, is_hardware);
     let vcontext_id = pcontext_to_vcontext(this_cpu_data().id * 2 + 1);
     this_cpu_data()
         .zone
@@ -153,10 +153,42 @@ pub fn update_hart_line() {
 
 impl Zone {
     pub fn arch_irqchip_reset(&self) {
-        /*
-           Reset priority, threshold, enable, and so on related to this zone.
-        */
-        todo!();
+        // We should make sure only one cpu to do this.
+        // This func will only be called by one root zone's cpu.
+        let host_plic = host_plic();
+        let vplic = self.vplic.as_ref().unwrap();
+        for (index, &word) in self.irq_bitmap.iter().enumerate() {
+            for bit_position in 0..32 {
+                if word & (1 << bit_position) != 0 {
+                    let irq_id = index * 32 + bit_position;
+                    // Skip the irq_id which is not in HW_IRQS
+                    if !HW_IRQS.iter().any(|&x| x == irq_id as _) {
+                        continue;
+                    }
+                    // Reset priority
+                    info!("Reset irq_id {} priority to 0", irq_id);
+                    host_plic.set_priority(irq_id, 0);
+                    // Reset enable
+                    self.cpu_set.iter().for_each(|cpuid| {
+                        let pcontext_id = cpuid * 2 + 1;
+                        info!(
+                            "Reset pcontext_id {} irq_id {} enable to false",
+                            pcontext_id, irq_id
+                        );
+                        host_plic.set_enable_num(pcontext_id, irq_id, false);
+                    });
+                }
+            }
+        }
+        self.cpu_set.iter().for_each(|cpuid| {
+            // Reset threshold
+            let pcontext_id = cpuid * 2 + 1;
+            info!("Reset pcontext_id {} threshold to 0", pcontext_id);
+            host_plic.set_threshold(pcontext_id, 0);
+            // At the same time, clear the events related to this cpu.
+            info!("Clear events related to cpu {}", cpuid);
+            crate::event::clear_events(cpuid);
+        });
     }
 
     fn insert_irq_to_bitmap(&mut self, irq: u32) {

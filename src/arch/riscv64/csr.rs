@@ -57,6 +57,8 @@ pub const CSR_HENVCFGH: u64 = 0x61A;
 pub const CSR_STIMECMP: u64 = 0x14D;
 pub const CSR_STIMECMPH: u64 = 0x15D;
 
+pub const HSTATUS_SPV: u64 = 1 << 7;
+
 macro_rules! read_csr {
     ($csr_number:expr) => {
         {
@@ -73,6 +75,7 @@ macro_rules! read_csr {
     }
 }
 pub(crate) use read_csr;
+
 macro_rules! write_csr {
     ($csr_number:expr, $value: expr) => {
         unsafe{

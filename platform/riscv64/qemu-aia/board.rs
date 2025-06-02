@@ -17,6 +17,8 @@ use crate::{arch::zone::HvArchZoneConfig, config::*};
 
 pub const BOARD_NAME: &str = "qemu-aia";
 
+pub const BOARD_NCPUS: usize = 4;
+
 pub const ACLINT_SSWI_BASE: usize = 0x2F00000;
 
 pub const PLIC_BASE: usize = 0xc000000;

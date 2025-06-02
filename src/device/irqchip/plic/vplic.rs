@@ -77,6 +77,12 @@ impl VirtualPLIC {
         inner.vplic_set_hw(intr_id, hw);
     }
 
+    /// Get one interrupt as hardware interrupt.
+    pub fn vplic_get_hw(&self, intr_id: usize) -> bool {
+        let inner = self.inner.lock();
+        inner.vplic_get_hw(intr_id)
+    }
+
     /// Inject an interrupt into the vPLIC.
     pub fn inject_irq(&self, vcontext_id: usize, intr_id: usize, hw: bool) {
         debug!("Inject interrupt {} to vcontext {}", intr_id, vcontext_id);
@@ -393,11 +399,11 @@ impl VirtualPLICInner {
             let irq_id = self.vplic_get_next_pending(vcontext_id);
             if irq_id != 0 {
                 unsafe {
-                    riscv::register::hvip::set_vseip();
+                    riscv_h::register::hvip::set_vseip();
                 }
             } else {
                 unsafe {
-                    riscv::register::hvip::clear_vseip();
+                    riscv_h::register::hvip::clear_vseip();
                 }
             }
         } else {

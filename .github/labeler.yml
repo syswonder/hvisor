@@ -1,0 +1,19 @@
+aarch64:
+- changed-files:
+  - any-glob-to-any-file: src/arch/aarch64/**/*
+
+loongarch64:
+- changed-files:
+  - any-glob-to-any-file: src/arch/loongarch64/**/*
+
+riscv64:
+- changed-files:
+  - any-glob-to-any-file: src/arch/riscv64/**/*
+
+x86_64:
+- changed-files:
+  - any-glob-to-any-file: src/arch/x86_64/**/*
+
+
+
+
