@@ -62,7 +62,6 @@ gicv3 = []
 pl011 = []
 xuartps = []
 imx_uart = []
-ok62xx_uart = []
 uart_16550 = []
 
 # pagetable layout
@@ -76,6 +75,7 @@ mpidr_rockchip = []
 # uart infos
 uart_base_rk3568 = []
 uart_base_rk3588 = []
+uart_base_ok6254 = []
 
 ############## riscv64 #############
 # irqchip driver

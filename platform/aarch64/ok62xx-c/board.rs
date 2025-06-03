@@ -17,6 +17,8 @@
 use crate::{arch::zone::HvArchZoneConfig, config::*};
 
 pub const BOARD_NAME: &str = "ok6254";
+pub const BOARD_NCPUS: usize = 4;
+
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x88000000; // 设备树地址
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x82000000; // 内核加载地址
 pub const ROOT_ZONE_ENTRY: u64 = 0x82000000; // 内核入口地址
@@ -100,23 +102,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 12] = [
 ];
 
 pub const ROOT_ZONE_IRQS: [u32; 17] = [
-    0,
-    1,
-    27,
-    66,
-    114,
-    115,
-    165,
-    194,
-    210,
-    228,
-    258,
-    266,
-    195,
-    118,
-    211,
-    5,
-    0x40, // hvisor
+    0, 1, 27, 66, 114, 115, 165, 194, 210, 228, 258, 266, 195, 118, 211, 5, 0x40, // hvisor
 ];
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
