@@ -38,7 +38,6 @@
 		// 	method = "smc";
 		// };
 		
-		// PSCI 是 ARM 定义的标准接口，用于管理多核处理器的电源状态
 		psci {
 			compatible = "arm,psci-1.0";
 			method = "smc";
@@ -113,7 +112,7 @@
 			interrupts = <0x00 0xb2 0x04>;
 			current-speed = <0x1c200>;
 			// power-domains = <0x02 0x92 0x01>;
-			clocks = <0xbf 0x92 0x00>; // 换成fix clock
+			clocks = <0xbf 0x92 0x00>; // change to fix clock
 			clock-frequency = <0x2dc6c00>;
 			clock-names = "fclk";
 			pinctrl-names = "default";

@@ -19,20 +19,20 @@ use crate::{arch::zone::HvArchZoneConfig, config::*};
 pub const BOARD_NAME: &str = "ok6254";
 pub const BOARD_NCPUS: usize = 4;
 
-pub const ROOT_ZONE_DTB_ADDR: u64 = 0x88000000; // 设备树地址
-pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x82000000; // 内核加载地址
-pub const ROOT_ZONE_ENTRY: u64 = 0x82000000; // 内核入口地址
-pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1); // 2个cpu
+pub const ROOT_ZONE_DTB_ADDR: u64 = 0x88000000; // DTB load address
+pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x82000000; // kernel load address
+pub const ROOT_ZONE_ENTRY: u64 = 0x82000000; // kernel entry point
+pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1); // 2 cpus
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 
 pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 12] = [
-    // RAM区域：覆盖DTS中memory节点定义的物理内存，排除保留区域
+    // Ram regions: defined here are based on the DTS (Device Tree Source) file
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
-        physical_start: 0x80000000, // 起始地址
-        virtual_start: 0x80000000,  // 直接映射
-        size: 0x80000000,           // memory@0x80000000
-    },
+        physical_start: 0x80000000,
+        virtual_start: 0x80000000,
+        size: 0x80000000,
+    }, // memory@0x80000000
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x0,
@@ -41,10 +41,10 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 12] = [
     },
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
-        physical_start: 0x2800000, // 0x2800000包括serial2
+        physical_start: 0x2800000,
         virtual_start: 0x2800000,
         size: 0x1000000,
-    }, // serial@2810000-serial@2860000
+    }, // serial@2800000-serial@2860000
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x4000000,
@@ -55,50 +55,50 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 12] = [
         mem_type: MEM_TYPE_IO,
         physical_start: 0xfc40000,
         virtual_start: 0xfc40000,
-        size: 0x70000, // spi
-    },
+        size: 0x70000,
+    }, // spi
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x8000000,
         virtual_start: 0x8000000,
-        size: 0x200000, // eth
-    },
+        size: 0x200000,
+    }, // eth
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0xf900000,
         virtual_start: 0xf900000,
-        size: 0x30000, // usb
-    },
+        size: 0x30000,
+    }, // usb
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0xfa00000,
         virtual_start: 0xfa00000,
-        size: 0x100000, // mmc
-    },
+        size: 0x100000,
+    }, // mmc
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0xe000000,
         virtual_start: 0xe000000,
-        size: 0x20000, // watchdog e000000 e010000
-    },
+        size: 0x20000,
+    }, // watchdog e000000 e010000
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0xfd00000,
         virtual_start: 0xfd00000,
-        size: 0x20000, // gpu 0xfd00000 0x20000
-    },
+        size: 0x20000,
+    }, // gpu 0xfd00000 0x20000
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0xa003000,
         virtual_start: 0xa003000,
-        size: 0x1000, // gpu 0xfd00000 0x20000
-    },
+        size: 0x1000,
+    }, // gpu 0xfd00000 0x20000
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x10000000,
         virtual_start: 0x10000000,
-        size: 0x70000000, // 0x0 ~ 0x80000000
-    },
+        size: 0x70000000,
+    }, // 0x10000000 ~ 0x80000000
 ];
 
 pub const ROOT_ZONE_IRQS: [u32; 17] = [
