@@ -16,7 +16,7 @@
 //
 use crate::device::irqchip::ls7a2000::chip::get_extioi_sr;
 use crate::{
-    arch::{cpu::this_cpu_id, trap::GLOBAL_TRAP_CONTEXT_HELPER},
+    arch::{cpu::this_cpu_id, trap::GLOBAL_TRAP_CONTEXT_HELPER_PER_CPU},
     config::*,
     consts::PAGE_SIZE,
     device::virtio_trampoline::mmio_virtio_handler,
@@ -447,12 +447,16 @@ impl MMIOAccessTracker {
 static MMIO_ACCESS_STATS: Lazy<Mutex<MMIOAccessTracker>> =
     Lazy::new(|| Mutex::new(MMIOAccessTracker::new()));
 
-const COMPRESSION_THRESHOLD: u64 = 20;
+const COMPRESSION_THRESHOLD: u64 = 10000;
 const LOG_INTERVAL: u64 = 10000;
 
 const BASE_ADDR: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_0000);
 const UART0_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_01e0);
 const UART0_SIZE: usize = 0x8;
+const LIOINTC_MAP_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_1400);
+const LIOINTC_MAP_SIZE: usize = 0x30; // CHECK
+const ANYSEND_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_1158);
+const ANYSEND_SIZE: usize = 0x10;
 const EXTIOI_MAP_CORE_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_1c00);
 const EXTIOI_MAP_CORE_SIZE: usize = 0x100;
 const EXTIOI_SR_CORE_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_1800);
@@ -579,7 +583,7 @@ fn handle_mmio_stats(mmio: &mut MMIOAccess) {
     let last_value = stats.last_value.load(Ordering::SeqCst);
     let is_compressed = stats.is_compressed.load(Ordering::SeqCst);
 
-    let trap_context_helper = GLOBAL_TRAP_CONTEXT_HELPER.lock();
+    let trap_context_helper = GLOBAL_TRAP_CONTEXT_HELPER_PER_CPU[this_cpu_id()].lock();
     let mut msg1 = format!(
         "loongarch64: generic mmio handler, zone_era={:#x}, offset={:#x}, size={}, {} {:#x}",
         trap_context_helper.era,
@@ -608,7 +612,7 @@ fn handle_mmio_stats(mmio: &mut MMIOAccess) {
     };
 
     if !msg.is_empty() {
-        debug!("{}", msg);
+        warn!("{}", msg);
     }
 
     stats.last_value.store(mmio.value as u64, Ordering::SeqCst);

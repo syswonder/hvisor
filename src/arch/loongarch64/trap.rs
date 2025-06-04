@@ -19,6 +19,7 @@ use super::register::*;
 use super::zone::ZoneContext;
 use crate::arch::cpu::this_cpu_id;
 use crate::arch::ipi::*;
+use crate::consts::MAX_CPU_NUM;
 use crate::device::irqchip::inject_irq;
 use crate::device::irqchip::ls7a2000::chip::*;
 use crate::event::{check_events, dump_cpu_events, dump_events};
@@ -76,8 +77,10 @@ impl TrapContextHelper {
     }
 }
 
-pub static GLOBAL_TRAP_CONTEXT_HELPER: Mutex<TrapContextHelper> =
+const GLOBAL_TRAP_CONTEXT_HELPER_PER_CPU_INITDATA: Mutex<TrapContextHelper> =
     Mutex::new(TrapContextHelper::new());
+pub static GLOBAL_TRAP_CONTEXT_HELPER_PER_CPU: [Mutex<TrapContextHelper>; MAX_CPU_NUM] =
+    [GLOBAL_TRAP_CONTEXT_HELPER_PER_CPU_INITDATA; MAX_CPU_NUM];
 
 pub fn install_trap_vector() {
     // force disable INT here
@@ -230,14 +233,16 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
     let tlbrelo1_ = tlbrelo1::read();
 
     // update global trap context helper
-    GLOBAL_TRAP_CONTEXT_HELPER.lock().update(
-        ecode,
-        esubcode,
-        is,
-        badv_.vaddr(),
-        badi_.inst() as usize,
-        era_.raw(),
-    );
+    GLOBAL_TRAP_CONTEXT_HELPER_PER_CPU[this_cpu_id()]
+        .lock()
+        .update(
+            ecode,
+            esubcode,
+            is,
+            badv_.vaddr(),
+            badi_.inst() as usize,
+            era_.raw(),
+        );
 
     let mut is_idle = false;
     if ecode == ECODE_GSPR && badi_.inst() == 0b0000_0110_0100_1000_1000_0000_0000_0000 {

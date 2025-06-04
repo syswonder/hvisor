@@ -1,5 +1,3 @@
-use core::ptr::read_volatile;
-
 // Copyright (c) 2025 Syswonder
 // hvisor is licensed under Mulan PSL v2.
 // You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -16,6 +14,7 @@ use core::ptr::read_volatile;
 // Authors:
 //
 use alloc::vec::Vec;
+use core::ptr::read_volatile;
 
 use super::{
     cfg_base, cfg_reg_addr,

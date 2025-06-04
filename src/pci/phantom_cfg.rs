@@ -1,23 +1,3 @@
-use core::{ptr, usize};
-
-use alloc::collections::btree_map::BTreeMap;
-
-use crate::{
-    error::HvResult,
-    memory::{mmio_perform_access, MMIOAccess},
-    pci::PHANTOM_DEV_HEADER,
-    zone::this_zone_id,
-};
-
-use super::{
-    cfg_base, endpoint::EndpointConfig, extract_reg_addr, pcibar::VirtPciBar, CFG_BAR0, CFG_BAR1,
-    CFG_BAR2, CFG_BAR3, CFG_BAR4, CFG_BAR5, CFG_CAP_PTR_OFF, CFG_CLASS_CODE_OFF, CFG_CMD_OFF,
-    CFG_EXT_CAP_PTR_OFF, CFG_INT_LINE, CFG_INT_PIN, CFG_IO_BASE, CFG_IO_BASE_UPPER16, CFG_IO_LIMIT,
-    CFG_IO_LIMIT_UPPER16, CFG_MEM_BASE, CFG_MEM_LIMIT, CFG_PREF_BASE_UPPER32,
-    CFG_PREF_LIMIT_UPPER32, CFG_PREF_MEM_BASE, CFG_PREF_MEM_LIMIT, CFG_PRIMARY_BUS,
-    CFG_SECONDARY_BUS, NUM_BAR_REGS_TYPE0, NUM_BAR_REGS_TYPE1, NUM_MAX_BARS,
-};
-
 // Copyright (c) 2025 Syswonder
 // hvisor is licensed under Mulan PSL v2.
 // You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -33,6 +13,23 @@ use super::{
 //
 // Authors:
 //
+use super::{
+    cfg_base, endpoint::EndpointConfig, extract_reg_addr, pcibar::VirtPciBar, CFG_BAR0, CFG_BAR1,
+    CFG_BAR2, CFG_BAR3, CFG_BAR4, CFG_BAR5, CFG_CAP_PTR_OFF, CFG_CLASS_CODE_OFF, CFG_CMD_OFF,
+    CFG_EXT_CAP_PTR_OFF, CFG_INT_LINE, CFG_INT_PIN, CFG_IO_BASE, CFG_IO_BASE_UPPER16, CFG_IO_LIMIT,
+    CFG_IO_LIMIT_UPPER16, CFG_MEM_BASE, CFG_MEM_LIMIT, CFG_PREF_BASE_UPPER32,
+    CFG_PREF_LIMIT_UPPER32, CFG_PREF_MEM_BASE, CFG_PREF_MEM_LIMIT, CFG_PRIMARY_BUS,
+    CFG_SECONDARY_BUS, NUM_BAR_REGS_TYPE0, NUM_BAR_REGS_TYPE1, NUM_MAX_BARS,
+};
+use crate::{
+    error::HvResult,
+    memory::{mmio_perform_access, MMIOAccess},
+    pci::PHANTOM_DEV_HEADER,
+    zone::this_zone_id,
+};
+use alloc::collections::btree_map::BTreeMap;
+use core::{ptr, usize};
+
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum PhantomCfgType {
     ENDPOINT,

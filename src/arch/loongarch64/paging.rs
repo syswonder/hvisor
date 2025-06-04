@@ -632,5 +632,5 @@ pub fn set_pwcl_pwch_stlbps() {
     set_ptbase(12);
     set_ptwidth(9);
     set_pte_width(8); // 64 bits -> 8 bytes
-    stlbps::set_ps(PAGE_SIZE);
+    stlbps::set_ps(12); // log2(real_page_size), 16KB -> 14, 4KB -> 12
 }
