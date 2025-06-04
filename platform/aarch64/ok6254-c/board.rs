@@ -101,8 +101,8 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 12] = [
     }, // 0x10000000 ~ 0x80000000
 ];
 
-pub const ROOT_ZONE_IRQS: [u32; 17] = [
-    0, 1, 27, 66, 114, 115, 165, 194, 210, 228, 258, 266, 195, 118, 211, 5, 0x40, // hvisor
+pub const ROOT_ZONE_IRQS: [u32; 13] = [
+    64, 66, 114, 115, 118, 165, 194, 195, 210, 211, 228, 258, 266,
 ];
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {

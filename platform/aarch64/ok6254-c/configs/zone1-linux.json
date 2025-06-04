@@ -70,7 +70,7 @@
     "interrupts": [78,76,210],
     "ivc_configs": [],
     "kernel_filepath": "./Image",
-    "dtb_filepath": "./ok6254-zone1.dtb",
+    "dtb_filepath": "./zone1-linux.dtb",
     "kernel_load_paddr": "0xb0400000",
     "dtb_load_paddr":   "0xb0000000",
     "entry_point":      "0xb0400000",
