@@ -75,6 +75,7 @@ mpidr_rockchip = []
 # uart infos
 uart_base_rk3568 = []
 uart_base_rk3588 = []
+uart_base_ok6254 = []
 
 ############## riscv64 #############
 # irqchip driver
