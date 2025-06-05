@@ -108,13 +108,20 @@ int open_dev() {
 // }
 
 static __u64 load_image_to_memory(const char *path, __u64 load_paddr) {
+    if (strcmp(path, "null") == 0) {
+        return 0;
+    }
     __u64 size, page_size,
         map_size; // Define variables: image size, page size, and map size
     int fd;       // File descriptor
     void *image_content,
         *virt_addr; // Pointers to image content and virtual address
 
-    fd = open_dev();
+    fd = open("/dev/mem", O_RDWR);
+    if (fd < 0) {
+        log_error("Failed to open /dev/mem!");
+        exit(1);
+    }
     // Load image content into memory
     image_content = read_file(path, &size);
 
