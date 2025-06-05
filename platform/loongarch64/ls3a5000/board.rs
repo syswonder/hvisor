@@ -140,6 +140,12 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
         virtual_start: 0xf0000,
         size: 0x10000,
     }, // 0xf0000
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RAM,
+        physical_start: 0x1_4000_0000,
+        virtual_start: 0x1_4000_0000,
+        size: 0x1000_0000, // 256M shared memory across all zones
+    }, // SHARD_MEM
 ];
 
 pub const ROOT_ZONE_IRQS: [u32; 0] = [];

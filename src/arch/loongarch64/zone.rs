@@ -447,20 +447,28 @@ impl MMIOAccessTracker {
 static MMIO_ACCESS_STATS: Lazy<Mutex<MMIOAccessTracker>> =
     Lazy::new(|| Mutex::new(MMIOAccessTracker::new()));
 
-const COMPRESSION_THRESHOLD: u64 = 10000;
-const LOG_INTERVAL: u64 = 10000;
+const COMPRESSION_THRESHOLD: u64 = 50;
+const LOG_INTERVAL: u64 = 10;
 
 const BASE_ADDR: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_0000);
 const UART0_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_01e0);
 const UART0_SIZE: usize = 0x8;
-const LIOINTC_MAP_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_1400);
-const LIOINTC_MAP_SIZE: usize = 0x30; // CHECK
+const LIOINTC_MAP_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_1400); // 1400-141f
+const LIOINTC_MAP_SIZE: usize = 0x20;
 const ANYSEND_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_1158);
 const ANYSEND_SIZE: usize = 0x10;
 const EXTIOI_MAP_CORE_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_1c00);
 const EXTIOI_MAP_CORE_SIZE: usize = 0x100;
+const EXTIOI_SR_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_1700); // 1700 - 1718
+const EXTIOI_SR_SIZE: usize = 0x20;
+const EXTIOI_NODE_SEL_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_14a0); // 14a0-14be
+const EXTIOI_NODE_SEL_SIZE: usize = 0x20;
 const EXTIOI_SR_CORE_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_1800);
 const EXTIOI_SR_CORE_SIZE: usize = 0x400; // core0 0x1800-0x18ff, core1 0x1900-0x19ff, core2 0x1a00-0x1aff, core3 0x1b00-0x1bff
+const EXTIOI_ENABLE_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_1600); // 1600 - 1618
+const EXTIOI_ENABLE_SIZE: usize = 0x20;
+const EXTIOI_BOUNCE_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_1680); // 1680 - 1698
+const EXTIOI_BOUNCE_SIZE: usize = 0x20;
 
 pub fn offset(addr: usize) -> usize {
     addr - BASE_ADDR
@@ -497,8 +505,14 @@ fn handle_extioi_status_mmio(mmio: &mut MMIOAccess, base_addr: usize, size: usiz
 
 fn handle_extioi_mapping_mmio(mmio: &mut MMIOAccess, base_addr: usize, size: usize) -> HvResult {
     if !mmio.is_write {
-        error!("should not happen, extioi core regs read makes no sense");
-        return hv_result_err!(EIO, "extioi core regs read makes no sense");
+        warn!("should not happen, extioi core regs read makes no sense");
+        return Ok(());
+    }
+
+    // if this is nonroot, we ignore the mmio
+    if this_cpu_id() != 0 {
+        warn!("nonroot's write to extioi mapping regs, ignored");
+        return Ok(());
     }
 
     let mut vecs = [0u8; 8];
@@ -630,6 +644,30 @@ pub fn loongarch_generic_mmio_handler(mmio: &mut MMIOAccess, arg: usize) -> HvRe
         ret = handle_extioi_mapping_mmio(mmio, EXTIOI_MAP_CORE_BASE, EXTIOI_MAP_CORE_SIZE);
     } else if is_in_mmio_range!(mmio.address, EXTIOI_SR_CORE_BASE, EXTIOI_SR_CORE_SIZE) {
         ret = handle_extioi_status_mmio(mmio, EXTIOI_SR_CORE_BASE, EXTIOI_SR_CORE_SIZE);
+    } else if is_in_mmio_range!(mmio.address, EXTIOI_ENABLE_BASE, EXTIOI_ENABLE_SIZE) {
+        if this_cpu_id() != 0 && mmio.is_write {
+            // ignore nonroot's write to enable regs
+            warn!("nonroot's write to enable regs, ignored");
+            return Ok(());
+        } else {
+            ret = handle_generic_mmio(mmio, BASE_ADDR);
+        }
+    } else if is_in_mmio_range!(mmio.address, EXTIOI_BOUNCE_BASE, EXTIOI_BOUNCE_SIZE) {
+        if this_cpu_id() != 0 && mmio.is_write {
+            // ignore nonroot's write to bounce regs
+            warn!("nonroot's write to bounce regs, ignored");
+            return Ok(());
+        } else {
+            ret = handle_generic_mmio(mmio, BASE_ADDR);
+        }
+    } else if is_in_mmio_range!(mmio.address, EXTIOI_NODE_SEL_BASE, EXTIOI_NODE_SEL_SIZE) {
+        if this_cpu_id() != 0 && mmio.is_write {
+            // ignore nonroot's write to node sel regs
+            warn!("nonroot's write to node sel regs, ignored");
+            return Ok(());
+        } else {
+            ret = handle_generic_mmio(mmio, BASE_ADDR);
+        }
     } else {
         ret = handle_generic_mmio(mmio, BASE_ADDR);
     }
