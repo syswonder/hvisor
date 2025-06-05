@@ -91,19 +91,21 @@ static int hvisor_finish_req(void) {
 //     vma = get_vm_area(size, VM_IOREMAP);
 //     if (!vma)
 //     {
-//         pr_err("hvisor.ko: failed to allocate virtual kernel memory for image\n"); 
-//         return -ENOMEM;
+//         pr_err("hvisor.ko: failed to allocate virtual kernel memory for
+//         image\n"); return -ENOMEM;
 //     }
 //     vma->phys_addr = phys_start;
 
-//     if (ioremap_page_range((unsigned long)vma->addr, (unsigned long)(vma->addr + size), phys_start, PAGE_KERNEL_EXEC))
+//     if (ioremap_page_range((unsigned long)vma->addr, (unsigned
+//     long)(vma->addr + size), phys_start, PAGE_KERNEL_EXEC))
 //     {
 //         pr_err("hvisor.ko: failed to ioremap image\n");
 //         err = -EFAULT;
 //         goto unmap_vma;
 //     }
 //     // flush icache will also flush dcache
-//     flush_icache_range((unsigned long)(vma->addr), (unsigned long)(vma->addr + size));
+//     flush_icache_range((unsigned long)(vma->addr), (unsigned long)(vma->addr
+//     + size));
 
 // unmap_vma:
 //     vunmap(vma->addr);
