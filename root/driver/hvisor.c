@@ -64,27 +64,46 @@ static int hvisor_finish_req(void) {
 
 // static int flush_cache(__u64 phys_start, __u64 size)
 // {
+//     void __iomem *vaddr;
+//     int err = 0;
+
+//     size = PAGE_ALIGN(size);
+
+//     // 使用 ioremap 映射物理地址
+//     vaddr = ioremap_cache(phys_start, size);
+//     if (!vaddr) {
+//         pr_err("hvisor.ko: failed to ioremap image\n");
+//         return -ENOMEM;
+//     }
+
+//     // flush I-cache（ARM64 平台中 flush_icache_range 是对 D/I 的处理）
+//     flush_icache_range((unsigned long)vaddr, (unsigned long)vaddr + size);
+
+//     // 解除映射
+//     iounmap(vaddr);
+//     return err;
+// }
+// static int flush_cache(__u64 phys_start, __u64 size)
+// {
 //     struct vm_struct *vma;
 //     int err = 0;
 //     size = PAGE_ALIGN(size);
-//     vma = __get_vm_area(size, VM_IOREMAP, VMALLOC_START, VMALLOC_END);
+//     vma = get_vm_area(size, VM_IOREMAP);
 //     if (!vma)
 //     {
-//         pr_err("hvisor.ko: failed to allocate virtual kernel memory for
-//         image\n"); return -ENOMEM;
+//         pr_err("hvisor.ko: failed to allocate virtual kernel memory for image\n"); 
+//         return -ENOMEM;
 //     }
 //     vma->phys_addr = phys_start;
 
-//     if (ioremap_page_range((unsigned long)vma->addr, (unsigned
-//     long)(vma->addr + size), phys_start, PAGE_KERNEL_EXEC))
+//     if (ioremap_page_range((unsigned long)vma->addr, (unsigned long)(vma->addr + size), phys_start, PAGE_KERNEL_EXEC))
 //     {
 //         pr_err("hvisor.ko: failed to ioremap image\n");
 //         err = -EFAULT;
 //         goto unmap_vma;
 //     }
 //     // flush icache will also flush dcache
-//     flush_icache_range((unsigned long)(vma->addr), (unsigned long)(vma->addr
-//     + size));
+//     flush_icache_range((unsigned long)(vma->addr), (unsigned long)(vma->addr + size));
 
 // unmap_vma:
 //     vunmap(vma->addr);
