@@ -1,0 +1,210 @@
+/dts-v1/;
+
+/ {
+	model = "Forlinx AM62xx";
+	compatible = "forlinx,am625x\0ti,am625-sk\0ti,am625";
+	interrupt-parent = <0x01>;
+	#address-cells = <0x02>;
+	#size-cells = <0x02>;
+
+	aliases {
+		serial0 = "/bus@f0000/serial@2800000";
+	};
+
+	
+	chosen {
+		// virtio blk and real console:
+		// stdout-path = "serial3:115200n8";
+		// bootargs = "console=ttyS3,115200n8 earlycon=ns16550a,mmio32,0x02810000 root=/dev/vda rootwait rw";
+		
+		stdout-path = "serial0:115200n8";
+		//bootargs = "clk_ignore_unused console=ttyS0,115200n8  earlycon=ns16550a,mmio32,0x02810000 root=/dev/vda rootwait rw";
+		//bootargs = "console=ttyS0,115200n8  earlycon=ns16550a,mmio32,0x02800000 root=/dev/vda rootwait rw";
+		bootargs = "console=ttyS0,115200n8 earlycon=ns8250a,mmio32,0x02800000  root=/dev/vda rootwait rw init=/bin/bash";
+		
+		
+		//stdout-path = "serial3:115200n8";
+		//bootargs = "console=ttyS3,115200n8 root=/dev/vda rootwait rw";
+		
+		
+		// virtio blk and virtio console:
+		// bootargs = "clk_ignore_unused earlycon=virtio,mmio,0xa003800 console=hvc0 root=/dev/vda rootwait rw";
+		// stdout-path = "/virtio_mmio@a003800";
+	};
+
+	firmware {
+		// optee {
+		// 	compatible = "linaro,optee-tz";
+		// 	method = "smc";
+		// };
+		
+		psci {
+			compatible = "arm,psci-1.0";
+			method = "smc";
+			phandle = <0x4d>;
+		};
+	};
+	
+	timer-cl0-cpu0 {
+		compatible = "arm,armv8-timer";
+		interrupts = <0x01 0x0d 0x08
+		0x01 0x0e 0x08
+		0x01 0x0b 0x08
+		0x01 0x0a 0x08>;
+		phandle = <0x4e>;
+	};
+
+	pmu {
+		compatible = "arm,cortex-a53-pmu";
+		interrupts = <0x01 0x07 0x04>;
+		phandle = <0x4f>;
+	};
+
+
+
+	bus@f0000 {
+		compatible = "simple-bus";
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+		phandle = <0x50>;
+
+		interrupt-controller@1800000 {
+			compatible = "arm,gic-v3";
+			#address-cells = <0x02>;
+			#size-cells = <0x02>;
+			ranges;
+			#interrupt-cells = <0x03>;
+			interrupt-controller;
+			reg = <0x00 0x1800000 0x00 0x10000 0x00 0x1880000 0x00 0xc0000>;
+			interrupts = <0x01 0x09 0x04>;
+			phandle = <0x01>;
+
+			msi-controller@1820000 {
+				compatible = "arm,gic-v3-its";
+				reg = <0x00 0x1820000 0x00 0x10000>;
+				socionext,synquacer-pre-its = <0x1000000 0x400000>;
+				msi-controller;
+				#msi-cells = <0x01>;
+				phandle = <0x63>;
+			};
+		};
+
+		pinctrl@f4000 {
+			compatible = "pinctrl-single";
+			reg = <0x00 0xf4000 0x00 0x2ac>;
+			#pinctrl-cells = <0x01>;
+			pinctrl-single,register-width = <0x20>;
+			pinctrl-single,function-mask = <0xffffffff>;
+			phandle = <0x68>;
+
+			main-uart0-pins-default {
+				pinctrl-single,pins = <0x1c8 0x50000 0x1cc 0x10000>;
+				phandle = <0x14>;
+			};
+		};
+
+		serial@2800000 {
+			compatible = "ti,am64-uart\0ti,am654-uart";
+			reg = <0x00 0x2800000 0x00 0x100>;
+			reg-shift = <0x02>;
+			reg-io-width = <0x04>;
+			interrupts = <0x00 0xb2 0x04>;
+			current-speed = <0x1c200>;
+			// power-domains = <0x02 0x92 0x01>;
+			clocks = <0xbf 0x92 0x00>; // change to fix clock
+			clock-frequency = <0x2dc6c00>;
+			clock-names = "fclk";
+			pinctrl-names = "default";
+			pinctrl-0 = <0x14>;
+			phandle = <0x6b>;
+		};
+
+		interrupt-controller@a00000 {
+			compatible = "ti,sci-intr";
+			reg = <0x00 0xa00000 0x00 0x800>;
+			ti,intr-trigger-type = <0x01>;
+			interrupt-controller;
+			interrupt-parent = <0x01>;
+			#interrupt-cells = <0x01>;
+			ti,sci = <0x05>;
+			ti,sci-dev-id = <0x03>;
+			ti,interrupt-ranges = <0x00 0x20 0x10>;
+			phandle = <0x23>;
+		};
+
+	};
+
+	cpus {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+		
+		cpu@2 {
+			compatible = "arm,cortex-a53";
+			reg = <0x02>;
+			device_type = "cpu";
+			enable-method = "psci";
+			next-level-cache = <0x43>;
+		};
+		
+		cpu@3 {
+			compatible = "arm,cortex-a53";
+			reg = <0x03>;
+			device_type = "cpu";
+			enable-method = "psci";
+			next-level-cache = <0x43>;
+		};
+	};
+	
+	l2-cache0 {
+		compatible = "cache";
+		cache-level = <0x02>;
+		cache-size = <0x40000>;
+		cache-line-size = <0x40>;
+		cache-sets = <0x200>;
+		phandle = <0x43>;
+	};
+
+	memory@b0000000 {
+		device_type = "memory";
+		reg = <0x00 0xb0000000 0x00 0x2f000000>;
+	};
+	
+	forlinx_control {
+		status = "disabled";
+		video-vp0 = "lvds";
+		video-vp1 = "rgb";
+	};
+
+	reserved-memory {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+	};
+	
+	// virtio blk
+	virtio_mmio@a003c00 {
+		dma-coherent;
+		interrupt-parent = <0x01>;
+		interrupts = <0x0 0x2e 0x1>;
+		reg = <0x0 0xa003c00 0x0 0x200>;
+		compatible = "virtio,mmio";
+		status = "okay";
+	};
+	
+	// virtio serial
+	virtio_mmio@a003800 {
+	   dma-coherent;
+	   interrupt-parent = <0x01>;
+	   interrupts = <0x0 0x2c 0x1>;
+	   reg = <0x0 0xa003800 0x0 0x200>;
+	   compatible = "virtio,mmio";
+	};
+
+	clk_uart_fixed {
+		compatible = "fixed-clock";
+		#clock-cells = <0x00>;
+		clock-frequency = <0x2dc6c00>; // 48MHz
+		phandle = <0xbf>;
+	};
+};
