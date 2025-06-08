@@ -50,6 +50,12 @@ jobs:
           - arch: aarch64
             board: "qemu-gicv2"
             rustc_target: aarch64-unknown-none
+          - arch: riscv64
+            board: "qemu-plic"
+            rustc_target: riscv64gc-unknown-none-elf
+          - arch: riscv64
+            board: "qemu-aia"
+            rustc_target: riscv64gc-unknown-none-elf
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4

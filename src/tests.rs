@@ -20,6 +20,9 @@
 use core::ptr::write_volatile;
 use qemu_exit::QEMUExit;
 
+#[cfg(target_arch = "riscv64")]
+use crate::platform::__board::SIFIVE_TEST_BASE;
+
 #[test_case]
 fn simple_test() {
     assert_eq!(1, 1);
@@ -58,13 +61,18 @@ pub enum HvUnitTestResult {
 
 pub fn quit_qemu(result: HvUnitTestResult) {
     warn!("quitting qemu, result: {:?}", result);
+
     #[cfg(target_arch = "aarch64")]
-    {
-        let qemu_exit_handle = qemu_exit::AArch64::new();
-        match result {
-            HvUnitTestResult::Success => qemu_exit_handle.exit_success(),
-            HvUnitTestResult::Failed => qemu_exit_handle.exit_failure(),
-        }
+    let qemu_exit_handle = qemu_exit::AArch64::new();
+
+    // addr: The address of sifive_test.
+    #[cfg(target_arch = "riscv64")]
+    let qemu_exit_handle = qemu_exit::RISCV64::new(SIFIVE_TEST_BASE);
+
+    #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+    match result {
+        HvUnitTestResult::Success => qemu_exit_handle.exit_success(),
+        HvUnitTestResult::Failed => qemu_exit_handle.exit_failure(),
     }
 }
 
