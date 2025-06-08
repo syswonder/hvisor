@@ -12,11 +12,7 @@ ARCH=${ARCH}
 FEATURES=${FEATURES}
 BOARD=${BOARD}
 
-UBOOT_GICV3=u-boot-atf.bin
-UBOOT_GICV2=u-boot-v2.bin
-
 HVISOR_ELF=$CARGO_BUILD_INPUT_ARG0
-HVISOR_BIN_TMP=$HVISOR_ELF.bin.tmp
 HVISOR_BIN=$HVISOR_ELF.bin
 
 OBJCOPY=rust-objcopy
@@ -29,70 +25,15 @@ info() {
     echo "[INFO | $THIS] $1"
 }
 
-# check if mkimage is installed
-if ! command -v mkimage &>/dev/null; then
-    if command -v apt &>/dev/null; then
-        sudo apt update && sudo apt install -y u-boot-tools
-    elif command -v brew &>/dev/null; then
-        brew install u-boot-tools
-    else
-        info "You need to install u-boot-tools to run this script (mkimage)"
-        exit 1
-    fi
-fi
-
 info "Running cargo test with env: ARCH=$ARCH, FEATURES=$FEATURES, BOARD=$BOARD"
 
 info "Building hvisor with $CARGO_BUILD_INPUT_ARG0"
 info "PWD=$PWD, running cargo test"
-$OBJCOPY $HVISOR_ELF --strip-all -O binary $HVISOR_BIN_TMP
+$OBJCOPY $HVISOR_ELF --strip-all -O binary $HVISOR_BIN
 
-if [ "$ARCH" == "aarch64" ]; then
-    mkimage -n hvisor_img -A arm64 -O linux -C none -T kernel -a 0x40400000 \
-        -e 0x40400000 -d $HVISOR_BIN_TMP $HVISOR_BIN
+qemu-system-riscv64 \
+    -machine virt,aclint=on \
+    -bios default -cpu rv64 -smp 4 -m 4G -nographic \
+    -kernel $HVISOR_BIN
 
-    info "Running QEMU with $HVISOR_BIN"
-
-    # if we have gicv2,gicv3 in FEATURES, we get the number from it
-    AARCH64_GIC_TEST_VERSION=3
-    if [[ $FEATURES == *"gicv2"* ]]; then
-        AARCH64_GIC_TEST_VERSION=2
-    fi
-    info "Using GIC version: $AARCH64_GIC_TEST_VERSION"
-
-    UBOOT=$UBOOT_GICV3
-    if [ $AARCH64_GIC_TEST_VERSION -eq 2 ]; then
-        UBOOT=$UBOOT_GICV2
-    fi
-    UBOOT=$PWD/platform/$ARCH/$BOARD/image/bootloader/$UBOOT
-    info "Using U-Boot: $UBOOT"
-
-
-    qemu-system-aarch64 \
-        -machine virt,secure=on,gic-version=${AARCH64_GIC_TEST_VERSION},virtualization=on,iommu=smmuv3 \
-        -cpu cortex-a57 -smp 4 -m 3G -nographic \
-        -semihosting \
-        -bios $UBOOT \
-        -drive if=pflash,format=raw,index=1,file=flash.img \
-        -device loader,file=$HVISOR_BIN,addr=0x40400000,force-raw=on \
-        -global arm-smmuv3.stage=2
-
-    exit 0
-elif [ "$ARCH" == "riscv64" ]; then
-    mv $HVISOR_BIN_TMP $HVISOR_BIN
-    
-    QEMU_MACHINE="virt,aclint=on"
-    if [[ $FEATURES == *"aia"* ]]; then
-        QEMU_MACHINE="virt,aia=aplic-imsic,aia-guests=1,aclint=on"
-    fi
-
-    qemu-system-riscv64 \
-        -machine ${QEMU_MACHINE} \
-        -bios default -cpu rv64 -smp 4 -m 4G -nographic \
-        -kernel $HVISOR_BIN
-
-    exit 0
-else
-    info "Unsupported ARCH: $ARCH"
-    exit 1
-fi
+exit 0
