@@ -383,6 +383,9 @@ pub fn mmio_pci_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     let reg_addr = extract_reg_addr(mmio.address);
     let bdf_shift = get_bdf_shift();
     let bdf = (mmio.address >> bdf_shift) & 0xffff;
+    let bus = (mmio.address >> 8) & 0xff;
+    let dev = (mmio.address >> 3) & 0x1f;
+    let func = mmio.address & 0x7;
 
     let is_assigned = binding.pciroot.is_assigned_device(bdf);
     let is_bridge = binding.pciroot.is_bridge(bdf);
@@ -390,7 +393,8 @@ pub fn mmio_pci_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     match is_assigned {
         true => {
             mmio_perform_access(base, mmio);
-            if reg_addr == 0x150 {
+            if bus == 6 && reg_addr == 0x150 && !mmio.is_write {
+                // assume pcie network card is in bus 6(X4 slot in 3A6000 board), this will skip it's sriov
                 mmio.value = mmio.value & 0x00ffffff;
                 mmio.value += 0x1a000000;
             }

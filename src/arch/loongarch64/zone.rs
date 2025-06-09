@@ -447,8 +447,8 @@ impl MMIOAccessTracker {
 static MMIO_ACCESS_STATS: Lazy<Mutex<MMIOAccessTracker>> =
     Lazy::new(|| Mutex::new(MMIOAccessTracker::new()));
 
-const COMPRESSION_THRESHOLD: u64 = 50;
-const LOG_INTERVAL: u64 = 10;
+const COMPRESSION_THRESHOLD: u64 = 40;
+const LOG_INTERVAL: u64 = 5000;
 
 const BASE_ADDR: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_0000);
 const UART0_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_01e0);
@@ -511,7 +511,7 @@ fn handle_extioi_mapping_mmio(mmio: &mut MMIOAccess, base_addr: usize, size: usi
 
     // if this is nonroot, we ignore the mmio
     if this_cpu_id() != 0 {
-        warn!("nonroot's write to extioi mapping regs, ignored");
+        info!("nonroot's write to extioi mapping regs, ignored");
         return Ok(());
     }
 
@@ -626,7 +626,7 @@ fn handle_mmio_stats(mmio: &mut MMIOAccess) {
     };
 
     if !msg.is_empty() {
-        warn!("{}", msg);
+        debug!("{}", msg);
     }
 
     stats.last_value.store(mmio.value as u64, Ordering::SeqCst);
@@ -646,24 +646,21 @@ pub fn loongarch_generic_mmio_handler(mmio: &mut MMIOAccess, arg: usize) -> HvRe
         ret = handle_extioi_status_mmio(mmio, EXTIOI_SR_CORE_BASE, EXTIOI_SR_CORE_SIZE);
     } else if is_in_mmio_range!(mmio.address, EXTIOI_ENABLE_BASE, EXTIOI_ENABLE_SIZE) {
         if this_cpu_id() != 0 && mmio.is_write {
-            // ignore nonroot's write to enable regs
-            warn!("nonroot's write to enable regs, ignored");
+            info!("nonroot's write to enable regs, ignored");
             return Ok(());
         } else {
             ret = handle_generic_mmio(mmio, BASE_ADDR);
         }
     } else if is_in_mmio_range!(mmio.address, EXTIOI_BOUNCE_BASE, EXTIOI_BOUNCE_SIZE) {
         if this_cpu_id() != 0 && mmio.is_write {
-            // ignore nonroot's write to bounce regs
-            warn!("nonroot's write to bounce regs, ignored");
+            info!("nonroot's write to bounce regs, ignored");
             return Ok(());
         } else {
             ret = handle_generic_mmio(mmio, BASE_ADDR);
         }
     } else if is_in_mmio_range!(mmio.address, EXTIOI_NODE_SEL_BASE, EXTIOI_NODE_SEL_SIZE) {
         if this_cpu_id() != 0 && mmio.is_write {
-            // ignore nonroot's write to node sel regs
-            warn!("nonroot's write to node sel regs, ignored");
+            info!("nonroot's write to node sel regs, ignored");
             return Ok(());
         } else {
             ret = handle_generic_mmio(mmio, BASE_ADDR);

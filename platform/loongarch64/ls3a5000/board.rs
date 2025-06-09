@@ -170,10 +170,11 @@ pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
 /* 00:07.0, 00:08.0, 00:09.0, 00:0a.0, 00:0b.0 */
 /* 00:0c.0, 00:0d.0, 00:0f.0, 00:10.0, 00:13.0 */
 /* 00:16.0, 00:19.0, 02:00.0, 05:00.0 */
+/* BUS 8 on X16 slot */
 /* 08:00.0, 08:00.1, 08:00.2, 08:00.3 net */
-// BUS 8
-/* 06:00.0, 06:00.1, 06:00.2, 06:00.3 net */ // BUS 6
-pub const ROOT_PCI_DEVS: [u64; 24] = [
+/* BUS 6 on X4 slot */
+/* 06:00.0, 06:00.1, 06:00.2, 06:00.3 net */
+pub const ROOT_PCI_DEVS: [u64; 26] = [
     0,
     1,
     2,
@@ -182,9 +183,12 @@ pub const ROOT_PCI_DEVS: [u64; 24] = [
     (4 << 3) + 1,
     5 << 3,
     (5 << 3) + 1,
-    0x30,
+    // 00:06.xx is VGA and Graphics card
+    (6 << 3),
+    (6 << 3) + 1,
+    (6 << 3) + 2,
     7 << 3,
-    8 << 3,
+    8 << 3, // bus 0 device 8: AHCI
     9 << 3,
     0xa << 3,
     0xb << 3,
@@ -197,6 +201,7 @@ pub const ROOT_PCI_DEVS: [u64; 24] = [
     0x19 << 3,
     2 << 8,
     5 << 8,
+    // bus 6 (x4 slot) is PCIe network card
     // (8 << 8), // bus 8 net
     (6 << 8), // bus 6 net
 ];
