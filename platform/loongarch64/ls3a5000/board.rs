@@ -144,7 +144,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x1_4000_0000,
         virtual_start: 0x1_4000_0000,
-        size: 0x1000_0000, // 256M shared memory across all zones
+        size: 0x80_0000, // linux1-root
     }, // SHARD_MEM
 ];
 
