@@ -13,7 +13,8 @@ ZIP_PARTS=(
 )
 ZIP_OUTPUT="rootfs1.zip"
 UNZIP_DIR="platform/riscv64/qemu-plic/image/virtdisk"          # Extraction directory
-``
+ROOTFS_FILE="${UNZIP_DIR}/rootfs1.ext4"
+
 # Independent image configuration
 TARGET_DIR="platform/riscv64/qemu-plic/image/kernel"   # Target directory path
 IMAGE_FILE="${TARGET_DIR}/Image"     # Full image file path
@@ -77,9 +78,9 @@ download_file() {
 main() {
   check_dependencies
 
-  # Check if final files exist # TODO: check the files, not the directory - wheatfox
-  if [ -d "$UNZIP_DIR" ] && [ -f "$IMAGE_FILE" ]; then
-    echo -e "${GREEN}All files already exist:\n- Image file: $IMAGE_FILE\n- Extracted directory: $UNZIP_DIR${NC}"
+  # Check if final files exist
+  if [ -f "$ROOTFS_FILE" ] && [ -f "$IMAGE_FILE" ]; then
+    echo -e "${GREEN}All files already exist:\n- Image file: $IMAGE_FILE\n- rootfs file: $ROOTFS_FILE${NC}"
     exit 0
   fi
 
@@ -94,6 +95,7 @@ main() {
       continue
     fi
 
+    i = 0
     ((i=i%PARALLEL_DOWNLOADS)); ((i++==0)) && wait
     (
       echo -e "${GREEN}ROOTFS_URL: $url${NC}"
