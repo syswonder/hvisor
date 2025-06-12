@@ -150,6 +150,10 @@ jobs:
           - arch: aarch64
             rustc_target: aarch64-unknown-none
             board: "qemu-gicv3"
+          # riscv64
+          - arch: riscv64
+            rustc_target: riscv64gc-unknown-none-elf
+            board: "qemu-plic"
           # Because other features need to be customized scripts
     steps:
       - name: Checkout Repository
@@ -167,15 +171,24 @@ jobs:
           install-path: '/opt/qemu'
 
       - name: Setup ARM aarch64-none-linux-gnu
+        if: matrix.arch == 'aarch64'
         uses: ./.github/actions/setup-aarch64-none-linux-gnu
         with:
           version: '10.3-2021.07' 
           install-path: '/opt/aarch64-none-linux-gnu'
 
+      - name: Setup RISCV riscv64-unknown-linux-gnu
+        if: matrix.arch == 'riscv64'
+        uses: ./.github/actions/setup-riscv64-unknown-linux-gnu
+        with:
+          version: '13.2.0' 
+          install-path: '/opt/riscv64-unknown-linux-gnu'
+
+
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget expect device-tree-compiler p7zip-full gcc-aarch64-linux-gnu
+          sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget expect device-tree-compiler p7zip-full gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu
           cargo install --version 0.3.0 --locked cargo-binutils
           cargo install cargo-xbuild
 

@@ -15,7 +15,7 @@
                         "addr": "0x10006000",
                         "len": "0x1000",
                         "irq": 6,
-                        "img": "rootfs2.ext4",
+                        "img": "riscv_rootfs2.img",
                         "status": "enable"
                     },
                     {
