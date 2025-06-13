@@ -1,0 +1,2 @@
+non root region mmap succeed!
+hvisor.ko: invoking hypercall to start the zone

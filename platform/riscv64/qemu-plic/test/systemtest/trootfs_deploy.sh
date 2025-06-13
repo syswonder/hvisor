@@ -6,12 +6,12 @@ set -x            # Print commands for debugging
 # Environment Configuration
 # ========================
 WORKSPACE_ROOT="${GITHUB_WORKSPACE:-$(pwd)}"
-ROOTFS_DIR="${WORKSPACE_ROOT}/platform/aarch64/qemu-gicv3/image/virtdisk/rootfs"
-LINUX_KERNEL_DIR="${WORKSPACE_ROOT}/platform/aarch64/qemu-gicv3/image/virtdisk/linux_5.4"
-HVISOR_TOOL_DIR="${WORKSPACE_ROOT}/platform/aarch64/qemu-gicv3/image/virtdisk/hvisor-tool"
-CONFIG_DIR="${WORKSPACE_ROOT}/platform/aarch64/qemu-gicv3/configs"
-TEST_DIR="${WORKSPACE_ROOT}/platform/aarch64/qemu-gicv3/test/systemtest"
-DTS_DIR="${WORKSPACE_ROOT}/platform/aarch64/qemu-gicv3/image/dts"
+ROOTFS_DIR="${WORKSPACE_ROOT}/platform/riscv64/qemu-plic/image/virtdisk/rootfs"
+LINUX_KERNEL_DIR="${WORKSPACE_ROOT}/platform/riscv64/qemu-plic/image/virtdisk/linux_v6.10-rc1"
+HVISOR_TOOL_DIR="${WORKSPACE_ROOT}/platform/riscv64/qemu-plic/image/virtdisk/hvisor-tool"
+CONFIG_DIR="${WORKSPACE_ROOT}/platform/riscv64/qemu-plic/configs"
+TEST_DIR="${WORKSPACE_ROOT}/platform/riscv64/qemu-plic/test/systemtest"
+DTS_DIR="${WORKSPACE_ROOT}/platform/riscv64/qemu-plic/image/dts"
 
 # ========================
 # Function Definitions
@@ -28,7 +28,7 @@ mount_rootfs() {
 
 prepare_sources() {
     echo "=== Cloning required repositories ==="
-    git clone https://github.com/CHonghaohao/linux_5.4.git || return 1
+    git clone https://github.com/CHonghaohao/linux_v6.10-rc1.git || return 1
     git clone https://github.com/syswonder/hvisor-tool.git || return 1
 }
 
@@ -38,14 +38,14 @@ build_hvisor_tool() {
 
     # Cross-compilation parameters
     make all \
-        ARCH=arm64 \
+        ARCH=riscv \
         LOG=LOG_INFO \
         KDIR="${LINUX_KERNEL_DIR}"
 }
 
 deploy_artifacts() {
     echo "=== Deploying build artifacts ==="
-    local dest_dir="${ROOTFS_DIR}/home/arm64"
+    local dest_dir="${ROOTFS_DIR}/home/riscv64"
     local test_dest="${dest_dir}/test"
     # Copy main components
     sudo cp -v "${HVISOR_TOOL_DIR}/tools/hvisor" "${dest_dir}/"
@@ -72,7 +72,7 @@ deploy_artifacts() {
 # Main Execution Flow
 # ========================
 (
-    cd "${WORKSPACE_ROOT}/platform/aarch64/qemu-gicv3/image/virtdisk"
+    cd "${WORKSPACE_ROOT}/platform/riscv64/qemu-plic/image/virtdisk"
     
     # Setup environment
     mount_rootfs

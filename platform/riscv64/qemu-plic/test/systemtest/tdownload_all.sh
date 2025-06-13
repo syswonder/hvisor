@@ -4,7 +4,7 @@
 # Usage: ./download_all.sh
 
 # Configuration parameters
-RELEASE_NAME="v2025.04.11"
+RELEASE_NAME="v2025.06.11"
 BASE_URL="https://github.com/CHonghaohao/hvisor_env_img/releases/download/$RELEASE_NAME"
 
 # Split archive configuration (must be in order)
@@ -12,11 +12,11 @@ ZIP_PARTS=(
   "rootfs1.zip"
 )
 ZIP_OUTPUT="rootfs1.zip"
-UNZIP_DIR="platform/aarch64/qemu-gicv3/image/virtdisk"          # Extraction directory
+UNZIP_DIR="platform/riscv64/qemu-plic/image/virtdisk"          # Extraction directory
 ROOTFS_FILE="${UNZIP_DIR}/rootfs1.ext4"
 
 # Independent image configuration
-TARGET_DIR="platform/aarch64/qemu-gicv3/image/kernel"   # Target directory path
+TARGET_DIR="platform/riscv64/qemu-plic/image/kernel"   # Target directory path
 IMAGE_FILE="${TARGET_DIR}/Image"     # Full image file path
 IMAGE_URL="$BASE_URL/Image"
 
