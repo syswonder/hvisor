@@ -133,7 +133,7 @@ impl VirtualPLIC {
             return 0;
         }
         if value > u32::MAX as usize {
-            error!("vplic_emul_access: value is out of range");
+            error!("vplic_emul_access: value{:#x} is out of range 0xffffffff", value);
             return 0;
         }
 
@@ -213,6 +213,7 @@ impl VirtualPLIC {
                 let irq_end = bits + 31;
                 let mut inner = self.inner.lock();
                 if is_write {
+                    info!("enable value:{:#x}", value);
                     for irq in irq_start..=irq_end.min(self.max_interrupts) {
                         let irq_enable = (value & (1 << (irq - irq_start))) != 0;
                         if inner.enable[vcontext_id][irq] == irq_enable {
