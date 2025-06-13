@@ -31,7 +31,7 @@ use crate::{
 };
 
 pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> {
-    base..(base + (n - 1) * size)
+    base..(base + n * size)
 }
 
 impl Zone {
