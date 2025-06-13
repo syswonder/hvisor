@@ -133,7 +133,10 @@ impl VirtualPLIC {
             return 0;
         }
         if value > u32::MAX as usize {
-            error!("vplic_emul_access: value{:#x} is out of range 0xffffffff", value);
+            error!(
+                "vplic_emul_access: value{:#x} is out of range 0xffffffff",
+                value
+            );
             return 0;
         }
 

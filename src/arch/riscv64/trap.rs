@@ -293,7 +293,7 @@ pub fn guest_page_fault_handler(current_cpu: &mut ArchCpu) {
             address: addr as _,
             size: size as _,
             is_write: is_write as _,
-            value: if is_write { current_cpu.x[reg] as _} else { 0 },
+            value: if is_write { current_cpu.x[reg] as _ } else { 0 },
         };
 
         match mmio_handle_access(&mut mmio_access) {
@@ -305,7 +305,8 @@ pub fn guest_page_fault_handler(current_cpu: &mut ArchCpu) {
                         // for load instruction, x[rd] will be written.
                         if sign_ext {
                             // note: this is used for 64bit system.
-                            (((mmio_access.value << (64 - 8 * size)) as i64) >> (64 - 8 * size)) as usize
+                            (((mmio_access.value << (64 - 8 * size)) as i64) >> (64 - 8 * size))
+                                as usize
                         } else {
                             mmio_access.value
                         }
