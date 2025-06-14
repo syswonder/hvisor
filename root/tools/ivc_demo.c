@@ -34,10 +34,9 @@ static int open_dev() {
 
 int main(int argc, char *argv[]) {
     printf("ivc_demo: starting\n");
-    int fd, err, sig, ivc_id, is_send = 0, ret;
-    ivc_uinfo_t ivc_info;
-    void *tb_virt, *mem_virt;
-    unsigned long long ct_ipa, offset;
+    int fd, is_send = 0, ret;
+    void *tb_virt;
+    unsigned long long offset;
 
     if (argc != 2) {
         printf("Usage: ivc_demo send|receive\n");
