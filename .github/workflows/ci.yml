@@ -198,3 +198,14 @@ jobs:
           echo "BOARD=${{ matrix.board }}" >> $GITHUB_ENV
       - name: Run System Test
         run: make stest
+
+  license-checker:
+    name: license-checker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: License Check
+        run: |
+          set -x  
+          ./tools/license_checker.sh
