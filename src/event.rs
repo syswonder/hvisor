@@ -14,12 +14,10 @@
 // Authors:
 //
 use crate::{
-    arch::ipi::arch_send_event,
-    device::{
+    arch::ipi::arch_send_event, consts::MAX_CPU_NUM, device::{
         irqchip::{self, inject_irq},
         virtio_trampoline::{handle_virtio_irq, IRQ_WAKEUP_VIRTIO_DEVICE},
-    },
-    percpu::this_cpu_data,
+    }, percpu::this_cpu_data
 };
 use alloc::{collections::VecDeque, vec::Vec};
 use spin::{Mutex, Once};
@@ -97,8 +95,8 @@ fn fetch_event(cpu: usize) -> Option<usize> {
     EVENT_MANAGER.get().unwrap().fetch_event(cpu)
 }
 
-pub fn init(max_cpus: usize) {
-    EVENT_MANAGER.call_once(|| EventManager::new(max_cpus));
+pub fn init() {
+    EVENT_MANAGER.call_once(|| EventManager::new(MAX_CPU_NUM));
 }
 
 pub fn dump_events() {
@@ -172,7 +170,7 @@ pub fn send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
 
 #[test_case]
 fn test_simple_send_event() {
-    init(1);
+    init();
     send_event(0, 0, IPI_EVENT_WAKEUP);
     assert_eq!(fetch_event(0), Some(IPI_EVENT_WAKEUP));
 }

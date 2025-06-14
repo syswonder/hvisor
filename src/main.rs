@@ -114,7 +114,7 @@ fn wait_for_counter(counter: &AtomicU32, max_value: u32) {
     wait_for(|| counter.load(Ordering::Acquire) < max_value)
 }
 
-fn primary_init_early(ncpu: usize) {
+fn primary_init_early() {
     extern "C" {
         fn __core_end();
     }
@@ -133,7 +133,7 @@ fn primary_init_early(ncpu: usize) {
     );
     memory::frame::init();
     memory::frame::test();
-    event::init(ncpu);
+    event::init();
 
     device::irqchip::primary_init_early();
     // crate::arch::mm::init_hv_page_table().unwrap();
@@ -166,8 +166,8 @@ fn per_cpu_init(cpu: &mut PerCpu) {
     info!("CPU {} hv_pt_install OK.", cpu.id);
 }
 
-fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize, ncpu: usize) {
-    for cpu_id in 0..ncpu {
+fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
+    for cpu_id in 0..MAX_CPU_NUM {
         if cpu_id == this_id {
             continue;
         }
@@ -199,54 +199,13 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         cpu.id, cpu as *const _, &cpu.arch_cpu as *const _, host_dtb
     );
 
-    // Don't you wanna know how many cpu(s) on board? :D
-    let mut ncpu: usize = 0;
-    #[cfg(all(
-        any(target_arch = "aarch64", target_arch = "riscv64"),
-        not(feature = "no_autodetect_ncpus")
-    ))]
-    {
-        let devtree = unsafe { DevTree::from_raw_pointer(host_dtb as *const u8).unwrap() };
-
-        let mut node_iter = devtree.nodes();
-        while let Some(node) = node_iter.next().unwrap() {
-            if node.name().unwrap().starts_with("cpu@") {
-                ncpu += 1;
-            }
-        }
-    }
-
-    // If we failed to detect, just use default value.
-    if ncpu == 0 {
-        if is_primary {
-            println!(
-                "Failed to count cpu(s) from devicetree. Using default value {}.",
-                BOARD_NCPUS
-            );
-        }
-        ncpu = BOARD_NCPUS;
-    } else if ncpu > MAX_CPU_NUM {
-        if is_primary {
-            println!("{} cpu(s) detected, but using only {}.", ncpu, MAX_CPU_NUM);
-        }
-        ncpu = MAX_CPU_NUM;
-    }
-
     if is_primary {
-        #[cfg(target_arch = "aarch64")]
-        {
-            println!("Using {} cpu(s) on this system.", ncpu);
-        }
-
-        unsafe {
-            consts::NCPU = ncpu;
-        }
-        wakeup_secondary_cpus(cpu.id, host_dtb, ncpu);
+        wakeup_secondary_cpus(cpu.id, host_dtb);
     }
 
     ENTERED_CPUS.fetch_add(1, Ordering::SeqCst);
-    wait_for(|| PerCpu::entered_cpus() < ncpu as _);
-    assert_eq!(PerCpu::entered_cpus(), ncpu as _);
+    wait_for(|| PerCpu::entered_cpus() < MAX_CPU_NUM as _);
+    assert_eq!(PerCpu::entered_cpus(), MAX_CPU_NUM as _);
 
     println!(
         "{} CPU {} has entered.",
@@ -255,10 +214,10 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     );
 
     #[cfg(target_arch = "aarch64")]
-    setup_parange(ncpu);
+    setup_parange();
 
     if is_primary {
-        primary_init_early(ncpu); // create root zone here
+        primary_init_early(); // create root zone here
     } else {
         wait_for_counter(&INIT_EARLY_OK, 1);
     }
@@ -268,7 +227,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
 
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
 
-    wait_for_counter(&INITED_CPUS, ncpu as _);
+    wait_for_counter(&INITED_CPUS, MAX_CPU_NUM as _);
 
     if is_primary {
         primary_init_late();

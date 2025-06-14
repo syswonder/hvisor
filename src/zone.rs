@@ -16,7 +16,7 @@
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 // use psci::error::INVALID_ADDRESS;
-use crate::consts::INVALID_ADDRESS;
+use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM};
 use crate::event::{send_event, IPI_EVENT_SHUTDOWN};
 use crate::hypercall::SGI_IPI_ID;
 use crate::pci::pci::PciRoot;
@@ -56,7 +56,7 @@ impl Zone {
             name: name.try_into().unwrap(),
             id: zoneid,
             gpm: new_s2_memory_set(),
-            cpu_set: CpuSet::new(unsafe { consts::NCPU } as usize, 0),
+            cpu_set: CpuSet::new(MAX_CPU_NUM as usize, 0),
             mmio: Vec::new(),
             irq_bitmap: [0; 1024 / 32],
             pciroot: PciRoot::new(),

@@ -97,7 +97,7 @@ use self::gicr::enable_ipi;
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::arch::cpu::this_cpu_id;
 use crate::config::root_zone_config;
-use crate::consts;
+use crate::consts::{self, MAX_CPU_NUM};
 
 use crate::event::check_events;
 use crate::hypercall::SGI_IPI_ID;
@@ -462,7 +462,7 @@ pub fn primary_init_early() {
         gits_init();
     }
 
-    PENDING_VIRQS.call_once(|| PendingIrqs::new(unsafe { consts::NCPU }));
+    PENDING_VIRQS.call_once(|| PendingIrqs::new(MAX_CPU_NUM));
     debug!("gic = {:#x?}", GIC.get().unwrap());
 }
 
