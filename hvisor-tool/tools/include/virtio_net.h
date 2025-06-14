@@ -30,7 +30,7 @@
 
 typedef struct virtio_net_config NetConfig;
 typedef struct virtio_net_hdr_v1 NetHdr;
-
+typedef struct virtio_net_hdr NetHdrLegacy;
 typedef struct virtio_net_dev {
     NetConfig config;
     int tapfd;
