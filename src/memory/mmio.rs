@@ -99,6 +99,7 @@ pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
     }
 }
 
+#[allow(dead_code)]
 pub fn mmio_generic_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     mmio_perform_access(base, mmio);
     Ok(())

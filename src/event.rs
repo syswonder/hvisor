@@ -13,11 +13,15 @@
 //
 // Authors:
 //
+#![allow(unused)]
 use crate::{
-    arch::ipi::arch_send_event, consts::MAX_CPU_NUM, device::{
-        irqchip::{self, inject_irq},
+    arch::ipi::arch_send_event,
+    consts::MAX_CPU_NUM,
+    device::{
+        irqchip::inject_irq,
         virtio_trampoline::{handle_virtio_irq, IRQ_WAKEUP_VIRTIO_DEVICE},
-    }, percpu::this_cpu_data
+    },
+    percpu::this_cpu_data,
 };
 use alloc::{collections::VecDeque, vec::Vec};
 use spin::{Mutex, Once};
@@ -132,11 +136,13 @@ pub fn check_events() -> bool {
         }
         #[cfg(target_arch = "loongarch64")]
         Some(IPI_EVENT_CLEAR_INJECT_IRQ) => {
+            use crate::device::irqchip;
             irqchip::ls7a2000::clear_hwi_injected_irq();
             true
         }
         #[cfg(all(target_arch = "riscv64", feature = "plic"))]
         Some(IPI_EVENT_UPDATE_HART_LINE) => {
+            use crate::device::irqchip;
             info!("cpu {} update hart line", cpu_data.id);
             irqchip::plic::update_hart_line();
             true

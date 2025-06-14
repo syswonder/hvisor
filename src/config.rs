@@ -39,17 +39,6 @@ pub struct HvConfigMemoryRegion {
     pub size: u64,
 }
 
-impl HvConfigMemoryRegion {
-    pub fn new_empty() -> Self {
-        Self {
-            mem_type: 0,
-            physical_start: 0,
-            virtual_start: 0,
-            size: 0,
-        }
-    }
-}
-
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct HvPciConfig {
@@ -185,7 +174,10 @@ pub fn root_zone_config() -> &'static HvZoneConfig {
     unsafe { HV_ROOT_ZONE_CONFIG.get().unwrap() }
 }
 
+#[allow(unused)]
 pub const IVC_PROTOCOL_USER: u32 = 0x0;
+
+#[allow(unused)]
 pub const IVC_PROTOCOL_HVISOR: u32 = 0x1;
 
 #[repr(C)]

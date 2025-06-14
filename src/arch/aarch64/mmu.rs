@@ -13,8 +13,10 @@
 //
 // Authors:
 //
+#![allow(unused)]
+
 use cfg_if::cfg_if;
-use cortex_a::registers::{MAIR_EL1, SCTLR_EL2};
+use cortex_a::registers::SCTLR_EL2;
 use tock_registers::interfaces::*;
 use tock_registers::*;
 
@@ -63,13 +65,11 @@ register_bitfields! {u64,
     ]
 }
 
-pub const PAGE_SIZE: usize = 4096;
-pub const PAGE_SHIFT: usize = 12;
+const PAGE_SIZE: usize = 4096;
+const PAGE_SHIFT: usize = 12;
 
-pub const ENTRY_PER_PAGE: usize = PAGE_SIZE / 8;
-
-pub const WORD_SIZE: usize = 8;
-pub const PTE_PER_PAGE: usize = PAGE_SIZE / WORD_SIZE;
+const WORD_SIZE: usize = 8;
+const ENTRY_PER_PAGE: usize = PAGE_SIZE / WORD_SIZE;
 
 enum MemoryType {
     Normal,

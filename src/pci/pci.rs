@@ -17,10 +17,9 @@ use core::{ptr, usize};
 
 use crate::config::{HvPciConfig, CONFIG_MAX_PCI_DEV};
 use crate::memory::addr::align_down;
+use crate::pci::init_ecam_base;
 use crate::pci::pcibar::BarType;
-use crate::pci::{get_ecam_base, init_ecam_base};
 use crate::percpu::this_zone;
-use crate::zone::this_zone_id;
 use crate::{
     error::HvResult,
     memory::MMIOAccess,
@@ -34,7 +33,7 @@ use super::endpoint::EndpointConfig;
 use super::pcibar::BarRegion;
 use super::phantom_cfg::PhantomCfg;
 use super::{
-    cfg_base, CFG_CAP_PTR_OFF, CFG_CLASS_CODE_OFF, CFG_CMD_OFF, ECAM_BASE, NUM_BAR_REGS_TYPE0,
+    cfg_base, CFG_CAP_PTR_OFF, CFG_CLASS_CODE_OFF, CFG_CMD_OFF, NUM_BAR_REGS_TYPE0,
     NUM_BAR_REGS_TYPE1, PHANTOM_DEV_HEADER,
 };
 

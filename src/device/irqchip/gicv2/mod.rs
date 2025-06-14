@@ -13,7 +13,6 @@
 //
 // Authors:
 //
-use crate::consts;
 use crate::device::irqchip::gicv2::gic::MAX_CPU_NUM;
 /// The outer layer is defined using gicv2.
 /// author: ForeverYolo

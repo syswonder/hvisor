@@ -76,9 +76,7 @@ use crate::consts::MAX_CPU_NUM;
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
-use fdt_rs::{base::DevTree, prelude::FallibleIterator};
 use percpu::PerCpu;
-use platform::BOARD_NCPUS;
 use zone::{add_zone, zone_create};
 
 #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
@@ -136,7 +134,6 @@ fn primary_init_early() {
     event::init();
 
     device::irqchip::primary_init_early();
-    // crate::arch::mm::init_hv_page_table().unwrap();
 
     #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
     iommu_init();
@@ -160,9 +157,6 @@ fn per_cpu_init(cpu: &mut PerCpu) {
     if cpu.zone.is_none() {
         warn!("zone is not created for cpu {}", cpu.id);
     }
-    // unsafe {
-    //     memory::hv_page_table().read().activate();
-    // };
     info!("CPU {} hv_pt_install OK.", cpu.id);
 }
 

@@ -85,10 +85,9 @@ use core::arch::asm;
 use core::ptr::write_volatile;
 use core::sync::atomic::AtomicU64;
 
-use alloc::collections::btree_map::BTreeMap;
 use alloc::collections::vec_deque::VecDeque;
 use alloc::vec::Vec;
-use gicr::{init_lpi_prop, GICR_ISENABLER, GICR_SGI_BASE};
+use gicr::init_lpi_prop;
 use gits::gits_init;
 use spin::{Mutex, Once};
 

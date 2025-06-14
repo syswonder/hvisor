@@ -17,15 +17,12 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 // use psci::error::INVALID_ADDRESS;
 use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM};
-use crate::event::{send_event, IPI_EVENT_SHUTDOWN};
-use crate::hypercall::SGI_IPI_ID;
 use crate::pci::pci::PciRoot;
 use spin::RwLock;
 
 use crate::arch::mm::new_s2_memory_set;
 use crate::arch::s2pt::Stage2PageTable;
 use crate::config::{HvZoneConfig, CONFIG_NAME_MAXLEN};
-use crate::consts;
 
 #[cfg(all(target_arch = "riscv64", feature = "plic"))]
 use crate::device::irqchip::plic::vplic;
@@ -221,7 +218,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
         &config.alloc_pci_devs,
     );
 
-    let mut cpu_num = 0;
+    let mut _cpu_num = 0;
 
     for cpu_id in config.cpus().iter() {
         if let Some(zone) = get_cpu_data(*cpu_id as _).zone.clone() {
@@ -235,7 +232,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
             );
         }
         zone.cpu_set.set_bit(*cpu_id as _);
-        cpu_num += 1;
+        _cpu_num += 1;
     }
 
     #[cfg(feature = "plic")]
@@ -243,7 +240,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
         zone.vplic = Some(vplic::VirtualPLIC::new(
             config.arch_config.plic_base,
             BOARD_PLIC_INTERRUPTS_NUM,
-            cpu_num * 2,
+            _cpu_num * 2,
         ));
     }
 

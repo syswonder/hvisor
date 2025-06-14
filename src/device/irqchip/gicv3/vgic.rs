@@ -18,7 +18,7 @@ use alloc::sync::Arc;
 use super::{gicd::GICD_LOCK, is_spi};
 use crate::{
     arch::zone::HvArchZoneConfig,
-    consts::{self, MAX_CPU_NUM},
+    consts::MAX_CPU_NUM,
     device::irqchip::gicv3::{
         gicd::*, gicr::*, gits::*, host_gicd_base, host_gicr_base, host_gits_base,
         MAINTENACE_INTERRUPT, PER_GICR_SIZE,

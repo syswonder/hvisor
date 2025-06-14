@@ -6,12 +6,10 @@
 
 use core::ptr;
 
-use alloc::vec::Vec;
 use spin::{mutex::Mutex, Once};
 
 use crate::{
     arch::cpu::this_cpu_id,
-    consts,
     consts::{MAX_CPU_NUM, MAX_ZONE_NUM, PAGE_SIZE},
     hypercall::SGI_IPI_ID,
     memory::Frame,
