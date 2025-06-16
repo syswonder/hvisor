@@ -21,33 +21,34 @@
 
 .macro handle_vmexit exit_reason
 	.align	7
-	/* Fill the union registers. Should comply with NUM_USR_REGS */
-	/*now sp =>per_cpu stack top*/
-	stp	x29, x30, [sp, #-16]!
-	stp	x27, x28, [sp, #-16]!
-	stp	x25, x26, [sp, #-16]!
-	stp	x23, x24, [sp, #-16]!
-	stp	x21, x22, [sp, #-16]!
-	stp	x19, x20, [sp, #-16]!
-	stp	x17, x18, [sp, #-16]!
-	stp	x15, x16, [sp, #-16]!
-	stp	x13, x14, [sp, #-16]!
-	stp	x11, x12, [sp, #-16]!
-	stp	x9, x10, [sp, #-16]!
-	stp	x7, x8, [sp, #-16]!
-	stp	x5, x6, [sp, #-16]!
-	stp	x3, x4, [sp, #-16]!
-	stp	x1, x2, [sp, #-16]!
+	mrs x0, TPIDR_EL2
+    stp x0, x1, [x0]
+    stp x2, x3, [x0, #0x10]
+    stp x4, x5, [x0, #0x20]
+    stp x6, x7, [x0, #0x30]
+    stp x8, x9, [x0, #0x40]
+    stp x10, x11, [x0, #0x50]
+    stp x12, x13, [x0, #0x60]
+    stp x14, x15, [x0, #0x70]
+    stp x16, x17, [x0, #0x80]
+    stp x18, x19, [x0, #0x90]
+    stp x20, x21, [x0, #0xa0]
+    stp x22, x23, [x0, #0xb0]
+    stp x24, x25, [x0, #0xc0]
+    stp x26, x27, [x0, #0xd0]
+    stp x28, x29, [x0, #0xe0]
+    str x30, [x0, #0xf0]
 
-	mov	x1, #\exit_reason
-	stp	x1, x0, [sp, #-16]!
+    mrs x1, ELR_EL2
+    str x1, [x0, #0xf8]
+    mrs x1, SPSR_EL2
+    str x1, [x0, #0x100]
 
-	mov	x29, xzr	/* reset fp,lr */
-	mov	x30, xzr
-	mov	x0, sp		/*x0 guest regs*/
-	bl	{0}
-	b	.
+    mov x1, #\exit_reason
+    bl {0}
+	bl .
 .endm
+
 EXIT_REASON_EL2_ABORT	=0x0
 EXIT_REASON_EL2_IRQ		=0x1
 EXIT_REASON_EL1_ABORT	=0x2

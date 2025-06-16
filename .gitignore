@@ -1,7 +1,7 @@
 /target
 /qemu-test
 /test-img
-/hvisor.S
+/hvisor.asm
 /hvisor-elf.txt
 /images/*
 /platform/*/*/image/kernel/*

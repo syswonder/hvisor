@@ -24,5 +24,7 @@ pub mod s2pt;
 pub mod sysreg;
 pub mod trap;
 pub mod zone;
+pub mod vcpu;
 
 pub use s2pt::Stage2PageTable;
+

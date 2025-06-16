@@ -60,6 +60,8 @@ mod memory;
 mod panic;
 mod percpu;
 mod platform;
+mod scheduler;
+mod vcpu;
 mod zone;
 
 #[cfg(target_arch = "aarch64")]
@@ -71,12 +73,14 @@ mod pci;
 mod tests;
 
 #[cfg(target_arch = "aarch64")]
-use crate::arch::mm::setup_parange;
-use crate::consts::MAX_CPU_NUM;
+use crate::arch::{cpu::activate_vmm, mm::setup_parange};
+use crate::{consts::MAX_CPU_NUM, scheduler::add_vcpu, vcpu::VCpu, zone::root_zone};
+use alloc::sync::Arc;
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
+use spin::RwLock;
 use zone::{add_zone, zone_create};
 
 #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
@@ -132,6 +136,7 @@ fn primary_init_early() {
     memory::frame::init();
     memory::frame::test();
     event::init();
+    scheduler::init();
 
     device::irqchip::primary_init_early();
 
@@ -151,13 +156,6 @@ fn primary_init_late() {
     device::irqchip::primary_init_late();
 
     INIT_LATE_OK.store(1, Ordering::Release);
-}
-
-fn per_cpu_init(cpu: &mut PerCpu) {
-    if cpu.zone.is_none() {
-        warn!("zone is not created for cpu {}", cpu.id);
-    }
-    info!("CPU {} hv_pt_install OK.", cpu.id);
 }
 
 fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
@@ -198,14 +196,17 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     }
 
     ENTERED_CPUS.fetch_add(1, Ordering::SeqCst);
-    wait_for(|| PerCpu::entered_cpus() < MAX_CPU_NUM as _);
-    assert_eq!(PerCpu::entered_cpus(), MAX_CPU_NUM as _);
 
     println!(
         "{} CPU {} has entered.",
         if is_primary { "Primary" } else { "Secondary" },
         cpu.id
     );
+
+    wait_for(|| PerCpu::entered_cpus() < MAX_CPU_NUM as _);
+    assert_eq!(PerCpu::entered_cpus(), MAX_CPU_NUM as _);
+
+    println!("Booting up {} CPUs...", MAX_CPU_NUM);
 
     #[cfg(target_arch = "aarch64")]
     setup_parange();
@@ -216,7 +217,9 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         wait_for_counter(&INIT_EARLY_OK, 1);
     }
 
-    per_cpu_init(cpu);
+    #[cfg(target_arch = "aarch64")]
+    activate_vmm();
+
     device::irqchip::percpu_init();
 
     INITED_CPUS.fetch_add(1, Ordering::SeqCst);
@@ -236,5 +239,12 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         test_main();
     }
 
-    cpu.run_vm();
+    if is_primary {
+        let vcpu = Arc::new(RwLock::new(VCpu::new(Arc::downgrade(&root_zone()))));
+        add_vcpu(Arc::downgrade(&vcpu.clone()));
+        scheduler::run_next();
+    } else {
+        error!("Secondary CPU: run scheduler (todo)");
+        loop {}
+    }
 }

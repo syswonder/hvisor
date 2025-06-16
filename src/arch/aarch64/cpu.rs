@@ -225,3 +225,29 @@ pub fn mpidr_to_cpuid(mpidr: u64) -> u64 {
 pub fn this_cpu_id() -> usize {
     mpidr_to_cpuid(MPIDR_EL1.get()) as _
 }
+
+pub fn activate_vmm() {
+    VTCR_EL2.write(
+        VTCR_EL2::TG0::Granule4KB
+            + VTCR_EL2::PS.val(get_parange() as _)
+            + VTCR_EL2::SH0::Inner
+            + VTCR_EL2::HA::Enabled
+            + VTCR_EL2::SL0.val(if is_s2_pt_level3() { 1 } else { 2 })
+            + VTCR_EL2::ORGN0::NormalWBRAWA
+            + VTCR_EL2::IRGN0::NormalWBRAWA
+            + VTCR_EL2::T0SZ.val(
+                64 - if is_s2_pt_level3() {
+                    39
+                } else {
+                    get_parange_bits() as _
+                },
+            ),
+    );
+    HCR_EL2.write(
+        HCR_EL2::RW::EL1IsAarch64
+            + HCR_EL2::TSC::EnableTrapEl1SmcToEl2
+            + HCR_EL2::VM::SET
+            + HCR_EL2::IMO::SET
+            + HCR_EL2::FMO::SET,
+    );
+}

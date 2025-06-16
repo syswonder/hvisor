@@ -13,12 +13,13 @@
 //
 // Authors:
 //
-use alloc::sync::Arc;
+use alloc::sync::{Arc, Weak};
 use spin::{Mutex, RwLock};
 
 use crate::arch::cpu::{this_cpu_id, ArchCpu};
 use crate::consts::{INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::memory::addr::VirtAddr;
+use crate::vcpu::VCpu;
 use crate::zone::Zone;
 use crate::ENTERED_CPUS;
 use core::fmt::Debug;
@@ -34,6 +35,7 @@ pub struct PerCpu {
     pub arch_cpu: ArchCpu,
     pub zone: Option<Arc<RwLock<Zone>>>,
     pub ctrl_lock: Mutex<()>,
+    pub vcpu: Weak<RwLock<VCpu>>,
     pub boot_cpu: bool,
     // percpu stack
 }
@@ -50,6 +52,7 @@ impl PerCpu {
                 arch_cpu: ArchCpu::new(cpu_id),
                 zone: None,
                 ctrl_lock: Mutex::new(()),
+                vcpu: Weak::new(),
                 boot_cpu: false,
             })
         };
@@ -81,6 +84,16 @@ impl PerCpu {
         unsafe {
             self.zone.clone().unwrap().read().gpm.activate();
         }
+    }
+
+    pub fn vcpu(&self) -> Weak<RwLock<VCpu>> {
+        let _lock = self.ctrl_lock.lock();
+        return self.vcpu.clone();
+    }
+
+    pub fn set_vcpu(&mut self, vcpu: Weak<RwLock<VCpu>>) {
+        let _lock = self.ctrl_lock.lock();
+        self.vcpu = vcpu;
     }
 }
 
