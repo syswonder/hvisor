@@ -1,11 +1,19 @@
-// Copyright 2023 The arm-gic Authors.
-// This project is dual-licensed under Apache 2.0 and MIT terms.
-// See LICENSE-APACHE and LICENSE-MIT for details.
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 
-/// Reads and returns the value of the given aarch64 system register.
-/// use crate::arch::sysreg::write_sysreg;
-/// unsafe {write_sysreg!(icc_sgi1r_el1, val);}
-/// let intid = unsafe { read_sysreg!(icc_iar1_el1) } as u32;
 macro_rules! read_sysreg {
     ($name:ident) => {
         {
@@ -46,25 +54,12 @@ macro_rules! smc_arg1 {
 }
 pub(crate) use smc_arg1;
 
-macro_rules! smc_call {
-    ($x0:expr, $x1:expr, $x2:expr, $x3:expr) => {{
-        let mut x0_val: u64 = $x0;
-        let mut x1_val: u64 = $x1;
-        let mut x2_val: u64 = $x2;
-        let mut x3_val: u64 = $x3;
-
-        ::core::arch::asm!(
-            "smc #0",
-            inout("x0") x0_val,
-            inout("x1") x1_val,
-            inout("x2") x2_val,
-            inout("x3") x3_val,
-            options(nomem, nostack),
-        );
-        (x0_val,x1_val,x2_val,x3_val)
-    }};
+pub fn smc_call(function: u64, args: &[u64]) -> [u64; 4] {
+    let args: [u64; 17] = args.try_into().expect("args length should be 17");
+    smc64(function as _, args)[0..4]
+        .try_into()
+        .expect("smc64 ret err")
 }
-pub(crate) use smc_call;
 
 // macro_rules! read_lrreg {
 //     ($lr:expr) => {

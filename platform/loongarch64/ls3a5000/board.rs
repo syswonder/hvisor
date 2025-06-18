@@ -18,6 +18,8 @@ use crate::{arch::zone::HvArchZoneConfig, config::*};
 
 pub const BOARD_NAME: &str = "ls3a5000";
 
+pub const BOARD_NCPUS: usize = 4;
+
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x10000f000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x200000;
 pub const ROOT_ZONE_ENTRY: u64 = 0x9000000000da4000;
@@ -150,6 +152,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
 
 pub const ROOT_ZONE_IRQS: [u32; 0] = [];
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig { dummy: 0 };
+pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
 
 pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
     ecam_base: 0xfe00000000,

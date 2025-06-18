@@ -50,17 +50,13 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
     );
     memory_regions[..ROOT_ZONE_MEMORY_REGIONS.len()].copy_from_slice(&ROOT_ZONE_MEMORY_REGIONS);
 
-    let mut ivc_configs = [HvIvcConfig::default(); CONFIG_MAX_IVC_CONFIGS];
-    let mut num_ivc_configs = 0;
+    let mut ivc_configs: [HvIvcConfig; 2] = [HvIvcConfig::default(); CONFIG_MAX_IVC_CONFIGS];
+    let mut _num_ivc_configs = 0;
+
     #[cfg(target_arch = "aarch64")]
     {
-        num_ivc_configs = ROOT_ZONE_IVC_CONFIG.len() as _;
-        check!(
-            num_ivc_configs,
-            CONFIG_MAX_IVC_CONFIGS,
-            "ROOT_ZONE_IVC_CONFIG"
-        );
-        ivc_configs[..num_ivc_configs].copy_from_slice(&ROOT_ZONE_IVC_CONFIG);
+        _num_ivc_configs = ROOT_ZONE_IVC_CONFIG.len() as _;
+        ivc_configs[.._num_ivc_configs].copy_from_slice(&ROOT_ZONE_IVC_CONFIG);
     }
 
     let mut interrupts = [0; CONFIG_MAX_INTERRUPTS];
@@ -76,14 +72,17 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
     name[..ROOT_ZONE_NAME.len()].copy_from_slice(ROOT_ZONE_NAME.as_bytes());
 
     let mut pci_devs = [0; CONFIG_MAX_PCI_DEV];
-    let mut root_pci_cfg = HvPciConfig::new_empty();
-    let mut num_pci_devs: u64 = 0;
-    #[cfg(all(feature = "pci"))]
-    {
+    let mut _root_pci_cfg = HvPciConfig::new_empty();
+    let mut _num_pci_devs: u64 = 0;
+
+    if cfg!(all(
+        feature = "pci",
+        any(target_arch = "aarch64", target_arch = "loongarch64")
+    )) {
         check!(ROOT_PCI_DEVS.len(), CONFIG_MAX_PCI_DEV, "ROOT_PCI_DEVS");
         pci_devs[..ROOT_PCI_DEVS.len()].copy_from_slice(&ROOT_PCI_DEVS);
-        root_pci_cfg = ROOT_PCI_CONFIG;
-        num_pci_devs = ROOT_PCI_DEVS.len() as _;
+        _root_pci_cfg = ROOT_PCI_CONFIG;
+        _num_pci_devs = ROOT_PCI_DEVS.len() as _;
     }
 
     HvZoneConfig::new(
@@ -93,7 +92,7 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
         memory_regions,
         ROOT_ZONE_IRQS.len() as u32,
         interrupts,
-        num_ivc_configs as _,
+        _num_ivc_configs as _,
         ivc_configs,
         ROOT_ZONE_ENTRY,
         ROOT_ZONE_KERNEL_ADDR,
@@ -102,8 +101,8 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
         INVALID_ADDRESS as _,
         name,
         ROOT_ARCH_ZONE_CONFIG,
-        root_pci_cfg,
-        num_pci_devs,
+        _root_pci_cfg,
+        _num_pci_devs,
         pci_devs,
     )
 }

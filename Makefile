@@ -115,8 +115,7 @@ elf:
 
 disa:
 	readelf -a $(hvisor_elf) > hvisor-elf.txt
-# rust-objdump --disassemble $(hvisor_elf) > hvisor.S
-	rust-objdump --disassemble --source $(hvisor_elf) > hvisor.S
+	rust-objdump --disassemble --source --line-numbers $(hvisor_elf) > hvisor.asm
 
 run: all
 	$(QEMU) $(QEMU_ARGS)
@@ -173,6 +172,7 @@ test: clean test-pre gen_cargo_config
 stest: clean test-pre gen_cargo_config
 	./platform/$(ARCH)/$(BOARD)/test/systemtest/tcompiledtb.sh
 	./platform/$(ARCH)/$(BOARD)/test/systemtest/tdownload_all.sh
+	./platform/$(ARCH)/$(BOARD)/test/systemtest/trootfs_deploy.sh
 	./platform/$(ARCH)/$(BOARD)/test/systemtest/tstart.sh
 
 dtb:

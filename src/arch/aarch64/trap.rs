@@ -18,6 +18,7 @@ use core::arch::global_asm;
 
 use super::cpu::GeneralRegisters;
 use crate::arch::sysreg::smc_call;
+use crate::zone::zone_error;
 use crate::{
     arch::{
         cpu::mpidr_to_cpuid,
@@ -27,7 +28,7 @@ use crate::{
     event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_WAKEUP},
     hypercall::{HyperCall, SGI_IPI_ID},
     memory::{mmio_handle_access, MMIOAccess},
-    percpu::{get_cpu_data, this_cpu_data, this_zone, PerCpu},
+    percpu::{get_cpu_data, this_cpu_data, this_zone},
     zone::{is_this_root_zone, remove_zone},
 };
 
@@ -49,13 +50,17 @@ const SMC_TYPE_MASK: u64 = 0x3F000000;
 #[allow(non_snake_case)]
 pub mod SmcType {
     pub const ARCH_SC: u64 = 0x0;
-    pub const STANDARD_SC: u64 = 0x4000000;
-    pub const SIP_SC: u64 = 0x2000000;
+    pub const SIP_SC: u64 = 0x02000000;
+    pub const STANDARD_SC: u64 = 0x04000000;
+    pub const TOS_SC_START: u64 = 0x32000000;
+    pub const TOS_SC_END: u64 = 0x3F000000;
 }
 
 const PSCI_VERSION_1_1: u64 = 0x10001;
 const PSCI_TOS_NOT_PRESENT_MP: u64 = 2;
-const ARM_SMCCC_VERSION_1_0: u64 = 0x10000;
+const ARM_SMCCC_VERSION_1_1: u64 = 0x10001;
+
+#[allow(unused)]
 const ARM_SMCCC_NOT_SUPPORTED: i64 = -1;
 
 extern "C" {
@@ -170,9 +175,8 @@ fn arch_handle_trap_el2(_regs: &mut GeneralRegisters) {
         }
         Some(ESR_EL2::EC::Value::InstrAbortCurrentEL) => {
             println!(
-                "EL2 Exception: Instruction Abort, ELR_EL2: {:#x?}, FAR_EL2: {:#x?}",
-                ELR_EL2.get(),
-                FAR_EL2.get()
+                "EL2 Exception: Instruction Abort, ELR_EL2: {:#x?}, ESR_EL2: {:#x?},FAR_EL2: {:#x?}",
+                elr, esr, far
             );
         }
         _ => {
@@ -189,15 +193,19 @@ fn handle_iabt(_regs: &mut GeneralRegisters) {
     let iss = ESR_EL2.read(ESR_EL2::ISS);
     let op = iss >> 6 & 0x1;
     let hpfar = read_sysreg!(HPFAR_EL2);
-    let hdfar = read_sysreg!(FAR_EL2);
-    let mut address = hpfar << 8;
-    address |= hdfar & 0xfff;
-    error!("error ins access {} at {:#x?}!", op, address);
-    error!("esr_el2: iss {:#x?}", iss);
+    let far = read_sysreg!(FAR_EL2);
+    let address = (far & 0xfff) | (hpfar << 8);
+    error!(
+        "Failed to fetch instruction (op={}) at {:#x?}, ELR_EL2={:#x?}!",
+        op,
+        address,
+        ELR_EL2.get()
+    );
     loop {}
-    //TODO finish dabt handle
+    // TODO: finish iabt handle
     // arch_skip_instruction(frame);
 }
+
 fn handle_dabt(regs: &mut GeneralRegisters) {
     let iss = ESR_EL2.read(ESR_EL2::ISS);
     let is_write = (iss >> 6 & 0x1) != 0;
@@ -234,7 +242,8 @@ fn handle_dabt(regs: &mut GeneralRegisters) {
             }
         }
         Err(e) => {
-            panic!("mmio_handle_access: {:#x?}", e);
+            error!("mmio_handle_access: {:#x?}", e);
+            zone_error();
         }
     }
     //TODO finish dabt handle
@@ -268,9 +277,12 @@ fn handle_hvc(regs: &mut GeneralRegisters) {
     let (code, arg0, arg1) = (regs.usr[0], regs.usr[1], regs.usr[2]);
     let cpu_data = this_cpu_data();
 
-    debug!(
+    trace!(
         "HVC from CPU{},code:{:#x?},arg0:{:#x?},arg1:{:#x?}",
-        cpu_data.id, code, arg0, arg1
+        cpu_data.id,
+        code,
+        arg0,
+        arg1
     );
     let result = match HyperCall::new(cpu_data).hypercall(code as _, arg0, arg1) {
         Ok(ret) => ret as _,
@@ -285,7 +297,6 @@ fn handle_hvc(regs: &mut GeneralRegisters) {
 
 fn handle_smc(regs: &mut GeneralRegisters) {
     let (code, arg0, arg1, arg2) = (regs.usr[0], regs.usr[1], regs.usr[2], regs.usr[3]);
-    let cpu_data = this_cpu_data() as &mut PerCpu;
     //info!(
     //    "SMC from CPU{}, func_id:{:#x?}, arg0:{:#x?}, arg1:{:#x?}, arg2:{:#x?}",
     //    cpu_data.id, code, arg0, arg1, arg2
@@ -293,13 +304,16 @@ fn handle_smc(regs: &mut GeneralRegisters) {
     let result = match code & SMC_TYPE_MASK {
         SmcType::ARCH_SC => handle_arch_smc(regs, code, arg0, arg1, arg2),
         SmcType::STANDARD_SC => handle_psci_smc(regs, code, arg0, arg1, arg2),
-        SmcType::SIP_SC => unsafe {
-            (regs.usr[0], regs.usr[1], regs.usr[2], regs.usr[3]) =
-                smc_call!(code, arg0, arg1, arg2);
-            regs.usr[0]
-        },
+        SmcType::TOS_SC_START..=SmcType::TOS_SC_END | SmcType::SIP_SC => {
+            let ret = smc_call(code, &regs.usr[1..18]);
+            regs.usr[0] = ret[0];
+            regs.usr[1] = ret[1];
+            regs.usr[2] = ret[2];
+            regs.usr[3] = ret[3];
+            ret[0]
+        }
         _ => {
-            warn!("unsupported smc");
+            warn!("unsupported smc {:#x?}", code);
             0
         }
     };
@@ -406,7 +420,7 @@ fn handle_arch_smc(
     _arg2: u64,
 ) -> u64 {
     match code {
-        SMCccFnId::SMCCC_VERSION => ARM_SMCCC_VERSION_1_0,
+        SMCccFnId::SMCCC_VERSION => ARM_SMCCC_VERSION_1_1,
         SMCccFnId::SMCCC_ARCH_FEATURES => !0,
         _ => {
             error!("unsupported ARM smc service");

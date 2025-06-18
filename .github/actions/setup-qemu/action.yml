@@ -1,0 +1,60 @@
+name: 'QEMU Source Installation'
+description: 'Install QEMU from source'
+inputs:
+  qemu-version:
+    description: 'QEMU version to install'
+    required: false
+    default: '9.0.2'
+  install-path:
+    description: 'Custom installation path'
+    required: false
+    default: '/opt/qemu'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Install Build Dependencies
+      shell: bash
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y python3-venv ninja-build pkg-config python3-pip libglib2.0-dev nettle-dev libpixman-1-dev meson flex bison libslirp-dev
+        pip install sphinx-rtd-theme
+
+    - name: Download QEMU Source
+      shell: bash
+      run: |
+        wget https://download.qemu.org/qemu-${{ inputs.qemu-version }}.tar.xz
+        tar xJf qemu-${{ inputs.qemu-version }}.tar.xz
+        cd qemu-${{ inputs.qemu-version }}
+
+    - name: Configure Build
+      shell: bash
+      working-directory: ./qemu-${{ inputs.qemu-version }}
+      run: |
+        ./configure \
+          --prefix=${{ inputs.install-path }} \
+          --target-list=aarch64-softmmu,riscv64-softmmu,riscv64-linux-user \
+          --enable-kvm \
+          --enable-nettle \
+          --enable-user \
+          --enable-linux-user \
+          --enable-slirp \
+          --enable-debug
+
+    - name: Compile & Install
+      shell: bash
+      working-directory: ./qemu-${{ inputs.qemu-version }}
+      run: |
+        make -j$(nproc)
+        sudo make install
+
+    - name: Set Environment Path
+      shell: bash
+      run: |
+        echo "${{ inputs.install-path }}/bin" >> $GITHUB_PATH
+
+    - name: Verify Installation
+      shell: bash
+      run: |
+        qemu-system-aarch64 --version
+        echo "Qemu path: ${{ inputs.install-path }}"

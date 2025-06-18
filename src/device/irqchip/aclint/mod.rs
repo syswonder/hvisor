@@ -60,12 +60,9 @@ pub fn aclint_init(base_addr: usize) {
 
 /// Send a software interrupt to the target hart.
 pub fn aclint_send_ipi(hart_id: usize) {
-    assert!(
-        hart_id >= 0 && hart_id < MAX_CPU_NUM,
-        "hart_id is out of range"
-    );
+    assert!(hart_id < MAX_CPU_NUM, "hart_id is out of range");
 
-    info!("ACLINT: addr {:#x}", *ACLINT_BASE.get().unwrap());
+    debug!("ACLINT: addr {:#x}", *ACLINT_BASE.get().unwrap());
 
     let sswi = unsafe { SSWI::new(*ACLINT_BASE.get().unwrap() as usize) };
     let setssip = sswi.setssip(HartId::from_number(hart_id).unwrap());

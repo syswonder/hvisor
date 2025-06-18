@@ -25,6 +25,7 @@ use crate::{
 use aarch64_cpu::registers::{
     Readable, Writeable, ELR_EL2, HCR_EL2, MPIDR_EL1, SCTLR_EL1, SPSR_EL2, VTCR_EL2,
 };
+use core::ptr::addr_of;
 
 use super::{
     mm::{get_parange, get_parange_bits, is_s2_pt_level3},
@@ -167,20 +168,24 @@ impl ArchCpu {
         this_cpu_data().activate_gpm();
         self.reset(this_cpu_data().cpu_on_entry, this_cpu_data().dtb_ipa);
         self.power_on = true;
-        info!("cpu {} started", self.cpuid);
+        info!(
+            "cpu {} started at {:#x?}",
+            self.cpuid,
+            this_cpu_data().cpu_on_entry
+        );
         unsafe {
             vmreturn(self.guest_reg() as *mut _ as usize);
         }
     }
 
     pub fn idle(&mut self) -> ! {
+        debug!("cpu {} begin to be idle", self.cpuid);
         assert!(this_cpu_id() == self.cpuid);
         let cpu_data = this_cpu_data();
         let _lock = cpu_data.ctrl_lock.lock();
         self.power_on = false;
         drop(_lock);
 
-        info!("cpu {} idle", self.cpuid);
         // reset current cpu -> pc = 0x0 (wfi)
         PARKING_MEMORY_SET.call_once(|| {
             let parking_code: [u8; 8] = [0x7f, 0x20, 0x03, 0xd5, 0xff, 0xff, 0xff, 0x17]; // 1: wfi; b 1b
@@ -191,7 +196,9 @@ impl ArchCpu {
             let mut gpm = new_s2_memory_set();
             gpm.insert(MemoryRegion::new_with_offset_mapper(
                 0 as GuestPhysAddr,
-                unsafe { &PARKING_INST_PAGE as *const _ as HostPhysAddr - PHYS_VIRT_OFFSET },
+                unsafe {
+                    addr_of!(PARKING_INST_PAGE) as *const _ as HostPhysAddr - PHYS_VIRT_OFFSET
+                },
                 PAGE_SIZE,
                 MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
             ))
@@ -201,43 +208,20 @@ impl ArchCpu {
         self.reset(0, this_cpu_data().dtb_ipa);
         unsafe {
             PARKING_MEMORY_SET.get().unwrap().activate();
-            info!("cpu {} started from parking", self.cpuid);
+            info!("cpu {} start parking", self.cpuid);
             vmreturn(self.guest_reg() as *mut _ as usize);
         }
     }
 }
 
 pub fn mpidr_to_cpuid(mpidr: u64) -> u64 {
-    mpidr & 0xff00ffffff
+    if cfg!(feature = "mpidr_rockchip") {
+        (mpidr >> 8) & 0xff
+    } else {
+        mpidr & 0xff00ffffff
+    }
 }
 
 pub fn this_cpu_id() -> usize {
     mpidr_to_cpuid(MPIDR_EL1.get()) as _
-}
-
-pub unsafe fn enable_mmu() {
-    const MAIR_FLAG: usize = 0x004404ff; //10001000000010011111111
-    const SCTLR_FLAG: usize = 0x30c51835; //110000110001010001100000110101
-    const TCR_FLAG: usize = 0x80853510; //10000000100001010011010100010000
-
-    core::arch::asm!(
-        "
-        /* setup the MMU for EL2 hypervisor mappings */
-        ldr	x1, ={MAIR_FLAG}     
-        msr	mair_el2, x1       // memory attributes for pagetable
-        ldr	x1, ={TCR_FLAG}
-	    msr	tcr_el2, x1        // translate control, virt range = [0, 2^48)
-
-	    /* Enable MMU, allow cacheability for instructions and data */
-	    ldr	x1, ={SCTLR_FLAG}
-	    msr	sctlr_el2, x1      // system control register
-
-	    isb
-	    tlbi alle2
-	    dsb	nsh
-    ",
-        MAIR_FLAG = const MAIR_FLAG,
-        TCR_FLAG = const TCR_FLAG,
-        SCTLR_FLAG = const SCTLR_FLAG,
-    );
 }

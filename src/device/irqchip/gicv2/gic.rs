@@ -14,6 +14,7 @@
 // Authors:
 //
 use crate::arch::cpu::this_cpu_id;
+use crate::consts;
 use crate::device::irqchip::gicv2::gicc::GICC;
 use crate::device::irqchip::gicv2::gicd::GICV2_SGIS_NUM;
 use crate::device::irqchip::gicv2::gich::{
@@ -30,7 +31,7 @@ use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use spin::{Mutex, Once};
 
-pub const MAX_CPU_NUM: usize = 8;
+pub const MAX_CPU_NUM: usize = consts::MAX_CPU_NUM;
 pub const MAINTENACE_INTERRUPT: u64 = 25;
 
 pub fn gicv2_handle_irq() {

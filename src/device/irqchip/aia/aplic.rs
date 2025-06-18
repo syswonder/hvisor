@@ -13,14 +13,13 @@
 //
 // Authors:
 //
-use riscv::use_sv32;
+
 use spin::Once;
 use spin::RwLock;
 // use crate::device::irqchip::aia::imsic::imsic_trigger;
 use crate::config::root_zone_config;
 use crate::zone::Zone;
 use crate::{arch::cpu::ArchCpu, memory::GuestPhysAddr, percpu::this_cpu_data};
-use fdt::Fdt;
 use riscv_decode::Instruction;
 // S-mode interrupt delivery controller
 const APLIC_S_IDC: usize = 0xd00_4000;
@@ -478,9 +477,4 @@ pub fn vaplic_emul_handler(current_cpu: &mut ArchCpu, addr: GuestPhysAddr, inst:
 pub fn init_aplic(aplic_base: usize, aplic_size: usize) {
     let aplic = Aplic::new(aplic_base, aplic_size);
     APLIC.call_once(|| RwLock::new(aplic));
-}
-impl Zone {
-    pub fn arch_irqchip_reset(&self) {
-        //TODO
-    }
 }

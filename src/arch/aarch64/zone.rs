@@ -50,6 +50,7 @@ impl Zone {
                     );
                 }
                 _ => {
+                    // hvisor-tool will check memory type. So only root linux can reach here.
                     panic!("Unsupported memory type: {}", mem_region.mem_type)
                 }
             }

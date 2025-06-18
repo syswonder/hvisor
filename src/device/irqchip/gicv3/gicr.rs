@@ -1,12 +1,21 @@
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
 //
-// Copyright (c) 2020-2022 Andre Richter <andre.o.richter@gmail.com>
-
-//! GICC Driver - GIC CPU interface.
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 
 use core::ptr;
 
-use alloc::vec::Vec;
 use spin::{mutex::Mutex, Once};
 
 use crate::{
@@ -64,8 +73,6 @@ pub fn enable_ipi() {
         gicr_igroupr0.write_volatile(gicr_igroupr0.read_volatile() | (1 << SGI_IPI_ID));
 
         let gicr_isenabler0 = (base + GICR_ISENABLER) as *mut u32;
-        gicr_isenabler0.write_volatile(1 << SGI_IPI_ID | 1 << MAINTENACE_INTERRUPT);
-        trace!("gicr_isenabler0: {}", gicr_isenabler0.read_volatile());
         let gicr_ipriorityr0 = (base + GICR_IPRIORITYR) as *mut u32;
         for irq_id in [SGI_IPI_ID, MAINTENACE_INTERRUPT] {
             let reg = irq_id / 4;
@@ -75,6 +82,8 @@ pub fn enable_ipi() {
             let prio = p.read_volatile();
 
             p.write_volatile((prio & !mask) | (0x01 << offset));
+
+            gicr_isenabler0.write_volatile(1 << irq_id);
         }
     }
 }
