@@ -13,8 +13,6 @@
 //
 // Authors:
 //
-use core::arch::global_asm;
-
 use crate::consts::PER_CPU_SIZE;
 
 //global_asm!(include_str!("boot_pt.S"));

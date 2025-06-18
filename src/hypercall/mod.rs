@@ -14,13 +14,10 @@
 // Authors:
 //
 #![allow(dead_code)]
+#![allow(unreachable_patterns)]
 
-use crate::arch::cpu::{self, this_cpu_id};
 use crate::config::{HvZoneConfig, CONFIG_MAGIC_VERSION};
-use crate::consts;
 use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, MAX_WAIT_TIMES, PAGE_SIZE};
-
-use crate::device::irqchip::inject_irq;
 use crate::device::virtio_trampoline::{MAX_DEVS, MAX_REQ, VIRTIO_BRIDGE, VIRTIO_IRQS};
 use crate::error::HvResult;
 use crate::percpu::{get_cpu_data, this_zone, PerCpu};
@@ -88,7 +85,7 @@ impl<'a> HyperCall<'a> {
                 HyperCallCode::HvZoneList => self.hv_zone_list(&mut *(arg0 as *mut ZoneInfo), arg1),
                 HyperCallCode::HvClearInjectIrq => {
                     use crate::event::IPI_EVENT_CLEAR_INJECT_IRQ;
-                    for i in 1..unsafe { consts::NCPU } {
+                    for i in 1..MAX_CPU_NUM {
                         // if target cpu status is not running, we skip it
                         if !get_cpu_data(i).arch_cpu.power_on {
                             continue;
@@ -269,6 +266,7 @@ impl<'a> HyperCall<'a> {
         };
         #[cfg(target_arch = "loongarch64")]
         {
+            use crate::arch::cpu::this_cpu_id;
             // assert this is cpu 0
             let cpuid = this_cpu_id();
             assert_eq!(cpuid, 0);

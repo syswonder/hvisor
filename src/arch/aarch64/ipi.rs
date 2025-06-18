@@ -14,8 +14,6 @@
 // Authors:
 //
 
-use crate::arch::cpu;
-
 #[cfg(feature = "gicv3")]
 use crate::arch::sysreg::write_sysreg;
 #[cfg(feature = "gicv2")]

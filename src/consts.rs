@@ -13,8 +13,8 @@
 //
 // Authors:
 //
-use crate::memory::addr::VirtAddr;
 pub use crate::memory::PAGE_SIZE;
+use crate::{memory::addr::VirtAddr, platform::BOARD_NCPUS};
 
 /// Size of the hypervisor heap.
 pub const HV_HEAP_SIZE: usize = 1024 * 1024; // 1 MB
@@ -28,11 +28,9 @@ pub const PER_CPU_ARRAY_PTR: *mut VirtAddr = __core_end as _;
 
 pub const INVALID_ADDRESS: usize = usize::MAX;
 
-pub const MAX_CPU_NUM: usize = 32;
+pub const MAX_CPU_NUM: usize = BOARD_NCPUS;
 
 pub const MAX_ZONE_NUM: usize = 3;
-
-pub static mut NCPU: usize = MAX_CPU_NUM;
 
 pub const MAX_WAIT_TIMES: usize = 10000000;
 
@@ -41,7 +39,7 @@ pub fn core_end() -> VirtAddr {
 }
 
 pub fn mem_pool_start() -> VirtAddr {
-    core_end() + unsafe { NCPU } * PER_CPU_SIZE
+    core_end() + MAX_CPU_NUM * PER_CPU_SIZE
 }
 
 pub fn hv_end() -> VirtAddr {

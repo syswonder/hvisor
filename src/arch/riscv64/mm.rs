@@ -18,9 +18,7 @@ use spin::RwLock;
 use crate::{
     arch::Stage2PageTable,
     error::HvResult,
-    memory::{
-        addr::align_up, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet, HV_PT,
-    },
+    memory::{addr::align_up, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet},
 };
 
 pub fn init_hv_page_table() -> HvResult {

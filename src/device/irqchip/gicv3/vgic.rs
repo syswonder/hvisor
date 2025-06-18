@@ -18,7 +18,7 @@ use alloc::sync::Arc;
 use super::{gicd::GICD_LOCK, is_spi};
 use crate::{
     arch::zone::HvArchZoneConfig,
-    consts,
+    consts::MAX_CPU_NUM,
     device::irqchip::gicv3::{
         gicd::*, gicr::*, gits::*, host_gicd_base, host_gicr_base, host_gits_base,
         MAINTENACE_INTERRUPT, PER_GICR_SIZE,
@@ -31,7 +31,7 @@ use crate::{
 };
 
 pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> {
-    base..(base + (n - 1) * size)
+    base..(base + n * size)
 }
 
 impl Zone {
@@ -43,7 +43,7 @@ impl Zone {
         self.mmio_region_register(arch.gicd_base, arch.gicd_size, vgicv3_dist_handler, 0);
         self.mmio_region_register(arch.gits_base, arch.gits_size, vgicv3_its_handler, 0);
 
-        for cpu in 0..unsafe { consts::NCPU } {
+        for cpu in 0..MAX_CPU_NUM {
             let gicr_base = arch.gicr_base + cpu * PER_GICR_SIZE;
             debug!("registering gicr {} at {:#x?}", cpu, gicr_base);
             self.mmio_region_register(gicr_base, PER_GICR_SIZE, vgicv3_redist_handler, cpu);
@@ -153,7 +153,7 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
         }
         GICR_TYPER => {
             mmio_perform_access(gicr_base, mmio);
-            if cpu == unsafe { consts::NCPU } - 1 {
+            if cpu == MAX_CPU_NUM - 1 {
                 mmio.value |= GICR_TYPER_LAST;
             }
         }

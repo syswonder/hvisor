@@ -102,6 +102,12 @@ jobs:
           - arch: aarch64
             board: "rk3568"
             rustc_target: aarch64-unknown-none
+          - arch: aarch64
+            board: "rk3588"
+            rustc_target: aarch64-unknown-none
+          - arch: aarch64
+            board: "ok6254-c"
+            rustc_target: aarch64-unknown-none
           # riscv64
           - arch: riscv64
             board: "qemu-aia"
@@ -198,3 +204,14 @@ jobs:
           echo "BOARD=${{ matrix.board }}" >> $GITHUB_ENV
       - name: Run System Test
         run: make stest
+
+  license-checker:
+    name: license-checker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: License Check
+        run: |
+          set -x  
+          ./tools/license_checker.sh

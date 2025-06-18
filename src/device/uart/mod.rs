@@ -15,6 +15,8 @@
 //
 // we specified the driver for each platform in the FEATURES environment variable.
 
+#![allow(unused)]
+
 #[cfg(all(feature = "pl011", target_arch = "aarch64"))]
 mod pl011;
 #[cfg(all(feature = "pl011", target_arch = "aarch64"))]
