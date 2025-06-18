@@ -947,24 +947,8 @@ int virtio_handle_req(volatile struct device_req *req) {
     if (i == vdevs_num) {
         log_warn("no matched virtio dev in zone %d, address is 0x%x",
                  req->src_zone, req->address);
-        // Return 0 for read-only registers when no device is found
-        if (!req->is_write) {
-            switch (req->address & 0xff) {
-            case VIRTIO_MMIO_MAGIC_VALUE:
-                value = VIRT_MAGIC;
-                break;
-            case VIRTIO_MMIO_VERSION:
-                value = VIRT_VERSION;
-                break;
-            case VIRTIO_MMIO_VENDOR_ID:
-                value = VIRT_VENDOR;
-                break;
-            default:
-                value = 0;
-                break;
-            }
-            virtio_finish_cfg_req(req->src_cpu, value);
-        }
+        value = virtio_mmio_read(NULL, 0, 0);
+        virtio_finish_cfg_req(req->src_cpu, value);
         return -1;
     }
 
