@@ -25,3 +25,5 @@ __loongarch*
 .config.old
 .cache
 compile_commands.json
+output/
+script.py

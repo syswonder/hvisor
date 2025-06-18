@@ -1,3 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/**
+ * Copyright (c) 2025 Syswonder
+ *
+ * Syswonder Website:
+ *      https://www.syswonder.org
+ *
+ * Authors:
+ *      Guowei Li <2401213322@stu.pku.edu.cn>
+ */
 #ifndef __HVISOR_H
 #define __HVISOR_H
 #include <linux/ioctl.h>
@@ -9,7 +19,7 @@
 #define MMAP_SIZE 4096
 #define MAX_REQ 32
 #define MAX_DEVS 8
-#define MAX_CPUS 4
+#define MAX_CPUS 32
 #define MAX_ZONES MAX_CPUS
 
 #define SIGHVI 10
@@ -58,12 +68,14 @@ typedef struct ioctl_zone_list_args zone_list_args_t;
 #define HVISOR_ZONE_START _IOW(1, 3, zone_config_t *)
 #define HVISOR_ZONE_SHUTDOWN _IOW(1, 4, __u64)
 #define HVISOR_ZONE_LIST _IOR(1, 5, zone_list_args_t *)
+#define HVISOR_CONFIG_CHECK _IOR(1, 6, __u64 *)
 
 #define HVISOR_HC_INIT_VIRTIO 0
 #define HVISOR_HC_FINISH_REQ 1
 #define HVISOR_HC_START_ZONE 2
 #define HVISOR_HC_SHUTDOWN_ZONE 3
 #define HVISOR_HC_ZONE_LIST 4
+#define HVISOR_HC_CONFIG_CHECK 6
 
 #ifdef LOONGARCH64
 

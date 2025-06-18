@@ -1,7 +1,17 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/**
+ * Copyright (c) 2025 Syswonder
+ *
+ * Syswonder Website:
+ *      https://www.syswonder.org
+ *
+ * Authors:
+ *      Guowei Li <2401213322@stu.pku.edu.cn>
+ */
 #ifndef __HVISOR_VIRTIO_H
 #define __HVISOR_VIRTIO_H
-#include "cJSON.h"
 #include "hvisor.h"
+#include "safe_cjson.h"
 #include <linux/virtio_config.h>
 #include <linux/virtio_mmio.h>
 #include <linux/virtio_ring.h>
