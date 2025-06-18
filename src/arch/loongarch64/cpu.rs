@@ -82,7 +82,7 @@ impl ArchCpu {
             self.get_cpuid(),
             self.ctx.sepc
         );
-        info!("loongarch64: @{:#x?}", self);
+        debug!("loongarch64: @{:#x?}", self);
         // step 1: enable guest mode
         // step 2: set guest entry to era
         // step 3: run ertn and enter guest mode

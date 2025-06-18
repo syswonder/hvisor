@@ -219,7 +219,7 @@ impl<'a> HyperCall<'a> {
                 as *const HvZoneConfig)
         };
 
-        info!("hv_zone_start: config: {:#x?}", config);
+        debug!("hv_zone_start: config: {:#x?}", config);
         if !is_this_root_zone() {
             return hv_result_err!(
                 EPERM,

@@ -447,8 +447,8 @@ impl MMIOAccessTracker {
 static MMIO_ACCESS_STATS: Lazy<Mutex<MMIOAccessTracker>> =
     Lazy::new(|| Mutex::new(MMIOAccessTracker::new()));
 
-const COMPRESSION_THRESHOLD: u64 = 40;
-const LOG_INTERVAL: u64 = 5000;
+const COMPRESSION_THRESHOLD: u64 = 50;
+const LOG_INTERVAL: u64 = 50;
 
 const BASE_ADDR: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_0000);
 const UART0_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_01e0);
