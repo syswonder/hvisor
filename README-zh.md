@@ -3,6 +3,7 @@
 <img src="https://www.syswonder.org/_media/hvisor-logo.svg">
 <br><br>
 <!-- <img src="https://img.shields.io/badge/hvisor-orange" /> -->
+<a href="https://github.com/syswonder/hvisor/actions/workflows/ci.yml"><img src="https://github.com/syswonder/hvisor/actions/workflows/ci.yml/badge.svg?branch=dev" alt="CI" style="max-width: 100%;"></a>
 <img src="https://img.shields.io/github/stars/syswonder/hvisor?color=yellow" />
 <img src="https://img.shields.io/github/license/syswonder/hvisor?color=red" />
 <img src="https://img.shields.io/github/contributors/syswonder/hvisor?color=blue" />
@@ -29,22 +30,23 @@ hvisor 是一个用 Rust 实现的 Type-1 裸机虚拟机监控器，采用分�
 
 ## 设备支持
 
-| **类别**           | **设备**              | **支持架构**             | **备注**                        |
-| ------------------ | --------------------- | ------------------------ | ------------------------------- |
-| **Virtio 设备**    | virtio-blk            | `aarch64`                |                                 |
-|                    | virtio-net            | `aarch64`                |                                 |
-|                    | virtio-console        | `aarch64`, `loongarch64` |                                 |
-|                    | virtio-gpu            | `aarch64`                | 仅支持 QEMU                     |
-| **串行设备/UARTs** | PL011                 | `aarch64`                |                                 |
-|                    | imx-uart              | `aarch64`                | NXP i.MX8MP                     |
-|                    | NS16550A              | `loongarch64`            |                                 |
-|                    | xuartps               | `aarch64`                | Xilinx Ultrascale+ MPSoC ZCU102 |
-| **中断控制器**     | GIC irq controller    | `aarch64`                |                                 |
-|                    | 7A2000 irq controller | `loongarch64`            |                                 |
-|                    | PLIC                  | `riscv64`                |                                 |
-|                    | AIA-APIC              | `riscv64`                | 仅支持 MSI 模式                 |
-| **PCIe 直通**      | PCIe                  | `aarch64`, `riscv`       |                                 |
-| **GPU 直通**       | GPU                   | `aarch64`                | NXP i.MX8MP                     |
+| **类别**           | **设备**              | **支持架构**                         | **备注                           |
+| ------------------ | --------------------- | ----------------------------------- | ------------------------------- |
+| **Virtio 设备**    | virtio-blk            | `aarch64`, `riscv64`                |                                 |
+|                    | virtio-net            | `aarch64`                           |                                 |
+|                    | virtio-console        | `aarch64`, `riscv64`, `loongarch64` |                                 |
+|                    | virtio-gpu            | `aarch64`                           | 仅支持 QEMU                      |
+| **串行设备/UARTs** | PL011                 | `aarch64`                            |                                 |
+|                    | imx-uart              | `aarch64`                           | NXP i.MX8MP                     |
+|                    | NS16550A              | `loongarch64`                       |                                 |
+|                    | xuartps               | `aarch64`                           | Xilinx Ultrascale+ MPSoC ZCU102 |
+|                    | uart16550             | `aarch64`                           | Rockchip 3568/3588, TI OK6254-C |
+| **中断控制器**     | GIC irq controller    | `aarch64`                            |                                 |
+|                    | 7A2000 irq controller | `loongarch64`                       |                                 |
+|                    | PLIC                  | `riscv64`                           |                                 |
+|                    | AIA                   | `riscv64`                           | 仅支持 MSI 模式                  |
+| **PCIe 直通**      | PCIe                  | `aarch64`, `riscv64`                |                                 |
+| **GPU 直通**       | GPU                   | `aarch64`                           | NXP i.MX8MP                     |
 
 ## 板卡支持
 
@@ -53,9 +55,9 @@ hvisor 是一个用 Rust 实现的 Type-1 裸机虚拟机监控器，采用分�
 - [x] QEMU virt aarch64
 - [x] NXP i.MX8MP
 - [x] Xilinx Ultrascale+ MPSoC ZCU102
-- [ ] Rockchip RK3588
-- [ ] Rockchip RK3568
-- [ ] Forlinx OK6254-C
+- [x] Rockchip RK3588
+- [x] Rockchip RK3568
+- [x] Forlinx OK6254-C
 
 ### riscv64
 
