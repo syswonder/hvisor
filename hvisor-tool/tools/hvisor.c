@@ -284,9 +284,11 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
     if (pci_config_json == NULL) {
         log_warn("No pci_config field found.");
         return -1;
+    } else {
+        printf("pci_config field found.\n");
     }
 
-#ifdef ARM64
+#if defined(ARM64) || defined(LOONGARCH64)
     cJSON *ecam_base_json =
         SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "ecam_base");
     cJSON *io_base_json =
@@ -351,7 +353,6 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
             SAFE_CJSON_GET_ARRAY_ITEM(alloc_pci_devs_json, i)->valueint;
     }
 #endif
-
     return 0;
 }
 
@@ -539,14 +540,15 @@ static int zone_start_from_json(const char *json_config_path,
     log_info("Zone name: %s", config->name);
 
 #ifndef LOONGARCH64
-
     // Parse architecture-specific configurations (interrupts for each platform)
     if (parse_arch_config(root, config))
         goto err_out;
 
-    parse_pci_config(root, config);
+        // parse_pci_config(root, config);
 
 #endif
+
+    parse_pci_config(root, config);
 
     if (root)
         cJSON_Delete(root);
@@ -684,6 +686,9 @@ int main(int argc, char *argv[]) {
         help(1);
 
     if (strcmp(argv[1], "zone") == 0) {
+        if (argc < 3)
+            help(1);
+
         if (strcmp(argv[2], "start") == 0) {
             err = zone_start(argc, argv);
         } else if (strcmp(argv[2], "shutdown") == 0) {
@@ -694,6 +699,9 @@ int main(int argc, char *argv[]) {
             help(1);
         }
     } else if (strcmp(argv[1], "virtio") == 0) {
+        if (argc < 3)
+            help(1);
+
         if (strcmp(argv[2], "start") == 0) {
             err = virtio_start(argc, argv);
         } else {
