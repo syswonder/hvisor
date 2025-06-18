@@ -214,6 +214,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
 
     /* loongarch page table emergency */
     /* Kai: Maybe unnecessary but i can't boot vms on my 3A6000 PC without this function. */
+    #[cfg(target_arch = "loongarch64")]
     zone.page_table_emergency(
         config.pci_config.ecam_base as _,
         config.pci_config.ecam_size as _,

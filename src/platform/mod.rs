@@ -75,10 +75,7 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
     let mut _root_pci_cfg = HvPciConfig::new_empty();
     let mut _num_pci_devs: u64 = 0;
 
-    if cfg!(all(
-        feature = "pci",
-        any(target_arch = "aarch64", target_arch = "loongarch64")
-    )) {
+    #[cfg(feature = "pci")] {
         check!(ROOT_PCI_DEVS.len(), CONFIG_MAX_PCI_DEV, "ROOT_PCI_DEVS");
         pci_devs[..ROOT_PCI_DEVS.len()].copy_from_slice(&ROOT_PCI_DEVS);
         _root_pci_cfg = ROOT_PCI_CONFIG;
