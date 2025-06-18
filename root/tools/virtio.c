@@ -172,17 +172,16 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
     vdev->irq_id = irq_id;
     vdev->type = dev_type;
 
-    log_info(
-        "wheatfox: vdev->base_addr is %lx, vdev->len is %lx, vdev->zone_id "
-        "is %d, vdev->irq_id is %d",
-        vdev->base_addr, vdev->len, vdev->zone_id, vdev->irq_id);
+    log_info("debug: vdev->base_addr is %lx, vdev->len is %lx, vdev->zone_id "
+             "is %d, vdev->irq_id is %d",
+             vdev->base_addr, vdev->len, vdev->zone_id, vdev->irq_id);
 
     switch (dev_type) {
     case VirtioTBlock:
         vdev->regs.dev_feature = BLK_SUPPORTED_FEATURES;
         init_blk_dev(vdev);
         init_virtio_queue(vdev, dev_type);
-        log_info("wheatfox: init_blk_dev and init_virtio_queue finished\n");
+        log_info("debug: init_blk_dev and init_virtio_queue finished\n");
         is_err = virtio_blk_init(vdev, (const char *)arg0);
         break;
 
@@ -1171,7 +1170,7 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
         // virtio-blk
         char *img = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "img")->valuestring;
         arg0 = img, arg1 = NULL;
-        log_info("wheatfox: img is %s", img);
+        log_info("debug: img is %s", img);
     } else if (dev_type == VirtioTNet) {
         // virtio-net
         char *tap = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "tap")->valuestring;
@@ -1276,14 +1275,14 @@ int virtio_start_from_json(char *json_path) {
             }
 
             log_info(
-                "wheatfox: zone0_ipa is %lx, zonex_ipa is %lx, mem_size is %lx",
+                "debug: zone0_ipa is %lx, zonex_ipa is %lx, mem_size is %lx",
                 zone0_ipa, zonex_ipa, mem_size);
 
             // Map from zone0_ipa
             virt_addr = mmap(NULL, mem_size, PROT_READ | PROT_WRITE, MAP_SHARED,
                              ko_fd, (off_t)zone0_ipa);
 
-            log_info("wheatfox: mmap zone0_ipa is %lx, zonex_ipa is %lx, "
+            log_info("debug: mmap zone0_ipa is %lx, zonex_ipa is %lx, "
                      "mem_size is %lx finished",
                      zone0_ipa, zonex_ipa, mem_size);
 
