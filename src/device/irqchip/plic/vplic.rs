@@ -216,7 +216,10 @@ impl VirtualPLIC {
                 let irq_end = bits + 31;
                 let mut inner = self.inner.lock();
                 if is_write {
-                    info!("enable value:{:#x}", value);
+                    debug!(
+                        "vplic_enable_access: vcontext {} irq range {}-{} enable value:{:#x}",
+                        vcontext_id, irq_start, irq_end, value
+                    );
                     for irq in irq_start..=irq_end.min(self.max_interrupts) {
                         let irq_enable = (value & (1 << (irq - irq_start))) != 0;
                         if inner.enable[vcontext_id][irq] == irq_enable {
