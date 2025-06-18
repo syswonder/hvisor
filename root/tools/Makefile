@@ -36,7 +36,8 @@ else ifeq ($(ARCH), loongarch)
 	CC := loongarch64-unknown-linux-gnu-gcc
 	READELF := loongarch64-unknown-linux-gnu-readelf
 	OBJDUMP := loongarch64-unknown-linux-gnu-objdump
-	CFLAGS += -DLOONGARCH64 -static
+	CFLAGS := -Wall -Wextra -DLOG_USE_COLOR -DHLOG=$(LOG) -DLOONGARCH64 -static
+	LIBS := 
 	ifeq ($(VIRTIO_GPU), y)
 		include_dirs += -I/opt/libdrm-install/include -L/opt/libdrm-install/lib -I/opt/libdrm-install/include/libdrm -ldrm
 	endif
