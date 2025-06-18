@@ -82,15 +82,15 @@ impl EndpointConfig {
         info!("finding sriov");
 
         let mut prev_cap_ptr = 0;
-        let mut curr_cap_ptr = CFG_EXT_CAP_PTR_OFF; // 0x100 起始
+        let mut curr_cap_ptr = CFG_EXT_CAP_PTR_OFF; // start from 0x100
 
-        // 初始化为无效偏移值，用于检查是否找到
+        // init to invalid offset value, to check if we find sriov
         self.node_before_sriov = 0xfff;
         self.node_after_sriov = 0xfff;
 
         while curr_cap_ptr != 0 {
             let cap_addr = cfg_reg_addr(self.bdf, curr_cap_ptr);
-            let cap_val = unsafe { read_volatile(cap_addr as *const u32) }; // 每个 ext cap 占 8 字节
+            let cap_val = unsafe { read_volatile(cap_addr as *const u32) }; // each ext cap is 8 bytes
 
             let cap_id = (cap_val & 0xffff) as u16;
             let next_cap_ptr = ((cap_val >> 20) & 0xfff) as usize;
