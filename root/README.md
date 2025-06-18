@@ -17,7 +17,7 @@ All operations should be performed in the `hvisor-tool` directory on an x86 host
 * Compile the command-line tools and kernel modules
 
 ```bash
-make all ARCH=<arch> LOG=<log> KDIR=/path/to/your-linux VIRTIO_GPU=[y/n]
+make all ARCH=<arch> LOG=<log> KDIR=/path/to/your-linux VIRTIO_GPU=[y/n] ROOT=/path/to/target_rootfs
 ```
 
 Where `<arch>` should be either `arm64` or `riscv`.
@@ -97,6 +97,8 @@ hvisor_virtio_device {
 ```
 
 This way, when hvisor injects an interrupt with the number `32 + 0x20`, it will trigger the interrupt handler registered in `hvisor.ko` and wake up the Virtio daemon.
+
+If the `32+0x20` interrupt has already been occupied by a device, in addition to modifying the device tree node mentioned above, you also need to modify the `IRQ_WAKEUP_VIRTIO_DEVICE` in Hvisor. For ARM architectures, if the value filled in interrupts is `0xa`, then `IRQ_WAKEUP_VIRTIO_DEVICE` should be set to `32+0xa`. For RISC-V architectures, there is no need to add 32, simply set the two values to be equal.
 
 #### Starting and Creating Virtio Devices
 

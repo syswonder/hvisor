@@ -1,3 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/**
+ * Copyright (c) 2025 Syswonder
+ *
+ * Syswonder Website:
+ *      https://www.syswonder.org
+ *
+ * Authors:
+ *      Guowei Li <2401213322@stu.pku.edu.cn>
+ */
 #include <errno.h>
 #include <pthread.h>
 #include <stdlib.h>
@@ -69,7 +79,7 @@ struct hvisor_event *add_event(int fd, int epoll_type,
 // Create a thread monitoring events.
 int initialize_event_monitor() {
     epoll_fd = epoll_create1(0);
-    log_debug("create epoll_fd is %d", epoll_fd);
+    log_debug("create epoll_fd %d", epoll_fd);
     pthread_create(&emonitor_tid, NULL, epoll_loop, NULL);
     if (epoll_fd >= 0)
         return 0;

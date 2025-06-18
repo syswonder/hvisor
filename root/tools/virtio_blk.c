@@ -1,3 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/**
+ * Copyright (c) 2025 Syswonder
+ *
+ * Syswonder Website:
+ *      https://www.syswonder.org
+ *
+ * Authors:
+ *      Guowei Li <2401213322@stu.pku.edu.cn>
+ */
 #include "virtio_blk.h"
 #include "log.h"
 #include "virtio.h"
@@ -113,6 +123,7 @@ static void *blkproc_thread(void *arg) {
 // create blk dev.
 BlkDev *init_blk_dev(VirtIODevice *vdev) {
     BlkDev *dev = malloc(sizeof(BlkDev));
+    vdev->dev = dev;
     dev->config.capacity = -1;
     dev->config.size_max = -1;
     dev->config.seg_max = BLK_SEG_MAX;
@@ -132,12 +143,12 @@ int virtio_blk_init(VirtIODevice *vdev, const char *img_path) {
     struct stat st;
     uint64_t blk_size;
     if (img_fd == -1) {
-        log_error("cannot open %s, Error code is %d\n", img_path, errno);
+        log_error("cannot open %s, Error code is %d", img_path, errno);
         close(img_fd);
         return -1;
     }
     if (fstat(img_fd, &st) == -1) {
-        log_error("cannot stat %s, Error code is %d\n", img_path, errno);
+        log_error("cannot stat %s, Error code is %d", img_path, errno);
         close(img_fd);
         return -1;
     }

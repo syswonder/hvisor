@@ -1,3 +1,13 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/**
+ * Copyright (c) 2025 Syswonder
+ *
+ * Syswonder Website:
+ *      https://www.syswonder.org
+ *
+ * Authors:
+ *      Guowei Li <2401213322@stu.pku.edu.cn>
+ */
 #ifndef _HVISOR_VIRTIO_NET_H
 #define _HVISOR_VIRTIO_NET_H
 #include "event_monitor.h"
