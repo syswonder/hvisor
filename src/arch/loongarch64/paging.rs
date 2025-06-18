@@ -1,4 +1,3 @@
-use crate::consts::PAGE_SIZE;
 // Copyright (c) 2025 Syswonder
 // hvisor is licensed under Mulan PSL v2.
 // You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -15,6 +14,7 @@ use crate::consts::PAGE_SIZE;
 // Authors:
 //      Yulong Han <wheatfox17@icloud.com>
 //
+use crate::consts::PAGE_SIZE;
 use crate::error::{HvError, HvResult};
 use crate::memory::addr::is_aligned;
 use crate::memory::mapper::Mapper;
