@@ -98,7 +98,7 @@ static inline struct iovec *rm_iov_header(struct iovec *iov, int *niov,
 size_t get_nethdr_size(VirtIODevice *vdev) {
     // Virtio 1.0 specifies the header as NetHdr. But the legacy version
     // specifies the headr as NetHdrLegacy
-    if (vdev->regs.drv_feature & VIRTIO_F_VERSION_1) {
+    if (vdev->regs.drv_feature & (1ULL << VIRTIO_F_VERSION_1)) {
         return sizeof(NetHdr);
     } else {
         return sizeof(NetHdrLegacy);
@@ -158,7 +158,7 @@ void virtio_net_event_handler(int fd, int epoll_type, void *param) {
         }
 
         memset(vnet_header, 0, header_len);
-        if (vdev->regs.drv_feature & VIRTIO_F_VERSION_1) {
+        if (vdev->regs.drv_feature & (1ULL << VIRTIO_F_VERSION_1)) {
             ((NetHdr *)vnet_header)->num_buffers = 1;
         }
 
