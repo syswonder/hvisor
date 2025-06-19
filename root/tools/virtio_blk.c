@@ -123,6 +123,7 @@ static void *blkproc_thread(void *arg) {
 // create blk dev.
 BlkDev *init_blk_dev(VirtIODevice *vdev) {
     BlkDev *dev = malloc(sizeof(BlkDev));
+    vdev->dev = dev;
     dev->config.capacity = -1;
     dev->config.size_max = -1;
     dev->config.seg_max = BLK_SEG_MAX;
