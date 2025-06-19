@@ -170,7 +170,7 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
     switch (dev_type) {
     case VirtioTBlock:
         vdev->regs.dev_feature = BLK_SUPPORTED_FEATURES;
-        vdev->dev = init_blk_dev(vdev);
+        init_blk_dev(vdev);
         init_virtio_queue(vdev, dev_type);
         is_err = virtio_blk_init(vdev, (const char *)arg0);
         break;
