@@ -85,7 +85,8 @@ impl ArchCpu {
             set_csr!(CSR_HENVCFG, 1 << 63);
             set_csr!(CSR_VSTIMECMP, usize::MAX);
         } else {
-            set_csr!(CSR_HENVCFG, 0);
+            // In megrez board, this instruction is not supported. (illegal instruction)
+            // set_csr!(CSR_HENVCFG, 0);
         }
         set_csr!(CSR_HCOUNTEREN, 1 << 1); // HCOUNTEREN_TM
                                           // In VU-mode, a counter is not readable unless the applicable bits are set in both hcounteren and scounteren.

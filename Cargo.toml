@@ -83,6 +83,8 @@ aia = []
 aclint = []
 # extensions
 sstc = []
+sv39 = []
+
 ########### loongarch64 ############
 # irqchip driver
 loongson_7a2000 = []
@@ -93,3 +95,4 @@ loongson_uart = []
 [profile.dev]
 # panic = "abort" # avoid cargo test failure, this is a bug of cargo
 debug = 2
+opt-level = 0 

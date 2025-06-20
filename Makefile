@@ -136,7 +136,7 @@ jlink-server:
 	JLinkGDBServer -select USB -if JTAG -device Cortex-A53 -port 1234
 
 cp:
-	cp $(hvisor_bin) ~/tftp
+	cp $(hvisor_bin) /mnt/d/megrez/backup/hvisor.bin
 
 test-pre: download-test-img
 	chmod +x platform/$(ARCH)/$(BOARD)/test/runner.sh
