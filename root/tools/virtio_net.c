@@ -95,16 +95,27 @@ static inline struct iovec *rm_iov_header(struct iovec *iov, int *niov,
     }
 }
 
+size_t get_nethdr_size(VirtIODevice *vdev) {
+    // Virtio 1.0 specifies the header as NetHdr. But the legacy version
+    // specifies the headr as NetHdrLegacy
+    if (vdev->regs.drv_feature & (1ULL << VIRTIO_F_VERSION_1)) {
+        return sizeof(NetHdr);
+    } else {
+        return sizeof(NetHdrLegacy);
+    }
+}
+
 /// Called when tap device received packets
 void virtio_net_event_handler(int fd, int epoll_type, void *param) {
     log_debug("virtio_net_event_handler");
     VirtIODevice *vdev = param;
-    NetHdr *vnet_header;
+    void *vnet_header;
     struct iovec *iov, *iov_packet;
     NetDev *net = vdev->dev;
     VirtQueue *vq = &vdev->vqs[NET_QUEUE_RX];
     int n, len;
     uint16_t idx;
+    size_t header_len = get_nethdr_size(vdev);
     if (fd != net->tapfd || epoll_type != EPOLLIN) {
         log_error("invalid event");
         return;
@@ -132,7 +143,7 @@ void virtio_net_event_handler(int fd, int epoll_type, void *param) {
             goto free_iov;
         }
         vnet_header = iov[0].iov_base;
-        iov_packet = rm_iov_header(iov, &n, sizeof(NetHdr));
+        iov_packet = rm_iov_header(iov, &n, header_len);
         if (iov_packet == NULL)
             goto free_iov;
         // Read a packet from tap device
@@ -146,10 +157,12 @@ void virtio_net_event_handler(int fd, int epoll_type, void *param) {
             break;
         }
 
-        memset(vnet_header, 0, sizeof(NetHdr));
-        vnet_header->num_buffers = 1;
+        memset(vnet_header, 0, header_len);
+        if (vdev->regs.drv_feature & (1ULL << VIRTIO_F_VERSION_1)) {
+            ((NetHdr *)vnet_header)->num_buffers = 1;
+        }
 
-        update_used_ring(vq, idx, len + sizeof(NetHdr));
+        update_used_ring(vq, idx, len + header_len);
         free(iov);
     }
 
@@ -159,13 +172,15 @@ free_iov:
     free(iov);
 }
 
-static void virtq_tx_handle_one_request(NetDev *net, VirtQueue *vq) {
+static void virtq_tx_handle_one_request(VirtIODevice *vdev, VirtQueue *vq) {
     struct iovec *iov = NULL;
     int i, n;
     int packet_len, all_len; // all_len include the header length.
     uint16_t idx;
     static char pad[64];
     ssize_t len;
+    NetDev *net = vdev->dev;
+    size_t header_len = get_nethdr_size(vdev);
     if (net->tapfd == -1) {
         log_error("tap device is invalid");
         return;
@@ -179,9 +194,9 @@ static void virtq_tx_handle_one_request(NetDev *net, VirtQueue *vq) {
     for (i = 0, all_len = 0; i < n; i++)
         all_len += iov[i].iov_len;
 
-    packet_len = all_len - sizeof(NetHdr);
-    iov[0].iov_base += sizeof(NetHdr);
-    iov[0].iov_len -= sizeof(NetHdr);
+    packet_len = all_len - header_len;
+    iov[0].iov_base += header_len;
+    iov[0].iov_len -= header_len;
     log_debug("packet send: %d bytes", packet_len);
 
     // The mininum packet for data link layer is 64 bytes.
@@ -202,7 +217,7 @@ int virtio_net_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     log_debug("virtio_net_txq_notify_handler");
     virtqueue_disable_notify(vq);
     while (!virtqueue_is_empty(vq)) {
-        virtq_tx_handle_one_request(vdev->dev, vq);
+        virtq_tx_handle_one_request(vdev, vq);
     }
     virtqueue_enable_notify(vq);
     // TODO: Can we don't inject irq when send packets to improve performance?
