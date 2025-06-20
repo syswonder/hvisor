@@ -95,18 +95,6 @@ int open_dev() {
     return fd;
 }
 
-// static void get_info(char *optarg, char **path, u64 *address) {
-// 	char *now;
-// 	*path = strtok(optarg, ",");
-// 	now = strtok(NULL, "=");
-// 	if (strcmp(now, "addr") == 0) {
-// 		now = strtok(NULL, "=");
-// 		*address = strtoull(now, NULL, 16);
-// 	} else {
-// 		help(1);
-// 	}
-// }
-
 static __u64 load_image_to_memory(const char *path, __u64 load_paddr) {
     if (strcmp(path, "null") == 0) {
         return 0;

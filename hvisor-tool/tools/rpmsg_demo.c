@@ -59,7 +59,8 @@ static int rpmsg_create_eptdev(char *eptdev_name, int local_port,
 }
 
 static int rpmsg_open_eptdev(char *eptdev_name, int flags) {
-    int efd, endpt;
+    (void)eptdev_name;
+    int efd;
 
     efd = open("/dev/rpmsg0", O_RDWR | flags);
     if (efd < 0) {
@@ -112,7 +113,7 @@ static int rpmsg_destroy_eptdev(int fd) {
     close(fd);
     return 0;
 }
-int main(int argc, char const *argv[]) {
+int main() {
     int ret, packet_len;
     char packet_buf[512] = {0};
     printf("rpmsg_demo start\n");
