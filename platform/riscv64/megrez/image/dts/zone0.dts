@@ -1,0 +1,133 @@
+/dts-v1/;
+
+/ {
+	#address-cells = <0x02>;
+	#size-cells = <0x02>;
+	compatible = "sifive,hifive-unmatched-a00\0sifive,fu740-c000\0sifive,fu740\0eswin,eic7700";
+	model = "Milk-V Megrez";
+
+	cpus {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+		timebase-frequency = <0xf4240>;
+
+		cpu@0 {
+			compatible = "eswin,eic770x\0riscv";
+			device_type = "cpu";
+			mmu-type = "riscv,sv48";
+			reg = <0x00>;
+			riscv,isa = "rv64imafdc";
+			status = "okay";
+			timebase-frequency = <0xf4240>;
+			phandle = <0x4a>;
+
+			interrupt-controller {
+				#interrupt-cells = <0x01>;
+				compatible = "riscv,cpu-intc";
+				interrupt-controller;
+				phandle = <0x0c>;
+			};
+		};
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x0 0x80000000 0x0 0x80000000>;
+	};
+
+	soc {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		compatible = "SiFive,FU800-soc\0fu800-soc\0sifive-soc\0simple-bus";
+		ranges;
+
+		interrupt-controller@c000000 {
+			#interrupt-cells = <0x01>;
+			compatible = "sifive,plic-1.0.0";
+			interrupt-controller;
+			interrupts-extended = <0x0c 0xffffffff 0x0c 0x09>;
+			reg = <0x00 0xc000000 0x00 0x4000000>;
+			reg-names = "control";
+			riscv,max-priority = <0x07>;
+			riscv,ndev = <0x208>;
+			numa-node-id = <0x00>;
+			phandle = <0x10>;
+		};
+
+		serial@0x50900000 {
+			compatible = "snps,dw-apb-uart";
+			reg = <0x00 0x50900000 0x00 0x10000>;
+			clock-frequency = <0xbebc200>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x64>;
+			reg-shift = <0x02>;
+			reg-io-width = <0x04>;
+			numa-node-id = <0x00>;
+			status = "okay";
+		};
+
+		serial@0x50910000 {
+			compatible = "snps,dw-apb-uart";
+			reg = <0x00 0x50910000 0x00 0x10000>;
+			clock-frequency = <0xbebc200>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x65>;
+			reg-shift = <0x02>;
+			reg-io-width = <0x04>;
+			numa-node-id = <0x00>;
+			status = "okay";
+		};
+
+		serial@0x50920000 {
+			compatible = "snps,dw-apb-uart";
+			reg = <0x00 0x50920000 0x00 0x10000>;
+			clock-frequency = <0xbebc200>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x66>;
+			reg-shift = <0x02>;
+			reg-io-width = <0x04>;
+			numa-node-id = <0x00>;
+			status = "okay";
+		};
+
+	};
+
+	reserved-memory {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+
+		opensbi@0x80000000 {
+			no-map;
+			reg = <0x00 0x80000000 0x00 0x00200000>;
+		};
+
+		hvisor@0x80200000 {
+			no-map;
+			reg = <0x00 0x80200000 0x00 0x02E00000>;
+		};
+
+		nonroot@0x83000000 {
+			no-map;
+			reg = <0x00 0x83000000 0x00 0x0C000000>;
+		};
+
+		dtbfile@0x8f000000 {
+			no-map;
+			reg = <0x00 0x8f000000 0x00 0x01000000>;
+		};
+	};
+
+	aliases {
+		serial0 = "/soc/serial@0x50900000";
+	};
+
+	chosen {
+		// stdout-path = "serial0:115200n8";
+
+		domain-config {
+			compatible = "opensbi,domain,config";
+			system-suspend-test;
+		};
+	};
+};
