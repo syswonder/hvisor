@@ -29,7 +29,6 @@ use core::ptr::addr_of;
 
 use super::{
     mm::{get_parange, get_parange_bits, is_s2_pt_level3},
-    trap::vmreturn,
 };
 
 pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
@@ -39,20 +38,6 @@ pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
             panic!("can't wake up cpu {}", cpuid);
         }
     });
-}
-
-#[repr(C)]
-#[derive(Debug)]
-pub struct GeneralRegisters {
-    pub exit_reason: u64,
-    pub usr: [u64; 31],
-}
-
-impl GeneralRegisters {
-    pub fn clear(&mut self) {
-        self.exit_reason = 0;
-        self.usr.fill(0);
-    }
 }
 
 #[repr(C)]
@@ -71,17 +56,18 @@ impl ArchCpu {
     }
 
     pub fn reset(&mut self, entry: usize, dtb: usize) {
-        debug!(
-            "cpu {} reset, entry: {:#x}, dtb: {:#x}",
-            self.cpuid, entry, dtb
-        );
-        ELR_EL2.set(entry as _);
-        SPSR_EL2.set(0x3c5);
-        let regs = self.guest_reg();
-        regs.clear();
-        regs.usr[0] = dtb as _; // dtb addr
-        self.reset_vm_regs();
-        self.activate_vmm();
+        todo!();
+        // debug!(
+        //     "cpu {} reset, entry: {:#x}, dtb: {:#x}",
+        //     self.cpuid, entry, dtb
+        // );
+        // ELR_EL2.set(entry as _);
+        // SPSR_EL2.set(0x3c5);
+        // let regs = self.guest_reg();
+        // regs.clear();
+        // regs.usr[0] = dtb as _; // dtb addr
+        // self.reset_vm_regs();
+        // self.activate_vmm();
     }
 
     fn activate_vmm(&self) {
@@ -114,9 +100,9 @@ impl ArchCpu {
         PER_CPU_ARRAY_PTR as VirtAddr + (self.cpuid + 1) as usize * PER_CPU_SIZE
     }
 
-    fn guest_reg(&self) -> &mut GeneralRegisters {
-        unsafe { &mut *((self.stack_top() - 32 * 8) as *mut GeneralRegisters) }
-    }
+    // fn guest_reg(&self) -> &mut AArch64TrapFrame {
+    //     unsafe { &mut *((self.stack_top() - 32 * 8) as *mut AArch64TrapFrame) }
+    // }
 
     fn reset_vm_regs(&self) {
         /* put the cpu in a reset state */
@@ -164,53 +150,55 @@ impl ArchCpu {
     }
 
     pub fn run(&mut self) -> ! {
-        assert!(this_cpu_id() == self.cpuid);
-        this_cpu_data().activate_gpm();
-        self.reset(this_cpu_data().cpu_on_entry, this_cpu_data().dtb_ipa);
-        self.power_on = true;
-        info!(
-            "cpu {} started at {:#x?}",
-            self.cpuid,
-            this_cpu_data().cpu_on_entry
-        );
-        unsafe {
-            vmreturn(self.guest_reg() as *mut _ as usize);
-        }
+        todo!();
+        // assert!(this_cpu_id() == self.cpuid);
+        // this_cpu_data().activate_gpm();
+        // self.reset(this_cpu_data().cpu_on_entry, this_cpu_data().dtb_ipa);
+        // self.power_on = true;
+        // info!(
+        //     "cpu {} started at {:#x?}",
+        //     self.cpuid,
+        //     this_cpu_data().cpu_on_entry
+        // );
+        // unsafe {
+        //     vmreturn(self.guest_reg() as *mut _ as usize);
+        // }
     }
 
     pub fn idle(&mut self) -> ! {
-        debug!("cpu {} begin to be idle", self.cpuid);
-        assert!(this_cpu_id() == self.cpuid);
-        let cpu_data = this_cpu_data();
-        let _lock = cpu_data.ctrl_lock.lock();
-        self.power_on = false;
-        drop(_lock);
+        todo!();
+        // debug!("cpu {} begin to be idle", self.cpuid);
+        // assert!(this_cpu_id() == self.cpuid);
+        // let cpu_data = this_cpu_data();
+        // let _lock = cpu_data.ctrl_lock.lock();
+        // self.power_on = false;
+        // drop(_lock);
 
-        // reset current cpu -> pc = 0x0 (wfi)
-        PARKING_MEMORY_SET.call_once(|| {
-            let parking_code: [u8; 8] = [0x7f, 0x20, 0x03, 0xd5, 0xff, 0xff, 0xff, 0x17]; // 1: wfi; b 1b
-            unsafe {
-                PARKING_INST_PAGE[..8].copy_from_slice(&parking_code);
-            }
+        // // reset current cpu -> pc = 0x0 (wfi)
+        // PARKING_MEMORY_SET.call_once(|| {
+        //     let parking_code: [u8; 8] = [0x7f, 0x20, 0x03, 0xd5, 0xff, 0xff, 0xff, 0x17]; // 1: wfi; b 1b
+        //     unsafe {
+        //         PARKING_INST_PAGE[..8].copy_from_slice(&parking_code);
+        //     }
 
-            let mut gpm = new_s2_memory_set();
-            gpm.insert(MemoryRegion::new_with_offset_mapper(
-                0 as GuestPhysAddr,
-                unsafe {
-                    addr_of!(PARKING_INST_PAGE) as *const _ as HostPhysAddr - PHYS_VIRT_OFFSET
-                },
-                PAGE_SIZE,
-                MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-            ))
-            .unwrap();
-            gpm
-        });
-        self.reset(0, this_cpu_data().dtb_ipa);
-        unsafe {
-            PARKING_MEMORY_SET.get().unwrap().activate();
-            info!("cpu {} start parking", self.cpuid);
-            vmreturn(self.guest_reg() as *mut _ as usize);
-        }
+        //     let mut gpm = new_s2_memory_set();
+        //     gpm.insert(MemoryRegion::new_with_offset_mapper(
+        //         0 as GuestPhysAddr,
+        //         unsafe {
+        //             addr_of!(PARKING_INST_PAGE) as *const _ as HostPhysAddr - PHYS_VIRT_OFFSET
+        //         },
+        //         PAGE_SIZE,
+        //         MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        //     ))
+        //     .unwrap();
+        //     gpm
+        // });
+        // self.reset(0, this_cpu_data().dtb_ipa);
+        // unsafe {
+        //     PARKING_MEMORY_SET.get().unwrap().activate();
+        //     info!("cpu {} start parking", self.cpuid);
+        //     vmreturn(self.guest_reg() as *mut _ as usize);
+        // }
     }
 }
 

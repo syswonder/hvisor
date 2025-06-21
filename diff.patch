@@ -1,0 +1,1225 @@
+diff --git a/src/arch/aarch64/cpu.rs b/src/arch/aarch64/cpu.rs
+index e33881f..104eb1e 100644
+--- a/src/arch/aarch64/cpu.rs
++++ b/src/arch/aarch64/cpu.rs
+@@ -29,7 +29,6 @@ use core::ptr::addr_of;
+ 
+ use super::{
+     mm::{get_parange, get_parange_bits, is_s2_pt_level3},
+-    trap::vmreturn,
+ };
+ 
+ pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
+@@ -41,20 +40,6 @@ pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
+     });
+ }
+ 
+-#[repr(C)]
+-#[derive(Debug)]
+-pub struct GeneralRegisters {
+-    pub exit_reason: u64,
+-    pub usr: [u64; 31],
+-}
+-
+-impl GeneralRegisters {
+-    pub fn clear(&mut self) {
+-        self.exit_reason = 0;
+-        self.usr.fill(0);
+-    }
+-}
+-
+ #[repr(C)]
+ #[derive(Debug)]
+ pub struct ArchCpu {
+@@ -71,17 +56,18 @@ impl ArchCpu {
+     }
+ 
+     pub fn reset(&mut self, entry: usize, dtb: usize) {
+-        debug!(
+-            "cpu {} reset, entry: {:#x}, dtb: {:#x}",
+-            self.cpuid, entry, dtb
+-        );
+-        ELR_EL2.set(entry as _);
+-        SPSR_EL2.set(0x3c5);
+-        let regs = self.guest_reg();
+-        regs.clear();
+-        regs.usr[0] = dtb as _; // dtb addr
+-        self.reset_vm_regs();
+-        self.activate_vmm();
++        todo!();
++        // debug!(
++        //     "cpu {} reset, entry: {:#x}, dtb: {:#x}",
++        //     self.cpuid, entry, dtb
++        // );
++        // ELR_EL2.set(entry as _);
++        // SPSR_EL2.set(0x3c5);
++        // let regs = self.guest_reg();
++        // regs.clear();
++        // regs.usr[0] = dtb as _; // dtb addr
++        // self.reset_vm_regs();
++        // self.activate_vmm();
+     }
+ 
+     fn activate_vmm(&self) {
+@@ -114,9 +100,9 @@ impl ArchCpu {
+         PER_CPU_ARRAY_PTR as VirtAddr + (self.cpuid + 1) as usize * PER_CPU_SIZE
+     }
+ 
+-    fn guest_reg(&self) -> &mut GeneralRegisters {
+-        unsafe { &mut *((self.stack_top() - 32 * 8) as *mut GeneralRegisters) }
+-    }
++    // fn guest_reg(&self) -> &mut AArch64TrapFrame {
++    //     unsafe { &mut *((self.stack_top() - 32 * 8) as *mut AArch64TrapFrame) }
++    // }
+ 
+     fn reset_vm_regs(&self) {
+         /* put the cpu in a reset state */
+@@ -164,53 +150,55 @@ impl ArchCpu {
+     }
+ 
+     pub fn run(&mut self) -> ! {
+-        assert!(this_cpu_id() == self.cpuid);
+-        this_cpu_data().activate_gpm();
+-        self.reset(this_cpu_data().cpu_on_entry, this_cpu_data().dtb_ipa);
+-        self.power_on = true;
+-        info!(
+-            "cpu {} started at {:#x?}",
+-            self.cpuid,
+-            this_cpu_data().cpu_on_entry
+-        );
+-        unsafe {
+-            vmreturn(self.guest_reg() as *mut _ as usize);
+-        }
++        todo!();
++        // assert!(this_cpu_id() == self.cpuid);
++        // this_cpu_data().activate_gpm();
++        // self.reset(this_cpu_data().cpu_on_entry, this_cpu_data().dtb_ipa);
++        // self.power_on = true;
++        // info!(
++        //     "cpu {} started at {:#x?}",
++        //     self.cpuid,
++        //     this_cpu_data().cpu_on_entry
++        // );
++        // unsafe {
++        //     vmreturn(self.guest_reg() as *mut _ as usize);
++        // }
+     }
+ 
+     pub fn idle(&mut self) -> ! {
+-        debug!("cpu {} begin to be idle", self.cpuid);
+-        assert!(this_cpu_id() == self.cpuid);
+-        let cpu_data = this_cpu_data();
+-        let _lock = cpu_data.ctrl_lock.lock();
+-        self.power_on = false;
+-        drop(_lock);
+-
+-        // reset current cpu -> pc = 0x0 (wfi)
+-        PARKING_MEMORY_SET.call_once(|| {
+-            let parking_code: [u8; 8] = [0x7f, 0x20, 0x03, 0xd5, 0xff, 0xff, 0xff, 0x17]; // 1: wfi; b 1b
+-            unsafe {
+-                PARKING_INST_PAGE[..8].copy_from_slice(&parking_code);
+-            }
+-
+-            let mut gpm = new_s2_memory_set();
+-            gpm.insert(MemoryRegion::new_with_offset_mapper(
+-                0 as GuestPhysAddr,
+-                unsafe {
+-                    addr_of!(PARKING_INST_PAGE) as *const _ as HostPhysAddr - PHYS_VIRT_OFFSET
+-                },
+-                PAGE_SIZE,
+-                MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+-            ))
+-            .unwrap();
+-            gpm
+-        });
+-        self.reset(0, this_cpu_data().dtb_ipa);
+-        unsafe {
+-            PARKING_MEMORY_SET.get().unwrap().activate();
+-            info!("cpu {} start parking", self.cpuid);
+-            vmreturn(self.guest_reg() as *mut _ as usize);
+-        }
++        todo!();
++        // debug!("cpu {} begin to be idle", self.cpuid);
++        // assert!(this_cpu_id() == self.cpuid);
++        // let cpu_data = this_cpu_data();
++        // let _lock = cpu_data.ctrl_lock.lock();
++        // self.power_on = false;
++        // drop(_lock);
++
++        // // reset current cpu -> pc = 0x0 (wfi)
++        // PARKING_MEMORY_SET.call_once(|| {
++        //     let parking_code: [u8; 8] = [0x7f, 0x20, 0x03, 0xd5, 0xff, 0xff, 0xff, 0x17]; // 1: wfi; b 1b
++        //     unsafe {
++        //         PARKING_INST_PAGE[..8].copy_from_slice(&parking_code);
++        //     }
++
++        //     let mut gpm = new_s2_memory_set();
++        //     gpm.insert(MemoryRegion::new_with_offset_mapper(
++        //         0 as GuestPhysAddr,
++        //         unsafe {
++        //             addr_of!(PARKING_INST_PAGE) as *const _ as HostPhysAddr - PHYS_VIRT_OFFSET
++        //         },
++        //         PAGE_SIZE,
++        //         MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
++        //     ))
++        //     .unwrap();
++        //     gpm
++        // });
++        // self.reset(0, this_cpu_data().dtb_ipa);
++        // unsafe {
++        //     PARKING_MEMORY_SET.get().unwrap().activate();
++        //     info!("cpu {} start parking", self.cpuid);
++        //     vmreturn(self.guest_reg() as *mut _ as usize);
++        // }
+     }
+ }
+ 
+diff --git a/src/arch/aarch64/trap.S b/src/arch/aarch64/trap.S
+index 5dc39d3..68e212b 100644
+--- a/src/arch/aarch64/trap.S
++++ b/src/arch/aarch64/trap.S
+@@ -21,29 +21,29 @@
+ 
+ .macro handle_vmexit exit_reason
+ 	.align	7
+-	mrs x0, TPIDR_EL2
+-    stp x0, x1, [x0]
+-    stp x2, x3, [x0, #0x10]
+-    stp x4, x5, [x0, #0x20]
+-    stp x6, x7, [x0, #0x30]
+-    stp x8, x9, [x0, #0x40]
+-    stp x10, x11, [x0, #0x50]
+-    stp x12, x13, [x0, #0x60]
+-    stp x14, x15, [x0, #0x70]
+-    stp x16, x17, [x0, #0x80]
+-    stp x18, x19, [x0, #0x90]
+-    stp x20, x21, [x0, #0xa0]
+-    stp x22, x23, [x0, #0xb0]
+-    stp x24, x25, [x0, #0xc0]
+-    stp x26, x27, [x0, #0xd0]
+-    stp x28, x29, [x0, #0xe0]
+-    str x30, [x0, #0xf0]
++    stp x0, x1, [sp]
++    stp x2, x3, [sp, #0x10]
++    stp x4, x5, [sp, #0x20]
++    stp x6, x7, [sp, #0x30]
++    stp x8, x9, [sp, #0x40]
++    stp x10, x11, [sp, #0x50]
++    stp x12, x13, [sp, #0x60]
++    stp x14, x15, [sp, #0x70]
++    stp x16, x17, [sp, #0x80]
++    stp x18, x19, [sp, #0x90]
++    stp x20, x21, [sp, #0xa0]
++    stp x22, x23, [sp, #0xb0]
++    stp x24, x25, [sp, #0xc0]
++    stp x26, x27, [sp, #0xd0]
++    stp x28, x29, [sp, #0xe0]
++    str x30, [sp, #0xf0]
+ 
+     mrs x1, ELR_EL2
+-    str x1, [x0, #0xf8]
++    str x1, [sp, #0xf8]
+     mrs x1, SPSR_EL2
+-    str x1, [x0, #0x100]
++    str x1, [sp, #0x100]
+ 
++    mov x0, sp
+     mov x1, #\exit_reason
+     bl {0}
+ 	bl .
+diff --git a/src/arch/aarch64/trap.rs b/src/arch/aarch64/trap.rs
+index 74280e9..ab65e96 100644
+--- a/src/arch/aarch64/trap.rs
++++ b/src/arch/aarch64/trap.rs
+@@ -16,8 +16,9 @@
+ use aarch64_cpu::{asm::wfi, registers::*};
+ use core::arch::global_asm;
+ 
+-use super::cpu::GeneralRegisters;
++use crate::arch;
+ use crate::arch::sysreg::smc_call;
++use crate::arch::vcpu::AArch64TrapFrame;
+ use crate::zone::zone_error;
+ use crate::{
+     arch::{
+@@ -103,19 +104,17 @@ pub enum TrapReturn {
+     TrapForbidden = -1,
+ }
+ 
+-/*From hyp_vec->handle_vmexit x0:guest regs x1:exit_reason sp =stack_top-32*8*/
+-pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> ! {
+-    let mpidr = MPIDR_EL1.get();
+-    let _cpu_id = mpidr_to_cpuid(mpidr);
+-    trace!("cpu exit, exit_reson:{:#x?}", regs.exit_reason);
+-    match regs.exit_reason as u64 {
++pub fn arch_handle_exit(regs: &mut AArch64TrapFrame, exit_reason: u64) -> ! {
++    trace!("cpu exit, exit_reson:{:#x?}", exit_reason);
++    info!("trapframe: {:#x?}", regs);
++    match exit_reason {
+         ExceptionType::EXIT_REASON_EL1_IRQ => irqchip_handle_irq1(),
+         ExceptionType::EXIT_REASON_EL1_ABORT => arch_handle_trap_el1(regs),
+         ExceptionType::EXIT_REASON_EL2_ABORT => arch_handle_trap_el2(regs),
+         ExceptionType::EXIT_REASON_EL2_IRQ => irqchip_handle_irq2(),
+-        _ => arch_dump_exit(regs.exit_reason),
++        _ => arch_dump_exit(exit_reason),
+     }
+-    unsafe { vmreturn(regs as *const _ as usize) }
++    arch::vcpu::vmreturn();
+ }
+ 
+ fn irqchip_handle_irq1() {
+@@ -128,7 +127,7 @@ fn irqchip_handle_irq2() {
+     loop {}
+ }
+ 
+-fn arch_handle_trap_el1(regs: &mut GeneralRegisters) {
++fn arch_handle_trap_el1(regs: &mut AArch64TrapFrame) {
+     let mut _ret = TrapReturn::TrapUnhandled;
+ 
+     trace!(
+@@ -138,11 +137,11 @@ fn arch_handle_trap_el1(regs: &mut GeneralRegisters) {
+     );
+ 
+     match ESR_EL2.read_as_enum(ESR_EL2::EC) {
+-        Some(ESR_EL2::EC::Value::HVC64) => handle_hvc(regs),
++        // Some(ESR_EL2::EC::Value::HVC64) => handle_hvc(),
+         Some(ESR_EL2::EC::Value::SMC64) => handle_smc(regs),
+-        Some(ESR_EL2::EC::Value::TrappedMsrMrs) => handle_sysreg(regs),
++        // Some(ESR_EL2::EC::Value::TrappedMsrMrs) => handle_sysreg(),
+         Some(ESR_EL2::EC::Value::DataAbortLowerEL) => handle_dabt(regs),
+-        Some(ESR_EL2::EC::Value::InstrAbortLowerEL) => handle_iabt(regs),
++        // Some(ESR_EL2::EC::Value::InstrAbortLowerEL) => handle_iabt(),
+         _ => {
+             error!(
+                 "Unsupported Exception EC:{:#x?}!",
+@@ -155,7 +154,7 @@ fn arch_handle_trap_el1(regs: &mut GeneralRegisters) {
+     }
+ }
+ 
+-fn arch_handle_trap_el2(_regs: &mut GeneralRegisters) {
++fn arch_handle_trap_el2(_regs: &mut AArch64TrapFrame) {
+     let elr = ELR_EL2.get();
+     let esr = ESR_EL2.get();
+     let far = FAR_EL2.get();
+@@ -189,24 +188,24 @@ fn arch_handle_trap_el2(_regs: &mut GeneralRegisters) {
+     loop {}
+ }
+ 
+-fn handle_iabt(_regs: &mut GeneralRegisters) {
+-    let iss = ESR_EL2.read(ESR_EL2::ISS);
+-    let op = iss >> 6 & 0x1;
+-    let hpfar = read_sysreg!(HPFAR_EL2);
+-    let far = read_sysreg!(FAR_EL2);
+-    let address = (far & 0xfff) | (hpfar << 8);
+-    error!(
+-        "Failed to fetch instruction (op={}) at {:#x?}, ELR_EL2={:#x?}!",
+-        op,
+-        address,
+-        ELR_EL2.get()
+-    );
+-    loop {}
+-    // TODO: finish iabt handle
+-    // arch_skip_instruction(frame);
+-}
+-
+-fn handle_dabt(regs: &mut GeneralRegisters) {
++// fn handle_iabt(_regs: &mut AArch64TrapFrame) {
++//     let iss = ESR_EL2.read(ESR_EL2::ISS);
++//     let op = iss >> 6 & 0x1;
++//     let hpfar = read_sysreg!(HPFAR_EL2);
++//     let far = read_sysreg!(FAR_EL2);
++//     let address = (far & 0xfff) | (hpfar << 8);
++//     error!(
++//         "Failed to fetch instruction (op={}) at {:#x?}, ELR_EL2={:#x?}!",
++//         op,
++//         address,
++//         ELR_EL2.get()
++//     );
++//     loop {}
++//     // TODO: finish iabt handle
++//     // arch_skip_instruction(frame);
++// }
++
++fn handle_dabt(regs: &mut AArch64TrapFrame) {
+     let iss = ESR_EL2.read(ESR_EL2::ISS);
+     let is_write = (iss >> 6 & 0x1) != 0;
+     let srt = iss >> 16 & 0x1f;
+@@ -225,7 +224,7 @@ fn handle_dabt(regs: &mut GeneralRegisters) {
+         value: if srt == 31 {
+             0
+         } else {
+-            regs.usr[srt as usize] as _
++            regs.x[srt as usize] as _
+         },
+     };
+ 
+@@ -238,7 +237,7 @@ fn handle_dabt(regs: &mut GeneralRegisters) {
+                     mmio_access.value =
+                         ((mmio_access.value << (32 - 8 * size)) as i32) as usize >> (32 - 8 * size);
+                 }
+-                regs.usr[srt as usize] = mmio_access.value as _;
++                regs.x[srt as usize] = mmio_access.value as _;
+             }
+         }
+         Err(e) => {
+@@ -250,66 +249,66 @@ fn handle_dabt(regs: &mut GeneralRegisters) {
+     arch_skip_instruction(regs);
+ }
+ 
+-fn handle_sysreg(regs: &mut GeneralRegisters) {
+-    //TODO check sysreg type
+-    //send sgi
+-    trace!("esr_el2: iss {:#x?}", ESR_EL2.read(ESR_EL2::ISS));
+-    let rt = (ESR_EL2.get() >> 5) & 0x1f;
+-    let val = regs.usr[rt as usize];
+-    trace!("esr_el2 rt{}: {:#x?}", rt, val);
+-    let sgi_id: u64 = (val & (0xf << 24)) >> 24;
+-    if !this_cpu_data().arch_cpu.power_on {
+-        warn!("skip send sgi {:#x?}", sgi_id);
+-    } else {
+-        trace!("send sgi {:#x?}", sgi_id);
+-        write_sysreg!(icc_sgi1r_el1, val);
+-    }
+-
+-    arch_skip_instruction(regs); //skip sgi write
+-}
+-
+-fn handle_hvc(regs: &mut GeneralRegisters) {
+-    /*
+-    if ESR_EL2.read(ESR_EL2::ISS) != 0x4a48 {
+-        return;
+-    }
+-    */
+-    let (code, arg0, arg1) = (regs.usr[0], regs.usr[1], regs.usr[2]);
+-    let cpu_data = this_cpu_data();
+-
+-    trace!(
+-        "HVC from CPU{},code:{:#x?},arg0:{:#x?},arg1:{:#x?}",
+-        cpu_data.id,
+-        code,
+-        arg0,
+-        arg1
++// fn handle_sysreg() {
++//     //TODO check sysreg type
++//     //send sgi
++//     trace!("esr_el2: iss {:#x?}", ESR_EL2.read(ESR_EL2::ISS));
++//     let rt = (ESR_EL2.get() >> 5) & 0x1f;
++//     let val = regs.usr[rt as usize];
++//     trace!("esr_el2 rt{}: {:#x?}", rt, val);
++//     let sgi_id: u64 = (val & (0xf << 24)) >> 24;
++//     if !this_cpu_data().arch_cpu.power_on {
++//         warn!("skip send sgi {:#x?}", sgi_id);
++//     } else {
++//         trace!("send sgi {:#x?}", sgi_id);
++//         write_sysreg!(icc_sgi1r_el1, val);
++//     }
++
++//     arch_skip_instruction(); //skip sgi write
++// }
++
++// fn handle_hvc() {
++//     /*
++//     if ESR_EL2.read(ESR_EL2::ISS) != 0x4a48 {
++//         return;
++//     }
++//     */
++//     let (code, arg0, arg1) = (regs.usr[0], regs.usr[1], regs.usr[2]);
++//     let cpu_data = this_cpu_data();
++
++//     trace!(
++//         "HVC from CPU{},code:{:#x?},arg0:{:#x?},arg1:{:#x?}",
++//         cpu_data.id,
++//         code,
++//         arg0,
++//         arg1
++//     );
++//     let result = match HyperCall::new(cpu_data).hypercall(code as _, arg0, arg1) {
++//         Ok(ret) => ret as _,
++//         Err(e) => {
++//             error!("hypercall error: {:#?}", e);
++//             e.code()
++//         }
++//     };
++//     debug!("HVC result = {}", result);
++//     regs.usr[0] = result as _;
++// }
++
++fn handle_smc(regs: &mut AArch64TrapFrame) {
++    let (code, arg0, arg1, arg2) = (regs.x[0], regs.x[1], regs.x[2], regs.x[3]);
++    info!(
++        "SMC func_id:{:#x?}, arg0:{:#x?}, arg1:{:#x?}, arg2:{:#x?}",
++        code, arg0, arg1, arg2
+     );
+-    let result = match HyperCall::new(cpu_data).hypercall(code as _, arg0, arg1) {
+-        Ok(ret) => ret as _,
+-        Err(e) => {
+-            error!("hypercall error: {:#?}", e);
+-            e.code()
+-        }
+-    };
+-    debug!("HVC result = {}", result);
+-    regs.usr[0] = result as _;
+-}
+-
+-fn handle_smc(regs: &mut GeneralRegisters) {
+-    let (code, arg0, arg1, arg2) = (regs.usr[0], regs.usr[1], regs.usr[2], regs.usr[3]);
+-    //info!(
+-    //    "SMC from CPU{}, func_id:{:#x?}, arg0:{:#x?}, arg1:{:#x?}, arg2:{:#x?}",
+-    //    cpu_data.id, code, arg0, arg1, arg2
+-    //);
+     let result = match code & SMC_TYPE_MASK {
+         SmcType::ARCH_SC => handle_arch_smc(regs, code, arg0, arg1, arg2),
+         SmcType::STANDARD_SC => handle_psci_smc(regs, code, arg0, arg1, arg2),
+         SmcType::TOS_SC_START..=SmcType::TOS_SC_END | SmcType::SIP_SC => {
+-            let ret = smc_call(code, &regs.usr[1..18]);
+-            regs.usr[0] = ret[0];
+-            regs.usr[1] = ret[1];
+-            regs.usr[2] = ret[2];
+-            regs.usr[3] = ret[3];
++            let ret = smc_call(code, &regs.x[1..18]);
++            regs.x[0] = ret[0];
++            regs.x[1] = ret[1];
++            regs.x[2] = ret[2];
++            regs.x[3] = ret[3];
+             ret[0]
+         }
+         _ => {
+@@ -317,7 +316,7 @@ fn handle_smc(regs: &mut GeneralRegisters) {
+             0
+         }
+     };
+-    regs.usr[0] = result;
++    regs.x[0] = result;
+ 
+     arch_skip_instruction(regs); //skip the smc ins
+ }
+@@ -338,29 +337,30 @@ fn psci_emulate_features_info(code: u64) -> u64 {
+     }
+ }
+ 
+-fn psci_emulate_cpu_on(regs: &mut GeneralRegisters) -> u64 {
+-    // Todo: Check if `cpu` is in the cpuset of current zone
+-    let cpu = mpidr_to_cpuid(regs.usr[1]);
+-    info!("psci: try to wake up cpu {}", cpu);
+-
+-    let target_data = get_cpu_data(cpu as _);
+-    let _lock = target_data.ctrl_lock.lock();
+-
+-    if !target_data.arch_cpu.power_on {
+-        target_data.cpu_on_entry = regs.usr[2] as _;
+-        target_data.arch_cpu.power_on = true;
+-        send_event(cpu as _, SGI_IPI_ID as _, IPI_EVENT_WAKEUP);
+-    } else {
+-        error!("psci: cpu {} already on", cpu);
+-        return u64::MAX - 3;
+-    };
+-    drop(_lock);
++fn psci_emulate_cpu_on(regs: &mut AArch64TrapFrame) -> u64 {
++    todo!();
++    // // Todo: Check if `cpu` is in the cpuset of current zone
++    // let cpu = mpidr_to_cpuid(regs.x[1]);
++    // info!("psci: try to wake up cpu {}", cpu);
++
++    // let target_data = get_cpu_data(cpu as _);
++    // let _lock = target_data.ctrl_lock.lock();
++
++    // if !target_data.arch_cpu.power_on {
++    //     target_data.cpu_on_entry = regs.x[2] as _;
++    //     target_data.arch_cpu.power_on = true;
++    //     send_event(cpu as _, SGI_IPI_ID as _, IPI_EVENT_WAKEUP);
++    // } else {
++    //     error!("psci: cpu {} already on", cpu);
++    //     return u64::MAX - 3;
++    // };
++    // drop(_lock);
+ 
+     0
+ }
+ 
+ fn handle_psci_smc(
+-    regs: &mut GeneralRegisters,
++    regs: &mut AArch64TrapFrame,
+     code: u64,
+     arg0: u64,
+     _arg1: u64,
+@@ -380,7 +380,7 @@ fn handle_psci_smc(
+             !get_cpu_data(arg0 as _).arch_cpu.power_on as _
+         }
+         PsciFnId::PSCI_MIG_INFO_TYPE => PSCI_TOS_NOT_PRESENT_MP,
+-        PsciFnId::PSCI_FEATURES => psci_emulate_features_info(regs.usr[1]),
++        PsciFnId::PSCI_FEATURES => psci_emulate_features_info(regs.x[1]),
+         PsciFnId::PSCI_CPU_ON_32 | PsciFnId::PSCI_CPU_ON_64 => psci_emulate_cpu_on(regs),
+         PsciFnId::PSCI_SYSTEM_OFF => {
+             let zone = this_zone();
+@@ -413,7 +413,7 @@ fn handle_psci_smc(
+ }
+ 
+ fn handle_arch_smc(
+-    _regs: &mut GeneralRegisters,
++    _regs: &mut AArch64TrapFrame,
+     code: u64,
+     _arg0: u64,
+     _arg1: u64,
+@@ -429,9 +429,8 @@ fn handle_arch_smc(
+     }
+ }
+ 
+-fn arch_skip_instruction(_regs: &mut GeneralRegisters) {
++fn arch_skip_instruction(regs: &mut AArch64TrapFrame) {
+     //ELR_EL2: ret address
+-    let mut pc = ELR_EL2.get();
+     //ESR_EL2::IL exception instruction length
+     let ins = match ESR_EL2.read(ESR_EL2::IL) {
+         0 => 2, //16 bit ins
+@@ -439,8 +438,7 @@ fn arch_skip_instruction(_regs: &mut GeneralRegisters) {
+         _ => 0,
+     };
+     //skip ins
+-    pc = pc + ins;
+-    ELR_EL2.set(pc);
++    regs.elr += ins;
+ }
+ 
+ fn arch_dump_exit(reason: u64) {
+@@ -449,33 +447,33 @@ fn arch_dump_exit(reason: u64) {
+     loop {}
+ }
+ 
+-#[naked]
+-#[no_mangle]
+-pub unsafe extern "C" fn vmreturn(_gu_regs: usize) -> ! {
+-    core::arch::asm!(
+-        "
+-        /* x0: guest registers */
+-        mov	sp, x0
+-        ldp	x1, x0, [sp], #16	/* x1 is the exit_reason */
+-        ldp	x1, x2, [sp], #16
+-        ldp	x3, x4, [sp], #16
+-        ldp	x5, x6, [sp], #16
+-        ldp	x7, x8, [sp], #16
+-        ldp	x9, x10, [sp], #16
+-        ldp	x11, x12, [sp], #16
+-        ldp	x13, x14, [sp], #16
+-        ldp	x15, x16, [sp], #16
+-        ldp	x17, x18, [sp], #16
+-        ldp	x19, x20, [sp], #16
+-        ldp	x21, x22, [sp], #16
+-        ldp	x23, x24, [sp], #16
+-        ldp	x25, x26, [sp], #16
+-        ldp	x27, x28, [sp], #16
+-        ldp	x29, x30, [sp], #16
+-        /*now el2 sp point to per cpu stack top*/
+-        eret                            //ret to el2_entry hvc #0 now,depend on ELR_EL2
+-        
+-    ",
+-        options(noreturn),
+-    )
+-}
++// #[naked]
++// #[no_mangle]
++// pub unsafe extern "C" fn vmreturn(_gu_regs: usize) -> ! {
++//     core::arch::asm!(
++//         "
++//         /* x0: guest registers */
++//         mov	sp, x0
++//         ldp	x1, x0, [sp], #16
++//         ldp	x1, x2, [sp], #16
++//         ldp	x3, x4, [sp], #16
++//         ldp	x5, x6, [sp], #16
++//         ldp	x7, x8, [sp], #16
++//         ldp	x9, x10, [sp], #16
++//         ldp	x11, x12, [sp], #16
++//         ldp	x13, x14, [sp], #16
++//         ldp	x15, x16, [sp], #16
++//         ldp	x17, x18, [sp], #16
++//         ldp	x19, x20, [sp], #16
++//         ldp	x21, x22, [sp], #16
++//         ldp	x23, x24, [sp], #16
++//         ldp	x25, x26, [sp], #16
++//         ldp	x27, x28, [sp], #16
++//         ldp	x29, x30, [sp], #16
++//         /*now el2 sp point to per cpu stack top*/
++//         eret                            //ret to el2_entry hvc #0 now,depend on ELR_EL2
++
++//     ",
++//         options(noreturn),
++//     )
++// }
+diff --git a/src/arch/aarch64/vcpu.rs b/src/arch/aarch64/vcpu.rs
+index dc73404..1203087 100644
+--- a/src/arch/aarch64/vcpu.rs
++++ b/src/arch/aarch64/vcpu.rs
+@@ -1,13 +1,15 @@
+-use aarch64_cpu::registers::SCTLR_EL1;
+-use alloc::boxed::Box;
+-use alloc::sync::Weak;
+-use spin::RwLock;
+-
+ use crate::arch::sysreg::write_sysreg;
+ use crate::consts::VCPU_STACK_SIZE;
+ use crate::vcpu::{current_vcpu, VCpu};
+ use aarch64_cpu::registers::Writeable;
+-use core::fmt::{Debug, Formatter};
++use aarch64_cpu::registers::SCTLR_EL1;
++use alloc::boxed::Box;
++use alloc::string::ToString;
++use alloc::sync::Arc;
++use alloc::vec::Vec;
++use core::cell::UnsafeCell;
++use core::fmt::{self, Debug, Formatter};
++use core::ops::{Index, IndexMut, Range};
+ use core::ptr::addr_of;
+ 
+ #[repr(C, align(4096))]
+@@ -15,6 +17,16 @@ struct AArch64VCpuStack {
+     _st: [u8; VCPU_STACK_SIZE],
+ }
+ 
++impl AArch64VCpuStack {
++    fn lower_bound(&self) -> *const u8 {
++        addr_of!(self._st) as *const u8
++    }
++
++    fn upper_bound(&self) -> *const u8 {
++        unsafe { self.lower_bound().add(VCPU_STACK_SIZE) }
++    }
++}
++
+ impl Default for AArch64VCpuStack {
+     fn default() -> Self {
+         Self {
+@@ -23,33 +35,116 @@ impl Default for AArch64VCpuStack {
+     }
+ }
+ 
++impl Debug for AArch64VCpuStack {
++    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), core::fmt::Error> {
++        // write stack addr range as format [a..b]
++        let addr_range = format!(
++            "[0x{:x}..0x{:x}]",
++            self.lower_bound() as usize,
++            self.upper_bound() as usize
++        );
++        f.debug_struct("AArch64VCpuHyperStack")
++            .field("stack_addr_range", &addr_range)
++            .finish()
++    }
++}
++
+ #[repr(C)]
+ #[derive(Default)]
+-struct AArch64VCpuHyper {
++pub struct AArch64GenericRegs {
+     x: [u64; 31],
++}
++
++impl Index<usize> for AArch64GenericRegs {
++    type Output = u64;
++
++    fn index(&self, index: usize) -> &Self::Output {
++        if index >= 31 {
++            panic!("Index out of bounds: {} (valid range 0-30)", index);
++        }
++        &self.x[index]
++    }
++}
++
++impl IndexMut<usize> for AArch64GenericRegs {
++    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
++        if index >= 31 {
++            panic!("Index out of bounds: {} (valid range 0-30)", index);
++        }
++        &mut self.x[index]
++    }
++}
++
++impl Index<Range<usize>> for AArch64GenericRegs {
++    type Output = [u64];
++    fn index(&self, range: Range<usize>) -> &Self::Output {
++        &self.x[range]
++    }
++}
++
++impl fmt::Debug for AArch64GenericRegs {
++    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
++        // Collect non-zero registers
++        let mut non_zero = Vec::new();
++        let mut all_zero = true;
++
++        for (i, &val) in self.x.iter().enumerate() {
++            if val != 0 {
++                non_zero.push((i, val));
++                all_zero = false;
++            }
++        }
++
++        // Print non-zero registers
++        for (i, val) in &non_zero {
++            write!(f, "x{}: 0x{:016x} ", i, val)?;
++        }
++
++        // Handle zero registers
++        if !all_zero {
++            let zero_regs: Vec<_> = (0..31)
++                .filter(|i| !non_zero.iter().any(|(j, _)| *j == *i))
++                .collect();
++
++            if !zero_regs.is_empty() {
++                write!(
++                    f,
++                    "(x{} all zero)",
++                    zero_regs
++                        .iter()
++                        .map(ToString::to_string)
++                        .collect::<Vec<_>>()
++                        .join(", ")
++                )?;
++            }
++        } else {
++            write!(f, "All x registers are zero")?;
++        }
++
++        Ok(())
++    }
++}
++
++#[repr(C)]
++#[derive(Default)]
++struct AArch64VCpuContext {
++    x: AArch64GenericRegs,
+     sp: u64,
+-    _stack: Box<AArch64VCpuStack>,
+ }
+ 
+-impl Debug for AArch64VCpuHyper {
++impl Debug for AArch64VCpuContext {
+     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), core::fmt::Error> {
+         f.debug_struct("AArch64VCpuHyper")
+             .field("x", &self.x)
+             .field("sp", &self.sp)
+-            .field("stack", &addr_of!(self._stack._st))
+-            .field("stack_size", &VCPU_STACK_SIZE)
+             .finish()
+     }
+ }
+ 
+-impl AArch64VCpuHyper {
+-    fn stack_bottom(&self) -> usize {
+-        addr_of!(self._stack._st) as usize + VCPU_STACK_SIZE
+-    }
+-
++impl AArch64VCpuContext {
+     #[naked]
+     #[no_mangle]
+-    unsafe extern "C" fn __switch_to(_hyper_regs: *const Self) -> ! {
++    unsafe extern "C" fn __switch_to(_context: *const Self) -> ! {
+         core::arch::asm!(
+             "ldp x2, x3, [x0, #0x10]",
+             "ldp x4, x5, [x0, #0x20]",
+@@ -76,93 +171,82 @@ impl AArch64VCpuHyper {
+ 
+ #[repr(C)]
+ #[derive(Debug, Default)]
+-struct AArch64VCpuGuest {
+-    x: [u64; 31],
+-    elr: u64,
+-    spsr: u64,
++pub struct AArch64TrapFrame {
++    pub x: AArch64GenericRegs,
++    pub elr: u64,
++    pub spsr: u64,
+ }
+ 
+-impl AArch64VCpuGuest {
++impl AArch64TrapFrame {
+     #[naked]
+     #[no_mangle]
+-    unsafe extern "C" fn __vm_return(_guest_regs: *const Self, hyp_stack_bottom: u64) -> ! {
++    unsafe extern "C" fn __vm_entry(_trapframe: *const Self) -> ! {
+         core::arch::asm!(
+-            "mov sp, x1", // We need to set the stack pointer to the end of the stack here
+-            "msr TPIDR_EL2, x0",
+-            "ldp x2, x3, [x0, #0x10]",
+-            "ldp x4, x5, [x0, #0x20]",
+-            "ldp x6, x7, [x0, #0x30]",
+-            "ldp x8, x9, [x0, #0x40]",
+-            "ldp x10, x11, [x0, #0x50]",
+-            "ldp x12, x13, [x0, #0x60]",
+-            "ldp x14, x15, [x0, #0x70]",
+-            "ldp x16, x17, [x0, #0x80]",
+-            "ldp x18, x19, [x0, #0x90]",
+-            "ldp x20, x21, [x0, #0xa0]",
+-            "ldp x22, x23, [x0, #0xb0]",
+-            "ldp x24, x25, [x0, #0xc0]",
+-            "ldp x26, x27, [x0, #0xd0]",
+-            "ldp x28, x29, [x0, #0xe0]",
+-            "ldr x30, [x0, #0xf0]",
+-            "ldr x1, [x0, #0xf8]",
++            "mov sp, x0", // We need to set the stack pointer to current trapframe here
++            "ldp x2, x3, [sp, #0x10]",
++            "ldp x4, x5, [sp, #0x20]",
++            "ldp x6, x7, [sp, #0x30]",
++            "ldp x8, x9, [sp, #0x40]",
++            "ldp x10, x11, [sp, #0x50]",
++            "ldp x12, x13, [sp, #0x60]",
++            "ldp x14, x15, [sp, #0x70]",
++            "ldp x16, x17, [sp, #0x80]",
++            "ldp x18, x19, [sp, #0x90]",
++            "ldp x20, x21, [sp, #0xa0]",
++            "ldp x22, x23, [sp, #0xb0]",
++            "ldp x24, x25, [sp, #0xc0]",
++            "ldp x26, x27, [sp, #0xd0]",
++            "ldp x28, x29, [sp, #0xe0]",
++            "ldp x30, x1, [sp, #0xf0]",
+             "msr ELR_EL2, x1",
+             "ldr x1, [x0, #0x100]",
+             "msr SPSR_EL2, x1",
+-            "ldp x0, x1, [x0]",
++            "ldp x0, x1, [sp]",
+             "eret",
+             options(noreturn)
+         );
+     }
+-
+-    unsafe extern "C" fn __vm_exit() -> ! {
+-        core::arch::asm!(
+-            "mrs x0, TPIDR_EL2",
+-            "stp x0, x1, [x0]",
+-            "stp x2, x3, [x0, #0x10]",
+-            "stp x4, x5, [x0, #0x20]",
+-            "stp x6, x7, [x0, #0x30]",
+-            "stp x8, x9, [x0, #0x40]",
+-            "stp x10, x11, [x0, #0x50]",
+-            "stp x12, x13, [x0, #0x60]",
+-            "stp x14, x15, [x0, #0x70]",
+-            "stp x16, x17, [x0, #0x80]",
+-            "stp x18, x19, [x0, #0x90]",
+-            "stp x20, x21, [x0, #0xa0]",
+-            "stp x22, x23, [x0, #0xb0]",
+-            "stp x24, x25, [x0, #0xc0]",
+-            "stp x26, x27, [x0, #0xd0]",
+-            "stp x28, x29, [x0, #0xe0]",
+-            "str x30, [x0, #0xf0]",
+-            "mrs x1, ELR_EL2",
+-            "str x1, [x0, #0xf8]",
+-            "mrs x1, SPSR_EL2",
+-            "str x1, [x0, #0x100]",
+-            "stp x0, x1, [x0]",
+-            "bl testtrap",
+-            options(noreturn)
+-        );
+-    }
+-}
+-
+-#[no_mangle]
+-fn testtrap() {
+-    println!("testtrap!\n");
+ }
+ 
+ #[repr(C)]
+-#[derive(Debug, Default)]
++#[derive(Default)]
+ pub struct AArch64VCpu {
+-    hyper_regs: AArch64VCpuHyper,
+-    guest_regs: AArch64VCpuGuest,
++    context: UnsafeCell<Box<AArch64VCpuContext>>,
++    stack: Box<AArch64VCpuStack>,
++}
++
++impl Debug for AArch64VCpu {
++    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), core::fmt::Error> {
++        f.debug_struct("AArch64VCpu")
++            .field("context", &self.context())
++            .field("trapframe", &self.trapframe())
++            .field("stack", &self.stack)
++            .finish()
++    }
+ }
+ 
+ impl AArch64VCpu {
+     pub fn new() -> Self {
+-        let mut vcpu = Self::default();
+-        // set stack pointer to the end of the stack
+-        vcpu.hyper_regs.sp = vcpu.hyper_regs.stack_bottom() as _;
+-        vcpu.hyper_regs.x[30] = arch_vcpu_hyp_entry as _;
+-        vcpu
++        let arch = Self::default();
++        let context = arch.context();
++        context.sp = arch.trapframe() as *const _ as _;
++        context.x[30] = arch_vcpu_hyp_entry as _;
++        info!("New AArch64 VCPU created: {:#x?}", arch);
++        arch
++    }
++
++    fn trapframe(&self) -> &mut AArch64TrapFrame {
++        unsafe {
++            &mut *((self
++                .stack
++                .upper_bound()
++                .sub(core::mem::size_of::<AArch64TrapFrame>()))
++                as *mut AArch64TrapFrame)
++        }
++    }
++
++    fn context(&self) -> &mut AArch64VCpuContext {
++        unsafe { (*self.context.get()).as_mut() }
+     }
+ 
+     fn reset_vm_regs() {
+@@ -212,37 +296,41 @@ impl AArch64VCpu {
+ }
+ 
+ fn arch_vcpu_hyp_entry() -> ! {
+-    let vcpu = current_vcpu().upgrade().unwrap().clone();
+-    let mut vcpu_lock = vcpu.write();
+-    info!("AArch64 VCPU {} is running", vcpu_lock.id);
+-
+-    vcpu_lock.arch.guest_regs.elr = 0xa0400000;
+-    vcpu_lock.arch.guest_regs.x[0] = 0xa0000000;
+-    vcpu_lock.arch.guest_regs.spsr = 0x3c5;
+-
+-    vcpu_lock.activate_gpm();
++    {
++        let vcpu = current_vcpu();
++        info!("AArch64 VCPU {} is running", vcpu.id);
++        let trapframe = vcpu.arch.trapframe();
++        trapframe.elr = 0xa0400000;
++        trapframe.x[0] = 0xa0000000;
++        trapframe.spsr = 0x3c5;
++    }
+     AArch64VCpu::reset_vm_regs();
+-    let guest_regs = &vcpu_lock.arch.guest_regs as *const _;
+-    let stack_bottom = vcpu_lock.arch.hyper_regs.stack_bottom();
+-
+-    drop(vcpu_lock);
+-    drop(vcpu);
++    vmreturn();
++}
+ 
++pub fn vmreturn() -> ! {
++    let mut _trapframe_ptr;
++    {
++        let vcpu = current_vcpu();
++        vcpu.activate_gpm();
++        let trapframe = vcpu.arch.trapframe();
++        _trapframe_ptr = &*trapframe as *const _ as u64;
++    }
+     unsafe {
+-        AArch64VCpuGuest::__vm_return(guest_regs, stack_bottom as _);
++        AArch64TrapFrame::__vm_entry(_trapframe_ptr as _);
+     }
+ }
+ 
+-pub fn arch_switch_to_vcpu(vcpu: Weak<RwLock<VCpu>>) {
+-    let vcpu = vcpu.upgrade().unwrap();
+-    let vcpu_lock = vcpu.read();
+-    let hyper_regs = &vcpu_lock.arch.hyper_regs as *const _;
+-    drop(vcpu_lock);
++pub fn arch_switch_to_vcpu(vcpu: Arc<VCpu>) -> ! {
++    let context = vcpu.arch.context();
++    let _context_ptr = &*context as *const _;
+     drop(vcpu);
+ 
+     unsafe {
+-        AArch64VCpuHyper::__switch_to(hyper_regs);
++        AArch64VCpuContext::__switch_to(_context_ptr as _);
+     }
+ }
+ 
++unsafe impl Sync for AArch64VCpu {}
++
+ pub type ArchVCpu = AArch64VCpu;
+diff --git a/src/main.rs b/src/main.rs
+index 9d458b1..fea2412 100644
+--- a/src/main.rs
++++ b/src/main.rs
+@@ -80,7 +80,6 @@ use arch::{cpu::cpu_start, entry::arch_entry};
+ use config::root_zone_config;
+ use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+ use percpu::PerCpu;
+-use spin::RwLock;
+ use zone::{add_zone, zone_create};
+ 
+ #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
+@@ -240,8 +239,8 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
+     }
+ 
+     if is_primary {
+-        let vcpu = Arc::new(RwLock::new(VCpu::new(Arc::downgrade(&root_zone()))));
+-        add_vcpu(Arc::downgrade(&vcpu.clone()));
++        let vcpu = Arc::new(VCpu::new(root_zone()));
++        add_vcpu(vcpu);
+         scheduler::run_next();
+     } else {
+         error!("Secondary CPU: run scheduler (todo)");
+diff --git a/src/percpu.rs b/src/percpu.rs
+index e7f678f..80209ef 100644
+--- a/src/percpu.rs
++++ b/src/percpu.rs
+@@ -13,7 +13,7 @@
+ //
+ // Authors:
+ //
+-use alloc::sync::{Arc, Weak};
++use alloc::sync::Arc;
+ use spin::{Mutex, RwLock};
+ 
+ use crate::arch::cpu::{this_cpu_id, ArchCpu};
+@@ -35,7 +35,7 @@ pub struct PerCpu {
+     pub arch_cpu: ArchCpu,
+     pub zone: Option<Arc<RwLock<Zone>>>,
+     pub ctrl_lock: Mutex<()>,
+-    pub vcpu: Weak<RwLock<VCpu>>,
++    pub vcpu: Option<Arc<VCpu>>,
+     pub boot_cpu: bool,
+     // percpu stack
+ }
+@@ -52,7 +52,7 @@ impl PerCpu {
+                 arch_cpu: ArchCpu::new(cpu_id),
+                 zone: None,
+                 ctrl_lock: Mutex::new(()),
+-                vcpu: Weak::new(),
++                vcpu: None,
+                 boot_cpu: false,
+             })
+         };
+@@ -67,15 +67,6 @@ impl PerCpu {
+         unsafe { ret.as_mut().unwrap() }
+     }
+ 
+-    pub fn run_vm(&mut self) {
+-        if !self.boot_cpu {
+-            info!("CPU{}: Idling the CPU before starting VM...", self.id);
+-            self.arch_cpu.idle();
+-        }
+-        info!("CPU{}: Running the VM...", self.id);
+-        self.arch_cpu.run();
+-    }
+-
+     pub fn entered_cpus() -> u32 {
+         ENTERED_CPUS.load(Ordering::Acquire)
+     }
+@@ -86,14 +77,14 @@ impl PerCpu {
+         }
+     }
+ 
+-    pub fn vcpu(&self) -> Weak<RwLock<VCpu>> {
++    pub fn vcpu(&self) -> Option<Arc<VCpu>> {
+         let _lock = self.ctrl_lock.lock();
+         return self.vcpu.clone();
+     }
+ 
+-    pub fn set_vcpu(&mut self, vcpu: Weak<RwLock<VCpu>>) {
++    pub fn set_vcpu(&mut self, vcpu: Arc<VCpu>) {
+         let _lock = self.ctrl_lock.lock();
+-        self.vcpu = vcpu;
++        self.vcpu = Some(vcpu);
+     }
+ }
+ 
+diff --git a/src/scheduler.rs b/src/scheduler.rs
+index 9714687..84ea825 100644
+--- a/src/scheduler.rs
++++ b/src/scheduler.rs
+@@ -1,9 +1,9 @@
+ use crate::vcpu::{switch_to_vcpu, VCpu};
+-use alloc::{sync::Weak, vec::Vec};
++use alloc::{sync::Arc, vec::Vec};
+ use spin::{Once, RwLock};
+ 
+ struct SchedulerInner {
+-    vcpus: Vec<Weak<RwLock<VCpu>>>,
++    vcpus: Vec<Arc<VCpu>>,
+ }
+ pub struct Scheduler {
+     inner: RwLock<SchedulerInner>,
+@@ -16,16 +16,13 @@ impl SchedulerInner {
+         Self { vcpus: Vec::new() }
+     }
+ 
+-    fn add_vcpu(&mut self, vcpu: Weak<RwLock<VCpu>>) {
++    fn add_vcpu(&mut self, vcpu: Arc<VCpu> ) {
+         self.vcpus.push(vcpu);
+     }
+ 
+     fn run_next(&mut self) {
+         if let Some(v) = self.vcpus.pop() {
+-            match v.upgrade() {
+-                Some(_) => switch_to_vcpu(v),
+-                None => todo!("Weak reference expired..."),
+-            }
++            switch_to_vcpu(v)
+         } else {
+             todo!("No vcpu available...")
+         }
+@@ -39,7 +36,7 @@ impl Scheduler {
+         }
+     }
+ 
+-    pub fn add_vcpu(&self, vcpu: Weak<RwLock<VCpu>>) {
++    pub fn add_vcpu(&self, vcpu: Arc<VCpu>) {
+         let mut inner = self.inner.write();
+         inner.add_vcpu(vcpu);
+     }
+@@ -58,7 +55,7 @@ fn scheduler() -> &'static Scheduler {
+     SCHEDULER.get().unwrap()
+ }
+ 
+-pub fn add_vcpu(vcpu: Weak<RwLock<VCpu>>) {
++pub fn add_vcpu(vcpu: Arc<VCpu>) {
+     scheduler().add_vcpu(vcpu);
+ }
+ 
+diff --git a/src/vcpu.rs b/src/vcpu.rs
+index c646b1c..b519d81 100644
+--- a/src/vcpu.rs
++++ b/src/vcpu.rs
+@@ -1,6 +1,6 @@
+ use core::sync::atomic::AtomicUsize;
+ 
+-use alloc::sync::Weak;
++use alloc::sync::Arc;
+ use spin::RwLock;
+ 
+ use crate::arch::vcpu::ArchVCpu;
+@@ -15,12 +15,12 @@ fn free_vcpu_id() -> usize {
+ 
+ pub struct VCpu {
+     pub id: usize,
+-    pub zone: Weak<RwLock<Zone>>,
++    pub zone: Arc<RwLock<Zone>>,
+     pub arch: ArchVCpu,
+ }
+ 
+ impl VCpu {
+-    pub fn new(zone: Weak<RwLock<Zone>>) -> Self {
++    pub fn new(zone: Arc<RwLock<Zone>>) -> Self {
+         Self {
+             id: free_vcpu_id(),
+             zone,
+@@ -30,20 +30,20 @@ impl VCpu {
+ 
+     pub fn activate_gpm(&self) {
+         unsafe {
+-            self.zone.upgrade().unwrap().read().gpm.activate();
++            self.zone.read().gpm.activate();
+         }
+     }
+ }
+ 
+-pub fn current_vcpu() -> Weak<RwLock<VCpu>> {
+-    this_cpu_data().vcpu()
++pub fn current_vcpu() -> Arc<VCpu> {
++    this_cpu_data().vcpu().unwrap()
+ }
+ 
+-pub fn set_current_vcpu(cpu: Weak<RwLock<VCpu>>) {
++pub fn set_current_vcpu(cpu: Arc<VCpu>) {
+     this_cpu_data().set_vcpu(cpu)
+ }
+ 
+-pub fn switch_to_vcpu(vcpu: Weak<RwLock<VCpu>>) {
++pub fn switch_to_vcpu(vcpu: Arc<VCpu>) {
+     set_current_vcpu(vcpu.clone());
+     crate::arch::vcpu::arch_switch_to_vcpu(vcpu);
+ }

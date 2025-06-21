@@ -80,7 +80,6 @@ use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
-use spin::RwLock;
 use zone::{add_zone, zone_create};
 
 #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
@@ -240,8 +239,8 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     }
 
     if is_primary {
-        let vcpu = Arc::new(RwLock::new(VCpu::new(Arc::downgrade(&root_zone()))));
-        add_vcpu(Arc::downgrade(&vcpu.clone()));
+        let vcpu = Arc::new(VCpu::new(root_zone()));
+        add_vcpu(vcpu);
         scheduler::run_next();
     } else {
         error!("Secondary CPU: run scheduler (todo)");

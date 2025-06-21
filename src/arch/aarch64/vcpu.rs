@@ -1,18 +1,30 @@
-use aarch64_cpu::registers::SCTLR_EL1;
-use alloc::boxed::Box;
-use alloc::sync::Weak;
-use spin::RwLock;
-
 use crate::arch::sysreg::write_sysreg;
 use crate::consts::VCPU_STACK_SIZE;
 use crate::vcpu::{current_vcpu, VCpu};
 use aarch64_cpu::registers::Writeable;
-use core::fmt::{Debug, Formatter};
+use aarch64_cpu::registers::SCTLR_EL1;
+use alloc::boxed::Box;
+use alloc::string::ToString;
+use alloc::sync::Arc;
+use alloc::vec::Vec;
+use core::cell::UnsafeCell;
+use core::fmt::{self, Debug, Formatter};
+use core::ops::{Index, IndexMut, Range};
 use core::ptr::addr_of;
 
 #[repr(C, align(4096))]
 struct AArch64VCpuStack {
     _st: [u8; VCPU_STACK_SIZE],
+}
+
+impl AArch64VCpuStack {
+    fn lower_bound(&self) -> *const u8 {
+        addr_of!(self._st) as *const u8
+    }
+
+    fn upper_bound(&self) -> *const u8 {
+        unsafe { self.lower_bound().add(VCPU_STACK_SIZE) }
+    }
 }
 
 impl Default for AArch64VCpuStack {
@@ -23,33 +35,116 @@ impl Default for AArch64VCpuStack {
     }
 }
 
-#[repr(C)]
-#[derive(Default)]
-struct AArch64VCpuHyper {
-    x: [u64; 31],
-    sp: u64,
-    _stack: Box<AArch64VCpuStack>,
-}
-
-impl Debug for AArch64VCpuHyper {
+impl Debug for AArch64VCpuStack {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), core::fmt::Error> {
-        f.debug_struct("AArch64VCpuHyper")
-            .field("x", &self.x)
-            .field("sp", &self.sp)
-            .field("stack", &addr_of!(self._stack._st))
-            .field("stack_size", &VCPU_STACK_SIZE)
+        // write stack addr range as format [a..b]
+        let addr_range = format!(
+            "[0x{:x}..0x{:x}]",
+            self.lower_bound() as usize,
+            self.upper_bound() as usize
+        );
+        f.debug_struct("AArch64VCpuHyperStack")
+            .field("stack_addr_range", &addr_range)
             .finish()
     }
 }
 
-impl AArch64VCpuHyper {
-    fn stack_bottom(&self) -> usize {
-        addr_of!(self._stack._st) as usize + VCPU_STACK_SIZE
-    }
+#[repr(C)]
+#[derive(Default)]
+pub struct AArch64GenericRegs {
+    x: [u64; 31],
+}
 
+impl Index<usize> for AArch64GenericRegs {
+    type Output = u64;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        if index >= 31 {
+            panic!("Index out of bounds: {} (valid range 0-30)", index);
+        }
+        &self.x[index]
+    }
+}
+
+impl IndexMut<usize> for AArch64GenericRegs {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        if index >= 31 {
+            panic!("Index out of bounds: {} (valid range 0-30)", index);
+        }
+        &mut self.x[index]
+    }
+}
+
+impl Index<Range<usize>> for AArch64GenericRegs {
+    type Output = [u64];
+    fn index(&self, range: Range<usize>) -> &Self::Output {
+        &self.x[range]
+    }
+}
+
+impl fmt::Debug for AArch64GenericRegs {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        // Collect non-zero registers
+        let mut non_zero = Vec::new();
+        let mut all_zero = true;
+
+        for (i, &val) in self.x.iter().enumerate() {
+            if val != 0 {
+                non_zero.push((i, val));
+                all_zero = false;
+            }
+        }
+
+        // Print non-zero registers
+        for (i, val) in &non_zero {
+            write!(f, "x{}: 0x{:016x} ", i, val)?;
+        }
+
+        // Handle zero registers
+        if !all_zero {
+            let zero_regs: Vec<_> = (0..31)
+                .filter(|i| !non_zero.iter().any(|(j, _)| *j == *i))
+                .collect();
+
+            if !zero_regs.is_empty() {
+                write!(
+                    f,
+                    "(x{} all zero)",
+                    zero_regs
+                        .iter()
+                        .map(ToString::to_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                )?;
+            }
+        } else {
+            write!(f, "All x registers are zero")?;
+        }
+
+        Ok(())
+    }
+}
+
+#[repr(C)]
+#[derive(Default)]
+struct AArch64VCpuContext {
+    x: AArch64GenericRegs,
+    sp: u64,
+}
+
+impl Debug for AArch64VCpuContext {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), core::fmt::Error> {
+        f.debug_struct("AArch64VCpuHyper")
+            .field("x", &self.x)
+            .field("sp", &self.sp)
+            .finish()
+    }
+}
+
+impl AArch64VCpuContext {
     #[naked]
     #[no_mangle]
-    unsafe extern "C" fn __switch_to(_hyper_regs: *const Self) -> ! {
+    unsafe extern "C" fn __switch_to(_context: *const Self) -> ! {
         core::arch::asm!(
             "ldp x2, x3, [x0, #0x10]",
             "ldp x4, x5, [x0, #0x20]",
@@ -76,93 +171,82 @@ impl AArch64VCpuHyper {
 
 #[repr(C)]
 #[derive(Debug, Default)]
-struct AArch64VCpuGuest {
-    x: [u64; 31],
-    elr: u64,
-    spsr: u64,
+pub struct AArch64TrapFrame {
+    pub x: AArch64GenericRegs,
+    pub elr: u64,
+    pub spsr: u64,
 }
 
-impl AArch64VCpuGuest {
+impl AArch64TrapFrame {
     #[naked]
     #[no_mangle]
-    unsafe extern "C" fn __vm_return(_guest_regs: *const Self, hyp_stack_bottom: u64) -> ! {
+    unsafe extern "C" fn __vm_entry(_trapframe: *const Self) -> ! {
         core::arch::asm!(
-            "mov sp, x1", // We need to set the stack pointer to the end of the stack here
-            "msr TPIDR_EL2, x0",
-            "ldp x2, x3, [x0, #0x10]",
-            "ldp x4, x5, [x0, #0x20]",
-            "ldp x6, x7, [x0, #0x30]",
-            "ldp x8, x9, [x0, #0x40]",
-            "ldp x10, x11, [x0, #0x50]",
-            "ldp x12, x13, [x0, #0x60]",
-            "ldp x14, x15, [x0, #0x70]",
-            "ldp x16, x17, [x0, #0x80]",
-            "ldp x18, x19, [x0, #0x90]",
-            "ldp x20, x21, [x0, #0xa0]",
-            "ldp x22, x23, [x0, #0xb0]",
-            "ldp x24, x25, [x0, #0xc0]",
-            "ldp x26, x27, [x0, #0xd0]",
-            "ldp x28, x29, [x0, #0xe0]",
-            "ldr x30, [x0, #0xf0]",
-            "ldr x1, [x0, #0xf8]",
+            "mov sp, x0", // We need to set the stack pointer to current trapframe here
+            "ldp x2, x3, [sp, #0x10]",
+            "ldp x4, x5, [sp, #0x20]",
+            "ldp x6, x7, [sp, #0x30]",
+            "ldp x8, x9, [sp, #0x40]",
+            "ldp x10, x11, [sp, #0x50]",
+            "ldp x12, x13, [sp, #0x60]",
+            "ldp x14, x15, [sp, #0x70]",
+            "ldp x16, x17, [sp, #0x80]",
+            "ldp x18, x19, [sp, #0x90]",
+            "ldp x20, x21, [sp, #0xa0]",
+            "ldp x22, x23, [sp, #0xb0]",
+            "ldp x24, x25, [sp, #0xc0]",
+            "ldp x26, x27, [sp, #0xd0]",
+            "ldp x28, x29, [sp, #0xe0]",
+            "ldp x30, x1, [sp, #0xf0]",
             "msr ELR_EL2, x1",
             "ldr x1, [x0, #0x100]",
             "msr SPSR_EL2, x1",
-            "ldp x0, x1, [x0]",
+            "ldp x0, x1, [sp]",
             "eret",
             options(noreturn)
         );
     }
-
-    unsafe extern "C" fn __vm_exit() -> ! {
-        core::arch::asm!(
-            "mrs x0, TPIDR_EL2",
-            "stp x0, x1, [x0]",
-            "stp x2, x3, [x0, #0x10]",
-            "stp x4, x5, [x0, #0x20]",
-            "stp x6, x7, [x0, #0x30]",
-            "stp x8, x9, [x0, #0x40]",
-            "stp x10, x11, [x0, #0x50]",
-            "stp x12, x13, [x0, #0x60]",
-            "stp x14, x15, [x0, #0x70]",
-            "stp x16, x17, [x0, #0x80]",
-            "stp x18, x19, [x0, #0x90]",
-            "stp x20, x21, [x0, #0xa0]",
-            "stp x22, x23, [x0, #0xb0]",
-            "stp x24, x25, [x0, #0xc0]",
-            "stp x26, x27, [x0, #0xd0]",
-            "stp x28, x29, [x0, #0xe0]",
-            "str x30, [x0, #0xf0]",
-            "mrs x1, ELR_EL2",
-            "str x1, [x0, #0xf8]",
-            "mrs x1, SPSR_EL2",
-            "str x1, [x0, #0x100]",
-            "stp x0, x1, [x0]",
-            "bl testtrap",
-            options(noreturn)
-        );
-    }
-}
-
-#[no_mangle]
-fn testtrap() {
-    println!("testtrap!\n");
 }
 
 #[repr(C)]
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct AArch64VCpu {
-    hyper_regs: AArch64VCpuHyper,
-    guest_regs: AArch64VCpuGuest,
+    context: UnsafeCell<Box<AArch64VCpuContext>>,
+    stack: Box<AArch64VCpuStack>,
+}
+
+impl Debug for AArch64VCpu {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result<(), core::fmt::Error> {
+        f.debug_struct("AArch64VCpu")
+            .field("context", &self.context())
+            .field("trapframe", &self.trapframe())
+            .field("stack", &self.stack)
+            .finish()
+    }
 }
 
 impl AArch64VCpu {
     pub fn new() -> Self {
-        let mut vcpu = Self::default();
-        // set stack pointer to the end of the stack
-        vcpu.hyper_regs.sp = vcpu.hyper_regs.stack_bottom() as _;
-        vcpu.hyper_regs.x[30] = arch_vcpu_hyp_entry as _;
-        vcpu
+        let arch = Self::default();
+        let context = arch.context();
+        context.sp = arch.trapframe() as *const _ as _;
+        context.x[30] = arch_vcpu_hyp_entry as _;
+        info!("New AArch64 VCPU created: {:#x?}", arch);
+        arch
+    }
+
+    fn trapframe(&self) -> &mut AArch64TrapFrame {
+        unsafe {
+            &mut *((self
+                .stack
+                .upper_bound()
+                .sub(core::mem::size_of::<AArch64TrapFrame>()))
+                as *mut AArch64TrapFrame)
+        }
+    }
+
+    fn context(&self) -> &mut AArch64VCpuContext {
+        unsafe { (*self.context.get()).as_mut() }
     }
 
     fn reset_vm_regs() {
@@ -212,37 +296,41 @@ impl AArch64VCpu {
 }
 
 fn arch_vcpu_hyp_entry() -> ! {
-    let vcpu = current_vcpu().upgrade().unwrap().clone();
-    let mut vcpu_lock = vcpu.write();
-    info!("AArch64 VCPU {} is running", vcpu_lock.id);
-
-    vcpu_lock.arch.guest_regs.elr = 0xa0400000;
-    vcpu_lock.arch.guest_regs.x[0] = 0xa0000000;
-    vcpu_lock.arch.guest_regs.spsr = 0x3c5;
-
-    vcpu_lock.activate_gpm();
+    {
+        let vcpu = current_vcpu();
+        info!("AArch64 VCPU {} is running", vcpu.id);
+        let trapframe = vcpu.arch.trapframe();
+        trapframe.elr = 0xa0400000;
+        trapframe.x[0] = 0xa0000000;
+        trapframe.spsr = 0x3c5;
+    }
     AArch64VCpu::reset_vm_regs();
-    let guest_regs = &vcpu_lock.arch.guest_regs as *const _;
-    let stack_bottom = vcpu_lock.arch.hyper_regs.stack_bottom();
+    vmreturn();
+}
 
-    drop(vcpu_lock);
-    drop(vcpu);
-
+pub fn vmreturn() -> ! {
+    let mut _trapframe_ptr;
+    {
+        let vcpu = current_vcpu();
+        vcpu.activate_gpm();
+        let trapframe = vcpu.arch.trapframe();
+        _trapframe_ptr = &*trapframe as *const _ as u64;
+    }
     unsafe {
-        AArch64VCpuGuest::__vm_return(guest_regs, stack_bottom as _);
+        AArch64TrapFrame::__vm_entry(_trapframe_ptr as _);
     }
 }
 
-pub fn arch_switch_to_vcpu(vcpu: Weak<RwLock<VCpu>>) {
-    let vcpu = vcpu.upgrade().unwrap();
-    let vcpu_lock = vcpu.read();
-    let hyper_regs = &vcpu_lock.arch.hyper_regs as *const _;
-    drop(vcpu_lock);
+pub fn arch_switch_to_vcpu(vcpu: Arc<VCpu>) -> ! {
+    let context = vcpu.arch.context();
+    let _context_ptr = &*context as *const _;
     drop(vcpu);
 
     unsafe {
-        AArch64VCpuHyper::__switch_to(hyper_regs);
+        AArch64VCpuContext::__switch_to(_context_ptr as _);
     }
 }
+
+unsafe impl Sync for AArch64VCpu {}
 
 pub type ArchVCpu = AArch64VCpu;

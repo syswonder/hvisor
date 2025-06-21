@@ -1,6 +1,6 @@
 use core::sync::atomic::AtomicUsize;
 
-use alloc::sync::Weak;
+use alloc::sync::Arc;
 use spin::RwLock;
 
 use crate::arch::vcpu::ArchVCpu;
@@ -15,12 +15,12 @@ fn free_vcpu_id() -> usize {
 
 pub struct VCpu {
     pub id: usize,
-    pub zone: Weak<RwLock<Zone>>,
+    pub zone: Arc<RwLock<Zone>>,
     pub arch: ArchVCpu,
 }
 
 impl VCpu {
-    pub fn new(zone: Weak<RwLock<Zone>>) -> Self {
+    pub fn new(zone: Arc<RwLock<Zone>>) -> Self {
         Self {
             id: free_vcpu_id(),
             zone,
@@ -30,20 +30,20 @@ impl VCpu {
 
     pub fn activate_gpm(&self) {
         unsafe {
-            self.zone.upgrade().unwrap().read().gpm.activate();
+            self.zone.read().gpm.activate();
         }
     }
 }
 
-pub fn current_vcpu() -> Weak<RwLock<VCpu>> {
-    this_cpu_data().vcpu()
+pub fn current_vcpu() -> Arc<VCpu> {
+    this_cpu_data().vcpu().unwrap()
 }
 
-pub fn set_current_vcpu(cpu: Weak<RwLock<VCpu>>) {
+pub fn set_current_vcpu(cpu: Arc<VCpu>) {
     this_cpu_data().set_vcpu(cpu)
 }
 
-pub fn switch_to_vcpu(vcpu: Weak<RwLock<VCpu>>) {
+pub fn switch_to_vcpu(vcpu: Arc<VCpu>) {
     set_current_vcpu(vcpu.clone());
     crate::arch::vcpu::arch_switch_to_vcpu(vcpu);
 }

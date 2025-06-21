@@ -1,9 +1,9 @@
 use crate::vcpu::{switch_to_vcpu, VCpu};
-use alloc::{sync::Weak, vec::Vec};
+use alloc::{sync::Arc, vec::Vec};
 use spin::{Once, RwLock};
 
 struct SchedulerInner {
-    vcpus: Vec<Weak<RwLock<VCpu>>>,
+    vcpus: Vec<Arc<VCpu>>,
 }
 pub struct Scheduler {
     inner: RwLock<SchedulerInner>,
@@ -16,16 +16,13 @@ impl SchedulerInner {
         Self { vcpus: Vec::new() }
     }
 
-    fn add_vcpu(&mut self, vcpu: Weak<RwLock<VCpu>>) {
+    fn add_vcpu(&mut self, vcpu: Arc<VCpu> ) {
         self.vcpus.push(vcpu);
     }
 
     fn run_next(&mut self) {
         if let Some(v) = self.vcpus.pop() {
-            match v.upgrade() {
-                Some(_) => switch_to_vcpu(v),
-                None => todo!("Weak reference expired..."),
-            }
+            switch_to_vcpu(v)
         } else {
             todo!("No vcpu available...")
         }
@@ -39,7 +36,7 @@ impl Scheduler {
         }
     }
 
-    pub fn add_vcpu(&self, vcpu: Weak<RwLock<VCpu>>) {
+    pub fn add_vcpu(&self, vcpu: Arc<VCpu>) {
         let mut inner = self.inner.write();
         inner.add_vcpu(vcpu);
     }
@@ -58,7 +55,7 @@ fn scheduler() -> &'static Scheduler {
     SCHEDULER.get().unwrap()
 }
 
-pub fn add_vcpu(vcpu: Weak<RwLock<VCpu>>) {
+pub fn add_vcpu(vcpu: Arc<VCpu>) {
     scheduler().add_vcpu(vcpu);
 }
 

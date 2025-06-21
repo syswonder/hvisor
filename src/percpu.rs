@@ -13,7 +13,7 @@
 //
 // Authors:
 //
-use alloc::sync::{Arc, Weak};
+use alloc::sync::Arc;
 use spin::{Mutex, RwLock};
 
 use crate::arch::cpu::{this_cpu_id, ArchCpu};
@@ -35,7 +35,7 @@ pub struct PerCpu {
     pub arch_cpu: ArchCpu,
     pub zone: Option<Arc<RwLock<Zone>>>,
     pub ctrl_lock: Mutex<()>,
-    pub vcpu: Weak<RwLock<VCpu>>,
+    pub vcpu: Option<Arc<VCpu>>,
     pub boot_cpu: bool,
     // percpu stack
 }
@@ -52,7 +52,7 @@ impl PerCpu {
                 arch_cpu: ArchCpu::new(cpu_id),
                 zone: None,
                 ctrl_lock: Mutex::new(()),
-                vcpu: Weak::new(),
+                vcpu: None,
                 boot_cpu: false,
             })
         };
@@ -67,15 +67,6 @@ impl PerCpu {
         unsafe { ret.as_mut().unwrap() }
     }
 
-    pub fn run_vm(&mut self) {
-        if !self.boot_cpu {
-            info!("CPU{}: Idling the CPU before starting VM...", self.id);
-            self.arch_cpu.idle();
-        }
-        info!("CPU{}: Running the VM...", self.id);
-        self.arch_cpu.run();
-    }
-
     pub fn entered_cpus() -> u32 {
         ENTERED_CPUS.load(Ordering::Acquire)
     }
@@ -86,14 +77,14 @@ impl PerCpu {
         }
     }
 
-    pub fn vcpu(&self) -> Weak<RwLock<VCpu>> {
+    pub fn vcpu(&self) -> Option<Arc<VCpu>> {
         let _lock = self.ctrl_lock.lock();
         return self.vcpu.clone();
     }
 
-    pub fn set_vcpu(&mut self, vcpu: Weak<RwLock<VCpu>>) {
+    pub fn set_vcpu(&mut self, vcpu: Arc<VCpu>) {
         let _lock = self.ctrl_lock.lock();
-        self.vcpu = vcpu;
+        self.vcpu = Some(vcpu);
     }
 }
 

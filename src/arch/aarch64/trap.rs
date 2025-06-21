@@ -16,8 +16,9 @@
 use aarch64_cpu::{asm::wfi, registers::*};
 use core::arch::global_asm;
 
-use super::cpu::GeneralRegisters;
+use crate::arch;
 use crate::arch::sysreg::smc_call;
+use crate::arch::vcpu::AArch64TrapFrame;
 use crate::zone::zone_error;
 use crate::{
     arch::{
@@ -103,19 +104,17 @@ pub enum TrapReturn {
     TrapForbidden = -1,
 }
 
-/*From hyp_vec->handle_vmexit x0:guest regs x1:exit_reason sp =stack_top-32*8*/
-pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> ! {
-    let mpidr = MPIDR_EL1.get();
-    let _cpu_id = mpidr_to_cpuid(mpidr);
-    trace!("cpu exit, exit_reson:{:#x?}", regs.exit_reason);
-    match regs.exit_reason as u64 {
+pub fn arch_handle_exit(regs: &mut AArch64TrapFrame, exit_reason: u64) -> ! {
+    trace!("cpu exit, exit_reson:{:#x?}", exit_reason);
+    info!("trapframe: {:#x?}", regs);
+    match exit_reason {
         ExceptionType::EXIT_REASON_EL1_IRQ => irqchip_handle_irq1(),
         ExceptionType::EXIT_REASON_EL1_ABORT => arch_handle_trap_el1(regs),
         ExceptionType::EXIT_REASON_EL2_ABORT => arch_handle_trap_el2(regs),
         ExceptionType::EXIT_REASON_EL2_IRQ => irqchip_handle_irq2(),
-        _ => arch_dump_exit(regs.exit_reason),
+        _ => arch_dump_exit(exit_reason),
     }
-    unsafe { vmreturn(regs as *const _ as usize) }
+    arch::vcpu::vmreturn();
 }
 
 fn irqchip_handle_irq1() {
@@ -128,7 +127,7 @@ fn irqchip_handle_irq2() {
     loop {}
 }
 
-fn arch_handle_trap_el1(regs: &mut GeneralRegisters) {
+fn arch_handle_trap_el1(regs: &mut AArch64TrapFrame) {
     let mut _ret = TrapReturn::TrapUnhandled;
 
     trace!(
@@ -138,11 +137,11 @@ fn arch_handle_trap_el1(regs: &mut GeneralRegisters) {
     );
 
     match ESR_EL2.read_as_enum(ESR_EL2::EC) {
-        Some(ESR_EL2::EC::Value::HVC64) => handle_hvc(regs),
+        // Some(ESR_EL2::EC::Value::HVC64) => handle_hvc(),
         Some(ESR_EL2::EC::Value::SMC64) => handle_smc(regs),
-        Some(ESR_EL2::EC::Value::TrappedMsrMrs) => handle_sysreg(regs),
+        // Some(ESR_EL2::EC::Value::TrappedMsrMrs) => handle_sysreg(),
         Some(ESR_EL2::EC::Value::DataAbortLowerEL) => handle_dabt(regs),
-        Some(ESR_EL2::EC::Value::InstrAbortLowerEL) => handle_iabt(regs),
+        // Some(ESR_EL2::EC::Value::InstrAbortLowerEL) => handle_iabt(),
         _ => {
             error!(
                 "Unsupported Exception EC:{:#x?}!",
@@ -155,7 +154,7 @@ fn arch_handle_trap_el1(regs: &mut GeneralRegisters) {
     }
 }
 
-fn arch_handle_trap_el2(_regs: &mut GeneralRegisters) {
+fn arch_handle_trap_el2(_regs: &mut AArch64TrapFrame) {
     let elr = ELR_EL2.get();
     let esr = ESR_EL2.get();
     let far = FAR_EL2.get();
@@ -189,24 +188,24 @@ fn arch_handle_trap_el2(_regs: &mut GeneralRegisters) {
     loop {}
 }
 
-fn handle_iabt(_regs: &mut GeneralRegisters) {
-    let iss = ESR_EL2.read(ESR_EL2::ISS);
-    let op = iss >> 6 & 0x1;
-    let hpfar = read_sysreg!(HPFAR_EL2);
-    let far = read_sysreg!(FAR_EL2);
-    let address = (far & 0xfff) | (hpfar << 8);
-    error!(
-        "Failed to fetch instruction (op={}) at {:#x?}, ELR_EL2={:#x?}!",
-        op,
-        address,
-        ELR_EL2.get()
-    );
-    loop {}
-    // TODO: finish iabt handle
-    // arch_skip_instruction(frame);
-}
+// fn handle_iabt(_regs: &mut AArch64TrapFrame) {
+//     let iss = ESR_EL2.read(ESR_EL2::ISS);
+//     let op = iss >> 6 & 0x1;
+//     let hpfar = read_sysreg!(HPFAR_EL2);
+//     let far = read_sysreg!(FAR_EL2);
+//     let address = (far & 0xfff) | (hpfar << 8);
+//     error!(
+//         "Failed to fetch instruction (op={}) at {:#x?}, ELR_EL2={:#x?}!",
+//         op,
+//         address,
+//         ELR_EL2.get()
+//     );
+//     loop {}
+//     // TODO: finish iabt handle
+//     // arch_skip_instruction(frame);
+// }
 
-fn handle_dabt(regs: &mut GeneralRegisters) {
+fn handle_dabt(regs: &mut AArch64TrapFrame) {
     let iss = ESR_EL2.read(ESR_EL2::ISS);
     let is_write = (iss >> 6 & 0x1) != 0;
     let srt = iss >> 16 & 0x1f;
@@ -225,7 +224,7 @@ fn handle_dabt(regs: &mut GeneralRegisters) {
         value: if srt == 31 {
             0
         } else {
-            regs.usr[srt as usize] as _
+            regs.x[srt as usize] as _
         },
     };
 
@@ -238,7 +237,7 @@ fn handle_dabt(regs: &mut GeneralRegisters) {
                     mmio_access.value =
                         ((mmio_access.value << (32 - 8 * size)) as i32) as usize >> (32 - 8 * size);
                 }
-                regs.usr[srt as usize] = mmio_access.value as _;
+                regs.x[srt as usize] = mmio_access.value as _;
             }
         }
         Err(e) => {
@@ -250,66 +249,66 @@ fn handle_dabt(regs: &mut GeneralRegisters) {
     arch_skip_instruction(regs);
 }
 
-fn handle_sysreg(regs: &mut GeneralRegisters) {
-    //TODO check sysreg type
-    //send sgi
-    trace!("esr_el2: iss {:#x?}", ESR_EL2.read(ESR_EL2::ISS));
-    let rt = (ESR_EL2.get() >> 5) & 0x1f;
-    let val = regs.usr[rt as usize];
-    trace!("esr_el2 rt{}: {:#x?}", rt, val);
-    let sgi_id: u64 = (val & (0xf << 24)) >> 24;
-    if !this_cpu_data().arch_cpu.power_on {
-        warn!("skip send sgi {:#x?}", sgi_id);
-    } else {
-        trace!("send sgi {:#x?}", sgi_id);
-        write_sysreg!(icc_sgi1r_el1, val);
-    }
+// fn handle_sysreg() {
+//     //TODO check sysreg type
+//     //send sgi
+//     trace!("esr_el2: iss {:#x?}", ESR_EL2.read(ESR_EL2::ISS));
+//     let rt = (ESR_EL2.get() >> 5) & 0x1f;
+//     let val = regs.usr[rt as usize];
+//     trace!("esr_el2 rt{}: {:#x?}", rt, val);
+//     let sgi_id: u64 = (val & (0xf << 24)) >> 24;
+//     if !this_cpu_data().arch_cpu.power_on {
+//         warn!("skip send sgi {:#x?}", sgi_id);
+//     } else {
+//         trace!("send sgi {:#x?}", sgi_id);
+//         write_sysreg!(icc_sgi1r_el1, val);
+//     }
 
-    arch_skip_instruction(regs); //skip sgi write
-}
+//     arch_skip_instruction(); //skip sgi write
+// }
 
-fn handle_hvc(regs: &mut GeneralRegisters) {
-    /*
-    if ESR_EL2.read(ESR_EL2::ISS) != 0x4a48 {
-        return;
-    }
-    */
-    let (code, arg0, arg1) = (regs.usr[0], regs.usr[1], regs.usr[2]);
-    let cpu_data = this_cpu_data();
+// fn handle_hvc() {
+//     /*
+//     if ESR_EL2.read(ESR_EL2::ISS) != 0x4a48 {
+//         return;
+//     }
+//     */
+//     let (code, arg0, arg1) = (regs.usr[0], regs.usr[1], regs.usr[2]);
+//     let cpu_data = this_cpu_data();
 
-    trace!(
-        "HVC from CPU{},code:{:#x?},arg0:{:#x?},arg1:{:#x?}",
-        cpu_data.id,
-        code,
-        arg0,
-        arg1
+//     trace!(
+//         "HVC from CPU{},code:{:#x?},arg0:{:#x?},arg1:{:#x?}",
+//         cpu_data.id,
+//         code,
+//         arg0,
+//         arg1
+//     );
+//     let result = match HyperCall::new(cpu_data).hypercall(code as _, arg0, arg1) {
+//         Ok(ret) => ret as _,
+//         Err(e) => {
+//             error!("hypercall error: {:#?}", e);
+//             e.code()
+//         }
+//     };
+//     debug!("HVC result = {}", result);
+//     regs.usr[0] = result as _;
+// }
+
+fn handle_smc(regs: &mut AArch64TrapFrame) {
+    let (code, arg0, arg1, arg2) = (regs.x[0], regs.x[1], regs.x[2], regs.x[3]);
+    info!(
+        "SMC func_id:{:#x?}, arg0:{:#x?}, arg1:{:#x?}, arg2:{:#x?}",
+        code, arg0, arg1, arg2
     );
-    let result = match HyperCall::new(cpu_data).hypercall(code as _, arg0, arg1) {
-        Ok(ret) => ret as _,
-        Err(e) => {
-            error!("hypercall error: {:#?}", e);
-            e.code()
-        }
-    };
-    debug!("HVC result = {}", result);
-    regs.usr[0] = result as _;
-}
-
-fn handle_smc(regs: &mut GeneralRegisters) {
-    let (code, arg0, arg1, arg2) = (regs.usr[0], regs.usr[1], regs.usr[2], regs.usr[3]);
-    //info!(
-    //    "SMC from CPU{}, func_id:{:#x?}, arg0:{:#x?}, arg1:{:#x?}, arg2:{:#x?}",
-    //    cpu_data.id, code, arg0, arg1, arg2
-    //);
     let result = match code & SMC_TYPE_MASK {
         SmcType::ARCH_SC => handle_arch_smc(regs, code, arg0, arg1, arg2),
         SmcType::STANDARD_SC => handle_psci_smc(regs, code, arg0, arg1, arg2),
         SmcType::TOS_SC_START..=SmcType::TOS_SC_END | SmcType::SIP_SC => {
-            let ret = smc_call(code, &regs.usr[1..18]);
-            regs.usr[0] = ret[0];
-            regs.usr[1] = ret[1];
-            regs.usr[2] = ret[2];
-            regs.usr[3] = ret[3];
+            let ret = smc_call(code, &regs.x[1..18]);
+            regs.x[0] = ret[0];
+            regs.x[1] = ret[1];
+            regs.x[2] = ret[2];
+            regs.x[3] = ret[3];
             ret[0]
         }
         _ => {
@@ -317,7 +316,7 @@ fn handle_smc(regs: &mut GeneralRegisters) {
             0
         }
     };
-    regs.usr[0] = result;
+    regs.x[0] = result;
 
     arch_skip_instruction(regs); //skip the smc ins
 }
@@ -338,29 +337,30 @@ fn psci_emulate_features_info(code: u64) -> u64 {
     }
 }
 
-fn psci_emulate_cpu_on(regs: &mut GeneralRegisters) -> u64 {
-    // Todo: Check if `cpu` is in the cpuset of current zone
-    let cpu = mpidr_to_cpuid(regs.usr[1]);
-    info!("psci: try to wake up cpu {}", cpu);
+fn psci_emulate_cpu_on(regs: &mut AArch64TrapFrame) -> u64 {
+    todo!();
+    // // Todo: Check if `cpu` is in the cpuset of current zone
+    // let cpu = mpidr_to_cpuid(regs.x[1]);
+    // info!("psci: try to wake up cpu {}", cpu);
 
-    let target_data = get_cpu_data(cpu as _);
-    let _lock = target_data.ctrl_lock.lock();
+    // let target_data = get_cpu_data(cpu as _);
+    // let _lock = target_data.ctrl_lock.lock();
 
-    if !target_data.arch_cpu.power_on {
-        target_data.cpu_on_entry = regs.usr[2] as _;
-        target_data.arch_cpu.power_on = true;
-        send_event(cpu as _, SGI_IPI_ID as _, IPI_EVENT_WAKEUP);
-    } else {
-        error!("psci: cpu {} already on", cpu);
-        return u64::MAX - 3;
-    };
-    drop(_lock);
+    // if !target_data.arch_cpu.power_on {
+    //     target_data.cpu_on_entry = regs.x[2] as _;
+    //     target_data.arch_cpu.power_on = true;
+    //     send_event(cpu as _, SGI_IPI_ID as _, IPI_EVENT_WAKEUP);
+    // } else {
+    //     error!("psci: cpu {} already on", cpu);
+    //     return u64::MAX - 3;
+    // };
+    // drop(_lock);
 
     0
 }
 
 fn handle_psci_smc(
-    regs: &mut GeneralRegisters,
+    regs: &mut AArch64TrapFrame,
     code: u64,
     arg0: u64,
     _arg1: u64,
@@ -380,7 +380,7 @@ fn handle_psci_smc(
             !get_cpu_data(arg0 as _).arch_cpu.power_on as _
         }
         PsciFnId::PSCI_MIG_INFO_TYPE => PSCI_TOS_NOT_PRESENT_MP,
-        PsciFnId::PSCI_FEATURES => psci_emulate_features_info(regs.usr[1]),
+        PsciFnId::PSCI_FEATURES => psci_emulate_features_info(regs.x[1]),
         PsciFnId::PSCI_CPU_ON_32 | PsciFnId::PSCI_CPU_ON_64 => psci_emulate_cpu_on(regs),
         PsciFnId::PSCI_SYSTEM_OFF => {
             let zone = this_zone();
@@ -413,7 +413,7 @@ fn handle_psci_smc(
 }
 
 fn handle_arch_smc(
-    _regs: &mut GeneralRegisters,
+    _regs: &mut AArch64TrapFrame,
     code: u64,
     _arg0: u64,
     _arg1: u64,
@@ -429,9 +429,8 @@ fn handle_arch_smc(
     }
 }
 
-fn arch_skip_instruction(_regs: &mut GeneralRegisters) {
+fn arch_skip_instruction(regs: &mut AArch64TrapFrame) {
     //ELR_EL2: ret address
-    let mut pc = ELR_EL2.get();
     //ESR_EL2::IL exception instruction length
     let ins = match ESR_EL2.read(ESR_EL2::IL) {
         0 => 2, //16 bit ins
@@ -439,8 +438,7 @@ fn arch_skip_instruction(_regs: &mut GeneralRegisters) {
         _ => 0,
     };
     //skip ins
-    pc = pc + ins;
-    ELR_EL2.set(pc);
+    regs.elr += ins;
 }
 
 fn arch_dump_exit(reason: u64) {
@@ -449,33 +447,33 @@ fn arch_dump_exit(reason: u64) {
     loop {}
 }
 
-#[naked]
-#[no_mangle]
-pub unsafe extern "C" fn vmreturn(_gu_regs: usize) -> ! {
-    core::arch::asm!(
-        "
-        /* x0: guest registers */
-        mov	sp, x0
-        ldp	x1, x0, [sp], #16	/* x1 is the exit_reason */
-        ldp	x1, x2, [sp], #16
-        ldp	x3, x4, [sp], #16
-        ldp	x5, x6, [sp], #16
-        ldp	x7, x8, [sp], #16
-        ldp	x9, x10, [sp], #16
-        ldp	x11, x12, [sp], #16
-        ldp	x13, x14, [sp], #16
-        ldp	x15, x16, [sp], #16
-        ldp	x17, x18, [sp], #16
-        ldp	x19, x20, [sp], #16
-        ldp	x21, x22, [sp], #16
-        ldp	x23, x24, [sp], #16
-        ldp	x25, x26, [sp], #16
-        ldp	x27, x28, [sp], #16
-        ldp	x29, x30, [sp], #16
-        /*now el2 sp point to per cpu stack top*/
-        eret                            //ret to el2_entry hvc #0 now,depend on ELR_EL2
-        
-    ",
-        options(noreturn),
-    )
-}
+// #[naked]
+// #[no_mangle]
+// pub unsafe extern "C" fn vmreturn(_gu_regs: usize) -> ! {
+//     core::arch::asm!(
+//         "
+//         /* x0: guest registers */
+//         mov	sp, x0
+//         ldp	x1, x0, [sp], #16
+//         ldp	x1, x2, [sp], #16
+//         ldp	x3, x4, [sp], #16
+//         ldp	x5, x6, [sp], #16
+//         ldp	x7, x8, [sp], #16
+//         ldp	x9, x10, [sp], #16
+//         ldp	x11, x12, [sp], #16
+//         ldp	x13, x14, [sp], #16
+//         ldp	x15, x16, [sp], #16
+//         ldp	x17, x18, [sp], #16
+//         ldp	x19, x20, [sp], #16
+//         ldp	x21, x22, [sp], #16
+//         ldp	x23, x24, [sp], #16
+//         ldp	x25, x26, [sp], #16
+//         ldp	x27, x28, [sp], #16
+//         ldp	x29, x30, [sp], #16
+//         /*now el2 sp point to per cpu stack top*/
+//         eret                            //ret to el2_entry hvc #0 now,depend on ELR_EL2
+
+//     ",
+//         options(noreturn),
+//     )
+// }
