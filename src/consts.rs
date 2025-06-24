@@ -21,10 +21,10 @@ pub const HV_HEAP_SIZE: usize = 1024 * 1024; // 1 MB
 pub const HV_MEM_POOL_SIZE: usize = 16 * 1024 * 1024; // 16 MB
 
 /// Size of the per-CPU data (stack and other CPU-local data).
-pub const PER_CPU_SIZE: usize = 512 * 1024; // 512KB  //may get bigger when dev
+pub const PER_CPU_SIZE: usize = 512 * 1024; // 128KB  //may get bigger when dev
 
 /// Size of the per-VCPU stack.
-pub const VCPU_STACK_SIZE: usize = 64 * 1024; // 64KB
+pub const VCPU_STACK_SIZE: usize = 128 * 1024; // 128KB
 
 /// Pointer of the per-CPU data array.
 pub const PER_CPU_ARRAY_PTR: *mut VirtAddr = __core_end as _;

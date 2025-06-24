@@ -1,3 +1,4 @@
+use alloc::collections::btree_map::BTreeMap;
 // Copyright (c) 2025 Syswonder
 // hvisor is licensed under Mulan PSL v2.
 // You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -18,6 +19,7 @@ use alloc::vec::Vec;
 // use psci::error::INVALID_ADDRESS;
 use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM};
 use crate::pci::pci::PciRoot;
+use crate::vcpu::VCpu;
 use spin::RwLock;
 
 use crate::arch::mm::new_s2_memory_set;
@@ -45,6 +47,7 @@ pub struct Zone {
     #[cfg(all(target_arch = "riscv64", feature = "plic"))]
     pub vplic: Option<vplic::VirtualPLIC>,
     pub is_err: bool,
+    vcpus: BTreeMap<usize, Arc<VCpu>>,   // Map vcpu_id -> VCpu
 }
 
 impl Zone {
@@ -52,14 +55,15 @@ impl Zone {
         Self {
             name: name.try_into().unwrap(),
             id: zoneid,
-            gpm: new_s2_memory_set(),
-            cpu_set: CpuSet::new(MAX_CPU_NUM as usize, 0),
             mmio: Vec::new(),
+            cpu_set: CpuSet::new(MAX_CPU_NUM as usize, 0),
+            gpm: new_s2_memory_set(),
             irq_bitmap: [0; 1024 / 32],
+            vcpus: BTreeMap::new(),
             pciroot: PciRoot::new(),
-            is_err: false,
             #[cfg(all(target_arch = "riscv64", feature = "plic"))]
             vplic: None,
+            is_err: false,
         }
     }
 
@@ -135,6 +139,14 @@ impl Zone {
         let idx = (irq_id / 32) as usize;
         let bit_pos = (irq_id % 32) as usize;
         (self.irq_bitmap[idx] & (1 << bit_pos)) != 0
+    }
+
+    pub fn add_vcpu(&mut self, vcpu: Arc<VCpu>) {
+        self.vcpus.insert(vcpu.id, vcpu);
+    }
+
+    pub fn get_vcpu(&self, vcpu_id: usize) -> Option<Arc<VCpu>> {
+        self.vcpus.get(&vcpu_id).cloned()
     }
 }
 

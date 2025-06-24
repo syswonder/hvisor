@@ -74,7 +74,7 @@ mod tests;
 
 #[cfg(target_arch = "aarch64")]
 use crate::arch::{cpu::activate_vmm, mm::setup_parange};
-use crate::{consts::MAX_CPU_NUM, scheduler::add_vcpu, vcpu::VCpu, zone::root_zone};
+use crate::{consts::MAX_CPU_NUM, scheduler::add_vcpu_to_scheduler, vcpu::VCpu, zone::root_zone};
 use alloc::sync::Arc;
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
@@ -239,9 +239,14 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     }
 
     if is_primary {
-        let vcpu = Arc::new(VCpu::new(root_zone()));
-        add_vcpu(vcpu);
-        scheduler::run_next();
+        {
+            let vcpu0 = Arc::new(VCpu::new(root_zone()));
+            let vcpu1 = Arc::new(VCpu::new(root_zone()));
+            add_vcpu_to_scheduler(vcpu0.clone());
+            root_zone().write().add_vcpu(vcpu0);
+            root_zone().write().add_vcpu(vcpu1);
+        }
+        scheduler::scheduler_run_next();
     } else {
         error!("Secondary CPU: run scheduler (todo)");
         loop {}

@@ -19,15 +19,13 @@ use core::arch::global_asm;
 use crate::arch;
 use crate::arch::sysreg::smc_call;
 use crate::arch::vcpu::AArch64TrapFrame;
+use crate::vcpu::wakeup_vpu;
 use crate::zone::zone_error;
 use crate::{
-    arch::{
-        cpu::mpidr_to_cpuid,
-        sysreg::{read_sysreg, write_sysreg},
-    },
+    arch::{cpu::mpidr_to_cpuid, sysreg::read_sysreg},
     device::irqchip::gic_handle_irq,
-    event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_WAKEUP},
-    hypercall::{HyperCall, SGI_IPI_ID},
+    event::{send_event, IPI_EVENT_SHUTDOWN},
+    hypercall::SGI_IPI_ID,
     memory::{mmio_handle_access, MMIOAccess},
     percpu::{get_cpu_data, this_cpu_data, this_zone},
     zone::{is_this_root_zone, remove_zone},
@@ -106,7 +104,6 @@ pub enum TrapReturn {
 
 pub fn arch_handle_exit(regs: &mut AArch64TrapFrame, exit_reason: u64) -> ! {
     trace!("cpu exit, exit_reson:{:#x?}", exit_reason);
-    info!("trapframe: {:#x?}", regs);
     match exit_reason {
         ExceptionType::EXIT_REASON_EL1_IRQ => irqchip_handle_irq1(),
         ExceptionType::EXIT_REASON_EL1_ABORT => arch_handle_trap_el1(regs),
@@ -337,26 +334,23 @@ fn psci_emulate_features_info(code: u64) -> u64 {
     }
 }
 
-fn psci_emulate_cpu_on(regs: &mut AArch64TrapFrame) -> u64 {
-    todo!();
+fn psci_emulate_cpu_on(regs: &mut AArch64TrapFrame) -> isize {
     // // Todo: Check if `cpu` is in the cpuset of current zone
-    // let cpu = mpidr_to_cpuid(regs.x[1]);
-    // info!("psci: try to wake up cpu {}", cpu);
+    let vcpu_id = mpidr_to_cpuid(regs.x[1]) as usize;
+    info!(
+        "psci: try to wake up vcpu mpdir={:#x?}, vcpu_id={:#x?}",
+        regs.x[1], vcpu_id
+    );
 
-    // let target_data = get_cpu_data(cpu as _);
-    // let _lock = target_data.ctrl_lock.lock();
-
-    // if !target_data.arch_cpu.power_on {
-    //     target_data.cpu_on_entry = regs.x[2] as _;
-    //     target_data.arch_cpu.power_on = true;
-    //     send_event(cpu as _, SGI_IPI_ID as _, IPI_EVENT_WAKEUP);
-    // } else {
-    //     error!("psci: cpu {} already on", cpu);
-    //     return u64::MAX - 3;
-    // };
-    // drop(_lock);
-
-    0
+    let zone = this_zone();
+    let zone_lock = zone.read();
+    match zone_lock.get_vcpu(vcpu_id) {
+        Some(target_vcpu) => wakeup_vpu(target_vcpu),
+        None => {
+            warn!("vcpu not found, vcpu_id={:#x?}", vcpu_id);
+            -1
+        }
+    }
 }
 
 fn handle_psci_smc(
@@ -381,7 +375,7 @@ fn handle_psci_smc(
         }
         PsciFnId::PSCI_MIG_INFO_TYPE => PSCI_TOS_NOT_PRESENT_MP,
         PsciFnId::PSCI_FEATURES => psci_emulate_features_info(regs.x[1]),
-        PsciFnId::PSCI_CPU_ON_32 | PsciFnId::PSCI_CPU_ON_64 => psci_emulate_cpu_on(regs),
+        PsciFnId::PSCI_CPU_ON_32 | PsciFnId::PSCI_CPU_ON_64 => psci_emulate_cpu_on(regs) as _,
         PsciFnId::PSCI_SYSTEM_OFF => {
             let zone = this_zone();
             let zone_id = zone.read().id;

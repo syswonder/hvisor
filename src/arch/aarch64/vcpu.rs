@@ -1,5 +1,6 @@
 use crate::arch::sysreg::write_sysreg;
 use crate::consts::VCPU_STACK_SIZE;
+use crate::scheduler::add_vcpu_to_scheduler;
 use crate::vcpu::{current_vcpu, VCpu};
 use aarch64_cpu::registers::Writeable;
 use aarch64_cpu::registers::SCTLR_EL1;
@@ -11,6 +12,7 @@ use core::cell::UnsafeCell;
 use core::fmt::{self, Debug, Formatter};
 use core::ops::{Index, IndexMut, Range};
 use core::ptr::addr_of;
+use core::sync::atomic::AtomicBool;
 
 #[repr(C, align(4096))]
 struct AArch64VCpuStack {
@@ -213,6 +215,7 @@ impl AArch64TrapFrame {
 pub struct AArch64VCpu {
     context: UnsafeCell<Box<AArch64VCpuContext>>,
     stack: Box<AArch64VCpuStack>,
+    pub psci_on: AtomicBool,
 }
 
 impl Debug for AArch64VCpu {
@@ -314,7 +317,7 @@ pub fn vmreturn() -> ! {
         let vcpu = current_vcpu();
         vcpu.activate_gpm();
         let trapframe = vcpu.arch.trapframe();
-        _trapframe_ptr = &*trapframe as *const _ as u64;
+        _trapframe_ptr = &*trapframe as *const _;
     }
     unsafe {
         AArch64TrapFrame::__vm_entry(_trapframe_ptr as _);
@@ -329,6 +332,20 @@ pub fn arch_switch_to_vcpu(vcpu: Arc<VCpu>) -> ! {
     unsafe {
         AArch64VCpuContext::__switch_to(_context_ptr as _);
     }
+}
+
+pub fn arch_wakeup_vcpu(vcpu: Arc<VCpu>) -> isize {
+    if vcpu.arch.psci_on.load(core::sync::atomic::Ordering::SeqCst) {
+        error!("PSCI: vcpu {} is already on", vcpu.id);
+        return -4;
+    }
+
+    add_vcpu_to_scheduler(vcpu.clone());
+    vcpu.arch
+        .psci_on
+        .store(true, core::sync::atomic::Ordering::SeqCst);
+
+    0
 }
 
 unsafe impl Sync for AArch64VCpu {}

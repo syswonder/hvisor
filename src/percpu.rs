@@ -35,7 +35,7 @@ pub struct PerCpu {
     pub arch_cpu: ArchCpu,
     pub zone: Option<Arc<RwLock<Zone>>>,
     pub ctrl_lock: Mutex<()>,
-    pub vcpu: Option<Arc<VCpu>>,
+    pub current_vcpu: Option<Arc<VCpu>>,
     pub boot_cpu: bool,
     // percpu stack
 }
@@ -52,7 +52,7 @@ impl PerCpu {
                 arch_cpu: ArchCpu::new(cpu_id),
                 zone: None,
                 ctrl_lock: Mutex::new(()),
-                vcpu: None,
+                current_vcpu: None,
                 boot_cpu: false,
             })
         };
@@ -77,14 +77,14 @@ impl PerCpu {
         }
     }
 
-    pub fn vcpu(&self) -> Option<Arc<VCpu>> {
+    pub fn current_vcpu(&self) -> Option<Arc<VCpu>> {
         let _lock = self.ctrl_lock.lock();
-        return self.vcpu.clone();
+        return self.current_vcpu.clone();
     }
 
-    pub fn set_vcpu(&mut self, vcpu: Arc<VCpu>) {
+    pub fn set_current_vcpu(&mut self, vcpu: Arc<VCpu>) {
         let _lock = self.ctrl_lock.lock();
-        self.vcpu = Some(vcpu);
+        self.current_vcpu = Some(vcpu);
     }
 }
 

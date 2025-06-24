@@ -55,10 +55,10 @@ fn scheduler() -> &'static Scheduler {
     SCHEDULER.get().unwrap()
 }
 
-pub fn add_vcpu(vcpu: Arc<VCpu>) {
+pub fn add_vcpu_to_scheduler(vcpu: Arc<VCpu>) {
     scheduler().add_vcpu(vcpu);
 }
 
-pub fn run_next() {
+pub fn scheduler_run_next() {
     scheduler().run_next();
 }
