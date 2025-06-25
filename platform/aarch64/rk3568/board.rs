@@ -168,12 +168,12 @@ pub const ROOT_ZONE_IRQS: [u32; 20] = [
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     gic_version: 3,
     gic_config: GicConfig::Gicv3(Gicv3Config {
-        gicd_base: 0xfe600000,
+        gicd_base: 0xfd400000,
         gicd_size: 0x10000,
-        gicr_base: 0xfe680000,
-        gicr_size: 0x100000,
-        gits_base: 0x8080000,
-        gits_size: 0x20000,
+        gicr_base: 0xfd460000,
+        gicr_size: 0xc0000,
+        gits_base: 0x0,
+        gits_size: 0x0,
     }),
 };
 
