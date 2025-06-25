@@ -15,7 +15,9 @@
 //
 use core::ptr;
 
-use spin::{mutex::Mutex, Once};
+use aarch64_cpu::registers::DAIF::A;
+use alloc::{sync::Arc, vec::Vec};
+use spin::{mutex::Mutex, Once, RwLock};
 
 use crate::{
     consts::MAX_ZONE_NUM, device::irqchip::gicv3::gicr::enable_one_lpi, memory::Frame,
@@ -39,12 +41,15 @@ pub const GITS_BASER: usize = 0x0100; // itt, desc
 pub const GITS_COLLECTION_BASER: usize = GITS_BASER + 0x8;
 pub const GITS_TRANSLATER: usize = 0x10000 + 0x0040; // to signal an interrupt, written by devices
 
+pub const CMDQ_PAGE_SIZE: usize = 0x1000; // 4KB
+pub const CMDQ_PAGES_NUM: usize = 16; // 16 pages, 64KB
 pub const PER_CMD_BYTES: usize = 0x20;
 pub const PER_CMD_QWORD: usize = PER_CMD_BYTES >> 3;
 
-fn ring_ptr_update(val: usize) -> usize {
-    if val >= 0x10000 {
-        val - 0x10000
+fn ring_ptr_update(val: usize, page_num: usize) -> usize {
+    let total_size = CMDQ_PAGE_SIZE * page_num;
+    if val >= total_size {
+        val - total_size
     } else {
         val
     }
@@ -105,11 +110,12 @@ pub struct Cmdq {
     cbaser_list: [usize; MAX_ZONE_NUM],
     creadr_list: [usize; MAX_ZONE_NUM],
     cwriter_list: [usize; MAX_ZONE_NUM],
+    cmdq_page_num: [usize; MAX_ZONE_NUM],
 }
 
 impl Cmdq {
     fn new() -> Self {
-        let f = Frame::new_contiguous(16, 0).unwrap();
+        let f = Frame::new_contiguous(CMDQ_PAGES_NUM, 0).unwrap();
         trace!("its cmdq base: 0x{:x}", f.start_paddr());
         let r = Self {
             phy_addr: f.start_paddr(),
@@ -120,6 +126,7 @@ impl Cmdq {
             cbaser_list: [0; MAX_ZONE_NUM],
             creadr_list: [0; MAX_ZONE_NUM],
             cwriter_list: [0; MAX_ZONE_NUM],
+            cmdq_page_num: [0; MAX_ZONE_NUM],
         };
         r.init_real_cbaser();
         r
@@ -128,11 +135,12 @@ impl Cmdq {
     fn init_real_cbaser(&self) {
         let reg = host_gits_base() + GITS_CBASER;
         let writer = host_gits_base() + GITS_CWRITER;
-        let val = 0xb80000000000040f | self.phy_addr;
+        let mut val = 0xb800000000000400 | self.phy_addr;
+        val = val | (CMDQ_PAGES_NUM - 1); // 16 contigous 4KB pages
         let ctrl = host_gits_base() + GITS_CTRL;
         unsafe {
             let origin_ctrl = ptr::read_volatile(ctrl as *mut u64);
-            ptr::write_volatile(ctrl as *mut u64, origin_ctrl | 0xfffffffffffffffeu64); // turn off, vm will turn on this ctrl
+            ptr::write_volatile(ctrl as *mut u64, origin_ctrl & 0xfffffffffffffffeu64); // turn off, vm will turn on this ctrl
             ptr::write_volatile(reg as *mut u64, val as u64);
             ptr::write_volatile(writer as *mut u64, 0 as u64); // init cwriter
         }
@@ -142,6 +150,11 @@ impl Cmdq {
         assert!(zone_id < MAX_ZONE_NUM, "Invalid zone id!");
         self.cbaser_list[zone_id] = value;
         self.phy_base_list[zone_id] = value & 0xffffffffff000;
+        self.cmdq_page_num[zone_id] = (value & 0xff) + 1; // get the page num
+        info!(
+            "zone_id: {}, cmdq base: {:#x}, page num: {}",
+            zone_id, self.phy_base_list[zone_id], self.cmdq_page_num[zone_id]
+        );
     }
 
     fn read_baser(&self, zone_id: usize) -> usize {
@@ -151,7 +164,9 @@ impl Cmdq {
 
     fn set_cwriter(&mut self, zone_id: usize, value: usize) {
         assert!(zone_id < MAX_ZONE_NUM, "Invalid zone id!");
-        if value == 0 {
+        if value == self.creadr_list[zone_id] {
+            // if the off vmm gonna read is equal to the cwriter, it means that
+            // the first write cmd is not sent to the hw, so we ignore it.
             trace!("ignore first write");
         } else {
             self.insert_cmd(zone_id, value);
@@ -247,10 +262,16 @@ impl Cmdq {
         assert!(zone_id < MAX_ZONE_NUM, "Invalid zone id");
 
         let zone_addr = self.phy_base_list[zone_id];
-
         let origin_readr = self.creadr_list[zone_id];
+        let vm_page_num = self.cmdq_page_num[zone_id];
+        let vm_cmdq_size = CMDQ_PAGE_SIZE * vm_page_num;
 
-        let cmd_size = writer - origin_readr;
+        let cmd_size = if writer < origin_readr {
+            // cmdq wrap
+            (vm_cmdq_size - origin_readr) + writer
+        } else {
+            writer - origin_readr
+        };
         let cmd_num = cmd_size / PER_CMD_BYTES;
 
         trace!("cmd size: {:#x}, cmd num: {:#x}", cmd_size, cmd_num);
@@ -269,12 +290,13 @@ impl Cmdq {
                 }
             }
             vm_cmdq_addr += PER_CMD_BYTES;
-            vm_cmdq_addr = ring_ptr_update(vm_cmdq_addr - zone_addr) + zone_addr;
-            real_cmdq_addr = ring_ptr_update(real_cmdq_addr - self.phy_addr) + self.phy_addr;
+            vm_cmdq_addr = ring_ptr_update(vm_cmdq_addr - zone_addr, vm_page_num) + zone_addr;
+            real_cmdq_addr =
+                ring_ptr_update(real_cmdq_addr - self.phy_addr, CMDQ_PAGES_NUM) + self.phy_addr;
         }
 
         self.writer += cmd_size;
-        self.writer = ring_ptr_update(self.writer); // ring buffer ptr
+        self.writer = ring_ptr_update(self.writer, CMDQ_PAGES_NUM); // ring buffer ptr
         let cwriter = host_gits_base() + GITS_CWRITER;
         let readr = host_gits_base() + GITS_CREADR;
         unsafe {
@@ -296,57 +318,95 @@ impl Cmdq {
     }
 }
 
-pub static DT: Once<Mutex<DeviceTable>> = Once::new();
-pub static CMDQ: Once<Mutex<Cmdq>> = Once::new();
-pub static CT: Once<Mutex<CollectionTable>> = Once::new();
+static DT_LIST: RwLock<Vec<Arc<RwLock<DeviceTable>>>> = RwLock::new(vec![]);
+
+static CMDQ: Once<Mutex<Cmdq>> = Once::new();
+
+static CT_LIST: RwLock<Vec<Arc<RwLock<CollectionTable>>>> = RwLock::new(vec![]);
 
 pub fn gits_init() {
-    DT.call_once(|| Mutex::new(DeviceTable::new()));
     CMDQ.call_once(|| Mutex::new(Cmdq::new()));
-    CT.call_once(|| Mutex::new(CollectionTable::new()));
+    dt_list_init();
+    ct_list_init();
 }
 
-pub fn set_cbaser(value: usize) {
+fn dt_list_init() {
+    info!("Virtual Device Tables init!");
+    let mut list = DT_LIST.write();
+    if list.is_empty() {
+        for _ in 0..MAX_ZONE_NUM {
+            list.push(Arc::new(RwLock::new(DeviceTable::new())));
+        }
+    }
+}
+
+fn ct_list_init() {
+    info!("Virtual Collection Tables init!");
+    let mut list = CT_LIST.write();
+    if list.is_empty() {
+        for _ in 0..MAX_ZONE_NUM {
+            list.push(Arc::new(RwLock::new(CollectionTable::new())));
+        }
+    }
+}
+
+fn get_dt(zone_id: usize) -> Arc<RwLock<DeviceTable>> {
+    assert!(zone_id < MAX_ZONE_NUM, "Invalid zone_id for DeviceTable!");
+    let list = DT_LIST.read();
+    list[zone_id].clone()
+}
+
+fn get_ct(zone_id: usize) -> Arc<RwLock<CollectionTable>> {
+    assert!(zone_id < MAX_ZONE_NUM, "Invalid zone_id for CollectionTable!");
+    let list = CT_LIST.read();
+    list[zone_id].clone()
+}
+
+pub fn set_cbaser(value: usize, zone_id: usize) {
     let mut cmdq = CMDQ.get().unwrap().lock();
-    cmdq.set_cbaser(this_zone_id(), value);
+    cmdq.set_cbaser(zone_id, value);
 }
 
-pub fn read_cbaser() -> usize {
+pub fn read_cbaser(zone_id: usize) -> usize {
     let cmdq = CMDQ.get().unwrap().lock();
-    cmdq.read_baser(this_zone_id())
+    cmdq.read_baser(zone_id)
 }
 
-pub fn set_cwriter(value: usize) {
+pub fn set_cwriter(value: usize, zone_id: usize) {
     let mut cmdq = CMDQ.get().unwrap().lock();
-    cmdq.set_cwriter(this_zone_id(), value);
+    cmdq.set_cwriter(zone_id, value);
 }
 
-pub fn read_cwriter() -> usize {
+pub fn read_cwriter(zone_id: usize) -> usize {
     let mut cmdq = CMDQ.get().unwrap().lock();
-    cmdq.read_cwriter(this_zone_id())
+    cmdq.read_cwriter(zone_id)
 }
 
-pub fn read_creadr() -> usize {
+pub fn read_creadr(zone_id: usize) -> usize {
     let mut cmdq = CMDQ.get().unwrap().lock();
-    cmdq.read_creadr(this_zone_id())
+    cmdq.read_creadr(zone_id)
 }
 
-pub fn read_dt_baser() -> usize {
-    let dt = DT.get().unwrap().lock();
+pub fn read_dt_baser(zone_id: usize) -> usize {
+    let binding = get_dt(zone_id);
+    let dt = binding.read();
     dt.read_baser()
 }
 
-pub fn set_dt_baser(value: usize) {
-    let mut dt = DT.get().unwrap().lock();
+pub fn set_dt_baser(value: usize, zone_id: usize) {
+    let binding = get_dt(zone_id);
+    let mut dt = binding.write();
     dt.set_baser(value);
 }
 
-pub fn read_ct_baser() -> usize {
-    let ct = CT.get().unwrap().lock();
+pub fn read_ct_baser(zone_id: usize) -> usize {
+    let binding = get_ct(zone_id);
+    let ct = binding.read();
     ct.read_baser()
 }
 
-pub fn set_ct_baser(value: usize) {
-    let mut ct = CT.get().unwrap().lock();
+pub fn set_ct_baser(value: usize, zone_id: usize) {
+    let binding = get_ct(zone_id);
+    let mut ct = binding.write();
     ct.set_baser(value);
 }
