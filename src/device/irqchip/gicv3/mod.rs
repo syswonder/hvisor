@@ -85,10 +85,9 @@ use core::arch::asm;
 use core::ptr::write_volatile;
 use core::sync::atomic::AtomicU64;
 
-use alloc::collections::btree_map::BTreeMap;
 use alloc::collections::vec_deque::VecDeque;
 use alloc::vec::Vec;
-use gicr::{init_lpi_prop, GICR_ISENABLER, GICR_SGI_BASE};
+use gicr::init_lpi_prop;
 use gits::gits_init;
 use spin::{Mutex, Once};
 
@@ -150,7 +149,7 @@ fn gicv3_clear_pending_irqs() {
 
 static TIMER_INTERRUPT_COUNTER: AtomicU64 = AtomicU64::new(0);
 // how often to print timer interrupt counter
-const TIMER_INTERRUPT_PRINT_TIMES: u64 = 50;
+const TIMER_INTERRUPT_PRINT_INTERVAL: u64 = 50;
 
 pub fn gicv3_handle_irq_el1() {
     while let Some(irq_id) = pending_irq() {
@@ -172,10 +171,10 @@ pub fn gicv3_handle_irq_el1() {
                 // virtual timer interrupt
                 TIMER_INTERRUPT_COUNTER.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
                 if TIMER_INTERRUPT_COUNTER.load(core::sync::atomic::Ordering::SeqCst)
-                    % TIMER_INTERRUPT_PRINT_TIMES
+                    % TIMER_INTERRUPT_PRINT_INTERVAL
                     == 0
                 {
-                    debug!(
+                    trace!(
                         "Virtual timer interrupt, counter = {}",
                         TIMER_INTERRUPT_COUNTER.load(core::sync::atomic::Ordering::SeqCst)
                     );
@@ -185,7 +184,7 @@ pub fn gicv3_handle_irq_el1() {
                 handle_maintenace_interrupt();
             } else if irq_id > 31 {
                 //inject phy irq
-                debug!("*** get spi_irq id = {}", irq_id);
+                trace!("*** get spi_irq id = {}", irq_id);
             } else {
                 warn!("not konw irq id = {}", irq_id);
             }

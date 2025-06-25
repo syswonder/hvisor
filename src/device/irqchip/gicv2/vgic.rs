@@ -110,7 +110,7 @@ impl Zone {
 }
 
 pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> {
-    base..(base + (n - 1) * size)
+    base..(base + n * size)
 }
 
 // extend from gicv3, support half-word and byte access.
