@@ -13,7 +13,7 @@
 //
 // Authors:
 //
-use crate::{arch::zone::HvArchZoneConfig, config::*};
+use crate::{arch::zone::{HvArchZoneConfig,GicConfig,Gicv3Config}, config::*};
 
 // [   17.796762]   node   0: [mem 0x0000000000200000-0x000000000047ffff]
 // [   17.797335]   node   0: [mem 0x0000000000480000-0x000000000087ffff]

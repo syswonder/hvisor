@@ -14,8 +14,11 @@
 // Authors:
 //
 use crate::{arch::zone::{HvArchZoneConfig,GicConfig,Gicv3Config}, config::*};
-pub const BOARD_NAME: &str = "qemu-givc3";
+
+pub const BOARD_NAME: &str = "qemu-gicv3";
+
 pub const BOARD_NCPUS: usize = 4;
+
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0xa0000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0xa0400000;
 pub const ROOT_ZONE_ENTRY: u64 = 0xa0400000;

@@ -14,7 +14,10 @@
 // Authors:
 //    Hangqi Ren <2572131118@qq.com>
 use crate::{arch::zone::{HvArchZoneConfig,GicConfig,Gicv2Config}, config::*};
+
 pub const BOARD_NAME: &str = "qemu-gicv2";
+
+pub const BOARD_NCPUS: usize = 4;
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0xa0000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0xa0400000;
@@ -62,6 +65,7 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
         gicv_size: 0x10000,
     }),
 };
+
 
 pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
     ecam_base: 0x4010000000,

@@ -14,7 +14,7 @@
 // Authors:
 //
 
-use crate::{arch::zone::HvArchZoneConfig, config::*};
+use crate::{arch::zone::{HvArchZoneConfig,GicConfig,Gicv3Config}, config::*};
 
 pub const BOARD_NAME: &str = "ok6254";
 pub const BOARD_NCPUS: usize = 4;

@@ -13,7 +13,7 @@
 //
 // Authors:
 //
-use crate::{arch::zone::HvArchZoneConfig, config::*};
+use crate::{arch::zone::{HvArchZoneConfig,GicConfig,Gicv3Config}, config::*};
 
 pub const BOARD_NAME: &str = "imx8mp";
 
@@ -75,13 +75,13 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 8] = [
         virtual_start: 0x32c00000,
         size: 0x400000,
     }, // hdmi
-       // bus@30800000
-       // HvConfigMemoryRegion {
-       //     mem_type: MEM_TYPE_IO,
-       //     physical_start: 0x30890000,
-       //     virtual_start: 0x30890000,
-       //     size: 0x1000,
-       // }, // serial
+    // bus@30800000
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0x30890000,
+    //     virtual_start: 0x30890000,
+    //     size: 0x1000,
+    // }, // serial
 ];
 
 pub const ROOT_ZONE_IRQS: [u32; 28] = [

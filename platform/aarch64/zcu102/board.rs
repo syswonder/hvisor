@@ -12,9 +12,9 @@
 //      https://www.syswonder.org
 //
 // Authors:
-//
+//    Hangqi Ren <2572131118@qq.com>
 use crate::config::HvConfigMemoryRegion;
-use crate::{arch::zone::HvArchZoneConfig, config::*};
+use crate::{arch::zone::{HvArchZoneConfig,GicConfig,Gicv2Config}, config::*};
 
 pub const BOARD_NAME: &str = "zcu102";
 
@@ -82,6 +82,5 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
         gicv_size: 0x20000,
     }),
 };
-
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
