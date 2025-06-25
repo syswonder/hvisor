@@ -71,6 +71,11 @@ pub fn primary_init_early() {
             GICV2.call_once(|| {
                 Gicv2 {
                     gicd_base: gicv2_config.gicd_base,
+                    /*
+                     * Some boards have the GIC CPU interface registers alias, which will overlap DIR register, so we need to add an offset to
+                     * find the last gic cpu alias region.
+                     * ref: https://github.com/Xilinx/qemu-devicetrees/commit/09d4c3200538dc90082fbda9289e2af9794b9a28
+                     */
                     gicc_base: gicv2_config.gicc_base + gicv2_config.gicc_offset,
                     gich_base: gicv2_config.gich_base,
                     gicv_base: gicv2_config.gicv_base,

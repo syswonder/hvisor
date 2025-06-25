@@ -154,6 +154,7 @@ const TIMER_INTERRUPT_PRINT_INTERVAL: u64 = 50;
 pub fn gicv3_handle_irq_el1() {
     while let Some(irq_id) = pending_irq() {
         if irq_id < 8 {
+            trace!("sgi get {}, try to handle...", irq_id);
             deactivate_irq(irq_id);
             let mut ipi_handled = false;
             if irq_id == SGI_IPI_ID as _ {
