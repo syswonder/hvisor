@@ -357,7 +357,10 @@ fn get_dt(zone_id: usize) -> Arc<RwLock<DeviceTable>> {
 }
 
 fn get_ct(zone_id: usize) -> Arc<RwLock<CollectionTable>> {
-    assert!(zone_id < MAX_ZONE_NUM, "Invalid zone_id for CollectionTable!");
+    assert!(
+        zone_id < MAX_ZONE_NUM,
+        "Invalid zone_id for CollectionTable!"
+    );
     let list = CT_LIST.read();
     list[zone_id].clone()
 }
