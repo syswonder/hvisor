@@ -17,7 +17,7 @@ use alloc::sync::Arc;
 
 use super::{gicd::GICD_LOCK, is_spi};
 use crate::{
-    arch::zone::HvArchZoneConfig,
+    arch::zone::{HvArchZoneConfig, GicConfig, Gicv2Config, Gicv3Config},
     consts::MAX_CPU_NUM,
     device::irqchip::gicv3::{
         gicd::*, gicr::*, gits::*, host_gicd_base, host_gicr_base, host_gits_base,
@@ -31,22 +31,31 @@ use crate::{
 };
 
 pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> {
-    base..(base + n * size)
+    base..(base + (n - 1) * size)
 }
 
 impl Zone {
     pub fn vgicv3_mmio_init(&mut self, arch: &HvArchZoneConfig) {
-        if arch.gicd_base == 0 || arch.gicr_base == 0 {
-            panic!("vgicv3_mmio_init: gicd_base or gicr_base is null");
-        }
+        match arch.gic_config {
+            GicConfig::Gicv2(_) => {
+                panic!("vgicv3_mmio_init: GICv2 is not supported in this function");
+            }
+            GicConfig::Gicv3(ref gicv3_config) => {
+                // GICv3 specific initialization
+                info!("Initializing GICv3 MMIO regions for zone {}", self.id);
+                if gicv3_config.gicd_base == 0 || gicv3_config.gicr_base == 0 {
+                    panic!("vgicv3_mmio_init: gicd_base or gicr_base is null");
+                }
 
-        self.mmio_region_register(arch.gicd_base, arch.gicd_size, vgicv3_dist_handler, 0);
-        self.mmio_region_register(arch.gits_base, arch.gits_size, vgicv3_its_handler, 0);
+                self.mmio_region_register(gicv3_config.gicd_base, gicv3_config.gicd_size, vgicv3_dist_handler, 0);
+                self.mmio_region_register(gicv3_config.gits_base, gicv3_config.gits_size, vgicv3_its_handler, 0);
 
-        for cpu in 0..MAX_CPU_NUM {
-            let gicr_base = arch.gicr_base + cpu * PER_GICR_SIZE;
-            debug!("registering gicr {} at {:#x?}", cpu, gicr_base);
-            self.mmio_region_register(gicr_base, PER_GICR_SIZE, vgicv3_redist_handler, cpu);
+                for cpu in 0..MAX_CPU_NUM {
+                    let gicr_base = gicv3_config.gicr_base + cpu * PER_GICR_SIZE;
+                    debug!("registering gicr {} at {:#x?}", cpu, gicr_base);
+                    self.mmio_region_register(gicr_base, PER_GICR_SIZE, vgicv3_redist_handler, cpu);
+                }
+            }
         }
     }
 
@@ -205,19 +214,19 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
             || reg == GICR_SGI_BASE + GICR_ICACTIVER
             || reg_range(GICR_SGI_BASE + GICR_IPRIORITYR, 8, 4).contains(&reg)
             || reg_range(GICR_SGI_BASE + GICR_ICFGR, 2, 4).contains(&reg) =>
-        {
-            if Arc::ptr_eq(&this_zone(), get_cpu_data(cpu).zone.as_ref().unwrap()) {
-                // avoid linux disable maintenance interrupt
-                if reg == GICR_SGI_BASE + GICR_ICENABLER {
-                    mmio.value &= !(1 << MAINTENACE_INTERRUPT);
-                    mmio.value &= !(1 << SGI_IPI_ID);
+            {
+                if Arc::ptr_eq(&this_zone(), get_cpu_data(cpu).zone.as_ref().unwrap()) {
+                    // avoid linux disable maintenance interrupt
+                    if reg == GICR_SGI_BASE + GICR_ICENABLER {
+                        mmio.value &= !(1 << MAINTENACE_INTERRUPT);
+                        mmio.value &= !(1 << SGI_IPI_ID);
+                    }
+                    // ignore access to foreign redistributors
+                    mmio_perform_access(gicr_base, mmio);
+                } else {
+                    trace!("*** gicv3_gicr_mmio_handler: ignore access to foreign redistributors ***");
                 }
-                // ignore access to foreign redistributors
-                mmio_perform_access(gicr_base, mmio);
-            } else {
-                trace!("*** gicv3_gicr_mmio_handler: ignore access to foreign redistributors ***");
             }
-        }
         _ => {}
     }
     HvResult::Ok(())
@@ -256,7 +265,7 @@ fn vgicv3_dist_misc_access(mmio: &mut MMIOAccess, gicd_base: usize) -> HvResult 
             mmio_perform_access(gicd_base, mmio);
         }
     } else {
-        todo!("vgicv3_dist_misc_access: MMIO.Address = {:#x?}", reg)
+        todo!()
     }
 
     Ok(())
@@ -280,9 +289,9 @@ pub fn vgicv3_dist_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
             || reg_range(GICD_ISPENDR, 32, 4).contains(&reg)
             || reg_range(GICD_ICACTIVER, 32, 4).contains(&reg)
             || reg_range(GICD_ISACTIVER, 32, 4).contains(&reg) =>
-        {
-            restrict_bitmask_access(mmio, (reg & 0x7f) / 4, 1, true, gicd_base)
-        }
+            {
+                restrict_bitmask_access(mmio, (reg & 0x7f) / 4, 1, true, gicd_base)
+            }
         reg if reg_range(GICD_IGROUPR, 32, 4).contains(&reg) => {
             restrict_bitmask_access(mmio, (reg & 0x7f) / 4, 1, false, gicd_base)
         }
@@ -312,9 +321,6 @@ pub fn vgicv3_its_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
         }
         GITS_CBASER => {
             if mmio.is_write {
-                if this_zone_id() == 0 {
-                    mmio_perform_access(gits_base, mmio);
-                }
                 set_cbaser(mmio.value);
                 trace!("write GITS_CBASER: {:#x}", mmio.value);
             } else {

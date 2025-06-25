@@ -146,19 +146,15 @@ pub const ROOT_ZONE_IRQS: [u32; 29] = [
 ];
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
-    gicd_base: 0xfe600000,
-    gicd_size: 0x10000,
-    gicr_base: 0xfe680000,
-    gicr_size: 0x100000,
-    gicc_base: 0x8010000,
-    gicc_size: 0x10000,
-    gicc_offset: 0x0,
-    gich_base: 0x8030000,
-    gich_size: 0x10000,
-    gicv_base: 0x8040000,
-    gicv_size: 0x10000,
-    gits_base: 0x8080000,
-    gits_size: 0x20000,
+    gic_version: 3,
+    gic_config: GicConfig::Gicv3(Gicv3Config {
+        gicd_base: 0xfe600000,
+        gicd_size: 0x10000,
+        gicr_base: 0xfe680000,
+        gicr_size: 0x100000,
+        gits_base: 0x8080000,
+        gits_size: 0x20000,
+    }),
 };
 
 pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {

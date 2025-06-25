@@ -12,7 +12,7 @@
 //      https://www.syswonder.org
 //
 // Authors:
-//
+//    Hangqi Ren <2572131118@qq.com>
 #![allow(unused_variables)]
 #![allow(dead_code)]
 use crate::device::irqchip::gicv2::gic_ref::GicRef;
@@ -22,6 +22,7 @@ use crate::device::irqchip::gicv2::GICV2;
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite};
+use spin::Once;
 pub const GICV2_MAX_LIST_REGS_NUM: usize = 64;
 pub const GICV2_GICH_HCR_EN: u32 = 0x1;
 pub const GICV2_GICH_VMCR_VEM: u32 = 0x1 << 9;
@@ -67,8 +68,18 @@ register_structs! {
 }
 unsafe impl Sync for GicHypervisorInterface {}
 // Each CPU holds one GICH.
-pub static GICH: GicRef<GicHypervisorInterface> =
-    unsafe { GicRef::new(GICV2.gich_base as *const GicHypervisorInterface) };
+pub static GICH: Once<GicRef<GicHypervisorInterface>> = Once::new();
+    // unsafe { GicRef::new(GICV2.gich_base as *const GicHypervisorInterface) };
+
+pub fn gich_init(gich_base: usize) {
+    unsafe {
+        GICH.call_once(|| {
+            GicRef::new(gich_base as *const GicHypervisorInterface)
+        });
+    }
+
+}
+
 
 impl GicHypervisorInterface {
     // init GICH for each CPU.

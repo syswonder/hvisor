@@ -12,9 +12,8 @@
 //      https://www.syswonder.org
 //
 // Authors:
-//
+//    Hangqi Ren <2572131118@qq.com>
 use crate::arch::cpu::this_cpu_id;
-use crate::consts;
 use crate::device::irqchip::gicv2::gicc::GICC;
 use crate::device::irqchip::gicv2::gicd::GICV2_SGIS_NUM;
 use crate::device::irqchip::gicv2::gich::{
@@ -31,7 +30,7 @@ use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use spin::{Mutex, Once};
 
-pub const MAX_CPU_NUM: usize = consts::MAX_CPU_NUM;
+pub const MAX_CPU_NUM: usize = 8;
 pub const MAINTENACE_INTERRUPT: u64 = 25;
 
 pub fn gicv2_handle_irq() {
@@ -57,7 +56,7 @@ pub fn gicv2_handle_irq() {
 }
 
 pub fn get_pending_irq() -> Option<usize> {
-    let iar = GICC.get_iar() as usize;
+    let iar = GICC.get().unwrap().get_iar() as usize;
     let irq = iar & 0x3ff;
     if irq >= 1023 {
         None
@@ -68,22 +67,22 @@ pub fn get_pending_irq() -> Option<usize> {
 
 // deactivate irq: GIC doesn't care CPU ID.
 pub fn deactivate_irq(irq_id: usize) {
-    GICC.set_eoir(irq_id as u32);
+    GICC.get().unwrap().set_eoir(irq_id as u32);
     if irq_id < GICV2_SGIS_NUM {
-        GICC.set_dir(irq_id as u32);
+        GICC.get().unwrap().set_dir(irq_id as u32);
     }
 }
 
 pub fn change_underflow_maintenance(is_enable: bool) {
     trace!("enable_maintenace_interrupt, is_enable is {}", is_enable);
-    let mut hcr = GICH.get_hcr();
+    let mut hcr = GICH.get().unwrap().get_hcr();
     trace!("hcr is {}", hcr);
     if is_enable {
         hcr |= GICV2_GICH_HCR_UIE;
     } else {
         hcr &= !GICV2_GICH_HCR_UIE;
     }
-    GICH.set_hcr(hcr);
+    GICH.get().unwrap().set_hcr(hcr);
 }
 
 fn handle_maintenace_interrupt() {
@@ -103,8 +102,8 @@ fn handle_maintenace_interrupt() {
 }
 
 pub fn inject_irq(irq_id: usize, is_sgi: bool) -> bool {
-    let elrsr: u64 = (GICH.get_elrsr(1) as u64) << 32 | GICH.get_elrsr(0) as u64;
-    let lr_num: isize = GICH.get_lr_num() as isize;
+    let elrsr: u64 = (GICH.get().unwrap().get_elrsr(1) as u64) << 32 | GICH.get().unwrap().get_elrsr(0) as u64;
+    let lr_num: isize = GICH.get().unwrap().get_lr_num() as isize;
     let lr_pint_mask: usize = 0x3ff << 10;
     let mut free_lr: isize = -1;
     for i in 0..lr_num {
@@ -112,7 +111,7 @@ pub fn inject_irq(irq_id: usize, is_sgi: bool) -> bool {
             free_lr = i;
             continue;
         }
-        let lr = GICH.get_lr(i as usize) as usize;
+        let lr = GICH.get().unwrap().get_lr(i as usize) as usize;
         let pint = (lr & lr_pint_mask) >> 10;
         if pint == irq_id {
             trace!("virtual irq {} enables again", irq_id);
@@ -122,7 +121,7 @@ pub fn inject_irq(irq_id: usize, is_sgi: bool) -> bool {
     if free_lr == -1 {
         warn!("no free lr");
         for i in 0..lr_num {
-            let lr = GICH.get_lr(i as usize) as usize;
+            let lr = GICH.get().unwrap().get_lr(i as usize) as usize;
             warn!("lr[{}]: {:#x}", i, lr);
         }
         PENDING_VIRQS
@@ -147,7 +146,7 @@ pub fn inject_irq(irq_id: usize, is_sgi: bool) -> bool {
             // config hw bit 31
             val = val | GICV2_GICH_LR_HW;
         }
-        GICH.set_lr(free_lr as usize, val as u32);
+        GICH.get().unwrap().set_lr(free_lr as usize, val as u32);
         true
     }
 }

@@ -12,8 +12,8 @@
 //      https://www.syswonder.org
 //
 // Authors:
-//
-use crate::arch::zone::HvArchZoneConfig;
+//    Hangqi Ren <2572131118@qq.com>
+use crate::arch::zone::{HvArchZoneConfig,GicConfig,Gicv2Config};
 use crate::device::irqchip::gicv2::gicd::{
     get_max_int_num, GICD, GICD_CTRL_REG_OFFSET, GICD_ICACTIVER_REG_OFFSET,
     GICD_ICENABLER_REG_OFFSET, GICD_ICFGR_REG_OFFSET, GICD_ICPENDR_REG_OFFSET,
@@ -33,36 +33,51 @@ use crate::percpu::this_zone;
 /// reference:
 /// 1. gicv2 spec : https://www.cl.cam.ac.uk/research/srg/han/ACS-P35/zynq/arm_gic_architecture_specification.pdf
 use crate::zone::Zone;
-
 const GICV2_REG_WIDTH: usize = 4;
 
 impl Zone {
     // trap all Guest OS accesses to the GIC Distributor registers.
     pub fn vgicv2_mmio_init(&mut self, arch: &HvArchZoneConfig) {
-        if arch.gicd_base == 0 {
-            panic!("vgicv2_mmio_init: gicd_base is null");
+        match arch.gic_config {
+            GicConfig::Gicv3(_) => {
+                panic!("GICv3 is not supported in this version of hvisor");
+            }
+            GicConfig::Gicv2(ref gicv2_config) => {
+                if gicv2_config.gicd_base == 0 {
+                    panic!("vgicv2_mmio_init: gicd_base is null");
+                }
+                info!("Initializing GICv2 MMIO regions for zone {}", self.id);
+                self.mmio_region_register(gicv2_config.gicd_base, gicv2_config.gicd_size, vgicv2_dist_handler, 0);
+            }
         }
-        self.mmio_region_register(arch.gicd_base, arch.gicd_size, vgicv2_dist_handler, 0);
     }
 
     // remap the GIC CPU interface register address space to point to the GIC virtual CPU interface registers.
     pub fn vgicv2_remap_init(&mut self, arch: &HvArchZoneConfig) {
-        if arch.gicc_base == 0 || arch.gicv_base == 0 || arch.gicc_size == 0 || arch.gicv_size == 0
-        {
-            panic!("vgicv2_remap_init: gic related address is null");
+        match arch.gic_config {
+            GicConfig::Gicv3(_) => {
+                panic!("GICv3 is not supported in this version of hvisor");
+            }
+            GicConfig::Gicv2(ref gicv2_config) => {
+                if gicv2_config.gicc_base == 0 || gicv2_config.gicv_base == 0 || gicv2_config.gicc_size == 0 || gicv2_config.gicv_size == 0
+                {
+                    panic!("vgicv2_remap_init: gic related address is null");
+                }
+                if gicv2_config.gicv_size != gicv2_config.gicc_size {
+                    panic!("vgicv2_remap_init: gicv_size not equal to gicc_size");
+                }
+                info!("Remaping GICv2 GICV MMIO regions to GICC MMIO regions for zone {}", self.id);
+                // map gicv memory region to gicc memory region.
+                self.gpm
+                    .insert(MemoryRegion::new_with_offset_mapper(
+                        gicv2_config.gicc_base,
+                        gicv2_config.gicv_base,
+                        gicv2_config.gicc_size,
+                        MemFlags::READ | MemFlags::WRITE,
+                    ))
+                    .unwrap();
+            }
         }
-        if arch.gicv_size != arch.gicc_size {
-            panic!("vgicv2_remap_init: gicv_size not equal to gicc_size");
-        }
-        // map gicv memory region to gicc memory region.
-        self.gpm
-            .insert(MemoryRegion::new_with_offset_mapper(
-                arch.gicc_base,
-                arch.gicv_base,
-                arch.gicc_size,
-                MemFlags::READ | MemFlags::WRITE,
-            ))
-            .unwrap();
     }
 
     // store the interrupt number in the irq_bitmap.
@@ -95,7 +110,7 @@ impl Zone {
 }
 
 pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> {
-    base..(base + n * size)
+    base..(base + (n - 1) * size)
 }
 
 // extend from gicv3, support half-word and byte access.
@@ -229,13 +244,13 @@ pub fn set_sgi_irq(irq_id: usize, target_list: usize, routing_mode: usize) {
         target_list,
         routing_mode
     );
-    trace!("ISENABLER: {:#x}", GICD.get_isenabler(0));
-    GICD.set_sgir(val as u32);
+    trace!("ISENABLER: {:#x}", GICD.get().unwrap().get_isenabler(0));
+    GICD.get().unwrap().set_sgir(val as u32);
 }
 
 // Handle GIC Distributor register accesses.
 pub fn vgicv2_dist_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
-    let gicd_base = GICV2.gicd_base;
+    let gicd_base = GICV2.get().unwrap().gicd_base;
     let reg = mmio.address;
 
     match reg {

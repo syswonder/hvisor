@@ -12,7 +12,7 @@
 //      https://www.syswonder.org
 //
 // Authors:
-//
+//    Hangqi Ren <2572131118@qq.com>
 #![allow(unused_variables)]
 #![allow(dead_code)]
 use crate::device::irqchip::gicv2::gic_ref::GicRef;
@@ -21,7 +21,7 @@ use crate::device::irqchip::gicv2::GICV2;
 /// author : ForeverYolo
 /// reference:
 /// 1. gicv2 spec : https://www.cl.cam.ac.uk/research/srg/han/ACS-P35/zynq/arm_gic_architecture_specification.pdf
-use spin::Mutex;
+use spin::{Mutex, Once};
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite};
@@ -100,9 +100,13 @@ register_structs! {
 unsafe impl Sync for GicDistributer {}
 
 // GICD is globally unique.
-pub static GICD: GicRef<GicDistributer> =
-    unsafe { GicRef::new(GICV2.gicd_base as *const GicDistributer) };
+pub static GICD: Once<GicRef<GicDistributer>> = Once::new();
+    // unsafe { GicRef::new(GICV2.gicd_base as *const GicDistributer) };
 pub static GICD_LOCK: Mutex<()> = Mutex::new(());
+
+pub fn gicd_init(gicd_base: usize) {
+    GICD.call_once(|| unsafe { GicRef::new(gicd_base as *const GicDistributer) });
+}
 
 impl GicDistributer {
     // init GICD globally and enable it.
@@ -187,7 +191,7 @@ impl GicDistributer {
 
 // Get the maximum number of interrupt IDs that the GIC supports.
 pub fn get_max_int_num() -> usize {
-    let value = (GICD.TYPER.get() & 0b11111) as usize;
+    let value = (GICD.get().unwrap().TYPER.get() & 0b11111) as usize;
     (value + 1) * 32
 }
 
@@ -198,9 +202,9 @@ pub fn is_spi(irqn: usize) -> bool {
 
 // Get the base address of GICD.
 pub fn host_gicd_base() -> usize {
-    GICV2.gicd_base
+    GICV2.get().unwrap().gicd_base
 }
 
 pub fn set_ispender(index: usize, value: u32) {
-    GICD.set_ispender(index, value);
+    GICD.get().unwrap().set_ispender(index, value);
 }

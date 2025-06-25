@@ -1,19 +1,3 @@
-// Copyright (c) 2025 Syswonder
-// hvisor is licensed under Mulan PSL v2.
-// You can use this software according to the terms and conditions of the Mulan PSL v2.
-// You may obtain a copy of Mulan PSL v2 at:
-//     http://license.coscl.org.cn/MulanPSL2
-// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
-// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
-// FIT FOR A PARTICULAR PURPOSE.
-// See the Mulan PSL v2 for more details.
-//
-// Syswonder Website:
-//      https://www.syswonder.org
-//
-// Authors:
-//
-
 use crate::{arch::zone::HvArchZoneConfig, config::*};
 
 pub const BOARD_NAME: &str = "rk3568";
@@ -166,19 +150,15 @@ pub const ROOT_ZONE_IRQS: [u32; 20] = [
    0x84, 0x98, 0x40, 0x104, 0x105, 0x106, 0x107, 0x2d, 0x2e, 0x2b, 0x2a, 0x29, 0x33, 0x96, 0x11c, 0x44, 0x43, 0x42, 0x41, 0x8d];
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
-    gicd_base: 0xfd400000,
-    gicd_size: 0x10000,
-    gicr_base: 0xfd460000,
-    gicr_size: 0xc0000,
-    gicc_base: 0,
-    gicc_size: 0,
-    gicc_offset: 0x0,
-    gich_base: 0,
-    gich_size: 0,
-    gicv_base: 0,
-    gicv_size: 0,
-    gits_base: 0,
-    gits_size: 0,
+    gic_version: 3,
+    gic_config: GicConfig::Gicv3(Gicv3Config {
+        gicd_base: 0xfd400000,
+        gicd_size: 0x10000,
+        gicr_base: 0xfd460000,
+        gicr_size: 0xc0000,
+        gits_base: 0x0,
+        gits_size: 0x0,
+    }),
 };
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
 
