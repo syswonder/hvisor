@@ -13,7 +13,10 @@
 //
 // Authors:
 //
-use crate::{arch::zone::{HvArchZoneConfig,GicConfig,Gicv3Config}, config::*};
+use crate::{
+    arch::zone::{GicConfig, Gicv3Config, HvArchZoneConfig},
+    config::*,
+};
 
 pub const BOARD_NAME: &str = "qemu-gicv3";
 

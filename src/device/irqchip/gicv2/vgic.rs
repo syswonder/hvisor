@@ -13,7 +13,7 @@
 //
 // Authors:
 //    Hangqi Ren <2572131118@qq.com>
-use crate::arch::zone::{HvArchZoneConfig,GicConfig,Gicv2Config};
+use crate::arch::zone::{GicConfig, Gicv2Config, HvArchZoneConfig};
 use crate::device::irqchip::gicv2::gicd::{
     get_max_int_num, GICD, GICD_CTRL_REG_OFFSET, GICD_ICACTIVER_REG_OFFSET,
     GICD_ICENABLER_REG_OFFSET, GICD_ICFGR_REG_OFFSET, GICD_ICPENDR_REG_OFFSET,
@@ -47,7 +47,12 @@ impl Zone {
                     panic!("vgicv2_mmio_init: gicd_base is null");
                 }
                 info!("Initializing GICv2 MMIO regions for zone {}", self.id);
-                self.mmio_region_register(gicv2_config.gicd_base, gicv2_config.gicd_size, vgicv2_dist_handler, 0);
+                self.mmio_region_register(
+                    gicv2_config.gicd_base,
+                    gicv2_config.gicd_size,
+                    vgicv2_dist_handler,
+                    0,
+                );
             }
         }
     }
@@ -59,14 +64,20 @@ impl Zone {
                 panic!("GICv3 is not supported in this version of hvisor");
             }
             GicConfig::Gicv2(ref gicv2_config) => {
-                if gicv2_config.gicc_base == 0 || gicv2_config.gicv_base == 0 || gicv2_config.gicc_size == 0 || gicv2_config.gicv_size == 0
+                if gicv2_config.gicc_base == 0
+                    || gicv2_config.gicv_base == 0
+                    || gicv2_config.gicc_size == 0
+                    || gicv2_config.gicv_size == 0
                 {
                     panic!("vgicv2_remap_init: gic related address is null");
                 }
                 if gicv2_config.gicv_size != gicv2_config.gicc_size {
                     panic!("vgicv2_remap_init: gicv_size not equal to gicc_size");
                 }
-                info!("Remaping GICv2 GICV MMIO regions to GICC MMIO regions for zone {}", self.id);
+                info!(
+                    "Remaping GICv2 GICV MMIO regions to GICC MMIO regions for zone {}",
+                    self.id
+                );
                 // map gicv memory region to gicc memory region.
                 self.gpm
                     .insert(MemoryRegion::new_with_offset_mapper(

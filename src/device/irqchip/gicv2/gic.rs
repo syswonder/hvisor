@@ -102,7 +102,8 @@ fn handle_maintenace_interrupt() {
 }
 
 pub fn inject_irq(irq_id: usize, is_sgi: bool) -> bool {
-    let elrsr: u64 = (GICH.get().unwrap().get_elrsr(1) as u64) << 32 | GICH.get().unwrap().get_elrsr(0) as u64;
+    let elrsr: u64 =
+        (GICH.get().unwrap().get_elrsr(1) as u64) << 32 | GICH.get().unwrap().get_elrsr(0) as u64;
     let lr_num: isize = GICH.get().unwrap().get_lr_num() as isize;
     let lr_pint_mask: usize = 0x3ff << 10;
     let mut free_lr: isize = -1;

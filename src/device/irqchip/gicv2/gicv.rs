@@ -26,12 +26,9 @@ use crate::device::irqchip::gicv2::GICV2;
 use spin::Once;
 // Each CPU holds one GICV, and it has the same register layout as GICC.
 pub static GICV: Once<GicRef<GicCpuInterface>> = Once::new();
-    // unsafe { GicRef::new(GICV2.gicv_base as *const GicCpuInterface) };
 
 pub fn gicv_init(gicv_base: usize) {
     unsafe {
-        GICV.call_once(|| {
-            GicRef::new(gicv_base as *const GicCpuInterface)
-        });
+        GICV.call_once(|| GicRef::new(gicv_base as *const GicCpuInterface));
     }
 }

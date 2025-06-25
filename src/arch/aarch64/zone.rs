@@ -68,7 +68,6 @@ pub struct HvArchZoneConfig {
     pub gic_config: GicConfig,
 }
 
-
 #[repr(C, usize)]
 #[derive(Debug, Clone)]
 pub enum GicConfig {
@@ -100,4 +99,3 @@ pub struct Gicv3Config {
     pub gits_base: usize,
     pub gits_size: usize,
 }
-

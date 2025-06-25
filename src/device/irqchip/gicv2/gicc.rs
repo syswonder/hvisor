@@ -16,7 +16,6 @@
 #![allow(unused_variables)]
 #![allow(dead_code)]
 
-use spin::Once;
 use crate::device::irqchip::gicv2::gic_ref::GicRef;
 use crate::device::irqchip::gicv2::gicd::GICD;
 use crate::device::irqchip::gicv2::gich::{
@@ -24,6 +23,7 @@ use crate::device::irqchip::gicv2::gich::{
     GICV2_GICH_VMCR_VMGRP0EN,
 };
 use crate::device::irqchip::gicv2::GICV2;
+use spin::Once;
 /// gicc layout definition and functions for gicc operations.
 /// author : ForeverYolo
 /// reference:
@@ -86,13 +86,10 @@ unsafe impl Sync for GicCpuInterface {}
 
 // Each CPU holds one GICC.
 pub static GICC: Once<GicRef<GicCpuInterface>> = Once::new();
-    // unsafe { GicRef::new(GICV2.gicc_base as *const GicCpuInterface) };
 
 pub fn gicc_init(gicc_base: usize) {
     unsafe {
-        GICC.call_once(|| {
-            GicRef::new(gicc_base as *const GicCpuInterface)
-        });
+        GICC.call_once(|| GicRef::new(gicc_base as *const GicCpuInterface));
     }
 }
 

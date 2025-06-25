@@ -101,7 +101,6 @@ unsafe impl Sync for GicDistributer {}
 
 // GICD is globally unique.
 pub static GICD: Once<GicRef<GicDistributer>> = Once::new();
-    // unsafe { GicRef::new(GICV2.gicd_base as *const GicDistributer) };
 pub static GICD_LOCK: Mutex<()> = Mutex::new(());
 
 pub fn gicd_init(gicd_base: usize) {

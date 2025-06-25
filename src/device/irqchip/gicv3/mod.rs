@@ -34,13 +34,13 @@ use self::gicd::{enable_gic_are_ns, GICD_ICACTIVER, GICD_ICENABLER};
 use self::gicr::enable_ipi;
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::arch::cpu::this_cpu_id;
+use crate::arch::zone::{GicConfig, Gicv2Config, HvArchZoneConfig};
 use crate::config::root_zone_config;
 use crate::consts::MAX_CPU_NUM;
-
 use crate::event::check_events;
 use crate::hypercall::SGI_IPI_ID;
 use crate::zone::Zone;
-use crate::arch::zone::{HvArchZoneConfig,GicConfig,Gicv2Config};
+
 const ICH_HCR_UIE: u64 = 1 << 1;
 //TODO: add Distributor init
 pub fn gicc_init() {
@@ -390,7 +390,10 @@ pub fn primary_init_early() {
         }
         GicConfig::Gicv3(ref gicv3_config) => {
             if root_config.arch_config.gic_version != 3 {
-                panic!("GIC version mismatch, expected 3, got {}", root_config.arch_config.gic_version);
+                panic!(
+                    "GIC version mismatch, expected 3, got {}",
+                    root_config.arch_config.gic_version
+                );
             }
             info!("GICv3 detected");
             GIC.call_once(|| Gic {
@@ -401,9 +404,21 @@ pub fn primary_init_early() {
                 gits_base: gicv3_config.gits_base,
                 gits_size: gicv3_config.gits_size,
             });
-            info!("GIC Distributor base: {:#x}, size: {:#x}", GIC.get().unwrap().gicd_base, GIC.get().unwrap().gicd_size);
-            info!("GIC Redistributor base: {:#x}, size: {:#x}", GIC.get().unwrap().gicr_base, GIC.get().unwrap().gicr_size);
-            info!("GIC ITS base: {:#x}, size: {:#x}", GIC.get().unwrap().gits_base, GIC.get().unwrap().gits_size);
+            info!(
+                "GIC Distributor base: {:#x}, size: {:#x}",
+                GIC.get().unwrap().gicd_base,
+                GIC.get().unwrap().gicd_size
+            );
+            info!(
+                "GIC Redistributor base: {:#x}, size: {:#x}",
+                GIC.get().unwrap().gicr_base,
+                GIC.get().unwrap().gicr_size
+            );
+            info!(
+                "GIC ITS base: {:#x}, size: {:#x}",
+                GIC.get().unwrap().gits_base,
+                GIC.get().unwrap().gits_size
+            );
         }
     }
     init_lpi_prop();

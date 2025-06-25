@@ -13,21 +13,21 @@
 //
 // Authors:
 //    Hangqi Ren <2572131118@qq.com>
-use spin::Once;
+use crate::arch::zone::{GicConfig, Gicv2Config, HvArchZoneConfig};
 use crate::device::irqchip::gicv2::gic::MAX_CPU_NUM;
+use crate::device::irqchip::gicv2::gicc::gicc_init;
 /// The outer layer is defined using gicv2.
 /// author: ForeverYolo
 /// reference:
 /// 1. gicv2 spec : https://www.cl.cam.ac.uk/research/srg/han/ACS-P35/zynq/arm_gic_architecture_specification.pdf
 use crate::device::irqchip::gicv2::gicc::GICC;
-use crate::device::irqchip::gicv2::gicd::GICD;
 use crate::device::irqchip::gicv2::gicd::gicd_init;
-use crate::device::irqchip::gicv2::gicc::gicc_init;
+use crate::device::irqchip::gicv2::gicd::GICD;
 use crate::device::irqchip::gicv2::gich::gich_init;
 use crate::device::irqchip::gicv2::gicv::gicv_init;
 use crate::platform::ROOT_ARCH_ZONE_CONFIG;
 use crate::zone::Zone;
-use crate::arch::zone::{HvArchZoneConfig,GicConfig,Gicv2Config};
+use spin::Once;
 // GIC Distributor Definition.
 pub mod gicd;
 
@@ -65,7 +65,10 @@ pub fn primary_init_early() {
         }
         GicConfig::Gicv2(ref gicv2_config) => {
             if ROOT_ARCH_ZONE_CONFIG.gic_version != 2 {
-                panic!("GIC version mismatch, expected 2, got {}", ROOT_ARCH_ZONE_CONFIG.gic_version);
+                panic!(
+                    "GIC version mismatch, expected 2, got {}",
+                    ROOT_ARCH_ZONE_CONFIG.gic_version
+                );
             }
             info!("GICv2 detected");
             GICV2.call_once(|| {
@@ -85,11 +88,27 @@ pub fn primary_init_early() {
             gicc_init(gicv2_config.gicc_base + gicv2_config.gicc_offset);
             gich_init(gicv2_config.gich_base);
             gicv_init(gicv2_config.gicv_base);
-            info!("GIC Distributor base: {:#x}, size: {:#x}", GICV2.get().unwrap().gicd_base, gicv2_config.gicd_size);
-            info!("GIC CPU Interface base: {:#x}, size: {:#x}", GICV2.get().unwrap().gicc_base, gicv2_config.gicc_size);
+            info!(
+                "GIC Distributor base: {:#x}, size: {:#x}",
+                GICV2.get().unwrap().gicd_base,
+                gicv2_config.gicd_size
+            );
+            info!(
+                "GIC CPU Interface base: {:#x}, size: {:#x}",
+                GICV2.get().unwrap().gicc_base,
+                gicv2_config.gicc_size
+            );
             info!("GIC CPU Interface offset: {:#x}", gicv2_config.gicc_offset);
-            info!("GIC Hypervisor Interface base: {:#x}, size: {:#x}", GICV2.get().unwrap().gich_base, gicv2_config.gich_size);
-            info!("GIC Virtual CPU Interface base: {:#x}, size: {:#x}", GICV2.get().unwrap().gicv_base, gicv2_config.gicv_size);
+            info!(
+                "GIC Hypervisor Interface base: {:#x}, size: {:#x}",
+                GICV2.get().unwrap().gich_base,
+                gicv2_config.gich_size
+            );
+            info!(
+                "GIC Virtual CPU Interface base: {:#x}, size: {:#x}",
+                GICV2.get().unwrap().gicv_base,
+                gicv2_config.gicv_size
+            );
         }
     };
     gic::PENDING_VIRQS.call_once(|| gic::PendingIrqs::new(MAX_CPU_NUM));
