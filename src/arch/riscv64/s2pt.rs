@@ -15,8 +15,8 @@
 //
 #![allow(unused)]
 use super::{
-    csr::{write_csr, CSR_HGATP},
-    paging::{GenericPTE, Level3PageTable, PagingInstr},
+    csr::{write_csr, read_csr,  CSR_HGATP},
+    paging::{GenericPTE, Level4PageTable, PagingInstr},
 };
 use bit_field::BitField;
 use core::fmt;
@@ -72,10 +72,12 @@ impl From<DescriptorAttr> for MemFlags {
     }
 }
 
+
 impl From<MemFlags> for DescriptorAttr {
     fn from(flags: MemFlags) -> Self {
         let mut attr = Self::empty();
-        attr |= Self::VALID | Self::USER | Self::ACCESSED | Self::DIRTY;       // stage 2 page table must user
+        attr |= Self::VALID | Self::USER | Self::ACCESSED | Self::DIRTY | Self::READABLE | Self::WRITABLE;       // stage 2 page table must user
+
         if flags.contains(MemFlags::READ) {
             attr |= Self::READABLE;
         }
@@ -121,9 +123,9 @@ impl GenericPTE for PageTableEntry {
     }
 
     fn is_huge(&self) -> bool {
-        DescriptorAttr::from_bits_truncate(self.0).contains(DescriptorAttr::READABLE)
+        self.is_present() & (DescriptorAttr::from_bits_truncate(self.0).contains(DescriptorAttr::READABLE)
             | DescriptorAttr::from_bits_truncate(self.0).contains(DescriptorAttr::WRITABLE)
-            | DescriptorAttr::from_bits_truncate(self.0).contains(DescriptorAttr::EXECUTABLE)
+            | DescriptorAttr::from_bits_truncate(self.0).contains(DescriptorAttr::EXECUTABLE))
     }
 
     fn set_addr(&mut self, paddr: HostPhysAddr) {
@@ -132,9 +134,16 @@ impl GenericPTE for PageTableEntry {
 
     fn set_flags(&mut self, flags: MemFlags) {
         let mut attr: DescriptorAttr = flags.into();
-
+        attr |= DescriptorAttr::VALID;
+        // info!("set flags: {:#x?}", attr);
         self.0 = (attr.bits() & !PTE_PPN_MASK as u64) | (self.0 as u64 & PTE_PPN_MASK as u64);
     }
+
+    // fn set_accessed(&mut self) {
+    //     let mut attr: DescriptorAttr = flags.into();
+    //     attr |= DescriptorAttr::ACCESSED;
+    //     self.0 = (attr.bits() & !PTE_PPN_MASK as u64) | (self.0 as u64 & PTE_PPN_MASK as u64);
+    // }
 
     fn set_table(&mut self, paddr: HostPhysAddr) {
         self.set_addr(paddr);
@@ -168,17 +177,23 @@ pub struct S2PTInstr;
 
 impl PagingInstr for S2PTInstr {
     unsafe fn activate(root_paddr: HostPhysAddr) {
-        println!("guest stage2 PT activate");
+        info!("guest stage2 PT activate");
         unsafe {
-            let mut bits = 0usize;
-            let mode: usize = 8; //Mode::Sv39x4
+            let mut bits: usize = 0;
+            let mode: usize = 9;    // Mode::Sv39x4
             let vmid: usize = 0;
             bits.set_bits(60..64, mode as usize);
             bits.set_bits(44..58, vmid);
             bits.set_bits(0..44, root_paddr >> 12);
-            println!("HGATP: {:#x?}", bits);
             write_csr!(CSR_HGATP, bits);
-            //core::arch::asm!("hsfence.vvma");//not supported in rust
+            // info!("flush TLB: hfence.gvma, hfence.vvma");
+            let hgatp: usize = read_csr!(CSR_HGATP);
+            info!("HGATP after activation: {:#x?}", hgatp);
+
+            core::arch::asm!("hfence.gvma", options(nomem, nostack));
+            core::arch::asm!("hfence.vvma", options(nomem, nostack));
+
+        //     // core::arch::asm!("hfence.gvma");                            //not supported in rust
         }
     }
 
@@ -187,4 +202,5 @@ impl PagingInstr for S2PTInstr {
     }
 }
 
-pub type Stage2PageTable = Level3PageTable<HostPhysAddr, PageTableEntry, S2PTInstr>;
+// pub type Stage2PageTable = Level3PageTable<HostPhysAddr, PageTableEntry, S2PTInstr>;
+pub type Stage2PageTable = Level4PageTable<HostPhysAddr, PageTableEntry, S2PTInstr>;

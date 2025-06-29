@@ -12,13 +12,15 @@
 		timebase-frequency = <0xf4240>;
 
 		cpu@0 {
+			clock-frequency = <0x00>;
 			compatible = "eswin,eic770x\0riscv";
 			device_type = "cpu";
 			mmu-type = "riscv,sv48";
 			reg = <0x00>;
-			riscv,isa = "rv64imafdc";
+			riscv,isa = "rv64imafdc_zicsr_zifencei_zba_zbb_sscofpmf";
 			status = "okay";
 			timebase-frequency = <0xf4240>;
+			clocks = <0x03 0x1f4>;
 			phandle = <0x4a>;
 
 			interrupt-controller {
@@ -31,8 +33,11 @@
 	};
 
 	memory@80000000 {
+		compatible = "sifive,axi4-mem-port\0sifive,axi4-port\0sifive,mem-port";
 		device_type = "memory";
-		reg = <0x0 0x80000000 0x0 0x80000000>;
+		reg = <0x00 0x80000000 0x00 0x80000000>;
+		sifive,port-width-bytes = <0x20>;
+		phandle = <0x14>;
 	};
 
 	soc {
@@ -40,6 +45,63 @@
 		#size-cells = <0x02>;
 		compatible = "SiFive,FU800-soc\0fu800-soc\0sifive-soc\0simple-bus";
 		ranges;
+
+			bus-error-unit@hart0 {
+			compatible = "sifive,buserror";
+			interrupt-parent = <0x10>;
+			interrupts = <0x205>;
+			reg = <0x00 0x1700000 0x00 0x1000>;
+			reg-names = "control";
+			phandle = <0x02>;
+		};
+
+		bus-error-unit@hart1 {
+			compatible = "sifive,buserror";
+			interrupt-parent = <0x10>;
+			interrupts = <0x206>;
+			reg = <0x00 0x1701000 0x00 0x1000>;
+			reg-names = "control";
+			phandle = <0x07>;
+		};
+
+		bus-error-unit@hart2 {
+			compatible = "sifive,buserror";
+			interrupt-parent = <0x10>;
+			interrupts = <0x207>;
+			reg = <0x00 0x1702000 0x00 0x1000>;
+			reg-names = "control";
+			phandle = <0x09>;
+		};
+
+		bus-error-unit@hart3 {
+			compatible = "sifive,buserror";
+			interrupt-parent = <0x10>;
+			interrupts = <0x208>;
+			reg = <0x00 0x1703000 0x00 0x1000>;
+			reg-names = "control";
+			phandle = <0x0b>;
+		};
+
+		cache-controller@2010000 {
+			cache-block-size = <0x40>;
+			cache-level = <0x03>;
+			cache-sets = <0x1000>;
+			cache-size = <0x400000>;
+			cache-unified;
+			compatible = "sifive,ccache1\0cache\0sifive,fu740-c000-ccache";
+			interrupt-parent = <0x10>;
+			interrupts = <0x01 0x03 0x04 0x02>;
+			next-level-cache = <0x14>;
+			reg = <0x00 0x2010000 0x00 0x4000 0x00 0x8000000 0x00 0x400000>;
+			reg-names = "control\0sideband";
+			sifive,a-mshr-count = <0x3c>;
+			sifive,bank-count = <0x04>;
+			sifive,ecc-granularity = <0x08>;
+			sifive,max-master-id = <0x0d>;
+			sifive,perfmon-counters = <0x06>;
+			numa-node-id = <0x00>;
+			phandle = <0x15>;
+		};
 
 		interrupt-controller@c000000 {
 			#interrupt-cells = <0x01>;
@@ -50,7 +112,6 @@
 			reg-names = "control";
 			riscv,max-priority = <0x07>;
 			riscv,ndev = <0x208>;
-			numa-node-id = <0x00>;
 			phandle = <0x10>;
 		};
 
@@ -62,34 +123,69 @@
 			interrupts = <0x64>;
 			reg-shift = <0x02>;
 			reg-io-width = <0x04>;
-			numa-node-id = <0x00>;
 			status = "okay";
 		};
 
-		serial@0x50910000 {
-			compatible = "snps,dw-apb-uart";
-			reg = <0x00 0x50910000 0x00 0x10000>;
-			clock-frequency = <0xbebc200>;
+		sys-crg@51828000 {
+			compatible = "eswin,win2030-sys-crg\0syscon\0simple-mfd";
+			reg = <0x00 0x51828000 0x00 0x80000>;
+			numa-node-id = <0x00>;
+			phandle = <0x16>;
+
+			reset-controller {
+				compatible = "eswin,win2030-reset";
+				#reset-cells = <0x02>;
+				status = "okay";
+				phandle = <0x18>;
+			};
+
+			clock-controller {
+				compatible = "eswin,win2030-clock";
+				#clock-cells = <0x01>;
+				status = "okay";
+				force-1_8ghz;
+				phandle = <0x03>;
+			};
+		};
+
+		hsp_sp_top_csr@0x50440000 {
+			compatible = "eswin,win2030-hsp-sp-csr\0syscon";
+			#size-cells = <0x02>;
+			reg = <0x00 0x50440000 0x00 0x2000>;
+			phandle = <0x1a>;
+		};
+
+		mmc@0x50460000 {
+			compatible = "eswin,sdhci-sdio";
+			reg = <0x00 0x50460000 0x00 0x10000>;
 			interrupt-parent = <0x10>;
-			interrupts = <0x65>;
-			reg-shift = <0x02>;
-			reg-io-width = <0x04>;
+			interrupts = <0x51>;
+			clocks = <0x03 0x22b 0x03 0x222 0x03 0x0c 0x03 0x23>;
+			clock-names = "clk_xin\0clk_ahb\0clk_spll2_fout3\0clk_mux1_1";
+			clock-output-names = "sdio0_cardclock";
+			#clock-cells = <0x00>;
+			resets = <0x18 0x07 0x80 0x18 0x07 0x10 0x18 0x07 0x40000 0x18 0x07 0x400000>;
+			reset-names = "txrx_rst\0phy_rst\0prstn\0arstn";
+			clock-frequency = <0xc65d400>;
+			max-frequency = <0xc65d400>;
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			eswin,hsp_sp_csr = <0x1a 0x103c 0x608 0x60c>;
+			eswin,syscrg_csr = <0x16 0x164 0x148 0x14c>;
+			bus-width = <0x04>;
+			sdio-id = <0x00>;
 			numa-node-id = <0x00>;
 			status = "okay";
+			dma-noncoherent;
+			delay_code = <0x3b>;
+			drive-impedance-ohm = <0x21>;
+			enable-cmd-pullup;
+			enable-data-pullup;
+			no-sdio;
+			no-mmc;
+			disable-wp;
+			broken-cd;
 		};
-
-		serial@0x50920000 {
-			compatible = "snps,dw-apb-uart";
-			reg = <0x00 0x50920000 0x00 0x10000>;
-			clock-frequency = <0xbebc200>;
-			interrupt-parent = <0x10>;
-			interrupts = <0x66>;
-			reg-shift = <0x02>;
-			reg-io-width = <0x04>;
-			numa-node-id = <0x00>;
-			status = "okay";
-		};
-
 	};
 
 	reserved-memory {
@@ -97,37 +193,19 @@
 		#size-cells = <0x02>;
 		ranges;
 
-		opensbi@0x80000000 {
+		opensbi@80000000 {
 			no-map;
 			reg = <0x00 0x80000000 0x00 0x00200000>;
 		};
 
-		hvisor@0x80200000 {
+		hvisor@80200000 {
 			no-map;
 			reg = <0x00 0x80200000 0x00 0x02E00000>;
 		};
-
-		nonroot@0x83000000 {
-			no-map;
-			reg = <0x00 0x83000000 0x00 0x0C000000>;
-		};
-
-		dtbfile@0x8f000000 {
-			no-map;
-			reg = <0x00 0x8f000000 0x00 0x01000000>;
-		};
-	};
-
-	aliases {
-		serial0 = "/soc/serial@0x50900000";
 	};
 
 	chosen {
-		// stdout-path = "serial0:115200n8";
-
-		domain-config {
-			compatible = "opensbi,domain,config";
-			system-suspend-test;
-		};
+		bootargs = "earlycon=dwapb,mmio,0x50900000,115200 console=ttyS0,115200 root=PARTUUID=b0f77ad6-36cd-4a99-a8c0-31d73649aa09 rootfstype=ext4 rw rootwait";
+		stdout-path = "serial0:115200n8";
 	};
 };

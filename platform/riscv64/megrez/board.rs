@@ -31,13 +31,25 @@ pub const ROOT_ZONE_CPUS: u64 = (1 << 0);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 3] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
-        physical_start: 0x8F000000,
-        virtual_start: 0x8F000000,
-        size: 0x71000000,
+        physical_start: 0x83000000,
+        virtual_start: 0x83000000,
+        size: 0x7D000000,
     }, // ram
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x50440000,
+        virtual_start: 0x50440000,
+        size: 0x2000,
+    }, // hsp_sp_top_csr (SD card needs)
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x50460000,
+        virtual_start: 0x50460000,
+        size: 0x10000,
+    }, // mmc
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x50900000,
@@ -46,18 +58,48 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 3] = [
     }, // serial
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
-        physical_start: 0x50470000,
-        virtual_start: 0x50470000,
-        size: 0x10000,
-    }, // mmc
-];
+        physical_start: 0x51828000,
+        virtual_start: 0x51828000,
+        size: 0x80000,
+    }, // sys-crg (clock-controller, reset-controller) (SD card needs)
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0x51810000,
+    //     virtual_start: 0x51810000,
+    //     size: 0x8000,
+    // }, // eswin,win2030-scu-sys-con (SD card needs)
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x1700000,
+        virtual_start: 0x1700000,
+        size: 0x4000,
+    }, // bus-error-unit(hart0)
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x2010000,
+        virtual_start: 0x2010000,
+        size: 0x4000,
+    }, // cache-controller
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x8000000,
+        virtual_start: 0x8000000,
+        size: 0x400000,
+    }, // cache-controller
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start:  0xc000000000,
+        virtual_start: 0xc000000000,
+        size: 0x100000000,
+    }, // Big addr.
+]; 
 
 // Note: all here's irqs are hardware irqs,
 //  only these irq can be transferred to the physical PLIC.
-pub const HW_IRQS: [u32; 3] = [100, 101, 102];
+pub const HW_IRQS: [u32; 10] = [0x01, 0x03, 0x04, 0x02, 0x51, 0x64, 0x205, 0x206, 0x207, 0x208];
 
 // irqs belong to the root zone.
-pub const ROOT_ZONE_IRQS: [u32; 3] = [100, 101, 102];
+pub const ROOT_ZONE_IRQS: [u32; 10] =  [0x01, 0x03, 0x04, 0x02, 0x51, 0x64, 0x205, 0x206, 0x207, 0x208];
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     plic_base: 0xc000000,
