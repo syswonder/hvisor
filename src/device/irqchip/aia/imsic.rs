@@ -13,7 +13,7 @@
 //
 // Authors:
 //
-use crate::arch::csr::{write_csr ,read_csr};
+use crate::arch::csr::{read_csr, write_csr};
 /* AIA Extension */
 pub const CSR_VSISELECT: usize = 0x250;
 pub const CSR_VSIREG: usize = 0x251;
@@ -60,10 +60,9 @@ fn imsic_read(reg: usize) -> usize {
 }
 // VS-Mode IMSIC CSRs
 
-
 pub fn imsic_trigger(hart: u32, guest: u32, eiid: u32) {
     // info!("hart: {} guest {} eiid {}", hart, guest, eiid);
-    if guest == 1{
+    if guest == 1 {
         unsafe {
             core::ptr::write_volatile(imsic_vs(hart as usize) as *mut u32, eiid);
         }
@@ -74,4 +73,3 @@ pub fn imsic_trigger(hart: u32, guest: u32, eiid: u32) {
         );
     }
 }
-

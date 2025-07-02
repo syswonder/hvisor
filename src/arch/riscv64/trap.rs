@@ -362,7 +362,7 @@ pub fn guest_page_fault_handler(current_cpu: &mut ArchCpu) {
             let mut trap_ins = htinst::read();
             // Default instruction size is 4 bytes.
             let mut ins_size = 4;
-    
+
             /*
              * According riscv spec, htinst is one of the following:
              *     1. zero;
@@ -370,7 +370,7 @@ pub fn guest_page_fault_handler(current_cpu: &mut ArchCpu) {
              *     3. a custom value;
              *     4. a special pseudoinstruction.
              */
-    
+
             if trap_ins == 0 {
                 /*
                  * An implementation may at any time reduce its effort by substituting zero in place of the transformed instruction.
@@ -410,12 +410,12 @@ pub fn guest_page_fault_handler(current_cpu: &mut ArchCpu) {
                  */
                 trap_ins = trap_ins | 0x2;
             }
-    
+
             // Decode instruction to get size, is_write, sign_ext and register number.
             // For load, reg is rd, and for store, reg is rs2.
             let (size, is_write, sign_ext, reg) = ins_ldst_decode(trap_ins);
             // warn!("size: {}, is_write: {}, sign_ext: {}, reg: {}", size, is_write, sign_ext, reg);
-    
+
             // create mmio access struct.
             let mut mmio_access = MMIOAccess {
                 address: addr as _,
@@ -423,7 +423,7 @@ pub fn guest_page_fault_handler(current_cpu: &mut ArchCpu) {
                 is_write: is_write as _,
                 value: if is_write { current_cpu.x[reg] as _ } else { 0 },
             };
-    
+
             match mmio_handle_access(&mut mmio_access) {
                 Ok(_) => {
                     if !is_write {
@@ -441,7 +441,6 @@ pub fn guest_page_fault_handler(current_cpu: &mut ArchCpu) {
                             }
                         };
                         // warn!("current_cpu.x[{}]: 0x{:x}", reg, current_cpu.x[reg]);
-                        
                     }
                 }
                 Err(e) => {
