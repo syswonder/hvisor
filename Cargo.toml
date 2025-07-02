@@ -83,6 +83,8 @@ aia = []
 aclint = []
 # extensions
 sstc = []
+# platform specific
+eic770x_soc = []
 
 ########### loongarch64 ############
 # irqchip driver
