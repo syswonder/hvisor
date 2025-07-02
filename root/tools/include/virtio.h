@@ -19,6 +19,7 @@
 #include <stdint.h>
 #include <sys/uio.h>
 #include <unistd.h>
+#include <pthread.h>
 
 #define VIRT_QUEUE_SIZE 512
 
@@ -131,7 +132,7 @@ struct VirtIODevice {
 // used event idx for driver telling device when to notify driver.
 #define VQ_USED_EVENT(vq) ((vq)->avail_ring->ring[(vq)->num])
 // avail event idx for device telling driver when to notify device.
-#define VQ_AVAIL_EVENT(vq) (*(__uint16_t *)&(vq)->used_ring->ring[(vq)->num])
+#define VQ_AVAIL_EVENT(vq) (*(uint16_t *)&(vq)->used_ring->ring[(vq)->num])
 
 #define VIRT_MAGIC 0x74726976 /* 'virt' */
 
@@ -219,6 +220,6 @@ int virtio_start_from_json(char *json_path);
 
 int virtio_start(int argc, char *argv[]);
 
-void *read_file(char *filename, u_int64_t *filesize);
+void *read_file(char *filename, uint64_t *filesize);
 
 #endif /* __HVISOR_VIRTIO_H */
