@@ -47,7 +47,7 @@ static void __attribute__((noreturn)) help(int exit_status) {
     exit(exit_status);
 }
 
-void *read_file(char *filename, u_int64_t *filesize) {
+void *read_file(char *filename, uint64_t *filesize) {
     int fd;
     struct stat st;
     void *buf;
@@ -572,7 +572,7 @@ static int zone_start(int argc, char *argv[]) {
     char *json_config_path = NULL;
     zone_config_t config;
     int fd, ret;
-    u_int64_t hvisor_config_version;
+    uint64_t hvisor_config_version;
 
     if (argc != 4) {
         help(1);

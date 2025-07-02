@@ -3,11 +3,13 @@ ARCH ?= arm64
 LOG ?= LOG_INFO
 DEBUG ?= n
 VIRTIO_GPU ?= n
+LIBC ?= gnu
 
 export KDIR
 export ARCH
 export LOG
 export VIRTIO_GPU
+export LIBC
 
 .PHONY: all help env tools driver clean transfer tftp transfer_nxp check-kdir
 
