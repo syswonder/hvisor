@@ -16,13 +16,22 @@
 use crate::{
     config::{
         HvConfigMemoryRegion, HvIvcConfig, HvPciConfig, HvZoneConfig, CONFIG_MAX_INTERRUPTS,
-        CONFIG_MAX_IVC_CONGIGS, CONFIG_MAX_MEMORY_REGIONS, CONFIG_MAX_PCI_DEV, CONFIG_NAME_MAXLEN,
+        CONFIG_MAX_IVC_CONFIGS, CONFIG_MAX_MEMORY_REGIONS, CONFIG_MAX_PCI_DEV, CONFIG_NAME_MAXLEN,
     },
     consts::INVALID_ADDRESS,
 };
 
 pub mod __board; // riscv64 uses some private PLIC constants in board.rs ... so we have to `pub` it - wheatfox
 pub use __board::*;
+
+// define a macro to check if the length of the array is less than the limit
+macro_rules! check {
+    ($len:expr, $limit:expr, $name:expr) => {
+        if $len > $limit {
+            panic!("board's {} ({}) exceeds limit ({})", $name, $len, $limit);
+        }
+    };
+}
 
 pub fn platform_root_zone_config() -> HvZoneConfig {
     // fill zero for memory regions and interrupts
@@ -34,9 +43,14 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
         size: 0,
     }; CONFIG_MAX_MEMORY_REGIONS];
 
+    check!(
+        ROOT_ZONE_MEMORY_REGIONS.len(),
+        CONFIG_MAX_MEMORY_REGIONS,
+        "ROOT_ZONE_MEMORY_REGIONS"
+    );
     memory_regions[..ROOT_ZONE_MEMORY_REGIONS.len()].copy_from_slice(&ROOT_ZONE_MEMORY_REGIONS);
 
-    let mut ivc_configs: [HvIvcConfig; 2] = [HvIvcConfig::default(); CONFIG_MAX_IVC_CONGIGS];
+    let mut ivc_configs: [HvIvcConfig; 2] = [HvIvcConfig::default(); CONFIG_MAX_IVC_CONFIGS];
     let mut _num_ivc_configs = 0;
 
     #[cfg(target_arch = "aarch64")]
@@ -46,17 +60,24 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
     }
 
     let mut interrupts = [0; CONFIG_MAX_INTERRUPTS];
+    check!(
+        ROOT_ZONE_IRQS.len(),
+        CONFIG_MAX_INTERRUPTS,
+        "ROOT_ZONE_IRQS"
+    );
     interrupts[..ROOT_ZONE_IRQS.len()].copy_from_slice(&ROOT_ZONE_IRQS);
 
     let mut name = [0; CONFIG_NAME_MAXLEN];
+    check!(ROOT_ZONE_NAME.len(), CONFIG_NAME_MAXLEN, "ROOT_ZONE_NAME");
     name[..ROOT_ZONE_NAME.len()].copy_from_slice(ROOT_ZONE_NAME.as_bytes());
 
     let mut pci_devs = [0; CONFIG_MAX_PCI_DEV];
     let mut _root_pci_cfg = HvPciConfig::new_empty();
     let mut _num_pci_devs: u64 = 0;
 
-    #[cfg(all(feature = "pci", target_arch = "aarch64"))]
+    #[cfg(feature = "pci")]
     {
+        check!(ROOT_PCI_DEVS.len(), CONFIG_MAX_PCI_DEV, "ROOT_PCI_DEVS");
         pci_devs[..ROOT_PCI_DEVS.len()].copy_from_slice(&ROOT_PCI_DEVS);
         _root_pci_cfg = ROOT_PCI_CONFIG;
         _num_pci_devs = ROOT_PCI_DEVS.len() as _;

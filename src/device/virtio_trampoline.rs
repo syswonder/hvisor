@@ -38,7 +38,7 @@ pub static VIRTIO_BRIDGE: Mutex<VirtioBridgeRegion> = Mutex::new(VirtioBridgeReg
 
 const QUEUE_NOTIFY: usize = 0x50;
 pub const MAX_REQ: u32 = 32;
-pub const MAX_DEVS: usize = 4; // Attention: The max virtio-dev number for vm is 4.
+pub const MAX_DEVS: usize = 8; // Attention: The max virtio-dev number for vm is 8 (loongarch64 needs 3 consoles and 3 disks for zgclab project).
 pub const MAX_CPUS: usize = 32;
 
 #[cfg(not(target_arch = "riscv64"))]

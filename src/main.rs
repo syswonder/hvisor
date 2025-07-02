@@ -79,7 +79,7 @@ use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
 use zone::{add_zone, zone_create};
 
-#[cfg(all(feature = "iommu", target_arch = "aarch64"))]
+#[cfg(all(feature = "iommu"))]
 use crate::arch::iommu::iommu_init;
 
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);

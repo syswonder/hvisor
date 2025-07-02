@@ -18,7 +18,7 @@ use crate::{memory::addr::VirtAddr, platform::BOARD_NCPUS};
 
 /// Size of the hypervisor heap.
 pub const HV_HEAP_SIZE: usize = 1024 * 1024; // 1 MB
-pub const HV_MEM_POOL_SIZE: usize = 16 * 1024 * 1024; // 16 MB
+pub const HV_MEM_POOL_SIZE: usize = 64 * 1024 * 1024; // 64 MB
 
 /// Size of the per-CPU data (stack and other CPU-local data).
 pub const PER_CPU_SIZE: usize = 512 * 1024; // 512KB  //may get bigger when dev

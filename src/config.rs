@@ -26,8 +26,8 @@ pub const CONFIG_MAGIC_VERSION: usize = 0x1;
 pub const CONFIG_MAX_MEMORY_REGIONS: usize = 64;
 pub const CONFIG_MAX_INTERRUPTS: usize = 32;
 pub const CONFIG_NAME_MAXLEN: usize = 32;
-pub const CONFIG_MAX_IVC_CONGIGS: usize = 2;
-pub const CONFIG_MAX_PCI_DEV: usize = 16;
+pub const CONFIG_MAX_IVC_CONFIGS: usize = 2;
+pub const CONFIG_MAX_PCI_DEV: usize = 32;
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -83,7 +83,7 @@ pub struct HvZoneConfig {
     num_interrupts: u32,
     interrupts: [u32; CONFIG_MAX_INTERRUPTS],
     num_ivc_configs: u32,
-    ivc_configs: [HvIvcConfig; CONFIG_MAX_IVC_CONGIGS],
+    ivc_configs: [HvIvcConfig; CONFIG_MAX_IVC_CONFIGS],
     pub entry_point: u64,
     pub kernel_load_paddr: u64,
     pub kernel_size: u64,
@@ -105,7 +105,7 @@ impl HvZoneConfig {
         num_interrupts: u32,
         interrupts: [u32; CONFIG_MAX_INTERRUPTS],
         num_ivc_configs: u32,
-        ivc_configs: [HvIvcConfig; CONFIG_MAX_IVC_CONGIGS],
+        ivc_configs: [HvIvcConfig; CONFIG_MAX_IVC_CONFIGS],
         entry_point: u64,
         kernel_load_paddr: u64,
         kernel_size: u64,

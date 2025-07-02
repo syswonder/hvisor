@@ -90,7 +90,13 @@ pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
     match res {
         Some((region, handler, arg)) => {
             mmio.address -= region.start;
-            handler(mmio, arg)
+            match handler(mmio, arg) {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    error!("mmio handler returned error: {:#x?}", e);
+                    Err(e)
+                }
+            }
         }
         None => {
             warn!("Zone {} unhandled mmio fault {:#x?}", zone_id, mmio);

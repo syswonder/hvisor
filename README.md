@@ -32,7 +32,7 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
 
 | **Category**              | **Device**            | **Supported Architectures**          | **Notes**                                |
 | ------------------------- | --------------------- | ------------------------------------ | ---------------------------------------- |
-| **Virtio Devices**        | virtio-blk            | `aarch64`, `riscv64`                 |                                          |
+| **Virtio Devices**        | virtio-blk            | `aarch64`, `riscv64`, `loongarch64`  |                                          |
 |                           | virtio-net            | `aarch64`                            |                                          |
 |                           | virtio-console        | `aarch64`, `riscv64`, `loongarch64`  |                                          |
 |                           | virtio-gpu            | `aarch64`                            | Only supports QEMU                       |
@@ -45,7 +45,7 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
 |                           | 7A2000 irq controller | `loongarch64`                        |                                          |
 |                           | PLIC                  | `riscv64`                            |                                          |
 |                           | AIA                   | `riscv64`                            | Only supports MSI mode                   |
-| **PCIe Passthrough**      | PCIe                  | `aarch64`, `riscv64`                 |                                          |
+| **PCIe Passthrough**      | PCIe                  | `aarch64`, `riscv64`, `loongarch64`  |                                          |
 | **GPU Passthrough**       | GPU                   | `aarch64`                            | NXP i.MX8MP                              |
 
 ## Supported Boards
@@ -63,12 +63,12 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
 
 - [x] QEMU virt riscv64
 - [ ] FPGA XiangShan(KunMingHu) on S2C Prodigy S7-19PS-2
-- [ ] FPGA  RocketChip on Xilinx Ultrascale+ MPSoC ZCU102
+- [ ] FPGA RocketChip on Xilinx Ultrascale+ MPSoC ZCU102
 
 ### loongarch64
 
-- [x] Loongson 3A5000 and 7A2000 bridge chip
-- [ ] Loongson 3A6000
+- [x] Loongson 3A5000 (7A2000 bridge chip)
+- [ ] Loongson 3A6000 (7A2000 bridge chip)
 
 ## Getting Started
 
