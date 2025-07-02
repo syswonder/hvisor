@@ -21,7 +21,7 @@ use spin::{mutex::Mutex, Once, RwLock};
 
 use crate::{
     consts::MAX_ZONE_NUM, device::irqchip::gicv3::gicr::enable_one_lpi, memory::Frame,
-    zone::this_zone_id,
+    percpu::this_zone, zone::this_zone_id,
 };
 
 use super::host_gits_base;
@@ -53,6 +53,21 @@ fn ring_ptr_update(val: usize, page_num: usize) -> usize {
     } else {
         val
     }
+}
+
+fn vicid_to_icid(vicid: u64, cpu_bitmap: u64) -> Option<u64> {
+    let mut count = 0;
+
+    for phys_id in 0..64 {
+        if (cpu_bitmap & (1 << phys_id)) != 0 {
+            if count == vicid {
+                return Some(phys_id);
+            }
+            count += 1;
+        }
+    }
+
+    None
 }
 
 // created by root linux, and make a virtual one to non root
@@ -115,8 +130,8 @@ pub struct Cmdq {
 
 impl Cmdq {
     fn new() -> Self {
-        let f = Frame::new_contiguous(CMDQ_PAGES_NUM, 0).unwrap();
-        trace!("its cmdq base: 0x{:x}", f.start_paddr());
+        let f = Frame::new_contiguous_with_base(CMDQ_PAGES_NUM, 16).unwrap();
+        info!("its cmdq base: 0x{:x}", f.start_paddr());
         let r = Self {
             phy_addr: f.start_paddr(),
             readr: 0,
@@ -191,18 +206,28 @@ impl Cmdq {
     }
 
     // it's ok to add qemu-args: -trace gicv3_gits_cmd_*, remember to remain `enable one lpi`
-    fn analyze_cmd(&self, value: [u64; 4]) {
+    // we need changge vicid to icid here
+    fn analyze_cmd(&self, value: [u64; 4]) -> [u64; 4] {
         let code = (value[0] & 0xff) as usize;
+        let mut new_cmd = value.clone();
+        let binding = this_zone();
+        let zone = binding.read();
+        let cpuset_bitmap = zone.cpu_set.bitmap;
         match code {
             0x0b => {
                 let id = value[0] & 0xffffffff00000000;
                 let event = value[1] & 0xffffffff;
-                let icid = value[2] & 0xffff;
+                let vicid = value[2] & 0xffff;
+                let icid = vicid_to_icid(vicid, cpuset_bitmap)
+                    .expect("vicid to icid failed, maybe logical_id out of range");
+                new_cmd[2] &= !0xffffu64;
+                new_cmd[2] |= icid & 0xffff;
                 enable_one_lpi((event - 8192) as _);
-                trace!(
-                    "MAPI cmd, for device {:#x}, event = intid = {:#x} -> icid {:#x}",
+                info!(
+                    "MAPI cmd, for device {:#x}, event = intid = {:#x} -> vicid {:#x} (icid {:#x})",
                     id >> 32,
                     event,
+                    vicid,
                     icid
                 );
             }
@@ -219,20 +244,32 @@ impl Cmdq {
                 let id = value[0] & 0xffffffff00000000;
                 let event = value[1] & 0xffffffff;
                 let intid = value[1] >> 32;
-                let icid = value[2] & 0xffff;
+                let vicid = value[2] & 0xffff;
+                let icid = vicid_to_icid(vicid, cpuset_bitmap)
+                    .expect("vicid to icid failed, maybe logical_id out of range");
+                new_cmd[2] &= !0xffffu64;
+                new_cmd[2] |= icid & 0xffff;
                 enable_one_lpi((intid - 8192) as _);
-                trace!(
-                    "MAPTI cmd, for device {:#x}, event {:#x} -> icid {:#x} + intid {:#x}",
+                info!(
+                    "MAPTI cmd, for device {:#x}, event {:#x} -> vicid {:#x} (icid {:#x}) + intid {:#x}",
                     id >> 32,
                     event,
+                    vicid,
                     icid,
                     intid
                 );
             }
             0x09 => {
-                let icid = value[2] & 0xffff;
+                let vicid = value[2] & 0xffff;
+                let icid = vicid_to_icid(vicid, cpuset_bitmap)
+                    .expect("vicid to icid failed, maybe logical_id out of range");
+                new_cmd[2] &= !0xffffu64;
+                new_cmd[2] |= icid & 0xffff;
                 let rd_base = (value[2] >> 16) & 0x7ffffffff;
-                trace!("MAPC cmd, icid {:#x} -> redist {:#x}", icid, rd_base);
+                info!(
+                    "MAPC cmd, vicid {:#x} (icid {:#x}) -> redist {:#x}",
+                    vicid, icid, rd_base
+                );
             }
             0x05 => {
                 trace!("SYNC cmd");
@@ -256,6 +293,7 @@ impl Cmdq {
                 trace!("other cmd, code: 0x{:x}", code);
             }
         }
+        new_cmd
     }
 
     fn insert_cmd(&mut self, zone_id: usize, writer: usize) {
@@ -282,10 +320,10 @@ impl Cmdq {
         for _cmd_id in 0..cmd_num {
             unsafe {
                 let v = ptr::read_volatile(vm_cmdq_addr as *mut [u64; PER_CMD_QWORD]);
-                self.analyze_cmd(v.clone());
+                let new_cmd = self.analyze_cmd(v.clone());
 
                 for i in 0..PER_CMD_QWORD {
-                    ptr::write_volatile(real_cmdq_addr as *mut u64, v[i] as u64);
+                    ptr::write_volatile(real_cmdq_addr as *mut u64, new_cmd[i] as u64);
                     real_cmdq_addr += 8;
                 }
             }
