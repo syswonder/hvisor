@@ -308,6 +308,66 @@
 			phandle = <0x10>;
 		};
 
+		pl2@104000 {
+			cache-block-size = <0x40>;
+			cache-level = <0x02>;
+			cache-sets = <0x200>;
+			cache-size = <0x40000>;
+			cache-unified;
+			compatible = "sifive,pL2Cache0\0cache";
+			next-level-cache = <0x15>;
+			reg = <0x00 0x104000 0x00 0x4000>;
+			reg-names = "control";
+			sifive,ecc-granularity = <0x10>;
+			sifive,perfmon-counters = <0x06>;
+			phandle = <0x01>;
+		};
+
+		pl2@108000 {
+			cache-block-size = <0x40>;
+			cache-level = <0x02>;
+			cache-sets = <0x200>;
+			cache-size = <0x40000>;
+			cache-unified;
+			compatible = "sifive,pL2Cache0\0cache";
+			next-level-cache = <0x15>;
+			reg = <0x00 0x108000 0x00 0x4000>;
+			reg-names = "control";
+			sifive,ecc-granularity = <0x10>;
+			sifive,perfmon-counters = <0x06>;
+			phandle = <0x06>;
+		};
+
+		pl2@10c000 {
+			cache-block-size = <0x40>;
+			cache-level = <0x02>;
+			cache-sets = <0x200>;
+			cache-size = <0x40000>;
+			cache-unified;
+			compatible = "sifive,pL2Cache0\0cache";
+			next-level-cache = <0x15>;
+			reg = <0x00 0x10c000 0x00 0x4000>;
+			reg-names = "control";
+			sifive,ecc-granularity = <0x10>;
+			sifive,perfmon-counters = <0x06>;
+			phandle = <0x08>;
+		};
+
+		pl2@110000 {
+			cache-block-size = <0x40>;
+			cache-level = <0x02>;
+			cache-sets = <0x200>;
+			cache-size = <0x40000>;
+			cache-unified;
+			compatible = "sifive,pL2Cache0\0cache";
+			next-level-cache = <0x15>;
+			reg = <0x00 0x110000 0x00 0x4000>;
+			reg-names = "control";
+			sifive,ecc-granularity = <0x10>;
+			sifive,perfmon-counters = <0x06>;
+			phandle = <0x0a>;
+		};
+
 		serial@0x50900000 {
 			compatible = "snps,dw-apb-uart";
 			reg = <0x00 0x50900000 0x00 0x10000>;

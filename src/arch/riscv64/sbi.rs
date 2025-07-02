@@ -27,7 +27,7 @@ use sbi_rt::{HartMask, SbiRet};
 use sbi_spec::binary::{
     RET_ERR_ALREADY_AVAILABLE, RET_ERR_FAILED, RET_ERR_NOT_SUPPORTED, RET_SUCCESS,
 };
-use sbi_spec::{base, hsm, rfnc, spi, time};
+use sbi_spec::{base, hsm, rfnc, spi, time, legacy};
 
 // Reserved for hvisor-tool.
 pub const EID_HVISOR: usize = 0x114514;
@@ -90,7 +90,8 @@ pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
         EID_HVISOR => {
             sbi_ret = sbi_hvisor_handler(current_cpu);
         }
-        0x1 => {
+        // Legacy::Console putchar (usually used), temporily don't support other legacy extensions.
+        legacy::LEGACY_CONSOLE_PUTCHAR => {
             sbi_ret = SbiRet {
                 error: sbi_rt::legacy::console_putchar(current_cpu.x[10] as _),
                 value: 0,

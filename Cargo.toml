@@ -31,7 +31,7 @@ psci = { version = "0.1.0", default-features = false, features = ["smc"]}
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
 sbi-rt = { version = "0.0.3", features = ["legacy"] }
-sbi-spec = "0.0.8"
+sbi-spec = { version = "0.0.8", features = ["legacy"]}
 riscv = "0.13.0"
 riscv_h = { package = "riscv", git = "https://github.com/rcore-os/riscv", features = ["inline-asm"] }
 riscv-decode = "0.2.1"
@@ -83,7 +83,6 @@ aia = []
 aclint = []
 # extensions
 sstc = []
-sv39 = []
 
 ########### loongarch64 ############
 # irqchip driver

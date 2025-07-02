@@ -138,7 +138,6 @@ jlink-server:
 cp: run dtb
 	cp $(hvisor_bin) /mnt/d/megrez/backup/hvisor.bin
 	cp /home/jingyu/workspace/hvisor-megrez/platform/riscv64/megrez/image/dts/zone0.dtb /mnt/d/megrez/backup/zone0.dtb
-	cp /home/jingyu/workspace/hvisor-megrez/platform/riscv64/megrez/image/dts/minimal.dtb /mnt/d/megrez/backup/native.dtb
 
 test-pre: download-test-img
 	chmod +x platform/$(ARCH)/$(BOARD)/test/runner.sh
