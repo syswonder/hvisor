@@ -81,7 +81,7 @@ all: hvisor ivc_demo rpmsg_demo
 	rm -f $@.$$$$
 
 $(objects): %.o: %.c
-	$(CC) -H $(CFLAGS) $(include_dirs) $(LIBS) -c -o $@ $<
+	$(CC) $(CFLAGS) $(include_dirs) $(LIBS) -c -o $@ $<
 
 hvisor: $(hvisor_objects)
 	$(CC) -o $@ $^ $(CFLAGS) $(include_dirs) $(LDFLAGS) $(LIBS)
