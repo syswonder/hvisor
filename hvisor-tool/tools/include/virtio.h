@@ -15,11 +15,11 @@
 #include <linux/virtio_config.h>
 #include <linux/virtio_mmio.h>
 #include <linux/virtio_ring.h>
+#include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <sys/uio.h>
 #include <unistd.h>
-#include <pthread.h>
 
 #define VIRT_QUEUE_SIZE 512
 
