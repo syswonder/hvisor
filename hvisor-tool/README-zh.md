@@ -17,7 +17,7 @@ hvisor-tool
 * 编译命令行工具及内核模块
 
 ```bash
-make all ARCH=<arch> LOG=<log> KDIR=/path/to/your-linux VIRTIO_GPU=[y/n]
+make all ARCH=<arch> LOG=<log> KDIR=/path/to/your-linux LIBC=[gnu/musl] VIRTIO_GPU=[y/n] ROOT=/path/to/target_rootfs
 ```
 
 其中，`<arch>`应该为`arm64`和`riscv`之一。
@@ -25,6 +25,8 @@ make all ARCH=<arch> LOG=<log> KDIR=/path/to/your-linux VIRTIO_GPU=[y/n]
 `<log>`为`LOG_TRACE`、`LOG_DEBUG`、`LOG_INFO`、`LOG_WARN`、`LOG_ERROR`、`LOG_FATAL`之一，用来控制Virtio守护进程的日志输出等级。
 
 `/path/to/your-linux`为root linux的kernel源码目录。具体的编译选项请见[Makefile](./Makefile)、[tools/Makefile](./tools/Makefile)、[driver/Makefile](./driver/Makefile)。
+
+`LIBC`指定编译`hvisor-tool`时使用的`libc`库，可为`gnu`或`musl`。
 
 例如，要编译面向`arm64`的命令行工具，可以执行：
 

@@ -1206,7 +1206,7 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
 
 int virtio_start_from_json(char *json_path) {
     char *buffer = NULL;
-    u_int64_t file_size;
+    uint64_t file_size;
     int zone_id, num_devices = 0, err = 0, num_zones = 0;
     void *zone0_ipa, *zonex_ipa, *virt_addr;
     unsigned long long mem_size;
