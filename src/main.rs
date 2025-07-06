@@ -135,6 +135,9 @@ fn primary_init_early() {
 
     device::irqchip::primary_init_early();
 
+    #[cfg(target_arch = "riscv64")]
+    arch::s2pt::riscv_gstage_mode_detect();
+
     #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
     iommu_init();
 
