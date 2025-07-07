@@ -116,6 +116,7 @@ pub fn clear_events(cpu: usize) {
 }
 
 pub fn check_events() -> bool {
+    warn!("check_events");
     trace!("check_events");
     let cpu_data = this_cpu_data();
     match fetch_event(cpu_data.id) {
@@ -170,6 +171,7 @@ pub fn send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
             cpu_id, ipi_int_id, event_id
         );
     }
+    warn!("send_event cpu_id: {}", cpu_id);
     add_event(cpu_id, event_id);
     arch_send_event(cpu_id as _, ipi_int_id as _);
 }

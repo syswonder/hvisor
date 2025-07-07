@@ -1,0 +1,45 @@
+{
+    "arch": "riscv",
+    "name": "linux2",
+    "zone_id": 1,
+    "cpus": [1],
+    "memory_regions": [
+        {
+            "type": "ram",
+            "physical_start": "0x83000000",
+            "virtual_start":  "0x83000000",
+            "size": "0x0C000000"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0x10007000",
+            "virtual_start": "0x10007000",
+            "size": "0x1000"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0x10006000",
+            "virtual_start": "0x10006000",
+            "size": "0x1000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x50900000",
+            "virtual_start":  "0x50900000",
+            "size": "0x10000"
+        }
+    ],
+    "interrupts": [6, 7],
+    "ivc_configs": [],
+    "kernel_filepath": "./Image",
+    "dtb_filepath": "./zone1-linux.dtb",
+    "kernel_load_paddr": "0x84000000",
+    "dtb_load_paddr":   "0x83000000",
+    "entry_point":      "0x84000000",
+    "arch_config": {
+        "plic_base": "0xc000000",
+        "plic_size": "0x4000000",
+        "aplic_base": "0xd000000",
+        "aplic_size": "0x8000"
+    }
+}

@@ -27,7 +27,7 @@ pub const BOARD_PLIC_INTERRUPTS_NUM: usize = 1023; // except irq 0
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x8f000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x90000000;
 pub const ROOT_ZONE_ENTRY: u64 = 0x90000000;
-pub const ROOT_ZONE_CPUS: u64 = (1 << 0);
+pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 
@@ -92,10 +92,10 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [
 
 // Note: all here's irqs are hardware irqs,
 //  only these irq can be transferred to the physical PLIC.
-pub const HW_IRQS: [u32; 6] = [0x01, 0x03, 0x04, 0x02, 0x51, 0x64];
+pub const HW_IRQS: [u32; 7] = [0x01, 0x03, 0x04, 0x02, 0x20, 0x51, 0x64];
 
 // irqs belong to the root zone.
-pub const ROOT_ZONE_IRQS: [u32; 6] =  [0x01, 0x03, 0x04, 0x02, 0x51, 0x64];
+pub const ROOT_ZONE_IRQS: [u32; 7] =  [0x01, 0x03, 0x04, 0x02, 0x20, 0x51, 0x64];
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     plic_base: 0xc000000,
