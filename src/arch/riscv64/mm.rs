@@ -137,7 +137,5 @@ pub fn init_hv_page_table() -> HvResult {
 
 pub fn new_s2_memory_set() -> MemorySet<Stage2PageTable> {
     // Create a new memory set for stage 2 page table, pt_level is dynamically detected before here.
-    unsafe{
-        MemorySet::new(crate::arch::s2pt::GSTAGE_PT_LEVEL)
-    }
+    unsafe { MemorySet::new(crate::arch::s2pt::GSTAGE_PT_LEVEL) }
 }

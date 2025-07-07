@@ -15,7 +15,7 @@
 //
 #![allow(unused)]
 use super::{
-    csr::{write_csr, read_csr,  CSR_HGATP},
+    csr::{read_csr, write_csr, CSR_HGATP},
     paging::{GenericPTE, HvPageTable, PagingInstr},
 };
 use bit_field::BitField;
@@ -24,7 +24,7 @@ use numeric_enum_macro::numeric_enum;
 use tock_registers::interfaces::Writeable;
 
 use crate::memory::{
-    addr::{HostPhysAddr, GuestPhysAddr, PhysAddr},
+    addr::{GuestPhysAddr, HostPhysAddr, PhysAddr},
     MemFlags,
 };
 // |Reserved|  PPN  |RSW |Attr|
@@ -181,7 +181,7 @@ impl GenericPTE for PageTableEntry {
     fn is_huge(&self) -> bool {
         // Note: It is not possible to determine huge pages only by flags.
         // But one huge page entry must be a leaf node.
-        DescriptorAttr::from_bits_truncate(self.0).contains(DescriptorAttr::PTE_LEAF_FLAGS)
+        DescriptorAttr::from_bits_truncate(self.0).intersects(DescriptorAttr::PTE_LEAF_FLAGS)
     }
 
     // Set the physical address embedded in the page table entry.
@@ -210,7 +210,7 @@ impl GenericPTE for PageTableEntry {
 
 impl fmt::Debug for PageTableEntry {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("Stage1PageTableEntry")
+        f.debug_struct("Stage2PageTableEntry")
             .field("raw", &self.0)
             .field("paddr", &self.addr())
             .field("attr", &DescriptorAttr::from_bits_truncate(self.0))
@@ -237,16 +237,16 @@ impl PagingInstr for S2PTInstr {
         }
         unsafe {
             let mut bits: usize = 0;
-            let mode: usize = GSTAGE_MODE;          // GSTAGE_MODE is dynamically detected.
-            let vmid: usize = 0;                    // Default VMID is 0, in hvisor one CPU only supports one VMID.
-            bits.set_bits(60..64, mode as usize);   // Set the HGATP mode.
-            bits.set_bits(44..58, vmid);            // Set the VMID.
+            let mode: usize = GSTAGE_MODE; // GSTAGE_MODE is dynamically detected.
+            let vmid: usize = 0; // Default VMID is 0, in hvisor one CPU only supports one VMID.
+            bits.set_bits(60..64, mode as usize); // Set the HGATP mode.
+            bits.set_bits(44..58, vmid); // Set the VMID.
             bits.set_bits(0..44, root_paddr >> 12); // Set the root page table's PPN.
             write_csr!(CSR_HGATP, bits);
             // info!("flush TLB: hfence.gvma, hfence.vvma");
             let hgatp: usize = read_csr!(CSR_HGATP);
             info!("HGATP after activation: {:#x?}", hgatp);
-            hfence_gvma_all();                        //not supported in rust
+            hfence_gvma_all(); //not supported in rust
         }
     }
 

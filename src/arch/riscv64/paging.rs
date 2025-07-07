@@ -45,11 +45,11 @@ impl From<PagingError> for HvError {
 #[repr(usize)]
 #[derive(Debug, Copy, Clone, Eq, PartialEq)]
 pub enum PageSize {
-    Size4K = 0x1000,               // 12 bits
-    Size2M = 0x20_0000,            // 21 bits
-    Size1G = 0x4000_0000,          // 30 bits
-    // Size512G = 0x80_0000_0000,     // 39 bits
-    // Size256TB = 0x1_0000_0000_0000,// 48 bits
+    Size4K = 0x1000,    // 12 bits
+    Size2M = 0x20_0000, // 21 bits
+    Size1G = 0x4000_0000, // 30 bits
+                        // Size512G = 0x80_0000_0000,     // 39 bits
+                        // Size256TB = 0x1_0000_0000_0000,// 48 bits
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -167,7 +167,7 @@ where
 
     fn get_entry_mut(&self, vaddr: VA) -> PagingResult<(&mut PTE, PageSize)> {
         let vaddr = vaddr.into();
-        let p3 = if self.pt_level == 5{
+        let p3 = if self.pt_level == 5 {
             // Get the root page table (related to root_paddr).
             let p5 = table_of_mut::<PTE>(self.root_paddr());
             // Use index to get the related PTE.
@@ -175,7 +175,7 @@ where
             let p4 = next_table_mut(p5e)?;
             let p4e = &mut p4[p4_index(vaddr)];
             next_table_mut(p4e)?
-        } else if self.pt_level == 4{
+        } else if self.pt_level == 4 {
             // Get the root page table (related to root_paddr).
             let p4 = table_of_mut::<PTE>(self.root_paddr());
             let p4e = &mut p4[p4_index(vaddr)];
@@ -211,7 +211,8 @@ where
     ) {
         let mut n = 0;
         for (i, entry) in table.iter().enumerate() {
-            let vaddr = start_vaddr + (i << (12 + (self.pt_level - level) * 9));
+            // start_vaddr is the base virtual address of the current page table.
+            let vaddr = start_vaddr + (i << (12 + (self.pt_level - 1 - level) * 9));
             if entry.is_present() {
                 func(level, i, vaddr, entry);
                 if level < self.pt_level - 1 {
@@ -504,12 +505,14 @@ where
                 && PageSize::Size1G.is_aligned(paddr)               // vaddr is aligned to 1G
                 && size >= PageSize::Size1G as usize
                 && !region.flags.contains(MemFlags::NO_HUGEPAGES)
+            // current hvisor this condition always be true
             {
                 PageSize::Size1G
             } else if PageSize::Size2M.is_aligned(vaddr)           // vadddr is aligned to 2M
                 && PageSize::Size2M.is_aligned(paddr)              // paddr is aligned to 2M
                 && size >= PageSize::Size2M as usize
                 && !region.flags.contains(MemFlags::NO_HUGEPAGES)
+            // current hvisor this condition always be true
             {
                 PageSize::Size2M
             } else {

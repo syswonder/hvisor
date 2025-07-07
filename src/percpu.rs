@@ -67,7 +67,7 @@ impl PerCpu {
     pub fn run_vm(&mut self) {
         if !self.boot_cpu {
             info!("CPU{}: Idling the CPU before starting VM...", self.id);
-            loop{ };
+            loop {}
             self.arch_cpu.idle();
         }
         info!("CPU{}: Running the VM...", self.id);
