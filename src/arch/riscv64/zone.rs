@@ -24,9 +24,11 @@ use crate::{
 impl Zone {
     pub fn pt_init(&mut self, mem_regions: &[HvConfigMemoryRegion]) -> HvResult {
         for mem_region in mem_regions.iter() {
-            let mut flags = MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE;
-            if mem_region.mem_type == MEM_TYPE_IO {
-                flags |= MemFlags::IO;
+            let mut flags = MemFlags::READ | MemFlags::WRITE;
+            // Note: in riscv, base flags are D/A/G/U/W/X, some mem attributes are embedded in the PMA.
+            // Svpbmt extension is not supported in current hvisor(G-Stage).
+            if mem_region.mem_type == MEM_TYPE_RAM {
+                flags |= MemFlags::EXECUTE;
             }
             match mem_region.mem_type {
                 MEM_TYPE_RAM | MEM_TYPE_IO => {

@@ -72,7 +72,7 @@ mod tests;
 
 #[cfg(target_arch = "aarch64")]
 use crate::arch::mm::setup_parange;
-use crate::consts::MAX_CPU_NUM;
+use crate::consts::{hv_end, mem_pool_start, MAX_CPU_NUM};
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
@@ -119,6 +119,8 @@ fn primary_init_early() {
     logging::init();
     info!("Logging is enabled.");
     info!("__core_end = {:#x?}", __core_end as usize);
+    info!("mem_pool_start = {:#x?}", mem_pool_start() as usize);
+    info!("hv_end = {:#x?}", hv_end() as usize);
     // let system_config = HvSystemConfig::get();
     // let revision = system_config.revision;
     info!("Hypervisor initialization in progress...");
