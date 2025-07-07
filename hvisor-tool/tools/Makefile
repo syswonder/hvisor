@@ -62,7 +62,7 @@ ifeq ($(ARCH), arm64)
 		include_dirs += -I/usr/$(toolchain)/include -I/usr/$(toolchain)/include/libdrm -L/usr/$(toolchain)/lib -ldrm 
 	endif
 else ifeq ($(ARCH), riscv)
-# Nothing to do for riscv
+	CFLAGS += -static
 else ifeq ($(ARCH), loongarch)
 	CFLAGS += -DLOONGARCH64 -static
 	ifeq ($(VIRTIO_GPU), y)
