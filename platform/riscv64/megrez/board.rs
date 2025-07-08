@@ -27,7 +27,7 @@ pub const BOARD_PLIC_INTERRUPTS_NUM: usize = 1023; // except irq 0
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x8f000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x90000000;
 pub const ROOT_ZONE_ENTRY: u64 = 0x90000000;
-pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1);
+pub const ROOT_ZONE_CPUS: u64 = (1 << 0);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 
@@ -87,7 +87,13 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [
         physical_start:  0x104000,
         virtual_start: 0x104000,
         size: 0x4000,
-    }, // pL2Cache.
+    }, // pL2Cache. (cpu0)
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start:  0x108000,
+    //     virtual_start: 0x108000,
+    //     size: 0x4000,
+    // }, // pL2Cache. (cpu1)
 ]; 
 
 // Note: all here's irqs are hardware irqs,
@@ -103,3 +109,6 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     aplic_base: 0xd000000,
     aplic_size: 0x8000,
 };
+
+nohup ./hvisor virtio start zone1-linux-virtio.json &
+./hvisor zone start zone1-linux.json

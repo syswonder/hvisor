@@ -14,14 +14,19 @@
 // Authors:
 //
 use sbi_rt::HartMask;
+use sbi_rt::SbiRet;
 
 // arch_send_event
 pub fn arch_send_event(cpu_id: u64, _sgi_num: u64) {
     debug!("arch_send_event: cpu_id: {}", cpu_id);
     #[cfg(feature = "aclint")]
     crate::device::irqchip::aclint::aclint_send_ipi(cpu_id as usize);
-    #[cfg(not(feature = "aclint"))]
-    sbi_rt::send_ipi(HartMask::from_mask_base(1 << cpu_id, 0));
+    #[cfg(not(feature = "aclint"))]{
+        let sbi_ret: SbiRet = sbi_rt::send_ipi(HartMask::from_mask_base(1 << cpu_id, 0));
+        if sbi_ret.is_err() {
+            error!("arch_send_event: send_ipi failed: {:?}", sbi_ret);
+        }
+    }
 }
 
 /// Handle send_ipi event.

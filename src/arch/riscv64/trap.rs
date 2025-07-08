@@ -413,7 +413,7 @@ pub fn interrupts_arch_handle(current_cpu: &mut ArchCpu) {
             handle_timer_interrupt(current_cpu);
         }
         InterruptType::SSI => {
-            warn!("IPI receive: {}", current_cpu.cpuid);
+            // warn!("IPI receive: {}", current_cpu.cpuid);
             // Get event to handle and clear software interrupt pending bit.
             handle_software_interrupt(current_cpu);
         }

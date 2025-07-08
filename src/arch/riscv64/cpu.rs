@@ -41,6 +41,8 @@ pub struct ArchCpu {
     pub sstc: bool,
 }
 
+const PARKING_INST_GPA: usize = 0x0; // wfi instruction address (gpa)
+
 impl ArchCpu {
     pub fn new(cpuid: usize) -> Self {
         let ret = ArchCpu {
@@ -153,14 +155,14 @@ impl ArchCpu {
         self.power_on = false;
 
         PARKING_MEMORY_SET.call_once(|| {
-            let parking_code: [u8; 4] = [0x73, 0x00, 0x50, 0x10]; // 1: wfi; b 1b
+            let parking_code: [u8; 8] = [0x73, 0x00, 0x50, 0x10, 0x6F, 0xF0, 0x9F, 0xFF]; // 1: wfi; b 1b
             unsafe {
-                PARKING_INST_PAGE[..4].copy_from_slice(&parking_code);
+                PARKING_INST_PAGE[..8].copy_from_slice(&parking_code);
             }
 
             let mut gpm = new_s2_memory_set();
             gpm.insert(MemoryRegion::new_with_offset_mapper(
-                0 as GuestPhysAddr,
+                PARKING_INST_GPA as GuestPhysAddr,
                 unsafe { &PARKING_INST_PAGE as *const _ as HostPhysAddr - PHYS_VIRT_OFFSET },
                 PAGE_SIZE,
                 MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
@@ -170,7 +172,11 @@ impl ArchCpu {
         });
 
         // reset current cpu -> pc = 0x0 (wfi)
-        self.reset_regs(0, this_cpu_data().id, this_cpu_data().dtb_ipa);
+        // Note: in park_inst_page
+        self.reset_regs(PARKING_INST_GPA,      // entry_addr
+            this_cpu_data().id,         // a0
+            this_cpu_data().dtb_ipa,    // a1
+        );
         self.reset_interrupt();
         unsafe {
             PARKING_MEMORY_SET.get().unwrap().activate();
