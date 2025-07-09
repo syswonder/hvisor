@@ -116,24 +116,23 @@ impl VirtIoApic {
                     if reg % 2 == 0 {
                         entry.set_bits(0..=31, value.get_bits(0..=31));
                         // use host vector instead of guest vector
-                        entry.set_bits(
-                            0..=7,
-                            idt::get_host_vector(entry.get_bits(0..=7) as u32, zone_id).unwrap()
-                                as _,
-                        );
-                        /*info!(
-                            "write {:x} is edge: {:x?}, {:x}",
-                            index,
-                            value.get_bit(15),
-                            value
-                        );*/
+                        let gv = entry.get_bits(0..=7) as u32;
+                        if gv >= 0x20 {
+                            let hv = idt::get_host_vector(gv, zone_id).unwrap();
+                            entry.set_bits(0..=7, hv as _);
+                        }
                     } else {
                         entry.set_bits(32..=63, value.get_bits(0..=31));
 
-                        if zone_id == 0 {
+                        /*if zone_id == 0 {
+                            // info!("1 write {:x} entry: {:x?}", index, *entry);
                             // only root zone modify the real I/O APIC
-                            unsafe { configure_gsi_from_raw(index as _, *entry) };
-                        }
+                            // unsafe { configure_gsi_from_raw(index as _, *entry) };
+                        }*/
+                    }
+                    if zone_id == 0 {
+                        // only root zone modify the real I/O APIC
+                        unsafe { configure_gsi_from_raw(index as _, *entry) };
                     }
                 }
             }
@@ -203,6 +202,7 @@ fn mmio_ioapic_handler(mmio: &mut MMIOAccess, _: usize) -> HvResult {
 }
 
 unsafe fn configure_gsi_from_raw(irq: u8, raw: u64) {
+    // info!("irq={:x} {:x}", irq, raw);
     let mut io_apic = IO_APIC.lock();
     io_apic.set_table_entry(irq, core::mem::transmute(raw));
 }

@@ -20,6 +20,9 @@ use spin::Mutex;
 
 use crate::device::uart;
 
+#[cfg(all(feature = "graphics", target_arch = "x86_64"))]
+use crate::arch::graphics::fb_putstr;
+
 static PRINT_LOCK: Mutex<()> = Mutex::new(());
 struct Stdout;
 
@@ -94,6 +97,28 @@ enum ColorCode {
     BrightWhite = 97,
 }
 
+fn color_code_to_bgra(code: &ColorCode) -> u32 {
+    match code {
+        ColorCode::Black => 0,
+        ColorCode::Red => 0x0000aaff,
+        ColorCode::Green => 0x00aa00ff,
+        ColorCode::Yellow => 0x0055aaff,
+        ColorCode::Blue => 0xaa0000ff,
+        ColorCode::Magenta => 0xaa00aaff,
+        ColorCode::Cyan => 0xaaaa00ff,
+        ColorCode::White => 0xaaaaaaff,
+        ColorCode::BrightBlack => 0x555555ff,
+        ColorCode::BrightRed => 0x5555ffff,
+        ColorCode::BrightGreen => 0x55ff55ff,
+        ColorCode::BrightYellow => 0x55ffffff,
+        ColorCode::BrightBlue => 0xff5555ff,
+        ColorCode::BrightMagenta => 0xff55ffff,
+        ColorCode::BrightCyan => 0xffff55ff,
+        ColorCode::BrightWhite => 0xffffffff,
+        _ => 0,
+    }
+}
+
 pub fn init() {
     static LOGGER: SimpleLogger = SimpleLogger;
     log::set_logger(&LOGGER).unwrap();
@@ -137,6 +162,32 @@ impl Log for SimpleLogger {
             Level::Debug => ColorCode::Cyan,
             Level::Trace => ColorCode::BrightBlack,
         };
+
+        #[cfg(all(feature = "graphics", target_arch = "x86_64"))]
+        {
+            /*fb_putstr("[", color_code_to_bgra(&ColorCode::White));
+            fb_putstr(
+                format!("{:<5} ", level).as_str(),
+                color_code_to_bgra(&ColorCode::Yellow),
+            );
+            fb_putstr(
+                format!("{}] ({}:{}) ", cpu_id, target, line).as_str(),
+                color_code_to_bgra(&ColorCode::White),
+            );
+            fb_putstr(
+                format!("{}\n", record.args()).as_str(),
+                color_code_to_bgra(&args_color),
+            );*/
+            println!(
+                "[{:<5} {}] ({}:{}) {}",
+                level,
+                cpu_id,
+                target,
+                line,
+                record.args()
+            );
+        }
+        #[cfg(not(all(feature = "graphics", target_arch = "x86_64")))]
         print(with_color!(
             ColorCode::White,
             "[{} {}] {} {}\n",

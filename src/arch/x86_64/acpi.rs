@@ -1,5 +1,5 @@
 use crate::{
-    arch::pci::probe_root_pci_devices,
+    arch::{boot, pci::probe_root_pci_devices},
     config::{HvConfigMemoryRegion, HvZoneConfig},
     error::HvResult,
     percpu::{this_zone, CpuSet},
@@ -16,8 +16,14 @@ use alloc::{
     collections::{btree_map::BTreeMap, btree_set::BTreeSet},
     vec::Vec,
 };
-use core::{mem::size_of, pin::Pin, ptr::NonNull};
-use spin::Mutex;
+use core::{
+    any::Any,
+    mem::size_of,
+    pin::Pin,
+    ptr::{read_unaligned, write_unaligned, NonNull},
+    slice,
+};
+use spin::{Mutex, Once};
 
 const RSDP_V1_SIZE: usize = 20;
 const RSDP_V2_SIZE: usize = 36;
@@ -33,6 +39,9 @@ const FADT_FACS_OFFSET_32: usize = 0x24;
 const FADT_FACS_OFFSET_64: usize = 0x84;
 
 const SDT_HEADER_SIZE: usize = 36;
+
+const RSDP_CHECKSUM_OFFSET: usize = 8;
+const ACPI_CHECKSUM_OFFSET: usize = 9;
 
 macro_rules! acpi_table {
     ($a: ident, $b: ident) => {
@@ -71,109 +80,153 @@ impl AcpiHandler for HvAcpiHandler {
     fn unmap_physical_region<T>(region: &acpi::PhysicalMapping<Self, T>) {}
 }
 
-lazy_static::lazy_static! {
-    static ref ROOT_ACPI: Mutex<RootAcpi> = {
-        Mutex::new(RootAcpi::default())
-    };
+static ROOT_ACPI: Once<RootAcpi> = Once::new();
+
+#[derive(Clone, Debug)]
+enum PatchValue {
+    U8(u8),
+    U16(u16),
+    U32(u32),
+    U64(u64),
 }
 
 #[derive(Clone, Debug, Default)]
 pub struct AcpiTable {
-    bytes: Vec<u8>,
+    sig: Option<Signature>,
+    src: usize,
+    patches: BTreeMap<usize, PatchValue>,
+    len: usize,
+    checksum: u8,
     gpa: usize,
     hpa: usize,
     is_addr_set: bool,
-    is_dirty: bool,
+}
+
+fn get_byte_sum_u32(value: u32) -> u8 {
+    value
+        .to_ne_bytes()
+        .iter()
+        .fold(0u8, |acc, &b| acc.wrapping_add(b))
+}
+
+fn get_byte_sum_u64(value: u64) -> u8 {
+    value
+        .to_ne_bytes()
+        .iter()
+        .fold(0u8, |acc, &b| acc.wrapping_add(b))
 }
 
 impl AcpiTable {
     pub fn set_u8(&mut self, value: u8, offset: usize) {
-        self.bytes[offset] = value;
-        self.is_dirty = true;
+        self.patches.insert(offset, PatchValue::U8(value));
+        let old = unsafe { *((self.src + offset) as *const u8) };
+        self.checksum = self.checksum.wrapping_add(old).wrapping_sub(value);
     }
 
     pub fn set_u32(&mut self, value: u32, offset: usize) {
-        let bytes = value.to_ne_bytes();
-        self.bytes[offset..offset + 4].copy_from_slice(&bytes);
-        self.is_dirty = true;
+        self.patches.insert(offset, PatchValue::U32(value));
+        let old = unsafe { read_unaligned((self.src + offset) as *const u32) };
+        self.checksum = self
+            .checksum
+            .wrapping_add(get_byte_sum_u32(old))
+            .wrapping_sub(get_byte_sum_u32(value));
     }
 
     pub fn set_u64(&mut self, value: u64, offset: usize) {
-        let bytes = value.to_ne_bytes();
-        self.bytes[offset..offset + 8].copy_from_slice(&bytes);
-        self.is_dirty = true;
+        self.patches.insert(offset, PatchValue::U64(value));
+        let old = unsafe { read_unaligned((self.src + offset) as *const u64) };
+        self.checksum = self
+            .checksum
+            .wrapping_add(get_byte_sum_u64(old))
+            .wrapping_sub(get_byte_sum_u64(value));
     }
 
-    // not for rsdp
-    pub fn set_len(&mut self, len: usize) {
-        self.bytes.resize(len, 0);
-        self.set_u32(len as u32, 4);
-        self.is_dirty = true;
+    /// new len must not be longer
+    pub fn set_new_len(&mut self, len: usize) {
+        let src_len = self.get_u32(4) as usize;
+        println!("len: {:x}, selflen: {:x}", len, src_len);
+        assert!(len <= src_len);
+
+        // update checksum
+        for offset in len..src_len {
+            self.checksum = self
+                .checksum
+                .wrapping_add(unsafe { *((self.src + offset) as *const u8) });
+        }
+
+        self.set_u32(len as _, 4);
+        self.len = len;
     }
 
     pub fn get_len(&self) -> usize {
-        self.bytes.len()
+        self.len
     }
 
-    pub fn get_bytes(&self) -> &Vec<u8> {
-        &self.bytes
+    pub fn get_unpatched_src(&self) -> *const u8 {
+        self.src as *const u8
     }
 
     pub fn get_u8(&self, offset: usize) -> u8 {
-        self.bytes[offset]
+        if let Some(&PatchValue::U8(value)) = self.patches.get(&offset) {
+            return value;
+        }
+        unsafe { *((self.src + offset) as *const u8) }
     }
 
     pub fn get_u16(&self, offset: usize) -> u16 {
-        let bytes: [u8; 2] = self.bytes[offset..offset + 2].try_into().unwrap();
-        u16::from_ne_bytes(bytes)
+        if let Some(&PatchValue::U16(value)) = self.patches.get(&offset) {
+            return value;
+        }
+        unsafe { read_unaligned((self.src + offset) as *const u16) }
     }
 
     pub fn get_u32(&self, offset: usize) -> u32 {
-        let bytes: [u8; 4] = self.bytes[offset..offset + 4].try_into().unwrap();
-        u32::from_ne_bytes(bytes)
+        if let Some(&PatchValue::U32(value)) = self.patches.get(&offset) {
+            return value;
+        }
+        unsafe { read_unaligned((self.src + offset) as *const u32) }
     }
 
     pub fn get_u64(&self, offset: usize) -> u64 {
-        let bytes: [u8; 8] = self.bytes[offset..offset + 8].try_into().unwrap();
-        u64::from_ne_bytes(bytes)
+        if let Some(&PatchValue::U64(value)) = self.patches.get(&offset) {
+            return value;
+        }
+        unsafe { read_unaligned((self.src + offset) as *const u64) }
     }
 
-    pub fn fill(&mut self, ptr: *const u8, len: usize) {
-        self.bytes.clear();
-        if self.bytes.capacity() < len {
-            self.bytes.reserve(len);
-        }
-
-        unsafe {
-            core::ptr::copy_nonoverlapping(ptr, self.bytes.as_mut_ptr(), len);
-            self.bytes.set_len(len);
-        }
+    pub fn fill(
+        &mut self,
+        sig: Option<Signature>,
+        ptr: *const u8,
+        len: usize,
+        checksum_offset: usize,
+    ) {
+        self.sig = sig;
+        self.patches.clear();
+        self.src = ptr as usize;
+        self.len = len;
+        self.checksum = unsafe { *(ptr.wrapping_add(checksum_offset)) };
     }
 
-    pub fn copy_to_mem(&self) {
-        unsafe {
-            core::ptr::copy_nonoverlapping(
-                self.bytes.as_ptr(),
-                self.hpa as *mut u8,
-                self.bytes.len(),
-            )
-        };
-    }
+    pub unsafe fn copy_to_mem(&self) {
+        core::ptr::copy(self.src as *const u8, self.hpa as *mut u8, self.len);
 
-    pub fn remove(&mut self, start: usize, len: usize) {
-        let tot_len = self.bytes.len();
-        let end = start + len;
-        assert!(end <= tot_len);
-
-        if len == 0 {
-            return;
+        macro_rules! write_patch {
+            ($addr:expr, $val:expr, $ty:ty) => {
+                write_unaligned($addr as *mut $ty, $val)
+            };
         }
 
-        unsafe {
-            let ptr = self.bytes.as_mut_ptr();
-            core::ptr::copy(ptr.add(end), ptr.add(start), tot_len - end);
+        for (offset, value) in self.patches.iter() {
+            let addr = self.hpa + *offset;
+            match *value {
+                PatchValue::U8(v) => write_patch!(addr, v, u8),
+                PatchValue::U16(v) => write_patch!(addr, v, u16),
+                PatchValue::U32(v) => write_patch!(addr, v, u32),
+                PatchValue::U64(v) => write_patch!(addr, v, u64),
+                _ => {}
+            }
         }
-        self.set_len(tot_len - len);
     }
 
     pub fn set_addr(&mut self, hpa: usize, gpa: usize) {
@@ -184,12 +237,7 @@ impl AcpiTable {
 
     /// for rsdp, offset = 8; for the others, offset = 9.
     pub fn update_checksum(&mut self, offset: usize) {
-        self.bytes[offset] = 0;
-        let sum = self
-            .bytes
-            .iter()
-            .fold(0u8, |sum, &byte| sum.wrapping_add(byte));
-        self.bytes[offset] = 0u8.wrapping_sub(sum);
+        unsafe { *((self.src + offset) as *mut u8) = self.checksum };
     }
 }
 
@@ -203,16 +251,20 @@ struct AcpiPointer {
 
 #[derive(Clone, Debug, Default)]
 pub struct RootAcpi {
+    /// we need to store rsdp to a safer place
+    rsdp_copy: Vec<u8>,
     rsdp: AcpiTable,
     tables: BTreeMap<Signature, AcpiTable>,
     pointers: Vec<AcpiPointer>,
     devices: Vec<usize>,
     config_space_base: usize,
     config_space_size: usize,
-    // key: data reg hpa, value: bdf
+    /// key: data reg hpa, value: bdf
     msi_data_reg_map: BTreeMap<usize, usize>,
-    // key: msi-x table bar, value: bdf
+    /// key: msi-x table bar, value: bdf
     msix_bar_map: BTreeMap<usize, usize>,
+    /// key: cpuid, value: cpu nr (continuous)
+    lapic_map: BTreeMap<usize, usize>,
 }
 
 impl RootAcpi {
@@ -233,7 +285,7 @@ impl RootAcpi {
 
     fn add_new_table(&mut self, sig: Signature, ptr: *const u8, len: usize) {
         let mut table = AcpiTable::default();
-        table.fill(ptr, len);
+        table.fill(Some(sig), ptr, len, ACPI_CHECKSUM_OFFSET);
         self.tables.insert(sig, table);
     }
 
@@ -270,16 +322,18 @@ impl RootAcpi {
 
         // fix madt cpu info
         for entry in
-            unsafe { Pin::new_unchecked(&*(madt.get_bytes().clone().as_ptr() as *const Madt)) }
-                .entries()
+            unsafe { Pin::new_unchecked(&*(madt.get_unpatched_src() as *const Madt)) }.entries()
         {
             let mut entry_len = madt.get_u8(madt_cur + 1) as usize;
             match entry {
                 MadtEntry::LocalApic(entry) => {
                     if !cpu_set.contains_cpu(entry.processor_id as _) {
-                        madt.remove(madt_cur, entry_len);
-                        entry_len = 0;
+                        // madt.remove(madt_cur, entry_len);
+                        // set flag to disable lapic
+                        madt.set_u32(0x0, madt_cur + 4);
                     }
+                    // let apic id equals processor id
+                    // madt.set_u8(entry.processor_id, madt_cur + 3);
                 }
                 MadtEntry::LocalX2Apic(entry) => {
                     if !cpu_set.contains_cpu(entry.processor_uid as _) {}
@@ -288,20 +342,6 @@ impl RootAcpi {
             }
             madt_cur += entry_len;
         }
-
-        // FIXME: temp clear dsdt
-        // let mut dsdt = tables.get_mut(&Signature::DSDT).unwrap();
-        // dsdt.set_u32(SDT_HEADER_SIZE as _, 0x4);
-
-        // FIXME: temp add mcfg entry
-        /*let mut mcfg = tables.get_mut(&Signature::MCFG).unwrap();
-        let mcfg_len = mcfg.get_u32(0x4) as usize;
-        let mut entry = vec![
-            0x00u8, 0x00, 0x00, 0xC0, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0xff, 0x00, 0x00,
-            0x00, 0x00,
-        ];
-        mcfg.set_u32(mcfg_len as u32 + entry.len() as u32, 0x4);
-        mcfg.bytes.append(&mut entry);*/
 
         // set pointers
         let hpa_start = acpi_zone_region.physical_start as usize;
@@ -350,34 +390,48 @@ impl RootAcpi {
         }
 
         // update checksums
-        rsdp.update_checksum(8);
+        rsdp.update_checksum(RSDP_CHECKSUM_OFFSET);
         for (sig, table) in tables.iter_mut() {
-            if table.is_dirty {
-                table.update_checksum(9);
-            }
+            table.update_checksum(ACPI_CHECKSUM_OFFSET);
         }
 
         // copy to memory
-        rsdp.copy_to_mem();
+        unsafe { rsdp.copy_to_mem() };
         for (sig, table) in tables.iter() {
             // don't copy tables that are not inside ACPI tree
             if tables_involved.contains(sig) {
-                table.copy_to_mem();
+                unsafe { table.copy_to_mem() };
             }
         }
     }
 
     // let zone 0 bsp cpu does the work
-    pub fn init(&mut self) {
-        let rsdp_mapping = unsafe { Rsdp::search_for_on_bios(HvAcpiHandler {}).unwrap() };
+    pub fn init() -> Self {
+        let mut root_acpi = Self::default();
+        let rsdp_addr = boot::get_multiboot_tags().rsdp_addr.unwrap();
+
+        root_acpi.rsdp_copy = unsafe {
+            slice::from_raw_parts(rsdp_addr as *const u8, core::mem::size_of::<Rsdp>()).to_vec()
+        };
+        let rsdp_copy_addr = root_acpi.rsdp_copy.as_ptr() as usize;
+        println!("rsdp: {:x}", rsdp_copy_addr);
+
+        let handler = HvAcpiHandler {};
+        let rsdp_mapping = unsafe {
+            handler.map_physical_region::<Rsdp>(rsdp_copy_addr, core::mem::size_of::<Rsdp>())
+        };
+
+        // let rsdp_mapping = unsafe { Rsdp::search_for_on_bios(HvAcpiHandler {}).unwrap() };
         // FIXME: temporarily suppose we use ACPI 1.0
         assert!(rsdp_mapping.revision() == 0);
 
-        self.rsdp.fill(
+        root_acpi.rsdp.fill(
+            None,
             rsdp_mapping.virtual_start().as_ptr() as *const u8,
             RSDP_V1_SIZE,
+            RSDP_CHECKSUM_OFFSET,
         );
-        self.add_pointer(
+        root_acpi.add_pointer(
             Signature::RSDT,
             RSDP_RSDT_OFFSET,
             Signature::RSDT,
@@ -385,41 +439,25 @@ impl RootAcpi {
         );
 
         // get rsdt
-
-        self.add_new_table(
+        root_acpi.add_new_table(
             Signature::RSDT,
             rsdp_mapping.rsdt_address() as usize as *const u8,
             SDT_HEADER_SIZE,
         );
-        let mut rsdt_offset = self.get_mut_table(Signature::RSDT).unwrap().get_len();
+        let mut rsdt_offset = root_acpi.get_mut_table(Signature::RSDT).unwrap().get_len();
 
         let tables =
             unsafe { AcpiTables::from_validated_rsdp(HvAcpiHandler {}, rsdp_mapping) }.unwrap();
 
-        if let Ok(madt) = tables.find_table::<Madt>() {
-            self.add_new_table(
-                Signature::MADT,
-                madt.physical_start() as *const u8,
-                madt.region_length(),
-            );
-
-            info!("-------------------------------- MADT --------------------------------");
-            for entry in madt.get().entries() {
-                info!("{:x?}", entry);
-            }
-
-            self.add_pointer(Signature::RSDT, rsdt_offset, Signature::MADT, RSDT_PTR_SIZE);
-            rsdt_offset += RSDT_PTR_SIZE;
-        }
-
+        // mcfg
         if let Ok(mcfg) = tables.find_table::<Mcfg>() {
-            self.add_new_table(
+            root_acpi.add_new_table(
                 Signature::MCFG,
                 mcfg.physical_start() as *const u8,
                 mcfg.region_length(),
             );
 
-            info!("-------------------------------- MCFG --------------------------------");
+            println!("---------- MCFG ----------");
             let mut offset = size_of::<Mcfg>() + 0xb;
 
             if let Some(entry) = mcfg
@@ -428,92 +466,127 @@ impl RootAcpi {
                 .find(|&entry| entry.pci_segment_group == 0)
             {
                 // we only support segment group 0
-                info!("{:x?}", entry);
+                println!("{:x?}", entry);
 
                 // we don't have such many buses, probe devices to get the max_bus we have
                 let (mut devices, mut msi_data_reg_map, mut msix_bar_map, _, max_bus) =
                     probe_root_pci_devices(entry.base_address as _);
 
                 // update bus_number_end
-                self.get_mut_table(Signature::MCFG)
+                root_acpi
+                    .get_mut_table(Signature::MCFG)
                     .unwrap()
                     .set_u8(max_bus, offset);
                 offset += size_of::<McfgEntry>();
 
-                self.devices.append(&mut devices);
+                root_acpi.devices.append(&mut devices);
 
-                self.config_space_base = entry.base_address as _;
-                self.config_space_size =
+                root_acpi.config_space_base = entry.base_address as _;
+                root_acpi.config_space_size =
                     (((max_bus as u64 - entry.bus_number_start as u64) + 1) << 20) as usize;
 
-                self.msi_data_reg_map.append(&mut msi_data_reg_map);
-                self.msix_bar_map.append(&mut msix_bar_map);
+                root_acpi.msi_data_reg_map.append(&mut msi_data_reg_map);
+                root_acpi.msix_bar_map.append(&mut msix_bar_map);
             }
 
-            self.add_pointer(Signature::RSDT, rsdt_offset, Signature::MCFG, RSDT_PTR_SIZE);
+            root_acpi.add_pointer(Signature::RSDT, rsdt_offset, Signature::MCFG, RSDT_PTR_SIZE);
             rsdt_offset += RSDT_PTR_SIZE;
         }
 
+        // println!("fadt");
         if let Ok(fadt) = tables.find_table::<Fadt>() {
-            self.add_new_table(
+            root_acpi.add_new_table(
                 Signature::FADT,
                 fadt.physical_start() as *const u8,
                 fadt.region_length(),
             );
 
-            self.add_pointer(Signature::RSDT, rsdt_offset, Signature::FADT, RSDT_PTR_SIZE);
+            root_acpi.add_pointer(Signature::RSDT, rsdt_offset, Signature::FADT, RSDT_PTR_SIZE);
             rsdt_offset += RSDT_PTR_SIZE;
 
             // dsdt
-
+            // println!("dsdt");
             if let Ok(dsdt) = tables.dsdt() {
-                self.add_new_table(
+                println!("dsdt ptr: {:x}, len: {:x}", dsdt.address, dsdt.length);
+                root_acpi.add_new_table(
                     Signature::DSDT,
                     (dsdt.address - SDT_HEADER_SIZE) as *const u8,
                     (dsdt.length as usize + SDT_HEADER_SIZE),
                 );
+                // println!("dsdt add_new_table");
 
-                self.add_pointer(Signature::FADT, FADT_DSDT_OFFSET_32, Signature::DSDT, 4);
-                self.add_pointer(Signature::FADT, FADT_DSDT_OFFSET_64, Signature::DSDT, 8);
+                root_acpi.add_pointer(Signature::FADT, FADT_DSDT_OFFSET_32, Signature::DSDT, 4);
+                root_acpi.add_pointer(Signature::FADT, FADT_DSDT_OFFSET_64, Signature::DSDT, 8);
             }
 
             // facs
-
+            println!("facs");
             if let Ok(facs_addr) = fadt.facs_address() {
-                self.add_new_table(Signature::FACS, facs_addr as *const u8, unsafe {
+                root_acpi.add_new_table(Signature::FACS, facs_addr as *const u8, unsafe {
                     *((facs_addr + 4) as *const u32) as usize
                 });
 
-                self.add_pointer(Signature::FADT, FADT_FACS_OFFSET_32, Signature::FACS, 4);
-                self.add_pointer(Signature::FADT, FADT_FACS_OFFSET_64, Signature::FACS, 8);
+                root_acpi.add_pointer(Signature::FADT, FADT_FACS_OFFSET_32, Signature::FACS, 4);
+                root_acpi.add_pointer(Signature::FADT, FADT_FACS_OFFSET_64, Signature::FACS, 8);
             }
         }
 
+        // madt
+        if let Ok(madt) = tables.find_table::<Madt>() {
+            root_acpi.add_new_table(
+                Signature::MADT,
+                madt.physical_start() as *const u8,
+                madt.region_length(),
+            );
+
+            println!("---------- MADT ----------");
+            for entry in madt.get().entries() {
+                match entry {
+                    MadtEntry::LocalApic(entry) => {
+                        if entry.flags != 0 {
+                            println!("{:x?}", entry);
+                            root_acpi
+                                .lapic_map
+                                .insert(entry.apic_id as _, root_acpi.lapic_map.len());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            root_acpi.add_pointer(Signature::RSDT, rsdt_offset, Signature::MADT, RSDT_PTR_SIZE);
+            rsdt_offset += RSDT_PTR_SIZE;
+        }
+
+        // dmar
+        println!("dmar");
         acpi_table!(Dmar, DMAR);
         if let Ok(dmar) = tables.find_table::<Dmar>() {
-            self.add_new_table(
+            root_acpi.add_new_table(
                 Signature::DMAR,
                 dmar.physical_start() as *const u8,
                 dmar.region_length(),
             );
 
-            info!("dmar: {:x?}", unsafe {
+            println!("dmar: {:x?}", unsafe {
                 *((dmar.physical_start() + 56) as *const [u8; 8])
             });
 
             // self.add_pointer(Signature::RSDT, rsdt_offset, Signature::DMAR, RSDT_PTR_SIZE);
-            rsdt_offset += RSDT_PTR_SIZE;
+            // rsdt_offset += RSDT_PTR_SIZE;
         }
 
-        if let Some(rsdt) = self.get_mut_table(Signature::RSDT) {
-            rsdt.set_len(rsdt_offset);
+        if let Some(rsdt) = root_acpi.get_mut_table(Signature::RSDT) {
+            rsdt.set_new_len(rsdt_offset);
         }
+        println!("acpi init end");
+        root_acpi
     }
 }
 
 // let zone 0 bsp cpu does the work
 pub fn root_init() {
-    ROOT_ACPI.lock().init();
+    ROOT_ACPI.call_once(|| RootAcpi::init());
 }
 
 pub fn copy_to_guest_memory_region(config: &HvZoneConfig, cpu_set: &CpuSet) {
@@ -522,7 +595,7 @@ pub fn copy_to_guest_memory_region(config: &HvZoneConfig, cpu_set: &CpuSet) {
     // if config.zone_id != 0 {
     // banned.insert(Signature::FADT);
     // }
-    ROOT_ACPI.lock().copy_to_zone_region(
+    ROOT_ACPI.get().unwrap().copy_to_zone_region(
         &config.memory_regions()[config.arch_config.rsdp_memory_region_id],
         &config.memory_regions()[config.arch_config.acpi_memory_region_id],
         &banned,
@@ -531,16 +604,16 @@ pub fn copy_to_guest_memory_region(config: &HvZoneConfig, cpu_set: &CpuSet) {
 }
 
 pub fn root_get_table(sig: &Signature) -> Option<AcpiTable> {
-    ROOT_ACPI.lock().get_table(sig)
+    ROOT_ACPI.get().unwrap().get_table(sig)
 }
 
 pub fn root_get_config_space_info() -> Option<(usize, usize)> {
-    let acpi = ROOT_ACPI.lock();
+    let acpi = ROOT_ACPI.get().unwrap();
     Some((acpi.config_space_base, acpi.config_space_size))
 }
 
 pub fn is_msi_data_reg(hpa: usize) -> Option<usize> {
-    if let Some(&bdf) = ROOT_ACPI.lock().msi_data_reg_map.get(&hpa) {
+    if let Some(&bdf) = ROOT_ACPI.get().unwrap().msi_data_reg_map.get(&hpa) {
         Some(bdf)
     } else {
         None
@@ -548,9 +621,13 @@ pub fn is_msi_data_reg(hpa: usize) -> Option<usize> {
 }
 
 pub fn is_msix_bar(hpa: usize) -> Option<usize> {
-    if let Some(&bdf) = ROOT_ACPI.lock().msix_bar_map.get(&hpa) {
+    if let Some(&bdf) = ROOT_ACPI.get().unwrap().msix_bar_map.get(&hpa) {
         Some(bdf)
     } else {
         None
     }
+}
+
+pub fn get_lapic_map() -> &'static BTreeMap<usize, usize> {
+    &ROOT_ACPI.get().unwrap().lapic_map
 }

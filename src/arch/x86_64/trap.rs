@@ -17,7 +17,7 @@ use crate::{
             inject_vector,
             pic::{ioapic::irqs, lapic::VirtLocalApic},
         },
-        uart::UartReg,
+        uart::{virt_console_io_read, virt_console_io_write, UartReg},
     },
     error::HvResult,
     hypercall::HyperCall,
@@ -30,7 +30,7 @@ use x86_64::registers::control::Cr4Flags;
 
 use super::{
     pci::{handle_pci_config_port_read, handle_pci_config_port_write},
-    pio::{PCI_CONFIG_ADDR_PORT, PCI_CONFIG_DATA_PORT},
+    pio::{PCI_CONFIG_ADDR_PORT, PCI_CONFIG_DATA_PORT, UART_COM1_PORT},
 };
 
 core::arch::global_asm!(
@@ -99,6 +99,9 @@ fn handle_irq(vector: u8) {
         ),
         _ => match get_guest_vector(vector, this_zone_id()) {
             Some(gv) => {
+                if gv < 0x20 {
+                    info!("inject {:x} {:x}", vector, gv);
+                }
                 inject_vector(this_cpu_id(), gv as _, None, false);
             }
             None => {
@@ -266,12 +269,16 @@ fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
             || PCI_CONFIG_DATA_PORT.contains(&io_info.port)
         {
             handle_pci_config_port_write(&io_info, value);
+        } else if UART_COM1_PORT.contains(&io_info.port) {
+            virt_console_io_write(io_info.port, value);
         }
     } else {
         if PCI_CONFIG_ADDR_PORT.contains(&io_info.port)
             || PCI_CONFIG_DATA_PORT.contains(&io_info.port)
         {
             value = handle_pci_config_port_read(&io_info);
+        } else if UART_COM1_PORT.contains(&io_info.port) {
+            value = virt_console_io_read(io_info.port);
         }
         let rax = &mut arch_cpu.regs_mut().rax;
         // SDM Vol. 1, Section 3.4.1.1:

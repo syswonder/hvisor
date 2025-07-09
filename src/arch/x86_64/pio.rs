@@ -7,6 +7,7 @@ use crate::{
 };
 
 pub const UART_COM1_BASE_PORT: u16 = 0x3f8;
+pub const UART_COM1_PORT: Range<u16> = 0x3f8..0x400;
 pub const PCI_CONFIG_ADDR_PORT: Range<u16> = 0xcf8..0xcfc;
 pub const PCI_CONFIG_DATA_PORT: Range<u16> = 0xcfc..0xd00;
 
@@ -42,6 +43,7 @@ impl PortIoBitmap {
         // FIXME: uart & i8254
         if zone_id == 0 {
             bitmap.set_range_intercept(0x60..0x65, false);
+            #[cfg(not(feature = "graphics"))]
             bitmap.set_range_intercept(0x3f8..0x400, false);
         }
         // bitmap.set_range_intercept(0x3f8..0x400, false);

@@ -4,6 +4,7 @@ pub mod boot;
 pub mod cpu;
 pub mod cpuid;
 pub mod entry;
+pub mod graphics;
 pub mod hpet;
 pub mod idt;
 pub mod ipi;

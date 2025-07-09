@@ -1,9 +1,12 @@
-.equ boot_stack_top, __core_end + {per_cpu_size}
+.equ    bsp_boot_stack_top,     __core_end + {per_cpu_size}
+.equ    multiboot2_header_len,  multiboot2_header_end - multiboot2_header    
 
-.section .text.entry
+.equ    multiboot2_header_tag_end, 0
+.equ    multiboot2_header_tag_address, 2
+.equ    multiboot2_header_tag_entry_address, 3
+.equ    multiboot2_header_tag_framebuffer, 5
 
-.section .text.entry32
-.code32
+.section .text.header
 
 .balign 4
 .type multiboot_header, STT_OBJECT
@@ -17,22 +20,72 @@ multiboot_header:
     .int    ebss - {offset}                    // bss_end_addr
     .int    arch_entry - {offset}              // entry_addrs
 
-.macro ENTRY32_COMMON
-    // set data segment selectors
-    mov     ax, 0x18
-    mov     ss, ax
-    mov     ds, ax
-    mov     es, ax
-    mov     fs, ax
-    mov     gs, ax
+.align 8
+.type multiboot2_header STT_OBJECT
+multiboot2_header:
+    .int    {multiboot2_header_magic}
+    .int    {multiboot2_arch_i386}
+    .int    multiboot2_header_len
+    .int    -({multiboot2_header_magic} + {multiboot2_arch_i386} + multiboot2_header_len)
 
-    // set PAE, PGE bit in CR4
-    mov     eax, {cr4}
-    mov     cr4, eax
+.align 8
+.type tag_address STT_OBJECT
+tag_address:
+    .short  multiboot2_header_tag_address
+    .short  0
+    .int    24
+    .int    multiboot2_header - {offset}        // header_addr
+    .int    skernel - {offset}                  // load_addr
+    .int    edata - {offset}                    // load_end_addr
+    .int    bsp_boot_stack_top - {offset}       // bss_end_addr
+
+.align 8
+.type tag_entry_address STT_OBJECT
+tag_entry_address:
+    .short  multiboot2_header_tag_entry_address
+    .short  0
+    .int    12
+    .int    arch_entry - {offset}               // entry_addr
+
+.align 8
+.type tag_framebuffer STT_OBJECT
+tag_framebuffer:
+    .short  multiboot2_header_tag_framebuffer
+    .short  0
+    .int    20
+    .int    1024                                // width
+    .int    768                                 // height
+    .int    32                                  // depth
+
+.align 8
+.type tag_end STT_OBJECT
+tag_end:
+    .short  multiboot2_header_tag_end
+    .short  0
+    .int    8
+
+multiboot2_header_end:
+
+.section .text.entry
+
+.section .text.entry32
+.code32
+
+.macro ENTRY32_COMMON_1
+    // disable paging (UEFI may turn it on)
+    mov     eax, cr0
+    mov     ebx, (1 << 31)
+    not     ebx
+    and     eax, ebx
+    mov     eax, cr0
     
     // load the temporary page table
     lea     eax, [.Ltmp_pml4 - {offset}]
     mov     cr3, eax
+
+    // set PAE, PGE bit in CR4
+    mov     eax, {cr4}
+    mov     cr4, eax
 
     // set LME, NXE bit in IA32_EFER
     mov     ecx, {efer_msr}
@@ -43,6 +96,16 @@ multiboot_header:
     // set protected mode, write protect, paging bit in CR0
     mov     eax, {cr0}
     mov     cr0, eax
+.endm
+
+.macro ENTRY32_COMMON_2
+    // set data segment selectors
+    mov     ax, 0x18
+    mov     ss, ax
+    mov     ds, ax
+    mov     es, ax
+    mov     fs, ax
+    mov     gs, ax
 .endm
 
 .macro ENTRY64_COMMON
@@ -56,9 +119,12 @@ multiboot_header:
 .endm
 
 bsp_entry32:
-    // load the temporary GDT
+    ENTRY32_COMMON_1
+
+    // set up GDT
     lgdt    [.Ltmp_gdt_desc_phys - {offset}]
-    ENTRY32_COMMON
+    
+    ENTRY32_COMMON_2
 
     // long return to the 64-bit entry
     push    0x10    // code64 segment selector
@@ -68,7 +134,8 @@ bsp_entry32:
 
 .global ap_entry32
 ap_entry32:
-    ENTRY32_COMMON
+    ENTRY32_COMMON_1
+    ENTRY32_COMMON_2
 
     // long return to the 64-bit entry
     push    0x10    // code64 segment selector
@@ -83,20 +150,21 @@ bsp_entry64:
     // reload GDT by high address
     movabs  rax, offset .Ltmp_gdt_desc
     lgdt    [rax]
+
+    // load task register
     mov     ax, 0x20
     ltr     ax
-
+    
     ENTRY64_COMMON
 
     // set stack and jump to rust_entry
-    movabs  rsp, offset boot_stack_top
+    movabs  rsp, offset bsp_boot_stack_top
     movabs  rax, offset {rust_entry}
     call    rax
     jmp     .Lhlt
 
 ap_entry64:
     ENTRY64_COMMON
-
     // set rsp to high address
     mov     rax, {offset}
     add     rsp, rax
@@ -134,20 +202,18 @@ ap_entry64:
 
 .balign 4096
 .Ltmp_pml4:
-    // 0x0000_0000 ~ 0x1_0000_0000
-    .quad .Ltmp_pdpt_low - {offset} + 0x3   // PRESENT | WRITABLE | paddr(tmp_pdpt)
+    // 0x0000_0000 ~ 0x4000_0000
+    .quad Ltmp_pdpt_low - {offset} + 0x3    // PRESENT | WRITABLE | paddr(tmp_pdpt)
     .zero 8 * 510
-    // 0xffff_ff80_0000_0000 ~ 0xffff_ff80_8000_0000
-    .quad .Ltmp_pdpt_high - {offset} + 0x3  // PRESENT | WRITABLE | paddr(tmp_pdpt)
+    // 0xffff_ff80_0000_0000 ~ 0xffff_ff80_4000_0000
+    .quad Ltmp_pdpt_high - {offset} + 0x3   // PRESENT | WRITABLE | paddr(tmp_pdpt)
 
-.Ltmp_pdpt_low:
-    .quad 0x0000 | 0x83         // PRESENT | WRITABLE | HUGE_PAGE | paddr(0x0)
-    .quad 0x40000000 | 0x83     // PRESENT | WRITABLE | HUGE_PAGE | paddr(0x4000_0000)
-    .quad 0x80000000 | 0x83     // PRESENT | WRITABLE | HUGE_PAGE | paddr(0x4000_0000)
-    .quad 0xc0000000 | 0x83     // PRESENT | WRITABLE | HUGE_PAGE | paddr(0x4000_0000)
-    .zero 8 * 508
+.global Ltmp_pdpt_low
+Ltmp_pdpt_low:
+    .quad 0x00000000 | 0x83                 // PRESENT | WRITABLE | HUGE_PAGE | paddr(0x0)
+    .zero 8 * 511
 
-.Ltmp_pdpt_high:
-    .quad 0x0000 | 0x83         // PRESENT | WRITABLE | HUGE_PAGE | paddr(0x0)
-    .quad 0x40000000 | 0x83     // PRESENT | WRITABLE | HUGE_PAGE | paddr(0x4000_0000)
-    .zero 8 * 510
+.global Ltmp_pdpt_high
+Ltmp_pdpt_high:
+    .quad 0x00000000 | 0x83                 // PRESENT | WRITABLE | HUGE_PAGE | paddr(0x0)
+    .zero 8 * 511

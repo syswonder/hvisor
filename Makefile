@@ -3,7 +3,7 @@ LOG ?= info
 STATS ?= off
 PORT ?= 2333
 MODE ?= debug
-BOARD ?= qemu
+BOARD ?= nuc14
 FEATURES=
 BID ?=
 

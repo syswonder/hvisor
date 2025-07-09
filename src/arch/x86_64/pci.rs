@@ -23,11 +23,16 @@ use super::{
 
 impl Zone {
     pub fn pci_config_space_mmio_init(&mut self, arch: &HvArchZoneConfig) {
-        let bytes = acpi::root_get_table(&Signature::MCFG)
+        /*let bytes = acpi::root_get_table(&Signature::MCFG)
             .unwrap()
             .get_bytes()
             .clone();
-        let mcfg = unsafe { &*(bytes.as_ptr() as *const Mcfg) };
+        let mcfg = unsafe { &*(bytes.as_ptr() as *const Mcfg) };*/
+
+        let bytes = acpi::root_get_table(&Signature::MCFG)
+            .unwrap()
+            .get_unpatched_src();
+        let mcfg = unsafe { &*(bytes as *const Mcfg) };
 
         for entry in mcfg.entries() {
             let start = entry.base_address as usize;
@@ -77,7 +82,7 @@ pub fn probe_root_pci_devices(
             let device_id = unsafe { *((bdf_config_hpa + 0x2) as *const u16) };
             let header_type = unsafe { *((bdf_config_hpa + 0xe) as *const u8) };
 
-            info!(
+            println!(
                     "bdf: {:x}, bus: {:x}, dev_func: {:x}, vendor id: {:x}, device id: {:x}, header type: {:x}",
                     bdf, bus, dev_func, vendor_id, device_id, header_type
                 );
@@ -86,7 +91,7 @@ pub fn probe_root_pci_devices(
             bus_empty = false;
 
             // pci bridge
-            if header_type == 0x1 {
+            if header_type.get_bits(0..7) == 0x1 {
                 let secondary_bus = unsafe { *((bdf_config_hpa + 0x19) as *const u8) };
                 buses.push_back(secondary_bus);
             }
@@ -107,7 +112,7 @@ pub fn probe_root_pci_devices(
                         false => cap_hpa + 0x8,
                     };
                     msi_data_reg_map.insert(data_reg_hpa, bdf as _);
-                    info!("msi data reg hpa: {:x?}", data_reg_hpa);
+                    // println!("msi data reg hpa: {:x?}", data_reg_hpa);
                 } else if cap_id == 0x11 {
                     // msi-x capability
                     let msg_ctrl_reg = unsafe { *((cap_hpa + 0x2) as *const u16) };
@@ -135,20 +140,20 @@ pub fn probe_root_pci_devices(
                         }
                     }
 
-                    info!(
+                    /*println!(
                         "table size: {:x}, table bir: {:x}, bar: {:x}",
                         table_size, table_bir, bar
-                    );
+                    );*/
                     msix_bar_map.insert(bar, bdf as _);
 
                     for i in 0..=table_size {
                         let data_reg_hpa = bar + i * size_of::<u128>() + 2 * size_of::<u32>();
                         msi_data_reg_map.insert(data_reg_hpa, bdf as _);
-                        info!("msi-x data reg hpa: {:x?}", data_reg_hpa);
+                        // println!("msi-x data reg hpa: {:x?}", data_reg_hpa);
                     }
                 }
 
-                info!("cap id: {:x}, hpa: {:x}", cap_id, cap_hpa);
+                // println!("cap id: {:x}, hpa: {:x}", cap_id, cap_hpa);
                 cap_pointer = unsafe { *((cap_hpa + 1) as *const u8) } as usize;
             }
         }

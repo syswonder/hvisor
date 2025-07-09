@@ -1,4 +1,11 @@
-use crate::arch::pio::UART_COM1_BASE_PORT;
+use core::ops::Range;
+
+use crate::{
+    arch::{graphics::fb_putchar, pio::UART_COM1_BASE_PORT},
+    device::irqchip::inject_irq,
+    error::HvResult,
+};
+use alloc::vec::Vec;
 use spin::Mutex;
 use x86_64::instructions::port::{PortReadOnly, PortWriteOnly};
 
@@ -24,6 +31,11 @@ lazy_static::lazy_static! {
         let mut uart = Uart16550a::new(UART_COM1_BASE_PORT);
         uart.init(115200);
         Mutex::new(uart)
+    };
+
+    static ref VIRT_COM1: VirtUart16550a = {
+        let uart = VirtUart16550a::new(UART_COM1_BASE_PORT);
+        uart
     };
 }
 
@@ -164,10 +176,175 @@ impl Uart16550a {
     }
 }
 
+pub struct VirtUart16550aUnlocked {
+    iir: u8,
+    ier: u8,
+    lcr: u8,
+    lsr: u8,
+    fifo: Fifo<64>,
+}
+
+impl VirtUart16550aUnlocked {
+    fn new() -> Self {
+        Self {
+            iir: 0,
+            ier: 0,
+            lcr: 0,
+            lsr: (LineStatusFlags::XMIT_HOLD_REG_EMPTY | LineStatusFlags::XMIT_EMPTY).bits(),
+            fifo: Fifo::new(),
+        }
+    }
+
+    fn update_irq(&mut self) {
+        let mut iir: u8 = 0;
+
+        if self.ier & InterruptEnableFlags::ENABLE_RCVR_DATA_AVAIL_INTR.bits() != 0
+            && self.lsr & LineStatusFlags::RCVR_DATA_READY.bits() != 0
+        {
+            iir |= InterruptIdentFlags::RCVR_DATA_AVAIL.bits();
+        }
+
+        if self.ier & InterruptEnableFlags::ENABLE_XMIT_HOLD_REG_EMPTY_INTR.bits() != 0
+            && self.lsr & LineStatusFlags::XMIT_HOLD_REG_EMPTY.bits() != 0
+        {
+            iir |= InterruptIdentFlags::XMIT_HOLD_REG_EMPTY.bits();
+        }
+
+        if iir == 0 {
+            self.iir = InterruptIdentFlags::NO_INTR_IS_PENDING.bits();
+        } else {
+            self.iir = iir;
+            // FIXME:
+            inject_irq(0x4, false);
+        }
+    }
+}
+
+pub struct VirtUart16550a {
+    base_port: u16,
+    port_range: Vec<Range<u16>>,
+    uart: Mutex<VirtUart16550aUnlocked>,
+}
+
+impl VirtUart16550a {
+    pub fn new(base_port: u16) -> Self {
+        Self {
+            base_port,
+            port_range: vec![base_port..base_port + 8],
+            uart: Mutex::new(VirtUart16550aUnlocked::new()),
+        }
+    }
+
+    fn port_range(&self) -> &Vec<Range<u16>> {
+        &self.port_range
+    }
+
+    fn read(&self, port: u16) -> HvResult<u32> {
+        let mut uart = self.uart.lock();
+
+        let ret = match port - self.base_port {
+            UartReg::RCVR_BUFFER => {
+                if uart.lcr & LineControlFlags::DIVISOR_LATCH_ACCESS_BIT.bits() != 0 {
+                    1 // dll
+                } else {
+                    // read a byte from FIFO
+                    if uart.fifo.is_empty() {
+                        0
+                    } else {
+                        uart.fifo.pop()
+                    }
+                }
+            }
+            UartReg::INTR_ENABLE => {
+                if uart.lcr & LineControlFlags::DIVISOR_LATCH_ACCESS_BIT.bits() != 0 {
+                    0 // dlm
+                } else {
+                    uart.ier
+                }
+            }
+            UartReg::INTR_IDENT => {
+                // info!("IIR read, {:x}", uart.iir);
+                uart.iir | InterruptIdentFlags::FIFO_ENABLED_16550_MODE.bits()
+            }
+            UartReg::LINE_CTRL => uart.lcr,
+            UartReg::LINE_STATUS => {
+                // check if the physical serial port has an available byte, and push it to FIFO.
+                if !uart.fifo.is_full() {
+                    if let Some(c) = console_getchar() {
+                        uart.fifo.push(c);
+                    }
+                }
+                if !uart.fifo.is_empty() {
+                    uart.lsr |= LineStatusFlags::RCVR_DATA_READY.bits();
+                } else {
+                    uart.lsr &= (!LineStatusFlags::RCVR_DATA_READY).bits();
+                }
+                uart.lsr
+            }
+            UartReg::MODEM_CTRL | UartReg::MODEM_STATUS | UartReg::SCRATCH => {
+                debug!("Unimplemented serial port I/O read: {:#x}", port); // unimplemented
+                0
+            }
+            _ => unreachable!(),
+        };
+
+        uart.update_irq();
+        Ok(ret as u32)
+    }
+
+    fn write(&self, port: u16, value: u32) -> HvResult {
+        let mut uart = self.uart.lock();
+        let value: u8 = value as u8;
+
+        match port - self.base_port {
+            UartReg::XMIT_BUFFER => {
+                if uart.lcr & LineControlFlags::DIVISOR_LATCH_ACCESS_BIT.bits() != 0 {
+                    // dll
+                } else {
+                    uart.lsr |=
+                        (LineStatusFlags::XMIT_HOLD_REG_EMPTY | LineStatusFlags::XMIT_EMPTY).bits();
+                    if value != 0xff {
+                        console_putchar(value as u8);
+                    }
+                }
+            }
+            UartReg::INTR_ENABLE => {
+                if uart.lcr & LineControlFlags::DIVISOR_LATCH_ACCESS_BIT.bits() != 0 {
+                    // dlm
+                } else {
+                    // info!("ier: {:x}", uart.ier);
+                    uart.ier = value & 0x0f;
+                }
+            }
+            UartReg::LINE_CTRL => {
+                uart.lcr = value;
+            }
+            UartReg::FIFO_CTRL | UartReg::MODEM_CTRL | UartReg::SCRATCH => {
+                debug!("Unimplemented serial port I/O write: {:#x}", port);
+            }
+            UartReg::LINE_STATUS => {} // ignore
+            _ => unreachable!(),
+        }
+
+        uart.update_irq();
+        Ok(())
+    }
+}
+
 pub fn console_putchar(c: u8) {
     COM1.lock().putchar(c);
+    #[cfg(all(feature = "graphics", target_arch = "x86_64"))]
+    fb_putchar(c, 0xffffffff, 0);
 }
 
 pub fn console_getchar() -> Option<u8> {
     COM1.lock().getchar()
+}
+
+pub fn virt_console_io_read(port: u16) -> u32 {
+    VIRT_COM1.read(port).unwrap()
+}
+
+pub fn virt_console_io_write(port: u16, value: u32) {
+    VIRT_COM1.write(port, value).unwrap()
 }

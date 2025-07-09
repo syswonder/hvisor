@@ -1,4 +1,5 @@
 use crate::{
+    arch::{cpu::this_cpu_id, idt::IdtVector},
     device::irqchip::inject_vector,
     error::HvResult,
     event,
@@ -8,8 +9,6 @@ use crate::{
 use alloc::{collections::vec_deque::VecDeque, vec::Vec};
 use bit_field::BitField;
 use spin::{Mutex, Once};
-
-use super::{cpu::this_cpu_id, idt::IdtVector};
 
 #[allow(non_snake_case)]
 pub mod IpiDeliveryMode {

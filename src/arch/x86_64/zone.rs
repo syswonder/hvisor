@@ -20,6 +20,8 @@ pub struct HvArchZoneConfig {
     pub rsdp_memory_region_id: usize,
     pub acpi_memory_region_id: usize,
     pub initrd_memory_region_id: usize,
+    /// not longer than 32 bits
+    pub screen_base: usize,
 }
 
 impl Zone {
@@ -36,7 +38,7 @@ impl Zone {
                         mem_region.physical_start as HostPhysAddr,
                         mem_region.size as _,
                         flags,
-                    ))?
+                    ));
                 }
                 MEM_TYPE_VIRTIO => {
                     self.mmio_region_register(

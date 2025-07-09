@@ -1,5 +1,6 @@
 use crate::{
     arch::{
+        acpi,
         boot::BootParams,
         hpet, ipi,
         mm::new_s2_memory_set,
@@ -283,6 +284,7 @@ impl ArchCpu {
         }
 
         self.host_stack_top = (core_end() + (self.cpuid + 1) * PER_CPU_SIZE) as _;
+
         unsafe { self.vmx_launch() };
     }
 

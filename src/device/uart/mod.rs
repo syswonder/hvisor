@@ -46,4 +46,6 @@ pub use uart_16550::{console_getchar, console_putchar};
 #[cfg(target_arch = "x86_64")]
 mod uart16550a;
 #[cfg(target_arch = "x86_64")]
-pub use uart16550a::{console_getchar, console_putchar, UartReg};
+pub use uart16550a::{
+    console_getchar, console_putchar, virt_console_io_read, virt_console_io_write, UartReg,
+};

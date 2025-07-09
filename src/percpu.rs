@@ -41,6 +41,10 @@ pub struct PerCpu {
 
 impl PerCpu {
     pub fn new<'a>(cpu_id: usize) -> &'static mut PerCpu {
+        #[cfg(target_arch = "x86_64")]
+        let vaddr = PER_CPU_ARRAY_PTR as VirtAddr
+            + *crate::arch::acpi::get_lapic_map().get(&cpu_id).unwrap() as usize * PER_CPU_SIZE;
+        #[cfg(not(target_arch = "x86_64"))]
         let vaddr = PER_CPU_ARRAY_PTR as VirtAddr + cpu_id as usize * PER_CPU_SIZE;
         let ret = vaddr as *mut Self;
         unsafe {
@@ -86,6 +90,10 @@ impl PerCpu {
 }
 
 pub fn get_cpu_data<'a>(cpu_id: usize) -> &'a mut PerCpu {
+    #[cfg(target_arch = "x86_64")]
+    let cpu_data: usize = PER_CPU_ARRAY_PTR as VirtAddr
+        + *crate::arch::acpi::get_lapic_map().get(&cpu_id).unwrap() as usize * PER_CPU_SIZE;
+    #[cfg(not(target_arch = "x86_64"))]
     let cpu_data: usize = PER_CPU_ARRAY_PTR as VirtAddr + cpu_id as usize * PER_CPU_SIZE;
     unsafe { &mut *(cpu_data as *mut PerCpu) }
 }

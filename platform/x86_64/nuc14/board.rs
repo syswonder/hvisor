@@ -21,7 +21,7 @@ pub const ROOT_ZONE_DTB_ADDR: u64 = 0x00000000;
 pub const ROOT_ZONE_BOOT_STACK: GuestPhysAddr = 0x7000;
 pub const ROOT_ZONE_ENTRY: u64 = 0x8000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x500_0000; // hpa
-pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1);
+pub const ROOT_ZONE_CPUS: u64 = (1 << 0);
 
 const ROOT_ZONE_RSDP_REGION: HvConfigMemoryRegion = HvConfigMemoryRegion {
     mem_type: MEM_TYPE_RAM,
@@ -34,7 +34,7 @@ const ROOT_ZONE_ACPI_REGION: HvConfigMemoryRegion = HvConfigMemoryRegion {
     mem_type: MEM_TYPE_RAM,
     physical_start: 0x3a20_0000, // hpa
     virtual_start: 0x3520_0000,  // gpa
-    size: 0xf000,                // modify size accordingly
+    size: 0x10_0000,             // modify size accordingly
 };
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
@@ -106,7 +106,9 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     screen_base: ROOT_ZONE_SCREEN_BASE_ADDR,
 };
 
-pub const ROOT_PCI_DEVS: [u64; 8] = [0x0, 0x8, 0x10, 0x18, 0xf8, 0xfa, 0xfb, 0x100]; // 0x10,
+pub const ROOT_PCI_DEVS: [u64; 16] = [
+    0x0, 0x10, 0x20, 0x40, 0x50, 0x68, 0x90, 0xa0, 0xa2, 0xa3, 0xb0, 0xe0, 0xe8, 0xf8, 0xfb, 0xfc,
+]; // 0xfd,
 
 #[cfg(all(feature = "graphics", target_arch = "x86_64"))]
 pub const GRAPHICS_FONT: &[u8] =

@@ -111,7 +111,6 @@ pub fn primary_init_early() {
     PENDING_VECTORS.call_once(|| PendingVectors::new(MAX_CPU_NUM));
     idt::init(MAX_ZONE_NUM);
     ioapic::init_virt_ioapic(MAX_ZONE_NUM);
-    acpi::root_init();
     vtd::init();
 }
 

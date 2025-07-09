@@ -25,6 +25,8 @@ const CONTEXT_TABLE_ENTRY_SIZE: usize = 16;
 //  DMA-remapping registers
 
 mod dma_remap_reg {
+    /// Capability Register
+    pub const DMAR_CAP_REG: usize = 0x8;
     /// Extended Capability Register
     pub const DMAR_ECAP_REG: usize = 0x10;
     /// Global Command Register
@@ -220,9 +222,11 @@ impl Vtd {
     }
 
     fn check_capability(&mut self) {
-        let ecap = EcapFlags::from_bits_truncate(self.mmio_read_u64(DMAR_ECAP_REG));
-        info!("ecap: {:x?}", ecap);
-        assert!(ecap.contains(EcapFlags::EIM | EcapFlags::IR | EcapFlags::QI));
+        let cap = self.mmio_read_u64(DMAR_CAP_REG);
+        let ecap = self.mmio_read_u64(DMAR_ECAP_REG);
+        info!("cap: {:x?} ecap: {:x?}", cap, ecap);
+        assert!(EcapFlags::from_bits_truncate(ecap)
+            .contains(EcapFlags::EIM | EcapFlags::IR | EcapFlags::QI));
     }
 
     fn init(&mut self) {
@@ -346,6 +350,7 @@ pub fn init() {
 }
 
 pub fn add_device(zone_id: usize, bdf: u64) {
+    // info!("vtd add device: {:x}, zone: {:x}", bdf, zone_id);
     VTD.get().unwrap().lock().add_device(zone_id, bdf);
 }
 

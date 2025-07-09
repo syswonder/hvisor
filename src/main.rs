@@ -71,8 +71,6 @@ mod pci;
 #[cfg(test)]
 mod tests;
 
-#[cfg(target_arch = "x86_64")]
-use crate::arch::boot::MultibootInfo;
 #[cfg(target_arch = "aarch64")]
 use crate::arch::mm::setup_parange;
 use crate::consts::MAX_CPU_NUM;
@@ -164,15 +162,29 @@ fn per_cpu_init(cpu: &mut PerCpu) {
     //     memory::hv_page_table().read().activate();
     // };
     info!("CPU {} hv_pt_install OK.", cpu.id);
+    info!(
+        "cpuid: {} ArchCpu::id:{}",
+        crate::arch::cpu::this_cpu_id(),
+        percpu::this_cpu_data().arch_cpu.cpuid
+    );
 }
 
 fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize, ncpu: usize) {
+    #[cfg(target_arch = "x86_64")]
+    for (&apic_id, _) in crate::arch::acpi::get_lapic_map() {
+        if apic_id == this_id {
+            continue;
+        }
+        cpu_start(apic_id, arch_entry as _, host_dtb);
+    }
+    #[cfg(not(target_arch = "x86_64"))]
     for cpu_id in 0..ncpu {
         if cpu_id == this_id {
             continue;
         }
         cpu_start(cpu_id, arch_entry as _, host_dtb);
     }
+    println!("wakeup secondary cpus done");
 }
 
 fn rust_main(cpuid: usize, host_dtb: usize) {
@@ -189,8 +201,9 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         memory::heap::test();
         #[cfg(target_arch = "x86_64")]
         {
-            MultibootInfo::init(host_dtb);
+            crate::arch::boot::module_init(host_dtb);
             device::irqchip::pic::ioapic::init_ioapic();
+            crate::arch::acpi::root_init();
         }
     }
 
@@ -217,7 +230,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     // FIXME:
     #[cfg(target_arch = "x86_64")]
     {
-        ncpu = 4;
+        ncpu = crate::arch::acpi::get_lapic_map().len();
     }
 
     // If we failed to detect, just use default value.

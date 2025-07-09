@@ -1,8 +1,8 @@
 use crate::{
-    arch::Stage2PageTable,
+    arch::{zone::HvArchZoneConfig, Stage2PageTable},
     config::{root_zone_config, HvPciConfig, HvZoneConfig, MEM_TYPE_RAM},
     error::HvResult,
-    memory::{GuestPhysAddr, HostPhysAddr, MemorySet},
+    memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet},
     percpu::this_zone,
     platform::MEM_TYPE_OTHER_ZONES,
 };
@@ -10,21 +10,71 @@ use alloc::string::{String, ToString};
 use core::{
     arch::{self, global_asm},
     ffi::{c_char, CStr},
+    mem::size_of,
     ptr::{copy, copy_nonoverlapping},
 };
-use spin::Mutex;
+use multiboot_tag::{Modules, MultibootTags};
+use spin::{Mutex, Once};
 
-use super::zone::HvArchZoneConfig;
+mod multiboot_tag {
+    pub const END: u32 = 0;
+    pub const MODULES: u32 = 3;
+    pub const MEMORY_MAP: u32 = 6;
+    pub const FRAMEBUFFER: u32 = 8;
+    pub const ACPI_V1: u32 = 14;
+
+    #[repr(C)]
+    #[derive(Default, Debug, Clone, Copy)]
+    pub struct Modules {
+        tag_type: u32,
+        pub size: u32,
+        pub mod_start: u32,
+        pub mod_end: u32,
+    }
+
+    #[repr(C)]
+    #[derive(Default, Debug, Clone, Copy)]
+    pub struct MemoryMap {
+        tag_type: u32,
+        pub size: u32,
+        pub entry_size: u32,
+        pub entry_version: u32,
+    }
+
+    #[repr(C)]
+    #[derive(Default, Debug, Clone, Copy)]
+    pub struct MemoryMapEntry {
+        pub base_addr: u64,
+        pub length: u64,
+        pub _type: u32,
+        reserved: u32,
+    }
+
+    #[repr(C)]
+    #[derive(Default, Debug, Clone, Copy)]
+    pub struct Framebuffer {
+        tag_type: u32,
+        size: u32,
+        pub addr: u64,
+        pub pitch: u32,
+        pub width: u32,
+        pub height: u32,
+        pub bpp: u8,
+        pub fb_type: u8,
+        reserved: u8,
+    }
+
+    #[derive(Default, Debug, Clone, Copy)]
+    pub struct MultibootTags {
+        pub framebuffer: Framebuffer,
+        pub memory_map_addr: Option<usize>,
+        pub rsdp_addr: Option<usize>,
+    }
+}
+
+static MULTIBOOT_TAGS: Once<MultibootTags> = Once::new();
 
 const E820_MAX_ENTRIES_ZEROPAGE: usize = 128;
-
-lazy_static::lazy_static! {
-    static ref CMDLINE: Mutex<String> = Mutex::new(String::new());
-}
-
-pub fn cmdline() -> &'static Mutex<String> {
-    &CMDLINE
-}
 
 bitflags::bitflags! {
     #[derive(Clone, Copy, Debug)]
@@ -56,13 +106,16 @@ pub enum E820Type {
 #[derive(Debug, Clone, Copy)]
 /// The so-called "zeropage"
 pub struct BootParams {
-    pad0: [u8; 0x1e8],
+    screen_info: ScreenInfo,
+    pad0: [u8; 0x1a8],
     e820_entries: u8,
     pad1: [u8; 0x8],
     setup_sects: u8,
     root_flags: u16,
     syssize: u32,
-    pad2: [u8; 0xd],
+    ramsize: u16,
+    vid_mode: u16,
+    pad2: [u8; 0x9],
     boot_proto_version: u16,
     pad3: [u8; 0x6],
     kernel_version: u16,
@@ -87,7 +140,7 @@ pub struct BootParams {
 }
 
 impl BootParams {
-    pub fn fill(config: &HvZoneConfig, gpm: &MemorySet<Stage2PageTable>) -> HvResult {
+    pub fn fill(config: &HvZoneConfig, gpm: &mut MemorySet<Stage2PageTable>) -> HvResult {
         if config.arch_config.setup_load_gpa == 0 {
             panic!("setup addr not set yet!");
         }
@@ -129,15 +182,21 @@ impl BootParams {
         }
 
         // set e820
-        // TODO: zone config
-        boot_params.set_e820_entries(&config);
+        boot_params.set_e820_entries(config);
 
+        // set initrd
         if config.arch_config.initrd_load_gpa != 0 {
             boot_params.set_initrd(
                 config.arch_config.initrd_load_gpa as _,
                 config.arch_config.initrd_size as _,
             );
         }
+
+        // set screen
+        if config.arch_config.screen_base != 0 {
+            boot_params.set_screen_info(config, gpm);
+        }
+
         Ok(())
     }
 
@@ -183,6 +242,41 @@ impl BootParams {
         self.ramdisk_size = ramdisk_size;
         info!("initrd size: {}", self.ramdisk_size);
     }
+
+    fn set_screen_info(&mut self, config: &HvZoneConfig, gpm: &mut MemorySet<Stage2PageTable>) {
+        let fb_info = &get_multiboot_tags().framebuffer;
+
+        let bytes_per_pixel = (fb_info.bpp as usize) / 8;
+        let width = fb_info.width as usize;
+        let height = fb_info.height as usize;
+
+        self.screen_info.lfb_base = config.arch_config.screen_base as _;
+        self.screen_info.lfb_width = width as _;
+        self.screen_info.lfb_height = height as _;
+        self.screen_info.lfb_depth = fb_info.bpp as _;
+        self.screen_info.lfb_size = (bytes_per_pixel * width * height) as _;
+        self.screen_info.lfb_linelength = (bytes_per_pixel * width) as _;
+
+        // TODO: custom
+        self.screen_info.blue_size = 8;
+        self.screen_info.blue_pos = 0;
+        self.screen_info.green_size = 8;
+        self.screen_info.green_pos = 8;
+        self.screen_info.red_size = 8;
+        self.screen_info.red_pos = 16;
+        self.screen_info.alpha_size = 8;
+        self.screen_info.alpha_pos = 24;
+        self.screen_info.orig_video_is_vga = 0x23; // VESA
+        self.screen_info.capabilities = 0;
+        self.vid_mode = 0xffff;
+
+        gpm.insert(MemoryRegion::new_with_offset_mapper(
+            config.arch_config.screen_base as GuestPhysAddr,
+            fb_info.addr as HostPhysAddr,
+            self.screen_info.lfb_size as _,
+            MemFlags::READ | MemFlags::WRITE,
+        ));
+    }
 }
 
 #[repr(packed)]
@@ -194,33 +288,147 @@ pub struct BootE820Entry {
     _type: E820Type,
 }
 
-#[repr(C)]
-#[derive(Debug, Default, Clone, Copy)]
-pub struct MultibootInfo {
-    flags: u32,
-    mem_lower: u32,
-    mem_upper: u32,
-    boot_device: u32,
-    cmdline: u32,
-    pub mods_count: u32,
-    pub mods_addr: u32,
+#[repr(packed)]
+#[derive(Debug, Clone, Copy)]
+pub struct ScreenInfo {
+    pad0: [u8; 0x0f],
+    orig_video_is_vga: u8,
+    pad1: u16,
+    lfb_width: u16,
+    lfb_height: u16,
+    lfb_depth: u16,
+    lfb_base: u32,
+    lfb_size: u32,
+    pad2: [u16; 2],
+    lfb_linelength: u16,
+    red_size: u8,
+    red_pos: u8,
+    green_size: u8,
+    green_pos: u8,
+    blue_size: u8,
+    blue_pos: u8,
+    alpha_size: u8,
+    alpha_pos: u8,
+    pad3: [u8; 4],
+    pages: u16,
+    vesa_attributes: u16,
+    capabilities: u32,
+    pad4: [u8; 6],
 }
 
-impl MultibootInfo {
-    fn new(addr: usize) -> Self {
-        let multiboot_info = unsafe { &*(addr as *const MultibootInfo) };
-        multiboot_info.clone()
+#[repr(packed)]
+#[derive(Debug, Clone, Copy)]
+pub struct EfiInfo {
+    loader_signature: u32,
+    systab: u32,
+    memdesc_size: u32,
+    memdesc_version: u32,
+    memmap: u32,
+    memmap_size: u32,
+    systab_hi: u32,
+    memmap_hi: u32,
+}
+
+pub fn multiboot_init(info_addr: usize) {
+    let mut cur = info_addr;
+    let total_size = unsafe { *(cur as *const u32) } as usize;
+    let mut multiboot_tags = MultibootTags::default();
+
+    // println!("{:#x?}", total_size);
+    cur += 8;
+    while cur < info_addr + total_size {
+        let tag_type = unsafe { *(cur as *const u32) };
+        if tag_type == multiboot_tag::END {
+            break;
+        }
+
+        // println!("{:#x?}", tag_type);
+        match tag_type {
+            multiboot_tag::MODULES => {}
+            multiboot_tag::MEMORY_MAP => {
+                multiboot_tags.memory_map_addr = Some(cur);
+            }
+            multiboot_tag::FRAMEBUFFER => {
+                multiboot_tags.framebuffer =
+                    unsafe { *(cur as *const multiboot_tag::Framebuffer) }.clone();
+            }
+            multiboot_tag::ACPI_V1 => {
+                multiboot_tags.rsdp_addr = Some(cur + 8);
+            }
+            _ => {}
+        }
+        cur += ((unsafe { *((cur + 4) as *const u32) } as usize + 7) & (!7));
     }
 
-    pub fn init(info_addr: usize) {
-        let boot_info = MultibootInfo::new(info_addr);
-        println!("{:#x?}", boot_info);
+    MULTIBOOT_TAGS.call_once(|| multiboot_tags);
+}
 
-        let cmd_ptr = boot_info.cmdline as *const c_char;
-        let cmd_cstr = unsafe { CStr::from_ptr(cmd_ptr) };
-        let cmd_str = cmd_cstr.to_str().unwrap();
-        CMDLINE.lock().push_str(cmd_str);
+pub fn get_multiboot_tags() -> &'static multiboot_tag::MultibootTags {
+    MULTIBOOT_TAGS.get().unwrap()
+}
 
-        println!("cmdline: {}", CMDLINE.lock().as_str());
+pub fn print_memory_map() {
+    let map_addr = get_multiboot_tags().memory_map_addr.unwrap();
+    let mem_map = unsafe { *(map_addr as *const multiboot_tag::MemoryMap) };
+    let mem_map_size = size_of::<multiboot_tag::MemoryMap>();
+    let cnt = ((mem_map.size as usize) - mem_map_size) / (mem_map.entry_size as usize);
+
+    let mut entry_addr = map_addr + mem_map_size;
+    println!("===== MEMORY MAP =====");
+    for i in 0..cnt {
+        let entry = unsafe { *(entry_addr as *const multiboot_tag::MemoryMapEntry) };
+        println!(
+            "base: {:x}, len: {:x}, type: {:x}",
+            entry.base_addr, entry.length, entry._type
+        );
+        entry_addr += size_of::<multiboot_tag::MemoryMapEntry>();
     }
+}
+
+/// copy kernel modules to the right place
+pub fn module_init(info_addr: usize) {
+    println!("module_init");
+    let mut cur = info_addr;
+    let total_size = unsafe { *(cur as *const u32) } as usize;
+
+    let mut cnt = 0;
+    cur += 8;
+    while cur < info_addr + total_size {
+        let tag_type = unsafe { *(cur as *const u32) };
+        let ptr = cur as *const multiboot_tag::Modules;
+        cur += ((unsafe { *((cur + 4) as *const u32) } as usize + 7) & (!7));
+
+        if tag_type == multiboot_tag::END {
+            break;
+        }
+        if tag_type != multiboot_tag::MODULES {
+            continue;
+        }
+
+        let module = unsafe { *ptr };
+        let dst = unsafe {
+            usize::from_str_radix(
+                CStr::from_ptr(((ptr as usize) + size_of::<Modules>()) as *const c_char)
+                    .to_str()
+                    .unwrap(),
+                16,
+            )
+            .unwrap()
+        };
+        println!("module: {:#x?}, addr: {:#x?}", module, dst);
+        cnt += 1;
+
+        if dst == 0x0 {
+            continue;
+        }
+
+        unsafe {
+            core::ptr::copy(
+                module.mod_start as *mut u8,
+                dst as *mut u8,
+                (module.mod_end - module.mod_start + 1) as usize,
+            )
+        };
+    }
+    println!("module cnt: {:x}", cnt);
 }
