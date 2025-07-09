@@ -1,0 +1,41 @@
+name: 'RISCV GCC Toolchain Setup'
+description: 'Install RISCV GCC cross-compiler with caching support'
+inputs:
+  version:
+    description: 'Toolchain version'
+    required: false
+    default: '13.2.0'
+  install-path:
+    description: 'Installation directory'
+    required: false
+    default: '/opt/riscv64-unknown-linux-gnu'
+
+runs:
+  using: "composite"
+  steps:
+    - name: Create Installation Directory
+      shell: bash
+      run: |
+        mkdir -p "${{ inputs.install-path }}"
+      env:
+        INSTALL_DIR: ${{ inputs.install-path }}
+
+    - name: Download & Extract
+      shell: bash
+      run: |
+        wget https://github.com/riscv-collab/riscv-gnu-toolchain/releases/download/2025.06.07/riscv64-glibc-ubuntu-22.04-gcc-nightly-2025.06.07-nightly.tar.xz
+        tar xJf riscv64-glibc-ubuntu-22.04-gcc-nightly-2025.06.07-nightly.tar.xz \
+          -C "${{ inputs.install-path }}" \
+          --strip-components=1
+
+
+    - name: Set Environment
+      shell: bash
+      run: |
+        echo "${{ inputs.install-path }}/bin" >> $GITHUB_PATH
+
+    - name: Verify Installation
+      shell: bash
+      run: |
+        riscv64-unknown-linux-gnu-gcc --version
+        echo "Toolchain path: ${{ inputs.install-path }}"

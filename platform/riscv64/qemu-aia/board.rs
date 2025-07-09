@@ -1,6 +1,28 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 use crate::{arch::zone::HvArchZoneConfig, config::*};
 
 pub const BOARD_NAME: &str = "qemu-aia";
+
+pub const BOARD_NCPUS: usize = 4;
+
+pub const ACLINT_SSWI_BASE: usize = 0x2F00000;
+
+// This device is used for qemu-quit.
+pub const SIFIVE_TEST_BASE: u64 = 0x100000;
 
 pub const PLIC_BASE: usize = 0xc000000;
 pub const APLIC_BASE: usize = 0xc000000;

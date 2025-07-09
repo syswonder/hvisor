@@ -1,19 +1,37 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 // use psci::error::INVALID_ADDRESS;
-use crate::consts::INVALID_ADDRESS;
+use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM};
 use crate::pci::pci::PciRoot;
 use spin::RwLock;
 
 use crate::arch::mm::new_s2_memory_set;
 use crate::arch::s2pt::Stage2PageTable;
 use crate::config::{HvZoneConfig, CONFIG_NAME_MAXLEN};
-use crate::consts::MAX_CPU_NUM;
 
+#[cfg(all(target_arch = "riscv64", feature = "plic"))]
+use crate::device::irqchip::plic::vplic;
 use crate::error::HvResult;
 use crate::memory::addr::GuestPhysAddr;
 use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
 use crate::percpu::{get_cpu_data, this_zone, CpuSet};
+#[cfg(all(feature = "plic", target_arch = "riscv64"))]
+use crate::platform::BOARD_PLIC_INTERRUPTS_NUM;
 use core::panic;
 
 pub struct Zone {
@@ -24,6 +42,9 @@ pub struct Zone {
     pub irq_bitmap: [u32; 1024 / 32],
     pub gpm: MemorySet<Stage2PageTable>,
     pub pciroot: PciRoot,
+    #[cfg(all(target_arch = "riscv64", feature = "plic"))]
+    pub vplic: Option<vplic::VirtualPLIC>,
+    pub is_err: bool,
 }
 
 impl Zone {
@@ -36,6 +57,9 @@ impl Zone {
             mmio: Vec::new(),
             irq_bitmap: [0; 1024 / 32],
             pciroot: PciRoot::new(),
+            is_err: false,
+            #[cfg(all(target_arch = "riscv64", feature = "plic"))]
+            vplic: None,
         }
     }
 
@@ -71,7 +95,7 @@ impl Zone {
         if let Some(mmio) = self.mmio.iter_mut().find(|mmio| mmio.region.start == start) {
             warn!("duplicated mmio region {:#x?}", mmio);
             if mmio.region.size != size {
-                panic!("duplicated mmio region size not match");
+                error!("duplicated mmio region size not match, PLEASE CHECK!!!");
             }
             mmio.handler = handler;
             mmio.arg = arg;
@@ -160,6 +184,7 @@ pub fn all_zones_info() -> Vec<ZoneInfo> {
                 zone_id: zone_lock.id as u32,
                 cpus: zone_lock.cpu_set.bitmap,
                 name: zone_lock.name.clone(),
+                is_err: zone_lock.is_err as u8,
             }
         })
         .collect()
@@ -175,25 +200,60 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     let zone_id = config.zone_id as usize;
 
     if find_zone(zone_id).is_some() {
-        return hv_result_err!(EEXIST);
+        return hv_result_err!(
+            EINVAL,
+            format!("Failed to create zone: zone_id {} already exists", zone_id)
+        );
     }
 
     let mut zone = Zone::new(zone_id, &config.name);
     zone.pt_init(config.memory_regions()).unwrap();
     zone.mmio_init(&config.arch_config);
-    zone.irq_bitmap_init(config.interrupts());
     #[cfg(target_arch = "aarch64")]
     zone.ivc_init(config.ivc_config());
-    #[cfg(all(feature = "pci", target_arch = "aarch64"))]
+
+    /* loongarch page table emergency */
+    /* Kai: Maybe unnecessary but i can't boot vms on my 3A6000 PC without this function. */
+    #[cfg(target_arch = "loongarch64")]
+    zone.page_table_emergency(
+        config.pci_config.ecam_base as _,
+        config.pci_config.ecam_size as _,
+    )?;
+
+    #[cfg(all(feature = "pci"))]
     zone.pci_init(
         &config.pci_config,
         config.num_pci_devs as _,
         &config.alloc_pci_devs,
     );
 
-    config.cpus().iter().for_each(|cpu_id| {
+    let mut _cpu_num = 0;
+
+    for cpu_id in config.cpus().iter() {
+        if let Some(zone) = get_cpu_data(*cpu_id as _).zone.clone() {
+            return hv_result_err!(
+                EBUSY,
+                format!(
+                    "Failed to create zone: cpu {} already belongs to zone {}",
+                    cpu_id,
+                    zone.read().id
+                )
+            );
+        }
         zone.cpu_set.set_bit(*cpu_id as _);
-    });
+        _cpu_num += 1;
+    }
+
+    #[cfg(feature = "plic")]
+    {
+        zone.vplic = Some(vplic::VirtualPLIC::new(
+            config.arch_config.plic_base,
+            BOARD_PLIC_INTERRUPTS_NUM,
+            _cpu_num * 2,
+        ));
+    }
+
+    zone.irq_bitmap_init(config.interrupts());
 
     let mut dtb_ipa = INVALID_ADDRESS as u64;
     for region in config.memory_regions() {
@@ -220,7 +280,6 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
             cpu_data.dtb_ipa = dtb_ipa as _;
         });
     }
-    add_zone(new_zone_pointer.clone());
 
     Ok(new_zone_pointer)
 }
@@ -231,6 +290,22 @@ pub struct ZoneInfo {
     zone_id: u32,
     cpus: u64,
     name: [u8; CONFIG_NAME_MAXLEN],
+    is_err: u8,
+}
+// Be careful about dead lock for zone.write()
+pub fn zone_error() {
+    if is_this_root_zone() {
+        panic!("root zone has some error");
+    }
+    let zone = this_zone();
+    let zone_id = zone.read().id;
+    error!("zone {} has some error, please shut down it", zone_id);
+
+    let mut zone_w = zone.write();
+    zone_w.is_err = true;
+
+    drop(zone_w);
+    drop(zone);
 }
 
 #[test_case]

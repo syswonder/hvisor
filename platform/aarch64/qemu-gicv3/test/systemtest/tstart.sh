@@ -48,7 +48,7 @@ expect {
 # Test ls command
 expect {
     "root@(none):/home/arm64# " {
-        send "ls > ./test/testresult/test_ls.txt\r"
+        send "ls | grep zone0.txt > ./test/testresult/test_ls.txt\r"
     }
     timeout {
         exit 1
@@ -88,14 +88,14 @@ expect {
 # Test starting zone1
 expect {
     "root@(none):/home/arm64# " {
-        send "./linux2.sh\r"
+        send "./boot_zone1.sh\r"
     }
     timeout {
         exit 1
     }
 }
 expect {
-    -re {Script started, file is /dev/null.*#} {
+    -re {Script started.*#} {
         send "bash\r"
     }
     timeout {
@@ -116,7 +116,7 @@ expect {
 # Test screen access to zone1
 expect {
     "root@(none):/home/arm64# " {
-        send "./screen_linux2.sh\r"
+        send "./screen_zone1.sh\r"
         send "\r"
     }
     timeout {
@@ -167,34 +167,34 @@ expect {
 }
 
 # temporarily disable the problematic subtests
-# # Shutting down zone1
-# expect {
-#     "root@(none):/home/arm64# " {
-#         send "./hvisor zone shutdown -id 1\r"
-#     }
-#     timeout {
-#         exit 1
-#     }
-# }
+# Shutting down zone1
+expect {
+    "root@(none):/home/arm64# " {
+        send "./hvisor zone shutdown -id 1\r"
+    }
+    timeout {
+        exit 1
+    }
+}
 
-# # Test printing zone list after removing zone1
-# expect {
-#     "root@(none):/home/arm64# " {
-#         send "./hvisor zone list > ./test/testresult/test_zone_list1.txt\r"
-#     }
-#     timeout {
-#         exit 1
-#     }
-# }
+# Test printing zone list after removing zone1
+expect {
+    "root@(none):/home/arm64# " {
+        send "./hvisor zone list > ./test/testresult/test_zone_list1.txt\r"
+    }
+    timeout {
+        exit 1
+    }
+}
 
-# expect {
-#     "root@(none):/home/arm64# " {
-#         send "echo \"Test out finish!!\"\r"
-#     }
-#     timeout {
-#         exit 1
-#     }
-# }
+expect {
+    "root@(none):/home/arm64# " {
+        send "echo \"Test out finish!!\"\r"
+    }
+    timeout {
+        exit 1
+    }
+}
 
 after 5000  # Delay 5 seconds
 # Compare test results and print finally

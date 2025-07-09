@@ -1,7 +1,24 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
+#![allow(unused)]
 use crate::{
     arch::ipi::arch_send_event,
+    consts::MAX_CPU_NUM,
     device::{
-        irqchip::{self, inject_irq},
+        irqchip::inject_irq,
         virtio_trampoline::{handle_virtio_irq, IRQ_WAKEUP_VIRTIO_DEVICE},
     },
     percpu::this_cpu_data,
@@ -14,6 +31,8 @@ pub const IPI_EVENT_SHUTDOWN: usize = 1;
 pub const IPI_EVENT_VIRTIO_INJECT_IRQ: usize = 2;
 pub const IPI_EVENT_WAKEUP_VIRTIO_DEVICE: usize = 3;
 pub const IPI_EVENT_CLEAR_INJECT_IRQ: usize = 4;
+pub const IPI_EVENT_UPDATE_HART_LINE: usize = 5;
+pub const IPI_EVENT_SEND_IPI: usize = 6;
 
 static EVENT_MANAGER: Once<EventManager> = Once::new();
 
@@ -35,6 +54,9 @@ impl EventManager {
         match self.inner.get(cpu) {
             Some(events) => {
                 let mut e = events.lock();
+                if event_id == IPI_EVENT_SHUTDOWN {
+                    e.clear();
+                }
                 e.push_back(event_id);
                 Some(())
             }
@@ -77,8 +99,8 @@ fn fetch_event(cpu: usize) -> Option<usize> {
     EVENT_MANAGER.get().unwrap().fetch_event(cpu)
 }
 
-pub fn init(max_cpus: usize) {
-    EVENT_MANAGER.call_once(|| EventManager::new(max_cpus));
+pub fn init() {
+    EVENT_MANAGER.call_once(|| EventManager::new(MAX_CPU_NUM));
 }
 
 pub fn dump_events() {
@@ -87,6 +109,10 @@ pub fn dump_events() {
 
 pub fn dump_cpu_events(cpu: usize) -> Vec<usize> {
     EVENT_MANAGER.get().unwrap().dump_cpu(cpu)
+}
+
+pub fn clear_events(cpu: usize) {
+    EVENT_MANAGER.get().unwrap().inner[cpu].lock().clear();
 }
 
 pub fn check_events() -> bool {
@@ -110,7 +136,23 @@ pub fn check_events() -> bool {
         }
         #[cfg(target_arch = "loongarch64")]
         Some(IPI_EVENT_CLEAR_INJECT_IRQ) => {
+            use crate::device::irqchip;
             irqchip::ls7a2000::clear_hwi_injected_irq();
+            true
+        }
+        #[cfg(all(target_arch = "riscv64", feature = "plic"))]
+        Some(IPI_EVENT_UPDATE_HART_LINE) => {
+            use crate::device::irqchip;
+            info!("cpu {} update hart line", cpu_data.id);
+            irqchip::plic::update_hart_line();
+            true
+        }
+        #[cfg(target_arch = "riscv64")]
+        Some(IPI_EVENT_SEND_IPI) => {
+            // This event is different from events above, it is used to inject software interrupt.
+            // While events above will inject external interrupt.
+            use crate::arch::ipi::arch_ipi_handler;
+            arch_ipi_handler();
             true
         }
         _ => false,
@@ -134,7 +176,7 @@ pub fn send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
 
 #[test_case]
 fn test_simple_send_event() {
-    init(1);
+    init();
     send_event(0, 0, IPI_EVENT_WAKEUP);
     assert_eq!(fetch_event(0), Some(IPI_EVENT_WAKEUP));
 }

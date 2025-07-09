@@ -1,4 +1,20 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 use crate::arch::cpu::this_cpu_id;
+use crate::consts;
 use crate::device::irqchip::gicv2::gicc::GICC;
 use crate::device::irqchip::gicv2::gicd::GICV2_SGIS_NUM;
 use crate::device::irqchip::gicv2::gich::{
@@ -15,7 +31,7 @@ use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use spin::{Mutex, Once};
 
-pub const MAX_CPU_NUM: usize = 8;
+pub const MAX_CPU_NUM: usize = consts::MAX_CPU_NUM;
 pub const MAINTENACE_INTERRUPT: u64 = 25;
 
 pub fn gicv2_handle_irq() {

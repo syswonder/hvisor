@@ -30,7 +30,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget
-          cargo install --version 0.3.0 cargo-binutils
+          cargo install --version 0.3.0 --locked cargo-binutils
           cargo install cargo-xbuild
       - name: Format Check
         run: make fmt-test
@@ -50,6 +50,12 @@ jobs:
           - arch: aarch64
             board: "qemu-gicv2"
             rustc_target: aarch64-unknown-none
+          - arch: riscv64
+            board: "qemu-plic"
+            rustc_target: riscv64gc-unknown-none-elf
+          - arch: riscv64
+            board: "qemu-aia"
+            rustc_target: riscv64gc-unknown-none-elf
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -62,7 +68,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget
-          cargo install --version 0.3.0 cargo-binutils
+          cargo install --version 0.3.0 --locked cargo-binutils
           cargo install cargo-xbuild
       - name: Set up environment variables
         run: |
@@ -93,6 +99,15 @@ jobs:
           - arch: aarch64
             board: "imx8mp"
             rustc_target: aarch64-unknown-none
+          - arch: aarch64
+            board: "rk3568"
+            rustc_target: aarch64-unknown-none
+          - arch: aarch64
+            board: "rk3588"
+            rustc_target: aarch64-unknown-none
+          - arch: aarch64
+            board: "ok6254-c"
+            rustc_target: aarch64-unknown-none
           # riscv64
           - arch: riscv64
             board: "qemu-aia"
@@ -116,7 +131,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y wget
-          cargo install --version 0.3.0 cargo-binutils
+          cargo install --version 0.3.0 --locked cargo-binutils
           cargo install cargo-xbuild
           wget -q https://github.com/sunhaiyong1978/CLFS-for-LoongArch/releases/download/8.0/loongarch64-clfs-8.0-cross-tools-gcc-full.tar.xz
           tar -xf loongarch64-clfs-8.0-cross-tools-gcc-full.tar.xz
@@ -132,7 +147,7 @@ jobs:
   systemtest:
     # if: false # we need to update corresponding scripts for the new board abstraction
     name: systemtest
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     strategy:
       fail-fast: false
       matrix:
@@ -141,6 +156,10 @@ jobs:
           - arch: aarch64
             rustc_target: aarch64-unknown-none
             board: "qemu-gicv3"
+          # riscv64
+          - arch: riscv64
+            rustc_target: riscv64gc-unknown-none-elf
+            board: "qemu-plic"
           # Because other features need to be customized scripts
     steps:
       - name: Checkout Repository
@@ -150,15 +169,49 @@ jobs:
         with:
           targets: ${{ matrix.rustc_target }}
           components: rust-src
+
+      - name: Setup QEMU from Source
+        uses: ./.github/actions/setup-qemu
+        with:
+          qemu-version: '9.0.2'
+          install-path: '/opt/qemu'
+
+      - name: Setup ARM aarch64-none-linux-gnu
+        if: matrix.arch == 'aarch64'
+        uses: ./.github/actions/setup-aarch64-none-linux-gnu
+        with:
+          version: '10.3-2021.07' 
+          install-path: '/opt/aarch64-none-linux-gnu'
+
+      - name: Setup RISCV riscv64-unknown-linux-gnu
+        if: matrix.arch == 'riscv64'
+        uses: ./.github/actions/setup-riscv64-unknown-linux-gnu
+        with:
+          version: '13.2.0' 
+          install-path: '/opt/riscv64-unknown-linux-gnu'
+
+
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget expect device-tree-compiler p7zip-full
-          cargo install --version 0.3.0 cargo-binutils
+          sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget expect device-tree-compiler p7zip-full gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu
+          cargo install --version 0.3.0 --locked cargo-binutils
           cargo install cargo-xbuild
+
       - name: Set up environment variables
         run: |
           echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
           echo "BOARD=${{ matrix.board }}" >> $GITHUB_ENV
       - name: Run System Test
         run: make stest
+
+  license-checker:
+    name: license-checker
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+      - name: License Check
+        run: |
+          set -x  
+          ./tools/license_checker.sh

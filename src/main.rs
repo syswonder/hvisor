@@ -1,3 +1,19 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
+
 //! The main module and entrypoint
 //!
 //! Various facilities of hvisor are implemented as submodules. The most
@@ -29,6 +45,9 @@ mod error;
 extern crate log;
 #[macro_use]
 extern crate lazy_static;
+
+extern crate fdt_rs;
+
 #[macro_use]
 mod logging;
 mod arch;
@@ -58,9 +77,9 @@ use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
-use zone::zone_create;
+use zone::{add_zone, zone_create};
 
-#[cfg(all(feature = "iommu", target_arch = "aarch64"))]
+#[cfg(all(feature = "iommu"))]
 use crate::arch::iommu::iommu_init;
 
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
@@ -112,17 +131,18 @@ fn primary_init_early() {
     );
     memory::frame::init();
     memory::frame::test();
-    event::init(MAX_CPU_NUM);
+    event::init();
 
     device::irqchip::primary_init_early();
-    // crate::arch::mm::init_hv_page_table().unwrap();
 
     #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
     iommu_init();
 
     #[cfg(not(test))]
-    zone_create(root_zone_config()).unwrap();
-
+    {
+        let zone = zone_create(root_zone_config()).unwrap();
+        add_zone(zone);
+    }
     INIT_EARLY_OK.store(1, Ordering::Release);
 }
 
@@ -137,9 +157,6 @@ fn per_cpu_init(cpu: &mut PerCpu) {
     if cpu.zone.is_none() {
         warn!("zone is not created for cpu {}", cpu.id);
     }
-    // unsafe {
-    //     memory::hv_page_table().read().activate();
-    // };
     info!("CPU {} hv_pt_install OK.", cpu.id);
 }
 
@@ -156,7 +173,10 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     arch::trap::install_trap_vector();
 
     let mut is_primary = false;
-    println!("Hello, HVISOR!");
+    extern "C" {
+        fn skernel();
+    }
+    println!("Hello, start HVISOR at {:#x?}!", skernel as usize);
     if MASTER_CPU.load(Ordering::Acquire) == -1 {
         MASTER_CPU.store(cpuid as i32, Ordering::Release);
         is_primary = true;

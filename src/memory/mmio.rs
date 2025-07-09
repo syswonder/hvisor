@@ -1,6 +1,21 @@
-use core::ptr;
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
+use core::{ptr, usize};
 
-use crate::{error::HvResult, percpu::this_zone};
+use crate::{error::HvResult, percpu::this_zone, zone::zone_error};
 
 use super::GuestPhysAddr;
 
@@ -48,7 +63,9 @@ pub fn mmio_perform_access(base: usize, mmio: &mut MMIOAccess) {
                 2 => ptr::write_volatile(addr as *mut u16, mmio.value as u16),
                 4 => ptr::write_volatile(addr as *mut u32, mmio.value as u32),
                 8 => ptr::write_volatile(addr as *mut u64, mmio.value as u64),
-                _ => panic!("invalid mmio size"),
+                _ => {
+                    zone_error!("invalid mmio size: {}", mmio.size);
+                }
             }
         } else {
             mmio.value = match mmio.size {
@@ -56,7 +73,10 @@ pub fn mmio_perform_access(base: usize, mmio: &mut MMIOAccess) {
                 2 => ptr::read_volatile(addr as *mut u16) as _,
                 4 => ptr::read_volatile(addr as *mut u32) as _,
                 8 => ptr::read_volatile(addr as *mut u64) as _,
-                _ => panic!("invalid mmio size"),
+                _ => {
+                    zone_error!("invalid mmio size: {}", mmio.size);
+                    usize::MAX
+                }
             }
         }
     }
@@ -65,18 +85,27 @@ pub fn mmio_perform_access(base: usize, mmio: &mut MMIOAccess) {
 pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
     let zone = this_zone();
     let res = zone.read().find_mmio_region(mmio.address, mmio.size);
+    let zone_id = zone.read().id;
+    drop(zone);
     match res {
         Some((region, handler, arg)) => {
             mmio.address -= region.start;
-            handler(mmio, arg)
+            match handler(mmio, arg) {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    error!("mmio handler returned error: {:#x?}", e);
+                    Err(e)
+                }
+            }
         }
         None => {
-            warn!("Zone {} unhandled mmio fault {:#x?}", zone.read().id, mmio);
+            warn!("Zone {} unhandled mmio fault {:#x?}", zone_id, mmio);
             hv_result_err!(EINVAL)
         }
     }
 }
 
+#[allow(dead_code)]
 pub fn mmio_generic_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     mmio_perform_access(base, mmio);
     Ok(())

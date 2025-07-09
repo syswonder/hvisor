@@ -1,3 +1,18 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 #![allow(dead_code)]
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
@@ -6,7 +21,6 @@ use tock_registers::registers::{ReadOnly, ReadWrite, WriteOnly};
 use crate::memory::addr::{PhysAddr, VirtAddr};
 use spin::Mutex;
 
-pub const UART_BASE_PHYS: PhysAddr = 0x09000000;
 pub const UART_BASE_VIRT: VirtAddr = 0x09000000;
 
 lazy_static! {

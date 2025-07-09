@@ -1,7 +1,24 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//      Yulong Han(wheatfox17@icloud.com)
+//
+
 #![allow(unused_variables)]
 #![allow(dead_code)]
+
 /// UART driver for Xilinx Zynq Ultrascale+ MPSoC ZCU102 board.
-/// author: wheatfox (wheatfox17@icloud.com)
 /// references:
 /// 1. Zynq UltraScale+ Device TRM UG1085 (v2.4) December 21, 2023 Chapter 21
 /// 2. https://github.com/Xilinx/linux-xlnx :: drivers/tty/serial/xilinx_uartps.c
@@ -28,7 +45,6 @@ pub const UART_BAUDRATE_BDIV: u32 = 6;
 lazy_static! {
     static ref UART0: Mutex<ZynqUart> = {
         let mut uart = ZynqUart::new(UART0_BASE);
-        // uart.init();
         Mutex::new(uart)
     };
 }
@@ -36,7 +52,6 @@ lazy_static! {
 lazy_static! {
     static ref UART1: Mutex<ZynqUart> = {
         let mut uart = ZynqUart::new(UART1_BASE);
-        // uart.init();
         Mutex::new(uart)
     };
 }
@@ -156,6 +171,9 @@ impl ZynqUart {
     /// the baudrate is set to 115200, 8bit data, no parity, 1 stop bit
     fn init(&mut self) {
         // read clock_select from MR, assert it to 0 because we don't use 9600 baudrate
+
+        todo!(); // this init is not working right now, TODO: fix it on real hardware
+
         assert_eq!(
             self.regs().mr.read(MR::clock_select),
             MR::clock_select::Normal.into()

@@ -1,3 +1,18 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 use crate::arch::zone::HvArchZoneConfig;
 use crate::zone::Zone;
 
@@ -16,13 +31,26 @@ pub use gicv3::{
     gicd::set_ispender, inject_irq, percpu_init, primary_init_early, primary_init_late,
 };
 
-#[cfg(target_arch = "riscv64")]
-#[cfg(feature = "plic")]
+#[cfg(all(feature = "aclint", target_arch = "riscv64"))]
+pub mod aclint;
+
+#[cfg(all(feature = "plic", target_arch = "riscv64"))]
 pub mod plic;
 
-#[cfg(target_arch = "riscv64")]
-#[cfg(feature = "aia")]
+#[cfg(all(feature = "aia", target_arch = "riscv64"))]
 pub mod aia;
+
+#[cfg(target_arch = "riscv64")]
+pub fn primary_init_early() {
+    // aclint is local interrupt controller
+    // plic & aia is global interrupt controller
+    #[cfg(feature = "plic")]
+    plic::primary_init_early();
+    #[cfg(feature = "aia")]
+    aia::aplic::primary_init_early();
+    #[cfg(feature = "aclint")]
+    aclint::aclint_init(crate::platform::ACLINT_SSWI_BASE);
+}
 
 pub fn gic_handle_irq() {
     #[cfg(all(feature = "gicv2", target_arch = "aarch64"))]
@@ -42,21 +70,18 @@ impl Zone {
         {
             self.vgicv3_mmio_init(hv_config);
         }
+        #[cfg(all(feature = "plic", target_arch = "riscv64"))]
+        {
+            self.vplic_mmio_init(hv_config);
+        }
     }
 }
 
-#[cfg(target_arch = "riscv64")]
-#[cfg(feature = "plic")]
-pub use plic::{
-    host_plic, inject_irq, percpu_init, primary_init_early, primary_init_late,
-    vplic_global_emul_handler, vplic_hart_emul_handler,
-};
+#[cfg(all(feature = "plic", target_arch = "riscv64"))]
+pub use plic::{host_plic, inject_irq, percpu_init, primary_init_late};
 
-#[cfg(target_arch = "riscv64")]
-#[cfg(feature = "aia")]
-pub use aia::aplic::{
-    host_aplic, inject_irq, percpu_init, primary_init_early, primary_init_late, vaplic_emul_handler,
-};
+#[cfg(all(feature = "aia", target_arch = "riscv64"))]
+pub use aia::aplic::{host_aplic, inject_irq, percpu_init, primary_init_late, vaplic_emul_handler};
 
 #[cfg(target_arch = "loongarch64")]
 pub mod ls7a2000;

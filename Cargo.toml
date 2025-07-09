@@ -19,15 +19,24 @@ fdt = { path = "./vendor/fdt" }
 qemu-exit = "3.0.2"
 cortex-a = "8.1.1"
 cfg-if = "1.0"
+bitvec = { version="1.0.1", default-features = false, features = ["atomic", "alloc"] }
+
+[dependencies.fdt-rs]
+version = "0.4.5"
+default-features = false
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 aarch64-cpu = "9.4.0"
 psci = { version = "0.1.0", default-features = false, features = ["smc"]}
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
-sbi-rt = { version = "0.0.2", features = ["legacy"] }
-riscv = { git = "https://github.com/rcore-os/riscv", features = ["inline-asm"] }
+sbi-rt = { version = "0.0.3", features = ["legacy"] }
+sbi-spec = "0.0.8"
+riscv = "0.13.0"
+riscv_h = { package = "riscv", git = "https://github.com/rcore-os/riscv", features = ["inline-asm"] }
 riscv-decode = "0.2.1"
+riscv-peripheral = "0.2.1"
+riscv-pac = "0.2.0"
 
 [target.'cfg(target_arch = "loongarch64")'.dependencies]
 loongArch64 = "0.2.4"
@@ -39,23 +48,42 @@ x2apic = "0.4.3"
 raw-cpuid = "10.7.0"
 
 [features]
+############# general ##############
+iommu = [] # supported by: aarch64
+pci = [] # supported by: aarch64, loongarch64
+
 ############# aarch64 ##############
 # irqchip driver
 gicv2 = []
 gicv3 = []
+
 # uart driver
 pl011 = []
 xuartps = []
 imx_uart = []
-# functionality
-iommu = []
-pci = []
+uart_16550 = []
+
 # pagetable layout
 pt_layout_qemu = []
+pt_layout_rk3568 = []
+pt_layout_rk3588 = []
+pt_layout_zcu102 = []
+
+# cpu
+mpidr_rockchip = []
+
+# uart infos
+uart_base_rk3568 = []
+uart_base_rk3588 = []
+uart_base_ok6254 = []
+
 ############## riscv64 #############
 # irqchip driver
 plic = []
 aia = []
+aclint = []
+# extensions
+sstc = []
 ########### loongarch64 ############
 # irqchip driver
 loongson_7a2000 = []
@@ -66,4 +94,3 @@ loongson_uart = []
 [profile.dev]
 # panic = "abort" # avoid cargo test failure, this is a bug of cargo
 debug = 2
-# panic = "abort"

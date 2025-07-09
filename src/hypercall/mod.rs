@@ -1,13 +1,29 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 #![allow(dead_code)]
-use crate::arch::cpu::this_cpu_id;
-use crate::config::HvZoneConfig;
-use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, PAGE_SIZE};
-use crate::device::irqchip::inject_irq;
+#![allow(unreachable_patterns)]
+
+use crate::config::{HvZoneConfig, CONFIG_MAGIC_VERSION};
+use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, MAX_WAIT_TIMES, PAGE_SIZE};
 use crate::device::virtio_trampoline::{MAX_DEVS, MAX_REQ, VIRTIO_BRIDGE, VIRTIO_IRQS};
 use crate::error::HvResult;
 use crate::percpu::{get_cpu_data, this_zone, PerCpu};
 use crate::zone::{
-    all_zones_info, find_zone, is_this_root_zone, remove_zone, this_zone_id, zone_create, ZoneInfo,
+    add_zone, all_zones_info, find_zone, is_this_root_zone, remove_zone, this_zone_id, zone_create,
+    ZoneInfo,
 };
 
 use crate::event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_VIRTIO_INJECT_IRQ, IPI_EVENT_WAKEUP};
@@ -30,6 +46,7 @@ numeric_enum! {
         HvZoneList = 4,
         HvClearInjectIrq = 20,
         HvIvcInfo = 5,
+        HvConfigCheck = 6,
     }
 }
 pub const SGI_IPI_ID: u64 = 7;
@@ -79,6 +96,7 @@ impl<'a> HyperCall<'a> {
                 }
                 #[cfg(target_arch = "aarch64")]
                 HyperCallCode::HvIvcInfo => self.hv_ivc_info(arg0),
+                HyperCallCode::HvConfigCheck => self.hv_zone_config_check(arg0 as *mut u64),
                 _ => {
                     warn!("hypercall id={} unsupported!", code as u64);
                     Ok(0)
@@ -145,7 +163,7 @@ impl<'a> HyperCall<'a> {
 
     // Inject virtio device's irq to non root when a virtio device finishes one IO request. Only root zone calls.
     fn hv_virtio_inject_irq(&self) -> HyperCallResult {
-        debug!("hv_virtio_inject_irq: hypercall for trigger target cpu to inject irq");
+        trace!("hv_virtio_inject_irq: hypercall for trigger target cpu to inject irq");
         if !is_this_root_zone() {
             return hv_result_err!(
                 EPERM,
@@ -155,13 +173,19 @@ impl<'a> HyperCall<'a> {
         let dev = VIRTIO_BRIDGE.lock();
         let mut map_irq = VIRTIO_IRQS.lock();
         let region = dev.region();
+
         while !dev.is_res_list_empty() {
             let res_front = region.res_front as usize;
             let irq_id = region.res_list[res_front].irq_id as u64;
             let target_zone = region.res_list[res_front].target_zone;
             let target_cpu = match find_zone(target_zone as _) {
                 Some(zone) => zone.read().cpu_set.first_cpu().unwrap(),
-                _ => continue,
+                _ => {
+                    fence(Ordering::SeqCst);
+                    region.res_front = (region.res_front + 1) & (MAX_REQ - 1);
+                    fence(Ordering::SeqCst);
+                    continue;
+                }
             };
 
             let irq_list = map_irq.entry(target_cpu).or_insert([0; MAX_DEVS + 1]);
@@ -196,6 +220,34 @@ impl<'a> HyperCall<'a> {
         HyperCallResult::Ok(0)
     }
 
+    pub fn hv_zone_config_check(&self, magic_version: *mut u64) -> HyperCallResult {
+        #[cfg(target_arch = "loongarch64")]
+        {
+            let magic_version_raw = magic_version as u64;
+            let magic_version_hva =
+                magic_version_raw | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX;
+            let magic_version_hva = magic_version_hva as *mut u64;
+            debug!(
+                "hv_zone_config_check: magic_version target addr to write = {:#x?}",
+                magic_version_hva
+            );
+            unsafe {
+                core::ptr::write(magic_version_hva, CONFIG_MAGIC_VERSION as _);
+            }
+        }
+        #[cfg(not(target_arch = "loongarch64"))]
+        {
+            unsafe {
+                *magic_version = CONFIG_MAGIC_VERSION as _;
+            }
+        }
+        debug!(
+            "hv_zone_config_check: finished writing current magic version ({:#x})",
+            CONFIG_MAGIC_VERSION
+        );
+        HyperCallResult::Ok(0)
+    }
+
     pub fn hv_zone_start(&mut self, config: &HvZoneConfig, config_size: u64) -> HyperCallResult {
         #[cfg(target_arch = "loongarch64")]
         let config = unsafe {
@@ -204,7 +256,7 @@ impl<'a> HyperCall<'a> {
                 as *const HvZoneConfig)
         };
 
-        info!("hv_zone_start: config: {:#x?}", config);
+        debug!("hv_zone_start: config: {:#x?}", config);
         if !is_this_root_zone() {
             return hv_result_err!(
                 EPERM,
@@ -212,7 +264,14 @@ impl<'a> HyperCall<'a> {
             );
         }
         if config_size != core::mem::size_of::<HvZoneConfig>() as _ {
-            return hv_result_err!(EINVAL, "Invalid config!");
+            return hv_result_err!(
+                EINVAL,
+                format!(
+                    "hv_zone_start: config size should be {} bytes, but got {}",
+                    core::mem::size_of::<HvZoneConfig>(),
+                    config_size
+                )
+            );
         }
         let zone = zone_create(config)?;
         let boot_cpu = zone.read().cpu_set.first_cpu().unwrap();
@@ -228,10 +287,12 @@ impl<'a> HyperCall<'a> {
         };
         #[cfg(target_arch = "loongarch64")]
         {
+            use crate::arch::cpu::this_cpu_id;
             // assert this is cpu 0
             let cpuid = this_cpu_id();
             assert_eq!(cpuid, 0);
         }
+        add_zone(zone);
         drop(_lock);
         HyperCallResult::Ok(0)
     }
@@ -247,33 +308,56 @@ impl<'a> HyperCall<'a> {
         if zone_id == 0 {
             return hv_result_err!(EINVAL);
         }
+        // avoid virtio daemon send sgi to the shutdowning zone
+        let mut map_irq = VIRTIO_IRQS.lock();
+
         let zone = match find_zone(zone_id as _) {
             Some(zone) => zone,
-            _ => return hv_result_err!(EEXIST),
+            _ => {
+                return hv_result_err!(
+                    EINVAL,
+                    format!("Shutdown zone: zone {} not found!", zone_id)
+                )
+            }
         };
-        let zone_r = zone.read();
+        let zone_w = zone.write();
 
-        // // return zone's cpus to root_zone
-        zone_r.cpu_set.iter().for_each(|cpu_id| {
+        zone_w.cpu_set.iter().for_each(|cpu_id| {
             let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
             get_cpu_data(cpu_id).cpu_on_entry = INVALID_ADDRESS;
             send_event(cpu_id, SGI_IPI_ID as _, IPI_EVENT_SHUTDOWN);
+            // set the virtio irq list's len to 0
+            if let Some(irq_list) = map_irq.get_mut(&cpu_id) {
+                irq_list[0] = 0;
+            }
         });
+
+        let mut count: usize = 0;
+
         // wait all zone's cpus shutdown
-        while zone_r.cpu_set.iter().any(|cpu_id| {
+        while zone_w.cpu_set.iter().any(|cpu_id| {
             let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
-            get_cpu_data(cpu_id).arch_cpu.power_on
+            let power_on = get_cpu_data(cpu_id).arch_cpu.power_on;
+            count += 1;
+            if count > MAX_WAIT_TIMES {
+                if power_on {
+                    error!("cpu {} cannot be shut down", cpu_id);
+                    return false;
+                }
+            }
+            power_on
         }) {}
-        zone_r.cpu_set.iter().for_each(|cpu_id| {
+
+        zone_w.cpu_set.iter().for_each(|cpu_id| {
             let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
             get_cpu_data(cpu_id).zone = None;
         });
-        zone_r.arch_irqchip_reset();
+        zone_w.arch_irqchip_reset();
 
-        drop(zone_r);
+        drop(zone_w);
         drop(zone);
         remove_zone(zone_id as _);
-
+        info!("zone {} has been shutdown", zone_id);
         HyperCallResult::Ok(0)
     }
 

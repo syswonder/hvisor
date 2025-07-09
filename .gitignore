@@ -3,12 +3,9 @@
 /test-img
 /hvisor.S
 /hvisor-elf.txt
-/images/aarch64/virtdisk/*
-/images/aarch64/kernel/*
-/images/aarch64/devicetree/*.dtb
-/images/riscv64/virtdisk/*
-/images/riscv64/kernel/*
-/images/riscv64/devicetree/*.dtb
+/images/*
+/platform/*/*/image/kernel/*
+/platform/*/*/image/virtdisk/*
 /tools/hvisor
 /tmp
 *.mod.[co]
@@ -33,6 +30,7 @@ flash.img*
 compile.sh
 src/platform/__board.rs
 .config
+.vscode/extensions.json
 
 # systemtest
 rootfs1.zip*

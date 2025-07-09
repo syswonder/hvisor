@@ -3,8 +3,8 @@
 # set -x
 # Define two arrays to store filenames from two lists
 
-TESTCASE_DIR="./platform/aarch64/qemu-gicv3/test/systemtest/testcase"
-TESTRESULT_DIR="./platform/aarch64/qemu-gicv3/test/systemtest/testresult"
+TESTCASE_DIR="./test/testcase"
+TESTRESULT_DIR="./test/testresult"
 
 testcase_file_list=(
     $TESTCASE_DIR/tc_ls.txt
@@ -13,7 +13,7 @@ testcase_file_list=(
     # $TESTCASE_DIR/tc_zone1_start.txt
     $TESTCASE_DIR/tc_zone1_ls.txt
     $TESTCASE_DIR/tc_zone_list2.txt
-    # $TESTCASE_DIR/tc_zone_list1.txt
+    $TESTCASE_DIR/tc_zone_list1.txt
 )
 
 testresult_file_list=(
@@ -23,7 +23,7 @@ testresult_file_list=(
     # $TESTRESULT_DIR/test_zone1_start.txt
     $TESTRESULT_DIR/test_zone1_ls.txt
     $TESTRESULT_DIR/test_zone_list2.txt
-    # $TESTRESULT_DIR/test_zone_list1.txt
+    $TESTRESULT_DIR/test_zone_list1.txt
 )
 
 testcase_name_list=(
@@ -33,7 +33,7 @@ testcase_name_list=(
     # zone1_start_out
     zone1_start
     zone_list
-    # zone1_shutdown
+    zone1_shutdown
 )
 
 # Get the length of the file lists

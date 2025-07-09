@@ -1,19 +1,29 @@
-use core::ptr::write_volatile;
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 
-use alloc::{
-    collections::{btree_map::BTreeMap, btree_set::BTreeSet},
-    vec::Vec,
-};
+use alloc::collections::btree_map::BTreeMap;
 use spin::Mutex;
 
 use crate::device::irqchip::set_ispender;
 use crate::{
-    config::{HvIvcConfig, CONFIG_MAX_IVC_CONGIGS},
+    config::{HvIvcConfig, CONFIG_MAX_IVC_CONFIGS},
     consts::PAGE_SIZE,
     error::HvResult,
-    hypercall::SGI_IPI_ID,
     memory::{Frame, GuestPhysAddr, MMIOAccess, MemFlags, MemoryRegion},
-    zone::{find_zone, this_zone_id, Zone},
+    zone::{this_zone_id, Zone},
 };
 
 // ivc_id -> ivc_record
@@ -28,21 +38,21 @@ pub struct IvcInfo {
     /// The number that one zone participates in ivc region
     pub len: u64,
     /// The ivc control table ipa of each ivc region
-    ivc_ct_ipas: [u64; CONFIG_MAX_IVC_CONGIGS],
+    ivc_ct_ipas: [u64; CONFIG_MAX_IVC_CONFIGS],
     /// The ivc shared memory ipa of each ivc region
-    ivc_shmem_ipas: [u64; CONFIG_MAX_IVC_CONGIGS],
+    ivc_shmem_ipas: [u64; CONFIG_MAX_IVC_CONFIGS],
     /// The ivc_id of each ivc region
-    ivc_ids: [u32; CONFIG_MAX_IVC_CONGIGS],
+    ivc_ids: [u32; CONFIG_MAX_IVC_CONFIGS],
     /// The irq number of each ivc region
-    ivc_irqs: [u32; CONFIG_MAX_IVC_CONGIGS],
+    ivc_irqs: [u32; CONFIG_MAX_IVC_CONFIGS],
 }
 
 impl From<&[HvIvcConfig]> for IvcInfo {
     fn from(configs: &[HvIvcConfig]) -> Self {
-        let mut ivc_ids = [0; CONFIG_MAX_IVC_CONGIGS];
-        let mut ivc_ct_ipas = [0; CONFIG_MAX_IVC_CONGIGS];
-        let mut ivc_shmem_ipas = [0; CONFIG_MAX_IVC_CONGIGS];
-        let mut ivc_irqs = [0; CONFIG_MAX_IVC_CONGIGS];
+        let mut ivc_ids = [0; CONFIG_MAX_IVC_CONFIGS];
+        let mut ivc_ct_ipas = [0; CONFIG_MAX_IVC_CONFIGS];
+        let mut ivc_shmem_ipas = [0; CONFIG_MAX_IVC_CONFIGS];
+        let mut ivc_irqs = [0; CONFIG_MAX_IVC_CONFIGS];
         for i in 0..configs.len() {
             let config = &configs[i];
             ivc_ids[i] = config.ivc_id;
@@ -114,6 +124,7 @@ struct IvcRecord {
     shared_mem: Frame,
 }
 
+#[allow(unused)]
 struct PeerInfo {
     zone_id: u32,
     irq_num: u32,
@@ -142,12 +153,11 @@ impl Zone {
     pub fn ivc_init(&mut self, ivc_configs: &[HvIvcConfig]) {
         for ivc_config in ivc_configs {
             // is_new is ok to remove
-            if let Ok((is_new, start_paddr)) = insert_ivc_record(ivc_config, self.id as _) {
+            if let Ok((_, start_paddr)) = insert_ivc_record(ivc_config, self.id as _) {
                 info!(
                     "ivc init: zone {}'s shared mem begins at {:x}, ipa is {:x}",
                     self.id, start_paddr, ivc_config.shared_mem_ipa
                 );
-                let max_peers = ivc_config.max_peers;
                 let rw_sec_size: usize = ivc_config.rw_sec_size as usize;
                 let out_sec_size: usize = ivc_config.out_sec_size as usize;
                 self.gpm
@@ -197,7 +207,6 @@ const CT_IPI_INVOKE: GuestPhysAddr = 0x14;
 pub fn mmio_ivc_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     let zone_id = this_zone_id();
     let is_write = mmio.is_write;
-    let offset = mmio.address;
     let ivc_infos = IVC_INFOS.lock();
     let ivc_info = ivc_infos.get(&zone_id).unwrap();
     let ivc_id = (0..ivc_info.len as usize)
@@ -216,7 +225,7 @@ pub fn mmio_ivc_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
             let peer_id = rec
                 .peer_infos
                 .iter()
-                .find(|&(peer_id, info)| info.zone_id == zone_id as _)
+                .find(|&(_, info)| info.zone_id == zone_id as _)
                 .map(|(peer_id, _)| *peer_id)
                 .unwrap();
             peer_id as usize

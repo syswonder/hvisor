@@ -1,3 +1,19 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//      Yulong Han <wheatfox17@icloud.com>
+//
 use super::ipi::*;
 use super::zone::ZoneContext;
 use crate::arch::zone::disable_hwi_through;
@@ -27,14 +43,14 @@ pub struct ArchCpu {
 
 impl ArchCpu {
     pub fn new(cpuid: usize) -> Self {
-        let ret = ArchCpu {
+        let mut ret = ArchCpu {
             ctx: super::trap::dump_reset_gcsrs(),
             stack_top: 0,
             cpuid,
             power_on: false,
             init: false,
         };
-        ret
+        return ret;
     }
     pub fn get_cpuid(&self) -> usize {
         self.cpuid
@@ -58,12 +74,15 @@ impl ArchCpu {
         for i in 0..32 {
             self.ctx.x[i] = 0;
         }
+        // set all zone's GCSR.CPUID to 0 beacuse linux running on it will believe it's CPU0
+        // - wheatfox 2025.5.20
+        self.ctx.gcsr_cpuid = 0;
         info!(
             "loongarch64: CPU{} run@{:#x}",
             self.get_cpuid(),
             self.ctx.sepc
         );
-        info!("loongarch64: @{:#x?}", self);
+        debug!("loongarch64: @{:#x?}", self);
         // step 1: enable guest mode
         // step 2: set guest entry to era
         // step 3: run ertn and enter guest mode
@@ -81,14 +100,6 @@ impl ArchCpu {
             "loongarch64: ArchCpu::run: stack_tp={:#x}",
             self.stack_top()
         );
-
-        let cpuid = self.get_cpuid();
-        if cpuid != 0 {
-            // on loongarch64 we only allow direct interrupt through on cpu0 with rootlinux
-            // root linux use cpuintc->liointc->uart0 for IO irqs, we put it through to use uart0
-            // on nonroot, we only need to inject virtio irq so let's disable it - wheatfox
-            disable_hwi_through();
-        }
 
         unsafe {
             asm!(

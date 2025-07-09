@@ -1,4 +1,25 @@
-use crate::arch::csr::{write_csr ,read_csr ,CSR_VSISELECT ,CSR_VSIREG ,CSR_VSTOPI ,CSR_VSTOPEI};
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
+use crate::arch::csr::{read_csr, write_csr};
+/* AIA Extension */
+pub const CSR_VSISELECT: usize = 0x250;
+pub const CSR_VSIREG: usize = 0x251;
+pub const CSR_VSTOPI: usize = 0xEB0;
+pub const CSR_VSTOPEI: usize = 0x25C;
+
 pub const IMSIC_VS: usize = 0x2800_1000;
 const IMSIC_VS_HART_STRIDE: usize = 0x2000;
 
@@ -39,9 +60,9 @@ fn imsic_read(reg: usize) -> usize {
 }
 // VS-Mode IMSIC CSRs
 
-
 pub fn imsic_trigger(hart: u32, guest: u32, eiid: u32) {
-    if guest == 1{
+    // info!("hart: {} guest {} eiid {}", hart, guest, eiid);
+    if guest == 1 {
         unsafe {
             core::ptr::write_volatile(imsic_vs(hart as usize) as *mut u32, eiid);
         }
@@ -52,4 +73,3 @@ pub fn imsic_trigger(hart: u32, guest: u32, eiid: u32) {
         );
     }
 }
-

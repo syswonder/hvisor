@@ -1,3 +1,18 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PciBar {
     val: u32,
@@ -88,5 +103,45 @@ impl PciBar {
             size: higher_region.size * lower_region.size,
             bar_type: BarType::Mem64,
         }
+    }
+
+    pub fn generate_vbar(&self) -> VirtPciBar {
+        match self.size {
+            0 => VirtPciBar {
+                val: self.val,
+                mask: 0x0,
+            },
+            1 => VirtPciBar {
+                val: self.val,
+                mask: 0xffffffff,
+            },
+            _ => VirtPciBar {
+                val: self.val,
+                mask: !((self.size - 1) as u64) as _,
+            },
+        }
+    }
+}
+
+#[derive(Default, Clone, Debug, Copy)]
+pub struct VirtPciBar {
+    val: u32,
+    mask: u32,
+}
+
+impl VirtPciBar {
+    pub fn new(val: u32, mask: u32) -> Self {
+        Self {
+            val: val,
+            mask: mask,
+        }
+    }
+
+    pub fn read(&self) -> u32 {
+        self.val
+    }
+
+    pub fn write(&mut self, new_val: u32) {
+        self.val = new_val & self.mask;
     }
 }

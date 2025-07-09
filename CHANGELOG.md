@@ -2,11 +2,22 @@
 
 > ⚠️ Please update this file for any changes to the hvisor project along with your name and GitHub profile link under the CURRENT section.
 
-## CURRENT-hvisor v0.1.1
+## CURRENT - v0.1.2
 
-- [platform] seperate board definitions into `platform` folder with re-designed cargo feature system for hvisor ([wheatfox](https://github.com/enkerewpo))
+- [feature] riscv64: add virtio support in qemu-aia to boot zone1. ([CHonghao](https://github.com/CHonghaohao))
+- [feature] pci support for loongarch64 ([wheatfox](https://github.com/enkerewpo), [Zhongkai Xu](https://github.com/ZhongkaiXu))
+- [ci] support running CI with the latest hvisor-tool and the configuration files in hvisor ([CHonghao](https://github.com/CHonghaohao))
+- [feature] enable dynamic CPU detection for ARM platforms via device tree ([GuanTouYu](https://github.com/FlowerBlackG))
+- [platform] support for rk3568 ([dallasxy](https://github.com/dallasxy))
+- [feature] riscv64: add virtio support ([Jingyu Liu](https://github.com/liulog))
+- [feature] riscv64: add vplic struct ([Jingyu Liu](https://github.com/liulog))
+- [feature] riscv64: add aclint support ([Jingyu Liu](https://github.com/liulog))
 
 ## History Release
+
+### hvisor v0.1.1
+
+- [platform] seperate board definitions into `platform` folder with re-designed cargo feature system for hvisor ([wheatfox](https://github.com/enkerewpo))
 
 ### hvisor v0.1.0
 

@@ -78,7 +78,7 @@ COLOR_RESET := $(shell tput sgr0)
 
 # Targets
 .PHONY: all elf disa run gdb monitor clean tools rootfs
-all: gen_cargo_config $(hvisor_bin)
+all: clean_check gen_cargo_config $(hvisor_bin)
 	@printf "\n"
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)hvisor build summary:$(COLOR_RESET)\n"
 	@printf "%-10s %s\n" "ARCH            =" "$(COLOR_BOLD)$(ARCH)$(COLOR_RESET)"
@@ -93,18 +93,29 @@ all: gen_cargo_config $(hvisor_bin)
 	@printf "\n"
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)hvisor build success!$(COLOR_RESET)\n"
 
+clean_check:
+# if .config not exist, then everything is fine
+# else we read .config and parse ARCH and BOARD, if they are different, we clean the build
+	@if [ -f ".config" ]; then \
+		CONFIG_ARCH=$$(cat .config | grep "ARCH" | cut -d'=' -f2); \
+		CONFIG_BOARD=$$(cat .config | grep "BOARD" | cut -d'=' -f2); \
+		if [ "$$CONFIG_ARCH" != "$(ARCH)" ] || [ "$$CONFIG_BOARD" != "$(BOARD)" ]; then \
+			echo "$(COLOR_YELLOW)$(COLOR_BOLD)ARCH or BOARD changed(OLD: $$CONFIG_ARCH/$$CONFIG_BOARD, NEW: $(ARCH)/$(BOARD)), cleaning...$(COLOR_RESET)"; \
+			./tools/clean.sh; \
+		fi; \
+	fi
+
 gen_cargo_config:
-	@printf "$(COLOR_GREEN)$(COLOR_BOLD)Generating .cargo/config.toml...$(COLOR_RESET)\n"
+	@printf "$(COLOR_GREEN)$(COLOR_BOLD)generating .cargo/config.toml...$(COLOR_RESET)\n"
 	./tools/gen_cargo_config.sh
-	@printf "$(COLOR_GREEN)$(COLOR_BOLD)Generating .cargo/config.toml success!$(COLOR_RESET)\n"
+	@printf "$(COLOR_GREEN)$(COLOR_BOLD)generating .cargo/config.toml success!$(COLOR_RESET)\n"
 
 elf:
 	cargo build $(build_args)
 
 disa:
 	readelf -a $(hvisor_elf) > hvisor-elf.txt
-# rust-objdump --disassemble $(hvisor_elf) > hvisor.S
-	rust-objdump --disassemble --source $(hvisor_elf) > hvisor.S
+	rust-objdump --disassemble --source --line-numbers $(hvisor_elf) > hvisor.asm
 
 run: all
 	$(QEMU) $(QEMU_ARGS)
@@ -161,14 +172,15 @@ test: clean test-pre gen_cargo_config
 stest: clean test-pre gen_cargo_config
 	./platform/$(ARCH)/$(BOARD)/test/systemtest/tcompiledtb.sh
 	./platform/$(ARCH)/$(BOARD)/test/systemtest/tdownload_all.sh
+	./platform/$(ARCH)/$(BOARD)/test/systemtest/trootfs_deploy.sh
 	./platform/$(ARCH)/$(BOARD)/test/systemtest/tstart.sh
 
 dtb:
-	@echo "Building device tree at platform/$(ARCH)/$(BOARD)/image/dts"
+	@echo "building device tree at platform/$(ARCH)/$(BOARD)/image/dts"
 	@if [ ! -d "platform/$(ARCH)/$(BOARD)/image/dts" ]; then echo "ERROR: dts directory not found"; exit 1; fi
 	make -C platform/$(ARCH)/$(BOARD)/image/dts
 
 clean:
-	cargo clean
+	./tools/clean.sh
 
 include platform/$(ARCH)/$(BOARD)/platform.mk

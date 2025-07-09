@@ -31,8 +31,7 @@ $(hvisor_bin): elf
 	fi && \
 	$(OBJCOPY) $(hvisor_elf) --strip-all -O binary $(hvisor_bin).tmp && \
 	mkimage -n hvisor_img -A arm64 -O linux -C none -T kernel -a 0x40400000 \
-	-e 0x40400000 -d $(hvisor_bin).tmp $(hvisor_bin) && \
-	rm -rf $(hvisor_bin).tmp
+	-e 0x40400000 -d $(hvisor_bin).tmp $(hvisor_bin)
 
 QEMU_ARGS += -netdev type=user,id=net1
 QEMU_ARGS += -device virtio-net-pci,netdev=net1,disable-legacy=on,disable-modern=off,iommu_platform=on

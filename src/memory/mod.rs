@@ -1,3 +1,18 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 pub mod addr;
 pub mod frame;
 pub mod heap;
@@ -9,13 +24,12 @@ use core::ops::{Deref, DerefMut};
 
 use bitflags::bitflags;
 
-pub use addr::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, HostVirtAddr, PhysAddr, VirtAddr};
+pub use addr::{GuestPhysAddr, HostPhysAddr, PhysAddr, VirtAddr};
 pub use frame::Frame;
 pub use mm::{MemoryRegion, MemorySet, PARKING_INST_PAGE};
 pub use mmio::*;
-use spin::{Once, RwLock};
 
-use crate::arch::{paging, s1pt::Stage1PageTable};
+use crate::arch::paging;
 
 pub const PAGE_SIZE: usize = paging::PageSize::Size4K as usize;
 
@@ -33,13 +47,6 @@ bitflags! {
         const NO_HUGEPAGES  = 1 << 8;
         const USER          = 1 << 9;
     }
-}
-
-/// Page table used for hypervisor.
-pub static HV_PT: Once<RwLock<MemorySet<Stage1PageTable>>> = Once::new();
-
-pub fn hv_page_table<'a>() -> &'a RwLock<MemorySet<Stage1PageTable>> {
-    HV_PT.get().expect("Uninitialized hypervisor page table!")
 }
 
 #[repr(align(4096))]

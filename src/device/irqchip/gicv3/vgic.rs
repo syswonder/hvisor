@@ -1,3 +1,18 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 use alloc::sync::Arc;
 
 use super::{gicd::GICD_LOCK, is_spi};
@@ -16,7 +31,7 @@ use crate::{
 };
 
 pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> {
-    base..(base + (n - 1) * size)
+    base..(base + n * size)
 }
 
 impl Zone {
@@ -241,7 +256,7 @@ fn vgicv3_dist_misc_access(mmio: &mut MMIOAccess, gicd_base: usize) -> HvResult 
             mmio_perform_access(gicd_base, mmio);
         }
     } else {
-        todo!()
+        todo!("vgicv3_dist_misc_access: MMIO.Address = {:#x?}", reg)
     }
 
     Ok(())
@@ -284,8 +299,8 @@ pub fn vgicv3_dist_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
 pub fn vgicv3_its_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
     let gits_base = host_gits_base();
     let reg = mmio.address;
+    let zone_id = this_zone_id();
 
-    // mmio_perform_access(gits_base, mmio);
     match reg {
         GITS_CTRL => {
             mmio_perform_access(gits_base, mmio);
@@ -297,21 +312,24 @@ pub fn vgicv3_its_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
         }
         GITS_CBASER => {
             if mmio.is_write {
-                set_cbaser(mmio.value);
+                if zone_id == 0 {
+                    mmio_perform_access(gits_base, mmio);
+                }
+                set_cbaser(mmio.value, zone_id);
                 trace!("write GITS_CBASER: {:#x}", mmio.value);
             } else {
-                mmio.value = read_cbaser();
+                mmio.value = read_cbaser(zone_id);
                 trace!("read GITS_CBASER: {:#x}", mmio.value);
             }
         }
         GITS_BASER => {
-            if this_zone_id() == 0 {
+            if zone_id == 0 {
                 mmio_perform_access(gits_base, mmio);
             } else {
                 if mmio.is_write {
-                    set_dt_baser(mmio.value);
+                    set_dt_baser(mmio.value, zone_id);
                 } else {
-                    mmio.value = read_dt_baser();
+                    mmio.value = read_dt_baser(zone_id);
                 }
             }
             if mmio.is_write {
@@ -321,13 +339,13 @@ pub fn vgicv3_its_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
             }
         }
         GITS_COLLECTION_BASER => {
-            if this_zone_id() == 0 {
+            if zone_id == 0 {
                 mmio_perform_access(gits_base, mmio);
             } else {
                 if mmio.is_write {
-                    set_ct_baser(mmio.value);
+                    set_ct_baser(mmio.value, zone_id);
                 } else {
-                    mmio.value = read_ct_baser();
+                    mmio.value = read_ct_baser(zone_id);
                 }
             }
             if mmio.is_write {
@@ -339,14 +357,14 @@ pub fn vgicv3_its_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
         GITS_CWRITER => {
             if mmio.is_write {
                 trace!("write GITS_CWRITER: {:#x}", mmio.value);
-                set_cwriter(mmio.value);
+                set_cwriter(mmio.value, zone_id);
             } else {
-                mmio.value = read_cwriter();
+                mmio.value = read_cwriter(zone_id);
                 trace!("read GITS_CWRITER: {:#x}", mmio.value);
             }
         }
         GITS_CREADR => {
-            mmio.value = read_creadr();
+            mmio.value = read_creadr(zone_id);
             trace!("read GITS_CREADER: {:#x}", mmio.value);
         }
         GITS_TYPER => {

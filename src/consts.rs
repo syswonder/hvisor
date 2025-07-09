@@ -1,9 +1,24 @@
-use crate::memory::addr::VirtAddr;
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 pub use crate::memory::PAGE_SIZE;
+use crate::{memory::addr::VirtAddr, platform::BOARD_NCPUS};
 
 /// Size of the hypervisor heap.
 pub const HV_HEAP_SIZE: usize = 1024 * 1024; // 1 MB
-pub const HV_MEM_POOL_SIZE: usize = 16 * 1024 * 1024; // 16 MB
+pub const HV_MEM_POOL_SIZE: usize = 64 * 1024 * 1024; // 64 MB
 
 /// Size of the per-CPU data (stack and other CPU-local data).
 pub const PER_CPU_SIZE: usize = 512 * 1024; // 512KB  //may get bigger when dev
@@ -13,14 +28,11 @@ pub const PER_CPU_ARRAY_PTR: *mut VirtAddr = __core_end as _;
 
 pub const INVALID_ADDRESS: usize = usize::MAX;
 
-#[cfg(target_arch = "loongarch64")]
-pub const MAX_CPU_NUM: usize = 4;
-#[cfg(target_arch = "aarch64")]
-pub const MAX_CPU_NUM: usize = 4;
-#[cfg(target_arch = "riscv64")]
-pub const MAX_CPU_NUM: usize = 4;
+pub const MAX_CPU_NUM: usize = BOARD_NCPUS;
 
 pub const MAX_ZONE_NUM: usize = 3;
+
+pub const MAX_WAIT_TIMES: usize = 10000000;
 
 pub fn core_end() -> VirtAddr {
     __core_end as _

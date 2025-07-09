@@ -1,3 +1,20 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//      Yulong Han <wheatfox17@icloud.com>
+//
+use crate::consts::PAGE_SIZE;
 use crate::error::{HvError, HvResult};
 use crate::memory::addr::is_aligned;
 use crate::memory::mapper::Mapper;
@@ -11,7 +28,7 @@ use loongArch64::register::pwcl::{
     set_dir1_base, set_dir1_width, set_dir2_base, set_dir2_width, set_ptbase, set_pte_width,
     set_ptwidth,
 };
-use loongArch64::register::stlbps::set_ps;
+use loongArch64::register::stlbps::{self, set_ps};
 use loongArch64::register::MemoryAccessType;
 use loongArch64::register::{crmd, pwch, pwcl, tlbrentry};
 use loongArch64::register::{pgd, pgdh, pgdl};
@@ -605,7 +622,7 @@ fn next_table_mut_or_create<'a, E: GenericPTE>(
 }
 
 /// set pagetable format in loongarch64 as 4-level pagetable
-pub fn set_pwcl_pwch() {
+pub fn set_pwcl_pwch_stlbps() {
     set_dir3_base(12 + 9 + 9 + 9);
     set_dir3_width(9);
     set_dir2_base(12 + 9 + 9);
@@ -615,4 +632,5 @@ pub fn set_pwcl_pwch() {
     set_ptbase(12);
     set_ptwidth(9);
     set_pte_width(8); // 64 bits -> 8 bytes
+    stlbps::set_ps(12); // log2(real_page_size), 16KB -> 14, 4KB -> 12
 }
