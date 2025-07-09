@@ -98,10 +98,10 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [
 
 // Note: all here's irqs are hardware irqs,
 //  only these irq can be transferred to the physical PLIC.
-pub const HW_IRQS: [u32; 7] = [0x01, 0x03, 0x04, 0x02, 0x20, 0x51, 0x64];
+pub const HW_IRQS: [u32; 6] = [0x01, 0x03, 0x04, 0x02, 0x51, 0x64];
 
 // irqs belong to the root zone.
-pub const ROOT_ZONE_IRQS: [u32; 7] =  [0x01, 0x03, 0x04, 0x02, 0x20, 0x51, 0x64];
+pub const ROOT_ZONE_IRQS: [u32; 6] =  [0x01, 0x03, 0x04, 0x02, 0x51, 0x64];
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     plic_base: 0xc000000,
@@ -110,5 +110,6 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     aplic_size: 0x8000,
 };
 
-nohup ./hvisor virtio start zone1-linux-virtio.json &
-./hvisor zone start zone1-linux.json
+// Virtio zone1 cmd:
+//      nohup ./hvisor virtio start zone1-linux-virtio.json &
+//      ./hvisor zone start zone1-linux.json

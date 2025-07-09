@@ -222,7 +222,7 @@
 	};
 
 	chosen {
-		bootargs = "earlycon console=ttyS0,115200 root=/dev/mmcblk0p3 rootfstype=ext4 rw rootwait";
+		bootargs = "earlycon console=ttyS0,115200 root=/dev/mmcblk0p3 rootfstype=ext4 rw rootwait init=/bin/bash";
 		stdout-path = "serial0:115200n8";
 	};
 };

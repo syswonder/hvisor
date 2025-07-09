@@ -36,9 +36,8 @@
 			i-tlb-sets = <0x01>;
 			i-tlb-size = <0x20>;
 			mmu-type = "riscv,sv48";
-			next-level-cache = <0x06>;
 			reg = <0x01>;
-			riscv,isa = "rv64imafdch_zicsr_zifencei_zba_zbb_sscofpmf";
+			riscv,isa = "rv64imafdc";
 			status = "okay";
 			timebase-frequency = <0xf4240>;
 			tlb-split;
@@ -80,17 +79,6 @@
 			phandle = <0x10>;
 		};
 		
-		serial@0x50900000 {
-			compatible = "snps,dw-apb-uart";
-			reg = <0x00 0x50900000 0x00 0x10000>;
-			clock-frequency = <0xbebc200>;
-			interrupt-parent = <0x10>;
-			interrupts = <0x64>;
-			reg-shift = <0x02>;
-			reg-io-width = <0x04>;
-			status = "okay";
-		};
-		
 		virtio_mmio@10006000 {
 			interrupts = <0x06>;
 			interrupt-parent = <0x10>;
@@ -104,11 +92,10 @@
 			reg = <0x00 0x10007000 0x00 0x1000>;
 			compatible = "virtio,mmio";
 		};
-
 	};
 	
 	chosen {
-		bootargs = "earlycon console=ttyS0,115200 root=/dev/vda rootfstype=ext4 rw rootwait";
+		bootargs = "earlycon console=hvc0 root=/dev/vda rootfstype=ext4 rw rootwait";
 		stdout-path = "serial0:115200n8";
 	};
 };

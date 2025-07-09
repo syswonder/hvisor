@@ -91,12 +91,12 @@ pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
             sbi_ret = sbi_hvisor_handler(current_cpu);
         }
         // Legacy::Console putchar (usually used), temporily don't support other legacy extensions.
-        legacy::LEGACY_CONSOLE_PUTCHAR => {
-            sbi_ret = SbiRet {
-                error: sbi_rt::legacy::console_putchar(current_cpu.x[10] as _),
-                value: 0,
-            };
-        }
+        // legacy::LEGACY_CONSOLE_PUTCHAR => {
+        //     sbi_ret = SbiRet {
+        //         error: sbi_rt::legacy::console_putchar(current_cpu.x[10] as _),
+        //         value: 0,
+        //     };
+        // }
         _ => {
             // Pass through SBI call
             warn!("Unsupported SBI extension {:#x} function {:#x}", eid, fid);

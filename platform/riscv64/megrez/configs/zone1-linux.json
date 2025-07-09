@@ -21,12 +21,6 @@
             "physical_start": "0x10006000",
             "virtual_start": "0x10006000",
             "size": "0x1000"
-        },
-        {
-            "type": "io",
-            "physical_start": "0x50900000",
-            "virtual_start":  "0x50900000",
-            "size": "0x10000"
         }
     ],
     "interrupts": [6, 7],
