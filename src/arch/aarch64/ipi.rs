@@ -29,18 +29,12 @@ pub fn arch_send_event(cpu_id: u64, sgi_num: u64) {
         encode affinity values in MPIDR, we use conditional compilation to handle
         platform-specific mappings between cpu_id and interrupt target affinity.
         */
-        let aff3: u64 = 0 << 48;
-        let aff2: u64 = 0 << 32;
-        let aff1: u64;
-        let target_list: u64;
 
-        if cfg!(feature = "mpidr_rockchip") {
-            aff1 = cpu_id << 16;
-            target_list = 1 << 0;
-        } else {
-            aff1 = 0 << 16;
-            target_list = 1 << cpu_id;
-        }
+        use crate::arch::cpu::cpuid_to_mpidr_affinity;
+        let (aff3, aff2, aff1, aff0) = cpuid_to_mpidr_affinity(cpu_id);
+
+        let target_list = 1 << aff0;
+
         let irm: u64 = 0 << 40;
         let sgi_id: u64 = sgi_num << 24;
         let val: u64 = aff1 | aff2 | aff3 | irm | sgi_id | target_list;

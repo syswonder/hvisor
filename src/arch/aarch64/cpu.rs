@@ -15,12 +15,12 @@
 //
 use crate::{
     arch::{mm::new_s2_memory_set, sysreg::write_sysreg},
-    consts::{PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
+    consts::{MAX_CPU_NUM, PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
     memory::{
         addr::PHYS_VIRT_OFFSET, mm::PARKING_MEMORY_SET, GuestPhysAddr, HostPhysAddr, MemFlags,
         MemoryRegion, VirtAddr, PARKING_INST_PAGE,
     },
-    percpu::this_cpu_data,
+    percpu::this_cpu_data, platform::BOARD_MPIDR_MAPPINGS,
 };
 use aarch64_cpu::registers::{
     Readable, Writeable, ELR_EL2, HCR_EL2, MPIDR_EL1, SCTLR_EL1, SPSR_EL2, VTCR_EL2,
@@ -31,6 +31,8 @@ use super::{
     mm::{get_parange, get_parange_bits, is_s2_pt_level3},
     trap::vmreturn,
 };
+
+pub const MPIDR_MASK: u64 = 0xff00ffffff;
 
 pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
     psci::cpu_on(cpuid as u64 | 0x80000000, start_addr as _, opaque as _).unwrap_or_else(|err| {
@@ -215,12 +217,19 @@ impl ArchCpu {
 }
 
 pub fn mpidr_to_cpuid(mpidr: u64) -> u64 {
-    if cfg!(feature = "mpidr_rockchip") {
-        (mpidr >> 8) & 0xff
-    } else {
-        mpidr & 0xff00ffffff
-    }
+    let mpidr = mpidr & MPIDR_MASK;
+    (0..MAX_CPU_NUM).find(|&i| BOARD_MPIDR_MAPPINGS[i] == mpidr).unwrap() as u64
 }
+
+pub fn cpuid_to_mpidr_affinity(cpuid: u64) -> (u64, u64, u64, u64) {
+    let mpidr = BOARD_MPIDR_MAPPINGS[cpuid as usize];
+    let aff3 = (mpidr >> 24) & 0xff;
+    let aff2 = (mpidr >> 16) & 0xff;
+    let aff1 = (mpidr >> 8) & 0xff;
+    let aff0 = mpidr & 0xff;
+    (aff3, aff2, aff1, aff0)
+}
+
 
 pub fn this_cpu_id() -> usize {
     mpidr_to_cpuid(MPIDR_EL1.get()) as _

@@ -14,6 +14,9 @@
 // Authors:
 //
 use crate::consts::PER_CPU_SIZE;
+use crate::platform::BOARD_MPIDR_MAPPINGS;
+
+const INVALID_CPUID: usize = (-1) as _;
 
 //global_asm!(include_str!("boot_pt.S"));
 #[naked]
@@ -79,8 +82,8 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
 
             mov x1, x18
             mov x0, x17
-            mov x18, 0
-            mov x17, 0
+            mov x18, #0
+            mov x17, #0
             bl {rust_main}            // x0 = cpuid, x1 = dtbaddr
             ",
             options(noreturn),
@@ -98,31 +101,41 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
     }
 }
 
-#[cfg(feature = "mpidr_rockchip")]
 #[naked]
 #[no_mangle]
 pub unsafe extern "C" fn boot_cpuid_get() {
-    core::arch::asm!(
-        "
-        mrs x17, mpidr_el1
-        lsr x17, x17, #0x8
-        and x17, x17, #0xff
-        ret
-    ",
-        options(noreturn)
-    )
-}
+    use crate::arch::cpu;
 
-#[cfg(not(feature = "mpidr_rockchip"))]
-#[naked]
-#[no_mangle]
-pub unsafe extern "C" fn boot_cpuid_get() {
     core::arch::asm!(
         "
         mrs x17, mpidr_el1
-        and x17, x17, #0xff
+        ldr x2, ={mpidr_mask}
+        and x17, x17, x2
+        adr x2, {mpidr_mappings}
+        mov x4, #0
+    1:
+        // search for the mpidr_el1 mapping in BOARD_MPIDR_MAPPINGS.
+        ldr x3, [x2]
+        cmp x17, x3
+        b.eq 3f
+        add x2, x2, #8
+        add x4, x4, #1
+        cmp x4, {ncpus}
+        b.ne 1b
+    2: 
+        // failed to get cpuid, return an invalid id, and spin in an infinite loop.
+        mov x17, {inv_id}
+        wfi
+        b 2b
+    3:
+        // found cpuid, return it.
+        mov x17, x4
         ret
     ",
+        mpidr_mask = const cpu::MPIDR_MASK,
+        mpidr_mappings = sym BOARD_MPIDR_MAPPINGS,
+        ncpus = const crate::consts::MAX_CPU_NUM,
+        inv_id = const INVALID_CPUID,
         options(noreturn)
     )
 }

@@ -19,6 +19,8 @@ pub const BOARD_NAME: &str = "qemu-gicv3";
 
 pub const BOARD_NCPUS: usize = 4;
 
+pub static BOARD_MPIDR_MAPPINGS: [u64; BOARD_NCPUS] = [0x0, 0x1, 0x2, 0x3];
+
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0xa0000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0xa0400000;
 pub const ROOT_ZONE_ENTRY: u64 = 0xa0400000;

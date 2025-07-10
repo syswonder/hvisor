@@ -69,9 +69,6 @@ pt_layout_rk3568 = []
 pt_layout_rk3588 = []
 pt_layout_zcu102 = []
 
-# cpu
-mpidr_rockchip = []
-
 # uart infos
 uart_base_rk3568 = []
 uart_base_rk3588 = []
