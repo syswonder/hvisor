@@ -11,6 +11,12 @@
             "size": "0x0C000000"
         },
         {
+            "type": "io",
+            "physical_start": "0x50920000",
+            "virtual_start":  "0x50920000",
+            "size": "0x10000"
+        },
+        {
             "type": "virtio",
             "physical_start": "0x10007000",
             "virtual_start": "0x10007000",
@@ -23,7 +29,7 @@
             "size": "0x1000"
         }
     ],
-    "interrupts": [6, 7],
+    "interrupts": [6, 7, 102],
     "ivc_configs": [],
     "kernel_filepath": "./Image",
     "dtb_filepath": "./zone1-linux.dtb",

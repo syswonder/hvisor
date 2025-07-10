@@ -78,6 +78,17 @@
 			riscv,ndev = <0x208>;
 			phandle = <0x10>;
 		};
+
+		serial@0x50920000 {
+			compatible = "snps,dw-apb-uart";
+			reg = <0x00 0x50920000 0x00 0x10000>;
+			clock-frequency = <0xbebc200>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x66>;
+			reg-shift = <0x02>;
+			reg-io-width = <0x04>;
+			status = "okay";
+		};
 		
 		virtio_mmio@10006000 {
 			interrupts = <0x06>;
@@ -93,9 +104,17 @@
 			compatible = "virtio,mmio";
 		};
 	};
+
+	aliases {
+		// serial0 = "/soc/serial@0x50900000";
+		serial2 = "/soc/serial@0x50920000";
+		virtio-console = "/soc/virtio_mmio@10007000";
+	};
 	
 	chosen {
-		bootargs = "earlycon console=hvc0 root=/dev/vda rootfstype=ext4 rw rootwait";
-		stdout-path = "serial0:115200n8";
+		// bootargs = "earlycon console=hvc0 root=/dev/vda rootfstype=ext4 rw rootwait";
+		// stdout-path = "virtio-console";
+		bootargs = "earlycon console=ttyS2,115200 root=/dev/vda rootfstype=ext4 rw rootwait init=/bin/bash";
+		stdout-path = "serial2:115200n8";
 	};
 };

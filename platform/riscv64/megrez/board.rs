@@ -43,7 +43,13 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [
         physical_start: 0x50900000,
         virtual_start: 0x50900000,
         size: 0x10000,
-    }, // serial
+    }, // serial0
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0x50920000,
+    //     virtual_start: 0x50920000,
+    //     size: 0x10000,
+    // }, // serial2
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x50460000,
@@ -98,7 +104,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [
 
 // Note: all here's irqs are hardware irqs,
 //  only these irq can be transferred to the physical PLIC.
-pub const HW_IRQS: [u32; 6] = [0x01, 0x03, 0x04, 0x02, 0x51, 0x64];
+pub const HW_IRQS: [u32; 7] = [0x01, 0x03, 0x04, 0x02, 0x51, 0x64, 0x66];
 
 // irqs belong to the root zone.
 pub const ROOT_ZONE_IRQS: [u32; 6] =  [0x01, 0x03, 0x04, 0x02, 0x51, 0x64];
