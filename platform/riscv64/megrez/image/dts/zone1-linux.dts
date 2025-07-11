@@ -20,16 +20,16 @@
 			d-tlb-sets = <0x01>;
 			d-tlb-size = <0x20>;
 			device_type = "cpu";
-			hardware-exec-breakpoint-count = <0x04>;
-			hwpf-distanceBits = <0x06>;
-			hwpf-hitCacheThrdBits = <0x05>;
-			hwpf-hitMSHRThrdBits = <0x04>;
-			hwpf-l2pfPoolSize = <0x0a>;
-			hwpf-nIssQEnt = <0x06>;
-			hwpf-nPrefetchQueueEntries = <0x08>;
-			hwpf-nStreams = <0x10>;
-			hwpf-qFullnessThrdBits = <0x04>;
-			hwpf-windowBits = <0x06>;
+			// hardware-exec-breakpoint-count = <0x04>;
+			// hwpf-distanceBits = <0x06>;
+			// hwpf-hitCacheThrdBits = <0x05>;
+			// hwpf-hitMSHRThrdBits = <0x04>;
+			// hwpf-l2pfPoolSize = <0x0a>;
+			// hwpf-nIssQEnt = <0x06>;
+			// hwpf-nPrefetchQueueEntries = <0x08>;
+			// hwpf-nStreams = <0x10>;
+			// hwpf-qFullnessThrdBits = <0x04>;
+			// hwpf-windowBits = <0x06>;
 			i-cache-block-size = <0x40>;
 			i-cache-sets = <0x80>;
 			i-cache-size = <0x8000>;
@@ -66,6 +66,27 @@
 		#size-cells = <0x02>;
 		compatible = "SiFive,FU800-soc\0fu800-soc\0sifive-soc\0simple-bus";
 		ranges;
+
+		cache-controller@2010000 {
+			cache-block-size = <0x40>;
+			cache-level = <0x03>;
+			cache-sets = <0x1000>;
+			cache-size = <0x400000>;
+			cache-unified;
+			compatible = "sifive,ccache1\0cache\0sifive,fu740-c000-ccache";
+			// interrupt-parent = <0x10>;
+			// interrupts = <0x01 0x03 0x04 0x02>;
+			next-level-cache = <0x14>;
+			reg = <0x00 0x2010000 0x00 0x4000 0x00 0x8000000 0x00 0x400000>;
+			reg-names = "control\0sideband";
+			sifive,a-mshr-count = <0x3c>;
+			sifive,bank-count = <0x04>;
+			sifive,ecc-granularity = <0x08>;
+			sifive,max-master-id = <0x0d>;
+			sifive,perfmon-counters = <0x06>;
+			numa-node-id = <0x00>;
+			phandle = <0x15>;
+		};
 		
 		interrupt-controller@c000000 {
 			#interrupt-cells = <0x01>;
@@ -79,6 +100,50 @@
 			phandle = <0x10>;
 		};
 
+		pl2@108000 {
+			cache-block-size = <0x40>;
+			cache-level = <0x02>;
+			cache-sets = <0x200>;
+			cache-size = <0x40000>;
+			cache-unified;
+			compatible = "sifive,pL2Cache0\0cache";
+			next-level-cache = <0x15>;
+			reg = <0x00 0x108000 0x00 0x4000>;
+			reg-names = "control";
+			sifive,ecc-granularity = <0x10>;
+			sifive,perfmon-counters = <0x06>;
+			phandle = <0x06>;
+		};
+
+		sys-crg@51828000 {
+			compatible = "eswin,win2030-sys-crg\0syscon\0simple-mfd";
+			reg = <0x00 0x51828000 0x00 0x80000>;
+			numa-node-id = <0x00>;
+			phandle = <0x16>;
+
+			reset-controller {
+				compatible = "eswin,win2030-reset";
+				#reset-cells = <0x02>;
+				status = "okay";
+				phandle = <0x18>;
+			};
+
+			clock-controller {
+				compatible = "eswin,win2030-clock";
+				#clock-cells = <0x01>;
+				status = "okay";
+				force-1_8ghz;
+				phandle = <0x03>;
+			};
+		};
+
+		hsp_sp_top_csr@0x50440000 {
+			compatible = "eswin,win2030-hsp-sp-csr\0syscon";
+			#size-cells = <0x02>;
+			reg = <0x00 0x50440000 0x00 0x2000>;
+			phandle = <0x1a>;
+		};
+
 		serial@0x50920000 {
 			compatible = "snps,dw-apb-uart";
 			reg = <0x00 0x50920000 0x00 0x10000>;
@@ -89,20 +154,42 @@
 			reg-io-width = <0x04>;
 			status = "okay";
 		};
-		
-		virtio_mmio@10006000 {
-			interrupts = <0x06>;
-			interrupt-parent = <0x10>;
-			reg = <0x00 0x10006000 0x00 0x1000>;
-			compatible = "virtio,mmio";
-		};
 
-		virtio_mmio@10007000 {
-			interrupts = <0x07>;
+		sata@0x50420000 {
+			compatible = "snps,eswin-ahci";
+			reg = <0x00 0x50420000 0x00 0x10000>;
 			interrupt-parent = <0x10>;
-			reg = <0x00 0x10007000 0x00 0x1000>;
-			compatible = "virtio,mmio";
+			interrupt-names = "intrq\0msi\0pme";
+			interrupts = <0x3a 0x3b 0x3c>;
+			ports-implemented = <0x01>;
+			resets = <0x18 0x07 0x8000000>;
+			reset-names = "apb";
+			#size-cells = <0x02>;
+			// iommus = <0x19 0x0e>;
+			// tbus = <0x02>;
+			// dma-ranges = <0x00 0x00 0x00 0xc0000000 0x200 0x00>;
+			eswin,hsp_sp_csr = <0x1a 0x1050>;
+			eswin,syscrg_csr = <0x16 0x41c>;
+			numa-node-id = <0x00>;
+			dma-noncoherent;
+			status = "okay";
+			// pinctrl-names = "default";
+			// pinctrl-0 = <0x28>;
 		};
+		
+		// virtio_mmio@10006000 {
+		// 	interrupts = <0x06>;
+		// 	interrupt-parent = <0x10>;
+		// 	reg = <0x00 0x10006000 0x00 0x1000>;
+		// 	compatible = "virtio,mmio";
+		// };
+
+		// virtio_mmio@10007000 {
+		// 	interrupts = <0x07>;
+		// 	interrupt-parent = <0x10>;
+		// 	reg = <0x00 0x10007000 0x00 0x1000>;
+		// 	compatible = "virtio,mmio";
+		// };
 	};
 
 	aliases {
@@ -114,7 +201,7 @@
 	chosen {
 		// bootargs = "earlycon console=hvc0 root=/dev/vda rootfstype=ext4 rw rootwait";
 		// stdout-path = "virtio-console";
-		bootargs = "earlycon console=ttyS2,115200 root=/dev/vda rootfstype=ext4 rw rootwait init=/bin/bash";
+		bootargs = "earlycon console=ttyS2,115200 root=/dev/sda3 rootfstype=ext4 rw rootwait init=/bin/bash";
 		stdout-path = "serial2:115200n8";
 	};
 };

@@ -75,8 +75,8 @@
 			cache-size = <0x400000>;
 			cache-unified;
 			compatible = "sifive,ccache1\0cache\0sifive,fu740-c000-ccache";
-			interrupt-parent = <0x10>;
-			interrupts = <0x01 0x03 0x04 0x02>;
+			// interrupt-parent = <0x10>;
+			// interrupts = <0x01 0x03 0x04 0x02>;
 			next-level-cache = <0x14>;
 			reg = <0x00 0x2010000 0x00 0x4000 0x00 0x8000000 0x00 0x400000>;
 			reg-names = "control\0sideband";

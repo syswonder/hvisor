@@ -107,7 +107,9 @@ impl ArchCpu {
     pub fn init_interrupt(&self) {
         // Used before enter into VM.
         set_csr!(CSR_HIDELEG, 1 << 2 | 1 << 6 | 1 << 10); // HIDELEG_VSSI | HIDELEG_VSTI | HIDELEG_VSEI
-        set_csr!(CSR_HEDELEG, 1 << 8 | 1 << 12 | 1 << 13 | 1 << 15); // HEDELEG_ECU | HEDELEG_IPF | HEDELEG_LPF | HEDELEG_SPF
+        // Note: Breakpoint exception is temporarily needed.
+        // TODO: This is need to be checked in the future.
+        set_csr!(CSR_HEDELEG, 1 << 3 | 1 << 8 | 1 << 12 | 1 << 13 | 1 << 15); // HEDELEG_ECU | HEDELEG_IPF | HEDELEG_LPF | HEDELEG_SPF
         set_csr!(CSR_SIE, 1 << 9 | 1 << 5 | 1 << 1); // Enable all interrupts (SEIE STIE SSIE).
     }
 
