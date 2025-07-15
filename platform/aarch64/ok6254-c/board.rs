@@ -18,6 +18,7 @@ use crate::{arch::zone::HvArchZoneConfig, config::*};
 
 pub const BOARD_NAME: &str = "ok6254";
 pub const BOARD_NCPUS: usize = 4;
+pub const BOARD_UART_BASE: PhysAddr = 0x2800000;
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x88000000; // DTB load address
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x82000000; // kernel load address

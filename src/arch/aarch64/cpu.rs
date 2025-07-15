@@ -230,7 +230,6 @@ pub fn cpuid_to_mpidr_affinity(cpuid: u64) -> (u64, u64, u64, u64) {
     (aff3, aff2, aff1, aff0)
 }
 
-
 pub fn this_cpu_id() -> usize {
     mpidr_to_cpuid(MPIDR_EL1.get()) as _
 }

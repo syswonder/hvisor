@@ -18,6 +18,7 @@ use crate::{arch::zone::HvArchZoneConfig, config::*};
 pub const BOARD_NAME: &str = "qemu-gicv3";
 
 pub const BOARD_NCPUS: usize = 4;
+pub const BOARD_UART_BASE: u64 = 0x9000000;
 
 pub static BOARD_MPIDR_MAPPINGS: [u64; BOARD_NCPUS] = [0x0, 0x1, 0x2, 0x3];
 

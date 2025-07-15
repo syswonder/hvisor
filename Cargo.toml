@@ -69,11 +69,6 @@ pt_layout_rk3568 = []
 pt_layout_rk3588 = []
 pt_layout_zcu102 = []
 
-# uart infos
-uart_base_rk3568 = []
-uart_base_rk3588 = []
-uart_base_ok6254 = []
-
 ############## riscv64 #############
 # irqchip driver
 plic = []

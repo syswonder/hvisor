@@ -22,15 +22,7 @@ use tock_registers::interfaces::*;
 use tock_registers::register_bitfields;
 use tock_registers::register_structs;
 use tock_registers::registers::*;
-
-#[cfg(feature = "uart_base_rk3568")]
-pub const UART_BASE: PhysAddr = 0xfe660000;
-
-#[cfg(feature = "uart_base_rk3588")]
-pub const UART_BASE: PhysAddr = 0xfeb50000;
-
-#[cfg(feature = "uart_base_ok6254")]
-pub const UART_BASE: PhysAddr = 0x2800000;
+use crate::platform::BOARD_UART_BASE;
 
 /// Register struct representing the UART registers.
 register_structs! {
@@ -87,7 +79,7 @@ impl Uart16550 {
     }
 }
 
-static mut UART: Uart16550 = Uart16550::new(UART_BASE);
+static mut UART: Uart16550 = Uart16550::new(BOARD_UART_BASE as _);
 
 #[inline]
 pub fn console_putchar(c: u8) {

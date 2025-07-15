@@ -30,9 +30,10 @@ use tock_registers::{
     register_bitfields, register_structs,
     registers::{ReadOnly, ReadWrite, WriteOnly},
 };
+use crate::platform::BOARD_UART_BASE;
 
-pub const UART0_BASE: PhysAddr = 0xff000000;
-pub const UART1_BASE: PhysAddr = 0xff010000;
+// pub const UART0_BASE: PhysAddr = 0xff000000;
+// pub const UART1_BASE: PhysAddr = 0xff010000;
 
 pub const UART_FIFO_SIZE: usize = 64;
 pub const UART_REGS_REGION_SIZE: usize = 0x1000;
@@ -44,17 +45,17 @@ pub const UART_BAUDRATE_BDIV: u32 = 6;
 
 lazy_static! {
     static ref UART0: Mutex<ZynqUart> = {
-        let mut uart = ZynqUart::new(UART0_BASE);
+        let mut uart = ZynqUart::new(BOARD_UART_BASE as _);
         Mutex::new(uart)
     };
 }
 
-lazy_static! {
-    static ref UART1: Mutex<ZynqUart> = {
-        let mut uart = ZynqUart::new(UART1_BASE);
-        Mutex::new(uart)
-    };
-}
+// lazy_static! {
+//     static ref UART1: Mutex<ZynqUart> = {
+//         let mut uart = ZynqUart::new(UART1_BASE);
+//         Mutex::new(uart)
+//     };
+// }
 
 register_structs! {
     ZynqUartRegs {
