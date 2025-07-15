@@ -221,9 +221,30 @@ impl<'a> HyperCall<'a> {
     }
 
     pub fn hv_zone_config_check(&self, magic_version: *mut u64) -> HyperCallResult {
-        unsafe {
-            *magic_version = CONFIG_MAGIC_VERSION as _;
+        #[cfg(target_arch = "loongarch64")]
+        {
+            let magic_version_raw = magic_version as u64;
+            let magic_version_hva =
+                magic_version_raw | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX;
+            let magic_version_hva = magic_version_hva as *mut u64;
+            debug!(
+                "hv_zone_config_check: magic_version target addr to write = {:#x?}",
+                magic_version_hva
+            );
+            unsafe {
+                core::ptr::write(magic_version_hva, CONFIG_MAGIC_VERSION as _);
+            }
         }
+        #[cfg(not(target_arch = "loongarch64"))]
+        {
+            unsafe {
+                *magic_version = CONFIG_MAGIC_VERSION as _;
+            }
+        }
+        debug!(
+            "hv_zone_config_check: finished writing current magic version ({:#x})",
+            CONFIG_MAGIC_VERSION
+        );
         HyperCallResult::Ok(0)
     }
 
@@ -235,7 +256,7 @@ impl<'a> HyperCall<'a> {
                 as *const HvZoneConfig)
         };
 
-        info!("hv_zone_start: config: {:#x?}", config);
+        debug!("hv_zone_start: config: {:#x?}", config);
         if !is_this_root_zone() {
             return hv_result_err!(
                 EPERM,

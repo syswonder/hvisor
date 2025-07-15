@@ -50,7 +50,7 @@ raw-cpuid = "10.7.0"
 [features]
 ############# general ##############
 iommu = [] # supported by: aarch64
-pci = [] # supported by: aarch64
+pci = [] # supported by: aarch64, loongarch64
 
 ############# aarch64 ##############
 # irqchip driver
@@ -67,6 +67,7 @@ uart_16550 = []
 pt_layout_qemu = []
 pt_layout_rk3568 = []
 pt_layout_rk3588 = []
+pt_layout_zcu102 = []
 
 # cpu
 mpidr_rockchip = []

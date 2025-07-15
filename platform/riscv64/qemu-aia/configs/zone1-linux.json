@@ -2,7 +2,7 @@
     "arch": "riscv",
     "name": "linux2",
     "zone_id": 1,
-    "cpus": [2, 3],
+    "cpus": [3],
     "memory_regions": [
         {
             "type": "ram",
@@ -12,14 +12,14 @@
         },
         {
             "type": "virtio",
-            "physical_start": "0x10007000",
-            "virtual_start": "0x10007000",
+            "physical_start": "0x10006000",
+            "virtual_start": "0x10006000",
             "size": "0x1000"
         },
         {
             "type": "virtio",
-            "physical_start": "0x10006000",
-            "virtual_start": "0x10006000",
+            "physical_start": "0x10007000",
+            "virtual_start": "0x10007000",
             "size": "0x1000"
         }
     ],

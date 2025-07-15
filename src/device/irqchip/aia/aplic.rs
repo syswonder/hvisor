@@ -14,13 +14,13 @@
 // Authors:
 //
 
-use spin::Once;
-use spin::RwLock;
-// use crate::device::irqchip::aia::imsic::imsic_trigger;
 use crate::config::root_zone_config;
+use crate::device::irqchip::aia::imsic::imsic_trigger;
 use crate::zone::Zone;
 use crate::{arch::cpu::ArchCpu, memory::GuestPhysAddr, percpu::this_cpu_data};
 use riscv_decode::Instruction;
+use spin::Once;
+use spin::RwLock;
 // S-mode interrupt delivery controller
 const APLIC_S_IDC: usize = 0xd00_4000;
 pub const APLIC_DOMAINCFG_BASE: usize = 0x0000;
@@ -103,7 +103,10 @@ pub fn percpu_init() {
     //nothing to do
 }
 pub fn inject_irq(_irq: usize, is_hardware: bool) {
-    //nothing to do
+    // info!("inject_irq  _irq: {} is_hardware {}", _irq, is_hardware);
+    let host_aplic = host_aplic();
+    let (hart, guest, eiid) = host_aplic.read().get_target_info(_irq as u32);
+    imsic_trigger(hart, guest, eiid);
 }
 pub static APLIC: Once<RwLock<Aplic>> = Once::new();
 pub fn host_aplic<'a>() -> &'a RwLock<Aplic> {

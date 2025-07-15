@@ -71,6 +71,7 @@ register_structs! {
 
 const MMIO_BASE: usize = 0x8000_0000_1fe0_0000;
 const IPI_MMIO_BASE: usize = MMIO_BASE;
+const IPI_ANY_SEND_BASE: usize = MMIO_BASE + 0x1158;
 
 // IPI registers, use this if you don't want to use the percore-IPI feature
 pub static CORE0_IPI: MMIODerefWrapper<IpiRegisters> =

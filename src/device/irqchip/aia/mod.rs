@@ -14,6 +14,7 @@
 // Authors:
 //
 pub mod aplic;
+pub mod imsic;
 use crate::zone::Zone;
 
 impl Zone {

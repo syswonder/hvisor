@@ -19,7 +19,7 @@ use spin::Mutex;
 
 use crate::device::irqchip::set_ispender;
 use crate::{
-    config::{HvIvcConfig, CONFIG_MAX_IVC_CONGIGS},
+    config::{HvIvcConfig, CONFIG_MAX_IVC_CONFIGS},
     consts::PAGE_SIZE,
     error::HvResult,
     memory::{Frame, GuestPhysAddr, MMIOAccess, MemFlags, MemoryRegion},
@@ -38,21 +38,21 @@ pub struct IvcInfo {
     /// The number that one zone participates in ivc region
     pub len: u64,
     /// The ivc control table ipa of each ivc region
-    ivc_ct_ipas: [u64; CONFIG_MAX_IVC_CONGIGS],
+    ivc_ct_ipas: [u64; CONFIG_MAX_IVC_CONFIGS],
     /// The ivc shared memory ipa of each ivc region
-    ivc_shmem_ipas: [u64; CONFIG_MAX_IVC_CONGIGS],
+    ivc_shmem_ipas: [u64; CONFIG_MAX_IVC_CONFIGS],
     /// The ivc_id of each ivc region
-    ivc_ids: [u32; CONFIG_MAX_IVC_CONGIGS],
+    ivc_ids: [u32; CONFIG_MAX_IVC_CONFIGS],
     /// The irq number of each ivc region
-    ivc_irqs: [u32; CONFIG_MAX_IVC_CONGIGS],
+    ivc_irqs: [u32; CONFIG_MAX_IVC_CONFIGS],
 }
 
 impl From<&[HvIvcConfig]> for IvcInfo {
     fn from(configs: &[HvIvcConfig]) -> Self {
-        let mut ivc_ids = [0; CONFIG_MAX_IVC_CONGIGS];
-        let mut ivc_ct_ipas = [0; CONFIG_MAX_IVC_CONGIGS];
-        let mut ivc_shmem_ipas = [0; CONFIG_MAX_IVC_CONGIGS];
-        let mut ivc_irqs = [0; CONFIG_MAX_IVC_CONGIGS];
+        let mut ivc_ids = [0; CONFIG_MAX_IVC_CONFIGS];
+        let mut ivc_ct_ipas = [0; CONFIG_MAX_IVC_CONFIGS];
+        let mut ivc_shmem_ipas = [0; CONFIG_MAX_IVC_CONFIGS];
+        let mut ivc_irqs = [0; CONFIG_MAX_IVC_CONFIGS];
         for i in 0..configs.len() {
             let config = &configs[i];
             ivc_ids[i] = config.ivc_id;

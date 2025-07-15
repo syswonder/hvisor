@@ -425,10 +425,12 @@ register_structs! {
 register_structs! {
   #[allow(non_snake_case)]
   pub ChipExtioiStatusRegs {
-    (0x0000 => pub extioi_sr0: ReadOnly<u64, Extioi_sr0::Register>),
-    (0x0008 => pub extioi_sr1: ReadOnly<u64, Extioi_sr1::Register>),
-    (0x0010 => pub extioi_sr2: ReadOnly<u64, Extioi_sr2::Register>),
-    (0x0018 => pub extioi_sr3: ReadOnly<u64, Extioi_sr3::Register>),
+    (0x0000 => pub extioi_sr0: ReadWrite<u64, Extioi_sr0::Register>),
+    // according to loongson's linux driver, writing to this register [with a bitmask] will clear the corresponding SR reg,
+    // so we first check the SR regs, then clear them
+    (0x0008 => pub extioi_sr1: ReadWrite<u64, Extioi_sr1::Register>),
+    (0x0010 => pub extioi_sr2: ReadWrite<u64, Extioi_sr2::Register>),
+    (0x0018 => pub extioi_sr3: ReadWrite<u64, Extioi_sr3::Register>),
     (0x0020 => @END),
   }
 }
@@ -449,51 +451,60 @@ register_structs! {
 }
 
 const MMIO_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_0000);
+const CHIP_CONFIG_BASE: usize = MMIO_BASE + 0x0;
+const CHIP_OTHER_FUNCTION_BASE: usize = MMIO_BASE + 0x420;
+const CHIP_LEGACY_INT_ROUTE_BASE: usize = MMIO_BASE + 0x1400;
+const CHIP_LEGACY_INT_CTRL_BASE: usize = MMIO_BASE + 0x1420;
+const CHIP_EXTIOI_DEBUG_SEND_BASE: usize = MMIO_BASE + 0x1140;
+const CHIP_EXTIOI_NODE_TYPE_BASE: usize = MMIO_BASE + 0x14a0;
+const CHIP_EXTIOI_ROUTE_BASE: usize = MMIO_BASE + 0x14c2;
+const CHIP_EXTIOI_ENABLE_BASE: usize = MMIO_BASE + 0x1600;
+const CHIP_EXTIOI_BOUNCE_BASE: usize = MMIO_BASE + 0x1680;
+const CHIP_EXTIOI_STATUS_BASE: usize = MMIO_BASE + 0x1700;
+const CHIP_EXTIOI_CORE0_STATUS_BASE: usize = MMIO_BASE + 0x1800;
+const CHIP_EXTIOI_CORE1_STATUS_BASE: usize = MMIO_BASE + 0x1900;
+const CHIP_EXTIOI_CORE2_STATUS_BASE: usize = MMIO_BASE + 0x1a00;
+const CHIP_EXTIOI_CORE3_STATUS_BASE: usize = MMIO_BASE + 0x1b00;
+const CHIP_EXTIOI_ROUTE_CORE_BASE: usize = MMIO_BASE + 0x1c00;
 
-const CHIP_CONFIG_BASE: usize = MMIO_BASE;
+const CHIP_HT_CONFIG_BASE: usize = PHY_TO_DMW_UNCACHED!(0xfd_fb00_0000); // 3A5000 manual p118
+const CHIP_HT_INT_VECTOR_BASE: usize = CHIP_HT_CONFIG_BASE + 0x80;
+const CHIP_HT_INT_EN_BASE: usize = CHIP_HT_CONFIG_BASE + 0xa0;
+
 pub static CHIP_CONFIG: MMIODerefWrapper<ChipConfigRegs> =
     unsafe { MMIODerefWrapper::new(CHIP_CONFIG_BASE as usize) };
 
-const CHIP_LEGACY_INT_CTRL_BASE: usize = MMIO_BASE + 0x1420;
 pub static CHIP_LEGACY_INT_CTRL: MMIODerefWrapper<ChipLegacyIntCtrlRegs> =
     unsafe { MMIODerefWrapper::new(CHIP_LEGACY_INT_CTRL_BASE as usize) };
 
-const CHIP_OTHER_FUNCTION_BASE: usize = MMIO_BASE + 0x420;
 pub static CHIP_OTHER_FUNCTION: MMIODerefWrapper<ChipOtherFunctionRegs> =
     unsafe { MMIODerefWrapper::new(CHIP_OTHER_FUNCTION_BASE as usize) };
 
-const CHIP_LEGACY_INT_ROUTE_BASE: usize = MMIO_BASE + 0x1400;
 pub static CHIP_LEGACY_INT_ROUTE: MMIODerefWrapper<ChipLegacyIntRouteRegs> =
     unsafe { MMIODerefWrapper::new(CHIP_LEGACY_INT_ROUTE_BASE as usize) };
 
-const CHIP_EXTIOI_ENABLE_BASE: usize = MMIO_BASE + 0x1600;
 pub static CHIP_EXTIOI_ENABLE: MMIODerefWrapper<ChipExtioiEnableRegs> =
     unsafe { MMIODerefWrapper::new(CHIP_EXTIOI_ENABLE_BASE as usize) };
 
-const CHIP_EXTIOI_STATUS_BASE: usize = MMIO_BASE + 0x1700;
-pub static CHIP_EXTIOI_STATUS: MMIODerefWrapper<ChipExtioiStatusRegs> =
-    unsafe { MMIODerefWrapper::new(CHIP_EXTIOI_STATUS_BASE as usize) };
+pub static CHIP_EXTIOI_CORE0_STATUS: MMIODerefWrapper<ChipExtioiStatusRegs> =
+    unsafe { MMIODerefWrapper::new(CHIP_EXTIOI_CORE0_STATUS_BASE as usize) };
+
+pub static CHIP_EXTIOI_CORE1_STATUS: MMIODerefWrapper<ChipExtioiStatusRegs> =
+    unsafe { MMIODerefWrapper::new(CHIP_EXTIOI_CORE1_STATUS_BASE as usize) };
+
+pub static CHIP_EXTIOI_CORE2_STATUS: MMIODerefWrapper<ChipExtioiStatusRegs> =
+    unsafe { MMIODerefWrapper::new(CHIP_EXTIOI_CORE2_STATUS_BASE as usize) };
+
+pub static CHIP_EXTIOI_CORE3_STATUS: MMIODerefWrapper<ChipExtioiStatusRegs> =
+    unsafe { MMIODerefWrapper::new(CHIP_EXTIOI_CORE3_STATUS_BASE as usize) };
 
 // this indicates the configs for irq routing to which INT pin, not target cpu core
 // the 256 irqs are grouped into 8 group to control the target INT pin - wheatfox
-const CHIP_EXTIOI_ROUTE_BASE: usize = MMIO_BASE + 0x14c2;
 pub static CHIP_EXTIOI_ROUTE: MMIODerefWrapper<ChipExtioiRouteRegs> =
     unsafe { MMIODerefWrapper::new(CHIP_EXTIOI_ROUTE_BASE as usize) };
 
-const CHIP_EXTIOI_BOUNCE_BASE: usize = MMIO_BASE + 0x1680;
 pub static CHIP_EXTIOI_BOUNCE: MMIODerefWrapper<ChipExtioiBounceRegs> =
     unsafe { MMIODerefWrapper::new(CHIP_EXTIOI_BOUNCE_BASE as usize) };
-
-const CHIP_EXTIOI_DEBUG_SEND_BASE: usize = MMIO_BASE + 0x1140;
-
-// this is the target cpu core for all 256 irq sources - wheatfox
-const CHIP_EXTIOI_ROUTE_CORE_BASE: usize = MMIO_BASE + 0x1c00;
-const CHIP_EXTIOI_NODE_TYPE_BASE: usize = MMIO_BASE + 0x14a0;
-
-// 3A5000 manual p118
-const CHIP_HT_CONFIG_BASE: usize = PHY_TO_DMW_UNCACHED!(0xfd_fb00_0000);
-const CHIP_HT_INT_VECTOR_BASE: usize = CHIP_HT_CONFIG_BASE + 0x80;
-const CHIP_HT_INT_EN_BASE: usize = CHIP_HT_CONFIG_BASE + 0xa0;
 
 /******************************************** */
 /*             SOME BASIC FUCNTIONS           */
@@ -563,19 +574,19 @@ fn u64tostr(x: u64) -> String {
 #[no_mangle]
 pub fn print_chip_info() {
     info!(
-        "loongarch64:: irqchip:: chip config version: {:#x}",
+        "loongarch64: print_chip_info: chip config version: {:#x}",
         get_chip_conf_ver()
     );
     info!(
-        "loongarch64:: irqchip:: chip feature extioi support: {}",
+        "loongarch64: print_chip_info: chip feature extioi support: {}",
         CHIP_CONFIG.chip_feature.read(ChipFeature::EXTIOI_SUPPORT) != 0
     );
     info!(
-        "loongarch64:: irqchip:: manufacturer name: {}",
+        "loongarch64: print_chip_info: manufacturer name: {}",
         u64tostr(CHIP_CONFIG.manufacturer_name.read(ManufacturerName::VENDOR))
     );
     info!(
-        "loongarch64:: irqchip:: chip name: {}",
+        "loongarch64: print_chip_info: chip name: {}",
         u64tostr(CHIP_CONFIG.chip_name.read(ChipName::ID))
     );
 }
@@ -613,28 +624,13 @@ pub fn legacy_int_route_all() {
 }
 
 pub fn legacy_int_dump() {
+    info!("int_isr={:#x}", CHIP_LEGACY_INT_CTRL.int_isr.get());
+    info!("int_en={:#x}", CHIP_LEGACY_INT_CTRL.int_en.get());
+    info!("int_en_set={:#x}", CHIP_LEGACY_INT_CTRL.int_en_set.get());
+    info!("int_en_clr={:#x}", CHIP_LEGACY_INT_CTRL.int_en_clr.get());
+    info!("int_en_edge={:#x}", CHIP_LEGACY_INT_CTRL.int_en_edge.get());
     info!(
-        "(legacy_int_dump) int_isr_raw = 0x{:x}",
-        CHIP_LEGACY_INT_CTRL.int_isr.get()
-    );
-    info!(
-        "(legacy_int_dump) int_en_raw = 0x{:x}",
-        CHIP_LEGACY_INT_CTRL.int_en.get()
-    );
-    info!(
-        "(legacy_int_dump) int_en_set_raw = 0x{:x}",
-        CHIP_LEGACY_INT_CTRL.int_en_set.get()
-    );
-    info!(
-        "(legacy_int_dump) int_en_clr_raw = 0x{:x}",
-        CHIP_LEGACY_INT_CTRL.int_en_clr.get()
-    );
-    info!(
-        "(legacy_int_dump) int_en_edge_raw = 0x{:x}",
-        CHIP_LEGACY_INT_CTRL.int_en_edge.get()
-    );
-    info!(
-        "(legacy_int_dump) core0_intisr_raw = 0x{:x}",
+        "core0_intisr={:#x}",
         CHIP_LEGACY_INT_CTRL.core0_intisr.get()
     );
 }
@@ -739,53 +735,359 @@ pub fn extioi_int_route_core_all() {
     }
 }
 
-pub fn extioi_dump() {
-    info!(
-        "(extioi_dump) extioi_en0=0x{:x}",
-        CHIP_EXTIOI_ENABLE.extioi_en0.get()
+pub fn get_extioi_sr() -> String {
+    let mut sr = String::new();
+    // in one line, compact style
+    // core0: u64,u64,u64,u64; core1: u64,u64,u64,u64; core2: u64,u64,u64,u64; core3: u64,u64,u64,u64;
+    // so we need to read 4 * 4 = 16 u64
+    for core_id in 0..4 {
+        let (sr0, sr1, sr2, sr3) = match core_id {
+            0 => (
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr0.get(),
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr1.get(),
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr2.get(),
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr3.get(),
+            ),
+            1 => (
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr0.get(),
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr1.get(),
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr2.get(),
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr3.get(),
+            ),
+            2 => (
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr0.get(),
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr1.get(),
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr2.get(),
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr3.get(),
+            ),
+            3 => (
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr0.get(),
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr1.get(),
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr2.get(),
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr3.get(),
+            ),
+            _ => panic!("get_extioi_sr: invalid core id: {}", core_id),
+        };
+        sr.push_str(
+            format!(
+                "core{}: {:#x},{:#x},{:#x},{:#x}; ",
+                core_id, sr0, sr1, sr2, sr3
+            )
+            .as_str(),
+        );
+    }
+    sr
+}
+
+pub fn clear_extioi_sr() {
+    warn!(
+        "clear_extioi_sr: clearing extioi SR regs, before: {}",
+        get_extioi_sr()
     );
-    info!(
-        "(extioi_dump) extioi_en1=0x{:x}",
-        CHIP_EXTIOI_ENABLE.extioi_en1.get()
+    // step one, for each sr reg, we read it and find any pending bit
+    for core_id in 0..4 {
+        let (sr0, sr1, sr2, sr3) = match core_id {
+            0 => (
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr0.get(),
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr1.get(),
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr2.get(),
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr3.get(),
+            ),
+            1 => (
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr0.get(),
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr1.get(),
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr2.get(),
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr3.get(),
+            ),
+            2 => (
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr0.get(),
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr1.get(),
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr2.get(),
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr3.get(),
+            ),
+            3 => (
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr0.get(),
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr1.get(),
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr2.get(),
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr3.get(),
+            ),
+            _ => panic!("clear_extioi_sr: invalid core id: {}", core_id),
+        };
+        // then we directly write them back to clear the status
+        match core_id {
+            0 => {
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr0.set(sr0);
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr1.set(sr1);
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr2.set(sr2);
+                CHIP_EXTIOI_CORE0_STATUS.extioi_sr3.set(sr3);
+            }
+            1 => {
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr0.set(sr0);
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr1.set(sr1);
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr2.set(sr2);
+                CHIP_EXTIOI_CORE1_STATUS.extioi_sr3.set(sr3);
+            }
+            2 => {
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr0.set(sr0);
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr1.set(sr1);
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr2.set(sr2);
+                CHIP_EXTIOI_CORE2_STATUS.extioi_sr3.set(sr3);
+            }
+            3 => {
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr0.set(sr0);
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr1.set(sr1);
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr2.set(sr2);
+                CHIP_EXTIOI_CORE3_STATUS.extioi_sr3.set(sr3);
+            }
+            _ => panic!("clear_extioi_sr: invalid core id: {}", core_id),
+        }
+    }
+    warn!(
+        "clear_extioi_sr: clearing extioi SR regs, after: {}",
+        get_extioi_sr()
     );
-    info!(
-        "(extioi_dump) extioi_en2=0x{:x}",
-        CHIP_EXTIOI_ENABLE.extioi_en2.get()
+}
+
+/******************************************** */
+/*             PCI STUFFS :)                  */
+/******************************************** */
+
+const PCI_STANDARD_CONFIG_BASE_ALT: usize = 0x8000_0000_1a00_0000;
+const PCI_STANDARD_CONFIG_BASE: usize = 0x8000_0efd_fe00_0000;
+const PCI_RESERVED_CONFIG_BASE: usize = 0x8000_0efe_0000_0000;
+
+/**
+    Standard PCI config space:
+    TYPE0: [15:11] Device Number, [10:8] Function Number, [7:0] Offset
+    TYPE1: [23:16] Bus Number, [15:11] Device Number, [10:8] Function Number, [7:0] Offset
+
+    Reserved PCI config space:
+    TYPE0: [27:24] Offset[11:8], [15:11] Device Number, [10:8] Function Number, [7:0] Offset[7:0]
+    TYPE1: [27:24] Offset[11:8], [23:16] Bus Number, [15:11] Device Number, [10:8] Function Number, [7:0] Offset[7:0]
+*/
+
+pub fn probe_pci_config_standard_ecam(
+    bus: u8,
+    device: u8,
+    function: u8,
+    offset: u8,
+    size: u8,
+) -> usize {
+    let mut addr: usize;
+    let mut data: usize;
+    addr = PCI_STANDARD_CONFIG_BASE_ALT
+        | ((bus as usize) << 16)
+        | ((device as usize) << 11)
+        | ((function as usize) << 8)
+        | (offset as usize);
+    data = 0;
+    for i in 0..size {
+        let byte_addr = addr + i as usize;
+        let byte_data: u8;
+        unsafe {
+            byte_data = read_volatile(byte_addr as *const u8);
+        }
+        data |= (byte_data as usize) << (i * 8);
+    }
+    data
+}
+
+pub fn probe_pci_config_standard(bus: u8, device: u8, function: u8, offset: u8, size: u8) -> usize {
+    let mut addr: usize;
+    let mut data: usize;
+    addr = PCI_STANDARD_CONFIG_BASE
+        | ((bus as usize) << 16)
+        | ((device as usize) << 11)
+        | ((function as usize) << 8)
+        | (offset as usize);
+    data = 0;
+    for i in 0..size {
+        let byte_addr = addr + i as usize;
+        let byte_data: u8;
+        unsafe {
+            byte_data = read_volatile(byte_addr as *const u8);
+        }
+        data |= (byte_data as usize) << (i * 8);
+    }
+    data
+}
+pub fn probe_pci_config_reserved(
+    bus: u8,
+    device: u8,
+    function: u8,
+    offset: usize,
+    size: u8,
+) -> usize {
+    let mut addr: usize;
+    let mut data: usize;
+    let offset_low = offset & 0xff;
+    let offset_high = (offset >> 8) & 0xf;
+    addr = PCI_RESERVED_CONFIG_BASE
+        | ((bus as usize) << 16)
+        | ((device as usize) << 11)
+        | ((function as usize) << 8)
+        | (offset_low as usize)
+        | (offset_high << 24);
+    data = 0;
+    for i in 0..size {
+        let byte_addr = addr + i as usize;
+        let byte_data: u8;
+        unsafe {
+            byte_data = read_volatile(byte_addr as *const u8);
+        }
+        data |= (byte_data as usize) << (i * 8);
+    }
+    data
+}
+
+// https://admin.pci-ids.ucw.cz/read/PC/0014
+
+const PCI_VENDOR_ID_LOONGSON: usize = 0x0014;
+
+const PCI_DEVICE_ID_HT_BRIDGE: usize = 0x7a00;
+const PCI_DEVICE_ID_APB: usize = 0x7a02;
+const PCI_DEVICE_ID_GIGE: usize = 0x7a03;
+const PCI_DEVICE_ID_OTG_USB: usize = 0x7a04;
+const PCI_DEVICE_ID_GPU: usize = 0x7a05;
+const PCI_DEVICE_ID_DC: usize = 0x7a06;
+const PCI_DEVICE_ID_HDA: usize = 0x7a07;
+const PCI_DEVICE_ID_SATA: usize = 0x7a08;
+const PCI_DEVICE_ID_PCI_BRIDGE: usize = 0x7a09;
+const PCI_DEVICE_ID_SPI: usize = 0x7a0b;
+const PCI_DEVICE_ID_LPC: usize = 0x7a0c;
+const PCI_DEVICE_ID_DMA: usize = 0x7a0f;
+const PCI_DEVICE_ID_HT_BRIDGE2: usize = 0x7a10;
+const PCI_DEVICE_ID_PCH_GIGE: usize = 0x7a13;
+const PCI_DEVICE_ID_EHCI_USB: usize = 0x7a14;
+const PCI_DEVICE_ID_GPU2: usize = 0x7a15;
+const PCI_DEVICE_ID_SATA3: usize = 0x7a18;
+const PCI_DEVICE_ID_PCI_BRIDGE2: usize = 0x7a19;
+const PCI_DEVICE_ID_SPI2: usize = 0x7a1b;
+const PCI_DEVICE_ID_OHCI_USB: usize = 0x7a24;
+const PCI_DEVICE_ID_LG100_GPU: usize = 0x7a25;
+const PCI_DEVICE_ID_I2S: usize = 0x7a27;
+const PCI_DEVICE_ID_PCI_BRIDGE3: usize = 0x7a29;
+const PCI_DEVICE_ID_XHCI_USB: usize = 0x7a34;
+const PCI_DEVICE_ID_DC2: usize = 0x7a36;
+const PCI_DEVICE_ID_PCIE_X1: usize = 0x7a39;
+const PCI_DEVICE_ID_PCIE_X4: usize = 0x7a49;
+const PCI_DEVICE_ID_PCIE_X8: usize = 0x7a59;
+const PCI_DEVICE_ID_PCIE_X16: usize = 0x7a69;
+
+pub fn parse_vendor_device_id(vendor_id: usize, device_id: usize) -> String {
+    let mut name = String::new();
+    if vendor_id == PCI_VENDOR_ID_LOONGSON {
+        name.push_str(format!("[{}] ", "Loongson Technology LLC").as_str());
+        match device_id {
+            PCI_DEVICE_ID_HT_BRIDGE => name.push_str("Hyper Transport Bridge Controller	"),
+            PCI_DEVICE_ID_APB => name.push_str("APB (Advanced Peripheral Bus) Controller"),
+            PCI_DEVICE_ID_GIGE => name.push_str("Gigabit Ethernet Controller"),
+            PCI_DEVICE_ID_OTG_USB => name.push_str("OTG USB Controller"),
+            PCI_DEVICE_ID_GPU => name.push_str("Vivante GPU"),
+            PCI_DEVICE_ID_DC => name.push_str("Display Controller"),
+            PCI_DEVICE_ID_HDA => name.push_str("HDA (High Definition Audio) Controller"),
+            PCI_DEVICE_ID_SATA => name.push_str("SATA AHCI Controller"),
+            PCI_DEVICE_ID_PCI_BRIDGE => name.push_str("PCI-to-PCI Bridge"),
+            PCI_DEVICE_ID_SPI => name.push_str("SPI Controller"),
+            PCI_DEVICE_ID_LPC => name.push_str("LPC Controller"),
+            PCI_DEVICE_ID_DMA => name.push_str("DMA (Direct Memory Access) Controller"),
+            PCI_DEVICE_ID_HT_BRIDGE2 => name.push_str("Hyper Transport Bridge Controller"),
+            PCI_DEVICE_ID_PCH_GIGE => name.push_str("7A2000 PCH Gigabit Ethernet Controller"),
+            PCI_DEVICE_ID_EHCI_USB => name.push_str("EHCI USB Controller"),
+            PCI_DEVICE_ID_GPU2 => name.push_str("Vivante GPU"),
+            PCI_DEVICE_ID_SATA3 => name.push_str("SATA 3 AHCI Controller"),
+            PCI_DEVICE_ID_PCI_BRIDGE2 => name.push_str("PCI-to-PCI Bridge"),
+            PCI_DEVICE_ID_SPI2 => name.push_str("SPI Controller"),
+            PCI_DEVICE_ID_OHCI_USB => name.push_str("OHCI USB Controller"),
+            PCI_DEVICE_ID_LG100_GPU => name.push_str("LG100 GPU"),
+            PCI_DEVICE_ID_I2S => name.push_str("7A2000 PCH I2S Controller"),
+            PCI_DEVICE_ID_PCI_BRIDGE3 => name.push_str("PCI-to-PCI Bridge"),
+            PCI_DEVICE_ID_XHCI_USB => name.push_str("xHCI USB Controller"),
+            PCI_DEVICE_ID_DC2 => name.push_str("Display Controller"),
+            PCI_DEVICE_ID_PCIE_X1 => name.push_str("PCIe x1 Root Port"),
+            PCI_DEVICE_ID_PCIE_X4 => name.push_str("PCIe x4 Root Port"),
+            PCI_DEVICE_ID_PCIE_X8 => name.push_str("PCIe x8 Root Port"),
+            PCI_DEVICE_ID_PCIE_X16 => name.push_str("PCIe x16 Root Port"),
+            _ => name.push_str("Unknown Device"),
+        }
+    }
+    if name.is_empty() {
+        name.push_str("Unknown");
+    }
+    name
+}
+
+pub fn probe_pci() {
+    let mut num = 64;
+    // warn!(
+    //     "loongarch64: probe_pci: probing PCI devices @ 0x{:x}",
+    //     PCI_STANDARD_CONFIG_BASE_ALT
+    // );
+    // for i in 0..num {
+    //     // dump vendor id and device id
+    //     let vendor_id = probe_pci_config_standard_ecam(0, i, 0, 0, 2);
+    //     let device_id = probe_pci_config_standard_ecam(0, i, 0, 2, 2);
+    //     if vendor_id == 0xffff && device_id == 0xffff {
+    //         continue;
+    //     }
+    //     info!(
+    //         "loongarch64: probe_pci: device {}: vendor={:#x} device={:#x} name={}",
+    //         i,
+    //         vendor_id,
+    //         device_id,
+    //         parse_vendor_device_id(vendor_id, device_id)
+    //     );
+    // }
+    // warn!(
+    //     "loongarch64: probe_pci: probing PCI devices @ 0x{:x}",
+    //     PCI_STANDARD_CONFIG_BASE
+    // );
+    // for i in 0..num {
+    //     // dump vendor id and device id
+    //     let vendor_id = probe_pci_config_standard(0, i, 0, 0, 2);
+    //     let device_id = probe_pci_config_standard(0, i, 0, 2, 2);
+    //     if vendor_id == 0xffff && device_id == 0xffff {
+    //         continue;
+    //     }
+    //     info!(
+    //         "loongarch64: probe_pci: device {}: vendor={:#x} device={:#x} name={}",
+    //         i,
+    //         vendor_id,
+    //         device_id,
+    //         parse_vendor_device_id(vendor_id, device_id)
+    //     );
+    // }
+    warn!(
+        "loongarch64: probe_pci: probing PCI devices @ 0x{:x}",
+        PCI_RESERVED_CONFIG_BASE
     );
-    info!(
-        "(extioi_dump) extioi_en3=0x{:x}",
-        CHIP_EXTIOI_ENABLE.extioi_en3.get()
-    );
-    info!(
-        "(extioi_dump) extioi_bounce0=0x{:x}",
-        CHIP_EXTIOI_BOUNCE.extioi_bounce0.get()
-    );
-    info!(
-        "(extioi_dump) extioi_bounce1=0x{:x}",
-        CHIP_EXTIOI_BOUNCE.extioi_bounce1.get()
-    );
-    info!(
-        "(extioi_dump) extioi_bounce2=0x{:x}",
-        CHIP_EXTIOI_BOUNCE.extioi_bounce2.get()
-    );
-    info!(
-        "(extioi_dump) extioi_bounce3=0x{:x}",
-        CHIP_EXTIOI_BOUNCE.extioi_bounce3.get()
-    );
-    info!(
-        "(extioi_dump) extioi_sr0=0x{:x}",
-        CHIP_EXTIOI_STATUS.extioi_sr0.get()
-    );
-    info!(
-        "(extioi_dump) extioi_sr1=0x{:x}",
-        CHIP_EXTIOI_STATUS.extioi_sr1.get()
-    );
-    info!(
-        "(extioi_dump) extioi_sr2=0x{:x}",
-        CHIP_EXTIOI_STATUS.extioi_sr2.get()
-    );
-    info!(
-        "(extioi_dump) extioi_sr3=0x{:x}",
-        CHIP_EXTIOI_STATUS.extioi_sr3.get()
-    );
+    for i in 0..num {
+        // dump vendor id and device id
+        let vendor_id = probe_pci_config_reserved(0, i, 0, 0, 2);
+        let device_id = probe_pci_config_reserved(0, i, 0, 2, 2);
+        if vendor_id == 0xffff && device_id == 0xffff {
+            continue;
+        }
+        info!(
+            "loongarch64: probe_pci: device {}: vendor={:#x} device={:#x} name={}",
+            i,
+            vendor_id,
+            device_id,
+            parse_vendor_device_id(vendor_id, device_id)
+        );
+    }
+    unsafe {
+        warn!(
+            "given to linux @ 0xcf00000000: {:#x}",
+            read_volatile(0x800000cf00000000 as *const u32)
+        );
+        warn!(
+            "given to linux @ 0xcf00000800: {:#x}",
+            read_volatile(0x800000cf00000800 as *const u32)
+        );
+        warn!(
+            "given to linux @ 0xcf00000800: {:#x}",
+            read_volatile(0x800000cf00001000 as *const u32)
+        );
+    }
 }
