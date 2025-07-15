@@ -1,0 +1,246 @@
+/dts-v1/;
+
+/ {
+	#address-cells = <0x02>;
+	#size-cells = <0x02>;
+	compatible = "sifive,hifive-unmatched-a00\0sifive,fu740-c000\0sifive,fu740\0eswin,eic7700";
+	model = "Milk-V Megrez";
+
+	cpus {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+		timebase-frequency = <0xf4240>;
+
+		cpu@0 {
+			clock-frequency = <0x00>;
+			compatible = "eswin,eic770x\0riscv";
+			d-cache-block-size = <0x40>;
+			d-cache-sets = <0x80>;
+			d-cache-size = <0x8000>;
+			d-tlb-sets = <0x01>;
+			d-tlb-size = <0x20>;
+			device_type = "cpu";
+			hardware-exec-breakpoint-count = <0x04>;
+			hwpf-distanceBits = <0x06>;
+			hwpf-hitCacheThrdBits = <0x05>;
+			hwpf-hitMSHRThrdBits = <0x04>;
+			hwpf-l2pfPoolSize = <0x0a>;
+			hwpf-nIssQEnt = <0x06>;
+			hwpf-nPrefetchQueueEntries = <0x08>;
+			hwpf-nStreams = <0x10>;
+			hwpf-qFullnessThrdBits = <0x04>;
+			hwpf-windowBits = <0x06>;
+			i-cache-block-size = <0x40>;
+			i-cache-sets = <0x80>;
+			i-cache-size = <0x8000>;
+			i-tlb-sets = <0x01>;
+			i-tlb-size = <0x20>;
+			mmu-type = "riscv,sv48";
+			next-level-cache = <0x01>;
+			reg = <0x00>;
+			riscv,isa = "rv64imafdc";
+			status = "okay";
+			timebase-frequency = <0xf4240>;
+			tlb-split;
+			clocks = <0x03 0x1f4>;
+			phandle = <0x4a>;
+
+			interrupt-controller {
+				#interrupt-cells = <0x01>;
+				compatible = "riscv,cpu-intc";
+				interrupt-controller;
+				phandle = <0x0c>;
+			};
+		};
+	};
+
+	memory@80000000 {
+		compatible = "sifive,axi4-mem-port\0sifive,axi4-port\0sifive,mem-port";
+		device_type = "memory";
+		reg = <0x00 0x80000000 0x00 0x80000000>;
+		sifive,port-width-bytes = <0x20>;
+		phandle = <0x14>;
+	};
+
+	soc {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		compatible = "SiFive,FU800-soc\0fu800-soc\0sifive-soc\0simple-bus";
+		ranges;
+
+		cache-controller@2010000 {
+			cache-block-size = <0x40>;
+			cache-level = <0x03>;
+			cache-sets = <0x1000>;
+			cache-size = <0x400000>;
+			cache-unified;
+			compatible = "sifive,ccache1\0cache\0sifive,fu740-c000-ccache";
+			// interrupt-parent = <0x10>;
+			// interrupts = <0x01 0x03 0x04 0x02>;
+			next-level-cache = <0x14>;
+			reg = <0x00 0x2010000 0x00 0x4000 0x00 0x8000000 0x00 0x400000>;
+			reg-names = "control\0sideband";
+			sifive,a-mshr-count = <0x3c>;
+			sifive,bank-count = <0x04>;
+			sifive,ecc-granularity = <0x08>;
+			sifive,max-master-id = <0x0d>;
+			sifive,perfmon-counters = <0x06>;
+			numa-node-id = <0x00>;
+			phandle = <0x15>;
+		};
+
+		interrupt-controller@c000000 {
+			#interrupt-cells = <0x01>;
+			compatible = "sifive,plic-1.0.0";
+			interrupt-controller;
+			interrupts-extended = <0x0c 0xffffffff 0x0c 0x09>;
+			reg = <0x00 0xc000000 0x00 0x4000000>;
+			reg-names = "control";
+			riscv,max-priority = <0x07>;
+			riscv,ndev = <0x208>;
+			phandle = <0x10>;
+		};
+
+		pl2@104000 {
+			cache-block-size = <0x40>;
+			cache-level = <0x02>;
+			cache-sets = <0x200>;
+			cache-size = <0x40000>;
+			cache-unified;
+			compatible = "sifive,pL2Cache0\0cache";
+			next-level-cache = <0x15>;
+			reg = <0x00 0x104000 0x00 0x4000>;
+			reg-names = "control";
+			sifive,ecc-granularity = <0x10>;
+			sifive,perfmon-counters = <0x06>;
+			phandle = <0x01>;
+		};
+
+		serial@0x50900000 {
+			compatible = "snps,dw-apb-uart";
+			reg = <0x00 0x50900000 0x00 0x10000>;
+			clock-frequency = <0xbebc200>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x64>;
+			reg-shift = <0x02>;
+			reg-io-width = <0x04>;
+			status = "okay";
+		};
+
+		// serial@0x50920000 {
+		// 	compatible = "snps,dw-apb-uart";
+		// 	reg = <0x00 0x50920000 0x00 0x10000>;
+		// 	clock-frequency = <0xbebc200>;
+		// 	interrupt-parent = <0x10>;
+		// 	interrupts = <0x66>;
+		// 	reg-shift = <0x02>;
+		// 	reg-io-width = <0x04>;
+		// 	status = "okay";
+		// };
+
+		sys-crg@51828000 {
+			compatible = "eswin,win2030-sys-crg\0syscon\0simple-mfd";
+			reg = <0x00 0x51828000 0x00 0x80000>;
+			numa-node-id = <0x00>;
+			phandle = <0x16>;
+
+			reset-controller {
+				compatible = "eswin,win2030-reset";
+				#reset-cells = <0x02>;
+				status = "okay";
+				phandle = <0x18>;
+			};
+
+			clock-controller {
+				compatible = "eswin,win2030-clock";
+				#clock-cells = <0x01>;
+				status = "okay";
+				force-1_8ghz;
+				phandle = <0x03>;
+			};
+		};
+
+		hsp_sp_top_csr@0x50440000 {
+			compatible = "eswin,win2030-hsp-sp-csr\0syscon";
+			#size-cells = <0x02>;
+			reg = <0x00 0x50440000 0x00 0x2000>;
+			phandle = <0x1a>;
+		};
+
+		mmc@0x50460000 {
+			compatible = "eswin,sdhci-sdio";
+			reg = <0x00 0x50460000 0x00 0x10000>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x51>;
+			clocks = <0x03 0x22b 0x03 0x222 0x03 0x0c 0x03 0x23>;
+			clock-names = "clk_xin\0clk_ahb\0clk_spll2_fout3\0clk_mux1_1";
+			clock-output-names = "sdio0_cardclock";
+			#clock-cells = <0x00>;
+			resets = <0x18 0x07 0x80 0x18 0x07 0x10 0x18 0x07 0x40000 0x18 0x07 0x400000>;
+			reset-names = "txrx_rst\0phy_rst\0prstn\0arstn";
+			clock-frequency = <0xc65d400>;
+			max-frequency = <0xc65d400>;
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			eswin,hsp_sp_csr = <0x1a 0x103c 0x608 0x60c>;
+			eswin,syscrg_csr = <0x16 0x164 0x148 0x14c>;
+			bus-width = <0x04>;
+			sdio-id = <0x00>;
+			numa-node-id = <0x00>;
+			status = "okay";
+			dma-noncoherent;
+			delay_code = <0x3b>;
+			drive-impedance-ohm = <0x21>;
+			enable-cmd-pullup;
+			enable-data-pullup;
+			no-sdio;
+			no-mmc;
+			disable-wp;
+			broken-cd;
+		};
+	};
+
+	reserved-memory {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+
+		opensbi@80000000 {
+			no-map;
+			reg = <0x00 0x80000000 0x00 0x00200000>;
+		};
+
+		hvisor@80200000 {
+			no-map;
+			reg = <0x00 0x80200000 0x00 0x02E00000>;
+		};
+
+		nonroot@0x83000000 {
+			no-map;
+			reg = <0x00 0x83000000 0x00 0x0C000000>;
+		};
+
+		dtbfile@0x8f000000 {
+			no-map;
+			reg = <0x00 0x8f000000 0x00 0x01000000>;
+		};
+	};
+
+	hvisor_virtio_device {
+		compatible = "hvisor";
+    	interrupt-parent = <0x10>;
+    	interrupts = <0x20>;
+	};
+
+	aliases {
+		serial0 = "/soc/serial@0x50900000";
+		// serial2 = "/soc/serial@0x50920000";
+	};
+
+	chosen {
+		bootargs = "earlycon console=ttyS0,115200 root=/dev/mmcblk0p2 rootfstype=ext4 rw rootwait init=/bin/bash";
+		stdout-path = "serial0:115200n8";
+		// bootargs = "earlycon console=ttyS2,115200 root=/dev/mmcblk0p3 rootfstype=ext4 rw rootwait init=/bin/bash";
+		// stdout-path = "serial2:115200n8";
+	};
+};
