@@ -38,7 +38,7 @@ pub static VIRTIO_BRIDGE: Mutex<VirtioBridgeRegion> = Mutex::new(VirtioBridgeReg
 
 const QUEUE_NOTIFY: usize = 0x50;
 pub const MAX_REQ: u32 = 32;
-pub const MAX_DEVS: usize = 8; // Attention: The max virtio-dev number for vm is 4.
+pub const MAX_DEVS: usize = 8; // Attention: The max virtio-dev number for vm is 8 (loongarch64 needs 3 consoles and 3 disks for zgclab project).
 pub const MAX_CPUS: usize = 32;
 
 #[cfg(not(target_arch = "riscv64"))]
@@ -82,7 +82,6 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     // debug!("old cfg flag: {:#x?}", old_cfg_flag);
     dev.push_req(hreq);
     // If req list is empty, send sgi to root linux to wake up virtio device.
-    // 可以发现是这里的 dev.need_wakeup() 为 false, 导致 zone0 一直没有收到 WAKEUP_VIRTIO_DEVICE 的 IPI
     #[cfg(not(target_arch = "loongarch64"))]
     if dev.need_wakeup() {
         debug!("need wakeup, sending ipi to wake up virtio device");
