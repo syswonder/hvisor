@@ -135,7 +135,7 @@ monitor:
 jlink-server:
 	JLinkGDBServer -select USB -if JTAG -device Cortex-A53 -port 1234
 
-cp: run dtb
+cp:
 	cp $(hvisor_bin) ~/tftp
 
 test-pre: download-test-img
