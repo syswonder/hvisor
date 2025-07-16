@@ -63,12 +63,6 @@ xuartps = []
 imx_uart = []
 uart_16550 = []
 
-# pagetable layout
-pt_layout_qemu = []
-pt_layout_rk3568 = []
-pt_layout_rk3588 = []
-pt_layout_zcu102 = []
-
 ############## riscv64 #############
 # irqchip driver
 plic = []

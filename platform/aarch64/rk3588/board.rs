@@ -13,7 +13,10 @@
 //
 // Authors:
 //
-use crate::{arch::zone::HvArchZoneConfig, config::*};
+use crate::{
+    arch::{mmu::MemoryType, zone::HvArchZoneConfig},
+    config::*,
+};
 
 // [   17.796762]   node   0: [mem 0x0000000000200000-0x000000000047ffff]
 // [   17.797335]   node   0: [mem 0x0000000000480000-0x000000000087ffff]
@@ -27,6 +30,24 @@ pub const BOARD_NAME: &str = "rk3588";
 
 pub const BOARD_NCPUS: usize = 8;
 pub const BOARD_UART_BASE: u64 = 0xfeb50000;
+
+#[rustfmt::skip]
+pub static BOARD_MPIDR_MAPPINGS: [u64; BOARD_NCPUS] = [
+    0x0,     // cpu0
+    0x100,   // cpu1
+    0x200,   // cpu2
+    0x300,   // cpu3
+];
+
+/// The physical memory layout of the board.
+/// Each address should align to 2M (0x200000).
+/// Addresses must be in ascending order.
+#[rustfmt::skip]
+pub const BOARD_PHYSMEM_LIST: [(u64, u64, MemoryType); 2] = [
+ // (       start,           end,                type)
+    (         0x0,    0xf0000000,  MemoryType::Normal),
+    (  0xf0000000,   0x100000000,  MemoryType::Device),
+];
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x10000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x09400000;

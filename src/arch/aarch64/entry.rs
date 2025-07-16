@@ -18,11 +18,10 @@ use crate::platform::BOARD_MPIDR_MAPPINGS;
 
 const INVALID_CPUID: usize = (-1) as _;
 
-//global_asm!(include_str!("boot_pt.S"));
 #[naked]
 #[no_mangle]
 #[link_section = ".text.entry"]
-pub unsafe extern "C" fn arch_entry() -> i32 {
+pub unsafe extern "C" fn arch_entry() -> ! {
     unsafe {
         core::arch::asm!(
             "
@@ -37,11 +36,11 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
 
             nop
             nop
-            bl {boot_cpuid_get}
+            bl {boot_cpuid_get}        // x17 = cpuid
 
-            adrp x2, __core_end          // x2 = &__core_end
-            mov x3, {per_cpu_size}       // x3 = per_cpu_size
-            madd x4, x17, x3, x3        // x4 = cpuid * per_cpu_size
+            adrp x2, __core_end        // x2 = &__core_end
+            mov x3, {per_cpu_size}     // x3 = per_cpu_size
+            madd x4, x17, x3, x3       // x4 = cpuid * per_cpu_size
             add x5, x2, x4
             mov sp, x5                 // sp = &__core_end + (cpuid + 1) * per_cpu_size
 
@@ -66,14 +65,8 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
             // ic  iallu
 
             bl {clear_bss}
-
-            //bl boot_pt_init
-            adrp x0, {BOOT_PT_L0}
-            adrp x1, {BOOT_PT_L1}
             bl {boot_pt_init}
         1:
-            adrp x0, {BOOT_PT_L0}
-            bl {mmu_init}
             bl {mmu_enable}
 
             tlbi alle2
@@ -92,10 +85,7 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
             per_cpu_size = const PER_CPU_SIZE,
             rust_main = sym crate::rust_main,
             clear_bss = sym crate::clear_bss,
-            BOOT_PT_L0 = sym super::mmu::BOOT_PT_L0,
-            BOOT_PT_L1 = sym super::mmu::BOOT_PT_L1,
             boot_pt_init = sym super::mmu::boot_pt_init,
-            mmu_init = sym super::mmu::mmu_init,
             mmu_enable = sym super::mmu::mmu_enable,
         );
     }
