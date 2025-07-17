@@ -190,12 +190,94 @@
 		// 	reg = <0x00 0x10007000 0x00 0x1000>;
 		// 	compatible = "virtio,mmio";
 		// };
+
+		ethernet@50410000 {
+			compatible = "eswin,win2030-qos-eth";
+			reg = <0x00 0x50410000 0x00 0x10000>;
+			interrupt-parent = <0x10>;
+			interrupt-names = "macirq";
+			interrupts = <0x46>;
+			phy-mode = "rgmii";
+			numa-node-id = <0x00>;
+			id = <0x01>;
+			status = "okay";
+			clocks = <0x03 0x226 0x03 0x227 0x03 0x229>;
+			clock-names = "app\0stmmaceth\0tx";
+			resets = <0x18 0x07 0x2000000>;
+			reset-names = "ethrst";
+			// tbus = <0x02>;
+			dma-noncoherent;
+			eswin,hsp_sp_csr = <0x1a 0x1034 0x200 0x208>;
+			eswin,syscrg_csr = <0x16 0x148 0x14c>;
+			eswin,dly_hsp_reg = <0x214 0x218 0x21c>;
+			snps,axi-config = <0x1f>;
+			pinctrl-names = "default";
+			pinctrl-0 = <0x20>;
+			rst-gpios = <0x21 0x10 0x01>;
+			eswin,rgmiisel = <0x1e 0x294 0x03>;
+			eswin,led-cfgs = <0x6100 0xa40 0x420>;
+			dly-param-1000m = <0x25252525 0x80268025 0x26262626>;
+			dly-param-100m = <0x48484848 0x80588048 0x58585858>;
+			dly-param-10m = <0x00 0x00 0x00>;
+
+			stmmac-axi-config {
+				snps,blen = <0x00 0x00 0x00 0x00 0x10 0x08 0x04>;
+				snps,rd_osr_lmt = <0x02>;
+				snps,wr_osr_lmt = <0x02>;
+				snps,lpi_en = <0x00>;
+				phandle = <0x1f>;
+			};
+		};
+
+		pinctrl@0x51600080 {
+			compatible = "eswin,eic7x-pinctrl\0syscon";
+			reg = <0x00 0x51600080 0x00 0x1fff80>;
+			status = "okay";
+			phandle = <0x1e>;
+
+			gpio16-default {
+				phandle = <0x20>;
+
+				mux {
+					groups = "gpio16_group";
+					function = "gpio16_func";
+				};
+
+				conf {
+					groups = "gpio16_group";
+					input-enable = <0x00>;
+					bias-pull-down = <0x01>;
+				};
+			};
+		};
+
+		gpio@51600000 {
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			compatible = "snps,dw-apb-gpio";
+			reg = <0x00 0x51600000 0x00 0x80>;
+			status = "okay";
+
+			gpio-port@0 {
+				compatible = "snps,dw-apb-gpio-port";
+				gpio-controller;
+				#gpio-cells = <0x02>;
+				ngpios = <0x20>;
+				reg = <0x00>;
+				interrupt-parent = <0x10>;
+				interrupt-controller;
+				#interrupt-cells = <0x02>;
+				interrupts = <0x12f 0x130 0x131 0x132 0x133 0x134 0x135 0x136 0x137 0x138 0x139 0x13a 0x13b 0x13c 0x13d 0x13e 0x13f 0x140 0x141 0x142 0x143 0x144 0x145 0x146 0x147 0x148 0x149 0x14a 0x14b 0x14c 0x14d 0x14e>;
+				phandle = <0x21>;
+			};
+		};
 	};
 
 	aliases {
 		// serial0 = "/soc/serial@0x50900000";
 		serial2 = "/soc/serial@0x50920000";
-		virtio-console = "/soc/virtio_mmio@10007000";
+		// virtio-console = "/soc/virtio_mmio@10007000";
+		ethernet1 = "/soc/ethernet@50410000";
 	};
 	
 	chosen {

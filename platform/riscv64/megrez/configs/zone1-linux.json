@@ -45,9 +45,21 @@
             "physical_start": "0xc000000000",
             "virtual_start":  "0xc000000000",
             "size": "0x80000000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x50410000",
+            "virtual_start":  "0x50410000",
+            "size": "0x10000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x51600000",
+            "virtual_start":  "0x51600000",
+            "size": "0x200000"
         }
     ],
-    "interrupts": [58, 59, 60, 102],
+    "interrupts": [58, 59, 60, 102, 70],
     "ivc_configs": [],
     "kernel_filepath": "./Image",
     "dtb_filepath": "./zone1-linux.dtb",
