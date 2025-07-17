@@ -273,27 +273,30 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
         ctx,
     );
 
-    // restore timer
-    let cfg = ctx.gcsr_tcfg;
-    write_gcsr_tcfg(0);
-    // restore GCSR_ESTAT and GCSR_TCFG
-    write_gcsr_estat(ctx.gcsr_estat);
-    write_gcsr_tcfg(ctx.gcsr_tcfg);
-    if cfg & (1 << 0) == 0 {
-        // guest has disabled timer, we just restore the tval
-        write_gcsr_tval(ctx.gcsr_tval);
-    } else {
-        // guest has enabled timer
-        let ticks = ctx.gcsr_tval;
-        let estat = ctx.gcsr_estat;
-        if !((cfg & 2) != 0 && (ticks > cfg)) {
-            write_gcsr_tval(0); // inject timer irq
-            if estat & 0x800 != 0 {
-                // set GCSR.TICLR[0] to 1
-                write_gcsr_ticlr(1);
-            }
-        }
-    }
+    // if !is_idle {
+    //     // restore timer
+    //     let cfg = ctx.gcsr_tcfg;
+    //     write_gcsr_tcfg(0);
+    //     // restore GCSR_ESTAT and GCSR_TCFG
+    //     write_gcsr_estat(ctx.gcsr_estat);
+    //     write_gcsr_tcfg(ctx.gcsr_tcfg);
+    //     debug!("loongarch64: trap_handler: restore timer, cfg={:#x}", cfg);
+    //     if cfg & (1 << 0) == 0 {
+    //         // guest has disabled timer, we just restore the tval
+    //         write_gcsr_tval(ctx.gcsr_tval);
+    //     } else {
+    //         // guest has enabled timer
+    //         let ticks = ctx.gcsr_tval;
+    //         let estat = ctx.gcsr_estat;
+    //         if !((cfg & 2) != 0 && (ticks > cfg)) {
+    //             write_gcsr_tval(0); // inject timer irq
+    //             if estat & 0x800 != 0 {
+    //                 // set GCSR.TICLR[0] to 1
+    //                 write_gcsr_ticlr(1);
+    //             }
+    //         }
+    //     }
+    // }
 
     let cur1 = ktime_get();
     // calculate the time spent in trap_handler
@@ -301,7 +304,7 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
     // set guest timer compensation
     let gcntc = gcntc::read();
     let gcntc_com = gcntc.compensation();
-    gcntc::set_compensation(gcntc_com.wrapping_sub(time_spent));
+    // gcntc::set_compensation(gcntc_com.wrapping_sub(time_spent));
 
     if !is_idle {
         debug!("loongarch64: trap_handler: return");
@@ -1391,16 +1394,6 @@ fn emulate_idle(ins: usize, ctx: &mut ZoneContext) {
     // idle level           0000011001 0010001 level[14:0]
     let level = extract_field(ins, 0, 15);
     trace!("guest request an idle at level {:#x}", level);
-    // // wait until GCSR.ESTAT.IS != 0
-    // loop {
-    //     let estat = read_gcsr_estat();
-    //     // ESTAT[12:0] = IS
-    //     if estat & 0x1fff != 0 {
-    //         let is = estat & 0x1fff;
-    //         debug!("idle waited, interrupt status is {:#x}", is);
-    //         break;
-    //     }
-    // }
 }
 
 fn ty2str(ty: usize) -> &'static str {
@@ -1475,31 +1468,6 @@ fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
             // iocsrwr.w
             mmio_access.size = 4;
             mmio_access.is_write = true;
-
-            // TODO: move these to mmio handler in arch/loongarch64/zone.rs
-            //
-            // Special handling for IPI
-            // if mmio_access.address == 0x1014 {
-            //     // IPI send issued from guest is tricky ...
-            //     // IPI_send is 32 bit, we ignore the upper 32 bits
-            //     // bit [31]: wait for completion
-            //     // bit [25:16] target cpu id
-            //     // bit [4:0] ipi id (IPI_status, 32 bit) indicates the IPI type (0-31)
-            //     let ipi_send = mmio_access.value as u32;
-            //     let ipi_id = ipi_send & 0x1f;
-            //     let target_cpu_id = (ipi_send >> 16) & 0x3ff;
-            //     let wait_for_completion = (ipi_send >> 31) & 0x1;
-            //     warn!("IPI send issued from guest, ipi_id = {:#x}, target_cpu_id = {:#x}, wait_for_completion = {:#x}", ipi_id, target_cpu_id, wait_for_completion);
-            //     if target_cpu_id == this_cpu_id() as u32 {
-            //         warn!("send IPI to itself, injecting IPI to GCSR_ESTAT");
-            //         inject_irq(INT_IPI, false);
-            //         ctx.sepc += 4;
-            //         return;
-            //     } else {
-            //         // TODO
-            //         panic!("send IPI from guest to other cpu is not supported yet!");
-            //     }
-            // }
         }
         7 => {
             // iocsrwr.d
@@ -1689,10 +1657,6 @@ fn emulate_ld_b(ins: usize, ctx: &mut ZoneContext) {
     let vaddr = ctx.x[rj] as isize + imm12toi64(si12);
     info!("vaddr = 0x{:x}", vaddr as usize);
     let offset = (vaddr - UART0_BASE as isize) as usize; // minus the UART0 base address
-                                                         // let mut uart0 = UART_EMU.lock();
-                                                         // let byte = uart0.read(offset);
-                                                         // info!("byte = 0x{:x}", byte as usize);
-                                                         // ctx.x[rd] = byte as usize;
 }
 
 fn emulate_st_b(ins: usize, ctx: &mut ZoneContext) {
@@ -1710,15 +1674,6 @@ fn emulate_st_b(ins: usize, ctx: &mut ZoneContext) {
     let vaddr = ctx.x[rj] as isize + imm12toi64(si12);
     // info!("vaddr = 0x{:x}", vaddr as usize);
     let offset = (vaddr - UART0_BASE as isize) as usize; // minus the UART0 base address
-                                                         // for VGA
-                                                         // let mut uart0 = UART_EMU.lock();
-                                                         // let byte = ctx.x[rd] as u8;
-                                                         // info!("byte = 0x{:x}", byte as usize);
-                                                         // let cur_zone = current_vcpu().unwrap().get_zone().unwrap();
-                                                         // let cur_zone_id = cur_zone.get_zone_id();
-                                                         // uart0.write(offset, byte, false, (cur_zone_id - 1) as i32);
-                                                         // drop(uart0); // !!!! very important
-                                                         // cur_zone.inner.lock().uart_emu.write(offset, byte, true, 0);
 }
 
 fn emulate_ld_bu(ins: usize, ctx: &mut ZoneContext) {
@@ -1729,19 +1684,13 @@ fn emulate_ld_bu(ins: usize, ctx: &mut ZoneContext) {
     let rd = extract_field(ins, 0, 5);
     let rj = extract_field(ins, 5, 5);
     let si12 = extract_field(ins, 10, 12);
-
     // info!("ld.bu emulation, rd = {}, rj = {}, si12 = {}", rd, rj, si12);
     // vaddr = GR[rj] + SignExt(si12, GRLEN(64))
     // paddr = translate(vaddr)
     // byte = load (paddr, BYTE)
     // GR[rd] = byte
     let vaddr = ctx.x[rj] as isize + imm12toi64(si12);
-    // info!("vaddr = 0x{:x}", vaddr as usize);
     let offset = (vaddr - UART0_BASE as isize) as usize; // minus the UART0 base address
-                                                         // let mut uart0 = UART_EMU.lock();
-                                                         // let byte = uart0.read(offset);
-                                                         // info!("byte = 0x{:x}", byte as usize);
-                                                         // ctx.x[rd] = byte as usize;
 }
 
 fn check_op_type(inst: usize, opcode: usize, opcode_length: usize) -> bool {
@@ -1822,7 +1771,7 @@ fn emulate_instruction(era: usize, ins: usize, ctx: &mut ZoneContext) {
         }
     }
 
-    panic!("Unexpected opcode encountered, ins = {:#x}", ins);
+    panic!("unexpected opcode encountered, ins = {:#x}", ins);
 }
 
 /* TLB REFILL HANDLER */
