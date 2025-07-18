@@ -17,7 +17,11 @@ use crate::consts::PER_CPU_SIZE;
 
 #[no_mangle]
 #[link_section = ".data"]
-pub static mut CPU0_BSS_LOCK: u32 = 1;
+pub static mut CPU_BSS_LOCK: u32 = 1;
+
+#[no_mangle]
+#[link_section = ".data"]
+pub static mut ENTER_CPU: u32 = u32::MAX; // the first entered cpuid will be written.
 
 #[naked]
 #[no_mangle]
@@ -32,28 +36,34 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
         add t2, t1, t2           // t2 = cpuid * per_cpu_size+per_cpu_size
         add sp, t0, t2           // sp = core_end + cpuid * per_cpu_size + per_cpu_size
 
-        bnez  a0, 1f             // if cpuid != 0, jump to wait
+        # The first entered CPU will be stored in ENTER_CPU.
+        # And the first CPU will clear the bss.
+
+        la      t0, ENTER_CPU     # t0 = &ENTER_CPU
+        la      t3, CPU_BSS_LOCK
+        li      t1, -1            # t1 = initial expected value (-1)
+        amoswap.w.aq t2, a0, (t0) # t2 = old value; swap a0(cpuid) into ENTER_CPU
+        bne     t2, t1, 2f        # if old != -1, someone else already wrote
+
+    0:
         la    a3, sbss           // a3 = bss's start addr
         la    a4, ebss           // a4 = bss's end addr
-    0:
-        blt   a4, a3, 2f         // cpu0 clear bss
+    1:
+        blt   a4, a3, 2f         // first entered cpu clear bss
         sb    zero, 0(a3)
         addi  a3, a3, 1
-        j     0b
+        j     1b
     2:
-        la    t3, CPU0_BSS_LOCK  // complete bss clear
-        fence w, w               // ensure sw zero, 0(t3) after clear_bss
-        sw    zero, 0(t3)
-        j     3f
-    1:
-        la    t3, CPU0_BSS_LOCK
-    3:
-        lw    t4, 0(t3)          // wait for CPU0 to clear bss
+        fence w, w
+        sw    zero, 0(t3)        // clear bss done
+        j     4f
+    3:  
+        lw    t4, 0(t3)          // wait for ENTER_CPU to clear bss
         bnez  t4, 3b
+        fence r, rw
 
-        fence r, rw              // ensure all cores can see the bss cleared
-                                 // prevent cpus to read/write uncleared bss
-
+    4:
+        # All CPUs could see the bss cleared.
         call {rust_main}         // a0, a1, sp are certain values
         ",
         rust_main = sym crate::rust_main,
