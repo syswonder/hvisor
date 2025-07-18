@@ -180,8 +180,6 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     if MASTER_CPU.load(Ordering::Acquire) == -1 {
         MASTER_CPU.store(cpuid as i32, Ordering::Release);
         is_primary = true;
-        #[cfg(target_arch = "riscv64")]
-        clear_bss();
         memory::heap::init();
         memory::heap::test();
     }
