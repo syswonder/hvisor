@@ -51,7 +51,8 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
         lw    t4, 0(t3)          // wait for CPU0 to clear bss
         bnez  t4, 3b
 
-        fence rw, rw             // ensure all cores can see the bss cleared 
+        fence r, rw              // ensure all cores can see the bss cleared
+                                 // prevent cpus to read/write uncleared bss
 
         call {rust_main}         // a0, a1, sp are certain values
         ",
