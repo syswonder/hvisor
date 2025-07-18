@@ -42,6 +42,7 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
         j     0b
     2:
         la    t3, CPU0_BSS_LOCK  // complete bss clear
+        fence w, w               // ensure sw zero, 0(t3) after clear_bss
         sw    zero, 0(t3)
         j     3f
     1:
