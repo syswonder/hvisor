@@ -24,6 +24,7 @@ pub mod s2pt;
 pub mod sbi;
 pub mod trap;
 pub mod zone;
+mod iommu;
 
 pub use s1pt::Stage1PageTable;
 pub use s2pt::Stage2PageTable;

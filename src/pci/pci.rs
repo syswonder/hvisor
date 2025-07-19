@@ -38,8 +38,6 @@ use super::{
     cfg_base, extract_reg_addr, get_bdf_shift, CFG_EXT_CAP_PTR_OFF, NUM_BAR_REGS_TYPE0,
     NUM_BAR_REGS_TYPE1,
 };
-
-#[cfg(all(feature = "iommu", target_arch = "aarch64"))]
 use crate::arch::iommu::iommu_add_device;
 
 #[derive(Debug)]
@@ -191,7 +189,6 @@ impl Zone {
                 alloc_pci_devs[idx] & 0b111
             );
             self.pciroot.alloc_devs.push(alloc_pci_devs[idx] as _);
-            #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
             if alloc_pci_devs[idx] != 0 {
                 iommu_add_device(self.id, alloc_pci_devs[idx] as _);
             }
