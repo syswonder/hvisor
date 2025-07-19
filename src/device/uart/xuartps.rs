@@ -24,13 +24,13 @@
 /// 2. https://github.com/Xilinx/linux-xlnx :: drivers/tty/serial/xilinx_uartps.c
 /// 3. https://github.com/torvalds/linux/blob/master/drivers/tty/serial/xilinx_uartps.c
 use crate::memory::addr::{PhysAddr, VirtAddr};
+use crate::platform::BOARD_UART_BASE;
 use spin::Mutex;
 use tock_registers::{
     interfaces::{ReadWriteable, Readable, Writeable},
     register_bitfields, register_structs,
     registers::{ReadOnly, ReadWrite, WriteOnly},
 };
-use crate::platform::BOARD_UART_BASE;
 
 // pub const UART0_BASE: PhysAddr = 0xff000000;
 // pub const UART1_BASE: PhysAddr = 0xff010000;

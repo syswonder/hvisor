@@ -16,13 +16,13 @@
 //
 
 use crate::memory::addr::{PhysAddr, VirtAddr};
+use crate::platform::BOARD_UART_BASE;
 use core::ptr;
 use spin::Mutex;
 use tock_registers::interfaces::*;
 use tock_registers::register_bitfields;
 use tock_registers::register_structs;
 use tock_registers::registers::*;
-use crate::platform::BOARD_UART_BASE;
 
 /// Register struct representing the UART registers.
 register_structs! {

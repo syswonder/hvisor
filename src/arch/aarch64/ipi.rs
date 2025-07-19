@@ -18,4 +18,3 @@ use crate::device::irqchip::gic_send_event;
 pub fn arch_send_event(cpu_id: u64, sgi_num: u64) {
     gic_send_event(cpu_id, sgi_num);
 }
-

@@ -20,5 +20,8 @@ pub fn iommu_init() {
 }
 
 pub fn iommu_add_device(vmid: usize, sid: usize) {
-    info!("loongarch64: iommu_add_device: do nothing now, vmid: {}, sid: {}", vmid, sid);
+    info!(
+        "loongarch64: iommu_add_device: do nothing now, vmid: {}, sid: {}",
+        vmid, sid
+    );
 }

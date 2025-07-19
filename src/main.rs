@@ -70,6 +70,7 @@ mod pci;
 #[cfg(test)]
 mod tests;
 
+use crate::arch::iommu::iommu_init;
 #[cfg(target_arch = "aarch64")]
 use crate::arch::mm::setup_parange;
 use crate::consts::MAX_CPU_NUM;
@@ -78,7 +79,6 @@ use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
 use zone::{add_zone, zone_create};
-use crate::arch::iommu::iommu_init;
 
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
 static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);

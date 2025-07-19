@@ -15,8 +15,8 @@
 //
 #![allow(unused)]
 
-use core::{mem, panic};
 use core::ptr::addr_of;
+use core::{mem, panic};
 
 use aarch64_cpu::registers::CSSELR_EL1::Level::L1;
 use aarch64_cpu::registers::PAR_EL1::PA;

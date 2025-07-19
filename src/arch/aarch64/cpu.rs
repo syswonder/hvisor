@@ -20,7 +20,8 @@ use crate::{
         addr::PHYS_VIRT_OFFSET, mm::PARKING_MEMORY_SET, GuestPhysAddr, HostPhysAddr, MemFlags,
         MemoryRegion, VirtAddr, PARKING_INST_PAGE,
     },
-    percpu::this_cpu_data, platform::BOARD_MPIDR_MAPPINGS,
+    percpu::this_cpu_data,
+    platform::BOARD_MPIDR_MAPPINGS,
 };
 use aarch64_cpu::registers::{
     Readable, Writeable, ELR_EL2, HCR_EL2, MPIDR_EL1, SCTLR_EL1, SPSR_EL2, VTCR_EL2,
@@ -218,7 +219,9 @@ impl ArchCpu {
 
 pub fn mpidr_to_cpuid(mpidr: u64) -> u64 {
     let mpidr = mpidr & MPIDR_MASK;
-    (0..MAX_CPU_NUM).find(|&i| BOARD_MPIDR_MAPPINGS[i] == mpidr).unwrap() as u64
+    (0..MAX_CPU_NUM)
+        .find(|&i| BOARD_MPIDR_MAPPINGS[i] == mpidr)
+        .unwrap() as u64
 }
 
 pub fn cpuid_to_mpidr_affinity(cpuid: u64) -> (u64, u64, u64, u64) {
