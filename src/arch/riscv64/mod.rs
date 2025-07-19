@@ -17,7 +17,6 @@ pub mod cpu;
 pub mod csr;
 pub mod entry;
 pub mod iommu;
-mod iommu;
 pub mod ipi;
 pub mod mm;
 pub mod paging;
