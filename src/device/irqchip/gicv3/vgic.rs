@@ -299,8 +299,8 @@ pub fn vgicv3_dist_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
 pub fn vgicv3_its_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
     let gits_base = host_gits_base();
     let reg = mmio.address;
+    let zone_id = this_zone_id();
 
-    // mmio_perform_access(gits_base, mmio);
     match reg {
         GITS_CTRL => {
             mmio_perform_access(gits_base, mmio);
@@ -312,24 +312,24 @@ pub fn vgicv3_its_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
         }
         GITS_CBASER => {
             if mmio.is_write {
-                if this_zone_id() == 0 {
+                if zone_id == 0 {
                     mmio_perform_access(gits_base, mmio);
                 }
-                set_cbaser(mmio.value);
+                set_cbaser(mmio.value, zone_id);
                 trace!("write GITS_CBASER: {:#x}", mmio.value);
             } else {
-                mmio.value = read_cbaser();
+                mmio.value = read_cbaser(zone_id);
                 trace!("read GITS_CBASER: {:#x}", mmio.value);
             }
         }
         GITS_BASER => {
-            if this_zone_id() == 0 {
+            if zone_id == 0 {
                 mmio_perform_access(gits_base, mmio);
             } else {
                 if mmio.is_write {
-                    set_dt_baser(mmio.value);
+                    set_dt_baser(mmio.value, zone_id);
                 } else {
-                    mmio.value = read_dt_baser();
+                    mmio.value = read_dt_baser(zone_id);
                 }
             }
             if mmio.is_write {
@@ -339,13 +339,13 @@ pub fn vgicv3_its_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
             }
         }
         GITS_COLLECTION_BASER => {
-            if this_zone_id() == 0 {
+            if zone_id == 0 {
                 mmio_perform_access(gits_base, mmio);
             } else {
                 if mmio.is_write {
-                    set_ct_baser(mmio.value);
+                    set_ct_baser(mmio.value, zone_id);
                 } else {
-                    mmio.value = read_ct_baser();
+                    mmio.value = read_ct_baser(zone_id);
                 }
             }
             if mmio.is_write {
@@ -357,14 +357,14 @@ pub fn vgicv3_its_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
         GITS_CWRITER => {
             if mmio.is_write {
                 trace!("write GITS_CWRITER: {:#x}", mmio.value);
-                set_cwriter(mmio.value);
+                set_cwriter(mmio.value, zone_id);
             } else {
-                mmio.value = read_cwriter();
+                mmio.value = read_cwriter(zone_id);
                 trace!("read GITS_CWRITER: {:#x}", mmio.value);
             }
         }
         GITS_CREADR => {
-            mmio.value = read_creadr();
+            mmio.value = read_creadr(zone_id);
             trace!("read GITS_CREADER: {:#x}", mmio.value);
         }
         GITS_TYPER => {

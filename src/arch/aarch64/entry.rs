@@ -33,6 +33,7 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
             * offset in the binary layout. */
 
             nop
+            nop
             bl {boot_cpuid_get}
 
             adrp x2, __core_end          // x2 = &__core_end
