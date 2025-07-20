@@ -16,7 +16,8 @@
 #![allow(unused)]
 use crate::{
     arch::ipi::arch_send_event,
-    consts::MAX_CPU_NUM,
+    arch::trap::arch_check_events,
+    consts::{MAX_CPU_NUM,IPI_EVENT_CLEAR_INJECT_IRQ,IPI_EVENT_UPDATE_HART_LINE,IPI_EVENT_SEND_IPI},
     device::{
         irqchip::inject_irq,
         virtio_trampoline::{handle_virtio_irq, IRQ_WAKEUP_VIRTIO_DEVICE},
@@ -30,9 +31,6 @@ pub const IPI_EVENT_WAKEUP: usize = 0;
 pub const IPI_EVENT_SHUTDOWN: usize = 1;
 pub const IPI_EVENT_VIRTIO_INJECT_IRQ: usize = 2;
 pub const IPI_EVENT_WAKEUP_VIRTIO_DEVICE: usize = 3;
-pub const IPI_EVENT_CLEAR_INJECT_IRQ: usize = 4;
-pub const IPI_EVENT_UPDATE_HART_LINE: usize = 5;
-pub const IPI_EVENT_SEND_IPI: usize = 6;
 
 static EVENT_MANAGER: Once<EventManager> = Once::new();
 
@@ -118,7 +116,8 @@ pub fn clear_events(cpu: usize) {
 pub fn check_events() -> bool {
     trace!("check_events");
     let cpu_data = this_cpu_data();
-    match fetch_event(cpu_data.id) {
+    let event = fetch_event(cpu_data.id);
+    match event {
         Some(IPI_EVENT_WAKEUP) => {
             info!("cpu {} wakeup", cpu_data.id);
             cpu_data.arch_cpu.run();
@@ -134,27 +133,33 @@ pub fn check_events() -> bool {
             inject_irq(IRQ_WAKEUP_VIRTIO_DEVICE, false);
             true
         }
-        #[cfg(target_arch = "loongarch64")]
-        Some(IPI_EVENT_CLEAR_INJECT_IRQ) => {
-            use crate::device::irqchip;
-            irqchip::ls7a2000::clear_hwi_injected_irq();
-            true
-        }
-        #[cfg(all(target_arch = "riscv64", feature = "plic"))]
-        Some(IPI_EVENT_UPDATE_HART_LINE) => {
-            use crate::device::irqchip;
-            info!("cpu {} update hart line", cpu_data.id);
-            irqchip::plic::update_hart_line();
-            true
-        }
-        #[cfg(target_arch = "riscv64")]
+        Some(IPI_EVENT_CLEAR_INJECT_IRQ) |
+        Some(IPI_EVENT_UPDATE_HART_LINE) |
         Some(IPI_EVENT_SEND_IPI) => {
-            // This event is different from events above, it is used to inject software interrupt.
-            // While events above will inject external interrupt.
-            use crate::arch::ipi::arch_ipi_handler;
-            arch_ipi_handler();
+            arch_check_events(event);
             true
         }
+        // #[cfg(target_arch = "loongarch64")]
+        // Some(IPI_EVENT_CLEAR_INJECT_IRQ) => {
+        //     use crate::device::irqchip;
+        //     irqchip::ls7a2000::clear_hwi_injected_irq();
+        //     true
+        // }
+        // #[cfg(all(target_arch = "riscv64", feature = "plic"))]
+        // Some(IPI_EVENT_UPDATE_HART_LINE) => {
+        //     use crate::device::irqchip;
+        //     info!("cpu {} update hart line", cpu_data.id);
+        //     irqchip::plic::update_hart_line();
+        //     true
+        // }
+        // #[cfg(target_arch = "riscv64")]
+        // Some(IPI_EVENT_SEND_IPI) => {
+        //     // This event is different from events above, it is used to inject software interrupt.
+        //     // While events above will inject external interrupt.
+        //     use crate::arch::ipi::arch_ipi_handler;
+        //     arch_ipi_handler();
+        //     true
+        // }
         _ => false,
     }
 }

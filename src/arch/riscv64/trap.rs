@@ -17,6 +17,7 @@ use super::cpu::ArchCpu;
 use crate::arch::csr::read_csr;
 use crate::arch::csr::*;
 use crate::arch::sbi::sbi_vs_handler;
+use crate::consts::{IPI_EVENT_UPDATE_HART_LINE,IPI_EVENT_SEND_IPI};
 #[cfg(feature = "aia")]
 use crate::device::irqchip::aia::aplic::{host_aplic, vaplic_emul_handler};
 #[cfg(feature = "plic")]
@@ -560,5 +561,22 @@ pub fn handle_external_interrupt(current_cpu: &mut ArchCpu) {
     #[cfg(feature = "aia")]
     {
         panic!("HS extensional interrupt")
+    }
+}
+
+pub fn arch_check_events(event: Option<usize>) {
+    match event {
+        #[cfg(feature = "plic")]
+        Some(IPI_EVENT_UPDATE_HART_LINE) => {
+            use crate::device::irqchip::plic::update_hart_line;
+            update_hart_line();
+        }
+        Some(IPI_EVENT_SEND_IPI) => {
+            use crate::arch::riscv64::ipi::arch_ipi_handler;
+            arch_ipi_handler();
+        }
+        _ => {
+            panic!("arch_check_events: unhandled event: {:?}", event);
+        }
     }
 }

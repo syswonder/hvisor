@@ -84,7 +84,7 @@ impl<'a> HyperCall<'a> {
                 HyperCallCode::HvZoneShutdown => self.hv_zone_shutdown(arg0),
                 HyperCallCode::HvZoneList => self.hv_zone_list(&mut *(arg0 as *mut ZoneInfo), arg1),
                 HyperCallCode::HvClearInjectIrq => {
-                    use crate::event::IPI_EVENT_CLEAR_INJECT_IRQ;
+                    use crate::consts::IPI_EVENT_CLEAR_INJECT_IRQ;
                     for i in 1..MAX_CPU_NUM {
                         // if target cpu status is not running, we skip it
                         if !get_cpu_data(i).arch_cpu.power_on {

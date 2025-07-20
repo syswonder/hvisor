@@ -19,7 +19,7 @@ use super::register::*;
 use super::zone::ZoneContext;
 use crate::arch::cpu::this_cpu_id;
 use crate::arch::ipi::*;
-use crate::consts::MAX_CPU_NUM;
+use crate::consts::{MAX_CPU_NUM,IPI_EVENT_CLEAR_INJECT_IRQ};
 use crate::device::irqchip::inject_irq;
 use crate::device::irqchip::ls7a2000::chip::*;
 use crate::event::{check_events, dump_cpu_events, dump_events};
@@ -1853,5 +1853,19 @@ extern "C" fn tlb_refill_handler() {
         PAGE_WALK_MASK = const 0xfff,
         options(noreturn)
         );
+    }
+}
+
+
+pub fn arch_check_events(event: Option<usize>) {
+    match event {
+        Some(IPI_EVENT_CLEAR_INJECT_IRQ) => {
+            // clear the injected IPI interrupt
+            use crate::device::irqchip::ls7a2000::clear_hwi_injected_irq;
+            clear_hwi_injected_irq();
+        }
+        _ => {
+            panic!("arch_check_events: unhandled event: {:?}", event);
+        }
     }
 }

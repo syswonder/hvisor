@@ -46,6 +46,11 @@ pub fn hv_end() -> VirtAddr {
     mem_pool_start() + HV_MEM_POOL_SIZE
 }
 
+/// arch specific constants
+pub const IPI_EVENT_CLEAR_INJECT_IRQ: usize = 4;
+pub const IPI_EVENT_UPDATE_HART_LINE: usize = 5;
+pub const IPI_EVENT_SEND_IPI: usize = 6;
+
 extern "C" {
     fn __core_end();
 }
