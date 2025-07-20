@@ -17,7 +17,9 @@
 use crate::{
     arch::ipi::arch_send_event,
     arch::trap::arch_check_events,
-    consts::{MAX_CPU_NUM,IPI_EVENT_CLEAR_INJECT_IRQ,IPI_EVENT_UPDATE_HART_LINE,IPI_EVENT_SEND_IPI},
+    consts::{
+        IPI_EVENT_CLEAR_INJECT_IRQ, IPI_EVENT_SEND_IPI, IPI_EVENT_UPDATE_HART_LINE, MAX_CPU_NUM,
+    },
     device::{
         irqchip::inject_irq,
         virtio_trampoline::{handle_virtio_irq, IRQ_WAKEUP_VIRTIO_DEVICE},
@@ -133,9 +135,9 @@ pub fn check_events() -> bool {
             inject_irq(IRQ_WAKEUP_VIRTIO_DEVICE, false);
             true
         }
-        Some(IPI_EVENT_CLEAR_INJECT_IRQ) |
-        Some(IPI_EVENT_UPDATE_HART_LINE) |
-        Some(IPI_EVENT_SEND_IPI) => {
+        Some(IPI_EVENT_CLEAR_INJECT_IRQ)
+        | Some(IPI_EVENT_UPDATE_HART_LINE)
+        | Some(IPI_EVENT_SEND_IPI) => {
             arch_check_events(event);
             true
         }

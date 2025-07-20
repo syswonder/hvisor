@@ -480,11 +480,13 @@ pub unsafe extern "C" fn vmreturn(_gu_regs: usize) -> ! {
     )
 }
 
-
 pub fn arch_check_events(event: Option<usize>) {
     match event {
         _ => {
-            info!("aarch64: arch_check_events: event={:#x?} do nothing now", event);
+            info!(
+                "aarch64: arch_check_events: event={:#x?} do nothing now",
+                event
+            );
         }
     }
 }
