@@ -21,7 +21,7 @@ use crate::{
 
 pub const BOARD_NAME: &str = "ok6254";
 pub const BOARD_NCPUS: usize = 4;
-pub const BOARD_UART_BASE: PhysAddr = 0x2800000;
+pub const BOARD_UART_BASE: u64 = 0x2800000;
 
 
 #[rustfmt::skip]

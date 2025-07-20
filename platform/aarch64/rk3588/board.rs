@@ -37,6 +37,10 @@ pub static BOARD_MPIDR_MAPPINGS: [u64; BOARD_NCPUS] = [
     0x100,   // cpu1
     0x200,   // cpu2
     0x300,   // cpu3
+    0x400,   // cpu4
+    0x500,   // cpu5
+    0x600,   // cpu6
+    0x700,   // cpu7
 ];
 
 /// The physical memory layout of the board.
