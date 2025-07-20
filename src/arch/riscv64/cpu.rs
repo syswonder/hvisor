@@ -211,3 +211,10 @@ pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
         panic!("cpu_start error: {:#x?}", e);
     }
 }
+
+pub fn store_cpu_pointer_to_reg(pointer: usize) {
+    /// Store the pointer to the current CPU's ArchCpu structure in CSR_SSCRATCH
+    write_csr!(CSR_SSCRATCH, pointer);
+    // println!("Stored CPU pointer to CSR_SSCRATCH: {:#x}", pointer);
+    return;
+}

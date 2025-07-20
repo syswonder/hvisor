@@ -236,3 +236,8 @@ pub fn cpuid_to_mpidr_affinity(cpuid: u64) -> (u64, u64, u64, u64) {
 pub fn this_cpu_id() -> usize {
     mpidr_to_cpuid(MPIDR_EL1.get()) as _
 }
+
+pub fn store_cpu_pointer_to_reg(pointer: usize) {
+    // println!("aarch64 doesn't support store cpu pointer to reg, pointer: {:#x}", pointer);
+    return;
+}
