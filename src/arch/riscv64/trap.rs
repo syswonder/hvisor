@@ -563,20 +563,3 @@ pub fn handle_external_interrupt(current_cpu: &mut ArchCpu) {
         panic!("HS extensional interrupt")
     }
 }
-
-pub fn arch_check_events(event: Option<usize>) {
-    match event {
-        #[cfg(feature = "plic")]
-        Some(IPI_EVENT_UPDATE_HART_LINE) => {
-            use crate::device::irqchip::plic::update_hart_line;
-            update_hart_line();
-        }
-        Some(IPI_EVENT_SEND_IPI) => {
-            use crate::arch::riscv64::ipi::arch_ipi_handler;
-            arch_ipi_handler();
-        }
-        _ => {
-            panic!("arch_check_events: unhandled event: {:?}", event);
-        }
-    }
-}

@@ -18,3 +18,18 @@ use crate::device::irqchip::gic_send_event;
 pub fn arch_send_event(cpu_id: u64, sgi_num: u64) {
     gic_send_event(cpu_id, sgi_num);
 }
+
+pub fn arch_check_events(event: Option<usize>) {
+    match event {
+        _ => {
+            info!(
+                "aarch64: arch_check_events: event={:#x?} do nothing now",
+                event
+            );
+        }
+    }
+}
+
+pub fn arch_prepare_send_event() {
+    debug!("aarch64 arch_prepare_send_event: do nothing now.")
+}

@@ -15,8 +15,7 @@
 //
 #![allow(unused)]
 use crate::{
-    arch::ipi::arch_send_event,
-    arch::trap::arch_check_events,
+    arch::ipi::{arch_check_events, arch_prepare_send_event, arch_send_event},
     consts::{
         IPI_EVENT_CLEAR_INJECT_IRQ, IPI_EVENT_SEND_IPI, IPI_EVENT_UPDATE_HART_LINE, MAX_CPU_NUM,
     },
@@ -95,7 +94,7 @@ fn add_event(cpu: usize, event_id: usize) -> Option<()> {
     EVENT_MANAGER.get().unwrap().add_event(cpu, event_id)
 }
 
-fn fetch_event(cpu: usize) -> Option<usize> {
+pub fn fetch_event(cpu: usize) -> Option<usize> {
     EVENT_MANAGER.get().unwrap().fetch_event(cpu)
 }
 
@@ -167,16 +166,19 @@ pub fn check_events() -> bool {
 }
 
 pub fn send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
-    #[cfg(target_arch = "loongarch64")]
-    {
-        // block until the previous event is processed, which means
-        // the target queue is empty
-        while !fetch_event(cpu_id).is_none() {}
-        debug!(
-            "loongarch64:: send_event: cpu_id: {}, ipi_int_id: {}, event_id: {}",
-            cpu_id, ipi_int_id, event_id
-        );
-    }
+    // #[cfg(target_arch = "loongarch64")]
+    // {
+    //     // block until the previous event is processed, which means
+    //     // the target queue is empty
+    //     while !fetch_event(cpu_id).is_none() {}
+    //     debug!(
+    //         "loongarch64:: send_event: cpu_id: {}, ipi_int_id: {}, event_id: {}",
+    //         cpu_id, ipi_int_id, event_id
+    //     );
+    // }
+    /// Some arch need do something before send event.
+    /// Currently, we are not passing parameters, and we will modify the function signature later as needed.
+    arch_prepare_send_event();
     add_event(cpu_id, event_id);
     arch_send_event(cpu_id as _, ipi_int_id as _);
 }

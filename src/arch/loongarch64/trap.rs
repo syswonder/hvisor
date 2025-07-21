@@ -1855,16 +1855,3 @@ extern "C" fn tlb_refill_handler() {
         );
     }
 }
-
-pub fn arch_check_events(event: Option<usize>) {
-    match event {
-        Some(IPI_EVENT_CLEAR_INJECT_IRQ) => {
-            // clear the injected IPI interrupt
-            use crate::device::irqchip::ls7a2000::clear_hwi_injected_irq;
-            clear_hwi_injected_irq();
-        }
-        _ => {
-            panic!("arch_check_events: unhandled event: {:?}", event);
-        }
-    }
-}
