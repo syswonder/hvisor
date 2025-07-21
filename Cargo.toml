@@ -89,6 +89,9 @@ sstc = []
 loongson_7a2000 = []
 # uart driver
 loongson_uart = []
+# cpu (not used for now)
+loongson_3a5000 = []
+loongson_3a6000 = []
 
 
 [profile.dev]
