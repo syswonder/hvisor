@@ -69,10 +69,6 @@ pub unsafe extern "C" fn arch_entry() -> ! {
         1:
             bl {mmu_enable}
 
-            tlbi alle2
-            dsb nsh
-            isb
-
             mov x1, x18
             mov x0, x17
             mov x18, #0

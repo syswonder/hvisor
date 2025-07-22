@@ -55,11 +55,10 @@ pub fn gic_send_event(cpu_id: u64, sgi_num: u64) {
         use crate::arch::cpu::cpuid_to_mpidr_affinity;
         use crate::arch::sysreg::write_sysreg;
         let (aff3, aff2, aff1, aff0) = cpuid_to_mpidr_affinity(cpu_id);
-
         let target_list = 1 << aff0;
         let irm: u64 = 0 << 40;
         let sgi_id: u64 = sgi_num << 24;
-        let val: u64 = aff1 | aff2 | aff3 | irm | sgi_id | target_list;
+        let val: u64 = (aff1 << 16) | (aff2 << 32) | (aff3 << 48) | irm | sgi_id | target_list;
         write_sysreg!(icc_sgi1r_el1, val);
         debug!("write sgi sys value = {:#x}", val);
     }

@@ -36,7 +36,7 @@ pub static BOARD_MPIDR_MAPPINGS: [u64; BOARD_NCPUS] = [
 /// Each address should align to 2M (0x200000).
 /// Addresses must be in ascending order.
 #[rustfmt::skip]
-pub const BOARD_PHYSMEM_LIST: [(u64, u64, MemoryType); 2] = [
+pub const BOARD_PHYSMEM_LIST: &[(u64, u64, MemoryType)] = &[
  // (       start,           end,                type)
     (         0x0,    0x80000000,  MemoryType::Device),
     (  0x80000000,   0x100000000,  MemoryType::Normal),
