@@ -1,0 +1,100 @@
+{
+    "zones": [
+        {
+            "id": 1,
+            "memory_region": [
+                {
+                    "zone0_ipa": "0xc0000000",
+                    "zonex_ipa": "0xc0000000",
+                    "size": "0x10000000"
+                },
+                {
+                    "zone0_ipa": "0xd0000000",
+                    "zonex_ipa": "0xd0000000",
+                    "size": "0x10000000"
+                }
+            ],
+            "devices": [
+                {
+                    "type": "console",
+                    "addr": "0x30001000",
+                    "len": "0x200",
+                    "irq": 4,
+                    "status": "enable"
+                },
+                {
+                    "type": "blk",
+                    "addr": "0x30002000",
+                    "len": "0x200",
+                    "irq": 5,
+                    "img": "/tool/linux1-disk.ext4",
+                    "status": "enable"
+                }
+            ]
+        },
+        {
+            "id": 2,
+            "memory_region": [
+                {
+                    "zone0_ipa": "0xa0000000",
+                    "zonex_ipa": "0xa0000000",
+                    "size": "0x10000000"
+                },
+                {
+                    "zone0_ipa": "0xb0000000",
+                    "zonex_ipa": "0xb0000000",
+                    "size": "0x10000000"
+                }
+            ],
+            "devices": [
+                {
+                    "type": "console",
+                    "addr": "0x30001000",
+                    "len": "0x200",
+                    "irq": 4,
+                    "status": "enable"
+                },
+                {
+                    "type": "blk",
+                    "addr": "0x30002000",
+                    "len": "0x200",
+                    "irq": 5,
+                    "img": "/tool/linux2-disk.ext4",
+                    "status": "enable"
+                }
+            ]
+        },
+        {
+            "id": 3,
+            "memory_region": [
+                {
+                    "zone0_ipa": "0x100000000",
+                    "zonex_ipa": "0x100000000",
+                    "size": "0x10000000"
+                },
+                {
+                    "zone0_ipa": "0x110000000",
+                    "zonex_ipa": "0x110000000",
+                    "size": "0x10000000"
+                }
+            ],
+            "devices": [
+                {
+                    "type": "console",
+                    "addr": "0x30001000",
+                    "len": "0x200",
+                    "irq": 4,
+                    "status": "enable"
+                },
+                {
+                    "type": "blk",
+                    "addr": "0x30002000",
+                    "len": "0x200",
+                    "irq": 5,
+                    "img": "/tool/linux3-disk.ext4",
+                    "status": "enable"
+                }
+            ]
+        }
+    ]
+}
