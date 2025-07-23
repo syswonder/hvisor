@@ -18,10 +18,16 @@ use crate::{arch::zone::HvArchZoneConfig, config::*};
 #[allow(unused)]
 pub const BOARD_NAME: &str = "qem-plic";
 
+pub const BOARD_NCPUS: usize = 4;
+
 pub const ACLINT_SSWI_BASE: usize = 0x2F00000;
 
 pub const PLIC_BASE: usize = 0xc000000;
-pub const BOARD_PLIC_INTERRUPTS_NUM: usize = 1023;  // except irq 0
+
+pub const BOARD_PLIC_INTERRUPTS_NUM: usize = 1023; // except irq 0
+
+// This device is used for qemu-quit.
+pub const SIFIVE_TEST_BASE: u64 = 0x100000;
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x8f000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x90000000;

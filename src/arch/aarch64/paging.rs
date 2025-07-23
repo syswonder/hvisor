@@ -13,6 +13,8 @@
 //
 // Authors:
 //
+
+#![allow(unused)]
 use crate::error::{HvError, HvResult};
 use crate::memory::addr::is_aligned;
 use crate::memory::{Frame, MemFlags, MemoryRegion, PhysAddr, VirtAddr};

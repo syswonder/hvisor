@@ -13,8 +13,10 @@
 //
 // Authors:
 //
+#![allow(unused)]
+
 use cfg_if::cfg_if;
-use cortex_a::registers::{MAIR_EL1, SCTLR_EL2};
+use cortex_a::registers::SCTLR_EL2;
 use tock_registers::interfaces::*;
 use tock_registers::*;
 
@@ -63,13 +65,11 @@ register_bitfields! {u64,
     ]
 }
 
-pub const PAGE_SIZE: usize = 4096;
-pub const PAGE_SHIFT: usize = 12;
+const PAGE_SIZE: usize = 4096;
+const PAGE_SHIFT: usize = 12;
 
-pub const ENTRY_PER_PAGE: usize = PAGE_SIZE / 8;
-
-pub const WORD_SIZE: usize = 8;
-pub const PTE_PER_PAGE: usize = PAGE_SIZE / WORD_SIZE;
+const WORD_SIZE: usize = 8;
+const ENTRY_PER_PAGE: usize = PAGE_SIZE / WORD_SIZE;
 
 enum MemoryType {
     Normal,
@@ -164,7 +164,9 @@ pub extern "C" fn boot_pt_init(l0_pt: &mut PageTables, l1_pt: &mut PageTables) {
             for i in 1..ENTRY_PER_PAGE {
                 l0_pt.entry[i] = PTEDescriptor::new(0x40000000*i, MemoryType::Normal, PTEType::Block);
             }
-        } else if #[cfg(feature = "pt_layout_rk3568")]{
+        } else if #[cfg(any(feature = "pt_layout_rk3568",
+            feature = "pt_layout_rk3588",
+            feature = "pt_layout_zcu102"))] {
             // EMMC fe310000    0xfe200000-0xfe400000
             // GIC  fd400000    0xfd400000-0xfd600000
             // UART fe660000    0xfe600000-0xfe800000

@@ -16,16 +16,13 @@
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 // use psci::error::INVALID_ADDRESS;
-use crate::consts::INVALID_ADDRESS;
-use crate::event::{send_event, IPI_EVENT_SHUTDOWN};
-use crate::hypercall::SGI_IPI_ID;
+use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM};
 use crate::pci::pci::PciRoot;
 use spin::RwLock;
 
 use crate::arch::mm::new_s2_memory_set;
 use crate::arch::s2pt::Stage2PageTable;
 use crate::config::{HvZoneConfig, CONFIG_NAME_MAXLEN};
-use crate::consts;
 
 #[cfg(all(target_arch = "riscv64", feature = "plic"))]
 use crate::device::irqchip::plic::vplic;
@@ -67,7 +64,7 @@ impl Zone {
             name: name.try_into().unwrap(),
             id: zoneid,
             gpm: new_s2_memory_set(),
-            cpu_set: CpuSet::new(unsafe { consts::NCPU } as usize, 0),
+            cpu_set: CpuSet::new(MAX_CPU_NUM as usize, 0),
             mmio: Vec::new(),
             irq_bitmap: [0; 1024 / 32],
             pciroot: PciRoot::new(),
@@ -219,7 +216,10 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     let zone_id = config.zone_id as usize;
 
     if find_zone(zone_id).is_some() {
-        return hv_result_err!(EEXIST);
+        return hv_result_err!(
+            EINVAL,
+            format!("Failed to create zone: zone_id {} already exists", zone_id)
+        );
     }
 
     let mut zone = Zone::new(zone_id, &config.name);
@@ -227,25 +227,45 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     zone.mmio_init(&config.arch_config);
     #[cfg(target_arch = "aarch64")]
     zone.ivc_init(config.ivc_config());
-    #[cfg(all(feature = "pci", target_arch = "aarch64"))]
+
+    /* loongarch page table emergency */
+    /* Kai: Maybe unnecessary but i can't boot vms on my 3A6000 PC without this function. */
+    #[cfg(target_arch = "loongarch64")]
+    zone.page_table_emergency(
+        config.pci_config.ecam_base as _,
+        config.pci_config.ecam_size as _,
+    )?;
+
+    #[cfg(all(feature = "pci"))]
     zone.pci_init(
         &config.pci_config,
         config.num_pci_devs as _,
         &config.alloc_pci_devs,
     );
 
-    let mut cpu_num = 0;
-    config.cpus().iter().for_each(|cpu_id| {
+    let mut _cpu_num = 0;
+
+    for cpu_id in config.cpus().iter() {
+        if let Some(zone) = get_cpu_data(*cpu_id as _).zone.clone() {
+            return hv_result_err!(
+                EBUSY,
+                format!(
+                    "Failed to create zone: cpu {} already belongs to zone {}",
+                    cpu_id,
+                    zone.read().id
+                )
+            );
+        }
         zone.cpu_set.set_bit(*cpu_id as _);
-        cpu_num += 1;
-    });
+        _cpu_num += 1;
+    }
 
     #[cfg(feature = "plic")]
     {
         zone.vplic = Some(vplic::VirtualPLIC::new(
             config.arch_config.plic_base,
             BOARD_PLIC_INTERRUPTS_NUM,
-            cpu_num * 2,
+            _cpu_num * 2,
         ));
     }
 
@@ -294,7 +314,6 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
             cpu_data.dtb_ipa = dtb_ipa as _;
         });
     }
-    add_zone(new_zone_pointer.clone());
 
     Ok(new_zone_pointer)
 }
@@ -309,7 +328,7 @@ pub struct ZoneInfo {
 }
 // Be careful about dead lock for zone.write()
 pub fn zone_error() {
-    if (is_this_root_zone()) {
+    if is_this_root_zone() {
         panic!("root zone has some error");
     }
     let zone = this_zone();

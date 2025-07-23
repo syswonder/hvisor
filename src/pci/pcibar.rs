@@ -104,4 +104,44 @@ impl PciBar {
             bar_type: BarType::Mem64,
         }
     }
+
+    pub fn generate_vbar(&self) -> VirtPciBar {
+        match self.size {
+            0 => VirtPciBar {
+                val: self.val,
+                mask: 0x0,
+            },
+            1 => VirtPciBar {
+                val: self.val,
+                mask: 0xffffffff,
+            },
+            _ => VirtPciBar {
+                val: self.val,
+                mask: !((self.size - 1) as u64) as _,
+            },
+        }
+    }
+}
+
+#[derive(Default, Clone, Debug, Copy)]
+pub struct VirtPciBar {
+    val: u32,
+    mask: u32,
+}
+
+impl VirtPciBar {
+    pub fn new(val: u32, mask: u32) -> Self {
+        Self {
+            val: val,
+            mask: mask,
+        }
+    }
+
+    pub fn read(&self) -> u32 {
+        self.val
+    }
+
+    pub fn write(&mut self, new_val: u32) {
+        self.val = new_val & self.mask;
+    }
 }

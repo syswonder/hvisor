@@ -17,6 +17,8 @@ use crate::{arch::zone::HvArchZoneConfig, config::*, memory::GuestPhysAddr};
 
 pub const MEM_TYPE_OTHER_ZONES: u32 = 5;
 
+pub const BOARD_NCPUS: usize = 4;
+
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x00000000;
 pub const ROOT_ZONE_BOOT_STACK: GuestPhysAddr = 0x7000;
 pub const ROOT_ZONE_ENTRY: u64 = 0x8000;

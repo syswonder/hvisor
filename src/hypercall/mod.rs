@@ -14,18 +14,16 @@
 // Authors:
 //
 #![allow(dead_code)]
+#![allow(unreachable_patterns)]
 
-use crate::arch::cpu::{self, this_cpu_id};
 use crate::config::{HvZoneConfig, CONFIG_MAGIC_VERSION};
-use crate::consts;
 use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, MAX_WAIT_TIMES, PAGE_SIZE};
-
-use crate::device::irqchip::inject_irq;
 use crate::device::virtio_trampoline::{MAX_DEVS, MAX_REQ, VIRTIO_BRIDGE, VIRTIO_IRQS};
 use crate::error::HvResult;
 use crate::percpu::{get_cpu_data, this_zone, PerCpu};
 use crate::zone::{
-    all_zones_info, find_zone, is_this_root_zone, remove_zone, this_zone_id, zone_create, ZoneInfo,
+    add_zone, all_zones_info, find_zone, is_this_root_zone, remove_zone, this_zone_id, zone_create,
+    ZoneInfo,
 };
 
 use crate::event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_VIRTIO_INJECT_IRQ, IPI_EVENT_WAKEUP};
@@ -90,7 +88,7 @@ impl<'a> HyperCall<'a> {
                 HyperCallCode::HvZoneList => self.hv_zone_list(&mut *(arg0 as *mut ZoneInfo), arg1),
                 HyperCallCode::HvClearInjectIrq => {
                     use crate::event::IPI_EVENT_CLEAR_INJECT_IRQ;
-                    for i in 1..unsafe { consts::NCPU } {
+                    for i in 1..MAX_CPU_NUM {
                         // if target cpu status is not running, we skip it
                         if !get_cpu_data(i).arch_cpu.power_on {
                             continue;
@@ -266,6 +264,21 @@ impl<'a> HyperCall<'a> {
     }
 
     pub fn hv_zone_config_check(&self, magic_version: *mut u64) -> HyperCallResult {
+        #[cfg(target_arch = "loongarch64")]
+        {
+            let magic_version_raw = magic_version as u64;
+            let magic_version_hva =
+                magic_version_raw | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX;
+            let magic_version_hva = magic_version_hva as *mut u64;
+            debug!(
+                "hv_zone_config_check: magic_version target addr to write = {:#x?}",
+                magic_version_hva
+            );
+            unsafe {
+                core::ptr::write(magic_version_hva, CONFIG_MAGIC_VERSION as _);
+            }
+        }
+
         #[cfg(target_arch = "x86_64")]
         let magic_version = unsafe {
             this_zone()
@@ -276,9 +289,17 @@ impl<'a> HyperCall<'a> {
                 .0 as *mut u64
         };
 
-        unsafe {
-            *magic_version = CONFIG_MAGIC_VERSION as _;
+        #[cfg(all(not(target_arch = "loongarch64"), not(target_arch = "x86_64")))]
+        {
+            unsafe {
+                *magic_version = CONFIG_MAGIC_VERSION as _;
+            }
         }
+
+        debug!(
+            "hv_zone_config_check: finished writing current magic version ({:#x})",
+            CONFIG_MAGIC_VERSION
+        );
         HyperCallResult::Ok(0)
     }
 
@@ -299,7 +320,7 @@ impl<'a> HyperCall<'a> {
                 .0 as *mut HvZoneConfig)
         };
 
-        info!("hv_zone_start: config: {:#x?}", config);
+        debug!("hv_zone_start: config: {:#x?}", config);
         if !is_this_root_zone() {
             return hv_result_err!(
                 EPERM,
@@ -330,10 +351,12 @@ impl<'a> HyperCall<'a> {
         };
         #[cfg(target_arch = "loongarch64")]
         {
+            use crate::arch::cpu::this_cpu_id;
             // assert this is cpu 0
             let cpuid = this_cpu_id();
             assert_eq!(cpuid, 0);
         }
+        add_zone(zone);
         drop(_lock);
         HyperCallResult::Ok(0)
     }
@@ -354,7 +377,12 @@ impl<'a> HyperCall<'a> {
 
         let zone = match find_zone(zone_id as _) {
             Some(zone) => zone,
-            _ => return hv_result_err!(EEXIST),
+            _ => {
+                return hv_result_err!(
+                    EINVAL,
+                    format!("Shutdown zone: zone {} not found!", zone_id)
+                )
+            }
         };
         let zone_w = zone.write();
 
@@ -376,7 +404,7 @@ impl<'a> HyperCall<'a> {
             let power_on = get_cpu_data(cpu_id).arch_cpu.power_on;
             count += 1;
             if count > MAX_WAIT_TIMES {
-                if (power_on) {
+                if power_on {
                     error!("cpu {} cannot be shut down", cpu_id);
                     return false;
                 }

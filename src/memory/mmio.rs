@@ -90,7 +90,6 @@ pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
     match res {
         Some((region, handler, arg)) => {
             mmio.address -= region.start;
-
             if cfg!(target_arch = "x86_64") {
                 if mmio.size == 0 {
                     #[cfg(target_arch = "x86_64")]
@@ -99,7 +98,13 @@ pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
                     handler(mmio, arg)
                 }
             } else {
-                handler(mmio, arg)
+                match handler(mmio, arg) {
+                    Ok(_) => Ok(()),
+                    Err(e) => {
+                        error!("mmio handler returned error: {:#x?}", e);
+                        Err(e)
+                    }
+                }
             }
         }
         None => {
@@ -109,6 +114,7 @@ pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
     }
 }
 
+#[allow(dead_code)]
 pub fn mmio_generic_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     mmio_perform_access(base, mmio);
     Ok(())

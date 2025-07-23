@@ -33,7 +33,7 @@ runs:
       run: |
         ./configure \
           --prefix=${{ inputs.install-path }} \
-          --target-list=aarch64-softmmu \
+          --target-list=aarch64-softmmu,riscv64-softmmu,riscv64-linux-user \
           --enable-kvm \
           --enable-nettle \
           --enable-user \

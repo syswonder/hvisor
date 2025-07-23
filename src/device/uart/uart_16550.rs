@@ -1,3 +1,20 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//      Yulong Han <wheatfox17@icloud.com>
+//
+
 use crate::memory::addr::{PhysAddr, VirtAddr};
 use core::ptr;
 use spin::Mutex;
@@ -6,8 +23,14 @@ use tock_registers::register_bitfields;
 use tock_registers::register_structs;
 use tock_registers::registers::*;
 
-#[cfg(all(feature = "rk3568_uart_base"))]
+#[cfg(feature = "uart_base_rk3568")]
 pub const UART_BASE: PhysAddr = 0xfe660000;
+
+#[cfg(feature = "uart_base_rk3588")]
+pub const UART_BASE: PhysAddr = 0xfeb50000;
+
+#[cfg(feature = "uart_base_ok6254")]
+pub const UART_BASE: PhysAddr = 0x2800000;
 
 /// Register struct representing the UART registers.
 register_structs! {
@@ -51,18 +74,20 @@ impl Uart16550 {
 
         self.regs().IIR_FCR.set(0x1 << 0);
     }
+
     #[inline]
     pub fn putchar(&mut self, c: u8) {
         while self.regs().LSR.get() & (1 << 5) == 0 {}
         self.regs().THR_RBR_DLL.set(c as u32);
     }
+
     #[inline]
     fn getchar(&mut self) -> Option<u8> {
         todo!()
     }
 }
 
-static mut UART: Uart16550 = { Uart16550::new(UART_BASE) };
+static mut UART: Uart16550 = Uart16550::new(UART_BASE);
 
 #[inline]
 pub fn console_putchar(c: u8) {

@@ -14,14 +14,13 @@
 // Authors:
 //
 use alloc::sync::Arc;
-use alloc::vec::Vec;
 use spin::{Mutex, RwLock};
 
 use crate::arch::cpu::{this_cpu_id, ArchCpu};
 use crate::consts::{INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::memory::addr::VirtAddr;
 use crate::zone::Zone;
-use crate::{arch, ENTERED_CPUS};
+use crate::ENTERED_CPUS;
 use core::fmt::Debug;
 use core::sync::atomic::Ordering;
 
@@ -145,6 +144,8 @@ impl CpuSet {
 
 #[test_case]
 fn test_cpuset() {
+    use alloc::vec::Vec;
+
     let mut cpuset = CpuSet::new(3, 0b1010);
     assert_eq!(cpuset.contains_cpu(0), false);
     assert_eq!(cpuset.contains_cpu(1), true);

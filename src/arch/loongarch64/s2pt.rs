@@ -166,7 +166,7 @@ pub struct S2PTInstr;
 impl PagingInstr for S2PTInstr {
     unsafe fn activate(root_pa: HostPhysAddr) {
         info!("loongarch64: S2PTInstr::activate: root_pa: {:#x?}", root_pa);
-        super::paging::set_pwcl_pwch();
+        super::paging::set_pwcl_pwch_stlbps();
         extern "C" {
             fn tlb_refill_handler();
         }

@@ -77,6 +77,12 @@ impl VirtualPLIC {
         inner.vplic_set_hw(intr_id, hw);
     }
 
+    /// Get one interrupt as hardware interrupt.
+    pub fn vplic_get_hw(&self, intr_id: usize) -> bool {
+        let inner = self.inner.lock();
+        inner.vplic_get_hw(intr_id)
+    }
+
     /// Inject an interrupt into the vPLIC.
     pub fn inject_irq(&self, vcontext_id: usize, intr_id: usize, hw: bool) {
         debug!("Inject interrupt {} to vcontext {}", intr_id, vcontext_id);
@@ -127,7 +133,10 @@ impl VirtualPLIC {
             return 0;
         }
         if value > u32::MAX as usize {
-            error!("vplic_emul_access: value is out of range");
+            error!(
+                "vplic_emul_access: value {:#x} is out of range 0xffffffff",
+                value
+            );
             return 0;
         }
 
@@ -207,6 +216,10 @@ impl VirtualPLIC {
                 let irq_end = bits + 31;
                 let mut inner = self.inner.lock();
                 if is_write {
+                    debug!(
+                        "vplic_enable_access: vcontext {} irq range {}-{} enable value:{:#x}",
+                        vcontext_id, irq_start, irq_end, value
+                    );
                     for irq in irq_start..=irq_end.min(self.max_interrupts) {
                         let irq_enable = (value & (1 << (irq - irq_start))) != 0;
                         if inner.enable[vcontext_id][irq] == irq_enable {
@@ -393,11 +406,11 @@ impl VirtualPLICInner {
             let irq_id = self.vplic_get_next_pending(vcontext_id);
             if irq_id != 0 {
                 unsafe {
-                    riscv::register::hvip::set_vseip();
+                    riscv_h::register::hvip::set_vseip();
                 }
             } else {
                 unsafe {
-                    riscv::register::hvip::clear_vseip();
+                    riscv_h::register::hvip::clear_vseip();
                 }
             }
         } else {

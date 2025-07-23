@@ -1,17 +1,25 @@
-// SPDX-License-Identifier: MIT OR Apache-2.0
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
 //
-// Copyright (c) 2020-2022 Andre Richter <andre.o.richter@gmail.com>
-
-//! GICC Driver - GIC CPU interface.
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
 
 use core::ptr;
 
-use alloc::vec::Vec;
 use spin::{mutex::Mutex, Once};
 
 use crate::{
     arch::cpu::this_cpu_id,
-    consts,
     consts::{MAX_CPU_NUM, MAX_ZONE_NUM, PAGE_SIZE},
     hypercall::SGI_IPI_ID,
     memory::Frame,
@@ -65,8 +73,6 @@ pub fn enable_ipi() {
         gicr_igroupr0.write_volatile(gicr_igroupr0.read_volatile() | (1 << SGI_IPI_ID));
 
         let gicr_isenabler0 = (base + GICR_ISENABLER) as *mut u32;
-        gicr_isenabler0.write_volatile(1 << SGI_IPI_ID | 1 << MAINTENACE_INTERRUPT);
-        trace!("gicr_isenabler0: {}", gicr_isenabler0.read_volatile());
         let gicr_ipriorityr0 = (base + GICR_IPRIORITYR) as *mut u32;
         for irq_id in [SGI_IPI_ID, MAINTENACE_INTERRUPT] {
             let reg = irq_id / 4;
@@ -76,6 +82,8 @@ pub fn enable_ipi() {
             let prio = p.read_volatile();
 
             p.write_volatile((prio & !mask) | (0x01 << offset));
+
+            gicr_isenabler0.write_volatile(1 << irq_id);
         }
     }
 }
@@ -94,7 +102,7 @@ impl LpiPropTable {
         let page_num: usize = ((1 << (id_bits + 1)) - 8192) / PAGE_SIZE;
         let f = Frame::new_contiguous(page_num, 0).unwrap();
         let propreg = f.start_paddr() | 0x78f;
-        for id in 0..unsafe { consts::NCPU } {
+        for id in 0..MAX_CPU_NUM {
             let propbaser = host_gicr_base(id) + GICR_PROPBASER;
             unsafe {
                 ptr::write_volatile(propbaser as *mut u64, propreg as _);

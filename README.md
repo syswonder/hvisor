@@ -30,22 +30,23 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
 
 ## Device Support
 
-| **Category**              | **Device**            | **Supported Architectures** | **Notes**                       |
-| ------------------------- | --------------------- | --------------------------- | ------------------------------- |
-| **Virtio Devices**        | virtio-blk            | `aarch64`                   |                                 |
-|                           | virtio-net            | `aarch64`                   |                                 |
-|                           | virtio-console        | `aarch64`, `loongarch64`    |                                 |
-|                           | virtio-gpu            | `aarch64`                   | Only supports QEMU              |
-| **Serial Devices/UARTs**  | PL011                 | `aarch64`                   |                                 |
-|                           | imx-uart              | `aarch64`                   | NXP i.MX8MP                     |
-|                           | NS16550A              | `loongarch64`               |                                 |
-|                           | xuartps               | `aarch64`                   | Xilinx Ultrascale+ MPSoC ZCU102 |
-| **Interrupt Controllers** | GIC irq controller    | `aarch64`                   |                                 |
-|                           | 7A2000 irq controller | `loongarch64`               |                                 |
-|                           | PLIC                  | `riscv64`                   |                                 |
-|                           | AIA-APIC              | `riscv64`                   | Only supports MSI mode          |
-| **PCIe Passthrough**      | PCIe                  | `aarch64`, `riscv`          |                                 |
-| **GPU Passthrough**       | GPU                   | `aarch64`                   | NXP i.MX8MP                     |
+| **Category**              | **Device**            | **Supported Architectures**          | **Notes**                                |
+| ------------------------- | --------------------- | ------------------------------------ | ---------------------------------------- |
+| **Virtio Devices**        | virtio-blk            | `aarch64`, `riscv64`, `loongarch64`  |                                          |
+|                           | virtio-net            | `aarch64`                            |                                          |
+|                           | virtio-console        | `aarch64`, `riscv64`, `loongarch64`  |                                          |
+|                           | virtio-gpu            | `aarch64`                            | Only supports QEMU                       |
+| **Serial Devices/UARTs**  | PL011                 | `aarch64`                            |                                          |
+|                           | imx-uart              | `aarch64`                            | NXP i.MX8MP                              |
+|                           | NS16550A              | `loongarch64`                        |                                          |
+|                           | xuartps               | `aarch64`                            | Xilinx Ultrascale+ MPSoC ZCU102          |
+|                           | uart16550             | `aarch64`                            | Rockchip RK3568/RK3588, Forlinx OK6254-C |
+| **Interrupt Controllers** | GIC irq controller    | `aarch64`                            |                                          |
+|                           | 7A2000 irq controller | `loongarch64`                        |                                          |
+|                           | PLIC                  | `riscv64`                            |                                          |
+|                           | AIA                   | `riscv64`                            | Only supports MSI mode                   |
+| **PCIe Passthrough**      | PCIe                  | `aarch64`, `riscv64`, `loongarch64`  |                                          |
+| **GPU Passthrough**       | GPU                   | `aarch64`                            | NXP i.MX8MP                              |
 
 ## Supported Boards
 
@@ -54,20 +55,20 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
 - [x] QEMU virt aarch64
 - [x] NXP i.MX8MP
 - [x] Xilinx Ultrascale+ MPSoC ZCU102
-- [ ] Rockchip RK3588
-- [ ] Rockchip RK3568
-- [ ] Forlinx OK6254-C
+- [x] Rockchip RK3588
+- [x] Rockchip RK3568
+- [x] Forlinx OK6254-C
 
 ### riscv64
 
 - [x] QEMU virt riscv64
 - [ ] FPGA XiangShan(KunMingHu) on S2C Prodigy S7-19PS-2
-- [ ] FPGA  RocketChip on Xilinx Ultrascale+ MPSoC ZCU102
+- [ ] FPGA RocketChip on Xilinx Ultrascale+ MPSoC ZCU102
 
 ### loongarch64
 
-- [x] Loongson 3A5000 and 7A2000 bridge chip
-- [ ] Loongson 3A6000
+- [x] Loongson 3A5000 (7A2000 bridge chip)
+- [ ] Loongson 3A6000 (7A2000 bridge chip)
 
 ## Getting Started
 

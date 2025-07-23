@@ -18,6 +18,7 @@
 
 pub mod cpu;
 pub mod entry;
+pub mod iommu;
 pub mod ipi;
 pub mod mm;
 pub mod paging;
