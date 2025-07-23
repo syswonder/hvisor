@@ -55,7 +55,7 @@ pub fn timer_test_tick() {
         let current_time = read_stable_counter();
         if current_time - last_log_time > freq {
             info!(
-                "loongarch64: clock: timer_test_tick: freq: {}, currentdebug_time: {}, calcuated seconds: {}",
+                "loongarch64: clock: timer_test_tick: freq: {}, current_time: {}, calculated seconds: {}",
                 freq, current_time, (current_time - start_time) / freq
             );
             last_log_time = current_time;
