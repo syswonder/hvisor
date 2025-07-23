@@ -105,24 +105,29 @@ pub fn install_trap_vector() {
 }
 
 /// enable CRMD.IE
+#[inline(always)]
 pub fn enable_global_interrupt() {
     crmd::set_ie(true);
 }
 
 /// disable CRMD.IE
+#[inline(always)]
 pub fn disable_global_interrupt() {
     crmd::set_ie(false);
 }
 
+#[inline(always)]
 pub fn get_ms_counter(ms: usize) -> usize {
     ms * (time::get_timer_freq() / 1000)
 }
 
+#[inline(always)]
 pub fn get_us_counter(us: usize) -> usize {
     us * (time::get_timer_freq() / 1000_000)
 }
 
-/// read the current stable counter value
+/// read the current stable counter value, not ns!
+#[inline(always)]
 pub fn ktime_get() -> usize {
     let mut current_counter_time;
     unsafe {
@@ -215,10 +220,20 @@ fn handle_page_modify_fault() {
 
 #[no_mangle]
 pub fn trap_handler(mut ctx: &mut ZoneContext) {
-    let cur = ktime_get();
-    // print ctx addr
     trace!("loongarch64: trap_handler: ctx addr = {:p}", &ctx);
 
+    // save timer
+    let delta;
+    let ticks = ctx.gcsr_tval;
+    let cfg = ctx.gcsr_tcfg;
+    if ticks < cfg {
+        delta = ticks;
+    } else {
+        delta = 0;
+    }
+    let expire = ktime_get() + delta;
+
+    // dump trap csr regs
     let estat_ = estat::read();
     let ecode = estat_.ecode();
     let esubcode = estat_.esubcode();
@@ -247,10 +262,15 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
     let mut is_idle = false;
     if ecode == ECODE_GSPR && badi_.inst() == 0b0000_0110_0100_1000_1000_0000_0000_0000 {
         is_idle = true;
+        ctx.sepc += 4;
+        // just return to guest
+        unsafe {
+            let _ctx_ptr = ctx as *mut ZoneContext;
+            _vcpu_return(_ctx_ptr as usize);
+        }
     }
 
-    if !is_idle {
-        debug!(
+    debug!(
             "loongarch64: trap_handler: {} ecode={:#x} esubcode={:#x} is={:#x} badv={:#x} badi={:#x} era={:#x}", 
             ecode2str(ecode, esubcode),
             ecode,
@@ -260,8 +280,6 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
             badi_.inst(),
             era_.raw(),
         );
-        print!("\0");
-    }
 
     handle_exception(
         ecode,
@@ -273,43 +291,48 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
         ctx,
     );
 
-    // if !is_idle {
-    //     // restore timer
-    //     let cfg = ctx.gcsr_tcfg;
-    //     write_gcsr_tcfg(0);
-    //     // restore GCSR_ESTAT and GCSR_TCFG
-    //     write_gcsr_estat(ctx.gcsr_estat);
-    //     write_gcsr_tcfg(ctx.gcsr_tcfg);
-    //     debug!("loongarch64: trap_handler: restore timer, cfg={:#x}", cfg);
-    //     if cfg & (1 << 0) == 0 {
-    //         // guest has disabled timer, we just restore the tval
-    //         write_gcsr_tval(ctx.gcsr_tval);
-    //     } else {
-    //         // guest has enabled timer
-    //         let ticks = ctx.gcsr_tval;
-    //         let estat = ctx.gcsr_estat;
-    //         if !((cfg & 2) != 0 && (ticks > cfg)) {
-    //             write_gcsr_tval(0); // inject timer irq
-    //             if estat & 0x800 != 0 {
-    //                 // set GCSR.TICLR[0] to 1
-    //                 write_gcsr_ticlr(1);
-    //             }
-    //         }
-    //     }
-    // }
+    // restore timer
+    let cfg = ctx.gcsr_tcfg;
 
-    let cur1 = ktime_get();
-    // calculate the time spent in trap_handler
-    let time_spent = cur1 - cur;
-    // set guest timer compensation
-    let gcntc = gcntc::read();
-    let gcntc_com = gcntc.compensation();
-    // gcntc::set_compensation(gcntc_com.wrapping_sub(time_spent));
+    ctx.gcsr_tcfg = 0;
 
-    if !is_idle {
-        debug!("loongarch64: trap_handler: return");
-        print!("\0");
+    // restore GCSR_ESTAT and GCSR_TCFG
+    ctx.gcsr_estat = 0;
+    ctx.gcsr_tcfg = 0;
+
+    debug!("loongarch64: trap_handler: restore timer, cfg={:#x}", cfg);
+
+    if cfg & 1 == 0 {
+        // guest has disabled timer, we just restore the tval
+        ctx.gcsr_tval = 0;
+    } else {
+        let ticks = ctx.gcsr_tval;
+        let estat = ctx.gcsr_estat;
+
+        if !((cfg & 2) != 0 && (ticks > cfg)) {
+            ctx.gcsr_tval = 0; // inject irq
+            let cpu_timer = 1usize << 11;
+            if estat & cpu_timer == 0 {
+                ctx.gcsr_ticlr = 1; // clear timer interrupt
+            }
+        } else {
+            let now = ktime_get();
+            let mut __delta = 0;
+            if now < expire {
+                __delta = expire - now;
+            } else if (cfg & 2) != 0 {
+                // tcfg[63:2] || 00 is tval
+                let period = cfg & (0xffff_ffff_ffff_fffc);
+                __delta = now - expire;
+                __delta = period - (__delta % period);
+                // kvm queued guest timer irq injection here but we do nothing here
+            }
+
+            ctx.gcsr_tval = __delta;
+        }
     }
+
+    debug!("loongarch64: trap_handler: return");
 
     unsafe {
         let _ctx_ptr = ctx as *mut ZoneContext;
