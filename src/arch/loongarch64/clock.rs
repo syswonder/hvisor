@@ -50,7 +50,7 @@ pub fn timer_test_tick() {
         freq, start_time
     );
     let mut last_log_time = start_time;
-    while true {
+    loop {
         // after we passes 1 sec, we output a log, stop after 6 sec
         let current_time = read_stable_counter();
         if current_time - last_log_time > freq {
