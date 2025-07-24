@@ -1,0 +1,6 @@
+[target.loongarch64-unknown-none]
+linker = "loongarch64-unknown-linux-gnu-gcc"
+rustflags = [
+    "-Clink-arg=-Tplatform/__ARCH__/__BOARD__/linker.ld",
+    "-Cforce-frame-pointers=yes",
+]

@@ -383,6 +383,7 @@ impl<'a> HyperCall<'a> {
                 break;
             }
         }
+
         HyperCallResult::Ok(core::cmp::min(cnt as _, zones_info.len()))
     }
 }

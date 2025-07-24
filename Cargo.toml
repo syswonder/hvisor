@@ -39,7 +39,7 @@ riscv-peripheral = "0.2.1"
 riscv-pac = "0.2.0"
 
 [target.'cfg(target_arch = "loongarch64")'.dependencies]
-loongArch64 = "0.2.4"
+loongArch64 = "0.2.5"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86 = "0.52.0"
@@ -89,6 +89,9 @@ sstc = []
 loongson_7a2000 = []
 # uart driver
 loongson_uart = []
+# cpu (not used for now)
+loongson_3a5000 = []
+loongson_3a6000 = []
 
 
 [profile.dev]
