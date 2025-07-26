@@ -20,6 +20,7 @@ qemu-exit = "3.0.2"
 cortex-a = "8.1.1"
 cfg-if = "1.0"
 bitvec = { version="1.0.1", default-features = false, features = ["atomic", "alloc"] }
+heapless = { version = "0.8.0 "}
 
 [dependencies.fdt-rs]
 version = "0.4.5"

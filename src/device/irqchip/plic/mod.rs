@@ -20,8 +20,9 @@ pub mod vplic;
 pub use self::plic::*;
 use self::vplic::*;
 use crate::arch::zone::HvArchZoneConfig;
+use crate::config::HvZoneConfig;
 use crate::config::root_zone_config;
-use crate::consts::MAX_CPU_NUM;
+use crate::consts::{MAX_CPU_NUM, MAX_ZONE_NUM};
 use crate::error::HvResult;
 use crate::memory::mmio::MMIOAccess;
 use crate::memory::GuestPhysAddr;
@@ -33,6 +34,8 @@ use alloc::vec::Vec;
 use riscv_decode::Instruction;
 use riscv_h::register::hvip;
 use spin::Once;
+use heapless::FnvIndexMap;
+use crate::platform::BOARD_PLIC_INTERRUPTS_NUM;
 
 /*
    Due to hvisor is a static partitioning hypervisor.
@@ -42,6 +45,8 @@ use spin::Once;
 */
 
 pub static PLIC: Once<Plic> = Once::new();
+// The MAX_ZONE_NUM should be the power of 2.
+static mut VPLIC_MAP: Option<FnvIndexMap<usize, VirtualPLIC, MAX_ZONE_NUM>> = None;
 
 pub fn init_plic(plic_base: usize) {
     PLIC.call_once(|| Plic::new(plic_base));
@@ -56,6 +61,10 @@ pub fn primary_init_early() {
     let root_config = root_zone_config();
     init_plic(root_config.arch_config.plic_base as usize);
     host_plic().init_global(BOARD_PLIC_INTERRUPTS_NUM, MAX_CPU_NUM * 2);
+
+    unsafe {
+        VPLIC_MAP = Some(FnvIndexMap::new());
+    }
 }
 
 pub fn primary_init_late() {
@@ -74,9 +83,7 @@ pub fn inject_irq(irq: usize, is_hardware: bool) {
         .as_ref()
         .unwrap()
         .read()
-        .vplic
-        .as_ref()
-        .unwrap()
+        .get_vplic()
         .inject_irq(vcontext_id, irq, is_hardware);
 }
 
@@ -125,9 +132,7 @@ pub fn vplic_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
         .as_ref()
         .unwrap()
         .read()
-        .vplic
-        .as_ref()
-        .unwrap()
+        .get_vplic()
         .vplic_emul_access(mmio.address, mmio.size, mmio.value, mmio.is_write);
     if !mmio.is_write {
         // read from vplic
@@ -145,18 +150,61 @@ pub fn update_hart_line() {
         .as_ref()
         .unwrap()
         .read()
-        .vplic
-        .as_ref()
-        .unwrap()
+        .get_vplic()
         .update_hart_line(vcontext_id);
 }
 
+/// Print all keys in the VPLIC_MAP for debugging purposes.
+fn print_keys() {
+    info!("VPLIC_MAP keys:");
+    unsafe {
+        if let Some(map) = &VPLIC_MAP {
+            for (&key, _) in map.iter() {
+                info!("Zone {} in VPLIC_MAP", key);
+            }
+        }
+    }
+}
+
 impl Zone {
+    /// Initial the virtual PLIC related to thiz Zone.
+    pub fn vplic_init(&mut self, config: &HvZoneConfig) {
+        // Create a new VirtualPLIC for this Zone.
+        unsafe {
+            if let Some(map) = &mut VPLIC_MAP {
+                if map.contains_key(&self.id) {
+                    panic!("VirtualPLIC for Zone {} already exists!", self.id);
+                }
+                let vplic = vplic::VirtualPLIC::new(
+                    config.arch_config.plic_base,
+                    BOARD_PLIC_INTERRUPTS_NUM,
+                    self.cpu_num * 2,
+                );
+                // Insert into Map <zone_id, vplic>
+                let _ = map.insert(self.id, vplic);
+            } else {
+                panic!("VPLIC_MAP is not initialized!");
+            }
+        }
+        info!("VirtualPLIC for Zone {} initialized successfully", self.id);
+        print_keys();
+    }
+
+    pub fn get_vplic(&self) -> &VirtualPLIC {
+        unsafe {
+            VPLIC_MAP
+                .as_ref()
+                .expect("VPLIC_MAP is not initialized!")
+                .get(&self.id)
+                .expect("VirtualPLIC for this Zone does not exist!")
+        }
+    }
+
     pub fn arch_irqchip_reset(&self) {
         // We should make sure only one cpu to do this.
         // This func will only be called by one root zone's cpu.
         let host_plic = host_plic();
-        let vplic = self.vplic.as_ref().unwrap();
+        let vplic = self.get_vplic();
         for (index, &word) in self.irq_bitmap.iter().enumerate() {
             for bit_position in 0..32 {
                 if word & (1 << bit_position) != 0 {
@@ -189,6 +237,15 @@ impl Zone {
             info!("Clear events related to cpu {}", cpuid);
             crate::event::clear_events(cpuid);
         });
+
+        unsafe {
+            if let Some(map) = &mut VPLIC_MAP {
+                map.remove(&self.id);
+            } else {
+                panic!("VPLIC_MAP is not initialized!");
+            }
+        }
+        print_keys();
     }
 
     fn insert_irq_to_bitmap(&mut self, irq: u32) {
@@ -204,10 +261,7 @@ impl Zone {
             let irq_id = *irq;
             // They are hardware interrupts.
             if HW_IRQS.iter().any(|&x| x == irq_id) {
-                self.vplic
-                    .as_ref()
-                    .unwrap()
-                    .vplic_set_hw(irq_id as usize, true);
+                self.get_vplic().vplic_set_hw(irq_id as usize, true);
                 info!("Set irq {} to hardware interrupt", irq_id);
             }
             self.insert_irq_to_bitmap(irq_id);
