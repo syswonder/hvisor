@@ -26,8 +26,9 @@ impl PortIoBitmap {
             pci_config_addr: 0,
         };
 
-        bitmap.a.fill(0xff);
-        bitmap.b.fill(0xff);
+        // FIXME: zone0
+        bitmap.a.fill(0);
+        bitmap.b.fill(0);
 
         // ban i8259a ports
         bitmap.set_intercept(0x20, true);
@@ -43,14 +44,15 @@ impl PortIoBitmap {
         // FIXME: uart & i8254
         if zone_id == 0 {
             bitmap.set_range_intercept(0x60..0x65, false);
-            #[cfg(not(feature = "graphics"))]
-            bitmap.set_range_intercept(0x3f8..0x400, false);
+            #[cfg(feature = "graphics")]
+            bitmap.set_range_intercept(UART_COM1_PORT, true);
         }
         // bitmap.set_range_intercept(0x3f8..0x400, false);
 
         // FIXME: get port info from ACPI FACP table
-        bitmap.set_intercept(0xb2, false);
-        bitmap.set_range_intercept(0x600..0x630, false);
+        // bitmap.set_intercept(0xb2, false);
+        // bitmap.set_range_intercept(0x600..0x630, false);
+        // bitmap.set_range_intercept(0x1800..0x1900, false);
 
         bitmap
     }

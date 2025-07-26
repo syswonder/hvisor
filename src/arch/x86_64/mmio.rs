@@ -4,12 +4,15 @@ use crate::{
         vmcs::{VmcsGuest16, VmcsGuestNW},
     },
     error::HvResult,
-    memory::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr, MMIOAccess, MMIOHandler},
+    memory::{
+        addr::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr},
+        MMIOAccess, MMIOHandler,
+    },
     percpu::{this_cpu_data, this_zone},
 };
 use alloc::{sync::Arc, vec::Vec};
 use bit_field::BitField;
-use core::{mem::size_of, ops::Range, slice::from_raw_parts};
+use core::{mem::size_of, ops::Range, ptr::write_volatile, slice::from_raw_parts};
 use spin::Mutex;
 use x86::controlregs::{Cr0, Cr4};
 
@@ -126,19 +129,28 @@ impl RmReg {
 /*
 G: general registers
 E: registers / memory
-B: byte
-V: word / dword / qword
+b: byte
+w: word
+v: word / dword / qword
 */
 numeric_enum_macro::numeric_enum! {
 #[repr(u8)]
 #[derive(Debug)]
-pub enum OpCode {
+pub enum OneByteOpCode {
     // move r to r/m
     MovEbGb = 0x88,
     MovEvGv = 0x89,
     // move r/m to r
     MovGbEb = 0x8a,
     MovGvEv = 0x8b,
+}
+}
+numeric_enum_macro::numeric_enum! {
+#[repr(u8)]
+#[derive(Debug)]
+pub enum TwoByteOpCode {
+    MovZxGvEb = 0xb6,
+    MovZxGvEw = 0xb7,
 }
 }
 
@@ -154,6 +166,8 @@ bitflags::bitflags! {
 const REX_PREFIX_HIGH: u8 = 0x4;
 
 const OPERAND_SIZE_OVERRIDE_PREFIX: u8 = 0x66;
+
+const TWO_BYTE_ESCAPE: u8 = 0xf;
 
 // len stands for instruction len
 enum OprandType {
@@ -258,7 +272,7 @@ fn gva_to_gpa(gva: GuestVirtAddr) -> HvResult<GuestPhysAddr> {
 
     // lookup guest page table in long mode
 
-    let p4_gpa = VmcsGuestNW::CR3.read()?;
+    let p4_gpa = (VmcsGuestNW::CR3.read()?) & !(0xfff);
     let p4_hpa = gpa_to_hpa(p4_gpa)?;
     let p4_entry_id = (gva >> 39) & 0x1ff;
     let p4_entry = get_page_entry(p4_hpa, p4_entry_id);
@@ -349,83 +363,153 @@ fn emulate_inst(
     let mut rex = RexPrefixLow::from_bits_truncate(0);
     if inst[cur_id].get_bits(4..=7) == REX_PREFIX_HIGH {
         rex = RexPrefixLow::from_bits_truncate(inst[cur_id].get_bits(0..=3));
+        // we haven't implemented other situations yet
         assert!(rex == RexPrefixLow::REGISTERS);
         cur_id += 1;
     }
 
-    let opcode: OpCode = inst[cur_id].try_into().unwrap();
-    cur_id += 1;
-
-    if !size_override {
-        size = match opcode {
-            OpCode::MovEbGb | OpCode::MovGbEb => size_of::<u8>(),
-            _ => size,
-        };
+    let mut two_byte = false;
+    if inst[cur_id] == TWO_BYTE_ESCAPE {
+        two_byte = true;
+        cur_id += 1;
     }
 
-    match opcode {
-        OpCode::MovEbGb | OpCode::MovEvGv => {
-            let mod_rm = ModRM::new(inst[cur_id], &rex);
-            cur_id += 1;
-
-            let src = mod_rm.get_reg();
-            let src_val = src.read().unwrap();
-
-            let dst = mod_rm.get_modrm(inst, cur_id).unwrap();
-            match dst {
-                OprandType::Reg { reg, len } => {
-                    cur_id += len;
-                    reg.write(src_val, size).unwrap();
-                }
-                OprandType::Gpa { gpa, len } => {
-                    cur_id += len;
-
-                    mmio.address = gpa - base;
-                    mmio.is_write = true;
-                    mmio.size = size;
-                    mmio.value = src_val as _;
-
-                    handler(mmio, base);
-                }
-                _ => {}
-            }
-
-            Ok(cur_id)
+    if !two_byte {
+        if OneByteOpCode::try_from(inst[cur_id]).is_err() {
+            error!("inst: {:#x?}", inst);
         }
-        OpCode::MovGbEb | OpCode::MovGvEv => {
-            let mod_rm = ModRM::new(inst[cur_id], &rex);
-            cur_id += 1;
+        let opcode: OneByteOpCode = inst[cur_id].try_into().unwrap();
+        cur_id += 1;
 
-            let dst = mod_rm.get_reg();
-
-            let src = mod_rm.get_modrm(inst, cur_id).unwrap();
-            let src_val = match src {
-                OprandType::Reg { reg, len } => {
-                    cur_id += len;
-                    reg.read().unwrap()
-                }
-                OprandType::Gpa { gpa, len } => {
-                    cur_id += len;
-
-                    mmio.address = gpa - base;
-                    mmio.is_write = false;
-                    mmio.size = size;
-                    mmio.value = 0;
-                    // info!("src_val: {:x}", gpa);
-
-                    handler(mmio, base);
-                    mmio.value as u64
-                }
+        if !size_override {
+            size = match opcode {
+                OneByteOpCode::MovEbGb | OneByteOpCode::MovGbEb => size_of::<u8>(),
+                _ => size,
             };
-
-            dst.write(src_val, size).unwrap();
-            Ok(cur_id)
         }
-        _ => {
-            hv_result_err!(
-                ENOSYS,
-                format!("Unimplemented opcode: 0x{:x}", opcode as u8)
-            )
+
+        match opcode {
+            OneByteOpCode::MovEbGb | OneByteOpCode::MovEvGv => {
+                let mod_rm = ModRM::new(inst[cur_id], &rex);
+                cur_id += 1;
+
+                let src = mod_rm.get_reg();
+                let src_val = src.read().unwrap();
+
+                let dst = mod_rm.get_modrm(inst, cur_id).unwrap();
+                match dst {
+                    OprandType::Reg { reg, len } => {
+                        cur_id += len;
+                        reg.write(src_val, size).unwrap();
+                    }
+                    OprandType::Gpa { gpa, len } => {
+                        cur_id += len;
+
+                        mmio.address = gpa - base;
+                        mmio.is_write = true;
+                        mmio.size = size;
+                        mmio.value = src_val as _;
+
+                        handler(mmio, base);
+                    }
+                    _ => {}
+                }
+
+                Ok(cur_id)
+            }
+            OneByteOpCode::MovGbEb | OneByteOpCode::MovGvEv => {
+                let mod_rm = ModRM::new(inst[cur_id], &rex);
+                cur_id += 1;
+
+                let dst = mod_rm.get_reg();
+
+                let src = mod_rm.get_modrm(inst, cur_id).unwrap();
+                let src_val = match src {
+                    OprandType::Reg { reg, len } => {
+                        cur_id += len;
+                        reg.read().unwrap()
+                    }
+                    OprandType::Gpa { gpa, len } => {
+                        cur_id += len;
+
+                        mmio.address = gpa - base;
+                        mmio.is_write = false;
+                        mmio.size = size;
+                        mmio.value = 0;
+                        // info!("src_val: {:x}", gpa);
+
+                        handler(mmio, base);
+                        mmio.value as u64
+                    }
+                };
+
+                dst.write(src_val, size).unwrap();
+                Ok(cur_id)
+            }
+            _ => {
+                hv_result_err!(
+                    ENOSYS,
+                    format!("Unimplemented opcode: 0x{:x}", opcode as u8)
+                )
+            }
+        }
+    } else {
+        if TwoByteOpCode::try_from(inst[cur_id]).is_err() {
+            error!("inst: {:#x?}", inst);
+        }
+        let opcode: TwoByteOpCode = inst[cur_id].try_into().unwrap();
+        cur_id += 1;
+
+        if !size_override {
+            size = match opcode {
+                TwoByteOpCode::MovZxGvEb => size_of::<u8>(),
+                TwoByteOpCode::MovZxGvEw => size_of::<u16>(),
+                _ => size,
+            };
+        }
+
+        match opcode {
+            TwoByteOpCode::MovZxGvEb | TwoByteOpCode::MovZxGvEw => {
+                let mod_rm = ModRM::new(inst[cur_id], &rex);
+                cur_id += 1;
+
+                let dst = mod_rm.get_reg();
+
+                let src = mod_rm.get_modrm(inst, cur_id).unwrap();
+                let src_val = match src {
+                    OprandType::Reg { reg, len } => {
+                        cur_id += len;
+                        reg.read().unwrap()
+                    }
+                    OprandType::Gpa { gpa, len } => {
+                        cur_id += len;
+
+                        mmio.address = gpa - base;
+                        mmio.is_write = false;
+                        mmio.size = size;
+                        mmio.value = 0;
+                        // info!("src_val: {:x}", gpa);
+
+                        handler(mmio, base);
+                        mmio.value as u64
+                    }
+                };
+                let src_val_zero_extend = match size {
+                    1 => src_val.get_bits(0..8),
+                    2 => src_val.get_bits(0..16),
+                    4 => src_val.get_bits(0..32),
+                    _ => src_val,
+                };
+
+                dst.write(src_val_zero_extend, 8).unwrap();
+                Ok(cur_id)
+            }
+            _ => {
+                hv_result_err!(
+                    ENOSYS,
+                    format!("Unimplemented opcode: 0x{:x}", opcode as u8)
+                )
+            }
         }
     }
 }
@@ -439,5 +523,12 @@ pub fn instruction_emulator(handler: &MMIOHandler, mmio: &mut MMIOAccess, base: 
 
     this_cpu_data().arch_cpu.advance_guest_rip(len as _)?;
 
+    Ok(())
+}
+
+pub fn mmio_empty_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
+    if !mmio.is_write {
+        mmio.value = 0;
+    }
     Ok(())
 }

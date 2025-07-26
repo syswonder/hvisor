@@ -11,7 +11,7 @@ pub mod IdtVector {
     pub const ALLOC_START: u8 = 0x20;
     pub const ALLOC_END: u8 = 0xdf;
 
-    pub const VIRT_IPI_VECTOR: u8 = 0xe0;
+    pub const VIRT_IPI_VECTOR: u8 = 0x1e;
     pub const APIC_TIMER_VECTOR: u8 = 0xf0;
     pub const APIC_SPURIOUS_VECTOR: u8 = 0xf1;
     pub const APIC_ERROR_VECTOR: u8 = 0xf2;
@@ -40,6 +40,12 @@ impl RemapVectors {
     }
 
     fn get_host_vector(&self, gv: u32, zone_id: usize) -> Option<u8> {
+        if gv < 0x20 {
+            return None;
+        }
+        // FIXME:
+        return Some(gv as _);
+
         let mut vectors = self.inner.get(zone_id).unwrap().lock();
 
         if let Some(&hv) = vectors.gv_to_hv.get(&gv) {
@@ -51,7 +57,6 @@ impl RemapVectors {
                 vectors.hv_to_gv.insert(hv, gv);
                 vectors.gv_to_hv.insert(gv, hv);
 
-                // info!("gv: {:x}, hv: {:x}", gv, hv);
                 return Some(hv);
             }
         }
@@ -60,6 +65,12 @@ impl RemapVectors {
     }
 
     fn get_guest_vector(&self, hv: u8, zone_id: usize) -> Option<u32> {
+        if hv < 0x20 {
+            return None;
+        }
+        // FIXME:
+        return Some(hv as _);
+
         let mut vectors = self.inner.get(zone_id).unwrap().lock();
 
         if let Some(&gv) = vectors.hv_to_gv.get(&hv) {

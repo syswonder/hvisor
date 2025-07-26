@@ -15,7 +15,9 @@
 //
 use crate::{arch::zone::HvArchZoneConfig, config::*, memory::GuestPhysAddr};
 
-pub const MEM_TYPE_OTHER_ZONES: u32 = 5;
+pub const MEM_TYPE_RESERVED: u32 = 5;
+
+pub const BOARD_NCPUS: usize = 4;
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x00000000;
 pub const ROOT_ZONE_BOOT_STACK: GuestPhysAddr = 0x7000;
@@ -32,18 +34,18 @@ const ROOT_ZONE_RSDP_REGION: HvConfigMemoryRegion = HvConfigMemoryRegion {
 
 const ROOT_ZONE_ACPI_REGION: HvConfigMemoryRegion = HvConfigMemoryRegion {
     mem_type: MEM_TYPE_RAM,
-    physical_start: 0x3a20_0000, // hpa
-    virtual_start: 0x3520_0000,  // gpa
+    physical_start: 0x3a30_0000, // hpa
+    virtual_start: 0x3530_0000,  // gpa
     size: 0x10_0000,             // modify size accordingly
 };
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
-pub const ROOT_ZONE_CMDLINE: &str =
-    "video=vesafb console=ttyS0 console=tty0 earlyprintk=serial nointremap no_timer_check pci=pcie_scan_all,lastbus=1 root=/dev/vda rw init=/init\0";
+pub const ROOT_ZONE_CMDLINE: &str = "video=vesafb console=tty0 earlyprintk=serial nointremap no_timer_check pci=pcie_scan_all root=/dev/ram0 rw init=/init\0";
+// pub const ROOT_ZONE_CMDLINE: &str = "video=vesafb console=ttyS0 earlyprintk=serial nointremap no_timer_check pci=pcie_scan_all root=/dev/vda rw init=/init\0";
 //"console=ttyS0 earlyprintk=serial rdinit=/init nokaslr nointremap\0"; // noapic
 // video=vesafb
 
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 8] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 14] = [
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x500_0000,
@@ -61,12 +63,12 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 8] = [
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x1a00_0000,
         virtual_start: 0x1500_0000,
-        size: 0x20_0000,
+        size: 0x30_0000,
     }, // ram
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
-        physical_start: 0x1a20_0000,
-        virtual_start: 0x1520_0000,
+        physical_start: 0x1a30_0000,
+        virtual_start: 0x1530_0000,
         size: 0x2000_0000,
     }, // ram
     ROOT_ZONE_ACPI_REGION, // acpi
@@ -78,11 +80,47 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 8] = [
     }, // hpet
     // TODO: e820 mem space probe
     HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_OTHER_ZONES,
+        mem_type: MEM_TYPE_RESERVED,
         physical_start: 0x4030_0000,
         virtual_start: 0x4030_0000,
         size: 0x2000_0000,
     }, // zone 1
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RESERVED,
+        physical_start: 0x6ed7_f000,
+        virtual_start: 0x6ed7_f000,
+        size: 0x10_e000,
+    }, // FIXME: ACPI non-volatile storage
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RESERVED,
+        physical_start: 0xfeda_0000,
+        virtual_start: 0xfeda_0000,
+        size: 0x2_8000,
+    }, // FIXME: pnp 00:05
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RESERVED,
+        physical_start: 0xfe01_1000,
+        virtual_start: 0xfe01_1000,
+        size: 0x40_0000,
+    }, // FIXME: reserved
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RESERVED,
+        physical_start: 0x677a_b000,
+        virtual_start: 0x677a_b000,
+        size: 0x74d_3000,
+    }, // FIXME: reserved
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RESERVED,
+        physical_start: 0xfd69_0000,
+        virtual_start: 0xfd69_0000,
+        size: 0x6_0000,
+    }, // FIXME: INTC1057:00
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RESERVED,
+        physical_start: 0xfb00_0000,
+        virtual_start: 0xfb00_0000,
+        size: 0x100_0000,
+    }, // FIXME: reserved
 ];
 
 const ROOT_ZONE_CMDLINE_ADDR: GuestPhysAddr = 0x9000;
@@ -98,17 +136,20 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     kernel_entry_gpa: ROOT_ZONE_VMLINUX_ENTRY_ADDR,
     cmdline_load_gpa: ROOT_ZONE_CMDLINE_ADDR,
     setup_load_gpa: ROOT_ZONE_SETUP_ADDR,
-    initrd_load_gpa: 0x0,
-    initrd_size: 0x0,
+    // FIXME:
+    initrd_load_gpa: 0x1500_0000,
+    initrd_size: 0x26_b000,
     rsdp_memory_region_id: 0x1,
     acpi_memory_region_id: 0x5,
-    initrd_memory_region_id: 0x0,
+    // FIXME:
+    initrd_memory_region_id: 0x3,
     screen_base: ROOT_ZONE_SCREEN_BASE_ADDR,
 };
 
-pub const ROOT_PCI_DEVS: [u64; 16] = [
+pub const ROOT_PCI_DEVS: [u64; 19] = [
     0x0, 0x10, 0x20, 0x40, 0x50, 0x68, 0x90, 0xa0, 0xa2, 0xa3, 0xb0, 0xe0, 0xe8, 0xf8, 0xfb, 0xfc,
-]; // 0xfd,
+    0xfd, 0x100, 0x200,
+];
 
 #[cfg(all(feature = "graphics", target_arch = "x86_64"))]
 pub const GRAPHICS_FONT: &[u8] =

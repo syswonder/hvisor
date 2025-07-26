@@ -4,7 +4,7 @@ use crate::{
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet},
     percpu::this_zone,
-    platform::MEM_TYPE_OTHER_ZONES,
+    platform::MEM_TYPE_RESERVED,
 };
 use alloc::string::{String, ToString};
 use core::{
@@ -210,12 +210,13 @@ impl BootParams {
                 || i == config.arch_config.acpi_memory_region_id
             {
                 e820_type = E820Type::E820_ACPI;
-            } else if config.arch_config.initrd_load_gpa != 0
-                && i == config.arch_config.initrd_memory_region_id
-            {
             } else if mem_region.mem_type == MEM_TYPE_RAM {
                 e820_type = E820Type::E820_RAM;
-            }
+            } /*
+              else if config.arch_config.initrd_load_gpa != 0
+                    && i == config.arch_config.initrd_memory_region_id
+              {
+              }  */
 
             if e820_type != E820Type::E820_DEFAULT {
                 self.e820_table[index] = BootE820Entry {
@@ -374,7 +375,7 @@ pub fn print_memory_map() {
     let cnt = ((mem_map.size as usize) - mem_map_size) / (mem_map.entry_size as usize);
 
     let mut entry_addr = map_addr + mem_map_size;
-    println!("===== MEMORY MAP =====");
+    println!("---------- MEMORY MAP ----------");
     for i in 0..cnt {
         let entry = unsafe { *(entry_addr as *const multiboot_tag::MemoryMapEntry) };
         println!(

@@ -117,8 +117,7 @@ impl VirtIoApic {
                         entry.set_bits(0..=31, value.get_bits(0..=31));
                         // use host vector instead of guest vector
                         let gv = entry.get_bits(0..=7) as u32;
-                        if gv >= 0x20 {
-                            let hv = idt::get_host_vector(gv, zone_id).unwrap();
+                        if let Some(hv) = idt::get_host_vector(gv, zone_id) {
                             entry.set_bits(0..=7, hv as _);
                         }
                     } else {
@@ -157,18 +156,11 @@ impl VirtIoApic {
             let dest = entry.get_bits(56..=63) as usize;
             let masked = entry.get_bit(16);
             let vector = entry.get_bits(0..=7) as u8;
-            /*info!(
-                "trigger gv: {:x} zone: {:x}",
-                idt::get_guest_vector(vector as _, zone_id).unwrap(),
-                zone_id
-            );*/
-            if !masked {
-                inject_vector(
-                    dest,
-                    idt::get_guest_vector(vector as _, zone_id).unwrap() as _,
-                    None,
-                    allow_repeat,
-                );
+            // info!("trigger hv: {:x} zone: {:x}", vector, zone_id);
+            if let Some(gv) = idt::get_guest_vector(vector as _, zone_id) {
+                if !masked {
+                    inject_vector(dest, gv as _, None, allow_repeat);
+                }
             }
         }
         Ok(())

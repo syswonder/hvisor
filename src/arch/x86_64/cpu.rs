@@ -279,7 +279,7 @@ impl ArchCpu {
             self.guest_regs = self.vm_launch_guest_regs.clone();
         }
 
-        while VMXON_DONE.load(Ordering::Acquire) < unsafe { consts::NCPU } as u32 - 1 {
+        while VMXON_DONE.load(Ordering::Acquire) < unsafe { consts::MAX_CPU_NUM } as u32 - 1 {
             core::hint::spin_loop();
         }
 

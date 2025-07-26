@@ -106,6 +106,7 @@ pub fn probe_root_pci_devices(
                     // msi capablility
                     let msg_ctrl_reg = unsafe { *((cap_hpa + 0x2) as *const u16) };
                     let is_64b = msg_ctrl_reg.get_bit(7);
+                    let per_vector_masking = msg_ctrl_reg.get_bit(8);
 
                     let data_reg_hpa = match is_64b {
                         true => cap_hpa + 0xc,
@@ -113,6 +114,7 @@ pub fn probe_root_pci_devices(
                     };
                     msi_data_reg_map.insert(data_reg_hpa, bdf as _);
                     // println!("msi data reg hpa: {:x?}", data_reg_hpa);
+                    println!("msi per vector masking: {:#x?}", per_vector_masking);
                 } else if cap_id == 0x11 {
                     // msi-x capability
                     let msg_ctrl_reg = unsafe { *((cap_hpa + 0x2) as *const u16) };
@@ -200,27 +202,29 @@ pub fn mmio_msi_data_reg_handler(
 
     let host_vector = unsafe { core::ptr::read_volatile(hpa as *mut u32) } as u8;
     if mmio.is_write {
-        let alloc_host_vector = idt::get_host_vector(mmio.value as _, zone_id).unwrap();
-        if host_vector != alloc_host_vector {
-            idt::clear_vectors(host_vector, zone_id);
+        info!(
+            "MSI write, bdf: {:x} hpa: {:x} gv: {:x}",
+            bdf, hpa, mmio.value
+        );
+        if let Some(alloc_host_vector) = idt::get_host_vector(mmio.value as _, zone_id) {
+            if host_vector != alloc_host_vector {
+                idt::clear_vectors(host_vector, zone_id);
+            }
             mmio.value = alloc_host_vector as _;
-            mmio_perform_access(base, mmio);
+            info!(
+                "MSI write, old_hv: {:x} alloc_hv: {:x}",
+                host_vector, alloc_host_vector
+            );
         }
+        mmio_perform_access(base, mmio);
     } else {
         if let Some(guest_vector) = idt::get_guest_vector(host_vector, zone_id) {
             mmio.value = guest_vector as _;
         } else {
+            warn!("msi can't get hv with gv");
             mmio.value = host_vector as _;
         }
     }
-    trace!(
-        "mmio_msi_data_reg_handler! hpa: {:x}, bdf: {:x}, is write: {:x?}, read value: {:x}, write value: {:x}",
-        base + mmio.address,
-        bdf,
-        mmio.is_write,
-        host_vector,
-        mmio.value
-    );
     Ok(())
 }
 

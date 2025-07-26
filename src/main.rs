@@ -159,11 +159,6 @@ fn per_cpu_init(cpu: &mut PerCpu) {
         warn!("zone is not created for cpu {}", cpu.id);
     }
     info!("CPU {} hv_pt_install OK.", cpu.id);
-    info!(
-        "cpuid: {} ArchCpu::id:{}",
-        crate::arch::cpu::this_cpu_id(),
-        percpu::this_cpu_data().arch_cpu.cpuid
-    );
 }
 
 fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {

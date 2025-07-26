@@ -15,7 +15,7 @@
 //
 use crate::{arch::zone::HvArchZoneConfig, config::*, memory::GuestPhysAddr};
 
-pub const MEM_TYPE_OTHER_ZONES: u32 = 5;
+pub const MEM_TYPE_RESERVED: u32 = 5;
 
 pub const BOARD_NCPUS: usize = 4;
 
@@ -41,7 +41,7 @@ const ROOT_ZONE_ACPI_REGION: HvConfigMemoryRegion = HvConfigMemoryRegion {
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 pub const ROOT_ZONE_CMDLINE: &str =
-    "video=vesafb console=ttyS0 console=tty0 earlyprintk=serial nointremap no_timer_check pci=pcie_scan_all,lastbus=1 root=/dev/vda rw init=/init\0";
+    "video=vesafb console=ttyS0 earlyprintk=serial nointremap no_timer_check pci=pcie_scan_all,lastbus=1 root=/dev/ram0 rw rdinit=/bin/sh\0";
 //"console=ttyS0 earlyprintk=serial rdinit=/init nokaslr nointremap\0"; // noapic
 // video=vesafb
 
@@ -63,12 +63,12 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 8] = [
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x1a00_0000,
         virtual_start: 0x1500_0000,
-        size: 0x20_0000,
+        size: 0x30_0000,
     }, // ram
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
-        physical_start: 0x1a20_0000,
-        virtual_start: 0x1520_0000,
+        physical_start: 0x1a30_0000,
+        virtual_start: 0x1530_0000,
         size: 0x2000_0000,
     }, // ram
     ROOT_ZONE_ACPI_REGION, // acpi
@@ -80,7 +80,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 8] = [
     }, // hpet
     // TODO: e820 mem space probe
     HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_OTHER_ZONES,
+        mem_type: MEM_TYPE_RESERVED,
         physical_start: 0x4030_0000,
         virtual_start: 0x4030_0000,
         size: 0x2000_0000,
@@ -100,11 +100,11 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     kernel_entry_gpa: ROOT_ZONE_VMLINUX_ENTRY_ADDR,
     cmdline_load_gpa: ROOT_ZONE_CMDLINE_ADDR,
     setup_load_gpa: ROOT_ZONE_SETUP_ADDR,
-    initrd_load_gpa: 0x0,
-    initrd_size: 0x0,
+    initrd_load_gpa: 0x1500_0000,
+    initrd_size: 0x26_b000,
     rsdp_memory_region_id: 0x1,
     acpi_memory_region_id: 0x5,
-    initrd_memory_region_id: 0x0,
+    initrd_memory_region_id: 0x3,
     screen_base: ROOT_ZONE_SCREEN_BASE_ADDR,
 };
 

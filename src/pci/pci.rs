@@ -217,6 +217,7 @@ impl Zone {
                 self.virtual_pci_mmio_init(pci_config, hv_addr_prefix, loong_ht_prefix);
                 self.virtual_pci_device_init(pci_config);
                 self.pciroot.alloc_devs = root_zone_alloc_devs;
+                return;
             }
             #[cfg(not(target_arch = "x86_64"))]
             {
@@ -356,6 +357,9 @@ impl Zone {
 
         trace!("pciroot = {:?}", self.pciroot);
         self.pciroot.bars_register();
+        #[cfg(target_arch = "x86_64")]
+        self.pci_bars_register(pci_config);
+        #[cfg(not(target_arch = "x86_64"))]
         if self.id != 0 {
             self.pci_bars_register(pci_config);
         }
@@ -489,7 +493,11 @@ pub fn mmio_pci_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
                     mmio.value = header_val as _;
                     return Ok(());
                 } else {
+                    #[cfg(not(target_arch = "x86_64"))]
                     panic!("invalid access to empty device {:x}:{:x}.{:x}, addr: {:#x}, reg_addr: {:#x}!", bdf >> 8, (bdf >> 3) & 0b11111, bdf & 0b111, mmio.address, reg_addr);
+                    // in x86, linux will probe for pci devices automatically
+                    #[cfg(target_arch = "x86_64")]
+                    return Ok(());
                 }
             } else {
                 // device exists, so we try to get the phantom device

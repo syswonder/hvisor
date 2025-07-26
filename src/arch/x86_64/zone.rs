@@ -3,7 +3,7 @@ use crate::{
     device::virtio_trampoline::mmio_virtio_handler,
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion},
-    platform::MEM_TYPE_OTHER_ZONES,
+    platform::MEM_TYPE_RESERVED,
     zone::Zone,
 };
 
@@ -32,7 +32,7 @@ impl Zone {
                 flags |= MemFlags::IO;
             }
             match mem_region.mem_type {
-                MEM_TYPE_RAM | MEM_TYPE_IO | MEM_TYPE_OTHER_ZONES => {
+                MEM_TYPE_RAM | MEM_TYPE_IO | MEM_TYPE_RESERVED => {
                     self.gpm.insert(MemoryRegion::new_with_offset_mapper(
                         mem_region.virtual_start as GuestPhysAddr,
                         mem_region.physical_start as HostPhysAddr,

@@ -7,7 +7,7 @@ use crate::{
     },
     consts::PAGE_SIZE,
     error::{HvError, HvResult},
-    memory::{Frame, GuestPhysAddr, HostPhysAddr, HostVirtAddr, MemFlags, PhysAddr},
+    memory::{Frame, GuestPhysAddr, HostPhysAddr, MemFlags, PhysAddr},
 };
 use bit_field::BitField;
 use bitflags::{bitflags, Flags};

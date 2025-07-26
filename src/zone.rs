@@ -236,7 +236,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
         config.pci_config.ecam_size as _,
     )?;
 
-    #[cfg(all(feature = "pci"))]
+    #[cfg(all(feature = "pci", not(target_arch = "x86_64")))]
     zone.pci_init(
         &config.pci_config,
         config.num_pci_devs as _,

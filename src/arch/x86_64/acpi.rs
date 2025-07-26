@@ -255,6 +255,7 @@ pub struct RootAcpi {
     rsdp_copy: Vec<u8>,
     rsdp: AcpiTable,
     tables: BTreeMap<Signature, AcpiTable>,
+    ssdts: BTreeMap<usize, AcpiTable>,
     pointers: Vec<AcpiPointer>,
     devices: Vec<usize>,
     config_space_base: usize,
@@ -289,6 +290,12 @@ impl RootAcpi {
         self.tables.insert(sig, table);
     }
 
+    fn add_ssdt(&mut self, ptr: *const u8, len: usize, rsdt_offset: usize) {
+        let mut table = AcpiTable::default();
+        table.fill(Some(Signature::SSDT), ptr, len, ACPI_CHECKSUM_OFFSET);
+        self.ssdts.insert(rsdt_offset, table);
+    }
+
     fn get_mut_table(&mut self, sig: Signature) -> Option<&mut AcpiTable> {
         self.tables.get_mut(&sig)
     }
@@ -310,6 +317,7 @@ impl RootAcpi {
     ) {
         let mut rsdp = self.rsdp.clone();
         let mut tables = self.tables.clone();
+        let mut ssdts = self.ssdts.clone();
 
         // set rsdp addr
         rsdp.set_addr(
@@ -389,6 +397,26 @@ impl RootAcpi {
             }
         }
 
+        let ban_ssdt = banned_tables.contains(&Signature::SSDT);
+        let from = tables.get_mut(&Signature::RSDT).unwrap();
+        for (&offset, ssdt) in ssdts.iter_mut() {
+            info!(
+                "sig: {:x?}, hpa: {:x?}, gpa: {:x?}, size: {:x?}",
+                Signature::SSDT,
+                hpa_start + cur,
+                gpa_start + cur,
+                ssdt.get_len()
+            );
+            ssdt.set_addr(hpa_start + cur, gpa_start + cur);
+            cur += ssdt.get_len();
+
+            let to_gpa = match ban_ssdt {
+                true => 0,
+                false => ssdt.gpa,
+            };
+            from.set_u32(to_gpa as _, offset);
+        }
+
         // update checksums
         rsdp.update_checksum(RSDP_CHECKSUM_OFFSET);
         for (sig, table) in tables.iter_mut() {
@@ -403,6 +431,11 @@ impl RootAcpi {
                 unsafe { table.copy_to_mem() };
             }
         }
+        if !ban_ssdt {
+            for (&offset, ssdt) in ssdts.iter() {
+                unsafe { ssdt.copy_to_mem() };
+            }
+        }
     }
 
     // let zone 0 bsp cpu does the work
@@ -414,7 +447,6 @@ impl RootAcpi {
             slice::from_raw_parts(rsdp_addr as *const u8, core::mem::size_of::<Rsdp>()).to_vec()
         };
         let rsdp_copy_addr = root_acpi.rsdp_copy.as_ptr() as usize;
-        println!("rsdp: {:x}", rsdp_copy_addr);
 
         let handler = HvAcpiHandler {};
         let rsdp_mapping = unsafe {
@@ -439,15 +471,27 @@ impl RootAcpi {
         );
 
         // get rsdt
-        root_acpi.add_new_table(
-            Signature::RSDT,
-            rsdp_mapping.rsdt_address() as usize as *const u8,
-            SDT_HEADER_SIZE,
-        );
+        let rsdt_addr = rsdp_mapping.rsdt_address() as usize;
+        root_acpi.add_new_table(Signature::RSDT, rsdt_addr as *const u8, SDT_HEADER_SIZE);
         let mut rsdt_offset = root_acpi.get_mut_table(Signature::RSDT).unwrap().get_len();
 
         let tables =
             unsafe { AcpiTables::from_validated_rsdp(HvAcpiHandler {}, rsdp_mapping) }.unwrap();
+
+        // FIXME: temp
+        let mut rsdt_entry = rsdt_addr + 36;
+        let size = (unsafe { *((rsdt_addr + 4) as *const u32) } as usize - 36) / 4;
+        for i in 0..size {
+            let addr = unsafe { *(rsdt_entry as *const u32) } as usize;
+            let sig_ptr = addr as *const u8;
+            let sig =
+                unsafe { core::str::from_utf8_unchecked(core::slice::from_raw_parts(sig_ptr, 4)) };
+
+            println!("sig: {:#x?} ptr: {:x} len: {:x}", sig, addr, unsafe {
+                *((addr + 4) as *const u32)
+            });
+            rsdt_entry += 4;
+        }
 
         // mcfg
         if let Ok(mcfg) = tables.find_table::<Mcfg>() {
@@ -493,7 +537,7 @@ impl RootAcpi {
             rsdt_offset += RSDT_PTR_SIZE;
         }
 
-        // println!("fadt");
+        // fadt
         if let Ok(fadt) = tables.find_table::<Fadt>() {
             root_acpi.add_new_table(
                 Signature::FADT,
@@ -501,30 +545,47 @@ impl RootAcpi {
                 fadt.region_length(),
             );
 
+            println!("---------- FADT ----------");
+
             root_acpi.add_pointer(Signature::RSDT, rsdt_offset, Signature::FADT, RSDT_PTR_SIZE);
             rsdt_offset += RSDT_PTR_SIZE;
 
+            // acpi
+            let sci_int = fadt.sci_interrupt;
+            let smi_port = fadt.smi_cmd_port;
+            let acpi_enable = fadt.acpi_enable;
+            let acpi_disable = fadt.acpi_disable;
+            let pm1a_con = fadt.pm1a_control_block();
+            let pm1a_evt = fadt.pm1a_event_block();
+
+            /*println!(
+                "sci_interrupt: {:x}, smi_cmd_port: {:x}, acpi_enable: {:x}, acpi_disable: {:x}, pm1a_con: {:#x?}, pm1a_evt: {:#x?}",
+                sci_int, smi_port, acpi_enable, acpi_disable, pm1a_con, pm1a_evt,
+            );*/
+            // println!("{:#x?}", fadt.get());
+            // loop {}
+
             // dsdt
-            // println!("dsdt");
             if let Ok(dsdt) = tables.dsdt() {
-                println!("dsdt ptr: {:x}, len: {:x}", dsdt.address, dsdt.length);
                 root_acpi.add_new_table(
                     Signature::DSDT,
                     (dsdt.address - SDT_HEADER_SIZE) as *const u8,
                     (dsdt.length as usize + SDT_HEADER_SIZE),
                 );
-                // println!("dsdt add_new_table");
+                println!(
+                    "sig: \"DSDT\" ptr: {:x}, len: {:x}",
+                    dsdt.address, dsdt.length
+                );
 
                 root_acpi.add_pointer(Signature::FADT, FADT_DSDT_OFFSET_32, Signature::DSDT, 4);
                 root_acpi.add_pointer(Signature::FADT, FADT_DSDT_OFFSET_64, Signature::DSDT, 8);
             }
 
             // facs
-            println!("facs");
             if let Ok(facs_addr) = fadt.facs_address() {
-                root_acpi.add_new_table(Signature::FACS, facs_addr as *const u8, unsafe {
-                    *((facs_addr + 4) as *const u32) as usize
-                });
+                let len = unsafe { *((facs_addr + 4) as *const u32) as usize };
+                root_acpi.add_new_table(Signature::FACS, facs_addr as *const u8, len);
+                println!("sig: \"FACS\" ptr: {:x}, len: {:x}", facs_addr, len);
 
                 root_acpi.add_pointer(Signature::FADT, FADT_FACS_OFFSET_32, Signature::FACS, 4);
                 root_acpi.add_pointer(Signature::FADT, FADT_FACS_OFFSET_64, Signature::FACS, 8);
@@ -559,7 +620,6 @@ impl RootAcpi {
         }
 
         // dmar
-        println!("dmar");
         acpi_table!(Dmar, DMAR);
         if let Ok(dmar) = tables.find_table::<Dmar>() {
             root_acpi.add_new_table(
@@ -568,18 +628,27 @@ impl RootAcpi {
                 dmar.region_length(),
             );
 
-            println!("dmar: {:x?}", unsafe {
+            /*println!("DMAR: {:x?}", unsafe {
                 *((dmar.physical_start() + 56) as *const [u8; 8])
-            });
+            });*/
 
             // self.add_pointer(Signature::RSDT, rsdt_offset, Signature::DMAR, RSDT_PTR_SIZE);
             // rsdt_offset += RSDT_PTR_SIZE;
         }
 
+        // ssdt
+        for ssdt in tables.ssdts() {
+            root_acpi.add_ssdt(
+                (ssdt.address - SDT_HEADER_SIZE) as *const u8,
+                (ssdt.length as usize + SDT_HEADER_SIZE),
+                rsdt_offset,
+            );
+            rsdt_offset += RSDT_PTR_SIZE;
+        }
+
         if let Some(rsdt) = root_acpi.get_mut_table(Signature::RSDT) {
             rsdt.set_new_len(rsdt_offset);
         }
-        println!("acpi init end");
         root_acpi
     }
 }
@@ -591,6 +660,7 @@ pub fn root_init() {
 
 pub fn copy_to_guest_memory_region(config: &HvZoneConfig, cpu_set: &CpuSet) {
     let mut banned: BTreeSet<Signature> = BTreeSet::new();
+    // banned.insert(Signature::SSDT);
     // FIXME: temp
     // if config.zone_id != 0 {
     // banned.insert(Signature::FADT);

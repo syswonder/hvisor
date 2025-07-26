@@ -18,8 +18,10 @@ QEMU_ARGS += -vga std
 
 QEMU_ARGS += -device intel-iommu,intremap=on,eim=on,caching-mode=on,device-iotlb=on,aw-bits=48
 QEMU_ARGS += -device ioh3420,id=pcie.1,chassis=1
-QEMU_ARGS += -drive if=none,file="$(zone0_rootfs)",id=X10008000,format=raw
-QEMU_ARGS += -device virtio-blk-pci,bus=pcie.1,drive=X10008000,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on
+# QEMU_ARGS += -drive if=none,file="$(zone0_rootfs)",id=X10008000,format=raw
+# QEMU_ARGS += -device virtio-blk-pci,bus=pcie.1,drive=X10008000,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on
+QEMU_ARGS += -drive if=none,file="$(zone0_rootfs)",id=X10009000,format=raw
+QEMU_ARGS += -device nvme,serial=deadbeef,drive=X10009000
 
 # QEMU_ARGS += -drive if=none,file="$(zone1_rootfs)",id=X10009000,format=raw
 # QEMU_ARGS += -device virtio-blk-pci,bus=pcie.1,drive=X10009000,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on
@@ -35,7 +37,7 @@ QEMU_ARGS += -drive file=$(image_dir)/virtdisk/hvisor.iso,format=raw,index=0,med
 # QEMU_ARGS += -device loader,file="$(zone0_boot)",addr=0x5008000,force-raw=on
 # QEMU_ARGS += -device loader,file="$(zone0_setup)",addr=0x500a000,force-raw=on
 # QEMU_ARGS += -device loader,file="$(zone0_vmlinux)",addr=0x5100000,force-raw=on
-# QEMU_ARGS += -device loader,file="$(zone0_initrd)",addr=0x20000000,force-raw=on
+# QEMU_ARGS += -device loader,file="$(zone0_initrd)",addr=0x1a000000,force-raw=on
 # QEMU_ARGS += -append "initrd_size=$(shell stat -c%s $(zone0_initrd))"
 
 $(hvisor_bin): elf boot

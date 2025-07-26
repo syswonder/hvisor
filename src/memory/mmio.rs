@@ -90,24 +90,27 @@ pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
     match res {
         Some((region, handler, arg)) => {
             mmio.address -= region.start;
-            if cfg!(target_arch = "x86_64") {
-                if mmio.size == 0 {
-                    #[cfg(target_arch = "x86_64")]
-                    crate::arch::mmio::instruction_emulator(&handler, mmio, arg)
-                } else {
-                    handler(mmio, arg)
-                }
-            } else {
-                match handler(mmio, arg) {
-                    Ok(_) => Ok(()),
-                    Err(e) => {
-                        error!("mmio handler returned error: {:#x?}", e);
-                        Err(e)
-                    }
+
+            #[cfg(target_arch = "x86_64")]
+            if mmio.size == 0 {
+                return crate::arch::mmio::instruction_emulator(&handler, mmio, arg);
+            }
+
+            match handler(mmio, arg) {
+                Ok(_) => Ok(()),
+                Err(e) => {
+                    error!("mmio handler returned error: {:#x?}", e);
+                    Err(e)
                 }
             }
         }
         None => {
+            /*#[cfg(target_arch = "x86_64")]
+            if mmio.size == 0 {
+                let handler: MMIOHandler = mmio_generic_handler; //crate::arch::mmio::mmio_empty_handler;
+                return crate::arch::mmio::instruction_emulator(&handler, mmio, 0);
+            }*/
+
             warn!("Zone {} unhandled mmio fault {:#x?}", zone_id, mmio);
             hv_result_err!(EINVAL)
         }
