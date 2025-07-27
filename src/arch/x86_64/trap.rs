@@ -5,7 +5,7 @@ use crate::{
         cpu::{this_cpu_id, ArchCpu},
         cpuid::{CpuIdEax, ExtendedFeaturesEcx, FeatureInfoFlags},
         hpet,
-        idt::{get_guest_vector, get_host_vector, IdtStruct, IdtVector},
+        idt::{IdtStruct, IdtVector},
         ipi,
         msr::Msr::{self, *},
         s2pt::Stage2PageFaultInfo,
@@ -91,21 +91,12 @@ fn handle_irq(vector: u8) {
         IdtVector::VIRT_IPI_VECTOR => {
             ipi::handle_virt_ipi();
         }
-        IdtVector::APIC_TIMER_VECTOR => inject_vector(
-            this_cpu_id(),
-            this_cpu_data().arch_cpu.virt_lapic.virt_timer_vector,
-            None,
-            false,
-        ),
-        _ => match get_guest_vector(vector, this_zone_id()) {
-            Some(gv) => {
-                // info!("inject: {:x}", vector);
-                inject_vector(this_cpu_id(), gv as _, None, false);
+        IdtVector::APIC_SPURIOUS_VECTOR | IdtVector::APIC_ERROR_VECTOR => {}
+        _ => {
+            if vector >= 0x20 {
+                inject_vector(this_cpu_id(), vector, None, false);
             }
-            None => {
-                warn!("can't find guest vector with host vector {:x}", vector);
-            }
-        },
+        }
     }
     unsafe { VirtLocalApic::phys_local_apic().end_of_interrupt() };
 }

@@ -432,7 +432,7 @@ impl Zone {
                 self.mmio_region_register(
                     region.start,
                     region.size,
-                    crate::arch::x86_64::pci::mmio_msix_table_handler,
+                    crate::memory::mmio_generic_handler,
                     region.start,
                 );
             }
@@ -459,15 +459,6 @@ pub fn mmio_pci_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
 
     match is_assigned {
         true => {
-            #[cfg(target_arch = "x86_64")]
-            {
-                if let Some(bdf) = crate::arch::acpi::is_msi_data_reg(base + mmio.address) {
-                    crate::arch::pci::mmio_msi_data_reg_handler(mmio, base, bdf, zone_id);
-                } else {
-                    mmio_perform_access(base, mmio);
-                }
-            }
-            #[cfg(not(target_arch = "x86_64"))]
             mmio_perform_access(base, mmio);
             if bus == 6 && reg_addr == 0x150 && !mmio.is_write {
                 // assume pcie network card is in bus 6(X4 slot in 3A6000 board), this will skip it's sriov

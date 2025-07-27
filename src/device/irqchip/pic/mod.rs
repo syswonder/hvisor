@@ -109,7 +109,6 @@ pub fn percpu_init() {}
 pub fn primary_init_early() {
     ipi::init(MAX_CPU_NUM);
     PENDING_VECTORS.call_once(|| PendingVectors::new(MAX_CPU_NUM));
-    idt::init(MAX_ZONE_NUM);
     ioapic::init_virt_ioapic(MAX_ZONE_NUM);
     vtd::init();
 }

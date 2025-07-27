@@ -40,7 +40,7 @@ const ROOT_ZONE_ACPI_REGION: HvConfigMemoryRegion = HvConfigMemoryRegion {
 };
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
-pub const ROOT_ZONE_CMDLINE: &str = "video=vesafb console=tty0 earlyprintk=serial nointremap no_timer_check pci=pcie_scan_all root=/dev/ram0 rw init=/init\0";
+pub const ROOT_ZONE_CMDLINE: &str = "video=vesafb console=tty0 earlyprintk=serial nointremap no_timer_check pci=pcie_scan_all root=/dev/sda2 rw init=/bin/sh rootwait\0";
 // pub const ROOT_ZONE_CMDLINE: &str = "video=vesafb console=ttyS0 earlyprintk=serial nointremap no_timer_check pci=pcie_scan_all root=/dev/vda rw init=/init\0";
 //"console=ttyS0 earlyprintk=serial rdinit=/init nokaslr nointremap\0"; // noapic
 // video=vesafb
@@ -137,12 +137,12 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     cmdline_load_gpa: ROOT_ZONE_CMDLINE_ADDR,
     setup_load_gpa: ROOT_ZONE_SETUP_ADDR,
     // FIXME:
-    initrd_load_gpa: 0x1500_0000,
-    initrd_size: 0x26_b000,
+    initrd_load_gpa: 0, //0x1500_0000,
+    initrd_size: 0,     //0x26_b000,
     rsdp_memory_region_id: 0x1,
     acpi_memory_region_id: 0x5,
     // FIXME:
-    initrd_memory_region_id: 0x3,
+    initrd_memory_region_id: 0, //0x3,
     screen_base: ROOT_ZONE_SCREEN_BASE_ADDR,
 };
 

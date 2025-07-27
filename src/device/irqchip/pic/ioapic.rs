@@ -75,13 +75,7 @@ impl VirtIoApic {
                 let index = (reg >> 1) as usize;
                 if let Some(entry) = inner.rte.get(index) {
                     if reg % 2 == 0 {
-                        let mut lower = (*entry).get_bits(0..=31);
-                        if let Some(gv) =
-                            idt::get_guest_vector(lower.get_bits(0..=7) as u8, zone_id)
-                        {
-                            lower.set_bits(0..=7, gv as _);
-                        }
-                        Ok(lower.get_bits(0..=31))
+                        Ok((*entry).get_bits(0..=31))
                     } else {
                         Ok((*entry).get_bits(32..=63))
                     }
@@ -115,11 +109,6 @@ impl VirtIoApic {
                 if let Some(entry) = inner.rte.get_mut(index) {
                     if reg % 2 == 0 {
                         entry.set_bits(0..=31, value.get_bits(0..=31));
-                        // use host vector instead of guest vector
-                        let gv = entry.get_bits(0..=7) as u32;
-                        if let Some(hv) = idt::get_host_vector(gv, zone_id) {
-                            entry.set_bits(0..=7, hv as _);
-                        }
                     } else {
                         entry.set_bits(32..=63, value.get_bits(0..=31));
 
@@ -157,10 +146,8 @@ impl VirtIoApic {
             let masked = entry.get_bit(16);
             let vector = entry.get_bits(0..=7) as u8;
             // info!("trigger hv: {:x} zone: {:x}", vector, zone_id);
-            if let Some(gv) = idt::get_guest_vector(vector as _, zone_id) {
-                if !masked {
-                    inject_vector(dest, gv as _, None, allow_repeat);
-                }
+            if !masked && vector >= 0x20 {
+                inject_vector(dest, vector, None, allow_repeat);
             }
         }
         Ok(())

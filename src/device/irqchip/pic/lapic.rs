@@ -22,23 +22,29 @@ pub struct VirtLocalApic {
 
 impl VirtLocalApic {
     pub fn new() -> Self {
+        Self {
+            phys_lapic: Self::new_phys_lapic(
+                IdtVector::APIC_TIMER_VECTOR as _,
+                IdtVector::APIC_ERROR_VECTOR as _,
+                IdtVector::APIC_SPURIOUS_VECTOR as _,
+            ),
+            virt_timer_vector: IdtVector::APIC_TIMER_VECTOR as _,
+            virt_lvt_timer_bits: (1 << 16) as _, // masked
+        }
+    }
+
+    fn new_phys_lapic(timer: usize, error: usize, spurious: usize) -> LocalApic {
         let mut lapic = LocalApicBuilder::new()
-            .timer_vector(IdtVector::APIC_TIMER_VECTOR as _)
-            .error_vector(IdtVector::APIC_ERROR_VECTOR as _)
-            .spurious_vector(IdtVector::APIC_SPURIOUS_VECTOR as _)
+            .timer_vector(timer)
+            .error_vector(error)
+            .spurious_vector(spurious)
             .build()
             .unwrap();
-
         unsafe {
             lapic.enable();
             lapic.disable_timer();
         }
-
-        Self {
-            phys_lapic: lapic,
-            virt_timer_vector: 0,
-            virt_lvt_timer_bits: (1 << 16) as _, // masked
-        }
+        lapic
     }
 
     pub const fn msr_range() -> Range<u32> {
@@ -85,7 +91,15 @@ impl VirtLocalApic {
             }
             IA32_X2APIC_LVT_TIMER => {
                 self.virt_lvt_timer_bits = value as u32;
-                self.virt_timer_vector = value.get_bits(0..=7) as _;
+                let timer = value.get_bits(0..=7) as u8;
+                if timer != self.virt_timer_vector {
+                    self.virt_timer_vector = timer;
+                    self.phys_lapic = Self::new_phys_lapic(
+                        timer as _,
+                        IdtVector::APIC_ERROR_VECTOR as _,
+                        IdtVector::APIC_SPURIOUS_VECTOR as _,
+                    )
+                }
                 unsafe {
                     self.phys_lapic
                         .set_timer_mode(match value.get_bits(17..19) {

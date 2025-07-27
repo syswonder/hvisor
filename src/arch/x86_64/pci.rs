@@ -177,57 +177,6 @@ pub fn probe_root_pci_devices(
     )
 }
 
-pub fn mmio_msix_table_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
-    let hpa = base + mmio.address;
-
-    let zone = this_zone();
-    let zone_id = zone.read().id;
-
-    let bdf = acpi::is_msi_data_reg(hpa);
-    if bdf.is_some() && zone.write().pciroot.is_assigned_device(bdf.unwrap()) {
-        mmio_msi_data_reg_handler(mmio, base, bdf.unwrap(), zone_id)
-    } else {
-        mmio_perform_access(base, mmio);
-        Ok(())
-    }
-}
-
-pub fn mmio_msi_data_reg_handler(
-    mmio: &mut MMIOAccess,
-    base: usize,
-    bdf: usize,
-    zone_id: usize,
-) -> HvResult {
-    let hpa = base + mmio.address;
-
-    let host_vector = unsafe { core::ptr::read_volatile(hpa as *mut u32) } as u8;
-    if mmio.is_write {
-        info!(
-            "MSI write, bdf: {:x} hpa: {:x} gv: {:x}",
-            bdf, hpa, mmio.value
-        );
-        if let Some(alloc_host_vector) = idt::get_host_vector(mmio.value as _, zone_id) {
-            if host_vector != alloc_host_vector {
-                idt::clear_vectors(host_vector, zone_id);
-            }
-            mmio.value = alloc_host_vector as _;
-            info!(
-                "MSI write, old_hv: {:x} alloc_hv: {:x}",
-                host_vector, alloc_host_vector
-            );
-        }
-        mmio_perform_access(base, mmio);
-    } else {
-        if let Some(guest_vector) = idt::get_guest_vector(host_vector, zone_id) {
-            mmio.value = guest_vector as _;
-        } else {
-            warn!("msi can't get hv with gv");
-            mmio.value = host_vector as _;
-        }
-    }
-    Ok(())
-}
-
 fn get_pci_mmio_addr() -> Option<usize> {
     let addr = this_zone().read().pio_bitmap.pci_config_addr as usize;
     let (base, _) = crate::arch::acpi::root_get_config_space_info().unwrap();
