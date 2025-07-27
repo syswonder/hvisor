@@ -1,5 +1,11 @@
 use crate::{
-    arch::{cpu::this_cpu_id, idt, ipi, mmio::MMIoDevice, zone::HvArchZoneConfig},
+    arch::{
+        acpi::{get_apic_id, get_cpu_id},
+        cpu::this_cpu_id,
+        idt, ipi,
+        mmio::MMIoDevice,
+        zone::HvArchZoneConfig,
+    },
     device::irqchip::pic::inject_vector,
     error::HvResult,
     memory::{GuestPhysAddr, MMIOAccess},
@@ -131,7 +137,7 @@ impl VirtIoApic {
     fn get_irq_cpu(&self, irq: usize, zone_id: usize) -> Option<usize> {
         let ioapic = self.inner.get(zone_id).unwrap();
         if let Some(entry) = ioapic.lock().rte.get(irq) {
-            let dest = entry.get_bits(56..=63) as usize;
+            let dest = get_cpu_id(entry.get_bits(56..=63) as usize);
             return Some(dest);
         }
         None
@@ -142,7 +148,7 @@ impl VirtIoApic {
         let ioapic = self.inner.get(zone_id).unwrap();
         if let Some(entry) = ioapic.lock().rte.get(irq) {
             // TODO: physical & logical mode
-            let dest = entry.get_bits(56..=63) as usize;
+            let dest = get_cpu_id(entry.get_bits(56..=63) as usize);
             let masked = entry.get_bit(16);
             let vector = entry.get_bits(0..=7) as u8;
             // info!("trigger hv: {:x} zone: {:x}", vector, zone_id);

@@ -264,8 +264,10 @@ pub struct RootAcpi {
     msi_data_reg_map: BTreeMap<usize, usize>,
     /// key: msi-x table bar, value: bdf
     msix_bar_map: BTreeMap<usize, usize>,
-    /// key: cpuid, value: cpu nr (continuous)
-    lapic_map: BTreeMap<usize, usize>,
+    /// key: apic id, value: cpu id (continuous)
+    apic_id_to_cpu_id: BTreeMap<usize, usize>,
+    /// key: cpu id (continuous), value: apic id
+    cpu_id_to_apic_id: BTreeMap<usize, usize>,
 }
 
 impl RootAcpi {
@@ -335,13 +337,19 @@ impl RootAcpi {
             let mut entry_len = madt.get_u8(madt_cur + 1) as usize;
             match entry {
                 MadtEntry::LocalApic(entry) => {
-                    if !cpu_set.contains_cpu(entry.processor_id as _) {
-                        // madt.remove(madt_cur, entry_len);
+                    let mut disable_lapic = true;
+                    if contains_apic_id(entry.apic_id as _) {
+                        let cpuid = get_cpu_id(entry.apic_id as _);
+                        if cpu_set.contains_cpu(cpuid) {
+                            disable_lapic = false;
+                        }
+                        // reset processor id
+                        madt.set_u8(cpuid as _, madt_cur + 2);
+                    }
+                    if disable_lapic {
                         // set flag to disable lapic
                         madt.set_u32(0x0, madt_cur + 4);
                     }
-                    // let apic id equals processor id
-                    // madt.set_u8(entry.processor_id, madt_cur + 3);
                 }
                 MadtEntry::LocalX2Apic(entry) => {
                     if !cpu_set.contains_cpu(entry.processor_uid as _) {}
@@ -606,9 +614,13 @@ impl RootAcpi {
                     MadtEntry::LocalApic(entry) => {
                         if entry.flags != 0 {
                             println!("{:x?}", entry);
+                            let cpu_id = root_acpi.apic_id_to_cpu_id.len();
                             root_acpi
-                                .lapic_map
-                                .insert(entry.apic_id as _, root_acpi.lapic_map.len());
+                                .apic_id_to_cpu_id
+                                .insert(entry.apic_id as _, cpu_id);
+                            root_acpi
+                                .cpu_id_to_apic_id
+                                .insert(cpu_id, entry.apic_id as _);
                         }
                     }
                     _ => {}
@@ -698,6 +710,28 @@ pub fn is_msix_bar(hpa: usize) -> Option<usize> {
     }
 }
 
-pub fn get_lapic_map() -> &'static BTreeMap<usize, usize> {
-    &ROOT_ACPI.get().unwrap().lapic_map
+fn contains_apic_id(apic_id: usize) -> bool {
+    ROOT_ACPI
+        .get()
+        .unwrap()
+        .apic_id_to_cpu_id
+        .contains_key(&apic_id)
+}
+
+pub fn get_cpu_id(apic_id: usize) -> usize {
+    *ROOT_ACPI
+        .get()
+        .unwrap()
+        .apic_id_to_cpu_id
+        .get(&apic_id)
+        .unwrap()
+}
+
+pub fn get_apic_id(cpu_id: usize) -> usize {
+    *ROOT_ACPI
+        .get()
+        .unwrap()
+        .cpu_id_to_apic_id
+        .get(&cpu_id)
+        .unwrap()
 }

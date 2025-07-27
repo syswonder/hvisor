@@ -162,14 +162,6 @@ fn per_cpu_init(cpu: &mut PerCpu) {
 }
 
 fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
-    #[cfg(target_arch = "x86_64")]
-    for (&apic_id, _) in crate::arch::acpi::get_lapic_map() {
-        if apic_id == this_id {
-            continue;
-        }
-        cpu_start(apic_id, arch_entry as _, host_dtb);
-    }
-    #[cfg(not(target_arch = "x86_64"))]
     for cpu_id in 0..MAX_CPU_NUM {
         if cpu_id == this_id {
             continue;
@@ -200,6 +192,10 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
             crate::arch::acpi::root_init();
         }
     }
+
+    #[cfg(target_arch = "x86_64")]
+    // get the real cpuid, we are using apic id before
+    let cpuid = crate::arch::cpu::this_cpu_id();
 
     let cpu = PerCpu::new(cpuid);
 

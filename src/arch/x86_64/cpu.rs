@@ -1,6 +1,6 @@
 use crate::{
     arch::{
-        acpi,
+        acpi::{self, *},
         boot::BootParams,
         hpet, ipi,
         mm::new_s2_memory_set,
@@ -44,8 +44,6 @@ use x86::{
     },
 };
 use x86_64::registers::control::{Cr0, Cr0Flags, Cr3, Cr4, Cr4Flags};
-
-use super::acpi::RootAcpi;
 
 const AP_START_PAGE_IDX: u8 = 6;
 const AP_START_PAGE_PADDR: PhysAddr = AP_START_PAGE_IDX as usize * PAGE_SIZE;
@@ -124,13 +122,14 @@ pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
     unsafe { setup_ap_start_page(cpuid) };
 
     let lapic = VirtLocalApic::phys_local_apic();
+    let apic_id = acpi::get_apic_id(cpuid);
 
     // Intel SDM Vol 3C, Section 8.4.4, MP Initialization Example
-    unsafe { lapic.send_init_ipi(cpuid as u32) };
+    unsafe { lapic.send_init_ipi(apic_id as u32) };
     hpet::busy_wait(Duration::from_millis(50)); // 10ms
-    unsafe { lapic.send_sipi(AP_START_PAGE_IDX, cpuid as u32) };
+    unsafe { lapic.send_sipi(AP_START_PAGE_IDX, apic_id as u32) };
     hpet::busy_wait(Duration::from_micros(2000)); // 200us
-    unsafe { lapic.send_sipi(AP_START_PAGE_IDX, cpuid as u32) };
+    unsafe { lapic.send_sipi(AP_START_PAGE_IDX, apic_id as u32) };
 }
 
 /// General-Purpose Registers for 64-bit x86 architecture.
@@ -554,7 +553,7 @@ impl ArchCpu {
 
     fn vmexit_handler(&mut self) {
         crate::arch::trap::handle_vmexit(self).unwrap();
-        check_pending_vectors(this_cpu_id());
+        check_pending_vectors(self.cpuid);
     }
 
     unsafe fn vmx_entry_failed() -> ! {
@@ -596,9 +595,16 @@ impl ArchCpu {
 }
 
 pub fn this_cpu_id() -> usize {
+    crate::arch::acpi::get_cpu_id(this_apic_id())
+}
+
+pub fn this_apic_id() -> usize {
     match CpuId::new().get_feature_info() {
         Some(info) => info.initial_local_apic_id() as usize,
-        None => 0,
+        None => {
+            panic!("can not find apic id!");
+            0
+        }
     }
 }
 

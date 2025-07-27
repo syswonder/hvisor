@@ -1,5 +1,5 @@
 use crate::{
-    arch::{boot, cpu::this_cpu_id, graphics::font_init},
+    arch::{boot, cpu::this_apic_id, graphics::font_init},
     consts::PER_CPU_SIZE,
     memory::addr::PHYS_VIRT_OFFSET,
     platform::__board,
@@ -67,12 +67,12 @@ extern "C" fn rust_entry(magic: u32, info_addr: usize) {
     #[cfg(all(feature = "graphics", target_arch = "x86_64"))]
     font_init(__board::GRAPHICS_FONT);
     boot::print_memory_map();
-    rust_main(this_cpu_id(), info_addr);
+    rust_main(this_apic_id(), info_addr);
 }
 
 fn rust_entry_secondary() {
     // println!("CPUID: {}", this_cpu_id());
-    rust_main(this_cpu_id(), 0);
+    rust_main(this_apic_id(), 0);
 }
 
 extern "C" {

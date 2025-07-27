@@ -1,6 +1,6 @@
 use crate::{
     arch::{
-        cpu::this_cpu_id,
+        cpu::{this_apic_id, this_cpu_id},
         idt::IdtVector,
         ipi,
         msr::Msr::{self, *},
@@ -59,9 +59,9 @@ impl VirtLocalApic {
         match msr {
             IA32_X2APIC_APICID => {
                 // info!("apicid: {:x}", this_cpu_id());
-                Ok(this_cpu_id() as u64)
+                Ok(this_apic_id() as u64)
             }
-            IA32_X2APIC_LDR => Ok(this_cpu_id() as u64), // logical apic id
+            IA32_X2APIC_LDR => Ok(this_apic_id() as u64), // logical apic id
             IA32_X2APIC_ISR0 | IA32_X2APIC_ISR1 | IA32_X2APIC_ISR2 | IA32_X2APIC_ISR3
             | IA32_X2APIC_ISR4 | IA32_X2APIC_ISR5 | IA32_X2APIC_ISR6 | IA32_X2APIC_ISR7 => {
                 // info!("isr!");
