@@ -1,4 +1,4 @@
-KDIR ?= 
+KDIR ?=
 ARCH ?= arm64
 LOG ?= LOG_INFO
 DEBUG ?= n
@@ -11,12 +11,17 @@ export LOG
 export VIRTIO_GPU
 export LIBC
 
-.PHONY: all help env tools driver clean transfer tftp transfer_nxp check-kdir
+.PHONY: all help env tools driver clean transfer tftp transfer_nxp check-kdir check-config-change
 
 OUTPUT_DIR ?= output
 TFTP_DIR ?= ~/tftp
 
-all: tools driver
+BUILD_VARS_STRING := arch=$(ARCH)-log=$(LOG)-debug=$(DEBUG)-virtio_gpu=$(VIRTIO_GPU)-libc=$(LIBC)-kdir=$(KDIR)
+BUILD_CONFIG_FILE := $(OUTPUT_DIR)/.build_config
+
+all: check-config-change tools driver
+	@echo "Build successful. Storing current configuration."
+	@echo "$(BUILD_VARS_STRING)" > $(BUILD_CONFIG_FILE)
 
 help:
 	@echo "Compilation targets:"
@@ -39,19 +44,26 @@ ifeq ($(KDIR),)
 	$(error Linux kernel directory is not set. Please set environment variable 'KDIR')
 endif
 
-tools: env
+check-config-change:
+	@mkdir -p $(OUTPUT_DIR)
+	@if [ -f "$(BUILD_CONFIG_FILE)" ] && [ "$$(cat $(BUILD_CONFIG_FILE))" != "$(BUILD_VARS_STRING)" ]; then \
+		echo "Build options changed. Forcing 'clean'."; \
+		$(MAKE) clean; \
+	fi
+
+tools: env check-config-change
 	$(MAKE) -C tools all
 	@mkdir -p $(OUTPUT_DIR)
 	cp tools/hvisor $(OUTPUT_DIR)
-	
-driver: env check-kdir
+
+driver: env check-kdir check-config-change
 	$(MAKE) -C driver all
 	@mkdir -p $(OUTPUT_DIR)
 	cp driver/hvisor.ko $(OUTPUT_DIR)
 
 transfer: all
-	./trans_file.sh ./tools/hvisor 
-	./trans_file.sh ./driver/hvisor.ko 
+	./trans_file.sh ./tools/hvisor
+	./trans_file.sh ./driver/hvisor.ko
 
 tftp:
 	@mkdir -p $(OUTPUT_DIR)
@@ -64,9 +76,10 @@ tftp:
 	fi
 
 clean: check-kdir
-	make -C tools clean
-	make -C driver clean
-	rm -rf $(OUTPUT_DIR)
+	@echo "Cleaning sub-projects and output directory..."
+	@$(MAKE) -C tools clean
+	@$(MAKE) -C driver clean
+	@rm -rf $(OUTPUT_DIR)
 
 fmt:
 # if clang-format is not installed, ask to install
