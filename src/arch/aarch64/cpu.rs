@@ -226,7 +226,7 @@ pub fn mpidr_to_cpuid(mpidr: u64) -> u64 {
 
 pub fn cpuid_to_mpidr_affinity(cpuid: u64) -> (u64, u64, u64, u64) {
     let mpidr = BOARD_MPIDR_MAPPINGS[cpuid as usize];
-    let aff3 = (mpidr >> 24) & 0xff;
+    let aff3 = (mpidr >> 32) & 0xff;
     let aff2 = (mpidr >> 16) & 0xff;
     let aff1 = (mpidr >> 8) & 0xff;
     let aff0 = mpidr & 0xff;
