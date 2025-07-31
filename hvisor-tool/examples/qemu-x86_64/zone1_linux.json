@@ -76,10 +76,11 @@
         "setup_load_hpa": "0x4030d000",
         "setup_load_gpa": "0xd000",
         "rsdp_memory_region_id": "0x1",
-        "acpi_memory_region_id": "0x3"
+        "acpi_memory_region_id": "0x3",
+        "screen_base": "0x70000000"
     },
     "pci_config": {
-        "ecam_base": "0xb0000000",
+        "ecam_base": "0xe0000000",
         "ecam_size": "0x200000",
         "io_base": "0x0",
         "io_size": "0x0",

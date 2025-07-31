@@ -47,7 +47,7 @@ static void __attribute__((noreturn)) help(int exit_status) {
     exit(exit_status);
 }
 
-void *read_file(char *filename, u_int64_t *filesize) {
+void *read_file(char *filename, uint64_t *filesize) {
     int fd;
     struct stat st;
     void *buf;
@@ -95,18 +95,6 @@ int open_dev() {
     return fd;
 }
 
-// static void get_info(char *optarg, char **path, u64 *address) {
-// 	char *now;
-// 	*path = strtok(optarg, ",");
-// 	now = strtok(NULL, "=");
-// 	if (strcmp(now, "addr") == 0) {
-// 		now = strtok(NULL, "=");
-// 		*address = strtoull(now, NULL, 16);
-// 	} else {
-// 		help(1);
-// 	}
-// }
-
 static __u64 load_str_to_memory(const char *str, __u64 load_paddr) {
     __u64 size, page_size,
         map_size; // Define variables: image size, page size, and map size
@@ -135,13 +123,20 @@ static __u64 load_str_to_memory(const char *str, __u64 load_paddr) {
 }
 
 static __u64 load_image_to_memory(const char *path, __u64 load_paddr) {
+    if (strcmp(path, "null") == 0) {
+        return 0;
+    }
     __u64 size, page_size,
         map_size; // Define variables: image size, page size, and map size
     int fd;       // File descriptor
     void *image_content,
         *virt_addr; // Pointers to image content and virtual address
 
-    fd = open_dev();
+    fd = open("/dev/mem", O_RDWR);
+    if (fd < 0) {
+        log_error("Failed to open /dev/mem!");
+        exit(1);
+    }
     // Load image content into memory
     image_content = read_file(path, &size);
 
@@ -329,8 +324,8 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "rsdp_memory_region_id");
     cJSON *acpi_memory_region_id_json =
         SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "acpi_memory_region_id");
-    cJSON *initrd_memory_region_id_json =
-        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "initrd_memory_region_id");
+    cJSON *screen_base_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "screen_base");
 
     config->arch_config.ioapic_base =
         strtoull(ioapic_base_json->valuestring, NULL, 16);
@@ -373,8 +368,6 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         config->arch_config.initrd_size = load_image_to_memory(
             initrd_filepath_json->valuestring,
             strtoull(initrd_load_hpa_json->valuestring, NULL, 16));
-        config->arch_config.initrd_memory_region_id =
-            strtoull(initrd_memory_region_id_json->valuestring, NULL, 16);
 
         log_info("initrd size: %llu", config->arch_config.initrd_size);
     }
@@ -383,6 +376,9 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         strtoull(rsdp_memory_region_id_json->valuestring, NULL, 16);
     config->arch_config.acpi_memory_region_id =
         strtoull(acpi_memory_region_id_json->valuestring, NULL, 16);
+
+    config->arch_config.screen_base =
+        strtoull(screen_base_json->valuestring, NULL, 16);
 #endif
 
     return 0;
@@ -393,9 +389,11 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
     if (pci_config_json == NULL) {
         log_warn("No pci_config field found.");
         return -1;
+    } else {
+        printf("pci_config field found.\n");
     }
 
-#if (defined ARM64) || (defined X86_64)
+#if defined(ARM64) || defined(LOONGARCH64) || (defined X86_64)
     cJSON *ecam_base_json =
         SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "ecam_base");
     cJSON *io_base_json =
@@ -460,7 +458,6 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
             SAFE_CJSON_GET_ARRAY_ITEM(alloc_pci_devs_json, i)->valueint;
     }
 #endif
-
     return 0;
 }
 
@@ -651,14 +648,15 @@ static int zone_start_from_json(const char *json_config_path,
     log_info("Zone name: %s", config->name);
 
 #ifndef LOONGARCH64
-
     // Parse architecture-specific configurations (interrupts for each platform)
     if (parse_arch_config(root, config))
         goto err_out;
 
-    parse_pci_config(root, config);
+    // parse_pci_config(root, config);
 
 #endif
+
+    parse_pci_config(root, config);
 
     if (root)
         cJSON_Delete(root);
@@ -694,7 +692,7 @@ static int zone_start(int argc, char *argv[]) {
     char *json_config_path = NULL;
     zone_config_t config;
     int fd, ret;
-    u_int64_t hvisor_config_version;
+    uint64_t hvisor_config_version;
 
     if (argc != 4) {
         help(1);
@@ -796,6 +794,9 @@ int main(int argc, char *argv[]) {
         help(1);
 
     if (strcmp(argv[1], "zone") == 0) {
+        if (argc < 3)
+            help(1);
+
         if (strcmp(argv[2], "start") == 0) {
             err = zone_start(argc, argv);
         } else if (strcmp(argv[2], "shutdown") == 0) {
@@ -806,6 +807,9 @@ int main(int argc, char *argv[]) {
             help(1);
         }
     } else if (strcmp(argv[1], "virtio") == 0) {
+        if (argc < 3)
+            help(1);
+
         if (strcmp(argv[2], "start") == 0) {
             err = virtio_start(argc, argv);
         } else {

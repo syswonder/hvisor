@@ -16,6 +16,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/param.h>
+#include <sys/stat.h>
 
 static void complete_block_operation(BlkDev *dev, struct blkp_req *req,
                                      VirtQueue *vq, int err,
@@ -123,6 +124,7 @@ static void *blkproc_thread(void *arg) {
 // create blk dev.
 BlkDev *init_blk_dev(VirtIODevice *vdev) {
     BlkDev *dev = malloc(sizeof(BlkDev));
+    vdev->dev = dev;
     dev->config.capacity = -1;
     dev->config.size_max = -1;
     dev->config.seg_max = BLK_SEG_MAX;
@@ -156,6 +158,8 @@ int virtio_blk_init(VirtIODevice *vdev, const char *img_path) {
     dev->config.size_max = blk_size;
     dev->img_fd = img_fd;
     vdev->virtio_close = virtio_blk_close;
+    log_info("debug: virtio_blk_init: %s, size is %lld", img_path,
+             dev->config.capacity);
     return 0;
 }
 

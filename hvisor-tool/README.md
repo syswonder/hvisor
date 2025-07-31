@@ -17,7 +17,7 @@ All operations should be performed in the `hvisor-tool` directory on an x86 host
 * Compile the command-line tools and kernel modules
 
 ```bash
-make all ARCH=<arch> LOG=<log> KDIR=/path/to/your-linux VIRTIO_GPU=[y/n] ROOT=/path/to/target_rootfs
+make all ARCH=<arch> LOG=<log> KDIR=/path/to/your-linux LIBC=[gnu/musl] VIRTIO_GPU=[y/n] ROOT=/path/to/target_rootfs
 ```
 
 Where `<arch>` should be either `arm64` or `riscv`.
@@ -25,6 +25,8 @@ Where `<arch>` should be either `arm64` or `riscv`.
 `<log>` can be one of the following: `LOG_TRACE`, `LOG_DEBUG`, `LOG_INFO`, `LOG_WARN`, `LOG_ERROR`, or `LOG_FATAL`, to control the log output level of the Virtio daemon.
 
 `/path/to/your-linux` is the kernel source directory for the root Linux. Specific compilation options can be found in [Makefile](./Makefile), [tools/Makefile](./tools/Makefile), and [driver/Makefile](./driver/Makefile).
+
+`LIBC` specifies the C library (`libc`) to be used when compiling `hvisor-tool`, and it can be either `gnu` or `musl`.
 
 For example, to compile the command-line tools for `arm64`, you can run:
 

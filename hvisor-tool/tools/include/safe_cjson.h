@@ -9,6 +9,9 @@
  *      Linkun Chen <lkchen01@foxmail.com>
  */
 
+#ifndef _SAFE_CJSON_H
+#define _SAFE_CJSON_H
+
 #include "cJSON.h"
 
 cJSON *__safe_cJSON_GetObjectItem(const char *filename, int line,
@@ -29,3 +32,5 @@ void __safe_cJSON_Delete(const char *filename, int line, cJSON *object);
 #define SAFE_CJSON_PARSE(value) __safe_cJSON_Parse(__FILE__, __LINE__, value)
 #define SAFE_CJSON_DELETE(object)                                              \
     __safe_cJSON_Delete(__FILE__, __LINE__, object)
+
+#endif
