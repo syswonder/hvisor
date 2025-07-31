@@ -21,7 +21,7 @@
 #define CONFIG_MAX_INTERRUPTS 32
 #define CONFIG_MAX_ZONES 32
 #define CONFIG_NAME_MAXLEN 32
-#define CONFIG_MAX_PCI_DEV 16
+#define CONFIG_MAX_PCI_DEV 32
 
 #define IVC_PROTOCOL_USER 0x0
 #define IVC_PROTOCOL_HVISOR 0x01
@@ -95,7 +95,7 @@ struct arch_zone_config {
     __u64 initrd_size;
     __u64 rsdp_memory_region_id;
     __u64 acpi_memory_region_id;
-    __u64 initrd_memory_region_id;
+    __u64 screen_base;
 };
 #endif
 

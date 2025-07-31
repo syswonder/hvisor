@@ -3,11 +3,13 @@ ARCH ?= x86_64
 LOG ?= LOG_INFO
 DEBUG ?= n
 VIRTIO_GPU ?= n
+LIBC ?= gnu
 
 export KDIR
 export ARCH
 export LOG
 export VIRTIO_GPU
+export LIBC
 
 .PHONY: all help env tools driver clean transfer tftp transfer_nxp check-kdir
 
@@ -24,10 +26,10 @@ help:
 	@echo "  clean        - Clean build artifacts"
 	@echo ""
 	@echo "Environment variables:"
-	@echo "  ARCH=arm64|riscv  Target architecture (required)"
-	@echo "  LOG=LEVEL        Log level (default: LOG_INFO)"
-	@echo "  KDIR=path        Linux kernel source path (required)"
-	@echo "  VIRTIO_GPU=y|n   Enable GPU support (default: n)"
+	@echo "  ARCH=arm64|riscv|loongarch   Target architecture (required)"
+	@echo "  LOG=LEVEL                    Log level (default: LOG_INFO)"
+	@echo "  KDIR=path                    Linux kernel source path (required)"
+	@echo "  VIRTIO_GPU=y|n               Enable GPU support (default: n)"
 
 env:
 	git submodule update --init --recursive
@@ -65,3 +67,10 @@ clean: check-kdir
 	make -C tools clean
 	make -C driver clean
 	rm -rf $(OUTPUT_DIR)
+
+fmt:
+# if clang-format is not installed, ask to install
+ifeq ($(shell which clang-format),)
+	$(error clang-format is not installed. Please install it.)
+endif
+	find ./tools/ ./include/ ./driver/ -name "*.c" ! -name "*.mod.c" -o -name "*.h" | xargs clang-format -i
