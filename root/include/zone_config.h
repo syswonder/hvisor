@@ -66,6 +66,7 @@ struct arch_zone_config {
     __u64 gich_size;
     __u64 gicv_base;
     __u64 gicv_size;
+    __u8 is_aarch32;
 };
 #endif
 
@@ -98,7 +99,7 @@ struct ivc_config {
 };
 typedef struct ivc_config ivc_config_t;
 
-#define CONFIG_MAGIC_VERSION 0x01
+#define CONFIG_MAGIC_VERSION 0x02
 
 // Every time you change the struct, you should also change the
 // `CONFIG_MAGIC_VERSION`
