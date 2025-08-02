@@ -39,7 +39,7 @@ riscv-peripheral = "0.2.1"
 riscv-pac = "0.2.0"
 
 [target.'cfg(target_arch = "loongarch64")'.dependencies]
-loongArch64 = "0.2.4"
+loongArch64 = "0.2.5"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86 = "0.52.0"
@@ -50,8 +50,7 @@ raw-cpuid = "10.7.0"
 [features]
 ############# general ##############
 iommu = [] # supported by: aarch64
-pci = [] # supported by: aarch64
-no_autodetect_ncpus = []
+pci = [] # supported by: aarch64, loongarch64
 
 ############# aarch64 ##############
 # irqchip driver
@@ -68,6 +67,7 @@ uart_16550 = []
 pt_layout_qemu = []
 pt_layout_rk3568 = []
 pt_layout_rk3588 = []
+pt_layout_zcu102 = []
 
 # cpu
 mpidr_rockchip = []
@@ -75,6 +75,7 @@ mpidr_rockchip = []
 # uart infos
 uart_base_rk3568 = []
 uart_base_rk3588 = []
+uart_base_ok6254 = []
 
 ############## riscv64 #############
 # irqchip driver
@@ -88,6 +89,9 @@ sstc = []
 loongson_7a2000 = []
 # uart driver
 loongson_uart = []
+# cpu (not used for now)
+loongson_3a5000 = []
+loongson_3a6000 = []
 
 
 [profile.dev]

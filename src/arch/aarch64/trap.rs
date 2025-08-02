@@ -28,7 +28,7 @@ use crate::{
     event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_WAKEUP},
     hypercall::{HyperCall, SGI_IPI_ID},
     memory::{mmio_handle_access, MMIOAccess},
-    percpu::{get_cpu_data, this_cpu_data, this_zone, PerCpu},
+    percpu::{get_cpu_data, this_cpu_data, this_zone},
     zone::{is_this_root_zone, remove_zone},
 };
 
@@ -61,6 +61,8 @@ pub mod SmcType {
 const PSCI_VERSION_1_1: u64 = 0x10001;
 const PSCI_TOS_NOT_PRESENT_MP: u64 = 2;
 const ARM_SMCCC_VERSION_1_1: u64 = 0x10001;
+
+#[allow(unused)]
 const ARM_SMCCC_NOT_SUPPORTED: i64 = -1;
 
 extern "C" {
@@ -293,7 +295,6 @@ fn handle_hvc(regs: &mut GeneralRegisters) {
 
 fn handle_smc(regs: &mut GeneralRegisters) {
     let (code, arg0, arg1, arg2) = (regs.usr[0], regs.usr[1], regs.usr[2], regs.usr[3]);
-    let cpu_data = this_cpu_data() as &mut PerCpu;
     //info!(
     //    "SMC from CPU{}, func_id:{:#x?}, arg0:{:#x?}, arg1:{:#x?}, arg2:{:#x?}",
     //    cpu_data.id, code, arg0, arg1, arg2
@@ -301,14 +302,14 @@ fn handle_smc(regs: &mut GeneralRegisters) {
     let result = match code & SMC_TYPE_MASK {
         SmcType::ARCH_SC => handle_arch_smc(regs, code, arg0, arg1, arg2),
         SmcType::STANDARD_SC => handle_psci_smc(regs, code, arg0, arg1, arg2),
-        SmcType::TOS_SC_START..=SmcType::TOS_SC_END | SmcType::SIP_SC => unsafe {
+        SmcType::TOS_SC_START..=SmcType::TOS_SC_END | SmcType::SIP_SC => {
             let ret = smc_call(code, &regs.usr[1..18]);
             regs.usr[0] = ret[0];
             regs.usr[1] = ret[1];
             regs.usr[2] = ret[2];
             regs.usr[3] = ret[3];
             ret[0]
-        },
+        }
         _ => {
             warn!("unsupported smc {:#x?}", code);
             0

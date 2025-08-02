@@ -1,3 +1,20 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//      Yulong Han <wheatfox17@icloud.com>
+//
+
 use crate::memory::addr::{PhysAddr, VirtAddr};
 use core::ptr;
 use spin::Mutex;
@@ -11,6 +28,9 @@ pub const UART_BASE: PhysAddr = 0xfe660000;
 
 #[cfg(feature = "uart_base_rk3588")]
 pub const UART_BASE: PhysAddr = 0xfeb50000;
+
+#[cfg(feature = "uart_base_ok6254")]
+pub const UART_BASE: PhysAddr = 0x2800000;
 
 /// Register struct representing the UART registers.
 register_structs! {

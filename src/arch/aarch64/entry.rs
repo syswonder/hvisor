@@ -13,8 +13,6 @@
 //
 // Authors:
 //
-use core::arch::global_asm;
-
 use crate::consts::PER_CPU_SIZE;
 
 //global_asm!(include_str!("boot_pt.S"));
@@ -34,6 +32,7 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
             * prevents unintended relocation by maintaining non-zero value at this critical
             * offset in the binary layout. */
 
+            nop
             nop
             bl {boot_cpuid_get}
 

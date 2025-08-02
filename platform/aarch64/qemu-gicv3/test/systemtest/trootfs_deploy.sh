@@ -11,7 +11,7 @@ LINUX_KERNEL_DIR="${WORKSPACE_ROOT}/platform/aarch64/qemu-gicv3/image/virtdisk/l
 HVISOR_TOOL_DIR="${WORKSPACE_ROOT}/platform/aarch64/qemu-gicv3/image/virtdisk/hvisor-tool"
 CONFIG_DIR="${WORKSPACE_ROOT}/platform/aarch64/qemu-gicv3/configs"
 TEST_DIR="${WORKSPACE_ROOT}/platform/aarch64/qemu-gicv3/test/systemtest"
-DTS_DIR="${WORKSPACE_ROOT}/platform/aarch64/qemu-gicv3/dts"
+DTS_DIR="${WORKSPACE_ROOT}/platform/aarch64/qemu-gicv3/image/dts"
 
 # ========================
 # Function Definitions
@@ -55,7 +55,7 @@ deploy_artifacts() {
     sudo cp -v "${CONFIG_DIR}/zone1-linux.json" "${dest_dir}/zone1-linux.json"
     sudo cp -v "${CONFIG_DIR}/zone1-linux-virtio.json" "${dest_dir}/zone1-linux-virtio.json"
     # Test artifacts
-    sudo cp -v "${TEST_DIR}/testcase/*" "${test_dest}/testcase/"
+    sudo cp -v ${TEST_DIR}/testcase/* "${test_dest}/testcase/"
     sudo cp -v "${TEST_DIR}/textract_dmesg.sh" "${test_dest}/"
     sudo cp -v "${TEST_DIR}/tresult.sh" "${test_dest}/"
     # Boot zone1 shells

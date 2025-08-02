@@ -13,7 +13,6 @@
 //
 // Authors:
 //
-use crate::consts;
 use crate::device::irqchip::gicv2::gic::MAX_CPU_NUM;
 /// The outer layer is defined using gicv2.
 /// author: ForeverYolo
@@ -70,7 +69,7 @@ pub fn primary_init_early() {
     info!("GicCpuInterface = {:#x?}", GICV2.gicc_base);
     info!("GicHypervisorInterface = {:#x?}", GICV2.gich_base);
     info!("GicVCpuInterface = {:#x?}", GICV2.gicv_base);
-    gic::PENDING_VIRQS.call_once(|| gic::PendingIrqs::new(unsafe { consts::NCPU }));
+    gic::PENDING_VIRQS.call_once(|| gic::PendingIrqs::new(MAX_CPU_NUM));
 }
 
 pub fn percpu_init() {

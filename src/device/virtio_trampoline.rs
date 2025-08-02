@@ -14,7 +14,6 @@
 // Authors:
 //
 use crate::arch::cpu::this_cpu_id;
-use crate::consts;
 use crate::consts::MAX_CPU_NUM;
 use crate::consts::MAX_WAIT_TIMES;
 use crate::device::irqchip::inject_irq;
@@ -23,7 +22,6 @@ use crate::event::IPI_EVENT_WAKEUP_VIRTIO_DEVICE;
 use crate::hypercall::SGI_IPI_ID;
 use crate::zone::root_zone;
 use crate::zone::this_zone_id;
-use crate::zone::zone_error;
 use crate::{error::HvResult, memory::MMIOAccess};
 use alloc::collections::BTreeMap;
 use core::fmt::Debug;
@@ -40,7 +38,7 @@ pub static VIRTIO_BRIDGE: Mutex<VirtioBridgeRegion> = Mutex::new(VirtioBridgeReg
 
 const QUEUE_NOTIFY: usize = 0x50;
 pub const MAX_REQ: u32 = 32;
-pub const MAX_DEVS: usize = 4; // Attention: The max virtio-dev number for vm is 4.
+pub const MAX_DEVS: usize = 8; // Attention: The max virtio-dev number for vm is 8 (loongarch64 needs 3 consoles and 3 disks for zgclab project).
 pub const MAX_CPUS: usize = 32;
 
 #[cfg(not(target_arch = "riscv64"))]

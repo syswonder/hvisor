@@ -15,6 +15,8 @@
 //
 // we specified the driver for each platform in the FEATURES environment variable.
 
+#![allow(unused)]
+
 #[cfg(all(feature = "pl011", target_arch = "aarch64"))]
 mod pl011;
 #[cfg(all(feature = "pl011", target_arch = "aarch64"))]
@@ -36,7 +38,7 @@ pub use crate::arch::riscv64::sbi::{
 };
 
 #[cfg(all(feature = "loongson_uart", target_arch = "loongarch64"))]
-mod loongson_uart;
+pub mod loongson_uart;
 #[cfg(all(feature = "loongson_uart", target_arch = "loongarch64"))]
 pub use loongson_uart::{console_getchar, console_putchar};
 

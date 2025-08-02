@@ -21,6 +21,9 @@ pub const BOARD_NCPUS: usize = 4;
 
 pub const ACLINT_SSWI_BASE: usize = 0x2F00000;
 
+// This device is used for qemu-quit.
+pub const SIFIVE_TEST_BASE: u64 = 0x100000;
+
 pub const PLIC_BASE: usize = 0xc000000;
 pub const APLIC_BASE: usize = 0xc000000;
 pub const PLIC_MAX_IRQ: usize = 1024;

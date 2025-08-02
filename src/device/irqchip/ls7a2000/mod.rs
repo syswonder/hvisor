@@ -18,6 +18,7 @@
 
 use crate::{
     arch::{
+        clock::*,
         cpu::this_cpu_id,
         ipi::*,
         register::{read_gcsr_estat, write_gcsr_estat},
@@ -26,20 +27,21 @@ use crate::{
     zone::Zone,
 };
 use chip::*;
+use loongArch64::register::tcfg;
 use spin::Mutex;
 
 pub mod chip;
 
 pub fn primary_init_early() {
     if this_cpu_id() != 0 {
-        info!("loongarch64: irqchip: primary_init_early do nothing on secondary cpus");
+        info!("loongarch64: irqchip: primary_init_early: do nothing on secondary cpus");
         return;
     }
-    info!("loongarch64: irqchip: primary_init_early checking iochip configs");
+    info!("loongarch64: irqchip: primary_init_early: checking iochip configs");
     print_chip_info();
     csr_disable_new_codec();
-    legacy_int_enable_all();
-    extioi_mode_disable();
+    // legacy_int_enable_all();
+    // extioi_mode_disable();
     info!("loongarch64: irqchip: testing percore IPI feature");
     let is_ipi_percore = get_ipi_percore();
     info!(
@@ -48,15 +50,50 @@ pub fn primary_init_early() {
     );
 }
 pub fn primary_init_late() {
-    warn!("loongarch64: irqchip: primary_init_late do nothing");
+    info!("loongarch64: irqchip: primary_init_late: running primary_init_late");
+
+    info!("loongarch64: irqchip: primary_init_late: testing UART1");
+    crate::device::uart::loongson_uart::__test_uart1();
+
+    info!("loongarch64: irqchip: primary_init_late: probing pci");
+    probe_pci();
+
+    info!("loongarch64: irqchip: primary_init_late: clearing extioi SR regs");
+    clear_extioi_sr();
+    let extioi_sr = get_extioi_sr();
+    info!(
+        "loongarch64: irqchip: primary_init_late: extioi_sr: {}",
+        extioi_sr
+    );
+
+    info!("loongarch64: irqchip: primary_init_late finished");
 }
+
+// actually these configures are from cpucfg, not irqchip, but we put all
+// configuartion stuff here for convenience
+pub fn clock_cpucfg_dump() {
+    info!(
+        "loongarch64: irqchip: clock_cpucfg_dump: cc_freq: {}",
+        get_cpucfg_cc_freq()
+    );
+    info!(
+        "loongarch64: irqchip: clock_cpucfg_dump: cc_mul: {}",
+        get_cpucfg_cc_mul()
+    );
+    info!(
+        "loongarch64: irqchip: clock_cpucfg_dump: cc_div: {}",
+        get_cpucfg_cc_div()
+    );
+}
+
 pub fn percpu_init() {
-    info!("loongarch64: irqchip: running percpu_init");
+    info!("loongarch64: irqchip: percpu_init: running percpu_init");
+
     clear_all_ipi(this_cpu_id());
     enable_ipi(this_cpu_id());
     ecfg_ipi_enable();
-    info!("loongarch64: irqchip: dumping ipi registers");
-    dump_ipi_registers();
+    clock_cpucfg_dump();
+    // timer_test_tick();
 }
 
 const INT_SWI0: usize = 0;
@@ -76,10 +113,9 @@ const INT_IPI: usize = 12;
 /// inject irq to THIS cpu
 pub fn inject_irq(_irq: usize, is_hardware: bool) {
     debug!(
-        "loongarch64: inject_irq, _irq: {}, is_hardware: {}",
+        "loongarch64: inject_irq: _irq: {}, is_hardware: {}",
         _irq, is_hardware
     );
-    print!("\0");
     if _irq > INT_IPI {
         error!("loongarch64: inject_irq: _irq > {}, not valid", INT_IPI);
         return;
@@ -97,7 +133,9 @@ pub fn inject_irq(_irq: usize, is_hardware: bool) {
     }
     let mut status = GLOBAL_IRQ_INJECT_STATUS.lock();
     status.cpu_status[this_cpu_id()].status = InjectionStatus::Injecting;
-    drop(status);
+
+    tcfg::set_en(true); // start timer to avoid endless timer injection
+                        // please only enable this for debugging because it may cause overheads for realtime nonroots
 }
 
 /// clear the injecting irq ctrl bit on THIS cpu
@@ -112,18 +150,24 @@ pub fn clear_hwi_injected_irq() {
         asm!("csrrd {0}, 0x52", out(reg) gintc_raw);
     }
     debug!(
-        "loongarch64: clear_hwi_injected_irq, current gintc: {:#x}",
+        "loongarch64: clear_hwi_injected_irq: current gintc: {:#x}",
         gintc_raw
     );
-    print!("\0");
     let mut status = GLOBAL_IRQ_INJECT_STATUS.lock();
     status.cpu_status[this_cpu_id()].status = InjectionStatus::Idle;
-    drop(status);
+
+    tcfg::set_en(false); // stop timer
 }
 
 impl Zone {
     pub fn arch_irqchip_reset(&self) {
-        warn!("loongarch64: irqchip: arch_irqchip_reset do nothing");
+        // clear all SR regs
+        clear_extioi_sr();
+        let extioi_sr = get_extioi_sr();
+        info!(
+            "loongarch64: irqchip: arch_irqchip_reset: extioi_sr: {}",
+            extioi_sr
+        );
     }
 }
 
