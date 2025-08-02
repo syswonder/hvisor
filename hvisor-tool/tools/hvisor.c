@@ -183,6 +183,8 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "gicr_size");
     cJSON *gits_size_json =
         SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "gits_size");
+    cJSON *is_aarch32_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "is_aarch32");
     CHECK_JSON_NULL(gic_version_json, "gic_version");
     CHECK_JSON_NULL(gicd_base_json, "gicd_base")
     CHECK_JSON_NULL(gicr_base_json, "gicr_base")
@@ -233,6 +235,13 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         strtoull(gicd_size_json->valuestring, NULL, 16);
     config->arch_config.gicr_size =
         strtoull(gicr_size_json->valuestring, NULL, 16);
+    if (is_aarch32_json == NULL) {
+        log_warn("No is_aarch32 field in arch_config. If you are booting an aarch32 guest, "
+                 "please set it to true.\n");
+        config->arch_config.is_aarch32 = 0;
+    } else {
+        config->arch_config.is_aarch32 = is_aarch32_json->valueint;
+    }
 #endif
 
 #ifdef RISCV64

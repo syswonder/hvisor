@@ -20,6 +20,7 @@ cp.sh
 rpmsg_demo
 __loongarch*
 .vscode-ctags
+.clangd
 # kbuild
 .config
 .config.old
