@@ -236,7 +236,8 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
     config->arch_config.gicr_size =
         strtoull(gicr_size_json->valuestring, NULL, 16);
     if (is_aarch32_json == NULL) {
-        log_warn("No is_aarch32 field in arch_config. If you are booting an aarch32 guest, "
+        log_warn("No is_aarch32 field in arch_config. If you are booting an "
+                 "aarch32 guest, "
                  "please set it to true.\n");
         config->arch_config.is_aarch32 = 0;
     } else {
