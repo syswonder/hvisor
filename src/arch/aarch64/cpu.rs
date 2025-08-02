@@ -58,6 +58,7 @@ impl GeneralRegisters {
 #[derive(Debug)]
 pub struct ArchCpu {
     pub cpuid: usize,
+    pub is_aarch32: bool, 
     pub power_on: bool,
 }
 
@@ -65,6 +66,7 @@ impl ArchCpu {
     pub fn new(cpuid: usize) -> Self {
         Self {
             cpuid,
+            is_aarch32: false,
             power_on: false,
         }
     }
@@ -75,7 +77,11 @@ impl ArchCpu {
             self.cpuid, entry, dtb
         );
         ELR_EL2.set(entry as _);
-        SPSR_EL2.set(0x3c5);
+        SPSR_EL2.write(
+            SPSR_EL2::D::SET + 
+            SPSR_EL2::A::SET + SPSR_EL2::I::SET + SPSR_EL2::F::SET
+            + SPSR_EL2::M::EL1h);
+
         let regs = self.guest_reg();
         regs.clear();
         regs.usr[0] = dtb as _; // dtb addr
@@ -156,16 +162,28 @@ impl ArchCpu {
         write_sysreg!(CNTV_CTL_EL0, 0);
         write_sysreg!(CNTV_CVAL_EL0, 0);
         write_sysreg!(CNTV_TVAL_EL0, 0);
-        // //disable stage 1
-        // write_sysreg!(SCTLR_EL1, 0);
 
-        SCTLR_EL1.set((1 << 11) | (1 << 20) | (3 << 22) | (3 << 28));
+        // Disable EL1 MMU and all caches.
+        SCTLR_EL1.set((1 << 11) | (1 << 20) | (3 << 22) | (3 << 28)); 
     }
 
     pub fn run(&mut self) -> ! {
         assert!(this_cpu_id() == self.cpuid);
         this_cpu_data().activate_gpm();
         self.reset(this_cpu_data().cpu_on_entry, this_cpu_data().dtb_ipa);
+        if self.is_aarch32 {
+            info!("cpu {} is aarch32", self.cpuid);
+            // if guest runs at aarch32, set these registers to aarch32 mode
+            HCR_EL2.write(
+                HCR_EL2::RW::AllLowerELsAreAarch32
+                    + HCR_EL2::TSC::EnableTrapEl1SmcToEl2
+                    + HCR_EL2::VM::SET
+                    + HCR_EL2::IMO::SET
+                    + HCR_EL2::FMO::SET,
+            );
+            // Return to AArch32 Supervisor (SVC) mode, disable IRQ, FIQ, ABT
+            SPSR_EL2.set(0x1D3); 
+        }
         self.power_on = true;
         info!(
             "cpu {} started at {:#x?}",

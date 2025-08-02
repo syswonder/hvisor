@@ -82,6 +82,7 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     gich_size: 0x20000,
     gicv_base: 0xf9060000,
     gicv_size: 0x20000,
+    is_aarch32: 0,
 };
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];

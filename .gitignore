@@ -30,6 +30,6 @@ flash.img*
 compile.sh
 src/platform/__board.rs
 .config
-
+.cursorrules
 # systemtest
 rootfs1.zip*
