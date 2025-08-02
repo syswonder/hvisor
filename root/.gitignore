@@ -21,6 +21,7 @@ rpmsg_demo
 __loongarch*
 .vscode-ctags
 .clangd
+.cursorrules
 # kbuild
 .config
 .config.old
