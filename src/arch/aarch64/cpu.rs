@@ -59,7 +59,7 @@ impl GeneralRegisters {
 #[derive(Debug)]
 pub struct ArchCpu {
     pub cpuid: usize,
-    pub is_aarch32: bool, 
+    pub is_aarch32: bool,
     pub power_on: bool,
 }
 
@@ -79,9 +79,12 @@ impl ArchCpu {
         );
         ELR_EL2.set(entry as _);
         SPSR_EL2.write(
-            SPSR_EL2::D::SET + 
-            SPSR_EL2::A::SET + SPSR_EL2::I::SET + SPSR_EL2::F::SET
-            + SPSR_EL2::M::EL1h);
+            SPSR_EL2::D::SET
+                + SPSR_EL2::A::SET
+                + SPSR_EL2::I::SET
+                + SPSR_EL2::F::SET
+                + SPSR_EL2::M::EL1h,
+        );
 
         let regs = self.guest_reg();
         regs.clear();
@@ -165,7 +168,7 @@ impl ArchCpu {
         write_sysreg!(CNTV_TVAL_EL0, 0);
 
         // Disable EL1 MMU and all caches.
-        SCTLR_EL1.set((1 << 11) | (1 << 20) | (3 << 22) | (3 << 28)); 
+        SCTLR_EL1.set((1 << 11) | (1 << 20) | (3 << 22) | (3 << 28));
     }
 
     pub fn run(&mut self) -> ! {
@@ -183,7 +186,7 @@ impl ArchCpu {
                     + HCR_EL2::FMO::SET,
             );
             // Return to AArch32 Supervisor (SVC) mode, disable IRQ, FIQ, ABT
-            SPSR_EL2.set(0x1D3); 
+            SPSR_EL2.set(0x1D3);
         }
         self.power_on = true;
         info!(

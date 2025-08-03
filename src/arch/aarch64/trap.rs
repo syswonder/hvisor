@@ -111,8 +111,12 @@ pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> ! {
     let _cpu_id = mpidr_to_cpuid(mpidr);
     trace!("cpu exit, exit_reson:{:#x?}", regs.exit_reason);
     match regs.exit_reason as u64 {
-        ExceptionType::EXIT_REASON_EL1_IRQ | ExceptionType::EXIT_REASON_EL1_AARCH32_IRQ => irqchip_handle_irq1(),
-        ExceptionType::EXIT_REASON_EL1_ABORT | ExceptionType::EXIT_REASON_EL1_AARCH32_ABORT => arch_handle_trap_el1(regs),
+        ExceptionType::EXIT_REASON_EL1_IRQ | ExceptionType::EXIT_REASON_EL1_AARCH32_IRQ => {
+            irqchip_handle_irq1()
+        }
+        ExceptionType::EXIT_REASON_EL1_ABORT | ExceptionType::EXIT_REASON_EL1_AARCH32_ABORT => {
+            arch_handle_trap_el1(regs)
+        }
         ExceptionType::EXIT_REASON_EL2_ABORT => arch_handle_trap_el2(regs),
         ExceptionType::EXIT_REASON_EL2_IRQ => irqchip_handle_irq2(),
         _ => arch_dump_exit(regs.exit_reason),
@@ -224,7 +228,11 @@ fn handle_dabt(regs: &mut GeneralRegisters) {
         address: address as _,
         size,
         is_write,
-        value: if is_write && srt != 31 { regs.usr[srt as usize] as _ } else { 0 },
+        value: if is_write && srt != 31 {
+            regs.usr[srt as usize] as _
+        } else {
+            0
+        },
     };
 
     trace!("handle_dabt: {:#x?}", mmio_access);
