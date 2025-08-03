@@ -1,5 +1,4 @@
 {
-    "arch": "arm64",
     "name": "ruxos_display",
     "zone_id": 1,
     "cpus": [
@@ -74,6 +73,7 @@
         "gicr_base": "0x80a0000",
         "gicr_size": "0xf60000",
         "gits_base": "0x8080000",
-        "gits_size": "0x20000"
+        "gits_size": "0x20000",
+        "is_aarch32": false
     }
 }
