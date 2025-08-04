@@ -14,6 +14,7 @@
 // Authors:
 //
 use crate::arch::zone::HvArchZoneConfig;
+use crate::config::HvZoneConfig;
 use crate::zone::Zone;
 
 #[cfg(all(feature = "gicv2", target_arch = "aarch64"))]
@@ -71,6 +72,13 @@ pub fn gic_send_event(cpu_id: u64, sgi_num: u64) {
 }
 
 impl Zone {
+    pub fn virqc_init(&mut self, config: &HvZoneConfig) {
+        #[cfg(all(feature = "plic", target_arch = "riscv64"))]
+        {
+            self.vplic_init(config);
+        }
+    }
+
     pub fn mmio_init(&mut self, hv_config: &HvArchZoneConfig) {
         #[cfg(all(feature = "gicv2", target_arch = "aarch64"))]
         {
