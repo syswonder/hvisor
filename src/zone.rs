@@ -278,6 +278,10 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
             }
             cpu_data.cpu_on_entry = config.entry_point as _;
             cpu_data.dtb_ipa = dtb_ipa as _;
+            #[cfg(target_arch = "aarch64")]
+            {
+                cpu_data.arch_cpu.is_aarch32 = config.arch_config.is_aarch32 != 0;
+            }
         });
     }
 
