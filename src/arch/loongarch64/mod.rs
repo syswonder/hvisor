@@ -16,7 +16,7 @@
 //
 #![allow(unused)]
 
-pub mod clocks;
+pub mod clock;
 pub mod consts;
 pub mod cpu;
 pub mod entry;
