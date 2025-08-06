@@ -20,22 +20,22 @@ pub mod vplic;
 pub use self::plic::*;
 use self::vplic::*;
 use crate::arch::zone::HvArchZoneConfig;
-use crate::config::HvZoneConfig;
 use crate::config::root_zone_config;
+use crate::config::HvZoneConfig;
 use crate::consts::{MAX_CPU_NUM, MAX_ZONE_NUM};
 use crate::error::HvResult;
 use crate::memory::mmio::MMIOAccess;
 use crate::memory::GuestPhysAddr;
 use crate::percpu::this_zone;
 use crate::platform::__board::*;
+use crate::platform::BOARD_PLIC_INTERRUPTS_NUM;
 use crate::zone::Zone;
 use crate::{arch::cpu::ArchCpu, percpu::this_cpu_data};
 use alloc::vec::Vec;
+use heapless::FnvIndexMap;
 use riscv_decode::Instruction;
 use riscv_h::register::hvip;
 use spin::Once;
-use heapless::FnvIndexMap;
-use crate::platform::BOARD_PLIC_INTERRUPTS_NUM;
 
 /*
    Due to hvisor is a static partitioning hypervisor.
