@@ -13,6 +13,7 @@
 //
 // Authors:
 //
+pub mod consts;
 pub mod cpu;
 pub mod csr;
 pub mod entry;

@@ -38,8 +38,8 @@ use super::{
     cfg_base, extract_reg_addr, get_bdf_shift, CFG_EXT_CAP_PTR_OFF, NUM_BAR_REGS_TYPE0,
     NUM_BAR_REGS_TYPE1,
 };
+use crate::arch::consts::{BDF_SHIFT, HV_ADDR_PREFIX, LOONG_HT_PREFIX};
 use crate::arch::iommu::iommu_add_device;
-
 #[derive(Debug)]
 pub struct PciRoot {
     endpoints: Vec<EndpointConfig>,
@@ -166,18 +166,9 @@ impl Zone {
         }
         info!("PCIe init!");
 
-        let mut hv_addr_prefix: u64 = 0;
-        let mut loong_ht_prefix: u64 = 0;
-        let mut bdf_shift: usize = 12;
-
-        #[cfg(all(target_arch = "loongarch64"))]
-        {
-            info!("change bdf shift to 8 for loongson");
-            bdf_shift = 8;
-            /* turn to virtual address and add 0xe prefix for HT accessing */
-            hv_addr_prefix = 0x8000_0000_0000_0000;
-            loong_ht_prefix = 0xe00_0000_0000
-        }
+        let hv_addr_prefix: u64 = HV_ADDR_PREFIX;
+        let loong_ht_prefix: u64 = LOONG_HT_PREFIX;
+        let bdf_shift: usize = BDF_SHIFT;
 
         init_bdf_shift(bdf_shift);
 
