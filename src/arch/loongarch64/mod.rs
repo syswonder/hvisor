@@ -16,7 +16,6 @@
 //
 #![allow(unused)]
 
-pub mod consts;
 pub mod cpu;
 pub mod entry;
 pub mod iommu;
@@ -28,6 +27,7 @@ pub mod s1pt;
 pub mod s2pt;
 pub mod trap;
 pub mod zone;
+pub mod consts;
 
 pub use s1pt::Stage1PageTable;
 pub use s2pt::Stage2PageTable;
