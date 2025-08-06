@@ -203,16 +203,18 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     let mut zone = Zone::new(zone_id, &config.name);
     zone.pt_init(config.memory_regions()).unwrap();
     zone.mmio_init(&config.arch_config);
-    #[cfg(target_arch = "aarch64")]
-    zone.ivc_init(config.ivc_config());
+
+    zone.arch_zone_configuration(config)?;
+    // #[cfg(target_arch = "aarch64")]
+    // zone.ivc_init(config.ivc_config());
 
     /* loongarch page table emergency */
     /* Kai: Maybe unnecessary but i can't boot vms on my 3A6000 PC without this function. */
-    #[cfg(target_arch = "loongarch64")]
-    zone.page_table_emergency(
-        config.pci_config.ecam_base as _,
-        config.pci_config.ecam_size as _,
-    )?;
+    // #[cfg(target_arch = "loongarch64")]
+    // zone.page_table_emergency(
+    //     config.pci_config.ecam_base as _,
+    //     config.pci_config.ecam_size as _,
+    // )?;
 
     #[cfg(all(feature = "pci"))]
     zone.pci_init(
