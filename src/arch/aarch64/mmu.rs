@@ -245,7 +245,13 @@ fn map_list(list: &[(u64, u64, MemoryType)]) {
     }
 }
 
-extern "C" fn mem_attr_init() {
+pub extern "C" fn boot_pt_init() {
+    let phys_memlist = &crate::platform::BOARD_PHYSMEM_LIST;
+    check_list(phys_memlist);
+    map_list(phys_memlist);
+}
+
+pub extern "C" fn mmu_enable() {
     use cortex_a::registers::*;
     MAIR_EL2.write(
         MAIR_EL2::Attr0_Device::nonGathering_nonReordering_noEarlyWriteAck
@@ -254,17 +260,6 @@ extern "C" fn mem_attr_init() {
             + MAIR_EL2::Attr2_Normal_Outer::NonCacheable
             + MAIR_EL2::Attr2_Normal_Inner::NonCacheable,
     );
-}
-
-pub extern "C" fn boot_pt_init() {
-    let phys_memlist = &crate::platform::BOARD_PHYSMEM_LIST;
-    mem_attr_init();
-    check_list(phys_memlist);
-    map_list(phys_memlist);
-}
-
-pub extern "C" fn mmu_enable() {
-    use cortex_a::registers::*;
 
     TTBR0_EL2.set(unsafe { &BOOT_PT_L0.entry } as *const _ as u64);
 
