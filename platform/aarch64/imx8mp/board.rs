@@ -125,6 +125,7 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     gicv_size: 0,
     gits_base: 0,
     gits_size: 0,
+    is_aarch32: 0,
 };
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
