@@ -155,10 +155,15 @@ impl Zone {
         num_pci_devs: usize,
         alloc_pci_devs: &[u64; CONFIG_MAX_PCI_DEV],
     ) {
-        if num_pci_devs == 0 {
+        #[cfg(not(feature = "pci"))]
+        {
+            info!("PCIe feature is not enabled, skipping PCIe initialization.");
             return;
         }
 
+        if num_pci_devs == 0 {
+            return;
+        }
         info!("PCIe init!");
 
         let mut hv_addr_prefix: u64 = 0;

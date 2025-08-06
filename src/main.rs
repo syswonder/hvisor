@@ -71,8 +71,7 @@ mod pci;
 mod tests;
 
 use crate::arch::iommu::iommu_init;
-#[cfg(target_arch = "aarch64")]
-use crate::arch::mm::setup_parange;
+use crate::arch::mm::arch_setup_parange;
 use crate::consts::MAX_CPU_NUM;
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
@@ -204,8 +203,9 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         cpu.id
     );
 
-    #[cfg(target_arch = "aarch64")]
-    setup_parange();
+    arch_setup_parange();
+    // #[cfg(target_arch = "aarch64")]
+    // setup_parange();
 
     if is_primary {
         primary_init_early(); // create root zone here
