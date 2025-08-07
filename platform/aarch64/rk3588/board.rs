@@ -186,6 +186,7 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     gicv_size: 0x10000,
     gits_base: 0x8080000,
     gits_size: 0x20000,
+    is_aarch32: 0,
 };
 
 pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {

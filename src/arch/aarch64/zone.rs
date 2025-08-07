@@ -82,4 +82,5 @@ pub struct HvArchZoneConfig {
     pub gich_size: usize,
     pub gicv_base: usize,
     pub gicv_size: usize,
+    pub is_aarch32: u8,
 }

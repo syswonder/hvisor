@@ -11,6 +11,7 @@
 
 &uart1 {
 	status = "okay";
+	// set the above 'uart1' to 'uart0' if you don't have a COM connection right now
 };
 
 
@@ -32,11 +33,9 @@
 	
 	memory@200000 {
 		device_type = "memory";
-		reg = <0 0xc0200000 0 0x0ee00000
-		0 0xd0000000 0 0x10000000
-		0x1 0x40000000 0 0x800000
+		reg = <0 0xa0200000 0 0x0ee00000
+		0 0xb0000000 0 0x10000000
 		0x1 0x40800000 0 0x800000
-		0x1 0x41000000 0 0x800000
 		>;
 	};
 	
@@ -46,15 +45,7 @@
 		ranges;
 		shmem@0 {
 			no-map;
-			reg = <0x1 0x40000000 0 0x800000>;
-		};
-		shmem@1 {
-			no-map;
 			reg = <0x1 0x40800000 0 0x800000>;
-		};
-		shmem@2 {
-			no-map;
-			reg = <0x1 0x41000000 0 0x800000>;
 		};
 	};
 	
@@ -64,8 +55,8 @@
 		interrupt-controller;
 		#interrupt-cells = <1>;
 		msi-controller;
-		loongson,msi-base-vec = <112>;
-		loongson,msi-num-vecs = <48>; // [64-111(48),112-159(48),160-207(48),208-255(48)]
+		loongson,msi-base-vec = <160>;
+		loongson,msi-num-vecs = <48>;// [64-111(48),112-159(48),160-207(48),208-255(48)]
 		interrupt-parent = <&eiointc>;
 		phandle = <0x8004>;
 	};
