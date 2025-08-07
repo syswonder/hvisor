@@ -95,3 +95,9 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
         options(noreturn),
     );
 }
+
+pub fn check_and_do_clear_bss() {
+    // Loongarch clear bss in arch_entry, so we don't need to do it again.
+    trace!("check_and_do_clear_bss: Loongarch does not need to clear bss again.");
+    return;
+}

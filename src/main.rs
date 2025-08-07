@@ -70,7 +70,10 @@ mod tests;
 use crate::arch::iommu::iommu_init;
 use crate::arch::mm::arch_setup_parange;
 use crate::consts::MAX_CPU_NUM;
-use arch::{cpu::cpu_start, entry::arch_entry};
+use arch::{
+    cpu::cpu_start,
+    entry::{arch_entry, check_and_do_clear_bss},
+};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
@@ -173,6 +176,8 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     if MASTER_CPU.load(Ordering::Acquire) == -1 {
         MASTER_CPU.store(cpuid as i32, Ordering::Release);
         is_primary = true;
+        // Clear BSS section
+        check_and_do_clear_bss();
         memory::heap::init();
         memory::heap::test();
     }
