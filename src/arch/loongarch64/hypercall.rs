@@ -14,9 +14,11 @@ use crate::config::HvZoneConfig;
 //
 // Authors:
 //  ForeverYolo <2572131118@qq.com>
+
 use crate::arch::cpu::this_cpu_id;
 use crate::device::virtio_trampoline::MAX_DEVS;
 use crate::hypercall::HyperCallResult;
+use crate::hypercall::HyperCall;
 
 impl<'a> HyperCall<'a> {
     pub fn hv_ivc_info(&mut self, ivc_info_ipa: u64) -> HyperCallResult {
