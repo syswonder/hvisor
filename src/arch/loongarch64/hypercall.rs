@@ -27,7 +27,7 @@ impl<'a> HyperCall<'a> {
     }
 
     pub fn translate_ipa_to_hva(&mut self, ipa: u64) -> u64 {
-        return ipa | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX as usize;
+        return ipa | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX;
     }
 
     pub fn wait_for_interrupt(&mut self, irq_list: &mut [u64; MAX_DEVS + 1]) {
