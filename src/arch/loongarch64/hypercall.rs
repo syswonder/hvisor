@@ -1,4 +1,3 @@
-use crate::config::HvZoneConfig;
 // Copyright (c) 2025 Syswonder
 // hvisor is licensed under Mulan PSL v2.
 // You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -16,10 +15,11 @@ use crate::config::HvZoneConfig;
 //  ForeverYolo <2572131118@qq.com>
 
 use crate::arch::cpu::this_cpu_id;
+use crate::config::HvZoneConfig;
+use crate::config::CONFIG_MAGIC_VERSION;
 use crate::device::virtio_trampoline::MAX_DEVS;
 use crate::hypercall::HyperCall;
 use crate::hypercall::HyperCallResult;
-
 impl<'a> HyperCall<'a> {
     pub fn hv_ivc_info(&mut self, ivc_info_ipa: u64) -> HyperCallResult {
         warn!("hv_ivc_info is not implemented for Risc-V");
@@ -27,16 +27,12 @@ impl<'a> HyperCall<'a> {
     }
 
     pub fn translate_ipa_to_hva(&mut self, ipa: u64) -> u64 {
-        return shared_region_addr_pa | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX as usize;
+        return ipa | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX as usize;
     }
 
     pub fn wait_for_interrupt(&mut self, irq_list: &mut [u64; MAX_DEVS + 1]) {
         use crate::device::irqchip::ls7a2000::*;
         let status = GLOBAL_IRQ_INJECT_STATUS.lock();
-        debug!(
-            "hv_virtio_inject_irq: cpu {} status: {:?}",
-            target_cpu, status.cpu_status[target_cpu].status
-        );
         drop(status);
         irq_list[0] = 0; // CAUTION: this is a workaround for loongarch64
     }
