@@ -21,6 +21,7 @@ use crate::hypercall::HyperCallResult;
 impl<'a> HyperCall<'a> {
     pub fn hv_ivc_info(&mut self, ivc_info_ipa: u64) -> HyperCallResult {
         warn!("hv_ivc_info is not implemented for Risc-V");
+        HyperCallResult::Ok(0)
     }
 
     pub fn translate_ipa_to_hva(&mut self, ipa: u64) -> u64 {
@@ -49,6 +50,7 @@ impl<'a> HyperCall<'a> {
         unsafe {
             core::ptr::write(magic_version_hva, CONFIG_MAGIC_VERSION as _);
         }
+        HyperCallResult::Ok(0)
     }
 
     pub fn hv_get_real_pa(&mut self, config_addr: u64) -> u64 {

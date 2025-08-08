@@ -22,6 +22,7 @@ use crate::hypercall::HyperCallResult;
 impl<'a> HyperCall<'a> {
     pub fn hv_ivc_info(&mut self, ivc_info_ipa: u64) -> HyperCallResult {
         warn!("hv_ivc_info is not implemented for LoongArch64");
+        HyperCallResult::Ok(0)
     }
 
     pub fn translate_ipa_to_hva(&mut self, ipa: u64) -> u64 {
