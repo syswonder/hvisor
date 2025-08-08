@@ -17,8 +17,8 @@
 use crate::arch::cpu::this_cpu_id;
 use crate::config::{HvZoneConfig, CONFIG_MAGIC_VERSION};
 use crate::device::virtio_trampoline::MAX_DEVS;
-use crate::hypercall::HyperCallResult;
 use crate::hypercall::HyperCall;
+use crate::hypercall::HyperCallResult;
 
 impl<'a> HyperCall<'a> {
     pub fn hv_ivc_info(&mut self, ivc_info_ipa: u64) -> HyperCallResult {
