@@ -20,6 +20,7 @@ qemu-exit = "3.0.2"
 cortex-a = "8.1.1"
 cfg-if = "1.0"
 bitvec = { version="1.0.1", default-features = false, features = ["atomic", "alloc"] }
+heapless = { version = "0.8.0 "}
 
 [dependencies.fdt-rs]
 version = "0.4.5"
@@ -62,20 +63,6 @@ pl011 = []
 xuartps = []
 imx_uart = []
 uart_16550 = []
-
-# pagetable layout
-pt_layout_qemu = []
-pt_layout_rk3568 = []
-pt_layout_rk3588 = []
-pt_layout_zcu102 = []
-
-# cpu
-mpidr_rockchip = []
-
-# uart infos
-uart_base_rk3568 = []
-uart_base_rk3588 = []
-uart_base_ok6254 = []
 
 ############## riscv64 #############
 # irqchip driver

@@ -12,16 +12,15 @@
 //      https://www.syswonder.org
 //
 // Authors:
-//      Yulong Han <wheatfox17@icloud.com>
-//
+//      ForeverYolo <2572131118@qq.com>
 
 pub fn iommu_init() {
-    info!("loongarch64: iommu_init: do nothing now");
+    info!("riscv: iommu_init: do nothing now");
 }
 
 pub fn iommu_add_device(vmid: usize, sid: usize) {
     info!(
-        "loongarch64: iommu_add_device: do nothing now, vmid: {}, sid: {}",
+        "riscv: iommu_add_device: do nothing now, vmid: {}, sid: {}",
         vmid, sid
     );
 }

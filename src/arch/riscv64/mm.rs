@@ -138,3 +138,9 @@ pub fn init_hv_page_table() -> HvResult {
 pub fn new_s2_memory_set() -> MemorySet<Stage2PageTable> {
     MemorySet::new(3)
 }
+
+pub fn arch_setup_parange() {
+    // RISC-V does not have a parange setup like AArch64.
+    // The parange is determined by the memory regions defined in the device tree.
+    // So we do not need to do anything here.
+}

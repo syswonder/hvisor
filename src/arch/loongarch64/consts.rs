@@ -12,16 +12,10 @@
 //      https://www.syswonder.org
 //
 // Authors:
-//      Yulong Han <wheatfox17@icloud.com>
-//
+//  ForeverYolo <2572131118@qq.com>
 
-pub fn iommu_init() {
-    info!("loongarch64: iommu_init: do nothing now");
-}
-
-pub fn iommu_add_device(vmid: usize, sid: usize) {
-    info!(
-        "loongarch64: iommu_add_device: do nothing now, vmid: {}, sid: {}",
-        vmid, sid
-    );
-}
+// PCI constants
+/* turn to virtual address and add 0xe prefix for HT accessing */
+pub const HV_ADDR_PREFIX: u64 = 0x8000_0000_0000_0000;
+pub const LOONG_HT_PREFIX: u64 = 0xe00_0000_0000;
+pub const BDF_SHIFT: usize = 8;

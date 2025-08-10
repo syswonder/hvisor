@@ -14,10 +14,33 @@
 // Authors:
 //
 
-use crate::{arch::zone::HvArchZoneConfig, config::*};
+use crate::{
+    arch::{mmu::MemoryType, zone::HvArchZoneConfig},
+    config::*,
+};
 
 pub const BOARD_NAME: &str = "ok6254";
 pub const BOARD_NCPUS: usize = 4;
+pub const BOARD_UART_BASE: u64 = 0x2800000;
+
+
+#[rustfmt::skip]
+pub static BOARD_MPIDR_MAPPINGS: [u64; BOARD_NCPUS] = [
+    0x0,   // cpu0
+    0x1,   // cpu1
+    0x2,   // cpu2
+    0x3,   // cpu3
+];
+
+/// The physical memory layout of the board.
+/// Each address should align to 2M (0x200000).
+/// Addresses must be in ascending order.
+#[rustfmt::skip]
+pub const BOARD_PHYSMEM_LIST: &[(u64, u64, MemoryType)] = &[
+ // (       start,           end,                type)
+    (         0x0,    0x80000000,  MemoryType::Device),
+    (  0x80000000,   0x100000000,  MemoryType::Normal),
+];
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x88000000; // DTB load address
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x82000000; // kernel load address

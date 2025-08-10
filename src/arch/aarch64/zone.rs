@@ -59,6 +59,11 @@ impl Zone {
         info!("VM stage 2 memory set: {:#x?}", self.gpm);
         Ok(())
     }
+
+    pub fn arch_zone_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
+        self.ivc_init(config.ivc_config());
+        Ok(())
+    }
 }
 
 #[repr(C)]

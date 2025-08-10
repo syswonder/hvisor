@@ -12,16 +12,9 @@
 //      https://www.syswonder.org
 //
 // Authors:
-//      Yulong Han <wheatfox17@icloud.com>
-//
+//  ForeverYolo <2572131118@qq.com>
 
-pub fn iommu_init() {
-    info!("loongarch64: iommu_init: do nothing now");
-}
-
-pub fn iommu_add_device(vmid: usize, sid: usize) {
-    info!(
-        "loongarch64: iommu_add_device: do nothing now, vmid: {}, sid: {}",
-        vmid, sid
-    );
-}
+// PCI constants
+pub const HV_ADDR_PREFIX: u64 = 0;
+pub const LOONG_HT_PREFIX: u64 = 0;
+pub const BDF_SHIFT: usize = 12;

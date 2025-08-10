@@ -414,7 +414,8 @@ impl VirtualPLICInner {
                 }
             }
         } else {
-            use crate::event::{send_event, IPI_EVENT_UPDATE_HART_LINE};
+            use crate::consts::IPI_EVENT_UPDATE_HART_LINE;
+            use crate::event::send_event;
             let cpu_id = pcontext_id / 2;
             info!("vplic_update_hart_line to cpu {}", cpu_id);
             // the second arg don't need.

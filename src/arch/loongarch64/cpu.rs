@@ -158,3 +158,8 @@ pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
     mail_send(entry_addr, cpuid, 0);
     ipi_write_action(cpuid, SMP_BOOT_CPU);
 }
+
+pub fn store_cpu_pointer_to_reg(pointer: usize) {
+    // println!("loongarch64 doesn't support store cpu pointer to reg, pointer: {:#x}", pointer);
+    return;
+}

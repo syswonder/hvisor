@@ -19,7 +19,7 @@ use super::register::*;
 use super::zone::ZoneContext;
 use crate::arch::cpu::this_cpu_id;
 use crate::arch::ipi::*;
-use crate::consts::MAX_CPU_NUM;
+use crate::consts::{IPI_EVENT_CLEAR_INJECT_IRQ, MAX_CPU_NUM};
 use crate::device::irqchip::inject_irq;
 use crate::device::irqchip::ls7a2000::chip::*;
 use crate::event::{check_events, dump_cpu_events, dump_events};
