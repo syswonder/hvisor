@@ -79,4 +79,3 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
 //     // .section \".nrcfg1\", \"a\"
 //     // .incbin \"imgs/config/qemu-arm64-linux-demo.zone\"
 // ");
-

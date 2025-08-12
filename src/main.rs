@@ -69,11 +69,8 @@ mod tests;
 
 use crate::arch::iommu::iommu_init;
 use crate::arch::mm::arch_setup_parange;
-use crate::consts::{MAX_CPU_NUM, hv_end, mem_pool_start};
-use arch::{
-    cpu::cpu_start,
-    entry::{arch_entry},
-};
+use crate::consts::{hv_end, mem_pool_start, MAX_CPU_NUM};
+use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;

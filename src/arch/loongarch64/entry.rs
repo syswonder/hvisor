@@ -95,4 +95,3 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
         options(noreturn),
     );
 }
-

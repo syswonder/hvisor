@@ -29,5 +29,5 @@ pub mod trap;
 pub mod zone;
 
 pub use s1pt::Stage1PageTable;
-pub use s2pt::Stage2PageTable;
 pub use s2pt::stage2_mode_detect;
+pub use s2pt::Stage2PageTable;
