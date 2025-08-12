@@ -151,9 +151,11 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
                 }
             }
         }
-        GICR_TYPER => {
+        reg if reg == GICR_TYPER || reg == GICR_TYPER + 0x4 => {
+            // For aarch32 guest, the access to GICR_TYPER will be split into two parts.
+            // Many GIC supports 32-bit access to GICR_TYPER twice.
             mmio_perform_access(gicr_base, mmio);
-            if cpu == MAX_CPU_NUM - 1 {
+            if cpu == MAX_CPU_NUM - 1 && reg == GICR_TYPER {
                 mmio.value |= GICR_TYPER_LAST;
             }
         }
@@ -291,6 +293,14 @@ pub fn vgicv3_dist_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
         }
         reg if reg_range(GICD_IPRIORITYR, 255, 4).contains(&reg) => {
             restrict_bitmask_access(mmio, (reg & 0x3ff) / 4, 8, false, gicd_base)
+        }
+        reg if reg_range(GICD_IGRPMODR, 32, 4).contains(&reg) => {
+            // GICD_IGRPMODR is not supported in hvisor because it is used for secure state.
+            warn!(
+                "GICD_IGRPMODR is not supported in hvisor, reg = {:#x?}",
+                reg
+            );
+            Ok(())
         }
         _ => vgicv3_dist_misc_access(mmio, gicd_base),
     }

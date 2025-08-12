@@ -39,7 +39,7 @@ pub const HGATP_MODE_SV39X4: usize = 8;
 static mut GSTAGE_MODE: usize = HGATP_MODE_SV39X4;
 pub static mut GSTAGE_PT_LEVEL: usize = 3;
 
-pub fn riscv_gstage_mode_detect() {
+pub fn stage2_mode_detect() {
     info!("Detecting stage-2 paging mode...");
     unsafe {
         // Attempt to set the HGATP.mode to Sv57x4 first.

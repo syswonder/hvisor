@@ -17,6 +17,7 @@ use super::cpu::ArchCpu;
 use crate::arch::csr::read_csr;
 use crate::arch::csr::*;
 use crate::arch::sbi::sbi_vs_handler;
+use crate::consts::{IPI_EVENT_SEND_IPI, IPI_EVENT_UPDATE_HART_LINE};
 #[cfg(feature = "aia")]
 use crate::device::irqchip::aia::aplic::{host_aplic, vaplic_emul_handler};
 #[cfg(feature = "plic")]

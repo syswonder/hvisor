@@ -30,7 +30,7 @@ pub const INVALID_ADDRESS: usize = usize::MAX;
 
 pub const MAX_CPU_NUM: usize = BOARD_NCPUS;
 
-pub const MAX_ZONE_NUM: usize = 3;
+pub const MAX_ZONE_NUM: usize = 4;
 
 pub const MAX_WAIT_TIMES: usize = 10000000;
 
@@ -45,6 +45,11 @@ pub fn mem_pool_start() -> VirtAddr {
 pub fn hv_end() -> VirtAddr {
     mem_pool_start() + HV_MEM_POOL_SIZE
 }
+
+/// arch specific constants
+pub const IPI_EVENT_CLEAR_INJECT_IRQ: usize = 4;
+pub const IPI_EVENT_UPDATE_HART_LINE: usize = 5;
+pub const IPI_EVENT_SEND_IPI: usize = 6;
 
 extern "C" {
     fn __core_end();

@@ -165,7 +165,10 @@ pub struct S2PTInstr;
 
 impl PagingInstr for S2PTInstr {
     unsafe fn activate(root_pa: HostPhysAddr) {
-        info!("loongarch64: S2PTInstr::activate: root_pa: {:#x?}", root_pa);
+        info!(
+            "[[memory virtualization]] activating stage-2 pagetable: root_pa: {:#x?}",
+            root_pa
+        );
         super::paging::set_pwcl_pwch_stlbps();
         extern "C" {
             fn tlb_refill_handler();
@@ -178,13 +181,20 @@ impl PagingInstr for S2PTInstr {
             tlbrentry::set_tlbrentry(tlb_refill_handler as usize);
         }
         info!(
-            "loongarch64: S2PTInstr::activate: set tlbrentry to {:#x?} done!",
+            "[[memory virtualization]] activating stage 2 pagetable: set tlbrentry to {:#x?} done!",
             tlbrentry::read().addr()
         );
     }
     fn flush(vaddr: Option<usize>) {
-        warn!("loongarch64: S2PTInstr::flush: vaddr: {:#x?}", vaddr);
+        warn!(
+            "[[memory virtualization]] flushing stage2 page table: vaddr: {:#x?}",
+            vaddr
+        );
     }
 }
 
 pub type Stage2PageTable = Level4PageTable<GuestPhysAddr, PageTableEntry, S2PTInstr>;
+
+pub fn stage2_mode_detect() {
+    info!("Dynamical detection of stage-2 paging mode is not supported yet.");
+}

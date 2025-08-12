@@ -68,7 +68,7 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
 ### loongarch64
 
 - [x] Loongson 3A5000 (7A2000 bridge chip)
-- [ ] Loongson 3A6000 (7A2000 bridge chip)
+- [x] Loongson 3A6000 (7A2000 bridge chip)
 
 ## Getting Started
 

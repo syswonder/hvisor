@@ -16,7 +16,7 @@
 use alloc::sync::Arc;
 use spin::{Mutex, RwLock};
 
-use crate::arch::cpu::{this_cpu_id, ArchCpu};
+use crate::arch::cpu::{store_cpu_pointer_to_reg, this_cpu_id, ArchCpu};
 use crate::consts::{INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::memory::addr::VirtAddr;
 use crate::zone::Zone;
@@ -53,14 +53,18 @@ impl PerCpu {
                 boot_cpu: false,
             })
         };
-        #[cfg(target_arch = "riscv64")]
-        {
-            use crate::arch::csr::{write_csr, CSR_SSCRATCH};
-            write_csr!(
-                CSR_SSCRATCH,
-                &ret.as_mut().unwrap().arch_cpu as *const _ as usize
-            ); //arch cpu pointer
+        unsafe {
+            let pointer = &ret.as_mut().unwrap().arch_cpu as *const _ as usize;
+            store_cpu_pointer_to_reg(pointer);
         }
+        // #[cfg(target_arch = "riscv64")]
+        // {
+        //     use crate::arch::csr::{write_csr, CSR_SSCRATCH};
+        //     write_csr!(
+        //         CSR_SSCRATCH,
+        //         &ret.as_mut().unwrap().arch_cpu as *const _ as usize
+        //     ); //arch cpu pointer
+        // }
         unsafe { ret.as_mut().unwrap() }
     }
 
