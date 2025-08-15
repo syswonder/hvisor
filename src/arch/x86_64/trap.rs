@@ -262,7 +262,10 @@ fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
         } else if UART_COM1_PORT.contains(&io_info.port) {
             virt_console_io_write(io_info.port, value);
         } else {
-            // info!("io write {:x} value: {:x}", io_info.port, value);
+            /* info!(
+                "unhandled port io write {:x} value: {:x}",
+                io_info.port, value
+            ); */
         }
     } else {
         if PCI_CONFIG_ADDR_PORT.contains(&io_info.port)
@@ -272,7 +275,8 @@ fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
         } else if UART_COM1_PORT.contains(&io_info.port) {
             value = virt_console_io_read(io_info.port);
         } else {
-            // info!("io read {:x}", io_info.port);
+            // info!("unhandled port io read {:x}", io_info.port);
+            value = 0x0;
         }
         let rax = &mut arch_cpu.regs_mut().rax;
         // SDM Vol. 1, Section 3.4.1.1:

@@ -116,7 +116,6 @@ pub fn clear_events(cpu: usize) {
 }
 
 pub fn check_events() -> bool {
-    trace!("check_events");
     let cpu_data = this_cpu_data();
     match fetch_event(cpu_data.id) {
         Some(IPI_EVENT_WAKEUP) => {

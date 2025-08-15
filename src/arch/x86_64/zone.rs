@@ -19,7 +19,6 @@ pub struct HvArchZoneConfig {
     pub initrd_size: usize,
     pub rsdp_memory_region_id: usize,
     pub acpi_memory_region_id: usize,
-    pub initrd_memory_region_id: usize,
     /// not longer than 32 bits
     pub screen_base: usize,
 }

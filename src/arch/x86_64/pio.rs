@@ -26,9 +26,13 @@ impl PortIoBitmap {
             pci_config_addr: 0,
         };
 
-        // FIXME: zone0
-        bitmap.a.fill(0);
-        bitmap.b.fill(0);
+        if zone_id == 0 {
+            bitmap.a.fill(0);
+            bitmap.b.fill(0);
+        } else {
+            bitmap.a.fill(0xff);
+            bitmap.b.fill(0xff);
+        }
 
         // ban i8259a ports
         bitmap.set_intercept(0x20, true);
@@ -36,23 +40,24 @@ impl PortIoBitmap {
         bitmap.set_intercept(0xa0, true);
         bitmap.set_intercept(0xa1, true);
 
-        // ban pci config ports
-        // TODO: handle config space operations from io ports
+        // pci config ports
         bitmap.set_range_intercept(PCI_CONFIG_ADDR_PORT, true);
         bitmap.set_range_intercept(PCI_CONFIG_DATA_PORT, true);
 
-        // FIXME: uart & i8254
         if zone_id == 0 {
-            bitmap.set_range_intercept(0x60..0x65, false);
             #[cfg(feature = "graphics")]
             bitmap.set_range_intercept(UART_COM1_PORT, true);
         }
-        // bitmap.set_range_intercept(0x3f8..0x400, false);
 
-        // FIXME: get port info from ACPI FACP table
-        // bitmap.set_intercept(0xb2, false);
-        // bitmap.set_range_intercept(0x600..0x630, false);
-        // bitmap.set_range_intercept(0x1800..0x1900, false);
+        // i8042, we won't use it, but intercept its ports might block linux init
+        bitmap.set_range_intercept(0x60..0x65, false);
+
+        // FIXME: for debug
+        if zone_id != 0 {
+            // #[cfg(feature = "graphics")]
+            // bitmap.set_range_intercept(UART_COM1_PORT, true);
+            // bitmap.set_range_intercept(UART_COM1_PORT, false);
+        }
 
         bitmap
     }

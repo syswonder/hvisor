@@ -672,11 +672,10 @@ pub fn root_init() {
 
 pub fn copy_to_guest_memory_region(config: &HvZoneConfig, cpu_set: &CpuSet) {
     let mut banned: BTreeSet<Signature> = BTreeSet::new();
-    // banned.insert(Signature::SSDT);
-    // FIXME: temp
-    // if config.zone_id != 0 {
-    // banned.insert(Signature::FADT);
-    // }
+    if config.zone_id != 0 {
+        banned.insert(Signature::FADT);
+        banned.insert(Signature::SSDT);
+    }
     ROOT_ACPI.get().unwrap().copy_to_zone_region(
         &config.memory_regions()[config.arch_config.rsdp_memory_region_id],
         &config.memory_regions()[config.arch_config.acpi_memory_region_id],

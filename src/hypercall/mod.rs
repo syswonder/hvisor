@@ -289,7 +289,7 @@ impl<'a> HyperCall<'a> {
                 .0 as *mut u64
         };
 
-        #[cfg(all(not(target_arch = "loongarch64"), not(target_arch = "x86_64")))]
+        #[cfg(not(target_arch = "loongarch64"))]
         {
             unsafe {
                 *magic_version = CONFIG_MAGIC_VERSION as _;

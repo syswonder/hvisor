@@ -40,7 +40,7 @@ const ROOT_ZONE_ACPI_REGION: HvConfigMemoryRegion = HvConfigMemoryRegion {
 };
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
-pub const ROOT_ZONE_CMDLINE: &str = "video=vesafb console=tty0 earlyprintk=serial nointremap no_timer_check pci=pcie_scan_all root=/dev/sda2 rw init=/init rootwait\0";
+pub const ROOT_ZONE_CMDLINE: &str = "video=vesafb console=tty0 nointremap no_timer_check pci=pcie_scan_all root=/dev/sda2 rw init=/init rootwait\0";
 // pub const ROOT_ZONE_CMDLINE: &str = "video=vesafb console=ttyS0 earlyprintk=serial nointremap no_timer_check pci=pcie_scan_all root=/dev/vda rw init=/init\0";
 //"console=ttyS0 earlyprintk=serial rdinit=/init nokaslr nointremap\0"; // noapic
 // video=vesafb
@@ -81,8 +81,8 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 14] = [
     // TODO: e820 mem space probe
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RESERVED,
-        physical_start: 0x4030_0000,
-        virtual_start: 0x4030_0000,
+        physical_start: 0x1_0000_0000,
+        virtual_start: 0x1_0000_0000,
         size: 0x2000_0000,
     }, // zone 1
     HvConfigMemoryRegion {
@@ -126,7 +126,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 14] = [
 const ROOT_ZONE_CMDLINE_ADDR: GuestPhysAddr = 0x9000;
 const ROOT_ZONE_SETUP_ADDR: GuestPhysAddr = 0xa000;
 const ROOT_ZONE_VMLINUX_ENTRY_ADDR: GuestPhysAddr = 0x10_0000;
-const ROOT_ZONE_SCREEN_BASE_ADDR: GuestPhysAddr = 0x7000_0000;
+const ROOT_ZONE_SCREEN_BASE_ADDR: GuestPhysAddr = 0x8000_0000;
 
 pub const ROOT_ZONE_IRQS: [u32; 32] = [0; 32];
 pub const ROOT_ZONE_IOAPIC_BASE: usize = 0xfec0_0000;
@@ -141,8 +141,7 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     initrd_size: 0,     // 0x26_b000,
     rsdp_memory_region_id: 0x1,
     acpi_memory_region_id: 0x5,
-    // FIXME:
-    initrd_memory_region_id: 0, // 0x3,
+    // not longer than 32 bits
     screen_base: ROOT_ZONE_SCREEN_BASE_ADDR,
 };
 
