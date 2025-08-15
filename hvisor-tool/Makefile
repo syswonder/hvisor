@@ -1,4 +1,4 @@
-KDIR ?= ~/playground/linux
+KDIR ?= ~/playground2/linux
 ARCH ?= x86_64
 LOG ?= LOG_INFO
 DEBUG ?= n
