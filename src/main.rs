@@ -69,11 +69,8 @@ mod tests;
 
 use crate::arch::iommu::iommu_init;
 use crate::arch::mm::arch_setup_parange;
-use crate::consts::MAX_CPU_NUM;
-use arch::{
-    cpu::cpu_start,
-    entry::{arch_entry, check_and_do_clear_bss},
-};
+use crate::consts::{hv_end, mem_pool_start, MAX_CPU_NUM};
+use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
@@ -116,6 +113,8 @@ fn primary_init_early() {
     logging::init();
     info!("Logging is enabled.");
     info!("__core_end = {:#x?}", __core_end as usize);
+    info!("mem_pool_start = {:#x?}", mem_pool_start() as usize);
+    info!("hv_end = {:#x?}", hv_end() as usize);
     // let system_config = HvSystemConfig::get();
     // let revision = system_config.revision;
     info!("Hypervisor initialization in progress...");
@@ -129,6 +128,8 @@ fn primary_init_early() {
     memory::frame::init();
     memory::frame::test();
     event::init();
+
+    arch::stage2_mode_detect();
 
     device::irqchip::primary_init_early();
 
@@ -176,8 +177,6 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     if MASTER_CPU.load(Ordering::Acquire) == -1 {
         MASTER_CPU.store(cpuid as i32, Ordering::Release);
         is_primary = true;
-        // Clear BSS section
-        check_and_do_clear_bss();
         memory::heap::init();
         memory::heap::test();
     }

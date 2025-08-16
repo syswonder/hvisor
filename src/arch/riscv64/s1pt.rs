@@ -25,7 +25,7 @@ use crate::memory::{
     MemFlags,
 };
 
-use super::paging::{GenericPTE, Level3PageTable, PagingInstr};
+use super::paging::{GenericPTE, HvPageTable, PagingInstr};
 // |Reserved|  PPN  |RSW |Attr|
 // |  63-54 | 53-10 |9-8 |7-0 |
 
@@ -178,4 +178,4 @@ impl PagingInstr for S1PTInstr {
     }
 }
 
-pub type Stage1PageTable = Level3PageTable<HostPhysAddr, PageTableEntry, S1PTInstr>;
+pub type Stage1PageTable = HvPageTable<HostPhysAddr, PageTableEntry, S1PTInstr>;

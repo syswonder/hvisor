@@ -79,8 +79,3 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
 //     // .section \".nrcfg1\", \"a\"
 //     // .incbin \"imgs/config/qemu-arm64-linux-demo.zone\"
 // ");
-
-pub fn check_and_do_clear_bss() {
-    clear_bss();
-    return;
-}

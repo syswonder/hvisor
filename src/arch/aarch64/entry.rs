@@ -205,9 +205,3 @@ unsafe extern "C" fn cache_invalidate(cache_level: usize) {
         options(nostack)
     );
 }
-
-pub fn check_and_do_clear_bss() {
-    // AArch64 clear bss in arch_entry, so we don't need to do it again.
-    trace!("check_and_do_clear_bss: AArch64 does not need to clear bss again.");
-    return;
-}

@@ -1,0 +1,31 @@
+{
+    "zones": [
+        {
+            "id": 1,
+            "memory_region": [
+                {
+                    "zone0_ipa": "0x83000000",
+                    "zonex_ipa": "0x83000000",
+                    "size": "0x0C000000"
+                }
+            ],
+            "devices": [
+                    {
+                        "type": "blk",
+                        "addr": "0x10006000",
+                        "len": "0x1000",
+                        "irq": 6,
+                        "img": "riscv_rootfs2.img",
+                        "status": "enable"
+                    },
+                    {
+                        "type": "console",
+                        "addr": "0x10007000",
+                        "len": "0x1000",
+                        "irq": 7,
+                        "status": "enable"
+                    }
+                ]
+        }
+    ]
+}

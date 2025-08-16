@@ -28,4 +28,5 @@ pub mod sysreg;
 pub mod trap;
 pub mod zone;
 
+pub use s2pt::stage2_mode_detect;
 pub use s2pt::Stage2PageTable;
