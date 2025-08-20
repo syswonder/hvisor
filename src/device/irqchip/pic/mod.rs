@@ -2,7 +2,7 @@ pub mod ioapic;
 pub mod lapic;
 
 use crate::{
-    arch::{acpi, cpu::this_cpu_id, idt, ipi, vmcs::Vmcs, vtd},
+    arch::{acpi, cpu::this_cpu_id, idt, iommu, ipi, msr, pio, vmcs::Vmcs},
     consts::{MAX_CPU_NUM, MAX_ZONE_NUM},
     zone::Zone,
 };
@@ -109,8 +109,10 @@ pub fn percpu_init() {}
 pub fn primary_init_early() {
     ipi::init(MAX_CPU_NUM);
     PENDING_VECTORS.call_once(|| PendingVectors::new(MAX_CPU_NUM));
+    ioapic::init_ioapic();
     ioapic::init_virt_ioapic(MAX_ZONE_NUM);
-    vtd::init();
+    msr::init_msr_bitmap_map();
+    pio::init_pio_bitmap_map();
 }
 
 pub fn primary_init_late() {}

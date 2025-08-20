@@ -16,7 +16,7 @@
 use alloc::sync::Arc;
 use spin::{Mutex, RwLock};
 
-use crate::arch::cpu::{this_cpu_id, ArchCpu};
+use crate::arch::cpu::{store_cpu_pointer_to_reg, this_cpu_id, ArchCpu};
 use crate::consts::{INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::memory::addr::VirtAddr;
 use crate::zone::Zone;
@@ -40,27 +40,32 @@ pub struct PerCpu {
 
 impl PerCpu {
     pub fn new<'a>(cpu_id: usize) -> &'static mut PerCpu {
-        let vaddr = PER_CPU_ARRAY_PTR as VirtAddr + cpu_id as usize * PER_CPU_SIZE;
+        let arch_cpu = ArchCpu::new(cpu_id);
+        let vaddr = PER_CPU_ARRAY_PTR as VirtAddr + arch_cpu.cpuid as usize * PER_CPU_SIZE;
         let ret = vaddr as *mut Self;
         unsafe {
             ret.write_volatile(PerCpu {
-                id: cpu_id,
+                id: arch_cpu.cpuid,
                 cpu_on_entry: INVALID_ADDRESS,
                 dtb_ipa: INVALID_ADDRESS,
-                arch_cpu: ArchCpu::new(cpu_id),
+                arch_cpu,
                 zone: None,
                 ctrl_lock: Mutex::new(()),
                 boot_cpu: false,
             })
         };
-        #[cfg(target_arch = "riscv64")]
-        {
-            use crate::arch::csr::{write_csr, CSR_SSCRATCH};
-            write_csr!(
-                CSR_SSCRATCH,
-                &ret.as_mut().unwrap().arch_cpu as *const _ as usize
-            ); //arch cpu pointer
+        unsafe {
+            let pointer = &ret.as_mut().unwrap().arch_cpu as *const _ as usize;
+            store_cpu_pointer_to_reg(pointer);
         }
+        // #[cfg(target_arch = "riscv64")]
+        // {
+        //     use crate::arch::csr::{write_csr, CSR_SSCRATCH};
+        //     write_csr!(
+        //         CSR_SSCRATCH,
+        //         &ret.as_mut().unwrap().arch_cpu as *const _ as usize
+        //     ); //arch cpu pointer
+        // }
         unsafe { ret.as_mut().unwrap() }
     }
 

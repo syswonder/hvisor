@@ -39,19 +39,15 @@ use super::{
     cfg_base, extract_reg_addr, get_bdf_shift, CFG_EXT_CAP_PTR_OFF, NUM_BAR_REGS_TYPE0,
     NUM_BAR_REGS_TYPE1,
 };
-
-#[cfg(all(feature = "iommu", target_arch = "aarch64"))]
+use crate::arch::consts::{BDF_SHIFT, HV_ADDR_PREFIX, LOONG_HT_PREFIX};
 use crate::arch::iommu::iommu_add_device;
-#[cfg(target_arch = "x86_64")]
-use crate::arch::vtd;
-
 #[derive(Debug)]
 pub struct PciRoot {
     endpoints: Vec<EndpointConfig>,
     bridges: Vec<BridgeConfig>,
     alloc_devs: Vec<usize>, // include host bridge
     phantom_devs: Vec<PhantomCfg>,
-    bar_regions: Vec<BarRegion>,
+    pub bar_regions: Vec<BarRegion>,
 }
 impl PciRoot {
     pub fn new() -> Self {
@@ -99,12 +95,9 @@ impl PciRoot {
         for ep in self.endpoints.iter() {
             let regions = ep.get_regions();
             for mut region in regions {
-                // in x86_64, we allow io port region size not aligned to 4K
-                if cfg!(not(target_arch = "x86_64")) || region.bar_type != BarType::IO {
-                    if region.size < 0x1000 {
-                        // unnecessary unless you use qemu pci-test-dev
-                        region.size = 0x1000;
-                    }
+                if region.size < 0x1000 {
+                    // unnecessary unless you use qemu pci-test-dev
+                    region.size = 0x1000;
                 }
                 self.bar_regions.push(region);
             }
@@ -112,11 +105,8 @@ impl PciRoot {
         for bridge in self.bridges.iter() {
             let regions = bridge.get_regions();
             for mut region in regions {
-                // in x86_64, we allow io port region size not aligned to 4K
-                if cfg!(not(target_arch = "x86_64")) || region.bar_type != BarType::IO {
-                    if region.size < 0x1000 {
-                        region.size = 0x1000;
-                    }
+                if region.size < 0x1000 {
+                    region.size = 0x1000;
                 }
                 self.bar_regions.push(region);
             }
@@ -166,24 +156,20 @@ impl Zone {
         num_pci_devs: usize,
         alloc_pci_devs: &[u64; CONFIG_MAX_PCI_DEV],
     ) {
-        if num_pci_devs == 0 {
+        #[cfg(not(feature = "pci"))]
+        {
+            info!("PCIe feature is not enabled, skipping PCIe initialization.");
             return;
         }
 
+        if num_pci_devs == 0 {
+            return;
+        }
         info!("PCIe init!");
 
-        let mut hv_addr_prefix: u64 = 0;
-        let mut loong_ht_prefix: u64 = 0;
-        let mut bdf_shift: usize = 12;
-
-        #[cfg(all(target_arch = "loongarch64"))]
-        {
-            info!("change bdf shift to 8 for loongson");
-            bdf_shift = 8;
-            /* turn to virtual address and add 0xe prefix for HT accessing */
-            hv_addr_prefix = 0x8000_0000_0000_0000;
-            loong_ht_prefix = 0xe00_0000_0000
-        }
+        let hv_addr_prefix: u64 = HV_ADDR_PREFIX;
+        let loong_ht_prefix: u64 = LOONG_HT_PREFIX;
+        let bdf_shift: usize = BDF_SHIFT;
 
         init_bdf_shift(bdf_shift);
 
@@ -200,29 +186,13 @@ impl Zone {
                 alloc_pci_devs[idx] & 0b111
             );
             self.pciroot.alloc_devs.push(alloc_pci_devs[idx] as _);
-            #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
             if alloc_pci_devs[idx] != 0 {
                 iommu_add_device(self.id, alloc_pci_devs[idx] as _);
             }
-            #[cfg(target_arch = "x86_64")]
-            vtd::add_device(self.id, alloc_pci_devs[idx]);
         }
 
         if self.id == 0 {
-            #[cfg(target_arch = "x86_64")]
-            {
-                let root_zone_alloc_devs = self.pciroot.alloc_devs.clone();
-                // self.pciroot.alloc_devs = crate::arch::acpi::root_get_devices();
-                info!("probe devices: {:x?}", self.pciroot.alloc_devs);
-                self.virtual_pci_mmio_init(pci_config, hv_addr_prefix, loong_ht_prefix);
-                self.virtual_pci_device_init(pci_config);
-                self.pciroot.alloc_devs = root_zone_alloc_devs;
-                return;
-            }
-            #[cfg(not(target_arch = "x86_64"))]
-            {
-                self.root_pci_init(pci_config, hv_addr_prefix, loong_ht_prefix);
-            }
+            self.root_pci_init(pci_config, hv_addr_prefix, loong_ht_prefix);
         } else {
             self.virtual_pci_mmio_init(pci_config, hv_addr_prefix, loong_ht_prefix);
         }
@@ -357,19 +327,13 @@ impl Zone {
 
         trace!("pciroot = {:?}", self.pciroot);
         self.pciroot.bars_register();
-        #[cfg(target_arch = "x86_64")]
-        self.pci_bars_register(pci_config);
-        #[cfg(not(target_arch = "x86_64"))]
         if self.id != 0 {
             self.pci_bars_register(pci_config);
         }
         self.pciroot.generate_vdevs();
     }
 
-    fn pci_bars_register(&mut self, pci_config: &HvPciConfig) {
-        #[cfg(target_arch = "x86_64")]
-        let mut msix_bar_regions: Vec<BarRegion> = Vec::new();
-
+    pub fn pci_bars_register(&mut self, pci_config: &HvPciConfig) {
         for region in self.pciroot.bar_regions.iter_mut() {
             let (cpu_base, pci_base) = match region.bar_type {
                 BarType::IO => (pci_config.io_base as usize, pci_config.pci_io_base as usize),
@@ -384,58 +348,14 @@ impl Zone {
                 _ => panic!("Unknown BAR type!"),
             };
 
-            region.start = cpu_base + region.start - pci_base;
-            // in x86_64, we allow io port region size not aligned to 4K
-            if cfg!(not(target_arch = "x86_64")) || region.bar_type != BarType::IO {
-                region.start = align_down(region.start);
-            }
+            region.arch_set_bar_region_start(cpu_base, pci_base);
 
             info!(
                 "pci bar region: type: {:?}, base: {:#x}, size: {:#x}",
                 region.bar_type, region.start, region.size
             );
 
-            #[cfg(target_arch = "x86_64")]
-            {
-                // check whether this bar is msi-x table
-                // if true, use msi-x table handler instead
-                if region.bar_type != BarType::IO {
-                    if let Some(bdf) = crate::arch::acpi::is_msix_bar(region.start) {
-                        info!("msi-x bar! hpa: {:x} bdf: {:x}", region.start, bdf);
-                        msix_bar_regions.push(region.clone());
-                        continue;
-                    }
-                }
-            }
-
-            if cfg!(not(target_arch = "x86_64")) || region.bar_type != BarType::IO {
-                self.gpm
-                    .insert(MemoryRegion::new_with_offset_mapper(
-                        region.start as GuestPhysAddr,
-                        region.start,
-                        region.size,
-                        MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-                    ))
-                    .ok();
-            } else {
-                #[cfg(target_arch = "x86_64")]
-                self.pio_bitmap.set_range_intercept(
-                    (region.start as u16)..((region.start + region.size) as u16),
-                    false,
-                );
-            }
-        }
-
-        #[cfg(target_arch = "x86_64")]
-        {
-            for region in msix_bar_regions.iter() {
-                self.mmio_region_register(
-                    region.start,
-                    region.size,
-                    crate::memory::mmio_generic_handler,
-                    region.start,
-                );
-            }
+            region.arch_insert_bar_region(&mut self.gpm, self.id);
         }
     }
 }
@@ -443,7 +363,6 @@ impl Zone {
 pub fn mmio_pci_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     // info!("mmio pci: {:#x}", mmio.address);
     let zone = this_zone();
-    let zone_id = zone.read().id;
     let mut binding = zone.write();
     let zone_id = binding.id;
 

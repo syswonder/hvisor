@@ -228,3 +228,7 @@ impl PagingInstr for S2PTInstr {
 }
 
 pub type Stage2PageTable = HvPageTable<GuestPhysAddr, PageTableEntry, S2PTInstr>;
+
+pub fn stage2_mode_detect() {
+    info!("Dynamical detection of stage-2 paging mode is not supported yet.");
+}

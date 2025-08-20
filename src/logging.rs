@@ -20,9 +20,6 @@ use spin::Mutex;
 
 use crate::device::uart;
 
-#[cfg(all(feature = "graphics", target_arch = "x86_64"))]
-use crate::arch::graphics::fb_putstr;
-
 static PRINT_LOCK: Mutex<()> = Mutex::new(());
 struct Stdout;
 
@@ -163,21 +160,8 @@ impl Log for SimpleLogger {
             Level::Trace => ColorCode::BrightBlack,
         };
 
-        #[cfg(all(feature = "graphics", target_arch = "x86_64"))]
+        #[cfg(all(feature = "graphics"))]
         {
-            /*fb_putstr("[", color_code_to_bgra(&ColorCode::White));
-            fb_putstr(
-                format!("{:<5} ", level).as_str(),
-                color_code_to_bgra(&ColorCode::Yellow),
-            );
-            fb_putstr(
-                format!("{}] ({}:{}) ", cpu_id, target, line).as_str(),
-                color_code_to_bgra(&ColorCode::White),
-            );
-            fb_putstr(
-                format!("{}\n", record.args()).as_str(),
-                color_code_to_bgra(&args_color),
-            );*/
             println!(
                 "[{:<5} {}] ({}:{}) {}",
                 level,
@@ -187,7 +171,7 @@ impl Log for SimpleLogger {
                 record.args()
             );
         }
-        #[cfg(not(all(feature = "graphics", target_arch = "x86_64")))]
+        #[cfg(not(all(feature = "graphics")))]
         print(with_color!(
             ColorCode::White,
             "[{} {}] {} {}\n",

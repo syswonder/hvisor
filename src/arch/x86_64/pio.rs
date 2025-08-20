@@ -1,15 +1,43 @@
-use core::ops::Range;
-
 use crate::{
+    consts::MAX_ZONE_NUM,
     error::HvResult,
     memory::{Frame, HostPhysAddr},
     zone::this_zone_id,
 };
+use core::ops::Range;
+use heapless::FnvIndexMap;
 
 pub const UART_COM1_BASE_PORT: u16 = 0x3f8;
 pub const UART_COM1_PORT: Range<u16> = 0x3f8..0x400;
 pub const PCI_CONFIG_ADDR_PORT: Range<u16> = 0xcf8..0xcfc;
 pub const PCI_CONFIG_DATA_PORT: Range<u16> = 0xcfc..0xd00;
+
+static mut PIO_BITMAP_MAP: Option<FnvIndexMap<usize, PortIoBitmap, MAX_ZONE_NUM>> = None;
+
+pub fn init_pio_bitmap_map() {
+    unsafe { PIO_BITMAP_MAP = Some(FnvIndexMap::new()) };
+}
+
+pub fn set_pio_bitmap(zone_id: usize) {
+    unsafe {
+        if let Some(map) = &mut PIO_BITMAP_MAP {
+            if map.contains_key(&zone_id) {
+                panic!("pio bitmap for Zone {} already exists!", zone_id);
+            }
+            map.insert(zone_id, PortIoBitmap::new(zone_id));
+        }
+    }
+}
+
+pub fn get_pio_bitmap(zone_id: usize) -> &'static mut PortIoBitmap {
+    unsafe {
+        PIO_BITMAP_MAP
+            .as_mut()
+            .expect("PIO_BITMAP_MAP is not initialized!")
+            .get_mut(&zone_id)
+            .expect("pio bitmap for this Zone does not exist!")
+    }
+}
 
 #[derive(Debug)]
 pub struct PortIoBitmap {

@@ -14,11 +14,33 @@
 // Authors:
 //
 
-use crate::{arch::zone::HvArchZoneConfig, config::*};
+use crate::{
+    arch::{mmu::MemoryType, zone::HvArchZoneConfig},
+    config::*,
+};
 
 pub const BOARD_NAME: &str = "rk3568";
 
 pub const BOARD_NCPUS: usize = 4;
+pub const BOARD_UART_BASE: u64 = 0xfe660000;
+
+#[rustfmt::skip]
+pub static BOARD_MPIDR_MAPPINGS: [u64; BOARD_NCPUS] = [
+    0x0,     // cpu0
+    0x100,   // cpu1
+    0x200,   // cpu2
+    0x300,   // cpu3
+];
+
+/// The physical memory layout of the board.
+/// Each address should align to 2M (0x200000).
+/// Addresses must be in ascending order.
+#[rustfmt::skip]
+pub const BOARD_PHYSMEM_LIST: &[(u64, u64, MemoryType)] = &[
+ // (       start,           end,                type)
+    (         0x0,    0xf0000000,  MemoryType::Normal),
+    (  0xf0000000,   0x100000000,  MemoryType::Device),
+];
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0xa0000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x60080000 ;
@@ -179,6 +201,7 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     gicv_size: 0,
     gits_base: 0,
     gits_size: 0,
+    is_aarch32: 0,
 };
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
 

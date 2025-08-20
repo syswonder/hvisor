@@ -138,3 +138,18 @@ pub fn handle_virt_ipi() {
         }
     }
 }
+
+pub fn arch_check_events(event: Option<usize>) {
+    match event {
+        _ => {
+            info!(
+                "x86_64: arch_check_events: event={:#x?} do nothing now",
+                event
+            );
+        }
+    }
+}
+
+pub fn arch_prepare_send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
+    debug!("x86_64 arch_prepare_send_event: do nothing now.")
+}

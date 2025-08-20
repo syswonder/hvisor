@@ -75,19 +75,11 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
     let mut _root_pci_cfg = HvPciConfig::new_empty();
     let mut _num_pci_devs: u64 = 0;
 
-    #[cfg(all(feature = "pci", not(target_arch = "x86_64")))]
+    #[cfg(feature = "pci")]
     {
         check!(ROOT_PCI_DEVS.len(), CONFIG_MAX_PCI_DEV, "ROOT_PCI_DEVS");
         pci_devs[..ROOT_PCI_DEVS.len()].copy_from_slice(&ROOT_PCI_DEVS);
         _root_pci_cfg = ROOT_PCI_CONFIG;
-        _num_pci_devs = ROOT_PCI_DEVS.len() as _;
-    }
-    #[cfg(target_arch = "x86_64")]
-    {
-        pci_devs[..ROOT_PCI_DEVS.len()].copy_from_slice(&ROOT_PCI_DEVS);
-        let config_space_info = crate::arch::acpi::root_get_config_space_info().unwrap();
-        (_root_pci_cfg.ecam_base, _root_pci_cfg.ecam_size) =
-            (config_space_info.0 as _, config_space_info.1 as _);
         _num_pci_devs = ROOT_PCI_DEVS.len() as _;
     }
 

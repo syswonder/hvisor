@@ -2,19 +2,19 @@ use crate::{
     arch::{
         acpi::{self, *},
         boot::BootParams,
-        hpet, ipi,
+        hpet, iommu, ipi,
         mm::new_s2_memory_set,
         msr::{
+            get_msr_bitmap,
             Msr::{self, *},
             MsrBitmap,
         },
-        pio::PortIoBitmap,
+        pio::{get_pio_bitmap, PortIoBitmap},
         vmcs::*,
         vmx::*,
-        vtd,
     },
     consts::{self, core_end, PER_CPU_SIZE},
-    device::irqchip::pic::{check_pending_vectors, lapic::VirtLocalApic},
+    device::irqchip::pic::{check_pending_vectors, ioapic, lapic::VirtLocalApic},
     error::{HvError, HvResult},
     memory::{
         addr::{phys_to_virt, PHYS_VIRT_OFFSET},
@@ -24,6 +24,7 @@ use crate::{
     },
     percpu::{this_cpu_data, this_zone},
     platform::{ROOT_ZONE_BOOT_STACK, ROOT_ZONE_CMDLINE},
+    zone::{find_zone, this_zone_id},
 };
 use alloc::boxed::Box;
 use bit_field::BitField;
@@ -171,6 +172,7 @@ pub struct ArchCpu {
 
 impl ArchCpu {
     pub fn new(cpuid: usize) -> Self {
+        let cpuid = this_cpu_id();
         Self {
             guest_regs: GeneralRegisters::default(),
             host_stack_top: 0,
@@ -250,7 +252,12 @@ impl ArchCpu {
         &mut self.guest_regs
     }
 
-    pub fn run(&mut self) -> ! {
+    pub fn run(&mut self) {
+        if self.power_on {
+            // x86 wake up cpu will send ipi twice, but we only want once
+            return;
+        }
+
         unsafe { self.virt_lapic.phys_lapic.end_of_interrupt() };
 
         assert!(this_cpu_id() == self.cpuid);
@@ -274,7 +281,7 @@ impl ArchCpu {
 
         if per_cpu.boot_cpu {
             // must be called after activate_gpm()
-            vtd::activate();
+            iommu::activate();
             self.guest_regs = self.vm_launch_guest_regs.clone();
         }
 
@@ -285,6 +292,8 @@ impl ArchCpu {
         self.host_stack_top = (core_end() + (self.cpuid + 1) * PER_CPU_SIZE) as _;
 
         unsafe { self.vmx_launch() };
+
+        loop {}
     }
 
     pub fn set_boot_cpu_vm_launch_regs(&mut self, rax: u64, rsi: u64) {
@@ -440,11 +449,11 @@ impl ArchCpu {
         VmcsControl32::EXCEPTION_BITMAP.write(0)?;
 
         if self.power_on {
-            VmcsControl64::IO_BITMAP_A_ADDR
-                .write(this_zone().read().pio_bitmap.a.start_paddr() as _)?;
-            VmcsControl64::IO_BITMAP_B_ADDR
-                .write(this_zone().read().pio_bitmap.b.start_paddr() as _)?;
-            VmcsControl64::MSR_BITMAPS_ADDR.write(this_zone().read().msr_bitmap.phys_addr() as _)?;
+            let pio_bitmap = get_pio_bitmap(this_zone_id());
+            VmcsControl64::IO_BITMAP_A_ADDR.write(pio_bitmap.a.start_paddr() as _)?;
+            VmcsControl64::IO_BITMAP_B_ADDR.write(pio_bitmap.b.start_paddr() as _)?;
+            VmcsControl64::MSR_BITMAPS_ADDR
+                .write(get_msr_bitmap(this_zone_id()).phys_addr() as _)?;
         }
 
         // set virtual-APIC page address
@@ -644,4 +653,13 @@ impl Debug for ArchCpu {
         })()
         .unwrap()
     }
+}
+
+pub fn store_cpu_pointer_to_reg(pointer: usize) {
+    // println!("x86_64 doesn't support store cpu pointer to reg, pointer: {:#x}", pointer);
+    return;
+}
+
+pub fn get_target_cpu(irq: usize, zone_id: usize) -> usize {
+    ioapic::get_irq_cpu(irq, zone_id)
 }

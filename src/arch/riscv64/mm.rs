@@ -136,5 +136,18 @@ pub fn init_hv_page_table() -> HvResult {
 }
 
 pub fn new_s2_memory_set() -> MemorySet<Stage2PageTable> {
-    MemorySet::new(3)
+    // Create a new memory set for stage 2 page table, pt_level is dynamically detected before here.
+    unsafe { MemorySet::new(crate::arch::s2pt::GSTAGE_PT_LEVEL) }
+}
+
+pub fn arch_setup_parange() {
+    // RISC-V does not have a parange setup like AArch64.
+    // The parange is determined by the memory regions defined in the device tree.
+    // So we do not need to do anything here.
+}
+
+pub fn arch_post_heap_init(host_dtb: usize) {
+    // RISC-V does not need to do some setup work after heap init like x86_64.
+    // This function can be used to set up any architecture-specific parameters if needed.
+    // Currently, it does nothing.
 }

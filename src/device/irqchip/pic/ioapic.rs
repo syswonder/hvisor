@@ -193,7 +193,7 @@ unsafe fn configure_gsi_from_raw(irq: u8, raw: u64) {
 }
 
 pub fn init_ioapic() {
-    println!("Initializing I/O APIC...");
+    // println!("Initializing I/O APIC...");
     unsafe {
         Port::<u8>::new(0x20).write(0xff);
         Port::<u8>::new(0xa0).write(0xff);

@@ -333,7 +333,7 @@ impl VirtUart16550a {
 
 pub fn console_putchar(c: u8) {
     COM1.lock().putchar(c);
-    #[cfg(all(feature = "graphics", target_arch = "x86_64"))]
+    #[cfg(all(feature = "graphics"))]
     fb_putchar(c, 0xffffffff, 0);
 }
 

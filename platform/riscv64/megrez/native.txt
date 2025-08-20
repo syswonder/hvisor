@@ -1,0 +1,13 @@
+setenv serverip 192.168.137.10;
+setenv ipaddr 192.168.137.11;
+setenv netmask 255.255.255.0;
+setenv fdt_addr 0x8f000000;
+setenv ker_addr 0x90000000;
+tftpboot ${fdt_addr} ${serverip}:minimal.dtb;
+tftpboot ${ker_addr} ${serverip}:uImage;
+bootm ${ker_addr} - ${fdt_addr};
+
+
+tftpboot 0x8f000000 192.168.137.10:native.dtb;
+tftpboot 0x90000000 192.168.137.10:uImage;
+bootm 0x90000000 - 0x8f000000;

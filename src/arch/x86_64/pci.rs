@@ -1,11 +1,12 @@
 use crate::{
-    arch::{acpi, idt, mmio::MMIoDevice, zone::HvArchZoneConfig},
+    arch::{acpi, idt, mmio::MMIoDevice, pio::get_pio_bitmap, zone::HvArchZoneConfig},
     error::HvResult,
     memory::{
         mmio_generic_handler, mmio_handle_access, mmio_perform_access, GuestPhysAddr, MMIOAccess,
     },
+    pci::pcibar::BarRegion,
     percpu::this_zone,
-    zone::Zone,
+    zone::{this_zone_id, Zone},
 };
 use ::acpi::{mcfg::Mcfg, sdt::Signature};
 use alloc::{
@@ -178,7 +179,7 @@ pub fn probe_root_pci_devices(
 }
 
 fn get_pci_mmio_addr() -> Option<usize> {
-    let addr = this_zone().read().pio_bitmap.pci_config_addr as usize;
+    let addr = get_pio_bitmap(this_zone_id()).pci_config_addr as usize;
     let (base, _) = crate::arch::acpi::root_get_config_space_info().unwrap();
 
     let enable = addr.get_bit(31);
@@ -196,7 +197,7 @@ fn get_pci_mmio_addr() -> Option<usize> {
 pub fn handle_pci_config_port_read(io_info: &VmxIoExitInfo) -> u32 {
     let mut value = 0u32;
     if PCI_CONFIG_ADDR_PORT.contains(&io_info.port) {
-        value = this_zone().read().pio_bitmap.pci_config_addr;
+        value = get_pio_bitmap(this_zone_id()).pci_config_addr;
 
         let offset_bit = 8 * (io_info.port - PCI_CONFIG_ADDR_PORT.start) as usize;
         value = value.get_bits(offset_bit..offset_bit + (8 * io_info.access_size) as usize);
@@ -226,7 +227,7 @@ pub fn handle_pci_config_port_read(io_info: &VmxIoExitInfo) -> u32 {
 pub fn handle_pci_config_port_write(io_info: &VmxIoExitInfo, value: u32) {
     if PCI_CONFIG_ADDR_PORT.contains(&io_info.port) {
         let offset_bit = 8 * (io_info.port - PCI_CONFIG_ADDR_PORT.start) as usize;
-        this_zone().write().pio_bitmap.pci_config_addr.set_bits(
+        get_pio_bitmap(this_zone_id()).pci_config_addr.set_bits(
             offset_bit..offset_bit + (8 * (io_info.access_size as usize)),
             value,
         );

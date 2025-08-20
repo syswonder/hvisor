@@ -343,15 +343,15 @@ pub fn parse_root_dmar() -> Mutex<Vtd> {
 }
 
 // called after acpi init
-pub fn init() {
+pub fn iommu_init() {
     VTD.call_once(|| parse_root_dmar());
     VTD.get().unwrap().lock().init();
     // init_msi_cap_hpa_space();
 }
 
-pub fn add_device(zone_id: usize, bdf: u64) {
+pub fn iommu_add_device(zone_id: usize, bdf: usize) {
     // info!("vtd add device: {:x}, zone: {:x}", bdf, zone_id);
-    VTD.get().unwrap().lock().add_device(zone_id, bdf);
+    VTD.get().unwrap().lock().add_device(zone_id, bdf as _);
 }
 
 pub fn update_dma_translation_tables(zone_id: usize, zone_s2pt_hpa: HostPhysAddr) {

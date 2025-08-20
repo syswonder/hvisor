@@ -17,6 +17,7 @@ use super::cpu::ArchCpu;
 use crate::arch::csr::read_csr;
 use crate::arch::csr::*;
 use crate::arch::sbi::sbi_vs_handler;
+use crate::consts::{IPI_EVENT_SEND_IPI, IPI_EVENT_UPDATE_HART_LINE};
 #[cfg(feature = "aia")]
 use crate::device::irqchip::aia::aplic::{host_aplic, vaplic_emul_handler};
 #[cfg(feature = "plic")]
@@ -118,6 +119,7 @@ pub fn sync_exception_handler(current_cpu: &mut ArchCpu) {
     trace!("CSR_SCAUSE: {}", trap_code);
 
     if !riscv_h::register::hstatus::read().spv() {
+        warn!("Trap Cause: {}", CAUSE_STRINGS[trap_code]);
         // Hvisor don't handle sync exception which occurs in hvisor self (HS-mode).
         // If sync exception occurs, hvisor will panic!
         panic!("exception from HS mode");
@@ -151,7 +153,7 @@ pub fn sync_exception_handler(current_cpu: &mut ArchCpu) {
                 "CPU {} sync exception, sepc: {:#x}",
                 current_cpu.cpuid, current_cpu.sepc
             );
-            warn!("Trap cause code: {}", trap_code);
+            warn!("Trap Cause: {}", CAUSE_STRINGS[trap_code]);
             warn!("htval: {:#x}, htinst: {:#x}", trap_value, trap_ins);
             warn!("trap instruction: {:?}", inst);
             panic!("Unhandled sync exception");
@@ -506,6 +508,7 @@ pub fn interrupts_arch_handle(current_cpu: &mut ArchCpu) {
             handle_timer_interrupt(current_cpu);
         }
         InterruptType::SSI => {
+            // warn!("IPI receive: {}", current_cpu.cpuid);
             // Get event to handle and clear software interrupt pending bit.
             handle_software_interrupt(current_cpu);
         }

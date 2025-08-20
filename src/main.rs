@@ -63,25 +63,19 @@ mod percpu;
 mod platform;
 mod zone;
 
-#[cfg(target_arch = "aarch64")]
-mod ivc;
-
 mod pci;
 
 #[cfg(test)]
 mod tests;
 
-#[cfg(target_arch = "aarch64")]
-use crate::arch::mm::setup_parange;
-use crate::consts::MAX_CPU_NUM;
+use crate::arch::iommu::iommu_init;
+use crate::arch::mm::{arch_post_heap_init, arch_setup_parange};
+use crate::consts::{hv_end, mem_pool_start, MAX_CPU_NUM};
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use percpu::PerCpu;
 use zone::{add_zone, zone_create};
-
-#[cfg(all(feature = "iommu"))]
-use crate::arch::iommu::iommu_init;
 
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
 static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
@@ -120,6 +114,8 @@ fn primary_init_early() {
     logging::init();
     info!("Logging is enabled.");
     info!("__core_end = {:#x?}", __core_end as usize);
+    info!("mem_pool_start = {:#x?}", mem_pool_start() as usize);
+    info!("hv_end = {:#x?}", hv_end() as usize);
     // let system_config = HvSystemConfig::get();
     // let revision = system_config.revision;
     info!("Hypervisor initialization in progress...");
@@ -134,9 +130,10 @@ fn primary_init_early() {
     memory::frame::test();
     event::init();
 
+    arch::stage2_mode_detect();
+
     device::irqchip::primary_init_early();
 
-    #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
     iommu_init();
 
     #[cfg(not(test))]
@@ -181,21 +178,10 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     if MASTER_CPU.load(Ordering::Acquire) == -1 {
         MASTER_CPU.store(cpuid as i32, Ordering::Release);
         is_primary = true;
-        #[cfg(target_arch = "riscv64")]
-        clear_bss();
         memory::heap::init();
         memory::heap::test();
-        #[cfg(target_arch = "x86_64")]
-        {
-            crate::arch::boot::module_init(host_dtb);
-            device::irqchip::pic::ioapic::init_ioapic();
-            crate::arch::acpi::root_init();
-        }
+        arch_post_heap_init(host_dtb);
     }
-
-    #[cfg(target_arch = "x86_64")]
-    // get the real cpuid, we are using apic id before
-    let cpuid = crate::arch::cpu::this_cpu_id();
 
     let cpu = PerCpu::new(cpuid);
 
@@ -218,8 +204,9 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         cpu.id
     );
 
-    #[cfg(target_arch = "aarch64")]
-    setup_parange();
+    arch_setup_parange();
+    // #[cfg(target_arch = "aarch64")]
+    // setup_parange();
 
     if is_primary {
         primary_init_early(); // create root zone here

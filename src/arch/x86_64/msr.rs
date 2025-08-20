@@ -1,9 +1,11 @@
 use crate::{
     arch::msr::Msr::*,
+    consts::MAX_ZONE_NUM,
     device::irqchip::pic::lapic::VirtLocalApic,
     error::HvResult,
     memory::{Frame, HostPhysAddr},
 };
+use heapless::FnvIndexMap;
 use x86::msr::{rdmsr, wrmsr};
 
 numeric_enum_macro::numeric_enum! {
@@ -138,6 +140,33 @@ impl Msr {
     }
 }
 
+static mut MSR_BITMAP_MAP: Option<FnvIndexMap<usize, MsrBitmap, MAX_ZONE_NUM>> = None;
+
+pub fn init_msr_bitmap_map() {
+    unsafe { MSR_BITMAP_MAP = Some(FnvIndexMap::new()) };
+}
+
+pub fn set_msr_bitmap(zone_id: usize) {
+    unsafe {
+        if let Some(map) = &mut MSR_BITMAP_MAP {
+            if map.contains_key(&zone_id) {
+                panic!("msr bitmap for Zone {} already exists!", zone_id);
+            }
+            map.insert(zone_id, MsrBitmap::new());
+        }
+    }
+}
+
+pub fn get_msr_bitmap(zone_id: usize) -> &'static MsrBitmap {
+    unsafe {
+        MSR_BITMAP_MAP
+            .as_ref()
+            .expect("MSR_BITMAP_MAP is not initialized!")
+            .get(&zone_id)
+            .expect("msr bitmap for this Zone does not exist!")
+    }
+}
+
 #[derive(Debug)]
 pub struct MsrBitmap {
     frame: Frame,
@@ -178,15 +207,15 @@ impl MsrBitmap {
         self.frame.start_paddr()
     }
 
-    pub fn set_read_intercept(&mut self, msr: Msr, intercept: bool) {
+    pub fn set_read_intercept(&self, msr: Msr, intercept: bool) {
         self.set_intercept(msr as u32, false, intercept);
     }
 
-    pub fn set_write_intercept(&mut self, msr: Msr, intercept: bool) {
+    pub fn set_write_intercept(&self, msr: Msr, intercept: bool) {
         self.set_intercept(msr as u32, true, intercept);
     }
 
-    fn set_intercept(&mut self, msr: u32, is_write: bool, intercept: bool) {
+    fn set_intercept(&self, msr: u32, is_write: bool, intercept: bool) {
         let offset = if msr <= 0x1fff {
             if !is_write {
                 0 // Read bitmap for low MSRs (0x0000_0000..0x0000_1FFF)

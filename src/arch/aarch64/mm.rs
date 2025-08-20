@@ -25,7 +25,7 @@ const PARANGE_TABLE: [usize; 6] = [32, 36, 40, 42, 44, 48];
 static MIN_PARANGE: RwLock<u64> = RwLock::new(0x7);
 static PARANGE_OK_CPUS: AtomicU32 = AtomicU32::new(0);
 
-pub fn setup_parange() {
+pub fn arch_setup_parange() {
     let temp_parange = read_sysreg!(id_aa64mmfr0_el1) & 0xf;
     let mut p = MIN_PARANGE.write();
     *p = p.min(temp_parange);
@@ -51,4 +51,10 @@ pub fn is_s2_pt_level3() -> bool {
 
 pub fn new_s2_memory_set() -> MemorySet<Stage2PageTable> {
     MemorySet::new(if is_s2_pt_level3() { 3 } else { 4 })
+}
+
+pub fn arch_post_heap_init(host_dtb: usize) {
+    // AArch64 does not need to do some setup work after heap init like x86_64.
+    // This function can be used to set up any architecture-specific parameters if needed.
+    // Currently, it does nothing.
 }

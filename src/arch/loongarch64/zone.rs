@@ -16,7 +16,7 @@
 //
 use crate::device::irqchip::ls7a2000::chip::get_extioi_sr;
 use crate::{
-    arch::{cpu::this_cpu_id, trap::GLOBAL_TRAP_CONTEXT_HELPER_PER_CPU},
+    arch::{cpu::this_cpu_id, trap::GLOBAL_TRAP_CONTEXT_HELPER_PER_CPU, Stage2PageTable},
     config::*,
     consts::PAGE_SIZE,
     device::virtio_trampoline::mmio_virtio_handler,
@@ -24,8 +24,9 @@ use crate::{
     memory::{
         addr::{align_down, align_up},
         mmio_generic_handler, mmio_perform_access, GuestPhysAddr, HostPhysAddr, MMIOAccess,
-        MemFlags, MemoryRegion,
+        MemFlags, MemoryRegion, MemorySet,
     },
+    pci::pcibar::BarRegion,
     zone::Zone,
     PHY_TO_DMW_UNCACHED,
 };
@@ -94,7 +95,7 @@ impl Zone {
         info!("loongarch64: pt_init: add mmio handler for 0x1fe0_xxxx mmio region");
         self.mmio_region_register(0x1fe0_0000, 0x3000, loongarch_generic_mmio_handler, 0x1234);
 
-        debug!("zone stage-2 memory set: {:#x?}", self.gpm);
+        info!("zone stage-2 memory set: {:#x?}", self.gpm);
         unsafe {
             // test the page table by querying the first page
             if mem_regions.len() > 0 {
@@ -447,8 +448,8 @@ impl MMIOAccessTracker {
 static MMIO_ACCESS_STATS: Lazy<Mutex<MMIOAccessTracker>> =
     Lazy::new(|| Mutex::new(MMIOAccessTracker::new()));
 
-const COMPRESSION_THRESHOLD: u64 = 50;
-const LOG_INTERVAL: u64 = 50;
+const COMPRESSION_THRESHOLD: u64 = 40;
+const LOG_INTERVAL: u64 = 100000;
 
 const BASE_ADDR: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_0000);
 const UART0_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_01e0);
@@ -567,8 +568,8 @@ fn handle_extioi_mapping_mmio(mmio: &mut MMIOAccess, base_addr: usize, size: usi
         new_data |= (1 << target_cpu_id);
         let target_write_phyaddr = base_addr + target_ioi_number as usize;
         let target_write_value = new_data as u8;
-        debug!(
-            "extioi[{}], node_selection={:#x}, irq_target={:#x}, changed cpu routing to {}, value={:#x}",
+        info!(
+            "[[interrupt virtualization]] extioi[{}], node_selection={:#x}, irq_target={:#x}, changed irq routing to cpu {}, value={:#x}",
             target_ioi_number, target_ioi_node_selection, target_ioi_irq_target, target_cpu_id, target_write_value
         );
         unsafe {
@@ -646,21 +647,21 @@ pub fn loongarch_generic_mmio_handler(mmio: &mut MMIOAccess, arg: usize) -> HvRe
         ret = handle_extioi_status_mmio(mmio, EXTIOI_SR_CORE_BASE, EXTIOI_SR_CORE_SIZE);
     } else if is_in_mmio_range!(mmio.address, EXTIOI_ENABLE_BASE, EXTIOI_ENABLE_SIZE) {
         if this_cpu_id() != 0 && mmio.is_write {
-            info!("nonroot's write to enable regs, ignored");
+            info!("nonroot's write to extioi enable regs, ignored");
             return Ok(());
         } else {
             ret = handle_generic_mmio(mmio, BASE_ADDR);
         }
     } else if is_in_mmio_range!(mmio.address, EXTIOI_BOUNCE_BASE, EXTIOI_BOUNCE_SIZE) {
         if this_cpu_id() != 0 && mmio.is_write {
-            info!("nonroot's write to bounce regs, ignored");
+            info!("nonroot's write to extioi bounce regs, ignored");
             return Ok(());
         } else {
             ret = handle_generic_mmio(mmio, BASE_ADDR);
         }
     } else if is_in_mmio_range!(mmio.address, EXTIOI_NODE_SEL_BASE, EXTIOI_NODE_SEL_SIZE) {
         if this_cpu_id() != 0 && mmio.is_write {
-            info!("nonroot's write to node sel regs, ignored");
+            info!("nonroot's write to extioi node sel regs, ignored");
             return Ok(());
         } else {
             ret = handle_generic_mmio(mmio, BASE_ADDR);
@@ -684,5 +685,37 @@ impl Zone {
             MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
         ))?;
         self.gpm.delete(vaddr as GuestPhysAddr)
+    }
+
+    pub fn arch_zone_pre_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
+        let vaddr = config.pci_config.ecam_base;
+        let size = config.pci_config.ecam_size;
+        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
+            vaddr as GuestPhysAddr,
+            vaddr as HostPhysAddr,
+            size as _,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ))?;
+        self.gpm.delete(vaddr as GuestPhysAddr)
+    }
+
+    pub fn arch_zone_post_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
+        Ok(())
+    }
+}
+
+impl BarRegion {
+    pub fn arch_set_bar_region_start(&mut self, cpu_base: usize, pci_base: usize) {
+        self.start = crate::memory::addr::align_down(cpu_base + self.start - pci_base);
+    }
+
+    pub fn arch_insert_bar_region(&self, gpm: &mut MemorySet<Stage2PageTable>, zone_id: usize) {
+        gpm.insert(MemoryRegion::new_with_offset_mapper(
+            self.start as GuestPhysAddr,
+            self.start,
+            self.size,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ))
+        .ok();
     }
 }

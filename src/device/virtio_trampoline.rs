@@ -1,3 +1,4 @@
+use crate::arch::cpu::get_target_cpu;
 // Copyright (c) 2025 Syswonder
 // hvisor is licensed under Mulan PSL v2.
 // You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -87,12 +88,11 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     #[cfg(not(target_arch = "loongarch64"))]
     if dev.need_wakeup() {
         debug!("need wakeup, sending ipi to wake up virtio device");
-        #[cfg(not(target_arch = "x86_64"))]
-        let root_cpu = root_zone().read().cpu_set.first_cpu().unwrap();
-        #[cfg(target_arch = "x86_64")]
-        let root_cpu =
-            crate::device::irqchip::pic::ioapic::get_irq_cpu(IRQ_WAKEUP_VIRTIO_DEVICE, 0);
-        send_event(root_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP_VIRTIO_DEVICE);
+        send_event(
+            get_target_cpu(IRQ_WAKEUP_VIRTIO_DEVICE, 0),
+            SGI_IPI_ID as _,
+            IPI_EVENT_WAKEUP_VIRTIO_DEVICE,
+        );
     }
     drop(dev);
     let mut count: usize = 0;
@@ -103,7 +103,6 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
             // fence(Ordering::Acquire);
             count += 1;
             if count == MAX_WAIT_TIMES {
-                #[cfg(not(target_arch = "x86_64"))]
                 warn!(
                     "virtio backend is too slow, please check it! addr: {:x} is_write: {:x?}",
                     mmio.address, mmio.is_write

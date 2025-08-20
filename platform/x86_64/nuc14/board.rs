@@ -145,11 +145,25 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     screen_base: ROOT_ZONE_SCREEN_BASE_ADDR,
 };
 
+pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
+    ecam_base: 0xc0000000,
+    ecam_size: 0x300000,
+    io_base: 0x0,
+    io_size: 0x0,
+    pci_io_base: 0x0,
+    mem32_base: 0x0,
+    mem32_size: 0x0,
+    pci_mem32_base: 0x0,
+    mem64_base: 0x0,
+    mem64_size: 0x0,
+    pci_mem64_base: 0x0,
+};
+
 pub const ROOT_PCI_DEVS: [u64; 19] = [
     0x0, 0x10, 0x20, 0x40, 0x50, 0x68, 0x90, 0xa0, 0xa2, 0xa3, 0xb0, 0xe0, 0xe8, 0xf8, 0xfb, 0xfc,
     0xfd, 0x100, 0x200,
 ];
 
-#[cfg(all(feature = "graphics", target_arch = "x86_64"))]
+#[cfg(all(feature = "graphics"))]
 pub const GRAPHICS_FONT: &[u8] =
     include_bytes!("../../platform/x86_64/qemu/image/font/spleen-6x12.psf");

@@ -64,7 +64,7 @@ extern "C" fn rust_entry(magic: u32, info_addr: usize) {
     crate::clear_bss();
     unsafe { PHYS_VIRT_OFFSET = X86_PHYS_VIRT_OFFSET };
     boot::multiboot_init(info_addr);
-    #[cfg(all(feature = "graphics", target_arch = "x86_64"))]
+    #[cfg(all(feature = "graphics"))]
     font_init(__board::GRAPHICS_FONT);
     boot::print_memory_map();
     rust_main(this_apic_id(), info_addr);

@@ -1,8 +1,8 @@
 use crate::{
     arch::{
+        iommu,
         paging::{GenericPTE, Level4PageTable, PagingInstr},
         vmcs::*,
-        vtd,
     },
     consts::PAGE_SIZE,
     error::HvResult,
@@ -247,7 +247,7 @@ impl PagingInstr for S2PTInstr {
 
         // if this cpu is boot cpu and it is running
         if this_cpu_data().arch_cpu.power_on && this_cpu_data().boot_cpu {
-            vtd::update_dma_translation_tables(this_zone_id(), root_paddr);
+            iommu::update_dma_translation_tables(this_zone_id(), root_paddr);
         }
     }
 
@@ -286,3 +286,7 @@ impl Stage2PageFaultInfo {
 }
 
 pub type Stage2PageTable = Level4PageTable<GuestPhysAddr, PageTableEntry, S2PTInstr>;
+
+pub fn stage2_mode_detect() {
+    info!("Dynamical detection of stage-2 paging mode is not supported yet.");
+}

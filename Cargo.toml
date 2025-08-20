@@ -7,7 +7,7 @@ edition = "2021"
 
 [dependencies]
 log = "0.4"
-spin = "0.9"
+spin = "0.10.0"
 bitflags = "2.1"
 bit_field = "0.10"
 numeric-enum-macro = "0.2"
@@ -19,10 +19,8 @@ fdt = { path = "./vendor/fdt" }
 qemu-exit = "3.0.2"
 cortex-a = "8.1.1"
 cfg-if = "1.0"
-bitvec = { version = "1.0.1", default-features = false, features = [
-    "atomic",
-    "alloc",
-] }
+bitvec = { version="1.0.1", default-features = false, features = ["atomic", "alloc"] }
+heapless = { version = "0.8.0 "}
 
 [dependencies.fdt-rs]
 version = "0.4.5"
@@ -34,7 +32,7 @@ psci = { version = "0.1.0", default-features = false, features = ["smc"] }
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
 sbi-rt = { version = "0.0.3", features = ["legacy"] }
-sbi-spec = "0.0.8"
+sbi-spec = { version = "0.0.8", features = ["legacy"]}
 riscv = "0.13.0"
 riscv_h = { package = "riscv", git = "https://github.com/rcore-os/riscv", features = ["inline-asm"] }
 riscv-decode = "0.2.1"
@@ -42,7 +40,7 @@ riscv-peripheral = "0.2.1"
 riscv-pac = "0.2.0"
 
 [target.'cfg(target_arch = "loongarch64")'.dependencies]
-loongArch64 = "0.2.4"
+loongArch64 = "0.2.5"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86 = "=0.52.0"
@@ -67,20 +65,6 @@ xuartps = []
 imx_uart = []
 uart_16550 = []
 
-# pagetable layout
-pt_layout_qemu = []
-pt_layout_rk3568 = []
-pt_layout_rk3588 = []
-pt_layout_zcu102 = []
-
-# cpu
-mpidr_rockchip = []
-
-# uart infos
-uart_base_rk3568 = []
-uart_base_rk3588 = []
-uart_base_ok6254 = []
-
 ############## riscv64 #############
 # irqchip driver
 plic = []
@@ -88,11 +72,18 @@ aia = []
 aclint = []
 # extensions
 sstc = []
+# platform specific
+eic770x_soc = []
+
 ########### loongarch64 ############
 # irqchip driver
 loongson_7a2000 = []
 # uart driver
 loongson_uart = []
+# cpu (not used for now)
+loongson_3a5000 = []
+loongson_3a6000 = []
+
 ############# x86_64 ###############
 graphics = []
 
@@ -100,3 +91,4 @@ graphics = []
 [profile.dev]
 # panic = "abort" # avoid cargo test failure, this is a bug of cargo
 debug = 2
+opt-level = 0 
