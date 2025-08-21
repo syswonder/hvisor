@@ -1,0 +1,673 @@
+/dts-v1/;
+
+/ {
+	#address-cells = <0x02>;
+	#size-cells = <0x02>;
+	compatible = "sifive,hifive-premier-p550\0eswin,eic7700";
+	model = "SiFive HiFive Premier P550";
+
+	opp-table@dsp {
+		compatible = "operating-points-v2";
+		phandle = <0x22>;
+
+		opp@520000000 {
+			opp-hz = <0x00 0x1efe9200>;
+			opp-microvolt = "\0\f5";
+		};
+
+		opp@1040000000 {
+			opp-hz = <0x00 0x3dfd2400>;
+			opp-microvolt = "\0\f5";
+		};
+	};
+
+	opp-table@npu {
+		compatible = "operating-points-v2";
+		phandle = <0x1f>;
+
+		opp@1040000000 {
+			opp-hz = <0x00 0x3dfd2400>;
+			opp-microvolt = <0xdbba0>;
+		};
+
+		opp@1500000000 {
+			opp-hz = <0x00 0x59682f00>;
+			opp-microvolt = <0x100590>;
+		};
+	};
+
+	cpus {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+		timebase-frequency = <0xf4240>;
+
+		idle-states {
+
+			cpu-retentive {
+				compatible = "riscv,idle-state";
+				riscv,sbi-suspend-param = <0x00>;
+				entry-latency-us = <0x14>;
+				exit-latency-us = <0x28>;
+				min-residency-us = <0x50>;
+				phandle = <0x05>;
+			};
+		};
+
+		cpu@0 {
+			clock-frequency = <0x00>;
+			compatible = "eswin,eic770x\0riscv";
+			d-cache-block-size = <0x40>;
+			d-cache-sets = <0x80>;
+			d-cache-size = <0x8000>;
+			d-tlb-sets = <0x01>;
+			d-tlb-size = <0x20>;
+			device_type = "cpu";
+			hardware-exec-breakpoint-count = <0x04>;
+			hwpf-distanceBits = <0x06>;
+			hwpf-hitCacheThrdBits = <0x05>;
+			hwpf-hitMSHRThrdBits = <0x04>;
+			hwpf-l2pfPoolSize = <0x0a>;
+			hwpf-nIssQEnt = <0x06>;
+			hwpf-nPrefetchQueueEntries = <0x08>;
+			hwpf-nStreams = <0x10>;
+			hwpf-qFullnessThrdBits = <0x04>;
+			hwpf-windowBits = <0x06>;
+			i-cache-block-size = <0x40>;
+			i-cache-sets = <0x80>;
+			i-cache-size = <0x8000>;
+			i-tlb-sets = <0x01>;
+			i-tlb-size = <0x20>;
+			mmu-type = "riscv,sv48";
+			next-level-cache = <0x01>;
+			reg = <0x00>;
+			riscv,isa = "rv64imafdc";
+			riscv,pmpgranularity = <0x1000>;
+			riscv,pmpregions = <0x08>;
+			sifive,buserror = <0x02>;
+			status = "okay";
+			timebase-frequency = <0xf4240>;
+			tlb-split;
+			numa-node-id = <0x00>;
+			clocks = <0x03 0x1f4>;
+			operating-points-v2 = <0x04>;
+			#cooling-cells = <0x02>;
+			dynamic-power-coefficient = <0x144>;
+			cpu-idle-states = <0x05>;
+
+			interrupt-controller {
+				#interrupt-cells = <0x01>;
+				compatible = "riscv,cpu-intc";
+				interrupt-controller;
+				phandle = <0x0c>;
+			};
+		};
+	};
+
+	soc {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		compatible = "SiFive,FU800-soc\0fu800-soc\0sifive-soc\0simple-bus";
+		ranges;
+
+		cache-controller@2010000 {
+			#address-cells = <0x02>;
+			#size-cells = <0x02>;
+			cache-block-size = <0x40>;
+			cache-level = <0x03>;
+			cache-sets = <0x1000>;
+			cache-size = <0x400000>;
+			cache-unified;
+			compatible = "sifive,ccache1\0cache\0sifive,fu740-c000-ccache";
+			interrupt-parent = <0x10>;
+			interrupts = <0x01 0x03 0x04 0x02>;
+			reg = <0x00 0x2010000 0x00 0x4000 0x00 0x8000000 0x00 0x400000>;
+			reg-names = "control\0sideband";
+			sifive,a-mshr-count = <0x3c>;
+			sifive,bank-count = <0x04>;
+			sifive,ecc-granularity = <0x08>;
+			sifive,max-master-id = <0x0d>;
+			sifive,perfmon-counters = <0x06>;
+			numa-node-id = <0x00>;
+			ranges;
+			phandle = <0x11>;
+
+			zero-device@1a000000 {
+				compatible = "l3,zero-device";
+				reg = <0x00 0x1a000000 0x00 0x400000>;
+			};
+		};
+
+		interrupt-controller@c000000 {
+			#interrupt-cells = <0x01>;
+			compatible = "sifive,plic-1.0.0";
+			interrupt-controller;
+			interrupts-extended = <0x0c 0xffffffff 0x0c 0x09>;
+			reg = <0x00 0xc000000 0x00 0x4000000>;
+			reg-names = "control";
+			riscv,max-priority = <0x07>;
+			riscv,ndev = <0x208>;
+			numa-node-id = <0x00>;
+			phandle = <0x10>;
+		};
+
+		serial@0x50900000 {
+			compatible = "snps,dw-apb-uart";
+			reg = <0x00 0x50900000 0x00 0x10000>;
+			clock-frequency = <0xbebc200>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x64>;
+			reg-shift = <0x02>;
+			reg-io-width = <0x04>;
+			numa-node-id = <0x00>;
+			status = "okay";
+			phandle = <0x27>;
+		};
+
+		scu_sys_con@0x51810000 {
+			compatible = "eswin,win2030-scu-sys-con\0syscon\0simple-mfd";
+			#syscon-cells = <0x02>;
+			#size-cells = <0x02>;
+			reg = <0x00 0x51810000 0x00 0x8000>;
+			numa-node-id = <0x00>;
+			phandle = <0x14>;
+		};
+
+		sys-crg@51828000 {
+			compatible = "eswin,win2030-sys-crg\0syscon\0simple-mfd";
+			reg = <0x00 0x51828000 0x00 0x80000>;
+			numa-node-id = <0x00>;
+			phandle = <0x12>;
+
+			reset-controller {
+				compatible = "eswin,win2030-reset";
+				#reset-cells = <0x02>;
+				numa-node-id = <0x00>;
+				status = "okay";
+				phandle = <0x15>;
+			};
+
+			clock-controller {
+				compatible = "eswin,win2030-clock";
+				#clock-cells = <0x01>;
+				numa-node-id = <0x00>;
+				status = "okay";
+				cpu-voltage-gpios = <0x13 0x1e 0x00>;
+				phandle = <0x03>;
+			};
+		};
+
+		hsp_sp_top_csr@0x50440000 {
+			compatible = "eswin,win2030-hsp-sp-csr\0syscon";
+			numa-node-id = <0x00>;
+			#size-cells = <0x02>;
+			reg = <0x00 0x50440000 0x00 0x2000>;
+			phandle = <0x17>;
+		};
+
+		iommu@50c00000 {
+			compatible = "arm,smmu-v3";
+			reg = <0x00 0x50c00000 0x00 0x100000>;
+			eswin,syscfg = <0x14 0x3fc>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x164 0x168 0x165 0x166>;
+			interrupt-names = "eventq\0gerror\0priq\0cmdq-sync";
+			#iommu-cells = <0x01>;
+			resets = <0x15 0x05 0x01 0x15 0x05 0x02 0x15 0x05 0x10 0x15 0x05 0x20 0x15 0x05 0x40 0x15 0x05 0x80 0x15 0x05 0x100 0x15 0x05 0x200 0x15 0x05 0x400 0x15 0x05 0x800>;
+			reset-names = "axi_rst\0cfg_rst\0tbu0_rst\0tbu1_rst\0tbu2_rst\0tbu3_rst\0tbu4_rst\0tbu5_rst\0tbu6_rst\0tbu7_rst";
+			status = "okay";
+			numa-node-id = <0x00>;
+			dma-noncoherent;
+			phandle = <0x16>;
+		};
+
+		eswin-npu@51c00000 {
+			compatible = "eswin,npu";
+			reg = <0x00 0x51c00000 0x00 0x400000>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x183 0x10>;
+			#size-cells = <0x02>;
+			dma-ranges = <0x01 0x00 0x00 0xc0000000 0x1ff 0x00>;
+			iommus = <0x16 0x04>;
+			tbus = <0x05>;
+			dsp-avail-num = <0x01>;
+			spram-size = <0x400000>;
+			npu_mbox = <0x1e>;
+			clocks = <0x03 0x236 0x03 0x237 0x03 0x23c 0x03 0x23a 0x03 0x23d 0x03 0x26 0x03 0x25 0x03 0x0b 0x03 0x07 0x03 0x238 0x03 0x0d>;
+			clock-names = "aclk\0cfg_clk\0core_clk\0clk_npu_llc_aclk\0e31_core_clk\0mux_u_npu_core_3mux1_gfree\0mux_u_npu_llclk_3mux1_gfree\0fixed_rate_clk_spll2_fout2\0fixed_rate_clk_spll1_fout1\0clk_clk_npu_llc_src0\0fixed_rate_clk_vpll_fout1";
+			resets = <0x15 0x06 0x08>;
+			reset-names = "e31_core";
+			operating-points-v2 = <0x1f>;
+			numa-node-id = <0x00>;
+			firmware-name = "eic7700_die0_e31_fw";
+			dma-noncoherent;
+			#cooling-cells = <0x02>;
+			dynamic-power-coefficient = <0x00>;
+			status = "okay";
+			npu-supply = <0x20>;
+		};
+
+		llc@51c00000 {
+			compatible = "eswin,llc";
+			reg = <0x00 0x51c00000 0x00 0x400000>;
+			eswin,syscfg = <0x14 0x324>;
+			eswin,syscrg_csr = <0x12>;
+			clocks = <0x03 0x236 0x03 0x237 0x03 0x23a 0x03 0x23c 0x03 0x26 0x03 0x0b 0x03 0x07>;
+			clock-names = "aclk\0cfg_clk\0llc_clk\0core_clk\0mux_u_npu_core_3mux1_gfree\0fixed_rate_clk_spll2_fout2\0fixed_rate_clk_spll1_fout1";
+			resets = <0x15 0x06 0x01 0x15 0x06 0x02 0x15 0x06 0x04 0x15 0x06 0x40>;
+			reset-names = "axi\0cfg\0core\0llc";
+			numa-node-id = <0x00>;
+			spram-region = <0x21>;
+			npu-supply = <0x20>;
+			status = "okay";
+		};
+
+		dsp_subsys@52280400 {
+			#address-cells = <0x02>;
+			#size-cells = <0x02>;
+			reg = <0x00 0x52280400 0x00 0x10000 0x00 0x51810000 0x00 0x8000>;
+			ranges;
+			numa-node-id = <0x00>;
+			dma-ranges = <0x00 0x30000000 0x00 0xc0000000 0x00 0xce000000>;
+			compatible = "es-dsp-subsys\0simple-bus";
+			clocks = <0x03 0x210 0x03 0x20f>;
+			clock-names = "cfg_clk\0aclk";
+			resets = <0x15 0x02 0x01 0x15 0x02 0x02 0x15 0x02 0x04 0x15 0x02 0x10 0x15 0x02 0x20 0x15 0x02 0x40 0x15 0x02 0x80>;
+			reset-names = "axi\0cfg\0div4\0div_0\0div_1\0div_2\0div_3";
+			status = "okay";
+
+			es_dsp@0 {
+				#address-cells = <0x01>;
+				#size-cells = <0x01>;
+				compatible = "eswin-dsp\0cdns,xrp-hw-eswin";
+				ranges = <0x28000000 0x00 0x5b000000 0x8000 0x28100000 0x00 0x5b100000 0x20000 0x28120000 0x00 0x5b120000 0x20000>;
+				clocks = <0x03 0x2a8>;
+				clock-names = "aclk";
+				operating-points-v2 = <0x22>;
+				dsp_mbox = <0x23>;
+				device-irq = <0x0b 0x50a90000 0x20 0x50a80000 0x01 0x50a40000>;
+				device-uart = <0x50900000>;
+				device-irq-mode = <0x01>;
+				host-irq-mode = <0x01>;
+				firmware-name = "eic7700_dsp_fw";
+				process-id = <0x00>;
+				iommus = <0x16 0x12>;
+				tbus = <0x70>;
+				dma-noncoherent;
+				numa-node-id = <0x00>;
+				aux-e31-dtim = <0x5a110000>;
+				status = "okay";
+
+				dsp@0 {
+				};
+			};
+
+			es_dsp@1 {
+				#address-cells = <0x01>;
+				#size-cells = <0x01>;
+				compatible = "eswin-dsp\0cdns,xrp-hw-eswin";
+				ranges = <0x28000000 0x00 0x5b008000 0x8000 0x28100000 0x00 0x5b140000 0x20000 0x28120000 0x00 0x5b160000 0x20000>;
+				clocks = <0x03 0x2a9>;
+				clock-names = "aclk";
+				operating-points-v2 = <0x22>;
+				dsp_mbox = <0x24>;
+				device-irq = <0x0d 0x50ab0000 0x40 0x50aa0000 0x01 0x50a40000>;
+				device-uart = <0x50900000>;
+				device-irq-mode = <0x01>;
+				host-irq-mode = <0x01>;
+				firmware-name = "eic7700_dsp_fw";
+				process-id = <0x01>;
+				iommus = <0x16 0x13>;
+				tbus = <0x71>;
+				dma-noncoherent;
+				numa-node-id = <0x00>;
+				aux-e31-dtim = <0x5a110000>;
+				status = "okay";
+
+				dsp@0 {
+				};
+			};
+
+			es_dsp@2 {
+				#address-cells = <0x01>;
+				#size-cells = <0x01>;
+				compatible = "eswin-dsp\0cdns,xrp-hw-eswin";
+				ranges = <0x28000000 0x00 0x5b010000 0x8000 0x28100000 0x00 0x5b180000 0x20000 0x28120000 0x00 0x5b1a0000 0x20000>;
+				clocks = <0x03 0x2aa>;
+				clock-names = "aclk";
+				operating-points-v2 = <0x22>;
+				dsp_mbox = <0x25>;
+				device-irq = <0x0f 0x50ad0000 0x80 0x50ac0000 0x01 0x50a40000>;
+				device-uart = <0x50900000>;
+				device-irq-mode = <0x01>;
+				host-irq-mode = <0x01>;
+				firmware-name = "eic7700_dsp_fw";
+				process-id = <0x02>;
+				iommus = <0x16 0x14>;
+				tbus = <0x72>;
+				dma-noncoherent;
+				numa-node-id = <0x00>;
+				aux-e31-dtim = <0x5a110000>;
+				status = "okay";
+
+				dsp@0 {
+				};
+			};
+
+			es_dsp@3 {
+				#address-cells = <0x01>;
+				#size-cells = <0x01>;
+				compatible = "eswin-dsp\0cdns,xrp-hw-eswin";
+				ranges = <0x28000000 0x00 0x5b018000 0x8000 0x28100000 0x00 0x5b1c0000 0x20000 0x28120000 0x00 0x5b1e0000 0x20000>;
+				clocks = <0x03 0x2ab>;
+				clock-names = "aclk";
+				operating-points-v2 = <0x22>;
+				dsp_mbox = <0x26>;
+				device-irq = <0x11 0x50af0000 0x100 0x50ae0000 0x01 0x50a40000>;
+				device-uart = <0x50900000>;
+				device-irq-mode = <0x01>;
+				host-irq-mode = <0x01>;
+				firmware-name = "eic7700_dsp_fw";
+				process-id = <0x03>;
+				iommus = <0x16 0x15>;
+				tbus = <0x73>;
+				dma-noncoherent;
+				numa-node-id = <0x00>;
+				aux-e31-dtim = <0x5a110000>;
+				status = "okay";
+
+				dsp@0 {
+				};
+			};
+
+			sofdsp@4 {
+				#sound-dai-cells = <0x01>;
+				#address-cells = <0x02>;
+				#size-cells = <0x02>;
+				compatible = "eswin,sof-dsp";
+				reg = <0x00 0x5b018000 0x00 0x8000 0x00 0x5b1c0000 0x00 0x40000>;
+				mbox-names = "dsp-mbox";
+				mboxes = <0x26 0x00>;
+				clocks = <0x03 0x2ab>;
+				clock-names = "aclk";
+				process-id = <0x03>;
+				iommus = <0x16 0x15>;
+				tbus = <0x73>;
+				dma-noncoherent;
+				mailbox-dsp-to-u84-addr = <0x50af0000>;
+				mailbox-u84-to-dsp-addr = <0x50ae0000>;
+				dsp-uart = <0x27>;
+				device-uart-mutex = <0x51820000>;
+				numa-node-id = <0x00>;
+			};
+		};
+
+		mmc@0x50460000 {
+			compatible = "eswin,sdhci-sdio";
+			reg = <0x00 0x50460000 0x00 0x10000>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x51>;
+			clocks = <0x03 0x22b 0x03 0x222 0x03 0x0c 0x03 0x23>;
+			clock-names = "clk_xin\0clk_ahb\0clk_spll2_fout3\0clk_mux1_1";
+			clock-output-names = "sdio0_cardclock";
+			#clock-cells = <0x00>;
+			resets = <0x15 0x07 0x80 0x15 0x07 0x10 0x15 0x07 0x40000 0x15 0x07 0x400000>;
+			reset-names = "txrx_rst\0phy_rst\0prstn\0arstn";
+			clock-frequency = <0xc65d400>;
+			max-frequency = <0xc65d400>;
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			dma-ranges = <0x00 0x20000000 0x00 0xc0000000 0x00 0x40000000>;
+			iommus = <0x16 0x10>;
+			tbus = <0x02>;
+			eswin,hsp_sp_csr = <0x17 0x103c 0x608 0x60c>;
+			eswin,syscrg_csr = <0x12 0x164 0x148 0x14c>;
+			bus-width = <0x04>;
+			sdio-id = <0x00>;
+			numa-node-id = <0x00>;
+			status = "okay";
+			dma-noncoherent;
+			delay_code = <0x55>;
+			drive-impedance-ohm = <0x21>;
+			enable-cmd-pullup;
+			enable-data-pullup;
+			no-sdio;
+			no-mmc;
+		};
+
+		mbox@50a00000 {
+			compatible = "eswin,win2030-mailbox";
+			reg = <0x00 0x50a00000 0x00 0x10000 0x00 0x50a10000 0x00 0x10000>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x75>;
+			#mbox-cells = <0x01>;
+			clocks = <0x03 0x27e 0x03 0x27f>;
+			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
+			resets = <0x15 0x0c 0x01 0x15 0x0c 0x02>;
+			reset-names = "rst\0rst_device";
+			lock-bit = <0x01>;
+			irq-bit = <0x02>;
+			numa-node-id = <0x00>;
+			dma-noncoherent;
+			status = "okay";
+			phandle = <0x30>;
+		};
+
+		mbox@50a20000 {
+			compatible = "eswin,win2030-mailbox";
+			reg = <0x00 0x50a20000 0x00 0x10000 0x00 0x50a30000 0x00 0x10000>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x77>;
+			#mbox-cells = <0x01>;
+			clocks = <0x03 0x280 0x03 0x281>;
+			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
+			resets = <0x15 0x0c 0x04 0x15 0x0c 0x08>;
+			reset-names = "rst\0rst_device";
+			lock-bit = <0x01>;
+			irq-bit = <0x04>;
+			numa-node-id = <0x00>;
+			dma-noncoherent;
+			status = "okay";
+			phandle = <0x31>;
+		};
+
+		mbox@50a40000 {
+			compatible = "eswin,npu0-mailbox";
+			reg = <0x00 0x50a40000 0x00 0x10000 0x00 0x50a50000 0x00 0x10000>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x79>;
+			#mbox-cells = <0x01>;
+			clocks = <0x03 0x282 0x03 0x283>;
+			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
+			resets = <0x15 0x0c 0x10 0x15 0x0c 0x20>;
+			reset-names = "rst\0rst_device";
+			lock-bit = <0x01>;
+			irq-bit = <0x08>;
+			numa-node-id = <0x00>;
+			dma-noncoherent;
+			status = "okay";
+			phandle = <0x1e>;
+		};
+
+		mbox@50a60000 {
+			compatible = "eswin,win2030-mailbox";
+			reg = <0x00 0x50a60000 0x00 0x10000 0x00 0x50a70000 0x00 0x10000>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x7b>;
+			#mbox-cells = <0x01>;
+			clocks = <0x03 0x284 0x03 0x285>;
+			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
+			resets = <0x15 0x0c 0x40 0x15 0x0c 0x80>;
+			reset-names = "rst\0rst_device";
+			lock-bit = <0x01>;
+			irq-bit = <0x10>;
+			numa-node-id = <0x00>;
+			dma-noncoherent;
+			status = "okay";
+		};
+
+		mbox@50a80000 {
+			compatible = "eswin,dsp0-mailbox";
+			reg = <0x00 0x50a80000 0x00 0x10000 0x00 0x50a90000 0x00 0x10000>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x7d>;
+			#mbox-cells = <0x01>;
+			clocks = <0x03 0x286 0x03 0x287>;
+			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
+			resets = <0x15 0x0c 0x100 0x15 0x0c 0x200>;
+			reset-names = "rst\0rst_device";
+			lock-bit = <0x01>;
+			irq-bit = <0x20>;
+			numa-node-id = <0x00>;
+			dma-noncoherent;
+			status = "okay";
+			phandle = <0x23>;
+		};
+
+		mbox@50aa0000 {
+			compatible = "eswin,dsp1-mailbox";
+			reg = <0x00 0x50aa0000 0x00 0x10000 0x00 0x50ab0000 0x00 0x10000>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x7f>;
+			#mbox-cells = <0x01>;
+			clocks = <0x03 0x288 0x03 0x289>;
+			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
+			resets = <0x15 0x0c 0x400 0x15 0x0c 0x800>;
+			reset-names = "rst\0rst_device";
+			lock-bit = <0x01>;
+			irq-bit = <0x40>;
+			numa-node-id = <0x00>;
+			dma-noncoherent;
+			status = "okay";
+			phandle = <0x24>;
+		};
+
+		mbox@50ac0000 {
+			compatible = "eswin,dsp2-mailbox";
+			reg = <0x00 0x50ac0000 0x00 0x10000 0x00 0x50ad0000 0x00 0x10000>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x81>;
+			#mbox-cells = <0x01>;
+			clocks = <0x03 0x28a 0x03 0x28b>;
+			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
+			resets = <0x15 0x0c 0x1000 0x15 0x0c 0x2000>;
+			reset-names = "rst\0rst_device";
+			lock-bit = <0x01>;
+			irq-bit = <0x80>;
+			numa-node-id = <0x00>;
+			dma-noncoherent;
+			status = "okay";
+			phandle = <0x25>;
+		};
+
+		mbox@50ae0000 {
+			compatible = "eswin,dsp3-mailbox";
+			reg = <0x00 0x50ae0000 0x00 0x10000 0x00 0x50af0000 0x00 0x10000>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x83>;
+			#mbox-cells = <0x01>;
+			clocks = <0x03 0x28c 0x03 0x28d>;
+			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
+			resets = <0x15 0x0c 0x4000 0x15 0x0c 0x8000>;
+			reset-names = "rst\0rst_device";
+			lock-bit = <0x01>;
+			irq-bit = <0x100>;
+			numa-node-id = <0x00>;
+			dma-noncoherent;
+			status = "okay";
+			phandle = <0x26>;
+		};
+
+		i2c@51838000 {
+			compatible = "snps,designware-i2c";
+			clock-frequency = <0x186a0>;
+			clocks = <0x03 0x2a0>;
+			clock-names = "pclk";
+			resets = <0x15 0x25 0x01>;
+			reset-names = "rst";
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			reg = <0x00 0x51838000 0x00 0x8000>;
+			interrupts = <0x123>;
+			interrupt-parent = <0x10>;
+			numa-node-id = <0x00>;
+			status = "okay";
+			eswin,syscfg = <0x14 0x3c0 0x0f>;
+			i2c-sda-hold-time-ns = <0x40>;
+
+			mpq8785@12 {
+				compatible = "mps,mpq8785";
+				reg = <0x12>;
+				eswin,regulator_default-microvolt = <0xf4240>;
+				eswin,regulator_label = "supply vdd1\0npu vdd1\0npu current1\0npu temperature1";
+				label = "npu_vdd";
+
+				regulators {
+
+					npu_svcc {
+						regulator-name = "NPU_SVCC";
+						regulator-min-microvolt = <0xaae60>;
+						regulator-max-microvolt = <0x10c8e0>;
+						regulator-min-microamp = <0x1312d00>;
+						regulator-max-microamp = <0x2625a00>;
+						regulator-ov-protection-microvolt = <0x10c8e0>;
+						phandle = <0x20>;
+					};
+				};
+			};
+		};
+	};
+
+	aliases {
+		serial0 = "/soc/serial@0x50900000";
+	};
+
+	chosen {
+		bootargs = "root=PARTUUID=b0f77ad6-36cd-4a99-a8c0-31d73649aa09 console=ttyS0,115200 root=PARTUUID=b0f77ad6-36cd-4a99-a8c0-31d73649aa09 rootfstype=ext4 rootwait rw earlycon selinux=0 LANG=en_US.UTF-8 init=/bin/bash";
+		stdout-path = "serial0:115200n8";
+
+		domain-config {
+			compatible = "opensbi,domain,config";
+			system-suspend-test;
+		};
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x00 0x80000000 0x04 0x00>;
+		numa-node-id = <0x00>;
+	};
+
+	memory@59000000 {
+		device_type = "memory";
+		reg = <0x00 0x59000000 0x00 0x400000>;
+		numa-node-id = <0x00>;
+	};
+
+	reserved-memory {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+
+		opensbi@80000000 {
+			no-map;
+			reg = <0x00 0x80000000 0x00 0x00200000>;
+		};
+
+		hvisor@80200000 {
+			no-map;
+			reg = <0x00 0x80200000 0x00 0x02E00000>;
+		};
+
+		sprammemory@59000000 {
+			no-map;
+			reg = <0x00 0x59000000 0x00 0x400000>;
+			phandle = <0x21>;
+		};
+
+		mmz_nid_0_part_0 {
+			compatible = "eswin-reserve-memory";
+			reg = <0x03 0x00 0x01 0x80000000>;
+			no-map;
+		};
+	};
+};
