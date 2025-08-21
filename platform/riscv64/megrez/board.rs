@@ -31,7 +31,7 @@ pub const ROOT_ZONE_CPUS: u64 = (1 << 0);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 7] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x83000000,
@@ -88,38 +88,56 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 7] = [
         // mem-port -> sys-port (here easily equal to mem size)
         size: 0x8000_0000,
     }, // Sys-port. (here related to DMA)
-       // HvConfigMemoryRegion {
-       //     mem_type: MEM_TYPE_IO,
-       //     physical_start:  0x104000,
-       //     virtual_start: 0x104000,
-       //     size: 0x4000,
-       // }, // pL2Cache. (cpu0)
-       // HvConfigMemoryRegion {
-       //     mem_type: MEM_TYPE_IO,
-       //     physical_start:  0x108000,
-       //     virtual_start: 0x108000,
-       //     size: 0x4000,
-       // }, // pL2Cache. (cpu1)
-       // HvConfigMemoryRegion {
-       //     mem_type: MEM_TYPE_IO,
-       //     physical_start: 0x50420000,
-       //     virtual_start: 0x50420000,
-       //     size: 0x10000,
-       // }, // sata
-       // HvConfigMemoryRegion {
-       //     mem_type: MEM_TYPE_IO,
-       //     physical_start: 0x51600000,
-       //     virtual_start: 0x51600000,
-       //     size: 0x200000,
-       // }, // pinctrl
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start:  0x104000,
+    //     virtual_start: 0x104000,
+    //     size: 0x4000,
+    // }, // pL2Cache. (cpu0)
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start:  0x108000,
+    //     virtual_start: 0x108000,
+    //     size: 0x4000,
+    // }, // pL2Cache. (cpu1)
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0x50420000,
+    //     virtual_start: 0x50420000,
+    //     size: 0x10000,
+    // }, // sata
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0x51600000,
+    //     virtual_start: 0x51600000,
+    //     size: 0x200000,
+    // }, // pinctrl
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x50400000,
+        virtual_start: 0x50400000,
+        size: 0x10000,
+    }, // ethernet@50400000
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start:  0x50410000,
+    //     virtual_start: 0x50410000,
+    //     size: 0x10000,
+    // }, // ethernet@50410000
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x51600000,
+        virtual_start: 0x51600000,
+        size: 0x200000,
+    }, // gpio@51600000  pinctrl@0x51600080
 ];
 
 // Note: all here's irqs are hardware irqs,
 //  only these irq can be transferred to the physical PLIC.
-pub const HW_IRQS: [u32; 6] = [0x51, 0x64, 0x66, 0x3a, 0x3b, 0x3c];
+pub const HW_IRQS: [u32; 8] = [0x51, 0x64, 0x66, 0x3a, 0x3b, 0x3c, 0x3d, 0x46];
 
 // irqs belong to the root zone.
-pub const ROOT_ZONE_IRQS: [u32; 2] = [0x51, 0x64];
+pub const ROOT_ZONE_IRQS: [u32; 3] = [0x51, 0x64, 0x3d];
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     plic_base: 0xc000000,
@@ -127,7 +145,3 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     aplic_base: 0xd000000,
     aplic_size: 0x8000,
 };
-
-// Virtio zone1 cmd:
-//      nohup ./hvisor virtio start zone1-linux-virtio.json &
-//      ./hvisor zone start zone1-linux.json
