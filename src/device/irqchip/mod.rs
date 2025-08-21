@@ -74,6 +74,11 @@ impl Zone {
         {
             self.vplic_mmio_init(hv_config);
         }
+        #[cfg(all(feature = "eic770x_soc", target_arch = "riscv64"))]
+        {
+            self.virtual_sifive_ccache_mmio_init();
+            self.virtual_syscon_mmio_init();
+        }
     }
 }
 

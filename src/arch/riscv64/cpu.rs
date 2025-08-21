@@ -157,7 +157,7 @@ impl ArchCpu {
         self.power_on = false;
 
         PARKING_MEMORY_SET.call_once(|| {
-            let parking_code: [u8; 8] = [0x73, 0x00, 0x50, 0x10, 0x6F, 0xF0, 0x9F, 0xFF]; // 1: wfi; b 1b
+            let parking_code: [u8; 8] = [0x73, 0x00, 0x50, 0x10, 0x6F, 0xF0, 0xDF, 0xFF]; // 1: wfi; b 1b
             unsafe {
                 PARKING_INST_PAGE[..8].copy_from_slice(&parking_code);
             }

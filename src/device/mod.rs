@@ -17,3 +17,6 @@ pub mod common;
 pub mod irqchip;
 pub mod uart;
 pub mod virtio_trampoline;
+
+pub mod eic7700_syscrg;
+pub mod sifive_ccache;

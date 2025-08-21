@@ -19,10 +19,10 @@ use crate::{arch::zone::HvArchZoneConfig, config::*};
 pub const BOARD_NAME: &str = "milkv-megrez";
 
 pub const BOARD_NCPUS: usize = 4;
-
 pub const PLIC_BASE: usize = 0xc000000;
-
 pub const BOARD_PLIC_INTERRUPTS_NUM: usize = 1023; // except irq 0
+pub const SIFIVE_CCACHE_BASE: usize = 0x2010000; // SiFive composable cache controller
+pub const SIFIVE_CCACHE_SIZE: usize = 0x4000; // 16KB
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x8f000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x90000000;

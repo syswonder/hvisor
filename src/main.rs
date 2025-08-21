@@ -138,7 +138,11 @@ fn primary_init_early() {
     device::irqchip::primary_init_early();
 
     #[cfg(target_arch = "riscv64")]
-    arch::s2pt::riscv_gstage_mode_detect();
+    {
+        arch::s2pt::riscv_gstage_mode_detect();
+        #[cfg(feature = "eic770x_soc")]
+        crate::device::sifive_ccache::init_sifive_ccache();
+    }
 
     #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
     iommu_init();
@@ -185,8 +189,6 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     if MASTER_CPU.load(Ordering::Acquire) == -1 {
         MASTER_CPU.store(cpuid as i32, Ordering::Release);
         is_primary = true;
-        #[cfg(target_arch = "riscv64")]
-        clear_bss();
         memory::heap::init();
         memory::heap::test();
     }

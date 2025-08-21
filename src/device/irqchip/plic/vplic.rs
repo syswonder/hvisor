@@ -132,13 +132,13 @@ impl VirtualPLIC {
             error!("vplic_emul_access: only allowed word accesses");
             return 0;
         }
-        if value > u32::MAX as usize {
-            error!(
-                "vplic_emul_access: value {:#x} is out of range 0xffffffff",
-                value
-            );
-            return 0;
-        }
+        // if value > u32::MAX as usize {
+        //     error!(
+        //         "vplic_emul_access: value {:#x} is out of range 0xffffffff",
+        //         value
+        //     );
+        //     return 0;
+        // }
 
         /*
          * In VirtualPLICInner, we don't check, so in this function, we must check operations.
