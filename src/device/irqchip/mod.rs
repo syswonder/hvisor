@@ -95,7 +95,9 @@ impl Zone {
         }
         #[cfg(all(feature = "eic770x_soc", target_arch = "riscv64"))]
         {
+            #[cfg(feature = "sifive_ccache")]
             self.virtual_sifive_ccache_mmio_init();
+            #[cfg(feature = "eic7700_sysreg")]
             self.virtual_syscon_mmio_init();
         }
     }

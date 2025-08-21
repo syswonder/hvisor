@@ -23,14 +23,6 @@ pub static mut CPU_BSS_LOCK: u32 = 1;
 #[link_section = ".data"]
 pub static mut ENTER_CPU: u32 = u32::MAX; // the first entered cpuid will be written.
 
-#[no_mangle]
-#[link_section = ".data"]
-pub static mut CPU_BSS_LOCK: u32 = 1;
-
-#[no_mangle]
-#[link_section = ".data"]
-pub static mut ENTER_CPU: u32 = u32::MAX; // the first entered cpuid will be written.
-
 #[naked]
 #[no_mangle]
 #[link_section = ".text.entry"]
