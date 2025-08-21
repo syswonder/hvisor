@@ -25,7 +25,7 @@ const PARANGE_TABLE: [usize; 6] = [32, 36, 40, 42, 44, 48];
 static MIN_PARANGE: RwLock<u64> = RwLock::new(0x7);
 static PARANGE_OK_CPUS: AtomicU32 = AtomicU32::new(0);
 
-pub fn setup_parange() {
+pub fn arch_setup_parange() {
     let temp_parange = read_sysreg!(id_aa64mmfr0_el1) & 0xf;
     let mut p = MIN_PARANGE.write();
     *p = p.min(temp_parange);

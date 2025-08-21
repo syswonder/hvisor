@@ -19,13 +19,12 @@ use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite, WriteOnly};
 
 use crate::memory::addr::{PhysAddr, VirtAddr};
+use crate::platform::BOARD_UART_BASE;
 use spin::Mutex;
-
-pub const UART_BASE_VIRT: VirtAddr = 0x09000000;
 
 lazy_static! {
     static ref UART: Mutex<Pl011Uart> = {
-        let mut uart = Pl011Uart::new(UART_BASE_VIRT);
+        let mut uart = Pl011Uart::new(BOARD_UART_BASE as _);
         uart.init();
         Mutex::new(uart)
     };

@@ -30,7 +30,7 @@ flash.img*
 compile.sh
 src/platform/__board.rs
 .config
+.cursorrules
 .vscode/extensions.json
-
 # systemtest
 rootfs1.zip*

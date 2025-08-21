@@ -112,6 +112,12 @@ impl Zone {
             }
         })
     }
+
+    pub fn arch_zone_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
+        // We do not have any specific architecture configuration for RISC-V.
+        // If needed, this function can be extended in the future.
+        Ok(())
+    }
 }
 
 #[repr(C)]

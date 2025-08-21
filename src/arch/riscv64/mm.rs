@@ -139,3 +139,9 @@ pub fn new_s2_memory_set() -> MemorySet<Stage2PageTable> {
     // Create a new memory set for stage 2 page table, pt_level is dynamically detected before here.
     unsafe { MemorySet::new(crate::arch::s2pt::GSTAGE_PT_LEVEL) }
 }
+
+pub fn arch_setup_parange() {
+    // RISC-V does not have a parange setup like AArch64.
+    // The parange is determined by the memory regions defined in the device tree.
+    // So we do not need to do anything here.
+}

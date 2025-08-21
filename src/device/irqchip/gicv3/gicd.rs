@@ -31,6 +31,7 @@ pub const GICD_TYPER: usize = 0x0004;
 pub const GICD_IIDR: usize = 0x0008;
 pub const GICD_TYPER2: usize = 0x000c;
 pub const GICD_IGROUPR: usize = 0x0080;
+pub const GICD_IGRPMODR: usize = 0x0d00;
 pub const GICD_ISENABLER: usize = 0x0100;
 pub const GICD_ICENABLER: usize = 0x0180;
 pub const GICD_ISPENDR: usize = 0x0200;

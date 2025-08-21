@@ -1,0 +1,117 @@
+{
+    "arch": "loongarch64",
+    "name": "linux3",
+    "zone_id": 3,
+    "cpus": [
+        3
+    ],
+    "memory_regions": [
+        {
+            "type": "ram",
+            "physical_start": "0x100000000",
+            "virtual_start": "0x100000000",
+            "size": "0x10000000"
+        },
+        {
+            "type": "ram",
+            "physical_start": "0x110000000",
+            "virtual_start": "0x110000000",
+            "size": "0x10000000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x1fe00000",
+            "virtual_start": "0x1fe00000",
+            "size": "0x1000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x10080000",
+            "virtual_start": "0x10080000",
+            "size": "0x1000"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0x30001000",
+            "virtual_start": "0x30001000",
+            "size": "0x200"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0x30002000",
+            "virtual_start": "0x30002000",
+            "size": "0x200"
+        },
+        {
+            "type": "io",
+            "physical_start": "0xffffffff0000",
+            "virtual_start": "0xffffffff0000",
+            "size": "0x1000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x10000000",
+            "virtual_start": "0x10000000",
+            "size": "0x1000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x100d0000",
+            "virtual_start": "0x100d0000",
+            "size": "0x1000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x10010000",
+            "virtual_start": "0x10010000",
+            "size": "0x00010000"
+        },
+        {
+            "type": "ram",
+            "physical_start": "0x1000",
+            "virtual_start": "0x0",
+            "size": "0x10000"
+        },
+        {
+            "type": "ram",
+            "physical_start": "0xf0000",
+            "virtual_start": "0xf0000",
+            "size": "0x10000"
+        },
+        {
+            "type": "ram",
+            "physical_start": "0x141000000",
+            "virtual_start": "0x141000000",
+            "size": "0x800000"
+        }
+    ],
+    "interrupts": [
+        4,
+        5
+    ],
+    "ivc_configs": [],
+    "kernel_args": "NOT_USED_YET",
+    "kernel_filepath": "/tool/nonroot/vmlinux-linux3.bin",
+    "dtb_filepath": "/tool/test.bin",
+    "kernel_load_paddr": "0x100200000",
+    "dtb_load_paddr": "0x100000000",
+    "entry_point": "0x9000000100dff000",
+    "arch_config": {
+        "dummy": "0x1234"
+    },
+    "pci_config": {
+        "ecam_base": "0xfe00000000",
+        "ecam_size": "0x20000000",
+        "io_base": "0x18408000",
+        "io_size": "0x8000",
+        "pci_io_base": "0x00008000",
+        "mem32_base": "0x0",
+        "mem32_size": "0x0",
+        "pci_mem32_base": "0x0",
+        "mem64_base": "0x60000000",
+        "mem64_size": "0x20000000",
+        "pci_mem64_base": "0x60000000"
+    },
+    "num_pci_devs": 1,
+    "alloc_pci_devs": [1539]
+}
