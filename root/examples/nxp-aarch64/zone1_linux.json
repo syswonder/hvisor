@@ -1,5 +1,4 @@
 {
-    "arch": "arm64",
     "name": "linux2",
     "zone_id": 1,
     "cpus": [2, 3],
@@ -41,7 +40,8 @@
         "gicd_base": "0x38800000",
         "gicd_size": "0x10000",
         "gicr_base": "0x38880000",
-        "gicr_size": "0xc0000"
+        "gicr_size": "0xc0000",
+        "is_aarch32": false
     }
 }
 
