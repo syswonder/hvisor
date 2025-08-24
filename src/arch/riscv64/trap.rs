@@ -18,10 +18,8 @@ use crate::arch::csr::read_csr;
 use crate::arch::csr::*;
 use crate::arch::sbi::sbi_vs_handler;
 use crate::consts::{IPI_EVENT_SEND_IPI, IPI_EVENT_UPDATE_HART_LINE};
-#[cfg(feature = "aia")]
-use crate::device::irqchip::aia::aplic::{host_aplic, vaplic_emul_handler};
 #[cfg(feature = "plic")]
-use crate::device::irqchip::plic::*;
+use crate::device::irqchip::plic::host_plic;
 use crate::event::check_events;
 use crate::memory::{mmio_handle_access, MMIOAccess};
 use crate::memory::{GuestPhysAddr, HostPhysAddr};
@@ -242,101 +240,93 @@ pub fn ins_ldst_decode(ins: usize) -> (usize, bool, bool, usize) {
 
 /// Handle guest page fault sync exception.
 pub fn guest_page_fault_handler(current_cpu: &mut ArchCpu) {
-    #[cfg(feature = "plic")]
-    {
-        use riscv_h::register::{htinst, htval, stval};
-        // htval: Hypervisor bad guest physical address.
-        let addr: usize = (htval::read() << 2) | (stval::read() & 0x3);
-        // htinst: Hypervisor trap instruction (transformed).
-        let mut trap_ins = htinst::read();
-        // Default instruction size is 4 bytes.
-        let mut ins_size = 4;
-
+    use riscv_h::register::{htinst, htval, stval};
+    // htval: Hypervisor bad guest physical address.
+    let addr: usize = (htval::read() << 2) | (stval::read() & 0x3);
+    // htinst: Hypervisor trap instruction (transformed).
+    let mut trap_ins = htinst::read();
+    // Default instruction size is 4 bytes.
+    let mut ins_size = 4;
+    /*
+     * According riscv spec, htinst is one of the following:
+     *     1. zero;
+     *     2. a transformation of the trapping instruction;
+     *     3. a custom value;
+     *     4. a special pseudoinstruction.
+     */
+    if trap_ins == 0 {
         /*
-         * According riscv spec, htinst is one of the following:
-         *     1. zero;
-         *     2. a transformation of the trapping instruction;
-         *     3. a custom value;
-         *     4. a special pseudoinstruction.
+         * An implementation may at any time reduce its effort by substituting zero in place of the transformed instruction.
+         * Handling this case is important to be more compatible with different hardware.
          */
-
-        if trap_ins == 0 {
-            /*
-             * An implementation may at any time reduce its effort by substituting zero in place of the transformed instruction.
-             * Handling this case is important to be more compatible with different hardware.
-             */
-            // Get trap instruction from memory.
-            trap_ins = read_inst(current_cpu.sepc) as _;
-            if ins_is_compressed(trap_ins as _) {
-                ins_size = 2;
-            } else {
-                ins_size = 4;
-            }
-        } else if ins_is_preudo(trap_ins) {
-            /*
-             * If the instruction is a pseudo instruction, it will be transformed to a standard instruction.
-             * The pseudo instruction will be replaced with a standard instruction.
-             */
-            panic!("No support for htinst pseudo instruction.");
+        // Get trap instruction from memory.
+        trap_ins = read_inst(current_cpu.sepc) as _;
+        if ins_is_compressed(trap_ins as _) {
+            ins_size = 2;
         } else {
-            /*
-             * For a standard compressed instruction (16-bit size), the transformed instruction is found as follows:
-             *     1. Expand the compressed instruction to its 32-bit equivalent.
-             *     2. Transform the 32-bit equivalent instruction.
-             *     3. Replace bit 1 with a 0.
-             *
-             * RISCV Spec: Bits[1:0] of a transformed standard instruction will be binary 01
-             *     if the trapping instruction is compressed and 11 if not.
-             */
-            ins_size = match trap_ins & 0x3 {
-                0x1 => 2,
-                0x3 => 4,
-                _ => panic!("Invalid instruction size."),
-            };
-            /*
-             * Bit[0] == 1, and replacing bit 1 with 1 makes the value
-             *     into a valid encoding of a standard instruction.
-             */
-            trap_ins = trap_ins | 0x2;
+            ins_size = 4;
         }
-
-        // Decode instruction to get size, is_write, sign_ext and register number.
-        // For load, reg is rd, and for store, reg is rs2.
-        let (size, is_write, sign_ext, reg) = ins_ldst_decode(trap_ins);
-
-        // create mmio access struct.
-        let mut mmio_access = MMIOAccess {
-            address: addr as _,
-            size: size as _,
-            is_write: is_write as _,
-            value: if is_write { current_cpu.x[reg] as _ } else { 0 },
+    } else if ins_is_preudo(trap_ins) {
+        /*
+         * If the instruction is a pseudo instruction, it will be transformed to a standard instruction.
+         * The pseudo instruction will be replaced with a standard instruction.
+         */
+        panic!("No support for htinst pseudo instruction.");
+    } else {
+        /*
+         * For a standard compressed instruction (16-bit size), the transformed instruction is found as follows:
+         *     1. Expand the compressed instruction to its 32-bit equivalent.
+         *     2. Transform the 32-bit equivalent instruction.
+         *     3. Replace bit 1 with a 0.
+         *
+         * RISCV Spec: Bits[1:0] of a transformed standard instruction will be binary 01
+         *     if the trapping instruction is compressed and 11 if not.
+         */
+        ins_size = match trap_ins & 0x3 {
+            0x1 => 2,
+            0x3 => 4,
+            _ => panic!("Invalid instruction size."),
         };
-
-        match mmio_handle_access(&mut mmio_access) {
-            Ok(_) => {
-                if !is_write {
-                    current_cpu.x[reg] = if reg == 0 {
-                        0
+        /*
+         * Bit[0] == 1, and replacing bit 1 with 1 makes the value
+         *     into a valid encoding of a standard instruction.
+         */
+        trap_ins = trap_ins | 0x2;
+    }
+    // Decode instruction to get size, is_write, sign_ext and register number.
+    // For load, reg is rd, and for store, reg is rs2.
+    let (size, is_write, sign_ext, reg) = ins_ldst_decode(trap_ins);
+    // create mmio access struct.
+    let mut mmio_access = MMIOAccess {
+        address: addr as _,
+        size: size as _,
+        is_write: is_write as _,
+        value: if is_write { current_cpu.x[reg] as _ } else { 0 },
+    };
+    match mmio_handle_access(&mut mmio_access) {
+        Ok(_) => {
+            if !is_write {
+                current_cpu.x[reg] = if reg == 0 {
+                    0
+                } else {
+                    // for load instruction, x[rd] will be written.
+                    if sign_ext {
+                        // note: this is used for 64bit system.
+                        (((mmio_access.value << (64 - 8 * size)) as i64) >> (64 - 8 * size))
+                            as usize
                     } else {
-                        // for load instruction, x[rd] will be written.
-                        if sign_ext {
-                            // note: this is used for 64bit system.
-                            (((mmio_access.value << (64 - 8 * size)) as i64) >> (64 - 8 * size))
-                                as usize
-                        } else {
-                            mmio_access.value
-                        }
-                    };
-                }
-            }
-            Err(e) => {
-                panic!("mmio_handle_access: {:#x?}", e);
+                        mmio_access.value
+                    }
+                };
             }
         }
-        debug!("guest page fault at {:#x}, trap_ins: {:08x}, size: {}, is_write: {}, sign_ext: {}, reg: {}", addr, trap_ins, size, is_write, sign_ext, reg);
-        // Add inst size.
-        current_cpu.sepc += ins_size;
+        Err(e) => {
+            panic!("mmio_handle_access: {:#x?}", e);
+        }
     }
+    debug!("guest page fault at {:#x}, trap_ins: {:08x}, size: {}, is_write: {}, sign_ext: {}, reg: {}", addr, trap_ins, size, is_write, sign_ext, reg);
+    // Add inst size.
+    current_cpu.sepc += ins_size;
 }
 
 /// Read instruction from guest memory.
@@ -446,6 +436,7 @@ pub fn handle_external_interrupt(current_cpu: &mut ArchCpu) {
     }
     #[cfg(feature = "aia")]
     {
+        // Note: no irq belongs to hvisor, so hvisor won't handle external interrupt.
         panic!("HS extensional interrupt")
     }
 }

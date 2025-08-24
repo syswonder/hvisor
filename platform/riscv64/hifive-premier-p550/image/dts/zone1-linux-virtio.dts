@@ -4,7 +4,7 @@
 	#address-cells = <0x02>;
 	#size-cells = <0x02>;
 	compatible = "sifive,hifive-unmatched-a00\0sifive,fu740-c000\0sifive,fu740\0eswin,eic7700";
-	model = "Milk-V Megrez";
+	model = "SiFive HiFive Premier P550";
 	
 	cpus {
 		#address-cells = <0x01>;
