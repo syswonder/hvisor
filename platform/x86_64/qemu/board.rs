@@ -41,7 +41,7 @@ const ROOT_ZONE_ACPI_REGION: HvConfigMemoryRegion = HvConfigMemoryRegion {
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 pub const ROOT_ZONE_CMDLINE: &str =
-    "video=vesafb console=ttyS0 earlyprintk=serial nointremap no_timer_check pci=pcie_scan_all,lastbus=1 root=/dev/vda rw init=/init\0";
+    "console=ttyS0 earlyprintk=serial nointremap no_timer_check pci=pcie_scan_all,lastbus=1 root=/dev/vda rw init=/init\0";
 //"console=ttyS0 earlyprintk=serial rdinit=/init nokaslr nointremap\0"; // noapic
 // video=vesafb
 
@@ -108,6 +108,7 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     screen_base: ROOT_ZONE_SCREEN_BASE_ADDR,
 };
 
+// only need to fill in ecam_base and ecam_size in x86_64
 pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
     ecam_base: 0xe0000000,
     ecam_size: 0x200000,

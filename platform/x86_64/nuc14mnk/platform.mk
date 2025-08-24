@@ -41,9 +41,11 @@ QEMU_ARGS += -drive file=$(image_dir)/virtdisk/hvisor.iso,format=raw,index=0,med
 $(hvisor_bin): elf boot
 	$(OBJCOPY) $(hvisor_elf) --strip-all -O binary $@
 	cp $(hvisor_elf) $(image_dir)/iso/boot
+	mkdir -p $(image_dir)/iso/boot/kernel
 	cp $(zone0_boot) $(image_dir)/iso/boot/kernel
 	cp $(zone0_setup) $(image_dir)/iso/boot/kernel
 	cp $(zone0_vmlinux) $(image_dir)/iso/boot/kernel
+	mkdir -p $(image_dir)/virtdisk
 	grub-mkrescue /usr/lib/grub/x86_64-efi -o $(image_dir)/virtdisk/hvisor.iso $(image_dir)/iso
 
 include $(image_dir)/bootloader/boot.mk

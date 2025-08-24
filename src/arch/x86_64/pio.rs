@@ -80,13 +80,6 @@ impl PortIoBitmap {
         // i8042, we won't use it, but intercept its ports might block linux init
         bitmap.set_range_intercept(0x60..0x65, false);
 
-        // FIXME: for debug
-        if zone_id != 0 {
-            // #[cfg(feature = "graphics")]
-            // bitmap.set_range_intercept(UART_COM1_PORT, true);
-            // bitmap.set_range_intercept(UART_COM1_PORT, false);
-        }
-
         bitmap
     }
 

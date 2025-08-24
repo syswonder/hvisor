@@ -107,7 +107,6 @@ pub fn send_ipi(value: u64) -> HvResult {
             }
             IpiDeliveryMode::INIT => {}
             IpiDeliveryMode::START_UP => {
-                // FIXME: start up once?
                 let mut ipi_info = get_ipi_info(dest).unwrap().lock();
                 ipi_info.start_up_addr = (vector as usize) << 12;
                 event::send_event(dest, SGI_IPI_ID as _, event::IPI_EVENT_WAKEUP);

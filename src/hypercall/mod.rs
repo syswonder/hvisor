@@ -131,7 +131,6 @@ impl<'a> HyperCall<'a> {
             .set_base_addr(shared_region_addr_pa as _);
         info!("hvisor device region base is {:#x?}", shared_region_addr_pa);
 
-        // FIXME:
         HyperCallResult::Ok(0)
     }
 

@@ -212,7 +212,7 @@ impl Vtd {
         irte.set_bit(15, false);
         // vector
         irte.set_bits(16..=23, irq as _);
-        // FIXME: dest id
+        // dest id
         irte.set_bits(32..=63, 0);
 
         unsafe { *irte_ptr = irte };

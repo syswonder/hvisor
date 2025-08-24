@@ -90,37 +90,37 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 14] = [
         physical_start: 0x6ed7_f000,
         virtual_start: 0x6ed7_f000,
         size: 0x10_e000,
-    }, // FIXME: ACPI non-volatile storage
+    }, // ACPI non-volatile storage
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RESERVED,
         physical_start: 0xfeda_0000,
         virtual_start: 0xfeda_0000,
         size: 0x2_8000,
-    }, // FIXME: pnp 00:05
+    }, // pnp 00:05
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RESERVED,
         physical_start: 0xfe01_1000,
         virtual_start: 0xfe01_1000,
         size: 0x40_0000,
-    }, // FIXME: reserved
+    }, // reserved
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RESERVED,
         physical_start: 0x677a_b000,
         virtual_start: 0x677a_b000,
         size: 0x74d_3000,
-    }, // FIXME: reserved
+    }, // reserved
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RESERVED,
         physical_start: 0xfd69_0000,
         virtual_start: 0xfd69_0000,
         size: 0x6_0000,
-    }, // FIXME: INTC1057:00
+    }, // INTC1057:00
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RESERVED,
         physical_start: 0xfb00_0000,
         virtual_start: 0xfb00_0000,
         size: 0x100_0000,
-    }, // FIXME: reserved
+    }, // reserved
 ];
 
 const ROOT_ZONE_CMDLINE_ADDR: GuestPhysAddr = 0x9000;
@@ -136,7 +136,6 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     kernel_entry_gpa: ROOT_ZONE_VMLINUX_ENTRY_ADDR,
     cmdline_load_gpa: ROOT_ZONE_CMDLINE_ADDR,
     setup_load_gpa: ROOT_ZONE_SETUP_ADDR,
-    // FIXME:
     initrd_load_gpa: 0, // 0x1500_0000,
     initrd_size: 0,     // 0x26_b000,
     rsdp_memory_region_id: 0x1,

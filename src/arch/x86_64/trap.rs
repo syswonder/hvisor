@@ -103,7 +103,7 @@ fn handle_irq(vector: u8) {
 
 fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
     use raw_cpuid::{cpuid, CpuIdResult};
-    // FIXME: temporary hypervisor hack
+    // TODO: temporary hypervisor hack
     let signature = unsafe { &*("ACRNACRNACRN".as_ptr() as *const [u32; 3]) };
     let cr4_flags = Cr4Flags::from_bits_truncate(arch_cpu.cr(4) as _);
     let regs = arch_cpu.regs_mut();
@@ -254,7 +254,7 @@ fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
             _ => unreachable!(),
         } as _;
 
-        // FIXME: reconstruct
+        // TODO: reconstruct
         if PCI_CONFIG_ADDR_PORT.contains(&io_info.port)
             || PCI_CONFIG_DATA_PORT.contains(&io_info.port)
         {
@@ -302,7 +302,6 @@ fn handle_msr_read(arch_cpu: &mut ArchCpu) -> HvResult {
 
     if let Ok(msr) = Msr::try_from(rcx) {
         let res = if msr == IA32_APIC_BASE {
-            // FIXME: non root linux
             let mut apic_base = unsafe { IA32_APIC_BASE.read() };
             // info!("APIC BASE: {:x}", apic_base);
             apic_base |= 1 << 11 | 1 << 10; // enable xAPIC and x2APIC

@@ -214,7 +214,7 @@ impl VirtUart16550aUnlocked {
             self.iir = InterruptIdentFlags::NO_INTR_IS_PENDING.bits();
         } else {
             self.iir = iir;
-            // FIXME:
+            // use COM1 irq
             inject_irq(0x4, false);
         }
     }

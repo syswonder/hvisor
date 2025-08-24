@@ -462,7 +462,7 @@ impl RootAcpi {
         };
 
         // let rsdp_mapping = unsafe { Rsdp::search_for_on_bios(HvAcpiHandler {}).unwrap() };
-        // FIXME: temporarily suppose we use ACPI 1.0
+        // TODO: temporarily suppose we use ACPI 1.0
         assert!(rsdp_mapping.revision() == 0);
 
         root_acpi.rsdp.fill(
@@ -486,7 +486,7 @@ impl RootAcpi {
         let tables =
             unsafe { AcpiTables::from_validated_rsdp(HvAcpiHandler {}, rsdp_mapping) }.unwrap();
 
-        // FIXME: temp
+        // print rsdt entries
         let mut rsdt_entry = rsdt_addr + 36;
         let size = (unsafe { *((rsdt_addr + 4) as *const u32) } as usize - 36) / 4;
         for i in 0..size {

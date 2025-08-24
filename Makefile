@@ -3,7 +3,7 @@ LOG ?= info
 STATS ?= off
 PORT ?= 2333
 MODE ?= debug
-BOARD ?= nuc14
+BOARD ?= nuc14mnk
 FEATURES=
 BID ?=
 
