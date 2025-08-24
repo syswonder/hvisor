@@ -18,8 +18,6 @@ use crate::arch::csr::read_csr;
 use crate::arch::csr::*;
 use crate::arch::sbi::sbi_vs_handler;
 use crate::consts::{IPI_EVENT_SEND_IPI, IPI_EVENT_UPDATE_HART_LINE};
-#[cfg(feature = "plic")]
-use crate::device::irqchip::plic::host_plic;
 use crate::event::check_events;
 use crate::memory::{mmio_handle_access, MMIOAccess};
 use crate::memory::{GuestPhysAddr, HostPhysAddr};
@@ -424,7 +422,7 @@ pub fn handle_external_interrupt(current_cpu: &mut ArchCpu) {
         // Note: in hvisor, all external interrupts are assigned to VS.
         // 1. claim hw irq.
         let context_id = 2 * this_cpu_data().id + 1;
-        let irq_id = host_plic().claim(context_id);
+        let irq_id = crate::device::irqchip::plic::host_plic().claim(context_id);
 
         // If this irq has been claimed, it will be 0.
         if irq_id == 0 {
@@ -432,7 +430,7 @@ pub fn handle_external_interrupt(current_cpu: &mut ArchCpu) {
         }
 
         // 2. inject hw irq to zone.
-        inject_irq(irq_id as usize, true);
+        crate::device::irqchip::plic::inject_irq(irq_id as usize, true);
     }
     #[cfg(feature = "aia")]
     {
