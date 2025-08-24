@@ -42,10 +42,7 @@ pub fn vimsic_init(zone: &mut Zone, imsic_base: usize, guest_num: usize) {
         let imsic_gpa = imsic_base + PAGE_SIZE * vcpu_id; // In hvisor, vcpu_id == cpu_id.
         info!(
             "Zone {} vIMSIC map hart {} imsic hpa {:#x} gpa {:#x}",
-            zone.id,
-            cpu_id,
-            imsic_hpa,
-            imsic_gpa
+            zone.id, cpu_id, imsic_hpa, imsic_gpa
         );
         zone.gpm.insert(MemoryRegion::new_with_offset_mapper(
             imsic_gpa as GuestPhysAddr,

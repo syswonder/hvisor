@@ -34,17 +34,17 @@ pub fn imsic_init() {
     // Disable interrupt delivery
     write_csr!(CSR_SISELECT, IMSIC_EIDELIVERY);
     write_csr!(CSR_SIREG, 0);
-    
+
     // For qemu, num_ids = 0xff
     let num_ids = (IMSIC_NUM_IDS + 63) / 64;
-    
+
     // For 64bit system, eip1, eip3.. eip63 don't exist.
     for i in (0..num_ids) {
         // Disable all interrupts
-        write_csr!(CSR_SISELECT, IMSIC_EIE + i*2);
+        write_csr!(CSR_SISELECT, IMSIC_EIE + i * 2);
         write_csr!(CSR_SIREG, 0);
         // Remove all pending interrupts
-        write_csr!(CSR_SISELECT, IMSIC_EIP + i*2);
+        write_csr!(CSR_SISELECT, IMSIC_EIP + i * 2);
         write_csr!(CSR_SIREG, 0);
     }
 

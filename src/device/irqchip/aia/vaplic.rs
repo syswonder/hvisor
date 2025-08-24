@@ -128,9 +128,7 @@ impl VirtualAPLIC {
                     // }
                     info!(
                         "Set vAPLIC domaincfg to {:#x}, msi_mode {}, bigendian {}",
-                        value,
-                        msi_mode,
-                        bigendian
+                        value, msi_mode, bigendian
                     );
                     let new_value = value & 0b1_0000_0101; // 3bits: IE, MSI-mode, Bigendian
                     inner.vaplic_set_domaincfg(new_value as u32);
@@ -235,7 +233,7 @@ impl VirtualAPLIC {
                 let irq_idx = (offset - 0x1F00) / 4;
                 let mut inner = self.inner.lock();
                 if is_write {
-                    for irq_id in irq_idx*32..(irq_idx+1)*32 {
+                    for irq_id in irq_idx * 32..(irq_idx + 1) * 32 {
                         if irq_id > self.max_interrupts {
                             break;
                         }
@@ -298,7 +296,15 @@ impl VirtualAPLIC {
                 let mut inner = self.inner.lock();
                 if is_write {
                     let hart_id = (value >> 18) & 0x3fff;
-                    let phys_hart_id = hart_id + this_cpu_data().zone.as_ref().unwrap().read().cpu_set.first_cpu().unwrap();
+                    let phys_hart_id = hart_id
+                        + this_cpu_data()
+                            .zone
+                            .as_ref()
+                            .unwrap()
+                            .read()
+                            .cpu_set
+                            .first_cpu()
+                            .unwrap();
                     let guest_id = (value >> 12) & 0x3f;
                     let eiid = value & 0x7ff;
                     if inner.hw[irq_id] {

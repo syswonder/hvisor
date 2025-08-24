@@ -32,7 +32,9 @@ use crate::memory::MemFlags;
 use crate::memory::MemoryRegion;
 use crate::percpu::this_cpu_data;
 use crate::platform::HW_IRQS;
-use crate::platform::{BOARD_APLIC_INTERRUPTS_NUM, IMSIC_GUEST_NUM, IMSIC_S_BASE, IMSIC_GUEST_INDEX};
+use crate::platform::{
+    BOARD_APLIC_INTERRUPTS_NUM, IMSIC_GUEST_INDEX, IMSIC_GUEST_NUM, IMSIC_S_BASE,
+};
 use crate::root_zone_config;
 use crate::zone::Zone;
 pub use aplic::*;
@@ -98,18 +100,27 @@ pub fn inject_irq(irq: usize, is_hardware: bool) {
         return;
     }
     // For hvisor on qemu-aia, only software interrupt will be injected.
-    // Hardware interrupt will be transferred to IMSIC's interrupt file directly. 
+    // Hardware interrupt will be transferred to IMSIC's interrupt file directly.
     let target = this_cpu_data()
         .zone
         .as_ref()
         .unwrap()
         .read()
-        .get_vaplic().vaplic_get_target(irq);
+        .get_vaplic()
+        .vaplic_get_target(irq);
     let mut hart = (target >> 18) & 0x3FFF;
     // let guest = (target >> 12) & 0x3F;
     let eiid = target & 0x3FF;
     // Transfer vhart_id to phart_id.
-    hart = hart + this_cpu_data().zone.as_ref().unwrap().read().cpu_set.first_cpu().unwrap() as u32;
+    hart = hart
+        + this_cpu_data()
+            .zone
+            .as_ref()
+            .unwrap()
+            .read()
+            .cpu_set
+            .first_cpu()
+            .unwrap() as u32;
     imsic_trigger(hart, IMSIC_GUEST_INDEX as u32, eiid);
 }
 
