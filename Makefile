@@ -1,9 +1,9 @@
-ARCH ?= x86_64
+ARCH ?= aarch64
 LOG ?= info
 STATS ?= off
 PORT ?= 2333
 MODE ?= debug
-BOARD ?= nuc14mnk
+BOARD ?= qemu-gicv3
 FEATURES=
 BID ?=
 
