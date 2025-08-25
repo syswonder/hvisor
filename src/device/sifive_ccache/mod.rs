@@ -38,7 +38,7 @@ pub static SIFIVE_CCACHE: Once<SifiveCcache> = Once::new();
 pub fn init_sifive_ccache() {
     SIFIVE_CCACHE.call_once(|| SifiveCcache::new(SIFIVE_CCACHE_BASE));
     // info!("Sifive composable cache controller initialized at 0x{:x}", SIFIVE_CCACHE_BASE);
-    // host_sifive_ccache().init();
+    host_sifive_ccache().init();
 }
 
 pub fn host_sifive_ccache<'a>() -> &'a SifiveCcache {
