@@ -137,8 +137,6 @@
 			};
 		};
 
-
-
 		interrupt-controller@c000000 {
 			#interrupt-cells = <0x01>;
 			compatible = "sifive,plic-1.0.0";
@@ -163,6 +161,23 @@
 			numa-node-id = <0x00>;
 			status = "okay";
 			phandle = <0x27>;
+		};
+
+		scu_sys_con@0x51810000 {
+			compatible = "eswin,win2030-scu-sys-con\0syscon\0simple-mfd";
+			#syscon-cells = <0x02>;
+			#size-cells = <0x02>;
+			reg = <0x00 0x51810000 0x00 0x8000>;
+			numa-node-id = <0x00>;
+			phandle = <0x13>;
+
+			noc@51810324 {
+				compatible = "eswin,win2030-noc-wdt";
+				interrupt-parent = <0x10>;
+				interrupts = <0x188 0x189 0x18a 0x18b 0x18c 0x18d 0x18e 0x18f 0x190 0x191 0x192 0x193 0x194 0x195 0x196 0x197 0x198 0x199 0x19a 0x19b 0x19c 0x19d 0x19e 0x19f 0x1a0 0x1a1 0x1a2 0x1a3 0x1a4 0x1a5 0x1a6 0x1a7 0x1a8 0x1a9 0x1aa>;
+				eswin,syscrg_csr = <0x12 0x100 0xffff>;
+				status = "okay";
+			};
 		};
 
 		sys-crg@51828000 {
@@ -197,43 +212,59 @@
 			phandle = <0x16>;
 		};
 
-		// ethernet@50400000 {
-		// 	compatible = "eswin,win2030-qos-eth";
-		// 	reg = <0x00 0x50400000 0x00 0x10000>;
-		// 	interrupt-parent = <0x10>;
-		// 	interrupt-names = "macirq";
-		// 	interrupts = <0x3d>;
-		// 	phy-mode = "rgmii";
-		// 	numa-node-id = <0x00>;
-		// 	id = <0x00>;
-		// 	status = "okay";
-		// 	clocks = <0x03 0x226 0x03 0x227 0x03 0x228>;
-		// 	clock-names = "app\0stmmaceth\0tx";
-		// 	resets = <0x14 0x07 0x4000000>;
-		// 	reset-names = "ethrst";
-		// 	tbus = <0x02>;
-		// 	dma-noncoherent;
-		// 	eswin,hsp_sp_csr = <0x16 0x1030 0x100 0x108>;
-		// 	eswin,syscrg_csr = <0x12 0x148 0x14c>;
-		// 	eswin,dly_hsp_reg = <0x114 0x118 0x11c>;
-		// 	snps,axi-config = <0x17>;
-		// 	pinctrl-names = "default";
-		// 	pinctrl-0 = <0x18>;
-		// 	rst-gpios = <0x19 0x1e 0x01>;
-		// 	eswin,rgmiisel = <0x1a 0x290 0x03>;
-		// 	eswin,led-cfgs = <0x6100 0xa40 0x420>;
-		// 	dly-param-1000m = <0x23232323 0x800c8023 0xc0c0c0c>;
-		// 	dly-param-100m = <0x50505050 0x803f8050 0x3f3f3f3f>;
-		// 	dly-param-10m = <0x00 0x00 0x00>;
+		iommu@50c00000 {
+			compatible = "arm,smmu-v3";
+			reg = <0x00 0x50c00000 0x00 0x100000>;
+			eswin,syscfg = <0x13 0x3fc>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x164 0x168 0x165 0x166>;
+			interrupt-names = "eventq\0gerror\0priq\0cmdq-sync";
+			#iommu-cells = <0x01>;
+			resets = <0x14 0x05 0x01 0x14 0x05 0x02 0x14 0x05 0x10 0x14 0x05 0x20 0x14 0x05 0x40 0x14 0x05 0x80 0x14 0x05 0x100 0x14 0x05 0x200 0x14 0x05 0x400 0x14 0x05 0x800>;
+			reset-names = "axi_rst\0cfg_rst\0tbu0_rst\0tbu1_rst\0tbu2_rst\0tbu3_rst\0tbu4_rst\0tbu5_rst\0tbu6_rst\0tbu7_rst";
+			status = "okay";
+			numa-node-id = <0x00>;
+			dma-noncoherent;
+			phandle = <0x15>;
+		};
 
-		// 	stmmac-axi-config {
-		// 		snps,blen = <0x00 0x00 0x00 0x00 0x10 0x08 0x04>;
-		// 		snps,rd_osr_lmt = <0x02>;
-		// 		snps,wr_osr_lmt = <0x02>;
-		// 		snps,lpi_en = <0x00>;
-		// 		phandle = <0x17>;
-		// 	};
-		// };
+		ethernet@50400000 {
+			compatible = "eswin,win2030-qos-eth";
+			reg = <0x00 0x50400000 0x00 0x10000>;
+			interrupt-parent = <0x10>;
+			interrupt-names = "macirq";
+			interrupts = <0x3d>;
+			phy-mode = "rgmii";
+			numa-node-id = <0x00>;
+			id = <0x00>;
+			status = "okay";
+			clocks = <0x03 0x226 0x03 0x227 0x03 0x228>;
+			clock-names = "app\0stmmaceth\0tx";
+			resets = <0x14 0x07 0x4000000>;
+			reset-names = "ethrst";
+			tbus = <0x02>;
+			dma-noncoherent;
+			eswin,hsp_sp_csr = <0x16 0x1030 0x100 0x108>;
+			eswin,syscrg_csr = <0x12 0x148 0x14c>;
+			eswin,dly_hsp_reg = <0x114 0x118 0x11c>;
+			snps,axi-config = <0x17>;
+			pinctrl-names = "default";
+			pinctrl-0 = <0x18>;
+			rst-gpios = <0x19 0x1e 0x01>;
+			eswin,rgmiisel = <0x1a 0x290 0x03>;
+			eswin,led-cfgs = <0x6100 0xa40 0x420>;
+			dly-param-1000m = <0x23232323 0x800c8023 0xc0c0c0c>;
+			dly-param-100m = <0x50505050 0x803f8050 0x3f3f3f3f>;
+			dly-param-10m = <0x00 0x00 0x00>;
+
+			stmmac-axi-config {
+				snps,blen = <0x00 0x00 0x00 0x00 0x10 0x08 0x04>;
+				snps,rd_osr_lmt = <0x02>;
+				snps,wr_osr_lmt = <0x02>;
+				snps,lpi_en = <0x00>;
+				phandle = <0x17>;
+			};
+		};
 
 		// ethernet@50410000 {
 		// 	compatible = "eswin,win2030-qos-eth";
@@ -313,134 +344,6 @@
 			spram-region = <0x21>;
 			npu-supply = <0x20>;
 			apply_npu_high_freq;
-		};
-
-		mbox@50a40000 {
-			compatible = "eswin,npu0-mailbox";
-			reg = <0x00 0x50a40000 0x00 0x10000 0x00 0x50a50000 0x00 0x10000>;
-			interrupt-parent = <0x10>;
-			interrupts = <0x79>;
-			#mbox-cells = <0x01>;
-			clocks = <0x03 0x282 0x03 0x283>;
-			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
-			resets = <0x14 0x0c 0x10 0x14 0x0c 0x20>;
-			reset-names = "rst\0rst_device";
-			lock-bit = <0x01>;
-			irq-bit = <0x08>;
-			numa-node-id = <0x00>;
-			dma-noncoherent;
-			status = "okay";
-			phandle = <0x1e>;
-		};
-
-		mbox@50a80000 {
-			compatible = "eswin,dsp0-mailbox";
-			reg = <0x00 0x50a80000 0x00 0x10000 0x00 0x50a90000 0x00 0x10000>;
-			interrupt-parent = <0x10>;
-			interrupts = <0x7d>;
-			#mbox-cells = <0x01>;
-			clocks = <0x03 0x286 0x03 0x287>;
-			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
-			resets = <0x14 0x0c 0x100 0x14 0x0c 0x200>;
-			reset-names = "rst\0rst_device";
-			lock-bit = <0x01>;
-			irq-bit = <0x20>;
-			numa-node-id = <0x00>;
-			dma-noncoherent;
-			status = "okay";
-			phandle = <0x23>;
-		};
-
-		mbox@50aa0000 {
-			compatible = "eswin,dsp1-mailbox";
-			reg = <0x00 0x50aa0000 0x00 0x10000 0x00 0x50ab0000 0x00 0x10000>;
-			interrupt-parent = <0x10>;
-			interrupts = <0x7f>;
-			#mbox-cells = <0x01>;
-			clocks = <0x03 0x288 0x03 0x289>;
-			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
-			resets = <0x14 0x0c 0x400 0x14 0x0c 0x800>;
-			reset-names = "rst\0rst_device";
-			lock-bit = <0x01>;
-			irq-bit = <0x40>;
-			numa-node-id = <0x00>;
-			dma-noncoherent;
-			status = "okay";
-			phandle = <0x24>;
-		};
-
-		mbox@50ac0000 {
-			compatible = "eswin,dsp2-mailbox";
-			reg = <0x00 0x50ac0000 0x00 0x10000 0x00 0x50ad0000 0x00 0x10000>;
-			interrupt-parent = <0x10>;
-			interrupts = <0x81>;
-			#mbox-cells = <0x01>;
-			clocks = <0x03 0x28a 0x03 0x28b>;
-			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
-			resets = <0x14 0x0c 0x1000 0x14 0x0c 0x2000>;
-			reset-names = "rst\0rst_device";
-			lock-bit = <0x01>;
-			irq-bit = <0x80>;
-			numa-node-id = <0x00>;
-			dma-noncoherent;
-			status = "okay";
-			phandle = <0x25>;
-		};
-
-		mbox@50ae0000 {
-			compatible = "eswin,dsp3-mailbox";
-			reg = <0x00 0x50ae0000 0x00 0x10000 0x00 0x50af0000 0x00 0x10000>;
-			interrupt-parent = <0x10>;
-			interrupts = <0x83>;
-			#mbox-cells = <0x01>;
-			clocks = <0x03 0x28c 0x03 0x28d>;
-			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
-			resets = <0x14 0x0c 0x4000 0x14 0x0c 0x8000>;
-			reset-names = "rst\0rst_device";
-			lock-bit = <0x01>;
-			irq-bit = <0x100>;
-			numa-node-id = <0x00>;
-			dma-noncoherent;
-			status = "okay";
-			phandle = <0x26>;
-		};
-
-		i2c@50960000 {
-			compatible = "snps,designware-i2c";
-			clock-frequency = <0x186a0>;
-			clocks = <0x03 0x28f>;
-			clock-names = "pclk";
-			resets = <0x14 0x09 0x02>;
-			reset-names = "rst";
-			#address-cells = <0x01>;
-			#size-cells = <0x00>;
-			reg = <0x00 0x50960000 0x00 0x10000>;
-			interrupts = <0x6a>;
-			interrupt-parent = <0x10>;
-			numa-node-id = <0x00>;
-			status = "okay";
-
-			es5430@f {
-				compatible = "einno,es5340";
-				reg = <0x0f>;
-				eswin,regulator_default-microvolt = <0xf4240>;
-				eswin,regulator_label = "supply vdd1\0npu vdd1\0npu current1\0npu temperature1";
-				label = "npu_vdd";
-
-				regulators {
-
-					npu_svcc {
-						regulator-name = "NPU_SVCC";
-						regulator-min-microvolt = <0xaae60>;
-						regulator-max-microvolt = <0x10c8e0>;
-						regulator-min-microamp = <0x1312d00>;
-						regulator-max-microamp = <0x2625a00>;
-						regulator-ov-protection-microvolt = <0x10c8e0>;
-						regulator-always-on;
-						phandle = <0x20>;
-					};
-				};
-			};
 		};
 
 		dsp_subsys@52280400 {
@@ -583,37 +486,42 @@
 			};
 		};
 
-		iommu@50c00000 {
-			compatible = "arm,smmu-v3";
-			reg = <0x00 0x50c00000 0x00 0x100000>;
-			eswin,syscfg = <0x13 0x3fc>;
+		mmc@50450000 {
+			compatible = "eswin,emmc-sdhci-5.1";
+			reg = <0x00 0x50450000 0x00 0x10000>;
 			interrupt-parent = <0x10>;
-			interrupts = <0x164 0x168 0x165 0x166>;
-			interrupt-names = "eventq\0gerror\0priq\0cmdq-sync";
-			#iommu-cells = <0x01>;
-			resets = <0x14 0x05 0x01 0x14 0x05 0x02 0x14 0x05 0x10 0x14 0x05 0x20 0x14 0x05 0x40 0x14 0x05 0x80 0x14 0x05 0x100 0x14 0x05 0x200 0x14 0x05 0x400 0x14 0x05 0x800>;
-			reset-names = "axi_rst\0cfg_rst\0tbu0_rst\0tbu1_rst\0tbu2_rst\0tbu3_rst\0tbu4_rst\0tbu5_rst\0tbu6_rst\0tbu7_rst";
+			interrupts = <0x4f>;
+			assigned-clocks = <0x03 0x22a>;
+			assigned-clock-rates = <0xbebc200>;
+			clocks = <0x03 0x22a 0x03 0x222>;
+			clock-names = "clk_xin\0clk_ahb";
+			clock-output-names = "emmc_cardclock";
+			#clock-cells = <0x00>;
+			resets = <0x14 0x07 0x40 0x14 0x07 0x08 0x14 0x07 0x80000 0x14 0x07 0x800000>;
+			reset-names = "txrx_rst\0phy_rst\0prstn\0arstn";
+			core-clk-reg = <0x51828160>;
+			disable-cqe-dcmd;
+			bus-width = <0x08>;
+			non-removable;
+			mmc-hs400-1_8v;
+			max-frequency = <0xbebc200>;
+			#size-cells = <0x02>;
+			iommus = <0x15 0x0f>;
+			tbus = <0x02>;
+			dma-ranges = <0x00 0x00 0x00 0xc0000000 0x01 0x00>;
+			eswin,hsp_sp_csr = <0x16 0x1038 0x508 0x50c>;
+			eswin,syscrg_csr = <0x12 0x160 0x148 0x14c>;
 			status = "okay";
 			numa-node-id = <0x00>;
 			dma-noncoherent;
-			phandle = <0x15>;
-		};
-
-		scu_sys_con@0x51810000 {
-			compatible = "eswin,win2030-scu-sys-con\0syscon\0simple-mfd";
-			#syscon-cells = <0x02>;
-			#size-cells = <0x02>;
-			reg = <0x00 0x51810000 0x00 0x8000>;
-			numa-node-id = <0x00>;
-			phandle = <0x13>;
-
-			noc@51810324 {
-				compatible = "eswin,win2030-noc-wdt";
-				interrupt-parent = <0x10>;
-				interrupts = <0x188 0x189 0x18a 0x18b 0x18c 0x18d 0x18e 0x18f 0x190 0x191 0x192 0x193 0x194 0x195 0x196 0x197 0x198 0x199 0x19a 0x19b 0x19c 0x19d 0x19e 0x19f 0x1a0 0x1a1 0x1a2 0x1a3 0x1a4 0x1a5 0x1a6 0x1a7 0x1a8 0x1a9 0x1aa>;
-				eswin,syscrg_csr = <0x12 0x100 0xffff>;
-				status = "okay";
-			};
+			delay_code = <0x17>;
+			drive-impedance-ohm = <0x32>;
+			enable-cmd-pullup;
+			enable-data-pullup;
+			pinctrl-names = "default";
+			pinctrl-0 = <0x2c>;
+			no-sdio;
+			no-sd;
 		};
 
 		mmc@0x50460000 {
@@ -651,12 +559,190 @@
 			broken-cd;
 		};
 
+		// mmc@0x50470000 {
+		// 	compatible = "eswin,sdhci-sdio";
+		// 	reg = <0x00 0x50470000 0x00 0x10000>;
+		// 	interrupt-parent = <0x10>;
+		// 	interrupts = <0x53>;
+		// 	clocks = <0x03 0x22c 0x03 0x222 0x03 0x0c 0x03 0x23>;
+		// 	clock-names = "clk_xin\0clk_ahb\0clk_spll2_fout3\0clk_mux1_1";
+		// 	clock-output-names = "sdio1_cardclock";
+		// 	#clock-cells = <0x00>;
+		// 	resets = <0x14 0x07 0x100 0x14 0x07 0x20 0x14 0x07 0x20000 0x14 0x07 0x200000>;
+		// 	reset-names = "txrx_rst\0phy_rst\0prstn\0arstn";
+		// 	clock-frequency = <0xc65d400>;
+		// 	max-frequency = <0xc65d400>;
+		// 	#address-cells = <0x01>;
+		// 	#size-cells = <0x00>;
+		// 	dma-ranges = <0x00 0x20000000 0x00 0xc0000000 0x00 0x40000000>;
+		// 	iommus = <0x15 0x11>;
+		// 	tbus = <0x02>;
+		// 	eswin,hsp_sp_csr = <0x16 0x1040 0x708 0x70c>;
+		// 	eswin,syscrg_csr = <0x12 0x168 0x148 0x14c>;
+		// 	bus-width = <0x04>;
+		// 	sdio-id = <0x01>;
+		// 	numa-node-id = <0x00>;
+		// 	status = "okay";
+		// 	dma-noncoherent;
+		// 	delay_code = <0x29>;
+		// 	drive-impedance-ohm = <0x21>;
+		// 	enable-cmd-pullup;
+		// 	enable-data-pullup;
+		// 	keep-power-in-suspend;
+		// 	non-removable;
+		// 	no-sd;
+		// 	no-mmc;
+		// };
+
+		mbox@50a40000 {
+			compatible = "eswin,npu0-mailbox";
+			reg = <0x00 0x50a40000 0x00 0x10000 0x00 0x50a50000 0x00 0x10000>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x79>;
+			#mbox-cells = <0x01>;
+			clocks = <0x03 0x282 0x03 0x283>;
+			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
+			resets = <0x14 0x0c 0x10 0x14 0x0c 0x20>;
+			reset-names = "rst\0rst_device";
+			lock-bit = <0x01>;
+			irq-bit = <0x08>;
+			numa-node-id = <0x00>;
+			dma-noncoherent;
+			status = "okay";
+			phandle = <0x1e>;
+		};
+
+		mbox@50a80000 {
+			compatible = "eswin,dsp0-mailbox";
+			reg = <0x00 0x50a80000 0x00 0x10000 0x00 0x50a90000 0x00 0x10000>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x7d>;
+			#mbox-cells = <0x01>;
+			clocks = <0x03 0x286 0x03 0x287>;
+			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
+			resets = <0x14 0x0c 0x100 0x14 0x0c 0x200>;
+			reset-names = "rst\0rst_device";
+			lock-bit = <0x01>;
+			irq-bit = <0x20>;
+			numa-node-id = <0x00>;
+			dma-noncoherent;
+			status = "okay";
+			phandle = <0x23>;
+		};
+
+		mbox@50aa0000 {
+			compatible = "eswin,dsp1-mailbox";
+			reg = <0x00 0x50aa0000 0x00 0x10000 0x00 0x50ab0000 0x00 0x10000>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x7f>;
+			#mbox-cells = <0x01>;
+			clocks = <0x03 0x288 0x03 0x289>;
+			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
+			resets = <0x14 0x0c 0x400 0x14 0x0c 0x800>;
+			reset-names = "rst\0rst_device";
+			lock-bit = <0x01>;
+			irq-bit = <0x40>;
+			numa-node-id = <0x00>;
+			dma-noncoherent;
+			status = "okay";
+			phandle = <0x24>;
+		};
+
+		mbox@50ac0000 {
+			compatible = "eswin,dsp2-mailbox";
+			reg = <0x00 0x50ac0000 0x00 0x10000 0x00 0x50ad0000 0x00 0x10000>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x81>;
+			#mbox-cells = <0x01>;
+			clocks = <0x03 0x28a 0x03 0x28b>;
+			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
+			resets = <0x14 0x0c 0x1000 0x14 0x0c 0x2000>;
+			reset-names = "rst\0rst_device";
+			lock-bit = <0x01>;
+			irq-bit = <0x80>;
+			numa-node-id = <0x00>;
+			dma-noncoherent;
+			status = "okay";
+			phandle = <0x25>;
+		};
+
+		mbox@50ae0000 {
+			compatible = "eswin,dsp3-mailbox";
+			reg = <0x00 0x50ae0000 0x00 0x10000 0x00 0x50af0000 0x00 0x10000>;
+			interrupt-parent = <0x10>;
+			interrupts = <0x83>;
+			#mbox-cells = <0x01>;
+			clocks = <0x03 0x28c 0x03 0x28d>;
+			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
+			resets = <0x14 0x0c 0x4000 0x14 0x0c 0x8000>;
+			reset-names = "rst\0rst_device";
+			lock-bit = <0x01>;
+			irq-bit = <0x100>;
+			numa-node-id = <0x00>;
+			dma-noncoherent;
+			status = "okay";
+			phandle = <0x26>;
+		};
+
+		i2c@50960000 {
+			compatible = "snps,designware-i2c";
+			clock-frequency = <0x186a0>;
+			clocks = <0x03 0x28f>;
+			clock-names = "pclk";
+			resets = <0x14 0x09 0x02>;
+			reset-names = "rst";
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			reg = <0x00 0x50960000 0x00 0x10000>;
+			interrupts = <0x6a>;
+			interrupt-parent = <0x10>;
+			numa-node-id = <0x00>;
+			status = "okay";
+
+			es5430@f {
+				compatible = "einno,es5340";
+				reg = <0x0f>;
+				eswin,regulator_default-microvolt = <0xf4240>;
+				eswin,regulator_label = "supply vdd1\0npu vdd1\0npu current1\0npu temperature1";
+				label = "npu_vdd";
+
+				regulators {
+
+					npu_svcc {
+						regulator-name = "NPU_SVCC";
+						regulator-min-microvolt = <0xaae60>;
+						regulator-max-microvolt = <0x10c8e0>;
+						regulator-min-microamp = <0x1312d00>;
+						regulator-max-microamp = <0x2625a00>;
+						regulator-ov-protection-microvolt = <0x10c8e0>;
+						regulator-always-on;
+						phandle = <0x20>;
+					};
+				};
+			};
+		};
+
 		pinctrl@0x51600080 {
 			compatible = "eswin,eic7x-pinctrl\0syscon";
 			reg = <0x00 0x51600080 0x00 0x1fff80>;
 			numa-node-id = <0x00>;
 			status = "okay";
 			phandle = <0x1a>;
+
+			emmc_led_control-default {
+				phandle = <0x2c>;
+
+				mux {
+					groups = "emmc_led_control_group";
+					function = "emmc_led_control_func";
+				};
+
+				conf {
+					groups = "emmc_led_control_group";
+					input-enable = <0x00>;
+					bias-pull-down = <0x01>;
+				};
+			};
 
 			gpio16-default {
 				phandle = <0x1c>;
@@ -687,8 +773,6 @@
 					bias-pull-down = <0x01>;
 				};
 			};
-
-
 		};
 
 		gpio@51600000 {
@@ -712,6 +796,7 @@
 				phandle = <0x1d>;
 			};
 
+
 			gpio-port@2 {
 				compatible = "snps,dw-apb-gpio-port";
 				gpio-controller;
@@ -720,21 +805,12 @@
 				reg = <0x02>;
 				phandle = <0x19>;
 			};
-
 		};
-
-	};
-
-	hvisor_virtio_device {
-		compatible = "hvisor";
-    	interrupt-parent = <0x10>;
-    	interrupts = <0x20>;
 	};
 
 	aliases {
 		serial0 = "/soc/serial@0x50900000";
 		ethernet0 = "/soc/ethernet@50400000";
-		ethernet1 = "/soc/ethernet@50410000";
 	};
 
 	chosen {
