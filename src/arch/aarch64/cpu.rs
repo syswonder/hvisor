@@ -36,7 +36,13 @@ use super::{
 pub const MPIDR_MASK: u64 = 0xff00ffffff;
 
 pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
-    psci::cpu_on(cpuid as u64 | 0x80000000, start_addr as _, opaque as _).unwrap_or_else(|err| {
+    let new_cpuid = {
+        if cpuid >= MAX_CPU_NUM {
+            panic!("Invalid cpuid: {}", cpuid);
+        }
+        BOARD_MPIDR_MAPPINGS[cpuid]
+    };
+    psci::cpu_on(new_cpuid, start_addr as _, opaque as _).unwrap_or_else(|err| {
         if let psci::error::Error::AlreadyOn = err {
         } else {
             panic!("can't wake up cpu {}", cpuid);

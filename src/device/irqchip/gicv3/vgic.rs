@@ -16,6 +16,7 @@
 use alloc::sync::Arc;
 
 use super::{gicd::GICD_LOCK, is_spi};
+use crate::platform::BOARD_MPIDR_MAPPINGS;
 use crate::{
     arch::zone::HvArchZoneConfig,
     consts::MAX_CPU_NUM,
@@ -29,7 +30,6 @@ use crate::{
     percpu::{get_cpu_data, this_zone},
     zone::{this_zone_id, Zone},
 };
-
 pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> {
     base..(base + n * size)
 }
@@ -44,8 +44,8 @@ impl Zone {
         self.mmio_region_register(arch.gits_base, arch.gits_size, vgicv3_its_handler, 0);
 
         for cpu in 0..MAX_CPU_NUM {
-            let gicr_base = arch.gicr_base + cpu * PER_GICR_SIZE;
-            debug!("registering gicr {} at {:#x?}", cpu, gicr_base);
+            let gicr_base = host_gicr_base(cpu);
+            info!("registering gicr cpu{} at {:#x?}", cpu, gicr_base);
             self.mmio_region_register(gicr_base, PER_GICR_SIZE, vgicv3_redist_handler, cpu);
         }
     }
@@ -155,7 +155,9 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
             // For aarch32 guest, the access to GICR_TYPER will be split into two parts.
             // Many GIC supports 32-bit access to GICR_TYPER twice.
             mmio_perform_access(gicr_base, mmio);
-            if cpu == MAX_CPU_NUM - 1 && reg == GICR_TYPER {
+            let max_mpidr = BOARD_MPIDR_MAPPINGS.iter().max().copied().unwrap_or(0);
+            let current_mpidr = BOARD_MPIDR_MAPPINGS[cpu];
+            if current_mpidr == max_mpidr && reg == GICR_TYPER {
                 mmio.value |= GICR_TYPER_LAST;
             }
         }
