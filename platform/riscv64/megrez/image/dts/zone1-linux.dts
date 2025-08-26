@@ -4,13 +4,25 @@
 	#address-cells = <0x02>;
 	#size-cells = <0x02>;
 	compatible = "sifive,hifive-unmatched-a00\0sifive,fu740-c000\0sifive,fu740\0eswin,eic7700";
-	model = "Milk-V Megrez";
-	
+	model = "Milk-V Megrez";	
+
 	cpus {
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
 		timebase-frequency = <0xf4240>;
-		
+
+		idle-states {
+
+			cpu-retentive {
+				compatible = "riscv,idle-state";
+				riscv,sbi-suspend-param = <0x00>;
+				entry-latency-us = <0x14>;
+				exit-latency-us = <0x28>;
+				min-residency-us = <0x50>;
+				phandle = <0x05>;
+			};
+		};
+
 		cpu@1 {
 			clock-frequency = <0x00>;
 			compatible = "eswin,eic770x\0riscv";
@@ -20,30 +32,38 @@
 			d-tlb-sets = <0x01>;
 			d-tlb-size = <0x20>;
 			device_type = "cpu";
-			// hardware-exec-breakpoint-count = <0x04>;
-			// hwpf-distanceBits = <0x06>;
-			// hwpf-hitCacheThrdBits = <0x05>;
-			// hwpf-hitMSHRThrdBits = <0x04>;
-			// hwpf-l2pfPoolSize = <0x0a>;
-			// hwpf-nIssQEnt = <0x06>;
-			// hwpf-nPrefetchQueueEntries = <0x08>;
-			// hwpf-nStreams = <0x10>;
-			// hwpf-qFullnessThrdBits = <0x04>;
-			// hwpf-windowBits = <0x06>;
+			hardware-exec-breakpoint-count = <0x04>;
+			hwpf-distanceBits = <0x06>;
+			hwpf-hitCacheThrdBits = <0x05>;
+			hwpf-hitMSHRThrdBits = <0x04>;
+			hwpf-l2pfPoolSize = <0x0a>;
+			hwpf-nIssQEnt = <0x06>;
+			hwpf-nPrefetchQueueEntries = <0x08>;
+			hwpf-nStreams = <0x10>;
+			hwpf-qFullnessThrdBits = <0x04>;
+			hwpf-windowBits = <0x06>;
 			i-cache-block-size = <0x40>;
 			i-cache-sets = <0x80>;
 			i-cache-size = <0x8000>;
 			i-tlb-sets = <0x01>;
 			i-tlb-size = <0x20>;
 			mmu-type = "riscv,sv48";
+			next-level-cache = <0x06>;
 			reg = <0x01>;
-			riscv,isa = "rv64imafdc";
+			riscv,isa = "rv64imafdch_zicsr_zifencei_zba_zbb_sscofpmf";
+			riscv,pmpgranularity = <0x1000>;
+			riscv,pmpregions = <0x08>;
+			sifive,buserror = <0x07>;
 			status = "okay";
 			timebase-frequency = <0xf4240>;
 			tlb-split;
+			numa-node-id = <0x00>;
 			clocks = <0x03 0x1f5>;
-			phandle = <0x4b>;
-			
+			operating-points-v2 = <0x04>;
+			#cooling-cells = <0x02>;
+			dynamic-power-coefficient = <0x144>;
+			cpu-idle-states = <0x05>;
+
 			interrupt-controller {
 				#interrupt-cells = <0x01>;
 				compatible = "riscv,cpu-intc";
@@ -52,15 +72,7 @@
 			};
 		};
 	};
-	
-	memory@80000000 {
-		compatible = "sifive,axi4-mem-port\0sifive,axi4-port\0sifive,mem-port";
-		device_type = "memory";
-		reg = <0x00 0x83000000 0x00 0x0C000000>;
-		sifive,port-width-bytes = <0x20>;
-		phandle = <0x14>;
-	};
-	
+
 	soc {
 		#address-cells = <0x02>;
 		#size-cells = <0x02>;
@@ -68,6 +80,8 @@
 		ranges;
 
 		cache-controller@2010000 {
+			#address-cells = <0x02>;
+			#size-cells = <0x02>;
 			cache-block-size = <0x40>;
 			cache-level = <0x03>;
 			cache-sets = <0x1000>;
@@ -76,7 +90,6 @@
 			compatible = "sifive,ccache1\0cache\0sifive,fu740-c000-ccache";
 			// interrupt-parent = <0x10>;
 			// interrupts = <0x01 0x03 0x04 0x02>;
-			next-level-cache = <0x14>;
 			reg = <0x00 0x2010000 0x00 0x4000 0x00 0x8000000 0x00 0x400000>;
 			reg-names = "control\0sideband";
 			sifive,a-mshr-count = <0x3c>;
@@ -85,9 +98,15 @@
 			sifive,max-master-id = <0x0d>;
 			sifive,perfmon-counters = <0x06>;
 			numa-node-id = <0x00>;
-			phandle = <0x15>;
+			ranges;
+			phandle = <0x11>;
+
+			zero-device@1a000000 {
+				compatible = "l3,zero-device";
+				reg = <0x00 0x1a000000 0x00 0x400000>;
+			};
 		};
-		
+
 		interrupt-controller@c000000 {
 			#interrupt-cells = <0x01>;
 			compatible = "sifive,plic-1.0.0";
@@ -97,6 +116,7 @@
 			reg-names = "control";
 			riscv,max-priority = <0x07>;
 			riscv,ndev = <0x208>;
+			numa-node-id = <0x00>;
 			phandle = <0x10>;
 		};
 
@@ -107,41 +127,13 @@
 			cache-size = <0x40000>;
 			cache-unified;
 			compatible = "sifive,pL2Cache0\0cache";
-			next-level-cache = <0x15>;
+			next-level-cache = <0x11>;
 			reg = <0x00 0x108000 0x00 0x4000>;
 			reg-names = "control";
 			sifive,ecc-granularity = <0x10>;
 			sifive,perfmon-counters = <0x06>;
-			phandle = <0x06>;
-		};
-
-		sys-crg@51828000 {
-			compatible = "eswin,win2030-sys-crg\0syscon\0simple-mfd";
-			reg = <0x00 0x51828000 0x00 0x80000>;
 			numa-node-id = <0x00>;
-			phandle = <0x16>;
-
-			reset-controller {
-				compatible = "eswin,win2030-reset";
-				#reset-cells = <0x02>;
-				status = "okay";
-				phandle = <0x18>;
-			};
-
-			clock-controller {
-				compatible = "eswin,win2030-clock";
-				#clock-cells = <0x01>;
-				status = "okay";
-				force-1_8ghz;
-				phandle = <0x03>;
-			};
-		};
-
-		hsp_sp_top_csr@0x50440000 {
-			compatible = "eswin,win2030-hsp-sp-csr\0syscon";
-			#size-cells = <0x02>;
-			reg = <0x00 0x50440000 0x00 0x2000>;
-			phandle = <0x1a>;
+			phandle = <0x06>;
 		};
 
 		serial@0x50920000 {
@@ -152,7 +144,79 @@
 			interrupts = <0x66>;
 			reg-shift = <0x02>;
 			reg-io-width = <0x04>;
+			numa-node-id = <0x00>;
 			status = "okay";
+		};
+
+		sys-crg@51828000 {
+			compatible = "eswin,win2030-sys-crg\0syscon\0simple-mfd";
+			reg = <0x00 0x51828000 0x00 0x80000>;
+			numa-node-id = <0x00>;
+			phandle = <0x12>;
+
+			reset-controller {
+				compatible = "eswin,win2030-reset";
+				#reset-cells = <0x02>;
+				numa-node-id = <0x00>;
+				status = "okay";
+				phandle = <0x14>;
+			};
+
+			clock-controller {
+				compatible = "eswin,win2030-clock";
+				#clock-cells = <0x01>;
+				numa-node-id = <0x00>;
+				status = "okay";
+				force-1_8ghz;
+				phandle = <0x03>;
+			};
+		};
+
+		hsp_sp_top_csr@0x50440000 {
+			compatible = "eswin,win2030-hsp-sp-csr\0syscon";
+			numa-node-id = <0x00>;
+			#size-cells = <0x02>;
+			reg = <0x00 0x50440000 0x00 0x2000>;
+			phandle = <0x16>;
+		};
+
+
+		ethernet@50410000 {
+			compatible = "eswin,win2030-qos-eth";
+			reg = <0x00 0x50410000 0x00 0x10000>;
+			interrupt-parent = <0x10>;
+			interrupt-names = "macirq";
+			interrupts = <0x46>;
+			phy-mode = "rgmii";
+			numa-node-id = <0x00>;
+			id = <0x01>;
+			status = "okay";
+			clocks = <0x03 0x226 0x03 0x227 0x03 0x229>;
+			clock-names = "app\0stmmaceth\0tx";
+			resets = <0x14 0x07 0x2000000>;
+			reset-names = "ethrst";
+			// tbus = <0x02>;
+			dma-noncoherent;
+			eswin,hsp_sp_csr = <0x16 0x1034 0x200 0x208>;
+			eswin,syscrg_csr = <0x12 0x148 0x14c>;
+			eswin,dly_hsp_reg = <0x214 0x218 0x21c>;
+			snps,axi-config = <0x1b>;
+			pinctrl-names = "default";
+			pinctrl-0 = <0x1c>;
+			rst-gpios = <0x1d 0x10 0x01>;
+			eswin,rgmiisel = <0x1a 0x294 0x03>;
+			eswin,led-cfgs = <0x6100 0xa40 0x420>;
+			dly-param-1000m = <0x25252525 0x80268025 0x26262626>;
+			dly-param-100m = <0x48484848 0x80588048 0x58585858>;
+			dly-param-10m = <0x00 0x00 0x00>;
+
+			stmmac-axi-config {
+				snps,blen = <0x00 0x00 0x00 0x00 0x10 0x08 0x04>;
+				snps,rd_osr_lmt = <0x02>;
+				snps,wr_osr_lmt = <0x02>;
+				snps,lpi_en = <0x00>;
+				phandle = <0x1b>;
+			};
 		};
 
 		sata@0x50420000 {
@@ -162,21 +226,21 @@
 			interrupt-names = "intrq\0msi\0pme";
 			interrupts = <0x3a 0x3b 0x3c>;
 			ports-implemented = <0x01>;
-			resets = <0x18 0x07 0x8000000>;
+			resets = <0x14 0x07 0x8000000>;
 			reset-names = "apb";
 			#size-cells = <0x02>;
-			// iommus = <0x19 0x0e>;
+			// iommus = <0x15 0x0e>;
 			// tbus = <0x02>;
 			// dma-ranges = <0x00 0x00 0x00 0xc0000000 0x200 0x00>;
-			eswin,hsp_sp_csr = <0x1a 0x1050>;
-			eswin,syscrg_csr = <0x16 0x41c>;
+			eswin,hsp_sp_csr = <0x16 0x1050>;
+			eswin,syscrg_csr = <0x12 0x41c>;
 			numa-node-id = <0x00>;
 			dma-noncoherent;
 			status = "okay";
 			// pinctrl-names = "default";
-			// pinctrl-0 = <0x28>;
+			// pinctrl-0 = <0x29>;
 		};
-		
+
 		// virtio_mmio@10006000 {
 		// 	interrupts = <0x06>;
 		// 	interrupt-parent = <0x10>;
@@ -191,52 +255,15 @@
 		// 	compatible = "virtio,mmio";
 		// };
 
-		ethernet@50410000 {
-			compatible = "eswin,win2030-qos-eth";
-			reg = <0x00 0x50410000 0x00 0x10000>;
-			interrupt-parent = <0x10>;
-			interrupt-names = "macirq";
-			interrupts = <0x46>;
-			phy-mode = "rgmii";
-			numa-node-id = <0x00>;
-			id = <0x01>;
-			status = "okay";
-			clocks = <0x03 0x226 0x03 0x227 0x03 0x229>;
-			clock-names = "app\0stmmaceth\0tx";
-			resets = <0x18 0x07 0x2000000>;
-			reset-names = "ethrst";
-			// tbus = <0x02>;
-			dma-noncoherent;
-			eswin,hsp_sp_csr = <0x1a 0x1034 0x200 0x208>;
-			eswin,syscrg_csr = <0x16 0x148 0x14c>;
-			eswin,dly_hsp_reg = <0x214 0x218 0x21c>;
-			snps,axi-config = <0x1f>;
-			pinctrl-names = "default";
-			pinctrl-0 = <0x20>;
-			rst-gpios = <0x21 0x10 0x01>;
-			eswin,rgmiisel = <0x1e 0x294 0x03>;
-			eswin,led-cfgs = <0x6100 0xa40 0x420>;
-			dly-param-1000m = <0x25252525 0x80268025 0x26262626>;
-			dly-param-100m = <0x48484848 0x80588048 0x58585858>;
-			dly-param-10m = <0x00 0x00 0x00>;
-
-			stmmac-axi-config {
-				snps,blen = <0x00 0x00 0x00 0x00 0x10 0x08 0x04>;
-				snps,rd_osr_lmt = <0x02>;
-				snps,wr_osr_lmt = <0x02>;
-				snps,lpi_en = <0x00>;
-				phandle = <0x1f>;
-			};
-		};
-
 		pinctrl@0x51600080 {
 			compatible = "eswin,eic7x-pinctrl\0syscon";
 			reg = <0x00 0x51600080 0x00 0x1fff80>;
+			numa-node-id = <0x00>;
 			status = "okay";
-			phandle = <0x1e>;
+			phandle = <0x1a>;
 
 			gpio16-default {
-				phandle = <0x20>;
+				phandle = <0x1c>;
 
 				mux {
 					groups = "gpio16_group";
@@ -256,6 +283,7 @@
 			#size-cells = <0x00>;
 			compatible = "snps,dw-apb-gpio";
 			reg = <0x00 0x51600000 0x00 0x80>;
+			numa-node-id = <0x00>;
 			status = "okay";
 
 			gpio-port@0 {
@@ -268,9 +296,10 @@
 				interrupt-controller;
 				#interrupt-cells = <0x02>;
 				interrupts = <0x12f 0x130 0x131 0x132 0x133 0x134 0x135 0x136 0x137 0x138 0x139 0x13a 0x13b 0x13c 0x13d 0x13e 0x13f 0x140 0x141 0x142 0x143 0x144 0x145 0x146 0x147 0x148 0x149 0x14a 0x14b 0x14c 0x14d 0x14e>;
-				phandle = <0x21>;
+				phandle = <0x1d>;
 			};
 		};
+
 	};
 
 	aliases {
@@ -279,11 +308,17 @@
 		// virtio-console = "/soc/virtio_mmio@10007000";
 		ethernet1 = "/soc/ethernet@50410000";
 	};
-	
+
 	chosen {
 		// bootargs = "earlycon console=hvc0 root=/dev/vda rootfstype=ext4 rw rootwait";
 		// stdout-path = "virtio-console";
 		bootargs = "earlycon console=ttyS2,115200 root=/dev/sda3 rootfstype=ext4 rw rootwait init=/bin/bash";
 		stdout-path = "serial2:115200n8";
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x00 0x83000000 0x00 0x0C000000>;
+		numa-node-id = <0x00>;
 	};
 };
