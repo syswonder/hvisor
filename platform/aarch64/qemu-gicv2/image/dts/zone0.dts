@@ -35,7 +35,18 @@
 
 	memory@50000000 {
 		device_type = "memory";
-		reg = <0x00 0x50000000 0x00 0x80000000>;
+		reg = <0x00 0x50000000 0x00 0x70000000>;
+	};
+
+	reserved-memory {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+
+		nonroot@50000000 {
+			no-map;
+			reg = <0x00 0x50000000 0x00 0x30000000>;
+		};
 	};
 
 	intc@8000000 {
@@ -91,7 +102,13 @@
 	};
 
 	chosen {
-		bootargs = "earlycon console=ttyAMA0 root=/dev/vda mem=768M rw";
+		bootargs = "clk_ignore_unused earlycon console=ttyAMA0 root=/dev/vda iomem=relaxed rw";
 		stdout-path = "/pl011@9000000";
+	};
+
+	hvisor_virtio_device {
+		compatible = "hvisor";
+		interrupt-parent = <0x01>;
+		interrupts = <0x00 0x20 0x01>;
 	};
 };
