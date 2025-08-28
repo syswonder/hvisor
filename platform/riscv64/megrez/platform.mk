@@ -1,6 +1,7 @@
 
 # HVISOR ENTRY
 HVISOR_ENTRY_PA := 0x80200000
+BOOT_PATH := $(image_dir)/../
 
 
 $(hvisor_bin): elf
@@ -11,3 +12,6 @@ $(hvisor_bin): elf
 	mkimage -n hvisor_img -A riscv -O linux -C none -T kernel -a $(HVISOR_ENTRY_PA) \
 	-e $(HVISOR_ENTRY_PA) -d $(hvisor_bin).tmp $(hvisor_bin) && \
 	rm -rf $(hvisor_bin).tmp
+
+mkscr:
+	mkimage -A arm -T script -C none -n "Boot Script" -d $(BOOT_PATH)boot.txt $(BOOT_PATH)boot.scr

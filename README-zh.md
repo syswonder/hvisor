@@ -62,6 +62,8 @@ hvisor 是一个用 Rust 实现的 Type-1 裸机虚拟机监控器，采用分�
 ### riscv64
 
 - [x] QEMU virt riscv64
+- [x] Milk-V Megrez
+- [x] Sifive Hifive Premier P550
 - [ ] FPGA 香山（昆明湖）on S2C Prodigy S7-19PS-2
 - [ ] FPGA  RocketChip on Xilinx Ultrascale+ MPSoC ZCU102
 

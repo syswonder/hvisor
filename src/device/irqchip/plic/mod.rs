@@ -11,7 +11,7 @@
 // Syswonder Website:
 //      https://www.syswonder.org
 //
-// Authors:
+// Authors: Jingyu Liu <liujingyu24s@ict.ac.cn>
 //
 
 pub mod plic;
@@ -44,6 +44,7 @@ use spin::Once;
    For physical plic, we don't add lock for it.
 */
 
+// Physical PLIC
 pub static PLIC: Once<Plic> = Once::new();
 // The MAX_ZONE_NUM should be the power of 2.
 static mut VPLIC_MAP: Option<FnvIndexMap<usize, VirtualPLIC, MAX_ZONE_NUM>> = None;

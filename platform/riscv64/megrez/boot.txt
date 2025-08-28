@@ -1,5 +1,5 @@
-setenv serverip 192.168.137.10;
-setenv ipaddr 192.168.137.11;
+setenv serverip 192.168.1.150;
+setenv ipaddr 192.168.1.200;
 setenv netmask 255.255.255.0;
 setenv hvisor_addr 0x80200000;
 setenv zone0_fdt_addr 0x8f000000;
