@@ -68,7 +68,7 @@
 		interrupt-affinity = <0x03 0x04>;
 	};
 
-	gic@80000000 {
+	gic@8000000 {
 		compatible = "arm,gic-v3";
 		#interrupt-cells = <0x03>;
 		interrupt-controller;
