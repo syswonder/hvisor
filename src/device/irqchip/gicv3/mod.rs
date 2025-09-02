@@ -59,7 +59,7 @@ pub fn gicc_init() {
 
     gicv3_clear_pending_irqs();
     let _vtr = read_sysreg!(ich_vtr_el2);
-    let vmcr = ((pmr & 0xff) << 24) | (1 << 1) | (1 << 9); //VPMR|VENG1|VEOIM
+    let vmcr = ((pmr & 0xff) << 24) | (1 << 1); //VPMR|VENG1
     write_sysreg!(ich_vmcr_el2, vmcr);
     write_sysreg!(ich_hcr_el2, 0x1); //enable virt cpu interface
 
