@@ -1,0 +1,46 @@
+{
+    "name": "linux2",
+    "zone_id": 1,
+    "cpus": [2, 3],
+    "memory_regions": [
+        {
+            "type": "ram",
+            "physical_start": "0x50000000",
+            "virtual_start":  "0x50000000",
+            "size": "0x25000000"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0xff9d0000",
+            "virtual_start":  "0xff9d0000",
+            "size": "0x200"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0xff9e0000",
+            "virtual_start":  "0xff9e0000",
+            "size": "0x200"
+        }
+    ],
+    "interrupts": [76, 78],
+    "ivc_configs": [],
+    "kernel_filepath": "./Image",
+    "dtb_filepath": "./linux1.dtb",
+    "kernel_load_paddr": "0x50400000",
+    "dtb_load_paddr":   "0x50000000",
+    "entry_point":      "0x50400000",
+    "arch_config": {
+        "gic_version": "v2",
+        "gicd_base": "0xf9010000",
+        "gicd_size": "0x10000",
+        "gicc_base": "0xf9020000",
+        "gicc_size": "0x20000",
+        "gicc_offset": "0xf000",
+        "gich_base": "0xf9040000",
+        "gich_size": "0x20000",
+        "gicv_base": "0xf9060000",
+        "gicv_size": "0x20000",
+        "is_aarch32": false
+    }
+}
+
