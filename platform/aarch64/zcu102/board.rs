@@ -12,7 +12,7 @@
 //      https://www.syswonder.org
 //
 // Authors:
-//
+//  ForeverYolo <2572131118@qq.com>
 use crate::config::HvConfigMemoryRegion;
 use crate::{
     arch::{mmu::MemoryType, zone::HvArchZoneConfig},
@@ -49,7 +49,7 @@ pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 5] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [
     // HvConfigMemoryRegion {
     //     mem_type: MEM_TYPE_RAM,
     //     physical_start: 0x800000000,
@@ -86,9 +86,34 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 5] = [
         virtual_start: 0xff170000,
         size: 0x1000,
     }, // mmc0
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xff0e0000,
+        virtual_start: 0xff0e0000,
+        size: 0x1000,
+    }, // ethernet
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xff020000,
+        virtual_start: 0xff020000,
+        size: 0x1000,
+    }, // i2c
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xff030000,
+        virtual_start: 0xff030000,
+        size: 0x1000,
+    }, // i2c
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xff0a0000,
+        virtual_start: 0xff0a0000,
+        size: 0x1000,
+    }, // gpio
 ];
 
-pub const ROOT_ZONE_IRQS: [u32; 8] = [53, 81, 67, 175, 176, 177, 178, 64];
+pub const ROOT_ZONE_IRQS: [u32; 11] = [53, 81, 175, 176, 177, 178, 64, 50, 48, 49, 95];
+// serial-mmc-pmu-pmu-pmu-pmu-(hvisor_virtio_device)-gpio-i2c(ff030000)-i2c(ff020000)-ethernet
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     gicd_base: 0xf9010000,
