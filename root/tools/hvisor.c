@@ -238,7 +238,6 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
             strtoull(gits_size_json->valuestring, NULL, 16);
     }
 
-
     if (is_aarch32_json == NULL) {
         log_warn("No is_aarch32 field in arch_config. If you are booting an "
                  "aarch32 guest, "
