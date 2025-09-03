@@ -186,10 +186,8 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
     cJSON *is_aarch32_json =
         SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "is_aarch32");
     CHECK_JSON_NULL(gic_version_json, "gic_version");
-    CHECK_JSON_NULL(gicd_base_json, "gicd_base")
-    CHECK_JSON_NULL(gicr_base_json, "gicr_base")
-    CHECK_JSON_NULL(gicd_size_json, "gicd_size")
-    CHECK_JSON_NULL(gicr_size_json, "gicr_size")
+    CHECK_JSON_NULL(gicd_base_json, "gicd_base");
+    CHECK_JSON_NULL(gicd_size_json, "gicd_size");
 
     char *gic_version = gic_version_json->valuestring;
     if (!strcmp(gic_version, "v2")) {
@@ -214,10 +212,23 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
             strtoull(gich_size_json->valuestring, NULL, 16);
         config->arch_config.gicc_size =
             strtoull(gicc_size_json->valuestring, NULL, 16);
-    } else if (strcmp(gic_version, "v3") != 0) {
+    } else if (!strcmp(gic_version, "v3")) {
+        CHECK_JSON_NULL(gicr_base_json, "gicr_base")
+        CHECK_JSON_NULL(gicr_size_json, "gicr_size")
+        config->arch_config.gicr_base =
+            strtoull(gicr_base_json->valuestring, NULL, 16);
+        config->arch_config.gicr_size =
+            strtoull(gicr_size_json->valuestring, NULL, 16);
+    } else {
         log_error("Invalid GIC version. It should be either of v2 or v3\n");
         return -1;
     }
+
+    config->arch_config.gicd_base =
+        strtoull(gicd_base_json->valuestring, NULL, 16);
+    config->arch_config.gicd_size =
+        strtoull(gicd_size_json->valuestring, NULL, 16);
+
     if (gits_base_json == NULL || gits_size_json == NULL) {
         log_warn("No gits fields in arch_config.\n");
     } else {
@@ -227,14 +238,7 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
             strtoull(gits_size_json->valuestring, NULL, 16);
     }
 
-    config->arch_config.gicd_base =
-        strtoull(gicd_base_json->valuestring, NULL, 16);
-    config->arch_config.gicr_base =
-        strtoull(gicr_base_json->valuestring, NULL, 16);
-    config->arch_config.gicd_size =
-        strtoull(gicd_size_json->valuestring, NULL, 16);
-    config->arch_config.gicr_size =
-        strtoull(gicr_size_json->valuestring, NULL, 16);
+
     if (is_aarch32_json == NULL) {
         log_warn("No is_aarch32 field in arch_config. If you are booting an "
                  "aarch32 guest, "
