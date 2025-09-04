@@ -28,7 +28,7 @@ use alloc::collections::vec_deque::VecDeque;
 use alloc::vec::Vec;
 use gicr::init_lpi_prop;
 use gits::gits_init;
-use spin::{Mutex, Once};
+use spin::{Lazy, Mutex, Once};
 
 use self::gicd::{enable_gic_are_ns, GICD_ICACTIVER, GICD_ICENABLER};
 use self::gicr::enable_ipi;
@@ -36,6 +36,7 @@ use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::arch::cpu::this_cpu_id;
 use crate::config::root_zone_config;
 use crate::consts::{self, MAX_CPU_NUM};
+use crate::platform::BOARD_MPIDR_MAPPINGS;
 
 use crate::event::check_events;
 use crate::hypercall::SGI_IPI_ID;
@@ -345,11 +346,24 @@ pub fn host_gicd_base() -> usize {
     GIC.get().unwrap().gicd_base
 }
 
+static SORTED_MPIDRS: Lazy<Vec<u64>> = Lazy::new(|| {
+    let mut sorted = BOARD_MPIDR_MAPPINGS.to_vec();
+    sorted.sort_unstable();
+    sorted
+});
+
 pub fn host_gicr_base(id: usize) -> usize {
     assert!(id < consts::MAX_CPU_NUM);
-    GIC.get().unwrap().gicr_base + id * PER_GICR_SIZE
-}
 
+    let mpidr = BOARD_MPIDR_MAPPINGS[id];
+
+    let order = SORTED_MPIDRS
+        .iter()
+        .position(|&x| x == mpidr)
+        .expect("MPIDR from BOARD_MPIDR_MAPPINGS must be present in sorted list");
+
+    GIC.get().unwrap().gicr_base + order * PER_GICR_SIZE
+}
 pub fn host_gits_base() -> usize {
     GIC.get().unwrap().gits_base
 }
