@@ -76,7 +76,6 @@ pub const ROOT_ZONE_IRQS: [u32; 9] = [33, 64, 77, 79, 35, 36, 37, 38, 65];
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     is_aarch32: 0,
-    gic_version: 2,
     gic_config: GicConfig::Gicv2(Gicv2Config {
         gicd_base: 0x8000000,
         gicd_size: 0x10000,
