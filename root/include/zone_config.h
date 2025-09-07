@@ -70,7 +70,7 @@ typedef struct pci_config pci_config_t;
 
 // enum class GicVesionTag: __u64 { v2, v3 };
 
-struct Gicv2Config{
+struct Gicv2Config {
     __u64 gicd_base;
     __u64 gicd_size;
     __u64 gicc_base;
@@ -79,10 +79,10 @@ struct Gicv2Config{
     __u64 gich_base;
     __u64 gich_size;
     __u64 gicv_base;
-    __u64 gicv_size; 
+    __u64 gicv_size;
 };
 
-struct Gicv3Config{
+struct Gicv3Config {
     __u64 gicd_base;
     __u64 gicd_size;
     __u64 gicr_base;
@@ -108,7 +108,7 @@ union GicConfig {
 
 struct arch_zone_config {
     __u8 is_aarch32;
-    union GicConfig gic_config; 
+    union GicConfig gic_config;
 };
 #endif
 
