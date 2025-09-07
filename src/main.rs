@@ -46,8 +46,6 @@ extern crate log;
 #[macro_use]
 extern crate lazy_static;
 
-extern crate fdt_rs;
-
 #[macro_use]
 mod logging;
 mod arch;
