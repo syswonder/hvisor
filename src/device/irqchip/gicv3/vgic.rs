@@ -62,7 +62,7 @@ impl Zone {
 
                 for cpu in 0..MAX_CPU_NUM {
                     let gicr_base = host_gicr_base(cpu);
-                    info!("registering gicr cpu{} at {:#x?}", cpu, gicr_base);
+                    info!("Registering GIC Redistributor region for CPU {} at {:#x?}", cpu, gicr_base);
                     self.mmio_region_register(gicr_base, PER_GICR_SIZE, vgicv3_redist_handler, cpu);
                 }
             }
