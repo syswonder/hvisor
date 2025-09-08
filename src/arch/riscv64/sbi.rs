@@ -93,16 +93,16 @@ pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
         }
         // Legacy::Console putchar (usually used), temporily don't support other legacy extensions.
         legacy::LEGACY_CONSOLE_PUTCHAR => {
-            sbi_ret = SbiRet {
-                error: sbi_rt::legacy::console_putchar(current_cpu.x[10] as _),
-                value: 0,
-            };
+           sbi_ret = SbiRet {
+               error: sbi_rt::legacy::console_putchar(current_cpu.x[10] as _),
+               value: 0,
+           };
         }
         legacy::LEGACY_CONSOLE_GETCHAR => {
-            sbi_ret = SbiRet {
-                error: sbi_rt::legacy::console_getchar(),
-                value: 0,
-            };
+           sbi_ret = SbiRet {
+               error: sbi_rt::legacy::console_getchar(),
+               value: 0,
+           };
         }
         _ => {
             // Pass through SBI call
@@ -148,11 +148,17 @@ pub fn sbi_base_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
                 sbi_ret.value = ext_id;
             }
         }
-        base::GET_MVENDORID | base::GET_MARCHID | base::GET_MIMPID => {
+        base::GET_MVENDORID => {
             // Return a value that is legal for the mvendorid CSR and 0 is always a legal value for this CSR.
+            sbi_ret.value = sbi_rt::get_mvendorid();
+        }
+        base::GET_MARCHID => {
             // Return a value that is legal for the marchid CSR and 0 is always a legal value for this CSR.
+            sbi_ret.value = sbi_rt::get_marchid();
+        }
+        base::GET_MIMPID => {
             // Return a value that is legal for the mimpid CSR and 0 is always a legal value for this CSR.
-            sbi_ret.value = 0;
+            sbi_ret.value = sbi_rt::get_mimpid();
         }
         _ => {
             sbi_ret.error = RET_ERR_NOT_SUPPORTED;

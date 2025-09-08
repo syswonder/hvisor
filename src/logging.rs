@@ -137,14 +137,30 @@ impl Log for SimpleLogger {
             Level::Debug => ColorCode::Cyan,
             Level::Trace => ColorCode::BrightBlack,
         };
-        print(with_color!(
-            ColorCode::White,
-            "[{} {}] {} {}\n",
-            with_color!(level_color, "{:<5}", level),
-            with_color!(ColorCode::White, "{}", cpu_id),
-            with_color!(ColorCode::White, "({}:{})", target, line),
-            with_color!(args_color, "{}", record.args()),
-        ));
+        if cfg!(feature = "print_timestamp")
+        {
+            let time_us: u64 = crate::arch::time::get_time_us();
+            let sec = time_us / 1_000_000;
+            let us = time_us % 1_000_000;
+            print(with_color!(
+                ColorCode::White,
+                "[{}] {} {} hvisor: {} {}\n",
+                with_color!(ColorCode::BrightWhite, "{:>5}.{:06}", sec, us),
+                with_color!(level_color, "{:<5}", level),
+                with_color!(ColorCode::BrightGreen, "CPU{}", cpu_id),
+                with_color!(ColorCode::White, "({}:{})", target, line),
+                with_color!(args_color, "{}", record.args()),
+            ));
+        } else {
+            print(with_color!(
+                ColorCode::White,
+                "[{} {}] {} {}\n",
+                with_color!(level_color, "{:<5}", level),
+                with_color!(ColorCode::White, "{}", cpu_id),
+                with_color!(ColorCode::White, "({}:{})", target, line),
+                with_color!(args_color, "{}", record.args()),
+            ));
+        }
     }
 
     fn flush(&self) {}

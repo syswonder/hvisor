@@ -34,6 +34,10 @@ pub const MAX_ZONE_NUM: usize = 4;
 
 pub const MAX_WAIT_TIMES: usize = 10000000;
 
+pub fn hv_start() -> VirtAddr {
+    skernel as _
+}
+
 pub fn core_end() -> VirtAddr {
     __core_end as _
 }
@@ -52,5 +56,6 @@ pub const IPI_EVENT_UPDATE_HART_LINE: usize = 5;
 pub const IPI_EVENT_SEND_IPI: usize = 6;
 
 extern "C" {
+    fn skernel();
     fn __core_end();
 }

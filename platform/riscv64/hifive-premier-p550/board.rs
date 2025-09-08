@@ -19,6 +19,8 @@ use crate::{arch::zone::HvArchZoneConfig, config::*};
 pub const BOARD_NAME: &str = "hifive-premier-p550";
 
 pub const BOARD_NCPUS: usize = 4;
+pub const TIMEBASE_FREQ: u64 = 0xf4240; // 1MHz
+
 pub const PLIC_BASE: usize = 0xc000000;
 pub const BOARD_PLIC_INTERRUPTS_NUM: usize = 1023; // except irq 0
 pub const SIFIVE_CCACHE_BASE: usize = 0x2010000; // SiFive composable cache controller
@@ -31,18 +33,24 @@ pub const ROOT_ZONE_CPUS: u64 = 0x1;
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 7] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 4] = [
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
-        physical_start: 0x80000000,
-        virtual_start: 0x80000000,
-        size: 0x8000_0000,
+        physical_start: 0x8000_0000,
+        virtual_start: 0x8000_0000,
+        size: 0x4_0000_0000,
     }, // ram
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
-        physical_start: 0x50900000,
-        virtual_start: 0x50900000,
-        size: 0x10000,
+        physical_start: 0x0000,
+        virtual_start: 0x0000,
+        size: 0xc00_0000,
+    }, // serial0
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x1000_0000,
+        virtual_start: 0x1000_0000,
+        size: 0x7000_0000,
     }, // serial0
     // HvConfigMemoryRegion {
     //     mem_type: MEM_TYPE_IO,
@@ -74,37 +82,37 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 7] = [
     //     virtual_start: 0x50920000,
     //     size: 0x10000,
     // }, // serial2
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0x50460000,
-        virtual_start: 0x50460000,
-        size: 0x10000,
-    }, // mmc
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0x50440000,
-        virtual_start: 0x50440000,
-        size: 0x2000,
-    }, // hsp_sp_top_csr
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0x51828000,
-        virtual_start: 0x51828000,
-        size: 0x80000,
-    }, // sys-crg (clock-controller, reset-controller) (SD card needs)
-    // Cache controller is needed, otherwise terminal will report "VFS: cannot open root device..."
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0x2010000,
-        virtual_start: 0x2010000,
-        size: 0x4000,
-    }, // L3 cache-controller, now hvisor has virtual sifive ccache.
     // HvConfigMemoryRegion {
     //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0x8000000,
-    //     virtual_start: 0x8000000,
-    //     size: 0x400000,
-    // }, // L3 Loosely-Integrated Memory (L3 LIM)
+    //     physical_start: 0x50460000,
+    //     virtual_start: 0x50460000,
+    //     size: 0x10000,
+    // }, // mmc
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0x50440000,
+    //     virtual_start: 0x50440000,
+    //     size: 0x2000,
+    // }, // hsp_sp_top_csr
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0x51828000,
+    //     virtual_start: 0x51828000,
+    //     size: 0x80000,
+    // }, // sys-crg (clock-controller, reset-controller) (SD card needs)
+    // // Cache controller is needed, otherwise terminal will report "VFS: cannot open root device..."
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0x2010000,
+    //     virtual_start: 0x2010000,
+    //     size: 0x4000,
+    // }, // L3 cache-controller, now hvisor has virtual sifive ccache.
+    // // HvConfigMemoryRegion {
+    // //     mem_type: MEM_TYPE_IO,
+    // //     physical_start: 0x8000000,
+    // //     virtual_start: 0x8000000,
+    // //     size: 0x400000,
+    // // }, // L3 Loosely-Integrated Memory (L3 LIM)
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0xc0_0000_0000,
@@ -140,16 +148,28 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 7] = [
 
 // Note: all here's irqs are hardware irqs,
 //  only these irq can be transferred to the physical PLIC.
-pub const HW_IRQS: [u32; 3] = [
+pub const HW_IRQS: [u32; 21] = [
+    0x1, 0x2, 0x3, 0x4, // cache controller
     0x4f, // emmc
     0x51, // sd-card
-    0x64  // uart0
+    0x64,  // uart0
+    0x164, 0x168, 0x165, 0x166, // iommu
+    0x183, // npu
+    0x75, 0x77, 0x79, 0x7b, 0x7d, 0x7f, 0x81, 0x83, // mailbox
+    0x123, // i2c
+    // 0x01, 0x03, 0x04, 0x02, // cache controller
 ];
 
 // irqs belong to the root zone.
-pub const ROOT_ZONE_IRQS: [u32; 2] = [
+pub const ROOT_ZONE_IRQS: [u32; 20] = [
+    0x1, 0x2, 0x3, 0x4, // cache controller
     0x51, // sd-card
-    0x64  // uart0
+    0x64,  // uart0
+    0x164, 0x168, 0x165, 0x166, // iommu
+    0x183, // npu
+    0x75, 0x77, 0x79, 0x7b, 0x7d, 0x7f, 0x81, 0x83, // mailbox
+    0x123, // i2c
+    // 0x01, 0x03, 0x04, 0x02, // cache controller
 ];
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {

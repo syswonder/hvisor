@@ -52,6 +52,7 @@ raw-cpuid = "10.7.0"
 ############# general ##############
 iommu = [] # supported by: aarch64
 pci = [] # supported by: aarch64, loongarch64
+print_timestamp = [] # print timestamp when logging
 
 ############# aarch64 ##############
 # irqchip driver
