@@ -29,7 +29,7 @@ use spin::*;
 pub const LOONGARCH64_CACHED_DMW_PREFIX: u64 = 0x9000_0000_0000_0000;
 pub const LOONGARCH64_UNCACHED_DMW_PREFIX: u64 = 0x8000_0000_0000_0000;
 
-pub fn init_hv_page_table(fdt: &fdt::Fdt) -> HvResult {
+pub fn init_hv_page_table() -> HvResult {
     todo!();
     // let mut hv_pt: MemorySet<Stage1PageTable> = MemorySet::new(4);
     // // let mem_region = fdt.memory().regions().next().unwrap();
