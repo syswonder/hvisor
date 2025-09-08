@@ -33,11 +33,10 @@ use spin::{Lazy, Mutex, Once};
 use self::gicd::{enable_gic_are_ns, GICD_ICACTIVER, GICD_ICENABLER};
 use self::gicr::enable_ipi;
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
-use crate::arch::cpu::{this_cpu_id, MPIDR_MASK};
+use crate::arch::cpu::{cpuid_to_mpidr_affinity, this_cpu_id};
 use crate::arch::zone::GicConfig;
 use crate::config::root_zone_config;
 use crate::consts::{self, MAX_CPU_NUM};
-use crate::platform::BOARD_MPIDR_MAPPINGS;
 
 use crate::event::check_events;
 use crate::hypercall::SGI_IPI_ID;
@@ -366,10 +365,11 @@ static CPU_GICR_BASE: Lazy<Vec<usize>> = Lazy::new(|| {
         let affinity = (typer & GICR_TYPER_AFFINITY_VALUE_MASK) >> GICR_TYPER_AFFINITY_VALUE_SHIFT;
 
         // Find which CPU this GICR belongs to
-        if let Some(cpu_id) = BOARD_MPIDR_MAPPINGS
-            .iter()
-            .position(|&mpidr| mpidr & MPIDR_MASK == affinity & MPIDR_MASK)
-        {
+        if let Some(cpu_id) = (0..MAX_CPU_NUM).position(|cpu_id| {
+            let (aff3, aff2, aff1, aff0) = cpuid_to_mpidr_affinity(cpu_id as u64);
+            let aff = (aff3 << 24) | (aff2 << 16) | (aff1 << 8) | aff0;
+            aff == affinity
+        }) {
             bases[cpu_id] = curr_base;
             found_cpus += 1;
         }
