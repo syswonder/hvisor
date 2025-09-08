@@ -14,7 +14,10 @@
 // Authors:
 //
 use crate::{
-    arch::{mmu::MemoryType, zone::HvArchZoneConfig},
+    arch::{
+        mmu::MemoryType,
+        zone::{GicConfig, Gicv3Config, HvArchZoneConfig},
+    },
     config::*,
 };
 
@@ -132,20 +135,15 @@ pub const ROOT_ZONE_IRQS: [u32; 14] =
     [46, 54, 64, 65, 75, 76, 78, 87, 104, 105, 116, 133, 138, 191];
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
-    gicd_base: 0x30800000,
-    gicd_size: 0x20000,
-    gicr_base: 0x30880000,
-    gicr_size: 0x80000,
-    gicc_base: 0x0,
-    gicc_size: 0x0,
-    gicc_offset: 0x0,
-    gich_base: 0x0,
-    gich_size: 0x0,
-    gicv_base: 0x0,
-    gicv_size: 0x0,
-    gits_base: 0x0,
-    gits_size: 0x0,
     is_aarch32: 0,
+    gic_config: GicConfig::Gicv3(Gicv3Config {
+        gicd_base: 0x30800000,
+        gicd_size: 0x20000,
+        gicr_base: 0x30880000,
+        gicr_size: 0x80000,
+        gits_base: 0,
+        gits_size: 0,
+    }),
 };
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];

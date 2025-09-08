@@ -34,6 +34,7 @@ use self::gicd::{enable_gic_are_ns, GICD_ICACTIVER, GICD_ICENABLER};
 use self::gicr::enable_ipi;
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
 use crate::arch::cpu::this_cpu_id;
+use crate::arch::zone::{GicConfig, Gicv2Config, HvArchZoneConfig};
 use crate::config::root_zone_config;
 use crate::consts::{self, MAX_CPU_NUM};
 use crate::platform::BOARD_MPIDR_MAPPINGS;
@@ -353,7 +354,7 @@ static SORTED_MPIDRS: Lazy<Vec<u64>> = Lazy::new(|| {
 });
 
 pub fn host_gicr_base(id: usize) -> usize {
-    assert!(id < consts::MAX_CPU_NUM);
+    assert!(id < MAX_CPU_NUM);
 
     let mpidr = BOARD_MPIDR_MAPPINGS[id];
 
@@ -398,16 +399,37 @@ pub fn disable_irqs() {
 
 pub fn primary_init_early() {
     let root_config = root_zone_config();
-
-    GIC.call_once(|| Gic {
-        gicd_base: root_config.arch_config.gicd_base,
-        gicr_base: root_config.arch_config.gicr_base,
-        gicd_size: root_config.arch_config.gicd_size,
-        gicr_size: root_config.arch_config.gicr_size,
-        gits_base: root_config.arch_config.gits_base,
-        gits_size: root_config.arch_config.gits_size,
-    });
-
+    match root_config.arch_config.gic_config {
+        GicConfig::Gicv2(_) => {
+            panic!("GICv2 is not supported in this version of hvisor");
+        }
+        GicConfig::Gicv3(ref gicv3_config) => {
+            info!("GICv3 detected");
+            GIC.call_once(|| Gic {
+                gicd_base: gicv3_config.gicd_base,
+                gicr_base: gicv3_config.gicr_base,
+                gicd_size: gicv3_config.gicd_size,
+                gicr_size: gicv3_config.gicr_size,
+                gits_base: gicv3_config.gits_base,
+                gits_size: gicv3_config.gits_size,
+            });
+            info!(
+                "GIC Distributor base: {:#x}, size: {:#x}",
+                GIC.get().unwrap().gicd_base,
+                GIC.get().unwrap().gicd_size
+            );
+            info!(
+                "GIC Redistributor base: {:#x}, size: {:#x}",
+                GIC.get().unwrap().gicr_base,
+                GIC.get().unwrap().gicr_size
+            );
+            info!(
+                "GIC ITS base: {:#x}, size: {:#x}",
+                GIC.get().unwrap().gits_base,
+                GIC.get().unwrap().gits_size
+            );
+        }
+    }
     init_lpi_prop();
 
     if host_gits_base() != 0 && host_gits_size() != 0 {
