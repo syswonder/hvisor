@@ -41,28 +41,20 @@ pub fn read_time() -> u64 {
 
 /// Return time in nanoseconds since some arbitrary point in the past.
 pub fn get_time_ns() -> u64 {
-    unsafe {
-        (read_time() - TIMEBASE) * 1_000_000_000 / TIMEBASE_FREQ
-    }
+    unsafe { (read_time() - TIMEBASE) * 1_000_000_000 / TIMEBASE_FREQ }
 }
 
 /// Return time in seconds since some arbitrary point in the past.
 pub fn get_time_us() -> u64 {
-    unsafe {
-        (read_time() - TIMEBASE) * 1_000_000 / TIMEBASE_FREQ
-    }
+    unsafe { (read_time() - TIMEBASE) * 1_000_000 / TIMEBASE_FREQ }
 }
 
 /// Return time in seconds since some arbitrary point in the past.
 pub fn get_time_ms() -> u64 {
-    unsafe {
-        (read_time() - TIMEBASE) * 1_000 / TIMEBASE_FREQ
-    }
+    unsafe { (read_time() - TIMEBASE) * 1_000 / TIMEBASE_FREQ }
 }
 
 /// Return time in seconds since some arbitrary point in the past.
 pub fn get_time_s() -> u64 {
-    unsafe {
-        (read_time() - TIMEBASE) / TIMEBASE_FREQ
-    }
+    unsafe { (read_time() - TIMEBASE) / TIMEBASE_FREQ }
 }

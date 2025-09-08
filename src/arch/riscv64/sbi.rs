@@ -95,16 +95,16 @@ pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
         // But for compatibility, we still support some legacy SBI calls.
         // Legacy::Console putchar (usually used), temporily don't support other legacy extensions.
         legacy::LEGACY_CONSOLE_PUTCHAR => {
-           sbi_ret = SbiRet {
-               error: sbi_rt::legacy::console_putchar(current_cpu.x[10] as _),
-               value: 0,
-           };
+            sbi_ret = SbiRet {
+                error: sbi_rt::legacy::console_putchar(current_cpu.x[10] as _),
+                value: 0,
+            };
         }
         legacy::LEGACY_CONSOLE_GETCHAR => {
-           sbi_ret = SbiRet {
-               error: sbi_rt::legacy::console_getchar(),
-               value: 0,
-           };
+            sbi_ret = SbiRet {
+                error: sbi_rt::legacy::console_getchar(),
+                value: 0,
+            };
         }
         legacy::LEGACY_SET_TIMER => {
             sbi_ret = sbi_time_handler(time::SET_TIMER, current_cpu);
@@ -121,7 +121,8 @@ pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
     // Write the return value back to the current_cpu
     // Note: for legacy SBI extensions, nothing is returned in a1 register.
     // For other SBI extensions, a0 is error code, a1 is return value.
-    if eid > 0xF { // Legacy extensions are 0x0 ~ 0xF
+    if eid > 0xF {
+        // Legacy extensions are 0x0 ~ 0xF
         current_cpu.x[10] = sbi_ret.error as usize;
         current_cpu.x[11] = sbi_ret.value as usize;
     } else {

@@ -137,7 +137,7 @@ impl Log for SimpleLogger {
             Level::Debug => ColorCode::Cyan,
             Level::Trace => ColorCode::BrightBlack,
         };
-        if cfg!(feature = "print_timestamp")
+        #[cfg(feature = "print_timestamp")]
         {
             let time_us: u64 = crate::arch::time::get_time_us();
             let sec = time_us / 1_000_000;
@@ -151,16 +151,16 @@ impl Log for SimpleLogger {
                 with_color!(ColorCode::White, "({}:{})", target, line),
                 with_color!(args_color, "{}", record.args()),
             ));
-        } else {
-            print(with_color!(
-                ColorCode::White,
-                "[{} {}] {} {}\n",
-                with_color!(level_color, "{:<5}", level),
-                with_color!(ColorCode::White, "{}", cpu_id),
-                with_color!(ColorCode::White, "({}:{})", target, line),
-                with_color!(args_color, "{}", record.args()),
-            ));
         }
+        #[cfg(not(feature = "print_timestamp"))]
+        print(with_color!(
+            ColorCode::White,
+            "[{} {}] {} {}\n",
+            with_color!(level_color, "{:<5}", level),
+            with_color!(ColorCode::White, "{}", cpu_id),
+            with_color!(ColorCode::White, "({}:{})", target, line),
+            with_color!(args_color, "{}", record.args()),
+        ));
     }
 
     fn flush(&self) {}
