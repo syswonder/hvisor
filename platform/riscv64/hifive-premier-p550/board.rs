@@ -33,24 +33,18 @@ pub const ROOT_ZONE_CPUS: u64 = 0x1;
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 4] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 7] = [
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
-        physical_start: 0x8000_0000,
-        virtual_start: 0x8000_0000,
-        size: 0x4_0000_0000,
+        physical_start: 0x80000000,
+        virtual_start: 0x80000000,
+        size: 0x8000_0000,
     }, // ram
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
-        physical_start: 0x0000,
-        virtual_start: 0x0000,
-        size: 0xc00_0000,
-    }, // serial0
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0x1000_0000,
-        virtual_start: 0x1000_0000,
-        size: 0x7000_0000,
+        physical_start: 0x50900000,
+        virtual_start: 0x50900000,
+        size: 0x10000,
     }, // serial0
     // HvConfigMemoryRegion {
     //     mem_type: MEM_TYPE_IO,
@@ -82,37 +76,37 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 4] = [
     //     virtual_start: 0x50920000,
     //     size: 0x10000,
     // }, // serial2
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x50460000,
+        virtual_start: 0x50460000,
+        size: 0x10000,
+    }, // mmc
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x50440000,
+        virtual_start: 0x50440000,
+        size: 0x2000,
+    }, // hsp_sp_top_csr
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x51828000,
+        virtual_start: 0x51828000,
+        size: 0x80000,
+    }, // sys-crg (clock-controller, reset-controller) (SD card needs)
+    // Cache controller is needed, otherwise terminal will report "VFS: cannot open root device..."
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x2010000,
+        virtual_start: 0x2010000,
+        size: 0x4000,
+    }, // L3 cache-controller, now hvisor has virtual sifive ccache.
     // HvConfigMemoryRegion {
     //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0x50460000,
-    //     virtual_start: 0x50460000,
-    //     size: 0x10000,
-    // }, // mmc
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0x50440000,
-    //     virtual_start: 0x50440000,
-    //     size: 0x2000,
-    // }, // hsp_sp_top_csr
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0x51828000,
-    //     virtual_start: 0x51828000,
-    //     size: 0x80000,
-    // }, // sys-crg (clock-controller, reset-controller) (SD card needs)
-    // // Cache controller is needed, otherwise terminal will report "VFS: cannot open root device..."
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0x2010000,
-    //     virtual_start: 0x2010000,
-    //     size: 0x4000,
-    // }, // L3 cache-controller, now hvisor has virtual sifive ccache.
-    // // HvConfigMemoryRegion {
-    // //     mem_type: MEM_TYPE_IO,
-    // //     physical_start: 0x8000000,
-    // //     virtual_start: 0x8000000,
-    // //     size: 0x400000,
-    // // }, // L3 Loosely-Integrated Memory (L3 LIM)
+    //     physical_start: 0x8000000,
+    //     virtual_start: 0x8000000,
+    //     size: 0x400000,
+    // }, // L3 Loosely-Integrated Memory (L3 LIM)
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0xc0_0000_0000,
