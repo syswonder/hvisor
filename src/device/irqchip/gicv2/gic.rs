@@ -31,7 +31,7 @@ use alloc::vec::Vec;
 use spin::{Mutex, Once};
 
 // gicv2 support max 8 cpus
-pub const MAX_CPU_NUM: usize = 8;
+pub(crate) const MAX_CPU_NUM: usize = 8;
 pub const MAINTENACE_INTERRUPT: u64 = 25;
 
 pub fn gicv2_handle_irq() {

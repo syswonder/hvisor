@@ -61,8 +61,8 @@ impl Zone {
                 );
 
                 for cpu in 0..MAX_CPU_NUM {
-                    let gicr_base = gicv3_config.gicr_base + cpu * PER_GICR_SIZE;
-                    debug!("registering gicr {} at {:#x?}", cpu, gicr_base);
+                    let gicr_base = host_gicr_base(cpu);
+                    info!("registering gicr cpu{} at {:#x?}", cpu, gicr_base);
                     self.mmio_region_register(gicr_base, PER_GICR_SIZE, vgicv3_redist_handler, cpu);
                 }
             }
