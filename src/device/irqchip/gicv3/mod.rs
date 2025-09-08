@@ -33,8 +33,8 @@ use spin::{Lazy, Mutex, Once};
 use self::gicd::{enable_gic_are_ns, GICD_ICACTIVER, GICD_ICENABLER};
 use self::gicr::enable_ipi;
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
-use crate::arch::zone::GicConfig;
 use crate::arch::cpu::{this_cpu_id, MPIDR_MASK};
+use crate::arch::zone::GicConfig;
 use crate::config::root_zone_config;
 use crate::consts::{self, MAX_CPU_NUM};
 use crate::platform::BOARD_MPIDR_MAPPINGS;
@@ -359,7 +359,7 @@ static CPU_GICR_BASE: Lazy<Vec<usize>> = Lazy::new(|| {
 
     // Scan through all GICR frames once
     let mut curr_base = base;
-    
+
     for _ in 0..MAX_CPU_NUM {
         let typer =
             unsafe { core::ptr::read_volatile((curr_base + gicr::GICR_TYPER) as *const u64) };
