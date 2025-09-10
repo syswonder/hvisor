@@ -64,7 +64,7 @@ mod zone;
 
 #[cfg(target_arch = "aarch64")]
 mod ivc;
-
+#[cfg(feature = "pci")]
 mod pci;
 
 #[cfg(test)]
@@ -76,6 +76,8 @@ use crate::consts::MAX_CPU_NUM;
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+#[cfg(feature = "pci")]
+use pci::pci_config::hvisor_pci_init;
 use percpu::PerCpu;
 use zone::{add_zone, zone_create};
 
@@ -137,6 +139,12 @@ fn primary_init_early() {
 
     #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
     iommu_init();
+
+    #[cfg(feature = "pci")]
+    {
+        let config = unsafe { config::HV_ROOT_ZONE_CONFIG.get().unwrap().pci_config };
+        let _ = hvisor_pci_init(&config);
+    }
 
     #[cfg(not(test))]
     {

@@ -67,20 +67,71 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     gits_size: 0x20000,
 };
 
-pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
-    ecam_base: 0x4010000000,
-    ecam_size: 0x10000000,
-    io_base: 0x3eff0000,
-    io_size: 0x10000,
-    pci_io_base: 0x0,
-    mem32_base: 0x10000000,
-    mem32_size: 0x2eff0000,
-    pci_mem32_base: 0x10000000,
-    mem64_base: 0x8000000000,
-    mem64_size: 0x8000000000,
-    pci_mem64_base: 0x8000000000,
-};
+pub const ROOT_PCI_CONFIG: [HvPciConfig; 4] = [
+    HvPciConfig {
+        ecam_base: 0x4010000000,
+        ecam_size: 0x10000000,
+        io_base: 0x3eff0000,
+        io_size: 0x10000,
+        pci_io_base: 0x0,
+        mem32_base: 0x10000000,
+        mem32_size: 0x2eff0000,
+        pci_mem32_base: 0x10000000,
+        mem64_base: 0x8000000000,
+        mem64_size: 0x8000000000,
+        pci_mem64_base: 0x8000000000,
+    },
+    HvPciConfig {
+        ecam_base: 0x0,
+        ecam_size: 0x0,
+        io_base: 0x0,
+        io_size: 0x0,
+        pci_io_base: 0x0,
+        mem32_base: 0x0,
+        mem32_size: 0x0,
+        pci_mem32_base: 0x0,
+        mem64_base: 0x0,
+        mem64_size: 0x0,
+        pci_mem64_base: 0x0,
+    },
+    HvPciConfig {
+        ecam_base: 0x0,
+        ecam_size: 0x0,
+        io_base: 0x0,
+        io_size: 0x0,
+        pci_io_base: 0x0,
+        mem32_base: 0x0,
+        mem32_size: 0x0,
+        pci_mem32_base: 0x0,
+        mem64_base: 0x0,
+        mem64_size: 0x0,
+        pci_mem64_base: 0x0,
+    },
+    HvPciConfig {
+        ecam_base: 0x0,
+        ecam_size: 0x0,
+        io_base: 0x0,
+        io_size: 0x0,
+        pci_io_base: 0x0,
+        mem32_base: 0x0,
+        mem32_size: 0x0,
+        pci_mem32_base: 0x0,
+        mem64_base: 0x0,
+        mem64_size: 0x0,
+        pci_mem64_base: 0x0,
+    },
+];
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
 
-pub const ROOT_PCI_DEVS: [u64; 2] = [0, 1 << 3];
+pub const ROOT_PCI_DEVS: [HvPciDevConfig; 3] = [
+    HvPciDevConfig { bdf: 0, vbdf: 0 },
+    HvPciDevConfig {
+        bdf: (0 << 20 | 2 << 15 | 0 << 12),
+        vbdf: (0 << 20 | 2 << 15 | 0 << 12),
+    },
+    HvPciDevConfig {
+        bdf: (0 << 20 | 3 << 15 | 0 << 12),
+        vbdf: (0 << 20 | 3 << 15 | 0 << 12),
+    },
+];

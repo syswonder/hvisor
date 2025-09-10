@@ -15,8 +15,9 @@
 //
 use crate::{
     config::{
-        HvConfigMemoryRegion, HvIvcConfig, HvPciConfig, HvZoneConfig, CONFIG_MAX_INTERRUPTS,
-        CONFIG_MAX_IVC_CONFIGS, CONFIG_MAX_MEMORY_REGIONS, CONFIG_MAX_PCI_DEV, CONFIG_NAME_MAXLEN,
+        HvConfigMemoryRegion, HvIvcConfig, HvPciConfig, HvPciDevConfig, HvZoneConfig,
+        CONFIG_MAX_INTERRUPTS, CONFIG_MAX_IVC_CONFIGS, CONFIG_MAX_MEMORY_REGIONS,
+        CONFIG_MAX_PCI_DEV, CONFIG_NAME_MAXLEN, CONFIG_PCI_BUS_MAXLEN,
     },
     consts::INVALID_ADDRESS,
 };
@@ -71,8 +72,8 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
     check!(ROOT_ZONE_NAME.len(), CONFIG_NAME_MAXLEN, "ROOT_ZONE_NAME");
     name[..ROOT_ZONE_NAME.len()].copy_from_slice(ROOT_ZONE_NAME.as_bytes());
 
-    let mut pci_devs = [0; CONFIG_MAX_PCI_DEV];
-    let mut _root_pci_cfg = HvPciConfig::new_empty();
+    let mut pci_devs = [HvPciDevConfig::default(); CONFIG_MAX_PCI_DEV];
+    let mut _root_pci_cfg = [HvPciConfig::new_empty(); CONFIG_PCI_BUS_MAXLEN];
     let mut _num_pci_devs: u64 = 0;
 
     #[cfg(feature = "pci")]
