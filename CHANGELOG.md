@@ -12,7 +12,8 @@
 - [feature] Add **aarch32** support. ([Guowei Li](https://github.com/KouweiLee))
 - [feature] **riscv64** enhancements: g-stage dynamic detection, eic770x_soc, and syscrg emulation. ([Jingyu Liu](https://github.com/liulog))
 - [infra] Unify UART / MPIDR mapping, centralize IOMMU configuration, remove redundant arch feature flags, and tidy Cargo/zone/hypercall code. ([Nehckl](https://github.com/Inquisitor-201), [Ren HangQi](https://github.com/ForeverYolo))
-- [chore] Update dependencies, add ccache support, and improve build/tooling workflows. ([Jingyu Liu](https://github.com/liulog))
+- [infra/tool] **aarch64**: Optimized the structure of GIC parameters ([Ren HangQi](https://github.com/ForeverYolo))
+- [ci/misc] Update dependencies, add ccache support, and improve build/tooling workflows. ([Jingyu Liu](https://github.com/liulog))
 
 ## History Release
 
