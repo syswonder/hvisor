@@ -908,58 +908,54 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                                                 /* Linux traverses the PCI bus twice. During the first traversal,
                                                  * it does not assign addresses to the BARs; it simply writes back the same
                                                  * values. In the second traversal, it reorders the BARs and assigns
-                                                 * addresses to them. If address allocation is performed during the first
-                                                 * traversal, then in the second traversal conflicts may occur between the
-                                                 * current BAR addresses and other BAR addresses that have not yet been updated.
-                                                 * When the new and old values are the same, it indicates the first traversal,
-                                                 * and no address remapping is performed. Only when the addresses are actually
-                                                 * modified will remapping take place.
+                                                 * addresses to them. Each time the guest writes to a BAR, 
+                                                 * it attempts to remove the previous mapping and add a new one. 
+                                                 * However, on the first access there is no prior mapping, so a single warning 
+                                                 * is normal. Subsequent warnings should be treated with caution.
                                                  *
-                                                 * This issue also leads to the hypervisor not fully supporting PCIe bus hot-reload:
-                                                 * if the number of devices changes before and after the reload, address conflicts
-                                                 * may also occur.
+                                                 * TODO: When adding a new device or removing an old one, reloading 
+                                                 * the PCIe bus, will the newly written BAR address overlap with 
+                                                 * the old BAR addresses, potentially causing the update to fail?
                                                  */
-                                                if old_vaddr != new_vaddr {
-                                                    if !gpm
-                                                        .try_delete(old_vaddr.try_into().unwrap())
-                                                        .is_ok()
-                                                    {
-                                                        /* The first delete from the guest will fail
-                                                         * because the region has not yet been inserted
-                                                         */
-                                                        warn!(
-                                                            "delete bar {}: can not found 0x{:x}",
-                                                            slot, old_vaddr
-                                                        );
-                                                    }
-                                                    let paddr = bar.get_value64();
-                                                    debug!(
-                                                        "old_vaddr {:x} new_vaddr {:x} paddr {:x}",
-                                                        old_vaddr, new_vaddr, paddr
+                                                if !gpm
+                                                    .try_delete(old_vaddr.try_into().unwrap())
+                                                    .is_ok()
+                                                {
+                                                    /* The first delete from the guest will fail
+                                                        * because the region has not yet been inserted
+                                                        */
+                                                    warn!(
+                                                        "delete bar {}: can not found 0x{:x}",
+                                                        slot, old_vaddr
                                                     );
+                                                }
+                                                let paddr = bar.get_value64();
+                                                debug!(
+                                                    "old_vaddr {:x} new_vaddr {:x} paddr {:x}",
+                                                    old_vaddr, new_vaddr, paddr
+                                                );
 
-                                                    dev.set_bar_virtual_value(slot, new_vaddr);
-                                                    if bar_type == PciMemType::Mem64High {
-                                                        dev.set_bar_virtual_value(
-                                                            slot - 1,
-                                                            new_vaddr,
-                                                        );
-                                                    }
+                                                dev.set_bar_virtual_value(slot, new_vaddr);
+                                                if bar_type == PciMemType::Mem64High {
+                                                    dev.set_bar_virtual_value(
+                                                        slot - 1,
+                                                        new_vaddr,
+                                                    );
+                                                }
 
-                                                    gpm.insert(
-                                                        MemoryRegion::new_with_offset_mapper(
-                                                            new_vaddr as GuestPhysAddr,
-                                                            paddr as HostPhysAddr,
-                                                            bar.get_size() as _,
-                                                            MemFlags::READ | MemFlags::WRITE,
-                                                        ),
-                                                    )?;
-                                                    /* after update gpm, mem barrier is needed */
-                                                    unsafe {
-                                                        core::arch::asm!("isb");
-                                                        core::arch::asm!("tlbi vmalls12e1is");
-                                                        core::arch::asm!("dsb nsh");
-                                                    }
+                                                gpm.insert(
+                                                    MemoryRegion::new_with_offset_mapper(
+                                                        new_vaddr as GuestPhysAddr,
+                                                        paddr as HostPhysAddr,
+                                                        bar.get_size() as _,
+                                                        MemFlags::READ | MemFlags::WRITE,
+                                                    ),
+                                                )?;
+                                                /* after update gpm, mem barrier is needed */
+                                                unsafe {
+                                                    core::arch::asm!("isb");
+                                                    core::arch::asm!("tlbi vmalls12e1is");
+                                                    core::arch::asm!("dsb nsh");
                                                 }
                                             }
                                         }
