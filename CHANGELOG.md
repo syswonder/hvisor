@@ -2,18 +2,29 @@
 
 > ⚠️ Please update this file for any changes to the hvisor project along with your name and GitHub profile link under the CURRENT section.
 
-## CURRENT - v0.1.2
+## CURRENT - v0.2
+
+- [platform] **riscv64**: Add support for Megrez / Milk-V platforms (zone0/zone1 boot, uart2, virtio, Ethernet, SATA passthrough, NPU, updated device-tree). ([Jingyu Liu](https://github.com/liulog))
+- [platform] **riscv64**: Add support for SiFive HiFive Premier P550. ([Jingyu Liu](https://github.com/liulog))
+- [platform] **aarch64**: Add support for Phytium-Pi. ([Zixu Bao](https://github.com/Baozixu99))
+- [platform] **aarch64**: Improve QEMU GICv2/GICv3 configurations and add zone1-linux support. ([agicy](https://github.com/agicy))
+- [platform] **loongarch64**: Add support for Loongson 3A5 / 3A6 platforms and improve clock and trap handling. ([wheatfox](https://github.com/enkerewpo))
+- [feature] Add **aarch32** support. ([Guowei Li](https://github.com/KouweiLee))
+- [feature] **riscv64** enhancements: g-stage dynamic detection, eic770x_soc, and syscrg emulation. ([Jingyu Liu](https://github.com/liulog))
+- [infra] Unify UART / MPIDR mapping, centralize IOMMU configuration, remove redundant arch feature flags, and tidy Cargo/zone/hypercall code. ([Nehckl](https://github.com/Inquisitor-201), [Ren HangQi](https://github.com/ForeverYolo))
+- [chore] Update dependencies, add ccache support, and improve build/tooling workflows. ([Jingyu Liu](https://github.com/liulog))
+
+## History Release
+
+### hvisor v0.1.2
 
 - [feature] riscv64: add virtio support in qemu-aia to boot zone1. ([CHonghao](https://github.com/CHonghaohao))
 - [feature] pci support for loongarch64 ([wheatfox](https://github.com/enkerewpo), [Zhongkai Xu](https://github.com/ZhongkaiXu))
 - [ci] support running CI with the latest hvisor-tool and the configuration files in hvisor ([CHonghao](https://github.com/CHonghaohao))
-- [feature] enable dynamic CPU detection for ARM platforms via device tree ([GuanTouYu](https://github.com/FlowerBlackG))
 - [platform] support for rk3568 ([dallasxy](https://github.com/dallasxy))
 - [feature] riscv64: add virtio support ([Jingyu Liu](https://github.com/liulog))
 - [feature] riscv64: add vplic struct ([Jingyu Liu](https://github.com/liulog))
 - [feature] riscv64: add aclint support ([Jingyu Liu](https://github.com/liulog))
-
-## History Release
 
 ### hvisor v0.1.1
 
