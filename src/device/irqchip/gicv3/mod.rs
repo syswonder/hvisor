@@ -33,11 +33,10 @@ use spin::{Lazy, Mutex, Once};
 use self::gicd::{enable_gic_are_ns, GICD_ICACTIVER, GICD_ICENABLER};
 use self::gicr::enable_ipi;
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
-use crate::arch::cpu::this_cpu_id;
-use crate::arch::zone::{GicConfig, Gicv2Config, HvArchZoneConfig};
+use crate::arch::cpu::{cpuid_to_mpidr_affinity, this_cpu_id};
+use crate::arch::zone::GicConfig;
 use crate::config::root_zone_config;
 use crate::consts::{self, MAX_CPU_NUM};
-use crate::platform::BOARD_MPIDR_MAPPINGS;
 
 use crate::event::check_events;
 use crate::hypercall::SGI_IPI_ID;
@@ -333,6 +332,10 @@ pub fn inject_irq(irq_id: usize, is_hardware: bool) -> bool {
 pub static GIC: Once<Gic> = Once::new();
 pub const PER_GICR_SIZE: usize = 0x20000;
 
+// GICR register offsets and fields
+const GICR_TYPER_AFFINITY_VALUE_SHIFT: usize = 32;
+const GICR_TYPER_AFFINITY_VALUE_MASK: u64 = 0xFFFFFFFF << GICR_TYPER_AFFINITY_VALUE_SHIFT;
+
 #[derive(Debug)]
 pub struct Gic {
     pub gicd_base: usize,
@@ -347,24 +350,47 @@ pub fn host_gicd_base() -> usize {
     GIC.get().unwrap().gicd_base
 }
 
-static SORTED_MPIDRS: Lazy<Vec<u64>> = Lazy::new(|| {
-    let mut sorted = BOARD_MPIDR_MAPPINGS.to_vec();
-    sorted.sort_unstable();
-    sorted
+static CPU_GICR_BASE: Lazy<Vec<usize>> = Lazy::new(|| {
+    let mut bases = vec![0; MAX_CPU_NUM];
+    let gic = GIC.get().unwrap();
+    let base = gic.gicr_base;
+    let mut found_cpus = 0;
+
+    // Scan through all GICR frames once
+    let mut curr_base = base;
+
+    for _ in 0..MAX_CPU_NUM {
+        let typer =
+            unsafe { core::ptr::read_volatile((curr_base + gicr::GICR_TYPER) as *const u64) };
+        let affinity = (typer & GICR_TYPER_AFFINITY_VALUE_MASK) >> GICR_TYPER_AFFINITY_VALUE_SHIFT;
+
+        // Find which CPU this GICR belongs to
+        if let Some(cpu_id) = (0..MAX_CPU_NUM).position(|cpu_id| {
+            let (aff3, aff2, aff1, aff0) = cpuid_to_mpidr_affinity(cpu_id as u64);
+            let aff = (aff3 << 24) | (aff2 << 16) | (aff1 << 8) | aff0;
+            aff == affinity
+        }) {
+            bases[cpu_id] = curr_base;
+            found_cpus += 1;
+        }
+        curr_base += PER_GICR_SIZE;
+    }
+
+    if found_cpus != MAX_CPU_NUM {
+        panic!(
+            "Could not find GICR for all CPUs, only found {}",
+            found_cpus
+        );
+    }
+    info!("GICR bases: {:#x?}", bases);
+    bases
 });
 
 pub fn host_gicr_base(id: usize) -> usize {
-    assert!(id < MAX_CPU_NUM);
-
-    let mpidr = BOARD_MPIDR_MAPPINGS[id];
-
-    let order = SORTED_MPIDRS
-        .iter()
-        .position(|&x| x == mpidr)
-        .expect("MPIDR from BOARD_MPIDR_MAPPINGS must be present in sorted list");
-
-    GIC.get().unwrap().gicr_base + order * PER_GICR_SIZE
+    assert!(id < consts::MAX_CPU_NUM);
+    CPU_GICR_BASE[id]
 }
+
 pub fn host_gits_base() -> usize {
     GIC.get().unwrap().gits_base
 }
