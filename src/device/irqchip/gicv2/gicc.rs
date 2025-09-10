@@ -12,9 +12,10 @@
 //      https://www.syswonder.org
 //
 // Authors:
-//
+//    Hangqi Ren <2572131118@qq.com>
 #![allow(unused_variables)]
 #![allow(dead_code)]
+
 use crate::device::irqchip::gicv2::gic_ref::GicRef;
 use crate::device::irqchip::gicv2::gicd::GICD;
 use crate::device::irqchip::gicv2::gich::{
@@ -22,6 +23,7 @@ use crate::device::irqchip::gicv2::gich::{
     GICV2_GICH_VMCR_VMGRP0EN,
 };
 use crate::device::irqchip::gicv2::GICV2;
+use spin::Once;
 /// gicc layout definition and functions for gicc operations.
 /// author : ForeverYolo
 /// reference:
@@ -83,14 +85,19 @@ register_structs! {
 unsafe impl Sync for GicCpuInterface {}
 
 // Each CPU holds one GICC.
-pub static GICC: GicRef<GicCpuInterface> =
-    unsafe { GicRef::new(GICV2.gicc_base as *const GicCpuInterface) };
+pub static GICC: Once<GicRef<GicCpuInterface>> = Once::new();
+
+pub fn gicc_init(gicc_base: usize) {
+    unsafe {
+        GICC.call_once(|| GicRef::new(gicc_base as *const GicCpuInterface));
+    }
+}
 
 impl GicCpuInterface {
     // init GICC for each CPU.
     pub fn init(&self) {
         // Ensure all SGIs disabled.
-        GICD.set_icenabler(0, 0x0000FFFF);
+        GICD.get().unwrap().set_icenabler(0, 0x0000FFFF);
         // get ctrl and pmr value
         let gicc_ctrl = self.CTLR.get();
         let gicc_pmr = self.PMR.get();
@@ -108,18 +115,18 @@ impl GicCpuInterface {
         if gicc_ctrl & GICV2_GICC_CTRL_EOIMODES != 0 {
             vmcr |= GICV2_GICH_VMCR_VEM;
         }
-        GICH.set_vmcr(vmcr);
+        GICH.get().unwrap().set_vmcr(vmcr);
         // Enable virtual CPU interface operation.
-        GICH.set_hcr(GICV2_GICH_HCR_EN);
+        GICH.get().unwrap().set_hcr(GICV2_GICH_HCR_EN);
         // Clear all lr registers in GICH.
-        GICH.clear_all_lr();
+        GICH.get().unwrap().clear_all_lr();
         // Deactivate all active and pending SGIS
-        let gicd_isactive = GICD.get_isactiver(0);
-        let gicd_ispend = GICD.get_spendsgir(0);
-        GICD.set_icactiver(0, gicd_isactive & 0xffff);
-        GICD.set_cpendsgir(0, gicd_ispend & 0xffff);
+        let gicd_isactive = GICD.get().unwrap().get_isactiver(0);
+        let gicd_ispend = GICD.get().unwrap().get_spendsgir(0);
+        GICD.get().unwrap().set_icactiver(0, gicd_isactive & 0xffff);
+        GICD.get().unwrap().set_cpendsgir(0, gicd_ispend & 0xffff);
         // re-enable all SGIs
-        GICD.set_isenabler(0, 0x0000FFFF);
+        GICD.get().unwrap().set_isenabler(0, 0x0000FFFF);
         info!("GICV2: GICC init done.");
     }
 

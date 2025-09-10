@@ -13,58 +13,56 @@
 //
 // Authors:
 //
+use super::vimsic::*;
 use crate::arch::csr::{read_csr, write_csr};
-/* AIA Extension */
-pub const CSR_VSISELECT: usize = 0x250;
-pub const CSR_VSIREG: usize = 0x251;
-pub const CSR_VSTOPI: usize = 0xEB0;
-pub const CSR_VSTOPEI: usize = 0x25C;
+use crate::platform::__board::{IMSIC_GUEST_INDEX, IMSIC_NUM_IDS};
 
-pub const IMSIC_VS: usize = 0x2800_1000;
-const IMSIC_VS_HART_STRIDE: usize = 0x2000;
+pub const CSR_SISELECT: usize = 0x150;
+pub const CSR_SIREG: usize = 0x151;
+pub const CSR_STOPEI: usize = 0x15c;
+// pub const CSR_VSISELECT: usize = 0x250;
+// pub const CSR_VSIREG: usize = 0x251;
+// pub const CSR_VSTOPEI: usize = 0x25C;
 
-const XLEN: usize = usize::BITS as usize;
-const XLEN_STRIDE: usize = XLEN / 32;
+pub const IMSIC_EIDELIVERY: usize = 0x70;
+pub const IMSIC_EITHRESHOLD: usize = 0x72;
+pub const IMSIC_EIP: usize = 0x80; // 0x80..=0xBF
+pub const IMSIC_EIE: usize = 0xC0; // 0xC0..=0xFF
 
-const EIP: usize = 0x80;
+/// Init imsic per hart
+pub fn imsic_init() {
+    // Disable interrupt delivery
+    write_csr!(CSR_SISELECT, IMSIC_EIDELIVERY);
+    write_csr!(CSR_SIREG, 0);
 
-pub const fn imsic_vs(hart: usize) -> usize {
-    IMSIC_VS + IMSIC_VS_HART_STRIDE * hart
-}
-fn imsic_write(reg: usize, val: usize) {
-    unsafe {
-        match reg {
-            CSR_VSISELECT => write_csr!(CSR_VSISELECT, val),
-            CSR_VSIREG => write_csr!(CSR_VSIREG, val),
-            CSR_VSTOPI => write_csr!(CSR_VSTOPI, val),
-            CSR_VSTOPEI => write_csr!(CSR_VSTOPEI, val),
-            _ => panic!("Unknown CSR {}", reg),
-        }
+    // For qemu, num_ids = 0xff
+    let num_ids = (IMSIC_NUM_IDS + 63) / 64;
+
+    // For 64bit system, eip1, eip3.. eip63 don't exist.
+    for i in (0..num_ids) {
+        // Disable all interrupts
+        write_csr!(CSR_SISELECT, IMSIC_EIE + i * 2);
+        write_csr!(CSR_SIREG, 0);
+        // Remove all pending interrupts
+        write_csr!(CSR_SISELECT, IMSIC_EIP + i * 2);
+        write_csr!(CSR_SIREG, 0);
     }
+
+    // Every interrupt is triggerable
+    write_csr!(CSR_SISELECT, IMSIC_EITHRESHOLD);
+    write_csr!(CSR_SIREG, 0);
+
+    // Enable interrupt delivery
+    write_csr!(CSR_SISELECT, IMSIC_EIDELIVERY);
+    write_csr!(CSR_SIREG, 1);
 }
 
-// Read from an IMSIC CSR
-
-fn imsic_read(reg: usize) -> usize {
-    let ret: usize;
-    unsafe {
-        ret = match reg {
-            CSR_VSISELECT => read_csr!(CSR_VSISELECT),
-            CSR_VSIREG => read_csr!(CSR_VSIREG),
-            CSR_VSTOPI => read_csr!(CSR_VSTOPI),
-            CSR_VSTOPEI => read_csr!(CSR_VSTOPEI),
-            _ => panic!("Unknown CSR {}", reg),
-        }
-    }
-    ret
-}
-// VS-Mode IMSIC CSRs
-
+/// Write to imsic interrupt file.
 pub fn imsic_trigger(hart: u32, guest: u32, eiid: u32) {
-    // info!("hart: {} guest {} eiid {}", hart, guest, eiid);
-    if guest == 1 {
+    if guest as usize == IMSIC_GUEST_INDEX {
+        let addr = imsic_vs_file_addr(hart as usize);
         unsafe {
-            core::ptr::write_volatile(imsic_vs(hart as usize) as *mut u32, eiid);
+            core::ptr::write_volatile(addr as *mut u32, eiid);
         }
     } else {
         panic!(

@@ -18,10 +18,7 @@
 use core::ptr;
 
 use crate::memory::addr::{PhysAddr, VirtAddr};
-// use spin::Mutex;
-
-pub const UART_BASE_PHYS: PhysAddr = 0x30890000;
-// pub const UART_BASE_VIRT: VirtAddr = 0xffffc0090000;
+use crate::platform::BOARD_UART_BASE;
 
 const UTS: usize = 0xb4;
 const UTXD: usize = 0x40;
@@ -29,7 +26,7 @@ const UTS_TXEMPTY: u32 = 1 << 6;
 
 // lazy_static! {
 static mut UART: ImxUart = {
-    ImxUart::new(UART_BASE_PHYS)
+    ImxUart::new(BOARD_UART_BASE as _)
     // Mutex::new(uart)
 };
 // }

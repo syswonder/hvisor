@@ -50,7 +50,7 @@
 		reg = <0x0 0x50000000 0x0 0x70000000>;
 	};
 
-	intc@80000000 {
+	intc@8000000 {
 		phandle = <0x01>;
 		interrupts = <0x01 0x09 0x04>;
 		reg = <0x00 0x8000000 0x00 0x10000 0x00 0x80a0000 0x00 0xf60000>;
@@ -330,7 +330,7 @@
 
 	virtio_mmio@a003c00 {
 		dma-coherent;
-	 interrupt-parent = <0x01>;
+	    interrupt-parent = <0x01>;
 		interrupts = <0x0 0x2e 0x1>;
 		reg = <0x0 0xa003c00 0x0 0x200>;
 		compatible = "virtio,mmio";
@@ -347,7 +347,6 @@
 
 	chosen {
 		bootargs = "clk_ignore_unused earlycon console=ttyAMA0 root=/dev/vda iomem=relaxed rw";
-        // bootargs = "root=/dev/vda mem=768M";
 		stdout-path = "/pl011@9000000";
 	};
 

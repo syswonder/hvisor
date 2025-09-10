@@ -583,8 +583,13 @@ static SMMUV3: spin::Once<Mutex<Smmuv3>> = spin::Once::new();
 
 /// smmuv3 init
 pub fn iommu_init() {
-    info!("Smmuv3 init...");
-    SMMUV3.call_once(|| Mutex::new(Smmuv3::new()));
+    #[cfg(feature = "iommu")]
+    {
+        info!("Smmuv3 init...");
+        SMMUV3.call_once(|| Mutex::new(Smmuv3::new()));
+    }
+    #[cfg(not(feature = "iommu"))]
+    info!("Smmuv3 init: do nothing now");
 }
 
 /// smmuv3_base
@@ -601,6 +606,14 @@ pub fn smmuv3_size() -> usize {
 
 /// write ste
 pub fn iommu_add_device(vmid: usize, sid: usize) {
-    let mut smmu = SMMUV3.get().unwrap().lock();
-    smmu.write_ste(sid as _, vmid as _);
+    #[cfg(feature = "iommu")]
+    {
+        let mut smmu = SMMUV3.get().unwrap().lock();
+        smmu.write_ste(sid as _, vmid as _);
+    }
+    #[cfg(not(feature = "iommu"))]
+    info!(
+        "aarch64: iommu_add_device: do nothing now, vmid: {}, sid: {}",
+        vmid, sid
+    );
 }

@@ -41,6 +41,8 @@ pub struct ArchCpu {
     pub sstc: bool,
 }
 
+const PARKING_INST_GPA: usize = 0x0; // wfi instruction address (gpa)
+
 impl ArchCpu {
     pub fn new(cpuid: usize) -> Self {
         let ret = ArchCpu {
@@ -85,6 +87,8 @@ impl ArchCpu {
             set_csr!(CSR_HENVCFG, 1 << 63);
             set_csr!(CSR_VSTIMECMP, usize::MAX);
         } else {
+            // In megrez board, this instruction is not supported. (illegal instruction)
+            #[cfg(not(feature = "eic770x_soc"))]
             set_csr!(CSR_HENVCFG, 0);
         }
         set_csr!(CSR_HCOUNTEREN, 1 << 1); // HCOUNTEREN_TM
@@ -103,7 +107,9 @@ impl ArchCpu {
     pub fn init_interrupt(&self) {
         // Used before enter into VM.
         set_csr!(CSR_HIDELEG, 1 << 2 | 1 << 6 | 1 << 10); // HIDELEG_VSSI | HIDELEG_VSTI | HIDELEG_VSEI
-        set_csr!(CSR_HEDELEG, 1 << 8 | 1 << 12 | 1 << 13 | 1 << 15); // HEDELEG_ECU | HEDELEG_IPF | HEDELEG_LPF | HEDELEG_SPF
+                                                          // Note: Breakpoint exception is temporarily needed.
+                                                          // TODO: This is need to be checked in the future.
+        set_csr!(CSR_HEDELEG, 1 << 3 | 1 << 8 | 1 << 12 | 1 << 13 | 1 << 15); // HEDELEG_ECU | HEDELEG_IPF | HEDELEG_LPF | HEDELEG_SPF
         set_csr!(CSR_SIE, 1 << 9 | 1 << 5 | 1 << 1); // Enable all interrupts (SEIE STIE SSIE).
     }
 
@@ -151,14 +157,14 @@ impl ArchCpu {
         self.power_on = false;
 
         PARKING_MEMORY_SET.call_once(|| {
-            let parking_code: [u8; 4] = [0x73, 0x00, 0x50, 0x10]; // 1: wfi; b 1b
+            let parking_code: [u8; 8] = [0x73, 0x00, 0x50, 0x10, 0x6F, 0xF0, 0xDF, 0xFF]; // 1: wfi; b 1b
             unsafe {
-                PARKING_INST_PAGE[..4].copy_from_slice(&parking_code);
+                PARKING_INST_PAGE[..8].copy_from_slice(&parking_code);
             }
 
             let mut gpm = new_s2_memory_set();
             gpm.insert(MemoryRegion::new_with_offset_mapper(
-                0 as GuestPhysAddr,
+                PARKING_INST_GPA as GuestPhysAddr,
                 unsafe { &PARKING_INST_PAGE as *const _ as HostPhysAddr - PHYS_VIRT_OFFSET },
                 PAGE_SIZE,
                 MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
@@ -168,7 +174,12 @@ impl ArchCpu {
         });
 
         // reset current cpu -> pc = 0x0 (wfi)
-        self.reset_regs(0, this_cpu_data().id, this_cpu_data().dtb_ipa);
+        // Note: in park_inst_page
+        self.reset_regs(
+            PARKING_INST_GPA,        // entry_addr
+            this_cpu_data().id,      // a0
+            this_cpu_data().dtb_ipa, // a1
+        );
         self.reset_interrupt();
         unsafe {
             PARKING_MEMORY_SET.get().unwrap().activate();
@@ -210,4 +221,11 @@ pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
     if let Some(e) = sbi_rt::hart_start(cpuid, start_addr, opaque).err() {
         panic!("cpu_start error: {:#x?}", e);
     }
+}
+
+pub fn store_cpu_pointer_to_reg(pointer: usize) {
+    /// Store the pointer to the current CPU's ArchCpu structure in CSR_SSCRATCH
+    write_csr!(CSR_SSCRATCH, pointer);
+    // println!("Stored CPU pointer to CSR_SSCRATCH: {:#x}", pointer);
+    return;
 }

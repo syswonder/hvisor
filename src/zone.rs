@@ -25,20 +25,17 @@ use crate::arch::mm::new_s2_memory_set;
 use crate::arch::s2pt::Stage2PageTable;
 use crate::config::{HvZoneConfig, CONFIG_NAME_MAXLEN};
 
-#[cfg(all(target_arch = "riscv64", feature = "plic"))]
-use crate::device::irqchip::plic::vplic;
 use crate::error::HvResult;
 use crate::memory::addr::GuestPhysAddr;
 use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
 use crate::percpu::{get_cpu_data, this_zone, CpuSet};
-#[cfg(all(feature = "plic", target_arch = "riscv64"))]
-use crate::platform::BOARD_PLIC_INTERRUPTS_NUM;
 use core::panic;
 
 pub struct Zone {
     pub name: [u8; CONFIG_NAME_MAXLEN],
     pub id: usize,
     pub mmio: Vec<MMIOConfig>,
+    pub cpu_num: usize,
     pub cpu_set: CpuSet,
     pub irq_bitmap: [u32; 1024 / 32],
     pub gpm: MemorySet<Stage2PageTable>,
@@ -55,12 +52,11 @@ impl Zone {
             name: name.try_into().unwrap(),
             id: zoneid,
             gpm: new_s2_memory_set(),
+            cpu_num: 0,
             cpu_set: CpuSet::new(MAX_CPU_NUM as usize, 0),
             mmio: Vec::new(),
             irq_bitmap: [0; 1024 / 32],
             is_err: false,
-            #[cfg(all(target_arch = "riscv64", feature = "plic"))]
-            vplic: None,
             #[cfg(feature = "pci")]
             vpci_bus: VirtualRootComplex::new(),
         }
@@ -217,18 +213,18 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
         let _ = zone.virtual_pci_mmio_init(&config.pci_config);
         let _ = zone.guest_pci_init(&config.alloc_pci_devs, config.num_pci_devs);
     }
-    #[cfg(target_arch = "aarch64")]
-    zone.ivc_init(config.ivc_config());
+    // #[cfg(target_arch = "aarch64")]
+    // zone.ivc_init(config.ivc_config());
 
     /* loongarch page table emergency */
     /* Kai: Maybe unnecessary but i can't boot vms on my 3A6000 PC without this function. */
-    #[cfg(target_arch = "loongarch64")]
-    zone.page_table_emergency(
-        config.pci_config[0].ecam_base as _,
-        config.pci_config[0].ecam_size as _,
-    )?;
+    // #[cfg(target_arch = "loongarch64")]
+    // zone.page_table_emergency(
+    //     config.pci_config[0].ecam_base as _,
+    //     config.pci_config[0].ecam_size as _,
+    // )?;
 
-    let mut _cpu_num = 0;
+    let mut cpu_num = 0;
 
     for cpu_id in config.cpus().iter() {
         if let Some(zone) = get_cpu_data(*cpu_id as _).zone.clone() {
@@ -242,17 +238,12 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
             );
         }
         zone.cpu_set.set_bit(*cpu_id as _);
-        _cpu_num += 1;
+        cpu_num += 1;
     }
 
-    #[cfg(feature = "plic")]
-    {
-        zone.vplic = Some(vplic::VirtualPLIC::new(
-            config.arch_config.plic_base,
-            BOARD_PLIC_INTERRUPTS_NUM,
-            _cpu_num * 2,
-        ));
-    }
+    zone.cpu_num = cpu_num;
+    // Initialize the virtual interrupt controller, it needs zone.cpu_num
+    zone.virqc_init(config);
 
     zone.irq_bitmap_init(config.interrupts());
 
@@ -279,6 +270,10 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
             }
             cpu_data.cpu_on_entry = config.entry_point as _;
             cpu_data.dtb_ipa = dtb_ipa as _;
+            #[cfg(target_arch = "aarch64")]
+            {
+                cpu_data.arch_cpu.is_aarch32 = config.arch_config.is_aarch32 != 0;
+            }
         });
     }
 

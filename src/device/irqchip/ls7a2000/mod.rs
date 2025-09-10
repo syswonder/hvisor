@@ -18,6 +18,7 @@
 
 use crate::{
     arch::{
+        clock::*,
         cpu::this_cpu_id,
         ipi::*,
         register::{read_gcsr_estat, write_gcsr_estat},
@@ -67,12 +68,32 @@ pub fn primary_init_late() {
 
     info!("loongarch64: irqchip: primary_init_late finished");
 }
+
+// actually these configures are from cpucfg, not irqchip, but we put all
+// configuartion stuff here for convenience
+pub fn clock_cpucfg_dump() {
+    info!(
+        "loongarch64: irqchip: clock_cpucfg_dump: cc_freq: {}",
+        get_cpucfg_cc_freq()
+    );
+    info!(
+        "loongarch64: irqchip: clock_cpucfg_dump: cc_mul: {}",
+        get_cpucfg_cc_mul()
+    );
+    info!(
+        "loongarch64: irqchip: clock_cpucfg_dump: cc_div: {}",
+        get_cpucfg_cc_div()
+    );
+}
+
 pub fn percpu_init() {
     info!("loongarch64: irqchip: percpu_init: running percpu_init");
 
     clear_all_ipi(this_cpu_id());
     enable_ipi(this_cpu_id());
     ecfg_ipi_enable();
+    clock_cpucfg_dump();
+    // timer_test_tick();
 }
 
 const INT_SWI0: usize = 0;

@@ -15,12 +15,13 @@
 //
 use crate::{
     arch::{mm::new_s2_memory_set, sysreg::write_sysreg},
-    consts::{PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
+    consts::{MAX_CPU_NUM, PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
     memory::{
         addr::PHYS_VIRT_OFFSET, mm::PARKING_MEMORY_SET, GuestPhysAddr, HostPhysAddr, MemFlags,
         MemoryRegion, VirtAddr, PARKING_INST_PAGE,
     },
     percpu::this_cpu_data,
+    platform::BOARD_MPIDR_MAPPINGS,
 };
 use aarch64_cpu::registers::{
     Readable, Writeable, ELR_EL2, HCR_EL2, MPIDR_EL1, SCTLR_EL1, SPSR_EL2, VTCR_EL2,
@@ -32,8 +33,16 @@ use super::{
     trap::vmreturn,
 };
 
+pub const MPIDR_MASK: u64 = 0xff00ffffff;
+
 pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
-    psci::cpu_on(cpuid as u64 | 0x80000000, start_addr as _, opaque as _).unwrap_or_else(|err| {
+    let new_cpuid = {
+        if cpuid >= MAX_CPU_NUM {
+            panic!("Invalid cpuid: {}", cpuid);
+        }
+        BOARD_MPIDR_MAPPINGS[cpuid]
+    };
+    psci::cpu_on(new_cpuid, start_addr as _, opaque as _).unwrap_or_else(|err| {
         if let psci::error::Error::AlreadyOn = err {
         } else {
             panic!("can't wake up cpu {}", cpuid);
@@ -59,6 +68,7 @@ impl GeneralRegisters {
 #[derive(Debug)]
 pub struct ArchCpu {
     pub cpuid: usize,
+    pub is_aarch32: bool,
     pub power_on: bool,
 }
 
@@ -66,6 +76,7 @@ impl ArchCpu {
     pub fn new(cpuid: usize) -> Self {
         Self {
             cpuid,
+            is_aarch32: false,
             power_on: false,
         }
     }
@@ -76,7 +87,14 @@ impl ArchCpu {
             self.cpuid, entry, dtb
         );
         ELR_EL2.set(entry as _);
-        SPSR_EL2.set(0x3c5);
+        SPSR_EL2.write(
+            SPSR_EL2::D::SET
+                + SPSR_EL2::A::SET
+                + SPSR_EL2::I::SET
+                + SPSR_EL2::F::SET
+                + SPSR_EL2::M::EL1h,
+        );
+
         let regs = self.guest_reg();
         regs.clear();
         regs.usr[0] = dtb as _; // dtb addr
@@ -157,9 +175,8 @@ impl ArchCpu {
         write_sysreg!(CNTV_CTL_EL0, 0);
         write_sysreg!(CNTV_CVAL_EL0, 0);
         write_sysreg!(CNTV_TVAL_EL0, 0);
-        // //disable stage 1
-        // write_sysreg!(SCTLR_EL1, 0);
 
+        // Disable EL1 MMU and all caches.
         SCTLR_EL1.set((1 << 11) | (1 << 20) | (3 << 22) | (3 << 28));
     }
 
@@ -167,6 +184,19 @@ impl ArchCpu {
         assert!(this_cpu_id() == self.cpuid);
         this_cpu_data().activate_gpm();
         self.reset(this_cpu_data().cpu_on_entry, this_cpu_data().dtb_ipa);
+        if self.is_aarch32 {
+            info!("cpu {} is aarch32", self.cpuid);
+            // if guest runs at aarch32, set these registers to aarch32 mode
+            HCR_EL2.write(
+                HCR_EL2::RW::AllLowerELsAreAarch32
+                    + HCR_EL2::TSC::EnableTrapEl1SmcToEl2
+                    + HCR_EL2::VM::SET
+                    + HCR_EL2::IMO::SET
+                    + HCR_EL2::FMO::SET,
+            );
+            // Return to AArch32 Supervisor (SVC) mode, disable IRQ, FIQ, ABT
+            SPSR_EL2.set(0x1D3);
+        }
         self.power_on = true;
         info!(
             "cpu {} started at {:#x?}",
@@ -215,13 +245,26 @@ impl ArchCpu {
 }
 
 pub fn mpidr_to_cpuid(mpidr: u64) -> u64 {
-    if cfg!(feature = "mpidr_rockchip") {
-        (mpidr >> 8) & 0xff
-    } else {
-        mpidr & 0xff00ffffff
-    }
+    let mpidr = mpidr & MPIDR_MASK;
+    (0..MAX_CPU_NUM)
+        .find(|&i| BOARD_MPIDR_MAPPINGS[i] == mpidr)
+        .unwrap() as u64
+}
+
+pub fn cpuid_to_mpidr_affinity(cpuid: u64) -> (u64, u64, u64, u64) {
+    let mpidr = BOARD_MPIDR_MAPPINGS[cpuid as usize];
+    let aff3 = (mpidr >> 32) & 0xff;
+    let aff2 = (mpidr >> 16) & 0xff;
+    let aff1 = (mpidr >> 8) & 0xff;
+    let aff0 = mpidr & 0xff;
+    (aff3, aff2, aff1, aff0)
 }
 
 pub fn this_cpu_id() -> usize {
     mpidr_to_cpuid(MPIDR_EL1.get()) as _
+}
+
+pub fn store_cpu_pointer_to_reg(pointer: usize) {
+    // println!("aarch64 doesn't support store cpu pointer to reg, pointer: {:#x}", pointer);
+    return;
 }

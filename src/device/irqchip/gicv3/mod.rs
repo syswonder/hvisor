@@ -28,12 +28,13 @@ use alloc::collections::vec_deque::VecDeque;
 use alloc::vec::Vec;
 use gicr::init_lpi_prop;
 use gits::gits_init;
-use spin::{Mutex, Once};
+use spin::{Lazy, Mutex, Once};
 
 use self::gicd::{enable_gic_are_ns, GICD_ICACTIVER, GICD_ICENABLER};
 use self::gicr::enable_ipi;
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
-use crate::arch::cpu::this_cpu_id;
+use crate::arch::cpu::{cpuid_to_mpidr_affinity, this_cpu_id};
+use crate::arch::zone::GicConfig;
 use crate::config::root_zone_config;
 use crate::consts::{self, MAX_CPU_NUM};
 
@@ -59,7 +60,7 @@ pub fn gicc_init() {
 
     gicv3_clear_pending_irqs();
     let _vtr = read_sysreg!(ich_vtr_el2);
-    let vmcr = ((pmr & 0xff) << 24) | (1 << 1) | (1 << 9); //VPMR|VENG1|VEOIM
+    let vmcr = ((pmr & 0xff) << 24) | (1 << 1); //VPMR|VENG1
     write_sysreg!(ich_vmcr_el2, vmcr);
     write_sysreg!(ich_hcr_el2, 0x1); //enable virt cpu interface
 
@@ -331,6 +332,10 @@ pub fn inject_irq(irq_id: usize, is_hardware: bool) -> bool {
 pub static GIC: Once<Gic> = Once::new();
 pub const PER_GICR_SIZE: usize = 0x20000;
 
+// GICR register offsets and fields
+const GICR_TYPER_AFFINITY_VALUE_SHIFT: usize = 32;
+const GICR_TYPER_AFFINITY_VALUE_MASK: u64 = 0xFFFFFFFF << GICR_TYPER_AFFINITY_VALUE_SHIFT;
+
 #[derive(Debug)]
 pub struct Gic {
     pub gicd_base: usize,
@@ -345,9 +350,45 @@ pub fn host_gicd_base() -> usize {
     GIC.get().unwrap().gicd_base
 }
 
+static CPU_GICR_BASE: Lazy<Vec<usize>> = Lazy::new(|| {
+    let mut bases = vec![0; MAX_CPU_NUM];
+    let gic = GIC.get().unwrap();
+    let base = gic.gicr_base;
+    let mut found_cpus = 0;
+
+    // Scan through all GICR frames once
+    let mut curr_base = base;
+
+    for _ in 0..MAX_CPU_NUM {
+        let typer =
+            unsafe { core::ptr::read_volatile((curr_base + gicr::GICR_TYPER) as *const u64) };
+        let affinity = (typer & GICR_TYPER_AFFINITY_VALUE_MASK) >> GICR_TYPER_AFFINITY_VALUE_SHIFT;
+
+        // Find which CPU this GICR belongs to
+        if let Some(cpu_id) = (0..MAX_CPU_NUM).position(|cpu_id| {
+            let (aff3, aff2, aff1, aff0) = cpuid_to_mpidr_affinity(cpu_id as u64);
+            let aff = (aff3 << 24) | (aff2 << 16) | (aff1 << 8) | aff0;
+            aff == affinity
+        }) {
+            bases[cpu_id] = curr_base;
+            found_cpus += 1;
+        }
+        curr_base += PER_GICR_SIZE;
+    }
+
+    if found_cpus != MAX_CPU_NUM {
+        panic!(
+            "Could not find GICR for all CPUs, only found {}",
+            found_cpus
+        );
+    }
+    info!("GICR bases: {:#x?}", bases);
+    bases
+});
+
 pub fn host_gicr_base(id: usize) -> usize {
     assert!(id < consts::MAX_CPU_NUM);
-    GIC.get().unwrap().gicr_base + id * PER_GICR_SIZE
+    CPU_GICR_BASE[id]
 }
 
 pub fn host_gits_base() -> usize {
@@ -384,16 +425,37 @@ pub fn disable_irqs() {
 
 pub fn primary_init_early() {
     let root_config = root_zone_config();
-
-    GIC.call_once(|| Gic {
-        gicd_base: root_config.arch_config.gicd_base,
-        gicr_base: root_config.arch_config.gicr_base,
-        gicd_size: root_config.arch_config.gicd_size,
-        gicr_size: root_config.arch_config.gicr_size,
-        gits_base: root_config.arch_config.gits_base,
-        gits_size: root_config.arch_config.gits_size,
-    });
-
+    match root_config.arch_config.gic_config {
+        GicConfig::Gicv2(_) => {
+            panic!("GICv2 is not supported in this version of hvisor");
+        }
+        GicConfig::Gicv3(ref gicv3_config) => {
+            info!("GICv3 detected");
+            GIC.call_once(|| Gic {
+                gicd_base: gicv3_config.gicd_base,
+                gicr_base: gicv3_config.gicr_base,
+                gicd_size: gicv3_config.gicd_size,
+                gicr_size: gicv3_config.gicr_size,
+                gits_base: gicv3_config.gits_base,
+                gits_size: gicv3_config.gits_size,
+            });
+            info!(
+                "GIC Distributor base: {:#x}, size: {:#x}",
+                GIC.get().unwrap().gicd_base,
+                GIC.get().unwrap().gicd_size
+            );
+            info!(
+                "GIC Redistributor base: {:#x}, size: {:#x}",
+                GIC.get().unwrap().gicr_base,
+                GIC.get().unwrap().gicr_size
+            );
+            info!(
+                "GIC ITS base: {:#x}, size: {:#x}",
+                GIC.get().unwrap().gits_base,
+                GIC.get().unwrap().gits_size
+            );
+        }
+    }
     init_lpi_prop();
 
     if host_gits_base() != 0 && host_gits_size() != 0 {

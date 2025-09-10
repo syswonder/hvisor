@@ -33,28 +33,6 @@
 			phandle = <0x07>;
 		};
 
-		cpu@2 {
-			compatible = "arm,cortex-a53";
-			device_type = "cpu";
-			enable-method = "psci";
-			reg = <0x02>;
-			operating-points-v2 = <0x01>;
-			cpu-idle-states = <0x02>;
-			next-level-cache = <0x03>;
-			phandle = <0x08>;
-		};
-
-		cpu@3 {
-			compatible = "arm,cortex-a53";
-			device_type = "cpu";
-			enable-method = "psci";
-			reg = <0x03>;
-			operating-points-v2 = <0x01>;
-			cpu-idle-states = <0x02>;
-			next-level-cache = <0x03>;
-			phandle = <0x09>;
-		};
-
 		l2-cache {
 			compatible = "cache";
 			cache-level = <0x02>;
@@ -76,27 +54,6 @@
 		};
 	};
 
-    zynqmp-ipi {
-		bootph-all;
-		compatible = "xlnx,zynqmp-ipi-mailbox";
-		interrupt-parent = <0x05>;
-		interrupts = <0x00 0x23 0x04>;
-		xlnx,ipi-id = <0x00>;
-		#address-cells = <0x02>;
-		#size-cells = <0x02>;
-		ranges;
-		phandle = <0x40>;
-
-		mailbox@ff9905c0 {
-			bootph-all;
-			reg = <0x00 0xff9905c0 0x00 0x20 0x00 0xff9905e0 0x00 0x20 0x00 0xff990e80 0x00 0x20 0x00 0xff990ea0 0x00 0x20>;
-			reg-names = "local_request_region\0local_response_region\0remote_request_region\0remote_response_region";
-			#mbox-cells = <0x01>;
-			xlnx,ipi-id = <0x04>;
-			phandle = <0x0a>;
-		};
-	};
-
 	pmu {
 		compatible = "arm,armv8-pmuv3";
 		interrupt-parent = <0x05>;
@@ -111,10 +68,18 @@
 
     memory@0 {
 		device_type = "memory";
-		// reg = <0x00 0x00 0x00 0x7ff00000 0x08 0x00 0x00 0x80000000>;
-		reg = <0x00 0x00 0x00 0x40000000>;
+		reg = <0x00 0x00 0x00 0x40000000 0x00 0x50000000 0x00 0x25000000>;
 	};
 
+	reserved-memory {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+		nonroot@50000000 {
+			no-map;
+			reg = <0x00 0x50000000 0x00 0x25000000>;
+		};
+	};
 
     timer {
 		compatible = "arm,armv8-timer";
@@ -128,14 +93,6 @@
 			phandle = <0x11>;
 	};
 
-	fpga-region {
-		compatible = "fpga-region";
-		fpga-mgr = <0x10>;
-		#address-cells = <0x02>;
-		#size-cells = <0x02>;
-		ranges;
-		phandle = <0x57>;
-	};
 
     axi {
 		compatible = "simple-bus";
@@ -156,6 +113,18 @@
 			num_interrupts = <0x60>;
 			phandle = <0x05>;
 		};
+
+		smmu@fd800000 {
+			compatible = "arm,mmu-500";
+			reg = <0x00 0xfd800000 0x00 0x20000>;
+			#iommu-cells = <0x01>;
+			status = "disabled";
+			#global-interrupts = <0x01>;
+			interrupt-parent = <0x05>;
+			interrupts = <0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04>;
+			phandle = <0x14>;
+		};
+
 
         serial@ff000000 {
 			bootph-all;
@@ -199,16 +168,158 @@
 			xlnx,mio-bank = <0x01>;
 			phandle = <0x8e>;
 		};
-		
-		smmu@fd800000 {
-			compatible = "arm,mmu-500";
-			reg = <0x00 0xfd800000 0x00 0x20000>;
-			#iommu-cells = <0x01>;
-			status = "disabled";
-			#global-interrupts = <0x01>;
+
+		ethernet@ff0e0000 {
+			compatible = "xlnx,zynqmp-gem\0cdns,gem";
+			status = "okay";
 			interrupt-parent = <0x05>;
-			interrupts = <0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04 0x00 0x9b 0x04>;
-			phandle = <0x14>;
+			interrupts = <0x00 0x3f 0x04 0x00 0x3f 0x04>;
+			reg = <0x00 0xff0e0000 0x00 0x1000>;
+			clock-names = "pclk\0hclk\0tx_clk\0rx_clk\0tsu_clk";
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			iommus = <0x14 0x877>;
+			power-domains = <0x12 0x20>;
+			resets = <0x11 0x20>;
+			reset-names = "gem3_rst";
+			clocks = <0x04 0x1f 0x04 0x6b 0x04 0x30 0x04 0x34 0x04 0x2c>;
+			assigned-clocks = <0x04 0x2c>;
+			phy-handle = <0x15>;
+			pinctrl-names = "default";
+			pinctrl-0 = <0x16>;
+			phy-mode = "rgmii-id";
+			xlnx,ptp-enet-clock = <0x00>;
+			local-mac-address = [ff ff ff ff ff ff];
+			phandle = <0x74>;
+
+			mdio {
+				#address-cells = <0x01>;
+				#size-cells = <0x00>;
+				phandle = <0x75>;
+
+				ethernet-phy@c {
+					#phy-cells = <0x01>;
+					compatible = "ethernet-phy-id2000.a231";
+					reg = <0x0c>;
+					ti,rx-internal-delay = <0x08>;
+					ti,tx-internal-delay = <0x0a>;
+					ti,fifo-depth = <0x01>;
+					ti,dp83867-rxctrl-strap-quirk;
+					reset-gpios = <0x17 0x06 0x01>;
+					phandle = <0x15>;
+				};
+			};
+		};
+		
+
+		i2c@ff030000 {
+			compatible = "cdns,i2c-r1p14";
+			status = "okay";
+			interrupt-parent = <0x05>;
+			interrupts = <0x00 0x12 0x04>;
+			clock-frequency = <0x61a80>;
+			reg = <0x00 0xff030000 0x00 0x1000>;
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			power-domains = <0x12 0x26>;
+			clocks = <0x04 0x3e>;
+			pinctrl-names = "default\0gpio";
+			pinctrl-0 = <0x1c>;
+			pinctrl-1 = <0x1d>;
+			scl-gpios = <0x1b 0x10 0x06>;
+			sda-gpios = <0x1b 0x11 0x06>;
+			phandle = <0x78>;
+
+			i2c-mux@74 {
+				compatible = "nxp,pca9548";
+				#address-cells = <0x01>;
+				#size-cells = <0x00>;
+				reg = <0x74>;
+
+				i2c@0 {
+					#address-cells = <0x01>;
+					#size-cells = <0x00>;
+					reg = <0x00>;
+
+					eeprom@54 {
+						compatible = "atmel,24c08";
+						reg = <0x54>;
+						#address-cells = <0x01>;
+						#size-cells = <0x01>;
+						phandle = <0x79>;
+
+						board-sn@0 {
+							reg = <0x00 0x14>;
+							phandle = <0x7a>;
+						};
+
+						eth-mac@20 {
+							reg = <0x20 0x06>;
+							phandle = <0x7b>;
+						};
+
+						board-name@d0 {
+							reg = <0xd0 0x06>;
+							phandle = <0x7c>;
+						};
+
+						board-revision@e0 {
+							reg = <0xe0 0x03>;
+							phandle = <0x7d>;
+						};
+					};
+				};
+			};
+		};
+
+
+		i2c@ff020000 {
+			compatible = "cdns,i2c-r1p14";
+			status = "okay";
+			interrupt-parent = <0x05>;
+			interrupts = <0x00 0x11 0x04>;
+			clock-frequency = <0x61a80>;
+			reg = <0x00 0xff020000 0x00 0x1000>;
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			power-domains = <0x12 0x25>;
+			clocks = <0x04 0x3d>;
+			pinctrl-names = "default\0gpio";
+			pinctrl-0 = <0x19>;
+			pinctrl-1 = <0x1a>;
+			scl-gpios = <0x1b 0x0e 0x06>;
+			sda-gpios = <0x1b 0x0f 0x06>;
+			phandle = <0x76>;
+
+			gpio@20 {
+				compatible = "ti,tca6416";
+				reg = <0x20>;
+				gpio-controller;
+				#gpio-cells = <0x02>;
+				gpio-line-names = "PS_GTR_LAN_SEL0\0PS_GTR_LAN_SEL1\0PS_GTR_LAN_SEL2\0PS_GTR_LAN_SEL3\0PCI_CLK_DIR_SEL\0IIC_MUX_RESET_B\0GEM3_EXP_RESET_B\0\0\0\0\0\0\0\0\0";
+				phandle = <0x17>;
+			};
+		};
+
+
+		gpio@ff0a0000 {
+			compatible = "xlnx,zynqmp-gpio-1.0";
+			status = "okay";
+			#gpio-cells = <0x02>;
+			gpio-controller;
+			interrupt-parent = <0x05>;
+			interrupts = <0x00 0x10 0x04>;
+			interrupt-controller;
+			#interrupt-cells = <0x02>;
+			reg = <0x00 0xff0a0000 0x00 0x1000>;
+			power-domains = <0x12 0x2e>;
+			clocks = <0x04 0x1f>;
+			pinctrl-names = "default";
+			pinctrl-0 = <0x18>;
+			emio-gpio-width = <0x20>;
+			gpio-mask-high = <0x00>;
+			gpio-mask-low = <0x5600>;
+			phandle = <0x1b>;
 		};
     };
 
@@ -252,9 +363,18 @@
 		phandle = <0x0e>;
 	};
 
+	ref48M {
+		compatible = "fixed-clock";
+		#clock-cells = <0x00>;
+		clock-frequency = <0x2dc6c00>;
+		phandle = <0x1e>;
+	};
+
     aliases {
 		mmc0 = "/axi/mmc@ff170000";
 		serial0 = "/axi/serial@ff000000";
+		ethernet0 = "/axi/ethernet@ff0e0000";
+		i2c1 = "/axi/i2c@ff030000";
 	};
 
     firmware {
@@ -266,25 +386,41 @@
 			#power-domain-cells = <0x01>;
 			phandle = <0x12>;
 
-            zynqmp-power {
-				bootph-all;
-				compatible = "xlnx,zynqmp-power";
-				interrupt-parent = <0x05>;
-				interrupts = <0x00 0x23 0x04>;
-				mboxes = <0x0a 0x00 0x0a 0x01>;
-				mbox-names = "tx\0rx";
-				phandle = <0x42>;
-			};
-
-			pcap {
-				compatible = "xlnx,zynqmp-pcap-fpga";
-				phandle = <0x10>;
-			};
-
             pinctrl {
 				compatible = "xlnx,zynqmp-pinctrl";
 				status = "okay";
 				phandle = <0x56>;
+
+				i2c0-default {
+					phandle = <0x19>;
+
+					mux {
+						groups = "i2c0_3_grp";
+						function = "i2c0";
+					};
+
+					conf {
+						groups = "i2c0_3_grp";
+						bias-pull-up;
+						slew-rate = <0x01>;
+						power-source = <0x01>;
+					};
+				};
+
+				i2c0-gpio {
+					phandle = <0x1a>;
+
+					mux {
+						groups = "gpio0_14_grp\0gpio0_15_grp";
+						function = "gpio0";
+					};
+
+					conf {
+						groups = "gpio0_14_grp\0gpio0_15_grp";
+						slew-rate = <0x01>;
+						power-source = <0x01>;
+					};
+				};
 
 				uart0-default {
 					phandle = <0x25>;
@@ -352,8 +488,120 @@
 						power-source = <0x01>;
 					};
 				};
+
+				gpio-default {
+					phandle = <0x18>;
+
+					mux-sw {
+						function = "gpio0";
+						groups = "gpio0_22_grp\0gpio0_23_grp";
+					};
+
+					conf-sw {
+						groups = "gpio0_22_grp\0gpio0_23_grp";
+						slew-rate = <0x01>;
+						power-source = <0x01>;
+					};
+
+					mux-msp {
+						function = "gpio0";
+						groups = "gpio0_13_grp\0gpio0_38_grp";
+					};
+
+					conf-msp {
+						groups = "gpio0_13_grp\0gpio0_38_grp";
+						slew-rate = <0x01>;
+						power-source = <0x01>;
+					};
+
+					conf-pull-up {
+						pins = "MIO22\0MIO23";
+						bias-pull-up;
+					};
+
+					conf-pull-none {
+						pins = "MIO13\0MIO38";
+						bias-disable;
+					};
+				};
+
+				i2c1-default {
+					phandle = <0x1c>;
+
+					mux {
+						groups = "i2c1_4_grp";
+						function = "i2c1";
+					};
+
+					conf {
+						groups = "i2c1_4_grp";
+						bias-pull-up;
+						slew-rate = <0x01>;
+						power-source = <0x01>;
+					};
+				};
+
+				i2c1-gpio {
+					phandle = <0x1d>;
+
+					mux {
+						groups = "gpio0_16_grp\0gpio0_17_grp";
+						function = "gpio0";
+					};
+
+					conf {
+						groups = "gpio0_16_grp\0gpio0_17_grp";
+						slew-rate = <0x01>;
+						power-source = <0x01>;
+					};
+				};
+
+				gem3-default {
+					phandle = <0x16>;
+
+					mux {
+						function = "ethernet3";
+						groups = "ethernet3_0_grp";
+					};
+
+					conf {
+						groups = "ethernet3_0_grp";
+						slew-rate = <0x01>;
+						power-source = <0x01>;
+					};
+
+					conf-rx {
+						pins = "MIO70\0MIO71\0MIO72\0MIO73\0MIO74\0MIO75";
+						bias-high-impedance;
+						low-power-disable;
+					};
+
+					conf-tx {
+						pins = "MIO64\0MIO65\0MIO66\0MIO67\0MIO68\0MIO69";
+						bias-disable;
+						low-power-enable;
+					};
+
+					mux-mdio {
+						function = "mdio3";
+						groups = "mdio3_0_grp";
+					};
+
+					conf-mdio {
+						groups = "mdio3_0_grp";
+						slew-rate = <0x01>;
+						power-source = <0x01>;
+						bias-disable;
+					};
+				};
 			};
 
+			gpio {
+				compatible = "xlnx,zynqmp-gpio-modepin";
+				gpio-controller;
+				#gpio-cells = <0x02>;
+				phandle = <0x27>;
+			};
 
 			clock-controller {
 				bootph-all;
@@ -368,9 +616,14 @@
 
     chosen {
 		bootargs = "earlycon console=ttyPS0,115200 root=/dev/mmcblk0p2 rootwait rw";
-		// linux,initrd-start = <0x4000000>;
-		// linux,initrd-end = <0x4536393>;
-		// linux,initrd-end = <0x4800000>;
 		stdout-path = "serial0:115200n8";
 	};
+
+	hvisor_virtio_device {
+		compatible = "hvisor";
+		interrupt-parent = <0x05>;
+		interrupts = <0x00 0x20 0x01>;
+	};
+
+	
 };

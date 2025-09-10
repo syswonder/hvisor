@@ -15,13 +15,22 @@
 //
 #![allow(unused)]
 
+use core::ptr::addr_of;
+use core::{mem, panic};
+
+use aarch64_cpu::registers::CSSELR_EL1::Level::L1;
+use aarch64_cpu::registers::PAR_EL1::PA;
 use cfg_if::cfg_if;
 use cortex_a::registers::SCTLR_EL2;
 use tock_registers::interfaces::*;
 use tock_registers::*;
 
+use crate::arch::mmu::S1PageAndBlockDescriptor::VALID;
+use crate::memory::addr::is_aligned;
+use crate::memory::AlignedPage;
+
 register_bitfields! {u64,
-    pub S1PageAndBlockDescriptor [
+    S1PageAndBlockDescriptor [
         RES     OFFSET(55) NUMBITS(4) [],
         UXN     OFFSET(54) NUMBITS(1) [
             False = 0,
@@ -71,7 +80,8 @@ const PAGE_SHIFT: usize = 12;
 const WORD_SIZE: usize = 8;
 const ENTRY_PER_PAGE: usize = PAGE_SIZE / WORD_SIZE;
 
-enum MemoryType {
+#[derive(PartialEq, Clone, Copy)]
+pub enum MemoryType {
     Normal,
     Device,
     Null,
@@ -125,92 +135,123 @@ impl PTEDescriptor {
     }
 }
 
+const MAX_PT_L1_PAGES: usize = 16;
+
 #[repr(C)]
 #[repr(align(4096))]
-pub struct PageTables {
+struct BootPTPagePool([u8; MAX_PT_L1_PAGES * PAGE_SIZE]);
+
+static mut BOOT_PT_L1_PAGE_POOL: BootPTPagePool = BootPTPagePool([0; MAX_PT_L1_PAGES * PAGE_SIZE]);
+static mut BOOT_PT_INDEX: usize = 0;
+
+const L1_SHIFT: u64 = 21;
+const L0_SHIFT: u64 = 30;
+
+const L1_SZ: u64 = 1 << L1_SHIFT;
+const L0_SZ: u64 = 1 << L0_SHIFT;
+
+#[repr(C)]
+#[repr(align(4096))]
+struct PageTables {
     entry: [PTEDescriptor; ENTRY_PER_PAGE],
 }
 
-// l1 page table
-pub static BOOT_PT_L0: PageTables = PageTables {
+static mut BOOT_PT_L0: PageTables = PageTables {
     entry: [PTEDescriptor(0); ENTRY_PER_PAGE],
 };
 
-// l2 page table
-pub static BOOT_PT_L1: PageTables = PageTables {
-    entry: [PTEDescriptor(0); ENTRY_PER_PAGE],
-};
+fn check_list(list: &[(u64, u64, MemoryType)]) {
+    unsafe { assert!(is_aligned(addr_of!(BOOT_PT_L1_PAGE_POOL.0) as _)) };
+    assert!(MAX_PT_L1_PAGES > 0);
 
-//TODO: use memset from crate
-pub unsafe fn memset(s: *mut u8, c: i32, n: usize) {
-    if (s as usize) < 0x1000 {
-        panic!("illegal addr for memset s {:x}", s as usize);
-    }
-    core::ptr::write_bytes(s, c as u8, n);
-}
-
-// #[link_section = ".text.boot"]
-pub extern "C" fn boot_pt_init(l0_pt: &mut PageTables, l1_pt: &mut PageTables) {
-    let l0_pt_entry: usize = l0_pt as *const _ as usize;
-    let l1_pt_entry: usize = l1_pt as *const _ as usize;
-
-    unsafe {
-        memset(l0_pt_entry as *mut u8, 0, PAGE_SIZE);
-        memset(l1_pt_entry as *mut u8, 0, PAGE_SIZE);
-    }
-    cfg_if! {
-        if #[cfg(feature = "pt_layout_qemu")] {
-            l0_pt.entry[0] = PTEDescriptor::new(0x0, MemoryType::Device, PTEType::Block);
-            for i in 1..ENTRY_PER_PAGE {
-                l0_pt.entry[i] = PTEDescriptor::new(0x40000000*i, MemoryType::Normal, PTEType::Block);
-            }
-        } else if #[cfg(any(feature = "pt_layout_rk3568",
-            feature = "pt_layout_rk3588",
-            feature = "pt_layout_zcu102"))] {
-            // EMMC fe310000    0xfe200000-0xfe400000
-            // GIC  fd400000    0xfd400000-0xfd600000
-            // UART fe660000    0xfe600000-0xfe800000
-            const L2_SHIFT: usize = 21;
-            l0_pt.entry[0] = PTEDescriptor::new(0x0, MemoryType::Normal, PTEType::Block);
-            l0_pt.entry[1] = PTEDescriptor::new(0x40000000, MemoryType::Normal, PTEType::Block);
-            l0_pt.entry[2] = PTEDescriptor::new(0x80000000, MemoryType::Normal, PTEType::Block);
-            l0_pt.entry[3] = PTEDescriptor::new(l1_pt_entry, MemoryType::Null, PTEType::Page);
-            // 0xc0000000 ~ 0xf0000000
-            const DEVICE_BOUND: usize = (0xf0000000 - 0xc0000000) / (1 << L2_SHIFT);
-            for i in 0..DEVICE_BOUND {
-                l1_pt.entry[i] = PTEDescriptor::new(
-                    0x0c0000000 + (i << L2_SHIFT),
-                    MemoryType::Normal,
-                    PTEType::Block,
-                );
-            }
-            // 0xf0000000 ~ 0x10000_0000
-            for i in DEVICE_BOUND..ENTRY_PER_PAGE {
-                l1_pt.entry[i] = PTEDescriptor::new(
-                    0x0c0000000 + (i << L2_SHIFT),
-                    MemoryType::Device,
-                    PTEType::Block,
-                );
-            }
-            for i in 4..ENTRY_PER_PAGE {
-                l0_pt.entry[i] = PTEDescriptor::new(0x40000000*i, MemoryType::Normal, PTEType::Block);
-            }
-        } else {
-            l0_pt.entry[0] = PTEDescriptor::new(0x0, MemoryType::Device, PTEType::Block);
-            for i in 1..7 {
-                l0_pt.entry[i] = PTEDescriptor::new(0x40000000*i, MemoryType::Normal, PTEType::Block);
-            }
-            for i in 8..ENTRY_PER_PAGE {
-                l0_pt.entry[i] = PTEDescriptor::invalid();
-            }
+    for i in 0..list.len() {
+        // each addr should align to 2M
+        if list[i].0 % L1_SZ != 0 || list[i].1 % L1_SZ != 0 {
+            panic!("memory list addr not align to 2M at index {}", i);
+        }
+        if i < list.len() - 1 && list[i].1 > list[i + 1].0 {
+            panic!("memory list addr not sorted at index {}", i);
         }
     }
 }
 
-// init mmu
-// #[link_section = ".text.boot"]
-#[no_mangle]
-pub extern "C" fn mmu_init(pt: &PageTables) {
+unsafe fn map_l1_page(addr: usize, l0_index: usize, l1_index: usize, mem_type: MemoryType) {
+    let l0_entry = &mut BOOT_PT_L0.entry[l0_index];
+    let l1_pt_addr = if (l0_entry.0 & 0x1 == 0) {
+        // l1 page table not exist, create it
+        if BOOT_PT_INDEX >= MAX_PT_L1_PAGES {
+            panic!("boot pt page pool is full");
+        }
+        let l1_pt_addr = BOOT_PT_L1_PAGE_POOL
+            .0
+            .as_ptr()
+            .add(BOOT_PT_INDEX * PAGE_SIZE) as u64;
+        BOOT_PT_INDEX += 1;
+        *l0_entry = PTEDescriptor::new(l1_pt_addr as _, MemoryType::Null, PTEType::Page);
+        l1_pt_addr
+    } else {
+        l0_entry.0 & !(PAGE_SIZE as u64 - 1)
+    };
+    assert!(is_aligned(l1_pt_addr as _));
+    (*(l1_pt_addr as *mut PageTables)).entry[l1_index] =
+        PTEDescriptor::new(addr, mem_type, PTEType::Block);
+}
+
+unsafe fn map_l0_page(addr: usize, l0_index: usize, mem_type: MemoryType) {
+    assert!(addr as u64 % L0_SZ == 0);
+    let l0_entry = &mut BOOT_PT_L0.entry[l0_index];
+    *l0_entry = PTEDescriptor::new(addr, mem_type, PTEType::Block);
+}
+
+fn map_range(mut start: u64, end: u64, mem_type: MemoryType) {
+    assert!(start <= end, "Start address is greater than end address");
+    assert!(start % L1_SZ == 0, "Start address is not align to 2M");
+    assert!(end % L1_SZ == 0, "End address is not align to 2M");
+
+    while (start < end) {
+        let l0_index = start >> L0_SHIFT;
+        let l1_index = (start >> L1_SHIFT) & (ENTRY_PER_PAGE as u64 - 1);
+        if (l0_index >= ENTRY_PER_PAGE as _) || (l1_index >= ENTRY_PER_PAGE as _) {
+            panic!("l0_index or l1_index out of range");
+        }
+
+        if (l1_index == 0 && start + L0_SZ <= end) {
+            // we can directly map l0 page table here
+            unsafe {
+                map_l0_page(start as _, l0_index as _, mem_type);
+            }
+            start += L0_SZ;
+        } else {
+            unsafe {
+                map_l1_page(start as _, l0_index as _, l1_index as _, mem_type);
+            }
+            start += L1_SZ;
+        }
+    }
+}
+
+fn map_list(list: &[(u64, u64, MemoryType)]) {
+    let mut i = 0;
+
+    while i < list.len() {
+        let (start, mut end, mem_type) = list[i];
+        while i + 1 < list.len() && list[i + 1].0 == end && list[i + 1].2 == mem_type {
+            end = list[i].1;
+            i += 1;
+        }
+        // map from start to end with mem_type
+        map_range(start, end, mem_type);
+        i += 1;
+    }
+}
+
+pub extern "C" fn boot_pt_init() {
+    let phys_memlist = &crate::platform::BOARD_PHYSMEM_LIST;
+    check_list(phys_memlist);
+    map_list(phys_memlist);
+}
+
+pub extern "C" fn mmu_enable() {
     use cortex_a::registers::*;
     MAIR_EL2.write(
         MAIR_EL2::Attr0_Device::nonGathering_nonReordering_noEarlyWriteAck
@@ -219,7 +260,8 @@ pub extern "C" fn mmu_init(pt: &PageTables) {
             + MAIR_EL2::Attr2_Normal_Outer::NonCacheable
             + MAIR_EL2::Attr2_Normal_Inner::NonCacheable,
     );
-    TTBR0_EL2.set(&pt.entry as *const _ as u64);
+
+    TTBR0_EL2.set(unsafe { &BOOT_PT_L0.entry } as *const _ as u64);
 
     TCR_EL2.write(
         TCR_EL2::PS::Bits_48
@@ -229,9 +271,11 @@ pub extern "C" fn mmu_init(pt: &PageTables) {
             + TCR_EL2::IRGN0::WriteBack_ReadAlloc_WriteAlloc_Cacheable
             + TCR_EL2::T0SZ.val(64 - 39),
     );
-}
-
-// #[link_section = ".text.boot"]
-pub extern "C" fn mmu_enable() {
     SCTLR_EL2.modify(SCTLR_EL2::M::Enable + SCTLR_EL2::C::Cacheable + SCTLR_EL2::I::Cacheable);
+
+    unsafe {
+        core::arch::asm!("tlbi alle2");
+        core::arch::asm!("dsb nsh");
+        core::arch::asm!("isb");
+    }
 }

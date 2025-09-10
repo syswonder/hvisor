@@ -131,7 +131,7 @@ pub struct Cmdq {
 impl Cmdq {
     fn new() -> Self {
         let f = Frame::new_contiguous_with_base(CMDQ_PAGES_NUM, 16).unwrap();
-        info!("its cmdq base: 0x{:x}", f.start_paddr());
+        info!("ITS cmdq base: 0x{:x}", f.start_paddr());
         let r = Self {
             phy_addr: f.start_paddr(),
             readr: 0,

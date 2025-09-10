@@ -24,15 +24,12 @@ pub const ACLINT_SSWI_BASE: usize = 0x2F00000;
 // This device is used for qemu-quit.
 pub const SIFIVE_TEST_BASE: u64 = 0x100000;
 
-pub const PLIC_BASE: usize = 0xc000000;
 pub const APLIC_BASE: usize = 0xc000000;
-pub const PLIC_MAX_IRQ: usize = 1024;
-pub const PLIC_GLOBAL_SIZE: usize = 0x200000;
-pub const PLIC_TOTAL_SIZE: usize = 0x400000;
-pub const PLIC_MAX_CONTEXT: usize = 64;
-pub const PLIC_PRIORITY_BASE: usize = 0x0000;
-pub const PLIC_PENDING_BASE: usize = 0x1000;
-pub const PLIC_ENABLE_BASE: usize = 0x2000;
+pub const BOARD_APLIC_INTERRUPTS_NUM: usize = 1023;
+pub const IMSIC_S_BASE: usize = 0x2800_0000;
+pub const IMSIC_GUEST_NUM: usize = 1; // hvisor only supports 1 guest now.
+pub const IMSIC_GUEST_INDEX: usize = 1;
+pub const IMSIC_NUM_IDS: usize = 0xFF;
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x8f000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x90000000;
@@ -98,6 +95,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [
     }, // virtio
 ];
 
+pub const HW_IRQS: [u32; 11] = [1, 2, 3, 4, 5, 8, 10, 33, 34, 35, 36];
 pub const ROOT_ZONE_IRQS: [u32; 11] = [1, 2, 3, 4, 5, 8, 10, 33, 34, 35, 36]; // ARCH= riscv .It doesn't matter temporarily.
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {

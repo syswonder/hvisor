@@ -23,7 +23,7 @@ pub const MEM_TYPE_RAM: u32 = 0;
 pub const MEM_TYPE_IO: u32 = 1;
 pub const MEM_TYPE_VIRTIO: u32 = 2;
 
-pub const CONFIG_MAGIC_VERSION: usize = 0x1;
+pub const CONFIG_MAGIC_VERSION: usize = 0x3;
 pub const CONFIG_MAX_MEMORY_REGIONS: usize = 64;
 pub const CONFIG_MAX_INTERRUPTS: usize = 32;
 pub const CONFIG_NAME_MAXLEN: usize = 32;

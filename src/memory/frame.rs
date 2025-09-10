@@ -150,10 +150,10 @@ impl Frame {
         loop {
             if let Ok(frame) = Frame::new_contiguous(frame_count, 0) {
                 if frame.start_paddr() & align_mask == 0 {
-                    info!(
-                        "new contiguous success!!! start_paddr:0x{:x}",
-                        frame.start_paddr()
-                    );
+                    // info!(
+                    //     "new contiguous success!!! start_paddr:0x{:x}",
+                    //     frame.start_paddr()
+                    // );
                     return Ok(frame);
                 } else {
                     let start_paddr = frame.start_paddr();
@@ -162,10 +162,10 @@ impl Frame {
                     drop(frame);
                     attempted_frames.push(Frame::new_contiguous(temp_frame_count, 0));
                     if let Ok(frame) = Frame::new_contiguous(frame_count, 0) {
-                        info!(
-                            "new contiguous success!!! start_paddr:0x{:x}",
-                            frame.start_paddr()
-                        );
+                        // info!(
+                        //     "new contiguous success!!! start_paddr:0x{:x}",
+                        //     frame.start_paddr()
+                        // );
                         return Ok(frame);
                     }
                 }

@@ -1,0 +1,216 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+* Copyright (C) 2023 Loongson Technology Corporation Limited
+*/
+
+/dts-v1/;
+
+// #include <dt-bindings/interrupt-controller/irq.h>
+#include "irq.h"
+
+/ {
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+		
+		cpu@0 {
+			compatible = "loongson,loongson3";
+			device_type = "cpu";
+			reg = <0x0>;
+			l2-cache = <&vcache0>;
+			next-level-cache = <&scache0>;
+			numa-node-id = <0>;
+		};
+		vcache0: l2-cache0 {
+			compatible = "cache";
+			next-level-cache = <&scache0>;
+		};
+		vcache1: l2-cache1 {
+			compatible = "cache";
+			next-level-cache = <&scache0>;
+		};
+		vcache2: l2-cache2 {
+			compatible = "cache";
+			next-level-cache = <&scache0>;
+		};
+		vcache3: l2-cache3 {
+			compatible = "cache";
+			next-level-cache = <&scache0>;
+		};
+		vcache4: l2-cache4 {
+			compatible = "cache";
+			next-level-cache = <&scache1>;
+		};
+		vcache5: l2-cache5 {
+			compatible = "cache";
+			next-level-cache = <&scache1>;
+		};
+		vcache6: l2-cache6 {
+			compatible = "cahce";
+			next-level-cache = <&scache1>;
+		};
+		vcache7: l2-cache7 {
+			compatible = "cache";
+			next-level-cache = <&scache1>;
+		};
+		vcache8: l2-cache8 {
+			compatible = "cache";
+			next-level-cache = <&scache2>;
+		};
+		vcache9: l2-cache9 {
+			compatible = "cache";
+			next-level-cache = <&scache2>;
+		};
+		vcachea: l2-cachea {
+			compatible = "cache";
+			next-level-cache = <&scache2>;
+		};
+		vcacheb: l2-cacheb {
+			compatible = "cache";
+			next-level-cache = <&scache2>;
+		};
+		vcachec: l2-cachec {
+			compatible = "cache";
+			next-level-cache = <&scache3>;
+		};
+		vcached: l2-cached {
+			compatible = "cache";
+			next-level-cache = <&scache3>;
+		};
+		vcachee: l2-cachee {
+			compatible = "cache";
+			next-level-cache = <&scache3>;
+		};
+		vcachef: l2-cachef {
+			compatible = "cache";
+			next-level-cache = <&scache3>;
+		};
+		scache0: l3-cache0 {
+			compatible = "cache";
+		};
+		scache1: l3-cache1 {
+			compatible = "cache";
+		};
+		scache2: l3-cache2 {
+			compatible = "cache";
+		};
+		scache3: l3-cache3 {
+			compatible = "cache";
+		};
+	};
+};
+
+/ {
+	#address-cells = <2>;
+	#size-cells = <2>;
+	
+	cpuintc: interrupt-controller {
+		compatible = "loongson,cpu-interrupt-controller";
+		#interrupt-cells = <1>;
+		interrupt-controller;
+		phandle = <0x8001>;
+	};
+	
+	board: platform {
+		compatible = "loongson,nbus", "simple-bus";
+		
+		ranges = <
+		0x00  0x10000000  0x00  0x10000000  0x00  0x10000000
+		0x00  0x02000000  0x00  0x02000000  0x00  0x02000000
+		0x00  0x20000000  0x00  0x20000000  0x00  0x10000000
+		0x00  0x40000000  0x00  0x40000000  0x00  0x40000000
+		0xfe  0x00000000  0xfe  0x00000000  0x00  0x40000000
+		>;
+		
+		#address-cells = <2>;
+		#size-cells = <2>;
+		
+		// liointc: interrupt-controller@1fe01400 {
+		// 	compatible = "loongson,liointc-1.0";
+		// 	reg = <0x0 0x1fe01400 0x0 0x64>;
+		// 	interrupt-controller;
+		// 	#interrupt-cells = <2>;
+		// 	interrupt-parent = <&cpuintc>;
+		// 	interrupts = <2>;
+		// 	interrupt-names = "int0";
+		// 	loongson,parent_int_map =
+		// 	<0x00000000>, /* int0 */
+		// 	<0xffffffff>, /* int1 */
+		// 	<0x00000000>, /* int2 */
+		// 	<0x00000000>; /* int3 */
+		// };
+		
+		eiointc: interrupt-controller@1fe01600 {
+			compatible = "loongson,ls2k2000-eiointc";
+			reg = <0x0 0x1fe01600 0x0 0xea00>;
+			interrupt-controller;
+			#interrupt-cells = <1>;
+			interrupt-parent = <&cpuintc>;
+			interrupts = <3>;
+			phandle = <0x8002>;
+			// status = "disabled";
+		};
+		
+		pic: interrupt-controller@10000000 {
+			compatible = "loongson,pch-pic-1.0";// Platform Controller Hub - Programmable Interrupt Controller
+			reg = <0x0 0x10000000 0x0 0x400>;
+			interrupt-controller;
+			#interrupt-cells = <2>;
+			loongson,pic-base-vec = <0>;
+			interrupt-parent = <&eiointc>;
+			phandle = <0x8003>;
+			// status = "disabled";
+		};
+		
+		// root's msi
+		// msi: msi-controller@1fe01140 {
+		// 	compatible = "loongson,pch-msi-1.0";
+		// 	reg = <0x0 0x1fe01140 0x0 0x8>;
+		// 	interrupt-controller;
+		// 	#interrupt-cells = <1>;
+		// 	msi-controller;
+		// 	loongson,msi-base-vec = <64>;
+		// 	loongson,msi-num-vecs = <48>; // [64-111(48),112-159(48),160-207(48),208-255(48)]
+		// 	interrupt-parent = <&eiointc>;
+		// 	phandle = <0x8004>;
+		// 	// status = "disabled";
+		// };
+		
+		rtc0: rtc@100d0100 {
+			compatible = "loongson,ls7a-rtc";// Real Time Clock
+			reg = <0x0 0x100d0100 0x0 0x100>;
+			interrupt-parent = <&pic>;// pic-rtc0
+			interrupts = <52 IRQ_TYPE_LEVEL_HIGH>;
+			// status = "disabled";
+		};
+		
+		ref_100m: clock-ref-100m {
+			compatible = "fixed-clock";
+			#clock-cells = <0>;
+			clock-frequency = <100000000>;
+			clock-output-names = "ref_100m";
+		};
+		
+		uart0: serial@1fe001e0 {
+			compatible = "ns16550a";
+			reg = <0x0 0x1fe001e0 0x0 0x100>;
+			clock-frequency = <100000000>;// 100M
+			// interrupt-parent = <&pic>;
+			// interrupts = <26 IRQ_TYPE_LEVEL_HIGH>; // from ACPI ASL Interrupt number
+			// interrupt-parent = <&liointc>;
+			// interrupts = <10 IRQ_TYPE_LEVEL_HIGH>;
+			no-loopback-test;
+			status = "disabled";
+		};
+
+		uart1: serial@10080000 {
+			compatible = "ns16550a";
+			reg = <0x0 0x10080000 0x0 0x100>;
+			clock-frequency = <50000000>;// 50M (according to ACPI ASL)
+			interrupt-parent = <&pic>;
+			interrupts = <8 IRQ_TYPE_LEVEL_HIGH>;
+			no-loopback-test;
+			status = "disabled";
+		};
+	};
+};

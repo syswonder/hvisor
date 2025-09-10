@@ -78,11 +78,11 @@ impl ArchCpu {
         // - wheatfox 2025.5.20
         self.ctx.gcsr_cpuid = 0;
         info!(
-            "loongarch64: CPU{} run@{:#x}",
+            "[[CPU virtualization]] CPU{} run@{:#x}",
             self.get_cpuid(),
             self.ctx.sepc
         );
-        debug!("loongarch64: @{:#x?}", self);
+        info!("loongarch64: @{:#x?}", self);
         // step 1: enable guest mode
         // step 2: set guest entry to era
         // step 3: run ertn and enter guest mode
@@ -157,4 +157,9 @@ pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
     let entry_addr = start_addr;
     mail_send(entry_addr, cpuid, 0);
     ipi_write_action(cpuid, SMP_BOOT_CPU);
+}
+
+pub fn store_cpu_pointer_to_reg(pointer: usize) {
+    // println!("loongarch64 doesn't support store cpu pointer to reg, pointer: {:#x}", pointer);
+    return;
 }

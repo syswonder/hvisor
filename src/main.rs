@@ -46,8 +46,6 @@ extern crate log;
 #[macro_use]
 extern crate lazy_static;
 
-extern crate fdt_rs;
-
 #[macro_use]
 mod logging;
 mod arch;
@@ -62,17 +60,15 @@ mod percpu;
 mod platform;
 mod zone;
 
-#[cfg(target_arch = "aarch64")]
-mod ivc;
 #[cfg(feature = "pci")]
 mod pci;
 
 #[cfg(test)]
 mod tests;
 
-#[cfg(target_arch = "aarch64")]
-use crate::arch::mm::setup_parange;
-use crate::consts::MAX_CPU_NUM;
+use crate::arch::iommu::iommu_init;
+use crate::arch::mm::arch_setup_parange;
+use crate::consts::{hv_end, mem_pool_start, MAX_CPU_NUM};
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
@@ -80,9 +76,6 @@ use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use pci::pci_config::hvisor_pci_init;
 use percpu::PerCpu;
 use zone::{add_zone, zone_create};
-
-#[cfg(all(feature = "iommu"))]
-use crate::arch::iommu::iommu_init;
 
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
 static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
@@ -121,6 +114,8 @@ fn primary_init_early() {
     logging::init();
     info!("Logging is enabled.");
     info!("__core_end = {:#x?}", __core_end as usize);
+    info!("mem_pool_start = {:#x?}", mem_pool_start() as usize);
+    info!("hv_end = {:#x?}", hv_end() as usize);
     // let system_config = HvSystemConfig::get();
     // let revision = system_config.revision;
     info!("Hypervisor initialization in progress...");
@@ -135,9 +130,10 @@ fn primary_init_early() {
     memory::frame::test();
     event::init();
 
+    arch::stage2_mode_detect();
+
     device::irqchip::primary_init_early();
 
-    #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
     iommu_init();
 
     #[cfg(feature = "pci")]
@@ -163,9 +159,8 @@ fn primary_init_late() {
 
 fn per_cpu_init(cpu: &mut PerCpu) {
     if cpu.zone.is_none() {
-        warn!("zone is not created for cpu {}", cpu.id);
+        warn!("CPU {} is not bound to zone0 (root zone)", cpu.id);
     }
-    info!("CPU {} hv_pt_install OK.", cpu.id);
 }
 
 fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
@@ -188,8 +183,6 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     if MASTER_CPU.load(Ordering::Acquire) == -1 {
         MASTER_CPU.store(cpuid as i32, Ordering::Release);
         is_primary = true;
-        #[cfg(target_arch = "riscv64")]
-        clear_bss();
         memory::heap::init();
         memory::heap::test();
     }
@@ -215,8 +208,9 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         cpu.id
     );
 
-    #[cfg(target_arch = "aarch64")]
-    setup_parange();
+    arch_setup_parange();
+    // #[cfg(target_arch = "aarch64")]
+    // setup_parange();
 
     if is_primary {
         primary_init_early(); // create root zone here

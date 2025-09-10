@@ -15,8 +15,10 @@
 //
 #![allow(unused)]
 use crate::{
-    arch::ipi::arch_send_event,
-    consts::MAX_CPU_NUM,
+    arch::ipi::{arch_check_events, arch_prepare_send_event, arch_send_event},
+    consts::{
+        IPI_EVENT_CLEAR_INJECT_IRQ, IPI_EVENT_SEND_IPI, IPI_EVENT_UPDATE_HART_LINE, MAX_CPU_NUM,
+    },
     device::{
         irqchip::inject_irq,
         virtio_trampoline::{handle_virtio_irq, IRQ_WAKEUP_VIRTIO_DEVICE},
@@ -30,9 +32,6 @@ pub const IPI_EVENT_WAKEUP: usize = 0;
 pub const IPI_EVENT_SHUTDOWN: usize = 1;
 pub const IPI_EVENT_VIRTIO_INJECT_IRQ: usize = 2;
 pub const IPI_EVENT_WAKEUP_VIRTIO_DEVICE: usize = 3;
-pub const IPI_EVENT_CLEAR_INJECT_IRQ: usize = 4;
-pub const IPI_EVENT_UPDATE_HART_LINE: usize = 5;
-pub const IPI_EVENT_SEND_IPI: usize = 6;
 
 static EVENT_MANAGER: Once<EventManager> = Once::new();
 
@@ -95,7 +94,7 @@ fn add_event(cpu: usize, event_id: usize) -> Option<()> {
     EVENT_MANAGER.get().unwrap().add_event(cpu, event_id)
 }
 
-fn fetch_event(cpu: usize) -> Option<usize> {
+pub fn fetch_event(cpu: usize) -> Option<usize> {
     EVENT_MANAGER.get().unwrap().fetch_event(cpu)
 }
 
@@ -118,7 +117,8 @@ pub fn clear_events(cpu: usize) {
 pub fn check_events() -> bool {
     trace!("check_events");
     let cpu_data = this_cpu_data();
-    match fetch_event(cpu_data.id) {
+    let event = fetch_event(cpu_data.id);
+    match event {
         Some(IPI_EVENT_WAKEUP) => {
             info!("cpu {} wakeup", cpu_data.id);
             cpu_data.arch_cpu.run();
@@ -134,42 +134,51 @@ pub fn check_events() -> bool {
             inject_irq(IRQ_WAKEUP_VIRTIO_DEVICE, false);
             true
         }
-        #[cfg(target_arch = "loongarch64")]
-        Some(IPI_EVENT_CLEAR_INJECT_IRQ) => {
-            use crate::device::irqchip;
-            irqchip::ls7a2000::clear_hwi_injected_irq();
+        Some(IPI_EVENT_CLEAR_INJECT_IRQ)
+        | Some(IPI_EVENT_UPDATE_HART_LINE)
+        | Some(IPI_EVENT_SEND_IPI) => {
+            arch_check_events(event);
             true
         }
-        #[cfg(all(target_arch = "riscv64", feature = "plic"))]
-        Some(IPI_EVENT_UPDATE_HART_LINE) => {
-            use crate::device::irqchip;
-            info!("cpu {} update hart line", cpu_data.id);
-            irqchip::plic::update_hart_line();
-            true
-        }
-        #[cfg(target_arch = "riscv64")]
-        Some(IPI_EVENT_SEND_IPI) => {
-            // This event is different from events above, it is used to inject software interrupt.
-            // While events above will inject external interrupt.
-            use crate::arch::ipi::arch_ipi_handler;
-            arch_ipi_handler();
-            true
-        }
+        // #[cfg(target_arch = "loongarch64")]
+        // Some(IPI_EVENT_CLEAR_INJECT_IRQ) => {
+        //     use crate::device::irqchip;
+        //     irqchip::ls7a2000::clear_hwi_injected_irq();
+        //     true
+        // }
+        // #[cfg(all(target_arch = "riscv64", feature = "plic"))]
+        // Some(IPI_EVENT_UPDATE_HART_LINE) => {
+        //     use crate::device::irqchip;
+        //     info!("cpu {} update hart line", cpu_data.id);
+        //     irqchip::plic::update_hart_line();
+        //     true
+        // }
+        // #[cfg(target_arch = "riscv64")]
+        // Some(IPI_EVENT_SEND_IPI) => {
+        //     // This event is different from events above, it is used to inject software interrupt.
+        //     // While events above will inject external interrupt.
+        //     use crate::arch::ipi::arch_ipi_handler;
+        //     arch_ipi_handler();
+        //     true
+        // }
         _ => false,
     }
 }
 
 pub fn send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
-    #[cfg(target_arch = "loongarch64")]
-    {
-        // block until the previous event is processed, which means
-        // the target queue is empty
-        while !fetch_event(cpu_id).is_none() {}
-        debug!(
-            "loongarch64:: send_event: cpu_id: {}, ipi_int_id: {}, event_id: {}",
-            cpu_id, ipi_int_id, event_id
-        );
-    }
+    // #[cfg(target_arch = "loongarch64")]
+    // {
+    //     // block until the previous event is processed, which means
+    //     // the target queue is empty
+    //     while !fetch_event(cpu_id).is_none() {}
+    //     debug!(
+    //         "loongarch64:: send_event: cpu_id: {}, ipi_int_id: {}, event_id: {}",
+    //         cpu_id, ipi_int_id, event_id
+    //     );
+    // }
+    /// Some arch need do something before send event.
+    /// Currently, we are not passing parameters, and we will modify the function signature later as needed.
+    arch_prepare_send_event(cpu_id, ipi_int_id, event_id);
     add_event(cpu_id, event_id);
     arch_send_event(cpu_id as _, ipi_int_id as _);
 }
