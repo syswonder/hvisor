@@ -2,7 +2,7 @@ use alloc::collections::btree_map::BTreeMap;
 use spin::{Lazy, Mutex};
 
 use crate::{
-    config::{HvPciConfig, HvPciDevConfig, CONFIG_MAX_PCI_DEV, CONFIG_PCI_BUS_MAXLEN},
+    config::{HvPciConfig, HvPciDevConfig, CONFIG_MAX_PCI_DEV, CONFIG_PCI_BUS_MAXNUM},
     error::HvResult,
     pci::{
         mem_alloc::BaseAllocator,
@@ -20,7 +20,7 @@ pub static GLOBAL_PCIE_LIST: Lazy<Mutex<BTreeMap<Bdf, VirtualPciConfigSpace>>> =
 });
 
 /* add all dev to GLOBAL_PCIE_LIST */
-pub fn hvisor_pci_init(pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAXLEN]) -> HvResult {
+pub fn hvisor_pci_init(pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAXNUM]) -> HvResult {
     for rootcomplex_config in pci_rootcomplex_config {
         /* empty config */
         if rootcomplex_config.ecam_base == 0 {
@@ -71,7 +71,7 @@ impl Zone {
 
     pub fn virtual_pci_mmio_init(
         &mut self,
-        pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAXLEN],
+        pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
     ) {
         for rootcomplex_config in pci_rootcomplex_config {
             /* empty config */

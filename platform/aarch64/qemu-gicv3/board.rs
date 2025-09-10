@@ -20,6 +20,9 @@ use crate::{
     },
     config::*,
 };
+
+use crate::pci_dev;
+
 pub const BOARD_NAME: &str = "qemu-gicv3";
 
 pub const BOARD_NCPUS: usize = 4;
@@ -146,13 +149,7 @@ pub const ROOT_PCI_CONFIG: [HvPciConfig; 4] = [
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
 
 pub const ROOT_PCI_DEVS: [HvPciDevConfig; 3] = [
-    HvPciDevConfig { bdf: 0, vbdf: 0 },
-    HvPciDevConfig {
-        bdf: (0 << 20 | 2 << 15 | 0 << 12),
-        vbdf: (0 << 20 | 2 << 15 | 0 << 12),
-    },
-    HvPciDevConfig {
-        bdf: (0 << 20 | 3 << 15 | 0 << 12),
-        vbdf: (0 << 20 | 3 << 15 | 0 << 12),
-    },
+    pci_dev!(0x0, 0x0, 0x0),
+    pci_dev!(0x0, 0x1, 0x0),
+    pci_dev!(0x0, 0x2, 0x0),
 ];
