@@ -45,10 +45,13 @@ hvisor 是一个用 Rust 实现的 Type-1 裸机虚拟机监控器，采用分�
 |                    | 7A2000 irq controller | `loongarch64`                       |                                        |
 |                    | PLIC                  | `riscv64`                           |                                        |
 |                    | AIA                   | `riscv64`                           | 仅支持 MSI 模式                         |
-| **设备直通**       | PCIe                  | `aarch64`, `riscv64`, `loongarch64` |                                        |
-|                    | GPU / HDMI            | `aarch64`                           | NXP i.MX8MP                            |
-|                    | SATA                  | `riscv64`                           | megrez                                 |
-|                    | NPU                   | `riscv64`                           | megrez                                 |
+| **设备直通(Zone0)** | All                  | All                                 |                                        |
+| **设备直通(ZoneU)** | PCIe                  | `aarch64`, `riscv64`, `loongarch64` | 待测试                                |
+|                    | GPU / HDMI            | `aarch64`, `loongarch64`           | NXP i.MX8MP, 3A6000                    |
+|                    | eMMC                  | `aarch64`, `riscv64`                | NXP i.MX8MP                           |
+|                    | USB                   | `aarch64`                           |  NXP i.MX8MP                            |   
+|                    | SATA                  | `riscv64`, `loongarch64`            | megrez, 3A6000                         |
+|                    | Ethernet              | `aarch64`, `riscv64`, `loongarch64` | NXP i.MX8MP, megrez, 3A6000             |
 
 ## 板卡支持
 
@@ -68,7 +71,6 @@ hvisor 是一个用 Rust 实现的 Type-1 裸机虚拟机监控器，采用分�
 - [x] Milk-V Megrez
 - [x] Sifive Hifive Premier P550
 - [ ] FPGA 香山（昆明湖）on S2C Prodigy S7-19PS-2
-- [ ] FPGA RocketChip on Xilinx Ultrascale+ MPSoC ZCU102
 
 ### loongarch64
 
@@ -78,6 +80,16 @@ hvisor 是一个用 Rust 实现的 Type-1 裸机虚拟机监控器，采用分�
 ### x86_64
 
 - [ ] QEMU virt x86_64
+- [ ] ASUS NUC14MNK
+
+## Guest OS 支持
+
+- [x] Linux 6.13
+- [x] Zephyr AArch64
+- [x] Zephyr AArch32
+- [x] RT-Thread
+- [ ] Android
+- [ ] OpenHarmony
 
 ## 开始使用
 
@@ -85,8 +97,25 @@ hvisor 是一个用 Rust 实现的 Type-1 裸机虚拟机监控器，采用分�
 
 ## 路线图
 
-- 支持在 NXP i.MX8MP 硬件平台上实现 Android nonroot
-- 支持在 `x86_64` 架构上运行 hvisor
+- 支持 `x86_64` 架构
+- 支持 Android 
+- 支持 OpenHarmony
+- 支持 ARMv9
+- 支持 GICv4
+- 支持缓存着色
+- 支持 SR-IOV
+- 支持 USB / NPU zoneU 直通
+- 支持 Nvidia GPU zoneU 直通
+- Web Management tool
+- 设备树配置工具
+- 支持 Nvidia Orin
+- 支持 Nvidia Thor
+- 支持 Raspberry Pi 5
+- 支持 IOMMU 虚拟化
+- 支持 PCIe 总线虚拟化
+- 支持 时钟控制器 虚拟化
+- 支持 pinctrl 虚拟化
+- 支持无 zone0 启动 zoneU / zoneR
 
 ## 致谢
 
