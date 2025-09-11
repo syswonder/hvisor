@@ -45,9 +45,10 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
 |                           | 7A2000 irq controller | `loongarch64`                        |                                          |
 |                           | PLIC                  | `riscv64`                            |                                          |
 |                           | AIA                   | `riscv64`                            | Only supports MSI mode                   |
-| **PCIe Passthrough**      | PCIe                  | `aarch64`, `riscv64`, `loongarch64`  |                                          |
-| **GPU Passthrough**       | GPU                   | `aarch64`                            | NXP i.MX8MP                              |
-
+| **Device Passthrough**    | PCIe                  | `aarch64`, `riscv64`, `loongarch64`  |                                          |
+|                           | GPU / HDMI            | `aarch64`                            | NXP i.MX8MP                              |
+|                           | SATA                  | `riscv64`                            | megrez                                   |
+|                           | NPU                   | `riscv64`                            | megrez                                   |
 ## Supported Boards
 
 ### aarch64
@@ -58,6 +59,7 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
 - [x] Rockchip RK3588
 - [x] Rockchip RK3568
 - [x] Forlinx OK6254-C
+- [x] Phytium Pi
 
 ### riscv64
 
@@ -71,6 +73,10 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
 
 - [x] Loongson 3A5000 (7A2000 bridge chip)
 - [x] Loongson 3A6000 (7A2000 bridge chip)
+
+### x86_64
+
+- [ ] QEMU virt x86_64
 
 ## Getting Started
 
