@@ -17,7 +17,6 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 // use psci::error::INVALID_ADDRESS;
 use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM};
-#[cfg(feature = "pci")]
 use crate::pci::pci_struct::VirtualRootComplex;
 use spin::RwLock;
 
@@ -40,7 +39,6 @@ pub struct Zone {
     pub irq_bitmap: [u32; 1024 / 32],
     pub gpm: MemorySet<Stage2PageTable>,
     pub is_err: bool,
-    #[cfg(feature = "pci")]
     pub vpci_bus: VirtualRootComplex,
 }
 
@@ -55,7 +53,6 @@ impl Zone {
             mmio: Vec::new(),
             irq_bitmap: [0; 1024 / 32],
             is_err: false,
-            #[cfg(feature = "pci")]
             vpci_bus: VirtualRootComplex::new(),
         }
     }
@@ -206,11 +203,10 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     let mut zone = Zone::new(zone_id, &config.name);
     zone.pt_init(config.memory_regions()).unwrap();
     zone.mmio_init(&config.arch_config);
-    #[cfg(feature = "pci")]
-    {
-        let _ = zone.virtual_pci_mmio_init(&config.pci_config, config.num_pci_bus);
-        let _ = zone.guest_pci_init(&config.alloc_pci_devs, config.num_pci_devs);
-    }
+
+    let _ = zone.virtual_pci_mmio_init(&config.pci_config, config.num_pci_bus);
+    let _ = zone.guest_pci_init(&config.alloc_pci_devs, config.num_pci_devs);
+    
     // #[cfg(target_arch = "aarch64")]
     // zone.ivc_init(config.ivc_config());
 

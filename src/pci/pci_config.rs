@@ -56,7 +56,7 @@ pub fn hvisor_pci_init(pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAX
             GLOBAL_PCIE_LIST.lock().insert(node.get_bdf(), node);
         }
     }
-    info!("hvisor pci init \n{:#?}", GLOBAL_PCIE_LIST);
+    info!("hvisor pci init done \n{:#?}", GLOBAL_PCIE_LIST);
     Ok(())
 }
 
@@ -90,7 +90,7 @@ impl Zone {
             }
             i += 1;
         }
-        info!("vpci bus init end\n {:#?}", self.vpci_bus);
+        info!("vpci bus init done\n {:#?}", self.vpci_bus);
         Ok(())
     }
 

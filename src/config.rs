@@ -215,14 +215,6 @@ macro_rules! pci_dev {
     };
 }
 
-#[cfg(not(feature = "pci"))]
-impl core::fmt::Debug for HvPciDevConfig {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        core::fmt::Debug::fmt(&(self.bdf, self.vbdf), f)
-    }
-}
-
-#[cfg(feature = "pci")]
 impl Debug for HvPciDevConfig {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let bdf = crate::pci::pci_struct::Bdf::from_address(self.bdf);

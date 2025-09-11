@@ -60,7 +60,6 @@ mod percpu;
 mod platform;
 mod zone;
 
-#[cfg(feature = "pci")]
 mod pci;
 
 #[cfg(test)]
@@ -72,7 +71,6 @@ use crate::consts::{hv_end, mem_pool_start, MAX_CPU_NUM};
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
-#[cfg(feature = "pci")]
 use pci::pci_config::hvisor_pci_init;
 use percpu::PerCpu;
 use zone::{add_zone, zone_create};
@@ -138,12 +136,7 @@ fn primary_init_early() {
 
     let root_config = root_zone_config();
 
-    #[cfg(feature = "pci")]
-    {
-        info!("1");
-        let _ = hvisor_pci_init(&root_config.pci_config);
-        info!("3");
-    }
+    let _ = hvisor_pci_init(&root_config.pci_config);
 
     #[cfg(not(test))]
     {
