@@ -136,15 +136,18 @@ fn primary_init_early() {
 
     iommu_init();
 
+    let root_config = root_zone_config();
+
     #[cfg(feature = "pci")]
     {
-        let config = unsafe { config::HV_ROOT_ZONE_CONFIG.get().unwrap().pci_config };
-        let _ = hvisor_pci_init(&config);
+        info!("1");
+        let _ = hvisor_pci_init(&root_config.pci_config);
+        info!("3");
     }
 
     #[cfg(not(test))]
     {
-        let zone = zone_create(root_zone_config()).unwrap();
+        let zone = zone_create(root_config).unwrap();
         add_zone(zone);
     }
     INIT_EARLY_OK.store(1, Ordering::Release);

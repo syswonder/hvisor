@@ -39,8 +39,6 @@ pub struct Zone {
     pub cpu_set: CpuSet,
     pub irq_bitmap: [u32; 1024 / 32],
     pub gpm: MemorySet<Stage2PageTable>,
-    #[cfg(all(target_arch = "riscv64", feature = "plic"))]
-    pub vplic: Option<vplic::VirtualPLIC>,
     pub is_err: bool,
     #[cfg(feature = "pci")]
     pub vpci_bus: VirtualRootComplex,
