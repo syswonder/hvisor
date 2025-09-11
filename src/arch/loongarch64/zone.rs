@@ -684,14 +684,6 @@ impl Zone {
     }
 
     pub fn arch_zone_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
-        let vaddr = config.pci_config.ecam_base;
-        let size = config.pci_config.ecam_size;
-        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-            vaddr as GuestPhysAddr,
-            vaddr as HostPhysAddr,
-            size as _,
-            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-        ))?;
-        self.gpm.delete(vaddr as GuestPhysAddr)
+        Ok(())
     }
 }

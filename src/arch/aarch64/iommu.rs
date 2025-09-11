@@ -13,6 +13,7 @@
 //
 // Authors:
 //
+#![allow(dead_code)]
 use crate::{
     arch::mm::new_s2_memory_set,
     consts::{MAX_ZONE_NUM, PAGE_SIZE},

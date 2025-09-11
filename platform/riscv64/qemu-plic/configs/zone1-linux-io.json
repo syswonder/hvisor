@@ -36,7 +36,7 @@
         "aplic_base": "0xd000000",
         "aplic_size": "0x8000"
     },
-    "pci_config": {
+    "pci_config": [{
         "ecam_base": "0x30000000",
         "ecam_size": "0x10000000",
         "io_base": "0x3000000",
@@ -48,7 +48,16 @@
         "mem64_base": "0x400000000",
         "mem64_size": "0x400000000",
         "pci_mem64_base": "0x400000000"
-    },
+    }],
     "num_pci_devs": 2,
-    "alloc_pci_devs": [0, 16]
+    "alloc_pci_devs": [
+        {
+            "bdf": "0x0",
+            "vbdf": "0x0"
+        },
+        {
+            "bdf": "0x10",
+            "vbdf": "0x10"
+        }
+    ]
 }

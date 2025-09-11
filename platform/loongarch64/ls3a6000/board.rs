@@ -15,6 +15,7 @@
 //      Yulong Han <wheatfox17@icloud.com>
 //
 use crate::{arch::zone::HvArchZoneConfig, config::*};
+use crate::pci_dev;
 
 pub const BOARD_NAME: &str = "ls3a5000";
 
@@ -154,19 +155,21 @@ pub const ROOT_ZONE_IRQS: [u32; 0] = [];
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig { dummy: 0 };
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
 
-pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
-    ecam_base: 0xfe00000000,
-    ecam_size: 0x20000000,
-    io_base: 0x18408000,
-    io_size: 0x8000,
-    pci_io_base: 0x00008000,
-    mem32_base: 0x0,
-    mem32_size: 0x0,
-    pci_mem32_base: 0x0,
-    mem64_base: 0x60000000,
-    mem64_size: 0x20000000,
-    pci_mem64_base: 0x60000000,
-};
+pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [
+    HvPciConfig {
+        ecam_base: 0xfe00000000,
+        ecam_size: 0x20000000,
+        io_base: 0x18408000,
+        io_size: 0x8000,
+        pci_io_base: 0x00008000,
+        mem32_base: 0x0,
+        mem32_size: 0x0,
+        pci_mem32_base: 0x0,
+        mem64_base: 0x60000000,
+        mem64_size: 0x20000000,
+        pci_mem64_base: 0x60000000,
+    }
+];
 
 /* 00:00.0, 00:00.1, 00:00.2, 00:00.3, 00:04.0, 00:04.1*/
 /* 00:05.0, 00:05.1, 00:06.0, 00:06.1, 00:06.2 */
@@ -177,37 +180,35 @@ pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
 /* 08:00.0, 08:00.1, 08:00.2, 08:00.3 net */
 /* BUS 6 on X4 slot */
 /* 06:00.0, 06:00.1, 06:00.2, 06:00.3 net */
-pub const ROOT_PCI_DEVS: [u64; 26] = [
-    0,
-    1,
-    2,
-    3,
-    4 << 3,
-    (4 << 3) + 1,
-    5 << 3,
-    (5 << 3) + 1,
-    // 00:06.xx is VGA and Graphics card
-    (6 << 3),
-    (6 << 3) + 1,
-    (6 << 3) + 2,
-    7 << 3,
-    8 << 3, // bus 0 device 8: AHCI
-    9 << 3,
-    0xa << 3,
-    0xb << 3,
-    0xc << 3,
-    0xd << 3,
-    0xf << 3,
-    0x10 << 3,
-    0x13 << 3,
-    0x16 << 3,
-    0x19 << 3,
-    2 << 8,
-    5 << 8,
-    // bus 6 (x4 slot) is PCIe network card
-    // (8 << 8), // bus 8 net
-    (6 << 8), // bus 6 net
+pub const ROOT_PCI_DEVS: [HvPciDevConfig; 26] = [
+    pci_dev!(0x0, 0x0, 0x0),  // 00:00.0
+    pci_dev!(0x0, 0x0, 0x1),  // 00:00.1
+    pci_dev!(0x0, 0x0, 0x2),  // 00:00.2
+    pci_dev!(0x0, 0x0, 0x3),  // 00:00.3
+    pci_dev!(0x0, 0x4, 0x0),  // 00:04.0
+    pci_dev!(0x0, 0x4, 0x1),  // 00:04.1
+    pci_dev!(0x0, 0x5, 0x0),  // 00:05.0
+    pci_dev!(0x0, 0x5, 0x1),  // 00:05.1
+    pci_dev!(0x0, 0x6, 0x0),  // 00:06.0
+    pci_dev!(0x0, 0x6, 0x1),  // 00:06.1
+    pci_dev!(0x0, 0x6, 0x2),  // 00:06.2
+    pci_dev!(0x0, 0x7, 0x0),  // 00:07.0
+    pci_dev!(0x0, 0x8, 0x0),  // 00:08.0
+    pci_dev!(0x0, 0x9, 0x0),  // 00:09.0
+    pci_dev!(0x0, 0xa, 0x0),  // 00:0a.0
+    pci_dev!(0x0, 0xb, 0x0),  // 00:0b.0
+    pci_dev!(0x0, 0xc, 0x0),  // 00:0c.0
+    pci_dev!(0x0, 0xd, 0x0),  // 00:0d.0
+    pci_dev!(0x0, 0xf, 0x0),  // 00:0f.0
+    pci_dev!(0x0, 0x10, 0x0), // 00:10.0
+    pci_dev!(0x0, 0x13, 0x0), // 00:13.0
+    pci_dev!(0x0, 0x16, 0x0), // 00:16.0
+    pci_dev!(0x0, 0x19, 0x0), // 00:19.0
+    pci_dev!(0x2, 0x0, 0x0),  // 02:00.0
+    pci_dev!(0x5, 0x0, 0x0),  // 05:00.0
+    pci_dev!(0x6, 0x0, 0x0),  // 06:00.0
 ];
+
 
 // bus << 8 | dev << 5 | func << 3
 

@@ -4,8 +4,8 @@
 /hvisor.S
 /hvisor-elf.txt
 /images/*
-/platform/*/*/image/kernel/*
-/platform/*/*/image/virtdisk/*
+/platform/*/*/image/kernel
+/platform/*/*/image/virtdisk
 /tools/hvisor
 /tmp
 *.mod.[co]

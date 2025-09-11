@@ -14,6 +14,7 @@
 // Authors:
 //
 use alloc::vec::Vec;
+use core::fmt::Debug;
 use spin::Once;
 
 use crate::{arch::zone::HvArchZoneConfig, platform};
@@ -22,11 +23,12 @@ pub const MEM_TYPE_RAM: u32 = 0;
 pub const MEM_TYPE_IO: u32 = 1;
 pub const MEM_TYPE_VIRTIO: u32 = 2;
 
-pub const CONFIG_MAGIC_VERSION: usize = 0x3;
+pub const CONFIG_MAGIC_VERSION: usize = 0x4;
 pub const CONFIG_MAX_MEMORY_REGIONS: usize = 64;
 pub const CONFIG_MAX_INTERRUPTS: usize = 32;
 pub const CONFIG_NAME_MAXLEN: usize = 32;
 pub const CONFIG_MAX_IVC_CONFIGS: usize = 2;
+pub const CONFIG_PCI_BUS_MAXNUM: usize = 4;
 pub const CONFIG_MAX_PCI_DEV: usize = 32;
 
 #[repr(C)]
@@ -91,9 +93,10 @@ pub struct HvZoneConfig {
     pub dtb_size: u64,
     pub name: [u8; CONFIG_NAME_MAXLEN],
     pub arch_config: HvArchZoneConfig,
-    pub pci_config: HvPciConfig,
+    pub num_pci_bus: u64,
+    pub pci_config: [HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
     pub num_pci_devs: u64,
-    pub alloc_pci_devs: [u64; CONFIG_MAX_PCI_DEV],
+    pub alloc_pci_devs: [HvPciDevConfig; CONFIG_MAX_PCI_DEV],
 }
 
 impl HvZoneConfig {
@@ -113,9 +116,10 @@ impl HvZoneConfig {
         dtb_size: u64,
         name: [u8; CONFIG_NAME_MAXLEN],
         arch: HvArchZoneConfig,
-        pci: HvPciConfig,
+        num_pci_bus: u64,
+        pci: [HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
         num_pci_devs: u64,
-        alloc_pci_devs: [u64; CONFIG_MAX_PCI_DEV],
+        alloc_pci_devs: [HvPciDevConfig; CONFIG_MAX_PCI_DEV],
     ) -> Self {
         Self {
             zone_id,
@@ -133,6 +137,7 @@ impl HvZoneConfig {
             dtb_size,
             name,
             arch_config: arch,
+            num_pci_bus,
             pci_config: pci,
             num_pci_devs: num_pci_devs,
             alloc_pci_devs: alloc_pci_devs,
@@ -191,4 +196,29 @@ pub struct HvIvcConfig {
     pub out_sec_size: u32,
     pub interrupt_num: u32,
     pub max_peers: u32,
+}
+
+#[repr(C)]
+#[derive(Copy, Clone, Default)]
+pub struct HvPciDevConfig {
+    pub bdf: u64,
+    pub vbdf: u64,
+}
+
+#[macro_export]
+macro_rules! pci_dev {
+    ($bus:expr, $dev:expr, $func:expr) => {
+        HvPciDevConfig {
+            bdf: ($bus << 8) | ($dev << 3) | ($func),
+            vbdf: ($bus << 8) | ($dev << 3) | ($func),
+        }
+    };
+}
+
+impl Debug for HvPciDevConfig {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let bdf = crate::pci::pci_struct::Bdf::from_address(self.bdf);
+        let vbdf = crate::pci::pci_struct::Bdf::from_address(self.vbdf);
+        write!(f, "bdf {:#?} vbdf {:#?}", bdf, vbdf)
+    }
 }
