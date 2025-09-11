@@ -22,6 +22,7 @@
 #define CONFIG_MAX_ZONES 32
 #define CONFIG_NAME_MAXLEN 32
 #define CONFIG_MAX_PCI_DEV 32
+#define CONFIG_PCI_BUS_MAXNUM 4
 
 #define IVC_PROTOCOL_USER 0x0
 #define IVC_PROTOCOL_HVISOR 0x01
@@ -34,6 +35,13 @@ struct memory_region {
 };
 
 typedef struct memory_region memory_region_t;
+
+struct hv_pci_dev_config {
+    __u64 bdf;
+    __u64 vbdf;
+};
+
+typedef struct hv_pci_dev_config hv_pci_dev_config_t;
 
 struct pci_config {
     __u64 ecam_base;
@@ -123,7 +131,7 @@ struct ivc_config {
 };
 typedef struct ivc_config ivc_config_t;
 
-#define CONFIG_MAGIC_VERSION 0x03
+#define CONFIG_MAGIC_VERSION 0x04
 
 // Every time you change the struct, you should also change the
 // `CONFIG_MAGIC_VERSION`
@@ -145,9 +153,10 @@ struct zone_config {
     char name[CONFIG_NAME_MAXLEN];
 
     arch_zone_config_t arch_config;
-    pci_config_t pci_config;
+    __u64 num_pci_bus;
+    pci_config_t pci_config[CONFIG_PCI_BUS_MAXNUM];
     __u64 num_pci_devs;
-    __u64 alloc_pci_devs[CONFIG_MAX_PCI_DEV];
+    hv_pci_dev_config_t alloc_pci_devs[CONFIG_MAX_PCI_DEV];
 };
 
 typedef struct zone_config zone_config_t;
