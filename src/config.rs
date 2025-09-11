@@ -93,6 +93,7 @@ pub struct HvZoneConfig {
     pub dtb_size: u64,
     pub name: [u8; CONFIG_NAME_MAXLEN],
     pub arch_config: HvArchZoneConfig,
+    pub num_pci_bus: u64,
     pub pci_config: [HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
     pub num_pci_devs: u64,
     pub alloc_pci_devs: [HvPciDevConfig; CONFIG_MAX_PCI_DEV],
@@ -115,6 +116,7 @@ impl HvZoneConfig {
         dtb_size: u64,
         name: [u8; CONFIG_NAME_MAXLEN],
         arch: HvArchZoneConfig,
+        num_pci_bus: u64,
         pci: [HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
         num_pci_devs: u64,
         alloc_pci_devs: [HvPciDevConfig; CONFIG_MAX_PCI_DEV],
@@ -135,6 +137,7 @@ impl HvZoneConfig {
             dtb_size,
             name,
             arch_config: arch,
+            num_pci_bus,
             pci_config: pci,
             num_pci_devs: num_pci_devs,
             alloc_pci_devs: alloc_pci_devs,
@@ -206,8 +209,8 @@ pub struct HvPciDevConfig {
 macro_rules! pci_dev {
     ($bus:expr, $dev:expr, $func:expr) => {
         HvPciDevConfig {
-            bdf: ($bus << 20) | ($dev << 15) | ($func << 12),
-            vbdf: ($bus << 20) | ($dev << 15) | ($func << 12),
+            bdf: ($bus << 8) | ($dev << 3) | ($func),
+            vbdf: ($bus << 8) | ($dev << 3) | ($func),
         }
     };
 }

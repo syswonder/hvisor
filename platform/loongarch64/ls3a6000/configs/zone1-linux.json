@@ -125,5 +125,8 @@
         "pci_mem64_base": "0x60000000"
     },
     "num_pci_devs": 1,
-    "alloc_pci_devs": [1537]
+    "alloc_pci_devs": [{
+        "bdf": "0x601",
+        "vbdf": "0x601"
+    }]
 }

@@ -92,7 +92,7 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
 };
 
 
-pub const ROOT_PCI_CONFIG: [HvPciConfig; 4] = [
+pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [
     HvPciConfig {
         ecam_base: 0x4010000000,
         ecam_size: 0x10000000,
@@ -105,46 +105,7 @@ pub const ROOT_PCI_CONFIG: [HvPciConfig; 4] = [
         mem64_base: 0x8000000000,
         mem64_size: 0x8000000000,
         pci_mem64_base: 0x8000000000,
-    },
-    HvPciConfig {
-        ecam_base: 0x0,
-        ecam_size: 0x0,
-        io_base: 0x0,
-        io_size: 0x0,
-        pci_io_base: 0x0,
-        mem32_base: 0x0,
-        mem32_size: 0x0,
-        pci_mem32_base: 0x0,
-        mem64_base: 0x0,
-        mem64_size: 0x0,
-        pci_mem64_base: 0x0,
-    },
-    HvPciConfig {
-        ecam_base: 0x0,
-        ecam_size: 0x0,
-        io_base: 0x0,
-        io_size: 0x0,
-        pci_io_base: 0x0,
-        mem32_base: 0x0,
-        mem32_size: 0x0,
-        pci_mem32_base: 0x0,
-        mem64_base: 0x0,
-        mem64_size: 0x0,
-        pci_mem64_base: 0x0,
-    },
-    HvPciConfig {
-        ecam_base: 0x0,
-        ecam_size: 0x0,
-        io_base: 0x0,
-        io_size: 0x0,
-        pci_io_base: 0x0,
-        mem32_base: 0x0,
-        mem32_size: 0x0,
-        pci_mem32_base: 0x0,
-        mem64_base: 0x0,
-        mem64_size: 0x0,
-        pci_mem64_base: 0x0,
-    },
+    }
 ];
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];

@@ -1,8 +1,8 @@
 use core::{
-    cmp::Ordering, fmt::Debug, hint::spin_loop, ops::Range, str::FromStr, sync::atomic::AtomicBool,
+    cmp::Ordering, fmt::Debug, hint::spin_loop, ops::Range, str::FromStr,
 };
 
-use alloc::{boxed::Box, collections::btree_map::BTreeMap, vec::Vec};
+use alloc::{collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
 use bit_field::BitField;
 use bitvec::{array::BitArray, order::Lsb0, BitArr};
 
@@ -71,6 +71,14 @@ impl Bdf {
         address.set_bits(15..20, self.device as u64);
         address.set_bits(20..28, self.bus as u64);
         address
+    }
+
+    pub fn is_host_bridge(&self) -> bool {
+        if (self.device, self.function) == (0, 0) {
+            true
+        } else {
+            false
+        }
     }
 }
 
@@ -193,8 +201,8 @@ impl VirtualPciAccessBits {
  * control: control the satus of rw every bit in config space
  * access: Determines whether the variable is read from space or hw
  * backend: the hw rw interface
- * disabled: not used yet
  */
+#[derive(Clone)]
 pub struct VirtualPciConfigSpace {
     bdf: Bdf,
     vbdf: Bdf,
@@ -204,12 +212,10 @@ pub struct VirtualPciConfigSpace {
     control: VirtualPciConfigControl,
     access: VirtualPciAccessBits,
 
-    backend: Box<dyn PciRW>,
+    backend: Arc<dyn PciRW>,
 
     bararr: Bar,
     rom: PciMem,
-
-    disabled: AtomicBool,
 }
 
 impl VirtualPciConfigSpace {
@@ -280,7 +286,7 @@ impl Debug for VirtualPciConfigSpace {
 }
 
 impl VirtualPciConfigSpace {
-    pub fn endpoint(bdf: Bdf, backend: Box<dyn PciRW>, bararr: Bar, rom: PciMem) -> Self {
+    pub fn endpoint(bdf: Bdf, backend: Arc<dyn PciRW>, bararr: Bar, rom: PciMem) -> Self {
         Self {
             bdf,
             vbdf: Bdf::default(),
@@ -291,11 +297,10 @@ impl VirtualPciConfigSpace {
             backend,
             bararr,
             rom,
-            disabled: AtomicBool::new(false),
         }
     }
 
-    pub fn bridge(bdf: Bdf, backend: Box<dyn PciRW>, bararr: Bar) -> Self {
+    pub fn bridge(bdf: Bdf, backend: Arc<dyn PciRW>, bararr: Bar) -> Self {
         Self {
             bdf,
             vbdf: Bdf::default(),
@@ -306,11 +311,10 @@ impl VirtualPciConfigSpace {
             backend,
             bararr,
             rom: PciMem::default(),
-            disabled: AtomicBool::new(false),
         }
     }
 
-    pub fn unknown(bdf: Bdf, backend: Box<dyn PciRW>) -> Self {
+    pub fn unknown(bdf: Bdf, backend: Arc<dyn PciRW>) -> Self {
         Self {
             bdf,
             vbdf: Bdf::default(),
@@ -321,11 +325,10 @@ impl VirtualPciConfigSpace {
             backend,
             bararr: Bar::default(),
             rom: PciMem::default(),
-            disabled: AtomicBool::new(false),
         }
     }
 
-    pub fn host_bridge(bdf: Bdf, backend: Box<dyn PciRW>) -> Self {
+    pub fn host_bridge(bdf: Bdf, backend: Arc<dyn PciRW>) -> Self {
         Self {
             bdf: bdf,
             vbdf: bdf,
@@ -336,7 +339,6 @@ impl VirtualPciConfigSpace {
             backend,
             bararr: Bar::default(),
             rom: PciMem::default(),
-            disabled: AtomicBool::new(false),
         }
     }
 
@@ -354,8 +356,6 @@ impl VirtualPciConfigSpace {
 
     pub fn set_vbdf(&mut self, vbdf: Bdf) {
         self.vbdf = vbdf;
-        self.disabled
-            .store(true, core::sync::atomic::Ordering::SeqCst);
     }
 
     /* now the space_init just with bar
@@ -521,20 +521,20 @@ impl<B: BarAllocator> PciIterator<B> {
                         i += 1;
                     }
                 }
-                let ep = Box::new(ep);
+                let ep = Arc::new(ep);
                 let bdf = Bdf::from_address(address);
                 Some(VirtualPciConfigSpace::endpoint(bdf, ep, bararr, rom))
             }
             HeaderType::PciBridge => {
                 warn!("bridge");
                 let bridge = PciBridgeHeader::new_with_region(region);
-                let bridge = Box::new(bridge);
+                let bridge = Arc::new(bridge);
                 let bdf = Bdf::from_address(address);
                 Some(VirtualPciConfigSpace::bridge(bdf, bridge, Bar::default()))
             }
             _ => {
                 warn!("unknown type");
-                let pci_header = Box::new(pci_header);
+                let pci_header = Arc::new(pci_header);
                 let bdf = Bdf::from_address(address);
                 Some(VirtualPciConfigSpace::unknown(bdf, pci_header))
             }

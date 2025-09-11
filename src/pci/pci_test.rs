@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 use core::str::FromStr;
 
-use alloc::{boxed::Box, collections::btree_map::BTreeMap};
+use alloc::{collections::btree_map::BTreeMap, sync::Arc};
 use spin::{lazy::Lazy, mutex::Mutex};
 
 use crate::{
@@ -48,7 +48,7 @@ pub fn pcie_guest_init() {
         bdf.to_address(0) + 0x4010000000,
         CONFIG_LENTH,
     ));
-    let dev = VirtualPciConfigSpace::host_bridge(bdf, Box::new(backend));
+    let dev = VirtualPciConfigSpace::host_bridge(bdf, Arc::new(backend));
     vbus.insert(vbdf, dev);
 
     let vbdf = Bdf::from_str("0000:00:01.0").unwrap();

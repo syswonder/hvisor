@@ -75,13 +75,16 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
     let mut pci_devs = [HvPciDevConfig::default(); CONFIG_MAX_PCI_DEV];
     let mut _root_pci_cfg = [HvPciConfig::new_empty(); CONFIG_PCI_BUS_MAXNUM];
     let mut _num_pci_devs: u64 = 0;
+    let mut _num_pci_bus: u64 = 0;
 
     #[cfg(feature = "pci")]
     {
         check!(ROOT_PCI_DEVS.len(), CONFIG_MAX_PCI_DEV, "ROOT_PCI_DEVS");
         pci_devs[..ROOT_PCI_DEVS.len()].copy_from_slice(&ROOT_PCI_DEVS);
-        _root_pci_cfg = ROOT_PCI_CONFIG;
+        check!(ROOT_PCI_CONFIG.len(), CONFIG_PCI_BUS_MAXNUM, "ROOT_PCI_CONFIG");
+        _root_pci_cfg[..ROOT_PCI_CONFIG.len()].copy_from_slice(&ROOT_PCI_CONFIG);
         _num_pci_devs = ROOT_PCI_DEVS.len() as _;
+        _num_pci_bus = ROOT_PCI_CONFIG.len() as _;
     }
 
     HvZoneConfig::new(
@@ -100,6 +103,7 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
         INVALID_ADDRESS as _,
         name,
         ROOT_ARCH_ZONE_CONFIG,
+        _num_pci_bus,
         _root_pci_cfg,
         _num_pci_devs,
         pci_devs,

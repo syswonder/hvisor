@@ -55,13 +55,23 @@ impl Zone {
         let mut i = 0;
         while i < num_pci_devs {
             let dev_config = alloc_pci_devs[i as usize];
-            let bdf = Bdf::from_address(dev_config.bdf);
-            let vbdf = Bdf::from_address(dev_config.vbdf);
-            if let Some(mut vdev) = guard.remove(&bdf) {
-                vdev.set_vbdf(vbdf);
-                self.vpci_bus.insert(vbdf, vdev);
+            let bdf = Bdf::from_address(dev_config.bdf << 12);
+            let vbdf = Bdf::from_address(dev_config.vbdf << 12);
+            if bdf.is_host_bridge() {
+                if let Some(mut vdev) = guard.get(&bdf) {
+                    let mut vdev = vdev.clone();
+                    vdev.set_vbdf(vbdf);
+                    self.vpci_bus.insert(vbdf, vdev);
+                } else {
+                    warn!("can not find host bridge {:#?}", bdf);
+                }
             } else {
-                warn!("can not find dev {:#?}", bdf);
+                if let Some(mut vdev) = guard.remove(&bdf) {
+                    vdev.set_vbdf(vbdf);
+                    self.vpci_bus.insert(vbdf, vdev);
+                } else {
+                    warn!("can not find dev {:#?}", bdf);
+                }
             }
             i += 1;
         }
@@ -72,6 +82,7 @@ impl Zone {
     pub fn virtual_pci_mmio_init(
         &mut self,
         pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
+        _num_pci_bus: u64
     ) {
         for rootcomplex_config in pci_rootcomplex_config {
             /* empty config */
