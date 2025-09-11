@@ -13,7 +13,7 @@
 //
 // Authors:
 //
-#![allow(dead_code)]
+// #![allow(dead_code)]
 use core::{
     fmt::Debug,
     ops::{Index, IndexMut},
@@ -36,11 +36,6 @@ use super::{
     pci_struct::Bdf,
     PciConfigAddress,
 };
-
-pub trait PciRW: Debug + Send + Sync {
-    fn read(&self, offset: PciConfigAddress, size: usize) -> HvResult<usize>;
-    fn write(&self, offset: PciConfigAddress, size: usize, value: usize) -> HvResult;
-}
 
 pub type VendorId = u16;
 pub type DeviceId = u16;
@@ -459,227 +454,93 @@ impl Debug for Bar {
     }
 }
 
-/*      32                            16                              0
- *      +-----------------------------+------------------------------+
- *      |       Device ID             |       Vendor ID              | 0x00
- *      |                             |                              |
- *      +-----------------------------+------------------------------+
- *      |         Status              |       Command                | 0x04
- *      |                             |                              |
- *      +-----------------------------+---------------+--------------+
- *      |               Class Code                    |   Revision   | 0x08
- *      |                                             |      ID      |
- *      +--------------+--------------+---------------+--------------+
- *      |     BIST     |    Header    |    Latency    |  Cacheline   | 0x0c
- *      |              |     type     |     timer     |    size      |
- *      +--------------+--------------+---------------+--------------+
- */
-#[derive(Debug, Clone)]
-pub struct PciConfigHeader(PciRegionMmio);
-
-macro_rules! impl_pci_rw {
-    ($ty:ty) => {
-        impl PciRW for $ty {
-            fn read(&self, offset: PciConfigAddress, size: usize) -> HvResult<usize> {
-                match size {
-                    1 => self.0.read_u8(offset).map(|v| v as usize),
-                    2 => self.0.read_u16(offset).map(|v| v as usize),
-                    4 => self.0.read_u32(offset).map(|v| v as usize),
-                    _ => {
-                        hv_result_err!(EFAULT, "pci: invalid mmio read size: {size}")
-                    }
-                }
-            }
-            fn write(&self, offset: PciConfigAddress, size: usize, value: usize) -> HvResult {
-                match size {
-                    1 => self.0.write_u8(offset, value as u8),
-                    2 => self.0.write_u16(offset, value as u16),
-                    4 => self.0.write_u32(offset, value as u32),
-                    _ => {
-                        hv_result_err!(EFAULT, "pci: invalid mmio write size: {size}")
-                    }
-                }
+pub trait PciRWBase: Debug + Send + Sync {
+    fn backend(&self) -> &dyn PciRegion;
+}
+pub trait PciRW: Debug + Send + Sync + PciRWBase {
+    fn read(&self, offset: PciConfigAddress, size: usize) -> HvResult<usize> {
+        match size {
+            1 => self.backend().read_u8(offset).map(|v| v as usize),
+            2 => self.backend().read_u16(offset).map(|v| v as usize),
+            4 => self.backend().read_u32(offset).map(|v| v as usize),
+            _ => {
+                hv_result_err!(EFAULT, "pci: invalid mmio read size: {size}")
             }
         }
-    };
-}
-
-macro_rules! impl_pci_header {
-    ($ty:ty) => {
-        impl $ty {
-            pub fn id(&self) -> (DeviceId, VendorId) {
-                let id = self.0.read_u32(0x00).unwrap();
-                (
-                    id.get_bits(0..16) as VendorId,
-                    id.get_bits(16..32) as DeviceId,
-                )
-            }
-
-            pub fn header_type(&self) -> HeaderType {
-                match self.0.read_u8(0x0e).unwrap().get_bits(0..7) {
-                    0x00 => HeaderType::Endpoint,
-                    0x01 => HeaderType::PciBridge,
-                    0x02 => HeaderType::CardBusBridge,
-                    v => HeaderType::Unknown(v as u8),
-                }
-            }
-
-            pub fn has_multiple_functions(&self) -> bool {
-                self.0.read_u8(0x0c).unwrap().get_bit(7)
-            }
-
-            pub fn revision_and_class(&self) -> (DeviceRevision, BaseClass, SubClass, Interface) {
-                let value = self.0.read_u32(0x08).unwrap();
-                (
-                    value.get_bits(0..8) as DeviceRevision,
-                    value.get_bits(24..32) as BaseClass,
-                    value.get_bits(16..24) as SubClass,
-                    value.get_bits(8..16) as Interface,
-                )
-            }
-
-            pub fn status(&self) -> PciStatus {
-                let status = self.0.read_u16(0x06).unwrap();
-                PciStatus::from_bits_truncate(status)
-            }
-
-            pub fn command(&self) -> PciCommand {
-                let command = self.0.read_u16(0x04).unwrap();
-                PciCommand::from_bits_truncate(command)
-            }
-
-            pub fn update_command<F>(&mut self, f: F)
-            where
-                F: FnOnce(PciCommand) -> PciCommand,
-            {
-                let mut data = self.0.read_u16(0x04).unwrap();
-                let new_command = f(PciCommand::from_bits_retain(data.get_bits(0..16)));
-                data.set_bits(0..16, new_command.bits());
-                let _ = self.0.write_u16(0x04, data);
-            }
-        }
-    };
-}
-
-impl_pci_rw!(PciConfigHeader);
-impl_pci_header!(PciConfigHeader);
-
-impl PciConfigHeader {
-    pub fn new_with_region(region: PciRegionMmio) -> Self {
-        PciConfigHeader(region)
     }
-}
-
-/*     32                           16                              0
- *     +-----------------------------------------------------------+ 0x00
- *     |                                                           |
- *     |                Predefined region of header                |
- *     |                                                           |
- *     |                                                           |
- *     +-----------------------------------------------------------+
- *     |                  Base Address Register 0                  | 0x10
- *     |                                                           |
- *     +-----------------------------------------------------------+
- *     |                  Base Address Register 1                  | 0x14
- *     |                                                           |
- *     +-----------------------------------------------------------+
- *     |                  Base Address Register 2                  | 0x18
- *     |                                                           |
- *     +-----------------------------------------------------------+
- *     |                  Base Address Register 3                  | 0x1c
- *     |                                                           |
- *     +-----------------------------------------------------------+
- *     |                  Base Address Register 4                  | 0x20
- *     |                                                           |
- *     +-----------------------------------------------------------+
- *     |                  Base Address Register 5                  | 0x24
- *     |                                                           |
- *     +-----------------------------------------------------------+
- *     |                  CardBus CIS Pointer                      | 0x28
- *     |                                                           |
- *     +----------------------------+------------------------------+
- *     |       Subsystem ID         |    Subsystem vendor ID       | 0x2c
- *     |                            |                              |
- *     +----------------------------+------------------------------+
- *     |               Expansion ROM Base Address                  | 0x30
- *     |                                                           |
- *     +--------------------------------------------+--------------+
- *     |                 Reserved                   | Capabilities | 0x34
- *     |                                            |   Pointer    |
- *     +--------------------------------------------+--------------+
- *     |                         Reserved                          | 0x38
- *     |                                                           |
- *     +--------------+--------------+--------------+--------------+
- *     |   Max_Lat    |   Min_Gnt    |  Interrupt   |  Interrupt   | 0x3c
- *     |              |              |   pin        |   line       |
- *     +--------------+--------------+--------------+--------------+
- */
-pub enum EndpointField {
-    ID,
-    Command,
-    Status,
-    RevisionIDAndClassCode,
-    CacheLineSize,
-    LatencyTime,
-    HeaderType,
-    Bist,
-    Bar,
-    CardCisPointer,
-    SubsystemVendorId,
-    SubsystemId,
-    ExpansionRomBar,
-    CapabilitiesPointer,
-    InterruptLine,
-    InterruptPin,
-    MinGnt,
-    MaxLat,
-    Unknown(usize),
-}
-
-impl EndpointField {
-    pub fn from(offset: usize, size: usize) -> Self {
-        match (offset, size) {
-            (0x00, 4) => EndpointField::ID,
-            (0x04, 2) => EndpointField::Command,
-            (0x06, 2) => EndpointField::Status,
-            (0x08, 4) => EndpointField::RevisionIDAndClassCode,
-            (0x0c, 1) => EndpointField::CacheLineSize,
-            (0x0d, 1) => EndpointField::LatencyTime,
-            (0x0e, 1) => EndpointField::HeaderType,
-            (0x0f, 1) => EndpointField::Bist,
-            (0x10, 4) | (0x14, 4) | (0x18, 4) | (0x1c, 4) | (0x20, 4) | (0x24, 4) => {
-                EndpointField::Bar
+    fn write(&self, offset: PciConfigAddress, size: usize, value: usize) -> HvResult {
+        match size {
+            1 => self.backend().write_u8(offset, value as u8),
+            2 => self.backend().write_u16(offset, value as u16),
+            4 => self.backend().write_u32(offset, value as u32),
+            _ => {
+                hv_result_err!(EFAULT, "pci: invalid mmio write size: {size}")
             }
-            (0x28, 4) => EndpointField::CardCisPointer,
-            (0x2c, 2) => EndpointField::SubsystemVendorId,
-            (0x2e, 2) => EndpointField::SubsystemId,
-            (0x30, 4) => EndpointField::ExpansionRomBar,
-            (0x34, 4) => EndpointField::CapabilitiesPointer,
-            (0x3c, 1) => EndpointField::InterruptLine,
-            (0x3d, 1) => EndpointField::InterruptPin,
-            (0x3e, 1) => EndpointField::MinGnt,
-            (0x3f, 1) => EndpointField::MaxLat,
-            (x, _) => EndpointField::Unknown(x),
         }
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct EndpointHeader(PciRegionMmio);
-
-impl_pci_rw!(EndpointHeader);
-impl_pci_header!(EndpointHeader);
-
-impl EndpointHeader {
-    pub fn new_with_region(region: PciRegionMmio) -> Self {
-        EndpointHeader(region)
+pub trait PciHeaderRW: PciRWBase {
+    fn id(&self) -> (DeviceId, VendorId) {
+        let id = self.backend().read_u32(0x00).unwrap();
+        (
+            id.get_bits(0..16) as VendorId,
+            id.get_bits(16..32) as DeviceId,
+        )
     }
 
-    pub fn parse_bar(&self) -> Bar {
+    fn header_type(&self) -> HeaderType {
+        match self.backend().read_u8(0x0e).unwrap().get_bits(0..7) {
+            0x00 => HeaderType::Endpoint,
+            0x01 => HeaderType::PciBridge,
+            0x02 => HeaderType::CardBusBridge,
+            v => HeaderType::Unknown(v as u8),
+        }
+    }
+
+    fn has_multiple_functions(&self) -> bool {
+        self.backend().read_u8(0x0c).unwrap().get_bit(7)
+    }
+
+    fn revision_and_class(&self) -> (DeviceRevision, BaseClass, SubClass, Interface) {
+        let value = self.backend().read_u32(0x08).unwrap();
+        (
+            value.get_bits(0..8) as DeviceRevision,
+            value.get_bits(24..32) as BaseClass,
+            value.get_bits(16..24) as SubClass,
+            value.get_bits(8..16) as Interface,
+        )
+    }
+
+    fn status(&self) -> PciStatus {
+        let status = self.backend().read_u16(0x06).unwrap();
+        PciStatus::from_bits_truncate(status)
+    }
+
+    fn command(&self) -> PciCommand {
+        let command = self.backend().read_u16(0x04).unwrap();
+        PciCommand::from_bits_truncate(command)
+    }
+
+    fn update_command<F>(&mut self, f: F)
+    where
+        F: FnOnce(PciCommand) -> PciCommand,
+    {
+        let mut data = self.backend().read_u16(0x04).unwrap();
+        let new_command = f(PciCommand::from_bits_retain(data.get_bits(0..16)));
+        data.set_bits(0..16, new_command.bits());
+        let _ = self.backend().write_u16(0x04, data);
+    }
+}
+
+pub trait PciBarRW: PciRWBase {
+    fn bar_limit(&self) -> u8;
+
+    fn parse_bar(&self) -> Bar {
         let mut bararr = Bar::default();
 
         let mut slot = 0u8;
-        while slot < 6 {
+        while slot < self.bar_limit() {
             let value = self.read_bar(slot).unwrap();
 
             if !value.get_bit(0) {
@@ -744,27 +605,30 @@ impl EndpointHeader {
         bararr
     }
 
-    pub fn read_bar(&self, slot: u8) -> HvResult<usize> {
+    fn read_bar(&self, slot: u8) -> HvResult<usize> {
         // println!("read bar slot {}", slot);
-        self.0
+        self.backend()
             .read_u32((0x10 + (slot as u16) * 4) as PciConfigAddress)
             .map(|r| r as usize)
     }
 
-    pub fn write_bar(&self, slot: u8, value: u32) -> HvResult {
+    fn write_bar(&self, slot: u8, value: u32) -> HvResult {
         // println!("write bar slot {} {}", slot, value);
-        self.0
+        self.backend()
             .write_u32((0x10 + (slot as u16) * 4) as PciConfigAddress, value)
     }
+}
 
-    pub fn parse_rom(&self) -> PciMem {
-        let offset = 0x30;
-        let value = self.0.read_u32(offset).unwrap();
+pub trait PciRomRW: PciRWBase {
+    fn rom_offset(&self) -> u64;
+    fn parse_rom(&self) -> PciMem {
+        let offset = self.rom_offset();
+        let value = self.backend().read_u32(offset).unwrap();
 
         let size = {
-            let _ = self.0.write_u32(offset, 0xfffff800);
-            let mut readback = self.0.read_u32(offset).unwrap();
-            let _ = self.0.write_u32(offset, value);
+            let _ = self.backend().write_u32(offset, 0xfffff800);
+            let mut readback = self.backend().read_u32(offset).unwrap();
+            let _ = self.backend().write_u32(offset, value);
             if readback == 0x0 {
                 return PciMem::default();
             }
@@ -772,6 +636,159 @@ impl EndpointHeader {
             1 << readback.trailing_zeros()
         };
         PciMem::new_rom(value as u64, size)
+    }
+}
+
+/*      32                            16                              0
+ *      +-----------------------------+------------------------------+
+ *      |       Device ID             |       Vendor ID              | 0x00
+ *      |                             |                              |
+ *      +-----------------------------+------------------------------+
+ *      |         Status              |       Command                | 0x04
+ *      |                             |                              |
+ *      +-----------------------------+---------------+--------------+
+ *      |               Class Code                    |   Revision   | 0x08
+ *      |                                             |      ID      |
+ *      +--------------+--------------+---------------+--------------+
+ *      |     BIST     |    Header    |    Latency    |  Cacheline   | 0x0c
+ *      |              |     type     |     timer     |    size      |
+ *      +--------------+--------------+---------------+--------------+
+ */
+#[derive(Debug, Clone)]
+pub struct PciConfigHeader(PciRegionMmio);
+
+impl PciRWBase for PciConfigHeader {
+    fn backend(&self) -> &dyn PciRegion {
+        &self.0
+    }
+}
+impl PciRW for PciConfigHeader {}
+impl PciHeaderRW for PciConfigHeader {}
+
+impl PciConfigHeader {
+    pub fn new_with_region(region: PciRegionMmio) -> Self {
+        PciConfigHeader(region)
+    }
+}
+
+/*     32                           16                              0
+ *     +-----------------------------------------------------------+ 0x00
+ *     |                                                           |
+ *     |                Predefined region of header                |
+ *     |                                                           |
+ *     |                                                           |
+ *     +-----------------------------------------------------------+
+ *     |                  Base Address Register 0                  | 0x10
+ *     |                                                           |
+ *     +-----------------------------------------------------------+
+ *     |                  Base Address Register 1                  | 0x14
+ *     |                                                           |
+ *     +-----------------------------------------------------------+
+ *     |                  Base Address Register 2                  | 0x18
+ *     |                                                           |
+ *     +-----------------------------------------------------------+
+ *     |                  Base Address Register 3                  | 0x1c
+ *     |                                                           |
+ *     +-----------------------------------------------------------+
+ *     |                  Base Address Register 4                  | 0x20
+ *     |                                                           |
+ *     +-----------------------------------------------------------+
+ *     |                  Base Address Register 5                  | 0x24
+ *     |                                                           |
+ *     +-----------------------------------------------------------+
+ *     |                  CardBus CIS Pointer                      | 0x28
+ *     |                                                           |
+ *     +----------------------------+------------------------------+
+ *     |       Subsystem ID         |    Subsystem vendor ID       | 0x2c
+ *     |                            |                              |
+ *     +----------------------------+------------------------------+
+ *     |               Expansion ROM Base Address                  | 0x30
+ *     |                                                           |
+ *     +--------------------------------------------+--------------+
+ *     |                 Reserved                   |  Capability  | 0x34
+ *     |                                            |   Pointer    |
+ *     +--------------------------------------------+--------------+
+ *     |                         Reserved                          | 0x38
+ *     |                                                           |
+ *     +--------------+--------------+--------------+--------------+
+ *     |   Max_Lat    |   Min_Gnt    |  Interrupt   |  Interrupt   | 0x3c
+ *     |              |              |   pin        |   line       |
+ *     +--------------+--------------+--------------+--------------+
+ */
+pub enum EndpointField {
+    ID,
+    Command,
+    Status,
+    RevisionIDAndClassCode,
+    CacheLineSize,
+    LatencyTime,
+    HeaderType,
+    Bist,
+    Bar,
+    CardCisPointer,
+    SubsystemVendorId,
+    SubsystemId,
+    ExpansionRomBar,
+    CapabilityPointer,
+    InterruptLine,
+    InterruptPin,
+    MinGnt,
+    MaxLat,
+    Unknown(usize),
+}
+
+impl EndpointField {
+    pub fn from(offset: usize, size: usize) -> Self {
+        match (offset, size) {
+            (0x00, 4) => EndpointField::ID,
+            (0x04, 2) => EndpointField::Command,
+            (0x06, 2) => EndpointField::Status,
+            (0x08, 4) => EndpointField::RevisionIDAndClassCode,
+            (0x0c, 1) => EndpointField::CacheLineSize,
+            (0x0d, 1) => EndpointField::LatencyTime,
+            (0x0e, 1) => EndpointField::HeaderType,
+            (0x0f, 1) => EndpointField::Bist,
+            (0x10, 4) | (0x14, 4) | (0x18, 4) | (0x1c, 4) | (0x20, 4) | (0x24, 4) => {
+                EndpointField::Bar
+            }
+            (0x28, 4) => EndpointField::CardCisPointer,
+            (0x2c, 2) => EndpointField::SubsystemVendorId,
+            (0x2e, 2) => EndpointField::SubsystemId,
+            (0x30, 4) => EndpointField::ExpansionRomBar,
+            (0x34, 1) => EndpointField::CapabilityPointer,
+            (0x3c, 1) => EndpointField::InterruptLine,
+            (0x3d, 1) => EndpointField::InterruptPin,
+            (0x3e, 1) => EndpointField::MinGnt,
+            (0x3f, 1) => EndpointField::MaxLat,
+            (x, _) => EndpointField::Unknown(x),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct EndpointHeader(PciRegionMmio);
+
+impl PciRWBase for EndpointHeader {
+    fn backend(&self) -> &dyn PciRegion {
+        &self.0
+    }
+}
+impl PciRW for EndpointHeader {}
+impl PciHeaderRW for EndpointHeader {}
+impl PciBarRW for EndpointHeader {
+    fn bar_limit(&self) -> u8 {
+        6
+    }
+}
+impl PciRomRW for EndpointHeader {
+    fn rom_offset(&self) -> u64 {
+        0x30
+    }
+}
+
+impl EndpointHeader {
+    pub fn new_with_region(region: PciRegionMmio) -> Self {
+        EndpointHeader(region)
     }
 }
 
@@ -819,11 +836,96 @@ impl EndpointHeader {
  *     |                             |     PIN      |   Line       |
  *     +-----------------------------+--------------+--------------+
  */
+pub enum BridgeField {
+    ID,
+    Command,
+    Status,
+    RevisionIDAndClassCode,
+    CacheLineSize,
+    LatencyTime,
+    HeaderType,
+    Bist,
+    Bar,
+    PrimaryBusNumber,
+    SecondaryBusNumber,
+    SubordinateBusNumber,
+    SecondaryLatencyTimer,
+    IOBase,
+    IOLimit,
+    SecondaryStatus,
+    MemoryBase,
+    MemoryLimit,
+    PrefetchableMemoryBase,
+    PrefetchableMemoryLimit,
+    PrefetchableBaseUpper32Bits,
+    PrefetchableLimitUpper32Bits,
+    UIBaseUpper16Bits,
+    IOLimitUpper16Bits,
+    CapabilityPointer,
+    ExpansionRomBar,
+    InterruptLine,
+    InterruptPin,
+    BridgeControl,
+    Unknown(usize),
+}
+
+impl BridgeField {
+    pub fn from(offset: usize, size: usize) -> Self {
+        match (offset, size) {
+            (0x00, 4) => BridgeField::ID,
+            (0x04, 2) => BridgeField::Command,
+            (0x06, 2) => BridgeField::Status,
+            (0x08, 4) => BridgeField::RevisionIDAndClassCode,
+            (0x0c, 1) => BridgeField::CacheLineSize,
+            (0x0d, 1) => BridgeField::LatencyTime,
+            (0x0e, 1) => BridgeField::HeaderType,
+            (0x0f, 1) => BridgeField::Bist,
+            (0x10, 4) | (0x14, 4) => BridgeField::Bar,
+            (0x18, 1) => BridgeField::PrimaryBusNumber,
+            (0x19, 1) => BridgeField::SecondaryBusNumber,
+            (0x1a, 1) => BridgeField::SubordinateBusNumber,
+            (0x1b, 1) => BridgeField::SecondaryLatencyTimer,
+            (0x1c, 1) => BridgeField::IOBase,
+            (0x1d, 1) => BridgeField::IOLimit,
+            (0x1e, 2) => BridgeField::SecondaryStatus,
+            (0x20, 2) => BridgeField::MemoryBase,
+            (0x22, 2) => BridgeField::MemoryLimit,
+            (0x24, 2) => BridgeField::PrefetchableMemoryBase,
+            (0x26, 2) => BridgeField::PrefetchableMemoryLimit,
+            (0x28, 4) => BridgeField::PrefetchableBaseUpper32Bits,
+            (0x2c, 4) => BridgeField::PrefetchableLimitUpper32Bits,
+            (0x30, 2) => BridgeField::UIBaseUpper16Bits,
+            (0x32, 2) => BridgeField::IOLimitUpper16Bits,
+            (0x34, 1) => BridgeField::CapabilityPointer,
+            (0x38, 4) => BridgeField::ExpansionRomBar,
+            (0x3c, 1) => BridgeField::InterruptLine,
+            (0x3d, 1) => BridgeField::InterruptPin,
+            (0x3e, 2) => BridgeField::BridgeControl,
+            (x, _) => BridgeField::Unknown(x),
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct PciBridgeHeader(PciRegionMmio);
 
-impl_pci_rw!(PciBridgeHeader);
-impl_pci_header!(PciBridgeHeader);
+impl PciRWBase for PciBridgeHeader {
+    fn backend(&self) -> &dyn PciRegion {
+        &self.0
+    }
+}
+impl PciRW for PciBridgeHeader {}
+impl PciHeaderRW for PciBridgeHeader {}
+impl PciBarRW for PciBridgeHeader {
+    fn bar_limit(&self) -> u8 {
+        2
+    }
+}
+impl PciRomRW for PciBridgeHeader {
+    fn rom_offset(&self) -> u64 {
+        0x38
+    }
+}
 
 impl PciBridgeHeader {
     pub fn new_with_region(region: PciRegionMmio) -> Self {
@@ -961,7 +1063,10 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                                                     bar.get_size() as _,
                                                     MemFlags::READ | MemFlags::WRITE,
                                                 ))?;
-                                                /* after update gpm, mem barrier is needed */
+                                                /* after update gpm, mem barrier is needed
+                                                 * TODO: for loongarch64 need ibar 0 dbar 0
+                                                 */
+                                                #[cfg(target_arch = "aarch64")]
                                                 unsafe {
                                                     core::arch::asm!("isb");
                                                     core::arch::asm!("tlbi vmalls12e1is");

@@ -21,7 +21,7 @@ use bitvec::{array::BitArray, order::Lsb0, BitArr};
 
 use crate::{
     error::{HvErrorNum, HvResult},
-    pci::pci_access::Bar,
+    pci::pci_access::{Bar, PciBarRW, PciHeaderRW, PciRomRW},
 };
 
 use super::{
@@ -500,50 +500,25 @@ impl<B: BarAllocator> PciIterator<B> {
         match pci_header.header_type() {
             HeaderType::Endpoint => {
                 let mut ep = EndpointHeader::new_with_region(region);
-
-                let mut bararr = ep.parse_bar();
                 let rom = ep.parse_rom();
-                if let Some(a) = &mut self.allocator {
-                    ep.update_command(|mut cmd| {
-                        cmd.remove(PciCommand::IO_ENABLE);
-                        cmd.remove(PciCommand::MEMORY_ENABLE);
-                        cmd
-                    });
 
-                    let mut i = 0;
-                    while i < 6 {
-                        match bararr[i].get_type() {
-                            PciMemType::Mem32 => {
-                                let value = a.alloc_memory32(bararr[i].get_size() as u32).unwrap();
-                                bararr[i].set_value(value as u64);
-                                bararr[i].set_virtual_value(value as u64);
-                                let _ = ep.write_bar(i as u8, value);
-                            }
-                            PciMemType::Mem64Low => {
-                                let value = a.alloc_memory64(bararr[i].get_size()).unwrap();
-                                bararr[i].set_value(value);
-                                bararr[i].set_virtual_value(value);
-                                let _ = ep.write_bar(i as u8, value as u32);
-                                i += 1;
-                                bararr[i].set_value(value);
-                                bararr[i].set_virtual_value(value);
-                                let _ = ep.write_bar(i as u8, (value >> 32) as u32);
-                            }
-                            _ => {}
-                        }
-                        i += 1;
-                    }
-                }
+                let bararr =
+                    Self::bar_mem_init(ep.bar_limit().into(), &mut self.allocator, &mut ep);
+
                 let ep = Arc::new(ep);
                 let bdf = Bdf::from_address(address);
                 Some(VirtualPciConfigSpace::endpoint(bdf, ep, bararr, rom))
             }
             HeaderType::PciBridge => {
                 warn!("bridge");
-                let bridge = PciBridgeHeader::new_with_region(region);
+                let mut bridge = PciBridgeHeader::new_with_region(region);
+
+                let bararr =
+                    Self::bar_mem_init(bridge.bar_limit().into(), &mut self.allocator, &mut bridge);
+
                 let bridge = Arc::new(bridge);
                 let bdf = Bdf::from_address(address);
-                Some(VirtualPciConfigSpace::bridge(bdf, bridge, Bar::default()))
+                Some(VirtualPciConfigSpace::bridge(bdf, bridge, bararr))
             }
             _ => {
                 warn!("unknown type");
@@ -552,6 +527,47 @@ impl<B: BarAllocator> PciIterator<B> {
                 Some(VirtualPciConfigSpace::unknown(bdf, pci_header))
             }
         }
+    }
+
+    fn bar_mem_init<D: PciBarRW + PciHeaderRW>(
+        bar_max: usize,
+        allocator: &mut Option<B>,
+        dev: &mut D,
+    ) -> Bar {
+        let mut bararr = dev.parse_bar();
+
+        if let Some(a) = allocator {
+            dev.update_command(|mut cmd| {
+                cmd.remove(PciCommand::IO_ENABLE);
+                cmd.remove(PciCommand::MEMORY_ENABLE);
+                cmd
+            });
+
+            let mut i = 0;
+            while i < bar_max {
+                match bararr[i].get_type() {
+                    PciMemType::Mem32 => {
+                        let value = a.alloc_memory32(bararr[i].get_size() as u32).unwrap();
+                        bararr[i].set_value(value as u64);
+                        bararr[i].set_virtual_value(value as u64);
+                        let _ = dev.write_bar(i as u8, value);
+                    }
+                    PciMemType::Mem64Low => {
+                        let value = a.alloc_memory64(bararr[i].get_size()).unwrap();
+                        bararr[i].set_value(value);
+                        bararr[i].set_virtual_value(value);
+                        let _ = dev.write_bar(i as u8, value as u32);
+                        i += 1;
+                        bararr[i].set_value(value);
+                        bararr[i].set_virtual_value(value);
+                        let _ = dev.write_bar(i as u8, (value >> 32) as u32);
+                    }
+                    _ => {}
+                }
+                i += 1;
+            }
+        }
+        bararr
     }
 
     fn get_bridge(&self) -> Bridge {
