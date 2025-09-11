@@ -24,9 +24,11 @@ use crate::{
 impl Zone {
     pub fn pt_init(&mut self, mem_regions: &[HvConfigMemoryRegion]) -> HvResult {
         for mem_region in mem_regions.iter() {
-            let mut flags = MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE;
-            if mem_region.mem_type == MEM_TYPE_IO {
-                flags |= MemFlags::IO;
+            let mut flags = MemFlags::READ | MemFlags::WRITE;
+            // Note: in riscv, base flags are D/A/G/U/W/X, some mem attributes are embedded in the PMA.
+            // Svpbmt extension is not supported in current hvisor(G-Stage).
+            if mem_region.mem_type == MEM_TYPE_RAM {
+                flags |= MemFlags::EXECUTE;
             }
             match mem_region.mem_type {
                 MEM_TYPE_RAM | MEM_TYPE_IO => {
@@ -50,65 +52,14 @@ impl Zone {
                 }
             }
         }
-        #[cfg(feature = "aia")]
-        {
-            use crate::memory::PAGE_SIZE;
-            let paddr = 0x2800_0000 as HostPhysAddr;
-            let size = PAGE_SIZE;
-            self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-                paddr as GuestPhysAddr,
-                paddr + PAGE_SIZE * 1,
-                size,
-                MemFlags::READ | MemFlags::WRITE,
-            ))?;
-
-            let paddr = 0x2800_1000 as HostPhysAddr;
-            let size = PAGE_SIZE;
-            self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-                paddr as GuestPhysAddr,
-                paddr + PAGE_SIZE * 2,
-                size,
-                MemFlags::READ | MemFlags::WRITE,
-            ))?;
-
-            let paddr = 0x2800_2000 as HostPhysAddr;
-            let size = PAGE_SIZE;
-            self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-                paddr as GuestPhysAddr,
-                paddr + PAGE_SIZE * 3,
-                size,
-                MemFlags::READ | MemFlags::WRITE,
-            ))?;
-
-            let paddr = 0x2800_3000 as HostPhysAddr;
-            let size = PAGE_SIZE;
-            self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-                paddr as GuestPhysAddr,
-                paddr + PAGE_SIZE * 4,
-                size,
-                MemFlags::READ | MemFlags::WRITE,
-            ))?;
-        }
         info!("VM stage 2 memory set: {:#x?}", self.gpm);
         Ok(())
     }
 
-    pub fn isa_init(&mut self, fdt: &fdt::Fdt) {
-        let cpu_set = self.cpu_set;
-        cpu_set.iter().for_each(|cpuid| {
-            let cpu_data = get_cpu_data(cpuid);
-            let cpu_isa = fdt
-                .cpus()
-                .find(|cpu| cpu.ids().all().next().unwrap() == cpuid)
-                .unwrap()
-                .properties()
-                .find(|p| p.name == "riscv,isa")
-                .unwrap();
-            if cpu_isa.as_str().unwrap().contains("sstc") {
-                println!("cpu{} support sstc", cpuid);
-                cpu_data.arch_cpu.sstc = true;
-            }
-        })
+    pub fn arch_zone_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
+        // We do not have any specific architecture configuration for RISC-V.
+        // If needed, this function can be extended in the future.
+        Ok(())
     }
 }
 

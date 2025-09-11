@@ -13,7 +13,13 @@
 //
 // Authors:
 //
-use crate::{arch::zone::HvArchZoneConfig, config::*};
+use crate::{
+    arch::{
+        mmu::MemoryType,
+        zone::{GicConfig, Gicv3Config, HvArchZoneConfig},
+    },
+    config::*,
+};
 
 // [   17.796762]   node   0: [mem 0x0000000000200000-0x000000000047ffff]
 // [   17.797335]   node   0: [mem 0x0000000000480000-0x000000000087ffff]
@@ -26,6 +32,30 @@ use crate::{arch::zone::HvArchZoneConfig, config::*};
 pub const BOARD_NAME: &str = "rk3588";
 
 pub const BOARD_NCPUS: usize = 8;
+pub const BOARD_UART_BASE: u64 = 0xfeb50000;
+
+#[rustfmt::skip]
+pub static BOARD_MPIDR_MAPPINGS: [u64; BOARD_NCPUS] = [
+    0x0,     // cpu0
+    0x100,   // cpu1
+    0x200,   // cpu2
+    0x300,   // cpu3
+    0x400,   // cpu4
+    0x500,   // cpu5
+    0x600,   // cpu6
+    0x700,   // cpu7
+];
+
+/// The physical memory layout of the board.
+/// Each address should align to 2M (0x200000).
+/// Addresses must be in ascending order.
+#[rustfmt::skip]
+pub const BOARD_PHYSMEM_LIST: &[(u64, u64, MemoryType)] = &[
+ // (       start,           end,                type)
+    (         0x0,    0xf0000000,  MemoryType::Normal),
+    (  0xf0000000,   0x100000000,  MemoryType::Device),
+    ( 0x100000000,   0x3fc000000,  MemoryType::Normal)
+];
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x10000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x09400000;
@@ -146,19 +176,15 @@ pub const ROOT_ZONE_IRQS: [u32; 29] = [
 ];
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
-    gicd_base: 0xfe600000,
-    gicd_size: 0x10000,
-    gicr_base: 0xfe680000,
-    gicr_size: 0x100000,
-    gicc_base: 0x8010000,
-    gicc_size: 0x10000,
-    gicc_offset: 0x0,
-    gich_base: 0x8030000,
-    gich_size: 0x10000,
-    gicv_base: 0x8040000,
-    gicv_size: 0x10000,
-    gits_base: 0x8080000,
-    gits_size: 0x20000,
+    is_aarch32: 0,
+    gic_config: GicConfig::Gicv3(Gicv3Config {
+        gicd_base: 0xfe600000,
+        gicd_size: 0x10000,
+        gicr_base: 0xfe680000,
+        gicr_size: 0x100000,
+        gits_base: 0x8080000,
+        gits_size: 0x20000,
+    }),
 };
 
 pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {

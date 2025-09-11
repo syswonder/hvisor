@@ -38,10 +38,8 @@ use super::{
     cfg_base, extract_reg_addr, get_bdf_shift, CFG_EXT_CAP_PTR_OFF, NUM_BAR_REGS_TYPE0,
     NUM_BAR_REGS_TYPE1,
 };
-
-#[cfg(all(feature = "iommu", target_arch = "aarch64"))]
+use crate::arch::consts::{BDF_SHIFT, HV_ADDR_PREFIX, LOONG_HT_PREFIX};
 use crate::arch::iommu::iommu_add_device;
-
 #[derive(Debug)]
 pub struct PciRoot {
     endpoints: Vec<EndpointConfig>,
@@ -157,24 +155,20 @@ impl Zone {
         num_pci_devs: usize,
         alloc_pci_devs: &[u64; CONFIG_MAX_PCI_DEV],
     ) {
-        if num_pci_devs == 0 {
+        #[cfg(not(feature = "pci"))]
+        {
+            info!("PCIe feature is not enabled, skipping PCIe initialization.");
             return;
         }
 
+        if num_pci_devs == 0 {
+            return;
+        }
         info!("PCIe init!");
 
-        let mut hv_addr_prefix: u64 = 0;
-        let mut loong_ht_prefix: u64 = 0;
-        let mut bdf_shift: usize = 12;
-
-        #[cfg(all(target_arch = "loongarch64"))]
-        {
-            info!("change bdf shift to 8 for loongson");
-            bdf_shift = 8;
-            /* turn to virtual address and add 0xe prefix for HT accessing */
-            hv_addr_prefix = 0x8000_0000_0000_0000;
-            loong_ht_prefix = 0xe00_0000_0000
-        }
+        let hv_addr_prefix: u64 = HV_ADDR_PREFIX;
+        let loong_ht_prefix: u64 = LOONG_HT_PREFIX;
+        let bdf_shift: usize = BDF_SHIFT;
 
         init_bdf_shift(bdf_shift);
 
@@ -191,7 +185,6 @@ impl Zone {
                 alloc_pci_devs[idx] & 0b111
             );
             self.pciroot.alloc_devs.push(alloc_pci_devs[idx] as _);
-            #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
             if alloc_pci_devs[idx] != 0 {
                 iommu_add_device(self.id, alloc_pci_devs[idx] as _);
             }

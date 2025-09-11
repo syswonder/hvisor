@@ -132,13 +132,18 @@ impl VirtualPLIC {
             error!("vplic_emul_access: only allowed word accesses");
             return 0;
         }
-        if value > u32::MAX as usize {
-            error!(
-                "vplic_emul_access: value {:#x} is out of range 0xffffffff",
-                value
-            );
-            return 0;
-        }
+        // Reason for annotation: When four consecutive interrupts are enabled,
+        // their corresponding enable bits are bits 28, 29, 30, and 31 of the same context.
+        // According to the kernel's enable logic, the written mask bits accumulate to 0xF0000000.
+        // After writing this value to a 64-bit register, sign extension occurs,
+        // converting the value to 0xFFFFFFFFF0000000, which leads to the following error.
+        // if value > u32::MAX as usize {
+        //     error!(
+        //         "vplic_emul_access: value {:#x} is out of range 0xffffffff",
+        //         value
+        //     );
+        //     return 0;
+        // }
 
         /*
          * In VirtualPLICInner, we don't check, so in this function, we must check operations.
@@ -414,7 +419,8 @@ impl VirtualPLICInner {
                 }
             }
         } else {
-            use crate::event::{send_event, IPI_EVENT_UPDATE_HART_LINE};
+            use crate::consts::IPI_EVENT_UPDATE_HART_LINE;
+            use crate::event::send_event;
             let cpu_id = pcontext_id / 2;
             info!("vplic_update_hart_line to cpu {}", cpu_id);
             // the second arg don't need.

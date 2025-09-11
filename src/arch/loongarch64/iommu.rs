@@ -18,3 +18,10 @@
 pub fn iommu_init() {
     info!("loongarch64: iommu_init: do nothing now");
 }
+
+pub fn iommu_add_device(vmid: usize, sid: usize) {
+    info!(
+        "loongarch64: iommu_add_device: do nothing now, vmid: {}, sid: {}",
+        vmid, sid
+    );
+}

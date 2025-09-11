@@ -29,7 +29,7 @@ use spin::*;
 pub const LOONGARCH64_CACHED_DMW_PREFIX: u64 = 0x9000_0000_0000_0000;
 pub const LOONGARCH64_UNCACHED_DMW_PREFIX: u64 = 0x8000_0000_0000_0000;
 
-pub fn init_hv_page_table(fdt: &fdt::Fdt) -> HvResult {
+pub fn init_hv_page_table() -> HvResult {
     todo!();
     // let mut hv_pt: MemorySet<Stage1PageTable> = MemorySet::new(4);
     // // let mem_region = fdt.memory().regions().next().unwrap();
@@ -62,4 +62,10 @@ pub fn init_hv_page_table(fdt: &fdt::Fdt) -> HvResult {
 
 pub fn new_s2_memory_set() -> MemorySet<Stage2PageTable> {
     MemorySet::new(4)
+}
+
+pub fn arch_setup_parange() {
+    // LoongArch64 does not have a parange setup like AArch64.
+    // This function can be used to set up any architecture-specific parameters if needed.
+    // Currently, it does nothing.
 }

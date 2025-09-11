@@ -17,7 +17,8 @@
 
 use super::cpu::ArchCpu;
 use crate::arch::csr::*;
-use crate::event::{send_event, IPI_EVENT_SEND_IPI, IPI_EVENT_WAKEUP};
+use crate::consts::IPI_EVENT_SEND_IPI;
+use crate::event::{send_event, IPI_EVENT_WAKEUP};
 use crate::hypercall::HyperCall;
 use crate::percpu::{get_cpu_data, this_cpu_data};
 use core::sync::atomic::{self, Ordering};
@@ -27,7 +28,7 @@ use sbi_rt::{HartMask, SbiRet};
 use sbi_spec::binary::{
     RET_ERR_ALREADY_AVAILABLE, RET_ERR_FAILED, RET_ERR_NOT_SUPPORTED, RET_SUCCESS,
 };
-use sbi_spec::{base, hsm, rfnc, spi, time};
+use sbi_spec::{base, hsm, legacy, rfnc, spi, time};
 
 // Reserved for hvisor-tool.
 pub const EID_HVISOR: usize = 0x114514;
@@ -89,6 +90,19 @@ pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
         // Hvisor Extension (Hvisor Defined)
         EID_HVISOR => {
             sbi_ret = sbi_hvisor_handler(current_cpu);
+        }
+        // Legacy::Console putchar (usually used), temporily don't support other legacy extensions.
+        legacy::LEGACY_CONSOLE_PUTCHAR => {
+            sbi_ret = SbiRet {
+                error: sbi_rt::legacy::console_putchar(current_cpu.x[10] as _),
+                value: 0,
+            };
+        }
+        legacy::LEGACY_CONSOLE_GETCHAR => {
+            sbi_ret = SbiRet {
+                error: sbi_rt::legacy::console_getchar(),
+                value: 0,
+            };
         }
         _ => {
             // Pass through SBI call
@@ -213,7 +227,7 @@ pub fn sbi_hsm_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
         hsm::HART_SUSPEND => {
             // Todo: support hart suspend.
             sbi_ret.error = RET_ERR_NOT_SUPPORTED;
-            warn!("SBI: unsupported sbi_hsm_hart_suspend");
+            // warn!("SBI: unsupported sbi_hsm_hart_suspend");
         }
         _ => {
             sbi_ret.error = RET_ERR_NOT_SUPPORTED;
