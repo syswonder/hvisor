@@ -82,7 +82,7 @@ impl Zone {
     pub fn virtual_pci_mmio_init(
         &mut self,
         pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
-        _num_pci_bus: u64
+        _num_pci_bus: u64,
     ) {
         for rootcomplex_config in pci_rootcomplex_config {
             /* empty config */

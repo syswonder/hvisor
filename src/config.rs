@@ -14,8 +14,8 @@
 // Authors:
 //
 use alloc::vec::Vec;
-use spin::Once;
 use core::fmt::Debug;
+use spin::Once;
 
 use crate::{arch::zone::HvArchZoneConfig, platform};
 

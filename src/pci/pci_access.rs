@@ -908,13 +908,13 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                                                 /* Linux traverses the PCI bus twice. During the first traversal,
                                                  * it does not assign addresses to the BARs; it simply writes back the same
                                                  * values. In the second traversal, it reorders the BARs and assigns
-                                                 * addresses to them. Each time the guest writes to a BAR, 
-                                                 * it attempts to remove the previous mapping and add a new one. 
-                                                 * However, on the first access there is no prior mapping, so a single warning 
+                                                 * addresses to them. Each time the guest writes to a BAR,
+                                                 * it attempts to remove the previous mapping and add a new one.
+                                                 * However, on the first access there is no prior mapping, so a single warning
                                                  * is normal. Subsequent warnings should be treated with caution.
                                                  *
-                                                 * TODO: When adding a new device or removing an old one, reloading 
-                                                 * the PCIe bus, will the newly written BAR address overlap with 
+                                                 * TODO: When adding a new device or removing an old one, reloading
+                                                 * the PCIe bus, will the newly written BAR address overlap with
                                                  * the old BAR addresses, potentially causing the update to fail?
                                                  */
                                                 if !gpm
@@ -922,8 +922,8 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                                                     .is_ok()
                                                 {
                                                     /* The first delete from the guest will fail
-                                                        * because the region has not yet been inserted
-                                                        */
+                                                     * because the region has not yet been inserted
+                                                     */
                                                     warn!(
                                                         "delete bar {}: can not found 0x{:x}",
                                                         slot, old_vaddr
@@ -937,20 +937,15 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
 
                                                 dev.set_bar_virtual_value(slot, new_vaddr);
                                                 if bar_type == PciMemType::Mem64High {
-                                                    dev.set_bar_virtual_value(
-                                                        slot - 1,
-                                                        new_vaddr,
-                                                    );
+                                                    dev.set_bar_virtual_value(slot - 1, new_vaddr);
                                                 }
 
-                                                gpm.insert(
-                                                    MemoryRegion::new_with_offset_mapper(
-                                                        new_vaddr as GuestPhysAddr,
-                                                        paddr as HostPhysAddr,
-                                                        bar.get_size() as _,
-                                                        MemFlags::READ | MemFlags::WRITE,
-                                                    ),
-                                                )?;
+                                                gpm.insert(MemoryRegion::new_with_offset_mapper(
+                                                    new_vaddr as GuestPhysAddr,
+                                                    paddr as HostPhysAddr,
+                                                    bar.get_size() as _,
+                                                    MemFlags::READ | MemFlags::WRITE,
+                                                ))?;
                                                 /* after update gpm, mem barrier is needed */
                                                 unsafe {
                                                     core::arch::asm!("isb");

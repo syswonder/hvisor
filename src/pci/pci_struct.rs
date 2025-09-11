@@ -1,6 +1,4 @@
-use core::{
-    cmp::Ordering, fmt::Debug, hint::spin_loop, ops::Range, str::FromStr,
-};
+use core::{cmp::Ordering, fmt::Debug, hint::spin_loop, ops::Range, str::FromStr};
 
 use alloc::{collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
 use bit_field::BitField;

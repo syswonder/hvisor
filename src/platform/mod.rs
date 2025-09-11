@@ -81,7 +81,11 @@ pub fn platform_root_zone_config() -> HvZoneConfig {
     {
         check!(ROOT_PCI_DEVS.len(), CONFIG_MAX_PCI_DEV, "ROOT_PCI_DEVS");
         pci_devs[..ROOT_PCI_DEVS.len()].copy_from_slice(&ROOT_PCI_DEVS);
-        check!(ROOT_PCI_CONFIG.len(), CONFIG_PCI_BUS_MAXNUM, "ROOT_PCI_CONFIG");
+        check!(
+            ROOT_PCI_CONFIG.len(),
+            CONFIG_PCI_BUS_MAXNUM,
+            "ROOT_PCI_CONFIG"
+        );
         _root_pci_cfg[..ROOT_PCI_CONFIG.len()].copy_from_slice(&ROOT_PCI_CONFIG);
         _num_pci_devs = ROOT_PCI_DEVS.len() as _;
         _num_pci_bus = ROOT_PCI_CONFIG.len() as _;
