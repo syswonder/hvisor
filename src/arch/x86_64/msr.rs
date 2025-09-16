@@ -150,7 +150,7 @@ pub fn set_msr_bitmap(zone_id: usize) {
     unsafe {
         if let Some(map) = &mut MSR_BITMAP_MAP {
             if map.contains_key(&zone_id) {
-                panic!("msr bitmap for Zone {} already exists!", zone_id);
+                map.remove(&zone_id);
             }
             map.insert(zone_id, MsrBitmap::new());
         }

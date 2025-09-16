@@ -23,6 +23,7 @@ use spin::Mutex;
 use super::addr::{align_down, align_up, is_aligned, PhysAddr};
 use crate::consts::PAGE_SIZE;
 use crate::error::HvResult;
+use crate::memory::addr::virt_to_phys;
 
 // Support max 1M * 4096 = 1GB memory.
 type FrameAlloc = bitmap_allocator::BitAlloc1M;
@@ -277,7 +278,9 @@ pub fn init() {
     let mem_pool_start = crate::consts::mem_pool_start();
     let mem_pool_end = align_down(crate::consts::hv_end());
     let mem_pool_size = mem_pool_end - mem_pool_start;
-    FRAME_ALLOCATOR.lock().init(mem_pool_start, mem_pool_size);
+    FRAME_ALLOCATOR
+        .lock()
+        .init(virt_to_phys(mem_pool_start), mem_pool_size);
 
     info!(
         "Frame allocator initialization finished: {:#x?}",

@@ -22,7 +22,7 @@ pub fn set_pio_bitmap(zone_id: usize) {
     unsafe {
         if let Some(map) = &mut PIO_BITMAP_MAP {
             if map.contains_key(&zone_id) {
-                panic!("pio bitmap for Zone {} already exists!", zone_id);
+                map.remove(&zone_id);
             }
             map.insert(zone_id, PortIoBitmap::new(zone_id));
         }
