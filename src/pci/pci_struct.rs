@@ -229,6 +229,7 @@ pub struct VirtualPciConfigSpace {
 
     bararr: Bar,
     rom: PciMem,
+    capabilities: PciCapabilityList,
 }
 
 impl VirtualPciConfigSpace {
@@ -310,6 +311,7 @@ impl VirtualPciConfigSpace {
             backend,
             bararr,
             rom,
+            capabilities: PciCapabilityList::new(),
         }
     }
 
@@ -324,6 +326,7 @@ impl VirtualPciConfigSpace {
             backend,
             bararr,
             rom: PciMem::default(),
+            capabilities: PciCapabilityList::new(),
         }
     }
 
@@ -338,6 +341,7 @@ impl VirtualPciConfigSpace {
             backend,
             bararr: Bar::default(),
             rom: PciMem::default(),
+            capabilities: PciCapabilityList::new(),
         }
     }
 
@@ -352,6 +356,7 @@ impl VirtualPciConfigSpace {
             backend,
             bararr: Bar::default(),
             rom: PciMem::default(),
+            capabilities: PciCapabilityList::new(),
         }
     }
 
@@ -535,6 +540,8 @@ impl<B: BarAllocator> PciIterator<B> {
         dev: &mut D,
     ) -> Bar {
         let mut bararr = dev.parse_bar();
+
+        info!("{:#?}", bararr);
 
         if let Some(a) = allocator {
             dev.update_command(|mut cmd| {
@@ -756,5 +763,264 @@ impl VirtualRootComplex {
 
     pub fn devs(&mut self) -> &mut BTreeMap<Bdf, VirtualPciConfigSpace> {
         &mut self.devs
+    }
+}
+
+#[derive(Debug)]
+pub struct CapabilityIterator {
+    backend: Arc<dyn PciRW>,
+    offset: PciConfigAddress,
+}
+
+impl CapabilityIterator {
+    pub fn get_offset(&self) -> PciConfigAddress {
+        self.offset
+    }
+
+    pub fn get_next_cap(&mut self) -> HvResult {
+        let address = self.backend.read(self.offset, 2).unwrap().get_bits(8..16) as PciConfigAddress;
+        self.offset = address;
+        Ok(())
+    }
+
+    pub fn get_id(&self) -> PciConfigAddress {
+        self.backend.read(self.offset, 2).unwrap().get_bits(0..8) as PciConfigAddress
+    }
+
+    pub fn get_extension(&self) -> u16 {
+        self.backend.read(self.offset, 2).unwrap().get_bits(16..32) as u16
+    }
+}
+
+impl Iterator for CapabilityIterator {
+    type Item = PciCapability;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        while self.get_offset() != 0 {
+            let cap = PciCapability::from_address(self.get_offset(), self.get_id(), self.get_extension());
+            // warn!("cap value {:x}", self.backend.read(self.offset, 4).unwrap());
+            let _ = self.get_next_cap();
+            if let Some(cap) = cap {
+                return Some(cap);
+            }
+        }
+        None
+    }
+}
+
+#[derive(Clone)]
+pub enum PciCapability {
+    // Power management capability, Cap ID = `0x01`
+    PowerManagement(PciCapabilityRegion),
+    // Accelerated graphics port capability, Cap ID = `0x02`
+    AcceleratedGraphicsPort(PciCapabilityRegion),
+    // Vital product data capability, Cap ID = `0x3`
+    VitalProductData(PciCapabilityRegion),
+    // Slot identification capability, Cap ID = `0x04`
+    SlotIdentification(PciCapabilityRegion),
+    // Message signalling interrupts capability, Cap ID = `0x05`
+    Msi(PciCapabilityRegion),
+    // CompactPCI HotSwap capability, Cap ID = `0x06`
+    CompactPCIHotswap(PciCapabilityRegion),
+    // PCI-X capability, Cap ID = `0x07`
+    PciX(PciCapabilityRegion),
+    // HyperTransport capability, Cap ID = `0x08`
+    HyperTransport(PciCapabilityRegion),
+    // Vendor-specific capability, Cap ID = `0x09`
+    Vendor(PciCapabilityRegion),
+    // Debug port capability, Cap ID = `0x0A`
+    DebugPort(PciCapabilityRegion),
+    // CompactPCI Central Resource Control capability, Cap ID = `0x0B`
+    CompactPCICentralResourceControl(PciCapabilityRegion),
+    // PCI Standard Hot-Plug Controller capability, Cap ID = `0x0C`
+    PciHotPlugControl(PciCapabilityRegion),
+    // Bridge subsystem vendor/device ID capability, Cap ID = `0x0D`
+    BridgeSubsystemVendorId(PciCapabilityRegion),
+    // AGP Target PCI-PCI bridge capability, Cap ID = `0x0E`
+    AGP3(PciCapabilityRegion),
+    // PCI Express capability, Cap ID = `0x10`
+    PciExpress(PciCapabilityRegion),
+    // MSI-X capability, Cap ID = `0x11`
+    MsiX(PciCapabilityRegion),
+    // Unknown capability
+    Unknown(PciCapabilityRegion),
+}
+
+impl PciCapability {
+    fn from_address(offset: PciConfigAddress, id: PciConfigAddress, extension: u16) -> Option<PciCapability> {
+        match id {
+            0x00 => None,
+            0x01 => Some(PciCapability::PowerManagement(PciCapabilityRegion::new(
+                offset, extension,
+            ))),
+            0x02 => Some(PciCapability::AcceleratedGraphicsPort(
+                PciCapabilityRegion::new(offset, extension),
+            )),
+            0x03 => Some(PciCapability::VitalProductData(PciCapabilityRegion::new(
+                offset, extension,
+            ))),
+            0x04 => Some(PciCapability::SlotIdentification(PciCapabilityRegion::new(
+                offset, extension,
+            ))),
+            0x05 => Some(PciCapability::Msi(PciCapabilityRegion::new(
+                offset, extension,
+            ))),
+            0x06 => Some(PciCapability::CompactPCIHotswap(PciCapabilityRegion::new(
+                offset, extension,
+            ))),
+            0x07 => Some(PciCapability::PciX(PciCapabilityRegion::new(
+                offset, extension,
+            ))),
+            0x08 => Some(PciCapability::HyperTransport(PciCapabilityRegion::new(
+                offset, extension,
+            ))),
+            0x09 => Some(PciCapability::Vendor(PciCapabilityRegion::new(
+                offset, extension,
+            ))),
+            0x0A => Some(PciCapability::DebugPort(PciCapabilityRegion::new(
+                offset, extension,
+            ))),
+            0x0B => Some(PciCapability::CompactPCICentralResourceControl(
+                PciCapabilityRegion::new(offset, extension),
+            )),
+            0x0C => Some(PciCapability::PciHotPlugControl(PciCapabilityRegion::new(
+                offset, extension,
+            ))),
+            0x0D => Some(PciCapability::BridgeSubsystemVendorId(
+                PciCapabilityRegion::new(offset, extension),
+            )),
+            0x0E => Some(PciCapability::AGP3(PciCapabilityRegion::new(
+                offset, extension,
+            ))),
+            0x10 => Some(PciCapability::PciExpress(PciCapabilityRegion::new(
+                offset, extension,
+            ))),
+            0x11 => Some(PciCapability::MsiX(PciCapabilityRegion::new(
+                offset, extension,
+            ))),
+            _ => Some(PciCapability::Unknown(PciCapabilityRegion::new(
+                offset, extension,
+            ))),
+        }
+    }
+
+    fn get_offset(&self) -> PciConfigAddress {
+        match *self {
+            PciCapability::PowerManagement(PciCapabilityRegion { offset, .. }) => offset,
+            PciCapability::AcceleratedGraphicsPort(PciCapabilityRegion { offset, .. }) => offset,
+            PciCapability::VitalProductData(PciCapabilityRegion { offset, .. }) => offset,
+            PciCapability::SlotIdentification(PciCapabilityRegion { offset, .. }) => offset,
+            PciCapability::Msi(PciCapabilityRegion { offset, .. }) => offset,
+            PciCapability::CompactPCIHotswap(PciCapabilityRegion { offset, .. }) => offset,
+            PciCapability::PciX(PciCapabilityRegion { offset, .. }) => offset,
+            PciCapability::HyperTransport(PciCapabilityRegion { offset, .. }) => offset,
+            PciCapability::Vendor(PciCapabilityRegion { offset, .. }) => offset,
+            PciCapability::DebugPort(PciCapabilityRegion { offset, .. }) => offset,
+            PciCapability::CompactPCICentralResourceControl(PciCapabilityRegion {
+                offset, ..
+            }) => offset,
+            PciCapability::PciHotPlugControl(PciCapabilityRegion { offset, .. }) => offset,
+            PciCapability::BridgeSubsystemVendorId(PciCapabilityRegion { offset, .. }) => offset,
+            PciCapability::AGP3(PciCapabilityRegion { offset, .. }) => offset,
+            PciCapability::PciExpress(PciCapabilityRegion { offset, .. }) => offset,
+            PciCapability::MsiX(PciCapabilityRegion { offset, .. }) => offset,
+            PciCapability::Unknown(PciCapabilityRegion { offset, .. }) => offset,
+        }
+    }
+}
+
+impl Debug for PciCapability {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match *self {
+            PciCapability::PowerManagement(PciCapabilityRegion { offset, .. }) => {
+                write!(f, "PowerManagement {:x}", offset)
+            }
+            PciCapability::AcceleratedGraphicsPort(PciCapabilityRegion { offset, .. }) => {
+                write!(f, "AcceleratedGraphicsPort {:x}", offset)
+            }
+            PciCapability::VitalProductData(PciCapabilityRegion { offset, .. }) => {
+                write!(f, "VitalProductData {:x}", offset)
+            }
+            PciCapability::SlotIdentification(PciCapabilityRegion { offset, .. }) => {
+                write!(f, "SlotIdentification {:x}", offset)
+            }
+            PciCapability::Msi(PciCapabilityRegion { offset, .. }) => write!(f, "Msi {:x}", offset),
+            PciCapability::CompactPCIHotswap(PciCapabilityRegion { offset, .. }) => {
+                write!(f, "CompactPCIHotswap {:x}", offset)
+            }
+            PciCapability::PciX(PciCapabilityRegion { offset, .. }) => {
+                write!(f, "PciX {:x}", offset)
+            }
+            PciCapability::HyperTransport(PciCapabilityRegion { offset, .. }) => {
+                write!(f, "HyperTransport {:x}", offset)
+            }
+            PciCapability::Vendor(PciCapabilityRegion { offset, .. }) => {
+                write!(f, "Vendor {:x}", offset)
+            }
+            PciCapability::DebugPort(PciCapabilityRegion { offset, .. }) => {
+                write!(f, "DebugPort {:x}", offset)
+            }
+            PciCapability::CompactPCICentralResourceControl(PciCapabilityRegion {
+                offset, ..
+            }) => write!(f, "CompactPCICentralResourceControl {:x}", offset),
+            PciCapability::PciHotPlugControl(PciCapabilityRegion { offset, .. }) => {
+                write!(f, "PciHotPlugControl {:x}", offset)
+            }
+            PciCapability::BridgeSubsystemVendorId(PciCapabilityRegion { offset, .. }) => {
+                write!(f, "BridgeSubsystemVendorId {:x}", offset)
+            }
+            PciCapability::AGP3(PciCapabilityRegion { offset, .. }) => {
+                write!(f, "AGP3 {:x}", offset)
+            }
+            PciCapability::PciExpress(PciCapabilityRegion { offset, .. }) => {
+                write!(f, "PciExpress {:x}", offset)
+            }
+            PciCapability::MsiX(PciCapabilityRegion { offset, .. }) => {
+                write!(f, "MsiX {:x}", offset)
+            }
+            PciCapability::Unknown(PciCapabilityRegion { offset, .. }) => {
+                write!(f, "Unknown {:x}", offset)
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct PciCapabilityRegion {
+    offset: PciConfigAddress,
+    extension: u16,
+}
+
+impl PciCapabilityRegion {
+    pub fn new(offset: PciConfigAddress, extension: u16) -> Self {
+        Self {
+            offset,
+            extension,
+        }
+    }
+}
+
+pub type PciCapabilityList = BTreeMap<PciConfigAddress, PciCapability>;
+
+impl VirtualPciConfigSpace {
+    fn _capability_enumerate(&self, backend: Arc<dyn PciRW>) -> CapabilityIterator {
+        CapabilityIterator {
+            backend, 
+            offset: 0x34
+        }
+    }
+
+    pub fn capability_enumerate(&mut self) {
+        let mut capabilities = PciCapabilityList::new();
+        for capability in self._capability_enumerate(self.backend.clone()) {
+            match capability {
+                PciCapability::Msi(_) => {}
+                PciCapability::MsiX(_) => {}
+                _ => {}
+            }
+            capabilities.insert(capability.get_offset(), capability);
+        }
+        info!("capability {:#?}", capabilities);
+        self.capabilities = capabilities;
     }
 }

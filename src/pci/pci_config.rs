@@ -52,7 +52,8 @@ pub fn hvisor_pci_init(pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAX
         );
 
         let mut rootcomplex = RootComplex::new(rootcomplex_config.ecam_base);
-        for node in rootcomplex.enumerate(None, Some(allocator)) {
+        for mut node in rootcomplex.enumerate(None, Some(allocator)) {
+            node.capability_enumerate();
             GLOBAL_PCIE_LIST.lock().insert(node.get_bdf(), node);
         }
     }
