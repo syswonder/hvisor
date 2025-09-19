@@ -77,6 +77,11 @@ impl Zone {
         {
             self.vplic_init(config);
         }
+        #[cfg(all(feature = "aia", target_arch = "riscv64"))]
+        {
+            self.vaplic_init(config);
+            self.vimsic_init(config);
+        }
     }
 
     pub fn mmio_init(&mut self, hv_config: &HvArchZoneConfig) {
@@ -92,6 +97,17 @@ impl Zone {
         #[cfg(all(feature = "plic", target_arch = "riscv64"))]
         {
             self.vplic_mmio_init(hv_config);
+        }
+        #[cfg(all(feature = "aia", target_arch = "riscv64"))]
+        {
+            self.vaplic_mmio_init(hv_config);
+        }
+        #[cfg(all(feature = "eic770x_soc", target_arch = "riscv64"))]
+        {
+            #[cfg(feature = "sifive_ccache")]
+            self.virtual_sifive_ccache_mmio_init();
+            #[cfg(feature = "eic7700_sysreg")]
+            self.virtual_syscon_mmio_init();
         }
         #[cfg(target_arch = "x86_64")]
         {
@@ -114,7 +130,7 @@ pub use plic::{host_plic, inject_irq, percpu_init, primary_init_late};
 pub mod aia;
 
 #[cfg(all(feature = "aia", target_arch = "riscv64"))]
-pub use aia::aplic::{host_aplic, inject_irq, percpu_init, primary_init_late, vaplic_emul_handler};
+pub use aia::{host_aplic, inject_irq, percpu_init, primary_init_late};
 
 #[cfg(target_arch = "riscv64")]
 pub fn primary_init_early() {
@@ -123,7 +139,7 @@ pub fn primary_init_early() {
     #[cfg(feature = "plic")]
     plic::primary_init_early();
     #[cfg(feature = "aia")]
-    aia::aplic::primary_init_early();
+    aia::primary_init_early();
     #[cfg(feature = "aclint")]
     aclint::aclint_init(crate::platform::ACLINT_SSWI_BASE);
 }

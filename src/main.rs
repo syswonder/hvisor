@@ -47,8 +47,6 @@ extern crate log;
 #[macro_use]
 extern crate lazy_static;
 
-extern crate fdt_rs;
-
 #[macro_use]
 mod logging;
 mod arch;
@@ -153,9 +151,8 @@ fn primary_init_late() {
 
 fn per_cpu_init(cpu: &mut PerCpu) {
     if cpu.zone.is_none() {
-        warn!("zone is not created for cpu {}", cpu.id);
+        warn!("CPU {} is not bound to zone0 (root zone)", cpu.id);
     }
-    info!("CPU {} hv_pt_install OK.", cpu.id);
 }
 
 fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {

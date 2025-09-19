@@ -1,0 +1,6 @@
+[target.aarch64-unknown-none]
+rustflags = [
+    "-Clink-arg=-Tplatform/__ARCH__/__BOARD__/linker.ld",
+    "-Ctarget-feature=+v8a,+strict-align,-neon,-fp-armv8",
+    "-Cforce-frame-pointers=yes",
+]

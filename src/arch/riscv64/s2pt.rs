@@ -246,7 +246,8 @@ impl PagingInstr for S2PTInstr {
             // info!("flush TLB: hfence.gvma, hfence.vvma");
             let hgatp: usize = read_csr!(CSR_HGATP);
             info!("HGATP after activation: {:#x?}", hgatp);
-            hfence_gvma_all(); //not supported in rust
+            // hfence_gvma_all();
+            riscv_h::asm::hfence_gvma(0, 0); // Flush all stage-2 TLB entries.
         }
     }
 

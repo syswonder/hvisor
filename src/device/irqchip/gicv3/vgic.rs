@@ -16,8 +16,9 @@
 use alloc::sync::Arc;
 
 use super::{gicd::GICD_LOCK, is_spi};
+use crate::platform::BOARD_MPIDR_MAPPINGS;
 use crate::{
-    arch::zone::HvArchZoneConfig,
+    arch::zone::{GicConfig, Gicv2Config, Gicv3Config, HvArchZoneConfig},
     consts::MAX_CPU_NUM,
     device::irqchip::gicv3::{
         gicd::*, gicr::*, gits::*, host_gicd_base, host_gicr_base, host_gits_base,
@@ -29,24 +30,45 @@ use crate::{
     percpu::{get_cpu_data, this_zone},
     zone::{this_zone_id, Zone},
 };
-
 pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> {
     base..(base + n * size)
 }
 
 impl Zone {
     pub fn vgicv3_mmio_init(&mut self, arch: &HvArchZoneConfig) {
-        if arch.gicd_base == 0 || arch.gicr_base == 0 {
-            panic!("vgicv3_mmio_init: gicd_base or gicr_base is null");
-        }
+        match arch.gic_config {
+            GicConfig::Gicv2(_) => {
+                panic!("vgicv3_mmio_init: GICv2 is not supported in this function");
+            }
+            GicConfig::Gicv3(ref gicv3_config) => {
+                // GICv3 specific initialization
+                info!("Initializing GICv3 MMIO regions for zone {}", self.id);
+                if gicv3_config.gicd_base == 0 || gicv3_config.gicr_base == 0 {
+                    panic!("vgicv3_mmio_init: gicd_base or gicr_base is null");
+                }
 
-        self.mmio_region_register(arch.gicd_base, arch.gicd_size, vgicv3_dist_handler, 0);
-        self.mmio_region_register(arch.gits_base, arch.gits_size, vgicv3_its_handler, 0);
+                self.mmio_region_register(
+                    gicv3_config.gicd_base,
+                    gicv3_config.gicd_size,
+                    vgicv3_dist_handler,
+                    0,
+                );
+                self.mmio_region_register(
+                    gicv3_config.gits_base,
+                    gicv3_config.gits_size,
+                    vgicv3_its_handler,
+                    0,
+                );
 
-        for cpu in 0..MAX_CPU_NUM {
-            let gicr_base = arch.gicr_base + cpu * PER_GICR_SIZE;
-            debug!("registering gicr {} at {:#x?}", cpu, gicr_base);
-            self.mmio_region_register(gicr_base, PER_GICR_SIZE, vgicv3_redist_handler, cpu);
+                for cpu in 0..MAX_CPU_NUM {
+                    let gicr_base = host_gicr_base(cpu);
+                    info!(
+                        "Registering GIC Redistributor region for CPU {} at {:#x?}",
+                        cpu, gicr_base
+                    );
+                    self.mmio_region_register(gicr_base, PER_GICR_SIZE, vgicv3_redist_handler, cpu);
+                }
+            }
         }
     }
 
@@ -155,7 +177,9 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
             // For aarch32 guest, the access to GICR_TYPER will be split into two parts.
             // Many GIC supports 32-bit access to GICR_TYPER twice.
             mmio_perform_access(gicr_base, mmio);
-            if cpu == MAX_CPU_NUM - 1 && reg == GICR_TYPER {
+            let max_mpidr = BOARD_MPIDR_MAPPINGS.iter().max().copied().unwrap_or(0);
+            let current_mpidr = BOARD_MPIDR_MAPPINGS[cpu];
+            if current_mpidr == max_mpidr && reg == GICR_TYPER {
                 mmio.value |= GICR_TYPER_LAST;
             }
         }

@@ -11,14 +11,6 @@
             ],
             "devices": [
                     {
-                        "type": "blk",
-                        "addr": "0x10006000",
-                        "len": "0x1000",
-                        "irq": 6,
-                        "img": "riscv_rootfs2.img",
-                        "status": "enable"
-                    },
-                    {
                         "type": "console",
                         "addr": "0x10007000",
                         "len": "0x1000",

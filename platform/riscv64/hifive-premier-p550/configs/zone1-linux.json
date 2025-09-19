@@ -12,14 +12,8 @@
         },
         {
             "type": "io",
-            "physical_start": "0x50920000",
-            "virtual_start":  "0x50920000",
-            "size": "0x10000"
-        },
-        {
-            "type": "io",
-            "physical_start": "0x50420000",
-            "virtual_start":  "0x50420000",
+            "physical_start": "0x50450000",
+            "virtual_start":  "0x50450000",
             "size": "0x10000"
         },
         {
@@ -45,9 +39,15 @@
             "physical_start": "0xc000000000",
             "virtual_start":  "0xc000000000",
             "size": "0x80000000"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0x10007000",
+            "virtual_start":  "0x10007000",
+            "size": "0x1000"
         }
     ],
-    "interrupts": [58, 59, 60, 102],
+    "interrupts": [7, 79],
     "ivc_configs": [],
     "kernel_filepath": "./Image",
     "dtb_filepath": "./zone1-linux.dtb",

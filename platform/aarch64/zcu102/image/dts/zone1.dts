@@ -6,7 +6,7 @@
 	#size-cells = <0x02>;
 	model = "ZynqMP ZCU102 RevB";
 
-    cpus {
+	cpus {
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
 
@@ -65,18 +65,18 @@
 		method = "smc";
 	};
 
-    memory@0 {
+	memory@0 {
 		device_type = "memory";
 		reg = <0x00 0x50000000 0x00 0x25000000>;
 	};
 
-    timer {
+	timer {
 		compatible = "arm,armv8-timer";
 		interrupt-parent = <0x05>;
 		interrupts = <0x01 0x0d 0xf08 0x01 0x0e 0xf08 0x01 0x0b 0xf08 0x01 0x0a 0xf08>;
 	};
 
-    axi {
+	axi {
 		compatible = "simple-bus";
 		bootph-all;
 		#address-cells = <0x02>;
@@ -95,31 +95,28 @@
 			num_interrupts = <0x60>;
 			phandle = <0x05>;
 		};
-    };
-
-
-    aliases {
 	};
 
-	// virtio blk
+	aliases {
+	};
+
 	virtio_mmio@ff9d0000 {
 		dma-coherent;
 		interrupt-parent = <0x05>;
-		interrupts = <0x0 0x2e 0x1>;
-		reg = <0x0 0xff9d0000 0x0 0x200>;
+		interrupts = <0x00 0x2e 0x01>;
+		reg = <0x00 0xff9d0000 0x00 0x200>;
 		compatible = "virtio,mmio";
 	};
 
-	// virtio serial
 	virtio_mmio@ff9e0000 {
 		dma-coherent;
 		interrupt-parent = <0x05>;
-		interrupts = <0x0 0x2c 0x1>;
-		reg = <0x0 0xff9e0000 0x0 0x200>;
+		interrupts = <0x00 0x2c 0x01>;
+		reg = <0x00 0xff9e0000 0x00 0x200>;
 		compatible = "virtio,mmio";
 	};
 
-    chosen {
+	chosen {
 		bootargs = "earlycon=virtio,mmio,0xff9e0000 console=hvc0 root=/dev/vda rootwait rw";
 		stdout-path = "/virtio_mmio@0xff9e0000";
 	};

@@ -80,8 +80,6 @@ impl Zone {
         Ok(())
     }
 
-    pub fn isa_init(&mut self, fdt: &fdt::Fdt) {}
-
     pub fn irq_bitmap_init(&mut self, irqs: &[u32]) {}
 
     /// called after cpu_set is initialized
