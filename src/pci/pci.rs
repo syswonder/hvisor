@@ -185,8 +185,13 @@ impl Zone {
                 alloc_pci_devs[idx] & 0b111
             );
             self.pciroot.alloc_devs.push(alloc_pci_devs[idx] as _);
+            #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
             if alloc_pci_devs[idx] != 0 {
-                iommu_add_device(self.id, alloc_pci_devs[idx] as _);
+                iommu_add_device(
+                    self.id,
+                    alloc_pci_devs[idx] as _,
+                    self.iommu_pt.as_ref().unwrap().root_paddr(),
+                );
             }
         }
 
