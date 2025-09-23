@@ -14,9 +14,9 @@
 // Authors:
 //
 #![allow(unused)]
-use aarch64_cpu::registers::VTTBR_EL2;
-use crate::memory::addr::{GuestPhysAddr, HostPhysAddr, PhysAddr};
 use super::paging::{GenericPTE, HvPageTable, PagingInstr};
+use crate::memory::addr::{GuestPhysAddr, HostPhysAddr, PhysAddr};
+use aarch64_cpu::registers::VTTBR_EL2;
 
 pub struct S2PTInstr;
 

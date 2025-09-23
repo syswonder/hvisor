@@ -26,7 +26,7 @@ use hvisor_pt::arch::aarch64::{vmsav8_4k_3level_arch, vmsav8_4k_4level_arch, Aar
 use hvisor_pt::common::{
     addr::PAddrExec,
     arch::PTArchExec,
-    frame::{FrameSize, MemAttr}
+    frame::{FrameSize, MemAttr},
 };
 use hvisor_pt::spec::memory::{PageTableMem, PageTableMemExec, Table};
 use vstd::prelude::*;
@@ -216,7 +216,7 @@ pub struct HvPageTable<VA: From<usize> + Into<usize> + Copy, I: PagingInstr> {
     _phantom: PhantomData<(VA, I)>,
 }
 
-impl<VA, I> HvPageTable<VA, I> 
+impl<VA, I> HvPageTable<VA, I>
 where
     VA: From<usize> + Into<usize> + Copy,
     I: PagingInstr,
