@@ -330,9 +330,17 @@ where
                 .query(vaddr.into())
                 .map(|(_, _, sz)| sz)
                 .map_err(|_| PagingError::NotMapped)?;
+            info!(
+                "unmapping vaddr={:#x?} page_size={:#x?}",
+                vaddr, page_size,
+            );
             self.inner
                 .unmap(vaddr.into())
                 .map_err(|_| PagingError::NotMapped)?;
+            info!(
+                "unmap vaddr={:#x?} page_size={:#x?} ok",
+                vaddr, page_size,
+            );
             if !page_size.is_aligned(vaddr) {
                 error!("error vaddr={:#x?}", vaddr);
                 loop {}
@@ -340,6 +348,7 @@ where
             vaddr += page_size as usize;
             size -= page_size as usize;
         }
+        info! ("unmap region {:#x?} done", region);
         Ok(())
     }
 
