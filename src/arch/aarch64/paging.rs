@@ -255,9 +255,10 @@ where
 
     fn query(&self, vaddr: Self::VA) -> PagingResult<(PhysAddr, MemFlags, PageSize)> {
         let _lock = self.clonee_lock.lock();
+        info!("query {:#x}", vaddr.into());
         self.inner
             .query(vaddr.into())
-            .map(|(vb, pb, sz, attr)| (pb, attr_to_flags(attr), PageSize::Size4K))
+            .map(|(vb, pb, sz, attr)| (pb, attr_to_flags(attr), frame_size_to_page_size(sz)))
             .map_err(|_| PagingError::NotMapped)
     }
 }
@@ -282,7 +283,7 @@ where
     }
 
     fn map(&mut self, region: &MemoryRegion<Self::VA>) -> HvResult {
-        info! (
+        info!(
             "create mapping in {}: {:#x?}",
             core::any::type_name::<Self>(),
             region
@@ -292,7 +293,7 @@ where
         let mut size = region.size;
         while size > 0 {
             let paddr = region.mapper.map_fn(vaddr);
-            let page_size = if PageSize::Size1G.is_aligned(vaddr)
+            let frame_size = if PageSize::Size1G.is_aligned(vaddr)
                 && PageSize::Size1G.is_aligned(paddr)
                 && size >= PageSize::Size1G as usize
                 && !region.flags.contains(MemFlags::NO_HUGEPAGES)
@@ -308,10 +309,10 @@ where
                 FrameSize::Size4K
             };
             self.inner
-                .map(vaddr, paddr, page_size, flags_to_attr(region.flags))
+                .map(vaddr, paddr, frame_size, flags_to_attr(region.flags))
                 .map_err(|_| PagingError::AlreadyMapped)?;
-            vaddr += page_size.as_usize();
-            size -= page_size.as_usize();
+            vaddr += frame_size.as_usize();
+            size -= frame_size.as_usize();
         }
         Ok(())
     }
@@ -327,20 +328,13 @@ where
         let mut size = region.size;
         while size > 0 {
             let page_size = self
+                .inner
                 .query(vaddr.into())
-                .map(|(_, _, sz)| sz)
+                .map(|(_, _, sz, _)| frame_size_to_page_size(sz))
                 .map_err(|_| PagingError::NotMapped)?;
-            info!(
-                "unmapping vaddr={:#x?} page_size={:#x?}",
-                vaddr, page_size,
-            );
             self.inner
                 .unmap(vaddr.into())
                 .map_err(|_| PagingError::NotMapped)?;
-            info!(
-                "unmap vaddr={:#x?} page_size={:#x?} ok",
-                vaddr, page_size,
-            );
             if !page_size.is_aligned(vaddr) {
                 error!("error vaddr={:#x?}", vaddr);
                 loop {}
@@ -348,7 +342,6 @@ where
             vaddr += page_size as usize;
             size -= page_size as usize;
         }
-        info! ("unmap region {:#x?} done", region);
         Ok(())
     }
 
@@ -360,8 +353,9 @@ where
     ) -> PagingResult<PageSize> {
         let _lock = self.clonee_lock.lock();
         let page_size = self
-            .query(vaddr)
-            .map(|(_, _, sz)| sz)
+            .inner
+            .query(vaddr.into())
+            .map(|(_, _, sz, _)| frame_size_to_page_size(sz))
             .map_err(|_| PagingError::NotMapped)?;
         self.inner
             .protect(vaddr.into(), flags_to_attr(flags))
@@ -412,5 +406,22 @@ fn flags_to_attr(flags: MemFlags) -> MemAttr {
         executable: flags.contains(MemFlags::EXECUTE),
         device: flags.contains(MemFlags::IO),
         user_accessible: flags.contains(MemFlags::USER),
+    }
+}
+
+fn page_size_to_frame_size(size: PageSize) -> FrameSize {
+    match size {
+        PageSize::Size4K => FrameSize::Size4K,
+        PageSize::Size2M => FrameSize::Size2M,
+        PageSize::Size1G => FrameSize::Size1G,
+    }
+}
+
+fn frame_size_to_page_size(size: FrameSize) -> PageSize {
+    match size {
+        FrameSize::Size4K => PageSize::Size4K,
+        FrameSize::Size2M => PageSize::Size2M,
+        FrameSize::Size1G => PageSize::Size1G,
+        _ => panic!("Unsupported frame size"),
     }
 }

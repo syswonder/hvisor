@@ -197,7 +197,7 @@ dependencies = [
 [[package]]
 name = "hvisor-pt"
 version = "0.1.0"
-source = "git+https://github.com/PKTH-Jx/hvisor-pt#addb0567a61f4afd88235f325b9d2b6eca85d8e9"
+source = "git+https://github.com/PKTH-Jx/hvisor-pt#88a1f48eba13e702a14f1c15c985060e57ac1fc2"
 dependencies = [
  "bitflags 2.9.4",
  "vstd",
