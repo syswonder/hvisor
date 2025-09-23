@@ -282,6 +282,11 @@ where
     }
 
     fn map(&mut self, region: &MemoryRegion<Self::VA>) -> HvResult {
+        info! (
+            "create mapping in {}: {:#x?}",
+            core::any::type_name::<Self>(),
+            region
+        );
         let _lock = self.clonee_lock.lock();
         let mut vaddr = region.start.into();
         let mut size = region.size;
@@ -312,6 +317,11 @@ where
     }
 
     fn unmap(&mut self, region: &MemoryRegion<Self::VA>) -> HvResult {
+        info!(
+            "remove mapping in {}: {:#x?}",
+            core::any::type_name::<Self>(),
+            region
+        );
         let _lock = self.clonee_lock.lock();
         let mut vaddr = region.start.into();
         let mut size = region.size;
@@ -327,8 +337,6 @@ where
                 error!("error vaddr={:#x?}", vaddr);
                 loop {}
             }
-            assert!(page_size.is_aligned(vaddr));
-            assert!(page_size as usize <= size);
             vaddr += page_size as usize;
             size -= page_size as usize;
         }
