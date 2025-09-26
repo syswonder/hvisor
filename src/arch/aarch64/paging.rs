@@ -22,14 +22,9 @@ use alloc::{sync::Arc, vec::Vec};
 use core::{fmt::Debug, marker::PhantomData, slice};
 use spin::Mutex;
 
-use hvisor_pt::arch::aarch64::{vmsav8_4k_3level_arch, vmsav8_4k_4level_arch, Aarch64PageTable};
-use hvisor_pt::common::{
-    addr::PAddrExec,
-    arch::PTArchExec,
-    frame::{FrameSize, MemAttr},
-};
-use hvisor_pt::spec::memory::{PageTableMem, PageTableMemExec, Table};
-use vstd::prelude::*;
+use verified_pt::aarch64::{vmsav8_4k_3level_arch, vmsav8_4k_4level_arch, Aarch64PageTable};
+use verified_pt::memory::PageTableMemExec;
+use verified_pt::utils::{FrameSize, MemAttr, PAddrExec, PTArchExec};
 
 #[derive(Debug)]
 pub enum PagingError {
@@ -147,8 +142,6 @@ pub trait GenericPageTable: GenericPageTableImmut {
     fn flush(&self, vaddr: Option<Self::VA>);
 }
 
-verus! {
-
 /// Memory that stores page tables.
 pub struct PageTableMemory {
     arch: PTArchExec,
@@ -156,17 +149,6 @@ pub struct PageTableMemory {
 }
 
 impl PageTableMemExec for PageTableMemory {
-    spec fn view(self) -> PageTableMem {
-        PageTableMem {
-            tables: Seq::new(self.tables.len() as nat, |i| Table {
-                base: self.frames[i].start_paddr(),
-                size: FrameSize::Size4K,
-                level: 0,
-            }),
-            arch: self.arch@,
-        }
-    }
-
     fn root(&self) -> PAddrExec {
         PAddrExec(self.tables[0].start_paddr())
     }
@@ -179,10 +161,12 @@ impl PageTableMemExec for PageTableMemory {
     }
 
     fn is_table_empty(&self, base: PAddrExec) -> bool {
-        let table = self.tables.iter().find(|t| t.start_paddr() == base.0).unwrap();
-        let contents = unsafe {
-            core::slice::from_raw_parts(base.0 as *const u8, table.size())
-        };
+        let table = self
+            .tables
+            .iter()
+            .find(|t| t.start_paddr() == base.0)
+            .unwrap();
+        let contents = unsafe { core::slice::from_raw_parts(base.0 as *const u8, table.size()) };
         contents.iter().all(|&b| b == 0)
     }
 
@@ -194,19 +178,29 @@ impl PageTableMemExec for PageTableMemory {
     }
 
     fn dealloc_table(&mut self, base: PAddrExec) {
-        let index = self.tables.iter().position(|f| f.start_paddr() == base.0).unwrap();
+        let index = self
+            .tables
+            .iter()
+            .position(|f| f.start_paddr() == base.0)
+            .unwrap();
         self.tables.remove(index);
     }
 
-    fn read(&self, base:PAddrExec, index:usize) -> u64 {
-        unsafe { (base.0 as *const u64).offset(index as isize).read_volatile() }
+    fn read(&self, base: PAddrExec, index: usize) -> u64 {
+        unsafe {
+            (base.0 as *const u64)
+                .offset(index as isize)
+                .read_volatile()
+        }
     }
 
-    fn write(&mut self, base:PAddrExec, index:usize, val:u64) {
-        unsafe { (base.0 as *mut u64).offset(index as isize).write_volatile(val) }
+    fn write(&mut self, base: PAddrExec, index: usize, val: u64) {
+        unsafe {
+            (base.0 as *mut u64)
+                .offset(index as isize)
+                .write_volatile(val)
+        }
     }
-}
-
 }
 
 /// Page table implementation for aarch64.

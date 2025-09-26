@@ -171,7 +171,6 @@ dependencies = [
  "cfg-if",
  "cortex-a",
  "heapless",
- "hvisor-pt",
  "lazy_static",
  "log",
  "loongArch64",
@@ -188,19 +187,10 @@ dependencies = [
  "sbi-spec 0.0.8",
  "spin 0.10.0",
  "tock-registers",
- "vstd",
+ "verified-pt",
  "x2apic",
  "x86",
  "x86_64",
-]
-
-[[package]]
-name = "hvisor-pt"
-version = "0.1.0"
-source = "git+https://github.com/PKTH-Jx/hvisor-pt#88a1f48eba13e702a14f1c15c985060e57ac1fc2"
-dependencies = [
- "bitflags 2.9.4",
- "vstd",
 ]
 
 [[package]]
@@ -532,6 +522,15 @@ name = "unicode-ident"
 version = "1.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f63a545481291138910575129486daeaf8ac54aee4387fe7906919f7830c7d9d"
+
+[[package]]
+name = "verified-pt"
+version = "0.1.0"
+source = "git+https://github.com/syswonder/verified-pt#13d41a07c909a20f0a2a3842fb9133c0bcdf405b"
+dependencies = [
+ "bitflags 2.9.4",
+ "vstd",
+]
 
 [[package]]
 name = "verus_builtin"

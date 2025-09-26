@@ -20,8 +20,7 @@ cortex-a = "8.1.1"
 cfg-if = "1.0"
 bitvec = { version="1.0.1", default-features = false, features = ["atomic", "alloc"] }
 heapless = { version = "0.8.0 "}
-vstd = { version = "0.0.0-2025-08-12-1837", default-features = false }
-hvisor-pt = { git = "https://github.com/PKTH-Jx/hvisor-pt", features = ["aarch64"] }
+verified-pt = { git = "https://github.com/syswonder/verified-pt", features = ["aarch64"] }
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 aarch64-cpu = "9.4.0"
