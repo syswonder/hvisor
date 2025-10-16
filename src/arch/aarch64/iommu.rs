@@ -348,7 +348,6 @@ impl CmdQueue {
 pub struct Smmuv3 {
     rp: &'static RegisterPage,
     strtab: LinearStreamTable,
-    iommu_pt_list: Vec<MemorySet<Stage2PageTable>>,
     cmdq: CmdQueue,
 }
 
@@ -358,20 +357,13 @@ impl Smmuv3 {
         let mut r = Self {
             rp: rp,
             strtab: LinearStreamTable::new(),
-            iommu_pt_list: vec![],
             cmdq: CmdQueue::new(),
         };
 
-        for _ in 0..MAX_ZONE_NUM {
-            r.iommu_pt_list.push(new_s2_memory_set());
-        }
-
-        info!("pagetables for iommu, init done!");
-
         r.check_env();
-        r.init_limited_pt();
         r.init_structures();
         r.device_reset();
+
         r
     }
 
@@ -411,47 +403,6 @@ impl Smmuv3 {
         if sid_max_bits <= 8 {
             info!("Smmuv3 must use linear stream table!");
         }
-    }
-
-    fn init_limited_pt(&mut self) {
-        // its
-        for pt in self.iommu_pt_list.iter_mut() {
-            pt.insert(MemoryRegion::new_with_offset_mapper(
-                0x8080000 as GuestPhysAddr,
-                0x8080000,
-                0x20000,
-                MemFlags::READ | MemFlags::WRITE,
-            ))
-            .ok();
-        }
-
-        // ram
-        self.iommu_pt_list[0]
-            .insert(MemoryRegion::new_with_offset_mapper(
-                0x80000000 as GuestPhysAddr,
-                0x80000000,
-                0x50000000,
-                MemFlags::READ | MemFlags::WRITE,
-            ))
-            .ok();
-
-        self.iommu_pt_list[1]
-            .insert(MemoryRegion::new_with_offset_mapper(
-                0x50000000 as GuestPhysAddr,
-                0x50000000,
-                0x30000000,
-                MemFlags::READ | MemFlags::WRITE,
-            ))
-            .ok();
-
-        self.iommu_pt_list[2]
-            .insert(MemoryRegion::new_with_offset_mapper(
-                0x80000000 as GuestPhysAddr,
-                0x80000000,
-                0x10000000,
-                MemFlags::READ | MemFlags::WRITE,
-            ))
-            .ok();
     }
 
     fn init_structures(&mut self) {
@@ -545,13 +496,12 @@ impl Smmuv3 {
     }
 
     // s1 bypass and s2 translate
-    fn write_ste(&mut self, sid: usize, vmid: usize) {
+    fn write_ste(&mut self, sid: usize, vmid: usize, root_pt: usize) {
         self.sync_ste(sid);
 
         assert!(vmid < MAX_ZONE_NUM, "Invalid zone id!");
 
-        self.strtab
-            .write_ste(sid, vmid, self.iommu_pt_list[vmid].root_paddr());
+        self.strtab.write_ste(sid, vmid, root_pt);
     }
 
     // invalidate the ste
@@ -582,13 +532,8 @@ static SMMUV3: spin::Once<Mutex<Smmuv3>> = spin::Once::new();
 
 /// smmuv3 init
 pub fn iommu_init() {
-    #[cfg(feature = "iommu")]
-    {
-        info!("Smmuv3 init...");
-        SMMUV3.call_once(|| Mutex::new(Smmuv3::new()));
-    }
-    #[cfg(not(feature = "iommu"))]
-    info!("Smmuv3 init: do nothing now");
+    info!("Smmuv3 init...");
+    SMMUV3.call_once(|| Mutex::new(Smmuv3::new()));
 }
 
 /// smmuv3_base
@@ -604,15 +549,7 @@ pub fn smmuv3_size() -> usize {
 }
 
 /// write ste
-pub fn iommu_add_device(vmid: usize, sid: usize) {
-    #[cfg(feature = "iommu")]
-    {
-        let mut smmu = SMMUV3.get().unwrap().lock();
-        smmu.write_ste(sid as _, vmid as _);
-    }
-    #[cfg(not(feature = "iommu"))]
-    info!(
-        "aarch64: iommu_add_device: do nothing now, vmid: {}, sid: {}",
-        vmid, sid
-    );
+pub fn iommu_add_device(vmid: usize, sid: usize, root_pt: usize) {
+    let mut smmu = SMMUV3.get().unwrap().lock();
+    smmu.write_ste(sid as _, vmid as _, root_pt as _);
 }

@@ -338,86 +338,79 @@ pub fn vgicv3_its_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
     match reg {
         GITS_CTRL => {
             mmio_perform_access(gits_base, mmio);
-            if mmio.is_write {
-                trace!("write GITS_CTRL: {:#x}", mmio.value);
-            } else {
-                trace!("read GITS_CTRL: {:#x}", mmio.value);
-            }
         }
         GITS_CBASER => {
             if mmio.is_write {
-                if zone_id == 0 {
-                    mmio_perform_access(gits_base, mmio);
-                }
                 set_cbaser(mmio.value, zone_id);
-                trace!("write GITS_CBASER: {:#x}", mmio.value);
             } else {
                 mmio.value = read_cbaser(zone_id);
-                trace!("read GITS_CBASER: {:#x}", mmio.value);
             }
         }
+        // v_dt_addr + 0x10000000;
         GITS_BASER => {
-            if zone_id == 0 {
-                mmio_perform_access(gits_base, mmio);
-            } else {
-                if mmio.is_write {
-                    set_dt_baser(mmio.value, zone_id);
-                } else {
-                    mmio.value = read_dt_baser(zone_id);
-                }
-            }
             if mmio.is_write {
-                trace!("write GITS_BASER: 0x{:016x}", mmio.value);
+                set_dt_baser(mmio.value, zone_id);
+                if zone_id == 0 {
+                    let v_dt_addr = mmio.value & 0xfff_fff_fff_000usize;
+                    let phys_dt_trans =
+                        unsafe { this_zone().read().gpm.page_table_query(v_dt_addr) };
+                    match phys_dt_trans {
+                        Ok(p) => {
+                            mmio.value &= !0xfff_fff_fff_000usize;
+                            mmio.value |= p.0 as usize;
+                        }
+                        _ => {}
+                    }
+                    mmio_perform_access(gits_base, mmio);
+                }
             } else {
-                trace!("read GITS_BASER: 0x{:016x}", mmio.value);
+                mmio.value = read_dt_baser(zone_id);
             }
         }
         GITS_COLLECTION_BASER => {
-            if zone_id == 0 {
-                mmio_perform_access(gits_base, mmio);
-            } else {
-                if mmio.is_write {
-                    set_ct_baser(mmio.value, zone_id);
-                } else {
-                    mmio.value = read_ct_baser(zone_id);
-                }
-            }
             if mmio.is_write {
-                trace!("write GITS_COLL_BASER: 0x{:016x}", mmio.value);
+                set_ct_baser(mmio.value, zone_id);
+                if zone_id == 0 {
+                    let v_ct_addr = mmio.value & 0xfff_fff_fff_000usize;
+                    let phys_ct_trans =
+                        unsafe { this_zone().read().gpm.page_table_query(v_ct_addr) };
+                    match phys_ct_trans {
+                        Ok(p) => {
+                            mmio.value &= !0xfff_fff_fff_000usize;
+                            mmio.value |= p.0 as usize;
+                        }
+                        _ => {}
+                    }
+                    mmio_perform_access(gits_base, mmio);
+                }
             } else {
-                trace!("read GITS_COLL_BASER: 0x{:016x}", mmio.value);
+                mmio.value = read_ct_baser(zone_id);
             }
         }
         GITS_CWRITER => {
             if mmio.is_write {
-                trace!("write GITS_CWRITER: {:#x}", mmio.value);
                 set_cwriter(mmio.value, zone_id);
             } else {
                 mmio.value = read_cwriter(zone_id);
-                trace!("read GITS_CWRITER: {:#x}", mmio.value);
             }
         }
         GITS_CREADR => {
             mmio.value = read_creadr(zone_id);
-            trace!("read GITS_CREADER: {:#x}", mmio.value);
         }
         GITS_TYPER => {
             mmio_perform_access(gits_base, mmio);
-            trace!("GITS_TYPER: {:#x}", mmio.value);
         }
         _ => {
             mmio_perform_access(gits_base, mmio);
             if mmio.is_write {
-                trace!(
+                debug!(
                     "write GITS offset: {:#x}, 0x{:016x}",
-                    mmio.address,
-                    mmio.value
+                    mmio.address, mmio.value
                 );
             } else {
-                trace!(
+                debug!(
                     "read GITS offset: {:#x}, 0x{:016x}",
-                    mmio.address,
-                    mmio.value
+                    mmio.address, mmio.value
                 );
             }
         }
