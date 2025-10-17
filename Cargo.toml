@@ -14,7 +14,7 @@ numeric-enum-macro = "0.2"
 buddy_system_allocator = "0.8"
 tock-registers = "0.8"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
-bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "03bd9909" }
+verified-memory-allocator = { git = "https://github.com/syswonder/verified-memory-allocator", rev = "7e49167" }
 qemu-exit = "3.0.2"
 cortex-a = "8.1.1"
 cfg-if = "1.0"

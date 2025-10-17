@@ -16,7 +16,7 @@
 //! Physical memory allocation.
 
 use alloc::vec::Vec;
-use bitmap_allocator::BitAlloc;
+use verified_memory_allocator::v_verus::v2_proof::{BitAllocView, BitAlloc};
 
 use spin::Mutex;
 
@@ -25,7 +25,7 @@ use crate::consts::PAGE_SIZE;
 use crate::error::HvResult;
 
 // Support max 1M * 4096 = 1GB memory.
-type FrameAlloc = bitmap_allocator::BitAlloc1M;
+type FrameAlloc = verified_memory_allocator::v_verus::v2_proof::BitAlloc1M;
 
 struct FrameAllocator {
     base: PhysAddr,
@@ -45,7 +45,7 @@ impl FrameAllocator {
     const fn empty() -> Self {
         Self {
             base: 0,
-            inner: FrameAlloc::DEFAULT,
+            inner: FrameAlloc::default(),
         }
     }
 
