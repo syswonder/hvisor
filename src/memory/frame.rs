@@ -99,6 +99,8 @@ impl FrameAllocator {
     unsafe fn dealloc_contiguous(&mut self, target: PhysAddr, frame_count: usize) {
         trace!("Deallocate {} frames: {:x}", frame_count, target);
         let start_idx = (target - self.base) / PAGE_SIZE;
+        // here can use remove to dealloc_contiguous mem
+        // self.inner.remove(start_idx..(start_idx + frame_count));
         for i in start_idx..start_idx + frame_count {
             self.inner.dealloc(i)
         }
