@@ -18,6 +18,7 @@
 use alloc::vec::Vec;
 use verified_memory_allocator::v_verus::v2_proof::{BitAllocView, BitAlloc};
 
+use once_cell::sync::Lazy;
 use spin::Mutex;
 
 use super::addr::{align_down, align_up, is_aligned, PhysAddr};
@@ -39,7 +40,9 @@ pub struct Frame {
     frame_count: usize,
 }
 
-static FRAME_ALLOCATOR: Mutex<FrameAllocator> = Mutex::new(FrameAllocator::empty());
+static FRAME_ALLOCATOR: Lazy<Mutex<FrameAllocator>> = Lazy::new(|| {
+    Mutex::new(FrameAllocator::empty())
+});
 
 impl FrameAllocator {
     fn empty() -> Self {

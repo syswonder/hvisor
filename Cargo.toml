@@ -8,6 +8,7 @@ edition = "2021"
 [dependencies]
 log = "0.4"
 spin = "0.10.0"
+once_cell = "1.19"
 bitflags = "2.1"
 bit_field = "0.10"
 numeric-enum-macro = "0.2"
