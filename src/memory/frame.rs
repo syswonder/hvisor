@@ -42,7 +42,7 @@ pub struct Frame {
 static FRAME_ALLOCATOR: Mutex<FrameAllocator> = Mutex::new(FrameAllocator::empty());
 
 impl FrameAllocator {
-    const fn empty() -> Self {
+    fn empty() -> Self {
         Self {
             base: 0,
             inner: FrameAlloc::default(),
