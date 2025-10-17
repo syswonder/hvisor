@@ -512,7 +512,7 @@ checksum = "f63a545481291138910575129486daeaf8ac54aee4387fe7906919f7830c7d9d"
 [[package]]
 name = "verified-memory-allocator"
 version = "0.1.0"
-source = "git+https://github.com/syswonder/verified-memory-allocator?rev=0ac03fd#0ac03fd258eb36ee1b92bf6b8d68ad62672faaf3"
+source = "git+https://github.com/syswonder/verified-memory-allocator?rev=e74d1c7#e74d1c777523d8dadb629260863ae6023c3a9d51"
 dependencies = [
  "bit_field",
  "vstd",

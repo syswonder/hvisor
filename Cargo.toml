@@ -14,7 +14,7 @@ numeric-enum-macro = "0.2"
 buddy_system_allocator = "0.8"
 tock-registers = "0.8"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
-verified-memory-allocator = { git = "https://github.com/syswonder/verified-memory-allocator", rev = "0ac03fd" }
+verified-memory-allocator = { git = "https://github.com/syswonder/verified-memory-allocator", rev = "e74d1c7" }
 qemu-exit = "3.0.2"
 cortex-a = "8.1.1"
 cfg-if = "1.0"
