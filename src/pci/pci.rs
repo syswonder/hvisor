@@ -1,4 +1,3 @@
-use core::ptr::{read_volatile, write_volatile};
 // Copyright (c) 2025 Syswonder
 // hvisor is licensed under Mulan PSL v2.
 // You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -14,8 +13,6 @@ use core::ptr::{read_volatile, write_volatile};
 //
 // Authors:
 //
-use core::{panic, ptr, usize};
-
 use crate::config::{HvPciConfig, CONFIG_MAX_PCI_DEV};
 use crate::memory::addr::align_down;
 use crate::memory::mmio_perform_access;
@@ -30,6 +27,8 @@ use crate::{
     zone::Zone,
 };
 use alloc::vec::Vec;
+use core::ptr::{read_volatile, write_volatile};
+use core::{panic, ptr, usize};
 
 use super::bridge::BridgeConfig;
 use super::endpoint::EndpointConfig;

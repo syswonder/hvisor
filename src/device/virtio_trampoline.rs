@@ -1,4 +1,3 @@
-use crate::arch::cpu::get_target_cpu;
 // Copyright (c) 2025 Syswonder
 // hvisor is licensed under Mulan PSL v2.
 // You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -14,7 +13,7 @@ use crate::arch::cpu::get_target_cpu;
 //
 // Authors:
 //
-use crate::arch::cpu::this_cpu_id;
+use crate::arch::cpu::{get_target_cpu, this_cpu_id};
 use crate::consts::MAX_CPU_NUM;
 use crate::consts::MAX_WAIT_TIMES;
 use crate::device::irqchip::inject_irq;

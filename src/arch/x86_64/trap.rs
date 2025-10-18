@@ -1,4 +1,18 @@
-use core::mem::size_of;
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//  Solicey <lzoi_lth@163.com>
 
 use crate::{
     arch::{
@@ -26,6 +40,7 @@ use crate::{
     zone::this_zone_id,
 };
 use bit_field::BitField;
+use core::mem::size_of;
 use x86_64::registers::control::Cr4Flags;
 
 use super::{
