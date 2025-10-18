@@ -62,6 +62,58 @@ impl Zone {
         Ok(())
     }
 
+    pub fn iommu_pt_init(
+        &mut self,
+        mem_regions: &[HvConfigMemoryRegion],
+        hv_config: &HvArchZoneConfig,
+    ) -> HvResult {
+        // Create a new stage 2 page table for iommu.
+        // Only map the memory regions that are possible to be accessed by devices as DMA buffer.
+
+        let pt = self.iommu_pt.as_mut().unwrap();
+        let flags = MemFlags::READ | MemFlags::WRITE;
+        for mem_region in mem_regions.iter() {
+            match mem_region.mem_type {
+                MEM_TYPE_RAM => {
+                    pt.insert(MemoryRegion::new_with_offset_mapper(
+                        mem_region.virtual_start as GuestPhysAddr,
+                        mem_region.physical_start as HostPhysAddr,
+                        mem_region.size as _,
+                        flags,
+                    ))?;
+                    info!(
+                        "iommu map: vaddr:{} - paddr:{}",
+                        mem_region.virtual_start, mem_region.physical_start
+                    );
+                }
+                _ => {
+                    // pass
+                }
+            }
+        }
+
+        match hv_config.gic_config {
+            GicConfig::Gicv3(ref gicv3_config) => {
+                if gicv3_config.gits_size != 0 {
+                    // map gits
+                    pt.insert(MemoryRegion::new_with_offset_mapper(
+                        gicv3_config.gits_base as GuestPhysAddr,
+                        gicv3_config.gits_base as HostPhysAddr,
+                        gicv3_config.gits_size as _,
+                        flags | MemFlags::IO,
+                    ))?;
+                    info!(
+                        "iommu map: vaddr:{} - paddr:{}",
+                        gicv3_config.gits_base, gicv3_config.gits_base
+                    );
+                }
+            }
+            _ => {}
+        }
+
+        Ok(())
+    }
+
     pub fn arch_zone_pre_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
         self.ivc_init(config.ivc_config());
         Ok(())

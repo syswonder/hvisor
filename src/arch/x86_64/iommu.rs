@@ -481,7 +481,7 @@ pub fn iommu_init() {
     // init_msi_cap_hpa_space();
 }
 
-pub fn iommu_add_device(zone_id: usize, bdf: usize) {
+pub fn iommu_add_device(zone_id: usize, bdf: usize, _: usize) {
     // info!("vtd add device: {:x}, zone: {:x}", bdf, zone_id);
     VTD.get().unwrap().lock().add_device(zone_id, bdf as _);
 }

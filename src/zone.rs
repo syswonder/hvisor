@@ -39,6 +39,7 @@ pub struct Zone {
     pub irq_bitmap: [u32; 1024 / 32],
     pub gpm: MemorySet<Stage2PageTable>,
     pub pciroot: PciRoot,
+    pub iommu_pt: Option<MemorySet<Stage2PageTable>>,
     pub is_err: bool,
 }
 
@@ -53,6 +54,11 @@ impl Zone {
             mmio: Vec::new(),
             irq_bitmap: [0; 1024 / 32],
             pciroot: PciRoot::new(),
+            iommu_pt: if cfg!(feature = "iommu") {
+                Some(new_s2_memory_set())
+            } else {
+                None
+            },
             is_err: false,
         }
     }
@@ -226,6 +232,10 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     zone.arch_zone_pre_configuration(config)?;
     // #[cfg(target_arch = "aarch64")]
     // zone.ivc_init(config.ivc_config());
+
+    #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
+    zone.iommu_pt_init(config.memory_regions(), &config.arch_config)
+        .unwrap();
 
     /* loongarch page table emergency */
     /* Kai: Maybe unnecessary but i can't boot vms on my 3A6000 PC without this function. */
