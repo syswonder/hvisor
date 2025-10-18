@@ -93,7 +93,7 @@ fn handle_irq(vector: u8) {
         }
         IdtVector::APIC_SPURIOUS_VECTOR | IdtVector::APIC_ERROR_VECTOR => {}
         _ => {
-            if vector >= 0x20 {
+            if vector >= 0x20 && this_cpu_data().arch_cpu.power_on {
                 inject_vector(this_cpu_id(), vector, None, false);
             }
         }

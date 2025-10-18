@@ -14,7 +14,7 @@ use crate::{
         vmx::*,
     },
     consts::{self, core_end, PER_CPU_SIZE},
-    device::irqchip::pic::{check_pending_vectors, ioapic, lapic::VirtLocalApic},
+    device::irqchip::pic::{check_pending_vectors, clear_vectors, ioapic, lapic::VirtLocalApic},
     error::{HvError, HvResult},
     memory::{
         addr::{phys_to_virt, PHYS_VIRT_OFFSET},
@@ -291,6 +291,8 @@ impl ArchCpu {
 
         self.host_stack_top = (core_end() + (self.cpuid + 1) * PER_CPU_SIZE) as _;
 
+        clear_vectors(self.cpuid);
+
         unsafe { self.vmx_launch() };
 
         loop {}
@@ -562,7 +564,9 @@ impl ArchCpu {
 
     fn vmexit_handler(&mut self) {
         crate::arch::trap::handle_vmexit(self).unwrap();
-        check_pending_vectors(self.cpuid);
+        if (self.power_on) {
+            check_pending_vectors(self.cpuid);
+        }
     }
 
     unsafe fn vmx_entry_failed() -> ! {

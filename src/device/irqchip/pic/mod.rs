@@ -71,6 +71,11 @@ impl PendingVectors {
         let mut vectors = self.inner.get(cpu_id).unwrap().lock();
         vectors.has_eoi = true;
     }
+
+    fn clear_vectors(&self, cpu_id: usize) {
+        let mut vectors = self.inner.get(cpu_id).unwrap().lock();
+        vectors.queue.clear();
+    }
 }
 
 pub fn inject_vector(cpu_id: usize, vector: u8, err_code: Option<u32>, allow_repeat: bool) {
@@ -90,6 +95,10 @@ pub fn check_pending_vectors(cpu_id: usize) -> bool {
 
 pub fn pop_vector(cpu_id: usize) {
     PENDING_VECTORS.get().unwrap().pop_vector(cpu_id);
+}
+
+pub fn clear_vectors(cpu_id: usize) {
+    PENDING_VECTORS.get().unwrap().clear_vectors(cpu_id);
 }
 
 pub fn enable_irq() {
@@ -118,5 +127,7 @@ pub fn primary_init_early() {
 pub fn primary_init_late() {}
 
 impl Zone {
-    pub fn arch_irqchip_reset(&self) {}
+    pub fn arch_irqchip_reset(&self) {
+        iommu::clear_dma_translation_tables(self.id);
+    }
 }

@@ -247,7 +247,7 @@ impl PagingInstr for S2PTInstr {
 
         // if this cpu is boot cpu and it is running
         if this_cpu_data().arch_cpu.power_on && this_cpu_data().boot_cpu {
-            iommu::update_dma_translation_tables(this_zone_id(), root_paddr);
+            iommu::fill_dma_translation_tables(this_zone_id(), root_paddr);
         }
     }
 

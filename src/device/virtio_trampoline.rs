@@ -99,7 +99,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     // if it is cfg request, current cpu should be blocked until gets the result
     if need_interrupt == 0 {
         // when virtio backend finish the req, it will add 1 to cfg_flag.
-        while cfg_flags[cpu_id] == old_cfg_flag {
+        while unsafe { core::ptr::read_volatile(&cfg_flags[cpu_id]) } == old_cfg_flag {
             // fence(Ordering::Acquire);
             count += 1;
             if count == MAX_WAIT_TIMES {
@@ -119,7 +119,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
         }
         if !mmio.is_write {
             // ensure cfg value is right.
-            mmio.value = cfg_values[cpu_id] as _;
+            mmio.value = unsafe { core::ptr::read_volatile(&cfg_values[cpu_id]) as _ };
             // debug!("non root receives value: {:#x?}", mmio.value);
         }
     }
