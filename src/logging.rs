@@ -131,6 +131,50 @@ pub fn init() {
 
 struct SimpleLogger;
 
+impl SimpleLogger {
+    #[cfg(feature = "graphics")]
+    fn print(
+        &self,
+        level: Level,
+        line: u32,
+        target: &str,
+        cpu_id: usize,
+        level_color: ColorCode,
+        args_color: ColorCode,
+        record: &Record,
+    ) {
+        println!(
+            "[{:<5} {}] ({}:{}) {}",
+            level,
+            cpu_id,
+            target,
+            line,
+            record.args()
+        );
+    }
+
+    #[cfg(not(feature = "graphics"))]
+    fn print(
+        &self,
+        level: Level,
+        line: u32,
+        target: &str,
+        cpu_id: usize,
+        level_color: ColorCode,
+        args_color: ColorCode,
+        record: &Record,
+    ) {
+        print(with_color!(
+            ColorCode::White,
+            "[{} {}] {} {}\n",
+            with_color!(level_color, "{:<5}", level),
+            with_color!(ColorCode::White, "{}", cpu_id),
+            with_color!(ColorCode::White, "({}:{})", target, line),
+            with_color!(args_color, "{}", record.args()),
+        ));
+    }
+}
+
 impl Log for SimpleLogger {
     fn enabled(&self, _metadata: &Metadata) -> bool {
         true
@@ -160,26 +204,7 @@ impl Log for SimpleLogger {
             Level::Trace => ColorCode::BrightBlack,
         };
 
-        #[cfg(all(feature = "graphics"))]
-        {
-            println!(
-                "[{:<5} {}] ({}:{}) {}",
-                level,
-                cpu_id,
-                target,
-                line,
-                record.args()
-            );
-        }
-        #[cfg(not(all(feature = "graphics")))]
-        print(with_color!(
-            ColorCode::White,
-            "[{} {}] {} {}\n",
-            with_color!(level_color, "{:<5}", level),
-            with_color!(ColorCode::White, "{}", cpu_id),
-            with_color!(ColorCode::White, "({}:{})", target, line),
-            with_color!(args_color, "{}", record.args()),
-        ));
+        self.print(level, line, target, cpu_id, level_color, args_color, record);
     }
 
     fn flush(&self) {}
