@@ -16,6 +16,7 @@
 #![allow(dead_code)]
 #![allow(unreachable_patterns)]
 
+use crate::arch::cpu::get_target_cpu;
 use crate::config::{HvZoneConfig, CONFIG_MAGIC_VERSION};
 use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, MAX_WAIT_TIMES, PAGE_SIZE};
 use crate::device::virtio_trampoline::{MAX_DEVS, MAX_REQ, VIRTIO_BRIDGE, VIRTIO_IRQS};
@@ -37,6 +38,7 @@ numeric_enum! {
     pub enum HyperCallCode {
         HvVirtioInit = 0,
         HvVirtioInjectIrq = 1,
+        HvVirtioGetIrq = 86,
         HvZoneStart = 2,
         HvZoneShutdown = 3,
         HvZoneList = 4,
@@ -74,6 +76,7 @@ impl<'a> HyperCall<'a> {
             match code {
                 HyperCallCode::HvVirtioInit => self.hv_virtio_init(arg0),
                 HyperCallCode::HvVirtioInjectIrq => self.hv_virtio_inject_irq(),
+                HyperCallCode::HvVirtioGetIrq => self.hv_virtio_get_irq(arg0 as *mut u32),
                 HyperCallCode::HvZoneStart => {
                     self.hv_zone_start(&*(arg0 as *const HvZoneConfig), arg1)
                 }
@@ -110,7 +113,7 @@ impl<'a> HyperCall<'a> {
             return hv_result_err!(EPERM, "Init virtio over non-root zones: unsupported!");
         }
 
-        let shared_region_addr_pa = self.translate_ipa_to_hva(shared_region_addr) as usize;
+        let shared_region_addr_pa = self.hv_get_real_pa(shared_region_addr) as usize;
 
         assert!(shared_region_addr_pa % PAGE_SIZE == 0);
         // let offset = shared_region_addr_pa & (PAGE_SIZE - 1);
@@ -127,6 +130,7 @@ impl<'a> HyperCall<'a> {
             .lock()
             .set_base_addr(shared_region_addr_pa as _);
         info!("hvisor device region base is {:#x?}", shared_region_addr_pa);
+
         HyperCallResult::Ok(0)
     }
 
@@ -148,7 +152,7 @@ impl<'a> HyperCall<'a> {
             let irq_id = region.res_list[res_front].irq_id as u64;
             let target_zone = region.res_list[res_front].target_zone;
             let target_cpu = match find_zone(target_zone as _) {
-                Some(zone) => zone.read().cpu_set.first_cpu().unwrap(),
+                Some(zone) => get_target_cpu(irq_id as _, target_zone as _),
                 _ => {
                     fence(Ordering::SeqCst);
                     region.res_front = (region.res_front + 1) & (MAX_REQ - 1);

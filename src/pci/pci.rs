@@ -13,8 +13,6 @@
 //
 // Authors:
 //
-use core::{panic, ptr, usize};
-
 use crate::config::{HvPciConfig, CONFIG_MAX_PCI_DEV};
 use crate::memory::addr::align_down;
 use crate::memory::mmio_perform_access;
@@ -29,6 +27,8 @@ use crate::{
     zone::Zone,
 };
 use alloc::vec::Vec;
+use core::ptr::{read_volatile, write_volatile};
+use core::{panic, ptr, usize};
 
 use super::bridge::BridgeConfig;
 use super::endpoint::EndpointConfig;
@@ -46,7 +46,7 @@ pub struct PciRoot {
     bridges: Vec<BridgeConfig>,
     alloc_devs: Vec<usize>, // include host bridge
     phantom_devs: Vec<PhantomCfg>,
-    bar_regions: Vec<BarRegion>,
+    pub bar_regions: Vec<BarRegion>,
 }
 impl PciRoot {
     pub fn new() -> Self {
@@ -120,11 +120,11 @@ impl PciRoot {
             for bar_id in 0..NUM_BAR_REGS_TYPE0 {
                 unsafe {
                     let reg_ptr = (cfg_base + offsets[bar_id]) as *mut u32;
-                    let origin_val = *reg_ptr;
-                    *reg_ptr = 0xffffffffu32;
-                    let new_val = *reg_ptr;
+                    let origin_val = read_volatile(reg_ptr);
+                    write_volatile(reg_ptr, 0xffffffffu32);
+                    let new_val = read_volatile(reg_ptr);
                     ep.bars_init(bar_id, origin_val, new_val);
-                    *reg_ptr = origin_val;
+                    write_volatile(reg_ptr, origin_val);
                 }
             }
         }
@@ -137,11 +137,11 @@ impl PciRoot {
             for bar_id in 0..NUM_BAR_REGS_TYPE1 {
                 unsafe {
                     let reg_ptr = (cfg_base + offsets[bar_id]) as *mut u32;
-                    let origin_val = *reg_ptr;
-                    *reg_ptr = 0xffffffffu32;
-                    let new_val = *reg_ptr;
+                    let origin_val = read_volatile(reg_ptr);
+                    write_volatile(reg_ptr, 0xffffffffu32);
+                    let new_val = read_volatile(reg_ptr);
                     bridge.bars_init(bar_id, origin_val, new_val);
-                    *reg_ptr = origin_val;
+                    write_volatile(reg_ptr, origin_val);
                 }
             }
         }
@@ -185,13 +185,17 @@ impl Zone {
                 alloc_pci_devs[idx] & 0b111
             );
             self.pciroot.alloc_devs.push(alloc_pci_devs[idx] as _);
-            #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
+            #[cfg(any(
+                all(feature = "iommu", target_arch = "aarch64"),
+                target_arch = "x86_64"
+            ))]
             if alloc_pci_devs[idx] != 0 {
-                iommu_add_device(
-                    self.id,
-                    alloc_pci_devs[idx] as _,
-                    self.iommu_pt.as_ref().unwrap().root_paddr(),
-                );
+                let iommu_pt_addr = if self.iommu_pt.is_some() {
+                    self.iommu_pt.as_ref().unwrap().root_paddr()
+                } else {
+                    0
+                };
+                iommu_add_device(self.id, alloc_pci_devs[idx] as _, iommu_pt_addr);
             }
         }
 
@@ -337,7 +341,7 @@ impl Zone {
         self.pciroot.generate_vdevs();
     }
 
-    fn pci_bars_register(&mut self, pci_config: &HvPciConfig) {
+    pub fn pci_bars_register(&mut self, pci_config: &HvPciConfig) {
         for region in self.pciroot.bar_regions.iter_mut() {
             let (cpu_base, pci_base) = match region.bar_type {
                 BarType::IO => (pci_config.io_base as usize, pci_config.pci_io_base as usize),
@@ -352,22 +356,14 @@ impl Zone {
                 _ => panic!("Unknown BAR type!"),
             };
 
-            region.start = cpu_base + region.start - pci_base;
-            region.start = align_down(region.start);
+            region.arch_set_bar_region_start(cpu_base, pci_base);
 
             info!(
-                "pci bar region: type: {:?}, base: {:#x}, size:{:#x}",
+                "pci bar region: type: {:?}, base: {:#x}, size: {:#x}",
                 region.bar_type, region.start, region.size
             );
 
-            self.gpm
-                .insert(MemoryRegion::new_with_offset_mapper(
-                    region.start as GuestPhysAddr,
-                    region.start,
-                    region.size,
-                    MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-                ))
-                .ok();
+            region.arch_insert_bar_region(&mut self.gpm, self.id);
         }
     }
 }
@@ -415,7 +411,11 @@ pub fn mmio_pci_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
                     mmio.value = header_val as _;
                     return Ok(());
                 } else {
+                    #[cfg(not(target_arch = "x86_64"))]
                     panic!("invalid access to empty device {:x}:{:x}.{:x}, addr: {:#x}, reg_addr: {:#x}!", bdf >> 8, (bdf >> 3) & 0b11111, bdf & 0b111, mmio.address, reg_addr);
+                    // in x86, linux will probe for pci devices automatically
+                    #[cfg(target_arch = "x86_64")]
+                    return Ok(());
                 }
             } else {
                 // device exists, so we try to get the phantom device

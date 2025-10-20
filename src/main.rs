@@ -28,6 +28,7 @@
 #![no_main]
 #![feature(asm_const)]
 #![feature(naked_functions)]
+#![feature(concat_idents)]
 // #![feature(core_panic)]
 // #![deny(warnings, missing_docs)]
 #![feature(proc_macro_hygiene)]
@@ -66,7 +67,7 @@ mod pci;
 mod tests;
 
 use crate::arch::iommu::iommu_init;
-use crate::arch::mm::arch_setup_parange;
+use crate::arch::mm::{arch_post_heap_init, arch_setup_parange};
 use crate::consts::{hv_end, mem_pool_start, MAX_CPU_NUM};
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
@@ -176,6 +177,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         is_primary = true;
         memory::heap::init();
         memory::heap::test();
+        arch_post_heap_init(host_dtb);
     }
 
     let cpu = PerCpu::new(cpuid);
