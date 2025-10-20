@@ -24,6 +24,13 @@
                     "len": "0x200",
                     "irq": 76,
                     "status": "enable"
+                },
+                {
+                    "type": "scmi",
+                    "addr": "0xa003600",
+                    "len": "0x200",
+                    "irq": 75,
+                    "status": "enable"
                 }
             ]
         }

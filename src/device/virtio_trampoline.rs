@@ -70,7 +70,10 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
         mmio.is_write,
         need_interrupt,
     );
-    // debug!("non root sends req: {:#x?}", hreq);
+    if base == 0xa003600 {
+        info!("non root sends req: {:#x?}", hreq);
+    }
+        
     let (cfg_flags, cfg_values) = unsafe {
         (
             core::slice::from_raw_parts(dev.get_cfg_flags(), MAX_CPU_NUM),
@@ -97,7 +100,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
             // fence(Ordering::Acquire);
             count += 1;
             if count == MAX_WAIT_TIMES {
-                warn!("virtio backend is too slow, please check it!");
+                warn!("virtio backend is too slow, please check it! Request = {:#x?}", hreq);
                 fence(Ordering::Acquire);
             }
             if count == MAX_WAIT_TIMES * 10 {
@@ -254,7 +257,7 @@ impl Debug for VirtioBridge {
 
 /// Hvisor device requests
 #[repr(C)]
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct HvisorDeviceReq {
     pub src_cpu: u64,
     address: u64,
