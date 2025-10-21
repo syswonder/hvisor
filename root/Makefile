@@ -1,5 +1,5 @@
-KDIR ?= ~/playground2/linux
-ARCH ?= x86_64
+KDIR ?=
+ARCH ?= arm64
 LOG ?= LOG_INFO
 DEBUG ?= n
 VIRTIO_GPU ?= n
