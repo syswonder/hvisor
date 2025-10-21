@@ -81,7 +81,7 @@ hvisor 是一个用 Rust 实现的 Type-1 裸机虚拟机监控器，采用分�
 
 ### x86_64
 
-- [x] QEMU virt x86_64
+- [x] QEMU Q35
 - [x] ASUS NUC14MNK
 
 ## Guest OS 支持
