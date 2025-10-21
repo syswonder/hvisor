@@ -94,6 +94,28 @@ enum ColorCode {
     BrightWhite = 97,
 }
 
+fn color_code_to_bgra(code: &ColorCode) -> u32 {
+    match code {
+        ColorCode::Black => 0,
+        ColorCode::Red => 0x0000aaff,
+        ColorCode::Green => 0x00aa00ff,
+        ColorCode::Yellow => 0x0055aaff,
+        ColorCode::Blue => 0xaa0000ff,
+        ColorCode::Magenta => 0xaa00aaff,
+        ColorCode::Cyan => 0xaaaa00ff,
+        ColorCode::White => 0xaaaaaaff,
+        ColorCode::BrightBlack => 0x555555ff,
+        ColorCode::BrightRed => 0x5555ffff,
+        ColorCode::BrightGreen => 0x55ff55ff,
+        ColorCode::BrightYellow => 0x55ffffff,
+        ColorCode::BrightBlue => 0xff5555ff,
+        ColorCode::BrightMagenta => 0xff55ffff,
+        ColorCode::BrightCyan => 0xffff55ff,
+        ColorCode::BrightWhite => 0xffffffff,
+        _ => 0,
+    }
+}
+
 pub fn init() {
     static LOGGER: SimpleLogger = SimpleLogger;
     log::set_logger(&LOGGER).unwrap();
@@ -108,6 +130,66 @@ pub fn init() {
 }
 
 struct SimpleLogger;
+
+impl SimpleLogger {
+    #[cfg(feature = "graphics")]
+    fn print(
+        &self,
+        level: Level,
+        line: u32,
+        target: &str,
+        cpu_id: usize,
+        level_color: ColorCode,
+        args_color: ColorCode,
+        record: &Record,
+    ) {
+        println!(
+            "[{:<5} {}] ({}:{}) {}",
+            level,
+            cpu_id,
+            target,
+            line,
+            record.args()
+        );
+    }
+
+    #[cfg(not(feature = "graphics"))]
+    fn print(
+        &self,
+        level: Level,
+        line: u32,
+        target: &str,
+        cpu_id: usize,
+        level_color: ColorCode,
+        args_color: ColorCode,
+        record: &Record,
+    ) {
+        #[cfg(feature = "print_timestamp")]
+        {
+            let time_us: u64 = crate::arch::time::get_time_us();
+            let sec = time_us / 1_000_000;
+            let us = time_us % 1_000_000;
+            print(with_color!(
+                ColorCode::White,
+                "[{}] {} {} hvisor: {} {}\n",
+                with_color!(ColorCode::BrightWhite, "{:>5}.{:06}", sec, us),
+                with_color!(level_color, "{:<5}", level),
+                with_color!(ColorCode::BrightGreen, "CPU{}", cpu_id),
+                with_color!(ColorCode::White, "({}:{})", target, line),
+                with_color!(args_color, "{}", record.args()),
+            ));
+        }
+        #[cfg(not(feature = "print_timestamp"))]
+        print(with_color!(
+            ColorCode::White,
+            "[{} {}] {} {}\n",
+            with_color!(level_color, "{:<5}", level),
+            with_color!(ColorCode::White, "{}", cpu_id),
+            with_color!(ColorCode::White, "({}:{})", target, line),
+            with_color!(args_color, "{}", record.args()),
+        ));
+    }
+}
 
 impl Log for SimpleLogger {
     fn enabled(&self, _metadata: &Metadata) -> bool {
@@ -137,30 +219,8 @@ impl Log for SimpleLogger {
             Level::Debug => ColorCode::Cyan,
             Level::Trace => ColorCode::BrightBlack,
         };
-        #[cfg(feature = "print_timestamp")]
-        {
-            let time_us: u64 = crate::arch::time::get_time_us();
-            let sec = time_us / 1_000_000;
-            let us = time_us % 1_000_000;
-            print(with_color!(
-                ColorCode::White,
-                "[{}] {} {} hvisor: {} {}\n",
-                with_color!(ColorCode::BrightWhite, "{:>5}.{:06}", sec, us),
-                with_color!(level_color, "{:<5}", level),
-                with_color!(ColorCode::BrightGreen, "CPU{}", cpu_id),
-                with_color!(ColorCode::White, "({}:{})", target, line),
-                with_color!(args_color, "{}", record.args()),
-            ));
-        }
-        #[cfg(not(feature = "print_timestamp"))]
-        print(with_color!(
-            ColorCode::White,
-            "[{} {}] {} {}\n",
-            with_color!(level_color, "{:<5}", level),
-            with_color!(ColorCode::White, "{}", cpu_id),
-            with_color!(ColorCode::White, "({}:{})", target, line),
-            with_color!(args_color, "{}", record.args()),
-        ));
+
+        self.print(level, line, target, cpu_id, level_color, args_color, record);
     }
 
     fn flush(&self) {}

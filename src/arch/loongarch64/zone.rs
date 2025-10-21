@@ -16,7 +16,7 @@
 //
 use crate::device::irqchip::ls7a2000::chip::get_extioi_sr;
 use crate::{
-    arch::{cpu::this_cpu_id, trap::GLOBAL_TRAP_CONTEXT_HELPER_PER_CPU},
+    arch::{cpu::this_cpu_id, trap::GLOBAL_TRAP_CONTEXT_HELPER_PER_CPU, Stage2PageTable},
     config::*,
     consts::PAGE_SIZE,
     device::virtio_trampoline::mmio_virtio_handler,
@@ -24,8 +24,9 @@ use crate::{
     memory::{
         addr::{align_down, align_up},
         mmio_generic_handler, mmio_perform_access, GuestPhysAddr, HostPhysAddr, MMIOAccess,
-        MemFlags, MemoryRegion,
+        MemFlags, MemoryRegion, MemorySet,
     },
+    pci::pcibar::BarRegion,
     zone::Zone,
     PHY_TO_DMW_UNCACHED,
 };
@@ -115,9 +116,6 @@ impl Zone {
             }
         }
         Ok(())
-    }
-    pub fn isa_init(&mut self, fdt: &fdt::Fdt) {
-        warn!("loongarch64: mm: isa_init do nothing");
     }
     pub fn irq_bitmap_init(&mut self, irqs: &[u32]) {}
 }
@@ -686,7 +684,7 @@ impl Zone {
         self.gpm.delete(vaddr as GuestPhysAddr)
     }
 
-    pub fn arch_zone_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
+    pub fn arch_zone_pre_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
         let vaddr = config.pci_config.ecam_base;
         let size = config.pci_config.ecam_size;
         self.gpm.insert(MemoryRegion::new_with_offset_mapper(
@@ -696,5 +694,25 @@ impl Zone {
             MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
         ))?;
         self.gpm.delete(vaddr as GuestPhysAddr)
+    }
+
+    pub fn arch_zone_post_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
+        Ok(())
+    }
+}
+
+impl BarRegion {
+    pub fn arch_set_bar_region_start(&mut self, cpu_base: usize, pci_base: usize) {
+        self.start = crate::memory::addr::align_down(cpu_base + self.start - pci_base);
+    }
+
+    pub fn arch_insert_bar_region(&self, gpm: &mut MemorySet<Stage2PageTable>, zone_id: usize) {
+        gpm.insert(MemoryRegion::new_with_offset_mapper(
+            self.start as GuestPhysAddr,
+            self.start,
+            self.size,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ))
+        .ok();
     }
 }

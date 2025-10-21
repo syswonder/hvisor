@@ -12,11 +12,12 @@
 //      https://www.syswonder.org
 //
 // Authors:
-//
+//    Hangqi Ren <2572131118@qq.com>
 #![allow(unused_variables)]
 #![allow(dead_code)]
 use crate::device::irqchip::gicv2::gic_ref::GicRef;
 use crate::device::irqchip::gicv2::GICV2;
+use spin::Once;
 /// gich layout definition and functions for gich operations.
 /// author : ForeverYolo
 use tock_registers::interfaces::{Readable, Writeable};
@@ -67,8 +68,13 @@ register_structs! {
 }
 unsafe impl Sync for GicHypervisorInterface {}
 // Each CPU holds one GICH.
-pub static GICH: GicRef<GicHypervisorInterface> =
-    unsafe { GicRef::new(GICV2.gich_base as *const GicHypervisorInterface) };
+pub static GICH: Once<GicRef<GicHypervisorInterface>> = Once::new();
+
+pub fn gich_init(gich_base: usize) {
+    unsafe {
+        GICH.call_once(|| GicRef::new(gich_base as *const GicHypervisorInterface));
+    }
+}
 
 impl GicHypervisorInterface {
     // init GICH for each CPU.

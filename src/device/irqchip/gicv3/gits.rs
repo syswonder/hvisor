@@ -37,7 +37,7 @@ pub const GITS_UMSIR: usize = 0x0048; // unmapped msi
 pub const GITS_CBASER: usize = 0x0080; // the addr of command queue
 pub const GITS_CWRITER: usize = 0x0088; // rw, write an command to the cmdq, write this reg to tell hw
 pub const GITS_CREADR: usize = 0x0090; // read-only, hardware changes it
-pub const GITS_BASER: usize = 0x0100; // itt, desc
+pub const GITS_BASER: usize = 0x0100; // device table, itt, desc
 pub const GITS_COLLECTION_BASER: usize = GITS_BASER + 0x8;
 pub const GITS_TRANSLATER: usize = 0x10000 + 0x0040; // to signal an interrupt, written by devices
 
@@ -73,19 +73,25 @@ fn vicid_to_icid(vicid: u64, cpu_bitmap: u64) -> Option<u64> {
 // created by root linux, and make a virtual one to non root
 pub struct DeviceTable {
     baser: usize,
+    mask: usize,
+    fix_val: usize,
 }
 
 impl DeviceTable {
     fn new() -> Self {
         let dt_baser_reg = host_gits_base() + GITS_BASER;
         let dt_baser = unsafe { ptr::read_volatile(dt_baser_reg as *mut u64) };
+        let mask = 0x71f000000000000;
+        let fix_val = dt_baser & mask;
         Self {
             baser: dt_baser as _,
+            mask: mask as _,
+            fix_val: fix_val as _,
         }
     }
 
     fn set_baser(&mut self, value: usize) {
-        self.baser = value;
+        self.baser = (value & !self.mask) | self.fix_val;
     }
 
     fn read_baser(&self) -> usize {
@@ -95,19 +101,25 @@ impl DeviceTable {
 
 pub struct CollectionTable {
     baser: usize,
+    mask: usize,
+    fix_val: usize,
 }
 
 impl CollectionTable {
     fn new() -> Self {
         let ct_baser_reg = host_gits_base() + GITS_COLLECTION_BASER;
         let ct_baser = unsafe { ptr::read_volatile(ct_baser_reg as *mut u64) };
+        let mask = 0x71f000000000000;
+        let fix_val = ct_baser & mask;
         Self {
             baser: ct_baser as _,
+            mask: mask as _,
+            fix_val: fix_val as _,
         }
     }
 
     fn set_baser(&mut self, value: usize) {
-        self.baser = value;
+        self.baser = (value & !self.mask) | self.fix_val;
     }
 
     fn read_baser(&self) -> usize {
@@ -121,8 +133,8 @@ pub struct Cmdq {
     writer: usize,
     frame: Frame,
 
-    phy_base_list: [usize; MAX_ZONE_NUM],
-    cbaser_list: [usize; MAX_ZONE_NUM],
+    phy_base_list: [usize; MAX_ZONE_NUM], // the real phy addr for vm cmdq
+    cbaser_list: [usize; MAX_ZONE_NUM],   // the v register for vm
     creadr_list: [usize; MAX_ZONE_NUM],
     cwriter_list: [usize; MAX_ZONE_NUM],
     cmdq_page_num: [usize; MAX_ZONE_NUM],
@@ -131,7 +143,6 @@ pub struct Cmdq {
 impl Cmdq {
     fn new() -> Self {
         let f = Frame::new_contiguous_with_base(CMDQ_PAGES_NUM, 16).unwrap();
-        info!("its cmdq base: 0x{:x}", f.start_paddr());
         let r = Self {
             phy_addr: f.start_paddr(),
             readr: 0,
@@ -154,8 +165,8 @@ impl Cmdq {
         val = val | (CMDQ_PAGES_NUM - 1); // 16 contigous 4KB pages
         let ctrl = host_gits_base() + GITS_CTRL;
         unsafe {
-            let origin_ctrl = ptr::read_volatile(ctrl as *mut u64);
-            ptr::write_volatile(ctrl as *mut u64, origin_ctrl & 0xfffffffffffffffeu64); // turn off, vm will turn on this ctrl
+            let origin_ctrl = ptr::read_volatile(ctrl as *mut u32);
+            ptr::write_volatile(ctrl as *mut u32, origin_ctrl & 0xfffffffeu32); // turn off, vm will turn on this ctrl
             ptr::write_volatile(reg as *mut u64, val as u64);
             ptr::write_volatile(writer as *mut u64, 0 as u64); // init cwriter
         }
@@ -164,9 +175,15 @@ impl Cmdq {
     fn set_cbaser(&mut self, zone_id: usize, value: usize) {
         assert!(zone_id < MAX_ZONE_NUM, "Invalid zone id!");
         self.cbaser_list[zone_id] = value;
-        self.phy_base_list[zone_id] = value & 0xffffffffff000;
+        let gpa_base = value & 0xffffffffff000;
+        unsafe {
+            let phy_base = match this_zone().read().gpm.page_table_query(gpa_base) {
+                Ok(p) => self.phy_base_list[zone_id] = p.0,
+                _ => {}
+            };
+        }
         self.cmdq_page_num[zone_id] = (value & 0xff) + 1; // get the page num
-        info!(
+        debug!(
             "zone_id: {}, cmdq base: {:#x}, page num: {}",
             zone_id, self.phy_base_list[zone_id], self.cmdq_page_num[zone_id]
         );
@@ -182,7 +199,7 @@ impl Cmdq {
         if value == self.creadr_list[zone_id] {
             // if the off vmm gonna read is equal to the cwriter, it means that
             // the first write cmd is not sent to the hw, so we ignore it.
-            trace!("ignore first write");
+            debug!("ignore first write");
         } else {
             self.insert_cmd(zone_id, value);
         }
@@ -205,7 +222,7 @@ impl Cmdq {
         self.creadr_list[zone_id] = writer;
     }
 
-    // it's ok to add qemu-args: -trace gicv3_gits_cmd_*, remember to remain `enable one lpi`
+    // it's ok to add qemu-args: -info gicv3_gits_cmd_*, remember to remain `enable one lpi`
     // we need changge vicid to icid here
     fn analyze_cmd(&self, value: [u64; 4]) -> [u64; 4] {
         let code = (value[0] & 0xff) as usize;
@@ -223,7 +240,7 @@ impl Cmdq {
                 new_cmd[2] &= !0xffffu64;
                 new_cmd[2] |= icid & 0xffff;
                 enable_one_lpi((event - 8192) as _);
-                info!(
+                debug!(
                     "MAPI cmd, for device {:#x}, event = intid = {:#x} -> vicid {:#x} (icid {:#x})",
                     id >> 32,
                     event,
@@ -233,10 +250,25 @@ impl Cmdq {
             }
             0x08 => {
                 let id = value[0] & 0xffffffff00000000;
-                let itt_base = (value[2] & 0x000fffffffffffff) >> 8;
-                trace!(
+                let itt_base = value[2] & 0x000fffffffffff00; // the lowest 8 bits are zeros
+                debug!(
+                    "MAPD cmd, for device {:#x}, itt base {:#x}",
+                    id >> 32,
+                    itt_base
+                );
+                let phys_itt_base = unsafe {
+                    this_zone()
+                        .read()
+                        .gpm
+                        .page_table_query(itt_base as _)
+                        .unwrap()
+                        .0
+                };
+                new_cmd[2] &= !0x000fffffffffff00u64;
+                new_cmd[2] |= phys_itt_base as u64;
+                debug!(
                     "MAPD cmd, set ITT: {:#x} to device {:#x}",
-                    itt_base,
+                    phys_itt_base,
                     id >> 32
                 );
             }
@@ -250,7 +282,7 @@ impl Cmdq {
                 new_cmd[2] &= !0xffffu64;
                 new_cmd[2] |= icid & 0xffff;
                 enable_one_lpi((intid - 8192) as _);
-                info!(
+                debug!(
                     "MAPTI cmd, for device {:#x}, event {:#x} -> vicid {:#x} (icid {:#x}) + intid {:#x}",
                     id >> 32,
                     event,
@@ -266,33 +298,34 @@ impl Cmdq {
                 new_cmd[2] &= !0xffffu64;
                 new_cmd[2] |= icid & 0xffff;
                 let rd_base = (value[2] >> 16) & 0x7ffffffff;
-                info!(
+                debug!(
                     "MAPC cmd, vicid {:#x} (icid {:#x}) -> redist {:#x}",
                     vicid, icid, rd_base
                 );
             }
             0x05 => {
-                trace!("SYNC cmd");
+                debug!("SYNC cmd");
             }
             0x04 => {
-                trace!("CLEAR cmd");
+                debug!("CLEAR cmd");
             }
             0x0f => {
-                trace!("DISCARD cmd");
+                debug!("DISCARD cmd");
             }
             0x03 => {
-                trace!("INT cmd");
+                debug!("INT cmd");
             }
             0x0c => {
-                trace!("INV cmd");
+                debug!("INV cmd");
             }
             0x0d => {
-                trace!("INVALL cmd");
+                debug!("INVALL cmd");
             }
             _ => {
-                trace!("other cmd, code: 0x{:x}", code);
+                debug!("other cmd, code: 0x{:x}", code);
             }
         }
+
         new_cmd
     }
 
@@ -312,7 +345,7 @@ impl Cmdq {
         };
         let cmd_num = cmd_size / PER_CMD_BYTES;
 
-        trace!("cmd size: {:#x}, cmd num: {:#x}", cmd_size, cmd_num);
+        debug!("cmd size: {:#x}, cmd num: {:#x}", cmd_size, cmd_num);
 
         let mut vm_cmdq_addr = zone_addr + origin_readr;
         let mut real_cmdq_addr = self.phy_addr + self.readr;
@@ -342,10 +375,9 @@ impl Cmdq {
             loop {
                 self.readr = (ptr::read_volatile(readr as *mut u64)) as usize; // hw readr
                 if self.readr == self.writer {
-                    trace!(
+                    debug!(
                         "readr={:#x}, writer={:#x}, its cmd end",
-                        self.readr,
-                        self.writer
+                        self.readr, self.writer
                     );
                     break;
                 } else {

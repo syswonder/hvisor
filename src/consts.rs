@@ -32,7 +32,7 @@ pub const MAX_CPU_NUM: usize = BOARD_NCPUS;
 
 pub const MAX_ZONE_NUM: usize = 4;
 
-pub const MAX_WAIT_TIMES: usize = 10000000;
+pub const MAX_WAIT_TIMES: usize = 100000000;
 
 pub fn hv_start() -> VirtAddr {
     skernel as _

@@ -22,12 +22,8 @@ use crate::hypercall::HyperCallResult;
 
 impl<'a> HyperCall<'a> {
     pub fn hv_ivc_info(&mut self, ivc_info_ipa: u64) -> HyperCallResult {
-        warn!("hv_ivc_info is not implemented for LoongArch64");
+        warn!("hv_ivc_info is not implemented for Risc-V");
         HyperCallResult::Ok(0)
-    }
-
-    pub fn translate_ipa_to_hva(&mut self, ipa: u64) -> u64 {
-        return ipa;
     }
 
     pub fn wait_for_interrupt(&mut self, irq_list: &mut [u64; MAX_DEVS + 1]) {
@@ -58,5 +54,10 @@ impl<'a> HyperCall<'a> {
     pub fn check_cpu_id(&self) {
         let cpuid = this_cpu_id();
         trace!("CPU ID: {} Start Zone", cpuid);
+    }
+
+    pub fn hv_virtio_get_irq(&self, virtio_irq: *mut u32) -> HyperCallResult {
+        trace!("hv_virtio_get_irq is not need for RISC-V");
+        HyperCallResult::Ok(0)
     }
 }

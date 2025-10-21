@@ -15,20 +15,15 @@ buddy_system_allocator = "0.8"
 tock-registers = "0.8"
 lazy_static = { version = "1.4", features = ["spin_no_std"] }
 bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev = "03bd9909" }
-fdt = { path = "./vendor/fdt" }
 qemu-exit = "3.0.2"
 cortex-a = "8.1.1"
 cfg-if = "1.0"
 bitvec = { version="1.0.1", default-features = false, features = ["atomic", "alloc"] }
 heapless = { version = "0.8.0 "}
 
-[dependencies.fdt-rs]
-version = "0.4.5"
-default-features = false
-
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 aarch64-cpu = "9.4.0"
-psci = { version = "0.1.0", default-features = false, features = ["smc"]}
+psci = { version = "0.1.0", default-features = false, features = ["smc"] }
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
 sbi-rt = { version = "0.0.3", features = ["legacy"] }
@@ -43,10 +38,11 @@ riscv-pac = "0.2.0"
 loongArch64 = "0.2.5"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
-x86 = "0.52.0"
+x86 = "=0.52.0"
 x86_64 = "=0.14.10"
-x2apic = "0.4.3"
-raw-cpuid = "10.7.0"
+x2apic = "=0.4.3"
+raw-cpuid = "=10.7.0"
+acpi = "=5.2.0"
 
 [features]
 ############# general ##############
@@ -66,6 +62,7 @@ imx_uart = []
 uart_16550 = []
 sifive_ccache = []
 eic7700_sysreg = []
+uart16550a = []
 
 ############## riscv64 #############
 # irqchip driver
@@ -85,6 +82,9 @@ loongson_uart = []
 # cpu (not used for now)
 loongson_3a5000 = []
 loongson_3a6000 = []
+
+############# x86_64 ###############
+graphics = []
 
 
 [profile.dev]

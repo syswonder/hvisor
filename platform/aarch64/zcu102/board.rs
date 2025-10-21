@@ -15,7 +15,7 @@
 //  ForeverYolo <2572131118@qq.com>
 use crate::config::HvConfigMemoryRegion;
 use crate::{
-    arch::{mmu::MemoryType, zone::HvArchZoneConfig},
+    arch::{mmu::MemoryType, zone::{GicConfig, Gicv2Config, HvArchZoneConfig},},
     config::*,
 };
 
@@ -116,20 +116,18 @@ pub const ROOT_ZONE_IRQS: [u32; 11] = [53, 81, 175, 176, 177, 178, 64, 50, 48, 4
 // serial-mmc-pmu-pmu-pmu-pmu-(hvisor_virtio_device)-gpio-i2c(ff030000)-i2c(ff020000)-ethernet
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
-    gicd_base: 0xf9010000,
-    gicd_size: 0x10000,
-    gicr_base: 0x80a0000,
-    gicr_size: 0xf60000,
-    gits_base: 0x20000,
-    gits_size: 0x20000,
-    gicc_base: 0xf9020000,
-    gicc_size: 0x20000,
-    gicc_offset: 0xf000,
-    gich_base: 0xf9040000,
-    gich_size: 0x20000,
-    gicv_base: 0xf9060000,
-    gicv_size: 0x20000,
     is_aarch32: 0,
+    gic_config: GicConfig::Gicv2(Gicv2Config {
+        gicd_base: 0xf9010000,
+        gicd_size: 0x10000,
+        gicc_base: 0xf9020000,
+        gicc_size: 0x20000,
+        gicc_offset: 0xf000,
+        gich_base: 0xf9040000,
+        gich_size: 0x20000,
+        gicv_base: 0xf9060000,
+        gicv_size: 0x20000,
+    }),
 };
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];

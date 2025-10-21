@@ -39,6 +39,7 @@ pub struct Zone {
     pub irq_bitmap: [u32; 1024 / 32],
     pub gpm: MemorySet<Stage2PageTable>,
     pub pciroot: PciRoot,
+    pub iommu_pt: Option<MemorySet<Stage2PageTable>>,
     pub is_err: bool,
 }
 
@@ -53,6 +54,11 @@ impl Zone {
             mmio: Vec::new(),
             irq_bitmap: [0; 1024 / 32],
             pciroot: PciRoot::new(),
+            iommu_pt: if cfg!(feature = "iommu") {
+                Some(new_s2_memory_set())
+            } else {
+                None
+            },
             is_err: false,
         }
     }
@@ -204,9 +210,32 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     zone.pt_init(config.memory_regions()).unwrap();
     zone.mmio_init(&config.arch_config);
 
-    zone.arch_zone_configuration(config)?;
+    let mut cpu_num = 0;
+    for cpu_id in config.cpus().iter() {
+        if let Some(zone) = get_cpu_data(*cpu_id as _).zone.clone() {
+            return hv_result_err!(
+                EBUSY,
+                format!(
+                    "Failed to create zone: cpu {} already belongs to zone {}",
+                    cpu_id,
+                    zone.read().id
+                )
+            );
+        }
+        zone.cpu_set.set_bit(*cpu_id as _);
+        cpu_num += 1;
+    }
+    zone.cpu_num = cpu_num;
+    info!("zone cpu_set: {:#b}", zone.cpu_set.bitmap);
+    let cpu_set = zone.cpu_set;
+
+    zone.arch_zone_pre_configuration(config)?;
     // #[cfg(target_arch = "aarch64")]
     // zone.ivc_init(config.ivc_config());
+
+    #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
+    zone.iommu_pt_init(config.memory_regions(), &config.arch_config)
+        .unwrap();
 
     /* loongarch page table emergency */
     /* Kai: Maybe unnecessary but i can't boot vms on my 3A6000 PC without this function. */
@@ -222,24 +251,8 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
         &config.alloc_pci_devs,
     );
 
-    let mut cpu_num = 0;
+    zone.arch_zone_post_configuration(config)?;
 
-    for cpu_id in config.cpus().iter() {
-        if let Some(zone) = get_cpu_data(*cpu_id as _).zone.clone() {
-            return hv_result_err!(
-                EBUSY,
-                format!(
-                    "Failed to create zone: cpu {} already belongs to zone {}",
-                    cpu_id,
-                    zone.read().id
-                )
-            );
-        }
-        zone.cpu_set.set_bit(*cpu_id as _);
-        cpu_num += 1;
-    }
-
-    zone.cpu_num = cpu_num;
     // Initialize the virtual interrupt controller, it needs zone.cpu_num
     zone.virqc_init(config);
 
@@ -254,8 +267,6 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
             dtb_ipa = region.virtual_start + config.dtb_load_paddr - region.physical_start;
         }
     }
-    info!("zone cpu_set: {:#b}", zone.cpu_set.bitmap);
-    let cpu_set = zone.cpu_set;
 
     let new_zone_pointer = Arc::new(RwLock::new(zone));
     {

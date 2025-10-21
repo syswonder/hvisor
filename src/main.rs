@@ -28,6 +28,7 @@
 #![no_main]
 #![feature(asm_const)]
 #![feature(naked_functions)]
+#![feature(concat_idents)]
 // #![feature(core_panic)]
 // #![deny(warnings, missing_docs)]
 #![feature(proc_macro_hygiene)]
@@ -45,8 +46,6 @@ mod error;
 extern crate log;
 #[macro_use]
 extern crate lazy_static;
-
-extern crate fdt_rs;
 
 #[macro_use]
 mod logging;
@@ -68,7 +67,7 @@ mod pci;
 mod tests;
 
 use crate::arch::iommu::iommu_init;
-use crate::arch::mm::arch_setup_parange;
+use crate::arch::mm::{arch_post_heap_init, arch_setup_parange};
 use crate::consts::{hv_end, mem_pool_start, MAX_CPU_NUM};
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
@@ -152,9 +151,8 @@ fn primary_init_late() {
 
 fn per_cpu_init(cpu: &mut PerCpu) {
     if cpu.zone.is_none() {
-        warn!("zone is not created for cpu {}", cpu.id);
+        warn!("CPU {} is not bound to zone0 (root zone)", cpu.id);
     }
-    info!("CPU {} hv_pt_install OK.", cpu.id);
 }
 
 fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
@@ -180,6 +178,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         memory::heap::init();
         memory::heap::test();
         arch::time::init_timebase();
+        arch_post_heap_init(host_dtb);
     }
 
     let cpu = PerCpu::new(cpuid);

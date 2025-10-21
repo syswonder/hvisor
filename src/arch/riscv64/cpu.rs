@@ -24,6 +24,7 @@ use crate::{
         addr::PHYS_VIRT_OFFSET, mm::PARKING_MEMORY_SET, GuestPhysAddr, HostPhysAddr, MemFlags,
         MemoryRegion, MemorySet, VirtAddr, PARKING_INST_PAGE,
     },
+    zone::find_zone,
 };
 
 #[repr(C)]
@@ -228,4 +229,13 @@ pub fn store_cpu_pointer_to_reg(pointer: usize) {
     write_csr!(CSR_SSCRATCH, pointer);
     // println!("Stored CPU pointer to CSR_SSCRATCH: {:#x}", pointer);
     return;
+}
+
+pub fn get_target_cpu(irq: usize, zone_id: usize) -> usize {
+    find_zone(zone_id)
+        .unwrap()
+        .read()
+        .cpu_set
+        .first_cpu()
+        .unwrap()
 }
