@@ -14,10 +14,12 @@
 // Authors:
 //
 use crate::{
+    arch::Stage2PageTable,
     config::*,
     device::virtio_trampoline::{mmio_virtio_handler, VIRTIO_BRIDGE},
     error::HvResult,
-    memory::{addr::align_up, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion},
+    memory::{addr::align_up, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet},
+    pci::pcibar::BarRegion,
     percpu::get_cpu_data,
     zone::Zone,
 };
@@ -56,9 +58,13 @@ impl Zone {
         Ok(())
     }
 
-    pub fn arch_zone_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
+    pub fn arch_zone_pre_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
         // We do not have any specific architecture configuration for RISC-V.
         // If needed, this function can be extended in the future.
+        Ok(())
+    }
+
+    pub fn arch_zone_post_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
         Ok(())
     }
 }
@@ -70,4 +76,20 @@ pub struct HvArchZoneConfig {
     pub plic_size: usize,
     pub aplic_base: usize,
     pub aplic_size: usize,
+}
+
+impl BarRegion {
+    pub fn arch_set_bar_region_start(&mut self, cpu_base: usize, pci_base: usize) {
+        self.start = crate::memory::addr::align_down(cpu_base + self.start - pci_base);
+    }
+
+    pub fn arch_insert_bar_region(&self, gpm: &mut MemorySet<Stage2PageTable>, zone_id: usize) {
+        gpm.insert(MemoryRegion::new_with_offset_mapper(
+            self.start as GuestPhysAddr,
+            self.start,
+            self.size,
+            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+        ))
+        .ok();
+    }
 }

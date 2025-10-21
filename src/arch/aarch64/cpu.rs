@@ -22,6 +22,7 @@ use crate::{
     },
     percpu::this_cpu_data,
     platform::BOARD_MPIDR_MAPPINGS,
+    zone::find_zone,
 };
 use aarch64_cpu::registers::{
     Readable, Writeable, ELR_EL2, HCR_EL2, MPIDR_EL1, SCTLR_EL1, SPSR_EL2, VTCR_EL2,
@@ -267,4 +268,13 @@ pub fn this_cpu_id() -> usize {
 pub fn store_cpu_pointer_to_reg(pointer: usize) {
     // println!("aarch64 doesn't support store cpu pointer to reg, pointer: {:#x}", pointer);
     return;
+}
+
+pub fn get_target_cpu(irq: usize, zone_id: usize) -> usize {
+    find_zone(zone_id)
+        .unwrap()
+        .read()
+        .cpu_set
+        .first_cpu()
+        .unwrap()
 }

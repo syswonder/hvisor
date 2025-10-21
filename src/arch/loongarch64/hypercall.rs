@@ -26,10 +26,6 @@ impl<'a> HyperCall<'a> {
         HyperCallResult::Ok(0)
     }
 
-    pub fn translate_ipa_to_hva(&mut self, ipa: u64) -> u64 {
-        return ipa | crate::arch::mm::LOONGARCH64_CACHED_DMW_PREFIX;
-    }
-
     pub fn wait_for_interrupt(&mut self, irq_list: &mut [u64; MAX_DEVS + 1]) {
         use crate::device::irqchip::ls7a2000::*;
         let status = GLOBAL_IRQ_INJECT_STATUS.lock();
@@ -58,12 +54,17 @@ impl<'a> HyperCall<'a> {
     }
 
     pub fn hv_get_real_list_pa(&mut self, list_addr: u64) -> u64 {
-        // RISC-V does not have a specific prefix for cached memory, so we return the address as is.
+        // LoongArch64 does not have a specific prefix for cached memory, so we return the address as is.
         return list_addr;
     }
 
     pub fn check_cpu_id(&self) {
         let cpuid = this_cpu_id();
         assert_eq!(cpuid, 0);
+    }
+
+    pub fn hv_virtio_get_irq(&self, virtio_irq: *mut u32) -> HyperCallResult {
+        trace!("hv_virtio_get_irq is not need for LoongArch64");
+        HyperCallResult::Ok(0)
     }
 }
