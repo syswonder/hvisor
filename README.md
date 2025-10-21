@@ -23,34 +23,36 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
   - CPU Virtualization: Static partitioning of physical CPUs (pCPUs), without dynamic scheduling.
   - Memory Virtualization: Pre-allocated virtual machine memory space via configuration files.
   - I/O Virtualization: Supports device passthrough and virtio paravirtualization.
-- **Multi-platform Support**: Supports various architectures, including `aarch64`, `riscv64`, and `loongarch64`.
+- **Multi-platform Support**: Supports various architectures, including `aarch64`, `riscv64`, `loongarch64` and `x86_64`.
 - **Virtual Machine Management**: Virtual machines are managed through a Linux environment in zone0 (root-linux), with basic management tasks (create, start, stop, delete) handled via the command-line tool [hvisor-tool](https://github.com/syswonder/hvisor-tool).
 - **Formal Verification**: Part of the hvisor code is undergoing formal verification using the [verus](https://github.com/verus-lang/verus) tool.
 
 ## Device Support
 
-| **Category**                     | **Device**             | **Supported Architectures**           | **Notes**                              |
-|----------------------------------|------------------------|---------------------------------------|----------------------------------------|
-| **Virtio Devices**               | virtio-blk             | `aarch64`, `riscv64`, `loongarch64`   |                                        |
-|                                  | virtio-net             | `aarch64`                             |                                        |
-|                                  | virtio-console         | `aarch64`, `riscv64`, `loongarch64`   |                                        |
-|                                  | virtio-gpu             | `aarch64`                             | QEMU only                              |
-| **Serial Devices/UARTs**         | PL011                  | `aarch64`                             |                                        |
-|                                  | imx-uart               | `aarch64`                             | NXP i.MX8MP                            |
-|                                  | NS16550A               | `loongarch64`                         |                                        |
-|                                  | xuartps                | `aarch64`                             | Xilinx Ultrascale+ MPSoC ZCU102        |
-|                                  | uart16550              | `aarch64`                             | Rockchip RK3568/RK3588, Forlinx OK6254-C|
-| **Interrupt Controllers**        | GIC irq controller     | `aarch64`                             |                                        |
-|                                  | 7A2000 irq controller  | `loongarch64`                         |                                        |
-|                                  | PLIC                   | `riscv64`                             |                                        |
-|                                  | AIA                    | `riscv64`                             | MSI mode only                          |
-| **Device Passthrough(Zone0)**    | All                    |  All                                  |                                        |
-| **Device Passthrough(ZoneU)**    | PCIe                   | `aarch64`, `riscv64`, `loongarch64`   | Testing needed                         |
-|                                  | GPU / HDMI             | `aarch64`, `loongarch64`              | NXP i.MX8MP, 3A6000                    |
-|                                  | eMMC                   | `aarch64`, `riscv64`                  | NXP i.MX8MP                            |
-|                                  | USB                    | `aarch64`                             | NXP i.MX8MP                            |
-|                                  | SATA                   | `riscv64`, `loongarch64`              | megrez, 3A6000                         |
-|                                  | Ethernet               | `aarch64`, `riscv64`, `loongarch64`   | NXP i.MX8MP, megrez, 3A6000            |
+| **Category**                     | **Device**             | **Supported Architectures**                  | **Notes**                              |
+|----------------------------------|------------------------|----------------------------------------------|----------------------------------------|
+| **Virtio Devices**               | virtio-blk             | `aarch64`, `riscv64`, `loongarch64`,`x86_64` |                                        |
+|                                  | virtio-net             | `aarch64`,`x86_64`                           |                                        |
+|                                  | virtio-console         | `aarch64`, `riscv64`, `loongarch64`,`x86_64` |                                        |
+|                                  | virtio-gpu             | `aarch64`                                    | QEMU only                              |
+| **Serial Devices/UARTs**         | PL011                  | `aarch64`                                    |                                        |
+|                                  | imx-uart               | `aarch64`                                    | NXP i.MX8MP                            |
+|                                  | NS16550A               | `loongarch64`                                |                                        |
+|                                  | xuartps                | `aarch64`                                    | Xilinx Ultrascale+ MPSoC ZCU102        |
+|                                  | uart16550              | `aarch64`                                    | Rockchip RK3568/RK3588, Forlinx OK6254-C|
+|                                  | uart16550a             | `x86_64`                                     |                                        |
+| **Interrupt Controllers**        | GIC irq controller     | `aarch64`                                    |                                        |
+|                                  | 7A2000 irq controller  | `loongarch64`                                |                                        |
+|                                  | PLIC                   | `riscv64`                                    |                                        |
+|                                  | AIA                    | `riscv64`                                    | MSI mode only                          |
+|                                  | APIC                   | `x86_64`                                     |                                        |
+| **Device Passthrough(Zone0)**    | All                    |  All                                         |                                        |
+| **Device Passthrough(ZoneU)**    | PCIe                   | `aarch64`, `riscv64`, `loongarch64`,`x86_64` | Testing needed                         |
+|                                  | GPU / HDMI             | `aarch64`, `loongarch64`                     | NXP i.MX8MP, 3A6000                    |
+|                                  | eMMC                   | `aarch64`, `riscv64`                         | NXP i.MX8MP                            |
+|                                  | USB                    | `aarch64`                                    | NXP i.MX8MP                            |
+|                                  | SATA                   | `riscv64`, `loongarch64`                     | megrez, 3A6000                         |
+|                                  | Ethernet               | `aarch64`, `riscv64`, `loongarch64`,`x86_64` | NXP i.MX8MP, megrez, 3A6000            |
 
 ## Supported Boards
 
@@ -78,8 +80,8 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
 
 ### x86_64
 
-- [ ] QEMU virt x86_64
-- [ ] ASUS NUC14MNK
+- [x] QEMU Q35
+- [x] ASUS NUC14MNK
 
 ## Supported Guest OS
 
@@ -96,7 +98,6 @@ Please refer to the hvisor documentation for quick start guides, build and run i
 
 ## Roadmap
 
-- Support for `x86_64` architecture
 - Support for Android
 - Support for OpenHarmony  
 - Support for ARMv9
