@@ -12,22 +12,10 @@
 //      https://www.syswonder.org
 //
 // Authors:
+//      Jingyu Liu <liujingyu24s@ict.ac.cn>
 //
-pub mod consts;
-pub mod cpu;
-pub mod entry;
-pub mod hypercall;
-pub mod iommu;
-pub mod ipi;
-pub mod ivc;
-pub mod mm;
-pub mod mmu;
-pub mod paging;
-pub mod s2pt;
-pub mod sysreg;
-pub mod time;
-pub mod trap;
-pub mod zone;
 
-pub use s2pt::stage2_mode_detect;
-pub use s2pt::Stage2PageTable;
+/// Note: You should call this function once during initialization.
+pub fn init_timebase() {
+    info!("Initializing aarch64 timebase not implemented yet.");
+}

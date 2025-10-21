@@ -179,7 +179,6 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         is_primary = true;
         memory::heap::init();
         memory::heap::test();
-        #[cfg(feature = "print_timestamp")]
         arch::time::init_timebase();
     }
 
