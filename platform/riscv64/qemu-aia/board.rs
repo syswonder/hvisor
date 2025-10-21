@@ -19,6 +19,8 @@ pub const BOARD_NAME: &str = "qemu-aia";
 
 pub const BOARD_NCPUS: usize = 4;
 
+pub const TIMEBASE_FREQ: u64 = 10_000_000; // 10MHz
+
 pub const ACLINT_SSWI_BASE: usize = 0x2F00000;
 
 // This device is used for qemu-quit.

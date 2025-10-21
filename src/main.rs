@@ -177,6 +177,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
         is_primary = true;
         memory::heap::init();
         memory::heap::test();
+        arch::time::init_timebase();
         arch_post_heap_init(host_dtb);
     }
 

@@ -300,105 +300,6 @@
 				dsp@0 {
 				};
 			};
-
-			es_dsp@1 {
-				#address-cells = <0x01>;
-				#size-cells = <0x01>;
-				compatible = "eswin-dsp\0cdns,xrp-hw-eswin";
-				ranges = <0x28000000 0x00 0x5b008000 0x8000 0x28100000 0x00 0x5b140000 0x20000 0x28120000 0x00 0x5b160000 0x20000>;
-				clocks = <0x03 0x2a9>;
-				clock-names = "aclk";
-				operating-points-v2 = <0x22>;
-				dsp_mbox = <0x24>;
-				device-irq = <0x0d 0x50ab0000 0x40 0x50aa0000 0x01 0x50a40000>;
-				device-uart = <0x50900000>;
-				device-irq-mode = <0x01>;
-				host-irq-mode = <0x01>;
-				firmware-name = "eic7700_dsp_fw";
-				process-id = <0x01>;
-				iommus = <0x16 0x13>;
-				tbus = <0x71>;
-				dma-noncoherent;
-				numa-node-id = <0x00>;
-				aux-e31-dtim = <0x5a110000>;
-				status = "okay";
-
-				dsp@0 {
-				};
-			};
-
-			es_dsp@2 {
-				#address-cells = <0x01>;
-				#size-cells = <0x01>;
-				compatible = "eswin-dsp\0cdns,xrp-hw-eswin";
-				ranges = <0x28000000 0x00 0x5b010000 0x8000 0x28100000 0x00 0x5b180000 0x20000 0x28120000 0x00 0x5b1a0000 0x20000>;
-				clocks = <0x03 0x2aa>;
-				clock-names = "aclk";
-				operating-points-v2 = <0x22>;
-				dsp_mbox = <0x25>;
-				device-irq = <0x0f 0x50ad0000 0x80 0x50ac0000 0x01 0x50a40000>;
-				device-uart = <0x50900000>;
-				device-irq-mode = <0x01>;
-				host-irq-mode = <0x01>;
-				firmware-name = "eic7700_dsp_fw";
-				process-id = <0x02>;
-				iommus = <0x16 0x14>;
-				tbus = <0x72>;
-				dma-noncoherent;
-				numa-node-id = <0x00>;
-				aux-e31-dtim = <0x5a110000>;
-				status = "okay";
-
-				dsp@0 {
-				};
-			};
-
-			es_dsp@3 {
-				#address-cells = <0x01>;
-				#size-cells = <0x01>;
-				compatible = "eswin-dsp\0cdns,xrp-hw-eswin";
-				ranges = <0x28000000 0x00 0x5b018000 0x8000 0x28100000 0x00 0x5b1c0000 0x20000 0x28120000 0x00 0x5b1e0000 0x20000>;
-				clocks = <0x03 0x2ab>;
-				clock-names = "aclk";
-				operating-points-v2 = <0x22>;
-				dsp_mbox = <0x26>;
-				device-irq = <0x11 0x50af0000 0x100 0x50ae0000 0x01 0x50a40000>;
-				device-uart = <0x50900000>;
-				device-irq-mode = <0x01>;
-				host-irq-mode = <0x01>;
-				firmware-name = "eic7700_dsp_fw";
-				process-id = <0x03>;
-				iommus = <0x16 0x15>;
-				tbus = <0x73>;
-				dma-noncoherent;
-				numa-node-id = <0x00>;
-				aux-e31-dtim = <0x5a110000>;
-				status = "okay";
-
-				dsp@0 {
-				};
-			};
-
-			sofdsp@4 {
-				#sound-dai-cells = <0x01>;
-				#address-cells = <0x02>;
-				#size-cells = <0x02>;
-				compatible = "eswin,sof-dsp";
-				reg = <0x00 0x5b018000 0x00 0x8000 0x00 0x5b1c0000 0x00 0x40000>;
-				mbox-names = "dsp-mbox";
-				mboxes = <0x26 0x00>;
-				clocks = <0x03 0x2ab>;
-				clock-names = "aclk";
-				process-id = <0x03>;
-				iommus = <0x16 0x15>;
-				tbus = <0x73>;
-				dma-noncoherent;
-				mailbox-dsp-to-u84-addr = <0x50af0000>;
-				mailbox-u84-to-dsp-addr = <0x50ae0000>;
-				dsp-uart = <0x27>;
-				device-uart-mutex = <0x51820000>;
-				numa-node-id = <0x00>;
-			};
 		};
 
 		mmc@0x50460000 {
@@ -432,24 +333,6 @@
 			enable-data-pullup;
 			no-sdio;
 			no-mmc;
-		};
-
-		mbox@50a00000 {
-			compatible = "eswin,win2030-mailbox";
-			reg = <0x00 0x50a00000 0x00 0x10000 0x00 0x50a10000 0x00 0x10000>;
-			interrupt-parent = <0x10>;
-			interrupts = <0x75>;
-			#mbox-cells = <0x01>;
-			clocks = <0x03 0x27e 0x03 0x27f>;
-			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
-			resets = <0x15 0x0c 0x01 0x15 0x0c 0x02>;
-			reset-names = "rst\0rst_device";
-			lock-bit = <0x01>;
-			irq-bit = <0x02>;
-			numa-node-id = <0x00>;
-			dma-noncoherent;
-			status = "okay";
-			phandle = <0x30>;
 		};
 
 		mbox@50a20000 {
@@ -488,23 +371,6 @@
 			phandle = <0x1e>;
 		};
 
-		mbox@50a60000 {
-			compatible = "eswin,win2030-mailbox";
-			reg = <0x00 0x50a60000 0x00 0x10000 0x00 0x50a70000 0x00 0x10000>;
-			interrupt-parent = <0x10>;
-			interrupts = <0x7b>;
-			#mbox-cells = <0x01>;
-			clocks = <0x03 0x284 0x03 0x285>;
-			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
-			resets = <0x15 0x0c 0x40 0x15 0x0c 0x80>;
-			reset-names = "rst\0rst_device";
-			lock-bit = <0x01>;
-			irq-bit = <0x10>;
-			numa-node-id = <0x00>;
-			dma-noncoherent;
-			status = "okay";
-		};
-
 		mbox@50a80000 {
 			compatible = "eswin,dsp0-mailbox";
 			reg = <0x00 0x50a80000 0x00 0x10000 0x00 0x50a90000 0x00 0x10000>;
@@ -521,60 +387,6 @@
 			dma-noncoherent;
 			status = "okay";
 			phandle = <0x23>;
-		};
-
-		mbox@50aa0000 {
-			compatible = "eswin,dsp1-mailbox";
-			reg = <0x00 0x50aa0000 0x00 0x10000 0x00 0x50ab0000 0x00 0x10000>;
-			interrupt-parent = <0x10>;
-			interrupts = <0x7f>;
-			#mbox-cells = <0x01>;
-			clocks = <0x03 0x288 0x03 0x289>;
-			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
-			resets = <0x15 0x0c 0x400 0x15 0x0c 0x800>;
-			reset-names = "rst\0rst_device";
-			lock-bit = <0x01>;
-			irq-bit = <0x40>;
-			numa-node-id = <0x00>;
-			dma-noncoherent;
-			status = "okay";
-			phandle = <0x24>;
-		};
-
-		mbox@50ac0000 {
-			compatible = "eswin,dsp2-mailbox";
-			reg = <0x00 0x50ac0000 0x00 0x10000 0x00 0x50ad0000 0x00 0x10000>;
-			interrupt-parent = <0x10>;
-			interrupts = <0x81>;
-			#mbox-cells = <0x01>;
-			clocks = <0x03 0x28a 0x03 0x28b>;
-			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
-			resets = <0x15 0x0c 0x1000 0x15 0x0c 0x2000>;
-			reset-names = "rst\0rst_device";
-			lock-bit = <0x01>;
-			irq-bit = <0x80>;
-			numa-node-id = <0x00>;
-			dma-noncoherent;
-			status = "okay";
-			phandle = <0x25>;
-		};
-
-		mbox@50ae0000 {
-			compatible = "eswin,dsp3-mailbox";
-			reg = <0x00 0x50ae0000 0x00 0x10000 0x00 0x50af0000 0x00 0x10000>;
-			interrupt-parent = <0x10>;
-			interrupts = <0x83>;
-			#mbox-cells = <0x01>;
-			clocks = <0x03 0x28c 0x03 0x28d>;
-			clock-names = "pclk_mailbox_host\0pclk_mailbox_device";
-			resets = <0x15 0x0c 0x4000 0x15 0x0c 0x8000>;
-			reset-names = "rst\0rst_device";
-			lock-bit = <0x01>;
-			irq-bit = <0x100>;
-			numa-node-id = <0x00>;
-			dma-noncoherent;
-			status = "okay";
-			phandle = <0x26>;
 		};
 
 		i2c@51838000 {
@@ -622,7 +434,7 @@
 	};
 
 	chosen {
-		bootargs = "root=PARTUUID=b0f77ad6-36cd-4a99-a8c0-31d73649aa09 console=ttyS0,115200 root=PARTUUID=b0f77ad6-36cd-4a99-a8c0-31d73649aa09 rootfstype=ext4 rootwait rw earlycon selinux=0 LANG=en_US.UTF-8 init=/bin/bash";
+		bootargs = "console=ttyS0,115200 root=/dev/mmcblk0p3 rootfstype=ext4 rootwait rw earlycon selinux=0 LANG=en_US.UTF-8 init=/init.sh";
 		stdout-path = "serial0:115200n8";
 
 		domain-config {
@@ -643,6 +455,12 @@
 		numa-node-id = <0x00>;
 	};
 
+	hvisor_virtio_device {
+		compatible = "hvisor";
+    	interrupt-parent = <0x10>;
+    	interrupts = <0x20>;
+	};
+
 	reserved-memory {
 		#address-cells = <0x02>;
 		#size-cells = <0x02>;
@@ -656,6 +474,11 @@
 		hvisor@80200000 {
 			no-map;
 			reg = <0x00 0x80200000 0x00 0x02E00000>;
+		};
+
+		nonroot@83000000 {
+			no-map;
+			reg = <0x00 0x83000000 0x00 0x0D000000>;
 		};
 
 		sprammemory@59000000 {
