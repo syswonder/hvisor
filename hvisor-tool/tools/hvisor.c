@@ -669,8 +669,6 @@ static int zone_start_from_json(const char *json_config_path,
     if (parse_arch_config(root, config))
         goto err_out;
 
-    // parse_pci_config(root, config);
-
 #endif
 
     parse_pci_config(root, config);
