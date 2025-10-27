@@ -91,6 +91,8 @@ pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
         EID_HVISOR => {
             sbi_ret = sbi_hvisor_handler(current_cpu);
         }
+        // Note: hvisor don't suggest to use Legacy Extension.
+        // But for compatibility, we still support some legacy SBI calls.
         // Legacy::Console putchar (usually used), temporily don't support other legacy extensions.
         legacy::LEGACY_CONSOLE_PUTCHAR => {
             sbi_ret = SbiRet {
@@ -104,6 +106,9 @@ pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
                 value: 0,
             };
         }
+        legacy::LEGACY_SET_TIMER => {
+            sbi_ret = sbi_time_handler(time::SET_TIMER, current_cpu);
+        }
         _ => {
             // Pass through SBI call
             warn!("Unsupported SBI extension {:#x} function {:#x}", eid, fid);
@@ -114,8 +119,16 @@ pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
         }
     }
     // Write the return value back to the current_cpu
-    current_cpu.x[10] = sbi_ret.error as usize;
-    current_cpu.x[11] = sbi_ret.value as usize;
+    // Note: for legacy SBI extensions, nothing is returned in a1 register.
+    // For other SBI extensions, a0 is error code, a1 is return value.
+    if eid > 0xF {
+        // Legacy extensions are 0x0 ~ 0xF
+        current_cpu.x[10] = sbi_ret.error as usize;
+        current_cpu.x[11] = sbi_ret.value as usize;
+    } else {
+        // This SBI call returns 0 upon success or an implementation specific negative error code.
+        current_cpu.x[10] = sbi_ret.error as usize;
+    }
 }
 
 /// Handle SBI Base Extension calls.
@@ -148,11 +161,17 @@ pub fn sbi_base_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
                 sbi_ret.value = ext_id;
             }
         }
-        base::GET_MVENDORID | base::GET_MARCHID | base::GET_MIMPID => {
+        base::GET_MVENDORID => {
             // Return a value that is legal for the mvendorid CSR and 0 is always a legal value for this CSR.
+            sbi_ret.value = sbi_rt::get_mvendorid();
+        }
+        base::GET_MARCHID => {
             // Return a value that is legal for the marchid CSR and 0 is always a legal value for this CSR.
+            sbi_ret.value = sbi_rt::get_marchid();
+        }
+        base::GET_MIMPID => {
             // Return a value that is legal for the mimpid CSR and 0 is always a legal value for this CSR.
-            sbi_ret.value = 0;
+            sbi_ret.value = sbi_rt::get_mimpid();
         }
         _ => {
             sbi_ret.error = RET_ERR_NOT_SUPPORTED;
