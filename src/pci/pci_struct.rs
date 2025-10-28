@@ -764,6 +764,14 @@ impl VirtualRootComplex {
     pub fn devs(&mut self) -> &mut BTreeMap<Bdf, VirtualPciConfigSpace> {
         &mut self.devs
     }
+
+    pub fn get(&self, bdf: &Bdf) -> Option<&VirtualPciConfigSpace> {
+        self.devs.get(bdf)
+    }
+
+    pub fn get_mut(&mut self, bdf: &Bdf) -> Option<&mut VirtualPciConfigSpace> {
+        self.devs.get_mut(bdf)
+    }
 }
 
 #[derive(Debug)]
