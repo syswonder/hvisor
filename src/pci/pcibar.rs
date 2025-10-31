@@ -142,6 +142,6 @@ impl VirtPciBar {
     }
 
     pub fn write(&mut self, new_val: u32) {
-        self.val = new_val & self.mask;
+        self.val = (new_val & self.mask) | (self.val & !self.mask);
     }
 }
