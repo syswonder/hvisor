@@ -127,6 +127,28 @@ fn primary_init_early() {
     memory::frame::init();
     memory::frame::test();
     event::init();
+    #[cfg(feature = "mpam")]
+    {
+        use crate::arch::mpam::{
+            configure_mpam_for_system, mpam_verison, MPAM_NODES, MPAM_SYSTEM_CONFIG, TOTAL_MEM_BW,
+        };
+        let mpam_version = mpam_verison();
+        info!(
+            "MPAM extension version: {}.{}",
+            mpam_version >> 4,
+            mpam_version & 0xf
+        );
+        if mpam_version == 0 {
+            warn!("MPAM extension is not supported on this platform.");
+        } else {
+            if configure_mpam_for_system(MPAM_NODES, MPAM_SYSTEM_CONFIG, TOTAL_MEM_BW).is_ok() {
+                use crate::arch::mpam::mpam2_el2_init_partid0;
+
+                info!("MPAM configured for the system successfully.");
+                mpam2_el2_init_partid0();
+            }
+        }
+    }
 
     arch::stage2_mode_detect();
 

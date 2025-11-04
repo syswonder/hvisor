@@ -175,14 +175,21 @@ pub fn mpam2_el2_init_partid0() {
 pub fn mpam_el1_zone_partid_enable(partid_d: u16, partid_i: u16) {
     let val = make_mpam_bundle(true, partid_d, partid_i, 0, 0);
     write_sysreg!(MPAM1_EL1, val);
+    write_sysreg!(MPAM0_EL1, val);
 }
 
 pub fn mpam_enable(partid_d: u16, partid_i: u16) {
+    if mpam_verison() == 0 {
+        return;
+    }
     dump_mpamidr_el1();
     mpam2_el2_init_partid0();
     mpam_el1_zone_partid_enable(partid_d, partid_i);
 }
 
 pub fn mpam_disable() {
+    if mpam_verison() == 0 {
+        return;
+    }
     write_sysreg!(MPAM1_EL1, 0);
 }

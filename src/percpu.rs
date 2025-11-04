@@ -75,6 +75,14 @@ impl PerCpu {
             self.arch_cpu.idle();
         }
         info!("CPU{}: Running the VM...", self.id);
+        #[cfg(feature = "mpam")]
+        {
+            use crate::arch::mpam::mpam_enable;
+
+            let zone_guard = self.zone.as_ref().unwrap().read();
+            mpam_enable(zone_guard.partid_d, zone_guard.partid_i);
+            drop(zone_guard);
+        }
         self.arch_cpu.run();
     }
 

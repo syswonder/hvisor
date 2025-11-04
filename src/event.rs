@@ -119,10 +119,26 @@ pub fn check_events() -> bool {
     let event = fetch_event(cpu_data.id);
     match event {
         Some(IPI_EVENT_WAKEUP) => {
+            #[cfg(feature = "mpam")]
+            {
+                use crate::arch::{mpam::mpam_enable, zone};
+                let zone_guard = cpu_data.zone.as_ref().unwrap().read();
+                mpam_enable(zone_guard.partid_d, zone_guard.partid_i);
+                drop(zone_guard);
+            }
             cpu_data.arch_cpu.run();
             false
         }
         Some(IPI_EVENT_SHUTDOWN) => {
+            #[cfg(feature = "mpam")]
+            {
+                use crate::arch::mpam::{dealloc_partid, mpam_disable};
+
+                let zone_guard = cpu_data.zone.as_ref().unwrap().read();
+                mpam_disable();
+                dealloc_partid(zone_guard.partid_d as usize);
+                drop(zone_guard);
+            }
             cpu_data.arch_cpu.idle();
         }
         Some(IPI_EVENT_VIRTIO_INJECT_IRQ) => {

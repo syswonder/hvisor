@@ -41,9 +41,32 @@ pub struct Zone {
     pub pciroot: PciRoot,
     pub iommu_pt: Option<MemorySet<Stage2PageTable>>,
     pub is_err: bool,
+    #[cfg(feature = "mpam")]
+    pub partid_d: u16,
+    #[cfg(feature = "mpam")]
+    pub partid_i: u16,
 }
 
 impl Zone {
+    #[cfg(feature = "mpam")]
+    pub fn new(zoneid: usize, name: &[u8]) -> Self {
+        use crate::arch::mpam::alloc_partid;
+        let partid = alloc_partid().expect("failed to alloc partid for zone") as u16;
+        Self {
+            name: name.try_into().unwrap(),
+            id: zoneid,
+            gpm: new_s2_memory_set(),
+            cpu_num: 0,
+            cpu_set: CpuSet::new(MAX_CPU_NUM as usize, 0),
+            mmio: Vec::new(),
+            irq_bitmap: [0; 1024 / 32],
+            pciroot: PciRoot::new(),
+            is_err: false,
+            partid_d: partid,
+            partid_i: partid,
+        }
+    }
+    #[cfg(not(feature = "mpam"))]
     pub fn new(zoneid: usize, name: &[u8]) -> Self {
         Self {
             name: name.try_into().unwrap(),

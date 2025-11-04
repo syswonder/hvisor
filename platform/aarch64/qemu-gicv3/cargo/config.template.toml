@@ -4,4 +4,5 @@ rustflags = [
     "-Clink-arg=-Tplatform/__ARCH__/__BOARD__/linker.ld",
     "-Ctarget-feature=+a72,+v8a,+strict-align,-neon,-fp-armv8",
     "-Cforce-frame-pointers=yes",
+    "-Ctarget-feature=+mpam"
 ]
