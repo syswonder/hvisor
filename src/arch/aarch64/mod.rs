@@ -22,6 +22,8 @@ pub mod ipi;
 pub mod ivc;
 pub mod mm;
 pub mod mmu;
+#[cfg(feature = "mpam")]
+pub mod mpam;
 pub mod paging;
 pub mod s2pt;
 pub mod sysreg;
