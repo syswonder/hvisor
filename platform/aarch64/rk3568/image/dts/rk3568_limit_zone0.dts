@@ -13,6 +13,88 @@
 		serial2 = "/serial@fe660000";
 		sdmmc2 = "/dwmmc@fe000000";
 		serial4 = "/serial@fe680000";
+		mmc1 = "/dwmmc@fe2b0000";
+		mmc2 = "/dwmmc@fe2c0000";
+		mmc3 = "/dwmmc@fe000000";
+	};
+
+	sdhci@fe310000 {
+		clock-names = "core\0bus\0axi\0block\0timer";
+		assigned-clocks = <0x20 0x7b 0x20 0x7d 0x20 0x7c>;
+		bus-width = <0x08>;
+		non-removable;
+		assigned-clock-rates = <0xbebc200 0x16e3600 0xbebc200>;
+		interrupts = <0x00 0x13 0x04>;
+		clocks = <0x20 0x7c 0x20 0x7a 0x20 0x79 0x20 0x7b 0x20 0x7d>;
+		compatible = "rockchip,dwcmshc-sdhci\0snps,dwcmshc-sdhci";
+		status = "okay";
+		reg = <0x00 0xfe310000 0x00 0x10000>;
+		phandle = <0x1a5>;
+		max-frequency = <0xbebc200>;
+		supports-emmc;
+	};
+
+	dwmmc@fe000000 {
+		fifo-depth = <0x100>;
+		pinctrl-names = "default";
+		supports-sdio;
+		pinctrl-0 = <0xa0 0xa1 0xa2>;
+		clock-names = "biu\0ciu\0ciu-drive\0ciu-sample";
+		cap-sd-highspeed;
+		bus-width = <0x04>;
+		non-removable;
+		resets = <0x20 0xeb>;
+		cap-sdio-irq;
+		interrupts = <0x00 0x64 0x04>;
+		clocks = <0x20 0xc1 0x20 0xc2 0x20 0x18e 0x20 0x18f>;
+		keep-power-in-suspend;
+		compatible = "rockchip,rk3568-dw-mshc\0rockchip,rk3288-dw-mshc";
+		status = "okay";
+		disable-wp;
+		mmc-pwrseq = <0x9f>;
+		reg = <0x00 0xfe000000 0x00 0x4000>;
+		phandle = <0x19a>;
+		sd-uhs-sdr104;
+		max-frequency = <0x8f0d180>;
+		reset-names = "reset";
+	};
+
+	dwmmc@fe2b0000 {
+		supports-sd;
+		fifo-depth = <0x100>;
+		pinctrl-names = "default";
+		pinctrl-0 = <0xbe 0xbf 0xc0 0xc1>;
+		clock-names = "biu\0ciu\0ciu-drive\0ciu-sample";
+		cap-sd-highspeed;
+		vqmmc-supply = <0x2d>;
+		bus-width = <0x04>;
+		resets = <0x20 0xd4>;
+		interrupts = <0x00 0x62 0x04>;
+		clocks = <0x20 0xb0 0x20 0xb1 0x20 0x18a 0x20 0x18b>;
+		vmmc-supply = <0xbd>;
+		compatible = "rockchip,rk3568-dw-mshc\0rockchip,rk3288-dw-mshc";
+		status = "okay";
+		disable-wp;
+		reg = <0x00 0xfe2b0000 0x00 0x4000>;
+		phandle = <0x1a2>;
+		sd-uhs-sdr104;
+		max-frequency = <0x8f0d180>;
+		cap-mmc-highspeed;
+		reset-names = "reset";
+	};
+
+	dwmmc@fe2c0000 {
+		fifo-depth = <0x100>;
+		clock-names = "biu\0ciu\0ciu-drive\0ciu-sample";
+		resets = <0x20 0xd6>;
+		interrupts = <0x00 0x63 0x04>;
+		clocks = <0x20 0xb2 0x20 0xb3 0x20 0x18c 0x20 0x18d>;
+		compatible = "rockchip,rk3568-dw-mshc\0rockchip,rk3288-dw-mshc";
+		status = "disabled";
+		reg = <0x00 0xfe2c0000 0x00 0x4000>;
+		phandle = <0x1a3>;
+		max-frequency = <0x8f0d180>;
+		reset-names = "reset";
 	};
     
     memory {
@@ -41,9 +123,9 @@
 			ftrace-size = <0x00>;
 		};
 
-        hvisor@480000 {
+        hvisor@280000 {
 			no-map;
-			reg = <0x00 0x480000 0x00 0x400000>;
+			reg = <0x00 0x280000 0x00 0x400000>;
 		};
 
 		nonroot {
@@ -1165,47 +1247,6 @@
 		phandle = <0x34>;
     };
 
-	sdhci@fe310000 {
-		clock-names = "core\0bus\0axi\0block\0timer";
-		assigned-clocks = <0x20 0x7b 0x20 0x7d 0x20 0x7c>;
-		bus-width = <0x08>;
-		non-removable;
-		assigned-clock-rates = <0xbebc200 0x16e3600 0xbebc200>;
-		interrupts = <0x00 0x13 0x04>;
-		clocks = <0x20 0x7c 0x20 0x7a 0x20 0x79 0x20 0x7b 0x20 0x7d>;
-		compatible = "rockchip,dwcmshc-sdhci\0snps,dwcmshc-sdhci";
-		status = "okay";
-		reg = <0x00 0xfe310000 0x00 0x10000>;
-		phandle = <0x1a5>;
-		max-frequency = <0xbebc200>;
-		supports-emmc;
-	};
-
-	dwmmc@fe000000 {
-		fifo-depth = <0x100>;
-		pinctrl-names = "default";
-		supports-sdio;
-		pinctrl-0 = <0xa0 0xa1 0xa2>;
-		clock-names = "biu\0ciu\0ciu-drive\0ciu-sample";
-		cap-sd-highspeed;
-		bus-width = <0x04>;
-		non-removable;
-		resets = <0x20 0xeb>;
-		cap-sdio-irq;
-		interrupts = <0x00 0x64 0x04>;
-		clocks = <0x20 0xc1 0x20 0xc2 0x20 0x18e 0x20 0x18f>;
-		keep-power-in-suspend;
-		compatible = "rockchip,rk3568-dw-mshc\0rockchip,rk3288-dw-mshc";
-		status = "okay";
-		disable-wp;
-		mmc-pwrseq = <0x9f>;
-		reg = <0x00 0xfe000000 0x00 0x4000>;
-		phandle = <0x19a>;
-		sd-uhs-sdr104;
-		max-frequency = <0x8f0d180>;
-		reset-names = "reset";
-	};
-
 	scmi-shmem@10f000 {
 		compatible = "arm,scmi-shmem";
 		reg = <0x00 0x10f000 0x00 0x100>;
@@ -1305,7 +1346,8 @@
 	};
 
 	chosen {
-		bootargs = "storagemedia=emmc rw rootwait earlycon=uart8250,mmio32,0xfe660000 console=ttyFIQ0 root=PARTUUID=614e0000-0000";
+		// bootargs = "storagemedia=emmc rw rootwait earlycon=uart8250,mmio32,0xfe660000 console=ttyFIQ0 root=PARTUUID=root=PARTUUID=614e0000-0000-4b53-8000-1d28000054a9";
+		bootargs = "storagemedia=emmc rw rootwait earlycon=uart8250,mmio32,0xfe660000 console=ttyFIQ0 root=/dev/mmcblk0p5";
 		phandle = <0x1eb>;
 	};
 

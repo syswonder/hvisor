@@ -43,16 +43,17 @@ pub const BOARD_PHYSMEM_LIST: &[(u64, u64, MemoryType)] = &[
  // (       start,           end,                type)
     (         0x0,    0xf0000000,  MemoryType::Normal),
     (  0xf0000000,   0x100000000,  MemoryType::Device),
+    ( 0x100000000,   0x3fc000000,  MemoryType::Normal),
 ];
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0xa0000000;
-pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x60080000 ;
-pub const ROOT_ZONE_ENTRY: u64 = 0x60080000 ;
+pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x00280000 ;
+pub const ROOT_ZONE_ENTRY: u64 = 0x00280000 ;
 //pub const ROOT_ZONE_CPUS: u64 = (1 << 0) ;
 pub const ROOT_ZONE_CPUS: u64 = (1 << 0)|(1 << 1);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 19] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 20] = [
     // HvConfigMemoryRegion {
     //     mem_type: MEM_TYPE_IO,
     //     physical_start: 0xfd400000,
@@ -66,12 +67,6 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 19] = [
     //     size: 0xc0000,
     // }, // gic
     HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0xfe000000,
-        virtual_start: 0xfe000000,
-        size: 0x4000,
-    }, // dwmmc
-    HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x200000,
         virtual_start: 0x200000,
@@ -83,30 +78,48 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 19] = [
         virtual_start: 0x9400000,
         size: 0xe6c00000,
     }, // memory
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_RAM,
-    //     physical_start: 0x0,
-    //     virtual_start: 0x0,
-    //     size: 0x200000,
-    // }, // ram
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
-        physical_start: 0x110000,
-        virtual_start: 0x110000,
-        size: 0xf0000,
-    }, // ramoops
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0x10f000,
-        virtual_start: 0x10f000,
-        size: 0x1000,
-    }, //scmi-shmem
+        physical_start: 0x0,
+        virtual_start: 0x0,
+        size: 0x200000,
+    }, // ram
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_RAM,
+    //     physical_start: 0x110000,
+    //     virtual_start: 0x110000,
+    //     size: 0xf0000,
+    // }, // ramoops
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0x10f000,
+    //     virtual_start: 0x10f000,
+    //     size: 0x1000,
+    // }, //scmi-shmem
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x1f0000000,
         virtual_start: 0x1f0000000,
         size: 0x10000000,
     }, // memory
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xfe2b0000,
+        virtual_start: 0xfe2b0000,
+        size: 0x4000,
+    }, //dwmmc mmc1
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xfe2c0000,
+        virtual_start: 0xfe2c0000,
+        size: 0x4000,
+    }, //dwmmc mmc2
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xfe000000,
+        virtual_start: 0xfe000000,
+        size: 0x4000,
+    }, //dwmmc mmc3
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0xFE660000,

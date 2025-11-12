@@ -20,7 +20,6 @@ use crate::{
     memory::{
         mmio_generic_handler, mmio_handle_access, mmio_perform_access, GuestPhysAddr, MMIOAccess,
     },
-    pci::pcibar::BarRegion,
     percpu::this_zone,
     zone::{this_zone_id, Zone},
 };
@@ -111,69 +110,6 @@ pub fn probe_root_pci_devices(
             if header_type.get_bits(0..7) == 0x1 {
                 let secondary_bus = unsafe { *((bdf_config_hpa + 0x19) as *const u8) };
                 buses.push_back(secondary_bus);
-            }
-
-            // probe msi/msi-x capability registers
-            let mut cap_pointer = unsafe { *((bdf_config_hpa + 0x34) as *const u8) } as usize;
-            while cap_pointer != 0 {
-                let cap_hpa = bdf_config_hpa + cap_pointer;
-                let cap_id = unsafe { *(cap_hpa as *const u8) };
-
-                if cap_id == 0x5 {
-                    // msi capablility
-                    let msg_ctrl_reg = unsafe { *((cap_hpa + 0x2) as *const u16) };
-                    let is_64b = msg_ctrl_reg.get_bit(7);
-                    let per_vector_masking = msg_ctrl_reg.get_bit(8);
-
-                    let data_reg_hpa = match is_64b {
-                        true => cap_hpa + 0xc,
-                        false => cap_hpa + 0x8,
-                    };
-                    msi_data_reg_map.insert(data_reg_hpa, bdf as _);
-                    // println!("msi data reg hpa: {:x?}", data_reg_hpa);
-                    println!("msi per vector masking: {:#x?}", per_vector_masking);
-                } else if cap_id == 0x11 {
-                    // msi-x capability
-                    let msg_ctrl_reg = unsafe { *((cap_hpa + 0x2) as *const u16) };
-                    let table_size = msg_ctrl_reg.get_bits(0..=10) as usize;
-                    let table_bir =
-                        unsafe { *((cap_hpa + 0x4) as *const u16) }.get_bits(0..=2) as usize;
-
-                    // find msi-x table bar
-                    let bar_hpa = bdf_config_hpa + 0x10 + (table_bir) * size_of::<u32>();
-                    let mut bar = unsafe { *(bar_hpa as *const u32) } as usize;
-                    assert!(!bar.get_bit(0)); // memory request
-                    match bar.get_bits(1..=2) {
-                        0b00 => {
-                            // 32-bit decoding
-                            bar &= !(0xfff);
-                        }
-                        0b10 => {
-                            // 64-bit decoding
-                            let bar_high =
-                                unsafe { *((bar_hpa + size_of::<u32>()) as *const u32) } as usize;
-                            bar = (bar_high << 6) + bar.get_bits(26..=31);
-                        }
-                        _ => {
-                            panic!("MSI-X table BAR type error!");
-                        }
-                    }
-
-                    /*println!(
-                        "table size: {:x}, table bir: {:x}, bar: {:x}",
-                        table_size, table_bir, bar
-                    );*/
-                    msix_bar_map.insert(bar, bdf as _);
-
-                    for i in 0..=table_size {
-                        let data_reg_hpa = bar + i * size_of::<u128>() + 2 * size_of::<u32>();
-                        msi_data_reg_map.insert(data_reg_hpa, bdf as _);
-                        // println!("msi-x data reg hpa: {:x?}", data_reg_hpa);
-                    }
-                }
-
-                // println!("cap id: {:x}, hpa: {:x}", cap_id, cap_hpa);
-                cap_pointer = unsafe { *((cap_hpa + 1) as *const u8) } as usize;
             }
         }
 

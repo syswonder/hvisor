@@ -17,7 +17,7 @@ use alloc::sync::Arc;
 use alloc::vec::Vec;
 // use psci::error::INVALID_ADDRESS;
 use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM};
-use crate::pci::pci::PciRoot;
+use crate::pci::pci_struct::VirtualRootComplex;
 use spin::RwLock;
 
 use crate::arch::mm::new_s2_memory_set;
@@ -38,9 +38,9 @@ pub struct Zone {
     pub cpu_set: CpuSet,
     pub irq_bitmap: [u32; 1024 / 32],
     pub gpm: MemorySet<Stage2PageTable>,
-    pub pciroot: PciRoot,
     pub iommu_pt: Option<MemorySet<Stage2PageTable>>,
     pub is_err: bool,
+    pub vpci_bus: VirtualRootComplex,
 }
 
 impl Zone {
@@ -53,13 +53,13 @@ impl Zone {
             cpu_set: CpuSet::new(MAX_CPU_NUM as usize, 0),
             mmio: Vec::new(),
             irq_bitmap: [0; 1024 / 32],
-            pciroot: PciRoot::new(),
             iommu_pt: if cfg!(feature = "iommu") {
                 Some(new_s2_memory_set())
             } else {
                 None
             },
             is_err: false,
+            vpci_bus: VirtualRootComplex::new(),
         }
     }
 
@@ -210,6 +210,20 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     zone.pt_init(config.memory_regions()).unwrap();
     zone.mmio_init(&config.arch_config);
 
+    let _ = zone.virtual_pci_mmio_init(&config.pci_config, config.num_pci_bus);
+    let _ = zone.guest_pci_init(zone_id, &config.alloc_pci_devs, config.num_pci_devs);
+
+    // #[cfg(target_arch = "aarch64")]
+    // zone.ivc_init(config.ivc_config());
+
+    /* loongarch page table emergency */
+    /* Kai: Maybe unnecessary but i can't boot vms on my 3A6000 PC without this function. */
+    // #[cfg(target_arch = "loongarch64")]
+    // zone.page_table_emergency(
+    //     config.pci_config[0].ecam_base as _,
+    //     config.pci_config[0].ecam_size as _,
+    // )?;
+
     let mut cpu_num = 0;
     for cpu_id in config.cpus().iter() {
         if let Some(zone) = get_cpu_data(*cpu_id as _).zone.clone() {
@@ -245,11 +259,11 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     //     config.pci_config.ecam_size as _,
     // )?;
 
-    zone.pci_init(
+    /*zone.pci_init(
         &config.pci_config,
         config.num_pci_devs as _,
         &config.alloc_pci_devs,
-    );
+    );*/
 
     zone.arch_zone_post_configuration(config)?;
 

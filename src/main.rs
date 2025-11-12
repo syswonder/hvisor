@@ -72,6 +72,7 @@ use crate::consts::{hv_end, mem_pool_start, MAX_CPU_NUM};
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+use pci::pci_config::hvisor_pci_init;
 use percpu::PerCpu;
 use zone::{add_zone, zone_create};
 
@@ -134,9 +135,13 @@ fn primary_init_early() {
 
     iommu_init();
 
+    let root_config = root_zone_config();
+
+    let _ = hvisor_pci_init(&root_config.pci_config);
+
     #[cfg(not(test))]
     {
-        let zone = zone_create(root_zone_config()).unwrap();
+        let zone = zone_create(root_config).unwrap();
         add_zone(zone);
     }
     INIT_EARLY_OK.store(1, Ordering::Release);

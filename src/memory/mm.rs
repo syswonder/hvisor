@@ -144,6 +144,16 @@ where
         }
     }
 
+    pub fn try_delete(&mut self, start: PT::VA) -> HvResult {
+        if let Entry::Occupied(e) = self.regions.entry(start) {
+            self.pt.unmap(e.get())?;
+            e.remove();
+            Ok(())
+        } else {
+            Err(hv_err!(ENOMEM))
+        }
+    }
+
     pub fn clear(&mut self) {
         for region in self.regions.values() {
             self.pt.unmap(region).unwrap();
