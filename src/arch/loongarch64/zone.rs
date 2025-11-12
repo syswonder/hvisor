@@ -16,7 +16,7 @@
 //
 use crate::device::irqchip::ls7a2000::chip::get_extioi_sr;
 use crate::{
-    arch::{cpu::this_cpu_id, trap::GLOBAL_TRAP_CONTEXT_HELPER_PER_CPU},
+    arch::{cpu::this_cpu_id, trap::GLOBAL_TRAP_CONTEXT_HELPER_PER_CPU, Stage2PageTable},
     config::*,
     consts::PAGE_SIZE,
     device::virtio_trampoline::mmio_virtio_handler,
@@ -24,7 +24,7 @@ use crate::{
     memory::{
         addr::{align_down, align_up},
         mmio_generic_handler, mmio_perform_access, GuestPhysAddr, HostPhysAddr, MMIOAccess,
-        MemFlags, MemoryRegion,
+        MemFlags, MemoryRegion, MemorySet,
     },
     zone::Zone,
     PHY_TO_DMW_UNCACHED,
@@ -683,7 +683,11 @@ impl Zone {
         self.gpm.delete(vaddr as GuestPhysAddr)
     }
 
-    pub fn arch_zone_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
+    pub fn arch_zone_pre_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
+        Ok(())
+    }
+
+    pub fn arch_zone_post_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
         Ok(())
     }
 }

@@ -145,3 +145,9 @@ pub fn arch_setup_parange() {
     // The parange is determined by the memory regions defined in the device tree.
     // So we do not need to do anything here.
 }
+
+pub fn arch_post_heap_init(host_dtb: usize) {
+    // RISC-V does not need to do some setup work after heap init like x86_64.
+    // This function can be used to set up any architecture-specific parameters if needed.
+    // Currently, it does nothing.
+}

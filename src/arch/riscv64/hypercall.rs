@@ -26,10 +26,6 @@ impl<'a> HyperCall<'a> {
         HyperCallResult::Ok(0)
     }
 
-    pub fn translate_ipa_to_hva(&mut self, ipa: u64) -> u64 {
-        return ipa;
-    }
-
     pub fn wait_for_interrupt(&mut self, irq_list: &mut [u64; MAX_DEVS + 1]) {
         trace!("wait_for_interrupt is not need for RISC-V");
     }
@@ -58,5 +54,10 @@ impl<'a> HyperCall<'a> {
     pub fn check_cpu_id(&self) {
         let cpuid = this_cpu_id();
         trace!("CPU ID: {} Start Zone", cpuid);
+    }
+
+    pub fn hv_virtio_get_irq(&self, virtio_irq: *mut u32) -> HyperCallResult {
+        trace!("hv_virtio_get_irq is not need for RISC-V");
+        HyperCallResult::Ok(0)
     }
 }

@@ -17,6 +17,7 @@ use alloc::collections::btree_map::BTreeMap;
 use spin::{Lazy, Mutex};
 
 use crate::{
+    arch::iommu::iommu_add_device,
     config::{HvPciConfig, HvPciDevConfig, CONFIG_MAX_PCI_DEV, CONFIG_PCI_BUS_MAXNUM},
     error::HvResult,
     pci::{
@@ -51,19 +52,26 @@ pub fn hvisor_pci_init(pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAX
             rootcomplex_config.mem64_size,
         );
 
+        // TODO: refactor
+        // in x86, we do not take the initiative to reallocate BAR space
+        #[cfg(target_arch = "x86_64")]
+        let allocator_opt: Option<BaseAllocator> = None;
+        #[cfg(not(target_arch = "x86_64"))]
+        let allocator_opt: Option<BaseAllocator> = Some(allocator);
+
         let mut rootcomplex = RootComplex::new(rootcomplex_config.ecam_base);
-        for mut node in rootcomplex.enumerate(None, Some(allocator)) {
+        for mut node in rootcomplex.enumerate(None, allocator_opt) {
             node.capability_enumerate();
             GLOBAL_PCIE_LIST.lock().insert(node.get_bdf(), node);
         }
     }
-    info!("hvisor pci init done \n{:#?}", GLOBAL_PCIE_LIST);
     Ok(())
 }
 
 impl Zone {
     pub fn guest_pci_init(
         &mut self,
+        zone_id: usize,
         alloc_pci_devs: &[HvPciDevConfig; CONFIG_MAX_PCI_DEV],
         num_pci_devs: u64,
     ) -> HvResult {
@@ -73,6 +81,18 @@ impl Zone {
             let dev_config = alloc_pci_devs[i as usize];
             let bdf = Bdf::from_address(dev_config.bdf << 12);
             let vbdf = Bdf::from_address(dev_config.vbdf << 12);
+            #[cfg(any(
+                all(feature = "iommu", target_arch = "aarch64"),
+                target_arch = "x86_64"
+            ))]
+            {
+                let iommu_pt_addr = if self.iommu_pt.is_some() {
+                    self.iommu_pt.as_ref().unwrap().root_paddr()
+                } else {
+                    0
+                };
+                iommu_add_device(self.id, (bdf.to_address(0) >> 12) as _, iommu_pt_addr);
+            }
             if bdf.is_host_bridge() {
                 if let Some(mut vdev) = guard.get(&bdf) {
                     let mut vdev = vdev.clone();

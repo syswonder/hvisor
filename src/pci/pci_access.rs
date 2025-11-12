@@ -27,8 +27,9 @@ use core::slice;
 use crate::{
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MMIOAccess, MemFlags, MemoryRegion},
+    pci::pci_struct::BIT_LENTH,
     percpu::this_zone,
-    zone::Zone,
+    zone::{this_zone_id, Zone},
 };
 
 use super::{
@@ -319,6 +320,10 @@ impl PciMem {
 
         self.virtual_value = val;
     }
+
+    pub fn set_virtual_value64(&mut self, value: u64) {
+        self.virtual_value = value;
+    }
 }
 
 impl Debug for PciMem {
@@ -499,7 +504,7 @@ pub trait PciHeaderRW: PciRWBase {
     }
 
     fn has_multiple_functions(&self) -> bool {
-        self.backend().read_u8(0x0c).unwrap().get_bit(7)
+        self.backend().read_u8(0x0e).unwrap().get_bit(7)
     }
 
     fn revision_and_class(&self) -> (DeviceRevision, BaseClass, SubClass, Interface) {
@@ -549,9 +554,9 @@ pub trait PciBarRW: PciRWBase {
                 match value.get_bits(1..3) {
                     0b00 => {
                         let size = {
-                            let _ = self.write_bar(slot, 0xfffffff0);
+                            let _ = self.write_bar(slot, 0xffffffff);
                             let mut readback = self.read_bar(slot).unwrap();
-                            let _ = self.write_bar(slot, readback as u32);
+                            let _ = self.write_bar(slot, value as u32);
 
                             if readback == 0x0 {
                                 // bar is null
@@ -572,12 +577,12 @@ pub trait PciBarRW: PciRWBase {
 
                         let value_high = self.read_bar(slot + 1).unwrap();
                         let size = {
-                            let _ = self.write_bar(slot, 0xfffffff0);
-                            let _ = self.write_bar(slot + 1, 0xfffffff0);
+                            let _ = self.write_bar(slot, 0xffffffff);
+                            let _ = self.write_bar(slot + 1, 0xffffffff);
                             let mut readback_low = self.read_bar(slot).unwrap();
                             let readback_high = self.read_bar(slot + 1).unwrap();
-                            let _ = self.write_bar(slot, readback_low as u32);
-                            let _ = self.write_bar(slot + 1, readback_high as u32);
+                            let _ = self.write_bar(slot, value as u32);
+                            let _ = self.write_bar(slot + 1, value_high as u32);
 
                             readback_low.set_bits(0..4, 0);
 
@@ -587,10 +592,12 @@ pub trait PciBarRW: PciRWBase {
                                 1u64 << ((readback_high.trailing_zeros() + 32) as u64)
                             }
                         };
+                        let value64 = (value as u64) | ((value_high as u64) << 32);
+
                         bararr[slot as usize] =
-                            PciMem::new_bar(PciMemType::Mem64Low, value as u64, size, pre);
+                            PciMem::new_bar(PciMemType::Mem64Low, value64 as u64, size, pre);
                         bararr[(slot + 1) as usize] =
-                            PciMem::new_bar(PciMemType::Mem64High, value_high as u64, size, pre);
+                            PciMem::new_bar(PciMemType::Mem64High, value64 as u64, size, pre);
                         slot += 1; // need extra add 1
                     }
                     _ => {
@@ -941,6 +948,7 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     let size = mmio.size;
     let value = mmio.value;
 
+    let zone_id = this_zone_id();
     let zone = this_zone();
     let mut guard = zone.write();
     let (vbus, gpm) = {
@@ -955,6 +963,13 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
             dev = Some(node.1);
             break;
         }
+    }
+
+    if (offset as usize) >= BIT_LENTH {
+        if !mmio.is_write {
+            mmio.value = 0;
+        }
+        return Ok(());
     }
 
     if let Some(dev) = dev {
@@ -1011,7 +1026,7 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                                             if (bar_type == PciMemType::Mem32)
                                                 | (bar_type == PciMemType::Mem64High)
                                             {
-                                                let old_vaddr = bar.get_virtual_value64() & &!0xf;
+                                                let old_vaddr = bar.get_virtual_value64() & !0xf;
                                                 let new_vaddr = {
                                                     if bar_type == PciMemType::Mem64High {
                                                         /* last 4bit is flag, not address and need ignore
@@ -1072,6 +1087,15 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                                                     core::arch::asm!("tlbi vmalls12e1is");
                                                     core::arch::asm!("dsb nsh");
                                                 }
+                                                /* after update gpm, need to flush iommu table
+                                                 * in x86_64
+                                                 */
+                                                #[cfg(target_arch = "x86_64")]
+                                                crate::arch::iommu::flush(
+                                                    zone_id,
+                                                    vbdf.bus,
+                                                    (vbdf.device << 3) + vbdf.function,
+                                                );
                                             }
                                         }
                                     } else {
@@ -1126,7 +1150,7 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                     mmio.value = 0xFFFF_FFFF;
                 }
                 _ => {
-                    warn!("unhandled pci mmio read");
+                    // warn!("unhandled pci mmio read, addr: {:#x?}", mmio.address);
                     mmio.value = 0;
                 }
             }

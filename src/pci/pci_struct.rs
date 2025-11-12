@@ -39,7 +39,7 @@ type VirtualPciConfigBits = BitArr!(for BIT_LENTH, in u8, Lsb0);
 const MAX_DEVICE: u8 = 31;
 const MAX_FUNCTION: u8 = 7;
 pub const CONFIG_LENTH: u64 = 256;
-const BIT_LENTH: usize = 256 * 2;
+pub const BIT_LENTH: usize = 256 * 2;
 
 #[derive(Clone, Copy, Eq, PartialEq, Default)]
 pub struct Bdf {
@@ -283,7 +283,7 @@ impl VirtualPciConfigSpace {
                 }
             }
             _ => {
-                warn!("TODO updating space");
+                // warn!("TODO updating space");
             }
         }
     }
@@ -549,7 +549,6 @@ impl<B: BarAllocator> PciIterator<B> {
                 cmd.remove(PciCommand::MEMORY_ENABLE);
                 cmd
             });
-
             let mut i = 0;
             while i < bar_max {
                 match bararr[i].get_type() {
@@ -567,6 +566,28 @@ impl<B: BarAllocator> PciIterator<B> {
                         i += 1;
                         bararr[i].set_value(value);
                         bararr[i].set_virtual_value(value);
+                        let _ = dev.write_bar(i as u8, (value >> 32) as u32);
+                    }
+                    _ => {}
+                }
+                i += 1;
+            }
+        } else {
+            // use default bar address as virt bar address
+            let mut i = 0;
+            while i < bar_max {
+                match bararr[i].get_type() {
+                    PciMemType::Mem32 => {
+                        let value = bararr[i].get_value64();
+                        bararr[i].set_virtual_value64(value as u64);
+                        let _ = dev.write_bar(i as u8, value as u32);
+                    }
+                    PciMemType::Mem64Low => {
+                        let value = bararr[i].get_value64();
+                        bararr[i].set_virtual_value64(value);
+                        let _ = dev.write_bar(i as u8, value as u32);
+                        i += 1;
+                        bararr[i].set_virtual_value64(value);
                         let _ = dev.write_bar(i as u8, (value >> 32) as u32);
                     }
                     _ => {}
@@ -786,7 +807,8 @@ impl CapabilityIterator {
     }
 
     pub fn get_next_cap(&mut self) -> HvResult {
-        let address = self.backend.read(self.offset, 2).unwrap().get_bits(8..16) as PciConfigAddress;
+        let address =
+            self.backend.read(self.offset, 2).unwrap().get_bits(8..16) as PciConfigAddress;
         self.offset = address;
         Ok(())
     }
@@ -805,7 +827,8 @@ impl Iterator for CapabilityIterator {
 
     fn next(&mut self) -> Option<Self::Item> {
         while self.get_offset() != 0 {
-            let cap = PciCapability::from_address(self.get_offset(), self.get_id(), self.get_extension());
+            let cap =
+                PciCapability::from_address(self.get_offset(), self.get_id(), self.get_extension());
             // warn!("cap value {:x}", self.backend.read(self.offset, 4).unwrap());
             let _ = self.get_next_cap();
             if let Some(cap) = cap {
@@ -855,7 +878,11 @@ pub enum PciCapability {
 }
 
 impl PciCapability {
-    fn from_address(offset: PciConfigAddress, id: PciConfigAddress, extension: u16) -> Option<PciCapability> {
+    fn from_address(
+        offset: PciConfigAddress,
+        id: PciConfigAddress,
+        extension: u16,
+    ) -> Option<PciCapability> {
         match id {
             0x00 => None,
             0x01 => Some(PciCapability::PowerManagement(PciCapabilityRegion::new(
@@ -1001,10 +1028,7 @@ pub struct PciCapabilityRegion {
 
 impl PciCapabilityRegion {
     pub fn new(offset: PciConfigAddress, extension: u16) -> Self {
-        Self {
-            offset,
-            extension,
-        }
+        Self { offset, extension }
     }
 }
 
@@ -1013,8 +1037,8 @@ pub type PciCapabilityList = BTreeMap<PciConfigAddress, PciCapability>;
 impl VirtualPciConfigSpace {
     fn _capability_enumerate(&self, backend: Arc<dyn PciRW>) -> CapabilityIterator {
         CapabilityIterator {
-            backend, 
-            offset: 0x34
+            backend,
+            offset: 0x34,
         }
     }
 
