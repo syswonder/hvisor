@@ -13,39 +13,51 @@
 //
 // Authors:
 //
-use core::{any::Any, fmt::Debug};
 
 use crate::error::HvResult;
-use crate::pci::PciConfigAddress;
+use crate::pci::{pci_struct::Bdf, PciConfigAddress};
+use super::{PciConfigAccessor, PciRegion, PciConfigMmio};
 
-pub trait PciRegion: Debug + Sync + Send + Any {
-    fn read_u8(&self, offset: PciConfigAddress) -> HvResult<u8>;
-    fn write_u8(&self, offset: PciConfigAddress, value: u8) -> HvResult;
-    fn read_u16(&self, offset: PciConfigAddress) -> HvResult<u16>;
-    fn write_u16(&self, offset: PciConfigAddress, value: u16) -> HvResult;
-    fn read_u32(&self, offset: PciConfigAddress) -> HvResult<u32>;
-    fn write_u32(&self, offset: PciConfigAddress, value: u32) -> HvResult;
+// ECAM (Enhanced Configuration Access Mechanism) accessor implementation
+// Standard ECAM mechanism used by most PCIe platforms
+#[derive(Debug)]
+pub struct EcamConfigAccessor {
+    ecam_base: PciConfigAddress,
 }
 
-/* in aarch64, config space just like a normal mem space */
-#[derive(Debug, Clone, Copy)]
-pub struct PciRegionMmio {
-    base: PciConfigAddress,
-    #[allow(dead_code)]
-    length: u64,
-}
-
-impl PciRegionMmio {
-    pub fn new(base: PciConfigAddress, length: u64) -> Self {
-        Self { base, length }
-    }
-    /* TODO: may here need check whether length exceeds*/
-    fn access<T>(&self, offset: PciConfigAddress) -> *mut T {
-        (self.base + offset) as *mut T
+impl EcamConfigAccessor {
+    pub fn new(ecam_base: PciConfigAddress) -> Self {
+        Self { ecam_base }
     }
 }
 
-impl PciRegion for PciRegionMmio {
+impl PciConfigAccessor for EcamConfigAccessor {
+    fn get_physical_address(&self, bdf: Bdf, offset: PciConfigAddress) -> HvResult<PciConfigAddress> {
+        let bus = bdf.bus() as PciConfigAddress;
+        let device = bdf.device() as PciConfigAddress;
+        let function = bdf.function() as PciConfigAddress;
+        
+        // ECAM standard address calculation:
+        // base + (bus << 20) + (device << 15) + (function << 12) + offset
+        let address = self.ecam_base 
+            + (bus << 20)
+            + (device << 15)
+            + (function << 12)
+            + offset;
+        Ok(address)
+    }
+    
+    fn prepare_access(&self, _bdf: Bdf) -> HvResult {
+        Ok(()) // ECAM doesn't need special preparation
+    }
+    
+    fn get_base_address(&self) -> PciConfigAddress {
+        self.ecam_base
+    }
+}
+
+#[cfg(any(feature = "ecam_pcie", all(not(feature = "dwc_pcie"), not(feature = "loongarch64_pcie"))))]
+impl PciRegion for PciConfigMmio {
     fn read_u8(&self, offset: PciConfigAddress) -> HvResult<u8> {
         unsafe { Ok(self.access::<u8>(offset).read_volatile() as u8) }
     }
@@ -68,3 +80,4 @@ impl PciRegion for PciRegionMmio {
         Ok(())
     }
 }
+

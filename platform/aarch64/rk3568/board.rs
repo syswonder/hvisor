@@ -21,6 +21,7 @@ use crate::{
     },
     config::*,
 };
+use crate::pci_dev;
 
 pub const BOARD_NAME: &str = "rk3568";
 
@@ -43,7 +44,8 @@ pub const BOARD_PHYSMEM_LIST: &[(u64, u64, MemoryType)] = &[
  // (       start,           end,                type)
     (         0x0,    0xf0000000,  MemoryType::Normal),
     (  0xf0000000,   0x100000000,  MemoryType::Device),
-    ( 0x100000000,   0x3fc000000,  MemoryType::Normal),
+    ( 0x100000000,   0x3c0000000,  MemoryType::Normal),
+    ( 0x3c0000000,   0x3d0000000,  MemoryType::Device)
 ];
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0xa0000000;
@@ -53,19 +55,43 @@ pub const ROOT_ZONE_ENTRY: u64 = 0x00280000 ;
 pub const ROOT_ZONE_CPUS: u64 = (1 << 0)|(1 << 1);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 20] = [
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0xfd400000,
-    //     virtual_start: 0xfd400000,
-    //     size: 0x10000,
-    // }, // gic
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0xfd460000,
-    //     virtual_start: 0xfd460000,
-    //     size: 0xc0000,
-    // }, // gic
+pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xfdcb8000,
+        virtual_start: 0xfdcb8000,
+        size: 0x10000,
+    }, //syscon pcie30_phy_grf
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xfdc90000,
+        virtual_start: 0xfdc90000,
+        size: 0x10000,
+    }, //syscon pipe_phy_grf2
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xfdc50000,
+        virtual_start: 0xfdc50000,
+        size: 0x10000,
+    }, //syscon pipegrf
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xfe8c0000,
+        virtual_start: 0xfe8c0000,
+        size: 0x20000,
+    }, // pcie30phy
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xfdd90000,
+        virtual_start: 0xfdd90000,
+        size: 0x1000,
+    }, // power-management
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xfe840000,
+        virtual_start: 0xfe840000,
+        size: 0x1000,
+    }, // combphy2_psq
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x200000,
@@ -210,11 +236,62 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
         gicd_size: 0x10000,
         gicr_base: 0xfd460000,
         gicr_size: 0xc0000,
-        gits_base: 0,
-        gits_size: 0,
+        gits_base: 0xfd440000,
+        gits_size: 0x20000,
     }),
 };
+pub const ROOT_PCI_CONFIG: &[HvPciConfig] = &[
+    // HvPciConfig {
+    //     ecam_base: 0xfe260000,
+    //     ecam_size: 0x400000,
+    //     io_base: 0xf4100000,
+    //     io_size: 0x100000,
+    //     pci_io_base: 0xf4100000,
+    //     mem32_base: 0xf4200000,
+    //     mem32_size: 0x1e00000,
+    //     pci_mem32_base: 0xf4200000,
+    //     mem64_base: 0x300000000,
+    //     mem64_size: 0x40000000,
+    //     pci_mem64_base: 0x300000000,
+    //     bus_range_begin: 0x0,
+    //     bus_range_end: 0x10,
+    // },
+    HvPciConfig {
+        ecam_base: 0x3c0400000,
+        ecam_size: 0x100000,
+        io_base: 0xf2100000,
+        io_size: 0x100000,
+        pci_io_base: 0xf2100000,
+        mem32_base: 0xf2200000,
+        mem32_size: 0x1e00000,
+        pci_mem32_base: 0xf2200000,
+        mem64_base: 0x340000000,
+        mem64_size: 0x40000000,
+        pci_mem64_base: 0x340000000,
+        bus_range_begin: 0x10,
+        bus_range_end: 0x1f,
+    },
+    // HvPciConfig {
+    //     ecam_base: 0xfe280000,
+    //     ecam_size: 0x400000,
+    //     io_base: 0xf0100000,
+    //     io_size: 0x100000,
+    //     pci_io_base: 0xf0100000,
+    //     mem32_base: 0xf0200000,
+    //     mem32_size: 0x1e00000,
+    //     pci_mem32_base: 0xf0200000,
+    //     mem64_base: 0x380000000,
+    //     mem64_size: 0x40000000,
+    //     pci_mem64_base: 0x380000000,
+    //     bus_range_begin: 0x20,
+    //     bus_range_end: 0x2f,
+    // }
+];
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
 
-pub const ROOT_PCI_DEVS: [u64; 0] = [];
+pub const ROOT_PCI_DEVS: [HvPciDevConfig; 3] = [
+    pci_dev!( 0x1, 0x0, 0x0),
+    pci_dev!(0x11, 0x0, 0x0),
+    pci_dev!(0x21, 0x0, 0x0),
+];

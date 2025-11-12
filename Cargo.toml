@@ -48,6 +48,11 @@ raw-cpuid = "10.7.0"
 iommu = [] # supported by: aarch64
 pci = [] # supported by: aarch64, loongarch64
 
+############# PCIe access mechanism ##############
+ecam_pcie = [] # Standard ECAM mechanism (default for most platforms)
+dwc_pcie = [] # DesignWare PCIe Core mechanism (CFG0/CFG1, used by RK3568)
+loongarch64_pcie = [] # LoongArch PCIe mechanism (used by LoongArch platforms)
+
 ############# aarch64 ##############
 # irqchip driver
 gicv2 = []

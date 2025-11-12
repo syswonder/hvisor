@@ -32,7 +32,7 @@ use crate::{
 };
 
 use super::{
-    pci_mem::{PciRegion, PciRegionMmio},
+    config_accessors::{PciRegion, PciConfigMmio},
     pci_struct::Bdf,
     PciConfigAddress,
 };
@@ -146,12 +146,12 @@ impl PciMem {
         }
     }
 
-    pub fn new_io(value: u64) -> Self {
+    pub fn new_io(value: u64, size: u64) -> Self {
         Self {
             bar_type: PciMemType::Io,
             virtual_value: 0,
             value,
-            size: 0,
+            size,
             prefetchable: false,
             size_read: false,
         }
@@ -499,7 +499,7 @@ pub trait PciHeaderRW: PciRWBase {
     }
 
     fn has_multiple_functions(&self) -> bool {
-        self.backend().read_u8(0x0c).unwrap().get_bit(7)
+        self.backend().read_u8(0x0e).unwrap().get_bit(7)
     }
 
     fn revision_and_class(&self) -> (DeviceRevision, BaseClass, SubClass, Interface) {
@@ -598,7 +598,20 @@ pub trait PciBarRW: PciRWBase {
                     }
                 }
             } else {
-                bararr[slot as usize] = PciMem::new_io(value as u64);
+                let size = {
+                    let _ = self.write_bar(slot, 0xffffffff);
+                    let mut readback = self.read_bar(slot).unwrap();
+                    let _ = self.write_bar(slot, readback as u32);
+
+                    readback.set_bit(0, false);
+                    if readback == 0x0 {
+                        slot += 1;
+                        continue;
+                    }
+
+                    1 << readback.trailing_zeros()
+                };
+                bararr[slot as usize] = PciMem::new_io(value as u64, size as u64);
             }
             slot += 1;
         }
@@ -655,7 +668,7 @@ pub trait PciRomRW: PciRWBase {
  *      +--------------+--------------+---------------+--------------+
  */
 #[derive(Debug, Clone)]
-pub struct PciConfigHeader(PciRegionMmio);
+pub struct PciConfigHeader(PciConfigMmio);
 
 impl PciRWBase for PciConfigHeader {
     fn backend(&self) -> &dyn PciRegion {
@@ -666,7 +679,7 @@ impl PciRW for PciConfigHeader {}
 impl PciHeaderRW for PciConfigHeader {}
 
 impl PciConfigHeader {
-    pub fn new_with_region(region: PciRegionMmio) -> Self {
+    pub fn new_with_region(region: PciConfigMmio) -> Self {
         PciConfigHeader(region)
     }
 }
@@ -766,7 +779,7 @@ impl EndpointField {
 }
 
 #[derive(Debug, Clone)]
-pub struct EndpointHeader(PciRegionMmio);
+pub struct EndpointHeader(PciConfigMmio);
 
 impl PciRWBase for EndpointHeader {
     fn backend(&self) -> &dyn PciRegion {
@@ -787,7 +800,7 @@ impl PciRomRW for EndpointHeader {
 }
 
 impl EndpointHeader {
-    pub fn new_with_region(region: PciRegionMmio) -> Self {
+    pub fn new_with_region(region: PciConfigMmio) -> Self {
         EndpointHeader(region)
     }
 }
@@ -907,7 +920,7 @@ impl BridgeField {
 }
 
 #[derive(Debug, Clone)]
-pub struct PciBridgeHeader(PciRegionMmio);
+pub struct PciBridgeHeader(PciConfigMmio);
 
 impl PciRWBase for PciBridgeHeader {
     fn backend(&self) -> &dyn PciRegion {
@@ -928,7 +941,7 @@ impl PciRomRW for PciBridgeHeader {
 }
 
 impl PciBridgeHeader {
-    pub fn new_with_region(region: PciRegionMmio) -> Self {
+    pub fn new_with_region(region: PciConfigMmio) -> Self {
         PciBridgeHeader(region)
     }
 }
@@ -951,7 +964,7 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     let mut dev = None;
     for node in vbus.devs().iter_mut() {
         if node.1.get_vbdf() == vbdf {
-            debug!("vbdf find {:#?}", vbdf);
+            info!("vbdf find {:#?}", vbdf);
             dev = Some(node.1);
             break;
         }
@@ -960,7 +973,7 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     if let Some(dev) = dev {
         match dev.access(offset, size) {
             false => {
-                debug!(
+                info!(
                     "hw vbdf {:#?} reg 0x{:x} try {} {}",
                     vbdf,
                     offset,
@@ -978,7 +991,7 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                 }
             }
             true => {
-                debug!(
+                info!(
                     "emu vbdf {:#?} reg 0x{:x} try {} {}",
                     vbdf,
                     offset,
@@ -1118,7 +1131,7 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
             }
         }
     } else {
-        debug!("not found dev");
+        info!("not found dev");
         /* if the dev is None, just return 0xFFFF_FFFF when read ID */
         if !mmio.is_write {
             match EndpointField::from(offset as usize, size) {
@@ -1133,7 +1146,7 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
         }
     }
 
-    debug!(
+    info!(
         "vbdf {:#?} reg 0x{:x} {} 0x{:x}",
         vbdf,
         offset,

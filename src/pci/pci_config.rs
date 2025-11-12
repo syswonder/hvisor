@@ -17,14 +17,11 @@ use alloc::collections::btree_map::BTreeMap;
 use spin::{Lazy, Mutex};
 
 use crate::{
-    config::{HvPciConfig, HvPciDevConfig, CONFIG_MAX_PCI_DEV, CONFIG_PCI_BUS_MAXNUM},
-    error::HvResult,
-    pci::{
+    config::{HvPciConfig, HvPciDevConfig, CONFIG_MAX_PCI_DEV, CONFIG_PCI_BUS_MAXNUM}, error::HvResult, memory::{mmio_perform_access, MMIOAccess}, pci::{
         mem_alloc::BaseAllocator,
         pci_access::mmio_vpci_handler,
         pci_struct::{Bdf, VirtualPciConfigSpace},
-    },
-    zone::Zone,
+    }, zone::Zone
 };
 
 use super::pci_struct::RootComplex;
@@ -35,12 +32,15 @@ pub static GLOBAL_PCIE_LIST: Lazy<Mutex<BTreeMap<Bdf, VirtualPciConfigSpace>>> =
 });
 
 /* add all dev to GLOBAL_PCIE_LIST */
-pub fn hvisor_pci_init(pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAXNUM]) -> HvResult {
-    for rootcomplex_config in pci_rootcomplex_config {
+pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
+    warn!("begin {:#?}", pci_config);
+    for rootcomplex_config in pci_config {
         /* empty config */
         if rootcomplex_config.ecam_base == 0 {
+            warn!("empty pcie config");
             continue;
         }
+
         let mut allocator = BaseAllocator::default();
         allocator.set_mem32(
             rootcomplex_config.pci_mem32_base as u32,
@@ -51,9 +51,37 @@ pub fn hvisor_pci_init(pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAX
             rootcomplex_config.mem64_size,
         );
 
-        let mut rootcomplex = RootComplex::new(rootcomplex_config.ecam_base);
-        for mut node in rootcomplex.enumerate(None, Some(allocator)) {
-            node.capability_enumerate();
+        let mut rootcomplex = {
+            #[cfg(feature = "dwc_pcie")]
+            {
+                warn!("dwc pcie");
+                // DWC PCIe: need dbi_base, cfg_base, etc.
+                // Get DWC related parameters from config
+                // Use ecam_base as dbi_base for now, should read from config
+                let dbi_base = 0x3c0400000; // TODO: should read from config
+                let cfg_base = rootcomplex_config.ecam_base; // TODO: should read from config
+                let cfg_size = rootcomplex_config.ecam_size; // TODO: should read from config
+                let first_busno = rootcomplex_config.bus_range_begin as u8;
+                
+                RootComplex::new_dwc(dbi_base, cfg_base, cfg_size, first_busno, None)
+            }
+            
+            #[cfg(feature = "loongarch64_pcie")]
+            {
+                RootComplex::new_loongarch(rootcomplex_config.ecam_base)
+            }
+            
+            #[cfg(all(not(feature = "dwc_pcie"), not(feature = "loongarch64_pcie")))]
+            {
+                // default use ECAM
+                RootComplex::new(rootcomplex_config.ecam_base)
+            }
+        };
+
+        let e = rootcomplex.enumerate(None, Some(allocator));
+        info!("begin enumerate {:#?}", e);
+        for node in e{
+            // Capabilities are already enumerated in get_node() during device discovery
             GLOBAL_PCIE_LIST.lock().insert(node.get_bdf(), node);
         }
     }
@@ -111,6 +139,58 @@ impl Zone {
                 mmio_vpci_handler,
                 0,
             );
+            // self.mmio_region_register(
+            //     0xfe270000 as usize,
+            //     0x10000 as usize,
+            //     mmio_vpci_handler_apb,
+            //     0xfe270000,
+            // );
+            // self.mmio_region_register(
+            //     0x3c0400000 as usize,
+            //     0x400000 as usize,
+            //     mmio_vpci_handler_dbi,
+            //     0x3c0400000,
+            // );
+            // self.mmio_region_register(
+            //     0xf2000000 as usize,
+            //     0x2000000 as usize,
+            //     mmio_vpci_handler_conf,
+            //     0xf2000000,
+            // );
         }
     }
+}
+
+pub fn mmio_vpci_handler_apb(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
+    mmio_perform_access(_base, mmio);
+    warn!(
+        "apb 0x{:x}+0x{:x} {} 0x{:x}",
+        _base,
+        mmio.address,
+        if mmio.is_write { "write" } else { "read" },
+        mmio.value
+    );
+    Ok(())
+}
+pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
+    mmio_perform_access(_base, mmio);
+    warn!(
+        "dbi 0x{:x}+0x{:x} {} 0x{:x}",
+        _base,
+        mmio.address,
+        if mmio.is_write { "write" } else { "read" },
+        mmio.value
+    );
+    Ok(())
+}
+pub fn mmio_vpci_handler_conf(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
+    mmio_perform_access(_base, mmio);
+    warn!(
+        "conf 0x{:x}+0x{:x} {} 0x{:x}",
+        _base,
+        mmio.address,
+        if mmio.is_write { "write" } else { "read" },
+        mmio.value
+    );
+    Ok(())
 }

@@ -71,6 +71,7 @@ use crate::consts::{hv_end, mem_pool_start, MAX_CPU_NUM};
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+#[cfg(feature = "pci")]
 use pci::pci_config::hvisor_pci_init;
 use percpu::PerCpu;
 use zone::{add_zone, zone_create};
@@ -136,7 +137,11 @@ fn primary_init_early() {
 
     let root_config = root_zone_config();
 
-    let _ = hvisor_pci_init(&root_config.pci_config);
+    #[cfg(feature = "pci")]
+    if root_config.num_pci_bus > 0 {
+        let num_pci_bus = root_config.num_pci_bus as usize;
+        let _ = hvisor_pci_init(&root_config.pci_config[..num_pci_bus]);
+    }
 
     #[cfg(not(test))]
     {

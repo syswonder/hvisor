@@ -55,6 +55,8 @@ pub struct HvPciConfig {
     pub mem64_base: u64,
     pub mem64_size: u64,
     pub pci_mem64_base: u64,
+    pub bus_range_begin: u32,
+    pub bus_range_end: u32,
 }
 
 impl HvPciConfig {
@@ -71,6 +73,8 @@ impl HvPciConfig {
             mem64_base: 0,
             mem64_size: 0,
             pci_mem64_base: 0,
+            bus_range_begin: 0,
+            bus_range_end: 0,
         }
     }
 }
@@ -165,6 +169,10 @@ impl HvZoneConfig {
 
     pub fn ivc_config(&self) -> &[HvIvcConfig] {
         &self.ivc_configs[..self.num_ivc_configs as usize]
+    }
+
+    pub fn pci_config(&self) -> &[HvPciConfig] {
+        &self.pci_config[..self.num_pci_bus as usize]
     }
 }
 

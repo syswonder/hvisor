@@ -20,8 +20,8 @@ use alloc::{collections::btree_map::BTreeMap, sync::Arc};
 use spin::{lazy::Lazy, mutex::Mutex};
 
 use crate::{
-    memory::MMIOAccess,
-    pci::{pci_access::EndpointHeader, pci_mem::PciRegionMmio},
+    memory::{MMIOAccess, mmio_perform_access},
+    pci::{pci_access::EndpointHeader, config_accessors::PciConfigMmio},
     percpu::this_zone,
 };
 
@@ -59,7 +59,7 @@ pub fn pcie_guest_init() {
     let vbdf = Bdf::from_str("0000:00:00.0").unwrap();
     let bdf = Bdf::from_str("0000:00:00.0").unwrap();
     // warn!("address {}", bdf.to_address(0));
-    let backend = EndpointHeader::new_with_region(PciRegionMmio::new(
+    let backend = EndpointHeader::new_with_region(PciConfigMmio::new(
         bdf.to_address(0) + 0x4010000000,
         CONFIG_LENTH,
     ));
@@ -117,4 +117,27 @@ pub fn pcie_guest_test() {
     );
 
     info!("pcie guest test passed");
+}
+
+pub fn pcie_dwc_test() {
+    info!("pcie dwc test begin");
+    let mut mmio = MMIOAccess {
+        address: 0x3c0400000,
+        size: 4,
+        is_write: false,
+        value: 0x0,
+    };
+    let ret = mmio_perform_access(0, &mut mmio);
+    info!("{:#?}", ret);
+    info!(
+        "mmio offset {:x}, is_wirte {}, size {}, value 0x{:x}",
+        mmio.address, mmio.is_write, mmio.size, mmio.value
+    );
+    use core::ptr::{read_volatile, write_volatile};
+    unsafe {
+        let a = read_volatile(0x3c0000900 as *const u32);
+        info!("{a}");
+    };
+
+    info!("pcie dwc test passed");
 }
