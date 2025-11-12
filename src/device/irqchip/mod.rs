@@ -109,6 +109,11 @@ impl Zone {
             #[cfg(feature = "eic7700_sysreg")]
             self.virtual_syscon_mmio_init();
         }
+        #[cfg(target_arch = "x86_64")]
+        {
+            self.ioapic_mmio_init(hv_config);
+            // self.pci_config_space_mmio_init(hv_config);
+        }
     }
 }
 
@@ -142,5 +147,11 @@ pub fn primary_init_early() {
 #[cfg(target_arch = "loongarch64")]
 pub mod ls7a2000;
 
+#[cfg(target_arch = "x86_64")]
+pub mod pic;
+
 #[cfg(target_arch = "loongarch64")]
 pub use ls7a2000::{inject_irq, percpu_init, primary_init_early, primary_init_late};
+
+#[cfg(target_arch = "x86_64")]
+pub use pic::{inject_irq, inject_vector, percpu_init, primary_init_early, primary_init_late};

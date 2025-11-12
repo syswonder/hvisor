@@ -13,7 +13,7 @@
 //
 // Authors:
 //
-use crate::arch::cpu::this_cpu_id;
+use crate::arch::cpu::{get_target_cpu, this_cpu_id};
 use crate::consts::MAX_CPU_NUM;
 use crate::consts::MAX_WAIT_TIMES;
 use crate::device::irqchip::inject_irq;
@@ -41,10 +41,12 @@ pub const MAX_REQ: u32 = 32;
 pub const MAX_DEVS: usize = 8; // Attention: The max virtio-dev number for vm is 8 (loongarch64 needs 3 consoles and 3 disks for zgclab project).
 pub const MAX_CPUS: usize = 32;
 
-#[cfg(not(target_arch = "riscv64"))]
+#[cfg(all(not(target_arch = "riscv64"), not(target_arch = "x86_64")))]
 pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;
 #[cfg(target_arch = "riscv64")]
 pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 0x20;
+#[cfg(target_arch = "x86_64")]
+pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 0x6;
 
 /// non root zone's virtio request handler
 pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
@@ -85,29 +87,38 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     #[cfg(not(target_arch = "loongarch64"))]
     if dev.need_wakeup() {
         debug!("need wakeup, sending ipi to wake up virtio device");
-        let root_cpu = root_zone().read().cpu_set.first_cpu().unwrap();
-        send_event(root_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP_VIRTIO_DEVICE);
+        send_event(
+            get_target_cpu(IRQ_WAKEUP_VIRTIO_DEVICE, 0),
+            SGI_IPI_ID as _,
+            IPI_EVENT_WAKEUP_VIRTIO_DEVICE,
+        );
     }
     drop(dev);
     let mut count: usize = 0;
     // if it is cfg request, current cpu should be blocked until gets the result
     if need_interrupt == 0 {
         // when virtio backend finish the req, it will add 1 to cfg_flag.
-        while cfg_flags[cpu_id] == old_cfg_flag {
+        while unsafe { core::ptr::read_volatile(&cfg_flags[cpu_id]) } == old_cfg_flag {
             // fence(Ordering::Acquire);
             count += 1;
             if count == MAX_WAIT_TIMES {
-                warn!("virtio backend is too slow, please check it!");
+                warn!(
+                    "virtio backend is too slow, please check it! addr: {:x} is_write: {:x?}",
+                    mmio.address, mmio.is_write
+                );
                 fence(Ordering::Acquire);
             }
             if count == MAX_WAIT_TIMES * 10 {
-                error!("virtio backend may have some problem, please check it!");
+                error!(
+                    "virtio backend may have some problem, please check it! addr: {:x} is_write: {:x?}",
+                    mmio.address, mmio.is_write
+                );
                 count = 0;
             }
         }
         if !mmio.is_write {
             // ensure cfg value is right.
-            mmio.value = cfg_values[cpu_id] as _;
+            mmio.value = unsafe { core::ptr::read_volatile(&cfg_values[cpu_id]) as _ };
             // debug!("non root receives value: {:#x?}", mmio.value);
         }
     }

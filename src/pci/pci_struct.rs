@@ -39,7 +39,7 @@ type VirtualPciConfigBits = BitArr!(for BIT_LENTH, in u8, Lsb0);
 const MAX_DEVICE: u8 = 31;
 const MAX_FUNCTION: u8 = 7;
 pub const CONFIG_LENTH: u64 = 256;
-const BIT_LENTH: usize = 256 * 2;
+pub const BIT_LENTH: usize = 256 * 2;
 
 // PCIe Device/Port Type values
 const PCI_EXP_TYPE_ROOT_PORT: u16 = 4;
@@ -293,7 +293,7 @@ impl VirtualPciConfigSpace {
                 }
             }
             _ => {
-                warn!("TODO updating space");
+                // warn!("TODO updating space");
             }
         }
     }
@@ -589,7 +589,6 @@ impl<B: BarAllocator> PciIterator<B> {
                 cmd.remove(PciCommand::MEMORY_ENABLE);
                 cmd
             });
-
             let mut i = 0;
             while i < bar_max {
                 match bararr[i].get_type() {
@@ -607,6 +606,28 @@ impl<B: BarAllocator> PciIterator<B> {
                         i += 1;
                         bararr[i].set_value(value);
                         bararr[i].set_virtual_value(value);
+                        let _ = dev.write_bar(i as u8, (value >> 32) as u32);
+                    }
+                    _ => {}
+                }
+                i += 1;
+            }
+        } else {
+            // use default bar address as virt bar address
+            let mut i = 0;
+            while i < bar_max {
+                match bararr[i].get_type() {
+                    PciMemType::Mem32 => {
+                        let value = bararr[i].get_value64();
+                        bararr[i].set_virtual_value64(value as u64);
+                        let _ = dev.write_bar(i as u8, value as u32);
+                    }
+                    PciMemType::Mem64Low => {
+                        let value = bararr[i].get_value64();
+                        bararr[i].set_virtual_value64(value);
+                        let _ = dev.write_bar(i as u8, value as u32);
+                        i += 1;
+                        bararr[i].set_virtual_value64(value);
                         let _ = dev.write_bar(i as u8, (value >> 32) as u32);
                     }
                     _ => {}

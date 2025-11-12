@@ -17,11 +17,16 @@ use alloc::collections::btree_map::BTreeMap;
 use spin::{Lazy, Mutex};
 
 use crate::{
-    config::{HvPciConfig, HvPciDevConfig, CONFIG_MAX_PCI_DEV, CONFIG_PCI_BUS_MAXNUM}, error::HvResult, memory::{mmio_perform_access, MMIOAccess}, pci::{
+    arch::iommu::iommu_add_device,
+    config::{HvPciConfig, HvPciDevConfig, CONFIG_MAX_PCI_DEV, CONFIG_PCI_BUS_MAXNUM},
+    error::HvResult,
+    memory::{mmio_perform_access, MMIOAccess},
+    pci::{
         mem_alloc::BaseAllocator,
         pci_access::mmio_vpci_handler,
         pci_struct::{Bdf, VirtualPciConfigSpace},
-    }, zone::Zone
+    },
+    zone::Zone,
 };
 
 use super::pci_struct::RootComplex;
@@ -51,6 +56,13 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
             rootcomplex_config.mem64_size,
         );
 
+        // TODO: refactor
+        // in x86, we do not take the initiative to reallocate BAR space
+        #[cfg(target_arch = "x86_64")]
+        let allocator_opt: Option<BaseAllocator> = None;
+        #[cfg(not(target_arch = "x86_64"))]
+        let allocator_opt: Option<BaseAllocator> = Some(allocator);
+
         let mut rootcomplex = {
             #[cfg(feature = "dwc_pcie")]
             {
@@ -78,10 +90,12 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
             }
         };
 
-        let e = rootcomplex.enumerate(None, Some(allocator));
+        let e = rootcomplex.enumerate(None, allocator_opt);
         info!("begin enumerate {:#?}", e);
-        for node in e{
+        for mut node in e {
             // Capabilities are already enumerated in get_node() during device discovery
+            // But we call capability_enumerate() explicitly to ensure they are processed
+            node.capability_enumerate();
             GLOBAL_PCIE_LIST.lock().insert(node.get_bdf(), node);
         }
     }
@@ -92,6 +106,7 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
 impl Zone {
     pub fn guest_pci_init(
         &mut self,
+        zone_id: usize,
         alloc_pci_devs: &[HvPciDevConfig; CONFIG_MAX_PCI_DEV],
         num_pci_devs: u64,
     ) -> HvResult {
@@ -101,8 +116,20 @@ impl Zone {
             let dev_config = alloc_pci_devs[i as usize];
             let bdf = Bdf::from_address(dev_config.bdf << 12);
             let vbdf = Bdf::from_address(dev_config.vbdf << 12);
+            #[cfg(any(
+                all(feature = "iommu", target_arch = "aarch64"),
+                target_arch = "x86_64"
+            ))]
+            {
+                let iommu_pt_addr = if self.iommu_pt.is_some() {
+                    self.iommu_pt.as_ref().unwrap().root_paddr()
+                } else {
+                    0
+                };
+                iommu_add_device(zone_id, (bdf.to_address(0) >> 12) as _, iommu_pt_addr);
+            }
             if bdf.is_host_bridge() {
-                if let Some(mut vdev) = guard.get(&bdf) {
+                if let Some(vdev) = guard.get(&bdf) {
                     let mut vdev = vdev.clone();
                     vdev.set_vbdf(vbdf);
                     self.vpci_bus.insert(vbdf, vdev);
@@ -139,24 +166,6 @@ impl Zone {
                 mmio_vpci_handler,
                 0,
             );
-            // self.mmio_region_register(
-            //     0xfe270000 as usize,
-            //     0x10000 as usize,
-            //     mmio_vpci_handler_apb,
-            //     0xfe270000,
-            // );
-            // self.mmio_region_register(
-            //     0x3c0400000 as usize,
-            //     0x400000 as usize,
-            //     mmio_vpci_handler_dbi,
-            //     0x3c0400000,
-            // );
-            // self.mmio_region_register(
-            //     0xf2000000 as usize,
-            //     0x2000000 as usize,
-            //     mmio_vpci_handler_conf,
-            //     0xf2000000,
-            // );
         }
     }
 }

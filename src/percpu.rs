@@ -40,14 +40,15 @@ pub struct PerCpu {
 
 impl PerCpu {
     pub fn new<'a>(cpu_id: usize) -> &'static mut PerCpu {
-        let vaddr = PER_CPU_ARRAY_PTR as VirtAddr + cpu_id as usize * PER_CPU_SIZE;
+        let arch_cpu = ArchCpu::new(cpu_id);
+        let vaddr = PER_CPU_ARRAY_PTR as VirtAddr + arch_cpu.cpuid as usize * PER_CPU_SIZE;
         let ret = vaddr as *mut Self;
         unsafe {
             ret.write_volatile(PerCpu {
-                id: cpu_id,
+                id: arch_cpu.cpuid,
                 cpu_on_entry: INVALID_ADDRESS,
                 dtb_ipa: INVALID_ADDRESS,
-                arch_cpu: ArchCpu::new(cpu_id),
+                arch_cpu,
                 zone: None,
                 ctrl_lock: Mutex::new(()),
                 boot_cpu: false,

@@ -52,3 +52,9 @@ pub fn is_s2_pt_level3() -> bool {
 pub fn new_s2_memory_set() -> MemorySet<Stage2PageTable> {
     MemorySet::new(if is_s2_pt_level3() { 3 } else { 4 })
 }
+
+pub fn arch_post_heap_init(host_dtb: usize) {
+    // AArch64 does not need to do some setup work after heap init like x86_64.
+    // This function can be used to set up any architecture-specific parameters if needed.
+    // Currently, it does nothing.
+}
