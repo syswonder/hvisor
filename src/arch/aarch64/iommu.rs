@@ -530,7 +530,14 @@ impl Smmuv3 {
 
 static SMMUV3: spin::Once<Mutex<Smmuv3>> = spin::Once::new();
 
-/// smmuv3 init
+/// iommu feature is disabled.
+#[cfg(not(feature = "iommu"))]
+pub fn iommu_init() {
+    info!("aarch64: iommu_init: do nothing now");
+}
+
+/// smmuv3 init (enabled)
+#[cfg(feature = "iommu")]
 pub fn iommu_init() {
     info!("Smmuv3 init...");
     SMMUV3.call_once(|| Mutex::new(Smmuv3::new()));
