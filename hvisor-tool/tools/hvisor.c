@@ -466,10 +466,16 @@ static int zone_start_from_json(const char *json_config_path,
                   mem_region->virtual_start, mem_region->size);
     }
 
-    config->num_interrupts = num_interrupts;
+    // irq
+    memset(config->interrupts_bitmap, 0,
+           sizeof(BitmapWord) * (CONFIG_MAX_INTERRUPTS /
+                                 CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD));
     for (int i = 0; i < num_interrupts; i++) {
-        config->interrupts[i] =
-            SAFE_CJSON_GET_ARRAY_ITEM(interrupts_json, i)->valueint;
+        __u32 irq = SAFE_CJSON_GET_ARRAY_ITEM(interrupts_json, i)->valueint;
+
+        size_t word_index = irq / CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD;
+        size_t bit_index = irq % CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD;
+        config->interrupts_bitmap[word_index] |= ((BitmapWord)1) << bit_index;
     }
 
     // ivc
