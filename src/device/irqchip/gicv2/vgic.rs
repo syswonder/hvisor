@@ -14,6 +14,7 @@
 // Authors:
 //    Hangqi Ren <2572131118@qq.com>
 use crate::arch::zone::{GicConfig, Gicv2Config, HvArchZoneConfig};
+use crate::config::{BitmapWord, CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD};
 use crate::device::irqchip::gicv2::gicd::{
     get_max_int_num, GICD, GICD_CTRL_REG_OFFSET, GICD_ICACTIVER_REG_OFFSET,
     GICD_ICENABLER_REG_OFFSET, GICD_ICFGR_REG_OFFSET, GICD_ICPENDR_REG_OFFSET,
@@ -93,12 +94,21 @@ impl Zone {
     }
 
     // store the interrupt number in the irq_bitmap.
-    pub fn irq_bitmap_init(&mut self, irqs: &[u32]) {
+    pub fn irq_bitmap_init(&mut self, irqs_bitmap: &[BitmapWord]) {
         // Enable each cpu's sgi and ppi access permission
         self.irq_bitmap[0] = 0xffff_ffff;
-        for irq in irqs {
-            self.insert_irq_to_bitmap(*irq);
+
+        for i in 0..irqs_bitmap.len() {
+            let word = irqs_bitmap[i];
+
+            for j in 0..CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD {
+                if ((word >> j) & 1) == 1 {
+                    let irq_id = (i * CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD + j) as u32;
+                    self.insert_irq_to_bitmap(irq_id);
+                }
+            }
         }
+
         for (index, &word) in self.irq_bitmap.iter().enumerate() {
             for bit_position in 0..32 {
                 if word & (1 << bit_position) != 0 {

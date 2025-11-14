@@ -19,6 +19,7 @@ use super::{gicd::GICD_LOCK, is_spi};
 use crate::platform::BOARD_MPIDR_MAPPINGS;
 use crate::{
     arch::zone::{GicConfig, Gicv2Config, Gicv3Config, HvArchZoneConfig},
+    config::{BitmapWord, CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD, CONFIG_MAX_INTERRUPTS},
     consts::MAX_CPU_NUM,
     device::irqchip::gicv3::{
         gicd::*, gicr::*, gits::*, host_gicd_base, host_gicr_base, host_gits_base,
@@ -72,14 +73,23 @@ impl Zone {
         }
     }
 
-    pub fn irq_bitmap_init(&mut self, irqs: &[u32]) {
-        for irq in irqs {
-            self.insert_irq_to_bitmap(*irq);
+    pub fn irq_bitmap_init(&mut self, irqs_bitmap: &[BitmapWord]) {
+        for i in 0..irqs_bitmap.len() {
+            let word = irqs_bitmap[i];
+
+            for j in 0..CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD {
+                if ((word >> j) & 1) == 1 {
+                    let irq_id = (i * CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD + j) as u32;
+                    self.insert_irq_to_bitmap(irq_id);
+                }
+            }
         }
+
         for (index, &word) in self.irq_bitmap.iter().enumerate() {
-            for bit_position in 0..32 {
+            for bit_position in 0..CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD {
                 if word & (1 << bit_position) != 0 {
-                    let interrupt_number = index * 32 + bit_position;
+                    let interrupt_number =
+                        index * CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD + bit_position;
                     info!(
                         "Found interrupt in Zone {} irq_bitmap: {}",
                         self.id, interrupt_number
@@ -90,9 +100,9 @@ impl Zone {
     }
 
     fn insert_irq_to_bitmap(&mut self, irq: u32) {
-        assert!(irq < 1024); // 1024 is the maximum number of interrupts supported by GICv3 (GICD_TYPER.ITLinesNumber)
-        let irq_index = irq / 32;
-        let irq_bit = irq % 32;
+        assert!(irq < (CONFIG_MAX_INTERRUPTS as u32)); // CONFIG_MAX_INTERRUPTS is the maximum number of interrupts supported by GICv3 (GICD_TYPER.ITLinesNumber)
+        let irq_index = irq / (CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD as u32);
+        let irq_bit = irq % (CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD as u32);
         self.irq_bitmap[irq_index as usize] |= 1 << irq_bit;
     }
 }
