@@ -321,6 +321,19 @@ impl Cmdq {
             0x0d => {
                 debug!("INVALL cmd");
             }
+            0x01 => {
+                let vicid = value[2] & 0xffff;
+                let icid = vicid_to_icid(vicid, cpuset_bitmap)
+                    .expect("vicid to icid failed, maybe logical_id out of range");
+                new_cmd[2] &= !0xffffu64;
+                new_cmd[2] |= icid & 0xffff;
+                debug!(
+                    "MOVI, for Device {:#x}, new vicid({}) -> icid({})",
+                    value[0] >> 32,
+                    vicid,
+                    icid
+                );
+            }
             _ => {
                 debug!("other cmd, code: 0x{:x}", code);
             }
