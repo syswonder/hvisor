@@ -187,7 +187,7 @@ impl PciMem {
 
     pub fn get_size_with_flag(&mut self) -> u64 {
         match self.bar_type {
-            PciMemType::Mem32 | PciMemType::Rom => !(self.size - 1u64),
+            PciMemType::Mem32 | PciMemType::Rom | PciMemType::Io => !(self.size - 1u64),
             PciMemType::Mem64Low => {
                 let bar_size = !(self.size - 1);
                 bar_size.get_bits(0..32)
@@ -322,9 +322,9 @@ impl PciMem {
         self.virtual_value = val;
     }
 
-    pub fn set_virtual_value64(&mut self, value: u64) {
-        self.virtual_value = value;
-    }
+    // pub fn set_virtual_value(&mut self, value: u64) {
+    //     self.virtual_value = value;
+    // }
 }
 
 impl Debug for PciMem {
@@ -562,6 +562,7 @@ pub trait PciBarRW: PciRWBase {
 
                 match value.get_bits(1..3) {
                     0b00 => {
+                        // 32-bit memory space
                         let size = {
                             let _ = self.write_bar(slot, 0xffffffff);
                             let mut readback = self.read_bar(slot).unwrap();
@@ -579,6 +580,7 @@ pub trait PciBarRW: PciRWBase {
                             PciMem::new_bar(PciMemType::Mem32, value as u64, size as u64, pre);
                     }
                     0b10 => {
+                        // 64-bit memory space
                         if slot == 5 {
                             warn!("read bar64 in last bar");
                             break;
@@ -601,7 +603,7 @@ pub trait PciBarRW: PciRWBase {
                                 1u64 << ((readback_high.trailing_zeros() + 32) as u64)
                             }
                         };
-                        let value64 = (value as u64) | ((value_high as u64) << 32);
+                        // let value64 = (value as u64) | ((value_high as u64) << 32);
 
                         bararr[slot as usize] =
                             PciMem::new_bar(PciMemType::Mem64Low, value as u64, size, pre);
@@ -614,6 +616,7 @@ pub trait PciBarRW: PciRWBase {
                     }
                 }
             } else {
+                // IO space
                 let size = {
                     let _ = self.write_bar(slot, 0xffffffff);
                     let mut readback = self.read_bar(slot).unwrap();
@@ -987,7 +990,7 @@ fn handle_config_space_access(
 
     match dev.access(offset, size) {
         false => {
-            info!(
+            debug!(
                 "hw vbdf {:#?} reg 0x{:x} try {} {}",
                 vbdf,
                 offset,
@@ -1005,7 +1008,7 @@ fn handle_config_space_access(
             }
         }
         true => {
-            info!(
+            debug!(
                 "emu vbdf {:#?} reg 0x{:x} try {} {}",
                 vbdf,
                 offset,
@@ -1037,6 +1040,7 @@ fn handle_config_space_access(
                                          */
                                         if (bar_type == PciMemType::Mem32)
                                             | (bar_type == PciMemType::Mem64High)
+                                            | (bar_type == PciMemType::Io)
                                         {
                                             let old_vaddr = bar.get_virtual_value64() & !0xf;
                                             let new_vaddr = {
@@ -1084,10 +1088,16 @@ fn handle_config_space_access(
                                                 dev.set_bar_virtual_value(slot - 1, new_vaddr);
                                             }
 
+                                            let bar_size = if crate::memory::addr::is_aligned(bar.get_size() as usize) {
+                                                bar.get_size()
+                                            } else {
+                                                crate::memory::PAGE_SIZE as u64
+                                            };
+
                                             gpm.insert(MemoryRegion::new_with_offset_mapper(
                                                 new_vaddr as GuestPhysAddr,
                                                 paddr as HostPhysAddr,
-                                                bar.get_size() as _,
+                                                bar_size as _,
                                                 MemFlags::READ | MemFlags::WRITE,
                                             ))?;
                                             /* after update gpm, mem barrier is needed
@@ -1146,6 +1156,7 @@ fn handle_config_space_access(
                 }
                 HeaderType::PciBridge => {
                     // TODO: add emu for bridge, actually it is same with endpoint
+                    warn!("bridge emu rw");
                 }
                 _ => {
                     warn!("unhanled pci type {:#?}", dev.get_config_type());
@@ -1154,7 +1165,7 @@ fn handle_config_space_access(
         }
     }
 
-    info!(
+    debug!(
         "vbdf {:#?} reg 0x{:x} {} 0x{:x}",
         vbdf,
         offset,
@@ -1182,7 +1193,7 @@ fn handle_device_not_found(mmio: &mut MMIOAccess, offset: PciConfigAddress) {
 }
 
 pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
-    info!("mmio_vpci_handler {:#x}", mmio.address);
+    // info!("mmio_vpci_handler {:#x}", mmio.address);
     let zone_id = this_zone_id();
     let zone = this_zone();
     let mut guard = zone.write();
@@ -1204,28 +1215,30 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
 }
 
 pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
-    info!("mmio_vpci_handler_dbi {:#x}", mmio.address);
-    let zone_id = this_zone_id();
-    let zone = this_zone();
-    let mut guard = zone.write();
-    let (vbus, gpm) = {
-        let Zone { gpm, vpci_bus, .. } = &mut *guard;
-        (vpci_bus, gpm)
-    };
+    // info!("mmio_vpci_handler_dbi {:#x}", mmio.address);
 
-    let offset = (mmio.address & 0xfff) as PciConfigAddress;
-    let base = mmio.address as PciConfigAddress - offset + _base as PciConfigAddress;
-    
-    if let Some(dev) = vbus.get_device_by_base(base) {
-        handle_config_space_access(dev, mmio, offset, gpm, zone_id)?;
+    if mmio.address >= 0x300000 /* ATU base */ {
+        mmio_perform_access(_base, mmio);
+    } else if mmio.address >= BIT_LENTH {
+        // dbi read
+        mmio_perform_access(_base, mmio);
     } else {
-        if (offset as usize) >= BIT_LENTH {
-            // dbi read
-            mmio_perform_access(_base, mmio);
+        let offset = (mmio.address & 0xfff) as PciConfigAddress;
+        let zone_id = this_zone_id();
+        let zone = this_zone();
+        let mut guard = zone.write();
+        let (vbus, gpm) = {
+            let Zone { gpm, vpci_bus, .. } = &mut *guard;
+            (vpci_bus, gpm)
+        };
+    
+        let base = mmio.address as PciConfigAddress - offset + _base as PciConfigAddress;
+        
+        if let Some(dev) = vbus.get_device_by_base(base) {
+            handle_config_space_access(dev, mmio, offset, gpm, zone_id)?;
         } else {
             handle_device_not_found(mmio, offset);
         }
-
     }
 
     Ok(())

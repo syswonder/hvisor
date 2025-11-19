@@ -133,21 +133,18 @@ impl Zone {
                 };
                 iommu_add_device(zone_id, dev_config.bdf as _, iommu_pt_addr);
             }
-            if bdf.is_host_bridge() {
-                if let Some(vdev) = guard.get(&bdf) {
-                    let mut vdev = vdev.clone();
+            if let Some(dev) = guard.get(&bdf){
+                if bdf.is_host_bridge(dev.get_host_bdf().bus()) {
+                    let mut vdev = dev.clone();
                     vdev.set_vbdf(vbdf);
                     self.vpci_bus.insert(vbdf, vdev);
                 } else {
-                    warn!("can not find host bridge {:#?}", bdf);
+                    let mut vdev = guard.remove(&bdf).unwrap();
+                    vdev.set_vbdf(vbdf);
+                    self.vpci_bus.insert(vbdf, vdev);
                 }
             } else {
-                if let Some(mut vdev) = guard.remove(&bdf) {
-                    vdev.set_vbdf(vbdf);
-                    self.vpci_bus.insert(vbdf, vdev);
-                } else {
-                    warn!("can not find dev {:#?}", bdf);
-                }
+                warn!("can not find dev {:#?}", bdf);
             }
             i += 1;
         }
@@ -174,7 +171,7 @@ impl Zone {
                 rootcomplex_config.ecam_base as usize,
             );
             }
-            // #[cfg(feature = "dwc_pcie")]
+            #[cfg(feature = "dwc_pcie")]
             {
                 self.mmio_region_register(
                     rootcomplex_config.ecam_base as usize,
@@ -182,45 +179,43 @@ impl Zone {
                     mmio_vpci_handler_dbi,
                     rootcomplex_config.ecam_base as usize,
                 );
-                #[cfg(feature = "dwc_pcie")]
-                {
-                    let extend_config = platform::ROOT_DWC_ATU_CONFIG
-                        .iter()
-                        .find(|extend_cfg| extend_cfg.ecam_base == rootcomplex_config.ecam_base);
-                    
-                    if let Some(extend_config) = extend_config {
-                        if extend_config.apb_base != 0 && extend_config.apb_size != 0 {
-                            self.mmio_region_register(
-                                extend_config.apb_base as usize,
-                                extend_config.apb_size as usize,
-                                mmio_generic_handler,
-                                extend_config.apb_base as usize,
-                            );
-                        }
-                        
-                        let cfg_size_half = extend_config.cfg_size / 2;
-                        let cfg0_base = extend_config.cfg_base;
-                        if cfg0_base != 0 && cfg_size_half != 0 {
-                            self.mmio_region_register(
-                                cfg0_base as usize,
-                                cfg_size_half as usize,
-                                mmio_vpci_handler,
-                                cfg0_base as usize,
-                            );
-                        }
-                        
-                        let cfg1_base = extend_config.cfg_base + cfg_size_half;
-                        if cfg1_base != 0 && cfg_size_half != 0 {
-                            self.mmio_region_register(
-                                cfg1_base as usize,
-                                cfg_size_half as usize,
-                                mmio_vpci_handler,
-                                cfg1_base as usize,
-                            );
-                        }
-                    } else {
-                        warn!("No extend config found for base 0x{:x}", rootcomplex_config.ecam_base);
+
+                let extend_config = platform::ROOT_DWC_ATU_CONFIG
+                    .iter()
+                    .find(|extend_cfg| extend_cfg.ecam_base == rootcomplex_config.ecam_base);
+                
+                if let Some(extend_config) = extend_config {
+                    if extend_config.apb_base != 0 && extend_config.apb_size != 0 {
+                        self.mmio_region_register(
+                            extend_config.apb_base as usize,
+                            extend_config.apb_size as usize,
+                            mmio_generic_handler,
+                            extend_config.apb_base as usize,
+                        );
                     }
+                    
+                    let cfg_size_half = extend_config.cfg_size / 2;
+                    let cfg0_base = extend_config.cfg_base;
+                    if cfg0_base != 0 && cfg_size_half != 0 {
+                        self.mmio_region_register(
+                            cfg0_base as usize,
+                            cfg_size_half as usize,
+                            mmio_vpci_handler,
+                            cfg0_base as usize,
+                        );
+                    }
+                    
+                    let cfg1_base = extend_config.cfg_base + cfg_size_half;
+                    if cfg1_base != 0 && cfg_size_half != 0 {
+                        self.mmio_region_register(
+                            cfg1_base as usize,
+                            cfg_size_half as usize,
+                            mmio_vpci_handler,
+                            cfg1_base as usize,
+                        );
+                    }
+                } else {
+                    warn!("No extend config found for base 0x{:x}", rootcomplex_config.ecam_base);
                 }
             }
         }

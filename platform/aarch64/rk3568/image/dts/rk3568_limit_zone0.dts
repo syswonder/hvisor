@@ -318,6 +318,17 @@
 		supports-emmc;
 	};
 
+	sdio-pwrseq {
+		pinctrl-names = "default";
+		pinctrl-0 = <0x136>;
+		clock-names = "ext_clock";
+		clocks = <0x135 0x01>;
+		reset-gpios = <0x83 0x1d 0x01>;
+		compatible = "mmc-pwrseq-simple";
+		post-power-on-delay-ms = <0xc8>;
+		phandle = <0x9f>;
+	};
+
 	dwmmc@fe000000 {
 		fifo-depth = <0x100>;
 		pinctrl-names = "default";
@@ -407,10 +418,10 @@
 			ftrace-size = <0x00>;
 		};
 
-        hvisor@60080000 {
-			no-map;
-			reg = <0x00 0x60080000 0x00 0x400000>;
-		};
+        // hvisor@0x2000000 {
+		// 	no-map;
+		// 	reg = <0x00 0x2000000 0x00 0x1000000>;
+		// };
 
 		nonroot {
 			no-map;
@@ -641,13 +652,13 @@
 		phandle = <0x01>;
 		interrupt-controller;
 
-		interrupt-controller@fd440000 {
-			msi-controller;
-			compatible = "arm,gic-v3-its";
-			reg = <0x00 0xfd440000 0x00 0x20000>;
-			phandle = <0xad>;
-			#msi-cells = <0x01>;
-		};
+		// interrupt-controller@fd440000 {
+		// 	msi-controller;
+		// 	compatible = "arm,gic-v3-its";
+		// 	reg = <0x00 0xfd440000 0x00 0x20000>;
+		// 	phandle = <0xad>;
+		// 	#msi-cells = <0x01>;
+		// };
 	};
 
 

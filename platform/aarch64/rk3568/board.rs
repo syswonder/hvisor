@@ -56,36 +56,36 @@ pub const ROOT_ZONE_CPUS: u64 = (1 << 0)|(1 << 1);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0x3c0400000,
-        virtual_start: 0x3c0400000,
-        size: 0x400000,
-    }, //pcie
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0xfe270000,
-        virtual_start: 0xfe270000,
-        size: 0x10000,
-    }, //pcie
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0xf2000000,
-        virtual_start: 0xf2000000,
-        size: 0x100000,
-    }, //pcie
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0xf2100000,
-        virtual_start: 0xf2100000,
-        size: 0x100000,
-    }, //pcie
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0xf2200000,
-        virtual_start: 0xf2200000,
-        size: 0x1e00000,
-    }, //pcie
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0x3c0400000,
+    //     virtual_start: 0x3c0400000,
+    //     size: 0x400000,
+    // }, //pcie
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0xfe270000,
+    //     virtual_start: 0xfe270000,
+    //     size: 0x10000,
+    // }, //pcie
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0xf2000000,
+    //     virtual_start: 0xf2000000,
+    //     size: 0x100000,
+    // }, //pcie
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0xf2100000,
+    //     virtual_start: 0xf2100000,
+    //     size: 0x100000,
+    // }, //pcie
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0xf2200000,
+    //     virtual_start: 0xf2200000,
+    //     size: 0x1e00000,
+    // }, //pcie
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x340000000,
@@ -294,7 +294,7 @@ pub const ROOT_PCI_CONFIG: &[HvPciConfig] = &[
     // },
     HvPciConfig {
         ecam_base: 0x3c0400000,
-        ecam_size: 0x100000,
+        ecam_size: 0x400000,
         io_base: 0xf2100000,
         io_size: 0x100000,
         pci_io_base: 0xf2100000,
@@ -331,8 +331,8 @@ pub const ROOT_DWC_ATU_CONFIG: &[HvDwcAtuConfig] = &[
         ecam_base: 0x3c0400000,
         dbi_base: 0x3c0400000,
         dbi_size: 0x10000,
-        apb_base: 0,
-        apb_size: 0,
+        apb_base: 0xfe270000,
+        apb_size: 0x10000,
         cfg_base: 0xf2000000,
         cfg_size: 0x80000*2,
         cfg0_atu_index: 0,
@@ -348,8 +348,7 @@ pub const ROOT_DWC_ATU_CONFIG: &[HvDwcAtuConfig] = &[
     },
 ];
 
-pub const ROOT_PCI_DEVS: [HvPciDevConfig; 3] = [
-    pci_dev!( 0x1, 0x0, 0x0),
+pub const ROOT_PCI_DEVS: [HvPciDevConfig; 2] = [
+    pci_dev!(0x10, 0x0, 0x0),
     pci_dev!(0x11, 0x0, 0x0),
-    pci_dev!(0x21, 0x0, 0x0),
 ];

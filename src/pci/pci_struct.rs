@@ -39,7 +39,7 @@ type VirtualPciConfigBits = BitArr!(for BIT_LENTH, in u8, Lsb0);
 const MAX_DEVICE: u8 = 31;
 const MAX_FUNCTION: u8 = 7;
 pub const CONFIG_LENTH: u64 = 256;
-pub const BIT_LENTH: usize = 256 * 2;
+pub const BIT_LENTH: usize = 128 * 5;   
 
 // PCIe Device/Port Type values
 const PCI_EXP_TYPE_ROOT_PORT: u16 = 4;
@@ -80,8 +80,8 @@ impl Bdf {
         <Self as BdfAddressConversion>::from_address(address)
     }
 
-    pub fn is_host_bridge(&self) -> bool {
-        if (self.bus, self.device, self.function) == (0, 0, 0) {
+    pub fn is_host_bridge(&self, bus_begin: u8) -> bool {
+        if (self.bus, self.device, self.function) == (bus_begin, 0, 0) {
             true
         } else {
             false
@@ -377,6 +377,10 @@ impl VirtualPciConfigSpace {
         self.host_bdf = host_bdf;
     }
 
+    pub fn get_host_bdf(&self) -> Bdf {
+        self.host_bdf
+    }
+
     pub fn set_parent_bdf(&mut self, parent_bdf: Bdf) {
         self.parent_bdf = parent_bdf;
     }
@@ -650,6 +654,12 @@ impl<B: BarAllocator> PciIterator<B> {
                         bararr[i].set_virtual_value(value);
                         let _ = dev.write_bar(i as u8, (value >> 32) as u32);
                     }
+                    PciMemType::Io => {
+                        //TODO: alloc io in hvisor, just set virt value for now
+                        let value = bararr[i].get_value64();
+                        bararr[i].set_virtual_value(value);
+                        let _ = dev.write_bar(i as u8, value as u32);
+                    }
                     _ => {}
                 }
                 i += 1;
@@ -661,16 +671,21 @@ impl<B: BarAllocator> PciIterator<B> {
                 match bararr[i].get_type() {
                     PciMemType::Mem32 => {
                         let value = bararr[i].get_value64();
-                        bararr[i].set_virtual_value64(value as u64);
+                        bararr[i].set_virtual_value(value as u64);
                         let _ = dev.write_bar(i as u8, value as u32);
                     }
                     PciMemType::Mem64Low => {
                         let value = bararr[i].get_value64();
-                        bararr[i].set_virtual_value64(value);
+                        bararr[i].set_virtual_value(value);
                         let _ = dev.write_bar(i as u8, value as u32);
                         i += 1;
-                        bararr[i].set_virtual_value64(value);
+                        bararr[i].set_virtual_value(value);
                         let _ = dev.write_bar(i as u8, (value >> 32) as u32);
+                    }
+                    PciMemType::Io => {
+                        let value = bararr[i].get_value64();
+                        bararr[i].set_virtual_value(value);
+                        let _ = dev.write_bar(i as u8, value as u32);
                     }
                     _ => {}
                 }
@@ -836,14 +851,6 @@ impl Bridge {
 
     pub fn next_bridge(&self, address: PciConfigAddress, has_secondary_link: bool) -> Self {
         let mmio = PciConfigMmio::new(address, CONFIG_LENTH);
-        warn!("next_bridge \n
-            bus {}\n 
-            device {}\n 
-            subordinate_bus {}\n 
-            secondary_bus {}\n 
-            primary_bus {}\n 
-            has_secondary_link {}", 
-            self.subordinate_bus + 1, 0, self.subordinate_bus, self.secondary_bus, self.primary_bus, has_secondary_link);
         Self {
             bus: self.subordinate_bus + 1,
             device: 0,
