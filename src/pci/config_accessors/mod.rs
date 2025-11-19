@@ -19,10 +19,6 @@ use core::{any::Any, fmt::Debug};
 use crate::error::HvResult;
 use crate::pci::{pci_struct::Bdf, PciConfigAddress};
 
-pub trait BdfAddressConversion {
-    fn from_address(address: PciConfigAddress) -> Bdf;
-}
-
 // PCIe region trait for memory-mapped I/O access
 pub trait PciRegion: Debug + Sync + Send + Any {
     fn read_u8(&self, offset: PciConfigAddress) -> HvResult<u8>;
@@ -45,10 +41,7 @@ impl PciConfigMmio {
     pub fn new(base: PciConfigAddress, length: u64) -> Self {
         Self { base, length }
     }
-    /* TODO: may here need check whether length exceeds*/
-    pub(crate) fn access<T>(&self, offset: PciConfigAddress) -> *mut T {
-        (self.base + offset) as *mut T
-    }
+
     /// Check if this is a placeholder (dummy) mmio with base address 0
     pub fn is_placeholder(&self) -> bool {
         self.base == 0 && self.length == 0
@@ -97,8 +90,6 @@ impl PciRegion for PciRegionMmio {
     }
 }
 
-// Default implementation of PciRegion for PciConfigMmio
-#[cfg(not(any(feature = "ecam_pcie", feature = "dwc_pcie", feature = "loongarch64_pcie")))]
 impl PciRegion for PciConfigMmio {
     fn read_u8(&self, offset: PciConfigAddress) -> HvResult<u8> {
         unsafe { Ok(self.access::<u8>(offset).read_volatile() as u8) }
@@ -120,22 +111,6 @@ impl PciRegion for PciConfigMmio {
     fn write_u32(&self, offset: PciConfigAddress, value: u32) -> HvResult {
         unsafe { self.access::<u32>(offset).write_volatile(value) }
         Ok(())
-    }
-}
-
-// Default implementation of BdfAddressConversion for Bdf
-#[cfg(not(any(feature = "ecam_pcie", feature = "dwc_pcie", feature = "loongarch64_pcie")))]
-impl BdfAddressConversion for Bdf {
-    fn from_address(address: PciConfigAddress) -> Bdf {
-        let bdf = address >> 12;
-        let function = (bdf & 0b111) as u8;
-        let device = ((bdf >> 3) & 0b11111) as u8;
-        let bus = (bdf >> 8) as u8;
-        Bdf {
-            bus,
-            device,
-            function,
-        }
     }
 }
 

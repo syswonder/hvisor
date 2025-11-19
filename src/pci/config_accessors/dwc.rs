@@ -18,7 +18,7 @@ use crate::error::{HvResult, HvErrorNum::*};
 use crate::pci::{pci_access::{PciRW, PciRWBase}, pci_struct::{Bdf, RootComplex}, PciConfigAddress};
 use crate::config::HvDwcAtuConfig;
 use alloc::sync::Arc;
-use super::{PciConfigAccessor, PciRegion, PciConfigMmio, PciRegionMmio, BdfAddressConversion};
+use super::{PciConfigAccessor, PciRegion, PciConfigMmio, PciRegionMmio};
 use super::dwc_atu::{AtuUnroll, AtuConfig, ATU_UNUSED};
 use bit_field::BitField;
 
@@ -190,18 +190,9 @@ impl PciConfigAccessor for DwcConfigAccessor {
     }
 }
 
-#[cfg(feature = "dwc_pcie")]
-impl BdfAddressConversion for Bdf {
-    fn from_address(address: PciConfigAddress) -> Bdf {
-        let bdf = address >> 12;
-        let function = (bdf & 0b111) as u8;
-        let device = ((bdf >> 3) & 0b11111) as u8;
-        let bus = (bdf >> 8) as u8;
-        Bdf {
-            bus,
-            device,
-            function,
-        }
+impl PciConfigMmio {
+    /* TODO: may here need check whether length exceeds*/
+    pub(crate) fn access<T>(&self, offset: PciConfigAddress) -> *mut T {
+        (self.base + offset) as *mut T
     }
 }
-

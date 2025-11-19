@@ -22,13 +22,16 @@ use crate::{
     error::HvResult,
     memory::mmio_generic_handler,
     pci::{
-        config_accessors::BdfAddressConversion, mem_alloc::BaseAllocator, pci_access::{mmio_vpci_handler, mmio_vpci_handler_dbi}, pci_struct::{Bdf, VirtualPciConfigSpace}
+        pci_access::{mmio_vpci_handler, mmio_vpci_handler_dbi}, 
+        pci_struct::{Bdf, VirtualPciConfigSpace}, 
+        config_accessors::PciConfigMmio
     },
     zone::Zone,
 };
 
 use crate::platform;
 use super::pci_struct::RootComplex;
+use crate::pci::mem_alloc::BaseAllocator;
 
 pub static GLOBAL_PCIE_LIST: Lazy<Mutex<BTreeMap<Bdf, VirtualPciConfigSpace>>> = Lazy::new(|| {
     let m = BTreeMap::new();
@@ -87,7 +90,8 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
             
             #[cfg(feature = "loongarch64_pcie")]
             {
-                RootComplex::new_loongarch(rootcomplex_config.ecam_base)
+                let root_bus = rootcomplex_config.bus_range_begin as u8;
+                RootComplex::new_loongarch(rootcomplex_config.ecam_base, rootcomplex_config.ecam_size, root_bus)
             }
             
             #[cfg(feature = "ecam_pcie")]
@@ -119,8 +123,8 @@ impl Zone {
         let mut i = 0;
         while i < num_pci_devs {
             let dev_config = alloc_pci_devs[i as usize];
-            let bdf = <Bdf as BdfAddressConversion>::from_address(dev_config.bdf << 12);
-            let vbdf = <Bdf as BdfAddressConversion>::from_address(dev_config.vbdf << 12);
+            let bdf = Bdf::from_address(dev_config.bdf << 12);
+            let vbdf = Bdf::from_address(dev_config.vbdf << 12);
             #[cfg(any(
                 all(feature = "iommu", target_arch = "aarch64"),
                 target_arch = "x86_64"

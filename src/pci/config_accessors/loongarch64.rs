@@ -16,13 +16,14 @@
 
 use crate::error::HvResult;
 use crate::pci::{pci_struct::{Bdf, RootComplex}, PciConfigAddress};
-use super::{PciConfigAccessor, PciRegion, PciConfigMmio, BdfAddressConversion};
+use super::{PciConfigAccessor, PciRegion, PciConfigMmio};
 use alloc::sync::Arc;
 use bit_field::BitField;
+use crate::arch::loongarch64::mm::LOONGARCH64_UNCACHED_DMW_PREFIX;
 
 impl RootComplex {
-    pub fn new_loongarch(mmio_base: PciConfigAddress) -> Self {
-        let accessor = Arc::new(LoongArchConfigAccessor::new(mmio_base));
+    pub fn new_loongarch(mmio_base: PciConfigAddress, cfg_size: u64, root_bus: u8) -> Self {
+        let accessor = Arc::new(LoongArchConfigAccessor::new(mmio_base, cfg_size, root_bus));
         
         Self { 
             mmio_base,
@@ -31,38 +32,21 @@ impl RootComplex {
     }
 }
 
-#[cfg(feature = "loongarch64_pcie")]
-impl PciRegion for PciConfigMmio {
-    fn read_u8(&self, _offset: PciConfigAddress) -> HvResult<u8> {
-        unimplemented!()
-    }
-    fn write_u8(&self, _offset: PciConfigAddress, _value: u8) -> HvResult {
-        unimplemented!()
-    }
-    fn read_u16(&self, _offset: PciConfigAddress) -> HvResult<u16> {
-        unimplemented!()
-    }
-    fn write_u16(&self, _offset: PciConfigAddress, _value: u16) -> HvResult {
-        unimplemented!()
-    }
-    fn read_u32(&self, _offset: PciConfigAddress) -> HvResult<u32> {
-        unimplemented!()
-    }
-    fn write_u32(&self, _offset: PciConfigAddress, _value: u32) -> HvResult {
-        unimplemented!()
-    }
-}
-
 // LoongArch PCIe accessor implementation
 // Similar to ECAM, uses standard address calculation
 #[derive(Debug)]
 pub struct LoongArchConfigAccessor {
-    cfg_base: PciConfigAddress,
+    cfg0: PciConfigAddress,
+    cfg1: PciConfigAddress,
+    root_bus: u8,
 }
 
 impl LoongArchConfigAccessor {
-    pub fn new(cfg_base: PciConfigAddress) -> Self {
-        Self { cfg_base }
+    pub fn new(cfg_base: PciConfigAddress, cfg_size: u64, root_bus: u8) -> Self {
+        let cfg_size_half = cfg_size / 2;
+        let cfg0 = cfg_base;
+        let cfg1 = cfg_base + cfg_size_half;
+        Self { cfg0, cfg1, root_bus }
     }
 }
 
@@ -72,13 +56,12 @@ impl PciConfigAccessor for LoongArchConfigAccessor {
         let device = bdf.device() as PciConfigAddress;
         let function = bdf.function() as PciConfigAddress;
         
-        // LoongArch PCIe uses similar address calculation to ECAM
-        // base + (bus << 20) + (device << 15) + (function << 12) + offset
-        let address = self.cfg_base 
-            + (bus << 20)
-            + (device << 15)
-            + (function << 12)
-            + offset;
+        let address = if bus == self.root_bus as PciConfigAddress{
+            self.cfg0 + (offset >> 8) << 23 + device << 10 + function << 7 + (offset & 0xff)
+        } else {
+            self.cfg1 + (offset >> 8) << 23 + bus << 15 + device << 10 + function << 7 + (offset & 0xff)
+        };
+
         Ok(address)
     }
 
@@ -87,18 +70,9 @@ impl PciConfigAccessor for LoongArchConfigAccessor {
     }
 }
 
-#[cfg(feature = "loongarch64_pcie")]
-impl BdfAddressConversion for Bdf {
-    fn from_address(address: PciConfigAddress) -> Bdf {
-        let bdf = address >> 12;
-        let function = (bdf & 0b111) as u8;
-        let device = ((bdf >> 3) & 0b11111) as u8;
-        let bus = (bdf >> 8) as u8;
-        Bdf {
-            bus,
-            device,
-            function,
-        }
+impl PciConfigMmio {
+    /* TODO: may here need check whether length exceeds*/
+    pub(crate) fn access<T>(&self, offset: PciConfigAddress) -> *mut T {
+        (self.base + offset | LOONGARCH64_UNCACHED_DMW_PREFIX) as *mut T
     }
 }
-

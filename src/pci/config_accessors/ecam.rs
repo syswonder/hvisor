@@ -18,7 +18,7 @@ use alloc::sync::Arc;
 use crate::error::HvResult;
 use crate::pci::pci_struct::RootComplex;
 use crate::pci::{pci_struct::Bdf, PciConfigAddress};
-use super::{PciConfigAccessor, PciRegion, PciConfigMmio, BdfAddressConversion};
+use super::{PciConfigAccessor, PciRegion, PciConfigMmio};
 use bit_field::BitField;
 
 impl RootComplex {
@@ -60,41 +60,10 @@ impl PciConfigAccessor for EcamConfigAccessor {
     }
 }
 
-impl BdfAddressConversion for Bdf {
-    fn from_address(address: PciConfigAddress) -> Bdf {
-        let bdf = address >> 12;
-        let function = (bdf & 0b111) as u8;
-        let device = ((bdf >> 3) & 0b11111) as u8;
-        let bus = (bdf >> 8) as u8;
-        Bdf {
-            bus,
-            device,
-            function,
-        }
-    }
-}
-
-impl PciRegion for PciConfigMmio {
-    fn read_u8(&self, offset: PciConfigAddress) -> HvResult<u8> {
-        unsafe { Ok(self.access::<u8>(offset).read_volatile() as u8) }
-    }
-    fn write_u8(&self, offset: PciConfigAddress, value: u8) -> HvResult {
-        unsafe { self.access::<u8>(offset).write_volatile(value) }
-        Ok(())
-    }
-    fn read_u16(&self, offset: PciConfigAddress) -> HvResult<u16> {
-        unsafe { Ok(self.access::<u16>(offset).read_volatile() as u16) }
-    }
-    fn write_u16(&self, offset: PciConfigAddress, value: u16) -> HvResult {
-        unsafe { self.access::<u16>(offset).write_volatile(value) }
-        Ok(())
-    }
-    fn read_u32(&self, offset: PciConfigAddress) -> HvResult<u32> {
-        unsafe { Ok(self.access::<u32>(offset).read_volatile() as u32) }
-    }
-    fn write_u32(&self, offset: PciConfigAddress, value: u32) -> HvResult {
-        unsafe { self.access::<u32>(offset).write_volatile(value) }
-        Ok(())
+impl PciConfigMmio {
+    /* TODO: may here need check whether length exceeds*/
+    pub(crate) fn access<T>(&self, offset: PciConfigAddress) -> *mut T {
+        (self.base + offset) as *mut T
     }
 }
 

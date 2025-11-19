@@ -30,7 +30,7 @@ use super::{
         EndpointField, EndpointHeader, HeaderType, PciBridgeHeader, PciCommand, PciConfigHeader,
         PciMem, PciMemType, PciRW,
     },
-    config_accessors::{PciConfigMmio, PciConfigAccessor, BdfAddressConversion},
+    config_accessors::{PciConfigMmio, PciConfigAccessor},
     PciConfigAddress,
 };
 
@@ -76,10 +76,18 @@ impl Bdf {
         self.function
     }
 
-    pub fn from_address(address: PciConfigAddress) -> Self {
-        <Self as BdfAddressConversion>::from_address(address)
+    pub fn from_address(address: PciConfigAddress) -> Bdf {
+        let bdf = address >> 12;
+        let function = (bdf & 0b111) as u8;
+        let device = ((bdf >> 3) & 0b11111) as u8;
+        let bus = (bdf >> 8) as u8;
+        Bdf {
+            bus,
+            device,
+            function,
+        }
     }
-
+    
     pub fn is_host_bridge(&self, bus_begin: u8) -> bool {
         if (self.bus, self.device, self.function) == (bus_begin, 0, 0) {
             true
