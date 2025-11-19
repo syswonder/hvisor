@@ -58,6 +58,42 @@ pub const ROOT_ZONE_NAME: &str = "root-linux";
 pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
+        physical_start: 0x3c0400000,
+        virtual_start: 0x3c0400000,
+        size: 0x400000,
+    }, //pcie
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xfe270000,
+        virtual_start: 0xfe270000,
+        size: 0x10000,
+    }, //pcie
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xf2000000,
+        virtual_start: 0xf2000000,
+        size: 0x100000,
+    }, //pcie
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xf2100000,
+        virtual_start: 0xf2100000,
+        size: 0x100000,
+    }, //pcie
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xf2200000,
+        virtual_start: 0xf2200000,
+        size: 0x1e00000,
+    }, //pcie
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x340000000,
+        virtual_start: 0x340000000,
+        size: 0x40000000,
+    }, //pcie
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
         physical_start: 0xfdcb8000,
         virtual_start: 0xfdcb8000,
         size: 0x10000,
@@ -289,6 +325,28 @@ pub const ROOT_PCI_CONFIG: &[HvPciConfig] = &[
 ];
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
+
+pub const ROOT_DWC_ATU_CONFIG: &[HvDwcAtuConfig] = &[
+    HvDwcAtuConfig {
+        ecam_base: 0x3c0400000,
+        dbi_base: 0x3c0400000,
+        dbi_size: 0x10000,
+        apb_base: 0,
+        apb_size: 0,
+        cfg_base: 0xf2000000,
+        cfg_size: 0x80000*2,
+        cfg0_atu_index: 0,
+        cfg0_atu_type: 4,
+        cfg1_atu_index: 0,
+        cfg1_atu_type: 4,
+        mem32_atu_index: 1,
+        mem32_atu_type: 0,
+        mem64_atu_index: 2,
+        mem64_atu_type: 0,
+        io_atu_index: 3,
+        io_atu_type: 2,
+    },
+];
 
 pub const ROOT_PCI_DEVS: [HvPciDevConfig; 3] = [
     pci_dev!( 0x1, 0x0, 0x0),

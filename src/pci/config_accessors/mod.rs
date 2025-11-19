@@ -18,7 +18,10 @@ use core::{any::Any, fmt::Debug};
 
 use crate::error::HvResult;
 use crate::pci::{pci_struct::Bdf, PciConfigAddress};
-use alloc::sync::Arc;
+
+pub trait BdfAddressConversion {
+    fn from_address(address: PciConfigAddress) -> Bdf;
+}
 
 // PCIe region trait for memory-mapped I/O access
 pub trait PciRegion: Debug + Sync + Send + Any {
@@ -45,6 +48,10 @@ impl PciConfigMmio {
     /* TODO: may here need check whether length exceeds*/
     pub(crate) fn access<T>(&self, offset: PciConfigAddress) -> *mut T {
         (self.base + offset) as *mut T
+    }
+    /// Check if this is a placeholder (dummy) mmio with base address 0
+    pub fn is_placeholder(&self) -> bool {
+        self.base == 0 && self.length == 0
     }
 }
 
@@ -90,52 +97,62 @@ impl PciRegion for PciRegionMmio {
     }
 }
 
-// PCIe config space accessor trait
-// Unified interface for different PCIe mechanisms (ECAM, DWC, LoongArch)
-pub trait PciConfigAccessor: Send + Sync + core::fmt::Debug {
-    // Get physical address from BDF and offset
-    fn get_physical_address(&self, bdf: Bdf, offset: PciConfigAddress) -> HvResult<PciConfigAddress>;
-    
-    // Prepare access before reading/writing (e.g., configure ATU)
-    fn prepare_access(&self, bdf: Bdf) -> HvResult;
-    
-    // Get base address of config space
-    fn get_base_address(&self) -> PciConfigAddress;
+// Default implementation of PciRegion for PciConfigMmio
+#[cfg(not(any(feature = "ecam_pcie", feature = "dwc_pcie", feature = "loongarch64_pcie")))]
+impl PciRegion for PciConfigMmio {
+    fn read_u8(&self, offset: PciConfigAddress) -> HvResult<u8> {
+        unsafe { Ok(self.access::<u8>(offset).read_volatile() as u8) }
+    }
+    fn write_u8(&self, offset: PciConfigAddress, value: u8) -> HvResult {
+        unsafe { self.access::<u8>(offset).write_volatile(value) }
+        Ok(())
+    }
+    fn read_u16(&self, offset: PciConfigAddress) -> HvResult<u16> {
+        unsafe { Ok(self.access::<u16>(offset).read_volatile() as u16) }
+    }
+    fn write_u16(&self, offset: PciConfigAddress, value: u16) -> HvResult {
+        unsafe { self.access::<u16>(offset).write_volatile(value) }
+        Ok(())
+    }
+    fn read_u32(&self, offset: PciConfigAddress) -> HvResult<u32> {
+        unsafe { Ok(self.access::<u32>(offset).read_volatile() as u32) }
+    }
+    fn write_u32(&self, offset: PciConfigAddress, value: u32) -> HvResult {
+        unsafe { self.access::<u32>(offset).write_volatile(value) }
+        Ok(())
+    }
 }
 
-// Accessor type enum
+// Default implementation of BdfAddressConversion for Bdf
+#[cfg(not(any(feature = "ecam_pcie", feature = "dwc_pcie", feature = "loongarch64_pcie")))]
+impl BdfAddressConversion for Bdf {
+    fn from_address(address: PciConfigAddress) -> Bdf {
+        let bdf = address >> 12;
+        let function = (bdf & 0b111) as u8;
+        let device = ((bdf >> 3) & 0b11111) as u8;
+        let bus = (bdf >> 8) as u8;
+        Bdf {
+            bus,
+            device,
+            function,
+        }
+    }
+}
+
+pub trait PciConfigAccessor: Send + Sync + core::fmt::Debug {
+    // Get physical address from BDF and offset
+    fn get_physical_address(&self, bdf: Bdf, offset: PciConfigAddress, _parent_bus: u8) -> HvResult<PciConfigAddress>;
+
+    fn skip_device(&self, _bdf: Bdf) -> bool {
+        false
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub enum PciAccessorType {
     Ecam,
     Dwc,
     LoongArch,
-}
-
-// Factory function to create accessor based on feature flag
-pub fn create_accessor(
-    accessor_type: PciAccessorType,
-    ecam_base: PciConfigAddress,
-) -> Arc<dyn PciConfigAccessor> {
-    match accessor_type {
-        PciAccessorType::Ecam => Arc::new(ecam::EcamConfigAccessor::new(ecam_base)),
-        PciAccessorType::Dwc => Arc::new(ecam::EcamConfigAccessor::new(ecam_base)),
-        PciAccessorType::LoongArch => Arc::new(ecam::EcamConfigAccessor::new(ecam_base)),
-    }
-}
-
-// Get default accessor type based on current features
-pub fn get_default_accessor_type() -> PciAccessorType {
-    #[cfg(feature = "dwc_pcie")]
-    return PciAccessorType::Dwc;
-    
-    #[cfg(feature = "loongarch64_pcie")]
-    return PciAccessorType::LoongArch;
-    
-    #[cfg(feature = "ecam_pcie")]
-    return PciAccessorType::Ecam;
-    
-    #[cfg(all(not(feature = "ecam_pcie"), not(feature = "dwc_pcie"), not(feature = "loongarch64_pcie")))]
-    return PciAccessorType::Ecam; // Default to ECAM
 }
 
 // Export accessor implementations
@@ -149,8 +166,4 @@ pub mod dwc_atu;
 
 #[cfg(feature = "loongarch64_pcie")]
 pub mod loongarch64;
-
-// Default ECAM implementation when no feature is specified
-#[cfg(all(not(feature = "ecam_pcie"), not(feature = "dwc_pcie"), not(feature = "loongarch64_pcie")))]
-pub mod ecam;
 

@@ -210,8 +210,12 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     zone.pt_init(config.memory_regions()).unwrap();
     zone.mmio_init(&config.arch_config);
 
-    let _ = zone.virtual_pci_mmio_init(&config.pci_config, config.num_pci_bus);
-    let _ = zone.guest_pci_init(zone_id, &config.alloc_pci_devs, config.num_pci_devs);
+    #[cfg(feature = "pci")]
+    {
+        let _ = zone.virtual_pci_mmio_init(&config.pci_config, config.num_pci_bus as usize);
+        let _ = zone.guest_pci_init(zone_id, &config.alloc_pci_devs, config.num_pci_devs);
+    }
+
 
     // #[cfg(target_arch = "aarch64")]
     // zone.ivc_init(config.ivc_config());

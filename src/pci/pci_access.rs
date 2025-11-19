@@ -26,17 +26,18 @@ use core::slice;
 
 use crate::{
     error::HvResult,
-    memory::{GuestPhysAddr, HostPhysAddr, MMIOAccess, MemFlags, MemoryRegion},
+    memory::{GuestPhysAddr, HostPhysAddr, MMIOAccess, MemFlags, MemoryRegion, MemorySet, mmio_perform_access},
     pci::pci_struct::BIT_LENTH,
     percpu::this_zone,
-    zone::{this_zone_id, Zone},
+    zone::{Zone, this_zone_id},
 };
 
 use super::{
     config_accessors::{PciRegion, PciConfigMmio},
-    pci_struct::Bdf,
+    pci_struct::VirtualPciConfigSpace,
     PciConfigAddress,
 };
+
 
 pub type VendorId = u16;
 pub type DeviceId = u16;
@@ -361,6 +362,12 @@ impl Debug for PciMem {
                     vaddr + size
                 )
             }
+            PciMemType::Rom => {
+                let paddr = self.value & !0xf;
+                let vaddr = self.virtual_value & !0xf;
+                let size = self.size;
+                write!(f, "{:#?} [0x{:x}-0x{:x}] => [0x{:x}-0x{:x}]", self.bar_type, paddr, paddr + size, vaddr, vaddr + size)
+            }
             _ => {
                 write!(f, "[{:#?}]", self.bar_type)
             }
@@ -462,6 +469,7 @@ impl Debug for Bar {
 pub trait PciRWBase: Debug + Send + Sync {
     fn backend(&self) -> &dyn PciRegion;
 }
+
 pub trait PciRW: Debug + Send + Sync + PciRWBase {
     fn read(&self, offset: PciConfigAddress, size: usize) -> HvResult<usize> {
         match size {
@@ -546,6 +554,7 @@ pub trait PciBarRW: PciRWBase {
 
         let mut slot = 0u8;
         while slot < self.bar_limit() {
+            warn!("parse bar slot {}", slot);   
             let value = self.read_bar(slot).unwrap();
 
             if !value.get_bit(0) {
@@ -595,9 +604,9 @@ pub trait PciBarRW: PciRWBase {
                         let value64 = (value as u64) | ((value_high as u64) << 32);
 
                         bararr[slot as usize] =
-                            PciMem::new_bar(PciMemType::Mem64Low, value64 as u64, size, pre);
+                            PciMem::new_bar(PciMemType::Mem64Low, value as u64, size, pre);
                         bararr[(slot + 1) as usize] =
-                            PciMem::new_bar(PciMemType::Mem64High, value64 as u64, size, pre);
+                            PciMem::new_bar(PciMemType::Mem64High, value_high as u64, size, pre);
                         slot += 1; // need extra add 1
                     }
                     _ => {
@@ -955,216 +964,191 @@ impl PciBridgeHeader {
 
 impl PciBridgeHeader {}
 
-pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
-    let offset = (mmio.address & 0xfff) as PciConfigAddress;
-    let vbdf = Bdf::from_address(mmio.address as u64);
+/// Handle PCI configuration space access
+fn handle_config_space_access(
+    dev: &mut VirtualPciConfigSpace,
+    mmio: &mut MMIOAccess,
+    offset: PciConfigAddress,
+    gpm: &mut MemorySet<crate::arch::s2pt::Stage2PageTable>,
+    zone_id: usize,
+) -> HvResult {
     let size = mmio.size;
     let value = mmio.value;
-
-    let zone_id = this_zone_id();
-    let zone = this_zone();
-    let mut guard = zone.write();
-    let (vbus, gpm) = {
-        let Zone { gpm, vpci_bus, .. } = &mut *guard;
-        (vpci_bus, gpm)
-    };
-
-    let mut dev = None;
-    for node in vbus.devs().iter_mut() {
-        if node.1.get_vbdf() == vbdf {
-            info!("vbdf find {:#?}", vbdf);
-            dev = Some(node.1);
-            break;
-        }
-    }
+    let is_write = mmio.is_write;
+    let vbdf = dev.get_vbdf();
 
     if (offset as usize) >= BIT_LENTH {
-        if !mmio.is_write {
+        warn!("invalid pci offset {:#x}", offset);
+        if !is_write {
             mmio.value = 0;
         }
         return Ok(());
     }
 
-    if let Some(dev) = dev {
-        match dev.access(offset, size) {
-            false => {
-                info!(
-                    "hw vbdf {:#?} reg 0x{:x} try {} {}",
-                    vbdf,
-                    offset,
-                    if mmio.is_write { "write" } else { "read" },
-                    if mmio.is_write {
-                        format!(" 0x{:x}", mmio.value)
-                    } else {
-                        String::new()
-                    }
-                );
-                if mmio.is_write {
-                    dev.write_hw(offset, size, value)?;
+    match dev.access(offset, size) {
+        false => {
+            info!(
+                "hw vbdf {:#?} reg 0x{:x} try {} {}",
+                vbdf,
+                offset,
+                if is_write { "write" } else { "read" },
+                if is_write {
+                    format!(" 0x{:x}", mmio.value)
                 } else {
-                    mmio.value = dev.read_hw(offset, size).unwrap();
+                    String::new()
                 }
-            }
-            true => {
-                info!(
-                    "emu vbdf {:#?} reg 0x{:x} try {} {}",
-                    vbdf,
-                    offset,
-                    if mmio.is_write { "write" } else { "read" },
-                    if mmio.is_write {
-                        format!(" 0x{:x}", mmio.value)
-                    } else {
-                        String::new()
-                    }
-                );
-                match dev.get_config_type() {
-                    HeaderType::Endpoint => {
-                        match EndpointField::from(offset as usize, size) {
-                            EndpointField::Bar => {
-                                let slot = ((offset - 0x10) / 4) as usize;
-                                /* the write of bar needs to start from dev,
-                                 * where the bar variable here is just a copy
-                                 */
-                                let bar = &mut dev.get_bararr()[slot];
-                                let bar_type = bar.get_type();
-                                if bar_type != PciMemType::default() {
-                                    if mmio.is_write {
-                                        if (value & 0xfffffff0) == 0xfffffff0 {
-                                            dev.set_bar_size_read(slot);
-                                        } else {
-                                            let _ = dev.write_emu(offset, size, value);
-                                            /* for mem64, Mem64High always write after Mem64Low,
-                                             * so update bar when write Mem64High
-                                             */
-                                            if (bar_type == PciMemType::Mem32)
-                                                | (bar_type == PciMemType::Mem64High)
-                                            {
-                                                let old_vaddr = bar.get_virtual_value64() & !0xf;
-                                                let new_vaddr = {
-                                                    if bar_type == PciMemType::Mem64High {
-                                                        /* last 4bit is flag, not address and need ignore
-                                                         * flag will auto add when set_value and set_virtual_value
-                                                         */
-                                                        dev.read_emu64(offset - 0x4).unwrap() & !0xf
-                                                    } else {
-                                                        (value as u64) & !0xf
-                                                    }
-                                                };
-                                                /* Linux traverses the PCI bus twice. During the first traversal,
-                                                 * it does not assign addresses to the BARs; it simply writes back the same
-                                                 * values. In the second traversal, it reorders the BARs and assigns
-                                                 * addresses to them. Each time the guest writes to a BAR,
-                                                 * it attempts to remove the previous mapping and add a new one.
-                                                 * However, on the first access there is no prior mapping, so a single warning
-                                                 * is normal. Subsequent warnings should be treated with caution.
-                                                 *
-                                                 * TODO: When adding a new device or removing an old one, reloading
-                                                 * the PCIe bus, will the newly written BAR address overlap with
-                                                 * the old BAR addresses, potentially causing the update to fail?
-                                                 */
-                                                if !gpm
-                                                    .try_delete(old_vaddr.try_into().unwrap())
-                                                    .is_ok()
-                                                {
-                                                    /* The first delete from the guest will fail
-                                                     * because the region has not yet been inserted
-                                                     */
-                                                    warn!(
-                                                        "delete bar {}: can not found 0x{:x}",
-                                                        slot, old_vaddr
-                                                    );
-                                                }
-                                                let paddr = bar.get_value64();
-                                                debug!(
-                                                    "old_vaddr {:x} new_vaddr {:x} paddr {:x}",
-                                                    old_vaddr, new_vaddr, paddr
-                                                );
-
-                                                dev.set_bar_virtual_value(slot, new_vaddr);
-                                                if bar_type == PciMemType::Mem64High {
-                                                    dev.set_bar_virtual_value(slot - 1, new_vaddr);
-                                                }
-
-                                                gpm.insert(MemoryRegion::new_with_offset_mapper(
-                                                    new_vaddr as GuestPhysAddr,
-                                                    paddr as HostPhysAddr,
-                                                    bar.get_size() as _,
-                                                    MemFlags::READ | MemFlags::WRITE,
-                                                ))?;
-                                                /* after update gpm, mem barrier is needed
-                                                 * TODO: for loongarch64 need ibar 0 dbar 0
-                                                 */
-                                                #[cfg(target_arch = "aarch64")]
-                                                unsafe {
-                                                    core::arch::asm!("isb");
-                                                    core::arch::asm!("tlbi vmalls12e1is");
-                                                    core::arch::asm!("dsb nsh");
-                                                }
-                                                /* after update gpm, need to flush iommu table
-                                                 * in x86_64
-                                                 */
-                                                #[cfg(target_arch = "x86_64")]
-                                                crate::arch::iommu::flush(
-                                                    zone_id,
-                                                    vbdf.bus,
-                                                    (vbdf.device << 3) + vbdf.function,
-                                                );
-                                            }
-                                        }
-                                    } else {
-                                        mmio.value = if bar.get_size_read() {
-                                            let r = bar.get_size_with_flag().try_into().unwrap();
-                                            dev.clear_bar_size_read(slot);
-                                            r
-                                        } else {
-                                            bar.get_virtual_value().try_into().unwrap()
-                                        };
-                                    }
-                                } else {
-                                    mmio.value = 0;
-                                }
-                            }
-                            EndpointField::ExpansionRomBar => {
-                                let mut rom = dev.get_rom();
-                                if mmio.is_write {
-                                    if (mmio.value & 0xfffff800) == 0xfffff800 {
-                                        rom.set_size_read();
-                                    } else {
-                                        // let old_vaddr = dev.read_emu(offset, size).unwrap() as u64;
-                                        let _ = dev.write_emu(offset, size, value);
-                                        // TODO: add gpm change for rom
-                                    }
-                                } else {
-                                    mmio.value = if rom.get_size_read() {
-                                        dev.read_emu(offset, size).unwrap()
-                                    } else {
-                                        rom.get_size_with_flag().try_into().unwrap()
-                                    };
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    HeaderType::PciBridge => {
-                        // TODO: add emu for bridge, actually it is same with endpoint
-                    }
-                    _ => {
-                        warn!("unhanled pci type {:#?}", dev.get_config_type());
-                    }
-                }
+            );
+            if is_write {
+                dev.write_hw(offset, size, value)?;
+            } else {
+                mmio.value = dev.read_hw(offset, size).unwrap();
             }
         }
-    } else {
-        info!("not found dev");
-        /* if the dev is None, just return 0xFFFF_FFFF when read ID */
-        if !mmio.is_write {
-            match EndpointField::from(offset as usize, size) {
-                EndpointField::ID => {
-                    mmio.value = 0xFFFF_FFFF;
+        true => {
+            info!(
+                "emu vbdf {:#?} reg 0x{:x} try {} {}",
+                vbdf,
+                offset,
+                if is_write { "write" } else { "read" },
+                if is_write {
+                    format!(" 0x{:x}", mmio.value)
+                } else {
+                    String::new()
+                }
+            );
+            match dev.get_config_type() {
+                HeaderType::Endpoint => {
+                    match EndpointField::from(offset as usize, size) {
+                        EndpointField::Bar => {
+                            let slot = ((offset - 0x10) / 4) as usize;
+                            /* the write of bar needs to start from dev,
+                             * where the bar variable here is just a copy
+                             */
+                            let bar = &mut dev.get_bararr()[slot];
+                            let bar_type = bar.get_type();
+                            if bar_type != PciMemType::default() {
+                                if is_write {
+                                    if (value & 0xfffffff0) == 0xfffffff0 {
+                                        dev.set_bar_size_read(slot);
+                                    } else {
+                                        let _ = dev.write_emu(offset, size, value);
+                                        /* for mem64, Mem64High always write after Mem64Low,
+                                         * so update bar when write Mem64High
+                                         */
+                                        if (bar_type == PciMemType::Mem32)
+                                            | (bar_type == PciMemType::Mem64High)
+                                        {
+                                            let old_vaddr = bar.get_virtual_value64() & !0xf;
+                                            let new_vaddr = {
+                                                if bar_type == PciMemType::Mem64High {
+                                                    /* last 4bit is flag, not address and need ignore
+                                                     * flag will auto add when set_value and set_virtual_value
+                                                     */
+                                                    dev.read_emu64(offset - 0x4).unwrap() & !0xf
+                                                } else {
+                                                    (value as u64) & !0xf
+                                                }
+                                            };
+                                            /* Linux traverses the PCI bus twice. During the first traversal,
+                                             * it does not assign addresses to the BARs; it simply writes back the same
+                                             * values. In the second traversal, it reorders the BARs and assigns
+                                             * addresses to them. Each time the guest writes to a BAR,
+                                             * it attempts to remove the previous mapping and add a new one.
+                                             * However, on the first access there is no prior mapping, so a single warning
+                                             * is normal. Subsequent warnings should be treated with caution.
+                                             *
+                                             * TODO: When adding a new device or removing an old one, reloading
+                                             * the PCIe bus, will the newly written BAR address overlap with
+                                             * the old BAR addresses, potentially causing the update to fail?
+                                             */
+                                            if !gpm
+                                                .try_delete(old_vaddr.try_into().unwrap())
+                                                .is_ok()
+                                            {
+                                                /* The first delete from the guest will fail
+                                                 * because the region has not yet been inserted
+                                                 */
+                                                warn!(
+                                                    "delete bar {}: can not found 0x{:x}",
+                                                    slot, old_vaddr
+                                                );
+                                            }
+                                            let paddr = bar.get_value64();
+                                            debug!(
+                                                "old_vaddr {:x} new_vaddr {:x} paddr {:x}",
+                                                old_vaddr, new_vaddr, paddr
+                                            );
+
+                                            dev.set_bar_virtual_value(slot, new_vaddr);
+                                            if bar_type == PciMemType::Mem64High {
+                                                dev.set_bar_virtual_value(slot - 1, new_vaddr);
+                                            }
+
+                                            gpm.insert(MemoryRegion::new_with_offset_mapper(
+                                                new_vaddr as GuestPhysAddr,
+                                                paddr as HostPhysAddr,
+                                                bar.get_size() as _,
+                                                MemFlags::READ | MemFlags::WRITE,
+                                            ))?;
+                                            /* after update gpm, mem barrier is needed
+                                             * TODO: for loongarch64 need ibar 0 dbar 0
+                                             */
+                                            #[cfg(target_arch = "aarch64")]
+                                            unsafe {
+                                                core::arch::asm!("isb");
+                                                core::arch::asm!("tlbi vmalls12e1is");
+                                                core::arch::asm!("dsb nsh");
+                                            }
+                                            /* after update gpm, need to flush iommu table
+                                             * in x86_64
+                                             */
+                                            #[cfg(target_arch = "x86_64")]
+                                            crate::arch::iommu::flush(
+                                                zone_id,
+                                                vbdf.bus,
+                                                (vbdf.device << 3) + vbdf.function,
+                                            );
+                                        }
+                                    }
+                                } else {
+                                    mmio.value = if bar.get_size_read() {
+                                        let r = bar.get_size_with_flag().try_into().unwrap();
+                                        dev.clear_bar_size_read(slot);
+                                        r
+                                    } else {
+                                        bar.get_virtual_value().try_into().unwrap()
+                                    };
+                                }
+                            } else {
+                                mmio.value = 0;
+                            }
+                        }
+                        EndpointField::ExpansionRomBar => {
+                            let mut rom = dev.get_rom();
+                            if is_write {
+                                if (mmio.value & 0xfffff800) == 0xfffff800 {
+                                    rom.set_size_read();
+                                } else {
+                                    // let old_vaddr = dev.read_emu(offset, size).unwrap() as u64;
+                                    let _ = dev.write_emu(offset, size, value);
+                                    // TODO: add gpm change for rom
+                                }
+                            } else {
+                                mmio.value = if rom.get_size_read() {
+                                    dev.read_emu(offset, size).unwrap()
+                                } else {
+                                    rom.get_size_with_flag().try_into().unwrap()
+                                };
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                HeaderType::PciBridge => {
+                    // TODO: add emu for bridge, actually it is same with endpoint
                 }
                 _ => {
-                    // warn!("unhandled pci mmio read, addr: {:#x?}", mmio.address);
-                    mmio.value = 0;
+                    warn!("unhanled pci type {:#?}", dev.get_config_type());
                 }
             }
         }
@@ -1174,9 +1158,75 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
         "vbdf {:#?} reg 0x{:x} {} 0x{:x}",
         vbdf,
         offset,
-        if mmio.is_write { "write" } else { "read" },
+        if is_write { "write" } else { "read" },
         mmio.value
     );
+
+    Ok(())
+}
+
+fn handle_device_not_found(mmio: &mut MMIOAccess, offset: PciConfigAddress) {
+    info!("not found dev");
+    /* if the dev is None, just return 0xFFFF_FFFF when read ID */
+    if !mmio.is_write {
+        match EndpointField::from(offset as usize, mmio.size) {
+            EndpointField::ID => {
+                mmio.value = 0xFFFF_FFFF;
+            }
+            _ => {
+                // warn!("unhandled pci mmio read, addr: {:#x?}", mmio.address);
+                mmio.value = 0;
+            }
+        }
+    }
+}
+
+pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
+    info!("mmio_vpci_handler {:#x}", mmio.address);
+    let zone_id = this_zone_id();
+    let zone = this_zone();
+    let mut guard = zone.write();
+    let (vbus, gpm) = {
+        let Zone { gpm, vpci_bus, .. } = &mut *guard;
+        (vpci_bus, gpm)
+    };
+
+    let offset = (mmio.address & 0xfff) as PciConfigAddress;
+    let base = mmio.address as PciConfigAddress - offset + _base as PciConfigAddress;
+    
+    if let Some(dev) = vbus.get_device_by_base(base) {
+        handle_config_space_access(dev, mmio, offset, gpm, zone_id)?;
+    } else {
+        handle_device_not_found(mmio, offset);
+    }
+
+    Ok(())
+}
+
+pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
+    info!("mmio_vpci_handler_dbi {:#x}", mmio.address);
+    let zone_id = this_zone_id();
+    let zone = this_zone();
+    let mut guard = zone.write();
+    let (vbus, gpm) = {
+        let Zone { gpm, vpci_bus, .. } = &mut *guard;
+        (vpci_bus, gpm)
+    };
+
+    let offset = (mmio.address & 0xfff) as PciConfigAddress;
+    let base = mmio.address as PciConfigAddress - offset + _base as PciConfigAddress;
+    
+    if let Some(dev) = vbus.get_device_by_base(base) {
+        handle_config_space_access(dev, mmio, offset, gpm, zone_id)?;
+    } else {
+        if (offset as usize) >= BIT_LENTH {
+            // dbi read
+            mmio_perform_access(_base, mmio);
+        } else {
+            handle_device_not_found(mmio, offset);
+        }
+
+    }
 
     Ok(())
 }

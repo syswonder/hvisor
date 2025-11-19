@@ -14,12 +14,24 @@
 // Authors:
 //
 
+use alloc::sync::Arc;
 use crate::error::HvResult;
+use crate::pci::pci_struct::RootComplex;
 use crate::pci::{pci_struct::Bdf, PciConfigAddress};
-use super::{PciConfigAccessor, PciRegion, PciConfigMmio};
+use super::{PciConfigAccessor, PciRegion, PciConfigMmio, BdfAddressConversion};
+use bit_field::BitField;
 
-// ECAM (Enhanced Configuration Access Mechanism) accessor implementation
-// Standard ECAM mechanism used by most PCIe platforms
+impl RootComplex {
+    pub fn new_ecam(mmio_base: PciConfigAddress) -> Self {
+        let accessor = Arc::new(EcamConfigAccessor::new(mmio_base));
+        
+        Self { 
+            mmio_base,
+            accessor,
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct EcamConfigAccessor {
     ecam_base: PciConfigAddress,
@@ -32,7 +44,7 @@ impl EcamConfigAccessor {
 }
 
 impl PciConfigAccessor for EcamConfigAccessor {
-    fn get_physical_address(&self, bdf: Bdf, offset: PciConfigAddress) -> HvResult<PciConfigAddress> {
+    fn get_physical_address(&self, bdf: Bdf, offset: PciConfigAddress, _parent_bus: u8) -> HvResult<PciConfigAddress> {
         let bus = bdf.bus() as PciConfigAddress;
         let device = bdf.device() as PciConfigAddress;
         let function = bdf.function() as PciConfigAddress;
@@ -46,17 +58,22 @@ impl PciConfigAccessor for EcamConfigAccessor {
             + offset;
         Ok(address)
     }
-    
-    fn prepare_access(&self, _bdf: Bdf) -> HvResult {
-        Ok(()) // ECAM doesn't need special preparation
-    }
-    
-    fn get_base_address(&self) -> PciConfigAddress {
-        self.ecam_base
+}
+
+impl BdfAddressConversion for Bdf {
+    fn from_address(address: PciConfigAddress) -> Bdf {
+        let bdf = address >> 12;
+        let function = (bdf & 0b111) as u8;
+        let device = ((bdf >> 3) & 0b11111) as u8;
+        let bus = (bdf >> 8) as u8;
+        Bdf {
+            bus,
+            device,
+            function,
+        }
     }
 }
 
-#[cfg(any(feature = "ecam_pcie", all(not(feature = "dwc_pcie"), not(feature = "loongarch64_pcie"))))]
 impl PciRegion for PciConfigMmio {
     fn read_u8(&self, offset: PciConfigAddress) -> HvResult<u8> {
         unsafe { Ok(self.access::<u8>(offset).read_volatile() as u8) }

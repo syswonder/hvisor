@@ -134,6 +134,7 @@ fn primary_init_early() {
 
     device::irqchip::primary_init_early();
 
+    #[cfg(feature = "iommu")]
     iommu_init();
 
     let root_config = root_zone_config();

@@ -16,6 +16,7 @@
 
 use crate::error::{HvResult, HvErrorNum::*};
 use crate::pci::{pci_access::PciRW, PciConfigAddress};
+use super::dwc::DwcConfigRegion;
 
 // DWC PCIe ATU (Address Translation Unit) register offsets
 // Unroll registers are used for unrolled ATU regions
@@ -37,6 +38,8 @@ pub const ATU_TYPE_IO: u32 = 0x2;   // IO Type
 
 // ATU enable bit
 pub const ATU_ENABLE_BIT: u32 = 0x80000000;
+
+pub const ATU_UNUSED: u32 = u32::MAX;
 
 // ATU configuration parameters
 #[derive(Debug, Clone, Copy)]
@@ -65,6 +68,18 @@ impl AtuConfig {
             pci_target,
         }
     }
+
+    pub fn new_with_dwc_config_region(
+        config_region: &DwcConfigRegion,
+    ) -> Self {
+        Self::new(
+            config_region.atu_index,
+            config_region.atu_type,
+            config_region.base,
+            config_region.size,
+            config_region.base,
+        )
+    }
 }
 
 // ATU unroll configuration functions
@@ -73,7 +88,7 @@ pub struct AtuUnroll;
 impl AtuUnroll {
     // Configure ATU region using unroll registers
     // Follows the same order as Linux kernel dw_pcie_prog_outbound_atu_unroll
-    pub fn configure_region(
+    pub fn dw_pcie_prog_outbound_atu_unroll(
         dbi_backend: &dyn PciRW,
         config: &AtuConfig,
     ) -> HvResult {

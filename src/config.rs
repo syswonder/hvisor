@@ -230,3 +230,60 @@ impl Debug for HvPciDevConfig {
         write!(f, "bdf {:#?} vbdf {:#?}", bdf, vbdf)
     }
 }
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct HvDwcAtuConfig {
+    /// ECAM (Enhanced Configuration Access Mechanism) base address
+    /// This is used to match with HvPciConfig::ecam_base
+    pub ecam_base: u64,
+    pub dbi_base: u64,
+    pub dbi_size: u64,
+    pub apb_base: u64,
+    pub apb_size: u64,
+    pub cfg_base: u64,
+    pub cfg_size: u64,
+    pub cfg0_atu_index: usize,
+    pub cfg0_atu_type: u32,
+    pub cfg1_atu_index: usize,
+    pub cfg1_atu_type: u32,
+    pub mem32_atu_index: usize,
+    pub mem32_atu_type: u32,
+    pub mem64_atu_index: usize,
+    pub mem64_atu_type: u32,
+    pub io_atu_index: usize,
+    pub io_atu_type: u32,
+}
+
+impl HvDwcAtuConfig {
+    pub const fn new_empty() -> Self {
+        // Use ATU_UNUSED for ATU indices that are not used by default
+        // ATU_UNUSED is u32::MAX, cast to usize for consistency
+        // Default ATU types: CFG0=4, CFG1=5, MEM=0, IO=2
+        Self {
+            ecam_base: 0,
+            dbi_base: 0,
+            dbi_size: 0,
+            apb_base: 0,
+            apb_size: 0,
+            cfg_base: 0,
+            cfg_size: 0,
+            cfg0_atu_index: u32::MAX as usize,
+            cfg0_atu_type: 4,  // ATU_TYPE_CFG0
+            cfg1_atu_index: u32::MAX as usize,
+            cfg1_atu_type: 5,  // ATU_TYPE_CFG1
+            mem32_atu_index: u32::MAX as usize,
+            mem32_atu_type: 0, // ATU_TYPE_MEM
+            mem64_atu_index: u32::MAX as usize,
+            mem64_atu_type: 0, // ATU_TYPE_MEM
+            io_atu_index: u32::MAX as usize,
+            io_atu_type: 2,    // ATU_TYPE_IO
+        }
+    }
+}
+
+impl Default for HvDwcAtuConfig {
+    fn default() -> Self {
+        Self::new_empty()
+    }
+}

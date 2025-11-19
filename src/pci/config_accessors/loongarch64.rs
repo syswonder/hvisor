@@ -15,8 +15,21 @@
 //
 
 use crate::error::HvResult;
-use crate::pci::{pci_struct::Bdf, PciConfigAddress};
-use super::{PciConfigAccessor, PciRegion, PciConfigMmio};
+use crate::pci::{pci_struct::{Bdf, RootComplex}, PciConfigAddress};
+use super::{PciConfigAccessor, PciRegion, PciConfigMmio, BdfAddressConversion};
+use alloc::sync::Arc;
+use bit_field::BitField;
+
+impl RootComplex {
+    pub fn new_loongarch(mmio_base: PciConfigAddress) -> Self {
+        let accessor = Arc::new(LoongArchConfigAccessor::new(mmio_base));
+        
+        Self { 
+            mmio_base,
+            accessor,
+        }
+    }
+}
 
 #[cfg(feature = "loongarch64_pcie")]
 impl PciRegion for PciConfigMmio {
@@ -54,16 +67,38 @@ impl LoongArchConfigAccessor {
 }
 
 impl PciConfigAccessor for LoongArchConfigAccessor {
-    fn get_physical_address(&self, bdf: Bdf, offset: PciConfigAddress) -> HvResult<PciConfigAddress> {
-
+    fn get_physical_address(&self, bdf: Bdf, offset: PciConfigAddress, _parent_bus: u8) -> HvResult<PciConfigAddress> {
+        let bus = bdf.bus() as PciConfigAddress;
+        let device = bdf.device() as PciConfigAddress;
+        let function = bdf.function() as PciConfigAddress;
+        
+        // LoongArch PCIe uses similar address calculation to ECAM
+        // base + (bus << 20) + (device << 15) + (function << 12) + offset
+        let address = self.cfg_base 
+            + (bus << 20)
+            + (device << 15)
+            + (function << 12)
+            + offset;
+        Ok(address)
     }
-    
-    fn prepare_access(&self, _bdf: Bdf) -> HvResult {
 
+    fn skip_device(&self, _bdf: Bdf) -> bool {
+        false
     }
-    
-    fn get_base_address(&self) -> PciConfigAddress {
+}
 
+#[cfg(feature = "loongarch64_pcie")]
+impl BdfAddressConversion for Bdf {
+    fn from_address(address: PciConfigAddress) -> Bdf {
+        let bdf = address >> 12;
+        let function = (bdf & 0b111) as u8;
+        let device = ((bdf >> 3) & 0b11111) as u8;
+        let bus = (bdf >> 8) as u8;
+        Bdf {
+            bus,
+            device,
+            function,
+        }
     }
 }
 

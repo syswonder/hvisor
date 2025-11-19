@@ -44,10 +44,10 @@ pub fn pcie_test() {
     allocator.set_mem32(0x10000000, 0x2efeffff);
     allocator.set_mem64(0x8000000000, 0xffffffffff - 0x8000000000);
 
-    let mut root = RootComplex::new(0x4010000000);
-    for node in root.enumerate(None, Some(allocator)) {
-        GLOBAL_PCIE_LIST_TEST.lock().insert(node.get_bdf(), node);
-    }
+    // let mut root = RootComplex::new(0x4010000000);
+    // for node in root.enumerate(None, Some(allocator)) {
+    //     GLOBAL_PCIE_LIST_TEST.lock().insert(node.get_bdf(), node);
+    // }
 }
 
 pub fn pcie_guest_init() {
@@ -58,12 +58,12 @@ pub fn pcie_guest_init() {
 
     let vbdf = Bdf::from_str("0000:00:00.0").unwrap();
     let bdf = Bdf::from_str("0000:00:00.0").unwrap();
-    // warn!("address {}", bdf.to_address(0));
+    let base = 0x4010000000; // Base address for test
     let backend = EndpointHeader::new_with_region(PciConfigMmio::new(
-        bdf.to_address(0) + 0x4010000000,
+        base,
         CONFIG_LENTH,
     ));
-    let dev = VirtualPciConfigSpace::host_bridge(bdf, Arc::new(backend));
+    let dev = VirtualPciConfigSpace::host_bridge(bdf, base, Arc::new(backend));
     vbus.insert(vbdf, dev);
 
     let vbdf = Bdf::from_str("0000:00:01.0").unwrap();
@@ -103,8 +103,18 @@ pub fn pcie_guest_init() {
 }
 
 pub fn pcie_guest_test() {
+    let zone = this_zone();
+    let vbus = &zone.read().vpci_bus;
+    let bdf = Bdf::from_str("0000:00:01.0").unwrap();
+    // Get base from VirtualPciConfigSpace and add offset
+    let address = if let Some(vdev) = vbus.get(&bdf) {
+        vdev.get_base() + 0x24
+    } else {
+        warn!("can not find dev {:#?} for test", bdf);
+        0
+    };
     let mut mmio = MMIOAccess {
-        address: Bdf::from_str("0000:00:01.0").unwrap().to_address(0x24) as _,
+        address: address as _,
         size: 4,
         is_write: false,
         value: 0x0,

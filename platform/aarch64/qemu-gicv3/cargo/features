@@ -2,3 +2,4 @@ gicv3
 pl011
 iommu
 pci
+ecam_pcie
