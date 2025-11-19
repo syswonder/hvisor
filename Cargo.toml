@@ -48,6 +48,7 @@ acpi = "=5.2.0"
 ############# general ##############
 iommu = [] # supported by: aarch64
 pci = [] # supported by: aarch64, loongarch64
+print_timestamp = [] # print timestamp when logging
 
 ############# PCIe access mechanism ##############
 ecam_pcie = [] # Standard ECAM mechanism (default for most platforms)

@@ -28,6 +28,7 @@ pub mod paging;
 pub mod register;
 pub mod s1pt;
 pub mod s2pt;
+pub mod time;
 pub mod trap;
 pub mod zone;
 
