@@ -15,17 +15,23 @@
 //
 
 use alloc::sync::Arc;
-use crate::error::HvResult;
-use crate::pci::pci_struct::RootComplex;
-use crate::pci::{pci_struct::Bdf, PciConfigAddress};
-use super::{PciConfigAccessor, PciRegion, PciConfigMmio};
 use bit_field::BitField;
+
+use super::{PciConfigAccessor, PciConfigMmio, PciRegion};
+
+use crate::{
+    error::HvResult,
+    pci::{
+        pci_struct::{Bdf, RootComplex},
+        PciConfigAddress,
+    },
+};
 
 impl RootComplex {
     pub fn new_ecam(mmio_base: PciConfigAddress) -> Self {
         let accessor = Arc::new(EcamConfigAccessor::new(mmio_base));
-        
-        Self { 
+
+        Self {
             mmio_base,
             accessor,
         }
@@ -44,26 +50,25 @@ impl EcamConfigAccessor {
 }
 
 impl PciConfigAccessor for EcamConfigAccessor {
-    fn get_physical_address(&self, bdf: Bdf, offset: PciConfigAddress, _parent_bus: u8) -> HvResult<PciConfigAddress> {
+    fn get_physical_address(
+        &self,
+        bdf: Bdf,
+        offset: PciConfigAddress,
+        _parent_bus: u8,
+    ) -> HvResult<PciConfigAddress> {
         let bus = bdf.bus() as PciConfigAddress;
         let device = bdf.device() as PciConfigAddress;
         let function = bdf.function() as PciConfigAddress;
-        
+
         // ECAM standard address calculation:
         // base + (bus << 20) + (device << 15) + (function << 12) + offset
-        let address = self.ecam_base 
-            + (bus << 20)
-            + (device << 15)
-            + (function << 12)
-            + offset;
+        let address = self.ecam_base + (bus << 20) + (device << 15) + (function << 12) + offset;
         Ok(address)
     }
 }
 
 impl PciConfigMmio {
-    /* TODO: may here need check whether length exceeds*/
     pub(crate) fn access<T>(&self, offset: PciConfigAddress) -> *mut T {
         (self.base + offset) as *mut T
     }
 }
-

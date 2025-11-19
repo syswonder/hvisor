@@ -171,6 +171,7 @@ impl HvZoneConfig {
         &self.ivc_configs[..self.num_ivc_configs as usize]
     }
 
+    #[allow(unused)]
     pub fn pci_config(&self) -> &[HvPciConfig] {
         &self.pci_config[..self.num_pci_bus as usize]
     }
@@ -269,15 +270,15 @@ impl HvDwcAtuConfig {
             cfg_base: 0,
             cfg_size: 0,
             cfg0_atu_index: u32::MAX as usize,
-            cfg0_atu_type: 4,  // ATU_TYPE_CFG0
+            cfg0_atu_type: 4, // ATU_TYPE_CFG0
             cfg1_atu_index: u32::MAX as usize,
-            cfg1_atu_type: 5,  // ATU_TYPE_CFG1
+            cfg1_atu_type: 5, // ATU_TYPE_CFG1
             mem32_atu_index: u32::MAX as usize,
             mem32_atu_type: 0, // ATU_TYPE_MEM
             mem64_atu_index: u32::MAX as usize,
             mem64_atu_type: 0, // ATU_TYPE_MEM
             io_atu_index: u32::MAX as usize,
-            io_atu_type: 2,    // ATU_TYPE_IO
+            io_atu_type: 2, // ATU_TYPE_IO
         }
     }
 }

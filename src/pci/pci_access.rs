@@ -14,30 +14,31 @@
 // Authors:
 //
 // #![allow(dead_code)]
-use core::{
-    fmt::Debug,
-    ops::{Index, IndexMut},
-};
-
 use alloc::string::String;
 use bit_field::BitField;
 use bitflags::bitflags;
-use core::slice;
-
-use crate::{
-    error::HvResult,
-    memory::{GuestPhysAddr, HostPhysAddr, MMIOAccess, MemFlags, MemoryRegion, MemorySet, mmio_perform_access},
-    pci::pci_struct::BIT_LENTH,
-    percpu::this_zone,
-    zone::{Zone, this_zone_id},
+use core::{
+    fmt::Debug,
+    ops::{Index, IndexMut},
+    slice,
 };
 
 use super::{
-    config_accessors::{PciRegion, PciConfigMmio},
+    config_accessors::{PciConfigMmio, PciRegion},
     pci_struct::VirtualPciConfigSpace,
     PciConfigAddress,
 };
 
+use crate::{
+    error::HvResult,
+    memory::{
+        mmio_perform_access, GuestPhysAddr, HostPhysAddr, MMIOAccess, MemFlags, MemoryRegion,
+        MemorySet,
+    },
+    pci::pci_struct::BIT_LENTH,
+    percpu::this_zone,
+    zone::{this_zone_id, Zone},
+};
 
 pub type VendorId = u16;
 pub type DeviceId = u16;
@@ -321,10 +322,6 @@ impl PciMem {
 
         self.virtual_value = val;
     }
-
-    // pub fn set_virtual_value(&mut self, value: u64) {
-    //     self.virtual_value = value;
-    // }
 }
 
 impl Debug for PciMem {
@@ -366,7 +363,15 @@ impl Debug for PciMem {
                 let paddr = self.value & !0xf;
                 let vaddr = self.virtual_value & !0xf;
                 let size = self.size;
-                write!(f, "{:#?} [0x{:x}-0x{:x}] => [0x{:x}-0x{:x}]", self.bar_type, paddr, paddr + size, vaddr, vaddr + size)
+                write!(
+                    f,
+                    "{:#?} [0x{:x}-0x{:x}] => [0x{:x}-0x{:x}]",
+                    self.bar_type,
+                    paddr,
+                    paddr + size,
+                    vaddr,
+                    vaddr + size
+                )
             }
             _ => {
                 write!(f, "[{:#?}]", self.bar_type)
@@ -554,7 +559,7 @@ pub trait PciBarRW: PciRWBase {
 
         let mut slot = 0u8;
         while slot < self.bar_limit() {
-            warn!("parse bar slot {}", slot);   
+            warn!("parse bar slot {}", slot);
             let value = self.read_bar(slot).unwrap();
 
             if !value.get_bit(0) {
@@ -967,7 +972,6 @@ impl PciBridgeHeader {
 
 impl PciBridgeHeader {}
 
-/// Handle PCI configuration space access
 fn handle_config_space_access(
     dev: &mut VirtualPciConfigSpace,
     mmio: &mut MMIOAccess,
@@ -1088,7 +1092,9 @@ fn handle_config_space_access(
                                                 dev.set_bar_virtual_value(slot - 1, new_vaddr);
                                             }
 
-                                            let bar_size = if crate::memory::addr::is_aligned(bar.get_size() as usize) {
+                                            let bar_size = if crate::memory::addr::is_aligned(
+                                                bar.get_size() as usize,
+                                            ) {
                                                 bar.get_size()
                                             } else {
                                                 crate::memory::PAGE_SIZE as u64
@@ -1101,7 +1107,6 @@ fn handle_config_space_access(
                                                 MemFlags::READ | MemFlags::WRITE,
                                             ))?;
                                             /* after update gpm, mem barrier is needed
-                                             * TODO: for loongarch64 need ibar 0 dbar 0
                                              */
                                             #[cfg(target_arch = "aarch64")]
                                             unsafe {
@@ -1204,7 +1209,7 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
 
     let offset = (mmio.address & 0xfff) as PciConfigAddress;
     let base = mmio.address as PciConfigAddress - offset + _base as PciConfigAddress;
-    
+
     if let Some(dev) = vbus.get_device_by_base(base) {
         handle_config_space_access(dev, mmio, offset, gpm, zone_id)?;
     } else {
@@ -1217,7 +1222,9 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
 pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     // info!("mmio_vpci_handler_dbi {:#x}", mmio.address);
 
-    if mmio.address >= 0x300000 /* ATU base */ {
+    if mmio.address >= 0x300000
+    /* ATU base */
+    {
         mmio_perform_access(_base, mmio);
     } else if mmio.address >= BIT_LENTH {
         // dbi read
@@ -1231,9 +1238,9 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
             let Zone { gpm, vpci_bus, .. } = &mut *guard;
             (vpci_bus, gpm)
         };
-    
+
         let base = mmio.address as PciConfigAddress - offset + _base as PciConfigAddress;
-        
+
         if let Some(dev) = vbus.get_device_by_base(base) {
             handle_config_space_access(dev, mmio, offset, gpm, zone_id)?;
         } else {

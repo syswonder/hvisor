@@ -18,20 +18,24 @@ use spin::{Lazy, Mutex};
 
 use crate::{
     arch::iommu::iommu_add_device,
-    config::{CONFIG_MAX_PCI_DEV, CONFIG_PCI_BUS_MAXNUM, HvPciConfig, HvPciDevConfig},
+    config::{HvPciConfig, HvPciDevConfig, CONFIG_MAX_PCI_DEV, CONFIG_PCI_BUS_MAXNUM},
     error::HvResult,
-    memory::mmio_generic_handler,
-    pci::{
-        pci_access::{mmio_vpci_handler, mmio_vpci_handler_dbi}, 
-        pci_struct::{Bdf, VirtualPciConfigSpace}, 
-        config_accessors::PciConfigMmio
-    },
+    pci::pci_struct::{Bdf, VirtualPciConfigSpace},
     zone::Zone,
 };
 
-use crate::platform;
-use super::pci_struct::RootComplex;
-use crate::pci::mem_alloc::BaseAllocator;
+#[cfg(any(
+    feature = "ecam_pcie",
+    feature = "dwc_pcie",
+    feature = "loongarch64_pcie"
+))]
+use crate::pci::{mem_alloc::BaseAllocator, pci_struct::RootComplex};
+
+#[cfg(any(feature = "ecam_pcie", feature = "dwc_pcie"))]
+use crate::pci::pci_access::mmio_vpci_handler;
+
+#[cfg(feature = "dwc_pcie")]
+use crate::{memory::mmio_generic_handler, pci::pci_access::mmio_vpci_handler_dbi, platform};
 
 pub static GLOBAL_PCIE_LIST: Lazy<Mutex<BTreeMap<Bdf, VirtualPciConfigSpace>>> = Lazy::new(|| {
     let m = BTreeMap::new();
@@ -41,7 +45,11 @@ pub static GLOBAL_PCIE_LIST: Lazy<Mutex<BTreeMap<Bdf, VirtualPciConfigSpace>>> =
 /* add all dev to GLOBAL_PCIE_LIST */
 pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
     warn!("begin {:#?}", pci_config);
-    #[cfg(any(feature = "ecam_pcie", feature = "dwc_pcie", feature = "loongarch64_pcie"))]
+    #[cfg(any(
+        feature = "ecam_pcie",
+        feature = "dwc_pcie",
+        feature = "loongarch64_pcie"
+    ))]
     for (index, rootcomplex_config) in pci_config.iter().enumerate() {
         /* empty config */
         if rootcomplex_config.ecam_base == 0 {
@@ -74,7 +82,7 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
                 let atu_config = platform::ROOT_DWC_ATU_CONFIG
                     .iter()
                     .find(|atu_cfg| atu_cfg.ecam_base == ecam_base);
-                
+
                 let atu_config = match atu_config {
                     Some(cfg) => cfg,
                     None => {
@@ -82,25 +90,29 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
                         return hv_result_err!(EINVAL, "No ATU config found for ecam_base");
                     }
                 };
-                
+
                 let root_bus = rootcomplex_config.bus_range_begin as u8;
-                
+
                 RootComplex::new_dwc(rootcomplex_config.ecam_base, atu_config, root_bus)
             }
-            
+
             #[cfg(feature = "loongarch64_pcie")]
             {
                 let root_bus = rootcomplex_config.bus_range_begin as u8;
-                RootComplex::new_loongarch(rootcomplex_config.ecam_base, rootcomplex_config.ecam_size, root_bus)
+                RootComplex::new_loongarch(
+                    rootcomplex_config.ecam_base,
+                    rootcomplex_config.ecam_size,
+                    root_bus,
+                )
             }
-            
+
             #[cfg(feature = "ecam_pcie")]
             {
                 RootComplex::new_ecam(rootcomplex_config.ecam_base)
             }
-            
         };
-        let range = rootcomplex_config.bus_range_begin as usize..rootcomplex_config.bus_range_end as usize;
+        let range =
+            rootcomplex_config.bus_range_begin as usize..rootcomplex_config.bus_range_end as usize;
         let e = rootcomplex.enumerate(Some(range), allocator_opt);
         info!("begin enumerate {:#?}", e);
         for node in e {
@@ -137,7 +149,7 @@ impl Zone {
                 };
                 iommu_add_device(zone_id, dev_config.bdf as _, iommu_pt_addr);
             }
-            if let Some(dev) = guard.get(&bdf){
+            if let Some(dev) = guard.get(&bdf) {
                 if bdf.is_host_bridge(dev.get_host_bdf().bus()) {
                     let mut vdev = dev.clone();
                     vdev.set_vbdf(vbdf);
@@ -169,11 +181,11 @@ impl Zone {
             #[cfg(feature = "ecam_pcie")]
             {
                 self.mmio_region_register(
-                rootcomplex_config.ecam_base as usize,
-                rootcomplex_config.ecam_size as usize,
-                mmio_vpci_handler,
-                rootcomplex_config.ecam_base as usize,
-            );
+                    rootcomplex_config.ecam_base as usize,
+                    rootcomplex_config.ecam_size as usize,
+                    mmio_vpci_handler,
+                    rootcomplex_config.ecam_base as usize,
+                );
             }
             #[cfg(feature = "dwc_pcie")]
             {
@@ -187,7 +199,7 @@ impl Zone {
                 let extend_config = platform::ROOT_DWC_ATU_CONFIG
                     .iter()
                     .find(|extend_cfg| extend_cfg.ecam_base == rootcomplex_config.ecam_base);
-                
+
                 if let Some(extend_config) = extend_config {
                     if extend_config.apb_base != 0 && extend_config.apb_size != 0 {
                         self.mmio_region_register(
@@ -197,7 +209,7 @@ impl Zone {
                             extend_config.apb_base as usize,
                         );
                     }
-                    
+
                     let cfg_size_half = extend_config.cfg_size / 2;
                     let cfg0_base = extend_config.cfg_base;
                     if cfg0_base != 0 && cfg_size_half != 0 {
@@ -208,7 +220,7 @@ impl Zone {
                             cfg0_base as usize,
                         );
                     }
-                    
+
                     let cfg1_base = extend_config.cfg_base + cfg_size_half;
                     if cfg1_base != 0 && cfg_size_half != 0 {
                         self.mmio_region_register(
@@ -219,7 +231,10 @@ impl Zone {
                         );
                     }
                 } else {
-                    warn!("No extend config found for base 0x{:x}", rootcomplex_config.ecam_base);
+                    warn!(
+                        "No extend config found for base 0x{:x}",
+                        rootcomplex_config.ecam_base
+                    );
                 }
             }
         }

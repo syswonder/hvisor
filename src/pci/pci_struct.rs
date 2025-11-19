@@ -13,33 +13,29 @@
 //
 // Authors:
 //
-use core::{cmp::Ordering, fmt::Debug, hint::spin_loop, ops::Range, str::FromStr};
-
 use alloc::{collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
 use bit_field::BitField;
 use bitvec::{array::BitArray, order::Lsb0, BitArr};
-
-use crate::{
-    error::{HvErrorNum, HvResult},
-    pci::pci_access::{Bar, PciBarRW, PciHeaderRW, PciRomRW},
-};
+use core::{cmp::Ordering, fmt::Debug, ops::Range, str::FromStr};
 
 use super::{
+    config_accessors::{PciConfigAccessor, PciConfigMmio},
     mem_alloc::BarAllocator,
     pci_access::{
-        EndpointField, EndpointHeader, HeaderType, PciBridgeHeader, PciCommand, PciConfigHeader,
-        PciMem, PciMemType, PciRW,
+        Bar, EndpointField, EndpointHeader, HeaderType, PciBarRW, PciBridgeHeader, PciCommand,
+        PciConfigHeader, PciHeaderRW, PciMem, PciMemType, PciRW, PciRomRW,
     },
-    config_accessors::{PciConfigMmio, PciConfigAccessor},
     PciConfigAddress,
 };
+
+use crate::error::{HvErrorNum, HvResult};
 
 type VirtualPciConfigBits = BitArr!(for BIT_LENTH, in u8, Lsb0);
 
 const MAX_DEVICE: u8 = 31;
 const MAX_FUNCTION: u8 = 7;
 pub const CONFIG_LENTH: u64 = 256;
-pub const BIT_LENTH: usize = 128 * 5;   
+pub const BIT_LENTH: usize = 128 * 5;
 
 // PCIe Device/Port Type values
 const PCI_EXP_TYPE_ROOT_PORT: u16 = 4;
@@ -87,7 +83,7 @@ impl Bdf {
             function,
         }
     }
-    
+
     pub fn is_host_bridge(&self, bus_begin: u8) -> bool {
         if (self.bus, self.device, self.function) == (bus_begin, 0, 0) {
             true
@@ -309,7 +305,13 @@ impl Debug for VirtualPciConfigSpace {
 }
 
 impl VirtualPciConfigSpace {
-    pub fn endpoint(bdf: Bdf, base: PciConfigAddress, backend: Arc<dyn PciRW>, bararr: Bar, rom: PciMem) -> Self {
+    pub fn endpoint(
+        bdf: Bdf,
+        base: PciConfigAddress,
+        backend: Arc<dyn PciRW>,
+        bararr: Bar,
+        rom: PciMem,
+    ) -> Self {
         Self {
             host_bdf: Bdf::default(),
             parent_bdf: Bdf::default(),
@@ -327,7 +329,13 @@ impl VirtualPciConfigSpace {
         }
     }
 
-    pub fn bridge(bdf: Bdf, base: PciConfigAddress, backend: Arc<dyn PciRW>, bararr: Bar, rom: PciMem) -> Self {
+    pub fn bridge(
+        bdf: Bdf,
+        base: PciConfigAddress,
+        backend: Arc<dyn PciRW>,
+        bararr: Bar,
+        rom: PciMem,
+    ) -> Self {
         Self {
             host_bdf: Bdf::default(),
             parent_bdf: Bdf::default(),
@@ -518,22 +526,24 @@ pub struct PciIterator<B: BarAllocator> {
 impl<B: BarAllocator> PciIterator<B> {
     fn address(&self, parent_bus: u8, bdf: Bdf) -> PciConfigAddress {
         let offset = 0;
-        
+
         match self.accessor.get_physical_address(bdf, offset, parent_bus) {
             Ok(addr) => addr,
-            Err(_) => {
-                0x0
-            }
+            Err(_) => 0x0,
         }
     }
 
     fn get_node(&mut self) -> Option<VirtualPciConfigSpace> {
         // Handle placeholder: pop it first, use bus_range.start for initial scan
-        let was_placeholder = self.stack.last().map(|b| b.mmio.is_placeholder()).unwrap_or(false);
+        let was_placeholder = self
+            .stack
+            .last()
+            .map(|b| b.mmio.is_placeholder())
+            .unwrap_or(false);
         if was_placeholder {
             self.stack.pop(); // Remove placeholder
         }
-        
+
         let (bus, device, function, parent_bus) = if let Some(parent) = self.stack.last() {
             // device is already added in next()
             (parent.bus, parent.device, self.function, parent.primary_bus)
@@ -542,9 +552,9 @@ impl<B: BarAllocator> PciIterator<B> {
             let bus_begin = self.bus_range.start as u8;
             (bus_begin, 0, self.function, bus_begin)
         };
-        
+
         let bdf = Bdf::new(bus, device, function);
-        
+
         let address = self.address(parent_bus, bdf);
         info!("get node {:x} {:#?}", address, bdf);
 
@@ -553,18 +563,24 @@ impl<B: BarAllocator> PciIterator<B> {
         let (vender_id, _device_id) = pci_header.id();
 
         warn!("vender_id {:#x}", vender_id);
-        
+
         // Check if device exists
         if vender_id == 0xffff || self.accessor.skip_device(bdf) {
             if function == 0 {
                 // Function 0 doesn't exist, so device doesn't exist at all
                 // Skip all functions and move to next device
-                warn!("get none - device not present (vendor_id=0xffff) at {:#?}", bdf);
+                warn!(
+                    "get none - device not present (vendor_id=0xffff) at {:#?}",
+                    bdf
+                );
                 self.function = 0;
                 self.is_mulitple_function = false;
             } else {
                 // Function > 0 doesn't exist, but device might have other functions
-                warn!("get none - function not present (vendor_id=0xffff) at {:#?}", bdf);
+                warn!(
+                    "get none - function not present (vendor_id=0xffff) at {:#?}",
+                    bdf
+                );
             }
             return None;
         }
@@ -579,10 +595,9 @@ impl<B: BarAllocator> PciIterator<B> {
                     let host_bridge = Bridge::host_bridge(self.segment, bus_begin);
                     self.stack.push(host_bridge);
                 }
-                
+
                 let mut ep = EndpointHeader::new_with_region(region);
                 let rom = Self::rom_init(&mut ep);
-                
 
                 let bararr =
                     Self::bar_mem_init(ep.bar_limit().into(), &mut self.allocator, &mut ep);
@@ -591,9 +606,9 @@ impl<B: BarAllocator> PciIterator<B> {
 
                 let ep = Arc::new(ep);
                 let mut node = VirtualPciConfigSpace::endpoint(bdf, address, ep, bararr, rom);
-                
+
                 let _ = node.capability_enumerate();
-                
+
                 Some(node)
             }
             HeaderType::PciBridge => {
@@ -607,9 +622,9 @@ impl<B: BarAllocator> PciIterator<B> {
 
                 let bridge = Arc::new(bridge);
                 let mut node = VirtualPciConfigSpace::bridge(bdf, address, bridge, bararr, rom);
-                
+
                 let _ = node.capability_enumerate();
-                
+
                 Some(node)
             }
             _ => {
@@ -620,9 +635,7 @@ impl<B: BarAllocator> PciIterator<B> {
         }
     }
 
-    fn rom_init<D: PciRomRW + PciHeaderRW>(
-        dev: &mut D,
-    ) -> PciMem {
+    fn rom_init<D: PciRomRW + PciHeaderRW>(dev: &mut D) -> PciMem {
         let mut rom = dev.parse_rom();
         rom.set_virtual_value(rom.get_value() as u64);
         rom
@@ -806,8 +819,13 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
                 self.next(match node.config_type {
                     HeaderType::PciBridge => {
                         let bdf = Bdf::new(parent.bus, parent.device, parent.subordinate_bus);
-                        Some(self.get_bridge().next_bridge(self.address(parent_bus, bdf), node.has_secondary_link()))
-                    },
+                        Some(
+                            self.get_bridge().next_bridge(
+                                self.address(parent_bus, bdf),
+                                node.has_secondary_link(),
+                            ),
+                        )
+                    }
                     _ => None,
                 });
                 return Some(node);
@@ -831,8 +849,8 @@ pub struct Bridge {
 }
 
 impl Bridge {
-    /// Create a placeholder bridge for initializing the stack.
-    /// This is not a real host bridge, just a placeholder to track bus hierarchy.
+    // Create a placeholder bridge for initializing the stack.
+    // This is not a real host bridge, just a placeholder to track bus hierarchy.
     pub fn placeholder() -> Self {
         Self {
             bus: 0,
@@ -875,7 +893,7 @@ impl Bridge {
         if self.mmio.is_placeholder() {
             return;
         }
-        // Direct memory access using the access method
+        // we need to update the bridge bus number if we want linux not to update bus number
         unsafe {
             let ptr = self.mmio.access::<u32>(0x18);
             let mut value = ptr.read_volatile();
@@ -913,7 +931,7 @@ impl RootComplex {
             function: 0,
             is_mulitple_function: false,
             is_finish: false,
-            accessor: self.accessor.clone(), // Pass accessor to iterator
+            accessor: self.accessor.clone(), // accessor to iterator
         }
     }
 
@@ -962,7 +980,11 @@ impl VirtualRootComplex {
         self.devs.get_mut(bdf)
     }
 
-    pub fn get_device_by_base(&mut self, base: PciConfigAddress) -> Option<&mut VirtualPciConfigSpace> {
+    /* because the base of device may discontinuous，get device by base is simpler */
+    pub fn get_device_by_base(
+        &mut self,
+        base: PciConfigAddress,
+    ) -> Option<&mut VirtualPciConfigSpace> {
         let bdf = self.base_to_bdf.get(&base).copied()?;
         self.devs.get_mut(&bdf)
     }
@@ -1008,11 +1030,10 @@ impl Iterator for CapabilityIterator {
         }
 
         while self.get_offset() != 0 {
-            warn!("get cap {:#x}", self.get_offset());
+            debug!("get cap {:#x}", self.get_offset());
             // Get current capability before moving to next
             let cap =
                 PciCapability::from_address(self.get_offset(), self.get_id(), self.get_extension());
-            warn!("cap value {:x}", self.backend.read(self.offset, 4).unwrap());
             // Move to next capability
             let _ = self.get_next_cap();
             if let Some(cap) = cap {
@@ -1241,10 +1262,11 @@ impl VirtualPciConfigSpace {
         self.capabilities = capabilities;
     }
 
+    //TODO: check secondary link by read cap
     pub fn has_secondary_link(&self) -> bool {
         match self.config_type {
             HeaderType::PciBridge => {
-                // // Find PciExpress capability
+                // Find PciExpress capability
                 // for (_, capability) in &self.capabilities {
                 //     if let PciCapability::PciExpress(PciCapabilityRegion { offset, .. }) = capability {
                 //         // Read PCIe Capability Register at offset + 0x00
@@ -1265,10 +1287,9 @@ impl VirtualPciConfigSpace {
                 #[cfg(feature = "dwc_pcie")]
                 return true;
                 #[cfg(not(feature = "dwc_pcie"))]
-                return false;  
+                return false;
             }
             _ => false,
         }
     }
-
 }

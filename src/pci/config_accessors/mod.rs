@@ -29,7 +29,6 @@ pub trait PciRegion: Debug + Sync + Send + Any {
     fn write_u32(&self, offset: PciConfigAddress, value: u32) -> HvResult;
 }
 
-/* in aarch64, config space just like a normal mem space */
 #[derive(Debug, Clone, Copy)]
 pub struct PciConfigMmio {
     base: PciConfigAddress,
@@ -42,13 +41,13 @@ impl PciConfigMmio {
         Self { base, length }
     }
 
-    /// Check if this is a placeholder (dummy) mmio with base address 0
+    // placeholder is used only once in the beginning when hvisor init the pci bus
+    // defined that placeholder is a dummy mmio with base address 0 and length 0
     pub fn is_placeholder(&self) -> bool {
         self.base == 0 && self.length == 0
     }
 }
 
-/* PCIe region MMIO for general memory-mapped I/O regions */
 #[derive(Debug, Clone, Copy)]
 pub struct PciRegionMmio {
     base: PciConfigAddress,
@@ -60,8 +59,19 @@ impl PciRegionMmio {
     pub fn new(base: PciConfigAddress, length: u64) -> Self {
         Self { base, length }
     }
-    /* TODO: may here need check whether length exceeds*/
+
     pub(crate) fn access<T>(&self, offset: PciConfigAddress) -> *mut T {
+        (self.base + offset) as *mut T
+    }
+}
+
+#[cfg(all(
+    not(feature = "ecam_pcie"),
+    not(feature = "dwc_pcie"),
+    not(feature = "loongarch64_pcie")
+))]
+impl PciConfigMmio {
+    pub fn access<T>(&self, offset: PciConfigAddress) -> *mut T {
         (self.base + offset) as *mut T
     }
 }
@@ -115,8 +125,12 @@ impl PciRegion for PciConfigMmio {
 }
 
 pub trait PciConfigAccessor: Send + Sync + core::fmt::Debug {
-    // Get physical address from BDF and offset
-    fn get_physical_address(&self, bdf: Bdf, offset: PciConfigAddress, _parent_bus: u8) -> HvResult<PciConfigAddress>;
+    fn get_physical_address(
+        &self,
+        bdf: Bdf,
+        offset: PciConfigAddress,
+        _parent_bus: u8,
+    ) -> HvResult<PciConfigAddress>;
 
     fn skip_device(&self, _bdf: Bdf) -> bool {
         false
@@ -141,4 +155,3 @@ pub mod dwc_atu;
 
 #[cfg(feature = "loongarch64_pcie")]
 pub mod loongarch64;
-

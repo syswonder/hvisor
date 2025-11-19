@@ -19,17 +19,16 @@ use core::str::FromStr;
 use alloc::{collections::btree_map::BTreeMap, sync::Arc};
 use spin::{lazy::Lazy, mutex::Mutex};
 
-use crate::{
-    memory::{MMIOAccess, mmio_perform_access},
-    pci::{pci_access::EndpointHeader, config_accessors::PciConfigMmio},
-    percpu::this_zone,
-};
-
-use super::pci_struct::CONFIG_LENTH;
 use super::{
     mem_alloc::BaseAllocator,
     pci_access::mmio_vpci_handler,
-    pci_struct::{Bdf, RootComplex, VirtualPciConfigSpace},
+    pci_struct::{Bdf, VirtualPciConfigSpace, CONFIG_LENTH},
+};
+
+use crate::{
+    memory::{mmio_perform_access, MMIOAccess},
+    pci::{config_accessors::PciConfigMmio, pci_access::EndpointHeader},
+    percpu::this_zone,
 };
 
 pub static GLOBAL_PCIE_LIST_TEST: Lazy<Mutex<BTreeMap<Bdf, VirtualPciConfigSpace>>> =
@@ -59,10 +58,7 @@ pub fn pcie_guest_init() {
     let vbdf = Bdf::from_str("0000:00:00.0").unwrap();
     let bdf = Bdf::from_str("0000:00:00.0").unwrap();
     let base = 0x4010000000; // Base address for test
-    let backend = EndpointHeader::new_with_region(PciConfigMmio::new(
-        base,
-        CONFIG_LENTH,
-    ));
+    let backend = EndpointHeader::new_with_region(PciConfigMmio::new(base, CONFIG_LENTH));
     let dev = VirtualPciConfigSpace::host_bridge(bdf, base, Arc::new(backend));
     vbus.insert(vbdf, dev);
 
@@ -102,7 +98,7 @@ pub fn pcie_guest_init() {
     info!("pcie guest init done");
 }
 
-pub fn pcie_guest_test() {
+pub fn ecam_pcie_guest_test() {
     let zone = this_zone();
     let vbus = &zone.read().vpci_bus;
     let bdf = Bdf::from_str("0000:00:01.0").unwrap();
@@ -129,7 +125,7 @@ pub fn pcie_guest_test() {
     info!("pcie guest test passed");
 }
 
-pub fn pcie_dwc_test() {
+pub fn dwc_pcie_guest_test() {
     info!("pcie dwc test begin");
     let mut mmio = MMIOAccess {
         address: 0x3c0400000,
@@ -143,7 +139,7 @@ pub fn pcie_dwc_test() {
         "mmio offset {:x}, is_wirte {}, size {}, value 0x{:x}",
         mmio.address, mmio.is_write, mmio.size, mmio.value
     );
-    use core::ptr::{read_volatile, write_volatile};
+    use core::ptr::read_volatile;
     unsafe {
         let a = read_volatile(0x3c0000900 as *const u32);
         info!("{a}");

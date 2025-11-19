@@ -216,7 +216,6 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
         let _ = zone.guest_pci_init(zone_id, &config.alloc_pci_devs, config.num_pci_devs);
     }
 
-
     // #[cfg(target_arch = "aarch64")]
     // zone.ivc_init(config.ivc_config());
 

@@ -188,6 +188,8 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
 };
 
 pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
+    bus_range_begin: 0x0,
+    bus_range_end: 0x1f,
     ecam_base: 0x4010000000,
     ecam_size: 0x10000000,
     io_base: 0x3eff0000,

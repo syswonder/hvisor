@@ -14,53 +14,34 @@
 // Authors:
 //
 
-use crate::error::{HvResult, HvErrorNum::*};
-use crate::pci::{pci_access::{PciRW, PciRWBase}, pci_struct::{Bdf, RootComplex}, PciConfigAddress};
-use crate::config::HvDwcAtuConfig;
 use alloc::sync::Arc;
-use super::{PciConfigAccessor, PciRegion, PciConfigMmio, PciRegionMmio};
-use super::dwc_atu::{AtuUnroll, AtuConfig, ATU_UNUSED};
 use bit_field::BitField;
 
+use super::{
+    dwc_atu::{AtuConfig, AtuUnroll, ATU_UNUSED},
+    PciConfigAccessor, PciConfigMmio, PciRegion, PciRegionMmio,
+};
+
+use crate::{
+    config::HvDwcAtuConfig,
+    error::{HvErrorNum::*, HvResult},
+    pci::{
+        pci_access::{PciRW, PciRWBase},
+        pci_struct::{Bdf, RootComplex},
+        PciConfigAddress,
+    },
+};
+
 impl RootComplex {
-    pub fn new_dwc(
-        ecam_base: u64,
-        atu_config: &HvDwcAtuConfig, 
-        root_bus: u8
-    ) -> Self {
+    pub fn new_dwc(ecam_base: u64, atu_config: &HvDwcAtuConfig, root_bus: u8) -> Self {
         let accessor = Arc::new(DwcConfigAccessor::new(atu_config, root_bus));
-        
-        Self { 
+
+        Self {
             mmio_base: ecam_base,
             accessor,
         }
     }
 }
-
-impl PciRegion for PciConfigMmio {
-    fn read_u8(&self, offset: PciConfigAddress) -> HvResult<u8> {
-        unsafe { Ok(self.access::<u8>(offset).read_volatile() as u8) }
-    }
-    fn write_u8(&self, offset: PciConfigAddress, value: u8) -> HvResult {
-        unsafe { self.access::<u8>(offset).write_volatile(value) }
-        Ok(())
-    }
-    fn read_u16(&self, offset: PciConfigAddress) -> HvResult<u16> {
-        unsafe { Ok(self.access::<u16>(offset).read_volatile() as u16) }
-    }
-    fn write_u16(&self, offset: PciConfigAddress, value: u16) -> HvResult {
-        unsafe { self.access::<u16>(offset).write_volatile(value) }
-        Ok(())
-    }
-    fn read_u32(&self, offset: PciConfigAddress) -> HvResult<u32> {
-        unsafe { Ok(self.access::<u32>(offset).read_volatile() as u32) }
-    }
-    fn write_u32(&self, offset: PciConfigAddress, value: u32) -> HvResult {
-        unsafe { self.access::<u32>(offset).write_volatile(value) }
-        Ok(())
-    }
-}
-
 
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
@@ -91,20 +72,17 @@ pub struct DwcConfigAccessor {
 }
 
 impl DwcConfigAccessor {
-    pub fn new(
-        atu_config: &HvDwcAtuConfig,
-        root_bus: u8
-    ) -> Self {
+    pub fn new(atu_config: &HvDwcAtuConfig, root_bus: u8) -> Self {
         let cfg_size_half = atu_config.cfg_size / 2;
         let cfg0_base = atu_config.cfg_base;
         let cfg1_base = atu_config.cfg_base + cfg_size_half;
-        
+
         // Create DBI backend for ATU configuration
         let dbi_base = atu_config.dbi_base as PciConfigAddress;
         let dbi_size = atu_config.dbi_size;
         let dbi_region = PciRegionMmio::new(dbi_base, dbi_size);
         let dbi_backend = Arc::new(DwcConfigRegionBackend(dbi_region));
-        
+
         let dbi = DwcConfigRegion {
             atu_index: ATU_UNUSED as usize,
             atu_type: 0,
@@ -123,7 +101,7 @@ impl DwcConfigAccessor {
             base: cfg1_base,
             size: cfg_size_half,
         };
-        
+
         Self {
             dbi_backend,
             dbi,
@@ -135,47 +113,44 @@ impl DwcConfigAccessor {
 }
 
 impl PciConfigAccessor for DwcConfigAccessor {
-    fn get_physical_address(&self, bdf: Bdf, offset: PciConfigAddress, parent_bus: u8) -> HvResult<PciConfigAddress> {
+    fn get_physical_address(
+        &self,
+        bdf: Bdf,
+        offset: PciConfigAddress,
+        parent_bus: u8,
+    ) -> HvResult<PciConfigAddress> {
         let bus = bdf.bus();
         let device = bdf.device() as PciConfigAddress;
         let function = bdf.function() as PciConfigAddress;
 
         warn!("parent_bus {} self.root_bus {}", parent_bus, self.root_bus);
-        
+
         // Calculate address without bus field (bus is handled by different config regions)
         // Address format: (device << 15) + (function << 12) + offset
         let offset_without_bus = (device << 15) + (function << 12) + offset;
-        
+
         let address = if bus == self.root_bus {
-            warn!("1");
             // Root bus: use DBI directly, no ATU configuration needed
             self.dbi.base + offset_without_bus
         } else if parent_bus == self.root_bus {
-            // Check if cfg0 ATU is configured (not ATU_UNUSED)
-            warn!("2");
             if self.cfg0.atu_index == ATU_UNUSED as usize {
                 return hv_result_err!(EINVAL, "CFG0 ATU is not configured");
             }
-            let atu_config = AtuConfig::new_with_dwc_config_region(
-                &self.cfg0,
-            );
+            let atu_config = AtuConfig::new_with_dwc_config_region(&self.cfg0);
             AtuUnroll::dw_pcie_prog_outbound_atu_unroll(self.dbi_backend.as_ref(), &atu_config)?;
-            
+
             self.cfg0.base + offset_without_bus
         } else {
-            // Check if cfg1 ATU is configured (not ATU_UNUSED)
-            warn!("3");
+            //TODO: cfg1 not implemented yet because it's not used in the current board
             if self.cfg1.atu_index == ATU_UNUSED as usize {
                 return hv_result_err!(EINVAL, "CFG1 ATU is not configured");
             }
-            let atu_config = AtuConfig::new_with_dwc_config_region(
-                &self.cfg1,
-            );
+            let atu_config = AtuConfig::new_with_dwc_config_region(&self.cfg1);
             AtuUnroll::dw_pcie_prog_outbound_atu_unroll(self.dbi_backend.as_ref(), &atu_config)?;
-            
+
             self.cfg1.base + offset_without_bus
         };
-        
+
         Ok(address)
     }
 
@@ -191,7 +166,6 @@ impl PciConfigAccessor for DwcConfigAccessor {
 }
 
 impl PciConfigMmio {
-    /* TODO: may here need check whether length exceeds*/
     pub(crate) fn access<T>(&self, offset: PciConfigAddress) -> *mut T {
         (self.base + offset) as *mut T
     }
