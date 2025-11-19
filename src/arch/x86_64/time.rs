@@ -12,35 +12,10 @@
 //      https://www.syswonder.org
 //
 // Authors:
-//  Solicey <lzoi_lth@163.com>
+//      Jingyu Liu <liujingyu24s@ict.ac.cn>
+//
 
-#![allow(unused)]
-pub mod acpi;
-pub mod boot;
-pub mod consts;
-pub mod cpu;
-pub mod cpuid;
-pub mod entry;
-pub mod graphics;
-pub mod hpet;
-pub mod hypercall;
-pub mod idt;
-pub mod iommu;
-pub mod ipi;
-pub mod mm;
-pub mod mmio;
-pub mod msr;
-pub mod paging;
-pub mod pci;
-pub mod pio;
-pub mod s1pt;
-pub mod s2pt;
-pub mod time;
-pub mod trap;
-pub mod vmcs;
-pub mod vmx;
-pub mod zone;
-
-pub use s1pt::Stage1PageTable;
-pub use s2pt::stage2_mode_detect;
-pub use s2pt::Stage2PageTable;
+/// Note: You should call this function once during initialization.
+pub fn init_timebase() {
+    info!("Initializing x86_64 timebase not implemented yet.");
+}
