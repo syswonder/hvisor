@@ -2,4 +2,6 @@ loongson_3a6000
 loongson_7a2000
 loongson_uart
 
+pci
 loongarch64_pcie
+no_pcie_bar_realloc
