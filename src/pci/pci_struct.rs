@@ -606,7 +606,7 @@ impl<B: BarAllocator> PciIterator<B> {
                 // For endpoint: push host_bridge if we popped placeholder
                 if was_placeholder {
                     let bus_begin = self.bus_range.start as u8;
-                    let host_bridge = Bridge::host_bridge(self.segment, bus_begin);
+                    let host_bridge = Bridge::host_bridge(self.segment, bus_begin, self.is_mulitple_function, self.function);
                     self.stack.push(host_bridge);
                 }
 
@@ -752,7 +752,8 @@ impl<B: BarAllocator> PciIterator<B> {
                     self.is_finish = parent.subordinate_bus as usize == self.bus_range.end;
 
                     parent.update_bridge_bus();
-                    self.function = 0;
+                    self.function = parent.function;
+                    self.is_mulitple_function = parent.is_mulitple_function;
                     return true;
                 } else {
                     self.is_finish = true;
@@ -780,7 +781,7 @@ impl<B: BarAllocator> PciIterator<B> {
                 self.function += 1;
                 return;
             }
-            
+
             self.function = 0;
             return;
         }
@@ -816,7 +817,7 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
                  * so we push host bridge to stack here
                  */ 
                 if self.stack.is_empty() {
-                    let host_bridge = Bridge::host_bridge(self.segment, bus_begin);
+                    let host_bridge = Bridge::host_bridge(self.segment, bus_begin, self.is_mulitple_function, self.function);
                     self.stack.push(host_bridge);
                 }
                 let parent = self.stack.last().unwrap(); // Safe because we just ensured it exists
@@ -825,14 +826,15 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
                 let parent_bus = parent.primary_bus;
                 node.set_host_bdf(host_bdf);
                 node.set_parent_bdf(parent_bdf);
-                //todo check bridge with 
                 self.next(match node.class.0 {
-                    0x6 => {
-                        let bdf = Bdf::new(parent.bus, parent.device, parent.subordinate_bus);
+                    0x6 if node.class.1 != 0x0 => {
+                        let bdf = Bdf::new(parent.subordinate_bus + 1, 0, 0);
                         Some(
                             self.get_bridge().next_bridge(
                                 self.address(parent_bus, bdf),
                                 node.has_secondary_link(),
+                                self.is_mulitple_function,
+                                self.function
                             ),
                         )
                     }
@@ -851,11 +853,13 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
 pub struct Bridge {
     bus: u8,
     device: u8,
+    function: u8,
     subordinate_bus: u8,
     secondary_bus: u8,
     primary_bus: u8,
     mmio: PciConfigMmio,
     has_secondary_link: bool,
+    is_mulitple_function: bool,
 }
 
 impl Bridge {
@@ -865,36 +869,42 @@ impl Bridge {
         Self {
             bus: 0,
             device: 0,
+            function: 0,
             subordinate_bus: 0,
             secondary_bus: 0,
             primary_bus: 0,
             mmio: PciConfigMmio::new(0, 0), // Dummy mmio for placeholder
             has_secondary_link: false,
+            is_mulitple_function: false,
         }
     }
 
-    pub fn host_bridge(address: PciConfigAddress, bus_begin: u8) -> Self {
+    pub fn host_bridge(address: PciConfigAddress, bus_begin: u8, is_mulitple_function: bool, function: u8) -> Self {
         Self {
             bus: bus_begin,
             device: 0,
+            function,
             subordinate_bus: bus_begin,
             secondary_bus: bus_begin,
             primary_bus: bus_begin,
             mmio: PciConfigMmio::new(address, CONFIG_LENTH),
             has_secondary_link: false,
+            is_mulitple_function,
         }
     }
 
-    pub fn next_bridge(&self, address: PciConfigAddress, has_secondary_link: bool) -> Self {
+    pub fn next_bridge(&self, address: PciConfigAddress, has_secondary_link: bool, is_mulitple_function: bool, function: u8) -> Self {
         let mmio = PciConfigMmio::new(address, CONFIG_LENTH);
         Self {
             bus: self.subordinate_bus + 1,
             device: 0,
+            function,
             subordinate_bus: self.subordinate_bus + 1,
             secondary_bus: self.subordinate_bus + 1,
             primary_bus: self.bus,
             mmio,
             has_secondary_link,
+            is_mulitple_function,
         }
     }
 
