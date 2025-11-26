@@ -211,7 +211,6 @@ pub struct HvIvcConfig {
 #[derive(Copy, Clone, Default)]
 pub struct HvPciDevConfig {
     pub bdf: u64,
-    pub vbdf: u64,
 }
 
 #[macro_export]
@@ -219,7 +218,6 @@ macro_rules! pci_dev {
     ($bus:expr, $dev:expr, $func:expr) => {
         HvPciDevConfig {
             bdf: ($bus << 8) | ($dev << 3) | ($func),
-            vbdf: ($bus << 8) | ($dev << 3) | ($func),
         }
     };
 }
@@ -227,8 +225,7 @@ macro_rules! pci_dev {
 impl Debug for HvPciDevConfig {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let bdf = crate::pci::pci_struct::Bdf::from_address(self.bdf);
-        let vbdf = crate::pci::pci_struct::Bdf::from_address(self.vbdf);
-        write!(f, "bdf {:#?} vbdf {:#?}", bdf, vbdf)
+        write!(f, "bdf {:#?}", bdf)
     }
 }
 

@@ -59,7 +59,7 @@ pub fn pcie_guest_init() {
     let bdf = Bdf::from_str("0000:00:00.0").unwrap();
     let base = 0x4010000000; // Base address for test
     let backend = EndpointHeader::new_with_region(PciConfigMmio::new(base, CONFIG_LENTH));
-    let dev = VirtualPciConfigSpace::host_bridge(bdf, base, Arc::new(backend));
+    let dev = VirtualPciConfigSpace::host_bridge(bdf, base, Arc::new(backend), (0x6u8,0x0u8,0u8));
     vbus.insert(vbdf, dev);
 
     let vbdf = Bdf::from_str("0000:00:01.0").unwrap();

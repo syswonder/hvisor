@@ -20,7 +20,6 @@ use bit_field::BitField;
 use super::{PciConfigAccessor, PciConfigMmio, PciRegion};
 
 use crate::{
-    arch::loongarch64::mm::LOONGARCH64_UNCACHED_DMW_PREFIX,
     error::HvResult,
     pci::{
         pci_struct::{Bdf, RootComplex},
@@ -104,8 +103,11 @@ impl PciConfigAccessor for LoongArchConfigAccessor {
     }
 }
 
+pub const HV_ADDR_PREFIX: u64 = 0x8000_0000_0000_0000;
+pub const LOONG_HT_PREFIX: u64 = 0xe00_0000_0000;
+
 impl PciConfigMmio {
     pub(crate) fn access<T>(&self, offset: PciConfigAddress) -> *mut T {
-        (self.base + offset | LOONGARCH64_UNCACHED_DMW_PREFIX) as *mut T
+        (self.base + offset | HV_ADDR_PREFIX | LOONG_HT_PREFIX) as *mut T
     }
 }

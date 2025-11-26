@@ -26,6 +26,7 @@ use super::{
         PciConfigHeader, PciHeaderRW, PciMem, PciMemType, PciRW, PciRomRW,
     },
     PciConfigAddress,
+    pci_access::{BaseClass, SubClass, Interface},
 };
 
 use crate::error::{HvErrorNum, HvResult};
@@ -223,6 +224,7 @@ pub struct VirtualPciConfigSpace {
     bdf: Bdf,
     vbdf: Bdf,
     config_type: HeaderType,
+    class: (BaseClass, SubClass, Interface),
 
     base: PciConfigAddress,
 
@@ -311,6 +313,7 @@ impl VirtualPciConfigSpace {
         backend: Arc<dyn PciRW>,
         bararr: Bar,
         rom: PciMem,
+        class: (BaseClass, SubClass, Interface),
     ) -> Self {
         Self {
             host_bdf: Bdf::default(),
@@ -318,6 +321,7 @@ impl VirtualPciConfigSpace {
             bdf,
             vbdf: Bdf::default(),
             config_type: HeaderType::Endpoint,
+            class,
             base,
             space: [0u8; BIT_LENTH],
             control: VirtualPciConfigControl::endpoint(),
@@ -335,6 +339,7 @@ impl VirtualPciConfigSpace {
         backend: Arc<dyn PciRW>,
         bararr: Bar,
         rom: PciMem,
+        class: (BaseClass, SubClass, Interface),
     ) -> Self {
         Self {
             host_bdf: Bdf::default(),
@@ -342,6 +347,7 @@ impl VirtualPciConfigSpace {
             bdf,
             vbdf: Bdf::default(),
             config_type: HeaderType::PciBridge,
+            class,
             base,
             space: [0u8; BIT_LENTH],
             control: VirtualPciConfigControl::bridge(),
@@ -360,6 +366,7 @@ impl VirtualPciConfigSpace {
             bdf,
             vbdf: Bdf::default(),
             config_type: HeaderType::Endpoint,
+            class: (0u8,0u8,0u8),
             base,
             space: [0u8; BIT_LENTH],
             control: VirtualPciConfigControl::endpoint(),
@@ -371,13 +378,14 @@ impl VirtualPciConfigSpace {
         }
     }
 
-    pub fn host_bridge(bdf: Bdf, base: PciConfigAddress, backend: Arc<dyn PciRW>) -> Self {
+    pub fn host_bridge(bdf: Bdf, base: PciConfigAddress, backend: Arc<dyn PciRW>, class: (BaseClass, SubClass, Interface)) -> Self {
         Self {
             host_bdf: bdf,
             parent_bdf: bdf,
             bdf: bdf,
             vbdf: bdf,
             config_type: HeaderType::Endpoint,
+            class,
             base,
             space: [0u8; BIT_LENTH],
             control: VirtualPciConfigControl::host_bridge(),
@@ -585,7 +593,13 @@ impl<B: BarAllocator> PciIterator<B> {
             return None;
         }
 
-        self.is_mulitple_function = pci_header.has_multiple_functions();
+        // only check is_mulitple_function for function 0
+        if self.function == 0 {
+            self.is_mulitple_function = pci_header.has_multiple_functions();
+        }
+
+        let (_, base_class, sub_class, interface) = pci_header.revision_and_class();
+        let class = (base_class, sub_class, interface);
 
         match pci_header.header_type() {
             HeaderType::Endpoint => {
@@ -605,7 +619,7 @@ impl<B: BarAllocator> PciIterator<B> {
                 info!("get node bar mem init end {:#?}", bararr);
 
                 let ep = Arc::new(ep);
-                let mut node = VirtualPciConfigSpace::endpoint(bdf, address, ep, bararr, rom);
+                let mut node = VirtualPciConfigSpace::endpoint(bdf, address, ep, bararr, rom, class);
 
                 let _ = node.capability_enumerate();
 
@@ -621,7 +635,7 @@ impl<B: BarAllocator> PciIterator<B> {
                     Self::bar_mem_init(bridge.bar_limit().into(), &mut self.allocator, &mut bridge);
 
                 let bridge = Arc::new(bridge);
-                let mut node = VirtualPciConfigSpace::bridge(bdf, address, bridge, bararr, rom);
+                let mut node = VirtualPciConfigSpace::bridge(bdf, address, bridge, bararr, rom, class);
 
                 let _ = node.capability_enumerate();
 
@@ -726,21 +740,6 @@ impl<B: BarAllocator> PciIterator<B> {
         }
     }
 
-    fn is_next_function_max(&mut self) -> bool {
-        if self.is_mulitple_function {
-            if self.function == MAX_FUNCTION {
-                self.function = 0;
-                true
-            } else {
-                self.function += 1;
-                false
-            }
-        } else {
-            self.function = 0;
-            true
-        }
-    }
-
     fn next_device_not_ok(&mut self) -> bool {
         if let Some(parent) = self.stack.last_mut() {
             // only one child and skip this bus
@@ -776,6 +775,12 @@ impl<B: BarAllocator> PciIterator<B> {
 
             self.stack.push(bridge.clone());
 
+            if self.is_mulitple_function && self.function < MAX_FUNCTION {
+                // Device supports multiple functions and we haven't checked all functions yet
+                self.function += 1;
+                return;
+            }
+            
             self.function = 0;
             return;
         }
@@ -805,7 +810,11 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
             if let Some(mut node) = self.get_node() {
                 node.space_init();
                 let bus_begin = self.bus_range.start as u8;
-                // Ensure stack has a parent (host bridge if empty)
+                /* 
+                 * when first time to enumerate, placeholder is pop in get_node
+                 * the message of host bridge must be got after get_node()
+                 * so we push host bridge to stack here
+                 */ 
                 if self.stack.is_empty() {
                     let host_bridge = Bridge::host_bridge(self.segment, bus_begin);
                     self.stack.push(host_bridge);
@@ -816,8 +825,9 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
                 let parent_bus = parent.primary_bus;
                 node.set_host_bdf(host_bdf);
                 node.set_parent_bdf(parent_bdf);
-                self.next(match node.config_type {
-                    HeaderType::PciBridge => {
+                //todo check bridge with 
+                self.next(match node.class.0 {
+                    0x6 => {
                         let bdf = Bdf::new(parent.bus, parent.device, parent.subordinate_bus);
                         Some(
                             self.get_bridge().next_bridge(

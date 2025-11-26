@@ -69,9 +69,9 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
 
         // TODO: refactor
         // in x86, we do not take the initiative to reallocate BAR space
-        #[cfg(target_arch = "no_pcie_bar_realloc")]
+        #[cfg(feature = "no_pcie_bar_realloc")]
         let allocator_opt: Option<BaseAllocator> = None;
-        #[cfg(not(target_arch = "no_pcie_bar_realloc"))]
+        #[cfg(not(feature = "no_pcie_bar_realloc"))]
         let allocator_opt: Option<BaseAllocator> = Some(allocator);
 
         let mut rootcomplex = {
@@ -136,7 +136,7 @@ impl Zone {
         while i < num_pci_devs {
             let dev_config = alloc_pci_devs[i as usize];
             let bdf = Bdf::from_address(dev_config.bdf << 12);
-            let vbdf = Bdf::from_address(dev_config.vbdf << 12);
+            let vbdf = bdf.clone();
             #[cfg(any(
                 all(feature = "iommu", target_arch = "aarch64"),
                 target_arch = "x86_64"
