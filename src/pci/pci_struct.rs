@@ -471,8 +471,6 @@ pub struct PciIterator<B: BarAllocator> {
     stack: Vec<Bridge>,
     segment: PciConfigAddress,
     bus_max: u8,
-    function: u8,
-    is_mulitple_function: bool,
     is_finish: bool,
 }
 
@@ -481,9 +479,10 @@ impl<B: BarAllocator> PciIterator<B> {
         let parent = self.stack.last().unwrap();
         let bus = parent.secondary_bus;
         let device = parent.device;
+        let function = parent.function;
 
         let mut address: PciConfigAddress = 0;
-        address.set_bits(12..15, self.function as PciConfigAddress);
+        address.set_bits(12..15, function as PciConfigAddress);
         address.set_bits(15..20, device as PciConfigAddress);
         address.set_bits(20..28, bus as PciConfigAddress);
         address += self.segment;
@@ -496,11 +495,10 @@ impl<B: BarAllocator> PciIterator<B> {
         let region = PciRegionMmio::new(address, CONFIG_LENTH);
         let pci_header = PciConfigHeader::new_with_region(region);
         let (vender_id, _device_id) = pci_header.id();
+
         if vender_id == 0xffff {
             return None;
         }
-
-        self.is_mulitple_function = pci_header.has_multiple_functions();
 
         match pci_header.header_type() {
             HeaderType::Endpoint => {
@@ -609,34 +607,34 @@ impl<B: BarAllocator> PciIterator<B> {
     }
 
     fn is_next_function_max(&mut self) -> bool {
-        if self.is_mulitple_function {
-            if self.function == MAX_FUNCTION {
-                self.function = 0;
-                true
+        if let Some(parent) = self.stack.last_mut() {
+            if parent.function == MAX_FUNCTION {
+                parent.function = 0;
+                return true;
             } else {
-                self.function += 1;
-                false
+                parent.function += 1;
+                return false;
             }
-        } else {
-            self.function = 0;
-            true
         }
+        unreachable!("null stack")
     }
 
     fn next_device_not_ok(&mut self) -> bool {
         if let Some(parent) = self.stack.last_mut() {
-            if parent.device == MAX_DEVICE {
+            if parent.function != MAX_FUNCTION {
+                parent.function += 1;
+            } else if parent.device != MAX_DEVICE {
+                parent.device += 1;
+                parent.function = 0;
+            } else {
                 if let Some(mut parent) = self.stack.pop() {
                     self.is_finish = parent.subordinate_bus == self.bus_max;
 
                     parent.update_bridge_bus();
-                    self.function = 0;
                     return true;
                 } else {
                     self.is_finish = true;
                 }
-            } else {
-                parent.device += 1;
             }
         } else {
             self.is_finish = true;
@@ -653,14 +651,11 @@ impl<B: BarAllocator> PciIterator<B> {
 
             self.stack.push(bridge.clone());
 
-            self.function = 0;
             return;
         }
 
-        if self.is_next_function_max() {
-            while self.next_device_not_ok() {
-                spin_loop();
-            }
+        while self.next_device_not_ok() {
+            spin_loop();
         }
     }
 }
@@ -688,6 +683,7 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
 #[derive(Debug, Clone)]
 pub struct Bridge {
     device: u8,
+    function: u8,
     subordinate_bus: u8,
     secondary_bus: u8,
     primary_bus: u8,
@@ -698,6 +694,7 @@ impl Bridge {
     pub fn host_bridge(address: PciConfigAddress) -> Self {
         Self {
             device: 0,
+            function: 0,
             subordinate_bus: 0,
             secondary_bus: 0,
             primary_bus: 0,
@@ -709,6 +706,7 @@ impl Bridge {
         let mmio = PciRegionMmio::new(address, CONFIG_LENTH);
         Self {
             device: 0,
+            function: 0,
             subordinate_bus: self.subordinate_bus + 1,
             secondary_bus: self.subordinate_bus + 1,
             primary_bus: self.secondary_bus,
@@ -747,8 +745,6 @@ impl RootComplex {
             stack: vec![Bridge::host_bridge(mmio_base)],
             segment: mmio_base,
             bus_max: (range.end - 1) as _,
-            function: 0,
-            is_mulitple_function: false,
             is_finish: false,
         }
     }

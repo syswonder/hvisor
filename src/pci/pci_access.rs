@@ -25,6 +25,7 @@ use bitflags::bitflags;
 use core::slice;
 
 use crate::{
+    consts::PAGE_SIZE,
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MMIOAccess, MemFlags, MemoryRegion},
     pci::pci_struct::BIT_LENTH,
@@ -1072,10 +1073,16 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                                                     dev.set_bar_virtual_value(slot - 1, new_vaddr);
                                                 }
 
+                                                let bar_size = bar.get_size() as usize;
+                                                let map_size = if bar_size < PAGE_SIZE {
+                                                    PAGE_SIZE
+                                                } else {
+                                                    bar_size
+                                                };
                                                 gpm.insert(MemoryRegion::new_with_offset_mapper(
                                                     new_vaddr as GuestPhysAddr,
                                                     paddr as HostPhysAddr,
-                                                    bar.get_size() as _,
+                                                    map_size,
                                                     MemFlags::READ | MemFlags::WRITE,
                                                 ))?;
                                                 /* after update gpm, mem barrier is needed

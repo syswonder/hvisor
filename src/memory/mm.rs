@@ -109,7 +109,11 @@ where
 
     /// Add a memory region to this set.
     pub fn insert(&mut self, region: MemoryRegion<PT::VA>) -> HvResult {
-        info!("region.start: {:#X}", region.start.into());
+        info!(
+            "region.start: {:#X}, region.size: {:#x?}",
+            region.start.into(),
+            region.size
+        );
         assert!(is_aligned(region.start.into()));
         assert!(is_aligned(region.size));
         if region.size == 0 {
