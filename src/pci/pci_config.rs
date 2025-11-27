@@ -20,7 +20,7 @@ use crate::{
     arch::iommu::iommu_add_device,
     config::{HvPciConfig, HvPciDevConfig, CONFIG_MAX_PCI_DEV, CONFIG_PCI_BUS_MAXNUM},
     error::HvResult,
-    pci::pci_struct::{Bdf, VirtualPciConfigSpace},
+    pci::{pci_struct::{Bdf, VirtualPciConfigSpace}, vpci_dev::VpciDevType}, 
     zone::Zone,
 };
 
@@ -130,6 +130,8 @@ impl Zone {
         zone_id: usize,
         alloc_pci_devs: &[HvPciDevConfig; CONFIG_MAX_PCI_DEV],
         num_pci_devs: u64,
+        //TODO: set vpci dev base in other way
+        _ecam_base: u64,
     ) -> HvResult {
         let mut guard = GLOBAL_PCIE_LIST.lock();
         let mut i = 0;
@@ -137,6 +139,7 @@ impl Zone {
             let dev_config = alloc_pci_devs[i as usize];
             let bdf = Bdf::from_address(dev_config.bdf << 12);
             let vbdf = bdf.clone();
+            let dev_type = dev_config.dev_type;
             #[cfg(any(
                 all(feature = "iommu", target_arch = "aarch64"),
                 target_arch = "x86_64"
@@ -160,7 +163,21 @@ impl Zone {
                     self.vpci_bus.insert(vbdf, vdev);
                 }
             } else {
-                warn!("can not find dev {:#?}", bdf);
+                // warn!("can not find dev {:#?}", bdf);
+                #[cfg(feature = "ecam_pcie")]
+                match dev_type {
+                    VpciDevType::StandardVdev => {
+                        let base = _ecam_base 
+                                        + ((bdf.bus() as u64) << 20)
+                                        + ((bdf.device() as u64) << 15)
+                                        + ((bdf.function() as u64) << 12);
+                        let dev = VirtualPciConfigSpace::virt_dev(bdf, base);
+                        self.vpci_bus.insert(vbdf, dev);
+                    }
+                    _ => {
+                        warn!("can not find dev {:#?}", bdf);
+                    }
+                }
             }
             i += 1;
         }

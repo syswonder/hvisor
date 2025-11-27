@@ -17,7 +17,7 @@ use alloc::vec::Vec;
 use core::fmt::Debug;
 use spin::Once;
 
-use crate::{arch::zone::HvArchZoneConfig, platform};
+use crate::{arch::zone::HvArchZoneConfig, pci::vpci_dev::VpciDevType, platform};
 
 pub const MEM_TYPE_RAM: u32 = 0;
 pub const MEM_TYPE_IO: u32 = 1;
@@ -211,13 +211,15 @@ pub struct HvIvcConfig {
 #[derive(Copy, Clone, Default)]
 pub struct HvPciDevConfig {
     pub bdf: u64,
+    pub dev_type: VpciDevType,
 }
 
 #[macro_export]
 macro_rules! pci_dev {
-    ($bus:expr, $dev:expr, $func:expr) => {
+    ($bus:expr, $dev:expr, $func:expr, $dev_type:expr) => {
         HvPciDevConfig {
             bdf: ($bus << 8) | ($dev << 3) | ($func),
+            dev_type: $dev_type,
         }
     };
 }

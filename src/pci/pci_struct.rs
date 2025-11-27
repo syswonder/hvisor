@@ -23,13 +23,13 @@ use super::{
     mem_alloc::BarAllocator,
     pci_access::{
         Bar, EndpointField, EndpointHeader, HeaderType, PciBarRW, PciBridgeHeader, PciCommand,
-        PciConfigHeader, PciHeaderRW, PciMem, PciMemType, PciRW, PciRomRW,
+        PciConfigHeader, PciField, PciHeaderRW, PciMem, PciMemType, PciRW, PciRomRW,
     },
     PciConfigAddress,
     pci_access::{BaseClass, SubClass, Interface},
 };
 
-use crate::error::{HvErrorNum, HvResult};
+use crate::{error::{HvErrorNum, HvResult}, pci::vpci_dev::VpciDevType};
 
 type VirtualPciConfigBits = BitArr!(for BIT_LENTH, in u8, Lsb0);
 
@@ -179,6 +179,12 @@ impl VirtualPciConfigControl {
             bits: !BitArray::ZERO,
         }
     }
+
+    pub fn virt_dev() -> Self {
+        Self {
+            bits: !BitArray::ZERO,
+        }
+    }
 }
 
 /* 0: read hw
@@ -207,6 +213,72 @@ impl VirtualPciAccessBits {
             bits: BitArray::ZERO,
         }
     }
+
+    pub fn virt_dev() -> Self {
+        Self {
+            bits: !BitArray::ZERO,
+        }
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct PciConfigSpace {
+    data: [u8; BIT_LENTH],
+}
+
+impl PciConfigSpace {
+    pub fn new() -> Self {
+        Self {
+            data: [0u8; BIT_LENTH],
+        }
+    }
+
+    pub fn as_slice(&self) -> &[u8] {
+        &self.data
+    }
+
+    pub fn as_mut_slice(&mut self) -> &mut [u8] {
+        &mut self.data
+    }
+
+    pub fn get_range(&self, offset: usize, size: usize) -> &[u8] {
+        &self.data[offset..offset + size]
+    }
+
+    pub fn get_range_mut(&mut self, offset: usize, size: usize) -> &mut [u8] {
+        &mut self.data[offset..offset + size]
+    }
+
+    pub fn set<F: PciField>(&mut self, field: F, value: u32) {
+        let offset = field.to_offset();
+        let size = field.size();
+        match size {
+            1 => {
+                self.get_range_mut(offset, 1)[0] = value as u8;
+            }
+            2 => {
+                self.get_range_mut(offset, 2).copy_from_slice(&(value as u16).to_le_bytes());
+            }
+            4 => {
+                self.get_range_mut(offset, 4).copy_from_slice(&value.to_le_bytes());
+            }
+            _ => {
+                // For other sizes, write as many bytes as needed
+                let bytes = value.to_le_bytes();
+                self.get_range_mut(offset, size.min(bytes.len())).copy_from_slice(&bytes[..size.min(bytes.len())]);
+            }
+        }
+    }
+
+    pub fn init_with_type(dev_type: VpciDevType) -> Self {
+        crate::pci::vpci_dev::init_config_space_with_type(dev_type)
+    }
+}
+
+impl Default for PciConfigSpace {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /* VirtualPciConfigSpace
@@ -228,7 +300,7 @@ pub struct VirtualPciConfigSpace {
 
     base: PciConfigAddress,
 
-    space: [u8; BIT_LENTH],
+    pub space: PciConfigSpace,
     control: VirtualPciConfigControl,
     access: VirtualPciAccessBits,
 
@@ -237,6 +309,8 @@ pub struct VirtualPciConfigSpace {
     bararr: Bar,
     rom: PciMem,
     capabilities: PciCapabilityList,
+
+    dev_type: VpciDevType,
 }
 
 impl VirtualPciConfigSpace {
@@ -274,6 +348,10 @@ impl VirtualPciConfigSpace {
         self.rom
     }
 
+    pub fn get_dev_type(&self) -> VpciDevType {
+        self.dev_type
+    }
+
     // TODO: update sapce when first time read value from hw, and next read will more quick
     pub fn update_space(&mut self, offset: PciConfigAddress, size: usize, _value: usize) {
         match self.get_config_type() {
@@ -300,13 +378,35 @@ impl Debug for VirtualPciConfigSpace {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "\n  bdf {:#?}\n  vbdf {:#?}\n  type {:#?}\n  {:#?} {:#?}",
-            self.bdf, self.vbdf, self.config_type, self.bararr, self.rom
+            "\n  bdf {:#?}\n  base {:#x}\n  type {:#?}\n  {:#?} {:#?}",
+            self.bdf, self.base, self.config_type, self.bararr, self.rom
         )
     }
 }
 
 impl VirtualPciConfigSpace {
+    pub fn virt_dev(
+        bdf: Bdf,
+        base: PciConfigAddress,
+    ) -> Self {
+        Self {
+            host_bdf: Bdf::default(),
+            parent_bdf: Bdf::default(),
+            bdf,
+            vbdf: Bdf::default(),
+            config_type: HeaderType::Endpoint,
+            class: (0u8,0u8,0u8),
+            base,
+            space: PciConfigSpace::init_with_type(VpciDevType::StandardVdev),
+            control: VirtualPciConfigControl::virt_dev(),
+            access: VirtualPciAccessBits::virt_dev(),
+            backend: Arc::new(EndpointHeader::new_with_region(PciConfigMmio::new(base, CONFIG_LENTH))),
+            bararr: Bar::default(),
+            rom: PciMem::default(),
+            capabilities: PciCapabilityList::new(),
+            dev_type: VpciDevType::StandardVdev,
+        }
+    }
     pub fn endpoint(
         bdf: Bdf,
         base: PciConfigAddress,
@@ -323,13 +423,14 @@ impl VirtualPciConfigSpace {
             config_type: HeaderType::Endpoint,
             class,
             base,
-            space: [0u8; BIT_LENTH],
+            space: PciConfigSpace::new(),
             control: VirtualPciConfigControl::endpoint(),
             access: VirtualPciAccessBits::endpoint(),
             backend,
             bararr,
             rom,
             capabilities: PciCapabilityList::new(),
+            dev_type: VpciDevType::Physical,
         }
     }
 
@@ -349,13 +450,14 @@ impl VirtualPciConfigSpace {
             config_type: HeaderType::PciBridge,
             class,
             base,
-            space: [0u8; BIT_LENTH],
+            space: PciConfigSpace::new(),
             control: VirtualPciConfigControl::bridge(),
             access: VirtualPciAccessBits::bridge(),
             backend,
             bararr,
             rom,
             capabilities: PciCapabilityList::new(),
+            dev_type: VpciDevType::Physical,
         }
     }
 
@@ -368,13 +470,14 @@ impl VirtualPciConfigSpace {
             config_type: HeaderType::Endpoint,
             class: (0u8,0u8,0u8),
             base,
-            space: [0u8; BIT_LENTH],
+            space: PciConfigSpace::new(),
             control: VirtualPciConfigControl::endpoint(),
             access: VirtualPciAccessBits::endpoint(),
             backend,
             bararr: Bar::default(),
             rom: PciMem::default(),
             capabilities: PciCapabilityList::new(),
+            dev_type: VpciDevType::Physical,
         }
     }
 
@@ -387,13 +490,14 @@ impl VirtualPciConfigSpace {
             config_type: HeaderType::Endpoint,
             class,
             base,
-            space: [0u8; BIT_LENTH],
+            space: PciConfigSpace::new(),
             control: VirtualPciConfigControl::host_bridge(),
             access: VirtualPciAccessBits::host_bridge(),
             backend,
             bararr: Bar::default(),
             rom: PciMem::default(),
             capabilities: PciCapabilityList::new(),
+            dev_type: VpciDevType::Physical,
         }
     }
 
@@ -435,16 +539,16 @@ impl VirtualPciConfigSpace {
         for (slot, bar) in self.bararr.into_iter().enumerate() {
             let offset = 0x10 + slot * 4;
             let bytes = bar.get_value().to_le_bytes();
-            self.space[offset..offset + 4].copy_from_slice(&bytes);
+            self.space.get_range_mut(offset, 4).copy_from_slice(&bytes);
         }
         match self.config_type {
             HeaderType::Endpoint => {
                 let bytes = self.rom.get_value().to_le_bytes();
-                self.space[0x30..0x34].copy_from_slice(&bytes);
+                self.space.get_range_mut(0x30, 4).copy_from_slice(&bytes);
             }
             HeaderType::PciBridge => {
                 let bytes = self.rom.get_value().to_le_bytes();
-                self.space[0x38..0x3c].copy_from_slice(&bytes);
+                self.space.get_range_mut(0x38, 4).copy_from_slice(&bytes);
             }
             _ => {}
         }
@@ -475,7 +579,7 @@ impl VirtualPciConfigSpace {
     pub fn read_emu(&mut self, offset: PciConfigAddress, size: usize) -> HvResult<usize> {
         match size {
             1 | 2 | 4 => {
-                let slice = &self.space[offset as usize..offset as usize + size];
+                let slice = self.space.get_range(offset as usize, size);
                 let value = match size {
                     1 => slice[0] as usize,
                     2 => u16::from_le_bytes(slice.try_into().unwrap()) as usize,
@@ -491,7 +595,7 @@ impl VirtualPciConfigSpace {
     }
 
     pub fn read_emu64(&mut self, offset: PciConfigAddress) -> HvResult<u64> {
-        let slice = &self.space[offset as usize..offset as usize + 8];
+        let slice = self.space.get_range(offset as usize, 8);
         let value = u64::from_le_bytes(slice.try_into().unwrap()) as u64;
         Ok(value)
     }
@@ -500,7 +604,7 @@ impl VirtualPciConfigSpace {
         if self.writable(offset, size) {
             match size {
                 1 | 2 | 4 => {
-                    let slice = &mut self.space[offset as usize..offset as usize + size];
+                    let slice = self.space.get_range_mut(offset as usize, size);
                     match size {
                         1 => slice[0] = value as u8,
                         2 => slice.copy_from_slice(&u16::to_le_bytes(value as u16)),

@@ -19,6 +19,7 @@ pub mod mem_alloc;
 pub mod pci_access;
 pub mod pci_config;
 pub mod pci_struct;
+pub mod vpci_dev;
 
 pub mod pci_test;
 

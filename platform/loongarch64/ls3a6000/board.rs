@@ -16,6 +16,7 @@
 //
 use crate::{arch::zone::HvArchZoneConfig, config::*};
 use crate::pci_dev;
+use crate::pci::vpci_dev::VpciDevType;
 
 pub const BOARD_NAME: &str = "ls3a5000";
 
