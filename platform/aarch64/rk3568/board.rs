@@ -46,10 +46,10 @@ pub const BOARD_PHYSMEM_LIST: &[(u64, u64, MemoryType)] = &[
 ];
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0xa0000000;
-pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x60080000 ;
-pub const ROOT_ZONE_ENTRY: u64 = 0x60080000 ;
+pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x60080000;
+pub const ROOT_ZONE_ENTRY: u64 = 0x60080000;
 //pub const ROOT_ZONE_CPUS: u64 = (1 << 0) ;
-pub const ROOT_ZONE_CPUS: u64 = (1 << 0)|(1 << 1);
+pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 19] = [
@@ -187,8 +187,10 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 19] = [
     }, //sdhci
 ];
 
-pub const ROOT_ZONE_IRQS: [u32; 20] = [
-   0x84, 0x98, 0x40, 0x104, 0x105, 0x106, 0x107, 0x2d, 0x2e, 0x2b, 0x2a, 0x29, 0x33, 0x96, 0x11c, 0x44, 0x43, 0x42, 0x41, 0x8d];
+pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[
+    0x84, 0x98, 0x40, 0x104, 0x105, 0x106, 0x107, 0x2d, 0x2e, 0x2b, 0x2a, 0x29, 0x33, 0x96, 0x11c,
+    0x44, 0x43, 0x42, 0x41, 0x8d,
+]);
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     is_aarch32: 0,

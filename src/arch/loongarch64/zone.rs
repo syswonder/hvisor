@@ -117,7 +117,7 @@ impl Zone {
         }
         Ok(())
     }
-    pub fn irq_bitmap_init(&mut self, irqs: &[u32]) {}
+    pub fn irq_bitmap_init(&mut self, irqs_bitmap: &[u32]) {}
 }
 
 pub fn disable_hwi_through() {
