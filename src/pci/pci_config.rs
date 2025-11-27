@@ -20,9 +20,12 @@ use crate::{
     arch::iommu::iommu_add_device,
     config::{HvPciConfig, HvPciDevConfig, CONFIG_MAX_PCI_DEV, CONFIG_PCI_BUS_MAXNUM},
     error::HvResult,
-    pci::{pci_struct::{Bdf, VirtualPciConfigSpace}, vpci_dev::VpciDevType}, 
+    pci::pci_struct::{Bdf, VirtualPciConfigSpace}, 
     zone::Zone,
 };
+
+#[cfg(feature = "ecam_pcie")]
+use crate::pci::vpci_dev::{VpciDevType, get_handler};
 
 #[cfg(any(
     feature = "ecam_pcie",
@@ -139,7 +142,6 @@ impl Zone {
             let dev_config = alloc_pci_devs[i as usize];
             let bdf = Bdf::from_address(dev_config.bdf << 12);
             let vbdf = bdf.clone();
-            let dev_type = dev_config.dev_type;
             #[cfg(any(
                 all(feature = "iommu", target_arch = "aarch64"),
                 target_arch = "x86_64"
@@ -165,18 +167,25 @@ impl Zone {
             } else {
                 // warn!("can not find dev {:#?}", bdf);
                 #[cfg(feature = "ecam_pcie")]
-                match dev_type {
-                    VpciDevType::StandardVdev => {
-                        let base = _ecam_base 
-                                        + ((bdf.bus() as u64) << 20)
-                                        + ((bdf.device() as u64) << 15)
-                                        + ((bdf.function() as u64) << 12);
-                        let dev = VirtualPciConfigSpace::virt_dev(bdf, base);
-                        self.vpci_bus.insert(vbdf, dev);
-                    }
-                    _ => {
+                {
+                    let dev_type = dev_config.dev_type;
+                    match dev_type {
+                    VpciDevType::Physical => {
                         warn!("can not find dev {:#?}", bdf);
                     }
+                    _ => {
+                        if let Some(_handler) = get_handler(dev_type) {
+                            let base = _ecam_base 
+                                            + ((bdf.bus() as u64) << 20)
+                                            + ((bdf.device() as u64) << 15)
+                                            + ((bdf.function() as u64) << 12);
+                            let dev = VirtualPciConfigSpace::virt_dev(bdf, base);
+                            self.vpci_bus.insert(vbdf, dev);
+                        } else {
+                            warn!("can not find dev {:#?}, unknown device type", bdf);
+                        }
+                    }
+                }
                 }
             }
             i += 1;

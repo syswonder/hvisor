@@ -36,7 +36,7 @@ static HANDLERS: &[(&dyn VpciDeviceHandler, VpciDevType)] = &[
     (&standard::HANDLER, VpciDevType::StandardVdev),
 ];
 
-fn get_handler(dev_type: VpciDevType) -> Option<&'static dyn VpciDeviceHandler> {
+pub(crate) fn get_handler(dev_type: VpciDevType) -> Option<&'static dyn VpciDeviceHandler> {
     HANDLERS.iter()
         .find(|(_, ty)| *ty == dev_type)
         .map(|(handler, _)| *handler)
