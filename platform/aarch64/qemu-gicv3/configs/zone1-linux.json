@@ -50,11 +50,11 @@
     "alloc_pci_devs": [
         {
             "bdf": "0x0",
-            "vbdf": "0x0"
+            "dev_type": "0"
         },
         {
             "bdf": "0x18",
-            "vbdf": "0x18"
+            "dev_type": "0"
         }
     ]
 }

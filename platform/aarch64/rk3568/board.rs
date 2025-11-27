@@ -20,6 +20,7 @@ use crate::{
         zone::{GicConfig, Gicv3Config, HvArchZoneConfig},
     },
     config::*,
+    pci::vpci_dev::VpciDevType,
 };
 use crate::pci_dev;
 
@@ -158,6 +159,12 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
     //     virtual_start: 0x10f000,
     //     size: 0x1000,
     // }, //scmi-shmem
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RAM,
+        physical_start: 0xfd440000,
+        virtual_start: 0xfd440000,
+        size: 0x20000,
+    }, // its
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x1f0000000,
@@ -349,6 +356,6 @@ pub const ROOT_DWC_ATU_CONFIG: &[HvDwcAtuConfig] = &[
 ];
 
 pub const ROOT_PCI_DEVS: [HvPciDevConfig; 2] = [
-    pci_dev!(0x10, 0x0, 0x0),
-    pci_dev!(0x11, 0x0, 0x0),
+    pci_dev!(0x10, 0x0, 0x0, VpciDevType::Physical),
+    pci_dev!(0x11, 0x0, 0x0, VpciDevType::Physical),
 ];

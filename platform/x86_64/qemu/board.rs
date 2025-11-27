@@ -14,7 +14,7 @@
 // Authors:
 //
 use crate::pci_dev;
-use crate::{arch::zone::HvArchZoneConfig, config::*, memory::GuestPhysAddr};
+use crate::{arch::zone::HvArchZoneConfig, config::*, memory::GuestPhysAddr, pci::vpci_dev::VpciDevType};
 
 pub const MEM_TYPE_RESERVED: u32 = 5;
 
@@ -127,14 +127,14 @@ pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [HvPciConfig {
 
 pub const ROOT_PCI_MAX_BUS: usize = 1;
 pub const ROOT_PCI_DEVS: [HvPciDevConfig; 8] = [
-    pci_dev!(0x0, 0x0, 0x0),  // host bridge
-    pci_dev!(0x0, 0x1, 0x0),  // VGA controller
-    pci_dev!(0x0, 0x2, 0x0),  // Ethernet controller
-    pci_dev!(0x0, 0x3, 0x0),  // PCI bridge
-    pci_dev!(0x0, 0x1f, 0x0), // ISA bridge
-    pci_dev!(0x0, 0x1f, 0x2), // SATA controller
-    pci_dev!(0x0, 0x1f, 0x3), // SMBus
-    pci_dev!(0x1, 0x0, 0x0),  // SCSI controller
+    pci_dev!(0x0, 0x0, 0x0, VpciDevType::Physical),  // host bridge
+    pci_dev!(0x0, 0x1, 0x0, VpciDevType::Physical),  // VGA controller
+    pci_dev!(0x0, 0x2, 0x0, VpciDevType::Physical),  // Ethernet controller
+    pci_dev!(0x0, 0x3, 0x0, VpciDevType::Physical),  // PCI bridge
+    pci_dev!(0x0, 0x1f, 0x0, VpciDevType::Physical), // ISA bridge
+    pci_dev!(0x0, 0x1f, 0x2, VpciDevType::Physical), // SATA controller
+    pci_dev!(0x0, 0x1f, 0x3, VpciDevType::Physical), // SMBus
+    pci_dev!(0x1, 0x0, 0x0, VpciDevType::Physical),  // SCSI controller
 ];
 
 #[cfg(all(feature = "graphics"))]

@@ -16,6 +16,7 @@
 use crate::{
     arch::{mmu::MemoryType, zone::{HvArchZoneConfig,GicConfig,Gicv2Config}},
     config::*,
+    pci::vpci_dev::VpciDevType,
 };
 
 use crate::pci_dev;
@@ -111,7 +112,7 @@ pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
 
 pub const ROOT_PCI_DEVS: [HvPciDevConfig; 3] = [
-    pci_dev!(0x0, 0x0, 0x0),
-    pci_dev!(0x0, 0x1, 0x0),
-    pci_dev!(0x0, 0x2, 0x0),
+    pci_dev!(0x0, 0x0, 0x0, VpciDevType::Physical),
+    pci_dev!(0x0, 0x1, 0x0, VpciDevType::Physical),
+    pci_dev!(0x0, 0x2, 0x0, VpciDevType::Physical),
 ];
