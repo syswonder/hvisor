@@ -22,7 +22,7 @@ pub mod vaplic;
 pub mod vimsic;
 use crate::arch::cpu::this_cpu_id;
 use crate::arch::zone::HvArchZoneConfig;
-use crate::config::HvZoneConfig;
+use crate::config::{BitmapWord, HvZoneConfig, CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD};
 use crate::consts::{MAX_CPU_NUM, MAX_ZONE_NUM};
 use crate::error::HvResult;
 use crate::memory::GuestPhysAddr;
@@ -219,16 +219,23 @@ impl Zone {
     }
 
     /// irq_bitmap_init, and set these irqs' hw bit in vplic to true.
-    pub fn irq_bitmap_init(&mut self, irqs: &[u32]) {
+    pub fn irq_bitmap_init(&mut self, irqs_bitmap: &[BitmapWord]) {
         // insert to zone.irq_bitmap
-        for irq in irqs {
-            let irq_id = *irq;
-            // They are hardware interrupts.
-            if HW_IRQS.iter().any(|&x| x == irq_id) {
-                self.get_vaplic().vaplic_set_hw(irq_id as usize, true);
-                info!("Set irq {} to hardware interrupt", irq_id);
+        for i in 0..irqs_bitmap.len() {
+            let word = irqs_bitmap[i];
+
+            for j in 0..CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD {
+                if ((word >> j) & 1) == 1 {
+                    let irq_id = (i * CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD + j) as u32;
+
+                    // They are hardware interrupts.
+                    if HW_IRQS.iter().any(|&x| x == irq_id) {
+                        self.get_vaplic().vaplic_set_hw(irq_id as usize, true);
+                        info!("Set irq {} to hardware interrupt", irq_id);
+                    }
+                    self.insert_irq_to_bitmap(irq_id);
+                }
             }
-            self.insert_irq_to_bitmap(irq_id);
         }
         // print irq_bitmap
         for (index, &word) in self.irq_bitmap.iter().enumerate() {

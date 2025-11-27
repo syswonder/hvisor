@@ -256,7 +256,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     // Initialize the virtual interrupt controller, it needs zone.cpu_num
     zone.virqc_init(config);
 
-    zone.irq_bitmap_init(config.interrupts());
+    zone.irq_bitmap_init(config.interrupts_bitmap());
 
     let mut dtb_ipa = INVALID_ADDRESS as u64;
     for region in config.memory_regions() {
