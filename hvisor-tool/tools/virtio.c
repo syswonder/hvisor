@@ -88,9 +88,9 @@ int get_zone_ram_index(void *zonex_ipa, int zone_id) {
         if (zone_mem[zone_id][i][MEM_SIZE] == 0)
             continue;
         ;
-        if (zonex_ipa >= zone_mem[zone_id][i][ZONEX_IPA] &&
-            zonex_ipa < zone_mem[zone_id][i][ZONEX_IPA] +
-                            zone_mem[zone_id][i][MEM_SIZE]) {
+        if ((uintptr_t)zonex_ipa >= zone_mem[zone_id][i][ZONEX_IPA] &&
+            (uintptr_t)zonex_ipa < zone_mem[zone_id][i][ZONEX_IPA] +
+                                       zone_mem[zone_id][i][MEM_SIZE]) {
             return i;
         }
     }
@@ -396,21 +396,24 @@ void virtqueue_set_desc_table(VirtQueue *vq) {
     int zone_id = vq->dev->zone_id;
     log_debug("zone %d set dev %s desc table ipa at %#x", zone_id,
               virtio_device_type_to_string(vq->dev->type), vq->desc_table_addr);
-    vq->desc_table = (VirtqDesc *)get_virt_addr(vq->desc_table_addr, zone_id);
+    vq->desc_table = (VirtqDesc *)get_virt_addr(
+        (void *)(uintptr_t)vq->desc_table_addr, zone_id);
 }
 
 void virtqueue_set_avail(VirtQueue *vq) {
     int zone_id = vq->dev->zone_id;
     log_debug("zone %d set dev %s avail ring ipa at %#x", zone_id,
               virtio_device_type_to_string(vq->dev->type), vq->avail_addr);
-    vq->avail_ring = (VirtqAvail *)get_virt_addr(vq->avail_addr, zone_id);
+    vq->avail_ring =
+        (VirtqAvail *)get_virt_addr((void *)(uintptr_t)vq->avail_addr, zone_id);
 }
 
 void virtqueue_set_used(VirtQueue *vq) {
     int zone_id = vq->dev->zone_id;
     log_debug("zone %d set dev %s used ring ipa at %#x", zone_id,
               virtio_device_type_to_string(vq->dev->type), vq->used_addr);
-    vq->used_ring = (VirtqUsed *)get_virt_addr(vq->used_addr, zone_id);
+    vq->used_ring =
+        (VirtqUsed *)get_virt_addr((void *)(uintptr_t)vq->used_addr, zone_id);
 }
 
 // record one descriptor to iov.
@@ -1242,14 +1245,14 @@ int virtio_start_from_json(char *json_path) {
         for (int j = 0; j < num_mems; j++) {
             cJSON *mem_region =
                 SAFE_CJSON_GET_ARRAY_ITEM(memory_region_json, j);
-            zone0_ipa =
-                strtoull(SAFE_CJSON_GET_OBJECT_ITEM(mem_region, "zone0_ipa")
-                             ->valuestring,
-                         NULL, 16);
-            zonex_ipa =
-                strtoull(SAFE_CJSON_GET_OBJECT_ITEM(mem_region, "zonex_ipa")
-                             ->valuestring,
-                         NULL, 16);
+            zone0_ipa = (void *)(uintptr_t)strtoull(
+                SAFE_CJSON_GET_OBJECT_ITEM(mem_region, "zone0_ipa")
+                    ->valuestring,
+                NULL, 16);
+            zonex_ipa = (void *)(uintptr_t)strtoull(
+                SAFE_CJSON_GET_OBJECT_ITEM(mem_region, "zonex_ipa")
+                    ->valuestring,
+                NULL, 16);
             mem_size = strtoull(
                 SAFE_CJSON_GET_OBJECT_ITEM(mem_region, "size")->valuestring,
                 NULL, 16);
@@ -1275,9 +1278,9 @@ int virtio_start_from_json(char *json_path) {
                 err = -1;
                 goto err_out;
             }
-            zone_mem[zone_id][j][VIRT_ADDR] = virt_addr;
-            zone_mem[zone_id][j][ZONE0_IPA] = zone0_ipa;
-            zone_mem[zone_id][j][ZONEX_IPA] = zonex_ipa;
+            zone_mem[zone_id][j][VIRT_ADDR] = (uintptr_t)virt_addr;
+            zone_mem[zone_id][j][ZONE0_IPA] = (uintptr_t)zone0_ipa;
+            zone_mem[zone_id][j][ZONEX_IPA] = (uintptr_t)zonex_ipa;
             zone_mem[zone_id][j][MEM_SIZE] = mem_size;
         }
 
