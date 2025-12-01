@@ -28,6 +28,7 @@
 #include "safe_cjson.h"
 #include "virtio.h"
 #include "zone_config.h"
+
 static void __attribute__((noreturn)) help(int exit_status) {
     printf("Hypervisor Management Tool\n\n");
     printf("Usage:\n");
@@ -111,7 +112,7 @@ static __u64 load_image_to_memory(const char *path, __u64 load_paddr) {
         exit(1);
     }
     // Load image content into memory
-    image_content = read_file(path, &size);
+    image_content = read_file(path, (uint64_t *)&size);
 
     page_size = sysconf(_SC_PAGESIZE);
     map_size = (size + page_size - 1) & ~(page_size - 1);
