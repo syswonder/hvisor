@@ -752,7 +752,7 @@ impl PciConfigHeader {
  *     |              |              |   pin        |   line       |
  *     +--------------+--------------+--------------+--------------+
  */
-pub trait PciField {
+pub trait PciField: Debug {
     fn to_offset(&self) -> usize;
     fn size(&self) -> usize;
 }
@@ -777,6 +777,34 @@ pub enum EndpointField {
     MinGnt,
     MaxLat,
     Unknown(usize),
+}
+
+impl Debug for EndpointField {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "EndpointField {{")?;
+        match self {
+            EndpointField::ID => write!(f, "ID"),
+            EndpointField::Command => write!(f, "Command"),
+            EndpointField::Status => write!(f, "Status"),
+            EndpointField::RevisionIDAndClassCode => write!(f, "RevisionIDAndClassCode"),
+            EndpointField::CacheLineSize => write!(f, "CacheLineSize"),
+            EndpointField::LatencyTime => write!(f, "LatencyTime"),
+            EndpointField::HeaderType => write!(f, "HeaderType"),
+            EndpointField::Bist => write!(f, "Bist"),
+            EndpointField::Bar => write!(f, "Bar"),
+            EndpointField::CardCisPointer => write!(f, "CardCisPointer"),
+            EndpointField::SubsystemVendorId => write!(f, "SubsystemVendorId"),
+            EndpointField::SubsystemId => write!(f, "SubsystemId"),
+            EndpointField::ExpansionRomBar => write!(f, "ExpansionRomBar"),
+            EndpointField::CapabilityPointer => write!(f, "CapabilityPointer"),
+            EndpointField::InterruptLine => write!(f, "InterruptLine"),
+            EndpointField::InterruptPin => write!(f, "InterruptPin"),
+            EndpointField::MinGnt => write!(f, "MinGnt"),
+            EndpointField::MaxLat => write!(f, "MaxLat"),
+            EndpointField::Unknown(offset) => write!(f, "Unknown({})", offset),
+        };
+        write!(f, "}}")
+    }
 }
 
 impl PciField for EndpointField {
@@ -960,6 +988,45 @@ pub enum BridgeField {
     InterruptPin,
     BridgeControl,
     Unknown(usize),
+}
+
+impl Debug for BridgeField {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "BridgeField {{")?;
+        match self {
+            BridgeField::ID => write!(f, "ID"),
+            BridgeField::Command => write!(f, "Command"),
+            BridgeField::Status => write!(f, "Status"),
+            BridgeField::RevisionIDAndClassCode => write!(f, "RevisionIDAndClassCode"),
+            BridgeField::CacheLineSize => write!(f, "CacheLineSize"),
+            BridgeField::LatencyTime => write!(f, "LatencyTime"),
+            BridgeField::HeaderType => write!(f, "HeaderType"),
+            BridgeField::Bist => write!(f, "Bist"),
+            BridgeField::Bar => write!(f, "Bar"),
+            BridgeField::PrimaryBusNumber => write!(f, "PrimaryBusNumber"),
+            BridgeField::SecondaryBusNumber => write!(f, "SecondaryBusNumber"),
+            BridgeField::SubordinateBusNumber => write!(f, "SubordinateBusNumber"),
+            BridgeField::SecondaryLatencyTimer => write!(f, "SecondaryLatencyTimer"),
+            BridgeField::IOBase => write!(f, "IOBase"),
+            BridgeField::IOLimit => write!(f, "IOLimit"),
+            BridgeField::SecondaryStatus => write!(f, "SecondaryStatus"),
+            BridgeField::MemoryBase => write!(f, "MemoryBase"),
+            BridgeField::MemoryLimit => write!(f, "MemoryLimit"),
+            BridgeField::PrefetchableMemoryBase => write!(f, "PrefetchableMemoryBase"),
+            BridgeField::PrefetchableMemoryLimit => write!(f, "PrefetchableMemoryLimit"),
+            BridgeField::PrefetchableBaseUpper32Bits => write!(f, "PrefetchableBaseUpper32Bits"),
+            BridgeField::PrefetchableLimitUpper32Bits => write!(f, "PrefetchableLimitUpper32Bits"),
+            BridgeField::UIBaseUpper16Bits => write!(f, "UIBaseUpper16Bits"),
+            BridgeField::IOLimitUpper16Bits => write!(f, "IOLimitUpper16Bits"),
+            BridgeField::CapabilityPointer => write!(f, "CapabilityPointer"),
+            BridgeField::ExpansionRomBar => write!(f, "ExpansionRomBar"),
+            BridgeField::InterruptLine => write!(f, "InterruptLine"),
+            BridgeField::InterruptPin => write!(f, "InterruptPin"),
+            BridgeField::BridgeControl => write!(f, "BridgeControl"),
+            BridgeField::Unknown(offset) => write!(f, "Unknown({})", offset),
+        };
+        write!(f, "}}")
+    }
 }
 
 impl PciField for BridgeField {

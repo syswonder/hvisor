@@ -6,7 +6,7 @@ pub mod standard;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PciConfigAccessStatus {
-    Done,
+    Done(usize),
     Perform,
     Reject,
 }
@@ -21,8 +21,8 @@ pub enum VpciDevType {
 }
 
 pub trait VpciDeviceHandler: Sync + Send {
-    fn read_cfg(&self) -> HvResult<PciConfigAccessStatus>;
-    fn write_cfg(&self) -> HvResult<PciConfigAccessStatus>;
+    fn read_cfg(&self, space: &mut PciConfigSpace, offset: PciConfigAddress, size: usize) -> HvResult<PciConfigAccessStatus>;
+    fn write_cfg(&self, space: &mut PciConfigSpace, offset: PciConfigAddress, size: usize, value: usize) -> HvResult<PciConfigAccessStatus>;
     fn init_config_space(&self) -> PciConfigSpace;
 }
 
@@ -55,11 +55,11 @@ pub(super) fn vpci_dev_read_cfg(
         }
         _ => {
             if let Some(handler) = get_handler(dev_type) {
-                match handler.read_cfg() {
+                match handler.read_cfg(node.get_space_mut(), offset, size) {
                     Ok(status) => {
                         match status {
-                            PciConfigAccessStatus::Done => {
-                                Ok(status as usize)
+                            PciConfigAccessStatus::Done(value) => {
+                                Ok(value)
                             }
                             PciConfigAccessStatus::Perform => {
                                 warn!("vpci_dev_read_cfg: perform, offset {:#x}, size {:#x}", offset, size);
@@ -101,10 +101,10 @@ pub(super) fn vpci_dev_write_cfg(
         }
         _ => {
             if let Some(handler) = get_handler(dev_type) {
-                match handler.write_cfg() {
+                match handler.write_cfg(node.get_space_mut(), offset, size, value) {
                     Ok(status) => {
                         match status {
-                            PciConfigAccessStatus::Done => {
+                            PciConfigAccessStatus::Done(_) => {
                                 Ok(())
                             }
                             PciConfigAccessStatus::Perform => {

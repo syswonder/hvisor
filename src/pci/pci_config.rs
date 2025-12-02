@@ -256,12 +256,23 @@ impl Zone {
                             cfg1_base as usize,
                         );
                     }
-                } else {
-                    warn!(
-                        "No extend config found for base 0x{:x}",
-                        rootcomplex_config.ecam_base
-                    );
-                }
+                } 
+            }
+            #[cfg(feature = "loongarch64_pcie")]
+            {
+                self.mmio_region_register(
+                    rootcomplex_config.ecam_base as usize,
+                    rootcomplex_config.ecam_size as usize,
+                    mmio_vpci_handler,
+                    rootcomplex_config.ecam_base as usize,
+                );
+            }
+            #[cfg(not(any(feature = "ecam_pcie", feature = "dwc_pcie", feature = "loongarch64_pcie")))]
+            {
+                warn!(
+                    "No extend config found for base 0x{:x}",
+                    rootcomplex_config.ecam_base
+                );
             }
         }
     }

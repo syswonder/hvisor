@@ -1,6 +1,7 @@
 use crate::error::HvResult;
 use crate::pci::pci_struct::PciConfigSpace;
 use crate::pci::pci_access::EndpointField;
+use crate::pci::PciConfigAddress;
 use super::{PciConfigAccessStatus, VpciDeviceHandler};
 
 const STANDARD_VENDOR_ID: u16 = 0x110a;
@@ -36,14 +37,33 @@ pub(crate) const DEFAULT_CSPACE_U32: [u32; STANDARD_CFG_SIZE / 4] = {
 pub struct StandardHandler;
 
 impl VpciDeviceHandler for StandardHandler {
-    fn read_cfg(&self) -> HvResult<PciConfigAccessStatus> {
-        info!("virt pci standard read_cfg");
-        Ok(PciConfigAccessStatus::Perform)
+    fn read_cfg(&self, _space: &mut PciConfigSpace, offset: PciConfigAddress, size: usize) -> HvResult<PciConfigAccessStatus> {
+        info!("virt pci standard read_cfg, offset {:#x}, size {:#x}", offset, size);
+        match EndpointField::from(offset as usize, size) {
+            EndpointField::ID => {
+                
+                Ok(PciConfigAccessStatus::Done(_space.get(EndpointField::ID) as usize))
+            }
+            _ => {
+                Ok(PciConfigAccessStatus::Perform)
+            }
+        }
     }
 
-    fn write_cfg(&self) -> HvResult<PciConfigAccessStatus> {
-        info!("virt pci standard write_cfg");
-        Ok(PciConfigAccessStatus::Perform)
+    fn write_cfg(&self, space: &mut PciConfigSpace, offset: PciConfigAddress, size: usize, value: usize) -> HvResult<PciConfigAccessStatus> {
+        info!("virt pci standard write_cfg, offset {:#x}, size {:#x}, value {:#x}", offset, size, value);
+        match EndpointField::from(offset as usize, size) {
+            EndpointField::ID => {
+                Ok(PciConfigAccessStatus::Reject)
+            }
+            EndpointField::Command => {
+                space.set(EndpointField::Command, value as u32);
+                Ok(PciConfigAccessStatus::Done(value))
+            }
+            _ => {
+                Ok(PciConfigAccessStatus::Reject)
+            }
+        }
     }
 
     fn init_config_space(&self) -> PciConfigSpace {

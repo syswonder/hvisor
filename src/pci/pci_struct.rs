@@ -270,6 +270,26 @@ impl PciConfigSpace {
         }
     }
 
+    pub fn get<F: PciField>(&self, field: F) -> u32 {
+        let offset = field.to_offset();
+        let size = field.size();
+        match size {
+            1 => {
+                self.get_range(offset, 1)[0] as u32
+            }
+            2 => {
+                u16::from_le_bytes(self.get_range(offset, 2).try_into().unwrap()) as u32
+            }
+            4 => {
+                u32::from_le_bytes(self.get_range(offset, 4).try_into().unwrap())
+            }
+            _ => {
+                warn!("vpci dev {:#?} get size {:#?} not supported", field, size);
+                0xFFFF_FFFF
+            }
+        }
+    }
+
     pub fn init_with_type(dev_type: VpciDevType) -> Self {
         crate::pci::vpci_dev::init_config_space_with_type(dev_type)
     }
@@ -300,7 +320,7 @@ pub struct VirtualPciConfigSpace {
 
     base: PciConfigAddress,
 
-    pub space: PciConfigSpace,
+    space: PciConfigSpace,
     control: VirtualPciConfigControl,
     access: VirtualPciAccessBits,
 
@@ -350,6 +370,14 @@ impl VirtualPciConfigSpace {
 
     pub fn get_dev_type(&self) -> VpciDevType {
         self.dev_type
+    }
+
+    pub fn get_space_mut(&mut self) -> &mut PciConfigSpace {
+        &mut self.space
+    }
+
+    pub fn get_space(&self) -> &PciConfigSpace {
+        &self.space
     }
 
     // TODO: update sapce when first time read value from hw, and next read will more quick
