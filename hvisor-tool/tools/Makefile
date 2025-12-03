@@ -13,6 +13,8 @@ else ifeq ($(ARCH), riscv)
 	CCARCH := riscv64
 else ifeq ($(ARCH), loongarch)
 	CCARCH := loongarch64
+else ifeq ($(ARCH), x86_64)
+	CCARCH := x86_64
 else
 $(error "Unsupported architecture $(ARCH)")
 endif
@@ -70,6 +72,10 @@ else ifeq ($(ARCH), loongarch)
 	ifeq ($(VIRTIO_GPU), y)
 		include_dirs += -I/opt/libdrm-install/include -L/opt/libdrm-install/lib -I/opt/libdrm-install/include/libdrm -ldrm
 	endif
+else ifeq ($(ARCH), x86_64)
+	CC := x86_64-linux-gnu-gcc
+	READELF := x86_64-linux-gnu-readelf
+	OBJDUMP := x86_64-linux-gnu-objdump
 endif
 
 .PHONY: all clean
