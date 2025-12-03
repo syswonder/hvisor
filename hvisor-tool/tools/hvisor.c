@@ -28,6 +28,7 @@
 #include "safe_cjson.h"
 #include "virtio.h"
 #include "zone_config.h"
+
 static void __attribute__((noreturn)) help(int exit_status) {
     printf("Hypervisor Management Tool\n\n");
     printf("Usage:\n");
@@ -111,7 +112,7 @@ static __u64 load_image_to_memory(const char *path, __u64 load_paddr) {
         exit(1);
     }
     // Load image content into memory
-    image_content = read_file(path, &size);
+    image_content = read_file(path, (uint64_t *)&size);
 
     page_size = sysconf(_SC_PAGESIZE);
     map_size = (size + page_size - 1) & ~(page_size - 1);
@@ -492,10 +493,16 @@ static int zone_start_from_json(const char *json_config_path,
                   mem_region->virtual_start, mem_region->size);
     }
 
-    config->num_interrupts = num_interrupts;
+    // irq
+    memset(config->interrupts_bitmap, 0,
+           sizeof(BitmapWord) * (CONFIG_MAX_INTERRUPTS /
+                                 CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD));
     for (int i = 0; i < num_interrupts; i++) {
-        config->interrupts[i] =
-            SAFE_CJSON_GET_ARRAY_ITEM(interrupts_json, i)->valueint;
+        __u32 irq = SAFE_CJSON_GET_ARRAY_ITEM(interrupts_json, i)->valueint;
+
+        size_t word_index = irq / CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD;
+        size_t bit_index = irq % CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD;
+        config->interrupts_bitmap[word_index] |= ((BitmapWord)1) << bit_index;
     }
 
     // ivc
