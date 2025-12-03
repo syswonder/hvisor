@@ -18,7 +18,11 @@
 #define MEM_TYPE_VIRTIO 2
 
 #define CONFIG_MAX_MEMORY_REGIONS 64
-#define CONFIG_MAX_INTERRUPTS 32
+
+typedef __u32 BitmapWord;
+#define CONFIG_MAX_INTERRUPTS 1024
+#define CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD 32
+
 #define CONFIG_MAX_ZONES 32
 #define CONFIG_NAME_MAXLEN 32
 #define CONFIG_MAX_PCI_DEV 32
@@ -142,8 +146,8 @@ struct zone_config {
     __u64 cpus;
     __u32 num_memory_regions;
     memory_region_t memory_regions[CONFIG_MAX_MEMORY_REGIONS];
-    __u32 num_interrupts;
-    __u32 interrupts[CONFIG_MAX_INTERRUPTS];
+    BitmapWord interrupts_bitmap[CONFIG_MAX_INTERRUPTS /
+                                 CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD];
     __u32 num_ivc_configs;
     ivc_config_t ivc_configs[CONFIG_MAX_IVC_CONFIGS];
 
