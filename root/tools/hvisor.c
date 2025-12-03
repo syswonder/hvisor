@@ -344,6 +344,14 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
             SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "pci_mem64_base")
                 ->valuestring,
             NULL, 16);
+        pci_config->bus_range_begin = strtoull(
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "bus_range_begin")
+                ->valuestring,
+            NULL, 16);
+        pci_config->bus_range_end = strtoull(
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "bus_range_end")
+                ->valuestring,
+            NULL, 16);
 
         // log_info("pci_config %d: ecam_base=0x%llx, ecam_size=0x%llx, "
         //          "io_base=0x%llx, io_size=0x%llx, "
@@ -369,9 +377,9 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
         dev_config->bdf = strtoull(
             SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "bdf")->valuestring,
             NULL, 16);
-        dev_config->vbdf = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "vbdf")->valuestring,
-            NULL, 16);
+        dev_config->dev_type = strtoull(
+            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "dev_type")->valuestring,
+            NULL, 8);
     }
 #endif
     return 0;
