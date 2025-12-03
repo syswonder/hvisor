@@ -60,8 +60,19 @@ pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
     mem64_base: 0x8000000000,
     mem64_size: 0x8000000000,
     pci_mem64_base: 0x8000000000,
+    bus_range_begin: 0x0,
+    bus_range_end: 0x1f,
 };
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
 
-pub const ROOT_PCI_DEVS: [u64; 2] = [0, 1 << 3];
+pub const ROOT_PCI_DEVS: [hv_pci_dev_config_t; 2] = [
+    hv_pci_dev_config_t {
+        bdf: 0,
+        dev_type: 0,
+    },
+    hv_pci_dev_config_t {
+        bdf: 1 << 3,
+        dev_type: 0,
+    },
+];
