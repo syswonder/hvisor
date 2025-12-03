@@ -77,6 +77,12 @@ typedef struct ioctl_zone_list_args zone_list_args_t;
 #define HVISOR_HC_ZONE_LIST 4
 #define HVISOR_HC_CONFIG_CHECK 6
 
+#ifdef X86_64
+
+#define HVISOR_HC_GET_VIRTIO_IRQ 86
+
+#endif /* X86_64 */
+
 #ifdef LOONGARCH64
 
 #define HVISOR_CLEAR_INJECT_IRQ _IO(1, 6) // used for ioctl

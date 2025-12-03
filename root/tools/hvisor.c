@@ -96,6 +96,33 @@ int open_dev() {
     return fd;
 }
 
+static __u64 load_str_to_memory(const char *str, __u64 load_paddr) {
+    __u64 size, page_size,
+        map_size; // Define variables: image size, page size, and map size
+
+    int fd = open_dev();
+    void *virt_addr;
+
+    size = strlen(str);
+    page_size = sysconf(_SC_PAGESIZE);
+    map_size = (size + page_size - 1) & ~(page_size - 1);
+
+    virt_addr = mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
+                     load_paddr);
+
+    if (virt_addr == MAP_FAILED) {
+        perror("Error mapping memory");
+        exit(1);
+    }
+
+    memmove(virt_addr, str, map_size);
+
+    munmap(virt_addr, map_size);
+
+    close(fd);
+    return map_size;
+}
+
 static __u64 load_image_to_memory(const char *path, __u64 load_paddr) {
     if (strcmp(path, "null") == 0) {
         return 0;
@@ -282,6 +309,96 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         strtoull(aplic_size_json->valuestring, NULL, 16);
 #endif
 
+#ifdef X86_64
+    cJSON *ioapic_base_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "ioapic_base");
+    cJSON *ioapic_size_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "ioapic_size");
+    cJSON *boot_filepath_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "boot_filepath");
+    cJSON *boot_load_paddr_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "boot_load_paddr");
+    cJSON *cmdline_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "cmdline");
+    cJSON *cmdline_load_hpa_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "cmdline_load_hpa");
+    cJSON *cmdline_load_gpa_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "cmdline_load_gpa");
+    cJSON *kernel_entry_gpa_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "kernel_entry_gpa");
+    cJSON *setup_filepath_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "setup_filepath");
+    cJSON *setup_load_hpa_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "setup_load_hpa");
+    cJSON *setup_load_gpa_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "setup_load_gpa");
+    cJSON *initrd_filepath_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "initrd_filepath");
+    cJSON *initrd_load_hpa_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "initrd_load_hpa");
+    cJSON *initrd_load_gpa_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "initrd_load_gpa");
+    cJSON *rsdp_memory_region_id_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "rsdp_memory_region_id");
+    cJSON *acpi_memory_region_id_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "acpi_memory_region_id");
+    cJSON *screen_base_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "screen_base");
+
+    config->arch_config.ioapic_base =
+        strtoull(ioapic_base_json->valuestring, NULL, 16);
+    config->arch_config.ioapic_size =
+        strtoull(ioapic_size_json->valuestring, NULL, 16);
+    config->arch_config.kernel_entry_gpa =
+        strtoull(kernel_entry_gpa_json->valuestring, NULL, 16);
+
+    if (boot_filepath_json != NULL) {
+        __u64 size = load_image_to_memory(
+            boot_filepath_json->valuestring,
+            strtoull(boot_load_paddr_json->valuestring, NULL, 16));
+
+        log_info("boot size: %llu", size);
+    }
+
+    if (setup_filepath_json != NULL) {
+        config->arch_config.setup_load_gpa =
+            strtoull(setup_load_gpa_json->valuestring, NULL, 16);
+        __u64 size = load_image_to_memory(
+            setup_filepath_json->valuestring,
+            strtoull(setup_load_hpa_json->valuestring, NULL, 16));
+
+        log_info("setup size: %llu", size);
+    }
+
+    if (cmdline_json != NULL) {
+        config->arch_config.cmdline_load_gpa =
+            strtoull(cmdline_load_gpa_json->valuestring, NULL, 16);
+        __u64 size = load_str_to_memory(
+            cmdline_json->valuestring,
+            strtoull(cmdline_load_hpa_json->valuestring, NULL, 16));
+
+        log_info("cmdline size: %llu", size);
+    }
+
+    if (initrd_filepath_json != NULL) {
+        config->arch_config.initrd_load_gpa =
+            strtoull(initrd_load_gpa_json->valuestring, NULL, 16);
+        config->arch_config.initrd_size = load_image_to_memory(
+            initrd_filepath_json->valuestring,
+            strtoull(initrd_load_hpa_json->valuestring, NULL, 16));
+
+        log_info("initrd size: %llu", config->arch_config.initrd_size);
+    }
+
+    config->arch_config.rsdp_memory_region_id =
+        strtoull(rsdp_memory_region_id_json->valuestring, NULL, 16);
+    config->arch_config.acpi_memory_region_id =
+        strtoull(acpi_memory_region_id_json->valuestring, NULL, 16);
+
+    config->arch_config.screen_base =
+        strtoull(screen_base_json->valuestring, NULL, 16);
+#endif
+
     return 0;
 }
 
@@ -294,7 +411,7 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
         printf("pci_config field found.\n");
     }
 
-#if defined(ARM64) || defined(LOONGARCH64)
+#if defined(ARM64) || defined(LOONGARCH64) || (defined X86_64)
     cJSON *ecam_base_json =
         SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "ecam_base");
     cJSON *io_base_json =
@@ -534,10 +651,13 @@ static int zone_start_from_json(const char *json_config_path,
         kernel_filepath_json->valuestring,
         strtoull(kernel_load_paddr_json->valuestring, NULL, 16));
 
-    // Load dtb to memory
+// Load dtb to memory
+// x86_64 uses ACPI
+#ifndef X86_64
     config->dtb_size = load_image_to_memory(
         dtb_filepath_json->valuestring,
         strtoull(dtb_load_paddr_json->valuestring, NULL, 16));
+#endif
 
     log_info("Kernel size: %llu, DTB size: %llu", config->kernel_size,
              config->dtb_size);
@@ -555,8 +675,6 @@ static int zone_start_from_json(const char *json_config_path,
     // Parse architecture-specific configurations (interrupts for each platform)
     if (parse_arch_config(root, config))
         goto err_out;
-
-        // parse_pci_config(root, config);
 
 #endif
 

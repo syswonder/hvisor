@@ -123,6 +123,9 @@ inline void write_barrier(void) {
 #ifdef LOONGARCH64
     asm volatile("dbar 0" ::: "memory");
 #endif
+#ifdef X86_64
+    asm volatile("" ::: "memory");
+#endif
 }
 
 inline void read_barrier(void) {
@@ -135,6 +138,9 @@ inline void read_barrier(void) {
 #ifdef LOONGARCH64
     asm volatile("dbar 0" ::: "memory");
 #endif
+#ifdef X86_64
+    asm volatile("" ::: "memory");
+#endif
 }
 
 inline void rw_barrier(void) {
@@ -146,6 +152,9 @@ inline void rw_barrier(void) {
 #endif
 #ifdef LOONGARCH64
     asm volatile("dbar 0" ::: "memory");
+#endif
+#ifdef X86_64
+    asm volatile("" ::: "memory");
 #endif
 }
 
@@ -816,8 +825,8 @@ void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t value,
             regs->interrupt_count--;
             break;
         } else if (value != regs->interrupt_status) {
-            log_error("interrupt_status is not equal to ack, type is %d",
-                      vdev->type);
+            log_error("interrupt_status %d is not equal to ack %d, type is %d",
+                      regs->interrupt_status, value, vdev->type);
         }
         regs->interrupt_status &= !value;
         log_info("debug: (%s) clearing! interrupt_status -> %d", __func__,
