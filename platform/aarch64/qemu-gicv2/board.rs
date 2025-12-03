@@ -14,7 +14,10 @@
 // Authors:
 //
 use crate::{
-    arch::{mmu::MemoryType, zone::{HvArchZoneConfig,GicConfig,Gicv2Config}},
+    arch::{
+        mmu::MemoryType,
+        zone::{GicConfig, Gicv2Config, HvArchZoneConfig},
+    },
     config::*,
     pci::vpci_dev::VpciDevType,
 };
@@ -75,7 +78,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 3] = [
 
 // 35 36 37 38 -> pcie intx#
 // 65 -> ivc
-pub const ROOT_ZONE_IRQS: [u32; 9] = [33, 64, 77, 79, 35, 36, 37, 38, 65];
+pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[33, 64, 77, 79, 35, 36, 37, 38, 65]);
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     is_aarch32: 0,

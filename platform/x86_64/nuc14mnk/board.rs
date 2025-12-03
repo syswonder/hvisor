@@ -129,7 +129,7 @@ const ROOT_ZONE_SETUP_ADDR: GuestPhysAddr = 0xa000;
 const ROOT_ZONE_VMLINUX_ENTRY_ADDR: GuestPhysAddr = 0x10_0000;
 const ROOT_ZONE_SCREEN_BASE_ADDR: GuestPhysAddr = 0x8000_0000;
 
-pub const ROOT_ZONE_IRQS: [u32; 32] = [0; 32];
+pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[0; 32]);
 pub const ROOT_ZONE_IOAPIC_BASE: usize = 0xfec0_0000;
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     ioapic_base: ROOT_ZONE_IOAPIC_BASE,

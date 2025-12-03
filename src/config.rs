@@ -25,7 +25,11 @@ pub const MEM_TYPE_VIRTIO: u32 = 2;
 
 pub const CONFIG_MAGIC_VERSION: usize = 0x4;
 pub const CONFIG_MAX_MEMORY_REGIONS: usize = 64;
-pub const CONFIG_MAX_INTERRUPTS: usize = 32;
+
+pub type BitmapWord = u32;
+pub const CONFIG_MAX_INTERRUPTS: usize = 1024;
+pub const CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD: usize = 32;
+
 pub const CONFIG_NAME_MAXLEN: usize = 32;
 pub const CONFIG_MAX_IVC_CONFIGS: usize = 2;
 pub const CONFIG_PCI_BUS_MAXNUM: usize = 4;
@@ -86,8 +90,7 @@ pub struct HvZoneConfig {
     cpus: u64,
     num_memory_regions: u32,
     memory_regions: [HvConfigMemoryRegion; CONFIG_MAX_MEMORY_REGIONS],
-    num_interrupts: u32,
-    interrupts: [u32; CONFIG_MAX_INTERRUPTS],
+    interrupts_bitmap: [BitmapWord; CONFIG_MAX_INTERRUPTS / CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD],
     num_ivc_configs: u32,
     ivc_configs: [HvIvcConfig; CONFIG_MAX_IVC_CONFIGS],
     pub entry_point: u64,
@@ -109,8 +112,8 @@ impl HvZoneConfig {
         cpus: u64,
         num_memory_regions: u32,
         memory_regions: [HvConfigMemoryRegion; CONFIG_MAX_MEMORY_REGIONS],
-        num_interrupts: u32,
-        interrupts: [u32; CONFIG_MAX_INTERRUPTS],
+        interrupts_bitmap: [BitmapWord;
+            CONFIG_MAX_INTERRUPTS / CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD],
         num_ivc_configs: u32,
         ivc_configs: [HvIvcConfig; CONFIG_MAX_IVC_CONFIGS],
         entry_point: u64,
@@ -130,8 +133,7 @@ impl HvZoneConfig {
             cpus,
             num_memory_regions,
             memory_regions,
-            num_interrupts,
-            interrupts,
+            interrupts_bitmap,
             num_ivc_configs,
             ivc_configs,
             entry_point,
@@ -153,8 +155,8 @@ impl HvZoneConfig {
         &self.memory_regions[..self.num_memory_regions as usize]
     }
 
-    pub fn interrupts(&self) -> &[u32] {
-        &self.interrupts[..self.num_interrupts as usize]
+    pub fn interrupts_bitmap(&self) -> &[BitmapWord] {
+        &self.interrupts_bitmap
     }
 
     pub fn cpus(&self) -> Vec<u64> {
@@ -286,4 +288,32 @@ impl Default for HvDwcAtuConfig {
     fn default() -> Self {
         Self::new_empty()
     }
+}
+pub const fn get_irqs_bitmap<const N: usize>(
+    numbers: &[u32; N],
+) -> [BitmapWord; CONFIG_MAX_INTERRUPTS / CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD] {
+    assert!(
+        CONFIG_MAX_INTERRUPTS % CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD == 0,
+        "Configuration error: CONFIG_MAX_INTERRUPTS must be a multiple of 32 for a [u32] bitmap without rounding.",
+    );
+
+    let mut bitmap = [0; CONFIG_MAX_INTERRUPTS / CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD];
+
+    let mut i = 0;
+    while i < N {
+        let num = numbers[i];
+
+        assert!(
+            (num as usize) < CONFIG_MAX_INTERRUPTS,
+            "Input IRQ number is out of bounds. It must be less than CONFIG_MAX_INTERRUPTS.",
+        );
+
+        let word_index = num as usize / CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD;
+        let bit_index = num as usize & (CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD - 1);
+
+        bitmap[word_index] |= (1 as BitmapWord) << bit_index;
+        i += 1;
+    }
+
+    bitmap
 }

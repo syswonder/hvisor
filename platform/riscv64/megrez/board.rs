@@ -198,11 +198,11 @@ pub const HW_IRQS: [u32; 8] = [
 ];
 
 // irqs belong to the root zone.
-pub const ROOT_ZONE_IRQS: [u32; 3] = [
+pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[
     0x51, // mmc@0x50460000
     0x64, // serial@0x50900000
     0x3d, // ethernet@50400000
-];
+]);
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     plic_base: 0xc000000,

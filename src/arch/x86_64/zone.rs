@@ -95,7 +95,7 @@ impl Zone {
         Ok(())
     }
 
-    pub fn irq_bitmap_init(&mut self, irqs: &[u32]) {}
+    pub fn irq_bitmap_init(&mut self, irqs_bitmap: &[u32]) {}
 
     /// called after cpu_set is initialized
     pub fn arch_zone_pre_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
