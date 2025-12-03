@@ -1300,8 +1300,14 @@ fn handle_config_space_access(
                                                     } else {
                                                         crate::memory::PAGE_SIZE as u64
                                                     };
+
+                                                    let new_vaddr = if !crate::memory::addr::is_aligned(new_vaddr as usize) {
+                                                        crate::memory::addr::align_up(new_vaddr as usize) as u64
+                                                    } else {
+                                                        new_vaddr
+                                                    };
         
-                                                    gpm.insert(MemoryRegion::new_with_offset_mapper(
+                                                    gpm.try_insert(MemoryRegion::new_with_offset_mapper(
                                                         new_vaddr as GuestPhysAddr,
                                                         paddr as HostPhysAddr,
                                                         bar_size as _,
