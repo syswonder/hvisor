@@ -34,7 +34,7 @@ use crate::pci::vpci_dev::{VpciDevType, get_handler};
 ))]
 use crate::pci::{mem_alloc::BaseAllocator, pci_struct::RootComplex};
 
-#[cfg(any(feature = "ecam_pcie", feature = "dwc_pcie"))]
+#[cfg(any(feature = "ecam_pcie", feature = "dwc_pcie", feature = "loongarch64_pcie"))]
 use crate::pci::pci_access::mmio_vpci_handler;
 
 #[cfg(feature = "dwc_pcie")]
@@ -266,6 +266,7 @@ impl Zone {
                     mmio_vpci_handler,
                     rootcomplex_config.ecam_base as usize,
                 );
+                self.page_table_emergency(rootcomplex_config.ecam_base as usize, rootcomplex_config.ecam_size as usize);
             }
             #[cfg(not(any(feature = "ecam_pcie", feature = "dwc_pcie", feature = "loongarch64_pcie")))]
             {
