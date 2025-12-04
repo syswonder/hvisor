@@ -564,8 +564,8 @@ fn handle_extioi_mapping_mmio(mmio: &mut MMIOAccess, base_addr: usize, size: usi
         new_data |= (1 << target_cpu_id);
         let target_write_phyaddr = base_addr + target_ioi_number as usize;
         let target_write_value = new_data as u8;
-        info!(
-            "[[interrupt virtualization]] extioi[{}], node_selection={:#x}, irq_target={:#x}, changed irq routing to cpu {}, value={:#x}",
+        trace!(
+            "extioi[{}], node_selection={:#x}, irq_target={:#x}, changed irq routing to cpu {}, value={:#x}",
             target_ioi_number, target_ioi_node_selection, target_ioi_irq_target, target_cpu_id, target_write_value
         );
         unsafe {

@@ -284,6 +284,7 @@ impl Zone {
                     mmio_vpci_handler,
                     rootcomplex_config.ecam_base as usize,
                 );
+                self.page_table_emergency(rootcomplex_config.ecam_base as usize, rootcomplex_config.ecam_size as usize);
             }
             #[cfg(not(any(feature = "ecam_pcie", feature = "dwc_pcie", feature = "loongarch64_pcie")))]
             {
