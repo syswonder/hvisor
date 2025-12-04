@@ -22,8 +22,8 @@ pub enum VpciDevType {
 }
 
 pub trait VpciDeviceHandler: Sync + Send {
-    fn read_cfg(&self, space: &mut PciConfigSpace, offset: PciConfigAddress, size: usize) -> HvResult<PciConfigAccessStatus>;
-    fn write_cfg(&self, space: &mut PciConfigSpace, offset: PciConfigAddress, size: usize, value: usize) -> HvResult<PciConfigAccessStatus>;
+    fn read_cfg(&self, dev: &mut VirtualPciConfigSpace, offset: PciConfigAddress, size: usize) -> HvResult<PciConfigAccessStatus>;
+    fn write_cfg(&self, dev: &mut VirtualPciConfigSpace, offset: PciConfigAddress, size: usize, value: usize) -> HvResult<PciConfigAccessStatus>;
     fn init_config_space(&self) -> PciConfigSpace;
     fn init_bar(&self) -> Bar;
 }
@@ -57,7 +57,7 @@ pub(super) fn vpci_dev_read_cfg(
         }
         _ => {
             if let Some(handler) = get_handler(dev_type) {
-                match handler.read_cfg(node.get_space_mut(), offset, size) {
+                match handler.read_cfg(node, offset, size) {
                     Ok(status) => {
                         match status {
                             PciConfigAccessStatus::Done(value) => {
@@ -103,7 +103,7 @@ pub(super) fn vpci_dev_write_cfg(
         }
         _ => {
             if let Some(handler) = get_handler(dev_type) {
-                match handler.write_cfg(node.get_space_mut(), offset, size, value) {
+                match handler.write_cfg(node, offset, size, value) {
                     Ok(status) => {
                         match status {
                             PciConfigAccessStatus::Done(_) => {

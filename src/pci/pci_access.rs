@@ -778,7 +778,7 @@ pub enum EndpointField {
     LatencyTime,
     HeaderType,
     Bist,
-    Bar,
+    Bar(usize),
     CardCisPointer,
     SubsystemVendorId,
     SubsystemId,
@@ -803,7 +803,7 @@ impl Debug for EndpointField {
             EndpointField::LatencyTime => write!(f, "LatencyTime"),
             EndpointField::HeaderType => write!(f, "HeaderType"),
             EndpointField::Bist => write!(f, "Bist"),
-            EndpointField::Bar => write!(f, "Bar"),
+            EndpointField::Bar(slot) => write!(f, "Bar({})", slot),
             EndpointField::CardCisPointer => write!(f, "CardCisPointer"),
             EndpointField::SubsystemVendorId => write!(f, "SubsystemVendorId"),
             EndpointField::SubsystemId => write!(f, "SubsystemId"),
@@ -830,7 +830,7 @@ impl PciField for EndpointField {
             EndpointField::LatencyTime => 0x0d,
             EndpointField::HeaderType => 0x0e,
             EndpointField::Bist => 0x0f,
-            EndpointField::Bar => 0x10,
+            EndpointField::Bar(slot) => (0x10 + slot * 4) as usize,
             EndpointField::CardCisPointer => 0x28,
             EndpointField::SubsystemVendorId => 0x2c,
             EndpointField::SubsystemId => 0x2e,
@@ -854,7 +854,7 @@ impl PciField for EndpointField {
             EndpointField::LatencyTime => 1,
             EndpointField::HeaderType => 1,
             EndpointField::Bist => 1,
-            EndpointField::Bar => 4,
+            EndpointField::Bar(_) => 4,
             EndpointField::CardCisPointer => 4,
             EndpointField::SubsystemVendorId => 2,
             EndpointField::SubsystemId => 2,
@@ -880,9 +880,15 @@ impl EndpointField {
             (0x0d, 1) => EndpointField::LatencyTime,
             (0x0e, 1) => EndpointField::HeaderType,
             (0x0f, 1) => EndpointField::Bist,
-            (0x10, 4) | (0x14, 4) | (0x18, 4) | (0x1c, 4) | (0x20, 4) | (0x24, 4) => {
-                EndpointField::Bar
-            }
+            // (0x10, 4) | (0x14, 4) | (0x18, 4) | (0x1c, 4) | (0x20, 4) | (0x24, 4) => {
+            //     EndpointField::Bar
+            // }
+            (0x10, 4) => EndpointField::Bar(0),
+            (0x14, 4) => EndpointField::Bar(1),
+            (0x18, 4) => EndpointField::Bar(2),
+            (0x1c, 4) => EndpointField::Bar(3),
+            (0x20, 4) => EndpointField::Bar(4),
+            (0x24, 4) => EndpointField::Bar(5),
             (0x28, 4) => EndpointField::CardCisPointer,
             (0x2c, 2) => EndpointField::SubsystemVendorId,
             (0x2e, 2) => EndpointField::SubsystemId,
@@ -1239,8 +1245,9 @@ fn handle_config_space_access(
                     match dev.get_config_type() {
                         HeaderType::Endpoint => {
                             match EndpointField::from(offset as usize, size) {
-                                EndpointField::Bar => {
-                                    let slot = ((offset - 0x10) / 4) as usize;
+                                EndpointField::Bar(slot) => {
+                                    // let slot = ((offset - 0x10) / 4) as usize;
+                                    let slot = slot as usize;
                                     /* the write of bar needs to start from dev,
                                      * where the bar variable here is just a copy
                                      */
