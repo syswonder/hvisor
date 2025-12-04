@@ -32,13 +32,13 @@ use crate::pci::vpci_dev::{VpciDevType, get_handler};
     feature = "dwc_pcie",
     feature = "loongarch64_pcie"
 ))]
-use crate::pci::{mem_alloc::BaseAllocator, pci_struct::RootComplex};
-
-#[cfg(any(feature = "ecam_pcie", feature = "dwc_pcie"))]
-use crate::pci::pci_access::mmio_vpci_handler;
+use crate::pci::{mem_alloc::BaseAllocator, pci_struct::RootComplex, pci_access::mmio_vpci_handler};
 
 #[cfg(feature = "dwc_pcie")]
 use crate::{memory::mmio_generic_handler, pci::pci_access::mmio_vpci_handler_dbi, platform};
+
+#[cfg(feature = "loongarch64_pcie")]
+use crate::pci::mem_alloc::LoongArchAllocator;
 
 pub static GLOBAL_PCIE_LIST: Lazy<Mutex<BTreeMap<Bdf, VirtualPciConfigSpace>>> = Lazy::new(|| {
     let m = BTreeMap::new();
@@ -62,12 +62,16 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
 
         let mut allocator = BaseAllocator::default();
         allocator.set_mem32(
-            rootcomplex_config.pci_mem32_base as u32,
-            rootcomplex_config.mem32_size as u32,
+            rootcomplex_config.mem32_base,
+            rootcomplex_config.mem32_size,
         );
         allocator.set_mem64(
-            rootcomplex_config.pci_mem64_base,
+            rootcomplex_config.mem64_base,
             rootcomplex_config.mem64_size,
+        );
+        allocator.set_io(
+            rootcomplex_config.io_base as u64,
+            rootcomplex_config.io_size,
         );
 
         // TODO: refactor
@@ -76,6 +80,20 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
         let allocator_opt: Option<BaseAllocator> = None;
         #[cfg(not(feature = "no_pcie_bar_realloc"))]
         let allocator_opt: Option<BaseAllocator> = Some(allocator);
+
+        #[cfg(feature = "loongarch64_pcie")]
+        let allocator_opt: Option<LoongArchAllocator> = {
+            let mut allocator = LoongArchAllocator::default();
+            allocator.set_mem(
+                rootcomplex_config.mem64_base,
+                rootcomplex_config.mem64_size,
+            );
+            allocator.set_io(
+                rootcomplex_config.io_base,
+                rootcomplex_config.io_size,
+            );
+            Some(allocator)
+        };
 
         let mut rootcomplex = {
             #[cfg(feature = "dwc_pcie")]
@@ -179,7 +197,7 @@ impl Zone {
                                             + ((bdf.bus() as u64) << 20)
                                             + ((bdf.device() as u64) << 15)
                                             + ((bdf.function() as u64) << 12);
-                            let dev = VirtualPciConfigSpace::virt_dev(bdf, base);
+                            let dev = VirtualPciConfigSpace::virt_dev(bdf, base, dev_type);
                             self.vpci_bus.insert(vbdf, dev);
                         } else {
                             warn!("can not find dev {:#?}, unknown device type", bdf);

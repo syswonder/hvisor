@@ -1,6 +1,7 @@
 use crate::pci::pci_struct::{PciConfigSpace, VirtualPciConfigSpace};
 use crate::pci::PciConfigAddress;
 use crate::error::HvResult;
+use crate::pci::pci_access::Bar;
 
 pub mod standard;
 
@@ -12,7 +13,7 @@ pub(crate) enum PciConfigAccessStatus {
 }
 
 #[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(u32)]
+#[repr(C, align(4))]
 pub enum VpciDevType {
     #[default]
     Physical=0,
@@ -24,6 +25,7 @@ pub trait VpciDeviceHandler: Sync + Send {
     fn read_cfg(&self, space: &mut PciConfigSpace, offset: PciConfigAddress, size: usize) -> HvResult<PciConfigAccessStatus>;
     fn write_cfg(&self, space: &mut PciConfigSpace, offset: PciConfigAddress, size: usize, value: usize) -> HvResult<PciConfigAccessStatus>;
     fn init_config_space(&self) -> PciConfigSpace;
+    fn init_bar(&self) -> Bar;
 }
 
 /* 
@@ -142,6 +144,23 @@ pub(super) fn init_config_space_with_type(dev_type: VpciDevType) -> PciConfigSpa
             } else {
                 warn!("init_config_space_with_type: unknown device type");
                 PciConfigSpace::new()
+            }
+        }
+    }
+}
+
+pub(super) fn virt_bar_init(dev_type: VpciDevType) -> Bar {
+    match dev_type {
+        VpciDevType::Physical => {
+            // Physical devices use default (all zeros) space
+            unreachable!("virt_bar_init: physical device is not supported");
+        }
+        _ => {
+            if let Some(handler) = get_handler(dev_type) {
+                handler.init_bar()
+            } else {
+                warn!("init_config_space_with_type: unknown device type");
+                Bar::default()
             }
         }
     }

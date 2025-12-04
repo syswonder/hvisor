@@ -1,8 +1,9 @@
 use crate::error::HvResult;
 use crate::pci::pci_struct::PciConfigSpace;
-use crate::pci::pci_access::EndpointField;
+use crate::pci::pci_access::{EndpointField, Bar};
 use crate::pci::PciConfigAddress;
 use super::{PciConfigAccessStatus, VpciDeviceHandler};
+use crate::memory::frame::Frame;
 
 const STANDARD_VENDOR_ID: u16 = 0x110a;
 const STANDARD_DEVICE_ID: u16 = 0x4106;
@@ -79,6 +80,18 @@ impl VpciDeviceHandler for StandardHandler {
         space.set(EndpointField::ID, 0x12345678);
         
         space
+    }
+
+    fn init_bar(&self) -> Bar {
+        let mut bar = Bar::default();
+        // value is the paddr of the mem you allocate
+        let frame = Frame::new().unwrap();
+        let start = frame.start_paddr();
+        let size = frame.size();
+        bar[0].set_value(start as u64);
+        bar[0].set_virtual_value(start as u64);
+        bar[0].set_size(size as u64);
+        bar
     }
 }
 

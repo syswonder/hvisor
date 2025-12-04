@@ -168,6 +168,8 @@ pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [
         mem64_base: 0x60000000,
         mem64_size: 0x20000000,
         pci_mem64_base: 0x60000000,
+        bus_range_begin: 0,
+        bus_range_end: 0xff,
     }
 ];
 
