@@ -97,57 +97,57 @@ impl BarAllocator for BaseAllocator {
     }
 }
 
-#[derive(Default, Debug)]
-pub struct LoongArchAllocator {
-    mem: Range<Mem64Address>,
-    mem_used: Mem64Address,
-    io: Range<Mem64Address>,
-    io_used: Mem64Address,
-}
+// #[derive(Default, Debug)]
+// pub struct LoongArchAllocator {
+//     mem: Range<Mem64Address>,
+//     mem_used: Mem64Address,
+//     io: Range<Mem64Address>,
+//     io_used: Mem64Address,
+// }
 
 
-impl LoongArchAllocator {
-    pub fn set_mem(&mut self, start: Mem64Address, size: Mem64Address) {
-        self.mem = start..start + size;
-        self.mem_used = start;
-    }
+// impl LoongArchAllocator {
+//     pub fn set_mem(&mut self, start: Mem64Address, size: Mem64Address) {
+//         self.mem = start..start + size;
+//         self.mem_used = start;
+//     }
 
-    pub fn set_io(&mut self, start: Mem64Address, size: Mem64Address) {
-        self.io = start..start + size;
-        self.io_used = start;
-    }
-}
+//     pub fn set_io(&mut self, start: Mem64Address, size: Mem64Address) {
+//         self.io = start..start + size;
+//         self.io_used = start;
+//     }
+// }
 
-impl BarAllocator for LoongArchAllocator {
-    fn alloc_memory32(&mut self, size: Mem32Address) -> Option<Mem64Address> {
-        let ptr = self.mem_used.align_up(size);
-        if self.mem.contains(&ptr) && ptr + size <= self.mem.end {
-            self.mem_used = ptr + size;
-            // debug!("alloc mem64 {:x} {}", ptr, size);
-            Some(ptr)
-        } else {
-            None
-        }
-    }
+// impl BarAllocator for LoongArchAllocator {
+//     fn alloc_memory32(&mut self, size: Mem32Address) -> Option<Mem64Address> {
+//         let ptr = self.mem_used.align_up(size);
+//         if self.mem.contains(&ptr) && ptr + size <= self.mem.end {
+//             self.mem_used = ptr + size;
+//             // debug!("alloc mem64 {:x} {}", ptr, size);
+//             Some(ptr)
+//         } else {
+//             None
+//         }
+//     }
 
-    fn alloc_memory64(&mut self, size: Mem64Address) -> Option<Mem64Address> {
-        let ptr = self.mem_used.align_up(size);
-        if self.mem.contains(&ptr) && ptr + size <= self.mem.end {
-            self.mem_used = ptr + size;
-            // debug!("alloc mem64 {:x} {}", ptr, size);
-            Some(ptr)
-        } else {
-            None
-        }
-    }
+//     fn alloc_memory64(&mut self, size: Mem64Address) -> Option<Mem64Address> {
+//         let ptr = self.mem_used.align_up(size);
+//         if self.mem.contains(&ptr) && ptr + size <= self.mem.end {
+//             self.mem_used = ptr + size;
+//             // debug!("alloc mem64 {:x} {}", ptr, size);
+//             Some(ptr)
+//         } else {
+//             None
+//         }
+//     }
 
-    fn alloc_io(&mut self, size: Mem64Address) -> Option<Mem64Address> {
-        let ptr = self.io_used.align_up(size);
-        if self.io.contains(&ptr) && ptr + size <= self.io.end {
-            self.io_used = ptr + size;
-            Some(ptr)
-        } else {
-            None
-        }
-    }
-}
+//     fn alloc_io(&mut self, size: Mem64Address) -> Option<Mem64Address> {
+//         let ptr = self.io_used.align_up(size);
+//         if self.io.contains(&ptr) && ptr + size <= self.io.end {
+//             self.io_used = ptr + size;
+//             Some(ptr)
+//         } else {
+//             None
+//         }
+//     }
+// }

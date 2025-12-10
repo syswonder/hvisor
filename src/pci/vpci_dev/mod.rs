@@ -64,14 +64,14 @@ pub(super) fn vpci_dev_read_cfg(
                                 Ok(value)
                             }
                             PciConfigAccessStatus::Perform => {
-                                warn!("vpci_dev_read_cfg: perform, offset {:#x}, size {:#x}", offset, size);
+                                // warn!("vpci_dev_read_cfg: perform, offset {:#x}, size {:#x}", offset, size);
                                 // warn!("vpci_dev_read_cfg: node {:#?}", node.space);
                                 let r = node.read_emu(offset, size).unwrap();
-                                warn!("vpci_dev_read_cfg: perform result {:#x}", r);
+                                // warn!("vpci_dev_read_cfg: perform result {:#x}", r);
                                 Ok(r)
                             }
                             PciConfigAccessStatus::Reject => {
-                                warn!("vpci_dev_read_cfg: operation rejected");
+                                // warn!("vpci_dev_read_cfg: operation rejected");
                                 Ok(0xFFFF_FFFF)
                             }
                         }
@@ -136,14 +136,14 @@ pub(super) fn init_config_space_with_type(dev_type: VpciDevType) -> PciConfigSpa
     match dev_type {
         VpciDevType::Physical => {
             // Physical devices use default (all zeros) space
-            PciConfigSpace::new()
+            PciConfigSpace::default()
         }
         _ => {
             if let Some(handler) = get_handler(dev_type) {
                 handler.init_config_space()
             } else {
                 warn!("init_config_space_with_type: unknown device type");
-                PciConfigSpace::new()
+                PciConfigSpace::default()
             }
         }
     }

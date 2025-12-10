@@ -38,7 +38,7 @@ use crate::pci::{mem_alloc::BaseAllocator, pci_struct::RootComplex, pci_access::
 use crate::{memory::mmio_generic_handler, pci::pci_access::mmio_vpci_handler_dbi, platform};
 
 #[cfg(feature = "loongarch64_pcie")]
-use crate::pci::mem_alloc::LoongArchAllocator;
+use crate::pci::pci_access::mmio_vpci_direct_handler;
 
 pub static GLOBAL_PCIE_LIST: Lazy<Mutex<BTreeMap<Bdf, VirtualPciConfigSpace>>> = Lazy::new(|| {
     let m = BTreeMap::new();
@@ -81,19 +81,19 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
         #[cfg(not(feature = "no_pcie_bar_realloc"))]
         let allocator_opt: Option<BaseAllocator> = Some(allocator);
 
-        #[cfg(feature = "loongarch64_pcie")]
-        let allocator_opt: Option<LoongArchAllocator> = {
-            let mut allocator = LoongArchAllocator::default();
-            allocator.set_mem(
-                rootcomplex_config.mem64_base,
-                rootcomplex_config.mem64_size,
-            );
-            allocator.set_io(
-                rootcomplex_config.io_base,
-                rootcomplex_config.io_size,
-            );
-            Some(allocator)
-        };
+        // #[cfg(feature = "loongarch64_pcie")]
+        // let allocator_opt: Option<LoongArchAllocator> = {
+        //     let mut allocator = LoongArchAllocator::default();
+        //     allocator.set_mem(
+        //         rootcomplex_config.mem64_base,
+        //         rootcomplex_config.mem64_size,
+        //     );
+        //     allocator.set_io(
+        //         rootcomplex_config.io_base,
+        //         rootcomplex_config.io_size,
+        //     );
+        //     Some(allocator)
+        // };
 
         let mut rootcomplex = {
             #[cfg(feature = "dwc_pcie")]
@@ -224,10 +224,12 @@ impl Zone {
             }
             #[cfg(feature = "ecam_pcie")]
             {
+                use crate::pci::pci_access::mmio_vpci_direct_handler;
                 self.mmio_region_register(
                     rootcomplex_config.ecam_base as usize,
                     rootcomplex_config.ecam_size as usize,
-                    mmio_vpci_handler,
+                    // mmio_vpci_handler,
+                    mmio_vpci_direct_handler,
                     rootcomplex_config.ecam_base as usize,
                 );
             }
@@ -281,7 +283,7 @@ impl Zone {
                 self.mmio_region_register(
                     rootcomplex_config.ecam_base as usize,
                     rootcomplex_config.ecam_size as usize,
-                    mmio_vpci_handler,
+                    mmio_vpci_direct_handler,
                     rootcomplex_config.ecam_base as usize,
                 );
                 self.page_table_emergency(rootcomplex_config.ecam_base as usize, rootcomplex_config.ecam_size as usize);

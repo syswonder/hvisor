@@ -26,7 +26,7 @@ use super::{
         PciConfigHeader, PciField, PciHeaderRW, PciMem, PciMemType, PciRW, PciRomRW,
     },
     PciConfigAddress,
-    pci_access::{BaseClass, SubClass, Interface},
+    pci_access::{BaseClass, SubClass, Interface, DeviceId, VendorId},
 };
 
 use crate::{error::{HvErrorNum, HvResult}, pci::vpci_dev::VpciDevType};
@@ -198,6 +198,7 @@ pub struct VirtualPciAccessBits {
 impl VirtualPciAccessBits {
     pub fn endpoint() -> Self {
         let mut bits = BitArray::ZERO;
+        bits[0x0..0x4].fill(true);   // ID
         bits[0x10..0x34].fill(true); //bar and rom
         Self { bits }
     }
@@ -227,9 +228,12 @@ pub struct PciConfigSpace {
 }
 
 impl PciConfigSpace {
-    pub fn new() -> Self {
+    pub fn new(id: (DeviceId, VendorId)) -> Self {
+        let mut data = [0u8; BIT_LENTH];
+        data[0x0..0x2].copy_from_slice(&id.0.to_le_bytes());
+        data[0x2..0x4].copy_from_slice(&id.1.to_le_bytes());
         Self {
-            data: [0u8; BIT_LENTH],
+            data,
         }
     }
 
@@ -297,7 +301,7 @@ impl PciConfigSpace {
 
 impl Default for PciConfigSpace {
     fn default() -> Self {
-        Self::new()
+        Self::new((0xFFFFu16, 0xFFFFu16))
     }
 }
 
@@ -358,6 +362,10 @@ impl VirtualPciConfigSpace {
 
     pub fn set_bar_virtual_value(&mut self, slot: usize, value: u64) {
         self.bararr[slot].set_virtual_value(value);
+    }
+
+    pub fn set_bar_value(&mut self, slot: usize, value: u64) {
+        self.bararr[slot].set_value(value);
     }
 
     pub fn clear_bar_size_read(&mut self, slot: usize) {
@@ -422,7 +430,7 @@ impl VirtualPciConfigSpace {
             host_bdf: Bdf::default(),
             parent_bdf: Bdf::default(),
             bdf,
-            vbdf: Bdf::default(),
+            vbdf: bdf,
             config_type: HeaderType::Endpoint,
             class: (0u8,0u8,0u8),
             base,
@@ -443,6 +451,7 @@ impl VirtualPciConfigSpace {
         bararr: Bar,
         rom: PciMem,
         class: (BaseClass, SubClass, Interface),
+        id: (DeviceId, VendorId),
     ) -> Self {
         Self {
             host_bdf: Bdf::default(),
@@ -452,7 +461,7 @@ impl VirtualPciConfigSpace {
             config_type: HeaderType::Endpoint,
             class,
             base,
-            space: PciConfigSpace::new(),
+            space: PciConfigSpace::new(id),
             control: VirtualPciConfigControl::endpoint(),
             access: VirtualPciAccessBits::endpoint(),
             backend,
@@ -470,6 +479,7 @@ impl VirtualPciConfigSpace {
         bararr: Bar,
         rom: PciMem,
         class: (BaseClass, SubClass, Interface),
+        id: (DeviceId, VendorId),
     ) -> Self {
         Self {
             host_bdf: Bdf::default(),
@@ -479,7 +489,7 @@ impl VirtualPciConfigSpace {
             config_type: HeaderType::PciBridge,
             class,
             base,
-            space: PciConfigSpace::new(),
+            space: PciConfigSpace::new(id),
             control: VirtualPciConfigControl::bridge(),
             access: VirtualPciAccessBits::bridge(),
             backend,
@@ -490,7 +500,7 @@ impl VirtualPciConfigSpace {
         }
     }
 
-    pub fn unknown(bdf: Bdf, base: PciConfigAddress, backend: Arc<dyn PciRW>) -> Self {
+    pub fn unknown(bdf: Bdf, base: PciConfigAddress, backend: Arc<dyn PciRW>, id: (DeviceId, VendorId)) -> Self {
         Self {
             host_bdf: Bdf::default(),
             parent_bdf: Bdf::default(),
@@ -499,7 +509,7 @@ impl VirtualPciConfigSpace {
             config_type: HeaderType::Endpoint,
             class: (0u8,0u8,0u8),
             base,
-            space: PciConfigSpace::new(),
+            space: PciConfigSpace::new(id),
             control: VirtualPciConfigControl::endpoint(),
             access: VirtualPciAccessBits::endpoint(),
             backend,
@@ -519,7 +529,7 @@ impl VirtualPciConfigSpace {
             config_type: HeaderType::Endpoint,
             class,
             base,
-            space: PciConfigSpace::new(),
+            space: PciConfigSpace::default(),
             control: VirtualPciConfigControl::host_bridge(),
             access: VirtualPciAccessBits::host_bridge(),
             backend,
@@ -701,7 +711,7 @@ impl<B: BarAllocator> PciIterator<B> {
 
         let region = PciConfigMmio::new(address, CONFIG_LENTH);
         let pci_header = PciConfigHeader::new_with_region(region);
-        let (vender_id, _device_id) = pci_header.id();
+        let (vender_id, device_id) = pci_header.id();
 
         warn!("vender_id {:#x}", vender_id);
 
@@ -752,7 +762,7 @@ impl<B: BarAllocator> PciIterator<B> {
                 info!("get node bar mem init end {:#?}", bararr);
 
                 let ep = Arc::new(ep);
-                let mut node = VirtualPciConfigSpace::endpoint(bdf, address, ep, bararr, rom, class);
+                let mut node = VirtualPciConfigSpace::endpoint(bdf, address, ep, bararr, rom, class, (device_id, vender_id));
 
                 let _ = node.capability_enumerate();
 
@@ -768,7 +778,7 @@ impl<B: BarAllocator> PciIterator<B> {
                     Self::bar_mem_init(bridge.bar_limit().into(), &mut self.allocator, &mut bridge);
 
                 let bridge = Arc::new(bridge);
-                let mut node = VirtualPciConfigSpace::bridge(bdf, address, bridge, bararr, rom, class);
+                let mut node = VirtualPciConfigSpace::bridge(bdf, address, bridge, bararr, rom, class, (device_id, vender_id));
 
                 let _ = node.capability_enumerate();
 
@@ -777,7 +787,7 @@ impl<B: BarAllocator> PciIterator<B> {
             _ => {
                 warn!("unknown type");
                 let pci_header = Arc::new(pci_header);
-                Some(VirtualPciConfigSpace::unknown(bdf, address, pci_header))
+                Some(VirtualPciConfigSpace::unknown(bdf, address, pci_header, (device_id, vender_id)))
             }
         }
     }

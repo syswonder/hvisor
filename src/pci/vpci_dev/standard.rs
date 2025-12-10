@@ -3,10 +3,11 @@ use crate::pci::pci_struct::PciConfigSpace;
 use crate::pci::pci_access::{EndpointField, Bar};
 use crate::pci::PciConfigAddress;
 use super::{PciConfigAccessStatus, VpciDeviceHandler};
-use crate::memory::frame::Frame;
+// use crate::memory::frame::Frame;
 use crate::pci::pci_struct::VirtualPciConfigSpace;
 use crate::percpu::this_zone;
 use crate::memory::MMIOAccess;
+use crate::pci::pci_access::PciMemType;
 
 const STANDARD_VENDOR_ID: u16 = 0x110a;
 const STANDARD_DEVICE_ID: u16 = 0x4106;
@@ -46,8 +47,17 @@ impl VpciDeviceHandler for StandardHandler {
         let space = dev.get_space_mut();
         match EndpointField::from(offset as usize, size) {
             EndpointField::ID => {
-                
                 Ok(PciConfigAccessStatus::Done(space.get(EndpointField::ID) as usize))
+            }
+            EndpointField::Bar(0) => {
+                let bar = dev.get_bararr()[0];
+                if bar.get_size_read() {
+                    let value = bar.get_size_with_flag();
+                    Ok(PciConfigAccessStatus::Done(value as usize))
+                } else {
+                    let value = bar.get_virtual_value();
+                    Ok(PciConfigAccessStatus::Done(value as usize))
+                }
             }
             _ => {
                 Ok(PciConfigAccessStatus::Perform)
@@ -66,15 +76,15 @@ impl VpciDeviceHandler for StandardHandler {
                 space.set(EndpointField::Command, value as u32);
                 Ok(PciConfigAccessStatus::Done(value))
             }
-            EndpointField::Bar(slot) => {
-                // let slot = 0;
+            EndpointField::Bar(0) => {
+                let slot = 0;
                 if value == 0xFFFF_FFFF {
                     dev.set_bar_size_read(slot);
                 } else {
-                    let zone = this_zone();
-                    let mut guard = zone.write();
                     let size = dev.get_bararr()[slot].get_size();
-                    guard.mmio_region_register(value as usize, size as usize, mmio_vdev_standard_handler, value);
+                    let zone = this_zone();
+                    // let mut guard = zone.write();
+                    // guard.mmio_region_register(value as usize, size as usize, mmio_vdev_standard_handler, value);
                 }
 
                 Ok(PciConfigAccessStatus::Done(value))
@@ -86,7 +96,7 @@ impl VpciDeviceHandler for StandardHandler {
     }
 
     fn init_config_space(&self) -> PciConfigSpace {
-        let mut space = PciConfigSpace::new();
+        let mut space = PciConfigSpace::default();
         let default_cspace = DEFAULT_CSPACE_U32;
         let mut offset = 0;
         for &value in &default_cspace {
@@ -102,6 +112,7 @@ impl VpciDeviceHandler for StandardHandler {
 
     fn init_bar(&self) -> Bar {
         let mut bar = Bar::default();
+        bar[0].set_type(PciMemType::Mem32);
         // value is the paddr of the mem you allocate
         let size = 0x1000;
         bar[0].set_size(size as u64);
