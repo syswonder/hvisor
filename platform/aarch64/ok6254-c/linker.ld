@@ -45,5 +45,7 @@ SECTIONS
         *(.eh_frame)
     }
     . = ALIGN(4K);
-	__core_end = .;
+    __core_end = .;
 }
+
+__hv_end = __core_end + HV_EXTENDED_SIZE;

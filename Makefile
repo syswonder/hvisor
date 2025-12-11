@@ -89,6 +89,12 @@ all: clean_check gen_cargo_config $(hvisor_bin)
 	@printf "%-10s %s\n" "RUSTC_TARGET    =" "$(COLOR_BOLD)$(RUSTC_TARGET)$(COLOR_RESET)"
 	@printf "%-10s %s\n" "BUILD_PATH      =" "$(COLOR_BOLD)$(build_path)$(COLOR_RESET)"
 	@printf "%-10s %s\n" "HVISON_BIN_SIZE =" "$(COLOR_BOLD)$(shell du -h $(hvisor_bin) | cut -f1)$(COLOR_RESET)"
+	@start_addr=$$(rust-nm $(hvisor_elf) | grep skernel | awk '{print $$1}'); \
+	 end_addr=$$(rust-nm $(hvisor_elf) | grep __hv_end | awk '{print $$1}'); \
+	 size=$$(printf '%016x\n' $$((0x$$end_addr - 0x$$start_addr))); \
+	 printf "%-10s %s\n" "START_ADDR      =" "$(COLOR_BOLD)0x$$start_addr$(COLOR_RESET)"; \
+	 printf "%-10s %s\n" "MEM_SIZE        =" "$(COLOR_BOLD)0x$$size$(COLOR_RESET)"; \
+	 printf "%-10s %s\n" "END_ADDR        =" "$(COLOR_BOLD)0x$$end_addr$(COLOR_RESET)"
 	@printf "%-10s %s\n" "BUILD TIME      =" "$(COLOR_BOLD)$(shell date)$(COLOR_RESET)"
 	@printf "\n"
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)hvisor build success!$(COLOR_RESET)\n"
