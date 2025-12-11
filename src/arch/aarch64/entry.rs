@@ -40,7 +40,7 @@ pub unsafe extern "C" fn arch_entry() -> ! {
 
             adrp x2, __core_end        // x2 = &__core_end
             mov x3, {per_cpu_size}     // x3 = per_cpu_size
-            madd x4, x17, x3, x3       // x4 = cpuid * per_cpu_size
+            madd x4, x19, x3, x3       // x4 = cpuid * per_cpu_size
             add x5, x2, x4
             mov sp, x5                 // sp = &__core_end + (cpuid + 1) * per_cpu_size
 
@@ -55,7 +55,7 @@ pub unsafe extern "C" fn arch_entry() -> ! {
 
             ic  iallu
 
-            cmp x17, 0
+            cmp x19, 0
             b.ne 1f
 
             // if (cpu_id == 0) cache_invalidate(2): clear l2$
@@ -70,9 +70,9 @@ pub unsafe extern "C" fn arch_entry() -> ! {
             bl {mmu_enable}
 
             mov x1, x18
-            mov x0, x17
+            mov x0, x19
             mov x18, #0
-            mov x17, #0
+            mov x19, #0
             bl {rust_main}            // x0 = cpuid, x1 = dtbaddr
             ",
             options(noreturn),
@@ -94,15 +94,15 @@ pub unsafe extern "C" fn boot_cpuid_get() {
 
     core::arch::asm!(
         "
-        mrs x17, mpidr_el1
+        mrs x19, mpidr_el1
         ldr x2, ={mpidr_mask}
-        and x17, x17, x2
+        and x19, x19, x2
         adr x2, {mpidr_mappings}
         mov x4, #0
     1:
         // search for the mpidr_el1 mapping in BOARD_MPIDR_MAPPINGS.
         ldr x3, [x2]
-        cmp x17, x3
+        cmp x19, x3
         b.eq 3f
         add x2, x2, #8
         add x4, x4, #1
@@ -110,12 +110,12 @@ pub unsafe extern "C" fn boot_cpuid_get() {
         b.ne 1b
     2: 
         // failed to get cpuid, return an invalid id, and spin in an infinite loop.
-        mov x17, {inv_id}
+        mov x19, {inv_id}
         wfi
         b 2b
     3:
         // found cpuid, return it.
-        mov x17, x4
+        mov x19, x4
         ret
     ",
         mpidr_mask = const cpu::MPIDR_MASK,
