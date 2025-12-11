@@ -182,7 +182,7 @@ pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [
 /* 08:00.0, 08:00.1, 08:00.2, 08:00.3 net */
 /* BUS 6 on X4 slot */
 /* 06:00.0, 06:00.1, 06:00.2, 06:00.3 net */
-pub const ROOT_PCI_DEVS: [HvPciDevConfig; 26] = [
+pub const ROOT_PCI_DEVS: &[HvPciDevConfig] = &[
     pci_dev!(0x0, 0x0, 0x0, VpciDevType::Physical),  // 00:00.0
     pci_dev!(0x0, 0x0, 0x1, VpciDevType::Physical),  // 00:00.1
     pci_dev!(0x0, 0x0, 0x2, VpciDevType::Physical),  // 00:00.2
