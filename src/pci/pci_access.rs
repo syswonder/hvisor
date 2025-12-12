@@ -214,8 +214,19 @@ impl PciMem {
         }
     }
 
-    pub fn set_type(&mut self, bar_type: PciMemType) {
+    pub fn set_bar_type(&mut self, bar_type: PciMemType){
         self.bar_type = bar_type;
+    }
+
+    pub fn set_prefetchable(&mut self, prefetchable: bool){
+        self.prefetchable = prefetchable;
+    }
+
+    pub fn config_init(&mut self, bar_type: PciMemType, prefetchable: bool, size: u64, value: u64) {
+        self.set_bar_type(bar_type);
+        self.set_prefetchable(prefetchable);
+        self.set_size(size);
+        self.set_value(value);
     }
 
     pub fn is_enabled(&self) -> bool {
@@ -266,7 +277,9 @@ impl PciMem {
                     val |= 0x8;
                 }
             }
-            _ => {}
+            _ => {
+                warn!("please init bar first");
+            }
         }
 
         self.value = val;
@@ -326,7 +339,9 @@ impl PciMem {
                     val |= 0x8;
                 }
             }
-            _ => {}
+            _ => {
+                warn!("unkown bar type: {:#?}", self.bar_type);
+            }
         }
 
         self.virtual_value = val;
@@ -1654,6 +1669,7 @@ fn handle_config_space_access_direct(
                                     } else {
                                         mmio.value = if bar.get_size_read() {
                                             let r = bar.get_size_with_flag().try_into().unwrap();
+
                                             r
                                         } else {
                                             bar.get_virtual_value() as usize

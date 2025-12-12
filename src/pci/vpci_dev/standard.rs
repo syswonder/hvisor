@@ -47,12 +47,14 @@ impl VpciDeviceHandler for StandardHandler {
         let space = dev.get_space_mut();
         match EndpointField::from(offset as usize, size) {
             EndpointField::ID => {
-                Ok(PciConfigAccessStatus::Done(space.get(EndpointField::ID) as usize))
+                Ok(PciConfigAccessStatus::Perform)
             }
             EndpointField::Bar(0) => {
-                let bar = dev.get_bararr()[0];
+                let slot = 0;
+                let bar = dev.get_bararr()[slot];
                 if bar.get_size_read() {
                     let value = bar.get_size_with_flag();
+                    dev.clear_bar_size_read(slot);
                     Ok(PciConfigAccessStatus::Done(value as usize))
                 } else {
                     let value = bar.get_virtual_value();
@@ -111,11 +113,10 @@ impl VpciDeviceHandler for StandardHandler {
     }
 
     fn init_bar(&self) -> Bar {
+        let your_addr = 0x0;
         let mut bar = Bar::default();
-        bar[0].set_type(PciMemType::Mem32);
-        // value is the paddr of the mem you allocate
         let size = 0x1000;
-        bar[0].set_size(size as u64);
+        bar[0].config_init(PciMemType::Mem32, false, size as u64, your_addr);
         bar
     }
 }

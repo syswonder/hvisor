@@ -5,6 +5,12 @@ use crate::pci::pci_access::Bar;
 
 pub mod standard;
 
+/*
+ * PciConfigAccessStatus is used to return the result of the config space access
+ * Done(usize): the value is returned in usize
+ * Perform: use read_emu to read the value from the space
+ * Reject: the access is rejected
+ */
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum PciConfigAccessStatus {
     Done(usize),
