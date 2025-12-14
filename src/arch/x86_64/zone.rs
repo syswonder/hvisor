@@ -54,6 +54,7 @@ pub struct HvArchZoneConfig {
     /// no restriction on start gpa and size, but its type should be MEM_TYPE_RAM as well.
     /// Usually, the DSDT table is large, so the size of this region should be large enough.
     pub acpi_memory_region_id: usize,
+    pub uefi_memory_region_id: usize,
     /// If you want to use a graphical console, set screen_base to a preferred gpa
     /// as the start of the framebuffer. Otherwise, leave it as zero.
     /// No need to add a memory region for the framebuffer,

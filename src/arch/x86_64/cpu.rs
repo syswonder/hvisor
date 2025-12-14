@@ -254,7 +254,6 @@ impl ArchCpu {
 
         unsafe {
             PARKING_MEMORY_SET.get().unwrap().activate();
-            info!("before vmx launch");
             self.vmx_launch();
         }
     }
