@@ -344,16 +344,8 @@ pub const ROOT_DWC_ATU_CONFIG: &[HvDwcAtuConfig] = &[
         apb_size: 0x10000,
         cfg_base: 0xf2000000,
         cfg_size: 0x80000*2,
-        cfg0_atu_index: 0,
-        cfg0_atu_type: 4,
-        cfg1_atu_index: 0,
-        cfg1_atu_type: 4,
-        mem32_atu_index: 1,
-        mem32_atu_type: 0,
-        mem64_atu_index: 2,
-        mem64_atu_type: 0,
-        io_atu_index: 3,
-        io_atu_type: 2,
+        io_cfg_atu_shared: 0,
+        pci_addr_base: 0xf2000000,
     },
 ];
 

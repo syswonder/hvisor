@@ -780,13 +780,21 @@ pub struct PciIterator<B: BarAllocator> {
     is_mulitple_function: bool,
     is_finish: bool,
     accessor: Arc<dyn PciConfigAccessor>,
+    pci_addr_base: Option<PciConfigAddress>,
 }
 
 impl<B: BarAllocator> PciIterator<B> {
+    fn get_pci_addr_base(&self, parent_bus: u8, bdf: Bdf) -> PciConfigAddress {
+        match self.accessor.get_pci_addr_base(bdf, parent_bus, self.pci_addr_base) {
+            Ok(addr) => addr,
+            Err(_) => 0x0,
+        }
+    }
+
     fn address(&self, parent_bus: u8, bdf: Bdf) -> PciConfigAddress {
         let offset = 0;
 
-        match self.accessor.get_physical_address(bdf, offset, parent_bus) {
+        match self.accessor.get_physical_address(bdf, offset, parent_bus, self.pci_addr_base) {
             Ok(addr) => addr,
             Err(_) => 0x0,
         }
@@ -815,7 +823,9 @@ impl<B: BarAllocator> PciIterator<B> {
         let bdf = Bdf::new(bus, device, function);
 
         let address = self.address(parent_bus, bdf);
-        info!("get node {:x} {:#?}", address, bdf);
+        let pci_addr_base = self.get_pci_addr_base(parent_bus, bdf);
+        // let pci_addr_base = address;
+        info!("get node {:x}->{:x} {:#?}", pci_addr_base, address, bdf);
 
         let region = PciConfigMmio::new(address, CONFIG_LENTH);
         let pci_header = PciConfigHeader::new_with_region(region);
@@ -870,7 +880,7 @@ impl<B: BarAllocator> PciIterator<B> {
                 info!("get node bar mem init end {:#?}", bararr);
 
                 let ep = Arc::new(ep);
-                let mut node = VirtualPciConfigSpace::endpoint(bdf, address, ep, bararr, rom, class, (device_id, vender_id));
+                let mut node = VirtualPciConfigSpace::endpoint(bdf, pci_addr_base, ep, bararr, rom, class, (device_id, vender_id));
 
                 let _ = node.capability_enumerate();
 
@@ -886,7 +896,7 @@ impl<B: BarAllocator> PciIterator<B> {
                     Self::bar_mem_init(bridge.bar_limit().into(), &mut self.allocator, &mut bridge);
 
                 let bridge = Arc::new(bridge);
-                let mut node = VirtualPciConfigSpace::bridge(bdf, address, bridge, bararr, rom, class, (device_id, vender_id));
+                let mut node = VirtualPciConfigSpace::bridge(bdf, pci_addr_base, bridge, bararr, rom, class, (device_id, vender_id));
 
                 let _ = node.capability_enumerate();
 
@@ -895,7 +905,7 @@ impl<B: BarAllocator> PciIterator<B> {
             _ => {
                 warn!("unknown type");
                 let pci_header = Arc::new(pci_header);
-                Some(VirtualPciConfigSpace::unknown(bdf, address, pci_header, (device_id, vender_id)))
+                Some(VirtualPciConfigSpace::unknown(bdf, pci_addr_base, pci_header, (device_id, vender_id)))
             }
         }
     }
@@ -1191,6 +1201,7 @@ impl RootComplex {
         &mut self,
         range: Option<Range<usize>>,
         bar_alloc: Option<B>,
+        pci_addr_base: Option<PciConfigAddress>,
     ) -> PciIterator<B> {
         let mmio_base = self.mmio_base;
         let range = range.unwrap_or_else(|| 0..0x100);
@@ -1203,6 +1214,7 @@ impl RootComplex {
             is_mulitple_function: false,
             is_finish: false,
             accessor: self.accessor.clone(), // accessor to iterator
+            pci_addr_base,
         }
     }
 
@@ -1210,8 +1222,9 @@ impl RootComplex {
         &mut self,
         range: Option<Range<usize>>,
         bar_alloc: Option<B>,
+        pci_addr_base: Option<PciConfigAddress>,
     ) -> PciIterator<B> {
-        self.__enumerate(range, bar_alloc)
+        self.__enumerate(range, bar_alloc, pci_addr_base)
     }
 }
 
@@ -1538,7 +1551,7 @@ impl VirtualPciConfigSpace {
     pub fn has_secondary_link(&self) -> bool {
         match self.config_type {
             HeaderType::PciBridge => {
-                // Find PciExpress capability
+                // // Find PciExpress capability
                 // for (_, capability) in &self.capabilities {
                 //     if let PciCapability::PciExpress(PciCapabilityRegion { offset, .. }) = capability {
                 //         // Read PCIe Capability Register at offset + 0x00

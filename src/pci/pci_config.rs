@@ -32,10 +32,9 @@ use crate::pci::vpci_dev::{VpciDevType, get_handler};
     feature = "dwc_pcie",
     feature = "loongarch64_pcie"
 ))]
-use crate::pci::{mem_alloc::BaseAllocator, pci_struct::RootComplex, pci_access::mmio_vpci_handler};
-
+use crate::pci::{mem_alloc::BaseAllocator, pci_struct::RootComplex, pci_access::mmio_vpci_handler, PciConfigAddress};
 #[cfg(feature = "dwc_pcie")]
-use crate::{memory::mmio_generic_handler, pci::pci_access::mmio_vpci_handler_dbi, platform};
+use crate::{platform, memory::mmio_generic_handler, pci::{config_accessors::dwc_atu::{AtuConfig, AtuType}, pci_access::{mmio_vpci_handler_dbi, mmio_dwc_io_handler, mmio_dwc_cfg_handler}}};
 
 #[cfg(feature = "loongarch64_pcie")]
 use crate::pci::pci_access::mmio_vpci_direct_handler;
@@ -134,7 +133,19 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
         };
         let range =
             rootcomplex_config.bus_range_begin as usize..rootcomplex_config.bus_range_end as usize;
-        let e = rootcomplex.enumerate(Some(range), allocator_opt);
+        
+        #[cfg(feature = "dwc_pcie")]
+        let pci_addr_base: Option<PciConfigAddress> = {
+            let ecam_base = rootcomplex_config.ecam_base;
+            platform::ROOT_DWC_ATU_CONFIG
+                .iter()
+                .find(|atu_cfg| atu_cfg.ecam_base == ecam_base)
+                .map(|atu_cfg| atu_cfg.pci_addr_base as PciConfigAddress)
+        };
+        
+        #[cfg(not(feature = "dwc_pcie"))]
+        let pci_addr_base: Option<PciConfigAddress> = None;
+        let e = rootcomplex.enumerate(Some(range), allocator_opt, pci_addr_base);
         info!("begin enumerate {:#?}", e);
         for node in e {
             info!("node {:#?}", node);
@@ -263,7 +274,7 @@ impl Zone {
                         self.mmio_region_register(
                             cfg0_base as usize,
                             cfg_size_half as usize,
-                            mmio_vpci_handler,
+                            mmio_dwc_cfg_handler,
                             cfg0_base as usize,
                         );
                     }
@@ -273,10 +284,23 @@ impl Zone {
                         self.mmio_region_register(
                             cfg1_base as usize,
                             cfg_size_half as usize,
-                            mmio_vpci_handler,
+                            mmio_dwc_cfg_handler,
                             cfg1_base as usize,
                         );
                     }
+
+                    if extend_config.pci_addr_base != 0 {
+                        self.mmio_region_register(
+                            rootcomplex_config.io_base as usize,
+                            rootcomplex_config.io_size as usize,
+                            mmio_dwc_io_handler,
+                            rootcomplex_config.io_base as usize,
+                        );
+                    }
+
+                    self.atu_configs.insert_atu(rootcomplex_config.ecam_base as usize, AtuConfig::default());
+                    self.atu_configs.insert_cfg_base_mapping(extend_config.cfg_base as PciConfigAddress, rootcomplex_config.ecam_base as usize);
+                    self.atu_configs.insert_io_base_mapping(rootcomplex_config.io_base as PciConfigAddress, rootcomplex_config.ecam_base as usize);
                 } 
             }
             #[cfg(feature = "loongarch64_pcie")]

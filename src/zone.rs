@@ -20,6 +20,11 @@ use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM};
 use crate::pci::pci_struct::VirtualRootComplex;
 use spin::RwLock;
 
+#[cfg(feature = "dwc_pcie")]
+use alloc::collections::btree_map::BTreeMap;
+#[cfg(feature = "dwc_pcie")]
+use crate::pci::{config_accessors::dwc_atu::AtuConfig, PciConfigAddress};
+
 use crate::arch::mm::new_s2_memory_set;
 use crate::arch::s2pt::Stage2PageTable;
 use crate::config::{HvZoneConfig, CONFIG_NAME_MAXLEN};
@@ -29,6 +34,78 @@ use crate::memory::addr::GuestPhysAddr;
 use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
 use crate::percpu::{get_cpu_data, this_zone, CpuSet};
 use core::panic;
+
+#[cfg(feature = "dwc_pcie")]
+#[derive(Debug)]
+pub struct VirtualAtuConfigs {
+    ecam_to_atu: BTreeMap<usize, AtuConfig>,
+    io_base_to_ecam: BTreeMap<PciConfigAddress, usize>,
+    cfg_base_to_ecam: BTreeMap<PciConfigAddress, usize>,
+}
+
+#[cfg(feature = "dwc_pcie")]
+impl VirtualAtuConfigs {
+    pub fn new() -> Self {
+        Self {
+            ecam_to_atu: BTreeMap::new(),
+            io_base_to_ecam: BTreeMap::new(),
+            cfg_base_to_ecam: BTreeMap::new(),
+        }
+    }
+
+    pub fn get_atu_by_ecam(&self, ecam_base: usize) -> Option<&AtuConfig> {
+        self.ecam_to_atu.get(&ecam_base)
+    }
+
+    pub fn get_atu_by_ecam_mut(&mut self, ecam_base: usize) -> Option<&mut AtuConfig> {
+        self.ecam_to_atu.get_mut(&ecam_base)
+    }
+
+    pub fn insert_atu(&mut self, ecam_base: usize, atu: AtuConfig) -> Option<AtuConfig> {
+        self.ecam_to_atu.insert(ecam_base, atu)
+    }
+
+    pub fn get_or_insert_atu<F>(&mut self, ecam_base: usize, f: F) -> &mut AtuConfig
+    where
+        F: FnOnce() -> AtuConfig,
+    {
+        self.ecam_to_atu.entry(ecam_base).or_insert_with(f)
+    }
+
+    pub fn get_atu_by_io_base(&self, io_base: PciConfigAddress) -> Option<&AtuConfig> {
+        let ecam = self.io_base_to_ecam.get(&io_base);
+        if let Some(ecam) = ecam {
+            self.get_atu_by_ecam(*ecam)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_ecam_by_io_base(&self, io_base: PciConfigAddress) -> Option<usize> {
+        self.io_base_to_ecam.get(&io_base).copied()
+    }
+
+    pub fn insert_io_base_mapping(&mut self, io_base: PciConfigAddress, ecam_base: usize) {
+        self.io_base_to_ecam.insert(io_base, ecam_base);
+    }
+
+    pub fn get_atu_by_cfg_base(&self, cfg_base: PciConfigAddress) -> Option<&AtuConfig> {
+        let ecam = self.cfg_base_to_ecam.get(&cfg_base);
+        if let Some(ecam) = ecam {
+            self.get_atu_by_ecam(*ecam)
+        } else {
+            None
+        }
+    }
+
+    pub fn get_ecam_by_cfg_base(&self, cfg_base: PciConfigAddress) -> Option<usize> {
+        self.cfg_base_to_ecam.get(&cfg_base).copied()
+    }
+
+    pub fn insert_cfg_base_mapping(&mut self, cfg_base: PciConfigAddress, ecam_base: usize) {
+        self.cfg_base_to_ecam.insert(cfg_base, ecam_base);
+    }
+}
 
 pub struct Zone {
     pub name: [u8; CONFIG_NAME_MAXLEN],
@@ -41,6 +118,8 @@ pub struct Zone {
     pub iommu_pt: Option<MemorySet<Stage2PageTable>>,
     pub is_err: bool,
     pub vpci_bus: VirtualRootComplex,
+    #[cfg(feature = "dwc_pcie")]
+    pub atu_configs: VirtualAtuConfigs,
 }
 
 impl Zone {
@@ -60,6 +139,8 @@ impl Zone {
             },
             is_err: false,
             vpci_bus: VirtualRootComplex::new(),
+            #[cfg(feature = "dwc_pcie")]
+            atu_configs: VirtualAtuConfigs::new(),
         }
     }
 

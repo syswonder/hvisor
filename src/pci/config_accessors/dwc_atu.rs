@@ -15,6 +15,7 @@
 //
 
 use super::dwc::DwcConfigRegion;
+use core::{fmt, fmt::Debug};
 
 use crate::{
     error::{HvErrorNum::*, HvResult},
@@ -32,31 +33,54 @@ pub const PCIE_ATU_UNR_LIMIT: usize = 0x10;
 pub const PCIE_ATU_UNR_LOWER_TARGET: usize = 0x14;
 pub const PCIE_ATU_UNR_UPPER_TARGET: usize = 0x18;
 
-// ATU region type constants
-pub const ATU_TYPE_CFG0: u32 = 0x4; // CFG0 Type
-pub const ATU_TYPE_CFG1: u32 = 0x5; // CFG1 Type
-pub const ATU_TYPE_MEM: u32 = 0x0; // Memory Type
-pub const ATU_TYPE_IO: u32 = 0x2; // IO Type
-
 // ATU enable bit
 pub const ATU_ENABLE_BIT: u32 = 0x80000000;
 
 // the flag is for dbi just
 pub const ATU_UNUSED: u32 = u32::MAX;
 
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, Default)]
+pub enum AtuType {
+    #[default]
+    Unused = 0xFF,
+    Cfg0 = 0x4,
+    Cfg1 = 0x5,
+    Mem = 0x0,
+    Io = 0x2,
+}
+
+impl AtuType {
+    pub fn from_u8(value: u8) -> Self {
+        match value {
+            0x0 => AtuType::Mem,
+            0x2 => AtuType::Io,
+            0x4 => AtuType::Cfg0,
+            0x5 => AtuType::Cfg1,
+            0xFF => AtuType::Unused,
+            _ => AtuType::Unused,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Default)]
 pub struct AtuConfig {
     pub index: usize,
-    pub atu_type: u32,
+    pub atu_type: AtuType,
     pub cpu_base: PciConfigAddress,
     pub cpu_limit: PciConfigAddress,
     pub pci_target: PciConfigAddress,
 }
 
+impl Debug for AtuConfig {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "AtuConfig {{ index: {},\n atu_type: {:?},\n cpu_base: {:#x},\n cpu_limit: {:#x},\n pci_target: {:#x} }}", self.index, self.atu_type, self.cpu_base, self.cpu_limit, self.pci_target)
+    }
+}
+
 impl AtuConfig {
     pub fn new(
         index: usize,
-        atu_type: u32,
+        atu_type: AtuType,
         cpu_base: PciConfigAddress,
         cpu_size: PciConfigAddress,
         pci_target: PciConfigAddress,
@@ -71,13 +95,13 @@ impl AtuConfig {
         }
     }
 
-    pub fn new_with_dwc_config_region(config_region: &DwcConfigRegion) -> Self {
+    pub fn new_with_dwc_config_region(config_region: &DwcConfigRegion, atu_type: AtuType, pci_addr: PciConfigAddress) -> Self {
         Self::new(
             config_region.atu_index,
-            config_region.atu_type,
+            atu_type,
             config_region.base,
             config_region.size,
-            config_region.base,
+            pci_addr,
         )
     }
 }

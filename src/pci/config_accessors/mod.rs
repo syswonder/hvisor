@@ -125,11 +125,19 @@ impl PciRegion for PciConfigMmio {
 }
 
 pub trait PciConfigAccessor: Send + Sync + core::fmt::Debug {
+    fn get_pci_addr_base(
+        &self, 
+        bdf: Bdf, 
+        parent_bus: u8,
+        pci_addr_base: Option<PciConfigAddress>,
+    ) -> HvResult<PciConfigAddress>;
+
     fn get_physical_address(
         &self,
         bdf: Bdf,
         offset: PciConfigAddress,
         _parent_bus: u8,
+        pci_addr_base: Option<PciConfigAddress>,
     ) -> HvResult<PciConfigAddress>;
 
     fn skip_device(&self, _bdf: Bdf) -> bool {

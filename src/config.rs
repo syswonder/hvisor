@@ -236,8 +236,8 @@ impl Debug for HvPciDevConfig {
 #[repr(C)]
 #[derive(Debug, Copy, Clone)]
 pub struct HvDwcAtuConfig {
-    /// ECAM (Enhanced Configuration Access Mechanism) base address
-    /// This is used to match with HvPciConfig::ecam_base
+    // ECAM (Enhanced Configuration Access Mechanism) base address
+    // This is used to match with HvPciConfig::ecam_base
     pub ecam_base: u64,
     pub dbi_base: u64,
     pub dbi_size: u64,
@@ -245,16 +245,10 @@ pub struct HvDwcAtuConfig {
     pub apb_size: u64,
     pub cfg_base: u64,
     pub cfg_size: u64,
-    pub cfg0_atu_index: usize,
-    pub cfg0_atu_type: u32,
-    pub cfg1_atu_index: usize,
-    pub cfg1_atu_type: u32,
-    pub mem32_atu_index: usize,
-    pub mem32_atu_type: u32,
-    pub mem64_atu_index: usize,
-    pub mem64_atu_type: u32,
-    pub io_atu_index: usize,
-    pub io_atu_type: u32,
+    // set 1 if io base use atu0, when hvisor need set mmio for io
+    // normally, when num-viewport less than 4, io_cfg_atu_shared is 1, otherwise is 0
+    pub io_cfg_atu_shared: u64,
+    pub pci_addr_base: u64,
 }
 
 impl HvDwcAtuConfig {
@@ -270,16 +264,8 @@ impl HvDwcAtuConfig {
             apb_size: 0,
             cfg_base: 0,
             cfg_size: 0,
-            cfg0_atu_index: u32::MAX as usize,
-            cfg0_atu_type: 4, // ATU_TYPE_CFG0
-            cfg1_atu_index: u32::MAX as usize,
-            cfg1_atu_type: 5, // ATU_TYPE_CFG1
-            mem32_atu_index: u32::MAX as usize,
-            mem32_atu_type: 0, // ATU_TYPE_MEM
-            mem64_atu_index: u32::MAX as usize,
-            mem64_atu_type: 0, // ATU_TYPE_MEM
-            io_atu_index: u32::MAX as usize,
-            io_atu_type: 2, // ATU_TYPE_IO
+            io_cfg_atu_shared: 0,
+            pci_addr_base: 0,
         }
     }
 }

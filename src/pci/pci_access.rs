@@ -39,6 +39,20 @@ use crate::{
     zone::{is_this_root_zone, this_zone_id},
 };
 
+#[cfg(feature = "dwc_pcie")]
+use crate::pci::config_accessors::{
+    dwc_atu::{
+        AtuConfig, AtuType, ATU_BASE, ATU_REGION_SIZE,
+        PCIE_ATU_UNR_REGION_CTRL1, PCIE_ATU_UNR_REGION_CTRL2,
+        PCIE_ATU_UNR_LOWER_BASE, PCIE_ATU_UNR_UPPER_BASE,
+        PCIE_ATU_UNR_LIMIT, PCIE_ATU_UNR_LOWER_TARGET, PCIE_ATU_UNR_UPPER_TARGET,
+        ATU_ENABLE_BIT,
+        AtuUnroll,
+    },
+    dwc::DwcConfigRegionBackend,
+    PciRegionMmio,
+};
+
 use crate::pci::vpci_dev::VpciDevType;
 
 pub type VendorId = u16;
@@ -1490,18 +1504,193 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
 
     Ok(())
 }
-
-pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
-    // info!("mmio_vpci_handler_dbi {:#x}", mmio.address);
-
-    if mmio.address >= 0x300000
-    /* ATU base */
+#[cfg(feature = "dwc_pcie")]
+pub fn mmio_dwc_io_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     {
+        let zone = this_zone();
+        let guard = zone.read();
+        
+        let atu_config = guard.atu_configs.get_atu_by_io_base(_base as PciConfigAddress)
+            .and_then(|atu| {
+                guard.atu_configs.get_ecam_by_io_base(_base as PciConfigAddress)
+                    .map(|ecam| (*atu, ecam))
+            });
+        
+        drop(guard);
+        
+        if let Some((atu, ecam_base)) = atu_config {
+            use crate::platform;
+            if let Some(extend_config) = platform::ROOT_DWC_ATU_CONFIG
+                .iter()
+                .find(|cfg| cfg.ecam_base == ecam_base as u64)
+            {
+                // Create DBI backend
+                let dbi_base = extend_config.dbi_base as PciConfigAddress;
+                let dbi_size = extend_config.dbi_size;
+                let dbi_region = PciRegionMmio::new(dbi_base, dbi_size);
+                let dbi_backend = DwcConfigRegionBackend::new(dbi_region);
+                
+                // Call AtuUnroll to program the ATU
+                AtuUnroll::dw_pcie_prog_outbound_atu_unroll(&dbi_backend, &atu)?;
+            }
+            mmio_perform_access(atu.pci_target as usize, mmio);
+        } else {
+            warn!("No ATU config yet, do nothing");
+        }
+    }
+    Ok(())
+}
+
+#[cfg(feature = "dwc_pcie")]
+pub fn mmio_dwc_cfg_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
+    info!("mmio_dwc_cfg_handler {:#x}", mmio.address + _base);    
+    let zone = this_zone();
+    let guard = zone.read();
+
+    let atu_config = guard.atu_configs.get_atu_by_cfg_base(_base as PciConfigAddress)
+        .and_then(|atu| {
+            guard.atu_configs.get_ecam_by_cfg_base(_base as PciConfigAddress)
+                .map(|ecam| (*atu, ecam))
+        });
+    
+    drop(guard);
+    
+    if let Some((atu, ecam_base)) = atu_config {
+        // Get dbi_base from platform config (usually dbi_base == ecam_base)
+        use crate::platform;
+        if let Some(extend_config) = platform::ROOT_DWC_ATU_CONFIG
+            .iter()
+            .find(|cfg| cfg.ecam_base == ecam_base as u64)
+        {
+            // Create DBI backend
+            let dbi_base = extend_config.dbi_base as PciConfigAddress;
+            let dbi_size = extend_config.dbi_size;
+            let dbi_region = PciRegionMmio::new(dbi_base, dbi_size);
+            let dbi_backend = DwcConfigRegionBackend::new(dbi_region);
+
+            warn!("atu config {:#?}", atu);
+            
+            // Call AtuUnroll to program the ATU
+            AtuUnroll::dw_pcie_prog_outbound_atu_unroll(&dbi_backend, &atu)?;
+        }
+        
+        let offset = (mmio.address & 0xfff) as PciConfigAddress;
+        let zone_id = this_zone_id();
+        
+        let base = mmio.address as PciConfigAddress - offset + atu.pci_target;
+        
+        let dev: Option<ArcRwLockVirtualPciConfigSpace> = {
+            let zone = this_zone();
+            let mut guard = zone.write();
+            let vbus = &mut guard.vpci_bus;
+            vbus.get_device_by_base(base)
+        };
+        
+        if let Some(dev) = dev {
+            handle_config_space_access(dev, mmio, offset, zone_id)?;
+        } else {
+            handle_device_not_found(mmio, offset);
+        }
+    } else {
+        warn!("No ATU config yet, do nothing");
+    }
+    Ok(())
+}
+
+#[cfg(feature = "dwc_pcie")]
+pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
+    info!("mmio_vpci_handler_dbi {:#x}", mmio.address);
+
+    if mmio.address >= ATU_BASE && mmio.address < ATU_BASE + ATU_REGION_SIZE
+    {
+        // ATU0 registers (0x300000 - 0x300200)
+        let zone = this_zone();
+        let mut guard = zone.write();
+        let ecam_base = _base;
+        let atu_offset = mmio.address - ATU_BASE;
+
+        warn!("set atu0 register {:#X} value {:#X}", atu_offset, mmio.value);
+        
+        let mut atu = guard.atu_configs.get_atu_by_ecam_mut(ecam_base).unwrap();
+
+        info!("atu config write {:#?}", atu);
+        
+        if mmio.is_write {
+            if mmio.size == 4 {
+                match atu_offset {
+                    PCIE_ATU_UNR_REGION_CTRL1 => {
+                        info!("set atu0 region ctrl1 value {:#X}", mmio.value);
+                        atu.atu_type = AtuType::from_u8((mmio.value & 0xff) as u8);
+                    }
+                    PCIE_ATU_UNR_REGION_CTRL2 => {
+                        // Enable bit is written here, but we just track it
+                        // The actual enable is handled by the driver
+                    }
+                    PCIE_ATU_UNR_LOWER_BASE => {
+                        info!("set atu0 lower base value {:#X}", mmio.value);
+                        atu.cpu_base = (atu.cpu_base & !0xffffffff) | (mmio.value as PciConfigAddress);
+                    }
+                    PCIE_ATU_UNR_UPPER_BASE => {
+                        info!("set atu0 upper base value {:#X}", mmio.value);
+                        atu.cpu_base = (atu.cpu_base & 0xffffffff) | ((mmio.value as PciConfigAddress) << 32);
+                    }
+                    PCIE_ATU_UNR_LIMIT => {
+                        info!("set atu0 limit value {:#X}", mmio.value);
+                        atu.cpu_limit = (atu.cpu_limit & !0xffffffff) | (mmio.value as PciConfigAddress);
+                    }
+                    PCIE_ATU_UNR_LOWER_TARGET => {
+                        info!("set atu0 lower target value {:#X}", mmio.value);
+                        atu.pci_target = (atu.pci_target & !0xffffffff) | (mmio.value as PciConfigAddress);
+                    }
+                    PCIE_ATU_UNR_UPPER_TARGET => {
+                        info!("set atu0 upper target value {:#X}", mmio.value);
+                        atu.pci_target = (atu.pci_target & 0xffffffff) | ((mmio.value as PciConfigAddress) << 32);
+                    }
+                    _ => {
+                        warn!("invalid atu0 write size {:#x}", mmio.size);
+                    }
+                }
+            } else {
+                warn!("invalid atu0 read size {:#x}", mmio.size);
+            }
+        } else {
+            // Read from virtual ATU
+            warn!("read atu0 {:#x}", atu_offset);
+            match atu_offset {
+                PCIE_ATU_UNR_REGION_CTRL1 => {
+                    mmio.value = atu.atu_type as usize;
+                }
+                PCIE_ATU_UNR_REGION_CTRL2 => {
+                    mmio.value = ATU_ENABLE_BIT as usize;
+                }
+                PCIE_ATU_UNR_LOWER_BASE => {
+                    mmio.value = (atu.cpu_base & 0xffffffff) as usize;
+                }
+                PCIE_ATU_UNR_UPPER_BASE => {
+                    mmio.value = ((atu.cpu_base >> 32) & 0xffffffff) as usize;
+                }
+                PCIE_ATU_UNR_LIMIT => {
+                    mmio.value = (atu.cpu_limit & 0xffffffff) as usize;
+                }
+                PCIE_ATU_UNR_LOWER_TARGET => {
+                    mmio.value = (atu.pci_target & 0xffffffff) as usize;
+                }
+                PCIE_ATU_UNR_UPPER_TARGET => {
+                    mmio.value = ((atu.pci_target >> 32) & 0xffffffff) as usize;
+                }
+                _ => {
+                    mmio_perform_access(_base, mmio);
+                }
+            }
+        }
+    } else if mmio.address > ATU_BASE + ATU_REGION_SIZE {
+        // other atu
         mmio_perform_access(_base, mmio);
     } else if mmio.address >= BIT_LENTH {
         // dbi read
         mmio_perform_access(_base, mmio);
     } else {
+        warn!("mmio_vpci_handler_dbi read {:#x}", mmio.address);
         let offset = (mmio.address & 0xfff) as PciConfigAddress;
         let zone_id = this_zone_id();
         let zone = this_zone();
