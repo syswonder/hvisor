@@ -166,7 +166,7 @@ pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [
         mem32_size: 0x0,
         pci_mem32_base: 0x0,
         mem64_base: 0x60000000,
-        mem64_size: 0x20000000,
+        mem64_size: 0x30000000,
         pci_mem64_base: 0x60000000,
         bus_range_begin: 0,
         bus_range_end: 0xff,
@@ -182,7 +182,7 @@ pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [
 /* 08:00.0, 08:00.1, 08:00.2, 08:00.3 net */
 /* BUS 6 on X4 slot */
 /* 06:00.0, 06:00.1, 06:00.2, 06:00.3 net */
-pub const ROOT_PCI_DEVS: [HvPciDevConfig; 26] = [
+pub const ROOT_PCI_DEVS: &[HvPciDevConfig] = &[
     pci_dev!(0x0, 0x0, 0x0, VpciDevType::Physical),  // 00:00.0
     pci_dev!(0x0, 0x0, 0x1, VpciDevType::Physical),  // 00:00.1
     pci_dev!(0x0, 0x0, 0x2, VpciDevType::Physical),  // 00:00.2
@@ -191,9 +191,9 @@ pub const ROOT_PCI_DEVS: [HvPciDevConfig; 26] = [
     pci_dev!(0x0, 0x4, 0x1, VpciDevType::Physical),  // 00:04.1
     pci_dev!(0x0, 0x5, 0x0, VpciDevType::Physical),  // 00:05.0
     pci_dev!(0x0, 0x5, 0x1, VpciDevType::Physical),  // 00:05.1
-    pci_dev!(0x0, 0x6, 0x0, VpciDevType::Physical),  // 00:06.0
-    pci_dev!(0x0, 0x6, 0x1, VpciDevType::Physical),  // 00:06.1
-    pci_dev!(0x0, 0x6, 0x2, VpciDevType::Physical),  // 00:06.2
+    // pci_dev!(0x0, 0x6, 0x0, VpciDevType::Physical),  // 00:06.0
+    // pci_dev!(0x0, 0x6, 0x1, VpciDevType::Physical),  // 00:06.1
+    // pci_dev!(0x0, 0x6, 0x2, VpciDevType::Physical),  // 00:06.2
     pci_dev!(0x0, 0x7, 0x0, VpciDevType::Physical),  // 00:07.0
     pci_dev!(0x0, 0x8, 0x0, VpciDevType::Physical),  // 00:08.0
     pci_dev!(0x0, 0x9, 0x0, VpciDevType::Physical),  // 00:09.0

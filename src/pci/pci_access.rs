@@ -1684,7 +1684,7 @@ fn handle_config_space_access_direct(
                                     } else {
                                         mmio.value = if bar.get_size_read() {
                                             let r = bar.get_size_with_flag().try_into().unwrap();
-
+                                            dev.clear_bar_size_read(slot);
                                             r
                                         } else {
                                             bar.get_virtual_value() as usize
