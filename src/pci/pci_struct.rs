@@ -17,6 +17,7 @@ use alloc::{collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
 use bit_field::BitField;
 use bitvec::{array::BitArray, order::Lsb0, BitArr};
 use core::{cmp::Ordering, fmt::Debug, ops::Range, str::FromStr};
+use spin::RwLock;
 
 use super::{
     config_accessors::{PciConfigAccessor, PciConfigMmio},
@@ -336,6 +337,113 @@ pub struct VirtualPciConfigSpace {
 
     dev_type: VpciDevType,
 }
+
+#[derive(Clone)]
+pub struct ArcRwLockVirtualPciConfigSpace(Arc<RwLock<VirtualPciConfigSpace>>);
+
+impl ArcRwLockVirtualPciConfigSpace {
+    pub fn new(dev: VirtualPciConfigSpace) -> Self {
+        Self(Arc::new(RwLock::new(dev)))
+    }
+    
+    pub fn inner(&self) -> &Arc<RwLock<VirtualPciConfigSpace>> {
+        &self.0
+    }
+
+    pub fn access(&self, offset: PciConfigAddress, size: usize) -> bool {
+        self.0.read().access(offset, size)
+    }
+
+    pub fn get_bdf(&self) -> Bdf {
+        self.0.read().get_bdf()
+    }
+
+    pub fn get_dev_type(&self) -> VpciDevType {
+        self.0.read().get_dev_type()
+    }
+
+    pub fn get_config_type(&self) -> HeaderType {
+        self.0.read().get_config_type()
+    }
+
+    pub fn get_bararr(&self) -> Bar {
+        self.0.read().get_bararr()
+    }
+
+    pub fn get_rom(&self) -> PciMem {
+        self.0.read().get_rom()
+    }
+
+    pub fn read_emu(&self, offset: PciConfigAddress, size: usize) -> HvResult<usize> {
+        self.0.write().read_emu(offset, size)
+    }
+
+    pub fn read_emu64(&self, offset: PciConfigAddress) -> HvResult<u64> {
+        self.0.write().read_emu64(offset)
+    }
+
+    pub fn write_emu(&self, offset: PciConfigAddress, size: usize, value: usize) -> HvResult {
+        self.0.write().write_emu(offset, size, value)
+    }
+
+    pub fn read_hw(&self, offset: PciConfigAddress, size: usize) -> HvResult<usize> {
+        self.0.write().read_hw(offset, size)
+    }
+
+    pub fn write_hw(&self, offset: PciConfigAddress, size: usize, value: usize) -> HvResult {
+        self.0.write().write_hw(offset, size, value)
+    }
+
+    pub fn set_bar_size_read(&self, slot: usize) {
+        self.0.write().set_bar_size_read(slot);
+    }
+
+    pub fn clear_bar_size_read(&self, slot: usize) {
+        self.0.write().clear_bar_size_read(slot);
+    }
+
+    pub fn set_bar_virtual_value(&self, slot: usize, value: u64) {
+        self.0.write().set_bar_virtual_value(slot, value);
+    }
+
+    pub fn set_bar_value(&self, slot: usize, value: u64) {
+        self.0.write().set_bar_value(slot, value);
+    }
+
+    pub fn read(&self) -> spin::RwLockReadGuard<'_, VirtualPciConfigSpace> {
+        self.0.read()
+    }
+
+    pub fn write(&self) -> spin::RwLockWriteGuard<'_, VirtualPciConfigSpace> {
+        self.0.write()
+    }
+}
+
+impl Debug for ArcRwLockVirtualPciConfigSpace {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        self.0.read().fmt(f)
+    }
+}
+
+// impl core::ops::Deref for ArcRwLockVirtualPciConfigSpace {
+//     type Target = Arc<RwLock<VirtualPciConfigSpace>>;
+
+//     fn deref(&self) -> &Self::Target {
+//         &self.0
+//     }
+// }
+
+// impl From<VirtualPciConfigSpace> for ArcRwLockVirtualPciConfigSpace {
+//     fn from(dev: VirtualPciConfigSpace) -> Self {
+//         Self::new(dev)
+//     }
+// }
+
+// impl From<Arc<RwLock<VirtualPciConfigSpace>>> for ArcRwLockVirtualPciConfigSpace {
+//     fn from(arc: Arc<RwLock<VirtualPciConfigSpace>>) -> Self {
+//         Self(arc)
+//     }
+// }
 
 impl VirtualPciConfigSpace {
     /* false: some bits ro */
@@ -1109,7 +1217,7 @@ impl RootComplex {
 
 #[derive(Debug)]
 pub struct VirtualRootComplex {
-    devs: BTreeMap<Bdf, VirtualPciConfigSpace>,
+    devs: BTreeMap<Bdf, ArcRwLockVirtualPciConfigSpace>,
     base_to_bdf: BTreeMap<PciConfigAddress, Bdf>,
 }
 
@@ -1125,22 +1233,22 @@ impl VirtualRootComplex {
         &mut self,
         bdf: Bdf,
         dev: VirtualPciConfigSpace,
-    ) -> Option<VirtualPciConfigSpace> {
+    ) -> Option<ArcRwLockVirtualPciConfigSpace> {
         let base = dev.get_base();
         info!("pci insert base {:#x} to bdf {:#?}", base, bdf);
         self.base_to_bdf.insert(base, bdf);
-        self.devs.insert(bdf, dev)
+        self.devs.insert(bdf, ArcRwLockVirtualPciConfigSpace::new(dev))
     }
 
-    pub fn devs(&mut self) -> &mut BTreeMap<Bdf, VirtualPciConfigSpace> {
+    pub fn devs(&mut self) -> &mut BTreeMap<Bdf, ArcRwLockVirtualPciConfigSpace> {
         &mut self.devs
     }
 
-    pub fn get(&self, bdf: &Bdf) -> Option<&VirtualPciConfigSpace> {
+    pub fn get(&self, bdf: &Bdf) -> Option<&ArcRwLockVirtualPciConfigSpace> {
         self.devs.get(bdf)
     }
 
-    pub fn get_mut(&mut self, bdf: &Bdf) -> Option<&mut VirtualPciConfigSpace> {
+    pub fn get_mut(&mut self, bdf: &Bdf) -> Option<&mut ArcRwLockVirtualPciConfigSpace> {
         self.devs.get_mut(bdf)
     }
 
@@ -1148,9 +1256,9 @@ impl VirtualRootComplex {
     pub fn get_device_by_base(
         &mut self,
         base: PciConfigAddress,
-    ) -> Option<&mut VirtualPciConfigSpace> {
+    ) -> Option<ArcRwLockVirtualPciConfigSpace> {
         let bdf = self.base_to_bdf.get(&base).copied()?;
-        self.devs.get_mut(&bdf)
+        self.devs.get(&bdf).cloned()
     }
 }
 

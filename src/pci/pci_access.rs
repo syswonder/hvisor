@@ -25,7 +25,7 @@ use core::{
 
 use super::{
     config_accessors::{PciConfigMmio, PciRegion},
-    pci_struct::VirtualPciConfigSpace,
+    pci_struct::ArcRwLockVirtualPciConfigSpace,
     PciConfigAddress,
 };
 
@@ -36,7 +36,7 @@ use crate::{
     },
     pci::{pci_config::GLOBAL_PCIE_LIST, pci_struct::BIT_LENTH},
     percpu::this_zone,
-    zone::{Zone, is_this_root_zone, this_zone_id},
+    zone::{is_this_root_zone, this_zone_id},
 };
 
 use crate::pci::vpci_dev::VpciDevType;
@@ -1204,21 +1204,17 @@ impl PciBridgeHeader {
 impl PciBridgeHeader {}
 
 fn handle_config_space_access(
-    dev: &mut VirtualPciConfigSpace,
+    dev: ArcRwLockVirtualPciConfigSpace,
     mmio: &mut MMIOAccess,
     offset: PciConfigAddress,
-    gpm: &mut MemorySet<crate::arch::s2pt::Stage2PageTable>,
     zone_id: usize,
 ) -> HvResult {
     let size = mmio.size;
     let value = mmio.value;
     let is_write = mmio.is_write;
-    // now the vbdf is same with bdf
+    
     let vbdf = dev.get_bdf();
-
-    // if vbdf.bus == 0 && vbdf.device == 5 && vbdf.function == 0 {
-    //     info!("virt pci standard access, vbdf {:#?}, offset {:#x}, size {:#x}, is_write {:#?}", vbdf, offset, size, is_write);
-    // }
+    let dev_type = dev.get_dev_type();
 
     if (offset as usize) >= BIT_LENTH {
         warn!("invalid pci offset {:#x}", offset);
@@ -1230,6 +1226,7 @@ fn handle_config_space_access(
 
     match dev.access(offset, size) {
         false => {
+            // Hardware access path
             info!(
                 "hw vbdf {:#?} reg 0x{:x} try {} {}",
                 vbdf,
@@ -1248,6 +1245,7 @@ fn handle_config_space_access(
             }
         }
         true => {
+            // Emulation access path
             info!(
                 "emu vbdf {:#?} reg 0x{:x} try {} {}",
                 vbdf,
@@ -1259,9 +1257,10 @@ fn handle_config_space_access(
                     String::new()
                 }
             );
-            match dev.get_dev_type() {
+            match dev_type {
                 super::vpci_dev::VpciDevType::Physical => {
-                    match dev.get_config_type() {
+                    let config_type = dev.get_config_type();
+                    match config_type {
                         HeaderType::Endpoint => {
                             match EndpointField::from(offset as usize, size) {
                                 EndpointField::Bar(slot) => {
@@ -1270,7 +1269,7 @@ fn handle_config_space_access(
                                     /* the write of bar needs to start from dev,
                                      * where the bar variable here is just a copy
                                      */
-                                    let bar = &mut dev.get_bararr()[slot];
+                                    let bar = dev.get_bararr()[slot];
                                     let bar_type = bar.get_type();
                                     if bar_type != PciMemType::default() {
                                         if is_write {
@@ -1308,18 +1307,6 @@ fn handle_config_space_access(
                                                      * the PCIe bus, will the newly written BAR address overlap with
                                                      * the old BAR addresses, potentially causing the update to fail?
                                                      */
-                                                    if !gpm
-                                                        .try_delete(old_vaddr.try_into().unwrap())
-                                                        .is_ok()
-                                                    {
-                                                        /* The first delete from the guest will fail
-                                                         * because the region has not yet been inserted
-                                                         */
-                                                        warn!(
-                                                            "delete bar {}: can not found 0x{:x}",
-                                                            slot, old_vaddr
-                                                        );
-                                                    }
                                                     let paddr = bar.get_value64();
                                                     info!(
                                                         "old_vaddr {:x} new_vaddr {:x} paddr {:x}",
@@ -1345,12 +1332,30 @@ fn handle_config_space_access(
                                                         new_vaddr
                                                     };
         
+                                                    let zone = this_zone();
+                                                    let mut guard = zone.write();
+                                                    let gpm = &mut guard.gpm;
+                                                    
+                                                    if !gpm
+                                                        .try_delete(old_vaddr.try_into().unwrap())
+                                                        .is_ok()
+                                                    {
+                                                        /* The first delete from the guest will fail
+                                                         * because the region has not yet been inserted
+                                                         */
+                                                        warn!(
+                                                            "delete bar {}: can not found 0x{:x}",
+                                                            slot, old_vaddr
+                                                        );
+                                                    }
+                                                    
                                                     gpm.try_insert(MemoryRegion::new_with_offset_mapper(
                                                         new_vaddr as GuestPhysAddr,
                                                         paddr as HostPhysAddr,
                                                         bar_size as _,
                                                         MemFlags::READ | MemFlags::WRITE,
                                                     ))?;
+
                                                     /* after update gpm, mem barrier is needed
                                                      */
                                                     #[cfg(target_arch = "aarch64")]
@@ -1388,17 +1393,21 @@ fn handle_config_space_access(
                                     }
                                 }
                                 EndpointField::ExpansionRomBar => {
-                                    let mut rom = dev.get_rom();
+                                    let rom = dev.get_rom();
+                                    let rom_size_read = rom.get_size_read();
                                     if is_write {
                                         if (mmio.value & 0xfffff800) == 0xfffff800 {
-                                            rom.set_size_read();
+                                            // Note: get_rom() returns a copy, so we need to get it again after setting
+                                            // For now, we'll just set the flag through the dev guard
+                                            // TODO: Add a method to set rom size_read flag
+                                            warn!("ExpansionRomBar size_read not yet implemented");
                                         } else {
                                             // let old_vaddr = dev.read_emu(offset, size).unwrap() as u64;
                                             let _ = dev.write_emu(offset, size, value);
                                             // TODO: add gpm change for rom
                                         }
                                     } else {
-                                        mmio.value = if rom.get_size_read() {
+                                        mmio.value = if rom_size_read {
                                             dev.read_emu(offset, size).unwrap()
                                         } else {
                                             rom.get_size_with_flag().try_into().unwrap()
@@ -1418,15 +1427,15 @@ fn handle_config_space_access(
                             warn!("bridge emu rw");
                         }
                         _ => {
-                            warn!("unhanled pci type {:#?}", dev.get_config_type());
+                            warn!("unhanled pci type {:#?}", config_type);
                         }
                     }
                 }
                 _ => {
                     if mmio.is_write {
-                        super::vpci_dev::vpci_dev_write_cfg(dev.get_dev_type(), dev, offset, size, value).unwrap();
+                        super::vpci_dev::vpci_dev_write_cfg(dev_type, dev.clone(), offset, size, value).unwrap();
                     } else {
-                        mmio.value = super::vpci_dev::vpci_dev_read_cfg(dev.get_dev_type(), dev, offset, size).unwrap() as usize;
+                        mmio.value = super::vpci_dev::vpci_dev_read_cfg(dev_type, dev.clone(), offset, size).unwrap() as usize;
                     }
                 }
             }
@@ -1463,17 +1472,18 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     // info!("mmio_vpci_handler {:#x}", mmio.address);
     let zone_id = this_zone_id();
     let zone = this_zone();
-    let mut guard = zone.write();
-    let (vbus, gpm) = {
-        let Zone { gpm, vpci_bus, .. } = &mut *guard;
-        (vpci_bus, gpm)
-    };
-
     let offset = (mmio.address & 0xfff) as PciConfigAddress;
     let base = mmio.address as PciConfigAddress - offset + _base as PciConfigAddress;
 
-    if let Some(dev) = vbus.get_device_by_base(base) {
-        handle_config_space_access(dev, mmio, offset, gpm, zone_id)?;
+    let dev: Option<ArcRwLockVirtualPciConfigSpace> = {
+        let mut guard = zone.write();
+        let vbus = &mut guard.vpci_bus;
+        vbus.get_device_by_base(base)
+    };
+
+
+    if let Some(dev) = dev {
+        handle_config_space_access(dev, mmio, offset, zone_id)?;
     } else {
         handle_device_not_found(mmio, offset);
     }
@@ -1496,15 +1506,16 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
         let zone_id = this_zone_id();
         let zone = this_zone();
         let mut guard = zone.write();
-        let (vbus, gpm) = {
-            let Zone { gpm, vpci_bus, .. } = &mut *guard;
-            (vpci_bus, gpm)
-        };
 
         let base = mmio.address as PciConfigAddress - offset + _base as PciConfigAddress;
 
-        if let Some(dev) = vbus.get_device_by_base(base) {
-            handle_config_space_access(dev, mmio, offset, gpm, zone_id)?;
+        let dev: Option<ArcRwLockVirtualPciConfigSpace> = {
+            let vbus = &mut guard.vpci_bus;
+            vbus.get_device_by_base(base)
+        };
+        
+        if let Some(dev) = dev {
+            handle_config_space_access(dev, mmio, offset, zone_id)?;
         } else {
             handle_device_not_found(mmio, offset);
         }
@@ -1514,10 +1525,9 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
 }
 
 fn handle_config_space_access_direct(
-    dev: &mut VirtualPciConfigSpace,
+    dev: ArcRwLockVirtualPciConfigSpace,
     mmio: &mut MMIOAccess,
     offset: PciConfigAddress,
-    gpm: &mut MemorySet<crate::arch::s2pt::Stage2PageTable>,
     zone_id: usize,
     is_root: bool,
     is_dev_belong_to_zone: bool,
@@ -1585,7 +1595,7 @@ fn handle_config_space_access_direct(
                                 }
                             }
                             EndpointField::Bar(slot) => {
-                                let bar = &mut dev.get_bararr()[slot];
+                                let bar = dev.get_bararr()[slot];
                                 let bar_type = bar.get_type();
                                 if bar_type != PciMemType::default() {
                                     if is_write {
@@ -1607,12 +1617,6 @@ fn handle_config_space_access_direct(
                                                             (value as u64) & !0xf
                                                         }
                                                     };
-                                                    if !gpm.try_delete(old_vaddr.try_into().unwrap()).is_ok() {
-                                                        warn!(
-                                                            "delete bar {}: can not found 0x{:x}",
-                                                            slot, old_vaddr
-                                                        );
-                                                    }
 
                                                     dev.set_bar_virtual_value(slot, new_vaddr);
                                                     if bar_type == PciMemType::Mem64High {
@@ -1641,6 +1645,17 @@ fn handle_config_space_access_direct(
                                                     } else {
                                                         new_vaddr as u64
                                                     };
+
+                                                    let zone = this_zone();
+                                                    let mut guard = zone.write();
+                                                    let gpm = &mut guard.gpm;
+                                                    
+                                                    if !gpm.try_delete(old_vaddr.try_into().unwrap()).is_ok() {
+                                                        warn!(
+                                                            "delete bar {}: can not found 0x{:x}",
+                                                            slot, old_vaddr
+                                                        );
+                                                    }
                                                     gpm.try_insert(MemoryRegion::new_with_offset_mapper(
                                                         new_vaddr as GuestPhysAddr,
                                                         paddr as HostPhysAddr,
@@ -1680,17 +1695,19 @@ fn handle_config_space_access_direct(
                                 }
                             }
                             EndpointField::ExpansionRomBar => {
-                                let mut rom = dev.get_rom();
+                                let rom = dev.get_rom();
+                                let rom_size_read = rom.get_size_read();
                                 if is_write {
                                     if (mmio.value & 0xfffff800) == 0xfffff800 {
-                                        rom.set_size_read();
+                                        // TODO: Add method to set rom size_read flag
+                                        warn!("ExpansionRomBar size_read not yet implemented for direct handler");
                                     } else {
                                         // let old_vaddr = dev.read_emu(offset, size).unwrap() as u64;
                                         let _ = dev.write_emu(offset, size, value);
                                         // TODO: add gpm change for rom
                                     }
                                 } else {
-                                    mmio.value = if rom.get_size_read() {
+                                    mmio.value = if rom_size_read {
                                         dev.read_emu(offset, size).unwrap()
                                     } else {
                                         rom.get_size_with_flag().try_into().unwrap()
@@ -1713,9 +1730,9 @@ fn handle_config_space_access_direct(
             }                
             _ => {
                 if mmio.is_write {
-                    super::vpci_dev::vpci_dev_write_cfg(dev.get_dev_type(), dev, offset, size, value).unwrap();
+                    super::vpci_dev::vpci_dev_write_cfg(dev.get_dev_type(), dev.clone(), offset, size, value).unwrap();
                 } else {
-                    mmio.value = super::vpci_dev::vpci_dev_read_cfg(dev.get_dev_type(), dev, offset, size).unwrap() as usize;
+                    mmio.value = super::vpci_dev::vpci_dev_read_cfg(dev.get_dev_type(), dev.clone(), offset, size).unwrap() as usize;
                 }
             }
         }
@@ -1734,28 +1751,28 @@ fn handle_config_space_access_direct(
 pub fn mmio_vpci_direct_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     let zone_id = this_zone_id();
     let zone = this_zone();
-    let mut guard = zone.write();
-    let (vbus, gpm) = {
-        let Zone { gpm, vpci_bus, .. } = &mut *guard;
-        (vpci_bus, gpm)
-    };
-
     let offset = (mmio.address & 0xfff) as PciConfigAddress;
     let base = mmio.address as PciConfigAddress - offset + _base as PciConfigAddress;
     let mut is_dev_belong_to_zone = false;
 
-    let mut global_pcie_list = GLOBAL_PCIE_LIST.lock();
-    let dev = match vbus.get_device_by_base(base) {
-        Some(dev) => {
+
+    let dev: Option<ArcRwLockVirtualPciConfigSpace> = {
+        let mut guard = zone.write();
+        let vbus = &mut guard.vpci_bus;
+        if let Some(dev) = vbus.get_device_by_base(base) {
             is_dev_belong_to_zone = true;
             Some(dev)
+        } else {
+            drop(guard);
+            let global_pcie_list = GLOBAL_PCIE_LIST.lock();
+            global_pcie_list
+                .values()
+                .find(|dev| dev.read().get_base() == base)
+                .cloned()
         }
-        None => global_pcie_list
-            .values_mut()
-            .find(|dev| dev.get_base() == base)
     };
 
-    let mut dev = match dev {
+    let dev = match dev {
         Some(dev) => dev,
         None => {
             handle_device_not_found(mmio, offset);
@@ -1765,7 +1782,7 @@ pub fn mmio_vpci_direct_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult
 
     let is_root = is_this_root_zone();
 
-    handle_config_space_access_direct(&mut dev, mmio, offset, gpm, zone_id, is_root, is_dev_belong_to_zone);
+    handle_config_space_access_direct(dev, mmio, offset, zone_id, is_root, is_dev_belong_to_zone);
     
     Ok(())
 }

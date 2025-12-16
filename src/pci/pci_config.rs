@@ -20,7 +20,7 @@ use crate::{
     arch::iommu::iommu_add_device,
     config::{HvPciConfig, HvPciDevConfig, CONFIG_MAX_PCI_DEV, CONFIG_PCI_BUS_MAXNUM},
     error::HvResult,
-    pci::pci_struct::{Bdf, VirtualPciConfigSpace}, 
+    pci::pci_struct::{Bdf, ArcRwLockVirtualPciConfigSpace}, 
     zone::Zone,
 };
 
@@ -40,7 +40,7 @@ use crate::{memory::mmio_generic_handler, pci::pci_access::mmio_vpci_handler_dbi
 #[cfg(feature = "loongarch64_pcie")]
 use crate::pci::pci_access::mmio_vpci_direct_handler;
 
-pub static GLOBAL_PCIE_LIST: Lazy<Mutex<BTreeMap<Bdf, VirtualPciConfigSpace>>> = Lazy::new(|| {
+pub static GLOBAL_PCIE_LIST: Lazy<Mutex<BTreeMap<Bdf, ArcRwLockVirtualPciConfigSpace>>> = Lazy::new(|| {
     let m = BTreeMap::new();
     Mutex::new(m)
 });
@@ -138,7 +138,7 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
         info!("begin enumerate {:#?}", e);
         for node in e {
             info!("node {:#?}", node);
-            GLOBAL_PCIE_LIST.lock().insert(node.get_bdf(), node);
+            GLOBAL_PCIE_LIST.lock().insert(node.get_bdf(), ArcRwLockVirtualPciConfigSpace::new(node));
         }
     }
     info!("hvisor pci init done \n{:#?}", GLOBAL_PCIE_LIST);
@@ -173,14 +173,15 @@ impl Zone {
                 iommu_add_device(zone_id, dev_config.bdf as _, iommu_pt_addr);
             }
             if let Some(dev) = guard.get(&bdf) {
-                if bdf.is_host_bridge(dev.get_host_bdf().bus()) {
-                    let mut vdev = dev.clone();
+                if bdf.is_host_bridge(dev.read().get_host_bdf().bus()) {
+                    let mut vdev = dev.read().clone();
                     vdev.set_vbdf(vbdf);
                     self.vpci_bus.insert(vbdf, vdev);
                 } else {
-                    let mut vdev = guard.remove(&bdf).unwrap();
-                    vdev.set_vbdf(vbdf);
-                    self.vpci_bus.insert(vbdf, vdev);
+                    let vdev = guard.remove(&bdf).unwrap();
+                    let mut vdev_inner = vdev.read().clone();
+                    vdev_inner.set_vbdf(vbdf);
+                    self.vpci_bus.insert(vbdf, vdev_inner);
                 }
             } else {
                 // warn!("can not find dev {:#?}", bdf);
@@ -228,8 +229,8 @@ impl Zone {
                 self.mmio_region_register(
                     rootcomplex_config.ecam_base as usize,
                     rootcomplex_config.ecam_size as usize,
-                    // mmio_vpci_handler,
-                    mmio_vpci_direct_handler,
+                    mmio_vpci_handler,
+                    // mmio_vpci_direct_handler,
                     rootcomplex_config.ecam_base as usize,
                 );
             }

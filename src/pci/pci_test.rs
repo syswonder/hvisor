@@ -104,7 +104,7 @@ pub fn ecam_pcie_guest_test() {
     let bdf = Bdf::from_str("0000:00:01.0").unwrap();
     // Get base from VirtualPciConfigSpace and add offset
     let address = if let Some(vdev) = vbus.get(&bdf) {
-        vdev.get_base() + 0x24
+        vdev.read().get_base() + 0x24
     } else {
         warn!("can not find dev {:#?} for test", bdf);
         0
