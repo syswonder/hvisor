@@ -60,6 +60,40 @@ impl LoongArchConfigAccessor {
 }
 
 impl PciConfigAccessor for LoongArchConfigAccessor {
+    fn get_pci_addr_base(&self, bdf: Bdf, parent_bus: u8) -> HvResult<PciConfigAddress> {
+        let bus = bdf.bus() as PciConfigAddress;
+        let device = bdf.device() as PciConfigAddress;
+        let function = bdf.function() as PciConfigAddress;
+        let offset = 0;
+
+        // Extract Offset[11:8] (bits 11-8 of offset) for bits 31-28
+        let offset_high = (offset >> 8) & 0xf;
+        // Extract Offset[7:0] (bits 7-0 of offset) for bits 7-0
+        let offset_low = offset & 0xff;
+
+        let address = if bus == self.root_bus as PciConfigAddress {
+            // Type 0 format (Root Bus):
+            // Bits 31-28: Offset[11:8]
+            // Bits 27-16: Reserved (0)
+            // Bits 15-11: Device Number
+            // Bits 10-8:  Function Number
+            // Bits 7-0:   Offset[7:0]
+            self.cfg0
+                + ((offset_high << 24) | (device << 11) | (function << 8) | offset_low)
+        } else {
+            // Type 1 format (Other Bus):
+            // Bits 31-28: Offset[11:8]
+            // Bits 27-16: Bus Number
+            // Bits 15-11: Device Number
+            // Bits 10-8:  Function Number
+            // Bits 7-0:   Offset[7:0]
+            self.cfg1
+                + ((offset_high << 24) | (bus << 16) | (device << 11) | (function << 8) | offset_low)
+        };
+
+        Ok(address)
+    }
+
     fn get_physical_address(
         &self,
         bdf: Bdf,

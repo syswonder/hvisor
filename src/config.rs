@@ -248,7 +248,6 @@ pub struct HvDwcAtuConfig {
     // set 1 if io base use atu0, when hvisor need set mmio for io
     // normally, when num-viewport less than 4, io_cfg_atu_shared is 1, otherwise is 0
     pub io_cfg_atu_shared: u64,
-    pub pci_addr_base: u64,
 }
 
 impl HvDwcAtuConfig {
@@ -265,7 +264,6 @@ impl HvDwcAtuConfig {
             cfg_base: 0,
             cfg_size: 0,
             io_cfg_atu_shared: 0,
-            pci_addr_base: 0,
         }
     }
 }

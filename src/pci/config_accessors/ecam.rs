@@ -50,6 +50,15 @@ impl EcamConfigAccessor {
 }
 
 impl PciConfigAccessor for EcamConfigAccessor {
+    fn get_pci_addr_base(&self, bdf: Bdf, parent_bus: u8) -> HvResult<PciConfigAddress> {
+        let bus = bdf.bus() as PciConfigAddress;
+        let device = bdf.device() as PciConfigAddress;
+        let function = bdf.function() as PciConfigAddress;
+
+        let address = self.ecam_base + (bus << 20) + (device << 15) + (function << 12);
+        Ok(address)
+    }
+
     fn get_physical_address(
         &self,
         bdf: Bdf,

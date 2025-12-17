@@ -25,7 +25,7 @@ use crate::{
 };
 
 #[cfg(feature = "ecam_pcie")]
-use crate::pci::vpci_dev::{VpciDevType, get_handler};
+use crate::pci::{vpci_dev::{VpciDevType, get_handler}, pci_struct::VirtualPciConfigSpace};
 
 #[cfg(any(
     feature = "ecam_pcie",
@@ -134,18 +134,7 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
         let range =
             rootcomplex_config.bus_range_begin as usize..rootcomplex_config.bus_range_end as usize;
         
-        #[cfg(feature = "dwc_pcie")]
-        let pci_addr_base: Option<PciConfigAddress> = {
-            let ecam_base = rootcomplex_config.ecam_base;
-            platform::ROOT_DWC_ATU_CONFIG
-                .iter()
-                .find(|atu_cfg| atu_cfg.ecam_base == ecam_base)
-                .map(|atu_cfg| atu_cfg.pci_addr_base as PciConfigAddress)
-        };
-        
-        #[cfg(not(feature = "dwc_pcie"))]
-        let pci_addr_base: Option<PciConfigAddress> = None;
-        let e = rootcomplex.enumerate(Some(range), allocator_opt, pci_addr_base);
+        let e = rootcomplex.enumerate(Some(range), allocator_opt);
         info!("begin enumerate {:#?}", e);
         for node in e {
             info!("node {:#?}", node);
@@ -289,7 +278,7 @@ impl Zone {
                         );
                     }
 
-                    if extend_config.pci_addr_base != 0 {
+                    if extend_config.io_cfg_atu_shared != 0 {
                         self.mmio_region_register(
                             rootcomplex_config.io_base as usize,
                             rootcomplex_config.io_size as usize,

@@ -125,20 +125,12 @@ impl PciConfigAccessor for DwcConfigAccessor {
         &self, 
         bdf: Bdf, 
         parent_bus: u8,
-        pci_addr_base: Option<PciConfigAddress>,
     ) -> HvResult<PciConfigAddress> {
         let bus = bdf.bus() as PciConfigAddress;
         let device = bdf.device() as PciConfigAddress;
         let function = bdf.function() as PciConfigAddress;
 
-        let pci_addr_base = if let Some(pci_addr_base) = pci_addr_base {
-            // pci_addr_base
-            0
-        } else {
-           return hv_result_err!(EINVAL, "PCI address base is not set");
-        };
-
-        let pci_addr = pci_addr_base + (bus << 24) + (device << 19) + (function << 16);
+        let pci_addr = (bus << 24) + (device << 19) + (function << 16);
         info!("pci_addr {:#x}", pci_addr);
         let address = if bus == self.root_bus.into() {
             // Root bus: use DBI directly, no ATU configuration needed
@@ -155,20 +147,14 @@ impl PciConfigAccessor for DwcConfigAccessor {
         bdf: Bdf,
         offset: PciConfigAddress,
         parent_bus: u8,
-        pci_addr_base: Option<PciConfigAddress>,
     ) -> HvResult<PciConfigAddress> {
         let bus = bdf.bus() as PciConfigAddress;
         let device = bdf.device() as PciConfigAddress;
         let function = bdf.function() as PciConfigAddress;
 
         warn!("parent_bus {} self.root_bus {}", parent_bus, self.root_bus);
-        let pci_addr_base = if let Some(pci_addr_base) = pci_addr_base {
-            pci_addr_base
-        } else {
-           return hv_result_err!(EINVAL, "PCI address base is not set");
-        };
 
-        let pci_addr = pci_addr_base + (bus << 24) + (device << 19) + (function << 16);
+        let pci_addr = (bus << 24) + (device << 19) + (function << 16);
 
         let address = if bus == self.root_bus.into() {
             // Root bus: use DBI directly, no ATU configuration needed
