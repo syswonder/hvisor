@@ -231,8 +231,8 @@ pub struct PciConfigSpace {
 impl PciConfigSpace {
     pub fn new(id: (DeviceId, VendorId)) -> Self {
         let mut data = [0u8; BIT_LENTH];
-        data[0x0..0x2].copy_from_slice(&id.0.to_le_bytes());
-        data[0x2..0x4].copy_from_slice(&id.1.to_le_bytes());
+        data[0x0..0x2].copy_from_slice(&id.1.to_le_bytes()); // VendorId
+        data[0x2..0x4].copy_from_slice(&id.0.to_le_bytes()); // DeviceId
         Self {
             data,
         }

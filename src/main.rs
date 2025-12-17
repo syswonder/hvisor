@@ -150,6 +150,11 @@ fn primary_init_early() {
         let zone = zone_create(root_config).unwrap();
         add_zone(zone);
     }
+
+    // crate::pci::pci_test::pcie_test();
+    // crate::pci::pci_test::pcie_guest_init();
+    // crate::pci::pci_test::ecam_pcie_guest_test();
+
     INIT_EARLY_OK.store(1, Ordering::Release);
 }
 

@@ -680,7 +680,7 @@ impl Zone {
             size as _,
             MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
         ))?;
-        self.gpm.delete(vaddr as GuestPhysAddr)
+        self.gpm.delete(vaddr as GuestPhysAddr, size)
     }
 
     pub fn arch_zone_pre_configuration(&mut self, config: &HvZoneConfig) -> HvResult {

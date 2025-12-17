@@ -110,18 +110,18 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
     //     virtual_start: 0xfe_0000_0000,
     //     size: 0x20000000,
     // }, // pci config space (HT)
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0x18408000,
-    //     virtual_start: 0x18408000,
-    //     size: 0x00008000,
-    // }, // pci io resource
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0x60000000,
-    //     virtual_start: 0x60000000,
-    //     size: 0x20000000,
-    // }, // pci mem resource
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x18408000,
+        virtual_start: 0x18408000,
+        size: 0x00008000,
+    }, // pci io resource
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x60000000,
+        virtual_start: 0x60000000,
+        size: 0x20000000,
+    }, // pci mem resource
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x1001_0000,

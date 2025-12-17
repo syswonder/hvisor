@@ -130,7 +130,7 @@ where
     pub fn try_insert(&mut self, region: MemoryRegion<PT::VA>) -> HvResult {
         if !self.test_free_area(&region) {
             warn!(
-                "MemoryRegion overlapped in MemorySet: {:#x?}\n{:#x?}",
+                "try insert MemoryRegion overlapped in MemorySet: {:#x?}\n{:#x?}",
                 region, self
             );
             return Ok(());
@@ -140,10 +140,22 @@ where
         Ok(())
     }
 
-    /// Find and remove memory region which starts from `start`.
-    pub fn delete(&mut self, start: PT::VA) -> HvResult {
+    /// Find and remove memory region which starts from `start` and `size`
+    pub fn delete(&mut self, start: PT::VA, size: usize) -> HvResult {
         if let Entry::Occupied(e) = self.regions.entry(start) {
-            self.pt.unmap(e.get())?;
+            let region = e.get();
+            if region.size != size {
+                return hv_result_err!(
+                    EINVAL,
+                    format!(
+                        "MemorySet::delete(): size mismatch at {:#x?}, expected {:#x?}, got {:#x?}",
+                        start.into(),
+                        size,
+                        region.size
+                    )
+                );
+            }
+            self.pt.unmap(region)?;
             e.remove();
             Ok(())
         } else {
@@ -157,11 +169,15 @@ where
         }
     }
 
-    pub fn try_delete(&mut self, start: PT::VA) -> HvResult {
+    pub fn try_delete(&mut self, start: PT::VA, size: usize) -> HvResult {
         if let Entry::Occupied(e) = self.regions.entry(start) {
-            self.pt.unmap(e.get())?;
-            e.remove();
-            Ok(())
+            let region = e.get();
+            if region.size == size {
+                self.delete(start, size)
+            } else {
+                warn!("try delete MemoryRegion size mismatch at {:#x?}, expected {:#x?}, got {:#x?}", start.into(), size, region.size);
+                Err(hv_err!(ENOMEM))
+            }
         } else {
             Err(hv_err!(ENOMEM))
         }

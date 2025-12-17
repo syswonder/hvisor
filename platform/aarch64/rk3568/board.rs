@@ -69,24 +69,24 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
     //     virtual_start: 0xfe270000,
     //     size: 0x10000,
     // }, //pcie
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0xf2000000,
-    //     virtual_start: 0xf2000000,
-    //     size: 0x100000,
-    // }, //pcie
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0xf2100000,
-    //     virtual_start: 0xf2100000,
-    //     size: 0x100000,
-    // }, //pcie
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0xf2200000,
-    //     virtual_start: 0xf2200000,
-    //     size: 0x1e00000,
-    // }, //pcie
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xf2000000,
+        virtual_start: 0xf2000000,
+        size: 0x100000,
+    }, //pcie
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xf2100000,
+        virtual_start: 0xf2100000,
+        size: 0x100000,
+    }, //pcie
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xf2200000,
+        virtual_start: 0xf2200000,
+        size: 0x1e00000,
+    }, //pcie
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x340000000,

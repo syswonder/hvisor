@@ -21,8 +21,8 @@ use spin::{lazy::Lazy, mutex::Mutex};
 
 use super::{
     mem_alloc::BaseAllocator,
-    pci_access::mmio_vpci_handler,
-    pci_struct::{Bdf, VirtualPciConfigSpace, CONFIG_LENTH},
+    pci_access::{mmio_vpci_direct_handler, mmio_vpci_handler},
+    pci_struct::{Bdf, VirtualPciConfigSpace, CONFIG_LENTH, RootComplex},
 };
 
 use crate::{
@@ -31,22 +31,28 @@ use crate::{
     percpu::this_zone,
 };
 
+#[cfg(feature = "ecam_pcie")]
+use crate::pci::config_accessors::ecam::EcamConfigAccessor;
+
 pub static GLOBAL_PCIE_LIST_TEST: Lazy<Mutex<BTreeMap<Bdf, VirtualPciConfigSpace>>> =
     Lazy::new(|| {
         let m = BTreeMap::new();
         Mutex::new(m)
     });
 
+#[cfg(feature = "ecam_pcie")]
 pub fn pcie_test() {
-    info!("pcie test");
+    warn!("pcie test");
     let mut allocator = BaseAllocator::default();
     allocator.set_mem32(0x10000000, 0x2efeffff);
     allocator.set_mem64(0x8000000000, 0xffffffffff - 0x8000000000);
 
-    // let mut root = RootComplex::new(0x4010000000);
-    // for node in root.enumerate(None, Some(allocator)) {
-    //     GLOBAL_PCIE_LIST_TEST.lock().insert(node.get_bdf(), node);
-    // }
+    let mut root = RootComplex::new_ecam(0x4010000000);
+    for node in root.enumerate(None, Some(allocator)) {
+        GLOBAL_PCIE_LIST_TEST.lock().insert(node.get_bdf(), node);
+    }
+    warn!("pcie guest init done");
+    warn!("{:#?}", GLOBAL_PCIE_LIST_TEST);
 }
 
 pub fn pcie_guest_init() {
@@ -100,29 +106,110 @@ pub fn pcie_guest_init() {
 
 pub fn ecam_pcie_guest_test() {
     let zone = this_zone();
-    let vbus = &zone.read().vpci_bus;
     let bdf = Bdf::from_str("0000:00:01.0").unwrap();
     // Get base from VirtualPciConfigSpace and add offset
-    let address = if let Some(vdev) = vbus.get(&bdf) {
-        vdev.read().get_base() + 0x24
-    } else {
-        warn!("can not find dev {:#?} for test", bdf);
-        0
+    // Use a block scope to ensure the read lock is released before calling mmio_vpci_direct_handler
+    let address = {
+        let vbus = &zone.read().vpci_bus;
+        if let Some(vdev) = vbus.get(&bdf) {
+            vdev.read().get_base()
+        } else {
+            warn!("can not find dev {:#?} for test", bdf);
+            0
+        }
     };
+    let value = 0;
+    let test_address = address + 0x14;
+
     let mut mmio = MMIOAccess {
-        address: address as _,
+        address: test_address as _,
         size: 4,
         is_write: false,
-        value: 0x0,
+        value: value,
     };
-    let ret = mmio_vpci_handler(&mut mmio, 0);
-    info!("{:#?}", ret);
+    let _ = mmio_vpci_direct_handler(&mut mmio, 0);
+    info!(
+        "mmio offset {:x}, is_wirte {}, size {}, value 0x{:x}",
+        mmio.address, mmio.is_write, mmio.size, mmio.value
+    );
+
+
+    let mut mmio = MMIOAccess {
+        address: test_address as _,
+        size: 4,
+        is_write: true,
+        value: 0xFFFF_FFFF,
+    };
+    let _ = mmio_vpci_direct_handler(&mut mmio, 0);
+    info!(
+        "mmio offset {:x}, is_wirte {}, size {}, value 0x{:x}",
+        mmio.address, mmio.is_write, mmio.size, mmio.value
+    );
+
+
+    let mut mmio = MMIOAccess {
+        address: test_address as _,
+        size: 4,
+        is_write: false,
+        value: value,
+    };
+    let _ = mmio_vpci_direct_handler(&mut mmio, 0);
+    info!(
+        "mmio offset {:x}, is_wirte {}, size {}, value 0x{:x}",
+        mmio.address, mmio.is_write, mmio.size, mmio.value
+    );
+
+    let mut mmio = MMIOAccess {
+        address: test_address as _,
+        size: 4,
+        is_write: true,
+        value: 0x80000000,
+    };
+    let _ = mmio_vpci_direct_handler(&mut mmio, 0);
+    info!(
+        "mmio offset {:x}, is_wirte {}, size {}, value 0x{:x}",
+        mmio.address, mmio.is_write, mmio.size, mmio.value
+    );
+
+    let mut mmio = MMIOAccess {
+        address: test_address as _,
+        size: 4,
+        is_write: false,
+        value: value,
+    };
+    let _ = mmio_vpci_direct_handler(&mut mmio, 0);
+    info!(
+        "mmio offset {:x}, is_wirte {}, size {}, value 0x{:x}",
+        mmio.address, mmio.is_write, mmio.size, mmio.value
+    );
+
+    let mut mmio = MMIOAccess {
+        address: test_address as _,
+        size: 4,
+        is_write: true,
+        value: 0x70000000,
+    };
+    let _ = mmio_vpci_direct_handler(&mut mmio, 0);
+    info!(
+        "mmio offset {:x}, is_wirte {}, size {}, value 0x{:x}",
+        mmio.address, mmio.is_write, mmio.size, mmio.value
+    );
+
+    let mut mmio = MMIOAccess {
+        address: test_address as _,
+        size: 4,
+        is_write: false,
+        value: value,
+    };
+    let _ = mmio_vpci_direct_handler(&mut mmio, 0);
     info!(
         "mmio offset {:x}, is_wirte {}, size {}, value 0x{:x}",
         mmio.address, mmio.is_write, mmio.size, mmio.value
     );
 
     info!("pcie guest test passed");
+
+    loop {}
 }
 
 pub fn dwc_pcie_guest_test() {
