@@ -1858,6 +1858,9 @@ fn handle_config_space_access_direct(
                                             dev.set_bar_size_read(slot);
                                         } else {
                                                 let _ = dev.write_emu(offset, size, value);
+                                                if is_root {
+                                                    let _ = dev.write_hw(offset, size, value);
+                                                }
                                                 if (bar_type == PciMemType::Mem32)
                                                 | (bar_type == PciMemType::Mem64High)
                                                 | (bar_type == PciMemType::Io) {
