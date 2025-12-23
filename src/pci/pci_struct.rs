@@ -27,7 +27,7 @@ use super::{
         PciConfigHeader, PciField, PciHeaderRW, PciMem, PciMemType, PciRW, PciRomRW,
     },
     PciConfigAddress,
-    pci_access::{BaseClass, SubClass, Interface, DeviceId, VendorId},
+    pci_access::{BaseClass, SubClass, Interface, DeviceId, VendorId, DeviceRevision},
 };
 
 use crate::{error::{HvErrorNum, HvResult}, pci::vpci_dev::VpciDevType};
@@ -37,15 +37,15 @@ type VirtualPciConfigBits = BitArr!(for BIT_LENTH, in u8, Lsb0);
 #[derive(Clone, Debug)]
 pub struct ConfigValue {
     id: (DeviceId, VendorId),
-    class: (BaseClass, SubClass, Interface),
+    class_and_revision_id: (BaseClass, SubClass, Interface, DeviceRevision),
     bar_value: [u32; 6],
 }
 
 impl ConfigValue {
-    pub fn new(id: (DeviceId, VendorId), class: (BaseClass, SubClass, Interface)) -> Self {
+    pub fn new(id: (DeviceId, VendorId), class_and_revision_id: (BaseClass, SubClass, Interface, DeviceRevision)) -> Self {
         Self {
             id,
-            class,
+            class_and_revision_id,
             bar_value: [0; 6],
         }
     }
@@ -58,12 +58,26 @@ impl ConfigValue {
         self.id = id;
     }
 
+    pub fn get_class_and_revision_id(&self) -> (BaseClass, SubClass, Interface, DeviceRevision) {
+        self.class_and_revision_id
+    }
+
     pub fn get_class(&self) -> (BaseClass, SubClass, Interface) {
-        self.class
+        let (base, sub, interface, _) = self.class_and_revision_id;
+        (base, sub, interface)
+    }
+
+    pub fn get_revision(&self) -> DeviceRevision {
+        self.class_and_revision_id.3
+    }
+
+    pub fn set_class_and_revision_id(&mut self, class_and_revision_id: (BaseClass, SubClass, Interface, DeviceRevision)) {
+        self.class_and_revision_id = class_and_revision_id;
     }
 
     pub fn set_class(&mut self, class: (BaseClass, SubClass, Interface)) {
-        self.class = class;
+        let (_, _, _, revision) = self.class_and_revision_id;
+        self.class_and_revision_id = (class.0, class.1, class.2, revision);
     }
 
     pub fn get_bar_value(&self, slot: usize) -> u32 {
@@ -255,6 +269,7 @@ impl VirtualPciAccessBits {
     pub fn endpoint() -> Self {
         let mut bits = BitArray::ZERO;
         bits[0x0..0x4].fill(true);   // ID
+        bits[0x08..0x0c].fill(true); // CLASS
         bits[0x10..0x34].fill(true); //bar and rom
         Self { bits }
     }
@@ -555,7 +570,7 @@ impl VirtualPciConfigSpace {
         backend: Arc<dyn PciRW>,
         bararr: Bar,
         rom: PciMem,
-        class: (BaseClass, SubClass, Interface),
+        class_and_revision_id: (DeviceRevision, BaseClass, SubClass, Interface),
         id: (DeviceId, VendorId),
     ) -> Self {
         Self {
@@ -565,7 +580,7 @@ impl VirtualPciConfigSpace {
             vbdf: Bdf::default(),
             config_type: HeaderType::Endpoint,
             base,
-            config_value: ConfigValue::new(id, class),
+            config_value: ConfigValue::new(id, class_and_revision_id),
             control: VirtualPciConfigControl::endpoint(),
             access: VirtualPciAccessBits::endpoint(),
             backend,
@@ -582,7 +597,7 @@ impl VirtualPciConfigSpace {
         backend: Arc<dyn PciRW>,
         bararr: Bar,
         rom: PciMem,
-        class: (BaseClass, SubClass, Interface),
+        class_and_revision_id: (DeviceRevision, BaseClass, SubClass, Interface),
         id: (DeviceId, VendorId),
     ) -> Self {
         Self {
@@ -592,7 +607,7 @@ impl VirtualPciConfigSpace {
             vbdf: Bdf::default(),
             config_type: HeaderType::PciBridge,
             base,
-            config_value: ConfigValue::new(id, class),
+            config_value: ConfigValue::new(id, class_and_revision_id),
             control: VirtualPciConfigControl::bridge(),
             access: VirtualPciAccessBits::bridge(),
             backend,
@@ -611,7 +626,8 @@ impl VirtualPciConfigSpace {
             vbdf: Bdf::default(),
             config_type: HeaderType::Endpoint,
             base,
-            config_value: ConfigValue::new(id, (0u8,0u8,0u8)),
+            // Default class: base=0xFF, others 0, revision 0
+            config_value: ConfigValue::new(id, (0xFFu8,0u8,0u8,0u8)),
             control: VirtualPciConfigControl::endpoint(),
             access: VirtualPciAccessBits::endpoint(),
             backend,
@@ -622,7 +638,7 @@ impl VirtualPciConfigSpace {
         }
     }
 
-    pub fn host_bridge(bdf: Bdf, base: PciConfigAddress, backend: Arc<dyn PciRW>, class: (BaseClass, SubClass, Interface)) -> Self {
+    pub fn host_bridge(bdf: Bdf, base: PciConfigAddress, backend: Arc<dyn PciRW>, class_and_revision_id: (DeviceRevision, BaseClass, SubClass, Interface)) -> Self {
         Self {
             host_bdf: bdf,
             parent_bdf: bdf,
@@ -630,7 +646,7 @@ impl VirtualPciConfigSpace {
             vbdf: bdf,
             config_type: HeaderType::Endpoint,
             base,
-            config_value: ConfigValue::new((0xFFFFu16, 0xFFFFu16), class), // Default ID for host bridge
+            config_value: ConfigValue::new((0xFFFFu16, 0xFFFFu16), class_and_revision_id), // Default ID for host bridge
             control: VirtualPciConfigControl::host_bridge(),
             access: VirtualPciAccessBits::host_bridge(),
             backend,
@@ -719,6 +735,14 @@ impl VirtualPciConfigSpace {
                         let id_value = ((id.0 as u32) << 16) | (id.1 as u32);
                         Ok(id_value as usize)
                     }
+                    EndpointField::RevisionIDAndClassCode => {
+                        let (base, sub, interface, revision) = self.config_value.get_class_and_revision_id();
+                        let value = ((base as u32) << 24)
+                            | ((sub as u32) << 16)
+                            | ((interface as u32) << 8)
+                            | (revision as u32);
+                        Ok(value as usize)
+                    }
                     EndpointField::Bar(slot) => {
                         // Read bar_value from cache
                         if slot < 6 {
@@ -729,6 +753,7 @@ impl VirtualPciConfigSpace {
                     }
                     _ => {
                         // For other fields, read from backend
+                        warn!("read emu {:#?} failed, try read from hw", field);
                         self.backend.read(offset, size)
                     }
                 }
@@ -773,6 +798,15 @@ impl VirtualPciConfigSpace {
                             (value & 0xFFFF) as VendorId,
                         ));
                     }
+                    EndpointField::RevisionIDAndClassCode => {
+                        // Update cached revision/class code
+                        let revision = (value & 0xff) as DeviceRevision;
+                        let interface = ((value >> 8) & 0xff) as Interface;
+                        let sub = ((value >> 16) & 0xff) as SubClass;
+                        let base = ((value >> 24) & 0xff) as BaseClass;
+                        self.config_value
+                            .set_class_and_revision_id((base, sub, interface, revision));
+                    }
                     EndpointField::Bar(slot) => {
                         // Update bar_value cache when writing bar
                         if slot < 6 {
@@ -785,6 +819,7 @@ impl VirtualPciConfigSpace {
                 }
                 
                 // Write to backend
+                warn!("write emu {:#?} failed, try write to hw", field);
                 self.backend.write(offset, size, value)
             }
             _ => {
@@ -887,8 +922,7 @@ impl<B: BarAllocator> PciIterator<B> {
             self.is_mulitple_function = pci_header.has_multiple_functions();
         }
 
-        let (_, base_class, sub_class, interface) = pci_header.revision_and_class();
-        let class = (base_class, sub_class, interface);
+        let class_and_revision = pci_header.revision_and_class();
 
         match pci_header.header_type() {
             HeaderType::Endpoint => {
@@ -908,7 +942,15 @@ impl<B: BarAllocator> PciIterator<B> {
                 info!("get node bar mem init end {:#?}", bararr);
 
                 let ep = Arc::new(ep);
-                let mut node = VirtualPciConfigSpace::endpoint(bdf, pci_addr_base, ep, bararr, rom, class, (device_id, vender_id));
+                let mut node = VirtualPciConfigSpace::endpoint(
+                    bdf,
+                    pci_addr_base,
+                    ep,
+                    bararr,
+                    rom,
+                    class_and_revision,
+                    (device_id, vender_id),
+                );
 
                 let _ = node.capability_enumerate();
 
@@ -924,7 +966,15 @@ impl<B: BarAllocator> PciIterator<B> {
                     Self::bar_mem_init(bridge.bar_limit().into(), &mut self.allocator, &mut bridge);
 
                 let bridge = Arc::new(bridge);
-                let mut node = VirtualPciConfigSpace::bridge(bdf, pci_addr_base, bridge, bararr, rom, class, (device_id, vender_id));
+                let mut node = VirtualPciConfigSpace::bridge(
+                    bdf,
+                    pci_addr_base,
+                    bridge,
+                    bararr,
+                    rom,
+                    class_and_revision,
+                    (device_id, vender_id),
+                );
 
                 let _ = node.capability_enumerate();
 

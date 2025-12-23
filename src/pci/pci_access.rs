@@ -558,13 +558,13 @@ pub trait PciHeaderRW: PciRWBase {
         self.backend().read_u8(0x0e).unwrap().get_bit(7)
     }
 
-    fn revision_and_class(&self) -> (DeviceRevision, BaseClass, SubClass, Interface) {
+    fn revision_and_class(&self) -> (BaseClass, SubClass, Interface, DeviceRevision) {
         let value = self.backend().read_u32(0x08).unwrap();
         (
-            value.get_bits(0..8) as DeviceRevision,
             value.get_bits(24..32) as BaseClass,
             value.get_bits(16..24) as SubClass,
             value.get_bits(8..16) as Interface,
+            value.get_bits(0..8) as DeviceRevision,
         )
     }
 
@@ -826,7 +826,7 @@ pub enum EndpointField {
 impl Debug for EndpointField {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "EndpointField {{")?;
-        match self {
+        let _ =match self {
             EndpointField::ID => write!(f, "ID"),
             EndpointField::Command => write!(f, "Command"),
             EndpointField::Status => write!(f, "Status"),
@@ -1043,7 +1043,7 @@ pub enum BridgeField {
 impl Debug for BridgeField {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "BridgeField {{")?;
-        match self {
+        let _ = match self {
             BridgeField::ID => write!(f, "ID"),
             BridgeField::Command => write!(f, "Command"),
             BridgeField::Status => write!(f, "Status"),
@@ -1848,6 +1848,18 @@ fn handle_config_space_access_direct(
                                     }
                                 }
                             }
+                            EndpointField::RevisionIDAndClassCode => {
+                                if !is_write {
+                                    if is_dev_belong_to_zone {
+                                        mmio.value = dev
+                                            .read_emu(EndpointField::RevisionIDAndClassCode)
+                                            .unwrap();
+                                    } else if is_root {
+                                        // Default: base class 0xff, subclass/progIF/revision set to 0
+                                        mmio.value = 0xff00_0000;
+                                    }
+                                }
+                            }
                             EndpointField::Bar(slot) => {
                                 let bar_type = dev.with_bar_ref(slot, |bar| bar.get_type());
                                 if bar_type != PciMemType::default() {
@@ -2067,7 +2079,7 @@ pub fn mmio_vpci_direct_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult
 
     let is_root = is_this_root_zone();
 
-    handle_config_space_access_direct(dev, mmio, offset, zone_id, is_root, is_dev_belong_to_zone);
+    let _ = handle_config_space_access_direct(dev, mmio, offset, zone_id, is_root, is_dev_belong_to_zone);
     
     Ok(())
 }

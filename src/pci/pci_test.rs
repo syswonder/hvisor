@@ -65,7 +65,7 @@ pub fn pcie_guest_init() {
     let bdf = Bdf::from_str("0000:00:00.0").unwrap();
     let base = 0x4010000000; // Base address for test
     let backend = EndpointHeader::new_with_region(PciConfigMmio::new(base, CONFIG_LENTH));
-    let dev = VirtualPciConfigSpace::host_bridge(bdf, base, Arc::new(backend), (0x6u8,0x0u8,0u8));
+    let dev = VirtualPciConfigSpace::host_bridge(bdf, base, Arc::new(backend), (0x6u8,0u8,0u8,0x0));
     vbus.insert(vbdf, dev);
 
     let vbdf = Bdf::from_str("0000:00:01.0").unwrap();
@@ -233,4 +233,175 @@ pub fn dwc_pcie_guest_test() {
     };
 
     info!("pcie dwc test passed");
+}
+
+pub fn ecam_pcie_guest_test64() {
+    let zone = this_zone();
+    let bdf = Bdf::from_str("0000:00:02.0").unwrap();
+    // Get base from VirtualPciConfigSpace and add offset
+    // Use a block scope to ensure the read lock is released before calling mmio_vpci_direct_handler
+    let address = {
+        let vbus = &zone.read().vpci_bus;
+        if let Some(vdev) = vbus.get(&bdf) {
+            vdev.read().get_base()
+        } else {
+            warn!("can not find dev {:#?} for test", bdf);
+            0
+        }
+    };
+    
+    if address == 0 {
+        warn!("Failed to get device base address");
+        return;
+    }
+
+    // 64-bit BAR: slot 4 (Mem64Low) at offset 0x20, slot 5 (Mem64High) at offset 0x24
+    let bar_low_offset = 0x20;  // slot 4: 0x10 + 4 * 4
+    let bar_high_offset = 0x24; // slot 5: 0x10 + 5 * 4
+    
+    let test_address_low = address + bar_low_offset;
+    let test_address_high = address + bar_high_offset;
+
+    info!("Testing 64-bit BAR for device {:#?}", bdf);
+    info!("Base address: 0x{:x}, BAR Low offset: 0x{:x}, BAR High offset: 0x{:x}", 
+          address, bar_low_offset, bar_high_offset);
+
+    let mut mmio = MMIOAccess {
+        address: test_address_low as _,
+        size: 4,
+        is_write: false,
+        value: 0,
+    };
+    let _ = mmio_vpci_direct_handler(&mut mmio, 0);
+    info!(
+        "Step 1 - Read Mem64Low (offset 0x{:x}): value 0x{:x}",
+        bar_low_offset, mmio.value
+    );
+
+    let mut mmio = MMIOAccess {
+        address: test_address_low as _,
+        size: 4,
+        is_write: true,
+        value: 0xFFFF_FFFF,
+    };
+    let _ = mmio_vpci_direct_handler(&mut mmio, 0);
+    info!(
+        "Step 2 - Write 0xFFFF_FFFF to Mem64Low (size probe)"
+    );
+
+    let mut mmio = MMIOAccess {
+        address: test_address_low as _,
+        size: 4,
+        is_write: false,
+        value: 0,
+    };
+    let _ = mmio_vpci_direct_handler(&mut mmio, 0);
+    info!(
+        "Step 3 - Read Mem64Low after size probe: value 0x{:x}",
+        mmio.value
+    );
+
+    let low_addr = 0x90000000;
+    let mut mmio = MMIOAccess {
+        address: test_address_low as _,
+        size: 4,
+        is_write: true,
+        value: low_addr,
+    };
+    let _ = mmio_vpci_direct_handler(&mut mmio, 0);
+    info!(
+        "Step 4 - Write low 32-bit address 0x{:x} to Mem64Low",
+        low_addr
+    );
+
+    let mut mmio = MMIOAccess {
+        address: test_address_low as _,
+        size: 4,
+        is_write: false,
+        value: 0,
+    };
+    let _ = mmio_vpci_direct_handler(&mut mmio, 0);
+    let read_low = mmio.value;
+    info!(
+        "Step 5 - Read Mem64Low: value 0x{:x}",
+        read_low
+    );
+
+    let high_addr = 0x00000001; // High 32 bits of 64-bit address
+    let mut mmio = MMIOAccess {
+        address: test_address_high as _,
+        size: 4,
+        is_write: true,
+        value: high_addr,
+    };
+    let _ = mmio_vpci_direct_handler(&mut mmio, 0);
+    info!(
+        "Step 6 - Write high 32-bit address 0x{:x} to Mem64High",
+        high_addr
+    );
+
+    let mut mmio = MMIOAccess {
+        address: test_address_low as _,
+        size: 4,
+        is_write: false,
+        value: 0,
+    };
+    let _ = mmio_vpci_direct_handler(&mut mmio, 0);
+    let final_low = mmio.value;
+
+    let mut mmio = MMIOAccess {
+        address: test_address_high as _,
+        size: 4,
+        is_write: false,
+        value: 0,
+    };
+    let _ = mmio_vpci_direct_handler(&mut mmio, 0);
+    let final_high = mmio.value;
+
+    let full_64bit_addr = (final_low as u64) | ((final_high as u64) << 32);
+    info!(
+        "Step 7 - Full 64-bit address: Mem64Low=0x{:x}, Mem64High=0x{:x}, Combined=0x{:x}",
+        final_low, final_high, full_64bit_addr
+    );
+
+    let new_low_addr = 0x70000000;
+    let mut mmio = MMIOAccess {
+        address: test_address_low as _,
+        size: 4,
+        is_write: true,
+        value: new_low_addr,
+    };
+    let _ = mmio_vpci_direct_handler(&mut mmio, 0);
+    info!(
+        "Step 8 - Write new low address 0x{:x} to Mem64Low",
+        new_low_addr
+    );
+
+    let mut mmio = MMIOAccess {
+        address: test_address_low as _,
+        size: 4,
+        is_write: false,
+        value: 0,
+    };
+    let _ = mmio_vpci_direct_handler(&mut mmio, 0);
+    info!(
+        "Step 9 - Read Mem64Low after update: value 0x{:x}",
+        mmio.value
+    );
+
+    let mut mmio = MMIOAccess {
+        address: test_address_high as _,
+        size: 4,
+        is_write: false,
+        value: 0,
+    };
+    let _ = mmio_vpci_direct_handler(&mut mmio, 0);
+    info!(
+        "Step 10 - Read Mem64High: value 0x{:x}",
+        mmio.value
+    );
+
+    info!("pcie guest test64 passed");
+
+    loop {}
 }

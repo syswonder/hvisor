@@ -145,14 +145,14 @@ pub(super) fn init_config_value_with_type(dev_type: VpciDevType) -> ConfigValue 
         VpciDevType::Physical => {
             // Physical devices use default values
             warn!("init_config_value_with_type: physical device is not supported");
-            return ConfigValue::new((0xFFFFu16, 0xFFFFu16), (0u8, 0u8, 0u8));
+            return ConfigValue::new((0xFFFFu16, 0xFFFFu16), (0xFFu8, 0u8, 0u8, 0u8));
         }
         _ => {
             if let Some(handler) = get_handler(dev_type) {
                 handler.init_config_space()
             } else {
                 warn!("init_config_value_with_type: unknown device type");
-                ConfigValue::new((0xFFFFu16, 0xFFFFu16), (0u8, 0u8, 0u8))
+                ConfigValue::new((0xFFFFu16, 0xFFFFu16), (0xFFu8, 0u8, 0u8, 0u8))
             }
         }
     }

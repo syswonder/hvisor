@@ -1,6 +1,6 @@
 use crate::error::HvResult;
 use crate::pci::pci_struct::ConfigValue;
-use crate::pci::pci_access::{EndpointField, Bar, DeviceId, VendorId, BaseClass, SubClass, Interface};
+use crate::pci::pci_access::{EndpointField, Bar, DeviceId, VendorId, BaseClass, SubClass, Interface, DeviceRevision};
 use crate::pci::PciConfigAddress;
 use super::{PciConfigAccessStatus, VpciDeviceHandler};
 // use crate::memory::frame::Frame;
@@ -100,9 +100,19 @@ impl VpciDeviceHandler for StandardHandler {
 
     fn init_config_space(&self) -> ConfigValue {
         let id :(DeviceId, VendorId) = (0x110a, 0x4106);
-        let class :(BaseClass, SubClass, Interface) = (0x0, 0x0, 0x0);
-        
-        ConfigValue::new(id, class)
+        let revision: DeviceRevision = 0xFFu8;
+        let base_class: BaseClass = 0x0;
+        let sub_class: SubClass = 0x0;
+        let interface: Interface = 0x0;
+        ConfigValue::new(
+            id,
+            (
+                base_class as BaseClass,
+                sub_class as SubClass,
+                interface as Interface,
+                revision as DeviceRevision,
+            ),
+        )
     }
 
     fn init_bar(&self) -> Bar {
