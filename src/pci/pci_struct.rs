@@ -394,20 +394,25 @@ impl ArcRwLockVirtualPciConfigSpace {
         self.0.write().write_hw(offset, size, value)
     }
 
-    pub fn set_bar_size_read(&self, slot: usize) {
-        self.0.write().set_bar_size_read(slot);
+
+    /// Execute a closure with a reference to the bar at the given slot
+    pub fn with_bar_ref<F, R>(&self, slot: usize, f: F) -> R
+    where
+        F: FnOnce(&PciMem) -> R,
+    {
+        let guard = self.0.read();
+        let bar = guard.get_bar_ref(slot);
+        f(bar)
     }
 
-    pub fn clear_bar_size_read(&self, slot: usize) {
-        self.0.write().clear_bar_size_read(slot);
-    }
-
-    pub fn set_bar_virtual_value(&self, slot: usize, value: u64) {
-        self.0.write().set_bar_virtual_value(slot, value);
-    }
-
-    pub fn set_bar_value(&self, slot: usize, value: u64) {
-        self.0.write().set_bar_value(slot, value);
+    /// Execute a closure with a mutable reference to the bar at the given slot
+    pub fn with_bar_ref_mut<F, R>(&self, slot: usize, f: F) -> R
+    where
+        F: FnOnce(&mut PciMem) -> R,
+    {
+        let mut guard = self.0.write();
+        let bar = guard.get_bar_ref_mut(slot);
+        f(bar)
     }
 
     pub fn read(&self) -> spin::RwLockReadGuard<'_, VirtualPciConfigSpace> {
@@ -462,6 +467,14 @@ impl VirtualPciConfigSpace {
 
     pub fn get_bararr(&self) -> Bar {
         self.bararr
+    }
+
+    pub fn get_bar_ref(&self, slot: usize) -> &PciMem {
+        &self.bararr[slot]
+    }
+
+    pub fn get_bar_ref_mut(&mut self, slot: usize) -> &mut PciMem {
+        &mut self.bararr[slot]
     }
 
     pub fn set_bar_size_read(&mut self, slot: usize) {

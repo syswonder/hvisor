@@ -1280,15 +1280,11 @@ fn handle_config_space_access(
                                 EndpointField::Bar(slot) => {
                                     // let slot = ((offset - 0x10) / 4) as usize;
                                     let slot = slot as usize;
-                                    /* the write of bar needs to start from dev,
-                                     * where the bar variable here is just a copy
-                                     */
-                                    let bar = dev.get_bararr()[slot];
-                                    let bar_type = bar.get_type();
+                                    let bar_type = dev.with_bar_ref(slot, |bar| bar.get_type());
                                     if bar_type != PciMemType::default() {
                                         if is_write {
                                             if (value & 0xfffffff0) == 0xfffffff0 {
-                                                dev.set_bar_size_read(slot);
+                                                dev.with_bar_ref_mut(slot, |bar| bar.set_size_read());
                                             } else {
                                                 let _ = dev.write_emu(offset, size, value);
                                                 /* for mem64, Mem64High always write after Mem64Low,
@@ -1298,7 +1294,7 @@ fn handle_config_space_access(
                                                     | (bar_type == PciMemType::Mem64High)
                                                     | (bar_type == PciMemType::Io)
                                                 {
-                                                    let old_vaddr = bar.get_virtual_value64() & !0xf;
+                                                    let old_vaddr = dev.with_bar_ref(slot, |bar| bar.get_virtual_value64()) & !0xf;
                                                     let new_vaddr = {
                                                         if bar_type == PciMemType::Mem64High {
                                                             /* last 4bit is flag, not address and need ignore
@@ -1321,35 +1317,34 @@ fn handle_config_space_access(
                                                      * the PCIe bus, will the newly written BAR address overlap with
                                                      * the old BAR addresses, potentially causing the update to fail?
                                                      */
-                                                    let paddr = bar.get_value64();
+                                                    let paddr = dev.with_bar_ref(slot, |bar| bar.get_value64());
                                                     info!(
                                                         "old_vaddr {:x} new_vaddr {:x} paddr {:x}",
                                                         old_vaddr, new_vaddr, paddr
                                                     );
         
-                                                    dev.set_bar_virtual_value(slot, new_vaddr);
+                                                    dev.with_bar_ref_mut(slot, |bar| bar.set_virtual_value(new_vaddr));
                                                     if bar_type == PciMemType::Mem64High {
-                                                        dev.set_bar_virtual_value(slot - 1, new_vaddr);
+                                                        dev.with_bar_ref_mut(slot - 1, |bar| bar.set_virtual_value(new_vaddr));
                                                     }
                                                     
                                                     // // Sync virtual_value back to space after processing (adding flags)
-                                                    // let bar = dev.get_bararr()[slot];
-                                                    // let virtual_value = bar.get_virtual_value();
+                                                    // let virtual_value = dev.get_bar_virtual_value(slot);
                                                     // let bar_offset = (0x10 + slot * 4) as PciConfigAddress;
                                                     // let _ = dev.write_emu(bar_offset, 4, virtual_value as usize);
                                                     // if bar_type == PciMemType::Mem64High {
-                                                    //     let bar_low = dev.get_bararr()[slot - 1];
-                                                    //     let virtual_value_low = bar_low.get_virtual_value();
+                                                    //     let virtual_value_low = dev.get_bar_virtual_value(slot - 1);
                                                     //     let bar_offset_low = (0x10 + (slot - 1) * 4) as PciConfigAddress;
                                                     //     let _ = dev.write_emu(bar_offset_low, 4, virtual_value_low as usize);
                                                     // }
         
-                                                    let bar_size = if crate::memory::addr::is_aligned(
-                                                        bar.get_size() as usize,
-                                                    ) {
-                                                        bar.get_size()
-                                                    } else {
-                                                        crate::memory::PAGE_SIZE as u64
+                                                    let bar_size = {
+                                                        let size = dev.with_bar_ref(slot, |bar| bar.get_size());
+                                                        if crate::memory::addr::is_aligned(size as usize) {
+                                                            size
+                                                        } else {
+                                                            crate::memory::PAGE_SIZE as u64
+                                                        }
                                                     };
 
                                                     let new_vaddr = if !crate::memory::addr::is_aligned(new_vaddr as usize) {
@@ -1402,14 +1397,15 @@ fn handle_config_space_access(
                                                 }
                                             }
                                         } else {
-                                            mmio.value = if bar.get_size_read() {
-                                                let r = bar.get_size_with_flag().try_into().unwrap();
-                                                dev.clear_bar_size_read(slot);
+                                            let size_read = dev.with_bar_ref(slot, |bar| bar.get_size_read());
+                                            mmio.value = if size_read {
+                                                let r = dev.with_bar_ref(slot, |bar| bar.get_size_with_flag()).try_into().unwrap();
+                                                dev.with_bar_ref_mut(slot, |bar| bar.clear_size_read());
                                                 r
                                             } else {
-                                                // bar.get_virtual_value().try_into().unwrap()
+                                                // dev.with_bar_ref(slot, |bar| bar.get_virtual_value()).try_into().unwrap()
                                                 let emu_value = dev.read_emu(offset, size).unwrap() as usize;
-                                                let virtual_value = bar.get_virtual_value() as usize;
+                                                let virtual_value = dev.with_bar_ref(slot, |bar| bar.get_virtual_value()) as usize;
                                                 info!("emu value {:#x} virtual_value {:#x}", emu_value, virtual_value);
                                                 emu_value
                                             };
@@ -1850,12 +1846,11 @@ fn handle_config_space_access_direct(
                                 }
                             }
                             EndpointField::Bar(slot) => {
-                                let bar = dev.get_bararr()[slot];
-                                let bar_type = bar.get_type();
+                                let bar_type = dev.with_bar_ref(slot, |bar| bar.get_type());
                                 if bar_type != PciMemType::default() {
                                     if is_write {
                                         if (value & 0xfffffff0) == 0xfffffff0 {
-                                            dev.set_bar_size_read(slot);
+                                            dev.with_bar_ref_mut(slot, |bar| bar.set_size_read());
                                         } else {
                                                 let _ = dev.write_emu(offset, size, value);
                                                 if is_root {
@@ -1864,7 +1859,7 @@ fn handle_config_space_access_direct(
                                                 if (bar_type == PciMemType::Mem32)
                                                 | (bar_type == PciMemType::Mem64High)
                                                 | (bar_type == PciMemType::Io) {
-                                                    let old_vaddr = bar.get_virtual_value64() & !0xf;
+                                                    let old_vaddr = dev.with_bar_ref(slot, |bar| bar.get_virtual_value64()) & !0xf;
                                                     let new_vaddr = {
                                                         if bar_type == PciMemType::Mem64High {
                                                             /* last 4bit is flag, not address and need ignore
@@ -1876,38 +1871,39 @@ fn handle_config_space_access_direct(
                                                         }
                                                     };
 
-                                                    dev.set_bar_virtual_value(slot, new_vaddr);
+                                                    dev.with_bar_ref_mut(slot, |bar| bar.set_virtual_value(new_vaddr));
                                                     if bar_type == PciMemType::Mem64High {
-                                                        dev.set_bar_virtual_value(slot - 1, new_vaddr);
+                                                        dev.with_bar_ref_mut(slot - 1, |bar| bar.set_virtual_value(new_vaddr));
                                                     }
                                                     
                                                     // Sync virtual_value back to space after processing (adding flags)
                                                     // TODO: check whether need sync here
-                                                    let virtual_value = dev.get_bararr()[slot].get_virtual_value();
+                                                    let virtual_value = dev.with_bar_ref(slot, |bar| bar.get_virtual_value());
                                                     let bar_offset = (0x10 + slot * 4) as PciConfigAddress;
                                                     let _ = dev.write_emu(bar_offset, 4, virtual_value as usize);
                                                     if bar_type == PciMemType::Mem64High {
-                                                        let virtual_value_low = dev.get_bararr()[slot - 1].get_virtual_value();
+                                                        let virtual_value_low = dev.with_bar_ref(slot - 1, |bar| bar.get_virtual_value());
                                                         let bar_offset_low = (0x10 + (slot - 1) * 4) as PciConfigAddress;
                                                         let _ = dev.write_emu(bar_offset_low, 4, virtual_value_low as usize);
                                                     }
 
                                                     let paddr = if is_root {
-                                                        dev.set_bar_value(slot, new_vaddr);
+                                                        dev.with_bar_ref_mut(slot, |bar| bar.set_value(new_vaddr));
                                                         if bar_type == PciMemType::Mem64High {
-                                                            dev.set_bar_value(slot - 1, new_vaddr);
+                                                            dev.with_bar_ref_mut(slot - 1, |bar| bar.set_value(new_vaddr));
                                                         }
                                                         new_vaddr as HostPhysAddr
                                                     } else {
-                                                        bar.get_value64() as HostPhysAddr
+                                                        dev.with_bar_ref(slot, |bar| bar.get_value64()) as HostPhysAddr
                                                     };
 
-                                                    let bar_size = if crate::memory::addr::is_aligned(
-                                                        bar.get_size() as usize,
-                                                    ) {
-                                                        bar.get_size()
-                                                    } else {
-                                                        crate::memory::PAGE_SIZE as u64
+                                                    let bar_size = {
+                                                        let size = dev.with_bar_ref(slot, |bar| bar.get_size());
+                                                        if crate::memory::addr::is_aligned(size as usize) {
+                                                            size
+                                                        } else {
+                                                            crate::memory::PAGE_SIZE as u64
+                                                        }
                                                     };
                                                     let new_vaddr = if !crate::memory::addr::is_aligned(new_vaddr as usize) {
                                                         crate::memory::addr::align_up(new_vaddr as usize) as u64
@@ -1953,14 +1949,16 @@ fn handle_config_space_access_direct(
                                                 }
                                         }
                                     } else {
-                                        mmio.value = if bar.get_size_read() {
-                                            let r = bar.get_size_with_flag().try_into().unwrap();
-                                            dev.clear_bar_size_read(slot);
+                                        // Re-fetch bar to get the latest virtual_value after potential write updates
+                                        let size_read = dev.with_bar_ref(slot, |bar| bar.get_size_read());
+                                        mmio.value = if size_read {
+                                            let r = dev.with_bar_ref(slot, |bar| bar.get_size_with_flag()).try_into().unwrap();
+                                            dev.with_bar_ref_mut(slot, |bar| bar.clear_size_read());
                                             r
                                         } else {
                                             // dev.read_emu(offset, size).unwrap() as usize
                                             let emu_value = dev.read_emu(offset, size).unwrap() as usize;
-                                            let virtual_value = bar.get_virtual_value() as usize;
+                                            let virtual_value = dev.with_bar_ref(slot, |bar| bar.get_virtual_value()) as usize;
                                             info!("emu value {:#x} virtual_value {:#x}", emu_value, virtual_value);
                                             virtual_value
                                         }

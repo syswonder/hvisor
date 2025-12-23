@@ -44,7 +44,6 @@ pub struct StandardHandler;
 impl VpciDeviceHandler for StandardHandler {
     fn read_cfg(&self, dev: ArcRwLockVirtualPciConfigSpace, offset: PciConfigAddress, size: usize) -> HvResult<PciConfigAccessStatus> {
         info!("virt pci standard read_cfg, offset {:#x}, size {:#x}", offset, size);
-        let dev_guard = dev.read();
         match EndpointField::from(offset as usize, size) {
             EndpointField::ID => {
                 warn!("virt pci standard read_cfg, id {:#x}", offset);
@@ -52,14 +51,13 @@ impl VpciDeviceHandler for StandardHandler {
             }
             EndpointField::Bar(0) => {
                 let slot = 0;
-                let bar = dev_guard.get_bararr()[slot];
-                if bar.get_size_read() {
-                    let value = bar.get_size_with_flag();
-                    drop(dev_guard);
-                    dev.write().clear_bar_size_read(slot);
+                let size_read = dev.with_bar_ref(slot, |bar| bar.get_size_read());
+                if size_read {
+                    let value = dev.with_bar_ref(slot, |bar| bar.get_size_with_flag());
+                    dev.with_bar_ref_mut(slot, |bar| bar.clear_size_read());
                     Ok(PciConfigAccessStatus::Done(value as usize))
                 } else {
-                    let value = bar.get_virtual_value();
+                    let value = dev.with_bar_ref(slot, |bar| bar.get_virtual_value());
                     Ok(PciConfigAccessStatus::Done(value as usize))
                 }
             }
@@ -83,10 +81,10 @@ impl VpciDeviceHandler for StandardHandler {
             }
             EndpointField::Bar(0) => {
                 let slot = 0;
-                let bar_size = dev.get_bararr()[slot].get_size();
+                let bar_size = dev.with_bar_ref(slot, |bar| bar.get_size());
                 
                 if value == 0xFFFF_FFFF {
-                    dev.set_bar_size_read(slot);
+                    dev.with_bar_ref_mut(slot, |bar| bar.set_size_read());
                 } else {
                     let zone = this_zone();
                     let mut guard = zone.write();
