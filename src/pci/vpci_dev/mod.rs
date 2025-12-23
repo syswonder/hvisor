@@ -1,7 +1,7 @@
-use crate::pci::pci_struct::{PciConfigSpace, ArcRwLockVirtualPciConfigSpace};
+use crate::pci::pci_struct::{ConfigValue, ArcRwLockVirtualPciConfigSpace};
 use crate::pci::PciConfigAddress;
 use crate::error::HvResult;
-use crate::pci::pci_access::Bar;
+use crate::pci::pci_access::{Bar, EndpointField};
 
 pub mod standard;
 
@@ -30,7 +30,7 @@ pub enum VpciDevType {
 pub trait VpciDeviceHandler: Sync + Send {
     fn read_cfg(&self, dev: ArcRwLockVirtualPciConfigSpace, offset: PciConfigAddress, size: usize) -> HvResult<PciConfigAccessStatus>;
     fn write_cfg(&self, dev: ArcRwLockVirtualPciConfigSpace, offset: PciConfigAddress, size: usize, value: usize) -> HvResult<PciConfigAccessStatus>;
-    fn init_config_space(&self) -> PciConfigSpace;
+    fn init_config_space(&self) -> ConfigValue;
     fn init_bar(&self) -> Bar;
 }
 
@@ -72,7 +72,8 @@ pub(super) fn vpci_dev_read_cfg(
                             PciConfigAccessStatus::Perform => {
                                 // warn!("vpci_dev_read_cfg: perform, offset {:#x}, size {:#x}", offset, size);
                                 // warn!("vpci_dev_read_cfg: node {:#?}", node.space);
-                                let r = node.write().read_emu(offset, size).unwrap();
+                                let field = EndpointField::from(offset as usize, size);
+                                let r = node.write().read_emu(field).unwrap();
                                 // warn!("vpci_dev_read_cfg: perform result {:#x}", r);
                                 Ok(r)
                             }
@@ -117,7 +118,8 @@ pub(super) fn vpci_dev_write_cfg(
                             }
                             PciConfigAccessStatus::Perform => {
                                 warn!("vpci_dev_write_cfg: perform");
-                                node.write().write_emu(offset, size, value)
+                                let field = EndpointField::from(offset as usize, size);
+                                node.write().write_emu(field, value)
                             }
                             PciConfigAccessStatus::Reject => {
                                 warn!("vpci_dev_write_cfg: operation rejected");
@@ -138,18 +140,19 @@ pub(super) fn vpci_dev_write_cfg(
     }
 }
 
-pub(super) fn init_config_space_with_type(dev_type: VpciDevType) -> PciConfigSpace {
+pub(super) fn init_config_value_with_type(dev_type: VpciDevType) -> ConfigValue {
     match dev_type {
         VpciDevType::Physical => {
-            // Physical devices use default (all zeros) space
-            PciConfigSpace::default()
+            // Physical devices use default values
+            warn!("init_config_value_with_type: physical device is not supported");
+            return ConfigValue::new((0xFFFFu16, 0xFFFFu16), (0u8, 0u8, 0u8));
         }
         _ => {
             if let Some(handler) = get_handler(dev_type) {
                 handler.init_config_space()
             } else {
-                warn!("init_config_space_with_type: unknown device type");
-                PciConfigSpace::default()
+                warn!("init_config_value_with_type: unknown device type");
+                ConfigValue::new((0xFFFFu16, 0xFFFFu16), (0u8, 0u8, 0u8))
             }
         }
     }
@@ -165,7 +168,7 @@ pub(super) fn virt_bar_init(dev_type: VpciDevType) -> Bar {
             if let Some(handler) = get_handler(dev_type) {
                 handler.init_bar()
             } else {
-                warn!("init_config_space_with_type: unknown device type");
+                warn!("init_config_value_with_type: unknown device type");
                 Bar::default()
             }
         }

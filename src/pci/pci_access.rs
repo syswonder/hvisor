@@ -1286,7 +1286,7 @@ fn handle_config_space_access(
                                             if (value & 0xfffffff0) == 0xfffffff0 {
                                                 dev.with_bar_ref_mut(slot, |bar| bar.set_size_read());
                                             } else {
-                                                let _ = dev.write_emu(offset, size, value);
+                                                let _ = dev.write_emu(EndpointField::Bar(slot), value);
                                                 /* for mem64, Mem64High always write after Mem64Low,
                                                  * so update bar when write Mem64High
                                                  */
@@ -1299,8 +1299,11 @@ fn handle_config_space_access(
                                                         if bar_type == PciMemType::Mem64High {
                                                             /* last 4bit is flag, not address and need ignore
                                                              * flag will auto add when set_value and set_virtual_value
+                                                             * Read from config_value.bar_value cache instead of space
                                                              */
-                                                            dev.read_emu64(offset - 0x4).unwrap() & !0xf
+                                                            let low_value = dev.with_config_value(|cv| cv.get_bar_value(slot - 1)) as u64;
+                                                            let high_value = (value as u32 as u64) << 32;
+                                                            (low_value | high_value) & !0xf
                                                         } else {
                                                             (value as u64) & !0xf
                                                         }
@@ -1404,7 +1407,7 @@ fn handle_config_space_access(
                                                 r
                                             } else {
                                                 // dev.with_bar_ref(slot, |bar| bar.get_virtual_value()).try_into().unwrap()
-                                                let emu_value = dev.read_emu(offset, size).unwrap() as usize;
+                                                let emu_value = dev.read_emu(EndpointField::Bar(slot)).unwrap() as usize;
                                                 let virtual_value = dev.with_bar_ref(slot, |bar| bar.get_virtual_value()) as usize;
                                                 info!("emu value {:#x} virtual_value {:#x}", emu_value, virtual_value);
                                                 emu_value
@@ -1425,12 +1428,12 @@ fn handle_config_space_access(
                                             warn!("ExpansionRomBar size_read not yet implemented");
                                         } else {
                                             // let old_vaddr = dev.read_emu(offset, size).unwrap() as u64;
-                                            let _ = dev.write_emu(offset, size, value);
+                                            let _ = dev.write_emu(EndpointField::ExpansionRomBar, value);
                                             // TODO: add gpm change for rom
                                         }
                                     } else {
                                         mmio.value = if rom_size_read {
-                                            dev.read_emu(offset, size).unwrap()
+                                            dev.read_emu(EndpointField::ExpansionRomBar).unwrap()
                                         } else {
                                             rom.get_size_with_flag().try_into().unwrap()
                                         };
@@ -1438,7 +1441,7 @@ fn handle_config_space_access(
                                 }
                                 EndpointField::ID => {
                                     if !is_write {
-                                        mmio.value = dev.read_emu(offset, size).unwrap() as usize;
+                                        mmio.value = dev.read_emu(EndpointField::ID).unwrap() as usize;
                                     }
                                 }
                                 _ => {}
@@ -1834,7 +1837,7 @@ fn handle_config_space_access_direct(
                             EndpointField::ID => {
                                 if !is_write {
                                     if is_dev_belong_to_zone {
-                                        mmio.value = dev.read_emu(offset, size).unwrap();
+                                        mmio.value = dev.read_emu(EndpointField::ID).unwrap();
                                     } else {
                                         if is_root {
                                             /* just a id no one used now
@@ -1852,7 +1855,7 @@ fn handle_config_space_access_direct(
                                         if (value & 0xfffffff0) == 0xfffffff0 {
                                             dev.with_bar_ref_mut(slot, |bar| bar.set_size_read());
                                         } else {
-                                                let _ = dev.write_emu(offset, size, value);
+                                                let _ = dev.write_emu(EndpointField::Bar(slot), value);
                                                 if is_root {
                                                     let _ = dev.write_hw(offset, size, value);
                                                 }
@@ -1864,8 +1867,11 @@ fn handle_config_space_access_direct(
                                                         if bar_type == PciMemType::Mem64High {
                                                             /* last 4bit is flag, not address and need ignore
                                                             * flag will auto add when set_value and set_virtual_value
+                                                            * Read from config_value.bar_value cache instead of space
                                                             */
-                                                            dev.read_emu64(offset - 0x4).unwrap() & !0xf
+                                                            let low_value = dev.with_config_value(|cv| cv.get_bar_value(slot - 1)) as u64;
+                                                            let high_value = (value as u32 as u64) << 32;
+                                                            (low_value | high_value) & !0xf
                                                         } else {
                                                             (value as u64) & !0xf
                                                         }
@@ -1879,12 +1885,10 @@ fn handle_config_space_access_direct(
                                                     // Sync virtual_value back to space after processing (adding flags)
                                                     // TODO: check whether need sync here
                                                     let virtual_value = dev.with_bar_ref(slot, |bar| bar.get_virtual_value());
-                                                    let bar_offset = (0x10 + slot * 4) as PciConfigAddress;
-                                                    let _ = dev.write_emu(bar_offset, 4, virtual_value as usize);
+                                                    let _ = dev.write_emu(EndpointField::Bar(slot), virtual_value as usize);
                                                     if bar_type == PciMemType::Mem64High {
                                                         let virtual_value_low = dev.with_bar_ref(slot - 1, |bar| bar.get_virtual_value());
-                                                        let bar_offset_low = (0x10 + (slot - 1) * 4) as PciConfigAddress;
-                                                        let _ = dev.write_emu(bar_offset_low, 4, virtual_value_low as usize);
+                                                        let _ = dev.write_emu(EndpointField::Bar(slot - 1), virtual_value_low as usize);
                                                     }
 
                                                     let paddr = if is_root {
@@ -1957,7 +1961,7 @@ fn handle_config_space_access_direct(
                                             r
                                         } else {
                                             // dev.read_emu(offset, size).unwrap() as usize
-                                            let emu_value = dev.read_emu(offset, size).unwrap() as usize;
+                                            let emu_value = dev.read_emu(EndpointField::Bar(slot)).unwrap() as usize;
                                             let virtual_value = dev.with_bar_ref(slot, |bar| bar.get_virtual_value()) as usize;
                                             info!("emu value {:#x} virtual_value {:#x}", emu_value, virtual_value);
                                             virtual_value
@@ -1976,12 +1980,12 @@ fn handle_config_space_access_direct(
                                         warn!("ExpansionRomBar size_read not yet implemented for direct handler");
                                     } else {
                                         // let old_vaddr = dev.read_emu(offset, size).unwrap() as u64;
-                                        let _ = dev.write_emu(offset, size, value);
+                                        let _ = dev.write_emu(EndpointField::ExpansionRomBar, value);
                                         // TODO: add gpm change for rom
                                     }
                                 } else {
                                     mmio.value = if rom_size_read {
-                                        dev.read_emu(offset, size).unwrap()
+                                        dev.read_emu(EndpointField::ExpansionRomBar).unwrap()
                                     } else {
                                         rom.get_size_with_flag().try_into().unwrap()
                                     };

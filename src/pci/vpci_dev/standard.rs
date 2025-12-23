@@ -1,6 +1,6 @@
 use crate::error::HvResult;
-use crate::pci::pci_struct::PciConfigSpace;
-use crate::pci::pci_access::{EndpointField, Bar};
+use crate::pci::pci_struct::ConfigValue;
+use crate::pci::pci_access::{EndpointField, Bar, DeviceId, VendorId, BaseClass, SubClass, Interface};
 use crate::pci::PciConfigAddress;
 use super::{PciConfigAccessStatus, VpciDeviceHandler};
 // use crate::memory::frame::Frame;
@@ -9,34 +9,34 @@ use crate::percpu::this_zone;
 use crate::memory::MMIOAccess;
 use crate::pci::pci_access::PciMemType;
 
-const STANDARD_VENDOR_ID: u16 = 0x110a;
-const STANDARD_DEVICE_ID: u16 = 0x4106;
-const PCI_STS_CAPS: u16 = 0x10; // bit 4
-const PCI_DEV_CLASS_OTHER: u8 = 0xff;
-const PCI_CFG_CAPS: usize = 0x34;
-const PCI_CAP_ID_VNDR: u8 = 0x09;
-const PCI_CAP_ID_MSIX: u8 = 0x11;
-const STANDARD_CFG_VNDR_CAP: u8 = 0x40;
-const STANDARD_CFG_VNDR_LEN: u8 = 0x20;
-const STANDARD_CFG_MSIX_CAP: usize = 0x60; // VNDR_CAP + VNDR_LEN
-const STANDARD_MSIX_VECTORS: u16 = 16;
-const STANDARD_CFG_SIZE: usize = 0x80;
+// const STANDARD_VENDOR_ID: u16 = 0x110a;
+// const STANDARD_DEVICE_ID: u16 = 0x4106;
+// const PCI_STS_CAPS: u16 = 0x10; // bit 4
+// const PCI_DEV_CLASS_OTHER: u8 = 0xff;
+// const PCI_CFG_CAPS: usize = 0x34;
+// const PCI_CAP_ID_VNDR: u8 = 0x09;
+// const PCI_CAP_ID_MSIX: u8 = 0x11;
+// const STANDARD_CFG_VNDR_CAP: u8 = 0x40;
+// const STANDARD_CFG_VNDR_LEN: u8 = 0x20;
+// const STANDARD_CFG_MSIX_CAP: usize = 0x60; // VNDR_CAP + VNDR_LEN
+// const STANDARD_MSIX_VECTORS: u16 = 16;
+// const STANDARD_CFG_SIZE: usize = 0x80;
 
-pub(crate) const DEFAULT_CSPACE_U32: [u32; STANDARD_CFG_SIZE / 4] = {
-    let mut arr = [0u32; STANDARD_CFG_SIZE / 4];
-    arr[0x00 / 4] = (STANDARD_DEVICE_ID as u32) << 16 | STANDARD_VENDOR_ID as u32;
-    arr[0x04 / 4] = (PCI_STS_CAPS as u32) << 16;
-    arr[0x08 / 4] = (PCI_DEV_CLASS_OTHER as u32) << 24;
-    arr[0x2c / 4] = (STANDARD_DEVICE_ID as u32) << 16 | STANDARD_VENDOR_ID as u32;
-    arr[PCI_CFG_CAPS / 4] = STANDARD_CFG_VNDR_CAP as u32;
-    arr[STANDARD_CFG_VNDR_CAP as usize / 4] = (STANDARD_CFG_VNDR_LEN as u32) << 16
-        | (STANDARD_CFG_MSIX_CAP as u32) << 8
-        | PCI_CAP_ID_VNDR as u32;
-    arr[STANDARD_CFG_MSIX_CAP / 4] = (0x00u32) << 8 | PCI_CAP_ID_MSIX as u32;
-    arr[(STANDARD_CFG_MSIX_CAP + 0x4) / 4] = 1;
-    arr[(STANDARD_CFG_MSIX_CAP + 0x8) / 4] = ((0x10 * STANDARD_MSIX_VECTORS) as u32) | 1;
-    arr
-};
+// pub(crate) const DEFAULT_CSPACE_U32: [u32; STANDARD_CFG_SIZE / 4] = {
+//     let mut arr = [0u32; STANDARD_CFG_SIZE / 4];
+//     arr[0x00 / 4] = (STANDARD_DEVICE_ID as u32) << 16 | STANDARD_VENDOR_ID as u32;
+//     arr[0x04 / 4] = (PCI_STS_CAPS as u32) << 16;
+//     arr[0x08 / 4] = (PCI_DEV_CLASS_OTHER as u32) << 24;
+//     arr[0x2c / 4] = (STANDARD_DEVICE_ID as u32) << 16 | STANDARD_VENDOR_ID as u32;
+//     arr[PCI_CFG_CAPS / 4] = STANDARD_CFG_VNDR_CAP as u32;
+//     arr[STANDARD_CFG_VNDR_CAP as usize / 4] = (STANDARD_CFG_VNDR_LEN as u32) << 16
+//         | (STANDARD_CFG_MSIX_CAP as u32) << 8
+//         | PCI_CAP_ID_VNDR as u32;
+//     arr[STANDARD_CFG_MSIX_CAP / 4] = (0x00u32) << 8 | PCI_CAP_ID_MSIX as u32;
+//     arr[(STANDARD_CFG_MSIX_CAP + 0x4) / 4] = 1;
+//     arr[(STANDARD_CFG_MSIX_CAP + 0x8) / 4] = ((0x10 * STANDARD_MSIX_VECTORS) as u32) | 1;
+//     arr
+// };
 
 /// Handler for standard virtual PCI devices
 pub struct StandardHandler;
@@ -74,9 +74,7 @@ impl VpciDeviceHandler for StandardHandler {
                 Ok(PciConfigAccessStatus::Reject)
             }
             EndpointField::Command => {
-                let mut dev_guard = dev.write();
-                let space = dev_guard.get_space_mut();
-                space.set(EndpointField::Command, value as u32);
+                // Command field is written directly to backend, no need for space cache
                 Ok(PciConfigAccessStatus::Done(value))
             }
             EndpointField::Bar(0) => {
@@ -100,19 +98,11 @@ impl VpciDeviceHandler for StandardHandler {
         }
     }
 
-    fn init_config_space(&self) -> PciConfigSpace {
-        let mut space = PciConfigSpace::default();
-        let default_cspace = DEFAULT_CSPACE_U32;
-        let mut offset = 0;
-        for &value in &default_cspace {
-            space.get_range_mut(offset, 4).copy_from_slice(&value.to_le_bytes());
-            offset += 4;
-        }
+    fn init_config_space(&self) -> ConfigValue {
+        let id :(DeviceId, VendorId) = (0x110a, 0x4106);
+        let class :(BaseClass, SubClass, Interface) = (0x0, 0x0, 0x0);
         
-        // Example: update vendor ID
-        space.set(EndpointField::ID, 0x12345678);
-        
-        space
+        ConfigValue::new(id, class)
     }
 
     fn init_bar(&self) -> Bar {
