@@ -1855,102 +1855,110 @@ fn handle_config_space_access_direct(
                                         if (value & 0xfffffff0) == 0xfffffff0 {
                                             dev.with_bar_ref_mut(slot, |bar| bar.set_size_read());
                                         } else {
-                                                let _ = dev.write_emu(EndpointField::Bar(slot), value);
-                                                if is_root {
-                                                    let _ = dev.write_hw(offset, size, value);
+                                            let _ = dev.write_emu(EndpointField::Bar(slot), value);
+                                            if is_root {
+                                                let _ = dev.write_hw(offset, size, value);
+                                            }
+                                            // For Mem64Low, update virtual_value but don't update GPM yet
+                                            // (GPM will be updated when Mem64High is written)
+                                            if bar_type == PciMemType::Mem64Low {
+                                                let new_vaddr = (value as u64) & !0xf;
+                                                dev.with_bar_ref_mut(slot, |bar| bar.set_virtual_value(new_vaddr));
+                                                // Sync virtual_value back to emu value
+                                                let virtual_value = dev.with_bar_ref(slot, |bar| bar.get_virtual_value());
+                                                let _ = dev.write_emu(EndpointField::Bar(slot), virtual_value as usize);
+                                            } else if (bar_type == PciMemType::Mem32)
+                                            | (bar_type == PciMemType::Mem64High)
+                                            | (bar_type == PciMemType::Io) {
+                                                let old_vaddr = dev.with_bar_ref(slot, |bar| bar.get_virtual_value64()) & !0xf;
+                                                let new_vaddr = {
+                                                    if bar_type == PciMemType::Mem64High {
+                                                        /* last 4bit is flag, not address and need ignore
+                                                        * flag will auto add when set_value and set_virtual_value
+                                                        * Read from config_value.bar_value cache instead of space
+                                                        */
+                                                        let low_value = dev.with_config_value(|cv| cv.get_bar_value(slot - 1)) as u64;
+                                                        let high_value = (value as u32 as u64) << 32;
+                                                        (low_value | high_value) & !0xf
+                                                    } else {
+                                                        (value as u64) & !0xf
+                                                    }
+                                                };
+
+                                                dev.with_bar_ref_mut(slot, |bar| bar.set_virtual_value(new_vaddr));
+                                                if bar_type == PciMemType::Mem64High {
+                                                    dev.with_bar_ref_mut(slot - 1, |bar| bar.set_virtual_value(new_vaddr));
                                                 }
-                                                if (bar_type == PciMemType::Mem32)
-                                                | (bar_type == PciMemType::Mem64High)
-                                                | (bar_type == PciMemType::Io) {
-                                                    let old_vaddr = dev.with_bar_ref(slot, |bar| bar.get_virtual_value64()) & !0xf;
-                                                    let new_vaddr = {
-                                                        if bar_type == PciMemType::Mem64High {
-                                                            /* last 4bit is flag, not address and need ignore
-                                                            * flag will auto add when set_value and set_virtual_value
-                                                            * Read from config_value.bar_value cache instead of space
-                                                            */
-                                                            let low_value = dev.with_config_value(|cv| cv.get_bar_value(slot - 1)) as u64;
-                                                            let high_value = (value as u32 as u64) << 32;
-                                                            (low_value | high_value) & !0xf
-                                                        } else {
-                                                            (value as u64) & !0xf
-                                                        }
-                                                    };
+                                                
+                                                // Sync virtual_value back to space after processing (adding flags)
+                                                // TODO: check whether need sync here
+                                                let virtual_value = dev.with_bar_ref(slot, |bar| bar.get_virtual_value());
+                                                let _ = dev.write_emu(EndpointField::Bar(slot), virtual_value as usize);
+                                                if bar_type == PciMemType::Mem64High {
+                                                    let virtual_value_low = dev.with_bar_ref(slot - 1, |bar| bar.get_virtual_value());
+                                                    let _ = dev.write_emu(EndpointField::Bar(slot - 1), virtual_value_low as usize);
+                                                }
 
-                                                    dev.with_bar_ref_mut(slot, |bar| bar.set_virtual_value(new_vaddr));
+                                                let paddr = if is_root {
+                                                    dev.with_bar_ref_mut(slot, |bar| bar.set_value(new_vaddr));
                                                     if bar_type == PciMemType::Mem64High {
-                                                        dev.with_bar_ref_mut(slot - 1, |bar| bar.set_virtual_value(new_vaddr));
+                                                        dev.with_bar_ref_mut(slot - 1, |bar| bar.set_value(new_vaddr));
                                                     }
+                                                    new_vaddr as HostPhysAddr
+                                                } else {
+                                                    dev.with_bar_ref(slot, |bar| bar.get_value64()) as HostPhysAddr
+                                                };
+
+                                                let bar_size = {
+                                                    let size = dev.with_bar_ref(slot, |bar| bar.get_size());
+                                                    if crate::memory::addr::is_aligned(size as usize) {
+                                                        size
+                                                    } else {
+                                                        crate::memory::PAGE_SIZE as u64
+                                                    }
+                                                };
+                                                let new_vaddr = if !crate::memory::addr::is_aligned(new_vaddr as usize) {
+                                                    crate::memory::addr::align_up(new_vaddr as usize) as u64
+                                                } else {
+                                                    new_vaddr as u64
+                                                };
+
+                                                if !is_root {
+                                                    let zone = this_zone();
+                                                    let mut guard = zone.write();
+                                                    let gpm = &mut guard.gpm;
                                                     
-                                                    // Sync virtual_value back to space after processing (adding flags)
-                                                    // TODO: check whether need sync here
-                                                    let virtual_value = dev.with_bar_ref(slot, |bar| bar.get_virtual_value());
-                                                    let _ = dev.write_emu(EndpointField::Bar(slot), virtual_value as usize);
-                                                    if bar_type == PciMemType::Mem64High {
-                                                        let virtual_value_low = dev.with_bar_ref(slot - 1, |bar| bar.get_virtual_value());
-                                                        let _ = dev.write_emu(EndpointField::Bar(slot - 1), virtual_value_low as usize);
-                                                    }
-
-                                                    let paddr = if is_root {
-                                                        dev.with_bar_ref_mut(slot, |bar| bar.set_value(new_vaddr));
-                                                        if bar_type == PciMemType::Mem64High {
-                                                            dev.with_bar_ref_mut(slot - 1, |bar| bar.set_value(new_vaddr));
-                                                        }
-                                                        new_vaddr as HostPhysAddr
-                                                    } else {
-                                                        dev.with_bar_ref(slot, |bar| bar.get_value64()) as HostPhysAddr
-                                                    };
-
-                                                    let bar_size = {
-                                                        let size = dev.with_bar_ref(slot, |bar| bar.get_size());
-                                                        if crate::memory::addr::is_aligned(size as usize) {
-                                                            size
-                                                        } else {
-                                                            crate::memory::PAGE_SIZE as u64
-                                                        }
-                                                    };
-                                                    let new_vaddr = if !crate::memory::addr::is_aligned(new_vaddr as usize) {
-                                                        crate::memory::addr::align_up(new_vaddr as usize) as u64
-                                                    } else {
-                                                        new_vaddr as u64
-                                                    };
-
-                                                    if !is_root {
-                                                        let zone = this_zone();
-                                                        let mut guard = zone.write();
-                                                        let gpm = &mut guard.gpm;
-                                                        
-                                                        if !gpm.try_delete(old_vaddr.try_into().unwrap(), bar_size as usize).is_ok() {
-                                                            warn!(
-                                                                "delete bar {}: can not found 0x{:x}",
-                                                                slot, old_vaddr
-                                                            );
-                                                        }
-                                                        gpm.try_insert(MemoryRegion::new_with_offset_mapper(
-                                                            new_vaddr as GuestPhysAddr,
-                                                            paddr as HostPhysAddr,
-                                                            bar_size as _,
-                                                            MemFlags::READ | MemFlags::WRITE,
-                                                        ))?;
-                                                        /* after update gpm, mem barrier is needed
-                                                            */
-                                                        #[cfg(target_arch = "aarch64")]
-                                                        unsafe {
-                                                            core::arch::asm!("isb");
-                                                            core::arch::asm!("tlbi vmalls12e1is");
-                                                            core::arch::asm!("dsb nsh");
-                                                        }
-                                                        /* after update gpm, need to flush iommu table
-                                                            * in x86_64
-                                                            */
-                                                        #[cfg(target_arch = "x86_64")]
-                                                        crate::arch::iommu::flush(
-                                                            zone_id,
-                                                            vbdf.bus,
-                                                            (vbdf.device << 3) + vbdf.function,
+                                                    if !gpm.try_delete(old_vaddr.try_into().unwrap(), bar_size as usize).is_ok() {
+                                                        warn!(
+                                                            "delete bar {}: can not found 0x{:x}",
+                                                            slot, old_vaddr
                                                         );
                                                     }
+                                                    gpm.try_insert(MemoryRegion::new_with_offset_mapper(
+                                                        new_vaddr as GuestPhysAddr,
+                                                        paddr as HostPhysAddr,
+                                                        bar_size as _,
+                                                        MemFlags::READ | MemFlags::WRITE,
+                                                    ))?;
+                                                    /* after update gpm, mem barrier is needed
+                                                        */
+                                                    #[cfg(target_arch = "aarch64")]
+                                                    unsafe {
+                                                        core::arch::asm!("isb");
+                                                        core::arch::asm!("tlbi vmalls12e1is");
+                                                        core::arch::asm!("dsb nsh");
+                                                    }
+                                                    /* after update gpm, need to flush iommu table
+                                                        * in x86_64
+                                                        */
+                                                    #[cfg(target_arch = "x86_64")]
+                                                    crate::arch::iommu::flush(
+                                                        zone_id,
+                                                        vbdf.bus,
+                                                        (vbdf.device << 3) + vbdf.function,
+                                                    );
                                                 }
+                                            }
                                         }
                                     } else {
                                         // Re-fetch bar to get the latest virtual_value after potential write updates
