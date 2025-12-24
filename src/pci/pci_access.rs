@@ -694,11 +694,6 @@ pub trait PciBarRW: PciRWBase {
     }
 }
 
-impl Bar {
-    pub fn virt_bar_init(dev_type: VpciDevType) -> Self {
-        crate::pci::vpci_dev::virt_bar_init(dev_type)
-    }
-}
 
 pub trait PciRomRW: PciRWBase {
     fn rom_offset(&self) -> u64;
@@ -1290,7 +1285,13 @@ fn handle_config_space_access(
                                                 /* for mem64, Mem64High always write after Mem64Low,
                                                  * so update bar when write Mem64High
                                                  */
-                                                if (bar_type == PciMemType::Mem32)
+                                                if bar_type == PciMemType::Mem64Low {
+                                                    let new_vaddr = (value as u64) & !0xf;
+                                                    dev.with_bar_ref_mut(slot, |bar| bar.set_virtual_value(new_vaddr));
+                                                    // Sync virtual_value back to emu value
+                                                    let virtual_value = dev.with_bar_ref(slot, |bar| bar.get_virtual_value());
+                                                    let _ = dev.write_emu(EndpointField::Bar(slot), virtual_value as usize);
+                                                } else if (bar_type == PciMemType::Mem32)
                                                     | (bar_type == PciMemType::Mem64High)
                                                     | (bar_type == PciMemType::Io)
                                                 {

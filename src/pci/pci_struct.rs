@@ -41,6 +41,16 @@ pub struct ConfigValue {
     bar_value: [u32; 6],
 }
 
+impl Default for ConfigValue {
+    fn default() -> Self {
+        Self {
+            id: (0xFFFFu16, 0xFFFFu16),
+            class_and_revision_id: (0xFFu8, 0u8, 0u8, 0u8),
+            bar_value: [0; 6],
+        }
+    }
+}
+
 impl ConfigValue {
     pub fn new(id: (DeviceId, VendorId), class_and_revision_id: (BaseClass, SubClass, Interface, DeviceRevision)) -> Self {
         Self {
@@ -106,7 +116,7 @@ impl ConfigValue {
 const MAX_DEVICE: u8 = 31;
 const MAX_FUNCTION: u8 = 7;
 pub const CONFIG_LENTH: u64 = 256;
-pub const BIT_LENTH: usize = 128 * 5;
+pub const BIT_LENTH: usize = 4096;
 
 // PCIe Device/Port Type values
 const PCI_EXP_TYPE_ROOT_PORT: u16 = 4;
@@ -512,6 +522,26 @@ impl VirtualPciConfigSpace {
         self.dev_type
     }
 
+    pub fn get_config_value(&self) -> &ConfigValue {
+        &self.config_value
+    }
+
+    /// Execute a closure with a mutable reference to the config_value
+    pub fn with_config_value_mut<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce(&mut ConfigValue) -> R,
+    {
+        f(&mut self.config_value)
+    }
+
+    /// Execute a closure with a mutable reference to the bararr
+    pub fn with_bararr_mut<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce(&mut Bar) -> R,
+    {
+        f(&mut self.bararr)
+    }
+
 
     // TODO: check whether need update config
     pub fn update_config(&mut self, offset: PciConfigAddress, size: usize, _value: usize) {
@@ -541,12 +571,13 @@ impl Debug for VirtualPciConfigSpace {
 }
 
 impl VirtualPciConfigSpace {
-    pub fn virt_dev(
+    pub(super) fn virt_dev_init_default(
         bdf: Bdf,
         base: PciConfigAddress,
         dev_type: VpciDevType,
+        config_value: ConfigValue,
+        bararr: Bar,
     ) -> Self {
-        let config_value = crate::pci::vpci_dev::init_config_value_with_type(dev_type);
         Self {
             host_bdf: Bdf::default(),
             parent_bdf: Bdf::default(),
@@ -558,11 +589,19 @@ impl VirtualPciConfigSpace {
             control: VirtualPciConfigControl::virt_dev(),
             access: VirtualPciAccessBits::virt_dev(),
             backend: Arc::new(EndpointHeader::new_with_region(PciConfigMmio::new(base, CONFIG_LENTH))),
-            bararr: Bar::virt_bar_init(dev_type),
+            bararr,
             rom: PciMem::default(),
             capabilities: PciCapabilityList::new(),
             dev_type,
         }
+    }
+
+    pub fn virt_dev(
+        bdf: Bdf,
+        base: PciConfigAddress,
+        dev_type: VpciDevType,
+    ) -> Self {
+        crate::pci::vpci_dev::virt_dev_init(bdf, base, dev_type)
     }
     pub fn endpoint(
         bdf: Bdf,
@@ -725,41 +764,34 @@ impl VirtualPciConfigSpace {
     pub fn read_emu(&mut self, field: EndpointField) -> HvResult<usize> {
         let offset = field.to_offset() as PciConfigAddress;
         let size = field.size();
-        
-        match size {
-            1 | 2 | 4 => {
-                match field {
-                    EndpointField::ID => {
-                        // Read ID from cached config_value.id field
-                        let id = self.config_value.get_id();
-                        let id_value = ((id.0 as u32) << 16) | (id.1 as u32);
-                        Ok(id_value as usize)
-                    }
-                    EndpointField::RevisionIDAndClassCode => {
-                        let (base, sub, interface, revision) = self.config_value.get_class_and_revision_id();
-                        let value = ((base as u32) << 24)
-                            | ((sub as u32) << 16)
-                            | ((interface as u32) << 8)
-                            | (revision as u32);
-                        Ok(value as usize)
-                    }
-                    EndpointField::Bar(slot) => {
-                        // Read bar_value from cache
-                        if slot < 6 {
-                            Ok(self.config_value.get_bar_value(slot) as usize)
-                        } else {
-                            self.backend.read(offset, size)
-                        }
-                    }
-                    _ => {
-                        // For other fields, read from backend
-                        warn!("read emu {:#?} failed, try read from hw", field);
-                        self.backend.read(offset, size)
-                    }
+    
+        match field {
+            EndpointField::ID => {
+                // Read ID from cached config_value.id field
+                let id = self.config_value.get_id();
+                let id_value = ((id.0 as u32) << 16) | (id.1 as u32);
+                Ok(id_value as usize)
+            }
+            EndpointField::RevisionIDAndClassCode => {
+                let (base, sub, interface, revision) = self.config_value.get_class_and_revision_id();
+                let value = ((base as u32) << 24)
+                    | ((sub as u32) << 16)
+                    | ((interface as u32) << 8)
+                    | (revision as u32);
+                Ok(value as usize)
+            }
+            EndpointField::Bar(slot) => {
+                // Read bar_value from cache
+                if slot < 6 {
+                    Ok(self.config_value.get_bar_value(slot) as usize)
+                } else {
+                    hv_result_err!(EFAULT, "pci: invalid bar slot: {slot}")
                 }
             }
             _ => {
-                hv_result_err!(EFAULT, "pci: invalid virtual mmio read size: {size}")
+                // For other fields, read from backend
+                warn!("read emu {:#?} failed, try read from hw", field);
+                self.backend.read(offset, size)
             }
         }
     }
@@ -776,64 +808,35 @@ impl VirtualPciConfigSpace {
             }
             _ => {
                 // Fallback to backend read
-                let offset = field.to_offset() as PciConfigAddress;
-                let low = self.backend.read(offset, 4)? as u64;
-                let high = self.backend.read(offset + 4, 4)? as u64;
-                Ok(low | (high << 32))
+                warn!("read emu64 {:#?} failed", field);
+                Ok(0)
             }
         }
     }
 
     pub fn write_emu(&mut self, field: EndpointField, value: usize) -> HvResult {
-        let offset = field.to_offset() as PciConfigAddress;
-        let size = field.size();
-        
-        match size {
-            1 | 2 | 4 => {
-                match field {
-                    EndpointField::ID => {
-                        // Update ID cache when writing ID field
-                        self.config_value.set_id((
-                            ((value >> 16) & 0xFFFF) as DeviceId,
-                            (value & 0xFFFF) as VendorId,
-                        ));
-                    }
-                    EndpointField::RevisionIDAndClassCode => {
-                        // Update cached revision/class code
-                        let revision = (value & 0xff) as DeviceRevision;
-                        let interface = ((value >> 8) & 0xff) as Interface;
-                        let sub = ((value >> 16) & 0xff) as SubClass;
-                        let base = ((value >> 24) & 0xff) as BaseClass;
-                        self.config_value
-                            .set_class_and_revision_id((base, sub, interface, revision));
-                    }
-                    EndpointField::Bar(slot) => {
-                        // Update bar_value cache when writing bar
-                        if slot < 6 {
-                            self.config_value.set_bar_value(slot, value as u32);
-                        }
-                    }
-                    _ => {
-                        // For other fields, write to backend
-                    }
+        match field {
+            EndpointField::Bar(slot) => {
+                // Update bar_value cache when writing bar
+                if slot < 6 {
+                    self.config_value.set_bar_value(slot, value as u32);
                 }
-                
-                // Write to backend
-                warn!("write emu {:#?} failed, try write to hw", field);
-                self.backend.write(offset, size, value)
             }
             _ => {
-                hv_result_err!(EFAULT, "pci: invalid virtual mmio write size: {size}")
+                // For other fields, write to backend
+                warn!("write emu {:#?} denied", field);
             }
         }
+        Ok(())
     }
+}
 
     // Legacy method for backward compatibility - converts offset/size to EndpointField
     // pub fn write_emu_legacy(&mut self, offset: PciConfigAddress, size: usize, value: usize) -> HvResult {
     //     let field = EndpointField::from(offset as usize, size);
     //     self.write_emu(field, value)
     // }
-}
+
 
 #[derive(Debug)]
 pub struct PciIterator<B: BarAllocator> {
