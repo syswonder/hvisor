@@ -920,7 +920,7 @@ impl EndpointField {
             (0x2c, 2) => EndpointField::SubsystemVendorId,
             (0x2e, 2) => EndpointField::SubsystemId,
             (0x30, 4) => EndpointField::ExpansionRomBar,
-            (0x34, 1) => EndpointField::CapabilityPointer,
+            (0x34, 4) => EndpointField::CapabilityPointer,
             (0x3c, 1) => EndpointField::InterruptLine,
             (0x3d, 1) => EndpointField::InterruptPin,
             (0x3e, 1) => EndpointField::MinGnt,
@@ -1445,7 +1445,9 @@ fn handle_config_space_access(
                                         mmio.value = dev.read_emu(EndpointField::ID).unwrap() as usize;
                                     }
                                 }
-                                _ => {}
+                                _ => {
+                                    mmio.value = 0;
+                                }
                             }
                         }
                         HeaderType::PciBridge => {
@@ -1458,10 +1460,56 @@ fn handle_config_space_access(
                     }
                 }
                 _ => {
-                    if mmio.is_write {
-                        super::vpci_dev::vpci_dev_write_cfg(dev_type, dev.clone(), offset, size, value).unwrap();
-                    } else {
-                        mmio.value = super::vpci_dev::vpci_dev_read_cfg(dev_type, dev.clone(), offset, size).unwrap() as usize;
+                    // warn!("virt pci standard rw offset {:#x}, size {:#x}", offset, size);
+                    let result = dev.with_cap(|capabilities| {
+                        if let Some((cap_offset, cap)) = capabilities.range(..=offset).next_back() {
+                            info!("find cap at offset {:#x}, cap {:#?}", cap_offset, cap.get_type());
+                            let end = *cap_offset + cap.get_size() as u64;
+                            if offset >= end {
+                                // hv_result_err!(ENOENT)
+                                warn!("virt pci cap rw offset {:#x} out of range", offset);
+                            }
+                            let relative_offset = offset - *cap_offset;
+                            
+                            if is_write {
+                                cap.with_region_mut(|region| {
+                                    match region.write(relative_offset, size, mmio.value as u32) {
+                                        Ok(()) => Ok(0),
+                                        Err(e) => {
+                                            warn!("Failed to write capability at offset 0x{:x}: {:?}", offset, e);
+                                            Err(e)
+                                        }
+                                    }
+                                })
+                            } else {
+                                cap.with_region(|region| {
+                                    match region.read(relative_offset, size) {
+                                        Ok(val) => Ok(val),
+                                        Err(e) => {
+                                            warn!("Failed to read capability at offset 0x{:x}: {:?}", offset, e);
+                                            Err(e)
+                                        }
+                                    }
+                                })
+                            }
+                        } else {
+                            hv_result_err!(ENOENT)
+                        }
+                    });
+                    
+                    match result {
+                        Ok(val) => {
+                            if !is_write {
+                                mmio.value = val as usize;
+                            }
+                        }
+                        Err(_) => {
+                            if mmio.is_write {
+                                super::vpci_dev::vpci_dev_write_cfg(dev_type, dev.clone(), offset, size, value).unwrap();
+                            } else {
+                                mmio.value = super::vpci_dev::vpci_dev_read_cfg(dev_type, dev.clone(), offset, size).unwrap() as usize;
+                            }
+                        }
                     }
                 }
             }
@@ -2027,10 +2075,56 @@ fn handle_config_space_access_direct(
                 }
             }                
             _ => {
-                if mmio.is_write {
-                    super::vpci_dev::vpci_dev_write_cfg(dev.get_dev_type(), dev.clone(), offset, size, value).unwrap();
-                } else {
-                    mmio.value = super::vpci_dev::vpci_dev_read_cfg(dev.get_dev_type(), dev.clone(), offset, size).unwrap() as usize;
+                // warn!("virt pci standard rw offset {:#x}, size {:#x}", offset, size);
+                let result = dev.with_cap(|capabilities| {
+                    if let Some((cap_offset, cap)) = capabilities.range(..=offset).next_back() {
+                        info!("find cap at offset {:#x}, cap {:#?}", cap_offset, cap.get_type());
+                        let end = *cap_offset + cap.get_size() as u64;
+                        if offset >= end {
+                            // hv_result_err!(ENOENT)
+                            warn!("virt pci cap rw offset {:#x} out of range", offset);
+                        }
+                        let relative_offset = offset - *cap_offset;
+                        
+                        if is_write {
+                            cap.with_region_mut(|region| {
+                                match region.write(relative_offset, size, mmio.value as u32) {
+                                    Ok(()) => Ok(0),
+                                    Err(e) => {
+                                        warn!("Failed to write capability at offset 0x{:x}: {:?}", offset, e);
+                                        Err(e)
+                                    }
+                                }
+                            })
+                        } else {
+                            cap.with_region(|region| {
+                                match region.read(relative_offset, size) {
+                                    Ok(val) => Ok(val),
+                                    Err(e) => {
+                                        warn!("Failed to read capability at offset 0x{:x}: {:?}", offset, e);
+                                        Err(e)
+                                    }
+                                }
+                            })
+                        }
+                    } else {
+                        hv_result_err!(ENOENT)
+                    }
+                });
+                
+                match result {
+                    Ok(val) => {
+                        if !is_write {
+                            mmio.value = val as usize;
+                        }
+                    }
+                    Err(_) => {
+                        if mmio.is_write {
+                            super::vpci_dev::vpci_dev_write_cfg(dev.get_dev_type(), dev.clone(), offset, size, value).unwrap();
+                        } else {
+                            mmio.value = super::vpci_dev::vpci_dev_read_cfg(dev.get_dev_type(), dev.clone(), offset, size).unwrap() as usize;
+                        }
+                    }
                 }
             }
         }

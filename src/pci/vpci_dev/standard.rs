@@ -1,5 +1,5 @@
 use crate::error::HvResult;
-use crate::pci::pci_struct::VirtualPciConfigSpace;
+use crate::pci::pci_struct::{CapabilityType, PciCapability, VirtualPciConfigSpace};
 use crate::pci::pci_access::{EndpointField, DeviceId, VendorId, BaseClass, SubClass, Interface, DeviceRevision};
 use crate::pci::PciConfigAddress;
 use super::{PciConfigAccessStatus, VpciDeviceHandler};
@@ -8,7 +8,10 @@ use crate::pci::pci_struct::ArcRwLockVirtualPciConfigSpace;
 use crate::percpu::this_zone;
 use crate::memory::MMIOAccess;
 use crate::pci::pci_access::PciMemType;
-
+use crate::pci::vpci_dev::VirtMsiXCap;
+use spin::RwLock;
+use alloc::sync::Arc;
+use crate::pci::pci_struct::PciCapabilityRegion;
 
 /// Handler for standard virtual PCI devices
 pub struct StandardHandler;
@@ -18,10 +21,10 @@ impl VpciDeviceHandler for StandardHandler {
         info!("virt pci standard read_cfg, offset {:#x}, size {:#x}", offset, size);
         match EndpointField::from(offset as usize, size) {
             EndpointField::ID => {
-                warn!("virt pci standard read_cfg, id {:#x}", offset);
-                Ok(PciConfigAccessStatus::Default)
+                let id = dev.with_config_value(|config_value| config_value.get_id());
+                Ok(PciConfigAccessStatus::Done((((id.0 as u32) << 16) | (id.1 as u32)) as usize))
             }
-            EndpointField::Bar(0) => {
+            EndpointField::Bar(0) => {      
                 let slot = 0;
                 let size_read = dev.with_bar_ref(slot, |bar| bar.get_size_read());
                 if size_read {
@@ -33,6 +36,9 @@ impl VpciDeviceHandler for StandardHandler {
                     Ok(PciConfigAccessStatus::Done(value as usize))
                 }
             }
+            EndpointField::CapabilityPointer => {
+                Ok(PciConfigAccessStatus::Done(0x98))
+            }
             _ => {
                 Ok(PciConfigAccessStatus::Default)
             }
@@ -42,9 +48,6 @@ impl VpciDeviceHandler for StandardHandler {
     fn write_cfg(&self, dev: ArcRwLockVirtualPciConfigSpace, offset: PciConfigAddress, size: usize, value: usize) -> HvResult<PciConfigAccessStatus> {
         info!("virt pci standard write_cfg, offset {:#x}, size {:#x}, value {:#x}", offset, size, value);
         match EndpointField::from(offset as usize, size) {
-            EndpointField::ID => {
-                Ok(PciConfigAccessStatus::Reject)
-            }
             EndpointField::Command => {
                 // Command field is written directly to backend, no need for space cache
                 Ok(PciConfigAccessStatus::Done(value))
@@ -64,7 +67,11 @@ impl VpciDeviceHandler for StandardHandler {
 
                 Ok(PciConfigAccessStatus::Done(value))
             }
+            EndpointField::Bar(_) => {
+                Ok(PciConfigAccessStatus::Done(value))
+            }
             _ => {
+                warn!("virt pci standard write_cfg, invalid offset {:#x}, size {:#x}, value {:#x}", offset, size, value);
                 Ok(PciConfigAccessStatus::Reject)
             }
         }
@@ -93,7 +100,29 @@ impl VpciDeviceHandler for StandardHandler {
         dev.with_bararr_mut(|bararr| {
             bararr[0].config_init(PciMemType::Mem32, false, size as u64, your_addr);
         });
-        
+
+        // 0x98 is an arbitrary value, used here only for demonstration purposes
+        // please don't forget to set next cap pointer if next cap exists
+        let msi_cap_offset = 0x98;
+        let mut msi_cap = VirtMsiXCap::new(msi_cap_offset);
+        msi_cap.set_next_cap_pointer(0x00);
+        dev.with_access_mut(|access| {
+            access.set_bits((msi_cap_offset as usize)..(msi_cap_offset as usize + msi_cap.get_size()) as usize);
+        });
+
+        dev.with_cap_mut(|capabilities| {
+            capabilities.insert(
+                msi_cap_offset, 
+                PciCapability::new_virt(
+                    CapabilityType::MsiX, 
+                    Arc::new(RwLock::new(msi_cap))
+                )
+            );
+        });
+
+        dev.with_access_mut(|access| {
+            access.set_bits(0x34..0x38);
+        });
         dev
     }
 }

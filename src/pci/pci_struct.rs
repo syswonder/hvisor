@@ -16,7 +16,7 @@
 use alloc::{collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
 use bit_field::BitField;
 use bitvec::{array::BitArray, order::Lsb0, BitArr};
-use core::{cmp::Ordering, fmt::Debug, ops::Range, str::FromStr};
+use core::{cmp::Ordering, fmt::Debug, ops::{Deref, DerefMut, Range}, str::FromStr};
 use spin::RwLock;
 
 use super::{
@@ -301,6 +301,10 @@ impl VirtualPciAccessBits {
             bits: !BitArray::ZERO,
         }
     }
+
+    pub fn set_bits(&mut self, range: Range<usize>) {
+        self.bits[range].fill(true);
+    }
 }
 
 
@@ -435,6 +439,15 @@ impl ArcRwLockVirtualPciConfigSpace {
         f(&mut guard.config_value)
     }
 
+    /// Execute a closure with a reference to the capabilities list
+    pub fn with_cap<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&PciCapabilityList) -> R,
+    {
+        let guard = self.0.read();
+        f(&guard.capabilities)
+    }
+
     pub fn read(&self) -> spin::RwLockReadGuard<'_, VirtualPciConfigSpace> {
         self.0.read()
     }
@@ -542,6 +555,19 @@ impl VirtualPciConfigSpace {
         f(&mut self.bararr)
     }
 
+    pub fn with_cap_mut<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce(&mut PciCapabilityList) -> R,
+    {
+        f(&mut self.capabilities)
+    }
+
+    pub fn with_access_mut<F, R>(&mut self, f: F) -> R
+    where
+        F: FnOnce(&mut VirtualPciAccessBits) -> R,
+    {
+        f(&mut self.access)
+    }
 
     // TODO: check whether need update config
     pub fn update_config(&mut self, offset: PciConfigAddress, size: usize, _value: usize) {
@@ -1396,7 +1422,7 @@ impl Iterator for CapabilityIterator {
             debug!("get cap {:#x}", self.get_offset());
             // Get current capability before moving to next
             let cap =
-                PciCapability::from_address(self.get_offset(), self.get_id(), self.get_extension());
+                PciCapability::from_address(self.get_offset(), self.get_id(), self.backend.clone());
             // Move to next capability
             let _ = self.get_next_cap();
             if let Some(cap) = cap {
@@ -1407,200 +1433,286 @@ impl Iterator for CapabilityIterator {
     }
 }
 
-#[derive(Clone)]
-pub enum PciCapability {
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum CapabilityType {
     // Power management capability, Cap ID = `0x01`
-    PowerManagement(PciCapabilityRegion),
+    PowerManagement,
     // Accelerated graphics port capability, Cap ID = `0x02`
-    AcceleratedGraphicsPort(PciCapabilityRegion),
+    AcceleratedGraphicsPort,
     // Vital product data capability, Cap ID = `0x3`
-    VitalProductData(PciCapabilityRegion),
+    VitalProductData,
     // Slot identification capability, Cap ID = `0x04`
-    SlotIdentification(PciCapabilityRegion),
+    SlotIdentification,
     // Message signalling interrupts capability, Cap ID = `0x05`
-    Msi(PciCapabilityRegion),
+    Msi,
     // CompactPCI HotSwap capability, Cap ID = `0x06`
-    CompactPCIHotswap(PciCapabilityRegion),
+    CompactPCIHotswap,
     // PCI-X capability, Cap ID = `0x07`
-    PciX(PciCapabilityRegion),
+    PciX,
     // HyperTransport capability, Cap ID = `0x08`
-    HyperTransport(PciCapabilityRegion),
+    HyperTransport,
     // Vendor-specific capability, Cap ID = `0x09`
-    Vendor(PciCapabilityRegion),
+    Vendor,
     // Debug port capability, Cap ID = `0x0A`
-    DebugPort(PciCapabilityRegion),
+    DebugPort,
     // CompactPCI Central Resource Control capability, Cap ID = `0x0B`
-    CompactPCICentralResourceControl(PciCapabilityRegion),
+    CompactPCICentralResourceControl,
     // PCI Standard Hot-Plug Controller capability, Cap ID = `0x0C`
-    PciHotPlugControl(PciCapabilityRegion),
+    PciHotPlugControl,
     // Bridge subsystem vendor/device ID capability, Cap ID = `0x0D`
-    BridgeSubsystemVendorId(PciCapabilityRegion),
+    BridgeSubsystemVendorId,
     // AGP Target PCI-PCI bridge capability, Cap ID = `0x0E`
-    AGP3(PciCapabilityRegion),
+    AGP3,
     // PCI Express capability, Cap ID = `0x10`
-    PciExpress(PciCapabilityRegion),
+    PciExpress,
     // MSI-X capability, Cap ID = `0x11`
-    MsiX(PciCapabilityRegion),
+    MsiX,
     // Unknown capability
-    Unknown(PciCapabilityRegion),
+    Unknown,
 }
 
-impl PciCapability {
-    fn from_address(
-        offset: PciConfigAddress,
-        id: PciConfigAddress,
-        extension: u16,
-    ) -> Option<PciCapability> {
+impl Debug for CapabilityType {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            CapabilityType::PowerManagement => write!(f, "PowerManagement(0x01)"),
+            CapabilityType::AcceleratedGraphicsPort => write!(f, "AcceleratedGraphicsPort(0x02)"),
+            CapabilityType::VitalProductData => write!(f, "VitalProductData(0x03)"),
+            CapabilityType::SlotIdentification => write!(f, "SlotIdentification(0x04)"),
+            CapabilityType::Msi => write!(f, "Msi(0x05)"),
+            CapabilityType::CompactPCIHotswap => write!(f, "CompactPCIHotswap(0x06)"),
+            CapabilityType::PciX => write!(f, "PciX(0x07)"),
+            CapabilityType::HyperTransport => write!(f, "HyperTransport(0x08)"),
+            CapabilityType::Vendor => write!(f, "Vendor(0x09)"),
+            CapabilityType::DebugPort => write!(f, "DebugPort(0x0A)"),
+            CapabilityType::CompactPCICentralResourceControl => write!(f, "CompactPCICentralResourceControl(0x0B)"),
+            CapabilityType::PciHotPlugControl => write!(f, "PciHotPlugControl(0x0C)"),
+            CapabilityType::BridgeSubsystemVendorId => write!(f, "BridgeSubsystemVendorId(0x0D)"),
+            CapabilityType::AGP3 => write!(f, "AGP3(0x0E)"),
+            CapabilityType::PciExpress => write!(f, "PciExpress(0x10)"),
+            CapabilityType::MsiX => write!(f, "MsiX(0x11)"),
+            CapabilityType::Unknown => write!(f, "Unknown(0x00)"),
+        }
+    }
+}
+
+impl CapabilityType {
+    fn from_id(id: PciConfigAddress) -> Self {
         match id {
-            0x00 => None,
-            0x01 => Some(PciCapability::PowerManagement(PciCapabilityRegion::new(
-                offset, extension,
-            ))),
-            0x02 => Some(PciCapability::AcceleratedGraphicsPort(
-                PciCapabilityRegion::new(offset, extension),
-            )),
-            0x03 => Some(PciCapability::VitalProductData(PciCapabilityRegion::new(
-                offset, extension,
-            ))),
-            0x04 => Some(PciCapability::SlotIdentification(PciCapabilityRegion::new(
-                offset, extension,
-            ))),
-            0x05 => Some(PciCapability::Msi(PciCapabilityRegion::new(
-                offset, extension,
-            ))),
-            0x06 => Some(PciCapability::CompactPCIHotswap(PciCapabilityRegion::new(
-                offset, extension,
-            ))),
-            0x07 => Some(PciCapability::PciX(PciCapabilityRegion::new(
-                offset, extension,
-            ))),
-            0x08 => Some(PciCapability::HyperTransport(PciCapabilityRegion::new(
-                offset, extension,
-            ))),
-            0x09 => Some(PciCapability::Vendor(PciCapabilityRegion::new(
-                offset, extension,
-            ))),
-            0x0A => Some(PciCapability::DebugPort(PciCapabilityRegion::new(
-                offset, extension,
-            ))),
-            0x0B => Some(PciCapability::CompactPCICentralResourceControl(
-                PciCapabilityRegion::new(offset, extension),
-            )),
-            0x0C => Some(PciCapability::PciHotPlugControl(PciCapabilityRegion::new(
-                offset, extension,
-            ))),
-            0x0D => Some(PciCapability::BridgeSubsystemVendorId(
-                PciCapabilityRegion::new(offset, extension),
-            )),
-            0x0E => Some(PciCapability::AGP3(PciCapabilityRegion::new(
-                offset, extension,
-            ))),
-            0x10 => Some(PciCapability::PciExpress(PciCapabilityRegion::new(
-                offset, extension,
-            ))),
-            0x11 => Some(PciCapability::MsiX(PciCapabilityRegion::new(
-                offset, extension,
-            ))),
-            _ => Some(PciCapability::Unknown(PciCapabilityRegion::new(
-                offset, extension,
-            ))),
+            0x01 => CapabilityType::PowerManagement,
+            0x02 => CapabilityType::AcceleratedGraphicsPort,
+            0x03 => CapabilityType::VitalProductData,
+            0x04 => CapabilityType::SlotIdentification,
+            0x05 => CapabilityType::Msi,
+            0x06 => CapabilityType::CompactPCIHotswap,
+            0x07 => CapabilityType::PciX,
+            0x08 => CapabilityType::HyperTransport,
+            0x09 => CapabilityType::Vendor,
+            0x0A => CapabilityType::DebugPort,
+            0x0B => CapabilityType::CompactPCICentralResourceControl,
+            0x0C => CapabilityType::PciHotPlugControl,
+            0x0D => CapabilityType::BridgeSubsystemVendorId,
+            0x0E => CapabilityType::AGP3,
+            0x10 => CapabilityType::PciExpress,
+            0x11 => CapabilityType::MsiX,
+            _ => CapabilityType::Unknown,
         }
     }
 
-    fn get_offset(&self) -> PciConfigAddress {
-        match *self {
-            PciCapability::PowerManagement(PciCapabilityRegion { offset, .. }) => offset,
-            PciCapability::AcceleratedGraphicsPort(PciCapabilityRegion { offset, .. }) => offset,
-            PciCapability::VitalProductData(PciCapabilityRegion { offset, .. }) => offset,
-            PciCapability::SlotIdentification(PciCapabilityRegion { offset, .. }) => offset,
-            PciCapability::Msi(PciCapabilityRegion { offset, .. }) => offset,
-            PciCapability::CompactPCIHotswap(PciCapabilityRegion { offset, .. }) => offset,
-            PciCapability::PciX(PciCapabilityRegion { offset, .. }) => offset,
-            PciCapability::HyperTransport(PciCapabilityRegion { offset, .. }) => offset,
-            PciCapability::Vendor(PciCapabilityRegion { offset, .. }) => offset,
-            PciCapability::DebugPort(PciCapabilityRegion { offset, .. }) => offset,
-            PciCapability::CompactPCICentralResourceControl(PciCapabilityRegion {
-                offset, ..
-            }) => offset,
-            PciCapability::PciHotPlugControl(PciCapabilityRegion { offset, .. }) => offset,
-            PciCapability::BridgeSubsystemVendorId(PciCapabilityRegion { offset, .. }) => offset,
-            PciCapability::AGP3(PciCapabilityRegion { offset, .. }) => offset,
-            PciCapability::PciExpress(PciCapabilityRegion { offset, .. }) => offset,
-            PciCapability::MsiX(PciCapabilityRegion { offset, .. }) => offset,
-            PciCapability::Unknown(PciCapabilityRegion { offset, .. }) => offset,
+    pub fn to_id(&self) -> PciConfigAddress {
+        match self {
+            CapabilityType::PowerManagement => 0x01,
+            CapabilityType::AcceleratedGraphicsPort => 0x02,
+            CapabilityType::VitalProductData => 0x03,
+            CapabilityType::SlotIdentification => 0x04,
+            CapabilityType::Msi => 0x05,
+            CapabilityType::CompactPCIHotswap => 0x06,
+            CapabilityType::PciX => 0x07,
+            CapabilityType::HyperTransport => 0x08,
+            CapabilityType::Vendor => 0x09,
+            CapabilityType::DebugPort => 0x0A,
+            CapabilityType::CompactPCICentralResourceControl => 0x0B,
+            CapabilityType::PciHotPlugControl => 0x0C,
+            CapabilityType::BridgeSubsystemVendorId => 0x0D,
+            CapabilityType::AGP3 => 0x0E,
+            CapabilityType::PciExpress => 0x10,
+            CapabilityType::MsiX => 0x11,
+            CapabilityType::Unknown => 0x00,
         }
+    }
+}
+
+#[derive(Clone)]
+pub struct PciCapability {
+    cap_type: CapabilityType,
+    region: Arc<RwLock<dyn PciCapabilityRegion>>,
+}
+
+impl PciCapability {
+    pub fn get_type(&self) -> CapabilityType {
+        self.cap_type
+    }
+
+    /// Execute a closure with a read lock on the capability region
+    pub fn with_region<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&dyn PciCapabilityRegion) -> R,
+    {
+        let guard = self.region.read();
+        f(&*guard)
+    }
+
+    /// Execute a closure with a write lock on the capability region
+    pub fn with_region_mut<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut dyn PciCapabilityRegion) -> R,
+    {
+        let mut guard = self.region.write();
+        f(&mut *guard)
+    }
+
+    fn from_address(
+        offset: PciConfigAddress,
+        id: PciConfigAddress,
+        backend: Arc<dyn PciRW>,
+    ) -> Option<PciCapability> {
+        match CapabilityType::from_id(id) {
+            CapabilityType::Unknown => None,
+            CapabilityType::Msi => {
+                let region = Arc::new(RwLock::new(StandardPciCapabilityRegion::new(offset, 32, backend)));
+                return Some(PciCapability {
+                    cap_type: CapabilityType::Msi,
+                    region,
+                });
+            }
+            _ => {        
+                let region = Arc::new(RwLock::new(StandardPciCapabilityRegion::new(offset, 32, backend)));
+                Some(PciCapability {
+                    cap_type: CapabilityType::from_id(id),
+                    region,
+                })
+            }
+        }
+    }
+
+    pub fn new_virt(cap_type: CapabilityType, region: Arc<RwLock<dyn PciCapabilityRegion>>) -> Self {
+        Self {
+            cap_type,
+            region,
+        }
+    }
+
+    pub fn get_offset(&self) -> PciConfigAddress {
+        self.with_region(|region| region.get_offset())
+    }
+    
+    pub fn get_size(&self) -> usize {
+        self.with_region(|region| region.get_size())
+    }
+    
+    fn next_cap(&self) -> HvResult<PciConfigAddress> {
+        self.with_region(|region| region.next_cap())
     }
 }
 
 impl Debug for PciCapability {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        match *self {
-            PciCapability::PowerManagement(PciCapabilityRegion { offset, .. }) => {
-                write!(f, "PowerManagement {:x}", offset)
-            }
-            PciCapability::AcceleratedGraphicsPort(PciCapabilityRegion { offset, .. }) => {
-                write!(f, "AcceleratedGraphicsPort {:x}", offset)
-            }
-            PciCapability::VitalProductData(PciCapabilityRegion { offset, .. }) => {
-                write!(f, "VitalProductData {:x}", offset)
-            }
-            PciCapability::SlotIdentification(PciCapabilityRegion { offset, .. }) => {
-                write!(f, "SlotIdentification {:x}", offset)
-            }
-            PciCapability::Msi(PciCapabilityRegion { offset, .. }) => write!(f, "Msi {:x}", offset),
-            PciCapability::CompactPCIHotswap(PciCapabilityRegion { offset, .. }) => {
-                write!(f, "CompactPCIHotswap {:x}", offset)
-            }
-            PciCapability::PciX(PciCapabilityRegion { offset, .. }) => {
-                write!(f, "PciX {:x}", offset)
-            }
-            PciCapability::HyperTransport(PciCapabilityRegion { offset, .. }) => {
-                write!(f, "HyperTransport {:x}", offset)
-            }
-            PciCapability::Vendor(PciCapabilityRegion { offset, .. }) => {
-                write!(f, "Vendor {:x}", offset)
-            }
-            PciCapability::DebugPort(PciCapabilityRegion { offset, .. }) => {
-                write!(f, "DebugPort {:x}", offset)
-            }
-            PciCapability::CompactPCICentralResourceControl(PciCapabilityRegion {
-                offset, ..
-            }) => write!(f, "CompactPCICentralResourceControl {:x}", offset),
-            PciCapability::PciHotPlugControl(PciCapabilityRegion { offset, .. }) => {
-                write!(f, "PciHotPlugControl {:x}", offset)
-            }
-            PciCapability::BridgeSubsystemVendorId(PciCapabilityRegion { offset, .. }) => {
-                write!(f, "BridgeSubsystemVendorId {:x}", offset)
-            }
-            PciCapability::AGP3(PciCapabilityRegion { offset, .. }) => {
-                write!(f, "AGP3 {:x}", offset)
-            }
-            PciCapability::PciExpress(PciCapabilityRegion { offset, .. }) => {
-                write!(f, "PciExpress {:x}", offset)
-            }
-            PciCapability::MsiX(PciCapabilityRegion { offset, .. }) => {
-                write!(f, "MsiX {:x}", offset)
-            }
-            PciCapability::Unknown(PciCapabilityRegion { offset, .. }) => {
-                write!(f, "Unknown {:x}", offset)
-            }
-        }
+        write!(f, "{:?}", self.cap_type)
+    }
+}
+
+pub trait PciCapabilityRegion: Send + Sync {
+    /// Read from capability region at relative offset
+    /// offset: relative offset from capability start (0 = capability start)
+    fn read(&self, offset: PciConfigAddress, size: usize) -> HvResult<u32>;
+    
+    /// Write to capability region at relative offset
+    /// offset: relative offset from capability start (0 = capability start)
+    fn write(&mut self, offset: PciConfigAddress, size: usize, value: u32) -> HvResult;
+    
+    /// Get absolute offset of capability in config space
+    fn get_offset(&self) -> PciConfigAddress;
+    
+    /// Get size of capability
+    fn get_size(&self) -> usize;
+    
+    /// Get next capability offset by reading next pointer
+    /// Default implementation: read 2 bytes at offset 0 (capability start), extract bits(8..16) as next pointer
+    fn next_cap(&self) -> HvResult<PciConfigAddress> {
+        let value = self.read(0, 2)?;
+        let next_offset = (value as u16).get_bits(8..16) as PciConfigAddress;
+        Ok(next_offset)
+    }
+}
+
+pub struct StandardPciCapabilityRegion {
+    offset: PciConfigAddress,
+    size: usize,
+    backend: Arc<dyn PciRW>,
+}
+
+impl StandardPciCapabilityRegion {
+    pub fn new(offset: PciConfigAddress, size: usize, backend: Arc<dyn PciRW>) -> Self {
+        Self { offset, size, backend }
+    }
+}
+
+impl PciCapabilityRegion for StandardPciCapabilityRegion {
+    fn read(&self, offset: PciConfigAddress, size: usize) -> HvResult<u32> {
+        self.backend.read(self.offset + offset, size).map(|v| v as u32)
+    }
+    
+    fn write(&mut self, offset: PciConfigAddress, size: usize, value: u32) -> HvResult {
+        self.backend.write(self.offset + offset, size, value as usize)
+    }
+    
+    fn get_offset(&self) -> PciConfigAddress {
+        self.offset
+    }
+    
+    fn get_size(&self) -> usize {
+        self.size
     }
 }
 
 #[derive(Clone)]
-pub struct PciCapabilityRegion {
-    offset: PciConfigAddress,
-    extension: u16,
-}
+pub struct PciCapabilityList(BTreeMap<PciConfigAddress, PciCapability>);
 
-impl PciCapabilityRegion {
-    pub fn new(offset: PciConfigAddress, extension: u16) -> Self {
-        Self { offset, extension }
+impl PciCapabilityList {
+    pub fn new() -> Self {
+        Self(BTreeMap::new())
     }
 }
 
-pub type PciCapabilityList = BTreeMap<PciConfigAddress, PciCapability>;
+// impl Default for PciCapabilityList {
+//     fn default() -> Self {
+//         Self::new()
+//     }
+// }
+
+impl Deref for PciCapabilityList {
+    type Target = BTreeMap<PciConfigAddress, PciCapability>;
+    
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for PciCapabilityList {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Debug for PciCapabilityList {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "PciCapabilityList {{\n")?;
+        for (offset, capability) in &self.0 {
+            write!(f, "0x{:x} {:?}\n", offset, capability)?;
+        }
+        write!(f, "}}")?;
+        Ok(())
+    }
+}
 
 impl VirtualPciConfigSpace {
     fn _capability_enumerate(&self, backend: Arc<dyn PciRW>) -> CapabilityIterator {
@@ -1613,10 +1725,10 @@ impl VirtualPciConfigSpace {
     pub fn capability_enumerate(&mut self) {
         let mut capabilities = PciCapabilityList::new();
         for capability in self._capability_enumerate(self.backend.clone()) {
-            match capability {
-                PciCapability::Msi(_) => {}
-                PciCapability::MsiX(_) => {}
-                PciCapability::PciExpress(_) => {}
+            match capability.get_type() {
+                CapabilityType::Msi => {}
+                CapabilityType::MsiX => {}
+                CapabilityType::PciExpress => {}
                 _ => {}
             }
             capabilities.insert(capability.get_offset(), capability);
@@ -1632,10 +1744,11 @@ impl VirtualPciConfigSpace {
                 // Find PciExpress capability
                 // warn!("has_secondary_link {:#?}", self.capabilities);
                 // for (_, capability) in &self.capabilities {
-                //     if let PciCapability::PciExpress(PciCapabilityRegion { offset, .. }) = capability {
+                //     if capability.cap_type == CapabilityType::PciExpress {
                 //         // Read PCIe Capability Register at offset + 0x00
                 //         // Bits 4:0 contain the Device/Port Type
-                //         if let Ok(cap_reg) = self.backend.read(*offset, 2) {
+                //         let offset = capability.get_offset();
+                //         if let Ok(cap_reg) = self.backend.read(offset, 2) {
                 //             let type_val = (cap_reg as u16).get_bits(0..5);
                 //             if type_val == PCI_EXP_TYPE_ROOT_PORT || type_val == PCI_EXP_TYPE_PCIE_BRIDGE {
                 //                 return true;
