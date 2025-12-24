@@ -173,7 +173,8 @@ impl Zone {
                 iommu_add_device(zone_id, dev_config.bdf as _, iommu_pt_addr);
             }
             if let Some(dev) = guard.get(&bdf) {
-                if bdf.is_host_bridge(dev.read().get_host_bdf().bus()) {
+                if bdf.is_host_bridge(dev.read().get_host_bdf().bus()) 
+                || dev.with_config_value(|config_value| -> bool {config_value.get_class().0 == 0x6}) {
                     let mut vdev = dev.read().clone();
                     vdev.set_vbdf(vbdf);
                     self.vpci_bus.insert(vbdf, vdev);
