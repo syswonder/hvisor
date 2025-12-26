@@ -13,7 +13,3 @@ riscv64:
 x86_64:
 - changed-files:
   - any-glob-to-any-file: src/arch/x86_64/**/*
-
-
-
-
