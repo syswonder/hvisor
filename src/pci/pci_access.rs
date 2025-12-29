@@ -45,7 +45,8 @@ use crate::pci::config_accessors::{
         AtuConfig, AtuType, ATU_BASE, ATU_REGION_SIZE,
         PCIE_ATU_UNR_REGION_CTRL1, PCIE_ATU_UNR_REGION_CTRL2,
         PCIE_ATU_UNR_LOWER_BASE, PCIE_ATU_UNR_UPPER_BASE,
-        PCIE_ATU_UNR_LIMIT, PCIE_ATU_UNR_LOWER_TARGET, PCIE_ATU_UNR_UPPER_TARGET,
+        PCIE_ATU_UNR_LIMIT, PCIE_ATU_UNR_UPPER_LIMIT,
+        PCIE_ATU_UNR_LOWER_TARGET, PCIE_ATU_UNR_UPPER_TARGET,
         ATU_ENABLE_BIT,
         AtuUnroll,
     },
@@ -1407,11 +1408,11 @@ fn handle_config_space_access(
                                                 dev.with_bar_ref_mut(slot, |bar| bar.clear_size_read());
                                                 r
                                             } else {
-                                                // dev.with_bar_ref(slot, |bar| bar.get_virtual_value()).try_into().unwrap()
-                                                let emu_value = dev.read_emu(EndpointField::Bar(slot)).unwrap() as usize;
-                                                let virtual_value = dev.with_bar_ref(slot, |bar| bar.get_virtual_value()) as usize;
-                                                info!("emu value {:#x} virtual_value {:#x}", emu_value, virtual_value);
-                                                emu_value
+                                                dev.with_bar_ref(slot, |bar| bar.get_virtual_value()) as usize
+                                                // let emu_value = dev.read_emu(EndpointField::Bar(slot)).unwrap() as usize;
+                                                // let virtual_value = dev.with_bar_ref(slot, |bar| bar.get_virtual_value()) as usize;
+                                                // info!("emu value {:#x} virtual_value {:#x}", emu_value, virtual_value);
+                                                // virtual_value
                                             };
                                         }
                                     } else {
@@ -1726,6 +1727,10 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                         // info!("set atu0 limit value {:#X}", mmio.value);
                         atu.cpu_limit = (atu.cpu_limit & !0xffffffff) | (mmio.value as PciConfigAddress);
                     }
+                    PCIE_ATU_UNR_UPPER_LIMIT => {
+                        // Update the upper 32 bits of cpu_limit
+                        atu.cpu_limit = (atu.cpu_limit & 0xffffffff) | ((mmio.value as PciConfigAddress) << 32);
+                    }
                     PCIE_ATU_UNR_LOWER_TARGET => {
                         // info!("set atu0 lower target value {:#X}", mmio.value);
                         atu.pci_target = (atu.pci_target & !0xffffffff) | (mmio.value as PciConfigAddress);
@@ -1758,7 +1763,15 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                     mmio.value = ((atu.cpu_base >> 32) & 0xffffffff) as usize;
                 }
                 PCIE_ATU_UNR_LIMIT => {
-                    mmio.value = (atu.cpu_limit & 0xffffffff) as usize;
+                    let limit_value = (atu.cpu_limit & 0xffffffff) as usize;
+                    // If limit is 0, return 0x3ffffff instead
+                    mmio.value = if limit_value == 0 { 0x3ffffff } else { limit_value };
+                }
+                PCIE_ATU_UNR_UPPER_LIMIT => {
+                    // Return the upper 32 bits of cpu_limit
+                    // If it's 0xffffffff, return 0x40000000 instead
+                    let upper_limit = ((atu.cpu_limit >> 32) & 0xffffffff) as usize;
+                    mmio.value = if upper_limit == 0xffffffff { 0x40000000 } else { upper_limit };
                 }
                 PCIE_ATU_UNR_LOWER_TARGET => {
                     mmio.value = (atu.pci_target & 0xffffffff) as usize;
@@ -1773,8 +1786,80 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
             }
         }
     } else if mmio.address > ATU_BASE + ATU_REGION_SIZE/2 {
-        // other atu
         mmio_perform_access(_base, mmio);
+        // // other atu
+        // let is_root = is_this_root_zone();
+        // let atu_offset = (mmio.address - ATU_BASE) % ATU_REGION_SIZE;
+        
+        // // 0x0-0x100 is inbound ATU (needs emulation)
+        // // 0x100-0x200 is outbound ATU (direct passthrough)
+        // if atu_offset >= 0x100 {
+        //     // Outbound ATU: direct passthrough
+        //     mmio_perform_access(_base, mmio);
+        //     return Ok(());
+        // }
+        
+        // // Inbound ATU: needs emulation (0x0-0x100 range)
+        // // For non-root zones, only allow access to LIMIT registers
+        // if !is_root {
+        //     if mmio.is_write {
+        //         // For non-root zones, only allow writes to LIMIT registers
+        //         if atu_offset == PCIE_ATU_UNR_LIMIT || atu_offset == PCIE_ATU_UNR_UPPER_LIMIT {
+        //             // Allow the write to proceed, but we'll handle read specially
+        //             mmio_perform_access(_base, mmio);
+        //         } else {
+        //             // Reject access to other registers for non-root zones
+        //             warn!("non-root zone attempted to access ATU register {:#x} at offset {:#x}", mmio.address, atu_offset);
+        //             return Ok(());
+        //         }
+        //     } else {
+        //         // For reads, handle LIMIT registers specially
+        //         if atu_offset == PCIE_ATU_UNR_LIMIT {
+        //             // Read from hardware first
+        //             mmio_perform_access(_base, mmio);
+        //             // If value is 0, return 0x3ffffff instead
+        //             if mmio.value == 0 {
+        //                 mmio.value = 0x3ffffff;
+        //             }
+        //         } else if atu_offset == PCIE_ATU_UNR_UPPER_LIMIT {
+        //             // Read upper limit from hardware
+        //             mmio_perform_access(_base, mmio);
+        //             // If value is 0xffffffff, return 0x40000000 instead
+        //             if mmio.value == 0xffffffff {
+        //                 mmio.value = 0x40000000;
+        //             }
+        //         } else {
+        //             // Reject access to other registers for non-root zones
+        //             warn!("non-root zone attempted to read ATU register {:#x} at offset {:#x}", mmio.address, atu_offset);
+        //             return Ok(());
+        //         }
+        //     }
+        // } else {
+        //     // For root zones, handle LIMIT registers specially but allow all other accesses
+        //     if !mmio.is_write {
+        //         if atu_offset == PCIE_ATU_UNR_LIMIT {
+        //             // Read from hardware first
+        //             mmio_perform_access(_base, mmio);
+        //             // If value is 0, return 0x3ffffff instead
+        //             if mmio.value == 0 {
+        //                 mmio.value = 0x3ffffff;
+        //             }
+        //         } else if atu_offset == PCIE_ATU_UNR_UPPER_LIMIT {
+        //             // Read upper limit from hardware
+        //             mmio_perform_access(_base, mmio);
+        //             // If value is 0xffffffff, return 0x40000000 instead
+        //             if mmio.value == 0xffffffff {
+        //                 mmio.value = 0x40000000;
+        //             }
+        //         } else {
+        //             // For other registers, perform normal access
+        //             mmio_perform_access(_base, mmio);
+        //         }
+        //     } else {
+        //         // For writes, perform normal access (including LIMIT registers)
+        //         mmio_perform_access(_base, mmio);
+        //     }
+        // }
     } else if mmio.address >= BIT_LENTH {
         // dbi read
         mmio_perform_access(_base, mmio);
@@ -2029,11 +2114,11 @@ fn handle_config_space_access_direct(
                                             dev.with_bar_ref_mut(slot, |bar| bar.clear_size_read());
                                             r
                                         } else {
-                                            // dev.read_emu(offset, size).unwrap() as usize
-                                            let emu_value = dev.read_emu(EndpointField::Bar(slot)).unwrap() as usize;
-                                            let virtual_value = dev.with_bar_ref(slot, |bar| bar.get_virtual_value()) as usize;
-                                            info!("emu value {:#x} virtual_value {:#x}", emu_value, virtual_value);
-                                            virtual_value
+                                            dev.with_bar_ref(slot, |bar| bar.get_virtual_value()) as usize
+                                            // let emu_value = dev.read_emu(EndpointField::Bar(slot)).unwrap() as usize;
+                                            // let virtual_value = dev.with_bar_ref(slot, |bar| bar.get_virtual_value()) as usize;
+                                            // info!("emu value {:#x} virtual_value {:#x}", emu_value, virtual_value);
+                                            // virtual_value
                                         }
                                     }
                                 } else {

@@ -32,6 +32,7 @@ pub const PCIE_ATU_UNR_UPPER_BASE: usize = 0x0C;
 pub const PCIE_ATU_UNR_LIMIT: usize = 0x10;
 pub const PCIE_ATU_UNR_LOWER_TARGET: usize = 0x14;
 pub const PCIE_ATU_UNR_UPPER_TARGET: usize = 0x18;
+pub const PCIE_ATU_UNR_UPPER_LIMIT: usize = 0x20;
 
 // ATU enable bit
 pub const ATU_ENABLE_BIT: u32 = 0x80000000;
