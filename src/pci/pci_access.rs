@@ -600,7 +600,7 @@ pub trait PciBarRW: PciRWBase {
 
         let mut slot = 0u8;
         while slot < self.bar_limit() {
-            warn!("parse bar slot {}", slot);
+            // info!("parse bar slot {}", slot);
             let value = self.read_bar(slot).unwrap();
 
             if !value.get_bit(0) {

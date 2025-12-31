@@ -9,6 +9,14 @@ use crate::pci::PciConfigAddress;
 use bitvec::array::BitArray;
 use bitvec::{order::Lsb0, BitArr};
 
+macro_rules! pci_virt_log {
+    ($($arg:tt)*) => {
+        // info!($($arg)*);
+        // To switch to debug level, change the line above to:
+        debug!($($arg)*);
+    };
+}
+
 // Standard virtual device configuration space defaults
 pub(crate) const STANDARD_CFG_SIZE: usize = 0x80;
 pub(crate) const DEFAULT_CSPACE_U32: [u32; STANDARD_CFG_SIZE / 4] = {
@@ -115,7 +123,7 @@ pub(super) fn vpci_dev_read_cfg(
                             PciConfigAccessStatus::Done(value) => Ok(value),
                             PciConfigAccessStatus::Default => {
                                 // If this is a standard virtual device, read from DEFAULT_CSPACE_U32
-                                warn!("vpci_dev_read_cfg: default config space read, offset {:#x}, size {:#x}", offset, size);
+                                pci_virt_log!("vpci_dev_read_cfg: default config space read, offset {:#x}, size {:#x}", offset, size);
                                 if offset < STANDARD_CFG_SIZE as PciConfigAddress {
                                     let u32_offset = (offset as usize) / 4;
                                     let u32_value = DEFAULT_CSPACE_U32[u32_offset];

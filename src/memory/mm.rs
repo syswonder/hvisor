@@ -145,6 +145,15 @@ where
         Ok(())
     }
 
+    pub fn try_insert_quiet(&mut self, region: MemoryRegion<PT::VA>) -> HvResult {
+        if !self.test_free_area(&region) {
+            return Ok(());
+        }
+
+        self.insert(region)?;
+        Ok(())
+    }
+
     /// Find and remove memory region which starts from `start` and `size`
     pub fn delete(&mut self, start: PT::VA, size: usize) -> HvResult {
         if let Entry::Occupied(e) = self.regions.entry(start) {

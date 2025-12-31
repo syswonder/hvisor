@@ -638,8 +638,8 @@ impl Debug for VirtualPciConfigSpace {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "\n  bdf {:#?}\n  base {:#x}\n  type {:#?}\n  {:#?} {:#?}",
-            self.bdf, self.base, self.config_type, self.bararr, self.rom
+            "\n  bdf {:#?}\n  base {:#x}\n  type {:#?}\n  {:#?}\n {:#?}\n {:#?}",
+            self.bdf, self.base, self.config_type, self.bararr, self.rom, self.capabilities
         )
     }
 }
@@ -983,31 +983,31 @@ impl<B: BarAllocator> PciIterator<B> {
 
         let address = self.address(parent_bus, bdf);
         let pci_addr_base = self.get_pci_addr_base(parent_bus, bdf);
-        info!("get node {:x} {:#?}", address, bdf);
+        // info!("get node {:x} {:#?}", address, bdf);
 
         let region = PciConfigMmio::new(address, CONFIG_LENTH);
         let pci_header = PciConfigHeader::new_with_region(region);
         let (vender_id, device_id) = pci_header.id();
 
-        warn!("vender_id {:#x}", vender_id);
+        // warn!("vender_id {:#x}", vender_id);
 
         // Check if device exists
         if vender_id == 0xffff || self.accessor.skip_device(bdf) {
             if function == 0 {
                 // Function 0 doesn't exist, so device doesn't exist at all
                 // Skip all functions and move to next device
-                warn!(
-                    "get none - device not present (vendor_id=0xffff) at {:#?}",
-                    bdf
-                );
+                // info!(
+                //     "get none - device not present (vendor_id=0xffff) at {:#?}",
+                //     bdf
+                // );
                 self.function = 0;
                 self.is_mulitple_function = false;
             } else {
                 // Function > 0 doesn't exist, but device might have other functions
-                warn!(
-                    "get none - function not present (vendor_id=0xffff) at {:#?}",
-                    bdf
-                );
+                // warn!(
+                //     "get none - function not present (vendor_id=0xffff) at {:#?}",
+                //     bdf
+                // );
             }
             return None;
         }
@@ -1039,7 +1039,7 @@ impl<B: BarAllocator> PciIterator<B> {
                 let bararr =
                     Self::bar_mem_init(ep.bar_limit().into(), &mut self.allocator, &mut ep);
 
-                info!("get node bar mem init end {:#?}", bararr);
+                // info!("get node bar mem init end {:#?}", bararr);
 
                 let ep = Arc::new(ep);
                 let mut node = VirtualPciConfigSpace::endpoint(
@@ -1095,7 +1095,10 @@ impl<B: BarAllocator> PciIterator<B> {
 
     fn rom_init<D: PciRomRW + PciHeaderRW>(dev: &mut D) -> PciMem {
         let mut rom = dev.parse_rom();
-        rom.set_virtual_value(rom.get_value() as u64);
+        if rom.get_type() == PciMemType::Rom {
+            rom.set_value(rom.get_value() as u64);
+            rom.set_virtual_value(rom.get_value() as u64);
+        }
         rom
     }
 
@@ -1250,7 +1253,6 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
     type Item = VirtualPciConfigSpace;
 
     fn next(&mut self) -> Option<Self::Item> {
-        info!("pci dev next");
         while !self.is_finish {
             if let Some(mut node) = self.get_node() {
                 node.config_value_init();

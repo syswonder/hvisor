@@ -25,9 +25,10 @@ impl VpciDeviceHandler for StandardHandler {
         offset: PciConfigAddress,
         size: usize,
     ) -> HvResult<PciConfigAccessStatus> {
-        info!(
+        pci_virt_log!(
             "virt pci standard read_cfg, offset {:#x}, size {:#x}",
-            offset, size
+            offset,
+            size
         );
         match EndpointField::from(offset as usize, size) {
             EndpointField::ID => {
@@ -60,9 +61,11 @@ impl VpciDeviceHandler for StandardHandler {
         size: usize,
         value: usize,
     ) -> HvResult<PciConfigAccessStatus> {
-        info!(
+        pci_virt_log!(
             "virt pci standard write_cfg, offset {:#x}, size {:#x}, value {:#x}",
-            offset, size, value
+            offset,
+            size,
+            value
         );
         match EndpointField::from(offset as usize, size) {
             EndpointField::Command => {
@@ -78,9 +81,10 @@ impl VpciDeviceHandler for StandardHandler {
                 } else {
                     let zone = this_zone();
                     let mut guard = zone.write();
-                    info!(
+                    pci_virt_log!(
                         "virtual pci standard write_cfg, register mmio region {:#x}, size {:#x}",
-                        value, bar_size
+                        value,
+                        bar_size
                     );
                     guard.mmio_region_register(
                         value as usize,
