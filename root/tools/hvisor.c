@@ -573,8 +573,7 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
                 ->valuestring,
             NULL, 16);
         pci_config->domain = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "domain")
-                ->valuestring,
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "domain")->valuestring,
             NULL, 16);
 
         // log_info("pci_config %d: ecam_base=0x%llx, ecam_size=0x%llx, "
@@ -607,9 +606,10 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
         dev_config->device = strtoull(
             SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "device")->valuestring,
             NULL, 16);
-        dev_config->function = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "function")->valuestring,
-            NULL, 16);
+        dev_config->function =
+            strtoull(SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "function")
+                         ->valuestring,
+                     NULL, 16);
         dev_config->dev_type =
             strtoull(SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "dev_type")
                          ->valuestring,
