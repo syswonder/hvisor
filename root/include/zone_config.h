@@ -41,7 +41,10 @@ struct memory_region {
 typedef struct memory_region memory_region_t;
 
 struct hv_pci_dev_config {
-    __u64 bdf;
+    __u8 domain;
+    __u8 bus;
+    __u8 device;
+    __u8 function;
     __u32 dev_type;
 };
 
@@ -61,6 +64,7 @@ struct pci_config {
     __u64 pci_mem64_base;
     __u32 bus_range_begin;
     __u32 bus_range_end;
+    __u8 domain;
 };
 
 typedef struct pci_config pci_config_t;
