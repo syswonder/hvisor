@@ -19,7 +19,10 @@ use crate::{
         zone::{GicConfig, Gicv3Config, HvArchZoneConfig},
     },
     config::*,
+    pci::vpci_dev::VpciDevType,
 };
+
+use crate::pci_dev;
 
 // [   17.796762]   node   0: [mem 0x0000000000200000-0x000000000047ffff]
 // [   17.797335]   node   0: [mem 0x0000000000480000-0x000000000087ffff]
@@ -201,8 +204,12 @@ pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
     mem64_base: 0x8000000000,
     mem64_size: 0x8000000000,
     pci_mem64_base: 0x8000000000,
+    domain: 0x0,
 };
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
 
-pub const ROOT_PCI_DEVS: [u64; 2] = [0, 1 << 3];
+pub const ROOT_PCI_DEVS: [HvPciDevConfig; 2] = [
+    pci_dev!(0x0, 0x0, 0x0, 0x0, VpciDevType::Physical),
+    pci_dev!(0x0, 0x0, 0x1, 0x0, VpciDevType::Physical),
+];

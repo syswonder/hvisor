@@ -126,7 +126,10 @@
     }],
     "num_pci_devs": 1,
     "alloc_pci_devs": [{
-        "bdf": "0x601",
-        "vbdf": "0x601"
+        "domain": "0x0",
+        "bus": "0x6",
+        "device": "0x1",
+        "function": "0x0",
+        "dev_type": "0"
     }]
 }

@@ -51,11 +51,17 @@
     "num_pci_devs": 2,
     "alloc_pci_devs": [
         {
-            "bdf": "0x0",
+            "domain": "0x0",
+            "bus": "0x0",
+            "device": "0x0",
+            "function": "0x0",
             "dev_type": "0"
         },
         {
-            "bdf": "0x18",
+            "domain": "0x0",
+            "bus": "0x0",
+            "device": "0x1",
+            "function": "0x0",
             "dev_type": "0"
         }
     ]

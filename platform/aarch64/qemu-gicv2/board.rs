@@ -109,13 +109,16 @@ pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [
         mem64_base: 0x8000000000,
         mem64_size: 0x8000000000,
         pci_mem64_base: 0x8000000000,
+        bus_range_begin: 0x0,
+        bus_range_end: 0xff,
+        domain: 0x0,
     }
 ];
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
 
 pub const ROOT_PCI_DEVS: [HvPciDevConfig; 3] = [
-    pci_dev!(0x0, 0x0, 0x0, VpciDevType::Physical),
-    pci_dev!(0x0, 0x1, 0x0, VpciDevType::Physical),
-    pci_dev!(0x0, 0x2, 0x0, VpciDevType::Physical),
+    pci_dev!(0x0, 0x0, 0x0, 0x0, VpciDevType::Physical),
+    pci_dev!(0x0, 0x0, 0x1, 0x0, VpciDevType::Physical),
+    pci_dev!(0x0, 0x0, 0x2, 0x0, VpciDevType::Physical),
 ];
