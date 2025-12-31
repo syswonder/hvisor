@@ -36,8 +36,8 @@ use super::{
 };
 
 use crate::{
-    error::{HvErrorNum, HvResult},
     config::HvPciDevConfig,
+    error::{HvErrorNum, HvResult},
     pci::vpci_dev::VpciDevType,
 };
 
@@ -1279,7 +1279,7 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
                 self.next(match node.config_value.get_class().0 {
                     // class code 0x6 is bridge and class.1 0x0 is host bridge
                     0x6 if node.config_value.get_class().1 != 0x0 => {
-                        let bdf = Bdf::new(domain,  parent.subordinate_bus + 1, 0, 0);
+                        let bdf = Bdf::new(domain, parent.subordinate_bus + 1, 0, 0);
                         Some(self.get_bridge().next_bridge(
                             self.address(parent_bus, bdf),
                             node.has_secondary_link(),

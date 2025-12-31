@@ -48,7 +48,7 @@ pub fn pcie_test() {
     allocator.set_mem64(0x8000000000, 0xffffffffff - 0x8000000000);
 
     let mut root = RootComplex::new_ecam(0x4010000000);
-    for node in root.enumerate(None, Some(allocator)) {
+    for node in root.enumerate(None, 0, Some(allocator)) {
         GLOBAL_PCIE_LIST_TEST.lock().insert(node.get_bdf(), node);
     }
     warn!("pcie guest init done");

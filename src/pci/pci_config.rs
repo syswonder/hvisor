@@ -166,68 +166,147 @@ impl Zone {
         zone_id: usize,
         alloc_pci_devs: &[HvPciDevConfig; CONFIG_MAX_PCI_DEV],
         num_pci_devs: u64,
-        //TODO: set vpci dev base in other way
-        _ecam_base: u64,
+        pci_config: &[HvPciConfig],
+        _num_pci_config: usize,
     ) -> HvResult {
         let mut guard = GLOBAL_PCIE_LIST.lock();
-        let mut i = 0;
-        while i < num_pci_devs {
-            let dev_config = alloc_pci_devs[i as usize];
-            let bdf = Bdf::new_from_config(dev_config);
-            let vbdf = bdf.clone();
-            #[cfg(any(
-                all(feature = "iommu", target_arch = "aarch64"),
-                target_arch = "x86_64"
-            ))]
-            {
-                let iommu_pt_addr = if self.iommu_pt.is_some() {
-                    self.iommu_pt.as_ref().unwrap().root_paddr()
-                } else {
-                    0
-                };
-                let device_id = (dev_config.bus as usize) << 8 | (dev_config.device as usize) << 3 | dev_config.function as usize;
-                iommu_add_device(zone_id, device_id as _, iommu_pt_addr);
+        for target_pci_config in pci_config {
+            // Skip empty config
+            if target_pci_config.ecam_base == 0 {
+                continue;
             }
-            if let Some(dev) = guard.get(&bdf) {
-                if bdf.is_host_bridge(dev.read().get_host_bdf().bus())
-                    || dev.with_config_value(|config_value| -> bool {
-                        config_value.get_class().0 == 0x6
-                    })
-                {
-                    let mut vdev = dev.read().clone();
-                    vdev.set_vbdf(vbdf);
-                    self.vpci_bus.insert(vbdf, vdev);
-                } else {
-                    let vdev = guard.remove(&bdf).unwrap();
-                    let mut vdev_inner = vdev.read().clone();
-                    vdev_inner.set_vbdf(vbdf);
-                    self.vpci_bus.insert(vbdf, vdev_inner);
+
+            #[allow(unused_variables)]
+            let ecam_base = target_pci_config.ecam_base;
+            let target_domain = target_pci_config.domain;
+            let bus_range_begin = target_pci_config.bus_range_begin as u8;
+
+            let mut filtered_devices: alloc::vec::Vec<HvPciDevConfig> = alloc::vec::Vec::new();
+            for i in 0..num_pci_devs {
+                let dev_config = alloc_pci_devs[i as usize];
+                if dev_config.domain == target_domain {
+                    filtered_devices.push(dev_config);
                 }
-            } else {
-                // warn!("can not find dev {:#?}", bdf);
-                #[cfg(feature = "ecam_pcie")]
+            }
+
+            // Skip if no devices for this domain
+            if filtered_devices.is_empty() {
+                continue;
+            }
+
+            filtered_devices.sort_by(|a, b| {
+                a.bus
+                    .cmp(&b.bus)
+                    .then_with(|| a.device.cmp(&b.device))
+                    .then_with(|| a.function.cmp(&b.function))
+            });
+
+            let mut vbus_pre = bus_range_begin;
+            let mut bus_pre = bus_range_begin;
+            let mut device_pre = 0u8;
+
+            /*
+             * To allow Linux to successfully recognize the devices we add, hvisor needs
+             * to adjust the devices’ BDFs. Linux always assumes that the PCIe buses
+             * it discovers are contiguous, and that device function numbers always start from 0.
+             *
+             * 1.   The bus number of a virtual BDF (vBDF) must start from range_begin and
+             *      be contiguous. Once the physical bus number increases—regardless of
+             *      how much it increases—the corresponding virtual bus number (vbus)
+             *      can only increase by 1.
+             *
+             * 2.   If the function number of a vBDF is not 0, and it is found that
+             *      the device with function 0 of the same vBDF does not belong to the current zone,
+             *      then the function number of the current vBDF should be set to 0.
+             */
+            for dev_config in &filtered_devices {
+                let bdf = Bdf::new_from_config(*dev_config);
+                let bus = bdf.bus();
+                let device = bdf.device();
+                let function = bdf.function();
+
+                /*
+                 * vfunction = if (bus != bus_pre || device != device_pre) && function != 0
+                 * In practice, remapping is performed only for new devices whose function is not 0;
+                 * however, the check for function != 0 does not affect the final result.
+                 */
+                let vfunction = if bus != bus_pre || device != device_pre {
+                    0
+                } else {
+                    function
+                };
+
+                let vbus = if bus > bus_pre {
+                    vbus_pre += 1;
+                    vbus_pre
+                } else {
+                    vbus_pre
+                };
+
+                let vbdf = Bdf::new(bdf.domain(), vbus, device, vfunction);
+
+                device_pre = device;
+                bus_pre = bus;
+
+                info!("set bdf {:#?} to vbdf {:#?}", bdf, vbdf);
+
+                #[cfg(any(
+                    all(feature = "iommu", target_arch = "aarch64"),
+                    target_arch = "x86_64"
+                ))]
                 {
-                    let dev_type = dev_config.dev_type;
-                    match dev_type {
-                        VpciDevType::Physical => {
-                            warn!("can not find dev {:#?}", bdf);
-                        }
-                        _ => {
-                            if let Some(_handler) = get_handler(dev_type) {
-                                let base = _ecam_base
-                                    + ((bdf.bus() as u64) << 20)
-                                    + ((bdf.device() as u64) << 15)
-                                    + ((bdf.function() as u64) << 12);
-                                let dev = VirtualPciConfigSpace::virt_dev(bdf, base, dev_type);
-                                self.vpci_bus.insert(vbdf, dev);
-                            } else {
-                                warn!("can not find dev {:#?}, unknown device type", bdf);
+                    let iommu_pt_addr = if self.iommu_pt.is_some() {
+                        self.iommu_pt.as_ref().unwrap().root_paddr()
+                    } else {
+                        0
+                    };
+                    let device_id = (dev_config.bus as usize) << 8
+                        | (dev_config.device as usize) << 3
+                        | dev_config.function as usize;
+                    iommu_add_device(zone_id, device_id as _, iommu_pt_addr);
+                }
+
+                // Insert device into vpci_bus with calculated vbdf
+                if let Some(dev) = guard.get(&bdf) {
+                    if bdf.is_host_bridge(dev.read().get_host_bdf().bus())
+                        || dev.with_config_value(|config_value| -> bool {
+                            config_value.get_class().0 == 0x6
+                        })
+                    {
+                        let mut vdev = dev.read().clone();
+                        vdev.set_vbdf(vbdf);
+                        self.vpci_bus.insert(vbdf, vdev);
+                    } else {
+                        let vdev = guard.remove(&bdf).unwrap();
+                        let mut vdev_inner = vdev.read().clone();
+                        vdev_inner.set_vbdf(vbdf);
+                        self.vpci_bus.insert(vbdf, vdev_inner);
+                    }
+                } else {
+                    // warn!("can not find dev {:#?}", bdf);
+                    #[cfg(feature = "ecam_pcie")]
+                    {
+                        let dev_type = dev_config.dev_type;
+                        match dev_type {
+                            VpciDevType::Physical => {
+                                warn!("can not find dev {:#?}", bdf);
+                            }
+                            _ => {
+                                if let Some(_handler) = get_handler(dev_type) {
+                                    let base = ecam_base
+                                        + ((bdf.bus() as u64) << 20)
+                                        + ((bdf.device() as u64) << 15)
+                                        + ((bdf.function() as u64) << 12);
+                                    let dev = VirtualPciConfigSpace::virt_dev(bdf, base, dev_type);
+                                    self.vpci_bus.insert(vbdf, dev);
+                                } else {
+                                    warn!("can not find dev {:#?}, unknown device type", bdf);
+                                }
                             }
                         }
                     }
                 }
             }
-            i += 1;
         }
         info!("vpci bus init done\n {:#?}", self.vpci_bus);
         Ok(())

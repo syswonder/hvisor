@@ -298,7 +298,8 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
             zone_id,
             &config.alloc_pci_devs,
             config.num_pci_devs,
-            config.pci_config[0].ecam_base as u64,
+            &config.pci_config,
+            config.num_pci_bus as usize,
         );
     }
 
