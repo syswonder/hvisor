@@ -21,7 +21,7 @@ use spin::{lazy::Lazy, mutex::Mutex};
 
 use super::{
     mem_alloc::BaseAllocator,
-    pci_access::{mmio_vpci_direct_handler, mmio_vpci_handler},
+    pci_handler::{mmio_vpci_direct_handler, mmio_vpci_handler},
     pci_struct::{Bdf, VirtualPciConfigSpace, CONFIG_LENTH, RootComplex},
 };
 

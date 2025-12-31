@@ -39,6 +39,7 @@ pub struct ConfigValue {
     id: (DeviceId, VendorId),
     class_and_revision_id: (BaseClass, SubClass, Interface, DeviceRevision),
     bar_value: [u32; 6],
+    rom_value: u32,
 }
 
 impl Default for ConfigValue {
@@ -47,6 +48,7 @@ impl Default for ConfigValue {
             id: (0xFFFFu16, 0xFFFFu16),
             class_and_revision_id: (0xFFu8, 0u8, 0u8, 0u8),
             bar_value: [0; 6],
+            rom_value: 0,
         }
     }
 }
@@ -57,6 +59,7 @@ impl ConfigValue {
             id,
             class_and_revision_id,
             bar_value: [0; 6],
+            rom_value: 0,
         }
     }
 
@@ -110,6 +113,14 @@ impl ConfigValue {
 
     pub fn get_bar_value_ref_mut(&mut self, slot: usize) -> &mut u32 {
         &mut self.bar_value[slot]
+    }
+
+    pub fn get_rom_value(&self) -> u32 {
+        self.rom_value
+    }
+
+    pub fn set_rom_value(&mut self, value: u32) {
+        self.rom_value = value;
     }
 }
 
@@ -359,6 +370,10 @@ impl ArcRwLockVirtualPciConfigSpace {
         self.0.read().get_bdf()
     }
 
+    pub fn get_vbdf(&self) -> Bdf {
+        self.0.read().get_vbdf()
+    }
+
     pub fn get_dev_type(&self) -> VpciDevType {
         self.0.read().get_dev_type()
     }
@@ -437,6 +452,26 @@ impl ArcRwLockVirtualPciConfigSpace {
     {
         let mut guard = self.0.write();
         f(&mut guard.config_value)
+    }
+
+    /// Execute a closure with a reference to the rom
+    pub fn with_rom_ref<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&PciMem) -> R,
+    {
+        let guard = self.0.read();
+        let rom = &guard.rom;
+        f(rom)
+    }
+
+    /// Execute a closure with a mutable reference to the rom
+    pub fn with_rom_ref_mut<F, R>(&self, f: F) -> R
+    where
+        F: FnOnce(&mut PciMem) -> R,
+    {
+        let mut guard = self.0.write();
+        let rom = &mut guard.rom;
+        f(rom)
     }
 
     /// Execute a closure with a reference to the capabilities list
@@ -814,6 +849,10 @@ impl VirtualPciConfigSpace {
                     hv_result_err!(EFAULT, "pci: invalid bar slot: {slot}")
                 }
             }
+            EndpointField::ExpansionRomBar => {
+                // Read rom_value from cache
+                Ok(self.config_value.get_rom_value() as usize)
+            }
             _ => {
                 // For other fields, read from backend
                 warn!("read emu {:#?} failed, try read from hw", field);
@@ -847,6 +886,10 @@ impl VirtualPciConfigSpace {
                 if slot < 6 {
                     self.config_value.set_bar_value(slot, value as u32);
                 }
+            }
+            EndpointField::ExpansionRomBar => {
+                // Update rom_value cache when writing rom bar
+                self.config_value.set_rom_value(value as u32);
             }
             _ => {
                 // For other fields, write to backend

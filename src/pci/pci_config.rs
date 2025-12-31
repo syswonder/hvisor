@@ -32,12 +32,12 @@ use crate::pci::{vpci_dev::{VpciDevType, get_handler}, pci_struct::VirtualPciCon
     feature = "dwc_pcie",
     feature = "loongarch64_pcie"
 ))]
-use crate::pci::{mem_alloc::BaseAllocator, pci_struct::RootComplex, pci_access::mmio_vpci_handler, PciConfigAddress};
+use crate::pci::{mem_alloc::BaseAllocator, pci_struct::RootComplex, pci_handler::mmio_vpci_handler, PciConfigAddress};
 #[cfg(feature = "dwc_pcie")]
-use crate::{platform, memory::mmio_generic_handler, pci::{config_accessors::dwc_atu::{AtuConfig, AtuType}, pci_access::{mmio_vpci_handler_dbi, mmio_dwc_io_handler, mmio_dwc_cfg_handler}}};
+use crate::{platform, memory::mmio_generic_handler, pci::{config_accessors::dwc_atu::{AtuConfig, AtuType}, pci_handler::{mmio_vpci_handler_dbi, mmio_dwc_io_handler, mmio_dwc_cfg_handler}}};
 
 #[cfg(feature = "loongarch64_pcie")]
-use crate::pci::pci_access::mmio_vpci_direct_handler;
+use crate::pci::pci_handler::mmio_vpci_direct_handler;
 
 pub static GLOBAL_PCIE_LIST: Lazy<Mutex<BTreeMap<Bdf, ArcRwLockVirtualPciConfigSpace>>> = Lazy::new(|| {
     let m = BTreeMap::new();
@@ -226,7 +226,7 @@ impl Zone {
             }
             #[cfg(feature = "ecam_pcie")]
             {
-                use crate::pci::pci_access::mmio_vpci_direct_handler;
+                // use crate::pci::pci_handler::mmio_vpci_direct_handler;
                 self.mmio_region_register(
                     rootcomplex_config.ecam_base as usize,
                     rootcomplex_config.ecam_size as usize,
