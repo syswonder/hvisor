@@ -23,6 +23,10 @@
 #define LOONGARCH64
 #endif
 
+#ifdef __x86_64__
+#define X86_64
+#endif
+
 #ifdef RISCV64
 
 // according to the riscv sbi spec
@@ -54,4 +58,16 @@ static inline __u64 hvisor_call(__u64 code, __u64 arg0, __u64 arg1) {
     return x0;
 }
 #endif /* ARM64 */
+
+#ifdef X86_64
+static inline __u64 hvisor_call(__u64 code, __u64 arg0, __u64 arg1) {
+    register __u64 rax asm("rax") = code;
+    register __u64 rdi asm("rdi") = arg0;
+    register __u64 rsi asm("rsi") = arg1;
+
+    asm volatile("vmcall" : "+a"(rax) : "D"(rdi), "S"(rsi) : "memory");
+    return rax;
+}
+#endif /* X86_64 */
+
 #endif /* __HVISOR_DEF_H */

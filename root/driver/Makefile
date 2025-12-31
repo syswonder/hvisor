@@ -12,6 +12,9 @@ else ifeq ($(ARCH), loongarch)
 	COMPILE := loongarch64-unknown-linux-gnu-
 	OBJDUMP := loongarch64-unknown-linux-gnu-objdump
 	EXTRA_CFLAGS += -DLOONGARCH64
+else ifeq ($(ARCH), x86_64)
+	COMPILE := x86_64-linux-gnu-
+	OBJDUMP := x86_64-linux-gnu-objdump
 else
 	COMPILE := 
 endif

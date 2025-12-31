@@ -1,0 +1,99 @@
+{
+    "arch": "x86_64",
+    "name": "linux2",
+    "zone_id": 1,
+    "cpus": [
+        2,
+        3
+    ],
+    "memory_regions": [
+        {
+            "type": "ram",
+            "physical_start": "0x100000000",
+            "virtual_start": "0x0",
+            "size": "0xe0000"
+        },
+        {
+            "type": "ram",
+            "physical_start": "0x1000e0000",
+            "virtual_start": "0xe0000",
+            "size": "0x20000"
+        },
+        {
+            "type": "ram",
+            "physical_start": "0x100100000",
+            "virtual_start": "0x100000",
+            "size": "0x14f00000"
+        },
+        {
+            "type": "ram",
+            "physical_start": "0x115000000",
+            "virtual_start": "0x15000000",
+            "size": "0x20000"
+        },
+        {
+            "type": "ram",
+            "physical_start": "0x115020000",
+            "virtual_start": "0x15020000",
+            "size": "0x200000"
+        },
+        {
+            "type": "ram",
+            "physical_start": "0x115220000",
+            "virtual_start": "0x15220000",
+            "size": "0x4000000"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0x119220000",
+            "virtual_start": "0x19220000",
+            "size": "0x4000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0xfed00000",
+            "virtual_start": "0xfed00000",
+            "size": "0x1000"
+        }
+    ],
+    "interrupts": [],
+    "ivc_configs": [],
+    "kernel_filepath": "./vmlinux.bin",
+    "dtb_filepath": "",
+    "kernel_load_paddr": "0x100100000",
+    "dtb_load_paddr": "0x0",
+    "entry_point": "0x8000",
+    "arch_config": {
+        "ioapic_base": "0xfec00000",
+        "ioapic_size": "0x1000",
+        "boot_filepath": "./boot.bin",
+        "boot_load_paddr": "0x100008000",
+        "cmdline": "console=hvc0 pci=pcie_scan_all,lastbus=1 root=/dev/vda rw init=/init nointremap virtio_mmio.device=0x200@0x119220000:10 virtio_mmio.device=0x200@0x119220200:14 virtio_mmio.device=0x200@0x119220400:11",
+        "cmdline_load_hpa": "0x10000c000",
+        "cmdline_load_gpa": "0xc000",
+        "kernel_entry_gpa": "0x100000",
+        "setup_filepath": "./setup.bin",
+        "setup_load_hpa": "0x10000d000",
+        "setup_load_gpa": "0xd000",
+        "rsdp_memory_region_id": "0x1",
+        "acpi_memory_region_id": "0x3",
+        "screen_base": "0x70000000"
+    },
+    "pci_config": {
+        "ecam_base": "0xc0000000",
+        "ecam_size": "0x300000",
+        "io_base": "0x0",
+        "io_size": "0x0",
+        "pci_io_base": "0x0",
+        "mem32_base": "0x0",
+        "mem32_size": "0x0",
+        "pci_mem32_base": "0x0",
+        "mem64_base": "0x0",
+        "mem64_size": "0x0",
+        "pci_mem64_base": "0x0"
+    },
+    "num_pci_devs": 1,
+    "alloc_pci_devs": [
+        0
+    ]
+}
