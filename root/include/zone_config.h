@@ -156,7 +156,7 @@ struct ivc_config {
 };
 typedef struct ivc_config ivc_config_t;
 
-#define CONFIG_MAGIC_VERSION 0x04
+#define CONFIG_MAGIC_VERSION 0x05
 
 // Every time you change the struct, you should also change the
 // `CONFIG_MAGIC_VERSION`
