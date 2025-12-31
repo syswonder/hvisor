@@ -300,6 +300,7 @@ pub const ROOT_PCI_CONFIG: &[HvPciConfig] = &[
     //     pci_mem64_base: 0x300000000,
     //     bus_range_begin: 0x0,
     //     bus_range_end: 0x10,
+    //     domain: 0x0,
     // },
     HvPciConfig {
         ecam_base: 0x3c0400000,
@@ -315,6 +316,7 @@ pub const ROOT_PCI_CONFIG: &[HvPciConfig] = &[
         pci_mem64_base: 0x340000000,
         bus_range_begin: 0x10,
         bus_range_end: 0x1f,
+        domain: 0x1,
     },
     // HvPciConfig {
     //     ecam_base: 0xfe280000,
@@ -330,6 +332,7 @@ pub const ROOT_PCI_CONFIG: &[HvPciConfig] = &[
     //     pci_mem64_base: 0x380000000,
     //     bus_range_begin: 0x20,
     //     bus_range_end: 0x2f,
+    //     domain: 0x2,
     // }
 ];
 
@@ -349,6 +352,6 @@ pub const ROOT_DWC_ATU_CONFIG: &[HvDwcAtuConfig] = &[
 ];
 
 pub const ROOT_PCI_DEVS: [HvPciDevConfig; 2] = [
-    pci_dev!(0x10, 0x0, 0x0, VpciDevType::Physical),
-    pci_dev!(0x11, 0x0, 0x0, VpciDevType::Physical),
+    pci_dev!(0x0, 0x10, 0x0, 0x0, VpciDevType::Physical),
+    pci_dev!(0x0, 0x11, 0x0, 0x0, VpciDevType::Physical),
 ];

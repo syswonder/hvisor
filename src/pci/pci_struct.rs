@@ -37,6 +37,7 @@ use super::{
 
 use crate::{
     error::{HvErrorNum, HvResult},
+    config::HvPciDevConfig,
     pci::vpci_dev::VpciDevType,
 };
 
@@ -151,19 +152,28 @@ const PCI_EXP_TYPE_PCIE_BRIDGE: u16 = 8;
 
 #[derive(Clone, Copy, Eq, PartialEq, Default)]
 pub struct Bdf {
+    pub domain: u8,
     pub bus: u8,
     pub device: u8,
     pub function: u8,
 }
 
 impl Bdf {
-    #[allow(dead_code)]
-    pub fn new(bus: u8, device: u8, function: u8) -> Self {
+    pub fn new(domain: u8, bus: u8, device: u8, function: u8) -> Self {
         Self {
+            domain,
             bus,
             device,
             function,
         }
+    }
+
+    pub fn new_from_config(config: HvPciDevConfig) -> Self {
+        Self::new(config.domain, config.bus, config.device, config.function)
+    }
+
+    pub fn domain(&self) -> u8 {
+        self.domain
     }
 
     pub fn bus(&self) -> u8 {
@@ -176,18 +186,6 @@ impl Bdf {
 
     pub fn function(&self) -> u8 {
         self.function
-    }
-
-    pub fn from_address(address: PciConfigAddress) -> Bdf {
-        let bdf = address >> 12;
-        let function = (bdf & 0b111) as u8;
-        let device = ((bdf >> 3) & 0b11111) as u8;
-        let bus = (bdf >> 8) as u8;
-        Bdf {
-            bus,
-            device,
-            function,
-        }
     }
 
     pub fn is_host_bridge(&self, bus_begin: u8) -> bool {
@@ -224,6 +222,10 @@ impl FromStr for Bdf {
             return Err(HvErrorNum::EINVAL);
         }
 
+        let domain = u8::from_str_radix(parts[0], 16)
+            .map_err(|_| HvErrorNum::EINVAL)
+            .unwrap();
+
         let bus = u8::from_str_radix(parts[1], 16)
             .map_err(|_| HvErrorNum::EINVAL)
             .unwrap();
@@ -240,6 +242,7 @@ impl FromStr for Bdf {
             .unwrap();
 
         Ok(Bdf {
+            domain,
             bus,
             device,
             function,
@@ -932,6 +935,7 @@ pub struct PciIterator<B: BarAllocator> {
     stack: Vec<Bridge>,
     segment: PciConfigAddress,
     bus_range: Range<usize>,
+    domain: u8,
     function: u8,
     is_mulitple_function: bool,
     is_finish: bool,
@@ -975,7 +979,7 @@ impl<B: BarAllocator> PciIterator<B> {
             (bus_begin, 0, self.function, bus_begin)
         };
 
-        let bdf = Bdf::new(bus, device, function);
+        let bdf = Bdf::new(self.domain, bus, device, function);
 
         let address = self.address(parent_bus, bdf);
         let pci_addr_base = self.get_pci_addr_base(parent_bus, bdf);
@@ -1251,6 +1255,7 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
             if let Some(mut node) = self.get_node() {
                 node.config_value_init();
                 let bus_begin = self.bus_range.start as u8;
+                let domain = self.domain;
                 /*
                  * when first time to enumerate, placeholder is pop in get_node
                  * the message of host bridge must be got after get_node()
@@ -1266,15 +1271,15 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
                     self.stack.push(host_bridge);
                 }
                 let parent = self.stack.last().unwrap(); // Safe because we just ensured it exists
-                let host_bdf = Bdf::new(bus_begin, 0, 0);
-                let parent_bdf = Bdf::new(parent.bus, parent.device, 0);
+                let host_bdf = Bdf::new(domain, bus_begin, 0, 0);
+                let parent_bdf = Bdf::new(domain, parent.bus, parent.device, 0);
                 let parent_bus = parent.primary_bus;
                 node.set_host_bdf(host_bdf);
                 node.set_parent_bdf(parent_bdf);
                 self.next(match node.config_value.get_class().0 {
                     // class code 0x6 is bridge and class.1 0x0 is host bridge
                     0x6 if node.config_value.get_class().1 != 0x0 => {
-                        let bdf = Bdf::new(parent.subordinate_bus + 1, 0, 0);
+                        let bdf = Bdf::new(domain,  parent.subordinate_bus + 1, 0, 0);
                         Some(self.get_bridge().next_bridge(
                             self.address(parent_bus, bdf),
                             node.has_secondary_link(),
@@ -1394,6 +1399,7 @@ impl RootComplex {
     fn __enumerate<B: BarAllocator>(
         &mut self,
         range: Option<Range<usize>>,
+        domain: u8,
         bar_alloc: Option<B>,
     ) -> PciIterator<B> {
         let mmio_base = self.mmio_base;
@@ -1403,6 +1409,7 @@ impl RootComplex {
             stack: vec![Bridge::placeholder()],
             segment: mmio_base,
             bus_range: range,
+            domain,
             function: 0,
             is_mulitple_function: false,
             is_finish: false,
@@ -1413,9 +1420,10 @@ impl RootComplex {
     pub fn enumerate<B: BarAllocator>(
         &mut self,
         range: Option<Range<usize>>,
+        domain: u8,
         bar_alloc: Option<B>,
     ) -> PciIterator<B> {
-        self.__enumerate(range, bar_alloc)
+        self.__enumerate(range, domain, bar_alloc)
     }
 }
 

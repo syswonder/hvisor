@@ -46,8 +46,8 @@ use crate::{
         config_accessors::{
             dwc::DwcConfigRegionBackend,
             dwc_atu::{AtuConfig, AtuType},
+            PciRegionMmio,
         },
-        pci_access::PciRegionMmio,
         pci_handler::{mmio_dwc_cfg_handler, mmio_dwc_io_handler, mmio_vpci_handler_dbi},
     },
     platform,
@@ -146,7 +146,8 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
         let range =
             rootcomplex_config.bus_range_begin as usize..rootcomplex_config.bus_range_end as usize;
 
-        let e = rootcomplex.enumerate(Some(range), allocator_opt);
+        let domain = rootcomplex_config.domain;
+        let e = rootcomplex.enumerate(Some(range), domain, allocator_opt);
         info!("begin enumerate {:#?}", e);
         for node in e {
             info!("node {:#?}", node);
@@ -172,7 +173,7 @@ impl Zone {
         let mut i = 0;
         while i < num_pci_devs {
             let dev_config = alloc_pci_devs[i as usize];
-            let bdf = Bdf::from_address(dev_config.bdf << 12);
+            let bdf = Bdf::new_from_config(dev_config);
             let vbdf = bdf.clone();
             #[cfg(any(
                 all(feature = "iommu", target_arch = "aarch64"),
@@ -184,7 +185,8 @@ impl Zone {
                 } else {
                     0
                 };
-                iommu_add_device(zone_id, dev_config.bdf as _, iommu_pt_addr);
+                let device_id = (dev_config.bus as usize) << 8 | (dev_config.device as usize) << 3 | dev_config.function as usize;
+                iommu_add_device(zone_id, device_id as _, iommu_pt_addr);
             }
             if let Some(dev) = guard.get(&bdf) {
                 if bdf.is_host_bridge(dev.read().get_host_bdf().bus())
@@ -311,7 +313,7 @@ impl Zone {
                     let dbi_size = extend_config.dbi_size;
                     let dbi_region = PciRegionMmio::new(dbi_base, dbi_size);
                     let dbi_backend = DwcConfigRegionBackend::new(dbi_region);
-                    if let Err(e) = atu.init_limit_hw_value(dbi_backend.as_ref()) {
+                    if let Err(e) = atu.init_limit_hw_value(&dbi_backend) {
                         warn!("Failed to initialize ATU0 limit defaults: {:?}", e);
                     }
 

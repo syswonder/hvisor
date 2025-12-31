@@ -55,7 +55,7 @@ pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 3] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x50000000,
@@ -107,13 +107,14 @@ pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [HvPciConfig {
     pci_mem64_base: 0x8000000000,
     bus_range_begin: 0,
     bus_range_end: 0xff,
+    domain: 0x0,
 }];
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
 
 pub const ROOT_PCI_DEVS: &[HvPciDevConfig] = &[
-    pci_dev!(0x0, 0x0, 0x0, VpciDevType::Physical),
-    pci_dev!(0x0, 0x1, 0x0, VpciDevType::Physical),
-    pci_dev!(0x0, 0x2, 0x0, VpciDevType::Physical),
-    pci_dev!(0x0, 0x5, 0x0, VpciDevType::StandardVdev),
+    pci_dev!(0x0, 0x0, 0x0, 0, VpciDevType::Physical),
+    pci_dev!(0x0, 0x1, 0x0, 0, VpciDevType::Physical),
+    pci_dev!(0x0, 0x2, 0x0, 0, VpciDevType::Physical),
+    pci_dev!(0x0, 0x5, 0x0, 0, VpciDevType::StandardVdev),
 ];

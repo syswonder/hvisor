@@ -61,6 +61,7 @@ pub struct HvPciConfig {
     pub pci_mem64_base: u64,
     pub bus_range_begin: u32,
     pub bus_range_end: u32,
+    pub domain: u8,
 }
 
 impl HvPciConfig {
@@ -79,6 +80,7 @@ impl HvPciConfig {
             pci_mem64_base: 0,
             bus_range_begin: 0,
             bus_range_end: 0,
+            domain: 0,
         }
     }
 }
@@ -212,15 +214,21 @@ pub struct HvIvcConfig {
 #[repr(C)]
 #[derive(Copy, Clone, Default)]
 pub struct HvPciDevConfig {
-    pub bdf: u64,
+    pub domain: u8,
+    pub bus: u8,
+    pub device: u8,
+    pub function: u8,
     pub dev_type: VpciDevType,
 }
 
 #[macro_export]
 macro_rules! pci_dev {
-    ($bus:expr, $dev:expr, $func:expr, $dev_type:expr) => {
+    ($domain:expr, $bus:expr, $dev:expr, $func:expr, $dev_type:expr) => {
         HvPciDevConfig {
-            bdf: ($bus << 8) | ($dev << 3) | ($func),
+            domain: $domain,
+            bus: $bus,
+            device: $dev,
+            function: $func,
             dev_type: $dev_type,
         }
     };
@@ -228,7 +236,7 @@ macro_rules! pci_dev {
 
 impl Debug for HvPciDevConfig {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let bdf = crate::pci::pci_struct::Bdf::from_address(self.bdf);
+        let bdf = crate::pci::pci_struct::Bdf::new(self.domain, self.bus, self.device, self.function);
         write!(f, "bdf {:#?}", bdf)
     }
 }
