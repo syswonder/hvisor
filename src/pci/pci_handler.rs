@@ -653,7 +653,7 @@ pub fn mmio_dwc_io_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                 // Call AtuUnroll to program the ATU
                 AtuUnroll::dw_pcie_prog_outbound_atu_unroll(&dbi_backend, &atu)?;
             }
-            mmio_perform_access(atu.pci_target as usize, mmio);
+            mmio_perform_access(atu.pci_target() as usize, mmio);
         } else {
             warn!("No ATU config yet, do nothing");
         }
@@ -698,7 +698,7 @@ pub fn mmio_dwc_cfg_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
         let zone = this_zone();
         let mut is_dev_belong_to_zone = false;
         
-        let base = mmio.address as PciConfigAddress - offset + atu.pci_target;
+        let base = mmio.address as PciConfigAddress - offset + atu.pci_target();
         
         let dev: Option<ArcRwLockVirtualPciConfigSpace> = {
             let mut guard = zone.write();
@@ -768,7 +768,7 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                 match atu_offset {
                     PCIE_ATU_UNR_REGION_CTRL1 => {
                         // info!("set atu0 region ctrl1 value {:#X}", mmio.value);
-                        atu.atu_type = AtuType::from_u8((mmio.value & 0xff) as u8);
+                        atu.set_atu_type(AtuType::from_u8((mmio.value & 0xff) as u8));
                     }
                     PCIE_ATU_UNR_REGION_CTRL2 => {
                         // Enable bit is written here, but we just track it
@@ -776,27 +776,27 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                     }
                     PCIE_ATU_UNR_LOWER_BASE => {
                         // info!("set atu0 lower base value {:#X}", mmio.value);
-                        atu.cpu_base = (atu.cpu_base & !0xffffffff) | (mmio.value as PciConfigAddress);
+                        atu.set_cpu_base((atu.cpu_base() & !0xffffffff) | (mmio.value as PciConfigAddress));
                     }
                     PCIE_ATU_UNR_UPPER_BASE => {
                         // info!("set atu0 upper base value {:#X}", mmio.value);
-                        atu.cpu_base = (atu.cpu_base & 0xffffffff) | ((mmio.value as PciConfigAddress) << 32);
+                        atu.set_cpu_base((atu.cpu_base() & 0xffffffff) | ((mmio.value as PciConfigAddress) << 32));
                     }
                     PCIE_ATU_UNR_LIMIT => {
                         // info!("set atu0 limit value {:#X}", mmio.value);
-                        atu.cpu_limit = (atu.cpu_limit & !0xffffffff) | (mmio.value as PciConfigAddress);
+                        atu.set_cpu_limit((atu.cpu_limit() & !0xffffffff) | (mmio.value as PciConfigAddress));
                     }
                     PCIE_ATU_UNR_UPPER_LIMIT => {
                         // Update the upper 32 bits of cpu_limit
-                        atu.cpu_limit = (atu.cpu_limit & 0xffffffff) | ((mmio.value as PciConfigAddress) << 32);
+                        atu.set_cpu_limit((atu.cpu_limit() & 0xffffffff) | ((mmio.value as PciConfigAddress) << 32));
                     }
                     PCIE_ATU_UNR_LOWER_TARGET => {
                         // info!("set atu0 lower target value {:#X}", mmio.value);
-                        atu.pci_target = (atu.pci_target & !0xffffffff) | (mmio.value as PciConfigAddress);
+                        atu.set_pci_target((atu.pci_target() & !0xffffffff) | (mmio.value as PciConfigAddress));
                     }
                     PCIE_ATU_UNR_UPPER_TARGET => {
                         // info!("set atu0 upper target value {:#X}", mmio.value);
-                        atu.pci_target = (atu.pci_target & 0xffffffff) | ((mmio.value as PciConfigAddress) << 32);
+                        atu.set_pci_target((atu.pci_target() & 0xffffffff) | ((mmio.value as PciConfigAddress) << 32));
                     }
                     _ => {
                         warn!("invalid atu0 write {:#x} + {:#x}", atu_offset, mmio.size);
@@ -810,33 +810,30 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
             // warn!("read atu0 {:#x}", atu_offset);
             match atu_offset {
                 PCIE_ATU_UNR_REGION_CTRL1 => {
-                    mmio.value = atu.atu_type as usize;
+                    mmio.value = atu.atu_type() as usize;
                 }
                 PCIE_ATU_UNR_REGION_CTRL2 => {
                     mmio.value = ATU_ENABLE_BIT as usize;
                 }
                 PCIE_ATU_UNR_LOWER_BASE => {
-                    mmio.value = (atu.cpu_base & 0xffffffff) as usize;
+                    mmio.value = (atu.cpu_base() & 0xffffffff) as usize;
                 }
                 PCIE_ATU_UNR_UPPER_BASE => {
-                    mmio.value = ((atu.cpu_base >> 32) & 0xffffffff) as usize;
+                    mmio.value = ((atu.cpu_base() >> 32) & 0xffffffff) as usize;
                 }
                 PCIE_ATU_UNR_LIMIT => {
-                    let limit_value = (atu.cpu_limit & 0xffffffff) as usize;
-                    // If limit is 0, return 0x3ffffff instead
-                    mmio.value = if limit_value == 0 { 0x3ffffff } else { limit_value };
+                    let limit_value = (atu.cpu_limit() & 0xffffffff) as usize;
+                    mmio.value = if limit_value == 0 { atu.limit_hw_value() as usize } else { limit_value };
                 }
                 PCIE_ATU_UNR_UPPER_LIMIT => {
-                    // Return the upper 32 bits of cpu_limit
-                    // If it's 0xffffffff, return 0x40000000 instead
-                    let upper_limit = ((atu.cpu_limit >> 32) & 0xffffffff) as usize;
-                    mmio.value = if upper_limit == 0xffffffff { 0x40000000 } else { upper_limit };
+                    let upper_limit = ((atu.cpu_limit() >> 32) & 0xffffffff) as usize;
+                    mmio.value = if upper_limit == 0xffffffff { atu.upper_limit_hw_value() as usize } else { upper_limit };
                 }
                 PCIE_ATU_UNR_LOWER_TARGET => {
-                    mmio.value = (atu.pci_target & 0xffffffff) as usize;
+                    mmio.value = (atu.pci_target() & 0xffffffff) as usize;
                 }
                 PCIE_ATU_UNR_UPPER_TARGET => {
-                    mmio.value = ((atu.pci_target >> 32) & 0xffffffff) as usize;
+                    mmio.value = ((atu.pci_target() >> 32) & 0xffffffff) as usize;
                 }
                 _ => {
                     warn!("invalid atu0 read {:#x}", atu_offset);

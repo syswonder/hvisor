@@ -65,16 +65,18 @@ impl AtuType {
 
 #[derive(Clone, Copy, Default)]
 pub struct AtuConfig {
-    pub index: usize,
-    pub atu_type: AtuType,
-    pub cpu_base: PciConfigAddress,
-    pub cpu_limit: PciConfigAddress,
-    pub pci_target: PciConfigAddress,
+    index: usize,
+    atu_type: AtuType,
+    cpu_base: PciConfigAddress,
+    cpu_limit: PciConfigAddress,
+    pci_target: PciConfigAddress,
+    limit_hw_value: u32,
+    upper_limit_hw_value: u32,
 }
 
 impl Debug for AtuConfig {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "AtuConfig {{ index: {},\n atu_type: {:?},\n cpu_base: {:#x},\n cpu_limit: {:#x},\n pci_target: {:#x} }}", self.index, self.atu_type, self.cpu_base, self.cpu_limit, self.pci_target)
+        write!(f, "AtuConfig {{ index: {},\n atu_type: {:?},\n cpu_base: {:#x},\n cpu_limit: {:#x},\n pci_target: {:#x} }}", self.index(), self.atu_type(), self.cpu_base(), self.cpu_limit(), self.pci_target())
     }
 }
 
@@ -93,6 +95,8 @@ impl AtuConfig {
             cpu_base,
             cpu_limit,
             pci_target,
+            limit_hw_value: 0,
+            upper_limit_hw_value: 0,
         }
     }
 
@@ -104,6 +108,76 @@ impl AtuConfig {
             config_region.size,
             pci_addr,
         )
+    }
+
+    pub fn index(&self) -> usize {
+        self.index
+    }
+
+    pub fn atu_type(&self) -> AtuType {
+        self.atu_type
+    }
+
+    pub fn cpu_base(&self) -> PciConfigAddress {
+        self.cpu_base
+    }
+
+    pub fn cpu_limit(&self) -> PciConfigAddress {
+        self.cpu_limit
+    }
+
+    pub fn pci_target(&self) -> PciConfigAddress {
+        self.pci_target
+    }
+
+    pub fn set_atu_type(&mut self, atu_type: AtuType) {
+        self.atu_type = atu_type;
+    }
+
+    pub fn set_cpu_base(&mut self, cpu_base: PciConfigAddress) {
+        self.cpu_base = cpu_base;
+    }
+
+    pub fn set_cpu_limit(&mut self, cpu_limit: PciConfigAddress) {
+        self.cpu_limit = cpu_limit;
+    }
+
+    pub fn set_pci_target(&mut self, pci_target: PciConfigAddress) {
+        self.pci_target = pci_target;
+    }
+
+    pub fn limit_hw_value(&self) -> u32 {
+        self.limit_hw_value
+    }
+
+    pub fn upper_limit_hw_value(&self) -> u32 {
+        self.upper_limit_hw_value
+    }
+
+    pub fn init_limit_hw_value(&mut self, dbi_backend: &dyn PciRW) -> HvResult {
+        let atu_base = (ATU_BASE + self.index() * ATU_REGION_SIZE) as PciConfigAddress;
+
+        dbi_backend.write(
+            atu_base + PCIE_ATU_UNR_LIMIT as PciConfigAddress,
+            4,
+            0,
+        )?;
+        self.limit_hw_value = dbi_backend.read(
+            atu_base + PCIE_ATU_UNR_LIMIT as PciConfigAddress,
+            4,
+        )? as u32;
+
+        dbi_backend.write(
+            atu_base + PCIE_ATU_UNR_UPPER_LIMIT as PciConfigAddress,
+            4,
+            0xffffffff,
+        )?;
+        self.upper_limit_hw_value = dbi_backend.read(
+            atu_base + PCIE_ATU_UNR_UPPER_LIMIT as PciConfigAddress,
+            4,
+        )? as u32;
+
+        Ok(())
     }
 }
 
@@ -117,37 +191,37 @@ impl AtuUnroll {
         dbi_backend: &dyn PciRW,
         config: &AtuConfig,
     ) -> HvResult {
-        let atu_base = (ATU_BASE + config.index * ATU_REGION_SIZE) as PciConfigAddress;
+        let atu_base = (ATU_BASE + config.index() * ATU_REGION_SIZE) as PciConfigAddress;
 
         dbi_backend.write(
             atu_base + PCIE_ATU_UNR_LOWER_BASE as PciConfigAddress,
             4,
-            (config.cpu_base & 0xffffffff) as usize,
+            (config.cpu_base() & 0xffffffff) as usize,
         )?;
         dbi_backend.write(
             atu_base + PCIE_ATU_UNR_UPPER_BASE as PciConfigAddress,
             4,
-            (config.cpu_base >> 32) as usize,
+            (config.cpu_base() >> 32) as usize,
         )?;
         dbi_backend.write(
             atu_base + PCIE_ATU_UNR_LIMIT as PciConfigAddress,
             4,
-            (config.cpu_limit & 0xffffffff) as usize,
+            (config.cpu_limit() & 0xffffffff) as usize,
         )?;
         dbi_backend.write(
             atu_base + PCIE_ATU_UNR_LOWER_TARGET as PciConfigAddress,
             4,
-            (config.pci_target & 0xffffffff) as usize,
+            (config.pci_target() & 0xffffffff) as usize,
         )?;
         dbi_backend.write(
             atu_base + PCIE_ATU_UNR_UPPER_TARGET as PciConfigAddress,
             4,
-            (config.pci_target >> 32) as usize,
+            (config.pci_target() >> 32) as usize,
         )?;
         dbi_backend.write(
             atu_base + PCIE_ATU_UNR_REGION_CTRL1 as PciConfigAddress,
             4,
-            config.atu_type as usize,
+            config.atu_type() as usize,
         )?;
         dbi_backend.write(
             atu_base + PCIE_ATU_UNR_REGION_CTRL2 as PciConfigAddress,

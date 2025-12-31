@@ -34,7 +34,7 @@ use crate::pci::{vpci_dev::{VpciDevType, get_handler}, pci_struct::VirtualPciCon
 ))]
 use crate::pci::{mem_alloc::BaseAllocator, pci_struct::RootComplex, pci_handler::mmio_vpci_handler, PciConfigAddress};
 #[cfg(feature = "dwc_pcie")]
-use crate::{platform, memory::mmio_generic_handler, pci::{config_accessors::dwc_atu::{AtuConfig, AtuType}, pci_handler::{mmio_vpci_handler_dbi, mmio_dwc_io_handler, mmio_dwc_cfg_handler}}};
+use crate::{platform, memory::mmio_generic_handler, pci::{config_accessors::{dwc_atu::{AtuConfig, AtuType}, dwc::DwcConfigRegionBackend}, pci_access::PciRegionMmio, pci_handler::{mmio_vpci_handler_dbi, mmio_dwc_io_handler, mmio_dwc_cfg_handler}}};
 
 #[cfg(feature = "loongarch64_pcie")]
 use crate::pci::pci_handler::mmio_vpci_direct_handler;
@@ -288,7 +288,17 @@ impl Zone {
                         );
                     }
 
-                    self.atu_configs.insert_atu(rootcomplex_config.ecam_base as usize, AtuConfig::default());
+                    let mut atu = AtuConfig::default();
+                    
+                    let dbi_base = extend_config.dbi_base as PciConfigAddress;
+                    let dbi_size = extend_config.dbi_size;
+                    let dbi_region = PciRegionMmio::new(dbi_base, dbi_size);
+                    let dbi_backend = DwcConfigRegionBackend::new(dbi_region);
+                    if let Err(e) = atu.init_limit_hw_value(dbi_backend.as_ref()) {
+                        warn!("Failed to initialize ATU0 limit defaults: {:?}", e);
+                    }
+                    
+                    self.atu_configs.insert_atu(rootcomplex_config.ecam_base as usize, atu);
                     self.atu_configs.insert_cfg_base_mapping(extend_config.cfg_base as PciConfigAddress, rootcomplex_config.ecam_base as usize);
                     self.atu_configs.insert_io_base_mapping(rootcomplex_config.io_base as PciConfigAddress, rootcomplex_config.ecam_base as usize);
                 } 
