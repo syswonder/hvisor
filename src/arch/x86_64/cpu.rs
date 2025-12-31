@@ -39,7 +39,7 @@ use crate::{
         PARKING_INST_PAGE,
     },
     percpu::{this_cpu_data, this_zone},
-    platform::{ROOT_ZONE_BOOT_STACK, ROOT_ZONE_CMDLINE},
+    platform::ROOT_ZONE_BOOT_STACK,
     zone::{find_zone, this_zone_id},
 };
 use alloc::boxed::Box;
@@ -254,6 +254,7 @@ impl ArchCpu {
 
         unsafe {
             PARKING_MEMORY_SET.get().unwrap().activate();
+            info!("before vmx launch");
             self.vmx_launch();
         }
     }
