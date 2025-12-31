@@ -3,7 +3,7 @@ objects ?= $(sources:.c=.o)
 ivc_demo_object ?= ivc_demo.o
 rpmsg_demo_object ?= rpmsg_demo.o
 hvisor_objects ?= $(filter-out $(ivc_demo_object) $(rpmsg_demo_object), $(objects))
-ROOT ?= /
+ROOT ?=
 # gnu or musl
 LIBC ?= gnu
 
@@ -13,6 +13,8 @@ else ifeq ($(ARCH), riscv)
 	CCARCH := riscv64
 else ifeq ($(ARCH), loongarch)
 	CCARCH := loongarch64
+else ifeq ($(ARCH), x86_64)
+	CCARCH := x86_64
 else
 $(error "Unsupported architecture $(ARCH)")
 endif
@@ -29,7 +31,13 @@ else
 toolchain := $(CCARCH)-linux-$(LIBC)
 endif
 
-CFLAGS := -Wall -Wextra -DLOG_USE_COLOR -DHLOG=$(LOG) --sysroot=$(ROOT)
+CFLAGS := -Wall -Wextra -DLOG_USE_COLOR -DHLOG=$(LOG) -pthread
+
+# Conditionally add sysroot if ROOT is set
+# Otherwise use default flags from cross-compiler
+ifneq ($(ROOT),)
+CFLAGS += --sysroot=$(ROOT)
+endif
 
 include_dirs := -I../include -I./include -I../cJSON
 
@@ -37,7 +45,7 @@ ifeq ($(LIBC), musl)
 include_dirs += -I./compat/
 endif
 
-LDFLAGS := -lpthread
+LDFLAGS := -lpthread -static
 
 # LIBS := -L$(ROOT)/usr/lib/$(toolchain) -L$(ROOT)/lib
 # LIBS := -L/opt/aarch64-linux-musl-cross/aarch64-linux-musl -L/opt/aarch64-linux-musl-cross/lib
@@ -70,6 +78,10 @@ else ifeq ($(ARCH), loongarch)
 	ifeq ($(VIRTIO_GPU), y)
 		include_dirs += -I/opt/libdrm-install/include -L/opt/libdrm-install/lib -I/opt/libdrm-install/include/libdrm -ldrm
 	endif
+else ifeq ($(ARCH), x86_64)
+	CC := x86_64-linux-gnu-gcc
+	READELF := x86_64-linux-gnu-readelf
+	OBJDUMP := x86_64-linux-gnu-objdump
 endif
 
 .PHONY: all clean
