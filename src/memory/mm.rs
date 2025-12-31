@@ -109,7 +109,12 @@ where
 
     /// Add a memory region to this set.
     pub fn insert(&mut self, region: MemoryRegion<PT::VA>) -> HvResult {
-        info!("region.start: {:#X}, size: {:#X}, flags: {:#X}", region.start.into(), region.size, region.flags);
+        info!(
+            "region.start: {:#X}, size: {:#X}, flags: {:#X}",
+            region.start.into(),
+            region.size,
+            region.flags
+        );
         assert!(is_aligned(region.start.into()));
         assert!(is_aligned(region.size));
         if region.size == 0 {
@@ -175,7 +180,12 @@ where
             if region.size == size {
                 self.delete(start, size)
             } else {
-                warn!("try delete MemoryRegion size mismatch at {:#x?}, expected {:#x?}, got {:#x?}", start.into(), size, region.size);
+                warn!(
+                    "try delete MemoryRegion size mismatch at {:#x?}, expected {:#x?}, got {:#x?}",
+                    start.into(),
+                    size,
+                    region.size
+                );
                 Err(hv_err!(ENOMEM))
             }
         } else {

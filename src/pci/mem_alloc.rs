@@ -105,7 +105,6 @@ impl BarAllocator for BaseAllocator {
 //     io_used: Mem64Address,
 // }
 
-
 // impl LoongArchAllocator {
 //     pub fn set_mem(&mut self, start: Mem64Address, size: Mem64Address) {
 //         self.mem = start..start + size;

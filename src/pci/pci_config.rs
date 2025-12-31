@@ -20,29 +20,47 @@ use crate::{
     arch::iommu::iommu_add_device,
     config::{HvPciConfig, HvPciDevConfig, CONFIG_MAX_PCI_DEV, CONFIG_PCI_BUS_MAXNUM},
     error::HvResult,
-    pci::pci_struct::{Bdf, ArcRwLockVirtualPciConfigSpace}, 
+    pci::pci_struct::{ArcRwLockVirtualPciConfigSpace, Bdf},
     zone::Zone,
 };
 
 #[cfg(feature = "ecam_pcie")]
-use crate::pci::{vpci_dev::{VpciDevType, get_handler}, pci_struct::VirtualPciConfigSpace};
+use crate::pci::{
+    pci_struct::VirtualPciConfigSpace,
+    vpci_dev::{get_handler, VpciDevType},
+};
 
 #[cfg(any(
     feature = "ecam_pcie",
     feature = "dwc_pcie",
     feature = "loongarch64_pcie"
 ))]
-use crate::pci::{mem_alloc::BaseAllocator, pci_struct::RootComplex, pci_handler::mmio_vpci_handler, PciConfigAddress};
+use crate::pci::{
+    mem_alloc::BaseAllocator, pci_handler::mmio_vpci_handler, pci_struct::RootComplex,
+    PciConfigAddress,
+};
 #[cfg(feature = "dwc_pcie")]
-use crate::{platform, memory::mmio_generic_handler, pci::{config_accessors::{dwc_atu::{AtuConfig, AtuType}, dwc::DwcConfigRegionBackend}, pci_access::PciRegionMmio, pci_handler::{mmio_vpci_handler_dbi, mmio_dwc_io_handler, mmio_dwc_cfg_handler}}};
+use crate::{
+    memory::mmio_generic_handler,
+    pci::{
+        config_accessors::{
+            dwc::DwcConfigRegionBackend,
+            dwc_atu::{AtuConfig, AtuType},
+        },
+        pci_access::PciRegionMmio,
+        pci_handler::{mmio_dwc_cfg_handler, mmio_dwc_io_handler, mmio_vpci_handler_dbi},
+    },
+    platform,
+};
 
 #[cfg(feature = "loongarch64_pcie")]
 use crate::pci::pci_handler::mmio_vpci_direct_handler;
 
-pub static GLOBAL_PCIE_LIST: Lazy<Mutex<BTreeMap<Bdf, ArcRwLockVirtualPciConfigSpace>>> = Lazy::new(|| {
-    let m = BTreeMap::new();
-    Mutex::new(m)
-});
+pub static GLOBAL_PCIE_LIST: Lazy<Mutex<BTreeMap<Bdf, ArcRwLockVirtualPciConfigSpace>>> =
+    Lazy::new(|| {
+        let m = BTreeMap::new();
+        Mutex::new(m)
+    });
 
 /* add all dev to GLOBAL_PCIE_LIST */
 pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
@@ -60,14 +78,8 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
         }
 
         let mut allocator = BaseAllocator::default();
-        allocator.set_mem32(
-            rootcomplex_config.mem32_base,
-            rootcomplex_config.mem32_size,
-        );
-        allocator.set_mem64(
-            rootcomplex_config.mem64_base,
-            rootcomplex_config.mem64_size,
-        );
+        allocator.set_mem32(rootcomplex_config.mem32_base, rootcomplex_config.mem32_size);
+        allocator.set_mem64(rootcomplex_config.mem64_base, rootcomplex_config.mem64_size);
         allocator.set_io(
             rootcomplex_config.io_base as u64,
             rootcomplex_config.io_size,
@@ -133,12 +145,14 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
         };
         let range =
             rootcomplex_config.bus_range_begin as usize..rootcomplex_config.bus_range_end as usize;
-        
+
         let e = rootcomplex.enumerate(Some(range), allocator_opt);
         info!("begin enumerate {:#?}", e);
         for node in e {
             info!("node {:#?}", node);
-            GLOBAL_PCIE_LIST.lock().insert(node.get_bdf(), ArcRwLockVirtualPciConfigSpace::new(node));
+            GLOBAL_PCIE_LIST
+                .lock()
+                .insert(node.get_bdf(), ArcRwLockVirtualPciConfigSpace::new(node));
         }
     }
     info!("hvisor pci init done \n{:#?}", GLOBAL_PCIE_LIST);
@@ -173,8 +187,11 @@ impl Zone {
                 iommu_add_device(zone_id, dev_config.bdf as _, iommu_pt_addr);
             }
             if let Some(dev) = guard.get(&bdf) {
-                if bdf.is_host_bridge(dev.read().get_host_bdf().bus()) 
-                || dev.with_config_value(|config_value| -> bool {config_value.get_class().0 == 0x6}) {
+                if bdf.is_host_bridge(dev.read().get_host_bdf().bus())
+                    || dev.with_config_value(|config_value| -> bool {
+                        config_value.get_class().0 == 0x6
+                    })
+                {
                     let mut vdev = dev.read().clone();
                     vdev.set_vbdf(vbdf);
                     self.vpci_bus.insert(vbdf, vdev);
@@ -190,22 +207,22 @@ impl Zone {
                 {
                     let dev_type = dev_config.dev_type;
                     match dev_type {
-                    VpciDevType::Physical => {
-                        warn!("can not find dev {:#?}", bdf);
-                    }
-                    _ => {
-                        if let Some(_handler) = get_handler(dev_type) {
-                            let base = _ecam_base 
-                                            + ((bdf.bus() as u64) << 20)
-                                            + ((bdf.device() as u64) << 15)
-                                            + ((bdf.function() as u64) << 12);
-                            let dev = VirtualPciConfigSpace::virt_dev(bdf, base, dev_type);
-                            self.vpci_bus.insert(vbdf, dev);
-                        } else {
-                            warn!("can not find dev {:#?}, unknown device type", bdf);
+                        VpciDevType::Physical => {
+                            warn!("can not find dev {:#?}", bdf);
+                        }
+                        _ => {
+                            if let Some(_handler) = get_handler(dev_type) {
+                                let base = _ecam_base
+                                    + ((bdf.bus() as u64) << 20)
+                                    + ((bdf.device() as u64) << 15)
+                                    + ((bdf.function() as u64) << 12);
+                                let dev = VirtualPciConfigSpace::virt_dev(bdf, base, dev_type);
+                                self.vpci_bus.insert(vbdf, dev);
+                            } else {
+                                warn!("can not find dev {:#?}, unknown device type", bdf);
+                            }
                         }
                     }
-                }
                 }
             }
             i += 1;
@@ -289,7 +306,7 @@ impl Zone {
                     }
 
                     let mut atu = AtuConfig::default();
-                    
+
                     let dbi_base = extend_config.dbi_base as PciConfigAddress;
                     let dbi_size = extend_config.dbi_size;
                     let dbi_region = PciRegionMmio::new(dbi_base, dbi_size);
@@ -297,11 +314,18 @@ impl Zone {
                     if let Err(e) = atu.init_limit_hw_value(dbi_backend.as_ref()) {
                         warn!("Failed to initialize ATU0 limit defaults: {:?}", e);
                     }
-                    
-                    self.atu_configs.insert_atu(rootcomplex_config.ecam_base as usize, atu);
-                    self.atu_configs.insert_cfg_base_mapping(extend_config.cfg_base as PciConfigAddress, rootcomplex_config.ecam_base as usize);
-                    self.atu_configs.insert_io_base_mapping(rootcomplex_config.io_base as PciConfigAddress, rootcomplex_config.ecam_base as usize);
-                } 
+
+                    self.atu_configs
+                        .insert_atu(rootcomplex_config.ecam_base as usize, atu);
+                    self.atu_configs.insert_cfg_base_mapping(
+                        extend_config.cfg_base as PciConfigAddress,
+                        rootcomplex_config.ecam_base as usize,
+                    );
+                    self.atu_configs.insert_io_base_mapping(
+                        rootcomplex_config.io_base as PciConfigAddress,
+                        rootcomplex_config.ecam_base as usize,
+                    );
+                }
             }
             #[cfg(feature = "loongarch64_pcie")]
             {
@@ -311,9 +335,16 @@ impl Zone {
                     mmio_vpci_direct_handler,
                     rootcomplex_config.ecam_base as usize,
                 );
-                self.page_table_emergency(rootcomplex_config.ecam_base as usize, rootcomplex_config.ecam_size as usize);
+                self.page_table_emergency(
+                    rootcomplex_config.ecam_base as usize,
+                    rootcomplex_config.ecam_size as usize,
+                );
             }
-            #[cfg(not(any(feature = "ecam_pcie", feature = "dwc_pcie", feature = "loongarch64_pcie")))]
+            #[cfg(not(any(
+                feature = "ecam_pcie",
+                feature = "dwc_pcie",
+                feature = "loongarch64_pcie"
+            )))]
             {
                 warn!(
                     "No extend config found for base 0x{:x}",

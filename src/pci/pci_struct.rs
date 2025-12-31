@@ -16,7 +16,12 @@
 use alloc::{collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
 use bit_field::BitField;
 use bitvec::{array::BitArray, order::Lsb0, BitArr};
-use core::{cmp::Ordering, fmt::Debug, ops::{Deref, DerefMut, Range}, str::FromStr};
+use core::{
+    cmp::Ordering,
+    fmt::Debug,
+    ops::{Deref, DerefMut, Range},
+    str::FromStr,
+};
 use spin::RwLock;
 
 use super::{
@@ -26,11 +31,14 @@ use super::{
         Bar, EndpointField, EndpointHeader, HeaderType, PciBarRW, PciBridgeHeader, PciCommand,
         PciConfigHeader, PciField, PciHeaderRW, PciMem, PciMemType, PciRW, PciRomRW,
     },
+    pci_access::{BaseClass, DeviceId, DeviceRevision, Interface, SubClass, VendorId},
     PciConfigAddress,
-    pci_access::{BaseClass, SubClass, Interface, DeviceId, VendorId, DeviceRevision},
 };
 
-use crate::{error::{HvErrorNum, HvResult}, pci::vpci_dev::VpciDevType};
+use crate::{
+    error::{HvErrorNum, HvResult},
+    pci::vpci_dev::VpciDevType,
+};
 
 type VirtualPciConfigBits = BitArr!(for BIT_LENTH, in u8, Lsb0);
 
@@ -54,7 +62,10 @@ impl Default for ConfigValue {
 }
 
 impl ConfigValue {
-    pub fn new(id: (DeviceId, VendorId), class_and_revision_id: (BaseClass, SubClass, Interface, DeviceRevision)) -> Self {
+    pub fn new(
+        id: (DeviceId, VendorId),
+        class_and_revision_id: (BaseClass, SubClass, Interface, DeviceRevision),
+    ) -> Self {
         Self {
             id,
             class_and_revision_id,
@@ -84,7 +95,10 @@ impl ConfigValue {
         self.class_and_revision_id.3
     }
 
-    pub fn set_class_and_revision_id(&mut self, class_and_revision_id: (BaseClass, SubClass, Interface, DeviceRevision)) {
+    pub fn set_class_and_revision_id(
+        &mut self,
+        class_and_revision_id: (BaseClass, SubClass, Interface, DeviceRevision),
+    ) {
         self.class_and_revision_id = class_and_revision_id;
     }
 
@@ -127,7 +141,7 @@ impl ConfigValue {
 const MAX_DEVICE: u8 = 31;
 const MAX_FUNCTION: u8 = 7;
 pub const CONFIG_LENTH: u64 = 256;
-pub const BIT_LENTH: usize = 128*8;
+pub const BIT_LENTH: usize = 128 * 8;
 
 // PCIe Device/Port Type values
 const PCI_EXP_TYPE_ROOT_PORT: u16 = 4;
@@ -289,7 +303,7 @@ pub struct VirtualPciAccessBits {
 impl VirtualPciAccessBits {
     pub fn endpoint() -> Self {
         let mut bits = BitArray::ZERO;
-        bits[0x0..0x4].fill(true);   // ID
+        bits[0x0..0x4].fill(true); // ID
         bits[0x08..0x0c].fill(true); // CLASS
         bits[0x10..0x34].fill(true); //bar and rom
         Self { bits }
@@ -317,7 +331,6 @@ impl VirtualPciAccessBits {
         self.bits[range].fill(true);
     }
 }
-
 
 /* VirtualPciConfigSpace
  * bdf: the bdf hvisor seeing(same with the bdf without hvisor)
@@ -357,7 +370,7 @@ impl ArcRwLockVirtualPciConfigSpace {
     pub fn new(dev: VirtualPciConfigSpace) -> Self {
         Self(Arc::new(RwLock::new(dev)))
     }
-    
+
     pub fn inner(&self) -> &Arc<RwLock<VirtualPciConfigSpace>> {
         &self.0
     }
@@ -414,7 +427,6 @@ impl ArcRwLockVirtualPciConfigSpace {
     pub fn write_hw(&self, offset: PciConfigAddress, size: usize, value: usize) -> HvResult {
         self.0.write().write_hw(offset, size, value)
     }
-
 
     /// Execute a closure with a reference to the bar at the given slot
     pub fn with_bar_ref<F, R>(&self, slot: usize, f: F) -> R
@@ -545,7 +557,6 @@ impl VirtualPciConfigSpace {
         &mut self.bararr[slot]
     }
 
-
     pub fn set_bar_size_read(&mut self, slot: usize) {
         self.bararr[slot].set_size_read();
     }
@@ -615,8 +626,7 @@ impl VirtualPciConfigSpace {
                     _ => {}
                 }
             }
-            _ => {
-            }
+            _ => {}
         }
     }
 }
@@ -649,7 +659,10 @@ impl VirtualPciConfigSpace {
             config_value,
             control: VirtualPciConfigControl::virt_dev(),
             access: VirtualPciAccessBits::virt_dev(),
-            backend: Arc::new(EndpointHeader::new_with_region(PciConfigMmio::new(base, CONFIG_LENTH))),
+            backend: Arc::new(EndpointHeader::new_with_region(PciConfigMmio::new(
+                base,
+                CONFIG_LENTH,
+            ))),
             bararr,
             rom: PciMem::default(),
             capabilities: PciCapabilityList::new(),
@@ -657,11 +670,7 @@ impl VirtualPciConfigSpace {
         }
     }
 
-    pub fn virt_dev(
-        bdf: Bdf,
-        base: PciConfigAddress,
-        dev_type: VpciDevType,
-    ) -> Self {
+    pub fn virt_dev(bdf: Bdf, base: PciConfigAddress, dev_type: VpciDevType) -> Self {
         crate::pci::vpci_dev::virt_dev_init(bdf, base, dev_type)
     }
     pub fn endpoint(
@@ -718,7 +727,12 @@ impl VirtualPciConfigSpace {
         }
     }
 
-    pub fn unknown(bdf: Bdf, base: PciConfigAddress, backend: Arc<dyn PciRW>, id: (DeviceId, VendorId)) -> Self {
+    pub fn unknown(
+        bdf: Bdf,
+        base: PciConfigAddress,
+        backend: Arc<dyn PciRW>,
+        id: (DeviceId, VendorId),
+    ) -> Self {
         Self {
             host_bdf: Bdf::default(),
             parent_bdf: Bdf::default(),
@@ -727,7 +741,7 @@ impl VirtualPciConfigSpace {
             config_type: HeaderType::Endpoint,
             base,
             // Default class: base=0xFF, others 0, revision 0
-            config_value: ConfigValue::new(id, (0xFFu8,0u8,0u8,0u8)),
+            config_value: ConfigValue::new(id, (0xFFu8, 0u8, 0u8, 0u8)),
             control: VirtualPciConfigControl::endpoint(),
             access: VirtualPciAccessBits::endpoint(),
             backend,
@@ -738,7 +752,12 @@ impl VirtualPciConfigSpace {
         }
     }
 
-    pub fn host_bridge(bdf: Bdf, base: PciConfigAddress, backend: Arc<dyn PciRW>, class_and_revision_id: (DeviceRevision, BaseClass, SubClass, Interface)) -> Self {
+    pub fn host_bridge(
+        bdf: Bdf,
+        base: PciConfigAddress,
+        backend: Arc<dyn PciRW>,
+        class_and_revision_id: (DeviceRevision, BaseClass, SubClass, Interface),
+    ) -> Self {
         Self {
             host_bdf: bdf,
             parent_bdf: bdf,
@@ -825,7 +844,7 @@ impl VirtualPciConfigSpace {
     pub fn read_emu(&mut self, field: EndpointField) -> HvResult<usize> {
         let offset = field.to_offset() as PciConfigAddress;
         let size = field.size();
-    
+
         match field {
             EndpointField::ID => {
                 // Read ID from cached config_value.id field
@@ -834,7 +853,8 @@ impl VirtualPciConfigSpace {
                 Ok(id_value as usize)
             }
             EndpointField::RevisionIDAndClassCode => {
-                let (base, sub, interface, revision) = self.config_value.get_class_and_revision_id();
+                let (base, sub, interface, revision) =
+                    self.config_value.get_class_and_revision_id();
                 let value = ((base as u32) << 24)
                     | ((sub as u32) << 16)
                     | ((interface as u32) << 8)
@@ -900,12 +920,11 @@ impl VirtualPciConfigSpace {
     }
 }
 
-    // Legacy method for backward compatibility - converts offset/size to EndpointField
-    // pub fn write_emu_legacy(&mut self, offset: PciConfigAddress, size: usize, value: usize) -> HvResult {
-    //     let field = EndpointField::from(offset as usize, size);
-    //     self.write_emu(field, value)
-    // }
-
+// Legacy method for backward compatibility - converts offset/size to EndpointField
+// pub fn write_emu_legacy(&mut self, offset: PciConfigAddress, size: usize, value: usize) -> HvResult {
+//     let field = EndpointField::from(offset as usize, size);
+//     self.write_emu(field, value)
+// }
 
 #[derive(Debug)]
 pub struct PciIterator<B: BarAllocator> {
@@ -1001,7 +1020,12 @@ impl<B: BarAllocator> PciIterator<B> {
                 // For endpoint: push host_bridge if we popped placeholder
                 if was_placeholder {
                     let bus_begin = self.bus_range.start as u8;
-                    let host_bridge = Bridge::host_bridge(self.segment, bus_begin, self.is_mulitple_function, self.function);
+                    let host_bridge = Bridge::host_bridge(
+                        self.segment,
+                        bus_begin,
+                        self.is_mulitple_function,
+                        self.function,
+                    );
                     self.stack.push(host_bridge);
                 }
 
@@ -1055,7 +1079,12 @@ impl<B: BarAllocator> PciIterator<B> {
             _ => {
                 warn!("unknown type");
                 let pci_header = Arc::new(pci_header);
-                Some(VirtualPciConfigSpace::unknown(bdf, pci_addr_base, pci_header, (device_id, vender_id)))
+                Some(VirtualPciConfigSpace::unknown(
+                    bdf,
+                    pci_addr_base,
+                    pci_header,
+                    (device_id, vender_id),
+                ))
             }
         }
     }
@@ -1222,13 +1251,18 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
             if let Some(mut node) = self.get_node() {
                 node.config_value_init();
                 let bus_begin = self.bus_range.start as u8;
-                /* 
+                /*
                  * when first time to enumerate, placeholder is pop in get_node
                  * the message of host bridge must be got after get_node()
                  * so we push host bridge to stack here
-                 */ 
+                 */
                 if self.stack.is_empty() {
-                    let host_bridge = Bridge::host_bridge(self.segment, bus_begin, self.is_mulitple_function, self.function);
+                    let host_bridge = Bridge::host_bridge(
+                        self.segment,
+                        bus_begin,
+                        self.is_mulitple_function,
+                        self.function,
+                    );
                     self.stack.push(host_bridge);
                 }
                 let parent = self.stack.last().unwrap(); // Safe because we just ensured it exists
@@ -1241,14 +1275,12 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
                     // class code 0x6 is bridge and class.1 0x0 is host bridge
                     0x6 if node.config_value.get_class().1 != 0x0 => {
                         let bdf = Bdf::new(parent.subordinate_bus + 1, 0, 0);
-                        Some(
-                            self.get_bridge().next_bridge(
-                                self.address(parent_bus, bdf),
-                                node.has_secondary_link(),
-                                self.is_mulitple_function,
-                                self.function
-                            ),
-                        )
+                        Some(self.get_bridge().next_bridge(
+                            self.address(parent_bus, bdf),
+                            node.has_secondary_link(),
+                            self.is_mulitple_function,
+                            self.function,
+                        ))
                     }
                     _ => None,
                 });
@@ -1291,7 +1323,12 @@ impl Bridge {
         }
     }
 
-    pub fn host_bridge(address: PciConfigAddress, bus_begin: u8, is_mulitple_function: bool, function: u8) -> Self {
+    pub fn host_bridge(
+        address: PciConfigAddress,
+        bus_begin: u8,
+        is_mulitple_function: bool,
+        function: u8,
+    ) -> Self {
         Self {
             bus: bus_begin,
             device: 0,
@@ -1305,7 +1342,13 @@ impl Bridge {
         }
     }
 
-    pub fn next_bridge(&self, address: PciConfigAddress, has_secondary_link: bool, is_mulitple_function: bool, function: u8) -> Self {
+    pub fn next_bridge(
+        &self,
+        address: PciConfigAddress,
+        has_secondary_link: bool,
+        is_mulitple_function: bool,
+        function: u8,
+    ) -> Self {
         let mmio = PciConfigMmio::new(address, CONFIG_LENTH);
         Self {
             bus: self.subordinate_bus + 1,
@@ -1398,7 +1441,8 @@ impl VirtualRootComplex {
         let base = dev.get_base();
         info!("pci insert base {:#x} to bdf {:#?}", base, bdf);
         self.base_to_bdf.insert(base, bdf);
-        self.devs.insert(bdf, ArcRwLockVirtualPciConfigSpace::new(dev))
+        self.devs
+            .insert(bdf, ArcRwLockVirtualPciConfigSpace::new(dev))
     }
 
     pub fn devs(&mut self) -> &mut BTreeMap<Bdf, ArcRwLockVirtualPciConfigSpace> {
@@ -1528,7 +1572,9 @@ impl Debug for CapabilityType {
             CapabilityType::HyperTransport => write!(f, "HyperTransport(0x08)"),
             CapabilityType::Vendor => write!(f, "Vendor(0x09)"),
             CapabilityType::DebugPort => write!(f, "DebugPort(0x0A)"),
-            CapabilityType::CompactPCICentralResourceControl => write!(f, "CompactPCICentralResourceControl(0x0B)"),
+            CapabilityType::CompactPCICentralResourceControl => {
+                write!(f, "CompactPCICentralResourceControl(0x0B)")
+            }
             CapabilityType::PciHotPlugControl => write!(f, "PciHotPlugControl(0x0C)"),
             CapabilityType::BridgeSubsystemVendorId => write!(f, "BridgeSubsystemVendorId(0x0D)"),
             CapabilityType::AGP3 => write!(f, "AGP3(0x0E)"),
@@ -1622,14 +1668,18 @@ impl PciCapability {
         match CapabilityType::from_id(id) {
             CapabilityType::Unknown => None,
             CapabilityType::Msi => {
-                let region = Arc::new(RwLock::new(StandardPciCapabilityRegion::new(offset, 32, backend)));
+                let region = Arc::new(RwLock::new(StandardPciCapabilityRegion::new(
+                    offset, 32, backend,
+                )));
                 return Some(PciCapability {
                     cap_type: CapabilityType::Msi,
                     region,
                 });
             }
-            _ => {        
-                let region = Arc::new(RwLock::new(StandardPciCapabilityRegion::new(offset, 32, backend)));
+            _ => {
+                let region = Arc::new(RwLock::new(StandardPciCapabilityRegion::new(
+                    offset, 32, backend,
+                )));
                 Some(PciCapability {
                     cap_type: CapabilityType::from_id(id),
                     region,
@@ -1638,21 +1688,21 @@ impl PciCapability {
         }
     }
 
-    pub fn new_virt(cap_type: CapabilityType, region: Arc<RwLock<dyn PciCapabilityRegion>>) -> Self {
-        Self {
-            cap_type,
-            region,
-        }
+    pub fn new_virt(
+        cap_type: CapabilityType,
+        region: Arc<RwLock<dyn PciCapabilityRegion>>,
+    ) -> Self {
+        Self { cap_type, region }
     }
 
     pub fn get_offset(&self) -> PciConfigAddress {
         self.with_region(|region| region.get_offset())
     }
-    
+
     pub fn get_size(&self) -> usize {
         self.with_region(|region| region.get_size())
     }
-    
+
     fn next_cap(&self) -> HvResult<PciConfigAddress> {
         self.with_region(|region| region.next_cap())
     }
@@ -1668,17 +1718,17 @@ pub trait PciCapabilityRegion: Send + Sync {
     /// Read from capability region at relative offset
     /// offset: relative offset from capability start (0 = capability start)
     fn read(&self, offset: PciConfigAddress, size: usize) -> HvResult<u32>;
-    
+
     /// Write to capability region at relative offset
     /// offset: relative offset from capability start (0 = capability start)
     fn write(&mut self, offset: PciConfigAddress, size: usize, value: u32) -> HvResult;
-    
+
     /// Get absolute offset of capability in config space
     fn get_offset(&self) -> PciConfigAddress;
-    
+
     /// Get size of capability
     fn get_size(&self) -> usize;
-    
+
     /// Get next capability offset by reading next pointer
     /// Default implementation: read 2 bytes at offset 0 (capability start), extract bits(8..16) as next pointer
     fn next_cap(&self) -> HvResult<PciConfigAddress> {
@@ -1696,23 +1746,30 @@ pub struct StandardPciCapabilityRegion {
 
 impl StandardPciCapabilityRegion {
     pub fn new(offset: PciConfigAddress, size: usize, backend: Arc<dyn PciRW>) -> Self {
-        Self { offset, size, backend }
+        Self {
+            offset,
+            size,
+            backend,
+        }
     }
 }
 
 impl PciCapabilityRegion for StandardPciCapabilityRegion {
     fn read(&self, offset: PciConfigAddress, size: usize) -> HvResult<u32> {
-        self.backend.read(self.offset + offset, size).map(|v| v as u32)
+        self.backend
+            .read(self.offset + offset, size)
+            .map(|v| v as u32)
     }
-    
+
     fn write(&mut self, offset: PciConfigAddress, size: usize, value: u32) -> HvResult {
-        self.backend.write(self.offset + offset, size, value as usize)
+        self.backend
+            .write(self.offset + offset, size, value as usize)
     }
-    
+
     fn get_offset(&self) -> PciConfigAddress {
         self.offset
     }
-    
+
     fn get_size(&self) -> usize {
         self.size
     }
@@ -1735,7 +1792,7 @@ impl PciCapabilityList {
 
 impl Deref for PciCapabilityList {
     type Target = BTreeMap<PciConfigAddress, PciCapability>;
-    
+
     fn deref(&self) -> &Self::Target {
         &self.0
     }

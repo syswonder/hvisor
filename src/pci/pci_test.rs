@@ -22,7 +22,7 @@ use spin::{lazy::Lazy, mutex::Mutex};
 use super::{
     mem_alloc::BaseAllocator,
     pci_handler::{mmio_vpci_direct_handler, mmio_vpci_handler},
-    pci_struct::{Bdf, VirtualPciConfigSpace, CONFIG_LENTH, RootComplex},
+    pci_struct::{Bdf, RootComplex, VirtualPciConfigSpace, CONFIG_LENTH},
 };
 
 use crate::{
@@ -65,7 +65,8 @@ pub fn pcie_guest_init() {
     let bdf = Bdf::from_str("0000:00:00.0").unwrap();
     let base = 0x4010000000; // Base address for test
     let backend = EndpointHeader::new_with_region(PciConfigMmio::new(base, CONFIG_LENTH));
-    let dev = VirtualPciConfigSpace::host_bridge(bdf, base, Arc::new(backend), (0x6u8,0u8,0u8,0x0));
+    let dev =
+        VirtualPciConfigSpace::host_bridge(bdf, base, Arc::new(backend), (0x6u8, 0u8, 0u8, 0x0));
     vbus.insert(vbdf, dev);
 
     let vbdf = Bdf::from_str("0000:00:01.0").unwrap();
@@ -133,7 +134,6 @@ pub fn ecam_pcie_guest_test() {
         mmio.address, mmio.is_write, mmio.size, mmio.value
     );
 
-
     let mut mmio = MMIOAccess {
         address: test_address as _,
         size: 4,
@@ -145,7 +145,6 @@ pub fn ecam_pcie_guest_test() {
         "mmio offset {:x}, is_wirte {}, size {}, value 0x{:x}",
         mmio.address, mmio.is_write, mmio.size, mmio.value
     );
-
 
     let mut mmio = MMIOAccess {
         address: test_address as _,
@@ -249,22 +248,24 @@ pub fn ecam_pcie_guest_test64() {
             0
         }
     };
-    
+
     if address == 0 {
         warn!("Failed to get device base address");
         return;
     }
 
     // 64-bit BAR: slot 4 (Mem64Low) at offset 0x20, slot 5 (Mem64High) at offset 0x24
-    let bar_low_offset = 0x20;  // slot 4: 0x10 + 4 * 4
+    let bar_low_offset = 0x20; // slot 4: 0x10 + 4 * 4
     let bar_high_offset = 0x24; // slot 5: 0x10 + 5 * 4
-    
+
     let test_address_low = address + bar_low_offset;
     let test_address_high = address + bar_high_offset;
 
     info!("Testing 64-bit BAR for device {:#?}", bdf);
-    info!("Base address: 0x{:x}, BAR Low offset: 0x{:x}, BAR High offset: 0x{:x}", 
-          address, bar_low_offset, bar_high_offset);
+    info!(
+        "Base address: 0x{:x}, BAR Low offset: 0x{:x}, BAR High offset: 0x{:x}",
+        address, bar_low_offset, bar_high_offset
+    );
 
     let mut mmio = MMIOAccess {
         address: test_address_low as _,
@@ -285,9 +286,7 @@ pub fn ecam_pcie_guest_test64() {
         value: 0xFFFF_FFFF,
     };
     let _ = mmio_vpci_direct_handler(&mut mmio, 0);
-    info!(
-        "Step 2 - Write 0xFFFF_FFFF to Mem64Low (size probe)"
-    );
+    info!("Step 2 - Write 0xFFFF_FFFF to Mem64Low (size probe)");
 
     let mut mmio = MMIOAccess {
         address: test_address_low as _,
@@ -322,10 +321,7 @@ pub fn ecam_pcie_guest_test64() {
     };
     let _ = mmio_vpci_direct_handler(&mut mmio, 0);
     let read_low = mmio.value;
-    info!(
-        "Step 5 - Read Mem64Low: value 0x{:x}",
-        read_low
-    );
+    info!("Step 5 - Read Mem64Low: value 0x{:x}", read_low);
 
     let high_addr = 0x00000001; // High 32 bits of 64-bit address
     let mut mmio = MMIOAccess {
@@ -396,10 +392,7 @@ pub fn ecam_pcie_guest_test64() {
         value: 0,
     };
     let _ = mmio_vpci_direct_handler(&mut mmio, 0);
-    info!(
-        "Step 10 - Read Mem64High: value 0x{:x}",
-        mmio.value
-    );
+    info!("Step 10 - Read Mem64High: value 0x{:x}", mmio.value);
 
     info!("pcie guest test64 passed");
 

@@ -78,8 +78,7 @@ impl PciConfigAccessor for LoongArchConfigAccessor {
             // Bits 15-11: Device Number
             // Bits 10-8:  Function Number
             // Bits 7-0:   Offset[7:0]
-            self.cfg0
-                + ((offset_high << 24) | (device << 11) | (function << 8) | offset_low)
+            self.cfg0 + ((offset_high << 24) | (device << 11) | (function << 8) | offset_low)
         } else {
             // Type 1 format (Other Bus):
             // Bits 31-28: Offset[11:8]
@@ -88,7 +87,11 @@ impl PciConfigAccessor for LoongArchConfigAccessor {
             // Bits 10-8:  Function Number
             // Bits 7-0:   Offset[7:0]
             self.cfg1
-                + ((offset_high << 24) | (bus << 16) | (device << 11) | (function << 8) | offset_low)
+                + ((offset_high << 24)
+                    | (bus << 16)
+                    | (device << 11)
+                    | (function << 8)
+                    | offset_low)
         };
 
         Ok(address)
@@ -116,8 +119,7 @@ impl PciConfigAccessor for LoongArchConfigAccessor {
             // Bits 15-11: Device Number
             // Bits 10-8:  Function Number
             // Bits 7-0:   Offset[7:0]
-            self.cfg0
-                + ((offset_high << 24) | (device << 11) | (function << 8) | offset_low)
+            self.cfg0 + ((offset_high << 24) | (device << 11) | (function << 8) | offset_low)
         } else {
             // Type 1 format (Other Bus):
             // Bits 31-28: Offset[11:8]
@@ -126,7 +128,11 @@ impl PciConfigAccessor for LoongArchConfigAccessor {
             // Bits 10-8:  Function Number
             // Bits 7-0:   Offset[7:0]
             self.cfg1
-                + ((offset_high << 24) | (bus << 16) | (device << 11) | (function << 8) | offset_low)
+                + ((offset_high << 24)
+                    | (bus << 16)
+                    | (device << 11)
+                    | (function << 8)
+                    | offset_low)
         };
 
         Ok(address)

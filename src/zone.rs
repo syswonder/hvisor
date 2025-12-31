@@ -21,9 +21,9 @@ use crate::pci::pci_struct::VirtualRootComplex;
 use spin::RwLock;
 
 #[cfg(feature = "dwc_pcie")]
-use alloc::collections::btree_map::BTreeMap;
-#[cfg(feature = "dwc_pcie")]
 use crate::pci::{config_accessors::dwc_atu::AtuConfig, PciConfigAddress};
+#[cfg(feature = "dwc_pcie")]
+use alloc::collections::btree_map::BTreeMap;
 
 use crate::arch::mm::new_s2_memory_set;
 use crate::arch::s2pt::Stage2PageTable;
@@ -294,7 +294,12 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     #[cfg(feature = "pci")]
     {
         let _ = zone.virtual_pci_mmio_init(&config.pci_config, config.num_pci_bus as usize);
-        let _ = zone.guest_pci_init(zone_id, &config.alloc_pci_devs, config.num_pci_devs, config.pci_config[0].ecam_base as u64);
+        let _ = zone.guest_pci_init(
+            zone_id,
+            &config.alloc_pci_devs,
+            config.num_pci_devs,
+            config.pci_config[0].ecam_base as u64,
+        );
     }
 
     // #[cfg(target_arch = "aarch64")]

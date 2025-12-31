@@ -100,7 +100,11 @@ impl AtuConfig {
         }
     }
 
-    pub fn new_with_dwc_config_region(config_region: &DwcConfigRegion, atu_type: AtuType, pci_addr: PciConfigAddress) -> Self {
+    pub fn new_with_dwc_config_region(
+        config_region: &DwcConfigRegion,
+        atu_type: AtuType,
+        pci_addr: PciConfigAddress,
+    ) -> Self {
         Self::new(
             config_region.atu_index,
             atu_type,
@@ -157,25 +161,17 @@ impl AtuConfig {
     pub fn init_limit_hw_value(&mut self, dbi_backend: &dyn PciRW) -> HvResult {
         let atu_base = (ATU_BASE + self.index() * ATU_REGION_SIZE) as PciConfigAddress;
 
-        dbi_backend.write(
-            atu_base + PCIE_ATU_UNR_LIMIT as PciConfigAddress,
-            4,
-            0,
-        )?;
-        self.limit_hw_value = dbi_backend.read(
-            atu_base + PCIE_ATU_UNR_LIMIT as PciConfigAddress,
-            4,
-        )? as u32;
+        dbi_backend.write(atu_base + PCIE_ATU_UNR_LIMIT as PciConfigAddress, 4, 0)?;
+        self.limit_hw_value =
+            dbi_backend.read(atu_base + PCIE_ATU_UNR_LIMIT as PciConfigAddress, 4)? as u32;
 
         dbi_backend.write(
             atu_base + PCIE_ATU_UNR_UPPER_LIMIT as PciConfigAddress,
             4,
             0xffffffff,
         )?;
-        self.upper_limit_hw_value = dbi_backend.read(
-            atu_base + PCIE_ATU_UNR_UPPER_LIMIT as PciConfigAddress,
-            4,
-        )? as u32;
+        self.upper_limit_hw_value =
+            dbi_backend.read(atu_base + PCIE_ATU_UNR_UPPER_LIMIT as PciConfigAddress, 4)? as u32;
 
         Ok(())
     }

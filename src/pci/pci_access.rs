@@ -32,7 +32,8 @@ use super::{
 use crate::{
     error::HvResult,
     memory::{
-        GuestPhysAddr, HostPhysAddr, MMIOAccess, MemFlags, MemoryRegion, MemorySet, mmio_perform_access
+        mmio_perform_access, GuestPhysAddr, HostPhysAddr, MMIOAccess, MemFlags, MemoryRegion,
+        MemorySet,
     },
     pci::{pci_config::GLOBAL_PCIE_LIST, pci_struct::BIT_LENTH},
     percpu::this_zone,
@@ -41,16 +42,13 @@ use crate::{
 
 #[cfg(feature = "dwc_pcie")]
 use crate::pci::config_accessors::{
-    dwc_atu::{
-        AtuConfig, AtuType, ATU_BASE, ATU_REGION_SIZE,
-        PCIE_ATU_UNR_REGION_CTRL1, PCIE_ATU_UNR_REGION_CTRL2,
-        PCIE_ATU_UNR_LOWER_BASE, PCIE_ATU_UNR_UPPER_BASE,
-        PCIE_ATU_UNR_LIMIT, PCIE_ATU_UNR_UPPER_LIMIT,
-        PCIE_ATU_UNR_LOWER_TARGET, PCIE_ATU_UNR_UPPER_TARGET,
-        ATU_ENABLE_BIT,
-        AtuUnroll,
-    },
     dwc::DwcConfigRegionBackend,
+    dwc_atu::{
+        AtuConfig, AtuType, AtuUnroll, ATU_BASE, ATU_ENABLE_BIT, ATU_REGION_SIZE,
+        PCIE_ATU_UNR_LIMIT, PCIE_ATU_UNR_LOWER_BASE, PCIE_ATU_UNR_LOWER_TARGET,
+        PCIE_ATU_UNR_REGION_CTRL1, PCIE_ATU_UNR_REGION_CTRL2, PCIE_ATU_UNR_UPPER_BASE,
+        PCIE_ATU_UNR_UPPER_LIMIT, PCIE_ATU_UNR_UPPER_TARGET,
+    },
     PciRegionMmio,
 };
 
@@ -141,7 +139,7 @@ impl Debug for PciMemType {
  * virtaul_value: the vaddr guset zone can rw, same with as the corresponding value in virtualconfigspace.space
  * value: the paddr which hvisor and hw can rw, init when hvisor init the pci bus
  * size: the size of mem region, when size_read is true return !(size - 1)
- * 
+ *
  * size_read: if software write 0xffff_ffff to bar, size_read will set so next time hvisor can rerturn !(size - 1) indicating size to the software
  * acutally size_read is not used now, we keep it just in case of possible special register handling in the future
  */
@@ -200,7 +198,7 @@ impl PciMem {
         }
     }
 
-    pub fn set_size(&mut self, size: u64){
+    pub fn set_size(&mut self, size: u64) {
         self.size = size;
     }
 
@@ -231,11 +229,11 @@ impl PciMem {
         }
     }
 
-    pub fn set_bar_type(&mut self, bar_type: PciMemType){
+    pub fn set_bar_type(&mut self, bar_type: PciMemType) {
         self.bar_type = bar_type;
     }
 
-    pub fn set_prefetchable(&mut self, prefetchable: bool){
+    pub fn set_prefetchable(&mut self, prefetchable: bool) {
         self.prefetchable = prefetchable;
     }
 
@@ -294,9 +292,7 @@ impl PciMem {
                     val |= 0x8;
                 }
             }
-            PciMemType::Rom => {
-                
-            }
+            PciMemType::Rom => {}
             _ => {
                 warn!("please init bar first");
             }
@@ -359,9 +355,7 @@ impl PciMem {
                     val |= 0x8;
                 }
             }
-            PciMemType::Rom => {
-                
-            }
+            PciMemType::Rom => {}
             _ => {
                 warn!("unkown bar type: {:#?}", self.bar_type);
             }
@@ -703,7 +697,6 @@ pub trait PciBarRW: PciRWBase {
     }
 }
 
-
 pub trait PciRomRW: PciRWBase {
     fn rom_offset(&self) -> u64;
     fn parse_rom(&self) -> PciMem {
@@ -830,7 +823,7 @@ pub enum EndpointField {
 impl Debug for EndpointField {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "EndpointField {{")?;
-        let _ =match self {
+        let _ = match self {
             EndpointField::ID => write!(f, "ID"),
             EndpointField::Command => write!(f, "Command"),
             EndpointField::Status => write!(f, "Status"),
@@ -937,7 +930,6 @@ impl EndpointField {
             (x, _) => EndpointField::Unknown(x),
         }
     }
-
 }
 
 #[derive(Debug, Clone)]
@@ -1220,5 +1212,3 @@ impl PciBridgeHeader {
 }
 
 impl PciBridgeHeader {}
-
-

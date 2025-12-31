@@ -2,28 +2,25 @@ use alloc::string::String;
 
 use crate::error::HvResult;
 use crate::memory::MMIOAccess;
-use crate::memory::{GuestPhysAddr, HostPhysAddr, MemoryRegion, MemFlags, mmio_perform_access};
+use crate::memory::{mmio_perform_access, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion};
 use crate::percpu::this_zone;
 use crate::zone::{is_this_root_zone, this_zone_id};
 
 use super::pci_access::{BridgeField, EndpointField, HeaderType, PciField, PciMemType};
-use super::pci_struct::{ArcRwLockVirtualPciConfigSpace, BIT_LENTH};
 use super::pci_config::GLOBAL_PCIE_LIST;
+use super::pci_struct::{ArcRwLockVirtualPciConfigSpace, BIT_LENTH};
 use super::vpci_dev::VpciDevType;
 use super::PciConfigAddress;
 
 #[cfg(feature = "dwc_pcie")]
 use crate::pci::config_accessors::{
-    dwc_atu::{
-        AtuConfig, AtuType, ATU_BASE, ATU_REGION_SIZE,
-        PCIE_ATU_UNR_REGION_CTRL1, PCIE_ATU_UNR_REGION_CTRL2,
-        PCIE_ATU_UNR_LOWER_BASE, PCIE_ATU_UNR_UPPER_BASE,
-        PCIE_ATU_UNR_LIMIT, PCIE_ATU_UNR_UPPER_LIMIT,
-        PCIE_ATU_UNR_LOWER_TARGET, PCIE_ATU_UNR_UPPER_TARGET,
-        ATU_ENABLE_BIT,
-        AtuUnroll,
-    },
     dwc::DwcConfigRegionBackend,
+    dwc_atu::{
+        AtuConfig, AtuType, AtuUnroll, ATU_BASE, ATU_ENABLE_BIT, ATU_REGION_SIZE,
+        PCIE_ATU_UNR_LIMIT, PCIE_ATU_UNR_LOWER_BASE, PCIE_ATU_UNR_LOWER_TARGET,
+        PCIE_ATU_UNR_REGION_CTRL1, PCIE_ATU_UNR_REGION_CTRL2, PCIE_ATU_UNR_UPPER_BASE,
+        PCIE_ATU_UNR_UPPER_LIMIT, PCIE_ATU_UNR_UPPER_TARGET,
+    },
     PciRegionMmio,
 };
 
@@ -179,13 +176,13 @@ fn handle_endpoint_access(
              * value: same with physical reg, the paddr for pt
              * virt_value: the vaddr for pt
              * config_value: the virtual reg for zone, directly rw
-             * 
-             * The virt_value cache of vaddr is required because mem64 bar updates are 
-             * split between mem64high and mem64low registers. The Hvisor must wait 
+             *
+             * The virt_value cache of vaddr is required because mem64 bar updates are
+             * split between mem64high and mem64low registers. The Hvisor must wait
              * for both updates to complete before using old_vaddr for page table maintenance
-             * 
-             * In typical operation, tmp_value maintains parity with virt_value; the sole exception occurs 
-             * when exclusively updating mem64low while leaving mem64high unmodified, 
+             *
+             * In typical operation, tmp_value maintains parity with virt_value; the sole exception occurs
+             * when exclusively updating mem64low while leaving mem64high unmodified,
              * as previously described
              */
             let bar_type = dev.with_bar_ref(slot, |bar| bar.get_type());
@@ -198,15 +195,18 @@ fn handle_endpoint_access(
                         });
                         dev.write_hw(field.to_offset() as PciConfigAddress, field.size(), value)?;
                         if (bar_type == PciMemType::Mem32)
-                        | (bar_type == PciMemType::Mem64High)
-                        | (bar_type == PciMemType::Io) {
+                            | (bar_type == PciMemType::Mem64High)
+                            | (bar_type == PciMemType::Io)
+                        {
                             let new_vaddr = {
                                 if bar_type == PciMemType::Mem64High {
                                     /* last 4bit is flag, not address and need ignore
-                                    * flag will auto add when set_value and set_virtual_value
-                                    * Read from config_value.bar_value cache instead of space
-                                    */
-                                    let low_value = dev.with_config_value(|cv| cv.get_bar_value(slot - 1)) as u64;
+                                     * flag will auto add when set_value and set_virtual_value
+                                     * Read from config_value.bar_value cache instead of space
+                                     */
+                                    let low_value = dev
+                                        .with_config_value(|cv| cv.get_bar_value(slot - 1))
+                                        as u64;
                                     let high_value = (value as u32 as u64) << 32;
                                     (low_value | high_value) & !0xf
                                 } else {
@@ -217,7 +217,9 @@ fn handle_endpoint_access(
                             // set virt_value
                             dev.with_bar_ref_mut(slot, |bar| bar.set_virtual_value(new_vaddr));
                             if bar_type == PciMemType::Mem64High {
-                                dev.with_bar_ref_mut(slot - 1, |bar| bar.set_virtual_value(new_vaddr));
+                                dev.with_bar_ref_mut(slot - 1, |bar| {
+                                    bar.set_virtual_value(new_vaddr)
+                                });
                             }
 
                             // set value
@@ -226,7 +228,6 @@ fn handle_endpoint_access(
                                 dev.with_bar_ref_mut(slot - 1, |bar| bar.set_value(new_vaddr));
                             }
                         }
-
                     } else if is_dev_belong_to_zone {
                         // normal mod, update virt resources
                         dev.with_config_value_mut(|configvalue| {
@@ -234,16 +235,20 @@ fn handle_endpoint_access(
                         });
 
                         if (bar_type == PciMemType::Mem32)
-                        | (bar_type == PciMemType::Mem64High)
-                        | (bar_type == PciMemType::Io) {
-                            let old_vaddr = dev.with_bar_ref(slot, |bar| bar.get_virtual_value64()) & !0xf;
+                            | (bar_type == PciMemType::Mem64High)
+                            | (bar_type == PciMemType::Io)
+                        {
+                            let old_vaddr =
+                                dev.with_bar_ref(slot, |bar| bar.get_virtual_value64()) & !0xf;
                             let new_vaddr = {
                                 if bar_type == PciMemType::Mem64High {
                                     /* last 4bit is flag, not address and need ignore
-                                    * flag will auto add when set_value and set_virtual_value
-                                    * Read from config_value.bar_value cache instead of space
-                                    */
-                                    let low_value = dev.with_config_value(|cv| cv.get_bar_value(slot - 1)) as u64;
+                                     * flag will auto add when set_value and set_virtual_value
+                                     * Read from config_value.bar_value cache instead of space
+                                     */
+                                    let low_value = dev
+                                        .with_config_value(|cv| cv.get_bar_value(slot - 1))
+                                        as u64;
                                     let high_value = (value as u32 as u64) << 32;
                                     (low_value | high_value) & !0xf
                                 } else {
@@ -253,7 +258,9 @@ fn handle_endpoint_access(
 
                             dev.with_bar_ref_mut(slot, |bar| bar.set_virtual_value(new_vaddr));
                             if bar_type == PciMemType::Mem64High {
-                                dev.with_bar_ref_mut(slot - 1, |bar| bar.set_virtual_value(new_vaddr));
+                                dev.with_bar_ref_mut(slot - 1, |bar| {
+                                    bar.set_virtual_value(new_vaddr)
+                                });
                             }
 
                             let paddr = if is_root {
@@ -273,7 +280,8 @@ fn handle_endpoint_access(
                                     crate::memory::PAGE_SIZE as u64
                                 }
                             };
-                            let new_vaddr = if !crate::memory::addr::is_aligned(new_vaddr as usize) {
+                            let new_vaddr = if !crate::memory::addr::is_aligned(new_vaddr as usize)
+                            {
                                 crate::memory::addr::align_up(new_vaddr as usize) as u64
                             } else {
                                 new_vaddr as u64
@@ -282,12 +290,12 @@ fn handle_endpoint_access(
                             let zone = this_zone();
                             let mut guard = zone.write();
                             let gpm = &mut guard.gpm;
-                            
-                            if !gpm.try_delete(old_vaddr.try_into().unwrap(), bar_size as usize).is_ok() {
-                                warn!(
-                                    "delete bar {}: can not found 0x{:x}",
-                                    slot, old_vaddr
-                                );
+
+                            if !gpm
+                                .try_delete(old_vaddr.try_into().unwrap(), bar_size as usize)
+                                .is_ok()
+                            {
+                                warn!("delete bar {}: can not found 0x{:x}", slot, old_vaddr);
                             }
                             gpm.try_insert(MemoryRegion::new_with_offset_mapper(
                                 new_vaddr as GuestPhysAddr,
@@ -297,7 +305,7 @@ fn handle_endpoint_access(
                             ))?;
                             drop(guard);
                             /* after update gpm, mem barrier is needed
-                                */
+                             */
                             #[cfg(target_arch = "aarch64")]
                             unsafe {
                                 core::arch::asm!("isb");
@@ -305,27 +313,29 @@ fn handle_endpoint_access(
                                 core::arch::asm!("dsb nsh");
                             }
                             /* after update gpm, need to flush iommu table
-                                * in x86_64
-                                */
+                             * in x86_64
+                             */
                             #[cfg(target_arch = "x86_64")]
                             {
                                 let vbdf = dev.get_vbdf();
                                 crate::arch::iommu::flush(
-                                this_zone_id(),
-                                vbdf.bus,
-                                (vbdf.device << 3) + vbdf.function,
-                            );
-                        }
+                                    this_zone_id(),
+                                    vbdf.bus,
+                                    (vbdf.device << 3) + vbdf.function,
+                                );
+                            }
                         }
                     }
                     Ok(None)
                 } else {
                     // read bar
-                    if (dev.with_config_value(|configvalue| configvalue.get_bar_value(slot)) & 0xfffffff0) == 0xfffffff0
+                    if (dev.with_config_value(|configvalue| configvalue.get_bar_value(slot))
+                        & 0xfffffff0)
+                        == 0xfffffff0
                     {
                         /*
                          * tmp_value being 0xFFFF_FFFF means that Linux is attempting to determine the BAR size.
-                         * The value of tmp_value is used directly here because Linux will rewrite this register later, 
+                         * The value of tmp_value is used directly here because Linux will rewrite this register later,
                          * so the Hvisor does not need to preserve any additional state.
                          */
                         Ok(Some(
@@ -352,12 +362,12 @@ fn handle_endpoint_access(
                             configvalue.set_rom_value(value as u32);
                         });
                         dev.write_hw(field.to_offset() as PciConfigAddress, field.size(), value)?;
-                        
+
                         let new_vaddr = (value as u64) & !0xf;
-                        
+
                         // set virt_value
                         dev.with_rom_ref_mut(|rom| rom.set_virtual_value(new_vaddr));
-                        
+
                         // set value
                         dev.with_rom_ref_mut(|rom| rom.set_value(new_vaddr));
                     } else if is_dev_belong_to_zone {
@@ -365,19 +375,19 @@ fn handle_endpoint_access(
                         dev.with_config_value_mut(|configvalue| {
                             configvalue.set_rom_value(value as u32);
                         });
-                        
+
                         let old_vaddr = dev.with_rom_ref(|rom| rom.get_virtual_value64()) & !0xf;
                         let new_vaddr = (value as u64) & !0xf;
-                        
+
                         dev.with_rom_ref_mut(|rom| rom.set_virtual_value(new_vaddr));
-                        
+
                         let paddr = if is_root {
                             dev.with_rom_ref_mut(|rom| rom.set_value(new_vaddr));
                             new_vaddr as HostPhysAddr
                         } else {
                             dev.with_rom_ref(|rom| rom.get_value64()) as HostPhysAddr
                         };
-                        
+
                         let rom_size = {
                             let size = dev.with_rom_ref(|rom| rom.get_size());
                             if crate::memory::addr::is_aligned(size as usize) {
@@ -391,16 +401,16 @@ fn handle_endpoint_access(
                         } else {
                             new_vaddr as u64
                         };
-                        
+
                         let zone = this_zone();
                         let mut guard = zone.write();
                         let gpm = &mut guard.gpm;
-                        
-                        if !gpm.try_delete(old_vaddr.try_into().unwrap(), rom_size as usize).is_ok() {
-                            warn!(
-                                "delete rom bar: can not found 0x{:x}",
-                                old_vaddr
-                            );
+
+                        if !gpm
+                            .try_delete(old_vaddr.try_into().unwrap(), rom_size as usize)
+                            .is_ok()
+                        {
+                            warn!("delete rom bar: can not found 0x{:x}", old_vaddr);
                         }
                         gpm.try_insert(MemoryRegion::new_with_offset_mapper(
                             new_vaddr as GuestPhysAddr,
@@ -410,7 +420,7 @@ fn handle_endpoint_access(
                         ))?;
                         drop(guard);
                         /* after update gpm, mem barrier is needed
-                            */
+                         */
                         #[cfg(target_arch = "aarch64")]
                         unsafe {
                             core::arch::asm!("isb");
@@ -418,8 +428,8 @@ fn handle_endpoint_access(
                             core::arch::asm!("dsb nsh");
                         }
                         /* after update gpm, need to flush iommu table
-                            * in x86_64
-                            */
+                         * in x86_64
+                         */
                         #[cfg(target_arch = "x86_64")]
                         {
                             let vbdf = dev.get_vbdf();
@@ -433,11 +443,13 @@ fn handle_endpoint_access(
                     Ok(None)
                 } else {
                     // read rom bar
-                    if (dev.with_config_value(|configvalue| configvalue.get_rom_value())) & 0xfffff800 == 0xfffff800
+                    if (dev.with_config_value(|configvalue| configvalue.get_rom_value()))
+                        & 0xfffff800
+                        == 0xfffff800
                     {
                         /*
                          * config_value being 0xFFFF_FFFF means that Linux is attempting to determine the ROM size.
-                         * The value is used directly here because Linux will rewrite this register later, 
+                         * The value is used directly here because Linux will rewrite this register later,
                          * so the Hvisor does not need to preserve any additional state.
                          */
                         Ok(Some(
@@ -451,7 +463,6 @@ fn handle_endpoint_access(
                     }
                 }
             } else {
-
                 Ok(None)
             }
         }
@@ -575,7 +586,7 @@ fn handle_config_space_access(
             }
         }
     }
-    
+
     pci_log!(
         "vbdf {:#?} reg 0x{:x} {} 0x{:x}",
         vbdf,
@@ -617,7 +628,7 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
 
     if let Some(dev) = dev {
         handle_config_space_access(dev, mmio, offset, false, is_root, true)?;
-    } else { 
+    } else {
         handle_device_not_found(mmio, offset);
     }
 
@@ -629,15 +640,19 @@ pub fn mmio_dwc_io_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     {
         let zone = this_zone();
         let guard = zone.read();
-        
-        let atu_config = guard.atu_configs.get_atu_by_io_base(_base as PciConfigAddress)
+
+        let atu_config = guard
+            .atu_configs
+            .get_atu_by_io_base(_base as PciConfigAddress)
             .and_then(|atu| {
-                guard.atu_configs.get_ecam_by_io_base(_base as PciConfigAddress)
+                guard
+                    .atu_configs
+                    .get_ecam_by_io_base(_base as PciConfigAddress)
                     .map(|ecam| (*atu, ecam))
             });
-        
+
         drop(guard);
-        
+
         if let Some((atu, ecam_base)) = atu_config {
             use crate::platform;
             if let Some(extend_config) = platform::ROOT_DWC_ATU_CONFIG
@@ -649,7 +664,7 @@ pub fn mmio_dwc_io_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                 let dbi_size = extend_config.dbi_size;
                 let dbi_region = PciRegionMmio::new(dbi_base, dbi_size);
                 let dbi_backend = DwcConfigRegionBackend::new(dbi_region);
-                
+
                 // Call AtuUnroll to program the ATU
                 AtuUnroll::dw_pcie_prog_outbound_atu_unroll(&dbi_backend, &atu)?;
             }
@@ -663,18 +678,22 @@ pub fn mmio_dwc_io_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
 
 #[cfg(feature = "dwc_pcie")]
 pub fn mmio_dwc_cfg_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
-    info!("mmio_dwc_cfg_handler {:#x}", mmio.address + _base);    
+    info!("mmio_dwc_cfg_handler {:#x}", mmio.address + _base);
     let zone = this_zone();
     let guard = zone.read();
 
-    let atu_config = guard.atu_configs.get_atu_by_cfg_base(_base as PciConfigAddress)
+    let atu_config = guard
+        .atu_configs
+        .get_atu_by_cfg_base(_base as PciConfigAddress)
         .and_then(|atu| {
-            guard.atu_configs.get_ecam_by_cfg_base(_base as PciConfigAddress)
+            guard
+                .atu_configs
+                .get_ecam_by_cfg_base(_base as PciConfigAddress)
                 .map(|ecam| (*atu, ecam))
         });
-    
+
     drop(guard);
-    
+
     if let Some((atu, ecam_base)) = atu_config {
         // Get dbi_base from platform config (usually dbi_base == ecam_base)
         use crate::platform;
@@ -689,17 +708,17 @@ pub fn mmio_dwc_cfg_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
             let dbi_backend = DwcConfigRegionBackend::new(dbi_region);
 
             // warn!("atu config {:#?}", atu);
-            
+
             // Call AtuUnroll to program the ATU
             AtuUnroll::dw_pcie_prog_outbound_atu_unroll(&dbi_backend, &atu)?;
         }
-        
+
         let offset = (mmio.address & 0xfff) as PciConfigAddress;
         let zone = this_zone();
         let mut is_dev_belong_to_zone = false;
-        
+
         let base = mmio.address as PciConfigAddress - offset + atu.pci_target();
-        
+
         let dev: Option<ArcRwLockVirtualPciConfigSpace> = {
             let mut guard = zone.write();
             let vbus = &mut guard.vpci_bus;
@@ -723,7 +742,7 @@ pub fn mmio_dwc_cfg_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                 dev_clone
             }
         };
-        
+
         let dev = match dev {
             Some(dev) => dev,
             None => {
@@ -731,10 +750,10 @@ pub fn mmio_dwc_cfg_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                 return Ok(());
             }
         };
-        
+
         let is_root = is_this_root_zone();
         let is_direct = true; // dwc_cfg_handler uses direct mode
-        
+
         handle_config_space_access(dev, mmio, offset, is_direct, is_root, is_dev_belong_to_zone)?;
     } else {
         warn!("No ATU config yet, do nothing");
@@ -750,19 +769,18 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
      * 0x100-0x200 is inbound atu0 reg just handle outbound right now
      * so MAX is ATU_BASE + ATU_REGION_SIZE/2
      */
-    if mmio.address >= ATU_BASE && mmio.address < ATU_BASE + ATU_REGION_SIZE/2
-    {
+    if mmio.address >= ATU_BASE && mmio.address < ATU_BASE + ATU_REGION_SIZE / 2 {
         let zone = this_zone();
         let mut guard = zone.write();
         let ecam_base = _base;
         let atu_offset = mmio.address - ATU_BASE;
 
         // warn!("set atu0 register {:#X} value {:#X}", atu_offset, mmio.value);
-        
+
         let mut atu = guard.atu_configs.get_atu_by_ecam_mut(ecam_base).unwrap();
 
         // info!("atu config write {:#?}", atu);
-        
+
         if mmio.is_write {
             if mmio.size == 4 {
                 match atu_offset {
@@ -776,27 +794,42 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                     }
                     PCIE_ATU_UNR_LOWER_BASE => {
                         // info!("set atu0 lower base value {:#X}", mmio.value);
-                        atu.set_cpu_base((atu.cpu_base() & !0xffffffff) | (mmio.value as PciConfigAddress));
+                        atu.set_cpu_base(
+                            (atu.cpu_base() & !0xffffffff) | (mmio.value as PciConfigAddress),
+                        );
                     }
                     PCIE_ATU_UNR_UPPER_BASE => {
                         // info!("set atu0 upper base value {:#X}", mmio.value);
-                        atu.set_cpu_base((atu.cpu_base() & 0xffffffff) | ((mmio.value as PciConfigAddress) << 32));
+                        atu.set_cpu_base(
+                            (atu.cpu_base() & 0xffffffff)
+                                | ((mmio.value as PciConfigAddress) << 32),
+                        );
                     }
                     PCIE_ATU_UNR_LIMIT => {
                         // info!("set atu0 limit value {:#X}", mmio.value);
-                        atu.set_cpu_limit((atu.cpu_limit() & !0xffffffff) | (mmio.value as PciConfigAddress));
+                        atu.set_cpu_limit(
+                            (atu.cpu_limit() & !0xffffffff) | (mmio.value as PciConfigAddress),
+                        );
                     }
                     PCIE_ATU_UNR_UPPER_LIMIT => {
                         // Update the upper 32 bits of cpu_limit
-                        atu.set_cpu_limit((atu.cpu_limit() & 0xffffffff) | ((mmio.value as PciConfigAddress) << 32));
+                        atu.set_cpu_limit(
+                            (atu.cpu_limit() & 0xffffffff)
+                                | ((mmio.value as PciConfigAddress) << 32),
+                        );
                     }
                     PCIE_ATU_UNR_LOWER_TARGET => {
                         // info!("set atu0 lower target value {:#X}", mmio.value);
-                        atu.set_pci_target((atu.pci_target() & !0xffffffff) | (mmio.value as PciConfigAddress));
+                        atu.set_pci_target(
+                            (atu.pci_target() & !0xffffffff) | (mmio.value as PciConfigAddress),
+                        );
                     }
                     PCIE_ATU_UNR_UPPER_TARGET => {
                         // info!("set atu0 upper target value {:#X}", mmio.value);
-                        atu.set_pci_target((atu.pci_target() & 0xffffffff) | ((mmio.value as PciConfigAddress) << 32));
+                        atu.set_pci_target(
+                            (atu.pci_target() & 0xffffffff)
+                                | ((mmio.value as PciConfigAddress) << 32),
+                        );
                     }
                     _ => {
                         warn!("invalid atu0 write {:#x} + {:#x}", atu_offset, mmio.size);
@@ -823,11 +856,19 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                 }
                 PCIE_ATU_UNR_LIMIT => {
                     let limit_value = (atu.cpu_limit() & 0xffffffff) as usize;
-                    mmio.value = if limit_value == 0 { atu.limit_hw_value() as usize } else { limit_value };
+                    mmio.value = if limit_value == 0 {
+                        atu.limit_hw_value() as usize
+                    } else {
+                        limit_value
+                    };
                 }
                 PCIE_ATU_UNR_UPPER_LIMIT => {
                     let upper_limit = ((atu.cpu_limit() >> 32) & 0xffffffff) as usize;
-                    mmio.value = if upper_limit == 0xffffffff { atu.upper_limit_hw_value() as usize } else { upper_limit };
+                    mmio.value = if upper_limit == 0xffffffff {
+                        atu.upper_limit_hw_value() as usize
+                    } else {
+                        upper_limit
+                    };
                 }
                 PCIE_ATU_UNR_LOWER_TARGET => {
                     mmio.value = (atu.pci_target() & 0xffffffff) as usize;
@@ -841,7 +882,7 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                 }
             }
         }
-    } else if mmio.address > ATU_BASE + ATU_REGION_SIZE/2 {
+    } else if mmio.address > ATU_BASE + ATU_REGION_SIZE / 2 {
         mmio_perform_access(_base, mmio);
     } else if mmio.address >= BIT_LENTH {
         // dbi read
@@ -877,7 +918,7 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                 dev_clone
             }
         };
-        
+
         let dev = match dev {
             Some(dev) => dev,
             None => {
@@ -885,10 +926,10 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                 return Ok(());
             }
         };
-        
+
         let is_root = is_this_root_zone();
         let is_direct = true; // dbi handler uses direct mode
-        
+
         handle_config_space_access(dev, mmio, offset, is_direct, is_root, is_dev_belong_to_zone)?;
     }
 
@@ -927,8 +968,8 @@ pub fn mmio_vpci_direct_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult
 
     let is_root = is_this_root_zone();
     let is_direct = true; // direct handler uses direct mode
-    
+
     handle_config_space_access(dev, mmio, offset, is_direct, is_root, is_dev_belong_to_zone)?;
-    
+
     Ok(())
 }

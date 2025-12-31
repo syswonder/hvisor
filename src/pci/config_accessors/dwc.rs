@@ -95,7 +95,7 @@ impl DwcConfigAccessor {
             base: dbi_base,
             size: dbi_size,
         };
-        
+
         /* actually we only use atu0 to init dwc pcie */
         let cfg0 = DwcConfigRegion {
             atu_index: 0,
@@ -121,11 +121,7 @@ impl DwcConfigAccessor {
 }
 
 impl PciConfigAccessor for DwcConfigAccessor {
-    fn get_pci_addr_base(
-        &self, 
-        bdf: Bdf, 
-        parent_bus: u8,
-    ) -> HvResult<PciConfigAddress> {
+    fn get_pci_addr_base(&self, bdf: Bdf, parent_bus: u8) -> HvResult<PciConfigAddress> {
         let bus = bdf.bus() as PciConfigAddress;
         let device = bdf.device() as PciConfigAddress;
         let function = bdf.function() as PciConfigAddress;
@@ -163,7 +159,8 @@ impl PciConfigAccessor for DwcConfigAccessor {
             if self.cfg0.atu_index == ATU_UNUSED as usize {
                 return hv_result_err!(EINVAL, "CFG0 ATU is not configured");
             }
-            let atu_config = AtuConfig::new_with_dwc_config_region(&self.cfg0, AtuType::Cfg0, pci_addr);
+            let atu_config =
+                AtuConfig::new_with_dwc_config_region(&self.cfg0, AtuType::Cfg0, pci_addr);
             AtuUnroll::dw_pcie_prog_outbound_atu_unroll(self.dbi_backend.as_ref(), &atu_config)?;
 
             self.cfg0.base
@@ -171,7 +168,8 @@ impl PciConfigAccessor for DwcConfigAccessor {
             if self.cfg1.atu_index == ATU_UNUSED as usize {
                 return hv_result_err!(EINVAL, "CFG1 ATU is not configured");
             }
-            let atu_config = AtuConfig::new_with_dwc_config_region(&self.cfg1, AtuType::Cfg1, pci_addr);   
+            let atu_config =
+                AtuConfig::new_with_dwc_config_region(&self.cfg1, AtuType::Cfg1, pci_addr);
             AtuUnroll::dw_pcie_prog_outbound_atu_unroll(self.dbi_backend.as_ref(), &atu_config)?;
 
             self.cfg1.base
