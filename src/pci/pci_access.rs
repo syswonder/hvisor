@@ -13,8 +13,8 @@
 //
 // Authors:
 //
+
 // #![allow(dead_code)]
-use alloc::string::String;
 use bit_field::BitField;
 use bitflags::bitflags;
 use core::{
@@ -25,34 +25,12 @@ use core::{
 
 use super::{
     config_accessors::{PciConfigMmio, PciRegion},
-    pci_struct::ArcRwLockVirtualPciConfigSpace,
     PciConfigAddress,
 };
 
 use crate::{
-    error::HvResult,
-    memory::{
-        mmio_perform_access, GuestPhysAddr, HostPhysAddr, MMIOAccess, MemFlags, MemoryRegion,
-        MemorySet,
-    },
-    pci::{pci_config::GLOBAL_PCIE_LIST, pci_struct::BIT_LENTH},
-    percpu::this_zone,
-    zone::{is_this_root_zone, this_zone_id},
+    error::HvResult
 };
-
-#[cfg(feature = "dwc_pcie")]
-use crate::pci::config_accessors::{
-    dwc::DwcConfigRegionBackend,
-    dwc_atu::{
-        AtuConfig, AtuType, AtuUnroll, ATU_BASE, ATU_ENABLE_BIT, ATU_REGION_SIZE,
-        PCIE_ATU_UNR_LIMIT, PCIE_ATU_UNR_LOWER_BASE, PCIE_ATU_UNR_LOWER_TARGET,
-        PCIE_ATU_UNR_REGION_CTRL1, PCIE_ATU_UNR_REGION_CTRL2, PCIE_ATU_UNR_UPPER_BASE,
-        PCIE_ATU_UNR_UPPER_LIMIT, PCIE_ATU_UNR_UPPER_TARGET,
-    },
-    PciRegionMmio,
-};
-
-use crate::pci::vpci_dev::VpciDevType;
 
 pub type VendorId = u16;
 pub type DeviceId = u16;
@@ -222,10 +200,10 @@ impl PciMem {
                  */
                 0
             }
-            _ => {
-                warn!("{:#?} not support size", self.bar_type);
-                0
-            }
+            // _ => {
+            //     warn!("{:#?} not support size", self.bar_type);
+            //     0
+            // }
         }
     }
 

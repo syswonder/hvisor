@@ -13,6 +13,7 @@
 //
 // Authors:
 //
+
 #![allow(dead_code)]
 use core::str::FromStr;
 
@@ -20,9 +21,14 @@ use alloc::{collections::btree_map::BTreeMap, sync::Arc};
 use spin::{lazy::Lazy, mutex::Mutex};
 
 use super::{
+    pci_handler::mmio_vpci_direct_handler,
+    pci_struct::{Bdf, VirtualPciConfigSpace, CONFIG_LENTH},
+};
+
+#[cfg(feature = "ecam_pcie")]
+use super::{
     mem_alloc::BaseAllocator,
-    pci_handler::{mmio_vpci_direct_handler, mmio_vpci_handler},
-    pci_struct::{Bdf, RootComplex, VirtualPciConfigSpace, CONFIG_LENTH},
+    pci_struct::RootComplex,
 };
 
 use crate::{

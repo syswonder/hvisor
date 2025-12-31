@@ -1,10 +1,26 @@
+// Copyright (c) 2025 Syswonder
+// hvisor is licensed under Mulan PSL v2.
+// You can use this software according to the terms and conditions of the Mulan PSL v2.
+// You may obtain a copy of Mulan PSL v2 at:
+//     http://license.coscl.org.cn/MulanPSL2
+// THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND, EITHER
+// EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT, MERCHANTABILITY OR
+// FIT FOR A PARTICULAR PURPOSE.
+// See the Mulan PSL v2 for more details.
+//
+// Syswonder Website:
+//      https://www.syswonder.org
+//
+// Authors:
+//
+
 use alloc::string::String;
 
 use crate::error::HvResult;
 use crate::memory::MMIOAccess;
-use crate::memory::{mmio_perform_access, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion};
+use crate::memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion};
 use crate::percpu::this_zone;
-use crate::zone::{is_this_root_zone, this_zone_id};
+use crate::zone::is_this_root_zone;
 
 use super::pci_access::{BridgeField, EndpointField, HeaderType, PciField, PciMemType};
 use super::pci_config::GLOBAL_PCIE_LIST;
@@ -12,16 +28,22 @@ use super::pci_struct::{ArcRwLockVirtualPciConfigSpace, BIT_LENTH};
 use super::vpci_dev::VpciDevType;
 use super::PciConfigAddress;
 
+#[cfg(target_arch = "x86_64")]
+use crate::zone::this_zone_id;
+
 #[cfg(feature = "dwc_pcie")]
-use crate::pci::config_accessors::{
-    dwc::DwcConfigRegionBackend,
-    dwc_atu::{
-        AtuConfig, AtuType, AtuUnroll, ATU_BASE, ATU_ENABLE_BIT, ATU_REGION_SIZE,
-        PCIE_ATU_UNR_LIMIT, PCIE_ATU_UNR_LOWER_BASE, PCIE_ATU_UNR_LOWER_TARGET,
-        PCIE_ATU_UNR_REGION_CTRL1, PCIE_ATU_UNR_REGION_CTRL2, PCIE_ATU_UNR_UPPER_BASE,
-        PCIE_ATU_UNR_UPPER_LIMIT, PCIE_ATU_UNR_UPPER_TARGET,
+use crate::{
+    pci::config_accessors::{
+        dwc::DwcConfigRegionBackend,
+        dwc_atu::{
+            AtuType, AtuUnroll, ATU_BASE, ATU_ENABLE_BIT, ATU_REGION_SIZE,
+            PCIE_ATU_UNR_LIMIT, PCIE_ATU_UNR_LOWER_BASE, PCIE_ATU_UNR_LOWER_TARGET,
+            PCIE_ATU_UNR_REGION_CTRL1, PCIE_ATU_UNR_REGION_CTRL2, PCIE_ATU_UNR_UPPER_BASE,
+            PCIE_ATU_UNR_UPPER_LIMIT, PCIE_ATU_UNR_UPPER_TARGET,
+        },
+        PciRegionMmio,
     },
-    PciRegionMmio,
+    memory::mmio_perform_access,
 };
 
 macro_rules! pci_log {
@@ -777,7 +799,7 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
 
         // warn!("set atu0 register {:#X} value {:#X}", atu_offset, mmio.value);
 
-        let mut atu = guard.atu_configs.get_atu_by_ecam_mut(ecam_base).unwrap();
+        let atu = guard.atu_configs.get_atu_by_ecam_mut(ecam_base).unwrap();
 
         // info!("atu config write {:#?}", atu);
 

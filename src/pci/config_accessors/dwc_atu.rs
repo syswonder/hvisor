@@ -18,7 +18,7 @@ use super::dwc::DwcConfigRegion;
 use core::{fmt, fmt::Debug};
 
 use crate::{
-    error::{HvErrorNum::*, HvResult},
+    error::HvResult,
     pci::{pci_access::PciRW, PciConfigAddress},
 };
 

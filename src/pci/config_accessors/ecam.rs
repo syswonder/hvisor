@@ -15,9 +15,8 @@
 //
 
 use alloc::sync::Arc;
-use bit_field::BitField;
 
-use super::{PciConfigAccessor, PciConfigMmio, PciRegion};
+use super::{PciConfigAccessor, PciConfigMmio};
 
 use crate::{
     error::HvResult,
@@ -50,7 +49,7 @@ impl EcamConfigAccessor {
 }
 
 impl PciConfigAccessor for EcamConfigAccessor {
-    fn get_pci_addr_base(&self, bdf: Bdf, parent_bus: u8) -> HvResult<PciConfigAddress> {
+    fn get_pci_addr_base(&self, bdf: Bdf) -> HvResult<PciConfigAddress> {
         let bus = bdf.bus() as PciConfigAddress;
         let device = bdf.device() as PciConfigAddress;
         let function = bdf.function() as PciConfigAddress;

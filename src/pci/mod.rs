@@ -13,6 +13,7 @@
 //
 // Authors:
 //
+
 #![allow(dead_code)]
 pub mod config_accessors;
 pub mod mem_alloc;
@@ -22,6 +23,7 @@ pub mod pci_handler;
 pub mod pci_struct;
 pub mod vpci_dev;
 
+#[cfg(test)]
 pub mod pci_test;
 
 pub type PciConfigAddress = u64;

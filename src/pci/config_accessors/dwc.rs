@@ -15,7 +15,6 @@
 //
 
 use alloc::sync::Arc;
-use bit_field::BitField;
 
 use super::{
     dwc_atu::{AtuConfig, AtuType, AtuUnroll, ATU_UNUSED},
@@ -24,7 +23,7 @@ use super::{
 
 use crate::{
     config::HvDwcAtuConfig,
-    error::{HvErrorNum::*, HvResult},
+    error::HvResult,
     pci::{
         pci_access::{PciRW, PciRWBase},
         pci_struct::{Bdf, RootComplex},
@@ -121,13 +120,13 @@ impl DwcConfigAccessor {
 }
 
 impl PciConfigAccessor for DwcConfigAccessor {
-    fn get_pci_addr_base(&self, bdf: Bdf, parent_bus: u8) -> HvResult<PciConfigAddress> {
+    fn get_pci_addr_base(&self, bdf: Bdf) -> HvResult<PciConfigAddress> {
         let bus = bdf.bus() as PciConfigAddress;
         let device = bdf.device() as PciConfigAddress;
         let function = bdf.function() as PciConfigAddress;
 
         let pci_addr = (bus << 24) + (device << 19) + (function << 16);
-        info!("pci_addr {:#x}", pci_addr);
+        // info!("pci_addr {:#x}", pci_addr);
         let address = if bus == self.root_bus.into() {
             // Root bus: use DBI directly, no ATU configuration needed
             self.dbi.base
@@ -141,14 +140,14 @@ impl PciConfigAccessor for DwcConfigAccessor {
     fn get_physical_address(
         &self,
         bdf: Bdf,
-        offset: PciConfigAddress,
+        _offset: PciConfigAddress,
         parent_bus: u8,
     ) -> HvResult<PciConfigAddress> {
         let bus = bdf.bus() as PciConfigAddress;
         let device = bdf.device() as PciConfigAddress;
         let function = bdf.function() as PciConfigAddress;
 
-        warn!("parent_bus {} self.root_bus {}", parent_bus, self.root_bus);
+        // warn!("parent_bus {} self.root_bus {}", parent_bus, self.root_bus);
 
         let pci_addr = (bus << 24) + (device << 19) + (function << 16);
 
@@ -182,7 +181,7 @@ impl PciConfigAccessor for DwcConfigAccessor {
         // On root bus, only device 0 (slot 0) is valid, devices with dev > 0 should be skipped
         // This matches Linux kernel's dw_pcie_valid_device() behavior
         if bdf.bus() == self.root_bus && bdf.device() > 0 {
-            warn!("skip_device {:#?}", bdf);
+            // warn!("skip_device {:#?}", bdf);
             return true;
         }
         false

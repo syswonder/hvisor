@@ -13,16 +13,22 @@
 //
 // Authors:
 //
+
 use alloc::collections::btree_map::BTreeMap;
 use spin::{Lazy, Mutex};
 
 use crate::{
-    arch::iommu::iommu_add_device,
     config::{HvPciConfig, HvPciDevConfig, CONFIG_MAX_PCI_DEV, CONFIG_PCI_BUS_MAXNUM},
     error::HvResult,
     pci::pci_struct::{ArcRwLockVirtualPciConfigSpace, Bdf},
     zone::Zone,
 };
+
+#[cfg(any(
+    all(feature = "iommu", target_arch = "aarch64"),
+    target_arch = "x86_64"
+))]
+use crate::arch::iommu::iommu_add_device;
 
 #[cfg(feature = "ecam_pcie")]
 use crate::pci::{
@@ -36,19 +42,22 @@ use crate::pci::{
     feature = "loongarch64_pcie"
 ))]
 use crate::pci::{
-    mem_alloc::BaseAllocator, pci_handler::mmio_vpci_handler, pci_struct::RootComplex,
-    PciConfigAddress,
+    mem_alloc::BaseAllocator, pci_struct::RootComplex,
 };
+
+#[cfg(feature = "ecam_pcie")]
+use crate::pci::pci_handler::mmio_vpci_handler;
 #[cfg(feature = "dwc_pcie")]
 use crate::{
     memory::mmio_generic_handler,
     pci::{
         config_accessors::{
             dwc::DwcConfigRegionBackend,
-            dwc_atu::{AtuConfig, AtuType},
+            dwc_atu::AtuConfig,
             PciRegionMmio,
         },
         pci_handler::{mmio_dwc_cfg_handler, mmio_dwc_io_handler, mmio_vpci_handler_dbi},
+        PciConfigAddress,
     },
     platform,
 };
@@ -70,7 +79,7 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
         feature = "dwc_pcie",
         feature = "loongarch64_pcie"
     ))]
-    for (index, rootcomplex_config) in pci_config.iter().enumerate() {
+    for (_index, rootcomplex_config) in pci_config.iter().enumerate() {
         /* empty config */
         if rootcomplex_config.ecam_base == 0 {
             warn!("empty pcie config");
@@ -163,7 +172,7 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
 impl Zone {
     pub fn guest_pci_init(
         &mut self,
-        zone_id: usize,
+        _zone_id: usize,
         alloc_pci_devs: &[HvPciDevConfig; CONFIG_MAX_PCI_DEV],
         num_pci_devs: u64,
         pci_config: &[HvPciConfig],
@@ -263,7 +272,7 @@ impl Zone {
                     let device_id = (dev_config.bus as usize) << 8
                         | (dev_config.device as usize) << 3
                         | dev_config.function as usize;
-                    iommu_add_device(zone_id, device_id as _, iommu_pt_addr);
+                    iommu_add_device(_zone_id, device_id as _, iommu_pt_addr);
                 }
 
                 // Insert device into vpci_bus with calculated vbdf
@@ -416,7 +425,7 @@ impl Zone {
                     mmio_vpci_direct_handler,
                     rootcomplex_config.ecam_base as usize,
                 );
-                self.page_table_emergency(
+                let _ = self.page_table_emergency(
                     rootcomplex_config.ecam_base as usize,
                     rootcomplex_config.ecam_size as usize,
                 );

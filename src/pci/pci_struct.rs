@@ -13,6 +13,7 @@
 //
 // Authors:
 //
+
 use alloc::{collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
 use bit_field::BitField;
 use bitvec::{array::BitArray, order::Lsb0, BitArr};
@@ -943,8 +944,8 @@ pub struct PciIterator<B: BarAllocator> {
 }
 
 impl<B: BarAllocator> PciIterator<B> {
-    fn get_pci_addr_base(&self, parent_bus: u8, bdf: Bdf) -> PciConfigAddress {
-        match self.accessor.get_pci_addr_base(bdf, parent_bus) {
+    fn get_pci_addr_base(&self, bdf: Bdf) -> PciConfigAddress {
+        match self.accessor.get_pci_addr_base(bdf) {
             Ok(addr) => addr,
             Err(_) => 0x0,
         }
@@ -982,7 +983,7 @@ impl<B: BarAllocator> PciIterator<B> {
         let bdf = Bdf::new(self.domain, bus, device, function);
 
         let address = self.address(parent_bus, bdf);
-        let pci_addr_base = self.get_pci_addr_base(parent_bus, bdf);
+        let pci_addr_base = self.get_pci_addr_base(bdf);
         // info!("get node {:x} {:#?}", address, bdf);
 
         let region = PciConfigMmio::new(address, CONFIG_LENTH);
