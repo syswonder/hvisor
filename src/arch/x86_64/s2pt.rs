@@ -26,7 +26,7 @@ use crate::{
         addr::{GuestPhysAddr, HostPhysAddr, PhysAddr},
         MemFlags,
     },
-    percpu::this_cpu_data,
+    cpu_data::this_cpu_data,
     zone::this_zone_id,
 };
 use bit_field::BitField;

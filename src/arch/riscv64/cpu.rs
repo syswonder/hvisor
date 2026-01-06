@@ -15,7 +15,7 @@
 //
 use super::csr::*;
 use crate::arch::Stage2PageTable;
-use crate::percpu::this_cpu_data;
+use crate::cpu_data::this_cpu_data;
 use crate::{
     arch::mm::new_s2_memory_set,
     consts::{PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},

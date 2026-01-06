@@ -36,7 +36,7 @@ use crate::{
     error::HvResult,
     hypercall::HyperCall,
     memory::{mmio_handle_access, MMIOAccess, MemFlags},
-    percpu::{this_cpu_data, this_zone},
+    cpu_data::{this_cpu_data, this_zone},
     zone::this_zone_id,
 };
 use bit_field::BitField;

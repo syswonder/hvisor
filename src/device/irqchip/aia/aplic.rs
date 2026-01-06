@@ -17,7 +17,7 @@
 use crate::config::root_zone_config;
 use crate::device::irqchip::aia::imsic::imsic_trigger;
 use crate::zone::Zone;
-use crate::{arch::cpu::ArchCpu, memory::GuestPhysAddr, percpu::this_cpu_data};
+use crate::{arch::cpu::ArchCpu, memory::GuestPhysAddr, cpu_data::this_cpu_data};
 use riscv_decode::Instruction;
 use spin::Once;
 use spin::RwLock;

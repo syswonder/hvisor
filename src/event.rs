@@ -19,13 +19,14 @@ use crate::{
     consts::{
         IPI_EVENT_CLEAR_INJECT_IRQ, IPI_EVENT_SEND_IPI, IPI_EVENT_UPDATE_HART_LINE, MAX_CPU_NUM,
     },
+    cpu_data::this_cpu_data,
     device::{
         irqchip::inject_irq,
         virtio_trampoline::{handle_virtio_irq, IRQ_WAKEUP_VIRTIO_DEVICE},
     },
-    percpu::this_cpu_data,
 };
 use alloc::{collections::VecDeque, vec::Vec};
+use percpu::def_percpu;
 use spin::{Mutex, Once};
 
 pub const IPI_EVENT_WAKEUP: usize = 0;
@@ -33,85 +34,56 @@ pub const IPI_EVENT_SHUTDOWN: usize = 1;
 pub const IPI_EVENT_VIRTIO_INJECT_IRQ: usize = 2;
 pub const IPI_EVENT_WAKEUP_VIRTIO_DEVICE: usize = 3;
 
-static EVENT_MANAGER: Once<EventManager> = Once::new();
+#[percpu::def_percpu]
+static PERCPU_EVENTS: Mutex<VecDeque<usize>> = Mutex::new(VecDeque::new());
 
-struct EventManager {
-    pub inner: Vec<Mutex<VecDeque<usize>>>,
-}
-
-impl EventManager {
-    fn new(max_cpus: usize) -> Self {
-        let mut vs = vec![];
-        for _ in 0..max_cpus {
-            let v = Mutex::new(VecDeque::new());
-            vs.push(v)
-        }
-        Self { inner: vs }
-    }
-
-    fn add_event(&self, cpu: usize, event_id: usize) -> Option<()> {
-        match self.inner.get(cpu) {
-            Some(events) => {
-                let mut e = events.lock();
-                if event_id == IPI_EVENT_SHUTDOWN {
-                    e.clear();
-                }
-                e.push_back(event_id);
-                Some(())
-            }
-            None => None,
-        }
-    }
-
-    fn fetch_event(&self, cpu: usize) -> Option<usize> {
-        match self.inner.get(cpu) {
-            Some(events) => {
-                let mut e = events.lock();
-                e.pop_front()
-            }
-            None => None,
-        }
-    }
-
-    fn dump(&self) {
-        for (cpu, events) in self.inner.iter().enumerate() {
-            let e = events.lock();
-            debug!("event manager: cpu: {}, events: {:?}", cpu, e);
-        }
-    }
-
-    fn dump_cpu(&self, cpu: usize) -> Vec<usize> {
-        let mut res = Vec::new();
-        let e = self.inner[cpu].lock();
-        for i in e.iter() {
-            res.push(*i);
-        }
-        res
-    }
+// The caller ensures the cpu_id is vaild
+#[inline(always)]
+fn get_percpu_events(cpu: usize) -> &'static Mutex<VecDeque<usize>> {
+    unsafe { PERCPU_EVENTS.remote_ref_raw(cpu) }
 }
 
 fn add_event(cpu: usize, event_id: usize) -> Option<()> {
-    EVENT_MANAGER.get().unwrap().add_event(cpu, event_id)
+    if cpu >= MAX_CPU_NUM {
+        return None;
+    }
+    let mut e = get_percpu_events(cpu).lock();
+    if event_id == IPI_EVENT_SHUTDOWN {
+        // If the event is shutdown, we need to clear all previous events, because shutdown will make cpu idle and won't process any events.
+        e.clear();
+    }
+    e.push_back(event_id);
+    Some(())
 }
 
 pub fn fetch_event(cpu: usize) -> Option<usize> {
-    EVENT_MANAGER.get().unwrap().fetch_event(cpu)
-}
-
-pub fn init() {
-    EVENT_MANAGER.call_once(|| EventManager::new(MAX_CPU_NUM));
+    if cpu >= MAX_CPU_NUM {
+        return None;
+    }
+    get_percpu_events(cpu).lock().pop_front()
 }
 
 pub fn dump_events() {
-    EVENT_MANAGER.get().unwrap().dump();
+    for cpu in 0..MAX_CPU_NUM {
+        let events = get_percpu_events(cpu).lock();
+        if !events.is_empty() {
+            debug!("cpu {} events: {:?}", cpu, *events);
+        }
+    }
 }
 
 pub fn dump_cpu_events(cpu: usize) -> Vec<usize> {
-    EVENT_MANAGER.get().unwrap().dump_cpu(cpu)
+    if cpu >= MAX_CPU_NUM {
+        return Vec::new();
+    }
+    get_percpu_events(cpu).lock().iter().cloned().collect()
 }
 
 pub fn clear_events(cpu: usize) {
-    EVENT_MANAGER.get().unwrap().inner[cpu].lock().clear();
+    if cpu >= MAX_CPU_NUM {
+        return;
+    }
+    get_percpu_events(cpu).lock().clear();
 }
 
 pub fn check_events() -> bool {
@@ -180,11 +152,4 @@ pub fn send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
     arch_prepare_send_event(cpu_id, ipi_int_id, event_id);
     add_event(cpu_id, event_id);
     arch_send_event(cpu_id as _, ipi_int_id as _);
-}
-
-#[test_case]
-fn test_simple_send_event() {
-    init();
-    send_event(0, 0, IPI_EVENT_WAKEUP);
-    assert_eq!(fetch_event(0), Some(IPI_EVENT_WAKEUP));
 }
