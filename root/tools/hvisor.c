@@ -506,7 +506,7 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
 
 static int parse_pci_config(cJSON *root, zone_config_t *config) {
     cJSON *pci_configs_json = SAFE_CJSON_GET_OBJECT_ITEM(root, "pci_config");
-    CHECK_JSON_NULL_ERR_OUT(pci_configs_json, "pci_configs")
+    CHECK_JSON_NULL_ERR_OUT(pci_configs_json, "pci_config")
 
 #if defined(ARM64) || defined(LOONGARCH64) || (defined X86_64)
     int num_pci_bus = SAFE_CJSON_GET_ARRAY_SIZE(pci_configs_json);
@@ -516,65 +516,78 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
     }
 
     config->num_pci_bus = num_pci_bus;
-    log_info("num pci bus %llx", num_pci_bus);
+    log_info("num pci bus %d", num_pci_bus);
 
     for (int i = 0; i < num_pci_bus; i++) {
         cJSON *pci_config_json = SAFE_CJSON_GET_ARRAY_ITEM(pci_configs_json, i);
         pci_config_t *pci_config = &config->pci_config[i];
 
-        pci_config->ecam_base =
-            strtoull(SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "ecam_base")
-                         ->valuestring,
-                     NULL, 16);
-        pci_config->ecam_size =
-            strtoull(SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "ecam_size")
-                         ->valuestring,
-                     NULL, 16);
-        pci_config->io_base = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "io_base")->valuestring,
-            NULL, 16);
-        pci_config->io_size = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "io_size")->valuestring,
-            NULL, 16);
+        cJSON *ecam_base_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "ecam_base");
+        CHECK_JSON_NULL_ERR_OUT(ecam_base_json, "ecam_base")
+        cJSON *ecam_size_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "ecam_size");
+        CHECK_JSON_NULL_ERR_OUT(ecam_size_json, "ecam_size")
+        cJSON *io_base_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "io_base");
+        CHECK_JSON_NULL_ERR_OUT(io_base_json, "io_base")
+        cJSON *io_size_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "io_size");
+        CHECK_JSON_NULL_ERR_OUT(io_size_json, "io_size")
+        cJSON *pci_io_base_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "pci_io_base");
+        CHECK_JSON_NULL_ERR_OUT(pci_io_base_json, "pci_io_base")
+        cJSON *mem32_base_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "mem32_base");
+        CHECK_JSON_NULL_ERR_OUT(mem32_base_json, "mem32_base")
+        cJSON *mem32_size_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "mem32_size");
+        CHECK_JSON_NULL_ERR_OUT(mem32_size_json, "mem32_size")
+        cJSON *pci_mem32_base_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "pci_mem32_base");
+        CHECK_JSON_NULL_ERR_OUT(pci_mem32_base_json, "pci_mem32_base")
+        cJSON *mem64_base_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "mem64_base");
+        CHECK_JSON_NULL_ERR_OUT(mem64_base_json, "mem64_base")
+        cJSON *mem64_size_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "mem64_size");
+        CHECK_JSON_NULL_ERR_OUT(mem64_size_json, "mem64_size")
+        cJSON *pci_mem64_base_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "pci_mem64_base");
+        CHECK_JSON_NULL_ERR_OUT(pci_mem64_base_json, "pci_mem64_base")
+        cJSON *bus_range_begin_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "bus_range_begin");
+        CHECK_JSON_NULL_ERR_OUT(bus_range_begin_json, "bus_range_begin")
+        cJSON *bus_range_end_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "bus_range_end");
+        CHECK_JSON_NULL_ERR_OUT(bus_range_end_json, "bus_range_end")
+        cJSON *domain_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "domain");
+        CHECK_JSON_NULL_ERR_OUT(domain_json, "domain")
+
+        pci_config->ecam_base = strtoull(ecam_base_json->valuestring, NULL, 16);
+        pci_config->ecam_size = strtoull(ecam_size_json->valuestring, NULL, 16);
+        pci_config->io_base = strtoull(io_base_json->valuestring, NULL, 16);
+        pci_config->io_size = strtoull(io_size_json->valuestring, NULL, 16);
         pci_config->pci_io_base =
-            strtoull(SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "pci_io_base")
-                         ->valuestring,
-                     NULL, 16);
+            strtoull(pci_io_base_json->valuestring, NULL, 16);
         pci_config->mem32_base =
-            strtoull(SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "mem32_base")
-                         ->valuestring,
-                     NULL, 16);
+            strtoull(mem32_base_json->valuestring, NULL, 16);
         pci_config->mem32_size =
-            strtoull(SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "mem32_size")
-                         ->valuestring,
-                     NULL, 16);
-        pci_config->pci_mem32_base = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "pci_mem32_base")
-                ->valuestring,
-            NULL, 16);
+            strtoull(mem32_size_json->valuestring, NULL, 16);
+        pci_config->pci_mem32_base =
+            strtoull(pci_mem32_base_json->valuestring, NULL, 16);
         pci_config->mem64_base =
-            strtoull(SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "mem64_base")
-                         ->valuestring,
-                     NULL, 16);
+            strtoull(mem64_base_json->valuestring, NULL, 16);
         pci_config->mem64_size =
-            strtoull(SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "mem64_size")
-                         ->valuestring,
-                     NULL, 16);
-        pci_config->pci_mem64_base = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "pci_mem64_base")
-                ->valuestring,
-            NULL, 16);
-        pci_config->bus_range_begin = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "bus_range_begin")
-                ->valuestring,
-            NULL, 16);
-        pci_config->bus_range_end = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "bus_range_end")
-                ->valuestring,
-            NULL, 16);
-        pci_config->domain = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "domain")->valuestring,
-            NULL, 16);
+            strtoull(mem64_size_json->valuestring, NULL, 16);
+        pci_config->pci_mem64_base =
+            strtoull(pci_mem64_base_json->valuestring, NULL, 16);
+        pci_config->bus_range_begin =
+            strtoull(bus_range_begin_json->valuestring, NULL, 16);
+        pci_config->bus_range_end =
+            strtoull(bus_range_end_json->valuestring, NULL, 16);
+        pci_config->domain = strtoull(domain_json->valuestring, NULL, 16);
 
         // log_info("pci_config %d: ecam_base=0x%llx, ecam_size=0x%llx, "
         //          "io_base=0x%llx, io_size=0x%llx, "
