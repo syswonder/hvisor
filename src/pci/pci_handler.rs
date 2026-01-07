@@ -33,17 +33,17 @@ use crate::zone::this_zone_id;
 
 #[cfg(feature = "dwc_pcie")]
 use crate::{
+    memory::mmio_perform_access,
     pci::config_accessors::{
         dwc::DwcConfigRegionBackend,
         dwc_atu::{
-            AtuType, AtuUnroll, ATU_BASE, ATU_ENABLE_BIT, ATU_REGION_SIZE,
-            PCIE_ATU_UNR_LIMIT, PCIE_ATU_UNR_LOWER_BASE, PCIE_ATU_UNR_LOWER_TARGET,
-            PCIE_ATU_UNR_REGION_CTRL1, PCIE_ATU_UNR_REGION_CTRL2, PCIE_ATU_UNR_UPPER_BASE,
-            PCIE_ATU_UNR_UPPER_LIMIT, PCIE_ATU_UNR_UPPER_TARGET,
+            AtuType, AtuUnroll, ATU_BASE, ATU_ENABLE_BIT, ATU_REGION_SIZE, PCIE_ATU_UNR_LIMIT,
+            PCIE_ATU_UNR_LOWER_BASE, PCIE_ATU_UNR_LOWER_TARGET, PCIE_ATU_UNR_REGION_CTRL1,
+            PCIE_ATU_UNR_REGION_CTRL2, PCIE_ATU_UNR_UPPER_BASE, PCIE_ATU_UNR_UPPER_LIMIT,
+            PCIE_ATU_UNR_UPPER_TARGET,
         },
         PciRegionMmio,
     },
-    memory::mmio_perform_access,
 };
 
 macro_rules! pci_log {

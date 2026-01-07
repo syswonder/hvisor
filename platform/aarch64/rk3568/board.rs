@@ -352,6 +352,6 @@ pub const ROOT_DWC_ATU_CONFIG: &[HvDwcAtuConfig] = &[
 ];
 
 pub const ROOT_PCI_DEVS: [HvPciDevConfig; 2] = [
-    pci_dev!(0x0, 0x10, 0x0, 0x0, VpciDevType::Physical),
-    pci_dev!(0x0, 0x11, 0x0, 0x0, VpciDevType::Physical),
+    pci_dev!(0x0, 0x00, 0x0, 0x0, VpciDevType::Physical),
+    pci_dev!(0x0, 0x01, 0x0, 0x0, VpciDevType::Physical),
 ];

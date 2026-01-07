@@ -26,10 +26,7 @@ use super::{
 };
 
 #[cfg(feature = "ecam_pcie")]
-use super::{
-    mem_alloc::BaseAllocator,
-    pci_struct::RootComplex,
-};
+use super::{mem_alloc::BaseAllocator, pci_struct::RootComplex};
 
 use crate::{
     memory::{mmio_perform_access, MMIOAccess},

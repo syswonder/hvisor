@@ -28,9 +28,7 @@ use super::{
     PciConfigAddress,
 };
 
-use crate::{
-    error::HvResult
-};
+use crate::error::HvResult;
 
 pub type VendorId = u16;
 pub type DeviceId = u16;
@@ -199,11 +197,10 @@ impl PciMem {
                 /* for unused bar, size is 0
                  */
                 0
-            }
-            // _ => {
-            //     warn!("{:#?} not support size", self.bar_type);
-            //     0
-            // }
+            } // _ => {
+              //     warn!("{:#?} not support size", self.bar_type);
+              //     0
+              // }
         }
     }
 

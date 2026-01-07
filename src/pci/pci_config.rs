@@ -41,9 +41,7 @@ use crate::pci::{
     feature = "dwc_pcie",
     feature = "loongarch64_pcie"
 ))]
-use crate::pci::{
-    mem_alloc::BaseAllocator, pci_struct::RootComplex,
-};
+use crate::pci::{mem_alloc::BaseAllocator, pci_struct::RootComplex};
 
 #[cfg(feature = "ecam_pcie")]
 use crate::pci::pci_handler::mmio_vpci_handler;
@@ -51,11 +49,7 @@ use crate::pci::pci_handler::mmio_vpci_handler;
 use crate::{
     memory::mmio_generic_handler,
     pci::{
-        config_accessors::{
-            dwc::DwcConfigRegionBackend,
-            dwc_atu::AtuConfig,
-            PciRegionMmio,
-        },
+        config_accessors::{dwc::DwcConfigRegionBackend, dwc_atu::AtuConfig, PciRegionMmio},
         pci_handler::{mmio_dwc_cfg_handler, mmio_dwc_io_handler, mmio_vpci_handler_dbi},
         PciConfigAddress,
     },

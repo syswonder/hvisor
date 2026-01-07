@@ -122,7 +122,10 @@
         "pci_mem32_base": "0x0",
         "mem64_base": "0x60000000",
         "mem64_size": "0x20000000",
-        "pci_mem64_base": "0x60000000"
+        "pci_mem64_base": "0x60000000",
+        "bus_range_begin": "0x0",
+        "bus_range_end": "0x1f",
+        "domain": "0x0"
     }],
     "num_pci_devs": 1,
     "alloc_pci_devs": [{
