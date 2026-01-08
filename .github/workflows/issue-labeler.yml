@@ -39,11 +39,6 @@ jobs:
             labels.push('documentation');
           }
           
-          // CI/CD
-          if (title.includes('ci') || body.includes('ci')) {
-            labels.push('ci');
-          }
-          
           // Architecture specific
           if (title.includes('aarch64') || body.includes('aarch64')) {
             labels.push('aarch64');
