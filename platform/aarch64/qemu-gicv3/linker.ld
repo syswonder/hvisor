@@ -38,7 +38,7 @@ SECTIONS
         *(.sbss .sbss.*)
     }
 
-   . = ALIGN(4K);
+    . = ALIGN(4K);
     _percpu_start = .;
     _percpu_end = _percpu_start + SIZEOF(.percpu);
     .percpu 0x0 (NOLOAD) : AT(_percpu_start) {

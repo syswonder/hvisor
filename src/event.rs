@@ -26,8 +26,7 @@ use crate::{
     },
 };
 use alloc::{collections::VecDeque, vec::Vec};
-use percpu::def_percpu;
-use spin::{Mutex, Once};
+use spin::Mutex;
 
 pub const IPI_EVENT_WAKEUP: usize = 0;
 pub const IPI_EVENT_SHUTDOWN: usize = 1;
@@ -37,7 +36,7 @@ pub const IPI_EVENT_WAKEUP_VIRTIO_DEVICE: usize = 3;
 #[percpu::def_percpu]
 static PERCPU_EVENTS: Mutex<VecDeque<usize>> = Mutex::new(VecDeque::new());
 
-// The caller ensures the cpu_id is vaild
+// The caller ensures the cpu_id is valid
 #[inline(always)]
 fn get_percpu_events(cpu: usize) -> &'static Mutex<VecDeque<usize>> {
     unsafe { PERCPU_EVENTS.remote_ref_raw(cpu) }
