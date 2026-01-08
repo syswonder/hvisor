@@ -79,7 +79,7 @@
         "acpi_memory_region_id": "0x3",
         "screen_base": "0x70000000"
     },
-    "pci_config": {
+    "pci_config": [{
         "ecam_base": "0xc0000000",
         "ecam_size": "0x300000",
         "io_base": "0x0",
@@ -90,10 +90,19 @@
         "pci_mem32_base": "0x0",
         "mem64_base": "0x0",
         "mem64_size": "0x0",
-        "pci_mem64_base": "0x0"
-    },
+        "pci_mem64_base": "0x0",
+        "bus_range_begin": "0x0",
+        "bus_range_end": "0x1f",
+        "domain": "0x0"
+    }],
     "num_pci_devs": 1,
     "alloc_pci_devs": [
-        0
+        {
+            "domain": "0x0",
+            "bus": "0x0",
+            "device": "0x0",
+            "function": "0x0",
+            "dev_type": "0x0"
+        }
     ]
 }

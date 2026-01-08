@@ -48,7 +48,7 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     gits_size: 0x20000,
 };
 
-pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
+pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [HvPciConfig {
     ecam_base: 0x4010000000,
     ecam_size: 0x10000000,
     io_base: 0x3eff0000,
@@ -60,8 +60,26 @@ pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
     mem64_base: 0x8000000000,
     mem64_size: 0x8000000000,
     pci_mem64_base: 0x8000000000,
-};
+    bus_range_begin: 0,
+    bus_range_end: 0xff,
+    domain: 0x0,
+}];
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
 
-pub const ROOT_PCI_DEVS: [u64; 2] = [0, 1 << 3];
+pub const ROOT_PCI_DEVS: [HvPciDevConfig; 2] = [
+    HvPciDevConfig {
+        domain: 0x0,
+        bus: 0x0,
+        device: 0x0,
+        function: 0x0,
+        dev_type: 0,
+    },
+    HvPciDevConfig {
+        domain: 0x0,
+        bus: 0x0,
+        device: 0x2,
+        function: 0x0,
+        dev_type: 0,
+    },
+];
