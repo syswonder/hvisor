@@ -95,6 +95,7 @@ impl VpciDeviceHandler for StandardHandler {
                 if value == 0xFFFF_FFFF {
                     dev.with_bar_ref_mut(slot, |bar| bar.set_size_read());
                 } else {
+                    dev.with_bar_ref_mut(slot, |bar| bar.set_virtual_value(value as u64));
                     let zone = this_zone();
                     let mut guard = zone.write();
                     pci_virt_log!(
