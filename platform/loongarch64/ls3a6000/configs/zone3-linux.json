@@ -99,7 +99,7 @@
     "arch_config": {
         "dummy": "0x1234"
     },
-    "pci_config": {
+    "pci_config": [{
         "ecam_base": "0xfe00000000",
         "ecam_size": "0x20000000",
         "io_base": "0x18408000",
@@ -110,8 +110,17 @@
         "pci_mem32_base": "0x0",
         "mem64_base": "0x60000000",
         "mem64_size": "0x20000000",
-        "pci_mem64_base": "0x60000000"
-    },
+        "pci_mem64_base": "0x60000000",
+        "bus_range_begin": "0x0",
+        "bus_range_end": "0x1f",
+        "domain": "0x0"
+    }],
     "num_pci_devs": 1,
-    "alloc_pci_devs": [1539]
+    "alloc_pci_devs": [{
+        "domain": "0x0",
+        "bus": "0x6",
+        "device": "0x3",
+        "function": "0x0",
+        "dev_type": "0"
+    }]
 }

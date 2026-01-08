@@ -15,10 +15,11 @@
 //  Solicey <lzoi_lth@163.com>
 
 use crate::{
-    arch::{boot, pci::probe_root_pci_devices},
+    arch::boot,
     config::{HvConfigMemoryRegion, HvZoneConfig},
     error::HvResult,
     percpu::{this_zone, CpuSet},
+    platform::ROOT_PCI_MAX_BUS,
 };
 use acpi::{
     fadt::Fadt,
@@ -273,13 +274,8 @@ pub struct RootAcpi {
     tables: BTreeMap<Signature, AcpiTable>,
     ssdts: BTreeMap<usize, AcpiTable>,
     pointers: Vec<AcpiPointer>,
-    devices: Vec<usize>,
     config_space_base: usize,
     config_space_size: usize,
-    /// key: data reg hpa, value: bdf
-    msi_data_reg_map: BTreeMap<usize, usize>,
-    /// key: msi-x table bar, value: bdf
-    msix_bar_map: BTreeMap<usize, usize>,
     /// key: apic id, value: cpu id (continuous)
     apic_id_to_cpu_id: BTreeMap<usize, usize>,
     /// key: cpu id (continuous), value: apic id
@@ -536,10 +532,7 @@ impl RootAcpi {
                 // we only support segment group 0
                 println!("{:x?}", entry);
 
-                // we don't have such many buses, probe devices to get the max_bus we have
-                let (mut devices, mut msi_data_reg_map, mut msix_bar_map, _, max_bus) =
-                    probe_root_pci_devices(entry.base_address as _);
-
+                let max_bus = ROOT_PCI_MAX_BUS as u8;
                 // update bus_number_end
                 root_acpi
                     .get_mut_table(Signature::MCFG)
@@ -547,14 +540,9 @@ impl RootAcpi {
                     .set_u8(max_bus, offset);
                 offset += size_of::<McfgEntry>();
 
-                root_acpi.devices.append(&mut devices);
-
                 root_acpi.config_space_base = entry.base_address as _;
                 root_acpi.config_space_size =
                     (((max_bus as u64 - entry.bus_number_start as u64) + 1) << 20) as usize;
-
-                root_acpi.msi_data_reg_map.append(&mut msi_data_reg_map);
-                root_acpi.msix_bar_map.append(&mut msix_bar_map);
             }
 
             root_acpi.add_pointer(Signature::RSDT, rsdt_offset, Signature::MCFG, RSDT_PTR_SIZE);
@@ -707,22 +695,6 @@ pub fn root_get_table(sig: &Signature) -> Option<AcpiTable> {
 pub fn root_get_config_space_info() -> Option<(usize, usize)> {
     let acpi = ROOT_ACPI.get().unwrap();
     Some((acpi.config_space_base, acpi.config_space_size))
-}
-
-pub fn is_msi_data_reg(hpa: usize) -> Option<usize> {
-    if let Some(&bdf) = ROOT_ACPI.get().unwrap().msi_data_reg_map.get(&hpa) {
-        Some(bdf)
-    } else {
-        None
-    }
-}
-
-pub fn is_msix_bar(hpa: usize) -> Option<usize> {
-    if let Some(&bdf) = ROOT_ACPI.get().unwrap().msix_bar_map.get(&hpa) {
-        Some(bdf)
-    } else {
-        None
-    }
 }
 
 fn contains_apic_id(apic_id: usize) -> bool {

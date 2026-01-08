@@ -297,6 +297,12 @@ impl Vtd {
         self.invalid_iotlb(zone_id as _);
     }
 
+    fn flush(&mut self, zone_id: usize, bus: u8, dev_func: u8) {
+        let bdf: u16 = (bus as u16) << 8 | (dev_func as u16);
+        self.invalidate_context_cache(zone_id as _, bdf as _, 0);
+        self.invalid_iotlb(zone_id as _);
+    }
+
     fn init(&mut self) {
         self.check_capability();
         self.set_interrupt();
@@ -516,6 +522,10 @@ pub fn fill_dma_translation_tables(zone_id: usize, zone_s2pt_hpa: HostPhysAddr) 
 /// should be called after gpm is activated
 pub fn activate() {
     VTD.get().unwrap().lock().activate();
+}
+
+pub fn flush(zone_id: usize, bus: u8, dev_func: u8) {
+    VTD.get().unwrap().lock().flush(zone_id, bus, dev_func);
 }
 
 fn flush_cache_range(hpa: usize, size: usize) {
