@@ -24,7 +24,7 @@ use crate::{
     error::HvResult,
     event,
     hypercall::SGI_IPI_ID,
-    percpu::{this_cpu_data, this_zone, CpuSet},
+    cpu_data::{this_cpu_data, this_zone, CpuSet},
 };
 use alloc::{collections::vec_deque::VecDeque, vec::Vec};
 use bit_field::BitField;

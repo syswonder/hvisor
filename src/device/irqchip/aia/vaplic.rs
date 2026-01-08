@@ -15,7 +15,7 @@
 //
 
 use super::*;
-use crate::percpu::this_cpu_data;
+use crate::cpu_data::this_cpu_data;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 use bitvec::prelude::*;

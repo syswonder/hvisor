@@ -20,7 +20,7 @@ use crate::{
     error::HvResult,
     memory::{addr::align_up, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet},
     pci::pcibar::BarRegion,
-    percpu::get_cpu_data,
+    cpu_data::get_cpu_data,
     zone::Zone,
 };
 impl Zone {

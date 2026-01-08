@@ -25,7 +25,7 @@ use crate::device::irqchip::ls7a2000::chip::*;
 use crate::event::{check_events, dump_cpu_events, dump_events};
 use crate::hypercall::{SGI_IPI_ID, *};
 use crate::memory::{addr, mmio_handle_access, MMIOAccess};
-use crate::percpu::this_cpu_data;
+use crate::cpu_data::this_cpu_data;
 use crate::zone::Zone;
 use crate::PHY_TO_DMW_UNCACHED;
 use core::arch;

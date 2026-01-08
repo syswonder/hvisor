@@ -38,7 +38,7 @@ use crate::{
         Frame, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, PhysAddr, PAGE_SIZE,
         PARKING_INST_PAGE,
     },
-    percpu::{this_cpu_data, this_zone},
+    cpu_data::{this_cpu_data, this_zone},
     platform::{ROOT_ZONE_BOOT_STACK, ROOT_ZONE_CMDLINE},
     zone::{find_zone, this_zone_id},
 };

@@ -18,7 +18,7 @@ use super::ipi::*;
 use super::zone::ZoneContext;
 use crate::arch::zone::disable_hwi_through;
 use crate::device::common::MMIODerefWrapper;
-use crate::percpu::this_cpu_data;
+use crate::cpu_data::this_cpu_data;
 use crate::zone::find_zone;
 use core::arch::asm;
 use core::fmt::{self, Debug, Formatter};

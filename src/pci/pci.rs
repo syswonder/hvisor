@@ -19,7 +19,7 @@ use crate::memory::mmio_perform_access;
 use crate::pci::pcibar::BarType;
 use crate::pci::phantom_cfg::find_phantom_dev;
 use crate::pci::{get_ecam_base, init_bdf_shift, init_ecam_base};
-use crate::percpu::this_zone;
+use crate::cpu_data::this_zone;
 use crate::{
     error::HvResult,
     memory::MMIOAccess,

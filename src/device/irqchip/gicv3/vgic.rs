@@ -28,7 +28,7 @@ use crate::{
     error::HvResult,
     hypercall::SGI_IPI_ID,
     memory::{mmio_perform_access, MMIOAccess},
-    percpu::{get_cpu_data, this_zone},
+    cpu_data::{get_cpu_data, this_zone},
     zone::{this_zone_id, Zone},
 };
 pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> {

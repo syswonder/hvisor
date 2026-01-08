@@ -28,7 +28,7 @@ use crate::{
     event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_WAKEUP},
     hypercall::{HyperCall, SGI_IPI_ID},
     memory::{mmio_handle_access, MMIOAccess},
-    percpu::{get_cpu_data, this_cpu_data, this_zone},
+    cpu_data::{get_cpu_data, this_cpu_data, this_zone},
     zone::{is_this_root_zone, remove_zone},
 };
 

@@ -28,7 +28,7 @@ use crate::device::irqchip::gicv2::gicd::{
 use crate::device::irqchip::gicv2::GICV2;
 use crate::error::HvResult;
 use crate::memory::{mmio_perform_access, MMIOAccess, MemFlags, MemoryRegion};
-use crate::percpu::this_zone;
+use crate::cpu_data::this_zone;
 /// This file defines and implements the functional functions of virtual gicv2.
 /// author: ForeverYolo
 /// reference:

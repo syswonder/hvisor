@@ -19,7 +19,7 @@ use crate::{
     config::CONFIG_MAGIC_VERSION,
     device::virtio_trampoline::MAX_DEVS,
     hypercall::{HyperCall, HyperCallResult},
-    percpu::this_zone,
+    cpu_data::this_zone,
     zone::{Zone, ZoneInfo},
 };
 use spin::RwLock;

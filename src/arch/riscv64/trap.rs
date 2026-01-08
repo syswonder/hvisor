@@ -21,7 +21,7 @@ use crate::consts::{IPI_EVENT_SEND_IPI, IPI_EVENT_UPDATE_HART_LINE};
 use crate::event::check_events;
 use crate::memory::{mmio_handle_access, MMIOAccess};
 use crate::memory::{GuestPhysAddr, HostPhysAddr};
-use crate::percpu::this_cpu_data;
+use crate::cpu_data::this_cpu_data;
 use crate::platform::__board::*;
 use core::arch::{asm, global_asm};
 use riscv::register::stvec::TrapMode;

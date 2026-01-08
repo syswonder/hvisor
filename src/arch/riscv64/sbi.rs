@@ -20,7 +20,7 @@ use crate::arch::csr::*;
 use crate::consts::IPI_EVENT_SEND_IPI;
 use crate::event::{send_event, IPI_EVENT_WAKEUP};
 use crate::hypercall::HyperCall;
-use crate::percpu::{get_cpu_data, this_cpu_data};
+use crate::cpu_data::{get_cpu_data, this_cpu_data};
 use core::sync::atomic::{self, Ordering};
 use riscv::register::sie;
 use riscv_h::register::hvip;

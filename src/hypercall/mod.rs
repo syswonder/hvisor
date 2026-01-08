@@ -21,7 +21,7 @@ use crate::config::{HvZoneConfig, CONFIG_MAGIC_VERSION};
 use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, MAX_WAIT_TIMES, PAGE_SIZE};
 use crate::device::virtio_trampoline::{MAX_DEVS, MAX_REQ, VIRTIO_BRIDGE, VIRTIO_IRQS};
 use crate::error::HvResult;
-use crate::percpu::{get_cpu_data, this_zone, PerCpu};
+use crate::cpu_data::{get_cpu_data, this_zone, PerCpu};
 use crate::zone::{
     add_zone, all_zones_info, find_zone, is_this_root_zone, remove_zone, this_zone_id, zone_create,
     ZoneInfo,

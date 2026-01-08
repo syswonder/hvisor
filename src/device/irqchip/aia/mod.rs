@@ -30,7 +30,7 @@ use crate::memory::HostPhysAddr;
 use crate::memory::MMIOAccess;
 use crate::memory::MemFlags;
 use crate::memory::MemoryRegion;
-use crate::percpu::this_cpu_data;
+use crate::cpu_data::this_cpu_data;
 use crate::platform::HW_IRQS;
 use crate::platform::{
     BOARD_APLIC_INTERRUPTS_NUM, IMSIC_GUEST_INDEX, IMSIC_GUEST_NUM, IMSIC_S_BASE,

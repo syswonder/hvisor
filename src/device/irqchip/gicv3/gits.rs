@@ -21,7 +21,7 @@ use spin::{mutex::Mutex, Once, RwLock};
 
 use crate::{
     consts::MAX_ZONE_NUM, device::irqchip::gicv3::gicr::enable_one_lpi, memory::Frame,
-    percpu::this_zone, zone::this_zone_id,
+    cpu_data::this_zone, zone::this_zone_id,
 };
 
 use super::host_gits_base;

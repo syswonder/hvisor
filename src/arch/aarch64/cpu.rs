@@ -20,7 +20,7 @@ use crate::{
         addr::PHYS_VIRT_OFFSET, mm::PARKING_MEMORY_SET, GuestPhysAddr, HostPhysAddr, MemFlags,
         MemoryRegion, VirtAddr, PARKING_INST_PAGE,
     },
-    percpu::this_cpu_data,
+    cpu_data::this_cpu_data,
     platform::BOARD_MPIDR_MAPPINGS,
     zone::find_zone,
 };
