@@ -19,7 +19,7 @@
     "interrupts": [76, 78],
     "ivc_configs": [],
     "kernel_filepath": "./Image",
-    "dtb_filepath": "./linux2.dtb",
+    "dtb_filepath": "./zone1-linux.dtb",
     "kernel_load_paddr": "0x50400000",
     "dtb_load_paddr":   "0x50000000",
     "entry_point":      "0x50400000",
