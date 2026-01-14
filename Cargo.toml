@@ -94,7 +94,7 @@ loongson_3a6000 = []
 
 ############# x86_64 ###############
 graphics = []
-
+split_screen = []
 
 [profile.dev]
 # panic = "abort" # avoid cargo test failure, this is a bug of cargo

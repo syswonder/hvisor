@@ -229,7 +229,9 @@ impl BootParams {
         }
 
         // set efi_info
+        // if (config.zone_id == 0) {
         boot_params.set_uefi_info(config);
+        // }
 
         Ok(())
     }
@@ -389,7 +391,11 @@ impl BootParams {
 
         let bytes_per_pixel = (fb_info.bpp as usize) / 8;
         let width = fb_info.width as usize;
+
+        #[cfg(not(feature = "split_screen"))]
         let height = fb_info.height as usize;
+        #[cfg(all(feature = "split_screen"))]
+        let height = (fb_info.height / 2) as usize;
 
         self.screen_info.lfb_base = config.arch_config.screen_base as _;
         self.screen_info.lfb_width = width as _;

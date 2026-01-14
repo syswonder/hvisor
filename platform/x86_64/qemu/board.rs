@@ -55,8 +55,9 @@ pub const ROOT_ZONE_CMDLINE: &str =
     "console=ttyS0 earlyprintk=serial nointremap no_timer_check efi=noruntime pci=pcie_scan_all,lastbus=1 root=/dev/vda rw init=/init\0";
 //"console=ttyS0 earlyprintk=serial rdinit=/init nokaslr nointremap\0"; // noapic
 // video=vesafb
+// /lib/systemd/systemd
 
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 10] = [
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x500_0000,
@@ -96,6 +97,12 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [
         physical_start: 0x4030_0000,
         virtual_start: 0x4030_0000,
         size: 0x2000_0000,
+    }, // zone 1
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RESERVED,
+        physical_start: 0x1_0000_0000,
+        virtual_start: 0x1_0000_0000,
+        size: 0x7000_0000,
     }, // zone 1
 ];
 

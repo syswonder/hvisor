@@ -51,7 +51,7 @@ const ROOT_ZONE_UEFI_REGION: HvConfigMemoryRegion = HvConfigMemoryRegion {
 const ROOT_ZONE_UEFI_REGION_ID: usize = 0x3;
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
-pub const ROOT_ZONE_CMDLINE: &str = "video=vesafb console=tty0 nointremap no_timer_check efi=noruntime pci=pcie_scan_all root=/dev/sda2 rw init=/init rootwait\0";
+pub const ROOT_ZONE_CMDLINE: &str = "video=vesafb console=tty0 nointremap no_timer_check efi=noruntime pci=pcie_scan_all root=/dev/nvme0n1p5 rw init=/init rootwait\0";
 // pub const ROOT_ZONE_CMDLINE: &str = "video=vesafb console=ttyS0 earlyprintk=serial nointremap no_timer_check pci=pcie_scan_all root=/dev/vda rw init=/init\0";
 //"console=ttyS0 earlyprintk=serial rdinit=/init nokaslr nointremap\0"; // noapic
 // video=vesafb
@@ -95,7 +95,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 15] = [
         mem_type: MEM_TYPE_RESERVED,
         physical_start: 0x1_0000_0000,
         virtual_start: 0x1_0000_0000,
-        size: 0x2000_0000,
+        size: 0x2_0000_0000,
     }, // zone 1
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RESERVED,
@@ -173,6 +173,12 @@ pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [HvPciConfig {
 }];
 
 pub const ROOT_PCI_MAX_BUS: usize = 2;
+pub const ROOT_PCI_DEVS: [HvPciDevConfig; 17] = [
+    pci_dev!(0x0, 0x0, 0x0), // host bridge
+    pci_dev!(0x0, 0x2, 0x0), // VGA controller
+    pci_dev!(0x0, 0x4, 0x0),
+    pci_dev!(0x0, 0x8, 0x0),
+    pci_dev!(0x0, 0xa, 0x0),
 pub const ROOT_PCI_DEVS: [HvPciDevConfig; 18] = [
     pci_dev!(0x0, 0x0, 0x0, VpciDevType::Physical), // host bridge
     pci_dev!(0x0, 0x2, 0x0, VpciDevType::Physical), // VGA controller
