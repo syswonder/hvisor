@@ -508,7 +508,6 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
     cJSON *pci_configs_json = SAFE_CJSON_GET_OBJECT_ITEM(root, "pci_config");
     CHECK_JSON_NULL_ERR_OUT(pci_configs_json, "pci_config")
 
-#if defined(ARM64) || defined(LOONGARCH64) || (defined X86_64)
     int num_pci_bus = SAFE_CJSON_GET_ARRAY_SIZE(pci_configs_json);
     if (num_pci_bus > CONFIG_PCI_BUS_MAXNUM) {
         log_error("Exceeded maximum allowed pci configs.");
@@ -628,7 +627,6 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
                          ->valuestring,
                      NULL, 8);
     }
-#endif
     return 0;
 err_out:
     return -1;
