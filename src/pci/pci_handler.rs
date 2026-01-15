@@ -218,15 +218,15 @@ fn handle_endpoint_access(
                         dev.write_hw(field.to_offset() as PciConfigAddress, field.size(), value)?;
                         if (value & 0xfffffff0) != 0xfffffff0 {
                             if (bar_type == PciMemType::Mem32)
-                            | (bar_type == PciMemType::Mem64High)
-                            | (bar_type == PciMemType::Io)
+                                | (bar_type == PciMemType::Mem64High)
+                                | (bar_type == PciMemType::Io)
                             {
                                 let new_vaddr = {
                                     if bar_type == PciMemType::Mem64High {
                                         /* last 4bit is flag, not address and need ignore
-                                        * flag will auto add when set_value and set_virtual_value
-                                        * Read from config_value.bar_value cache instead of space
-                                        */
+                                         * flag will auto add when set_value and set_virtual_value
+                                         * Read from config_value.bar_value cache instead of space
+                                         */
                                         let low_value = dev
                                             .with_config_value(|cv| cv.get_bar_value(slot - 1))
                                             as u64;
@@ -259,17 +259,17 @@ fn handle_endpoint_access(
                         });
                         if (value & 0xfffffff0) != 0xfffffff0 {
                             if (bar_type == PciMemType::Mem32)
-                            | (bar_type == PciMemType::Mem64High)
-                            | (bar_type == PciMemType::Io)
+                                | (bar_type == PciMemType::Mem64High)
+                                | (bar_type == PciMemType::Io)
                             {
                                 let old_vaddr =
                                     dev.with_bar_ref(slot, |bar| bar.get_virtual_value64()) & !0xf;
                                 let new_vaddr = {
                                     if bar_type == PciMemType::Mem64High {
                                         /* last 4bit is flag, not address and need ignore
-                                        * flag will auto add when set_value and set_virtual_value
-                                        * Read from config_value.bar_value cache instead of space
-                                        */
+                                         * flag will auto add when set_value and set_virtual_value
+                                         * Read from config_value.bar_value cache instead of space
+                                         */
                                         let low_value = dev
                                             .with_config_value(|cv| cv.get_bar_value(slot - 1))
                                             as u64;
@@ -280,8 +280,8 @@ fn handle_endpoint_access(
                                     }
                                 };
 
-                                info!("new_vaddr: {:#x}", new_vaddr); 
-                                info!("old_vaddr: {:#x}", old_vaddr); 
+                                info!("new_vaddr: {:#x}", new_vaddr);
+                                info!("old_vaddr: {:#x}", old_vaddr);
                                 dev.with_bar_ref_mut(slot, |bar| bar.set_virtual_value(new_vaddr));
                                 if bar_type == PciMemType::Mem64High {
                                     dev.with_bar_ref_mut(slot - 1, |bar| {
@@ -292,7 +292,9 @@ fn handle_endpoint_access(
                                 let paddr = if is_root {
                                     dev.with_bar_ref_mut(slot, |bar| bar.set_value(new_vaddr));
                                     if bar_type == PciMemType::Mem64High {
-                                        dev.with_bar_ref_mut(slot - 1, |bar| bar.set_value(new_vaddr));
+                                        dev.with_bar_ref_mut(slot - 1, |bar| {
+                                            bar.set_value(new_vaddr)
+                                        });
                                     }
                                     new_vaddr as HostPhysAddr
                                 } else {
@@ -306,12 +308,12 @@ fn handle_endpoint_access(
                                         crate::memory::PAGE_SIZE as u64
                                     }
                                 };
-                                let new_vaddr = if !crate::memory::addr::is_aligned(new_vaddr as usize)
-                                {
-                                    crate::memory::addr::align_up(new_vaddr as usize) as u64
-                                } else {
-                                    new_vaddr as u64
-                                };
+                                let new_vaddr =
+                                    if !crate::memory::addr::is_aligned(new_vaddr as usize) {
+                                        crate::memory::addr::align_up(new_vaddr as usize) as u64
+                                    } else {
+                                        new_vaddr as u64
+                                    };
 
                                 let zone = this_zone();
                                 let mut guard = zone.write();
@@ -331,7 +333,7 @@ fn handle_endpoint_access(
                                 ))?;
                                 drop(guard);
                                 /* after update gpm, mem barrier is needed
-                                */
+                                 */
                                 #[cfg(target_arch = "aarch64")]
                                 unsafe {
                                     core::arch::asm!("isb");
@@ -339,8 +341,8 @@ fn handle_endpoint_access(
                                     core::arch::asm!("dsb nsh");
                                 }
                                 /* after update gpm, need to flush iommu table
-                                * in x86_64
-                                */
+                                 * in x86_64
+                                 */
                                 #[cfg(target_arch = "x86_64")]
                                 {
                                     let vbdf = dev.get_vbdf();
