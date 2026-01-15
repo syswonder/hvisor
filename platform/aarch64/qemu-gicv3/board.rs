@@ -114,7 +114,7 @@ pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
 
 pub const ROOT_PCI_DEVS: &[HvPciDevConfig] = &[
     pci_dev!(0x0, 0x0, 0x0, 0x0, VpciDevType::Physical),
-    // pci_dev!(0x0, 0x0, 0x1, 0x0, VpciDevType::Physical),
+    pci_dev!(0x0, 0x0, 0x1, 0x0, VpciDevType::Physical),
     // pci_dev!(0x0, 0x0, 0x3, 0x0, VpciDevType::Physical),
     pci_dev!(0x0, 0x0, 0x5, 0x0, VpciDevType::StandardVdev),
 ];
