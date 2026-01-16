@@ -321,7 +321,7 @@ static irqreturn_t virtio_irq_handler(int irq, void *dev_id) {
 static int __init hvisor_init(void) {
     int err;
     struct device_node *node = NULL;
-    u32 *irq;
+    // u32 *irq;
     err = misc_register(&hvisor_misc_dev);
     if (err) {
         pr_err("hvisor_misc_register failed!!!\n");
@@ -352,7 +352,7 @@ static int __init hvisor_init(void) {
     of_node_put(node);
 #else
     // we don't use device tree in x86_64, so we have to get IRQ using hypercall
-    irq = kmalloc(sizeof(u32), GFP_KERNEL);
+    u32 *irq = kmalloc(sizeof(u32), GFP_KERNEL);
     err = hvisor_call(HVISOR_HC_GET_VIRTIO_IRQ, __pa(irq), 0);
     virtio_irq = *irq;
     err = request_irq(virtio_irq, virtio_irq_handler, IRQF_SHARED,
