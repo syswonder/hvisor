@@ -67,7 +67,7 @@ pub static GLOBAL_PCIE_LIST: Lazy<Mutex<BTreeMap<Bdf, ArcRwLockVirtualPciConfigS
 
 /* add all dev to GLOBAL_PCIE_LIST */
 pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
-    warn!("begin {:#?}", pci_config);
+    warn!("begin {:#x?}", pci_config);
     #[cfg(any(
         feature = "ecam_pcie",
         feature = "dwc_pcie",
@@ -151,7 +151,7 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
 
         let domain = rootcomplex_config.domain;
         let e = rootcomplex.enumerate(Some(range), domain, allocator_opt);
-        info!("begin enumerate {:#?}", e);
+        info!("begin enumerate {:#x?}", e);
         for node in e {
             info!("node {:#?}", node);
             GLOBAL_PCIE_LIST
@@ -311,7 +311,7 @@ impl Zone {
                 }
             }
         }
-        info!("vpci bus init done\n {:#?}", self.vpci_bus);
+        info!("vpci bus init done\n {:#x?}", self.vpci_bus);
         Ok(())
     }
 

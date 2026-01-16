@@ -238,7 +238,7 @@ impl Debug for HvPciDevConfig {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         let bdf =
             crate::pci::pci_struct::Bdf::new(self.domain, self.bus, self.device, self.function);
-        write!(f, "bdf {:#?}", bdf)
+        write!(f, "bdf {:#x?}", bdf)
     }
 }
 
