@@ -21,7 +21,7 @@ use crate::consts::IPI_EVENT_SEND_IPI;
 use crate::event::{send_event, IPI_EVENT_WAKEUP};
 use crate::hypercall::HyperCall;
 use crate::percpu::{get_cpu_data, this_cpu_data};
-use core::sync::atomic::{self, Ordering};
+use core::sync::atomic;
 use riscv::register::sie;
 use riscv_h::register::hvip;
 use sbi_rt::{HartMask, SbiRet};
@@ -65,6 +65,7 @@ pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
     // a6 encodes the SBI function ID (FID)
     let eid: usize = current_cpu.x[17];
     let fid: usize = current_cpu.x[16];
+    // info!("SBI call: EID={:#x}, FID={:#x}", eid, fid);
     let sbi_ret;
     match eid {
         // Base Extension (SBI Spec Chapter 4)
@@ -211,6 +212,7 @@ pub fn sbi_time_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
 }
 
 #[allow(unused)]
+#[allow(non_camel_case_types)]
 #[derive(Debug, PartialEq)]
 pub enum HSM_STATUS {
     STARTED,

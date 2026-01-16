@@ -136,6 +136,43 @@ main() {
     }
   fi
 
+  # Mount rootfs1.ext4, extract /home/riscv64/riscv_rootfs2.img to rootfs2.ext4, then unmount
+  local ROOTFS_LOOP_MNT="/tmp/hvisor-rootfs1-mnt.$"
+
+  mkdir -p "$ROOTFS_LOOP_MNT" || {
+    echo -e "${RED}Failed to create mount dir: $ROOTFS_LOOP_MNT${NC}"
+    exit 1
+  }
+
+  echo -e "${YELLOW}Mounting $ROOTFS_FILE to $ROOTFS_LOOP_MNT ...${NC}"
+  if ! sudo mount -o loop "$ROOTFS_FILE" "$ROOTFS_LOOP_MNT"; then
+    echo -e "${RED}Failed to mount $ROOTFS_FILE${NC}"
+    rmdir "$ROOTFS_LOOP_MNT"
+    exit 1
+  fi
+
+  if [ ! -f "$ROOTFS_LOOP_MNT/home/riscv64/riscv_rootfs2.img" ]; then
+    echo -e "${RED}File not found: $ROOTFS_LOOP_MNT/home/riscv64/riscv_rootfs2.img${NC}"
+    sudo umount "$ROOTFS_LOOP_MNT"
+    rmdir "$ROOTFS_LOOP_MNT"
+    exit 1
+  fi
+
+  echo -e "${YELLOW}Copying riscv_rootfs2.img to $UNZIP_DIR/rootfs2.ext4 ...${NC}"
+  cp "$ROOTFS_LOOP_MNT/home/riscv64/riscv_rootfs2.img" "$UNZIP_DIR/rootfs2.ext4" || {
+    echo -e "${RED}Failed to copy rootfs2 image${NC}"
+    sudo umount "$ROOTFS_LOOP_MNT"
+    rmdir "$ROOTFS_LOOP_MNT"
+    exit 1
+  }
+
+  sudo umount "$ROOTFS_LOOP_MNT" || {
+    echo -e "${RED}Failed to umount $ROOTFS_LOOP_MNT${NC}"
+    rmdir "$ROOTFS_LOOP_MNT"
+    exit 1
+  }
+  rmdir "$ROOTFS_LOOP_MNT"
+
   # Download independent image
   echo -e "${YELLOW}Downloading image file: $IMAGE_FILE ...${NC}"
   mkdir -p "$TARGET_DIR" || {

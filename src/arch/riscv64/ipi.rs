@@ -13,9 +13,9 @@
 //
 // Authors:
 //
-use crate::consts::{IPI_EVENT_SEND_IPI, IPI_EVENT_UPDATE_HART_LINE};
-use sbi_rt::HartMask;
-use sbi_rt::SbiRet;
+use crate::consts::IPI_EVENT_SEND_IPI;
+#[cfg(feature = "plic")]
+use crate::consts::IPI_EVENT_UPDATE_HART_LINE;
 
 // arch_send_event
 pub fn arch_send_event(cpu_id: u64, _sgi_num: u64) {
@@ -24,7 +24,8 @@ pub fn arch_send_event(cpu_id: u64, _sgi_num: u64) {
     crate::device::irqchip::aclint::aclint_send_ipi(cpu_id as usize);
     #[cfg(not(feature = "aclint"))]
     {
-        let sbi_ret: SbiRet = sbi_rt::send_ipi(HartMask::from_mask_base(1 << cpu_id, 0));
+        let sbi_ret: sbi_rt::SbiRet =
+            sbi_rt::send_ipi(sbi_rt::HartMask::from_mask_base(1 << cpu_id, 0));
         if sbi_ret.is_err() {
             error!("arch_send_event: send_ipi failed: {:?}", sbi_ret);
         }
@@ -55,6 +56,6 @@ pub fn arch_check_events(event: Option<usize>) {
     }
 }
 
-pub fn arch_prepare_send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
+pub fn arch_prepare_send_event(_cpu_id: usize, _ipi_int_id: usize, _event_id: usize) {
     debug!("risc-v arch_prepare_send_event: do nothing now.")
 }

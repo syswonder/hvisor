@@ -14,16 +14,13 @@
 // Authors:
 //
 use crate::{arch::zone::HvArchZoneConfig, config::*};
-
 pub const BOARD_NAME: &str = "qemu-aia";
-
 pub const BOARD_NCPUS: usize = 4;
-
 pub const TIMEBASE_FREQ: u64 = 10_000_000; // 10MHz
-
 pub const ACLINT_SSWI_BASE: usize = 0x2F00000;
 
 // This device is used for qemu-quit.
+#[allow(unused)]
 pub const SIFIVE_TEST_BASE: u64 = 0x100000;
 
 pub const APLIC_BASE: usize = 0xc000000;
@@ -32,12 +29,10 @@ pub const IMSIC_S_BASE: usize = 0x2800_0000;
 pub const IMSIC_GUEST_NUM: usize = 1; // hvisor only supports 1 guest now.
 pub const IMSIC_GUEST_INDEX: usize = 1;
 pub const IMSIC_NUM_IDS: usize = 0xFF;
-
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x8f000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x90000000;
 pub const ROOT_ZONE_ENTRY: u64 = 0x90000000;
 pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1) | (1 << 2);
-
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 
 pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [

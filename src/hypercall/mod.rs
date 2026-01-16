@@ -17,14 +17,13 @@
 #![allow(unreachable_patterns)]
 
 use crate::arch::cpu::get_target_cpu;
-use crate::config::{HvZoneConfig, CONFIG_MAGIC_VERSION};
+use crate::config::HvZoneConfig;
 use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, MAX_WAIT_TIMES, PAGE_SIZE};
 use crate::device::virtio_trampoline::{MAX_DEVS, MAX_REQ, VIRTIO_BRIDGE, VIRTIO_IRQS};
 use crate::error::HvResult;
-use crate::percpu::{get_cpu_data, this_zone, PerCpu};
+use crate::percpu::{get_cpu_data, PerCpu};
 use crate::zone::{
-    add_zone, all_zones_info, find_zone, is_this_root_zone, remove_zone, this_zone_id, zone_create,
-    ZoneInfo,
+    add_zone, all_zones_info, find_zone, is_this_root_zone, remove_zone, zone_create, ZoneInfo,
 };
 
 use crate::event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_VIRTIO_INJECT_IRQ, IPI_EVENT_WAKEUP};

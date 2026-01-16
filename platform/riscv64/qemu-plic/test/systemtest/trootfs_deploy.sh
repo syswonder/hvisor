@@ -52,7 +52,7 @@ deploy_artifacts() {
     sudo cp -v "${HVISOR_TOOL_DIR}/driver/hvisor.ko" "${dest_dir}/"
     # Device Tree & Configurations
     sudo cp -v "${DTS_DIR}/zone1-linux.dtb" "${dest_dir}/zone1-linux.dtb"
-    sudo cp -v "${CONFIG_DIR}/zone1-linux.json" "${dest_dir}/zone1-linux.json"
+    sudo cp -v "${CONFIG_DIR}/virtio-backend.json" "${dest_dir}/virtio-backend.json"
     sudo cp -v "${CONFIG_DIR}/zone1-linux-virtio.json" "${dest_dir}/zone1-linux-virtio.json"
     # Test artifacts
     sudo cp -v ${TEST_DIR}/testcase/* "${test_dest}/testcase/"
