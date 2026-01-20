@@ -83,9 +83,9 @@ impl ArchCpu {
         self.x[10] = cpu_id; // cpu id
         self.x[11] = dtb; // dtb addr
 
-        // hvisor doesn't handle timer interrupt.
-        set_csr!(CSR_STIMECMP, usize::MAX);
         if self.sstc {
+            // hvisor doesn't handle timer interrupt.
+            set_csr!(CSR_STIMECMP, usize::MAX);
             set_csr!(CSR_HENVCFG, 1 << 63);
             set_csr!(CSR_VSTIMECMP, usize::MAX);
         } else {
