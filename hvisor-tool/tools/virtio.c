@@ -918,10 +918,19 @@ void virtio_inject_irq(VirtQueue *vq) {
         }
     }
     volatile struct device_res *res;
-    while (is_queue_full(virtio_bridge->res_front, virtio_bridge->res_rear,
-                         MAX_REQ))
-        ;
+
+    // virtio_bridge is a global resource located in shared memory.
+    // Access to critical resources such as res_front and res_rear requires locking.
+
+    // Since the shared resources related to res_list are only accessed
+    //  at one specific code location, a lock before polling is_queue_full
+    //  is enough to ensure thread safety and performance.
     pthread_mutex_lock(&RES_MUTEX);
+
+    while (is_queue_full(virtio_bridge->res_front,
+                         virtio_bridge->res_rear,
+                         MAX_REQ)) {
+    }
     unsigned int res_rear = virtio_bridge->res_rear;
     res = &virtio_bridge->res_list[res_rear];
     res->irq_id = vq->dev->irq_id;
