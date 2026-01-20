@@ -216,7 +216,11 @@ fn handle_endpoint_access(
                             configvalue.set_bar_value(slot, value as u32);
                         });
                         if (value & 0xfffffff0) != 0xfffffff0 {
-                            dev.write_hw(field.to_offset() as PciConfigAddress, field.size(), value)?;
+                            dev.write_hw(
+                                field.to_offset() as PciConfigAddress,
+                                field.size(),
+                                value,
+                            )?;
                             if (bar_type == PciMemType::Mem32)
                                 | (bar_type == PciMemType::Mem64High)
                                 | (bar_type == PciMemType::Io)
@@ -391,8 +395,12 @@ fn handle_endpoint_access(
                             configvalue.set_rom_value(value as u32);
                         });
                         if value & 0xfffff800 != 0xfffff800 {
-                            dev.write_hw(field.to_offset() as PciConfigAddress, field.size(), value)?;
-                            
+                            dev.write_hw(
+                                field.to_offset() as PciConfigAddress,
+                                field.size(),
+                                value,
+                            )?;
+
                             let new_vaddr = (value as u64) & !0xf;
 
                             // set virt_value
