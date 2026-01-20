@@ -112,7 +112,7 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
         let mut rootcomplex = {
             #[cfg(feature = "dwc_pcie")]
             {
-                warn!("dwc pcie");
+                // warn!("dwc pcie");
                 let ecam_base = rootcomplex_config.ecam_base;
                 let atu_config = platform::ROOT_DWC_ATU_CONFIG
                     .iter()
