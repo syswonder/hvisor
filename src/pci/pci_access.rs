@@ -440,8 +440,8 @@ impl Debug for Bar {
         let mut is_null = true;
         while i < self.bararr.len() {
             let bar = &self.bararr[i];
-            let address = bar.value & !0xf;
-            // let address = bar.value;
+            let address = bar.virtual_value & !0xf;
+            // let address = bar.virtual_value;
             match bar.bar_type {
                 PciMemType::Mem32 => {
                     is_null = false;
@@ -473,7 +473,7 @@ impl Debug for Bar {
                     i += 1;
                 }
                 PciMemType::Io => {
-                    writeln!(f, "   IO @ 0x{:x}", bar.value)?;
+                    write!(f, "\n   IO @ 0x{:x}", bar.value)?;
                 }
                 _ => {}
             }
@@ -624,12 +624,12 @@ pub trait PciBarRW: PciRWBase {
                                 1u64 << ((readback_high.trailing_zeros() + 32) as u64)
                             }
                         };
-                        // let value64 = (value as u64) | ((value_high as u64) << 32);
+                        let value64 = (value as u64) | ((value_high as u64) << 32);
 
                         bararr[slot as usize] =
-                            PciMem::new_bar(PciMemType::Mem64Low, value as u64, size, pre);
+                            PciMem::new_bar(PciMemType::Mem64Low, value64, size, pre);
                         bararr[(slot + 1) as usize] =
-                            PciMem::new_bar(PciMemType::Mem64High, value_high as u64, size, pre);
+                            PciMem::new_bar(PciMemType::Mem64High, value64, size, pre);
                         slot += 1; // need extra add 1
                     }
                     _ => {

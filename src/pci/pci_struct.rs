@@ -1160,10 +1160,10 @@ impl<B: BarAllocator> PciIterator<B> {
                     PciMemType::Mem64Low => {
                         let value = bararr[i].get_value64();
                         bararr[i].set_virtual_value(value);
-                        let _ = dev.write_bar(i as u8, value as u32);
+                        // let _ = dev.write_bar(i as u8, value as u32);
                         i += 1;
                         bararr[i].set_virtual_value(value);
-                        let _ = dev.write_bar(i as u8, (value >> 32) as u32);
+                        // let _ = dev.write_bar(i as u8, (value >> 32) as u32);
                     }
                     PciMemType::Io => {
                         let value = bararr[i].get_value64();
@@ -1281,7 +1281,7 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
                 node.set_parent_bdf(parent_bdf);
                 self.next(match node.config_value.get_class().0 {
                     // class code 0x6 is bridge and class.1 0x0 is host bridge
-                    0x6 if node.config_value.get_class().1 != 0x0 => {
+                    0x6 if node.config_value.get_class().1 == 0x4 => {
                         let bdf = Bdf::new(domain, parent.subordinate_bus + 1, 0, 0);
                         Some(self.get_bridge().next_bridge(
                             self.address(parent_bus, bdf),
