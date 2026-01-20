@@ -2,7 +2,7 @@ QEMU := qemu-system-riscv64
 
 
 FSIMG1 := $(image_dir)/virtdisk/rootfs1.ext4
-FSIMG2 := $(image_dir)/virtdisk/rootfs-busybox.qcow2
+FSIMG2 := $(image_dir)/virtdisk/rootfs2.ext4
 # HVISOR ENTRY
 HVISOR_ENTRY_PA := 0x80200000
 zone0_kernel := $(image_dir)/kernel/Image
@@ -23,11 +23,13 @@ QEMU_ARGS += -device loader,file="$(zone0_dtb)",addr=0x8f000000,force-raw=on
 # QEMU_ARGS += -device loader,file="$(zone1_kernel)",addr=0x84000000,force-raw=on
 # QEMU_ARGS += -device loader,file="$(zone1_dtb)",addr=0x83000000,force-raw=on
 
-QEMU_ARGS += -drive if=none,file=$(FSIMG1),id=X10008000,format=raw
-QEMU_ARGS += -device virtio-blk-device,drive=X10008000,bus=virtio-mmio-bus.7
+QEMU_ARGS += -drive if=none,file=$(FSIMG1),id=hd0,format=raw
+# QEMU_ARGS += -device virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.7
+QEMU_ARGS += -device virtio-blk-pci,drive=hd0,disable-legacy=on,disable-modern=off,addr=01.0
 QEMU_ARGS += -device virtio-serial-device,bus=virtio-mmio-bus.6 -chardev pty,id=X10007000 -device virtconsole,chardev=X10007000 -S
-# QEMU_ARGS += -drive if=none,file=$(FSIMG2),id=X10006000,format=qcow2
-# QEMU_ARGS += -device virtio-blk-device,drive=X10006000,bus=virtio-mmio-bus.5
+QEMU_ARGS += -drive if=none,file=$(FSIMG2),id=hd1,format=raw
+# QEMU_ARGS += -device virtio-blk-device,drive=hd1,bus=virtio-mmio-bus.5
+QEMU_ARGS += -device virtio-blk-pci,drive=hd1,disable-legacy=on,disable-modern=off,addr=02.0
 # -------------------------------------------------------------------
 
 # QEMU_ARGS := -machine virt

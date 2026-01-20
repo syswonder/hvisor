@@ -13,7 +13,8 @@
 //
 // Authors:
 //
-use crate::{arch::zone::HvArchZoneConfig, config::*, memory::GuestPhysAddr};
+use crate::pci_dev;
+use crate::{arch::zone::HvArchZoneConfig, config::*, memory::GuestPhysAddr, pci::vpci_dev::VpciDevType};
 
 pub const MEM_TYPE_RESERVED: u32 = 5;
 
@@ -144,7 +145,7 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     screen_base: ROOT_ZONE_SCREEN_BASE_ADDR,
 };
 
-pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
+pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [HvPciConfig {
     ecam_base: 0xc0000000,
     ecam_size: 0x300000,
     io_base: 0x0,
@@ -156,11 +157,29 @@ pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
     mem64_base: 0x0,
     mem64_size: 0x0,
     pci_mem64_base: 0x0,
-};
+}];
 
-pub const ROOT_PCI_DEVS: [u64; 19] = [
-    0x0, 0x10, 0x20, 0x40, 0x50, 0x68, 0x90, 0xa0, 0xa2, 0xa3, 0xb0, 0xe0, 0xe8, 0xf8, 0xfb, 0xfc,
-    0xfd, 0x100, 0x200,
+pub const ROOT_PCI_MAX_BUS: usize = 2;
+pub const ROOT_PCI_DEVS: [HvPciDevConfig; 18] = [
+    pci_dev!(0x0, 0x0, 0x0, VpciDevType::Physical), // host bridge
+    pci_dev!(0x0, 0x2, 0x0, VpciDevType::Physical), // VGA controller
+    pci_dev!(0x0, 0x4, 0x0, VpciDevType::Physical),
+    pci_dev!(0x0, 0x8, 0x0, VpciDevType::Physical),
+    pci_dev!(0x0, 0xa, 0x0, VpciDevType::Physical),
+    // pci_dev!(0x0, 0xd, 0x0), // USB controller
+    pci_dev!(0x0, 0x12, 0x0, VpciDevType::Physical), // serial controller
+    pci_dev!(0x0, 0x14, 0x0, VpciDevType::Physical), // USB controller
+    pci_dev!(0x0, 0x14, 0x2, VpciDevType::Physical), // RAM memory
+    pci_dev!(0x0, 0x14, 0x3, VpciDevType::Physical), // network controller
+    pci_dev!(0x0, 0x16, 0x0, VpciDevType::Physical), // communication controller
+    pci_dev!(0x0, 0x1c, 0x0, VpciDevType::Physical), // PCI bridge
+    pci_dev!(0x0, 0x1d, 0x0, VpciDevType::Physical), // PCI bridge
+    pci_dev!(0x0, 0x1f, 0x0, VpciDevType::Physical), // ISA bridge
+    pci_dev!(0x0, 0x1f, 0x3, VpciDevType::Physical), // audio controller
+    pci_dev!(0x0, 0x1f, 0x4, VpciDevType::Physical), // SMBus
+    pci_dev!(0x0, 0x1f, 0x5, VpciDevType::Physical), // serial bus controller
+    pci_dev!(0x1, 0x0, 0x0, VpciDevType::Physical),  // ethernet controller
+    pci_dev!(0x2, 0x0, 0x0, VpciDevType::Physical),  // memory controller
 ];
 
 #[cfg(all(feature = "graphics"))]

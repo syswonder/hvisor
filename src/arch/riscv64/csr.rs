@@ -89,6 +89,7 @@ macro_rules! write_csr {
 }
 pub(crate) use write_csr;
 
+#[allow(unused)]
 macro_rules! clear_csr {
     ($csr_number:expr, $value: expr) => {
         unsafe{
@@ -100,6 +101,7 @@ macro_rules! clear_csr {
                 options(nomem, nostack),)}
     };
 }
+#[allow(unused)]
 pub(crate) use clear_csr;
 
 macro_rules! set_csr {

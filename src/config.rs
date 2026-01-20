@@ -14,15 +14,16 @@
 // Authors:
 //
 use alloc::vec::Vec;
+use core::fmt::Debug;
 use spin::Once;
 
-use crate::{arch::zone::HvArchZoneConfig, platform};
+use crate::{arch::zone::HvArchZoneConfig, pci::vpci_dev::VpciDevType, platform};
 
 pub const MEM_TYPE_RAM: u32 = 0;
 pub const MEM_TYPE_IO: u32 = 1;
 pub const MEM_TYPE_VIRTIO: u32 = 2;
 
-pub const CONFIG_MAGIC_VERSION: usize = 0x4;
+pub const CONFIG_MAGIC_VERSION: usize = 0x5;
 pub const CONFIG_MAX_MEMORY_REGIONS: usize = 64;
 
 pub type BitmapWord = u32;
@@ -31,6 +32,7 @@ pub const CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD: usize = 32;
 
 pub const CONFIG_NAME_MAXLEN: usize = 32;
 pub const CONFIG_MAX_IVC_CONFIGS: usize = 2;
+pub const CONFIG_PCI_BUS_MAXNUM: usize = 4;
 pub const CONFIG_MAX_PCI_DEV: usize = 32;
 
 #[repr(C)]
@@ -57,6 +59,9 @@ pub struct HvPciConfig {
     pub mem64_base: u64,
     pub mem64_size: u64,
     pub pci_mem64_base: u64,
+    pub bus_range_begin: u32,
+    pub bus_range_end: u32,
+    pub domain: u8,
 }
 
 impl HvPciConfig {
@@ -73,6 +78,9 @@ impl HvPciConfig {
             mem64_base: 0,
             mem64_size: 0,
             pci_mem64_base: 0,
+            bus_range_begin: 0,
+            bus_range_end: 0,
+            domain: 0,
         }
     }
 }
@@ -94,9 +102,10 @@ pub struct HvZoneConfig {
     pub dtb_size: u64,
     pub name: [u8; CONFIG_NAME_MAXLEN],
     pub arch_config: HvArchZoneConfig,
-    pub pci_config: HvPciConfig,
+    pub num_pci_bus: u64,
+    pub pci_config: [HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
     pub num_pci_devs: u64,
-    pub alloc_pci_devs: [u64; CONFIG_MAX_PCI_DEV],
+    pub alloc_pci_devs: [HvPciDevConfig; CONFIG_MAX_PCI_DEV],
 }
 
 impl HvZoneConfig {
@@ -116,9 +125,10 @@ impl HvZoneConfig {
         dtb_size: u64,
         name: [u8; CONFIG_NAME_MAXLEN],
         arch: HvArchZoneConfig,
-        pci: HvPciConfig,
+        num_pci_bus: u64,
+        pci: [HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
         num_pci_devs: u64,
-        alloc_pci_devs: [u64; CONFIG_MAX_PCI_DEV],
+        alloc_pci_devs: [HvPciDevConfig; CONFIG_MAX_PCI_DEV],
     ) -> Self {
         Self {
             zone_id,
@@ -135,6 +145,7 @@ impl HvZoneConfig {
             dtb_size,
             name,
             arch_config: arch,
+            num_pci_bus,
             pci_config: pci,
             num_pci_devs: num_pci_devs,
             alloc_pci_devs: alloc_pci_devs,
@@ -162,6 +173,11 @@ impl HvZoneConfig {
 
     pub fn ivc_config(&self) -> &[HvIvcConfig] {
         &self.ivc_configs[..self.num_ivc_configs as usize]
+    }
+
+    #[allow(unused)]
+    pub fn pci_config(&self) -> &[HvPciConfig] {
+        &self.pci_config[..self.num_pci_bus as usize]
     }
 }
 
@@ -195,6 +211,77 @@ pub struct HvIvcConfig {
     pub max_peers: u32,
 }
 
+#[repr(C)]
+#[derive(Copy, Clone, Default)]
+pub struct HvPciDevConfig {
+    pub domain: u8,
+    pub bus: u8,
+    pub device: u8,
+    pub function: u8,
+    pub dev_type: VpciDevType,
+}
+
+#[macro_export]
+macro_rules! pci_dev {
+    ($domain:expr, $bus:expr, $dev:expr, $func:expr, $dev_type:expr) => {
+        HvPciDevConfig {
+            domain: $domain,
+            bus: $bus,
+            device: $dev,
+            function: $func,
+            dev_type: $dev_type,
+        }
+    };
+}
+
+impl Debug for HvPciDevConfig {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        let bdf =
+            crate::pci::pci_struct::Bdf::new(self.domain, self.bus, self.device, self.function);
+        write!(f, "bdf {:#x?}", bdf)
+    }
+}
+
+#[repr(C)]
+#[derive(Debug, Copy, Clone)]
+pub struct HvDwcAtuConfig {
+    // ECAM (Enhanced Configuration Access Mechanism) base address
+    // This is used to match with HvPciConfig::ecam_base
+    pub ecam_base: u64,
+    pub dbi_base: u64,
+    pub dbi_size: u64,
+    pub apb_base: u64,
+    pub apb_size: u64,
+    pub cfg_base: u64,
+    pub cfg_size: u64,
+    // set 1 if io base use atu0, when hvisor need set mmio for io
+    // normally, when num-viewport less than 4, io_cfg_atu_shared is 1, otherwise is 0
+    pub io_cfg_atu_shared: u64,
+}
+
+impl HvDwcAtuConfig {
+    pub const fn new_empty() -> Self {
+        // Use ATU_UNUSED for ATU indices that are not used by default
+        // ATU_UNUSED is u32::MAX, cast to usize for consistency
+        // Default ATU types: CFG0=4, CFG1=5, MEM=0, IO=2
+        Self {
+            ecam_base: 0,
+            dbi_base: 0,
+            dbi_size: 0,
+            apb_base: 0,
+            apb_size: 0,
+            cfg_base: 0,
+            cfg_size: 0,
+            io_cfg_atu_shared: 0,
+        }
+    }
+}
+
+impl Default for HvDwcAtuConfig {
+    fn default() -> Self {
+        Self::new_empty()
+    }
+}
 pub const fn get_irqs_bitmap<const N: usize>(
     numbers: &[u32; N],
 ) -> [BitmapWord; CONFIG_MAX_INTERRUPTS / CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD] {

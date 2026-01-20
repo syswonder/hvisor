@@ -72,6 +72,8 @@ use crate::consts::{hv_end, mem_pool_start, MAX_CPU_NUM};
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+#[cfg(feature = "pci")]
+use pci::pci_config::hvisor_pci_init;
 use percpu::PerCpu;
 use zone::{add_zone, zone_create};
 
@@ -132,13 +134,27 @@ fn primary_init_early() {
 
     device::irqchip::primary_init_early();
 
+    #[cfg(feature = "iommu")]
     iommu_init();
+
+    let root_config = root_zone_config();
+
+    #[cfg(feature = "pci")]
+    if root_config.num_pci_bus > 0 {
+        let num_pci_bus = root_config.num_pci_bus as usize;
+        let _ = hvisor_pci_init(&root_config.pci_config[..num_pci_bus]);
+    }
 
     #[cfg(not(test))]
     {
-        let zone = zone_create(root_zone_config()).unwrap();
+        let zone = zone_create(root_config).unwrap();
         add_zone(zone);
     }
+
+    // crate::pci::pci_test::pcie_test();
+    // crate::pci::pci_test::pcie_guest_init();
+    // crate::pci::pci_test::ecam_pcie_guest_test();
+
     INIT_EARLY_OK.store(1, Ordering::Release);
 }
 

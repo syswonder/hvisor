@@ -78,6 +78,7 @@ impl VirtualPLIC {
     }
 
     /// Get one interrupt as hardware interrupt.
+    #[allow(unused)]
     pub fn vplic_get_hw(&self, intr_id: usize) -> bool {
         let inner = self.inner.lock();
         inner.vplic_get_hw(intr_id)
@@ -113,7 +114,7 @@ impl VirtualPLIC {
     }
 
     pub fn update_hart_line(&self, vcontext_id: usize) {
-        let mut inner = self.inner.lock();
+        let inner = self.inner.lock();
         inner.vplic_update_hart_line(vcontext_id);
     }
 
@@ -197,7 +198,7 @@ impl VirtualPLIC {
                     let irq_start = bits;
                     let irq_end = bits + 31;
                     let mut pending = 0;
-                    let mut inner = self.inner.lock();
+                    let inner = self.inner.lock();
                     // irq_end isn't beyond max_interrupts.
                     for irq in irq_start..=irq_end.min(self.max_interrupts) {
                         pending |= (inner.vplic_get_pending(irq) as u32) << (irq - irq_start);

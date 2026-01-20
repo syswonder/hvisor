@@ -35,6 +35,7 @@ pub mod pci;
 pub mod pio;
 pub mod s1pt;
 pub mod s2pt;
+pub mod time;
 pub mod trap;
 pub mod vmcs;
 pub mod vmx;

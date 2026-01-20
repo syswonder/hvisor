@@ -71,6 +71,7 @@ impl PageSize {
         addr & (self as usize - 1)
     }
 
+    #[allow(unused)]
     pub const fn is_huge(self) -> bool {
         !matches!(self, Self::Size4K)
     }
@@ -127,6 +128,7 @@ pub trait GenericPageTable: GenericPageTableImmut {
 
     fn map(&mut self, region: &MemoryRegion<Self::VA>) -> HvResult;
     fn unmap(&mut self, region: &MemoryRegion<Self::VA>) -> HvResult;
+    #[allow(unused)]
     fn update(
         &mut self,
         vaddr: Self::VA,
@@ -137,6 +139,7 @@ pub trait GenericPageTable: GenericPageTableImmut {
     fn clone(&self) -> Self;
 
     unsafe fn activate(&self);
+    #[allow(unused)]
     fn flush(&self, vaddr: Option<Self::VA>);
 }
 
@@ -335,7 +338,7 @@ where
     fn get_entry_mut_or_create(
         &mut self,
         page: Page<VA>,
-        flags: &mut MemFlags,
+        _flags: &mut MemFlags,
     ) -> PagingResult<&mut PTE> {
         let vaddr: usize = page.vaddr.into();
         // Current hvisor don't support huge page which > 1G.

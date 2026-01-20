@@ -20,7 +20,6 @@ use crate::device::irqchip::inject_irq;
 use crate::event::send_event;
 use crate::event::IPI_EVENT_WAKEUP_VIRTIO_DEVICE;
 use crate::hypercall::SGI_IPI_ID;
-use crate::zone::root_zone;
 use crate::zone::this_zone_id;
 use crate::{error::HvResult, memory::MMIOAccess};
 use alloc::collections::BTreeMap;

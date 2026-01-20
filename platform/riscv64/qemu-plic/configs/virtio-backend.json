@@ -1,0 +1,23 @@
+{
+    "zones": [
+        {
+            "id": 1,
+            "memory_region": [
+                {
+                    "zone0_ipa": "0x85000000",
+                    "zonex_ipa": "0x85000000",
+                    "size": "0x0a000000"
+                }
+            ],
+            "devices": [
+                    {
+                        "type": "console",
+                        "addr": "0x10007000",
+                        "len": "0x1000",
+                        "irq": 7,
+                        "status": "enable"
+                    }
+                ]
+        }
+    ]
+}

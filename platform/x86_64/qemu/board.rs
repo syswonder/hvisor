@@ -13,7 +13,8 @@
 //
 // Authors:
 //
-use crate::{arch::zone::HvArchZoneConfig, config::*, memory::GuestPhysAddr};
+use crate::pci_dev;
+use crate::{arch::zone::HvArchZoneConfig, config::*, memory::GuestPhysAddr, pci::vpci_dev::VpciDevType};
 
 pub const MEM_TYPE_RESERVED: u32 = 5;
 
@@ -90,7 +91,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 8] = [
 const ROOT_ZONE_CMDLINE_ADDR: GuestPhysAddr = 0x9000;
 const ROOT_ZONE_SETUP_ADDR: GuestPhysAddr = 0xa000;
 const ROOT_ZONE_VMLINUX_ENTRY_ADDR: GuestPhysAddr = 0x10_0000;
-const ROOT_ZONE_SCREEN_BASE_ADDR: GuestPhysAddr = 0x7000_0000;
+const ROOT_ZONE_SCREEN_BASE_ADDR: GuestPhysAddr = 0;
 
 pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[0; 32]);
 pub const ROOT_ZONE_IOAPIC_BASE: usize = 0xfec0_0000;
@@ -108,8 +109,9 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     screen_base: ROOT_ZONE_SCREEN_BASE_ADDR,
 };
 
-// only need to fill in ecam_base and ecam_size in x86_64
-pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
+pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [HvPciConfig {
+    bus_range_begin: 0x0,
+    bus_range_end: 0x1f,
     ecam_base: 0xe0000000,
     ecam_size: 0x200000,
     io_base: 0x0,
@@ -121,9 +123,20 @@ pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
     mem64_base: 0x0,
     mem64_size: 0x0,
     pci_mem64_base: 0x0,
-};
+    domain: 0x0,
+}];
 
-pub const ROOT_PCI_DEVS: [u64; 8] = [0x0, 0x8, 0x10, 0x18, 0xf8, 0xfa, 0xfb, 0x100];
+pub const ROOT_PCI_MAX_BUS: usize = 1;
+pub const ROOT_PCI_DEVS: [HvPciDevConfig; 8] = [
+    pci_dev!(0x0, 0x0, 0x0, 0x0, VpciDevType::Physical),  // host bridge
+    pci_dev!(0x0, 0x0, 0x1, 0x0, VpciDevType::Physical),  // VGA controller
+    pci_dev!(0x0, 0x0, 0x2, 0x0, VpciDevType::Physical),  // Ethernet controller
+    pci_dev!(0x0, 0x0, 0x3, 0x0, VpciDevType::Physical),  // PCI bridge
+    pci_dev!(0x0, 0x0, 0x1f, 0x0, VpciDevType::Physical), // ISA bridge
+    pci_dev!(0x0, 0x0, 0x1f, 0x2, VpciDevType::Physical), // SATA controller
+    pci_dev!(0x0, 0x0, 0x1f, 0x3, VpciDevType::Physical), // SMBus
+    pci_dev!(0x0, 0x1, 0x0, 0x0, VpciDevType::Physical),  // SCSI controller
+];
 
 #[cfg(all(feature = "graphics"))]
 pub const GRAPHICS_FONT: &[u8] =

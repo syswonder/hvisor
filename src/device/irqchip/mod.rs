@@ -124,7 +124,7 @@ pub mod aclint;
 pub mod plic;
 
 #[cfg(all(feature = "plic", target_arch = "riscv64"))]
-pub use plic::{host_plic, inject_irq, percpu_init, primary_init_late};
+pub use plic::{inject_irq, percpu_init, primary_init_late};
 
 #[cfg(all(feature = "aia", target_arch = "riscv64"))]
 pub mod aia;

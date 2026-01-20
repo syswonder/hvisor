@@ -13,7 +13,6 @@
 //
 // Authors:
 //
-use crate::clear_bss;
 use crate::consts::PER_CPU_SIZE;
 #[no_mangle]
 #[link_section = ".data"]
