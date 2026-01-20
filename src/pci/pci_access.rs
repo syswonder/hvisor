@@ -624,7 +624,7 @@ pub trait PciBarRW: PciRWBase {
                                 1u64 << ((readback_high.trailing_zeros() + 32) as u64)
                             }
                         };
-                        let value64 = (value as u64) | ((value_high as u64) << 32);
+                        // let value64 = (value as u64) | ((value_high as u64) << 32);
 
                         bararr[slot as usize] =
                             PciMem::new_bar(PciMemType::Mem64Low, value64, size, pre);
