@@ -91,7 +91,7 @@ all: clean_check gen_cargo_config $(hvisor_bin)
 	@printf "%-10s %s\n" "HVISON_BIN_SIZE =" "$(COLOR_BOLD)$(shell du -h $(hvisor_bin) | cut -f1)$(COLOR_RESET)"
 	@start_addr=$$(rust-nm $(hvisor_elf) | grep skernel | awk '{print $$1}'); \
 	 end_addr=$$(rust-nm $(hvisor_elf) | grep __hv_end | awk '{print $$1}'); \
-	 size=$$(printf '%016x\n' $$((0x$$end_addr - 0x$$start_addr))); \
+	 size=$$(echo "obase=16; ibase=16; $$(echo $$end_addr | tr 'a-z' 'A-Z') - $$(echo $$start_addr | tr 'a-z' 'A-Z')" | bc | tr 'A-Z' 'a-z'); \
 	 printf "%-10s %s\n" "START_ADDR      =" "$(COLOR_BOLD)0x$$start_addr$(COLOR_RESET)"; \
 	 printf "%-10s %s\n" "MEM_SIZE        =" "$(COLOR_BOLD)0x$$size$(COLOR_RESET)"; \
 	 printf "%-10s %s\n" "END_ADDR        =" "$(COLOR_BOLD)0x$$end_addr$(COLOR_RESET)"
