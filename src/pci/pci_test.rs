@@ -29,9 +29,9 @@ use super::{
 use super::{mem_alloc::BaseAllocator, pci_struct::RootComplex};
 
 use crate::{
+    cpu_data::this_zone,
     memory::{mmio_perform_access, MMIOAccess},
     pci::{config_accessors::PciConfigMmio, pci_access::EndpointHeader},
-    percpu::this_zone,
 };
 
 #[cfg(feature = "ecam_pcie")]

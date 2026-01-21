@@ -20,7 +20,7 @@ use crate::config::{HvZoneConfig, CONFIG_MAGIC_VERSION};
 use crate::device::virtio_trampoline::MAX_DEVS;
 use crate::hypercall::HyperCall;
 use crate::hypercall::HyperCallResult;
-use crate::percpu::this_zone;
+use crate::cpu_data::this_zone;
 use crate::zone::this_zone_id;
 
 impl<'a> HyperCall<'a> {

@@ -16,10 +16,10 @@
 
 use alloc::string::String;
 
+use crate::cpu_data::this_zone;
 use crate::error::HvResult;
 use crate::memory::MMIOAccess;
 use crate::memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion};
-use crate::percpu::this_zone;
 use crate::zone::is_this_root_zone;
 
 use super::pci_access::{BridgeField, EndpointField, HeaderType, PciField, PciMemType};

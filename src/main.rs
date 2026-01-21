@@ -52,12 +52,12 @@ mod logging;
 mod arch;
 mod config;
 mod consts;
+mod cpu_data;
 mod device;
 mod event;
 mod hypercall;
 mod memory;
 mod panic;
-mod percpu;
 mod platform;
 mod zone;
 
@@ -72,9 +72,9 @@ use crate::consts::{hv_end, mem_pool_start, MAX_CPU_NUM};
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
+use cpu_data::PerCpu;
 #[cfg(feature = "pci")]
 use pci::pci_config::hvisor_pci_init;
-use percpu::PerCpu;
 use zone::{add_zone, zone_create};
 
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
@@ -128,7 +128,6 @@ fn primary_init_early() {
     );
     memory::frame::init();
     memory::frame::test();
-    event::init();
 
     arch::stage2_mode_detect();
 
@@ -197,11 +196,13 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     if MASTER_CPU.load(Ordering::Acquire) == -1 {
         MASTER_CPU.store(cpuid as i32, Ordering::Release);
         is_primary = true;
+        percpu::init();
         memory::heap::init();
         memory::heap::test();
         arch::time::init_timebase();
         arch_post_heap_init(host_dtb);
     }
+    percpu::init_percpu_reg(cpuid);
 
     let cpu = PerCpu::new(cpuid);
 

@@ -20,7 +20,7 @@ use crate::{
     consts::PAGE_SIZE,
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet},
-    percpu::this_zone,
+    cpu_data::this_zone,
     platform::MEM_TYPE_RESERVED,
 };
 use alloc::string::{String, ToString};
