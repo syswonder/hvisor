@@ -15,6 +15,8 @@
 //
 use super::cpu::ArchCpu;
 use crate::arch::sbi::sbi_vs_handler;
+#[cfg(feature = "plic")]
+use crate::device::irqchip::plic::{inject_irq, plic_get_hwirq};
 use crate::event::check_events;
 use crate::memory::GuestPhysAddr;
 use crate::memory::{mmio_handle_access, MMIOAccess};
@@ -32,7 +34,8 @@ global_asm!(include_str!("trap.S"),
 sync_exception_handler=sym sync_exception_handler,
 interrupts_arch_handle=sym interrupts_arch_handle);
 
-#[allow(non_snake_case, unused)]
+#[allow(non_snake_case)]
+#[allow(unused)]
 pub mod ExceptionType {
     pub const ECALL_VU: usize = 8;
     pub const ECALL_VS: usize = 10;
@@ -89,6 +92,7 @@ pub const INS_C_LW: usize = 0x4000; // [15:13] = 0b010, [1:0] = 0b00
 pub const INS_C_SW: usize = 0xc000; // [15:13] = 0b110, [1:0] = 0b00
 pub const INS_C_LD: usize = 0x6000; // [15:13] = 0b011, [1:0] = 0b00
 pub const INS_C_SD: usize = 0xe000; // [15:13] = 0b111, [1:0] = 0b00
+
 #[allow(unused)]
 pub const INS_RS1_MASK: usize = 0x000f8000;
 pub const INS_RS2_MASK: usize = 0x01f00000;
@@ -368,11 +372,8 @@ fn decode_inst(inst: u32) -> (usize, Option<Instruction>) {
 
 /// Handle interrupts which hvisor receives.
 pub fn interrupts_arch_handle(current_cpu: &mut ArchCpu) {
+    trace!("interrupts_arch_handle @CPU{}", current_cpu.cpuid);
     let trap_code = riscv::register::scause::read().code();
-    debug!(
-        "interrupts_arch_handle @CPU{}: {:?}",
-        current_cpu.cpuid, trap_code
-    );
     match trap_code {
         InterruptType::STI => {
             // Inject timer interrupt to VS.
@@ -420,9 +421,7 @@ pub fn handle_external_interrupt(_current_cpu: &mut ArchCpu) {
     {
         // Note: in hvisor, all external interrupts are assigned to VS.
         // 1. claim hw irq.
-        use crate::arch::cpu::this_cpu_id;
-        let context_id = 2 * this_cpu_id() + 1;
-        let irq_id = crate::device::irqchip::plic::host_plic().claim(context_id);
+        let irq_id = plic_get_hwirq();
 
         // If this irq has been claimed, it will be 0.
         if irq_id == 0 {
@@ -430,7 +429,7 @@ pub fn handle_external_interrupt(_current_cpu: &mut ArchCpu) {
         }
 
         // 2. inject hw irq to zone.
-        crate::device::irqchip::plic::inject_irq(irq_id as usize, true);
+        inject_irq(irq_id as usize, true);
     }
     #[cfg(feature = "aia")]
     {

@@ -73,6 +73,7 @@ uart16550a = []
 ############## riscv64 #############
 # irqchip driver
 plic = []
+dp1000_plic = []
 aia = []
 aclint = []
 # extensions

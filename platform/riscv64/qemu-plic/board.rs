@@ -31,6 +31,7 @@ pub const ACLINT_SSWI_BASE: usize = 0x2F00000;
 pub const PLIC_BASE: usize = 0xc000000;
 pub const PLIC_SIZE: usize = 0x4000000;
 pub const BOARD_PLIC_INTERRUPTS_NUM: usize = 1023; // except irq 0
+pub const NUM_CONTEXTS_PER_HART: usize = 2; // M-mode、S-mode
 
 // This device is used for qemu-quit.
 #[allow(unused)]
