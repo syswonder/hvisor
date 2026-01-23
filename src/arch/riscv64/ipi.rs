@@ -14,10 +14,10 @@
 // Authors:
 //      Jingyu Liu <liujingyu24s@ict.ac.cn>
 //
-use crate::platform::BOARD_HARTID_MAP;
 use crate::consts::IPI_EVENT_SEND_IPI;
 #[cfg(feature = "plic")]
 use crate::consts::IPI_EVENT_UPDATE_HART_LINE;
+use crate::platform::BOARD_HARTID_MAP;
 
 // arch_send_event
 pub fn arch_send_event(cpu_id: u64, _sgi_num: u64) {

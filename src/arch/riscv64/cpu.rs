@@ -140,7 +140,7 @@ impl ArchCpu {
         // reset all registers related
         self.reset_regs(
             this_cpu_data().cpu_on_entry,
-            BOARD_HARTID_MAP[this_cpu_id()],   // This should be hartid.
+            BOARD_HARTID_MAP[this_cpu_id()], // This should be hartid.
             this_cpu_data().dtb_ipa,
         );
         this_cpu_data().activate_gpm();
