@@ -180,6 +180,12 @@ fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
     }
 }
 
+/// Rust main function for hvisor.
+///
+/// # Arguments
+///
+/// * `cpuid` - The logical cpu_id 0..BOARD_NCPUS.
+/// * `host_dtb` - The device tree blob address.
 fn rust_main(cpuid: usize, host_dtb: usize) {
     arch::trap::install_trap_vector();
 

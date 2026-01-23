@@ -15,6 +15,7 @@
 //
 use super::csr::*;
 use crate::percpu::this_cpu_data;
+use crate::platform::{BOARD_HARTID_MAP, BOARD_NCPUS};
 use crate::{
     arch::mm::new_s2_memory_set,
     consts::{PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
@@ -139,7 +140,7 @@ impl ArchCpu {
         // reset all registers related
         self.reset_regs(
             this_cpu_data().cpu_on_entry,
-            this_cpu_data().id,
+            BOARD_HARTID_MAP[this_cpu_id()], // This should be hartid.
             this_cpu_data().dtb_ipa,
         );
         this_cpu_data().activate_gpm();
@@ -181,7 +182,7 @@ impl ArchCpu {
         // Note: in park_inst_page
         self.reset_regs(
             PARKING_INST_GPA,        // entry_addr
-            this_cpu_data().id,      // a0
+            this_cpu_id(),           // a0
             this_cpu_data().dtb_ipa, // a1
         );
         self.reset_interrupt();
@@ -217,12 +218,20 @@ fn this_cpu_arch() -> &'static mut ArchCpu {
     unsafe { &mut *(sscratch as *mut ArchCpu) }
 }
 
+/// Get the logical cpu_id 0..BOARD_NCPUS.
 pub fn this_cpu_id() -> usize {
     this_cpu_arch().get_cpuid()
 }
 
+pub fn hartid_to_cpuid(hartid: usize) -> usize {
+    (0..BOARD_NCPUS)
+        .find(|&i| BOARD_HARTID_MAP[i] == hartid)
+        .unwrap()
+}
+
 pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
-    if let Some(e) = sbi_rt::hart_start(cpuid, start_addr, opaque).err() {
+    // Convert cpuid to hartid
+    if let Some(e) = sbi_rt::hart_start(BOARD_HARTID_MAP[cpuid], start_addr, opaque).err() {
         panic!("cpu_start error: {:#x?}", e);
     }
 }

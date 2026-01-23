@@ -18,6 +18,14 @@ use crate::{arch::zone::HvArchZoneConfig, config::*, pci::vpci_dev::VpciDevType,
 #[allow(unused)]
 pub const BOARD_NAME: &str = "qem-plic";
 pub const BOARD_NCPUS: usize = 4;
+#[rustfmt::skip]
+pub static BOARD_HARTID_MAP: [usize; BOARD_NCPUS] = [
+    0x0,            // core0   \
+    0x1,            // core1    | -> cluster0 -> CPU
+    0x2,            // core2    |
+    0x3,            // core3   / 
+];
+
 pub const TIMEBASE_FREQ: u64 = 10_000_000; // 10MHz
 pub const ACLINT_SSWI_BASE: usize = 0x2F00000;
 pub const PLIC_BASE: usize = 0xc000000;

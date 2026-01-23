@@ -95,6 +95,7 @@ pub fn get_cpu_data<'a>(cpu_id: usize) -> &'a mut PerCpu {
 }
 
 pub fn this_cpu_data<'a>() -> &'a mut PerCpu {
+    // Note: this_cpu_id() should return logical cpu_id 0..BOARD_NCPUS
     get_cpu_data(this_cpu_id())
 }
 
