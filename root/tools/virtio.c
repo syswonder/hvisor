@@ -1080,9 +1080,6 @@ void initialize_log() {
     log_level = LOG_WARN;
 #endif
     log_set_level(log_level);
-
-    FILE *log_file = fopen("log.txt", "w+");
-    log_add_fp(log_file, LOG_WARN);
 }
 
 int virtio_init() {
