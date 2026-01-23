@@ -12,20 +12,23 @@
 //      https://www.syswonder.org
 //
 // Authors:
+//      Jingyu Liu <liujingyu24s@ict.ac.cn>
 //
+use crate::platform::BOARD_HARTID_MAP;
 use crate::consts::IPI_EVENT_SEND_IPI;
 #[cfg(feature = "plic")]
 use crate::consts::IPI_EVENT_UPDATE_HART_LINE;
 
 // arch_send_event
 pub fn arch_send_event(cpu_id: u64, _sgi_num: u64) {
-    debug!("arch_send_event: cpu_id: {}", cpu_id);
+    let hart_id = BOARD_HARTID_MAP[cpu_id as usize];
+    debug!("arch_send_event: cpu_id: {}", hart_id);
     #[cfg(feature = "aclint")]
-    crate::device::irqchip::aclint::aclint_send_ipi(cpu_id as usize);
+    crate::device::irqchip::aclint::aclint_send_ipi(hart_id as usize);
     #[cfg(not(feature = "aclint"))]
     {
         let sbi_ret: sbi_rt::SbiRet =
-            sbi_rt::send_ipi(sbi_rt::HartMask::from_mask_base(1 << cpu_id, 0));
+            sbi_rt::send_ipi(sbi_rt::HartMask::from_mask_base(1 << hart_id, 0));
         if sbi_ret.is_err() {
             error!("arch_send_event: send_ipi failed: {:?}", sbi_ret);
         }

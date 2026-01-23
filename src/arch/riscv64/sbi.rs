@@ -16,6 +16,7 @@
 //! SBI call wrappers
 
 use super::cpu::ArchCpu;
+use crate::arch::cpu::hartid_to_cpuid;
 use crate::arch::csr::*;
 use crate::consts::IPI_EVENT_SEND_IPI;
 use crate::event::{send_event, IPI_EVENT_WAKEUP};
@@ -65,7 +66,6 @@ pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
     // a6 encodes the SBI function ID (FID)
     let eid: usize = current_cpu.x[17];
     let fid: usize = current_cpu.x[16];
-    // info!("SBI call: EID={:#x}, FID={:#x}", eid, fid);
     let sbi_ret;
     match eid {
         // Base Extension (SBI Spec Chapter 4)
@@ -97,12 +97,14 @@ pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
         // Legacy::Console putchar (usually used), temporily don't support other legacy extensions.
         legacy::LEGACY_CONSOLE_PUTCHAR => {
             sbi_ret = SbiRet {
+                #[allow(deprecated)]
                 error: sbi_rt::legacy::console_putchar(current_cpu.x[10] as _),
                 value: 0,
             };
         }
         legacy::LEGACY_CONSOLE_GETCHAR => {
             sbi_ret = SbiRet {
+                #[allow(deprecated)]
                 error: sbi_rt::legacy::console_getchar(),
                 value: 0,
             };
@@ -264,7 +266,7 @@ pub fn sbi_hsm_start_handler(current_cpu: &mut ArchCpu) -> SbiRet {
         error: RET_SUCCESS,
         value: 0,
     };
-    let cpuid = current_cpu.x[10]; // In hvisor, it is physical cpu id.
+    let cpuid = hartid_to_cpuid(current_cpu.x[10]); // convert to hvisor's logical cpuid
     let start_addr = current_cpu.x[11];
     let opaque = current_cpu.x[12];
     if cpuid == current_cpu.cpuid {
@@ -306,11 +308,11 @@ pub fn sbi_ipi_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
     let hart_mask = current_cpu.x[10];
     let hart_mask_base = current_cpu.x[11];
     let hart_mask_bits = HartMask::from_mask_base(hart_mask, hart_mask_base);
-    for cpu_id in 0..64 {
+    for hart_id in 0..64 {
         // hart_mask is 64 bits
-        if hart_mask_bits.has_bit(cpu_id) {
+        if hart_mask_bits.has_bit(hart_id) {
             // the second parameter is ignored is riscv64.
-            send_event(cpu_id, 0, IPI_EVENT_SEND_IPI);
+            send_event(hartid_to_cpuid(hart_id), 0, IPI_EVENT_SEND_IPI);
         }
     }
     SbiRet {
