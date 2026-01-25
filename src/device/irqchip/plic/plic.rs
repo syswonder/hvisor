@@ -70,6 +70,9 @@ pub const PLIC_COMPLETE_OFFSET: usize = 0x200004;
 pub const PLIC_MAX_IRQ: usize = 1023; // 1-1023, in PLIC, irq 0 does not exist.
 pub const PLIC_MAX_CONTEXT: usize = 15872;
 
+use crate::platform::BOARD_PLIC_INTERRUPTS_NUM;
+use crate::platform::NUM_CONTEXTS_PER_HART;
+
 /// Plic struct
 pub struct Plic {
     base: usize,
@@ -99,7 +102,7 @@ impl Plic {
         }
         // set enable to 0
         for i in 0..num_contexts {
-            for j in 0..(num_interrupts + 31 / 32) {
+            for j in 0..((num_interrupts + 31) / 32) {
                 self.set_enable(i, j * 4, 0);
             }
         }
@@ -109,7 +112,7 @@ impl Plic {
     pub fn init_per_hart(&self, cpu_id: usize) {
         // set threshold to 0
         info!("PLIC init per hart: cpu_id = {}", cpu_id);
-        let context = cpu_id * 2 + 1;
+        let context = cpu_id * NUM_CONTEXTS_PER_HART + 1;
         self.set_threshold(context, 0);
     }
 
@@ -139,10 +142,28 @@ impl Plic {
     pub fn set_enable_num(&self, context: usize, irq_id: usize, enable: bool) {
         let addr = self.base + PLIC_ENABLE_OFFSET + context * 0x80 + irq_id / 32 * 4;
         let mut value = unsafe { core::ptr::read_volatile(addr as *const u32) };
-        value = value | ((enable as u32) << (irq_id % 32));
+        if enable {
+            value |= 1 << (irq_id % 32);
+        } else {
+            value &= !(1 << (irq_id % 32));
+        }
         unsafe {
             core::ptr::write_volatile(addr as *mut u32, value);
         }
+    }
+
+    /// Plic get enable
+    #[inline(always)]
+    pub fn get_enable(&self, context: usize, irq_base: usize) -> u32 {
+        let addr = self.base + PLIC_ENABLE_OFFSET + context * 0x80 + irq_base;
+        unsafe { core::ptr::read_volatile(addr as *const u32) }
+    }
+
+    /// Plic get pending
+    #[inline(always)]
+    fn get_pending(&self, irq_base: usize) -> u32 {
+        let addr = self.base + PLIC_PENDING_OFFSET + irq_base;
+        unsafe { core::ptr::read_volatile(addr as *const u32) }
     }
 
     /// Plic set threshold
@@ -151,6 +172,12 @@ impl Plic {
         unsafe {
             core::ptr::write_volatile(addr as *mut u32, value);
         }
+    }
+
+    /// Plic get threshold
+    pub fn get_threshold(&self, context: usize) -> u32 {
+        let addr = self.base + PLIC_THRESHOLD_OFFSET + context * 0x1000;
+        unsafe { core::ptr::read_volatile(addr as *const u32) }
     }
 
     /// Plic claim
@@ -165,5 +192,61 @@ impl Plic {
         unsafe {
             core::ptr::write_volatile(addr as *mut u32, irq_id as u32);
         }
+    }
+
+    fn plic_check_enable_first_pending(&self, context: usize, ie: &mut [u32; 32]) -> bool {
+        let nr_irq_groups = (BOARD_PLIC_INTERRUPTS_NUM + 1) / 32;
+        // Read Current interrupt enables
+        for i in 0..nr_irq_groups {
+            ie[i] = self.get_enable(context, i * 4);
+        }
+        // Check for pending interrupts and enable only the first one found
+        for i in 0..nr_irq_groups {
+            let pending_irqs = self.get_pending(i * 4) & ie[i];
+            // Find first pending irq
+            if pending_irqs != 0 {
+                let nbits = pending_irqs.trailing_zeros();
+                for j in 0..nr_irq_groups {
+                    let value = if j == i { 1 << nbits } else { 0 };
+                    self.set_enable(context, j * 4, value);
+                }
+                return true;
+            }
+        }
+        false
+    }
+
+    fn plic_restore_enable_state(&self, context: usize, ie: &[u32; 32]) {
+        let nr_irq_groups = (BOARD_PLIC_INTERRUPTS_NUM + 1) / 32;
+        for i in 0..nr_irq_groups {
+            self.set_enable(context, i * 4, ie[i]);
+        }
+    }
+
+    /// Get hw irq from PLIC
+    pub fn plic_get_hwirq(&self, context: usize) -> u32 {
+        /*
+         * https://github.com/RVCK-Project/rvck/blob/rvck-6.6/drivers/irqchip/irq-sifive-plic.c:
+         *      Due to the implementation of the claim register in the UltraRISC DP1000
+         *      platform PLIC not conforming to the specification, this is a hardware
+         *      bug. Therefore, when an interrupt is pending, we need to disable the other
+         *      interrupts before reading the claim register. After processing the interrupt,
+         *      we should then restore the enable register.
+         */
+
+        let mut hwirq = 0;
+        if cfg!(feature = "dp1000_plic") {
+            let mut ie: [u32; 32] = [0; 32]; // max 1024 irqs
+            hwirq = if self.plic_check_enable_first_pending(context, &mut ie) {
+                self.claim(context)
+            } else {
+                0
+            };
+            self.plic_restore_enable_state(context, &ie);
+        } else {
+            hwirq = self.claim(context);
+        }
+
+        hwirq
     }
 }

@@ -12,10 +12,11 @@
 //      https://www.syswonder.org
 //
 // Authors:
+//      Jingyu Liu <liujingyu24s@ict.ac.cn>
 //
 
-use crate::percpu::this_cpu_data;
-use alloc::sync::Arc;
+use crate::arch::cpu::this_cpu_id;
+use crate::platform::NUM_CONTEXTS_PER_HART;
 use alloc::vec::Vec;
 use bitvec::prelude::*;
 use spin::Mutex;
@@ -30,7 +31,7 @@ pub struct VirtualPLIC {
     /// Number of Hart contexts (contains S-mode and M-mode), only S-mode works
     num_contexts: usize,
     /// Inner state of the vPLIC (thread-safe)
-    inner: Arc<Mutex<VirtualPLICInner>>,
+    inner: Mutex<VirtualPLICInner>,
 }
 
 /// Inner state of the vPLIC
@@ -67,7 +68,7 @@ impl VirtualPLIC {
             base_addr,
             max_interrupts,
             num_contexts,
-            inner: Arc::new(Mutex::new(vplic)),
+            inner: Mutex::new(vplic),
         }
     }
 
@@ -99,7 +100,7 @@ impl VirtualPLIC {
                 inner.vplic_update_hart_line(vcontext_id);
             } else {
                 for vcontext_id in 0..self.num_contexts {
-                    if vcontext_id % 2 == 0 {
+                    if vcontext_id % NUM_CONTEXTS_PER_HART != 1 {
                         continue;
                     }
                     if inner.vplic_get_enable(intr_id, vcontext_id)
@@ -172,7 +173,7 @@ impl VirtualPLIC {
                     } else {
                         // only support S-mode hart.
                         for vcontext_id in 0..self.num_contexts {
-                            if vcontext_id % 2 == 0 {
+                            if vcontext_id % NUM_CONTEXTS_PER_HART != 1 {
                                 continue;
                             }
                             if inner.vplic_get_enable(intr_id, vcontext_id) {
@@ -209,7 +210,7 @@ impl VirtualPLIC {
             // PLIC enable
             offset if offset >= 0x2000 && offset < (0x2000 + 0x80 * self.num_contexts) => {
                 let vcontext_id = (offset - 0x2000) / 0x80;
-                if vcontext_id >= self.num_contexts || vcontext_id % 2 == 0 {
+                if vcontext_id >= self.num_contexts || vcontext_id % NUM_CONTEXTS_PER_HART != 1 {
                     // context should be a S-mode hart context.
                     error!("Invalid context ID {}", vcontext_id);
                     return 0;
@@ -256,7 +257,7 @@ impl VirtualPLIC {
             // PLIC threshold
             offset if offset >= 0x200000 && (offset - 0x200000) % 0x1000 == 0 => {
                 let vcontext_id = (offset - 0x200000) / 0x1000;
-                if vcontext_id >= self.num_contexts || vcontext_id % 2 == 0 {
+                if vcontext_id >= self.num_contexts || vcontext_id % NUM_CONTEXTS_PER_HART != 1 {
                     // context should be a S-mode hart context.
                     error!("Invalid context ID {}", vcontext_id);
                     return 0;
@@ -281,7 +282,7 @@ impl VirtualPLIC {
             // PLIC claim/complete
             offset if offset >= 0x200004 && (offset - 0x200004) % 0x1000 == 0 => {
                 let vcontext_id = (offset - 0x200004) / 0x1000;
-                if vcontext_id >= self.num_contexts || vcontext_id % 2 == 0 {
+                if vcontext_id >= self.num_contexts || vcontext_id % NUM_CONTEXTS_PER_HART != 1 {
                     // context should be a S-mode hart context.
                     error!("Invalid context ID {}", vcontext_id);
                     return 0;
@@ -408,7 +409,7 @@ impl VirtualPLICInner {
             "vPLIC update line to vcontext_id {}, pcontext_id {}",
             vcontext_id, pcontext_id
         );
-        if pcontext_id / 2 == this_cpu_data().id {
+        if pcontext_id / NUM_CONTEXTS_PER_HART == this_cpu_id() {
             let irq_id = self.vplic_get_next_pending(vcontext_id);
             if irq_id != 0 {
                 unsafe {
@@ -422,7 +423,7 @@ impl VirtualPLICInner {
         } else {
             use crate::consts::IPI_EVENT_UPDATE_HART_LINE;
             use crate::event::send_event;
-            let cpu_id = pcontext_id / 2;
+            let cpu_id = pcontext_id / NUM_CONTEXTS_PER_HART;
             info!("vplic_update_hart_line to cpu {}", cpu_id);
             // the second arg don't need.
             send_event(cpu_id, 0, IPI_EVENT_UPDATE_HART_LINE);
