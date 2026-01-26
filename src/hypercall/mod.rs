@@ -19,7 +19,7 @@
 use crate::arch::cpu::get_target_cpu;
 use crate::config::HvZoneConfig;
 use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, MAX_WAIT_TIMES, PAGE_SIZE};
-use crate::device::virtio_trampoline::{MAX_DEVS, MAX_REQ, VIRTIO_BRIDGE, VIRTIO_IRQS};
+use crate::device::virtio_trampoline::{MAX_DEVS, VIRTIO_BRIDGE, VIRTIO_IRQS};
 use crate::error::HvResult;
 use crate::percpu::{get_cpu_data, PerCpu};
 use crate::zone::{
@@ -28,7 +28,6 @@ use crate::zone::{
 
 use crate::event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_VIRTIO_INJECT_IRQ, IPI_EVENT_WAKEUP};
 use core::convert::TryFrom;
-use core::sync::atomic::{fence, Ordering};
 use numeric_enum_macro::numeric_enum;
 
 numeric_enum! {
@@ -125,9 +124,7 @@ impl<'a> HyperCall<'a> {
         // 		MemFlags::READ | MemFlags::WRITE,
         // 	))?;
         // TODO: flush tlb
-        VIRTIO_BRIDGE
-            .lock()
-            .set_base_addr(shared_region_addr_pa as _);
+        VIRTIO_BRIDGE.set_base_addr(shared_region_addr_pa as _);
         info!("hvisor device region base is {:#x?}", shared_region_addr_pa);
 
         HyperCallResult::Ok(0)
@@ -142,20 +139,14 @@ impl<'a> HyperCall<'a> {
                 "Virtio send irq operation over non-root zones: unsupported!"
             );
         }
-        let dev = VIRTIO_BRIDGE.lock();
+        let mut res_agent = VIRTIO_BRIDGE.res_agent();
         let mut map_irq = VIRTIO_IRQS.lock();
-        let region = dev.region();
-
-        while !dev.is_res_list_empty() {
-            let res_front = region.res_front as usize;
-            let irq_id = region.res_list[res_front].irq_id as u64;
-            let target_zone = region.res_list[res_front].target_zone;
+        while !res_agent.is_empty() {
+            let (_res_front, irq_id, target_zone) = res_agent.peek_front();
             let target_cpu = match find_zone(target_zone as _) {
-                Some(zone) => get_target_cpu(irq_id as _, target_zone as _),
+                Some(_zone) => get_target_cpu(irq_id as _, target_zone as _),
                 _ => {
-                    fence(Ordering::SeqCst);
-                    region.res_front = (region.res_front + 1) & (MAX_REQ - 1);
-                    fence(Ordering::SeqCst);
+                    res_agent.advance_front();
                     continue;
                 }
             };
@@ -175,11 +166,9 @@ impl<'a> HyperCall<'a> {
                 );
             }
 
-            fence(Ordering::SeqCst);
-            region.res_front = (region.res_front + 1) & (MAX_REQ - 1);
-            fence(Ordering::SeqCst);
+            res_agent.advance_front();
         }
-        drop(dev);
+        drop(res_agent);
         HyperCallResult::Ok(0)
     }
 
