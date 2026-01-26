@@ -108,6 +108,9 @@ jobs:
           - arch: aarch64
             board: "ok6254-c"
             rustc_target: aarch64-unknown-none
+          - arch: aarch64
+            board: "phytium-pi"
+            rustc_target: aarch64-unknown-none
           # riscv64
           - arch: riscv64
             board: "qemu-aia"
@@ -115,10 +118,29 @@ jobs:
           - arch: riscv64
             board: "qemu-plic"
             rustc_target: riscv64gc-unknown-none-elf
+          - arch: riscv64
+            board: "hifive-premier-p550"
+            rustc_target: riscv64gc-unknown-none-elf
+          - arch: riscv64
+            board: "megrez"
+            rustc_target: riscv64gc-unknown-none-elf
+          - arch: riscv64
+            board: "ur-dp1000"
+            rustc_target: riscv64gc-unknown-none-elf
           # loongarch64
           - arch: loongarch64
             board: "ls3a5000"
             rustc_target: loongarch64-unknown-none
+          - arch: loongarch64
+            board: "ls3a6000"
+            rustc_target: loongarch64-unknown-none
+          # x86_64
+          - arch: x86_64
+            board: "qemu"
+            rustc_target: x86_64-unknown-none
+          - arch: x86_64
+            board: "nuc14mnk"
+            rustc_target: x86_64-unknown-none
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
