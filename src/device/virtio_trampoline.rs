@@ -52,19 +52,21 @@ pub const MAX_DEVS: usize = 8; // Attention: The max virtio-dev number for vm is
 pub const MAX_CPUS: usize = 32;
 pub const MAX_BACKOFF: usize = 1024;
 
-#[cfg(all(not(target_arch = "riscv64"), not(target_arch = "x86_64")))]
-pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;
-#[cfg(target_arch = "riscv64")]
-pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 0x20;
-#[cfg(target_arch = "x86_64")]
-pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 0x6;
+use crate::platform::IRQ_WAKEUP_VIRTIO_DEVICE;
+// #[cfg(all(not(target_arch = "riscv64"), not(target_arch = "x86_64")))]
+// pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;
+// #[cfg(target_arch = "riscv64")]
+// pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 0x20;
+// #[cfg(target_arch = "x86_64")]
+// pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 0x6;
 
 /// non root zone's virtio request handler
 pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     // debug!("mmio virtio handler");
+    let cpu_id = this_cpu_id() as usize;
     let need_interrupt = if mmio.address == QUEUE_NOTIFY { 1 } else { 0 };
     if need_interrupt == 1 {
-        trace!("notify !!!, cpu id is {}", this_cpu_id());
+        trace!("notify !!!, cpu id is {}", cpu_id);
     }
     mmio.address += base;
     let mut backoff = 1;
@@ -82,7 +84,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
         req_agent = VIRTIO_BRIDGE.req_agent();
     }
     let hreq = HvisorDeviceReq::new(
-        this_cpu_id() as _,
+        cpu_id as _,
         mmio.address as _,
         mmio.size as _,
         mmio.value as _,
@@ -91,19 +93,17 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
         need_interrupt,
     );
     // debug!("non root sends req: {:#x?}", hreq);
-    let cpu_id = this_cpu_id() as usize;
-    // debug!("old cfg flag: {:#x?}", old_cfg_flag);
     req_agent.push_req(hreq);
     drop(req_agent);
 
     // Due to cfg_flag and cfg_value are per-cpu, so there is no need to lock them.
     let old_cfg_flag = VIRTIO_BRIDGE.cfg_flag(cpu_id);
     let mut count: usize = 0;
+    let mut ipi_sent = false;
     // if it is cfg request, current cpu should be blocked until gets the result
     if need_interrupt == 0 {
-        let mut ipi_sent = false;
-        // when virtio backend finish the req, it will add 1 to cfg_flag.
-        while !VIRTIO_BRIDGE.is_cfg_updated(cpu_id, old_cfg_flag) {
+        loop {
+            // If backend is sleep, hvisor needs to send ipi to wake it up.
             #[cfg(not(target_arch = "loongarch64"))]
             if !ipi_sent && VIRTIO_BRIDGE.need_wakeup() {
                 debug!("need wakeup (recheck), sending ipi to wake up virtio device");
@@ -113,6 +113,10 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
                     IPI_EVENT_WAKEUP_VIRTIO_DEVICE,
                 );
                 ipi_sent = true;
+            }
+            // when virtio backend finish the req, it will add 1 to cfg_flags[cpu_id].
+            if VIRTIO_BRIDGE.is_cfg_updated(cpu_id, old_cfg_flag) {
+                break;
             }
             count += 1;
             if count == MAX_WAIT_TIMES {
@@ -277,7 +281,6 @@ pub struct ResAgent<'a> {
 }
 
 impl<'a> ResAgent<'a> {
-    // Unsafe: Caller must ensure only Res fields are accessed
     fn region(&self) -> &mut VirtioBridge {
         unsafe { &mut *(self.base as *mut VirtioBridge) }
     }

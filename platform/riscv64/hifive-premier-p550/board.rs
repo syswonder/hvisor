@@ -150,6 +150,8 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 7] = [
        // }, // pinctrl
 ];
 
+pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 0x20;
+
 // Note: all here's irqs are hardware irqs,
 //  only these irq can be transferred to the physical PLIC.
 pub const HW_IRQS: [u32; 21] = [

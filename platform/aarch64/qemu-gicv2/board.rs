@@ -76,6 +76,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 3] = [
     }, // virtio
 ];
 
+pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;
 // 35 36 37 38 -> pcie intx#
 // 65 -> ivc
 pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[33, 64, 77, 79, 35, 36, 37, 38, 65]);

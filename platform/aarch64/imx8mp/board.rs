@@ -109,6 +109,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 8] = [
        // }, // serial
 ];
 
+pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;
 pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[
     35, 36, 37, 38, 45, 52, 55, 56, 57, 59, 64, 67, 75, 96, 97, 98, 99, 100, 101, 102, 103, 104,
     105, 135, 150, 151, 152, 162,

@@ -19,11 +19,9 @@ use crate::{
     consts::{
         IPI_EVENT_CLEAR_INJECT_IRQ, IPI_EVENT_SEND_IPI, IPI_EVENT_UPDATE_HART_LINE, MAX_CPU_NUM,
     },
-    device::{
-        irqchip::inject_irq,
-        virtio_trampoline::{handle_virtio_irq, IRQ_WAKEUP_VIRTIO_DEVICE},
-    },
+    device::{irqchip::inject_irq, virtio_trampoline::handle_virtio_irq},
     percpu::this_cpu_data,
+    platform::IRQ_WAKEUP_VIRTIO_DEVICE,
 };
 use alloc::{collections::VecDeque, vec::Vec};
 use spin::{Mutex, Once};
