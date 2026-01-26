@@ -8,8 +8,10 @@
  * Authors:
  *      Guowei Li <2401213322@stu.pku.edu.cn>
  */
+#define _GNU_SOURCE
 #include <errno.h>
 #include <pthread.h>
+#include <sched.h>
 #include <stdlib.h>
 #include <unistd.h>
 
@@ -81,6 +83,32 @@ int initialize_event_monitor() {
     epoll_fd = epoll_create1(0);
     log_debug("create epoll_fd %d", epoll_fd);
     pthread_create(&emonitor_tid, NULL, epoll_loop, NULL);
+    cpu_set_t cpuset;
+    if (sched_getaffinity(0, sizeof(cpu_set_t), &cpuset) == 0) {
+        int last_cpu = -1;
+        for (int i = CPU_SETSIZE - 1; i >= 1; i++) {
+            if (CPU_ISSET(i, &cpuset)) {
+                last_cpu = i;
+                break;
+            }
+        }
+
+        if (last_cpu != -1) {
+            cpu_set_t set;
+            CPU_ZERO(&set);
+            CPU_SET(last_cpu, &set);
+            if (pthread_setaffinity_np(emonitor_tid, sizeof(cpu_set_t), &set) !=
+                0) {
+                log_warn("failed to set epoll_loop thread to cpu %d", last_cpu);
+            } else {
+                log_info("epoll_loop thread set to cpu %d", last_cpu);
+            }
+        } else {
+            log_warn("No available CPU other than CPU0");
+        }
+    } else {
+        log_warn("failed to get cpu affinity: %d", errno);
+    }
     if (epoll_fd >= 0)
         return 0;
     else {
