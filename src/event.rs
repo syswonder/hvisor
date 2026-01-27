@@ -19,8 +19,8 @@ use crate::{
     consts::{
         IPI_EVENT_CLEAR_INJECT_IRQ, IPI_EVENT_SEND_IPI, IPI_EVENT_UPDATE_HART_LINE, MAX_CPU_NUM,
     },
+    cpu_data::this_cpu_data,
     device::{irqchip::inject_irq, virtio_trampoline::handle_virtio_irq},
-    percpu::this_cpu_data,
     platform::IRQ_WAKEUP_VIRTIO_DEVICE,
 };
 use alloc::{collections::VecDeque, vec::Vec};
@@ -93,6 +93,7 @@ pub fn check_events() -> bool {
         }
         Some(IPI_EVENT_SHUTDOWN) => {
             cpu_data.arch_cpu.idle();
+            false
         }
         Some(IPI_EVENT_VIRTIO_INJECT_IRQ) => {
             handle_virtio_irq();

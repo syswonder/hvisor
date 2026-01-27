@@ -19,6 +19,7 @@
 use crate::arch::cpu::get_target_cpu;
 use crate::config::HvZoneConfig;
 use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, MAX_WAIT_TIMES, PAGE_SIZE};
+use crate::cpu_data::{get_cpu_data, PerCpu};
 use crate::device::virtio_trampoline::{MAX_DEVS, VIRTIO_BRIDGE, VIRTIO_IRQS};
 use crate::error::HvResult;
 use crate::zone::{
