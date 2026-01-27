@@ -108,7 +108,7 @@ hvisor_virtio_device {
 
 ```c
 // 注意要先启动守护进程，再启动各个zones
-./hvisor virtio start virtio_cfg.json &
+nohup ./hvisor virtio start virtio_cfg.json &
 ./hvisor zone start <vm_config.json>
 ```
 
