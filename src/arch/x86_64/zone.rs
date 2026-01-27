@@ -17,10 +17,10 @@
 use crate::{
     arch::{acpi, boot, msr::set_msr_bitmap, pio, pio::set_pio_bitmap, Stage2PageTable},
     config::*,
+    cpu_data::get_cpu_data,
     device::virtio_trampoline::mmio_virtio_handler,
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet},
-    percpu::get_cpu_data,
     platform::MEM_TYPE_RESERVED,
     zone::Zone,
 };

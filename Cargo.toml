@@ -20,6 +20,7 @@ cortex-a = "8.1.1"
 cfg-if = "1.0"
 bitvec = { version="1.0.1", default-features = false, features = ["atomic", "alloc"] }
 heapless = { version = "0.8.0 "}
+percpu = { package = "percpu", version="0.2", features=["arm-el2"]}
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 aarch64-cpu = "9.4.0"
