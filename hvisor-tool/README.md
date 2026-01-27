@@ -108,7 +108,7 @@ On Root Linux, execute the following example commands:
 
 ```c
 // Note: Start the daemon before starting the zones
-./hvisor virtio start virtio_cfg.json &
+nohup ./hvisor virtio start virtio_cfg.json &
 ./hvisor zone start <vm_config.json>
 ```
 
