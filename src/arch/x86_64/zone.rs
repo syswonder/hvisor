@@ -21,7 +21,7 @@ use crate::{
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet},
     pci::pcibar::{BarRegion, BarType},
-    percpu::get_cpu_data,
+    cpu_data::get_cpu_data,
     platform::MEM_TYPE_RESERVED,
     zone::Zone,
 };

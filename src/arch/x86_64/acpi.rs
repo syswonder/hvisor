@@ -18,7 +18,7 @@ use crate::{
     arch::{boot, pci::probe_root_pci_devices},
     config::{HvConfigMemoryRegion, HvZoneConfig},
     error::HvResult,
-    percpu::{this_zone, CpuSet},
+    cpu_data::{this_zone, CpuSet},
 };
 use acpi::{
     fadt::Fadt,

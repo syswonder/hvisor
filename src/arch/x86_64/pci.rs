@@ -21,7 +21,7 @@ use crate::{
         mmio_generic_handler, mmio_handle_access, mmio_perform_access, GuestPhysAddr, MMIOAccess,
     },
     pci::pcibar::BarRegion,
-    percpu::this_zone,
+    cpu_data::this_zone,
     zone::{this_zone_id, Zone},
 };
 use ::acpi::{mcfg::Mcfg, sdt::Signature};

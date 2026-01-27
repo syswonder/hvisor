@@ -19,7 +19,7 @@ use crate::{
     config::{root_zone_config, HvPciConfig, HvZoneConfig, MEM_TYPE_RAM},
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet},
-    percpu::this_zone,
+    cpu_data::this_zone,
     platform::MEM_TYPE_RESERVED,
 };
 use alloc::string::{String, ToString};

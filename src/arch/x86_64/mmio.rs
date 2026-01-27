@@ -24,7 +24,7 @@ use crate::{
         addr::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr},
         MMIOAccess, MMIOHandler,
     },
-    percpu::{this_cpu_data, this_zone},
+    cpu_data::{this_cpu_data, this_zone},
 };
 use alloc::{sync::Arc, vec::Vec};
 use bit_field::BitField;
