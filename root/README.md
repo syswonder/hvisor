@@ -108,11 +108,20 @@ On Root Linux, execute the following example commands:
 
 ```c
 // Note: Start the daemon before starting the zones
-nohup ./hvisor virtio start virtio_cfg.json &
+./hvisor virtio start virtio_cfg.json &
 ./hvisor zone start <vm_config.json>
 ```
 
-The `nohup ... &` part indicates that this command will create a daemon, and its log output will be saved in the `nohup.out` file in the current directory.
+The `&` part indicates that this command will run in the background. Since the Virtio daemon uses `syslog` for logging, use the following commands to view the `hvisor-tool` logs:
+
+*   **For systems with `systemd`:**
+    ```bash
+    journalctl -t hvisor-tool -f
+    ```
+*   **For systems without `systemd` (logs are handled by `rsyslog`):**
+    ```bash
+    tail -f /var/log/syslog | grep hvisor-tool
+    ```
 
 `virtio_cfg.json` is a JSON file that describes the Virtio devices, such as [virtio_cfg.json](./examples/nxp-aarch64/virtio_cfg.json). The example file will perform the following actions:
 
@@ -126,7 +135,7 @@ A Virtio-blk device is created, and `zone1` will communicate with this device vi
 
 3. **Create Virtio-console Device**
 
-A Virtio-console device is created for the main serial port of `zone1`. Root Linux should execute the command `screen /dev/pts/x` to enter this virtual console, where `x` can be found in the `nohup.out` log file.
+A Virtio-console device is created for the main serial port of `zone1`. Root Linux should execute the command `screen /dev/pts/x` to enter this virtual console, where `x` can be found in the system log.
 
 To return to the main console, press the shortcut `ctrl+a+d`. In QEMU, press `ctrl+a ctrl+a+d`. To re-enter the virtual console, execute `screen -r [SID]`, where SID is the process ID of the `screen` session.
 
