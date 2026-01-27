@@ -130,6 +130,8 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 11] = [
         size: 0x2000,
     },
 ];
+
+pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;
 //46-usb2,54-mailbox 64-usb2,87-net,104、105-mmc,116-uart,133、138-i2c,191-spi
 pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] =
     &get_irqs_bitmap(&[46, 54, 64, 65, 75, 76, 78, 87, 104, 105, 116, 133, 138, 191]);

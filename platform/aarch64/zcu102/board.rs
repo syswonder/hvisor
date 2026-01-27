@@ -115,6 +115,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [
     }, // gpio
 ];
 
+pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;
 pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] =
     &get_irqs_bitmap(&[53, 81, 175, 176, 177, 178, 64, 50, 48, 49, 95]);
 // serial-mmc-pmu-pmu-pmu-pmu-(hvisor_virtio_device)-gpio-i2c(ff030000)-i2c(ff020000)-ethernet

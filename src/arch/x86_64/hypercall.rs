@@ -79,7 +79,7 @@ impl<'a> HyperCall<'a> {
                 .0 as *mut u32
         };
         unsafe {
-            (*virtio_irq) = crate::device::virtio_trampoline::IRQ_WAKEUP_VIRTIO_DEVICE as _;
+            (*virtio_irq) = crate::platform::IRQ_WAKEUP_VIRTIO_DEVICE as _;
         };
         HyperCallResult::Ok(0)
     }

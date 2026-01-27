@@ -63,6 +63,9 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
     }, // virtio
 ];
 
+// The irq number used by the hvisor_device for virtio device wakeup.
+pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 0x20;
+
 // Note: all here's irqs are hardware irqs,
 //  only these irq can be transferred to the physical PLIC.
 // For qemu-virt, 32 is pcie pinA, 33 is pcie pinB, 34 is pcie pinC, 35 is pcie pinD, now only use 33,34
