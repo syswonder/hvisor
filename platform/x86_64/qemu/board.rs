@@ -54,7 +54,7 @@ const ROOT_ZONE_UEFI_REGION_ID: usize = 0x3;
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 pub const ROOT_ZONE_CMDLINE: &str =
-    "console=ttyS0 earlyprintk=serial nointremap no_timer_check efi=noruntime pci=pcie_scan_all,lastbus=1 root=/dev/vda rw init=/init\0";
+    "console=tty0 console=ttyS0 earlycon=efifb earlyprintk=serial nointremap no_timer_check efi=noruntime pci=pcie_scan_all,lastbus=1 root=/dev/vda rw init=/sbin/init\0";
 //"console=ttyS0 earlyprintk=serial rdinit=/init nokaslr nointremap\0"; // noapic
 // video=vesafb
 // /lib/systemd/systemd
@@ -111,7 +111,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 10] = [
 const ROOT_ZONE_CMDLINE_ADDR: GuestPhysAddr = 0x9000;
 const ROOT_ZONE_SETUP_ADDR: GuestPhysAddr = 0xa000;
 const ROOT_ZONE_VMLINUX_ENTRY_ADDR: GuestPhysAddr = 0x10_0000;
-const ROOT_ZONE_SCREEN_BASE_ADDR: GuestPhysAddr = 0;
+const ROOT_ZONE_SCREEN_BASE_ADDR: GuestPhysAddr = 0x7000_0000;
 
 pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 0x6;
 pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[0; 32]);

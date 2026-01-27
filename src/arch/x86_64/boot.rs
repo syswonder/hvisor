@@ -18,9 +18,9 @@ use crate::{
     arch::{zone::HvArchZoneConfig, Stage2PageTable},
     config::{root_zone_config, HvConfigMemoryRegion, HvPciConfig, HvZoneConfig, MEM_TYPE_RAM},
     consts::PAGE_SIZE,
+    cpu_data::this_zone,
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet},
-    cpu_data::this_zone,
     platform::MEM_TYPE_RESERVED,
 };
 use alloc::string::{String, ToString};
@@ -104,6 +104,9 @@ static MULTIBOOT_TAGS: Once<MultibootTags> = Once::new();
 const E820_MAX_ENTRIES_ZEROPAGE: usize = 128;
 
 const EFI64_LOADER_SIGNATURE: u32 = 0x34364c45; // EL64
+
+const VIDEO_TYPE_VLFB: u8 = 0x23;
+const VIDEO_TYPE_EFI: u8 = 0x70;
 
 bitflags::bitflags! {
     #[derive(Clone, Copy, Debug)]
@@ -413,7 +416,7 @@ impl BootParams {
         self.screen_info.red_pos = 16;
         self.screen_info.alpha_size = 8;
         self.screen_info.alpha_pos = 24;
-        self.screen_info.orig_video_is_vga = 0x23; // VESA
+        self.screen_info.orig_video_is_vga = VIDEO_TYPE_EFI;
         self.screen_info.capabilities = 0;
         self.vid_mode = 0xffff;
 
