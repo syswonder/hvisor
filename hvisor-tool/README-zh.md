@@ -112,9 +112,18 @@ nohup ./hvisor virtio start virtio_cfg.json &
 ./hvisor zone start <vm_config.json>
 ```
 
-其中`nohup ... &`说明该命令会创建一个守护进程，且该进程的日志输出保存在当前文件夹下的nohup.out文件中。
+其中 `&` 说明该命令会在后台运行。由于 Virtio 守护进程使用 `syslog` 记录日志，使用以下命令查看 `hvisor-tool` 的日志：
 
-`virtio_cfg.json`则是一个描述Virtio设备的JSON文件，例如[virtio_cfg.json](./examples/nxp-aarch64/virtio_cfg.json)。该示例文件会依次执行：
+*   **对于使用 `systemd` 的系统：**
+    ```bash
+    journalctl -t hvisor-tool -f
+    ```
+*   **对于没有 `systemd` 的系统（日志由 `rsyslog` 处理）：**
+    ```bash
+    tail -f /var/log/syslog | grep hvisor-tool
+    ```
+
+`virtio_cfg.json` 则是一个描述Virtio设备的JSON file，例如[virtio_cfg.json](./examples/nxp-aarch64/virtio_cfg.json)。该示例文件会依次执行：
 
 1. 地址空间映射
 
@@ -126,7 +135,7 @@ nohup ./hvisor virtio start virtio_cfg.json &
 
 3. 创建Virtio-console设备
 
-创建一个Virtio-console设备，用于`zone1`主串口的输出。root linux需要执行`screen /dev/pts/x`命令进入该虚拟控制台，其中`x`可通过nohup.out日志文件查看。
+创建一个Virtio-console设备，用于`zone1`主串口的输出。root linux需要执行`screen /dev/pts/x`命令进入该虚拟控制台，其中`x`可通过syslog日志查看。
 
 如要退回到主控制台，按下快捷键`ctrl+a+d`。如果在qemu中，则需要按下`ctrl+a ctrl+a+d`。如要再次进入虚拟控制台，执行`screen -r [SID]`，其中SID为该screen会话的进程ID。
 

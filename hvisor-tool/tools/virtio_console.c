@@ -68,12 +68,6 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
             break;
         }
         len = readv(dev->master_fd, iov, n);
-        if (len > 0) {
-            for (int i = 0; i < len; i++) {
-                log_printf("%c", *(char *)&iov->iov_base[i]);
-            }
-            log_printf("] vq->last_avail_idx is %d\n", vq->last_avail_idx);
-        }
         if (len < 0 && errno == EWOULDBLOCK) {
             log_debug("no more bytes");
             vq->last_avail_idx--;
@@ -158,32 +152,12 @@ static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq) {
     uint16_t idx;
     ssize_t len;
     struct iovec *iov = NULL;
-    static int count = 0;
-    count++;
     if (dev->master_fd <= 0) {
         log_error("Console master fd is not ready");
         return;
     }
 
     n = process_descriptor_chain(vq, &idx, &iov, NULL, 0, false);
-    // if (count % 100 == 0) {
-    //     log_info("console txq: n is %d, data is ", n);
-    //     for (int i=0; i<iov->iov_len; i++)
-    //         log_printf("%c", *(char*)&iov->iov_base[i]);
-    //     log_printf("\n");
-    // }
-
-    for (int i = 0; i < n; i++) {
-        log_printf("RAW:[");
-        for (int j = 0; j < iov[i].iov_len; j++) {
-            char x = *(char *)&iov[i].iov_base[j];
-            if (x == '\t' || x == '\n' || x == '\r') {
-                x = ' ';
-            }
-            log_printf("%c", x);
-        }
-        log_printf("]\n");
-    }
 
     if (n < 1) {
         return;
