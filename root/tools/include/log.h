@@ -38,5 +38,5 @@ void log_set_quiet(bool enable);
 
 void log_log(int level, const char *file, int line, const char *fmt, ...);
 void multithread_log_init();
-void mutithread_log_exit();
+void multithread_log_exit();
 #endif

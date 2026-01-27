@@ -71,4 +71,4 @@ void multithread_log_init() {
     openlog("hvisor-tool", LOG_PID | LOG_NDELAY, LOG_DAEMON);
 }
 
-void mutithread_log_exit() { closelog(); }
+void multithread_log_exit() { closelog(); }
