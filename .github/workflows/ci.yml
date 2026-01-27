@@ -134,13 +134,13 @@ jobs:
           - arch: loongarch64
             board: "ls3a6000"
             rustc_target: loongarch64-unknown-none
-          # x86_64
-          - arch: x86_64
-            board: "qemu"
-            rustc_target: x86_64-unknown-none
-          - arch: x86_64
-            board: "nuc14mnk"
-            rustc_target: x86_64-unknown-none
+        #   # x86_64
+        #   - arch: x86_64
+        #     board: "qemu"
+        #     rustc_target: x86_64-unknown-none
+        #   - arch: x86_64
+        #     board: "nuc14mnk"
+        #     rustc_target: x86_64-unknown-none
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4

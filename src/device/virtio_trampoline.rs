@@ -20,15 +20,15 @@
 #![deny(unused_mut)]
 #![deny(unused)]
 
+#[cfg(not(target_arch = "loongarch64"))]
 use crate::{
-    arch::cpu::{get_target_cpu, this_cpu_id},
-    consts::MAX_WAIT_TIMES,
-    device::irqchip::inject_irq,
-    error::HvResult,
+    arch::cpu::get_target_cpu,
     event::{send_event, IPI_EVENT_WAKEUP_VIRTIO_DEVICE},
     hypercall::SGI_IPI_ID,
-    memory::MMIOAccess,
-    zone::this_zone_id,
+};
+use crate::{
+    arch::cpu::this_cpu_id, consts::MAX_WAIT_TIMES, device::irqchip::inject_irq, error::HvResult,
+    memory::MMIOAccess, zone::this_zone_id,
 };
 use alloc::collections::BTreeMap;
 use core::{
@@ -52,6 +52,7 @@ pub const MAX_DEVS: usize = 8; // Attention: The max virtio-dev number for vm is
 pub const MAX_CPUS: usize = 32;
 pub const MAX_BACKOFF: usize = 1024;
 
+#[cfg(not(target_arch = "loongarch64"))]
 use crate::platform::IRQ_WAKEUP_VIRTIO_DEVICE;
 // #[cfg(all(not(target_arch = "riscv64"), not(target_arch = "x86_64")))]
 // pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;
@@ -69,6 +70,12 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
         trace!("notify !!!, cpu id is {}", cpu_id);
     }
     mmio.address += base;
+    // Ensure read old_cfg_flag before push_req
+    let old_cfg_flag = VIRTIO_BRIDGE.cfg_flag(cpu_id);
+    fence(Ordering::Acquire);
+
+    // Try to push req to req_list (in VirtioBridge critical area)
+    // To avoid concurrent access to req_list, hvisor should lock VIRTIO_BRIDGE's req_list related part (here use req_agent)
     let mut backoff = 1;
     let mut req_agent = VIRTIO_BRIDGE.req_agent();
     while req_agent.is_full() {
@@ -96,28 +103,17 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     req_agent.push_req(hreq);
     drop(req_agent);
 
-    // Due to cfg_flag and cfg_value are per-cpu, so there is no need to lock them.
-    let old_cfg_flag = VIRTIO_BRIDGE.cfg_flag(cpu_id);
+    #[cfg(not(target_arch = "loongarch64"))]
+    let mut is_ipi_sent = false;
+    // If backend is sleep, hvisor needs to send ipi to wake it up.
+    #[cfg(not(target_arch = "loongarch64"))]
+    check_need_wakeup_and_send_ipi(&mut is_ipi_sent);
+
     let mut count: usize = 0;
-    let mut ipi_sent = false;
     // if it is cfg request, current cpu should be blocked until gets the result
     if need_interrupt == 0 {
-        loop {
-            // If backend is sleep, hvisor needs to send ipi to wake it up.
-            #[cfg(not(target_arch = "loongarch64"))]
-            if !ipi_sent && VIRTIO_BRIDGE.need_wakeup() {
-                debug!("need wakeup (recheck), sending ipi to wake up virtio device");
-                send_event(
-                    get_target_cpu(IRQ_WAKEUP_VIRTIO_DEVICE, 0),
-                    SGI_IPI_ID as _,
-                    IPI_EVENT_WAKEUP_VIRTIO_DEVICE,
-                );
-                ipi_sent = true;
-            }
-            // when virtio backend finish the req, it will add 1 to cfg_flags[cpu_id].
-            if VIRTIO_BRIDGE.is_cfg_updated(cpu_id, old_cfg_flag) {
-                break;
-            }
+        // when virtio backend finish the req, it will add 1 to cfg_flags[cpu_id].
+        while !VIRTIO_BRIDGE.is_cfg_updated(cpu_id, old_cfg_flag) {
             count += 1;
             if count == MAX_WAIT_TIMES {
                 warn!(
@@ -132,6 +128,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
                 );
                 count = 0;
             }
+            // check_need_wakeup_and_send_ipi(&mut is_ipi_sent);
         }
         if !mmio.is_write {
             // ensure cfg value is right.
@@ -141,6 +138,19 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     }
     // debug!("non root returns");
     Ok(())
+}
+
+#[cfg(not(target_arch = "loongarch64"))]
+pub fn check_need_wakeup_and_send_ipi(is_send_ipi: &mut bool) {
+    if !(*is_send_ipi) && VIRTIO_BRIDGE.need_wakeup() {
+        debug!("need wakeup (recheck), sending ipi to wake up virtio device");
+        send_event(
+            get_target_cpu(IRQ_WAKEUP_VIRTIO_DEVICE, 0),
+            SGI_IPI_ID as _,
+            IPI_EVENT_WAKEUP_VIRTIO_DEVICE,
+        );
+        *is_send_ipi = true;
+    }
 }
 
 /// When virtio req type is notify, root zone will send sgi to non root, \
@@ -228,6 +238,7 @@ impl VirtioBridgeController {
         self.cfg_values()[cpu_id].get()
     }
 
+    #[allow(unused)]
     pub fn need_wakeup(&self) -> bool {
         let base = self.base_address.load(Ordering::Relaxed);
         let need_wakeup = unsafe { (&*(base as *const VirtioBridge)).need_wakeup.get() };
