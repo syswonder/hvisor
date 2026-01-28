@@ -20,8 +20,6 @@ use crate::device::irqchip::plic::{inject_irq, plic_get_hwirq};
 use crate::event::check_events;
 use crate::memory::GuestPhysAddr;
 use crate::memory::{mmio_handle_access, MMIOAccess};
-use crate::memory::{GuestPhysAddr, HostPhysAddr};
-use crate::platform::__board::*;
 use core::arch::{asm, global_asm};
 use riscv::register::stvec::TrapMode;
 use riscv::register::{sie, stvec};
