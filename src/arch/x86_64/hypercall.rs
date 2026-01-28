@@ -17,9 +17,9 @@
 use crate::{
     arch::cpu::this_cpu_id,
     config::CONFIG_MAGIC_VERSION,
+    cpu_data::this_zone,
     device::virtio_trampoline::MAX_DEVS,
     hypercall::{HyperCall, HyperCallResult},
-    percpu::this_zone,
     zone::{Zone, ZoneInfo},
 };
 use spin::RwLock;

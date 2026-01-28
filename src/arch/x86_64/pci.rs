@@ -16,11 +16,11 @@
 
 use crate::{
     arch::{acpi, idt, mmio::MMIoDevice, pio::get_pio_bitmap, zone::HvArchZoneConfig},
+    cpu_data::this_zone,
     error::HvResult,
     memory::{
         mmio_generic_handler, mmio_handle_access, mmio_perform_access, GuestPhysAddr, MMIOAccess,
     },
-    percpu::this_zone,
     zone::{this_zone_id, Zone},
 };
 use ::acpi::{mcfg::Mcfg, sdt::Signature};
