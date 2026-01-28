@@ -15,11 +15,9 @@
 //
 use crate::{
     config::*,
-    cpu_data::get_cpu_data,
     device::virtio_trampoline::mmio_virtio_handler,
     error::HvResult,
-    memory::{addr::align_up, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet},
-    pci::pcibar::BarRegion,
+    memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion},
     zone::Zone,
 };
 impl Zone {
