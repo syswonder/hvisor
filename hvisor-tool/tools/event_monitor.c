@@ -84,9 +84,10 @@ int initialize_event_monitor() {
     log_debug("create epoll_fd %d", epoll_fd);
     pthread_create(&emonitor_tid, NULL, epoll_loop, NULL);
     cpu_set_t cpuset;
+    CPU_ZERO(&cpuset);
     if (sched_getaffinity(0, sizeof(cpu_set_t), &cpuset) == 0) {
         int last_cpu = -1;
-        for (int i = CPU_SETSIZE - 1; i >= 1; i++) {
+        for (int i = CPU_SETSIZE - 1; i >= 1; i--) {
             if (CPU_ISSET(i, &cpuset)) {
                 last_cpu = i;
                 break;
