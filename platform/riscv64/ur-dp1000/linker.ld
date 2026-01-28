@@ -1,6 +1,6 @@
 ENTRY(arch_entry)
 BASE_ADDRESS = 0x80200000;
-CPU_NUM = 4;
+CPU_NUM = 8;
 
 
 SECTIONS
