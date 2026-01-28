@@ -13,10 +13,10 @@
 //
 // Authors:
 //
+#![allow(dead_code)]
 use crate::{
-    arch::mm::new_s2_memory_set,
     consts::{MAX_ZONE_NUM, PAGE_SIZE},
-    memory::{Frame, GuestPhysAddr, MemFlags, MemoryRegion, MemorySet, PhysAddr},
+    memory::{Frame, PhysAddr},
 };
 use aarch64_cpu::registers::{Readable, Writeable};
 use alloc::vec::Vec;
@@ -25,8 +25,6 @@ use tock_registers::{
     register_structs,
     registers::{ReadOnly, ReadWrite},
 };
-
-use super::Stage2PageTable;
 
 #[allow(dead_code)]
 const SMMU_BASE_ADDR: PhysAddr = 0x09050000;
@@ -530,7 +528,14 @@ impl Smmuv3 {
 
 static SMMUV3: spin::Once<Mutex<Smmuv3>> = spin::Once::new();
 
-/// smmuv3 init
+/// iommu feature is disabled.
+#[cfg(not(feature = "iommu"))]
+pub fn iommu_init() {
+    info!("aarch64: iommu_init: do nothing now");
+}
+
+/// smmuv3 init (enabled)
+#[cfg(feature = "iommu")]
 pub fn iommu_init() {
     info!("Smmuv3 init...");
     SMMUV3.call_once(|| Mutex::new(Smmuv3::new()));

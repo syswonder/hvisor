@@ -12,70 +12,103 @@
 //      https://www.syswonder.org
 //
 // Authors:
+//      Jingyu Liu <liujingyu24s@ict.ac.cn>
 //
-use crate::clear_bss;
-use crate::consts::PER_CPU_SIZE;
-#[no_mangle]
-#[link_section = ".data"]
-pub static mut CPU_BSS_LOCK: u32 = 1;
 
-#[no_mangle]
+use crate::consts::PER_CPU_SIZE;
+use crate::platform::BOARD_HARTID_MAP;
+use crate::platform::BOARD_NCPUS;
+
+extern "C" {
+    fn __core_end();
+    fn sbss();
+    fn ebss();
+}
+
 #[link_section = ".data"]
-pub static mut ENTER_CPU: u32 = u32::MAX; // the first entered cpuid will be written.
+static mut CLEAR_BSS_DONE: usize = 0;
+
+#[link_section = ".data"]
+static mut ENTER_CPU: usize = usize::MAX; // i.e., -1
 
 #[naked]
 #[no_mangle]
 #[link_section = ".text.entry"]
 pub unsafe extern "C" fn arch_entry() -> i32 {
-    //a0=cpuid,a1=dtb addr
+    // a0=hart_id, a1=dtb_addr
+    // Note: hart_id may not be continuous, we should map it to continuous cpu_id.
     core::arch::asm!(
         "
-        la t0, __core_end        // t0 = core_end
-        li t1, {per_cpu_size}    // t1 = per_cpu_size
-        mul t2, a0, t1           // t2 = cpuid * per_cpu_size
-        add t2, t1, t2           // t2 = cpuid * per_cpu_size+per_cpu_size
-        add sp, t0, t2           // sp = core_end + cpuid * per_cpu_size + per_cpu_size
-
-        # The first entered CPU will be stored in ENTER_CPU.
-        # And the first CPU will clear the bss.
-
-        la      t0, ENTER_CPU     # t0 = &ENTER_CPU
-        la      t3, CPU_BSS_LOCK
-        li      t1, -1            # t1 = initial expected value (-1)
-        amoswap.w.aq t2, a0, (t0) # t2 = old value; swap a0(cpuid) into ENTER_CPU
-        bne     t2, t1, 2f        # if old != -1, someone else already wrote
-
-    0:
-        la    a3, sbss           // a3 = bss's start addr
-        la    a4, ebss           // a4 = bss's end addr
+        // ================================================
+        // Step1: Map hart_id to cpu_id, store cpu_id in a0
+        // ================================================
+        la t0, {board_hartid_map}      // t0 = &BOARD_HARTID_MAP
+        li t1, {num_cpus}              // t1 = num_cpus
+        li t2, 0                       // t2 = 0
+    0: 
+        ld t3, 0(t0)                   // t3 = BOARD_HARTID_MAP[t2]
+        beq a0, t3, 1f                 // if hartid == BOARD_HARTID_MAP[t2], found
+        addi t2, t2, 1                 // t2++
+        addi t0, t0, 8                 // t0 += sizeof(usize)
+        bltu t2, t1, 0b                // if t2 < num_cpus, continue
+        j .                            // not found, hang
     1:
-        blt   a4, a3, 2f         // first entered cpu clear bss
+        mv a0, t2                      // store logical cpu_id in a0
+
+        // ===================================
+        // Step2: Prepare stack used by hvisor 
+        // ===================================
+        la t0, {__core_end}            // t0 = core_end
+        li t1, {per_cpu_size}          // t1 = per_cpu_size
+        mul t2, a0, t1                 // t2 = cpu_id * per_cpu_size
+        add t2, t1, t2                 // t2 = cpu_id * per_cpu_size + per_cpu_size
+        add sp, t0, t2                 // sp = core_end + cpu_id * per_cpu_size + per_cpu_size
+
+        // ==================================================
+        // Step3: Record the master CPU (first entered hart)
+        // ==================================================
+        la      t0, {enter_cpu}        // t0 = &ENTER_CPU
+        la      t3, {clear_bss_done}   // t3 = &CLEAR_BSS_DONE
+        li      t1, -1                 // t1 = -1
+        amoswap.w t2, a0, (t0)         // t2 = ENTER_CPU; ENTER_CPU = a0 (atomic)
+        bne     t2, t1, 5f             // only master cpu can get -1
+
+        // ===================================
+        // Step4: Master CPU clear bss section
+        // ===================================
+    2:
+        la    a3, {sbss}              // a3 = bss's start addr
+        la    a4, {ebss}              // a4 = bss's end addr
+    3:
+        bgeu  a3, a4, 4f              // master cpu clear bss segment
         sb    zero, 0(a3)
         addi  a3, a3, 1
-        j     1b
-    2:
-        fence w, w
-        sw    zero, 0(t3)        // clear bss done
-        j     4f
-    3:  
-        lw    t4, 0(t3)          // wait for ENTER_CPU to clear bss
-        bnez  t4, 3b
-        fence r, rw
-
+        j     3b
     4:
-        # All CPUs could see the bss cleared.
-        call {rust_main}         // a0, a1, sp are certain values
+        li    t4, 1
+        fence rw, w
+        sd    t4, 0(t3)               // Master cpu: clear bss done
+        j     6f
+    5:    
+        ld    t6, 0(t3)               // Secondary cpus: wait for master cpu to clear bss
+        fence r, rw
+        beq   t6, zero, 5b
+    6:
+
+        // ========================================================================================
+        // Step5: Jump to rust, with a0=cpu_id, a1=dtb_addr, sp=stack_addr, and bss segment cleared
+        // ========================================================================================
+        call {rust_main}
         ",
         rust_main = sym crate::rust_main,
-        per_cpu_size=const PER_CPU_SIZE,
+        __core_end = sym __core_end,
+        sbss = sym sbss,
+        ebss = sym ebss,
+        enter_cpu = sym ENTER_CPU,
+        clear_bss_done = sym CLEAR_BSS_DONE,
+        board_hartid_map = sym BOARD_HARTID_MAP,
+        per_cpu_size = const PER_CPU_SIZE,
+        num_cpus = const BOARD_NCPUS,
         options(noreturn),
     );
 }
-
-// global_asm!("
-//     .section \".rootcfg\", \"a\"
-//     .incbin \"imgs/config/qemu-riscv64.zone\"
-
-//     // .section \".nrcfg1\", \"a\"
-//     // .incbin \"imgs/config/qemu-arm64-linux-demo.zone\"
-// ");

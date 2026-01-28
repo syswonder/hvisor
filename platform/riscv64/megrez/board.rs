@@ -19,8 +19,21 @@ use crate::{arch::zone::HvArchZoneConfig, config::*};
 pub const BOARD_NAME: &str = "milkv-megrez";
 
 pub const BOARD_NCPUS: usize = 4;
+#[rustfmt::skip]
+pub static BOARD_HARTID_MAP: [usize; BOARD_NCPUS] = [
+    0x0,            // core0   \
+    0x1,            // core1    | -> cluster0 -> CPU
+    0x2,            // core2    |
+    0x3,            // core3   / 
+];
+
+pub const TIMEBASE_FREQ: u64 = 0xf4240; // 1MHz
+
 pub const PLIC_BASE: usize = 0xc000000;
+pub const PLIC_SIZE: usize = 0x4000000;
 pub const BOARD_PLIC_INTERRUPTS_NUM: usize = 1023; // except irq 0
+pub const NUM_CONTEXTS_PER_HART: usize = 2; // M-mode、S-mode
+
 pub const SIFIVE_CCACHE_BASE: usize = 0x2010000; // SiFive composable cache controller
 pub const SIFIVE_CCACHE_SIZE: usize = 0x4000; // 16KB
 
@@ -186,6 +199,8 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 10] = [
        // }, // mmc@50450000
 ];
 
+pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 0x20;
+
 // Note: all here's irqs are hardware irqs,
 //  only these irq can be transferred to the physical PLIC.
 pub const HW_IRQS: [u32; 8] = [
@@ -198,15 +213,15 @@ pub const HW_IRQS: [u32; 8] = [
 ];
 
 // irqs belong to the root zone.
-pub const ROOT_ZONE_IRQS: [u32; 3] = [
+pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[
     0x51, // mmc@0x50460000
     0x64, // serial@0x50900000
     0x3d, // ethernet@50400000
-];
+]);
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
-    plic_base: 0xc000000,
-    plic_size: 0x4000000,
-    aplic_base: 0xd000000,
-    aplic_size: 0x8000,
+    plic_base: PLIC_BASE,
+    plic_size: PLIC_SIZE,
+    aplic_base: 0x0,
+    aplic_size: 0x0,
 };

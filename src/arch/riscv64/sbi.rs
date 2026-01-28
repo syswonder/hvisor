@@ -16,12 +16,13 @@
 //! SBI call wrappers
 
 use super::cpu::ArchCpu;
+use crate::arch::cpu::hartid_to_cpuid;
 use crate::arch::csr::*;
 use crate::consts::IPI_EVENT_SEND_IPI;
+use crate::cpu_data::{get_cpu_data, this_cpu_data};
 use crate::event::{send_event, IPI_EVENT_WAKEUP};
 use crate::hypercall::HyperCall;
-use crate::percpu::{get_cpu_data, this_cpu_data};
-use core::sync::atomic::{self, Ordering};
+use core::sync::atomic;
 use riscv::register::sie;
 use riscv_h::register::hvip;
 use sbi_rt::{HartMask, SbiRet};
@@ -91,18 +92,25 @@ pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
         EID_HVISOR => {
             sbi_ret = sbi_hvisor_handler(current_cpu);
         }
+        // Note: hvisor don't suggest to use Legacy Extension.
+        // But for compatibility, we still support some legacy SBI calls.
         // Legacy::Console putchar (usually used), temporily don't support other legacy extensions.
         legacy::LEGACY_CONSOLE_PUTCHAR => {
             sbi_ret = SbiRet {
+                #[allow(deprecated)]
                 error: sbi_rt::legacy::console_putchar(current_cpu.x[10] as _),
                 value: 0,
             };
         }
         legacy::LEGACY_CONSOLE_GETCHAR => {
             sbi_ret = SbiRet {
+                #[allow(deprecated)]
                 error: sbi_rt::legacy::console_getchar(),
                 value: 0,
             };
+        }
+        legacy::LEGACY_SET_TIMER => {
+            sbi_ret = sbi_time_handler(time::SET_TIMER, current_cpu);
         }
         _ => {
             // Pass through SBI call
@@ -114,8 +122,16 @@ pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
         }
     }
     // Write the return value back to the current_cpu
-    current_cpu.x[10] = sbi_ret.error as usize;
-    current_cpu.x[11] = sbi_ret.value as usize;
+    // Note: for legacy SBI extensions, nothing is returned in a1 register.
+    // For other SBI extensions, a0 is error code, a1 is return value.
+    if eid > 0xF {
+        // Legacy extensions are 0x0 ~ 0xF
+        current_cpu.x[10] = sbi_ret.error as usize;
+        current_cpu.x[11] = sbi_ret.value as usize;
+    } else {
+        // This SBI call returns 0 upon success or an implementation specific negative error code.
+        current_cpu.x[10] = sbi_ret.error as usize;
+    }
 }
 
 /// Handle SBI Base Extension calls.
@@ -148,11 +164,17 @@ pub fn sbi_base_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
                 sbi_ret.value = ext_id;
             }
         }
-        base::GET_MVENDORID | base::GET_MARCHID | base::GET_MIMPID => {
+        base::GET_MVENDORID => {
             // Return a value that is legal for the mvendorid CSR and 0 is always a legal value for this CSR.
+            sbi_ret.value = sbi_rt::get_mvendorid();
+        }
+        base::GET_MARCHID => {
             // Return a value that is legal for the marchid CSR and 0 is always a legal value for this CSR.
+            sbi_ret.value = sbi_rt::get_marchid();
+        }
+        base::GET_MIMPID => {
             // Return a value that is legal for the mimpid CSR and 0 is always a legal value for this CSR.
-            sbi_ret.value = 0;
+            sbi_ret.value = sbi_rt::get_mimpid();
         }
         _ => {
             sbi_ret.error = RET_ERR_NOT_SUPPORTED;
@@ -192,6 +214,7 @@ pub fn sbi_time_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
 }
 
 #[allow(unused)]
+#[allow(non_camel_case_types)]
 #[derive(Debug, PartialEq)]
 pub enum HSM_STATUS {
     STARTED,
@@ -243,7 +266,7 @@ pub fn sbi_hsm_start_handler(current_cpu: &mut ArchCpu) -> SbiRet {
         error: RET_SUCCESS,
         value: 0,
     };
-    let cpuid = current_cpu.x[10]; // In hvisor, it is physical cpu id.
+    let cpuid = hartid_to_cpuid(current_cpu.x[10]); // convert to hvisor's logical cpuid
     let start_addr = current_cpu.x[11];
     let opaque = current_cpu.x[12];
     if cpuid == current_cpu.cpuid {
@@ -285,11 +308,11 @@ pub fn sbi_ipi_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
     let hart_mask = current_cpu.x[10];
     let hart_mask_base = current_cpu.x[11];
     let hart_mask_bits = HartMask::from_mask_base(hart_mask, hart_mask_base);
-    for cpu_id in 0..64 {
+    for hart_id in 0..64 {
         // hart_mask is 64 bits
-        if hart_mask_bits.has_bit(cpu_id) {
+        if hart_mask_bits.has_bit(hart_id) {
             // the second parameter is ignored is riscv64.
-            send_event(cpu_id, 0, IPI_EVENT_SEND_IPI);
+            send_event(hartid_to_cpuid(hart_id), 0, IPI_EVENT_SEND_IPI);
         }
     }
     SbiRet {

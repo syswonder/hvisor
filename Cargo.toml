@@ -20,6 +20,7 @@ cortex-a = "8.1.1"
 cfg-if = "1.0"
 bitvec = { version="1.0.1", default-features = false, features = ["atomic", "alloc"] }
 heapless = { version = "0.8.0 "}
+percpu = { package = "percpu", version="0.2", features=["arm-el2"]}
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 aarch64-cpu = "9.4.0"
@@ -43,11 +44,20 @@ x86_64 = "=0.14.10"
 x2apic = "=0.4.3"
 raw-cpuid = "=10.7.0"
 acpi = "=5.2.0"
+uguid = "=2.2.0"
+uefi-raw = "=0.9.0"
 
 [features]
 ############# general ##############
 iommu = [] # supported by: aarch64
 pci = [] # supported by: aarch64, loongarch64
+print_timestamp = [] # print timestamp when logging
+
+############# PCIe access mechanism ##############
+ecam_pcie = [] # Standard ECAM mechanism (default for most platforms)
+dwc_pcie = [] # DesignWare PCIe Core mechanism (CFG0/CFG1, used by RK3568)
+loongarch64_pcie = [] # LoongArch PCIe mechanism (used by LoongArch platforms)
+no_pcie_bar_realloc = []
 
 ############# aarch64 ##############
 # irqchip driver
@@ -66,6 +76,7 @@ uart16550a = []
 ############## riscv64 #############
 # irqchip driver
 plic = []
+dp1000_plic = []
 aia = []
 aclint = []
 # extensions
@@ -84,7 +95,7 @@ loongson_3a6000 = []
 
 ############# x86_64 ###############
 graphics = []
-
+split_screen = []
 
 [profile.dev]
 # panic = "abort" # avoid cargo test failure, this is a bug of cargo

@@ -6,9 +6,9 @@
     "memory_regions": [
         {
             "type": "ram",
-            "physical_start": "0x83000000",
-            "virtual_start":  "0x83000000",
-            "size": "0x0C000000"
+            "physical_start": "0x85000000",
+            "virtual_start":  "0x85000000",
+            "size": "0x0A000000"
         },
         {
             "type": "io",
@@ -23,20 +23,20 @@
             "size": "0x1000"
         }
     ],
-    "interrupts": [6, 7],
+    "interrupts": [6, 7, 34],
     "ivc_configs": [],
     "kernel_filepath": "./Image",
     "dtb_filepath": "./zone1-linux.dtb",
-    "kernel_load_paddr": "0x84000000",
-    "dtb_load_paddr":   "0x83000000",
-    "entry_point":      "0x84000000",
+    "kernel_load_paddr": "0x86000000",
+    "dtb_load_paddr": "0x85000000",
+    "entry_point": "0x86000000",
     "arch_config": {
         "plic_base": "0xc000000",
         "plic_size": "0x4000000",
-        "aplic_base": "0xd000000",
-        "aplic_size": "0x8000"
+        "aplic_base": "0x0",
+        "aplic_size": "0x0"
     },
-    "pci_config": {
+    "pci_config": [{
         "ecam_base": "0x30000000",
         "ecam_size": "0x10000000",
         "io_base": "0x3000000",
@@ -47,8 +47,26 @@
         "pci_mem32_base": "0x40000000",
         "mem64_base": "0x400000000",
         "mem64_size": "0x400000000",
-        "pci_mem64_base": "0x400000000"
-    },
+        "pci_mem64_base": "0x400000000",
+        "bus_range_begin": "0x0",
+        "bus_range_end": "0x1f",
+        "domain": "0x0"
+    }],
     "num_pci_devs": 2,
-    "alloc_pci_devs": [0, 16]
+    "alloc_pci_devs": [
+          {
+            "domain": "0x0",
+            "bus": "0x0",
+            "device": "0x0",
+            "function": "0x0",
+            "dev_type": "0"
+        },
+        {
+            "domain": "0x0",
+            "bus": "0x0",
+            "device": "0x2",
+            "function": "0x0",
+            "dev_type": "0"
+        }
+    ]
 }

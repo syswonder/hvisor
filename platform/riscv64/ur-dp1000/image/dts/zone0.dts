@@ -1,0 +1,275 @@
+/dts-v1/;
+
+/ {
+	#address-cells = <0x02>;
+	#size-cells = <0x02>;
+	compatible = "ultrarisc,dp1000";
+	model = "ultrarisc,dp1000";
+
+	chosen {
+		bootargs = "earlycon=sbi console=tty0 console=ttyS0,115200n8";
+		stdout-path = "/soc/serial@20300000";
+	};
+
+	cpus {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+		timebase-frequency = <10000000>;
+
+    	cpu0: cpu@0 {
+			device_type = "cpu";
+			reg = <0x00>;
+			status = "okay";
+			compatible = "riscv";
+			riscv,isa = "rv64imafdcb";
+			mmu-type = "riscv,sv48";
+			clock-frequency = <2000000000>;
+			cpu0_intc:interrupt-controller {
+				#address-cells = <0x01>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+				#interrupt-cells = <0x01>;
+			};
+		};
+	    cpu1: cpu@1 {
+			device_type = "cpu";
+			reg = <0x1>;
+			status = "okay";
+			compatible = "riscv";
+			riscv,isa = "rv64imafdcb";
+			mmu-type = "riscv,sv48";
+			clock-frequency = <2000000000>;
+			cpu1_intc:interrupt-controller {
+				#address-cells = <0x01>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+				#interrupt-cells = <0x01>;
+			};
+		};
+		//cpu2: cpu@2 {
+		//	device_type = "cpu";
+		//	reg = <0x2>;
+		//	status = "okay";
+		//	compatible = "riscv";
+		//	riscv,isa = "rv64imafdcb";
+		//	mmu-type = "riscv,sv48";
+		//	clock-frequency = <2000000000>;
+		//	cpu2_intc:interrupt-controller {
+		//		#address-cells = <0x01>;
+		//		interrupt-controller;
+		//		compatible = "riscv,cpu-intc";
+		//		#interrupt-cells = <0x01>;
+		//	};
+		//};
+		//cpu3: cpu@3 {
+		//	device_type = "cpu";
+		//	reg = <0x3>;
+		//	status = "okay";
+		//	compatible = "riscv";
+		//	riscv,isa = "rv64imafdcb";
+		//	mmu-type = "riscv,sv48";
+		//	clock-frequency = <2000000000>;
+		//	cpu3_intc:interrupt-controller {
+		//		#address-cells = <0x01>;
+		//		interrupt-controller;
+		//		compatible = "riscv,cpu-intc";
+		//		#interrupt-cells = <0x01>;
+		//	};
+		//};
+	};
+
+	memory@80000000 {
+		device_type = "memory";
+		reg = <0x00 0x80000000 0x00 0x40000000>;
+	};
+
+    reserved-memory {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+
+        // 0x8000_0000 - 0x8500_0000 is reserverd for low-level software
+		opensbi@80000000 {
+			no-map;
+			reg = <0x00 0x80000000 0x00 0x00200000>;
+		};
+		hvisor@80200000 {
+			no-map;
+			reg = <0x00 0x80200000 0x00 0x04E00000>;
+		};
+
+        // zone0's dtb is located here
+		dtbfile@8f000000 {
+			no-map;
+			reg = <0x00 0x8f000000 0x00 0x01000000>;
+		};
+
+        // reserved for zonex's pcie msi (needs DMA32 mem)
+		pcimsi@c0000000 {
+			no-map;
+			reg = <0x00 0xc0000000 0x00 0x40000000>;
+		};
+
+        // non-root area, top 30 GB
+        //nonroot@100000000 {
+		//	no-map;
+		//	reg = <0x01 0x00 0x07 0x80000000>;
+		//};
+	};
+
+	soc {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		compatible = "simple-bus";
+		ranges;
+
+		//clocks {
+		//	compatible = "simple-bus";
+		//	u-boot,dm-pre-reloc;
+		//	device_clk: device_clk {
+		//		compatible = "fixed-clock";
+		//		clock-frequency = <62500000>;
+		//		#clock-cells = <0>;
+		//	};
+		//	csr_clk: csr_clk {
+		//		compatible = "fixed-clock";
+		//		clock-frequency = <250000000>;
+		//		#clock-cells = <0>;
+		//	};
+		//};
+
+		plic: plic@9000000 {
+			#interrupt-cells = <1>;
+			#address-cells = <0>;
+			phandle = <0x01>;
+			compatible = "sifive,plic-1.0.0";
+			interrupt-controller;
+			interrupts-extended = <&cpu0_intc 0xffffffff>, <&cpu0_intc 0x9>, <&cpu0_intc 0xffffffff>,
+            <&cpu1_intc 0xffffffff>, <&cpu1_intc 0x9>, <&cpu1_intc 0xffffffff>;
+			reg = <0x00 0x9000000 0x00 0x4000000>;
+			riscv,max-priority = <0x07>;
+			riscv,ndev = <160>;
+		};
+
+		uart0: serial@20300000 {
+			interrupt-parent = <0x01>;
+			interrupts = <17>;
+			clock-frequency = <62500000>;
+			current-speed = <115200>;
+			reg = <0x00 0x20300000 0x00 0x10000>;
+			compatible = "ultrarisc,dp1000-uart","ns16550";
+			reg-offset = <0x0>;
+			reg-shift = <0x02>;
+		};
+
+    	//ethernet1@38000000 {
+		//	clocks = <&csr_clk>;
+		//	clock-names = "stmmaceth";
+		//	compatible = "ultrarisc,dp1000-gmac", "snps,dwmac-5.10a";
+		//	interrupt-parent = <0x01>;
+		//	interrupts = <84>;
+		//	interrupt-names = "macirq";
+		//	reg = <0x00 0x38000000 0x00 0x1000000>;
+		//	local-mac-address = [ff ff ff ff ff ff];
+		//	phy-mode = "rgmii";
+		//	max-speed = <1000>;
+		//	snps,txpbl = <8>;
+		//	snps,rxpbl = <8>;
+		//	phy-handle = <&phy0>;
+		//	mdio {
+		//		#address-cells = <0x01>;
+		//		#size-cells = <0x00>;
+		//		compatible = "snps,dwmac-mdio";
+		//		phy0: phy@0{
+		//			phandle = <0x04>;
+		//			reg = <0x00>;
+		//			status = "okay";
+		//		};
+		//	};
+		//};
+
+		//pcie_x16: pcie@21000000 {
+		//	compatible = "ultrarisc,dw-pcie";
+		//	#address-cells = <3>;
+		//	#size-cells = <2>;
+		//	#interrupt-cells = <1>;
+		//	reg = <0x0 0x21000000 0x0 0x01000000>, /* IP registers */
+		//	      <0x0 0x4fff0000 0x0 0x00010000>; /* Configuration space */
+		//	reg-names = "dbi", "config";
+		//	device_type = "pci";
+		//	dma-coherent;
+		//	bus-range = <0x0 0xff>;
+		//	num-lanes = <16>;
+		//	ranges = <0x81000000  0x0 0x4fbf0000  0x0 0x4fbf0000  0x0 0x00400000>,
+		//		 <0x82000000  0x0 0x40000000  0x0 0x40000000  0x0 0x0fbf0000>,
+		//		 <0xc3000000 0x40 0x00000000 0x40 0x00000000  0xd 0x00000000>;
+		//	max-link-speed = <4>;
+		//	interrupt-parent = <&plic>;
+		//	interrupts = <43>, <44>, <45>, <46>, <47>, <48>;
+		//	interrupt-names = "msi", "inta", "intb", "intc", "intd", "aer";
+		//	interrupt-map-mask = <0x0 0x0 0x0 0x7>;
+		//	interrupt-map = <0x0 0x0 0x0 0x1 &plic 44>,
+		//			<0x0 0x0 0x0 0x2 &plic 45>,
+		//			<0x0 0x0 0x0 0x3 &plic 46>,
+		//			<0x0 0x0 0x0 0x4 &plic 47>;
+		//};
+
+		//pcie_x4a: pcie@23000000 {
+		//	compatible = "ultrarisc,dw-pcie";
+		//	#address-cells = <3>;
+		//	#size-cells = <2>;
+		//	#interrupt-cells = <1>;
+		//	reg = <0x0 0x23000000 0x0 0x01000000>, /* IP registers */
+		//	      <0x0 0x6fff0000 0x0 0x00010000>; /* Configuration space */
+		//	reg-names = "dbi", "config";
+		//	device_type = "pci";
+		//	dma-coherent;
+		//	bus-range = <0x0 0xff>;
+		//	num-lanes = <4>;
+		//	ranges = <0x81000000  0x0 0x6fbf0000  0x0 0x6fbf0000  0x0 0x00400000>,
+		//		 <0x82000000  0x0 0x60000000  0x0 0x60000000  0x0 0x0fbf0000>,
+		//		 <0xc3000000 0x80 0x00000000 0x80 0x00000000  0xd 0x00000000>;
+		//	max-link-speed = <4>;
+		//	interrupt-parent = <&plic>;
+		//	interrupts = <63>, <64>, <65>, <66>, <67>, <68>;
+		//	interrupt-names = "msi", "inta", "intb", "intc", "intd", "aer";
+		//	interrupt-map-mask = <0x0 0x0 0x0 0x7>;
+		//	interrupt-map = <0x0 0x0 0x0 0x1 &plic 64>,
+		//			<0x0 0x0 0x0 0x2 &plic 65>,
+		//			<0x0 0x0 0x0 0x3 &plic 66>,
+		//			<0x0 0x0 0x0 0x4 &plic 67>;
+		//};
+
+		//pcie_x4b: pcie@24000000 {
+		//	compatible = "ultrarisc,dw-pcie";
+		//	#address-cells = <3>;
+		//	#size-cells = <2>;
+		//	#interrupt-cells = <1>;
+		//	reg = <0x0 0x24000000 0x0 0x01000000>, /* IP registers */
+		//	      <0x0 0x7fff0000 0x0 0x00010000>; /* Configuration space */
+		//	reg-names = "dbi", "config";
+		//	device_type = "pci";
+		//	dma-coherent;
+		//	bus-range = <0x0 0xff>;
+		//	num-lanes = <4>;
+		//	ranges = <0x81000000  0x0 0x7fbf0000  0x0 0x7fbf0000 0x0 0x00400000>,
+		//		 <0x82000000  0x0 0x70000000  0x0 0x70000000 0x0 0x0fbf0000>,
+		//		 <0xc3000000 0xc0 0x00000000 0xc0 0x00000000 0xd 0x00000000>;
+		//	max-link-speed = <4>;
+		//	interrupt-parent = <&plic>;
+		//	interrupts = <73>, <74>, <75>, <76>, <77>, <78>;
+		//	interrupt-names = "msi", "inta", "intb", "intc", "intd", "aer";
+		//	interrupt-map-mask = <0x0 0x0 0x0 0x7>;
+		//	interrupt-map = <0x0 0x0 0x0 0x1 &plic 74>,
+		//			<0x0 0x0 0x0 0x2 &plic 75>,
+		//			<0x0 0x0 0x0 0x3 &plic 76>,
+		//			<0x0 0x0 0x0 0x4 &plic 77>;
+		//};
+	};
+
+    hvisor_virtio_device {
+		compatible = "hvisor";
+    	interrupt-parent = <&plic>;
+    	interrupts = <0x20>;
+	};
+};

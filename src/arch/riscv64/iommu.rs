@@ -14,10 +14,12 @@
 // Authors:
 //      ForeverYolo <2572131118@qq.com>
 
+#[allow(unused)]
 pub fn iommu_init() {
     info!("riscv: iommu_init: do nothing now");
 }
 
+#[allow(unused)]
 pub fn iommu_add_device(vmid: usize, sid: usize) {
     info!(
         "riscv: iommu_add_device: do nothing now, vmid: {}, sid: {}",

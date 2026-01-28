@@ -14,15 +14,12 @@
 // Authors:
 //
 use super::cpu::ArchCpu;
-use crate::arch::csr::read_csr;
-use crate::arch::csr::*;
 use crate::arch::sbi::sbi_vs_handler;
-use crate::consts::{IPI_EVENT_SEND_IPI, IPI_EVENT_UPDATE_HART_LINE};
+#[cfg(feature = "plic")]
+use crate::device::irqchip::plic::{inject_irq, plic_get_hwirq};
 use crate::event::check_events;
+use crate::memory::GuestPhysAddr;
 use crate::memory::{mmio_handle_access, MMIOAccess};
-use crate::memory::{GuestPhysAddr, HostPhysAddr};
-use crate::percpu::this_cpu_data;
-use crate::platform::__board::*;
 use core::arch::{asm, global_asm};
 use riscv::register::stvec::TrapMode;
 use riscv::register::{sie, stvec};
@@ -38,6 +35,7 @@ sync_exception_handler=sym sync_exception_handler,
 interrupts_arch_handle=sym interrupts_arch_handle);
 
 #[allow(non_snake_case)]
+#[allow(unused)]
 pub mod ExceptionType {
     pub const ECALL_VU: usize = 8;
     pub const ECALL_VS: usize = 10;
@@ -95,6 +93,7 @@ pub const INS_C_SW: usize = 0xc000; // [15:13] = 0b110, [1:0] = 0b00
 pub const INS_C_LD: usize = 0x6000; // [15:13] = 0b011, [1:0] = 0b00
 pub const INS_C_SD: usize = 0xe000; // [15:13] = 0b111, [1:0] = 0b00
 
+#[allow(unused)]
 pub const INS_RS1_MASK: usize = 0x000f8000;
 pub const INS_RS2_MASK: usize = 0x01f00000;
 pub const INS_RD_MASK: usize = 0x00000f80;
@@ -197,7 +196,7 @@ pub fn ins_ldst_decode(ins: usize) -> (usize, bool, bool, usize) {
                 ins
             );
         }
-        let size = if (ins_is_cld || ins_is_csd) { 8 } else { 4 };
+        let size = if ins_is_cld || ins_is_csd { 8 } else { 4 };
         let is_write = ins_is_csw || ins_is_csd;
         // Decode register number.
         let reg = ((ins >> 2) & 0x7) + 8;
@@ -244,7 +243,7 @@ pub fn guest_page_fault_handler(current_cpu: &mut ArchCpu) {
     // htinst: Hypervisor trap instruction (transformed).
     let mut trap_ins = htinst::read();
     // Default instruction size is 4 bytes.
-    let mut ins_size = 4;
+    let ins_size;
     /*
      * According riscv spec, htinst is one of the following:
      *     1. zero;
@@ -359,6 +358,7 @@ fn hlvxhu(addr: GuestPhysAddr) -> u64 {
 }
 
 /// Decode risc-v instruction, return (inst len, inst).
+#[allow(unused)]
 fn decode_inst(inst: u32) -> (usize, Option<Instruction>) {
     let i1 = inst as u16;
     let len = riscv_decode::instruction_length(i1);
@@ -373,7 +373,7 @@ fn decode_inst(inst: u32) -> (usize, Option<Instruction>) {
 /// Handle interrupts which hvisor receives.
 pub fn interrupts_arch_handle(current_cpu: &mut ArchCpu) {
     trace!("interrupts_arch_handle @CPU{}", current_cpu.cpuid);
-    let trap_code = unsafe { riscv::register::scause::read().code() };
+    let trap_code = riscv::register::scause::read().code();
     match trap_code {
         InterruptType::STI => {
             // Inject timer interrupt to VS.
@@ -398,7 +398,7 @@ pub fn interrupts_arch_handle(current_cpu: &mut ArchCpu) {
 }
 
 /// Handle supervisor timer interrupt.
-pub fn handle_timer_interrupt(current_cpu: &mut ArchCpu) {
+pub fn handle_timer_interrupt(_current_cpu: &mut ArchCpu) {
     unsafe {
         hvip::set_vstip();
         sie::clear_stimer();
@@ -406,7 +406,7 @@ pub fn handle_timer_interrupt(current_cpu: &mut ArchCpu) {
 }
 
 /// Handle supervisor software interrupt.
-pub fn handle_software_interrupt(current_cpu: &mut ArchCpu) {
+pub fn handle_software_interrupt(_current_cpu: &mut ArchCpu) {
     while check_events() {
         // Get next event to handle, it is handled in check_events function.
     }
@@ -416,13 +416,12 @@ pub fn handle_software_interrupt(current_cpu: &mut ArchCpu) {
 }
 
 /// Handle supervisor external interrupt.
-pub fn handle_external_interrupt(current_cpu: &mut ArchCpu) {
+pub fn handle_external_interrupt(_current_cpu: &mut ArchCpu) {
     #[cfg(feature = "plic")]
     {
         // Note: in hvisor, all external interrupts are assigned to VS.
         // 1. claim hw irq.
-        let context_id = 2 * this_cpu_data().id + 1;
-        let irq_id = crate::device::irqchip::plic::host_plic().claim(context_id);
+        let irq_id = plic_get_hwirq();
 
         // If this irq has been claimed, it will be 0.
         if irq_id == 0 {
@@ -430,7 +429,7 @@ pub fn handle_external_interrupt(current_cpu: &mut ArchCpu) {
         }
 
         // 2. inject hw irq to zone.
-        crate::device::irqchip::plic::inject_irq(irq_id as usize, true);
+        inject_irq(irq_id as usize, true);
     }
     #[cfg(feature = "aia")]
     {

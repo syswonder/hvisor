@@ -135,9 +135,9 @@ expect {
 }
 
 expect {
-   "# " {
-      send "bash\r"
-   }
+    -re {\r?\n# } {
+        send "bash\r"
+    }
     timeout {
         exit 1
     }

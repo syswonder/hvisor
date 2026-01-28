@@ -17,11 +17,10 @@
 use crate::{
     arch::{acpi, boot, msr::set_msr_bitmap, pio, pio::set_pio_bitmap, Stage2PageTable},
     config::*,
+    cpu_data::get_cpu_data,
     device::virtio_trampoline::mmio_virtio_handler,
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet},
-    pci::pcibar::{BarRegion, BarType},
-    percpu::get_cpu_data,
     platform::MEM_TYPE_RESERVED,
     zone::Zone,
 };
@@ -55,6 +54,7 @@ pub struct HvArchZoneConfig {
     /// no restriction on start gpa and size, but its type should be MEM_TYPE_RAM as well.
     /// Usually, the DSDT table is large, so the size of this region should be large enough.
     pub acpi_memory_region_id: usize,
+    pub uefi_memory_region_id: usize,
     /// If you want to use a graphical console, set screen_base to a preferred gpa
     /// as the start of the framebuffer. Otherwise, leave it as zero.
     /// No need to add a memory region for the framebuffer,
@@ -96,7 +96,7 @@ impl Zone {
         Ok(())
     }
 
-    pub fn irq_bitmap_init(&mut self, irqs: &[u32]) {}
+    pub fn irq_bitmap_init(&mut self, irqs_bitmap: &[u32]) {}
 
     /// called after cpu_set is initialized
     pub fn arch_zone_pre_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
@@ -118,7 +118,7 @@ impl Zone {
     }
 
     pub fn arch_zone_post_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
-        let mut msix_bar_regions: Vec<BarRegion> = Vec::new();
+        /*let mut msix_bar_regions: Vec<BarRegion> = Vec::new();
         for region in self.pciroot.bar_regions.iter_mut() {
             // check whether this bar is msi-x table
             // if true, use msi-x table handler instead
@@ -142,7 +142,7 @@ impl Zone {
 
         if self.id == 0 {
             self.pci_bars_register(&config.pci_config);
-        }
+        }*/
 
         boot::BootParams::fill(&config, &mut self.gpm);
         acpi::copy_to_guest_memory_region(&config, &self.cpu_set);
@@ -151,7 +151,7 @@ impl Zone {
     }
 }
 
-impl BarRegion {
+/*impl BarRegion {
     pub fn arch_set_bar_region_start(&mut self, cpu_base: usize, pci_base: usize) {
         self.start = cpu_base + self.start - pci_base;
         if self.bar_type != BarType::IO {
@@ -175,4 +175,4 @@ impl BarRegion {
             );
         }
     }
-}
+}*/

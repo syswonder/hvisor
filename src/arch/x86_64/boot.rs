@@ -17,12 +17,13 @@
 use crate::{
     arch::{zone::HvArchZoneConfig, Stage2PageTable},
     config::{root_zone_config, HvPciConfig, HvZoneConfig, MEM_TYPE_RAM},
+    cpu_data::this_zone,
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet},
-    percpu::this_zone,
     platform::MEM_TYPE_RESERVED,
 };
 use alloc::string::{String, ToString};
+use bit_field::BitField;
 use core::{
     arch::{self, global_asm},
     ffi::{c_char, CStr},
@@ -31,6 +32,15 @@ use core::{
 };
 use multiboot_tag::{Modules, MultibootTags};
 use spin::{Mutex, Once};
+use uefi_raw::table::{
+    boot::{MemoryAttribute, MemoryDescriptor, MemoryType},
+    configuration::ConfigurationTable,
+    system::SystemTable,
+    Header, Revision,
+};
+use uguid::{guid, Guid};
+
+const ACPI_20_TABLE_GUID: Guid = guid!("8868E871-E4F1-11D3-BC22-0080C73C8881");
 
 mod multiboot_tag {
     pub const END: u32 = 0;
@@ -92,6 +102,11 @@ static MULTIBOOT_TAGS: Once<MultibootTags> = Once::new();
 
 const E820_MAX_ENTRIES_ZEROPAGE: usize = 128;
 
+const EFI64_LOADER_SIGNATURE: u32 = 0x34364c45; // EL64
+
+const VIDEO_TYPE_VLFB: u8 = 0x23;
+const VIDEO_TYPE_EFI: u8 = 0x70;
+
 bitflags::bitflags! {
     #[derive(Clone, Copy, Debug)]
     /// https://www.kernel.org/doc/html/latest/arch/x86/boot.html
@@ -123,7 +138,9 @@ pub enum E820Type {
 /// The so-called "zeropage"
 pub struct BootParams {
     screen_info: ScreenInfo,
-    pad0: [u8; 0x1a8],
+    pad9: [u8; 0x180],
+    efi_info: EfiInfo,
+    pad0: [u8; 0x8],
     e820_entries: u8,
     pad1: [u8; 0x8],
     setup_sects: u8,
@@ -213,26 +230,29 @@ impl BootParams {
             boot_params.set_screen_info(config, gpm);
         }
 
+        // set efi_info
+        // if (config.zone_id == 0) {
+        boot_params.set_uefi_info(config);
+        // }
+
         Ok(())
     }
 
     fn set_e820_entries(&mut self, config: &HvZoneConfig) {
         let mut index = 0;
         for i in 0..config.memory_regions().len() {
-            let mem_region = config.memory_regions()[i];
+            let mem_region = &config.memory_regions()[i];
             let mut e820_type = E820Type::E820_DEFAULT;
 
             if i == config.arch_config.rsdp_memory_region_id
                 || i == config.arch_config.acpi_memory_region_id
             {
                 e820_type = E820Type::E820_ACPI;
+            } else if i == config.arch_config.uefi_memory_region_id {
+                e820_type = E820Type::E820_RESERVED;
             } else if mem_region.mem_type == MEM_TYPE_RAM {
                 e820_type = E820Type::E820_RAM;
-            } /*
-              else if config.arch_config.initrd_load_gpa != 0
-                    && i == config.arch_config.initrd_memory_region_id
-              {
-              }  */
+            }
 
             if e820_type != E820Type::E820_DEFAULT {
                 self.e820_table[index] = BootE820Entry {
@@ -245,13 +265,59 @@ impl BootParams {
         }
 
         self.e820_table[index] = BootE820Entry {
-            addr: config.pci_config.ecam_base as _,
-            size: config.pci_config.ecam_size as _,
+            addr: config.pci_config[0].ecam_base as _,
+            size: config.pci_config[0].ecam_size as _,
             _type: E820Type::E820_RESERVED,
         };
         index += 1;
 
         self.e820_entries = index as _;
+    }
+
+    fn set_efi_mem_map(&mut self, config: &HvZoneConfig, paddr: usize) -> usize {
+        let mut cnt = 0;
+        let mem_map_cnt = config.memory_regions().len();
+        let mut mem_map = unsafe { paddr as *mut MemoryDescriptor };
+        for i in 0..mem_map_cnt {
+            let mem_region = &config.memory_regions()[i];
+            let mem_desc = unsafe { &mut *mem_map };
+
+            let mut mem_desc_type = MemoryType::RESERVED;
+
+            if i == config.arch_config.rsdp_memory_region_id
+                || i == config.arch_config.acpi_memory_region_id
+            {
+                mem_desc_type = MemoryType::ACPI_RECLAIM;
+            } else if i == config.arch_config.uefi_memory_region_id {
+                mem_desc_type = MemoryType::RUNTIME_SERVICES_DATA;
+            } else if mem_region.mem_type == MEM_TYPE_RAM {
+                mem_desc_type = MemoryType::CONVENTIONAL;
+            }
+
+            if mem_desc_type != MemoryType::RESERVED {
+                *mem_desc = MemoryDescriptor {
+                    ty: mem_desc_type,
+                    phys_start: mem_region.virtual_start,
+                    virt_start: mem_region.virtual_start,
+                    page_count: mem_region.size / (PAGE_SIZE as u64),
+                    att: MemoryAttribute::WRITE_BACK,
+                };
+                cnt += 1;
+                mem_map = mem_map.wrapping_add(1);
+            }
+        }
+
+        let mem_desc = unsafe { &mut *mem_map };
+        *mem_desc = MemoryDescriptor {
+            ty: MemoryType::MMIO,
+            phys_start: config.pci_config[0].ecam_base,
+            virt_start: config.pci_config[0].ecam_base,
+            page_count: config.pci_config[0].ecam_size / (PAGE_SIZE as u64),
+            att: MemoryAttribute::UNCACHEABLE,
+        };
+        cnt += 1;
+
+        cnt
     }
 
     fn set_initrd(&mut self, ramdisk_image: u32, ramdisk_size: u32) {
@@ -260,12 +326,78 @@ impl BootParams {
         info!("initrd size: {}", self.ramdisk_size);
     }
 
+    fn set_uefi_info(&mut self, config: &HvZoneConfig) {
+        self.efi_info.loader_signature = EFI64_LOADER_SIGNATURE;
+
+        let uefi_region = &config.memory_regions()[config.arch_config.uefi_memory_region_id];
+        let mut vaddr = uefi_region.virtual_start as usize;
+        let mut paddr = uefi_region.physical_start as usize;
+
+        // set system table
+        self.efi_info.systab = vaddr.get_bits(0..32) as _;
+        self.efi_info.systab_hi = vaddr.get_bits(32..64) as _;
+        let system_table = unsafe { &mut *(paddr as usize as *mut SystemTable) };
+
+        let system_table_header = Header {
+            signature: SystemTable::SIGNATURE,
+            revision: Revision::EFI_2_90,
+            size: size_of::<SystemTable>() as u32,
+            crc: 0,
+            reserved: 0,
+        };
+
+        // start of the efi memmap
+        vaddr += size_of::<SystemTable>();
+        paddr += size_of::<SystemTable>();
+
+        let mem_desc_cnt = self.set_efi_mem_map(config, paddr);
+        let mem_map_tot_size = size_of::<MemoryDescriptor>() * mem_desc_cnt;
+        self.efi_info.memmap = vaddr.get_bits(0..32) as _;
+        self.efi_info.memmap_hi = vaddr.get_bits(32..64) as _;
+        self.efi_info.memdesc_size = size_of::<MemoryDescriptor>() as _;
+        self.efi_info.memmap_size = mem_map_tot_size as _;
+        self.efi_info.memdesc_version = MemoryDescriptor::VERSION;
+
+        // start of the config table
+        vaddr += size_of::<MemoryDescriptor>() * mem_desc_cnt;
+        paddr += size_of::<MemoryDescriptor>() * mem_desc_cnt;
+
+        const CONFIG_TABLE_ENTRIES: usize = 1;
+        let config_table =
+            unsafe { &mut *(paddr as *mut [ConfigurationTable; CONFIG_TABLE_ENTRIES]) };
+
+        // ACPI_20_TABLE_GUID
+        let rsdp_region = &config.memory_regions()[config.arch_config.rsdp_memory_region_id];
+        config_table[0].vendor_guid = ACPI_20_TABLE_GUID;
+        config_table[0].vendor_table = unsafe { rsdp_region.virtual_start as _ };
+
+        *system_table = SystemTable {
+            header: system_table_header,
+            firmware_vendor: core::ptr::null_mut(),
+            firmware_revision: 0,
+            stdin_handle: core::ptr::null_mut(),
+            stdin: core::ptr::null_mut(),
+            stdout_handle: core::ptr::null_mut(),
+            stdout: core::ptr::null_mut(),
+            stderr_handle: core::ptr::null_mut(),
+            stderr: core::ptr::null_mut(),
+            runtime_services: core::ptr::null_mut(),
+            boot_services: core::ptr::null_mut(),
+            number_of_configuration_table_entries: CONFIG_TABLE_ENTRIES,
+            configuration_table: unsafe { vaddr as *mut ConfigurationTable },
+        };
+    }
+
     fn set_screen_info(&mut self, config: &HvZoneConfig, gpm: &mut MemorySet<Stage2PageTable>) {
         let fb_info = &get_multiboot_tags().framebuffer;
 
         let bytes_per_pixel = (fb_info.bpp as usize) / 8;
         let width = fb_info.width as usize;
+
+        #[cfg(not(feature = "split_screen"))]
         let height = fb_info.height as usize;
+        #[cfg(all(feature = "split_screen"))]
+        let height = (fb_info.height / 2) as usize;
 
         self.screen_info.lfb_base = config.arch_config.screen_base as _;
         self.screen_info.lfb_width = width as _;
@@ -283,7 +415,7 @@ impl BootParams {
         self.screen_info.red_pos = 16;
         self.screen_info.alpha_size = 8;
         self.screen_info.alpha_pos = 24;
-        self.screen_info.orig_video_is_vga = 0x23; // VESA
+        self.screen_info.orig_video_is_vga = VIDEO_TYPE_EFI;
         self.screen_info.capabilities = 0;
         self.vid_mode = 0xffff;
 

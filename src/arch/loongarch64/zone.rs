@@ -26,7 +26,6 @@ use crate::{
         mmio_generic_handler, mmio_perform_access, GuestPhysAddr, HostPhysAddr, MMIOAccess,
         MemFlags, MemoryRegion, MemorySet,
     },
-    pci::pcibar::BarRegion,
     zone::Zone,
     PHY_TO_DMW_UNCACHED,
 };
@@ -117,7 +116,7 @@ impl Zone {
         }
         Ok(())
     }
-    pub fn irq_bitmap_init(&mut self, irqs: &[u32]) {}
+    pub fn irq_bitmap_init(&mut self, irqs_bitmap: &[u32]) {}
 }
 
 pub fn disable_hwi_through() {
@@ -565,8 +564,8 @@ fn handle_extioi_mapping_mmio(mmio: &mut MMIOAccess, base_addr: usize, size: usi
         new_data |= (1 << target_cpu_id);
         let target_write_phyaddr = base_addr + target_ioi_number as usize;
         let target_write_value = new_data as u8;
-        info!(
-            "[[interrupt virtualization]] extioi[{}], node_selection={:#x}, irq_target={:#x}, changed irq routing to cpu {}, value={:#x}",
+        trace!(
+            "extioi[{}], node_selection={:#x}, irq_target={:#x}, changed irq routing to cpu {}, value={:#x}",
             target_ioi_number, target_ioi_node_selection, target_ioi_irq_target, target_cpu_id, target_write_value
         );
         unsafe {
@@ -681,38 +680,14 @@ impl Zone {
             size as _,
             MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
         ))?;
-        self.gpm.delete(vaddr as GuestPhysAddr)
+        self.gpm.delete(vaddr as GuestPhysAddr, size)
     }
 
     pub fn arch_zone_pre_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
-        let vaddr = config.pci_config.ecam_base;
-        let size = config.pci_config.ecam_size;
-        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-            vaddr as GuestPhysAddr,
-            vaddr as HostPhysAddr,
-            size as _,
-            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-        ))?;
-        self.gpm.delete(vaddr as GuestPhysAddr)
+        Ok(())
     }
 
     pub fn arch_zone_post_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
         Ok(())
-    }
-}
-
-impl BarRegion {
-    pub fn arch_set_bar_region_start(&mut self, cpu_base: usize, pci_base: usize) {
-        self.start = crate::memory::addr::align_down(cpu_base + self.start - pci_base);
-    }
-
-    pub fn arch_insert_bar_region(&self, gpm: &mut MemorySet<Stage2PageTable>, zone_id: usize) {
-        gpm.insert(MemoryRegion::new_with_offset_mapper(
-            self.start as GuestPhysAddr,
-            self.start,
-            self.size,
-            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-        ))
-        .ok();
     }
 }

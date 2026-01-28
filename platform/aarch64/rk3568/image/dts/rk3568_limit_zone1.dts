@@ -25,9 +25,9 @@
 		ranges;
 		phandle = <0x142>;
 
-        hvisor@480000 {
+        hvisor@280000 {
 			no-map;
-			reg = <0x00 0x480000 0x00 0x400000>;
+			reg = <0x00 0x280000 0x00 0x400000>;
 		};
     };
 

@@ -19,7 +19,10 @@ use crate::{
         zone::{GicConfig, Gicv3Config, HvArchZoneConfig},
     },
     config::*,
+    pci::vpci_dev::VpciDevType,
 };
+
+use crate::pci_dev;
 
 // [   17.796762]   node   0: [mem 0x0000000000200000-0x000000000047ffff]
 // [   17.797335]   node   0: [mem 0x0000000000480000-0x000000000087ffff]
@@ -169,11 +172,12 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [
     // }
 ];
 
-// pub const ROOT_ZONE_IRQS: [u32; 10] = [39, 64, 235, 237, 309, 312, 360, 365, 429, 455];
-pub const ROOT_ZONE_IRQS: [u32; 29] = [
+pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;
+// pub const ROOT_ZONE_IRQS_BITMAP: [u32; 10] = [39, 64, 235, 237, 309, 312, 360, 365, 429, 455];
+pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[
     39, 41, 42, 43, 45, 46, 64, 120, 121, 235, 237, 247, 248, 250, 251, 252, 265, 266, 309, 312,
     313, 355, 360, 365, 423, 424, 425, 429, 455,
-];
+]);
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     is_aarch32: 0,
@@ -188,6 +192,8 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
 };
 
 pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
+    bus_range_begin: 0x0,
+    bus_range_end: 0x1f,
     ecam_base: 0x4010000000,
     ecam_size: 0x10000000,
     io_base: 0x3eff0000,
@@ -199,8 +205,12 @@ pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
     mem64_base: 0x8000000000,
     mem64_size: 0x8000000000,
     pci_mem64_base: 0x8000000000,
+    domain: 0x0,
 };
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
 
-pub const ROOT_PCI_DEVS: [u64; 2] = [0, 1 << 3];
+pub const ROOT_PCI_DEVS: [HvPciDevConfig; 2] = [
+    pci_dev!(0x0, 0x0, 0x0, 0x0, VpciDevType::Physical),
+    pci_dev!(0x0, 0x0, 0x1, 0x0, VpciDevType::Physical),
+];

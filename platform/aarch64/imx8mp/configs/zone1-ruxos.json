@@ -74,5 +74,5 @@
     },
     "num_pci_devs": 0,
     "alloc_pci_devs": [],
-    "pci_config": {}
+    "pci_config": []
 }

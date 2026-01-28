@@ -52,12 +52,12 @@ mod logging;
 mod arch;
 mod config;
 mod consts;
+mod cpu_data;
 mod device;
 mod event;
 mod hypercall;
 mod memory;
 mod panic;
-mod percpu;
 mod platform;
 mod zone;
 
@@ -72,8 +72,9 @@ use crate::consts::{hv_end, mem_pool_start, MAX_CPU_NUM};
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
-use percpu::PerCpu;
-use zone::{add_zone, zone_create};
+use cpu_data::PerCpu;
+#[cfg(feature = "pci")]
+use pci::pci_config::hvisor_pci_init;
 
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
 static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
@@ -126,19 +127,33 @@ fn primary_init_early() {
     );
     memory::frame::init();
     memory::frame::test();
-    event::init();
 
     arch::stage2_mode_detect();
 
     device::irqchip::primary_init_early();
 
+    #[cfg(feature = "iommu")]
     iommu_init();
+
+    let root_config = root_zone_config();
+
+    #[cfg(feature = "pci")]
+    if root_config.num_pci_bus > 0 {
+        let num_pci_bus = root_config.num_pci_bus as usize;
+        let _ = hvisor_pci_init(&root_config.pci_config[..num_pci_bus]);
+    }
 
     #[cfg(not(test))]
     {
-        let zone = zone_create(root_zone_config()).unwrap();
+        use zone::{add_zone, zone_create};
+        let zone = zone_create(root_config).unwrap();
         add_zone(zone);
     }
+
+    // crate::pci::pci_test::pcie_test();
+    // crate::pci::pci_test::pcie_guest_init();
+    // crate::pci::pci_test::ecam_pcie_guest_test();
+
     INIT_EARLY_OK.store(1, Ordering::Release);
 }
 
@@ -164,6 +179,12 @@ fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
     }
 }
 
+/// Rust main function for hvisor.
+///
+/// # Arguments
+///
+/// * `cpuid` - The logical cpu_id 0..BOARD_NCPUS.
+/// * `host_dtb` - The device tree blob address.
 fn rust_main(cpuid: usize, host_dtb: usize) {
     arch::trap::install_trap_vector();
 
@@ -175,10 +196,13 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     if MASTER_CPU.load(Ordering::Acquire) == -1 {
         MASTER_CPU.store(cpuid as i32, Ordering::Release);
         is_primary = true;
+        percpu::init();
         memory::heap::init();
         memory::heap::test();
+        arch::time::init_timebase();
         arch_post_heap_init(host_dtb);
     }
+    percpu::init_percpu_reg(cpuid);
 
     let cpu = PerCpu::new(cpuid);
 

@@ -14,28 +14,33 @@
 // Authors:
 //
 use crate::{arch::zone::HvArchZoneConfig, config::*};
-
 pub const BOARD_NAME: &str = "qemu-aia";
-
 pub const BOARD_NCPUS: usize = 4;
-
+#[rustfmt::skip]
+pub static BOARD_HARTID_MAP: [usize; BOARD_NCPUS] = [
+    0x0,            // core0   \
+    0x1,            // core1    | -> cluster0 -> CPU
+    0x2,            // core2    |
+    0x3,            // core3   / 
+];
+pub const TIMEBASE_FREQ: u64 = 10_000_000; // 10MHz
 pub const ACLINT_SSWI_BASE: usize = 0x2F00000;
 
 // This device is used for qemu-quit.
+#[allow(unused)]
 pub const SIFIVE_TEST_BASE: u64 = 0x100000;
 
-pub const APLIC_BASE: usize = 0xc000000;
+pub const APLIC_S_BASE: usize = 0xd000000;
+pub const APLIC_S_SIZE: usize = 0x8000; // Related to BOARD_NCPUS.
 pub const BOARD_APLIC_INTERRUPTS_NUM: usize = 1023;
 pub const IMSIC_S_BASE: usize = 0x2800_0000;
 pub const IMSIC_GUEST_NUM: usize = 1; // hvisor only supports 1 guest now.
 pub const IMSIC_GUEST_INDEX: usize = 1;
 pub const IMSIC_NUM_IDS: usize = 0xFF;
-
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x8f000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x90000000;
 pub const ROOT_ZONE_ENTRY: u64 = 0x90000000;
 pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1) | (1 << 2);
-
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 
 pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [
@@ -95,12 +100,14 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [
     }, // virtio
 ];
 
+pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 0x20;
 pub const HW_IRQS: [u32; 11] = [1, 2, 3, 4, 5, 8, 10, 33, 34, 35, 36];
-pub const ROOT_ZONE_IRQS: [u32; 11] = [1, 2, 3, 4, 5, 8, 10, 33, 34, 35, 36]; // ARCH= riscv .It doesn't matter temporarily.
+pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] =
+    &get_irqs_bitmap(&[1, 2, 3, 4, 5, 8, 10, 33, 34, 35, 36]); // ARCH= riscv .It doesn't matter temporarily.
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
-    plic_base: 0xc000000,
-    plic_size: 0x4000000,
-    aplic_base: 0xd000000,
-    aplic_size: 0x8000,
+    plic_base: 0x0,
+    plic_size: 0x0,
+    aplic_base: APLIC_S_BASE,
+    aplic_size: APLIC_S_SIZE,
 };

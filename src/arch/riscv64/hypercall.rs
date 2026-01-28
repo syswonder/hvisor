@@ -15,18 +15,18 @@
 //  ForeverYolo <2572131118@qq.com>
 
 use crate::arch::cpu::this_cpu_id;
-use crate::config::{HvZoneConfig, CONFIG_MAGIC_VERSION};
+use crate::config::CONFIG_MAGIC_VERSION;
 use crate::device::virtio_trampoline::MAX_DEVS;
 use crate::hypercall::HyperCall;
 use crate::hypercall::HyperCallResult;
 
 impl<'a> HyperCall<'a> {
-    pub fn hv_ivc_info(&mut self, ivc_info_ipa: u64) -> HyperCallResult {
+    pub fn hv_ivc_info(&mut self, _ivc_info_ipa: u64) -> HyperCallResult {
         warn!("hv_ivc_info is not implemented for Risc-V");
         HyperCallResult::Ok(0)
     }
 
-    pub fn wait_for_interrupt(&mut self, irq_list: &mut [u64; MAX_DEVS + 1]) {
+    pub fn wait_for_interrupt(&mut self, _irq_list: &mut [u64; MAX_DEVS + 1]) {
         trace!("wait_for_interrupt is not need for RISC-V");
     }
 
@@ -46,6 +46,7 @@ impl<'a> HyperCall<'a> {
         return config_addr;
     }
 
+    #[allow(unused)]
     pub fn hv_get_real_list_pa(&mut self, list_addr: u64) -> u64 {
         // RISC-V does not have a specific prefix for cached memory, so we return the address as is.
         return list_addr;
@@ -56,7 +57,7 @@ impl<'a> HyperCall<'a> {
         trace!("CPU ID: {} Start Zone", cpuid);
     }
 
-    pub fn hv_virtio_get_irq(&self, virtio_irq: *mut u32) -> HyperCallResult {
+    pub fn hv_virtio_get_irq(&self, _virtio_irq: *mut u32) -> HyperCallResult {
         trace!("hv_virtio_get_irq is not need for RISC-V");
         HyperCallResult::Ok(0)
     }

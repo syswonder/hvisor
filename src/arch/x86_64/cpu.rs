@@ -30,6 +30,7 @@ use crate::{
         vmx::*,
     },
     consts::{self, core_end, PER_CPU_SIZE},
+    cpu_data::{this_cpu_data, this_zone},
     device::irqchip::pic::{check_pending_vectors, clear_vectors, ioapic, lapic::VirtLocalApic},
     error::{HvError, HvResult},
     memory::{
@@ -38,8 +39,7 @@ use crate::{
         Frame, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, PhysAddr, PAGE_SIZE,
         PARKING_INST_PAGE,
     },
-    percpu::{this_cpu_data, this_zone},
-    platform::{ROOT_ZONE_BOOT_STACK, ROOT_ZONE_CMDLINE},
+    platform::ROOT_ZONE_BOOT_STACK,
     zone::{find_zone, this_zone_id},
 };
 use alloc::boxed::Box;

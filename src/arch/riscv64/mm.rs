@@ -13,14 +13,10 @@
 //
 // Authors:
 //
-use spin::RwLock;
 
-use crate::{
-    arch::Stage2PageTable,
-    error::HvResult,
-    memory::{addr::align_up, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet},
-};
+use crate::{arch::Stage2PageTable, error::HvResult, memory::MemorySet};
 
+#[allow(unused)]
 pub fn init_hv_page_table() -> HvResult {
     todo!();
     // let mut hv_pt: MemorySet<Stage1PageTable> = MemorySet::new();
@@ -146,7 +142,7 @@ pub fn arch_setup_parange() {
     // So we do not need to do anything here.
 }
 
-pub fn arch_post_heap_init(host_dtb: usize) {
+pub fn arch_post_heap_init(_host_dtb: usize) {
     // RISC-V does not need to do some setup work after heap init like x86_64.
     // This function can be used to set up any architecture-specific parameters if needed.
     // Currently, it does nothing.

@@ -25,6 +25,7 @@ pub mod mmu;
 pub mod paging;
 pub mod s2pt;
 pub mod sysreg;
+pub mod time;
 pub mod trap;
 pub mod zone;
 

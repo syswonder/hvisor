@@ -14,9 +14,15 @@
 // Authors:
 //
 use crate::{
-    arch::{mmu::MemoryType, zone::{HvArchZoneConfig,GicConfig,Gicv2Config}},
+    arch::{
+        mmu::MemoryType,
+        zone::{GicConfig, Gicv2Config, HvArchZoneConfig},
+    },
     config::*,
+    pci::vpci_dev::VpciDevType,
 };
+
+use crate::pci_dev;
 
 pub const BOARD_NAME: &str = "qemu-gicv2";
 
@@ -70,9 +76,10 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 3] = [
     }, // virtio
 ];
 
+pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;
 // 35 36 37 38 -> pcie intx#
 // 65 -> ivc
-pub const ROOT_ZONE_IRQS: [u32; 9] = [33, 64, 77, 79, 35, 36, 37, 38, 65];
+pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[33, 64, 77, 79, 35, 36, 37, 38, 65]);
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     is_aarch32: 0,
@@ -90,20 +97,29 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
 };
 
 
-pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {
-    ecam_base: 0x4010000000,
-    ecam_size: 0x10000000,
-    io_base: 0x3eff0000,
-    io_size: 0x10000,
-    pci_io_base: 0x0,
-    mem32_base: 0x10000000,
-    mem32_size: 0x2eff0000,
-    pci_mem32_base: 0x10000000,
-    mem64_base: 0x8000000000,
-    mem64_size: 0x8000000000,
-    pci_mem64_base: 0x8000000000,
-};
+pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [
+    HvPciConfig {
+        ecam_base: 0x4010000000,
+        ecam_size: 0x10000000,
+        io_base: 0x3eff0000,
+        io_size: 0x10000,
+        pci_io_base: 0x0,
+        mem32_base: 0x10000000,
+        mem32_size: 0x2eff0000,
+        pci_mem32_base: 0x10000000,
+        mem64_base: 0x8000000000,
+        mem64_size: 0x8000000000,
+        pci_mem64_base: 0x8000000000,
+        bus_range_begin: 0x0,
+        bus_range_end: 0xff,
+        domain: 0x0,
+    }
+];
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
 
-pub const ROOT_PCI_DEVS: [u64; 2] = [0, 1 << 3];
+pub const ROOT_PCI_DEVS: [HvPciDevConfig; 3] = [
+    pci_dev!(0x0, 0x0, 0x0, 0x0, VpciDevType::Physical),
+    pci_dev!(0x0, 0x0, 0x1, 0x0, VpciDevType::Physical),
+    pci_dev!(0x0, 0x0, 0x2, 0x0, VpciDevType::Physical),
+];

@@ -16,12 +16,10 @@
 use core::panic;
 
 use crate::{
-    arch::Stage2PageTable,
     config::*,
     device::virtio_trampoline::mmio_virtio_handler,
     error::HvResult,
-    memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet},
-    pci::pcibar::BarRegion,
+    memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion},
     zone::Zone,
 };
 
@@ -119,7 +117,7 @@ impl Zone {
         Ok(())
     }
 
-    pub fn arch_zone_post_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
+    pub fn arch_zone_post_configuration(&mut self, _config: &HvZoneConfig) -> HvResult {
         Ok(())
     }
 }
@@ -133,6 +131,7 @@ pub struct HvArchZoneConfig {
 
 #[repr(C, usize)]
 #[derive(Debug, Clone)]
+#[allow(unused)]
 pub enum GicConfig {
     Gicv2(Gicv2Config),
     Gicv3(Gicv3Config),
@@ -161,20 +160,4 @@ pub struct Gicv3Config {
     pub gicr_size: usize,
     pub gits_base: usize,
     pub gits_size: usize,
-}
-
-impl BarRegion {
-    pub fn arch_set_bar_region_start(&mut self, cpu_base: usize, pci_base: usize) {
-        self.start = crate::memory::addr::align_down(cpu_base + self.start - pci_base);
-    }
-
-    pub fn arch_insert_bar_region(&self, gpm: &mut MemorySet<Stage2PageTable>, zone_id: usize) {
-        gpm.insert(MemoryRegion::new_with_offset_mapper(
-            self.start as GuestPhysAddr,
-            self.start,
-            self.size,
-            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-        ))
-        .ok();
-    }
 }

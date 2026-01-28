@@ -1,2 +1,6 @@
 pci
+ecam_pcie
+no_pcie_bar_realloc
 uart16550a
+graphics
+split_screen

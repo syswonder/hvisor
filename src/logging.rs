@@ -94,6 +94,7 @@ enum ColorCode {
     BrightWhite = 97,
 }
 
+#[allow(unused)]
 fn color_code_to_bgra(code: &ColorCode) -> u32 {
     match code {
         ColorCode::Black => 0,
@@ -164,6 +165,22 @@ impl SimpleLogger {
         args_color: ColorCode,
         record: &Record,
     ) {
+        #[cfg(feature = "print_timestamp")]
+        {
+            let time_us: u64 = crate::arch::time::get_time_us();
+            let sec = time_us / 1_000_000;
+            let us = time_us % 1_000_000;
+            print(with_color!(
+                ColorCode::White,
+                "[{}] {} {} hvisor: {} {}\n",
+                with_color!(ColorCode::BrightWhite, "{:>5}.{:06}", sec, us),
+                with_color!(level_color, "{:<5}", level),
+                with_color!(ColorCode::BrightGreen, "CPU{}", cpu_id),
+                with_color!(ColorCode::White, "({}:{})", target, line),
+                with_color!(args_color, "{}", record.args()),
+            ));
+        }
+        #[cfg(not(feature = "print_timestamp"))]
         print(with_color!(
             ColorCode::White,
             "[{} {}] {} {}\n",
@@ -188,7 +205,7 @@ impl Log for SimpleLogger {
         let level = record.level();
         let line = record.line().unwrap_or(0);
         let target = record.target();
-        let cpu_id = crate::percpu::this_cpu_data().id;
+        let cpu_id = crate::cpu_data::this_cpu_data().id;
         let level_color = match level {
             Level::Error => ColorCode::BrightRed,
             Level::Warn => ColorCode::BrightYellow,

@@ -17,9 +17,9 @@
 use crate::{
     arch::cpu::this_cpu_id,
     config::CONFIG_MAGIC_VERSION,
+    cpu_data::this_zone,
     device::virtio_trampoline::MAX_DEVS,
     hypercall::{HyperCall, HyperCallResult},
-    percpu::this_zone,
     zone::{Zone, ZoneInfo},
 };
 use spin::RwLock;
@@ -79,7 +79,7 @@ impl<'a> HyperCall<'a> {
                 .0 as *mut u32
         };
         unsafe {
-            (*virtio_irq) = crate::device::virtio_trampoline::IRQ_WAKEUP_VIRTIO_DEVICE as _;
+            (*virtio_irq) = crate::platform::IRQ_WAKEUP_VIRTIO_DEVICE as _;
         };
         HyperCallResult::Ok(0)
     }

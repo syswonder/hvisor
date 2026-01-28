@@ -14,18 +14,18 @@
 // Authors:
 //
 use super::csr::*;
-use crate::arch::Stage2PageTable;
-use crate::percpu::this_cpu_data;
+use crate::cpu_data::this_cpu_data;
+use crate::platform::{BOARD_HARTID_MAP, BOARD_NCPUS};
 use crate::{
     arch::mm::new_s2_memory_set,
     consts::{PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
-    memory::PhysAddr,
     memory::{
         addr::PHYS_VIRT_OFFSET, mm::PARKING_MEMORY_SET, GuestPhysAddr, HostPhysAddr, MemFlags,
-        MemoryRegion, MemorySet, VirtAddr, PARKING_INST_PAGE,
+        MemoryRegion, VirtAddr, PARKING_INST_PAGE,
     },
     zone::find_zone,
 };
+use core::ptr::addr_of;
 
 #[repr(C)]
 #[derive(Debug)]
@@ -85,6 +85,8 @@ impl ArchCpu {
         self.x[11] = dtb; // dtb addr
 
         if self.sstc {
+            // hvisor doesn't handle timer interrupt.
+            set_csr!(CSR_STIMECMP, usize::MAX);
             set_csr!(CSR_HENVCFG, 1 << 63);
             set_csr!(CSR_VSTIMECMP, usize::MAX);
         } else {
@@ -138,7 +140,7 @@ impl ArchCpu {
         // reset all registers related
         self.reset_regs(
             this_cpu_data().cpu_on_entry,
-            this_cpu_data().id,
+            BOARD_HARTID_MAP[this_cpu_id()], // This should be hartid.
             this_cpu_data().dtb_ipa,
         );
         this_cpu_data().activate_gpm();
@@ -166,7 +168,9 @@ impl ArchCpu {
             let mut gpm = new_s2_memory_set();
             gpm.insert(MemoryRegion::new_with_offset_mapper(
                 PARKING_INST_GPA as GuestPhysAddr,
-                unsafe { &PARKING_INST_PAGE as *const _ as HostPhysAddr - PHYS_VIRT_OFFSET },
+                unsafe {
+                    addr_of!(PARKING_INST_PAGE) as *const _ as HostPhysAddr - PHYS_VIRT_OFFSET
+                },
                 PAGE_SIZE,
                 MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
             ))
@@ -178,7 +182,7 @@ impl ArchCpu {
         // Note: in park_inst_page
         self.reset_regs(
             PARKING_INST_GPA,        // entry_addr
-            this_cpu_data().id,      // a0
+            this_cpu_id(),           // a0
             this_cpu_data().dtb_ipa, // a1
         );
         self.reset_interrupt();
@@ -214,24 +218,32 @@ fn this_cpu_arch() -> &'static mut ArchCpu {
     unsafe { &mut *(sscratch as *mut ArchCpu) }
 }
 
+/// Get the logical cpu_id 0..BOARD_NCPUS.
 pub fn this_cpu_id() -> usize {
     this_cpu_arch().get_cpuid()
 }
 
+pub fn hartid_to_cpuid(hartid: usize) -> usize {
+    (0..BOARD_NCPUS)
+        .find(|&i| BOARD_HARTID_MAP[i] == hartid)
+        .unwrap()
+}
+
 pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
-    if let Some(e) = sbi_rt::hart_start(cpuid, start_addr, opaque).err() {
+    // Convert cpuid to hartid
+    if let Some(e) = sbi_rt::hart_start(BOARD_HARTID_MAP[cpuid], start_addr, opaque).err() {
         panic!("cpu_start error: {:#x?}", e);
     }
 }
 
 pub fn store_cpu_pointer_to_reg(pointer: usize) {
-    /// Store the pointer to the current CPU's ArchCpu structure in CSR_SSCRATCH
+    // Store the pointer to the current CPU's ArchCpu structure in CSR_SSCRATCH
     write_csr!(CSR_SSCRATCH, pointer);
     // println!("Stored CPU pointer to CSR_SSCRATCH: {:#x}", pointer);
     return;
 }
 
-pub fn get_target_cpu(irq: usize, zone_id: usize) -> usize {
+pub fn get_target_cpu(_irq: usize, zone_id: usize) -> usize {
     find_zone(zone_id)
         .unwrap()
         .read()

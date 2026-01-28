@@ -1,5 +1,4 @@
 {
-    "arch": "arm64",
     "name": "linux2",
     "zone_id": 1,
     "cpus": [2, 3],
@@ -9,6 +8,12 @@
             "physical_start": "0x50000000",
             "virtual_start":  "0x50000000",
             "size": "0x30000000"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0xa003600",
+            "virtual_start": "0xa003600",
+            "size": "0x200"
         },
         {
             "type": "virtio",
@@ -23,11 +28,14 @@
             "size": "0x200"
         }
     ],
-    "interrupts": [76, 78],
+    "interrupts": [
+        75,
+        76,
+        78
+    ],
     "ivc_configs": [],
-    "kernel_filepath": "Image",
-    "kernel_args": "",
-    "dtb_filepath": "zone1-linux.dtb",
+    "kernel_filepath": "./Image",
+    "dtb_filepath": "./zone1-linux.dtb",
     "kernel_load_paddr": "0x50400000",
     "dtb_load_paddr":   "0x50000000",
     "entry_point":      "0x50400000",
@@ -38,9 +46,10 @@
         "gicr_base": "0x80a0000",
         "gicr_size": "0xf60000",
         "gits_base": "0x8080000",
-        "gits_size": "0x20000"
+        "gits_size": "0x20000",
+        "is_aarch32": false
     },
-    "pci_config": {
+    "pci_config": [{
         "ecam_base": "0x4010000000",
         "ecam_size": "0x10000000",
         "io_base": "0x3eff0000",
@@ -51,8 +60,26 @@
         "pci_mem32_base": "0x10000000",
         "mem64_base": "0x8000000000",
         "mem64_size": "0x8000000000",
-        "pci_mem64_base": "0x8000000000"
-    },
+        "pci_mem64_base": "0x8000000000",
+        "bus_range_begin": "0x0",
+        "bus_range_end": "0x1f",
+        "domain": "0x0"
+    }],
     "num_pci_devs": 2,
-    "alloc_pci_devs": [0, 16]
+    "alloc_pci_devs": [
+        {
+            "domain": "0x0",
+            "bus": "0x0",
+            "device": "0x0",
+            "function": "0x0",
+            "dev_type": "0"
+        },
+        {
+            "domain": "0x0",
+            "bus": "0x0",
+            "device": "0x1",
+            "function": "0x0",
+            "dev_type": "0"
+        }
+    ]
 }
