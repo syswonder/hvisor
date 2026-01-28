@@ -22,7 +22,7 @@ use crate::consts::IPI_EVENT_SEND_IPI;
 use crate::cpu_data::{get_cpu_data, this_cpu_data};
 use crate::event::{send_event, IPI_EVENT_WAKEUP};
 use crate::hypercall::HyperCall;
-use core::sync::atomic::{self, Ordering};
+use core::sync::atomic;
 use riscv::register::sie;
 use riscv_h::register::hvip;
 use sbi_rt::{HartMask, SbiRet};

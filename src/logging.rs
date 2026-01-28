@@ -94,6 +94,7 @@ enum ColorCode {
     BrightWhite = 97,
 }
 
+#[allow(unused)]
 fn color_code_to_bgra(code: &ColorCode) -> u32 {
     match code {
         ColorCode::Black => 0,

@@ -21,12 +21,12 @@ use crate::{
         vmcs::*,
     },
     consts::PAGE_SIZE,
+    cpu_data::this_cpu_data,
     error::HvResult,
     memory::{
         addr::{GuestPhysAddr, HostPhysAddr, PhysAddr},
         MemFlags,
     },
-    cpu_data::this_cpu_data,
     zone::this_zone_id,
 };
 use bit_field::BitField;

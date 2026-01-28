@@ -16,11 +16,10 @@
 use core::panic;
 
 use crate::{
-    arch::Stage2PageTable,
     config::*,
     device::virtio_trampoline::mmio_virtio_handler,
     error::HvResult,
-    memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet},
+    memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion},
     zone::Zone,
 };
 
@@ -118,7 +117,7 @@ impl Zone {
         Ok(())
     }
 
-    pub fn arch_zone_post_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
+    pub fn arch_zone_post_configuration(&mut self, _config: &HvZoneConfig) -> HvResult {
         Ok(())
     }
 }
@@ -132,6 +131,7 @@ pub struct HvArchZoneConfig {
 
 #[repr(C, usize)]
 #[derive(Debug, Clone)]
+#[allow(unused)]
 pub enum GicConfig {
     Gicv2(Gicv2Config),
     Gicv3(Gicv3Config),

@@ -15,9 +15,8 @@
 //
 #![allow(dead_code)]
 use crate::{
-    arch::mm::new_s2_memory_set,
     consts::{MAX_ZONE_NUM, PAGE_SIZE},
-    memory::{Frame, GuestPhysAddr, MemFlags, MemoryRegion, MemorySet, PhysAddr},
+    memory::{Frame, PhysAddr},
 };
 use aarch64_cpu::registers::{Readable, Writeable};
 use alloc::vec::Vec;
@@ -26,8 +25,6 @@ use tock_registers::{
     register_structs,
     registers::{ReadOnly, ReadWrite},
 };
-
-use super::Stage2PageTable;
 
 #[allow(dead_code)]
 const SMMU_BASE_ADDR: PhysAddr = 0x09050000;

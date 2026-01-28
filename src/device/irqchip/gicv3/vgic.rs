@@ -18,9 +18,10 @@ use alloc::sync::Arc;
 use super::{gicd::GICD_LOCK, is_spi};
 use crate::platform::BOARD_MPIDR_MAPPINGS;
 use crate::{
-    arch::zone::{GicConfig, Gicv2Config, Gicv3Config, HvArchZoneConfig},
+    arch::zone::{GicConfig, HvArchZoneConfig},
     config::{BitmapWord, CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD, CONFIG_MAX_INTERRUPTS},
     consts::MAX_CPU_NUM,
+    cpu_data::{get_cpu_data, this_zone},
     device::irqchip::gicv3::{
         gicd::*, gicr::*, gits::*, host_gicd_base, host_gicr_base, host_gits_base,
         MAINTENACE_INTERRUPT, PER_GICR_SIZE,
@@ -28,7 +29,6 @@ use crate::{
     error::HvResult,
     hypercall::SGI_IPI_ID,
     memory::{mmio_perform_access, MMIOAccess},
-    cpu_data::{get_cpu_data, this_zone},
     zone::{this_zone_id, Zone},
 };
 pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> {

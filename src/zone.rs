@@ -29,10 +29,10 @@ use crate::arch::mm::new_s2_memory_set;
 use crate::arch::s2pt::Stage2PageTable;
 use crate::config::{HvZoneConfig, CONFIG_NAME_MAXLEN};
 
+use crate::cpu_data::{get_cpu_data, this_zone, CpuSet};
 use crate::error::HvResult;
 use crate::memory::addr::GuestPhysAddr;
 use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
-use crate::cpu_data::{get_cpu_data, this_zone, CpuSet};
 use core::panic;
 
 #[cfg(feature = "dwc_pcie")]

@@ -39,7 +39,7 @@ use crate::{
         Frame, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, PhysAddr, PAGE_SIZE,
         PARKING_INST_PAGE,
     },
-    platform::{ROOT_ZONE_BOOT_STACK, ROOT_ZONE_CMDLINE},
+    platform::ROOT_ZONE_BOOT_STACK,
     zone::{find_zone, this_zone_id},
 };
 use alloc::boxed::Box;

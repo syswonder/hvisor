@@ -34,9 +34,6 @@ use crate::{
     pci::{config_accessors::PciConfigMmio, pci_access::EndpointHeader},
 };
 
-#[cfg(feature = "ecam_pcie")]
-use crate::pci::config_accessors::ecam::EcamConfigAccessor;
-
 pub static GLOBAL_PCIE_LIST_TEST: Lazy<Mutex<BTreeMap<Bdf, VirtualPciConfigSpace>>> =
     Lazy::new(|| {
         let m = BTreeMap::new();

@@ -21,10 +21,10 @@ use crate::{
         ipi,
         msr::Msr::{self, *},
     },
+    cpu_data::this_cpu_data,
     device::irqchip::pic::pop_vector,
     error::HvResult,
     memory::Frame,
-    cpu_data::this_cpu_data,
 };
 use bit_field::BitField;
 use core::{ops::Range, u32};

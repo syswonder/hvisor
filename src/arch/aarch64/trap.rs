@@ -24,11 +24,11 @@ use crate::{
         cpu::mpidr_to_cpuid,
         sysreg::{read_sysreg, write_sysreg},
     },
+    cpu_data::{get_cpu_data, this_cpu_data, this_zone},
     device::irqchip::gic_handle_irq,
     event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_WAKEUP},
     hypercall::{HyperCall, SGI_IPI_ID},
     memory::{mmio_handle_access, MMIOAccess},
-    cpu_data::{get_cpu_data, this_cpu_data, this_zone},
     zone::{is_this_root_zone, remove_zone},
 };
 

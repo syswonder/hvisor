@@ -16,11 +16,11 @@
 use crate::{
     arch::{mm::new_s2_memory_set, sysreg::write_sysreg},
     consts::{MAX_CPU_NUM, PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
+    cpu_data::this_cpu_data,
     memory::{
         addr::PHYS_VIRT_OFFSET, mm::PARKING_MEMORY_SET, GuestPhysAddr, HostPhysAddr, MemFlags,
         MemoryRegion, VirtAddr, PARKING_INST_PAGE,
     },
-    cpu_data::this_cpu_data,
     platform::BOARD_MPIDR_MAPPINGS,
     zone::find_zone,
 };
@@ -265,12 +265,12 @@ pub fn this_cpu_id() -> usize {
     mpidr_to_cpuid(MPIDR_EL1.get()) as _
 }
 
-pub fn store_cpu_pointer_to_reg(pointer: usize) {
+pub fn store_cpu_pointer_to_reg(_pointer: usize) {
     // println!("aarch64 doesn't support store cpu pointer to reg, pointer: {:#x}", pointer);
     return;
 }
 
-pub fn get_target_cpu(irq: usize, zone_id: usize) -> usize {
+pub fn get_target_cpu(_irq: usize, zone_id: usize) -> usize {
     find_zone(zone_id)
         .unwrap()
         .read()

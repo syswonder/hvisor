@@ -26,6 +26,7 @@ use crate::{
         vmcs::*,
         vmx::{VmxCrAccessInfo, VmxExitInfo, VmxExitReason, VmxInterruptInfo, VmxIoExitInfo},
     },
+    cpu_data::{this_cpu_data, this_zone},
     device::{
         irqchip::{
             inject_vector,
@@ -36,7 +37,6 @@ use crate::{
     error::HvResult,
     hypercall::HyperCall,
     memory::{mmio_handle_access, MMIOAccess, MemFlags},
-    cpu_data::{this_cpu_data, this_zone},
     zone::this_zone_id,
 };
 use bit_field::BitField;

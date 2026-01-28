@@ -20,11 +20,11 @@ use crate::{
         cpu::this_cpu_id,
         idt::IdtVector,
     },
+    cpu_data::{this_cpu_data, this_zone, CpuSet},
     device::irqchip::inject_vector,
     error::HvResult,
     event,
     hypercall::SGI_IPI_ID,
-    cpu_data::{this_cpu_data, this_zone, CpuSet},
 };
 use alloc::{collections::vec_deque::VecDeque, vec::Vec};
 use bit_field::BitField;

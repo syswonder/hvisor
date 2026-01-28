@@ -75,7 +75,6 @@ use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use cpu_data::PerCpu;
 #[cfg(feature = "pci")]
 use pci::pci_config::hvisor_pci_init;
-use zone::{add_zone, zone_create};
 
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
 static ENTERED_CPUS: AtomicU32 = AtomicU32::new(0);
@@ -146,6 +145,7 @@ fn primary_init_early() {
 
     #[cfg(not(test))]
     {
+        use zone::{add_zone, zone_create};
         let zone = zone_create(root_config).unwrap();
         add_zone(zone);
     }

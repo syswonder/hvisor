@@ -24,12 +24,12 @@ use crate::arch::cpu::this_cpu_id;
 use crate::arch::zone::HvArchZoneConfig;
 use crate::config::{BitmapWord, HvZoneConfig, CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD};
 use crate::consts::MAX_ZONE_NUM;
+use crate::cpu_data::this_cpu_data;
 use crate::error::HvResult;
 use crate::memory::HostPhysAddr;
 use crate::memory::MMIOAccess;
 use crate::memory::MemFlags;
 use crate::memory::MemoryRegion;
-use crate::cpu_data::this_cpu_data;
 use crate::platform::HW_IRQS;
 use crate::platform::{
     BOARD_APLIC_INTERRUPTS_NUM, IMSIC_GUEST_INDEX, IMSIC_GUEST_NUM, IMSIC_S_BASE,

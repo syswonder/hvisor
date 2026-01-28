@@ -15,13 +15,12 @@
 //
 use core::ptr;
 
-use aarch64_cpu::registers::DAIF::A;
 use alloc::{sync::Arc, vec::Vec};
 use spin::{mutex::Mutex, Once, RwLock};
 
 use crate::{
-    consts::MAX_ZONE_NUM, device::irqchip::gicv3::gicr::enable_one_lpi, memory::Frame,
-    cpu_data::this_zone, zone::this_zone_id,
+    consts::MAX_ZONE_NUM, cpu_data::this_zone, device::irqchip::gicv3::gicr::enable_one_lpi,
+    memory::Frame,
 };
 
 use super::host_gits_base;
@@ -177,7 +176,7 @@ impl Cmdq {
         self.cbaser_list[zone_id] = value;
         let gpa_base = value & 0xffffffffff000;
         unsafe {
-            let phy_base = match this_zone().read().gpm.page_table_query(gpa_base) {
+            let _phy_base = match this_zone().read().gpm.page_table_query(gpa_base) {
                 Ok(p) => self.phy_base_list[zone_id] = p.0,
                 _ => {}
             };

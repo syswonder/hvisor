@@ -189,7 +189,7 @@ impl VirtioBridgeController {
     }
 
     /// Get req list agent.
-    pub fn req_agent(&self) -> ReqAgent {
+    fn req_agent(&self) -> ReqAgent {
         if !self.is_enable.load(Ordering::Acquire) {
             panic!("VirtioBridge not enabled");
         }

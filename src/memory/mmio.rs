@@ -15,7 +15,7 @@
 //
 use core::{ptr, usize};
 
-use crate::{error::HvResult, cpu_data::this_zone, zone::zone_error};
+use crate::{cpu_data::this_zone, error::HvResult, zone::zone_error};
 
 use super::GuestPhysAddr;
 

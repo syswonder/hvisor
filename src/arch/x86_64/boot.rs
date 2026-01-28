@@ -16,8 +16,7 @@
 
 use crate::{
     arch::{zone::HvArchZoneConfig, Stage2PageTable},
-    config::{root_zone_config, HvConfigMemoryRegion, HvPciConfig, HvZoneConfig, MEM_TYPE_RAM},
-    consts::PAGE_SIZE,
+    config::{root_zone_config, HvPciConfig, HvZoneConfig, MEM_TYPE_RAM},
     cpu_data::this_zone,
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet},
