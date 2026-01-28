@@ -88,10 +88,10 @@ impl PortIoBitmap {
         bitmap.set_range_intercept(PCI_CONFIG_ADDR_PORT, true);
         bitmap.set_range_intercept(PCI_CONFIG_DATA_PORT, true);
 
-        if zone_id == 0 {
-            #[cfg(feature = "graphics")]
-            bitmap.set_range_intercept(UART_COM1_PORT, true);
-        }
+        // if zone_id == 0 {
+        #[cfg(feature = "graphics")]
+        bitmap.set_range_intercept(UART_COM1_PORT, true);
+        // }
 
         // i8042, we won't use it, but intercept its ports might block linux init
         bitmap.set_range_intercept(0x60..0x65, false);

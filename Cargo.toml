@@ -44,6 +44,8 @@ x86_64 = "=0.14.10"
 x2apic = "=0.4.3"
 raw-cpuid = "=10.7.0"
 acpi = "=5.2.0"
+uguid = "=2.2.0"
+uefi-raw = "=0.9.0"
 
 [features]
 ############# general ##############
@@ -93,7 +95,7 @@ loongson_3a6000 = []
 
 ############# x86_64 ###############
 graphics = []
-
+split_screen = []
 
 [profile.dev]
 # panic = "abort" # avoid cargo test failure, this is a bug of cargo

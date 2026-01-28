@@ -93,6 +93,7 @@ pub fn check_events() -> bool {
         }
         Some(IPI_EVENT_SHUTDOWN) => {
             cpu_data.arch_cpu.idle();
+            false
         }
         Some(IPI_EVENT_VIRTIO_INJECT_IRQ) => {
             handle_virtio_irq();
