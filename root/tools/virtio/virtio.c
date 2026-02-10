@@ -13,12 +13,17 @@
 #include <getopt.h>
 #include <limits.h>
 #include <signal.h>
+#include <stdatomic.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/epoll.h>
+#include <sys/eventfd.h>
 #include <sys/ioctl.h>
 #include <sys/mman.h>
 #include <sys/prctl.h>
+#include <sys/signalfd.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/uio.h>
@@ -36,6 +41,9 @@
 
 /// hvisor kernel module fd
 int ko_fd;
+static int efd = -1;
+static int sfd = -1;
+static int epoll_fd = -1;
 volatile struct virtio_bridge *virtio_bridge;
 
 pthread_mutex_t RES_MUTEX = PTHREAD_MUTEX_INITIALIZER;
@@ -1002,6 +1010,22 @@ void virtio_close() {
     for (int i = 0; i < vdevs_num; i++)
         vdevs[i]->virtio_close(vdevs[i]);
     close(ko_fd);
+
+    if (efd >= 0) {
+        close(efd);
+        efd = -1;
+    }
+
+    if (sfd >= 0) {
+        close(sfd);
+        sfd = -1;
+    }
+
+    if (epoll_fd >= 0) {
+        close(epoll_fd);
+        epoll_fd = -1;
+    }
+
     munmap((void *)virtio_bridge, MMAP_SIZE);
     for (int i = 0; i < MAX_ZONES; i++) {
         for (int j = 0; j < MAX_RAMS; j++)
@@ -1015,60 +1039,126 @@ void virtio_close() {
 }
 
 void handle_virtio_requests() {
-    int sig;
-    sigset_t wait_set;
     struct timespec timeout;
-    unsigned int req_front = virtio_bridge->req_front;
-    volatile struct device_req *req;
     timeout.tv_sec = 0;
     timeout.tv_nsec = WAIT_TIME;
-    sigemptyset(&wait_set);
-    sigaddset(&wait_set, SIGHVI);
-    sigaddset(&wait_set, SIGTERM);
+
+    // Block signals to handle them synchronously via signalfd
+    sigset_t mask;
+    sigemptyset(&mask);
+    sigaddset(&mask, SIGINT);
+    sigaddset(&mask, SIGTERM);
+    if (sigprocmask(SIG_BLOCK, &mask, NULL) == -1) {
+        log_error("Failed to set sigprocmask");
+        return;
+    }
+
+    sfd = signalfd(-1, &mask, SFD_NONBLOCK | SFD_CLOEXEC);
+    if (sfd == -1) {
+        log_error("Failed to create signalfd");
+        return;
+    }
+
+    epoll_fd = epoll_create1(EPOLL_CLOEXEC);
+    if (epoll_fd == -1) {
+        log_error("Failed to create epoll instance");
+        close(sfd);
+        return;
+    }
+
+    // Register signalfd for termination handling
+    struct epoll_event ev;
+    ev.events = EPOLLIN;
+    ev.data.fd = sfd;
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, sfd, &ev) == -1) {
+        log_error("epoll_ctl failed for signalfd");
+        close(sfd);
+        close(epoll_fd);
+        return;
+    }
+
+    // Register eventfd for kernel-to-user VirtIO kicks
+    ev.events = EPOLLIN;
+    ev.data.fd = efd;
+    if (epoll_ctl(epoll_fd, EPOLL_CTL_ADD, efd, &ev) == -1) {
+        log_error("epoll_ctl failed for eventfd");
+        close(sfd);
+        close(epoll_fd);
+        return;
+    }
+
     virtio_bridge->need_wakeup = 1;
 
+    log_info("virtio request handler loop started.");
+    unsigned int req_front = virtio_bridge->req_front;
+    volatile struct device_req *req;
     int signal_count = 0, proc_count = 0;
     unsigned long long count = 0;
-    for (;;) {
+    struct epoll_event events[16];
+    while (true) {
 #ifndef LOONGARCH64
         log_warn("signal_count is %d, proc_count is %d", signal_count,
                  proc_count);
-        sigwait(&wait_set, &sig); // change to no signal irq
-        signal_count++;
-        if (sig == SIGTERM) {
+
+        // Wait indefinitely for a signal or a kernel kick
+        int nfds = epoll_wait(epoll_fd, events, 16, -1);
+        ++signal_count;
+        if (nfds == -1) {
+            if (errno == EINTR)
+                continue;
+            log_error("epoll_wait failed");
             virtio_close();
             break;
-        } else if (sig != SIGHVI) {
-            log_error("unknown signal %d", sig);
-            continue;
         }
-#endif
-        while (1) {
-            if (!is_queue_empty(req_front, virtio_bridge->req_rear)) {
-                count = 0;
-                proc_count++;
-                req = &virtio_bridge->req_list[req_front];
-                virtio_bridge->need_wakeup = 0;
-                virtio_handle_req(req);
-                req_front = (req_front + 1) & (MAX_REQ - 1);
-                virtio_bridge->req_front = req_front;
-                write_barrier();
-            }
-#ifndef LOONGARCH64
-            else {
-                count++;
-                if (count < 10000000)
-                    continue;
-                count = 0;
-                virtio_bridge->need_wakeup = 1;
-                write_barrier();
-                nanosleep(&timeout, NULL);
-                if (is_queue_empty(req_front, virtio_bridge->req_rear)) {
-                    break;
+
+        for (int i = 0; i < nfds; ++i) {
+            if (events[i].data.fd == sfd) {
+                struct signalfd_siginfo fdsi;
+                if (read(sfd, &fdsi, sizeof(fdsi)) == sizeof(fdsi)) {
+                    log_info("Received termination signal %d. Exiting...",
+                             fdsi.ssi_signo);
+                    virtio_close();
+                    return;
                 }
-            }
+            } else if (events[i].data.fd == efd) {
+                uint64_t u;
+                // Clear the eventfd counter to acknowledge the notification
+                if (read(efd, &u, sizeof(uint64_t)) != sizeof(uint64_t)) {
+                    continue;
+                }
 #endif
+
+                while (1) {
+                    if (!is_queue_empty(req_front, virtio_bridge->req_rear)) {
+                        count = 0;
+                        proc_count++;
+                        req = &virtio_bridge->req_list[req_front];
+                        virtio_bridge->need_wakeup = 0;
+                        virtio_handle_req(req);
+                        req_front = (req_front + 1) & (MAX_REQ - 1);
+                        virtio_bridge->req_front = req_front;
+                        write_barrier();
+                    }
+#ifndef LOONGARCH64
+                    else {
+                        count++;
+                        if (count < 10000000)
+                            continue;
+                        count = 0;
+                        virtio_bridge->need_wakeup = 1;
+                        write_barrier();
+                        nanosleep(&timeout, NULL);
+                        if (is_queue_empty(req_front,
+                                           virtio_bridge->req_rear)) {
+                            break;
+                        }
+                    }
+#endif
+                }
+#ifndef LOONGARCH64
+            }
         }
+#endif
     }
 }
 
@@ -1110,6 +1200,20 @@ int virtio_init() {
     if (err) {
         log_error("ioctl failed, err code is %d", err);
         close(ko_fd);
+        exit(1);
+    }
+
+    // create eventfd
+    efd = eventfd(0, EFD_NONBLOCK | EFD_CLOEXEC);
+    if (efd < 0) {
+        log_error("eventfd failed, errno is %d", errno);
+        close(ko_fd);
+        exit(1);
+    }
+    if (ioctl(ko_fd, HVISOR_SET_EVENTFD, efd) < 0) {
+        log_error("ioctl HVISOR_SET_EVENTFD failed, errno is %d", errno);
+        close(ko_fd);
+        close(efd);
         exit(1);
     }
 

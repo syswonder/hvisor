@@ -69,6 +69,7 @@ typedef struct ioctl_zone_list_args zone_list_args_t;
 #define HVISOR_ZONE_SHUTDOWN _IOW(1, 4, __u64)
 #define HVISOR_ZONE_LIST _IOR(1, 5, zone_list_args_t *)
 #define HVISOR_CONFIG_CHECK _IOR(1, 6, __u64 *)
+#define HVISOR_SET_EVENTFD _IOW(1, 7, int)
 
 #define HVISOR_HC_INIT_VIRTIO 0
 #define HVISOR_HC_FINISH_REQ 1
