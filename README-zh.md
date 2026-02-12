@@ -48,11 +48,11 @@ hvisor 是一个用 Rust 实现的 Type-1 裸机虚拟机监控器，采用分�
 |                    | AIA                   | `riscv64`                                     | 仅支持 MSI 模式                         |
 |                    | APIC                  | `x86_64`                                      |                                        |
 | **设备直通(Zone0)** | All                  | All                                            |                                        |
-| **设备直通(ZoneU)** | PCIe                  | `aarch64`, `riscv64`, `loongarch64`,`x86_64`  | 待测试                                |
-|                    | GPU / HDMI            | `aarch64`, `loongarch64`                      |           NXP i.MX8MP, 3A6000                    |
+| **设备直通(ZoneU)** | PCIe                  | `aarch64`, `riscv64`, `loongarch64`,`x86_64`  |                                       |
+|                    | GPU / HDMI            | `aarch64`, `loongarch64`                      | NXP i.MX8MP, 3A6000                    |
 |                    | eMMC                  | `aarch64`, `riscv64`                          | NXP i.MX8MP                           |
-|                    | USB                   | `aarch64`                                     |  NXP i.MX8MP                            |   
-|                    | SATA                  | `riscv64`, `loongarch64`                      | megrez, 3A6000                         |
+|                    | USB                   | `aarch64`,`x86_64`                            | NXP i.MX8MP                            |   
+|                    | SATA                  | `riscv64`, `loongarch64`,`x86_64`             | megrez, 3A6000                         |
 |                    | Ethernet              | `aarch64`, `riscv64`, `loongarch64`,`x86_64`  | NXP i.MX8MP, megrez, 3A6000             |
 
 ## 板卡支持
@@ -72,6 +72,7 @@ hvisor 是一个用 Rust 实现的 Type-1 裸机虚拟机监控器，采用分�
 - [x] QEMU virt riscv64
 - [x] Milk-V Megrez
 - [x] Sifive Hifive Premier P550
+- [x] dp-1000
 - [ ] FPGA 香山（昆明湖）on S2C Prodigy S7-19PS-2
 
 ### loongarch64
@@ -83,6 +84,7 @@ hvisor 是一个用 Rust 实现的 Type-1 裸机虚拟机监控器，采用分�
 
 - [x] QEMU Q35
 - [x] ASUS NUC14MNK
+- [x] ECX-2300F-PEG
 
 ## Guest OS 支持
 
@@ -99,13 +101,19 @@ hvisor 是一个用 Rust 实现的 Type-1 裸机虚拟机监控器，采用分�
 
 ## 路线图
 
+### 已完成
+- [更新日志](./CHANGELOG.md)
+- 支持 USB zoneU 直通
+- 支持 PCIe 总线虚拟化
+
+### 计划中
 - 支持 Android 
 - 支持 OpenHarmony
 - 支持 ARMv9
 - 支持 GICv4
 - 支持缓存着色
 - 支持 SR-IOV
-- 支持 USB / NPU zoneU 直通
+- 支持 NPU zoneU 直通
 - 支持 Nvidia GPU zoneU 直通
 - Web Management tool
 - 设备树配置工具
@@ -113,7 +121,6 @@ hvisor 是一个用 Rust 实现的 Type-1 裸机虚拟机监控器，采用分�
 - 支持 Nvidia Thor
 - 支持 Raspberry Pi 5
 - 支持 IOMMU 虚拟化
-- 支持 PCIe 总线虚拟化
 - 支持 时钟控制器 虚拟化
 - 支持 pinctrl 虚拟化
 - 支持无 zone0 启动 zoneU / zoneR
