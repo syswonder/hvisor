@@ -444,6 +444,8 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "rsdp_memory_region_id");
     cJSON *acpi_memory_region_id_json =
         SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "acpi_memory_region_id");
+    cJSON *uefi_memory_region_id_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "uefi_memory_region_id");
     cJSON *screen_base_json =
         SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "screen_base");
 
@@ -496,6 +498,8 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         strtoull(rsdp_memory_region_id_json->valuestring, NULL, 16);
     config->arch_config.acpi_memory_region_id =
         strtoull(acpi_memory_region_id_json->valuestring, NULL, 16);
+    config->arch_config.uefi_memory_region_id =
+        strtoull(uefi_memory_region_id_json->valuestring, NULL, 16);
 
     config->arch_config.screen_base =
         strtoull(screen_base_json->valuestring, NULL, 16);
