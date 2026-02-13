@@ -1,4 +1,11 @@
-sources ?= $(wildcard *.c) ../cJSON/cJSON.c
+sources ?= $(wildcard *.c) $(wildcard ./virtio/*.c) ../cJSON/cJSON.c
+
+# Include device-specific Makefiles
+include ./virtio/devices/blk/Makefile
+include ./virtio/devices/console/Makefile
+include ./virtio/devices/net/Makefile
+include ./virtio/devices/gpu/Makefile
+
 objects ?= $(sources:.c=.o)
 ivc_demo_object ?= ivc_demo.o
 rpmsg_demo_object ?= rpmsg_demo.o
@@ -33,7 +40,7 @@ ifneq ($(ROOT),)
 CFLAGS += --sysroot=$(ROOT)
 endif
 
-include_dirs := -I../include -I./include -I../cJSON
+include_dirs := -I../include -I./include -I./virtio/include -I../cJSON
 
 ifeq ($(LIBC), musl)
 include_dirs += -I./compat/
@@ -42,7 +49,6 @@ endif
 LDFLAGS := -lpthread -static
 
 ifeq ($(VIRTIO_GPU), y)
-	sources += $(wildcard ./virtio_gpu/*.c)
 	CFLAGS += -DENABLE_VIRTIO_GPU
 endif
 
@@ -93,4 +99,4 @@ rpmsg_demo: $(rpmsg_demo_object)
 	$(CC) -o $@ $^ $(CFLAGS) $(include_dirs) $(LDFLAGS) $(LIBS)
 
 clean:
-	@rm -f hvisor ivc_demo rpmsg_demo *.o *.d *.d.* virtio_gpu/*.o virtio_gpu/*.d virtio_gpu/*.d.* ../cJSON/*.o ../cJSON/*.d ../cJSON/*.d.*
+	@rm -f hvisor ivc_demo rpmsg_demo *.o *.d *.d.* virtio/*.o virtio/*.d virtio/*.d.* virtio/devices/*/*.o virtio/devices/*/*.d virtio/devices/*/*.d.* ../cJSON/*.o ../cJSON/*.d ../cJSON/*.d.*
