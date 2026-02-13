@@ -138,6 +138,7 @@ struct arch_zone_config {
     __u64 initrd_size;
     __u64 rsdp_memory_region_id;
     __u64 acpi_memory_region_id;
+    __u64 uefi_memory_region_id;
     __u64 screen_base;
 };
 #endif
