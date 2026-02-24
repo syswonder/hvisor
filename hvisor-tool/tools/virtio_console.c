@@ -28,6 +28,7 @@ ConsoleDev *init_console_dev() {
     dev->config.cols = 80;
     dev->config.rows = 25;
     dev->master_fd = -1;
+    dev->slave_keepalive_fd = -1;
     dev->rx_ready = -1;
     dev->event = NULL;
     return dev;
@@ -43,7 +44,7 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
     struct iovec *iov = NULL;
     uint16_t idx;
 
-    if (epoll_type != EPOLLIN || fd != dev->master_fd) {
+    if (fd != dev->master_fd || !(epoll_type & EPOLLIN)) {
         log_error("Invalid console event");
         return;
     }
@@ -115,17 +116,30 @@ int virtio_console_init(VirtIODevice *vdev) {
         log_error("Failed to get slave name, errno is %d", errno);
     }
     log_info("char device redirected to %s", slave_name);
+    // Open and keep a slave fd in this process. Without a slave peer,
+    // master poll/epoll keeps reporting EPOLLHUP and can cause busy loops.
+    slave_fd = open(slave_name, O_RDWR);
+    if (slave_fd < 0) {
+        log_error("Failed to open slave pty, errno is %d", errno);
+        close(master_fd);
+        dev->master_fd = -1;
+        return -1;
+    }
+
     // Disable line discipline to prevent the TTY
     // from echoing the characters sent from the master back to the master.
-    slave_fd = open(slave_name, O_RDWR);
     tcgetattr(slave_fd, &term_io);
     cfmakeraw(&term_io);
     tcsetattr(slave_fd, TCSAFLUSH, &term_io);
-    close(slave_fd);
+    dev->slave_keepalive_fd = slave_fd;
 
     if (set_nonblocking(dev->master_fd) < 0) {
-        dev->master_fd = -1;
         close(dev->master_fd);
+        if (dev->slave_keepalive_fd >= 0) {
+            close(dev->slave_keepalive_fd);
+            dev->slave_keepalive_fd = -1;
+        }
+        dev->master_fd = -1;
         log_error("Failed to set nonblocking mode, fd closed!");
     }
 
@@ -135,6 +149,10 @@ int virtio_console_init(VirtIODevice *vdev) {
     if (dev->event == NULL) {
         log_error("Can't register console event");
         close(master_fd);
+        if (dev->slave_keepalive_fd >= 0) {
+            close(dev->slave_keepalive_fd);
+            dev->slave_keepalive_fd = -1;
+        }
         dev->master_fd = -1;
         return -1;
     }
@@ -213,6 +231,9 @@ int virtio_console_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
 void virtio_console_close(VirtIODevice *vdev) {
     ConsoleDev *dev = vdev->dev;
     close(dev->master_fd);
+    if (dev->slave_keepalive_fd >= 0) {
+        close(dev->slave_keepalive_fd);
+    }
     free(dev->event);
     free(dev);
     free(vdev->vqs);
