@@ -38,7 +38,7 @@ static void *epoll_loop() {
             hevent = events[i].data.ptr;
             if (hevent == NULL)
                 log_error("hevent shouldn't be null");
-            hevent->handler(hevent->fd, hevent->epoll_type, hevent->param);
+            hevent->handler(hevent->fd, events[i].events, hevent->param);
         }
     }
     pthread_exit(NULL);
