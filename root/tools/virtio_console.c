@@ -141,6 +141,7 @@ int virtio_console_init(VirtIODevice *vdev) {
         }
         dev->master_fd = -1;
         log_error("Failed to set nonblocking mode, fd closed!");
+        return -1;
     }
 
     dev->event =
