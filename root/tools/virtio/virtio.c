@@ -59,8 +59,6 @@ int vdevs_num;
 #define MAX_RAMS 4
 unsigned long long zone_mem[MAX_ZONES][MAX_RAMS][4];
 
-#define WAIT_TIME 1000 // 1ms
-
 const char *virtio_device_type_to_string(VirtioDeviceType type) {
     switch (type) {
     case VirtioTNone:
@@ -113,10 +111,6 @@ inline int is_queue_full(unsigned int front, unsigned int rear,
     } else {
         return 0;
     }
-}
-
-inline int is_queue_empty(unsigned int front, unsigned int rear) {
-    return rear == front;
 }
 
 /// Write barrier to make sure all write operations are finished before this
@@ -1038,11 +1032,127 @@ void virtio_close() {
     log_warn("virtio daemon exit successfully");
 }
 
-void handle_virtio_requests() {
-    struct timespec timeout;
-    timeout.tv_sec = 0;
-    timeout.tv_nsec = WAIT_TIME;
+// Ensure MAX_REQ is a power of two for bitwise masking to work correctly.
+_Static_assert((MAX_REQ != 0) && ((MAX_REQ & (MAX_REQ - 1)) == 0),
+               "MAX_REQ must be a power of 2");
 
+/**
+ * @brief Consumes pending VirtIO requests from the shared ring buffer
+ *
+ * This function implements a high-performance consumer that processes VirtIO
+ * requests from a circular shared buffer. It uses atomic operations and
+ * Dekker's algorithm to avoid race conditions and minimize unnecessary wakeups.
+ *
+ * The function performs the following operations:
+ * - Reads requests from the shared ring buffer using atomic operations
+ * - Processes each request by calling virtio_handle_req()
+ * - Implements busy-polling with a defined maximum count to avoid excessive CPU
+ * usage
+ * - Uses Dekker's algorithm to coordinate with the producer for efficient
+ * sleep/wakeup synchronization
+ *
+ * @return the number of requests successfully processed during this invocation
+ */
+static int consume_pending_requests(void) {
+    int proc_count = 0;
+
+    const uint32_t MAX_POLL_COUNT = 10000000;
+    uint32_t poll_count = 0;
+
+    // Pointers to indices in the shared virtio_bridge structure.
+    uint32_t *p_req_front = (uint32_t *)&virtio_bridge->req_front;
+    uint32_t *p_req_rear = (uint32_t *)&virtio_bridge->req_rear;
+    uint8_t *p_need_wakeup = (uint8_t *)&virtio_bridge->need_wakeup;
+
+    // Local copy of the front index to minimize shared memory reads
+    uint32_t req_front = __atomic_load_n(p_req_front, memory_order_relaxed);
+
+    // Inform the producer that we are active; no need to trigger eventfd
+    __atomic_store_n(p_need_wakeup, 0, memory_order_relaxed);
+
+    while (true) {
+        uint32_t req_rear = __atomic_load_n(p_req_rear, memory_order_relaxed);
+        if (req_front != req_rear) {
+            // Make Guest data visible to Host
+            __atomic_thread_fence(memory_order_acquire);
+
+            // Data available: reset poll counter and clear sleep intention
+            poll_count = 0;
+            ++proc_count;
+
+            struct device_req *req =
+                (struct device_req *)&virtio_bridge->req_list[req_front];
+            virtio_handle_req(req);
+
+            // Move to the next slot in the circular buffer
+            req_front = (req_front + 1U) & (uint32_t)(MAX_REQ - 1);
+
+            // Update the shared front index so the producer knows we've
+            // consumed the slot
+            __atomic_store_n(p_req_front, req_front, memory_order_release);
+        } else {
+            // No data: busy-poll for a defined period before deciding to sleep
+            if (++poll_count < MAX_POLL_COUNT) {
+                continue;
+            }
+            poll_count = 0;
+
+            /*
+             * Dekker's Algorithm Step 1: Signal intention to sleep.
+             * The producer will check this flag to decide whether to write to
+             * eventfd.
+             */
+            __atomic_store_n(p_need_wakeup, 1, memory_order_relaxed);
+
+            /*
+             * Dekker's Algorithm Step 2: Full System Memory Barrier.
+             * This prevents the Store (need_wakeup=1) from being reordered with
+             * the Load (req_rear), which is critical to avoid missing a late
+             * update.
+             */
+            __atomic_thread_fence(memory_order_seq_cst);
+
+            /*
+             * Dekker's Algorithm Step 3: Final re-check.
+             * Check if the producer added a request between our last check and
+             * setting the flag.
+             */
+            req_rear = __atomic_load_n(p_req_rear, memory_order_relaxed);
+            if (req_front == req_rear) {
+                // Confirmed empty: exit loop and enter epoll_wait in the caller
+                break;
+            }
+
+            // Race detected: producer added work, so clear flag and keep
+            // processing
+            __atomic_store_n(p_need_wakeup, 0, memory_order_relaxed);
+        }
+    }
+
+    return proc_count;
+}
+
+/**
+ * @brief Main event loop for handling VirtIO requests and system signals
+ *
+ * This function implements the core event loop for the VirtIO backend. It sets
+ * up signal handling and event notification mechanisms, then enters an infinite
+ * loop waiting for either VirtIO kick events from the kernel or termination
+ * signals.
+ *
+ * Key functionality includes:
+ * - Blocks SIGINT and SIGTERM signals for synchronous handling via signalfd
+ * - Creates and configures epoll instance to monitor both signalfd and eventfd
+ * - Initializes the shared memory state to indicate readiness for notifications
+ * - Processes incoming events using epoll_wait() with infinite timeout
+ * - Handles termination signals gracefully by cleaning up resources
+ * - Delegates VirtIO request processing to consume_pending_requests()
+ *
+ * @return void
+ *
+ * @note The function runs indefinitely until a termination signal is received
+ */
+void handle_virtio_requests(void) {
     // Block signals to handle them synchronously via signalfd
     sigset_t mask;
     sigemptyset(&mask);
@@ -1087,13 +1197,11 @@ void handle_virtio_requests() {
         return;
     }
 
-    virtio_bridge->need_wakeup = 1;
+    // Initial state: Mark backend as ready to receive notifications
+    __atomic_store_n(&virtio_bridge->need_wakeup, 1, memory_order_relaxed);
 
     log_info("virtio request handler loop started.");
-    unsigned int req_front = virtio_bridge->req_front;
-    volatile struct device_req *req;
     int signal_count = 0, proc_count = 0;
-    unsigned long long count = 0;
     struct epoll_event events[16];
     while (true) {
 #ifndef LOONGARCH64
@@ -1128,33 +1236,8 @@ void handle_virtio_requests() {
                 }
 #endif
 
-                while (1) {
-                    if (!is_queue_empty(req_front, virtio_bridge->req_rear)) {
-                        count = 0;
-                        proc_count++;
-                        req = &virtio_bridge->req_list[req_front];
-                        virtio_bridge->need_wakeup = 0;
-                        virtio_handle_req(req);
-                        req_front = (req_front + 1) & (MAX_REQ - 1);
-                        virtio_bridge->req_front = req_front;
-                        write_barrier();
-                    }
-#ifndef LOONGARCH64
-                    else {
-                        count++;
-                        if (count < 10000000)
-                            continue;
-                        count = 0;
-                        virtio_bridge->need_wakeup = 1;
-                        write_barrier();
-                        nanosleep(&timeout, NULL);
-                        if (is_queue_empty(req_front,
-                                           virtio_bridge->req_rear)) {
-                            break;
-                        }
-                    }
-#endif
-                }
+                // Process all pending requests until the ring is empty
+                proc_count += consume_pending_requests();
 #ifndef LOONGARCH64
             }
         }
