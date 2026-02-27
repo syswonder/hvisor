@@ -621,9 +621,8 @@ static const char *virtio_mmio_reg_name(uint64_t offset) {
 }
 
 uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size) {
-    log_debug("virtio mmio read at %#x", offset);
-    log_info("READ virtio mmio at offset=%#x[%s], size=%d, vdev=%p, type=%d",
-             offset, virtio_mmio_reg_name(offset), size, vdev, vdev->type);
+    log_debug("READ virtio mmio at offset=%#x[%s], size=%d, vdev=%p, type=%d",
+              offset, virtio_mmio_reg_name(offset), size, vdev, vdev->type);
 
     if (!vdev) {
         switch (offset) {
@@ -681,8 +680,8 @@ uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size) {
         log_debug("read VIRTIO_MMIO_QUEUE_READY");
         return vdev->vqs[vdev->regs.queue_sel].ready;
     case VIRTIO_MMIO_INTERRUPT_STATUS:
-        log_info("debug: (%s) current interrupt status is %d", __func__,
-                 vdev->regs.interrupt_status);
+        log_debug("(%s) current interrupt status is %d", __func__,
+                  vdev->regs.interrupt_status);
 #ifdef LOONGARCH64
         // clear lvz gintc irq injection bit to avoid endless interrupt...
         log_warn(
@@ -724,12 +723,10 @@ uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size) {
 
 void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t value,
                        unsigned size) {
-    log_debug("virtio mmio write at %#x, value is %#x", offset, value);
-
-    log_info("WRITE virtio mmio at offset=%#x[%s], value=%#x, size=%d, "
-             "vdev=%p, type=%d",
-             offset, virtio_mmio_reg_name(offset), value, size, vdev,
-             vdev->type);
+    log_debug("WRITE virtio mmio at offset=%#x[%s], value=%#x, size=%d, "
+              "vdev=%p, type=%d",
+              offset, virtio_mmio_reg_name(offset), value, size, vdev,
+              vdev->type);
 
     VirtMmioRegs *regs = &vdev->regs;
     VirtQueue *vqs = vdev->vqs;
@@ -831,8 +828,8 @@ void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t value,
                       regs->interrupt_status, value, vdev->type);
         }
         regs->interrupt_status &= !value;
-        log_info("debug: (%s) clearing! interrupt_status -> %d", __func__,
-                 regs->interrupt_status);
+        log_debug("(%s) clearing! interrupt_status -> %d", __func__,
+                  regs->interrupt_status);
         break;
     case VIRTIO_MMIO_STATUS:
         log_debug("write VIRTIO_MMIO_STATUS");
@@ -1205,7 +1202,7 @@ void handle_virtio_requests(void) {
     struct epoll_event events[16];
     while (true) {
 #ifndef LOONGARCH64
-        log_warn("signal_count is %d, proc_count is %d", signal_count,
+        log_info("signal_count is %d, proc_count is %d", signal_count,
                  proc_count);
 
         // Wait indefinitely for a signal or a kernel kick
