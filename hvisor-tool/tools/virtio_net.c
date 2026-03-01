@@ -116,7 +116,7 @@ void virtio_net_event_handler(int fd, int epoll_type, void *param) {
     int n, len;
     uint16_t idx;
     size_t header_len = get_nethdr_size(vdev);
-    if (fd != net->tapfd || epoll_type != EPOLLIN) {
+    if (fd != net->tapfd || !(epoll_type & EPOLLIN)) {
         log_error("invalid event");
         return;
     }
