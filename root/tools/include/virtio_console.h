@@ -25,6 +25,7 @@ typedef struct virtio_console_config ConsoleConfig;
 typedef struct virtio_console_dev {
     ConsoleConfig config;
     int master_fd;
+    int slave_keepalive_fd;
     int rx_ready;
     struct hvisor_event *event;
 } ConsoleDev;
