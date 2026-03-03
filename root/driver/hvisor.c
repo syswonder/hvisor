@@ -62,9 +62,9 @@ static int hvisor_finish_req(void) {
     return 0;
 }
 
-/* Clean+invalidate D-cache to PoC for [phys_start, size). Used after clear and in zone_start. */
-static int flush_cache(__u64 phys_start, __u64 size)
-{
+/* Clean+invalidate D-cache to PoC for [phys_start, size). Used after clear and
+ * in zone_start. */
+static int flush_cache(__u64 phys_start, __u64 size) {
     void __iomem *vaddr;
     unsigned long start, end, addr, line_size;
     size = PAGE_ALIGN(size);
@@ -77,16 +77,17 @@ static int flush_cache(__u64 phys_start, __u64 size)
     end = start + size;
 
 #ifdef ARM64
-    asm volatile("mrs %0, ctr_el0" : "=r" (line_size));
+    asm volatile("mrs %0, ctr_el0" : "=r"(line_size));
     line_size = 4 << ((line_size >> 16) & 0xf);
     // Clean and Invalidate Data Cache to Point of Coherency (PoC)
     addr = start & ~(line_size - 1);
     while (addr < end) {
-        asm volatile("dc civac, %0" : : "r" (addr) : "memory");
+        asm volatile("dc civac, %0" : : "r"(addr) : "memory");
         addr += line_size;
     }
 
-    // barrier, confirm operations are completed and other cores can see the changes.
+    // barrier, confirm operations are completed and other cores can see the
+    // changes.
     asm volatile("dsb sy" : : : "memory");
 #elif RISCV64
     // TODO: implement riscv64 flush operation
@@ -119,14 +120,16 @@ static int hvisor_zone_start(zone_config_t __user *arg) {
 
     // flush image and dtb to memory
     if (zone_config->kernel_load_paddr && zone_config->kernel_size) {
-        pr_info("hvisor.ko: flushing cache for kernel image: [0x%016llx - 0x%016llx), size: 0x%llx\n",
+        pr_info("hvisor.ko: flushing cache for kernel image: [0x%016llx - "
+                "0x%016llx), size: 0x%llx\n",
                 zone_config->kernel_load_paddr,
                 zone_config->kernel_load_paddr + zone_config->kernel_size,
                 zone_config->kernel_size);
         flush_cache(zone_config->kernel_load_paddr, zone_config->kernel_size);
     }
     if (zone_config->dtb_load_paddr && zone_config->dtb_size) {
-        pr_info("hvisor.ko: flushing cache for dtb: [0x%016llx - 0x%016llx), size: 0x%llx\n",
+        pr_info("hvisor.ko: flushing cache for dtb: [0x%016llx - 0x%016llx), "
+                "size: 0x%llx\n",
                 zone_config->dtb_load_paddr,
                 zone_config->dtb_load_paddr + zone_config->dtb_size,
                 zone_config->dtb_size);
@@ -235,7 +238,8 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
     case HVISOR_CONFIG_CHECK:
         err = hvisor_config_check((u64 __user *)arg);
         break;
-    /* Used after clear (zeros to PoC) and in zone_start (all RAM); runs on current CPU. */
+    /* Used after clear (zeros to PoC) and in zone_start (all RAM); runs on
+     * current CPU. */
     case HVISOR_FLUSH_CACHE: {
         struct hvisor_flush_cache_args kargs;
         if (copy_from_user(&kargs, (void __user *)arg, sizeof(kargs))) {
