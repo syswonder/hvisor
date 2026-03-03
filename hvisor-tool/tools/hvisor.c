@@ -124,14 +124,15 @@ static size_t parse_json_size(const cJSON *const json_str) {
 }
 
 static void clear_memory_region(__u64 phys_addr, __u64 size) {
-    int fd = open_dev(); 
+    int fd = open_dev();
     size_t page_size = sysconf(_SC_PAGESIZE);
     __u64 page_offset = phys_addr % page_size;
     __u64 map_phys_addr = phys_addr - page_offset;
     size_t map_size = (size + page_offset + page_size - 1) & ~(page_size - 1);
 
     // Map the physical memory to virtual memory
-    void *map_base = mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, map_phys_addr);
+    void *map_base = mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED,
+                          fd, map_phys_addr);
     if (map_base == MAP_FAILED) {
         perror("Error mapping memory for clearing");
         close(fd);
@@ -157,7 +158,9 @@ static void clear_memory_region(__u64 phys_addr, __u64 size) {
 
     munmap(map_base, map_size);
     close(fd);
-    log_info("Cleared and flushed memory region: 0x%llx - 0x%llx (size: 0x%llx)", phys_addr, phys_addr + size, size);
+    log_info(
+        "Cleared and flushed memory region: 0x%llx - 0x%llx (size: 0x%llx)",
+        phys_addr, phys_addr + size, size);
 }
 
 static __u64 load_str_to_memory(const char *str, __u64 load_paddr) {
@@ -764,9 +767,12 @@ static int zone_start_from_json(const char *json_config_path,
         if (strcmp(type_str, "ram") == 0) {
             mem_region->type = MEM_TYPE_RAM;
             // For some ram region, it is essential to clear the memory region.
-            cJSON *need_clear_json = SAFE_CJSON_GET_OBJECT_ITEM(region, "need_clear");
-            if (need_clear_json && cJSON_IsBool(need_clear_json) && cJSON_IsTrue(need_clear_json)) {
-                clear_memory_region(mem_region->physical_start, mem_region->size);
+            cJSON *need_clear_json =
+                SAFE_CJSON_GET_OBJECT_ITEM(region, "need_clear");
+            if (need_clear_json && cJSON_IsBool(need_clear_json) &&
+                cJSON_IsTrue(need_clear_json)) {
+                clear_memory_region(mem_region->physical_start,
+                                    mem_region->size);
             }
         } else if (strcmp(type_str, "io") == 0) {
             // io device

@@ -70,7 +70,8 @@ typedef struct ioctl_zone_list_args zone_list_args_t;
 #define HVISOR_ZONE_LIST _IOR(1, 5, zone_list_args_t *)
 #define HVISOR_CONFIG_CHECK _IOR(1, 6, __u64 *)
 
-/* Flush [phys_start, phys_start+size) to PoC (e.g. after clear so any CPU sees zeros). */
+/* Flush [phys_start, phys_start+size) to PoC (e.g. after clear so any CPU sees
+ * zeros). */
 struct hvisor_flush_cache_args {
     __u64 phys_start;
     __u64 size;
