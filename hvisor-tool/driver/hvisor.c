@@ -62,58 +62,49 @@ static int hvisor_finish_req(void) {
     return 0;
 }
 
-// static int flush_cache(__u64 phys_start, __u64 size)
-// {
-//     void __iomem *vaddr;
-//     int err = 0;
+/* Clean+invalidate D-cache to PoC for [phys_start, size). Used after clear and in zone_start. */
+static int flush_cache(__u64 phys_start, __u64 size)
+{
+    void __iomem *vaddr;
+    unsigned long start, end, addr, line_size;
+    size = PAGE_ALIGN(size);
+    vaddr = ioremap_cache(phys_start, size);
+    if (!vaddr) {
+        pr_err("hvisor.ko: failed to ioremap image\n");
+        return -ENOMEM;
+    }
+    start = (unsigned long)vaddr;
+    end = start + size;
 
-//     size = PAGE_ALIGN(size);
+#ifdef ARM64
+    asm volatile("mrs %0, ctr_el0" : "=r" (line_size));
+    line_size = 4 << ((line_size >> 16) & 0xf);
+    // Clean and Invalidate Data Cache to Point of Coherency (PoC)
+    addr = start & ~(line_size - 1);
+    while (addr < end) {
+        asm volatile("dc civac, %0" : : "r" (addr) : "memory");
+        addr += line_size;
+    }
 
-//     // 使用 ioremap 映射物理地址
-//     vaddr = ioremap_cache(phys_start, size);
-//     if (!vaddr) {
-//         pr_err("hvisor.ko: failed to ioremap image\n");
-//         return -ENOMEM;
-//     }
-
-//     // flush I-cache（ARM64 平台中 flush_icache_range 是对 D/I 的处理）
-//     flush_icache_range((unsigned long)vaddr, (unsigned long)vaddr + size);
-
-//     // 解除映射
-//     iounmap(vaddr);
-//     return err;
-// }
-// static int flush_cache(__u64 phys_start, __u64 size)
-// {
-//     struct vm_struct *vma;
-//     int err = 0;
-//     size = PAGE_ALIGN(size);
-//     vma = get_vm_area(size, VM_IOREMAP);
-//     if (!vma)
-//     {
-//         pr_err("hvisor.ko: failed to allocate virtual kernel memory for
-//         image\n"); return -ENOMEM;
-//     }
-//     vma->phys_addr = phys_start;
-
-//     if (ioremap_page_range((unsigned long)vma->addr, (unsigned
-//     long)(vma->addr + size), phys_start, PAGE_KERNEL_EXEC))
-//     {
-//         pr_err("hvisor.ko: failed to ioremap image\n");
-//         err = -EFAULT;
-//         goto unmap_vma;
-//     }
-//     // flush icache will also flush dcache
-//     flush_icache_range((unsigned long)(vma->addr), (unsigned long)(vma->addr
-//     + size));
-
-// unmap_vma:
-//     vunmap(vma->addr);
-//     return err;
-// }
+    // barrier, confirm operations are completed and other cores can see the changes.
+    asm volatile("dsb sy" : : : "memory");
+#elif RISCV64
+    // TODO: implement riscv64 flush operation
+#elif LOONGARCH64
+    // TODO: implement loongarch64 flush operation
+#elif X86_64
+    // TODO: implement x86_64 flush operation
+#else
+    pr_err("hvisor.ko: unsupported architecture\n");
+#endif
+    iounmap(vaddr);
+    return 0;
+}
 
 static int hvisor_zone_start(zone_config_t __user *arg) {
     int err = 0;
+    int i = 0;
+
     zone_config_t *zone_config = kmalloc(sizeof(zone_config_t), GFP_KERNEL);
 
     if (zone_config == NULL) {
@@ -126,8 +117,21 @@ static int hvisor_zone_start(zone_config_t __user *arg) {
         return -EFAULT;
     }
 
-    // flush_cache(zone_config->kernel_load_paddr, zone_config->kernel_size);
-    // flush_cache(zone_config->dtb_load_paddr, zone_config->dtb_size);
+    // flush image and dtb to memory
+    if (zone_config->kernel_load_paddr && zone_config->kernel_size) {
+        pr_info("hvisor.ko: flushing cache for kernel image: [0x%016llx - 0x%016llx), size: 0x%llx\n",
+                zone_config->kernel_load_paddr,
+                zone_config->kernel_load_paddr + zone_config->kernel_size,
+                zone_config->kernel_size);
+        flush_cache(zone_config->kernel_load_paddr, zone_config->kernel_size);
+    }
+    if (zone_config->dtb_load_paddr && zone_config->dtb_size) {
+        pr_info("hvisor.ko: flushing cache for dtb: [0x%016llx - 0x%016llx), size: 0x%llx\n",
+                zone_config->dtb_load_paddr,
+                zone_config->dtb_load_paddr + zone_config->dtb_size,
+                zone_config->dtb_size);
+        flush_cache(zone_config->dtb_load_paddr, zone_config->dtb_size);
+    }
 
     pr_info("hvisor.ko: invoking hypercall to start the zone\n");
 
@@ -231,6 +235,16 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
     case HVISOR_CONFIG_CHECK:
         err = hvisor_config_check((u64 __user *)arg);
         break;
+    /* Used after clear (zeros to PoC) and in zone_start (all RAM); runs on current CPU. */
+    case HVISOR_FLUSH_CACHE: {
+        struct hvisor_flush_cache_args kargs;
+        if (copy_from_user(&kargs, (void __user *)arg, sizeof(kargs))) {
+            err = -EFAULT;
+            break;
+        }
+        err = flush_cache(kargs.phys_start, kargs.size);
+        break;
+    }
 #ifdef LOONGARCH64
     case HVISOR_CLEAR_INJECT_IRQ:
         err = hvisor_call(HVISOR_HC_CLEAR_INJECT_IRQ, 0, 0);

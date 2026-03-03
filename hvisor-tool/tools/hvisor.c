@@ -123,6 +123,43 @@ static size_t parse_json_size(const cJSON *const json_str) {
     return strtoull(json_str->valuestring, NULL, 16);
 }
 
+static void clear_memory_region(__u64 phys_addr, __u64 size) {
+    int fd = open_dev(); 
+    size_t page_size = sysconf(_SC_PAGESIZE);
+    __u64 page_offset = phys_addr % page_size;
+    __u64 map_phys_addr = phys_addr - page_offset;
+    size_t map_size = (size + page_offset + page_size - 1) & ~(page_size - 1);
+
+    // Map the physical memory to virtual memory
+    void *map_base = mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, map_phys_addr);
+    if (map_base == MAP_FAILED) {
+        perror("Error mapping memory for clearing");
+        close(fd);
+        exit(1);
+    }
+
+    // Clear the mem region
+    void *virt_addr = (unsigned char *)map_base + page_offset;
+    memset(virt_addr, 0, size);
+    __sync_synchronize();
+
+    // Flush to mem, confirm all writes are visible to other cores.
+    struct hvisor_flush_cache_args flush_args = {
+        .phys_start = phys_addr,
+        .size = size,
+    };
+    if (ioctl(fd, HVISOR_FLUSH_CACHE, &flush_args) != 0) {
+        perror("clear_memory_region: HVISOR_FLUSH_CACHE failed");
+        munmap(map_base, map_size);
+        close(fd);
+        exit(1);
+    }
+
+    munmap(map_base, map_size);
+    close(fd);
+    log_info("Cleared and flushed memory region: 0x%llx - 0x%llx (size: 0x%llx)", phys_addr, phys_addr + size, size);
+}
+
 static __u64 load_str_to_memory(const char *str, __u64 load_paddr) {
     __u64 size, page_size,
         map_size; // Define variables: image size, page size, and map size
@@ -713,10 +750,24 @@ static int zone_start_from_json(const char *json_config_path,
         cJSON *region = SAFE_CJSON_GET_ARRAY_ITEM(memory_regions_json, i);
         memory_region_t *mem_region = &config->memory_regions[i];
 
+        mem_region->physical_start = strtoull(
+            SAFE_CJSON_GET_OBJECT_ITEM(region, "physical_start")->valuestring,
+            NULL, 16);
+        mem_region->virtual_start = strtoull(
+            SAFE_CJSON_GET_OBJECT_ITEM(region, "virtual_start")->valuestring,
+            NULL, 16);
+        mem_region->size = strtoull(
+            SAFE_CJSON_GET_OBJECT_ITEM(region, "size")->valuestring, NULL, 16);
+
         const char *type_str =
             SAFE_CJSON_GET_OBJECT_ITEM(region, "type")->valuestring;
         if (strcmp(type_str, "ram") == 0) {
             mem_region->type = MEM_TYPE_RAM;
+            // For some ram region, it is essential to clear the memory region.
+            cJSON *need_clear_json = SAFE_CJSON_GET_OBJECT_ITEM(region, "need_clear");
+            if (need_clear_json && cJSON_IsBool(need_clear_json) && cJSON_IsTrue(need_clear_json)) {
+                clear_memory_region(mem_region->physical_start, mem_region->size);
+            }
         } else if (strcmp(type_str, "io") == 0) {
             // io device
             mem_region->type = MEM_TYPE_IO;
@@ -727,15 +778,6 @@ static int zone_start_from_json(const char *json_config_path,
             log_error("Unknown memory region type: %s", type_str);
             goto err_out;
         }
-
-        mem_region->physical_start = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(region, "physical_start")->valuestring,
-            NULL, 16);
-        mem_region->virtual_start = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(region, "virtual_start")->valuestring,
-            NULL, 16);
-        mem_region->size = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(region, "size")->valuestring, NULL, 16);
 
         log_debug("memory_region %d: type %d, physical_start %llx, "
                   "virtual_start %llx, size %llx",
