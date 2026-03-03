@@ -16,10 +16,10 @@
 use crate::{
     arch::{mm::new_s2_memory_set, sysreg::write_sysreg},
     consts::{MAX_CPU_NUM, PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
-    cpu_data::this_cpu_data,
+    cpu_data::{this_cpu_data, this_zone},
     memory::{
-        addr::PHYS_VIRT_OFFSET, mm::PARKING_MEMORY_SET, GuestPhysAddr, HostPhysAddr, MemFlags,
-        MemoryRegion, VirtAddr, PARKING_INST_PAGE,
+        addr::phys_to_virt, addr::PHYS_VIRT_OFFSET, mm::PARKING_MEMORY_SET, GuestPhysAddr,
+        HostPhysAddr, MemFlags, MemoryRegion, VirtAddr, PARKING_INST_PAGE,
     },
     platform::BOARD_MPIDR_MAPPINGS,
     zone::find_zone,
@@ -30,6 +30,7 @@ use aarch64_cpu::registers::{
 use core::ptr::addr_of;
 
 use super::{
+    cache::invalidate_dcache_range,
     mm::{get_parange, get_parange_bits, is_s2_pt_level3},
     trap::vmreturn,
 };
@@ -205,6 +206,26 @@ impl ArchCpu {
             this_cpu_data().cpu_on_entry
         );
         unsafe {
+            // invalidate Guest related cache, only for RAM regions
+            // Get cache line size from CTR_EL0[16:19] (min line size, in words of 4 bytes)
+            let ctr_el0: u64;
+            core::arch::asm!("mrs {0}, ctr_el0", out(reg) ctr_el0, options(nostack, preserves_flags));
+            let dcache_line_size = 4 * (1 << ((ctr_el0 >> 16 & 0xF) as usize));
+            this_zone().read().gpm.for_each_region(|region| {
+                // Invalidate all RAM regions of the guest
+                if !region.flags.contains(MemFlags::IO) {
+                    let phys_start = region.mapper.map_fn(region.start);
+                    let hva_start = phys_to_virt(phys_start);
+                    info!("Invalidate Guest related cache, region.start: {:#x}, region.size: {:#x}, phys_start: {:#x}, hva_start: {:#x}", region.start, region.size, phys_start, hva_start);
+                    invalidate_dcache_range(hva_start, region.size, dcache_line_size);
+                }
+            });
+            // Invalidate all instruction cache.
+            core::arch::asm!("ic iallu", options(nostack, preserves_flags));
+            // Invalidate all EL1 stage-1 TLB.
+            core::arch::asm!("tlbi alle1", options(nostack, preserves_flags));
+            core::arch::asm!("dsb sy", options(nostack, preserves_flags));
+            core::arch::asm!("isb", options(nostack, preserves_flags));
             vmreturn(self.guest_reg() as *mut _ as usize);
         }
     }
