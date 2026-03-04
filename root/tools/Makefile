@@ -1,4 +1,11 @@
-sources ?= $(wildcard *.c) ../cJSON/cJSON.c
+sources ?= $(wildcard *.c) $(wildcard ./virtio/*.c) ../cJSON/cJSON.c
+
+# Include device-specific Makefiles
+include ./virtio/devices/blk/Makefile
+include ./virtio/devices/console/Makefile
+include ./virtio/devices/net/Makefile
+include ./virtio/devices/gpu/Makefile
+
 objects ?= $(sources:.c=.o)
 ivc_demo_object ?= ivc_demo.o
 rpmsg_demo_object ?= rpmsg_demo.o
@@ -7,28 +14,22 @@ ROOT ?=
 # gnu or musl
 LIBC ?= gnu
 
-ifeq ($(ARCH), arm64)
-	CCARCH := aarch64
-else ifeq ($(ARCH), riscv)
-	CCARCH := riscv64
-else ifeq ($(ARCH), loongarch)
-	CCARCH := loongarch64
-else ifeq ($(ARCH), x86_64)
-	CCARCH := x86_64
-else
-$(error "Unsupported architecture $(ARCH)")
-endif
-
 ifeq ($(filter $(LIBC),gnu musl),)
 $(error LIBC must be one of: gnu musl)
 endif
 
-ifeq ($(ARCH), loongarch)
-toolchain := $(CCARCH)-unknown-linux-$(LIBC)
-else ifeq ($(ARCH), arm64)
-toolchain := $(CCARCH)-none-linux-$(LIBC)
-else
-toolchain := $(CCARCH)-linux-$(LIBC)
+ifndef CROSS_COMPILE
+	ifeq ($(ARCH), arm64)
+		CROSS_COMPILE := aarch64-none-linux-$(LIBC)-
+	else ifeq ($(ARCH), riscv)
+		CROSS_COMPILE := riscv64-linux-$(LIBC)-
+	else ifeq ($(ARCH), loongarch)
+		CROSS_COMPILE := loongarch64-unknown-linux-$(LIBC)-
+	else ifeq ($(ARCH), x86_64)
+		CROSS_COMPILE := x86_64-linux-$(LIBC)-
+	else
+	$(error "Unsupported architecture $(ARCH)")
+	endif
 endif
 
 CFLAGS := -Wall -Wextra -DLOG_USE_COLOR -DHLOG=$(LOG) -pthread
@@ -39,7 +40,7 @@ ifneq ($(ROOT),)
 CFLAGS += --sysroot=$(ROOT)
 endif
 
-include_dirs := -I../include -I./include -I../cJSON
+include_dirs := -I../include -I./include -I./virtio/include -I../cJSON
 
 ifeq ($(LIBC), musl)
 include_dirs += -I./compat/
@@ -47,11 +48,7 @@ endif
 
 LDFLAGS := -lpthread -static
 
-# LIBS := -L$(ROOT)/usr/lib/$(toolchain) -L$(ROOT)/lib
-# LIBS := -L/opt/aarch64-linux-musl-cross/aarch64-linux-musl -L/opt/aarch64-linux-musl-cross/lib
-
 ifeq ($(VIRTIO_GPU), y)
-	sources += $(wildcard ./virtio_gpu/*.c)
 	CFLAGS += -DENABLE_VIRTIO_GPU
 endif
 
@@ -63,13 +60,12 @@ else
 	CFLAGS += -O2
 endif
 
-CC := $(toolchain)-gcc
-READELF := $(toolchain)-readelf
-OBJDUMP := $(toolchain)-objdump
+CC := $(CROSS_COMPILE)gcc
 
 ifeq ($(ARCH), arm64)
 	ifeq ($(VIRTIO_GPU), y)
-		include_dirs += -I/usr/$(toolchain)/include -I/usr/$(toolchain)/include/libdrm -L/usr/$(toolchain)/lib -ldrm
+		triplet := $(patsubst %-,%,$(notdir $(CROSS_COMPILE)))
+		include_dirs += -I/usr/$(triplet)/include -I/usr/$(triplet)/include/libdrm -L/usr/$(triplet)/lib -ldrm
 	endif
 else ifeq ($(ARCH), riscv)
 	CFLAGS += -static
@@ -78,10 +74,6 @@ else ifeq ($(ARCH), loongarch)
 	ifeq ($(VIRTIO_GPU), y)
 		include_dirs += -I/opt/libdrm-install/include -L/opt/libdrm-install/lib -I/opt/libdrm-install/include/libdrm -ldrm
 	endif
-else ifeq ($(ARCH), x86_64)
-	CC := x86_64-linux-gnu-gcc
-	READELF := x86_64-linux-gnu-readelf
-	OBJDUMP := x86_64-linux-gnu-objdump
 endif
 
 .PHONY: all clean
@@ -107,4 +99,4 @@ rpmsg_demo: $(rpmsg_demo_object)
 	$(CC) -o $@ $^ $(CFLAGS) $(include_dirs) $(LDFLAGS) $(LIBS)
 
 clean:
-	@rm -f hvisor ivc_demo rpmsg_demo *.o *.d *.d.* virtio_gpu/*.o virtio_gpu/*.d virtio_gpu/*.d.* ../cJSON/*.o ../cJSON/*.d ../cJSON/*.d.*
+	@rm -f hvisor ivc_demo rpmsg_demo *.o *.d *.d.* virtio/*.o virtio/*.d virtio/*.d.* virtio/devices/*/*.o virtio/devices/*/*.d virtio/devices/*/*.d.* ../cJSON/*.o ../cJSON/*.d ../cJSON/*.d.*
