@@ -276,12 +276,12 @@ impl Zone {
                             config_value.get_class().0 == 0x6
                         })
                     {
-                        let mut vdev = dev.read().clone();
+                        let mut vdev = dev.read().config_space.clone();
                         vdev.set_vbdf(vbdf);
                         self.vpci_bus.insert(vbdf, vdev);
                     } else {
                         let vdev = guard.remove(&bdf).unwrap();
-                        let mut vdev_inner = vdev.read().clone();
+                        let mut vdev_inner = vdev.read().config_space.clone();
                         vdev_inner.set_vbdf(vbdf);
                         self.vpci_bus.insert(vbdf, vdev_inner);
                     }
