@@ -273,7 +273,7 @@ impl<'a> HyperCall<'a> {
 
         drop(zone_w);
         drop(zone);
-        
+
         // Reset zone_id for all devices allocated to this zone
         let mut pci_list = GLOBAL_PCIE_LIST.lock();
         for (_bdf, dev) in pci_list.iter() {
@@ -282,7 +282,7 @@ impl<'a> HyperCall<'a> {
             }
         }
         drop(pci_list);
-        
+
         remove_zone(zone_id as _);
         info!("zone {} has been shutdown", zone_id);
         HyperCallResult::Ok(0)

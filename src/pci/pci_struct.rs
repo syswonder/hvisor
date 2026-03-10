@@ -1491,7 +1491,6 @@ impl VirtualRootComplex {
         bdf: Bdf,
         dev: VirtualPciConfigSpace,
     ) -> Option<ArcRwLockVirtualPciConfigSpace> {
-        // Calculate base from vbdf (bdf parameter) using accessor, similar to address() method
         let parent_bus = dev.parent_bdf.bus();
         let offset = 0;
         let base = if let Some(accessor) = &self.accessor {
@@ -1500,7 +1499,7 @@ impl VirtualRootComplex {
                 Err(_) => {
                     warn!("can not get physical address for device {:#?}(vbdf), reset device base same to hardware", bdf);
                     dev.get_base()
-                },
+                }
             }
         } else {
             warn!("can not found accessor for vpci bus, reset device base same to hardware");

@@ -49,7 +49,10 @@ use crate::pci::pci_handler::mmio_vpci_handler;
 use crate::{
     memory::mmio_generic_handler,
     pci::{
-        config_accessors::{dwc::DwcConfigAccessor, dwc::DwcConfigRegionBackend, dwc_atu::AtuConfig, PciConfigAccessor, PciRegionMmio},
+        config_accessors::{
+            dwc::DwcConfigAccessor, dwc::DwcConfigRegionBackend, dwc_atu::AtuConfig,
+            PciConfigAccessor, PciRegionMmio,
+        },
         pci_handler::{mmio_dwc_cfg_handler, mmio_dwc_io_handler, mmio_vpci_handler_dbi},
         PciConfigAddress,
     },
@@ -348,7 +351,11 @@ impl Zone {
                             vdev_inner.set_vbdf(vbdf);
                             self.vpci_bus.insert(vbdf, vdev_inner);
                         } else {
-                            warn!("Device {:#?} is already allocated to zone {:?}", bdf, dev.get_zone_id());
+                            warn!(
+                                "Device {:#?} is already allocated to zone {:?}",
+                                bdf,
+                                dev.get_zone_id()
+                            );
                         }
                     }
                 } else {
