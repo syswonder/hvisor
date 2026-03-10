@@ -253,6 +253,7 @@ impl Zone {
             let mut vbus_pre = bus_range_begin;
             let mut bus_pre = bus_range_begin;
             let mut device_pre = 0u8;
+            let mut vdevice_pre = 0u8;
 
             /*
              * To allow Linux to successfully recognize the devices we add, hvisor needs
@@ -292,7 +293,21 @@ impl Zone {
                     vbus_pre
                 };
 
-                let vbdf = Bdf::new(bdf.domain(), vbus, device, vfunction);
+                // Remap device number to be contiguous, starting from 0
+                let vdevice = if bus != bus_pre || device != device_pre {
+                    // New bus or new device, increment device counter
+                    if bus != bus_pre {
+                        vdevice_pre = 0;
+                    } else {
+                        vdevice_pre += 1;
+                    }
+                    vdevice_pre
+                } else {
+                    // Same bus and device, keep the same virtual device number
+                    vdevice_pre
+                };
+
+                let vbdf = Bdf::new(bdf.domain(), vbus, vdevice, vfunction);
 
                 device_pre = device;
                 bus_pre = bus;
