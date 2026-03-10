@@ -280,10 +280,15 @@ impl Zone {
                         vdev.set_vbdf(vbdf);
                         self.vpci_bus.insert(vbdf, vdev);
                     } else {
-                        let vdev = guard.remove(&bdf).unwrap();
-                        let mut vdev_inner = vdev.read().config_space.clone();
-                        vdev_inner.set_vbdf(vbdf);
-                        self.vpci_bus.insert(vbdf, vdev_inner);
+                        // Check if device is already allocated to another zone
+                        if dev.get_zone_id().is_none() {
+                            dev.set_zone_id(Some(_zone_id as u32));
+                            let mut vdev_inner = dev.read().config_space.clone();
+                            vdev_inner.set_vbdf(vbdf);
+                            self.vpci_bus.insert(vbdf, vdev_inner);
+                        } else {
+                            warn!("Device {:#?} is already allocated to zone {:?}", bdf, dev.get_zone_id());
+                        }
                     }
                 } else {
                     // warn!("can not find dev {:#?}", bdf);
