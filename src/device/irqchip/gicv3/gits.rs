@@ -157,6 +157,14 @@ impl Cmdq {
         r
     }
 
+    fn reset_vm(&mut self, zone_id: usize) {
+        assert!(zone_id < MAX_ZONE_NUM, "Invalid zone id!");
+        self.cbaser_list[zone_id] = 0;
+        self.creadr_list[zone_id] = 0;
+        self.cwriter_list[zone_id] = 0;
+        self.cmdq_page_num[zone_id] = 0;
+    }
+
     fn init_real_cbaser(&self) {
         let reg = host_gits_base() + GITS_CBASER;
         let writer = host_gits_base() + GITS_CWRITER;
@@ -494,4 +502,15 @@ pub fn set_ct_baser(value: usize, zone_id: usize) {
     let binding = get_ct(zone_id);
     let mut ct = binding.write();
     ct.set_baser(value);
+}
+
+pub fn gits_reset(zone_id: usize) {
+    let mut cmdq = CMDQ.get().unwrap().lock();
+    cmdq.reset_vm(zone_id);
+    let dt_binding = get_dt(zone_id);
+    let mut dt = dt_binding.write();
+    dt.set_baser(0);
+    let ct_binding = get_ct(zone_id);
+    let mut ct = ct_binding.write();
+    ct.set_baser(0);
 }

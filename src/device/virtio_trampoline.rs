@@ -241,8 +241,8 @@ impl VirtioBridgeController {
     #[allow(unused)]
     pub fn need_wakeup(&self) -> bool {
         let base = self.base_address.load(Ordering::Relaxed);
+        fence(Ordering::SeqCst);
         let need_wakeup = unsafe { (&*(base as *const VirtioBridge)).need_wakeup.get() };
-        fence(Ordering::Acquire);
         need_wakeup == 1
     }
 }
