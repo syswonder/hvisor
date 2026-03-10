@@ -19,12 +19,12 @@ use crate::{
         s2pt::DescriptorAttr,
         vmcs::{VmcsGuest16, VmcsGuestNW},
     },
+    cpu_data::{this_cpu_data, this_zone},
     error::HvResult,
     memory::{
         addr::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr},
         MMIOAccess, MMIOHandler,
     },
-    percpu::{this_cpu_data, this_zone},
 };
 use alloc::{sync::Arc, vec::Vec};
 use bit_field::BitField;

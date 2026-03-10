@@ -15,6 +15,7 @@
 //    Hangqi Ren <2572131118@qq.com>
 use crate::arch::zone::{GicConfig, Gicv2Config, HvArchZoneConfig};
 use crate::config::{BitmapWord, CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD};
+use crate::cpu_data::this_zone;
 use crate::device::irqchip::gicv2::gicd::{
     get_max_int_num, GICD, GICD_CTRL_REG_OFFSET, GICD_ICACTIVER_REG_OFFSET,
     GICD_ICENABLER_REG_OFFSET, GICD_ICFGR_REG_OFFSET, GICD_ICPENDR_REG_OFFSET,
@@ -28,7 +29,6 @@ use crate::device::irqchip::gicv2::gicd::{
 use crate::device::irqchip::gicv2::GICV2;
 use crate::error::HvResult;
 use crate::memory::{mmio_perform_access, MMIOAccess, MemFlags, MemoryRegion};
-use crate::percpu::this_zone;
 /// This file defines and implements the functional functions of virtual gicv2.
 /// author: ForeverYolo
 /// reference:

@@ -22,12 +22,12 @@ use crate::pci::pci_access::{
 use crate::pci::pci_struct::{CapabilityType, PciCapability, VirtualPciConfigSpace};
 use crate::pci::PciConfigAddress;
 // use crate::memory::frame::Frame;
+use crate::cpu_data::this_zone;
 use crate::memory::MMIOAccess;
 use crate::pci::pci_access::PciMemType;
 use crate::pci::pci_struct::ArcRwLockVirtualPciConfigSpace;
 use crate::pci::pci_struct::PciCapabilityRegion;
 use crate::pci::vpci_dev::VirtMsiXCap;
-use crate::percpu::this_zone;
 use alloc::sync::Arc;
 use spin::RwLock;
 

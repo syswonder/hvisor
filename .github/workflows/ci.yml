@@ -31,7 +31,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget
           cargo install --version 0.3.0 --locked cargo-binutils
-          cargo install cargo-xbuild
       - name: Format Check
         run: make fmt-test
 
@@ -69,7 +68,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget
           cargo install --version 0.3.0 --locked cargo-binutils
-          cargo install cargo-xbuild
       - name: Set up environment variables
         run: |
           echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
@@ -154,7 +152,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y wget
           cargo install --version 0.3.0 --locked cargo-binutils
-          cargo install cargo-xbuild
           wget -q https://github.com/sunhaiyong1978/CLFS-for-LoongArch/releases/download/8.0/loongarch64-clfs-8.0-cross-tools-gcc-full.tar.xz
           tar -xf loongarch64-clfs-8.0-cross-tools-gcc-full.tar.xz
           echo "$GITHUB_WORKSPACE/cross-tools/bin" >> $GITHUB_PATH
@@ -218,8 +215,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget expect device-tree-compiler p7zip-full gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu
           cargo install --version 0.3.0 --locked cargo-binutils
-          cargo install cargo-xbuild
-
       - name: Set up environment variables
         run: |
           echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV

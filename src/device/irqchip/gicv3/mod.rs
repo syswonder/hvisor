@@ -38,6 +38,7 @@ use crate::arch::zone::GicConfig;
 use crate::config::root_zone_config;
 use crate::consts::{self, MAX_CPU_NUM};
 
+use crate::device::irqchip::gicv3::gits::gits_reset;
 use crate::event::check_events;
 use crate::hypercall::SGI_IPI_ID;
 use crate::zone::Zone;
@@ -487,6 +488,9 @@ impl Zone {
                 write_volatile((gicd_base + GICD_ICENABLER + idx * 4) as *mut u32, mask);
                 write_volatile((gicd_base + GICD_ICACTIVER + idx * 4) as *mut u32, mask);
             }
+        }
+        if host_gits_size() != 0 {
+            gits_reset(self.id);
         }
     }
 }

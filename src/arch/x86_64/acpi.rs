@@ -17,8 +17,8 @@
 use crate::{
     arch::boot,
     config::{HvConfigMemoryRegion, HvZoneConfig},
+    cpu_data::{this_zone, CpuSet},
     error::HvResult,
-    percpu::{this_zone, CpuSet},
     platform::ROOT_PCI_MAX_BUS,
 };
 use acpi::{

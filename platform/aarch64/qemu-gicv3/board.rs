@@ -24,6 +24,7 @@ use crate::{
 
 use crate::pci_dev;
 
+#[allow(unused)]
 pub const BOARD_NAME: &str = "qemu-gicv3";
 
 pub const BOARD_NCPUS: usize = 4;

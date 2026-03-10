@@ -94,6 +94,7 @@ enum ColorCode {
     BrightWhite = 97,
 }
 
+#[allow(unused)]
 fn color_code_to_bgra(code: &ColorCode) -> u32 {
     match code {
         ColorCode::Black => 0,
@@ -204,7 +205,7 @@ impl Log for SimpleLogger {
         let level = record.level();
         let line = record.line().unwrap_or(0);
         let target = record.target();
-        let cpu_id = crate::percpu::this_cpu_data().id;
+        let cpu_id = crate::cpu_data::this_cpu_data().id;
         let level_color = match level {
             Level::Error => ColorCode::BrightRed,
             Level::Warn => ColorCode::BrightYellow,

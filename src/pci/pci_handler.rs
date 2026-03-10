@@ -16,10 +16,10 @@
 
 use alloc::string::String;
 
+use crate::cpu_data::this_zone;
 use crate::error::HvResult;
 use crate::memory::MMIOAccess;
 use crate::memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion};
-use crate::percpu::this_zone;
 use crate::zone::is_this_root_zone;
 
 use super::pci_access::{BridgeField, EndpointField, HeaderType, PciField, PciMemType};
@@ -293,17 +293,8 @@ fn handle_endpoint_access(
                                     });
                                 }
 
-                                let paddr = if is_root {
-                                    dev.with_bar_ref_mut(slot, |bar| bar.set_value(new_vaddr));
-                                    if bar_type == PciMemType::Mem64High {
-                                        dev.with_bar_ref_mut(slot - 1, |bar| {
-                                            bar.set_value(new_vaddr)
-                                        });
-                                    }
-                                    new_vaddr as HostPhysAddr
-                                } else {
-                                    dev.with_bar_ref(slot, |bar| bar.get_value64()) as HostPhysAddr
-                                };
+                                let paddr =
+                                    dev.with_bar_ref(slot, |bar| bar.get_value64()) as HostPhysAddr;
                                 let bar_size = {
                                     let size = dev.with_bar_ref(slot, |bar| bar.get_size());
                                     if crate::memory::addr::is_aligned(size as usize) {

@@ -15,13 +15,12 @@
 //
 use core::ptr;
 
-use aarch64_cpu::registers::DAIF::A;
 use alloc::{sync::Arc, vec::Vec};
 use spin::{mutex::Mutex, Once, RwLock};
 
 use crate::{
-    consts::MAX_ZONE_NUM, device::irqchip::gicv3::gicr::enable_one_lpi, memory::Frame,
-    percpu::this_zone, zone::this_zone_id,
+    consts::MAX_ZONE_NUM, cpu_data::this_zone, device::irqchip::gicv3::gicr::enable_one_lpi,
+    memory::Frame,
 };
 
 use super::host_gits_base;
@@ -158,6 +157,14 @@ impl Cmdq {
         r
     }
 
+    fn reset_vm(&mut self, zone_id: usize) {
+        assert!(zone_id < MAX_ZONE_NUM, "Invalid zone id!");
+        self.cbaser_list[zone_id] = 0;
+        self.creadr_list[zone_id] = 0;
+        self.cwriter_list[zone_id] = 0;
+        self.cmdq_page_num[zone_id] = 0;
+    }
+
     fn init_real_cbaser(&self) {
         let reg = host_gits_base() + GITS_CBASER;
         let writer = host_gits_base() + GITS_CWRITER;
@@ -177,7 +184,7 @@ impl Cmdq {
         self.cbaser_list[zone_id] = value;
         let gpa_base = value & 0xffffffffff000;
         unsafe {
-            let phy_base = match this_zone().read().gpm.page_table_query(gpa_base) {
+            let _phy_base = match this_zone().read().gpm.page_table_query(gpa_base) {
                 Ok(p) => self.phy_base_list[zone_id] = p.0,
                 _ => {}
             };
@@ -495,4 +502,15 @@ pub fn set_ct_baser(value: usize, zone_id: usize) {
     let binding = get_ct(zone_id);
     let mut ct = binding.write();
     ct.set_baser(value);
+}
+
+pub fn gits_reset(zone_id: usize) {
+    let mut cmdq = CMDQ.get().unwrap().lock();
+    cmdq.reset_vm(zone_id);
+    let dt_binding = get_dt(zone_id);
+    let mut dt = dt_binding.write();
+    dt.set_baser(0);
+    let ct_binding = get_ct(zone_id);
+    let mut ct = ct_binding.write();
+    ct.set_baser(0);
 }

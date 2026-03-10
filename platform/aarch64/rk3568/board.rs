@@ -14,6 +14,7 @@
 // Authors:
 //
 
+use crate::pci_dev;
 use crate::{
     arch::{
         mmu::MemoryType,
@@ -22,7 +23,6 @@ use crate::{
     config::*,
     pci::vpci_dev::VpciDevType,
 };
-use crate::pci_dev;
 
 pub const BOARD_NAME: &str = "rk3568";
 
@@ -50,8 +50,8 @@ pub const BOARD_PHYSMEM_LIST: &[(u64, u64, MemoryType)] = &[
 ];
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0xa0000000;
-pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x00280000 ;
-pub const ROOT_ZONE_ENTRY: u64 = 0x00280000 ;
+pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x00280000;
+pub const ROOT_ZONE_ENTRY: u64 = 0x00280000;
 //pub const ROOT_ZONE_CPUS: u64 = (1 << 0) ;
 pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1);
 
@@ -339,18 +339,16 @@ pub const ROOT_PCI_CONFIG: &[HvPciConfig] = &[
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
 
-pub const ROOT_DWC_ATU_CONFIG: &[HvDwcAtuConfig] = &[
-    HvDwcAtuConfig {
-        ecam_base: 0x3c0400000,
-        dbi_base: 0x3c0400000,
-        dbi_size: 0x10000,
-        apb_base: 0xfe270000,
-        apb_size: 0x10000,
-        cfg_base: 0xf2000000,
-        cfg_size: 0x80000*2,
-        io_cfg_atu_shared: 0,
-    },
-];
+pub const ROOT_DWC_ATU_CONFIG: &[HvDwcAtuConfig] = &[HvDwcAtuConfig {
+    ecam_base: 0x3c0400000,
+    dbi_base: 0x3c0400000,
+    dbi_size: 0x10000,
+    apb_base: 0xfe270000,
+    apb_size: 0x10000,
+    cfg_base: 0xf2000000,
+    cfg_size: 0x80000 * 2,
+    io_cfg_atu_shared: 0,
+}];
 
 pub const ROOT_PCI_DEVS: [HvPciDevConfig; 2] = [
     pci_dev!(0x0, 0x00, 0x0, 0x0, VpciDevType::Physical),

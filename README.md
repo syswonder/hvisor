@@ -47,11 +47,11 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
 |                                  | AIA                    | `riscv64`                                    | MSI mode only                          |
 |                                  | APIC                   | `x86_64`                                     |                                        |
 | **Device Passthrough(Zone0)**    | All                    |  All                                         |                                        |
-| **Device Passthrough(ZoneU)**    | PCIe                   | `aarch64`, `riscv64`, `loongarch64`,`x86_64` | Testing needed                         |
+| **Device Passthrough(ZoneU)**    | PCIe                   | `aarch64`, `riscv64`, `loongarch64`,`x86_64` |                                        |
 |                                  | GPU / HDMI             | `aarch64`, `loongarch64`                     | NXP i.MX8MP, 3A6000                    |
 |                                  | eMMC                   | `aarch64`, `riscv64`                         | NXP i.MX8MP                            |
-|                                  | USB                    | `aarch64`                                    | NXP i.MX8MP                            |
-|                                  | SATA                   | `riscv64`, `loongarch64`                     | megrez, 3A6000                         |
+|                                  | USB                    | `aarch64`, `x86_64`                          | NXP i.MX8MP                            |
+|                                  | SATA                   | `riscv64`, `loongarch64`, `x86_64`           | megrez, 3A6000                         |
 |                                  | Ethernet               | `aarch64`, `riscv64`, `loongarch64`,`x86_64` | NXP i.MX8MP, megrez, 3A6000            |
 
 ## Supported Boards
@@ -71,6 +71,7 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
 - [x] QEMU virt riscv64
 - [x] Milk-V Megrez 
 - [x] Sifive Hifive Premier P550
+- [x] dp-1000
 - [ ] FPGA XiangShan(KunMingHu) on S2C Prodigy S7-19PS-2
 
 ### loongarch64
@@ -82,6 +83,7 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
 
 - [x] QEMU Q35
 - [x] ASUS NUC14MNK
+- [x] ECX-2300F-PEG
 
 ## Supported Guest OS
 
@@ -97,14 +99,19 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
 Please refer to the hvisor documentation for quick start guides, build and run instructions for all supported platforms: [hvisor Documentation](https://hvisor.syswonder.org/)
 
 ## Roadmap
+### Completed
+- [CHANGELOG](./CHANGELOG.md)
+- Support for USB zoneU passthrough
+- Support for PCIe bus virtualization
 
+### Planned
 - Support for Android
 - Support for OpenHarmony  
 - Support for ARMv9
 - Support for GICv4
 - Support for Cache Coloring
 - Support for SR-IOV
-- Support for USB / NPU zoneU passthrough
+- Support for NPU zoneU passthrough
 - Support for Nvidia GPU zoneU passthrough
 - Web Management tool
 - Device Tree configuration tool
@@ -112,7 +119,6 @@ Please refer to the hvisor documentation for quick start guides, build and run i
 - Support for Nvidia Thor
 - Support for Raspberry Pi 5
 - Support for IOMMU virtualization
-- Support for PCIe bus virtualization
 - Support for Clock Controller virtualization
 - Support for pinctrl virtualization
 - Support for booting zoneU / zoneR without zone0

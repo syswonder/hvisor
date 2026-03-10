@@ -72,15 +72,15 @@ pub fn gic_send_event(cpu_id: u64, sgi_num: u64) {
 }
 
 impl Zone {
-    pub fn virqc_init(&mut self, config: &HvZoneConfig) {
+    pub fn virqc_init(&mut self, _config: &HvZoneConfig) {
         #[cfg(all(feature = "plic", target_arch = "riscv64"))]
         {
-            self.vplic_init(config);
+            self.vplic_init(_config);
         }
         #[cfg(all(feature = "aia", target_arch = "riscv64"))]
         {
-            self.vaplic_init(config);
-            self.vimsic_init(config);
+            self.vaplic_init(_config);
+            self.vimsic_init(_config);
         }
     }
 

@@ -17,7 +17,6 @@
 /// since this is a baremetal program
 /// all unittests are performed when running hvisor on qemu
 /// you will need to use `make test` to run the unittests
-use core::ptr::write_volatile;
 use qemu_exit::QEMUExit;
 
 #[cfg(target_arch = "riscv64")]

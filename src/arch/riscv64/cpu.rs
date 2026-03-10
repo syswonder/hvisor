@@ -14,7 +14,7 @@
 // Authors:
 //
 use super::csr::*;
-use crate::percpu::this_cpu_data;
+use crate::cpu_data::this_cpu_data;
 use crate::platform::{BOARD_HARTID_MAP, BOARD_NCPUS};
 use crate::{
     arch::mm::new_s2_memory_set,

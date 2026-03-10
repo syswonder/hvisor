@@ -189,7 +189,7 @@ impl VirtioBridgeController {
     }
 
     /// Get req list agent.
-    pub fn req_agent(&self) -> ReqAgent {
+    fn req_agent(&self) -> ReqAgent {
         if !self.is_enable.load(Ordering::Acquire) {
             panic!("VirtioBridge not enabled");
         }
@@ -241,8 +241,8 @@ impl VirtioBridgeController {
     #[allow(unused)]
     pub fn need_wakeup(&self) -> bool {
         let base = self.base_address.load(Ordering::Relaxed);
+        fence(Ordering::SeqCst);
         let need_wakeup = unsafe { (&*(base as *const VirtioBridge)).need_wakeup.get() };
-        fence(Ordering::Acquire);
         need_wakeup == 1
     }
 }
