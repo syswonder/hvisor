@@ -1470,6 +1470,7 @@ impl RootComplex {
 pub struct VirtualRootComplex {
     devs: BTreeMap<Bdf, ArcRwLockVirtualPciConfigSpace>,
     base_to_bdf: BTreeMap<PciConfigAddress, Bdf>,
+    accessor: Option<Arc<dyn PciConfigAccessor>>,
 }
 
 impl VirtualRootComplex {
@@ -1477,7 +1478,12 @@ impl VirtualRootComplex {
         Self {
             devs: BTreeMap::new(),
             base_to_bdf: BTreeMap::new(),
+            accessor: None,
         }
+    }
+
+    pub fn set_accessor(&mut self, accessor: Arc<dyn PciConfigAccessor>) {
+        self.accessor = Some(accessor);
     }
 
     pub fn insert(
@@ -1485,7 +1491,21 @@ impl VirtualRootComplex {
         bdf: Bdf,
         dev: VirtualPciConfigSpace,
     ) -> Option<ArcRwLockVirtualPciConfigSpace> {
-        let base = dev.get_base();
+        // Calculate base from vbdf (bdf parameter) using accessor, similar to address() method
+        let parent_bus = dev.parent_bdf.bus();
+        let offset = 0;
+        let base = if let Some(accessor) = &self.accessor {
+            match accessor.get_physical_address(bdf, offset, parent_bus) {
+                Ok(addr) => addr,
+                Err(_) => {
+                    warn!("can not get physical address for device {:#?}(vbdf), reset device base same to hardware", bdf);
+                    dev.get_base()
+                },
+            }
+        } else {
+            warn!("can not found accessor for vpci bus, reset device base same to hardware");
+            dev.get_base()
+        };
         info!("pci insert base {:#x} to bdf {:#?}", base, bdf);
         self.base_to_bdf.insert(base, bdf);
         self.devs

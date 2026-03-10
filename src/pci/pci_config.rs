@@ -49,12 +49,18 @@ use crate::pci::pci_handler::mmio_vpci_handler;
 use crate::{
     memory::mmio_generic_handler,
     pci::{
-        config_accessors::{dwc::DwcConfigRegionBackend, dwc_atu::AtuConfig, PciRegionMmio},
+        config_accessors::{dwc::DwcConfigAccessor, dwc::DwcConfigRegionBackend, dwc_atu::AtuConfig, PciConfigAccessor, PciRegionMmio},
         pci_handler::{mmio_dwc_cfg_handler, mmio_dwc_io_handler, mmio_vpci_handler_dbi},
         PciConfigAddress,
     },
     platform,
 };
+
+#[cfg(feature = "ecam_pcie")]
+use crate::pci::config_accessors::{ecam::EcamConfigAccessor, PciConfigAccessor};
+
+#[cfg(feature = "loongarch64_pcie")]
+use crate::pci::config_accessors::{loongarch64::LoongArchConfigAccessor, PciConfigAccessor};
 
 #[cfg(feature = "loongarch64_pcie")]
 use crate::pci::pci_handler::mmio_vpci_direct_handler;
@@ -183,6 +189,46 @@ impl Zone {
             let ecam_base = target_pci_config.ecam_base;
             let target_domain = target_pci_config.domain;
             let bus_range_begin = target_pci_config.bus_range_begin as u8;
+
+            // Create accessor for VirtualRootComplex, similar to RootComplex
+            #[cfg(feature = "dwc_pcie")]
+            {
+                use alloc::sync::Arc;
+                let atu_config = platform::ROOT_DWC_ATU_CONFIG
+                    .iter()
+                    .find(|atu_cfg| atu_cfg.ecam_base == ecam_base);
+
+                match atu_config {
+                    Some(cfg) => {
+                        let root_bus = bus_range_begin;
+                        let accessor = Arc::new(DwcConfigAccessor::new(cfg, root_bus));
+                        self.vpci_bus.set_accessor(accessor);
+                    }
+                    None => {
+                        warn!("No ATU config found for ecam_base 0x{:x}", ecam_base);
+                        continue;
+                    }
+                }
+            }
+
+            #[cfg(feature = "loongarch64_pcie")]
+            {
+                use alloc::sync::Arc;
+                let root_bus = bus_range_begin;
+                let accessor = Arc::new(LoongArchConfigAccessor::new(
+                    ecam_base,
+                    target_pci_config.ecam_size,
+                    root_bus,
+                ));
+                self.vpci_bus.set_accessor(accessor);
+            }
+
+            #[cfg(feature = "ecam_pcie")]
+            {
+                use alloc::sync::Arc;
+                let accessor = Arc::new(EcamConfigAccessor::new(ecam_base));
+                self.vpci_bus.set_accessor(accessor);
+            }
 
             let mut filtered_devices: alloc::vec::Vec<HvPciDevConfig> = alloc::vec::Vec::new();
             for i in 0..num_pci_devs {
