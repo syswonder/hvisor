@@ -44,14 +44,14 @@ use crate::pci::{
 use crate::pci::{mem_alloc::BaseAllocator, pci_struct::RootComplex};
 
 #[cfg(feature = "ecam_pcie")]
-use crate::pci::pci_handler::mmio_vpci_handler;
+use crate::pci::{config_accessors::ecam::EcamConfigAccessor, pci_handler::mmio_vpci_handler};
+
 #[cfg(feature = "dwc_pcie")]
 use crate::{
     memory::mmio_generic_handler,
     pci::{
         config_accessors::{
-            dwc::DwcConfigAccessor, dwc::DwcConfigRegionBackend, dwc_atu::AtuConfig,
-            PciConfigAccessor, PciRegionMmio,
+            dwc::DwcConfigAccessor, dwc::DwcConfigRegionBackend, dwc_atu::AtuConfig, PciRegionMmio,
         },
         pci_handler::{mmio_dwc_cfg_handler, mmio_dwc_io_handler, mmio_vpci_handler_dbi},
         PciConfigAddress,
@@ -59,14 +59,10 @@ use crate::{
     platform,
 };
 
-#[cfg(feature = "ecam_pcie")]
-use crate::pci::config_accessors::{ecam::EcamConfigAccessor, PciConfigAccessor};
-
 #[cfg(feature = "loongarch64_pcie")]
-use crate::pci::config_accessors::{loongarch64::LoongArchConfigAccessor, PciConfigAccessor};
-
-#[cfg(feature = "loongarch64_pcie")]
-use crate::pci::pci_handler::mmio_vpci_direct_handler;
+use crate::pci::{
+    config_accessors::loongarch64::LoongArchConfigAccessor, pci_handler::mmio_vpci_direct_handler,
+};
 
 pub static GLOBAL_PCIE_LIST: Lazy<Mutex<BTreeMap<Bdf, ArcRwLockVirtualPciConfigSpace>>> =
     Lazy::new(|| {
@@ -181,7 +177,7 @@ impl Zone {
         pci_config: &[HvPciConfig],
         _num_pci_config: usize,
     ) -> HvResult {
-        let mut guard = GLOBAL_PCIE_LIST.lock();
+        let guard = GLOBAL_PCIE_LIST.lock();
         for target_pci_config in pci_config {
             // Skip empty config
             if target_pci_config.ecam_base == 0 {

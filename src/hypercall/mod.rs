@@ -275,7 +275,7 @@ impl<'a> HyperCall<'a> {
         drop(zone);
 
         // Reset zone_id for all devices allocated to this zone
-        let mut pci_list = GLOBAL_PCIE_LIST.lock();
+        let pci_list = GLOBAL_PCIE_LIST.lock();
         for (_bdf, dev) in pci_list.iter() {
             if dev.get_zone_id() == Some(zone_id as u32) {
                 dev.set_zone_id(None);
