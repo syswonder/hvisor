@@ -321,13 +321,15 @@ static irqreturn_t virtio_irq_handler(int irq, void *dev_id) {
     }
 
     // Wake up the userspace virtio daemon.
-    // Linux 6.8+ simplified eventfd_signal to one argument
+    // Linux 6.8+ simplified eventfd_signal to one argument and return void
+    // static inline void eventfd_signal(struct eventfd_ctx *ctx) in eventfd.h
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
     eventfd_signal(virtio_irq_ctx);
 #else
-    if (eventfd_signal(virtio_irq_ctx, 1) < 0) {
-        pr_err("eventfd_signal failed (%d).\n", ret);
-    }
+    /* e.g. Linux 5.10: eventfd_signal(ctx, n) returns __u64 (amount
+     * incremented). */
+    if (eventfd_signal(virtio_irq_ctx, 1) == 0)
+        pr_err("eventfd_signal: counter overflow or no increment\n");
 #endif
 
     return IRQ_HANDLED;
