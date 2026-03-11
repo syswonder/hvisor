@@ -315,18 +315,22 @@ static struct miscdevice hvisor_misc_dev = {
  * invalid
  */
 static irqreturn_t virtio_irq_handler(int irq, void *dev_id) {
-    int ret;
-
     // Check the device id and virtio_irq_ctx is valid.
     if (dev_id != &hvisor_misc_dev || !virtio_irq_ctx) {
         return IRQ_NONE;
     }
 
     // Wake up the userspace virtio daemon.
-    ret = eventfd_signal(virtio_irq_ctx, 1);
-    if (ret < 0) {
-        pr_err("eventfd_signal failed (%d).\n", ret);
-    }
+    // Linux 6.8+ simplified eventfd_signal to one argument and return void
+    // static inline void eventfd_signal(struct eventfd_ctx *ctx) in eventfd.h
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+    eventfd_signal(virtio_irq_ctx);
+#else
+    /* e.g. Linux 5.10: eventfd_signal(ctx, n) returns __u64 (amount
+     * incremented). */
+    if (eventfd_signal(virtio_irq_ctx, 1) == 0)
+        pr_err("eventfd_signal: counter overflow or no increment\n");
+#endif
 
     return IRQ_HANDLED;
 }
