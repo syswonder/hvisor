@@ -357,6 +357,9 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
 
     zone.arch_zone_post_configuration(config)?;
 
+    // Reset the zone arch-related resources, e.g. invalid data cache
+    zone.arch_zone_reset(config)?;
+
     // Initialize the virtual interrupt controller, it needs zone.cpu_num
     zone.virqc_init(config);
 

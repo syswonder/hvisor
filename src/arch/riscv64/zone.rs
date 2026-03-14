@@ -64,6 +64,10 @@ impl Zone {
     pub fn arch_zone_post_configuration(&mut self, _config: &HvZoneConfig) -> HvResult {
         Ok(())
     }
+
+    pub fn arch_zone_reset(&mut self, config: &HvZoneConfig) -> HvResult {
+        Ok(())
+    }
 }
 
 #[repr(C)]

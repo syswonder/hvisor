@@ -15,11 +15,12 @@
 //
 use core::panic;
 
+use super::cache::invalidate_dcache_range;
 use crate::{
     config::*,
     device::virtio_trampoline::mmio_virtio_handler,
     error::HvResult,
-    memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion},
+    memory::{addr::phys_to_virt, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion},
     zone::Zone,
 };
 
@@ -118,6 +119,33 @@ impl Zone {
     }
 
     pub fn arch_zone_post_configuration(&mut self, _config: &HvZoneConfig) -> HvResult {
+        Ok(())
+    }
+
+    pub fn arch_zone_reset(&mut self, _config: &HvZoneConfig) -> HvResult {
+        // This operation serves as an insurance to ensure that
+        //      there is no relevant d-cache line in the cache;
+        //      since the VA has the inner-shareable attribute,
+        //      the cores within the inner-shareable domain will
+        //      be affected by the broadcast invalidation.
+        unsafe {
+            // Get cache line size from CTR_EL0[16:19] (min line size, in words of 4 bytes)
+            let ctr_el0: u64;
+            core::arch::asm!("mrs {0}, ctr_el0", out(reg) ctr_el0, options(nostack, preserves_flags));
+            let dcache_line_size = (1 << ((ctr_el0 >> 16 & 0xF) as usize)) * 4;
+            self.gpm.for_each_region(|region| {
+                // Invalidate all RAM regions of the guest
+                if !region.flags.contains(MemFlags::IO) { // TODO: need to enrich the types and exercise more precise control
+                    // Calculate the physical start address of the region
+                    let phys_start = region.mapper.map_fn(region.start);
+                    // Map phys_start to hvisor virtual address
+                    let hva_start = phys_to_virt(phys_start);
+                    info!("Invalidate Guest related cache, region.start: {:#x}, region.size: {:#x}, phys_start: {:#x}, hva_start: {:#x}", region.start, region.size, phys_start, hva_start);
+                    // D-cache invalid operation will broadcast to all cores, just do it once. There is no need to do it on each core.
+                    invalidate_dcache_range(hva_start, region.size, dcache_line_size);
+                }
+            });
+        }
         Ok(())
     }
 }
