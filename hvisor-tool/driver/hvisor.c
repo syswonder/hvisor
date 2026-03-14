@@ -64,17 +64,10 @@ static int hvisor_finish_req(void) {
     return 0;
 }
 
-/* Clean+invalidate D-cache to PoC for [phys_start, size). Used after clear and
- * in zone_start. */
-static int flush_cache(__u64 phys_start, __u64 size) {
-    void __iomem *vaddr;
+// Flush mapped cache range to memory.
+static int flush_cache_mapped(void __iomem *vaddr, __u64 size) {
     unsigned long start, end, addr, line_size;
     size = PAGE_ALIGN(size);
-    vaddr = ioremap_cache(phys_start, size);
-    if (!vaddr) {
-        pr_err("hvisor.ko: failed to ioremap image\n");
-        return -ENOMEM;
-    }
     start = (unsigned long)vaddr;
     end = start + size;
 
@@ -87,7 +80,6 @@ static int flush_cache(__u64 phys_start, __u64 size) {
         asm volatile("dc civac, %0" : : "r"(addr) : "memory");
         addr += line_size;
     }
-
     // barrier, confirm operations are completed and other cores can see the
     // changes.
     asm volatile("dsb sy" : : : "memory");
@@ -100,8 +92,57 @@ static int flush_cache(__u64 phys_start, __u64 size) {
 #else
     pr_err("hvisor.ko: unsupported architecture\n");
 #endif
-    iounmap(vaddr);
     return 0;
+}
+
+static int hvisor_load_image(struct hvisor_load_image_args __user *arg) {
+    struct hvisor_load_image_args kargs;
+    void __iomem *vaddr = NULL;
+    __u64 map_phys;
+    __u64 page_offs;
+    __u64 map_size;
+    void __iomem *dst;
+    int ret = 0;
+
+    if (copy_from_user(&kargs, arg, sizeof(kargs)))
+        return -EFAULT;
+
+    if (!kargs.user_buffer || !kargs.size)
+        return -EINVAL;
+
+    // Align to page boundary
+    map_phys = kargs.load_paddr & PAGE_MASK;
+    page_offs = kargs.load_paddr - map_phys;
+    if (kargs.size > U64_MAX - page_offs)
+        return -EINVAL;
+    map_size = PAGE_ALIGN(kargs.size + page_offs);
+    if (map_size < kargs.size)
+        return -EINVAL;
+
+    // Map the memory to kernel space
+    vaddr = ioremap_cache(map_phys, map_size);
+    if (!vaddr) {
+        return -ENOMEM;
+    }
+
+    dst = (void __iomem *)((char __iomem *)vaddr + page_offs);
+    if (copy_from_user((void __force *)dst, u64_to_user_ptr(kargs.user_buffer),
+                       kargs.size)) {
+        ret = -EFAULT;
+        goto out;
+    }
+
+    // Clean D-cache to PoC first so new contents are visible globally.
+    ret = flush_cache_mapped(vaddr, map_size);
+    if (ret)
+        goto out;
+
+    // Then invalidate I-cache for the written image range.
+    flush_icache_range((unsigned long)dst, (unsigned long)dst + kargs.size);
+
+out:
+    iounmap(vaddr);
+    return ret;
 }
 
 static int hvisor_zone_start(zone_config_t __user *arg) {
@@ -118,24 +159,6 @@ static int hvisor_zone_start(zone_config_t __user *arg) {
         pr_err("hvisor.ko: failed to copy from user\n");
         kfree(zone_config);
         return -EFAULT;
-    }
-
-    // flush image and dtb to memory
-    if (zone_config->kernel_load_paddr && zone_config->kernel_size) {
-        pr_info("hvisor.ko: flushing cache for kernel image: [0x%016llx - "
-                "0x%016llx), size: 0x%llx\n",
-                zone_config->kernel_load_paddr,
-                zone_config->kernel_load_paddr + zone_config->kernel_size,
-                zone_config->kernel_size);
-        flush_cache(zone_config->kernel_load_paddr, zone_config->kernel_size);
-    }
-    if (zone_config->dtb_load_paddr && zone_config->dtb_size) {
-        pr_info("hvisor.ko: flushing cache for dtb: [0x%016llx - 0x%016llx), "
-                "size: 0x%llx\n",
-                zone_config->dtb_load_paddr,
-                zone_config->dtb_load_paddr + zone_config->dtb_size,
-                zone_config->dtb_size);
-        flush_cache(zone_config->dtb_load_paddr, zone_config->dtb_size);
     }
 
     pr_info("hvisor.ko: invoking hypercall to start the zone\n");
@@ -240,15 +263,6 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
     case HVISOR_CONFIG_CHECK:
         err = hvisor_config_check((u64 __user *)arg);
         break;
-    /* Used after clear (zeros to PoC) and in zone_start (all RAM); runs on
-     * current CPU. */
-    case HVISOR_FLUSH_CACHE: {
-        struct hvisor_flush_cache_args kargs;
-        if (copy_from_user(&kargs, (void __user *)arg, sizeof(kargs))) {
-            err = -EFAULT;
-            break;
-        }
-        err = flush_cache(kargs.phys_start, kargs.size);
     case HVISOR_SET_EVENTFD: {
         struct eventfd_ctx *ctx = eventfd_ctx_fdget((int)arg);
         if (IS_ERR(ctx)) {
@@ -260,6 +274,9 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
         }
         break;
     }
+    case HVISOR_LOAD_IMAGE:
+        err = hvisor_load_image((struct hvisor_load_image_args __user *)arg);
+        break;
 #ifdef LOONGARCH64
     case HVISOR_CLEAR_INJECT_IRQ:
         err = hvisor_call(HVISOR_HC_CLEAR_INJECT_IRQ, 0, 0);
