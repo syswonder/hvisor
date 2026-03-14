@@ -691,7 +691,7 @@ impl Zone {
         Ok(())
     }
 
-    pub fn arch_zone_reset(&mut self, config: &HvZoneConfig) -> HvResult {
+    pub fn arch_zone_reset(&mut self, _config: &HvZoneConfig) -> HvResult {
         Ok(())
     }
 }
