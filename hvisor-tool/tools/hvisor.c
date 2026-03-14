@@ -123,7 +123,8 @@ static size_t parse_json_size(const cJSON *const json_str) {
     return strtoull(json_str->valuestring, NULL, 16);
 }
 
-static __u64 load_buffer_to_memory(const void *buf, __u64 size, __u64 load_paddr) {
+static __u64 load_buffer_to_memory(const void *buf, __u64 size,
+                                   __u64 load_paddr) {
     int fd;
     long page_size;
     __u64 map_size;
