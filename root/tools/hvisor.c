@@ -12,8 +12,8 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <pthread.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -123,114 +123,50 @@ static size_t parse_json_size(const cJSON *const json_str) {
     return strtoull(json_str->valuestring, NULL, 16);
 }
 
-static void clear_memory_region(__u64 phys_addr, __u64 size) {
-    int fd = open_dev();
-    size_t page_size = sysconf(_SC_PAGESIZE);
-    __u64 page_offset = phys_addr % page_size;
-    __u64 map_phys_addr = phys_addr - page_offset;
-    size_t map_size = (size + page_offset + page_size - 1) & ~(page_size - 1);
+static __u64 load_buffer_to_memory(const void *buf, __u64 size, __u64 load_paddr) {
+    int fd;
+    long page_size;
+    __u64 map_size;
+    struct hvisor_load_image_args args;
 
-    // Map the physical memory to virtual memory
-    void *map_base = mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED,
-                          fd, map_phys_addr);
-    if (map_base == MAP_FAILED) {
-        perror("Error mapping memory for clearing");
+    if (size == 0) {
+        return 0;
+    }
+
+    page_size = sysconf(_SC_PAGESIZE);
+    map_size = (size + page_size - 1) & ~((__u64)page_size - 1);
+
+    fd = open_dev();
+    args.user_buffer = (__u64)(uintptr_t)buf;
+    args.size = size;
+    args.load_paddr = load_paddr;
+    if (ioctl(fd, HVISOR_LOAD_IMAGE, &args) != 0) {
+        perror("load_buffer_to_memory: HVISOR_LOAD_IMAGE failed");
         close(fd);
         exit(1);
     }
-
-    // Clear the mem region
-    void *virt_addr = (unsigned char *)map_base + page_offset;
-    memset(virt_addr, 0, size);
-    __sync_synchronize();
-
-    // Flush to mem, confirm all writes are visible to other cores.
-    struct hvisor_flush_cache_args flush_args = {
-        .phys_start = phys_addr,
-        .size = size,
-    };
-    if (ioctl(fd, HVISOR_FLUSH_CACHE, &flush_args) != 0) {
-        perror("clear_memory_region: HVISOR_FLUSH_CACHE failed");
-        munmap(map_base, map_size);
-        close(fd);
-        exit(1);
-    }
-
-    munmap(map_base, map_size);
     close(fd);
-    log_info(
-        "Cleared and flushed memory region: 0x%llx - 0x%llx (size: 0x%llx)",
-        phys_addr, phys_addr + size, size);
+
+    return map_size;
 }
 
 static __u64 load_str_to_memory(const char *str, __u64 load_paddr) {
-    __u64 size, page_size,
-        map_size; // Define variables: image size, page size, and map size
-
-    int fd = open_dev();
-    void *virt_addr;
-
-    size = strlen(str);
-    page_size = sysconf(_SC_PAGESIZE);
-    map_size = (size + page_size - 1) & ~(page_size - 1);
-
-    virt_addr = mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
-                     load_paddr);
-
-    if (virt_addr == MAP_FAILED) {
-        perror("Error mapping memory");
-        exit(1);
-    }
-
-    memmove(virt_addr, str, map_size);
-
-    munmap(virt_addr, map_size);
-
-    close(fd);
-    return map_size;
+    /* Include trailing '\0' so guest side can safely parse cmdline. */
+    __u64 size = strlen(str) + 1;
+    return load_buffer_to_memory(str, size, load_paddr);
 }
 
 static __u64 load_image_to_memory(const char *path, __u64 load_paddr) {
     if (strcmp(path, "null") == 0) {
         return 0;
     }
-    __u64 size, page_size,
-        map_size; // Define variables: image size, page size, and map size
-    int fd;       // File descriptor
-    void *image_content,
-        *virt_addr; // Pointers to image content and virtual address
+    __u64 size;
+    __u64 map_size;
+    void *image_content;
 
-    fd = open("/dev/mem", O_RDWR);
-    if (fd < 0) {
-        log_error("Failed to open /dev/mem!");
-        exit(1);
-    }
-    // Load image content into memory
-    image_content = read_file(path, (uint64_t *)&size);
-
-    page_size = sysconf(_SC_PAGESIZE);
-    map_size = (size + page_size - 1) & ~(page_size - 1);
-
-    // Map the physical memory to virtual memory
-#ifdef LOONGARCH64
-    virt_addr = (__u64)mmap(NULL, map_size, PROT_READ | PROT_WRITE | PROT_EXEC,
-                            MAP_SHARED, fd, load_paddr);
-#else
-    virt_addr = mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
-                     load_paddr);
-#endif
-
-    if (virt_addr == MAP_FAILED) {
-        perror("Error mapping memory");
-        exit(1);
-    }
-
-    memmove(virt_addr, image_content, map_size);
-
+    image_content = read_file((char *)path, (uint64_t *)&size);
+    map_size = load_buffer_to_memory(image_content, size, load_paddr);
     free(image_content);
-    munmap(virt_addr, map_size);
-
-    close(fd);
     return map_size;
 }
 
@@ -691,6 +627,7 @@ static int zone_start_from_json(const char *json_config_path,
     char *buffer = malloc(file_size + 1);
     if (fread(buffer, 1, file_size, file) == 0) {
         log_error("Error reading json file: %s", json_config_path);
+        fclose(file);
         goto err_out;
     }
     fclose(file);
@@ -766,14 +703,6 @@ static int zone_start_from_json(const char *json_config_path,
             SAFE_CJSON_GET_OBJECT_ITEM(region, "type")->valuestring;
         if (strcmp(type_str, "ram") == 0) {
             mem_region->type = MEM_TYPE_RAM;
-            // For some ram region, it is essential to clear the memory region.
-            cJSON *need_clear_json =
-                SAFE_CJSON_GET_OBJECT_ITEM(region, "need_clear");
-            if (need_clear_json && cJSON_IsBool(need_clear_json) &&
-                cJSON_IsTrue(need_clear_json)) {
-                clear_memory_region(mem_region->physical_start,
-                                    mem_region->size);
-            }
         } else if (strcmp(type_str, "io") == 0) {
             // io device
             mem_region->type = MEM_TYPE_IO;
