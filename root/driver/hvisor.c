@@ -65,13 +65,13 @@ static int hvisor_finish_req(void) {
 }
 
 // Flush mapped cache range to memory.
-static int flush_cache_mapped(void __iomem *vaddr, __u64 size) {
+static int flush_cache_mapped(void *vaddr, __u64 size) {
     unsigned long start, end, addr, line_size;
     size = PAGE_ALIGN(size);
     start = (unsigned long)vaddr;
     end = start + size;
 
-#ifdef ARM64
+#if defined(ARM64)
     asm volatile("mrs %0, ctr_el0" : "=r"(line_size));
     line_size = 4 << ((line_size >> 16) & 0xf);
     // Clean and Invalidate Data Cache to Point of Coherency (PoC)
@@ -83,11 +83,11 @@ static int flush_cache_mapped(void __iomem *vaddr, __u64 size) {
     // barrier, confirm operations are completed and other cores can see the
     // changes.
     asm volatile("dsb sy" : : : "memory");
-#elif RISCV64
+#elif defined(RISCV64)
     // TODO: implement riscv64 flush operation
-#elif LOONGARCH64
+#elif defined(LOONGARCH64)
     // TODO: implement loongarch64 flush operation
-#elif X86_64
+#elif defined(X86_64)
     // TODO: implement x86_64 flush operation
 #else
     pr_err("hvisor.ko: unsupported architecture\n");
@@ -97,11 +97,11 @@ static int flush_cache_mapped(void __iomem *vaddr, __u64 size) {
 
 static int hvisor_load_image(struct hvisor_load_image_args __user *arg) {
     struct hvisor_load_image_args kargs;
-    void __iomem *vaddr = NULL;
+    void *vaddr = NULL;
     __u64 map_phys;
     __u64 page_offs;
     __u64 map_size;
-    void __iomem *dst;
+    void *dst;
     int ret = 0;
 
     if (copy_from_user(&kargs, arg, sizeof(kargs)))
@@ -119,15 +119,14 @@ static int hvisor_load_image(struct hvisor_load_image_args __user *arg) {
     if (map_size < kargs.size)
         return -EINVAL;
 
-    // Map the memory to kernel space
-    vaddr = ioremap_cache(map_phys, map_size);
+    // This is physical RAM for image loading, not MMIO, so keep it WB cacheable.
+    vaddr = memremap(map_phys, map_size, MEMREMAP_WB);
     if (!vaddr) {
         return -ENOMEM;
     }
 
-    dst = (void __iomem *)((char __iomem *)vaddr + page_offs);
-    if (copy_from_user((void __force *)dst, u64_to_user_ptr(kargs.user_buffer),
-                       kargs.size)) {
+    dst = (char *)vaddr + page_offs;
+    if (copy_from_user(dst, u64_to_user_ptr(kargs.user_buffer), kargs.size)) {
         ret = -EFAULT;
         goto out;
     }
@@ -141,7 +140,7 @@ static int hvisor_load_image(struct hvisor_load_image_args __user *arg) {
     flush_icache_range((unsigned long)dst, (unsigned long)dst + kargs.size);
 
 out:
-    iounmap(vaddr);
+    memunmap(vaddr);
     return ret;
 }
 
@@ -348,18 +347,22 @@ static struct miscdevice hvisor_misc_dev = {
  * invalid
  */
 static irqreturn_t virtio_irq_handler(int irq, void *dev_id) {
-    int ret;
-
     // Check the device id and virtio_irq_ctx is valid.
     if (dev_id != &hvisor_misc_dev || !virtio_irq_ctx) {
         return IRQ_NONE;
     }
 
     // Wake up the userspace virtio daemon.
-    ret = eventfd_signal(virtio_irq_ctx, 1);
-    if (ret < 0) {
-        pr_err("eventfd_signal failed (%d).\n", ret);
-    }
+    // Linux 6.8+ simplified eventfd_signal to one argument and return void
+    // static inline void eventfd_signal(struct eventfd_ctx *ctx) in eventfd.h
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+    eventfd_signal(virtio_irq_ctx);
+#else
+    /* e.g. Linux 5.10: eventfd_signal(ctx, n) returns __u64 (amount
+     * incremented). */
+    if (eventfd_signal(virtio_irq_ctx, 1) == 0)
+        pr_err("eventfd_signal: counter overflow or no increment\n");
+#endif
 
     return IRQ_HANDLED;
 }
