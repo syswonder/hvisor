@@ -119,7 +119,8 @@ static int hvisor_load_image(struct hvisor_load_image_args __user *arg) {
     if (map_size < kargs.size)
         return -EINVAL;
 
-    // This is physical RAM for image loading, not MMIO, so keep it WB cacheable.
+    // This is physical RAM for image loading, not MMIO, so keep it WB
+    // cacheable.
     vaddr = memremap(map_phys, map_size, MEMREMAP_WB);
     if (!vaddr) {
         return -ENOMEM;
