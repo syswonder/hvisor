@@ -40,6 +40,7 @@
 #include "virtio_console.h"
 #include "virtio_gpu.h"
 #include "virtio_net.h"
+#include "virtio_scmi.h"
 
 /// hvisor kernel module fd
 int ko_fd;
@@ -76,6 +77,8 @@ const char *virtio_device_type_to_string(VirtioDeviceType type) {
         return "virtio-blk";
     case VirtioTConsole:
         return "virtio-console";
+    case VirtioTSCMI:
+        return "virtio-scmi";
     case VirtioTGPU:
         return "virtio-gpu";
     default:
@@ -202,6 +205,13 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
         is_err = virtio_console_init(vdev);
         break;
 
+    case VirtioTSCMI:
+        vdev->regs.dev_feature = SCMI_SUPPORTED_FEATURES;
+        vdev->dev = init_scmi_dev();
+        init_virtio_queue(vdev, dev_type);
+        is_err = 0;
+        break;
+    
     case VirtioTGPU:
 #ifdef ENABLE_VIRTIO_GPU
         vdev->regs.dev_feature = GPU_SUPPORTED_FEATURES;
@@ -305,6 +315,18 @@ void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type) {
 #else
         log_error("virtio gpu is not enabled");
 #endif
+        break;
+
+    case VirtioTSCMI:
+        vdev->vqs_len = SCMI_MAX_QUEUES;
+        vqs = malloc(sizeof(VirtQueue) * SCMI_MAX_QUEUES);
+        for (int i = 0; i < SCMI_MAX_QUEUES; ++i) {
+            virtqueue_reset(vqs, i);
+            vqs[i].queue_num_max = VIRTQUEUE_SCMI_MAX_SIZE;
+            vqs[i].dev = vdev;
+        }
+        vqs[SCMI_QUEUE_TX].notify_handler = virtio_scmi_txq_notify_handler;
+        vdev->vqs = vqs;
         break;
 
     default:
@@ -1314,18 +1336,31 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
 
     // Get device type
     char *type = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "type")->valuestring;
-    void *arg0, *arg1;
+    void *arg0 = NULL, *arg1 = NULL;
 
-    // Match the device type field in json
-    if (strcmp(type, "blk") == 0) {
-        dev_type = VirtioTBlock;
-    } else if (strcmp(type, "net") == 0) {
-        dev_type = VirtioTNet;
-    } else if (strcmp(type, "console") == 0) {
-        dev_type = VirtioTConsole;
-    } else if (strcmp(type, "gpu") == 0) {
-        dev_type = VirtioTGPU;
-    } else {
+    // Mapping table for device types
+    static const struct {
+        const char *name;
+        VirtioDeviceType type;
+    } device_type_map[] = {
+        {"blk", VirtioTBlock},
+        {"net", VirtioTNet},
+        {"console", VirtioTConsole},
+        {"gpu", VirtioTGPU},
+        {"scmi", VirtioTSCMI},
+        {NULL, VirtioTNone} // Sentinel
+    };
+
+    // Find device type in mapping table
+    dev_type = VirtioTNone;
+    for (int i = 0; device_type_map[i].name != NULL; i++) {
+        if (strcmp(type, device_type_map[i].name) == 0) {
+            dev_type = device_type_map[i].type;
+            break;
+        }
+    }
+
+    if (dev_type == VirtioTNone) {
         log_error("unknown device type %s", type);
         return -1;
     }

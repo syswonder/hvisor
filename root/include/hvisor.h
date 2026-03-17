@@ -70,6 +70,8 @@ typedef struct ioctl_zone_list_args zone_list_args_t;
 #define HVISOR_ZONE_LIST _IOR(1, 5, zone_list_args_t *)
 #define HVISOR_CONFIG_CHECK _IOR(1, 6, __u64 *)
 #define HVISOR_SET_EVENTFD _IOW(1, 7, int)
+#define HVISOR_SCMI_CLOCK_IOCTL _IOWR(1, 32, struct hvisor_scmi_clock_args)
+#define HVISOR_SCMI_RESET_IOCTL _IOWR(1, 33, struct hvisor_scmi_reset_args)
 
 /* Copy user buffer to [load_paddr, load_paddr + size) in kernel. */
 struct hvisor_load_image_args {
@@ -91,6 +93,76 @@ struct hvisor_load_image_args {
 #define HVISOR_HC_GET_VIRTIO_IRQ 86
 
 #endif /* X86_64 */
+
+/* SCMI Clock Subcommands */
+#define HVISOR_SCMI_CLOCK_GET_COUNT 0x01
+#define HVISOR_SCMI_CLOCK_GET_ATTRIBUTES 0x02
+#define HVISOR_SCMI_CLOCK_DESCRIBE_RATES 0x03
+#define HVISOR_SCMI_CLOCK_RATE_GET 0x04
+#define HVISOR_SCMI_CLOCK_RATE_SET 0x05
+#define HVISOR_SCMI_CLOCK_CONFIG_GET 0x06
+#define HVISOR_SCMI_CLOCK_CONFIG_SET 0x07
+#define HVISOR_SCMI_CLOCK_NAME_GET 0x08
+
+/* SCMI Reset Subcommands */
+#define HVISOR_SCMI_RESET_RESET 0x01
+
+/* SCMI Clock ioctl argument structure */
+struct hvisor_scmi_clock_args {
+    __u32 subcmd;   /* Subcommand ID */
+    __u32 data_len; /* Length of data buffer */
+    union {
+        __u32 clock_count; /* For GET_COUNT */
+        struct {
+            __u32 clock_id;
+            __u32 enabled;
+            __u32 parent_id;
+            char clock_name[64];
+            __u32 is_valid;     /* Whether the clock is valid */
+        } clock_attr;      /* For GET_ATTRIBUTES */
+        struct {
+            __u32 clock_id;
+            __u32 rate_index;
+            __u32 num_rates;
+            __u32 remaining;
+            __u64 rates[8]; /* Max 8 rates per response */
+        } clock_rates_info; /* For DESCRIBE_RATES */
+        struct {
+            __u32 clock_id;
+            __u64 rate;
+        } clock_rate_info; /* For RATE_GET */
+        struct {
+            __u32 clock_id;
+            __u32 flags;
+            __u64 rate;
+        } clock_rate_set_info; /* For RATE_SET */
+        struct {
+            __u32 clock_id;
+            __u32 flags;
+            __u32 config;
+            __u32 extended_config_val;
+        } clock_config_info; /* For CONFIG_GET/CONFIG_SET */
+        struct {
+            __u32 clock_id;
+            char name[64];
+        } clock_name_info; /* For NAME_GET */
+        __u8 data[0];      /* For other commands */
+    } u;
+};
+
+/* SCMI Reset ioctl argument structure */
+struct hvisor_scmi_reset_args {
+    __u32 subcmd;   /* Subcommand ID */
+    __u32 data_len; /* Length of data buffer */
+    union {
+        struct {
+            __u32 domain_id;
+            __u32 flags;
+            __u32 reset_state;
+        } reset_info; /* For RESET */
+        __u8 data[0];      /* For other commands */
+    } u;
+};
 
 #ifdef LOONGARCH64
 
