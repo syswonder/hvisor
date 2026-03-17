@@ -190,7 +190,7 @@ static irqreturn_t ivc_irq_handler(int irq, void *dev_id) {
 //     of_changeset_init(&overlay_changeset);
 // 	node = of_find_node_by_path("/hvisor_ivc_device");
 
-//     // TODO: 加入对gic interrupt cell的探测，以及错误处理
+//     // TODO: Add detection for gic interrupt cell and error handling
 //     prop = alloc_property("interrupts", sizeof(u32)*3*dev_len);
 //     values = prop->value;
 //     for(i=0; i<dev_len; i++) {

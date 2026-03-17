@@ -99,6 +99,21 @@ int set_nonblocking(int fd) {
     return 0;
 }
 
+int get_zone_ram_index(void *zonex_ipa, int zone_id) {
+    uintptr_t addr = (uintptr_t)zonex_ipa;
+    for (int i = 0; i < MAX_RAMS; i++) {
+        if (zone_mem[zone_id][i][MEM_SIZE] == 0)
+            continue;
+
+        if ((uintptr_t)zonex_ipa >= zone_mem[zone_id][i][ZONEX_IPA] &&
+            (uintptr_t)zonex_ipa < zone_mem[zone_id][i][ZONEX_IPA] +
+                                       zone_mem[zone_id][i][MEM_SIZE]) {
+            return i;
+        }
+    }
+    log_error("can't find zone mem index for zonex ipa %#x", zonex_ipa);
+    return -1;
+}
 inline int is_queue_full(unsigned int front, unsigned int rear,
                          unsigned int size) {
     if (((rear + 1) & (size - 1)) == front) {
@@ -177,11 +192,7 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
     vdev->zone_id = zone_id;
     vdev->irq_id = irq_id;
     vdev->type = dev_type;
-
-    log_info("debug: vdev->base_addr is %lx, vdev->len is %lx, vdev->zone_id "
-             "is %d, vdev->irq_id is %d",
-             vdev->base_addr, vdev->len, vdev->zone_id, vdev->irq_id);
-
+    
     switch (dev_type) {
     case VirtioTBlock:
         vdev->regs.dev_feature = BLK_SUPPORTED_FEATURES;
@@ -668,7 +679,7 @@ uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size) {
         offset -= VIRTIO_MMIO_CONFIG;
         // the first member of vdev->dev must be config.
         log_debug("read virtio dev config");
-        return *(uint64_t *)(vdev->dev + offset);
+        return *(uint64_t *)((uintptr_t)vdev->dev + offset);
     }
 
     if (size != 4) {
@@ -712,10 +723,6 @@ uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size) {
             "clear lvz gintc irq injection bit to avoid endless interrupt...");
         ioctl(ko_fd, HVISOR_CLEAR_INJECT_IRQ);
 #endif
-        if (vdev->regs.interrupt_status == 0) {
-            log_error("virtio-mmio-read: interrupt status is 0, type is %d",
-                      vdev->type);
-        }
         return vdev->regs.interrupt_status;
     case VIRTIO_MMIO_STATUS:
         log_debug("read VIRTIO_MMIO_STATUS");
@@ -1225,7 +1232,7 @@ void handle_virtio_requests(void) {
     struct epoll_event events[16];
     while (true) {
 #ifndef LOONGARCH64
-        log_info("signal_count is %d, proc_count is %d", signal_count,
+        log_debug("signal_count is %d, proc_count is %d", signal_count,
                  proc_count);
 
         // Wait indefinitely for a signal or a kernel kick
@@ -1278,7 +1285,7 @@ int virtio_init() {
     prctl(PR_SET_NAME, "hvisor-virtio", 0, 0, 0);
 
     log_info("hvisor init");
-    ko_fd = open("/dev/hvisor", O_RDWR);
+    ko_fd = open(HVISOR_DEVICE, O_RDWR);
     if (ko_fd < 0) {
         log_error("open hvisor failed");
         exit(1);

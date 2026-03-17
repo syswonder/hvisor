@@ -812,7 +812,7 @@ static int hvisor_map(struct file *filp, struct vm_area_struct *vma) {
                               vma->vm_end - vma->vm_start, vma->vm_page_prot);
         if (err)
             return err;
-        pr_info("virtio bridge mmap succeed!\n");
+        pr_debug("virtio bridge mmap succeed!\n");
     } else {
         size_t size = vma->vm_end - vma->vm_start;
         // TODO: add check for non root memory region.
@@ -826,7 +826,7 @@ static int hvisor_map(struct file *filp, struct vm_area_struct *vma) {
                               vma->vm_page_prot);
         if (err)
             return err;
-        pr_info("non root region mmap succeed!\n");
+        pr_debug("non root region mmap succeed!\n");
     }
     return 0;
 }
@@ -925,7 +925,7 @@ static int __init hvisor_init(void) {
 
     kfree(irq);
 #endif /* X86_64 */
-    pr_info("hvisor init done!!!\n");
+    pr_debug("hvisor init done!!!\n");
     return 0;
 err_out:
     pr_err("hvisor cannot register IRQ, err is %d\n", err);
@@ -948,7 +948,7 @@ static void __exit hvisor_exit(void) {
         free_pages((unsigned long)virtio_bridge, 0);
     }
     misc_deregister(&hvisor_misc_dev);
-    pr_info("hvisor exit!!!\n");
+    pr_debug("hvisor exit!!!\n");
 }
 
 module_init(hvisor_init);

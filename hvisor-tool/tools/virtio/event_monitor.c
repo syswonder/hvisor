@@ -31,8 +31,8 @@ static void *epoll_loop() {
     for (;;) {
         ret = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
         // log_debug("ret is %d, errno is %d", ret, errno);
-        if (ret < 0 && errno != EINTR)
-            log_error("epoll_wait failed, errno is %d", errno);
+        // if (ret < 0 && errno != EINTR)
+        //     log_error("epoll_wait failed, errno is %d", errno);
         for (i = 0; i < ret; ++i) {
             // handle active hvisor_event
             hevent = events[i].data.ptr;
