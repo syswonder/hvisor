@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-only
 /**
- * Copyright (c) 2025 Syswonder
- *
- * Syswonder Website:
+ * Copyright (c) 2025 Syswonder
+ *
+ * Syswonder Website:
  *      https://www.syswonder.org
- *
- * Authors:
+ *
+ * Authors:
  *      Guowei Li <2401213322@stu.pku.edu.cn>
- */
+ */
 #ifndef __HVISOR_H
 #define __HVISOR_H
 #include <linux/ioctl.h>
@@ -15,6 +15,8 @@
 
 #include "def.h"
 #include "zone_config.h"
+
+#define HVISOR_DEVICE "/dev/hvisor"
 
 #define MMAP_SIZE 4096
 #define MAX_REQ 32
