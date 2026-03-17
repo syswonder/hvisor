@@ -49,7 +49,7 @@ static void __attribute__((noreturn)) help(int exit_status) {
     exit(exit_status);
 }
 
-void *read_file(char *filename, uint64_t *filesize) {
+void *read_file(const char *filename, uint64_t *filesize) {
     int fd;
     struct stat st;
     void *buf;
@@ -165,7 +165,7 @@ static __u64 load_image_to_memory(const char *path, __u64 load_paddr) {
     __u64 map_size;
     void *image_content;
 
-    image_content = read_file((char *)path, (uint64_t *)&size);
+    image_content = read_file(path, (uint64_t *)&size);
     map_size = load_buffer_to_memory(image_content, size, load_paddr);
     free(image_content);
     return map_size;
