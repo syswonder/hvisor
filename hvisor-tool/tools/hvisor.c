@@ -25,6 +25,7 @@
 
 #include "event_monitor.h"
 #include "hvisor.h"
+#include "json_parse.h"
 #include "log.h"
 #include "safe_cjson.h"
 #include "virtio.h"
@@ -95,32 +96,6 @@ int open_dev() {
         exit(1);
     }
     return fd;
-}
-
-/**
- * @brief Parse a JSON string to a uintptr_t value.
- *
- * This function converts a JSON string to a uintptr_t value. The JSON string
- * should represent a hexadecimal number.
- *
- * @param json_str The JSON string to parse.
- * @return The parsed uintptr_t value.
- */
-static uintptr_t parse_json_address(const cJSON *const json_str) {
-    return strtoull(json_str->valuestring, NULL, 16);
-}
-
-/**
- * @brief Parse a JSON string to a size_t value.
- *
- * This function converts a JSON string to a size_t value. The JSON string
- * should represent a hexadecimal number.
- *
- * @param json_str The JSON string to parse.
- * @return The parsed size_t value.
- */
-static size_t parse_json_size(const cJSON *const json_str) {
-    return strtoull(json_str->valuestring, NULL, 16);
 }
 
 static __u64 load_buffer_to_memory(const void *buf, __u64 size,
@@ -222,7 +197,12 @@ static int parse_modules(const cJSON *const modules_json) {
         }
 
         // load module image to memory
-        uintptr_t item_load_paddr = parse_json_address(load_paddr_json);
+        uintptr_t item_load_paddr;
+        if (parse_json_address(load_paddr_json, &item_load_paddr) != 0) {
+            log_error("Failed to parse module load_paddr");
+            return -1;
+        }
+
         size_t item_size =
             load_image_to_memory(filepath_json->valuestring, item_load_paddr);
 
