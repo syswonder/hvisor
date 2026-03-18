@@ -220,6 +220,6 @@ int virtio_start_from_json(char *json_path);
 
 int virtio_start(int argc, char *argv[]);
 
-void *read_file(char *filename, uint64_t *filesize);
+void *read_file(const char *filename, uint64_t *filesize);
 
 #endif /* __HVISOR_VIRTIO_H */

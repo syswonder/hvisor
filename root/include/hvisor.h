@@ -71,6 +71,14 @@ typedef struct ioctl_zone_list_args zone_list_args_t;
 #define HVISOR_CONFIG_CHECK _IOR(1, 6, __u64 *)
 #define HVISOR_SET_EVENTFD _IOW(1, 7, int)
 
+/* Copy user buffer to [load_paddr, load_paddr + size) in kernel. */
+struct hvisor_load_image_args {
+    __u64 user_buffer;
+    __u64 size;
+    __u64 load_paddr;
+};
+#define HVISOR_LOAD_IMAGE _IOW(1, 8, struct hvisor_load_image_args)
+
 #define HVISOR_HC_INIT_VIRTIO 0
 #define HVISOR_HC_FINISH_REQ 1
 #define HVISOR_HC_START_ZONE 2

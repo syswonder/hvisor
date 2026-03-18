@@ -28,7 +28,7 @@ ifndef CROSS_COMPILE
 	else ifeq ($(ARCH), x86_64)
 		CROSS_COMPILE := x86_64-linux-$(LIBC)-
 	else
-	$(error "Unsupported architecture $(ARCH)")
+$(error "Unsupported architecture $(ARCH)")
 	endif
 endif
 

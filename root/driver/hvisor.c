@@ -64,58 +64,91 @@ static int hvisor_finish_req(void) {
     return 0;
 }
 
-// static int flush_cache(__u64 phys_start, __u64 size)
-// {
-//     void __iomem *vaddr;
-//     int err = 0;
+// Flush mapped cache range to memory.
+static int flush_cache_mapped(void *vaddr, __u64 size) {
+    unsigned long start, end, addr, line_size;
+    size = PAGE_ALIGN(size);
+    start = (unsigned long)vaddr;
+    end = start + size;
 
-//     size = PAGE_ALIGN(size);
+#if defined(ARM64)
+    asm volatile("mrs %0, ctr_el0" : "=r"(line_size));
+    line_size = 4 << ((line_size >> 16) & 0xf);
+    // Clean and Invalidate Data Cache to Point of Coherency (PoC)
+    addr = start & ~(line_size - 1);
+    while (addr < end) {
+        asm volatile("dc civac, %0" : : "r"(addr) : "memory");
+        addr += line_size;
+    }
+    // barrier, confirm operations are completed and other cores can see the
+    // changes.
+    asm volatile("dsb sy" : : : "memory");
+#elif defined(RISCV64)
+    // TODO: implement riscv64 flush operation
+#elif defined(LOONGARCH64)
+    // TODO: implement loongarch64 flush operation
+#elif defined(X86_64)
+    // TODO: implement x86_64 flush operation
+#else
+    pr_err("hvisor.ko: unsupported architecture\n");
+#endif
+    return 0;
+}
 
-//     // 使用 ioremap 映射物理地址
-//     vaddr = ioremap_cache(phys_start, size);
-//     if (!vaddr) {
-//         pr_err("hvisor.ko: failed to ioremap image\n");
-//         return -ENOMEM;
-//     }
+static int hvisor_load_image(struct hvisor_load_image_args __user *arg) {
+    struct hvisor_load_image_args kargs;
+    void *vaddr = NULL;
+    __u64 map_phys;
+    __u64 page_offs;
+    __u64 map_size;
+    void *dst;
+    int ret = 0;
 
-//     // flush I-cache（ARM64 平台中 flush_icache_range 是对 D/I 的处理）
-//     flush_icache_range((unsigned long)vaddr, (unsigned long)vaddr + size);
+    if (copy_from_user(&kargs, arg, sizeof(kargs)))
+        return -EFAULT;
 
-//     // 解除映射
-//     iounmap(vaddr);
-//     return err;
-// }
-// static int flush_cache(__u64 phys_start, __u64 size)
-// {
-//     struct vm_struct *vma;
-//     int err = 0;
-//     size = PAGE_ALIGN(size);
-//     vma = get_vm_area(size, VM_IOREMAP);
-//     if (!vma)
-//     {
-//         pr_err("hvisor.ko: failed to allocate virtual kernel memory for
-//         image\n"); return -ENOMEM;
-//     }
-//     vma->phys_addr = phys_start;
+    if (!kargs.user_buffer || !kargs.size)
+        return -EINVAL;
 
-//     if (ioremap_page_range((unsigned long)vma->addr, (unsigned
-//     long)(vma->addr + size), phys_start, PAGE_KERNEL_EXEC))
-//     {
-//         pr_err("hvisor.ko: failed to ioremap image\n");
-//         err = -EFAULT;
-//         goto unmap_vma;
-//     }
-//     // flush icache will also flush dcache
-//     flush_icache_range((unsigned long)(vma->addr), (unsigned long)(vma->addr
-//     + size));
+    // Align to page boundary
+    map_phys = kargs.load_paddr & PAGE_MASK;
+    page_offs = kargs.load_paddr - map_phys;
+    if (kargs.size > U64_MAX - page_offs)
+        return -EINVAL;
+    map_size = PAGE_ALIGN(kargs.size + page_offs);
+    if (map_size < kargs.size)
+        return -EINVAL;
 
-// unmap_vma:
-//     vunmap(vma->addr);
-//     return err;
-// }
+    // This is physical RAM for image loading, not MMIO, so keep it WB
+    // cacheable.
+    vaddr = memremap(map_phys, map_size, MEMREMAP_WB);
+    if (!vaddr) {
+        return -ENOMEM;
+    }
+
+    dst = (char *)vaddr + page_offs;
+    if (copy_from_user(dst, u64_to_user_ptr(kargs.user_buffer), kargs.size)) {
+        ret = -EFAULT;
+        goto out;
+    }
+
+    // Clean D-cache to PoC first so new contents are visible globally.
+    ret = flush_cache_mapped(vaddr, map_size);
+    if (ret)
+        goto out;
+
+    // Then invalidate I-cache for the written image range.
+    flush_icache_range((unsigned long)dst, (unsigned long)dst + kargs.size);
+
+out:
+    memunmap(vaddr);
+    return ret;
+}
 
 static int hvisor_zone_start(zone_config_t __user *arg) {
     int err = 0;
+    int i = 0;
+
     zone_config_t *zone_config = kmalloc(sizeof(zone_config_t), GFP_KERNEL);
 
     if (zone_config == NULL) {
@@ -127,9 +160,6 @@ static int hvisor_zone_start(zone_config_t __user *arg) {
         kfree(zone_config);
         return -EFAULT;
     }
-
-    // flush_cache(zone_config->kernel_load_paddr, zone_config->kernel_size);
-    // flush_cache(zone_config->dtb_load_paddr, zone_config->dtb_size);
 
     pr_info("hvisor.ko: invoking hypercall to start the zone\n");
 
@@ -244,6 +274,9 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
         }
         break;
     }
+    case HVISOR_LOAD_IMAGE:
+        err = hvisor_load_image((struct hvisor_load_image_args __user *)arg);
+        break;
 #ifdef LOONGARCH64
     case HVISOR_CLEAR_INJECT_IRQ:
         err = hvisor_call(HVISOR_HC_CLEAR_INJECT_IRQ, 0, 0);
