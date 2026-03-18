@@ -12,8 +12,8 @@
 #include <fcntl.h>
 #include <getopt.h>
 #include <inttypes.h>
+#include <limits.h>
 #include <pthread.h>
-#include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -49,7 +49,7 @@ static void __attribute__((noreturn)) help(int exit_status) {
     exit(exit_status);
 }
 
-void *read_file(char *filename, uint64_t *filesize) {
+void *read_file(const char *filename, uint64_t *filesize) {
     int fd;
     struct stat st;
     void *buf;
@@ -123,74 +123,51 @@ static size_t parse_json_size(const cJSON *const json_str) {
     return strtoull(json_str->valuestring, NULL, 16);
 }
 
-static __u64 load_str_to_memory(const char *str, __u64 load_paddr) {
-    __u64 size, page_size,
-        map_size; // Define variables: image size, page size, and map size
+static __u64 load_buffer_to_memory(const void *buf, __u64 size,
+                                   __u64 load_paddr) {
+    int fd;
+    long page_size;
+    __u64 map_size;
+    struct hvisor_load_image_args args;
 
-    int fd = open_dev();
-    void *virt_addr;
-
-    size = strlen(str);
-    page_size = sysconf(_SC_PAGESIZE);
-    map_size = (size + page_size - 1) & ~(page_size - 1);
-
-    virt_addr = mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
-                     load_paddr);
-
-    if (virt_addr == MAP_FAILED) {
-        perror("Error mapping memory");
-        exit(1);
+    if (size == 0) {
+        return 0;
     }
 
-    memmove(virt_addr, str, map_size);
+    page_size = sysconf(_SC_PAGESIZE);
+    map_size = (size + page_size - 1) & ~((__u64)page_size - 1);
 
-    munmap(virt_addr, map_size);
-
+    fd = open_dev();
+    args.user_buffer = (__u64)(uintptr_t)buf;
+    args.size = size;
+    args.load_paddr = load_paddr;
+    if (ioctl(fd, HVISOR_LOAD_IMAGE, &args) != 0) {
+        perror("load_buffer_to_memory: HVISOR_LOAD_IMAGE failed");
+        close(fd);
+        exit(1);
+    }
     close(fd);
+
     return map_size;
+}
+
+static __u64 load_str_to_memory(const char *str, __u64 load_paddr) {
+    /* Include trailing '\0' so guest side can safely parse cmdline. */
+    __u64 size = strlen(str) + 1;
+    return load_buffer_to_memory(str, size, load_paddr);
 }
 
 static __u64 load_image_to_memory(const char *path, __u64 load_paddr) {
     if (strcmp(path, "null") == 0) {
         return 0;
     }
-    __u64 size, page_size,
-        map_size; // Define variables: image size, page size, and map size
-    int fd;       // File descriptor
-    void *image_content,
-        *virt_addr; // Pointers to image content and virtual address
+    __u64 size;
+    __u64 map_size;
+    void *image_content;
 
-    fd = open("/dev/mem", O_RDWR);
-    if (fd < 0) {
-        log_error("Failed to open /dev/mem!");
-        exit(1);
-    }
-    // Load image content into memory
     image_content = read_file(path, (uint64_t *)&size);
-
-    page_size = sysconf(_SC_PAGESIZE);
-    map_size = (size + page_size - 1) & ~(page_size - 1);
-
-    // Map the physical memory to virtual memory
-#ifdef LOONGARCH64
-    virt_addr = (__u64)mmap(NULL, map_size, PROT_READ | PROT_WRITE | PROT_EXEC,
-                            MAP_SHARED, fd, load_paddr);
-#else
-    virt_addr = mmap(NULL, map_size, PROT_READ | PROT_WRITE, MAP_SHARED, fd,
-                     load_paddr);
-#endif
-
-    if (virt_addr == MAP_FAILED) {
-        perror("Error mapping memory");
-        exit(1);
-    }
-
-    memmove(virt_addr, image_content, map_size);
-
+    map_size = load_buffer_to_memory(image_content, size, load_paddr);
     free(image_content);
-    munmap(virt_addr, map_size);
-
-    close(fd);
     return map_size;
 }
 
@@ -651,6 +628,7 @@ static int zone_start_from_json(const char *json_config_path,
     char *buffer = malloc(file_size + 1);
     if (fread(buffer, 1, file_size, file) == 0) {
         log_error("Error reading json file: %s", json_config_path);
+        fclose(file);
         goto err_out;
     }
     fclose(file);
@@ -713,6 +691,15 @@ static int zone_start_from_json(const char *json_config_path,
         cJSON *region = SAFE_CJSON_GET_ARRAY_ITEM(memory_regions_json, i);
         memory_region_t *mem_region = &config->memory_regions[i];
 
+        mem_region->physical_start = strtoull(
+            SAFE_CJSON_GET_OBJECT_ITEM(region, "physical_start")->valuestring,
+            NULL, 16);
+        mem_region->virtual_start = strtoull(
+            SAFE_CJSON_GET_OBJECT_ITEM(region, "virtual_start")->valuestring,
+            NULL, 16);
+        mem_region->size = strtoull(
+            SAFE_CJSON_GET_OBJECT_ITEM(region, "size")->valuestring, NULL, 16);
+
         const char *type_str =
             SAFE_CJSON_GET_OBJECT_ITEM(region, "type")->valuestring;
         if (strcmp(type_str, "ram") == 0) {
@@ -727,15 +714,6 @@ static int zone_start_from_json(const char *json_config_path,
             log_error("Unknown memory region type: %s", type_str);
             goto err_out;
         }
-
-        mem_region->physical_start = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(region, "physical_start")->valuestring,
-            NULL, 16);
-        mem_region->virtual_start = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(region, "virtual_start")->valuestring,
-            NULL, 16);
-        mem_region->size = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(region, "size")->valuestring, NULL, 16);
 
         log_debug("memory_region %d: type %d, physical_start %llx, "
                   "virtual_start %llx, size %llx",
