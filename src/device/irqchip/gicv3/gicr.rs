@@ -14,17 +14,16 @@
 // Authors:
 //
 
-use core::ptr;
-
-use spin::{mutex::Mutex, Once};
-
 use crate::{
-    arch::cpu::this_cpu_id,
+    arch::cpu::{cpuid_to_mpidr_affinity, this_cpu_id},
     consts::{MAX_CPU_NUM, MAX_ZONE_NUM, PAGE_SIZE},
     hypercall::SGI_IPI_ID,
     memory::Frame,
     zone::this_zone_id,
 };
+use alloc::vec::Vec;
+use core::ptr;
+use spin::{mutex::Mutex, Lazy, Once};
 
 use super::{
     gicd::{
@@ -155,3 +154,82 @@ pub fn enable_one_lpi(lpi: usize) {
     let lpt = LPT.get().unwrap().lock();
     lpt.enable_one_lpi(lpi);
 }
+
+pub struct GicrBaseLayout {
+    cpu_bases: Vec<usize>,
+    unused_bases: Vec<usize>,
+}
+
+impl GicrBaseLayout {
+    pub fn cpu_bases(&self) -> Vec<usize> {
+        self.cpu_bases.clone()
+    }
+
+    pub fn unused_bases(&self) -> Vec<usize> {
+        self.unused_bases.clone()
+    }
+}
+
+fn cpuid_to_gicr_affinity(cpu_id: usize) -> u64 {
+    let (aff3, aff2, aff1, aff0) = cpuid_to_mpidr_affinity(cpu_id as u64);
+    (aff3 << 24) | (aff2 << 16) | (aff1 << 8) | aff0
+}
+
+fn read_gicr_affinity(base: usize) -> u64 {
+    let typer = unsafe {
+        core::ptr::read_volatile(
+            (base + crate::device::irqchip::gicv3::gicr::GICR_TYPER) as *const u64,
+        )
+    };
+    (typer & crate::device::irqchip::gicv3::GICR_TYPER_AFFINITY_VALUE_MASK)
+        >> crate::device::irqchip::gicv3::GICR_TYPER_AFFINITY_VALUE_SHIFT
+}
+
+fn gicr_base_layout() -> GicrBaseLayout {
+    // info!("Calculating GICR base layout...");
+    let gic = crate::device::irqchip::gicv3::GIC.get().unwrap();
+    let possible_num = gic.gicr_size / crate::device::irqchip::gicv3::PER_GICR_SIZE;
+    let cpu_affinities: [u64; MAX_CPU_NUM] = core::array::from_fn(cpuid_to_gicr_affinity);
+
+    let mut cpu_bases = vec![None; MAX_CPU_NUM];
+    let mut unused_bases = Vec::new();
+    let mut found_cpus = 0;
+    let mut curr_base = gic.gicr_base;
+
+    for idx in 0..possible_num {
+        let affinity = read_gicr_affinity(curr_base);
+        if let Some(cpu_id) = cpu_affinities.iter().position(|&aff| aff == affinity) {
+            if cpu_bases[cpu_id].is_none() {
+                found_cpus += 1;
+            }
+            cpu_bases[cpu_id] = Some(curr_base);
+        } else {
+            unused_bases.push(curr_base);
+        }
+
+        curr_base += crate::device::irqchip::gicv3::PER_GICR_SIZE;
+
+        // Once all CPUs are matched, remaining GICR frames are all treated as unused.
+        if found_cpus == MAX_CPU_NUM {
+            for _ in (idx + 1)..possible_num {
+                unused_bases.push(curr_base);
+                curr_base += crate::device::irqchip::gicv3::PER_GICR_SIZE;
+            }
+            break;
+        }
+    }
+
+    if found_cpus != MAX_CPU_NUM {
+        panic!(
+            "Could not find GICR for all CPUs, only found {}",
+            found_cpus
+        );
+    }
+
+    GicrBaseLayout {
+        cpu_bases: cpu_bases.into_iter().map(Option::unwrap).collect(),
+        unused_bases,
+    }
+}
+
+pub(super) static GICR_BASE_LAYOUT: Lazy<GicrBaseLayout> = Lazy::new(gicr_base_layout);

@@ -13,8 +13,7 @@
 //
 // Authors:
 //
-use alloc::sync::Arc;
-
+use super::CPU_UNUSED_GICR_BASE;
 use super::{gicd::GICD_LOCK, is_spi};
 use crate::platform::BOARD_MPIDR_MAPPINGS;
 use crate::{
@@ -31,6 +30,7 @@ use crate::{
     memory::{mmio_perform_access, MMIOAccess},
     zone::{this_zone_id, Zone},
 };
+use alloc::sync::Arc;
 pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> {
     base..(base + n * size)
 }
@@ -73,6 +73,20 @@ impl Zone {
                         PER_GICR_SIZE,
                         vgicv3_redist_handler,
                         cpu,
+                    );
+                }
+
+                for base in CPU_UNUSED_GICR_BASE.iter() {
+                    let unused_gicr_base = base.clone();
+                    debug!(
+                        "Registering unused GIC Redistributor region at {:#x?}",
+                        unused_gicr_base
+                    );
+                    inner.mmio_region_register(
+                        unused_gicr_base,
+                        PER_GICR_SIZE,
+                        vgicv3_unused_redist_handler,
+                        unused_gicr_base,
                     );
                 }
             }
@@ -168,6 +182,11 @@ fn restrict_bitmask_access(
         mmio_perform_access(gicd_base, mmio);
     }
     Ok(())
+}
+
+pub fn vgicv3_unused_redist_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
+    mmio_perform_access(base, mmio);
+    HvResult::Ok(())
 }
 
 pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
