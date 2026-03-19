@@ -241,6 +241,8 @@ static int parse_modules(const cJSON *const modules_json) {
 static int parse_arch_config(cJSON *root, zone_config_t *config) {
     cJSON *arch_config_json = SAFE_CJSON_GET_OBJECT_ITEM(root, "arch_config");
     CHECK_JSON_NULL(arch_config_json, "arch_config");
+
+    arch_zone_config_t *arch_config = &config->arch_config;
 #ifdef ARM64
     cJSON *gic_version_json =
         SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "gic_version");
@@ -284,46 +286,40 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         CHECK_JSON_NULL(gich_size_json, "gich_size")
         CHECK_JSON_NULL(gicv_base_json, "gicv_base")
         CHECK_JSON_NULL(gicv_size_json, "gicv_size")
-        config->arch_config.gic_config.gicv2.gic_version_tag = 0;
-        config->arch_config.gic_config.gicv2.gicv2_config.gicd_base =
-            strtoull(gicd_base_json->valuestring, NULL, 16);
-        config->arch_config.gic_config.gicv2.gicv2_config.gicd_size =
-            strtoull(gicd_size_json->valuestring, NULL, 16);
-        config->arch_config.gic_config.gicv2.gicv2_config.gicc_base =
-            strtoull(gicc_base_json->valuestring, NULL, 16);
-        config->arch_config.gic_config.gicv2.gicv2_config.gicc_size =
-            strtoull(gicc_size_json->valuestring, NULL, 16);
-        config->arch_config.gic_config.gicv2.gicv2_config.gicc_offset =
-            strtoull(gicc_offset_json->valuestring, NULL, 16);
-        config->arch_config.gic_config.gicv2.gicv2_config.gich_base =
-            strtoull(gich_base_json->valuestring, NULL, 16);
-        config->arch_config.gic_config.gicv2.gicv2_config.gich_size =
-            strtoull(gich_size_json->valuestring, NULL, 16);
-        config->arch_config.gic_config.gicv2.gicv2_config.gicv_base =
-            strtoull(gicv_base_json->valuestring, NULL, 16);
-        config->arch_config.gic_config.gicv2.gicv2_config.gicv_size =
-            strtoull(gicv_size_json->valuestring, NULL, 16);
+
+        struct Gicv2Payload *gicv2_payload = &arch_config->gic_config.gicv2;
+        struct Gicv2Config *gicv2 = &gicv2_payload->gicv2_config;
+
+        gicv2_payload->gic_version_tag = 0;
+        gicv2->gicd_base = strtoull(gicd_base_json->valuestring, NULL, 16);
+        gicv2->gicd_size = strtoull(gicd_size_json->valuestring, NULL, 16);
+        gicv2->gicc_base = strtoull(gicc_base_json->valuestring, NULL, 16);
+        gicv2->gicc_size = strtoull(gicc_size_json->valuestring, NULL, 16);
+        gicv2->gicc_offset = strtoull(gicc_offset_json->valuestring, NULL, 16);
+        gicv2->gich_base = strtoull(gich_base_json->valuestring, NULL, 16);
+        gicv2->gich_size = strtoull(gich_size_json->valuestring, NULL, 16);
+        gicv2->gicv_base = strtoull(gicv_base_json->valuestring, NULL, 16);
+        gicv2->gicv_size = strtoull(gicv_size_json->valuestring, NULL, 16);
     } else if (!strcmp(gic_version, "v3")) {
         CHECK_JSON_NULL(gicd_base_json, "gicd_base")
         CHECK_JSON_NULL(gicr_base_json, "gicr_base")
         CHECK_JSON_NULL(gicd_size_json, "gicd_size")
         CHECK_JSON_NULL(gicr_size_json, "gicr_size")
-        config->arch_config.gic_config.gicv3.gic_version_tag = 1;
-        config->arch_config.gic_config.gicv3.gicv3_config.gicd_base =
-            strtoull(gicd_base_json->valuestring, NULL, 16);
-        config->arch_config.gic_config.gicv3.gicv3_config.gicd_size =
-            strtoull(gicd_size_json->valuestring, NULL, 16);
-        config->arch_config.gic_config.gicv3.gicv3_config.gicr_base =
-            strtoull(gicr_base_json->valuestring, NULL, 16);
-        config->arch_config.gic_config.gicv3.gicv3_config.gicr_size =
-            strtoull(gicr_size_json->valuestring, NULL, 16);
+
+        struct Gicv3Payload *gicv3_payload = &arch_config->gic_config.gicv3;
+        struct Gicv3Config *gicv3 = &gicv3_payload->gicv3_config;
+
+        gicv3_payload->gic_version_tag = 1;
+        gicv3->gicd_base = strtoull(gicd_base_json->valuestring, NULL, 16);
+        gicv3->gicd_size = strtoull(gicd_size_json->valuestring, NULL, 16);
+        gicv3->gicr_base = strtoull(gicr_base_json->valuestring, NULL, 16);
+        gicv3->gicr_size = strtoull(gicr_size_json->valuestring, NULL, 16);
+
         if (gits_base_json == NULL || gits_size_json == NULL) {
             log_warn("No gits fields in arch_config.\n");
         } else {
-            config->arch_config.gic_config.gicv3.gicv3_config.gits_base =
-                strtoull(gits_base_json->valuestring, NULL, 16);
-            config->arch_config.gic_config.gicv3.gicv3_config.gits_size =
-                strtoull(gits_size_json->valuestring, NULL, 16);
+            gicv3->gits_base = strtoull(gits_base_json->valuestring, NULL, 16);
+            gicv3->gits_size = strtoull(gits_size_json->valuestring, NULL, 16);
         }
     } else {
         log_error("Invalid GIC version. It should be either of v2 or v3\n");
@@ -333,9 +329,9 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         log_warn("No is_aarch32 field in arch_config. If you are booting an "
                  "aarch32 guest, "
                  "please set it to true.\n");
-        config->arch_config.is_aarch32 = 0;
+        arch_config->is_aarch32 = 0;
     } else {
-        config->arch_config.is_aarch32 = is_aarch32_json->valueint;
+        arch_config->is_aarch32 = is_aarch32_json->valueint;
     }
 #endif
 
@@ -358,14 +354,10 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         return -1;
     }
 
-    config->arch_config.plic_base =
-        strtoull(plic_base_json->valuestring, NULL, 16);
-    config->arch_config.plic_size =
-        strtoull(plic_size_json->valuestring, NULL, 16);
-    config->arch_config.aplic_base =
-        strtoull(aplic_base_json->valuestring, NULL, 16);
-    config->arch_config.aplic_size =
-        strtoull(aplic_size_json->valuestring, NULL, 16);
+    arch_config->plic_base = strtoull(plic_base_json->valuestring, NULL, 16);
+    arch_config->plic_size = strtoull(plic_size_json->valuestring, NULL, 16);
+    arch_config->aplic_base = strtoull(aplic_base_json->valuestring, NULL, 16);
+    arch_config->aplic_size = strtoull(aplic_size_json->valuestring, NULL, 16);
 #endif
 
 #ifdef X86_64
@@ -406,11 +398,11 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
     cJSON *screen_base_json =
         SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "screen_base");
 
-    config->arch_config.ioapic_base =
+    arch_config->ioapic_base =
         strtoull(ioapic_base_json->valuestring, NULL, 16);
-    config->arch_config.ioapic_size =
+    arch_config->ioapic_size =
         strtoull(ioapic_size_json->valuestring, NULL, 16);
-    config->arch_config.kernel_entry_gpa =
+    arch_config->kernel_entry_gpa =
         strtoull(kernel_entry_gpa_json->valuestring, NULL, 16);
 
     if (boot_filepath_json != NULL) {
@@ -422,7 +414,7 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
     }
 
     if (setup_filepath_json != NULL) {
-        config->arch_config.setup_load_gpa =
+        arch_config->setup_load_gpa =
             strtoull(setup_load_gpa_json->valuestring, NULL, 16);
         __u64 size = load_image_to_memory(
             setup_filepath_json->valuestring,
@@ -432,7 +424,7 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
     }
 
     if (cmdline_json != NULL) {
-        config->arch_config.cmdline_load_gpa =
+        arch_config->cmdline_load_gpa =
             strtoull(cmdline_load_gpa_json->valuestring, NULL, 16);
         __u64 size = load_str_to_memory(
             cmdline_json->valuestring,
@@ -442,23 +434,23 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
     }
 
     if (initrd_filepath_json != NULL) {
-        config->arch_config.initrd_load_gpa =
+        arch_config->initrd_load_gpa =
             strtoull(initrd_load_gpa_json->valuestring, NULL, 16);
-        config->arch_config.initrd_size = load_image_to_memory(
+        arch_config->initrd_size = load_image_to_memory(
             initrd_filepath_json->valuestring,
             strtoull(initrd_load_hpa_json->valuestring, NULL, 16));
 
-        log_info("initrd size: %llu", config->arch_config.initrd_size);
+        log_info("initrd size: %llu", arch_config->initrd_size);
     }
 
-    config->arch_config.rsdp_memory_region_id =
+    arch_config->rsdp_memory_region_id =
         strtoull(rsdp_memory_region_id_json->valuestring, NULL, 16);
-    config->arch_config.acpi_memory_region_id =
+    arch_config->acpi_memory_region_id =
         strtoull(acpi_memory_region_id_json->valuestring, NULL, 16);
-    config->arch_config.uefi_memory_region_id =
+    arch_config->uefi_memory_region_id =
         strtoull(uefi_memory_region_id_json->valuestring, NULL, 16);
 
-    config->arch_config.screen_base =
+    arch_config->screen_base =
         strtoull(screen_base_json->valuestring, NULL, 16);
 #endif
 
@@ -779,15 +771,13 @@ static int zone_start_from_json(const char *json_config_path,
 
     // Load kernel image to memory
     config->kernel_size = load_image_to_memory(
-        kernel_filepath_json->valuestring,
-        strtoull(kernel_load_paddr_json->valuestring, NULL, 16));
+        kernel_filepath_json->valuestring, config->kernel_load_paddr);
 
 // Load dtb to memory
 // x86_64 uses ACPI
 #ifndef X86_64
-    config->dtb_size = load_image_to_memory(
-        dtb_filepath_json->valuestring,
-        strtoull(dtb_load_paddr_json->valuestring, NULL, 16));
+    config->dtb_size = load_image_to_memory(dtb_filepath_json->valuestring,
+                                            config->dtb_load_paddr);
 #endif
 
     log_info("Kernel size: %llu, DTB size: %llu", config->kernel_size,
