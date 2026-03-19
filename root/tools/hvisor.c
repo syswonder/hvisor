@@ -702,15 +702,29 @@ static int zone_start_from_json(const char *json_config_path,
     }
 
     // irq
-    memset(config->interrupts_bitmap, 0,
-           sizeof(BitmapWord) * (CONFIG_MAX_INTERRUPTS /
-                                 CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD));
+    log_info("num interrupts %d", num_interrupts);
+    memset(config->interrupts_bitmap, 0, sizeof(config->interrupts_bitmap));
+    log_info("interrupts_bitmap %p, size %zu, is cleared",
+             config->interrupts_bitmap, sizeof(config->interrupts_bitmap));
     for (int i = 0; i < num_interrupts; i++) {
-        __u32 irq = SAFE_CJSON_GET_ARRAY_ITEM(interrupts_json, i)->valueint;
+        const cJSON *const item = SAFE_CJSON_GET_ARRAY_ITEM(interrupts_json, i);
 
-        size_t word_index = irq / CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD;
-        size_t bit_index = irq % CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD;
+        size_t irq;
+        if (parse_json_size(item, &irq) != 0) {
+            log_error("Failed to parse irq %d", i);
+            goto err_out;
+        }
+
+        if (irq >= CONFIG_MAX_INTERRUPTS) {
+            log_error("irq %zu is out of range", irq);
+            goto err_out;
+        }
+
+        // irq is valid, set the bit in the bitmap
+        const size_t word_index = irq / CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD;
+        const size_t bit_index = irq % CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD;
         config->interrupts_bitmap[word_index] |= ((BitmapWord)1) << bit_index;
+        log_info("irq %zu is valid, set the bit in the bitmap", irq);
     }
 
     // ivc
