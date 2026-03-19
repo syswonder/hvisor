@@ -291,15 +291,18 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         struct Gicv2Config *gicv2 = &gicv2_payload->gicv2_config;
 
         gicv2_payload->gic_version_tag = 0;
-        gicv2->gicd_base = strtoull(gicd_base_json->valuestring, NULL, 16);
-        gicv2->gicd_size = strtoull(gicd_size_json->valuestring, NULL, 16);
-        gicv2->gicc_base = strtoull(gicc_base_json->valuestring, NULL, 16);
-        gicv2->gicc_size = strtoull(gicc_size_json->valuestring, NULL, 16);
-        gicv2->gicc_offset = strtoull(gicc_offset_json->valuestring, NULL, 16);
-        gicv2->gich_base = strtoull(gich_base_json->valuestring, NULL, 16);
-        gicv2->gich_size = strtoull(gich_size_json->valuestring, NULL, 16);
-        gicv2->gicv_base = strtoull(gicv_base_json->valuestring, NULL, 16);
-        gicv2->gicv_size = strtoull(gicv_size_json->valuestring, NULL, 16);
+        if (parse_json_linux_u64(gicd_base_json, &gicv2->gicd_base) != 0 ||
+            parse_json_linux_u64(gicd_size_json, &gicv2->gicd_size) != 0 ||
+            parse_json_linux_u64(gicc_base_json, &gicv2->gicc_base) != 0 ||
+            parse_json_linux_u64(gicc_size_json, &gicv2->gicc_size) != 0 ||
+            parse_json_linux_u64(gicc_offset_json, &gicv2->gicc_offset) != 0 ||
+            parse_json_linux_u64(gich_base_json, &gicv2->gich_base) != 0 ||
+            parse_json_linux_u64(gich_size_json, &gicv2->gich_size) != 0 ||
+            parse_json_linux_u64(gicv_base_json, &gicv2->gicv_base) != 0 ||
+            parse_json_linux_u64(gicv_size_json, &gicv2->gicv_size) != 0) {
+            log_error("Failed to parse gicv2 config\n");
+            return -1;
+        }
     } else if (!strcmp(gic_version, "v3")) {
         CHECK_JSON_NULL(gicd_base_json, "gicd_base")
         CHECK_JSON_NULL(gicr_base_json, "gicr_base")
@@ -310,16 +313,22 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         struct Gicv3Config *gicv3 = &gicv3_payload->gicv3_config;
 
         gicv3_payload->gic_version_tag = 1;
-        gicv3->gicd_base = strtoull(gicd_base_json->valuestring, NULL, 16);
-        gicv3->gicd_size = strtoull(gicd_size_json->valuestring, NULL, 16);
-        gicv3->gicr_base = strtoull(gicr_base_json->valuestring, NULL, 16);
-        gicv3->gicr_size = strtoull(gicr_size_json->valuestring, NULL, 16);
+        if (parse_json_linux_u64(gicd_base_json, &gicv3->gicd_base) != 0 ||
+            parse_json_linux_u64(gicd_size_json, &gicv3->gicd_size) != 0 ||
+            parse_json_linux_u64(gicr_base_json, &gicv3->gicr_base) != 0 ||
+            parse_json_linux_u64(gicr_size_json, &gicv3->gicr_size) != 0) {
+            log_error("Failed to parse gicv3 config\n");
+            return -1;
+        }
 
         if (gits_base_json == NULL || gits_size_json == NULL) {
             log_warn("No gits fields in arch_config.\n");
         } else {
-            gicv3->gits_base = strtoull(gits_base_json->valuestring, NULL, 16);
-            gicv3->gits_size = strtoull(gits_size_json->valuestring, NULL, 16);
+            if (parse_json_linux_u64(gits_base_json, &gicv3->gits_base) != 0 ||
+                parse_json_linux_u64(gits_size_json, &gicv3->gits_size) != 0) {
+                log_error("Failed to parse gits config\n");
+                return -1;
+            }
         }
     } else {
         log_error("Invalid GIC version. It should be either of v2 or v3\n");
@@ -354,10 +363,13 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         return -1;
     }
 
-    arch_config->plic_base = strtoull(plic_base_json->valuestring, NULL, 16);
-    arch_config->plic_size = strtoull(plic_size_json->valuestring, NULL, 16);
-    arch_config->aplic_base = strtoull(aplic_base_json->valuestring, NULL, 16);
-    arch_config->aplic_size = strtoull(aplic_size_json->valuestring, NULL, 16);
+    if (parse_json_linux_u64(plic_base_json, &arch_config->plic_base) != 0 ||
+        parse_json_linux_u64(plic_size_json, &arch_config->plic_size) != 0 ||
+        parse_json_linux_u64(aplic_base_json, &arch_config->aplic_base) != 0 ||
+        parse_json_linux_u64(aplic_size_json, &arch_config->aplic_size) != 0) {
+        log_error("Failed to parse plic/aplic config\n");
+        return -1;
+    }
 #endif
 
 #ifdef X86_64
@@ -398,60 +410,82 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
     cJSON *screen_base_json =
         SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "screen_base");
 
-    arch_config->ioapic_base =
-        strtoull(ioapic_base_json->valuestring, NULL, 16);
-    arch_config->ioapic_size =
-        strtoull(ioapic_size_json->valuestring, NULL, 16);
-    arch_config->kernel_entry_gpa =
-        strtoull(kernel_entry_gpa_json->valuestring, NULL, 16);
+    if (parse_json_linux_u64(ioapic_base_json, &arch_config->ioapic_base) !=
+            0 ||
+        parse_json_linux_u64(ioapic_size_json, &arch_config->ioapic_size) !=
+            0 ||
+        parse_json_linux_u64(kernel_entry_gpa_json,
+                             &arch_config->kernel_entry_gpa) != 0) {
+        log_error("Failed to parse ioapic or kernel_entry_gpa\n");
+        return -1;
+    }
 
     if (boot_filepath_json != NULL) {
-        __u64 size = load_image_to_memory(
-            boot_filepath_json->valuestring,
-            strtoull(boot_load_paddr_json->valuestring, NULL, 16));
+        __u64 boot_load_paddr;
+        if (parse_json_linux_u64(boot_load_paddr_json, &boot_load_paddr) != 0) {
+            log_error("Failed to parse boot_load_paddr\n");
+            return -1;
+        }
+        __u64 size = load_image_to_memory(boot_filepath_json->valuestring,
+                                          boot_load_paddr);
 
         log_info("boot size: %llu", size);
     }
 
     if (setup_filepath_json != NULL) {
-        arch_config->setup_load_gpa =
-            strtoull(setup_load_gpa_json->valuestring, NULL, 16);
-        __u64 size = load_image_to_memory(
-            setup_filepath_json->valuestring,
-            strtoull(setup_load_hpa_json->valuestring, NULL, 16));
+        __u64 setup_load_hpa;
+        if (parse_json_linux_u64(setup_load_gpa_json,
+                                 &arch_config->setup_load_gpa) != 0 ||
+            parse_json_linux_u64(setup_load_hpa_json, &setup_load_hpa) != 0) {
+            log_error("Failed to parse setup_load_gpa or setup_load_hpa\n");
+            return -1;
+        }
+        __u64 size = load_image_to_memory(setup_filepath_json->valuestring,
+                                          setup_load_hpa);
 
         log_info("setup size: %llu", size);
     }
 
     if (cmdline_json != NULL) {
-        arch_config->cmdline_load_gpa =
-            strtoull(cmdline_load_gpa_json->valuestring, NULL, 16);
-        __u64 size = load_str_to_memory(
-            cmdline_json->valuestring,
-            strtoull(cmdline_load_hpa_json->valuestring, NULL, 16));
+        __u64 cmdline_load_hpa;
+        if (parse_json_linux_u64(cmdline_load_gpa_json,
+                                 &arch_config->cmdline_load_gpa) != 0 ||
+            parse_json_linux_u64(cmdline_load_hpa_json, &cmdline_load_hpa) !=
+                0) {
+            log_error("Failed to parse cmdline_load_gpa or cmdline_load_hpa\n");
+            return -1;
+        }
+        __u64 size =
+            load_str_to_memory(cmdline_json->valuestring, cmdline_load_hpa);
 
         log_info("cmdline size: %llu", size);
     }
 
     if (initrd_filepath_json != NULL) {
-        arch_config->initrd_load_gpa =
-            strtoull(initrd_load_gpa_json->valuestring, NULL, 16);
+        __u64 initrd_load_hpa;
+        if (parse_json_linux_u64(initrd_load_gpa_json,
+                                 &arch_config->initrd_load_gpa) != 0 ||
+            parse_json_linux_u64(initrd_load_hpa_json, &initrd_load_hpa) != 0) {
+            log_error("Failed to parse initrd_load_gpa or initrd_load_hpa\n");
+            return -1;
+        }
         arch_config->initrd_size = load_image_to_memory(
-            initrd_filepath_json->valuestring,
-            strtoull(initrd_load_hpa_json->valuestring, NULL, 16));
+            initrd_filepath_json->valuestring, initrd_load_hpa);
 
         log_info("initrd size: %llu", arch_config->initrd_size);
     }
 
-    arch_config->rsdp_memory_region_id =
-        strtoull(rsdp_memory_region_id_json->valuestring, NULL, 16);
-    arch_config->acpi_memory_region_id =
-        strtoull(acpi_memory_region_id_json->valuestring, NULL, 16);
-    arch_config->uefi_memory_region_id =
-        strtoull(uefi_memory_region_id_json->valuestring, NULL, 16);
-
-    arch_config->screen_base =
-        strtoull(screen_base_json->valuestring, NULL, 16);
+    if (parse_json_linux_u64(rsdp_memory_region_id_json,
+                             &arch_config->rsdp_memory_region_id) != 0 ||
+        parse_json_linux_u64(acpi_memory_region_id_json,
+                             &arch_config->acpi_memory_region_id) != 0 ||
+        parse_json_linux_u64(uefi_memory_region_id_json,
+                             &arch_config->uefi_memory_region_id) != 0 ||
+        parse_json_linux_u64(screen_base_json, &arch_config->screen_base) !=
+            0) {
+        log_error("Failed to parse region ids or screen_base\n");
+        return -1;
+    }
 #endif
 
     return 0;
@@ -517,29 +551,32 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
             SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "domain");
         CHECK_JSON_NULL_ERR_OUT(domain_json, "domain")
 
-        pci_config->ecam_base = strtoull(ecam_base_json->valuestring, NULL, 16);
-        pci_config->ecam_size = strtoull(ecam_size_json->valuestring, NULL, 16);
-        pci_config->io_base = strtoull(io_base_json->valuestring, NULL, 16);
-        pci_config->io_size = strtoull(io_size_json->valuestring, NULL, 16);
-        pci_config->pci_io_base =
-            strtoull(pci_io_base_json->valuestring, NULL, 16);
-        pci_config->mem32_base =
-            strtoull(mem32_base_json->valuestring, NULL, 16);
-        pci_config->mem32_size =
-            strtoull(mem32_size_json->valuestring, NULL, 16);
-        pci_config->pci_mem32_base =
-            strtoull(pci_mem32_base_json->valuestring, NULL, 16);
-        pci_config->mem64_base =
-            strtoull(mem64_base_json->valuestring, NULL, 16);
-        pci_config->mem64_size =
-            strtoull(mem64_size_json->valuestring, NULL, 16);
-        pci_config->pci_mem64_base =
-            strtoull(pci_mem64_base_json->valuestring, NULL, 16);
-        pci_config->bus_range_begin =
-            strtoull(bus_range_begin_json->valuestring, NULL, 16);
-        pci_config->bus_range_end =
-            strtoull(bus_range_end_json->valuestring, NULL, 16);
-        pci_config->domain = strtoull(domain_json->valuestring, NULL, 16);
+        if (parse_json_linux_u64(ecam_base_json, &pci_config->ecam_base) != 0 ||
+            parse_json_linux_u64(ecam_size_json, &pci_config->ecam_size) != 0 ||
+            parse_json_linux_u64(io_base_json, &pci_config->io_base) != 0 ||
+            parse_json_linux_u64(io_size_json, &pci_config->io_size) != 0 ||
+            parse_json_linux_u64(pci_io_base_json, &pci_config->pci_io_base) !=
+                0 ||
+            parse_json_linux_u64(mem32_base_json, &pci_config->mem32_base) !=
+                0 ||
+            parse_json_linux_u64(mem32_size_json, &pci_config->mem32_size) !=
+                0 ||
+            parse_json_linux_u64(pci_mem32_base_json,
+                                 &pci_config->pci_mem32_base) != 0 ||
+            parse_json_linux_u64(mem64_base_json, &pci_config->mem64_base) !=
+                0 ||
+            parse_json_linux_u64(mem64_size_json, &pci_config->mem64_size) !=
+                0 ||
+            parse_json_linux_u64(pci_mem64_base_json,
+                                 &pci_config->pci_mem64_base) != 0 ||
+            parse_json_linux_u32(bus_range_begin_json,
+                                 &pci_config->bus_range_begin) != 0 ||
+            parse_json_linux_u32(bus_range_end_json,
+                                 &pci_config->bus_range_end) != 0 ||
+            parse_json_linux_u8(domain_json, &pci_config->domain) != 0) {
+            log_error("Failed to parse pci_config\n");
+            goto err_out;
+        }
 
         // log_info("pci_config %d: ecam_base=0x%llx, ecam_size=0x%llx, "
         //          "io_base=0x%llx, io_size=0x%llx, "
@@ -562,23 +599,27 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
         cJSON *dev_config_json =
             SAFE_CJSON_GET_ARRAY_ITEM(alloc_pci_devs_json, i);
         hv_pci_dev_config_t *dev_config = &config->alloc_pci_devs[i];
-        dev_config->domain = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "domain")->valuestring,
-            NULL, 16);
-        dev_config->bus = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "bus")->valuestring,
-            NULL, 16);
-        dev_config->device = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "device")->valuestring,
-            NULL, 16);
-        dev_config->function =
-            strtoull(SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "function")
-                         ->valuestring,
-                     NULL, 16);
-        dev_config->dev_type =
-            strtoull(SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "dev_type")
-                         ->valuestring,
-                     NULL, 8);
+
+        cJSON *dev_domain_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "domain");
+        cJSON *dev_bus_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "bus");
+        cJSON *dev_device_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "device");
+        cJSON *dev_function_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "function");
+        cJSON *dev_type_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "dev_type");
+
+        if (parse_json_linux_u8(dev_domain_json, &dev_config->domain) != 0 ||
+            parse_json_linux_u8(dev_bus_json, &dev_config->bus) != 0 ||
+            parse_json_linux_u8(dev_device_json, &dev_config->device) != 0 ||
+            parse_json_linux_u8(dev_function_json, &dev_config->function) !=
+                0 ||
+            parse_json_linux_u32(dev_type_json, &dev_config->dev_type) != 0) {
+            log_error("Failed to parse pci device config\n");
+            goto err_out;
+        }
     }
     return 0;
 err_out:
@@ -663,14 +704,20 @@ static int zone_start_from_json(const char *json_config_path,
         cJSON *region = SAFE_CJSON_GET_ARRAY_ITEM(memory_regions_json, i);
         memory_region_t *mem_region = &config->memory_regions[i];
 
-        mem_region->physical_start = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(region, "physical_start")->valuestring,
-            NULL, 16);
-        mem_region->virtual_start = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(region, "virtual_start")->valuestring,
-            NULL, 16);
-        mem_region->size = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(region, "size")->valuestring, NULL, 16);
+        cJSON *physical_start_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(region, "physical_start");
+        cJSON *virtual_start_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(region, "virtual_start");
+        cJSON *size_json = SAFE_CJSON_GET_OBJECT_ITEM(region, "size");
+
+        if (parse_json_linux_u64(physical_start_json,
+                                 &mem_region->physical_start) != 0 ||
+            parse_json_linux_u64(virtual_start_json,
+                                 &mem_region->virtual_start) != 0 ||
+            parse_json_linux_u64(size_json, &mem_region->size) != 0) {
+            log_error("Failed to parse memory region %d\n", i);
+            goto err_out;
+        }
 
         const char *type_str =
             SAFE_CJSON_GET_OBJECT_ITEM(region, "type")->valuestring;
@@ -734,22 +781,28 @@ static int zone_start_from_json(const char *json_config_path,
             SAFE_CJSON_GET_OBJECT_ITEM(ivc_config_json, "ivc_id")->valueint;
         ivc_config->peer_id =
             SAFE_CJSON_GET_OBJECT_ITEM(ivc_config_json, "peer_id")->valueint;
-        ivc_config->shared_mem_ipa = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(ivc_config_json, "shared_mem_ipa")
-                ->valuestring,
-            NULL, 16);
-        ivc_config->control_table_ipa = strtoull(
-            SAFE_CJSON_GET_OBJECT_ITEM(ivc_config_json, "control_table_ipa")
-                ->valuestring,
-            NULL, 16);
-        ivc_config->rw_sec_size =
-            strtoull(SAFE_CJSON_GET_OBJECT_ITEM(ivc_config_json, "rw_sec_size")
-                         ->valuestring,
-                     NULL, 16);
-        ivc_config->out_sec_size =
-            strtoull(SAFE_CJSON_GET_OBJECT_ITEM(ivc_config_json, "out_sec_size")
-                         ->valuestring,
-                     NULL, 16);
+
+        cJSON *shared_mem_ipa_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(ivc_config_json, "shared_mem_ipa");
+        cJSON *control_table_ipa_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(ivc_config_json, "control_table_ipa");
+        cJSON *rw_sec_size_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(ivc_config_json, "rw_sec_size");
+        cJSON *out_sec_size_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(ivc_config_json, "out_sec_size");
+
+        if (parse_json_linux_u64(shared_mem_ipa_json,
+                                 &ivc_config->shared_mem_ipa) != 0 ||
+            parse_json_linux_u64(control_table_ipa_json,
+                                 &ivc_config->control_table_ipa) != 0 ||
+            parse_json_linux_u32(rw_sec_size_json, &ivc_config->rw_sec_size) !=
+                0 ||
+            parse_json_linux_u32(out_sec_size_json,
+                                 &ivc_config->out_sec_size) != 0) {
+            log_error("Failed to parse ivc config\n");
+            goto err_out;
+        }
+
         ivc_config->interrupt_num =
             SAFE_CJSON_GET_OBJECT_ITEM(ivc_config_json, "interrupt_num")
                 ->valueint;
@@ -761,13 +814,16 @@ static int zone_start_from_json(const char *json_config_path,
                  ivc_config->shared_mem_ipa, ivc_config->interrupt_num,
                  ivc_config->max_peers);
     }
-    config->entry_point = strtoull(entry_point_json->valuestring, NULL, 16);
 
-    config->kernel_load_paddr =
-        strtoull(kernel_load_paddr_json->valuestring, NULL, 16);
-
-    config->dtb_load_paddr =
-        strtoull(dtb_load_paddr_json->valuestring, NULL, 16);
+    if (parse_json_linux_u64(entry_point_json, &config->entry_point) != 0 ||
+        parse_json_linux_u64(kernel_load_paddr_json,
+                             &config->kernel_load_paddr) != 0 ||
+        parse_json_linux_u64(dtb_load_paddr_json, &config->dtb_load_paddr) !=
+            0) {
+        log_error("Failed to parse entry_point, kernel_load_paddr or "
+                  "dtb_load_paddr\n");
+        goto err_out;
+    }
 
     // Load kernel image to memory
     config->kernel_size = load_image_to_memory(

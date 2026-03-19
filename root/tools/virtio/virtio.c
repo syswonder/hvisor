@@ -31,6 +31,7 @@
 #include <unistd.h>
 
 #include "hvisor.h"
+#include "json_parse.h"
 #include "log.h"
 #include "safe_cjson.h"
 #include "virtio.h"
@@ -1345,11 +1346,15 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
 
     // Get base_addr, len, irq_id (mmio region base address and length, device
     // interrupt number)
-    base_addr = strtoul(
-        SAFE_CJSON_GET_OBJECT_ITEM(device_json, "addr")->valuestring, NULL, 16);
-    len = strtoul(SAFE_CJSON_GET_OBJECT_ITEM(device_json, "len")->valuestring,
-                  NULL, 16);
-    irq_id = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "irq")->valueint;
+    if (parse_json_u64(SAFE_CJSON_GET_OBJECT_ITEM(device_json, "addr"),
+                       &base_addr) != 0 ||
+        parse_json_u64(SAFE_CJSON_GET_OBJECT_ITEM(device_json, "len"), &len) !=
+            0 ||
+        parse_json_u32(SAFE_CJSON_GET_OBJECT_ITEM(device_json, "irq"),
+                       &irq_id) != 0) {
+        log_error("failed to parse addr, len, or irq");
+        return -1;
+    }
 
     // Handle other fields according to the device type
     if (dev_type == VirtioTBlock) {
@@ -1363,8 +1368,11 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
         cJSON *mac_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "mac");
         uint8_t mac[6];
         for (int i = 0; i < 6; i++) {
-            mac[i] = strtoul(
-                SAFE_CJSON_GET_ARRAY_ITEM(mac_json, i)->valuestring, NULL, 16);
+            if (parse_json_u8(SAFE_CJSON_GET_ARRAY_ITEM(mac_json, i),
+                              &mac[i]) != 0) {
+                log_error("failed to parse mac address");
+                return -1;
+            }
         }
         arg0 = mac, arg1 = tap;
     } else if (dev_type == VirtioTConsole) {
@@ -1378,10 +1386,14 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
         requested_state =
             (GPURequestedState *)malloc(sizeof(GPURequestedState));
         memset(requested_state, 0, sizeof(GPURequestedState));
-        requested_state->width =
-            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "width")->valueint;
-        requested_state->height =
-            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "height")->valueint;
+        if (parse_json_u32(SAFE_CJSON_GET_OBJECT_ITEM(device_json, "width"),
+                           &requested_state->width) != 0 ||
+            parse_json_u32(SAFE_CJSON_GET_OBJECT_ITEM(device_json, "height"),
+                           &requested_state->height) != 0) {
+            log_error("failed to parse gpu width or height");
+            free(requested_state);
+            return -1;
+        }
         arg0 = requested_state;
         arg1 = NULL;
 #else
@@ -1432,7 +1444,13 @@ int virtio_start_from_json(char *json_path) {
         cJSON *memory_region_json =
             SAFE_CJSON_GET_OBJECT_ITEM(zone_json, "memory_region");
         cJSON *devices_json = SAFE_CJSON_GET_OBJECT_ITEM(zone_json, "devices");
-        zone_id = zone_id_json->valueint;
+        uint32_t parsed_zone_id;
+        if (parse_json_u32(zone_id_json, &parsed_zone_id) != 0) {
+            log_error("failed to parse zone id");
+            err = -1;
+            goto err_out;
+        }
+        zone_id = (int)parsed_zone_id;
         if (zone_id >= MAX_ZONES) {
             log_error("Exceed maximum zone number");
             err = -1;
@@ -1444,17 +1462,23 @@ int virtio_start_from_json(char *json_path) {
         for (int j = 0; j < num_mems; j++) {
             cJSON *mem_region =
                 SAFE_CJSON_GET_ARRAY_ITEM(memory_region_json, j);
-            zone0_ipa = (void *)(uintptr_t)strtoull(
-                SAFE_CJSON_GET_OBJECT_ITEM(mem_region, "zone0_ipa")
-                    ->valuestring,
-                NULL, 16);
-            zonex_ipa = (void *)(uintptr_t)strtoull(
-                SAFE_CJSON_GET_OBJECT_ITEM(mem_region, "zonex_ipa")
-                    ->valuestring,
-                NULL, 16);
-            mem_size = strtoull(
-                SAFE_CJSON_GET_OBJECT_ITEM(mem_region, "size")->valuestring,
-                NULL, 16);
+            uintptr_t zone0_ipa_val = 0, zonex_ipa_val = 0;
+            uint64_t mem_size_val = 0;
+            if (parse_json_address(
+                    SAFE_CJSON_GET_OBJECT_ITEM(mem_region, "zone0_ipa"),
+                    &zone0_ipa_val) != 0 ||
+                parse_json_address(
+                    SAFE_CJSON_GET_OBJECT_ITEM(mem_region, "zonex_ipa"),
+                    &zonex_ipa_val) != 0 ||
+                parse_json_u64(SAFE_CJSON_GET_OBJECT_ITEM(mem_region, "size"),
+                               &mem_size_val) != 0) {
+                log_error("failed to parse memory region");
+                err = -1;
+                goto err_out;
+            }
+            zone0_ipa = (void *)zone0_ipa_val;
+            zonex_ipa = (void *)zonex_ipa_val;
+            mem_size = mem_size_val;
             if (mem_size == 0) {
                 log_error("Invalid memory size");
                 continue;
