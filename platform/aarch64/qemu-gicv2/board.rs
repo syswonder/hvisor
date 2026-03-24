@@ -48,6 +48,8 @@ pub const BOARD_PHYSMEM_LIST: &[(u64, u64, MemoryType)] = &[
     (0x4010000000,  0x4020000000,  MemoryType::Device),
 ];
 
+/// Early boot cache invalidate mask (per CPU): bit0->L1(D), bit1->L2, bit2->L3.
+pub static BOARD_EARLY_CACHE_INVALIDATE_MASKS: [u64; BOARD_NCPUS] = [0b011; BOARD_NCPUS];
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0xa0000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0xa0400000;
 pub const ROOT_ZONE_ENTRY: u64 = 0xa0400000;
