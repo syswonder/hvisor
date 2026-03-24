@@ -347,6 +347,11 @@ fn handle_endpoint_access(
                                         (vbdf.device << 3) + vbdf.function,
                                     );
                                 }
+                                #[cfg(target_arch = "riscv64")]
+                                unsafe {
+                                    // TOOD: add remote fence support (using sbi rfence spec?)
+                                    core::arch::asm!("hfence.gvma");
+                                }
                             }
                         }
                     }

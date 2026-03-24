@@ -29,6 +29,7 @@ use alloc::vec::Vec;
 
 #[cfg(any(
     all(feature = "iommu", target_arch = "aarch64"),
+    all(feature = "iommu", target_arch = "riscv64"),
     target_arch = "x86_64"
 ))]
 use crate::arch::iommu::iommu_add_device;
@@ -259,6 +260,7 @@ impl Zone {
 
                 #[cfg(any(
                     all(feature = "iommu", target_arch = "aarch64"),
+                    all(feature = "iommu", target_arch = "riscv64"),
                     target_arch = "x86_64"
                 ))]
                 {
