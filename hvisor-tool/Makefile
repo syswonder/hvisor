@@ -3,12 +3,14 @@ ARCH ?= arm64
 LOG ?= LOG_INFO
 DEBUG ?= n
 VIRTIO_GPU ?= n
+VIRTIO_SCMI ?= n
 LIBC ?= gnu
 
 export KDIR
 export ARCH
 export LOG
 export VIRTIO_GPU
+export VIRTIO_SCMI
 export LIBC
 
 .PHONY: all help env tools driver clean transfer tftp transfer_nxp check-kdir check-config-change
@@ -16,7 +18,7 @@ export LIBC
 OUTPUT_DIR ?= output
 TFTP_DIR ?= ~/tftp
 
-BUILD_VARS_STRING := arch=$(ARCH)-log=$(LOG)-debug=$(DEBUG)-virtio_gpu=$(VIRTIO_GPU)-libc=$(LIBC)-kdir=$(KDIR)
+BUILD_VARS_STRING := arch=$(ARCH)-log=$(LOG)-debug=$(DEBUG)-virtio_gpu=$(VIRTIO_GPU)-virtio_scmi=$(VIRTIO_SCMI)-libc=$(LIBC)-kdir=$(KDIR)
 BUILD_CONFIG_FILE := $(OUTPUT_DIR)/.build_config
 
 all: check-config-change tools driver
@@ -35,6 +37,7 @@ help:
 	@echo "  LOG=LEVEL                    Log level: LOG_DEBUG LOG_INFO LOG_WARNING LOG_ERR LOG_CRIT (default: LOG_INFO)"
 	@echo "  KDIR=path                    Linux kernel source path (required)"
 	@echo "  VIRTIO_GPU=y|n               Enable GPU support (default: n)"
+	@echo "  VIRTIO_SCMI=y|n              Enable SCMI support (default: n)"
 
 env:
 	git submodule update --init --recursive
@@ -57,7 +60,7 @@ tools: env check-config-change
 	cp tools/hvisor $(OUTPUT_DIR)
 
 driver: env check-kdir check-config-change
-	$(MAKE) -C driver all
+	$(MAKE) -C driver all VIRTIO_SCMI=$(VIRTIO_SCMI)
 	@mkdir -p $(OUTPUT_DIR)
 	cp driver/hvisor.ko $(OUTPUT_DIR)
 

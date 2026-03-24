@@ -53,6 +53,10 @@ ifeq ($(VIRTIO_GPU), y)
 	CFLAGS += -DENABLE_VIRTIO_GPU
 endif
 
+ifeq ($(VIRTIO_SCMI), y)
+	CFLAGS += -DENABLE_VIRTIO_SCMI
+endif
+
 
 
 include $(sources:.c=.d)

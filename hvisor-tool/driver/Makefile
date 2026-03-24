@@ -6,6 +6,10 @@ ccflags-y += -Wno-unused-function
 ccflags-y += -fno-stack-protector
 ccflags-y += -Wno-declaration-after-statement
 
+ifeq ($(VIRTIO_SCMI), y)
+	ccflags-y += -DENABLE_VIRTIO_SCMI
+endif
+
 ifndef CROSS_COMPILE
 	ifeq ($(ARCH), arm64)
 		CROSS_COMPILE := aarch64-none-linux-gnu-

@@ -10,6 +10,7 @@
  */
 #ifndef _HVISOR_VIRTIO_SCMI_H
 #define _HVISOR_VIRTIO_SCMI_H
+#ifdef ENABLE_VIRTIO_SCMI
 
 #include "virtio.h"
 #include <stdint.h>
@@ -241,4 +242,5 @@ int scmi_get_protocol_count(void);
 SCMIDev *init_scmi_dev();
 int virtio_scmi_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq);
 
+#endif
 #endif

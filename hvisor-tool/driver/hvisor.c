@@ -40,9 +40,11 @@
 /* Reset provider phandle, hardcoded as requested */
 #define RESET_PROVIDER_PHANDLE 2
 
+#ifdef ENABLE_VIRTIO_SCMI
 #define SCMI_RESET_DEASSERT	     0
 #define SCMI_RESET_RESET	     (1 << 0)
 #define SCMI_RESET_ASSERT        (1 << 1)
+#endif
 
 extern bool __clk_is_enabled(const struct clk *clk);
 extern const char *__clk_get_name(const struct clk *clk);
@@ -143,6 +145,7 @@ static struct reset_control *get_reset_by_id(u32 reset_id, struct device_node *p
     return rstc;
 }
 
+#ifdef ENABLE_VIRTIO_SCMI
 static int reset_domain(u32 reset_id, u32 flags, u32 reset_state) {
     struct reset_control *rstc;
     int ret = 0;
@@ -208,6 +211,7 @@ static int reset_domain(u32 reset_id, u32 flags, u32 reset_state) {
 
     return ret;
 }
+#endif
 
 
 static int get_clock_config(u32 clock_id, u32 *config, u32 *extended_config_val) {
@@ -424,6 +428,7 @@ static int set_clock_config(u32 clock_id, u32 config) {
     return ret;
 }
 
+#ifdef ENABLE_VIRTIO_SCMI
 // Encapsulate the function to handle SCMI clock ioctl
 static int hvisor_scmi_clock_ioctl(struct hvisor_scmi_clock_args __user *user_args) {
     struct hvisor_scmi_clock_args args;
@@ -517,7 +522,9 @@ static int hvisor_scmi_clock_ioctl(struct hvisor_scmi_clock_args __user *user_ar
         return -EINVAL;
     }
 }
+#endif
 
+#ifdef ENABLE_VIRTIO_SCMI
 static int hvisor_scmi_reset_ioctl(struct hvisor_scmi_reset_args __user *user_args) {
     struct hvisor_scmi_reset_args args;
     
@@ -534,6 +541,7 @@ static int hvisor_scmi_reset_ioctl(struct hvisor_scmi_reset_args __user *user_ar
         return -EINVAL;
     }
 }
+#endif
 
 struct virtio_bridge *virtio_bridge;
 int virtio_irq = -1;
@@ -781,12 +789,14 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
     case HVISOR_LOAD_IMAGE:
         err = hvisor_load_image((struct hvisor_load_image_args __user *)arg);
         break;
+#ifdef ENABLE_VIRTIO_SCMI
     case HVISOR_SCMI_CLOCK_IOCTL:
         err = hvisor_scmi_clock_ioctl((struct hvisor_scmi_clock_args __user *)arg);
         break;
     case HVISOR_SCMI_RESET_IOCTL:
         err = hvisor_scmi_reset_ioctl((struct hvisor_scmi_reset_args __user *)arg);
         break;
+#endif
 #ifdef LOONGARCH64
     case HVISOR_CLEAR_INJECT_IRQ:
         err = hvisor_call(HVISOR_HC_CLEAR_INJECT_IRQ, 0, 0);
