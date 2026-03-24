@@ -38,7 +38,24 @@ impl Write for Stdout {
     }
 }
 
+// the number of checks for uart console free, used when sequential_output feature is enabled
+// Tips: this may cause a long delay when the console is busy, so it should be set to a small value,
+//       and the default value is 3000, which is enough for most cases.
+pub const CHECK_NUM: u64 = 3000;
 pub fn print(args: fmt::Arguments) {
+    #[cfg(feature = "sequential_output")]
+    {
+        let mut flag = false;
+        while !flag {
+            flag = true;
+            for _i in 1..CHECK_NUM {
+                if !uart::console_free_check() {
+                    flag = false;
+                    break;
+                }
+            }
+        }
+    }
     let _locked = PRINT_LOCK.lock();
     Stdout.write_fmt(args).unwrap();
 }

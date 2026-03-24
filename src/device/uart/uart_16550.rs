@@ -73,6 +73,10 @@ impl Uart16550 {
         self.regs().THR_RBR_DLL.set(c as u32);
     }
 
+    pub fn check_lsr(&mut self) -> bool {
+        return self.regs().LSR.get() & (1 << 5) != 0;
+    }
+
     #[inline]
     fn getchar(&mut self) -> Option<u8> {
         todo!()
@@ -89,4 +93,8 @@ pub fn console_putchar(c: u8) {
 #[inline]
 pub fn console_getchar() -> Option<u8> {
     unsafe { UART.getchar() }
+}
+
+pub fn console_free_check() -> bool {
+    return unsafe { UART.check_lsr() };
 }

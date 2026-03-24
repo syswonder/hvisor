@@ -71,6 +71,10 @@ impl Pl011Uart {
         self.regs().dr.set(c as u32)
     }
 
+    fn check_fr(&mut self) -> bool {
+        self.regs().fr.get() & (1 << 4) != 0
+    }
+
     fn getchar(&mut self) -> Option<u8> {
         if self.regs().fr.get() & (1 << 4) == 0 {
             Some(self.regs().dr.get() as u8)
@@ -86,4 +90,8 @@ pub fn console_putchar(c: u8) {
 
 pub fn console_getchar() -> Option<u8> {
     UART.lock().getchar()
+}
+
+pub fn console_free_check() -> bool {
+    UART.lock().check_fr()
 }
