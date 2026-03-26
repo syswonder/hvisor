@@ -37,6 +37,10 @@ pub const IMSIC_S_BASE: usize = 0x2800_0000;
 pub const IMSIC_GUEST_NUM: usize = 1; // hvisor only supports 1 guest now.
 pub const IMSIC_GUEST_INDEX: usize = 1;
 pub const IMSIC_NUM_IDS: usize = 0xFF;
+pub const IOMMU_SYS_BASE: usize = 0x3010000;
+pub const IOMMU_SYS_SIZE: usize = 0x1000;
+
+
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x8f000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x90000000;
 pub const ROOT_ZONE_ENTRY: u64 = 0x90000000;

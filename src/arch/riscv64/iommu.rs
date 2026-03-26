@@ -193,7 +193,10 @@ pub fn iommu_add_device(vm_id: usize, device_id: usize, root_pt: usize) {
 
 /// Initialize RISC-V IOMMU with hardware DDTP probing.
 fn riscv_iommu_init() {
-    assert!(crate::platform::IOMMU_SYS_SIZE == 0x1000, "IOMMU_SYS_SIZE is not 0x1000");
+    assert!(
+        crate::platform::IOMMU_SYS_SIZE == 0x1000,
+        "IOMMU_SYS_SIZE is not 0x1000"
+    );
     let iommu = Iommu::new(crate::platform::IOMMU_SYS_BASE);
     IOMMU.call_once(|| RwLock::new(iommu));
     get_iommu().write().rv_iommu_init();
@@ -247,7 +250,9 @@ impl IommuHw {
         }
         if !self.caps.is_set(IOMMU_CAPS::MSI_FLAT) {
             // Current DDT Entry only supports Extented-for
-            todo!("RISC-V IOMMU HW does not support MSI Address Translation (basic-translate mode)");
+            todo!(
+                "RISC-V IOMMU HW does not support MSI Address Translation (basic-translate mode)"
+            );
         }
         if self.caps.read(IOMMU_CAPS::IGS) == IOMMU_CAPS::IGS::MSI.value {
             warn!("RISC-V IOMMU HW does not support WSI generation");
@@ -451,12 +456,14 @@ impl Iommu {
             3 => DDT_IOHGATP::MODE::SV39X4,
             4 => DDT_IOHGATP::MODE::SV48X4,
             5 => DDT_IOHGATP::MODE::SV57X4,
-            _ => panic!("Invalid stage-2 pt level: {}", unsafe { crate::arch::s2pt::GSTAGE_PT_LEVEL }),
+            _ => panic!("Invalid stage-2 pt level: {}", unsafe {
+                crate::arch::s2pt::GSTAGE_PT_LEVEL
+            }),
         };
         entry.iohgatp.write(
             DDT_IOHGATP::PPN.val((root_pt as u64) >> 12)
                 + DDT_IOHGATP::GSCID.val(vm_id as u64)
-                + iohgatp_mode
+                + iohgatp_mode,
         );
         // Bare first-stage context.
         entry.fsc.write(DDT_FSC::MODE::BARE);
