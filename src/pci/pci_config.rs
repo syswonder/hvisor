@@ -272,6 +272,9 @@ impl Zone {
                     let device_id = (dev_config.bus as usize) << 8
                         | (dev_config.device as usize) << 3
                         | dev_config.function as usize;
+                    #[cfg(feature = "share_s2pt")]
+                    iommu_add_device(_zone_id, device_id as _, inner.gpm().root_paddr());
+                    #[cfg(not(feature = "share_s2pt"))]
                     iommu_add_device(_zone_id, device_id as _, iommu_pt_addr);
                 }
 

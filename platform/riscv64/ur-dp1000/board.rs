@@ -46,6 +46,9 @@ pub const PLIC_SIZE: usize = 0x4000000;
 pub const BOARD_PLIC_INTERRUPTS_NUM: usize = 0xa0; // except irq 0, here range is [1, 160]
 pub const NUM_CONTEXTS_PER_HART: usize = 3; // M-mode、S-mode and VS-mode(unused)
 
+pub const IOMMU_SYS_BASE: usize = 0x0;
+pub const IOMMU_SYS_SIZE: usize = 0x0;
+
 // ==================================================
 //              Root Zone Config
 // ==================================================

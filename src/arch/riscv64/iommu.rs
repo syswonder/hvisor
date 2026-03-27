@@ -21,7 +21,7 @@ use crate::memory::Frame;
 use alloc::vec::Vec;
 use core::sync::atomic::{fence, Ordering};
 use log::{error, info, warn};
-use spin::{Once, RwLock};
+use spin::{Mutex, Once};
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_bitfields;
 use tock_registers::register_structs;
@@ -37,16 +37,15 @@ fn io_fence() {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u64)]
 pub enum IommuDdtMode {
-    Off = 0,
-    Bare = 1,
-    OneLevel = 2,
-    TwoLevel = 3,
-    ThreeLevel = 4,
+    Off = 0,        // No inbound memory translations are allowed by the IOMMU.
+    Bare = 1,       // NO translation or protection.
+    OneLevel = 2,   // One-level device-directory table.
+    TwoLevel = 3,   // Two-level device-directory table.
+    ThreeLevel = 4, // Three-level device-directory table.
 }
 
-// RISC-V IOMMU Spec Chap6.3 IOMMU capabilities
 register_bitfields![u64,
-    IOMMU_CAPS [
+    IOMMU_CAPS [    // RISC-V IOMMU Spec Chap6.3 IOMMU capabilities
         VERSION OFFSET(0) NUMBITS(8) [
             VERSION_1_0 = 0x10,
         ],
@@ -78,11 +77,11 @@ register_bitfields![u64,
         PD8 OFFSET(38) NUMBITS(1) [],
         PD17 OFFSET(39) NUMBITS(1) [],
         PD20 OFFSET(40) NUMBITS(1) [],
-        QOS OFFSET(41) NUMBITS(1) [],
+        QOSID OFFSET(41) NUMBITS(1) [],
         NL OFFSET(42) NUMBITS(1) [],
         S OFFSET(43) NUMBITS(1) [],
     ],
-    IOMMU_DDTP [
+    IOMMU_DDTP [ // RISCV-IOMMU Spec Chap6.5 Device-directory table pointer
         MODE OFFSET(0) NUMBITS(4) [
             OFF = 0,
             BARE = 1,
@@ -93,11 +92,21 @@ register_bitfields![u64,
         BUSY OFFSET(4) NUMBITS(1) [],
         PPN OFFSET(10) NUMBITS(44) []
     ],
-    DDT_TC [
+    DDT_TC [ // RISCV-IOMMU Spec Chap3.1.3.1 Translation Control
         V OFFSET(0) NUMBITS(1) [],
-        EN_PRI OFFSET(4) NUMBITS(1) []
+        EN_ATS OFFSET(1) NUMBITS(1) [],
+        EN_PRI OFFSET(2) NUMBITS(1) [],
+        T2GPA OFFSET(3) NUMBITS(1) [],
+        DT2GPA OFFSET(4) NUMBITS(1) [],
+        PDTV OFFSET(5) NUMBITS(1) [],
+        PRP OFFSET(6) NUMBITS(1) [],
+        GADEV OFFSET(7) NUMBITS(1) [],
+        SADEV OFFSET(8) NUMBITS(1) [],
+        DPE OFFSET(9) NUMBITS(1) [],
+        SBE OFFSET(10) NUMBITS(1) [],
+        SXL OFFSET(11) NUMBITS(1) []
     ],
-    DDT_IOHGATP [
+    DDT_IOHGATP [ // RISCV-IOMMU Spec Chap3.1.3.2 IO hypervisor guest address translation and protection
         PPN OFFSET(0) NUMBITS(44) [],
         GSCID OFFSET(44) NUMBITS(16) [],
         MODE OFFSET(60) NUMBITS(4) [
@@ -106,24 +115,33 @@ register_bitfields![u64,
             SV57X4 = 10
         ]
     ],
-    DDT_FSC [
-        MODE OFFSET(0) NUMBITS(4) [
-            BARE = 0
-        ]
+    DDT_TA [ // RISCV-IOMMU Spec Chap3.1.3.3 Translation attributes
+        PS_CID OFFSET(12) NUMBITS(20) [],
+        RCID OFFSET(40) NUMBITS(12) [],
+        MTYPE OFFSET(52) NUMBITS(12) [],
     ],
-    DDT_DIR [
+    DDT_FSC [ // RISCV-IOMMU Spec Chap3.1.3.4 First-stage context
+        MODE OFFSET(60) NUMBITS(4) [
+            BARE = 0,
+            SV39 = 8,
+            SV48 = 9,
+            SV57 = 10
+        ],
+        PPN OFFSET(0) NUMBITS(44) []
+    ],
+    DDT_DIR [ // RISCV-IOMMU Spec Chap3.1.1 Non-leaf DDT entry
         V OFFSET(0) NUMBITS(1) [],
         PPN OFFSET(10) NUMBITS(44) []
     ]
 ];
 
 register_bitfields![u32,
-    IOMMU_FCTL [
+    IOMMU_FCTL [ // RISCV-IOMMU Spec Chap6.4 Features-control register
         BE OFFSET(0) NUMBITS(1) [],
         WSI OFFSET(1) NUMBITS(1) [],
         GXL OFFSET(2) NUMBITS(1) [],
     ],
-    IOMMU_IPSR [
+    IOMMU_IPSR [ // RISCV-IOMMU Spec Chap6.18 Interrupt pending status register
         CIP OFFSET(0) NUMBITS(1) [],
         FIP OFFSET(1) NUMBITS(1) [],
         PMIP OFFSET(2) NUMBITS(1) [],
@@ -170,25 +188,33 @@ register_structs! {
 }
 
 /// Global IOMMU instance
-static IOMMU: Once<RwLock<Iommu>> = Once::new();
+static IOMMU: Once<Mutex<Iommu>> = Once::new();
 
-fn get_iommu<'a>() -> &'a RwLock<Iommu> {
+fn get_iommu<'a>() -> &'a Mutex<Iommu> {
     IOMMU.get().expect("Uninitialized hypervisor iommu!")
 }
 
 /// Initialize IOMMU with default mode
 pub fn iommu_init() {
+    #[cfg(feature = "iommu")]
     riscv_iommu_init();
+    #[cfg(not(feature = "iommu"))]
+    info!("RISC-V IOMMU: do nothing now");
 }
 
 /// Add a device to IOMMU
 pub fn iommu_add_device(vm_id: usize, device_id: usize, root_pt: usize) {
-    info!(
-        "RV_IOMMU_ADD_DEVICE: root_pt {:#x}, vm_id {}",
-        root_pt, vm_id
-    );
-    let iommu = get_iommu();
-    iommu.write().rv_iommu_add_device(device_id, vm_id, root_pt);
+    #[cfg(feature = "iommu")]
+    {
+        info!(
+            "RV IOMMU: Add device, root_pt {:#x}, vm_id {}, device_id {}",
+            root_pt, vm_id, device_id
+        );
+        let iommu = get_iommu();
+        iommu.lock().rv_iommu_add_device(device_id, vm_id, root_pt);
+    }
+    #[cfg(not(feature = "iommu"))]
+    info!("RISC-V IOMMU: do nothing now");
 }
 
 /// Initialize RISC-V IOMMU with hardware DDTP probing.
@@ -198,8 +224,8 @@ fn riscv_iommu_init() {
         "IOMMU_SYS_SIZE is not 0x1000"
     );
     let iommu = Iommu::new(crate::platform::IOMMU_SYS_BASE);
-    IOMMU.call_once(|| RwLock::new(iommu));
-    get_iommu().write().rv_iommu_init();
+    IOMMU.call_once(|| Mutex::new(iommu));
+    get_iommu().lock().rv_iommu_init();
 }
 
 impl IommuHw {
@@ -214,11 +240,17 @@ impl IommuHw {
     }
 
     fn set_ddtp(&mut self, ddt_addr: usize, requested_mode: IommuDdtMode) -> IommuDdtMode {
-        let candidates: &[IommuDdtMode] = &[
-            IommuDdtMode::ThreeLevel,
-            IommuDdtMode::TwoLevel,
-            IommuDdtMode::OneLevel,
-        ];
+        let candidates: &[IommuDdtMode] = match requested_mode {
+            IommuDdtMode::Off => &[],
+            IommuDdtMode::Bare => &[IommuDdtMode::Bare],
+            IommuDdtMode::OneLevel => &[IommuDdtMode::OneLevel],
+            IommuDdtMode::TwoLevel => &[IommuDdtMode::TwoLevel, IommuDdtMode::OneLevel],
+            IommuDdtMode::ThreeLevel => &[
+                IommuDdtMode::ThreeLevel,
+                IommuDdtMode::TwoLevel,
+                IommuDdtMode::OneLevel,
+            ],
+        };
         for mode in candidates {
             if self.try_set_ddtp(ddt_addr, *mode) {
                 info!("RISC-V IOMMU: DDTP mode set to {:?}", *mode);
@@ -239,20 +271,19 @@ impl IommuHw {
         }
         // Note: here RISCV-IOMMU and CPU share the same stage-2 page table.
         let cpu_s2pt_lvl = unsafe { crate::arch::s2pt::GSTAGE_PT_LEVEL };
-        if !self.caps.is_set(IOMMU_CAPS::SV39X4) && cpu_s2pt_lvl == 3 {
+        if cpu_s2pt_lvl == 3 && !self.caps.is_set(IOMMU_CAPS::SV39X4) {
             panic!("CPU s2pt is Sv39x4, but IOMMU does not support Sv39x4");
         }
-        if !self.caps.is_set(IOMMU_CAPS::SV48X4) && cpu_s2pt_lvl == 4 {
+        if cpu_s2pt_lvl == 4 && !self.caps.is_set(IOMMU_CAPS::SV48X4) {
             panic!("CPU s2pt is Sv48x4, but IOMMU does not support Sv48x4");
         }
-        if !self.caps.is_set(IOMMU_CAPS::SV57X4) && cpu_s2pt_lvl == 5 {
+        if cpu_s2pt_lvl == 5 && !self.caps.is_set(IOMMU_CAPS::SV57X4) {
             panic!("CPU s2pt is Sv57x4, but IOMMU does not support Sv57x4");
         }
+        // If capabilities.MSI_FLAT is 1 then the Extended Format is used else the Base Format is used.
         if !self.caps.is_set(IOMMU_CAPS::MSI_FLAT) {
             // Current DDT Entry only supports Extented-for
-            todo!(
-                "RISC-V IOMMU HW does not support MSI Address Translation (basic-translate mode)"
-            );
+            todo!("To support Base-format DDT Entry");
         }
         if self.caps.read(IOMMU_CAPS::IGS) == IOMMU_CAPS::IGS::MSI.value {
             warn!("RISC-V IOMMU HW does not support WSI generation");
@@ -275,8 +306,17 @@ impl IommuHw {
         );
         // TODO: support MSI
         // TODO: program the command queue
+        self.cqb.set(0x0);
+        self.cqh.set(0x0);
+        self.cqt.set(0x0);
         // TODO: program the fault queue
+        self.fqb.set(0x0);
+        self.fqh.set(0x0);
+        self.fqt.set(0x0);
         // TODO: program the page-request queue
+        self.pqb.set(0x0);
+        self.pqh.set(0x0);
+        self.pqt.set(0x0);
 
         // Configure ddtp with DDT base address and IOMMU mode
         self.set_ddtp(ddt_addr, ddt_mode)
@@ -296,7 +336,7 @@ struct DdtEntry {
     __rsv: ReadWrite<u64>,
 }
 
-/// Intermediate device-directory table
+/// Non-leaf device-directory table
 #[repr(C)]
 struct DdtDirTable {
     entries: [ReadWrite<u64, DDT_DIR::Register>; 512],
@@ -432,6 +472,19 @@ impl Iommu {
     }
 
     fn rv_iommu_add_device(&mut self, device_id: usize, vm_id: usize, root_pt: usize) {
+        if device_id == 0 {
+            info!("Skip Device with device_id = 0");
+            return;
+        }
+        // Check riscv stage-2 pt, root pt should be 16KiB aligned.
+        if root_pt & ((16 * 1024) - 1) != 0 {
+            error!(
+                "RV IOMMU: iohgatp root page-table is not 16KiB aligned: {:#x}",
+                root_pt
+            );
+            return;
+        }
+
         let Some(entry) = self.ddt.get_or_alloc_leaf_entry(device_id) else {
             warn!(
                 "RV IOMMU: Invalid device ID {} for DDT mode {:?}",
@@ -442,31 +495,28 @@ impl Iommu {
         };
 
         // Prepare TC without publishing VALID yet.
-        entry.tc.write(DDT_TC::V::CLEAR + DDT_TC::EN_PRI::SET);
+        entry.tc.set(0x0);
 
-        // Check riscv stage-2 pt, root pt should be 16KiB aligned.
-        if root_pt & ((16 * 1024) - 1) != 0 {
-            error!(
-                "RV IOMMU: iohgatp root page-table is not 16KiB aligned: {:#x}",
-                root_pt
-            );
-        }
         // Configure the stage-2 page table mode same as cpu.
         let iohgatp_mode = match unsafe { crate::arch::s2pt::GSTAGE_PT_LEVEL } {
             3 => DDT_IOHGATP::MODE::SV39X4,
             4 => DDT_IOHGATP::MODE::SV48X4,
             5 => DDT_IOHGATP::MODE::SV57X4,
-            _ => panic!("Invalid stage-2 pt level: {}", unsafe {
-                crate::arch::s2pt::GSTAGE_PT_LEVEL
-            }),
+            _ => {
+                error!("RV IOMMU: Invalid stage-2 pt level: {}", unsafe {
+                    crate::arch::s2pt::GSTAGE_PT_LEVEL
+                });
+                return;
+            }
         };
+
         entry.iohgatp.write(
             DDT_IOHGATP::PPN.val((root_pt as u64) >> 12)
                 + DDT_IOHGATP::GSCID.val(vm_id as u64)
                 + iohgatp_mode,
         );
         // Bare first-stage context.
-        entry.fsc.write(DDT_FSC::MODE::BARE);
+        entry.fsc.set(0x0);
         entry.tc.write(DDT_TC::V::SET);
         info!(
             "RV IOMMU: Write DDT, add decive context, iohgatp.mode = {:#x?}, ioghatp.ppn = {:#x?}",
@@ -477,6 +527,10 @@ impl Iommu {
     }
 
     fn rv_iommu_remove_device(&mut self, device_id: usize) {
+        if device_id == 0 {
+            info!("Skip Device with device_id = 0");
+            return;
+        }
         let Some(entry) = self.ddt.get_or_alloc_leaf_entry(device_id) else {
             warn!(
                 "RV IOMMU: Invalid device ID {} for DDT mode {:?}",

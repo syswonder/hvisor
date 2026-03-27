@@ -49,8 +49,9 @@ uefi-raw = "=0.9.0"
 
 [features]
 ############# general ##############
-iommu = [] # supported by: aarch64
-pci = [] # supported by: aarch64, loongarch64
+iommu = [] # supported by: aarch64, riscv64
+pci = [] # supported by: aarch64, riscv64,loongarch64
+share_s2pt = ["iommu"]
 print_timestamp = [] # print timestamp when logging
 
 ############# PCIe access mechanism ##############
