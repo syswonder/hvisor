@@ -1328,7 +1328,7 @@ impl<B: BarAllocator> PciIterator<B> {
     fn next_device_not_ok(&mut self) -> bool {
         if let Some(parent) = self.stack.last_mut() {
             // only one child and skip this bus
-            if parent.has_secondary_link {
+            if parent.has_only_one_child {
                 parent.device = MAX_DEVICE;
             }
 
@@ -1471,7 +1471,7 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
                         let immediate_parent_bus = parent.bus;
                         Some(self.get_bridge().next_bridge(
                             self.address(immediate_parent_bus, bdf),
-                            node.has_secondary_link(),
+                            node.has_only_one_child(),
                             self.is_mulitple_function,
                             self.function,
                             next_bus,
@@ -1497,7 +1497,7 @@ pub struct Bridge {
     secondary_bus: u8,
     primary_bus: u8,
     mmio: PciConfigMmio,
-    has_secondary_link: bool,
+    has_only_one_child: bool,
     is_mulitple_function: bool,
 }
 
@@ -1513,7 +1513,7 @@ impl Bridge {
             secondary_bus: 0,
             primary_bus: 0,
             mmio: PciConfigMmio::new(0, 0), // Dummy mmio for placeholder
-            has_secondary_link: false,
+            has_only_one_child: false,
             is_mulitple_function: false,
         }
     }
@@ -1532,7 +1532,7 @@ impl Bridge {
             secondary_bus: bus_begin,
             primary_bus: bus_begin,
             mmio: PciConfigMmio::new(address, CONFIG_LENTH),
-            has_secondary_link: false,
+            has_only_one_child: false,
             is_mulitple_function,
         }
     }
@@ -1540,7 +1540,7 @@ impl Bridge {
     pub fn next_bridge(
         &self,
         address: PciConfigAddress,
-        has_secondary_link: bool,
+        has_only_one_child: bool,
         is_mulitple_function: bool,
         function: u8,
         target_bus: u8,
@@ -1554,7 +1554,7 @@ impl Bridge {
             secondary_bus: target_bus,
             primary_bus: self.bus,
             mmio,
-            has_secondary_link,
+            has_only_one_child,
             is_mulitple_function,
         }
     }
@@ -1583,8 +1583,8 @@ impl Bridge {
         }
     }
 
-    pub fn set_has_secondary_link(&mut self, value: bool) {
-        self.has_secondary_link = value;
+    pub fn set_has_only_one_child(&mut self, value: bool) {
+        self.has_only_one_child = value;
     }
 }
 
@@ -2209,34 +2209,35 @@ impl VirtualPciConfigSpace {
         self.capabilities = capabilities;
     }
 
-    //TODO: check secondary link by read cap
-    pub fn has_secondary_link(&self) -> bool {
+    // detect whether this bridge secondary bus can have only one child device.
+    pub fn has_only_one_child(&self) -> bool {
         match self.config_type {
             HeaderType::PciBridge => {
-                // Find PciExpress capability
-                // warn!("has_secondary_link {:#?}", self.capabilities);
-                // for (_, capability) in &self.capabilities {
-                //     if capability.cap_type == CapabilityType::PciExpress {
-                //         // Read PCIe Capability Register at offset + 0x00
-                //         // Bits 4:0 contain the Device/Port Type
-                //         let offset = capability.get_offset();
-                //         if let Ok(cap_reg) = self.backend.read(offset, 2) {
-                //             let type_val = (cap_reg as u16).get_bits(0..5);
-                //             if type_val == PCI_EXP_TYPE_ROOT_PORT || type_val == PCI_EXP_TYPE_PCIE_BRIDGE {
-                //                 return true;
-                //             } else if type_val == PCI_EXP_TYPE_UPSTREAM || type_val == PCI_EXP_TYPE_DOWNSTREAM {
-                //                 // Parent check is not implemented, set to false for now
-                //                 return false;
-                //             }
-                //         }
-                //         break;
-                //     }
-                // }
-                // false
-                // #[cfg(feature = "dwc_pcie")]
-                // return true;
-                // #[cfg(not(feature = "dwc_pcie"))]
-                return false;
+                // Parse PCIe Device/Port Type from PCI Express Capability Register
+                // (capability offset + 0x02, bits 7:4).
+                for capability in self._capability_enumerate(self.backend.clone()) {
+                    if capability.get_type() != CapabilityType::PciExpress {
+                        continue;
+                    }
+
+                    let offset = capability.get_offset();
+                    if let Ok(cap_reg) = self.backend.read(offset + 0x2, 2) {
+                        let port_type = (cap_reg as u16).get_bits(4..8) as u16;
+                        return match port_type {
+                            // Root Port / Downstream Port: secondary bus has a single downstream link.
+                            PCI_EXP_TYPE_ROOT_PORT | PCI_EXP_TYPE_DOWNSTREAM => true,
+                            // Upstream Port / PCIe-to-PCI bridge can have multiple children behind it.
+                            PCI_EXP_TYPE_UPSTREAM | PCI_EXP_TYPE_PCIE_BRIDGE => false,
+                            _ => false,
+                        };
+                    }
+
+                    // Capability exists but cannot be read safely.
+                    return false;
+                }
+
+                // Non-PCIe bridge (or no PCIe capability): keep full secondary-bus scan.
+                false
             }
             _ => false,
         }
