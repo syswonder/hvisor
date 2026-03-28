@@ -480,76 +480,95 @@ fn handle_endpoint_access(
                             configvalue.set_rom_value(value as u32);
                         });
 
-                        if value & 0xfffff800 != 0xfffff800 {
+                        // Check if this is size probe (all 1s in BA field, bits 31-11)
+                        let is_size_probe = (value & 0xfffff800) == 0xfffff800;
+                        // Check if ROM enable bit (bit 0) is set
+                        let rom_enabled = (value & 0x1) != 0;
+
+                        if !is_size_probe {
                             let old_vaddr =
                                 dev.with_rom_ref(|rom| rom.get_virtual_value64()) & !0xf;
                             let new_vaddr = (value as u64) & !0xf;
 
-                            dev.with_rom_ref_mut(|rom| rom.set_virtual_value(new_vaddr));
+                            // Only perform mapping operations if ROM enable bit is set
+                            if rom_enabled {
+                                // set new_value not new_vaddr, because `set_virtual_value` will not add enable flag automatically
+                                dev.with_rom_ref_mut(|rom| rom.set_virtual_value(value as _));
 
-                            let paddr = if is_root {
-                                dev.with_rom_ref_mut(|rom| rom.set_value(new_vaddr));
-                                new_vaddr as HostPhysAddr
-                            } else {
-                                dev.with_rom_ref(|rom| rom.get_value64()) as HostPhysAddr
-                            };
+                                // Write to hardware with enable bit set
+                                // Get the current ROM value from hardware and set bit 0
+                                // And not to use rom.set_value()
+                                let hw_value = dev.with_rom_ref(|rom| rom.get_value64());
+                                let hw_value_enabled = hw_value | 0x1; // Set enable bit
+                                dev.write_hw(
+                                    field.to_offset() as PciConfigAddress,
+                                    field.size(),
+                                    hw_value_enabled as usize,
+                                )?;
+                                dev.with_rom_ref_mut(|rom| rom.set_value(hw_value_enabled));
 
-                            let rom_size = {
-                                let size = dev.with_rom_ref(|rom| rom.get_size());
-                                if crate::memory::addr::is_aligned(size as usize) {
-                                    size
-                                } else {
-                                    crate::memory::PAGE_SIZE as u64
+                                let paddr =
+                                    dev.with_rom_ref(|rom| rom.get_value64()) as HostPhysAddr;
+
+                                let rom_size = {
+                                    let size = dev.with_rom_ref(|rom| rom.get_size());
+                                    if crate::memory::addr::is_aligned(size as usize) {
+                                        size
+                                    } else {
+                                        crate::memory::PAGE_SIZE as u64
+                                    }
+                                };
+                                let new_vaddr_aligned =
+                                    if !crate::memory::addr::is_aligned(new_vaddr as usize) {
+                                        crate::memory::addr::align_up(new_vaddr as usize) as u64
+                                    } else {
+                                        new_vaddr as u64
+                                    };
+
+                                let zone = this_zone();
+                                let mut guard = zone.write();
+                                let gpm = guard.gpm_mut();
+
+                                if !gpm
+                                    .try_delete(old_vaddr.try_into().unwrap(), rom_size as usize)
+                                    .is_ok()
+                                {
+                                    // warn!("delete rom bar: can not found 0x{:x}", old_vaddr);
                                 }
-                            };
-                            let new_vaddr = if !crate::memory::addr::is_aligned(new_vaddr as usize)
-                            {
-                                crate::memory::addr::align_up(new_vaddr as usize) as u64
+                                gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
+                                    new_vaddr_aligned as GuestPhysAddr,
+                                    paddr as HostPhysAddr,
+                                    rom_size as _,
+                                    MemFlags::READ | MemFlags::WRITE,
+                                ))?;
+                                drop(guard);
+                                /* after update gpm, mem barrier is needed
+                                 */
+                                #[cfg(target_arch = "aarch64")]
+                                unsafe {
+                                    core::arch::asm!("isb");
+                                    core::arch::asm!("tlbi vmalls12e1is");
+                                    core::arch::asm!("dsb nsh");
+                                }
+                                /* after update gpm, need to flush iommu table
+                                 * in x86_64
+                                 */
+                                #[cfg(all(target_arch = "x86_64", feature = "intel_vtd"))]
+                                {
+                                    let vbdf = dev.get_vbdf();
+                                    crate::device::iommu::flush(
+                                        this_zone_id(),
+                                        vbdf.bus,
+                                        (vbdf.device << 3) + vbdf.function,
+                                    );
+                                }
+                                #[cfg(target_arch = "riscv64")]
+                                unsafe {
+                                    // TOOD: add remote fence support (using sbi rfence spec?)
+                                    core::arch::asm!("hfence.gvma");
+                                }
                             } else {
-                                new_vaddr as u64
-                            };
-
-                            let zone = this_zone();
-                            let mut guard = zone.write();
-                            let gpm = guard.gpm_mut();
-
-                            if !gpm
-                                .try_delete(old_vaddr.try_into().unwrap(), rom_size as usize)
-                                .is_ok()
-                            {
-                                // warn!("delete rom bar: can not found 0x{:x}", old_vaddr);
-                            }
-                            gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
-                                new_vaddr as GuestPhysAddr,
-                                paddr as HostPhysAddr,
-                                rom_size as _,
-                                MemFlags::READ | MemFlags::WRITE,
-                            ))?;
-                            drop(guard);
-                            /* after update gpm, mem barrier is needed
-                             */
-                            #[cfg(target_arch = "aarch64")]
-                            unsafe {
-                                core::arch::asm!("isb");
-                                core::arch::asm!("tlbi vmalls12e1is");
-                                core::arch::asm!("dsb nsh");
-                            }
-                            /* after update gpm, need to flush iommu table
-                             * in x86_64
-                             */
-                            #[cfg(all(target_arch = "x86_64", feature = "intel_vtd"))]
-                            {
-                                let vbdf = dev.get_vbdf();
-                                crate::device::iommu::flush(
-                                    this_zone_id(),
-                                    vbdf.bus,
-                                    (vbdf.device << 3) + vbdf.function,
-                                );
-                            }
-                            #[cfg(target_arch = "riscv64")]
-                            unsafe {
-                                // TOOD: add remote fence support (using sbi rfence spec?)
-                                core::arch::asm!("hfence.gvma");
+                                // ROM disabled
                             }
                         }
                     }

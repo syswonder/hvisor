@@ -1172,7 +1172,7 @@ impl<B: BarAllocator> PciIterator<B> {
                 }
 
                 let mut ep = EndpointHeader::new_with_region(region);
-                let rom = Self::rom_init(&mut ep);
+                let rom = Self::rom_init(&mut self.allocator, &mut ep);
 
                 let bararr =
                     Self::bar_mem_init(ep.bar_limit().into(), &mut self.allocator, &mut ep);
@@ -1198,7 +1198,7 @@ impl<B: BarAllocator> PciIterator<B> {
                 // For bridge: don't push host_bridge, it will be handled in Iterator::next()
                 warn!("bridge");
                 let mut bridge = PciBridgeHeader::new_with_region(region);
-                let rom = Self::rom_init(&mut bridge);
+                let rom = Self::rom_init(&mut self.allocator, &mut bridge);
 
                 let bararr =
                     Self::bar_mem_init(bridge.bar_limit().into(), &mut self.allocator, &mut bridge);
@@ -1231,11 +1231,28 @@ impl<B: BarAllocator> PciIterator<B> {
         }
     }
 
-    fn rom_init<D: PciRomRW + PciHeaderRW>(dev: &mut D) -> PciMem {
+    fn rom_init<D: PciRomRW + PciHeaderRW + PciRW>(
+        allocator: &mut Option<B>,
+        dev: &mut D,
+    ) -> PciMem {
         let mut rom = dev.parse_rom();
         if rom.get_type() == PciMemType::Rom {
-            rom.set_value(rom.get_value() as u64);
-            rom.set_virtual_value(rom.get_value() as u64);
+            if let Some(a) = allocator {
+                let value = a.alloc_memory32(rom.get_size() as u64).unwrap();
+                rom.set_value(value);
+                rom.set_virtual_value(value);
+                // Do not enable ROM yet, write 0 (ROM disabled)
+                // VM will enable it later by writing address + enable bit
+                // info!(
+                //     "allocated rom address: {:#x}, write 0 (disabled) to hardware",
+                //     value
+                // );
+                let _ = dev.write(dev.rom_offset(), 4, 0 as _);
+            } else {
+                let value = rom.get_value() as u64;
+                rom.set_value(value);
+                rom.set_virtual_value(value);
+            }
         }
         rom
     }
