@@ -316,14 +316,15 @@ impl VirtualPciAccessBits {
         let mut bits = BitArray::ZERO;
         bits[0x0..0x4].fill(true); // ID
         bits[0x08..0x0c].fill(true); // CLASS
-        bits[0x10..0x34].fill(true); //bar and rom
+        bits[0x10..0x34].fill(true); // BARs and ROM
         Self { bits }
     }
 
     pub fn bridge() -> Self {
-        Self {
-            bits: BitArray::ZERO,
-        }
+        let mut bits = BitArray::ZERO;
+        bits[0x10..0x18].fill(true); // BARs
+        bits[0x38..0x3c].fill(true); // ROM
+        Self { bits }
     }
 
     pub fn host_bridge() -> Self {

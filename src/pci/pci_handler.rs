@@ -603,11 +603,286 @@ fn handle_endpoint_access(
 }
 
 fn handle_pci_bridge_access(
-    _dev: ArcRwLockVirtualPciConfigSpace,
-    _field: BridgeField,
-    _is_write: bool,
+    dev: ArcRwLockVirtualPciConfigSpace,
+    field: BridgeField,
+    value: usize,
+    is_write: bool,
+    is_direct: bool,
+    is_root: bool,
+    is_dev_belong_to_zone: bool,
 ) -> HvResult<Option<usize>> {
-    Ok(None)
+    match field {
+        BridgeField::Bar(slot) => {
+            let bar_type = dev.with_bar_ref(slot, |bar| bar.get_type());
+            if bar_type != PciMemType::default() {
+                if is_write {
+                    if is_direct && is_root {
+                        // direct mode and root zone, update resources directly
+                        dev.with_config_value_mut(|configvalue| {
+                            configvalue.set_bar_value(slot, value as u32);
+                        });
+                        if (value & 0xfffffff0) != 0xfffffff0 {
+                            dev.write_hw(
+                                field.to_offset() as PciConfigAddress,
+                                field.size(),
+                                value,
+                            )?;
+                            if (bar_type == PciMemType::Mem32) | (bar_type == PciMemType::Io) {
+                                let new_vaddr = (value as u64) & !0xf;
+
+                                // set virt_value
+                                dev.with_bar_ref_mut(slot, |bar| bar.set_virtual_value(new_vaddr));
+
+                                // set value
+                                dev.with_bar_ref_mut(slot, |bar| bar.set_value(new_vaddr));
+                            }
+                        }
+                    } else if is_dev_belong_to_zone {
+                        // normal mode, update virt resources
+                        dev.with_config_value_mut(|configvalue| {
+                            configvalue.set_bar_value(slot, value as u32);
+                        });
+                        if (value & 0xfffffff0) != 0xfffffff0 {
+                            if (bar_type == PciMemType::Mem32) | (bar_type == PciMemType::Io) {
+                                let old_vaddr =
+                                    dev.with_bar_ref(slot, |bar| bar.get_virtual_value64()) & !0xf;
+                                let new_vaddr = (value as u64) & !0xf;
+
+                                dev.with_bar_ref_mut(slot, |bar| bar.set_virtual_value(new_vaddr));
+
+                                let paddr =
+                                    dev.with_bar_ref(slot, |bar| bar.get_value64()) as HostPhysAddr;
+                                let bar_size = {
+                                    let size = dev.with_bar_ref(slot, |bar| bar.get_size());
+                                    if crate::memory::addr::is_aligned(size as usize) {
+                                        size
+                                    } else {
+                                        crate::memory::PAGE_SIZE as u64
+                                    }
+                                };
+                                let new_vaddr_aligned =
+                                    if !crate::memory::addr::is_aligned(new_vaddr as usize) {
+                                        crate::memory::addr::align_up(new_vaddr as usize) as u64
+                                    } else {
+                                        new_vaddr as u64
+                                    };
+
+                                let zone = this_zone();
+                                let mut guard = zone.write();
+                                let gpm = guard.gpm_mut();
+
+                                if !gpm
+                                    .try_delete(old_vaddr.try_into().unwrap(), bar_size as usize)
+                                    .is_ok()
+                                {
+                                    // warn!("delete bar {}: can not found 0x{:x}", slot, old_vaddr);
+                                }
+                                gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
+                                    new_vaddr_aligned as GuestPhysAddr,
+                                    paddr as HostPhysAddr,
+                                    bar_size as _,
+                                    MemFlags::READ | MemFlags::WRITE,
+                                ))?;
+                                drop(guard);
+                                /* after update gpm, mem barrier is needed
+                                 */
+                                #[cfg(target_arch = "aarch64")]
+                                unsafe {
+                                    core::arch::asm!("isb");
+                                    core::arch::asm!("tlbi vmalls12e1is");
+                                    core::arch::asm!("dsb nsh");
+                                }
+                                /* after update gpm, need to flush iommu table
+                                 * in x86_64
+                                 */
+                                #[cfg(target_arch = "x86_64")]
+                                {
+                                    let vbdf = dev.get_vbdf();
+                                    crate::arch::iommu::flush(
+                                        this_zone_id(),
+                                        vbdf.bus,
+                                        (vbdf.device << 3) + vbdf.function,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                    Ok(None)
+                } else {
+                    // read bar
+                    if (dev.with_config_value(|configvalue| configvalue.get_bar_value(slot))
+                        & 0xfffffff0)
+                        == 0xfffffff0
+                    {
+                        /*
+                         * tmp_value being 0xFFFF_FFFF means that Linux is attempting to determine the BAR size.
+                         * The value of tmp_value is used directly here because Linux will rewrite this register later,
+                         * so the Hvisor does not need to preserve any additional state.
+                         */
+                        Ok(Some(
+                            dev.with_bar_ref(slot, |bar| bar.get_size_with_flag()) as usize
+                        ))
+                    } else {
+                        Ok(Some(
+                            dev.with_config_value(|configvalue| configvalue.get_bar_value(slot))
+                                as usize,
+                        ))
+                    }
+                }
+            } else {
+                Ok(None)
+            }
+        }
+        BridgeField::ExpansionRomBar => {
+            // rom is same with bar
+            let rom_type = dev.with_rom_ref(|rom| rom.get_type());
+            if rom_type == PciMemType::Rom {
+                if is_write {
+                    if is_direct && is_root {
+                        dev.with_config_value_mut(|configvalue| {
+                            configvalue.set_rom_value(value as u32);
+                        });
+                        if value & 0xfffff800 != 0xfffff800 {
+                            dev.write_hw(
+                                field.to_offset() as PciConfigAddress,
+                                field.size(),
+                                value,
+                            )?;
+
+                            let new_vaddr = (value as u64) & !0xf;
+
+                            // set virt_value
+                            dev.with_rom_ref_mut(|rom| rom.set_virtual_value(new_vaddr));
+
+                            // set value
+                            dev.with_rom_ref_mut(|rom| rom.set_value(new_vaddr));
+                        }
+                    } else if is_dev_belong_to_zone {
+                        // normal mode, update virt resources
+                        dev.with_config_value_mut(|configvalue| {
+                            configvalue.set_rom_value(value as u32);
+                        });
+
+                        // Check if this is size probe (all 1s in BA field, bits 31-11)
+                        let is_size_probe = (value & 0xfffff800) == 0xfffff800;
+                        // Check if ROM enable bit (bit 0) is set
+                        let rom_enabled = (value & 0x1) != 0;
+
+                        if !is_size_probe {
+                            let old_vaddr =
+                                dev.with_rom_ref(|rom| rom.get_virtual_value64()) & !0xf;
+                            let new_vaddr = (value as u64) & !0xf;
+
+                            // Only perform mapping operations if ROM enable bit is set
+                            if rom_enabled {
+                                // set new_value not new_vaddr, because `set_virtual_value` will not add enable flag automatically
+                                dev.with_rom_ref_mut(|rom| rom.set_virtual_value(value as _));
+
+                                // Write to hardware with enable bit set
+                                // Get the current ROM value from hardware and set bit 0
+                                // And not to use rom.set_value()
+                                let hw_value = dev.with_rom_ref(|rom| rom.get_value64());
+                                let hw_value_enabled = hw_value | 0x1; // Set enable bit
+                                dev.write_hw(
+                                    field.to_offset() as PciConfigAddress,
+                                    field.size(),
+                                    hw_value_enabled as usize,
+                                )?;
+                                dev.with_rom_ref_mut(|rom| rom.set_value(hw_value_enabled));
+
+                                let paddr =
+                                    dev.with_rom_ref(|rom| rom.get_value64()) as HostPhysAddr;
+
+                                let rom_size = {
+                                    let size = dev.with_rom_ref(|rom| rom.get_size());
+                                    if crate::memory::addr::is_aligned(size as usize) {
+                                        size
+                                    } else {
+                                        crate::memory::PAGE_SIZE as u64
+                                    }
+                                };
+                                let new_vaddr_aligned =
+                                    if !crate::memory::addr::is_aligned(new_vaddr as usize) {
+                                        crate::memory::addr::align_up(new_vaddr as usize) as u64
+                                    } else {
+                                        new_vaddr as u64
+                                    };
+
+                                let zone = this_zone();
+                                let mut guard = zone.write();
+                                let gpm = guard.gpm_mut();
+
+                                if !gpm
+                                    .try_delete(old_vaddr.try_into().unwrap(), rom_size as usize)
+                                    .is_ok()
+                                {
+                                    // warn!("delete rom bar: can not found 0x{:x}", old_vaddr);
+                                }
+                                gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
+                                    new_vaddr_aligned as GuestPhysAddr,
+                                    paddr as HostPhysAddr,
+                                    rom_size as _,
+                                    MemFlags::READ | MemFlags::WRITE,
+                                ))?;
+                                drop(guard);
+                                /* after update gpm, mem barrier is needed
+                                 */
+                                #[cfg(target_arch = "aarch64")]
+                                unsafe {
+                                    core::arch::asm!("isb");
+                                    core::arch::asm!("tlbi vmalls12e1is");
+                                    core::arch::asm!("dsb nsh");
+                                }
+                                /* after update gpm, need to flush iommu table
+                                 * in x86_64
+                                 */
+                                #[cfg(target_arch = "x86_64")]
+                                {
+                                    let vbdf = dev.get_vbdf();
+                                    crate::arch::iommu::flush(
+                                        this_zone_id(),
+                                        vbdf.bus,
+                                        (vbdf.device << 3) + vbdf.function,
+                                    );
+                                }
+                                #[cfg(target_arch = "riscv64")]
+                                unsafe {
+                                    // TOOD: add remote fence support (using sbi rfence spec?)
+                                    core::arch::asm!("hfence.gvma");
+                                }
+                            } else {
+                                // ROM disabled
+                            }
+                        }
+                    }
+                    Ok(None)
+                } else {
+                    // read rom bar
+                    if (dev.with_config_value(|configvalue| configvalue.get_rom_value()))
+                        & 0xfffff800
+                        == 0xfffff800
+                    {
+                        /*
+                         * config_value being 0xFFFF_FFFF means that Linux is attempting to determine the ROM size.
+                         * The value is used directly here because Linux will rewrite this register later,
+                         * so the Hvisor does not need to preserve any additional state.
+                         */
+                        Ok(Some(
+                            dev.with_rom_ref(|rom| rom.get_size_with_flag()) as usize
+                        ))
+                    } else {
+                        Ok(Some(
+                            dev.with_config_value(|configvalue| configvalue.get_rom_value())
+                                as usize,
+                        ))
+                    }
+                }
+            } else {
+                Ok(None)
+            }
+        }
+        _ => Ok(None),
+    }
 }
 
 /*
@@ -696,7 +971,11 @@ fn handle_config_space_access(
                                 if let Some(val) = handle_pci_bridge_access(
                                     dev,
                                     BridgeField::from(offset as usize, size),
+                                    value,
                                     is_write,
+                                    is_direct,
+                                    is_root,
+                                    is_dev_belong_to_zone,
                                 )? {
                                     mmio.value = val;
                                 }
