@@ -257,6 +257,8 @@ pub struct HvDwcAtuConfig {
     // set 1 if io base use atu0, when hvisor need set mmio for io
     // normally, when num-viewport less than 4, io_cfg_atu_shared is 1, otherwise is 0
     pub io_cfg_atu_shared: u64,
+    // choose the atu index for io and cfg access, when io_cfg_atu_shared is 1, io and cfg use the same atu index, otherwise use different atu index
+    pub io_atu_index: u64,
 }
 
 impl HvDwcAtuConfig {
@@ -273,6 +275,7 @@ impl HvDwcAtuConfig {
             cfg_base: 0,
             cfg_size: 0,
             io_cfg_atu_shared: 0,
+            io_atu_index: 0,
         }
     }
 }
