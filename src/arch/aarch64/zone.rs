@@ -142,10 +142,6 @@ impl Zone {
         //      the cores within the inner-shareable domain will
         //      be affected by the broadcast invalidation.
         unsafe {
-            // Get cache line size from CTR_EL0[16:19] (min line size, in words of 4 bytes)
-            let ctr_el0: u64;
-            core::arch::asm!("mrs {0}, ctr_el0", out(reg) ctr_el0, options(nostack, preserves_flags));
-            let dcache_line_size = (1 << ((ctr_el0 >> 16 & 0xF) as usize)) * 4;
             let inner = self.read();
             inner.gpm().for_each_region(|region| {
                 // Invalidate all RAM regions of the guest
@@ -156,7 +152,7 @@ impl Zone {
                     let hva_start = phys_to_virt(phys_start);
                     info!("Invalidate Guest related cache, region.start: {:#x}, region.size: {:#x}, phys_start: {:#x}, hva_start: {:#x}", region.start, region.size, phys_start, hva_start);
                     // D-cache invalid operation will broadcast to all cores, just do it once. There is no need to do it on each core.
-                    invalidate_dcache_range(hva_start, region.size, dcache_line_size);
+                    invalidate_dcache_range(hva_start, region.size);
                 }
             });
         }
@@ -169,6 +165,24 @@ impl Zone {
 pub struct HvArchZoneConfig {
     pub is_aarch32: u8,
     pub gic_config: GicConfig,
+    pub uefi_config: UefiConfig,
+}
+
+#[repr(C, usize)]
+#[derive(Debug, Clone)]
+#[allow(unused)]
+pub enum UefiConfig {
+    Uefi(Uefi),
+    NoUefi(u64),
+}
+
+#[repr(C)]
+#[derive(Clone, Debug)]
+#[allow(unused)]
+pub struct Uefi {
+    pub memory_map_addr: u64,
+    pub memory_map_size: u64,
+    pub sys_map_addr: u64,
 }
 
 #[repr(C, usize)]

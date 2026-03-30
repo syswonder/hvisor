@@ -16,7 +16,7 @@
 use crate::{
     arch::{
         mmu::MemoryType,
-        zone::{GicConfig, Gicv3Config, HvArchZoneConfig},
+        zone::{GicConfig, Gicv3Config, HvArchZoneConfig, UefiConfig, Uefi},
     },
     config::*,
     pci::vpci_dev::VpciDevType,
@@ -53,7 +53,7 @@ pub const BOARD_PHYSMEM_LIST: &[(u64, u64, MemoryType)] = &[
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0xa0000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0xa0400000;
 pub const ROOT_ZONE_ENTRY: u64 = 0xa0400000;
-pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1);
+pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 
@@ -72,6 +72,24 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
     }, // serial
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
+        physical_start: 0x9010000,
+        virtual_start: 0x9010000,
+        size: 0x1000,
+    }, // rtc
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x00000000,
+        virtual_start: 0x00000000,
+        size: 0x08000000,
+    }, // flash
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x9020000,
+        virtual_start: 0x9020000,
+        size: 0x1000,
+    }, // fw-cfg
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
         physical_start: 0xa000000,
         virtual_start: 0xa000000,
         size: 0x4000,
@@ -82,9 +100,13 @@ pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;
 pub const IRQ_WAKEUP_VIRTIO_PCI_CONFIG: usize = 32 + 0x21;
 pub const IRQ_WAKEUP_VIRTIO_PCI_DATA: usize = 32 + 0x22;
 // 35 36 37 38 -> pcie intx#
+// 45 46 47 48 -> timer
+// 34 -> pl031
+// 33 -> pl011
+// 79 -> virtio
 // 65 -> ivc
 pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] =
-    &get_irqs_bitmap(&[33, 64, 77, 79, 35, 36, 37, 38, 65, 66, 67]);
+    &get_irqs_bitmap(&[33, 34, 39, 45, 46, 47, 48, 64, 77, 79, 35, 36, 37, 38, 65, 66, 67]);
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     is_aarch32: 0,
@@ -96,6 +118,11 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
         gits_base: 0x8080000,
         gits_size: 0x20000,
     }),
+    uefi_config: UefiConfig::Uefi(Uefi {
+        memory_map_addr: 0xB0000000,
+        memory_map_size: 0x570,
+        sys_map_addr: 0xB1000000,
+    })
 };
 
 pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [HvPciConfig {

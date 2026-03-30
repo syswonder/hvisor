@@ -15,7 +15,12 @@
 //  Jingyu Liu <liujingyu24s@ict.ac.cn>
 //
 
-pub unsafe fn invalidate_dcache_range(start: usize, size: usize, line_size: usize) {
+pub unsafe fn invalidate_dcache_range(start: usize, size: usize) {
+    // Get cache line size from CTR_EL0[16:19] (min line size, in words of 4 bytes)
+    let ctr_el0: u64;
+    core::arch::asm!("mrs {0}, ctr_el0", out(reg) ctr_el0, options(nostack, preserves_flags));
+    let line_size = (1 << ((ctr_el0 >> 16 & 0xF) as usize)) * 4;
+
     let mut addr = start & !(line_size - 1);
     let end = start + size;
     while addr < end {

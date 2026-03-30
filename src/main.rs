@@ -69,7 +69,7 @@ mod tests;
 use crate::arch::mm::{arch_post_heap_init, arch_setup_parange};
 use crate::consts::{hv_end, mem_pool_start, MAX_CPU_NUM};
 use crate::device::iommu::iommu_init;
-use arch::{cpu::cpu_start, entry::arch_entry};
+use arch::{arch_config_by_args, cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use cpu_data::PerCpu;
@@ -231,6 +231,7 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
 
     if is_primary {
         primary_init_early(); // create root zone here
+        arch_config_by_args(cpuid, host_dtb);
     } else {
         wait_for_counter(&INIT_EARLY_OK, 1);
     }
