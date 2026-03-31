@@ -17,9 +17,16 @@
 
 #![allow(unused)]
 
+// TODO:
+// - [ ] Remove iommu from arch to device
+// - [ ] Add a abstract interface for all-architecture IOMMU
+// - [ ] Support MSI remapping
+// - [ ] Complete command queue and fault queue
+// - [ ] Support vIOMMU
+// - [ ] Increase more fault tolerance
+
 use crate::memory::Frame;
 use alloc::vec::Vec;
-use core::sync::atomic::{fence, Ordering};
 use log::{error, info, warn};
 use spin::{Mutex, Once};
 use tock_registers::interfaces::{Readable, Writeable};
@@ -27,16 +34,9 @@ use tock_registers::register_bitfields;
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite};
 
-#[inline(always)]
-fn io_fence() {
-    unsafe {
-        core::arch::asm!("fence iorw, iorw", options(nostack, preserves_flags));
-    }
-}
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u64)]
-pub enum IommuDdtMode {
+enum IommuDdtMode {
     Off = 0,        // No inbound memory translations are allowed by the IOMMU.
     Bare = 1,       // NO translation or protection.
     OneLevel = 2,   // One-level device-directory table.
@@ -132,6 +132,19 @@ register_bitfields![u64,
     DDT_DIR [ // RISCV-IOMMU Spec Chap3.1.1 Non-leaf DDT entry
         V OFFSET(0) NUMBITS(1) [],
         PPN OFFSET(10) NUMBITS(44) []
+    ],
+    IOMMU_XQB [ // RISC-V IOMMU Spec Chap6.6 Command-queue base
+                // RISC-V IOMMU Spec Chap6.9 Fault queue base
+        LOG2SZ_1 OFFSET(0) NUMBITS(5) [],
+        PPN OFFSET(10) NUMBITS(44) []
+    ],
+    IOMMU_FQ_TAG [ // RISC-V IOMMU Spec Chap4.2 Fault/Event-Queue
+        CAUSE OFFSET(0) NUMBITS(12) [],
+        PID OFFSET(12) NUMBITS(20) [],
+        PV OFFSET(32) NUMBITS(1) [],
+        PRIV OFFSET(33) NUMBITS(1) [],
+        TYPE OFFSET(34) NUMBITS(6) [],
+        DID OFFSET(40) NUMBITS(24) []
     ]
 ];
 
@@ -140,6 +153,24 @@ register_bitfields![u32,
         BE OFFSET(0) NUMBITS(1) [],
         WSI OFFSET(1) NUMBITS(1) [],
         GXL OFFSET(2) NUMBITS(1) [],
+    ],
+    IOMMU_CQCSR [ // RISCV-IOMMU Spec Chap6.15 Command-queue CSR
+        CQEN OFFSET(0) NUMBITS(1) [],
+        CIE OFFSET(1) NUMBITS(1) [],
+        CQMF OFFSET(8) NUMBITS(1) [],
+        CMDTO OFFSET(9) NUMBITS(1) [],
+        CMDILL OFFSET(10) NUMBITS(1) [],
+        FENCEWIP OFFSET(11) NUMBITS(1) [],
+        CQON OFFSET(16) NUMBITS(1) [],
+        BUSY OFFSET(17) NUMBITS(1) [],
+    ],
+    IOMMU_FQCSR [ // RISCV-IOMMU Spec Chap6.16 Fault-queue CSR
+        FQEN OFFSET(0) NUMBITS(1) [],
+        FIE OFFSET(1) NUMBITS(1) [],
+        FQMF OFFSET(8) NUMBITS(1) [],
+        FQOF OFFSET(9) NUMBITS(1) [],
+        FQON OFFSET(16) NUMBITS(1) [],
+        BUSY OFFSET(17) NUMBITS(1) [],
     ],
     IOMMU_IPSR [ // RISCV-IOMMU Spec Chap6.18 Interrupt pending status register
         CIP OFFSET(0) NUMBITS(1) [],
@@ -157,17 +188,17 @@ register_structs! {
         (0x008 => fctl: ReadWrite<u32, IOMMU_FCTL::Register>),
         (0x00c => _custom1),
         (0x010 => ddtp: ReadWrite<u64, IOMMU_DDTP::Register>),
-        (0x018 => cqb: ReadWrite<u64>),
+        (0x018 => cqb: ReadWrite<u64, IOMMU_XQB::Register>),
         (0x020 => cqh: ReadWrite<u32>),
         (0x024 => cqt: ReadWrite<u32>),
-        (0x028 => fqb: ReadWrite<u64>),
+        (0x028 => fqb: ReadWrite<u64, IOMMU_XQB::Register>),
         (0x030 => fqh: ReadWrite<u32>),
         (0x034 => fqt: ReadWrite<u32>),
         (0x038 => pqb: ReadWrite<u64>),
         (0x040 => pqh: ReadWrite<u32>),
         (0x044 => pqt: ReadWrite<u32>),
-        (0x048 => cqcsr: ReadWrite<u32>),
-        (0x04c => fqcsr: ReadWrite<u32>),
+        (0x048 => cqcsr: ReadWrite<u32, IOMMU_CQCSR::Register>),
+        (0x04c => fqcsr: ReadWrite<u32, IOMMU_FQCSR::Register>),
         (0x050 => pqcsr: ReadWrite<u32>),
         (0x054 => ipsr: ReadWrite<u32, IOMMU_IPSR::Register>),
         (0x058 => iocntovf: ReadWrite<u32>),
@@ -214,7 +245,22 @@ pub fn iommu_add_device(vm_id: usize, device_id: usize, root_pt: usize) {
         iommu.lock().rv_iommu_add_device(device_id, vm_id, root_pt);
     }
     #[cfg(not(feature = "iommu"))]
-    info!("RISC-V IOMMU: do nothing now");
+    info!("RISC-V: iommu_add_device do nothing now");
+}
+
+/// Remove a device from IOMMU
+pub fn iommu_remove_device(vm_id: usize, device_id: usize) {
+    #[cfg(feature = "iommu")]
+    {
+        info!(
+            "RV IOMMU: Remove device, vm_id {}, device_id {}",
+            vm_id, device_id
+        );
+        let iommu = get_iommu();
+        iommu.lock().rv_iommu_remove_device(device_id);
+    }
+    #[cfg(not(feature = "iommu"))]
+    info!("RISC-V: iommu_remove_device do nothing now");
 }
 
 /// Initialize RISC-V IOMMU with hardware DDTP probing.
@@ -229,6 +275,36 @@ fn riscv_iommu_init() {
 }
 
 impl IommuHw {
+    const CQ_ENTRY_SIZE: usize = 16;
+    const FQ_ENTRY_SIZE: usize = 32;
+    const CQ_LOG2SZ_1: u32 = 7; // k-1, where k=log2(N), N=256
+    const FQ_LOG2SZ_1: u32 = 6; // k-1, where k=log2(N), N=128
+    const CQ_ENTRIES: usize = 1usize << (Self::CQ_LOG2SZ_1 + 1);
+    const FQ_ENTRIES: usize = 1usize << (Self::FQ_LOG2SZ_1 + 1);
+    const QUEUE_ON_TIMEOUT: usize = 1_000_000;
+
+    fn wait_cq_on(&self) {
+        let mut loops = 0usize;
+        while !self.cqcsr.is_set(IOMMU_CQCSR::CQON) {
+            core::hint::spin_loop();
+            loops += 1;
+            if loops >= Self::QUEUE_ON_TIMEOUT {
+                panic!("RISC-V IOMMU: timeout waiting for CQON");
+            }
+        }
+    }
+
+    fn wait_fq_on(&self) {
+        let mut loops = 0usize;
+        while !self.fqcsr.is_set(IOMMU_FQCSR::FQON) {
+            core::hint::spin_loop();
+            loops += 1;
+            if loops >= Self::QUEUE_ON_TIMEOUT {
+                panic!("RISC-V IOMMU: timeout waiting for FQON");
+            }
+        }
+    }
+
     fn try_set_ddtp(&mut self, ddt_addr: usize, mode: IommuDdtMode) -> bool {
         while self.ddtp.is_set(IOMMU_DDTP::BUSY) {}
         self.ddtp.write(
@@ -290,7 +366,13 @@ impl IommuHw {
         }
     }
 
-    fn rv_iommu_init(&mut self, ddt_addr: usize, ddt_mode: IommuDdtMode) -> IommuDdtMode {
+    fn rv_iommu_init(
+        &mut self,
+        ddt_addr: usize,
+        ddt_mode: IommuDdtMode,
+        cq_addr: usize,
+        fq_addr: usize,
+    ) -> IommuDdtMode {
         // RISC-V IOMMU Spec Chap7.2 Guidelines for initialization
         // Read the capabilities register to discover the capabilities of the IOMMU.
         self.rv_iommu_check_features();
@@ -304,16 +386,33 @@ impl IommuHw {
                 + IOMMU_IPSR::PMIP::SET
                 + IOMMU_IPSR::PIP::SET,
         );
-        // TODO: support MSI
-        // TODO: program the command queue
-        self.cqb.set(0x0);
-        self.cqh.set(0x0);
+        // TODO: support MSI-translation
+
+        // TODO: program icvec
+
+        // Program command queue:
+        // Here use static one frame for command queue.
+        let cq_size = Self::CQ_ENTRIES * Self::CQ_ENTRY_SIZE;
+        self.cqb.write(
+            IOMMU_XQB::LOG2SZ_1.val(Self::CQ_LOG2SZ_1 as u64)
+                + IOMMU_XQB::PPN.val((cq_addr as u64) >> 12),
+        );
         self.cqt.set(0x0);
-        // TODO: program the fault queue
-        self.fqb.set(0x0);
+        self.cqcsr.write(IOMMU_CQCSR::CQEN::SET);
+        self.wait_cq_on();  // Poll cqcsr.cqon until it reads 1
+
+        // Program fault queue:
+        // Here use static one frame for fault queue.
+        let fq_size = Self::FQ_ENTRIES * Self::FQ_ENTRY_SIZE;
+        self.fqb.write(
+            IOMMU_XQB::LOG2SZ_1.val(Self::FQ_LOG2SZ_1 as u64)
+                + IOMMU_XQB::PPN.val((fq_addr as u64) >> 12),
+        );
         self.fqh.set(0x0);
-        self.fqt.set(0x0);
-        // TODO: program the page-request queue
+        self.fqcsr.write(IOMMU_FQCSR::FQEN::SET);
+        self.wait_fq_on();  // Poll fqcsr.fqon until it reads 1
+
+        // Do not support page-request queue.
         self.pqb.set(0x0);
         self.pqh.set(0x0);
         self.pqt.set(0x0);
@@ -349,7 +448,7 @@ struct DdtLeafTable {
 }
 
 /// Device-directory table
-pub struct DdtRootMemory {
+struct DdtRootMemory {
     mode: IommuDdtMode,
     root: Frame,
     lower_levels: Vec<Frame>,
@@ -431,9 +530,27 @@ impl DdtRootMemory {
     }
 }
 
-pub struct Iommu {
-    pub base: usize,
-    ddt: DdtRootMemory,
+/// Command queue entry, RISC-V IOMMU Spec v1.0 Chap4.1 Command-queue
+#[repr(C)]
+struct CqEntry {
+    cmd: ReadWrite<u128>,   // TODO: split into detailed fields
+}
+
+/// Fault queue entry, RISC-V IOMMU Spec v1.0 Chap4.2 Fault/Event-Queue
+#[repr(C)]
+struct FqEntry {
+    tags: ReadWrite<u64, IOMMU_FQ_TAG::Register>,
+    __rsv: ReadWrite<u64>,
+    iotval: ReadWrite<u64>,
+    iotval2: ReadWrite<u64>,
+}
+
+/// Global IOMMU structure
+struct Iommu {
+    base: usize,
+    ddt: DdtRootMemory, // device-directory table
+    cq: Frame, // command queue
+    fq: Frame, // fault queue
 }
 
 impl Iommu {
@@ -441,6 +558,8 @@ impl Iommu {
         Self {
             base,
             ddt: DdtRootMemory::new(),
+            cq: Frame::new_zero().unwrap(),
+            fq: Frame::new_zero().unwrap(),
         }
     }
 
@@ -459,9 +578,12 @@ impl Iommu {
     fn rv_iommu_init(&mut self) {
         // Always probe from the highest practical mode, then fallback by retention.
         let requested_mode = IommuDdtMode::ThreeLevel;
-        let selected_mode = self
-            .iommu()
-            .rv_iommu_init(self.ddt_root_paddr(), requested_mode);
+        let selected_mode = self.iommu().rv_iommu_init(
+            self.ddt_root_paddr(),
+            requested_mode,
+            self.cq.start_paddr(),
+            self.fq.start_paddr(),
+        );
         if selected_mode != requested_mode {
             warn!(
                 "RV IOMMU: DDTP mode downgraded from {:?} to {:?}",
