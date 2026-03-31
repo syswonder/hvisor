@@ -20,6 +20,7 @@ use crate::cpu_data::this_zone;
 use crate::error::HvResult;
 use crate::memory::MMIOAccess;
 use crate::memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion};
+use crate::pci::pci_struct::CapabilityType;
 use crate::zone::is_this_root_zone;
 
 use super::pci_access::{BridgeField, EndpointField, HeaderType, PciField, PciMemType};
@@ -214,6 +215,100 @@ fn handle_virtio_pci_write(
 //         }
 //     }
 // }
+
+fn handle_cap_access(
+    dev: ArcRwLockVirtualPciConfigSpace,
+    offset: PciConfigAddress,
+    size: usize,
+    value: usize,
+    is_write: bool,
+    is_dev_belong_to_zone: bool,
+) -> HvResult<Option<usize>> {
+    // Handle capability region access (offset >= 0x34)
+    if offset == 0x34 {
+        // Cap Pointer register (may be accessed as different sizes)
+        if is_dev_belong_to_zone {
+            // Direct pass through to hardware
+            if is_write {
+                dev.write_hw(offset, size, value)?;
+                Ok(None)
+            } else {
+                Ok(Some(dev.read_hw(offset, size)?))
+            }
+        } else {
+            // Device not belong to zone, return 0 (no capability)
+            if is_write {
+                Ok(None)
+            } else {
+                Ok(Some(0))
+            }
+        }
+    } else {
+        // Other capability region offsets
+        // Try to find the capability that contains this offset
+        let cap_info = dev.with_cap(|capabilities| {
+            capabilities
+                .range(..=offset as u64)
+                .next_back()
+                .map(|(cap_offset, cap)| (*cap_offset, cap.get_type()))
+        });
+
+        if let Some((cap_offset, cap_type)) = cap_info {
+            let cap_offset = cap_offset as usize;
+            let relative_offset = offset as usize - cap_offset;
+
+            // Log: identify and record MSI cap access
+            if cap_type == CapabilityType::Msi {
+                // MSI Capability (type 0x05)
+                let vbdf = dev.get_vbdf();
+
+                // Analyze MSI field based on relative offset
+                let field_name = match relative_offset {
+                    0 => "Cap ID & Next Cap Ptr",
+                    2 => "Message Control",
+                    4 | 5 | 6 | 7 => "Message Address (Low)",
+                    8 | 9 | 10 | 11 => "Message Address (High)",
+                    12 | 13 => "Message Data",
+                    _ => "Unknown MSI field",
+                };
+
+                if is_write {
+                    info!(
+                        "vbdf {:#?}: wrote MSI {} at offset 0x{:x}: value=0x{:x}",
+                        vbdf, field_name, offset, value
+                    );
+
+                    // Special handling: record doorbell writes
+                    // Doorbell is typically in the message data area, but may vary by device
+                    // For now, treat Message Data writes as doorbell-related
+                    if relative_offset == 12 || relative_offset == 13 {
+                        // Update msi_info doorbell with the written value
+                        dev.with_msi_info_mut(|msi_info| {
+                            msi_info.set_doorbell(value as u64);
+                        });
+                        info!("vbdf {:#?}: MSI doorbell recorded as 0x{:x}", vbdf, value);
+                    }
+                } else {
+                    info!(
+                        "vbdf {:#?}: read MSI {} at offset 0x{:x}",
+                        vbdf, field_name, offset
+                    );
+                }
+            }
+
+            // Direct pass through to hardware for all cap access
+            if is_write {
+                dev.write_hw(offset, size, value)?;
+                Ok(None)
+            } else {
+                Ok(Some(dev.read_hw(offset, size)?))
+            }
+        } else {
+            // No capability found at this offset
+            Ok(None)
+        }
+    }
+}
 
 fn handle_endpoint_access(
     dev: ArcRwLockVirtualPciConfigSpace,
@@ -955,29 +1050,57 @@ fn handle_config_space_access(
                         let config_type = dev.get_config_type();
                         match config_type {
                             HeaderType::Endpoint => {
-                                if let Some(val) = handle_endpoint_access(
-                                    dev,
-                                    EndpointField::from(offset as usize, size),
-                                    value,
-                                    is_write,
-                                    is_direct,
-                                    is_root,
-                                    is_dev_belong_to_zone,
-                                )? {
-                                    mmio.value = val;
+                                // Check if this is capability region access (offset >= 0x40)
+                                if offset >= 0x40 && offset < 0x100 {
+                                    if let Some(val) = handle_cap_access(
+                                        dev,
+                                        offset,
+                                        size,
+                                        value,
+                                        is_write,
+                                        is_dev_belong_to_zone,
+                                    )? {
+                                        mmio.value = val;
+                                    }
+                                } else {
+                                    if let Some(val) = handle_endpoint_access(
+                                        dev,
+                                        EndpointField::from(offset as usize, size),
+                                        value,
+                                        is_write,
+                                        is_direct,
+                                        is_root,
+                                        is_dev_belong_to_zone,
+                                    )? {
+                                        mmio.value = val;
+                                    }
                                 }
                             }
                             HeaderType::PciBridge => {
-                                if let Some(val) = handle_pci_bridge_access(
-                                    dev,
-                                    BridgeField::from(offset as usize, size),
-                                    value,
-                                    is_write,
-                                    is_direct,
-                                    is_root,
-                                    is_dev_belong_to_zone,
-                                )? {
-                                    mmio.value = val;
+                                // Check if this is capability region access (offset >= 0x40)
+                                if offset >= 0x40 && offset < 0x100 {
+                                    if let Some(val) = handle_cap_access(
+                                        dev,
+                                        offset,
+                                        size,
+                                        value,
+                                        is_write,
+                                        is_dev_belong_to_zone,
+                                    )? {
+                                        mmio.value = val;
+                                    }
+                                } else {
+                                    if let Some(val) = handle_pci_bridge_access(
+                                        dev,
+                                        BridgeField::from(offset as usize, size),
+                                        value,
+                                        is_write,
+                                        is_direct,
+                                        is_root,
+                                        is_dev_belong_to_zone,
+                                    )? {
+                                        mmio.value = val;
+                                    }
                                 }
                             }
                             _ => {

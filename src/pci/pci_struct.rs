@@ -317,6 +317,8 @@ impl VirtualPciAccessBits {
         bits[0x0..0x4].fill(true); // ID
         bits[0x08..0x0c].fill(true); // CLASS
         bits[0x10..0x34].fill(true); // BARs and ROM
+        bits[0x34..0x38].fill(true); // Capability Pointer
+        bits[0x40..0x100].fill(true); // Capability region (caps start at 0x40)
         Self { bits }
     }
 
@@ -324,6 +326,8 @@ impl VirtualPciAccessBits {
         let mut bits = BitArray::ZERO;
         bits[0x10..0x18].fill(true); // BARs
         bits[0x38..0x3c].fill(true); // ROM
+        bits[0x34..0x38].fill(true); // Capability Pointer
+        bits[0x40..0x100].fill(true); // Capability region (caps start at 0x40)
         Self { bits }
     }
 
@@ -575,6 +579,14 @@ impl ArcRwLockVirtualPciConfigSpace {
     {
         let guard = self.read();
         f(&guard.capabilities)
+    }
+
+    pub fn with_msi_info_mut<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut MsiInfo) -> R,
+    {
+        let mut guard = self.0.write();
+        guard.msi_info.as_mut().map(|msi_info| f(msi_info))
     }
 
     pub fn read(&self) -> spin::RwLockReadGuard<'_, VirtualPciConfigSpaceWithZone> {
