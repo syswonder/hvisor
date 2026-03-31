@@ -18,7 +18,7 @@ use alloc::string::String;
 
 use crate::cpu_data::this_zone;
 use crate::error::HvResult;
-use crate::memory::MMIOAccess;
+use crate::memory::{mmio_perform_access, MMIOAccess};
 use crate::memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion};
 use crate::pci::pci_struct::CapabilityType;
 use crate::zone::is_this_root_zone;
@@ -372,6 +372,19 @@ fn handle_endpoint_access(
              * as previously described
              */
             let bar_type = dev.with_bar_ref(slot, |bar| bar.get_type());
+
+            // Check if this BAR contains MSIX table
+            let is_msix_bar = dev
+                .read()
+                .get_msi_info()
+                .and_then(|msi_info| {
+                    msi_info
+                        .msix_info
+                        .as_ref()
+                        .map(|msix| msix.bar_id == slot as u8)
+                })
+                .unwrap_or(false);
+
             if bar_type != PciMemType::default() {
                 if is_write {
                     if is_direct && is_root {
@@ -476,20 +489,37 @@ fn handle_endpoint_access(
 
                                 let zone = this_zone();
                                 let mut guard = zone.write();
-                                let gpm = guard.gpm_mut();
 
-                                if !gpm
-                                    .try_delete(old_vaddr.try_into().unwrap(), bar_size as usize)
-                                    .is_ok()
-                                {
-                                    // warn!("delete bar {}: can not found 0x{:x}", slot, old_vaddr);
+                                if is_msix_bar {
+                                    // Remove old MSIX handler if it exists
+                                    guard.mmio_region_remove(old_vaddr as GuestPhysAddr);
+                                    // Register new MSIX handler at new address
+                                    guard.mmio_region_register(
+                                        new_vaddr as GuestPhysAddr,
+                                        bar_size as usize,
+                                        mmio_msix_table_handler,
+                                        paddr as usize,
+                                    );
+                                } else {
+                                    // Delete old gpm mapping if it exists
+                                    let gpm = guard.gpm_mut();
+                                    if !gpm
+                                        .try_delete(
+                                            old_vaddr.try_into().unwrap(),
+                                            bar_size as usize,
+                                        )
+                                        .is_ok()
+                                    {
+                                        // warn!("delete bar {}: can not found 0x{:x}", slot, old_vaddr);
+                                    }
+                                    // Insert new gpm mapping at new address
+                                    gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
+                                        new_vaddr as GuestPhysAddr,
+                                        paddr as HostPhysAddr,
+                                        bar_size as _,
+                                        MemFlags::READ | MemFlags::WRITE,
+                                    ))?;
                                 }
-                                gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
-                                    new_vaddr as GuestPhysAddr,
-                                    paddr as HostPhysAddr,
-                                    bar_size as _,
-                                    MemFlags::READ | MemFlags::WRITE,
-                                ))?;
                                 drop(guard);
                                 /* after update gpm, mem barrier is needed
                                  */
@@ -709,6 +739,19 @@ fn handle_pci_bridge_access(
     match field {
         BridgeField::Bar(slot) => {
             let bar_type = dev.with_bar_ref(slot, |bar| bar.get_type());
+
+            // Check if this BAR contains MSIX table
+            let is_msix_bar = dev
+                .read()
+                .get_msi_info()
+                .and_then(|msi_info| {
+                    msi_info
+                        .msix_info
+                        .as_ref()
+                        .map(|msix| msix.bar_id == slot as u8)
+                })
+                .unwrap_or(false);
+
             if bar_type != PciMemType::default() {
                 if is_write {
                     if is_direct && is_root {
@@ -764,20 +807,37 @@ fn handle_pci_bridge_access(
 
                                 let zone = this_zone();
                                 let mut guard = zone.write();
-                                let gpm = guard.gpm_mut();
 
-                                if !gpm
-                                    .try_delete(old_vaddr.try_into().unwrap(), bar_size as usize)
-                                    .is_ok()
-                                {
-                                    // warn!("delete bar {}: can not found 0x{:x}", slot, old_vaddr);
+                                if is_msix_bar {
+                                    // Remove old MSIX handler if it exists
+                                    guard.mmio_region_remove(old_vaddr as GuestPhysAddr);
+                                    // Register new MSIX handler at new address
+                                    guard.mmio_region_register(
+                                        new_vaddr_aligned as GuestPhysAddr,
+                                        bar_size as usize,
+                                        mmio_msix_table_handler,
+                                        paddr as usize,
+                                    );
+                                } else {
+                                    // Delete old gpm mapping if it exists
+                                    let gpm = guard.gpm_mut();
+                                    if !gpm
+                                        .try_delete(
+                                            old_vaddr.try_into().unwrap(),
+                                            bar_size as usize,
+                                        )
+                                        .is_ok()
+                                    {
+                                        // warn!("delete bar {}: can not found 0x{:x}", slot, old_vaddr);
+                                    }
+                                    // Insert new gpm mapping at new address
+                                    gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
+                                        new_vaddr_aligned as GuestPhysAddr,
+                                        paddr as HostPhysAddr,
+                                        bar_size as _,
+                                        MemFlags::READ | MemFlags::WRITE,
+                                    ))?;
                                 }
-                                gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
-                                    new_vaddr_aligned as GuestPhysAddr,
-                                    paddr as HostPhysAddr,
-                                    bar_size as _,
-                                    MemFlags::READ | MemFlags::WRITE,
-                                ))?;
                                 drop(guard);
                                 /* after update gpm, mem barrier is needed
                                  */
@@ -1051,7 +1111,7 @@ fn handle_config_space_access(
                         match config_type {
                             HeaderType::Endpoint => {
                                 // Check if this is capability region access (offset >= 0x40)
-                                if offset >= 0x40 && offset < 0x100 {
+                                if (offset >= 0x40 && offset < 0x100) || (offset == 0x34) {
                                     if let Some(val) = handle_cap_access(
                                         dev,
                                         offset,
@@ -1078,7 +1138,7 @@ fn handle_config_space_access(
                             }
                             HeaderType::PciBridge => {
                                 // Check if this is capability region access (offset >= 0x40)
-                                if offset >= 0x40 && offset < 0x100 {
+                                if (offset >= 0x40 && offset < 0x100) || (offset == 0x34) {
                                     if let Some(val) = handle_cap_access(
                                         dev,
                                         offset,
@@ -1536,6 +1596,78 @@ pub fn mmio_vpci_direct_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult
     let is_direct = true; // direct handler uses direct mode
 
     handle_config_space_access(dev, mmio, offset, is_direct, is_root, is_dev_belong_to_zone)?;
+
+    Ok(())
+}
+
+/// Handle MMIO access to MSIX table in BAR memory
+pub fn mmio_msix_table_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
+    let access_offset = mmio.address as u64;
+
+    // Find the device matching this BAR's physical address
+    let zone = this_zone();
+    let device_info = {
+        let guard = zone.read();
+        let vbus = guard.vpci_bus();
+
+        // Find the device whose MSIX BAR paddr matches the handler base
+        let mut result = None;
+        for dev in vbus.devs_ref().values() {
+            if let Some(msi_info) = dev.read().get_msi_info() {
+                if let Some(msix) = &msi_info.msix_info {
+                    if msix.bar_paddr == base as u64 {
+                        result = Some((dev.clone(), msix.offset, msix.entry_count));
+                        break;
+                    }
+                }
+            }
+        }
+        result
+    };
+
+    // Check if this access is within the MSIX table range
+    if let Some((dev, msix_offset, entry_count)) = device_info {
+        let vbdf = dev.get_vbdf();
+        // warn!(
+        //     "MSIX BAR access from device vbdf {:#?}, paddr: {:#x}",
+        //     vbdf, base
+        // );
+
+        let msix_table_size = (entry_count as u64) * 16; // Each entry is 16 bytes
+        let msix_table_end = msix_offset + msix_table_size;
+
+        if access_offset >= msix_offset && access_offset < msix_table_end {
+            // This is a MSIX table access, record it with detailed information
+            let offset_in_entry = access_offset - msix_offset;
+            let entry_index = offset_in_entry / 16;
+            let field_offset = offset_in_entry % 16;
+
+            if mmio.is_write {
+                match field_offset {
+                    0..=3 => {
+                        // Update doorbell with low 32-bit address
+                        dev.with_msi_info_mut(|msi_info| {
+                            let current = msi_info.msi_doorbell & 0xffffffff00000000;
+                            msi_info.set_doorbell(current | (mmio.value as u64));
+                        });
+                    }
+                    4..=7 => {
+                        // Update doorbell with high 32-bit address
+                        dev.with_msi_info_mut(|msi_info| {
+                            let current = msi_info.msi_doorbell & 0xffffffff;
+                            msi_info.set_doorbell(current | ((mmio.value as u64) << 32));
+                        });
+                    }
+                    8..=11 => {}
+                    12..=15 => {}
+                    _ => {}
+                }
+            } else {
+            }
+        }
+    }
+
+    mmio_perform_access(base, mmio);
 
     Ok(())
 }

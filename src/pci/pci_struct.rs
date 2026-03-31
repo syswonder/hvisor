@@ -352,6 +352,8 @@ impl VirtualPciAccessBits {
 pub struct MsixInfo {
     pub bar_id: u8,
     pub offset: u64,
+    pub entry_count: u32, // number of MSIX table entries
+    pub bar_paddr: u64,   // physical address of the BAR
 }
 
 #[derive(Clone, Debug)]
@@ -375,8 +377,13 @@ impl MsiInfo {
         self.msi_doorbell = doorbell;
     }
 
-    pub fn set_msix_info(&mut self, bar_id: u8, offset: u64) {
-        self.msix_info = Some(MsixInfo { bar_id, offset });
+    pub fn set_msix_info(&mut self, bar_id: u8, offset: u64, entry_count: u32, bar_paddr: u64) {
+        self.msix_info = Some(MsixInfo {
+            bar_id,
+            offset,
+            entry_count,
+            bar_paddr,
+        });
     }
 }
 
@@ -813,7 +820,7 @@ impl Debug for VirtualPciConfigSpace {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "\n  bdf {:#?}\n  base {:#x}\n  type {:#?}\n  msi_info {:#?}\n  {:#?}\n {:#?}\n {:#?}",
+            "\n  bdf {:#?}\n  base {:#x}\n  type {:#?}\n  msi_info {:#x?}\n  {:#?}\n {:#?}\n {:#?}",
             self.bdf,
             self.base,
             self.config_type,
@@ -1056,7 +1063,9 @@ impl VirtualPciConfigSpace {
             let mut msi_info = MsiInfo::new(interrupt_count);
 
             if has_msix {
-                msi_info.set_msix_info(msix_bar_id, msix_offset);
+                // Read the BAR's physical address
+                let bar_paddr = self.bararr[msix_bar_id as usize].get_value64() & !0xf;
+                msi_info.set_msix_info(msix_bar_id, msix_offset, msix_count, bar_paddr);
             }
 
             self.msi_info = Some(msi_info);
@@ -1821,6 +1830,10 @@ impl VirtualRootComplex {
 
     pub fn devs(&mut self) -> &mut BTreeMap<Bdf, ArcRwLockVirtualPciConfigSpace> {
         &mut self.devs
+    }
+
+    pub fn devs_ref(&self) -> &BTreeMap<Bdf, ArcRwLockVirtualPciConfigSpace> {
+        &self.devs
     }
 
     pub fn read_devs(&self) -> &BTreeMap<Bdf, ArcRwLockVirtualPciConfigSpace> {
