@@ -205,7 +205,10 @@ pub fn create_fake_memory_map(hv_zone_config: &HvZoneConfig, uefi_config: &Uefi)
                     let desc_start = MEM_MAP.get().unwrap()[index].physical_start as usize;
                     let desc_end = desc_start
                         + (MEM_MAP.get().unwrap()[index].number_of_pages * EFI_PAGE_SIZE) as usize;
-                    info!("desc_start: {:#x}, bound_addr: {:#x}, base_addr: {:#x}", desc_start, bound_addr, base_addr);
+                    info!(
+                        "desc_start: {:#x}, bound_addr: {:#x}, base_addr: {:#x}",
+                        desc_start, bound_addr, base_addr
+                    );
                     let new_memory_size = min(desc_start, bound_addr as usize) - base_addr as usize;
                     if new_memory_size % EFI_PAGE_SIZE as usize != 0 {
                         panic!("memory is not aligned to EFI_PAGE_SIZE");
