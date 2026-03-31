@@ -344,6 +344,38 @@ impl VirtualPciAccessBits {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct MsixInfo {
+    pub bar_id: u8,
+    pub offset: u64,
+}
+
+#[derive(Clone, Debug)]
+pub struct MsiInfo {
+    pub msi_count: u32,
+    // doorbell vm write to trigger interrupt
+    pub msi_doorbell: u64,
+    pub msix_info: Option<MsixInfo>,
+}
+
+impl MsiInfo {
+    pub fn new(msi_count: u32) -> Self {
+        Self {
+            msi_count,
+            msi_doorbell: 0,
+            msix_info: None,
+        }
+    }
+
+    pub fn set_doorbell(&mut self, doorbell: u64) {
+        self.msi_doorbell = doorbell;
+    }
+
+    pub fn set_msix_info(&mut self, bar_id: u8, offset: u64) {
+        self.msix_info = Some(MsixInfo { bar_id, offset });
+    }
+}
+
 /* VirtualPciConfigSpace
  * bdf: the bdf hvisor seeing(same with the bdf without hvisor)
  * vbdf: the bdf zone seeing, it can set just you like without sr-iov
@@ -373,6 +405,9 @@ pub struct VirtualPciConfigSpace {
     capabilities: PciCapabilityList,
 
     dev_type: VpciDevType,
+
+    // MSI/MSIX info for this device
+    msi_info: Option<MsiInfo>,
     msix_table: Option<Arc<RwLock<MsixTable>>>,
 }
 
@@ -766,8 +801,14 @@ impl Debug for VirtualPciConfigSpace {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "\n  bdf {:#?}\n  base {:#x}\n  type {:#?}\n  {:#?}\n {:#?}\n {:#?}",
-            self.bdf, self.base, self.config_type, self.bararr, self.rom, self.capabilities
+            "\n  bdf {:#?}\n  base {:#x}\n  type {:#?}\n  msi_info {:#?}\n  {:#?}\n {:#?}\n {:#?}",
+            self.bdf,
+            self.base,
+            self.config_type,
+            self.msi_info,
+            self.bararr,
+            self.rom,
+            self.capabilities
         )
     }
 }
@@ -799,6 +840,7 @@ impl VirtualPciConfigSpace {
             rom: PciMem::default(),
             capabilities: PciCapabilityList::new(),
             dev_type,
+            msi_info: None,
             msix_table,
         }
     }
@@ -827,6 +869,7 @@ impl VirtualPciConfigSpace {
             rom,
             capabilities: PciCapabilityList::new(),
             dev_type: VpciDevType::Physical,
+            msi_info: None,
             msix_table: None,
         }
     }
@@ -855,6 +898,7 @@ impl VirtualPciConfigSpace {
             rom,
             capabilities: PciCapabilityList::new(),
             dev_type: VpciDevType::Physical,
+            msi_info: None,
             msix_table: None,
         }
     }
@@ -885,6 +929,7 @@ impl VirtualPciConfigSpace {
             rom: PciMem::default(),
             capabilities: PciCapabilityList::new(),
             dev_type: VpciDevType::Physical,
+            msi_info: None,
             msix_table: None,
         }
     }
@@ -910,6 +955,7 @@ impl VirtualPciConfigSpace {
             rom: PciMem::default(),
             capabilities: PciCapabilityList::new(),
             dev_type: VpciDevType::Physical,
+            msi_info: None,
             msix_table: None,
         }
     }
@@ -944,6 +990,69 @@ impl VirtualPciConfigSpace {
 
     pub fn get_base(&self) -> PciConfigAddress {
         self.base
+    }
+
+    pub fn get_msi_count(&self) -> u32 {
+        self.msi_info
+            .as_ref()
+            .map(|info| info.msi_count)
+            .unwrap_or(0)
+    }
+
+    /// Build MSI/MSIX info structure based on device capabilities
+    pub fn build_msi_info(&mut self) {
+        let mut msi_count = 0u32;
+        let mut msix_count = 0u32;
+        let mut msix_bar_id = 0u8;
+        let mut msix_offset = 0u64;
+        let mut has_msix = false;
+
+        // Check if the device has MSI or MSIX capability and calculate both
+        for (_offset, cap) in self.capabilities.iter() {
+            match cap.get_type() {
+                CapabilityType::Msi => {
+                    // For MSI: read offset+2, bits 2-0 contain MMC (Multiple Message Capable)
+                    // Supported messages = 2^(MMC+1)
+                    if let Ok(val) = cap.with_region(|region| region.read(0x02, 2)) {
+                        let mmc = (val & 0x0E) >> 1; // bits 2-0
+                        msi_count = (1u32 << (mmc + 1)) as u32;
+                    }
+                }
+                CapabilityType::MsiX => {
+                    // For MSIX: read offset+2, bits 10-0 contain table size
+                    // Supported messages = table_size + 1
+                    if let Ok(val) = cap.with_region(|region| region.read(0x02, 2)) {
+                        let table_size = (val & 0x07FF) as u32; // bits 10-0
+                        msix_count = table_size + 1;
+                    }
+
+                    // Extract MSIX table location (offset+4)
+                    // Bits 2-0: BAR ID (0-5), Bits 31-3: table offset
+                    if let Ok(table_info) = cap.with_region(|region| region.read(0x04, 4)) {
+                        msix_bar_id = (table_info & 0x07) as u8;
+                        msix_offset = ((table_info >> 3) as u64) << 3; // multiply by 8 since offset is in 8-byte increments
+                        has_msix = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Create MsiInfo if device has MSI or MSIX capability
+        let interrupt_count = core::cmp::max(msi_count, msix_count);
+        if interrupt_count > 0 {
+            let mut msi_info = MsiInfo::new(interrupt_count);
+
+            if has_msix {
+                msi_info.set_msix_info(msix_bar_id, msix_offset);
+            }
+
+            self.msi_info = Some(msi_info);
+        }
+    }
+
+    pub fn get_msi_info(&self) -> Option<&MsiInfo> {
+        self.msi_info.as_ref()
     }
 
     /* now the space_init just with bar
@@ -1192,6 +1301,8 @@ impl<B: BarAllocator> PciIterator<B> {
                 );
 
                 let _ = node.capability_enumerate();
+                // Build MSI/MSIX info once during device discovery
+                node.build_msi_info();
 
                 Some(node)
             }
@@ -1216,6 +1327,8 @@ impl<B: BarAllocator> PciIterator<B> {
                 );
 
                 let _ = node.capability_enumerate();
+                // Build MSI/MSIX info once during device discovery
+                node.build_msi_info();
 
                 Some(node)
             }
@@ -1648,6 +1761,8 @@ impl RootComplex {
 pub struct VirtualRootComplex {
     devs: BTreeMap<Bdf, ArcRwLockVirtualPciConfigSpace>,
     base_to_bdf: BTreeMap<PciConfigAddress, Bdf>,
+    // Total MSI interrupt count needed for all devices in this root complex
+    total_msi_count: u32,
     accessor: Option<Arc<dyn PciConfigAccessor>>,
     msix_backend: Option<Arc<RwLock<dyn MsixBackend>>>,
 }
@@ -1657,6 +1772,7 @@ impl VirtualRootComplex {
         Self {
             devs: BTreeMap::new(),
             base_to_bdf: BTreeMap::new(),
+            total_msi_count: 0,
             accessor: None,
             msix_backend: None,
         }
@@ -1714,6 +1830,18 @@ impl VirtualRootComplex {
     ) -> Option<ArcRwLockVirtualPciConfigSpace> {
         let bdf = self.base_to_bdf.get(&base).copied()?;
         self.devs.get(&bdf).cloned()
+    }
+
+    pub fn total_msi_count(&self) -> u32 {
+        self.total_msi_count
+    }
+
+    pub fn add_msi_count(&mut self, count: u32) {
+        self.total_msi_count += count;
+    }
+
+    pub fn set_total_msi_count(&mut self, count: u32) {
+        self.total_msi_count = count;
     }
 
     pub fn get_msix_backend(&self) -> Option<Arc<RwLock<dyn MsixBackend>>> {
