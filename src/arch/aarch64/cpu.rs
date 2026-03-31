@@ -123,7 +123,9 @@ impl ArchCpu {
                 + HCR_EL2::TSC::EnableTrapEl1SmcToEl2
                 + HCR_EL2::VM::SET
                 + HCR_EL2::IMO::SET
-                + HCR_EL2::FMO::SET,
+                + HCR_EL2::FMO::SET
+                + HCR_EL2::API::SET
+                + HCR_EL2::APK::SET,
         );
     }
 
