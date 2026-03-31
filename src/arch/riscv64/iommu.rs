@@ -399,7 +399,7 @@ impl IommuHw {
         );
         self.cqt.set(0x0);
         self.cqcsr.write(IOMMU_CQCSR::CQEN::SET);
-        self.wait_cq_on();  // Poll cqcsr.cqon until it reads 1
+        self.wait_cq_on(); // Poll cqcsr.cqon until it reads 1
 
         // Program fault queue:
         // Here use static one frame for fault queue.
@@ -410,7 +410,7 @@ impl IommuHw {
         );
         self.fqh.set(0x0);
         self.fqcsr.write(IOMMU_FQCSR::FQEN::SET);
-        self.wait_fq_on();  // Poll fqcsr.fqon until it reads 1
+        self.wait_fq_on(); // Poll fqcsr.fqon until it reads 1
 
         // Do not support page-request queue.
         self.pqb.set(0x0);
@@ -533,7 +533,7 @@ impl DdtRootMemory {
 /// Command queue entry, RISC-V IOMMU Spec v1.0 Chap4.1 Command-queue
 #[repr(C)]
 struct CqEntry {
-    cmd: ReadWrite<u128>,   // TODO: split into detailed fields
+    cmd: ReadWrite<u128>, // TODO: split into detailed fields
 }
 
 /// Fault queue entry, RISC-V IOMMU Spec v1.0 Chap4.2 Fault/Event-Queue
@@ -549,8 +549,8 @@ struct FqEntry {
 struct Iommu {
     base: usize,
     ddt: DdtRootMemory, // device-directory table
-    cq: Frame, // command queue
-    fq: Frame, // fault queue
+    cq: Frame,          // command queue
+    fq: Frame,          // fault queue
 }
 
 impl Iommu {
