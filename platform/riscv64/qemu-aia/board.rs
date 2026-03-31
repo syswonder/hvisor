@@ -13,7 +13,8 @@
 //
 // Authors:
 //
-use crate::{arch::zone::HvArchZoneConfig, config::*};
+use crate::{arch::zone::HvArchZoneConfig, config::*, pci::vpci_dev::VpciDevType, pci_dev};
+
 pub const BOARD_NAME: &str = "qemu-aia";
 pub const BOARD_NCPUS: usize = 4;
 #[rustfmt::skip]
@@ -47,12 +48,12 @@ pub const ROOT_ZONE_ENTRY: u64 = 0x90000000;
 pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1) | (1 << 2);
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
-        physical_start: 0x83000000,
-        virtual_start: 0x83000000,
-        size: 0x1D000000,
+        physical_start: 0x85000000,
+        virtual_start: 0x85000000,
+        size: 0x7B000000,
     }, // ram
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
@@ -60,54 +61,12 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 9] = [
         virtual_start: 0x10000000,
         size: 0x1000,
     }, // serial
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0x30000000,
-        virtual_start: 0x30000000,
-        size: 0x10000000,
-    }, // pci
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0x10001000,
-        virtual_start: 0x10001000,
-        size: 0x1000,
-    }, // virtio
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0x10002000,
-        virtual_start: 0x10002000,
-        size: 0x1000,
-    }, // virtio
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0x10003000,
-        virtual_start: 0x10003000,
-        size: 0x1000,
-    }, // virtio
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0x10004000,
-        virtual_start: 0x10004000,
-        size: 0x1000,
-    }, // virtio
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0x10005000,
-        virtual_start: 0x10005000,
-        size: 0x1000,
-    }, // virtio
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0x10008000,
-        virtual_start: 0x10008000,
-        size: 0x1000,
-    }, // virtio
 ];
 
 pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 0x20;
-pub const HW_IRQS: [u32; 11] = [1, 2, 3, 4, 5, 8, 10, 33, 34, 35, 36];
+pub const HW_IRQS: &[u32] = &[7, 10, 33, 34];
 pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] =
-    &get_irqs_bitmap(&[1, 2, 3, 4, 5, 8, 10, 33, 34, 35, 36]); // ARCH= riscv .It doesn't matter temporarily.
+    &get_irqs_bitmap(&[10, 33]); // ARCH= riscv .It doesn't matter temporarily.
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     plic_base: 0x0,
@@ -115,3 +74,29 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     aplic_base: APLIC_S_BASE,
     aplic_size: APLIC_S_SIZE,
 };
+
+pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [HvPciConfig {
+    ecam_base: 0x30000000,
+    ecam_size: 0x10000000,
+    io_base: 0x3000000,
+    io_size: 0x10000,
+    pci_io_base: 0x0,
+    mem32_base: 0x40000000,
+    mem32_size: 0x40000000,
+    pci_mem32_base: 0x40000000,
+    mem64_base: 0x400000000,
+    mem64_size: 0x400000000,
+    pci_mem64_base: 0x400000000,
+    bus_range_begin: 0,
+    bus_range_end: 0xff,
+    domain: 0x0,
+}];
+
+pub const ROOT_ZONE_IVC_CONFIG: &[HvIvcConfig] = &[];
+
+pub const ROOT_PCI_DEVS: &[HvPciDevConfig] = &[
+    pci_dev!(0x0, 0x0, 0x0, 0x0, VpciDevType::Physical),
+    pci_dev!(0x0, 0x0, 0x1, 0x0, VpciDevType::Physical),
+    // pci_dev!(0x0, 0x0, 0x3, 0x0, VpciDevType::Physical),
+    // pci_dev!(0x0, 0x0, 0x5, 0x0, VpciDevType::StandardVdev),
+];

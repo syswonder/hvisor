@@ -319,8 +319,8 @@ impl VirtualAPLIC {
                             eiid as u32,
                         );
                         info!(
-                            "vAPLIC set target for IRQ {} to guest {}, hart {}, eiid {} -> host APLIC Guest {}",
-                            irq_id, guest_id, hart_id, eiid, GUEST_INDEX
+                            "vAPLIC set target for IRQ {} to guest {}, phys_hart {}, hart {}, eiid {} -> host APLIC Guest {}",
+                            irq_id, guest_id, phys_hart_id, hart_id, eiid, GUEST_INDEX
                         );
                         inner.vaplic_set_target(irq_id, value as u32);
                     } else {
