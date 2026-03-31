@@ -61,8 +61,8 @@ pub unsafe extern "C" fn arch_entry() -> ! {
             tlbi alle2is
 
             // per-cpu mask bits: bit0->L1(D), bit1->L2, bit2->L3.
-            adrp x9, {cache_inv_masks}             // 获取符号所在页
-            add  x9, x9, :lo12:{cache_inv_masks}   // 得到数组起始地址
+            adrp x9, {cache_inv_masks}             // Get Symbol Table Page Address
+            add  x9, x9, :lo12:{cache_inv_masks}   // Get Symbol Table Page Offset
             lsl  x10, x19, #3
             add x9, x9, x10
             ldr x9, [x9]
