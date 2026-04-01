@@ -14,9 +14,10 @@
 // Authors: Jingyu Liu <liujingyu24s@ict.ac.cn>
 //
 
+use alloc::vec::Vec;
+
 use crate::consts::PAGE_SIZE;
 use crate::memory::GuestPhysAddr;
-use crate::memory::HostPhysAddr;
 use crate::memory::MemFlags;
 use crate::memory::MemoryRegion;
 use crate::platform::__board::{IMSIC_GUEST_INDEX, IMSIC_GUEST_NUM, IMSIC_S_BASE};
@@ -33,18 +34,24 @@ use crate::zone::Zone;
  */
 
 pub fn vimsic_init(zone: &mut Zone, imsic_base: usize, guest_num: usize) {
-    let paddr = imsic_base as HostPhysAddr;
     let size = crate::memory::PAGE_SIZE;
-    zone.cpu_set.iter().for_each(|cpu_id| {
+
+    let cpu_ids: Vec<_> = zone.cpu_set().iter().collect();
+    let mut inner = zone.write();
+
+    cpu_ids.iter().for_each(|cpu_id| {
         let vcpu_id = cpu_id; // In hvisor, vcpu_id == cpu_id.
         let imsic_hpa = imsic_base + PAGE_SIZE * ((1 + guest_num) * cpu_id + IMSIC_GUEST_INDEX);
         // For VM, it couldn't see VS-files.
         let imsic_gpa = imsic_base + PAGE_SIZE * vcpu_id; // In hvisor, vcpu_id == cpu_id.
         info!(
             "Zone {} vIMSIC map hart {} imsic hpa {:#x} gpa {:#x}",
-            zone.id, cpu_id, imsic_hpa, imsic_gpa
+            zone.id(),
+            cpu_id,
+            imsic_hpa,
+            imsic_gpa
         );
-        zone.gpm.insert(MemoryRegion::new_with_offset_mapper(
+        inner.gpm_mut().insert(MemoryRegion::new_with_offset_mapper(
             imsic_gpa as GuestPhysAddr,
             imsic_hpa,
             size,

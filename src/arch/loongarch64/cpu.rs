@@ -169,7 +169,7 @@ pub fn get_target_cpu(irq: usize, zone_id: usize) -> usize {
     find_zone(zone_id)
         .unwrap()
         .read()
-        .cpu_set
+        .cpu_set()
         .first_cpu()
         .unwrap()
 }

@@ -1,0 +1,2 @@
+hvisor: loading out-of-tree module taints kernel.
+hvisor init done!!!

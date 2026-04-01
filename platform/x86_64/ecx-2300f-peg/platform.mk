@@ -42,10 +42,31 @@ $(hvisor_bin): elf boot
 	$(OBJCOPY) $(hvisor_elf) --strip-all -O binary $@
 	cp $(hvisor_elf) $(image_dir)/iso/boot
 	mkdir -p $(image_dir)/iso/boot/kernel
-	cp $(zone0_boot) $(image_dir)/iso/boot/kernel
-	cp $(zone0_setup) $(image_dir)/iso/boot/kernel
-	cp $(zone0_vmlinux) $(image_dir)/iso/boot/kernel
+
+	if [ -f $(zone0_boot) ]; then \
+		cp $(zone0_boot) $(image_dir)/iso/boot/kernel; \
+	else \
+		echo "Warning: $(zone0_boot) not found, skipping"; \
+	fi
+
+	if [ -f $(zone0_setup) ]; then \
+		cp $(zone0_setup) $(image_dir)/iso/boot/kernel; \
+	else \
+		echo "Warning: $(zone0_setup) not found, skipping"; \
+	fi
+
+	if [ -f $(zone0_vmlinux) ]; then \
+		cp $(zone0_vmlinux) $(image_dir)/iso/boot/kernel; \
+	else \
+		echo "Warning: $(zone0_vmlinux) not found, skipping"; \
+	fi
+
 	mkdir -p $(image_dir)/virtdisk
-	grub-mkrescue /usr/lib/grub/x86_64-efi -o $(image_dir)/virtdisk/hvisor.iso $(image_dir)/iso
+
+	if command -v xorriso >/dev/null 2>&1; then \
+		grub-mkrescue /usr/lib/grub/x86_64-efi -o $(image_dir)/virtdisk/hvisor.iso $(image_dir)/iso; \
+	else \
+		echo "Warning: xorriso not installed, skipping ISO creation"; \
+	fi
 
 include $(image_dir)/bootloader/boot.mk

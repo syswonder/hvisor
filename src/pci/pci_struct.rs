@@ -1525,7 +1525,7 @@ impl VirtualRootComplex {
 
     /* because the base of device may discontinuous，get device by base is simpler */
     pub fn get_device_by_base(
-        &mut self,
+        &self,
         base: PciConfigAddress,
     ) -> Option<ArcRwLockVirtualPciConfigSpace> {
         let bdf = self.base_to_bdf.get(&base).copied()?;

@@ -68,3 +68,10 @@ screen /dev/xxx (Replace xxx with the actual number.)
 ### Notes
 In the current configuration, the virtio-console backend runs inside root Linux, not in QEMU.
 Both the root zone and zone1 are assigned one virtio-pci-blk device(using wired-interupt) each.
+
+### IOMMU (draft)
+
+Please confirm qemu-system-riscv64 version >= 10.0.0, add iommu-sys=on for machine param and iommu_platform=on for devices linked behind iommu. (refer to platform.mk)
+
+Add `iommu` and `share_s2pt` features for hvisor.
+

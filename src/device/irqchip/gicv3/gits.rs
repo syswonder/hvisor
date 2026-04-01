@@ -196,7 +196,7 @@ impl Cmdq {
         self.cbaser_list[zone_id] = value;
         let gpa_base = value & 0xffffffffff000;
         unsafe {
-            let _phy_base = match this_zone().read().gpm.page_table_query(gpa_base) {
+            let _phy_base = match this_zone().read().gpm().page_table_query(gpa_base) {
                 Ok(p) => self.phy_base_list[zone_id] = p.0,
                 _ => {}
             };
@@ -311,7 +311,7 @@ impl Cmdq {
                 let phys_itt_base = unsafe {
                     this_zone()
                         .read()
-                        .gpm
+                        .gpm()
                         .page_table_query(itt_base as _)
                         .unwrap()
                         .0

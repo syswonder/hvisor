@@ -54,7 +54,7 @@ const ROOT_ZONE_UEFI_REGION_ID: usize = 0x3;
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 pub const ROOT_ZONE_CMDLINE: &str =
-    "console=tty0 console=ttyS0 earlycon=efifb earlyprintk=serial nointremap no_timer_check efi=noruntime pci=pcie_scan_all,lastbus=1 root=/dev/vda rw init=/sbin/init\0";
+    "console=tty0 console=ttyS0 earlycon=efifb earlyprintk=serial nointremap no_timer_check efi=noruntime pci=pcie_scan_all,lastbus=1 root=/dev/vda rw init=/init\0";
 //"console=ttyS0 earlyprintk=serial rdinit=/init nokaslr nointremap\0"; // noapic
 // video=vesafb
 // /lib/systemd/systemd
@@ -149,14 +149,14 @@ pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [HvPciConfig {
 }];
 
 pub const ROOT_PCI_MAX_BUS: usize = 1;
-pub const ROOT_PCI_DEVS: [HvPciDevConfig; 8] = [
+pub const ROOT_PCI_DEVS: [HvPciDevConfig; 7] = [
     pci_dev!(0x0, 0x0, 0x0, 0x0, VpciDevType::Physical), // host bridge
     pci_dev!(0x0, 0x0, 0x1, 0x0, VpciDevType::Physical), // VGA controller
     pci_dev!(0x0, 0x0, 0x2, 0x0, VpciDevType::Physical), // Ethernet controller
     pci_dev!(0x0, 0x0, 0x3, 0x0, VpciDevType::Physical), // PCI bridge
     pci_dev!(0x0, 0x0, 0x1f, 0x0, VpciDevType::Physical), // ISA bridge
     pci_dev!(0x0, 0x0, 0x1f, 0x2, VpciDevType::Physical), // SATA controller
-    pci_dev!(0x0, 0x0, 0x1f, 0x3, VpciDevType::Physical), // SMBus
+    // pci_dev!(0x0, 0x0, 0x1f, 0x3, VpciDevType::Physical), // SMBus
     pci_dev!(0x0, 0x1, 0x0, 0x0, VpciDevType::Physical), // SCSI controller
 ];
 

@@ -258,7 +258,7 @@ impl ModRM {
 }
 
 fn gpa_to_hpa(gpa: GuestPhysAddr) -> HvResult<HostPhysAddr> {
-    let (hpa, _, _) = unsafe { this_zone().read().gpm.page_table_query(gpa)? };
+    let (hpa, _, _) = unsafe { this_zone().read().gpm().page_table_query(gpa)? };
     Ok(hpa)
 }
 

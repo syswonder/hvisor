@@ -38,7 +38,7 @@ impl<'a> HyperCall<'a> {
         unsafe {
             this_zone()
                 .read()
-                .gpm
+                .gpm()
                 .page_table_query(config_addr as _)
                 .unwrap()
                 .0 as _
@@ -49,7 +49,7 @@ impl<'a> HyperCall<'a> {
         let magic_version = unsafe {
             this_zone()
                 .read()
-                .gpm
+                .gpm()
                 .page_table_query(magic_version as usize)
                 .unwrap()
                 .0 as *mut u64
@@ -73,7 +73,7 @@ impl<'a> HyperCall<'a> {
         let virtio_irq = unsafe {
             this_zone()
                 .read()
-                .gpm
+                .gpm()
                 .page_table_query(virtio_irq as usize)
                 .unwrap()
                 .0 as *mut u32

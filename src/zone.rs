@@ -18,7 +18,7 @@ use alloc::vec::Vec;
 // use psci::error::INVALID_ADDRESS;
 use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM};
 use crate::pci::pci_struct::VirtualRootComplex;
-use spin::RwLock;
+use spin::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[cfg(feature = "dwc_pcie")]
 use crate::pci::{config_accessors::dwc_atu::AtuConfig, PciConfigAddress};
@@ -34,6 +34,7 @@ use crate::error::HvResult;
 use crate::memory::addr::GuestPhysAddr;
 use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
 use core::panic;
+use core::sync::atomic::{AtomicBool, Ordering};
 
 #[cfg(feature = "dwc_pcie")]
 #[derive(Debug)]
@@ -108,36 +109,77 @@ impl VirtualAtuConfigs {
 }
 
 pub struct Zone {
-    pub name: [u8; CONFIG_NAME_MAXLEN],
-    pub id: usize,
-    pub mmio: Vec<MMIOConfig>,
-    pub cpu_num: usize,
-    pub cpu_set: CpuSet,
-    pub irq_bitmap: [u32; 1024 / 32],
-    pub gpm: MemorySet<Stage2PageTable>,
-    pub iommu_pt: Option<MemorySet<Stage2PageTable>>,
-    pub is_err: bool,
-    pub vpci_bus: VirtualRootComplex,
+    name: [u8; CONFIG_NAME_MAXLEN],
+    id: usize,
+    is_err: AtomicBool,
+    inner: RwLock<ZoneInner>,
+}
+
+pub struct ZoneInner {
+    mmio: Vec<MMIOConfig>,
+    cpu_num: usize,
+    cpu_set: CpuSet,
+    irq_bitmap: [u32; 1024 / 32],
+    gpm: MemorySet<Stage2PageTable>,
+    iommu_pt: Option<MemorySet<Stage2PageTable>>,
+    vpci_bus: VirtualRootComplex,
     #[cfg(feature = "dwc_pcie")]
-    pub atu_configs: VirtualAtuConfigs,
+    atu_configs: VirtualAtuConfigs,
 }
 
 impl Zone {
+    #[allow(dead_code)]
     pub fn new(zoneid: usize, name: &[u8]) -> Self {
         Self {
             name: name.try_into().unwrap(),
             id: zoneid,
+            is_err: AtomicBool::new(false),
+            inner: RwLock::new(ZoneInner::new()),
+        }
+    }
+
+    pub fn read(&self) -> RwLockReadGuard<'_, ZoneInner> {
+        self.inner.read()
+    }
+
+    pub fn write(&self) -> RwLockWriteGuard<'_, ZoneInner> {
+        self.inner.write()
+    }
+
+    pub fn id(&self) -> usize {
+        self.id
+    }
+
+    pub fn name(&self) -> [u8; CONFIG_NAME_MAXLEN] {
+        self.name
+    }
+
+    pub fn is_err(&self) -> bool {
+        self.is_err.load(Ordering::Acquire)
+    }
+
+    pub fn set_err(&self) {
+        self.is_err.store(true, Ordering::Release);
+    }
+
+    pub fn cpu_set(&self) -> CpuSet {
+        self.read().cpu_set()
+    }
+}
+
+impl ZoneInner {
+    pub fn new() -> Self {
+        Self {
             gpm: new_s2_memory_set(),
+            mmio: Vec::new(),
             cpu_num: 0,
             cpu_set: CpuSet::new(MAX_CPU_NUM as usize, 0),
-            mmio: Vec::new(),
             irq_bitmap: [0; 1024 / 32],
             iommu_pt: if cfg!(feature = "iommu") {
                 Some(new_s2_memory_set())
             } else {
                 None
             },
-            is_err: false,
             vpci_bus: VirtualRootComplex::new(),
             #[cfg(feature = "dwc_pcie")]
             atu_configs: VirtualAtuConfigs::new(),
@@ -217,11 +259,69 @@ impl Zone {
         let bit_pos = (irq_id % 32) as usize;
         (self.irq_bitmap[idx] & (1 << bit_pos)) != 0
     }
+
+    pub fn cpu_set(&self) -> CpuSet {
+        self.cpu_set
+    }
+
+    pub fn cpu_num(&self) -> usize {
+        self.cpu_num
+    }
+
+    pub fn set_cpu_num(&mut self, cpu_num: usize) {
+        self.cpu_num = cpu_num;
+    }
+
+    pub fn cpu_set_mut(&mut self) -> &mut CpuSet {
+        &mut self.cpu_set
+    }
+
+    pub fn irq_bitmap(&self) -> &[u32; 1024 / 32] {
+        &self.irq_bitmap
+    }
+
+    pub fn irq_bitmap_mut(&mut self) -> &mut [u32; 1024 / 32] {
+        &mut self.irq_bitmap
+    }
+
+    pub fn gpm(&self) -> &MemorySet<Stage2PageTable> {
+        &self.gpm
+    }
+
+    pub fn gpm_mut(&mut self) -> &mut MemorySet<Stage2PageTable> {
+        &mut self.gpm
+    }
+
+    pub fn iommu_pt(&self) -> Option<&MemorySet<Stage2PageTable>> {
+        self.iommu_pt.as_ref()
+    }
+
+    pub fn iommu_pt_mut(&mut self) -> Option<&mut MemorySet<Stage2PageTable>> {
+        self.iommu_pt.as_mut()
+    }
+
+    pub fn vpci_bus(&self) -> &VirtualRootComplex {
+        &self.vpci_bus
+    }
+
+    pub fn vpci_bus_mut(&mut self) -> &mut VirtualRootComplex {
+        &mut self.vpci_bus
+    }
+
+    #[cfg(feature = "dwc_pcie")]
+    pub fn atu_configs(&self) -> &VirtualAtuConfigs {
+        &self.atu_configs
+    }
+
+    #[cfg(feature = "dwc_pcie")]
+    pub fn atu_configs_mut(&mut self) -> &mut VirtualAtuConfigs {
+        &mut self.atu_configs
+    }
 }
 
-static ZONE_LIST: RwLock<Vec<Arc<RwLock<Zone>>>> = RwLock::new(vec![]);
+static ZONE_LIST: RwLock<Vec<Arc<Zone>>> = RwLock::new(vec![]);
 
-pub fn root_zone() -> Arc<RwLock<Zone>> {
+pub fn root_zone() -> Arc<Zone> {
     ZONE_LIST.read().get(0).cloned().unwrap()
 }
 
@@ -230,7 +330,7 @@ pub fn is_this_root_zone() -> bool {
 }
 
 /// Add zone to CELL_LIST
-pub fn add_zone(zone: Arc<RwLock<Zone>>) {
+pub fn add_zone(zone: Arc<Zone>) {
     ZONE_LIST.write().push(zone);
 }
 
@@ -240,17 +340,17 @@ pub fn remove_zone(zone_id: usize) {
     let (idx, _) = zone_list
         .iter()
         .enumerate()
-        .find(|(_, zone)| zone.read().id == zone_id)
+        .find(|(_, zone)| zone.id() == zone_id)
         .unwrap();
     let removed_zone = zone_list.remove(idx);
     assert_eq!(Arc::strong_count(&removed_zone), 1);
 }
 
-pub fn find_zone(zone_id: usize) -> Option<Arc<RwLock<Zone>>> {
+pub fn find_zone(zone_id: usize) -> Option<Arc<Zone>> {
     ZONE_LIST
         .read()
         .iter()
-        .find(|zone| zone.read().id == zone_id)
+        .find(|zone| zone.id() == zone_id)
         .cloned()
 }
 
@@ -259,23 +359,20 @@ pub fn all_zones_info() -> Vec<ZoneInfo> {
 
     zone_list
         .iter()
-        .map(|zone| {
-            let zone_lock = zone.read();
-            ZoneInfo {
-                zone_id: zone_lock.id as u32,
-                cpus: zone_lock.cpu_set.bitmap,
-                name: zone_lock.name.clone(),
-                is_err: zone_lock.is_err as u8,
-            }
+        .map(|zone| ZoneInfo {
+            zone_id: zone.id() as u32,
+            cpus: zone.read().cpu_set().bitmap,
+            name: zone.name(),
+            is_err: zone.is_err() as u8,
         })
         .collect()
 }
 
 pub fn this_zone_id() -> usize {
-    this_zone().read().id
+    this_zone().id()
 }
 
-pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
+pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
     // we create the new zone here
     // TODO: create Zone with cpu_set
     let zone_id = config.zone_id as usize;
@@ -288,7 +385,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
     }
 
     let mut zone = Zone::new(zone_id, &config.name);
-    zone.pt_init(config.memory_regions()).unwrap();
+    zone.pt_init(config.memory_regions())?;
     zone.mmio_init(&config.arch_config);
 
     #[cfg(feature = "pci")]
@@ -316,30 +413,29 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
 
     let mut cpu_num = 0;
     for cpu_id in config.cpus().iter() {
-        if let Some(zone) = get_cpu_data(*cpu_id as _).zone.clone() {
+        if let Some(existing_zone) = get_cpu_data(*cpu_id as _).zone.clone() {
             return hv_result_err!(
                 EBUSY,
                 format!(
                     "Failed to create zone: cpu {} already belongs to zone {}",
                     cpu_id,
-                    zone.read().id
+                    existing_zone.id()
                 )
             );
         }
-        zone.cpu_set.set_bit(*cpu_id as _);
+        zone.write().cpu_set_mut().set_bit(*cpu_id as _);
         cpu_num += 1;
     }
-    zone.cpu_num = cpu_num;
-    info!("zone cpu_set: {:#b}", zone.cpu_set.bitmap);
-    let cpu_set = zone.cpu_set;
+    zone.write().set_cpu_num(cpu_num);
+    let cpu_set = zone.read().cpu_set();
+    info!("zone cpu_set: {:#b}", cpu_set.bitmap);
 
     zone.arch_zone_pre_configuration(config)?;
     // #[cfg(target_arch = "aarch64")]
     // zone.ivc_init(config.ivc_config());
 
     #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
-    zone.iommu_pt_init(config.memory_regions(), &config.arch_config)
-        .unwrap();
+    zone.iommu_pt_init(config.memory_regions(), &config.arch_config)?;
 
     /* loongarch page table emergency */
     /* Kai: Maybe unnecessary but i can't boot vms on my 3A6000 PC without this function. */
@@ -357,6 +453,9 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
 
     zone.arch_zone_post_configuration(config)?;
 
+    // Reset the zone arch-related resources, e.g. invalid data cache
+    zone.arch_zone_reset(config)?;
+
     // Initialize the virtual interrupt controller, it needs zone.cpu_num
     zone.virqc_init(config);
 
@@ -372,7 +471,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
         }
     }
 
-    let new_zone_pointer = Arc::new(RwLock::new(zone));
+    let new_zone_pointer = Arc::new(zone);
     {
         cpu_set.iter().for_each(|cpuid| {
             let cpu_data = get_cpu_data(cpuid);
@@ -407,13 +506,10 @@ pub fn zone_error() {
         panic!("root zone has some error");
     }
     let zone = this_zone();
-    let zone_id = zone.read().id;
+    let zone_id = zone.id();
     error!("zone {} has some error, please shut down it", zone_id);
 
-    let mut zone_w = zone.write();
-    zone_w.is_err = true;
-
-    drop(zone_w);
+    zone.set_err();
     drop(zone);
 }
 
@@ -424,7 +520,7 @@ fn test_add_and_remove_zone() {
     for i in 0..zone_count {
         let u8name_array = [i as u8; CONFIG_NAME_MAXLEN];
         let zone = Zone::new(i, &u8name_array);
-        ZONE_LIST.write().push(Arc::new(RwLock::new(zone)));
+        ZONE_LIST.write().push(Arc::new(zone));
     }
     for i in 0..zone_count {
         remove_zone(i);

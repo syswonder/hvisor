@@ -14,7 +14,9 @@
 // Authors:
 //
 use crate::pci_dev;
-use crate::{arch::zone::HvArchZoneConfig, config::*, memory::GuestPhysAddr};
+use crate::{
+    arch::zone::HvArchZoneConfig, config::*, memory::GuestPhysAddr, pci::vpci_dev::VpciDevType,
+};
 
 pub const MEM_TYPE_RESERVED: u32 = 5;
 
@@ -117,7 +119,8 @@ const ROOT_ZONE_SETUP_ADDR: GuestPhysAddr = 0xa000;
 const ROOT_ZONE_VMLINUX_ENTRY_ADDR: GuestPhysAddr = 0x10_0000;
 const ROOT_ZONE_SCREEN_BASE_ADDR: GuestPhysAddr = 0x8000_0000;
 
-pub const ROOT_ZONE_IRQS: [u32; 32] = [0; 32];
+pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 0x6;
+pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[0; 32]);
 pub const ROOT_ZONE_IOAPIC_BASE: usize = 0xfec0_0000;
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     ioapic_base: ROOT_ZONE_IOAPIC_BASE,
@@ -135,6 +138,8 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
 };
 
 pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [HvPciConfig {
+    bus_range_begin: 0x0,
+    bus_range_end: 0x1f,
     ecam_base: 0xe0000000,
     ecam_size: 0x400000,
     io_base: 0x0,
@@ -146,32 +151,33 @@ pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [HvPciConfig {
     mem64_base: 0x0,
     mem64_size: 0x0,
     pci_mem64_base: 0x0,
+    domain: 0x0,
 }];
 
 pub const ROOT_PCI_MAX_BUS: usize = 3;
 pub const ROOT_PCI_DEVS: [HvPciDevConfig; 19] = [
-    pci_dev!(0x0, 0x0, 0x0), // host bridge
-    pci_dev!(0x0, 0x1, 0x0), // PCI bridge
-    pci_dev!(0x0, 0x1, 0x1), // PCI bridge
-    // pci_dev!(0x0, 0x2, 0x0),  // display controller
-    pci_dev!(0x0, 0x8, 0x0),  // system peripheral
-    pci_dev!(0x0, 0x12, 0x0), // signal processing controller
-    pci_dev!(0x0, 0x14, 0x0), // USB controller
-    pci_dev!(0x0, 0x14, 0x2), // RAM memory
-    pci_dev!(0x0, 0x14, 0x5), // SD host controller
-    pci_dev!(0x0, 0x15, 0x0), // serial bus controller
-    pci_dev!(0x0, 0x16, 0x0), // communication controller
-    pci_dev!(0x0, 0x16, 0x3), // serial controller
-    pci_dev!(0x0, 0x17, 0x0), // SATA controller
-    pci_dev!(0x0, 0x1d, 0x0), // PCI bridge
-    // pci_dev!(0x0, 0x1f, 0x0), // ISA bridge
-    pci_dev!(0x0, 0x1f, 0x3), // audio device
-    pci_dev!(0x0, 0x1f, 0x4), // SMBus
-    pci_dev!(0x0, 0x1f, 0x5), // serial bus controller
-    // pci_dev!(0x0, 0x1f, 0x6), // ethernet controller
-    pci_dev!(0x2, 0x0, 0x0), // VGA controller
-    pci_dev!(0x2, 0x0, 0x1), // audio device
-    pci_dev!(0x3, 0x0, 0x0), // ethernet controller
+    pci_dev!(0x0, 0x0, 0x0, 0x0, VpciDevType::Physical), // host bridge
+    pci_dev!(0x0, 0x0, 0x1, 0x0, VpciDevType::Physical), // PCI bridge
+    pci_dev!(0x0, 0x0, 0x1, 0x1, VpciDevType::Physical), // PCI bridge
+    // pci_dev!(0x0, 0x0, 0x2, 0x0, VpciDevType::Physical),  // display controller
+    pci_dev!(0x0, 0x0, 0x8, 0x0, VpciDevType::Physical), // system peripheral
+    pci_dev!(0x0, 0x0, 0x12, 0x0, VpciDevType::Physical), // signal processing controller
+    pci_dev!(0x0, 0x0, 0x14, 0x0, VpciDevType::Physical), // USB controller
+    pci_dev!(0x0, 0x0, 0x14, 0x2, VpciDevType::Physical), // RAM memory
+    pci_dev!(0x0, 0x0, 0x14, 0x5, VpciDevType::Physical), // SD host controller
+    pci_dev!(0x0, 0x0, 0x15, 0x0, VpciDevType::Physical), // serial bus controller
+    pci_dev!(0x0, 0x0, 0x16, 0x0, VpciDevType::Physical), // communication controller
+    pci_dev!(0x0, 0x0, 0x16, 0x3, VpciDevType::Physical), // serial controller
+    pci_dev!(0x0, 0x0, 0x17, 0x0, VpciDevType::Physical), // SATA controller
+    pci_dev!(0x0, 0x0, 0x1d, 0x0, VpciDevType::Physical), // PCI bridge
+    // pci_dev!(0x0, 0x0, 0x1f, 0x0, VpciDevType::Physical), // ISA bridge
+    pci_dev!(0x0, 0x0, 0x1f, 0x3, VpciDevType::Physical), // audio device
+    pci_dev!(0x0, 0x0, 0x1f, 0x4, VpciDevType::Physical), // SMBus
+    pci_dev!(0x0, 0x0, 0x1f, 0x5, VpciDevType::Physical), // serial bus controller
+    // pci_dev!(0x0, 0x0, 0x1f, 0x6, VpciDevType::Physical), // ethernet controller
+    pci_dev!(0x0, 0x2, 0x0, 0x0, VpciDevType::Physical), // VGA controller
+    pci_dev!(0x0, 0x2, 0x0, 0x1, VpciDevType::Physical), // audio device
+    pci_dev!(0x0, 0x3, 0x0, 0x0, VpciDevType::Physical), // ethernet controller
 ];
 
 #[cfg(all(feature = "graphics"))]

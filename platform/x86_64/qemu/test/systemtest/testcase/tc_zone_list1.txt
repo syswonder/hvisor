@@ -1,0 +1,2 @@
+|     zone_id     |       cpus        |      name       |     status |
+|               0 |              0, 1 |      root-linux |    running |

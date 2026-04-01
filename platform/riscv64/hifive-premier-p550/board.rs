@@ -36,6 +36,9 @@ pub const NUM_CONTEXTS_PER_HART: usize = 2; // M-mode、S-mode
 pub const SIFIVE_CCACHE_BASE: usize = 0x2010000; // SiFive composable cache controller
 pub const SIFIVE_CCACHE_SIZE: usize = 0x4000; // 16KB
 
+pub const IOMMU_SYS_BASE: usize = 0x0;
+pub const IOMMU_SYS_SIZE: usize = 0x0;
+
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x8f000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x90000000;
 pub const ROOT_ZONE_ENTRY: u64 = 0x90000000;

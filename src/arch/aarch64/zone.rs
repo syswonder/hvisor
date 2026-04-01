@@ -15,16 +15,18 @@
 //
 use core::panic;
 
+use super::cache::invalidate_dcache_range;
 use crate::{
     config::*,
     device::virtio_trampoline::mmio_virtio_handler,
     error::HvResult,
-    memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion},
+    memory::{addr::phys_to_virt, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion},
     zone::Zone,
 };
 
 impl Zone {
     pub fn pt_init(&mut self, mem_regions: &[HvConfigMemoryRegion]) -> HvResult {
+        let mut inner = self.write();
         // The first memory region is used to map the guest physical memory.
 
         for mem_region in mem_regions.iter() {
@@ -34,15 +36,17 @@ impl Zone {
             }
             match mem_region.mem_type {
                 MEM_TYPE_RAM | MEM_TYPE_IO => {
-                    self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-                        mem_region.virtual_start as GuestPhysAddr,
-                        mem_region.physical_start as HostPhysAddr,
-                        mem_region.size as _,
-                        flags,
-                    ))?
+                    inner
+                        .gpm_mut()
+                        .insert(MemoryRegion::new_with_offset_mapper(
+                            mem_region.virtual_start as GuestPhysAddr,
+                            mem_region.physical_start as HostPhysAddr,
+                            mem_region.size as _,
+                            flags,
+                        ))?
                 }
                 MEM_TYPE_VIRTIO => {
-                    self.mmio_region_register(
+                    inner.mmio_region_register(
                         mem_region.physical_start as _,
                         mem_region.size as _,
                         mmio_virtio_handler,
@@ -50,13 +54,23 @@ impl Zone {
                     );
                 }
                 _ => {
-                    // hvisor-tool will check memory type. So only root linux can reach here.
-                    panic!("Unsupported memory type: {}", mem_region.mem_type)
+                    // hvisor-tool should check memory type in advance.
+                    if self.id() == 0 {
+                        panic!("Unsupported memory type: {}", mem_region.mem_type);
+                    }
+                    return hv_result_err!(
+                        EINVAL,
+                        format!(
+                            "zone {} has unsupported memory type: {}",
+                            self.id(),
+                            mem_region.mem_type
+                        )
+                    );
                 }
             }
         }
 
-        info!("VM stage 2 memory set: {:#x?}", self.gpm);
+        info!("VM stage 2 memory set: {:#x?}", inner.gpm());
         Ok(())
     }
 
@@ -65,10 +79,11 @@ impl Zone {
         mem_regions: &[HvConfigMemoryRegion],
         hv_config: &HvArchZoneConfig,
     ) -> HvResult {
+        let mut inner = self.write();
         // Create a new stage 2 page table for iommu.
         // Only map the memory regions that are possible to be accessed by devices as DMA buffer.
 
-        let pt = self.iommu_pt.as_mut().unwrap();
+        let pt = inner.iommu_pt_mut().unwrap();
         let flags = MemFlags::READ | MemFlags::WRITE;
         for mem_region in mem_regions.iter() {
             match mem_region.mem_type {
@@ -113,11 +128,38 @@ impl Zone {
     }
 
     pub fn arch_zone_pre_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
-        self.ivc_init(config.ivc_config());
-        Ok(())
+        self.ivc_init(config.ivc_config())
     }
 
     pub fn arch_zone_post_configuration(&mut self, _config: &HvZoneConfig) -> HvResult {
+        Ok(())
+    }
+
+    pub fn arch_zone_reset(&mut self, _config: &HvZoneConfig) -> HvResult {
+        // This operation serves as an insurance to ensure that
+        //      there is no relevant d-cache line in the cache;
+        //      since the VA has the inner-shareable attribute,
+        //      the cores within the inner-shareable domain will
+        //      be affected by the broadcast invalidation.
+        unsafe {
+            // Get cache line size from CTR_EL0[16:19] (min line size, in words of 4 bytes)
+            let ctr_el0: u64;
+            core::arch::asm!("mrs {0}, ctr_el0", out(reg) ctr_el0, options(nostack, preserves_flags));
+            let dcache_line_size = (1 << ((ctr_el0 >> 16 & 0xF) as usize)) * 4;
+            let inner = self.read();
+            inner.gpm().for_each_region(|region| {
+                // Invalidate all RAM regions of the guest
+                if !region.flags.contains(MemFlags::IO) { // TODO: need to enrich the types and exercise more precise control
+                    // Calculate the physical start address of the region
+                    let phys_start = region.mapper.map_fn(region.start);
+                    // Map phys_start to hvisor virtual address
+                    let hva_start = phys_to_virt(phys_start);
+                    info!("Invalidate Guest related cache, region.start: {:#x}, region.size: {:#x}, phys_start: {:#x}, hva_start: {:#x}", region.start, region.size, phys_start, hva_start);
+                    // D-cache invalid operation will broadcast to all cores, just do it once. There is no need to do it on each core.
+                    invalidate_dcache_range(hva_start, region.size, dcache_line_size);
+                }
+            });
+        }
         Ok(())
     }
 }

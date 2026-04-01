@@ -14,7 +14,7 @@
 // Authors:
 //
 use alloc::sync::Arc;
-use spin::{Mutex, RwLock};
+use spin::Mutex;
 
 use crate::arch::cpu::{store_cpu_pointer_to_reg, this_cpu_id, ArchCpu};
 use crate::consts::{INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
@@ -32,7 +32,7 @@ pub struct PerCpu {
     pub cpu_on_entry: usize,
     pub dtb_ipa: usize,
     pub arch_cpu: ArchCpu,
-    pub zone: Option<Arc<RwLock<Zone>>>,
+    pub zone: Option<Arc<Zone>>,
     pub ctrl_lock: Mutex<()>,
     pub boot_cpu: bool,
     // percpu stack
@@ -84,7 +84,7 @@ impl PerCpu {
 
     pub fn activate_gpm(&self) {
         unsafe {
-            self.zone.clone().unwrap().read().gpm.activate();
+            self.zone.clone().unwrap().read().gpm().activate();
         }
     }
 }
@@ -100,7 +100,7 @@ pub fn this_cpu_data<'a>() -> &'a mut PerCpu {
 }
 
 #[allow(unused)]
-pub fn this_zone() -> Arc<RwLock<Zone>> {
+pub fn this_zone() -> Arc<Zone> {
     this_cpu_data().zone.clone().unwrap()
 }
 

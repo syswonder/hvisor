@@ -480,7 +480,8 @@ pub fn percpu_init() {
 impl Zone {
     pub fn arch_irqchip_reset(&self) {
         let gicd_base = host_gicd_base();
-        for (idx, &mask) in self.irq_bitmap.iter().enumerate() {
+        let zone = self.read();
+        for (idx, &mask) in zone.irq_bitmap().iter().enumerate() {
             if idx == 0 {
                 continue;
             }
@@ -490,7 +491,7 @@ impl Zone {
             }
         }
         if host_gits_size() != 0 {
-            gits_reset(self.id);
+            gits_reset(self.id());
         }
     }
 }

@@ -79,7 +79,7 @@ jobs:
   # there is no actual running in this job
   build:
     name: build
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
       matrix:
@@ -88,57 +88,78 @@ jobs:
           - arch: aarch64
             board: "qemu-gicv3"
             rustc_target: aarch64-unknown-none
+            runs-on: ubuntu-latest
           - arch: aarch64
             board: "qemu-gicv2"
             rustc_target: aarch64-unknown-none
+            runs-on: ubuntu-latest
           - arch: aarch64
             board: "zcu102"
             rustc_target: aarch64-unknown-none
+            runs-on: ubuntu-latest
           - arch: aarch64
             board: "imx8mp"
             rustc_target: aarch64-unknown-none
+            runs-on: ubuntu-latest
           - arch: aarch64
             board: "rk3568"
             rustc_target: aarch64-unknown-none
+            runs-on: ubuntu-latest
           - arch: aarch64
             board: "rk3588"
             rustc_target: aarch64-unknown-none
+            runs-on: ubuntu-latest
           - arch: aarch64
             board: "ok6254-c"
             rustc_target: aarch64-unknown-none
+            runs-on: ubuntu-latest
           - arch: aarch64
             board: "phytium-pi"
             rustc_target: aarch64-unknown-none
+            runs-on: ubuntu-latest
           # riscv64
           - arch: riscv64
             board: "qemu-aia"
             rustc_target: riscv64gc-unknown-none-elf
+            runs-on: ubuntu-latest
           - arch: riscv64
             board: "qemu-plic"
             rustc_target: riscv64gc-unknown-none-elf
+            runs-on: ubuntu-latest
           - arch: riscv64
             board: "hifive-premier-p550"
             rustc_target: riscv64gc-unknown-none-elf
+            runs-on: ubuntu-latest
           - arch: riscv64
             board: "megrez"
             rustc_target: riscv64gc-unknown-none-elf
+            runs-on: ubuntu-latest
           - arch: riscv64
             board: "ur-dp1000"
             rustc_target: riscv64gc-unknown-none-elf
+            runs-on: ubuntu-latest
           # loongarch64
           - arch: loongarch64
             board: "ls3a5000"
             rustc_target: loongarch64-unknown-none
+            runs-on: ubuntu-latest
           - arch: loongarch64
             board: "ls3a6000"
             rustc_target: loongarch64-unknown-none
-        #   # x86_64
-        #   - arch: x86_64
-        #     board: "qemu"
-        #     rustc_target: x86_64-unknown-none
-        #   - arch: x86_64
-        #     board: "nuc14mnk"
-        #     rustc_target: x86_64-unknown-none
+            runs-on: ubuntu-latest
+          # x86_64
+          - arch: x86_64
+            board: "qemu"
+            rustc_target: x86_64-unknown-none
+            runs-on: ubuntu-latest
+          - arch: x86_64
+            board: "nuc14mnk"
+            rustc_target: x86_64-unknown-none
+            runs-on: ubuntu-latest
+          - arch: x86_64
+            board: "ecx-2300f-peg"
+            rustc_target: x86_64-unknown-none
+            runs-on: ubuntu-latest
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -166,7 +187,7 @@ jobs:
   systemtest:
     # if: false # we need to update corresponding scripts for the new board abstraction
     name: systemtest
-    runs-on: ubuntu-22.04
+    runs-on: ${{ matrix.runs-on }}
     strategy:
       fail-fast: false
       matrix:
@@ -175,10 +196,20 @@ jobs:
           - arch: aarch64
             rustc_target: aarch64-unknown-none
             board: "qemu-gicv3"
+            runs-on: ubuntu-22.04
+            qemu_version: "9.0.2"
           # riscv64
           - arch: riscv64
             rustc_target: riscv64gc-unknown-none-elf
             board: "qemu-plic"
+            runs-on: ubuntu-22.04
+            qemu_version: "9.0.2"
+          # x86_64
+          - arch: x86_64
+            rustc_target: x86_64-unknown-none
+            board: "qemu"
+            runs-on: ["self-hosted", "X64"]
+            qemu_version: "9.2.3"
           # Because other features need to be customized scripts
     steps:
       - name: Checkout Repository
@@ -190,9 +221,10 @@ jobs:
           components: rust-src
 
       - name: Setup QEMU from Source
+        if: matrix.arch != 'x86_64'
         uses: ./.github/actions/setup-qemu
         with:
-          qemu-version: '9.0.2'
+          qemu-version: ${{ matrix.qemu_version }}
           install-path: '/opt/qemu'
 
       - name: Setup ARM aarch64-none-linux-gnu
@@ -209,18 +241,26 @@ jobs:
           version: '13.2.0' 
           install-path: '/opt/riscv64-unknown-linux-gnu'
 
-
       - name: Install Dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget expect device-tree-compiler p7zip-full gcc-aarch64-linux-gnu gcc-riscv64-linux-gnu
           cargo install --version 0.3.0 --locked cargo-binutils
+      
+      - name: x86_64 Dependencies
+        if: matrix.arch == 'x86_64'
+        run: |
+          sudo apt-get install -y qemu-system-x86-64 grub-common xorriso grub-efi-amd64 mtools ovmf
+          sudo chmod 777 /dev/kvm
+          sed -i 's/ecam_base:.*,/ecam_base: 0xb0000000,/' ./platform/x86_64/qemu/board.rs
+
       - name: Set up environment variables
         run: |
           echo "ARCH=${{ matrix.arch }}" >> $GITHUB_ENV
           echo "BOARD=${{ matrix.board }}" >> $GITHUB_ENV
       - name: Run System Test
-        run: make stest
+        run: |
+          make stest
 
   license-checker:
     name: license-checker

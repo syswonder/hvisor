@@ -30,7 +30,7 @@ impl<'a> HyperCall<'a> {
         // ipa->hpa->hva
         let hpa = unsafe {
             zone.read()
-                .gpm
+                .gpm()
                 .page_table_query(ivc_info_ipa as _)
                 .unwrap()
                 .0

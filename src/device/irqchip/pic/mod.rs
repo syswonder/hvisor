@@ -144,6 +144,6 @@ pub fn primary_init_late() {}
 
 impl Zone {
     pub fn arch_irqchip_reset(&self) {
-        iommu::clear_dma_translation_tables(self.id);
+        iommu::clear_dma_translation_tables(self.id());
     }
 }

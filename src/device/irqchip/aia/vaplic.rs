@@ -302,7 +302,7 @@ impl VirtualAPLIC {
                             .as_ref()
                             .unwrap()
                             .read()
-                            .cpu_set
+                            .cpu_set()
                             .first_cpu()
                             .unwrap();
                     let guest_id = (value >> 12) & 0x3f;

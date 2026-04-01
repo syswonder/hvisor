@@ -68,6 +68,13 @@ deploy_artifacts() {
 
 }
 
+umount_rootfs() {
+    echo "=== Umounting rootfs ==="
+    if mountpoint -q "${ROOTFS_DIR}"; then
+        sudo umount "${ROOTFS_DIR}"
+    fi
+}
+
 # ========================
 # Main Execution Flow
 # ========================
@@ -77,6 +84,7 @@ deploy_artifacts() {
     # Setup environment
     mount_rootfs
     prepare_sources
+    trap umount_rootfs EXIT TERM
     
     # Build process
     if ! build_hvisor_tool; then
@@ -87,7 +95,4 @@ deploy_artifacts() {
     # Deployment
     deploy_artifacts
 
-    # Cleanup
-    echo "=== Unmounting rootfs ==="
-    sudo umount "${ROOTFS_DIR}"
 ) || exit 1

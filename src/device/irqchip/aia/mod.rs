@@ -82,7 +82,6 @@ pub fn vaplic_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
         .zone
         .as_ref()
         .unwrap()
-        .read()
         .get_vaplic()
         .vaplic_emul_access(mmio.address, mmio.size, mmio.value, mmio.is_write);
     if !mmio.is_write {
@@ -104,7 +103,6 @@ pub fn inject_irq(irq: usize, is_hardware: bool) {
         .zone
         .as_ref()
         .unwrap()
-        .read()
         .get_vaplic()
         .vaplic_get_target(irq);
     let mut hart = (target >> 18) & 0x3FFF;
@@ -117,7 +115,7 @@ pub fn inject_irq(irq: usize, is_hardware: bool) {
             .as_ref()
             .unwrap()
             .read()
-            .cpu_set
+            .cpu_set()
             .first_cpu()
             .unwrap() as u32;
     imsic_trigger(hart, IMSIC_GUEST_INDEX as u32, eiid);
@@ -141,26 +139,29 @@ impl Zone {
         // Create a new VirtualAPLIC for this Zone.
         unsafe {
             if let Some(map) = &mut VAPLIC_MAP {
-                if map.contains_key(&self.id) {
-                    panic!("VirtualAPLIC for Zone {} already exists!", self.id);
+                if map.contains_key(&self.id()) {
+                    panic!("VirtualAPLIC for Zone {} already exists!", self.id());
                 }
                 let vaplic = vaplic::VirtualAPLIC::new(
                     config.arch_config.aplic_base,
                     BOARD_APLIC_INTERRUPTS_NUM,
                 );
                 // Insert into Map <zone_id, vplic>
-                let _ = map.insert(self.id, vaplic);
+                let _ = map.insert(self.id(), vaplic);
             } else {
                 panic!("VAPLIC_MAP is not initialized!");
             }
         }
-        info!("VirtualAPLIC for Zone {} initialized successfully", self.id);
+        info!(
+            "VirtualAPLIC for Zone {} initialized successfully",
+            self.id()
+        );
         print_keys();
     }
 
     /// Initial the virtual IMSIC related to thiz Zone.
     pub fn vimsic_init(&mut self, config: &HvZoneConfig) {
-        info!("Zone {} vIMSIC init", self.id);
+        info!("Zone {} vIMSIC init", self.id());
         vimsic::vimsic_init(self, IMSIC_S_BASE, IMSIC_GUEST_NUM);
     }
 
@@ -169,7 +170,7 @@ impl Zone {
             VAPLIC_MAP
                 .as_ref()
                 .expect("VAPLIC_MAP is not initialized!")
-                .get(&self.id)
+                .get(&self.id())
                 .expect("VirtualAPLIC for this Zone does not exist!")
         }
     }
@@ -179,7 +180,8 @@ impl Zone {
         // This func will only be called by one root zone's cpu.
         let host_aplic = host_aplic();
         let vaplic = self.get_vaplic();
-        for (index, &word) in self.irq_bitmap.iter().enumerate() {
+        let zone_r = self.read();
+        for (index, &word) in zone_r.irq_bitmap().iter().enumerate() {
             for bit_position in 0..32 {
                 if word & (1 << bit_position) != 0 {
                     let irq_id = index * 32 + bit_position;
@@ -195,7 +197,7 @@ impl Zone {
             }
         }
 
-        self.cpu_set.iter().for_each(|cpuid| {
+        self.cpu_set().iter().for_each(|cpuid| {
             // Clear the events related to this cpu.
             info!("Clear events related to cpu {}", cpuid);
             crate::event::clear_events(cpuid);
@@ -203,7 +205,7 @@ impl Zone {
 
         unsafe {
             if let Some(map) = &mut VAPLIC_MAP {
-                map.remove(&self.id);
+                map.remove(&self.id());
             } else {
                 panic!("VAPLIC_MAP is not initialized!");
             }
@@ -211,14 +213,9 @@ impl Zone {
         print_keys();
     }
 
-    fn insert_irq_to_bitmap(&mut self, irq: u32) {
-        let irq_index = irq / 32;
-        let irq_bit = irq % 32;
-        self.irq_bitmap[irq_index as usize] |= 1 << irq_bit;
-    }
-
     /// irq_bitmap_init, and set these irqs' hw bit in vplic to true.
     pub fn irq_bitmap_init(&mut self, irqs_bitmap: &[BitmapWord]) {
+        let mut zone_w = self.write();
         // insert to zone.irq_bitmap
         for i in 0..irqs_bitmap.len() {
             let word = irqs_bitmap[i];
@@ -232,18 +229,21 @@ impl Zone {
                         self.get_vaplic().vaplic_set_hw(irq_id as usize, true);
                         info!("Set irq {} to hardware interrupt", irq_id);
                     }
-                    self.insert_irq_to_bitmap(irq_id);
+                    let irq_index = irq_id / 32;
+                    let irq_bit = irq_id % 32;
+                    zone_w.irq_bitmap_mut()[irq_index as usize] |= 1 << irq_bit;
                 }
             }
         }
         // print irq_bitmap
-        for (index, &word) in self.irq_bitmap.iter().enumerate() {
+        for (index, &word) in zone_w.irq_bitmap().iter().enumerate() {
             for bit_position in 0..32 {
                 if word & (1 << bit_position) != 0 {
                     let interrupt_number = index * 32 + bit_position;
                     info!(
                         "Found interrupt in Zone {} irq_bitmap: {}",
-                        self.id, interrupt_number
+                        self.id(),
+                        interrupt_number
                     );
                 }
             }
@@ -254,6 +254,7 @@ impl Zone {
         if arch.aplic_base == 0 {
             panic!("vplic_mmio_init: plic_base is null");
         }
-        self.mmio_region_register(arch.aplic_base, arch.aplic_size, vaplic_handler, 0);
+        self.write()
+            .mmio_region_register(arch.aplic_base, arch.aplic_size, vaplic_handler, 0);
     }
 }

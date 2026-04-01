@@ -10,7 +10,7 @@ zone0_dtb    := $(image_dir)/dts/zone0.dtb
 # zone1_kernel := $(image_dir)/kernel/Image
 # zone1_dtb    := $(image_dir)/devicetree/linux.dtb
 
-QEMU_ARGS := -machine virt,aclint=on
+QEMU_ARGS := -machine virt,aclint=on # ,iommu-sys=on # -d trace:*iommu*
 QEMU_ARGS += -bios default
 QEMU_ARGS += -cpu rv64
 QEMU_ARGS += -smp 4
@@ -25,11 +25,11 @@ QEMU_ARGS += -device loader,file="$(zone0_dtb)",addr=0x8f000000,force-raw=on
 
 QEMU_ARGS += -drive if=none,file=$(FSIMG1),id=hd0,format=raw
 # QEMU_ARGS += -device virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.7
-QEMU_ARGS += -device virtio-blk-pci,drive=hd0,disable-legacy=on,disable-modern=off,addr=01.0
+QEMU_ARGS += -device virtio-blk-pci,drive=hd0,disable-legacy=on,disable-modern=off,addr=01.0 # ,iommu_platform=on
 QEMU_ARGS += -device virtio-serial-device,bus=virtio-mmio-bus.6 -chardev pty,id=X10007000 -device virtconsole,chardev=X10007000 -S
 QEMU_ARGS += -drive if=none,file=$(FSIMG2),id=hd1,format=raw
 # QEMU_ARGS += -device virtio-blk-device,drive=hd1,bus=virtio-mmio-bus.5
-QEMU_ARGS += -device virtio-blk-pci,drive=hd1,disable-legacy=on,disable-modern=off,addr=02.0
+QEMU_ARGS += -device virtio-blk-pci,drive=hd1,disable-legacy=on,disable-modern=off,addr=02.0 #,iommu_platform=on
 # -------------------------------------------------------------------
 
 # QEMU_ARGS := -machine virt

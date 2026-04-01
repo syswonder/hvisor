@@ -97,13 +97,14 @@ pub fn virtual_hsp_sp_top_csr_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvR
 impl Zone {
     /// Initialize syscon MMIO region.
     pub fn virtual_syscon_mmio_init(&mut self) {
-        self.mmio_region_register(
+        let mut inner = self.write();
+        inner.mmio_region_register(
             EIC7700_SYSCRG_BASE,
             EIC7700_SYSCRG_SIZE,
             virtual_syscrg_handler,
             0,
         );
-        self.mmio_region_register(
+        inner.mmio_region_register(
             EIC7700_HSP_SP_TOP_CSR_BASE,
             EIC7700_HSP_SP_TOP_CSR_SIZE,
             virtual_hsp_sp_top_csr_handler,
