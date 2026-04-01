@@ -48,12 +48,15 @@ use crate::pci::{
 use crate::pci::{mem_alloc::BaseAllocator, pci_struct::RootComplex};
 
 #[cfg(feature = "ecam_pcie")]
-use crate::pci::pci_handler::mmio_vpci_handler;
+use crate::pci::{config_accessors::ecam::EcamConfigAccessor, pci_handler::mmio_vpci_handler};
+
 #[cfg(feature = "dwc_pcie")]
 use crate::{
     memory::mmio_generic_handler,
     pci::{
-        config_accessors::{dwc::DwcConfigRegionBackend, dwc_atu::AtuConfig, PciRegionMmio},
+        config_accessors::{
+            dwc::DwcConfigAccessor, dwc::DwcConfigRegionBackend, dwc_atu::AtuConfig, PciRegionMmio,
+        },
         pci_handler::{mmio_dwc_cfg_handler, mmio_dwc_io_handler, mmio_vpci_handler_dbi},
         PciConfigAddress,
     },
@@ -61,7 +64,9 @@ use crate::{
 };
 
 #[cfg(feature = "loongarch64_pcie")]
-use crate::pci::pci_handler::mmio_vpci_direct_handler;
+use crate::pci::{
+    config_accessors::loongarch64::LoongArchConfigAccessor, pci_handler::mmio_vpci_direct_handler,
+};
 
 pub static GLOBAL_PCIE_LIST: Lazy<Mutex<BTreeMap<Bdf, ArcRwLockVirtualPciConfigSpace>>> =
     Lazy::new(|| {
@@ -189,6 +194,46 @@ impl Zone {
             let target_domain = target_pci_config.domain;
             let bus_range_begin = target_pci_config.bus_range_begin as u8;
 
+            // Create accessor for VirtualRootComplex, similar to RootComplex
+            #[cfg(feature = "dwc_pcie")]
+            {
+                use alloc::sync::Arc;
+                let atu_config = platform::ROOT_DWC_ATU_CONFIG
+                    .iter()
+                    .find(|atu_cfg| atu_cfg.ecam_base == ecam_base);
+
+                match atu_config {
+                    Some(cfg) => {
+                        let root_bus = bus_range_begin;
+                        let accessor = Arc::new(DwcConfigAccessor::new(cfg, root_bus));
+                        inner.vpci_bus_mut().set_accessor(accessor);
+                    }
+                    None => {
+                        warn!("No ATU config found for ecam_base 0x{:x}", ecam_base);
+                        continue;
+                    }
+                }
+            }
+
+            #[cfg(feature = "loongarch64_pcie")]
+            {
+                use alloc::sync::Arc;
+                let root_bus = bus_range_begin;
+                let accessor = Arc::new(LoongArchConfigAccessor::new(
+                    ecam_base,
+                    target_pci_config.ecam_size,
+                    root_bus,
+                ));
+                inner.vpci_bus_mut().set_accessor(accessor);
+            }
+
+            #[cfg(feature = "ecam_pcie")]
+            {
+                use alloc::sync::Arc;
+                let accessor = Arc::new(EcamConfigAccessor::new(ecam_base));
+                inner.vpci_bus_mut().set_accessor(accessor);
+            }
+
             let mut filtered_devices: alloc::vec::Vec<HvPciDevConfig> = alloc::vec::Vec::new();
             for i in 0..num_pci_devs {
                 let dev_config = alloc_pci_devs[i as usize];
@@ -212,6 +257,7 @@ impl Zone {
             let mut vbus_pre = bus_range_begin;
             let mut bus_pre = bus_range_begin;
             let mut device_pre = 0u8;
+            let mut vdevice_pre = 0u8;
 
             /*
              * To allow Linux to successfully recognize the devices we add, hvisor needs
@@ -229,32 +275,49 @@ impl Zone {
              */
             for dev_config in &filtered_devices {
                 let bdf = Bdf::new_from_config(*dev_config);
-                let bus = bdf.bus();
-                let device = bdf.device();
-                let function = bdf.function();
+                // let bus = bdf.bus();
+                // let device = bdf.device();
+                // let function = bdf.function();
 
-                /*
-                 * vfunction = if (bus != bus_pre || device != device_pre) && function != 0
-                 * In practice, remapping is performed only for new devices whose function is not 0;
-                 * however, the check for function != 0 does not affect the final result.
-                 */
-                let vfunction = if bus != bus_pre || device != device_pre {
-                    0
-                } else {
-                    function
-                };
+                // /*
+                //  * vfunction = if (bus != bus_pre || device != device_pre) && function != 0
+                //  * In practice, remapping is performed only for new devices whose function is not 0;
+                //  * however, the check for function != 0 does not affect the final result.
+                //  */
+                // let vfunction = if bus != bus_pre || device != device_pre {
+                //     0
+                // } else {
+                //     function
+                // };
 
-                let vbus = if bus > bus_pre {
-                    vbus_pre += 1;
-                    vbus_pre
-                } else {
-                    vbus_pre
-                };
+                // let vbus = if bus > bus_pre {
+                //     vbus_pre += 1;
+                //     vbus_pre
+                // } else {
+                //     vbus_pre
+                // };
 
-                let vbdf = Bdf::new(bdf.domain(), vbus, device, vfunction);
+                // // Remap device number to be contiguous, starting from 0
+                // let vdevice = if bus != bus_pre || device != device_pre {
+                //     // New bus or new device, increment device counter
+                //     if bus != bus_pre {
+                //         vdevice_pre = 0;
+                //     } else {
+                //         vdevice_pre += 1;
+                //     }
+                //     vdevice_pre
+                // } else {
+                //     // Same bus and device, keep the same virtual device number
+                //     vdevice_pre
+                // };
 
-                device_pre = device;
-                bus_pre = bus;
+                // let vbdf = Bdf::new(bdf.domain(), vbus, vdevice, vfunction);
+
+                // device_pre = device;
+                // bus_pre = bus;
+
+                // TODO: adjust vbdf will cause line interrupt injecet error, so remove it temporarily
+                let vbdf = bdf;
 
                 info!("set bdf {:#?} to vbdf {:#?}", bdf, vbdf);
 
@@ -285,14 +348,23 @@ impl Zone {
                             config_value.get_class().0 == 0x6
                         })
                     {
-                        let mut vdev = dev.read().clone();
+                        let mut vdev = dev.read().config_space.clone();
                         vdev.set_vbdf(vbdf);
                         inner.vpci_bus_mut().insert(vbdf, vdev);
                     } else {
-                        let vdev = guard.remove(&bdf).unwrap();
-                        let mut vdev_inner = vdev.read().clone();
-                        vdev_inner.set_vbdf(vbdf);
-                        inner.vpci_bus_mut().insert(vbdf, vdev_inner);
+                        // Check if device is already allocated to another zone
+                        if dev.get_zone_id().is_none() {
+                            dev.set_zone_id(Some(_zone_id as u32));
+                            let mut vdev_inner = dev.read().config_space.clone();
+                            vdev_inner.set_vbdf(vbdf);
+                            inner.vpci_bus_mut().insert(vbdf, vdev_inner);
+                        } else {
+                            warn!(
+                                "Device {:#?} is already allocated to zone {:?}",
+                                bdf,
+                                dev.get_zone_id()
+                            );
+                        }
                     }
                 } else {
                     // warn!("can not find dev {:#?}", bdf);

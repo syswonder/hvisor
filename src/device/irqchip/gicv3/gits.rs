@@ -20,7 +20,7 @@ use spin::{mutex::Mutex, Once, RwLock};
 
 use crate::{
     consts::MAX_ZONE_NUM, cpu_data::this_zone, device::irqchip::gicv3::gicr::enable_one_lpi,
-    memory::Frame,
+    memory::Frame, pci::pci_struct::Bdf,
 };
 
 use super::host_gits_base;
@@ -44,6 +44,18 @@ pub const CMDQ_PAGE_SIZE: usize = 0x1000; // 4KB
 pub const CMDQ_PAGES_NUM: usize = 16; // 16 pages, 64KB
 pub const PER_CMD_BYTES: usize = 0x20;
 pub const PER_CMD_QWORD: usize = PER_CMD_BYTES >> 3;
+
+pub const ITS_CMD_MOVI: usize = 0x01;
+pub const ITS_CMD_INT: usize = 0x03;
+pub const ITS_CMD_CLEAR: usize = 0x04;
+pub const ITS_CMD_SYNC: usize = 0x05;
+pub const ITS_CMD_MAPD: usize = 0x08;
+pub const ITS_CMD_MAPC: usize = 0x09;
+pub const ITS_CMD_MAPTI: usize = 0x0a;
+pub const ITS_CMD_MAPI: usize = 0x0b;
+pub const ITS_CMD_INV: usize = 0x0c;
+pub const ITS_CMD_INVALL: usize = 0x0d;
+pub const ITS_CMD_DISCARD: usize = 0x0f;
 
 fn ring_ptr_update(val: usize, page_num: usize) -> usize {
     let total_size = CMDQ_PAGE_SIZE * page_num;
@@ -235,33 +247,67 @@ impl Cmdq {
         let code = (value[0] & 0xff) as usize;
         let mut new_cmd = value.clone();
         let binding = this_zone();
-        let cpuset_bitmap = binding.read().cpu_set().bitmap;
+        let zone = binding.read();
+        let cpuset_bitmap = zone.cpu_set().bitmap;
+
+        let vicid_to_icid_checked = |vicid: u64| -> u64 {
+            vicid_to_icid(vicid, cpuset_bitmap)
+                .expect("vicid to icid failed, maybe logical_id out of range")
+        };
+        let set_cmd2_icid = |cmd2: &mut u64, icid: u64| {
+            *cmd2 &= !0xffffu64;
+            *cmd2 |= icid & 0xffff;
+        };
+
+        // vbdf -> bdf
+        let id_32 = (value[0] >> 32) as u32;
+        let domain = (id_32 >> 16) as u8;
+        let vbus = ((id_32 >> 8) & 0xFF) as u8;
+        let vdevice = ((id_32 >> 3) & 0x1F) as u8;
+        let vfunction = (id_32 & 0x07) as u8;
+
+        let vbdf = Bdf::new(domain, vbus, vdevice, vfunction);
+        let bdf = match zone.vpci_bus().get(&vbdf) {
+            Some(vdev) => vdev.read().get_bdf(),
+            None => Bdf {
+                domain,
+                bus: 0,
+                device: 0,
+                function: 0,
+            },
+        };
+
+        let phys_id_32 = ((bdf.domain as u32) << 16)
+            | ((bdf.bus as u32) << 8)
+            | ((bdf.device as u32) << 3)
+            | (bdf.function as u32);
+
+        // new_cmd[0] = cmd0_tmp
+        // CLEAR DISCARD INT INV MAPD MAPI MAPTI MOVI
+        let cmd0_tmp = (value[0] & 0xffffffff) | ((phys_id_32 as u64) << 32);
+
         match code {
-            0x0b => {
-                let id = value[0] & 0xffffffff00000000;
+            ITS_CMD_MAPI => {
+                new_cmd[0] = cmd0_tmp;
+
                 let event = value[1] & 0xffffffff;
                 let vicid = value[2] & 0xffff;
-                let icid = vicid_to_icid(vicid, cpuset_bitmap)
-                    .expect("vicid to icid failed, maybe logical_id out of range");
-                new_cmd[2] &= !0xffffu64;
-                new_cmd[2] |= icid & 0xffff;
+                let icid = vicid_to_icid_checked(vicid);
+                set_cmd2_icid(&mut new_cmd[2], icid);
                 enable_one_lpi((event - 8192) as _);
                 debug!(
-                    "MAPI cmd, for device {:#x}, event = intid = {:#x} -> vicid {:#x} (icid {:#x})",
-                    id >> 32,
+                    "MAPI cmd, for vbdf {:#x}:{:#x}:{:#x}:{:#x} -> {:#x}:{:#x}:{:#x}:{:#x}, event = intid = {:#x} -> vicid {:#x} (icid {:#x})",
+                    domain, vbus, vdevice, vfunction,
+                    bdf.domain, bdf.bus, bdf.device, bdf.function,
                     event,
                     vicid,
                     icid
                 );
             }
-            0x08 => {
-                let id = value[0] & 0xffffffff00000000;
+            ITS_CMD_MAPD => {
+                new_cmd[0] = cmd0_tmp;
+
                 let itt_base = value[2] & 0x000fffffffffff00; // the lowest 8 bits are zeros
-                debug!(
-                    "MAPD cmd, for device {:#x}, itt base {:#x}",
-                    id >> 32,
-                    itt_base
-                );
                 let phys_itt_base = unsafe {
                     this_zone()
                         .read()
@@ -273,69 +319,73 @@ impl Cmdq {
                 new_cmd[2] &= !0x000fffffffffff00u64;
                 new_cmd[2] |= phys_itt_base as u64;
                 debug!(
-                    "MAPD cmd, set ITT: {:#x} to device {:#x}",
+                    "MAPD cmd, set ITT: {:#x} to vbdf {:#x}:{:#x}:{:#x}:{:#x} -> {:#x}:{:#x}:{:#x}:{:#x}",
                     phys_itt_base,
-                    id >> 32
+                    domain, vbus, vdevice, vfunction,
+                    bdf.domain, bdf.bus, bdf.device, bdf.function
                 );
             }
-            0x0a => {
-                let id = value[0] & 0xffffffff00000000;
+            ITS_CMD_MAPTI => {
+                new_cmd[0] = cmd0_tmp;
+
                 let event = value[1] & 0xffffffff;
                 let intid = value[1] >> 32;
                 let vicid = value[2] & 0xffff;
-                let icid = vicid_to_icid(vicid, cpuset_bitmap)
-                    .expect("vicid to icid failed, maybe logical_id out of range");
-                new_cmd[2] &= !0xffffu64;
-                new_cmd[2] |= icid & 0xffff;
+                let icid = vicid_to_icid_checked(vicid);
+                set_cmd2_icid(&mut new_cmd[2], icid);
                 enable_one_lpi((intid - 8192) as _);
                 debug!(
-                    "MAPTI cmd, for device {:#x}, event {:#x} -> vicid {:#x} (icid {:#x}) + intid {:#x}",
-                    id >> 32,
+                    "MAPTI cmd, for vbdf {:#x}:{:#x}:{:#x}:{:#x} -> {:#x}:{:#x}:{:#x}:{:#x}, event {:#x} -> vicid {:#x} (icid {:#x}) + intid {:#x}",
+                    domain, vbus, vdevice, vfunction,
+                    bdf.domain, bdf.bus, bdf.device, bdf.function,
                     event,
                     vicid,
                     icid,
                     intid
                 );
             }
-            0x09 => {
+            ITS_CMD_MAPC => {
                 let vicid = value[2] & 0xffff;
-                let icid = vicid_to_icid(vicid, cpuset_bitmap)
-                    .expect("vicid to icid failed, maybe logical_id out of range");
-                new_cmd[2] &= !0xffffu64;
-                new_cmd[2] |= icid & 0xffff;
+                let icid = vicid_to_icid_checked(vicid);
+                set_cmd2_icid(&mut new_cmd[2], icid);
                 let rd_base = (value[2] >> 16) & 0x7ffffffff;
                 debug!(
                     "MAPC cmd, vicid {:#x} (icid {:#x}) -> redist {:#x}",
                     vicid, icid, rd_base
                 );
             }
-            0x05 => {
+            ITS_CMD_SYNC => {
                 debug!("SYNC cmd");
             }
-            0x04 => {
+            ITS_CMD_CLEAR => {
+                new_cmd[0] = cmd0_tmp;
                 debug!("CLEAR cmd");
             }
-            0x0f => {
+            ITS_CMD_DISCARD => {
+                new_cmd[0] = cmd0_tmp;
                 debug!("DISCARD cmd");
             }
-            0x03 => {
+            ITS_CMD_INT => {
+                new_cmd[0] = cmd0_tmp;
                 debug!("INT cmd");
             }
-            0x0c => {
+            ITS_CMD_INV => {
+                new_cmd[0] = cmd0_tmp;
                 debug!("INV cmd");
             }
-            0x0d => {
+            ITS_CMD_INVALL => {
                 debug!("INVALL cmd");
             }
-            0x01 => {
+            ITS_CMD_MOVI => {
+                new_cmd[0] = cmd0_tmp;
+
                 let vicid = value[2] & 0xffff;
-                let icid = vicid_to_icid(vicid, cpuset_bitmap)
-                    .expect("vicid to icid failed, maybe logical_id out of range");
-                new_cmd[2] &= !0xffffu64;
-                new_cmd[2] |= icid & 0xffff;
+                let icid = vicid_to_icid_checked(vicid);
+                set_cmd2_icid(&mut new_cmd[2], icid);
                 debug!(
-                    "MOVI, for Device {:#x}, new vicid({}) -> icid({})",
-                    value[0] >> 32,
+                    "MOVI, for vbdf {:#x}:{:#x}:{:#x}:{:#x} -> {:#x}:{:#x}:{:#x}:{:#x}, new vicid({}) -> icid({})",
+                    domain, vbus, vdevice, vfunction,
+                    bdf.domain, bdf.bus, bdf.device, bdf.function,
                     vicid,
                     icid
                 );
