@@ -206,7 +206,7 @@ impl Zone {
                     Some(cfg) => {
                         let root_bus = bus_range_begin;
                         let accessor = Arc::new(DwcConfigAccessor::new(cfg, root_bus));
-                        self.vpci_bus.set_accessor(accessor);
+                        inner.vpci_bus_mut().set_accessor(accessor);
                     }
                     None => {
                         warn!("No ATU config found for ecam_base 0x{:x}", ecam_base);
@@ -224,14 +224,14 @@ impl Zone {
                     target_pci_config.ecam_size,
                     root_bus,
                 ));
-                self.vpci_bus.set_accessor(accessor);
+                inner.vpci_bus_mut().set_accessor(accessor);
             }
 
             #[cfg(feature = "ecam_pcie")]
             {
                 use alloc::sync::Arc;
                 let accessor = Arc::new(EcamConfigAccessor::new(ecam_base));
-                self.vpci_bus.set_accessor(accessor);
+                inner.vpci_bus_mut().set_accessor(accessor);
             }
 
             let mut filtered_devices: alloc::vec::Vec<HvPciDevConfig> = alloc::vec::Vec::new();
@@ -357,7 +357,7 @@ impl Zone {
                             dev.set_zone_id(Some(_zone_id as u32));
                             let mut vdev_inner = dev.read().config_space.clone();
                             vdev_inner.set_vbdf(vbdf);
-                            self.vpci_bus.insert(vbdf, vdev_inner);
+                            inner.vpci_bus_mut().insert(vbdf, vdev_inner);
                         } else {
                             warn!(
                                 "Device {:#?} is already allocated to zone {:?}",

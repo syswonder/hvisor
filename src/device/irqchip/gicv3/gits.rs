@@ -248,7 +248,7 @@ impl Cmdq {
         let mut new_cmd = value.clone();
         let binding = this_zone();
         let zone = binding.read();
-        let cpuset_bitmap = zone.cpu_set.bitmap;
+        let cpuset_bitmap = zone.cpu_set().bitmap;
 
         let vicid_to_icid_checked = |vicid: u64| -> u64 {
             vicid_to_icid(vicid, cpuset_bitmap)
@@ -267,7 +267,7 @@ impl Cmdq {
         let vfunction = (id_32 & 0x07) as u8;
 
         let vbdf = Bdf::new(domain, vbus, vdevice, vfunction);
-        let bdf = match zone.vpci_bus.get(&vbdf) {
+        let bdf = match zone.vpci_bus().get(&vbdf) {
             Some(vdev) => vdev.read().get_bdf(),
             None => Bdf {
                 domain,
