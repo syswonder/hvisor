@@ -1442,6 +1442,31 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
             "virtio-gpu is not enabled, please add VIRTIO_GPU=y in make cmd");
         return -1;
 #endif
+    } else if (dev_type == VirtioTSCMI) {
+// virtio-scmi
+#ifdef ENABLE_VIRTIO_SCMI
+        // Parse allowed_list, reset_map and clock_map
+        cJSON *allowed_list_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "allowed_list");
+        cJSON *reset_map_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "reset_map");
+        cJSON *clock_map_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "clock_map");
+        // Initialize reset map
+        extern int virtio_scmi_reset_init_map(cJSON *, cJSON *);
+        if (virtio_scmi_reset_init_map(allowed_list_json, reset_map_json) < 0) {
+            log_error("Failed to initialize SCMI reset map");
+            return -1;
+        }
+        // Initialize clock allowed list and map
+        extern int virtio_scmi_clock_init_map(cJSON *, cJSON *);
+        if (virtio_scmi_clock_init_map(allowed_list_json, clock_map_json) < 0) {
+            log_error("Failed to initialize SCMI clock allowed list and map");
+            return -1;
+        }
+        arg0 = NULL, arg1 = NULL;
+#else
+        log_error(
+            "virtio-scmi is not enabled, please add VIRTIO_SCMI=y in make cmd");
+        return -1;
+#endif
     }
 
     // Check for missing fields

@@ -16,6 +16,21 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+// Generic mapping structure
+typedef struct {
+    uint32_t scmi_id;
+    uint32_t phys_id;
+} scmi_map_entry_t;
+
+// Generic mapping context
+typedef struct {
+    scmi_map_entry_t *map;
+    uint32_t map_count;
+    uint32_t *allowed_ids;
+    uint32_t allowed_count;
+    bool allow_all;
+} scmi_map_context_t;
+
 #define NSEC_PER_SEC 1000000000L
 #define SCMI_MAX_POLL_TO_NS    (30 * NSEC_PER_SEC)
 
@@ -238,6 +253,11 @@ int scmi_handle_message(SCMIDev *dev, uint8_t protocol_id, uint8_t msg_id,
                       struct iovec *resp_iov);
 
 int scmi_get_protocol_count(void);
+
+/* Generic mapping functions */
+int scmi_init_map(scmi_map_context_t *ctx, void *allowed_list_json, void *map_json, const char *id_key, const char *map_key);
+bool scmi_is_valid_id(scmi_map_context_t *ctx, uint32_t id);
+uint32_t scmi_map_id(scmi_map_context_t *ctx, uint32_t scmi_id);
 
 SCMIDev *init_scmi_dev();
 int virtio_scmi_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq);

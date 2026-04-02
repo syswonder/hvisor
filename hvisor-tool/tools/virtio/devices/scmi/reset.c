@@ -12,7 +12,7 @@
 #include "virtio_scmi.h"
 #include "log.h"
 #include "hvisor.h"
-#include "scmi_reset_map.h"
+#include "safe_cjson.h"
 #include <string.h>
 #include <stdint.h>
 #include <sys/ioctl.h>
@@ -20,6 +20,16 @@
 #include <unistd.h>
 #include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
+
+// Reset map context
+static scmi_map_context_t reset_map_ctx = {
+    .map = NULL,
+    .map_count = 0,
+    .allowed_ids = NULL,
+    .allowed_count = 0,
+    .allow_all = false
+};
 
 /* Reset Protocol version 2.0 */
 #define SCMI_RESET_VERSION 0x20000
@@ -37,9 +47,6 @@ struct scmi_msg_req_reset {
     uint32_t flags;               /* Bit 0: async, Bit 1: assert, Bit 2: deassert */
     uint32_t reset_state;          /* 0: arch reset, 1: impl defined */
 };
-
-/* Define reset count macro */
-#define SCMI_RESET_COUNT (sizeof(scmi_to_phys_map) / sizeof(scmi_to_phys_map[0]))
 
 /**
  * hvisor_scmi_ioctl - Generic hvisor device ioctl operation wrapper function
@@ -72,10 +79,20 @@ static int hvisor_scmi_ioctl(uint32_t subcmd, struct hvisor_scmi_reset_args *ioc
     return 0;
 }
 
+/**
+ * virtio_scmi_reset_init_map - Initialize reset map from configuration
+ * @allowed_list_json: JSON object containing allowed reset IDs
+ * @reset_map_json: JSON object containing reset ID mappings
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int virtio_scmi_reset_init_map(cJSON *allowed_list_json, cJSON *reset_map_json) {
+    return scmi_init_map(&reset_map_ctx, allowed_list_json, reset_map_json, "reset_ids", "reset_map");
+}
+
 /* Helper: validate reset domain id */
 static bool is_valid_reset_id(uint32_t reset_id) {
-    // Directly check if it's within the mapping array range
-    return reset_id < SCMI_RESET_COUNT;
+    return scmi_is_valid_id(&reset_map_ctx, reset_id);
 }
 
 static int handle_reset_version(SCMIDev *dev, uint16_t token,
@@ -111,11 +128,12 @@ static int handle_reset_protocol_attributes(SCMIDev *dev, uint16_t token,
     uint32_t *attributes = (uint32_t *)resp->payload;
 
     // Set attributes: Bits[15:0] = number of reset domains, Bits[31:16] = 0
-    *attributes = (uint32_t)(SCMI_RESET_COUNT & 0xFFFF);
+    uint32_t num_resets = reset_map_ctx.allow_all ? 0xFFFF : (reset_map_ctx.allowed_ids ? reset_map_ctx.allowed_count : reset_map_ctx.map_count);
+    *attributes = (uint32_t)(num_resets & 0xFFFF);
 
     scmi_make_response(dev, token, resp_iov, SCMI_SUCCESS);
 
-    log_debug("RESET_PROTOCOL_ATTRIBUTES: num_resets=%d", SCMI_RESET_COUNT);
+    log_debug("RESET_PROTOCOL_ATTRIBUTES: num_resets=%d", num_resets);
     return 0;
 }
 
@@ -138,7 +156,7 @@ static int handle_reset_attributes(SCMIDev *dev, uint16_t token,
     }
 
     // Map SCMI reset ID to physical reset ID
-    phys_rst_id = scmi_to_phys_map[domain_id];
+    phys_rst_id = scmi_map_id(&reset_map_ctx, domain_id);
 
     struct scmi_response *resp = resp_iov->iov_base;
     struct scmi_msg_resp_reset_attributes *attr =
@@ -182,7 +200,7 @@ static int handle_reset(SCMIDev *dev, uint16_t token,
     // Prepare ioctl arguments
     struct hvisor_scmi_reset_args args;
     // Map SCMI reset ID to physical reset ID
-    args.u.reset_info.domain_id = scmi_to_phys_map[domain_id];
+    args.u.reset_info.domain_id = scmi_map_id(&reset_map_ctx, domain_id);
     args.u.reset_info.flags = flags;
     args.u.reset_info.reset_state = reset_state;
 
@@ -199,7 +217,7 @@ static int handle_reset(SCMIDev *dev, uint16_t token,
 }
 
 static int handle_reset_notify(SCMIDev *dev, uint16_t token,
-                              const struct iovec *req_iov,
+                              const struct iovec *req_iov __attribute__((unused)),
                               struct iovec *resp_iov) {
     // For simplicity, we don't support reset notifications
     return scmi_make_response(dev, token, resp_iov, SCMI_ERR_SUPPORT);
