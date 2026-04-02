@@ -12,6 +12,7 @@
 #include "virtio_scmi.h"
 #include "log.h"
 #include "hvisor.h"
+#include "safe_cjson.h"
 #include <string.h>
 #include <stdint.h>
 #include <sys/ioctl.h>
@@ -19,6 +20,16 @@
 #include <unistd.h>
 #include <errno.h>
 #include <time.h>
+#include <stdlib.h>
+
+// Clock map context
+static scmi_map_context_t clock_map_ctx = {
+    .map = NULL,
+    .map_count = 0,
+    .allowed_ids = NULL,
+    .allowed_count = 0,
+    .allow_all = false
+};
 
 /* Clock Protocol version 3.0 */
 #define SCMI_CLOCK_VERSION 0x30000
@@ -81,11 +92,14 @@ struct scmi_msg_resp_clock_clock_attributes {
 
 /* Helper: validate clock_id */
 static bool is_valid_clock_id(uint32_t clock_id) {
-    uint16_t total_clocks = 0;
-    if (scmi_clock_get_count(&total_clocks) < 0) {
-        return false;
+    if (clock_map_ctx.allow_all) {
+        uint16_t total_clocks = 0;
+        if (scmi_clock_get_count(&total_clocks) < 0) {
+            return false;
+        }
+        return clock_id < total_clocks;
     }
-    return clock_id < total_clocks;
+    return scmi_is_valid_id(&clock_map_ctx, clock_id);
 }
 
 /* ================ Handlers ================ */
@@ -196,7 +210,7 @@ static int handle_clock_clock_attributes(SCMIDev *dev, uint16_t token,
 
     // Prepare ioctl arguments
     struct hvisor_scmi_clock_args args;
-    args.u.clock_attr.clock_id = clock_id;
+    args.u.clock_attr.clock_id = scmi_map_id(&clock_map_ctx, clock_id);
 
     // Call the common ioctl function
     int ret = hvisor_scmi_ioctl(HVISOR_SCMI_CLOCK_GET_ATTRIBUTES, &args, sizeof(args));
@@ -328,7 +342,7 @@ static int handle_clock_rate_get(SCMIDev *dev, uint16_t token,
     /* Prepare ioctl arguments */
     struct hvisor_scmi_clock_args args;
     struct clock_rate_info *rate_info = (struct clock_rate_info *)&args.u.data;
-    rate_info->clock_id = clock_id;
+    rate_info->clock_id = scmi_map_id(&clock_map_ctx, clock_id);
 
     /* Call the common ioctl function */
     int ret = hvisor_scmi_ioctl(HVISOR_SCMI_CLOCK_RATE_GET, &args, sizeof(args));
@@ -370,7 +384,7 @@ static int handle_clock_rate_set(SCMIDev *dev, uint16_t token,
     /* Prepare ioctl arguments */
     struct hvisor_scmi_clock_args args;
     struct clock_rate_set_info *rate_set_info = (struct clock_rate_set_info *)&args.u.data;
-    rate_set_info->clock_id = clock_id;
+    rate_set_info->clock_id = scmi_map_id(&clock_map_ctx, clock_id);
     rate_set_info->flags = flags;
     rate_set_info->rate = requested_rate;
 
@@ -410,7 +424,7 @@ static int handle_clock_config_get(SCMIDev *dev, uint16_t token,
     /* Prepare ioctl arguments */
     struct hvisor_scmi_clock_args args;
     struct clock_config_info *config_info = (struct clock_config_info *)&args.u.data;
-    config_info->clock_id = clock_id;
+    config_info->clock_id = scmi_map_id(&clock_map_ctx, clock_id);
     config_info->flags = flags;
 
     /* Call the common ioctl function */
@@ -446,7 +460,7 @@ static int handle_clock_config_set(SCMIDev *dev, uint16_t token,
     /* Prepare ioctl arguments */
     struct hvisor_scmi_clock_args args;
     struct clock_config_info *config_info = (struct clock_config_info *)&args.u.data;
-    config_info->clock_id = clock_id;
+    config_info->clock_id = scmi_map_id(&clock_map_ctx, clock_id);
     config_info->config = attributes;
 
     /* Call the common ioctl function */
@@ -487,7 +501,7 @@ static int handle_clock_name_get(SCMIDev *dev, uint16_t token,
     /* Prepare ioctl arguments */
     struct hvisor_scmi_clock_args args;
     struct clock_name_info *name_info = (struct clock_name_info *)&args.u.data;
-    name_info->clock_id = clock_id;
+    name_info->clock_id = scmi_map_id(&clock_map_ctx, clock_id);
 
     /* Call the common ioctl function */
     int ret = hvisor_scmi_ioctl(HVISOR_SCMI_CLOCK_NAME_GET, &args, sizeof(args));
@@ -546,6 +560,17 @@ static const struct scmi_protocol clock_protocol = {
     .id = SCMI_PROTO_ID_CLOCK,
     .handle_request = virtio_scmi_clock_handle_req,
 };
+
+/**
+ * virtio_scmi_clock_init_map - Initialize clock allowed list and map from configuration
+ * @allowed_list_json: JSON object containing allowed clock IDs
+ * @clock_map_json: JSON object containing clock ID mappings
+ *
+ * Return: 0 on success, negative error code on failure
+ */
+int virtio_scmi_clock_init_map(cJSON *allowed_list_json, cJSON *clock_map_json) {
+    return scmi_init_map(&clock_map_ctx, allowed_list_json, clock_map_json, "clock_ids", "clock_map");
+}
 
 /* Initialize Clock Protocol */
 int virtio_scmi_clock_init(void) {

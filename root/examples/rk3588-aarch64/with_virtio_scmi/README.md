@@ -4,7 +4,7 @@
 
 ## 1. 现状说明
 
-目前 VirtIO-SCMI 核心逻辑已 rebase 至 hvisor-tool 的较新分支（非最新版），兼容`config v5`版本。该版本包含完整的消息转发与协议解析功能，足以支持直通设备的初始化与基本资源管理。
+VirtIO-SCMI 核心逻辑已适配至 hvisor-tool 的最新架构，兼容`config v5`版本。设备代码位于 `devices/scmi/` 目录，与其他 VirtIO 设备保持一致的目录结构。该版本包含完整的消息转发与协议解析功能，支持通过配置文件定义资源访问权限和映射关系，足以支持直通设备的初始化与基本资源管理。
 
 ## 2. 虚拟机（ZoneU）配置
 
@@ -95,7 +95,7 @@ virtio_mmio@ff9c0000 {
 }
 ```
 - **virtio_cfg.json (VirtIO 配置)**：
-  在该文件中手动添加 SCMI 设备的 VirtIO 区域信息。
+  在该文件中手动添加 SCMI 设备的 VirtIO 区域信息，并配置允许的资源和映射关系。
   
 ```json
 {
@@ -110,13 +110,26 @@ virtio_mmio@ff9c0000 {
 		                "addr": "0xff9c0000",
 		                "len": "0x200",
 		                "irq": 75,
-		                "status": "enable"
+		                "status": "enable",
+		                "allowed_list": {
+		                    "reset_ids": [0],
+		                    "clock_ids": ["*"]
+		                },
+		                "reset_map": {
+		                    "0": 523
+		                }
 		            }
             ]
         }
     ]
 }
 ```
+
+**配置说明**：
+- `allowed_list`：指定允许虚拟机访问的资源 ID 列表
+  - `reset_ids`：允许的复位域 ID 列表，例如 `[0]` 表示只允许访问 ID 为 0 的复位域
+  - `clock_ids`：允许的时钟 ID 列表，使用 `["*"]` 表示允许访问所有时钟
+- `reset_map`：指定虚拟复位 ID 到物理复位 ID 的映射关系，例如 `{"0": 523}` 表示虚拟 ID 0 映射到物理 ID 523
 
 ### 2.3 Linux 内核要求
 
@@ -135,13 +148,9 @@ virtio_mmio@ff9c0000 {
 无需任何修改。
 hvisor 在此框架中仅作为透明的消息转发层（Trampoline），不参与协议解析。直接使用现有主分支代码即可支持 VirtIO-SCMI 通信。
 
-## 4. 已知不足与适配说明
+## 4. 后续工作
 
-- **架构兼容性**：
-  最新版本的 hvisor-tool 对 VirtIO 后端架构进行了重构（将具体设备移至 devices/ 目录）。当前的 SCMI 实现基于重构前的架构，暂不兼容最新版本。
-
-- **后续工作**：
-  计划在下一阶段将 SCMI 后端逻辑适配至 hvisor-tool 的最新目录结构中。目前建议在指定的 rebase 分支上进行开发和测试。
+计划进一步完善 SCMI 协议的功能，包括支持更多的协议消息类型和优化资源管理机制。
 
 ## 5. 调试建议
 

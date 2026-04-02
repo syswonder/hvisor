@@ -10,29 +10,36 @@
                 }
             ],
             "devices": [
-                    {
-                        "type": "blk",
-                        "addr": "0xff9d0000",
-                        "len": "0x200",
-                        "irq": 78,
-                        "img": "rootfs.ext4",
-                        "status": "enable"
+                {
+                    "type": "blk",
+                    "addr": "0xff9d0000",
+                    "len": "0x200",
+                    "irq": 78,
+                    "img": "rootfs.ext4",
+                    "status": "enable"
+                },
+                {
+                    "type": "console",
+                    "addr": "0xff9e0000",
+                    "len": "0x200",
+                    "irq": 76,
+                    "status": "enable"
+                },
+                {
+                    "type": "scmi",
+                    "addr": "0xff9c0000",
+                    "len": "0x200",
+                    "irq": 75,
+                    "status": "enable",
+                    "allowed_list": {
+                        "reset_ids": [0],
+                        "clock_ids": ["*"]
                     },
-                    {
-                        "type": "console",
-                        "addr": "0xff9e0000",
-                        "len": "0x200",
-                        "irq": 76,
-                        "status": "enable"
-                    },
-		            {
-		                "type": "scmi",
-		                "addr": "0xff9c0000",
-		                "len": "0x200",
-		                "irq": 75,
-		                "status": "enable"
-		            }
-                ]
+                    "reset_map": {
+                        "0": 523
+                    }
+                }
+            ]
         }
     ]
 }
