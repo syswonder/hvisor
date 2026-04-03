@@ -130,6 +130,8 @@ virtio_mmio@ff9c0000 {
   - `reset_ids`：允许的复位域 ID 列表，例如 `[0]` 表示只允许访问 ID 为 0 的复位域
   - `clock_ids`：允许的时钟 ID 列表，使用 `["*"]` 表示允许访问所有时钟
 - `reset_map`：指定虚拟复位 ID 到物理复位 ID 的映射关系，例如 `{"0": 523}` 表示虚拟 ID 0 映射到物理 ID 523
+- `clock_phandle`：指定时钟控制器的 phandle 值，对应设备树中 SCMI 时钟协议节点的 phandle，例如 `2`
+- `reset_phandle`：指定复位控制器的 phandle 值，对应设备树中 SCMI 复位协议节点的 phandle，例如 `2`
 
 ### 2.3 Linux 内核要求
 

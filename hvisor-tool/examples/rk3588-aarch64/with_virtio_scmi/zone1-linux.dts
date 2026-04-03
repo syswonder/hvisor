@@ -303,7 +303,7 @@
 		rockchip,php_grf = <0x73>;
 		clocks = <0x02 0x144 0x02 0x145 0x02 0x168 0x02 0x16d 0x02 0x143>;
 		clock-names = "stmmaceth\0clk_mac_ref\0pclk_mac\0aclk_mac\0ptp_ref";
-		resets = <0x1002 0x138>;       // virt scmi reset id, original 0x20b
+		resets = <0x1002 0x0>;       // virt scmi reset id, original 0x20b
 		reset-names = "stmmaceth";
 		power-domains = <0x5d 0x21>;
 		snps,mixed-burst;

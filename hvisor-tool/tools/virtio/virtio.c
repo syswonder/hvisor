@@ -44,6 +44,10 @@
 #endif
 #ifdef ENABLE_VIRTIO_SCMI
 #include "virtio_scmi.h"
+
+// Global variables to store phandle values
+uint32_t clock_phandle = 0;
+uint32_t reset_phandle = 0;
 #endif
 
 /// hvisor kernel module fd
@@ -227,7 +231,7 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
         init_virtio_queue(vdev, dev_type);
         is_err = 0;
 #else
-        log_error("virtio scmi is not enabled");
+        log_error("virtio-scmi is not enabled");
         goto err;
 #endif
         break;
@@ -1449,6 +1453,17 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
         cJSON *allowed_list_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "allowed_list");
         cJSON *reset_map_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "reset_map");
         cJSON *clock_map_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "clock_map");
+        // Parse clock_phandle and reset_phandle first
+        cJSON *clock_phandle_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "clock_phandle");
+        cJSON *reset_phandle_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "reset_phandle");
+        if (clock_phandle_json) {
+            clock_phandle = clock_phandle_json->valueint;
+            log_info("SCMI clock_phandle set to %u", clock_phandle);
+        }
+        if (reset_phandle_json) {
+            reset_phandle = reset_phandle_json->valueint;
+            log_info("SCMI reset_phandle set to %u", reset_phandle);
+        }
         // Initialize reset map
         extern int virtio_scmi_reset_init_map(cJSON *, cJSON *);
         if (virtio_scmi_reset_init_map(allowed_list_json, reset_map_json) < 0) {
@@ -1461,7 +1476,6 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
             log_error("Failed to initialize SCMI clock allowed list and map");
             return -1;
         }
-        arg0 = NULL, arg1 = NULL;
 #else
         log_error(
             "virtio-scmi is not enabled, please add VIRTIO_SCMI=y in make cmd");
