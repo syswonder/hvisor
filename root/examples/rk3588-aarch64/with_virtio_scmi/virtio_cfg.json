@@ -31,6 +31,8 @@
                     "len": "0x200",
                     "irq": 75,
                     "status": "enable",
+                    "clock_phandle": 2,
+                    "reset_phandle": 2,
                     "allowed_list": {
                         "reset_ids": [0],
                         "clock_ids": ["*"]

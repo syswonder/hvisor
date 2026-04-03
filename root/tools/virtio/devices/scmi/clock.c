@@ -569,7 +569,27 @@ static const struct scmi_protocol clock_protocol = {
  * Return: 0 on success, negative error code on failure
  */
 int virtio_scmi_clock_init_map(cJSON *allowed_list_json, cJSON *clock_map_json) {
-    return scmi_init_map(&clock_map_ctx, allowed_list_json, clock_map_json, "clock_ids", "clock_map");
+    int ret = scmi_init_map(&clock_map_ctx, allowed_list_json, clock_map_json, "clock_ids", "clock_map");
+    
+    // Set clock provider phandle if available
+    extern uint32_t clock_phandle;
+    if (clock_phandle > 0) {
+        int fd = open(HVISOR_DEVICE, O_RDWR);
+        if (fd >= 0) {
+            struct hvisor_scmi_clock_args args;
+            args.subcmd = HVISOR_SCMI_CLOCK_SET_PHANDLE;
+            args.data_len = sizeof(args.u.clock_phandle_info);
+            args.u.clock_phandle_info.phandle = clock_phandle;
+            if (ioctl(fd, HVISOR_SCMI_CLOCK_IOCTL, &args) < 0) {
+                log_error("Failed to set clock provider phandle: %s", strerror(errno));
+            } else {
+                log_info("Clock provider phandle set to %u", clock_phandle);
+            }
+            close(fd);
+        }
+    }
+    
+    return ret;
 }
 
 /* Initialize Clock Protocol */

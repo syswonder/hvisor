@@ -87,7 +87,27 @@ static int hvisor_scmi_ioctl(uint32_t subcmd, struct hvisor_scmi_reset_args *ioc
  * Return: 0 on success, negative error code on failure
  */
 int virtio_scmi_reset_init_map(cJSON *allowed_list_json, cJSON *reset_map_json) {
-    return scmi_init_map(&reset_map_ctx, allowed_list_json, reset_map_json, "reset_ids", "reset_map");
+    int ret = scmi_init_map(&reset_map_ctx, allowed_list_json, reset_map_json, "reset_ids", "reset_map");
+    
+    // Set reset provider phandle if available
+    extern uint32_t reset_phandle;
+    if (reset_phandle > 0) {
+        int fd = open(HVISOR_DEVICE, O_RDWR);
+        if (fd >= 0) {
+            struct hvisor_scmi_reset_args args;
+            args.subcmd = HVISOR_SCMI_RESET_SET_PHANDLE;
+            args.data_len = sizeof(args.u.reset_phandle_info);
+            args.u.reset_phandle_info.phandle = reset_phandle;
+            if (ioctl(fd, HVISOR_SCMI_RESET_IOCTL, &args) < 0) {
+                log_error("Failed to set reset provider phandle: %s", strerror(errno));
+            } else {
+                log_info("Reset provider phandle set to %u", reset_phandle);
+            }
+            close(fd);
+        }
+    }
+    
+    return ret;
 }
 
 /* Helper: validate reset domain id */

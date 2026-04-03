@@ -7,11 +7,11 @@
 
 #ifdef ENABLE_VIRTIO_SCMI
 
-/* Clock provider phandle hardcoded as requested */
-#define CLOCK_PROVIDER_PHANDLE 2
+/* Clock provider phandle - configurable via ioctl */
+static uint32_t clock_provider_phandle = 0;
 
-/* Reset provider phandle hardcoded as requested */
-#define RESET_PROVIDER_PHANDLE 2
+/* Reset provider phandle - configurable via ioctl */
+static uint32_t reset_provider_phandle = 0;
 
 extern bool __clk_is_enabled(const struct clk *clk);
 extern const char *__clk_get_name(const struct clk *clk);
@@ -22,7 +22,7 @@ extern struct reset_control *get_reset_domain_by_id(unsigned int reset_id);
  * Return: Pointer to the clock provider node on success, NULL on failure
  */
 static struct device_node *get_clock_provider_node(void) {
-    struct device_node *provider_np = of_find_node_by_phandle(CLOCK_PROVIDER_PHANDLE);
+    struct device_node *provider_np = of_find_node_by_phandle(clock_provider_phandle);
     if (!provider_np) {
         pr_err("Failed to find clock provider node\n");
     }
@@ -75,7 +75,7 @@ static int get_clock_count(void) {
  * Return: Pointer to the reset provider node on success, NULL on failure
  */
 static struct device_node *get_reset_provider_node(void) {
-    struct device_node *provider_np = of_find_node_by_phandle(RESET_PROVIDER_PHANDLE);
+    struct device_node *provider_np = of_find_node_by_phandle(reset_provider_phandle);
     if (!provider_np) {
         pr_err("Failed to find reset provider node\n");
     }
@@ -463,6 +463,11 @@ int hvisor_scmi_clock_ioctl(struct hvisor_scmi_clock_args __user *user_args) {
             return -EFAULT;
         return 0;
     }
+    case HVISOR_SCMI_CLOCK_SET_PHANDLE: {
+        clock_provider_phandle = args.u.clock_phandle_info.phandle;
+        pr_info("Clock provider phandle set to %u\n", clock_provider_phandle);
+        return 0;
+    }
     default:
         return -EINVAL;
     }
@@ -479,6 +484,11 @@ int hvisor_scmi_reset_ioctl(struct hvisor_scmi_reset_args __user *user_args) {
     case HVISOR_SCMI_RESET_RESET: {
         int ret = reset_domain(args.u.reset_info.domain_id, args.u.reset_info.flags, args.u.reset_info.reset_state);
         return ret;
+    }
+    case HVISOR_SCMI_RESET_SET_PHANDLE: {
+        reset_provider_phandle = args.u.reset_phandle_info.phandle;
+        pr_info("Reset provider phandle set to %u\n", reset_provider_phandle);
+        return 0;
     }
     default:
         pr_err("Invalid SCMI reset subcommand: %d\n", args.subcmd);
