@@ -176,11 +176,9 @@ static int handle_clock_protocol_attributes(SCMIDev *dev, uint16_t token,
     struct scmi_response *resp = resp_iov->iov_base;
     struct scmi_msg_resp_clock_attributes *attr = (struct scmi_msg_resp_clock_attributes *)resp->payload;
 
-    // Call the encapsulated function to get clock count
-    ret = scmi_clock_get_count(&attr->num_clocks);
-    if (ret < 0) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_GENERIC);
-    }
+    // Use clock_max_num from configuration
+    extern uint32_t clock_max_num;
+    attr->num_clocks = clock_max_num;
 
     attr->max_async_req = 1; // support 1 async request
     attr->reserved = 0;

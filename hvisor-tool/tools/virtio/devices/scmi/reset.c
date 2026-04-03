@@ -148,7 +148,8 @@ static int handle_reset_protocol_attributes(SCMIDev *dev, uint16_t token,
     uint32_t *attributes = (uint32_t *)resp->payload;
 
     // Set attributes: Bits[15:0] = number of reset domains, Bits[31:16] = 0
-    uint32_t num_resets = reset_map_ctx.allow_all ? 0xFFFF : (reset_map_ctx.allowed_ids ? reset_map_ctx.allowed_count : reset_map_ctx.map_count);
+    extern uint32_t reset_max_num;
+    uint32_t num_resets = reset_max_num;
     *attributes = (uint32_t)(num_resets & 0xFFFF);
 
     scmi_make_response(dev, token, resp_iov, SCMI_SUCCESS);

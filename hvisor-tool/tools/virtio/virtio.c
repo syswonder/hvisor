@@ -48,6 +48,10 @@
 // Global variables to store phandle values
 uint32_t clock_phandle = 0;
 uint32_t reset_phandle = 0;
+
+// Global variables to store max num values
+uint32_t clock_max_num = 0;
+uint32_t reset_max_num = 0;
 #endif
 
 /// hvisor kernel module fd
@@ -1464,6 +1468,22 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
             reset_phandle = reset_phandle_json->valueint;
             log_info("SCMI reset_phandle set to %u", reset_phandle);
         }
+        
+        // Parse clock_max_num and reset_max_num (strictly required)
+        cJSON *clock_max_num_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "clock_max_num");
+        cJSON *reset_max_num_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "reset_max_num");
+        if (!clock_max_num_json) {
+            log_error("Missing required field: clock_max_num");
+            return -1;
+        }
+        if (!reset_max_num_json) {
+            log_error("Missing required field: reset_max_num");
+            return -1;
+        }
+        clock_max_num = clock_max_num_json->valueint;
+        reset_max_num = reset_max_num_json->valueint;
+        log_info("SCMI clock_max_num set to %u", clock_max_num);
+        log_info("SCMI reset_max_num set to %u", reset_max_num);
         // Initialize reset map
         extern int virtio_scmi_reset_init_map(cJSON *, cJSON *);
         if (virtio_scmi_reset_init_map(allowed_list_json, reset_map_json) < 0) {
