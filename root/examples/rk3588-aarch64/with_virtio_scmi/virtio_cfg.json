@@ -33,6 +33,8 @@
                     "status": "enable",
                     "clock_phandle": 2,
                     "reset_phandle": 2,
+                    "clock_max_num": 721,
+                    "reset_max_num": 1,
                     "allowed_list": {
                         "reset_ids": [0],
                         "clock_ids": ["*"]
