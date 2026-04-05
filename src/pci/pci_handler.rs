@@ -373,7 +373,8 @@ fn handle_endpoint_access(
              */
             let bar_type = dev.with_bar_ref(slot, |bar| bar.get_type());
 
-            // Check if this BAR contains MSIX table
+            // Check if this BAR contains MSIX table (only when dwc_msi feature is enabled)
+            #[cfg(feature = "dwc_msi")]
             let is_msix_bar = dev
                 .read()
                 .get_msi_info()
@@ -384,6 +385,9 @@ fn handle_endpoint_access(
                         .map(|msix| msix.bar_id == slot as u8)
                 })
                 .unwrap_or(false);
+
+            #[cfg(not(feature = "dwc_msi"))]
+            let is_msix_bar = false;
 
             if bar_type != PciMemType::default() {
                 if is_write {
@@ -740,7 +744,8 @@ fn handle_pci_bridge_access(
         BridgeField::Bar(slot) => {
             let bar_type = dev.with_bar_ref(slot, |bar| bar.get_type());
 
-            // Check if this BAR contains MSIX table
+            // Check if this BAR contains MSIX table (only when dwc_msi feature is enabled)
+            #[cfg(feature = "dwc_msi")]
             let is_msix_bar = dev
                 .read()
                 .get_msi_info()
@@ -751,6 +756,9 @@ fn handle_pci_bridge_access(
                         .map(|msix| msix.bar_id == slot as u8)
                 })
                 .unwrap_or(false);
+
+            #[cfg(not(feature = "dwc_msi"))]
+            let is_msix_bar = false;
 
             if bar_type != PciMemType::default() {
                 if is_write {
@@ -1628,10 +1636,6 @@ pub fn mmio_msix_table_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     // Check if this access is within the MSIX table range
     if let Some((dev, msix_offset, entry_count)) = device_info {
         let vbdf = dev.get_vbdf();
-        // warn!(
-        //     "MSIX BAR access from device vbdf {:#?}, paddr: {:#x}",
-        //     vbdf, base
-        // );
 
         let msix_table_size = (entry_count as u64) * 16; // Each entry is 16 bytes
         let msix_table_end = msix_offset + msix_table_size;
@@ -1645,6 +1649,10 @@ pub fn mmio_msix_table_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
             if mmio.is_write {
                 match field_offset {
                     0..=3 => {
+                        info!(
+                            "MSIX[vbdf {:#?}][entry {}] Message Address (Low) write: {:#x}",
+                            vbdf, entry_index, mmio.value
+                        );
                         // Update doorbell with low 32-bit address
                         dev.with_msi_info_mut(|msi_info| {
                             let current = msi_info.msi_doorbell & 0xffffffff00000000;
@@ -1652,14 +1660,31 @@ pub fn mmio_msix_table_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
                         });
                     }
                     4..=7 => {
+                        info!(
+                            "MSIX[vbdf {:#?}][entry {}] Message Address (High) write: {:#x}",
+                            vbdf, entry_index, mmio.value
+                        );
                         // Update doorbell with high 32-bit address
                         dev.with_msi_info_mut(|msi_info| {
                             let current = msi_info.msi_doorbell & 0xffffffff;
                             msi_info.set_doorbell(current | ((mmio.value as u64) << 32));
                         });
                     }
-                    8..=11 => {}
-                    12..=15 => {}
+                    8..=11 => {
+                        info!(
+                            "MSIX[vbdf {:#?}][entry {}] Message Data write: {:#x}",
+                            vbdf, entry_index, mmio.value
+                        );
+                    }
+                    12..=15 => {
+                        info!(
+                            "MSIX[vbdf {:#?}][entry {}] Vector Control write: {:#x} (masked={})",
+                            vbdf,
+                            entry_index,
+                            mmio.value,
+                            (mmio.value & 0x1) != 0
+                        );
+                    }
                     _ => {}
                 }
             } else {
