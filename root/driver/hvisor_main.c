@@ -9,6 +9,8 @@
  *      Guowei Li <2401213322@stu.pku.edu.cn>
  */
 #include <asm/cacheflush.h>
+#include <linux/clk.h>
+#include <linux/delay.h>
 #include <linux/eventfd.h>
 #include <linux/gfp.h>
 #include <linux/init.h>
@@ -21,15 +23,13 @@
 #include <linux/of.h>
 #include <linux/of_irq.h>
 #include <linux/of_reserved_mem.h>
+#include <linux/reset.h>
 #include <linux/sched/signal.h>
 #include <linux/slab.h>
 #include <linux/string.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
 #include <linux/vmalloc.h>
-#include <linux/clk.h>
-#include <linux/delay.h>
-#include <linux/reset.h>
 
 #include "hvisor.h"
 #include "zone_config.h"
@@ -46,12 +46,15 @@ extern int clk_prepare_enable(struct clk *clk);
 extern void clk_disable_unprepare(struct clk *clk);
 
 /* Reset controller functions */
-#include <linux/reset.h>
 #include <linux/reset-domains.h>
+#include <linux/reset.h>
 
-extern struct reset_control *reset_control_get(struct device *dev, const char *id);
-extern struct reset_control *reset_control_get_optional(struct device *dev, const char *id);
-extern struct reset_control *devm_reset_control_get(struct device *dev, const char *id);
+extern struct reset_control *reset_control_get(struct device *dev,
+                                               const char *id);
+extern struct reset_control *reset_control_get_optional(struct device *dev,
+                                                        const char *id);
+extern struct reset_control *devm_reset_control_get(struct device *dev,
+                                                    const char *id);
 extern void reset_control_put(struct reset_control *rstc);
 extern int reset_control_reset(struct reset_control *rstc);
 extern int reset_control_assert(struct reset_control *rstc);
@@ -304,10 +307,12 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
         break;
 #ifdef ENABLE_VIRTIO_SCMI
     case HVISOR_SCMI_CLOCK_IOCTL:
-        err = hvisor_scmi_clock_ioctl((struct hvisor_scmi_clock_args __user *)arg);
+        err = hvisor_scmi_clock_ioctl(
+            (struct hvisor_scmi_clock_args __user *)arg);
         break;
     case HVISOR_SCMI_RESET_IOCTL:
-        err = hvisor_scmi_reset_ioctl((struct hvisor_scmi_reset_args __user *)arg);
+        err = hvisor_scmi_reset_ioctl(
+            (struct hvisor_scmi_reset_args __user *)arg);
         break;
 #endif
 #ifdef LOONGARCH64
