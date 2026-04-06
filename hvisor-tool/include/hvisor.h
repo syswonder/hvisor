@@ -122,8 +122,8 @@ struct hvisor_scmi_clock_args {
             __u32 enabled;
             __u32 parent_id;
             char clock_name[64];
-            __u32 is_valid;     /* Whether the clock is valid */
-        } clock_attr;      /* For GET_ATTRIBUTES */
+            __u32 is_valid; /* Whether the clock is valid */
+        } clock_attr;       /* For GET_ATTRIBUTES */
         struct {
             __u32 clock_id;
             __u32 rate_index;
@@ -153,7 +153,7 @@ struct hvisor_scmi_clock_args {
         struct {
             __u32 phandle;
         } clock_phandle_info; /* For SET_PHANDLE */
-        __u8 data[0];      /* For other commands */
+        __u8 data[0];         /* For other commands */
     } u;
 };
 
@@ -170,7 +170,7 @@ struct hvisor_scmi_reset_args {
         struct {
             __u32 phandle;
         } reset_phandle_info; /* For SET_PHANDLE */
-        __u8 data[0];      /* For other commands */
+        __u8 data[0];         /* For other commands */
     } u;
 };
 

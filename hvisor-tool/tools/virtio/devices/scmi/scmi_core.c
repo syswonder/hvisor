@@ -8,15 +8,15 @@
  * Authors:
  *      Linkun Chen <lkchen01@foxmail.com>
  */
-#include "virtio_scmi.h"
+#include "json_parse.h"
 #include "log.h"
 #include "safe_cjson.h"
-#include "json_parse.h"
-#include <string.h>
-#include <stdlib.h>
+#include "virtio_scmi.h"
 #include <errno.h>
+#include <stdlib.h>
+#include <string.h>
 
-static struct scmi_protocol* protocols[SCMI_MAX_PROTOCOLS];
+static struct scmi_protocol *protocols[SCMI_MAX_PROTOCOLS];
 static int protocol_count = 0;
 
 /* Get protocol by ID */
@@ -37,14 +37,11 @@ const struct scmi_protocol *scmi_get_protocol_by_index(int index) {
     return protocols[index];
 }
 
-int scmi_get_protocol_count(void) {
-    return protocol_count;
-}
+int scmi_get_protocol_count(void) { return protocol_count; }
 
 /* Validate request/response buffers */
 int scmi_validate_request(size_t req_size, size_t min_req_size,
-                         size_t resp_size, size_t min_resp_size)
-{
+                          size_t resp_size, size_t min_resp_size) {
     if (req_size < min_req_size) {
         log_error("Request too small: %zu < %zu", req_size, min_req_size);
         return SCMI_ERR_PARAMS;
@@ -59,9 +56,8 @@ int scmi_validate_request(size_t req_size, size_t min_req_size,
 }
 
 /* Create standard SCMI response */
-int scmi_make_response(SCMIDev *dev, uint16_t token,
-                      struct iovec *resp_iov, int32_t status)
-{
+int scmi_make_response(SCMIDev *dev, uint16_t token, struct iovec *resp_iov,
+                       int32_t status) {
     if (resp_iov->iov_len < sizeof(struct scmi_response)) {
         return SCMI_ERR_PARAMS;
     }
@@ -101,7 +97,8 @@ int scmi_register_protocol(const struct scmi_protocol *proto) {
 }
 
 /* Initialize map from JSON configuration */
-int scmi_init_map(scmi_map_context_t *ctx, void *allowed_list_json, void *map_json, const char *id_key, const char *map_key) {
+int scmi_init_map(scmi_map_context_t *ctx, void *allowed_list_json,
+                  void *map_json, const char *id_key, const char *map_key) {
     cJSON *allowed_list = (cJSON *)allowed_list_json;
     cJSON *map = (cJSON *)map_json;
     // Initialize allowed IDs
@@ -111,14 +108,16 @@ int scmi_init_map(scmi_map_context_t *ctx, void *allowed_list_json, void *map_js
         if (ids_json) {
             ctx->allowed_count = SAFE_CJSON_GET_ARRAY_SIZE(ids_json);
             if (ctx->allowed_count > 0) {
-                ctx->allowed_ids = malloc(sizeof(uint32_t) * ctx->allowed_count);
+                ctx->allowed_ids =
+                    malloc(sizeof(uint32_t) * ctx->allowed_count);
                 if (!ctx->allowed_ids) {
                     log_error("Failed to allocate allowed_ids");
                     return -ENOMEM;
                 }
                 for (uint32_t i = 0; i < ctx->allowed_count; i++) {
                     cJSON *id_json = SAFE_CJSON_GET_ARRAY_ITEM(ids_json, i);
-                    if (id_json->type == cJSON_String && strcmp(id_json->valuestring, "*") == 0) {
+                    if (id_json->type == cJSON_String &&
+                        strcmp(id_json->valuestring, "*") == 0) {
                         ctx->allow_all = true;
                         free(ctx->allowed_ids);
                         ctx->allowed_ids = NULL;
@@ -129,7 +128,8 @@ int scmi_init_map(scmi_map_context_t *ctx, void *allowed_list_json, void *map_js
                     if (id_json->type == cJSON_Number) {
                         parse_json_u32(id_json, &ctx->allowed_ids[i]);
                     } else {
-                        ctx->allowed_ids[i] = strtoul(id_json->valuestring, NULL, 10);
+                        ctx->allowed_ids[i] =
+                            strtoul(id_json->valuestring, NULL, 10);
                     }
                 }
             }
@@ -179,8 +179,8 @@ int scmi_init_map(scmi_map_context_t *ctx, void *allowed_list_json, void *map_js
         }
     }
 
-    log_info("%s initialized with %u entries, allowed %s: %u", 
-             map_key, ctx->map_count, id_key, ctx->allowed_count);
+    log_info("%s initialized with %u entries, allowed %s: %u", map_key,
+             ctx->map_count, id_key, ctx->allowed_count);
     return 0;
 }
 
@@ -218,9 +218,8 @@ uint32_t scmi_map_id(scmi_map_context_t *ctx, uint32_t scmi_id) {
 
 /* Dispatch SCMI message to protocol handler */
 int scmi_handle_message(SCMIDev *dev, uint8_t protocol_id, uint8_t msg_id,
-                      uint16_t token, const struct iovec *req_iov,
-                      struct iovec *resp_iov)
-{
+                        uint16_t token, const struct iovec *req_iov,
+                        struct iovec *resp_iov) {
     const struct scmi_protocol *proto = scmi_get_protocol_by_id(protocol_id);
     if (!proto) {
         log_warn("Unsupported protocol: %u", protocol_id);

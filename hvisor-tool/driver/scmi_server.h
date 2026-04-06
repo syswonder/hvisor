@@ -3,13 +3,14 @@
 
 #ifdef ENABLE_VIRTIO_SCMI
 
+#include "../include/hvisor.h"
 #include <linux/clk.h>
 #include <linux/reset.h>
 
 /* SCMI reset constants */
-#define SCMI_RESET_DEASSERT         0
-#define SCMI_RESET_RESET            (1 << 0)
-#define SCMI_RESET_ASSERT           (1 << 1)
+#define SCMI_RESET_DEASSERT 0
+#define SCMI_RESET_RESET (1 << 0)
+#define SCMI_RESET_ASSERT (1 << 1)
 
 /* Clock provider phandle, hardcoded as requested */
 #define CLOCK_PROVIDER_PHANDLE 2

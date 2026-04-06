@@ -204,7 +204,7 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
     vdev->zone_id = zone_id;
     vdev->irq_id = irq_id;
     vdev->type = dev_type;
-    
+
     switch (dev_type) {
     case VirtioTBlock:
         vdev->regs.dev_feature = BLK_SUPPORTED_FEATURES;
@@ -239,7 +239,7 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
         goto err;
 #endif
         break;
-    
+
     case VirtioTGPU:
 #ifdef ENABLE_VIRTIO_GPU
         vdev->regs.dev_feature = GPU_SUPPORTED_FEATURES;
@@ -1254,7 +1254,7 @@ void handle_virtio_requests(void) {
     while (true) {
 #ifndef LOONGARCH64
         log_debug("signal_count is %d, proc_count is %d", signal_count,
-                 proc_count);
+                  proc_count);
 
         // Wait indefinitely for a signal or a kernel kick
         int nfds = epoll_wait(epoll_fd, events, 16, -1);
@@ -1371,12 +1371,9 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
         const char *name;
         VirtioDeviceType type;
     } device_type_map[] = {
-        {"blk", VirtioTBlock},
-        {"net", VirtioTNet},
-        {"console", VirtioTConsole},
-        {"gpu", VirtioTGPU},
-        {"scmi", VirtioTSCMI},
-        {NULL, VirtioTNone} // Sentinel
+        {"blk", VirtioTBlock},       {"net", VirtioTNet},
+        {"console", VirtioTConsole}, {"gpu", VirtioTGPU},
+        {"scmi", VirtioTSCMI},       {NULL, VirtioTNone} // Sentinel
     };
 
     // Find device type in mapping table
@@ -1454,12 +1451,17 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
 // virtio-scmi
 #ifdef ENABLE_VIRTIO_SCMI
         // Parse allowed_list, reset_map and clock_map
-        cJSON *allowed_list_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "allowed_list");
-        cJSON *reset_map_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "reset_map");
-        cJSON *clock_map_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "clock_map");
+        cJSON *allowed_list_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "allowed_list");
+        cJSON *reset_map_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "reset_map");
+        cJSON *clock_map_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "clock_map");
         // Parse clock_phandle and reset_phandle first
-        cJSON *clock_phandle_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "clock_phandle");
-        cJSON *reset_phandle_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "reset_phandle");
+        cJSON *clock_phandle_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "clock_phandle");
+        cJSON *reset_phandle_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "reset_phandle");
         if (clock_phandle_json) {
             clock_phandle = clock_phandle_json->valueint;
             log_info("SCMI clock_phandle set to %u", clock_phandle);
@@ -1468,10 +1470,12 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
             reset_phandle = reset_phandle_json->valueint;
             log_info("SCMI reset_phandle set to %u", reset_phandle);
         }
-        
+
         // Parse clock_max_num and reset_max_num (strictly required)
-        cJSON *clock_max_num_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "clock_max_num");
-        cJSON *reset_max_num_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "reset_max_num");
+        cJSON *clock_max_num_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "clock_max_num");
+        cJSON *reset_max_num_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "reset_max_num");
         if (!clock_max_num_json) {
             log_error("Missing required field: clock_max_num");
             return -1;
