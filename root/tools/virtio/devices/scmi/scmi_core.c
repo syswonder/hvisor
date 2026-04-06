@@ -11,6 +11,7 @@
 #include "virtio_scmi.h"
 #include "log.h"
 #include "safe_cjson.h"
+#include "json_parse.h"
 #include <string.h>
 #include <stdlib.h>
 #include <errno.h>
@@ -126,7 +127,7 @@ int scmi_init_map(scmi_map_context_t *ctx, void *allowed_list_json, void *map_js
                         break;
                     }
                     if (id_json->type == cJSON_Number) {
-                        ctx->allowed_ids[i] = id_json->valueint;
+                        parse_json_u32(id_json, &ctx->allowed_ids[i]);
                     } else {
                         ctx->allowed_ids[i] = strtoul(id_json->valuestring, NULL, 10);
                     }
@@ -151,7 +152,7 @@ int scmi_init_map(scmi_map_context_t *ctx, void *allowed_list_json, void *map_js
             while (entry && i < ctx->map_count) {
                 ctx->map[i].scmi_id = strtoul(entry->string, NULL, 10);
                 if (entry->type == cJSON_Number) {
-                    ctx->map[i].phys_id = entry->valueint;
+                    parse_json_u32(entry, &ctx->map[i].phys_id);
                 } else {
                     ctx->map[i].phys_id = strtoul(entry->valuestring, NULL, 10);
                 }
