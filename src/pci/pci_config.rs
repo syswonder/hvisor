@@ -77,6 +77,11 @@ pub static GLOBAL_PCIE_LIST: Lazy<Mutex<BTreeMap<Bdf, ArcRwLockVirtualPciConfigS
 /* add all dev to GLOBAL_PCIE_LIST */
 pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
     warn!("begin {:#x?}", pci_config);
+
+    // Track domains that have been initialized for DW MSI
+    #[cfg(feature = "dwc_msi")]
+    let mut initialized_domains: alloc::vec::Vec<u8> = alloc::vec::Vec::new();
+
     #[cfg(any(
         feature = "ecam_pcie",
         feature = "dwc_pcie",
@@ -166,6 +171,15 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
             GLOBAL_PCIE_LIST
                 .lock()
                 .insert(node.get_bdf(), ArcRwLockVirtualPciConfigSpace::new(node));
+        }
+
+        // Initialize DW MSI domain for this domain ID (only once per domain)
+        #[cfg(feature = "dwc_msi")]
+        {
+            if !initialized_domains.contains(&domain) {
+                crate::pci::dwc_msi::init_dwc_msi_domain(domain)?;
+                initialized_domains.push(domain);
+            }
         }
     }
     info!("hvisor pci init done \n{:#?}", GLOBAL_PCIE_LIST);
@@ -257,6 +271,7 @@ impl Zone {
             let mut vbus_pre = bus_range_begin;
             let mut bus_pre = bus_range_begin;
             let mut device_pre = 0u8;
+            let mut domain_msi_count: u32 = 0;
             let mut vdevice_pre = 0u8;
             let msix_backend = get_arch_msix_backend();
             if let Some(x) = msix_backend.clone() {
@@ -360,7 +375,7 @@ impl Zone {
                         let mut vdev = dev.read().config_space.clone();
                         vdev.set_vbdf(vbdf);
                         let msi_count = vdev.get_msi_count();
-                        inner.vpci_bus_mut().add_msi_count(msi_count);
+                        domain_msi_count += msi_count;
                         inner.vpci_bus_mut().insert(vbdf, vdev);
                     } else {
                         // Check if device is already allocated to another zone
@@ -369,7 +384,7 @@ impl Zone {
                             let mut vdev_inner = dev.read().config_space.clone();
                             vdev_inner.set_vbdf(vbdf);
                         let msi_count = vdev_inner.get_msi_count();
-                        inner.vpci_bus_mut().add_msi_count(msi_count);
+                        domain_msi_count += msi_count;
                             inner.vpci_bus_mut().insert(vbdf, vdev_inner);
                         } else {
                             warn!(
@@ -408,6 +423,50 @@ impl Zone {
                     }
                 }
             }
+
+            // After processing all devices for this domain, allocate hardware MSI bits
+            if domain_msi_count > 0 {
+                #[cfg(feature = "dwc_msi")]
+                {
+                    // Get the DW MSI domain allocator and allocate hwbit
+                    if let Some(mut domain_lock) =
+                        crate::pci::dwc_msi::get_dwc_msi_domain_mut(target_domain)
+                    {
+                        if let Some(domain_msi) = domain_lock.get_mut(&target_domain) {
+                            match domain_msi.allocate(domain_msi_count) {
+                                Ok(hwirq_bit) => {
+                                    info!(
+                                        "Allocate MSI for domain {}, count: {}, hwirq_bit: {}",
+                                        target_domain, domain_msi_count, hwirq_bit
+                                    );
+                                    // Register the MSI info for this domain
+                                    inner.vpci_bus_mut().add_msi_count_for_domain(
+                                        target_domain,
+                                        domain_msi_count,
+                                        hwirq_bit,
+                                    );
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        "Failed to allocate MSI for domain {}: {:?}",
+                                        target_domain, e
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+
+                #[cfg(not(feature = "dwc_msi"))]
+                {
+                    // Without dwc_msi feature, just register without hardware bit allocation
+                    inner.vpci_bus_mut().add_msi_count_for_domain(
+                        target_domain,
+                        domain_msi_count,
+                        0, // hwirq_bit is 0 when not using dwc_msi
+                    );
+                }
+            }
         }
         info!("vpci bus init done\n {:#x?}", inner.vpci_bus());
         Ok(())
@@ -441,11 +500,16 @@ impl Zone {
             }
             #[cfg(feature = "dwc_pcie")]
             {
+                // Encode domain_id into the arg parameter: arg = ecam_base + domain_id
+                // Since ecam_base is 4KB aligned, its low 12 bits are 0
+                // domain_id (0-15) fits in the low bits without interfering
+                let encoded_arg =
+                    rootcomplex_config.ecam_base as usize + (rootcomplex_config.domain as usize);
                 inner.mmio_region_register(
                     rootcomplex_config.ecam_base as usize,
                     rootcomplex_config.ecam_size as usize,
                     mmio_vpci_handler_dbi,
-                    rootcomplex_config.ecam_base as usize,
+                    encoded_arg,
                 );
 
                 let extend_config = platform::ROOT_DWC_ATU_CONFIG

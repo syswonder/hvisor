@@ -588,6 +588,14 @@ impl ArcRwLockVirtualPciConfigSpace {
         f(&guard.capabilities)
     }
 
+    pub fn with_msi_info<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&MsiInfo) -> R,
+    {
+        let guard = self.0.read();
+        guard.msi_info.as_ref().map(|msi_info| f(msi_info))
+    }
+
     pub fn with_msi_info_mut<F, R>(&self, f: F) -> Option<R>
     where
         F: FnOnce(&mut MsiInfo) -> R,
@@ -1779,11 +1787,53 @@ impl RootComplex {
 }
 
 #[derive(Debug)]
+/// MSI information for a specific domain in a VM
+/// Tracks the MSI interrupts needed for this domain and the hardware base interrupt bit
+pub struct DomainMsiInfo {
+    /// Total number of MSI interrupts needed for all devices in this domain
+    pub msi_count: u32,
+    /// Hardware MSI base bit index (allocated from domain allocator)
+    pub hwirq_bit: u32,
+    /// Virtual doorbell address set by the VM (PCIE_MSI_ADDR_LO + PCIE_MSI_ADDR_HI)
+    pub vm_doorbell_addr: u64,
+}
+
+impl DomainMsiInfo {
+    pub fn new(msi_count: u32, hwirq_bit: u32) -> Self {
+        Self {
+            msi_count,
+            hwirq_bit,
+            vm_doorbell_addr: 0,
+        }
+    }
+
+    /// Set the virtual doorbell address (from VM)
+    pub fn set_vm_doorbell(&mut self, addr: u64) {
+        self.vm_doorbell_addr = addr;
+    }
+
+    /// Get the virtual doorbell address
+    pub fn get_vm_doorbell(&self) -> u64 {
+        self.vm_doorbell_addr
+    }
+
+    /// Get MSI mask based on msi_count
+    /// Returns a mask with msi_count bits set (0-based, e.g. msi_count=4 -> mask=0xf)
+    pub fn get_msi_mask(&self) -> u32 {
+        if self.msi_count >= 32 {
+            0xffffffff
+        } else {
+            (1u32 << self.msi_count) - 1
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct VirtualRootComplex {
     devs: BTreeMap<Bdf, ArcRwLockVirtualPciConfigSpace>,
     base_to_bdf: BTreeMap<PciConfigAddress, Bdf>,
-    // Total MSI interrupt count needed for all devices in this root complex
-    total_msi_count: u32,
+    // MSI interrupt information per domain (domain_id -> DomainMsiInfo)
+    domain_msi_info: BTreeMap<u8, DomainMsiInfo>,
     accessor: Option<Arc<dyn PciConfigAccessor>>,
     msix_backend: Option<Arc<RwLock<dyn MsixBackend>>>,
 }
@@ -1793,7 +1843,7 @@ impl VirtualRootComplex {
         Self {
             devs: BTreeMap::new(),
             base_to_bdf: BTreeMap::new(),
-            total_msi_count: 0,
+            domain_msi_info: BTreeMap::new(),
             accessor: None,
             msix_backend: None,
         }
@@ -1857,16 +1907,25 @@ impl VirtualRootComplex {
         self.devs.get(&bdf).cloned()
     }
 
-    pub fn total_msi_count(&self) -> u32 {
-        self.total_msi_count
+    /// Add MSI count for a specific domain with allocated hardware interrupt bit
+    pub fn add_msi_count_for_domain(&mut self, domain: u8, msi_count: u32, hwirq_bit: u32) {
+        self.domain_msi_info
+            .insert(domain, DomainMsiInfo::new(msi_count, hwirq_bit));
     }
 
-    pub fn add_msi_count(&mut self, count: u32) {
-        self.total_msi_count += count;
+    /// Get MSI info for a specific domain
+    pub fn get_domain_msi_info(&self, domain: u8) -> Option<&DomainMsiInfo> {
+        self.domain_msi_info.get(&domain)
     }
 
-    pub fn set_total_msi_count(&mut self, count: u32) {
-        self.total_msi_count = count;
+    /// Get reference to domain MSI info map
+    pub fn domain_msi_info(&self) -> &BTreeMap<u8, DomainMsiInfo> {
+        &self.domain_msi_info
+    }
+
+    /// Get mutable reference to domain MSI info map
+    pub fn domain_msi_info_mut(&mut self) -> &mut BTreeMap<u8, DomainMsiInfo> {
+        &mut self.domain_msi_info
     }
 
     pub fn get_msix_backend(&self) -> Option<Arc<RwLock<dyn MsixBackend>>> {
