@@ -183,7 +183,7 @@
 	};
 
 	chosen {
-		bootargs = "root=/dev/vda rw earlycon console=ttyS0 pci=nomsi";
+		bootargs = "root=/dev/vda rw earlycon console=ttyS0";
 	};
 
 };

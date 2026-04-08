@@ -129,6 +129,19 @@ register_bitfields![u64,
         ],
         PPN OFFSET(0) NUMBITS(44) []
     ],
+    DDT_MSIPTP [ // RISCV-IOMMU Spec Chap3.1.3.5 MSI page table pointer
+        MODE OFFSET(60) NUMBITS(4) [
+            OFF = 0,
+            FLAT = 1,
+        ],
+        PPN OFFSET(0) NUMBITS(44) [],
+    ],
+    DDT_MSI_ADDR_MASK [ // RISCV-IOMMU Spec Chap3.1.3.6 MSI address mask and pattern
+        MASK OFFSET(0) NUMBITS(52) [],
+    ],
+    DDT_MSI_ADDR_PATTERN [
+        PATTERN OFFSET(0) NUMBITS(52) [],
+    ],
     DDT_DIR [ // RISCV-IOMMU Spec Chap3.1.1 Non-leaf DDT entry
         V OFFSET(0) NUMBITS(1) [],
         PPN OFFSET(10) NUMBITS(44) []
@@ -429,9 +442,9 @@ struct DdtEntry {
     iohgatp: ReadWrite<u64, DDT_IOHGATP::Register>,
     ta: ReadWrite<u64>,
     fsc: ReadWrite<u64, DDT_FSC::Register>,
-    msiptp: ReadWrite<u64>,
-    msi_addr_mask: ReadWrite<u64>,
-    msi_addr_pattern: ReadWrite<u64>,
+    msiptp: ReadWrite<u64, DDT_MSIPTP::Register>,
+    msi_addr_mask: ReadWrite<u64, DDT_MSI_ADDR_MASK::Register>,
+    msi_addr_pattern: ReadWrite<u64, DDT_MSI_ADDR_PATTERN::Register>,
     __rsv: ReadWrite<u64>,
 }
 
@@ -639,6 +652,39 @@ impl Iommu {
         );
         // Bare first-stage context.
         entry.fsc.set(0x0);
+        #[cfg(feature = "aia")]
+        {
+            use crate::device::irqchip::aia::msi_pt_paddr_for_zone;
+
+            if let Some(msi_pt_paddr) = msi_pt_paddr_for_zone(vm_id) {
+                entry.msiptp.write(
+                    DDT_MSIPTP::MODE.val(DDT_MSIPTP::MODE::FLAT.value)
+                        + DDT_MSIPTP::PPN.val((msi_pt_paddr as u64) >> 12),
+                );
+            } else {
+                warn!(
+                    "RV IOMMU: no MSI_PT_MAP entry for zone {}, msiptp cleared",
+                    vm_id
+                );
+                entry.msiptp.set(0);
+            }
+            // (A >> 12) & ~msi_addr_mask = (msi_addr_pattern & ~msi_addr_mask)
+            let imsic_s_base_ppn = crate::platform::IMSIC_S_BASE >> 12; // Assume every Guest's vIMSIC_S base is the same as the global IMSIC_S_BASE.
+            let mask = (1usize
+                << crate::consts::MAX_CPU_NUM
+                    .next_power_of_two()
+                    .trailing_zeros())
+                - 1;
+            let pattern = imsic_s_base_ppn; // Here we assume that every Guest's vIMSIC_S base is the same.
+            entry
+                .msi_addr_mask
+                .write(DDT_MSI_ADDR_MASK::MASK.val(mask as u64));
+            entry
+                .msi_addr_pattern
+                .write(DDT_MSI_ADDR_PATTERN::PATTERN.val(pattern as u64));
+            info!("msiptp mode = {} msiptp ppn = {:#x}, msi_addr_mask = {:#x}, msi_addr_pattern = {:#x}", entry.msiptp.read(DDT_MSIPTP::MODE), entry.msiptp.read(DDT_MSIPTP::PPN), entry.msi_addr_mask.read(DDT_MSI_ADDR_MASK::MASK), entry.msi_addr_pattern.read(DDT_MSI_ADDR_PATTERN::PATTERN));
+        }
+
         entry.tc.write(DDT_TC::V::SET);
         info!(
             "RV IOMMU: Write DDT, add decive context, iohgatp.mode = {:#x?}, ioghatp.ppn = {:#x?}",
@@ -661,7 +707,13 @@ impl Iommu {
             );
             return;
         };
-        entry.tc.write(DDT_TC::V::CLEAR);
+        entry.ta.set(0x0);
+        entry.tc.set(0x0);
+        entry.fsc.set(0x0);
+        entry.iohgatp.set(0x0);
+        entry.msi_addr_mask.set(0x0);
+        entry.msi_addr_pattern.set(0x0);
+        entry.msiptp.set(0x0);
         info!(
             "RV IOMMU: Write DDT, remove decive context, iohgatp.mode = {:#x?}, ioghatp.ppn = {:#x?}",
             entry.iohgatp.read(DDT_IOHGATP::MODE),

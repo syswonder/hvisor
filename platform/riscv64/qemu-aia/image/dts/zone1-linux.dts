@@ -90,6 +90,6 @@
 	};
 
 	chosen {
-		bootargs = "root=/dev/vda rw earlycon=virtio,mmio,0x10007000 console=hvc0 pci=nomsi";
+		bootargs = "root=/dev/vda rw earlycon=virtio,mmio,0x10007000 console=hvc0";
 	};
 };

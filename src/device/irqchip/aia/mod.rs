@@ -30,6 +30,7 @@ use crate::memory::HostPhysAddr;
 use crate::memory::MMIOAccess;
 use crate::memory::MemFlags;
 use crate::memory::MemoryRegion;
+use crate::memory::{Frame, PhysAddr};
 use crate::platform::HW_IRQS;
 use crate::platform::{
     BOARD_APLIC_INTERRUPTS_NUM, IMSIC_GUEST_INDEX, IMSIC_GUEST_NUM, IMSIC_S_BASE,
@@ -47,6 +48,15 @@ pub use vimsic::*;
 pub static APLIC: Once<Aplic> = Once::new();
 // The MAX_ZONE_NUM should be the power of 2.
 static mut VAPLIC_MAP: Option<FnvIndexMap<usize, VirtualAPLIC, MAX_ZONE_NUM>> = None;
+/// Per-zone IOMMU MSI page table (one 4 KiB frame, 16-byte PTEs; invalid entries are all-zero).
+static mut MSI_PT_MAP: Option<FnvIndexMap<usize, Frame, MAX_ZONE_NUM>> = None;
+
+/// Physical base of the MSI page-table frame for `zone_id` (`vm_id`), after `vimsic_init`.
+pub fn msi_pt_paddr_for_zone(zone_id: usize) -> Option<PhysAddr> {
+    // Once the MSI_PT for one zone is initialized, it wouldn't change.
+    // Here don't use lock, because it's read-only operation here.
+    unsafe { MSI_PT_MAP.as_ref()?.get(&zone_id).map(|f| f.start_paddr()) }
+}
 
 pub fn init_aplic(aplic_base: usize) {
     APLIC.call_once(|| Aplic::new(aplic_base));
@@ -64,6 +74,7 @@ pub fn primary_init_early() {
 
     unsafe {
         VAPLIC_MAP = Some(FnvIndexMap::new());
+        MSI_PT_MAP = Some(FnvIndexMap::new());
     }
 }
 
@@ -160,9 +171,21 @@ impl Zone {
     }
 
     /// Initial the virtual IMSIC related to thiz Zone.
-    pub fn vimsic_init(&mut self, config: &HvZoneConfig) {
+    pub fn vimsic_init(&mut self, _config: &HvZoneConfig) {
         info!("Zone {} vIMSIC init", self.id());
-        vimsic::vimsic_init(self, IMSIC_S_BASE, IMSIC_GUEST_NUM);
+        let msi_pt = vimsic::vimsic_init(self, IMSIC_S_BASE, IMSIC_GUEST_NUM);
+        unsafe {
+            if let Some(map) = &mut MSI_PT_MAP {
+                if map.contains_key(&self.id()) {
+                    panic!("MSI page table for Zone {} already exists!", self.id());
+                }
+                if map.insert(self.id(), msi_pt).is_err() {
+                    panic!("MSI_PT_MAP full");
+                }
+            } else {
+                panic!("MSI_PT_MAP is not initialized!");
+            }
+        }
     }
 
     pub fn get_vaplic(&self) -> &VirtualAPLIC {
@@ -208,6 +231,11 @@ impl Zone {
                 map.remove(&self.id());
             } else {
                 panic!("VAPLIC_MAP is not initialized!");
+            }
+            if let Some(map) = &mut MSI_PT_MAP {
+                let _ = map.remove(&self.id());
+            } else {
+                panic!("MSI_PT_MAP is not initialized!");
             }
         }
         print_keys();

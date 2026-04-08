@@ -41,7 +41,6 @@ pub const IMSIC_NUM_IDS: usize = 0xFF;
 pub const IOMMU_SYS_BASE: usize = 0x3010000;
 pub const IOMMU_SYS_SIZE: usize = 0x1000;
 
-
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x8f000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x90000000;
 pub const ROOT_ZONE_ENTRY: u64 = 0x90000000;
@@ -65,8 +64,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
 
 pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 0x20;
 pub const HW_IRQS: &[u32] = &[7, 10, 33, 34];
-pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] =
-    &get_irqs_bitmap(&[10, 33]); // ARCH= riscv .It doesn't matter temporarily.
+pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[10, 33]); // ARCH= riscv .It doesn't matter temporarily.
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     plic_base: 0x0,
