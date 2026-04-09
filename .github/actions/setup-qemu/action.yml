@@ -4,7 +4,7 @@ inputs:
   qemu-version:
     description: 'QEMU version to install'
     required: false
-    default: '9.0.2'
+    default: '10.1.0'
   install-path:
     description: 'Custom installation path'
     required: false
