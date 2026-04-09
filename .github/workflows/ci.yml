@@ -63,10 +63,20 @@ jobs:
         with:
           targets: ${{ matrix.rustc_target }}
           components: rust-src
+      - name: Setup QEMU from Source
+        if: matrix.arch == 'riscv64'
+        uses: ./.github/actions/setup-qemu
+        with:
+          qemu-version: "10.1.0"
+          install-path: "/opt/qemu"
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget
+          if [ "${{ matrix.arch }}" = "riscv64" ]; then
+            sudo apt-get install -y gdb-multiarch llvm-dev libclang-dev wget
+          else
+            sudo apt-get install -y qemu-system-aarch64 gdb-multiarch llvm-dev libclang-dev wget
+          fi
           cargo install --version 0.3.0 --locked cargo-binutils
       - name: Set up environment variables
         run: |
