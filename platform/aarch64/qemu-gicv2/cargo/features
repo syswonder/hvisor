@@ -1,4 +1,4 @@
 gicv2
 pl011
-iommu
+arm_smmu
 pci

@@ -2,5 +2,5 @@ aia
 sstc
 pci
 ecam_pcie
-iommu
+riscv_iommu
 share_s2pt

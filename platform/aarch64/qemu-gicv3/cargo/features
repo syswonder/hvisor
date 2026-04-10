@@ -1,5 +1,5 @@
 gicv3
 pl011
-iommu
+arm_smmu
 pci
 ecam_pcie

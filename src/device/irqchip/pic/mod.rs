@@ -18,8 +18,9 @@ pub mod ioapic;
 pub mod lapic;
 
 use crate::{
-    arch::{acpi, cpu::this_cpu_id, idt, iommu, ipi, msr, pio, vmcs::Vmcs},
+    arch::{acpi, cpu::this_cpu_id, idt, ipi, msr, pio, vmcs::Vmcs},
     consts::{MAX_CPU_NUM, MAX_ZONE_NUM},
+    device::iommu,
     zone::Zone,
 };
 use alloc::{collections::vec_deque::VecDeque, vec::Vec};
@@ -144,6 +145,7 @@ pub fn primary_init_late() {}
 
 impl Zone {
     pub fn arch_irqchip_reset(&self) {
+        #[cfg(feature = "intel_vtd")]
         iommu::clear_dma_translation_tables(self.id());
     }
 }

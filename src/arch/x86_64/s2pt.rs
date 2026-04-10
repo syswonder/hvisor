@@ -16,12 +16,12 @@
 
 use crate::{
     arch::{
-        iommu,
         paging::{GenericPTE, Level4PageTable, PagingInstr},
         vmcs::*,
     },
     consts::PAGE_SIZE,
     cpu_data::this_cpu_data,
+    device::iommu,
     error::HvResult,
     memory::{
         addr::{GuestPhysAddr, HostPhysAddr, PhysAddr},
@@ -263,6 +263,7 @@ impl PagingInstr for S2PTInstr {
 
         // if this cpu is boot cpu and it is running
         if this_cpu_data().arch_cpu.power_on && this_cpu_data().boot_cpu {
+            #[cfg(feature = "intel_vtd")]
             iommu::fill_dma_translation_tables(this_zone_id(), root_paddr);
         }
     }

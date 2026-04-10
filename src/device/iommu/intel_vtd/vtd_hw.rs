@@ -62,30 +62,30 @@ const DMA_IOTLB_DR: u64 = (1 << 7);
 
 mod dma_remap_reg {
     /// Capability Register
-    pub const DMAR_CAP_REG: usize = 0x8;
+    pub(super) const DMAR_CAP_REG: usize = 0x8;
     /// Extended Capability Register
-    pub const DMAR_ECAP_REG: usize = 0x10;
+    pub(super) const DMAR_ECAP_REG: usize = 0x10;
     /// Global Command Register
-    pub const DMAR_GCMD_REG: usize = 0x18;
+    pub(super) const DMAR_GCMD_REG: usize = 0x18;
     /// Global Status Register
-    pub const DMAR_GSTS_REG: usize = 0x1c;
+    pub(super) const DMAR_GSTS_REG: usize = 0x1c;
     /// Root Table Address Register
-    pub const DMAR_RTADDR_REG: usize = 0x20;
+    pub(super) const DMAR_RTADDR_REG: usize = 0x20;
     /// Fault Event Control Register
-    pub const DMAR_FECTL_REG: usize = 0x38;
+    pub(super) const DMAR_FECTL_REG: usize = 0x38;
     /// Invalidation Queue Tail Register
-    pub const DMAR_IQT_REG: usize = 0x88;
+    pub(super) const DMAR_IQT_REG: usize = 0x88;
     /// Invalidation Queue Address Register
-    pub const DMAR_IQA_REG: usize = 0x90;
+    pub(super) const DMAR_IQA_REG: usize = 0x90;
     /// Interrupt Remapping Table Address Register
-    pub const DMAR_IRTA_REG: usize = 0xb8;
+    pub(super) const DMAR_IRTA_REG: usize = 0xb8;
 }
 
 static VTD: Once<Mutex<Vtd>> = Once::new();
 
 bitflags::bitflags! {
     #[derive(Clone, Copy, Debug)]
-    pub struct EcapFlags: u64 {
+    struct EcapFlags: u64 {
         ///  Extended Interrupt Mode
         const EIM = 1 << 4;
         ///  Interrupt Remapping Support
@@ -95,7 +95,7 @@ bitflags::bitflags! {
     }
 
     #[derive(Clone, Copy, Debug)]
-    pub struct GstsFlags: u32 {
+    struct GstsFlags: u32 {
         /// Translation Enable Status
         const TES = 1 << 31;
         /// Root Table Pointer Status
@@ -109,7 +109,7 @@ bitflags::bitflags! {
     }
 
     #[derive(Clone, Copy, Debug)]
-    pub struct GcmdFlags: u32 {
+    struct GcmdFlags: u32 {
         /// Translation Enable
         const TE = 1 << 31;
         /// Set Root Table Pointer
@@ -459,7 +459,7 @@ const fn dma_iotlb_did(did: u16) -> u64 {
     ((did as u64) & 0xffff) << 16
 }
 
-pub fn parse_root_dmar() -> Mutex<Vtd> {
+fn parse_root_dmar() -> Mutex<Vtd> {
     let dmar = acpi::root_get_table(&Signature::DMAR).unwrap();
     let mut cur: usize = 48; // start offset of remapping structures
     let len = dmar.get_len();

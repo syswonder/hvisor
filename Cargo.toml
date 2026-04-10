@@ -54,6 +54,11 @@ pci = [] # supported by: aarch64, riscv64,loongarch64
 share_s2pt = ["iommu"]
 print_timestamp = [] # print timestamp when logging
 
+############# IOMMU ##############
+riscv_iommu = ["iommu"]
+arm_smmu = ["iommu"]
+intel_vtd = ["iommu"]
+
 ############# PCIe access mechanism ##############
 ecam_pcie = [] # Standard ECAM mechanism (default for most platforms)
 dwc_pcie = [] # DesignWare PCIe Core mechanism (CFG0/CFG1, used by RK3568)
