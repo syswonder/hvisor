@@ -323,7 +323,7 @@ fn handle_cap_access(
                         }
                         12 | 13 => {
                             // Message Data (interrupt vector)
-                            // Convert VM's virq bit to hardware hwirq bit
+                            // Convert VM vector index to hardware vector index.
                             dev.with_msi_info_mut(|msi_info| {
                                 msi_info.set_doorbell(
                                     (msi_info.msi_doorbell & 0xffffffff00000000) | (value as u64),
@@ -338,7 +338,7 @@ fn handle_cap_access(
                             if let Some(domain_msi_info) = vbus.domain_msi_info().get(&domain_id) {
                                 let virq_bit = value as u32;
                                 let hwirq_bit = domain_msi_info.hwirq_bit;
-                                let hw_value = virq_bit.wrapping_shl(hwirq_bit);
+                                let hw_value = virq_bit.wrapping_add(hwirq_bit);
 
                                 info!(
                                     "vbdf {:#?}: MSI Message Data converted: virq {:#x} -> hw {:#x} (hwirq_bit={})",
@@ -397,7 +397,7 @@ fn handle_cap_access(
                             return Ok(Some(((vm_doorbell >> 32) & 0xffffffff) as usize));
                         }
                         12 | 13 => {
-                            // Read hardware and convert back from hwirq to virq
+                            // Read hardware and convert back from hardware vector index to VM index
                             let hw_value = dev.read_hw(offset, size)?;
 
                             let zone = this_zone();
@@ -406,7 +406,12 @@ fn handle_cap_access(
 
                             if let Some(domain_msi_info) = vbus.domain_msi_info().get(&domain_id) {
                                 let hwirq_bit = domain_msi_info.hwirq_bit;
-                                let virq_bit = (hw_value as u32).wrapping_shr(hwirq_bit);
+                                let hw_vec = hw_value as u32;
+                                let virq_bit = if hw_vec >= hwirq_bit {
+                                    hw_vec - hwirq_bit
+                                } else {
+                                    hw_vec
+                                };
 
                                 info!(
                                     "vbdf {:#?}: MSI Message Data read converted: hw {:#x} -> virq {:#x} (hwirq_bit={})",
@@ -503,16 +508,23 @@ fn handle_endpoint_access(
 
             // Check if this BAR contains MSIX table (only when dwc_msi feature is enabled)
             #[cfg(feature = "dwc_msi")]
-            let is_msix_bar = dev
-                .read()
-                .get_msi_info()
-                .and_then(|msi_info| {
-                    msi_info
-                        .msix_info
-                        .as_ref()
-                        .map(|msix| msix.bar_id == slot as u8)
-                })
-                .unwrap_or(false);
+            let is_msix_bar = {
+                let msix_check_slot = if bar_type == PciMemType::Mem64High && slot > 0 {
+                    slot - 1
+                } else {
+                    slot
+                };
+
+                dev.read()
+                    .get_msi_info()
+                    .and_then(|msi_info| {
+                        msi_info
+                            .msix_info
+                            .as_ref()
+                            .map(|msix| msix.bar_id == msix_check_slot as u8)
+                    })
+                    .unwrap_or(false)
+            };
 
             #[cfg(not(feature = "dwc_msi"))]
             let is_msix_bar = false;
@@ -534,6 +546,8 @@ fn handle_endpoint_access(
                                 | (bar_type == PciMemType::Mem64High)
                                 | (bar_type == PciMemType::Io)
                             {
+                                let old_vaddr =
+                                    dev.with_bar_ref(slot, |bar| bar.get_virtual_value64()) & !0xf;
                                 let new_vaddr = {
                                     if bar_type == PciMemType::Mem64High {
                                         /* last 4bit is flag, not address and need ignore
@@ -562,6 +576,103 @@ fn handle_endpoint_access(
                                 dev.with_bar_ref_mut(slot, |bar| bar.set_value(new_vaddr));
                                 if bar_type == PciMemType::Mem64High {
                                     dev.with_bar_ref_mut(slot - 1, |bar| bar.set_value(new_vaddr));
+                                }
+
+                                let paddr = {
+                                    let raw = dev.with_bar_ref(slot, |bar| bar.get_value64())
+                                        as HostPhysAddr;
+                                    if bar_type == PciMemType::Io {
+                                        raw & !0x3
+                                    } else {
+                                        raw & !0xf
+                                    }
+                                };
+
+                                if is_msix_bar {
+                                    let msix_slot = if bar_type == PciMemType::Mem64High {
+                                        slot - 1
+                                    } else {
+                                        slot
+                                    };
+                                    dev.with_msi_info_mut(|msi_info| {
+                                        if let Some(msix) = msi_info.msix_info.as_mut() {
+                                            if msix.bar_id as usize == msix_slot {
+                                                msix.bar_paddr = paddr as u64;
+                                            }
+                                        }
+                                    });
+                                }
+
+                                let bar_size = {
+                                    let size = dev.with_bar_ref(slot, |bar| bar.get_size());
+                                    if crate::memory::addr::is_aligned(size as usize) {
+                                        size
+                                    } else {
+                                        crate::memory::PAGE_SIZE as u64
+                                    }
+                                };
+                                let new_vaddr_aligned =
+                                    if !crate::memory::addr::is_aligned(new_vaddr as usize) {
+                                        crate::memory::addr::align_up(new_vaddr as usize) as u64
+                                    } else {
+                                        new_vaddr as u64
+                                    };
+
+                                let zone = this_zone();
+                                let mut guard = zone.write();
+
+                                if is_msix_bar {
+                                    let msix_bar_id = if bar_type == PciMemType::Mem64High {
+                                        slot - 1
+                                    } else {
+                                        slot
+                                    };
+                                    warn!(
+                                        "Register MSI-X BAR handler: vbdf {:#?}, bar_id {}, gpa {:#x}, size {:#x}, paddr {:#x}",
+                                        dev.get_vbdf(),
+                                        msix_bar_id,
+                                        new_vaddr_aligned,
+                                        bar_size,
+                                        paddr
+                                    );
+                                    guard.mmio_region_remove(old_vaddr as GuestPhysAddr);
+                                    guard.mmio_region_register(
+                                        new_vaddr_aligned as GuestPhysAddr,
+                                        bar_size as usize,
+                                        mmio_msix_table_handler,
+                                        paddr as usize,
+                                    );
+                                } else {
+                                    let gpm = guard.gpm_mut();
+                                    if !gpm
+                                        .try_delete(
+                                            old_vaddr.try_into().unwrap(),
+                                            bar_size as usize,
+                                        )
+                                        .is_ok()
+                                    {}
+                                    gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
+                                        new_vaddr_aligned as GuestPhysAddr,
+                                        paddr as HostPhysAddr,
+                                        bar_size as _,
+                                        MemFlags::READ | MemFlags::WRITE,
+                                    ))?;
+                                }
+                                drop(guard);
+                                #[cfg(target_arch = "aarch64")]
+                                unsafe {
+                                    core::arch::asm!("isb");
+                                    core::arch::asm!("tlbi vmalls12e1is");
+                                    core::arch::asm!("dsb nsh");
+                                }
+                                #[cfg(target_arch = "x86_64")]
+                                {
+                                    let vbdf = dev.get_vbdf();
+                                    crate::arch::iommu::flush(
+                                        this_zone_id(),
+                                        vbdf.bus,
+                                        (vbdf.device << 3) + vbdf.function,
+                                    );
                                 }
                             }
                         }
@@ -602,8 +713,30 @@ fn handle_endpoint_access(
                                     });
                                 }
 
-                                let paddr =
-                                    dev.with_bar_ref(slot, |bar| bar.get_value64()) as HostPhysAddr;
+                                let paddr = {
+                                    let raw = dev.with_bar_ref(slot, |bar| bar.get_value64())
+                                        as HostPhysAddr;
+                                    if bar_type == PciMemType::Io {
+                                        raw & !0x3
+                                    } else {
+                                        raw & !0xf
+                                    }
+                                };
+
+                                if is_msix_bar {
+                                    dev.with_msi_info_mut(|msi_info| {
+                                        if let Some(msix) = msi_info.msix_info.as_mut() {
+                                            let msix_slot = if bar_type == PciMemType::Mem64High {
+                                                slot - 1
+                                            } else {
+                                                slot
+                                            };
+                                            if msix.bar_id as usize == msix_slot {
+                                                msix.bar_paddr = paddr as u64;
+                                            }
+                                        }
+                                    });
+                                }
                                 let bar_size = {
                                     let size = dev.with_bar_ref(slot, |bar| bar.get_size());
                                     if crate::memory::addr::is_aligned(size as usize) {
@@ -623,6 +756,19 @@ fn handle_endpoint_access(
                                 let mut guard = zone.write();
 
                                 if is_msix_bar {
+                                    let msix_bar_id = if bar_type == PciMemType::Mem64High {
+                                        slot - 1
+                                    } else {
+                                        slot
+                                    };
+                                    warn!(
+                                        "Register MSI-X BAR handler: vbdf {:#?}, bar_id {}, gpa {:#x}, size {:#x}, paddr {:#x}",
+                                        dev.get_vbdf(),
+                                        msix_bar_id,
+                                        new_vaddr,
+                                        bar_size,
+                                        paddr
+                                    );
                                     // Remove old MSIX handler if it exists
                                     guard.mmio_region_remove(old_vaddr as GuestPhysAddr);
                                     // Register new MSIX handler at new address
@@ -874,16 +1020,23 @@ fn handle_pci_bridge_access(
 
             // Check if this BAR contains MSIX table (only when dwc_msi feature is enabled)
             #[cfg(feature = "dwc_msi")]
-            let is_msix_bar = dev
-                .read()
-                .get_msi_info()
-                .and_then(|msi_info| {
-                    msi_info
-                        .msix_info
-                        .as_ref()
-                        .map(|msix| msix.bar_id == slot as u8)
-                })
-                .unwrap_or(false);
+            let is_msix_bar = {
+                let msix_check_slot = if bar_type == PciMemType::Mem64High && slot > 0 {
+                    slot - 1
+                } else {
+                    slot
+                };
+
+                dev.read()
+                    .get_msi_info()
+                    .and_then(|msi_info| {
+                        msi_info
+                            .msix_info
+                            .as_ref()
+                            .map(|msix| msix.bar_id == msix_check_slot as u8)
+                    })
+                    .unwrap_or(false)
+            };
 
             #[cfg(not(feature = "dwc_msi"))]
             let is_msix_bar = false;
@@ -901,31 +1054,63 @@ fn handle_pci_bridge_access(
                                 field.size(),
                                 value,
                             )?;
-                            if (bar_type == PciMemType::Mem32) | (bar_type == PciMemType::Io) {
-                                let new_vaddr = (value as u64) & !0xf;
+                            if (bar_type == PciMemType::Mem32)
+                                | (bar_type == PciMemType::Mem64High)
+                                | (bar_type == PciMemType::Io)
+                            {
+                                let old_vaddr =
+                                    dev.with_bar_ref(slot, |bar| bar.get_virtual_value64()) & !0xf;
+                                let new_vaddr = {
+                                    if bar_type == PciMemType::Mem64High {
+                                        let low_value = dev
+                                            .with_config_value(|cv| cv.get_bar_value(slot - 1))
+                                            as u64;
+                                        let high_value = (value as u32 as u64) << 32;
+                                        (low_value | high_value) & !0xf
+                                    } else {
+                                        (value as u64) & !0xf
+                                    }
+                                };
 
                                 // set virt_value
                                 dev.with_bar_ref_mut(slot, |bar| bar.set_virtual_value(new_vaddr));
+                                if bar_type == PciMemType::Mem64High {
+                                    dev.with_bar_ref_mut(slot - 1, |bar| {
+                                        bar.set_virtual_value(new_vaddr)
+                                    });
+                                }
 
                                 // set value
                                 dev.with_bar_ref_mut(slot, |bar| bar.set_value(new_vaddr));
-                            }
-                        }
-                    } else if is_dev_belong_to_zone {
-                        // normal mode, update virt resources
-                        dev.with_config_value_mut(|configvalue| {
-                            configvalue.set_bar_value(slot, value as u32);
-                        });
-                        if (value & 0xfffffff0) != 0xfffffff0 {
-                            if (bar_type == PciMemType::Mem32) | (bar_type == PciMemType::Io) {
-                                let old_vaddr =
-                                    dev.with_bar_ref(slot, |bar| bar.get_virtual_value64()) & !0xf;
-                                let new_vaddr = (value as u64) & !0xf;
+                                if bar_type == PciMemType::Mem64High {
+                                    dev.with_bar_ref_mut(slot - 1, |bar| bar.set_value(new_vaddr));
+                                }
 
-                                dev.with_bar_ref_mut(slot, |bar| bar.set_virtual_value(new_vaddr));
+                                let paddr = {
+                                    let raw = dev.with_bar_ref(slot, |bar| bar.get_value64())
+                                        as HostPhysAddr;
+                                    if bar_type == PciMemType::Io {
+                                        raw & !0x3
+                                    } else {
+                                        raw & !0xf
+                                    }
+                                };
 
-                                let paddr =
-                                    dev.with_bar_ref(slot, |bar| bar.get_value64()) as HostPhysAddr;
+                                if is_msix_bar {
+                                    let msix_slot = if bar_type == PciMemType::Mem64High {
+                                        slot - 1
+                                    } else {
+                                        slot
+                                    };
+                                    dev.with_msi_info_mut(|msi_info| {
+                                        if let Some(msix) = msi_info.msix_info.as_mut() {
+                                            if msix.bar_id as usize == msix_slot {
+                                                msix.bar_paddr = paddr as u64;
+                                            }
+                                        }
+                                    });
+                                }
+
                                 let bar_size = {
                                     let size = dev.with_bar_ref(slot, |bar| bar.get_size());
                                     if crate::memory::addr::is_aligned(size as usize) {
@@ -945,6 +1130,147 @@ fn handle_pci_bridge_access(
                                 let mut guard = zone.write();
 
                                 if is_msix_bar {
+                                    let msix_bar_id = if bar_type == PciMemType::Mem64High {
+                                        slot - 1
+                                    } else {
+                                        slot
+                                    };
+                                    warn!(
+                                        "Register MSI-X BAR handler: vbdf {:#?}, bar_id {}, gpa {:#x}, size {:#x}, paddr {:#x}",
+                                        dev.get_vbdf(),
+                                        msix_bar_id,
+                                        new_vaddr_aligned,
+                                        bar_size,
+                                        paddr
+                                    );
+                                    guard.mmio_region_remove(old_vaddr as GuestPhysAddr);
+                                    guard.mmio_region_register(
+                                        new_vaddr_aligned as GuestPhysAddr,
+                                        bar_size as usize,
+                                        mmio_msix_table_handler,
+                                        paddr as usize,
+                                    );
+                                } else {
+                                    let gpm = guard.gpm_mut();
+                                    if !gpm
+                                        .try_delete(
+                                            old_vaddr.try_into().unwrap(),
+                                            bar_size as usize,
+                                        )
+                                        .is_ok()
+                                    {}
+                                    gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
+                                        new_vaddr_aligned as GuestPhysAddr,
+                                        paddr as HostPhysAddr,
+                                        bar_size as _,
+                                        MemFlags::READ | MemFlags::WRITE,
+                                    ))?;
+                                }
+                                drop(guard);
+                                #[cfg(target_arch = "aarch64")]
+                                unsafe {
+                                    core::arch::asm!("isb");
+                                    core::arch::asm!("tlbi vmalls12e1is");
+                                    core::arch::asm!("dsb nsh");
+                                }
+                                #[cfg(target_arch = "x86_64")]
+                                {
+                                    let vbdf = dev.get_vbdf();
+                                    crate::arch::iommu::flush(
+                                        this_zone_id(),
+                                        vbdf.bus,
+                                        (vbdf.device << 3) + vbdf.function,
+                                    );
+                                }
+                            }
+                        }
+                    } else if is_dev_belong_to_zone {
+                        // normal mode, update virt resources
+                        dev.with_config_value_mut(|configvalue| {
+                            configvalue.set_bar_value(slot, value as u32);
+                        });
+                        if (value & 0xfffffff0) != 0xfffffff0 {
+                            if (bar_type == PciMemType::Mem32)
+                                | (bar_type == PciMemType::Mem64High)
+                                | (bar_type == PciMemType::Io)
+                            {
+                                let old_vaddr =
+                                    dev.with_bar_ref(slot, |bar| bar.get_virtual_value64()) & !0xf;
+                                let new_vaddr = {
+                                    if bar_type == PciMemType::Mem64High {
+                                        let low_value = dev
+                                            .with_config_value(|cv| cv.get_bar_value(slot - 1))
+                                            as u64;
+                                        let high_value = (value as u32 as u64) << 32;
+                                        (low_value | high_value) & !0xf
+                                    } else {
+                                        (value as u64) & !0xf
+                                    }
+                                };
+
+                                dev.with_bar_ref_mut(slot, |bar| bar.set_virtual_value(new_vaddr));
+                                if bar_type == PciMemType::Mem64High {
+                                    dev.with_bar_ref_mut(slot - 1, |bar| {
+                                        bar.set_virtual_value(new_vaddr)
+                                    });
+                                }
+
+                                let paddr = {
+                                    let raw = dev.with_bar_ref(slot, |bar| bar.get_value64())
+                                        as HostPhysAddr;
+                                    if bar_type == PciMemType::Io {
+                                        raw & !0x3
+                                    } else {
+                                        raw & !0xf
+                                    }
+                                };
+
+                                if is_msix_bar {
+                                    dev.with_msi_info_mut(|msi_info| {
+                                        if let Some(msix) = msi_info.msix_info.as_mut() {
+                                            let msix_slot = if bar_type == PciMemType::Mem64High {
+                                                slot - 1
+                                            } else {
+                                                slot
+                                            };
+                                            if msix.bar_id as usize == msix_slot {
+                                                msix.bar_paddr = paddr as u64;
+                                            }
+                                        }
+                                    });
+                                }
+                                let bar_size = {
+                                    let size = dev.with_bar_ref(slot, |bar| bar.get_size());
+                                    if crate::memory::addr::is_aligned(size as usize) {
+                                        size
+                                    } else {
+                                        crate::memory::PAGE_SIZE as u64
+                                    }
+                                };
+                                let new_vaddr_aligned =
+                                    if !crate::memory::addr::is_aligned(new_vaddr as usize) {
+                                        crate::memory::addr::align_up(new_vaddr as usize) as u64
+                                    } else {
+                                        new_vaddr as u64
+                                    };
+
+                                let zone = this_zone();
+                                let mut guard = zone.write();
+
+                                if is_msix_bar {
+                                    let msix_bar_id = if bar_type == PciMemType::Mem64High {
+                                        slot - 1
+                                    } else {
+                                        slot
+                                    };
+                                    warn!(
+                                        "Register MSI-X BAR handler: vbdf {:#?}, bar_id {}, gpa {:#x}, size {:#x}, paddr {:#x}",
+                                        dev.get_vbdf(),
+                                        msix_bar_id,
+                                        new_vaddr_aligned,
+                                        bar_size,
+                                        paddr
+                                    );
                                     // Remove old MSIX handler if it exists
                                     guard.mmio_region_remove(old_vaddr as GuestPhysAddr);
                                     // Register new MSIX handler at new address
@@ -1642,7 +1968,9 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
             }
         } else if mmio.address > ATU_BASE {
             mmio_perform_access(ecam_base, mmio);
-        } else if mmio.address >= BIT_LENTH {
+        } else if mmio.address >= BIT_LENTH
+            && !(mmio.address >= PCIE_MSI_ADDR_LO && mmio.address <= PCIE_MSI_INTR0_STATUS)
+        {
             // dbi read
             mmio_perform_access(ecam_base, mmio);
         } else if mmio.address >= PCIE_MSI_ADDR_LO && mmio.address <= PCIE_MSI_INTR0_STATUS {
@@ -1996,6 +2324,7 @@ pub fn mmio_vpci_direct_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult
 /// Handle MMIO access to MSIX table in BAR memory
 pub fn mmio_msix_table_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     let access_offset = mmio.address as u64;
+    let base_aligned = (base as u64) & !0xf;
 
     // Find the device matching this BAR's physical address and get domain_id from BDF
     let (device_info, domain_id) = {
@@ -2009,11 +2338,28 @@ pub fn mmio_msix_table_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
         for dev in vbus.devs_ref().values() {
             if let Some(msi_info) = dev.read().get_msi_info() {
                 if let Some(msix) = &msi_info.msix_info {
-                    if msix.bar_paddr == base as u64 {
+                    let msix_bar_aligned = msix.bar_paddr & !0xf;
+                    if msix_bar_aligned == base_aligned {
                         // Get domain_id from device's BDF
                         domain_id = dev.read().get_bdf().domain();
                         result = Some((dev.clone(), msix.offset, msix.entry_count));
                         break;
+                    }
+                }
+            }
+        }
+
+        if result.is_none() {
+            let global_pcie_list = GLOBAL_PCIE_LIST.lock();
+            for dev in global_pcie_list.values() {
+                if let Some(msi_info) = dev.read().get_msi_info() {
+                    if let Some(msix) = &msi_info.msix_info {
+                        let msix_bar_aligned = msix.bar_paddr & !0xf;
+                        if msix_bar_aligned == base_aligned {
+                            domain_id = dev.read().get_bdf().domain();
+                            result = Some((dev.clone(), msix.offset, msix.entry_count));
+                            break;
+                        }
                     }
                 }
             }
@@ -2085,7 +2431,7 @@ pub fn mmio_msix_table_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
                             "MSIX[vbdf {:#?}][entry {}] Message Data write: {:#x}",
                             vbdf, entry_index, mmio.value
                         );
-                        // Convert VM's virq bit to hardware hwirq bit
+                        // Convert VM vector index to hardware vector index.
                         #[cfg(feature = "dwc_msi")]
                         {
                             if domain_id != 0xFF {
@@ -2097,7 +2443,7 @@ pub fn mmio_msix_table_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
                                 {
                                     let virq_bit = mmio.value as u32;
                                     let hwirq_bit = domain_msi_info.hwirq_bit;
-                                    let hw_value = virq_bit.wrapping_shl(hwirq_bit);
+                                    let hw_value = virq_bit.wrapping_add(hwirq_bit);
                                     mmio.value = hw_value as usize;
 
                                     info!(
@@ -2156,7 +2502,11 @@ pub fn mmio_msix_table_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
                                 {
                                     let hwirq_bit = domain_msi_info.hwirq_bit;
                                     let hw_value = hw_mmio.value as u32;
-                                    let virq_bit = hw_value.wrapping_shr(hwirq_bit);
+                                    let virq_bit = if hw_value >= hwirq_bit {
+                                        hw_value - hwirq_bit
+                                    } else {
+                                        hw_value
+                                    };
                                     mmio.value = virq_bit as usize;
 
                                     info!(
