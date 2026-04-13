@@ -602,14 +602,16 @@ fn handle_exception(
                         "mmio access failed, error = {:?}, this is a real page fault",
                         e
                     );
-                    panic!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",
-                    ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv)
+                    error!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",
+                    ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv);
+                    this_cpu_data().arch_cpu.idle();// boneinscri 2026.04, use shutdown to restart it~ for debugging
                 }
             }
         }
         _ => {
-            panic!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",  
-            ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv)
+            error!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",  
+            ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv);
+            this_cpu_data().arch_cpu.idle();// boneinscri 2026.04, use shutdown to restart it~ for debugging
         }
     }
 }

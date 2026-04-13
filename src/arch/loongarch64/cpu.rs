@@ -396,11 +396,21 @@ impl ArchCpu {
             self.ctx.x[6] = 0;
             info!("a0={:#x?} a1={:#x?} a2={:#x?}", self.ctx.x[4], self.ctx.x[5], self.ctx.x[6]);
         } else {
-            self.ctx.x[4] = 1;
-            self.ctx.x[5] = boot_ctx.cmd_line_ptr;
-            self.ctx.x[6] = boot_ctx.efi_system_table;
-            info!("zone: {} x[4](a0)={:#x}, x[5](a1/cmd_line_ptr)={:#x}, x[6](a2/efi_system_table)={:#x}",
-                zone_id, self.ctx.x[4], self.ctx.x[5], self.ctx.x[6]);
+            let is_acpi = {
+                let zone = this_zone();
+                zone.boot_method.starts_with(b"acpi")
+            };
+            if is_acpi {
+                self.ctx.x[4] = 1;
+                self.ctx.x[5] = boot_ctx.cmd_line_ptr;
+                self.ctx.x[6] = boot_ctx.efi_system_table;
+            } else {
+                self.ctx.x[4] = 0;
+                self.ctx.x[5] = 0;
+                self.ctx.x[6] = 0;
+            }
+            info!("zone: {} boot_method: acpi={}, x[4](a0)={:#x}, x[5](a1/cmd_line_ptr)={:#x}, x[6](a2/efi_system_table)={:#x}",
+                zone_id, is_acpi, self.ctx.x[4], self.ctx.x[5], self.ctx.x[6]);
 
             snap.dmw0 = read_csr_dmw0();
             snap.dmw1 = read_csr_dmw1();
