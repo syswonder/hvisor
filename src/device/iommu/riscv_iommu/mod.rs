@@ -75,7 +75,11 @@ impl Iommu for RiscvIommu {
         );
     }
     fn remove_device(&self, zone_id: usize, device_id: usize) {
-        todo!("RiscvIommu remove device for device id {} and VMID {}", device_id, zone_id);
+        todo!(
+            "RiscvIommu remove device for device id {} and VMID {}",
+            device_id,
+            zone_id
+        );
     }
     fn interrupt_handler(&self, irq_id: usize) {
         todo!(
