@@ -39,6 +39,9 @@ impl Iommu for DummyIommu {
     fn add_device_exclusive_s2pt(&self, zone_id: usize, device_id: usize, _regions: Vec<MemoryRegion<GuestPhysAddr>>) {
         info!("No IOMMU implementation available, cannot add device id {} for VMID {} with exclusive S2PT", device_id, zone_id);
     }
+    fn remove_device(&self, zone_id: usize, device_id: usize) {
+        info!("No IOMMU implementation available, cannot remove device id {} for VMID {}", device_id, zone_id);
+    }
     fn interrupt_handler(&self, irq_id: usize) {
         info!("No IOMMU implementation available, cannot handle interrupt id {}", irq_id);
     }

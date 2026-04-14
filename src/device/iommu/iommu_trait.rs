@@ -30,6 +30,8 @@ pub(crate) trait Iommu {
     fn add_device_share_s2pt(&self, zone_id: usize, device_id: usize);
     /// Add a device with exclusive stage 2 page table mappings (i.e. iopagetable)
     fn add_device_exclusive_s2pt(&self, zone_id: usize, device_id: usize, regions: Vec<MemoryRegion<GuestPhysAddr>>);
+    /// Remove a device from the IOMMU
+    fn remove_device(&self, zone_id: usize, device_id: usize);
     /// Handle IOMMU-related interrupts
     fn interrupt_handler(&self, irq_id: usize);
     /// Initialize the Virtual IOMMU for the Zone
