@@ -1909,8 +1909,15 @@ impl VirtualRootComplex {
 
     /// Add MSI count for a specific domain with allocated hardware interrupt bit
     pub fn add_msi_count_for_domain(&mut self, domain: u8, msi_count: u32, hwirq_bit: u32) {
-        self.domain_msi_info
-            .insert(domain, DomainMsiInfo::new(msi_count, hwirq_bit));
+        let vm_doorbell = self
+            .domain_msi_info
+            .get(&domain)
+            .map(|info| info.get_vm_doorbell())
+            .unwrap_or(0);
+
+        let mut info = DomainMsiInfo::new(msi_count, hwirq_bit);
+        info.set_vm_doorbell(vm_doorbell);
+        self.domain_msi_info.insert(domain, info);
     }
 
     /// Get MSI info for a specific domain

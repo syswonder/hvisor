@@ -36,6 +36,13 @@ use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
 use core::panic;
 use core::sync::atomic::{AtomicBool, Ordering};
 
+#[cfg(feature = "pci")]
+use crate::config::{HvPciConfig, HvPciDevConfig, CONFIG_MAX_PCI_DEV, CONFIG_PCI_BUS_MAXNUM};
+#[cfg(feature = "pci")]
+use crate::pci::pci_config::GLOBAL_PCIE_LIST;
+#[cfg(feature = "pci")]
+use crate::pci::pci_struct::Bdf;
+
 #[cfg(feature = "dwc_pcie")]
 #[derive(Debug)]
 pub struct VirtualAtuConfigs {
@@ -317,6 +324,335 @@ impl ZoneInner {
     pub fn atu_configs_mut(&mut self) -> &mut VirtualAtuConfigs {
         &mut self.atu_configs
     }
+
+    #[cfg(feature = "pci")]
+    pub fn guest_pci_init(
+        &mut self,
+        _zone_id: usize,
+        alloc_pci_devs: &[HvPciDevConfig; CONFIG_MAX_PCI_DEV],
+        num_pci_devs: u64,
+        pci_config: &[HvPciConfig],
+        _num_pci_config: usize,
+    ) -> HvResult {
+        let mut guard = GLOBAL_PCIE_LIST.lock();
+        for target_pci_config in pci_config {
+            if target_pci_config.ecam_base == 0 {
+                continue;
+            }
+
+            #[allow(unused_variables)]
+            let ecam_base = target_pci_config.ecam_base;
+            let target_domain = target_pci_config.domain;
+            let bus_range_begin = target_pci_config.bus_range_begin as u8;
+
+            let mut filtered_devices: alloc::vec::Vec<HvPciDevConfig> = alloc::vec::Vec::new();
+            for i in 0..num_pci_devs {
+                let dev_config = alloc_pci_devs[i as usize];
+                if dev_config.domain == target_domain {
+                    filtered_devices.push(dev_config);
+                }
+            }
+
+            if filtered_devices.is_empty() {
+                continue;
+            }
+
+            filtered_devices.sort_by(|a, b| {
+                a.bus
+                    .cmp(&b.bus)
+                    .then_with(|| a.device.cmp(&b.device))
+                    .then_with(|| a.function.cmp(&b.function))
+            });
+
+            let mut vbus_pre = bus_range_begin;
+            let mut bus_pre = bus_range_begin;
+            let mut device_pre = 0u8;
+            let mut domain_msi_count: u32 = 0;
+
+            for dev_config in &filtered_devices {
+                let bdf = Bdf::new_from_config(*dev_config);
+                let bus = bdf.bus();
+                let device = bdf.device();
+                let function = bdf.function();
+
+                let vfunction = if bus != bus_pre || device != device_pre {
+                    0
+                } else {
+                    function
+                };
+
+                let vbus = if bus > bus_pre {
+                    vbus_pre += 1;
+                    vbus_pre
+                } else {
+                    vbus_pre
+                };
+
+                let vbdf = Bdf::new(bdf.domain(), vbus, device, vfunction);
+                device_pre = device;
+                bus_pre = bus;
+
+                info!("set bdf {:#?} to vbdf {:#?}", bdf, vbdf);
+
+                #[cfg(any(
+                    all(feature = "iommu", target_arch = "aarch64"),
+                    target_arch = "x86_64"
+                ))]
+                {
+                    let iommu_pt_addr = if self.iommu_pt().is_some() {
+                        self.iommu_pt().unwrap().root_paddr()
+                    } else {
+                        0
+                    };
+                    let device_id = (dev_config.bus as usize) << 8
+                        | (dev_config.device as usize) << 3
+                        | dev_config.function as usize;
+                    crate::arch::iommu::iommu_add_device(_zone_id, device_id as _, iommu_pt_addr);
+                }
+
+                if let Some(dev) = guard.get(&bdf) {
+                    if bdf.is_host_bridge(dev.read().get_host_bdf().bus())
+                        || dev.with_config_value(|config_value| -> bool {
+                            config_value.get_class().0 == 0x6
+                        })
+                    {
+                        let mut vdev = dev.read().clone();
+                        vdev.set_vbdf(vbdf);
+                        let msi_count = vdev.get_msi_count();
+                        domain_msi_count += msi_count;
+                        self.vpci_bus_mut().insert(vbdf, vdev);
+                    } else {
+                        let vdev = guard.remove(&bdf).unwrap();
+                        let mut vdev_inner = vdev.read().clone();
+                        vdev_inner.set_vbdf(vbdf);
+                        let msi_count = vdev_inner.get_msi_count();
+                        domain_msi_count += msi_count;
+                        self.vpci_bus_mut().insert(vbdf, vdev_inner);
+                    }
+                } else {
+                    #[cfg(feature = "ecam_pcie")]
+                    {
+                        use crate::pci::pci_struct::VirtualPciConfigSpace;
+                        use crate::pci::vpci_dev::{get_handler, VpciDevType};
+
+                        let dev_type = dev_config.dev_type;
+                        match dev_type {
+                            VpciDevType::Physical => {
+                                warn!("can not find dev {:#?}", bdf);
+                            }
+                            _ => {
+                                if let Some(_handler) = get_handler(dev_type) {
+                                    let base = ecam_base
+                                        + ((bdf.bus() as u64) << 20)
+                                        + ((bdf.device() as u64) << 15)
+                                        + ((bdf.function() as u64) << 12);
+                                    let dev = VirtualPciConfigSpace::virt_dev(bdf, base, dev_type);
+                                    self.vpci_bus_mut().insert(vbdf, dev);
+                                } else {
+                                    warn!("can not find dev {:#?}, unknown device type", bdf);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if domain_msi_count > 0 {
+                #[cfg(feature = "dwc_msi")]
+                {
+                    if let Some(mut domain_lock) =
+                        crate::pci::dwc_msi::get_dwc_msi_domain_mut(target_domain)
+                    {
+                        if let Some(domain_msi) = domain_lock.get_mut(&target_domain) {
+                            match domain_msi.allocate(domain_msi_count) {
+                                Ok(hwirq_bit) => {
+                                    info!(
+                                        "Allocate MSI for domain {}, count: {}, hwirq_bit: {}",
+                                        target_domain, domain_msi_count, hwirq_bit
+                                    );
+                                    self.vpci_bus_mut().add_msi_count_for_domain(
+                                        target_domain,
+                                        domain_msi_count,
+                                        hwirq_bit,
+                                    );
+                                }
+                                Err(e) => {
+                                    warn!(
+                                        "Failed to allocate MSI for domain {}: {:?}",
+                                        target_domain, e
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+
+                #[cfg(not(feature = "dwc_msi"))]
+                {
+                    self.vpci_bus_mut().add_msi_count_for_domain(
+                        target_domain,
+                        domain_msi_count,
+                        0,
+                    );
+                }
+            }
+        }
+        info!("vpci bus init done\n {:#x?}", self.vpci_bus());
+        Ok(())
+    }
+
+    #[cfg(all(feature = "pci", feature = "pci_init_delay", feature = "dwc_pcie"))]
+    pub fn virtual_pci_dbi_pref_init(
+        &mut self,
+        pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
+        _num_pci_config: usize,
+    ) {
+        use crate::pci::pci_handler::mmio_vpci_handler_dbi;
+
+        for rootcomplex_config in pci_rootcomplex_config {
+            if rootcomplex_config.ecam_base == 0 {
+                continue;
+            }
+
+            let encoded_arg =
+                rootcomplex_config.ecam_base as usize + (rootcomplex_config.domain as usize);
+            self.mmio_region_register(
+                rootcomplex_config.ecam_base as usize,
+                rootcomplex_config.ecam_size as usize,
+                mmio_vpci_handler_dbi,
+                encoded_arg,
+            );
+        }
+    }
+
+    #[cfg(feature = "pci")]
+    pub fn virtual_pci_mmio_init(
+        &mut self,
+        pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
+        _num_pci_config: usize,
+    ) {
+        use crate::pci::pci_handler::mmio_vpci_handler;
+
+        #[cfg(feature = "loongarch64_pcie")]
+        let mut emergency_map_regions: alloc::vec::Vec<(usize, usize)> = alloc::vec::Vec::new();
+
+        for rootcomplex_config in pci_rootcomplex_config {
+            if rootcomplex_config.ecam_base == 0 {
+                continue;
+            }
+            #[cfg(feature = "ecam_pcie")]
+            {
+                self.mmio_region_register(
+                    rootcomplex_config.ecam_base as usize,
+                    rootcomplex_config.ecam_size as usize,
+                    mmio_vpci_handler,
+                    rootcomplex_config.ecam_base as usize,
+                );
+            }
+            #[cfg(feature = "dwc_pcie")]
+            {
+                use crate::memory::mmio_generic_handler;
+                use crate::pci::config_accessors::dwc_atu::AtuConfig;
+                use crate::pci::config_accessors::{dwc::DwcConfigRegionBackend, PciRegionMmio};
+                use crate::pci::pci_handler::{
+                    mmio_dwc_cfg_handler, mmio_dwc_io_handler, mmio_vpci_handler_dbi,
+                };
+                use crate::platform;
+
+                let encoded_arg =
+                    rootcomplex_config.ecam_base as usize + (rootcomplex_config.domain as usize);
+                self.mmio_region_register(
+                    rootcomplex_config.ecam_base as usize,
+                    rootcomplex_config.ecam_size as usize,
+                    mmio_vpci_handler_dbi,
+                    encoded_arg,
+                );
+
+                let extend_config = platform::ROOT_DWC_ATU_CONFIG
+                    .iter()
+                    .find(|extend_cfg| extend_cfg.ecam_base == rootcomplex_config.ecam_base);
+
+                if let Some(extend_config) = extend_config {
+                    if extend_config.apb_base != 0 && extend_config.apb_size != 0 {
+                        self.mmio_region_register(
+                            extend_config.apb_base as usize,
+                            extend_config.apb_size as usize,
+                            mmio_generic_handler,
+                            extend_config.apb_base as usize,
+                        );
+                    }
+
+                    let cfg_size_half = extend_config.cfg_size / 2;
+                    let cfg0_base = extend_config.cfg_base;
+                    if cfg0_base != 0 && cfg_size_half != 0 {
+                        self.mmio_region_register(
+                            cfg0_base as usize,
+                            cfg_size_half as usize,
+                            mmio_dwc_cfg_handler,
+                            cfg0_base as usize,
+                        );
+                    }
+
+                    let cfg1_base = extend_config.cfg_base + cfg_size_half;
+                    if cfg1_base != 0 && cfg_size_half != 0 {
+                        self.mmio_region_register(
+                            cfg1_base as usize,
+                            cfg_size_half as usize,
+                            mmio_dwc_cfg_handler,
+                            cfg1_base as usize,
+                        );
+                    }
+
+                    if extend_config.io_cfg_atu_shared != 0 {
+                        self.mmio_region_register(
+                            rootcomplex_config.io_base as usize,
+                            rootcomplex_config.io_size as usize,
+                            mmio_dwc_io_handler,
+                            rootcomplex_config.io_base as usize,
+                        );
+                    }
+
+                    let mut atu = AtuConfig::default();
+
+                    let dbi_base = extend_config.dbi_base as crate::pci::PciConfigAddress;
+                    let dbi_size = extend_config.dbi_size;
+                    let dbi_region = PciRegionMmio::new(dbi_base, dbi_size);
+                    let dbi_backend = DwcConfigRegionBackend::new(dbi_region);
+                    if let Err(e) = atu.init_limit_hw_value(&dbi_backend) {
+                        warn!("Failed to initialize ATU0 limit defaults: {:?}", e);
+                    }
+
+                    self.atu_configs_mut()
+                        .insert_atu(rootcomplex_config.ecam_base as usize, atu);
+                    self.atu_configs_mut().insert_cfg_base_mapping(
+                        extend_config.cfg_base as crate::pci::PciConfigAddress,
+                        rootcomplex_config.ecam_base as usize,
+                    );
+                    self.atu_configs_mut().insert_io_base_mapping(
+                        rootcomplex_config.io_base as crate::pci::PciConfigAddress,
+                        rootcomplex_config.ecam_base as usize,
+                    );
+                }
+            }
+            #[cfg(feature = "loongarch64_pcie")]
+            {
+                use crate::pci::pci_handler::mmio_vpci_direct_handler;
+
+                self.mmio_region_register(
+                    rootcomplex_config.ecam_base as usize,
+                    rootcomplex_config.ecam_size as usize,
+                    mmio_vpci_direct_handler,
+                    rootcomplex_config.ecam_base as usize,
+                );
+                emergency_map_regions.push((
+                    rootcomplex_config.ecam_base as usize,
+                    rootcomplex_config.ecam_size as usize,
+                ));
+            }
+        }
+
+        // Note: emergency_map_regions requires access to self (for Zone), so this must be handled at Zone level
+    }
 }
 
 static ZONE_LIST: RwLock<Vec<Arc<Zone>>> = RwLock::new(vec![]);
@@ -390,14 +726,39 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
 
     #[cfg(feature = "pci")]
     {
-        let _ = zone.virtual_pci_mmio_init(&config.pci_config, config.num_pci_bus as usize);
-        let _ = zone.guest_pci_init(
-            zone_id,
-            &config.alloc_pci_devs,
-            config.num_pci_devs,
-            &config.pci_config,
-            config.num_pci_bus as usize,
-        );
+        #[cfg(feature = "pci_init_delay")]
+        {
+            #[cfg(feature = "dwc_pcie")]
+            {
+                if crate::pci::pci_handler::is_pci_init_done() {
+                    let _ =
+                        zone.virtual_pci_mmio_init(&config.pci_config, config.num_pci_bus as usize);
+                    let _ = zone.guest_pci_init(
+                        zone_id,
+                        &config.alloc_pci_devs,
+                        config.num_pci_devs,
+                        &config.pci_config,
+                        config.num_pci_bus as usize,
+                    );
+                } else {
+                    let mut inner = zone.write();
+                    inner
+                        .virtual_pci_dbi_pref_init(&config.pci_config, config.num_pci_bus as usize);
+                }
+            }
+        }
+
+        #[cfg(not(feature = "pci_init_delay"))]
+        {
+            let _ = zone.virtual_pci_mmio_init(&config.pci_config, config.num_pci_bus as usize);
+            let _ = zone.guest_pci_init(
+                zone_id,
+                &config.alloc_pci_devs,
+                config.num_pci_devs,
+                &config.pci_config,
+                config.num_pci_bus as usize,
+            );
+        }
     }
 
     // #[cfg(target_arch = "aarch64")]

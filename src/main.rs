@@ -73,7 +73,7 @@ use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};
 use cpu_data::PerCpu;
-#[cfg(feature = "pci")]
+#[cfg(all(feature = "pci", not(feature = "pci_init_delay")))]
 use pci::pci_config::hvisor_pci_init;
 
 static INITED_CPUS: AtomicU32 = AtomicU32::new(0);
@@ -137,7 +137,7 @@ fn primary_init_early() {
 
     let root_config = root_zone_config();
 
-    #[cfg(feature = "pci")]
+    #[cfg(all(feature = "pci", not(feature = "pci_init_delay")))]
     if root_config.num_pci_bus > 0 {
         let num_pci_bus = root_config.num_pci_bus as usize;
         let _ = hvisor_pci_init(&root_config.pci_config[..num_pci_bus]);
