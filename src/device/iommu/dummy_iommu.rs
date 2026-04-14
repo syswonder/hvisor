@@ -39,15 +39,6 @@ impl Iommu for DummyIommu {
     fn add_device_exclusive_s2pt(&self, zone_id: usize, device_id: usize, _regions: Vec<MemoryRegion<GuestPhysAddr>>) {
         info!("No IOMMU implementation available, cannot add device id {} for VMID {} with exclusive S2PT", device_id, zone_id);
     }
-    fn iommu_flush_all(&self) {
-        info!("No IOMMU implementation available, cannot flush all");
-    }
-    fn iommu_flush_s2pt_cache(&self, zone_id: usize) {
-        info!("No IOMMU implementation available, cannot flush S2PT IOTLB for VMID {}", zone_id);
-    }
-    fn iommu_flush_dev_dir_cache(&self, device_id: usize) {
-        info!("No IOMMU implementation available, cannot flush DDT for device id {}", device_id);
-    }
     fn interrupt_handler(&self, irq_id: usize) {
         info!("No IOMMU implementation available, cannot handle interrupt id {}", irq_id);
     }

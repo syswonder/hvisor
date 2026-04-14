@@ -30,12 +30,6 @@ pub(crate) trait Iommu {
     fn add_device_share_s2pt(&self, zone_id: usize, device_id: usize);
     /// Add a device with exclusive stage 2 page table mappings (i.e. iopagetable)
     fn add_device_exclusive_s2pt(&self, zone_id: usize, device_id: usize, regions: Vec<MemoryRegion<GuestPhysAddr>>);
-    /// Flush all IOMMU translation caches, including device directory and page table translation caches
-    fn iommu_flush_all(&self);
-    /// Flush stage 2 page table caches for a specific VMID
-    fn iommu_flush_s2pt_cache(&self, zone_id: usize);
-    /// Flush device directory caches for a specific device ID
-    fn iommu_flush_dev_dir_cache(&self, device_id: usize);
     /// Handle IOMMU-related interrupts
     fn interrupt_handler(&self, irq_id: usize);
     /// Initialize the Virtual IOMMU for the Zone

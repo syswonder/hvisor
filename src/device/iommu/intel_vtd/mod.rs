@@ -66,21 +66,6 @@ impl Iommu for IntelVtd {
             zone_id
         );
     }
-    fn iommu_flush_all(&self) {
-        todo!("IntelVtd flush all not implemented yet.");
-    }
-    fn iommu_flush_s2pt_cache(&self, zone_id: usize) {
-        todo!(
-            "IntelVtd flush s2pt cache for VMID {} not implemented yet.",
-            zone_id
-        );
-    }
-    fn iommu_flush_dev_dir_cache(&self, device_id: usize) {
-        todo!(
-            "IntelVtd flush dev dir cache for device id {} not implemented yet.",
-            device_id
-        );
-    }
     fn interrupt_handler(&self, irq_id: usize) {
         todo!(
             "IntelVtd interrupt handler for irq id {} not implemented yet.",
