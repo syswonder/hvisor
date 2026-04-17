@@ -27,12 +27,31 @@
 
 use crate::memory::Frame;
 use alloc::vec::Vec;
+use core::sync::atomic::{fence, Ordering};
 use log::{error, info, warn};
 use spin::{Mutex, Once};
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_bitfields;
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite};
+use super::reg_bits::{
+    DDT_DIR, DDT_FSC, DDT_IOHGATP, DDT_TC, IOMMU_CAPS, IOMMU_CQCSR, IOMMU_DDTP, IOMMU_FCTL,
+    IOMMU_FQ_TAG, IOMMU_FQCSR, IOMMU_IPSR, IOMMU_XQB,
+};
+use super::{IoDirCommand, IoDirFunc, IoFenceCommand, IoFenceFunc, IotInvalCommand, IotInvalFunc, RiscvIommuCommand};
+
+const CQ_ENTRY_SIZE: usize = 16;
+const FQ_ENTRY_SIZE: usize = 32;
+const CQ_LOG2SZ_1: u32 = 7; // k-1, where k=log2(N), N=256
+const CQ_MASK: u32 = CQ_ENTRIES as u32 - 1;
+const FQ_LOG2SZ_1: u32 = 6; // k-1, where k=log2(N), N=128
+const FQ_MASK: u32 = FQ_ENTRIES as u32 - 1;
+const CQ_ENTRIES: usize = 1usize << (CQ_LOG2SZ_1 + 1);
+const FQ_ENTRIES: usize = 1usize << (FQ_LOG2SZ_1 + 1);
+const QUEUE_ON_TIMEOUT: usize = 1_000_000;
+const QUEUE_FULL_TIMEOUT: usize = 1_000_000;
+const QUEUE_FENCE_C_TIMEOUT: usize = 1_000_000;
+const IOHGATP_MODE_BARE: u64 = 0;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 #[repr(u64)]
@@ -43,142 +62,6 @@ enum IommuDdtMode {
     TwoLevel = 3,   // Two-level device-directory table.
     ThreeLevel = 4, // Three-level device-directory table.
 }
-
-register_bitfields![u64,
-    IOMMU_CAPS [    // RISC-V IOMMU Spec Chap6.3 IOMMU capabilities
-        VERSION OFFSET(0) NUMBITS(8) [
-            VERSION_1_0 = 0x10,
-        ],
-        SV32 OFFSET(8) NUMBITS(1) [],
-        SV39 OFFSET(9) NUMBITS(1) [],
-        SV48 OFFSET(10) NUMBITS(1) [],
-        SV57 OFFSET(11) NUMBITS(1) [],
-        SVRSW60T59B OFFSET(14) NUMBITS(1) [],
-        SVPBMT OFFSET(15) NUMBITS(1) [],
-        SV32X4 OFFSET(16) NUMBITS(1) [],
-        SV39X4 OFFSET(17) NUMBITS(1) [],
-        SV48X4 OFFSET(18) NUMBITS(1) [],
-        SV57X4 OFFSET(19) NUMBITS(1) [],
-        AMO_MRIF OFFSET(21) NUMBITS(1) [],
-        MSI_FLAT OFFSET(22) NUMBITS(1) [],
-        MSI_MRIF OFFSET(23) NUMBITS(1) [],
-        AMO_HWAD OFFSET(24) NUMBITS(1) [],
-        ATS OFFSET(25) NUMBITS(1) [],
-        T2GPA OFFSET(26) NUMBITS(1) [],
-        END OFFSET(27) NUMBITS(1) [],
-        IGS OFFSET(28) NUMBITS(2) [
-            MSI = 0,
-            WSI = 1,
-            BOTH = 2,
-        ],
-        HPM OFFSET(30) NUMBITS(1) [],
-        DBG OFFSET(31) NUMBITS(1) [],
-        PAS OFFSET(32) NUMBITS(6) [],
-        PD8 OFFSET(38) NUMBITS(1) [],
-        PD17 OFFSET(39) NUMBITS(1) [],
-        PD20 OFFSET(40) NUMBITS(1) [],
-        QOSID OFFSET(41) NUMBITS(1) [],
-        NL OFFSET(42) NUMBITS(1) [],
-        S OFFSET(43) NUMBITS(1) [],
-    ],
-    IOMMU_DDTP [ // RISCV-IOMMU Spec Chap6.5 Device-directory table pointer
-        MODE OFFSET(0) NUMBITS(4) [
-            OFF = 0,
-            BARE = 1,
-            DDT_1LVL = 2,
-            DDT_2LVL = 3,
-            DDT_3LVL = 4
-        ],
-        BUSY OFFSET(4) NUMBITS(1) [],
-        PPN OFFSET(10) NUMBITS(44) []
-    ],
-    DDT_TC [ // RISCV-IOMMU Spec Chap3.1.3.1 Translation Control
-        V OFFSET(0) NUMBITS(1) [],
-        EN_ATS OFFSET(1) NUMBITS(1) [],
-        EN_PRI OFFSET(2) NUMBITS(1) [],
-        T2GPA OFFSET(3) NUMBITS(1) [],
-        DT2GPA OFFSET(4) NUMBITS(1) [],
-        PDTV OFFSET(5) NUMBITS(1) [],
-        PRP OFFSET(6) NUMBITS(1) [],
-        GADEV OFFSET(7) NUMBITS(1) [],
-        SADEV OFFSET(8) NUMBITS(1) [],
-        DPE OFFSET(9) NUMBITS(1) [],
-        SBE OFFSET(10) NUMBITS(1) [],
-        SXL OFFSET(11) NUMBITS(1) []
-    ],
-    DDT_IOHGATP [ // RISCV-IOMMU Spec Chap3.1.3.2 IO hypervisor guest address translation and protection
-        PPN OFFSET(0) NUMBITS(44) [],
-        GSCID OFFSET(44) NUMBITS(16) [],
-        MODE OFFSET(60) NUMBITS(4) [
-            SV39X4 = 8,
-            SV48X4 = 9,
-            SV57X4 = 10
-        ]
-    ],
-    DDT_TA [ // RISCV-IOMMU Spec Chap3.1.3.3 Translation attributes
-        PS_CID OFFSET(12) NUMBITS(20) [],
-        RCID OFFSET(40) NUMBITS(12) [],
-        MTYPE OFFSET(52) NUMBITS(12) [],
-    ],
-    DDT_FSC [ // RISCV-IOMMU Spec Chap3.1.3.4 First-stage context
-        MODE OFFSET(60) NUMBITS(4) [
-            BARE = 0,
-            SV39 = 8,
-            SV48 = 9,
-            SV57 = 10
-        ],
-        PPN OFFSET(0) NUMBITS(44) []
-    ],
-    DDT_DIR [ // RISCV-IOMMU Spec Chap3.1.1 Non-leaf DDT entry
-        V OFFSET(0) NUMBITS(1) [],
-        PPN OFFSET(10) NUMBITS(44) []
-    ],
-    IOMMU_XQB [ // RISC-V IOMMU Spec Chap6.6 Command-queue base
-                // RISC-V IOMMU Spec Chap6.9 Fault queue base
-        LOG2SZ_1 OFFSET(0) NUMBITS(5) [],
-        PPN OFFSET(10) NUMBITS(44) []
-    ],
-    IOMMU_FQ_TAG [ // RISC-V IOMMU Spec Chap4.2 Fault/Event-Queue
-        CAUSE OFFSET(0) NUMBITS(12) [],
-        PID OFFSET(12) NUMBITS(20) [],
-        PV OFFSET(32) NUMBITS(1) [],
-        PRIV OFFSET(33) NUMBITS(1) [],
-        TYPE OFFSET(34) NUMBITS(6) [],
-        DID OFFSET(40) NUMBITS(24) []
-    ]
-];
-
-register_bitfields![u32,
-    IOMMU_FCTL [ // RISCV-IOMMU Spec Chap6.4 Features-control register
-        BE OFFSET(0) NUMBITS(1) [],
-        WSI OFFSET(1) NUMBITS(1) [],
-        GXL OFFSET(2) NUMBITS(1) [],
-    ],
-    IOMMU_CQCSR [ // RISCV-IOMMU Spec Chap6.15 Command-queue CSR
-        CQEN OFFSET(0) NUMBITS(1) [],
-        CIE OFFSET(1) NUMBITS(1) [],
-        CQMF OFFSET(8) NUMBITS(1) [],
-        CMDTO OFFSET(9) NUMBITS(1) [],
-        CMDILL OFFSET(10) NUMBITS(1) [],
-        FENCEWIP OFFSET(11) NUMBITS(1) [],
-        CQON OFFSET(16) NUMBITS(1) [],
-        BUSY OFFSET(17) NUMBITS(1) [],
-    ],
-    IOMMU_FQCSR [ // RISCV-IOMMU Spec Chap6.16 Fault-queue CSR
-        FQEN OFFSET(0) NUMBITS(1) [],
-        FIE OFFSET(1) NUMBITS(1) [],
-        FQMF OFFSET(8) NUMBITS(1) [],
-        FQOF OFFSET(9) NUMBITS(1) [],
-        FQON OFFSET(16) NUMBITS(1) [],
-        BUSY OFFSET(17) NUMBITS(1) [],
-    ],
-    IOMMU_IPSR [ // RISCV-IOMMU Spec Chap6.18 Interrupt pending status register
-        CIP OFFSET(0) NUMBITS(1) [],
-        FIP OFFSET(1) NUMBITS(1) [],
-        PMIP OFFSET(2) NUMBITS(1) [],
-        PIP OFFSET(3) NUMBITS(1) []
-    ]
-];
 
 // RISC-V IOMMU Specv1.0: Chap6.1 Register layout
 register_structs! {
@@ -249,8 +132,7 @@ pub fn iommu_add_device(vm_id: usize, device_id: usize, root_pt: usize) {
 }
 
 /// Remove a device from IOMMU (reserved for future hot-unplug paths).
-#[allow(dead_code)]
-fn iommu_remove_device(vm_id: usize, device_id: usize) {
+pub fn iommu_remove_device(vm_id: usize, device_id: usize) {
     #[cfg(feature = "iommu")]
     {
         info!(
@@ -276,20 +158,12 @@ fn riscv_iommu_init() {
 }
 
 impl IommuHw {
-    const CQ_ENTRY_SIZE: usize = 16;
-    const FQ_ENTRY_SIZE: usize = 32;
-    const CQ_LOG2SZ_1: u32 = 7; // k-1, where k=log2(N), N=256
-    const FQ_LOG2SZ_1: u32 = 6; // k-1, where k=log2(N), N=128
-    const CQ_ENTRIES: usize = 1usize << (Self::CQ_LOG2SZ_1 + 1);
-    const FQ_ENTRIES: usize = 1usize << (Self::FQ_LOG2SZ_1 + 1);
-    const QUEUE_ON_TIMEOUT: usize = 1_000_000;
-
     fn wait_cq_on(&self) {
         let mut loops = 0usize;
         while !self.cqcsr.is_set(IOMMU_CQCSR::CQON) {
             core::hint::spin_loop();
             loops += 1;
-            if loops >= Self::QUEUE_ON_TIMEOUT {
+            if loops >= QUEUE_ON_TIMEOUT {
                 panic!("RISC-V IOMMU: timeout waiting for CQON");
             }
         }
@@ -300,7 +174,7 @@ impl IommuHw {
         while !self.fqcsr.is_set(IOMMU_FQCSR::FQON) {
             core::hint::spin_loop();
             loops += 1;
-            if loops >= Self::QUEUE_ON_TIMEOUT {
+            if loops >= QUEUE_ON_TIMEOUT {
                 panic!("RISC-V IOMMU: timeout waiting for FQON");
             }
         }
@@ -387,15 +261,13 @@ impl IommuHw {
                 + IOMMU_IPSR::PMIP::SET
                 + IOMMU_IPSR::PIP::SET,
         );
-        // TODO: support MSI-translation
-
         // TODO: program icvec
 
         // Program command queue:
         // Here use static one frame for command queue.
-        let cq_size = Self::CQ_ENTRIES * Self::CQ_ENTRY_SIZE;
+        let cq_size = CQ_ENTRIES * CQ_ENTRY_SIZE;
         self.cqb.write(
-            IOMMU_XQB::LOG2SZ_1.val(Self::CQ_LOG2SZ_1 as u64)
+            IOMMU_XQB::LOG2SZ_1.val(CQ_LOG2SZ_1 as u64)
                 + IOMMU_XQB::PPN.val((cq_addr as u64) >> 12),
         );
         self.cqt.set(0x0);
@@ -404,9 +276,9 @@ impl IommuHw {
 
         // Program fault queue:
         // Here use static one frame for fault queue.
-        let fq_size = Self::FQ_ENTRIES * Self::FQ_ENTRY_SIZE;
+        let fq_size = FQ_ENTRIES * FQ_ENTRY_SIZE;
         self.fqb.write(
-            IOMMU_XQB::LOG2SZ_1.val(Self::FQ_LOG2SZ_1 as u64)
+            IOMMU_XQB::LOG2SZ_1.val(FQ_LOG2SZ_1 as u64)
                 + IOMMU_XQB::PPN.val((fq_addr as u64) >> 12),
         );
         self.fqh.set(0x0);
@@ -420,6 +292,20 @@ impl IommuHw {
 
         // Configure ddtp with DDT base address and IOMMU mode
         self.set_ddtp(ddt_addr, ddt_mode)
+    }
+
+    fn cq_is_empty(&self) -> bool {
+        // If cqh == cqt, the command-queue is empty.
+        self.cqh.get() & CQ_MASK == self.cqt.get() & CQ_MASK
+    }
+
+    fn cq_is_full(&self) -> bool {
+        // If cqt == (cqh - 1) the command-queue is full.
+        (self.cqt.get() & CQ_MASK) == (self.cqh.get().wrapping_sub(1) & CQ_MASK)
+    }
+
+    fn advance_cqt(&mut self) {
+        self.cqt.set(self.cqt.get().wrapping_add(1) & CQ_MASK);
     }
 }
 
@@ -493,14 +379,15 @@ impl DdtRootMemory {
         unsafe { &mut *(paddr as *mut DdtLeafTable) }
     }
 
-    fn ensure_child_table(&mut self, table_paddr: usize, idx: usize) -> usize {
+    /// Check if the ddt entry is valid, if not, allocate a new child table and return the new table address.
+    fn ensure_child_table(&mut self, table_paddr: usize, idx: usize) -> (usize, bool) {
         let entry = &mut Self::dir_table_at(table_paddr).entries[idx];
         if entry.is_set(DDT_DIR::V) {
-            return (entry.read(DDT_DIR::PPN) as usize) << 12;
+            return ((entry.read(DDT_DIR::PPN) as usize) << 12, false);
         }
         let child_paddr = self.alloc_next_level_table();
         entry.write(DDT_DIR::V::SET + DDT_DIR::PPN.val((child_paddr as u64) >> 12));
-        child_paddr
+        (child_paddr, true)
     }
 
     // IOMMU.caps.MSI_FLAT should be 1.
@@ -513,21 +400,25 @@ impl DdtRootMemory {
         (l1, l2, l3)
     }
 
-    fn get_or_alloc_leaf_entry(&mut self, device_id: usize) -> Option<&mut DdtEntry> {
+    // For external users to get or allocate a leaf entry.
+    fn get_or_alloc_leaf_entry(&mut self, device_id: usize) -> Option<(&mut DdtEntry, bool)> {
         if device_id > Self::DEV_ID_MAX {
             return None;
         }
         let (l1, l2, l3) = Self::ddt_indices(device_id);
-        let leaf_table_paddr = match self.mode {
-            IommuDdtMode::OneLevel => self.root_paddr(),
+        // Get leaf-table
+        let (leaf_table_paddr, non_leaf_updated) = match self.mode {
+            IommuDdtMode::OneLevel => (self.root_paddr(), false),
             IommuDdtMode::TwoLevel => self.ensure_child_table(self.root_paddr(), l2),
             IommuDdtMode::ThreeLevel => {
-                let lvl2_table_paddr = self.ensure_child_table(self.root_paddr(), l1);
-                self.ensure_child_table(lvl2_table_paddr, l2)
+                let (lvl2_table_paddr, updated_l1) = self.ensure_child_table(self.root_paddr(), l1);
+                let (leaf_table_paddr, updated_l2) = self.ensure_child_table(lvl2_table_paddr, l2);
+                (leaf_table_paddr, updated_l1 || updated_l2)
             }
             _ => return None,
         };
-        Some(&mut Self::leaf_table_at(leaf_table_paddr).dc[l3])
+        // Get DDT Entry
+        Some((&mut Self::leaf_table_at(leaf_table_paddr).dc[l3], non_leaf_updated))
     }
 }
 
@@ -594,6 +485,7 @@ impl Iommu {
         self.ddt.set_mode(selected_mode);
     }
 
+    // Used for adding a new device context to the DDT, enable IOMMU translation for specific device.
     fn rv_iommu_add_device(&mut self, device_id: usize, vm_id: usize, root_pt: usize) {
         if device_id == 0 {
             info!("Skip Device with device_id = 0");
@@ -608,27 +500,42 @@ impl Iommu {
             return;
         }
 
-        let Some(entry) = self.ddt.get_or_alloc_leaf_entry(device_id) else {
-            warn!(
-                "RV IOMMU: Invalid device ID {} for DDT mode {:?}",
-                device_id,
-                self.ddt_mode()
-            );
-            return;
+        let (entry_ptr, non_leaf_updated) = {
+            let Some((entry, non_leaf_updated)) = self.ddt.get_or_alloc_leaf_entry(device_id) else {
+                warn!(
+                    "RV IOMMU: Invalid device ID {} for DDT mode {:?}",
+                    device_id,
+                    self.ddt_mode()
+                );
+                return;
+            };
+            (entry as *mut DdtEntry, non_leaf_updated)
         };
+
+        // RISC-V IOMMU Spec v1.0 Chap7.3.1: non-leaf updates should perform invalidation.
+        if non_leaf_updated {
+            // If software changes a non-leaf-level DDT entry the following invalidations must be performed:
+            //  IODIR.INVAL_DDT with DV=0
+            fence(Ordering::SeqCst);
+            self.enqueue_iodir_inval_ddt(false, 0);
+            // Wait IODIR_INVAL has been executed done by IOMMU.
+            self.sync_previous_commands(true, true);
+        }
+        
+        // Convert pointer to reference.
+        let entry = unsafe { &mut *entry_ptr };
 
         // Prepare TC without publishing VALID yet.
         entry.tc.set(0x0);
 
+        let gstage_pt_level = unsafe { crate::arch::s2pt::GSTAGE_PT_LEVEL };
         // Configure the stage-2 page table mode same as cpu.
-        let iohgatp_mode = match unsafe { crate::arch::s2pt::GSTAGE_PT_LEVEL } {
+        let iohgatp_mode = match gstage_pt_level {
             3 => DDT_IOHGATP::MODE::SV39X4,
             4 => DDT_IOHGATP::MODE::SV48X4,
             5 => DDT_IOHGATP::MODE::SV57X4,
             _ => {
-                error!("RV IOMMU: Invalid stage-2 pt level: {}", unsafe {
-                    crate::arch::s2pt::GSTAGE_PT_LEVEL
-                });
+                error!("RV IOMMU: Invalid stage-2 pt level: {}", gstage_pt_level);
                 return;
             }
         };
@@ -641,12 +548,25 @@ impl Iommu {
         // Bare first-stage context.
         entry.fsc.set(0x0);
         entry.tc.write(DDT_TC::V::SET);
-        info!(
-            "RV IOMMU: Write DDT, add decive context, iohgatp.mode = {:#x?}, ioghatp.ppn = {:#x?}",
+        let (dc_mode, dc_gscid) = (
             entry.iohgatp.read(DDT_IOHGATP::MODE),
-            entry.iohgatp.read(DDT_IOHGATP::PPN)
+            entry.iohgatp.read(DDT_IOHGATP::GSCID) as u16,
         );
-        // "RV IOMMU: DDT entry updated for device {}, remember to issue IODIR/IOTINVAL commands if entry is changed while IOMMU is active"
+
+        // RISC-V IOMMU Spec v1.0 Chap7.3.1: leaf updates should perform invalidation.
+        //  IODIR.INVAL_DDT with DV=1 and DID=D
+        //      If DC.iohgatp.MODE != Bare
+        //          IOTINVAL.VMA with GV=1, AV=PSCV=0, and GSCID=DC.iohgatp.GSCID
+        //          IOTINVAL.GVMA with GV=1, AV=0, and GSCID=DC.iohgatp.GSCID
+        fence(Ordering::SeqCst);
+        self.enqueue_leaf_ddt_invalidations(device_id as u32, dc_mode, dc_gscid);
+        // Wait IODIR_INVAL has been executed done by IOMMU.
+        self.sync_previous_commands(true, true);
+
+        info!(
+            "RV IOMMU: Write DDT, add decive context, device_id {}, mode {}, gscid {}",
+            device_id, dc_mode, dc_gscid
+        );
     }
 
     fn rv_iommu_remove_device(&mut self, device_id: usize) {
@@ -654,7 +574,7 @@ impl Iommu {
             info!("Skip Device with device_id = 0");
             return;
         }
-        let Some(entry) = self.ddt.get_or_alloc_leaf_entry(device_id) else {
+        let Some((entry, _)) = self.ddt.get_or_alloc_leaf_entry(device_id) else {
             warn!(
                 "RV IOMMU: Invalid device ID {} for DDT mode {:?}",
                 device_id,
@@ -662,12 +582,116 @@ impl Iommu {
             );
             return;
         };
+        let dc_mode = entry.iohgatp.read(DDT_IOHGATP::MODE);
+        let dc_gscid = entry.iohgatp.read(DDT_IOHGATP::GSCID) as u16;
+        // Update DDT Entry
         entry.tc.write(DDT_TC::V::CLEAR);
+
+        fence(Ordering::SeqCst);
+        self.enqueue_leaf_ddt_invalidations(device_id as u32, dc_mode, dc_gscid);
+        self.sync_previous_commands(true, true);
+
         info!(
-            "RV IOMMU: Write DDT, remove decive context, iohgatp.mode = {:#x?}, ioghatp.ppn = {:#x?}",
-            entry.iohgatp.read(DDT_IOHGATP::MODE),
-            entry.iohgatp.read(DDT_IOHGATP::PPN)
+            "RV IOMMU: Write DDT, remove decive context, device_id {}, mode {}, gscid {}",
+            device_id, dc_mode, dc_gscid
         );
-        // "RV IOMMU: DDT entry updated for device {}, remember to issue IODIR/IOTINVAL commands if entry is changed while IOMMU is active"
+    }
+
+    fn enqueue_leaf_ddt_invalidations(&mut self, device_id: u32, dc_mode: u64, dc_gscid: u16) {
+        // Leaf DDT entry updated: always invalidate this DID.
+        self.enqueue_iodir_inval_ddt(true, device_id);
+        // If DC.iohgatp.MODE != Bare, issue both global VMA and global GVMA invalidations.
+        if dc_mode != IOHGATP_MODE_BARE {
+            // IOTINVAL.VMA with GV=1, AV=PSCV=0, GSCID=DC.iohgatp.GSCID
+            self.enqueue_iotinval(IotInvalFunc::Vma, dc_gscid);
+            // IOTINVAL.GVMA with GV=1, AV=0, and GSCID=DC.iohgatp.GSCID
+            self.enqueue_iotinval(IotInvalFunc::Gvma, dc_gscid);
+        }
+    }
+
+    fn enqueue_iodir_inval_ddt(&mut self, dv: bool, did: u32) {
+        let iodir = IoDirCommand {
+            func: IoDirFunc::InvalDdt,
+            pid: 0,
+            dv,
+            did,
+        };
+        match iodir.encode() {
+            Ok(cmd) => self.rv_iommu_add_command(cmd),
+            Err(err) => error!("RV IOMMU: build IODIR command failed: {:?}", err),
+        }
+    }
+
+    fn enqueue_iotinval(&mut self, func: IotInvalFunc, gscid: u16) {
+        let iotinval = IotInvalCommand {
+            func,
+            av: false,
+            pscid: 0,
+            pscv: false,
+            gv: true,
+            nl: false,
+            gscid,
+            s: false,
+            addr: 0,
+        };
+        match iotinval.encode() {
+            Ok(cmd) => self.rv_iommu_add_command(cmd),
+            Err(err) => error!("RV IOMMU: build IOTINVAL command failed: {:?}", err),
+        }
+    }
+
+    fn enqueue_iofence_c(&mut self, pr: bool, pw: bool) {
+        let iofence = IoFenceCommand {
+            func: IoFenceFunc::C,
+            av: false,
+            wsi: false,
+            pr,
+            pw,
+            data: 0,
+            addr: 0,
+        };
+        match iofence.encode() {
+            Ok(cmd) => self.rv_iommu_add_command(cmd),
+            Err(err) => error!("RV IOMMU: build IOFENCE command failed: {:?}", err),
+        }
+    }
+
+    fn sync_previous_commands(&mut self, pr: bool, pw: bool) {
+        // Add IOFENCE.C command to CQ.
+        self.enqueue_iofence_c(pr, pw);
+        // Wait previous commands to be executed.
+        let mut loops = 0usize;
+        // Only one hart will handle CQ, here wait cq_is_empty is okay.
+        while !self.iommu().cq_is_empty() {
+            core::hint::spin_loop();
+            loops += 1;
+            if loops >= QUEUE_FENCE_C_TIMEOUT {
+                error!("RV IOMMU: command sync timeout waiting CQ empty");
+                panic!("RV IOMMU: timeout waiting command synchronization");
+            }
+        }
+    }
+
+    fn rv_iommu_add_command(&mut self, command: RiscvIommuCommand) {
+        let raw = u128::from(command.dword0) | (u128::from(command.dword1) << 64);
+        // Wait for CQ not full.
+        let mut loops = 0usize;
+        while self.iommu().cq_is_full() {
+            core::hint::spin_loop();
+            loops += 1;
+            if loops >= QUEUE_FULL_TIMEOUT {
+                error!("RV IOMMU: command queue full timeout");
+                panic!("RV IOMMU: timeout waiting command queue not full");
+            }
+        }
+        // Get current cqt index.
+        let cqt_idx = (self.iommu().cqt.get() & CQ_MASK) as usize;
+        let cq_entries = unsafe {
+            core::slice::from_raw_parts_mut(self.cq.as_mut_ptr() as *mut CqEntry, CQ_ENTRIES)
+        };
+        // Write command to queue tail.
+        cq_entries[cqt_idx].cmd.set(raw);
+        fence(Ordering::SeqCst);
+        self.iommu().advance_cqt();
     }
 }
