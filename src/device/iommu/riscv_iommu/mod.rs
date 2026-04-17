@@ -27,14 +27,14 @@
 // - [ ] Support vIOMMU
 // - [ ] Increase more fault tolerance
 
+mod cmd;
 mod iommu_hw;
 mod reg_bits;
-mod cmd;
 
 use super::Iommu;
 use crate::zone::Zone;
-use iommu_hw::*;
 use cmd::*;
+use iommu_hw::*;
 
 pub(super) struct RiscvIommu;
 

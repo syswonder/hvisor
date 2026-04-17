@@ -25,6 +25,14 @@
 // - [ ] Support vIOMMU
 // - [ ] Increase more fault tolerance
 
+use super::reg_bits::{
+    DDT_DIR, DDT_FSC, DDT_IOHGATP, DDT_TC, IOMMU_CAPS, IOMMU_CQCSR, IOMMU_DDTP, IOMMU_FCTL,
+    IOMMU_FQCSR, IOMMU_FQ_TAG, IOMMU_IPSR, IOMMU_XQB,
+};
+use super::{
+    IoDirCommand, IoDirFunc, IoFenceCommand, IoFenceFunc, IotInvalCommand, IotInvalFunc,
+    RiscvIommuCommand,
+};
 use crate::memory::Frame;
 use alloc::vec::Vec;
 use core::sync::atomic::{fence, Ordering};
@@ -34,11 +42,6 @@ use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_bitfields;
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite};
-use super::reg_bits::{
-    DDT_DIR, DDT_FSC, DDT_IOHGATP, DDT_TC, IOMMU_CAPS, IOMMU_CQCSR, IOMMU_DDTP, IOMMU_FCTL,
-    IOMMU_FQ_TAG, IOMMU_FQCSR, IOMMU_IPSR, IOMMU_XQB,
-};
-use super::{IoDirCommand, IoDirFunc, IoFenceCommand, IoFenceFunc, IotInvalCommand, IotInvalFunc, RiscvIommuCommand};
 
 const CQ_ENTRY_SIZE: usize = 16;
 const FQ_ENTRY_SIZE: usize = 32;
@@ -418,7 +421,10 @@ impl DdtRootMemory {
             _ => return None,
         };
         // Get DDT Entry
-        Some((&mut Self::leaf_table_at(leaf_table_paddr).dc[l3], non_leaf_updated))
+        Some((
+            &mut Self::leaf_table_at(leaf_table_paddr).dc[l3],
+            non_leaf_updated,
+        ))
     }
 }
 
@@ -501,7 +507,8 @@ impl Iommu {
         }
 
         let (entry_ptr, non_leaf_updated) = {
-            let Some((entry, non_leaf_updated)) = self.ddt.get_or_alloc_leaf_entry(device_id) else {
+            let Some((entry, non_leaf_updated)) = self.ddt.get_or_alloc_leaf_entry(device_id)
+            else {
                 warn!(
                     "RV IOMMU: Invalid device ID {} for DDT mode {:?}",
                     device_id,
@@ -521,7 +528,7 @@ impl Iommu {
             // Wait IODIR_INVAL has been executed done by IOMMU.
             self.sync_previous_commands(true, true);
         }
-        
+
         // Convert pointer to reference.
         let entry = unsafe { &mut *entry_ptr };
 

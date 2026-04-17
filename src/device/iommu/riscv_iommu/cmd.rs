@@ -68,7 +68,10 @@ impl IotInvalCommand {
     pub(super) fn encode(self) -> Result<RiscvIommuCommand, CommandBuildError> {
         // Check if the pscid is valid.
         if self.pscid >= (1 << 20) {
-            return Err(CommandBuildError::FieldOutOfRange("iotinval.pscid", self.pscid as u64));
+            return Err(CommandBuildError::FieldOutOfRange(
+                "iotinval.pscid",
+                self.pscid as u64,
+            ));
         }
         let mut dword0 = u64::from(IOTINVAL_OPCODE) | (u64::from(self.func.raw()) << 7);
         if self.av {
@@ -110,12 +113,12 @@ impl IoFenceFunc {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct IoFenceCommand {
     pub func: IoFenceFunc, // [9:7]
-    pub av: bool, // [10]
-    pub wsi: bool,  // [11]
-    pub pr: bool, // [12]
-    pub pw: bool, // [13]
-    pub data: u32, // [63:32]
-    pub addr: u64, // [125:64]
+    pub av: bool,          // [10]
+    pub wsi: bool,         // [11]
+    pub pr: bool,          // [12]
+    pub pw: bool,          // [13]
+    pub data: u32,         // [63:32]
+    pub addr: u64,         // [125:64]
 }
 
 impl IoFenceCommand {
@@ -157,19 +160,25 @@ impl IoDirFunc {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(super) struct IoDirCommand {
-    pub func: IoDirFunc,// [9:7]
-    pub pid: u32, // [31:12]
-    pub dv: bool, // [33]
-    pub did: u32, // [63:40]
+    pub func: IoDirFunc, // [9:7]
+    pub pid: u32,        // [31:12]
+    pub dv: bool,        // [33]
+    pub did: u32,        // [63:40]
 }
 
 impl IoDirCommand {
     pub(super) fn encode(self) -> Result<RiscvIommuCommand, CommandBuildError> {
         if self.pid >= (1 << 20) {
-            return Err(CommandBuildError::FieldOutOfRange("iodir.pid", self.pid as u64));
+            return Err(CommandBuildError::FieldOutOfRange(
+                "iodir.pid",
+                self.pid as u64,
+            ));
         }
         if self.did >= (1 << 24) {
-            return Err(CommandBuildError::FieldOutOfRange("iodir.did", self.did as u64));
+            return Err(CommandBuildError::FieldOutOfRange(
+                "iodir.did",
+                self.did as u64,
+            ));
         }
         let mut dword0 = u64::from(IODIR_OPCODE) | (u64::from(self.func.raw()) << 7);
         dword0 |= u64::from(self.pid & 0xFFFFF) << 12;
@@ -180,4 +189,3 @@ impl IoDirCommand {
         Ok(RiscvIommuCommand { dword0, dword1: 0 })
     }
 }
-
