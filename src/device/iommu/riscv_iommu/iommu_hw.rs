@@ -149,6 +149,31 @@ pub fn iommu_remove_device(vm_id: usize, device_id: usize) {
     info!("RISC-V: iommu_remove_device do nothing now");
 }
 
+pub fn iommu_msi_pt_tlb_invalid(gscid: u16, msi_gpa: usize) {
+    #[cfg(feature = "iommu")]
+    {
+        // If software changes a MSI page-table entry identified by interrupt file number I that corresponds to an
+        //  untranslated MSI address A then the following invalidations must be performed:
+        //      IOTINVAL.GVMA with GV=AV=1, ADDR[63:12]=A[63:12] and GSCID=DC.iohgatp.GSCID
+        //
+        // Between a change to the MSI PTE and when an invalidation command to invalidate the cached PTE is
+        //  processed by the IOMMU, the IOMMU may use the old PTE value or the new PTE value.
+        //
+        // An IOFENCE.C command with PW=1 may be used to to ensure that all previous writes, including MSI writes, that have been
+        //  command with PW=1 may be used to to ensure that all previous writes, including MSI writes, that have been
+        //  previously processed by the IOMMU are committed to a global ordering point such that they can be
+        //  observed by all RISC-V harts and IOMMUs in the system.
+        info!(
+            "RV IOMMU: Invalidate MSI PT, msi_gpa {:#x}, gscid {}",
+            msi_gpa, gscid
+        );
+        let iommu = get_iommu();
+        iommu.lock().rv_iommu_msi_pt_tlb_invalid(gscid, msi_gpa);
+    }
+    #[cfg(not(feature = "iommu"))]
+    info!("RISC-V: iommu_msi_pt_tlb_invalid do nothing now");
+}
+
 /// Initialize RISC-V IOMMU with hardware DDTP probing.
 fn riscv_iommu_init() {
     assert!(
@@ -523,7 +548,6 @@ impl Iommu {
         if non_leaf_updated {
             // If software changes a non-leaf-level DDT entry the following invalidations must be performed:
             //  IODIR.INVAL_DDT with DV=0
-            fence(Ordering::SeqCst);
             self.enqueue_iodir_inval_ddt(false, 0);
             // Wait IODIR_INVAL has been executed done by IOMMU.
             self.sync_previous_commands(true, true);
@@ -565,7 +589,6 @@ impl Iommu {
         //      If DC.iohgatp.MODE != Bare
         //          IOTINVAL.VMA with GV=1, AV=PSCV=0, and GSCID=DC.iohgatp.GSCID
         //          IOTINVAL.GVMA with GV=1, AV=0, and GSCID=DC.iohgatp.GSCID
-        fence(Ordering::SeqCst);
         self.enqueue_leaf_ddt_invalidations(device_id as u32, dc_mode, dc_gscid);
         // Wait IODIR_INVAL has been executed done by IOMMU.
         self.sync_previous_commands(true, true);
@@ -593,8 +616,6 @@ impl Iommu {
         let dc_gscid = entry.iohgatp.read(DDT_IOHGATP::GSCID) as u16;
         // Update DDT Entry
         entry.tc.write(DDT_TC::V::CLEAR);
-
-        fence(Ordering::SeqCst);
         self.enqueue_leaf_ddt_invalidations(device_id as u32, dc_mode, dc_gscid);
         self.sync_previous_commands(true, true);
 
@@ -604,15 +625,20 @@ impl Iommu {
         );
     }
 
+    fn rv_iommu_msi_pt_tlb_invalid(&mut self, gscid: u16, msi_gpa: usize) {
+        self.enqueue_iotinval(IotInvalFunc::Gvma, gscid, true, msi_gpa);
+        self.enqueue_iofence_c(false, true);
+    }
+
     fn enqueue_leaf_ddt_invalidations(&mut self, device_id: u32, dc_mode: u64, dc_gscid: u16) {
         // Leaf DDT entry updated: always invalidate this DID.
         self.enqueue_iodir_inval_ddt(true, device_id);
         // If DC.iohgatp.MODE != Bare, issue both global VMA and global GVMA invalidations.
         if dc_mode != IOHGATP_MODE_BARE {
             // IOTINVAL.VMA with GV=1, AV=PSCV=0, GSCID=DC.iohgatp.GSCID
-            self.enqueue_iotinval(IotInvalFunc::Vma, dc_gscid);
+            self.enqueue_iotinval(IotInvalFunc::Vma, dc_gscid, false, 0);
             // IOTINVAL.GVMA with GV=1, AV=0, and GSCID=DC.iohgatp.GSCID
-            self.enqueue_iotinval(IotInvalFunc::Gvma, dc_gscid);
+            self.enqueue_iotinval(IotInvalFunc::Gvma, dc_gscid, false, 0);
         }
     }
 
@@ -629,17 +655,17 @@ impl Iommu {
         }
     }
 
-    fn enqueue_iotinval(&mut self, func: IotInvalFunc, gscid: u16) {
+    fn enqueue_iotinval(&mut self, func: IotInvalFunc, gscid: u16, av: bool, addr: usize) {
         let iotinval = IotInvalCommand {
             func,
-            av: false,
+            av,
             pscid: 0,
             pscv: false,
             gv: true,
             nl: false,
             gscid,
             s: false,
-            addr: 0,
+            addr: addr as u64,
         };
         match iotinval.encode() {
             Ok(cmd) => self.rv_iommu_add_command(cmd),
@@ -698,7 +724,10 @@ impl Iommu {
         };
         // Write command to queue tail.
         cq_entries[cqt_idx].cmd.set(raw);
-        fence(Ordering::SeqCst);
+        // Make sure the ring buffer update (whether in normal or I/O memory) is
+        //  completed and visible before signaling the tail doorbell to fetch
+        //  the next command. 'fence ow, ow'
+        unsafe { core::arch::asm!("fence ow, ow", options(nomem, nostack)) };
         self.iommu().advance_cqt();
     }
 }

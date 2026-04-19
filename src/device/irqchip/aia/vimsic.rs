@@ -17,12 +17,14 @@
 use alloc::vec::Vec;
 
 use crate::consts::PAGE_SIZE;
+use crate::device::iommu::iommu_msi_pt_tlb_invalid;
 use crate::memory::Frame;
 use crate::memory::GuestPhysAddr;
 use crate::memory::MemFlags;
 use crate::memory::MemoryRegion;
 use crate::platform::__board::{IMSIC_GUEST_INDEX, IMSIC_GUEST_NUM, IMSIC_S_BASE};
 use crate::zone::Zone;
+use core::sync::atomic::{fence, Ordering};
 
 /// RISC-V IOMMU MSI PTE size (two 64-bit doublewords).
 pub const MSI_PTE_BYTES: usize = 16;
@@ -46,6 +48,7 @@ pub fn msi_pte_encode_basic(hpa: usize) -> [u8; MSI_PTE_BYTES] {
 /// Fill a 4 KiB MSI page table: PTE index is `vcpu_id = cpu_id - first_cpu` (guest ordinal).
 fn msi_pt_fill(
     frame: &mut Frame,
+    zone_id: usize,
     cpu_ids: &[usize],
     first_cpu: usize,
     imsic_base: usize,
@@ -73,6 +76,8 @@ fn msi_pt_fill(
         );
         // Fill MSI PTE to MSI PT.
         frame.as_slice_mut()[off..off + MSI_PTE_BYTES].copy_from_slice(&pte);
+        // After change the MSI PTE, invalidate the related TLBs in IOMMU.
+        iommu_msi_pt_tlb_invalid(zone_id as u16, imsic_gpa as usize);
     }
 }
 
@@ -124,7 +129,14 @@ pub fn vimsic_init(zone: &mut Zone, imsic_base: usize, guest_num: usize) -> Fram
 
     // 2. Construct MSI PT, this is used by devices that send MSI.
     let mut msi_frame = Frame::new_zero().expect("MSI page table frame allocation");
-    msi_pt_fill(&mut msi_frame, &cpu_ids, first_cpu, imsic_base, guest_num);
+    msi_pt_fill(
+        &mut msi_frame,
+        zone.id(),
+        &cpu_ids,
+        first_cpu,
+        imsic_base,
+        guest_num,
+    );
     info!(
         "Zone {} MSI page table at HPA {:#x} ({} valid PTEs, basic translation)",
         zone.id(),

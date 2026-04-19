@@ -35,6 +35,7 @@ use super::Iommu;
 use crate::zone::Zone;
 use cmd::*;
 use iommu_hw::*;
+pub use iommu_hw::{iommu_msi_pt_tlb_invalid, iommu_remove_device};
 
 pub(super) struct RiscvIommu;
 
@@ -71,11 +72,7 @@ impl Iommu for RiscvIommu {
         );
     }
     fn remove_device(&self, zone_id: usize, device_id: usize) {
-        todo!(
-            "RiscvIommu remove device for device id {} and VMID {}",
-            device_id,
-            zone_id
-        );
+        iommu_remove_device(zone_id, device_id);
     }
     fn interrupt_handler(&self, irq_id: usize) {
         todo!(

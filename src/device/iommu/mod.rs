@@ -84,3 +84,8 @@ pub fn activate() {
 pub fn flush(zone_id: usize, bus: u8, dev_func: u8) {
     intel_vtd::flush(zone_id, bus, dev_func);
 }
+
+#[cfg(feature = "riscv_iommu")]
+pub fn iommu_msi_pt_tlb_invalid(zone_id: u16, msi_gpa: usize) {
+    riscv_iommu::iommu_msi_pt_tlb_invalid(zone_id, msi_gpa);
+}
