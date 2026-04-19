@@ -491,6 +491,19 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
     return 0;
 }
 
+/**
+ * @brief Parse PCI configuration from zone JSON.
+ *
+ * This function requires the top-level `pci_config` section to be present, but
+ * allows it to be an empty array when the zone does not expose any PCI buses.
+ * Once `pci_config` contains entries, all required fields inside each PCI bus
+ * entry must be valid, otherwise the function returns an error.
+ *
+ * @param root Parsed zone configuration JSON object.
+ * @param config Zone configuration output structure to populate.
+ *
+ * @return 0 on success, -1 if the provided PCI configuration is invalid.
+ */
 static int parse_pci_config(cJSON *root, zone_config_t *config) {
     cJSON *pci_configs_json = SAFE_CJSON_GET_OBJECT_ITEM(root, "pci_config");
     CHECK_JSON_NULL_ERR_OUT(pci_configs_json, "pci_config")
@@ -860,7 +873,8 @@ static int zone_start_from_json(const char *json_config_path,
 
 #endif
 
-    parse_pci_config(root, config);
+    if (parse_pci_config(root, config))
+        goto err_out;
 
     if (root)
         cJSON_Delete(root);
