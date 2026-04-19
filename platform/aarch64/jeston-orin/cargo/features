@@ -1,0 +1,4 @@
+gicv3
+uart_16550
+sequential_output
+aarch64_uefi_support

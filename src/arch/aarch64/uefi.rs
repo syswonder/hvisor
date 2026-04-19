@@ -19,8 +19,6 @@ use super::cache::invalidate_dcache_range;
 use crate::arch::zone::{Uefi, UefiConfig};
 use crate::config::MEM_TYPE_RAM;
 use crate::config::{root_zone_config, HvZoneConfig};
-use crate::consts::PAGE_SIZE;
-use crate::platform::ROOT_ZONE_MEMORY_REGIONS;
 use alloc::vec::Vec;
 use core::cmp::min;
 use core::mem::size_of;
