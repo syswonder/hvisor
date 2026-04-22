@@ -210,8 +210,6 @@ void virtio_close();
 
 void handle_virtio_requests();
 
-void initialize_log();
-
 int virtio_init();
 
 int create_virtio_device_from_json(cJSON *device_json, int zone_id);

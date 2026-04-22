@@ -33,6 +33,15 @@ enum { LOG_TRACE, LOG_DEBUG, LOG_INFO, LOG_WARN, LOG_ERROR, LOG_FATAL };
 #define log_fatal(...) log_log(LOG_FATAL, __FILE__, __LINE__, __VA_ARGS__)
 
 const char *log_level_string(int level);
+
+/**
+ * @brief Configure the default syslog log level used by hvisor tools.
+ *
+ * This function applies the compile-time log level policy shared by the main
+ * CLI and the virtio backend after syslog has been initialized.
+ */
+void initialize_log(void);
+
 void log_set_level(int level);
 void log_set_quiet(bool enable);
 

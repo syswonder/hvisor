@@ -49,6 +49,16 @@ static const int syslog_levels[] = {LOG_DEBUG,   LOG_DEBUG, LOG_INFO,
 
 const char *log_level_string(int level) { return level_strings[level]; }
 
+void initialize_log(void) {
+    int log_level;
+#ifdef HLOG
+    log_level = HLOG;
+#else
+    log_level = LOG_WARN;
+#endif
+    log_set_level(log_level);
+}
+
 void log_set_level(int level) { L.level = level; }
 
 void log_set_quiet(bool enable) { L.quiet = enable; }

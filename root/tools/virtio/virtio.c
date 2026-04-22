@@ -1026,7 +1026,7 @@ void virtio_close() {
                        zone_mem[i][j][MEM_SIZE]);
             }
     }
-    multithread_log_exit();
+
     log_warn("virtio daemon exit successfully");
 }
 
@@ -1243,16 +1243,6 @@ void handle_virtio_requests(void) {
     }
 }
 
-void initialize_log() {
-    int log_level;
-#ifdef HLOG
-    log_level = HLOG;
-#else
-    log_level = LOG_WARN;
-#endif
-    log_set_level(log_level);
-}
-
 int virtio_init() {
     // The higher log level is, the faster virtio-blk will be.
     int err;
@@ -1264,10 +1254,6 @@ int virtio_init() {
 
     // Set process name
     prctl(PR_SET_NAME, "hvisor-virtio", 0, 0, 0);
-
-    // Initialize logging
-    multithread_log_init();
-    initialize_log();
 
     log_info("hvisor init");
     ko_fd = open("/dev/hvisor", O_RDWR);

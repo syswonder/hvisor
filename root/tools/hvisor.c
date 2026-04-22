@@ -1008,6 +1008,10 @@ static int zone_list(int argc, char *argv[]) {
 int main(int argc, char *argv[]) {
     int err = 0;
 
+    multithread_log_init();
+    initialize_log();
+    atexit(multithread_log_exit);
+
     if (argc < 3)
         help(1);
 
