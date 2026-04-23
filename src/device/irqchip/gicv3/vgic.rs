@@ -309,7 +309,19 @@ pub fn vgicv3_dist_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
 
     match reg {
         reg if reg_range(GICD_IROUTER, 1024, 8).contains(&reg) => {
-            vgicv3_handle_irq_ops(mmio, (reg - GICD_IROUTER) as u32 / 8)
+            let irq = (reg - GICD_IROUTER) as u32 / 8;
+
+            #[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+            {
+                // For zone0, the domainmsiinfo is empty, but it will always register the intterrupt to cpu0
+                // So this remap operation is needed for other zones
+                if mmio.is_write && crate::pci::dwc_msi::is_dwc_msi_hwirq(irq) {
+                    info!("remap dwc msi hwirq {} to cpu0!", irq);
+                    mmio.value = 0;
+                }
+            }
+
+            vgicv3_handle_irq_ops(mmio, irq)
         }
         reg if reg_range(GICD_ITARGETSR, 1024, 1).contains(&reg) => {
             vgicv3_handle_irq_ops(mmio, (reg - GICD_ITARGETSR) as u32)

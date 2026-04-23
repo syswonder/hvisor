@@ -1038,11 +1038,11 @@ impl VirtualPciConfigSpace {
         for (_offset, cap) in self.capabilities.iter() {
             match cap.get_type() {
                 CapabilityType::Msi => {
-                    // For MSI: read offset+2, bits 2-0 contain MMC (Multiple Message Capable)
-                    // Supported messages = 2^(MMC+1)
+                    // For MSI: read offset+2, Message Control bits 3:1 contain MMC
+                    // Supported messages = 2^MMC
                     if let Ok(val) = cap.with_region(|region| region.read(0x02, 2)) {
-                        let mmc = (val & 0x0E) >> 1; // bits 2-0
-                        msi_count = (1u32 << (mmc + 1)) as u32;
+                        let mmc = (val & 0x0E) >> 1; // bits 3:1
+                        msi_count = 1u32 << mmc;
                     }
                 }
                 CapabilityType::MsiX => {
@@ -1858,22 +1858,52 @@ impl VirtualRootComplex {
         bdf: Bdf,
         dev: VirtualPciConfigSpace,
     ) -> Option<ArcRwLockVirtualPciConfigSpace> {
-        let parent_bus = dev.parent_bdf.bus();
-        let offset = 0;
-        let base = if let Some(accessor) = &self.accessor {
-            match accessor.get_physical_address(bdf, offset, parent_bus) {
-                Ok(addr) => addr,
-                Err(_) => {
-                    warn!("can not get physical address for device {:#?}(vbdf), reset device base same to hardware", bdf);
-                    dev.get_base()
-                }
-            }
-        } else {
-            warn!("can not found accessor for vpci bus, reset device base same to hardware");
-            dev.get_base()
+        let base = dev.get_base();
+        let host_bdf = dev.get_bdf();
+        let vbdf = dev.get_vbdf();
+
+        #[cfg(feature = "dwc_pcie")]
+        let key = {
+            let bus = bdf.bus() as PciConfigAddress;
+            let device = bdf.device() as PciConfigAddress;
+            let function = bdf.function() as PciConfigAddress;
+            let pci_addr = (bus << 24) + (device << 19) + (function << 16);
+            if bus != 0 { pci_addr } else { base }
         };
-        info!("pci insert base {:#x} to bdf {:#?}", base, bdf);
-        self.base_to_bdf.insert(base, bdf);
+
+        #[cfg(not(feature = "dwc_pcie"))]
+        let key = base;
+
+        #[cfg(feature = "dwc_pcie")]
+        {
+            let bus = bdf.bus() as PciConfigAddress;
+            let device = bdf.device() as PciConfigAddress;
+            let function = bdf.function() as PciConfigAddress;
+            let pci_addr = (bus << 24) + (device << 19) + (function << 16);
+            info!(
+                "vpci insert: base_to_bdf[{:#x}] = key_bdf {:#?}, source {}, base {:#x}, pci_addr {:#x}, dev_host_bdf {:#?}, dev_vbdf {:#?}, remapped {}",
+                key,
+                bdf,
+                if key == pci_addr { "pci_addr" } else { "base" },
+                base,
+                pci_addr,
+                host_bdf,
+                vbdf,
+                host_bdf != vbdf
+            );
+        }
+
+        #[cfg(not(feature = "dwc_pcie"))]
+        info!(
+            "vpci insert: base_to_bdf[{:#x}] = key_bdf {:#?}, source base, base {:#x}, dev_host_bdf {:#?}, dev_vbdf {:#?}, remapped {}",
+            key,
+            bdf,
+            base,
+            host_bdf,
+            vbdf,
+            host_bdf != vbdf
+        );
+        self.base_to_bdf.insert(key, bdf);
         self.devs
             .insert(bdf, ArcRwLockVirtualPciConfigSpace::new(dev))
     }

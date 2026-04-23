@@ -79,7 +79,7 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
     warn!("begin {:#x?}", pci_config);
 
     // Track domains that have been initialized for DW MSI
-    #[cfg(feature = "dwc_msi")]
+    #[cfg(all(feature = "dwc_msi", feature = "dwc_pcie"))]
     let mut initialized_domains: alloc::vec::Vec<u8> = alloc::vec::Vec::new();
 
     #[cfg(any(
@@ -174,10 +174,15 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
         }
 
         // Initialize DW MSI domain for this domain ID (only once per domain)
-        #[cfg(feature = "dwc_msi")]
+        #[cfg(all(feature = "dwc_msi", feature = "dwc_pcie"))]
         {
             if !initialized_domains.contains(&domain) {
-                crate::pci::dwc_msi::init_dwc_msi_domain(domain)?;
+                let msi_irq = platform::ROOT_DWC_ATU_CONFIG
+                    .iter()
+                    .find(|cfg| cfg.ecam_base == rootcomplex_config.ecam_base)
+                    .map(|cfg| cfg.dw_msi_irq as u32)
+                    .unwrap_or(0);
+                crate::pci::dwc_msi::init_dwc_msi_domain(domain, msi_irq)?;
                 initialized_domains.push(domain);
             }
         }
@@ -426,19 +431,17 @@ impl Zone {
 
             // After processing all devices for this domain, allocate hardware MSI bits
             if domain_msi_count > 0 {
-                #[cfg(feature = "dwc_msi")]
+                #[cfg(all(feature = "dwc_msi", feature = "dwc_pcie"))]
                 {
                     // Get the DW MSI domain allocator and allocate hwbit
                     if let Some(mut domain_lock) =
                         crate::pci::dwc_msi::get_dwc_msi_domain_mut(target_domain)
                     {
                         if let Some(domain_msi) = domain_lock.get_mut(&target_domain) {
-                            match domain_msi.allocate(domain_msi_count) {
+                            let zone_cpu_set = inner.cpu_set();
+                            let target_cpu = zone_cpu_set.first_cpu().unwrap_or(0);
+                            match domain_msi.allocate_for_cpu(target_cpu, domain_msi_count) {
                                 Ok(hwirq_bit) => {
-                                    info!(
-                                        "Allocate MSI for domain {}, count: {}, hwirq_bit: {}",
-                                        target_domain, domain_msi_count, hwirq_bit
-                                    );
                                     // Register the MSI info for this domain
                                     inner.vpci_bus_mut().add_msi_count_for_domain(
                                         target_domain,

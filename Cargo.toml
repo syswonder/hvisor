@@ -64,7 +64,8 @@ ecam_pcie = [] # Standard ECAM mechanism (default for most platforms)
 dwc_pcie = [] # DesignWare PCIe Core mechanism (CFG0/CFG1, used by RK3568)
 loongarch64_pcie = [] # LoongArch PCIe mechanism (used by LoongArch platforms)
 no_pcie_bar_realloc = []
-dwc_msi = [] # DesignWare Native MSI (used when arch doesn't provide MSI, e.g., ARM without ITS)
+dwc_msi = ["dwc_pcie"] # DesignWare Native MSI (used when arch doesn't provide MSI, e.g., ARM without ITS)
+pci_init_delay = ["dwc_pcie"] # Delay hvisor PCI init until guest DBI offset 0 access
 virtio_pci = [] # Virtual virtio pci support
 
 ############# aarch64 ##############

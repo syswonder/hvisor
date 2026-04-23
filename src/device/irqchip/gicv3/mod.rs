@@ -45,6 +45,7 @@ use crate::hypercall::SGI_IPI_ID;
 use crate::zone::Zone;
 
 const ICH_HCR_UIE: u64 = 1 << 1;
+
 //TODO: add Distributor init
 pub fn gicc_init() {
     //TODO: add Redistributor init
@@ -110,6 +111,9 @@ pub fn gicv3_handle_irq_el1() {
             warn!("skip sgi {}", irq_id);
             deactivate_irq(irq_id);
         } else {
+            #[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+            let mut is_dwc_msi_irq = false;
+
             if irq_id == 27 {
                 // virtual timer interrupt
                 TIMER_INTERRUPT_COUNTER.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
@@ -128,12 +132,30 @@ pub fn gicv3_handle_irq_el1() {
             } else if irq_id > 31 {
                 //inject phy irq
                 trace!("*** get spi_irq id = {}", irq_id);
+
+                #[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+                {
+                    if let Some(domain_id) =
+                        crate::pci::dwc_msi::get_domain_id_by_irq(irq_id as u32)
+                    {
+                        is_dwc_msi_irq = true;
+                        crate::pci::dwc_msi::dwc_msi_transfer_and_inject(domain_id, irq_id);
+                    }
+                }
             } else {
                 warn!("not konw irq id = {}", irq_id);
             }
+
+            #[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+            if irq_id != 25 && !is_dwc_msi_irq {
+                inject_irq(irq_id, true);
+            }
+
+            #[cfg(not(all(feature = "dwc_pcie", feature = "dwc_msi")))]
             if irq_id != 25 {
                 inject_irq(irq_id, true);
             }
+
             deactivate_irq(irq_id);
         }
     }

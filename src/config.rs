@@ -259,6 +259,8 @@ pub struct HvDwcAtuConfig {
     pub io_cfg_atu_shared: u64,
     // choose the atu index for io and cfg access, when io_cfg_atu_shared is 1, io and cfg use the same atu index, otherwise use different atu index
     pub io_atu_index: u64,
+    // Shared hardware interrupt ID for this DWC RC MSI block
+    pub dw_msi_irq: u64,
 }
 
 impl HvDwcAtuConfig {
@@ -276,6 +278,7 @@ impl HvDwcAtuConfig {
             cfg_size: 0,
             io_cfg_atu_shared: 0,
             io_atu_index: 0,
+            dw_msi_irq: 0,
         }
     }
 }

@@ -36,11 +36,11 @@ use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
 use core::panic;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-#[cfg(feature = "pci")]
+#[cfg(all(feature = "pci_init_delay", feature = "dwc_pcie"))]
 use crate::config::{HvPciConfig, HvPciDevConfig, CONFIG_MAX_PCI_DEV, CONFIG_PCI_BUS_MAXNUM};
-#[cfg(feature = "pci")]
+#[cfg(all(feature = "pci_init_delay", feature = "dwc_pcie"))]
 use crate::pci::pci_config::GLOBAL_PCIE_LIST;
-#[cfg(feature = "pci")]
+#[cfg(all(feature = "pci_init_delay", feature = "dwc_pcie"))]
 use crate::pci::pci_struct::Bdf;
 
 #[cfg(feature = "dwc_pcie")]
@@ -71,13 +71,6 @@ impl VirtualAtuConfigs {
 
     pub fn insert_atu(&mut self, ecam_base: usize, atu: AtuConfig) -> Option<AtuConfig> {
         self.ecam_to_atu.insert(ecam_base, atu)
-    }
-
-    pub fn get_or_insert_atu<F>(&mut self, ecam_base: usize, f: F) -> &mut AtuConfig
-    where
-        F: FnOnce() -> AtuConfig,
-    {
-        self.ecam_to_atu.entry(ecam_base).or_insert_with(f)
     }
 
     pub fn get_atu_by_io_base(&self, io_base: PciConfigAddress) -> Option<&AtuConfig> {
@@ -325,8 +318,8 @@ impl ZoneInner {
         &mut self.atu_configs
     }
 
-    #[cfg(feature = "pci")]
-    pub fn guest_pci_init(
+    #[cfg(all(feature = "pci_init_delay", feature = "dwc_pcie"))]
+    pub fn guest_pci_init_delay(
         &mut self,
         _zone_id: usize,
         alloc_pci_devs: &[HvPciDevConfig; CONFIG_MAX_PCI_DEV],
@@ -458,18 +451,16 @@ impl ZoneInner {
             }
 
             if domain_msi_count > 0 {
-                #[cfg(feature = "dwc_msi")]
+                #[cfg(all(feature = "dwc_msi", feature = "dwc_pcie"))]
                 {
                     if let Some(mut domain_lock) =
                         crate::pci::dwc_msi::get_dwc_msi_domain_mut(target_domain)
                     {
                         if let Some(domain_msi) = domain_lock.get_mut(&target_domain) {
-                            match domain_msi.allocate(domain_msi_count) {
+                            let zone_cpu_set = self.cpu_set();
+                            let target_cpu = zone_cpu_set.first_cpu().unwrap_or(0);
+                            match domain_msi.allocate_for_cpu(target_cpu, domain_msi_count) {
                                 Ok(hwirq_bit) => {
-                                    info!(
-                                        "Allocate MSI for domain {}, count: {}, hwirq_bit: {}",
-                                        target_domain, domain_msi_count, hwirq_bit
-                                    );
                                     self.vpci_bus_mut().add_msi_count_for_domain(
                                         target_domain,
                                         domain_msi_count,
@@ -501,7 +492,7 @@ impl ZoneInner {
         Ok(())
     }
 
-    #[cfg(all(feature = "pci", feature = "pci_init_delay", feature = "dwc_pcie"))]
+    #[cfg(all(feature = "pci_init_delay", feature = "dwc_pcie"))]
     pub fn virtual_pci_dbi_pref_init(
         &mut self,
         pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
@@ -525,12 +516,13 @@ impl ZoneInner {
         }
     }
 
-    #[cfg(feature = "pci")]
-    pub fn virtual_pci_mmio_init(
+    #[cfg(all(feature = "pci_init_delay", feature = "dwc_pcie"))]
+    pub fn virtual_pci_mmio_init_delay(
         &mut self,
         pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
         _num_pci_config: usize,
     ) {
+        #[cfg(feature = "ecam_pcie")]
         use crate::pci::pci_handler::mmio_vpci_handler;
 
         #[cfg(feature = "loongarch64_pcie")]
@@ -724,31 +716,47 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
     zone.pt_init(config.memory_regions())?;
     zone.mmio_init(&config.arch_config);
 
+    let mut cpu_num = 0;
+    for cpu_id in config.cpus().iter() {
+        if let Some(existing_zone) = get_cpu_data(*cpu_id as _).zone.clone() {
+            return hv_result_err!(
+                EBUSY,
+                format!(
+                    "Failed to create zone: cpu {} already belongs to zone {}",
+                    cpu_id,
+                    existing_zone.id()
+                )
+            );
+        }
+        zone.write().cpu_set_mut().set_bit(*cpu_id as _);
+        cpu_num += 1;
+    }
+    zone.write().set_cpu_num(cpu_num);
+
     #[cfg(feature = "pci")]
     {
         #[cfg(feature = "pci_init_delay")]
         {
             #[cfg(feature = "dwc_pcie")]
             {
-                if crate::pci::pci_handler::is_pci_init_done() {
-                    let _ =
-                        zone.virtual_pci_mmio_init(&config.pci_config, config.num_pci_bus as usize);
+                let num_pci_bus = config.num_pci_bus as usize;
+                if zone_id == 0 {
+                    let mut inner = zone.write();
+                    inner.virtual_pci_dbi_pref_init(&config.pci_config, num_pci_bus);
+                } else {
+                    let _ = zone.virtual_pci_mmio_init(&config.pci_config, num_pci_bus);
                     let _ = zone.guest_pci_init(
                         zone_id,
                         &config.alloc_pci_devs,
                         config.num_pci_devs,
                         &config.pci_config,
-                        config.num_pci_bus as usize,
+                        num_pci_bus,
                     );
-                } else {
-                    let mut inner = zone.write();
-                    inner
-                        .virtual_pci_dbi_pref_init(&config.pci_config, config.num_pci_bus as usize);
                 }
             }
         }
 
-        #[cfg(not(feature = "pci_init_delay"))]
+        #[cfg(all(feature = "pci", not(feature = "pci_init_delay")))]
         {
             let _ = zone.virtual_pci_mmio_init(&config.pci_config, config.num_pci_bus as usize);
             let _ = zone.guest_pci_init(
@@ -772,22 +780,6 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
     //     config.pci_config[0].ecam_size as _,
     // )?;
 
-    let mut cpu_num = 0;
-    for cpu_id in config.cpus().iter() {
-        if let Some(existing_zone) = get_cpu_data(*cpu_id as _).zone.clone() {
-            return hv_result_err!(
-                EBUSY,
-                format!(
-                    "Failed to create zone: cpu {} already belongs to zone {}",
-                    cpu_id,
-                    existing_zone.id()
-                )
-            );
-        }
-        zone.write().cpu_set_mut().set_bit(*cpu_id as _);
-        cpu_num += 1;
-    }
-    zone.write().set_cpu_num(cpu_num);
     let cpu_set = zone.read().cpu_set();
     info!("zone cpu_set: {:#b}", cpu_set.bitmap);
 
