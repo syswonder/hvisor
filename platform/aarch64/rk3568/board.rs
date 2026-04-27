@@ -354,6 +354,8 @@ pub const ROOT_DWC_ATU_CONFIG: &[HvDwcAtuConfig] = &[HvDwcAtuConfig {
     cfg_base: 0xf2000000,
     cfg_size: 0x80000 * 2,
     io_cfg_atu_shared: 0,
+    io_atu_index: 0,
+    dw_msi_irq: 0,
 }];
 
 pub const ROOT_PCI_DEVS: [HvPciDevConfig; 2] = [

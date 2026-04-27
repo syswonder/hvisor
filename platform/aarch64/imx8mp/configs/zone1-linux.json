@@ -2,80 +2,148 @@
     "arch": "arm64",
     "name": "linux2",
     "zone_id": 1,
-    "cpus": [2, 3],
+    "cpus": [
+        2,
+        3
+    ],
     "memory_regions": [
         {
             "type": "ram",
             "physical_start": "0x50000000",
-            "virtual_start":  "0x50000000",
+            "virtual_start": "0x50000000",
             "size": "0x30000000"
         },
         {
             "type": "io",
             "physical_start": "0x30a60000",
-            "virtual_start":  "0x30a60000",
+            "virtual_start": "0x30a60000",
             "size": "0x10000"
         },
         {
             "type": "virtio",
             "physical_start": "0xa003c00",
-            "virtual_start":  "0xa003c00",
+            "virtual_start": "0xa003c00",
             "size": "0x200"
         },
         {
             "type": "virtio",
             "physical_start": "0xa003800",
-            "virtual_start":  "0xa003800",
+            "virtual_start": "0xa003800",
             "size": "0x200"
         },
         {
             "type": "virtio",
             "physical_start": "0xa003600",
-            "virtual_start":  "0xa003600",
+            "virtual_start": "0xa003600",
             "size": "0x200"
         },
         {
             "type": "io",
             "physical_start": "0x38000000",
-            "virtual_start":  "0x38000000",
+            "virtual_start": "0x38000000",
             "size": "0x10000"
         },
         {
             "type": "io",
             "physical_start": "0x38500000",
-            "virtual_start":  "0x38500000",
+            "virtual_start": "0x38500000",
             "size": "0x20000"
         },
         {
             "type": "io",
             "physical_start": "0x32e80000",
-            "virtual_start":  "0x32e80000",
+            "virtual_start": "0x32e80000",
             "size": "0x20000"
         },
         {
             "type": "io",
             "physical_start": "0x30c00000",
-            "virtual_start":  "0x30c00000",
+            "virtual_start": "0x30c00000",
             "size": "0x400000"
         },
         {
             "type": "io",
             "physical_start": "0x32fc0000",
-            "virtual_start":  "0x32fc0000",
+            "virtual_start": "0x32fc0000",
             "size": "0x20000"
         }
     ],
-    "interrupts": [35, 37, 38, 45, 56, 57, 61, 75, 76, 78, 135, 162],
+    "interrupts": [
+        35,
+        37,
+        38,
+        45,
+        56,
+        57,
+        61,
+        75,
+        76,
+        78,
+        135,
+        162,
+        172
+    ],
     "ivc_configs": [],
     "kernel_filepath": "./Image",
     "dtb_filepath": "./linux2.dtb",
     "kernel_load_paddr": "0x50400000",
-    "dtb_load_paddr":   "0x50000000",
-    "entry_point":      "0x50400000",
+    "dtb_load_paddr": "0x50000000",
+    "entry_point": "0x50400000",
     "arch_config": {
+        "gic_version": "v3",
         "gicd_base": "0x38800000",
         "gicd_size": "0x10000",
         "gicr_base": "0x38880000",
-        "gicr_size": "0xc0000"
-    }
+        "gicr_size": "0xc0000",
+        "is_aarch32": false
+    },
+    "pci_config": [
+        {
+            "ecam_base": "0x33800000",
+            "ecam_size": "0x400000",
+            "io_base": "0x1ff80000",
+            "io_size": "0x10000",
+            "pci_io_base": "0x0",
+            "mem32_base": "0x18000000",
+            "mem32_size": "0x7f00000",
+            "pci_mem32_base": "0x18000000",
+            "mem64_base": "0x0",
+            "mem64_size": "0x0",
+            "pci_mem64_base": "0x0",
+            "bus_range_begin": "0x0",
+            "bus_range_end": "0x1f",
+            "domain": "0x0"
+        }
+    ],
+    "dwc_atu_config": [
+        {
+            "ecam_base": "0x33800000",
+            "dbi_base": "0x33800000",
+            "dbi_size": "0x400000",
+            "apb_base": "0x0",
+            "apb_size": "0x0",
+            "cfg_base": "0x1ff00000",
+            "cfg_size": "0x10000",
+            "io_cfg_atu_shared": 1,
+            "io_atu_index": 1,
+            "dw_msi_irq": 172
+        }
+    ],
+    "num_pci_devs": 2,
+    "alloc_pci_devs": [
+        {
+            "domain": "0x0",
+            "bus": "0x0",
+            "device": "0x0",
+            "function": "0x0",
+            "dev_type": "0"
+        },
+        {
+            "domain": "0x0",
+            "bus": "0x1",
+            "device": "0x0",
+            "function": "0x1",
+            "dev_type": "0"
+        }
+    ]
 }
