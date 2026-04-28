@@ -300,48 +300,49 @@ impl Zone {
              */
             for dev_config in &filtered_devices {
                 let bdf = Bdf::new_from_config(*dev_config);
-                // let bus = bdf.bus();
-                // let device = bdf.device();
-                // let function = bdf.function();
+                let bus = bdf.bus();
+                let device = bdf.device();
+                let function = bdf.function();
 
-                // /*
-                //  * vfunction = if (bus != bus_pre || device != device_pre) && function != 0
-                //  * In practice, remapping is performed only for new devices whose function is not 0;
-                //  * however, the check for function != 0 does not affect the final result.
-                //  */
-                // let vfunction = if bus != bus_pre || device != device_pre {
-                //     0
-                // } else {
-                //     function
-                // };
+                /*
+                 * vfunction = if (bus != bus_pre || device != device_pre) && function != 0
+                 * In practice, remapping is performed only for new devices whose function is not 0;
+                 * however, the check for function != 0 does not affect the final result.
+                 */
+                let vfunction = if bus != bus_pre || device != device_pre {
+                    0
+                } else {
+                    function
+                };
 
-                // let vbus = if bus > bus_pre {
-                //     vbus_pre += 1;
-                //     vbus_pre
-                // } else {
-                //     vbus_pre
-                // };
+                let vbus = if bus > bus_pre {
+                    vbus_pre += 1;
+                    vbus_pre
+                } else {
+                    vbus_pre
+                };
 
-                // // Remap device number to be contiguous, starting from 0
-                // let vdevice = if bus != bus_pre || device != device_pre {
-                //     // New bus or new device, increment device counter
-                //     if bus != bus_pre {
-                //         vdevice_pre = 0;
-                //     } else {
-                //         vdevice_pre += 1;
-                //     }
-                //     vdevice_pre
-                // } else {
-                //     // Same bus and device, keep the same virtual device number
-                //     vdevice_pre
-                // };
+                // Remap device number to be contiguous, starting from 0
+                let vdevice = if bus != bus_pre || device != device_pre {
+                    // New bus or new device, increment device counter
+                    if bus != bus_pre {
+                        vdevice_pre = 0;
+                    } else {
+                        vdevice_pre += 1;
+                    }
+                    vdevice_pre
+                } else {
+                    // Same bus and device, keep the same virtual device number
+                    vdevice_pre
+                };
 
-                // let vbdf = Bdf::new(bdf.domain(), vbus, vdevice, vfunction);
+                let vbdf = Bdf::new(bdf.domain(), vbus, vdevice, vfunction);
 
-                // device_pre = device;
-                // bus_pre = bus;
+                device_pre = device;
+                bus_pre = bus;
 
                 // TODO: adjust vbdf will cause line interrupt injecet error, so remove it temporarily
+                #[cfg(not(feature = "dwc_msi"))]
                 let vbdf = bdf;
 
                 info!("set bdf {:#?} to vbdf {:#?}", bdf, vbdf);
