@@ -588,7 +588,7 @@ fn handle_endpoint_access(
                                     core::arch::asm!("tlbi vmalls12e1is");
                                     core::arch::asm!("dsb nsh");
                                 }
-                                #[cfg(target_arch = "x86_64")]
+                                #[cfg(all(target_arch = "x86_64", feature = "intel_vtd"))]
                                 {
                                     let vbdf = dev.get_vbdf();
                                     crate::device::iommu::flush(
@@ -1070,7 +1070,7 @@ fn handle_pci_bridge_access(
                                     core::arch::asm!("tlbi vmalls12e1is");
                                     core::arch::asm!("dsb nsh");
                                 }
-                                #[cfg(target_arch = "x86_64")]
+                                #[cfg(all(target_arch = "x86_64", feature = "intel_vtd"))]
                                 {
                                     let vbdf = dev.get_vbdf();
                                     crate::device::iommu::flush(
@@ -1196,7 +1196,7 @@ fn handle_pci_bridge_access(
                                 /* after update gpm, need to flush iommu table
                                  * in x86_64
                                  */
-                                #[cfg(target_arch = "x86_64")]
+                                #[cfg(all(target_arch = "x86_64", feature = "intel_vtd"))]
                                 {
                                     let vbdf = dev.get_vbdf();
                                     crate::device::iommu::flush(
@@ -1337,7 +1337,7 @@ fn handle_pci_bridge_access(
                                 /* after update gpm, need to flush iommu table
                                  * in x86_64
                                  */
-                                #[cfg(target_arch = "x86_64")]
+                                #[cfg(all(target_arch = "x86_64", feature = "intel_vtd"))]
                                 {
                                     let vbdf = dev.get_vbdf();
                                     crate::device::iommu::flush(
