@@ -591,7 +591,7 @@ fn handle_endpoint_access(
                                 #[cfg(target_arch = "x86_64")]
                                 {
                                     let vbdf = dev.get_vbdf();
-                                    crate::arch::iommu::flush(
+                                    crate::device::iommu::flush(
                                         this_zone_id(),
                                         vbdf.bus,
                                         (vbdf.device << 3) + vbdf.function,
@@ -1073,7 +1073,7 @@ fn handle_pci_bridge_access(
                                 #[cfg(target_arch = "x86_64")]
                                 {
                                     let vbdf = dev.get_vbdf();
-                                    crate::arch::iommu::flush(
+                                    crate::device::iommu::flush(
                                         this_zone_id(),
                                         vbdf.bus,
                                         (vbdf.device << 3) + vbdf.function,
@@ -1199,7 +1199,7 @@ fn handle_pci_bridge_access(
                                 #[cfg(target_arch = "x86_64")]
                                 {
                                     let vbdf = dev.get_vbdf();
-                                    crate::arch::iommu::flush(
+                                    crate::device::iommu::flush(
                                         this_zone_id(),
                                         vbdf.bus,
                                         (vbdf.device << 3) + vbdf.function,
@@ -1340,7 +1340,7 @@ fn handle_pci_bridge_access(
                                 #[cfg(target_arch = "x86_64")]
                                 {
                                     let vbdf = dev.get_vbdf();
-                                    crate::arch::iommu::flush(
+                                    crate::device::iommu::flush(
                                         this_zone_id(),
                                         vbdf.bus,
                                         (vbdf.device << 3) + vbdf.function,
