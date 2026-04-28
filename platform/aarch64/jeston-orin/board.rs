@@ -47,7 +47,7 @@ pub const BOARD_PHYSMEM_LIST: &[(u64, u64, MemoryType)] = &[
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0xA0000000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0xA0400000;
 pub const ROOT_ZONE_ENTRY: u64 = 0xA0400000;
-pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3);
+pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3) | (1 << 4) | (1 << 5);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 
@@ -107,6 +107,9 @@ pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;
 
 // serial-c - phy - pcie - phy - hsp - timer - hsp - phy - phy - memory-controller - external-memory-controller
 // pcie - phy - phy
+// bpmp-fabric
+// gpu
+// host1x
 pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[
     146,
     372,
@@ -121,7 +124,10 @@ pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[
     64,
     388, 389,
     253,
-    254]);
+    254,
+    206,
+    99, 100, 102, 103,
+    480, 481, 482, 483, 484, 485, 486, 487]);
 
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
