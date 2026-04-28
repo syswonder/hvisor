@@ -389,8 +389,8 @@ impl Zone {
                             dev.set_zone_id(Some(_zone_id as u32));
                             let mut vdev_inner = dev.read().config_space.clone();
                             vdev_inner.set_vbdf(vbdf);
-                        let msi_count = vdev_inner.get_msi_count();
-                        domain_msi_count += msi_count;
+                            let msi_count = vdev_inner.get_msi_count();
+                            domain_msi_count += msi_count;
                             inner.vpci_bus_mut().insert(vbdf, vdev_inner);
                         } else {
                             warn!(

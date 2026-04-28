@@ -342,9 +342,9 @@ impl ZoneInner {
             // Create accessor for VirtualRootComplex, similar to RootComplex
             #[cfg(feature = "dwc_pcie")]
             {
-                use alloc::sync::Arc;
                 use crate::pci::config_accessors::dwc::DwcConfigAccessor;
                 use crate::platform;
+                use alloc::sync::Arc;
 
                 let atu_config = platform::ROOT_DWC_ATU_CONFIG
                     .iter()
@@ -365,8 +365,8 @@ impl ZoneInner {
 
             #[cfg(feature = "loongarch64_pcie")]
             {
-                use alloc::sync::Arc;
                 use crate::pci::config_accessors::loongarch64::LoongArchConfigAccessor;
+                use alloc::sync::Arc;
 
                 let root_bus = bus_range_begin;
                 let accessor = Arc::new(LoongArchConfigAccessor::new(
@@ -379,8 +379,8 @@ impl ZoneInner {
 
             #[cfg(feature = "ecam_pcie")]
             {
-                use alloc::sync::Arc;
                 use crate::pci::config_accessors::ecam::EcamConfigAccessor;
+                use alloc::sync::Arc;
 
                 let accessor = Arc::new(EcamConfigAccessor::new(ecam_base));
                 self.vpci_bus_mut().set_accessor(accessor);

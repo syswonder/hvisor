@@ -1868,7 +1868,11 @@ impl VirtualRootComplex {
             let device = bdf.device() as PciConfigAddress;
             let function = bdf.function() as PciConfigAddress;
             let pci_addr = (bus << 24) + (device << 19) + (function << 16);
-            if bus != 0 { pci_addr } else { base }
+            if bus != 0 {
+                pci_addr
+            } else {
+                base
+            }
         };
 
         #[cfg(not(feature = "dwc_pcie"))]
