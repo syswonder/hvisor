@@ -4,6 +4,9 @@
 #include <linux/of.h>
 #include <linux/reset.h>
 #include <linux/uaccess.h>
+#include <linux/pm_domain.h>
+#include <linux/pm_runtime.h>
+#include <linux/platform_device.h>
 
 #ifdef ENABLE_VIRTIO_SCMI
 
@@ -355,12 +358,12 @@ static int reset_domain(u32 reset_id, u32 flags, u32 reset_state) {
             // Fallback to assert + deassert if reset is not supported
             pr_debug("Fallback to assert+deassert for reset domain %u\n",
                      reset_id);
+            pr_debug("Fallback to assert+deassert for reset domain %u\n", reset_id);
             ret = reset_control_assert(rstc);
             if (ret) {
                 pr_err("Failed to assert reset domain %u: %d\n", reset_id, ret);
                 break;
             }
-            // Add a small delay between assert and deassert
             udelay(1);
             ret = reset_control_deassert(rstc);
             if (ret)
@@ -378,17 +381,260 @@ static int reset_domain(u32 reset_id, u32 flags, u32 reset_state) {
         break;
     }
 
-    // Release the reset control
     reset_control_release(rstc);
 
     if (ret) {
         pr_err("Reset operation failed for domain %u: %d\n", reset_id, ret);
     }
 
-    // Put the reset control
     reset_control_put(rstc);
 
     return ret;
+}
+
+/* ======================== Power Domain (genpd) Support ======================== */
+
+static uint32_t power_provider_phandle = 0;
+
+/* Track per-domain dummy devices for genpd control */
+#define MAX_POWER_DOMAINS 128
+
+struct power_domain_dev {
+    struct platform_device *pdev;
+    bool attached;
+};
+
+static struct power_domain_dev power_devices[MAX_POWER_DOMAINS];
+static struct device_node *power_provider_np = NULL;
+
+static struct device_node *get_power_provider_node(void)
+{
+    if (!power_provider_np) {
+        power_provider_np = of_find_node_by_phandle(power_provider_phandle);
+        if (!power_provider_np)
+            pr_err("Failed to find power provider node (phandle=%u)\n",
+                   power_provider_phandle);
+    }
+    return power_provider_np;
+}
+
+static int power_domain_get_count(u32 *count)
+{
+    /* The count is managed by userspace (power_max_num from JSON config).
+     * This subcommand is not used; we just return 0 and let userspace
+     * provide the correct count from the configuration. */
+    *count = 0;
+    return 0;
+}
+
+static int power_domain_init(u32 domain_id)
+{
+    struct of_phandle_args args;
+    struct platform_device *pdev;
+    int ret;
+
+    if (domain_id >= MAX_POWER_DOMAINS)
+        return -ENOMEM;
+
+    if (power_devices[domain_id].attached)
+        return 0; /* Already initialized */
+
+    if (!power_provider_np) {
+        ret = -ENODEV;
+        goto err;
+    }
+
+    pdev = platform_device_alloc("hvisor-power", domain_id);
+    if (!pdev) {
+        ret = -ENOMEM;
+        goto err;
+    }
+
+    ret = platform_device_add(pdev);
+    if (ret) {
+        platform_device_put(pdev);
+        goto err;
+    }
+
+    args.np = power_provider_np;
+    args.args[0] = domain_id;
+    args.args_count = 1;
+
+    ret = of_genpd_add_device(&args, &pdev->dev);
+    if (ret) {
+        pr_err("Failed to attach device to power domain %u: %d\n",
+               domain_id, ret);
+        platform_device_unregister(pdev);
+        goto err;
+    }
+
+    pm_runtime_enable(&pdev->dev);
+
+    power_devices[domain_id].pdev = pdev;
+    power_devices[domain_id].attached = true;
+
+    pr_debug("Power domain %u initialized\n", domain_id);
+    return 0;
+
+err:
+    power_devices[domain_id].pdev = NULL;
+    power_devices[domain_id].attached = false;
+    return ret;
+}
+
+static int power_domain_state_set(u32 domain_id, u32 power_state)
+{
+    struct device *dev;
+    int ret;
+
+    if (domain_id >= MAX_POWER_DOMAINS || !power_devices[domain_id].attached)
+        return -ENODEV;
+
+    dev = &power_devices[domain_id].pdev->dev;
+
+    if (power_state == SCMI_POWER_STATE_GENERIC_ON) {
+        ret = pm_runtime_resume_and_get(dev);
+        if (ret < 0)
+            pr_err("Failed to power on domain %u: %d\n", domain_id, ret);
+        else
+            pr_debug("Power domain %u turned ON\n", domain_id);
+        return ret;
+    } else if (power_state == SCMI_POWER_STATE_GENERIC_OFF) {
+        ret = pm_runtime_put_sync(dev);
+        if (ret < 0)
+            pr_err("Failed to power off domain %u: %d\n", domain_id, ret);
+        else
+            pr_debug("Power domain %u turned OFF\n", domain_id);
+        /* pm_runtime_put_sync returns 1 if the device was suspended */
+        return (ret < 0) ? ret : 0;
+    }
+
+    return -EINVAL;
+}
+
+static int power_domain_state_get(u32 domain_id, u32 *power_state)
+{
+    struct device *dev;
+
+    if (domain_id >= MAX_POWER_DOMAINS || !power_devices[domain_id].attached)
+        return -ENODEV;
+
+    dev = &power_devices[domain_id].pdev->dev;
+
+    /* Check runtime PM status: RPM_ACTIVE = on, RPM_SUSPENDED = off */
+    *power_state = pm_runtime_active(dev) ?
+                   SCMI_POWER_STATE_GENERIC_ON :
+                   SCMI_POWER_STATE_GENERIC_OFF;
+
+    return 0;
+}
+
+static int power_domain_get_attributes(u32 domain_id, u32 *flags, char *name)
+{
+    struct device *dev;
+
+    if (domain_id >= MAX_POWER_DOMAINS || !power_devices[domain_id].attached)
+        return -ENODEV;
+
+    dev = &power_devices[domain_id].pdev->dev;
+
+    /* Register an idle notification to ensure genpd info is populated */
+    *flags = 0;
+
+    /* Set name: use genpd name if available, else fallback */
+    if (dev->pm_domain_name)
+        snprintf(name, 63, "%s", dev->pm_domain_name);
+    else
+        snprintf(name, 63, "pd_%u", domain_id);
+    name[63] = '\0';
+
+    return 0;
+}
+
+int hvisor_scmi_power_ioctl(struct hvisor_scmi_power_args __user *user_args)
+{
+    struct hvisor_scmi_power_args args;
+
+    if (copy_from_user(&args, user_args, sizeof(struct hvisor_scmi_power_args)))
+        return -EFAULT;
+
+    pr_debug("SCMI power ioctl, subcmd=%d\n", args.subcmd);
+
+    switch (args.subcmd) {
+    case HVISOR_SCMI_POWER_GET_COUNT: {
+        u32 count = 0;
+        int ret = power_domain_get_count(&count);
+        if (ret < 0)
+            return ret;
+        args.u.power_count = count;
+        if (copy_to_user(&user_args->u.power_count, &args.u.power_count, sizeof(u32)))
+            return -EFAULT;
+        return 0;
+    }
+    case HVISOR_SCMI_POWER_GET_ATTRIBUTES: {
+        u32 flags;
+        char name[64];
+        int ret;
+
+        /* Ensure domain is initialized */
+        ret = power_domain_init(args.u.power_attr.domain_id);
+        if (ret < 0)
+            return ret;
+
+        ret = power_domain_get_attributes(args.u.power_attr.domain_id,
+                                          &flags, name);
+        if (ret < 0)
+            return ret;
+
+        args.u.power_attr.flags = flags;
+        strncpy(args.u.power_attr.name, name, 63);
+        args.u.power_attr.name[63] = '\0';
+
+        if (copy_to_user(&user_args->u.power_attr, &args.u.power_attr,
+                         sizeof(args.u.power_attr)))
+            return -EFAULT;
+        return 0;
+    }
+    case HVISOR_SCMI_POWER_STATE_SET: {
+        u32 domain_id = args.u.power_state_info.domain_id;
+        int ret;
+
+        ret = power_domain_init(domain_id);
+        if (ret < 0)
+            return ret;
+
+        return power_domain_state_set(domain_id,
+                                      args.u.power_state_info.power_state);
+    }
+    case HVISOR_SCMI_POWER_STATE_GET: {
+        u32 domain_id = args.u.power_state_info.domain_id;
+        u32 power_state;
+        int ret;
+
+        if (!power_devices[domain_id].attached)
+            return -ENODEV;
+
+        ret = power_domain_state_get(domain_id, &power_state);
+        if (ret < 0)
+            return ret;
+
+        args.u.power_state_info.power_state = power_state;
+        if (copy_to_user(&user_args->u.power_state_info,
+                         &args.u.power_state_info,
+                         sizeof(args.u.power_state_info)))
+            return -EFAULT;
+        return 0;
+    }
+    case HVISOR_SCMI_POWER_SET_PHANDLE: {
+        power_provider_phandle = args.u.power_phandle_info.phandle;
+        power_provider_np = NULL; /* Reset so we re-fetch on next use */
+        pr_info("Power provider phandle set to %u\n", power_provider_phandle);
+        return 0;
+    }
+    default:
+        pr_err("Invalid SCMI power subcommand: %d\n", args.subcmd);
+        return -EINVAL;
+    }
 }
 
 int hvisor_scmi_clock_ioctl(struct hvisor_scmi_clock_args __user *user_args) {

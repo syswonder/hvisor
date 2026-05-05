@@ -103,7 +103,7 @@ SCMI 协议使用 **打包消息头（Packed Message Header）**：
 |------|------|------|
 | Message ID | 8 bits | 协议内消息标识 |
 | Message Type | 2 bits | 0=Command, 2=Delayed Response, 3=Notification |
-| Protocol ID | 8 bits | 协议标识（0x10=Base, 0x14=Clock, 0x16=Reset） |
+| Protocol ID | 8 bits | 协议标识（0x10=Base, 0x11=Power, 0x14=Clock, 0x16=Reset） |
 | Token ID | 10 bits | 请求/响应配对标识 |
 
 #### 2.1.2 支持的协议
@@ -111,6 +111,7 @@ SCMI 协议使用 **打包消息头（Packed Message Header）**：
 | 协议 ID | 协议名称 | 功能 |
 |---------|----------|------|
 | 0x10 | Base | 版本查询、协议列表、错误通知 |
+| 0x11 | Power Domain | 电源域属性查询、电源状态控制 |
 | 0x14 | Clock | 时钟属性、频率管理、时钟启用/禁用 |
 | 0x16 | Reset | 复位域属性、复位操作 |
 
@@ -166,9 +167,10 @@ VirtIO-SCMI 体系分为三个主要层次：
 |------|------|
 | [virtio_scmi.c](../../../tools/virtio/devices/scmi/virtio_scmi.c) | VirtIO 设备驱动入口，处理队列中断 |
 | [scmi_core.c](../../../tools/virtio/devices/scmi/scmi_core.c) | SCMI 协议核心，注册协议、消息分发 |
+| [base.c](../../../tools/virtio/devices/scmi/base.c) | Base 协议实现 |
+| [power.c](../../../tools/virtio/devices/scmi/power.c) | Power Domain 协议实现 |
 | [clock.c](../../../tools/virtio/devices/scmi/clock.c) | Clock 协议实现 |
 | [reset.c](../../../tools/virtio/devices/scmi/reset.c) | Reset 协议实现 |
-| [base.c](../../../tools/virtio/devices/scmi/base.c) | Base 协议实现 |
 
 #### 3.1.2 内核驱动层（scmi_server）
 
@@ -212,6 +214,7 @@ struct scmi_protocol {
 
 ```c
 extern int virtio_scmi_base_init(void);   // 注册 Base 协议
+extern int virtio_scmi_power_init(void);  // 注册 Power Domain 协议
 extern int virtio_scmi_clock_init(void);  // 注册 Clock 协议
 extern int virtio_scmi_reset_init(void);  // 注册 Reset 协议
 ```
@@ -778,36 +781,27 @@ dmesg | grep -E "scmi|hvisor"
 
 ### 7.1 添加新协议
 
-VirtIO-SCMI 框架支持扩展新的 SCMI 协议。以添加电源管理协议（0x11）为例：
+VirtIO-SCMI 框架支持扩展新的 SCMI 协议。Power Domain 协议（0x11）已作为一个完整参考实现包含在 `power.c` 中。如需添加其他协议（如 Performance 0x13、Sensor 0x15 等），可遵循以下步骤：
 
-1. **定义协议 ID**（virtio_scmi.h）：
-   ```c
-   #define SCMI_PROTO_ID_POWER   0x11
-   ```
+1. **定义协议 ID 和消息 ID**（virtio_scmi.h）
 
-2. **创建协议文件**（power.c）：
-   ```c
-   static int handle_power_protocol_attributes(...) { ... }
-   static int handle_power_domain_attributes(...) { ... }
-   static int handle_power_state_set(...) { ... }
-   static int handle_power_state_get(...) { ... }
-   
-   static const struct scmi_protocol power_protocol = {
-       .id = SCMI_PROTO_ID_POWER,
-       .handle_request = handle_power_request,
-   };
-   
-   int virtio_scmi_power_init(void) {
-       return scmi_register_protocol(&power_protocol);
-   }
-   ```
+2. **创建协议文件**，参考 `power.c` 的实现模式：
+   - 实现 handle_VERSION、handle_PROTOCOL_ATTRIBUTES 等通用消息
+   - 实现协议特定的消息处理函数
+   - 通过 ioctl 与内核模块（scmi_server.c）通信
+   - 使用 `scmi_register_protocol()` 注册
 
-3. **注册协议**（virtio_scmi.c）：
-   ```c
-   extern int virtio_scmi_power_init(void);
-   // 在 init_scmi_dev() 中添加
-   virtio_scmi_power_init();
-   ```
+3. **添加内核模块支持**（scmi_server.c + hvisor.h + scmi_server.h）：
+   - 定义 ioctl 命令号和参数结构（hvisor.h）
+   - 实现内核侧的硬件操作（scmi_server.c）
+   - 声明 ioctl 处理函数（scmi_server.h）
+   - 在 hvisor_main.c 中注册 ioctl 处理
+
+4. **注册协议**（virtio_scmi.c）：
+   在 `init_scmi_dev()` 中调用 `virtio_scmi_xxx_init()`。
+
+5. **解析配置**（virtio.c）：
+   在 `VirtioTSCMI` 分支中解析 JSON 配置字段，调用对应的 `virtio_scmi_xxx_init_map()`。
 
 ### 7.2 性能优化
 

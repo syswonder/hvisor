@@ -25,9 +25,11 @@ SCMIDev *init_scmi_dev() {
         extern int virtio_scmi_base_init(void);
         extern int virtio_scmi_clock_init(void);
         extern int virtio_scmi_reset_init(void);
+        extern int virtio_scmi_power_init(void);
         virtio_scmi_base_init();
         virtio_scmi_clock_init();
         virtio_scmi_reset_init();
+        virtio_scmi_power_init();
     }
     return dev;
 }
