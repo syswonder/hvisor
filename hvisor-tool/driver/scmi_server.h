@@ -21,6 +21,7 @@
 /* Function declarations */
 int hvisor_scmi_clock_ioctl(struct hvisor_scmi_clock_args __user *user_args);
 int hvisor_scmi_reset_ioctl(struct hvisor_scmi_reset_args __user *user_args);
+int hvisor_scmi_power_ioctl(struct hvisor_scmi_power_args __user *user_args);
 
 #endif /* ENABLE_VIRTIO_SCMI */
 

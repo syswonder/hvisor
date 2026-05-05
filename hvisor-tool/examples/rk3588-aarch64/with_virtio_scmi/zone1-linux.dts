@@ -210,6 +210,12 @@
 				#reset-cells = <0x01>;
 				phandle = <0x1002>;  // 新的phandle值
 			};
+
+			protocol@11 {    // power domain protocol
+				reg = <0x11>;
+				#power-domain-cells = <0x01>;
+				phandle = <0x1003>;  // power domain provider phandle
+			};
 		};
 	};
 
@@ -305,7 +311,7 @@
 		clock-names = "stmmaceth\0clk_mac_ref\0pclk_mac\0aclk_mac\0ptp_ref";
 		resets = <0x1002 0x0>;       // virt scmi reset id, original 0x20b
 		reset-names = "stmmaceth";
-		power-domains = <0x5d 0x21>;
+		power-domains = <0x1003 33>;	// SCMI power domain (PD_GMAC)
 		snps,mixed-burst;
 		snps,tso;
 		snps,axi-config = <0x110>;
@@ -724,25 +730,6 @@
 		};
 	};
 
-	power-management@fd8d8000 {
-		compatible = "rockchip,rk3588-pmu\0syscon\0simple-mfd";
-		reg = <0x00 0xfd8d8000 0x00 0x400>;
-		phandle = <0xd4>;
-
-		power-controller {
-			compatible = "rockchip,rk3588-power-controller";
-			#power-domain-cells = <0x01>;
-			#address-cells = <0x01>;
-			#size-cells = <0x00>;
-			status = "okay";
-			phandle = <0x5d>;
-
-			power-domain@33 {
-				reg = <0x21>;
-				clocks = <0x02 0x166 0x02 0x169 0x02 0x16a>;
-			};
-		};
-	};
 
     chosen {
 		bootargs = "earlycon=virtio,mmio,0xff9e0000 console=hvc0 root=/dev/vda rootwait rw loglevel=7";

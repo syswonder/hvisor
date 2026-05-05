@@ -48,10 +48,12 @@
 // Global variables to store phandle values
 uint32_t clock_phandle = 0;
 uint32_t reset_phandle = 0;
+uint32_t power_phandle = 0;
 
 // Global variables to store max num values
 uint32_t clock_max_num = 0;
 uint32_t reset_max_num = 0;
+uint32_t power_max_num = 0;
 #endif
 
 /// hvisor kernel module fd
@@ -1462,6 +1464,8 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
             SAFE_CJSON_GET_OBJECT_ITEM(device_json, "clock_phandle");
         cJSON *reset_phandle_json =
             SAFE_CJSON_GET_OBJECT_ITEM(device_json, "reset_phandle");
+        cJSON *power_phandle_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "power_phandle");
         if (clock_phandle_json) {
             clock_phandle = clock_phandle_json->valueint;
             log_info("SCMI clock_phandle set to %u", clock_phandle);
@@ -1470,12 +1474,18 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
             reset_phandle = reset_phandle_json->valueint;
             log_info("SCMI reset_phandle set to %u", reset_phandle);
         }
+        if (power_phandle_json) {
+            power_phandle = power_phandle_json->valueint;
+            log_info("SCMI power_phandle set to %u", power_phandle);
+        }
 
-        // Parse clock_max_num and reset_max_num (strictly required)
+        // Parse clock_max_num, reset_max_num and power_max_num
         cJSON *clock_max_num_json =
             SAFE_CJSON_GET_OBJECT_ITEM(device_json, "clock_max_num");
         cJSON *reset_max_num_json =
             SAFE_CJSON_GET_OBJECT_ITEM(device_json, "reset_max_num");
+        cJSON *power_max_num_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "power_max_num");
         if (!clock_max_num_json) {
             log_error("Missing required field: clock_max_num");
             return -1;
@@ -1499,6 +1509,17 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
         if (virtio_scmi_clock_init_map(allowed_list_json, clock_map_json) < 0) {
             log_error("Failed to initialize SCMI clock allowed list and map");
             return -1;
+        }
+        // Parse power_map (optional) and power_max_num (optional)
+        cJSON *power_map_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "power_map");
+        if (power_max_num_json) {
+            power_max_num = power_max_num_json->valueint;
+            log_info("SCMI power_max_num set to %u", power_max_num);
+            extern int virtio_scmi_power_init_map(cJSON *, cJSON *);
+            if (virtio_scmi_power_init_map(allowed_list_json, power_map_json) < 0) {
+                log_error("Failed to initialize SCMI power domain map");
+                return -1;
+            }
         }
 #else
         log_error(

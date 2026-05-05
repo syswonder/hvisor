@@ -107,28 +107,26 @@ typedef struct {
 #define SCMI_MSG_TYPE_NOTIFICATION 3 /* Notification */
 
 /* -------------------------- SCMI Protocol IDs -------------------------- */
-#define SCMI_PROTO_ID_BASE 0x10  /* Base Protocol */
-#define SCMI_PROTO_ID_CLOCK 0x14 /* Clock Protocol */
-#define SCMI_PROTO_ID_RESET 0x16 /* Reset Protocol */
+#define SCMI_PROTO_ID_BASE     0x10    /* Base Protocol */
+#define SCMI_PROTO_ID_POWER    0x11    /* Power Domain Protocol */
+#define SCMI_PROTO_ID_CLOCK    0x14    /* Clock Protocol */
+#define SCMI_PROTO_ID_RESET    0x16    /* Reset Protocol */
 
 /* -------------------------- SCMI Reset Protocol Message IDs ---------- */
 #define SCMI_RESET_MSG_RESET_ATTRIBUTES 0x3 /* Reset domain attributes */
 #define SCMI_RESET_MSG_RESET 0x4            /* Reset domain */
 #define SCMI_RESET_MSG_RESET_NOTIFY 0x5     /* Reset notify */
 
-/* -------------------------- SCMI Common Protocol Message IDs
- * -------------------------- */
-#define SCMI_COMMON_MSG_VERSION 0x0             /* Version request */
-#define SCMI_COMMON_MSG_PROTOCOL_ATTRIBUTES 0x1 /* Protocol attributes */
-#define SCMI_COMMON_MSG_MESSAGE_ATTRIBUTES                                     \
-    0x2 /* Protocol message attributes                                         \
-         */
+/* -------------------------- SCMI Power Protocol Message IDs ---------- */
+#define SCMI_POWER_MSG_POWER_DOMAIN_ATTRIBUTES  0x3  /* Power domain attributes */
+#define SCMI_POWER_MSG_POWER_STATE_SET          0x4  /* Set power state */
+#define SCMI_POWER_MSG_POWER_STATE_GET          0x5  /* Get power state */
+#define SCMI_POWER_MSG_POWER_STATE_NOTIFY       0x6  /* Power state notify */
 
-/* -------------------------- SCMI Base Protocol Message IDs
- * -------------------------- */
-#define SCMI_BASE_MSG_DISCOVER_VENDOR 0x3
-#define SCMI_BASE_MSG_DISCOVER_SUB_VENDOR 0x4
-#define SCMI_BASE_MSG_DISCOVER_IMPL_VERSION 0x5
+/* -------------------------- SCMI Common Protocol Message IDs -------------------------- */
+#define SCMI_COMMON_MSG_VERSION                        0x0  /* Version request */
+#define SCMI_COMMON_MSG_PROTOCOL_ATTRIBUTES            0x1  /* Protocol attributes */
+#define SCMI_COMMON_MSG_MESSAGE_ATTRIBUTES             0x2  /* Protocol message attributes */
 #define SCMI_BASE_MSG_DISCOVER_LIST_PROTOCOLS 0x6
 #define SCMI_BASE_MSG_DISCOVER_AGENT 0x7
 #define SCMI_BASE_MSG_NOTIFY_ERRORS 0x8
@@ -271,6 +269,10 @@ uint32_t scmi_map_id(scmi_map_context_t *ctx, uint32_t scmi_id);
 
 SCMIDev *init_scmi_dev();
 int virtio_scmi_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq);
+
+/* Power Protocol */
+int virtio_scmi_power_init(void);
+int virtio_scmi_power_init_map(cJSON *allowed_list_json, cJSON *power_map_json);
 
 #endif
 #endif

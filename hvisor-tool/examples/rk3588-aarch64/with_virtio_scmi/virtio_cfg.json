@@ -35,7 +35,10 @@
                     "reset_phandle": 2,
                     "clock_max_num": 721,
                     "reset_max_num": 1,
+                    "power_phandle": 93,
+                    "power_max_num": 44,
                     "allowed_list": {
+                        "power_ids": ["*"],
                         "reset_ids": [0],
                         "clock_ids": ["*"]
                     },
