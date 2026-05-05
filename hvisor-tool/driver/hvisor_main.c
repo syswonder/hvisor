@@ -46,7 +46,6 @@ extern int clk_prepare_enable(struct clk *clk);
 extern void clk_disable_unprepare(struct clk *clk);
 
 /* Reset controller functions */
-#include <linux/reset-domains.h>
 #include <linux/reset.h>
 
 extern struct reset_control *reset_control_get(struct device *dev,
