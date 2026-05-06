@@ -94,7 +94,7 @@
     },
     "pci_config": [
         {
-            "ecam_base": "0xb0000000",
+            "ecam_base": "0xe0000000",
             "ecam_size": "0x200000",
             "io_base": "0x0",
             "io_size": "0x0",
