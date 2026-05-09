@@ -59,9 +59,9 @@ impl<VA: From<usize> + Into<usize> + Copy> MemoryRegion<VA> {
     /// Test whether this region is overlap with `other`.
     fn is_overlap_with(&self, other: &Self) -> bool {
         let p0 = self.start.into();
-        let p1 = p0 + self.size;
+        let p1 = p0.wrapping_add(self.size);
         let p2 = other.start.into();
-        let p3 = p2 + other.size;
+        let p3 = p2.wrapping_add(other.size);
         !(p1 <= p2 || p0 >= p3)
     }
 }

@@ -1,5 +1,6 @@
 # hvisor for loongarch64 makefile
 # wheatfox(wheatfox17@icloud.com) 2024.6
+# boneinscri(boneinscri@163.com) 2026.4
 
 # HVISOR ENTRY
 HVISOR_ENTRY_PA := 0x9000000080000000
@@ -23,3 +24,8 @@ HVISOR_ENTRY_PA := 0x9000000080000000
 
 $(hvisor_bin): elf
 	$(OBJCOPY) $(hvisor_elf) --strip-all -O binary $@
+# objdump + hvisor-trap-vector.txt
+	readelf -a $(hvisor_elf) > hvisor-elf.txt
+	loongarch64-linux-gnu-objdump --disassemble $(hvisor_elf) > hvisor.S
+	cp $(hvisor_elf) hvisor.elf
+	nm -n hvisor.elf | grep -w _hyp_trap_vector | awk '{print "0x"$$1""}' > hvisor-trap-vector.txt

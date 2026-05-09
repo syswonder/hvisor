@@ -13,6 +13,7 @@
 //
 // Authors:
 //      Yulong Han <wheatfox17@icloud.com>
+//      Ming Shen  <boneinscri@163.com>
 //
 #![allow(unused)]
 
@@ -21,7 +22,9 @@ use crate::{
         clock::*,
         cpu::this_cpu_id,
         ipi::*,
-        register::{read_gcsr_estat, write_gcsr_estat},
+        register::{
+            clear_gcsr_estat, read_csr_gintc, read_gcsr_estat, set_csr_gintc, set_gcsr_estat, write_csr_gintc, write_gcsr_estat
+        },
     },
     consts::MAX_CPU_NUM,
     zone::Zone,
@@ -55,8 +58,8 @@ pub fn primary_init_late() {
     info!("loongarch64: irqchip: primary_init_late: testing UART1");
     crate::device::uart::loongson_uart::__test_uart1();
 
-    info!("loongarch64: irqchip: primary_init_late: probing pci");
-    probe_pci();
+    // info!("loongarch64: irqchip: primary_init_late: probing pci");
+    // probe_pci();
 
     info!("loongarch64: irqchip: primary_init_late: clearing extioi SR regs");
     clear_extioi_sr();
@@ -89,10 +92,11 @@ pub fn clock_cpucfg_dump() {
 pub fn percpu_init() {
     info!("loongarch64: irqchip: percpu_init: running percpu_init");
 
-    clear_all_ipi(this_cpu_id());
-    enable_ipi(this_cpu_id());
+    let this_pcpu_id = this_cpu_id();
+    clear_all_ipi(this_pcpu_id);
+    enable_ipi(this_pcpu_id);
     ecfg_ipi_enable();
-    clock_cpucfg_dump();
+    // clock_cpucfg_dump();
     // timer_test_tick();
 }
 
@@ -110,10 +114,13 @@ const INT_PERF: usize = 10;
 const INT_TIMER: usize = 11;
 const INT_IPI: usize = 12;
 
-/// inject irq to THIS cpu
+
+// ================================
+// inject and clear irq 
+// --boneinscri 2026.04
 pub fn inject_irq(_irq: usize, is_hardware: bool) {
     debug!(
-        "loongarch64: inject_irq: _irq: {}, is_hardware: {}",
+        "loongarch64: inject_irq, _irq: {}, is_hardware: {}",
         _irq, is_hardware
     );
     if _irq > INT_IPI {
@@ -122,21 +129,33 @@ pub fn inject_irq(_irq: usize, is_hardware: bool) {
     }
     let bit = 1 << _irq;
     if _irq >= INT_HWI0 && _irq <= INT_HWI7 {
-        // use gintc to inject
-        use crate::arch::register::gintc;
-        gintc::set_hwis(bit >> INT_HWI0);
+        set_csr_gintc(bit >> INT_HWI0);
     } else {
-        // use gcsr to inject, just set the bit
-        let mut gcsr_estat = read_gcsr_estat();
-        gcsr_estat |= bit;
-        write_gcsr_estat(gcsr_estat);
+        set_gcsr_estat(bit);
     }
-    let mut status = GLOBAL_IRQ_INJECT_STATUS.lock();
-    status.cpu_status[this_cpu_id()].status = InjectionStatus::Injecting;
-
-    tcfg::set_en(true); // start timer to avoid endless timer injection
-                        // please only enable this for debugging because it may cause overheads for realtime nonroots
 }
+
+pub fn clear_irq(_irq: usize, is_hardware: bool) {
+    debug!(
+        "loongarch64: inject_irq, _irq: {}, is_hardware: {}",
+        _irq, is_hardware
+    );
+    if _irq > INT_IPI {
+        error!("loongarch64: inject_irq: _irq > {}, not valid", INT_IPI);
+        return;
+    }
+    let bit = 1 << _irq;
+    if _irq >= INT_HWI0 && _irq <= INT_HWI7 {
+        use crate::arch::register::gintc;
+        let mut gintc_raw = read_csr_gintc();
+        gintc_raw &= !(bit >> INT_HWI0);
+        set_csr_gintc(gintc_raw);
+    } else {
+        clear_gcsr_estat(bit);
+    }
+}
+// ================================
+
 
 /// clear the injecting irq ctrl bit on THIS cpu
 pub fn clear_hwi_injected_irq() {

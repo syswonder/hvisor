@@ -13,20 +13,54 @@
 //
 // Authors:
 //      Yulong Han <wheatfox17@icloud.com>
+//      Ming Shen  <boneinscri@163.com>
 //
 
 use super::register::*;
 use super::zone::ZoneContext;
 use crate::arch::cpu::this_cpu_id;
 use crate::arch::ipi::*;
+use crate::arch::eiointc::{
+    loongarch_eiointc_readl, loongarch_eiointc_writel,
+    do_real_read_iocsr, do_real_write_iocsr,
+    EIOINTC_BASE, EIOINTC_SIZE, EIOINTC_VIRT_BASE, EIOINTC_VIRT_SIZE,
+};
+use crate::arch::timer::{restore_timer, save_timer, timer_init};
 use crate::consts::{IPI_EVENT_CLEAR_INJECT_IRQ, MAX_CPU_NUM};
-use crate::cpu_data::this_cpu_data;
-use crate::device::irqchip::inject_irq;
+use crate::cpu_data::{get_cpu_data, this_cpu_data};
+use crate::device::irqchip::{inject_irq, ls7a2000::clear_irq};
 use crate::device::irqchip::ls7a2000::chip::*;
+use crate::device::virtio_trampoline::handle_virtio_irq;
 use crate::event::{check_events, dump_cpu_events, dump_events};
 use crate::hypercall::{SGI_IPI_ID, *};
 use crate::memory::{addr, mmio_handle_access, MMIOAccess};
 use crate::zone::Zone;
+
+// IOCSR address range classification
+const IOCSR_TYPE_IPI: usize = 0;
+const IOCSR_TYPE_EIOINTC: usize = 1;
+const IOCSR_TYPE_EIOINTC_VIRT: usize = 2;
+const IOCSR_TYPE_OTHER: usize = 3;
+
+fn get_iocsr_type(addr: usize) -> usize {
+    if addr >= IOCSR_IPI_BASE && addr < IOCSR_IPI_BASE + 0x200 {
+        IOCSR_TYPE_IPI
+    } else if addr >= EIOINTC_BASE && addr < EIOINTC_BASE + EIOINTC_SIZE {
+        IOCSR_TYPE_EIOINTC
+    } else if addr >= EIOINTC_VIRT_BASE && addr < EIOINTC_VIRT_BASE + EIOINTC_VIRT_SIZE {
+        IOCSR_TYPE_EIOINTC_VIRT
+    } else {
+        IOCSR_TYPE_OTHER
+    }
+}
+
+// 0 or 7
+// boneinscri : 2026.04
+// VS_VALUE = 0, one handler
+// VS_VALUE = 7, interrupt vector
+// it can be changed runtime
+pub const GLOBAL_VS_VALUE: usize = 0;
+
 use crate::PHY_TO_DMW_UNCACHED;
 use core::arch;
 use core::arch::asm;
@@ -84,24 +118,22 @@ pub static GLOBAL_TRAP_CONTEXT_HELPER_PER_CPU: [Mutex<TrapContextHelper>; MAX_CP
 
 pub fn install_trap_vector() {
     // force disable INT here
-    crmd::set_ie(false);
     // clear UEFI firmware's previous timer configs
     ticlr::clear_timer_interrupt();
+    disable_global_interrupt();
+    ecfg_ipi_disable();
 
-    timer_init();
     tcfg::set_en(false); // we may need to use timer irq to trap for our virtio clear injection
                          // only enable timer irq trap for debugging, because it may cause overheads for realtime nonroots
 
-    // set CSR.EENTRY to _hyp_trap_vector and int vector offset to 0
-    ecfg::set_vs(0);
+    // set CSR.EENTRY to _hyp_trap_vector and int vector offset to 0/?
+    ecfg::set_vs(GLOBAL_VS_VALUE);
     eentry::set_eentry(_hyp_trap_vector as usize);
 
     // enable floating point
     euen::set_fpe(true); // basic floating point
     euen::set_sxe(true); // 128-bit SIMD
     euen::set_asxe(true); // 256-bit SIMD
-
-    enable_global_interrupt()
 }
 
 /// enable CRMD.IE
@@ -140,24 +172,59 @@ pub fn ktime_get() -> usize {
     current_counter_time
 }
 
-pub fn timer_init() {
-    // uefi firmware leaves timer interrupt pending, we need to clear it manually
-    ticlr::clear_timer_interrupt();
-    let timer_freq = time::get_timer_freq();
-    tcfg::set_periodic(true);
-    let init_val = get_ms_counter(200);
-    tcfg::set_init_val(init_val);
+pub fn ipi_init() {
+    let mut lie_ = ecfg::read().lie();
+    lie_ = lie_ | LineBasedInterrupt::IPI;
+    ecfg::set_lie(lie_);
+}
 
-    tcfg::set_en(true);
+pub fn ecfg_timer_disable() {
+    let mut lie_ = ecfg::read().lie();
+    lie_ = lie_ & !LineBasedInterrupt::TIMER;
+    ecfg::set_lie(lie_);
+}
 
+pub fn ecfg_timer_enable() {
     let mut lie_ = ecfg::read().lie();
     lie_ = lie_ | LineBasedInterrupt::TIMER;
     ecfg::set_lie(lie_);
 }
 
-pub fn ipi_init() {
+pub fn ecfg_swi_enable() {
     let mut lie_ = ecfg::read().lie();
-    lie_ = lie_ | LineBasedInterrupt::IPI;
+    lie_ = lie_ | LineBasedInterrupt::SWI0 | LineBasedInterrupt::SWI1;
+    ecfg::set_lie(lie_);
+}
+
+pub fn ecfg_swi_disable() {
+    let mut lie_ = ecfg::read().lie();
+    lie_ = lie_ & !LineBasedInterrupt::SWI0 & !LineBasedInterrupt::SWI1;
+    ecfg::set_lie(lie_);
+}
+
+pub fn ecfg_hwi_disable() {
+    let mut lie_ = ecfg::read().lie();
+    lie_ = lie_ & !LineBasedInterrupt::HWI0;
+    lie_ = lie_ & !LineBasedInterrupt::HWI1;
+    lie_ = lie_ & !LineBasedInterrupt::HWI2;
+    lie_ = lie_ & !LineBasedInterrupt::HWI3;
+    lie_ = lie_ & !LineBasedInterrupt::HWI4;
+    lie_ = lie_ & !LineBasedInterrupt::HWI5;
+    lie_ = lie_ & !LineBasedInterrupt::HWI6;
+    lie_ = lie_ & !LineBasedInterrupt::HWI7;
+    ecfg::set_lie(lie_);
+}
+
+pub fn ecfg_hwi_enable() {
+    let mut lie_ = ecfg::read().lie();
+    lie_ = lie_ | LineBasedInterrupt::HWI0;
+    lie_ = lie_ | LineBasedInterrupt::HWI1;
+    lie_ = lie_ | LineBasedInterrupt::HWI2;
+    lie_ = lie_ | LineBasedInterrupt::HWI3;
+    lie_ = lie_ | LineBasedInterrupt::HWI4;
+    lie_ = lie_ | LineBasedInterrupt::HWI5;
+    lie_ = lie_ | LineBasedInterrupt::HWI6;
+    lie_ = lie_ | LineBasedInterrupt::HWI7;
     ecfg::set_lie(lie_);
 }
 
@@ -223,15 +290,9 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
     trace!("loongarch64: trap_handler: ctx addr = {:p}", &ctx);
 
     // save timer
-    let delta;
-    let ticks = ctx.gcsr_tval;
-    let cfg = ctx.gcsr_tcfg;
-    if ticks < cfg {
-        delta = ticks;
-    } else {
-        delta = 0;
-    }
-    let expire = ktime_get() + delta;
+    // --boneinscri 2026.04
+    let pcpu_id = this_cpu_id();
+    save_timer(ctx, pcpu_id);
 
     // dump trap csr regs
     let estat_ = estat::read();
@@ -291,46 +352,10 @@ pub fn trap_handler(mut ctx: &mut ZoneContext) {
         ctx,
     );
 
-    // restore timer
-    let cfg = ctx.gcsr_tcfg;
-
-    ctx.gcsr_tcfg = 0;
-
-    // restore GCSR_ESTAT and GCSR_TCFG
-    ctx.gcsr_estat = 0;
-    ctx.gcsr_tcfg = 0;
-
-    debug!("loongarch64: trap_handler: restore timer, cfg={:#x}", cfg);
-
-    if cfg & 1 == 0 {
-        // guest has disabled timer, we just restore the tval
-        ctx.gcsr_tval = 0;
-    } else {
-        let ticks = ctx.gcsr_tval;
-        let estat = ctx.gcsr_estat;
-
-        if !((cfg & 2) != 0 && (ticks > cfg)) {
-            ctx.gcsr_tval = 0; // inject irq
-            let cpu_timer = 1usize << 11;
-            if estat & cpu_timer == 0 {
-                ctx.gcsr_ticlr = 1; // clear timer interrupt
-            }
-        } else {
-            let now = ktime_get();
-            let mut __delta = 0;
-            if now < expire {
-                __delta = expire - now;
-            } else if (cfg & 2) != 0 {
-                // tcfg[63:2] || 00 is tval
-                let period = cfg & (0xffff_ffff_ffff_fffc);
-                __delta = now - expire;
-                __delta = period - (__delta % period);
-                // kvm queued guest timer irq injection here but we do nothing here
-            }
-
-            ctx.gcsr_tval = __delta;
-        }
-    }
+    // restore timer + inject irq
+    // --boneinscri 2026.04
+    restore_timer(ctx, pcpu_id);
+    deliver_irq();
 
     debug!("loongarch64: trap_handler: return");
 
@@ -383,7 +408,7 @@ fn handle_exception(
             handle_hvc(ctx);
         }
         ECODE_PIL | ECODE_PIS | ECODE_PNR => {
-            debug!("exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",
+            info!("exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",
                     ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv);
             // we first assume this lies in virtio region
             // since we didn't add these regions into VMM Pages
@@ -577,14 +602,16 @@ fn handle_exception(
                         "mmio access failed, error = {:?}, this is a real page fault",
                         e
                     );
-                    panic!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",
-                    ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv)
+                    error!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",
+                    ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv);
+                    this_cpu_data().arch_cpu.idle();// boneinscri 2026.04, use shutdown to restart it~ for debugging
                 }
             }
         }
         _ => {
-            panic!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",  
-            ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv)
+            error!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",  
+            ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv);
+            this_cpu_data().arch_cpu.idle();// boneinscri 2026.04, use shutdown to restart it~ for debugging
         }
     }
 }
@@ -645,6 +672,15 @@ pub fn _vcpu_return(ctx: usize) {
 
     // Enable interrupt
     prmd::set_pie(true);
+
+    // ecfg_timer_enable();
+
+    // ecfg_hwi_enable();
+    // ecfg_swi_enable();
+
+    ecfg::set_vs(GLOBAL_VS_VALUE);
+    eentry::set_eentry(_hyp_trap_vector as usize);
+
     trace!(
         "loongarch64: _vcpu_return: calling _hyp_trap_return with ctx = {:#x}",
         ctx
@@ -702,126 +738,126 @@ extern "C" fn _hyp_trap_vector() {
             "st.d $r12, $r3, 256",
 
             // save GCSRS
-            "gcsrrd $r12, {LOONGARCH_GCSR_CRMD}",
-            "st.d $r12, $r3, 256+8*1",
-            "gcsrrd $r12, {LOONGARCH_GCSR_PRMD}",
-            "st.d $r12, $r3, 256+8*2",
-            "gcsrrd $r12, {LOONGARCH_GCSR_EUEN}",
-            "st.d $r12, $r3, 256+8*3",
-            "gcsrrd $r12, {LOONGARCH_GCSR_MISC}",
-            "st.d $r12, $r3, 256+8*4",
-            "gcsrrd $r12, {LOONGARCH_GCSR_ECTL}",
-            "st.d $r12, $r3, 256+8*5",
-            "gcsrrd $r12, {LOONGARCH_GCSR_ESTAT}",
-            "st.d $r12, $r3, 256+8*6",
-            "gcsrrd $r12, {LOONGARCH_GCSR_ERA}",
-            "st.d $r12, $r3, 256+8*7",
-            "gcsrrd $r12, {LOONGARCH_GCSR_BADV}",
-            "st.d $r12, $r3, 256+8*8",
-            "gcsrrd $r12, {LOONGARCH_GCSR_BADI}",
-            "st.d $r12, $r3, 256+8*9",
-            "gcsrrd $r12, {LOONGARCH_GCSR_EENTRY}",
-            "st.d $r12, $r3, 256+8*10",
-            "gcsrrd $r12, {LOONGARCH_GCSR_TLBIDX}",
-            "st.d $r12, $r3, 256+8*11",
-            "gcsrrd $r12, {LOONGARCH_GCSR_TLBEHI}",
-            "st.d $r12, $r3, 256+8*12",
-            "gcsrrd $r12, {LOONGARCH_GCSR_TLBELO0}",
-            "st.d $r12, $r3, 256+8*13",
-            "gcsrrd $r12, {LOONGARCH_GCSR_TLBELO1}",
-            "st.d $r12, $r3, 256+8*14",
-            "gcsrrd $r12, {LOONGARCH_GCSR_ASID}",
-            "st.d $r12, $r3, 256+8*15",
-            "gcsrrd $r12, {LOONGARCH_GCSR_PGDL}",
-            "st.d $r12, $r3, 256+8*16",
-            "gcsrrd $r12, {LOONGARCH_GCSR_PGDH}",
-            "st.d $r12, $r3, 256+8*17",
-            "gcsrrd $r12, {LOONGARCH_GCSR_PGD}",
-            "st.d $r12, $r3, 256+8*18",
-            "gcsrrd $r12, {LOONGARCH_GCSR_PWCL}",
-            "st.d $r12, $r3, 256+8*19",
-            "gcsrrd $r12, {LOONGARCH_GCSR_PWCH}",
-            "st.d $r12, $r3, 256+8*20",
-            "gcsrrd $r12, {LOONGARCH_GCSR_STLBPS}",
-            "st.d $r12, $r3, 256+8*21",
-            "gcsrrd $r12, {LOONGARCH_GCSR_RAVCFG}",
-            "st.d $r12, $r3, 256+8*22",
-            "gcsrrd $r12, {LOONGARCH_GCSR_CPUID}",
-            "st.d $r12, $r3, 256+8*23",
-            "gcsrrd $r12, {LOONGARCH_GCSR_PRCFG1}",
-            "st.d $r12, $r3, 256+8*24",
-            "gcsrrd $r12, {LOONGARCH_GCSR_PRCFG2}",
-            "st.d $r12, $r3, 256+8*25",
-            "gcsrrd $r12, {LOONGARCH_GCSR_PRCFG3}",
-            "st.d $r12, $r3, 256+8*26",
-            "gcsrrd $r12, {LOONGARCH_GCSR_SAVE0}",
-            "st.d $r12, $r3, 256+8*27",
-            "gcsrrd $r12, {LOONGARCH_GCSR_SAVE1}",
-            "st.d $r12, $r3, 256+8*28",
-            "gcsrrd $r12, {LOONGARCH_GCSR_SAVE2}",
-            "st.d $r12, $r3, 256+8*29",
-            "gcsrrd $r12, {LOONGARCH_GCSR_SAVE3}",
-            "st.d $r12, $r3, 256+8*30",
-            "gcsrrd $r12, {LOONGARCH_GCSR_SAVE4}",
-            "st.d $r12, $r3, 256+8*31",
-            "gcsrrd $r12, {LOONGARCH_GCSR_SAVE5}",
-            "st.d $r12, $r3, 256+8*32",
-            "gcsrrd $r12, {LOONGARCH_GCSR_SAVE6}",
-            "st.d $r12, $r3, 256+8*33",
-            "gcsrrd $r12, {LOONGARCH_GCSR_SAVE7}",
-            "st.d $r12, $r3, 256+8*34",
-            "gcsrrd $r12, {LOONGARCH_GCSR_SAVE8}",
-            "st.d $r12, $r3, 256+8*35",
-            "gcsrrd $r12, {LOONGARCH_GCSR_SAVE9}",
-            "st.d $r12, $r3, 256+8*36",
-            "gcsrrd $r12, {LOONGARCH_GCSR_SAVE10}",
-            "st.d $r12, $r3, 256+8*37",
-            "gcsrrd $r12, {LOONGARCH_GCSR_SAVE11}",
-            "st.d $r12, $r3, 256+8*38",
-            "gcsrrd $r12, {LOONGARCH_GCSR_SAVE12}",
-            "st.d $r12, $r3, 256+8*39",
-            "gcsrrd $r12, {LOONGARCH_GCSR_SAVE13}",
-            "st.d $r12, $r3, 256+8*40",
-            "gcsrrd $r12, {LOONGARCH_GCSR_SAVE14}",
-            "st.d $r12, $r3, 256+8*41",
-            "gcsrrd $r12, {LOONGARCH_GCSR_SAVE15}",
-            "st.d $r12, $r3, 256+8*42",
-            "gcsrrd $r12, {LOONGARCH_GCSR_TID}",
-            "st.d $r12, $r3, 256+8*43",
-            "gcsrrd $r12, {LOONGARCH_GCSR_TCFG}",
-            "st.d $r12, $r3, 256+8*44",
-            "gcsrrd $r12, {LOONGARCH_GCSR_TVAL}",
-            "st.d $r12, $r3, 256+8*45",
-            "gcsrrd $r12, {LOONGARCH_GCSR_CNTC}",
-            "st.d $r12, $r3, 256+8*46",
-            "gcsrrd $r12, {LOONGARCH_GCSR_TICLR}",
-            "st.d $r12, $r3, 256+8*47",
-            "gcsrrd $r12, {LOONGARCH_GCSR_LLBCTL}",
-            "st.d $r12, $r3, 256+8*48",
-            "gcsrrd $r12, {LOONGARCH_GCSR_TLBRENTRY}",
-            "st.d $r12, $r3, 256+8*49",
-            "gcsrrd $r12, {LOONGARCH_GCSR_TLBRBADV}",
-            "st.d $r12, $r3, 256+8*50",
-            "gcsrrd $r12, {LOONGARCH_GCSR_TLBRERA}",
-            "st.d $r12, $r3, 256+8*51",
-            "gcsrrd $r12, {LOONGARCH_GCSR_TLBRSAVE}",
-            "st.d $r12, $r3, 256+8*52",
-            "gcsrrd $r12, {LOONGARCH_GCSR_TLBRELO0}",
-            "st.d $r12, $r3, 256+8*53",
-            "gcsrrd $r12, {LOONGARCH_GCSR_TLBRELO1}",
-            "st.d $r12, $r3, 256+8*54",
-            "gcsrrd $r12, {LOONGARCH_GCSR_TLBREHI}",
-            "st.d $r12, $r3, 256+8*55",
-            "gcsrrd $r12, {LOONGARCH_GCSR_TLBRPRMD}",
-            "st.d $r12, $r3, 256+8*56",
-            "gcsrrd $r12, {LOONGARCH_GCSR_DMW0}",
-            "st.d $r12, $r3, 256+8*57",
-            "gcsrrd $r12, {LOONGARCH_GCSR_DMW1}",
-            "st.d $r12, $r3, 256+8*58",
-            "gcsrrd $r12, {LOONGARCH_GCSR_DMW2}",
-            "st.d $r12, $r3, 256+8*59",
-            "gcsrrd $r12, {LOONGARCH_GCSR_DMW3}",
-            "st.d $r12, $r3, 256+8*60",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_CRMD}",
+            // "st.d $r12, $r3, 256+8*1",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_PRMD}",
+            // "st.d $r12, $r3, 256+8*2",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_EUEN}",
+            // "st.d $r12, $r3, 256+8*3",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_MISC}",
+            // "st.d $r12, $r3, 256+8*4",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_ECTL}",
+            // "st.d $r12, $r3, 256+8*5",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_ESTAT}",
+            // "st.d $r12, $r3, 256+8*6",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_ERA}",
+            // "st.d $r12, $r3, 256+8*7",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_BADV}",
+            // "st.d $r12, $r3, 256+8*8",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_BADI}",
+            // "st.d $r12, $r3, 256+8*9",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_EENTRY}",
+            // "st.d $r12, $r3, 256+8*10",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_TLBIDX}",
+            // "st.d $r12, $r3, 256+8*11",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_TLBEHI}",
+            // "st.d $r12, $r3, 256+8*12",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_TLBELO0}",
+            // "st.d $r12, $r3, 256+8*13",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_TLBELO1}",
+            // "st.d $r12, $r3, 256+8*14",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_ASID}",
+            // "st.d $r12, $r3, 256+8*15",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_PGDL}",
+            // "st.d $r12, $r3, 256+8*16",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_PGDH}",
+            // "st.d $r12, $r3, 256+8*17",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_PGD}",
+            // "st.d $r12, $r3, 256+8*18",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_PWCL}",
+            // "st.d $r12, $r3, 256+8*19",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_PWCH}",
+            // "st.d $r12, $r3, 256+8*20",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_STLBPS}",
+            // "st.d $r12, $r3, 256+8*21",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_RAVCFG}",
+            // "st.d $r12, $r3, 256+8*22",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_CPUID}",
+            // "st.d $r12, $r3, 256+8*23",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_PRCFG1}",
+            // "st.d $r12, $r3, 256+8*24",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_PRCFG2}",
+            // "st.d $r12, $r3, 256+8*25",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_PRCFG3}",
+            // "st.d $r12, $r3, 256+8*26",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_SAVE0}",
+            // "st.d $r12, $r3, 256+8*27",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_SAVE1}",
+            // "st.d $r12, $r3, 256+8*28",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_SAVE2}",
+            // "st.d $r12, $r3, 256+8*29",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_SAVE3}",
+            // "st.d $r12, $r3, 256+8*30",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_SAVE4}",
+            // "st.d $r12, $r3, 256+8*31",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_SAVE5}",
+            // "st.d $r12, $r3, 256+8*32",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_SAVE6}",
+            // "st.d $r12, $r3, 256+8*33",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_SAVE7}",
+            // "st.d $r12, $r3, 256+8*34",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_SAVE8}",
+            // "st.d $r12, $r3, 256+8*35",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_SAVE9}",
+            // "st.d $r12, $r3, 256+8*36",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_SAVE10}",
+            // "st.d $r12, $r3, 256+8*37",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_SAVE11}",
+            // "st.d $r12, $r3, 256+8*38",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_SAVE12}",
+            // "st.d $r12, $r3, 256+8*39",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_SAVE13}",
+            // "st.d $r12, $r3, 256+8*40",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_SAVE14}",
+            // "st.d $r12, $r3, 256+8*41",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_SAVE15}",
+            // "st.d $r12, $r3, 256+8*42",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_TID}",
+            // "st.d $r12, $r3, 256+8*43",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_TCFG}",
+            // "st.d $r12, $r3, 256+8*44",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_TVAL}",
+            // "st.d $r12, $r3, 256+8*45",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_CNTC}",
+            // "st.d $r12, $r3, 256+8*46",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_TICLR}",
+            // "st.d $r12, $r3, 256+8*47",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_LLBCTL}",
+            // "st.d $r12, $r3, 256+8*48",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_TLBRENTRY}",
+            // "st.d $r12, $r3, 256+8*49",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_TLBRBADV}",
+            // "st.d $r12, $r3, 256+8*50",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_TLBRERA}",
+            // "st.d $r12, $r3, 256+8*51",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_TLBRSAVE}",
+            // "st.d $r12, $r3, 256+8*52",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_TLBRELO0}",
+            // "st.d $r12, $r3, 256+8*53",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_TLBRELO1}",
+            // "st.d $r12, $r3, 256+8*54",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_TLBREHI}",
+            // "st.d $r12, $r3, 256+8*55",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_TLBRPRMD}",
+            // "st.d $r12, $r3, 256+8*56",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_DMW0}",
+            // "st.d $r12, $r3, 256+8*57",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_DMW1}",
+            // "st.d $r12, $r3, 256+8*58",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_DMW2}",
+            // "st.d $r12, $r3, 256+8*59",
+            // "gcsrrd $r12, {LOONGARCH_GCSR_DMW3}",
+            // "st.d $r12, $r3, 256+8*60",
             // // now let's save the zone's pgd to ZoneContext
             // "csrrd $r12, {LOONGARCH_CSR_PGDL}",
             // "st.d $r12, $r3, 256+8*61", // PGDL
@@ -846,67 +882,67 @@ extern "C" fn _hyp_trap_vector() {
             LOONGARCH_CSR_SAVE4 = const 0x34,
             LOONGARCH_CSR_DESAVE = const 0x502,
             LOONGARCH_CSR_ERA = const 0x6,
-            LOONGARCH_GCSR_CRMD = const 0x0,
-            LOONGARCH_GCSR_PRMD = const 0x1,
-            LOONGARCH_GCSR_EUEN = const 0x2,
-            LOONGARCH_GCSR_MISC = const 0x3,
-            LOONGARCH_GCSR_ECTL = const 0x4,
-            LOONGARCH_GCSR_ESTAT = const 0x5,
-            LOONGARCH_GCSR_ERA = const 0x6,
-            LOONGARCH_GCSR_BADV = const 0x7,
-            LOONGARCH_GCSR_BADI = const 0x8,
-            LOONGARCH_GCSR_EENTRY = const 0xc,
-            LOONGARCH_GCSR_TLBIDX = const 0x10,
-            LOONGARCH_GCSR_TLBEHI = const 0x11,
-            LOONGARCH_GCSR_TLBELO0 = const 0x12,
-            LOONGARCH_GCSR_TLBELO1 = const 0x13,
-            LOONGARCH_GCSR_ASID = const 0x18,
-            LOONGARCH_GCSR_PGDL = const 0x19,
-            LOONGARCH_GCSR_PGDH = const 0x1a,
-            LOONGARCH_GCSR_PGD = const 0x1b,
-            LOONGARCH_GCSR_PWCL = const 0x1c,
-            LOONGARCH_GCSR_PWCH = const 0x1d,
-            LOONGARCH_GCSR_STLBPS = const 0x1e,
-            LOONGARCH_GCSR_RAVCFG = const 0x1f,
-            LOONGARCH_GCSR_CPUID = const 0x20,
-            LOONGARCH_GCSR_PRCFG1 = const 0x21,
-            LOONGARCH_GCSR_PRCFG2 = const 0x22,
-            LOONGARCH_GCSR_PRCFG3 = const 0x23,
-            LOONGARCH_GCSR_SAVE0 = const 0x30,
-            LOONGARCH_GCSR_SAVE1 = const 0x31,
-            LOONGARCH_GCSR_SAVE2 = const 0x32,
-            LOONGARCH_GCSR_SAVE3 = const 0x33,
-            LOONGARCH_GCSR_SAVE4 = const 0x34,
-            LOONGARCH_GCSR_SAVE5 = const 0x35,
-            LOONGARCH_GCSR_SAVE6 = const 0x36,
-            LOONGARCH_GCSR_SAVE7 = const 0x37,
-            LOONGARCH_GCSR_SAVE8 = const 0x38,
-            LOONGARCH_GCSR_SAVE9 = const 0x39,
-            LOONGARCH_GCSR_SAVE10 = const 0x3a,
-            LOONGARCH_GCSR_SAVE11 = const 0x3b,
-            LOONGARCH_GCSR_SAVE12 = const 0x3c,
-            LOONGARCH_GCSR_SAVE13 = const 0x3d,
-            LOONGARCH_GCSR_SAVE14 = const 0x3e,
-            LOONGARCH_GCSR_SAVE15 = const 0x3f,
-            LOONGARCH_GCSR_TID = const 0x40,
-            LOONGARCH_GCSR_TCFG = const 0x41,
-            LOONGARCH_GCSR_TVAL = const 0x42,
-            LOONGARCH_GCSR_CNTC = const 0x43,
-            LOONGARCH_GCSR_TICLR = const 0x44,
-            LOONGARCH_GCSR_LLBCTL = const 0x60,
-            LOONGARCH_GCSR_TLBRENTRY = const 0x88,
-            LOONGARCH_GCSR_TLBRBADV = const 0x89,
-            LOONGARCH_GCSR_TLBRERA = const 0x8a,
-            LOONGARCH_GCSR_TLBRSAVE = const 0x8b,
-            LOONGARCH_GCSR_TLBRELO0 = const 0x8c,
-            LOONGARCH_GCSR_TLBRELO1 = const 0x8d,
-            LOONGARCH_GCSR_TLBREHI = const 0x8e,
-            LOONGARCH_GCSR_TLBRPRMD = const 0x8f,
-            LOONGARCH_GCSR_DMW0 = const 0x180,
-            LOONGARCH_GCSR_DMW1 = const 0x181,
-            LOONGARCH_GCSR_DMW2 = const 0x182,
-            LOONGARCH_GCSR_DMW3 = const 0x183,
-            // LOONGARCH_CSR_PGDL = const 0x19,
+            // LOONGARCH_GCSR_CRMD = const 0x0,
+            // LOONGARCH_GCSR_PRMD = const 0x1,
+            // LOONGARCH_GCSR_EUEN = const 0x2,
+            // LOONGARCH_GCSR_MISC = const 0x3,
+            // LOONGARCH_GCSR_ECTL = const 0x4,
+            // LOONGARCH_GCSR_ESTAT = const 0x5,
+            // LOONGARCH_GCSR_ERA = const 0x6,
+            // LOONGARCH_GCSR_BADV = const 0x7,
+            // LOONGARCH_GCSR_BADI = const 0x8,
+            // LOONGARCH_GCSR_EENTRY = const 0xc,
+            // LOONGARCH_GCSR_TLBIDX = const 0x10,
+            // LOONGARCH_GCSR_TLBEHI = const 0x11,
+            // LOONGARCH_GCSR_TLBELO0 = const 0x12,
+            // LOONGARCH_GCSR_TLBELO1 = const 0x13,
+            // LOONGARCH_GCSR_ASID = const 0x18,
+            // LOONGARCH_GCSR_PGDL = const 0x19,
+            // LOONGARCH_GCSR_PGDH = const 0x1a,
+            // LOONGARCH_GCSR_PGD = const 0x1b,
+            // LOONGARCH_GCSR_PWCL = const 0x1c,
+            // LOONGARCH_GCSR_PWCH = const 0x1d,
+            // LOONGARCH_GCSR_STLBPS = const 0x1e,
+            // LOONGARCH_GCSR_RAVCFG = const 0x1f,
+            // LOONGARCH_GCSR_CPUID = const 0x20,
+            // LOONGARCH_GCSR_PRCFG1 = const 0x21,
+            // LOONGARCH_GCSR_PRCFG2 = const 0x22,
+            // LOONGARCH_GCSR_PRCFG3 = const 0x23,
+            // LOONGARCH_GCSR_SAVE0 = const 0x30,
+            // LOONGARCH_GCSR_SAVE1 = const 0x31,
+            // LOONGARCH_GCSR_SAVE2 = const 0x32,
+            // LOONGARCH_GCSR_SAVE3 = const 0x33,
+            // LOONGARCH_GCSR_SAVE4 = const 0x34,
+            // LOONGARCH_GCSR_SAVE5 = const 0x35,
+            // LOONGARCH_GCSR_SAVE6 = const 0x36,
+            // LOONGARCH_GCSR_SAVE7 = const 0x37,
+            // LOONGARCH_GCSR_SAVE8 = const 0x38,
+            // LOONGARCH_GCSR_SAVE9 = const 0x39,
+            // LOONGARCH_GCSR_SAVE10 = const 0x3a,
+            // LOONGARCH_GCSR_SAVE11 = const 0x3b,
+            // LOONGARCH_GCSR_SAVE12 = const 0x3c,
+            // LOONGARCH_GCSR_SAVE13 = const 0x3d,
+            // LOONGARCH_GCSR_SAVE14 = const 0x3e,
+            // LOONGARCH_GCSR_SAVE15 = const 0x3f,
+            // LOONGARCH_GCSR_TID = const 0x40,
+            // LOONGARCH_GCSR_TCFG = const 0x41,
+            // LOONGARCH_GCSR_TVAL = const 0x42,
+            // LOONGARCH_GCSR_CNTC = const 0x43,
+            // LOONGARCH_GCSR_TICLR = const 0x44,
+            // LOONGARCH_GCSR_LLBCTL = const 0x60,
+            // LOONGARCH_GCSR_TLBRENTRY = const 0x88,
+            // LOONGARCH_GCSR_TLBRBADV = const 0x89,
+            // LOONGARCH_GCSR_TLBRERA = const 0x8a,
+            // LOONGARCH_GCSR_TLBRSAVE = const 0x8b,
+            // LOONGARCH_GCSR_TLBRELO0 = const 0x8c,
+            // LOONGARCH_GCSR_TLBRELO1 = const 0x8d,
+            // LOONGARCH_GCSR_TLBREHI = const 0x8e,
+            // LOONGARCH_GCSR_TLBRPRMD = const 0x8f,
+            // LOONGARCH_GCSR_DMW0 = const 0x180,
+            // LOONGARCH_GCSR_DMW1 = const 0x181,
+            // LOONGARCH_GCSR_DMW2 = const 0x182,
+            // LOONGARCH_GCSR_DMW3 = const 0x183,
+            // // LOONGARCH_CSR_PGDL = const 0x19,
             // LOONGARCH_CSR_PGDH = const 0x1a,
             // LOONGARCH_CSR_SAVE5 = const 0x35,
             // LOONGARCH_CSR_SAVE6 = const 0x36,
@@ -925,90 +961,90 @@ pub unsafe extern "C" fn _hyp_trap_return(ctx: usize) {
             "ld.d $r12, $r3, 256",
             "csrwr $r12, {LOONGARCH_CSR_ERA}",
             // restore GCSRS
-            "ld.d $r12, $r3, 256+8*1",
-            "gcsrwr $r12, {LOONGARCH_GCSR_CRMD}",
-            "ld.d $r12, $r3, 256+8*2",
-            "gcsrwr $r12, {LOONGARCH_GCSR_PRMD}",
-            "ld.d $r12, $r3, 256+8*3",
-            "gcsrwr $r12, {LOONGARCH_GCSR_EUEN}",
-            "ld.d $r12, $r3, 256+8*4",
-            "gcsrwr $r12, {LOONGARCH_GCSR_MISC}",
-            "ld.d $r12, $r3, 256+8*5",
-            "gcsrwr $r12, {LOONGARCH_GCSR_ECTL}",
+            // "ld.d $r12, $r3, 256+8*1",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_CRMD}",
+            // "ld.d $r12, $r3, 256+8*2",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_PRMD}",
+            // "ld.d $r12, $r3, 256+8*3",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_EUEN}",
+            // "ld.d $r12, $r3, 256+8*4",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_MISC}",
+            // "ld.d $r12, $r3, 256+8*5",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_ECTL}",
             // "ld.d $r12, $r3, 256+8*6",
             // "gcsrwr $r12, {LOONGARCH_GCSR_ESTAT}",
-            "ld.d $r12, $r3, 256+8*7",
-            "gcsrwr $r12, {LOONGARCH_GCSR_ERA}",
-            "ld.d $r12, $r3, 256+8*8",
-            "gcsrwr $r12, {LOONGARCH_GCSR_BADV}",
-            "ld.d $r12, $r3, 256+8*9",
-            "gcsrwr $r12, {LOONGARCH_GCSR_BADI}",
-            "ld.d $r12, $r3, 256+8*10",
-            "gcsrwr $r12, {LOONGARCH_GCSR_EENTRY}",
-            "ld.d $r12, $r3, 256+8*11",
-            "gcsrwr $r12, {LOONGARCH_GCSR_TLBIDX}",
-            "ld.d $r12, $r3, 256+8*12",
-            "gcsrwr $r12, {LOONGARCH_GCSR_TLBEHI}",
-            "ld.d $r12, $r3, 256+8*13",
-            "gcsrwr $r12, {LOONGARCH_GCSR_TLBELO0}",
-            "ld.d $r12, $r3, 256+8*14",
-            "gcsrwr $r12, {LOONGARCH_GCSR_TLBELO1}",
-            "ld.d $r12, $r3, 256+8*15",
-            "gcsrwr $r12, {LOONGARCH_GCSR_ASID}",
-            "ld.d $r12, $r3, 256+8*16",
-            "gcsrwr $r12, {LOONGARCH_GCSR_PGDL}",
-            "ld.d $r12, $r3, 256+8*17",
-            "gcsrwr $r12, {LOONGARCH_GCSR_PGDH}",
-            "ld.d $r12, $r3, 256+8*18",
-            "gcsrwr $r12, {LOONGARCH_GCSR_PGD}",
-            "ld.d $r12, $r3, 256+8*19",
-            "gcsrwr $r12, {LOONGARCH_GCSR_PWCL}",
-            "ld.d $r12, $r3, 256+8*20",
-            "gcsrwr $r12, {LOONGARCH_GCSR_PWCH}",
-            "ld.d $r12, $r3, 256+8*21",
-            "gcsrwr $r12, {LOONGARCH_GCSR_STLBPS}",
-            "ld.d $r12, $r3, 256+8*22",
-            "gcsrwr $r12, {LOONGARCH_GCSR_RAVCFG}",
-            "ld.d $r12, $r3, 256+8*23",
-            "gcsrwr $r12, {LOONGARCH_GCSR_CPUID}",
-            "ld.d $r12, $r3, 256+8*24",
-            "gcsrwr $r12, {LOONGARCH_GCSR_PRCFG1}",
-            "ld.d $r12, $r3, 256+8*25",
-            "gcsrwr $r12, {LOONGARCH_GCSR_PRCFG2}",
-            "ld.d $r12, $r3, 256+8*26",
-            "gcsrwr $r12, {LOONGARCH_GCSR_PRCFG3}",
-            "ld.d $r12, $r3, 256+8*27",
-            "gcsrwr $r12, {LOONGARCH_GCSR_SAVE0}",
-            "ld.d $r12, $r3, 256+8*28",
-            "gcsrwr $r12, {LOONGARCH_GCSR_SAVE1}",
-            "ld.d $r12, $r3, 256+8*29",
-            "gcsrwr $r12, {LOONGARCH_GCSR_SAVE2}",
-            "ld.d $r12, $r3, 256+8*30",
-            "gcsrwr $r12, {LOONGARCH_GCSR_SAVE3}",
-            "ld.d $r12, $r3, 256+8*31",
-            "gcsrwr $r12, {LOONGARCH_GCSR_SAVE4}",
-            "ld.d $r12, $r3, 256+8*32",
-            "gcsrwr $r12, {LOONGARCH_GCSR_SAVE5}",
-            "ld.d $r12, $r3, 256+8*33",
-            "gcsrwr $r12, {LOONGARCH_GCSR_SAVE6}",
-            "ld.d $r12, $r3, 256+8*34",
-            "gcsrwr $r12, {LOONGARCH_GCSR_SAVE7}",
-            "ld.d $r12, $r3, 256+8*35",
-            "gcsrwr $r12, {LOONGARCH_GCSR_SAVE8}",
-            "ld.d $r12, $r3, 256+8*36",
-            "gcsrwr $r12, {LOONGARCH_GCSR_SAVE9}",
-            "ld.d $r12, $r3, 256+8*37",
-            "gcsrwr $r12, {LOONGARCH_GCSR_SAVE10}",
-            "ld.d $r12, $r3, 256+8*38",
-            "gcsrwr $r12, {LOONGARCH_GCSR_SAVE11}",
-            "ld.d $r12, $r3, 256+8*39",
-            "gcsrwr $r12, {LOONGARCH_GCSR_SAVE12}",
-            "ld.d $r12, $r3, 256+8*40",
-            "gcsrwr $r12, {LOONGARCH_GCSR_SAVE13}",
-            "ld.d $r12, $r3, 256+8*41",
-            "gcsrwr $r12, {LOONGARCH_GCSR_SAVE14}",
-            "ld.d $r12, $r3, 256+8*42",
-            "gcsrwr $r12, {LOONGARCH_GCSR_SAVE15}",
+            // "ld.d $r12, $r3, 256+8*7",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_ERA}",
+            // "ld.d $r12, $r3, 256+8*8",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_BADV}",
+            // "ld.d $r12, $r3, 256+8*9",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_BADI}",
+            // "ld.d $r12, $r3, 256+8*10",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_EENTRY}",
+            // "ld.d $r12, $r3, 256+8*11",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_TLBIDX}",
+            // "ld.d $r12, $r3, 256+8*12",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_TLBEHI}",
+            // "ld.d $r12, $r3, 256+8*13",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_TLBELO0}",
+            // "ld.d $r12, $r3, 256+8*14",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_TLBELO1}",
+            // "ld.d $r12, $r3, 256+8*15",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_ASID}",
+            // "ld.d $r12, $r3, 256+8*16",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_PGDL}",
+            // "ld.d $r12, $r3, 256+8*17",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_PGDH}",
+            // "ld.d $r12, $r3, 256+8*18",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_PGD}",
+            // "ld.d $r12, $r3, 256+8*19",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_PWCL}",
+            // "ld.d $r12, $r3, 256+8*20",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_PWCH}",
+            // "ld.d $r12, $r3, 256+8*21",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_STLBPS}",
+            // "ld.d $r12, $r3, 256+8*22",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_RAVCFG}",
+            // "ld.d $r12, $r3, 256+8*23",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_CPUID}",
+            // "ld.d $r12, $r3, 256+8*24",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_PRCFG1}",
+            // "ld.d $r12, $r3, 256+8*25",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_PRCFG2}",
+            // "ld.d $r12, $r3, 256+8*26",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_PRCFG3}",
+            // "ld.d $r12, $r3, 256+8*27",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_SAVE0}",
+            // "ld.d $r12, $r3, 256+8*28",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_SAVE1}",
+            // "ld.d $r12, $r3, 256+8*29",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_SAVE2}",
+            // "ld.d $r12, $r3, 256+8*30",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_SAVE3}",
+            // "ld.d $r12, $r3, 256+8*31",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_SAVE4}",
+            // "ld.d $r12, $r3, 256+8*32",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_SAVE5}",
+            // "ld.d $r12, $r3, 256+8*33",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_SAVE6}",
+            // "ld.d $r12, $r3, 256+8*34",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_SAVE7}",
+            // "ld.d $r12, $r3, 256+8*35",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_SAVE8}",
+            // "ld.d $r12, $r3, 256+8*36",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_SAVE9}",
+            // "ld.d $r12, $r3, 256+8*37",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_SAVE10}",
+            // "ld.d $r12, $r3, 256+8*38",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_SAVE11}",
+            // "ld.d $r12, $r3, 256+8*39",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_SAVE12}",
+            // "ld.d $r12, $r3, 256+8*40",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_SAVE13}",
+            // "ld.d $r12, $r3, 256+8*41",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_SAVE14}",
+            // "ld.d $r12, $r3, 256+8*42",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_SAVE15}",
             // "ld.d $r12, $r3, 256+8*43",
             // "gcsrwr $r12, {LOONGARCH_GCSR_TID}",
             // "ld.d $r12, $r3, 256+8*44",
@@ -1019,93 +1055,93 @@ pub unsafe extern "C" fn _hyp_trap_return(ctx: usize) {
             // "gcsrwr $r12, {LOONGARCH_GCSR_CNTC}",
             // "ld.d $r12, $r3, 256+8*47",
             // "gcsrwr $r12, {LOONGARCH_GCSR_TICLR}",
-            "ld.d $r12, $r3, 256+8*48",
-            "gcsrwr $r12, {LOONGARCH_GCSR_LLBCTL}",
-            "ld.d $r12, $r3, 256+8*49",
-            "gcsrwr $r12, {LOONGARCH_GCSR_TLBRENTRY}",
-            "ld.d $r12, $r3, 256+8*50",
-            "gcsrwr $r12, {LOONGARCH_GCSR_TLBRBADV}",
-            "ld.d $r12, $r3, 256+8*51",
-            "gcsrwr $r12, {LOONGARCH_GCSR_TLBRERA}",
-            "ld.d $r12, $r3, 256+8*52",
-            "gcsrwr $r12, {LOONGARCH_GCSR_TLBRSAVE}",
-            "ld.d $r12, $r3, 256+8*53",
-            "gcsrwr $r12, {LOONGARCH_GCSR_TLBRELO0}",
-            "ld.d $r12, $r3, 256+8*54",
-            "gcsrwr $r12, {LOONGARCH_GCSR_TLBRELO1}",
-            "ld.d $r12, $r3, 256+8*55",
-            "gcsrwr $r12, {LOONGARCH_GCSR_TLBREHI}",
-            "ld.d $r12, $r3, 256+8*56",
-            "gcsrwr $r12, {LOONGARCH_GCSR_TLBRPRMD}",
-            "ld.d $r12, $r3, 256+8*57",
-            "gcsrwr $r12, {LOONGARCH_GCSR_DMW0}",
-            "ld.d $r12, $r3, 256+8*58",
-            "gcsrwr $r12, {LOONGARCH_GCSR_DMW1}",
-            "ld.d $r12, $r3, 256+8*59",
-            "gcsrwr $r12, {LOONGARCH_GCSR_DMW2}",
-            "ld.d $r12, $r3, 256+8*60",
-            "gcsrwr $r12, {LOONGARCH_GCSR_DMW3}",
+            // "ld.d $r12, $r3, 256+8*48",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_LLBCTL}",
+            // "ld.d $r12, $r3, 256+8*49",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_TLBRENTRY}",
+            // "ld.d $r12, $r3, 256+8*50",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_TLBRBADV}",
+            // "ld.d $r12, $r3, 256+8*51",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_TLBRERA}",
+            // "ld.d $r12, $r3, 256+8*52",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_TLBRSAVE}",
+            // "ld.d $r12, $r3, 256+8*53",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_TLBRELO0}",
+            // "ld.d $r12, $r3, 256+8*54",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_TLBRELO1}",
+            // "ld.d $r12, $r3, 256+8*55",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_TLBREHI}",
+            // "ld.d $r12, $r3, 256+8*56",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_TLBRPRMD}",
+            // "ld.d $r12, $r3, 256+8*57",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_DMW0}",
+            // "ld.d $r12, $r3, 256+8*58",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_DMW1}",
+            // "ld.d $r12, $r3, 256+8*59",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_DMW2}",
+            // "ld.d $r12, $r3, 256+8*60",
+            // "gcsrwr $r12, {LOONGARCH_GCSR_DMW3}",
             LOONGARCH_CSR_ERA = const 0x6,
-            LOONGARCH_GCSR_CRMD = const 0x0,
-            LOONGARCH_GCSR_PRMD = const 0x1,
-            LOONGARCH_GCSR_EUEN = const 0x2,
-            LOONGARCH_GCSR_MISC = const 0x3,
-            LOONGARCH_GCSR_ECTL = const 0x4,
+            // LOONGARCH_GCSR_CRMD = const 0x0,
+            // LOONGARCH_GCSR_PRMD = const 0x1,
+            // LOONGARCH_GCSR_EUEN = const 0x2,
+            // LOONGARCH_GCSR_MISC = const 0x3,
+            // LOONGARCH_GCSR_ECTL = const 0x4,
             // LOONGARCH_GCSR_ESTAT = const 0x5,
-            LOONGARCH_GCSR_ERA = const 0x6,
-            LOONGARCH_GCSR_BADV = const 0x7,
-            LOONGARCH_GCSR_BADI = const 0x8,
-            LOONGARCH_GCSR_EENTRY = const 0xc,
-            LOONGARCH_GCSR_TLBIDX = const 0x10,
-            LOONGARCH_GCSR_TLBEHI = const 0x11,
-            LOONGARCH_GCSR_TLBELO0 = const 0x12,
-            LOONGARCH_GCSR_TLBELO1 = const 0x13,
-            LOONGARCH_GCSR_ASID = const 0x18,
-            LOONGARCH_GCSR_PGDL = const 0x19,
-            LOONGARCH_GCSR_PGDH = const 0x1a,
-            LOONGARCH_GCSR_PGD = const 0x1b,
-            LOONGARCH_GCSR_PWCL = const 0x1c,
-            LOONGARCH_GCSR_PWCH = const 0x1d,
-            LOONGARCH_GCSR_STLBPS = const 0x1e,
-            LOONGARCH_GCSR_RAVCFG = const 0x1f,
-            LOONGARCH_GCSR_CPUID = const 0x20,
-            LOONGARCH_GCSR_PRCFG1 = const 0x21,
-            LOONGARCH_GCSR_PRCFG2 = const 0x22,
-            LOONGARCH_GCSR_PRCFG3 = const 0x23,
-            LOONGARCH_GCSR_SAVE0 = const 0x30,
-            LOONGARCH_GCSR_SAVE1 = const 0x31,
-            LOONGARCH_GCSR_SAVE2 = const 0x32,
-            LOONGARCH_GCSR_SAVE3 = const 0x33,
-            LOONGARCH_GCSR_SAVE4 = const 0x34,
-            LOONGARCH_GCSR_SAVE5 = const 0x35,
-            LOONGARCH_GCSR_SAVE6 = const 0x36,
-            LOONGARCH_GCSR_SAVE7 = const 0x37,
-            LOONGARCH_GCSR_SAVE8 = const 0x38,
-            LOONGARCH_GCSR_SAVE9 = const 0x39,
-            LOONGARCH_GCSR_SAVE10 = const 0x3a,
-            LOONGARCH_GCSR_SAVE11 = const 0x3b,
-            LOONGARCH_GCSR_SAVE12 = const 0x3c,
-            LOONGARCH_GCSR_SAVE13 = const 0x3d,
-            LOONGARCH_GCSR_SAVE14 = const 0x3e,
-            LOONGARCH_GCSR_SAVE15 = const 0x3f,
+            // LOONGARCH_GCSR_ERA = const 0x6,
+            // LOONGARCH_GCSR_BADV = const 0x7,
+            // LOONGARCH_GCSR_BADI = const 0x8,
+            // LOONGARCH_GCSR_EENTRY = const 0xc,
+            // LOONGARCH_GCSR_TLBIDX = const 0x10,
+            // LOONGARCH_GCSR_TLBEHI = const 0x11,
+            // LOONGARCH_GCSR_TLBELO0 = const 0x12,
+            // LOONGARCH_GCSR_TLBELO1 = const 0x13,
+            // LOONGARCH_GCSR_ASID = const 0x18,
+            // LOONGARCH_GCSR_PGDL = const 0x19,
+            // LOONGARCH_GCSR_PGDH = const 0x1a,
+            // LOONGARCH_GCSR_PGD = const 0x1b,
+            // LOONGARCH_GCSR_PWCL = const 0x1c,
+            // LOONGARCH_GCSR_PWCH = const 0x1d,
+            // LOONGARCH_GCSR_STLBPS = const 0x1e,
+            // LOONGARCH_GCSR_RAVCFG = const 0x1f,
+            // LOONGARCH_GCSR_CPUID = const 0x20,
+            // LOONGARCH_GCSR_PRCFG1 = const 0x21,
+            // LOONGARCH_GCSR_PRCFG2 = const 0x22,
+            // LOONGARCH_GCSR_PRCFG3 = const 0x23,
+            // LOONGARCH_GCSR_SAVE0 = const 0x30,
+            // LOONGARCH_GCSR_SAVE1 = const 0x31,
+            // LOONGARCH_GCSR_SAVE2 = const 0x32,
+            // LOONGARCH_GCSR_SAVE3 = const 0x33,
+            // LOONGARCH_GCSR_SAVE4 = const 0x34,
+            // LOONGARCH_GCSR_SAVE5 = const 0x35,
+            // LOONGARCH_GCSR_SAVE6 = const 0x36,
+            // LOONGARCH_GCSR_SAVE7 = const 0x37,
+            // LOONGARCH_GCSR_SAVE8 = const 0x38,
+            // LOONGARCH_GCSR_SAVE9 = const 0x39,
+            // LOONGARCH_GCSR_SAVE10 = const 0x3a,
+            // LOONGARCH_GCSR_SAVE11 = const 0x3b,
+            // LOONGARCH_GCSR_SAVE12 = const 0x3c,
+            // LOONGARCH_GCSR_SAVE13 = const 0x3d,
+            // LOONGARCH_GCSR_SAVE14 = const 0x3e,
+            // LOONGARCH_GCSR_SAVE15 = const 0x3f,
             // LOONGARCH_GCSR_TID = const 0x40,
             // LOONGARCH_GCSR_TCFG = const 0x41,
             // LOONGARCH_GCSR_TVAL = const 0x42,
             // LOONGARCH_GCSR_CNTC = const 0x43,
             // LOONGARCH_GCSR_TICLR = const 0x44,
-            LOONGARCH_GCSR_LLBCTL = const 0x60,
-            LOONGARCH_GCSR_TLBRENTRY = const 0x88,
-            LOONGARCH_GCSR_TLBRBADV = const 0x89,
-            LOONGARCH_GCSR_TLBRERA = const 0x8a,
-            LOONGARCH_GCSR_TLBRSAVE = const 0x8b,
-            LOONGARCH_GCSR_TLBRELO0 = const 0x8c,
-            LOONGARCH_GCSR_TLBRELO1 = const 0x8d,
-            LOONGARCH_GCSR_TLBREHI = const 0x8e,
-            LOONGARCH_GCSR_TLBRPRMD = const 0x8f,
-            LOONGARCH_GCSR_DMW0 = const 0x180,
-            LOONGARCH_GCSR_DMW1 = const 0x181,
-            LOONGARCH_GCSR_DMW2 = const 0x182,
-            LOONGARCH_GCSR_DMW3 = const 0x183,
+            // LOONGARCH_GCSR_LLBCTL = const 0x60,
+            // LOONGARCH_GCSR_TLBRENTRY = const 0x88,
+            // LOONGARCH_GCSR_TLBRBADV = const 0x89,
+            // LOONGARCH_GCSR_TLBRERA = const 0x8a,
+            // LOONGARCH_GCSR_TLBRSAVE = const 0x8b,
+            // LOONGARCH_GCSR_TLBRELO0 = const 0x8c,
+            // LOONGARCH_GCSR_TLBRELO1 = const 0x8d,
+            // LOONGARCH_GCSR_TLBREHI = const 0x8e,
+            // LOONGARCH_GCSR_TLBRPRMD = const 0x8f,
+            // LOONGARCH_GCSR_DMW0 = const 0x180,
+            // LOONGARCH_GCSR_DMW1 = const 0x181,
+            // LOONGARCH_GCSR_DMW2 = const 0x182,
+            // LOONGARCH_GCSR_DMW3 = const 0x183,
         );
         // asm!(
         //   // vm-pagetable -> save5 and save6
@@ -1263,33 +1299,109 @@ const HWI4: usize = 1 << 6;
 const HWI5: usize = 1 << 7;
 const HWI6: usize = 1 << 8;
 const HWI7: usize = 1 << 9;
+const SWI0: usize = 1 << 0;
+const SWI1: usize = 1 << 1;
+
+
+fn do_deliver_irq(irq_flags: usize, clear_flag: bool) {
+    for irq in (0..13).rev() {
+        let mask = 1 << irq;
+        if irq_flags & mask != 0 {
+            if clear_flag {
+                // clear irq
+                clear_irq(irq, false);// para is_hardware is invalid here
+            } else {
+                // inject irq
+                inject_irq(irq, false);
+            }
+        }
+    }
+}
+
+fn deliver_irq() {
+    let pcpu_id = this_cpu_id();
+    let pcpu_data = get_cpu_data(pcpu_id);
+    let irq_pending = pcpu_data.arch_cpu.irq_pending;
+    let irq_clear = pcpu_data.arch_cpu.irq_clear;
+    if irq_pending == 0 && irq_clear == 0 {
+        return;
+    }
+    assert!(irq_clear & irq_pending == 0);
+
+    do_deliver_irq(irq_clear, true);
+    do_deliver_irq(irq_pending, false);
+    pcpu_data.arch_cpu.irq_pending = 0;
+    pcpu_data.arch_cpu.irq_clear = 0;
+}
 
 /// handle loongarch64 interrupts here
 fn handle_interrupt(is: usize) {
     // Handle IPI interrupts
-    if is & IPI_BIT != 0 {
-        let cpu_id = this_cpu_id();
-        let ipi_status = get_ipi_status(cpu_id);
-        debug!(
-            "CPU {} received IPI interrupt, status = {:#x}",
-            cpu_id, ipi_status
-        );
+    let pcpu_id_this: usize = this_cpu_id();
+    let pcpu_data = get_cpu_data(pcpu_id_this);
 
-        match ipi_status {
-            status if status == SGI_IPI_ID as _ => {
-                let events = dump_cpu_events(cpu_id);
-                debug!("CPU {} events: {:?}", cpu_id, events);
-                while check_events() {}
+    if is & IPI_BIT != 0 {
+        let ipi_status = get_ipi_status(pcpu_id_this);
+
+        let mut ipistate = pcpu_data.arch_cpu.ipi_state.lock();
+        let pcpu_ipi_status = ipistate.status as usize; // read
+
+        reset_ipi(pcpu_id_this); // clear
+
+        if pcpu_ipi_status & SMP_BOOT_CPU != 0 {
+            if pcpu_data.arch_cpu.power_on == true {
+                panic!("pcpu : {} has already power on, this should not happen", pcpu_id_this);
             }
-            status if status == 0x8 => {
-                debug!("CPU {} received unhandled IPI status {:#x}", cpu_id, status);
-            }
-            status => {
-                warn!("CPU {} received unknown IPI status {:#x}", cpu_id, status);
+            // this should be done by firmware, but we do this here, because linux kernel does not do it
+            ipistate.status &= !(ipi_status as u32);
+
+            let first_pcpu_id = pcpu_data.zone.as_ref().unwrap().read().cpu_set().first_cpu().unwrap();
+            
+            if(first_pcpu_id == pcpu_id_this) {
+                // this is the first cpu in the zone
+                drop(ipistate);// remember! avoid deadlock
+                pcpu_data.arch_cpu.run();
+                panic!("can't reach here");
+            } else {
+                // this is not the first cpu in the zone, read smpboot_entry from ipistate.buf
+                // let smpboot_entry = ipistate.buf[first_pcpu_id] as usize;
+                let smpboot_entry = ipistate.buf[0] as usize;
+                // note!, always fetch smpboot_entry from cpu[0]! boneinscri 2026.04
+                warn!("pcpu_ipi_status = {:#x}, first_pcpu_id = {:#x}, smpboot_entry: {:#x}, pcpu_ipi_status = {:#x}", 
+                pcpu_ipi_status, first_pcpu_id, smpboot_entry, ipistate.status as usize);
+                drop(ipistate);// remember! avoid deadlock
+                pcpu_data.arch_cpu.run_secondary(smpboot_entry);
+                panic!("can't reach here");    
             }
         }
-        reset_ipi(cpu_id);
-        return;
+        else if pcpu_ipi_status & HVISOR_SHUTDOWN != 0 {
+            // if pcpu_data.arch_cpu.power_on == false {
+            //     panic!("pcpu : {} has not power on, this should not happen", pcpu_id_this);
+            // }
+            ipistate.status &= !(ipi_status as u32);
+            drop(ipistate);
+            pcpu_data.arch_cpu.idle();
+        } 
+        else if pcpu_ipi_status & HVISOR_EVENT_VIRTIO_INJECT_IRQ != 0 {
+            if pcpu_data.arch_cpu.power_on == false {
+                panic!("pcpu : {} has not power on, this should not happen", pcpu_id_this);
+            }
+            ipistate.status &= !(ipi_status as u32);
+            drop(ipistate);
+            handle_virtio_irq();
+        } 
+        else if pcpu_ipi_status & HVISOR_EVENT_WAKEUP_VIRTIO_DEVICE != 0 {
+            panic!("HVISOR_EVENT_WAKEUP_VIRTIO_DEVICE, not tested");
+        }
+        else if pcpu_ipi_status & HVISOR_EVENT_VIRTIO_CLEAR_IRQ != 0 {
+            panic!("HVISOR_EVENT_VIRTIO_CLEAR_IRQ, not tested");
+        }
+        else if pcpu_ipi_status != 0 {
+            drop(ipistate);
+            pcpu_data.arch_cpu.add_irq(INT_IPI);
+        } else {
+        }
+        return ;
     }
 
     // Handle timer interrupts
@@ -1311,6 +1423,13 @@ fn handle_interrupt(is: usize) {
         );
         return;
     }
+
+    if is & SWI0 != 0 {
+        panic!("swi0 not handled");
+    }
+    if is & SWI1 != 0 {
+        panic!("swi1 not handled");
+    }    
 
     // Handle unknown interrupts
     error!("Received unhandled interrupt, status = {:#x}", is);
@@ -1352,10 +1471,10 @@ fn emulate_cpucfg(ins: usize, ctx: &mut ZoneContext) {
 
     const MAX_CPUCFG_REGS: usize = 21;
 
-    info!(
-        "cpucfg emulation, target cpucfg index is {:#x}",
-        cpucfg_target_idx
-    );
+    // info!(
+    //     "cpucfg emulation, target cpucfg index is {:#x}",
+    //     cpucfg_target_idx
+    // );
 
     if cpucfg_target_idx >= MAX_CPUCFG_REGS {
         // invalid cpucfg target
@@ -1364,9 +1483,12 @@ fn emulate_cpucfg(ins: usize, ctx: &mut ZoneContext) {
         // according to manual, we should set result to 0 if index is invalid
     } else {
         // just run cpucfg here
-        let result: usize;
+        let mut result= 0;
         unsafe {
             asm!("cpucfg {}, {}", out(reg) result, in(reg) cpucfg_target_idx);
+        }
+        if cpucfg_target_idx == 0x2 {
+            result &= !(1 << 10); // shutdown lvz of vm -- boneinscri 2026.04        
         }
         ctx.x[rd] = result;
         // finish the emulation by tweaking the ZoneContext's registers
@@ -1374,36 +1496,47 @@ fn emulate_cpucfg(ins: usize, ctx: &mut ZoneContext) {
     }
 }
 
+// modified -- boneinscri 2026.04 
 fn emulate_csrx(ins: usize, ctx: &mut ZoneContext) {
     // csrrd csrwr csrxchg
-
     // let ty = (ins >> 5) & 0x1f;
     // let rd = ins & 0x1f;
     // let csr = (ins >> 10) & 0x3fff;
-    let ty = extract_field(ins, 5, 5);
+    let rj = extract_field(ins, 5, 5);
     let rd = extract_field(ins, 0, 5);
-    let csr = extract_field(ins, 10, 14);
+    let csr_id = extract_field(ins, 10, 14);
     // ty: [9:5], 0 - csrrd, 1 - csrwr, else - csrxchg
     // rd [4:0]
     // csr [23:10] 14 bits
-    match ty {
+    assert!(csr_id <= 0x502);
+
+    let pcpu_data_this = this_cpu_data();
+    //  TODO: pay attention to PERFCTRL0
+    match rj {
         0 => {
             // csrrd
-            info!("csrrd emulation for CSR {:#x}", csr);
-            ctx.x[rd] = 0;
-            // just set it to 0
+            let val = pcpu_data_this.arch_cpu.csr[csr_id];
+            ctx.x[rd] = val;
+            // info!("csrrd emulation for CSR {:#x}, r val = {:#x}", csr_id, val);
         }
         1 => {
             // csrwr
-            info!("csrwr emulation for CSR {:#x}", csr);
-            ctx.x[rd] = 0;
-            // do nothing to GCSR, but we also need to set rd to 0
+            let val = ctx.x[rd];
+            // info!("csrwr emulation for CSR {:#x}, w val = {:#x}", csr_id, val);
+            pcpu_data_this.arch_cpu.csr[csr_id] = val;
+            ctx.x[rd] = val;
         }
         _ => {
             // csrxchg
-            info!("csrxchg emulation for CSR {:#x}", csr);
-            ctx.x[rd] = 0;
-            // do nothing to GCSR, but we also need to set rd to 0
+            // info!("csrxchg emulation for CSR {:#x}, val : {:#x}, csr_mask : {:#x}", 
+            //     csr_id, ctx.x[rd], ctx.x[rj]); 
+            let mut val = ctx.x[rd];
+            let csr_mask = ctx.x[rj];
+            let mut old = pcpu_data_this.arch_cpu.csr[csr_id];// read old value from sw csr
+            val = (old & !csr_mask) | (val & csr_mask);
+            pcpu_data_this.arch_cpu.csr[csr_id] = val;// record the new value from trap ctx
+            old = old & csr_mask;
+            ctx.x[rd] = old;// return old value to guest
         }
     }
 }
@@ -1433,6 +1566,54 @@ fn ty2str(ty: usize) -> &'static str {
     }
 }
 
+
+// boneinscri 2026.04
+pub fn loongarch_iocsr_read(pcpu_id: usize, addr: usize, len: usize) -> usize {
+    let iocsr_type = get_iocsr_type(addr);
+    match iocsr_type {
+        IOCSR_TYPE_IPI => {   
+            // IPI         
+            let ret = loongarch_ipi_readl(pcpu_id, addr, len);
+            ret
+        },
+        IOCSR_TYPE_EIOINTC => {
+            // EIOINTC
+            let ret = loongarch_eiointc_readl(pcpu_id, addr, len);
+            ret
+        },
+        IOCSR_TYPE_EIOINTC_VIRT => {
+            panic!("EIOINTC_VIRT detected, this is not supported yet");
+        },
+        _ => {
+            let mut addr_real = addr;
+            do_real_read_iocsr(addr_real, len)
+        }
+    }
+}
+pub fn loongarch_iocsr_write(pcpu_id: usize, addr: usize, val: usize, len: usize) -> usize {
+    let iocsr_type = get_iocsr_type(addr);
+    match iocsr_type {
+        IOCSR_TYPE_IPI => {
+            // IPI
+            let ret = loongarch_ipi_writel(pcpu_id, addr, val, len);
+            ret
+        },
+        IOCSR_TYPE_EIOINTC => {
+            // EIOINTC
+            let ret = loongarch_eiointc_writel(pcpu_id, addr, val, len);
+            ret 
+        },
+        IOCSR_TYPE_EIOINTC_VIRT => {
+            panic!("EIOINTC_VIRT detected, this is not supported yet");
+        },
+        _ => {
+            let mut addr_real = addr;
+            do_real_write_iocsr(addr_real, val, len);
+            0
+        }
+    }
+}
+
 fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
     // iocsrrd.b rd, rj     0000011001 001000000000 rj[9:5] rd[4:0]
     // iocsrrd.h rd, rj     0000011001 001000000001 rj[9:5] rd[4:0]
@@ -1448,96 +1629,28 @@ fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
     debug!("iocsr emulation, ty = {}, rd = {}, rj = {}", ty, rd, rj);
     debug!("GPR[rd] = {:#x}, GPR[rj] = {:#x}", ctx.x[rd], ctx.x[rj]);
 
-    const IOCSR_BASE_ADDR_PHY: usize = 0x1fe0_0000;
-    let mut mmio_access = MMIOAccess {
-        address: IOCSR_BASE_ADDR_PHY + ctx.x[rj], // iocsr only issues an offset from IOCSR_BASE_ADDR_PHY, so we need the calculate the real phy addr
-        size: 0,
-        is_write: false,
-        value: ctx.x[rd],
-    };
+    let mut len = 0;
+    let mut is_write = false;
+    let addr = ctx.x[rj] as usize; 
+    let val = ctx.x[rd] as usize;
 
-    match ty {
-        0 => {
-            // iocsrrd.b
-            mmio_access.size = 1;
-            mmio_access.is_write = false;
-        }
-        1 => {
-            // iocsrrd.h
-            mmio_access.size = 2;
-            mmio_access.is_write = false;
-        }
-        2 => {
-            // iocsrrd.w
-            mmio_access.size = 4;
-            mmio_access.is_write = false;
-        }
-        3 => {
-            // iocsrrd.d
-            mmio_access.size = 8;
-            mmio_access.is_write = false;
-        }
-        4 => {
-            // iocsrwr.b
-            mmio_access.size = 1;
-            mmio_access.is_write = true;
-        }
-        5 => {
-            // iocsrwr.h
-            mmio_access.size = 2;
-            mmio_access.is_write = true;
-        }
-        6 => {
-            // iocsrwr.w
-            mmio_access.size = 4;
-            mmio_access.is_write = true;
-        }
-        7 => {
-            // iocsrwr.d
-            mmio_access.size = 8;
-            mmio_access.is_write = true;
-        }
-        _ => {
-            // should not reach here
-            panic!("invalid iocsr type, this is impossible");
-        }
+    if ty < 8 {
+        len = 1 << (ty % 4); // 0-3:1,2,4,8; 4-7:1,2,4,8
+        is_write = ty >= 4;
+    } else {
+        panic!("emulate_iocsr, invalid iocsr type, this is impossible");
     }
 
-    debug!(
-        "iocsr issues a mmio access: {}, target address: {:#x}, size: {}, {}",
-        ty2str(ty),
-        mmio_access.address,
-        mmio_access.size,
-        if mmio_access.is_write { "W" } else { "R" }
-    );
-
-    let res = mmio_handle_access(&mut mmio_access);
-    match res {
-        Ok(_) => {
-            debug!("handle mmio success, v={:#x}", mmio_access.value);
-            if !mmio_access.is_write {
-                let mask = match mmio_access.size {
-                    1 => 0xff,
-                    2 => 0xffff,
-                    4 => 0xffffffff,
-                    8 => 0xffffffffffffffff,
-                    _ => panic!("invalid mmio access size: {}", mmio_access.size),
-                };
-                let trimmed_by_size = mmio_access.value & mask;
-                let extended = if ty < 4 {
-                    signed_ext(trimmed_by_size, mmio_access.size * 8)
-                } else {
-                    trimmed_by_size
-                };
-                ctx.x[rd] = extended;
-            }
-        }
-        Err(e) => {
-            panic!(
-                "mmio access failed, error = {:?}, this is a real page fault",
-                e
-            );
-        }
+    // TODO : modify to vCPU
+    let pcpu_id_this = this_cpu_id();
+        
+    if is_write {
+        let ret = loongarch_iocsr_write(pcpu_id_this, addr, val, len);
+        return;
+    } else {
+        let ret = loongarch_iocsr_read(pcpu_id_this, addr, len);
+        ctx.x[rd] = ret;
+        return;
     }
 }
 

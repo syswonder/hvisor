@@ -147,7 +147,13 @@ pub fn send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
     // }
     /// Some arch need do something before send event.
     /// Currently, we are not passing parameters, and we will modify the function signature later as needed.
+
     arch_prepare_send_event(cpu_id, ipi_int_id, event_id);
     add_event(cpu_id, event_id);
+
+    #[cfg(target_arch = "loongarch64")]
+    arch_send_event(cpu_id as _, event_id as _);
+
+    #[cfg(not(target_arch = "loongarch64"))]
     arch_send_event(cpu_id as _, ipi_int_id as _);
 }

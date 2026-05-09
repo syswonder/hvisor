@@ -13,7 +13,7 @@
 //
 // Authors:
 //      Yulong Han <wheatfox17@icloud.com>
-//
+//      Ming Shen  <boneinscri@163.com>
 /*
     this file is forked from extern crate loongArch64::register::macros;
     wheatfox
@@ -251,4 +251,38 @@ macro_rules! set_gcsr_loong_bit {
         tmp.set_bit($range, $value);
         write_gcsr_loong!($csr_number, tmp);
     };
+}
+
+#[macro_export]
+macro_rules! gcsr_xchg {
+    ($v:expr, $m:expr, $csr:literal) => {{
+        let mut val = $v;
+        unsafe {
+            core::arch::asm!(
+                "gcsrxchg {}, {}, {}",
+                out(reg) val,
+                in(reg) $m,
+                const $csr,
+                options(preserves_flags)
+            );
+        }
+        val
+    }};
+}
+
+#[macro_export]
+macro_rules! csr_xchg {
+    ($v:expr, $m:expr, $csr:literal) => {{
+        let mut val = $v;
+        unsafe {
+            core::arch::asm!(
+                "csrxchg {}, {}, {}",
+                out(reg) val,
+                in(reg) $m,
+                const $csr,
+                options(preserves_flags)
+            );
+        }
+        val
+    }};
 }

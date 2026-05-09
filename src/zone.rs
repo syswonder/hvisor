@@ -110,6 +110,7 @@ impl VirtualAtuConfigs {
 
 pub struct Zone {
     name: [u8; CONFIG_NAME_MAXLEN],
+    pub boot_method: [u8; CONFIG_NAME_MAXLEN],
     id: usize,
     is_err: AtomicBool,
     inner: RwLock<ZoneInner>,
@@ -125,13 +126,19 @@ pub struct ZoneInner {
     vpci_bus: VirtualRootComplex,
     #[cfg(feature = "dwc_pcie")]
     atu_configs: VirtualAtuConfigs,
+    #[cfg(target_arch = "loongarch64")]
+    pub efi_system_table: usize,
 }
 
 impl Zone {
     #[allow(dead_code)]
-    pub fn new(zoneid: usize, name: &[u8]) -> Self {
+    pub fn new(zoneid: usize, name: &[u8], boot_method: &[u8]) -> Self {
+        let mut bm = [0u8; CONFIG_NAME_MAXLEN];
+        let len = boot_method.len().min(CONFIG_NAME_MAXLEN);
+        bm[..len].copy_from_slice(&boot_method[..len]);
         Self {
             name: name.try_into().unwrap(),
+            boot_method: bm,
             id: zoneid,
             is_err: AtomicBool::new(false),
             inner: RwLock::new(ZoneInner::new()),
@@ -183,6 +190,8 @@ impl ZoneInner {
             vpci_bus: VirtualRootComplex::new(),
             #[cfg(feature = "dwc_pcie")]
             atu_configs: VirtualAtuConfigs::new(),
+            #[cfg(target_arch = "loongarch64")]
+            efi_system_table: 0,
         }
     }
 
@@ -384,7 +393,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
         );
     }
 
-    let mut zone = Zone::new(zone_id, &config.name);
+    let mut zone = Zone::new(zone_id, &config.name, &config.boot_method);
     zone.pt_init(config.memory_regions())?;
     zone.mmio_init(&config.arch_config);
 

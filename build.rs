@@ -137,7 +137,8 @@ fn main() {
     }
 
     // soft link the board.rs to __board.rs
-    if target_path.exists() {
+    // Use symlink_metadata so we detect broken symlinks too (exists() follows the link)
+    if target_path.symlink_metadata().is_ok() {
         fs::remove_file(target_path).expect("Failed to remove existing __board.rs");
     }
     std::os::unix::fs::symlink(source_path, target_path).expect("Failed to create symlink");

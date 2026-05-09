@@ -28,15 +28,25 @@ use crate::{memory::addr::VirtAddr, platform::BOARD_NCPUS};
 use core::arch::global_asm;
 
 /// Size of the hypervisor heap.
-pub const HV_HEAP_SIZE: usize = 1024 * 1024; // 1 MiB
+#[cfg(target_arch = "loongarch64")]
+pub const HV_HEAP_SIZE: usize = 64 * 1024 * 1024; // 64 MiB
+#[cfg(not(target_arch = "loongarch64"))]
+pub const HV_HEAP_SIZE: usize = 1 * 1024 * 1024; // 1 MiB
 
 /// Size of the hypervisor memory pool used for dynamic allocation.
+#[cfg(target_arch = "loongarch64")]
+pub const HV_MEM_POOL_SIZE: usize = 512 * 1024 * 1024; // 256 MiB
+#[cfg(not(target_arch = "loongarch64"))]
 pub const HV_MEM_POOL_SIZE: usize = 64 * 1024 * 1024; // 64 MiB
 
 /// Size of the per-CPU data area, including stack and CPU-local data.
 ///
 /// This area is allocated for each CPU core and may increase in size during
 /// development.
+
+#[cfg(target_arch = "loongarch64")]
+pub const PER_CPU_SIZE: usize = 1024 * 1024 * 16; // 16MiB
+#[cfg(not(target_arch = "loongarch64"))]
 pub const PER_CPU_SIZE: usize = 512 * 1024; // 512 KiB
 
 /// Pointer to the beginning of the per-CPU data array.

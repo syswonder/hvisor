@@ -1,6 +1,6 @@
 ENTRY(arch_entry)
-BASE_ADDRESS = 0x90000001f0000000;
-CPU_NUM = 4;
+BASE_ADDRESS = 0x90000007f0000000;
+CPU_NUM = 8;
 
 
 SECTIONS
@@ -14,10 +14,10 @@ SECTIONS
         *(.text .text.*)
     }
 
-    . = ALIGN(4K);
+    . = ALIGN(64K);
     .trap_entry : {
         *(.trap_entry)
-        . = ALIGN(4K);
+        . = ALIGN(64K);
         *(.tlbrefill_entry)
     }
 

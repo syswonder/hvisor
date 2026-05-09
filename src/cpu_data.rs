@@ -12,12 +12,12 @@
 //      https://www.syswonder.org
 //
 // Authors:
-//
+// 
 use alloc::sync::Arc;
 use spin::Mutex;
 
 use crate::arch::cpu::{store_cpu_pointer_to_reg, this_cpu_id, ArchCpu};
-use crate::consts::{INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
+use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::memory::addr::VirtAddr;
 use crate::zone::Zone;
 use crate::ENTERED_CPUS;
@@ -111,6 +111,22 @@ pub struct CpuSet {
     pub bitmap: u64,
 }
 
+pub fn get_real_pcpu_id(target_cpu_id: usize) -> usize {
+    assert!(target_cpu_id < MAX_CPU_NUM);
+    let zone = this_zone();
+    let cpu_set = zone.read().cpu_set();
+    let target_pcpu_real_id = cpu_set.iter().nth(target_cpu_id).unwrap();
+    target_pcpu_real_id
+}
+
+pub fn get_vcpuid_from_pcpuid(target_pcpu_id: usize) -> usize {
+    assert!(target_pcpu_id < MAX_CPU_NUM);
+    let zone = this_zone();
+    let cpu_set = zone.read().cpu_set();
+    let target_vcpuid = cpu_set.pcpuid_to_vcpuid(target_pcpu_id).unwrap();
+    target_vcpuid
+}
+
 impl CpuSet {
     pub fn new(max_cpu_id: usize, bitmap: u64) -> Self {
         Self { max_cpu_id, bitmap }
@@ -131,6 +147,14 @@ impl CpuSet {
     #[allow(unused)]
     pub fn first_cpu(&self) -> Option<usize> {
         (0..=self.max_cpu_id).find(move |&i| self.contains_cpu(i))
+    }
+    // boneinscri 2026.04
+    pub fn pcpuid_to_vcpuid(&self, pcpu_id: usize) -> Option<usize> {
+        if !self.contains_cpu(pcpu_id) {
+            return None;
+        }       
+        // Count how many CPUs are set before this one
+        Some((0..pcpu_id).filter(|&i| self.contains_cpu(i)).count())
     }
     pub fn iter<'a>(&'a self) -> impl Iterator<Item = usize> + 'a {
         (0..=self.max_cpu_id).filter(move |&i| self.contains_cpu(i))

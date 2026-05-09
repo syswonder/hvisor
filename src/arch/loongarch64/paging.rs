@@ -29,7 +29,7 @@ use loongArch64::register::pwcl::{
     set_ptwidth,
 };
 use loongArch64::register::stlbps::{self, set_ps};
-use loongArch64::register::MemoryAccessType;
+use loongArch64::register::{MemoryAccessType, tlbidx};
 use loongArch64::register::{crmd, pwch, pwcl, tlbrentry};
 use loongArch64::register::{pgd, pgdh, pgdl};
 
@@ -655,4 +655,6 @@ pub fn set_pwcl_pwch_stlbps() {
     set_ptwidth(9);
     set_pte_width(8); // 64 bits -> 8 bytes
     stlbps::set_ps(12); // log2(real_page_size), 16KB -> 14, 4KB -> 12
+
+    tlbidx::set_ps(0xc); // boneinscri : 2026.04
 }

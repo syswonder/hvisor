@@ -13,7 +13,7 @@
 //
 // Authors:
 //      Yulong Han <wheatfox17@icloud.com>
-//
+//      Ming Shen  <boneinscri@163.com>
 use crate::pci_dev;
 use crate::{arch::zone::HvArchZoneConfig, config::*, pci::vpci_dev::VpciDevType};
 
@@ -21,134 +21,226 @@ pub const BOARD_NAME: &str = "ls3a5000";
 
 pub const BOARD_NCPUS: usize = 4;
 
+pub const CPU_BOOT_CONTEXT_ADDRESS: usize = 0x90000001e0000000;
+
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x10000f000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x200000;
-pub const ROOT_ZONE_ENTRY: u64 = 0x9000000000d8c000;
-pub const ROOT_ZONE_CPUS: u64 = 1 << 0;
+pub const ROOT_ZONE_ENTRY: u64 = 0xe71000;
+pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1);
 
 pub const ROOT_ZONE_NAME: &str = "root-linux-la64";
 
+
 pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
-    /* memory regions */
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
-        physical_start: 0x00200000,
-        virtual_start: 0x00200000,
-        size: 0x0ee00000,
-    }, // ram
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_RAM,
-        physical_start: 0x90000000,
-        virtual_start: 0x90000000,
-        size: 0x10000000,
-    }, // ram
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_RAM,
-        physical_start: 0xf000_0000,
-        virtual_start: 0xf000_0000,
-        size: 0x1000_0000,
-    }, // ram
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_RAM,
-        physical_start: 0x1_6000_0000,
-        virtual_start: 0x1_6000_0000,
-        size: 0x1000_0000,
-    }, // linux0
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_RAM,
-        physical_start: 0xc000_0000,
-        virtual_start: 0xc000_0000,
-        size: 0x3000_0000,
-    }, // linux1
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_RAM,
-        physical_start: 0xa000_0000,
-        virtual_start: 0xa000_0000,
-        size: 0x2000_0000,
-    }, // linux2
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_RAM,
-        physical_start: 0x1_0000_0000,
-        virtual_start: 0x1_0000_0000,
-        size: 0x2000_0000,
-    }, // linux3
-    /* devices and controllers */
+        physical_start: 0x200000,
+        virtual_start:  0x200000,
+        size: 0xec00000,
+    }, // RAM
+
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x1fe00000,
-        virtual_start: 0x1fe00000,
-        size: 0x1000,
-    }, // uart0
+        virtual_start:  0x1fe00000,
+        size: 0x2000,
+    }, // IO important MMIO
+    
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x10080000,
-        virtual_start: 0x10080000,
+        virtual_start:  0x10080000,
         size: 0x1000,
-    }, // uart1, passthrough now
+    }, // serial
+
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x10090000,
+        virtual_start:  0x10090000,
+        size: 0x1000,
+    }, // IO 
+
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x18000000,
+        virtual_start:  0x18000000,
+        size: 0x1000,
+    }, // IO???? unknown
+
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0x100a0000,
+        virtual_start:  0x100a0000,
+        size: 0x1000,
+    }, // IO 
+
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x100d0000,
-        virtual_start: 0x100d0000,
+        virtual_start:  0x100d0000,
         size: 0x1000,
-    }, // rtc, passthrough now
+    }, // IO 
+
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
+        physical_start: 0x100e0000,
+        virtual_start:  0x100e0000,
+        size: 0x1000,
+    }, // IO
+
+    // 46f000000-47f7fffff
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RAM,
+        physical_start: 0x46f000000,
+        virtual_start:  0x46f000000,
+        size: 0x10800000,
+    }, // Reserved RAM
+
+    // 47f800000 - 47fffffff
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RAM,
+        physical_start: 0x47f800000,
+        virtual_start:  0x47f800000,
+        size: 0x800000,
+    }, // Reserved RAM
+    
+    // ====== for start_image ======
+    // 0x90000000 - 0xf9ffffff 0x6a000000
+    // 0xf7000000 - 0xf7ffffff 0x1000000
+    //(0xf9000000 - 0xf9ffffff 0x1000000)
+    // 0xfa000000 - 0xfaffffff 0x1000000
+    // 0xfb000000 - 0xfbffffff 0x1000000
+    // 0xfc000000 - 0xfcffffff 0x1000000
+    // 0xfd000000 - 0xfdffffff 0x1000000
+    // 0xfe000000 - 0xfeffffff 0x1000000
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RAM,
+        physical_start: 0x90000000,
+        virtual_start:  0x90000000,
+        size: 0x6a000000,
+    }, // RAM
+
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RAM,
+        physical_start: 0xfa000000,
+        virtual_start:  0xfa000000,
+        size: 0x5000000,
+    }, // RAM
+
+    // 0x800000000 ～ 0x87fffffff
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RAM,
+        physical_start: 0x800000000,
+        virtual_start:  0x800000000,
+        size: 0x80000000,
+    }, // RAM
+
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RAM,
+        physical_start: 0x7f0000000,
+        virtual_start:  0x7f0000000,
+        size: 0x10000000,
+    }, // RAM
+
+    // ==== for start_image ====
+
+    // addition
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        // mem_type: MEM_TYPE_PCH_PCI,
         physical_start: 0x10000000,
-        virtual_start: 0x10000000,
+        virtual_start:  0x10000000,
         size: 0x1000,
-    }, // pch-pic irq controller
-    /* PCI related stuffs ... */
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0x1a000000,
-    //     virtual_start: 0x1a000000,
-    //     size: 0x02000000,
-    // }, // pci
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0xefe_0000_0000,
-    //     virtual_start: 0xfe_0000_0000,
-    //     size: 0x20000000,
-    // }, // pci config space (HT)
+    }, // IO!!!!????? PCH-PCI
+    
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
-        physical_start: 0x18408000,
-        virtual_start: 0x18408000,
-        size: 0x00008000,
-    }, // pci io resource
+        physical_start: 0x10002000,
+        virtual_start:  0x10002000,
+        size: 0x1000,
+    }, // IO!!!!?????
+
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
-        physical_start: 0x60000000,
-        virtual_start: 0x60000000,
+        physical_start: 0x10010000,
+        virtual_start:  0x10010000,
+        size: 0x1000,
+    }, // IO!!!!?????
+
+    // ===========unknown region===============
+    // addition
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RAM,
+        physical_start: 0x100000000,
+        virtual_start:  0x100000000,
+        size: 0x200000000,
+        // size: 0xe0000000,
+    }, // RAM
+
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_RAM,
+    //     physical_start: 0x200000000,
+    //     virtual_start:  0x200000000,
+    //     size: 0x100000000,
+    //     // size: 0x10000,
+    // }, // RAM
+    // =========unknown region======
+
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xe0030000000,
+        virtual_start:  0xe0030000000,
+        size: 0x50000000,
+    }, // PCI
+
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xefe00000000,
+        virtual_start:  0xefe00000000,
         size: 0x20000000,
-    }, // pci mem resource
+    }, // PCI
+
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
-        physical_start: 0x1001_0000,
-        virtual_start: 0x1001_0000,
-        size: 0x0001_0000,
-    }, // ?
-    /* map special regions - 2024.4.12 */
-    // linux's strscpy called gpa at 0x9000_0000_0000_0000 which is ldx x, 0x9000_0000_0000_0000(a1) + 0x0(a0) why ?
-    // __memcpy_fromio 0xf0000 why?
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_RAM,
-        physical_start: 0x1000,
-        virtual_start: 0x0,
-        size: 0x10000,
-    }, // 0x0
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_RAM,
-        physical_start: 0xf0000,
-        virtual_start: 0xf0000,
-        size: 0x10000,
-    }, // 0xf0000
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_RAM,
-        physical_start: 0x1_4000_0000,
-        virtual_start: 0x1_4000_0000,
-        size: 0x80_0000, // linux1-root
-    }, // SHARD_MEM
+        physical_start: 0xefdfe000000,
+        virtual_start:  0xefdfe000000,
+        size: 0x2000,
+    }, // PCI
+
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0xe8000000000,
+    //     virtual_start:  0xe8000000000,
+    //     size: 0x10000000,
+    // }, // PCI
+
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0xe8015150000,
+    //     virtual_start:  0xe8015150000,
+    //     size: 0x8000
+    // }, // PCI
+
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0xe8015000000,
+    //     virtual_start:  0xe8015000000,
+    //     size: 0x100000
+    // }, // PCI
+
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IOMMU,
+    //     physical_start: 0xe0030000000,
+    //     virtual_start:  0xe0030000000,
+    //     size: 0x50000000,
+    // }, // PCI-IOMMU
+
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IOMMU,
+    //     physical_start: 0xefe00000000,
+    //     virtual_start:  0xefe00000000,
+    //     size: 0x20000000,
+    // }, // PCI-IOMMU
 ];
 
 pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;

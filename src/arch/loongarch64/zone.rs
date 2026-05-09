@@ -101,7 +101,7 @@ impl Zone {
         info!("loongarch64: pt_init: add mmio handler for 0x1fe0_xxxx mmio region");
         inner.mmio_region_register(0x1fe0_0000, 0x3000, loongarch_generic_mmio_handler, 0x1234);
 
-        info!("zone stage-2 memory set: {:#x?}", inner.gpm());
+        // info!("zone stage-2 memory set: {:#x?}", inner.gpm());
         unsafe {
             // test the page table by querying the first page
             if mem_regions.len() > 0 {

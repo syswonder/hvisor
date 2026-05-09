@@ -19,6 +19,8 @@
 pub mod clock;
 pub mod consts;
 pub mod cpu;
+pub mod eiointc;
+pub mod timer;
 pub mod entry;
 pub mod hypercall;
 pub mod ipi;

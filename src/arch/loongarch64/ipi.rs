@@ -13,9 +13,12 @@
 //
 // Authors:
 //      Yulong Han <wheatfox17@icloud.com>
+//      Ming Shen  <boneinscri@163.com>
 //
 use crate::arch::cpu::this_cpu_id;
-use crate::consts::IPI_EVENT_CLEAR_INJECT_IRQ;
+use crate::consts::{IPI_EVENT_CLEAR_INJECT_IRQ, MAX_CPU_NUM};
+use crate::event::{IPI_EVENT_VIRTIO_INJECT_IRQ, IPI_EVENT_WAKEUP, IPI_EVENT_SHUTDOWN, IPI_EVENT_WAKEUP_VIRTIO_DEVICE};
+use crate::cpu_data::{get_cpu_data, this_zone};
 use crate::device::common::MMIODerefWrapper;
 use core::arch::asm;
 use core::ptr::write_volatile;
@@ -34,8 +37,20 @@ pub fn arch_send_event(cpu_id: u64, sgi_num: u64) {
         "loongarch64: arch_send_event: sending event to cpu: {}, sgi_num: {}",
         cpu_id, sgi_num
     );
-    // just call ipi_write_action
-    ipi_write_action(cpu_id as usize, sgi_num as usize);
+
+    if sgi_num == IPI_EVENT_WAKEUP as u64 {
+        ipi_send_general(cpu_id as usize, SMP_BOOT_CPU as u32);
+    } else if sgi_num == IPI_EVENT_SHUTDOWN as u64 {
+        ipi_send_general(cpu_id as usize, HVISOR_SHUTDOWN as u32);
+    } else if sgi_num == IPI_EVENT_VIRTIO_INJECT_IRQ as u64 {
+        ipi_send_general(cpu_id as usize, HVISOR_EVENT_VIRTIO_INJECT_IRQ as u32);
+    } else if sgi_num == IPI_EVENT_WAKEUP_VIRTIO_DEVICE as u64  {
+        ipi_send_general(cpu_id as usize, HVISOR_EVENT_WAKEUP_VIRTIO_DEVICE as u32);
+    } else if sgi_num == IPI_EVENT_CLEAR_INJECT_IRQ as u64 {
+        ipi_send_general(cpu_id as usize, HVISOR_EVENT_VIRTIO_CLEAR_IRQ as u32);    
+    } else {
+        panic!("unknown sgi_num, {}", sgi_num);
+    }
 }
 
 register_bitfields! [
@@ -84,12 +99,31 @@ pub static CORE2_IPI: MMIODerefWrapper<IpiRegisters> =
 pub static CORE3_IPI: MMIODerefWrapper<IpiRegisters> =
     unsafe { MMIODerefWrapper::new(IPI_MMIO_BASE + 0x1300) };
 
+// boneinscri -- 2026.04 (for 3a6000 smp)
+const MMIO_BASE_2: usize = 0x8000_0000_1fe1_0000;
+const IPI_MMIO_BASE_2: usize = MMIO_BASE_2;
+pub static CORE4_IPI: MMIODerefWrapper<IpiRegisters> =
+    unsafe { MMIODerefWrapper::new(IPI_MMIO_BASE_2 + 0x1000) };
+pub static CORE5_IPI: MMIODerefWrapper<IpiRegisters> =
+    unsafe { MMIODerefWrapper::new(IPI_MMIO_BASE_2 + 0x1100) };
+pub static CORE6_IPI: MMIODerefWrapper<IpiRegisters> =
+    unsafe { MMIODerefWrapper::new(IPI_MMIO_BASE_2 + 0x1200) };
+pub static CORE7_IPI: MMIODerefWrapper<IpiRegisters> =
+    unsafe { MMIODerefWrapper::new(IPI_MMIO_BASE_2 + 0x1300) };
+
+
 // ipi actions
 pub const SMP_BOOT_CPU: usize = 0x1;
 pub const SMP_RESCHEDULE: usize = 0x2;
 pub const SMP_CALL_FUNCTION: usize = 0x4;
 // customized actions :), since there is no docs on this yet
 pub const HVISOR_START_VCPU: usize = 0x8;
+
+// boneinscri 2026.04
+pub const HVISOR_SHUTDOWN: usize = 0x40;
+pub const HVISOR_EVENT_VIRTIO_INJECT_IRQ: usize = 0x80;
+pub const HVISOR_EVENT_WAKEUP_VIRTIO_DEVICE: usize = 0x100;
+pub const HVISOR_EVENT_VIRTIO_CLEAR_IRQ: usize = 0x200;
 
 fn iocsr_mbuf_send_box_lo(a: usize) -> usize {
     a << 1
@@ -194,6 +228,12 @@ pub fn ipi_write_action(cpu_id: usize, _action: usize) {
         1 => &CORE1_IPI,
         2 => &CORE2_IPI,
         3 => &CORE3_IPI,
+
+        // boneinscri 2026.04 (3a6000 smp)
+        4 => &CORE4_IPI,
+        5 => &CORE5_IPI,
+        6 => &CORE6_IPI,
+        7 => &CORE7_IPI,
         _ => {
             error!("ipi_write_action_legacy: invalid cpu_id: {}", cpu_id);
             return;
@@ -218,6 +258,12 @@ pub fn mail_send(data: usize, cpu_id: usize, mailbox_id: usize) {
         1 => &CORE1_IPI,
         2 => &CORE2_IPI,
         3 => &CORE3_IPI,
+
+        // boneinscri 2026.04 (3a6000 smp)
+        4 => &CORE4_IPI,
+        5 => &CORE5_IPI,
+        6 => &CORE6_IPI,
+        7 => &CORE7_IPI,
         _ => {
             error!("mail_send: invalid cpu_id: {}", cpu_id);
             return;
@@ -245,6 +291,13 @@ pub fn enable_ipi(cpu_id: usize) {
         1 => &CORE1_IPI,
         2 => &CORE2_IPI,
         3 => &CORE3_IPI,
+
+        
+        // boneinscri 2026.04 (3a6000 smp)
+        4 => &CORE4_IPI,
+        5 => &CORE5_IPI,
+        6 => &CORE6_IPI,
+        7 => &CORE7_IPI,
         _ => {
             error!("enable_ipi: invalid cpu_id: {}", cpu_id);
             return;
@@ -260,6 +313,12 @@ pub fn clear_all_ipi(cpu_id: usize) {
         1 => &CORE1_IPI,
         2 => &CORE2_IPI,
         3 => &CORE3_IPI,
+
+        // boneinscri 2026.04 (3a6000 smp)
+        4 => &CORE4_IPI,
+        5 => &CORE5_IPI,
+        6 => &CORE6_IPI,
+        7 => &CORE7_IPI,
         _ => {
             error!("clear_all_ipi: invalid cpu_id: {}", cpu_id);
             return;
@@ -276,7 +335,7 @@ pub fn clear_all_ipi(cpu_id: usize) {
 pub fn reset_ipi(cpu_id: usize) {
     // clear all IPIs and enable all IPIs
     clear_all_ipi(cpu_id);
-    enable_ipi(cpu_id);
+    // enable_ipi(cpu_id);
 }
 
 pub fn get_ipi_status(cpu_id: usize) -> u32 {
@@ -285,6 +344,12 @@ pub fn get_ipi_status(cpu_id: usize) -> u32 {
         1 => &CORE1_IPI,
         2 => &CORE2_IPI,
         3 => &CORE3_IPI,
+
+        // boneinscri 2026.04 (3a6000 smp)
+        4 => &CORE4_IPI,
+        5 => &CORE5_IPI,
+        6 => &CORE6_IPI,
+        7 => &CORE7_IPI,
         _ => {
             error!("get_ipi_status: invalid cpu_id: {}", cpu_id);
             return 0;
@@ -297,22 +362,22 @@ pub fn ecfg_ipi_enable() {
     let mut lie_ = ecfg::read().lie();
     lie_ = lie_ | LineBasedInterrupt::IPI;
     ecfg::set_lie(lie_);
-    info!(
-        "ecfg ipi enabled on cpu {}, current lie: {:?}",
-        this_cpu_id(),
-        lie_
-    );
+    // info!(
+    //     "ecfg ipi enabled on cpu {}, current lie: {:?}",
+    //     this_cpu_id(),
+    //     lie_
+    // );
 }
 
 pub fn ecfg_ipi_disable() {
     let mut lie_ = ecfg::read().lie();
     lie_ = lie_ & !LineBasedInterrupt::IPI;
     ecfg::set_lie(lie_);
-    info!(
-        "ecfg ipi disabled on cpu {}, current lie: {:?}",
-        this_cpu_id(),
-        lie_
-    );
+    // info!(
+    //     "ecfg ipi disabled on cpu {}, current lie: {:?}",
+    //     this_cpu_id(),
+    //     lie_
+    // );
 }
 
 pub fn dump_ipi_registers() {
@@ -325,6 +390,12 @@ pub fn dump_ipi_registers() {
         1 => &CORE1_IPI,
         2 => &CORE2_IPI,
         3 => &CORE3_IPI,
+
+        // boneinscri 2026.04 (3a6000 smp)
+        4 => &CORE4_IPI,
+        5 => &CORE5_IPI,
+        6 => &CORE6_IPI,
+        7 => &CORE7_IPI,
         _ => {
             error!("dump_ipi_registers: invalid cpu_id: {}", this_cpu_id());
             return;
@@ -364,4 +435,305 @@ pub fn arch_prepare_send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize
         "loongarch64:: send_event: cpu_id: {}, ipi_int_id: {}, event_id: {}",
         cpu_id, ipi_int_id, event_id
     );
+}
+
+
+
+// IPI state per cpu (ref to kvm)
+// boneinscri --2026.04
+pub const IOCSR_IPI_BASE: usize = 0x1000;
+pub const IOCSR_IPI_STATUS: usize = 0x000;
+pub const INT_IPI: usize = 12;
+pub const IOCSR_IPI_EN: usize = 0x004;
+pub const IOCSR_IPI_SET: usize = 0x008;
+pub const IOCSR_IPI_CLEAR: usize = 0x00c;
+pub const IOCSR_IPI_BUF_20: usize = 0x020;
+pub const IOCSR_IPI_BUF_28: usize = 0x028;
+pub const IOCSR_IPI_BUF_30: usize = 0x030;
+pub const IOCSR_IPI_BUF_38: usize = 0x038;
+pub const IOCSR_IPI_SEND: usize = 0x040;
+pub const IOCSR_MAIL_SEND: usize = 0x048;
+pub const IOCSR_ANY_SEND: usize = 0x158;
+pub const IOCSR_IPI_BUF_END: usize = IOCSR_IPI_BUF_38 + 7;
+
+
+#[derive(Debug)]
+pub struct LoongArch64IpiState {
+    pub status: u32,
+    pub en: u32,
+    pub set: u32,
+    pub clear: u32,
+    pub buf: [u64; MAX_CPU_NUM],
+}
+
+impl LoongArch64IpiState {
+    pub fn new() -> Self {
+        Self {
+            status: 0,
+            en: 0,
+            set: 0,
+            clear: 0,
+            buf: [0; MAX_CPU_NUM],
+        }
+    }
+}
+
+pub fn write_mailbox(pcpu_id: usize, offset: usize, len: usize, val: usize) {
+    let pcpu = get_cpu_data(pcpu_id);
+    
+    if offset < 0x20 {
+        panic!("ipi read mailbox, offset = {:#x}, len = {:#x}", offset, len);
+    }
+    
+    let buf_offset = (offset - 0x20) as usize;
+    let idx = buf_offset / 8;
+    
+    let mut ipistate = pcpu.arch_cpu.ipi_state.lock();
+    let pbuf = &mut ipistate.buf[idx];
+
+    match len {
+        1 => {
+            let byte_ptr = pbuf as *mut u64 as *mut u8;
+            unsafe { *byte_ptr = val as u8 };
+        },
+        2 => {
+            let short_ptr = pbuf as *mut u64 as *mut u16;
+            unsafe { *short_ptr = val as u16 };
+        },
+        4 => {
+            let int_ptr = pbuf as *mut u64 as *mut u32;
+            unsafe { *int_ptr = val as u32 };
+        },
+        8 => {
+            *pbuf = val as u64;
+        },
+        _ => {
+            warn!("write_mailbox, invalid length {:#x}", len);
+        }
+    }
+}
+
+pub fn ipi_clear(pcpu_id: usize, data: usize) { 
+    let pcpu = get_cpu_data(pcpu_id);
+    let mut ipistate = pcpu.arch_cpu.ipi_state.lock();
+    ipistate.status &= !(data as u32);
+    let status = ipistate.status; 
+    drop(ipistate);
+
+    if status == 0 {   
+        let cur_pcpu_id = this_cpu_id();
+        if cur_pcpu_id != pcpu_id {
+            panic!("ipi_clear, need to support vcpu");
+        } else {
+            pcpu.arch_cpu.remove_irq(INT_IPI);
+        }
+        // TODO : for vcpu , inject IPI interrupt
+    }
+}
+
+// TODO: modify to vcpu
+pub fn get_target_cpu_id(data: usize) -> usize {
+    let target_cpu_id = ((data & 0xffffffff) >> 16) & 0x3ff;
+    if target_cpu_id < MAX_CPU_NUM {
+        let zone = this_zone();
+        let cpu_set = zone.read().cpu_set();
+        let result = cpu_set.iter().nth(target_cpu_id);
+        drop(cpu_set);
+        match result {
+            Some(id) => id,
+            None => {
+                warn!("get_target_cpu_id, invalid target cpu id {:#x}, ignore", target_cpu_id);
+                usize::MAX
+            }
+        }
+    } else {
+        panic!("invalid target cpu id {:#x}", target_cpu_id);
+    }
+}
+
+pub fn ipi_send_general(target_cpu_id: usize, action: u32) {
+    let target_cpu = get_cpu_data(target_cpu_id);
+    let mut ipistate = target_cpu.arch_cpu.ipi_state.lock();
+    let status = ipistate.status;
+    ipistate.status |= action;    
+
+    if (status == 0) {
+        // TODO : for vcpu , inject IPI interrupt
+        // pay attention to the target_cpu_id, it should be the real cpu id, not the vcpu id
+        ipi_write_action(target_cpu_id as usize, action as usize);
+    }
+}
+
+pub fn ipi_send(data: usize) {
+    let target_cpu_id = get_target_cpu_id(data);
+    if target_cpu_id == usize::MAX {
+        return;
+    }
+    let action = (1usize << (data & 0x1f)) as u32;
+    ipi_send_general(target_cpu_id, action);
+}
+
+pub fn send_ipi_data(target_cpu_id: usize, addr: usize, data: usize) {
+    let mut mask = 0;
+    let mut val = 0;
+
+    if (data >> 27) & 0xf != 0 {
+        val = loongarch_ipi_readl(target_cpu_id, addr, 4);
+        if val == usize::MAX {
+            panic!("send_ipi_data, read data from addr {:#x} failed", addr);
+        }
+        for i in 0..4 {
+            if (data & (1usize << (27 + i))) != 0 {
+                mask |= 0xff << (i * 8);
+            }
+        }
+        val &= mask;
+    }
+
+    val |= (data >> 32) & !mask;
+    let ret = loongarch_ipi_writel(target_cpu_id, addr, val, 4);
+    if ret != val {
+        panic!("send_ipi_data, write data to addr {:#x} failed", addr);
+    }
+}
+
+pub fn any_send(data: usize) {
+    let cpu = ((data & 0xffffffff) >> 16) & 0x3ff;
+    if cpu != 0 && cpu != 4 {
+        error!("cpu_id = {}", cpu);
+        panic!("any_send 1, check it carefullly");
+    }
+    let target_cpu_id = get_target_cpu_id(data);
+    if target_cpu_id == usize::MAX {
+        return;
+    }
+    if target_cpu_id != 0 && target_cpu_id != 4 {
+        error!("cpu_id = {}", cpu);
+        panic!("any_send 2, check it carefullly");
+    }
+    let offset = data & 0xffff;
+    warn!("[Look this] any_send, offset {:#x}, data {:#x}", offset, data);
+    send_ipi_data(target_cpu_id, offset, data);
+}
+
+pub fn mail_send_iocsr(data: usize) {
+    let target_cpu_id = get_target_cpu_id(data);
+    if target_cpu_id == usize::MAX {
+        return;
+    }
+    let mailbox = ((data & 0xffffffff) >> 2) & 0x7;
+    let offset = IOCSR_IPI_BASE + IOCSR_IPI_BUF_20 + mailbox * 4;
+    warn!("[Look this]mail_send_iocsr, offset {:#x}, data {:#x}", offset, data);
+    send_ipi_data(target_cpu_id, offset, data);
+}
+
+pub fn read_mailbox(pcpu_id: usize, offset: usize, len: usize) -> usize {
+    let res = 0;
+    let pcpu = get_cpu_data(pcpu_id);
+    let ipi_state = &pcpu.arch_cpu.ipi_state;
+    if offset < 0x20 {
+        panic!("ipi read mailbox, offset = {:#x}, len = {:#x}\n", offset, len);
+    }
+    let idx: usize = ((offset - 0x20) / 8).try_into().unwrap();
+
+    let ipistate = ipi_state.lock();
+    let data = ipistate.buf[idx];    
+    
+    match len {
+        1 => data & 0xff,
+        2 => data & 0xffff,
+        4 => data & 0xffffffff,
+        8 => data,
+        _ => {
+            panic!("read_mailbox: unknown data len: {}", len);
+        }
+    };
+    res    
+}
+
+// TODO : add vcpu for loongarch_ipi_readl and loongarch_ipi_writel
+pub fn loongarch_ipi_readl(pcpu_id: usize, addr: usize, len: usize) -> usize {
+    let offset = (addr & 0x1ff);
+    if offset & (len - 1) != 0 {
+        warn!("Unaligned access");
+    }
+    let mut res = 0;
+    
+    match offset {
+        IOCSR_IPI_STATUS => {
+            // this overhead is high
+            let pcpu = get_cpu_data(pcpu_id);
+            let ipistate = pcpu.arch_cpu.ipi_state.lock();
+            res = ipistate.status as usize;
+        } 
+        IOCSR_IPI_EN => {
+            let pcpu = get_cpu_data(pcpu_id);
+            let ipistate = pcpu.arch_cpu.ipi_state.lock();
+            res = ipistate.en as usize;
+        }
+        IOCSR_IPI_SET => {
+            res = 0;
+        }
+        IOCSR_IPI_CLEAR => {
+            res = 0;
+        }
+        IOCSR_IPI_BUF_20..=IOCSR_IPI_BUF_END => {
+            if offset + len > IOCSR_IPI_BUF_38 + 8 {
+                panic!("ipi readl IOCSR_IPI_BUF, offset = {:#x}, len = {:#x}", offset, len);    
+            }
+            res = read_mailbox(pcpu_id, offset, len);
+        }
+        _ => {
+            panic!("Invalid IPI read offset: {:#x}", offset);
+        }
+    }
+
+    res
+}
+
+pub fn loongarch_ipi_writel(pcpu_id: usize, addr: usize, val: usize, len: usize) -> usize {
+    let mut res = val;
+    let offset = (addr & 0x1ff);
+    if offset & (len - 1) != 0 {
+        warn!("Unaligned access");
+    }
+
+    match offset {
+        IOCSR_IPI_SEND => {
+            // overhead is high
+            ipi_send(val);
+        }
+        IOCSR_IPI_CLEAR => {
+            // overhead is high
+            ipi_clear(pcpu_id, val);
+        }
+        IOCSR_IPI_STATUS => {
+            panic!("ipi writel IOCSR_IPI_STATUS, pcpu_id = {}, val = {:#x}", pcpu_id, val);
+        }
+        IOCSR_IPI_EN => {
+            let mut pcpu = get_cpu_data(pcpu_id);
+            let mut ipistate = pcpu.arch_cpu.ipi_state.lock();
+            ipistate.en = val as u32;
+        }
+        IOCSR_IPI_SET => {
+            panic!("ipi writel IOCSR_IPI_SET, pcpu_id = {}, val = {:#x}", pcpu_id, val);
+        }
+        IOCSR_IPI_BUF_20..=IOCSR_IPI_BUF_END => {
+            if offset + len > IOCSR_IPI_BUF_38 + 8 {
+                panic!("ipi writel IOCSR_IPI_BUF, offset = {:#x}, len = {:#x}", offset, len);    
+            }
+            write_mailbox(pcpu_id, offset, len, val);
+        }
+        IOCSR_MAIL_SEND => {
+            mail_send_iocsr(val);
+        }
+        IOCSR_ANY_SEND => {
+            // any_send(val);
+        }
+        _ => {
+            panic!("Invalid IPI write offset: {:#x}", offset);
+        }
+    }
+
+    res
 }
