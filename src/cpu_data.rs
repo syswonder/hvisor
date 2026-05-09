@@ -21,16 +21,75 @@ use crate::consts::{INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::memory::addr::VirtAddr;
 use crate::zone::Zone;
 use crate::ENTERED_CPUS;
-use core::fmt::Debug;
-use core::sync::atomic::Ordering;
+use core::fmt::{Debug, Formatter, Result};
+use core::sync::atomic::{AtomicU8, Ordering};
 
 // global_asm!(include_str!("./arch/aarch64/page_table.S"),);
+
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum VcpuState {
+    Stopped = 0,
+    Running = 1,
+    Suspended = 2,
+}
+
+impl VcpuState {
+    fn from_raw(value: u8) -> Self {
+        match value {
+            0 => Self::Stopped,
+            1 => Self::Running,
+            2 => Self::Suspended,
+            _ => panic!("invalid vcpu state {}", value),
+        }
+    }
+}
+
+#[repr(transparent)]
+pub struct VcpuStateCell {
+    state: AtomicU8,
+}
+
+impl VcpuStateCell {
+    pub const fn new(state: VcpuState) -> Self {
+        Self {
+            state: AtomicU8::new(state as u8),
+        }
+    }
+
+    pub fn load(&self) -> VcpuState {
+        VcpuState::from_raw(self.state.load(Ordering::Acquire))
+    }
+
+    pub fn store(&self, state: VcpuState) {
+        self.state.store(state as u8, Ordering::Release);
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        self.load() == VcpuState::Stopped
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.load() == VcpuState::Running
+    }
+
+    pub fn is_suspended(&self) -> bool {
+        self.load() == VcpuState::Suspended
+    }
+}
+
+impl Debug for VcpuStateCell {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        self.load().fmt(f)
+    }
+}
 
 #[repr(C)]
 pub struct PerCpu {
     pub id: usize,
     pub cpu_on_entry: usize,
     pub dtb_ipa: usize,
+    pub vcpu_state: VcpuStateCell,
     pub arch_cpu: ArchCpu,
     pub zone: Option<Arc<Zone>>,
     pub ctrl_lock: Mutex<()>,
@@ -48,6 +107,7 @@ impl PerCpu {
                 id: arch_cpu.cpuid,
                 cpu_on_entry: INVALID_ADDRESS,
                 dtb_ipa: INVALID_ADDRESS,
+                vcpu_state: VcpuStateCell::new(VcpuState::Stopped),
                 arch_cpu,
                 zone: None,
                 ctrl_lock: Mutex::new(()),

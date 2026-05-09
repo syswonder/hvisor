@@ -14,7 +14,7 @@
 // Authors:
 //
 use super::csr::*;
-use crate::cpu_data::this_cpu_data;
+use crate::cpu_data::{this_cpu_data, VcpuState};
 use crate::platform::{BOARD_HARTID_MAP, BOARD_NCPUS};
 use crate::{
     arch::mm::new_s2_memory_set,
@@ -37,8 +37,6 @@ pub struct ArchCpu {
     pub stack_top: usize,
     pub cpuid: usize,
     // pub first_cpu: usize,
-    pub power_on: bool,
-    pub init: bool,
     pub sstc: bool,
 }
 
@@ -54,8 +52,6 @@ impl ArchCpu {
             stack_top: 0,
             cpuid,
             // first_cpu: 0,
-            power_on: false,
-            init: false,
             sstc: cfg!(feature = "sstc"),
         };
         ret
@@ -129,12 +125,7 @@ impl ArchCpu {
         }
 
         assert!(this_cpu_id() == self.cpuid);
-        // change power_on
-        self.power_on = true;
-
-        if !self.init {
-            self.init = true;
-        }
+        this_cpu_data().vcpu_state.store(VcpuState::Running);
         self.init_interrupt();
 
         // reset all registers related
@@ -157,7 +148,7 @@ impl ArchCpu {
             fn vcpu_arch_entry() -> !;
         }
         assert!(this_cpu_id() == self.cpuid);
-        self.power_on = false;
+        this_cpu_data().vcpu_state.store(VcpuState::Stopped);
 
         PARKING_MEMORY_SET.call_once(|| {
             let parking_code: [u8; 8] = [0x73, 0x00, 0x50, 0x10, 0x6F, 0xF0, 0xDF, 0xFF]; // 1: wfi; b 1b
@@ -202,7 +193,6 @@ impl ArchCpu {
         // debug!("sip: {:#x}", read_csr!(CSR_SIP));
         // // clear_csr!(CSR_SIP, 1 << 1);
         // debug!("sip*: {:#x}", read_csr!(CSR_SIP));
-        // self.init = true;
 
         // unsafe {
         //     vcpu_arch_entry();

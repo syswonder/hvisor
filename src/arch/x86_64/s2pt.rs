@@ -262,7 +262,7 @@ impl PagingInstr for S2PTInstr {
         unsafe { invs2pt(InvS2PTType::SingleContext, s2ptp) };
 
         // if this cpu is boot cpu and it is running
-        if this_cpu_data().arch_cpu.power_on && this_cpu_data().boot_cpu {
+        if this_cpu_data().vcpu_state.is_running() && this_cpu_data().boot_cpu {
             #[cfg(feature = "intel_vtd")]
             iommu::fill_dma_translation_tables(this_zone_id(), root_paddr);
         }

@@ -15,11 +15,13 @@
 //
 #![allow(unused)]
 use crate::{
-    arch::ipi::{arch_check_events, arch_prepare_send_event, arch_send_event},
+    arch::cpu::this_cpu_id,
+    arch::ipi::{arch_check_events, arch_hart_suspend, arch_prepare_send_event, arch_send_event},
     consts::{
-        IPI_EVENT_CLEAR_INJECT_IRQ, IPI_EVENT_SEND_IPI, IPI_EVENT_UPDATE_HART_LINE, MAX_CPU_NUM,
+        IPI_EVENT_CLEAR_INJECT_IRQ, IPI_EVENT_HART_SUSPEND, IPI_EVENT_SEND_IPI,
+        IPI_EVENT_UPDATE_HART_LINE, MAX_CPU_NUM,
     },
-    cpu_data::this_cpu_data,
+    cpu_data::{this_cpu_data, CpuSet},
     device::{irqchip::inject_irq, virtio_trampoline::handle_virtio_irq},
     platform::IRQ_WAKEUP_VIRTIO_DEVICE,
 };
@@ -109,6 +111,10 @@ pub fn check_events() -> bool {
             arch_check_events(event);
             true
         }
+        Some(IPI_EVENT_HART_SUSPEND) => {
+            arch_hart_suspend();
+            true
+        }
         // #[cfg(target_arch = "loongarch64")]
         // Some(IPI_EVENT_CLEAR_INJECT_IRQ) => {
         //     use crate::device::irqchip;
@@ -150,4 +156,17 @@ pub fn send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
     arch_prepare_send_event(cpu_id, ipi_int_id, event_id);
     add_event(cpu_id, event_id);
     arch_send_event(cpu_id as _, ipi_int_id as _);
+}
+
+
+/// Send event to a cpu set (except self).
+pub fn send_event_to_all(cpu_set: CpuSet, ipi_int_id: usize, event_id: usize) {
+    let this_cpu_id = this_cpu_id();
+    for target_cpu_id in cpu_set.iter() {
+        if target_cpu_id == this_cpu_id {
+            continue;
+        }
+        info!("send_event_to_all: send event {} to cpu {}", event_id, target_cpu_id);
+        send_event(target_cpu_id, ipi_int_id, event_id);
+    }
 }

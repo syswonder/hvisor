@@ -30,6 +30,10 @@ pub fn arch_check_events(event: Option<usize>) {
     }
 }
 
+pub fn arch_hart_suspend() {
+    warn!("unimplemented aarch64 arch_hart_suspend");
+}
+
 pub fn arch_prepare_send_event(_cpu_id: usize, _ipi_int_id: usize, _event_id: usize) {
     debug!("aarch64 arch_prepare_send_event: do nothing now.")
 }

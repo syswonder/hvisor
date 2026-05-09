@@ -357,6 +357,10 @@ pub fn arch_check_events(event: Option<usize>) {
     }
 }
 
+pub fn arch_hart_suspend() {
+    warn!("unimplemented loongarch64 arch_hart_suspend");
+}
+
 pub fn arch_prepare_send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
     use crate::event::fetch_event;
     while !fetch_event(cpu_id).is_none() {}
