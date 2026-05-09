@@ -66,6 +66,7 @@ mod pci;
 #[cfg(test)]
 mod tests;
 
+use crate::arch::entry::arch_secondary_entry;
 use crate::arch::mm::{arch_post_heap_init, arch_setup_parange};
 use crate::consts::{hv_end, mem_pool_start, MAX_CPU_NUM};
 use crate::device::iommu::iommu_init;
