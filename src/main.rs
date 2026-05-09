@@ -66,9 +66,11 @@ mod pci;
 #[cfg(test)]
 mod tests;
 
-use crate::arch::entry::arch_secondary_entry;
 use crate::arch::mm::{arch_post_heap_init, arch_setup_parange};
 use crate::consts::{hv_end, mem_pool_start, MAX_CPU_NUM};
+#[cfg(target_arch = "loongarch64")]
+use crate::arch::entry::arch_secondary_entry;
+#[cfg(feature = "iommu")]
 use crate::device::iommu::iommu_init;
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
