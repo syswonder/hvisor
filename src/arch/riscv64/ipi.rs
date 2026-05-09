@@ -46,14 +46,16 @@ pub fn arch_ipi_handler() {
 /// Handle hart suspend event.
 pub fn arch_hart_suspend() {
     info!("cpu {} suspending...", this_cpu_data().id);
-    this_cpu_data().vcpu_state.store(VcpuState::Suspended);
+    this_cpu_data().vcpu_state.store(VcpuState::Blocked);
     loop {
         // TODO: use wfi to optimize the loop
-        if !this_cpu_data().vcpu_state.is_suspended() {
+        if !this_cpu_data().vcpu_state.is_blocked() {
             break;
         }
         core::hint::spin_loop();
     }
+    // Remote sets `Ready` to leave Blocked; this hart then marks itself `Running` again.
+    this_cpu_data().vcpu_state.store(VcpuState::Running);
     info!("cpu {} resumed from suspend.", this_cpu_data().id);
 }
 
@@ -88,7 +90,7 @@ pub fn wait_for_other_cpus_suspend(cpu_set: CpuSet) {
         }
         // Wait for the cpu to suspend.
         loop {
-            if get_cpu_data(target_cpu_id).vcpu_state.is_suspended() {
+            if get_cpu_data(target_cpu_id).vcpu_state.is_blocked() {
                 break;
             }
             core::hint::spin_loop();
@@ -106,6 +108,6 @@ pub fn signal_other_cpus_resume(cpu_set: CpuSet) {
         }
         get_cpu_data(target_cpu_id)
             .vcpu_state
-            .store(VcpuState::Running);
+            .store(VcpuState::Ready);
     }
 }

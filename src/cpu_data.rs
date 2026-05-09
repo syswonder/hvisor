@@ -26,20 +26,27 @@ use core::sync::atomic::{AtomicU8, Ordering};
 
 // global_asm!(include_str!("./arch/aarch64/page_table.S"),);
 
+/// VCpu lifecycle states
 #[repr(u8)]
 #[derive(Copy, Clone, Debug, Eq, PartialEq)]
 pub enum VcpuState {
+    /// Initial state or after PSCI CPU_OFF. Not in any run queue.
     Stopped = 0,
-    Running = 1,
-    Suspended = 2,
+    /// In a pCPU's run queue, waiting to be scheduled.
+    Ready = 1,
+    /// Currently executing on a pCPU.
+    Running = 2,
+    /// Blocked by WFI/CPU_SUSPEND. Not in any run queue, awaiting interrupt wakeup.
+    Blocked = 3,
 }
 
 impl VcpuState {
     fn from_raw(value: u8) -> Self {
         match value {
             0 => Self::Stopped,
-            1 => Self::Running,
-            2 => Self::Suspended,
+            1 => Self::Ready,
+            2 => Self::Running,
+            3 => Self::Blocked,
             _ => panic!("invalid vcpu state {}", value),
         }
     }
@@ -69,12 +76,21 @@ impl VcpuStateCell {
         self.load() == VcpuState::Stopped
     }
 
+    pub fn is_ready(&self) -> bool {
+        self.load() == VcpuState::Ready
+    }
+
     pub fn is_running(&self) -> bool {
         self.load() == VcpuState::Running
     }
 
-    pub fn is_suspended(&self) -> bool {
-        self.load() == VcpuState::Suspended
+    pub fn is_blocked(&self) -> bool {
+        self.load() == VcpuState::Blocked
+    }
+
+    /// Logical CPU is up from the hypervisor’s view: not `Stopped` (includes Ready, Running, Blocked).
+    pub fn is_online(&self) -> bool {
+        !self.is_stopped()
     }
 }
 

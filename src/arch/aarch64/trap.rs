@@ -354,7 +354,7 @@ fn psci_emulate_cpu_on(regs: &mut GeneralRegisters) -> u64 {
 
     if target_data.vcpu_state.is_stopped() {
         target_data.cpu_on_entry = regs.usr[2] as _;
-        target_data.vcpu_state.store(VcpuState::Running);
+        target_data.vcpu_state.store(VcpuState::Ready);
         send_event(cpu as _, SGI_IPI_ID as _, IPI_EVENT_WAKEUP);
     } else {
         error!("psci: cpu {} already on", cpu);
@@ -383,7 +383,7 @@ fn handle_psci_smc(
             todo!();
         }
         PsciFnId::PSCI_AFFINITY_INFO_32 | PsciFnId::PSCI_AFFINITY_INFO_64 => {
-            !get_cpu_data(arg0 as _).vcpu_state.is_running() as _
+            !get_cpu_data(arg0 as _).vcpu_state.is_online() as _
         }
         PsciFnId::PSCI_MIG_INFO_TYPE => PSCI_TOS_NOT_PRESENT_MP,
         PsciFnId::PSCI_FEATURES => psci_emulate_features_info(regs.usr[1]),

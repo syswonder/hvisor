@@ -269,7 +269,7 @@ pub fn sbi_hsm_start_handler(current_cpu: &mut ArchCpu) -> SbiRet {
         } else {
             target_cpu.cpu_on_entry = start_addr;
             target_cpu.dtb_ipa = opaque;
-            target_cpu.vcpu_state.store(VcpuState::Running);
+            target_cpu.vcpu_state.store(VcpuState::Ready);
             send_event(cpuid, 0, IPI_EVENT_WAKEUP);
         }
         drop(_lock);

@@ -158,7 +158,6 @@ pub fn send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
     arch_send_event(cpu_id as _, ipi_int_id as _);
 }
 
-
 /// Send event to a cpu set (except self).
 pub fn send_event_to_all(cpu_set: CpuSet, ipi_int_id: usize, event_id: usize) {
     let this_cpu_id = this_cpu_id();
@@ -166,7 +165,10 @@ pub fn send_event_to_all(cpu_set: CpuSet, ipi_int_id: usize, event_id: usize) {
         if target_cpu_id == this_cpu_id {
             continue;
         }
-        info!("send_event_to_all: send event {} to cpu {}", event_id, target_cpu_id);
+        info!(
+            "send_event_to_all: send event {} to cpu {}",
+            event_id, target_cpu_id
+        );
         send_event(target_cpu_id, ipi_int_id, event_id);
     }
 }
