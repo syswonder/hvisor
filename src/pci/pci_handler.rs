@@ -1417,13 +1417,13 @@ fn handle_config_space_access(
     let vbdf = dev.get_bdf();
     let dev_type = dev.get_dev_type();
 
-    if !is_write && dev.get_config_type() == HeaderType::Endpoint && offset == 0x150 && size == 4 {
-        // Hardcode for test: skip SR-IOV cap (0x160) by rewriting next cap ptr to 0x1a0.
-        mmio.value = dev.read_hw(offset, size).unwrap();
-        mmio.value = mmio.value & 0x00ff_ffff;
-        mmio.value += 0x1a00_0000;
-        return Ok(());
-    }
+    // if !is_write && dev.get_config_type() == HeaderType::Endpoint && offset == 0x150 && size == 4 {
+    //     // Hardcode for test: skip SR-IOV cap (0x160) by rewriting next cap ptr to 0x1a0.
+    //     mmio.value = dev.read_hw(offset, size).unwrap();
+    //     mmio.value = mmio.value & 0x00ff_ffff;
+    //     mmio.value += 0x1a00_0000;
+    //     return Ok(());
+    // }
 
     if is_root || is_dev_belong_to_zone {
         match dev.access(offset, size) {

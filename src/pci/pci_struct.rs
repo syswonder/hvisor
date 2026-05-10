@@ -414,6 +414,7 @@ pub struct VirtualPciConfigSpace {
     bararr: Bar,
     rom: PciMem,
     capabilities: PciCapabilityList,
+    ext_capabilities: PciExtCapabilityList,
 
     dev_type: VpciDevType,
 
@@ -828,14 +829,15 @@ impl Debug for VirtualPciConfigSpace {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "\n  bdf {:#?}\n  base {:#x}\n  type {:#?}\n  msi_info {:#x?}\n  {:#?}\n {:#?}\n {:#?}",
+            "\n  bdf {:#?}\n  base {:#x}\n  type {:#?}\n  msi_info {:#x?}\n  {:#?}\n {:#?}\n {:#?}\n {:#?}",
             self.bdf,
             self.base,
             self.config_type,
             self.msi_info,
             self.bararr,
             self.rom,
-            self.capabilities
+            self.capabilities,
+            self.ext_capabilities
         )
     }
 }
@@ -866,6 +868,7 @@ impl VirtualPciConfigSpace {
             bararr,
             rom: PciMem::default(),
             capabilities: PciCapabilityList::new(),
+            ext_capabilities: PciExtCapabilityList::new(),
             dev_type,
             msi_info: None,
             msix_table,
@@ -895,6 +898,7 @@ impl VirtualPciConfigSpace {
             bararr,
             rom,
             capabilities: PciCapabilityList::new(),
+            ext_capabilities: PciExtCapabilityList::new(),
             dev_type: VpciDevType::Physical,
             msi_info: None,
             msix_table: None,
@@ -924,6 +928,7 @@ impl VirtualPciConfigSpace {
             bararr,
             rom,
             capabilities: PciCapabilityList::new(),
+            ext_capabilities: PciExtCapabilityList::new(),
             dev_type: VpciDevType::Physical,
             msi_info: None,
             msix_table: None,
@@ -955,6 +960,7 @@ impl VirtualPciConfigSpace {
             bararr: Bar::default(),
             rom: PciMem::default(),
             capabilities: PciCapabilityList::new(),
+            ext_capabilities: PciExtCapabilityList::new(),
             dev_type: VpciDevType::Physical,
             msi_info: None,
             msix_table: None,
@@ -981,6 +987,7 @@ impl VirtualPciConfigSpace {
             bararr: Bar::default(),
             rom: PciMem::default(),
             capabilities: PciCapabilityList::new(),
+            ext_capabilities: PciExtCapabilityList::new(),
             dev_type: VpciDevType::Physical,
             msi_info: None,
             msix_table: None,
@@ -1330,6 +1337,7 @@ impl<B: BarAllocator> PciIterator<B> {
                 );
 
                 let _ = node.capability_enumerate();
+                node.ext_capability_enumerate();
                 // Build MSI/MSIX info once during device discovery
                 node.build_msi_info();
 
@@ -1356,6 +1364,7 @@ impl<B: BarAllocator> PciIterator<B> {
                 );
 
                 let _ = node.capability_enumerate();
+                node.ext_capability_enumerate();
                 // Build MSI/MSIX info once during device discovery
                 node.build_msi_info();
 
@@ -2165,6 +2174,217 @@ impl CapabilityType {
     }
 }
 
+// ---- PCIe Extended Capabilities (config space 0x100–0xFFF) ----
+
+/// PCIe Extended Capability IDs (PCI-SIG ECN).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ExtCapabilityType {
+    /// Advanced Error Reporting, ID = 0x0001
+    AdvancedErrorReporting,
+    /// Virtual Channel, ID = 0x0002
+    VirtualChannel,
+    /// Device Serial Number, ID = 0x0003
+    DeviceSerialNumber,
+    /// Power Budgeting, ID = 0x0004
+    PowerBudgeting,
+    /// Root Complex Link Declaration, ID = 0x0005
+    RootComplexLinkDeclaration,
+    /// Root Complex Internal Link Control, ID = 0x0006
+    RootComplexInternalLinkControl,
+    /// Root Complex Event Collector Endpoint Association, ID = 0x0007
+    RootComplexEventCollector,
+    /// Multi-Function Virtual Channel, ID = 0x0008
+    MultiFunctionVirtualChannel,
+    /// VC in Multi-Function Device, ID = 0x0009
+    VirtualChannelMFVC,
+    /// Root Complex Register Block, ID = 0x000A
+    RootComplexRegisterBlock,
+    /// Vendor-Specific Extended Capability, ID = 0x000B
+    VendorSpecific,
+    /// Configuration Access Correlation, ID = 0x000C
+    ConfigurationAccessCorrelation,
+    /// Access Control Services, ID = 0x000D
+    AccessControlServices,
+    /// Alternative Routing-ID Interpretation, ID = 0x000E
+    AlternativeRoutingId,
+    /// Address Translation Services, ID = 0x000F
+    AddressTranslationServices,
+    /// Single Root I/O Virtualization (SR-IOV), ID = 0x0010
+    SingleRootIov,
+    /// Multi-Root I/O Virtualization (MR-IOV), ID = 0x0011
+    MultiRootIov,
+    /// Multicast, ID = 0x0012
+    Multicast,
+    /// Page Request Interface, ID = 0x0013
+    PageRequestInterface,
+    /// Resizable BAR, ID = 0x0015
+    ResizableBar,
+    /// Dynamic Power Allocation, ID = 0x0016
+    DynamicPowerAllocation,
+    /// TPH Requester, ID = 0x0017
+    TphRequester,
+    /// Latency Tolerance Reporting, ID = 0x0018
+    LatencyToleranceReporting,
+    /// Secondary PCI Express, ID = 0x0019
+    SecondaryPciExpress,
+    /// Protocol Multiplexing, ID = 0x001A
+    ProtocolMultiplexing,
+    /// Process Address Space ID (PASID), ID = 0x001B
+    ProcessAddressSpaceId,
+    /// LN Requester, ID = 0x001C
+    LnRequester,
+    /// Downstream Port Containment, ID = 0x001D
+    DownstreamPortContainment,
+    /// L1 PM Substates, ID = 0x001E
+    L1PmSubstates,
+    /// Precision Time Measurement, ID = 0x001F
+    PrecisionTimeMeasurement,
+    /// Designated Vendor-Specific, ID = 0x0023
+    DesignatedVendorSpecific,
+    /// VF Resizable BAR, ID = 0x0024
+    VfResizableBar,
+    /// Data Link Feature, ID = 0x0025
+    DataLinkFeature,
+    /// Physical Layer 16.0 GT/s, ID = 0x0026
+    PhysicalLayer16Gts,
+    /// Lane Margining at the Receiver, ID = 0x0027
+    LaneMargining,
+    /// Physical Layer 32.0 GT/s, ID = 0x002A
+    PhysicalLayer32Gts,
+    /// Unknown or reserved extended capability
+    Unknown(u16),
+}
+
+impl ExtCapabilityType {
+    pub fn from_id(id: u16) -> Self {
+        match id {
+            0x0001 => ExtCapabilityType::AdvancedErrorReporting,
+            0x0002 => ExtCapabilityType::VirtualChannel,
+            0x0003 => ExtCapabilityType::DeviceSerialNumber,
+            0x0004 => ExtCapabilityType::PowerBudgeting,
+            0x0005 => ExtCapabilityType::RootComplexLinkDeclaration,
+            0x0006 => ExtCapabilityType::RootComplexInternalLinkControl,
+            0x0007 => ExtCapabilityType::RootComplexEventCollector,
+            0x0008 => ExtCapabilityType::MultiFunctionVirtualChannel,
+            0x0009 => ExtCapabilityType::VirtualChannelMFVC,
+            0x000A => ExtCapabilityType::RootComplexRegisterBlock,
+            0x000B => ExtCapabilityType::VendorSpecific,
+            0x000C => ExtCapabilityType::ConfigurationAccessCorrelation,
+            0x000D => ExtCapabilityType::AccessControlServices,
+            0x000E => ExtCapabilityType::AlternativeRoutingId,
+            0x000F => ExtCapabilityType::AddressTranslationServices,
+            0x0010 => ExtCapabilityType::SingleRootIov,
+            0x0011 => ExtCapabilityType::MultiRootIov,
+            0x0012 => ExtCapabilityType::Multicast,
+            0x0013 => ExtCapabilityType::PageRequestInterface,
+            0x0015 => ExtCapabilityType::ResizableBar,
+            0x0016 => ExtCapabilityType::DynamicPowerAllocation,
+            0x0017 => ExtCapabilityType::TphRequester,
+            0x0018 => ExtCapabilityType::LatencyToleranceReporting,
+            0x0019 => ExtCapabilityType::SecondaryPciExpress,
+            0x001A => ExtCapabilityType::ProtocolMultiplexing,
+            0x001B => ExtCapabilityType::ProcessAddressSpaceId,
+            0x001C => ExtCapabilityType::LnRequester,
+            0x001D => ExtCapabilityType::DownstreamPortContainment,
+            0x001E => ExtCapabilityType::L1PmSubstates,
+            0x001F => ExtCapabilityType::PrecisionTimeMeasurement,
+            0x0023 => ExtCapabilityType::DesignatedVendorSpecific,
+            0x0024 => ExtCapabilityType::VfResizableBar,
+            0x0025 => ExtCapabilityType::DataLinkFeature,
+            0x0026 => ExtCapabilityType::PhysicalLayer16Gts,
+            0x0027 => ExtCapabilityType::LaneMargining,
+            0x002A => ExtCapabilityType::PhysicalLayer32Gts,
+            other => ExtCapabilityType::Unknown(other),
+        }
+    }
+
+    pub fn to_id(&self) -> u16 {
+        match self {
+            ExtCapabilityType::AdvancedErrorReporting => 0x0001,
+            ExtCapabilityType::VirtualChannel => 0x0002,
+            ExtCapabilityType::DeviceSerialNumber => 0x0003,
+            ExtCapabilityType::PowerBudgeting => 0x0004,
+            ExtCapabilityType::RootComplexLinkDeclaration => 0x0005,
+            ExtCapabilityType::RootComplexInternalLinkControl => 0x0006,
+            ExtCapabilityType::RootComplexEventCollector => 0x0007,
+            ExtCapabilityType::MultiFunctionVirtualChannel => 0x0008,
+            ExtCapabilityType::VirtualChannelMFVC => 0x0009,
+            ExtCapabilityType::RootComplexRegisterBlock => 0x000A,
+            ExtCapabilityType::VendorSpecific => 0x000B,
+            ExtCapabilityType::ConfigurationAccessCorrelation => 0x000C,
+            ExtCapabilityType::AccessControlServices => 0x000D,
+            ExtCapabilityType::AlternativeRoutingId => 0x000E,
+            ExtCapabilityType::AddressTranslationServices => 0x000F,
+            ExtCapabilityType::SingleRootIov => 0x0010,
+            ExtCapabilityType::MultiRootIov => 0x0011,
+            ExtCapabilityType::Multicast => 0x0012,
+            ExtCapabilityType::PageRequestInterface => 0x0013,
+            ExtCapabilityType::ResizableBar => 0x0015,
+            ExtCapabilityType::DynamicPowerAllocation => 0x0016,
+            ExtCapabilityType::TphRequester => 0x0017,
+            ExtCapabilityType::LatencyToleranceReporting => 0x0018,
+            ExtCapabilityType::SecondaryPciExpress => 0x0019,
+            ExtCapabilityType::ProtocolMultiplexing => 0x001A,
+            ExtCapabilityType::ProcessAddressSpaceId => 0x001B,
+            ExtCapabilityType::LnRequester => 0x001C,
+            ExtCapabilityType::DownstreamPortContainment => 0x001D,
+            ExtCapabilityType::L1PmSubstates => 0x001E,
+            ExtCapabilityType::PrecisionTimeMeasurement => 0x001F,
+            ExtCapabilityType::DesignatedVendorSpecific => 0x0023,
+            ExtCapabilityType::VfResizableBar => 0x0024,
+            ExtCapabilityType::DataLinkFeature => 0x0025,
+            ExtCapabilityType::PhysicalLayer16Gts => 0x0026,
+            ExtCapabilityType::LaneMargining => 0x0027,
+            ExtCapabilityType::PhysicalLayer32Gts => 0x002A,
+            ExtCapabilityType::Unknown(id) => *id,
+        }
+    }
+}
+
+impl core::fmt::Debug for ExtCapabilityType {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            ExtCapabilityType::AdvancedErrorReporting => write!(f, "AdvancedErrorReporting(0x0001)"),
+            ExtCapabilityType::VirtualChannel => write!(f, "VirtualChannel(0x0002)"),
+            ExtCapabilityType::DeviceSerialNumber => write!(f, "DeviceSerialNumber(0x0003)"),
+            ExtCapabilityType::PowerBudgeting => write!(f, "PowerBudgeting(0x0004)"),
+            ExtCapabilityType::RootComplexLinkDeclaration => write!(f, "RootComplexLinkDeclaration(0x0005)"),
+            ExtCapabilityType::RootComplexInternalLinkControl => write!(f, "RootComplexInternalLinkControl(0x0006)"),
+            ExtCapabilityType::RootComplexEventCollector => write!(f, "RootComplexEventCollector(0x0007)"),
+            ExtCapabilityType::MultiFunctionVirtualChannel => write!(f, "MultiFunctionVirtualChannel(0x0008)"),
+            ExtCapabilityType::VirtualChannelMFVC => write!(f, "VirtualChannelMFVC(0x0009)"),
+            ExtCapabilityType::RootComplexRegisterBlock => write!(f, "RootComplexRegisterBlock(0x000A)"),
+            ExtCapabilityType::VendorSpecific => write!(f, "VendorSpecific(0x000B)"),
+            ExtCapabilityType::ConfigurationAccessCorrelation => write!(f, "ConfigurationAccessCorrelation(0x000C)"),
+            ExtCapabilityType::AccessControlServices => write!(f, "AccessControlServices(0x000D)"),
+            ExtCapabilityType::AlternativeRoutingId => write!(f, "AlternativeRoutingId(0x000E)"),
+            ExtCapabilityType::AddressTranslationServices => write!(f, "AddressTranslationServices(0x000F)"),
+            ExtCapabilityType::SingleRootIov => write!(f, "SingleRootIov(SR-IOV)(0x0010)"),
+            ExtCapabilityType::MultiRootIov => write!(f, "MultiRootIov(MR-IOV)(0x0011)"),
+            ExtCapabilityType::Multicast => write!(f, "Multicast(0x0012)"),
+            ExtCapabilityType::PageRequestInterface => write!(f, "PageRequestInterface(0x0013)"),
+            ExtCapabilityType::ResizableBar => write!(f, "ResizableBar(0x0015)"),
+            ExtCapabilityType::DynamicPowerAllocation => write!(f, "DynamicPowerAllocation(0x0016)"),
+            ExtCapabilityType::TphRequester => write!(f, "TphRequester(0x0017)"),
+            ExtCapabilityType::LatencyToleranceReporting => write!(f, "LatencyToleranceReporting(0x0018)"),
+            ExtCapabilityType::SecondaryPciExpress => write!(f, "SecondaryPciExpress(0x0019)"),
+            ExtCapabilityType::ProtocolMultiplexing => write!(f, "ProtocolMultiplexing(0x001A)"),
+            ExtCapabilityType::ProcessAddressSpaceId => write!(f, "ProcessAddressSpaceId(0x001B)"),
+            ExtCapabilityType::LnRequester => write!(f, "LnRequester(0x001C)"),
+            ExtCapabilityType::DownstreamPortContainment => write!(f, "DownstreamPortContainment(0x001D)"),
+            ExtCapabilityType::L1PmSubstates => write!(f, "L1PmSubstates(0x001E)"),
+            ExtCapabilityType::PrecisionTimeMeasurement => write!(f, "PrecisionTimeMeasurement(0x001F)"),
+            ExtCapabilityType::DesignatedVendorSpecific => write!(f, "DesignatedVendorSpecific(0x0023)"),
+            ExtCapabilityType::VfResizableBar => write!(f, "VfResizableBar(0x0024)"),
+            ExtCapabilityType::DataLinkFeature => write!(f, "DataLinkFeature(0x0025)"),
+            ExtCapabilityType::PhysicalLayer16Gts => write!(f, "PhysicalLayer16Gts(0x0026)"),
+            ExtCapabilityType::LaneMargining => write!(f, "LaneMargining(0x0027)"),
+            ExtCapabilityType::PhysicalLayer32Gts => write!(f, "PhysicalLayer32Gts(0x002A)"),
+            ExtCapabilityType::Unknown(id) => write!(f, "Unknown({:#06x})", id),
+        }
+    }
+}
+
 #[derive(Clone)]
 pub struct PciCapability {
     cap_type: CapabilityType,
@@ -2478,6 +2698,118 @@ impl Debug for PciCapabilityList {
     }
 }
 
+// ---- PCIe Extended Capability types ----
+
+/// A single PCIe extended capability entry (config space 0x100–0xFFF).
+#[derive(Clone, Copy, Debug)]
+pub struct PciExtCapability {
+    pub cap_type: ExtCapabilityType,
+    /// Absolute offset of this extended capability header in config space.
+    pub offset: PciConfigAddress,
+    /// Capability structure version (bits 19:16 of the header DWORD).
+    pub version: u8,
+}
+
+/// Iterator over PCIe extended capabilities starting at offset 0x100.
+///
+/// Each header DWORD layout:
+/// - bits\[15:0\]  Extended Capability ID
+/// - bits\[19:16\] Capability Version
+/// - bits\[31:20\] Next Capability Offset (0 = end of list)
+pub struct ExtCapabilityIterator {
+    backend: Arc<dyn PciRW>,
+    offset: PciConfigAddress,
+}
+
+impl ExtCapabilityIterator {
+    const EXT_CAP_START: PciConfigAddress = 0x100;
+    const EXT_CAP_END: PciConfigAddress = 0x1000;
+}
+
+impl Iterator for ExtCapabilityIterator {
+    type Item = PciExtCapability;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // offset must be DWORD-aligned and leave room for a 4-byte DWORD read
+        if self.offset < Self::EXT_CAP_START
+            || self.offset > Self::EXT_CAP_END - 4
+            || (self.offset & 3) != 0
+        {
+            return None;
+        }
+
+        let header = match self.backend.read(self.offset, 4) {
+            Ok(v) => v as u32,
+            Err(_) => return None,
+        };
+
+        // A null DWORD (0x00000000) or all-ones DWORD (0xFFFFFFFF, config space
+        // not implemented) both mean there are no (more) extended caps.
+        if header == 0 || header == 0xFFFFFFFF {
+            self.offset = Self::EXT_CAP_END;
+            return None;
+        }
+
+        let id = (header & 0xFFFF) as u16;
+        let version = ((header >> 16) & 0xF) as u8;
+        let next_offset = ((header >> 20) & 0xFFF) as PciConfigAddress;
+
+        let cap = PciExtCapability {
+            cap_type: ExtCapabilityType::from_id(id),
+            offset: self.offset,
+            version,
+        };
+
+        // next_offset == 0 means this is the last cap in the list.
+        // Validate: must be DWORD-aligned, within [EXT_CAP_START, EXT_CAP_END-4].
+        // Any value outside this range (including 0xFFF etc.) stops iteration.
+        self.offset = if next_offset >= Self::EXT_CAP_START
+            && next_offset <= Self::EXT_CAP_END - 4
+            && (next_offset & 3) == 0
+        {
+            next_offset
+        } else {
+            Self::EXT_CAP_END // sentinel – stops iteration on the next call
+        };
+
+        Some(cap)
+    }
+}
+
+/// Ordered map of PCIe extended capabilities keyed by config-space offset.
+#[derive(Clone)]
+pub struct PciExtCapabilityList(BTreeMap<PciConfigAddress, PciExtCapability>);
+
+impl PciExtCapabilityList {
+    pub fn new() -> Self {
+        Self(BTreeMap::new())
+    }
+}
+
+impl Deref for PciExtCapabilityList {
+    type Target = BTreeMap<PciConfigAddress, PciExtCapability>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for PciExtCapabilityList {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Debug for PciExtCapabilityList {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "PciExtCapabilityList {{\n")?;
+        for (offset, cap) in &self.0 {
+            write!(f, "  0x{:x} {:?} (v{})\n", offset, cap.cap_type, cap.version)?;
+        }
+        write!(f, "}}")
+    }
+}
+
 impl VirtualPciConfigSpace {
     fn _capability_enumerate(&self, backend: Arc<dyn PciRW>) -> CapabilityIterator {
         CapabilityIterator {
@@ -2501,6 +2833,24 @@ impl VirtualPciConfigSpace {
         }
         info!("capability {:#?}", capabilities);
         self.capabilities = capabilities;
+    }
+
+    fn _ext_capability_enumerate(&self, backend: Arc<dyn PciRW>) -> ExtCapabilityIterator {
+        ExtCapabilityIterator {
+            backend,
+            offset: ExtCapabilityIterator::EXT_CAP_START,
+        }
+    }
+
+    /// Walk the PCIe extended configuration space (0x100–0xFFF) and record all
+    /// extended capabilities found.  No further parsing is performed.
+    pub fn ext_capability_enumerate(&mut self) {
+        let mut ext_caps = PciExtCapabilityList::new();
+        for cap in self._ext_capability_enumerate(self.backend.clone()) {
+            ext_caps.insert(cap.offset, cap);
+        }
+        info!("ext_capability {:#?}", ext_caps);
+        self.ext_capabilities = ext_caps;
     }
 
     // detect whether this bridge secondary bus can have only one child device.
