@@ -2344,37 +2344,63 @@ impl ExtCapabilityType {
 impl core::fmt::Debug for ExtCapabilityType {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         match self {
-            ExtCapabilityType::AdvancedErrorReporting => write!(f, "AdvancedErrorReporting(0x0001)"),
+            ExtCapabilityType::AdvancedErrorReporting => {
+                write!(f, "AdvancedErrorReporting(0x0001)")
+            }
             ExtCapabilityType::VirtualChannel => write!(f, "VirtualChannel(0x0002)"),
             ExtCapabilityType::DeviceSerialNumber => write!(f, "DeviceSerialNumber(0x0003)"),
             ExtCapabilityType::PowerBudgeting => write!(f, "PowerBudgeting(0x0004)"),
-            ExtCapabilityType::RootComplexLinkDeclaration => write!(f, "RootComplexLinkDeclaration(0x0005)"),
-            ExtCapabilityType::RootComplexInternalLinkControl => write!(f, "RootComplexInternalLinkControl(0x0006)"),
-            ExtCapabilityType::RootComplexEventCollector => write!(f, "RootComplexEventCollector(0x0007)"),
-            ExtCapabilityType::MultiFunctionVirtualChannel => write!(f, "MultiFunctionVirtualChannel(0x0008)"),
+            ExtCapabilityType::RootComplexLinkDeclaration => {
+                write!(f, "RootComplexLinkDeclaration(0x0005)")
+            }
+            ExtCapabilityType::RootComplexInternalLinkControl => {
+                write!(f, "RootComplexInternalLinkControl(0x0006)")
+            }
+            ExtCapabilityType::RootComplexEventCollector => {
+                write!(f, "RootComplexEventCollector(0x0007)")
+            }
+            ExtCapabilityType::MultiFunctionVirtualChannel => {
+                write!(f, "MultiFunctionVirtualChannel(0x0008)")
+            }
             ExtCapabilityType::VirtualChannelMFVC => write!(f, "VirtualChannelMFVC(0x0009)"),
-            ExtCapabilityType::RootComplexRegisterBlock => write!(f, "RootComplexRegisterBlock(0x000A)"),
+            ExtCapabilityType::RootComplexRegisterBlock => {
+                write!(f, "RootComplexRegisterBlock(0x000A)")
+            }
             ExtCapabilityType::VendorSpecific => write!(f, "VendorSpecific(0x000B)"),
-            ExtCapabilityType::ConfigurationAccessCorrelation => write!(f, "ConfigurationAccessCorrelation(0x000C)"),
+            ExtCapabilityType::ConfigurationAccessCorrelation => {
+                write!(f, "ConfigurationAccessCorrelation(0x000C)")
+            }
             ExtCapabilityType::AccessControlServices => write!(f, "AccessControlServices(0x000D)"),
             ExtCapabilityType::AlternativeRoutingId => write!(f, "AlternativeRoutingId(0x000E)"),
-            ExtCapabilityType::AddressTranslationServices => write!(f, "AddressTranslationServices(0x000F)"),
+            ExtCapabilityType::AddressTranslationServices => {
+                write!(f, "AddressTranslationServices(0x000F)")
+            }
             ExtCapabilityType::SingleRootIov => write!(f, "SingleRootIov(SR-IOV)(0x0010)"),
             ExtCapabilityType::MultiRootIov => write!(f, "MultiRootIov(MR-IOV)(0x0011)"),
             ExtCapabilityType::Multicast => write!(f, "Multicast(0x0012)"),
             ExtCapabilityType::PageRequestInterface => write!(f, "PageRequestInterface(0x0013)"),
             ExtCapabilityType::ResizableBar => write!(f, "ResizableBar(0x0015)"),
-            ExtCapabilityType::DynamicPowerAllocation => write!(f, "DynamicPowerAllocation(0x0016)"),
+            ExtCapabilityType::DynamicPowerAllocation => {
+                write!(f, "DynamicPowerAllocation(0x0016)")
+            }
             ExtCapabilityType::TphRequester => write!(f, "TphRequester(0x0017)"),
-            ExtCapabilityType::LatencyToleranceReporting => write!(f, "LatencyToleranceReporting(0x0018)"),
+            ExtCapabilityType::LatencyToleranceReporting => {
+                write!(f, "LatencyToleranceReporting(0x0018)")
+            }
             ExtCapabilityType::SecondaryPciExpress => write!(f, "SecondaryPciExpress(0x0019)"),
             ExtCapabilityType::ProtocolMultiplexing => write!(f, "ProtocolMultiplexing(0x001A)"),
             ExtCapabilityType::ProcessAddressSpaceId => write!(f, "ProcessAddressSpaceId(0x001B)"),
             ExtCapabilityType::LnRequester => write!(f, "LnRequester(0x001C)"),
-            ExtCapabilityType::DownstreamPortContainment => write!(f, "DownstreamPortContainment(0x001D)"),
+            ExtCapabilityType::DownstreamPortContainment => {
+                write!(f, "DownstreamPortContainment(0x001D)")
+            }
             ExtCapabilityType::L1PmSubstates => write!(f, "L1PmSubstates(0x001E)"),
-            ExtCapabilityType::PrecisionTimeMeasurement => write!(f, "PrecisionTimeMeasurement(0x001F)"),
-            ExtCapabilityType::DesignatedVendorSpecific => write!(f, "DesignatedVendorSpecific(0x0023)"),
+            ExtCapabilityType::PrecisionTimeMeasurement => {
+                write!(f, "PrecisionTimeMeasurement(0x001F)")
+            }
+            ExtCapabilityType::DesignatedVendorSpecific => {
+                write!(f, "DesignatedVendorSpecific(0x0023)")
+            }
             ExtCapabilityType::VfResizableBar => write!(f, "VfResizableBar(0x0024)"),
             ExtCapabilityType::DataLinkFeature => write!(f, "DataLinkFeature(0x0025)"),
             ExtCapabilityType::PhysicalLayer16Gts => write!(f, "PhysicalLayer16Gts(0x0026)"),
@@ -2804,7 +2830,11 @@ impl Debug for PciExtCapabilityList {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(f, "PciExtCapabilityList {{\n")?;
         for (offset, cap) in &self.0 {
-            write!(f, "  0x{:x} {:?} (v{})\n", offset, cap.cap_type, cap.version)?;
+            write!(
+                f,
+                "  0x{:x} {:?} (v{})\n",
+                offset, cap.cap_type, cap.version
+            )?;
         }
         write!(f, "}}")
     }
