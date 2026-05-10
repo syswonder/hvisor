@@ -1858,58 +1858,81 @@ impl VirtualRootComplex {
         bdf: Bdf,
         dev: VirtualPciConfigSpace,
     ) -> Option<ArcRwLockVirtualPciConfigSpace> {
-        let base = dev.get_base();
-        let host_bdf = dev.get_bdf();
-        let vbdf = dev.get_vbdf();
-
-        #[cfg(feature = "dwc_pcie")]
-        let key = {
-            let bus = bdf.bus() as PciConfigAddress;
-            let device = bdf.device() as PciConfigAddress;
-            let function = bdf.function() as PciConfigAddress;
-            let pci_addr = (bus << 24) + (device << 19) + (function << 16);
-            if bus != 0 {
-                pci_addr
-            } else {
-                base
+        let parent_bus = dev.parent_bdf.bus();
+        let offset = 0;
+        let base = if let Some(accessor) = &self.accessor {
+            #[cfg(feature = "dwc_pcie")]
+            let addr = accessor.get_pci_addr_base(bdf);
+            #[cfg(not(feature = "dwc_pcie"))]
+            let addr = accessor.get_physical_address(bdf, offset, parent_bus);
+            match addr {
+                Ok(addr) => addr,
+                Err(_) => {
+                    warn!("can not get physical address for device {:#?}(vbdf), reset device base same to hardware", bdf);
+                    dev.get_base()
+                }
             }
+        } else {
+            warn!("can not found accessor for vpci bus, reset device base same to hardware");
+            dev.get_base()
         };
-
-        #[cfg(not(feature = "dwc_pcie"))]
-        let key = base;
-
-        #[cfg(feature = "dwc_pcie")]
-        {
-            let bus = bdf.bus() as PciConfigAddress;
-            let device = bdf.device() as PciConfigAddress;
-            let function = bdf.function() as PciConfigAddress;
-            let pci_addr = (bus << 24) + (device << 19) + (function << 16);
-            info!(
-                "vpci insert: base_to_bdf[{:#x}] = key_bdf {:#?}, source {}, base {:#x}, pci_addr {:#x}, dev_host_bdf {:#?}, dev_vbdf {:#?}, remapped {}",
-                key,
-                bdf,
-                if key == pci_addr { "pci_addr" } else { "base" },
-                base,
-                pci_addr,
-                host_bdf,
-                vbdf,
-                host_bdf != vbdf
-            );
-        }
-
-        #[cfg(not(feature = "dwc_pcie"))]
-        info!(
-            "vpci insert: base_to_bdf[{:#x}] = key_bdf {:#?}, source base, base {:#x}, dev_host_bdf {:#?}, dev_vbdf {:#?}, remapped {}",
-            key,
-            bdf,
-            base,
-            host_bdf,
-            vbdf,
-            host_bdf != vbdf
-        );
-        self.base_to_bdf.insert(key, bdf);
+        info!("pci insert base {:#x} to bdf {:#?}", base, bdf);
+        self.base_to_bdf.insert(base, bdf);
         self.devs
             .insert(bdf, ArcRwLockVirtualPciConfigSpace::new(dev))
+
+        // let base = dev.get_base();
+        // let host_bdf = dev.get_bdf();
+        // let vbdf = dev.get_vbdf();
+
+        // #[cfg(feature = "dwc_pcie")]
+        // let key = {
+        //     let bus = bdf.bus() as PciConfigAddress;
+        //     let device = bdf.device() as PciConfigAddress;
+        //     let function = bdf.function() as PciConfigAddress;
+        //     let pci_addr = (bus << 24) + (device << 19) + (function << 16);
+        //     if bus != 0 {
+        //         pci_addr
+        //     } else {
+        //         base
+        //     }
+        // };
+
+        // #[cfg(not(feature = "dwc_pcie"))]
+        // let key = base;
+
+        // #[cfg(feature = "dwc_pcie")]
+        // {
+        //     let bus = bdf.bus() as PciConfigAddress;
+        //     let device = bdf.device() as PciConfigAddress;
+        //     let function = bdf.function() as PciConfigAddress;
+        //     let pci_addr = (bus << 24) + (device << 19) + (function << 16);
+        //     info!(
+        //         "vpci insert: base_to_bdf[{:#x}] = key_bdf {:#?}, source {}, base {:#x}, pci_addr {:#x}, dev_host_bdf {:#?}, dev_vbdf {:#?}, remapped {}",
+        //         key,
+        //         bdf,
+        //         if key == pci_addr { "pci_addr" } else { "base" },
+        //         base,
+        //         pci_addr,
+        //         host_bdf,
+        //         vbdf,
+        //         host_bdf != vbdf
+        //     );
+        // }
+
+        // #[cfg(not(feature = "dwc_pcie"))]
+        // info!(
+        //     "vpci insert: base_to_bdf[{:#x}] = key_bdf {:#?}, source base, base {:#x}, dev_host_bdf {:#?}, dev_vbdf {:#?}, remapped {}",
+        //     key,
+        //     bdf,
+        //     base,
+        //     host_bdf,
+        //     vbdf,
+        //     host_bdf != vbdf
+        // );
+        // self.base_to_bdf.insert(key, bdf);
+        // self.devs
+        //     .insert(bdf, ArcRwLockVirtualPciConfigSpace::new(dev))
     }
 
     pub fn devs(&mut self) -> &mut BTreeMap<Bdf, ArcRwLockVirtualPciConfigSpace> {

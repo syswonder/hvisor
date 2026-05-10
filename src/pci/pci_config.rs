@@ -273,10 +273,8 @@ impl Zone {
                     .then_with(|| a.function.cmp(&b.function))
             });
 
-            let mut vbus_pre = bus_range_begin;
-            let mut bus_pre = bus_range_begin;
-            let mut device_pre = 0u8;
             let mut domain_msi_count: u32 = 0;
+
             let mut vdevice_pre = 0u8;
             let msix_backend = get_arch_msix_backend();
             if let Some(x) = msix_backend.clone() {
@@ -300,50 +298,12 @@ impl Zone {
              */
             for dev_config in &filtered_devices {
                 let bdf = Bdf::new_from_config(*dev_config);
-                let bus = bdf.bus();
-                let device = bdf.device();
-                let function = bdf.function();
-
-                /*
-                 * vfunction = if (bus != bus_pre || device != device_pre) && function != 0
-                 * In practice, remapping is performed only for new devices whose function is not 0;
-                 * however, the check for function != 0 does not affect the final result.
-                 */
-                let vfunction = if bus != bus_pre || device != device_pre {
-                    0
-                } else {
-                    function
-                };
-
-                let vbus = if bus > bus_pre {
-                    vbus_pre += 1;
-                    vbus_pre
-                } else {
-                    vbus_pre
-                };
-
-                // Remap device number to be contiguous, starting from 0
-                let vdevice = if bus != bus_pre || device != device_pre {
-                    // New bus or new device, increment device counter
-                    if bus != bus_pre {
-                        vdevice_pre = 0;
-                    } else {
-                        vdevice_pre += 1;
-                    }
-                    vdevice_pre
-                } else {
-                    // Same bus and device, keep the same virtual device number
-                    vdevice_pre
-                };
-
-                let vbdf = Bdf::new(bdf.domain(), vbus, vdevice, vfunction);
-
-                device_pre = device;
-                bus_pre = bus;
-
-                // TODO: adjust vbdf will cause line interrupt injecet error, so remove it temporarily
-                #[cfg(not(feature = "dwc_msi"))]
-                let vbdf = bdf;
+                let vbdf = Bdf::new(
+                    bdf.domain(),
+                    dev_config.v_bus,
+                    dev_config.v_device,
+                    dev_config.v_function,
+                );
 
                 info!("set bdf {:#?} to vbdf {:#?}", bdf, vbdf);
 

@@ -218,17 +218,23 @@ pub struct HvPciDevConfig {
     pub bus: u8,
     pub device: u8,
     pub function: u8,
+    pub v_bus: u8,
+    pub v_device: u8,
+    pub v_function: u8,
     pub dev_type: VpciDevType,
 }
 
 #[macro_export]
 macro_rules! pci_dev {
-    ($domain:expr, $bus:expr, $dev:expr, $func:expr, $dev_type:expr) => {
+    ($domain:expr, $bus:expr, $dev:expr, $func:expr => $v_bus:expr, $v_dev:expr, $v_func:expr, $dev_type:expr) => {
         HvPciDevConfig {
             domain: $domain,
             bus: $bus,
             device: $dev,
             function: $func,
+            v_bus: $v_bus,
+            v_device: $v_dev,
+            v_function: $v_func,
             dev_type: $dev_type,
         }
     };
