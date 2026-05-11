@@ -16,12 +16,12 @@
 #![allow(unused)]
 use crate::{
     arch::cpu::this_cpu_id,
-    arch::ipi::{arch_check_events, arch_hart_suspend, arch_prepare_send_event, arch_send_event},
+    arch::ipi::{arch_check_events, arch_prepare_send_event, arch_send_event},
     consts::{
-        IPI_EVENT_CLEAR_INJECT_IRQ, IPI_EVENT_HART_SUSPEND, IPI_EVENT_SEND_IPI,
-        IPI_EVENT_UPDATE_HART_LINE, MAX_CPU_NUM,
+        IPI_EVENT_CLEAR_INJECT_IRQ, IPI_EVENT_SEND_IPI, IPI_EVENT_UPDATE_HART_LINE,
+        IPI_EVENT_VCPU_SUSPEND, MAX_CPU_NUM,
     },
-    cpu_data::{this_cpu_data, CpuSet},
+    cpu_data::{this_cpu_data, vcpu_suspend, CpuSet},
     device::{irqchip::inject_irq, virtio_trampoline::handle_virtio_irq},
     platform::IRQ_WAKEUP_VIRTIO_DEVICE,
 };
@@ -111,8 +111,8 @@ pub fn check_events() -> bool {
             arch_check_events(event);
             true
         }
-        Some(IPI_EVENT_HART_SUSPEND) => {
-            arch_hart_suspend();
+        Some(IPI_EVENT_VCPU_SUSPEND) => {
+            vcpu_suspend();
             true
         }
         // #[cfg(target_arch = "loongarch64")]

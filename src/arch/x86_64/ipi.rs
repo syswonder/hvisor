@@ -165,10 +165,6 @@ pub fn arch_check_events(event: Option<usize>) {
     }
 }
 
-pub fn arch_hart_suspend() {
-    warn!("unimplemented x86_64 arch_hart_suspend");
-}
-
 pub fn arch_prepare_send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
     debug!("x86_64 arch_prepare_send_event: do nothing now.")
 }

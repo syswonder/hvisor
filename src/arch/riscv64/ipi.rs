@@ -17,7 +17,6 @@
 use crate::consts::IPI_EVENT_SEND_IPI;
 #[cfg(feature = "plic")]
 use crate::consts::IPI_EVENT_UPDATE_HART_LINE;
-use crate::cpu_data::{get_cpu_data, this_cpu_data, CpuSet, VcpuState};
 use crate::platform::BOARD_HARTID_MAP;
 
 // arch_send_event
@@ -43,22 +42,6 @@ pub fn arch_ipi_handler() {
     }
 }
 
-/// Handle hart suspend event.
-pub fn arch_hart_suspend() {
-    info!("cpu {} suspending...", this_cpu_data().id);
-    this_cpu_data().vcpu_state.store(VcpuState::Blocked);
-    loop {
-        // TODO: use wfi to optimize the loop
-        if !this_cpu_data().vcpu_state.is_blocked() {
-            break;
-        }
-        core::hint::spin_loop();
-    }
-    // Remote sets `Ready` to leave Blocked; this hart then marks itself `Running` again.
-    this_cpu_data().vcpu_state.store(VcpuState::Running);
-    info!("cpu {} resumed from suspend.", this_cpu_data().id);
-}
-
 pub fn arch_check_events(event: Option<usize>) {
     match event {
         #[cfg(feature = "plic")]
@@ -78,36 +61,4 @@ pub fn arch_check_events(event: Option<usize>) {
 
 pub fn arch_prepare_send_event(_cpu_id: usize, _ipi_int_id: usize, _event_id: usize) {
     debug!("risc-v arch_prepare_send_event: do nothing now.")
-}
-
-/// Wait for other cpus in the cpu set to suspend.
-#[allow(unused)]
-pub fn wait_for_other_cpus_suspend(cpu_set: CpuSet) {
-    let this_cpu_id = crate::arch::cpu::this_cpu_id();
-    for target_cpu_id in cpu_set.iter() {
-        if target_cpu_id == this_cpu_id {
-            continue;
-        }
-        // Wait for the cpu to suspend.
-        loop {
-            if get_cpu_data(target_cpu_id).vcpu_state.is_blocked() {
-                break;
-            }
-            core::hint::spin_loop();
-        }
-    }
-}
-
-/// Signal other cpus in the cpu set to resume.
-#[allow(unused)]
-pub fn signal_other_cpus_resume(cpu_set: CpuSet) {
-    let this_cpu_id = crate::arch::cpu::this_cpu_id();
-    for target_cpu_id in cpu_set.iter() {
-        if target_cpu_id == this_cpu_id {
-            continue;
-        }
-        get_cpu_data(target_cpu_id)
-            .vcpu_state
-            .store(VcpuState::Ready);
-    }
 }

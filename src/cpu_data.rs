@@ -180,6 +180,54 @@ pub fn this_zone() -> Arc<Zone> {
     this_cpu_data().zone.clone().unwrap()
 }
 
+/// Enter blocked state and wait until another CPU resumes it.
+#[allow(unused)]
+pub fn vcpu_suspend() {
+    info!("cpu {} suspending...", this_cpu_data().id);
+    this_cpu_data().vcpu_state.store(VcpuState::Blocked);
+    loop {
+        // TODO: use wfi to optimize the loop
+        if !this_cpu_data().vcpu_state.is_blocked() {
+            break;
+        }
+        core::hint::spin_loop();
+    }
+    // Remote sets `Ready` to leave Blocked; this hart then marks itself `Running` again.
+    this_cpu_data().vcpu_state.store(VcpuState::Running);
+    info!("cpu {} resumed from suspend.", this_cpu_data().id);
+}
+
+/// Wait for other CPUs in the cpu set to enter Blocked state.
+#[allow(unused)]
+pub fn wait_for_other_vcpus_suspend(cpu_set: CpuSet) {
+    let this_cpu_id = this_cpu_id();
+    for target_cpu_id in cpu_set.iter() {
+        if target_cpu_id == this_cpu_id {
+            continue;
+        }
+        loop {
+            if get_cpu_data(target_cpu_id).vcpu_state.is_blocked() {
+                break;
+            }
+            core::hint::spin_loop();
+        }
+    }
+}
+
+/// Signal other CPUs in the cpu set to resume from Blocked.
+#[allow(unused)]
+pub fn signal_other_vcpus_resume(cpu_set: CpuSet) {
+    let this_cpu_id = this_cpu_id();
+    for target_cpu_id in cpu_set.iter() {
+        if target_cpu_id == this_cpu_id {
+            continue;
+        }
+        get_cpu_data(target_cpu_id)
+            .vcpu_state
+            .store(VcpuState::Ready);
+    }
+}
+
 #[repr(C)]
 #[derive(Copy, Clone, Debug)]
 pub struct CpuSet {
