@@ -53,7 +53,8 @@ const ROOT_ZONE_UEFI_REGION: HvConfigMemoryRegion = HvConfigMemoryRegion {
 const ROOT_ZONE_UEFI_REGION_ID: usize = 0x3;
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
-pub const ROOT_ZONE_CMDLINE: &str = "video=vesafb console=tty0 nointremap no_timer_check efi=noruntime pci=pcie_scan_all root=/dev/nvme0n1p5 rw init=/init rootwait\0";
+pub const ROOT_ZONE_CMDLINE: &str = "console=tty0 video=vesafb earlycon=vesafb nointremap no_timer_check efi=noruntime pci=pcie_scan_all root=/dev/nvme0n1p6 rdinit=/init rw rootwait\0";
+// console=tty0 video=vesafb earlycon=vesafb root=/dev/nvme0n1p5
 // pub const ROOT_ZONE_CMDLINE: &str = "video=vesafb console=ttyS0 earlyprintk=serial nointremap no_timer_check pci=pcie_scan_all root=/dev/vda rw init=/init\0";
 //"console=ttyS0 earlyprintk=serial rdinit=/init nokaslr nointremap\0"; // noapic
 // video=vesafb
@@ -80,7 +81,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 15] = [
         size: 0x2f_0000,
     }, // ram
     HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_RAM,
+        mem_type: MEM_TYPE_RESERVED,
         physical_start: 0x1a30_0000,
         virtual_start: 0x1530_0000,
         size: 0x2000_0000,
@@ -94,7 +95,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 15] = [
     }, // hpet
     // TODO: e820 mem space probe
     HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_RESERVED,
+        mem_type: MEM_TYPE_RAM,
         physical_start: 0x1_0000_0000,
         virtual_start: 0x1_0000_0000,
         size: 0x2_0000_0000,
@@ -113,9 +114,9 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 15] = [
     }, // pnp 00:05
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RESERVED,
-        physical_start: 0xfe01_1000,
-        virtual_start: 0xfe01_1000,
-        size: 0x40_0000,
+        physical_start: 0xfe00_0000,
+        virtual_start: 0xfe00_0000,
+        size: 0xd0_0000,
     }, // reserved
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RESERVED,
@@ -151,8 +152,8 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     kernel_entry_gpa: ROOT_ZONE_VMLINUX_ENTRY_ADDR,
     cmdline_load_gpa: ROOT_ZONE_CMDLINE_ADDR,
     setup_load_gpa: ROOT_ZONE_SETUP_ADDR,
-    initrd_load_gpa: 0, // 0x1500_0000,
-    initrd_size: 0,     // 0x26_b000,
+    initrd_load_gpa: 0x1530_0000, // 0x1500_0000,
+    initrd_size: 0x600_0000,      // 0x26_b000,
     rsdp_memory_region_id: ROOT_ZONE_RSDP_REGION_ID,
     acpi_memory_region_id: ROOT_ZONE_ACPI_REGION_ID,
     uefi_memory_region_id: ROOT_ZONE_UEFI_REGION_ID,
@@ -178,13 +179,13 @@ pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [HvPciConfig {
 }];
 
 pub const ROOT_PCI_MAX_BUS: usize = 2;
-pub const ROOT_PCI_DEVS: [HvPciDevConfig; 18] = [
+pub const ROOT_PCI_DEVS: [HvPciDevConfig; 19] = [
     pci_dev!(0x0, 0x0, 0x0, 0x0, VpciDevType::Physical), // host bridge
     pci_dev!(0x0, 0x0, 0x2, 0x0, VpciDevType::Physical), // VGA controller
     pci_dev!(0x0, 0x0, 0x4, 0x0, VpciDevType::Physical),
     pci_dev!(0x0, 0x0, 0x8, 0x0, VpciDevType::Physical),
     pci_dev!(0x0, 0x0, 0xa, 0x0, VpciDevType::Physical),
-    // pci_dev!(0x0, 0x0, 0xd, 0x0), // USB controller
+    pci_dev!(0x0, 0x0, 0xd, 0x0, VpciDevType::Physical), // USB controller
     pci_dev!(0x0, 0x0, 0x12, 0x0, VpciDevType::Physical), // serial controller
     pci_dev!(0x0, 0x0, 0x14, 0x0, VpciDevType::Physical), // USB controller
     pci_dev!(0x0, 0x0, 0x14, 0x2, VpciDevType::Physical), // RAM memory
@@ -196,8 +197,8 @@ pub const ROOT_PCI_DEVS: [HvPciDevConfig; 18] = [
     pci_dev!(0x0, 0x0, 0x1f, 0x3, VpciDevType::Physical), // audio controller
     pci_dev!(0x0, 0x0, 0x1f, 0x4, VpciDevType::Physical), // SMBus
     pci_dev!(0x0, 0x0, 0x1f, 0x5, VpciDevType::Physical), // serial bus controller
-    pci_dev!(0x0, 0x1, 0x0, 0x0, VpciDevType::Physical),  // ethernet controller
-    pci_dev!(0x0, 0x2, 0x0, 0x0, VpciDevType::Physical),  // memory controller
+    pci_dev!(0x0, 0x1, 0x0, 0x0, VpciDevType::Physical), // ethernet controller
+    pci_dev!(0x0, 0x2, 0x0, 0x0, VpciDevType::Physical), // memory controller
 ];
 
 #[cfg(all(feature = "graphics"))]

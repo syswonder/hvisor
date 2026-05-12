@@ -153,11 +153,19 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
         let e = rootcomplex.enumerate(Some(range), domain, allocator_opt);
         info!("begin enumerate {:#x?}", e);
         for node in e {
-            info!("node {:#?}", node);
+            // info!("node {:#?}", node);
+            let bdf = node.get_bdf();
+            info!("node {:#?}", bdf);
             GLOBAL_PCIE_LIST
                 .lock()
                 .insert(node.get_bdf(), ArcRwLockVirtualPciConfigSpace::new(node));
+            info!("insert node {:#?} to global list", bdf);
+            //TODO: temp
+            if (bdf.bus == 2 && bdf.device == 0 && bdf.function == 1) {
+                break;
+            }
         }
+        info!("enumerate done for root complex with domain {:#x}", domain);
     }
     info!("hvisor pci init done \n{:#?}", GLOBAL_PCIE_LIST);
     Ok(())

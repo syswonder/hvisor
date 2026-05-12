@@ -215,14 +215,106 @@ impl ModRM {
     }
 
     pub fn get_modrm(&self, inst: &Vec<u8>, disp_id: usize) -> Option<OprandType> {
+        // Check if we need to use SIB - when rm field is 4
+        if self.rm == 4 {
+            // Read SIB byte
+            let sib_byte = inst[disp_id];
+            let scale = sib_byte.get_bits(6..8) as u32;
+            let index = sib_byte.get_bits(3..6) as u32;
+            let base = sib_byte.get_bits(0..3) as u32;
+
+            // Calculate the effective address
+            let mut addr = 0u64;
+
+            // Add base register value (handle special case where base=5 means no base register in mod=0)
+            if !(self._mod == 0 && base == 5) {
+                let base_r: RmReg = base.try_into().unwrap();
+                addr = base_r.read().unwrap();
+            }
+
+            // Add scaled index register value (unless index=4, which means no index register)
+            if index != 4 {
+                let index_r: RmReg = index.try_into().unwrap();
+                let index_val = index_r.read().unwrap();
+
+                // Apply scale factor (1 << scale = 2^scale)
+                addr += index_val * (1u64 << scale);
+            }
+
+            // Add displacement based on mod field
+            let sib_offset = 1; // Skip SIB byte
+            match self._mod {
+                0 => {
+                    // Special case: if base is 5 (RBP/EBP) with mod=0, only displacement is used
+                    if base == 5 {
+                        let mut buf = [0u8; 4];
+                        buf[0..4]
+                            .copy_from_slice(&inst[disp_id + sib_offset..disp_id + sib_offset + 4]);
+                        let disp_32 = i32::from_ne_bytes(buf) as u64;
+                        addr = disp_32;
+                    }
+                }
+                1 => {
+                    // 8-bit signed displacement
+                    let mut buf = [0u8; 1];
+                    buf[0..1]
+                        .copy_from_slice(&inst[disp_id + sib_offset..disp_id + sib_offset + 1]);
+                    let disp_8 = i8::from_ne_bytes(buf) as i64 as u64;
+                    addr = addr.wrapping_add(disp_8);
+                }
+                2 => {
+                    // 32-bit signed displacement
+                    let mut buf = [0u8; 4];
+                    buf[0..4]
+                        .copy_from_slice(&inst[disp_id + sib_offset..disp_id + sib_offset + 4]);
+                    let disp_32 = i32::from_ne_bytes(buf) as u64;
+                    addr = addr.wrapping_add(disp_32);
+                }
+                _ => {} // Should not happen
+            }
+
+            // Return address calculated with SIB
+            let len = match self._mod {
+                0 => {
+                    if base == 5 {
+                        4 + sib_offset
+                    } else {
+                        sib_offset
+                    }
+                } // If base was 5, disp32 was used
+                1 => 1 + sib_offset, // SIB + disp8
+                2 => 4 + sib_offset, // SIB + disp32
+                _ => sib_offset,
+            };
+
+            return Some(OprandType::Gpa {
+                gpa: gva_to_gpa(addr as _).unwrap(),
+                len,
+            });
+        }
+
+        // Original logic for non-SIB cases
         let reg: RmReg = self.rm.try_into().unwrap();
         let mut reg_val = reg.read().unwrap();
-        // TODO: SIB
+
         match self._mod {
-            0 => Some(OprandType::Gpa {
-                gpa: gva_to_gpa(reg_val as _).unwrap(),
-                len: 0,
-            }),
+            0 => {
+                // Special case when rm=5 and mod=0: disp32 only (no base register)
+                if self.rm == 5 {
+                    let mut buf = [0u8; 4];
+                    buf[0..4].copy_from_slice(&inst[disp_id..disp_id + 4]);
+                    let disp_32 = i32::from_ne_bytes(buf) as u64;
+                    Some(OprandType::Gpa {
+                        gpa: gva_to_gpa(disp_32 as _).unwrap(),
+                        len: 4,
+                    })
+                } else {
+                    Some(OprandType::Gpa {
+                        gpa: gva_to_gpa(reg_val as _).unwrap(),
+                        len: 0,
+                    })
+                }
+            }
             1 => {
                 let mut buf = [0u8; 1];
                 buf[0..1].copy_from_slice(&inst[disp_id..disp_id + 1]);

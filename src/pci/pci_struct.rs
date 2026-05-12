@@ -981,6 +981,7 @@ impl<B: BarAllocator> PciIterator<B> {
         };
 
         let bdf = Bdf::new(self.domain, bus, device, function);
+        info!("get node, bdf {:#?}, parent_bus {:#x}", bdf, parent_bus);
 
         let address = self.address(parent_bus, bdf);
         let pci_addr_base = self.get_pci_addr_base(bdf);
@@ -990,7 +991,7 @@ impl<B: BarAllocator> PciIterator<B> {
         let pci_header = PciConfigHeader::new_with_region(region);
         let (vender_id, device_id) = pci_header.id();
 
-        // warn!("vender_id {:#x}", vender_id);
+        info!("vender_id {:#x}", vender_id);
 
         // Check if device exists
         if vender_id == 0xffff || self.accessor.skip_device(bdf) {

@@ -273,6 +273,8 @@ pub enum VmcsGuest64 {
     IA32_BNDCFGS = 0x2812,
     /// Guest IA32_RTIT_CTL (full).
     IA32_RTIT_CTL = 0x2814,
+    /// Guest XCR0 (full).
+    XCR0 = 0x2816,
 }
 vmcs_read!(VmcsGuest64, u64);
 vmcs_write!(VmcsGuest64, u64);

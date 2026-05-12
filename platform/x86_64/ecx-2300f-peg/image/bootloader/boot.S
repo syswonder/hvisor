@@ -35,6 +35,9 @@ prot_gdt:
     .quad 0x0000000000000000    # 0x00: null
     .quad 0x00cf9b000000ffff    # 0x08: code segment (base=0, limit=0xfffff, type=32bit code exec/read, DPL=0, 4k)
     .quad 0x00cf93000000ffff    # 0x10: data segment (base=0, limit=0xfffff, type=32bit data read/write, DPL=0, 4k)
+    .quad 0x00cf93000000ffff    # 0x18: data segment (base=0, limit=0xfffff, type=32bit data read/write, DPL=0, 4k)
+    .quad 0x00cffb000000ffff    # 0x20: user code segment (base=0, limit=0xfffff, type=32bit code exec/read, DPL=3, 4k)
+    .quad 0x00cff3000000ffff    # 0x28: user data segment (base=0, limit=0xfffff, type=32bit data read/write, DPL=3, 4k)
 
 prot_gdt_desc:
     .short  prot_gdt_desc - prot_gdt - 1    # limit

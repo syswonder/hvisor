@@ -16,17 +16,22 @@ entry16:
     or      eax, 0x1
     mov     cr0, eax
 
-    ljmp    0x8, entry32
+    ljmp    0x10, entry32
 
 .code32
 .global entry32
 entry32:
-    mov     ax, 0x10
+
+    mov     ax, 0x18
     mov     ds, ax
     mov     es, ax
     mov     ss, ax
     mov     fs, ax
     mov     gs, ax
+
+    mov     ebp, 0
+    mov     edi, 0
+    mov     ebx, 0
 
     jmp     ecx
 
@@ -34,7 +39,8 @@ entry32:
 prot_gdt:
     .quad 0x0000000000000000    # 0x00: null
     .quad 0x00cf9b000000ffff    # 0x08: code segment (base=0, limit=0xfffff, type=32bit code exec/read, DPL=0, 4k)
-    .quad 0x00cf93000000ffff    # 0x10: data segment (base=0, limit=0xfffff, type=32bit data read/write, DPL=0, 4k)
+    .quad 0x00cf9b000000ffff    # 0x10: code segment (base=0, limit=0xfffff, type=32bit code exec/read, DPL=0, 4k)
+    .quad 0x00cf93000000ffff    # 0x18: data segment (base=0, limit=0xfffff, type=32bit data read/write, DPL=0, 4k)
 
 prot_gdt_desc:
     .short  prot_gdt_desc - prot_gdt - 1    # limit

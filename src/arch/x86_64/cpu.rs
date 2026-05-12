@@ -342,7 +342,7 @@ impl ArchCpu {
         Ok(())
     }
 
-    fn set_cr(&mut self, cr_idx: usize, val: u64) -> HvResult {
+    pub(super) fn set_cr(&mut self, cr_idx: usize, val: u64) -> HvResult {
         match cr_idx {
             0 => {
                 // Retrieve/validate restrictions on CR0
@@ -357,6 +357,11 @@ impl ArchCpu {
                 // & !(Cr0Flags::NOT_WRITE_THROUGH | Cr0Flags::CACHE_DISABLE).bits();
                 let must1 = Msr::IA32_VMX_CR0_FIXED0.read()
                     & !(Cr0Flags::PAGING | Cr0Flags::PROTECTED_MODE_ENABLE).bits();
+                let cur = VmcsGuestNW::CR0.read()?;
+                /*info!(
+                    "write: cr0, val: {:#x}, must0: {:#x}, must1: {:#x}, cur: {:#x}, fixed0: {:#x}, fixed1: {:#x}",
+                    val, must0, must1, cur, Msr::IA32_VMX_CR0_FIXED0.read(), Msr::IA32_VMX_CR0_FIXED1.read()
+                );*/
                 VmcsGuestNW::CR0.write(((val & must0) | must1) as _)?;
                 VmcsControlNW::CR0_READ_SHADOW.write(val as _)?;
                 VmcsControlNW::CR0_GUEST_HOST_MASK.write((must1 | !must0) as _)?;
@@ -397,7 +402,7 @@ impl ArchCpu {
             VmcsControl32::PINBASED_EXEC_CONTROLS,
             Msr::IA32_VMX_TRUE_PINBASED_CTLS,
             Msr::IA32_VMX_PINBASED_CTLS.read() as u32,
-            (PinCtrl::NMI_EXITING | PinCtrl::EXTERNAL_INTERRUPT_EXITING).bits(),
+            (PinCtrl::EXTERNAL_INTERRUPT_EXITING).bits(), // PinCtrl::NMI_EXITING
             0,
         )?;
 
@@ -481,10 +486,11 @@ impl ArchCpu {
     }
 
     fn setup_vmcs_guest(&mut self, entry: GuestPhysAddr, rsp: GuestPhysAddr) -> HvResult {
-        let cr0_guest = Cr0Flags::EXTENSION_TYPE | Cr0Flags::NUMERIC_ERROR;
-        let cr4_guest = Cr4Flags::VIRTUAL_MACHINE_EXTENSIONS;
+        // TODO: ?
+        let cr0_guest = Cr0Flags::NUMERIC_ERROR | Cr0Flags::EXTENSION_TYPE;
+        let cr4_guest = Cr4Flags::VIRTUAL_MACHINE_EXTENSIONS | Cr4Flags::OSXSAVE;
 
-        self.set_cr(0, cr0_guest.bits());
+        self.set_cr(0, 0);
         self.set_cr(3, 0);
         self.set_cr(4, cr4_guest.bits());
 

@@ -16,24 +16,66 @@
 
 use crate::{
     arch::{
+        acpi::get_apic_id,
         cpu::{this_apic_id, this_cpu_id},
         idt::IdtVector,
         ipi,
         msr::Msr::{self, *},
+        zone::HvArchZoneConfig,
     },
     cpu_data::this_cpu_data,
     device::irqchip::pic::pop_vector,
     error::HvResult,
     memory::Frame,
+    memory::MMIOAccess,
+    zone::Zone,
 };
 use bit_field::BitField;
 use core::{ops::Range, u32};
 use x2apic::lapic::{LocalApic, LocalApicBuilder, TimerMode};
 
+// APIC Delivery Mode constants
+const APIC_DM_INIT: u64 = 0x00500;
+const APIC_DM_STARTUP: u64 = 0x00600;
+const APIC_INT_LEVELTRIG: u64 = 0x08000;
+const APIC_INT_ASSERT: u64 = 0x04000;
+
+/// Convert CPU ID to LDR value for flat mode
+/// In flat mode, CPU ID (0-7) maps to bit position (24-31) in LDR
+pub fn cpu_id_to_flat_ldr(cpu_id: u32) -> u32 {
+    if cpu_id >= 8 {
+        panic!("CPU ID must be less than 8 for flat mode");
+    }
+    // Set the bit corresponding to the CPU ID in the logical destination field
+    // CPU ID 0 maps to bit 24, CPU ID 1 to bit 25, etc.
+    1 << (24 + cpu_id)
+}
+
+/// Convert LDR value to CPU IDs for flat mode
+/// Returns an array of CPU IDs corresponding to each set bit in the LDR
+pub fn flat_ldr_to_cpu_ids(ldr_value: u32) -> alloc::vec::Vec<u32> {
+    let mut cpu_ids = alloc::vec::Vec::new();
+
+    // Extract the logical destination field (bits 24-31)
+    let logical_field = ldr_value & 0xFF000000;
+
+    // Check each bit in the logical field
+    for i in 0..8 {
+        if (logical_field & (1 << (24 + i))) != 0 {
+            cpu_ids.push(i);
+        }
+    }
+
+    cpu_ids
+}
+
 pub struct VirtLocalApic {
     pub phys_lapic: LocalApic,
     pub virt_timer_vector: u8,
     virt_lvt_timer_bits: u32,
+    icr_high: u64,
+    is_icr_high_set: bool,
+    is_flat_mode: bool,
 }
 
 impl VirtLocalApic {
@@ -46,6 +88,9 @@ impl VirtLocalApic {
             ),
             virt_timer_vector: IdtVector::APIC_TIMER_VECTOR as _,
             virt_lvt_timer_bits: (1 << 16) as _, // masked
+            icr_high: 0,
+            is_icr_high_set: false,
+            is_flat_mode: false,
         }
     }
 
@@ -71,13 +116,27 @@ impl VirtLocalApic {
         &mut this_cpu_data().arch_cpu.virt_lapic.phys_lapic
     }
 
-    pub fn rdmsr(&mut self, msr: Msr) -> HvResult<u64> {
+    pub fn write_icr_high(&mut self, value: u32) {
+        self.icr_high = value as u64;
+        self.is_icr_high_set = true;
+    }
+
+    pub fn rdmsr(&mut self, msr: Msr, is_mmio: bool) -> HvResult<u64> {
         match msr {
             IA32_X2APIC_APICID => {
                 // info!("apicid: {:x}", this_cpu_id());
                 Ok(this_apic_id() as u64)
             }
-            IA32_X2APIC_LDR => Ok(this_apic_id() as u64), // logical apic id
+            IA32_X2APIC_LDR => {
+                if is_mmio {
+                    if self.is_flat_mode {
+                        return Ok(cpu_id_to_flat_ldr(this_cpu_id() as u32) as u64);
+                    }
+                    Ok((this_apic_id() << 24).get_bits(0..32) as u64)
+                } else {
+                    Ok(this_apic_id() as u64)
+                }
+            }
             IA32_X2APIC_ISR0 | IA32_X2APIC_ISR1 | IA32_X2APIC_ISR2 | IA32_X2APIC_ISR3
             | IA32_X2APIC_ISR4 | IA32_X2APIC_ISR5 | IA32_X2APIC_ISR6 | IA32_X2APIC_ISR7 => {
                 // info!("isr!");
@@ -89,7 +148,7 @@ impl VirtLocalApic {
                 Ok(0)
             }
             IA32_X2APIC_LVT_TIMER => Ok(self.virt_lvt_timer_bits as _),
-            _ => hv_result_err!(ENOSYS),
+            _ => Ok(msr.read()),
         }
     }
 
@@ -102,7 +161,52 @@ impl VirtLocalApic {
             }
             IA32_X2APIC_ICR => {
                 // info!("ICR value: {:x}", value);
-                ipi::send_ipi(value);
+                if self.is_icr_high_set {
+                    let dest_array = if self.is_flat_mode {
+                        // Check if value contains specific APIC bits
+                        let value_lower = value & 0xffff_ffff;
+                        let has_special_bits = (value_lower & APIC_DM_INIT != 0)
+                            || (value_lower & APIC_DM_STARTUP != 0)
+                            || (value_lower & APIC_INT_LEVELTRIG != 0)
+                            || (value_lower & APIC_INT_ASSERT != 0);
+
+                        if has_special_bits {
+                            alloc::vec![(self.icr_high as u64) << 8]
+                        } else {
+                            // Use flat_ldr_to_cpu_ids and shift each element left 32 bits
+                            let cpu_ids = flat_ldr_to_cpu_ids(self.icr_high as u32);
+                            if !cpu_ids.is_empty() {
+                                cpu_ids
+                                    .iter()
+                                    .map(|&id| (get_apic_id(id as usize) as u64) << 32)
+                                    .collect()
+                            } else {
+                                alloc::vec![(self.icr_high as u64) << 8] // fallback
+                            }
+                        }
+                    } else {
+                        alloc::vec![(self.icr_high as u64) << 8]
+                    };
+                    self.is_icr_high_set = false;
+
+                    // Send IPI to each destination in the array
+                    for &dest in &dest_array {
+                        let icr_value = (dest & !0xffff_ffff) | (value & 0xffff_ffff);
+                        ipi::send_ipi(icr_value)?;
+                    }
+                } else {
+                    ipi::send_ipi(value);
+                }
+                Ok(())
+            }
+            IA32_X2APIC_LDR => {
+                if !self.is_flat_mode {
+                    unsafe { msr.write(value) };
+                }
+                Ok(())
+            }
+            IA32_X2APIC_DFR => {
+                self.is_flat_mode = value == 0xffffffff;
                 Ok(())
             }
             IA32_X2APIC_LVT_TIMER => {
@@ -131,7 +235,59 @@ impl VirtLocalApic {
                 }
                 Ok(())
             }
-            _ => hv_result_err!(ENOSYS),
+            _ => {
+                unsafe { msr.write(value) };
+                Ok(())
+            }
         }
+    }
+}
+
+fn offset_to_lapic_msr(offset: usize) -> Result<Msr, u32> {
+    // 0x0, 0x10, 0x20, ... mapped to x2apic MSR 0x800, 0x810, ...
+    let msr = 0x800 + ((offset & 0xff0) >> 4);
+    if msr == 0x831 {
+        return Msr::try_from(0x830);
+    }
+    Msr::try_from(msr as u32)
+}
+
+pub fn mmio_lapic_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
+    /*if mmio.address != 0xb0 {
+        info!(
+            "mmio lapic access: addr={:#x} value={:#x} is_write={}",
+            mmio.address, mmio.value, mmio.is_write
+        );
+    }*/
+    if let Ok(msr) = offset_to_lapic_msr(mmio.address) {
+        /*info!(
+            "lapic msr access: msr={:#x} value={:#x} is_write={}",
+            msr as u32, mmio.value, mmio.is_write
+        );*/
+        let virt_lapic = &mut this_cpu_data().arch_cpu.virt_lapic;
+        if msr == Msr::IA32_X2APIC_ICR && mmio.address == 0x310 && mmio.is_write {
+            virt_lapic.write_icr_high(mmio.value as u32);
+            return Ok(());
+        }
+        if mmio.is_write {
+            virt_lapic.wrmsr(msr, mmio.value as u64)
+        } else {
+            mmio.value = virt_lapic.rdmsr(msr, true)?.try_into().unwrap_or(0);
+            Ok(())
+        }
+    } else {
+        /*info!(
+            "unhandled mmio lapic access: addr={:#x} value={:#x} is_write={}",
+            mmio.address, mmio.value, mmio.is_write
+        );*/
+        Ok(())
+    }
+}
+
+impl Zone {
+    pub fn lapic_mmio_init(&mut self, arch: &HvArchZoneConfig) {
+        let lapic_base = 0xfee0_0000;
+        let lapic_size = 0x1000;
+        self.mmio_region_register(lapic_base, lapic_size, mmio_lapic_handler, lapic_base);
     }
 }

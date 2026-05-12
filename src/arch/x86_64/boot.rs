@@ -415,7 +415,7 @@ impl BootParams {
         self.screen_info.red_pos = 16;
         self.screen_info.alpha_size = 8;
         self.screen_info.alpha_pos = 24;
-        self.screen_info.orig_video_is_vga = VIDEO_TYPE_EFI;
+        self.screen_info.orig_video_is_vga = VIDEO_TYPE_VLFB;
         self.screen_info.capabilities = 0;
         self.vid_mode = 0xffff;
 
@@ -537,47 +537,121 @@ pub fn print_memory_map() {
 /// copy kernel modules to the right place
 pub fn module_init(info_addr: usize) {
     println!("module_init");
+
+    const MAX_MODULES: usize = 16;
+
+    #[derive(Clone, Copy)]
+    struct ModuleInfo {
+        start: usize,
+        end: usize,
+        dst: usize,
+        string_ptr: usize,
+    }
+
+    let mut modules = [ModuleInfo {
+        start: 0,
+        end: 0,
+        dst: 0,
+        string_ptr: 0,
+    }; MAX_MODULES];
+    let mut module_count = 0;
+
     let mut cur = info_addr;
     let total_size = unsafe { *(cur as *const u32) } as usize;
-
-    let mut cnt = 0;
     cur += 8;
-    while cur < info_addr + total_size {
+    while cur < info_addr + total_size && module_count < MAX_MODULES {
         let tag_type = unsafe { *(cur as *const u32) };
-        let ptr = cur as *const multiboot_tag::Modules;
-        cur += ((unsafe { *((cur + 4) as *const u32) } as usize + 7) & (!7));
-
         if tag_type == multiboot_tag::END {
             break;
         }
-        if tag_type != multiboot_tag::MODULES {
-            continue;
+        if tag_type == multiboot_tag::MODULES {
+            let ptr = cur as *const multiboot_tag::Modules;
+            let module = unsafe { *ptr };
+            let string_ptr = (ptr as usize) + size_of::<Modules>();
+            modules[module_count] = ModuleInfo {
+                start: module.mod_start as usize,
+                end: module.mod_end as usize,
+                dst: 0, // parse later
+                string_ptr,
+            };
+            module_count += 1;
         }
-
-        let module = unsafe { *ptr };
-        let dst = unsafe {
-            usize::from_str_radix(
-                CStr::from_ptr(((ptr as usize) + size_of::<Modules>()) as *const c_char)
-                    .to_str()
-                    .unwrap(),
-                16,
-            )
-            .unwrap()
-        };
-        println!("module: {:#x?}, addr: {:#x?}", module, dst);
-        cnt += 1;
-
-        if dst == 0x0 {
-            continue;
-        }
-
-        unsafe {
-            core::ptr::copy(
-                module.mod_start as *mut u8,
-                dst as *mut u8,
-                (module.mod_end - module.mod_start + 1) as usize,
-            )
-        };
+        cur += ((unsafe { *((cur + 4) as *const u32) } as usize + 7) & (!7));
     }
-    println!("module cnt: {:x}", cnt);
+
+    // parse dst
+    for i in 0..module_count {
+        let cstr = unsafe { CStr::from_ptr(modules[i].string_ptr as *const c_char) };
+        modules[i].dst = usize::from_str_radix(cstr.to_str().unwrap(), 16).unwrap();
+        println!(
+            "module: start={:#x}, end={:#x}, dst={:#x}",
+            modules[i].start, modules[i].end, modules[i].dst
+        );
+    }
+
+    // now move in order
+    let mut moved = [false; MAX_MODULES];
+    let mut moved_count = 0;
+    while moved_count < module_count {
+        let mut found = false;
+        for i in 0..module_count {
+            if moved[i] {
+                continue;
+            }
+            let dst = modules[i].dst;
+            let dst_end = dst + (modules[i].end - modules[i].start);
+            let mut can_move = true;
+            for j in 0..module_count {
+                if moved[j] || i == j {
+                    continue;
+                }
+                let start = modules[j].start;
+                let end = modules[j].end;
+                if dst < end && dst_end > start {
+                    can_move = false;
+                    break;
+                }
+            }
+            if can_move {
+                if modules[i].dst != 0 {
+                    let size = modules[i].end - modules[i].start + 1;
+                    let dst_end = modules[i].dst + size;
+                    let overlaps_self =
+                        modules[i].dst < modules[i].end && dst_end > modules[i].start;
+                    unsafe {
+                        if overlaps_self {
+                            println!(
+                                "moving overlapping module: src={:#x}-{:#x}, dst={:#x}-{:#x}",
+                                modules[i].start, modules[i].end, modules[i].dst, dst_end
+                            );
+                            core::ptr::copy(
+                                modules[i].start as *const u8,
+                                modules[i].dst as *mut u8,
+                                size,
+                            );
+                        } else {
+                            println!(
+                                "moving module: src={:#x}-{:#x}, dst={:#x}-{:#x}",
+                                modules[i].start, modules[i].end, modules[i].dst, dst_end
+                            );
+                            core::ptr::copy_nonoverlapping(
+                                modules[i].start as *const u8,
+                                modules[i].dst as *mut u8,
+                                size,
+                            );
+                        }
+                    }
+                }
+                moved[i] = true;
+                moved_count += 1;
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            panic!("Cannot move modules due to overlapping addresses");
+        }
+    }
+
+    println!("module cnt: {:x}", module_count);
 }

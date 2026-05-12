@@ -61,10 +61,13 @@ pub enum Msr {
     IA32_X2APIC_APICID = 0x802,
     /// Version register.
     IA32_X2APIC_VERSION = 0x803,
+    IA32_X2APIC_TASKPRI = 0x808,
     /// End-Of-Interrupt register.
     IA32_X2APIC_EOI = 0x80B,
     /// Logical Destination Register.
     IA32_X2APIC_LDR = 0x80D,
+    /// Destination Format Register.
+    IA32_X2APIC_DFR = 0x80E,
     /// Spurious Interrupt Vector register.
     IA32_X2APIC_SIVR = 0x80F,
 

@@ -41,7 +41,7 @@ use crate::{
 };
 use bit_field::BitField;
 use core::mem::size_of;
-use x86_64::registers::control::Cr4Flags;
+use x86_64::registers::control::{Cr0Flags, Cr4Flags};
 
 use super::{
     pci::{handle_pci_config_port_read, handle_pci_config_port_write},
@@ -61,6 +61,7 @@ const VM_EXIT_INSTR_LEN_HLT: u8 = 1;
 const VM_EXIT_INSTR_LEN_RDMSR: u8 = 2;
 const VM_EXIT_INSTR_LEN_WRMSR: u8 = 2;
 const VM_EXIT_INSTR_LEN_VMCALL: u8 = 3;
+const VM_EXIT_INSTR_LEN_CR_ACCESS: u8 = 3;
 
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy)]
@@ -151,6 +152,11 @@ fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
                 ecx.remove(ExtendedFeaturesEcx::WAITPKG);
                 res.ecx = ecx.bits() as _;
 
+                // Disable AVX2 (bit 5 of EBX for subleaf 0)
+                if regs.rcx == 0 {
+                    res.ebx &= !(1 << 5);
+                }
+
                 res
             }
             CpuIdEax::ProcessorFrequencyInfo => {
@@ -198,16 +204,95 @@ fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
 
 fn handle_cr_access(arch_cpu: &mut ArchCpu) -> HvResult {
     let cr_access_info = VmxCrAccessInfo::new()?;
-    panic!(
-        "VM-exit: CR{} access:\n{:#x?}",
-        cr_access_info.cr_n, arch_cpu
-    );
-
-    match cr_access_info.cr_n {
-        0 => {}
-        _ => {}
+    /*info!(
+        "VM exit: control register access: type={} CR{} GPR{} @ {:#x?}",
+        cr_access_info.access_type, cr_access_info.cr_n, cr_access_info.gpr, arch_cpu
+    );*/
+    fn get_gpr_value(arch_cpu: &ArchCpu, gpr: u8) -> HvResult<u64> {
+        let regs = arch_cpu.regs();
+        Ok(match gpr {
+            0 => regs.rax,
+            1 => regs.rcx,
+            2 => regs.rdx,
+            3 => regs.rbx,
+            4 => VmcsGuestNW::RSP.read()? as u64,
+            5 => regs.rbp,
+            6 => regs.rsi,
+            7 => regs.rdi,
+            8 => regs.r8,
+            9 => regs.r9,
+            10 => regs.r10,
+            11 => regs.r11,
+            12 => regs.r12,
+            13 => regs.r13,
+            14 => regs.r14,
+            15 => regs.r15,
+            _ => 0,
+        })
     }
 
+    fn set_gpr_value(arch_cpu: &mut ArchCpu, gpr: u8, value: u64) -> HvResult<()> {
+        let regs = arch_cpu.regs_mut();
+        match gpr {
+            0 => regs.rax = value,
+            1 => regs.rcx = value,
+            2 => regs.rdx = value,
+            3 => regs.rbx = value,
+            4 => VmcsGuestNW::RSP.write(value as _)?,
+            5 => regs.rbp = value,
+            6 => regs.rsi = value,
+            7 => regs.rdi = value,
+            8 => regs.r8 = value,
+            9 => regs.r9 = value,
+            10 => regs.r10 = value,
+            11 => regs.r11 = value,
+            12 => regs.r12 = value,
+            13 => regs.r13 = value,
+            14 => regs.r14 = value,
+            15 => regs.r15 = value,
+            _ => {}
+        }
+        Ok(())
+    }
+
+    match cr_access_info.access_type {
+        0 => {
+            // MOV to CR
+            let value = get_gpr_value(arch_cpu, cr_access_info.gpr)?;
+            match cr_access_info.cr_n {
+                0 | 3 | 4 => arch_cpu.set_cr(cr_access_info.cr_n as _, value)?,
+                _ => return hv_result_err!(ENOSYS),
+            }
+        }
+        1 => {
+            // MOV from CR
+            let value = match cr_access_info.cr_n {
+                0 => VmcsGuestNW::CR0.read()? as u64,
+                3 => VmcsGuestNW::CR3.read()? as u64,
+                4 => VmcsGuestNW::CR4.read()? as u64,
+                _ => return hv_result_err!(ENOSYS),
+            };
+            set_gpr_value(arch_cpu, cr_access_info.gpr, value)?;
+        }
+        2 => {
+            // CLTS clears TS in CR0
+            let mut cr0 = VmcsGuestNW::CR0.read()?;
+            cr0 &= !(Cr0Flags::TASK_SWITCHED.bits() as usize);
+            VmcsGuestNW::CR0.write(cr0)?;
+            VmcsControlNW::CR0_READ_SHADOW.write(cr0 as _)?;
+        }
+        3 => {
+            // LMSW
+            let lmsw_data = cr_access_info.lmsw_src as usize;
+            let mut cr0 = VmcsGuestNW::CR0.read()?;
+            cr0 = (cr0 & !0xffff) | (lmsw_data & 0xffff);
+            VmcsGuestNW::CR0.write(cr0)?;
+            VmcsControlNW::CR0_READ_SHADOW.write(cr0 as _)?;
+        }
+        _ => return hv_result_err!(ENOSYS),
+    }
+
+    arch_cpu.advance_guest_rip(VM_EXIT_INSTR_LEN_CR_ACCESS)?;
     Ok(())
 }
 
@@ -318,11 +403,10 @@ fn handle_msr_read(arch_cpu: &mut ArchCpu) -> HvResult {
     if let Ok(msr) = Msr::try_from(rcx) {
         let res = if msr == IA32_APIC_BASE {
             let mut apic_base = unsafe { IA32_APIC_BASE.read() };
-            // info!("APIC BASE: {:x}", apic_base);
             apic_base |= 1 << 11 | 1 << 10; // enable xAPIC and x2APIC
             Ok(apic_base)
         } else if VirtLocalApic::msr_range().contains(&rcx) {
-            arch_cpu.virt_lapic.rdmsr(msr)
+            arch_cpu.virt_lapic.rdmsr(msr, false)
         } else {
             hv_result_err!(ENOSYS)
         };

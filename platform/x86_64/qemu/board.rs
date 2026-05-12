@@ -26,7 +26,7 @@ pub const ROOT_ZONE_DTB_ADDR: u64 = 0x00000000;
 pub const ROOT_ZONE_BOOT_STACK: GuestPhysAddr = 0x7000;
 pub const ROOT_ZONE_ENTRY: u64 = 0x8000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x500_0000; // hpa
-pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1);
+pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3);
 
 const ROOT_ZONE_RSDP_REGION: HvConfigMemoryRegion = HvConfigMemoryRegion {
     mem_type: MEM_TYPE_RAM,
@@ -54,7 +54,7 @@ const ROOT_ZONE_UEFI_REGION_ID: usize = 0x3;
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 pub const ROOT_ZONE_CMDLINE: &str =
-    "console=tty0 console=ttyS0 earlycon=efifb earlyprintk=serial nointremap no_timer_check efi=noruntime pci=pcie_scan_all,lastbus=1 root=/dev/vda rw init=/init\0";
+    "console=ttyS0 earlyprintk=serial nointremap no_timer_check efi=noruntime pci=pcie_scan_all,lastbus=1 rw root=/dev/vda rdinit=/init\0";
 //"console=ttyS0 earlyprintk=serial rdinit=/init nokaslr nointremap\0"; // noapic
 // video=vesafb
 // /lib/systemd/systemd
@@ -81,11 +81,11 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 10] = [
         size: 0x2f_0000,
     }, // ram
     HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_RAM,
+        mem_type: MEM_TYPE_RESERVED,
         physical_start: 0x1a30_0000,
         virtual_start: 0x1530_0000,
         size: 0x2000_0000,
-    }, // ram
+    }, // initrd
     ROOT_ZONE_ACPI_REGION, // acpi
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
@@ -101,7 +101,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 10] = [
         size: 0x2000_0000,
     }, // zone 1
     HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_RESERVED,
+        mem_type: MEM_TYPE_RAM,
         physical_start: 0x1_0000_0000,
         virtual_start: 0x1_0000_0000,
         size: 0x7000_0000,
@@ -122,8 +122,8 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     kernel_entry_gpa: ROOT_ZONE_VMLINUX_ENTRY_ADDR,
     cmdline_load_gpa: ROOT_ZONE_CMDLINE_ADDR,
     setup_load_gpa: ROOT_ZONE_SETUP_ADDR,
-    initrd_load_gpa: 0, // 0x1500_0000,
-    initrd_size: 0,     //0x26_b000,
+    initrd_load_gpa: 0x1530_0000, // 0x1500_0000,
+    initrd_size: 0x600_0000,      //0x26_b000,
     rsdp_memory_region_id: ROOT_ZONE_RSDP_REGION_ID,
     acpi_memory_region_id: ROOT_ZONE_ACPI_REGION_ID,
     uefi_memory_region_id: ROOT_ZONE_UEFI_REGION_ID,

@@ -302,6 +302,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
             config.num_pci_bus as usize,
         );
     }
+    info!("after guest_pci_init");
 
     // #[cfg(target_arch = "aarch64")]
     // zone.ivc_init(config.ivc_config());
@@ -316,6 +317,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<RwLock<Zone>>> {
 
     let mut cpu_num = 0;
     for cpu_id in config.cpus().iter() {
+        info!("cpu_id: {:x}", cpu_id);
         if let Some(zone) = get_cpu_data(*cpu_id as _).zone.clone() {
             return hv_result_err!(
                 EBUSY,
