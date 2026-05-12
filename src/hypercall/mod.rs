@@ -19,7 +19,7 @@
 use crate::arch::cpu::get_target_cpu;
 use crate::config::HvZoneConfig;
 use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, MAX_WAIT_TIMES, PAGE_SIZE};
-use crate::cpu_data::{get_cpu_data, PerCpu};
+use crate::cpu_data::{get_cpu_data, PerCpu, VcpuState};
 use crate::device::virtio_trampoline::{MAX_DEVS, VIRTIO_BRIDGE, VIRTIO_IRQS};
 use crate::error::HvResult;
 use crate::pci::pci_config::GLOBAL_PCIE_LIST;
@@ -85,7 +85,7 @@ impl<'a> HyperCall<'a> {
                     use crate::consts::IPI_EVENT_CLEAR_INJECT_IRQ;
                     for i in 1..MAX_CPU_NUM {
                         // if target cpu status is not running, we skip it
-                        if !get_cpu_data(i).arch_cpu.power_on {
+                        if !get_cpu_data(i).vcpu_state.is_running() {
                             continue;
                         }
                         send_event(i, SGI_IPI_ID as _, IPI_EVENT_CLEAR_INJECT_IRQ);
@@ -201,8 +201,9 @@ impl<'a> HyperCall<'a> {
         let target_data = get_cpu_data(boot_cpu as _);
         let _lock = target_data.ctrl_lock.lock();
 
-        if !target_data.arch_cpu.power_on {
+        if target_data.vcpu_state.is_stopped() {
             info!("boot_cpu: {}", boot_cpu);
+            target_data.vcpu_state.store(VcpuState::Ready);
             send_event(boot_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP);
         } else {
             error!("hv_zone_start: cpu {} already on", boot_cpu);
@@ -253,18 +254,18 @@ impl<'a> HyperCall<'a> {
 
         let mut count: usize = 0;
 
-        // wait all zone's cpus shutdown
+        // wait all zone's cpus shutdown (Stopped only: includes Blocked / Ready / Running)
         while zone_w.cpu_set().iter().any(|cpu_id| {
             let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
-            let power_on = get_cpu_data(cpu_id).arch_cpu.power_on;
+            let not_stopped = !get_cpu_data(cpu_id).vcpu_state.is_stopped();
             count += 1;
             if count > MAX_WAIT_TIMES {
-                if power_on {
+                if not_stopped {
                     error!("cpu {} cannot be shut down", cpu_id);
                     return false;
                 }
             }
-            power_on
+            not_stopped
         }) {}
 
         zone_w.cpu_set().iter().for_each(|cpu_id| {

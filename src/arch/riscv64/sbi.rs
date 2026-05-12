@@ -19,10 +19,9 @@ use super::cpu::ArchCpu;
 use crate::arch::cpu::hartid_to_cpuid;
 use crate::arch::csr::*;
 use crate::consts::IPI_EVENT_SEND_IPI;
-use crate::cpu_data::{get_cpu_data, this_cpu_data};
+use crate::cpu_data::{get_cpu_data, this_cpu_data, VcpuState};
 use crate::event::{send_event, IPI_EVENT_WAKEUP};
 use crate::hypercall::HyperCall;
-use core::sync::atomic;
 use riscv::register::sie;
 use riscv_h::register::hvip;
 use sbi_rt::{HartMask, SbiRet};
@@ -213,19 +212,6 @@ pub fn sbi_time_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
     }
 }
 
-#[allow(unused)]
-#[allow(non_camel_case_types)]
-#[derive(Debug, PartialEq)]
-pub enum HSM_STATUS {
-    STARTED,
-    STOPPED,
-    START_PENDING,
-    STOP_PENDING,
-    SUSPENDED,
-    SUSPEND_PENDING,
-    RESUMING_PENDING,
-}
-
 /// SBI Hart State Management handler.
 pub fn sbi_hsm_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
     let mut sbi_ret = SbiRet {
@@ -278,15 +264,12 @@ pub fn sbi_hsm_start_handler(current_cpu: &mut ArchCpu) -> SbiRet {
         );
         let target_cpu = get_cpu_data(cpuid);
         let _lock = target_cpu.ctrl_lock.lock();
-        // Todo: use hsm status, not just hvisor defined power_on.
-        if target_cpu.arch_cpu.power_on {
+        if !target_cpu.vcpu_state.is_stopped() {
             sbi_ret.error = RET_ERR_FAILED;
         } else {
-            // Set the target cpu to start-pending.
             target_cpu.cpu_on_entry = start_addr;
             target_cpu.dtb_ipa = opaque;
-            // Insert memory fence.
-            atomic::fence(atomic::Ordering::SeqCst);
+            target_cpu.vcpu_state.store(VcpuState::Ready);
             send_event(cpuid, 0, IPI_EVENT_WAKEUP);
         }
         drop(_lock);

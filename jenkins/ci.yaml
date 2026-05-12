@@ -1,0 +1,51 @@
+bids:
+  - bid: riscv64/qemu-plic
+    build_args:
+      - ARCH=riscv64
+      - BOARD=qemu-plic
+      - KDIR=/home/light/DEMO/linux/linux-6.10
+    tests:
+      mode: qemu
+      cases:
+        - zone0_start
+        - zone1_start
+
+  - bid: aarch64/qemu-gicv3
+    build_args:
+      - ARCH=aarch64
+      - BOARD=qemu-gicv3
+      - KDIR=/home/light/DEMO/linux/linux-5.4
+    tests:
+      mode: qemu
+      uboot_cmd: bootm 0x40400000 - 0x40000000
+      cases:
+        - zone0_start
+        - zone1_start
+
+  # - bid: aarch64/rk3568
+  #   build_args:
+  #     - ARCH=aarch64
+  #     - BOARD=rk3568
+  #     - KDIR=/home/light/DEMO/sdk/rk356x-up4-2c/kernel
+  #   tests:
+  #     mode: board
+  #     serial: /dev/serial/by-id/usb-1a86_USB2.0-Ser_-if00-port0
+  #     baudrate: 115200
+  #     uboot_cmd: pci enum;setenv serverip 192.168.0.1; setenv ipaddr 192.168.0.2; setenv loadaddr 0x60800000; setenv fdt_addr 0xa0000000; setenv zone0_kernel_addr 0x00280000; tftp ${loadaddr} ${serverip}:hvisor.bin; tftp ${fdt_addr} ${serverip}:rk3568_limit_zone0.dtb; tftp ${zone0_kernel_addr} ${serverip}:Image_test5; bootm ${loadaddr} - ${fdt_addr};
+  #     cases:
+  #       - zone0_start
+  #       - zone1_start
+
+
+  - bid: x86_64/qemu
+    build_args:
+      - ARCH=x86_64
+      - BOARD=qemu
+      - KDIR=/home/light/DEMO/linux/linux-5.19
+    tests:
+      mode: qemu
+      cases:
+        - zone0_start
+        - zone1_start  
+
+

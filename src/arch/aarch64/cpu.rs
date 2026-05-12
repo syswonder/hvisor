@@ -16,7 +16,7 @@
 use crate::{
     arch::{mm::new_s2_memory_set, sysreg::write_sysreg},
     consts::{MAX_CPU_NUM, PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
-    cpu_data::this_cpu_data,
+    cpu_data::{this_cpu_data, VcpuState},
     memory::{
         addr::PHYS_VIRT_OFFSET, mm::PARKING_MEMORY_SET, GuestPhysAddr, HostPhysAddr, MemFlags,
         MemoryRegion, VirtAddr, PARKING_INST_PAGE,
@@ -70,7 +70,6 @@ impl GeneralRegisters {
 pub struct ArchCpu {
     pub cpuid: usize,
     pub is_aarch32: bool,
-    pub power_on: bool,
 }
 
 impl ArchCpu {
@@ -78,7 +77,6 @@ impl ArchCpu {
         Self {
             cpuid,
             is_aarch32: false,
-            power_on: false,
         }
     }
 
@@ -198,7 +196,7 @@ impl ArchCpu {
             // Return to AArch32 Supervisor (SVC) mode, disable IRQ, FIQ, ABT
             SPSR_EL2.set(0x1D3);
         }
-        self.power_on = true;
+        this_cpu_data().vcpu_state.store(VcpuState::Running);
         info!(
             "cpu {} started at {:#x?}",
             self.cpuid,
@@ -214,7 +212,7 @@ impl ArchCpu {
         assert!(this_cpu_id() == self.cpuid);
         let cpu_data = this_cpu_data();
         let _lock = cpu_data.ctrl_lock.lock();
-        self.power_on = false;
+        cpu_data.vcpu_state.store(VcpuState::Stopped);
         drop(_lock);
 
         // reset current cpu -> pc = 0x0 (wfi)

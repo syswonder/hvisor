@@ -1,0 +1,1 @@
+pci enum;setenv serverip 192.168.0.1; setenv ipaddr 192.168.0.2; setenv loadaddr 0x60800000; setenv fdt_addr 0xa0000000; setenv zone0_kernel_addr 0x00280000; tftp ${loadaddr} ${serverip}:hvisor.bin; tftp ${fdt_addr} ${serverip}:rk3568_limit_zone0.dtb; tftp ${zone0_kernel_addr} ${serverip}:Image_test5; bootm ${loadaddr} - ${fdt_addr};
