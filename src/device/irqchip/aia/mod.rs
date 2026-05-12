@@ -171,7 +171,7 @@ impl Zone {
     }
 
     /// Initial the virtual IMSIC related to thiz Zone.
-    pub fn vimsic_init(&mut self, _config: &HvZoneConfig) {
+    pub fn vimsic_init(&self, _config: &HvZoneConfig) {
         info!("Zone {} vIMSIC init", self.id());
         let msi_pt = vimsic::vimsic_init(self, IMSIC_S_BASE, IMSIC_GUEST_NUM);
         unsafe {

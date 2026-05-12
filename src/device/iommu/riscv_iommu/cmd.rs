@@ -16,9 +16,9 @@
 
 #![allow(unused)]
 
-const IOTINVAL_OPCODE: u8 = 1;
-const IOFENCE_OPCODE: u8 = 2;
-const IODIR_OPCODE: u8 = 3;
+pub(super) const IOTINVAL_OPCODE: u8 = 1;
+pub(super) const IOFENCE_OPCODE: u8 = 2;
+pub(super) const IODIR_OPCODE: u8 = 3;
 
 // Dword0 and dword1 are the two 64-bit words that make up the command.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -41,7 +41,7 @@ pub(super) enum IotInvalFunc {
 }
 
 impl IotInvalFunc {
-    fn raw(self) -> u8 {
+    pub(super) fn raw(self) -> u8 {
         match self {
             Self::Vma => 0,
             Self::Gvma => 1,
@@ -103,7 +103,7 @@ pub(super) enum IoFenceFunc {
 }
 
 impl IoFenceFunc {
-    fn raw(self) -> u8 {
+    pub(super) fn raw(self) -> u8 {
         match self {
             Self::C => 0,
         }
@@ -150,7 +150,7 @@ pub(super) enum IoDirFunc {
 }
 
 impl IoDirFunc {
-    fn raw(self) -> u8 {
+    pub(super) fn raw(self) -> u8 {
         match self {
             Self::InvalDdt => 0,
             Self::InvalPdt => 1,

@@ -54,7 +54,7 @@ register_bitfields! {
         NL OFFSET(42) NUMBITS(1) [],
         S OFFSET(43) NUMBITS(1) [],
     ],
-    pub(super) IOMMU_DDTP [ // RISCV-IOMMU Spec Chap6.5 Device-directory table pointer
+    pub(super) IOMMU_DDTP [ // RISC-V IOMMU Spec Chap6.5 Device-directory table pointer
         MODE OFFSET(0) NUMBITS(4) [
             OFF = 0,
             BARE = 1,
@@ -65,7 +65,7 @@ register_bitfields! {
         BUSY OFFSET(4) NUMBITS(1) [],
         PPN OFFSET(10) NUMBITS(44) []
     ],
-    pub(super) DDT_TC [ // RISCV-IOMMU Spec Chap3.1.3.1 Translation Control
+    pub(super) DDT_TC [ // RISC-V IOMMU Spec Chap3.1.3.1 Translation Control
         V OFFSET(0) NUMBITS(1) [],
         EN_ATS OFFSET(1) NUMBITS(1) [],
         EN_PRI OFFSET(2) NUMBITS(1) [],
@@ -79,7 +79,7 @@ register_bitfields! {
         SBE OFFSET(10) NUMBITS(1) [],
         SXL OFFSET(11) NUMBITS(1) []
     ],
-    pub(super) DDT_IOHGATP [ // RISCV-IOMMU Spec Chap3.1.3.2 IO hypervisor guest address translation and protection
+    pub(super) DDT_IOHGATP [ // RISC-V IOMMU Spec Chap3.1.3.2 IO hypervisor guest address translation and protection
         PPN OFFSET(0) NUMBITS(44) [],
         GSCID OFFSET(44) NUMBITS(16) [],
         MODE OFFSET(60) NUMBITS(4) [
@@ -88,12 +88,12 @@ register_bitfields! {
             SV57X4 = 10
         ]
     ],
-    pub(super) DDT_TA [ // RISCV-IOMMU Spec Chap3.1.3.3 Translation attributes
+    pub(super) DDT_TA [ // RISC-V IOMMU Spec Chap3.1.3.3 Translation attributes
         PS_CID OFFSET(12) NUMBITS(20) [],
         RCID OFFSET(40) NUMBITS(12) [],
         MTYPE OFFSET(52) NUMBITS(12) [],
     ],
-    pub(super) DDT_FSC [ // RISCV-IOMMU Spec Chap3.1.3.4 First-stage context
+    pub(super) DDT_FSC [ // RISC-V IOMMU Spec Chap3.1.3.4 First-stage context
         MODE OFFSET(60) NUMBITS(4) [
             BARE = 0,
             SV39 = 8,
@@ -102,12 +102,12 @@ register_bitfields! {
         ],
         PPN OFFSET(0) NUMBITS(44) []
     ],
-    pub(super) DDT_DIR [ // RISCV-IOMMU Spec Chap3.1.1 Non-leaf DDT entry
+    pub(super) DDT_DIR [ // RISC-V IOMMU Spec Chap3.1.1 Non-leaf DDT entry
         V OFFSET(0) NUMBITS(1) [],
         PPN OFFSET(10) NUMBITS(44) []
     ],
     pub(super) IOMMU_XQB [ // RISC-V IOMMU Spec Chap6.6 Command-queue base
-                // RISC-V IOMMU Spec Chap6.9 Fault queue base
+                           // RISC-V IOMMU Spec Chap6.9 Fault queue base
         LOG2SZ_1 OFFSET(0) NUMBITS(5) [],
         PPN OFFSET(10) NUMBITS(44) []
     ],
@@ -123,12 +123,12 @@ register_bitfields! {
 
 register_bitfields! {
     u32,
-    pub(super) IOMMU_FCTL [ // RISCV-IOMMU Spec Chap6.4 Features-control register
+    pub(super) IOMMU_FCTL [ // RISC-V IOMMU Spec Chap6.4 Features-control register
         BE OFFSET(0) NUMBITS(1) [],
         WSI OFFSET(1) NUMBITS(1) [],
         GXL OFFSET(2) NUMBITS(1) [],
     ],
-    pub(super) IOMMU_CQCSR [ // RISCV-IOMMU Spec Chap6.15 Command-queue CSR
+    pub(super) IOMMU_CQCSR [ // RISC-V IOMMU Spec Chap6.15 Command-queue CSR
         CQEN OFFSET(0) NUMBITS(1) [],
         CIE OFFSET(1) NUMBITS(1) [],
         CQMF OFFSET(8) NUMBITS(1) [],
@@ -138,7 +138,7 @@ register_bitfields! {
         CQON OFFSET(16) NUMBITS(1) [],
         BUSY OFFSET(17) NUMBITS(1) [],
     ],
-    pub(super) IOMMU_FQCSR [ // RISCV-IOMMU Spec Chap6.16 Fault-queue CSR
+    pub(super) IOMMU_FQCSR [ // RISC-V IOMMU Spec Chap6.16 Fault-queue CSR
         FQEN OFFSET(0) NUMBITS(1) [],
         FIE OFFSET(1) NUMBITS(1) [],
         FQMF OFFSET(8) NUMBITS(1) [],
@@ -146,7 +146,7 @@ register_bitfields! {
         FQON OFFSET(16) NUMBITS(1) [],
         BUSY OFFSET(17) NUMBITS(1) [],
     ],
-    pub(super) IOMMU_IPSR [ // RISCV-IOMMU Spec Chap6.18 Interrupt pending status register
+    pub(super) IOMMU_IPSR [ // RISC-V IOMMU Spec Chap6.18 Interrupt pending status register
         CIP OFFSET(0) NUMBITS(1) [],
         FIP OFFSET(1) NUMBITS(1) [],
         PMIP OFFSET(2) NUMBITS(1) [],

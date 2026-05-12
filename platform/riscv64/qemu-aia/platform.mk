@@ -25,11 +25,12 @@ QEMU_ARGS += -device loader,file="$(zone0_dtb)",addr=0x8f000000,force-raw=on
 
 QEMU_ARGS += -drive if=none,file=$(FSIMG1),id=hd0,format=raw
 # QEMU_ARGS += -device virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.7
-QEMU_ARGS += -device virtio-blk-pci,drive=hd0,disable-legacy=on,disable-modern=off,addr=01.0
+QEMU_ARGS += -device virtio-blk-pci,drive=hd0,disable-legacy=on,disable-modern=off,addr=01.0,iommu_platform=on
 QEMU_ARGS += -device virtio-serial-device,bus=virtio-mmio-bus.6 -chardev pty,id=X10007000 -device virtconsole,chardev=X10007000 -S
 QEMU_ARGS += -drive if=none,file=$(FSIMG2),id=hd1,format=qcow2
 # QEMU_ARGS += -device virtio-blk-device,drive=hd1,bus=virtio-mmio-bus.5
-QEMU_ARGS += -device virtio-blk-pci,drive=hd1,disable-legacy=on,disable-modern=off,addr=02.0
+QEMU_ARGS += -device virtio-blk-pci,drive=hd1,disable-legacy=on,disable-modern=off,addr=02.0,iommu_platform=on
+# QEMU_ARGS += -d trace:riscv_iommu_*
 # -------------------------------------------------------------------
 
 # QEMU_ARGS := -machine virt

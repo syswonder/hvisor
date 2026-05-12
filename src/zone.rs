@@ -400,6 +400,14 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
         );
     }
 
+    #[cfg(feature = "viommu")]
+    {
+        use crate::platform::{IOMMU_SYS_BASE, IOMMU_SYS_SIZE};
+        // Create viommu instance and register mmio handler for target zone.
+        crate::device::iommu::viommu_init(zone_id);
+        crate::device::iommu::viommu_mmio_handler_register(&zone, IOMMU_SYS_BASE, IOMMU_SYS_SIZE);
+    }
+
     // #[cfg(target_arch = "aarch64")]
     // zone.ivc_init(config.ivc_config());
 

@@ -165,6 +165,20 @@ where
         Ok(())
     }
 
+    /// Get the memory region which contains the `start` address.
+    pub fn get_region(&self, start: PT::VA) -> Option<MemoryRegion<PT::VA>> {
+        // Find a region that completely includes the range [start, end)
+        for (key, region) in self.regions.range(..=start) {
+            let region_start = *key;
+            let region_end = region_start.into() + region.size;
+            // Return the region contains the start address
+            if region_start <= start && region_end > start.into() {
+                return Some(region.clone());
+            }
+        }
+        None
+    }
+
     /// Find and remove memory region which starts from `start` and `size`
     pub fn delete(&mut self, start: PT::VA, size: usize) -> HvResult {
         if let Entry::Occupied(e) = self.regions.entry(start) {
