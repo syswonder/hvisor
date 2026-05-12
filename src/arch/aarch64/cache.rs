@@ -12,17 +12,15 @@
 //      https://www.syswonder.org
 //
 // Authors:
-//      ForeverYolo <2572131118@qq.com>
+//  Jingyu Liu <liujingyu24s@ict.ac.cn>
+//
 
-#[allow(unused)]
-pub fn iommu_init() {
-    info!("riscv: iommu_init: do nothing now");
-}
-
-#[allow(unused)]
-pub fn iommu_add_device(vmid: usize, sid: usize) {
-    info!(
-        "riscv: iommu_add_device: do nothing now, vmid: {}, sid: {}",
-        vmid, sid
-    );
+pub unsafe fn invalidate_dcache_range(start: usize, size: usize, line_size: usize) {
+    let mut addr = start & !(line_size - 1);
+    let end = start + size;
+    while addr < end {
+        core::arch::asm!("dc ivac, {0}", in(reg) addr, options(nostack, preserves_flags));
+        addr += line_size;
+    }
+    core::arch::asm!("dsb sy", options(nostack, preserves_flags));
 }

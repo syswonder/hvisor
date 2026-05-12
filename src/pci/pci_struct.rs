@@ -143,7 +143,7 @@ impl ConfigValue {
 const MAX_DEVICE: u8 = 31;
 const MAX_FUNCTION: u8 = 7;
 pub const CONFIG_LENTH: u64 = 256;
-pub const BIT_LENTH: usize = 128 * 8;
+pub const BIT_LENTH: usize = 512 * 8; // 4096 bytes = full PCIe extended config space
 
 // PCIe Device/Port Type values
 const PCI_EXP_TYPE_ROOT_PORT: u16 = 4;
@@ -368,68 +368,102 @@ pub struct VirtualPciConfigSpace {
 }
 
 #[derive(Clone)]
-pub struct ArcRwLockVirtualPciConfigSpace(Arc<RwLock<VirtualPciConfigSpace>>);
+pub struct VirtualPciConfigSpaceWithZone {
+    pub zone_id: Option<u32>,
+    pub config_space: VirtualPciConfigSpace,
+}
+
+impl core::ops::Deref for VirtualPciConfigSpaceWithZone {
+    type Target = VirtualPciConfigSpace;
+
+    fn deref(&self) -> &Self::Target {
+        &self.config_space
+    }
+}
+
+impl core::ops::DerefMut for VirtualPciConfigSpaceWithZone {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.config_space
+    }
+}
+
+impl Debug for VirtualPciConfigSpaceWithZone {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "zone_id: {:?}, ", self.zone_id)?;
+        self.config_space.fmt(f)
+    }
+}
+
+#[derive(Clone)]
+pub struct ArcRwLockVirtualPciConfigSpace(Arc<RwLock<VirtualPciConfigSpaceWithZone>>);
 
 impl ArcRwLockVirtualPciConfigSpace {
     pub fn new(dev: VirtualPciConfigSpace) -> Self {
-        Self(Arc::new(RwLock::new(dev)))
+        Self(Arc::new(RwLock::new(VirtualPciConfigSpaceWithZone {
+            zone_id: None,
+            config_space: dev,
+        })))
     }
 
-    pub fn inner(&self) -> &Arc<RwLock<VirtualPciConfigSpace>> {
-        &self.0
+    pub fn get_zone_id(&self) -> Option<u32> {
+        self.0.read().zone_id
+    }
+
+    pub fn set_zone_id(&self, zone_id: Option<u32>) {
+        self.0.write().zone_id = zone_id;
     }
 
     pub fn access(&self, offset: PciConfigAddress, size: usize) -> bool {
-        self.0.read().access(offset, size)
+        self.read().access(offset, size)
     }
 
     pub fn get_bdf(&self) -> Bdf {
-        self.0.read().get_bdf()
+        self.read().get_bdf()
     }
 
     pub fn get_vbdf(&self) -> Bdf {
-        self.0.read().get_vbdf()
+        self.read().get_vbdf()
     }
 
     pub fn get_dev_type(&self) -> VpciDevType {
-        self.0.read().get_dev_type()
+        self.read().get_dev_type()
     }
 
     pub fn get_config_type(&self) -> HeaderType {
-        self.0.read().get_config_type()
+        self.read().get_config_type()
     }
 
     pub fn get_bararr(&self) -> Bar {
-        self.0.read().get_bararr()
+        self.read().get_bararr()
     }
 
     pub fn get_rom(&self) -> PciMem {
-        self.0.read().get_rom()
+        self.read().get_rom()
     }
 
     pub fn read_emu(&self, field: EndpointField) -> HvResult<usize> {
-        self.0.write().read_emu(field)
+        self.write().read_emu(field)
     }
 
     pub fn read_emu64(&self, field: EndpointField) -> HvResult<u64> {
-        self.0.write().read_emu64(field)
+        self.write().read_emu64(field)
     }
 
     pub fn write_emu(&self, field: EndpointField, value: usize) -> HvResult {
-        self.0.write().write_emu(field, value)
+        self.write().write_emu(field, value)
     }
 
     // Legacy method for backward compatibility
     // pub fn write_emu_legacy(&self, offset: PciConfigAddress, size: usize, value: usize) -> HvResult {
-    //     self.0.write().write_emu_legacy(offset, size, value)
+    //     self.write().write_emu_legacy(offset, size, value)
     // }
 
     pub fn read_hw(&self, offset: PciConfigAddress, size: usize) -> HvResult<usize> {
-        self.0.write().read_hw(offset, size)
+        self.write().read_hw(offset, size)
     }
 
     pub fn write_hw(&self, offset: PciConfigAddress, size: usize, value: usize) -> HvResult {
-        self.0.write().write_hw(offset, size, value)
+        self.write().write_hw(offset, size, value)
     }
 
     /// Execute a closure with a reference to the bar at the given slot
@@ -437,7 +471,7 @@ impl ArcRwLockVirtualPciConfigSpace {
     where
         F: FnOnce(&PciMem) -> R,
     {
-        let guard = self.0.read();
+        let guard = self.read();
         let bar = guard.get_bar_ref(slot);
         f(bar)
     }
@@ -447,8 +481,8 @@ impl ArcRwLockVirtualPciConfigSpace {
     where
         F: FnOnce(&mut PciMem) -> R,
     {
-        let mut guard = self.0.write();
-        let bar = guard.get_bar_ref_mut(slot);
+        let mut inner = self.write();
+        let bar = inner.get_bar_ref_mut(slot);
         f(bar)
     }
 
@@ -457,8 +491,8 @@ impl ArcRwLockVirtualPciConfigSpace {
     where
         F: FnOnce(&ConfigValue) -> R,
     {
-        let guard = self.0.read();
-        f(&guard.config_value)
+        let guard = self.read();
+        f(guard.get_config_value())
     }
 
     /// Execute a closure with a mutable reference to the config_value
@@ -466,8 +500,8 @@ impl ArcRwLockVirtualPciConfigSpace {
     where
         F: FnOnce(&mut ConfigValue) -> R,
     {
-        let mut guard = self.0.write();
-        f(&mut guard.config_value)
+        let mut inner = self.write();
+        inner.with_config_value_mut(f)
     }
 
     /// Execute a closure with a reference to the rom
@@ -475,7 +509,7 @@ impl ArcRwLockVirtualPciConfigSpace {
     where
         F: FnOnce(&PciMem) -> R,
     {
-        let guard = self.0.read();
+        let guard = self.read();
         let rom = &guard.rom;
         f(rom)
     }
@@ -485,8 +519,8 @@ impl ArcRwLockVirtualPciConfigSpace {
     where
         F: FnOnce(&mut PciMem) -> R,
     {
-        let mut guard = self.0.write();
-        let rom = &mut guard.rom;
+        let mut inner = self.write();
+        let rom = &mut inner.rom;
         f(rom)
     }
 
@@ -495,22 +529,24 @@ impl ArcRwLockVirtualPciConfigSpace {
     where
         F: FnOnce(&PciCapabilityList) -> R,
     {
-        let guard = self.0.read();
+        let guard = self.read();
         f(&guard.capabilities)
     }
 
-    pub fn read(&self) -> spin::RwLockReadGuard<'_, VirtualPciConfigSpace> {
+    pub fn read(&self) -> spin::RwLockReadGuard<'_, VirtualPciConfigSpaceWithZone> {
         self.0.read()
     }
 
-    pub fn write(&self) -> spin::RwLockWriteGuard<'_, VirtualPciConfigSpace> {
+    pub fn write(&self) -> spin::RwLockWriteGuard<'_, VirtualPciConfigSpaceWithZone> {
         self.0.write()
     }
 }
 
 impl Debug for ArcRwLockVirtualPciConfigSpace {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        self.0.read().fmt(f)
+        let guard = self.0.read();
+        write!(f, "zone_id: {:?}, ", guard.zone_id)?;
+        guard.config_space.fmt(f)
     }
 }
 
@@ -1283,12 +1319,62 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
                 self.next(match node.config_value.get_class().0 {
                     // class code 0x6 is bridge and class.1 0x0 is host bridge
                     0x6 if node.config_value.get_class().1 == 0x4 => {
-                        let bdf = Bdf::new(domain, parent.subordinate_bus + 1, 0, 0);
+                        // When no_pcie_bar_realloc is enabled, use the firmware-programmed
+                        // secondary bus number instead of calculating our own. Firmware
+                        // (UEFI/BIOS) may skip bus numbers for subordinate bus reservation,
+                        // causing calculated bus numbers to diverge from actual hardware
+                        // bus assignments — making devices behind bridges invisible.
+                        #[cfg(feature = "no_pcie_bar_realloc")]
+                        let next_bus = {
+                            let bridge_base = node.get_base();
+                            let bus_reg = unsafe {
+                                let ptr = PciConfigMmio::new(bridge_base, CONFIG_LENTH)
+                                    .access::<u32>(0x18);
+                                ptr.read_volatile()
+                            };
+                            let fw_secondary = ((bus_reg >> 8) & 0xFF) as u8;
+                            let fw_subordinate = ((bus_reg >> 16) & 0xFF) as u8;
+                            info!(
+                                "bridge {:#?}: firmware secondary_bus={:#x}, subordinate_bus={:#x}",
+                                node.bdf, fw_secondary, fw_subordinate
+                            );
+                            // Validate firmware bus number against configured range.
+                            // While the zone config maker is primarily responsible for
+                            // providing a valid range, this guard prevents invalid ECAM
+                            // accesses if firmware programs an out-of-range value.
+                            let range_start = self.bus_range.start as u8;
+                            let range_end = self.bus_range.end as u8;
+                            if fw_secondary != 0
+                                && fw_secondary >= range_start
+                                && fw_secondary <= range_end
+                            {
+                                fw_secondary
+                            } else {
+                                if fw_secondary != 0 {
+                                    warn!(
+                                        "bridge {:#?}: firmware secondary_bus {:#x} out of range [{:#x}, {:#x}], falling back to calculated",
+                                        node.bdf, fw_secondary, range_start, range_end
+                                    );
+                                }
+                                parent.subordinate_bus + 1
+                            }
+                        };
+                        #[cfg(not(feature = "no_pcie_bar_realloc"))]
+                        let next_bus = parent.subordinate_bus + 1;
+
+                        let bdf = Bdf::new(domain, next_bus, 0, 0);
+                        // Use the current bridge's own bus as the immediate parent bus for
+                        // CFG address computation. For multi-level bridges (especially on
+                        // DWC), using parent.primary_bus (the upstream of the *parent*)
+                        // would select the wrong CFG0/CFG1 path and fail to reach devices
+                        // behind deeper bridges.
+                        let immediate_parent_bus = parent.bus;
                         Some(self.get_bridge().next_bridge(
-                            self.address(parent_bus, bdf),
+                            self.address(immediate_parent_bus, bdf),
                             node.has_secondary_link(),
                             self.is_mulitple_function,
                             self.function,
+                            next_bus,
                         ))
                     }
                     _ => None,
@@ -1357,14 +1443,15 @@ impl Bridge {
         has_secondary_link: bool,
         is_mulitple_function: bool,
         function: u8,
+        target_bus: u8,
     ) -> Self {
         let mmio = PciConfigMmio::new(address, CONFIG_LENTH);
         Self {
-            bus: self.subordinate_bus + 1,
+            bus: target_bus,
             device: 0,
             function,
-            subordinate_bus: self.subordinate_bus + 1,
-            secondary_bus: self.subordinate_bus + 1,
+            subordinate_bus: target_bus,
+            secondary_bus: target_bus,
             primary_bus: self.bus,
             mmio,
             has_secondary_link,
@@ -1377,14 +1464,22 @@ impl Bridge {
         if self.mmio.is_placeholder() {
             return;
         }
-        // we need to update the bridge bus number if we want linux not to update bus number
-        unsafe {
-            let ptr = self.mmio.access::<u32>(0x18);
-            let mut value = ptr.read_volatile();
-            value.set_bits(16..24, self.subordinate_bus.into());
-            value.set_bits(8..16, self.secondary_bus.into());
-            value.set_bits(0..8, self.primary_bus.into());
-            ptr.write_volatile(value);
+        // When no_pcie_bar_realloc is enabled, firmware already assigned correct bus
+        // numbers — don't overwrite them.
+        #[cfg(feature = "no_pcie_bar_realloc")]
+        return;
+
+        #[cfg(not(feature = "no_pcie_bar_realloc"))]
+        {
+            // we need to update the bridge bus number if we want linux not to update bus number
+            unsafe {
+                let ptr = self.mmio.access::<u32>(0x18);
+                let mut value = ptr.read_volatile();
+                value.set_bits(16..24, self.subordinate_bus.into());
+                value.set_bits(8..16, self.secondary_bus.into());
+                value.set_bits(0..8, self.primary_bus.into());
+                ptr.write_volatile(value);
+            }
         }
     }
 
@@ -1435,6 +1530,7 @@ impl RootComplex {
 pub struct VirtualRootComplex {
     devs: BTreeMap<Bdf, ArcRwLockVirtualPciConfigSpace>,
     base_to_bdf: BTreeMap<PciConfigAddress, Bdf>,
+    accessor: Option<Arc<dyn PciConfigAccessor>>,
 }
 
 impl VirtualRootComplex {
@@ -1442,7 +1538,12 @@ impl VirtualRootComplex {
         Self {
             devs: BTreeMap::new(),
             base_to_bdf: BTreeMap::new(),
+            accessor: None,
         }
+    }
+
+    pub fn set_accessor(&mut self, accessor: Arc<dyn PciConfigAccessor>) {
+        self.accessor = Some(accessor);
     }
 
     pub fn insert(
@@ -1450,7 +1551,20 @@ impl VirtualRootComplex {
         bdf: Bdf,
         dev: VirtualPciConfigSpace,
     ) -> Option<ArcRwLockVirtualPciConfigSpace> {
-        let base = dev.get_base();
+        let parent_bus = dev.parent_bdf.bus();
+        let offset = 0;
+        let base = if let Some(accessor) = &self.accessor {
+            match accessor.get_physical_address(bdf, offset, parent_bus) {
+                Ok(addr) => addr,
+                Err(_) => {
+                    warn!("can not get physical address for device {:#?}(vbdf), reset device base same to hardware", bdf);
+                    dev.get_base()
+                }
+            }
+        } else {
+            warn!("can not found accessor for vpci bus, reset device base same to hardware");
+            dev.get_base()
+        };
         info!("pci insert base {:#x} to bdf {:#?}", base, bdf);
         self.base_to_bdf.insert(base, bdf);
         self.devs
@@ -1471,7 +1585,7 @@ impl VirtualRootComplex {
 
     /* because the base of device may discontinuous，get device by base is simpler */
     pub fn get_device_by_base(
-        &mut self,
+        &self,
         base: PciConfigAddress,
     ) -> Option<ArcRwLockVirtualPciConfigSpace> {
         let bdf = self.base_to_bdf.get(&base).copied()?;

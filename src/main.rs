@@ -66,9 +66,9 @@ mod pci;
 #[cfg(test)]
 mod tests;
 
-use crate::arch::iommu::iommu_init;
 use crate::arch::mm::{arch_post_heap_init, arch_setup_parange};
 use crate::consts::{hv_end, mem_pool_start, MAX_CPU_NUM};
+use crate::device::iommu::iommu_init;
 use arch::{cpu::cpu_start, entry::arch_entry};
 use config::root_zone_config;
 use core::sync::atomic::{AtomicI32, AtomicU32, Ordering};

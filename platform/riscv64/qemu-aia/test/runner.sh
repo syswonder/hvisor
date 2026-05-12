@@ -32,7 +32,7 @@ info "PWD=$PWD, running cargo test"
 $OBJCOPY $HVISOR_ELF --strip-all -O binary $HVISOR_BIN
 
 qemu-system-riscv64 \
-    -machine virt,aia=aplic-imsic,aia-guests=1,aclint=on \
+    -machine virt,aia=aplic-imsic,aia-guests=1,iommu-sys=on \
     -bios default -cpu rv64 -smp 4 -m 4G -nographic \
     -kernel $HVISOR_BIN
 

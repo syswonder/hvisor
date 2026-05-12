@@ -37,3 +37,5 @@ src/platform/__board.rs
 .vscode/extensions.json
 # systemtest
 rootfs1.zip*
+jenkins/__pycache__
+jenkins-cli.jar

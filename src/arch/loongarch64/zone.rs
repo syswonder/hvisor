@@ -40,39 +40,46 @@ use spin::Mutex;
 
 impl Zone {
     pub fn pt_init(&mut self, mem_regions: &[HvConfigMemoryRegion]) -> HvResult {
+        let mut inner = self.write();
         // use the new zone config type of init
         for region in mem_regions {
             trace!("loongarch64: pt_init: process region: {:#x?}", region);
             let mem_type = region.mem_type;
             match mem_type {
                 MEM_TYPE_RAM => {
-                    self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-                        region.virtual_start as GuestPhysAddr,
-                        region.physical_start as HostPhysAddr,
-                        region.size as _,
-                        MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
-                    ))?;
+                    inner
+                        .gpm_mut()
+                        .insert(MemoryRegion::new_with_offset_mapper(
+                            region.virtual_start as GuestPhysAddr,
+                            region.physical_start as HostPhysAddr,
+                            region.size as _,
+                            MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+                        ))?;
                 }
                 MEM_TYPE_IO => {
-                    self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-                        region.virtual_start as GuestPhysAddr,
-                        region.physical_start as HostPhysAddr,
-                        region.size as _,
-                        MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-                    ))?;
+                    inner
+                        .gpm_mut()
+                        .insert(MemoryRegion::new_with_offset_mapper(
+                            region.virtual_start as GuestPhysAddr,
+                            region.physical_start as HostPhysAddr,
+                            region.size as _,
+                            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+                        ))?;
                 }
                 MEM_TYPE_VIRTIO => {
                     info!(
                         "loongarch64: pt_init: register virtio mmio region: {:#x?}",
                         region
                     );
-                    self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-                        region.virtual_start as GuestPhysAddr,
-                        region.physical_start as HostPhysAddr,
-                        PAGE_SIZE, // since we only need 0x200 size for virtio mmio, but the minimal size is PAGE_SIZE
-                        MemFlags::USER, // we use the USER as a hint flag for invalidating this stage-2 PTE
-                    ))?;
-                    self.mmio_region_register(
+                    inner
+                        .gpm_mut()
+                        .insert(MemoryRegion::new_with_offset_mapper(
+                            region.virtual_start as GuestPhysAddr,
+                            region.physical_start as HostPhysAddr,
+                            PAGE_SIZE, // since we only need 0x200 size for virtio mmio, but the minimal size is PAGE_SIZE
+                            MemFlags::USER, // we use the USER as a hint flag for invalidating this stage-2 PTE
+                        ))?;
+                    inner.mmio_region_register(
                         region.physical_start as _,
                         region.size as _,
                         mmio_virtio_handler,
@@ -92,14 +99,14 @@ impl Zone {
         // 3. chip configuration
 
         info!("loongarch64: pt_init: add mmio handler for 0x1fe0_xxxx mmio region");
-        self.mmio_region_register(0x1fe0_0000, 0x3000, loongarch_generic_mmio_handler, 0x1234);
+        inner.mmio_region_register(0x1fe0_0000, 0x3000, loongarch_generic_mmio_handler, 0x1234);
 
-        info!("zone stage-2 memory set: {:#x?}", self.gpm);
+        info!("zone stage-2 memory set: {:#x?}", inner.gpm());
         unsafe {
             // test the page table by querying the first page
             if mem_regions.len() > 0 {
-                let r = self
-                    .gpm
+                let r = inner
+                    .gpm()
                     .page_table_query(mem_regions[0].virtual_start as GuestPhysAddr);
                 debug!("query 0x{:x}: {:#x?}", mem_regions[0].virtual_start, r);
                 // check whether the first page is mapped
@@ -674,13 +681,15 @@ pub fn loongarch_generic_mmio_handler(mmio: &mut MMIOAccess, arg: usize) -> HvRe
 
 impl Zone {
     pub fn page_table_emergency(&mut self, vaddr: usize, size: usize) -> HvResult {
-        self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-            vaddr as GuestPhysAddr,
-            vaddr as HostPhysAddr,
-            size as _,
-            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-        ))?;
-        self.gpm.delete(vaddr as GuestPhysAddr, size)
+        self.write()
+            .gpm_mut()
+            .insert(MemoryRegion::new_with_offset_mapper(
+                vaddr as GuestPhysAddr,
+                vaddr as HostPhysAddr,
+                size as _,
+                MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+            ))?;
+        self.write().gpm_mut().delete(vaddr as GuestPhysAddr, size)
     }
 
     pub fn arch_zone_pre_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
@@ -688,6 +697,10 @@ impl Zone {
     }
 
     pub fn arch_zone_post_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
+        Ok(())
+    }
+
+    pub fn arch_zone_reset(&mut self, _config: &HvZoneConfig) -> HvResult {
         Ok(())
     }
 }

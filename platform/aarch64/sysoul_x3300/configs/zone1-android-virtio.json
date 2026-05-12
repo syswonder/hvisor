@@ -1,0 +1,44 @@
+{
+  "zones": [
+    {
+      "id": 1,
+      "memory_region": [
+        {
+          "zone0_ipa": "0x20000000",
+          "zonex_ipa": "0x20000000",
+          "size": "0x80000000"
+        },
+        {
+          "zone0_ipa": "0x100000000",
+          "zonex_ipa": "0x100000000",
+          "size": "0x2fc000000"
+        }
+      ],
+      "devices": [
+        {
+          "type": "console",
+          "addr": "0xff9e0000",
+          "len": "0x200",
+          "irq": 66,
+          "status": "enable"
+        },
+        {
+          "type": "net",
+          "addr": "0xff9f0000",
+          "len": "0x200",
+          "irq": 67,
+          "tap": "tap0",
+          "mac": [
+              "0x02",
+              "0x00",
+              "0x00",
+              "0x00",
+              "0x01",
+              "0x01"
+          ],
+          "status": "enable"
+        }
+      ]
+    }
+  ]
+}

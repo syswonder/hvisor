@@ -181,7 +181,7 @@ impl Zone {
         if arch.ioapic_base == 0 || arch.ioapic_size == 0 {
             return;
         }
-        self.mmio_region_register(
+        self.write().mmio_region_register(
             arch.ioapic_base,
             arch.ioapic_size,
             mmio_ioapic_handler,

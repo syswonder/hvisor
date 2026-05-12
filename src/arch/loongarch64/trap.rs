@@ -608,14 +608,14 @@ pub fn _vcpu_return(ctx: usize) {
     } else {
         // since LVZ use GID=0 for hypervisor TLB, we cannot use zone id 0 here
         // so we add it by 1 - wheatfox
-        vm_id = z.unwrap().read().id + 1;
+        vm_id = z.unwrap().id() + 1;
     }
     gstat::set_gid(vm_id);
     gstat::set_pgm(true);
     trace!(
         "loongarch64: _vcpu_return: set hardware Guest ID to {} for zone {}",
         vm_id,
-        z.unwrap().read().id
+        z.unwrap().id()
     );
     // Configure guest TLB control
     gtlbc::set_use_tgid(true);

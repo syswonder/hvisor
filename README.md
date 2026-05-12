@@ -91,7 +91,7 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
 - [x] Zephyr AArch64
 - [x] Zephyr AArch32
 - [x] RT-Thread
-- [ ] Android
+- [x] Android
 - [ ] OpenHarmony
 
 ## Getting Started
@@ -105,7 +105,6 @@ Please refer to the hvisor documentation for quick start guides, build and run i
 - Support for PCIe bus virtualization
 
 ### Planned
-- Support for Android
 - Support for OpenHarmony  
 - Support for ARMv9
 - Support for GICv4

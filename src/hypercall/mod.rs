@@ -22,6 +22,7 @@ use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, MAX_WAIT_TIMES, PAGE_SIZE};
 use crate::cpu_data::{get_cpu_data, PerCpu};
 use crate::device::virtio_trampoline::{MAX_DEVS, VIRTIO_BRIDGE, VIRTIO_IRQS};
 use crate::error::HvResult;
+use crate::pci::pci_config::GLOBAL_PCIE_LIST;
 use crate::zone::{
     add_zone, all_zones_info, find_zone, is_this_root_zone, remove_zone, zone_create, ZoneInfo,
 };
@@ -195,7 +196,7 @@ impl<'a> HyperCall<'a> {
             );
         }
         let zone = zone_create(config)?;
-        let boot_cpu = zone.read().cpu_set.first_cpu().unwrap();
+        let boot_cpu = zone.read().cpu_set().first_cpu().unwrap();
 
         let target_data = get_cpu_data(boot_cpu as _);
         let _lock = target_data.ctrl_lock.lock();
@@ -238,7 +239,7 @@ impl<'a> HyperCall<'a> {
         };
         let zone_w = zone.write();
 
-        zone_w.cpu_set.iter().for_each(|cpu_id| {
+        zone_w.cpu_set().iter().for_each(|cpu_id| {
             let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
             get_cpu_data(cpu_id).cpu_on_entry = INVALID_ADDRESS;
             send_event(cpu_id, SGI_IPI_ID as _, IPI_EVENT_SHUTDOWN);
@@ -251,7 +252,7 @@ impl<'a> HyperCall<'a> {
         let mut count: usize = 0;
 
         // wait all zone's cpus shutdown
-        while zone_w.cpu_set.iter().any(|cpu_id| {
+        while zone_w.cpu_set().iter().any(|cpu_id| {
             let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
             let power_on = get_cpu_data(cpu_id).arch_cpu.power_on;
             count += 1;
@@ -264,14 +265,24 @@ impl<'a> HyperCall<'a> {
             power_on
         }) {}
 
-        zone_w.cpu_set.iter().for_each(|cpu_id| {
+        zone_w.cpu_set().iter().for_each(|cpu_id| {
             let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
             get_cpu_data(cpu_id).zone = None;
         });
-        zone_w.arch_irqchip_reset();
 
         drop(zone_w);
+        zone.arch_irqchip_reset();
         drop(zone);
+
+        // Reset zone_id for all devices allocated to this zone
+        let pci_list = GLOBAL_PCIE_LIST.lock();
+        for (_bdf, dev) in pci_list.iter() {
+            if dev.get_zone_id() == Some(zone_id as u32) {
+                dev.set_zone_id(None);
+            }
+        }
+        drop(pci_list);
+
         remove_zone(zone_id as _);
         info!("zone {} has been shutdown", zone_id);
         HyperCallResult::Ok(0)

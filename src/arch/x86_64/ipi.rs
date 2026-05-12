@@ -91,7 +91,7 @@ pub fn send_ipi(value: u64) -> HvResult {
     let dest = get_cpu_id(value.get_bits(32..=39) as usize);
     let cnt = value.get_bits(40..=63) as u32;
 
-    let mut cpu_set = this_zone().read().cpu_set;
+    let mut cpu_set = this_zone().cpu_set();
     let cpu_id = this_cpu_id();
     let mut dest_set = CpuSet::new(cpu_set.max_cpu_id, 0);
 

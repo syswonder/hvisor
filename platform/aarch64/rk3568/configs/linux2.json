@@ -6,9 +6,9 @@
     "memory_regions": [
         {
             "type": "ram",
-            "physical_start": "0x40000000",
-            "virtual_start":  "0x40000000",
-            "size": "0x20000000"
+            "physical_start": "0x50000000",
+            "virtual_start":  "0x50000000",
+            "size": "0x25000000"
         },
         {
             "type": "io",
@@ -33,9 +33,9 @@
     "ivc_configs": [],
     "kernel_filepath": "./Image",
     "dtb_filepath": "./rk3568_limit_zone1.dtb",
-    "kernel_load_paddr": "0x40080000",
-    "dtb_load_paddr":   "0x40000000",
-    "entry_point":      "0x40080000",
+    "kernel_load_paddr": "0x50400000",
+    "dtb_load_paddr":   "0x50000000",
+    "entry_point":      "0x50400000",
     "arch_config": {
         "gic_version": "v3",
         "gicd_base": "0xfd400000",

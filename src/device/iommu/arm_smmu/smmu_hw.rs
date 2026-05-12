@@ -113,7 +113,7 @@ const DEFAULT_VCTR: usize =
 // page0 + page1
 register_structs! {
     #[allow(non_snake_case)]
-    pub RegisterPage{
+    RegisterPage {
         (0x0000 => IDR0:ReadOnly<u32>),
         (0x0004 => IDR1:ReadOnly<u32>),
         (0x0008 => IDR2:ReadOnly<u32>),
@@ -155,14 +155,14 @@ register_structs! {
 
 unsafe impl Sync for RegisterPage {}
 
-pub fn extract_bits(value: usize, start: usize, length: usize) -> usize {
+fn extract_bits(value: usize, start: usize, length: usize) -> usize {
     let mask = (1 << length) - 1;
     (value >> start) & mask
 }
 
-pub struct StreamTableEntry([u64; STRTAB_STE_DWORDS]);
+struct StreamTableEntry([u64; STRTAB_STE_DWORDS]);
 
-pub struct LinearStreamTable {
+struct LinearStreamTable {
     base: PhysAddr,
     sid_max_bits: usize,
     frames: Vec<Frame>,
@@ -236,7 +236,7 @@ impl LinearStreamTable {
     }
 }
 
-pub struct CmdQueue {
+struct CmdQueue {
     base_reg: usize,
     base: PhysAddr,
     prod: u32,
@@ -245,7 +245,7 @@ pub struct CmdQueue {
     q_frame: Frame,
 }
 
-pub struct Cmd([u64; CMDQ_ENT_DWORDS]);
+struct Cmd([u64; CMDQ_ENT_DWORDS]);
 
 impl Cmd {
     fn new() -> Self {
@@ -343,7 +343,7 @@ impl CmdQueue {
     }
 }
 
-pub struct Smmuv3 {
+struct Smmuv3 {
     rp: &'static RegisterPage,
     strtab: LinearStreamTable,
     cmdq: CmdQueue,
@@ -543,13 +543,13 @@ pub fn iommu_init() {
 
 /// smmuv3_base
 #[allow(dead_code)]
-pub fn smmuv3_base() -> usize {
+fn smmuv3_base() -> usize {
     SMMU_BASE_ADDR.into()
 }
 
 /// smmuv3_size
 #[allow(dead_code)]
-pub fn smmuv3_size() -> usize {
+fn smmuv3_size() -> usize {
     SMMU_SIZE.into()
 }
 

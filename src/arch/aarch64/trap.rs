@@ -390,10 +390,10 @@ fn handle_psci_smc(
         PsciFnId::PSCI_CPU_ON_32 | PsciFnId::PSCI_CPU_ON_64 => psci_emulate_cpu_on(regs),
         PsciFnId::PSCI_SYSTEM_OFF => {
             let zone = this_zone();
-            let zone_id = zone.read().id;
+            let zone_id = zone.id();
             let is_root = is_this_root_zone();
 
-            for cpu_id in zone.read().cpu_set.iter_except(this_cpu_data().id) {
+            for cpu_id in zone.read().cpu_set().iter_except(this_cpu_data().id) {
                 let target_cpu = get_cpu_data(cpu_id);
                 let _lock = target_cpu.ctrl_lock.lock();
                 target_cpu.zone = None;

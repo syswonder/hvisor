@@ -57,7 +57,11 @@ pub const BOARD_PHYSMEM_LIST: &[(u64, u64, MemoryType)] = &[
  // (       start,           end,                type)
     (         0x0,    0xf0000000,  MemoryType::Normal),
     (  0xf0000000,   0x100000000,  MemoryType::Device),
-    ( 0x100000000,   0x3fc000000,  MemoryType::Normal)
+    ( 0x100000000,   0x3fc000000,  MemoryType::Normal),
+    // BOARD_PHYSMEM_LIST is the EL2 linear map and must stay 2 MiB aligned.
+    // Cover the root zone RAM at 0x3fc500000..0x3ffefffff with an aligned superset.
+    ( 0x3fc400000,   0x400000000,  MemoryType::Normal),
+    ( 0x4f0000000,   0x500000000,  MemoryType::Normal),
 ];
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x10000000;

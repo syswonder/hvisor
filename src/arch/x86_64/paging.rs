@@ -324,19 +324,20 @@ where
         Ok(p1e)
     }
 
-    fn map_page(
-        &mut self,
-        page: Page<VA>,
-        paddr: PhysAddr,
-        flags: MemFlags,
-    ) -> PagingResult<&mut PTE> {
+    fn map_page(&mut self, page: Page<VA>, paddr: PhysAddr, flags: MemFlags) -> PagingResult<()> {
+        // Record the number of intermediate tables before allocation to enable rollback on failure.
+        let intrm_tables_len_before = self.intrm_tables.len();
+
         let entry = self.get_entry_mut_or_create(page)?;
         if !entry.is_unused() {
+            // Rollback before returning error (entry ref goes out of scope here).
+            let _ = entry;
+            self.intrm_tables.truncate(intrm_tables_len_before);
             return Err(PagingError::AlreadyMapped);
         }
         entry.set_addr(page.size.align_down(paddr));
         entry.set_flags(flags, page.size.is_huge());
-        Ok(entry)
+        Ok(())
     }
 
     fn unmap_page(&mut self, vaddr: VA) -> PagingResult<(PhysAddr, PageSize)> {
@@ -442,6 +443,7 @@ where
         let _lock = self.clonee_lock.lock();
         let mut vaddr = region.start.into();
         let mut size = region.size;
+        let mut mapped_size = 0usize;
         while size > 0 {
             let paddr = region.mapper.map_fn(vaddr);
             let page_size = if PageSize::Size1G.is_aligned(vaddr)
@@ -460,15 +462,34 @@ where
                 PageSize::Size4K
             };
             let page = Page::new_aligned(vaddr.into(), page_size);
-            self.inner
-                .map_page(page, paddr, region.flags)
-                .map_err(|e: PagingError| {
-                    error!(
-                        "failed to map page: {:#x?}({:?}) -> {:#x?}, {:?}",
-                        vaddr, page_size, paddr, e
-                    );
-                    e
-                })?;
+            if let Err(map_err) = self.inner.map_page(page, paddr, region.flags) {
+                error!(
+                    "failed to map page: {:#x?}({:?}) -> {:#x?}, {:?}",
+                    vaddr, page_size, paddr, map_err
+                );
+                let mut rollback_vaddr = region.start.into();
+                let mut rollback_size = mapped_size;
+                while rollback_size > 0 {
+                    let (_, rollback_page_size) =
+                        self.inner.unmap_page(rollback_vaddr.into()).map_err(|rollback_err| {
+                            error!(
+                                "failed to rollback mapped page: {:#x?}, rollback error: {:?}, original map error: {:?}",
+                                rollback_vaddr, rollback_err, map_err
+                            );
+                            rollback_err
+                        })?;
+                    if !rollback_page_size.is_aligned(rollback_vaddr) {
+                        error!("rollback alignment error vaddr={:#x?}", rollback_vaddr);
+                        loop {}
+                    }
+                    assert!(rollback_page_size.is_aligned(rollback_vaddr));
+                    assert!(rollback_page_size as usize <= rollback_size);
+                    rollback_vaddr += rollback_page_size as usize;
+                    rollback_size -= rollback_page_size as usize;
+                }
+                return Err(map_err.into());
+            }
+            mapped_size += page_size as usize;
             vaddr += page_size as usize;
             size -= page_size as usize;
         }

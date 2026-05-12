@@ -37,24 +37,25 @@ pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> 
 
 impl Zone {
     pub fn vgicv3_mmio_init(&mut self, arch: &HvArchZoneConfig) {
+        let mut inner = self.write();
         match arch.gic_config {
             GicConfig::Gicv2(_) => {
                 panic!("vgicv3_mmio_init: GICv2 is not supported in this function");
             }
             GicConfig::Gicv3(ref gicv3_config) => {
                 // GICv3 specific initialization
-                info!("Initializing GICv3 MMIO regions for zone {}", self.id);
+                info!("Initializing GICv3 MMIO regions for zone {}", self.id());
                 if gicv3_config.gicd_base == 0 || gicv3_config.gicr_base == 0 {
                     panic!("vgicv3_mmio_init: gicd_base or gicr_base is null");
                 }
 
-                self.mmio_region_register(
+                inner.mmio_region_register(
                     gicv3_config.gicd_base,
                     gicv3_config.gicd_size,
                     vgicv3_dist_handler,
                     0,
                 );
-                self.mmio_region_register(
+                inner.mmio_region_register(
                     gicv3_config.gits_base,
                     gicv3_config.gits_size,
                     vgicv3_its_handler,
@@ -67,43 +68,46 @@ impl Zone {
                         "Registering GIC Redistributor region for CPU {} at {:#x?}",
                         cpu, gicr_base
                     );
-                    self.mmio_region_register(gicr_base, PER_GICR_SIZE, vgicv3_redist_handler, cpu);
-                }
-            }
-        }
-    }
-
-    pub fn irq_bitmap_init(&mut self, irqs_bitmap: &[BitmapWord]) {
-        for i in 0..irqs_bitmap.len() {
-            let word = irqs_bitmap[i];
-
-            for j in 0..CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD {
-                if ((word >> j) & 1) == 1 {
-                    let irq_id = (i * CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD + j) as u32;
-                    self.insert_irq_to_bitmap(irq_id);
-                }
-            }
-        }
-
-        for (index, &word) in self.irq_bitmap.iter().enumerate() {
-            for bit_position in 0..CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD {
-                if word & (1 << bit_position) != 0 {
-                    let interrupt_number =
-                        index * CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD + bit_position;
-                    info!(
-                        "Found interrupt in Zone {} irq_bitmap: {}",
-                        self.id, interrupt_number
+                    inner.mmio_region_register(
+                        gicr_base,
+                        PER_GICR_SIZE,
+                        vgicv3_redist_handler,
+                        cpu,
                     );
                 }
             }
         }
     }
 
-    fn insert_irq_to_bitmap(&mut self, irq: u32) {
-        assert!(irq < (CONFIG_MAX_INTERRUPTS as u32)); // CONFIG_MAX_INTERRUPTS is the maximum number of interrupts supported by GICv3 (GICD_TYPER.ITLinesNumber)
-        let irq_index = irq / (CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD as u32);
-        let irq_bit = irq % (CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD as u32);
-        self.irq_bitmap[irq_index as usize] |= 1 << irq_bit;
+    pub fn irq_bitmap_init(&mut self, irqs_bitmap: &[BitmapWord]) {
+        let mut inner = self.write();
+        for i in 0..irqs_bitmap.len() {
+            let word = irqs_bitmap[i];
+
+            for j in 0..CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD {
+                if ((word >> j) & 1) == 1 {
+                    let irq_id = (i * CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD + j) as u32;
+                    assert!(irq_id < (CONFIG_MAX_INTERRUPTS as u32));
+                    let irq_index = irq_id / (CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD as u32);
+                    let irq_bit = irq_id % (CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD as u32);
+                    inner.irq_bitmap_mut()[irq_index as usize] |= 1 << irq_bit;
+                }
+            }
+        }
+
+        for (index, &word) in inner.irq_bitmap().iter().enumerate() {
+            for bit_position in 0..CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD {
+                if word & (1 << bit_position) != 0 {
+                    let interrupt_number =
+                        index * CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD + bit_position;
+                    info!(
+                        "Found interrupt in Zone {} irq_bitmap: {}",
+                        self.id(),
+                        interrupt_number
+                    );
+                }
+            }
+        }
     }
 }
 
@@ -363,7 +367,7 @@ pub fn vgicv3_its_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
                 if zone_id == 0 {
                     let v_dt_addr = mmio.value & 0xfff_fff_fff_000usize;
                     let phys_dt_trans =
-                        unsafe { this_zone().read().gpm.page_table_query(v_dt_addr) };
+                        unsafe { this_zone().read().gpm().page_table_query(v_dt_addr) };
                     match phys_dt_trans {
                         Ok(p) => {
                             mmio.value &= !0xfff_fff_fff_000usize;
@@ -383,7 +387,7 @@ pub fn vgicv3_its_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
                 if zone_id == 0 {
                     let v_ct_addr = mmio.value & 0xfff_fff_fff_000usize;
                     let phys_ct_trans =
-                        unsafe { this_zone().read().gpm.page_table_query(v_ct_addr) };
+                        unsafe { this_zone().read().gpm().page_table_query(v_ct_addr) };
                     match phys_ct_trans {
                         Ok(p) => {
                             mmio.value &= !0xfff_fff_fff_000usize;

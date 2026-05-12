@@ -236,7 +236,7 @@ fn map_list(list: &[(u64, u64, MemoryType)]) {
     while i < list.len() {
         let (start, mut end, mem_type) = list[i];
         while i + 1 < list.len() && list[i + 1].0 == end && list[i + 1].2 == mem_type {
-            end = list[i].1;
+            end = list[i + 1].1;
             i += 1;
         }
         // map from start to end with mem_type

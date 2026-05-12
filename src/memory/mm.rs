@@ -107,6 +107,16 @@ where
         true
     }
 
+    /// Iterate over all memory regions in the MemorySet.
+    pub fn for_each_region<F>(&self, mut f: F)
+    where
+        F: FnMut(&MemoryRegion<PT::VA>),
+    {
+        for region in self.regions.values() {
+            f(region);
+        }
+    }
+
     /// Add a memory region to this set.
     pub fn insert(&mut self, region: MemoryRegion<PT::VA>) -> HvResult {
         info!(
@@ -127,6 +137,7 @@ where
             );
             return hv_result_err!(EINVAL);
         }
+        // Keep metadata and page table consistent: pt.map must be all-or-nothing.
         self.pt.map(&region)?;
         self.regions.insert(region.start, region);
         Ok(())

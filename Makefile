@@ -2,10 +2,17 @@ ARCH ?= aarch64
 LOG ?= info
 STATS ?= off
 PORT ?= 2333
-MODE ?= debug
+MODE ?= release
 BOARD ?= qemu-gicv3
 FEATURES=
 BID ?=
+ptest ?=
+
+ifeq ($(origin ptest),command line)
+ifneq ($(strip $(ptest)),)
+.DEFAULT_GOAL := ptest
+endif
+endif
 
 # if user uses `make ID=aarch64/qemu-gicv2`, we parse it into ARCH and BOARD
 ifeq ($(BID),)
@@ -56,6 +63,9 @@ build_path := target/$(RUSTC_TARGET)/$(MODE)
 hvisor_elf := $(build_path)/hvisor
 hvisor_bin := $(build_path)/hvisor.bin
 image_dir  := platform/$(ARCH)/$(BOARD)/image
+test_dir := ./platform/$(ARCH)/$(BOARD)/test
+perftest_tdownload := $(test_dir)/perftest/tdownload_all.sh
+systemtest_tdownload := $(test_dir)/systemtest/tdownload_all.sh
 
 # Build arguments
 build_args := 
@@ -77,7 +87,7 @@ COLOR_BOLD := $(shell tput bold)
 COLOR_RESET := $(shell tput sgr0)
 
 # Targets
-.PHONY: all elf disa run gdb monitor clean tools rootfs vscode
+.PHONY: all elf disa run gdb monitor clean tools rootfs vscode ci-run
 all: clean_check gen_cargo_config vscode $(hvisor_bin)
 	@printf "\n"
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)hvisor build summary:$(COLOR_RESET)\n"
@@ -130,6 +140,10 @@ disa:
 
 run: all
 	$(QEMU) $(QEMU_ARGS)
+
+ci-run: all
+	@mkdir -p "$(CURDIR)/.qemu"
+	$(MAKE) run QEMU_ARGS+='$(subst -nographic,-display none,$(filter-out -s -S -serial mon:stdio,$(QEMU_ARGS))) -monitor none -chardev socket,id=char0,path=$(CURDIR)/.qemu/qemu.sock,server=on,wait=off -serial chardev:char0'
 
 gdb: all
 	$(QEMU) $(QEMU_ARGS) -s -S
@@ -185,6 +199,80 @@ stest: clean test-pre gen_cargo_config
 	./platform/$(ARCH)/$(BOARD)/test/systemtest/tdownload_all.sh
 	./platform/$(ARCH)/$(BOARD)/test/systemtest/trootfs_deploy.sh
 	./platform/$(ARCH)/$(BOARD)/test/systemtest/tstart.sh
+
+# Performance benchmark: data collection only, does not affect pass/fail.
+# Calls systemtest scripts for DTS, then perftest/tdownload_all.sh when present
+# (fallback to systemtest/tdownload_all.sh), and perftest/trootfs_deploy.sh.
+perf: clean test-pre gen_cargo_config
+	./platform/$(ARCH)/$(BOARD)/test/systemtest/tcompiledtb.sh
+	@if [ -x "$(perftest_tdownload)" ]; then \
+		$(perftest_tdownload); \
+	else \
+		$(systemtest_tdownload); \
+	fi
+	./platform/$(ARCH)/$(BOARD)/test/perftest/trootfs_deploy.sh
+	./platform/$(ARCH)/$(BOARD)/test/perftest/tstart.sh
+
+# Prepare perf image only: reuse existing rootfs img when present, download
+# missing assets, deploy benchmark scripts/tools into image, and print path.
+perf-prepare-img: clean test-pre gen_cargo_config
+	./platform/$(ARCH)/$(BOARD)/test/systemtest/tcompiledtb.sh
+	@if [ -x "$(perftest_tdownload)" ]; then \
+		$(perftest_tdownload); \
+	else \
+		$(systemtest_tdownload); \
+	fi
+	@ROOTFS_EXT4="platform/$(ARCH)/$(BOARD)/image/virtdisk/rootfs1.ext4"; \
+	 ROOTFS_ZIP="rootfs1.zip"; \
+	 if [ ! -f "$$ROOTFS_EXT4" ]; then \
+		echo "WARN: $$ROOTFS_EXT4 not found after download, trying unzip $$ROOTFS_ZIP"; \
+		if [ -f "$$ROOTFS_ZIP" ]; then \
+			unzip -qo "$$ROOTFS_ZIP" -d "platform/$(ARCH)/$(BOARD)/image/virtdisk"; \
+		else \
+			echo "ERROR: missing $$ROOTFS_EXT4 and $$ROOTFS_ZIP"; \
+			exit 1; \
+		fi; \
+	 fi; \
+	 if [ ! -f "$$ROOTFS_EXT4" ]; then \
+		echo "ERROR: still missing $$ROOTFS_EXT4 after unzip"; \
+		exit 1; \
+	 fi
+	./platform/$(ARCH)/$(BOARD)/test/perftest/trootfs_deploy.sh
+	@echo "READY_IMG=$(PWD)/platform/$(ARCH)/$(BOARD)/image/virtdisk/rootfs1.ext4"
+
+# Run a single perf benchmark (assumes perf image is already prepared).
+# Before test start, rebuild hvisor-tool and deploy artifacts into rootfs.
+# Usage: make ptest=irq | make ptest=net | make ptest=mem | make ptest=blk
+ptest: ptest-check
+	./platform/$(ARCH)/$(BOARD)/test/systemtest/tcompiledtb.sh
+	./platform/$(ARCH)/$(BOARD)/test/perftest/trootfs_deploy.sh
+	@if [ "$(ptest)" = "blk" ]; then \
+		expect -f ./platform/$(ARCH)/$(BOARD)/test/perftest/tstart_blk.sh; \
+	else \
+		PTEST=$(ptest) expect -f ./platform/$(ARCH)/$(BOARD)/test/perftest/tstart_one.sh; \
+	fi
+
+# Run a single perf benchmark without image prepare step.
+ptest-only: ptest-check
+	@if [ "$(ptest)" = "blk" ]; then \
+		expect -f ./platform/$(ARCH)/$(BOARD)/test/perftest/tstart_blk.sh; \
+	else \
+		PTEST=$(ptest) expect -f ./platform/$(ARCH)/$(BOARD)/test/perftest/tstart_one.sh; \
+	fi
+
+ptest-check:
+	@if [ -z "$(ptest)" ]; then \
+		echo "ERROR: ptest is empty. Use: make ptest=irq|net|mem|blk"; \
+		exit 1; \
+	fi
+	@if [ "$(BOARD)" != "qemu-plic" ] && [ "$(BOARD)" != "qemu-gicv3" ]; then \
+		echo "ERROR: ptest only supports BOARD=qemu-plic|qemu-gicv3 (current: $(BOARD))"; \
+		exit 1; \
+	fi
+	@if [ "$(ptest)" != "irq" ] && [ "$(ptest)" != "net" ] && [ "$(ptest)" != "mem" ] && [ "$(ptest)" != "blk" ]; then \
+		echo "ERROR: unsupported ptest='$(ptest)'. Use irq|net|mem|blk"; \
+		exit 1; \
+	fi
 
 dtb:
 	@echo "building device tree at platform/$(ARCH)/$(BOARD)/image/dts"

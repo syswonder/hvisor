@@ -92,10 +92,8 @@ pub fn inject_irq(irq: usize, is_hardware: bool) {
     //     .read()
     //     .get_vplic()
     //     .inject_irq(vcontext_id, irq, is_hardware);
-    let vplic = {
-        let zone = this_cpu_data().zone.as_ref().unwrap().read();
-        zone.get_vplic()
-    };
+    let zone = this_cpu_data().zone.as_ref().unwrap().clone();
+    let vplic = zone.get_vplic();
     // Avoid holding the read lock when calling inject_irq
     vplic.inject_irq(vcontext_id, irq, is_hardware);
 }
@@ -106,8 +104,7 @@ pub fn vcontext_to_pcontext(vcontext_id: usize) -> usize {
         .zone
         .as_ref()
         .unwrap()
-        .read()
-        .cpu_set
+        .cpu_set()
         .iter()
         .collect::<Vec<_>>();
     let index = vcontext_id / NUM_CONTEXTS_PER_HART;
@@ -122,8 +119,7 @@ pub fn pcontext_to_vcontext(_pcontext_id: usize) -> usize {
         .zone
         .as_ref()
         .unwrap()
-        .read()
-        .cpu_set
+        .cpu_set()
         .iter()
         .collect::<Vec<_>>();
     let pcpu_id = this_cpu_id();
@@ -147,10 +143,8 @@ pub fn vplic_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
     //     .read()
     //     .get_vplic()
     //     .vplic_emul_access(mmio.address, mmio.size, mmio.value, mmio.is_write);
-    let vplic = {
-        let zone = this_cpu_data().zone.as_ref().unwrap().read();
-        zone.get_vplic()
-    };
+    let zone = this_cpu_data().zone.as_ref().unwrap().clone();
+    let vplic = zone.get_vplic();
     // Avoid holding the read lock when calling vplic_emul_access
     let value = vplic.vplic_emul_access(mmio.address, mmio.size, mmio.value, mmio.is_write);
     if !mmio.is_write {
@@ -171,10 +165,8 @@ pub fn update_hart_line() {
     //     .read()
     //     .get_vplic()
     //     .update_hart_line(vcontext_id);
-    let vplic = {
-        let zone = this_cpu_data().zone.as_ref().unwrap().read();
-        zone.get_vplic()
-    };
+    let zone = this_cpu_data().zone.as_ref().unwrap().clone();
+    let vplic = zone.get_vplic();
     // Avoid holding the read lock when calling update_hart_line
     vplic.update_hart_line(vcontext_id);
 }
@@ -201,24 +193,27 @@ impl Zone {
     pub fn vplic_init(&mut self, config: &HvZoneConfig) {
         // Create a new VirtualPLIC for this Zone.
         let mut map = VPLIC_MAP.lock();
-        if map.contains_key(&self.id) {
-            panic!("VirtualPLIC for Zone {} already exists!", self.id);
+        if map.contains_key(&self.id()) {
+            panic!("VirtualPLIC for Zone {} already exists!", self.id());
         }
         let vplic = vplic::VirtualPLIC::new(
             config.arch_config.plic_base,
             BOARD_PLIC_INTERRUPTS_NUM,
-            self.cpu_num * NUM_CONTEXTS_PER_HART,
+            self.read().cpu_num() * NUM_CONTEXTS_PER_HART,
         );
         // Insert into Map <zone_id, vplic>
-        map.insert(self.id, Arc::new(vplic));
-        info!("VirtualPLIC for Zone {} initialized successfully", self.id);
+        map.insert(self.id(), Arc::new(vplic));
+        info!(
+            "VirtualPLIC for Zone {} initialized successfully",
+            self.id()
+        );
         print_keys_from_map(&map);
     }
 
     pub fn get_vplic(&self) -> Arc<VirtualPLIC> {
         VPLIC_MAP
             .lock()
-            .get(&self.id)
+            .get(&self.id())
             .expect("No vplic exists for current zone.")
             .clone()
     }
@@ -228,7 +223,8 @@ impl Zone {
         // This func will only be called by one root zone's cpu.
         let host_plic = host_plic();
         let _vplic = self.get_vplic();
-        for (index, &word) in self.irq_bitmap.iter().enumerate() {
+        let zone_r = self.read();
+        for (index, &word) in zone_r.irq_bitmap().iter().enumerate() {
             for bit_position in 0..32 {
                 if word & (1 << bit_position) != 0 {
                     let irq_id = index * 32 + bit_position;
@@ -240,7 +236,7 @@ impl Zone {
                     info!("Reset irq_id {} priority to 0", irq_id);
                     host_plic.set_priority(irq_id, 0);
                     // Reset enable
-                    self.cpu_set.iter().for_each(|cpuid| {
+                    self.cpu_set().iter().for_each(|cpuid| {
                         let pcontext_id = cpuid * NUM_CONTEXTS_PER_HART + 1;
                         info!(
                             "Reset pcontext_id {} irq_id {} enable to false",
@@ -251,7 +247,7 @@ impl Zone {
                 }
             }
         }
-        self.cpu_set.iter().for_each(|cpuid| {
+        self.cpu_set().iter().for_each(|cpuid| {
             // Reset threshold
             let pcontext_id = cpuid * NUM_CONTEXTS_PER_HART + 1;
             info!("Reset pcontext_id {} threshold to 0", pcontext_id);
@@ -262,18 +258,13 @@ impl Zone {
         });
 
         let mut map = VPLIC_MAP.lock();
-        map.remove(&self.id);
+        map.remove(&self.id());
         print_keys_from_map(&map);
-    }
-
-    fn insert_irq_to_bitmap(&mut self, irq: u32) {
-        let irq_index = irq / 32;
-        let irq_bit = irq % 32;
-        self.irq_bitmap[irq_index as usize] |= 1 << irq_bit;
     }
 
     /// irq_bitmap_init, and set these irqs' hw bit in vplic to true.
     pub fn irq_bitmap_init(&mut self, irqs_bitmap: &[BitmapWord]) {
+        let mut zone_w = self.write();
         // insert to zone.irq_bitmap
         for i in 0..irqs_bitmap.len() {
             let word = irqs_bitmap[i];
@@ -288,19 +279,22 @@ impl Zone {
                         info!("Set irq {} to hardware interrupt", irq_id);
                     }
 
-                    self.insert_irq_to_bitmap(irq_id);
+                    let irq_index = irq_id / 32;
+                    let irq_bit = irq_id % 32;
+                    zone_w.irq_bitmap_mut()[irq_index as usize] |= 1 << irq_bit;
                 }
             }
         }
 
         // print irq_bitmap
-        for (index, &word) in self.irq_bitmap.iter().enumerate() {
+        for (index, &word) in zone_w.irq_bitmap().iter().enumerate() {
             for bit_position in 0..32 {
                 if word & (1 << bit_position) != 0 {
                     let interrupt_number = index * 32 + bit_position;
                     info!(
                         "Found interrupt in Zone {} irq_bitmap: {}",
-                        self.id, interrupt_number
+                        self.id(),
+                        interrupt_number
                     );
                 }
             }
@@ -311,6 +305,7 @@ impl Zone {
         if arch.plic_base == 0 {
             panic!("vplic_mmio_init: plic_base is null");
         }
-        self.mmio_region_register(arch.plic_base, arch.plic_size, vplic_handler, 0);
+        self.write()
+            .mmio_region_register(arch.plic_base, arch.plic_size, vplic_handler, 0);
     }
 }

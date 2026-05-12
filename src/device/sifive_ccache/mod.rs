@@ -86,7 +86,7 @@ pub fn virtual_sifive_ccache_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvRe
 impl Zone {
     /// Initialize cache controller MMIO region.
     pub fn virtual_sifive_ccache_mmio_init(&mut self) {
-        self.mmio_region_register(
+        self.write().mmio_region_register(
             SIFIVE_CCACHE_BASE,
             SIFIVE_CCACHE_SIZE,
             virtual_sifive_ccache_handler,

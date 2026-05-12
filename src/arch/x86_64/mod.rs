@@ -25,7 +25,6 @@ pub mod graphics;
 pub mod hpet;
 pub mod hypercall;
 pub mod idt;
-pub mod iommu;
 pub mod ipi;
 pub mod mm;
 pub mod mmio;

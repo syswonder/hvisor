@@ -22,6 +22,7 @@ use crate::{
 };
 impl Zone {
     pub fn pt_init(&mut self, mem_regions: &[HvConfigMemoryRegion]) -> HvResult {
+        let mut inner = self.write();
         for mem_region in mem_regions.iter() {
             let mut flags = MemFlags::READ | MemFlags::WRITE;
             // Note: in riscv, base flags are D/A/G/U/W/X, some mem attributes are embedded in the PMA.
@@ -31,15 +32,17 @@ impl Zone {
             }
             match mem_region.mem_type {
                 MEM_TYPE_RAM | MEM_TYPE_IO => {
-                    self.gpm.insert(MemoryRegion::new_with_offset_mapper(
-                        mem_region.virtual_start as GuestPhysAddr,
-                        mem_region.physical_start as HostPhysAddr,
-                        mem_region.size as _,
-                        flags,
-                    ))?
+                    inner
+                        .gpm_mut()
+                        .insert(MemoryRegion::new_with_offset_mapper(
+                            mem_region.virtual_start as GuestPhysAddr,
+                            mem_region.physical_start as HostPhysAddr,
+                            mem_region.size as _,
+                            flags,
+                        ))?
                 }
                 MEM_TYPE_VIRTIO => {
-                    self.mmio_region_register(
+                    inner.mmio_region_register(
                         mem_region.physical_start as _,
                         mem_region.size as _,
                         mmio_virtio_handler,
@@ -51,7 +54,7 @@ impl Zone {
                 }
             }
         }
-        info!("VM stage 2 memory set: {:#x?}", self.gpm);
+        info!("VM stage 2 memory set: {:#x?}", inner.gpm());
         Ok(())
     }
 
@@ -62,6 +65,10 @@ impl Zone {
     }
 
     pub fn arch_zone_post_configuration(&mut self, _config: &HvZoneConfig) -> HvResult {
+        Ok(())
+    }
+
+    pub fn arch_zone_reset(&mut self, _config: &HvZoneConfig) -> HvResult {
         Ok(())
     }
 }

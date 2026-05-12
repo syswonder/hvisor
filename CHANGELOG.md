@@ -2,7 +2,31 @@
 
 > ⚠️ Please update this file for any changes to the hvisor project along with your name and GitHub profile link under the CURRENT section.
 
-## CURRENT - v0.4
+## CURRENT - v0.5
+
+- [platform] **aarch64**: Add support for **sysoul_x3300**. ([agicy](https://github.com/agicy))
+- [feature] **aarch64**: Add dual-zone Linux / Android deployment. ([agicy](https://github.com/agicy))
+- [feature] **riscv64**: Add initial support for **RISC-V IOMMU**. ([Jingyu Liu](https://github.com/liulog))
+- [feature] **riscv-iommu**: Add command queue support. ([Jingyu Liu](https://github.com/liulog))
+- [feature] **riscv64/PCIe**: Support MSI irq-remapping on `qemu-aia`. ([Jingyu Liu](https://github.com/liulog))
+- [feature] **riscv64/PCIe**: Improve virtual PCI support on `qemu-aia`. ([Jingyu Liu](https://github.com/liulog))
+- [feature] **PCIe**: Improve bus enumeration, validate firmware bus range, and extend config space to 4 KB. ([wheatfox](https://github.com/enkerewpo))
+- [bugfix] **PCIe**: Fix subsystem resource leakage. ([Xingyu Chen](https://github.com/dallasxy))
+- [refactor] Decouple IOMMU implementation from architecture-specific code and reorganize related modules. ([Jingyu Liu](https://github.com/liulog))
+- [refactor] Separate lock-free fields from `Zone` and improve encapsulation. ([Xinhao Li](https://github.com/li041))
+- [bugfix] Improve page-table rollback behavior on allocation failure. ([Xinhao Li](https://github.com/li041))
+- [bugfix] Fix linear map merge errors and zone0 startup data abort on **rk3588**. ([Xinhao Li](https://github.com/li041))
+- [bugfix] Fix zone interface handling in `arch_zone_reset`. ([Xinhao Li](https://github.com/li041))
+- [bugfix] Address several PCI / GIC related regressions. ([Zhongkai Xu](https://github.com/ZhongkaiXu))
+- [bugfix] Fix lost-wakeup ordering issues and improve synchronization robustness in cross-core wakeup paths. ([agicy](https://github.com/agicy))
+- [ci] Add **sysoul_x3300** to the build matrix. ([agicy](https://github.com/agicy))
+- [ci] Expand board build / test coverage. ([Jingyu Liu](https://github.com/liulog))
+- [ci] Add CI / CD support for **x86_64**. ([Tianhong Liu](https://github.com/Solicey))
+- [ci] Add performance benchmarking scripts for QEMU platforms. ([Xinhao Li](https://github.com/li041))
+
+## History Release
+
+## hvisor - v0.4
 
 - [platform] **x86**: Add support for ECX-2300F-PEG. ([Tianhong Liu](https://github.com/Solicey))
 - [platform] **riscv64**: Add support for dp-1000. ([Jingyu Liu](https://github.com/liulog))
@@ -15,9 +39,6 @@
 - [bugfix] **aarch64**: Add support for cmd MOVI. ([Zhongkai Xu](https://github.com/ZhongkaiXu))
 - [bugfix] **virtio**: Slove the race conditions caused by spinlock. ([Jingyu Liu](https://github.com/liulog))
 - [ci] Update dependencies, add ccache support, and improve build/tooling workflows. ([Xingyu Chen](https://github.com/dallasxy),[Jingyu Liu](https://github.com/liulog),[wheatfox](https://github.com/enkerewpo))
-
-
-## History Release
 
 ## hvisor - v0.3
 

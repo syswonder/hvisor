@@ -18,7 +18,7 @@ use crate::{
     arch::{
         acpi::{self, *},
         boot::BootParams,
-        hpet, iommu, ipi,
+        hpet, ipi,
         mm::new_s2_memory_set,
         msr::{
             get_msr_bitmap,
@@ -31,6 +31,7 @@ use crate::{
     },
     consts::{self, core_end, PER_CPU_SIZE},
     cpu_data::{this_cpu_data, this_zone},
+    device::iommu,
     device::irqchip::pic::{check_pending_vectors, clear_vectors, ioapic, lapic::VirtLocalApic},
     error::{HvError, HvResult},
     memory::{
@@ -297,6 +298,7 @@ impl ArchCpu {
 
         if per_cpu.boot_cpu {
             // must be called after activate_gpm()
+            #[cfg(feature = "intel_vtd")]
             iommu::activate();
             self.guest_regs = self.vm_launch_guest_regs.clone();
         }
