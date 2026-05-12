@@ -1347,7 +1347,7 @@ fn handle_interrupt(is: usize) {
         reset_ipi(pcpu_id_this); // clear
 
         if pcpu_ipi_status & SMP_BOOT_CPU != 0 {
-            if pcpu_data.arch_cpu.power_on == true {
+            if pcpu_data.vcpu_state.is_running() {
                 panic!(
                     "pcpu : {} has already power on, this should not happen",
                     pcpu_id_this
@@ -1389,7 +1389,7 @@ fn handle_interrupt(is: usize) {
             drop(ipistate);
             pcpu_data.arch_cpu.idle();
         } else if pcpu_ipi_status & HVISOR_EVENT_VIRTIO_INJECT_IRQ != 0 {
-            if pcpu_data.arch_cpu.power_on == false {
+            if pcpu_data.vcpu_state.is_running() == false {
                 panic!(
                     "pcpu : {} has not power on, this should not happen",
                     pcpu_id_this

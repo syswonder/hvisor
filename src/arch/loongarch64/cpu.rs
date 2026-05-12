@@ -488,7 +488,6 @@ impl ArchCpu {
         assert!(this_cpu_id() == self.get_cpuid());
         this_cpu_data().activate_gpm();
         this_cpu_data().vcpu_state.store(VcpuState::Running);
-        self.power_on = true;
 
         let boot_ctx = unsafe { &mut *(CPU_BOOT_CONTEXT_ADDRESS as *mut BootContext) };
         info!("boot_ctx_addr={:#x}", CPU_BOOT_CONTEXT_ADDRESS);
@@ -576,7 +575,7 @@ impl ArchCpu {
     pub fn run_secondary(&mut self, smpboot_entry: usize) -> ! {
         assert!(this_cpu_id() == self.get_cpuid());
         this_cpu_data().activate_gpm();
-        self.power_on = true;
+        this_cpu_data().vcpu_state.store(VcpuState::Running);
         this_cpu_data().cpu_on_entry = smpboot_entry;
 
         if !self.init {
@@ -613,7 +612,6 @@ impl ArchCpu {
         // enable ipi on ecfg
         ecfg_ipi_enable();
         enable_global_interrupt();
-        self.power_on = false;
         loop {}
     }
 }
