@@ -663,7 +663,7 @@ pub fn extioi_int_enable_all() {
     CHIP_EXTIOI_ENABLE.extioi_en1.set(0xffff_ffff_ffff_ffff);
     CHIP_EXTIOI_ENABLE.extioi_en2.set(0xffff_ffff_ffff_ffff);
     CHIP_EXTIOI_ENABLE.extioi_en3.set(0xffff_ffff_ffff_ffff);
-    #[cfg(feature = "extioi_debug")]
+    #[cfg(extioi_debug)]
     {
         // dump ht int vector and enable
         /*

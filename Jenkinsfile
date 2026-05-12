@@ -51,6 +51,18 @@ def normalizeToolArch(String arch) {
     return mapping.get(raw, raw)
 }
 
+/** Kconfig: venv + tools/kconfig/kconfig_cli.py (via make defconfig). Keep in sync with Makefile. */
+def kconfigSetupShell(String arch, String board) {
+    return """
+        export PATH=${env.CARGO_HOME}/bin:${env.TOOLCHAIN_PATHS}:\$PATH
+        chmod +x tools/kconfig/bootstrap_venv.sh tools/kconfig/host_config.sh tools/kconfig/save_defconfig.sh 2>/dev/null || true
+        if [ ! -x tools/kconfig/.venv/bin/python ]; then
+            ./tools/kconfig/bootstrap_venv.sh
+        fi
+        make defconfig ARCH=${arch} BOARD=${board}
+    """
+}
+
 pipeline {
     agent any
 
@@ -143,7 +155,8 @@ pipeline {
                                     }
                                     def arch = parts[0]
                                     def board = parts[1]
-                                    echo "Compile hvisor [BID=${env.BID}, ARCH=${arch}, BOARD=${board}]"
+                                    echo "Compile hvisor [BID=${env.BID}, ARCH=${arch}, BOARD=${board}] (Kconfig: kconfig_cli.py defconfig -> root .config; no Cargo --features)"
+                                    sh kconfigSetupShell(arch, board)
                                     if (arch != 'x86_64') {
                                         sh """
                                             export PATH=${env.CARGO_HOME}/bin:${env.TOOLCHAIN_PATHS}:\$PATH
@@ -219,6 +232,12 @@ pipeline {
                                     if (!arch || !board || !kdir || !mode) {
                                         error("jenkins/ci.yaml BID=${env.BID}: tests.mode and build_args ARCH/BOARD/KDIR are required")
                                     }
+                                    def bidPartsPrepare = (env.BID ?: '').split('/', 2)
+                                    if (bidPartsPrepare.size() == 2) {
+                                        if (arch != bidPartsPrepare[0] || board != bidPartsPrepare[1]) {
+                                            error("jenkins/ci.yaml BID=${env.BID}: build_args ARCH/BOARD (${arch}/${board}) must match matrix BID")
+                                        }
+                                    }
 
                                     if (mode == 'qemu') {
                                         def prepareScript = "jenkins/prepare.sh"
@@ -256,13 +275,26 @@ pipeline {
                         steps {
                             dir(matrixCellDir()) {
                                 script {
-                                    def ci = loadCiYaml()
-                                    def bidCfg = getBidConfig(ci, env.BID)
-                                    echo "Run tests via ci_runner [BID=${env.BID}]"
+                                    def bidParts = (env.BID ?: '').split('/', 2)
+                                    if (bidParts.size() != 2) {
+                                        error("invalid BID for tests: ${env.BID}")
+                                    }
+                                    def tArch = bidParts[0]
+                                    def tBoard = bidParts[1]
+                                    def ciRun = loadCiYaml()
+                                    def bidCfgRun = getBidConfig(ciRun, env.BID)
+                                    def buildArgsRun = parseCiBuildArgs(bidCfgRun)
+                                    def yamlArchRun = (buildArgsRun.ARCH ?: '').toString()
+                                    def yamlBoardRun = (buildArgsRun.BOARD ?: '').toString()
+                                    if (yamlArchRun != tArch || yamlBoardRun != tBoard) {
+                                        error("jenkins/ci.yaml BID=${env.BID}: build_args ARCH/BOARD (${yamlArchRun}/${yamlBoardRun}) must match matrix BID (${tArch}/${tBoard})")
+                                    }
+                                    echo "Run tests via ci_runner [BID=${env.BID}] (Kconfig: same as Compile — kconfig_cli via make defconfig)"
                                     sh """
                                         export TERM=\${TERM:-xterm}
                                         export PATH=${env.CARGO_HOME}/bin:${env.TOOLCHAIN_PATHS}:\$PATH
                                         export PATH=${env.QEMU_PATH}:\$PATH
+                                        ${kconfigSetupShell(tArch, tBoard)}
                                         python3 jenkins/ci_runner.py \
                                             --bid "${env.BID}"
                                     """

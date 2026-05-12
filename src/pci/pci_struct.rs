@@ -1323,7 +1323,7 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
                         // (UEFI/BIOS) may skip bus numbers for subordinate bus reservation,
                         // causing calculated bus numbers to diverge from actual hardware
                         // bus assignments — making devices behind bridges invisible.
-                        #[cfg(feature = "no_pcie_bar_realloc")]
+                        #[cfg(no_pcie_bar_realloc)]
                         let next_bus = {
                             let bridge_base = node.get_base();
                             let bus_reg = unsafe {
@@ -1358,7 +1358,7 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
                                 parent.subordinate_bus + 1
                             }
                         };
-                        #[cfg(not(feature = "no_pcie_bar_realloc"))]
+                        #[cfg(not(no_pcie_bar_realloc))]
                         let next_bus = parent.subordinate_bus + 1;
 
                         let bdf = Bdf::new(domain, next_bus, 0, 0);
@@ -1465,10 +1465,10 @@ impl Bridge {
         }
         // When no_pcie_bar_realloc is enabled, firmware already assigned correct bus
         // numbers — don't overwrite them.
-        #[cfg(feature = "no_pcie_bar_realloc")]
+        #[cfg(no_pcie_bar_realloc)]
         return;
 
-        #[cfg(not(feature = "no_pcie_bar_realloc"))]
+        #[cfg(not(no_pcie_bar_realloc))]
         {
             // we need to update the bridge bus number if we want linux not to update bus number
             unsafe {
@@ -1987,9 +1987,9 @@ impl VirtualPciConfigSpace {
                 //     }
                 // }
                 // false
-                // #[cfg(feature = "dwc_pcie")]
+                // #[cfg(dwc_pcie)]
                 // return true;
-                // #[cfg(not(feature = "dwc_pcie"))]
+                // #[cfg(not(dwc_pcie))]
                 return false;
             }
             _ => false,

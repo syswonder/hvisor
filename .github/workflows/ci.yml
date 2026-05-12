@@ -216,7 +216,7 @@ jobs:
             board: "qemu"
             runs-on: ["self-hosted", "X64"]
             qemu_version: "9.2.3"
-          # Because other features need to be customized scripts
+          # Board scripts use kconfig/defconfig (see docs/kconfig.md)
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4

@@ -89,7 +89,7 @@ impl PortIoBitmap {
         bitmap.set_range_intercept(PCI_CONFIG_DATA_PORT, true);
 
         // if zone_id == 0 {
-        #[cfg(feature = "graphics")]
+        #[cfg(graphics)]
         bitmap.set_range_intercept(UART_COM1_PORT, true);
         // }
 

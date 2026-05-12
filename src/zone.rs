@@ -20,9 +20,9 @@ use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM};
 use crate::pci::pci_struct::VirtualRootComplex;
 use spin::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-#[cfg(feature = "dwc_pcie")]
+#[cfg(dwc_pcie)]
 use crate::pci::{config_accessors::dwc_atu::AtuConfig, PciConfigAddress};
-#[cfg(feature = "dwc_pcie")]
+#[cfg(dwc_pcie)]
 use alloc::collections::btree_map::BTreeMap;
 
 use crate::arch::mm::new_s2_memory_set;
@@ -36,7 +36,7 @@ use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
 use core::panic;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-#[cfg(feature = "dwc_pcie")]
+#[cfg(dwc_pcie)]
 #[derive(Debug)]
 pub struct VirtualAtuConfigs {
     ecam_to_atu: BTreeMap<usize, AtuConfig>,
@@ -44,7 +44,7 @@ pub struct VirtualAtuConfigs {
     cfg_base_to_ecam: BTreeMap<PciConfigAddress, usize>,
 }
 
-#[cfg(feature = "dwc_pcie")]
+#[cfg(dwc_pcie)]
 impl VirtualAtuConfigs {
     pub fn new() -> Self {
         Self {
@@ -123,7 +123,7 @@ pub struct ZoneInner {
     gpm: MemorySet<Stage2PageTable>,
     iommu_pt: Option<MemorySet<Stage2PageTable>>,
     vpci_bus: VirtualRootComplex,
-    #[cfg(feature = "dwc_pcie")]
+    #[cfg(dwc_pcie)]
     atu_configs: VirtualAtuConfigs,
 }
 
@@ -175,13 +175,13 @@ impl ZoneInner {
             cpu_num: 0,
             cpu_set: CpuSet::new(MAX_CPU_NUM as usize, 0),
             irq_bitmap: [0; 1024 / 32],
-            iommu_pt: if cfg!(feature = "iommu") {
+            iommu_pt: if cfg!(iommu) {
                 Some(new_s2_memory_set())
             } else {
                 None
             },
             vpci_bus: VirtualRootComplex::new(),
-            #[cfg(feature = "dwc_pcie")]
+            #[cfg(dwc_pcie)]
             atu_configs: VirtualAtuConfigs::new(),
         }
     }
@@ -308,12 +308,12 @@ impl ZoneInner {
         &mut self.vpci_bus
     }
 
-    #[cfg(feature = "dwc_pcie")]
+    #[cfg(dwc_pcie)]
     pub fn atu_configs(&self) -> &VirtualAtuConfigs {
         &self.atu_configs
     }
 
-    #[cfg(feature = "dwc_pcie")]
+    #[cfg(dwc_pcie)]
     pub fn atu_configs_mut(&mut self) -> &mut VirtualAtuConfigs {
         &mut self.atu_configs
     }
@@ -388,7 +388,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
     zone.pt_init(config.memory_regions())?;
     zone.mmio_init(&config.arch_config);
 
-    #[cfg(feature = "pci")]
+    #[cfg(pci)]
     {
         let _ = zone.virtual_pci_mmio_init(&config.pci_config, config.num_pci_bus as usize);
         let _ = zone.guest_pci_init(
@@ -434,7 +434,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
     // #[cfg(target_arch = "aarch64")]
     // zone.ivc_init(config.ivc_config());
 
-    #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
+    #[cfg(all(iommu, target_arch = "aarch64"))]
     zone.iommu_pt_init(config.memory_regions(), &config.arch_config)?;
 
     /* loongarch page table emergency */

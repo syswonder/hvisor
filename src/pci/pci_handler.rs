@@ -31,7 +31,7 @@ use super::PciConfigAddress;
 #[cfg(target_arch = "x86_64")]
 use crate::zone::this_zone_id;
 
-#[cfg(feature = "dwc_pcie")]
+#[cfg(dwc_pcie)]
 use crate::{
     memory::mmio_perform_access,
     pci::config_accessors::{
@@ -338,7 +338,7 @@ fn handle_endpoint_access(
                                 /* after update gpm, need to flush iommu table
                                  * in x86_64
                                  */
-                                #[cfg(all(target_arch = "x86_64", feature = "intel_vtd"))]
+                                #[cfg(all(target_arch = "x86_64", intel_vtd))]
                                 {
                                     let vbdf = dev.get_vbdf();
                                     crate::device::iommu::flush(
@@ -468,7 +468,7 @@ fn handle_endpoint_access(
                             /* after update gpm, need to flush iommu table
                              * in x86_64
                              */
-                            #[cfg(all(target_arch = "x86_64", feature = "intel_vtd"))]
+                            #[cfg(all(target_arch = "x86_64", intel_vtd))]
                             {
                                 let vbdf = dev.get_vbdf();
                                 crate::device::iommu::flush(
@@ -679,7 +679,7 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     Ok(())
 }
 
-#[cfg(feature = "dwc_pcie")]
+#[cfg(dwc_pcie)]
 pub fn mmio_dwc_io_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     {
         let zone = this_zone();
@@ -720,7 +720,7 @@ pub fn mmio_dwc_io_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     Ok(())
 }
 
-#[cfg(feature = "dwc_pcie")]
+#[cfg(dwc_pcie)]
 pub fn mmio_dwc_cfg_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     // info!("mmio_dwc_cfg_handler {:#x}", mmio.address + _base);
     let zone = this_zone();
@@ -805,7 +805,7 @@ pub fn mmio_dwc_cfg_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     Ok(())
 }
 
-#[cfg(feature = "dwc_pcie")]
+#[cfg(dwc_pcie)]
 pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     // info!("mmio_vpci_handler_dbi {:#x}", mmio.address);
 

@@ -4,7 +4,6 @@ STATS ?= off
 PORT ?= 2333
 MODE ?= release
 BOARD ?= qemu-gicv3
-FEATURES=
 BID ?=
 ptest ?=
 
@@ -21,15 +20,6 @@ ifeq ($(BID),)
 else
 	ARCH := $(shell echo $(BID) | cut -d'/' -f1)
 	BOARD := $(shell echo $(BID) | cut -d'/' -f2)
-endif
-
-# if user add FEATURES in environment, we use it
-# else we use the default FEATURES in platform/$(ARCH)/$(BOARD)/cargo/features
-ifeq ($(FEATURES),)
-    FEATURES := $(shell ./tools/read_features.sh $(ARCH) $(BOARD) || echo ERROR)
-    ifeq ($(FEATURES),ERROR)
-        $(error ERROR: Read FEATURES failed. Please check if ARCH="$(ARCH)" and BOARD="$(BOARD)" are correct.)
-    endif
 endif
 
 ifeq ($(ARCH),aarch64)
@@ -56,7 +46,6 @@ export ARCH
 export BOARD
 export BID
 export RUSTC_TARGET
-export FEATURES
 
 # Build paths
 build_path := target/$(RUSTC_TARGET)/$(MODE)
@@ -69,7 +58,6 @@ systemtest_tdownload := $(test_dir)/systemtest/tdownload_all.sh
 
 # Build arguments
 build_args := 
-build_args += --features "$(FEATURES)" 
 build_args += --target $(RUSTC_TARGET)
 build_args += -Z build-std=core,alloc
 build_args += -Z build-std-features=compiler-builtins-mem
@@ -86,16 +74,44 @@ COLOR_BLUE := $(shell tput setaf 4)
 COLOR_BOLD := $(shell tput bold)
 COLOR_RESET := $(shell tput sgr0)
 
+# Defconfig / menuconfig: see tools/kconfig/kconfig_cli.py
+kconfig_python := tools/kconfig/.venv/bin/python
+
 # Targets
-.PHONY: all elf disa run gdb monitor clean tools rootfs vscode ci-run
-all: clean_check gen_cargo_config vscode $(hvisor_bin)
+.PHONY: all elf disa run gdb monitor clean tools rootfs vscode ci-run defconfig menuconfig savedefconfig ensure_config
+ensure_config:
+	@if [ ! -f .config ]; then \
+		echo "$(COLOR_YELLOW)No .config; running defconfig for $(ARCH)/$(BOARD)$(COLOR_RESET)"; \
+		$(MAKE) --no-print-directory defconfig; \
+	fi
+
+defconfig:
+	@if [ ! -x $(kconfig_python) ]; then \
+		echo "$(COLOR_RED)Missing tools/kconfig/.venv (kconfiglib).$(COLOR_RESET)"; \
+		echo "  ./tools/kconfig/bootstrap_venv.sh"; \
+		exit 1; \
+	fi
+	@$(kconfig_python) tools/kconfig/kconfig_cli.py defconfig
+
+menuconfig:
+	@if [ -x $(kconfig_python) ]; then \
+		$(kconfig_python) tools/kconfig/kconfig_cli.py menuconfig; \
+	else \
+		echo "Install kconfiglib: ./tools/kconfig/bootstrap_venv.sh"; \
+		exit 1; \
+	fi
+
+savedefconfig:
+	@./tools/kconfig/save_defconfig.sh "$(ARCH)" "$(BOARD)"
+
+all: clean_check ensure_config gen_cargo_config vscode $(hvisor_bin)
 	@printf "\n"
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)hvisor build summary:$(COLOR_RESET)\n"
 	@printf "%-10s %s\n" "ARCH            =" "$(COLOR_BOLD)$(ARCH)$(COLOR_RESET)"
 	@printf "%-10s %s\n" "BOARD           =" "$(COLOR_BOLD)$(BOARD)$(COLOR_RESET)"
 	@printf "%-10s %s\n" "BID             =" "$(COLOR_BOLD)$(BID)$(COLOR_RESET)"
 	@printf "%-10s %s\n" "LOG             =" "$(COLOR_BOLD)$(LOG)$(COLOR_RESET)"
-	@printf "%-10s %s\n" "FEATURES        =" "$(COLOR_BOLD)$(FEATURES)$(COLOR_RESET)"
+	@printf "%-10s %s\n" "DEFCONFIG       =" "$(COLOR_BOLD)platform/$(ARCH)/$(BOARD)/kconfig/defconfig$(COLOR_RESET)"
 	@printf "%-10s %s\n" "RUSTC_TARGET    =" "$(COLOR_BOLD)$(RUSTC_TARGET)$(COLOR_RESET)"
 	@printf "%-10s %s\n" "BUILD_PATH      =" "$(COLOR_BOLD)$(build_path)$(COLOR_RESET)"
 	@printf "%-10s %s\n" "HVISON_BIN_SIZE =" "$(COLOR_BOLD)$(shell du -h $(hvisor_bin) | cut -f1)$(COLOR_RESET)"
@@ -113,8 +129,8 @@ clean_check:
 # if .config not exist, then everything is fine
 # else we read .config and parse ARCH and BOARD, if they are different, we clean the build
 	@if [ -f ".config" ]; then \
-		CONFIG_ARCH=$$(cat .config | grep "ARCH" | cut -d'=' -f2); \
-		CONFIG_BOARD=$$(cat .config | grep "BOARD" | cut -d'=' -f2); \
+		CONFIG_ARCH=$$(grep '^ARCH=' .config | head -1 | cut -d'=' -f2); \
+		CONFIG_BOARD=$$(grep '^BOARD=' .config | head -1 | cut -d'=' -f2); \
 		if [ "$$CONFIG_ARCH" != "$(ARCH)" ] || [ "$$CONFIG_BOARD" != "$(BOARD)" ]; then \
 			echo "$(COLOR_YELLOW)$(COLOR_BOLD)ARCH or BOARD changed(OLD: $$CONFIG_ARCH/$$CONFIG_BOARD, NEW: $(ARCH)/$(BOARD)), cleaning...$(COLOR_RESET)"; \
 			./tools/clean.sh; \
@@ -123,15 +139,17 @@ clean_check:
 
 gen_cargo_config:
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)generating .cargo/config.toml...$(COLOR_RESET)\n"
-	./tools/gen_cargo_config.sh
+	@chmod +x tools/kconfig/host_config.sh 2>/dev/null || true
+	./tools/kconfig/host_config.sh cargo
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)generating .cargo/config.toml success!$(COLOR_RESET)\n"
 
 vscode:
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)generating .vscode/settings.json...$(COLOR_RESET)\n"
-	./tools/gen_vscode_settings.sh
+	@chmod +x tools/kconfig/host_config.sh 2>/dev/null || true
+	./tools/kconfig/host_config.sh vscode
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)generating .vscode/settings.json success!$(COLOR_RESET)\n"
 
-elf:
+elf: ensure_config gen_cargo_config
 	cargo build $(build_args)
 
 disa:
@@ -175,7 +193,7 @@ fmt: all
 	cargo fmt --all
 	@echo "your code has been formatted"
 
-clippy:
+clippy: ensure_config gen_cargo_config
 	cargo clippy $(build_args)
 
 flash-img:
@@ -191,10 +209,10 @@ download-test-img:
 	else echo "\nflash.img found\n"; \
 	fi
 
-test: clean test-pre gen_cargo_config
+test: clean test-pre ensure_config gen_cargo_config
 	cargo test $(build_args) -vv
 
-stest: clean test-pre gen_cargo_config
+stest: clean test-pre ensure_config gen_cargo_config
 	./platform/$(ARCH)/$(BOARD)/test/systemtest/tcompiledtb.sh
 	./platform/$(ARCH)/$(BOARD)/test/systemtest/tdownload_all.sh
 	./platform/$(ARCH)/$(BOARD)/test/systemtest/trootfs_deploy.sh
@@ -203,7 +221,7 @@ stest: clean test-pre gen_cargo_config
 # Performance benchmark: data collection only, does not affect pass/fail.
 # Calls systemtest scripts for DTS, then perftest/tdownload_all.sh when present
 # (fallback to systemtest/tdownload_all.sh), and perftest/trootfs_deploy.sh.
-perf: clean test-pre gen_cargo_config
+perf: clean test-pre ensure_config gen_cargo_config
 	./platform/$(ARCH)/$(BOARD)/test/systemtest/tcompiledtb.sh
 	@if [ -x "$(perftest_tdownload)" ]; then \
 		$(perftest_tdownload); \
@@ -215,7 +233,7 @@ perf: clean test-pre gen_cargo_config
 
 # Prepare perf image only: reuse existing rootfs img when present, download
 # missing assets, deploy benchmark scripts/tools into image, and print path.
-perf-prepare-img: clean test-pre gen_cargo_config
+perf-prepare-img: clean test-pre ensure_config gen_cargo_config
 	./platform/$(ARCH)/$(BOARD)/test/systemtest/tcompiledtb.sh
 	@if [ -x "$(perftest_tdownload)" ]; then \
 		$(perftest_tdownload); \

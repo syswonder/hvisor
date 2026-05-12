@@ -1,6 +1,6 @@
 QEMU := qemu-system-aarch64
 
-ifeq ($(findstring gicv3, $(FEATURES)),gicv3)
+ifneq ($(shell grep -Fx CONFIG_IRQ_GICV3=y platform/$(ARCH)/$(BOARD)/kconfig/defconfig 2>/dev/null),)
     UBOOT := $(image_dir)/bootloader/u-boot-atf.bin
     zone0_dtb := $(image_dir)/devicetree/linux1.dtb
     QEMU_ARGS := -machine virt,secure=on,gic-version=3,virtualization=on,iommu=smmuv3

@@ -145,7 +145,7 @@ pub fn primary_init_late() {}
 
 impl Zone {
     pub fn arch_irqchip_reset(&self) {
-        #[cfg(feature = "intel_vtd")]
+        #[cfg(intel_vtd)]
         iommu::clear_dma_translation_tables(self.id());
     }
 }

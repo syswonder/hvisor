@@ -24,33 +24,25 @@ use crate::{
     zone::Zone,
 };
 
-#[cfg(feature = "loongarch64_pcie")]
+#[cfg(loongarch64_pcie)]
 use alloc::vec::Vec;
 
-#[cfg(any(
-    all(feature = "iommu", target_arch = "aarch64"),
-    all(feature = "iommu", target_arch = "riscv64"),
-    target_arch = "x86_64"
-))]
+#[cfg(iommu)]
 use crate::device::iommu::iommu_add_device_with_root_pt_addr;
 
-#[cfg(feature = "ecam_pcie")]
+#[cfg(ecam_pcie)]
 use crate::pci::{
     pci_struct::VirtualPciConfigSpace,
     vpci_dev::{get_handler, VpciDevType},
 };
 
-#[cfg(any(
-    feature = "ecam_pcie",
-    feature = "dwc_pcie",
-    feature = "loongarch64_pcie"
-))]
+#[cfg(any(ecam_pcie, dwc_pcie, loongarch64_pcie))]
 use crate::pci::{mem_alloc::BaseAllocator, pci_struct::RootComplex};
 
-#[cfg(feature = "ecam_pcie")]
+#[cfg(ecam_pcie)]
 use crate::pci::{config_accessors::ecam::EcamConfigAccessor, pci_handler::mmio_vpci_handler};
 
-#[cfg(feature = "dwc_pcie")]
+#[cfg(dwc_pcie)]
 use crate::{
     memory::mmio_generic_handler,
     pci::{
@@ -63,7 +55,7 @@ use crate::{
     platform,
 };
 
-#[cfg(feature = "loongarch64_pcie")]
+#[cfg(loongarch64_pcie)]
 use crate::pci::{
     config_accessors::loongarch64::LoongArchConfigAccessor, pci_handler::mmio_vpci_direct_handler,
 };
@@ -77,11 +69,7 @@ pub static GLOBAL_PCIE_LIST: Lazy<Mutex<BTreeMap<Bdf, ArcRwLockVirtualPciConfigS
 /* add all dev to GLOBAL_PCIE_LIST */
 pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
     warn!("begin {:#x?}", pci_config);
-    #[cfg(any(
-        feature = "ecam_pcie",
-        feature = "dwc_pcie",
-        feature = "loongarch64_pcie"
-    ))]
+    #[cfg(any(ecam_pcie, dwc_pcie, loongarch64_pcie))]
     for (_index, rootcomplex_config) in pci_config.iter().enumerate() {
         /* empty config */
         if rootcomplex_config.ecam_base == 0 {
@@ -99,12 +87,12 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
 
         // TODO: refactor
         // in x86, we do not take the initiative to reallocate BAR space
-        #[cfg(feature = "no_pcie_bar_realloc")]
+        #[cfg(no_pcie_bar_realloc)]
         let allocator_opt: Option<BaseAllocator> = None;
-        #[cfg(not(feature = "no_pcie_bar_realloc"))]
+        #[cfg(not(no_pcie_bar_realloc))]
         let allocator_opt: Option<BaseAllocator> = Some(allocator);
 
-        // #[cfg(feature = "loongarch64_pcie")]
+        // #[cfg(loongarch64_pcie)]
         // let allocator_opt: Option<LoongArchAllocator> = {
         //     let mut allocator = LoongArchAllocator::default();
         //     allocator.set_mem(
@@ -119,7 +107,7 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
         // };
 
         let mut rootcomplex = {
-            #[cfg(feature = "dwc_pcie")]
+            #[cfg(dwc_pcie)]
             {
                 // warn!("dwc pcie");
                 let ecam_base = rootcomplex_config.ecam_base;
@@ -140,7 +128,7 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
                 RootComplex::new_dwc(rootcomplex_config.ecam_base, atu_config, root_bus)
             }
 
-            #[cfg(feature = "loongarch64_pcie")]
+            #[cfg(loongarch64_pcie)]
             {
                 let root_bus = rootcomplex_config.bus_range_begin as u8;
                 RootComplex::new_loongarch(
@@ -150,7 +138,7 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
                 )
             }
 
-            #[cfg(feature = "ecam_pcie")]
+            #[cfg(ecam_pcie)]
             {
                 RootComplex::new_ecam(rootcomplex_config.ecam_base)
             }
@@ -195,7 +183,7 @@ impl Zone {
             let bus_range_begin = target_pci_config.bus_range_begin as u8;
 
             // Create accessor for VirtualRootComplex, similar to RootComplex
-            #[cfg(feature = "dwc_pcie")]
+            #[cfg(dwc_pcie)]
             {
                 use alloc::sync::Arc;
                 let atu_config = platform::ROOT_DWC_ATU_CONFIG
@@ -215,7 +203,7 @@ impl Zone {
                 }
             }
 
-            #[cfg(feature = "loongarch64_pcie")]
+            #[cfg(loongarch64_pcie)]
             {
                 use alloc::sync::Arc;
                 let root_bus = bus_range_begin;
@@ -227,7 +215,7 @@ impl Zone {
                 inner.vpci_bus_mut().set_accessor(accessor);
             }
 
-            #[cfg(feature = "ecam_pcie")]
+            #[cfg(ecam_pcie)]
             {
                 use alloc::sync::Arc;
                 let accessor = Arc::new(EcamConfigAccessor::new(ecam_base));
@@ -321,11 +309,7 @@ impl Zone {
 
                 info!("set bdf {:#?} to vbdf {:#?}", bdf, vbdf);
 
-                #[cfg(any(
-                    all(feature = "iommu", target_arch = "aarch64"),
-                    all(feature = "iommu", target_arch = "riscv64"),
-                    target_arch = "x86_64"
-                ))]
+                #[cfg(iommu)]
                 {
                     let iommu_pt_addr = if inner.iommu_pt().is_some() {
                         inner.iommu_pt().unwrap().root_paddr()
@@ -335,13 +319,13 @@ impl Zone {
                     let device_id = (dev_config.bus as usize) << 8
                         | (dev_config.device as usize) << 3
                         | dev_config.function as usize;
-                    #[cfg(feature = "share_s2pt")]
+                    #[cfg(share_s2pt)]
                     iommu_add_device_with_root_pt_addr(
                         _zone_id,
                         device_id as _,
                         inner.gpm().root_paddr(),
                     );
-                    #[cfg(not(feature = "share_s2pt"))]
+                    #[cfg(not(share_s2pt))]
                     iommu_add_device_with_root_pt_addr(_zone_id, device_id as _, iommu_pt_addr);
                 }
 
@@ -372,7 +356,7 @@ impl Zone {
                     }
                 } else {
                     warn!("can not find dev {:#?} in GLOBAL_PCIE_LIST (not detected during enumeration)", bdf);
-                    #[cfg(feature = "ecam_pcie")]
+                    #[cfg(ecam_pcie)]
                     {
                         let dev_type = dev_config.dev_type;
                         match dev_type {
@@ -405,7 +389,7 @@ impl Zone {
         pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
         _num_pci_config: usize,
     ) {
-        #[cfg(feature = "loongarch64_pcie")]
+        #[cfg(loongarch64_pcie)]
         let mut emergency_map_regions: Vec<(usize, usize)> = Vec::new();
 
         let mut inner = self.write();
@@ -414,7 +398,7 @@ impl Zone {
             if rootcomplex_config.ecam_base == 0 {
                 continue;
             }
-            #[cfg(feature = "ecam_pcie")]
+            #[cfg(ecam_pcie)]
             {
                 // use crate::pci::pci_handler::mmio_vpci_direct_handler;
                 inner.mmio_region_register(
@@ -425,7 +409,7 @@ impl Zone {
                     rootcomplex_config.ecam_base as usize,
                 );
             }
-            #[cfg(feature = "dwc_pcie")]
+            #[cfg(dwc_pcie)]
             {
                 inner.mmio_region_register(
                     rootcomplex_config.ecam_base as usize,
@@ -501,7 +485,7 @@ impl Zone {
                     );
                 }
             }
-            #[cfg(feature = "loongarch64_pcie")]
+            #[cfg(loongarch64_pcie)]
             {
                 inner.mmio_region_register(
                     rootcomplex_config.ecam_base as usize,
@@ -514,11 +498,7 @@ impl Zone {
                     rootcomplex_config.ecam_size as usize,
                 ));
             }
-            #[cfg(not(any(
-                feature = "ecam_pcie",
-                feature = "dwc_pcie",
-                feature = "loongarch64_pcie"
-            )))]
+            #[cfg(not(any(ecam_pcie, dwc_pcie, loongarch64_pcie)))]
             {
                 warn!(
                     "No extend config found for base 0x{:x}",
@@ -527,7 +507,7 @@ impl Zone {
             }
         }
 
-        #[cfg(feature = "loongarch64_pcie")]
+        #[cfg(loongarch64_pcie)]
         {
             drop(inner);
             for (base, size) in emergency_map_regions {

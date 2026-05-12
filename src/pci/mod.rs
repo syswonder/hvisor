@@ -15,6 +15,17 @@
 //
 
 #![allow(dead_code)]
+
+#[cfg(all(target_arch = "aarch64", irq_gicv2, irq_gicv3))]
+compile_error!("invalid: irq_gicv2 and irq_gicv3 are mutually exclusive");
+
+#[cfg(all(ecam_pcie, dwc_pcie))]
+compile_error!("invalid: ecam_pcie and dwc_pcie are mutually exclusive");
+#[cfg(all(ecam_pcie, loongarch64_pcie))]
+compile_error!("invalid: ecam_pcie and loongarch64_pcie are mutually exclusive");
+#[cfg(all(dwc_pcie, loongarch64_pcie))]
+compile_error!("invalid: dwc_pcie and loongarch64_pcie are mutually exclusive");
+
 pub mod config_accessors;
 pub mod mem_alloc;
 pub mod pci_access;

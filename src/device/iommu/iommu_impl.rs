@@ -24,17 +24,17 @@ static IOMMU_IMPL: Once<Box<dyn Iommu + Sync + Send>> = Once::new();
 
 // Dispatch to the appropriate IOMMU implementation based on hardware support
 fn iommu_impl_init() -> Box<dyn Iommu + Sync + Send> {
-    #[cfg(feature = "arm_smmu")]
+    #[cfg(arm_smmu)]
     return Box::new(super::arm_smmu::ArmSmmu);
 
-    #[cfg(feature = "intel_vtd")]
+    #[cfg(intel_vtd)]
     return Box::new(super::intel_vtd::IntelVtd);
 
-    #[cfg(feature = "riscv_iommu")]
+    #[cfg(riscv_iommu)]
     return Box::new(super::riscv_iommu::RiscvIommu);
 
     // Default return DummyIommu if no IOMMU support
-    #[cfg(not(any(feature = "arm_smmu", feature = "intel_vtd", feature = "riscv_iommu",)))]
+    #[cfg(not(any(arm_smmu, intel_vtd, riscv_iommu)))]
     return Box::new(super::dummy_iommu::DummyIommu);
 }
 

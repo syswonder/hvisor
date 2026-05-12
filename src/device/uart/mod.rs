@@ -13,23 +13,23 @@
 //
 // Authors:
 //
-// we specified the driver for each platform in the FEATURES environment variable.
+// UART driver is selected per board via kconfig/defconfig (see kconfig/cfg_map.toml).
 
 #![allow(unused)]
 
-#[cfg(all(feature = "pl011", target_arch = "aarch64"))]
+#[cfg(all(pl011, target_arch = "aarch64"))]
 mod pl011;
-#[cfg(all(feature = "pl011", target_arch = "aarch64"))]
+#[cfg(all(pl011, target_arch = "aarch64"))]
 pub use pl011::{console_getchar, console_putchar};
 
-#[cfg(all(feature = "imx_uart", target_arch = "aarch64"))]
+#[cfg(all(imx_uart, target_arch = "aarch64"))]
 mod imx_uart;
-#[cfg(all(feature = "imx_uart", target_arch = "aarch64"))]
+#[cfg(all(imx_uart, target_arch = "aarch64"))]
 pub use imx_uart::{console_getchar, console_putchar};
 
-#[cfg(all(feature = "xuartps", target_arch = "aarch64"))]
+#[cfg(all(xuartps, target_arch = "aarch64"))]
 mod xuartps;
-#[cfg(all(feature = "xuartps", target_arch = "aarch64"))]
+#[cfg(all(xuartps, target_arch = "aarch64"))]
 pub use xuartps::{console_getchar, console_putchar};
 
 #[cfg(target_arch = "riscv64")]
@@ -37,19 +37,19 @@ pub use crate::arch::riscv64::sbi::{
     sbi_console_getchar as console_getchar, sbi_console_putchar as console_putchar,
 };
 
-#[cfg(all(feature = "loongson_uart", target_arch = "loongarch64"))]
+#[cfg(all(loongson_uart, target_arch = "loongarch64"))]
 pub mod loongson_uart;
-#[cfg(all(feature = "loongson_uart", target_arch = "loongarch64"))]
+#[cfg(all(loongson_uart, target_arch = "loongarch64"))]
 pub use loongson_uart::{console_getchar, console_putchar};
 
-#[cfg(all(feature = "uart_16550", target_arch = "aarch64"))]
+#[cfg(all(uart_16550, target_arch = "aarch64"))]
 mod uart_16550;
-#[cfg(all(feature = "uart_16550", target_arch = "aarch64"))]
+#[cfg(all(uart_16550, target_arch = "aarch64"))]
 pub use uart_16550::{console_getchar, console_putchar};
 
-#[cfg(all(feature = "uart16550a", target_arch = "x86_64"))]
+#[cfg(all(uart16550a, target_arch = "x86_64"))]
 mod uart16550a;
-#[cfg(all(feature = "uart16550a", target_arch = "x86_64"))]
+#[cfg(all(uart16550a, target_arch = "x86_64"))]
 pub use uart16550a::{
     console_getchar, console_putchar, virt_console_io_read, virt_console_io_write, UartReg,
 };
