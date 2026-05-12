@@ -36,3 +36,17 @@ pub mod zone;
 pub use s1pt::Stage1PageTable;
 pub use s2pt::stage2_mode_detect;
 pub use s2pt::Stage2PageTable;
+
+/// Print LoongArch64 specific logo
+pub fn print_logo() {
+    println!(
+        r"
+  _            _                   _
+ | |          (_)                 | |
+ | |__  __   ___ ___  ___  _ __   | | __ _
+ | '_ \ \ \ / / / __|/ _ \| '__|  | |/ _` |
+ | | | | \ V /| \__ \ (_) | |    _| | (_| |
+ |_| |_|  \_/ |_|___/\___/|_|   (_)_|\__,_|
+"
+    );
+}
