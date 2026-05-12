@@ -87,7 +87,7 @@ COLOR_BOLD := $(shell tput bold)
 COLOR_RESET := $(shell tput sgr0)
 
 # Targets
-.PHONY: all elf disa run gdb monitor clean tools rootfs vscode
+.PHONY: all elf disa run gdb monitor clean tools rootfs vscode ci-run
 all: clean_check gen_cargo_config vscode $(hvisor_bin)
 	@printf "\n"
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)hvisor build summary:$(COLOR_RESET)\n"
@@ -140,6 +140,10 @@ disa:
 
 run: all
 	$(QEMU) $(QEMU_ARGS)
+
+ci-run: all
+	@mkdir -p "$(CURDIR)/.qemu"
+	$(MAKE) run QEMU_ARGS+='$(subst -nographic,-display none,$(filter-out -s -S -serial mon:stdio,$(QEMU_ARGS))) -monitor none -chardev socket,id=char0,path=$(CURDIR)/.qemu/qemu.sock,server=on,wait=off -serial chardev:char0'
 
 gdb: all
 	$(QEMU) $(QEMU_ARGS) -s -S

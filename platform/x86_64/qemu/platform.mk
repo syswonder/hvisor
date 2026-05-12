@@ -36,6 +36,8 @@ QEMU_ARGS += -device virtio-blk-pci,bus=pcie.1,drive=X10008000,disable-legacy=on
 
 # QEMU_ARGS += -kernel $(hvisor_elf)
 QEMU_ARGS += -drive file=$(image_dir)/virtdisk/hvisor.iso,format=raw,index=0,media=disk
+QEMU_ARGS += -nographic
+
 
 # QEMU_ARGS += -device loader,file="$(zone0_boot)",addr=0x5008000,force-raw=on
 # QEMU_ARGS += -device loader,file="$(zone0_setup)",addr=0x500a000,force-raw=on
