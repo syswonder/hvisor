@@ -19,17 +19,16 @@
 use super::register::*;
 use super::zone::ZoneContext;
 use crate::arch::cpu::this_cpu_id;
-use crate::arch::ipi::*;
 use crate::arch::eiointc::{
-    loongarch_eiointc_readl, loongarch_eiointc_writel,
-    do_real_read_iocsr, do_real_write_iocsr,
+    do_real_read_iocsr, do_real_write_iocsr, loongarch_eiointc_readl, loongarch_eiointc_writel,
     EIOINTC_BASE, EIOINTC_SIZE, EIOINTC_VIRT_BASE, EIOINTC_VIRT_SIZE,
 };
+use crate::arch::ipi::*;
 use crate::arch::timer::{restore_timer, save_timer, timer_init};
 use crate::consts::{IPI_EVENT_CLEAR_INJECT_IRQ, MAX_CPU_NUM};
 use crate::cpu_data::{get_cpu_data, this_cpu_data};
-use crate::device::irqchip::{inject_irq, ls7a2000::clear_irq};
 use crate::device::irqchip::ls7a2000::chip::*;
+use crate::device::irqchip::{inject_irq, ls7a2000::clear_irq};
 use crate::device::virtio_trampoline::handle_virtio_irq;
 use crate::event::{check_events, dump_cpu_events, dump_events};
 use crate::hypercall::{SGI_IPI_ID, *};
@@ -604,14 +603,14 @@ fn handle_exception(
                     );
                     error!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",
                     ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv);
-                    this_cpu_data().arch_cpu.idle();// boneinscri 2026.04, use shutdown to restart it~ for debugging
+                    this_cpu_data().arch_cpu.idle(); // boneinscri 2026.04, use shutdown to restart it~ for debugging
                 }
             }
         }
         _ => {
             error!("unhandled exception: {}: ecode={:#x}, esubcode={:#x}, era={:#x}, is={:#x}, badi={:#x}, badv={:#x}",  
             ecode2str(ecode,esubcode), ecode, esubcode, era, is, badi, badv);
-            this_cpu_data().arch_cpu.idle();// boneinscri 2026.04, use shutdown to restart it~ for debugging
+            this_cpu_data().arch_cpu.idle(); // boneinscri 2026.04, use shutdown to restart it~ for debugging
         }
     }
 }
@@ -1302,14 +1301,13 @@ const HWI7: usize = 1 << 9;
 const SWI0: usize = 1 << 0;
 const SWI1: usize = 1 << 1;
 
-
 fn do_deliver_irq(irq_flags: usize, clear_flag: bool) {
     for irq in (0..13).rev() {
         let mask = 1 << irq;
         if irq_flags & mask != 0 {
             if clear_flag {
                 // clear irq
-                clear_irq(irq, false);// para is_hardware is invalid here
+                clear_irq(irq, false); // para is_hardware is invalid here
             } else {
                 // inject irq
                 inject_irq(irq, false);
@@ -1350,16 +1348,26 @@ fn handle_interrupt(is: usize) {
 
         if pcpu_ipi_status & SMP_BOOT_CPU != 0 {
             if pcpu_data.arch_cpu.power_on == true {
-                panic!("pcpu : {} has already power on, this should not happen", pcpu_id_this);
+                panic!(
+                    "pcpu : {} has already power on, this should not happen",
+                    pcpu_id_this
+                );
             }
             // this should be done by firmware, but we do this here, because linux kernel does not do it
             ipistate.status &= !(ipi_status as u32);
 
-            let first_pcpu_id = pcpu_data.zone.as_ref().unwrap().read().cpu_set().first_cpu().unwrap();
-            
-            if(first_pcpu_id == pcpu_id_this) {
+            let first_pcpu_id = pcpu_data
+                .zone
+                .as_ref()
+                .unwrap()
+                .read()
+                .cpu_set()
+                .first_cpu()
+                .unwrap();
+
+            if (first_pcpu_id == pcpu_id_this) {
                 // this is the first cpu in the zone
-                drop(ipistate);// remember! avoid deadlock
+                drop(ipistate); // remember! avoid deadlock
                 pcpu_data.arch_cpu.run();
                 panic!("can't reach here");
             } else {
@@ -1369,39 +1377,37 @@ fn handle_interrupt(is: usize) {
                 // note!, always fetch smpboot_entry from cpu[0]! boneinscri 2026.04
                 warn!("pcpu_ipi_status = {:#x}, first_pcpu_id = {:#x}, smpboot_entry: {:#x}, pcpu_ipi_status = {:#x}", 
                 pcpu_ipi_status, first_pcpu_id, smpboot_entry, ipistate.status as usize);
-                drop(ipistate);// remember! avoid deadlock
+                drop(ipistate); // remember! avoid deadlock
                 pcpu_data.arch_cpu.run_secondary(smpboot_entry);
-                panic!("can't reach here");    
+                panic!("can't reach here");
             }
-        }
-        else if pcpu_ipi_status & HVISOR_SHUTDOWN != 0 {
+        } else if pcpu_ipi_status & HVISOR_SHUTDOWN != 0 {
             // if pcpu_data.arch_cpu.power_on == false {
             //     panic!("pcpu : {} has not power on, this should not happen", pcpu_id_this);
             // }
             ipistate.status &= !(ipi_status as u32);
             drop(ipistate);
             pcpu_data.arch_cpu.idle();
-        } 
-        else if pcpu_ipi_status & HVISOR_EVENT_VIRTIO_INJECT_IRQ != 0 {
+        } else if pcpu_ipi_status & HVISOR_EVENT_VIRTIO_INJECT_IRQ != 0 {
             if pcpu_data.arch_cpu.power_on == false {
-                panic!("pcpu : {} has not power on, this should not happen", pcpu_id_this);
+                panic!(
+                    "pcpu : {} has not power on, this should not happen",
+                    pcpu_id_this
+                );
             }
             ipistate.status &= !(ipi_status as u32);
             drop(ipistate);
             handle_virtio_irq();
-        } 
-        else if pcpu_ipi_status & HVISOR_EVENT_WAKEUP_VIRTIO_DEVICE != 0 {
+        } else if pcpu_ipi_status & HVISOR_EVENT_WAKEUP_VIRTIO_DEVICE != 0 {
             panic!("HVISOR_EVENT_WAKEUP_VIRTIO_DEVICE, not tested");
-        }
-        else if pcpu_ipi_status & HVISOR_EVENT_VIRTIO_CLEAR_IRQ != 0 {
+        } else if pcpu_ipi_status & HVISOR_EVENT_VIRTIO_CLEAR_IRQ != 0 {
             panic!("HVISOR_EVENT_VIRTIO_CLEAR_IRQ, not tested");
-        }
-        else if pcpu_ipi_status != 0 {
+        } else if pcpu_ipi_status != 0 {
             drop(ipistate);
             pcpu_data.arch_cpu.add_irq(INT_IPI);
         } else {
         }
-        return ;
+        return;
     }
 
     // Handle timer interrupts
@@ -1429,7 +1435,7 @@ fn handle_interrupt(is: usize) {
     }
     if is & SWI1 != 0 {
         panic!("swi1 not handled");
-    }    
+    }
 
     // Handle unknown interrupts
     error!("Received unhandled interrupt, status = {:#x}", is);
@@ -1483,12 +1489,12 @@ fn emulate_cpucfg(ins: usize, ctx: &mut ZoneContext) {
         // according to manual, we should set result to 0 if index is invalid
     } else {
         // just run cpucfg here
-        let mut result= 0;
+        let mut result = 0;
         unsafe {
             asm!("cpucfg {}, {}", out(reg) result, in(reg) cpucfg_target_idx);
         }
         if cpucfg_target_idx == 0x2 {
-            result &= !(1 << 10); // shutdown lvz of vm -- boneinscri 2026.04        
+            result &= !(1 << 10); // shutdown lvz of vm -- boneinscri 2026.04
         }
         ctx.x[rd] = result;
         // finish the emulation by tweaking the ZoneContext's registers
@@ -1496,7 +1502,7 @@ fn emulate_cpucfg(ins: usize, ctx: &mut ZoneContext) {
     }
 }
 
-// modified -- boneinscri 2026.04 
+// modified -- boneinscri 2026.04
 fn emulate_csrx(ins: usize, ctx: &mut ZoneContext) {
     // csrrd csrwr csrxchg
     // let ty = (ins >> 5) & 0x1f;
@@ -1528,15 +1534,15 @@ fn emulate_csrx(ins: usize, ctx: &mut ZoneContext) {
         }
         _ => {
             // csrxchg
-            // info!("csrxchg emulation for CSR {:#x}, val : {:#x}, csr_mask : {:#x}", 
-            //     csr_id, ctx.x[rd], ctx.x[rj]); 
+            // info!("csrxchg emulation for CSR {:#x}, val : {:#x}, csr_mask : {:#x}",
+            //     csr_id, ctx.x[rd], ctx.x[rj]);
             let mut val = ctx.x[rd];
             let csr_mask = ctx.x[rj];
-            let mut old = pcpu_data_this.arch_cpu.csr[csr_id];// read old value from sw csr
+            let mut old = pcpu_data_this.arch_cpu.csr[csr_id]; // read old value from sw csr
             val = (old & !csr_mask) | (val & csr_mask);
-            pcpu_data_this.arch_cpu.csr[csr_id] = val;// record the new value from trap ctx
+            pcpu_data_this.arch_cpu.csr[csr_id] = val; // record the new value from trap ctx
             old = old & csr_mask;
-            ctx.x[rd] = old;// return old value to guest
+            ctx.x[rd] = old; // return old value to guest
         }
     }
 }
@@ -1566,24 +1572,23 @@ fn ty2str(ty: usize) -> &'static str {
     }
 }
 
-
 // boneinscri 2026.04
 pub fn loongarch_iocsr_read(pcpu_id: usize, addr: usize, len: usize) -> usize {
     let iocsr_type = get_iocsr_type(addr);
     match iocsr_type {
-        IOCSR_TYPE_IPI => {   
-            // IPI         
+        IOCSR_TYPE_IPI => {
+            // IPI
             let ret = loongarch_ipi_readl(pcpu_id, addr, len);
             ret
-        },
+        }
         IOCSR_TYPE_EIOINTC => {
             // EIOINTC
             let ret = loongarch_eiointc_readl(pcpu_id, addr, len);
             ret
-        },
+        }
         IOCSR_TYPE_EIOINTC_VIRT => {
             panic!("EIOINTC_VIRT detected, this is not supported yet");
-        },
+        }
         _ => {
             let mut addr_real = addr;
             do_real_read_iocsr(addr_real, len)
@@ -1597,15 +1602,15 @@ pub fn loongarch_iocsr_write(pcpu_id: usize, addr: usize, val: usize, len: usize
             // IPI
             let ret = loongarch_ipi_writel(pcpu_id, addr, val, len);
             ret
-        },
+        }
         IOCSR_TYPE_EIOINTC => {
             // EIOINTC
             let ret = loongarch_eiointc_writel(pcpu_id, addr, val, len);
-            ret 
-        },
+            ret
+        }
         IOCSR_TYPE_EIOINTC_VIRT => {
             panic!("EIOINTC_VIRT detected, this is not supported yet");
-        },
+        }
         _ => {
             let mut addr_real = addr;
             do_real_write_iocsr(addr_real, val, len);
@@ -1631,7 +1636,7 @@ fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
 
     let mut len = 0;
     let mut is_write = false;
-    let addr = ctx.x[rj] as usize; 
+    let addr = ctx.x[rj] as usize;
     let val = ctx.x[rd] as usize;
 
     if ty < 8 {
@@ -1643,7 +1648,7 @@ fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
 
     // TODO : modify to vCPU
     let pcpu_id_this = this_cpu_id();
-        
+
     if is_write {
         let ret = loongarch_iocsr_write(pcpu_id_this, addr, val, len);
         return;

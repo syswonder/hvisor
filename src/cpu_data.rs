@@ -12,7 +12,7 @@
 //      https://www.syswonder.org
 //
 // Authors:
-// 
+//
 use alloc::sync::Arc;
 use spin::Mutex;
 
@@ -152,7 +152,7 @@ impl CpuSet {
     pub fn pcpuid_to_vcpuid(&self, pcpu_id: usize) -> Option<usize> {
         if !self.contains_cpu(pcpu_id) {
             return None;
-        }       
+        }
         // Count how many CPUs are set before this one
         Some((0..pcpu_id).filter(|&i| self.contains_cpu(i)).count())
     }

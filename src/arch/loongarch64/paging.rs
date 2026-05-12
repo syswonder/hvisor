@@ -29,9 +29,9 @@ use loongArch64::register::pwcl::{
     set_ptwidth,
 };
 use loongArch64::register::stlbps::{self, set_ps};
-use loongArch64::register::{MemoryAccessType, tlbidx};
 use loongArch64::register::{crmd, pwch, pwcl, tlbrentry};
 use loongArch64::register::{pgd, pgdh, pgdl};
+use loongArch64::register::{tlbidx, MemoryAccessType};
 
 #[derive(Debug)]
 pub enum PagingError {

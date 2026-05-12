@@ -66,10 +66,10 @@ mod pci;
 #[cfg(test)]
 mod tests;
 
-use crate::arch::mm::{arch_post_heap_init, arch_setup_parange};
-use crate::consts::{hv_end, mem_pool_start, MAX_CPU_NUM};
 #[cfg(target_arch = "loongarch64")]
 use crate::arch::entry::arch_secondary_entry;
+use crate::arch::mm::{arch_post_heap_init, arch_setup_parange};
+use crate::consts::{hv_end, mem_pool_start, MAX_CPU_NUM};
 #[cfg(feature = "iommu")]
 use crate::device::iommu::iommu_init;
 use arch::{cpu::cpu_start, entry::arch_entry};
@@ -87,14 +87,16 @@ static MASTER_CPU: AtomicI32 = AtomicI32::new(-1);
 
 #[cfg(target_arch = "loongarch64")]
 fn print_logo() {
-    println!(r"
+    println!(
+        r"
   _            _                   _
  | |          (_)                 | |
  | |__  __   ___ ___  ___  _ __   | | __ _
  | '_ \ \ \ / / / __|/ _ \| '__|  | |/ _` |
  | | | | \ V /| \__ \ (_) | |    _| | (_| |
  |_| |_|  \_/ |_|___/\___/|_|   (_)_|\__,_|
-");
+"
+    );
 }
 
 pub fn clear_bss() {
@@ -190,7 +192,7 @@ fn wakeup_secondary_cpus(this_id: usize, host_dtb: usize) {
         if cpu_id == this_id {
             continue;
         }
-        
+
         #[cfg(not(target_arch = "loongarch64"))]
         cpu_start(cpu_id, arch_entry as _, host_dtb);
 
@@ -213,13 +215,13 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     extern "C" {
         fn skernel();
     }
-    
+
     #[cfg(not(target_arch = "loongarch64"))]
     println!("Hello, start HVISOR at {:#x?}!", skernel as usize);
     if MASTER_CPU.load(Ordering::Acquire) == -1 {
         MASTER_CPU.store(cpuid as i32, Ordering::Release);
         is_primary = true;
-        
+
         #[cfg(target_arch = "loongarch64")]
         {
             clear_bss();
@@ -235,7 +237,8 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
 
     let cpu = PerCpu::new(cpuid);
 
-    #[cfg(target_arch = "loongarch64")] {
+    #[cfg(target_arch = "loongarch64")]
+    {
         use crate::arch::timer::timer_init;
         timer_init();
     }

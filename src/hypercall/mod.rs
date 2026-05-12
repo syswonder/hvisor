@@ -210,7 +210,7 @@ impl<'a> HyperCall<'a> {
         };
         #[cfg(not(target_arch = "loongarch64"))]
         self.check_cpu_id();
-        
+
         add_zone(zone);
         drop(_lock);
         HyperCallResult::Ok(0)
@@ -307,7 +307,7 @@ impl<'a> HyperCall<'a> {
         //         cnt as usize,
         //     )
         // };
-     
+
         for (i, zone_info) in slice.iter_mut().enumerate() {
             if i < zones_info.len() {
                 *zone_info = zones_info[i].clone();
@@ -315,7 +315,7 @@ impl<'a> HyperCall<'a> {
                 break;
             }
         }
-     
+
         HyperCallResult::Ok(core::cmp::min(cnt as _, zones_info.len()))
     }
 }

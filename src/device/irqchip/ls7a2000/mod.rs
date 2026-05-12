@@ -23,7 +23,8 @@ use crate::{
         cpu::this_cpu_id,
         ipi::*,
         register::{
-            clear_gcsr_estat, read_csr_gintc, read_gcsr_estat, set_csr_gintc, set_gcsr_estat, write_csr_gintc, write_gcsr_estat
+            clear_gcsr_estat, read_csr_gintc, read_gcsr_estat, set_csr_gintc, set_gcsr_estat,
+            write_csr_gintc, write_gcsr_estat,
         },
     },
     consts::MAX_CPU_NUM,
@@ -114,9 +115,8 @@ const INT_PERF: usize = 10;
 const INT_TIMER: usize = 11;
 const INT_IPI: usize = 12;
 
-
 // ================================
-// inject and clear irq 
+// inject and clear irq
 // --boneinscri 2026.04
 pub fn inject_irq(_irq: usize, is_hardware: bool) {
     debug!(
@@ -155,7 +155,6 @@ pub fn clear_irq(_irq: usize, is_hardware: bool) {
     }
 }
 // ================================
-
 
 /// clear the injecting irq ctrl bit on THIS cpu
 pub fn clear_hwi_injected_irq() {

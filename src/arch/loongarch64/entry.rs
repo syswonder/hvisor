@@ -98,7 +98,6 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
     );
 }
 
-
 #[naked]
 #[no_mangle]
 #[link_section = ".text.entry"]
@@ -258,6 +257,6 @@ pub unsafe extern "C" fn arch_secondary_entry() -> i32 {
         LOONGARCH_CSR_DMW2 = const 0x182,
         LOONGARCH_CSR_DMW3 = const 0x183,
         options(noreturn),
-        
+
     );
 }

@@ -14,23 +14,23 @@
 // Authors:
 //      Yulong Han <wheatfox17@icloud.com>
 //      Ming Shen  <boneinscri@163.com>
+use super::eiointc::LoongArch64Eiointc;
 use super::ipi::*;
+use super::register::*;
 use super::zone::ZoneContext;
 use crate::arch::trap::enable_global_interrupt;
 use crate::arch::zone::disable_hwi_through;
+use crate::cpu_data::this_zone;
 use crate::cpu_data::{get_vcpuid_from_pcpuid, this_cpu_data};
 use crate::device::common::MMIODerefWrapper;
 use crate::zone::{find_zone, this_zone_id};
-use crate::cpu_data::this_zone;
 use core::arch::asm;
 use core::fmt::{self, Debug, Formatter};
 use loongArch64::register::crmd::Crmd;
 use loongArch64::register::pgdl;
 use loongArch64::register::{cpuid, crmd};
-use tock_registers::interfaces::Writeable;
-use super::register::*;
-use super::eiointc::LoongArch64Eiointc;
 use spin::Mutex;
+use tock_registers::interfaces::Writeable;
 
 use crate::{
     consts::{PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
@@ -43,201 +43,306 @@ use crate::{
 #[repr(C)]
 #[derive(Debug, Clone, Copy)]
 pub struct BootContext {
-    pub ra: usize,            // return address
-    pub sp: usize,            // stack pointer
-    pub tp: usize,            // threads pointer
-    pub s0: usize,            
-    pub s1: usize,            
-    pub s2: usize,            
-    pub s3: usize,            
-    pub s4: usize,            
-    pub s5: usize,            
-    pub s6: usize,            
-    pub s7: usize,            
-    pub s8: usize,            
-    pub fp: usize,           
-    pub start_image: usize,   
-    pub image_handle: usize,  
+    pub ra: usize, // return address
+    pub sp: usize, // stack pointer
+    pub tp: usize, // threads pointer
+    pub s0: usize,
+    pub s1: usize,
+    pub s2: usize,
+    pub s3: usize,
+    pub s4: usize,
+    pub s5: usize,
+    pub s6: usize,
+    pub s7: usize,
+    pub s8: usize,
+    pub fp: usize,
+    pub start_image: usize,
+    pub image_handle: usize,
     pub efi_system_table: usize,
-    pub cmd_line_ptr: usize,  
-    // pub t0: usize,            
-    // pub t1: usize,  
-    pub t2: usize,            
-    pub t3: usize,            
-    pub t4: usize,            
-    pub t5: usize,            
-    pub t6: usize,            
-    pub t7: usize,            
-    pub t8: usize,            
-    pub crmd: usize,          
-    pub prmd: usize,          
-    pub euen: usize,          
-    pub misc: usize,          
-    pub ecfg: usize,          
-    pub estat: usize,         
-    pub era: usize,           
-    pub badv: usize,          
-    pub badi: usize,          
-    pub eentry: usize,        
-    pub tlbidx: usize,        
-    pub tlbehi: usize,        
-    pub tlbelo0: usize,       
-    pub tlbelo1: usize,       
-    pub asid: usize,          
-    pub pgdl: usize,          
-    pub pgdh: usize,          
-    pub pwcl: usize,          
-    pub pwch: usize,          
-    pub stlbps: usize,        
-    pub rvacfg: usize,        
-    pub cpuid: usize,         
-    pub prcfg1: usize,        
-    pub prcfg2: usize,        
-    pub prcfg3: usize,        
-    pub save0: usize,         
-    pub save1: usize,         
-    pub save2: usize,         
-    pub save3: usize,         
-    pub save4: usize,         
-    pub save5: usize,         
-    pub save6: usize,         
-    pub save7: usize,         
-    pub tid: usize,           
-    pub tcfg: usize,          
-    pub tval: usize,          
-    pub cntc: usize,          
-    pub ticlr: usize,         
-    pub tlbrentry: usize,     
-    pub tlbrbadv: usize,      
-    pub tlbrera: usize,       
-    pub tlbrsave: usize,      
-    pub tlbrelo0: usize,      
-    pub tlbrelo1: usize,      
-    pub tlbrehi: usize,       
-    pub tlbrprmd: usize,      
-    pub dmw0: usize,          
-    pub dmw1: usize,          
-    pub dmw2: usize,          
-    pub dmw3: usize,  
+    pub cmd_line_ptr: usize,
+    // pub t0: usize,
+    // pub t1: usize,
+    pub t2: usize,
+    pub t3: usize,
+    pub t4: usize,
+    pub t5: usize,
+    pub t6: usize,
+    pub t7: usize,
+    pub t8: usize,
+    pub crmd: usize,
+    pub prmd: usize,
+    pub euen: usize,
+    pub misc: usize,
+    pub ecfg: usize,
+    pub estat: usize,
+    pub era: usize,
+    pub badv: usize,
+    pub badi: usize,
+    pub eentry: usize,
+    pub tlbidx: usize,
+    pub tlbehi: usize,
+    pub tlbelo0: usize,
+    pub tlbelo1: usize,
+    pub asid: usize,
+    pub pgdl: usize,
+    pub pgdh: usize,
+    pub pwcl: usize,
+    pub pwch: usize,
+    pub stlbps: usize,
+    pub rvacfg: usize,
+    pub cpuid: usize,
+    pub prcfg1: usize,
+    pub prcfg2: usize,
+    pub prcfg3: usize,
+    pub save0: usize,
+    pub save1: usize,
+    pub save2: usize,
+    pub save3: usize,
+    pub save4: usize,
+    pub save5: usize,
+    pub save6: usize,
+    pub save7: usize,
+    pub tid: usize,
+    pub tcfg: usize,
+    pub tval: usize,
+    pub cntc: usize,
+    pub ticlr: usize,
+    pub tlbrentry: usize,
+    pub tlbrbadv: usize,
+    pub tlbrera: usize,
+    pub tlbrsave: usize,
+    pub tlbrelo0: usize,
+    pub tlbrelo1: usize,
+    pub tlbrehi: usize,
+    pub tlbrprmd: usize,
+    pub dmw0: usize,
+    pub dmw1: usize,
+    pub dmw2: usize,
+    pub dmw3: usize,
 
-    pub second_crmd: usize,          
-    pub second_prmd: usize,          
-    pub second_euen: usize,          
-    pub second_misc: usize,          
-    pub second_ecfg: usize,          
-    pub second_estat: usize,         
-    pub second_era: usize,           
-    pub second_badv: usize,          
-    pub second_badi: usize,          
-    pub second_eentry: usize,        
-    pub second_tlbidx: usize,        
-    pub second_tlbehi: usize,        
-    pub second_tlbelo0: usize,       
-    pub second_tlbelo1: usize,       
-    pub second_asid: usize,          
-    pub second_pgdl: usize,          
-    pub second_pgdh: usize,          
-    pub second_pwcl: usize,          
-    pub second_pwch: usize,          
-    pub second_stlbps: usize,        
-    pub second_rvacfg: usize,        
-    pub second_cpuid: usize,         
-    pub second_prcfg1: usize,        
-    pub second_prcfg2: usize,        
-    pub second_prcfg3: usize,        
-    pub second_save0: usize,         
-    pub second_save1: usize,         
-    pub second_save2: usize,         
-    pub second_save3: usize,         
-    pub second_save4: usize,         
-    pub second_save5: usize,         
-    pub second_save6: usize,         
-    pub second_save7: usize,         
-    pub second_tid: usize,           
-    pub second_tcfg: usize,          
-    pub second_tval: usize,          
-    pub second_cntc: usize,          
-    pub second_ticlr: usize,         
-    pub second_tlbrentry: usize,     
-    pub second_tlbrbadv: usize,      
-    pub second_tlbrera: usize,       
-    pub second_tlbrsave: usize,      
-    pub second_tlbrelo0: usize,      
-    pub second_tlbrelo1: usize,      
-    pub second_tlbrehi: usize,       
-    pub second_tlbrprmd: usize,      
-    pub second_dmw0: usize,          
-    pub second_dmw1: usize,          
-    pub second_dmw2: usize,          
+    pub second_crmd: usize,
+    pub second_prmd: usize,
+    pub second_euen: usize,
+    pub second_misc: usize,
+    pub second_ecfg: usize,
+    pub second_estat: usize,
+    pub second_era: usize,
+    pub second_badv: usize,
+    pub second_badi: usize,
+    pub second_eentry: usize,
+    pub second_tlbidx: usize,
+    pub second_tlbehi: usize,
+    pub second_tlbelo0: usize,
+    pub second_tlbelo1: usize,
+    pub second_asid: usize,
+    pub second_pgdl: usize,
+    pub second_pgdh: usize,
+    pub second_pwcl: usize,
+    pub second_pwch: usize,
+    pub second_stlbps: usize,
+    pub second_rvacfg: usize,
+    pub second_cpuid: usize,
+    pub second_prcfg1: usize,
+    pub second_prcfg2: usize,
+    pub second_prcfg3: usize,
+    pub second_save0: usize,
+    pub second_save1: usize,
+    pub second_save2: usize,
+    pub second_save3: usize,
+    pub second_save4: usize,
+    pub second_save5: usize,
+    pub second_save6: usize,
+    pub second_save7: usize,
+    pub second_tid: usize,
+    pub second_tcfg: usize,
+    pub second_tval: usize,
+    pub second_cntc: usize,
+    pub second_ticlr: usize,
+    pub second_tlbrentry: usize,
+    pub second_tlbrbadv: usize,
+    pub second_tlbrera: usize,
+    pub second_tlbrsave: usize,
+    pub second_tlbrelo0: usize,
+    pub second_tlbrelo1: usize,
+    pub second_tlbrehi: usize,
+    pub second_tlbrprmd: usize,
+    pub second_dmw0: usize,
+    pub second_dmw1: usize,
+    pub second_dmw2: usize,
     pub second_dmw3: usize,
 }
 
 /// Flattened GCSR values extracted from BootContext (primary or secondary).
 struct GcsrSnapshot {
-    crmd: usize, prmd: usize, euen: usize, misc: usize, ecfg: usize,
-    estat: usize, era: usize, badv: usize, badi: usize, eentry: usize,
-    tlbidx: usize, tlbehi: usize, tlbelo0: usize, tlbelo1: usize,
-    asid: usize, pgdl: usize, pgdh: usize, pwcl: usize, pwch: usize,
-    stlbps: usize, rvacfg: usize, cpuid: usize,
-    prcfg1: usize, prcfg2: usize, prcfg3: usize,
-    save0: usize, save1: usize, save2: usize, save3: usize,
-    save4: usize, save5: usize, save6: usize, save7: usize,
-    tid: usize, tcfg: usize, tval: usize, cntc: usize, ticlr: usize,
-    tlbrentry: usize, tlbrbadv: usize, tlbrera: usize, tlbrsave: usize,
-    tlbrelo0: usize, tlbrelo1: usize, tlbrehi: usize, tlbrprmd: usize,
-    dmw0: usize, dmw1: usize, dmw2: usize, dmw3: usize,
+    crmd: usize,
+    prmd: usize,
+    euen: usize,
+    misc: usize,
+    ecfg: usize,
+    estat: usize,
+    era: usize,
+    badv: usize,
+    badi: usize,
+    eentry: usize,
+    tlbidx: usize,
+    tlbehi: usize,
+    tlbelo0: usize,
+    tlbelo1: usize,
+    asid: usize,
+    pgdl: usize,
+    pgdh: usize,
+    pwcl: usize,
+    pwch: usize,
+    stlbps: usize,
+    rvacfg: usize,
+    cpuid: usize,
+    prcfg1: usize,
+    prcfg2: usize,
+    prcfg3: usize,
+    save0: usize,
+    save1: usize,
+    save2: usize,
+    save3: usize,
+    save4: usize,
+    save5: usize,
+    save6: usize,
+    save7: usize,
+    tid: usize,
+    tcfg: usize,
+    tval: usize,
+    cntc: usize,
+    ticlr: usize,
+    tlbrentry: usize,
+    tlbrbadv: usize,
+    tlbrera: usize,
+    tlbrsave: usize,
+    tlbrelo0: usize,
+    tlbrelo1: usize,
+    tlbrehi: usize,
+    tlbrprmd: usize,
+    dmw0: usize,
+    dmw1: usize,
+    dmw2: usize,
+    dmw3: usize,
 }
 
 impl GcsrSnapshot {
     fn from_primary(b: &BootContext, vcpu_id: usize) -> Self {
         Self {
-            crmd: b.crmd, prmd: b.prmd, euen: b.euen, misc: b.misc, ecfg: b.ecfg,
-            estat: b.estat, era: b.era, badv: b.badv, badi: b.badi, eentry: b.eentry,
-            tlbidx: b.tlbidx, tlbehi: b.tlbehi, tlbelo0: b.tlbelo0, tlbelo1: b.tlbelo1,
-            asid: b.asid, pgdl: b.pgdl, pgdh: b.pgdh, pwcl: b.pwcl, pwch: b.pwch,
-            stlbps: b.stlbps, rvacfg: b.rvacfg, cpuid: vcpu_id,
-            prcfg1: b.prcfg1, prcfg2: b.prcfg2, prcfg3: b.prcfg3,
-            save0: b.save0, save1: b.save1, save2: b.save2, save3: b.save3,
-            save4: b.save4, save5: b.save5, save6: b.save6, save7: b.save7,
-            tid: vcpu_id, tcfg: b.tcfg, tval: b.tval, cntc: b.cntc, ticlr: b.ticlr,
-            tlbrentry: b.tlbrentry, tlbrbadv: b.tlbrbadv, tlbrera: b.tlbrera,
-            tlbrsave: b.tlbrsave, tlbrelo0: b.tlbrelo0, tlbrelo1: b.tlbrelo1,
-            tlbrehi: b.tlbrehi, tlbrprmd: b.tlbrprmd,
-            dmw0: b.dmw0, dmw1: b.dmw1, dmw2: b.dmw2, dmw3: b.dmw3,
+            crmd: b.crmd,
+            prmd: b.prmd,
+            euen: b.euen,
+            misc: b.misc,
+            ecfg: b.ecfg,
+            estat: b.estat,
+            era: b.era,
+            badv: b.badv,
+            badi: b.badi,
+            eentry: b.eentry,
+            tlbidx: b.tlbidx,
+            tlbehi: b.tlbehi,
+            tlbelo0: b.tlbelo0,
+            tlbelo1: b.tlbelo1,
+            asid: b.asid,
+            pgdl: b.pgdl,
+            pgdh: b.pgdh,
+            pwcl: b.pwcl,
+            pwch: b.pwch,
+            stlbps: b.stlbps,
+            rvacfg: b.rvacfg,
+            cpuid: vcpu_id,
+            prcfg1: b.prcfg1,
+            prcfg2: b.prcfg2,
+            prcfg3: b.prcfg3,
+            save0: b.save0,
+            save1: b.save1,
+            save2: b.save2,
+            save3: b.save3,
+            save4: b.save4,
+            save5: b.save5,
+            save6: b.save6,
+            save7: b.save7,
+            tid: vcpu_id,
+            tcfg: b.tcfg,
+            tval: b.tval,
+            cntc: b.cntc,
+            ticlr: b.ticlr,
+            tlbrentry: b.tlbrentry,
+            tlbrbadv: b.tlbrbadv,
+            tlbrera: b.tlbrera,
+            tlbrsave: b.tlbrsave,
+            tlbrelo0: b.tlbrelo0,
+            tlbrelo1: b.tlbrelo1,
+            tlbrehi: b.tlbrehi,
+            tlbrprmd: b.tlbrprmd,
+            dmw0: b.dmw0,
+            dmw1: b.dmw1,
+            dmw2: b.dmw2,
+            dmw3: b.dmw3,
         }
     }
 
     fn from_secondary(b: &BootContext, vcpu_id: usize) -> Self {
         Self {
-            crmd: b.second_crmd, prmd: b.second_prmd, euen: b.second_euen,
-            misc: b.second_misc, ecfg: b.second_ecfg, estat: b.second_estat,
-            era: b.second_era, badv: b.second_badv, badi: b.second_badi,
-            eentry: b.second_eentry, tlbidx: b.second_tlbidx, tlbehi: b.second_tlbehi,
-            tlbelo0: b.second_tlbelo0, tlbelo1: b.second_tlbelo1, asid: b.second_asid,
-            pgdl: b.second_pgdl, pgdh: b.second_pgdh, pwcl: b.second_pwcl,
-            pwch: b.second_pwch, stlbps: b.second_stlbps, rvacfg: b.second_rvacfg,
+            crmd: b.second_crmd,
+            prmd: b.second_prmd,
+            euen: b.second_euen,
+            misc: b.second_misc,
+            ecfg: b.second_ecfg,
+            estat: b.second_estat,
+            era: b.second_era,
+            badv: b.second_badv,
+            badi: b.second_badi,
+            eentry: b.second_eentry,
+            tlbidx: b.second_tlbidx,
+            tlbehi: b.second_tlbehi,
+            tlbelo0: b.second_tlbelo0,
+            tlbelo1: b.second_tlbelo1,
+            asid: b.second_asid,
+            pgdl: b.second_pgdl,
+            pgdh: b.second_pgdh,
+            pwcl: b.second_pwcl,
+            pwch: b.second_pwch,
+            stlbps: b.second_stlbps,
+            rvacfg: b.second_rvacfg,
             cpuid: vcpu_id,
-            prcfg1: b.second_prcfg1, prcfg2: b.second_prcfg2, prcfg3: b.second_prcfg3,
-            save0: b.second_save0, save1: b.second_save1, save2: b.second_save2,
-            save3: b.second_save3, save4: b.second_save4, save5: b.second_save5,
-            save6: b.second_save6, save7: b.second_save7,
-            tid: vcpu_id, tcfg: b.second_tcfg, tval: b.second_tval, cntc: b.second_cntc,
-            ticlr: b.second_ticlr, tlbrentry: b.second_tlbrentry,
-            tlbrbadv: b.second_tlbrbadv, tlbrera: b.second_tlbrera,
-            tlbrsave: b.second_tlbrsave, tlbrelo0: b.second_tlbrelo0,
-            tlbrelo1: b.second_tlbrelo1, tlbrehi: b.second_tlbrehi,
+            prcfg1: b.second_prcfg1,
+            prcfg2: b.second_prcfg2,
+            prcfg3: b.second_prcfg3,
+            save0: b.second_save0,
+            save1: b.second_save1,
+            save2: b.second_save2,
+            save3: b.second_save3,
+            save4: b.second_save4,
+            save5: b.second_save5,
+            save6: b.second_save6,
+            save7: b.second_save7,
+            tid: vcpu_id,
+            tcfg: b.second_tcfg,
+            tval: b.second_tval,
+            cntc: b.second_cntc,
+            ticlr: b.second_ticlr,
+            tlbrentry: b.second_tlbrentry,
+            tlbrbadv: b.second_tlbrbadv,
+            tlbrera: b.second_tlbrera,
+            tlbrsave: b.second_tlbrsave,
+            tlbrelo0: b.second_tlbrelo0,
+            tlbrelo1: b.second_tlbrelo1,
+            tlbrehi: b.second_tlbrehi,
             tlbrprmd: b.second_tlbrprmd,
-            dmw0: b.second_dmw0, dmw1: b.second_dmw1,
-            dmw2: b.second_dmw2, dmw3: b.second_dmw3,
+            dmw0: b.second_dmw0,
+            dmw1: b.second_dmw1,
+            dmw2: b.second_dmw2,
+            dmw3: b.second_dmw3,
         }
     }
 
     fn write_all(&self) {
         write_gcsr_crmd(self.crmd);
         write_gcsr_prmd(self.prmd);
-        write_gcsr_pgdh(self.euen); // NOTE: intentional mapping from original code
-        write_gcsr_pgdl(self.misc); // NOTE: intentional mapping from original code
-        write_gcsr_tval(self.ecfg); // NOTE: intentional mapping from original code
+        write_gcsr_pgdh(self.euen);
+        write_gcsr_pgdl(self.misc);
+        write_gcsr_tval(self.ecfg);
         write_gcsr_estat(self.estat);
         write_gcsr_era(self.era);
         write_gcsr_badv(self.badv);
@@ -303,7 +408,7 @@ pub struct ArchCpu {
     pub irq_pending: usize,
     pub irq_clear: usize,
     pub ipi_state: Mutex<IpiState>,
-    pub eiointc: Mutex<Eiointc>, 
+    pub eiointc: Mutex<Eiointc>,
     pub expire: isize,
     pub csr: [usize; 0x513],
 }
@@ -353,9 +458,19 @@ impl ArchCpu {
     /// Common vcpu entry: write SAVE3/SAVE4, flush TLB, jump to guest.
     fn vcpu_enter(&mut self) -> ! {
         let ctx_addr = &mut self.ctx as *mut ZoneContext;
-        debug!("loongarch64: ArchCpu::vcpu_enter: percpu_s={:#x}", self.stack_top() - PER_CPU_SIZE);
-        debug!("loongarch64: ArchCpu::vcpu_enter: ctx_addr={:#x}, size={}", ctx_addr as usize, core::mem::size_of::<ZoneContext>());
-        debug!("loongarch64: ArchCpu::vcpu_enter: stack_tp={:#x}", self.stack_top());
+        debug!(
+            "loongarch64: ArchCpu::vcpu_enter: percpu_s={:#x}",
+            self.stack_top() - PER_CPU_SIZE
+        );
+        debug!(
+            "loongarch64: ArchCpu::vcpu_enter: ctx_addr={:#x}, size={}",
+            ctx_addr as usize,
+            core::mem::size_of::<ZoneContext>()
+        );
+        debug!(
+            "loongarch64: ArchCpu::vcpu_enter: stack_tp={:#x}",
+            self.stack_top()
+        );
         unsafe {
             asm!(
                 "csrwr {}, {LOONGARCH_CSR_SAVE3}",
@@ -383,18 +498,26 @@ impl ArchCpu {
         let vcpu_id = get_vcpuid_from_pcpuid(self.get_cpuid());
         info!("gcsr_cpu_id : {}", vcpu_id);
 
-        for i in 0..32 { self.ctx.x[i] = 0; }
+        for i in 0..32 {
+            self.ctx.x[i] = 0;
+        }
 
         let mut snap = GcsrSnapshot::from_primary(boot_ctx, vcpu_id);
 
         let zone_id = this_zone_id();
         if zone_id == 0 {
             this_cpu_data().cpu_on_entry = boot_ctx.start_image;
-            info!("boot_ctx.efi_system_table: {:#x?}", boot_ctx.efi_system_table);
+            info!(
+                "boot_ctx.efi_system_table: {:#x?}",
+                boot_ctx.efi_system_table
+            );
             self.ctx.x[4] = boot_ctx.image_handle;
             self.ctx.x[5] = 0;
             self.ctx.x[6] = 0;
-            info!("a0={:#x?} a1={:#x?} a2={:#x?}", self.ctx.x[4], self.ctx.x[5], self.ctx.x[6]);
+            info!(
+                "a0={:#x?} a1={:#x?} a2={:#x?}",
+                self.ctx.x[4], self.ctx.x[5], self.ctx.x[6]
+            );
         } else {
             let is_acpi = {
                 let zone = this_zone();
@@ -423,12 +546,12 @@ impl ArchCpu {
 
         if !self.init {
             self.init(this_cpu_data().cpu_on_entry, this_cpu_data().id, 0);
-            self.init=  true;
+            self.init = true;
         }
 
-        self.ctx.x[1]  = boot_ctx.ra;
-        self.ctx.x[2]  = boot_ctx.tp;
-        self.ctx.x[3]  = boot_ctx.sp;
+        self.ctx.x[1] = boot_ctx.ra;
+        self.ctx.x[2] = boot_ctx.tp;
+        self.ctx.x[3] = boot_ctx.sp;
         self.ctx.x[22] = boot_ctx.fp;
         self.ctx.x[23] = boot_ctx.s0;
         self.ctx.x[24] = boot_ctx.s1;
@@ -461,7 +584,9 @@ impl ArchCpu {
             self.init(this_cpu_data().cpu_on_entry, this_cpu_data().id, 0);
             self.init = true;
         }
-        for i in 0..32 { self.ctx.x[i] = 0; }
+        for i in 0..32 {
+            self.ctx.x[i] = 0;
+        }
 
         let vcpu_id = get_vcpuid_from_pcpuid(self.get_cpuid());
         let boot_ctx = unsafe { &mut *(CPU_BOOT_CONTEXT_ADDRESS as *mut BootContext) };

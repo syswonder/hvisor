@@ -1,4 +1,3 @@
-
 // Copyright (c) 2025 Syswonder
 // hvisor is licensed under Mulan PSL v2.
 // You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -18,9 +17,23 @@
 
 use core::sync::atomic::{AtomicU64, Ordering};
 
-use loongArch64::{register::{tcfg, ticlr}, time};
+use loongArch64::{
+    register::{tcfg, ticlr},
+    time,
+};
 
-use crate::{arch::{cpu::this_cpu_id, register::{read_csr_cntc, read_gcsr_estat, read_gcsr_tcfg, read_gcsr_tval, write_csr_cntc, write_gcsr_estat, write_gcsr_tcfg, write_gcsr_ticlr, write_gcsr_tval}, trap::{ecfg_timer_disable, ktime_get}, zone::ZoneContext}, cpu_data::get_cpu_data};
+use crate::{
+    arch::{
+        cpu::this_cpu_id,
+        register::{
+            read_csr_cntc, read_gcsr_estat, read_gcsr_tcfg, read_gcsr_tval, write_csr_cntc,
+            write_gcsr_estat, write_gcsr_tcfg, write_gcsr_ticlr, write_gcsr_tval,
+        },
+        trap::{ecfg_timer_disable, ktime_get},
+        zone::ZoneContext,
+    },
+    cpu_data::get_cpu_data,
+};
 
 const CSR_TCFG_EN: usize = 1 << 0;
 const CSR_TCFG_PERIOD_SHIFT: usize = 1;
@@ -47,7 +60,7 @@ pub fn restore_timer(mut ctx: &mut ZoneContext, pcpu_id: usize) {
         write_gcsr_tval(ctx.gcsr_tval);
         return;
     }
-    
+
     let gcsr_tval = ctx.gcsr_tval;
     let gcsr_estat = ctx.gcsr_estat;
 
@@ -61,7 +74,7 @@ pub fn restore_timer(mut ctx: &mut ZoneContext, pcpu_id: usize) {
 
     let mut delta = 0;
     let now = ktime_get();
-    
+
     let pcpu_data = get_cpu_data(pcpu_id);
     let expire = pcpu_data.arch_cpu.expire as usize;
 
@@ -71,7 +84,7 @@ pub fn restore_timer(mut ctx: &mut ZoneContext, pcpu_id: usize) {
         let period = gcsr_tcfg & CSR_TCFG_VAL;
         delta = now - expire;
         delta = period - (delta % period);
-        
+
         // inject timer interrupt
         pcpu_data.arch_cpu.add_irq(INT_TI);
     }
@@ -82,15 +95,15 @@ pub fn do_save_timer(mut ctx: &mut ZoneContext, pcpu_id: usize) {
     let mut delta = 0;
     // TODO: read gcsr.tcfg from trap context (from vcpu)
     let gcsr_tcfg = ctx.gcsr_tcfg;
-    let gcsr_tval = ctx.gcsr_tval;   
-    
+    let gcsr_tval = ctx.gcsr_tval;
+
     if (gcsr_tval < gcsr_tcfg) {
         delta = gcsr_tval;
     } else {
         delta = 0;
     }
     let expire = ktime_get() + delta;
-    
+
     let pcpu_data = get_cpu_data(pcpu_id);
     pcpu_data.arch_cpu.expire = expire as isize;
 }
@@ -98,7 +111,7 @@ pub fn do_save_timer(mut ctx: &mut ZoneContext, pcpu_id: usize) {
 pub fn save_timer(mut ctx: &mut ZoneContext, pcpu_id: usize) {
     // TODO: if it supports, pcpu_id -> vcpu
     // TODO: if it supports vcpu, we should read gcsr from trap context
-    
+
     // TODO: save gcsr.tcfg and gcsr.tval for vcpu
     ctx.gcsr_tcfg = read_gcsr_tcfg();
     ctx.gcsr_tval = read_gcsr_tval();
@@ -113,12 +126,10 @@ pub fn save_timer(mut ctx: &mut ZoneContext, pcpu_id: usize) {
     ctx.gcsr_estat = read_gcsr_estat();
 }
 
-
 static INIT_OFFSET: AtomicU64 = AtomicU64::new(0);
 static GLOBAL_TIMER: AtomicU64 = AtomicU64::new(0);
 
-pub fn sync_counter()
-{
+pub fn sync_counter() {
     let init_offset_val = INIT_OFFSET.load(Ordering::Relaxed);
     write_csr_cntc(init_offset_val as usize);
 }
@@ -133,7 +144,7 @@ pub fn timer_init() {
     let pcpu_id = this_cpu_id();
     if pcpu_id == 0 {
         let init_offset_val = -(ktime_get() as isize - read_csr_cntc() as isize);
-        INIT_OFFSET.store(init_offset_val as u64, Ordering::Relaxed);    
+        INIT_OFFSET.store(init_offset_val as u64, Ordering::Relaxed);
     }
     sync_counter();
 
@@ -142,7 +153,7 @@ pub fn timer_init() {
     // 1s = 1000 ms = 1000_000 us
     // set timer
     let init_val = timer_freq / HZ;
-    tcfg::set_periodic(true);    
+    tcfg::set_periodic(true);
     tcfg::set_init_val(init_val);
-    tcfg::set_en(true);// enable timer, not timer interrupt
+    tcfg::set_en(true); // enable timer, not timer interrupt
 }

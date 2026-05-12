@@ -1,4 +1,3 @@
-
 // Copyright (c) 2025 Syswonder
 // hvisor is licensed under Mulan PSL v2.
 // You can use this software according to the terms and conditions of the Mulan PSL v2.
@@ -113,14 +112,14 @@ pub struct LoongArch64Eiointc {
     pub features: usize,
     pub status: usize,
     pub nodetype: [u8; EIOINTC_IRQS_NODETYPE_COUNT * 2], // u8 * 32
-    pub bounce: [u8; EIOINTC_IRQS_U8_NUMS], // 32
-    pub isr: [u8; EIOINTC_IRQS_U8_NUMS], // 32
+    pub bounce: [u8; EIOINTC_IRQS_U8_NUMS],              // 32
+    pub isr: [u8; EIOINTC_IRQS_U8_NUMS],                 // 32
     pub coreisr: [[u8; EIOINTC_IRQS_U8_NUMS]; EIOINTC_ROUTE_MAX_VCPUS], // 32 * 256
-    pub enable: [u8; EIOINTC_IRQS_U8_NUMS], // 32
-    pub ipmap: [u8; EIOINTC_IRQS_U8_NUMS / 4], // 8
-    pub coremap: [u8; EIOINTC_IRQS], // 256
-    pub sw_coremap: [u8; EIOINTC_IRQS], // 256
-    pub sw_coreisr: BitmapArray,// 256 * 8 * (4 * 64 bits)
+    pub enable: [u8; EIOINTC_IRQS_U8_NUMS],              // 32
+    pub ipmap: [u8; EIOINTC_IRQS_U8_NUMS / 4],           // 8
+    pub coremap: [u8; EIOINTC_IRQS],                     // 256
+    pub sw_coremap: [u8; EIOINTC_IRQS],                  // 256
+    pub sw_coreisr: BitmapArray,                         // 256 * 8 * (4 * 64 bits)
 }
 
 impl LoongArch64Eiointc {
@@ -175,11 +174,11 @@ pub fn do_real_write_iocsr(addr: usize, val: usize, len: usize) {
     }
 }
 
-pub fn do_real_read_iocsr(addr: usize, len: usize) -> usize {    
+pub fn do_real_read_iocsr(addr: usize, len: usize) -> usize {
     match len {
         1 => {
             // iocsrrd.b
-            let mut val= 0;
+            let mut val = 0;
             unsafe {
                 asm!("iocsrrd.b {}, {}", out(reg) val, in(reg) addr);
             }
@@ -208,7 +207,7 @@ pub fn do_real_read_iocsr(addr: usize, len: usize) -> usize {
                 asm!("iocsrrd.d {}, {}", out(reg) val, in(reg) addr);
             }
             val
-        }, 
+        }
         _ => {
             // should not reach here
             panic!("read invalid iocsr type, this is impossible");
@@ -238,7 +237,7 @@ pub fn read_masked_data(pbuf: *const u8, len: usize) -> usize {
             _ => {
                 panic!("write_memory: invalid length {:#x}", len);
             }
-        }    
+        }
     }
 }
 
@@ -264,18 +263,18 @@ pub fn write_masked_data(pbuf: *mut u8, val: usize, len: usize) {
             _ => {
                 warn!("write_memory: invalid length {:#x}", len);
             }
-        }    
+        }
     }
-}      
+}
 fn get_masked_data(data: usize, len: usize) -> usize {
     match len {
-      1 => data & 0xff,
-      2 => data & 0xffff,
-      4 => data & 0xffffffff,
-      8 => data,
-      _ => {
-          panic!("read_mailbox: unknown data len: {}", len);
-      }
+        1 => data & 0xff,
+        2 => data & 0xffff,
+        4 => data & 0xffffffff,
+        8 => data,
+        _ => {
+            panic!("read_mailbox: unknown data len: {}", len);
+        }
     }
 }
 
@@ -316,51 +315,51 @@ fn count_trailing_zeros(x: usize, len: usize) -> i32 {
     }
 }
 
-
 pub fn loongarch_eiointc_readl(pcpu_id: usize, addr: usize, len: usize) -> usize {
     let mut ret = 0;
     let offset = addr - EIOINTC_BASE;
-    let pcpu_data = get_cpu_data(pcpu_id); 
+    let pcpu_data = get_cpu_data(pcpu_id);
     let eiointc = pcpu_data.arch_cpu.eiointc.lock();
-    
 
     match offset {
         EIOINTC_NODETYPE_START..=EIOINTC_NODETYPE_END => {
             // nodetype
-            let idx_u8 = (offset - EIOINTC_NODETYPE_START) ;
+            let idx_u8 = (offset - EIOINTC_NODETYPE_START);
             let pbuf_read = &eiointc.nodetype[idx_u8];
             ret = read_masked_data(pbuf_read, len);
         }
         EIOINTC_IPMAP_START..=EIOINTC_IPMAP_END => {
-            let idx_u8 = (offset - EIOINTC_IPMAP_START) ;
+            let idx_u8 = (offset - EIOINTC_IPMAP_START);
             let pbuf_read = &eiointc.ipmap[idx_u8];
             ret = read_masked_data(pbuf_read, len);
         }
         EIOINTC_ENABLE_START..=EIOINTC_ENABLE_END => {
-            let idx_u8 = (offset - EIOINTC_ENABLE_START) ;
+            let idx_u8 = (offset - EIOINTC_ENABLE_START);
             let pbuf_read = &eiointc.enable[idx_u8];
             ret = read_masked_data(pbuf_read, len);
         }
         EIOINTC_BOUNCE_START..=EIOINTC_BOUNCE_END => {
-            let idx_u8 = (offset - EIOINTC_BOUNCE_START) ;
+            let idx_u8 = (offset - EIOINTC_BOUNCE_START);
             let pbuf_read = &eiointc.bounce[idx_u8];
             ret = read_masked_data(pbuf_read, len);
         }
         EIOINTC_COREISR_START..=EIOINTC_COREISR_END => {
-            let idx_u8 = (offset - EIOINTC_COREISR_START) ;
- 
+            let idx_u8 = (offset - EIOINTC_COREISR_START);
+
             if pcpu_id == 4 {
-                let offset = EIOINTC_BASE + EIOINTC_COREISR_START + 0 * EIOINTC_IRQS_U8_NUMS + idx_u8;
+                let offset =
+                    EIOINTC_BASE + EIOINTC_COREISR_START + 0 * EIOINTC_IRQS_U8_NUMS + idx_u8;
                 ret = do_real_read_iocsr(offset, len);
             } else {
-                let offset = EIOINTC_BASE + EIOINTC_COREISR_START + 0 * EIOINTC_IRQS_U8_NUMS + idx_u8;
+                let offset =
+                    EIOINTC_BASE + EIOINTC_COREISR_START + 0 * EIOINTC_IRQS_U8_NUMS + idx_u8;
                 ret = do_real_read_iocsr(offset, len);
             }
         }
         EIOINTC_COREMAP_START..=EIOINTC_COREMAP_END => {
-            let idx_u8 = (offset - EIOINTC_COREMAP_START) ;
-            let pbuf_read = &eiointc.coremap[idx_u8];       
-            ret = read_masked_data(pbuf_read, len);            
+            let idx_u8 = (offset - EIOINTC_COREMAP_START);
+            let pbuf_read = &eiointc.coremap[idx_u8];
+            ret = read_masked_data(pbuf_read, len);
         }
         _ => {
             panic!(
@@ -372,8 +371,8 @@ pub fn loongarch_eiointc_readl(pcpu_id: usize, addr: usize, len: usize) -> usize
     ret
 }
 
-use crate::cpu_data::{get_cpu_data, this_zone};
 use crate::consts::MAX_CPU_NUM;
+use crate::cpu_data::{get_cpu_data, this_zone};
 fn get_real_pcpu_id(target_cpu_id: usize) -> usize {
     assert!(target_cpu_id < MAX_CPU_NUM);
     let zone = this_zone();
@@ -391,19 +390,24 @@ pub fn get_vcpuid_from_pcpuid(target_pcpu_id: usize) -> usize {
 }
 
 use crate::PHY_TO_DMW_UNCACHED;
-const IOCSR_BASE:usize = 0x1fe00000;
+const IOCSR_BASE: usize = 0x1fe00000;
 const INT_HWI0: usize = 2;
-fn eiointc_update_irq(eiointc: &mut spin::MutexGuard<'_, LoongArch64Eiointc>, irq: usize, level: usize) {
-
+fn eiointc_update_irq(
+    eiointc: &mut spin::MutexGuard<'_, LoongArch64Eiointc>,
+    irq: usize,
+    level: usize,
+) {
     let ipmap_u8_idx = irq / 32;
     let ipmap_pbuf_read = &eiointc.ipmap[ipmap_u8_idx];
     let mut ipnum = read_masked_data(ipmap_pbuf_read, 1); // u8
-    
+
     if ((eiointc.status & bit!(EIOINTC_ENABLE_INT_ENCODE)) == 0) {
-    
         let ipnum_new = count_trailing_zeros(ipnum, 1);
         if ipnum_new >= 4 {
-            panic!("eiointc_update_irq, no ipnum found, irq: {}, level: {}", irq, level);
+            panic!(
+                "eiointc_update_irq, no ipnum found, irq: {}, level: {}",
+                irq, level
+            );
         }
         ipnum = (if ipnum_new >= 0 && ipnum_new < 4 {
             ipnum_new
@@ -414,7 +418,7 @@ fn eiointc_update_irq(eiointc: &mut spin::MutexGuard<'_, LoongArch64Eiointc>, ir
 
     let cpu = eiointc.sw_coremap[irq] as usize;
     let irq_index = irq / 32; // u32
-    // 8 * 32 = 256
+                              // 8 * 32 = 256
 
     let irq_mask = bit!(irq & 0x1f); // 1_1111 : 32 bits / 4 bytes
     let irq_index_u8 = irq_index * 4;
@@ -429,8 +433,8 @@ fn eiointc_update_irq(eiointc: &mut spin::MutexGuard<'_, LoongArch64Eiointc>, ir
         }
 
         let coreisr_pbuf_read = &eiointc.coreisr[cpu][irq_index_u8];
-        let coreisr_u32_new= read_masked_data(coreisr_pbuf_read, 4) | irq_mask;
-    
+        let coreisr_u32_new = read_masked_data(coreisr_pbuf_read, 4) | irq_mask;
+
         let mut check_data_before = 0;
         let mut check_data_after = 0;
         {
@@ -438,7 +442,7 @@ fn eiointc_update_irq(eiointc: &mut spin::MutexGuard<'_, LoongArch64Eiointc>, ir
             check_data_before = read_masked_data(pbuf_read, 4);
         }
         let coreisr_pbuf_write = &mut eiointc.coreisr[cpu][irq_index_u8];
-        write_masked_data(coreisr_pbuf_write, coreisr_u32_new, 4);// TODO: do real write this
+        write_masked_data(coreisr_pbuf_write, coreisr_u32_new, 4); // TODO: do real write this
         {
             let pbuf_read = &eiointc.coreisr[cpu][irq_index_u8];
             check_data_after = read_masked_data(pbuf_read, 4);
@@ -446,7 +450,6 @@ fn eiointc_update_irq(eiointc: &mut spin::MutexGuard<'_, LoongArch64Eiointc>, ir
 
         found = find_first_bit(&eiointc.sw_coreisr, cpu, ipnum);
         set_bit(&mut eiointc.sw_coreisr, cpu, ipnum, irq);
-
     } else {
         // clear
         let coreisr_pbuf_read = &eiointc.coreisr[cpu][irq_index_u8];
@@ -459,7 +462,7 @@ fn eiointc_update_irq(eiointc: &mut spin::MutexGuard<'_, LoongArch64Eiointc>, ir
             check_data_before = read_masked_data(pbuf_read, 4);
         }
         let coreisr_pbuf_write = &mut eiointc.coreisr[cpu][irq_index_u8];
-        write_masked_data(coreisr_pbuf_write, coreisr_u32_new, 4);// TODO: do real write this
+        write_masked_data(coreisr_pbuf_write, coreisr_u32_new, 4); // TODO: do real write this
         {
             let pbuf_read = &eiointc.coreisr[cpu][irq_index_u8];
             check_data_after = read_masked_data(pbuf_read, 4);
@@ -467,7 +470,6 @@ fn eiointc_update_irq(eiointc: &mut spin::MutexGuard<'_, LoongArch64Eiointc>, ir
 
         clear_bit(&mut eiointc.sw_coreisr, cpu, ipnum, irq);
         found = find_first_bit(&eiointc.sw_coreisr, cpu, ipnum);
-
     }
     if (found.is_none()) {
     } else if (found.unwrap() < EIOINTC_IRQS) {
@@ -480,17 +482,18 @@ fn eiointc_update_irq(eiointc: &mut spin::MutexGuard<'_, LoongArch64Eiointc>, ir
 
     let target_pcpu_data = get_cpu_data(cpu); // check this carefully
     if (level != 0) {
-
     } else {
-
     }
 }
 
-pub fn eiointc_set_irq(pcpu_id: usize, irq: usize, level: usize) {        
-    info!("eiointc_set_irq, pcpu_id: {}, irq: {}, level: {}", pcpu_id, irq, level);
+pub fn eiointc_set_irq(pcpu_id: usize, irq: usize, level: usize) {
+    info!(
+        "eiointc_set_irq, pcpu_id: {}, irq: {}, level: {}",
+        pcpu_id, irq, level
+    );
     let pcpu_data = get_cpu_data(pcpu_id);
     let mut eiointc = pcpu_data.arch_cpu.eiointc.lock();
-    
+
     let isr_bitmap_word = irq / 8;
     let isr_bitmap_offset = irq % 8;
     if level != 0 {
@@ -503,11 +506,16 @@ pub fn eiointc_set_irq(pcpu_id: usize, irq: usize, level: usize) {
     eiointc_update_irq(&mut eiointc, irq, level);
 }
 
-fn eiointc_enable_irq(eiointc: &mut spin::MutexGuard<'_, LoongArch64Eiointc>, index: usize, mask: usize, level: usize) {
+fn eiointc_enable_irq(
+    eiointc: &mut spin::MutexGuard<'_, LoongArch64Eiointc>,
+    index: usize,
+    mask: usize,
+    level: usize,
+) {
     let mut val = mask & 0xff;
 
     let mut irq = ffs(val);
-    
+
     while (irq != 0) {
         eiointc_update_irq(eiointc, irq - 1 + index * 8, level);
 
@@ -516,11 +524,20 @@ fn eiointc_enable_irq(eiointc: &mut spin::MutexGuard<'_, LoongArch64Eiointc>, in
     }
 }
 
-use core::{arch::asm, char, panic, ptr::{read_volatile, write_volatile}, sync::atomic::AtomicU64};
+use core::{
+    arch::asm,
+    char, panic,
+    ptr::{read_volatile, write_volatile},
+    sync::atomic::AtomicU64,
+};
 
-
-fn eiointc_update_sw_coremap(eiointc: &mut spin::MutexGuard<'_, LoongArch64Eiointc>, irq: usize, pvalue: usize, len: usize, notify: bool) {
-
+fn eiointc_update_sw_coremap(
+    eiointc: &mut spin::MutexGuard<'_, LoongArch64Eiointc>,
+    irq: usize,
+    pvalue: usize,
+    len: usize,
+    notify: bool,
+) {
     let mut val = pvalue;
     for i in 0..len {
         let mut cpu = (val & 0xff);
@@ -530,7 +547,10 @@ fn eiointc_update_sw_coremap(eiointc: &mut spin::MutexGuard<'_, LoongArch64Eioin
             cpu = __ffs(cpu);
 
             if cpu >= 4 {
-                error!("eiointc_update_sw_coremap, attention 2, check it, cpu : {}", cpu);
+                error!(
+                    "eiointc_update_sw_coremap, attention 2, check it, cpu : {}",
+                    cpu
+                );
             }
             cpu = if cpu >= 4 { 0 } else { cpu };
 
@@ -544,21 +564,20 @@ fn eiointc_update_sw_coremap(eiointc: &mut spin::MutexGuard<'_, LoongArch64Eioin
 
         let pcpu_id: usize = get_real_pcpu_id(cpu);
         if pcpu_id != cpu {
-            warn!("[Attention], eiointc_update_sw_coremap, pcpu_id: {}, cpu: {}", 
+            warn!(
+                "[Attention], eiointc_update_sw_coremap, pcpu_id: {}, cpu: {}",
                 pcpu_id, cpu
             );
         }
 
-        if (notify)
-        {
-            eiointc_update_irq(eiointc, irq + i, 0);// clear original irq
-            
-            eiointc.sw_coremap[irq + i] = pcpu_id as u8;
-            eiointc.coremap[irq + i] = (1 << pcpu_id) as u8;// update it!
+        if (notify) {
+            eiointc_update_irq(eiointc, irq + i, 0); // clear original irq
 
-            eiointc_update_irq(eiointc, irq + i, 1);// set new irq
-        } 
-        else {
+            eiointc.sw_coremap[irq + i] = pcpu_id as u8;
+            eiointc.coremap[irq + i] = (1 << pcpu_id) as u8; // update it!
+
+            eiointc_update_irq(eiointc, irq + i, 1); // set new irq
+        } else {
             panic!("notify is false, not tested");
             eiointc.sw_coremap[irq + i] = cpu as u8;
         }
@@ -569,7 +588,7 @@ pub fn find_first_bit_single(val: usize, bits: usize) -> usize {
     assert!(bits == 8 || bits == 16 || bits == 32 || bits == 64);
     let masked_value = get_masked_data(val, bits / 8);
     let pos = ffs(masked_value);
-    
+
     if pos == 0 {
         bits
     } else {
@@ -578,12 +597,11 @@ pub fn find_first_bit_single(val: usize, bits: usize) -> usize {
 }
 
 pub fn loongarch_eiointc_writel(pcpu_id: usize, addr: usize, val: usize, len: usize) -> usize {
-
     let mut ret = val;
     let offset = addr - EIOINTC_BASE;
 
     let data = get_masked_data(val, len);
-    
+
     let pcpu_data = get_cpu_data(pcpu_id);
     let mut eiointc = pcpu_data.arch_cpu.eiointc.lock();
 
@@ -596,60 +614,68 @@ pub fn loongarch_eiointc_writel(pcpu_id: usize, addr: usize, val: usize, len: us
         }
         EIOINTC_IPMAP_START..=EIOINTC_IPMAP_END => {
             // ipmap
-            let idx_u8 = (offset - EIOINTC_IPMAP_START) ;
-        
+            let idx_u8 = (offset - EIOINTC_IPMAP_START);
+
             let pbuf_write = &mut eiointc.ipmap[idx_u8];
             write_masked_data(pbuf_write, val, len);
         }
         EIOINTC_ENABLE_START..=EIOINTC_ENABLE_END => {
             // enable (important)
-            let idx_u8 = (offset - EIOINTC_ENABLE_START) ;
+            let idx_u8 = (offset - EIOINTC_ENABLE_START);
 
             let enable_pbuf_read = &eiointc.enable[idx_u8];
             let old_enable = read_masked_data(enable_pbuf_read, len);
-            
+
             let enable_pbuf_write = &mut eiointc.enable[idx_u8];
-            write_masked_data(enable_pbuf_write, val, len) ;
-            
+            write_masked_data(enable_pbuf_write, val, len);
+
             let enable_pbuf_read = &eiointc.enable[idx_u8];
-            let enable_val= read_masked_data(enable_pbuf_read, len);
+            let enable_val = read_masked_data(enable_pbuf_read, len);
 
             do_real_write_iocsr(addr, val, len);
-            
+
             return ret;
             /*
              * 1: enable irq.
              * update irq when isr is set.
              */
             let data = enable_val & !old_enable;
-            info!("write enable, set, enable_val & !old_enable : {:#x}/{}", data, data.trailing_zeros());
+            info!(
+                "write enable, set, enable_val & !old_enable : {:#x}/{}",
+                data,
+                data.trailing_zeros()
+            );
             if old_enable != 0 {
                 for i in 0..len {
                     let mask = (data >> (i * 8)) & 0xff;
                     eiointc_enable_irq(&mut eiointc, idx_u8 + i, mask, 1);
-                }    
+                }
             }
             /*
              * 0: disable irq.
              * update irq when isr is set.
              */
             let data = !enable_val & old_enable;
-            info!("write enable, clear, !enable_val & old_enable : {:#x}/{}", data, data.trailing_zeros());
+            info!(
+                "write enable, clear, !enable_val & old_enable : {:#x}/{}",
+                data,
+                data.trailing_zeros()
+            );
             if old_enable != 0 {
                 for i in 0..len {
                     let mask = (data >> (i * 8)) & 0xff;
                     eiointc_enable_irq(&mut eiointc, idx_u8 + i, mask, 0);
-                }    
+                }
             }
         }
         EIOINTC_BOUNCE_START..=EIOINTC_BOUNCE_END => {
             // bounce
-            let idx_u8 = (offset - EIOINTC_BOUNCE_START) ;
-            
+            let idx_u8 = (offset - EIOINTC_BOUNCE_START);
+
             let bounce_pbuf_write = &mut eiointc.bounce[idx_u8];
             write_masked_data(bounce_pbuf_write, val, len);
         }
-        
+
         EIOINTC_COREISR_START..=EIOINTC_COREISR_END => {
             let idx_u8 = (offset - EIOINTC_COREISR_START);
 
@@ -660,7 +686,7 @@ pub fn loongarch_eiointc_writel(pcpu_id: usize, addr: usize, val: usize, len: us
 
             let coreisr_pbuf_read = &eiointc.coreisr[cpu][idx_u8];
             let old_coreisr = read_masked_data(coreisr_pbuf_read, len);
-            
+
             /* write 1 to clear interrupt */
             let coreisr_new = coreisr & !old_coreisr;
 
@@ -668,16 +694,16 @@ pub fn loongarch_eiointc_writel(pcpu_id: usize, addr: usize, val: usize, len: us
             write_masked_data(coreisr_pbuf_write, coreisr_new, len); // TODO: do real write this
 
             coreisr &= old_coreisr;
-            
-            let bits = len * 8;// 4 * 8 = 32?
+
+            let bits = len * 8; // 4 * 8 = 32?
             let index = idx_u8 / len;
-            
+
             let mut irq = find_first_bit_single(coreisr, bits);
-            while (irq < bits) {    
+            while (irq < bits) {
                 eiointc_update_irq(&mut eiointc, irq + index * bits, 0);
 
                 // update coreisr and irq
-                coreisr &= !bit!(irq);// clear irq from coreisr
+                coreisr &= !bit!(irq); // clear irq from coreisr
                 irq = find_first_bit_single(coreisr, bits);
             }
         }
@@ -693,7 +719,7 @@ pub fn loongarch_eiointc_writel(pcpu_id: usize, addr: usize, val: usize, len: us
 
             let pbuf_read = &eiointc.coremap[idx_u8];
             let coremap_read = read_masked_data(pbuf_read, len);
-            ret = coremap_read;// update!
+            ret = coremap_read; // update!
         }
         _ => {
             panic!("eiointc_writel, Invalid EIOINTC offset: {:#x}", offset);
