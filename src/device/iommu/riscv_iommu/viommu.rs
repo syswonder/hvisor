@@ -25,7 +25,7 @@ use super::iommu_hw::{
 use super::reg_bits::{DDT_FSC, DDT_TC, IOMMU_CAPS, IOMMU_DDTP, IOMMU_XQB};
 use crate::consts::MAX_ZONE_NUM;
 use crate::consts::{IPI_EVENT_VCPU_RESUME, IPI_EVENT_VCPU_SUSPEND};
-use crate::cpu_data::{signal_other_vcpus_resume, wait_for_other_vcpus_suspend, CpuSet};
+use crate::cpu_data::{signal_other_vcpus_resume, wait_for_other_vcpus_suspend};
 use crate::error::HvResult;
 use crate::event::send_event_to_all;
 use crate::memory::{GuestPhysAddr, MMIOAccess, MemoryRegion};
@@ -191,6 +191,27 @@ pub(super) fn viommu_init(zone_id: usize) {
     info!("Zone {}'s Virtual IOMMU initialized.", zone_id);
 }
 
+/// Remove one viommu instance for target zone and clear its physical DDT side effects.
+pub(super) fn viommu_remove(zone_id: usize) {
+    if !validate_zone_id(zone_id) {
+        return;
+    }
+
+    let viommu = {
+        let mut viommu_arr = VIOMMU_ARR.lock();
+        viommu_arr[zone_id].take()
+    };
+
+    let Some(viommu) = viommu else {
+        warn!("Zone {}'s Virtual IOMMU does not exist.", zone_id);
+        return;
+    };
+
+    // Clean some content stored in memory related to this viommu.
+    viommu.cleanup_physical_ddt();
+    info!("Zone {}'s Virtual IOMMU removed.", zone_id);
+}
+
 /// Register viommu mmio handler for target zone.
 pub(super) fn viommu_mmio_handler_register(zone: &Zone, viommu_base: usize, viommu_size: usize) {
     zone.write()
@@ -292,28 +313,11 @@ struct FaultQueueState {
     tail: u32,
 }
 
+/// Device-directory-table shadow state.
+/// It affects the device directory table that the zone sees.
 struct DdtShadowState {
     tc: Vec<u64>,
-}
-
-struct VcpuSuspendGuard {
-    cpu_set: CpuSet,
-}
-
-impl VcpuSuspendGuard {
-    fn new(cpu_set: CpuSet) -> Self {
-        send_event_to_all(cpu_set, 0, IPI_EVENT_VCPU_SUSPEND);
-        riscv::asm::fence();
-        wait_for_other_vcpus_suspend(cpu_set);
-        Self { cpu_set }
-    }
-}
-
-impl Drop for VcpuSuspendGuard {
-    fn drop(&mut self) {
-        send_event_to_all(self.cpu_set, 0, IPI_EVENT_VCPU_RESUME);
-        signal_other_vcpus_resume(self.cpu_set);
-    }
+    fsc_written: Vec<bool>,
 }
 
 impl VirtualIommu {
@@ -393,7 +397,18 @@ impl DdtShadowState {
     fn new() -> Self {
         Self {
             tc: vec![0; MAX_VIOMMU_DDT_DEVICES],
+            fsc_written: vec![false; MAX_VIOMMU_DDT_DEVICES],
         }
+    }
+
+    fn mark_fsc_written(&mut self, device_id: usize) {
+        if let Some(written) = self.fsc_written.get_mut(device_id) {
+            *written = true;
+        }
+    }
+
+    fn fsc_needs_cleanup(&self, device_id: usize) -> bool {
+        self.fsc_written.get(device_id).copied().unwrap_or(false)
     }
 }
 
@@ -540,11 +555,14 @@ impl VirtualIommuInner {
 
         // We unmap this page to trigger a page fault when the guest accesses it.
         let cpu_set = zone_inner.cpu_set();
-        let _resume_guard = VcpuSuspendGuard::new(cpu_set);
+        send_event_to_all(cpu_set, 0, IPI_EVENT_VCPU_SUSPEND);
+        wait_for_other_vcpus_suspend(cpu_set);
 
         let gpm = zone_inner.gpm_mut();
         if let Err(err) = gpm.delete(region.start, region.size) {
             error!("vIOMMU ddtp region delete failed: {:?}", err);
+            send_event_to_all(cpu_set, 0, IPI_EVENT_VCPU_RESUME);
+            signal_other_vcpus_resume(cpu_set);
             return false;
         }
 
@@ -559,6 +577,8 @@ impl VirtualIommuInner {
             );
             if let Err(err) = gpm.insert(left_region) {
                 error!("vIOMMU ddtp left region insert failed: {:?}", err);
+                send_event_to_all(cpu_set, 0, IPI_EVENT_VCPU_RESUME);
+                signal_other_vcpus_resume(cpu_set);
                 return false;
             }
         }
@@ -573,6 +593,8 @@ impl VirtualIommuInner {
             );
             if let Err(err) = gpm.insert(right_region) {
                 error!("vIOMMU ddtp right region insert failed: {:?}", err);
+                send_event_to_all(cpu_set, 0, IPI_EVENT_VCPU_RESUME);
+                signal_other_vcpus_resume(cpu_set);
                 return false;
             }
         }
@@ -581,6 +603,8 @@ impl VirtualIommuInner {
         unsafe { riscv_h::asm::hfence_gvma(0, 0) };
         // Keep zone_id as 0 for now to preserve current behavior.
         zone_inner.mmio_region_register(ddt_gpa, VIOMMU_DDT1LVL_SIZE, viommu_ddt_emul_handler, 0);
+        send_event_to_all(cpu_set, 0, IPI_EVENT_VCPU_RESUME);
+        signal_other_vcpus_resume(cpu_set);
         true
     }
 
@@ -780,7 +804,7 @@ impl VirtualIommuInner {
         }
     }
 
-    fn handle_fsc_access(&self, ddt_index: usize, value: usize, access: MmioAccessType) -> u64 {
+    fn handle_fsc_access(&mut self, ddt_index: usize, value: usize, access: MmioAccessType) -> u64 {
         match access {
             MmioAccessType::Read => {
                 iommu_read_ddt_field(ddt_index, IommuDdtField::Fsc).unwrap_or(0)
@@ -801,8 +825,32 @@ impl VirtualIommuInner {
                 }
                 if !iommu_write_ddt_field(ddt_index, IommuDdtField::Fsc, fsc) {
                     warn!("vIOMMU ddt entry {} fsc write ignored", ddt_index);
+                } else {
+                    self.ddt.mark_fsc_written(ddt_index);
                 }
                 0
+            }
+        }
+    }
+}
+
+impl VirtualIommu {
+    fn cleanup_physical_ddt(&self) {
+        self.inner.lock().cleanup_physical_ddt();
+    }
+}
+
+impl VirtualIommuInner {
+    fn cleanup_physical_ddt(&mut self) {
+        for device_id in 1..self.ddt.tc.len() {
+            if !self.ddt.fsc_needs_cleanup(device_id) {
+                continue;
+            }
+            if iommu_write_ddt_field(device_id, IommuDdtField::Fsc, 0) {
+                self.ddt.fsc_written[device_id] = false;
+                info!("vIOMMU cleaned DDT FSC for device {}", device_id);
+            } else {
+                warn!("vIOMMU failed to clean DDT FSC for device {}", device_id);
             }
         }
     }

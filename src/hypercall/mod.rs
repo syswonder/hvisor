@@ -273,6 +273,10 @@ impl<'a> HyperCall<'a> {
 
         drop(zone_w);
         zone.arch_irqchip_reset();
+
+        // Remove viommu instance related to this zone.
+        #[cfg(feature = "viommu")]
+        crate::device::iommu::viommu_remove(zone_id as usize);
         drop(zone);
 
         // Reset zone_id for all devices allocated to this zone

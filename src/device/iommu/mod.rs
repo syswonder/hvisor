@@ -73,6 +73,18 @@ pub(crate) fn viommu_init(zone_id: usize) {
     }
 }
 
+/// Public interface for removing the Virtual IOMMU for the Zone
+pub(crate) fn viommu_remove(zone_id: usize) {
+    match check_zone_id(zone_id) {
+        Ok(()) => {
+            iommu_impl().viommu_remove(zone_id);
+        }
+        Err(e) => {
+            warn!("{}", e);
+        }
+    }
+}
+
 pub(crate) fn viommu_mmio_handler_register(zone: &Zone, viommu_base: usize, viommu_size: usize) {
     iommu_impl().viommu_mmio_handler_register(zone, viommu_base, viommu_size);
 }

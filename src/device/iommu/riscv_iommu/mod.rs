@@ -39,7 +39,7 @@ use cmd::*;
 use iommu_hw::*;
 pub use iommu_hw::{iommu_msi_pt_tlb_invalid, iommu_remove_device};
 #[cfg(feature = "viommu")]
-use viommu::{viommu_init, viommu_mmio_handler_register};
+use viommu::{viommu_init, viommu_mmio_handler_register, viommu_remove};
 
 pub(super) struct RiscvIommu;
 
@@ -90,6 +90,15 @@ impl Iommu for RiscvIommu {
         #[cfg(not(feature = "viommu"))]
         warn!(
             "Virtual IOMMU is not enabled, skipping viommu init for zone {}",
+            zone_id
+        );
+    }
+    fn viommu_remove(&self, zone_id: usize) {
+        #[cfg(feature = "viommu")]
+        viommu_remove(zone_id);
+        #[cfg(not(feature = "viommu"))]
+        warn!(
+            "Virtual IOMMU is not enabled, skipping viommu remove for zone {}",
             zone_id
         );
     }

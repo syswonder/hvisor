@@ -84,6 +84,12 @@ impl Iommu for ArmSmmu {
             zone_id
         );
     }
+    fn viommu_remove(&self, zone_id: usize) {
+        todo!(
+            "ArmSmmu viommu remove for zone id {} not implemented yet.",
+            zone_id
+        );
+    }
     fn viommu_mmio_handler_register(&self, zone: &Zone, _viommu_base: usize, _viommu_size: usize) {
         todo!(
             "ArmSmmu viommu handler for zone id {} not implemented yet.",
