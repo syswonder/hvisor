@@ -197,6 +197,10 @@ impl Zone {
 }
 
 fn mmio_ioapic_handler(mmio: &mut MMIOAccess, _: usize) -> HvResult {
+    warn!(
+        "IOAPIC MMIO access: addr={:#x} value={:#x} is_write={} size={}",
+        mmio.address, mmio.value, mmio.is_write, mmio.size
+    );
     if mmio.is_write {
         VIRT_IOAPIC
             .get()

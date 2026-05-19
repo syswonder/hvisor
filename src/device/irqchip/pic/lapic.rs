@@ -253,12 +253,10 @@ fn offset_to_lapic_msr(offset: usize) -> Result<Msr, u32> {
 }
 
 pub fn mmio_lapic_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
-    /*if mmio.address != 0xb0 {
-        info!(
-            "mmio lapic access: addr={:#x} value={:#x} is_write={}",
-            mmio.address, mmio.value, mmio.is_write
-        );
-    }*/
+    warn!(
+        "LAPIC MMIO access: addr={:#x} value={:#x} is_write={}",
+        mmio.address, mmio.value, mmio.is_write
+    );
     if let Ok(msr) = offset_to_lapic_msr(mmio.address) {
         /*info!(
             "lapic msr access: msr={:#x} value={:#x} is_write={}",

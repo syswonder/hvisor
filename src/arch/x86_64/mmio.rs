@@ -214,14 +214,23 @@ impl ModRM {
         self.reg_opcode.try_into().unwrap()
     }
 
-    pub fn get_modrm(&self, inst: &Vec<u8>, disp_id: usize) -> Option<OprandType> {
-        // Check if we need to use SIB - when rm field is 4
-        if self.rm == 4 {
+    pub fn get_modrm(&self, inst: &Vec<u8>, disp_id: usize, rex: &RexPrefixLow) -> Option<OprandType> {
+        // Check if we need to use SIB - when rm field is 4 (and not register mode)
+        if self.rm == 4 && self._mod != 3 {
             // Read SIB byte
             let sib_byte = inst[disp_id];
             let scale = sib_byte.get_bits(6..8) as u32;
-            let index = sib_byte.get_bits(3..6) as u32;
-            let base = sib_byte.get_bits(0..3) as u32;
+            let mut index = sib_byte.get_bits(3..6) as u32;
+            let mut base = sib_byte.get_bits(0..3) as u32;
+
+            // Extend with REX.X for index register (R8-R15)
+            if rex.contains(RexPrefixLow::INDEX) {
+                index.set_bit(3, true);
+            }
+            // Extend with REX.B for base register (R8-R15)
+            if rex.contains(RexPrefixLow::BASE) {
+                base.set_bit(3, true);
+            }
 
             // Calculate the effective address
             let mut addr = 0u64;
@@ -294,7 +303,12 @@ impl ModRM {
         }
 
         // Original logic for non-SIB cases
-        let reg: RmReg = self.rm.try_into().unwrap();
+        let mut rm_base = self.rm;
+        // REX.B extends the base register (but special case mod=0, rm=5 is RIP-relative, unaffected by REX.B)
+        if rex.contains(RexPrefixLow::BASE) && !(self._mod == 0 && self.rm == 5) {
+            rm_base.set_bit(3, true);
+        }
+        let reg: RmReg = rm_base.try_into().unwrap();
         let mut reg_val = reg.read().unwrap();
 
         match self._mod {
@@ -471,9 +485,12 @@ fn emulate_inst(
     let mut rex = RexPrefixLow::from_bits_truncate(0);
     if inst[cur_id].get_bits(4..=7) == REX_PREFIX_HIGH {
         rex = RexPrefixLow::from_bits_truncate(inst[cur_id].get_bits(0..=3));
-        // we haven't implemented other situations yet
-        assert!(rex == RexPrefixLow::REGISTERS);
         cur_id += 1;
+    }
+
+    // REX.W overrides operand size to 64-bit
+    if rex.contains(RexPrefixLow::OPERAND_WIDTH) {
+        size = size_of::<u64>();
     }
 
     let mut two_byte = false;
@@ -504,7 +521,7 @@ fn emulate_inst(
                 let src = mod_rm.get_reg();
                 let src_val = src.read().unwrap();
 
-                let dst = mod_rm.get_modrm(inst, cur_id).unwrap();
+                let dst = mod_rm.get_modrm(inst, cur_id, &rex).unwrap();
                 match dst {
                     OprandType::Reg { reg, len } => {
                         cur_id += len;
@@ -531,7 +548,7 @@ fn emulate_inst(
 
                 let dst = mod_rm.get_reg();
 
-                let src = mod_rm.get_modrm(inst, cur_id).unwrap();
+                let src = mod_rm.get_modrm(inst, cur_id, &rex).unwrap();
                 let src_val = match src {
                     OprandType::Reg { reg, len } => {
                         cur_id += len;
@@ -583,7 +600,7 @@ fn emulate_inst(
 
                 let dst = mod_rm.get_reg();
 
-                let src = mod_rm.get_modrm(inst, cur_id).unwrap();
+                let src = mod_rm.get_modrm(inst, cur_id, &rex).unwrap();
                 let src_val = match src {
                     OprandType::Reg { reg, len } => {
                         cur_id += len;

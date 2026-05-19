@@ -455,6 +455,13 @@ fn handle_msr_write(arch_cpu: &mut ArchCpu) -> HvResult {
 
 fn handle_s2pt_violation(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvResult {
     let fault_info = Stage2PageFaultInfo::new()?;
+    warn!(
+        "EPT violation @ GPA {:#x}, write={}, exec={}, rip={:#x}",
+        fault_info.fault_guest_paddr,
+        fault_info.access_flags.contains(MemFlags::WRITE),
+        fault_info.access_flags.contains(MemFlags::EXECUTE),
+        exit_info.guest_rip,
+    );
     mmio_handle_access(&mut MMIOAccess {
         address: fault_info.fault_guest_paddr,
         size: 0,
