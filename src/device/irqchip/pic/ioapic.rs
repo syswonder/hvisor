@@ -25,7 +25,7 @@ use crate::{
     device::irqchip::pic::inject_vector,
     error::HvResult,
     memory::{GuestPhysAddr, MMIOAccess},
-    platform::ROOT_ZONE_IOAPIC_BASE,
+    platform::{IRQ_WAKEUP_VIRTIO_DEVICE, ROOT_ZONE_IOAPIC_BASE},
     zone::{this_zone_id, Zone},
 };
 use alloc::{sync::Arc, vec::Vec};
@@ -78,7 +78,7 @@ impl VirtIoApic {
     }
 
     fn read(&self, gpa: GuestPhysAddr) -> HvResult<u64> {
-        // info!("ioapic read! gpa: {:x}", gpa,);
+        info!("ioapic read! gpa: {:x}", gpa,);
         let zone_id = this_zone_id();
         let ioapic = self.inner.get(zone_id).unwrap();
 
@@ -109,10 +109,10 @@ impl VirtIoApic {
     }
 
     fn write(&self, gpa: GuestPhysAddr, value: u64, size: usize) -> HvResult {
-        /*info!(
+        info!(
             "ioapic write! gpa: {:x}, value: {:x}, size: {:x}",
             gpa, value, size,
-        );*/
+        );
 
         let zone_id = this_zone_id();
         let ioapic = self.inner.get(zone_id).unwrap();
@@ -140,7 +140,7 @@ impl VirtIoApic {
                             // unsafe { configure_gsi_from_raw(index as _, *entry) };
                         }*/
                     }
-                    if zone_id == 0 {
+                    if zone_id == 0 && index != IRQ_WAKEUP_VIRTIO_DEVICE {
                         // only root zone modify the real I/O APIC
                         unsafe { configure_gsi_from_raw(index as _, *entry) };
                     }
@@ -164,10 +164,16 @@ impl VirtIoApic {
         let ioapic = self.inner.get(zone_id).unwrap();
         if let Some(entry) = ioapic.lock().rte.get(irq) {
             // TODO: physical & logical mode
-            let dest = get_cpu_id(entry.get_bits(56..=63) as usize);
             let masked = entry.get_bit(16);
             let vector = entry.get_bits(0..=7) as u8;
-            // info!("trigger hv: {:x} zone: {:x}", vector, zone_id);
+            let dest = match vector {
+                // 0x26 => 0,
+                _ => get_cpu_id(entry.get_bits(56..=63) as usize),
+            };
+            /*info!(
+                "trigger hv: {:x} zone: {:x}, dest: {:x}, irq: {:x}",
+                vector, zone_id, dest, irq
+            );*/
             if !masked && vector >= 0x20 {
                 inject_vector(dest, vector, None, allow_repeat);
             }

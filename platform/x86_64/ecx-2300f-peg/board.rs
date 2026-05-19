@@ -39,9 +39,9 @@ pub const ROOT_ZONE_CPUS: u64 = (1 << 0)
     | (1 << 10)
     | (1 << 11)
     | (1 << 12)
-    | (1 << 13)
-    | (1 << 14)
-    | (1 << 15);
+    | (1 << 13);
+// | (1 << 14)
+// | (1 << 15);
 
 const ROOT_ZONE_RSDP_REGION: HvConfigMemoryRegion = HvConfigMemoryRegion {
     mem_type: MEM_TYPE_RAM,
@@ -74,7 +74,7 @@ pub const ROOT_ZONE_CMDLINE: &str = "video=vesafb console=tty0 nointremap no_tim
 //"console=ttyS0 earlyprintk=serial rdinit=/init nokaslr nointremap\0"; // noapic
 // video=vesafb
 
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 12] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 13] = [
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x500_0000,
@@ -111,9 +111,9 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 12] = [
     // TODO: e820 mem space probe
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
-        physical_start: 0x1_0000_0000,
-        virtual_start: 0x1_0000_0000,
-        size: 0x7_5c00_0000,
+        physical_start: 0x1_1922_4000,
+        virtual_start: 0x1_1922_4000,
+        size: 0x7_42dd_c000,
     }, // zone 0 ram
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RESERVED,
@@ -133,6 +133,12 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 12] = [
         virtual_start: 0x1b30_0000,
         size: 0x1a00_0000,
     }, // ram
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RESERVED,
+        physical_start: 0x1_0000_0000,
+        virtual_start: 0x1_0000_0000,
+        size: 0x1922_4000,
+    }, // zone1 reserved
 ];
 
 const ROOT_ZONE_CMDLINE_ADDR: GuestPhysAddr = 0x9000;

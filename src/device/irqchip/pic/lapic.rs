@@ -288,6 +288,7 @@ impl Zone {
     pub fn lapic_mmio_init(&mut self, arch: &HvArchZoneConfig) {
         let lapic_base = 0xfee0_0000;
         let lapic_size = 0x1000;
-        self.mmio_region_register(lapic_base, lapic_size, mmio_lapic_handler, lapic_base);
+        self.write()
+            .mmio_region_register(lapic_base, lapic_size, mmio_lapic_handler, lapic_base);
     }
 }

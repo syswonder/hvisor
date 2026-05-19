@@ -171,7 +171,7 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
             info!("insert node {:#?} to global list", bdf);
             //TODO: temp
             if (bdf.bus == 2 && bdf.device == 0 && bdf.function == 1) {
-                break;
+                // break;
             }
         }
         info!("enumerate done for root complex with domain {:#x}", domain);

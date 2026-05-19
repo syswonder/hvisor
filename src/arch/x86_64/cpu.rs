@@ -31,8 +31,10 @@ use crate::{
     },
     consts::{self, core_end, PER_CPU_SIZE},
     cpu_data::{this_cpu_data, this_zone},
-    device::iommu,
-    device::irqchip::pic::{check_pending_vectors, clear_vectors, ioapic, lapic::VirtLocalApic},
+    device::{
+        iommu,
+        irqchip::pic::{check_pending_vectors, clear_vectors, ioapic, lapic::VirtLocalApic},
+    },
     error::{HvError, HvResult},
     memory::{
         addr::{phys_to_virt, PHYS_VIRT_OFFSET},
@@ -40,7 +42,7 @@ use crate::{
         Frame, GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, PhysAddr, PAGE_SIZE,
         PARKING_INST_PAGE,
     },
-    platform::ROOT_ZONE_BOOT_STACK,
+    platform::{ROOT_ZONE_BOOT_STACK, ROOT_ZONE_CPUS},
     zone::{find_zone, this_zone_id},
 };
 use alloc::boxed::Box;
@@ -280,7 +282,7 @@ impl ArchCpu {
         assert!(this_cpu_id() == self.cpuid);
         let mut per_cpu = this_cpu_data();
 
-        // info!("run! cpuid: {:x}", self.cpuid);
+        info!("run! cpuid: {:x}", self.cpuid);
 
         self.power_on = true;
         self.activate_vmx().unwrap();
@@ -489,12 +491,22 @@ impl ArchCpu {
 
     fn setup_vmcs_guest(&mut self, entry: GuestPhysAddr, rsp: GuestPhysAddr) -> HvResult {
         // TODO: ?
-        let cr0_guest = Cr0Flags::NUMERIC_ERROR | Cr0Flags::EXTENSION_TYPE;
-        let cr4_guest = Cr4Flags::VIRTUAL_MACHINE_EXTENSIONS | Cr4Flags::OSXSAVE;
+        // FIXME:5.19
+        if ROOT_ZONE_CPUS & (1 << self.cpuid) != 0 {
+            let cr0_guest = Cr0Flags::NUMERIC_ERROR | Cr0Flags::EXTENSION_TYPE;
+            let cr4_guest = Cr4Flags::VIRTUAL_MACHINE_EXTENSIONS | Cr4Flags::OSXSAVE;
 
-        self.set_cr(0, 0);
-        self.set_cr(3, 0);
-        self.set_cr(4, cr4_guest.bits());
+            self.set_cr(0, 0);
+            self.set_cr(3, 0);
+            self.set_cr(4, cr4_guest.bits());
+        } else {
+            let cr0_guest = Cr0Flags::EXTENSION_TYPE | Cr0Flags::NUMERIC_ERROR;
+            let cr4_guest = Cr4Flags::VIRTUAL_MACHINE_EXTENSIONS;
+
+            self.set_cr(0, cr0_guest.bits());
+            self.set_cr(3, 0);
+            self.set_cr(4, cr4_guest.bits());
+        }
 
         macro_rules! set_guest_segment {
             ($seg: ident, $access_rights: expr) => {{

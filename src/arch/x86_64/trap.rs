@@ -120,7 +120,10 @@ fn handle_irq(vector: u8) {
 fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
     use raw_cpuid::{cpuid, CpuIdResult};
     // TODO: temporary hypervisor hack
-    let signature = unsafe { &*("ACRNACRNACRN".as_ptr() as *const [u32; 3]) };
+    let signature = match this_zone_id() {
+        0 => unsafe { &*("HVISORHVISOR".as_ptr() as *const [u32; 3]) },
+        _ => unsafe { &*("ACRNACRNACRN".as_ptr() as *const [u32; 3]) },
+    };
     let cr4_flags = Cr4Flags::from_bits_truncate(arch_cpu.cr(4) as _);
     let regs = arch_cpu.regs_mut();
     let rax: Result<CpuIdEax, u32> = (regs.rax as u32).try_into();
@@ -502,9 +505,8 @@ pub fn handle_vmexit(arch_cpu: &mut ArchCpu) -> HvResult {
 
     if res.is_err() {
         panic!(
-            "Failed to handle VM-exit {:?}:\n{:#x?}\n{:?}",
+            "Failed to handle VM-exit {:?}:\n{:?}",
             exit_info.exit_reason,
-            arch_cpu,
             res.err()
         );
     }

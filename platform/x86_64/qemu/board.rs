@@ -20,13 +20,21 @@ use crate::{
 
 pub const MEM_TYPE_RESERVED: u32 = 5;
 
-pub const BOARD_NCPUS: usize = 4;
+pub const BOARD_NCPUS: usize = 10;
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x00000000;
 pub const ROOT_ZONE_BOOT_STACK: GuestPhysAddr = 0x7000;
 pub const ROOT_ZONE_ENTRY: u64 = 0x8000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x500_0000; // hpa
-pub const ROOT_ZONE_CPUS: u64 = (1 << 0) | (1 << 1) | (1 << 2) | (1 << 3);
+pub const ROOT_ZONE_CPUS: u64 = (1 << 0)
+    | (1 << 1)
+    | (1 << 2)
+    | (1 << 3)
+    | (1 << 4)
+    | (1 << 5)
+    | (1 << 6)
+    | (1 << 7)
+    | (1 << 8);
 
 const ROOT_ZONE_RSDP_REGION: HvConfigMemoryRegion = HvConfigMemoryRegion {
     mem_type: MEM_TYPE_RAM,
