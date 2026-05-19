@@ -76,8 +76,8 @@ static int virtq_tx_handle_one_request(void *dev, VirtQueue *vq) {
         goto error;
     }
 
-    // Update used ring with total length (request + response)
-    update_used_ring(vq, desc_idx, iov[0].iov_len + iov[1].iov_len);
+    // Update used ring with response length only (device only writes to iov[1])
+    update_used_ring(vq, desc_idx, iov[1].iov_len);
     free(iov);
     free(flags);
     return 0;
