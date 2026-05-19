@@ -90,7 +90,7 @@ pub static MEM_MAP: Once<Vec<EfiMemoryDescriptor>> = Once::new();
 pub fn memory_map_init(config_addr: usize) {
     let zone_config = root_zone_config();
     match zone_config.arch_config.uefi_config {
-        UefiConfig::NoUefi(_) => {
+        UefiConfig::NoUefi => {
             panic!("UEFI support is enabled, but no UEFI parameters are passed")
         }
         UefiConfig::Uefi(ref uefi_config) => {

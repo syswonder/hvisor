@@ -118,11 +118,7 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
         gits_base: 0x8080000,
         gits_size: 0x20000,
     }),
-    uefi_config: UefiConfig::Uefi(Uefi {
-        memory_map_addr: 0xB0000000,
-        memory_map_size: 0x570,
-        sys_map_addr: 0xB1000000,
-    }),
+    uefi_config: UefiConfig::NoUefi
 };
 
 pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [HvPciConfig {

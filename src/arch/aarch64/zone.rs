@@ -173,7 +173,7 @@ pub struct HvArchZoneConfig {
 #[allow(unused)]
 pub enum UefiConfig {
     Uefi(Uefi),
-    NoUefi(u64),
+    NoUefi,
 }
 
 #[repr(C)]
