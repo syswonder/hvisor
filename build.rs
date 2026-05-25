@@ -36,21 +36,37 @@ struct BuildEnv {
     bid: String,
 }
 
-// parse ARCH, BOAR and BID from .config
+// parse ARCH, BOARD and BID from .config (comment-prefixed metadata from kconfig_cli.py,
+// or legacy unprefixed lines).
 fn parse_build_env(file_path: &str) -> BuildEnv {
     let file = fs::read_to_string(file_path).expect("Failed to read .config file");
     let mut arch = String::new();
     let mut board = String::new();
     let mut bid = String::new();
     for line in file.lines() {
-        let parts: Vec<&str> = line.split('=').collect();
-        if parts.len() != 2 {
+        let t = line.trim();
+        if let Some(v) = t.strip_prefix("# ARCH=") {
+            arch = v.to_string();
             continue;
         }
-        match parts[0] {
-            "ARCH" => arch = parts[1].to_string(),
-            "BOARD" => board = parts[1].to_string(),
-            "BID" => bid = parts[1].to_string(),
+        if let Some(v) = t.strip_prefix("# BOARD=") {
+            board = v.to_string();
+            continue;
+        }
+        if let Some(v) = t.strip_prefix("# BID=") {
+            bid = v.to_string();
+            continue;
+        }
+        if t.starts_with('#') {
+            continue;
+        }
+        let Some((k, v)) = t.split_once('=') else {
+            continue;
+        };
+        match k {
+            "ARCH" if arch.is_empty() => arch = v.to_string(),
+            "BOARD" if board.is_empty() => board = v.to_string(),
+            "BID" if bid.is_empty() => bid = v.to_string(),
             _ => {}
         }
     }

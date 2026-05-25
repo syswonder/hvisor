@@ -27,7 +27,7 @@ def arch_from_kconf(kconf) -> str | None:
 
 
 def write_root_dot_config(root: Path, arch: str, board: str, kconf) -> None:
-    """Write repo-root `.config`: metadata lines then kconfiglib body."""
+    """Write repo-root `.config`: comment metadata (Kconfig-safe) then kconfiglib body."""
     cfg = root / ".config"
     derived = arch_from_kconf(kconf)
     if derived is None:
@@ -49,12 +49,12 @@ def write_root_dot_config(root: Path, arch: str, board: str, kconf) -> None:
     kconf.write_config(str(cfg))
     body = cfg.read_text()
     meta = (
-        f"ARCH={arch_out}\n"
-        f"BOARD={board}\n"
-        f"BID={bid}\n"
-        f"HVISOR_SRC={hvisor_src}\n"
-        f"LD_SCRIPT={ld}\n"
-        f"TEMPLATE={tmpl}\n"
+        f"# ARCH={arch_out}\n"
+        f"# BOARD={board}\n"
+        f"# BID={bid}\n"
+        f"# HVISOR_SRC={hvisor_src}\n"
+        f"# LD_SCRIPT={ld}\n"
+        f"# TEMPLATE={tmpl}\n"
         "\n"
     )
     cfg.write_text(meta + body)

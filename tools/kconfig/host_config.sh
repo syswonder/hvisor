@@ -21,11 +21,16 @@ cmd_gen_cargo() {
 		exit 1
 	fi
 	local ARCH BOARD HVISOR_SRC LD_SCRIPT CONFIG_TOML_TEMPLATE
-	ARCH=$(grep '^ARCH=' .config | head -1 | cut -d= -f2-)
-	BOARD=$(grep '^BOARD=' .config | head -1 | cut -d= -f2-)
-	HVISOR_SRC=$(grep '^HVISOR_SRC=' .config | head -1 | cut -d= -f2-)
-	LD_SCRIPT=$(grep '^LD_SCRIPT=' .config | head -1 | cut -d= -f2-)
-	CONFIG_TOML_TEMPLATE=$(grep '^TEMPLATE=' .config | head -1 | cut -d= -f2-)
+	ARCH=$(grep '^# ARCH=' .config 2>/dev/null | head -1 | sed 's/^# ARCH=//')
+	[ -n "$ARCH" ] || ARCH=$(grep '^ARCH=' .config | head -1 | cut -d= -f2-)
+	BOARD=$(grep '^# BOARD=' .config 2>/dev/null | head -1 | sed 's/^# BOARD=//')
+	[ -n "$BOARD" ] || BOARD=$(grep '^BOARD=' .config | head -1 | cut -d= -f2-)
+	HVISOR_SRC=$(grep '^# HVISOR_SRC=' .config 2>/dev/null | head -1 | sed 's/^# HVISOR_SRC=//')
+	[ -n "$HVISOR_SRC" ] || HVISOR_SRC=$(grep '^HVISOR_SRC=' .config | head -1 | cut -d= -f2-)
+	LD_SCRIPT=$(grep '^# LD_SCRIPT=' .config 2>/dev/null | head -1 | sed 's/^# LD_SCRIPT=//')
+	[ -n "$LD_SCRIPT" ] || LD_SCRIPT=$(grep '^LD_SCRIPT=' .config | head -1 | cut -d= -f2-)
+	CONFIG_TOML_TEMPLATE=$(grep '^# TEMPLATE=' .config 2>/dev/null | head -1 | sed 's/^# TEMPLATE=//')
+	[ -n "$CONFIG_TOML_TEMPLATE" ] || CONFIG_TOML_TEMPLATE=$(grep '^TEMPLATE=' .config | head -1 | cut -d= -f2-)
 	if [ -z "$ARCH" ] || [ -z "$BOARD" ] || [ -z "$HVISOR_SRC" ] || [ -z "$LD_SCRIPT" ] || [ -z "$CONFIG_TOML_TEMPLATE" ]; then
 		echo "error: .config missing ARCH/BOARD/HVISOR_SRC/LD_SCRIPT/TEMPLATE lines (run: make defconfig)" >&2
 		exit 1

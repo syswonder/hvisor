@@ -102,7 +102,7 @@ impl Zone {
         {
             self.vaplic_mmio_init(hv_config);
         }
-        #[cfg(all(eic770x_soc, target_arch = "riscv64"))]
+        #[cfg(all(hypervisor_v0_6, target_arch = "riscv64"))]
         {
             #[cfg(sifive_ccache)]
             self.virtual_sifive_ccache_mmio_init();

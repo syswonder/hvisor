@@ -41,3 +41,4 @@ jenkins/__pycache__
 jenkins-cli.jar
 tools/kconfig/.venv/
 tools/kconfig/__pycache__/
+kernel_build/

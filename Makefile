@@ -129,8 +129,10 @@ clean_check:
 # if .config not exist, then everything is fine
 # else we read .config and parse ARCH and BOARD, if they are different, we clean the build
 	@if [ -f ".config" ]; then \
-		CONFIG_ARCH=$$(grep '^ARCH=' .config | head -1 | cut -d'=' -f2); \
-		CONFIG_BOARD=$$(grep '^BOARD=' .config | head -1 | cut -d'=' -f2); \
+		CONFIG_ARCH=$$(grep '^# ARCH=' .config 2>/dev/null | head -1 | sed 's/^# ARCH=//'); \
+		[ -n "$$CONFIG_ARCH" ] || CONFIG_ARCH=$$(grep '^ARCH=' .config | head -1 | cut -d'=' -f2); \
+		CONFIG_BOARD=$$(grep '^# BOARD=' .config 2>/dev/null | head -1 | sed 's/^# BOARD=//'); \
+		[ -n "$$CONFIG_BOARD" ] || CONFIG_BOARD=$$(grep '^BOARD=' .config | head -1 | cut -d'=' -f2); \
 		if [ "$$CONFIG_ARCH" != "$(ARCH)" ] || [ "$$CONFIG_BOARD" != "$(BOARD)" ]; then \
 			echo "$(COLOR_YELLOW)$(COLOR_BOLD)ARCH or BOARD changed(OLD: $$CONFIG_ARCH/$$CONFIG_BOARD, NEW: $(ARCH)/$(BOARD)), cleaning...$(COLOR_RESET)"; \
 			./tools/clean.sh; \

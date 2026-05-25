@@ -1,5 +1,0 @@
-gicv3
-uart_16550
-pci
-dwc_pcie
-no_pcie_bar_realloc

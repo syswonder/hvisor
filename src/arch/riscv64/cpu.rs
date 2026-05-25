@@ -91,7 +91,7 @@ impl ArchCpu {
             set_csr!(CSR_VSTIMECMP, usize::MAX);
         } else {
             // In megrez board, this instruction is not supported. (illegal instruction)
-            #[cfg(not(eic770x_soc))]
+            #[cfg(not(hypervisor_v0_6))]
             set_csr!(CSR_HENVCFG, 0);
         }
         set_csr!(CSR_HCOUNTEREN, 1 << 1); // HCOUNTEREN_TM
