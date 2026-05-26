@@ -32,6 +32,23 @@ def matrixCellDir() {
     return "${env.WORKSPACE}/.matrix/${bid.replace('/', '__')}"
 }
 
+/** Isolated workspace for top-level CI jobs (linter, license-checker, …). */
+def jenkinsJobDir(String name) {
+    return "${env.WORKSPACE}/.jenkins/${name}"
+}
+
+/** Copy repo into an isolated dir; excludes other Jenkins sandboxes from the source tree. */
+def syncWorkspaceTo(String destDir) {
+    sh """
+        mkdir -p '${destDir}'
+        rsync -a --delete \\
+            --exclude '.jenkins/' \\
+            --exclude '.matrix/' \\
+            --exclude '.jenkins-matrix/' \\
+            '${env.WORKSPACE}/' '${destDir}/'
+    """
+}
+
 def loadCiYaml() {
     def data = readYaml file: 'jenkins/ci.yaml'
     def bids = data?.bids
@@ -154,10 +171,14 @@ pipeline {
             steps {
                 script {
                     publishGithubCheckInProgress('linter')
-                    sh """
-                        export PATH=${env.CARGO_HOME}/bin:${env.TOOLCHAIN_PATHS}:\$PATH
-                        make fmt-test
-                    """
+                    def cellWs = jenkinsJobDir('linter')
+                    syncWorkspaceTo(cellWs)
+                    dir(cellWs) {
+                        sh """
+                            export PATH=${env.CARGO_HOME}/bin:${env.TOOLCHAIN_PATHS}:\$PATH
+                            make fmt-test
+                        """
+                    }
                 }
             }
             post {
@@ -180,10 +201,14 @@ pipeline {
             steps {
                 script {
                     publishGithubCheckInProgress('license-checker')
-                    sh """
-                        chmod +x tools/license_checker.sh
-                        ./tools/license_checker.sh
-                    """
+                    def cellWs = jenkinsJobDir('license-checker')
+                    syncWorkspaceTo(cellWs)
+                    dir(cellWs) {
+                        sh """
+                            chmod +x tools/license_checker.sh
+                            ./tools/license_checker.sh
+                        """
+                    }
                 }
             }
             post {
@@ -236,14 +261,7 @@ pipeline {
                         steps {
                             script {
                                 publishMatrixCheckInProgress()
-                                def cellWs = matrixCellDir()
-                                sh """
-                                    mkdir -p '${cellWs}'
-                                    rsync -a --delete \\
-                                        --exclude '.matrix/' \\
-                                        --exclude '.jenkins-matrix/' \\
-                                        '${env.WORKSPACE}/' '${cellWs}/'
-                                """
+                                syncWorkspaceTo(matrixCellDir())
                             }
                         }
                     }
