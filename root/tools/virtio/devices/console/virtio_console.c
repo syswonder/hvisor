@@ -75,7 +75,7 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
             free(iov);
             break;
         } else if (len < 0) {
-            log_trace("Failed to read from console, errno is %d", errno);
+            log_debug("Failed to read from console, errno is %d", errno);
             vq->last_avail_idx--;
             free(iov);
             break;

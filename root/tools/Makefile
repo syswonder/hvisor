@@ -32,23 +32,7 @@ $(error "Unsupported architecture $(ARCH)")
 	endif
 endif
 
-ifeq ($(LOG),LOG_TRACE)
-	HLOG_LEVEL := 0
-else ifeq ($(LOG),LOG_DEBUG)
-	HLOG_LEVEL := 1
-else ifeq ($(LOG),LOG_INFO)
-	HLOG_LEVEL := 2
-else ifeq ($(LOG),LOG_WARN)
-	HLOG_LEVEL := 3
-else ifeq ($(LOG),LOG_ERROR)
-	HLOG_LEVEL := 4
-else ifeq ($(LOG),LOG_FATAL)
-	HLOG_LEVEL := 5
-else
-$(error LOG must be one of: LOG_TRACE LOG_DEBUG LOG_INFO LOG_WARN LOG_ERROR LOG_FATAL)
-endif
-
-CFLAGS := -Wall -Wextra -DLOG_USE_COLOR -DHLOG=$(HLOG_LEVEL) -pthread
+CFLAGS := -Wall -Wextra -DHLOG=$(LOG) -pthread
 
 # Conditionally add sysroot if ROOT is set
 # Otherwise use default flags from cross-compiler
