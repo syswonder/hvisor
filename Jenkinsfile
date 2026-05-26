@@ -65,25 +65,34 @@ def matrixCheckName() {
     return (env.BID ?: '').toString()
 }
 
-def publishMatrixCheckInProgress() {
+def publishGithubCheckInProgress(String checkName) {
     publishChecks(
-        name: matrixCheckName(),
-        title: matrixCheckName(),
+        name: checkName,
+        title: checkName,
         summary: 'In progress',
         status: 'IN_PROGRESS',
+        conclusion: 'NONE',
         detailsURL: "${env.RUN_DISPLAY_URL ?: env.BUILD_URL}",
     )
 }
 
-def publishMatrixCheckCompleted(String conclusion) {
+def publishGithubCheckCompleted(String checkName, String conclusion) {
     publishChecks(
-        name: matrixCheckName(),
-        title: matrixCheckName(),
+        name: checkName,
+        title: checkName,
         summary: conclusion == 'SUCCESS' ? 'Passed' : 'Failed',
         status: 'COMPLETED',
         conclusion: conclusion,
         detailsURL: "${env.RUN_DISPLAY_URL ?: env.BUILD_URL}",
     )
+}
+
+def publishMatrixCheckInProgress() {
+    publishGithubCheckInProgress(matrixCheckName())
+}
+
+def publishMatrixCheckCompleted(String conclusion) {
+    publishGithubCheckCompleted(matrixCheckName(), conclusion)
 }
 
 /** Kconfig: venv + tools/kconfig/kconfig_cli.py (via make defconfig). Keep in sync with Makefile. */
@@ -132,6 +141,52 @@ pipeline {
                 // Ensure no stale files from previous builds.
                 deleteDir()
                 checkout scm
+            }
+        }
+
+        stage('Linter') {
+            steps {
+                script {
+                    publishGithubCheckInProgress('linter')
+                    sh """
+                        export PATH=${env.CARGO_HOME}/bin:${env.TOOLCHAIN_PATHS}:\$PATH
+                        make fmt-test
+                    """
+                }
+            }
+            post {
+                success {
+                    script { publishGithubCheckCompleted('linter', 'SUCCESS') }
+                }
+                failure {
+                    script { publishGithubCheckCompleted('linter', 'FAILURE') }
+                }
+                unstable {
+                    script { publishGithubCheckCompleted('linter', 'FAILURE') }
+                }
+            }
+        }
+
+        stage('License checker') {
+            steps {
+                script {
+                    publishGithubCheckInProgress('license-checker')
+                    sh """
+                        chmod +x tools/license_checker.sh
+                        ./tools/license_checker.sh
+                    """
+                }
+            }
+            post {
+                success {
+                    script { publishGithubCheckCompleted('license-checker', 'SUCCESS') }
+                }
+                failure {
+                    script { publishGithubCheckCompleted('license-checker', 'FAILURE') }
+                }
+                unstable {
+                    script { publishGithubCheckCompleted('license-checker', 'FAILURE') }
+                }
             }
         }
 
