@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from ci_config import get_bid_entry, load_ci
+from ci_config import get_bid_entry, load_ci, parse_bid
 from terminal import Terminal, TerminalCommandError, TerminalTimeoutError
 
 
@@ -205,15 +205,16 @@ def parse_args() -> argparse.Namespace:
 def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
     ci = load_ci()
     bid_entry = get_bid_entry(ci, args.bid)
-    build_args = bid_entry["build_args"]
     tests = bid_entry["tests"]
 
-    arch = build_args.get("ARCH", "").strip()
-    board = build_args.get("BOARD", "").strip()
+    try:
+        arch, board = parse_bid(args.bid)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     mode = bid_entry.get("mode", "").strip()
     cases = bid_entry.get("cases", [])
-    if not arch or not board or not mode:
-        raise SystemExit(f"incomplete config for bid '{args.bid}': ARCH/BOARD/mode are required")
+    if not mode:
+        raise SystemExit(f"incomplete config for bid '{args.bid}': tests.mode is required")
     if not cases:
         raise SystemExit(f"no test cases configured for bid '{args.bid}'")
 

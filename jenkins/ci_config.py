@@ -15,6 +15,13 @@ ROOT = Path(__file__).resolve().parent.parent
 CI_YAML = ROOT / "jenkins" / "ci.yaml"
 
 
+def parse_bid(bid: str) -> tuple[str, str]:
+    parts = bid.strip().split("/", 1)
+    if len(parts) != 2 or not parts[0].strip() or not parts[1].strip():
+        raise ValueError(f"invalid BID: {bid!r}")
+    return parts[0].strip(), parts[1].strip()
+
+
 def normalize_build_args(raw: list[Any] | None) -> dict[str, str]:
     result: dict[str, str] = {}
     for item in raw or []:

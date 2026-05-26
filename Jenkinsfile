@@ -1,3 +1,12 @@
+/** ARCH/BOARD come from matrix BID (arch/board); ci.yaml must not duplicate them. */
+def parseBid(String bid) {
+    def parts = (bid ?: '').split('/', 2)
+    if (parts.size() != 2 || !parts[0] || !parts[1]) {
+        error("invalid BID: ${bid}")
+    }
+    return [arch: parts[0], board: parts[1]]
+}
+
 def parseCiBuildArgs(cfg) {
     def buildArgs = [:]
     if (!cfg?.build_args) {
@@ -149,13 +158,10 @@ pipeline {
                         steps {
                             dir(matrixCellDir()) {
                                 script {
-                                    def parts = (env.BID ?: '').split('/', 2)
-                                    if (parts.size() != 2) {
-                                        error("invalid BID: ${env.BID}")
-                                    }
-                                    def arch = parts[0]
-                                    def board = parts[1]
-                                    echo "Compile hvisor [BID=${env.BID}, ARCH=${arch}, BOARD=${board}] (Kconfig: kconfig_cli.py defconfig -> root .config; no Cargo --features)"
+                                    def bid = parseBid(env.BID)
+                                    def arch = bid.arch
+                                    def board = bid.board
+                                    echo "Compile hvisor [BID=${env.BID}, ARCH=${arch}, BOARD=${board}]"
                                     sh kconfigSetupShell(arch, board)
                                     if (arch != 'x86_64') {
                                         sh """
@@ -184,10 +190,11 @@ pipeline {
                                     def ci = loadCiYaml()
                                     def bidCfg = getBidConfig(ci, env.BID)
                                     def buildArgs = parseCiBuildArgs(bidCfg)
-                                    def tarch = normalizeToolArch(buildArgs.TARCH ?: buildArgs.ARCH)
+                                    def bidTool = parseBid(env.BID)
+                                    def tarch = normalizeToolArch(buildArgs.TARCH ?: bidTool.arch)
                                     def kdir = buildArgs.KDIR
-                                    if (!tarch || !kdir) {
-                                        error("jenkins/ci.yaml BID=${env.BID}: build_args must include ARCH/TARCH and KDIR")
+                                    if (!kdir) {
+                                        error("jenkins/ci.yaml BID=${env.BID}: build_args must include KDIR")
                                     }
 
                                     echo "Build hvisor-tool [BID=${env.BID}, TARCH=${tarch}, KDIR=${kdir}]"
@@ -224,19 +231,14 @@ pipeline {
                                     def ci = loadCiYaml()
                                     def bidCfg = getBidConfig(ci, env.BID)
                                     def buildArgs = parseCiBuildArgs(bidCfg)
-                                    def arch = (buildArgs.ARCH ?: '').toString()
-                                    def board = (buildArgs.BOARD ?: '').toString()
+                                    def bidPrepare = parseBid(env.BID)
+                                    def arch = bidPrepare.arch
+                                    def board = bidPrepare.board
                                     def kdir = (buildArgs.KDIR ?: '').toString()
                                     def testsCfg = bidCfg.tests ?: [:]
                                     def mode = (testsCfg.mode ?: '').toString().trim()
-                                    if (!arch || !board || !kdir || !mode) {
-                                        error("jenkins/ci.yaml BID=${env.BID}: tests.mode and build_args ARCH/BOARD/KDIR are required")
-                                    }
-                                    def bidPartsPrepare = (env.BID ?: '').split('/', 2)
-                                    if (bidPartsPrepare.size() == 2) {
-                                        if (arch != bidPartsPrepare[0] || board != bidPartsPrepare[1]) {
-                                            error("jenkins/ci.yaml BID=${env.BID}: build_args ARCH/BOARD (${arch}/${board}) must match matrix BID")
-                                        }
+                                    if (!kdir || !mode) {
+                                        error("jenkins/ci.yaml BID=${env.BID}: tests.mode and build_args KDIR are required")
                                     }
 
                                     if (mode == 'qemu') {
@@ -275,21 +277,10 @@ pipeline {
                         steps {
                             dir(matrixCellDir()) {
                                 script {
-                                    def bidParts = (env.BID ?: '').split('/', 2)
-                                    if (bidParts.size() != 2) {
-                                        error("invalid BID for tests: ${env.BID}")
-                                    }
-                                    def tArch = bidParts[0]
-                                    def tBoard = bidParts[1]
-                                    def ciRun = loadCiYaml()
-                                    def bidCfgRun = getBidConfig(ciRun, env.BID)
-                                    def buildArgsRun = parseCiBuildArgs(bidCfgRun)
-                                    def yamlArchRun = (buildArgsRun.ARCH ?: '').toString()
-                                    def yamlBoardRun = (buildArgsRun.BOARD ?: '').toString()
-                                    if (yamlArchRun != tArch || yamlBoardRun != tBoard) {
-                                        error("jenkins/ci.yaml BID=${env.BID}: build_args ARCH/BOARD (${yamlArchRun}/${yamlBoardRun}) must match matrix BID (${tArch}/${tBoard})")
-                                    }
-                                    echo "Run tests via ci_runner [BID=${env.BID}] (Kconfig: same as Compile — kconfig_cli via make defconfig)"
+                                    def bidRun = parseBid(env.BID)
+                                    def tArch = bidRun.arch
+                                    def tBoard = bidRun.board
+                                    echo "Run tests via ci_runner [BID=${env.BID}]"
                                     sh """
                                         export TERM=\${TERM:-xterm}
                                         export PATH=${env.CARGO_HOME}/bin:${env.TOOLCHAIN_PATHS}:\$PATH
