@@ -60,6 +60,32 @@ def normalizeToolArch(String arch) {
     return mapping.get(raw, raw)
 }
 
+/** GitHub Check name for this matrix cell */
+def matrixCheckName() {
+    return (env.BID ?: '').toString()
+}
+
+def publishMatrixCheckInProgress() {
+    publishChecks(
+        name: matrixCheckName(),
+        title: matrixCheckName(),
+        summary: 'In progress',
+        status: 'IN_PROGRESS',
+        detailsURL: "${env.RUN_DISPLAY_URL ?: env.BUILD_URL}",
+    )
+}
+
+def publishMatrixCheckCompleted(String conclusion) {
+    publishChecks(
+        name: matrixCheckName(),
+        title: matrixCheckName(),
+        summary: conclusion == 'SUCCESS' ? 'Passed' : 'Failed',
+        status: 'COMPLETED',
+        conclusion: conclusion,
+        detailsURL: "${env.RUN_DISPLAY_URL ?: env.BUILD_URL}",
+    )
+}
+
 /** Kconfig: venv + tools/kconfig/kconfig_cli.py (via make defconfig). Keep in sync with Makefile. */
 def kconfigSetupShell(String arch, String board) {
     return """
@@ -142,6 +168,7 @@ pipeline {
                     stage('Prepare cell workspace') {
                         steps {
                             script {
+                                publishMatrixCheckInProgress()
                                 def cellWs = matrixCellDir()
                                 sh """
                                     mkdir -p '${cellWs}'
@@ -292,6 +319,18 @@ pipeline {
                                 }
                             }
                         }
+                    }
+                }
+
+                post {
+                    success {
+                        script { publishMatrixCheckCompleted('SUCCESS') }
+                    }
+                    failure {
+                        script { publishMatrixCheckCompleted('FAILURE') }
+                    }
+                    unstable {
+                        script { publishMatrixCheckCompleted('FAILURE') }
                     }
                 }
             }
