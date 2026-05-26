@@ -77,10 +77,15 @@ def publishGithubCheckInProgress(String checkName) {
 }
 
 def publishGithubCheckCompleted(String checkName, String conclusion) {
+    def summaries = [
+        'SUCCESS'  : 'Passed',
+        'FAILURE'  : 'Failed',
+        'CANCELLED': 'Cancelled',
+    ]
     publishChecks(
         name: checkName,
         title: checkName,
-        summary: conclusion == 'SUCCESS' ? 'Passed' : 'Failed',
+        summary: summaries.get(conclusion, conclusion),
         status: 'COMPLETED',
         conclusion: conclusion,
         detailsURL: "${env.RUN_DISPLAY_URL ?: env.BUILD_URL}",
@@ -165,6 +170,9 @@ pipeline {
                 unstable {
                     script { publishGithubCheckCompleted('linter', 'FAILURE') }
                 }
+                aborted {
+                    script { publishGithubCheckCompleted('linter', 'CANCELLED') }
+                }
             }
         }
 
@@ -187,6 +195,9 @@ pipeline {
                 }
                 unstable {
                     script { publishGithubCheckCompleted('license-checker', 'FAILURE') }
+                }
+                aborted {
+                    script { publishGithubCheckCompleted('license-checker', 'CANCELLED') }
                 }
             }
         }
@@ -221,7 +232,7 @@ pipeline {
                 }
 
                 stages {
-                    stage('Prepare cell workspace') {
+                    stage('Prepare cell') {
                         steps {
                             script {
                                 publishMatrixCheckInProgress()
@@ -387,6 +398,9 @@ pipeline {
                     }
                     unstable {
                         script { publishMatrixCheckCompleted('FAILURE') }
+                    }
+                    aborted {
+                        script { publishMatrixCheckCompleted('CANCELLED') }
                     }
                 }
             }
