@@ -118,6 +118,7 @@ pipeline {
         always {
             echo "=== DEBUG: Branch ${env.BRANCH_NAME} ==="
             echo "=== DEBUG: Commit ${env.GIT_COMMIT} ==="
+            deleteDir()
         }
     }
 
@@ -136,13 +137,13 @@ pipeline {
     }
 
     stages {
-        stage('Checkout') {
-            steps {
-                // Ensure no stale files from previous builds.
-                deleteDir()
-                checkout scm
-            }
-        }
+        // stage('Checkout') {
+        //     steps {
+        //         // Ensure no stale files from previous builds.
+        //         deleteDir()
+        //         checkout scm
+        //     }
+        // }
 
         stage('Linter') {
             steps {
