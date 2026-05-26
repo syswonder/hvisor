@@ -78,28 +78,24 @@ COLOR_RESET := $(shell tput sgr0)
 kconfig_python := tools/kconfig/.venv/bin/python
 
 # Targets
-.PHONY: all elf disa run gdb monitor clean tools rootfs vscode ci-run defconfig menuconfig savedefconfig ensure_config
+.PHONY: all elf disa run gdb monitor clean tools rootfs vscode ci-run defconfig menuconfig savedefconfig ensure_config kconfig_venv
+kconfig_venv:
+	@if [ ! -x $(kconfig_python) ]; then \
+		echo "$(COLOR_YELLOW)Creating tools/kconfig/.venv (kconfiglib)...$(COLOR_RESET)"; \
+		./tools/kconfig/bootstrap_venv.sh; \
+	fi
+
 ensure_config:
 	@if [ ! -f .config ]; then \
 		echo "$(COLOR_YELLOW)No .config; running defconfig for $(ARCH)/$(BOARD)$(COLOR_RESET)"; \
 		$(MAKE) --no-print-directory defconfig; \
 	fi
 
-defconfig:
-	@if [ ! -x $(kconfig_python) ]; then \
-		echo "$(COLOR_RED)Missing tools/kconfig/.venv (kconfiglib).$(COLOR_RESET)"; \
-		echo "  ./tools/kconfig/bootstrap_venv.sh"; \
-		exit 1; \
-	fi
+defconfig: kconfig_venv
 	@$(kconfig_python) tools/kconfig/kconfig_cli.py defconfig
 
-menuconfig:
-	@if [ -x $(kconfig_python) ]; then \
-		$(kconfig_python) tools/kconfig/kconfig_cli.py menuconfig; \
-	else \
-		echo "Install kconfiglib: ./tools/kconfig/bootstrap_venv.sh"; \
-		exit 1; \
-	fi
+menuconfig: kconfig_venv
+	@$(kconfig_python) tools/kconfig/kconfig_cli.py menuconfig
 
 savedefconfig:
 	@./tools/kconfig/save_defconfig.sh "$(ARCH)" "$(BOARD)"
