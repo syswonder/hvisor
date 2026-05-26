@@ -130,7 +130,26 @@ impl Frame {
     }
 
     /// Allocate contiguous physical frames.
-    pub fn new_contiguous(frame_count: usize, align_log2: usize) -> HvResult<Self> {
+    ///
+    /// `align_to` specifies the byte alignment of the start physical address.
+    /// Must be a power of 2 and a multiple of `PAGE_SIZE`. Pass `0` for no
+    /// alignment requirement.
+    pub fn new_contiguous(frame_count: usize, align_to: usize) -> HvResult<Self> {
+        let align_log2 = if align_to == 0 {
+            0
+        } else {
+            debug_assert!(
+                align_to.is_power_of_two(),
+                "new_contiguous: align_to {:#x} is not a power of 2",
+                align_to
+            );
+            debug_assert!(
+                align_to % PAGE_SIZE == 0,
+                "new_contiguous: align_to {:#x} is not a multiple of PAGE_SIZE",
+                align_to
+            );
+            (align_to / PAGE_SIZE).trailing_zeros() as usize
+        };
         unsafe {
             FRAME_ALLOCATOR
                 .lock()

@@ -425,7 +425,7 @@ impl Smmuv3 {
             5 + self.strtab.sid_max_bits
         );
         if let Ok(frame) =
-            Frame::new_contiguous(frame_count, 5 + self.strtab.sid_max_bits)
+            Frame::new_contiguous(frame_count, 1 << (5 + self.strtab.sid_max_bits))
         {
             self.strtab.init_with_base(frame.start_paddr(), frame);
         } else {
