@@ -117,10 +117,33 @@ def publishMatrixCheckCompleted(String conclusion) {
     publishGithubCheckCompleted(matrixCheckName(), conclusion)
 }
 
+def finishGithubCheck(String checkName, String buildResult) {
+    def conclusion = [
+        'SUCCESS' : 'SUCCESS',
+        'FAILURE' : 'FAILURE',
+        'UNSTABLE': 'FAILURE',
+        'ABORTED' : 'CANCELLED',
+        'NOT_BUILT': 'CANCELLED',
+    ].get(buildResult ?: '', 'FAILURE')
+    publishGithubCheckCompleted(checkName, conclusion)
+}
+
+def hasCiTests() {
+    return getBidConfig(loadCiYaml(), env.BID) != null
+}
+
+def toolchainPathShell() {
+    return "export PATH=${env.CARGO_HOME}/bin:${env.TOOLCHAIN_PATHS}:\$PATH"
+}
+
+def qemuPathShell() {
+    return "export PATH=${env.QEMU_PATH}:\$PATH"
+}
+
 /** Kconfig: venv + tools/kconfig/kconfig_cli.py (via make defconfig). Keep in sync with Makefile. */
 def kconfigSetupShell(String arch, String board) {
     return """
-        export PATH=${env.CARGO_HOME}/bin:${env.TOOLCHAIN_PATHS}:\$PATH
+        ${toolchainPathShell()}
         chmod +x tools/kconfig/bootstrap_venv.sh tools/kconfig/host_config.sh tools/kconfig/save_defconfig.sh 2>/dev/null || true
         if [ ! -x tools/kconfig/.venv/bin/python ]; then
             ./tools/kconfig/bootstrap_venv.sh
@@ -159,14 +182,6 @@ pipeline {
     }
 
     stages {
-        // stage('Checkout') {
-        //     steps {
-        //         // Ensure no stale files from previous builds.
-        //         deleteDir()
-        //         checkout scm
-        //     }
-        // }
-
         stage('Linter') {
             steps {
                 script {
@@ -175,24 +190,15 @@ pipeline {
                     syncWorkspaceTo(cellWs)
                     dir(cellWs) {
                         sh """
-                            export PATH=${env.CARGO_HOME}/bin:${env.TOOLCHAIN_PATHS}:\$PATH
+                            ${toolchainPathShell()}
                             make fmt-test
                         """
                     }
                 }
             }
             post {
-                success {
-                    script { publishGithubCheckCompleted('linter', 'SUCCESS') }
-                }
-                failure {
-                    script { publishGithubCheckCompleted('linter', 'FAILURE') }
-                }
-                unstable {
-                    script { publishGithubCheckCompleted('linter', 'FAILURE') }
-                }
-                aborted {
-                    script { publishGithubCheckCompleted('linter', 'CANCELLED') }
+                always {
+                    script { finishGithubCheck('linter', currentBuild.currentResult) }
                 }
             }
         }
@@ -212,17 +218,8 @@ pipeline {
                 }
             }
             post {
-                success {
-                    script { publishGithubCheckCompleted('license-checker', 'SUCCESS') }
-                }
-                failure {
-                    script { publishGithubCheckCompleted('license-checker', 'FAILURE') }
-                }
-                unstable {
-                    script { publishGithubCheckCompleted('license-checker', 'FAILURE') }
-                }
-                aborted {
-                    script { publishGithubCheckCompleted('license-checker', 'CANCELLED') }
+                always {
+                    script { finishGithubCheck('license-checker', currentBuild.currentResult) }
                 }
             }
         }
@@ -277,12 +274,12 @@ pipeline {
                                     sh kconfigSetupShell(arch, board)
                                     if (arch != 'x86_64') {
                                         sh """
-                                            export PATH=${env.CARGO_HOME}/bin:${env.TOOLCHAIN_PATHS}:\$PATH
+                                            ${toolchainPathShell()}
                                             make dtb ARCH=${arch} BOARD=${board}
                                         """
                                     }
                                     sh """
-                                        export PATH=${env.CARGO_HOME}/bin:${env.TOOLCHAIN_PATHS}:\$PATH
+                                        ${toolchainPathShell()}
                                         make all ARCH=${arch} BOARD=${board} MODE=release
                                     """
                                 }
@@ -292,15 +289,12 @@ pipeline {
 
                     stage('Build hvisor-tool') {
                         when {
-                            expression {
-                                return getBidConfig(loadCiYaml(), env.BID) != null
-                            }
+                            expression { return hasCiTests() }
                         }
                         steps {
                             dir(matrixCellDir()) {
                                 script {
-                                    def ci = loadCiYaml()
-                                    def bidCfg = getBidConfig(ci, env.BID)
+                                    def bidCfg = getBidConfig(loadCiYaml(), env.BID)
                                     def buildArgs = parseCiBuildArgs(bidCfg)
                                     def bidTool = parseBid(env.BID)
                                     def tarch = normalizeToolArch(buildArgs.TARCH ?: bidTool.arch)
@@ -323,8 +317,7 @@ pipeline {
                                     }
                                     sh """
                                         export PATH=${env.TOOLCHAIN_PATHS}:\$PATH
-                                        cd ${env.HVISOR_TOOL_PATH}
-                                        make all ARCH=${tarch} KDIR=${kdir}
+                                        make -C ${env.HVISOR_TOOL_PATH} all ARCH=${tarch} KDIR=${kdir}
                                     """
                                 }
                             }
@@ -333,19 +326,16 @@ pipeline {
 
                     stage('Prepare test') {
                         when {
-                            expression {
-                                return getBidConfig(loadCiYaml(), env.BID) != null
-                            }
+                            expression { return hasCiTests() }
                         }
                         steps {
                             dir(matrixCellDir()) {
                                 script {
-                                    def ci = loadCiYaml()
-                                    def bidCfg = getBidConfig(ci, env.BID)
+                                    def bidCfg = getBidConfig(loadCiYaml(), env.BID)
                                     def buildArgs = parseCiBuildArgs(bidCfg)
-                                    def bidPrepare = parseBid(env.BID)
-                                    def arch = bidPrepare.arch
-                                    def board = bidPrepare.board
+                                    def bidParsed = parseBid(env.BID)
+                                    def arch = bidParsed.arch
+                                    def board = bidParsed.board
                                     def kdir = (buildArgs.KDIR ?: '').toString()
                                     def testsCfg = bidCfg.tests ?: [:]
                                     def mode = (testsCfg.mode ?: '').toString().trim()
@@ -382,22 +372,16 @@ pipeline {
 
                     stage('Run test cases') {
                         when {
-                            expression {
-                                return getBidConfig(loadCiYaml(), env.BID) != null
-                            }
+                            expression { return hasCiTests() }
                         }
                         steps {
                             dir(matrixCellDir()) {
                                 script {
-                                    def bidRun = parseBid(env.BID)
-                                    def tArch = bidRun.arch
-                                    def tBoard = bidRun.board
                                     echo "Run tests via ci_runner [BID=${env.BID}]"
                                     sh """
                                         export TERM=\${TERM:-xterm}
-                                        export PATH=${env.CARGO_HOME}/bin:${env.TOOLCHAIN_PATHS}:\$PATH
-                                        export PATH=${env.QEMU_PATH}:\$PATH
-                                        ${kconfigSetupShell(tArch, tBoard)}
+                                        ${toolchainPathShell()}
+                                        ${qemuPathShell()}
                                         python3 jenkins/ci_runner.py \
                                             --bid "${env.BID}"
                                     """
@@ -409,16 +393,16 @@ pipeline {
 
                 post {
                     success {
-                        script { publishMatrixCheckCompleted('SUCCESS') }
+                        script { finishGithubCheck(matrixCheckName(), 'SUCCESS') }
                     }
                     failure {
-                        script { publishMatrixCheckCompleted('FAILURE') }
+                        script { finishGithubCheck(matrixCheckName(), 'FAILURE') }
                     }
                     unstable {
-                        script { publishMatrixCheckCompleted('FAILURE') }
+                        script { finishGithubCheck(matrixCheckName(), 'UNSTABLE') }
                     }
                     aborted {
-                        script { publishMatrixCheckCompleted('CANCELLED') }
+                        script { finishGithubCheck(matrixCheckName(), 'ABORTED') }
                     }
                 }
             }
