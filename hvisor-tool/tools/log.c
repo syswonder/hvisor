@@ -40,32 +40,22 @@ void initialize_log(void) {
 #ifdef HLOG
     log_level = HLOG;
 #else
-    log_level = LOG_WARN;
+    log_level = LOG_WARNING;
 #endif
     log_set_level(log_level);
 }
-
-#include <syslog.h>
 
 static struct {
     int level;
     bool quiet;
 } L;
 
-static const char *level_strings[] = {"TRACE", "DEBUG", "INFO",
-                                      "WARN",  "ERROR", "FATAL"};
-
-static const int syslog_levels[] = {LOG_DEBUG,   LOG_DEBUG, LOG_INFO,
-                                    LOG_WARNING, LOG_ERR,   LOG_CRIT};
-
-const char *log_level_string(int level) { return level_strings[level]; }
-
 void log_set_level(int level) { L.level = level; }
 
 void log_set_quiet(bool enable) { L.quiet = enable; }
 
 void log_log(int level, const char *file, int line, const char *fmt, ...) {
-    if (L.quiet || level < L.level) {
+    if (L.quiet || level > L.level) {
         return;
     }
 
@@ -75,7 +65,7 @@ void log_log(int level, const char *file, int line, const char *fmt, ...) {
     char buf[2048];
     vsnprintf(buf, sizeof(buf), fmt, ap);
     va_end(ap);
-    syslog(syslog_levels[level], "%s:%d: %s", file, line, buf);
+    syslog(level, "%s:%d: %s", file, line, buf);
 }
 
 void multithread_log_init() {

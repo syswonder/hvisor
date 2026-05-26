@@ -32,7 +32,7 @@ help:
 	@echo ""
 	@echo "Environment variables:"
 	@echo "  ARCH=arm64|riscv|loongarch   Target architecture (required)"
-	@echo "  LOG=LEVEL                    Log level (default: LOG_INFO)"
+	@echo "  LOG=LEVEL                    Log level: LOG_DEBUG LOG_INFO LOG_WARNING LOG_ERR LOG_CRIT (default: LOG_INFO)"
 	@echo "  KDIR=path                    Linux kernel source path (required)"
 	@echo "  VIRTIO_GPU=y|n               Enable GPU support (default: n)"
 

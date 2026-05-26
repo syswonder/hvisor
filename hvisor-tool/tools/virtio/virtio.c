@@ -330,7 +330,7 @@ void init_mmio_regs(VirtMmioRegs *regs, VirtioDeviceType type) {
 
 void virtio_dev_reset(VirtIODevice *vdev) {
     // When driver read first 4 encoded messages, it will reset dev.
-    log_trace("virtio dev reset");
+    log_debug("virtio dev reset");
     vdev->regs.status = 0;
     vdev->regs.interrupt_status = 0;
     vdev->regs.interrupt_count = 0;
@@ -809,7 +809,7 @@ void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t value,
                   virtio_device_type_to_string(vdev->type));
 
         if (value < vdev->vqs_len) {
-            log_trace("queue notify ready, handler addr is %#x",
+            log_debug("queue notify ready, handler addr is %#x",
                       vqs[value].notify_handler);
             vqs[value].notify_handler(vdev, &vqs[value]);
         }
@@ -992,7 +992,7 @@ int virtio_handle_req(volatile struct device_req *req) {
         virtio_finish_cfg_req(req->src_cpu, value);
     }
 
-    log_trace("src_zone is %d, src_cpu is %lld", req->src_zone, req->src_cpu);
+    log_debug("src_zone is %d, src_cpu is %lld", req->src_zone, req->src_cpu);
     return 0;
 }
 
