@@ -52,8 +52,6 @@ impl ArchCpu {
             stack_top: 0,
             cpuid,
             // first_cpu: 0,
-            power_on: false,
-            init: false,
             sstc: cfg!(sstc),
         };
         ret
