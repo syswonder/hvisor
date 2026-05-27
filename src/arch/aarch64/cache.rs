@@ -19,7 +19,7 @@ pub unsafe fn invalidate_dcache_range(start: usize, size: usize, line_size: usiz
     let mut addr = start & !(line_size - 1);
     let end = start + size;
     while addr < end {
-        core::arch::asm!("dc ivac, {0}", in(reg) addr, options(nostack, preserves_flags));
+        core::arch::asm!("dc civac, {0}", in(reg) addr, options(nostack, preserves_flags));
         addr += line_size;
     }
     core::arch::asm!("dsb sy", options(nostack, preserves_flags));

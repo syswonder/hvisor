@@ -78,7 +78,7 @@ COLOR_RESET := $(shell tput sgr0)
 kconfig_python := tools/kconfig/.venv/bin/python
 
 # Targets
-.PHONY: all elf disa run gdb monitor clean tools rootfs vscode ci-run defconfig menuconfig savedefconfig ensure_config kconfig_venv
+.PHONY: all elf disa run gdb monitor clean tools rootfs vscode ci-run defconfig menuconfig savedefconfig ensure_config kconfig_venv check-hv-mem-overlap
 kconfig_venv:
 	@if [ ! -x $(kconfig_python) ]; then \
 		echo "$(COLOR_YELLOW)Creating tools/kconfig/.venv (kconfiglib)...$(COLOR_RESET)"; \
@@ -100,7 +100,7 @@ menuconfig: kconfig_venv
 savedefconfig:
 	@./tools/kconfig/save_defconfig.sh "$(ARCH)" "$(BOARD)"
 
-all: clean_check ensure_config gen_cargo_config vscode $(hvisor_bin)
+all: clean_check ensure_config gen_cargo_config vscode $(hvisor_bin) check-hv-mem-overlap
 	@printf "\n"
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)hvisor build summary:$(COLOR_RESET)\n"
 	@printf "%-10s %s\n" "ARCH            =" "$(COLOR_BOLD)$(ARCH)$(COLOR_RESET)"
@@ -140,6 +140,13 @@ gen_cargo_config:
 	@chmod +x tools/kconfig/host_config.sh 2>/dev/null || true
 	./tools/kconfig/host_config.sh cargo
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)generating .cargo/config.toml success!$(COLOR_RESET)\n"
+
+check-hv-mem-overlap: $(hvisor_bin) platform/$(ARCH)/$(BOARD)/board.rs
+	@printf "$(COLOR_GREEN)$(COLOR_BOLD)checking hvisor memory vs root zone regions...$(COLOR_RESET)\n"
+	@python3 tools/check_hv_mem_overlap.py $(hvisor_elf) platform/$(ARCH)/$(BOARD)/board.rs && \
+		printf "$(COLOR_GREEN)$(COLOR_BOLD)check passed!$(COLOR_RESET)\n" || \
+		(printf "$(COLOR_RED)$(COLOR_BOLD)OVERLAP DETECTED! See details above.$(COLOR_RESET)\n" && \
+		 false)
 
 vscode:
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)generating .vscode/settings.json...$(COLOR_RESET)\n"

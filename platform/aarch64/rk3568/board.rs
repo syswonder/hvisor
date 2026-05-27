@@ -139,8 +139,14 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x9400000,
         virtual_start: 0x9400000,
-        size: 0xe6c00000,
-    }, // memory
+        size: 0x56c00000,
+    }, // memory (before hvisor)
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RAM,
+        physical_start: 0x64600000,
+        virtual_start: 0x64600000,
+        size: 0x8ba00000,
+    }, // memory (after hvisor)
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x0,

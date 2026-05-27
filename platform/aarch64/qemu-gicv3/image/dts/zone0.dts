@@ -355,4 +355,16 @@
 		interrupt-parent = <0x01>;
 		interrupts = <0x00 0x20 0x01>;
 	};
+
+	hvisor_virtio_pci_config {
+		compatible = "hvisor";
+		interrupt-parent = <0x01>;
+		interrupts = <0x00 0x21 0x01>;
+	};
+
+	hvisor_virtio_pci_data {
+		compatible = "hvisor";
+		interrupt-parent = <0x01>;
+		interrupts = <0x00 0x22 0x01>;
+	};
 };

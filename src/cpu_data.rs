@@ -21,16 +21,91 @@ use crate::consts::{INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::memory::addr::VirtAddr;
 use crate::zone::Zone;
 use crate::ENTERED_CPUS;
-use core::fmt::Debug;
-use core::sync::atomic::Ordering;
+use core::fmt::{Debug, Formatter, Result};
+use core::sync::atomic::{AtomicU8, Ordering};
 
 // global_asm!(include_str!("./arch/aarch64/page_table.S"),);
+
+/// VCpu lifecycle states
+#[repr(u8)]
+#[derive(Copy, Clone, Debug, Eq, PartialEq)]
+pub enum VcpuState {
+    /// Initial state or after PSCI CPU_OFF. Not in any run queue.
+    Stopped = 0,
+    /// In a pCPU's run queue, waiting to be scheduled.
+    Ready = 1,
+    /// Currently executing on a pCPU.
+    Running = 2,
+    /// Blocked by WFI/CPU_SUSPEND. Not in any run queue, awaiting interrupt wakeup.
+    Blocked = 3,
+}
+
+impl VcpuState {
+    fn from_raw(value: u8) -> Self {
+        match value {
+            0 => Self::Stopped,
+            1 => Self::Ready,
+            2 => Self::Running,
+            3 => Self::Blocked,
+            _ => panic!("invalid vcpu state {}", value),
+        }
+    }
+}
+
+#[repr(transparent)]
+pub struct VcpuStateCell {
+    state: AtomicU8,
+}
+
+impl VcpuStateCell {
+    pub const fn new(state: VcpuState) -> Self {
+        Self {
+            state: AtomicU8::new(state as u8),
+        }
+    }
+
+    pub fn load(&self) -> VcpuState {
+        VcpuState::from_raw(self.state.load(Ordering::Acquire))
+    }
+
+    pub fn store(&self, state: VcpuState) {
+        self.state.store(state as u8, Ordering::Release);
+    }
+
+    pub fn is_stopped(&self) -> bool {
+        self.load() == VcpuState::Stopped
+    }
+
+    pub fn is_ready(&self) -> bool {
+        self.load() == VcpuState::Ready
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.load() == VcpuState::Running
+    }
+
+    pub fn is_blocked(&self) -> bool {
+        self.load() == VcpuState::Blocked
+    }
+
+    /// Logical CPU is up from the hypervisor’s view: not `Stopped` (includes Ready, Running, Blocked).
+    pub fn is_online(&self) -> bool {
+        !self.is_stopped()
+    }
+}
+
+impl Debug for VcpuStateCell {
+    fn fmt(&self, f: &mut Formatter<'_>) -> Result {
+        self.load().fmt(f)
+    }
+}
 
 #[repr(C)]
 pub struct PerCpu {
     pub id: usize,
     pub cpu_on_entry: usize,
     pub dtb_ipa: usize,
+    pub vcpu_state: VcpuStateCell,
     pub arch_cpu: ArchCpu,
     pub zone: Option<Arc<Zone>>,
     pub ctrl_lock: Mutex<()>,
@@ -48,6 +123,7 @@ impl PerCpu {
                 id: arch_cpu.cpuid,
                 cpu_on_entry: INVALID_ADDRESS,
                 dtb_ipa: INVALID_ADDRESS,
+                vcpu_state: VcpuStateCell::new(VcpuState::Stopped),
                 arch_cpu,
                 zone: None,
                 ctrl_lock: Mutex::new(()),
@@ -102,6 +178,54 @@ pub fn this_cpu_data<'a>() -> &'a mut PerCpu {
 #[allow(unused)]
 pub fn this_zone() -> Arc<Zone> {
     this_cpu_data().zone.clone().unwrap()
+}
+
+/// Enter blocked state and wait until another CPU resumes it.
+#[allow(unused)]
+pub fn vcpu_suspend() {
+    info!("cpu {} suspending...", this_cpu_data().id);
+    this_cpu_data().vcpu_state.store(VcpuState::Blocked);
+    loop {
+        // TODO: use wfi to optimize the loop
+        if !this_cpu_data().vcpu_state.is_blocked() {
+            break;
+        }
+        core::hint::spin_loop();
+    }
+    // Remote sets `Ready` to leave Blocked; this hart then marks itself `Running` again.
+    this_cpu_data().vcpu_state.store(VcpuState::Running);
+    info!("cpu {} resumed from suspend.", this_cpu_data().id);
+}
+
+/// Wait for other CPUs in the cpu set to enter Blocked state.
+#[allow(unused)]
+pub fn wait_for_other_vcpus_suspend(cpu_set: CpuSet) {
+    let this_cpu_id = this_cpu_id();
+    for target_cpu_id in cpu_set.iter() {
+        if target_cpu_id == this_cpu_id {
+            continue;
+        }
+        loop {
+            if get_cpu_data(target_cpu_id).vcpu_state.is_blocked() {
+                break;
+            }
+            core::hint::spin_loop();
+        }
+    }
+}
+
+/// Signal other CPUs in the cpu set to resume from Blocked.
+#[allow(unused)]
+pub fn signal_other_vcpus_resume(cpu_set: CpuSet) {
+    let this_cpu_id = this_cpu_id();
+    for target_cpu_id in cpu_set.iter() {
+        if target_cpu_id == this_cpu_id {
+            continue;
+        }
+        get_cpu_data(target_cpu_id)
+            .vcpu_state
+            .store(VcpuState::Ready);
+    }
 }
 
 #[repr(C)]

@@ -14,8 +14,12 @@
 // Authors:
 //
 
+use alloc::sync::Arc;
+use spin::RwLock;
+
 use super::{PciConfigAccessStatus, VpciDeviceHandler};
 use crate::error::HvResult;
+use crate::pci::msix::{MsixCap, MsixTable};
 use crate::pci::pci_access::{
     BaseClass, DeviceId, DeviceRevision, EndpointField, Interface, SubClass, VendorId,
 };
@@ -26,10 +30,7 @@ use crate::cpu_data::this_zone;
 use crate::memory::MMIOAccess;
 use crate::pci::pci_access::PciMemType;
 use crate::pci::pci_struct::ArcRwLockVirtualPciConfigSpace;
-use crate::pci::pci_struct::PciCapabilityRegion;
-use crate::pci::vpci_dev::VirtMsiXCap;
-use alloc::sync::Arc;
-use spin::RwLock;
+// use crate::pci::vpci_dev::VirtMsiXCap;
 
 /// Handler for standard virtual PCI devices
 pub struct StandardHandler;
@@ -126,7 +127,7 @@ impl VpciDeviceHandler for StandardHandler {
 
     fn vdev_init(&self, mut dev: VirtualPciConfigSpace) -> VirtualPciConfigSpace {
         // Set config_value
-        let id: (DeviceId, VendorId) = (0x110a, 0x4106);
+        let id: (DeviceId, VendorId) = (0x110b, 0x4106);
         let revision: DeviceRevision = 0xFFu8;
         let base_class: BaseClass = 0x0;
         let sub_class: SubClass = 0x0;
@@ -140,25 +141,32 @@ impl VpciDeviceHandler for StandardHandler {
         let your_addr = 0x0;
         let size = 0x1000;
         dev.with_bararr_mut(|bararr| {
-            bararr[0].config_init(PciMemType::Mem32, false, size as u64, your_addr);
+            bararr[0].config_init(PciMemType::Mem32, false, size as u64, your_addr, None);
         });
 
         // 0x98 is an arbitrary value, used here only for demonstration purposes
         // please don't forget to set next cap pointer if next cap exists
-        let msi_cap_offset = 0x98;
-        let mut msi_cap = VirtMsiXCap::new(msi_cap_offset);
-        msi_cap.set_next_cap_pointer(0x00);
+        let msix_cap_offset = 0x98;
+
+        let msix_table: Arc<RwLock<MsixTable>> = Arc::new(RwLock::new(MsixTable::new(
+            0x10,
+            dev.get_bdf().requester_id() as usize,
+        )));
+        let msix_cap = arc_rwlock!(MsixCap::new(
+            msix_cap_offset,
+            0x00,
+            0x10,
+            msix_table.clone()
+        ));
+        let msix = PciCapability::new_cap(CapabilityType::MsiX, msix_cap);
+        // let mut msi_cap = ::new(msi_cap_offset);
+        // msi_cap.set_next_cap_pointer(0x00);
         dev.with_access_mut(|access| {
-            access.set_bits(
-                (msi_cap_offset as usize)..(msi_cap_offset as usize + msi_cap.get_size()) as usize,
-            );
+            access.set_bits((msix_cap_offset as usize)..(msix_cap_offset as usize + 0x10) as usize);
         });
 
         dev.with_cap_mut(|capabilities| {
-            capabilities.insert(
-                msi_cap_offset,
-                PciCapability::new_virt(CapabilityType::MsiX, Arc::new(RwLock::new(msi_cap))),
-            );
+            capabilities.insert_cap(msix);
         });
 
         dev.with_access_mut(|access| {

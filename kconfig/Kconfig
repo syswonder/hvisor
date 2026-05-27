@@ -159,6 +159,11 @@ config NO_PCIE_BAR_REALLOC
 	bool "Do not reallocate PCIe BARs (board-specific)"
 	depends on PCI
 	default n
+
+config VIRTIO_PCI
+	bool "Virtio over PCI"
+	depends on PCI && IRQ_GICV3
+	default n
 endmenu
 
 menu "IOMMU"

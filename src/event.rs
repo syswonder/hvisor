@@ -15,13 +15,20 @@
 //
 #![allow(unused)]
 use crate::{
+    arch::cpu::this_cpu_id,
     arch::ipi::{arch_check_events, arch_prepare_send_event, arch_send_event},
     consts::{
-        IPI_EVENT_CLEAR_INJECT_IRQ, IPI_EVENT_SEND_IPI, IPI_EVENT_UPDATE_HART_LINE, MAX_CPU_NUM,
+        IPI_EVENT_CLEAR_INJECT_IRQ, IPI_EVENT_SEND_IPI, IPI_EVENT_UPDATE_HART_LINE,
+        IPI_EVENT_VCPU_SUSPEND, MAX_CPU_NUM,
     },
-    cpu_data::this_cpu_data,
+    cpu_data::{this_cpu_data, vcpu_suspend, CpuSet},
     device::{irqchip::inject_irq, virtio_trampoline::handle_virtio_irq},
     platform::IRQ_WAKEUP_VIRTIO_DEVICE,
+};
+#[cfg(virtio_pci)]
+use crate::{
+    pci::msix::activate_msix,
+    platform::{IRQ_WAKEUP_VIRTIO_PCI_CONFIG, IRQ_WAKEUP_VIRTIO_PCI_DATA},
 };
 use alloc::{collections::VecDeque, vec::Vec};
 use spin::Mutex;
@@ -30,6 +37,9 @@ pub const IPI_EVENT_WAKEUP: usize = 0;
 pub const IPI_EVENT_SHUTDOWN: usize = 1;
 pub const IPI_EVENT_VIRTIO_INJECT_IRQ: usize = 2;
 pub const IPI_EVENT_WAKEUP_VIRTIO_DEVICE: usize = 3;
+pub const IPI_EVENT_VIRTIO_PCI_CONFIG: usize = 7;
+pub const IPI_EVENT_VIRTIO_PCI_DATA: usize = 8;
+pub const IPI_EVENT_VIRTIO_PCI_DONE: usize = 9;
 
 #[percpu::def_percpu]
 static PERCPU_EVENTS: Mutex<VecDeque<usize>> = Mutex::new(VecDeque::new());
@@ -103,10 +113,33 @@ pub fn check_events() -> bool {
             inject_irq(IRQ_WAKEUP_VIRTIO_DEVICE, false);
             true
         }
+        #[cfg(virtio_pci)]
+        Some(IPI_EVENT_VIRTIO_PCI_CONFIG) => {
+            inject_irq(IRQ_WAKEUP_VIRTIO_PCI_CONFIG, false);
+            true
+        }
+        #[cfg(virtio_pci)]
+        Some(IPI_EVENT_VIRTIO_PCI_DATA) => {
+            inject_irq(IRQ_WAKEUP_VIRTIO_PCI_DATA, false);
+            true
+        }
+        #[cfg(virtio_pci)]
+        Some(IPI_EVENT_VIRTIO_PCI_DONE) => {
+            // Virtio PCI notice
+            // unsafe {
+            //     VIRTIO_MSIX_MANAGER.write().activate_all_pending_irq();
+            // }
+            activate_msix();
+            true
+        }
         Some(IPI_EVENT_CLEAR_INJECT_IRQ)
         | Some(IPI_EVENT_UPDATE_HART_LINE)
         | Some(IPI_EVENT_SEND_IPI) => {
             arch_check_events(event);
+            true
+        }
+        Some(IPI_EVENT_VCPU_SUSPEND) => {
+            vcpu_suspend();
             true
         }
         // #[cfg(target_arch = "loongarch64")]
@@ -150,4 +183,19 @@ pub fn send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
     arch_prepare_send_event(cpu_id, ipi_int_id, event_id);
     add_event(cpu_id, event_id);
     arch_send_event(cpu_id as _, ipi_int_id as _);
+}
+
+/// Send event to a cpu set (except self).
+pub fn send_event_to_all(cpu_set: CpuSet, ipi_int_id: usize, event_id: usize) {
+    let this_cpu_id = this_cpu_id();
+    for target_cpu_id in cpu_set.iter() {
+        if target_cpu_id == this_cpu_id {
+            continue;
+        }
+        info!(
+            "send_event_to_all: send event {} to cpu {}",
+            event_id, target_cpu_id
+        );
+        send_event(target_cpu_id, ipi_int_id, event_id);
+    }
 }

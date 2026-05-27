@@ -17,7 +17,7 @@
 use super::ipi::*;
 use super::zone::ZoneContext;
 use crate::arch::zone::disable_hwi_through;
-use crate::cpu_data::this_cpu_data;
+use crate::cpu_data::{this_cpu_data, VcpuState};
 use crate::device::common::MMIODerefWrapper;
 use crate::zone::find_zone;
 use core::arch::asm;
@@ -38,7 +38,6 @@ pub struct ArchCpu {
     pub ctx: ZoneContext,
     pub stack_top: usize,
     pub cpuid: usize,
-    pub power_on: bool,
     pub init: bool,
 }
 
@@ -48,7 +47,6 @@ impl ArchCpu {
             ctx: super::trap::dump_reset_gcsrs(),
             stack_top: 0,
             cpuid,
-            power_on: false,
             init: false,
         };
         return ret;
@@ -66,7 +64,7 @@ impl ArchCpu {
     pub fn run(&mut self) -> ! {
         assert!(this_cpu_id() == self.get_cpuid());
         this_cpu_data().activate_gpm();
-        self.power_on = true;
+        this_cpu_data().vcpu_state.store(VcpuState::Running);
         if !self.init {
             self.init(this_cpu_data().cpu_on_entry, this_cpu_data().id, 0);
             self.init = true;
@@ -134,6 +132,7 @@ impl ArchCpu {
             );
         }
         info!("loongarch64: ArchCpu::idle: cpuid={}", self.get_cpuid());
+        this_cpu_data().vcpu_state.store(VcpuState::Stopped);
         // enable ipi on ecfg
         ecfg_ipi_enable();
         loop {}

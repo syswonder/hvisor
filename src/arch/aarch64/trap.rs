@@ -24,7 +24,7 @@ use crate::{
         cpu::mpidr_to_cpuid,
         sysreg::{read_sysreg, write_sysreg},
     },
-    cpu_data::{get_cpu_data, this_cpu_data, this_zone},
+    cpu_data::{get_cpu_data, this_cpu_data, this_zone, VcpuState},
     device::irqchip::gic_handle_irq,
     event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_WAKEUP},
     hypercall::{HyperCall, SGI_IPI_ID},
@@ -212,6 +212,42 @@ fn handle_iabt(_regs: &mut GeneralRegisters) {
     // arch_skip_instruction(frame);
 }
 
+/// Returns the start and end of hvisor's physical memory range [hv_start, hv_end).
+fn hvisor_mem_range() -> (usize, usize) {
+    extern "C" {
+        fn skernel();
+        fn __hv_end();
+    }
+    (skernel as usize, __hv_end as usize)
+}
+
+/// Check if `addr` falls within hvisor's own physical memory range.
+/// If true, print diagnostic suggesting the guest DTB/config is wrong.
+fn check_fault_in_hvisor_mem(fault_addr: usize) -> bool {
+    let (hv_start, hv_end) = hvisor_mem_range();
+    if (hv_start..hv_end).contains(&fault_addr) {
+        error!(
+            "FAULT ADDRESS {:#x} is within hvisor's physical memory range [{:#x}, {:#x})",
+            fault_addr, hv_start, hv_end,
+        );
+        error!(
+            "LIKELY CAUSE: the guest device tree (DTB) or memory config \
+             includes hvisor's physical address range."
+        );
+        error!(
+            "FIX: ensure the guest's DTB and zone memory_regions exclude \
+             the hvisor range [{:#x}, {:#x}).",
+            hv_start, hv_end,
+        );
+        if is_this_root_zone() {
+            error!("     For root zone: also check ROOT_ZONE_MEMORY_REGIONS in board.rs.");
+        }
+        true
+    } else {
+        false
+    }
+}
+
 fn handle_dabt(regs: &mut GeneralRegisters) {
     let iss = ESR_EL2.read(ESR_EL2::ISS);
     let is_write = (iss >> 6 & 0x1) != 0;
@@ -248,6 +284,7 @@ fn handle_dabt(regs: &mut GeneralRegisters) {
             }
         }
         Err(e) => {
+            check_fault_in_hvisor_mem(address as usize);
             error!("mmio_handle_access: {:#x?}", e);
             zone_error();
         }
@@ -264,7 +301,7 @@ fn handle_sysreg(regs: &mut GeneralRegisters) {
     let val = regs.usr[rt as usize];
     trace!("esr_el2 rt{}: {:#x?}", rt, val);
     let sgi_id: u64 = (val & (0xf << 24)) >> 24;
-    if !this_cpu_data().arch_cpu.power_on {
+    if !this_cpu_data().vcpu_state.is_running() {
         warn!("skip send sgi {:#x?}", sgi_id);
     } else {
         trace!("send sgi {:#x?}", sgi_id);
@@ -352,9 +389,9 @@ fn psci_emulate_cpu_on(regs: &mut GeneralRegisters) -> u64 {
     let target_data = get_cpu_data(cpu as _);
     let _lock = target_data.ctrl_lock.lock();
 
-    if !target_data.arch_cpu.power_on {
+    if target_data.vcpu_state.is_stopped() {
         target_data.cpu_on_entry = regs.usr[2] as _;
-        target_data.arch_cpu.power_on = true;
+        target_data.vcpu_state.store(VcpuState::Ready);
         send_event(cpu as _, SGI_IPI_ID as _, IPI_EVENT_WAKEUP);
     } else {
         error!("psci: cpu {} already on", cpu);
@@ -383,7 +420,7 @@ fn handle_psci_smc(
             todo!();
         }
         PsciFnId::PSCI_AFFINITY_INFO_32 | PsciFnId::PSCI_AFFINITY_INFO_64 => {
-            !get_cpu_data(arg0 as _).arch_cpu.power_on as _
+            !get_cpu_data(arg0 as _).vcpu_state.is_online() as _
         }
         PsciFnId::PSCI_MIG_INFO_TYPE => PSCI_TOS_NOT_PRESENT_MP,
         PsciFnId::PSCI_FEATURES => psci_emulate_features_info(regs.usr[1]),

@@ -18,6 +18,7 @@
 pub mod gicd;
 pub mod gicr;
 pub mod gits;
+pub mod msix_backend;
 pub mod vgic;
 
 use core::arch::asm;

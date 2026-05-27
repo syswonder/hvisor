@@ -28,7 +28,7 @@ use super::{
     PciConfigAddress,
 };
 
-use crate::error::HvResult;
+use crate::{cpu_data::this_zone, error::HvResult, memory::MMIOAccess};
 
 pub type VendorId = u16;
 pub type DeviceId = u16;
@@ -111,6 +111,8 @@ impl Debug for PciMemType {
     }
 }
 
+pub type PciBARMMIOHanlder = fn(mmio: &mut MMIOAccess, base: usize) -> HvResult;
+
 /* PciMem
  * virtaul_value: the vaddr guset zone can rw, same with as the corresponding value in virtualconfigspace.space
  * value: the paddr which hvisor and hw can rw, init when hvisor init the pci bus
@@ -119,7 +121,7 @@ impl Debug for PciMemType {
  * size_read: if software write 0xffff_ffff to bar, size_read will set so next time hvisor can rerturn !(size - 1) indicating size to the software
  * acutally size_read is not used now, we keep it just in case of possible special register handling in the future
  */
-#[derive(Default, Clone, Copy)]
+#[derive(Default, Clone)]
 pub struct PciMem {
     bar_type: PciMemType,
     virtual_value: u64,
@@ -127,9 +129,47 @@ pub struct PciMem {
     size: u64,
     prefetchable: bool,
     size_read: bool,
+    handler: Option<PciBARMMIOHanlder>, // cap_handler:Option<BTreeMap<usize,usize>>
 }
 
 impl PciMem {
+    pub fn write(&mut self, value: u32) {
+        if value == 0xffff_ffff {
+            self.set_size_read();
+        } else if value == 0x0 {
+            // do nothing
+        } else {
+            match self.handler {
+                Some(handler) => {
+                    let zone = this_zone();
+                    let mut guard = zone.write();
+                    guard.mmio_region_register(
+                        value as usize,
+                        self.size as usize,
+                        handler,
+                        value as usize,
+                    );
+                    drop(guard);
+                    self.clear_size_read();
+                    self.set_virtual_value(value as u64);
+                }
+                None => {
+                    warn!("This bar has not register handler!");
+                }
+            }
+        }
+    }
+
+    // I don't know if it's correct to make the return value be u64
+    pub fn read(&self) -> u64 {
+        // let bar = &space.get_bararr()[n];
+        if self.get_size_read() {
+            return self.get_size();
+        } else {
+            return self.get_virtual_value() as u64;
+        }
+    }
+
     pub fn new_bar(bar_type: PciMemType, value: u64, size: u64, prefetchable: bool) -> Self {
         Self {
             bar_type,
@@ -138,6 +178,7 @@ impl PciMem {
             size,
             prefetchable,
             size_read: false,
+            handler: None,
         }
     }
 
@@ -149,6 +190,7 @@ impl PciMem {
             size,
             prefetchable: false,
             size_read: false,
+            handler: None,
         }
     }
 
@@ -160,6 +202,7 @@ impl PciMem {
             size,
             prefetchable: false,
             size_read: false,
+            handler: None,
         }
     }
 
@@ -171,6 +214,7 @@ impl PciMem {
             size,
             prefetchable: false,
             size_read: false,
+            handler: None,
         }
     }
 
@@ -212,11 +256,19 @@ impl PciMem {
         self.prefetchable = prefetchable;
     }
 
-    pub fn config_init(&mut self, bar_type: PciMemType, prefetchable: bool, size: u64, value: u64) {
+    pub fn config_init(
+        &mut self,
+        bar_type: PciMemType,
+        prefetchable: bool,
+        size: u64,
+        value: u64,
+        handler: Option<PciBARMMIOHanlder>,
+    ) {
         self.set_bar_type(bar_type);
         self.set_prefetchable(prefetchable);
         self.set_size(size);
         self.set_value(value);
+        self.set_handler(handler);
     }
 
     pub fn is_enabled(&self) -> bool {
@@ -241,6 +293,10 @@ impl PciMem {
      */
     pub fn get_value64(&self) -> u64 {
         self.value as u64
+    }
+
+    pub fn set_handler(&mut self, handler: Option<PciBARMMIOHanlder>) {
+        self.handler = handler
     }
 
     /* Automatically add flags */
@@ -297,6 +353,7 @@ impl PciMem {
     }
 
     pub fn get_virtual_value(&self) -> u32 {
+        // info!("get_virtual_value:{:?}", self.bar_type);
         match self.bar_type {
             PciMemType::Mem64High => (self.virtual_value >> 32) as u32,
             _ => self.virtual_value as u32,
@@ -335,8 +392,19 @@ impl PciMem {
                 warn!("unkown bar type: {:#?}", self.bar_type);
             }
         }
-
+        info!("self.virtual_value = {}", val);
         self.virtual_value = val;
+    }
+
+    pub fn get_virtual_addr(&self) -> Option<u32> {
+        match self.bar_type {
+            PciMemType::Io => Some(((self.virtual_value >> 2) << 2) as u32),
+            PciMemType::Unused => {
+                // warn!("get addr from unused bar!");
+                None
+            }
+            _ => Some(((self.virtual_value >> 4) << 4) as u32),
+        }
     }
 }
 
@@ -396,9 +464,19 @@ impl Debug for PciMem {
     }
 }
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Default)]
 pub struct Bar {
     bararr: [PciMem; 6],
+}
+
+impl Bar {
+    pub fn write_bar(&mut self, index: usize, value: u32) {
+        self.bararr[index].write(value);
+    }
+
+    pub fn read_bar(&self, index: usize) -> u32 {
+        self.bararr[index].read() as u32
+    }
 }
 
 impl Index<usize> for Bar {
@@ -878,6 +956,7 @@ impl EndpointField {
         match (offset, size) {
             (0x00, 4) => EndpointField::ID,
             (0x04, 2) => EndpointField::Command,
+            (0x04, 4) => EndpointField::Command,
             (0x06, 2) => EndpointField::Status,
             (0x08, 4) => EndpointField::RevisionIDAndClassCode,
             (0x0c, 1) => EndpointField::CacheLineSize,
@@ -898,6 +977,7 @@ impl EndpointField {
             (0x2e, 2) => EndpointField::SubsystemId,
             (0x30, 4) => EndpointField::ExpansionRomBar,
             (0x34, 4) => EndpointField::CapabilityPointer,
+            (0x34, 1) => EndpointField::CapabilityPointer,
             (0x3c, 1) => EndpointField::InterruptLine,
             (0x3d, 1) => EndpointField::InterruptPin,
             (0x3e, 1) => EndpointField::MinGnt,
