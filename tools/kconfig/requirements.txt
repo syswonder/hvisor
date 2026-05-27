@@ -1,3 +1,2 @@
-# Lets pip/urllib3 use socks5:// proxies (needed before first online pip install in some CI agents).
 PySocks>=1.7.1
 kconfiglib>=14.1.0

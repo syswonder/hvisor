@@ -65,7 +65,7 @@ impl PciRegionMmio {
     }
 }
 
-#[cfg(all(not(ecam_pcie), not(dwc_pcie), not(loongarch64_pcie)))]
+#[cfg(not(pci))]
 impl PciConfigMmio {
     pub fn access<T>(&self, offset: PciConfigAddress) -> *mut T {
         (self.base + offset) as *mut T

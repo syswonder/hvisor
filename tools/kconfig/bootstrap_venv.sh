@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 # Create tools/kconfig/.venv and install kconfiglib (+ PySocks) from vendored wheels
-# so pip never needs SOCKS support during the first install (fixes Jenkins when
-# ALL_PROXY/HTTPS_PROXY is socks5:// — urllib3 errors with "Missing dependencies for SOCKS support").
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")" && pwd)"
 VENV="${ROOT}/.venv"

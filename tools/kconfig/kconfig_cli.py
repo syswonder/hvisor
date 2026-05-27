@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Kconfig entrypoints: defconfig, menuconfig, vscode-cfgs (one module to avoid scattered scripts)."""
+"""Kconfig entrypoints: defconfig, menuconfig, vscode-cfgs."""
 from __future__ import annotations
 
 import argparse

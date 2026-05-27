@@ -39,7 +39,7 @@ use crate::pci::{
     vpci_dev::{get_handler, VpciDevType},
 };
 
-#[cfg(any(ecam_pcie, dwc_pcie, loongarch64_pcie))]
+#[cfg(pci)]
 use crate::pci::{mem_alloc::BaseAllocator, pci_struct::RootComplex};
 
 #[cfg(ecam_pcie)]
@@ -72,7 +72,7 @@ pub static GLOBAL_PCIE_LIST: Lazy<Mutex<BTreeMap<Bdf, ArcRwLockVirtualPciConfigS
 /* add all dev to GLOBAL_PCIE_LIST */
 pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
     warn!("begin {:#x?}", pci_config);
-    #[cfg(any(ecam_pcie, dwc_pcie, loongarch64_pcie))]
+    #[cfg(pci)]
     for (_index, rootcomplex_config) in pci_config.iter().enumerate() {
         /* empty config */
         if rootcomplex_config.ecam_base == 0 {
@@ -511,7 +511,7 @@ impl Zone {
                     rootcomplex_config.ecam_size as usize,
                 ));
             }
-            #[cfg(not(any(ecam_pcie, dwc_pcie, loongarch64_pcie)))]
+            #[cfg(not(pci))]
             {
                 warn!(
                     "No extend config found for base 0x{:x}",

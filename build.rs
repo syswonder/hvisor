@@ -36,8 +36,7 @@ struct BuildEnv {
     bid: String,
 }
 
-// parse ARCH, BOARD and BID from .config (comment-prefixed metadata from kconfig_cli.py,
-// or legacy unprefixed lines).
+// parse ARCH, BOARD and BID from .config
 fn parse_build_env(file_path: &str) -> BuildEnv {
     let file = fs::read_to_string(file_path).expect("Failed to read .config file");
     let mut arch = String::new();
