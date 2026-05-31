@@ -87,8 +87,8 @@ COLOR_BOLD := $(shell tput bold)
 COLOR_RESET := $(shell tput sgr0)
 
 # Targets
-.PHONY: all elf disa run gdb monitor clean tools rootfs vscode ci-run
-all: clean_check gen_cargo_config vscode $(hvisor_bin)
+.PHONY: all elf disa run gdb monitor clean tools rootfs vscode ci-run check-hv-mem-overlap
+all: clean_check gen_cargo_config vscode $(hvisor_bin) check-hv-mem-overlap
 	@printf "\n"
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)hvisor build summary:$(COLOR_RESET)\n"
 	@printf "%-10s %s\n" "ARCH            =" "$(COLOR_BOLD)$(ARCH)$(COLOR_RESET)"
@@ -125,6 +125,13 @@ gen_cargo_config:
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)generating .cargo/config.toml...$(COLOR_RESET)\n"
 	./tools/gen_cargo_config.sh
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)generating .cargo/config.toml success!$(COLOR_RESET)\n"
+
+check-hv-mem-overlap: $(hvisor_bin) platform/$(ARCH)/$(BOARD)/board.rs
+	@printf "$(COLOR_GREEN)$(COLOR_BOLD)checking hvisor memory vs root zone regions...$(COLOR_RESET)\n"
+	@python3 tools/check_hv_mem_overlap.py $(hvisor_elf) platform/$(ARCH)/$(BOARD)/board.rs && \
+		printf "$(COLOR_GREEN)$(COLOR_BOLD)check passed!$(COLOR_RESET)\n" || \
+		(printf "$(COLOR_RED)$(COLOR_BOLD)OVERLAP DETECTED! See details above.$(COLOR_RESET)\n" && \
+		 false)
 
 vscode:
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)generating .vscode/settings.json...$(COLOR_RESET)\n"

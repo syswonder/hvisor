@@ -212,6 +212,42 @@ fn handle_iabt(_regs: &mut GeneralRegisters) {
     // arch_skip_instruction(frame);
 }
 
+/// Returns the start and end of hvisor's physical memory range [hv_start, hv_end).
+fn hvisor_mem_range() -> (usize, usize) {
+    extern "C" {
+        fn skernel();
+        fn __hv_end();
+    }
+    (skernel as usize, __hv_end as usize)
+}
+
+/// Check if `addr` falls within hvisor's own physical memory range.
+/// If true, print diagnostic suggesting the guest DTB/config is wrong.
+fn check_fault_in_hvisor_mem(fault_addr: usize) -> bool {
+    let (hv_start, hv_end) = hvisor_mem_range();
+    if (hv_start..hv_end).contains(&fault_addr) {
+        error!(
+            "FAULT ADDRESS {:#x} is within hvisor's physical memory range [{:#x}, {:#x})",
+            fault_addr, hv_start, hv_end,
+        );
+        error!(
+            "LIKELY CAUSE: the guest device tree (DTB) or memory config \
+             includes hvisor's physical address range."
+        );
+        error!(
+            "FIX: ensure the guest's DTB and zone memory_regions exclude \
+             the hvisor range [{:#x}, {:#x}).",
+            hv_start, hv_end,
+        );
+        if is_this_root_zone() {
+            error!("     For root zone: also check ROOT_ZONE_MEMORY_REGIONS in board.rs.");
+        }
+        true
+    } else {
+        false
+    }
+}
+
 fn handle_dabt(regs: &mut GeneralRegisters) {
     let iss = ESR_EL2.read(ESR_EL2::ISS);
     let is_write = (iss >> 6 & 0x1) != 0;
@@ -248,6 +284,7 @@ fn handle_dabt(regs: &mut GeneralRegisters) {
             }
         }
         Err(e) => {
+            check_fault_in_hvisor_mem(address as usize);
             error!("mmio_handle_access: {:#x?}", e);
             zone_error();
         }

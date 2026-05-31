@@ -17,6 +17,7 @@
 #![allow(dead_code)]
 pub mod config_accessors;
 pub mod mem_alloc;
+pub mod msix;
 pub mod pci_access;
 pub mod pci_config;
 pub mod pci_handler;

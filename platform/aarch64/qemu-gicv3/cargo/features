@@ -3,3 +3,4 @@ pl011
 arm_smmu
 pci
 ecam_pcie
+virtio_pci

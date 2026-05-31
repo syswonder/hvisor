@@ -20,7 +20,10 @@ use spin::{Lazy, Mutex};
 use crate::{
     config::{HvPciConfig, HvPciDevConfig, CONFIG_MAX_PCI_DEV, CONFIG_PCI_BUS_MAXNUM},
     error::HvResult,
-    pci::pci_struct::{ArcRwLockVirtualPciConfigSpace, Bdf},
+    pci::{
+        msix::get_arch_msix_backend,
+        pci_struct::{ArcRwLockVirtualPciConfigSpace, Bdf},
+    },
     zone::Zone,
 };
 
@@ -35,10 +38,7 @@ use alloc::vec::Vec;
 use crate::device::iommu::iommu_add_device_with_root_pt_addr;
 
 #[cfg(feature = "ecam_pcie")]
-use crate::pci::{
-    pci_struct::VirtualPciConfigSpace,
-    vpci_dev::{get_handler, VpciDevType},
-};
+use crate::pci::vpci_dev::{get_handler, VpciDevType};
 
 #[cfg(any(
     feature = "ecam_pcie",
@@ -258,6 +258,11 @@ impl Zone {
             let mut bus_pre = bus_range_begin;
             let mut device_pre = 0u8;
             let mut vdevice_pre = 0u8;
+            let msix_backend = get_arch_msix_backend();
+            if let Some(x) = msix_backend.clone() {
+                x.write().enable();
+            }
+            inner.vpci_bus_mut().set_msix_backend(msix_backend.clone());
 
             /*
              * To allow Linux to successfully recognize the devices we add, hvisor needs
@@ -375,18 +380,22 @@ impl Zone {
                     #[cfg(feature = "ecam_pcie")]
                     {
                         let dev_type = dev_config.dev_type;
+                        warn!("dev_type:{:?}", dev_config);
                         match dev_type {
                             VpciDevType::Physical => {
                                 warn!("can not find dev {:#?}", bdf);
                             }
                             _ => {
                                 if let Some(_handler) = get_handler(dev_type) {
+                                    use crate::pci::vpci_dev::virt_dev_init;
                                     let base = ecam_base
                                         + ((bdf.bus() as u64) << 20)
                                         + ((bdf.device() as u64) << 15)
                                         + ((bdf.function() as u64) << 12);
-                                    let dev = VirtualPciConfigSpace::virt_dev(bdf, base, dev_type);
-                                    inner.vpci_bus_mut().insert(vbdf, dev);
+                                    let dev = virt_dev_init(bdf, base, dev_type);
+                                    if let Some(x) = dev {
+                                        inner.vpci_bus_mut().insert(vbdf, x);
+                                    }
                                 } else {
                                     warn!("can not find dev {:#?}, unknown device type", bdf);
                                 }
@@ -411,6 +420,7 @@ impl Zone {
         let mut inner = self.write();
         for rootcomplex_config in pci_rootcomplex_config {
             /* empty config */
+
             if rootcomplex_config.ecam_base == 0 {
                 continue;
             }

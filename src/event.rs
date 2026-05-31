@@ -25,6 +25,11 @@ use crate::{
     device::{irqchip::inject_irq, virtio_trampoline::handle_virtio_irq},
     platform::IRQ_WAKEUP_VIRTIO_DEVICE,
 };
+#[cfg(feature = "virtio_pci")]
+use crate::{
+    pci::msix::activate_msix,
+    platform::{IRQ_WAKEUP_VIRTIO_PCI_CONFIG, IRQ_WAKEUP_VIRTIO_PCI_DATA},
+};
 use alloc::{collections::VecDeque, vec::Vec};
 use spin::Mutex;
 
@@ -32,6 +37,9 @@ pub const IPI_EVENT_WAKEUP: usize = 0;
 pub const IPI_EVENT_SHUTDOWN: usize = 1;
 pub const IPI_EVENT_VIRTIO_INJECT_IRQ: usize = 2;
 pub const IPI_EVENT_WAKEUP_VIRTIO_DEVICE: usize = 3;
+pub const IPI_EVENT_VIRTIO_PCI_CONFIG: usize = 7;
+pub const IPI_EVENT_VIRTIO_PCI_DATA: usize = 8;
+pub const IPI_EVENT_VIRTIO_PCI_DONE: usize = 9;
 
 #[percpu::def_percpu]
 static PERCPU_EVENTS: Mutex<VecDeque<usize>> = Mutex::new(VecDeque::new());
@@ -103,6 +111,25 @@ pub fn check_events() -> bool {
         }
         Some(IPI_EVENT_WAKEUP_VIRTIO_DEVICE) => {
             inject_irq(IRQ_WAKEUP_VIRTIO_DEVICE, false);
+            true
+        }
+        #[cfg(feature = "virtio_pci")]
+        Some(IPI_EVENT_VIRTIO_PCI_CONFIG) => {
+            inject_irq(IRQ_WAKEUP_VIRTIO_PCI_CONFIG, false);
+            true
+        }
+        #[cfg(feature = "virtio_pci")]
+        Some(IPI_EVENT_VIRTIO_PCI_DATA) => {
+            inject_irq(IRQ_WAKEUP_VIRTIO_PCI_DATA, false);
+            true
+        }
+        #[cfg(feature = "virtio_pci")]
+        Some(IPI_EVENT_VIRTIO_PCI_DONE) => {
+            // Virtio PCI notice
+            // unsafe {
+            //     VIRTIO_MSIX_MANAGER.write().activate_all_pending_irq();
+            // }
+            activate_msix();
             true
         }
         Some(IPI_EVENT_CLEAR_INJECT_IRQ)
