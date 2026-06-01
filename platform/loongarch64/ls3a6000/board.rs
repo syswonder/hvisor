@@ -17,6 +17,85 @@
 use crate::pci_dev;
 use crate::{arch::zone::HvArchZoneConfig, config::*, pci::vpci_dev::VpciDevType};
 
+// ------------------------------------------------------------------------
+// Memory layout assumptions for LoongArch 3A6000 + LS7A2000 evaluation board
+// ------------------------------------------------------------------------
+//
+// The 3A6000 / LS7A2000 board exposes physical RAM through a non-contiguous
+// PA layout — RAM size != PA span. Always cross-reference `/proc/iomem` on
+// the running Linux to confirm before touching this file.
+//
+// ## Verified layout on 16 GiB dev board (this code's default target)
+//
+// ```
+// 0x00200000..0x0edfffff   ~236 MB    low RAM         (kernel image, early init)
+// 0x90400000..0xf8faffff   ~1.65 GB   mid RAM lo      (ACPI, EFI runtime, SMBIOS)
+// 0xf8fc0000..0xfdbaffff   ~78 MB     mid RAM hi      (EFI runtime continuation)
+// 0xfe190000..0x47fffffff  ~14.5 GB   hi RAM          (bulk RAM, PA top = 18 GiB)
+// ```
+//
+// Total RAM = ~16.46 GiB nominal. PA TOP = `0x480000000` (nominal 18 GiB) on
+// 16 GiB board because low/mid eat ~2 GiB of PA space.
+//
+// ## Adapting to other RAM sizes
+//
+// Only `BOARD_TOTAL_RAM_GIB` should need editing for a different memory size
+// on the SAME 3A6000+LS7A2000 board family. Numbers below are based on the
+// "low+mid PA ≈ 2 GiB constant" empirical assumption — verify with
+// /proc/iomem before trusting.
+//
+// | RAM   | PA top (hi RAM end)   | hi RAM span (above 4 GiB) |
+// |-------|------------------------|----------------------------|
+// |  8 GiB | `0x280000000` ≈ 10 GiB |  ~6.0 GiB (TENTATIVE)     |
+// | 16 GiB | `0x480000000` ≈ 18 GiB | ~14.0 GiB (verified)       |
+// | 32 GiB | `0x880000000` ≈ 34 GiB | ~30.0 GiB (TENTATIVE)      |
+//
+// Different motherboards (e.g. desktop vs server, different SPD timings, BIOS
+// version) may shift PA top — re-measure if /proc/iomem disagrees.
+//
+// ## hvisor footprint coordination
+//
+// Three files must agree on where hvisor lives + how big it is:
+//   1. `platform/loongarch64/ls3a6000/linker.ld`  → BASE_ADDRESS
+//   2. this file `HVISOR_LOAD_PA` + `HVISOR_FOOTPRINT_SIZE`
+//   3. `/etc/grub.d/09_loongvisor` template's argv[2] passed to loongstub
+//   4. `grub2-hvisor/grub-core/loader/loongarch64/loongstub.c` extra-reserve
+//
+// Keep all four in sync. The hi RAM region below is auto-split around
+// `HVISOR_LOAD_PA..HVISOR_FOOTPRINT_END` so guest Linux's stage-2 can never
+// see hvisor's own memory as RAM.
+
+/// Total system RAM in GiB. Change ONLY this and rebuild — the rest of the
+/// hi-RAM layout in this file derives from it (best-effort heuristic; verify
+/// `/proc/iomem` if you change to non-16).
+pub const BOARD_TOTAL_RAM_GIB: u64 = 32;
+
+/// Top of high RAM physical address (one byte past the last). Derived from
+/// `BOARD_TOTAL_RAM_GIB` via the empirical mapping in the table above. If a
+/// future 3A6000 board has a different PA top, override here directly.
+pub const BOARD_HI_RAM_TOP: u64 = match BOARD_TOTAL_RAM_GIB {
+    8  => 0x280000000,  // tentative — verify on 8 GiB board
+    16 => 0x480000000,  // verified on dev board (16 GiB)
+    32 => 0x880000000,  // tentative — verify on 32 GiB board
+    _  => panic!("unsupported BOARD_TOTAL_RAM_GIB; add an entry to the match"),
+};
+
+/// PA where hvisor itself is loaded. MUST match linker.ld `BASE_ADDRESS`
+/// (low 48 bits) and grub.cfg `hvisor_loongarch ... argv[1]`.
+pub const HVISOR_LOAD_PA: u64 = 0x380000000;  // 14 GiB
+
+/// Reserved PA span owned by hvisor (text + bss + percpu + heap + frame pool).
+/// MUST be ≥ actual hvisor build's MEM_SIZE (printed at end of hvisor `make`).
+/// MUST match the value loongstub uses for EFI memory reservation, otherwise
+/// EFI may place Boot Services Data into this range and hvisor's runtime
+/// allocator will then trample EFI structures → DxeCore asserts in
+/// `Locate.c`. 768 MB covers our current ~705 MB MEM_SIZE with headroom.
+pub const HVISOR_FOOTPRINT_SIZE: u64 = 0x30000000;  // 768 MB
+
+/// One-past-end of the reserved hvisor PA region.
+pub const HVISOR_FOOTPRINT_END: u64 = HVISOR_LOAD_PA + HVISOR_FOOTPRINT_SIZE;
+
+
 pub const BOARD_NAME: &str = "ls3a6000";
 
 pub const BOARD_NCPUS: usize = 8;
@@ -141,13 +220,37 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
         size: 0x1000,
     }, // IO
 
-    // 0x100000000 ~ 0x87fffffff （30GB)
+    // // 0x100000000 ~ 0x87fffffff （30GB)
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_RAM,
+    //     physical_start: 0x100000000,
+    //     virtual_start:  0x100000000,
+    //     size: 0x780000000,
+    // }, // RAM
+
+    // === hi RAM (PA 0x100000000 .. BOARD_HI_RAM_TOP) ===
+    //
+    // Split into two segments around hvisor's own footprint so guest Linux's
+    // stage-2 never sees hvisor's runtime pages as plain RAM. The hvisor PA
+    // window [HVISOR_LOAD_PA, HVISOR_FOOTPRINT_END) is OMITTED here on
+    // purpose; loongstub also marks the same window as EfiReservedMemoryType
+    // so EFI Boot Services Data won't land in it either.
+    //
+    // Sizes are computed from constants — if BOARD_TOTAL_RAM_GIB or the
+    // hvisor location changes, both regions adjust automatically.
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
-        physical_start: 0x100000000,
+        physical_start: 0x100000000,                                  // 4 GiB
         virtual_start:  0x100000000,
-        size: 0x780000000,
-    }, // RAM
+        size: HVISOR_LOAD_PA - 0x100000000,                           // hi RAM below hvisor
+    }, // RAM (below hvisor footprint)
+
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_RAM,
+        physical_start: HVISOR_FOOTPRINT_END,                         // hvisor top
+        virtual_start:  HVISOR_FOOTPRINT_END,
+        size: BOARD_HI_RAM_TOP - HVISOR_FOOTPRINT_END,                // hi RAM above hvisor
+    }, // RAM (above hvisor footprint, up to BOARD_HI_RAM_TOP)
 
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
