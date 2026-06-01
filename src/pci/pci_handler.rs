@@ -17,6 +17,7 @@
 #[cfg(all(feature = "dwc_pcie", feature = "pci_init_delay"))]
 use alloc::collections::btree_map::BTreeMap;
 use alloc::string::String;
+use alloc::vec::Vec;
 #[cfg(all(feature = "dwc_pcie", feature = "pci_init_delay"))]
 use spin::Lazy;
 #[cfg(all(feature = "dwc_pcie", feature = "pci_init_delay"))]
@@ -26,7 +27,9 @@ use crate::cpu_data::this_zone;
 use crate::error::HvResult;
 use crate::memory::{mmio_perform_access, MMIOAccess};
 use crate::memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion};
-use crate::pci::pci_struct::CapabilityType;
+use crate::pci::pci_struct::{
+    CapabilityType, SRIOV_CAP_SIZE, SRIOV_VF_BAR_END, SRIOV_VF_BAR_OFFSET,
+};
 use crate::zone::is_this_root_zone;
 
 use super::pci_access::{BridgeField, EndpointField, HeaderType, PciField, PciMemType};
@@ -60,6 +63,10 @@ use super::dwc_msi::{
 const PCIE_MSI_ADDR_LO: usize = 0x820;
 #[cfg(not(feature = "dwc_msi"))]
 const PCIE_MSI_INTR0_STATUS: usize = 0x830;
+
+const SRIOV_CTRL_OFFSET: PciConfigAddress = 0x08;
+const SRIOV_NUM_VFS_OFFSET: PciConfigAddress = 0x10;
+const SRIOV_CTRL_VF_ENABLE: u16 = 1 << 0;
 
 macro_rules! pci_log {
     ($($arg:tt)*) => {
@@ -230,6 +237,127 @@ fn handle_virtio_pci_write(
 //     }
 // }
 
+fn collect_vf_device_copies(
+    vf_host_bdf: super::pci_struct::Bdf,
+) -> Vec<ArcRwLockVirtualPciConfigSpace> {
+    let mut devices = Vec::new();
+
+    {
+        let zone = this_zone();
+        let guard = zone.read();
+        let vbus = guard.vpci_bus();
+        for dev in vbus.devs_ref().values() {
+            if dev.get_bdf() == vf_host_bdf {
+                devices.push(dev.clone());
+            }
+        }
+    }
+
+    if let Some(dev) = GLOBAL_PCIE_LIST.lock().get(&vf_host_bdf).cloned() {
+        devices.push(dev);
+    }
+
+    devices
+}
+
+fn sync_sriov_vf_bar_state(
+    pf_dev: ArcRwLockVirtualPciConfigSpace,
+    offset: PciConfigAddress,
+    size: usize,
+    value: usize,
+) -> HvResult<bool> {
+    if size != 4 {
+        return Ok(false);
+    }
+
+    let Some((cap_offset, vf_bdfs)) =
+        pf_dev.with_sriov_info(|sriov_info| (sriov_info.cap_offset, sriov_info.vf_bdfs.clone()))
+    else {
+        return Ok(false);
+    };
+
+    let vf_bar_start = cap_offset + SRIOV_VF_BAR_OFFSET;
+    if offset < vf_bar_start || offset >= cap_offset + SRIOV_VF_BAR_END {
+        return Ok(false);
+    }
+
+    let relative = offset - vf_bar_start;
+    if (relative & 0x3) != 0 {
+        return Ok(false);
+    }
+    let slot = (relative / 4) as usize;
+
+    let Some((bar_type, bar_size)) = pf_dev.with_sriov_info(|sriov_info| {
+        (
+            sriov_info.vf_bars[slot].get_type(),
+            sriov_info.vf_bars[slot].get_size(),
+        )
+    }) else {
+        return Ok(false);
+    };
+
+    if (value & 0xfffffff0) == 0xfffffff0 {
+        // PF-side SR-IOV BAR probing only queries the template in the ext cap.
+        // VF BAR state is meaningful only after PF programs a valid BAR value.
+        return Ok(true);
+    }
+
+    let pf_value = match bar_type {
+        PciMemType::Mem64Low => {
+            let low = pf_dev.read_hw(offset, size)? as u64;
+            let high = pf_dev.read_hw(offset + 4, size)? as u64;
+            (low | (high << 32)) & !0xf
+        }
+        PciMemType::Mem64High => {
+            let low = pf_dev.read_hw(offset - 4, size)? as u64;
+            let high = pf_dev.read_hw(offset, size)? as u64;
+            (low | (high << 32)) & !0xf
+        }
+        PciMemType::Io => (pf_dev.read_hw(offset, size)? as u64) & !0x3,
+        PciMemType::Mem32 => (pf_dev.read_hw(offset, size)? as u64) & !0xf,
+        _ => return Ok(false),
+    };
+
+    for (vf_index, vf_bdf) in vf_bdfs.into_iter().enumerate() {
+        let vf_value = pf_value.saturating_add((vf_index as u64).saturating_mul(bar_size));
+        let propagated_value = match bar_type {
+            PciMemType::Mem64Low => vf_value as u32 as usize,
+            PciMemType::Mem64High => (vf_value >> 32) as u32 as usize,
+            PciMemType::Io | PciMemType::Mem32 => vf_value as u32 as usize,
+            _ => continue,
+        };
+
+        for vf_dev in collect_vf_device_copies(vf_bdf) {
+            let is_root = is_this_root_zone();
+            let is_dev_belong_to_zone = {
+                let base = vf_dev.read().get_base();
+                let zone = this_zone();
+                let mut guard = zone.write();
+                let vbus = guard.vpci_bus_mut();
+                vbus.get_device_by_base(base).is_some()
+            };
+
+            // let vf_id = vf_dev
+            //     .read()
+            //     .get_sriov_vf_info()
+            //     .map(|vf_info| vf_info.vf_index)
+            //     .unwrap_or(vf_index as u16);
+
+            let _ = handle_endpoint_access(
+                vf_dev,
+                EndpointField::Bar(slot),
+                propagated_value,
+                true,
+                true,
+                is_root,
+                is_dev_belong_to_zone,
+            )?;
+        }
+    }
+
+    Ok(true)
+}
+
 fn handle_cap_access(
     dev: ArcRwLockVirtualPciConfigSpace,
     offset: PciConfigAddress,
@@ -256,6 +384,70 @@ fn handle_cap_access(
             } else {
                 Ok(Some(0))
             }
+        }
+    } else if offset >= 0x100 {
+        #[cfg(feature = "sriov")]
+        if let Some(cap_offset) = dev.with_sriov_info(|sriov_info| sriov_info.cap_offset) {
+            if offset >= cap_offset && offset < cap_offset + SRIOV_CAP_SIZE {
+                if is_write {
+                    dev.write_hw(offset, size, value)?;
+
+                    let _ = sync_sriov_vf_bar_state(dev.clone(), offset, size, value)?;
+                    return Ok(None);
+                }
+                let read_value = dev.read_hw(offset, size)?;
+                return Ok(Some(read_value));
+            }
+        }
+
+        // When `sriov` feature is disabled, hide the SR-IOV extended capability
+        // from guest VMs by patching the ext-cap linked list on the fly.
+        #[cfg(not(feature = "sriov"))]
+        if let Some(hide) = dev.with_hide_sriov(|h| h.clone()) {
+            use bit_field::BitField;
+            // Accesses inside the SR-IOV cap range: return 0 / silently drop writes.
+            if offset >= hide.sriov_cap_offset && offset < hide.sriov_cap_offset + SRIOV_CAP_SIZE {
+                if is_write {
+                    return Ok(None);
+                } else {
+                    return Ok(Some(0));
+                }
+            }
+
+            // Access to the first DWORD of the preceding cap node: patch the
+            // `next` pointer so it skips over the SR-IOV cap.
+            if let Some(prev_offset) = hide.prev_cap_offset {
+                if offset >= prev_offset && offset < prev_offset + 4 {
+                    if is_write {
+                        // Pass writes through unchanged; the physical `next`
+                        // pointer still points to SR-IOV which is fine for host.
+                        dev.write_hw(offset, size, value)?;
+                        return Ok(None);
+                    } else {
+                        // Always read the full DWORD, patch bits[31:20], then
+                        // return the sub-slice the guest asked for.
+                        let mut dw = dev.read_hw(prev_offset, 4)? as u32;
+                        dw.set_bits(20..32, hide.sriov_cap_next as u32);
+                        let byte_offset = (offset - prev_offset) as usize;
+                        let result = match size {
+                            1 => ((dw >> (byte_offset * 8)) & 0xFF) as usize,
+                            2 => ((dw >> (byte_offset * 8)) & 0xFFFF) as usize,
+                            _ => dw as usize,
+                        };
+                        return Ok(Some(result));
+                    }
+                }
+            }
+            // If SR-IOV is the first ext cap (prev_cap_offset == None) and the
+            // guest reads offset 0x100, the cap header has already been zeroed
+            // above so the guest sees no extended capabilities at all.
+        }
+
+        if is_write {
+            dev.write_hw(offset, size, value)?;
+            Ok(None)
+        } else {
+            Ok(Some(dev.read_hw(offset, size)?))
         }
     } else {
         // Other capability region offsets
@@ -479,24 +671,34 @@ fn handle_endpoint_access(
                                 value,
                             )?;
                             if (bar_type == PciMemType::Mem32)
+                                | (bar_type == PciMemType::Mem64Low)
                                 | (bar_type == PciMemType::Mem64High)
                                 | (bar_type == PciMemType::Io)
                             {
                                 let old_vaddr =
                                     dev.with_bar_ref(slot, |bar| bar.get_virtual_value64()) & !0xf;
                                 let new_vaddr = {
-                                    if bar_type == PciMemType::Mem64High {
-                                        /* last 4bit is flag, not address and need ignore
-                                         * flag will auto add when set_value and set_virtual_value
-                                         * Read from config_value.bar_value cache instead of space
-                                         */
-                                        let low_value = dev
-                                            .with_config_value(|cv| cv.get_bar_value(slot - 1))
-                                            as u64;
-                                        let high_value = (value as u32 as u64) << 32;
-                                        (low_value | high_value) & !0xf
-                                    } else {
-                                        (value as u64) & !0xf
+                                    match bar_type {
+                                        PciMemType::Mem64Low => {
+                                            let low_value = value as u32 as u64;
+                                            let high_value = (dev
+                                                .with_config_value(|cv| cv.get_bar_value(slot + 1))
+                                                as u64)
+                                                << 32;
+                                            (low_value | high_value) & !0xf
+                                        }
+                                        PciMemType::Mem64High => {
+                                            /* last 4bit is flag, not address and need ignore
+                                             * flag will auto add when set_value and set_virtual_value
+                                             * Read from config_value.bar_value cache instead of space
+                                             */
+                                            let low_value = dev
+                                                .with_config_value(|cv| cv.get_bar_value(slot - 1))
+                                                as u64;
+                                            let high_value = (value as u32 as u64) << 32;
+                                            (low_value | high_value) & !0xf
+                                        }
+                                        _ => (value as u64) & !0xf,
                                     }
                                 };
 
@@ -506,12 +708,18 @@ fn handle_endpoint_access(
                                     dev.with_bar_ref_mut(slot - 1, |bar| {
                                         bar.set_virtual_value(new_vaddr)
                                     });
+                                } else if bar_type == PciMemType::Mem64Low {
+                                    dev.with_bar_ref_mut(slot + 1, |bar| {
+                                        bar.set_virtual_value(new_vaddr)
+                                    });
                                 }
 
                                 // set value
                                 dev.with_bar_ref_mut(slot, |bar| bar.set_value(new_vaddr));
                                 if bar_type == PciMemType::Mem64High {
                                     dev.with_bar_ref_mut(slot - 1, |bar| bar.set_value(new_vaddr));
+                                } else if bar_type == PciMemType::Mem64Low {
+                                    dev.with_bar_ref_mut(slot + 1, |bar| bar.set_value(new_vaddr));
                                 }
 
                                 let paddr = {
@@ -606,24 +814,34 @@ fn handle_endpoint_access(
                         });
                         if (value & 0xfffffff0) != 0xfffffff0 {
                             if (bar_type == PciMemType::Mem32)
+                                | (bar_type == PciMemType::Mem64Low)
                                 | (bar_type == PciMemType::Mem64High)
                                 | (bar_type == PciMemType::Io)
                             {
                                 let old_vaddr =
                                     dev.with_bar_ref(slot, |bar| bar.get_virtual_value64()) & !0xf;
                                 let new_vaddr = {
-                                    if bar_type == PciMemType::Mem64High {
-                                        /* last 4bit is flag, not address and need ignore
-                                         * flag will auto add when set_value and set_virtual_value
-                                         * Read from config_value.bar_value cache instead of space
-                                         */
-                                        let low_value = dev
-                                            .with_config_value(|cv| cv.get_bar_value(slot - 1))
-                                            as u64;
-                                        let high_value = (value as u32 as u64) << 32;
-                                        (low_value | high_value) & !0xf
-                                    } else {
-                                        (value as u64) & !0xf
+                                    match bar_type {
+                                        PciMemType::Mem64Low => {
+                                            let low_value = value as u32 as u64;
+                                            let high_value = (dev
+                                                .with_config_value(|cv| cv.get_bar_value(slot + 1))
+                                                as u64)
+                                                << 32;
+                                            (low_value | high_value) & !0xf
+                                        }
+                                        PciMemType::Mem64High => {
+                                            /* last 4bit is flag, not address and need ignore
+                                             * flag will auto add when set_value and set_virtual_value
+                                             * Read from config_value.bar_value cache instead of space
+                                             */
+                                            let low_value = dev
+                                                .with_config_value(|cv| cv.get_bar_value(slot - 1))
+                                                as u64;
+                                            let high_value = (value as u32 as u64) << 32;
+                                            (low_value | high_value) & !0xf
+                                        }
+                                        _ => (value as u64) & !0xf,
                                     }
                                 };
 
@@ -632,6 +850,10 @@ fn handle_endpoint_access(
                                 dev.with_bar_ref_mut(slot, |bar| bar.set_virtual_value(new_vaddr));
                                 if bar_type == PciMemType::Mem64High {
                                     dev.with_bar_ref_mut(slot - 1, |bar| {
+                                        bar.set_virtual_value(new_vaddr)
+                                    });
+                                } else if bar_type == PciMemType::Mem64Low {
+                                    dev.with_bar_ref_mut(slot + 1, |bar| {
                                         bar.set_virtual_value(new_vaddr)
                                     });
                                 }
@@ -1417,13 +1639,12 @@ fn handle_config_space_access(
     let vbdf = dev.get_bdf();
     let dev_type = dev.get_dev_type();
 
-    // if !is_write && dev.get_config_type() == HeaderType::Endpoint && offset == 0x150 && size == 4 {
-    //     // Hardcode for test: skip SR-IOV cap (0x160) by rewriting next cap ptr to 0x1a0.
-    //     mmio.value = dev.read_hw(offset, size).unwrap();
-    //     mmio.value = mmio.value & 0x00ff_ffff;
-    //     mmio.value += 0x1a00_0000;
-    //     return Ok(());
-    // }
+    if !is_root && dev.read().get_sriov_vf_info().is_some() {
+        if offset == 0x100 {
+            mmio.value = 0x0;
+            return Ok(());
+        }
+    }
 
     if is_root || is_dev_belong_to_zone {
         match dev.access(offset, size) {
@@ -1465,7 +1686,10 @@ fn handle_config_space_access(
                         match config_type {
                             HeaderType::Endpoint => {
                                 // Check if this is capability region access (offset >= 0x40)
-                                if (offset >= 0x40 && offset < 0x100) || (offset == 0x34) {
+                                if (offset >= 0x40 && offset < 0x100)
+                                    || (offset == 0x34)
+                                    || (offset >= 0x100)
+                                {
                                     if let Some(val) = handle_cap_access(
                                         dev,
                                         offset,
@@ -1492,7 +1716,10 @@ fn handle_config_space_access(
                             }
                             HeaderType::PciBridge => {
                                 // Check if this is capability region access (offset >= 0x40)
-                                if (offset >= 0x40 && offset < 0x100) || (offset == 0x34) {
+                                if (offset >= 0x40 && offset < 0x100)
+                                    || (offset == 0x34)
+                                    || (offset >= 0x100)
+                                {
                                     if let Some(val) = handle_cap_access(
                                         dev,
                                         offset,
@@ -1674,7 +1901,7 @@ pub fn mmio_dwc_cfg_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                         && vbdf.device() == target_device
                         && vbdf.function() == target_function
                     {
-                        Some((dev.get_bdf(), vbdf, dev.read().get_base()))
+                        Some((dev.get_bdf(), dev.get_parent_bus()))
                     } else {
                         None
                     }
@@ -1682,15 +1909,30 @@ pub fn mmio_dwc_cfg_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
             };
 
             let mut hw_pci_target = pci_target;
-            if let Some((host_bdf, _, _)) = mapped_target {
+            let mut atu_type = atu.atu_type();
+            let mut config_base = atu.cpu_base();
+            let mut cpu_limit = atu.cpu_limit();
+            if let Some((host_bdf, parent_bus)) = mapped_target {
                 hw_pci_target = ((host_bdf.bus() as u64) << 24)
                     + ((host_bdf.device() as u64) << 19)
                     + ((host_bdf.function() as u64) << 16);
+                (config_base, atu_type) = if parent_bus == 0 {
+                    (extend_config.cfg_base, AtuType::Cfg0)
+                } else {
+                    (
+                        extend_config.cfg_base + (extend_config.cfg_size / 2),
+                        AtuType::Cfg1,
+                    )
+                };
+                cpu_limit = config_base + (extend_config.cfg_size / 2) - 1;
             }
 
             // Program hardware ATU with translated host target when remap exists.
             let mut hw_atu = atu;
             hw_atu.set_pci_target(hw_pci_target);
+            hw_atu.set_atu_type(atu_type);
+            hw_atu.set_cpu_base(config_base);
+            hw_atu.set_cpu_limit(cpu_limit);
             AtuUnroll::dw_pcie_prog_outbound_atu_unroll(&dbi_backend, &hw_atu)?;
         }
 
@@ -1735,7 +1977,14 @@ pub fn mmio_dwc_cfg_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
         let is_root = is_this_root_zone();
         let is_direct = true; // dwc_cfg_handler uses direct mode
 
-        handle_config_space_access(dev, mmio, offset, is_direct, is_root, is_dev_belong_to_zone)?;
+        handle_config_space_access(
+            dev.clone(),
+            mmio,
+            offset,
+            is_direct,
+            is_root,
+            is_dev_belong_to_zone,
+        )?;
     } else {
         warn!("No ATU config yet, do nothing");
     }
@@ -2349,26 +2598,17 @@ pub fn mmio_msix_table_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
         }
 
         if result.is_none() {
-            let global_pcie_list = GLOBAL_PCIE_LIST.lock();
-            for dev in global_pcie_list.values() {
-                if let Some(msi_info) = dev.read().get_msi_info() {
-                    if let Some(msix) = &msi_info.msix_info {
-                        let msix_bar_aligned = msix.bar_paddr & !0xf;
-                        if msix_bar_aligned == base_aligned {
-                            domain_id = dev.read().get_bdf().domain();
-                            result = Some((dev.clone(), msix.offset, msix.entry_count));
-                            break;
-                        }
-                    }
-                }
-            }
+            panic!(
+                "MSIX table handler could not find device in current zone vPCI bus for BAR base {:#x}",
+                base_aligned
+            );
         }
         (result, domain_id)
     };
 
     // Check if this access is within the MSIX table range
     if let Some((dev, msix_offset, entry_count)) = device_info {
-        let vbdf = dev.get_vbdf();
+        // let vbdf = dev.get_vbdf();
 
         let msix_table_size = (entry_count as u64) * 16; // Each entry is 16 bytes
         let msix_table_end = msix_offset + msix_table_size;
@@ -2376,19 +2616,19 @@ pub fn mmio_msix_table_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
         if access_offset >= msix_offset && access_offset < msix_table_end {
             // This is a MSIX table access, record it with detailed information
             let offset_in_entry = access_offset - msix_offset;
-            let entry_index = offset_in_entry / 16;
+            // let entry_index = offset_in_entry / 16;
             let field_offset = offset_in_entry % 16;
-            let host_bdf = dev.get_bdf();
-            let field_name = match field_offset {
-                0..=3 => "msg_addr_lo",
-                4..=7 => "msg_addr_hi",
-                8..=11 => "msg_data",
-                12..=15 => "vector_ctrl",
-                _ => "unknown",
-            };
+            // let host_bdf = dev.get_bdf();
+            // let field_name = match field_offset {
+            //     0..=3 => "msg_addr_lo",
+            //     4..=7 => "msg_addr_hi",
+            //     8..=11 => "msg_data",
+            //     12..=15 => "vector_ctrl",
+            //     _ => "unknown",
+            // };
 
             if mmio.is_write {
-                let vm_value = mmio.value;
+                // let vm_value = mmio.value;
                 match field_offset {
                     0..=3 => {
                         // Save VM's doorbell low 32 bits
@@ -2450,17 +2690,6 @@ pub fn mmio_msix_table_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
                 }
 
                 mmio_perform_access(base, mmio);
-                let hw_value = mmio.value;
-                info!(
-                    "MSIX access: rw W, vbdf {:#?}, host_bdf {:#?}, base {:#x}, entry {}, field {}, vm_value {:#x}, hw_value {:#x}",
-                    vbdf,
-                    host_bdf,
-                    base,
-                    entry_index,
-                    field_name,
-                    vm_value,
-                    hw_value
-                );
                 return Ok(());
             } else {
                 let mut hw_mmio = MMIOAccess {
@@ -2519,17 +2748,6 @@ pub fn mmio_msix_table_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
                         mmio.value = hw_value;
                     }
                 }
-
-                info!(
-                    "MSIX access: rw R, vbdf {:#?}, host_bdf {:#?}, base {:#x}, entry {}, field {}, vm_value {:#x}, hw_value {:#x}",
-                    vbdf,
-                    host_bdf,
-                    base,
-                    entry_index,
-                    field_name,
-                    mmio.value,
-                    hw_value
-                );
                 return Ok(());
             }
         }

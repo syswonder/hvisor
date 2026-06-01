@@ -167,10 +167,16 @@ pub fn hvisor_pci_init(pci_config: &[HvPciConfig]) -> HvResult {
         let e = rootcomplex.enumerate(Some(range), domain, allocator_opt);
         info!("begin enumerate {:#x?}", e);
         for node in e {
-            info!("node {:#?}", node);
-            GLOBAL_PCIE_LIST
-                .lock()
-                .insert(node.get_bdf(), ArcRwLockVirtualPciConfigSpace::new(node));
+            // info!("node {:#?}", node);
+            let sriov_vfs = rootcomplex.create_sriov_vfs(&node);
+
+            {
+                let mut global_pcie_list = GLOBAL_PCIE_LIST.lock();
+                global_pcie_list.insert(node.get_bdf(), ArcRwLockVirtualPciConfigSpace::new(node));
+                for vf in sriov_vfs {
+                    global_pcie_list.insert(vf.get_bdf(), ArcRwLockVirtualPciConfigSpace::new(vf));
+                }
+            }
         }
 
         // Initialize DW MSI domain for this domain ID (only once per domain)
@@ -201,7 +207,7 @@ impl Zone {
         _num_pci_config: usize,
     ) -> HvResult {
         let mut inner = self.write();
-        let mut guard = GLOBAL_PCIE_LIST.lock();
+        let guard = GLOBAL_PCIE_LIST.lock();
         for target_pci_config in pci_config {
             // Skip empty config
             if target_pci_config.ecam_base == 0 {
@@ -344,17 +350,29 @@ impl Zone {
                         domain_msi_count += msi_count;
                         inner.vpci_bus_mut().insert(vbdf, vdev);
                     } else {
-                        // Check if device is already allocated to another zone
-                        if dev.get_zone_id().is_none() {
-                            dev.set_zone_id(Some(_zone_id as u32));
-                            let mut vdev_inner = dev.read().config_space.clone();
-                            vdev_inner.set_vbdf(vbdf);
-                            let msi_count = vdev_inner.get_msi_count();
-                            domain_msi_count += msi_count;
-                            inner.vpci_bus_mut().insert(vbdf, vdev_inner);
+                        // Allow allocation if zone_id is None (unassigned), or if zone_id is
+                        // Some(0) and the device is a SRIOV VF (initially assigned to root zone
+                        // during enumeration, can be reassigned to a guest zone).
+                        let is_sriov_vf_from_root = dev.get_zone_id() == Some(0)
+                            && dev.read().get_sriov_vf_info().is_some();
+                        let is_pf = dev.read().get_sriov_info().is_some();
+                        if dev.get_zone_id().is_none() || is_sriov_vf_from_root {
+                            if is_pf && _zone_id != 0 {
+                                warn!(
+                                    "The SR-IOV PF {:#x?} can only be assigned to the root VM",
+                                    bdf
+                                );
+                            } else {
+                                dev.set_zone_id(Some(_zone_id as u32));
+                                let mut vdev_inner = dev.read().config_space.clone();
+                                vdev_inner.set_vbdf(vbdf);
+                                let msi_count = vdev_inner.get_msi_count();
+                                domain_msi_count += msi_count;
+                                inner.vpci_bus_mut().insert(vbdf, vdev_inner);
+                            }
                         } else {
                             warn!(
-                                "Device {:#?} is already allocated to zone {:?}",
+                                "Device {:#x?} is already allocated to zone {:?}",
                                 bdf,
                                 dev.get_zone_id()
                             );
@@ -535,6 +553,10 @@ impl Zone {
                         .insert_atu(rootcomplex_config.ecam_base as usize, atu);
                     inner.atu_configs_mut().insert_cfg_base_mapping(
                         extend_config.cfg_base as PciConfigAddress,
+                        rootcomplex_config.ecam_base as usize,
+                    );
+                    inner.atu_configs_mut().insert_cfg_base_mapping(
+                        cfg1_base as PciConfigAddress,
                         rootcomplex_config.ecam_base as usize,
                     );
                     inner.atu_configs_mut().insert_io_base_mapping(
