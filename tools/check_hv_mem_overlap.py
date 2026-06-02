@@ -19,9 +19,10 @@ Returns exit code 0 if no overlap, 1 if overlap detected or error.
 import re
 import subprocess
 import sys
+from typing import Optional
 
 
-def get_symbol_value(elf_path: str, symbol: str) -> int | None:
+def get_symbol_value(elf_path: str, symbol: str) -> Optional[int]:
     """Read a symbol value from the ELF using rust-nm."""
     result = subprocess.run(
         ["rust-nm", elf_path],

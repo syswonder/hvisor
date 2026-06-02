@@ -392,7 +392,7 @@ impl PciMem {
                 warn!("unkown bar type: {:#?}", self.bar_type);
             }
         }
-        info!("self.virtual_value = {}", val);
+        // info!("self.virtual_value = {}", val);
         self.virtual_value = val;
     }
 

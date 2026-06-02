@@ -17,7 +17,12 @@
 use alloc::{collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
 use bit_field::BitField;
 use bitvec::{array::BitArray, order::Lsb0, BitArr};
-use core::{cmp::Ordering, fmt::Debug, ops::Range, str::FromStr};
+use core::{
+    cmp::Ordering,
+    fmt::Debug,
+    ops::{Deref, DerefMut, Range},
+    str::FromStr,
+};
 use spin::RwLock;
 
 use super::{
@@ -969,7 +974,7 @@ impl VirtualPciConfigSpace {
                 backend_base,
                 CONFIG_LENTH,
             ))),
-            sriov_info.vf_bars,
+            sriov_info.vf_bars.clone(),
             PciMem::default(),
             self.config_value.get_class_and_revision_id(),
             (sriov_info.vf_device_id, self.config_value.get_id().1),
@@ -1413,7 +1418,7 @@ impl VirtualPciConfigSpace {
         let mut has_msix = false;
 
         // Check if the device has MSI or MSIX capability and calculate both
-        for (_offset, cap) in self.capabilities.iter() {
+        for (_offset, cap) in self.capabilities.cap_in_config_ref().iter() {
             match cap.get_type() {
                 CapabilityType::Msi => {
                     // For MSI: read offset+2, Message Control bits 3:1 contain MMC

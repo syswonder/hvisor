@@ -5,3 +5,4 @@ dwc_pcie
 no_pcie_bar_realloc
 dwc_msi
 pci_init_delay
+sriov

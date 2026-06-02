@@ -454,6 +454,7 @@ fn handle_cap_access(
         // Try to find the capability that contains this offset
         let cap_info = dev.with_cap(|capabilities| {
             capabilities
+                .cap_in_config_ref()
                 .range(..=offset as u64)
                 .next_back()
                 .map(|(cap_offset, cap)| (*cap_offset, cap.get_type()))
@@ -469,6 +470,7 @@ fn handle_cap_access(
 
                 let is_msi_64 = dev.with_cap(|capabilities| {
                     capabilities
+                        .cap_in_config_ref()
                         .get(&(cap_offset as u64))
                         .and_then(|cap| cap.with_region(|region| region.read(0x02, 2).ok()))
                         .map(|ctrl| (ctrl & (1 << 7)) != 0)
