@@ -71,18 +71,18 @@ config SSTC
 	bool "Sstc"
 	default n
 
-config Hypervisor_v0_6
+config HYPERVISOR_V0_6
 	bool "Hypervisor v0.6"
 	default n
 
 config EIC7700_SYSREG
 	bool "EIC7700 system registers"
-	depends on Hypervisor_v0_6
+	depends on HYPERVISOR_V0_6
 	default n
 
 config SIFIVE_CCACHE
 	bool "SiFive ccache"
-	depends on Hypervisor_v0_6
+	depends on HYPERVISOR_V0_6
 	default n
 
 endmenu

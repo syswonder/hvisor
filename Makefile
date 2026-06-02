@@ -78,7 +78,7 @@ COLOR_RESET := $(shell tput sgr0)
 kconfig_python := tools/kconfig/.venv/bin/python
 
 # Targets
-.PHONY: all elf disa run gdb monitor clean tools rootfs vscode ci-run defconfig menuconfig savedefconfig ensure_config kconfig_venv check-hv-mem-overlap
+.PHONY: all elf disa run gdb monitor clean tools rootfs vscode ci-run defconfig menuconfig savedefconfig ensure_config clean_check kconfig_venv check-hv-mem-overlap
 kconfig_venv:
 	@if [ ! -x $(kconfig_python) ]; then \
 		echo "$(COLOR_YELLOW)Creating tools/kconfig/.venv (kconfiglib)...$(COLOR_RESET)"; \
@@ -86,10 +86,23 @@ kconfig_venv:
 	fi
 
 ensure_config:
-	@if [ ! -f .config ]; then \
+	@CONFIG_ARCH=; CONFIG_BOARD=; \
+	if [ -f .config ]; then \
+		CONFIG_ARCH=$$(grep '^# ARCH=' .config 2>/dev/null | head -1 | sed 's/^# ARCH=//'); \
+		[ -n "$$CONFIG_ARCH" ] || CONFIG_ARCH=$$(grep '^ARCH=' .config | head -1 | cut -d'=' -f2); \
+		CONFIG_BOARD=$$(grep '^# BOARD=' .config 2>/dev/null | head -1 | sed 's/^# BOARD=//'); \
+		[ -n "$$CONFIG_BOARD" ] || CONFIG_BOARD=$$(grep '^BOARD=' .config | head -1 | cut -d'=' -f2); \
+	fi; \
+	if [ ! -f .config ]; then \
 		echo "$(COLOR_YELLOW)No .config; running defconfig for $(ARCH)/$(BOARD)$(COLOR_RESET)"; \
 		$(MAKE) --no-print-directory defconfig; \
+	elif [ "$$CONFIG_ARCH" != "$(ARCH)" ] || [ "$$CONFIG_BOARD" != "$(BOARD)" ]; then \
+		echo "$(COLOR_YELLOW)$(COLOR_BOLD)ARCH or BOARD changed (OLD: $$CONFIG_ARCH/$$CONFIG_BOARD, NEW: $(ARCH)/$(BOARD)), cleaning and reloading defconfig...$(COLOR_RESET)"; \
+		./tools/clean.sh; \
+		$(MAKE) --no-print-directory defconfig; \
 	fi
+
+clean_check: ensure_config
 
 defconfig: kconfig_venv
 	@$(kconfig_python) tools/kconfig/kconfig_cli.py defconfig
@@ -100,7 +113,7 @@ menuconfig: kconfig_venv
 savedefconfig:
 	@./tools/kconfig/save_defconfig.sh "$(ARCH)" "$(BOARD)"
 
-all: clean_check ensure_config gen_cargo_config vscode $(hvisor_bin) check-hv-mem-overlap
+all: ensure_config gen_cargo_config vscode $(hvisor_bin) check-hv-mem-overlap
 	@printf "\n"
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)hvisor build summary:$(COLOR_RESET)\n"
 	@printf "%-10s %s\n" "ARCH            =" "$(COLOR_BOLD)$(ARCH)$(COLOR_RESET)"
@@ -120,20 +133,6 @@ all: clean_check ensure_config gen_cargo_config vscode $(hvisor_bin) check-hv-me
 	@printf "%-10s %s\n" "BUILD TIME      =" "$(COLOR_BOLD)$(shell date)$(COLOR_RESET)"
 	@printf "\n"
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)hvisor build success!$(COLOR_RESET)\n"
-
-clean_check:
-# if .config not exist, then everything is fine
-# else we read .config and parse ARCH and BOARD, if they are different, we clean the build
-	@if [ -f ".config" ]; then \
-		CONFIG_ARCH=$$(grep '^# ARCH=' .config 2>/dev/null | head -1 | sed 's/^# ARCH=//'); \
-		[ -n "$$CONFIG_ARCH" ] || CONFIG_ARCH=$$(grep '^ARCH=' .config | head -1 | cut -d'=' -f2); \
-		CONFIG_BOARD=$$(grep '^# BOARD=' .config 2>/dev/null | head -1 | sed 's/^# BOARD=//'); \
-		[ -n "$$CONFIG_BOARD" ] || CONFIG_BOARD=$$(grep '^BOARD=' .config | head -1 | cut -d'=' -f2); \
-		if [ "$$CONFIG_ARCH" != "$(ARCH)" ] || [ "$$CONFIG_BOARD" != "$(BOARD)" ]; then \
-			echo "$(COLOR_YELLOW)$(COLOR_BOLD)ARCH or BOARD changed(OLD: $$CONFIG_ARCH/$$CONFIG_BOARD, NEW: $(ARCH)/$(BOARD)), cleaning...$(COLOR_RESET)"; \
-			./tools/clean.sh; \
-		fi; \
-	fi
 
 gen_cargo_config:
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)generating .cargo/config.toml...$(COLOR_RESET)\n"
