@@ -26,6 +26,6 @@ $(hvisor_bin): elf
 	$(OBJCOPY) $(hvisor_elf) --strip-all -O binary $@
 # objdump + hvisor-trap-vector.txt
 	readelf -a $(hvisor_elf) > hvisor-elf.txt
-	loongarch64-linux-gnu-objdump --disassemble $(hvisor_elf) > hvisor.S
+	loongarch64-unknown-linux-gnu-objdump --disassemble $(hvisor_elf) > hvisor.S
 	cp $(hvisor_elf) hvisor.elf
 	nm -n hvisor.elf | grep -w _hyp_trap_vector | awk '{print "0x"$$1""}' > hvisor-trap-vector.txt
