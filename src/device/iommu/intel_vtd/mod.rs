@@ -85,7 +85,13 @@ impl Iommu for IntelVtd {
             zone_id
         );
     }
-    fn viommu_mmio_handler(&self, zone: &mut Zone, viommu_base: usize, viommu_size: usize) {
+    fn viommu_remove(&self, zone_id: usize) {
+        todo!(
+            "IntelVtd viommu remove for zone id {} not implemented yet.",
+            zone_id
+        );
+    }
+    fn viommu_mmio_handler_register(&self, zone: &Zone, _viommu_base: usize, _viommu_size: usize) {
         todo!(
             "IntelVtd viommu handler for zone id {} not implemented yet.",
             zone.id()

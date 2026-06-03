@@ -174,6 +174,88 @@ pub fn iommu_msi_pt_tlb_invalid(gscid: u16, msi_gpa: usize) {
     info!("RISC-V: iommu_msi_pt_tlb_invalid do nothing now");
 }
 
+/// IOMMU register enumeration, used to access IOMMU registers for viommu module.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum IommuReg {
+    Caps,
+    Fctl,
+    Cqcsr,
+    Fqcsr,
+    Ipsr,
+    Icvec,
+}
+
+pub(super) fn iommu_read_reg(reg: IommuReg) -> u64 {
+    let iommu = get_iommu().lock();
+    let hw = iommu.iommu();
+
+    match reg {
+        IommuReg::Caps => hw.caps.get(),
+        IommuReg::Fctl => hw.fctl.get() as u64,
+        IommuReg::Cqcsr => hw.cqcsr.get() as u64,
+        IommuReg::Fqcsr => hw.fqcsr.get() as u64,
+        IommuReg::Ipsr => hw.ipsr.get() as u64,
+        IommuReg::Icvec => hw.icvec.get(),
+    }
+}
+
+pub(super) fn iommu_write_reg(reg: IommuReg, value: u64) {
+    let iommu = get_iommu().lock();
+    let hw = iommu.iommu();
+
+    match reg {
+        IommuReg::Cqcsr => hw.cqcsr.set(value as u32),
+        IommuReg::Fqcsr => hw.fqcsr.set(value as u32),
+        IommuReg::Ipsr => hw.ipsr.set(value as u32),
+        IommuReg::Icvec => hw.icvec.set(value),
+        IommuReg::Caps | IommuReg::Fctl => {
+            warn!(
+                "RV IOMMU: ignore unsupported write to mirrored register {:?}",
+                reg
+            );
+        }
+    }
+}
+
+/// Add a raw command to physical IOMMU command queue.
+pub(super) fn iommu_add_raw_command(command: RiscvIommuCommand) {
+    get_iommu().lock().rv_iommu_add_command(command);
+}
+
+/// Device directory table field enumeration, used to access device directory table fields for viommu module.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) enum IommuDdtField {
+    Iohgatp,
+    Ta,
+    Fsc,
+}
+
+/// Read a specific device directory table entry field.
+pub(super) fn iommu_read_ddt_field(device_id: usize, field: IommuDdtField) -> Option<u64> {
+    let mut iommu = get_iommu().lock();
+    let (entry, _) = iommu.ddt.get_or_alloc_leaf_entry(device_id)?;
+
+    Some(match field {
+        IommuDdtField::Iohgatp => entry.iohgatp.get(),
+        IommuDdtField::Ta => entry.ta.get(),
+        IommuDdtField::Fsc => entry.fsc.get(),
+    })
+}
+
+/// Write a specific device directory table entry field.
+pub(super) fn iommu_write_ddt_field(device_id: usize, field: IommuDdtField, value: u64) -> bool {
+    let mut iommu = get_iommu().lock();
+    if let Some((entry, _)) = iommu.ddt.get_or_alloc_leaf_entry(device_id) {
+        match field {
+            IommuDdtField::Iohgatp => entry.iohgatp.set(value),
+            IommuDdtField::Ta => entry.ta.set(value),
+            IommuDdtField::Fsc => entry.fsc.set(value),
+        }
+        return true;
+    }
+    false
+}
+
 /// Initialize RISC-V IOMMU with hardware DDTP probing.
 fn riscv_iommu_init() {
     assert!(
@@ -240,13 +322,17 @@ impl IommuHw {
     }
 
     fn rv_iommu_check_features(&self) {
-        let version = self.caps.read(IOMMU_CAPS::VERSION);
         // Stop and report failure if capabilities.version is not supported.
-        if version != IOMMU_CAPS::VERSION::VERSION_1_0.value {
-            panic!(
-                "RISC-V IOMMU unsupported version: {}, Please check the IOMMU version",
-                version
-            );
+        match self.caps.read_as_enum(IOMMU_CAPS::VERSION) {
+            Some(IOMMU_CAPS::VERSION::Value::VERSION_1_0) => {
+                info!("RISC-V IOMMU version 1.0 supported");
+            }
+            _ => {
+                panic!(
+                    "RISC-V IOMMU unsupported version: {}, Please check the IOMMU version",
+                    self.caps.read(IOMMU_CAPS::VERSION)
+                );
+            }
         }
         // Note: here RISCV-IOMMU and CPU share the same stage-2 page table.
         let cpu_s2pt_lvl = unsafe { crate::arch::s2pt::GSTAGE_PT_LEVEL };
@@ -263,9 +349,6 @@ impl IommuHw {
         if !self.caps.is_set(IOMMU_CAPS::MSI_FLAT) {
             // Current DDT Entry only supports Extented-for
             todo!("To support Base-format DDT Entry");
-        }
-        if self.caps.read(IOMMU_CAPS::IGS) == IOMMU_CAPS::IGS::MSI.value {
-            warn!("RISC-V IOMMU HW does not support WSI generation");
         }
     }
 

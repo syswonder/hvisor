@@ -48,7 +48,10 @@ impl Iommu for DummyIommu {
     fn viommu_init(&self, zone_id: usize) {
         info!("No IOMMU implementation available, cannot initialize VIOMMU for Zone id {}", zone_id);
     }
-    fn viommu_mmio_handler(&self, zone: &mut Zone, _viommu_base: usize, _viommu_size: usize) {
+    fn viommu_remove(&self, zone_id: usize) {
+        info!("No IOMMU implementation available, cannot remove VIOMMU for Zone id {}", zone_id);
+    }
+    fn viommu_mmio_handler_register(&self, zone: &Zone, _viommu_base: usize, _viommu_size: usize) {        
         info!("No IOMMU implementation available, cannot handle VIOMMU MMIO for Zone id {}", zone.id());
     }
 }

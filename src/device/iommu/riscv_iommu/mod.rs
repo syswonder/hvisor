@@ -30,12 +30,16 @@
 mod cmd;
 mod iommu_hw;
 mod reg_bits;
+#[cfg(viommu)]
+mod viommu;
 
 use super::Iommu;
 use crate::zone::Zone;
 use cmd::*;
 use iommu_hw::*;
 pub use iommu_hw::{iommu_msi_pt_tlb_invalid, iommu_remove_device};
+#[cfg(viommu)]
+use viommu::{viommu_init, viommu_mmio_handler_register, viommu_remove};
 
 pub(super) struct RiscvIommu;
 
@@ -81,15 +85,27 @@ impl Iommu for RiscvIommu {
         );
     }
     fn viommu_init(&self, zone_id: usize) {
-        todo!(
-            "RiscvIommu viommu init for zone id {} not implemented yet.",
+        #[cfg(viommu)]
+        viommu_init(zone_id);
+        #[cfg(not(viommu))]
+        warn!(
+            "Virtual IOMMU is not enabled, skipping viommu init for zone {}",
             zone_id
         );
     }
-    fn viommu_mmio_handler(&self, zone: &mut Zone, _viommu_base: usize, _viommu_size: usize) {
-        todo!(
-            "RiscvIommu viommu handler for zone id {} not implemented yet.",
-            zone.id()
+    fn viommu_remove(&self, zone_id: usize) {
+        #[cfg(viommu)]
+        viommu_remove(zone_id);
+        #[cfg(not(viommu))]
+        warn!(
+            "Virtual IOMMU is not enabled, skipping viommu remove for zone {}",
+            zone_id
         );
+    }
+    fn viommu_mmio_handler_register(&self, zone: &Zone, viommu_base: usize, viommu_size: usize) {
+        #[cfg(viommu)]
+        viommu_mmio_handler_register(zone, viommu_base, viommu_size);
+        #[cfg(not(viommu))]
+        warn!("Virtual IOMMU is not enabled, skipping viommu mmio handler for zone {}, viommu_base {}, viommu_size {}.", zone.id(), viommu_base, viommu_size);
     }
 }

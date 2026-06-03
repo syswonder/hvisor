@@ -194,6 +194,11 @@ config SHARE_S2PT
 	bool "Share stage-2 page tables with IOMMU (RISC-V IOMMU only)"
 	depends on RISCV_IOMMU
 	default n
+
+config VIOMMU
+	bool "Virtual RISC-V IOMMU"
+	depends on RISCV_IOMMU
+	default n
 endmenu
 
 menu "x86-specific options"

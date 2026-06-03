@@ -36,6 +36,8 @@ pub(crate) trait Iommu {
     fn interrupt_handler(&self, irq_id: usize);
     /// Initialize the Virtual IOMMU for the Zone
     fn viommu_init(&self, zone_id: usize);
-    /// Virtual IOMMU MMIO handler for the Zone
-    fn viommu_mmio_handler(&self, zone: &mut Zone, viommu_base: usize, viommu_size: usize);
+    /// Remove the Virtual IOMMU for the Zone
+    fn viommu_remove(&self, zone_id: usize);
+    /// Register the Virtual IOMMU MMIO handler for the Zone
+    fn viommu_mmio_handler_register(&self, zone: &Zone, viommu_base: usize, viommu_size: usize);
 }
