@@ -140,13 +140,18 @@ def qemuPathShell() {
     return "export PATH=${env.QEMU_PATH}:\$PATH"
 }
 
-/** Kconfig: venv + tools/kconfig/kconfig_cli.py (via make defconfig). Keep in sync with Makefile. */
+/** Kconfig: symlink agent venv + make defconfig. Keep in sync with Makefile kconfig_python path. */
 def kconfigSetupShell(String arch, String board) {
     return """
         ${toolchainPathShell()}
-        chmod +x tools/kconfig/bootstrap_venv.sh tools/kconfig/host_config.sh tools/kconfig/save_defconfig.sh 2>/dev/null || true
+        chmod +x tools/kconfig/host_config.sh tools/kconfig/save_defconfig.sh 2>/dev/null || true
         if [ ! -x tools/kconfig/.venv/bin/python ]; then
-            ./tools/kconfig/bootstrap_venv.sh
+            if [ ! -x ${env.KCONFIG_VENV}/bin/python ]; then
+                echo "ERROR: CI kconfig venv missing: ${env.KCONFIG_VENV}/bin/python" >&2
+                exit 1
+            fi
+            mkdir -p tools/kconfig
+            ln -sfn ${env.KCONFIG_VENV} tools/kconfig/.venv
         fi
         make defconfig ARCH=${arch} BOARD=${board}
     """
@@ -174,6 +179,7 @@ pipeline {
         CARGO_HOME = '/usr/local/cargo'
         QEMU_PATH = '/home/light/DEMO/qemu-9.2.3/build'
         TEST_IMG_BASE = '/home/light/DEMO/syswonder/test_img'
+        KCONFIG_VENV = "/home/light/DEMO/syswonder/test_img/venv"
         RISCV_TOOLCHAIN_PATH = '/home/light/DEMO/toolchain/riscv64-glibc-ubuntu-24.04-gcc'
         AARCH64_TOOLCHAIN_PATH = '/home/light/DEMO/toolchain/gcc-arm-10.3-2021.07-x86_64-aarch64-none-linux-gnu'
         LOONGARCH64_TOOLCHAIN_PATH = '/home/light/DEMO/toolchain/loongarch_cross_tools'
@@ -189,10 +195,9 @@ pipeline {
                     def cellWs = jenkinsJobDir('linter')
                     syncWorkspaceTo(cellWs)
                     dir(cellWs) {
-                        sh """
-                            ${toolchainPathShell()}
-                            make fmt-test
-                        """
+                        sh kconfigSetupShell('aarch64', 'qemu-gicv3') + '''
+                            cargo fmt --all -- --check
+                        '''
                     }
                 }
             }
