@@ -45,6 +45,9 @@ struct hv_pci_dev_config {
     __u8 bus;
     __u8 device;
     __u8 function;
+    __u8 v_bus;
+    __u8 v_device;
+    __u8 v_function;
     __u32 dev_type;
 };
 

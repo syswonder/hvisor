@@ -621,6 +621,12 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
             SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "device");
         cJSON *dev_function_json =
             SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "function");
+        cJSON *dev_vbus_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "v_bus");
+        cJSON *dev_vdevice_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "v_device");
+        cJSON *dev_vfunction_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "v_function");
         cJSON *dev_type_json =
             SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "dev_type");
 
@@ -628,6 +634,10 @@ static int parse_pci_config(cJSON *root, zone_config_t *config) {
             parse_json_linux_u8(dev_bus_json, &dev_config->bus) != 0 ||
             parse_json_linux_u8(dev_device_json, &dev_config->device) != 0 ||
             parse_json_linux_u8(dev_function_json, &dev_config->function) !=
+                0 ||
+            parse_json_linux_u8(dev_vbus_json, &dev_config->v_bus) != 0 ||
+            parse_json_linux_u8(dev_vdevice_json, &dev_config->v_device) != 0 ||
+            parse_json_linux_u8(dev_vfunction_json, &dev_config->v_function) !=
                 0 ||
             parse_json_linux_u32(dev_type_json, &dev_config->dev_type) != 0) {
             log_error("Failed to parse pci device config\n");
