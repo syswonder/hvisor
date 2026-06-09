@@ -708,7 +708,7 @@ static int zone_start_from_json(const char *json_config_path,
 
     for (int i = 0; i < num_cpus; i++) {
         config->cpus |=
-            (1 << SAFE_CJSON_GET_ARRAY_ITEM(cpus_json, i)->valueint);
+            (1ULL << SAFE_CJSON_GET_ARRAY_ITEM(cpus_json, i)->valueint);
     }
 
     int num_memory_regions = SAFE_CJSON_GET_ARRAY_SIZE(memory_regions_json);
