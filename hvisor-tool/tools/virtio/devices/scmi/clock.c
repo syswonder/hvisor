@@ -72,13 +72,6 @@ struct clock_name_info {
     char name[64];
 };
 
-/* Forward declarations */
-static int scmi_clock_get_count(uint16_t *clock_count);
-
-/* Cache for clock count */
-static uint16_t cached_clock_count = 0;
-static bool clock_count_cache_valid = false;
-
 /* Response for CLOCK_ATTRIBUTES (Message ID 0x3) */
 struct scmi_msg_resp_clock_clock_attributes {
     uint32_t attributes; /* Bitfield as per spec */
@@ -89,11 +82,8 @@ struct scmi_msg_resp_clock_clock_attributes {
 /* Helper: validate clock_id */
 static bool is_valid_clock_id(uint32_t clock_id) {
     if (clock_map_ctx.allow_all) {
-        uint16_t total_clocks = 0;
-        if (scmi_clock_get_count(&total_clocks) < 0) {
-            return false;
-        }
-        return clock_id < total_clocks;
+        extern uint32_t clock_max_num;
+        return clock_id < clock_max_num;
     }
     return scmi_is_valid_id(&clock_map_ctx, clock_id);
 }
@@ -138,26 +128,6 @@ static int hvisor_scmi_ioctl(uint32_t subcmd,
         return -EIO;
     }
     close(fd);
-
-    return 0;
-}
-
-static int scmi_clock_get_count(uint16_t *clock_count) {
-    if (clock_count_cache_valid) {
-        *clock_count = cached_clock_count;
-        return 0;
-    }
-
-    struct hvisor_scmi_clock_args args;
-    int ret =
-        hvisor_scmi_ioctl(HVISOR_SCMI_CLOCK_GET_COUNT, &args, sizeof(args));
-    if (ret < 0) {
-        return ret;
-    }
-
-    *clock_count = args.u.clock_count;
-    cached_clock_count = args.u.clock_count;
-    clock_count_cache_valid = true;
 
     return 0;
 }

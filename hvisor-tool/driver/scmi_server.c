@@ -187,7 +187,7 @@ static int get_clock_attributes(u32 clock_id, u32 *enabled, u32 *parent_id,
         *is_valid = 0; // Clock is invalid
         *enabled = 0;
         *parent_id = -1;
-        snprintf(clock_name, 64, "invalid_clock_%u", clock_id);
+        snprintf(clock_name, 64, "inv_%u", clock_id);
         return 0;
     }
 
