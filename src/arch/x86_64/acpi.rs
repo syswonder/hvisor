@@ -714,6 +714,13 @@ pub fn get_cpu_id(apic_id: usize) -> usize {
         .unwrap()
 }
 
+/// Non-panicking variant of [`get_cpu_id`]: returns `None` when `apic_id` is not
+/// a known local-APIC id. Use this on any path that consumes a guest-supplied
+/// APIC id, so a malicious or buggy guest cannot panic the hypervisor.
+pub fn try_get_cpu_id(apic_id: usize) -> Option<usize> {
+    ROOT_ACPI.get()?.apic_id_to_cpu_id.get(&apic_id).copied()
+}
+
 pub fn get_apic_id(cpu_id: usize) -> usize {
     *ROOT_ACPI
         .get()

@@ -127,6 +127,22 @@ fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
 
     if let Ok(function) = rax {
         res = match function {
+            CpuIdEax::VendorInfo => {
+                // EAX of leaf 0 is the highest basic leaf the CPU advertises
+                // (Intel SDM Vol.2A). We synthesize leaf 0x15 (TSC/crystal) and
+                // a guest derives its TSC frequency from it, so when calibration
+                // succeeded ensure the maximum advertised leaf is at least 0x15.
+                // We deliberately do NOT raise it to 0x16: leaf 0x16 (processor
+                // frequency) has bus/reference-clock semantics in ECX that we
+                // cannot synthesize faithfully, so we never *newly* advertise it.
+                // On a host whose maximum is already >= 0x15 (any modern CPU)
+                // this is a no-op; it only matters on a host that hides 0x15.
+                let mut res = cpuid!(regs.rax, regs.rcx);
+                if hpet::get_tsc_freq_mhz().is_some() && res.eax < 0x15 {
+                    res.eax = 0x15;
+                }
+                res
+            }
             CpuIdEax::FeatureInfo => {
                 let mut res = cpuid!(regs.rax, regs.rcx);
                 let mut ecx = FeatureInfoFlags::from_bits_truncate(res.ecx as _);
@@ -153,12 +169,41 @@ fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
 
                 res
             }
+            CpuIdEax::TimeStampCounterInfo => {
+                // Leaf 0x15 reports the TSC / core-crystal-clock relation
+                // (Intel SDM Vol.2A, CPUID): EAX = ratio denominator, EBX =
+                // ratio numerator, ECX = core-crystal-clock frequency in Hz, and
+                // the effective TSC frequency is `ECX * EBX / EAX`. The hardware
+                // leaf is frequently zeroed under virtualization, so synthesize
+                // the relation from the TSC frequency the hypervisor calibrated
+                // via the HPET. Expose it as a 1 MHz crystal (ECX) scaled by
+                // `freq_mhz` (EBX) over 1 (EAX); this reproduces the calibrated
+                // TSC frequency exactly (`1_000_000 * freq_mhz`) while keeping
+                // every field within u32, whereas the naive `freq_mhz *
+                // 1_000_000` in ECX overflows for nominal TSCs above ~4.29 GHz.
+                if let Some(freq_mhz) = hpet::get_tsc_freq_mhz() {
+                    CpuIdResult {
+                        eax: 1,
+                        ebx: freq_mhz,
+                        ecx: 1_000_000,
+                        edx: 0,
+                    }
+                } else {
+                    cpuid!(regs.rax, regs.rcx)
+                }
+            }
             CpuIdEax::ProcessorFrequencyInfo => {
                 if let Some(freq_mhz) = hpet::get_tsc_freq_mhz() {
+                    // Intel SDM Vol.2A CPUID.16H: EAX = processor base frequency
+                    // (MHz), EBX = maximum frequency (MHz), ECX = bus/reference
+                    // frequency (MHz). We approximate base/max with the
+                    // calibrated TSC frequency, but the bus/reference clock is
+                    // unknown under virtualization, so ECX is reported as 0
+                    // ("not enumerated") rather than mis-stating it as the TSC.
                     CpuIdResult {
                         eax: freq_mhz,
                         ebx: freq_mhz,
-                        ecx: freq_mhz,
+                        ecx: 0,
                         edx: 0,
                     }
                 } else {
@@ -275,7 +320,12 @@ fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
         {
             handle_pci_config_port_write(&io_info, value);
         } else if UART_COM1_PORT.contains(&io_info.port) {
-            virt_console_io_write(io_info.port, value);
+            // The legacy COM1 serial port is owned by the root zone. Drop a
+            // non-root zone's writes so it cannot drive or interleave the
+            // physical/root console (a non-root guest uses virtio-console).
+            if this_zone_id() == 0 {
+                virt_console_io_write(io_info.port, value);
+            }
         } else {
             /* info!(
                 "unhandled port io write {:x} value: {:x}",
@@ -288,7 +338,19 @@ fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
         {
             value = handle_pci_config_port_read(&io_info);
         } else if UART_COM1_PORT.contains(&io_info.port) {
-            value = virt_console_io_read(io_info.port);
+            value = if this_zone_id() == 0 {
+                virt_console_io_read(io_info.port)
+            } else {
+                // Inert COM1 for a non-root zone: report the transmitter as
+                // always ready (LSR THRE|TEMT) and no received data, so the
+                // guest's 16550 driver neither blocks nor observes root console
+                // state. LSR is at COM1 base + 5.
+                if io_info.port == UART_COM1_PORT.start + 5 {
+                    0x60
+                } else {
+                    0
+                }
+            };
         } else {
             // info!("unhandled port io read {:x}", io_info.port);
             value = 0x0;

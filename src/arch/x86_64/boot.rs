@@ -26,7 +26,6 @@ use alloc::string::{String, ToString};
 use bit_field::BitField;
 use core::{
     arch::{self, global_asm},
-    ffi::{c_char, CStr},
     mem::size_of,
     ptr::{copy, copy_nonoverlapping},
 };
@@ -320,6 +319,15 @@ impl BootParams {
         cnt
     }
 
+    /// Hand the guest its initramfs through the boot-params ramdisk fields.
+    ///
+    /// The ramdisk lives inside a RAM `memory_region`, so it is reported as
+    /// usable RAM in the e820/EFI map; the guest learns to keep it intact from
+    /// `ramdisk_image`/`ramdisk_size` here (Linux and Asterinas both reserve
+    /// `[ramdisk_image, ramdisk_image + ramdisk_size)` before populating the
+    /// frame allocator), which is why it is not separately carved out of e820.
+    /// `ramdisk_size` must be the true byte length of the image that is staged
+    /// at `ramdisk_image`; an undersized value truncates the archive.
     fn set_initrd(&mut self, ramdisk_image: u32, ramdisk_size: u32) {
         self.ramdisk_image = ramdisk_image;
         self.ramdisk_size = ramdisk_size;
@@ -534,50 +542,248 @@ pub fn print_memory_map() {
     }
 }
 
-/// copy kernel modules to the right place
+/// Maximum number of multiboot2 modules relocated during early boot.
+const MAX_BOOT_MODULES: usize = 16;
+
+#[derive(Clone, Copy)]
+struct BootModule {
+    /// Address where the bootloader staged the module image.
+    src: usize,
+    /// One past the last staged byte (`src + len`, computed with checked
+    /// arithmetic so a bogus descriptor cannot wrap a range used in overlap
+    /// tests).
+    src_end: usize,
+    /// Number of bytes occupied by the staged image.
+    len: usize,
+    /// Guest-physical address the module is relocated to, or 0 when the module
+    /// is consumed in place and left where the bootloader staged it.
+    dst: usize,
+    /// One past the last destination byte (`dst + len`, checked), or 0 when the
+    /// module is consumed in place.
+    dst_end: usize,
+}
+
+/// Relocate the multiboot2 modules supplied by the bootloader to the load
+/// addresses encoded in each module's command-line string.
+///
+/// A guest may be delivered as several modules (for example a multiboot2
+/// Asterinas image alongside its initramfs), and the bootloader is free to
+/// stage them anywhere in low memory. The destination of one module can
+/// therefore overlap the staging area of another module that has not been
+/// copied yet, so the relocations are ordered such that a module is only moved
+/// once no pending module is still sourced from its destination range. The
+/// copy itself is a memmove, which keeps a module that overlaps its own
+/// destination correct.
+///
+/// The ordering relocates any *acyclic* layout. A genuine cycle (module A's
+/// destination overlaps module B's source while B's destination overlaps A's
+/// source) cannot be satisfied in place and is *reported* (panic), not resolved
+/// with a scratch buffer; likewise overlapping final destinations and range
+/// arithmetic that would wrap are rejected. This is containment, not silent
+/// corruption: no layout is ever copied incorrectly.
 pub fn module_init(info_addr: usize) {
-    println!("module_init");
-    let mut cur = info_addr;
-    let total_size = unsafe { *(cur as *const u32) } as usize;
+    let total_size = unsafe { *(info_addr as *const u32) } as usize;
 
-    let mut cnt = 0;
-    cur += 8;
-    while cur < info_addr + total_size {
+    let mut modules = [BootModule {
+        src: 0,
+        src_end: 0,
+        len: 0,
+        dst: 0,
+        dst_end: 0,
+    }; MAX_BOOT_MODULES];
+    let mut count = 0;
+
+    // The multiboot2 information block is an 8-byte header followed by
+    // 8-byte-aligned tags. Bound every read to the declared size and reject
+    // malformed tags so a garbage/hostile bootloader cannot make the walk read
+    // out of bounds or spin on a non-advancing tag.
+    let info_end = info_addr
+        .checked_add(total_size)
+        .expect("module_init: multiboot2 info size overflows the address space");
+    let mut cur = info_addr + 8;
+    // Short-circuit on `cur < info_end` *before* the subtraction: if
+    // `total_size < 8` then `info_end < cur`, so `info_end - cur` would
+    // underflow (unsigned) to a huge value and spin the loop reading out of
+    // bounds. Guarding on `cur < info_end` first makes the subtraction safe and
+    // correctly skips the loop for an undersized info block.
+    while cur < info_end && info_end - cur >= 8 {
         let tag_type = unsafe { *(cur as *const u32) };
-        let ptr = cur as *const multiboot_tag::Modules;
-        cur += ((unsafe { *((cur + 4) as *const u32) } as usize + 7) & (!7));
-
+        let tag_size = unsafe { *((cur + 4) as *const u32) } as usize;
         if tag_type == multiboot_tag::END {
             break;
         }
-        if tag_type != multiboot_tag::MODULES {
-            continue;
+        // Every tag is at least its 8-byte header and must lie within the block.
+        if tag_size < 8 || tag_size > info_end - cur {
+            panic!(
+                "module_init: malformed multiboot2 tag (type {}, size {})",
+                tag_type, tag_size
+            );
         }
-
-        let module = unsafe { *ptr };
-        let dst = unsafe {
-            usize::from_str_radix(
-                CStr::from_ptr(((ptr as usize) + size_of::<Modules>()) as *const c_char)
-                    .to_str()
-                    .unwrap(),
-                16,
-            )
-            .unwrap()
-        };
-        println!("module: {:#x?}, addr: {:#x?}", module, dst);
-        cnt += 1;
-
-        if dst == 0x0 {
-            continue;
+        if tag_type == multiboot_tag::MODULES {
+            let hdr = size_of::<Modules>();
+            if tag_size <= hdr {
+                panic!("module_init: MODULES tag is too small for a command line");
+            }
+            // The module command line carries the load destination as a hex
+            // physical address (optionally followed by arguments). Search for the
+            // NUL terminator *within the tag bounds* rather than trusting
+            // termination, and check every parse step rather than unwrapping
+            // blind, so bad bootloader data fails loudly instead of corrupting
+            // memory or reading past the tag.
+            let str_bytes =
+                unsafe { core::slice::from_raw_parts((cur + hdr) as *const u8, tag_size - hdr) };
+            let nul = str_bytes
+                .iter()
+                .position(|&b| b == 0)
+                .expect("module_init: module command line is not NUL-terminated within its tag");
+            let s = core::str::from_utf8(&str_bytes[..nul])
+                .expect("module_init: module command line is not valid UTF-8");
+            let first = s
+                .trim()
+                .split_whitespace()
+                .next()
+                .expect("module_init: empty module command line (expected a hex load address)");
+            let dst = usize::from_str_radix(first, 16)
+                .expect("module_init: module load address is not a hex number");
+            let tag = unsafe { &*(cur as *const Modules) };
+            // multiboot2 `mod_end` is the address one past the module's last
+            // byte (exclusive), so the length is `mod_end - mod_start`. The
+            // exclusive range ends are pre-computed with checked arithmetic so a
+            // descriptor near the top of the address space cannot wrap a value
+            // the overlap/scheduler tests below rely on.
+            let src = tag.mod_start as usize;
+            let len = (tag.mod_end as usize)
+                .checked_sub(src)
+                .expect("module_init: multiboot2 module has mod_end < mod_start");
+            // An empty module (mod_end == mod_start) carries no data and
+            // occupies no bytes, so it is ignored: it is never added to the
+            // modules array (and never counted), which keeps the half-open
+            // overlap predicates from misfiring on a zero-length range and
+            // raising a spurious overlapping-load / cyclic-overlap panic.
+            if len == 0 {
+                cur += (tag_size + 7) & !7;
+                continue;
+            }
+            let src_end = src
+                .checked_add(len)
+                .expect("module_init: module source range overflows the address space");
+            let dst_end = if dst == 0 {
+                0
+            } else {
+                dst.checked_add(len)
+                    .expect("module_init: module destination range overflows the address space")
+            };
+            if count == MAX_BOOT_MODULES {
+                panic!(
+                    "module_init: more than {} multiboot2 modules; raise MAX_BOOT_MODULES",
+                    MAX_BOOT_MODULES
+                );
+            }
+            modules[count] = BootModule {
+                src,
+                src_end,
+                len,
+                dst,
+                dst_end,
+            };
+            count += 1;
         }
-
-        unsafe {
-            core::ptr::copy(
-                module.mod_start as *mut u8,
-                dst as *mut u8,
-                (module.mod_end - module.mod_start + 1) as usize,
-            )
-        };
+        // tag_size >= 8 guarantees forward progress; the END tag terminates the
+        // walk, and the loop condition keeps the aligned advance in bounds.
+        cur += (tag_size + 7) & !7;
     }
-    println!("module cnt: {:x}", cnt);
+
+    // The relocation scheduler below only protects module *sources* from being
+    // clobbered before they are copied; it does not prevent two modules from
+    // being copied onto overlapping *destinations*, which would deterministically
+    // corrupt one of the final images. Reject that pathological layout up front.
+    // Destination arithmetic is checked so a bogus mod_end cannot wrap a range.
+    for i in 0..count {
+        if modules[i].dst == 0 {
+            continue;
+        }
+        for j in (i + 1)..count {
+            if modules[j].dst == 0 {
+                continue;
+            }
+            // Half-open interval overlap on the pre-checked destination ranges.
+            if modules[i].dst < modules[j].dst_end && modules[i].dst_end > modules[j].dst {
+                panic!("module_init: modules have overlapping load destinations");
+            }
+        }
+    }
+
+    let mut relocated = [false; MAX_BOOT_MODULES];
+    let mut copied = 0usize;
+    let mut in_place = 0usize;
+    let mut remaining = count;
+    while remaining > 0 {
+        let mut progress = false;
+        for i in 0..count {
+            if relocated[i] {
+                continue;
+            }
+            // A module with no destination is consumed in place; it is never
+            // copied and its staging area must stay intact, so it imposes no
+            // ordering constraint of its own but keeps blocking others below.
+            if modules[i].dst == 0 {
+                relocated[i] = true;
+                remaining -= 1;
+                in_place += 1;
+                progress = true;
+                continue;
+            }
+            let dst = modules[i].dst;
+            let dst_end = modules[i].dst_end;
+            // A module may only be placed once its destination range no longer
+            // overlaps any module that still holds live data at its source: one
+            // that is consumed in place (dst == 0) or not yet relocated. All
+            // endpoints are the pre-checked (non-wrapping) ranges computed above.
+            let blocked = (0..count).any(|j| {
+                j != i
+                    && (modules[j].dst == 0 || !relocated[j])
+                    && dst < modules[j].src_end
+                    && dst_end > modules[j].src
+            });
+            if blocked {
+                continue;
+            }
+            unsafe {
+                copy(modules[i].src as *const u8, dst as *mut u8, modules[i].len);
+            }
+            relocated[i] = true;
+            remaining -= 1;
+            copied += 1;
+            progress = true;
+        }
+        if !progress {
+            // The common real cause of a stall is a not-yet-relocated module
+            // whose destination range overlaps the source range of an in-place
+            // (dst == 0) module, which can never move out of the way. Diagnose
+            // that case specifically before falling back to the generic
+            // cyclic-overlap report.
+            for i in 0..count {
+                if relocated[i] || modules[i].dst == 0 {
+                    continue;
+                }
+                let overlaps_in_place = (0..count).any(|j| {
+                    modules[j].dst == 0
+                        && modules[i].dst < modules[j].src_end
+                        && modules[i].dst_end > modules[j].src
+                });
+                if overlaps_in_place {
+                    panic!(
+                        "module_init: a module destination overlaps an in-place module source \
+                         and cannot relocate onto a module consumed in place"
+                    );
+                }
+            }
+            panic!("module_init: modules have a cyclic address overlap");
+        }
+    }
+
+    println!(
+        "module_init: relocated {} module(s) ({} copied, {} in place)",
+        count, copied, in_place
+    );
 }

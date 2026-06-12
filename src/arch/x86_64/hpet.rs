@@ -17,7 +17,7 @@
 use crate::memory::VirtAddr;
 use bit_field::BitField;
 use core::{arch::x86_64::_rdtsc, time::Duration, u32};
-use spin::Mutex;
+use spin::{Mutex, Once};
 use tock_registers::{
     interfaces::{Readable, Writeable},
     register_structs,
@@ -203,7 +203,19 @@ pub fn wait_millis(millis: u64) {
     HPET.wait_millis(millis);
 }
 
+/// Cached result of the one-time TSC-frequency calibration.
+///
+/// Calibration busy-waits on the HPET for tens of milliseconds, so it must run
+/// at most once: a guest can execute CPUID leaf 0x15/0x16 in a tight loop, and
+/// re-calibrating on every exit would let it stall the physical CPU at will.
+static TSC_FREQ_MHZ: Once<Option<u32>> = Once::new();
+
+/// TSC frequency in MHz, calibrated against the HPET on first use and cached.
 pub fn get_tsc_freq_mhz() -> Option<u32> {
+    *TSC_FREQ_MHZ.call_once(calibrate_tsc_freq_mhz)
+}
+
+fn calibrate_tsc_freq_mhz() -> Option<u32> {
     let mut best_freq_mhz = u32::MAX;
     for _ in 0..5 {
         let tsc_start = unsafe { _rdtsc() };
@@ -213,7 +225,10 @@ pub fn get_tsc_freq_mhz() -> Option<u32> {
         let hpet_end = current_ticks();
 
         let nanos = ticks_to_nanos(hpet_end.wrapping_sub(hpet_start));
-        let freq_mhz = ((tsc_end - tsc_start) * 1_000 / nanos) as u32;
+        if nanos == 0 {
+            continue;
+        }
+        let freq_mhz = (tsc_end.wrapping_sub(tsc_start) * 1_000 / nanos) as u32;
 
         if freq_mhz < best_freq_mhz {
             best_freq_mhz = freq_mhz;
