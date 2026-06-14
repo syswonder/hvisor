@@ -116,6 +116,16 @@ fn handle_irq(vector: u8) {
     unsafe { VirtLocalApic::phys_local_apic().end_of_interrupt() };
 }
 
+/// Measured TSC frequency in MHz, cached after the first calibration.
+///
+/// `hpet::get_tsc_freq_mhz` busy-waits on the HPET for tens of milliseconds, so
+/// it must not run on every guest CPUID. The value is stable for the lifetime of
+/// the hypervisor, so calibrate once and reuse the result.
+fn cached_tsc_freq_mhz() -> Option<u32> {
+    static TSC_FREQ_MHZ: spin::Once<Option<u32>> = spin::Once::new();
+    *TSC_FREQ_MHZ.call_once(hpet::get_tsc_freq_mhz)
+}
+
 fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
     use raw_cpuid::{cpuid, CpuIdResult};
     // TODO: temporary hypervisor hack
@@ -127,6 +137,13 @@ fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
 
     if let Ok(function) = rax {
         res = match function {
+            CpuIdEax::VendorInfo => {
+                let mut res = cpuid!(regs.rax, regs.rcx);
+                // Leaves 0x15/0x16 are synthesised below, so advertise a maximum
+                // basic leaf that covers them for guests that gate on EAX.
+                res.eax = res.eax.max(CpuIdEax::ProcessorFrequencyInfo as u32);
+                res
+            }
             CpuIdEax::FeatureInfo => {
                 let mut res = cpuid!(regs.rax, regs.rcx);
                 let mut ecx = FeatureInfoFlags::from_bits_truncate(res.ecx as _);
@@ -153,8 +170,30 @@ fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
 
                 res
             }
+            CpuIdEax::TimeStampCounterInfo => {
+                // Leaf 0x15: the guest derives TSC_Hz = ECX * EBX / EAX, where ECX
+                // is the core-crystal frequency and EBX/EAX the TSC:crystal ratio.
+                // Encoding the crystal as 1 MHz with ratio freq_mhz:1 represents the
+                // measured frequency exactly for any TSC (including >4.29 GHz)
+                // without overflowing the 32-bit ECX. ECX=0 signals "not
+                // enumerated" when the frequency is unknown.
+                match cached_tsc_freq_mhz() {
+                    Some(freq_mhz) => CpuIdResult {
+                        eax: 1,
+                        ebx: freq_mhz,
+                        ecx: 1_000_000,
+                        edx: 0,
+                    },
+                    None => CpuIdResult {
+                        eax: 1,
+                        ebx: 0,
+                        ecx: 0,
+                        edx: 0,
+                    },
+                }
+            }
             CpuIdEax::ProcessorFrequencyInfo => {
-                if let Some(freq_mhz) = hpet::get_tsc_freq_mhz() {
+                if let Some(freq_mhz) = cached_tsc_freq_mhz() {
                     CpuIdResult {
                         eax: freq_mhz,
                         ebx: freq_mhz,
