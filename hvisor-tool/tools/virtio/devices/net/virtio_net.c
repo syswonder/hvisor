@@ -177,7 +177,7 @@ static void virtq_tx_handle_one_request(VirtIODevice *vdev, VirtQueue *vq) {
     int i, n;
     int packet_len, all_len; // all_len include the header length.
     uint16_t idx;
-    static char pad[64];
+    char pad[64] = {0};
     ssize_t len;
     NetDev *net = vdev->dev;
     size_t header_len = get_nethdr_size(vdev);
