@@ -705,6 +705,32 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen) {
         used_idx, idx, vq->num);
 }
 
+void update_used_ring_batch(VirtQueue *vq, const uint16_t *indices,
+                            const uint32_t *lens, int count) {
+    volatile VirtqUsed *used_ring;
+    uint16_t used_idx, mask;
+
+    if (count <= 0)
+        return;
+
+    // Ensure prior stores (e.g. readv into guest buffers) are globally
+    // visible before any used-ring entry becomes observable.
+    write_barrier();
+
+    used_ring = vq->used_ring;
+    used_idx = used_ring->idx;
+    mask = vq->num - 1;
+
+    for (int i = 0; i < count; i++) {
+        used_ring->ring[(used_idx + i) & mask].id = indices[i];
+        used_ring->ring[(used_idx + i) & mask].len = lens[i];
+    }
+
+    write_barrier(); // make all entries visible
+    used_ring->idx = used_idx + count;
+    write_barrier(); // make idx update visible
+}
+
 // function for translating virtio offset to meaning string
 static const char *virtio_mmio_reg_name(uint64_t offset) {
     switch (offset) {
