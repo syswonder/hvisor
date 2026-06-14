@@ -144,8 +144,10 @@ void virtio_net_event_handler(int fd, int epoll_type, void *param) {
         }
         vnet_header = iov[0].iov_base;
         iov_packet = rm_iov_header(iov, &n, header_len);
-        if (iov_packet == NULL)
+        if (iov_packet == NULL) {
+            update_used_ring(vq, idx, 0);
             goto free_iov;
+        }
         // Read a packet from tap device
         len = readv(net->tapfd, iov_packet, n);
 
