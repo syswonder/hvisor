@@ -45,7 +45,7 @@ use x86_64::registers::control::Cr4Flags;
 
 use super::{
     pci::{handle_pci_config_port_read, handle_pci_config_port_write},
-    pio::{PCI_CONFIG_ADDR_PORT, PCI_CONFIG_DATA_PORT, UART_COM1_PORT},
+    pio::{I8042_PORT, PCI_CONFIG_ADDR_PORT, PCI_CONFIG_DATA_PORT, UART_COM1_PORT},
 };
 
 core::arch::global_asm!(
@@ -106,6 +106,7 @@ fn handle_irq(vector: u8) {
         IdtVector::VIRT_IPI_VECTOR => {
             ipi::handle_virt_ipi();
         }
+        IdtVector::I8042_KEYBOARD_VECTOR => {}
         IdtVector::APIC_SPURIOUS_VECTOR | IdtVector::APIC_ERROR_VECTOR => {}
         _ => {
             if vector >= 0x20 && this_cpu_data().vcpu_state.is_running() {
@@ -153,6 +154,13 @@ fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
 
                 res
             }
+            CpuIdEax::TscInfo => CpuIdResult {
+                eax: 1,
+                ebx: 1,
+                ecx: (hpet::get_tsc_freq_mhz().unwrap_or(0) as u64 * 1_000_000).min(u32::MAX as u64)
+                    as u32,
+                edx: 0,
+            },
             CpuIdEax::ProcessorFrequencyInfo => {
                 if let Some(freq_mhz) = hpet::get_tsc_freq_mhz() {
                     CpuIdResult {
@@ -276,11 +284,10 @@ fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
             handle_pci_config_port_write(&io_info, value);
         } else if UART_COM1_PORT.contains(&io_info.port) {
             virt_console_io_write(io_info.port, value);
-        } else {
-            /* info!(
-                "unhandled port io write {:x} value: {:x}",
-                io_info.port, value
-            ); */
+        } else if I8042_PORT.contains(&io_info.port) {
+            // i8042 writes are accepted and dropped: the controller is not
+            // emulated, but silently swallowing the access keeps a guest that
+            // probes the legacy keyboard controller during init from faulting.
         }
     } else {
         if PCI_CONFIG_ADDR_PORT.contains(&io_info.port)
@@ -289,8 +296,10 @@ fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
             value = handle_pci_config_port_read(&io_info);
         } else if UART_COM1_PORT.contains(&io_info.port) {
             value = virt_console_io_read(io_info.port);
+        } else if I8042_PORT.contains(&io_info.port) {
+            // No i8042 controller is present; report the bus-idle value.
+            value = 0xff;
         } else {
-            // info!("unhandled port io read {:x}", io_info.port);
             value = 0x0;
         }
         let rax = &mut arch_cpu.regs_mut().rax;

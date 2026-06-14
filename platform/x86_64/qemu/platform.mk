@@ -3,6 +3,7 @@ QEMU := qemu-system-x86_64
 zone0_boot := $(image_dir)/bootloader/out/boot.bin
 zone0_setup := $(image_dir)/kernel/setup.bin
 zone0_vmlinux := $(image_dir)/kernel/vmlinux.bin
+zone0_asterinas := $(image_dir)/kernel/aster-kernel-osdk-bin
 zone0_initrd := $(image_dir)/virtdisk/initramfs.cpio.gz
 zone0_rootfs := $(image_dir)/virtdisk/rootfs1.img
 zone1_rootfs := $(image_dir)/virtdisk/rootfs2.img
@@ -14,7 +15,7 @@ QEMU_ARGS += -serial mon:stdio
 QEMU_ARGS += -m 4G
 QEMU_ARGS += -bios /usr/share/ovmf/OVMF.fd
 QEMU_ARGS += -vga std
-# QEMU_ARGS += -nographic
+QEMU_ARGS += -nographic
 
 QEMU_ARGS += -nodefaults
 QEMU_ARGS += -net nic -net user
@@ -68,7 +69,19 @@ $(hvisor_bin): elf boot
 		echo "Warning: $(zone0_vmlinux) not found, skipping"; \
 	fi
 
+	if [ -f $(zone0_asterinas) ]; then \
+		cp $(zone0_asterinas) $(image_dir)/iso/boot/kernel; \
+	else \
+		echo "Warning: $(zone0_asterinas) not found, skipping"; \
+	fi
+
 	mkdir -p $(image_dir)/virtdisk
+
+	if [ -f $(zone0_initrd) ]; then \
+		cp $(zone0_initrd) $(image_dir)/iso/boot/kernel; \
+	else \
+		echo "Warning: $(zone0_initrd) not found, skipping"; \
+	fi
 
 	if command -v xorriso >/dev/null 2>&1; then \
 		grub-mkrescue /usr/lib/grub/x86_64-efi -o $(image_dir)/virtdisk/hvisor.iso $(image_dir)/iso; \

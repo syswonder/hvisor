@@ -16,12 +16,13 @@
 
 use crate::{
     arch::{
-        acpi::{get_apic_id, get_cpu_id},
-        cpu::this_cpu_id,
+        acpi::{contains_apic_id, get_apic_id, get_cpu_id},
+        cpu::{this_apic_id, this_cpu_id},
         idt, ipi,
         mmio::MMIoDevice,
         zone::HvArchZoneConfig,
     },
+    cpu_data::this_zone,
     device::irqchip::pic::inject_vector,
     error::HvResult,
     memory::{GuestPhysAddr, MMIOAccess},
@@ -95,6 +96,11 @@ impl VirtIoApic {
             mut reg => {
                 reg -= IoApicReg::TABLE_BASE;
                 let index = (reg >> 1) as usize;
+                // The serial line (IRQ4 / COM1) is virtualised for non-root
+                // zones, so a guest never owns its physical redirection entry.
+                if this_zone_id() != 0 && index == 4 {
+                    return Ok(u64::MAX);
+                }
                 if let Some(entry) = inner.rte.get(index) {
                     if reg % 2 == 0 {
                         Ok((*entry).get_bits(0..=31))
@@ -133,6 +139,21 @@ impl VirtIoApic {
                         entry.set_bits(0..=31, value.get_bits(0..=31));
                     } else {
                         entry.set_bits(32..=63, value.get_bits(0..=31));
+                        // The high dword's destination APIC id is in bits
+                        // 24..=31 (RTE bits 56..=63). Confine a zone to its own
+                        // CPUs: a destination that is not a known APIC id owned
+                        // by this zone is redirected to the current CPU rather
+                        // than another zone's. The membership check guards the
+                        // APIC-id lookup so a guest cannot panic it with an
+                        // unknown id.
+                        let dest = value.get_bits(24..=31);
+                        let owned = contains_apic_id(dest as usize)
+                            && this_zone()
+                                .cpu_set()
+                                .contains_cpu(get_cpu_id(dest as usize));
+                        if !owned {
+                            entry.set_bits(56..=63, this_apic_id() as u64);
+                        }
 
                         /*if zone_id == 0 {
                             // info!("1 write {:x} entry: {:x?}", index, *entry);

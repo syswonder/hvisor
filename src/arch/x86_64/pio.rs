@@ -27,6 +27,7 @@ pub const UART_COM1_BASE_PORT: u16 = 0x3f8;
 pub const UART_COM1_PORT: Range<u16> = 0x3f8..0x400;
 pub const PCI_CONFIG_ADDR_PORT: Range<u16> = 0xcf8..0xcfc;
 pub const PCI_CONFIG_DATA_PORT: Range<u16> = 0xcfc..0xd00;
+pub const I8042_PORT: Range<u16> = 0x60..0x65;
 
 static mut PIO_BITMAP_MAP: Option<FnvIndexMap<usize, PortIoBitmap, MAX_ZONE_NUM>> = None;
 
@@ -93,8 +94,13 @@ impl PortIoBitmap {
         bitmap.set_range_intercept(UART_COM1_PORT, true);
         // }
 
-        // i8042, we won't use it, but intercept its ports might block linux init
-        bitmap.set_range_intercept(0x60..0x65, false);
+        // i8042: zone0 reaches the real keyboard controller (intercepting it can
+        // block root Linux init); a non-root zone keeps it intercepted so it
+        // cannot touch the shared controller — the trap handler reports the
+        // bus-idle value, which a guest reads as "no device present".
+        if zone_id == 0 {
+            bitmap.set_range_intercept(I8042_PORT, false);
+        }
 
         bitmap
     }

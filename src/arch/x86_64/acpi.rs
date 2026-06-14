@@ -697,7 +697,7 @@ pub fn root_get_config_space_info() -> Option<(usize, usize)> {
     Some((acpi.config_space_base, acpi.config_space_size))
 }
 
-fn contains_apic_id(apic_id: usize) -> bool {
+pub fn contains_apic_id(apic_id: usize) -> bool {
     ROOT_ACPI
         .get()
         .unwrap()

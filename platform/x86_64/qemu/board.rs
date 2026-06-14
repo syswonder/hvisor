@@ -54,10 +54,7 @@ const ROOT_ZONE_UEFI_REGION_ID: usize = 0x3;
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
 pub const ROOT_ZONE_CMDLINE: &str =
-    "console=tty0 console=ttyS0 earlycon=efifb earlyprintk=serial nointremap no_timer_check efi=noruntime pci=pcie_scan_all,lastbus=1 root=/dev/vda rw init=/init\0";
-//"console=ttyS0 earlyprintk=serial rdinit=/init nokaslr nointremap\0"; // noapic
-// video=vesafb
-// /lib/systemd/systemd
+    "console=ttyS0 earlyprintk=serial nointremap no_timer_check efi=noruntime pci=pcie_scan_all,lastbus=1 root=/dev/vda rw init=/init\0";
 
 pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 10] = [
     HvConfigMemoryRegion {
@@ -122,8 +119,8 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     kernel_entry_gpa: ROOT_ZONE_VMLINUX_ENTRY_ADDR,
     cmdline_load_gpa: ROOT_ZONE_CMDLINE_ADDR,
     setup_load_gpa: ROOT_ZONE_SETUP_ADDR,
-    initrd_load_gpa: 0, // 0x1500_0000,
-    initrd_size: 0,     //0x26_b000,
+    initrd_load_gpa: 0,
+    initrd_size: 0,
     rsdp_memory_region_id: ROOT_ZONE_RSDP_REGION_ID,
     acpi_memory_region_id: ROOT_ZONE_ACPI_REGION_ID,
     uefi_memory_region_id: ROOT_ZONE_UEFI_REGION_ID,
@@ -134,7 +131,7 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
 pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [HvPciConfig {
     bus_range_begin: 0x0,
     bus_range_end: 0x1f,
-    ecam_base: 0xe0000000,
+    ecam_base: 0xb0000000,
     ecam_size: 0x200000,
     io_base: 0x0,
     io_size: 0x0,
@@ -149,11 +146,12 @@ pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [HvPciConfig {
 }];
 
 pub const ROOT_PCI_MAX_BUS: usize = 1;
-pub const ROOT_PCI_DEVS: [HvPciDevConfig; 7] = [
+pub const ROOT_PCI_DEVS: [HvPciDevConfig; 8] = [
     pci_dev!(0x0, 0x0, 0x0, 0x0 => 0x0, 0x0, 0x0, VpciDevType::Physical), // host bridge
     pci_dev!(0x0, 0x0, 0x1, 0x0 => 0x0, 0x1, 0x0, VpciDevType::Physical), // VGA controller
     pci_dev!(0x0, 0x0, 0x2, 0x0 => 0x0, 0x2, 0x0, VpciDevType::Physical), // Ethernet controller
     pci_dev!(0x0, 0x0, 0x3, 0x0 => 0x0, 0x3, 0x0, VpciDevType::Physical), // PCI bridge
+    pci_dev!(0x0, 0x0, 0x4, 0x0 => 0x0, 0x4, 0x0, VpciDevType::Physical), // PCI bridge
     pci_dev!(0x0, 0x0, 0x1f, 0x0 => 0x0, 0x1f, 0x0, VpciDevType::Physical), // ISA bridge
     pci_dev!(0x0, 0x0, 0x1f, 0x2 => 0x0, 0x1f, 0x2, VpciDevType::Physical), // SATA controller
     // pci_dev!(0x0, 0x0, 0x1f, 0x3 => 0x0, 0x1f, 0x3, VpciDevType::Physical), // SMBus
