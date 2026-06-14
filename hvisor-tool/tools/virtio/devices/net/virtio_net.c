@@ -191,6 +191,13 @@ static void virtq_tx_handle_one_request(VirtIODevice *vdev, VirtQueue *vq) {
         return;
     }
 
+    if ((size_t)iov[0].iov_len < header_len) {
+        log_error("malformed TX packet: iov[0] too small for header");
+        update_used_ring(vq, idx, 0);
+        free(iov);
+        return;
+    }
+
     for (i = 0, all_len = 0; i < n; i++)
         all_len += iov[i].iov_len;
 
