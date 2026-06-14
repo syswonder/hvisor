@@ -1444,6 +1444,14 @@ int virtio_start_from_json(char *json_path) {
         }
         int num_mems = SAFE_CJSON_GET_ARRAY_SIZE(memory_region_json);
 
+        if (num_mems > CONFIG_MAX_MEMORY_REGIONS) {
+            log_error("zone %d: %d memory regions exceeds "
+                      "CONFIG_MAX_MEMORY_REGIONS=%d",
+                      zone_id, num_mems, CONFIG_MAX_MEMORY_REGIONS);
+            err = -1;
+            goto err_out;
+        }
+
         struct zone_mem *z = &zone_mem[zone_id];
         z->num_regions = num_mems;
 
