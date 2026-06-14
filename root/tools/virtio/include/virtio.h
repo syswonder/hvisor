@@ -190,6 +190,32 @@ int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
                              struct iovec **iov, uint16_t **flags,
                              int append_len, bool copy_flags);
 
+// Caller-provided buffer arrays for process_descriptor_chain_buf().
+// out_iov / in_iov point to the arrays; max_out / max_in are their capacities.
+struct VirtioBufConfig {
+    struct iovec *out_iov;
+    size_t max_out;
+    struct iovec *in_iov;
+    size_t max_in;
+};
+
+// Parsed descriptor chain split by direction.  iov pointers alias the
+// caller-provided buffers in VirtioBufConfig; counts are the number
+// of populated entries.
+struct VirtioRequest {
+    struct iovec *out_iov;
+    unsigned int out_count;
+    struct iovec *in_iov;
+    unsigned int in_count;
+};
+
+// Fill req from the descriptor chain starting at desc_head into the
+// buffers described by cfg.  Returns total chain_len (out_count +
+// in_count) on success, -1 if either buffer is too small.
+int process_descriptor_chain_buf(VirtQueue *vq, uint16_t descriptor_head,
+                                 const struct VirtioBufConfig *cfg,
+                                 struct VirtioRequest *req);
+
 void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen);
 
 uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size);
