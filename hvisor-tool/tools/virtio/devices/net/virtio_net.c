@@ -166,6 +166,14 @@ void virtio_net_event_handler(int fd, int epoll_type, void *param) {
             break;
         }
 
+        if (len == 0) {
+            log_error("tap device EOF (closed or bridge down)");
+            update_used_ring(vq, idx, 0);
+            free(iov);
+            net->rx_ready = 0;
+            break;
+        }
+
         memset(vnet_header, 0, header_len);
         if (vdev->regs.drv_feature & (1ULL << VIRTIO_F_VERSION_1)) {
             ((NetHdr *)vnet_header)->num_buffers = 1;
