@@ -21,9 +21,6 @@
 #include <sys/ioctl.h>
 #include <sys/uio.h>
 #include <unistd.h>
-// The max bytes of a packet in data link layer is 1518 bytes.
-static uint8_t trashbuf[1600];
-
 NetDev *init_net_dev(uint8_t mac[]) {
     NetDev *dev = malloc(sizeof(NetDev));
     dev->config.mac[0] = mac[0];
@@ -126,6 +123,7 @@ void virtio_net_event_handler(int fd, int epoll_type, void *param) {
     }
 
     // if vq is not setup, drop the packet
+    uint8_t trashbuf[1600];
     if (!net->rx_ready) {
         read(net->tapfd, trashbuf, sizeof(trashbuf));
         return;
