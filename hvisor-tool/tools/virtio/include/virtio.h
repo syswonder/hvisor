@@ -218,6 +218,11 @@ int process_descriptor_chain_buf(VirtQueue *vq, uint16_t descriptor_head,
 
 void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen);
 
+// Batch version of update_used_ring: writes `count` used-ring entries
+// with a single pair of write barriers instead of two per entry.
+void update_used_ring_batch(VirtQueue *vq, const uint16_t *indices,
+                            const uint32_t *lens, int count);
+
 uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size);
 
 void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t value,
