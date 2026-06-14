@@ -486,6 +486,110 @@ inline int descriptor2iov(int i, volatile VirtqDesc *vd, struct iovec *iov,
     return 0;
 }
 
+// Dispatch a descriptor into cfg->out_iov or cfg->in_iov based on flags.
+static inline int push_descriptor(uint16_t flags, void *address,
+                                  uint32_t length,
+                                  const struct VirtioBufConfig *cfg,
+                                  size_t *out_count, size_t *in_count) {
+    struct iovec *buffer;
+    size_t max;
+    size_t *count;
+
+    if (flags & VRING_DESC_F_WRITE) {
+        buffer = cfg->in_iov;
+        max = cfg->max_in;
+        count = in_count;
+    } else {
+        buffer = cfg->out_iov;
+        max = cfg->max_out;
+        count = out_count;
+    }
+
+    if (*count >= max)
+        return -1;
+
+    buffer[*count].iov_base = address;
+    buffer[*count].iov_len = length;
+    (*count)++;
+    return 0;
+}
+
+/// record one descriptor list to iov, caller-provided buffer (no malloc)
+int process_descriptor_chain_buf(VirtQueue *virtqueue, uint16_t descriptor_head,
+                                 const struct VirtioBufConfig *cfg,
+                                 struct VirtioRequest *req) {
+
+    // Single-pass traversal; virtqueue->num guards against circular chains.
+    size_t out_count = 0, in_count = 0;
+    uint16_t next = descriptor_head;
+    volatile VirtqDesc *descriptor_table = virtqueue->desc_table;
+    for (size_t iter = 0; iter < virtqueue->num; iter++) {
+        VirtqDesc descriptor = descriptor_table[next];
+
+        if (descriptor.flags & VRING_DESC_F_INDIRECT) {
+            const size_t indirect_count = descriptor.len / sizeof(VirtqDesc);
+
+            volatile VirtqDesc *indirect_table = get_virt_addr(
+                (void *)(uintptr_t)descriptor.addr, virtqueue->dev->zone_id);
+            uint16_t indirect_next = 0;
+            for (size_t j = 0; j < indirect_count; j++) {
+                if (indirect_next >= indirect_count) {
+                    log_error("indirect_next is not less than indirect_count: "
+                              "%zu >= %zu",
+                              indirect_next, indirect_count);
+                    return -1;
+                }
+
+                VirtqDesc indirect_descriptor = indirect_table[indirect_next];
+                void *address =
+                    get_virt_addr((void *)(uintptr_t)indirect_descriptor.addr,
+                                  virtqueue->dev->zone_id);
+                if (!address) {
+                    log_error("address is null");
+                    return -1;
+                }
+
+                if (push_descriptor(indirect_descriptor.flags, address,
+                                    indirect_descriptor.len, cfg, &out_count,
+                                    &in_count) < 0) {
+                    log_error("descriptor buffer overflow");
+                    return -1;
+                }
+                if (!(indirect_descriptor.flags & VRING_DESC_F_NEXT))
+                    break;
+                indirect_next = indirect_descriptor.next;
+            }
+        } else {
+            void *address = get_virt_addr((void *)(uintptr_t)descriptor.addr,
+                                          virtqueue->dev->zone_id);
+            if (!address) {
+                log_error("address is null");
+                return -1;
+            }
+
+            if (push_descriptor(descriptor.flags, address, descriptor.len, cfg,
+                                &out_count, &in_count) < 0) {
+                log_error("descriptor buffer overflow");
+                return -1;
+            }
+        }
+
+        if (!(descriptor.flags & VRING_DESC_F_NEXT))
+            break;
+        next = descriptor.next;
+    }
+
+    *req = (struct VirtioRequest){
+        .out_iov = cfg->out_iov,
+        .out_count = out_count,
+        .in_iov = cfg->in_iov,
+        .in_count = in_count,
+    };
+
+    virtqueue->last_avail_idx++;
+    return out_count + in_count;
+}
+
 /// record one descriptor list to iov
 /// \param desc_idx the first descriptor's idx in descriptor list.
 /// \param iov the iov to record
