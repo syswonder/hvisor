@@ -143,8 +143,6 @@ struct VirtIODevice {
 // Set net and console to non-blocking
 int set_nonblocking(int fd);
 
-int get_zone_ram_index(void *zonex_ipa, int zone_id);
-
 /// Check if circular queue is full. size must be a power of 2
 int is_queue_full(unsigned int front, unsigned int rear, unsigned int size);
 
