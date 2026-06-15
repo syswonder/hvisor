@@ -23,6 +23,7 @@ use crate::{
     platform::MEM_TYPE_RESERVED,
 };
 use alloc::string::{String, ToString};
+use alloc::{vec, vec::Vec};
 use bit_field::BitField;
 use core::{
     arch::{self, global_asm},
@@ -535,17 +536,26 @@ pub fn print_memory_map() {
 }
 
 /// copy kernel modules to the right place
+/// Relocate GRUB multiboot2 modules to the load addresses encoded in their
+/// command lines.
+///
+/// GRUB places the modules contiguously wherever it sees fit, so a module's
+/// destination range may overlap the still-to-be-copied source of another
+/// module. Copying naively in tag order can therefore clobber a later module
+/// before it has been relocated. Modules are collected first and then copied in
+/// an order in which each destination no longer overlaps any pending source.
 pub fn module_init(info_addr: usize) {
-    println!("module_init");
-    let mut cur = info_addr;
-    let total_size = unsafe { *(cur as *const u32) } as usize;
+    // (src, dst, len) for each module, collected before any copy so the copy
+    // order can avoid overlaps. The heap is initialised before module_init runs,
+    // so an arbitrary number of modules is supported.
+    let mut mods: Vec<(usize, usize, usize)> = Vec::new();
 
-    let mut cnt = 0;
-    cur += 8;
+    let total_size = unsafe { *(info_addr as *const u32) } as usize;
+    let mut cur = info_addr + 8;
     while cur < info_addr + total_size {
         let tag_type = unsafe { *(cur as *const u32) };
         let ptr = cur as *const multiboot_tag::Modules;
-        cur += ((unsafe { *((cur + 4) as *const u32) } as usize + 7) & (!7));
+        cur += (unsafe { *((cur + 4) as *const u32) } as usize + 7) & !7;
 
         if tag_type == multiboot_tag::END {
             break;
@@ -555,29 +565,54 @@ pub fn module_init(info_addr: usize) {
         }
 
         let module = unsafe { *ptr };
-        let dst = unsafe {
-            usize::from_str_radix(
-                CStr::from_ptr(((ptr as usize) + size_of::<Modules>()) as *const c_char)
-                    .to_str()
-                    .unwrap(),
-                16,
-            )
-            .unwrap()
+        // The module command line carries the destination load address in hex.
+        let cmdline =
+            unsafe { CStr::from_ptr(((ptr as usize) + size_of::<Modules>()) as *const c_char) };
+        let dst = match cmdline
+            .to_str()
+            .ok()
+            .and_then(|s| usize::from_str_radix(s, 16).ok())
+        {
+            Some(dst) => dst,
+            None => {
+                warn!("module_init: ignoring module with malformed command line");
+                continue;
+            }
         };
-        println!("module: {:#x?}, addr: {:#x?}", module, dst);
-        cnt += 1;
-
-        if dst == 0x0 {
+        if dst == 0 || module.mod_end < module.mod_start {
             continue;
         }
 
-        unsafe {
-            core::ptr::copy(
-                module.mod_start as *mut u8,
-                dst as *mut u8,
-                (module.mod_end - module.mod_start + 1) as usize,
-            )
-        };
+        // GRUB sets mod_end = mod_start + size, so the byte count is exclusive.
+        let len = (module.mod_end - module.mod_start) as usize;
+        mods.push((module.mod_start as usize, dst, len));
     }
-    println!("module cnt: {:x}", cnt);
+
+    let mut copied = vec![false; mods.len()];
+    let mut remaining = mods.len();
+    while remaining > 0 {
+        let mut progressed = false;
+        for i in 0..mods.len() {
+            if copied[i] {
+                continue;
+            }
+            let (src_i, dst_i, len_i) = mods[i];
+            let overlaps_pending_src = mods.iter().enumerate().any(|(j, &(src_j, _, len_j))| {
+                !copied[j] && j != i && dst_i < src_j + len_j && src_j < dst_i + len_i
+            });
+            if overlaps_pending_src {
+                continue;
+            }
+            unsafe { core::ptr::copy(src_i as *const u8, dst_i as *mut u8, len_i) };
+            copied[i] = true;
+            remaining -= 1;
+            progressed = true;
+        }
+        if !progressed {
+            // No non-cyclic copy order exists (would require a bounce buffer);
+            // leave the remaining modules in place rather than panicking.
+            warn!("module_init: unresolved overlapping module layout, {remaining} left");
+            break;
+        }
+    }
 }
