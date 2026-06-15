@@ -37,7 +37,7 @@ use crate::{
     error::HvResult,
     hypercall::HyperCall,
     memory::{mmio_handle_access, MMIOAccess, MemFlags},
-    zone::this_zone_id,
+    zone::{this_zone_id, zone_error},
 };
 use bit_field::BitField;
 use core::mem::size_of;
@@ -288,6 +288,15 @@ fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
             // i8042 writes are accepted and dropped: the controller is not
             // emulated, but silently swallowing the access keeps a guest that
             // probes the legacy keyboard controller during init from faulting.
+        } else {
+            debug!(
+                "isolation-pio zone={} cpu={} kind=pio-out port={:#x} size={} value={:#x}",
+                this_zone_id(),
+                this_cpu_id(),
+                io_info.port,
+                io_info.access_size,
+                value
+            );
         }
     } else {
         if PCI_CONFIG_ADDR_PORT.contains(&io_info.port)
@@ -300,6 +309,13 @@ fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
             // No i8042 controller is present; report the bus-idle value.
             value = 0xff;
         } else {
+            debug!(
+                "isolation-pio zone={} cpu={} kind=pio-in port={:#x} size={}",
+                this_zone_id(),
+                this_cpu_id(),
+                io_info.port,
+                io_info.access_size
+            );
             value = 0x0;
         }
         let rax = &mut arch_cpu.regs_mut().rax;
@@ -367,8 +383,12 @@ fn handle_msr_write(arch_cpu: &mut ArchCpu) -> HvResult {
 
     if res.is_err() {
         warn!(
-            "Failed to handle WRMSR({:#x}) <- {:#x}: {:?}\n{:#x?}",
-            rcx, value, res, arch_cpu
+            "isolation-msr zone={} cpu={} kind=msr-write msr={:#x} value={:#x} result={:?}",
+            this_zone_id(),
+            this_cpu_id(),
+            rcx,
+            value,
+            res
         );
     }
     arch_cpu.advance_guest_rip(VM_EXIT_INSTR_LEN_WRMSR)?;
@@ -377,14 +397,43 @@ fn handle_msr_write(arch_cpu: &mut ArchCpu) -> HvResult {
 
 fn handle_s2pt_violation(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvResult {
     let fault_info = Stage2PageFaultInfo::new()?;
-    mmio_handle_access(&mut MMIOAccess {
+    let access = if fault_info.access_flags.contains(MemFlags::WRITE) {
+        "write"
+    } else if fault_info.access_flags.contains(MemFlags::EXECUTE) {
+        "execute"
+    } else {
+        "read"
+    };
+
+    match mmio_handle_access(&mut MMIOAccess {
         address: fault_info.fault_guest_paddr,
         size: 0,
         is_write: fault_info.access_flags.contains(MemFlags::WRITE),
         value: 0,
-    })?;
-
-    Ok(())
+    }) {
+        Ok(_) => Ok(()),
+        // A guest-physical address with neither a RAM mapping nor a registered
+        // MMIO handler used to return Err here, which handle_vmexit turns into a
+        // hypervisor-wide panic, taking down every zone. A non-root guest could
+        // therefore break availability isolation by touching one unmapped GPA.
+        // Match the aarch64 data-abort path instead: log the fault, flag the
+        // offending zone via zone_error(), and park the faulting CPU. The fault
+        // is confined to the guilty zone; the root zone still aborts (zone_error
+        // panics for zone0) so a genuine hypervisor bug is not masked.
+        Err(e) => {
+            error!(
+                "isolation-fault zone={} cpu={} kind=ept-violation gpa={:#x} access={} guest_rip={:#x} err={:?}",
+                this_zone_id(),
+                this_cpu_id(),
+                fault_info.fault_guest_paddr,
+                access,
+                exit_info.guest_rip,
+                e
+            );
+            zone_error();
+            arch_cpu.idle();
+        }
+    }
 }
 
 fn handle_triple_fault(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvResult {
