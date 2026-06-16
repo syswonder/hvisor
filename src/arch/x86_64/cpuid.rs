@@ -82,7 +82,7 @@ bitflags::bitflags! {
         const PSE = 1_u64 << (32 + 3);
         const DE = 1_u64 << (32 + 2);
         const VME = 1_u64 << (32 + 1);
-        const FPU = 1_u64 << (32 + 0);
+        const FPU = 1_u64 << 32;
 
         const HYPERVISOR = 1_u64 << 31;
         const RDRAND = 1_u64 << 30;

@@ -15,13 +15,7 @@
 //  Solicey <lzoi_lth@163.com>
 
 use crate::{
-    arch::{
-        acpi::{get_apic_id, try_get_cpu_id},
-        cpu::this_cpu_id,
-        idt, ipi,
-        mmio::MMIoDevice,
-        zone::HvArchZoneConfig,
-    },
+    arch::{acpi::try_get_cpu_id, zone::HvArchZoneConfig},
     cpu_data::{this_zone, CpuSet},
     device::irqchip::pic::inject_vector,
     error::HvResult,
@@ -29,9 +23,8 @@ use crate::{
     platform::ROOT_ZONE_IOAPIC_BASE,
     zone::{find_zone, this_zone_id, Zone},
 };
-use alloc::{sync::Arc, vec::Vec};
+use alloc::vec::Vec;
 use bit_field::BitField;
-use core::{ops::Range, u32};
 use spin::{Mutex, Once};
 use x2apic::ioapic::IoApic;
 use x86_64::instructions::port::Port;
@@ -122,7 +115,7 @@ impl VirtIoApic {
         }
     }
 
-    fn write(&self, gpa: GuestPhysAddr, value: u64, size: usize) -> HvResult {
+    fn write(&self, gpa: GuestPhysAddr, value: u64, _size: usize) -> HvResult {
         /*info!(
             "ioapic write! gpa: {:x}, value: {:x}, size: {:x}",
             gpa, value, size,
@@ -160,7 +153,7 @@ impl VirtIoApic {
                     // Store the guest's write verbatim so it reads back what it
                     // wrote. Destination containment is enforced at injection
                     // time (see `contain_dest_cpu`), which is the single choke
-                    // point for *every* RTE shape — including a guest that writes
+                    // point for *every* RTE shape, including a guest that writes
                     // only the low dword to unmask a vector while leaving a
                     // default/out-of-zone destination, or that toggles logical
                     // destination mode after a high-dword write.
@@ -297,7 +290,7 @@ pub fn init_virt_ioapic(max_zones: usize) {
 }
 
 pub fn ioapic_inject_irq(irq: u8, allow_repeat: bool) {
-    VIRT_IOAPIC.get().unwrap().trigger(irq as _, allow_repeat);
+    let _ = VIRT_IOAPIC.get().unwrap().trigger(irq as _, allow_repeat);
 }
 
 pub fn get_irq_cpu(irq: usize, zone_id: usize) -> usize {

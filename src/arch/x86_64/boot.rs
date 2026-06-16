@@ -639,7 +639,6 @@ pub fn module_init(info_addr: usize) {
             let s = core::str::from_utf8(&str_bytes[..nul])
                 .expect("module_init: module command line is not valid UTF-8");
             let first = s
-                .trim()
                 .split_whitespace()
                 .next()
                 .expect("module_init: empty module command line (expected a hex load address)");
