@@ -127,6 +127,17 @@ fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
 
     if let Ok(function) = rax {
         res = match function {
+            CpuIdEax::VendorInfo => {
+                let mut res = cpuid!(regs.rax, regs.rcx);
+                // Keep the basic-leaf limit consistent with the synthetic
+                // leaves below without exposing unsupported host gaps.
+                let tsc_leaf = CpuIdEax::TimeStampCounterInfo as u32;
+                let max_synth_leaf = CpuIdEax::ProcessorFrequencyInfo as u32;
+                if res.eax + 1 >= tsc_leaf && res.eax < max_synth_leaf {
+                    res.eax = max_synth_leaf;
+                }
+                res
+            }
             CpuIdEax::FeatureInfo => {
                 let mut res = cpuid!(regs.rax, regs.rcx);
                 let mut ecx = FeatureInfoFlags::from_bits_truncate(res.ecx as _);
@@ -152,6 +163,20 @@ fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
                 res.ecx = ecx.bits() as _;
 
                 res
+            }
+            CpuIdEax::TimeStampCounterInfo => {
+                // Report the measured TSC frequency as:
+                // ECX (1 MHz crystal) * EBX (freq_mhz) / EAX (1).
+                if let Some(freq_mhz) = hpet::get_tsc_freq_mhz() {
+                    CpuIdResult {
+                        eax: 1,
+                        ebx: freq_mhz,
+                        ecx: 1_000_000,
+                        edx: 0,
+                    }
+                } else {
+                    cpuid!(regs.rax, regs.rcx)
+                }
             }
             CpuIdEax::ProcessorFrequencyInfo => {
                 if let Some(freq_mhz) = hpet::get_tsc_freq_mhz() {
