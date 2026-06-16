@@ -60,6 +60,8 @@ pub struct HvArchZoneConfig {
     /// No need to add a memory region for the framebuffer,
     /// Hvisor will do the job. **IMPORTANT: screen_base should be no longer than 32 bits.**
     pub screen_base: usize,
+    pub multiboot_info_paddr: u64,
+    pub multiboot_enabled: u32,
 }
 
 impl Zone {
@@ -76,10 +78,9 @@ impl Zone {
                         mem_region.physical_start as HostPhysAddr,
                         mem_region.size as _,
                         flags,
-                    ));
+                    ))?;
                 }
                 MEM_TYPE_VIRTIO => {
-                    info!("Registering virtio mmio region: physical_start: {:#x}, size: {:#x}", mem_region.physical_start, mem_region.size);
                     self.mmio_region_register(
                         mem_region.physical_start as _,
                         mem_region.size as _,
@@ -101,16 +102,31 @@ impl Zone {
 
     /// called after cpu_set is initialized
     pub fn arch_zone_pre_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
-        self.cpu_set.iter().for_each(|cpuid| {
-            let cpu_data = get_cpu_data(cpuid);
-            // boot cpu
-            if cpuid == self.cpu_set.first_cpu().unwrap() {
-                cpu_data.arch_cpu.set_boot_cpu_vm_launch_regs(
-                    config.arch_config.kernel_entry_gpa as _,
-                    config.arch_config.setup_load_gpa as _,
-                );
-            }
-        });
+        let zone_id = config.zone_id as usize;
+
+        if zone_id != 0 && config.arch_config.multiboot_enabled != 0 {
+            info!("[ZONE{}] Using Multiboot2 boot mode", zone_id);
+
+            self.cpu_set.iter().for_each(|cpuid| {
+                let cpu_data = get_cpu_data(cpuid);
+                if cpuid == self.cpu_set.first_cpu().unwrap() {
+                    cpu_data.arch_cpu.set_multiboot_boot_regs(
+                        config.arch_config.multiboot_info_paddr as _,
+                        config.arch_config.kernel_entry_gpa as _,
+                    );
+                }
+            });
+        } else {
+            self.cpu_set.iter().for_each(|cpuid| {
+                let cpu_data = get_cpu_data(cpuid);
+                if cpuid == self.cpu_set.first_cpu().unwrap() {
+                    cpu_data.arch_cpu.set_boot_cpu_vm_launch_regs(
+                        config.arch_config.kernel_entry_gpa as _,
+                        config.arch_config.setup_load_gpa as _,
+                    );
+                }
+            });
+        }
 
         set_msr_bitmap(config.zone_id as _);
         set_pio_bitmap(config.zone_id as _);
@@ -147,7 +163,6 @@ impl Zone {
 
         boot::BootParams::fill(&config, &mut self.gpm);
         acpi::copy_to_guest_memory_region(&config, &self.cpu_set);
-
         Ok(())
     }
 }

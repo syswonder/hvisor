@@ -1,0 +1,84 @@
+{
+    "name": "asterinas",
+    "zone_id": 1,
+    "cpus": [2, 3],
+    "memory_regions": [
+        {
+            "type": "ram",
+            "physical_start": "0x40300000",
+            "virtual_start": "0x0",
+            "size": "0xe0000"
+        },
+        {
+            "type": "ram",
+            "physical_start": "0x403e0000",
+            "virtual_start": "0xe0000",
+            "size": "0x20000"
+        },
+        {
+            "type": "ram",
+            "physical_start": "0x40400000",
+            "virtual_start": "0x100000",
+            "size": "0x1fe00000"
+        },
+        {
+            "type": "ram",
+            "physical_start": "0x60200000",
+            "virtual_start": "0x1ff00000",
+            "size": "0x100000"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0xFEB00000",
+            "virtual_start": "0xFEB00000",
+            "size": "0x2000"
+        }
+    ],
+    "interrupts": [],
+    "ivc_configs": [],
+    "kernel_filepath": "./aster-kernel-osdk-bin",
+    "dtb_filepath": "null",
+    "kernel_load_paddr": "0x8000000",
+    "dtb_load_paddr": "0x00000000",
+    "entry_point": "0x8000",
+    "multiboot_enabled": true,
+    "multiboot_info_paddr": "0x9000000",
+    "kernel_cmdline": "console=hvc0 root=/dev/vda rw ostd.log_level=error",
+    "initramfs_filepath": "./initramfs.cpio.gz",
+    "initramfs_load_gpa": "0x10000000",
+    "arch_config": {
+        "ioapic_base": "0xfec00000",
+        "ioapic_size": "0x1000",
+        "boot_filepath": "mb2_boot.bin",
+        "boot_load_paddr": "0x8000",
+        "kernel_entry_gpa": "0x8000000",
+        "cmdline_load_gpa": "0x9000000",
+        "setup_load_gpa": "0x80000",
+        "initrd_load_gpa": "0x0",
+        "initrd_size": "0x0",
+        "rsdp_memory_region_id": 1,
+        "acpi_memory_region_id": 3,
+        "uefi_memory_region_id": 0,
+        "screen_base": "0x0"
+    },
+    "pci_config": [
+        {
+            "ecam_base": "0xb0000000",
+            "ecam_size": "0x200000",
+            "io_base": "0x0",
+            "io_size": "0x0",
+            "pci_io_base": "0x0",
+            "mem32_base": "0x0",
+            "mem32_size": "0x0",
+            "pci_mem32_base": "0x0",
+            "mem64_base": "0x0",
+            "mem64_size": "0x0",
+            "pci_mem64_base": "0x0",
+            "bus_range_begin": "0x0",
+            "bus_range_end": "0x1f",
+            "domain": "0x0"
+        }
+    ],
+    "num_pci_devs": 0,
+    "alloc_pci_devs": []
+}
