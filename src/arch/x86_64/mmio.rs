@@ -391,10 +391,12 @@ fn emulate_inst(
     }
 
     if !two_byte {
-        if OneByteOpCode::try_from(inst[cur_id]).is_err() {
-            error!("inst: {:#x?}", inst);
-        }
-        let opcode: OneByteOpCode = inst[cur_id].try_into().unwrap();
+        let opcode: OneByteOpCode = inst[cur_id].try_into().map_err(|_| {
+            hv_err!(
+                ENOSYS,
+                format!("unsupported one-byte MMIO opcode in {:#x?}", inst)
+            )
+        })?;
         cur_id += 1;
 
         if !size_override {
@@ -470,10 +472,12 @@ fn emulate_inst(
             }
         }
     } else {
-        if TwoByteOpCode::try_from(inst[cur_id]).is_err() {
-            error!("inst: {:#x?}", inst);
-        }
-        let opcode: TwoByteOpCode = inst[cur_id].try_into().unwrap();
+        let opcode: TwoByteOpCode = inst[cur_id].try_into().map_err(|_| {
+            hv_err!(
+                ENOSYS,
+                format!("unsupported two-byte MMIO opcode in {:#x?}", inst)
+            )
+        })?;
         cur_id += 1;
 
         if !size_override {
@@ -534,8 +538,10 @@ pub fn instruction_emulator(handler: &MMIOHandler, mmio: &mut MMIOAccess, base: 
     let rip_hpa = gpa_to_hpa(gva_to_gpa(VmcsGuestNW::RIP.read()?)?)? as *const u8;
     let inst = unsafe { from_raw_parts(rip_hpa, 15) }.to_vec();
 
-    let len = emulate_inst(&inst, handler, mmio, base).unwrap();
-    // info!("rip_hpa: {:?}, inst: {:x?}, len: {:x}", rip_hpa, inst, len);
+    // Propagate an emulation failure (unsupported opcode, bad operand) instead
+    // of unwrapping. The error reaches handle_s2pt_violation, which contains it
+    // to the faulting zone rather than panicking the whole hypervisor.
+    let len = emulate_inst(&inst, handler, mmio, base)?;
 
     this_cpu_data().arch_cpu.advance_guest_rip(len as _)?;
 
