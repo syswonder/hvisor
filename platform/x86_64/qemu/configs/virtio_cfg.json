@@ -7,44 +7,32 @@
                     "zone0_ipa": "0x40300000",
                     "zonex_ipa": "0x0",
                     "size": "0x20000000"
-                },
-                {
-                    "zone0_ipa": "0x100000000",
-                    "zonex_ipa": "0x100000000",
-                    "size": "0x70000000"
                 }
             ],
             "devices": [
                 {
                     "type": "console",
-                    "addr": "0x5950f000",
+                    "status": "enable",
+                    "addr": "0xFEB00000",
                     "len": "0x200",
-                    "irq": 10,
-                    "status": "enable"
+                    "irq": "16"
                 },
                 {
                     "type": "net",
-                    "addr": "0x5950f200",
+                    "status": "enable",
+                    "addr": "0xFEB00200",
                     "len": "0x200",
-                    "irq": 14,
+                    "irq": "17",
                     "tap": "tap0",
-                    "mac": [
-                        "0x00",
-                        "0x16",
-                        "0x3e",
-                        "0x10",
-                        "0x10",
-                        "0x10"
-                    ],
-                    "status": "enable"
+                    "mac": ["0x00", "0x16", "0x3e", "0x10", "0x10", "0x10"]
                 },
                 {
                     "type": "blk",
-                    "addr": "0x5950f400",
+                    "status": "enable",
+                    "addr": "0xFEB00400",
                     "len": "0x200",
-                    "irq": 11,
-                    "img": "rootfs2.img",
-                    "status": "enable"
+                    "irq": "18",
+                    "img": "/zone1_disk.img"
                 }
             ]
         }

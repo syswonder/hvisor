@@ -53,10 +53,12 @@ const ROOT_ZONE_UEFI_REGION: HvConfigMemoryRegion = HvConfigMemoryRegion {
 const ROOT_ZONE_UEFI_REGION_ID: usize = 0x3;
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
-pub const ROOT_ZONE_CMDLINE: &str = 
-// "BOOT_IMAGE=/boot/aster-kernel-osdk-bin SHELL=/bin/sh LOGNAME=root HOME=/ USER=root PATH=/bin:/benchmark ostd.log_level=info console=ttyS0 console=tty0 -- sh -l";
-// TODO: Asterinas
-"console=ttyS0 earlyprintk=serial nointremap no_timer_check efi=noruntime pci=pcie_scan_all,lastbus=1 root=/dev/vda rw init=/init\0";
+
+/// Reserved HPA range for zone1 high memory (0x1_0000_0000 -> 0x2_E000_0000).
+/// Adjust if zone1 high-memory layout changes.
+const ZONE1_HIGH_RESERVED_SIZE: u64 = 0x1_E000_0000;
+pub const ROOT_ZONE_CMDLINE: &str =
+    "console=tty0 console=ttyS0 earlycon=efifb earlyprintk=serial nointremap no_timer_check efi=noruntime pci=pcie_scan_all,lastbus=1 root=/dev/vda rw init=/sbin/init\0";
 //"console=ttyS0 earlyprintk=serial rdinit=/init nokaslr nointremap\0"; // noapic
 // video=vesafb
 // /lib/systemd/systemd
@@ -106,13 +108,11 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 10] = [
         mem_type: MEM_TYPE_RESERVED,
         physical_start: 0x1_0000_0000,
         virtual_start: 0x1_0000_0000,
-        size: 0x7000_0000,
-    }, // zone 1
+        size: ZONE1_HIGH_RESERVED_SIZE,
+    }, // zone 1 (0x100000000 → 0x2E0000000)
 ];
 
 const ROOT_ZONE_CMDLINE_ADDR: GuestPhysAddr = 0x9000;
-// TODO: Asterinas
-// const ROOT_ZONE_SETUP_ADDR: GuestPhysAddr = 0xf_f000;
 const ROOT_ZONE_SETUP_ADDR: GuestPhysAddr = 0xa000;
 const ROOT_ZONE_VMLINUX_ENTRY_ADDR: GuestPhysAddr = 0x10_0000;
 const ROOT_ZONE_SCREEN_BASE_ADDR: GuestPhysAddr = 0x7000_0000;
@@ -126,14 +126,15 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     kernel_entry_gpa: ROOT_ZONE_VMLINUX_ENTRY_ADDR,
     cmdline_load_gpa: ROOT_ZONE_CMDLINE_ADDR,
     setup_load_gpa: ROOT_ZONE_SETUP_ADDR,
-    // TODO: Asterinas
-    initrd_load_gpa:0,// 0x1530_0000,
-    initrd_size:0,// 0x210_0000,     //0x26_b000,
+    initrd_load_gpa: 0, // 0x1500_0000,
+    initrd_size: 0,     //0x26_b000,
     rsdp_memory_region_id: ROOT_ZONE_RSDP_REGION_ID,
     acpi_memory_region_id: ROOT_ZONE_ACPI_REGION_ID,
     uefi_memory_region_id: ROOT_ZONE_UEFI_REGION_ID,
     // not longer than 32 bits
     screen_base: ROOT_ZONE_SCREEN_BASE_ADDR,
+    multiboot_info_paddr: 0,
+    multiboot_enabled: 0,
 };
 
 pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [HvPciConfig {
@@ -159,12 +160,9 @@ pub const ROOT_PCI_DEVS: [HvPciDevConfig; 8] = [
     pci_dev!(0x0, 0x0, 0x1, 0x0, VpciDevType::Physical), // VGA controller
     pci_dev!(0x0, 0x0, 0x2, 0x0, VpciDevType::Physical), // Ethernet controller
     pci_dev!(0x0, 0x0, 0x3, 0x0, VpciDevType::Physical), // PCI bridge
-    // Asterinas
-    pci_dev!(0x0, 0x0, 0x4, 0x0, VpciDevType::Physical), // PCI bridge
-
     pci_dev!(0x0, 0x0, 0x1f, 0x0, VpciDevType::Physical), // ISA bridge
     pci_dev!(0x0, 0x0, 0x1f, 0x2, VpciDevType::Physical), // SATA controller
-    // pci_dev!(0x0, 0x0, 0x1f, 0x3, VpciDevType::Physical), // SMBus
+    pci_dev!(0x0, 0x0, 0x1f, 0x3, VpciDevType::Physical), // SMBus
     pci_dev!(0x0, 0x1, 0x0, 0x0, VpciDevType::Physical), // SCSI controller
 ];
 
