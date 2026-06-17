@@ -287,8 +287,18 @@ fn gva_to_gpa(gva: GuestVirtAddr) -> HvResult<GuestPhysAddr> {
     }
 
     // lookup guest page table in long mode
+    let cr3 = VmcsGuestNW::CR3.read()?;
 
-    let p4_gpa = (VmcsGuestNW::CR3.read()?) & !(0xfff);
+    // With 5-level paging (CR4.LA57) CR3 points at the PML5; resolve the
+    // top-level PML4 through it first. Otherwise CR3 is the PML4 directly.
+    let p4_gpa = if cr4 & Cr4::CR4_ENABLE_LA57.bits() != 0 {
+        let p5_gpa = cr3 & !(0xfff);
+        let p5_hpa = gpa_to_hpa(p5_gpa)?;
+        let p5_entry = get_page_entry(p5_hpa, (gva >> 48) & 0x1ff);
+        p5_entry & !(0xfff)
+    } else {
+        cr3 & !(0xfff)
+    };
     let p4_hpa = gpa_to_hpa(p4_gpa)?;
     let p4_entry_id = (gva >> 39) & 0x1ff;
     let p4_entry = get_page_entry(p4_hpa, p4_entry_id);
