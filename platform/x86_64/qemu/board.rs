@@ -59,7 +59,7 @@ pub const ROOT_ZONE_CMDLINE: &str =
 // video=vesafb
 // /lib/systemd/systemd
 
-pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 10] = [
+pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 11] = [
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x500_0000,
@@ -93,6 +93,12 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 10] = [
         virtual_start: 0xfed0_0000,
         size: 0x1000,
     }, // hpet
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xfe00_0000,
+        virtual_start: 0xfe00_0000,
+        size: 0xc0_0000,
+    }, // pcie mmio bar window (q35)
     // TODO: e820 mem space probe
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RESERVED,
@@ -134,7 +140,7 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
 pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [HvPciConfig {
     bus_range_begin: 0x0,
     bus_range_end: 0x1f,
-    ecam_base: 0xe0000000,
+    ecam_base: 0xb0000000,
     ecam_size: 0x200000,
     io_base: 0x0,
     io_size: 0x0,
