@@ -461,11 +461,18 @@ impl RootAcpi {
     // let zone 0 bsp cpu does the work
     pub fn init() -> Self {
         let mut root_acpi = Self::default();
-        let rsdp_addr = boot::get_multiboot_tags().rsdp_addr.unwrap();
+        let (rsdp_addr, rsdp_len) = boot::get_multiboot_tags().rsdp_addr.unwrap();
 
-        root_acpi.rsdp_copy = unsafe {
-            slice::from_raw_parts(rsdp_addr as *const u8, core::mem::size_of::<Rsdp>()).to_vec()
-        };
+        // Copy only the bytes the multiboot ACPI tag actually carries into a
+        // zero-filled, Rsdp-sized buffer, so a truncated tag can never cause an
+        // out-of-tag read; a short RSDP is then rejected by its own checksum.
+        let want = core::mem::size_of::<Rsdp>();
+        let avail = rsdp_len.min(want);
+        let mut rsdp_copy = Vec::new();
+        rsdp_copy.resize(want, 0u8);
+        rsdp_copy[..avail]
+            .copy_from_slice(unsafe { slice::from_raw_parts(rsdp_addr as *const u8, avail) });
+        root_acpi.rsdp_copy = rsdp_copy;
         let rsdp_copy_addr = root_acpi.rsdp_copy.as_ptr() as usize;
 
         let handler = HvAcpiHandler {};

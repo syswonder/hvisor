@@ -26,7 +26,6 @@ use alloc::string::{String, ToString};
 use bit_field::BitField;
 use core::{
     arch::{self, global_asm},
-    ffi::{c_char, CStr},
     mem::size_of,
     ptr::{copy, copy_nonoverlapping},
 };
@@ -94,11 +93,28 @@ mod multiboot_tag {
     pub struct MultibootTags {
         pub framebuffer: Framebuffer,
         pub memory_map_addr: Option<usize>,
-        pub rsdp_addr: Option<usize>,
+        // (address of the RSDP payload, number of payload bytes the tag carries)
+        pub rsdp_addr: Option<(usize, usize)>,
     }
 }
 
 static MULTIBOOT_TAGS: Once<MultibootTags> = Once::new();
+
+const MAX_MODULES: usize = 16;
+
+// (count, [(final relocation address, byte length); MAX_MODULES]) for the
+// multiboot2 modules. A consumer can recover a module's real size by its address
+// -- e.g. the exact initramfs size for the Linux boot params, instead of the
+// fixed reservation window.
+static BOOT_MODULES: Once<(usize, [(usize, usize); MAX_MODULES])> = Once::new();
+
+pub fn boot_module_size(addr: usize) -> Option<usize> {
+    let (count, mods) = BOOT_MODULES.get()?;
+    mods[..*count]
+        .iter()
+        .find(|&&(a, _)| a == addr)
+        .map(|&(_, len)| len)
+}
 
 const E820_MAX_ENTRIES_ZEROPAGE: usize = 128;
 
@@ -217,12 +233,17 @@ impl BootParams {
         // set e820
         boot_params.set_e820_entries(config);
 
-        // set initrd
+        // set initrd: report the actual relocated initramfs size (looked up by the
+        // module's host-physical address), falling back to the reservation window.
         if config.arch_config.initrd_load_gpa != 0 {
-            boot_params.set_initrd(
-                config.arch_config.initrd_load_gpa as _,
-                config.arch_config.initrd_size as _,
-            );
+            let initrd_hpa = unsafe {
+                gpm.page_table_query(config.arch_config.initrd_load_gpa)
+                    .unwrap()
+                    .0
+            };
+            let initrd_size =
+                boot_module_size(initrd_hpa).unwrap_or(config.arch_config.initrd_size);
+            boot_params.set_initrd(config.arch_config.initrd_load_gpa as _, initrd_size as _);
         }
 
         // set screen
@@ -479,35 +500,67 @@ pub struct EfiInfo {
 }
 
 pub fn multiboot_init(info_addr: usize) {
-    let mut cur = info_addr;
-    let total_size = unsafe { *(cur as *const u32) } as usize;
+    let total_size = unsafe { *(info_addr as *const u32) } as usize;
+    let info_end = info_addr
+        .checked_add(total_size)
+        .expect("multiboot2 info size overflows the address space");
     let mut multiboot_tags = MultibootTags::default();
 
-    // println!("{:#x?}", total_size);
-    cur += 8;
-    while cur < info_addr + total_size {
+    // The info tag stream is parsed with the same bounds- and overflow-checked
+    // iteration as the module loader: every tag must fit in the info block and be
+    // at least the 8-byte header, the stream must end with an exactly-sized END
+    // tag, and the aligned advance is checked.
+    let mut cur = info_addr
+        .checked_add(8)
+        .expect("multiboot2 info pointer overflows the address space");
+    let mut saw_end = false;
+    while cur.checked_add(8).map_or(false, |e| e <= info_end) {
         let tag_type = unsafe { *(cur as *const u32) };
+        let tag_size = unsafe { *((cur + 4) as *const u32) } as usize;
+        assert!(
+            tag_size >= 8 && cur.checked_add(tag_size).map_or(false, |e| e <= info_end),
+            "malformed multiboot2 tag"
+        );
         if tag_type == multiboot_tag::END {
+            assert_eq!(tag_size, 8, "malformed multiboot2 END tag");
+            saw_end = true;
             break;
         }
 
-        // println!("{:#x?}", tag_type);
+        // The generic check above only proves the tag fits in the info block; each
+        // tag whose payload is read must additionally be large enough for that
+        // payload before the unsafe read/store.
         match tag_type {
             multiboot_tag::MODULES => {}
             multiboot_tag::MEMORY_MAP => {
+                assert!(
+                    tag_size >= size_of::<multiboot_tag::MemoryMap>(),
+                    "multiboot2 memory-map tag too small"
+                );
                 multiboot_tags.memory_map_addr = Some(cur);
             }
             multiboot_tag::FRAMEBUFFER => {
+                assert!(
+                    tag_size >= size_of::<multiboot_tag::Framebuffer>(),
+                    "multiboot2 framebuffer tag too small"
+                );
                 multiboot_tags.framebuffer =
                     unsafe { *(cur as *const multiboot_tag::Framebuffer) }.clone();
             }
             multiboot_tag::ACPI_V1 => {
-                multiboot_tags.rsdp_addr = Some(cur + 8);
+                assert!(tag_size > 8, "multiboot2 ACPI tag carries no RSDP");
+                multiboot_tags.rsdp_addr = Some((cur + 8, tag_size - 8));
             }
             _ => {}
         }
-        cur += ((unsafe { *((cur + 4) as *const u32) } as usize + 7) & (!7));
+        cur = cur
+            .checked_add((tag_size + 7) & !7)
+            .expect("multiboot2 tag offset overflow");
     }
+    assert!(
+        saw_end,
+        "multiboot2 tag stream not terminated by an END tag"
+    );
 
     MULTIBOOT_TAGS.call_once(|| multiboot_tags);
 }
@@ -519,65 +572,199 @@ pub fn get_multiboot_tags() -> &'static multiboot_tag::MultibootTags {
 pub fn print_memory_map() {
     let map_addr = get_multiboot_tags().memory_map_addr.unwrap();
     let mem_map = unsafe { *(map_addr as *const multiboot_tag::MemoryMap) };
-    let mem_map_size = size_of::<multiboot_tag::MemoryMap>();
-    let cnt = ((mem_map.size as usize) - mem_map_size) / (mem_map.entry_size as usize);
+    let header = size_of::<multiboot_tag::MemoryMap>();
+    let entry_size = mem_map.entry_size as usize;
+    let total = mem_map.size as usize;
+    // Guard against a malformed tag: a zero/short entry size would divide by zero
+    // or read a truncated entry, and a total smaller than the header would
+    // underflow. Entries advance by the tag's `entry_size`, per the spec.
+    if entry_size < size_of::<multiboot_tag::MemoryMapEntry>() || total < header {
+        return;
+    }
+    let cnt = (total - header) / entry_size;
 
-    let mut entry_addr = map_addr + mem_map_size;
+    let mut entry_addr = map_addr + header;
     println!("---------- MEMORY MAP ----------");
-    for i in 0..cnt {
+    for _ in 0..cnt {
         let entry = unsafe { *(entry_addr as *const multiboot_tag::MemoryMapEntry) };
         println!(
             "base: {:x}, len: {:x}, type: {:x}",
             entry.base_addr, entry.length, entry._type
         );
-        entry_addr += size_of::<multiboot_tag::MemoryMapEntry>();
+        entry_addr += entry_size;
     }
 }
 
-/// copy kernel modules to the right place
+/// Relocate every multiboot2 module to its load address.
+///
+/// GRUB loads modules at addresses of its own choosing and passes the desired
+/// load address as each module's command-line string. A guest image may be
+/// supplied as several modules at once (bootstrap, kernel, initramfs), and one
+/// module's destination can overlap the current location of another, so the
+/// copies are ordered: a module is moved only once nothing still pending
+/// occupies its target range. For a fixed, non-cyclic layout this terminates.
 pub fn module_init(info_addr: usize) {
-    println!("module_init");
-    let mut cur = info_addr;
-    let total_size = unsafe { *(cur as *const u32) } as usize;
+    #[derive(Clone, Copy)]
+    struct Module {
+        src: usize,
+        len: usize,
+        dst: usize,
+    }
 
-    let mut cnt = 0;
-    cur += 8;
-    while cur < info_addr + total_size {
+    // Two half-open [start, start+len) ranges overlap. Saturating so a malformed
+    // (huge) length cannot wrap the comparison.
+    let overlaps = |s0: usize, l0: usize, s1: usize, l1: usize| {
+        s0 < s1.saturating_add(l1) && s1 < s0.saturating_add(l0)
+    };
+
+    let mut modules = [Module {
+        src: 0,
+        len: 0,
+        dst: 0,
+    }; MAX_MODULES];
+    let mut count = 0;
+
+    let total_size = unsafe { *(info_addr as *const u32) } as usize;
+    let info_end = info_addr
+        .checked_add(total_size)
+        .expect("multiboot2 info size overflows the address space");
+    let mut cur = info_addr
+        .checked_add(8)
+        .expect("multiboot2 info pointer overflows the address space");
+    let mut saw_end = false;
+    while cur.checked_add(8).map_or(false, |e| e <= info_end) {
         let tag_type = unsafe { *(cur as *const u32) };
-        let ptr = cur as *const multiboot_tag::Modules;
-        cur += ((unsafe { *((cur + 4) as *const u32) } as usize + 7) & (!7));
-
+        let tag_size = unsafe { *((cur + 4) as *const u32) } as usize;
+        assert!(
+            tag_size >= 8 && cur.checked_add(tag_size).map_or(false, |e| e <= info_end),
+            "malformed multiboot2 tag"
+        );
         if tag_type == multiboot_tag::END {
+            assert_eq!(tag_size, 8, "malformed multiboot2 END tag");
+            saw_end = true;
             break;
         }
-        if tag_type != multiboot_tag::MODULES {
-            continue;
+        if tag_type == multiboot_tag::MODULES {
+            assert!(count < MAX_MODULES, "too many multiboot2 modules");
+            assert!(
+                tag_size > size_of::<Modules>(),
+                "multiboot2 module tag too small"
+            );
+            let tag = unsafe { *(cur as *const multiboot_tag::Modules) };
+            let (start, end) = (tag.mod_start as usize, tag.mod_end as usize);
+            assert!(end >= start, "multiboot2 module end before start");
+            // The load-address string follows the fixed fields and is
+            // NUL-terminated within the tag; parse only that bounded slice.
+            let str_off = size_of::<Modules>();
+            let str_bytes = unsafe {
+                core::slice::from_raw_parts((cur + str_off) as *const u8, tag_size - str_off)
+            };
+            let nul = str_bytes
+                .iter()
+                .position(|&b| b == 0)
+                .expect("multiboot2 module string not terminated");
+            let dst_str = core::str::from_utf8(&str_bytes[..nul])
+                .expect("multiboot2 module load-address string is not UTF-8");
+            let dst = usize::from_str_radix(dst_str, 16)
+                .expect("multiboot2 module load address is not valid hex");
+            // mod_end is the address past the last byte, so the module is
+            // `end - start` bytes long.
+            modules[count] = Module {
+                src: start,
+                len: end - start,
+                dst,
+            };
+            count += 1;
         }
-
-        let module = unsafe { *ptr };
-        let dst = unsafe {
-            usize::from_str_radix(
-                CStr::from_ptr(((ptr as usize) + size_of::<Modules>()) as *const c_char)
-                    .to_str()
-                    .unwrap(),
-                16,
-            )
-            .unwrap()
-        };
-        println!("module: {:#x?}, addr: {:#x?}", module, dst);
-        cnt += 1;
-
-        if dst == 0x0 {
-            continue;
-        }
-
-        unsafe {
-            core::ptr::copy(
-                module.mod_start as *mut u8,
-                dst as *mut u8,
-                (module.mod_end - module.mod_start + 1) as usize,
-            )
-        };
+        cur = cur
+            .checked_add((tag_size + 7) & !7)
+            .expect("multiboot2 tag offset overflow");
     }
-    println!("module cnt: {:x}", cnt);
+    assert!(
+        saw_end,
+        "multiboot2 tag stream not terminated by an END tag"
+    );
+
+    // No module's source or destination range may wrap the address space, so the
+    // overlap tests and the byte copy below all operate on well-formed
+    // [start, start + len) intervals.
+    for i in 0..count {
+        let m = modules[i];
+        assert!(
+            m.src.checked_add(m.len).is_some() && m.dst.checked_add(m.len).is_some(),
+            "multiboot2 module range wraps the address space"
+        );
+    }
+
+    // The address each module ends up occupying: its load address, or its source
+    // when it is left in place (a destination of zero or equal to the source).
+    // These ranges must be disjoint, otherwise relocating one module would
+    // overwrite another that is already where it belongs.
+    let final_addr = |m: Module| {
+        if m.dst == 0 || m.dst == m.src {
+            m.src
+        } else {
+            m.dst
+        }
+    };
+    for i in 0..count {
+        for j in (i + 1)..count {
+            assert!(
+                !overlaps(
+                    final_addr(modules[i]),
+                    modules[i].len,
+                    final_addr(modules[j]),
+                    modules[j].len
+                ),
+                "multiboot2 module load addresses overlap"
+            );
+        }
+    }
+
+    // Move every module to its load address. A destination may overlap the
+    // current location of a module not yet relocated, so a module is moved only
+    // once nothing pending occupies its target range. A disjoint, acyclic layout
+    // -- what a bootloader hands over -- always terminates. A cyclic layout (two
+    // modules each needing the other's current location) cannot be relocated in
+    // place without scratch space and is rejected below rather than mishandled.
+    let mut moved = [false; MAX_MODULES];
+    let mut remaining = count;
+    while remaining > 0 {
+        let mut progress = false;
+        for i in 0..count {
+            if moved[i] {
+                continue;
+            }
+            let m = modules[i];
+            // A destination of zero (or equal to the source) means "leave in place".
+            if m.dst != 0 && m.dst != m.src {
+                let blocked = (0..count).any(|j| {
+                    j != i && !moved[j] && overlaps(m.dst, m.len, modules[j].src, modules[j].len)
+                });
+                if blocked {
+                    continue;
+                }
+                unsafe {
+                    core::ptr::copy(m.src as *const u8, m.dst as *mut u8, m.len);
+                }
+            }
+            moved[i] = true;
+            remaining -= 1;
+            progress = true;
+        }
+        assert!(
+            progress,
+            "multiboot2 module relocation stalled: cyclic load layout is unsupported"
+        );
+    }
+
+    // Record each module's final address and real byte length so the boot params
+    // can report the exact initramfs size rather than its reservation window.
+    let mut sizes = [(0usize, 0usize); MAX_MODULES];
+    for i in 0..count {
+        sizes[i] = (final_addr(modules[i]), modules[i].len);
+    }
+    BOOT_MODULES.call_once(|| (count, sizes));
+
+    println!("relocated {} boot module(s)", count);
 }
