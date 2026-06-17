@@ -114,12 +114,7 @@ pub fn check_events() -> bool {
             true
         }
         Some(IPI_EVENT_DWC_MSI_INJECT) => {
-            #[cfg(all(
-                target_arch = "aarch64",
-                irq_gicv3,
-                dwc_pcie,
-                dwc_msi
-            ))]
+            #[cfg(all(target_arch = "aarch64", irq_gicv3, dwc_pcie, dwc_msi))]
             {
                 crate::pci::dwc_msi::handle_dwc_msi_inject_event();
             }

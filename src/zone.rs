@@ -715,11 +715,7 @@ impl ZoneInner {
                     rootcomplex_config.ecam_size as usize,
                 ));
             }
-            #[cfg(not(any(
-                ecam_pcie,
-                dwc_pcie,
-                loongarch64_pcie
-            )))]
+            #[cfg(not(any(ecam_pcie, dwc_pcie, loongarch64_pcie)))]
             {
                 warn!(
                     "No extend config found for base 0x{:x}",
