@@ -78,7 +78,7 @@ COLOR_RESET := $(shell tput sgr0)
 kconfig_python := tools/kconfig/.venv/bin/python
 
 # Targets
-.PHONY: all elf disa run gdb monitor clean tools rootfs vscode ci-run defconfig menuconfig savedefconfig ensure_config clean_check kconfig_venv check-hv-mem-overlap
+.PHONY: all elf disa run gdb monitor clean tools rootfs vscode ci-run defconfig menuconfig savedefconfig ensure_config clean_check kconfig_venv link_board check-hv-mem-overlap
 kconfig_venv:
 	@if [ ! -x $(kconfig_python) ]; then \
 		echo "$(COLOR_YELLOW)Creating tools/kconfig/.venv (kconfiglib)...$(COLOR_RESET)"; \
@@ -104,8 +104,13 @@ ensure_config:
 
 clean_check: ensure_config
 
+link_board:
+	@mkdir -p src/platform
+	@ln -sfn ../../platform/$(ARCH)/$(BOARD)/board.rs src/platform/__board.rs
+
 defconfig: kconfig_venv
 	@$(kconfig_python) tools/kconfig/kconfig_cli.py defconfig
+	@$(MAKE) --no-print-directory link_board
 
 menuconfig: kconfig_venv
 	@$(kconfig_python) tools/kconfig/kconfig_cli.py menuconfig

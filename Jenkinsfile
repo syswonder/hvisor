@@ -82,6 +82,21 @@ def matrixCheckName() {
     return (env.BID ?: '').toString()
 }
 
+/** Marker file: only finish checks that published IN_PROGRESS. */
+def githubCheckStartedMarker(String checkName) {
+    def safe = checkName.replace('/', '__').replaceAll(/[^A-Za-z0-9_.-]/, '_')
+    return "${env.WORKSPACE}/.jenkins/check-started/${safe}"
+}
+
+def markGithubCheckStarted(String checkName) {
+    def marker = githubCheckStartedMarker(checkName)
+    sh "mkdir -p '${env.WORKSPACE}/.jenkins/check-started' && : > '${marker}'"
+}
+
+def isGithubCheckStarted(String checkName) {
+    return fileExists(githubCheckStartedMarker(checkName))
+}
+
 def publishGithubCheckInProgress(String checkName) {
     publishChecks(
         name: checkName,
@@ -91,6 +106,7 @@ def publishGithubCheckInProgress(String checkName) {
         conclusion: 'NONE',
         detailsURL: "${env.RUN_DISPLAY_URL ?: env.BUILD_URL}",
     )
+    markGithubCheckStarted(checkName)
 }
 
 def publishGithubCheckCompleted(String checkName, String conclusion) {
@@ -118,6 +134,10 @@ def publishMatrixCheckCompleted(String conclusion) {
 }
 
 def finishGithubCheck(String checkName, String buildResult) {
+    if (!isGithubCheckStarted(checkName)) {
+        echo "Skip GitHub check completion for '${checkName}' (in-progress was never published)"
+        return
+    }
     def conclusion = [
         'SUCCESS' : 'SUCCESS',
         'FAILURE' : 'FAILURE',
@@ -397,17 +417,8 @@ pipeline {
                 }
 
                 post {
-                    success {
-                        script { finishGithubCheck(matrixCheckName(), 'SUCCESS') }
-                    }
-                    failure {
-                        script { finishGithubCheck(matrixCheckName(), 'FAILURE') }
-                    }
-                    unstable {
-                        script { finishGithubCheck(matrixCheckName(), 'UNSTABLE') }
-                    }
-                    aborted {
-                        script { finishGithubCheck(matrixCheckName(), 'ABORTED') }
+                    always {
+                        script { finishGithubCheck(matrixCheckName(), currentBuild.currentResult) }
                     }
                 }
             }
