@@ -130,7 +130,26 @@ impl Frame {
     }
 
     /// Allocate contiguous physical frames.
-    pub fn new_contiguous(frame_count: usize, align_log2: usize) -> HvResult<Self> {
+    ///
+    /// `align_to` specifies the byte alignment of the start physical address.
+    /// Must be a power of 2 and a multiple of `PAGE_SIZE`. Pass `0` for no
+    /// alignment requirement.
+    pub fn new_contiguous(frame_count: usize, align_to: usize) -> HvResult<Self> {
+        let align_log2 = if align_to == 0 {
+            0
+        } else {
+            debug_assert!(
+                align_to.is_power_of_two(),
+                "new_contiguous: align_to {:#x} is not a power of 2",
+                align_to
+            );
+            debug_assert!(
+                align_to % PAGE_SIZE == 0,
+                "new_contiguous: align_to {:#x} is not a multiple of PAGE_SIZE",
+                align_to
+            );
+            (align_to / PAGE_SIZE).trailing_zeros() as usize
+        };
         unsafe {
             FRAME_ALLOCATOR
                 .lock()
@@ -140,39 +159,6 @@ impl Frame {
                     frame_count,
                 })
                 .ok_or(hv_err!(ENOMEM))
-        }
-    }
-
-    /// allocate contigugous frames, and you can specify the alignment, set the lower `align_log2` bits to 0.
-    pub fn new_contiguous_with_base(frame_count: usize, align_log2: usize) -> HvResult<Self> {
-        let align_mask = (1 << align_log2) - 1;
-        // Create a vector to keep track of attempted frames
-        let mut attempted_frames = Vec::new();
-        loop {
-            if let Ok(frame) = Frame::new_contiguous(frame_count, 0) {
-                if frame.start_paddr() & align_mask == 0 {
-                    // info!(
-                    //     "new contiguous success!!! start_paddr:0x{:x}",
-                    //     frame.start_paddr()
-                    // );
-                    return Ok(frame);
-                } else {
-                    let start_paddr = frame.start_paddr();
-                    let next_aligned_addr = (start_paddr + align_mask) & !align_mask;
-                    let temp_frame_count = (next_aligned_addr - start_paddr) / PAGE_SIZE;
-                    drop(frame);
-                    attempted_frames.push(Frame::new_contiguous(temp_frame_count, 0));
-                    if let Ok(frame) = Frame::new_contiguous(frame_count, 0) {
-                        // info!(
-                        //     "new contiguous success!!! start_paddr:0x{:x}",
-                        //     frame.start_paddr()
-                        // );
-                        return Ok(frame);
-                    }
-                }
-            } else {
-                return Err(hv_err!(ENOMEM));
-            }
         }
     }
 
@@ -188,23 +174,6 @@ impl Frame {
             start_paddr,
             frame_count: 0,
         }
-    }
-
-    pub fn new_16() -> HvResult<Self> {
-        let mut v: Vec<Frame> = Vec::new();
-        loop {
-            let f = Self::new_zero()?;
-            if f.start_paddr & 0b11_1111_1111_1111 == 0 {
-                v.push(f);
-                break;
-            }
-            v.push(f);
-        }
-        let f_16 = v.pop().unwrap();
-        drop(f_16);
-        let ret = Self::new_contiguous(4, 0)?;
-        drop(v);
-        Ok(ret)
     }
 
     /// Get the start physical address of this frame.

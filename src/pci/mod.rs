@@ -24,6 +24,9 @@ pub mod pci_handler;
 pub mod pci_struct;
 pub mod vpci_dev;
 
+#[cfg(all(dwc_msi, dwc_pcie))]
+pub mod dwc_msi;
+
 #[cfg(test)]
 pub mod pci_test;
 

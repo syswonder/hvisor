@@ -160,6 +160,21 @@ config NO_PCIE_BAR_REALLOC
 	depends on PCI
 	default n
 
+config DWC_MSI
+	bool "DesignWare native MSI"
+	depends on PCIE_DWC
+	default n
+
+config PCI_INIT_DELAY
+	bool "Delay PCI init until guest DBI offset 0 access"
+	depends on PCIE_DWC
+	default n
+
+config SRIOV
+	bool "SR-IOV PF/VF enumeration and passthrough"
+	depends on PCI
+	default n
+
 config VIRTIO_PCI
 	bool "Virtio over PCI"
 	depends on PCI && IRQ_GICV3

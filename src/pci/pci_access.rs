@@ -392,7 +392,7 @@ impl PciMem {
                 warn!("unkown bar type: {:#?}", self.bar_type);
             }
         }
-        info!("self.virtual_value = {}", val);
+        // info!("self.virtual_value = {}", val);
         self.virtual_value = val;
     }
 
@@ -1067,7 +1067,7 @@ pub enum BridgeField {
     LatencyTime,
     HeaderType,
     Bist,
-    Bar,
+    Bar(usize),
     PrimaryBusNumber,
     SecondaryBusNumber,
     SubordinateBusNumber,
@@ -1103,7 +1103,7 @@ impl Debug for BridgeField {
             BridgeField::LatencyTime => write!(f, "LatencyTime"),
             BridgeField::HeaderType => write!(f, "HeaderType"),
             BridgeField::Bist => write!(f, "Bist"),
-            BridgeField::Bar => write!(f, "Bar"),
+            BridgeField::Bar(slot) => write!(f, "Bar({})", slot),
             BridgeField::PrimaryBusNumber => write!(f, "PrimaryBusNumber"),
             BridgeField::SecondaryBusNumber => write!(f, "SecondaryBusNumber"),
             BridgeField::SubordinateBusNumber => write!(f, "SubordinateBusNumber"),
@@ -1141,7 +1141,7 @@ impl PciField for BridgeField {
             BridgeField::LatencyTime => 0x0d,
             BridgeField::HeaderType => 0x0e,
             BridgeField::Bist => 0x0f,
-            BridgeField::Bar => 0x10,
+            BridgeField::Bar(slot) => 0x10 + slot * 4,
             BridgeField::PrimaryBusNumber => 0x18,
             BridgeField::SecondaryBusNumber => 0x19,
             BridgeField::SubordinateBusNumber => 0x1a,
@@ -1176,7 +1176,7 @@ impl PciField for BridgeField {
             BridgeField::LatencyTime => 1,
             BridgeField::HeaderType => 1,
             BridgeField::Bist => 1,
-            BridgeField::Bar => 4,
+            BridgeField::Bar(_) => 4,
             BridgeField::PrimaryBusNumber => 1,
             BridgeField::SecondaryBusNumber => 1,
             BridgeField::SubordinateBusNumber => 1,
@@ -1213,7 +1213,8 @@ impl BridgeField {
             (0x0d, 1) => BridgeField::LatencyTime,
             (0x0e, 1) => BridgeField::HeaderType,
             (0x0f, 1) => BridgeField::Bist,
-            (0x10, 4) | (0x14, 4) => BridgeField::Bar,
+            (0x10, 4) => BridgeField::Bar(0),
+            (0x14, 4) => BridgeField::Bar(1),
             (0x18, 1) => BridgeField::PrimaryBusNumber,
             (0x19, 1) => BridgeField::SecondaryBusNumber,
             (0x1a, 1) => BridgeField::SubordinateBusNumber,

@@ -17,7 +17,12 @@
 use alloc::{collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
 use bit_field::BitField;
 use bitvec::{array::BitArray, order::Lsb0, BitArr};
-use core::{cmp::Ordering, fmt::Debug, ops::Range, str::FromStr};
+use core::{
+    cmp::Ordering,
+    fmt::Debug,
+    ops::{Deref, DerefMut, Range},
+    str::FromStr,
+};
 use spin::RwLock;
 
 use super::{
@@ -151,6 +156,18 @@ const PCI_EXP_TYPE_UPSTREAM: u16 = 5;
 const PCI_EXP_TYPE_DOWNSTREAM: u16 = 6;
 const PCI_EXP_TYPE_PCIE_BRIDGE: u16 = 8;
 
+pub(crate) const SRIOV_CAP_SIZE: PciConfigAddress = 0x40;
+const SRIOV_CTRL_OFFSET: PciConfigAddress = 0x08;
+const SRIOV_INITIAL_VFS_OFFSET: PciConfigAddress = 0x0c;
+const SRIOV_TOTAL_VFS_OFFSET: PciConfigAddress = 0x0e;
+const SRIOV_NUM_VFS_OFFSET: PciConfigAddress = 0x10;
+const SRIOV_FIRST_VF_OFFSET: PciConfigAddress = 0x14;
+const SRIOV_VF_STRIDE_OFFSET: PciConfigAddress = 0x16;
+const SRIOV_VF_DEVICE_ID_OFFSET: PciConfigAddress = 0x1a;
+pub(crate) const SRIOV_VF_BAR_OFFSET: PciConfigAddress = 0x24;
+pub(crate) const SRIOV_VF_BAR_END: PciConfigAddress = SRIOV_VF_BAR_OFFSET + 6 * 4;
+const SRIOV_CTRL_VF_ENABLE: u16 = 1 << 0;
+
 #[derive(Clone, Copy, Eq, PartialEq, Default)]
 pub struct Bdf {
     pub domain: u8,
@@ -187,6 +204,25 @@ impl Bdf {
 
     pub fn function(&self) -> u8 {
         self.function
+    }
+
+    pub fn routing_id(&self) -> u16 {
+        ((self.bus as u16) << 8) | ((self.device as u16) << 3) | (self.function as u16)
+    }
+
+    pub fn from_routing_id(domain: u8, routing_id: u16) -> Self {
+        Self {
+            domain,
+            bus: ((routing_id >> 8) & 0xff) as u8,
+            device: ((routing_id >> 3) & 0x1f) as u8,
+            function: (routing_id & 0x7) as u8,
+        }
+    }
+
+    pub fn add_routing_id_offset(&self, offset: u16) -> Option<Self> {
+        self.routing_id()
+            .checked_add(offset)
+            .map(|routing_id| Self::from_routing_id(self.domain, routing_id))
     }
 
     pub fn is_host_bridge(&self, bus_begin: u8) -> bool {
@@ -316,14 +352,19 @@ impl VirtualPciAccessBits {
         let mut bits = BitArray::ZERO;
         bits[0x0..0x4].fill(true); // ID
         bits[0x08..0x0c].fill(true); // CLASS
-        bits[0x10..0x34].fill(true); //bar and rom
+        bits[0x10..0x34].fill(true); // BARs and ROM
+        bits[0x34..0x38].fill(true); // Capability Pointer
+        bits[0x40..0x100].fill(true); // Capability region (caps start at 0x40)
         Self { bits }
     }
 
     pub fn bridge() -> Self {
-        Self {
-            bits: BitArray::ZERO,
-        }
+        let mut bits = BitArray::ZERO;
+        bits[0x10..0x18].fill(true); // BARs
+        bits[0x38..0x3c].fill(true); // ROM
+        bits[0x34..0x38].fill(true); // Capability Pointer
+        bits[0x40..0x100].fill(true); // Capability region (caps start at 0x40)
+        Self { bits }
     }
 
     pub fn host_bridge() -> Self {
@@ -343,6 +384,106 @@ impl VirtualPciAccessBits {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+pub struct MsixInfo {
+    pub bar_id: u8,
+    pub offset: u64,
+    pub entry_count: u32, // number of MSIX table entries
+    pub bar_paddr: u64,   // physical address of the BAR
+}
+
+#[derive(Clone, Debug)]
+pub struct MsiInfo {
+    pub msi_count: u32,
+    // doorbell vm write to trigger interrupt
+    pub msi_doorbell: u64,
+    pub msix_info: Option<MsixInfo>,
+}
+
+impl MsiInfo {
+    pub fn new(msi_count: u32) -> Self {
+        Self {
+            msi_count,
+            msi_doorbell: 0,
+            msix_info: None,
+        }
+    }
+
+    pub fn set_doorbell(&mut self, doorbell: u64) {
+        self.msi_doorbell = doorbell;
+    }
+
+    pub fn set_msix_info(&mut self, bar_id: u8, offset: u64, entry_count: u32, bar_paddr: u64) {
+        self.msix_info = Some(MsixInfo {
+            bar_id,
+            offset,
+            entry_count,
+            bar_paddr,
+        });
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct SriovVfInfo {
+    pub pf_bdf: Bdf,
+    pub vf_index: u16,
+}
+
+#[derive(Clone, Debug)]
+pub struct SriovInfo {
+    pub cap_offset: PciConfigAddress,
+    pub initial_vfs: u16,
+    pub total_vfs: u16,
+    pub enabled_vfs: u16,
+    pub first_vf_offset: u16,
+    pub vf_stride: u16,
+    pub vf_device_id: DeviceId,
+    pub vf_bars: Bar,
+    pub vf_bdfs: Vec<Bdf>,
+}
+
+impl SriovInfo {
+    pub fn new(
+        cap_offset: PciConfigAddress,
+        initial_vfs: u16,
+        total_vfs: u16,
+        first_vf_offset: u16,
+        vf_stride: u16,
+        vf_device_id: DeviceId,
+        vf_bars: Bar,
+        vf_bdfs: Vec<Bdf>,
+    ) -> Self {
+        Self {
+            cap_offset,
+            initial_vfs,
+            total_vfs,
+            enabled_vfs: 0,
+            first_vf_offset,
+            vf_stride,
+            vf_device_id,
+            vf_bars,
+            vf_bdfs,
+        }
+    }
+}
+
+/// Information needed to splice the SR-IOV extended capability out of the
+/// PCIe ext-cap linked list when presenting config space to a guest VM.
+/// Populated during `ext_capability_enumerate` when the `sriov` feature is
+/// disabled so that the SR-IOV cap is invisible to guests.
+#[derive(Clone, Debug)]
+pub struct HideSriovInfo {
+    /// Absolute config-space offset of the SR-IOV extended capability header.
+    pub sriov_cap_offset: PciConfigAddress,
+    /// The `next` pointer stored inside the SR-IOV cap header (bits\[31:20\]).
+    /// This is the cap that should follow SR-IOV in the list.
+    pub sriov_cap_next: PciConfigAddress,
+    /// Offset of the preceding ext-cap node (the one whose `next` pointer
+    /// currently points to `sriov_cap_offset`).  `None` when SR-IOV is the
+    /// first extended capability (at offset 0x100).
+    pub prev_cap_offset: Option<PciConfigAddress>,
+}
+
 /* VirtualPciConfigSpace
  * bdf: the bdf hvisor seeing(same with the bdf without hvisor)
  * vbdf: the bdf zone seeing, it can set just you like without sr-iov
@@ -355,6 +496,7 @@ impl VirtualPciAccessBits {
 pub struct VirtualPciConfigSpace {
     host_bdf: Bdf,
     parent_bdf: Bdf,
+    parent_bus: u8,
     bdf: Bdf,
     vbdf: Bdf,
     config_type: HeaderType,
@@ -370,8 +512,21 @@ pub struct VirtualPciConfigSpace {
     bararr: Bar,
     rom: PciMem,
     capabilities: PciCapabilityList,
+    ext_capabilities: PciExtCapabilityList,
 
     dev_type: VpciDevType,
+
+    // MSI/MSIX info for this device
+    msi_info: Option<MsiInfo>,
+
+    // for SR-IOV PF
+    sriov_info: Option<SriovInfo>,
+
+    // for SR-IOV VF
+    sriov_vf_info: Option<SriovVfInfo>,
+
+    // SR-IOV cap hide info (populated when `sriov` feature is disabled)
+    hide_sriov: Option<HideSriovInfo>,
     msix_table: Option<Arc<RwLock<MsixTable>>>,
 }
 
@@ -431,6 +586,14 @@ impl ArcRwLockVirtualPciConfigSpace {
 
     pub fn get_vbdf(&self) -> Bdf {
         self.read().get_vbdf()
+    }
+
+    pub fn get_parent_bdf(&self) -> Bdf {
+        self.read().get_parent_bdf()
+    }
+
+    pub fn get_parent_bus(&self) -> u8 {
+        self.read().get_parent_bus()
     }
 
     pub fn get_dev_type(&self) -> VpciDevType {
@@ -541,6 +704,46 @@ impl ArcRwLockVirtualPciConfigSpace {
         f(&guard.capabilities)
     }
 
+    pub fn with_msi_info<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&MsiInfo) -> R,
+    {
+        let guard = self.0.read();
+        guard.msi_info.as_ref().map(|msi_info| f(msi_info))
+    }
+
+    pub fn with_msi_info_mut<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut MsiInfo) -> R,
+    {
+        let mut guard = self.0.write();
+        guard.msi_info.as_mut().map(|msi_info| f(msi_info))
+    }
+
+    pub fn with_sriov_info<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&SriovInfo) -> R,
+    {
+        let guard = self.0.read();
+        guard.sriov_info.as_ref().map(|sriov_info| f(sriov_info))
+    }
+
+    pub fn with_sriov_info_mut<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&mut SriovInfo) -> R,
+    {
+        let mut guard = self.0.write();
+        guard.sriov_info.as_mut().map(|sriov_info| f(sriov_info))
+    }
+
+    pub fn with_hide_sriov<F, R>(&self, f: F) -> Option<R>
+    where
+        F: FnOnce(&HideSriovInfo) -> R,
+    {
+        let guard = self.0.read();
+        guard.hide_sriov.as_ref().map(|info| f(info))
+    }
+
     pub fn read(&self) -> spin::RwLockReadGuard<'_, VirtualPciConfigSpaceWithZone> {
         self.0.read()
     }
@@ -591,6 +794,207 @@ impl Debug for ArcRwLockVirtualPciConfigSpace {
 // }
 
 impl VirtualPciConfigSpace {
+    fn find_ext_cap_offset(&self, cap_type: ExtCapabilityType) -> Option<PciConfigAddress> {
+        self.ext_capabilities
+            .iter()
+            .find_map(|(offset, cap)| (cap.cap_type == cap_type).then_some(*offset))
+    }
+
+    fn parse_sriov_vf_bars(&self, cap_offset: PciConfigAddress) -> HvResult<Bar> {
+        let mut bararr = Bar::default();
+        let mut slot = 0usize;
+
+        while slot < 6 {
+            let bar_offset = cap_offset + SRIOV_VF_BAR_OFFSET + (slot as PciConfigAddress) * 4;
+            let value = self.backend.read(bar_offset, 4)? as u32;
+
+            if !value.get_bit(0) {
+                let prefetchable = value.get_bit(3);
+
+                match value.get_bits(1..3) {
+                    0b00 => {
+                        let size = {
+                            self.backend.write(bar_offset, 4, 0xffff_ffffusize)?;
+                            let mut readback = self.backend.read(bar_offset, 4)? as u32;
+                            self.backend.write(bar_offset, 4, value as usize)?;
+
+                            if readback == 0 {
+                                slot += 1;
+                                continue;
+                            }
+
+                            readback.set_bits(0..4, 0);
+                            1u64 << readback.trailing_zeros()
+                        };
+
+                        bararr[slot] =
+                            PciMem::new_bar(PciMemType::Mem32, value as u64, size, prefetchable);
+                    }
+                    0b10 => {
+                        if slot == 5 {
+                            warn!("SR-IOV VF BAR64 low part appears in BAR5");
+                            break;
+                        }
+
+                        let high_offset = bar_offset + 4;
+                        let value_high = self.backend.read(high_offset, 4)? as u32;
+                        let size = {
+                            self.backend.write(bar_offset, 4, 0xffff_ffffusize)?;
+                            self.backend.write(high_offset, 4, 0xffff_ffffusize)?;
+                            let mut readback_low = self.backend.read(bar_offset, 4)? as u32;
+                            let readback_high = self.backend.read(high_offset, 4)? as u32;
+                            self.backend.write(bar_offset, 4, value as usize)?;
+                            self.backend.write(high_offset, 4, value_high as usize)?;
+
+                            readback_low.set_bits(0..4, 0);
+
+                            if readback_low != 0 {
+                                1u64 << readback_low.trailing_zeros()
+                            } else {
+                                1u64 << (readback_high.trailing_zeros() + 32)
+                            }
+                        };
+                        let value64 = (value as u64) | ((value_high as u64) << 32);
+
+                        bararr[slot] =
+                            PciMem::new_bar(PciMemType::Mem64Low, value64, size, prefetchable);
+                        bararr[slot + 1] =
+                            PciMem::new_bar(PciMemType::Mem64High, value64, size, prefetchable);
+                        slot += 1;
+                    }
+                    _ => {
+                        warn!(
+                            "unsupported SR-IOV VF BAR type bits {:b}",
+                            value.get_bits(1..3)
+                        );
+                    }
+                }
+            } else {
+                let size = {
+                    self.backend.write(bar_offset, 4, 0xffff_ffffusize)?;
+                    let mut readback = self.backend.read(bar_offset, 4)? as u32;
+                    self.backend.write(bar_offset, 4, value as usize)?;
+
+                    readback.set_bit(0, false);
+                    if readback == 0 {
+                        slot += 1;
+                        continue;
+                    }
+
+                    1u64 << readback.trailing_zeros()
+                };
+                bararr[slot] = PciMem::new_io(value as u64, size);
+            }
+
+            slot += 1;
+        }
+
+        Ok(bararr)
+    }
+
+    pub fn build_sriov_info(&mut self) -> HvResult<()> {
+        let Some(cap_offset) = self.find_ext_cap_offset(ExtCapabilityType::SingleRootIov) else {
+            return Ok(());
+        };
+
+        let initial_vfs = self
+            .backend
+            .read(cap_offset + SRIOV_INITIAL_VFS_OFFSET, 2)? as u16;
+        let total_vfs = self.backend.read(cap_offset + SRIOV_TOTAL_VFS_OFFSET, 2)? as u16;
+        let first_vf_offset = self.backend.read(cap_offset + SRIOV_FIRST_VF_OFFSET, 2)? as u16;
+        let vf_stride = self.backend.read(cap_offset + SRIOV_VF_STRIDE_OFFSET, 2)? as u16;
+        let vf_device_id = self
+            .backend
+            .read(cap_offset + SRIOV_VF_DEVICE_ID_OFFSET, 2)? as u16;
+
+        if total_vfs == 0 || first_vf_offset == 0 || vf_stride == 0 {
+            return Ok(());
+        }
+
+        let vf_bars = self.parse_sriov_vf_bars(cap_offset)?;
+        let mut vf_bdfs = Vec::with_capacity(total_vfs as usize);
+        for vf_index in 0..total_vfs {
+            let route_offset = match first_vf_offset.checked_add(vf_stride.saturating_mul(vf_index))
+            {
+                Some(offset) => offset,
+                None => break,
+            };
+            if let Some(vf_bdf) = self.bdf.add_routing_id_offset(route_offset) {
+                vf_bdfs.push(vf_bdf);
+            } else {
+                break;
+            }
+        }
+
+        if vf_bdfs.is_empty() {
+            return Ok(());
+        }
+
+        self.with_access_mut(|access| {
+            access.set_bits(cap_offset as usize..(cap_offset as usize + 0x40));
+        });
+
+        self.backend
+            .write(cap_offset + SRIOV_NUM_VFS_OFFSET, 2, total_vfs as usize)?;
+        let ctrl = self.backend.read(cap_offset + SRIOV_CTRL_OFFSET, 2)? as u16;
+        self.backend.write(
+            cap_offset + SRIOV_CTRL_OFFSET,
+            2,
+            (ctrl | SRIOV_CTRL_VF_ENABLE) as usize,
+        )?;
+
+        let mut sriov_info = SriovInfo::new(
+            cap_offset,
+            initial_vfs,
+            total_vfs,
+            first_vf_offset,
+            vf_stride,
+            vf_device_id,
+            vf_bars,
+            vf_bdfs,
+        );
+        sriov_info.enabled_vfs = total_vfs;
+        self.sriov_info = Some(sriov_info);
+
+        Ok(())
+    }
+
+    pub fn create_sriov_vf(
+        &self,
+        vf_bdf: Bdf,
+        vf_index: u16,
+        backend_base: PciConfigAddress,
+        pci_addr_base: PciConfigAddress,
+    ) -> Option<Self> {
+        let sriov_info = self.sriov_info.as_ref()?;
+        let mut vf = Self::endpoint(
+            vf_bdf,
+            pci_addr_base,
+            Arc::new(EndpointHeader::new_with_region(PciConfigMmio::new(
+                backend_base,
+                CONFIG_LENTH,
+            ))),
+            sriov_info.vf_bars.clone(),
+            PciMem::default(),
+            self.config_value.get_class_and_revision_id(),
+            (sriov_info.vf_device_id, self.config_value.get_id().1),
+        );
+
+        vf.set_host_bdf(vf_bdf);
+        vf.set_parent_bdf(self.bdf);
+        vf.set_parent_bus(self.bdf.bus());
+        vf.set_sriov_vf_info(Some(SriovVfInfo {
+            pf_bdf: self.bdf,
+            vf_index,
+        }));
+        vf.config_value_init();
+        vf.capability_enumerate();
+        vf.ext_capability_enumerate();
+        vf.build_msi_info();
+
+        Some(vf)
+    }
+
     /* false: some bits ro */
     pub fn writable(&self, offset: PciConfigAddress, size: usize) -> bool {
         self.control.bits[offset as usize..offset as usize + size]
@@ -765,8 +1169,19 @@ impl Debug for VirtualPciConfigSpace {
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         write!(
             f,
-            "\n  bdf {:#?}\n  base {:#x}\n  type {:#?}\n  {:#?}\n {:#?}\n {:#?}",
-            self.bdf, self.base, self.config_type, self.bararr, self.rom, self.capabilities
+            "\n  bdf {:#?}\n  parent_bdf {:#?}\n  base {:#x}\n  type {:#?}\n  msi_info {:#x?}\n  sriov_info {:#x?}\n  sriov_vf_info {:#x?}\n  hide_sriov {:#x?}\n {:#?}\n {:#?}\n {:#?}\n {:#?}",
+            self.bdf,
+            self.parent_bdf,
+            self.base,
+            self.config_type,
+            self.msi_info,
+            self.sriov_info,
+            self.sriov_vf_info,
+            self.hide_sriov,
+            self.bararr,
+            self.rom,
+            self.capabilities,
+            self.ext_capabilities
         )
     }
 }
@@ -783,6 +1198,7 @@ impl VirtualPciConfigSpace {
         Self {
             host_bdf: Bdf::default(),
             parent_bdf: Bdf::default(),
+            parent_bus: 0,
             bdf,
             vbdf: bdf,
             config_type: HeaderType::Endpoint,
@@ -797,7 +1213,12 @@ impl VirtualPciConfigSpace {
             bararr,
             rom: PciMem::default(),
             capabilities: PciCapabilityList::new(),
+            ext_capabilities: PciExtCapabilityList::new(),
             dev_type,
+            msi_info: None,
+            sriov_info: None,
+            sriov_vf_info: None,
+            hide_sriov: None,
             msix_table,
         }
     }
@@ -814,6 +1235,7 @@ impl VirtualPciConfigSpace {
         Self {
             host_bdf: Bdf::default(),
             parent_bdf: Bdf::default(),
+            parent_bus: 0,
             bdf,
             vbdf: Bdf::default(),
             config_type: HeaderType::Endpoint,
@@ -825,7 +1247,12 @@ impl VirtualPciConfigSpace {
             bararr,
             rom,
             capabilities: PciCapabilityList::new(),
+            ext_capabilities: PciExtCapabilityList::new(),
             dev_type: VpciDevType::Physical,
+            msi_info: None,
+            sriov_info: None,
+            sriov_vf_info: None,
+            hide_sriov: None,
             msix_table: None,
         }
     }
@@ -842,6 +1269,7 @@ impl VirtualPciConfigSpace {
         Self {
             host_bdf: Bdf::default(),
             parent_bdf: Bdf::default(),
+            parent_bus: 0,
             bdf,
             vbdf: Bdf::default(),
             config_type: HeaderType::PciBridge,
@@ -853,7 +1281,12 @@ impl VirtualPciConfigSpace {
             bararr,
             rom,
             capabilities: PciCapabilityList::new(),
+            ext_capabilities: PciExtCapabilityList::new(),
             dev_type: VpciDevType::Physical,
+            msi_info: None,
+            sriov_info: None,
+            sriov_vf_info: None,
+            hide_sriov: None,
             msix_table: None,
         }
     }
@@ -871,6 +1304,7 @@ impl VirtualPciConfigSpace {
         Self {
             host_bdf: Bdf::default(),
             parent_bdf: Bdf::default(),
+            parent_bus: 0,
             bdf,
             vbdf: Bdf::default(),
             config_type: HeaderType::Endpoint,
@@ -883,7 +1317,12 @@ impl VirtualPciConfigSpace {
             bararr: Bar::default(),
             rom: PciMem::default(),
             capabilities: PciCapabilityList::new(),
+            ext_capabilities: PciExtCapabilityList::new(),
             dev_type: VpciDevType::Physical,
+            msi_info: None,
+            sriov_info: None,
+            sriov_vf_info: None,
+            hide_sriov: None,
             msix_table: None,
         }
     }
@@ -897,6 +1336,7 @@ impl VirtualPciConfigSpace {
         Self {
             host_bdf: bdf,
             parent_bdf: bdf,
+            parent_bus: bdf.bus(),
             bdf: bdf,
             vbdf: bdf,
             config_type: HeaderType::Endpoint,
@@ -908,7 +1348,12 @@ impl VirtualPciConfigSpace {
             bararr: Bar::default(),
             rom: PciMem::default(),
             capabilities: PciCapabilityList::new(),
+            ext_capabilities: PciExtCapabilityList::new(),
             dev_type: VpciDevType::Physical,
+            msi_info: None,
+            sriov_info: None,
+            sriov_vf_info: None,
+            hide_sriov: None,
             msix_table: None,
         }
     }
@@ -925,12 +1370,24 @@ impl VirtualPciConfigSpace {
         self.parent_bdf = parent_bdf;
     }
 
+    pub fn set_parent_bus(&mut self, parent_bus: u8) {
+        self.parent_bus = parent_bus;
+    }
+
     pub fn get_bdf(&self) -> Bdf {
         self.bdf
     }
 
     pub fn get_vbdf(&self) -> Bdf {
         self.vbdf
+    }
+
+    pub fn get_parent_bdf(&self) -> Bdf {
+        self.parent_bdf
+    }
+
+    pub fn get_parent_bus(&self) -> u8 {
+        self.parent_bus
     }
 
     pub fn get_config_type(&self) -> HeaderType {
@@ -943,6 +1400,87 @@ impl VirtualPciConfigSpace {
 
     pub fn get_base(&self) -> PciConfigAddress {
         self.base
+    }
+
+    pub fn get_msi_count(&self) -> u32 {
+        self.msi_info
+            .as_ref()
+            .map(|info| info.msi_count)
+            .unwrap_or(0)
+    }
+
+    /// Build MSI/MSIX info structure based on device capabilities
+    pub fn build_msi_info(&mut self) {
+        let mut msi_count = 0u32;
+        let mut msix_count = 0u32;
+        let mut msix_bar_id = 0u8;
+        let mut msix_offset = 0u64;
+        let mut has_msix = false;
+
+        // Check if the device has MSI or MSIX capability and calculate both
+        for (_offset, cap) in self.capabilities.cap_in_config_ref().iter() {
+            match cap.get_type() {
+                CapabilityType::Msi => {
+                    // For MSI: read offset+2, Message Control bits 3:1 contain MMC
+                    // Supported messages = 2^MMC
+                    if let Ok(val) = cap.with_region(|region| region.read(0x02, 2)) {
+                        let mmc = (val & 0x0E) >> 1; // bits 3:1
+                        msi_count = 1u32 << mmc;
+                    }
+                }
+                CapabilityType::MsiX => {
+                    // For MSIX: read offset+2, bits 10-0 contain table size
+                    // Supported messages = table_size + 1
+                    if let Ok(val) = cap.with_region(|region| region.read(0x02, 2)) {
+                        let table_size = (val & 0x07FF) as u32; // bits 10-0
+                        msix_count = table_size + 1;
+                    }
+
+                    // Extract MSIX table location (offset+4)
+                    // Bits 2-0: BAR ID (0-5), Bits 31-3: table offset
+                    if let Ok(table_info) = cap.with_region(|region| region.read(0x04, 4)) {
+                        msix_bar_id = (table_info & 0x07) as u8;
+                        msix_offset = ((table_info >> 3) as u64) << 3; // multiply by 8 since offset is in 8-byte increments
+                        has_msix = true;
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        // Create MsiInfo if device has MSI or MSIX capability
+        let interrupt_count = core::cmp::max(msi_count, msix_count);
+        if interrupt_count > 0 {
+            let mut msi_info = MsiInfo::new(interrupt_count);
+
+            if has_msix {
+                // Read the BAR's physical address
+                let bar_paddr = self.bararr[msix_bar_id as usize].get_value64() & !0xf;
+                msi_info.set_msix_info(msix_bar_id, msix_offset, msix_count, bar_paddr);
+            }
+
+            self.msi_info = Some(msi_info);
+        }
+    }
+
+    pub fn get_msi_info(&self) -> Option<&MsiInfo> {
+        self.msi_info.as_ref()
+    }
+
+    pub fn get_sriov_info(&self) -> Option<&SriovInfo> {
+        self.sriov_info.as_ref()
+    }
+
+    pub fn get_sriov_vf_info(&self) -> Option<SriovVfInfo> {
+        self.sriov_vf_info
+    }
+
+    pub fn set_sriov_info(&mut self, sriov_info: Option<SriovInfo>) {
+        self.sriov_info = sriov_info;
+    }
+
+    pub fn set_sriov_vf_info(&mut self, sriov_vf_info: Option<SriovVfInfo>) {
+        self.sriov_vf_info = sriov_vf_info;
     }
 
     /* now the space_init just with bar
@@ -1172,7 +1710,7 @@ impl<B: BarAllocator> PciIterator<B> {
                 }
 
                 let mut ep = EndpointHeader::new_with_region(region);
-                let rom = Self::rom_init(&mut ep);
+                let rom = Self::rom_init(&mut self.allocator, &mut ep);
 
                 let bararr =
                     Self::bar_mem_init(ep.bar_limit().into(), &mut self.allocator, &mut ep);
@@ -1191,14 +1729,18 @@ impl<B: BarAllocator> PciIterator<B> {
                 );
 
                 let _ = node.capability_enumerate();
+                node.ext_capability_enumerate();
+                #[cfg(sriov)]
+                let _ = node.build_sriov_info();
+                // Build MSI/MSIX info once during device discovery
+                node.build_msi_info();
 
                 Some(node)
             }
             HeaderType::PciBridge => {
                 // For bridge: don't push host_bridge, it will be handled in Iterator::next()
-                warn!("bridge");
                 let mut bridge = PciBridgeHeader::new_with_region(region);
-                let rom = Self::rom_init(&mut bridge);
+                let rom = Self::rom_init(&mut self.allocator, &mut bridge);
 
                 let bararr =
                     Self::bar_mem_init(bridge.bar_limit().into(), &mut self.allocator, &mut bridge);
@@ -1215,6 +1757,11 @@ impl<B: BarAllocator> PciIterator<B> {
                 );
 
                 let _ = node.capability_enumerate();
+                node.ext_capability_enumerate();
+                #[cfg(sriov)]
+                let _ = node.build_sriov_info();
+                // Build MSI/MSIX info once during device discovery
+                node.build_msi_info();
 
                 Some(node)
             }
@@ -1231,11 +1778,28 @@ impl<B: BarAllocator> PciIterator<B> {
         }
     }
 
-    fn rom_init<D: PciRomRW + PciHeaderRW>(dev: &mut D) -> PciMem {
+    fn rom_init<D: PciRomRW + PciHeaderRW + PciRW>(
+        allocator: &mut Option<B>,
+        dev: &mut D,
+    ) -> PciMem {
         let mut rom = dev.parse_rom();
         if rom.get_type() == PciMemType::Rom {
-            rom.set_value(rom.get_value() as u64);
-            rom.set_virtual_value(rom.get_value() as u64);
+            if let Some(a) = allocator {
+                let value = a.alloc_memory32(rom.get_size() as u64).unwrap();
+                rom.set_value(value);
+                rom.set_virtual_value(value);
+                // Do not enable ROM yet, write 0 (ROM disabled)
+                // VM will enable it later by writing address + enable bit
+                // info!(
+                //     "allocated rom address: {:#x}, write 0 (disabled) to hardware",
+                //     value
+                // );
+                let _ = dev.write(dev.rom_offset(), 4, 0 as _);
+            } else {
+                let value = rom.get_value() as u64;
+                rom.set_value(value);
+                rom.set_virtual_value(value);
+            }
         }
         rom
     }
@@ -1247,7 +1811,7 @@ impl<B: BarAllocator> PciIterator<B> {
     ) -> Bar {
         let mut bararr = dev.parse_bar();
 
-        info!("{:#?}", bararr);
+        // info!("{:#?}", bararr);
 
         if let Some(a) = allocator {
             dev.update_command(|mut cmd| {
@@ -1328,7 +1892,7 @@ impl<B: BarAllocator> PciIterator<B> {
     fn next_device_not_ok(&mut self) -> bool {
         if let Some(parent) = self.stack.last_mut() {
             // only one child and skip this bus
-            if parent.has_secondary_link {
+            if parent.has_only_one_child {
                 parent.device = MAX_DEVICE;
             }
 
@@ -1413,9 +1977,10 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
                 let parent = self.stack.last().unwrap(); // Safe because we just ensured it exists
                 let host_bdf = Bdf::new(domain, bus_begin, 0, 0);
                 let parent_bdf = Bdf::new(domain, parent.bus, parent.device, 0);
-                let parent_bus = parent.primary_bus;
+                let _parent_bus = parent.primary_bus;
                 node.set_host_bdf(host_bdf);
                 node.set_parent_bdf(parent_bdf);
+                node.set_parent_bus(_parent_bus);
                 self.next(match node.config_value.get_class().0 {
                     // class code 0x6 is bridge and class.1 0x0 is host bridge
                     0x6 if node.config_value.get_class().1 == 0x4 => {
@@ -1471,7 +2036,7 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
                         let immediate_parent_bus = parent.bus;
                         Some(self.get_bridge().next_bridge(
                             self.address(immediate_parent_bus, bdf),
-                            node.has_secondary_link(),
+                            node.has_only_one_child(),
                             self.is_mulitple_function,
                             self.function,
                             next_bus,
@@ -1497,7 +2062,7 @@ pub struct Bridge {
     secondary_bus: u8,
     primary_bus: u8,
     mmio: PciConfigMmio,
-    has_secondary_link: bool,
+    has_only_one_child: bool,
     is_mulitple_function: bool,
 }
 
@@ -1513,7 +2078,7 @@ impl Bridge {
             secondary_bus: 0,
             primary_bus: 0,
             mmio: PciConfigMmio::new(0, 0), // Dummy mmio for placeholder
-            has_secondary_link: false,
+            has_only_one_child: false,
             is_mulitple_function: false,
         }
     }
@@ -1532,7 +2097,7 @@ impl Bridge {
             secondary_bus: bus_begin,
             primary_bus: bus_begin,
             mmio: PciConfigMmio::new(address, CONFIG_LENTH),
-            has_secondary_link: false,
+            has_only_one_child: false,
             is_mulitple_function,
         }
     }
@@ -1540,7 +2105,7 @@ impl Bridge {
     pub fn next_bridge(
         &self,
         address: PciConfigAddress,
-        has_secondary_link: bool,
+        has_only_one_child: bool,
         is_mulitple_function: bool,
         function: u8,
         target_bus: u8,
@@ -1554,7 +2119,7 @@ impl Bridge {
             secondary_bus: target_bus,
             primary_bus: self.bus,
             mmio,
-            has_secondary_link,
+            has_only_one_child,
             is_mulitple_function,
         }
     }
@@ -1583,8 +2148,8 @@ impl Bridge {
         }
     }
 
-    pub fn set_has_secondary_link(&mut self, value: bool) {
-        self.has_secondary_link = value;
+    pub fn set_has_only_one_child(&mut self, value: bool) {
+        self.has_only_one_child = value;
     }
 }
 
@@ -1624,12 +2189,77 @@ impl RootComplex {
     ) -> PciIterator<B> {
         self.__enumerate(range, domain, bar_alloc)
     }
+
+    pub fn create_sriov_vfs(&self, pf: &VirtualPciConfigSpace) -> Vec<VirtualPciConfigSpace> {
+        let Some(sriov_info) = pf.get_sriov_info() else {
+            return Vec::new();
+        };
+
+        sriov_info
+            .vf_bdfs
+            .iter()
+            .copied()
+            .enumerate()
+            .filter_map(|(vf_index, vf_bdf)| {
+                let backend_base = self
+                    .accessor
+                    .get_physical_address(vf_bdf, 0, pf.get_bdf().bus())
+                    .unwrap_or(0);
+                let pci_addr_base = self.accessor.get_pci_addr_base(vf_bdf).unwrap_or(0);
+                pf.create_sriov_vf(vf_bdf, vf_index as u16, backend_base, pci_addr_base)
+            })
+            .collect()
+    }
+}
+
+#[derive(Debug)]
+/// MSI information for a specific domain in a VM
+/// Tracks the MSI interrupts needed for this domain and the hardware base interrupt bit
+pub struct DomainMsiInfo {
+    /// Total number of MSI interrupts needed for all devices in this domain
+    pub msi_count: u32,
+    /// Hardware MSI base bit index (allocated from domain allocator)
+    pub hwirq_bit: u32,
+    /// Virtual doorbell address set by the VM (PCIE_MSI_ADDR_LO + PCIE_MSI_ADDR_HI)
+    pub vm_doorbell_addr: u64,
+}
+
+impl DomainMsiInfo {
+    pub fn new(msi_count: u32, hwirq_bit: u32) -> Self {
+        Self {
+            msi_count,
+            hwirq_bit,
+            vm_doorbell_addr: 0,
+        }
+    }
+
+    /// Set the virtual doorbell address (from VM)
+    pub fn set_vm_doorbell(&mut self, addr: u64) {
+        self.vm_doorbell_addr = addr;
+    }
+
+    /// Get the virtual doorbell address
+    pub fn get_vm_doorbell(&self) -> u64 {
+        self.vm_doorbell_addr
+    }
+
+    /// Get MSI mask based on msi_count
+    /// Returns a mask with msi_count bits set (0-based, e.g. msi_count=4 -> mask=0xf)
+    pub fn get_msi_mask(&self) -> u32 {
+        if self.msi_count >= 32 {
+            0xffffffff
+        } else {
+            (1u32 << self.msi_count) - 1
+        }
+    }
 }
 
 #[derive(Debug)]
 pub struct VirtualRootComplex {
     devs: BTreeMap<Bdf, ArcRwLockVirtualPciConfigSpace>,
     base_to_bdf: BTreeMap<PciConfigAddress, Bdf>,
+    // MSI interrupt information per domain (domain_id -> DomainMsiInfo)
+    domain_msi_info: BTreeMap<u8, DomainMsiInfo>,
     accessor: Option<Arc<dyn PciConfigAccessor>>,
     msix_backend: Option<Arc<RwLock<dyn MsixBackend>>>,
 }
@@ -1639,6 +2269,7 @@ impl VirtualRootComplex {
         Self {
             devs: BTreeMap::new(),
             base_to_bdf: BTreeMap::new(),
+            domain_msi_info: BTreeMap::new(),
             accessor: None,
             msix_backend: None,
         }
@@ -1648,15 +2279,23 @@ impl VirtualRootComplex {
         self.accessor = Some(accessor);
     }
 
+    pub fn accessor(&self) -> Option<&Arc<dyn PciConfigAccessor>> {
+        self.accessor.as_ref()
+    }
+
     pub fn insert(
         &mut self,
         bdf: Bdf,
         dev: VirtualPciConfigSpace,
     ) -> Option<ArcRwLockVirtualPciConfigSpace> {
-        let parent_bus = dev.parent_bdf.bus();
-        let offset = 0;
+        let _parent_bus = dev.parent_bdf.bus();
+        let _offset = 0;
         let base = if let Some(accessor) = &self.accessor {
-            match accessor.get_physical_address(bdf, offset, parent_bus) {
+            #[cfg(dwc_pcie)]
+            let addr = accessor.get_pci_addr_base(bdf);
+            #[cfg(not(dwc_pcie))]
+            let addr = accessor.get_physical_address(bdf, _offset, _parent_bus);
+            match addr {
                 Ok(addr) => addr,
                 Err(_) => {
                     warn!("can not get physical address for device {:#?}(vbdf), reset device base same to hardware", bdf);
@@ -1671,10 +2310,67 @@ impl VirtualRootComplex {
         self.base_to_bdf.insert(base, bdf);
         self.devs
             .insert(bdf, ArcRwLockVirtualPciConfigSpace::new(dev))
+
+        // let base = dev.get_base();
+        // let host_bdf = dev.get_bdf();
+        // let vbdf = dev.get_vbdf();
+
+        // #[cfg(dwc_pcie)]
+        // let key = {
+        //     let bus = bdf.bus() as PciConfigAddress;
+        //     let device = bdf.device() as PciConfigAddress;
+        //     let function = bdf.function() as PciConfigAddress;
+        //     let pci_addr = (bus << 24) + (device << 19) + (function << 16);
+        //     if bus != 0 {
+        //         pci_addr
+        //     } else {
+        //         base
+        //     }
+        // };
+
+        // #[cfg(not(dwc_pcie))]
+        // let key = base;
+
+        // #[cfg(dwc_pcie)]
+        // {
+        //     let bus = bdf.bus() as PciConfigAddress;
+        //     let device = bdf.device() as PciConfigAddress;
+        //     let function = bdf.function() as PciConfigAddress;
+        //     let pci_addr = (bus << 24) + (device << 19) + (function << 16);
+        //     info!(
+        //         "vpci insert: base_to_bdf[{:#x}] = key_bdf {:#?}, source {}, base {:#x}, pci_addr {:#x}, dev_host_bdf {:#?}, dev_vbdf {:#?}, remapped {}",
+        //         key,
+        //         bdf,
+        //         if key == pci_addr { "pci_addr" } else { "base" },
+        //         base,
+        //         pci_addr,
+        //         host_bdf,
+        //         vbdf,
+        //         host_bdf != vbdf
+        //     );
+        // }
+
+        // #[cfg(not(dwc_pcie))]
+        // info!(
+        //     "vpci insert: base_to_bdf[{:#x}] = key_bdf {:#?}, source base, base {:#x}, dev_host_bdf {:#?}, dev_vbdf {:#?}, remapped {}",
+        //     key,
+        //     bdf,
+        //     base,
+        //     host_bdf,
+        //     vbdf,
+        //     host_bdf != vbdf
+        // );
+        // self.base_to_bdf.insert(key, bdf);
+        // self.devs
+        //     .insert(bdf, ArcRwLockVirtualPciConfigSpace::new(dev))
     }
 
     pub fn devs(&mut self) -> &mut BTreeMap<Bdf, ArcRwLockVirtualPciConfigSpace> {
         &mut self.devs
+    }
+
+    pub fn devs_ref(&self) -> &BTreeMap<Bdf, ArcRwLockVirtualPciConfigSpace> {
+        &self.devs
     }
 
     pub fn read_devs(&self) -> &BTreeMap<Bdf, ArcRwLockVirtualPciConfigSpace> {
@@ -1696,6 +2392,34 @@ impl VirtualRootComplex {
     ) -> Option<ArcRwLockVirtualPciConfigSpace> {
         let bdf = self.base_to_bdf.get(&base).copied()?;
         self.devs.get(&bdf).cloned()
+    }
+
+    /// Add MSI count for a specific domain with allocated hardware interrupt bit
+    pub fn add_msi_count_for_domain(&mut self, domain: u8, msi_count: u32, hwirq_bit: u32) {
+        let vm_doorbell = self
+            .domain_msi_info
+            .get(&domain)
+            .map(|info| info.get_vm_doorbell())
+            .unwrap_or(0);
+
+        let mut info = DomainMsiInfo::new(msi_count, hwirq_bit);
+        info.set_vm_doorbell(vm_doorbell);
+        self.domain_msi_info.insert(domain, info);
+    }
+
+    /// Get MSI info for a specific domain
+    pub fn get_domain_msi_info(&self, domain: u8) -> Option<&DomainMsiInfo> {
+        self.domain_msi_info.get(&domain)
+    }
+
+    /// Get reference to domain MSI info map
+    pub fn domain_msi_info(&self) -> &BTreeMap<u8, DomainMsiInfo> {
+        &self.domain_msi_info
+    }
+
+    /// Get mutable reference to domain MSI info map
+    pub fn domain_msi_info_mut(&mut self) -> &mut BTreeMap<u8, DomainMsiInfo> {
+        &mut self.domain_msi_info
     }
 
     pub fn get_msix_backend(&self) -> Option<Arc<RwLock<dyn MsixBackend>>> {
@@ -1867,6 +2591,243 @@ impl CapabilityType {
             CapabilityType::PciExpress => 0x10,
             CapabilityType::MsiX => 0x11,
             CapabilityType::Unknown => 0x00,
+        }
+    }
+}
+
+// ---- PCIe Extended Capabilities (config space 0x100–0xFFF) ----
+
+/// PCIe Extended Capability IDs (PCI-SIG ECN).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum ExtCapabilityType {
+    /// Advanced Error Reporting, ID = 0x0001
+    AdvancedErrorReporting,
+    /// Virtual Channel, ID = 0x0002
+    VirtualChannel,
+    /// Device Serial Number, ID = 0x0003
+    DeviceSerialNumber,
+    /// Power Budgeting, ID = 0x0004
+    PowerBudgeting,
+    /// Root Complex Link Declaration, ID = 0x0005
+    RootComplexLinkDeclaration,
+    /// Root Complex Internal Link Control, ID = 0x0006
+    RootComplexInternalLinkControl,
+    /// Root Complex Event Collector Endpoint Association, ID = 0x0007
+    RootComplexEventCollector,
+    /// Multi-Function Virtual Channel, ID = 0x0008
+    MultiFunctionVirtualChannel,
+    /// VC in Multi-Function Device, ID = 0x0009
+    VirtualChannelMFVC,
+    /// Root Complex Register Block, ID = 0x000A
+    RootComplexRegisterBlock,
+    /// Vendor-Specific Extended Capability, ID = 0x000B
+    VendorSpecific,
+    /// Configuration Access Correlation, ID = 0x000C
+    ConfigurationAccessCorrelation,
+    /// Access Control Services, ID = 0x000D
+    AccessControlServices,
+    /// Alternative Routing-ID Interpretation, ID = 0x000E
+    AlternativeRoutingId,
+    /// Address Translation Services, ID = 0x000F
+    AddressTranslationServices,
+    /// Single Root I/O Virtualization (SR-IOV), ID = 0x0010
+    SingleRootIov,
+    /// Multi-Root I/O Virtualization (MR-IOV), ID = 0x0011
+    MultiRootIov,
+    /// Multicast, ID = 0x0012
+    Multicast,
+    /// Page Request Interface, ID = 0x0013
+    PageRequestInterface,
+    /// Resizable BAR, ID = 0x0015
+    ResizableBar,
+    /// Dynamic Power Allocation, ID = 0x0016
+    DynamicPowerAllocation,
+    /// TPH Requester, ID = 0x0017
+    TphRequester,
+    /// Latency Tolerance Reporting, ID = 0x0018
+    LatencyToleranceReporting,
+    /// Secondary PCI Express, ID = 0x0019
+    SecondaryPciExpress,
+    /// Protocol Multiplexing, ID = 0x001A
+    ProtocolMultiplexing,
+    /// Process Address Space ID (PASID), ID = 0x001B
+    ProcessAddressSpaceId,
+    /// LN Requester, ID = 0x001C
+    LnRequester,
+    /// Downstream Port Containment, ID = 0x001D
+    DownstreamPortContainment,
+    /// L1 PM Substates, ID = 0x001E
+    L1PmSubstates,
+    /// Precision Time Measurement, ID = 0x001F
+    PrecisionTimeMeasurement,
+    /// Designated Vendor-Specific, ID = 0x0023
+    DesignatedVendorSpecific,
+    /// VF Resizable BAR, ID = 0x0024
+    VfResizableBar,
+    /// Data Link Feature, ID = 0x0025
+    DataLinkFeature,
+    /// Physical Layer 16.0 GT/s, ID = 0x0026
+    PhysicalLayer16Gts,
+    /// Lane Margining at the Receiver, ID = 0x0027
+    LaneMargining,
+    /// Physical Layer 32.0 GT/s, ID = 0x002A
+    PhysicalLayer32Gts,
+    /// Unknown or reserved extended capability
+    Unknown(u16),
+}
+
+impl ExtCapabilityType {
+    pub fn from_id(id: u16) -> Self {
+        match id {
+            0x0001 => ExtCapabilityType::AdvancedErrorReporting,
+            0x0002 => ExtCapabilityType::VirtualChannel,
+            0x0003 => ExtCapabilityType::DeviceSerialNumber,
+            0x0004 => ExtCapabilityType::PowerBudgeting,
+            0x0005 => ExtCapabilityType::RootComplexLinkDeclaration,
+            0x0006 => ExtCapabilityType::RootComplexInternalLinkControl,
+            0x0007 => ExtCapabilityType::RootComplexEventCollector,
+            0x0008 => ExtCapabilityType::MultiFunctionVirtualChannel,
+            0x0009 => ExtCapabilityType::VirtualChannelMFVC,
+            0x000A => ExtCapabilityType::RootComplexRegisterBlock,
+            0x000B => ExtCapabilityType::VendorSpecific,
+            0x000C => ExtCapabilityType::ConfigurationAccessCorrelation,
+            0x000D => ExtCapabilityType::AccessControlServices,
+            0x000E => ExtCapabilityType::AlternativeRoutingId,
+            0x000F => ExtCapabilityType::AddressTranslationServices,
+            0x0010 => ExtCapabilityType::SingleRootIov,
+            0x0011 => ExtCapabilityType::MultiRootIov,
+            0x0012 => ExtCapabilityType::Multicast,
+            0x0013 => ExtCapabilityType::PageRequestInterface,
+            0x0015 => ExtCapabilityType::ResizableBar,
+            0x0016 => ExtCapabilityType::DynamicPowerAllocation,
+            0x0017 => ExtCapabilityType::TphRequester,
+            0x0018 => ExtCapabilityType::LatencyToleranceReporting,
+            0x0019 => ExtCapabilityType::SecondaryPciExpress,
+            0x001A => ExtCapabilityType::ProtocolMultiplexing,
+            0x001B => ExtCapabilityType::ProcessAddressSpaceId,
+            0x001C => ExtCapabilityType::LnRequester,
+            0x001D => ExtCapabilityType::DownstreamPortContainment,
+            0x001E => ExtCapabilityType::L1PmSubstates,
+            0x001F => ExtCapabilityType::PrecisionTimeMeasurement,
+            0x0023 => ExtCapabilityType::DesignatedVendorSpecific,
+            0x0024 => ExtCapabilityType::VfResizableBar,
+            0x0025 => ExtCapabilityType::DataLinkFeature,
+            0x0026 => ExtCapabilityType::PhysicalLayer16Gts,
+            0x0027 => ExtCapabilityType::LaneMargining,
+            0x002A => ExtCapabilityType::PhysicalLayer32Gts,
+            other => ExtCapabilityType::Unknown(other),
+        }
+    }
+
+    pub fn to_id(&self) -> u16 {
+        match self {
+            ExtCapabilityType::AdvancedErrorReporting => 0x0001,
+            ExtCapabilityType::VirtualChannel => 0x0002,
+            ExtCapabilityType::DeviceSerialNumber => 0x0003,
+            ExtCapabilityType::PowerBudgeting => 0x0004,
+            ExtCapabilityType::RootComplexLinkDeclaration => 0x0005,
+            ExtCapabilityType::RootComplexInternalLinkControl => 0x0006,
+            ExtCapabilityType::RootComplexEventCollector => 0x0007,
+            ExtCapabilityType::MultiFunctionVirtualChannel => 0x0008,
+            ExtCapabilityType::VirtualChannelMFVC => 0x0009,
+            ExtCapabilityType::RootComplexRegisterBlock => 0x000A,
+            ExtCapabilityType::VendorSpecific => 0x000B,
+            ExtCapabilityType::ConfigurationAccessCorrelation => 0x000C,
+            ExtCapabilityType::AccessControlServices => 0x000D,
+            ExtCapabilityType::AlternativeRoutingId => 0x000E,
+            ExtCapabilityType::AddressTranslationServices => 0x000F,
+            ExtCapabilityType::SingleRootIov => 0x0010,
+            ExtCapabilityType::MultiRootIov => 0x0011,
+            ExtCapabilityType::Multicast => 0x0012,
+            ExtCapabilityType::PageRequestInterface => 0x0013,
+            ExtCapabilityType::ResizableBar => 0x0015,
+            ExtCapabilityType::DynamicPowerAllocation => 0x0016,
+            ExtCapabilityType::TphRequester => 0x0017,
+            ExtCapabilityType::LatencyToleranceReporting => 0x0018,
+            ExtCapabilityType::SecondaryPciExpress => 0x0019,
+            ExtCapabilityType::ProtocolMultiplexing => 0x001A,
+            ExtCapabilityType::ProcessAddressSpaceId => 0x001B,
+            ExtCapabilityType::LnRequester => 0x001C,
+            ExtCapabilityType::DownstreamPortContainment => 0x001D,
+            ExtCapabilityType::L1PmSubstates => 0x001E,
+            ExtCapabilityType::PrecisionTimeMeasurement => 0x001F,
+            ExtCapabilityType::DesignatedVendorSpecific => 0x0023,
+            ExtCapabilityType::VfResizableBar => 0x0024,
+            ExtCapabilityType::DataLinkFeature => 0x0025,
+            ExtCapabilityType::PhysicalLayer16Gts => 0x0026,
+            ExtCapabilityType::LaneMargining => 0x0027,
+            ExtCapabilityType::PhysicalLayer32Gts => 0x002A,
+            ExtCapabilityType::Unknown(id) => *id,
+        }
+    }
+}
+
+impl core::fmt::Debug for ExtCapabilityType {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            ExtCapabilityType::AdvancedErrorReporting => {
+                write!(f, "AdvancedErrorReporting(0x0001)")
+            }
+            ExtCapabilityType::VirtualChannel => write!(f, "VirtualChannel(0x0002)"),
+            ExtCapabilityType::DeviceSerialNumber => write!(f, "DeviceSerialNumber(0x0003)"),
+            ExtCapabilityType::PowerBudgeting => write!(f, "PowerBudgeting(0x0004)"),
+            ExtCapabilityType::RootComplexLinkDeclaration => {
+                write!(f, "RootComplexLinkDeclaration(0x0005)")
+            }
+            ExtCapabilityType::RootComplexInternalLinkControl => {
+                write!(f, "RootComplexInternalLinkControl(0x0006)")
+            }
+            ExtCapabilityType::RootComplexEventCollector => {
+                write!(f, "RootComplexEventCollector(0x0007)")
+            }
+            ExtCapabilityType::MultiFunctionVirtualChannel => {
+                write!(f, "MultiFunctionVirtualChannel(0x0008)")
+            }
+            ExtCapabilityType::VirtualChannelMFVC => write!(f, "VirtualChannelMFVC(0x0009)"),
+            ExtCapabilityType::RootComplexRegisterBlock => {
+                write!(f, "RootComplexRegisterBlock(0x000A)")
+            }
+            ExtCapabilityType::VendorSpecific => write!(f, "VendorSpecific(0x000B)"),
+            ExtCapabilityType::ConfigurationAccessCorrelation => {
+                write!(f, "ConfigurationAccessCorrelation(0x000C)")
+            }
+            ExtCapabilityType::AccessControlServices => write!(f, "AccessControlServices(0x000D)"),
+            ExtCapabilityType::AlternativeRoutingId => write!(f, "AlternativeRoutingId(0x000E)"),
+            ExtCapabilityType::AddressTranslationServices => {
+                write!(f, "AddressTranslationServices(0x000F)")
+            }
+            ExtCapabilityType::SingleRootIov => write!(f, "SingleRootIov(SR-IOV)(0x0010)"),
+            ExtCapabilityType::MultiRootIov => write!(f, "MultiRootIov(MR-IOV)(0x0011)"),
+            ExtCapabilityType::Multicast => write!(f, "Multicast(0x0012)"),
+            ExtCapabilityType::PageRequestInterface => write!(f, "PageRequestInterface(0x0013)"),
+            ExtCapabilityType::ResizableBar => write!(f, "ResizableBar(0x0015)"),
+            ExtCapabilityType::DynamicPowerAllocation => {
+                write!(f, "DynamicPowerAllocation(0x0016)")
+            }
+            ExtCapabilityType::TphRequester => write!(f, "TphRequester(0x0017)"),
+            ExtCapabilityType::LatencyToleranceReporting => {
+                write!(f, "LatencyToleranceReporting(0x0018)")
+            }
+            ExtCapabilityType::SecondaryPciExpress => write!(f, "SecondaryPciExpress(0x0019)"),
+            ExtCapabilityType::ProtocolMultiplexing => write!(f, "ProtocolMultiplexing(0x001A)"),
+            ExtCapabilityType::ProcessAddressSpaceId => write!(f, "ProcessAddressSpaceId(0x001B)"),
+            ExtCapabilityType::LnRequester => write!(f, "LnRequester(0x001C)"),
+            ExtCapabilityType::DownstreamPortContainment => {
+                write!(f, "DownstreamPortContainment(0x001D)")
+            }
+            ExtCapabilityType::L1PmSubstates => write!(f, "L1PmSubstates(0x001E)"),
+            ExtCapabilityType::PrecisionTimeMeasurement => {
+                write!(f, "PrecisionTimeMeasurement(0x001F)")
+            }
+            ExtCapabilityType::DesignatedVendorSpecific => {
+                write!(f, "DesignatedVendorSpecific(0x0023)")
+            }
+            ExtCapabilityType::VfResizableBar => write!(f, "VfResizableBar(0x0024)"),
+            ExtCapabilityType::DataLinkFeature => write!(f, "DataLinkFeature(0x0025)"),
+            ExtCapabilityType::PhysicalLayer16Gts => write!(f, "PhysicalLayer16Gts(0x0026)"),
+            ExtCapabilityType::LaneMargining => write!(f, "LaneMargining(0x0027)"),
+            ExtCapabilityType::PhysicalLayer32Gts => write!(f, "PhysicalLayer32Gts(0x002A)"),
+            ExtCapabilityType::Unknown(id) => write!(f, "Unknown({:#06x})", id),
         }
     }
 }
@@ -2184,6 +3145,122 @@ impl Debug for PciCapabilityList {
     }
 }
 
+// ---- PCIe Extended Capability types ----
+
+/// A single PCIe extended capability entry (config space 0x100–0xFFF).
+#[derive(Clone, Copy, Debug)]
+pub struct PciExtCapability {
+    pub cap_type: ExtCapabilityType,
+    /// Absolute offset of this extended capability header in config space.
+    pub offset: PciConfigAddress,
+    /// Capability structure version (bits 19:16 of the header DWORD).
+    pub version: u8,
+}
+
+/// Iterator over PCIe extended capabilities starting at offset 0x100.
+///
+/// Each header DWORD layout:
+/// - bits\[15:0\]  Extended Capability ID
+/// - bits\[19:16\] Capability Version
+/// - bits\[31:20\] Next Capability Offset (0 = end of list)
+pub struct ExtCapabilityIterator {
+    backend: Arc<dyn PciRW>,
+    offset: PciConfigAddress,
+}
+
+impl ExtCapabilityIterator {
+    const EXT_CAP_START: PciConfigAddress = 0x100;
+    const EXT_CAP_END: PciConfigAddress = 0x1000;
+}
+
+impl Iterator for ExtCapabilityIterator {
+    type Item = PciExtCapability;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        // offset must be DWORD-aligned and leave room for a 4-byte DWORD read
+        if self.offset < Self::EXT_CAP_START
+            || self.offset > Self::EXT_CAP_END - 4
+            || (self.offset & 3) != 0
+        {
+            return None;
+        }
+
+        let header = match self.backend.read(self.offset, 4) {
+            Ok(v) => v as u32,
+            Err(_) => return None,
+        };
+
+        // A null DWORD (0x00000000) or all-ones DWORD (0xFFFFFFFF, config space
+        // not implemented) both mean there are no (more) extended caps.
+        if header == 0 || header == 0xFFFFFFFF {
+            self.offset = Self::EXT_CAP_END;
+            return None;
+        }
+
+        let id = (header & 0xFFFF) as u16;
+        let version = ((header >> 16) & 0xF) as u8;
+        let next_offset = ((header >> 20) & 0xFFF) as PciConfigAddress;
+
+        let cap = PciExtCapability {
+            cap_type: ExtCapabilityType::from_id(id),
+            offset: self.offset,
+            version,
+        };
+
+        // next_offset == 0 means this is the last cap in the list.
+        // Validate: must be DWORD-aligned, within [EXT_CAP_START, EXT_CAP_END-4].
+        // Any value outside this range (including 0xFFF etc.) stops iteration.
+        self.offset = if next_offset >= Self::EXT_CAP_START
+            && next_offset <= Self::EXT_CAP_END - 4
+            && (next_offset & 3) == 0
+        {
+            next_offset
+        } else {
+            Self::EXT_CAP_END // sentinel – stops iteration on the next call
+        };
+
+        Some(cap)
+    }
+}
+
+/// Ordered map of PCIe extended capabilities keyed by config-space offset.
+#[derive(Clone)]
+pub struct PciExtCapabilityList(BTreeMap<PciConfigAddress, PciExtCapability>);
+
+impl PciExtCapabilityList {
+    pub fn new() -> Self {
+        Self(BTreeMap::new())
+    }
+}
+
+impl Deref for PciExtCapabilityList {
+    type Target = BTreeMap<PciConfigAddress, PciExtCapability>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl DerefMut for PciExtCapabilityList {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}
+
+impl Debug for PciExtCapabilityList {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        write!(f, "PciExtCapabilityList {{\n")?;
+        for (offset, cap) in &self.0 {
+            write!(
+                f,
+                "  0x{:x} {:?} (v{})\n",
+                offset, cap.cap_type, cap.version
+            )?;
+        }
+        write!(f, "}}")
+    }
+}
+
 impl VirtualPciConfigSpace {
     fn _capability_enumerate(&self, backend: Arc<dyn PciRW>) -> CapabilityIterator {
         CapabilityIterator {
@@ -2205,38 +3282,105 @@ impl VirtualPciConfigSpace {
                 .cap_in_config
                 .insert(capability.get_offset(), capability);
         }
-        info!("capability {:#?}", capabilities);
+        // info!("capability {:#?}", capabilities);
         self.capabilities = capabilities;
     }
 
-    //TODO: check secondary link by read cap
-    pub fn has_secondary_link(&self) -> bool {
+    fn _ext_capability_enumerate(&self, backend: Arc<dyn PciRW>) -> ExtCapabilityIterator {
+        ExtCapabilityIterator {
+            backend,
+            offset: ExtCapabilityIterator::EXT_CAP_START,
+        }
+    }
+
+    /// Walk the PCIe extended configuration space (0x100–0xFFF) and record all
+    /// extended capabilities found.  No further parsing is performed.
+    pub fn ext_capability_enumerate(&mut self) {
+        let mut ext_caps = PciExtCapabilityList::new();
+        for cap in self._ext_capability_enumerate(self.backend.clone()) {
+            ext_caps.insert(cap.offset, cap);
+        }
+        // info!("ext_capability {:#?}", ext_caps);
+
+        // When the `sriov` feature is disabled, record info needed to splice
+        // the SR-IOV cap out of the ext-cap linked list for guest VMs.
+        #[cfg(not(sriov))]
+        {
+            use bit_field::BitField;
+            let sriov_offset = ext_caps
+                .values()
+                .find(|c| c.cap_type == ExtCapabilityType::SingleRootIov)
+                .map(|c| c.offset);
+
+            if let Some(sriov_cap_offset) = sriov_offset {
+                // Read the SR-IOV cap header DWORD to get its own `next` pointer.
+                let sriov_cap_next = self
+                    .backend
+                    .read(sriov_cap_offset, 4)
+                    .ok()
+                    .map(|dw| ((dw as u32).get_bits(20..32)) as PciConfigAddress)
+                    .unwrap_or(0);
+
+                // The preceding node is the one with the largest offset that is
+                // still less than sriov_cap_offset.
+                let prev_cap_offset = ext_caps
+                    .range(..sriov_cap_offset)
+                    .next_back()
+                    .map(|(off, _)| *off);
+
+                self.hide_sriov = Some(HideSriovInfo {
+                    sriov_cap_offset,
+                    sriov_cap_next,
+                    prev_cap_offset,
+                });
+
+                // Mark these ranges as "emulated" so accesses go through
+                // handle_cap_access rather than the hardware direct path.
+                //
+                // SR-IOV cap range: we return 0 to hide it from the guest.
+                self.access.set_bits(
+                    sriov_cap_offset as usize
+                        ..(sriov_cap_offset as usize + SRIOV_CAP_SIZE as usize),
+                );
+                // First DWORD of the preceding node: we patch the `next` pointer.
+                if let Some(prev) = prev_cap_offset {
+                    self.access.set_bits(prev as usize..prev as usize + 4);
+                }
+            }
+        }
+
+        self.ext_capabilities = ext_caps;
+    }
+
+    // detect whether this bridge secondary bus can have only one child device.
+    pub fn has_only_one_child(&self) -> bool {
         match self.config_type {
             HeaderType::PciBridge => {
-                // Find PciExpress capability
-                // warn!("has_secondary_link {:#?}", self.capabilities);
-                // for (_, capability) in &self.capabilities {
-                //     if capability.cap_type == CapabilityType::PciExpress {
-                //         // Read PCIe Capability Register at offset + 0x00
-                //         // Bits 4:0 contain the Device/Port Type
-                //         let offset = capability.get_offset();
-                //         if let Ok(cap_reg) = self.backend.read(offset, 2) {
-                //             let type_val = (cap_reg as u16).get_bits(0..5);
-                //             if type_val == PCI_EXP_TYPE_ROOT_PORT || type_val == PCI_EXP_TYPE_PCIE_BRIDGE {
-                //                 return true;
-                //             } else if type_val == PCI_EXP_TYPE_UPSTREAM || type_val == PCI_EXP_TYPE_DOWNSTREAM {
-                //                 // Parent check is not implemented, set to false for now
-                //                 return false;
-                //             }
-                //         }
-                //         break;
-                //     }
-                // }
-                // false
-                // #[cfg(dwc_pcie)]
-                // return true;
-                // #[cfg(not(dwc_pcie))]
-                return false;
+                // Parse PCIe Device/Port Type from PCI Express Capability Register
+                // (capability offset + 0x02, bits 7:4).
+                for capability in self._capability_enumerate(self.backend.clone()) {
+                    if capability.get_type() != CapabilityType::PciExpress {
+                        continue;
+                    }
+
+                    let offset = capability.get_offset();
+                    if let Ok(cap_reg) = self.backend.read(offset + 0x2, 2) {
+                        let port_type = (cap_reg as u16).get_bits(4..8) as u16;
+                        return match port_type {
+                            // Root Port / Downstream Port: secondary bus has a single downstream link.
+                            PCI_EXP_TYPE_ROOT_PORT | PCI_EXP_TYPE_DOWNSTREAM => true,
+                            // Upstream Port / PCIe-to-PCI bridge can have multiple children behind it.
+                            PCI_EXP_TYPE_UPSTREAM | PCI_EXP_TYPE_PCIE_BRIDGE => false,
+                            _ => false,
+                        };
+                    }
+
+                    // Capability exists but cannot be read safely.
+                    return false;
+                }
+
+                // Non-PCIe bridge (or no PCIe capability): keep full secondary-bus scan.
+                false
             }
             _ => false,
         }

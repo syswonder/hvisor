@@ -218,17 +218,23 @@ pub struct HvPciDevConfig {
     pub bus: u8,
     pub device: u8,
     pub function: u8,
+    pub v_bus: u8,
+    pub v_device: u8,
+    pub v_function: u8,
     pub dev_type: VpciDevType,
 }
 
 #[macro_export]
 macro_rules! pci_dev {
-    ($domain:expr, $bus:expr, $dev:expr, $func:expr, $dev_type:expr) => {
+    ($domain:expr, $bus:expr, $dev:expr, $func:expr => $v_bus:expr, $v_dev:expr, $v_func:expr, $dev_type:expr) => {
         HvPciDevConfig {
             domain: $domain,
             bus: $bus,
             device: $dev,
             function: $func,
+            v_bus: $v_bus,
+            v_device: $v_dev,
+            v_function: $v_func,
             dev_type: $dev_type,
         }
     };
@@ -257,6 +263,10 @@ pub struct HvDwcAtuConfig {
     // set 1 if io base use atu0, when hvisor need set mmio for io
     // normally, when num-viewport less than 4, io_cfg_atu_shared is 1, otherwise is 0
     pub io_cfg_atu_shared: u64,
+    // choose the atu index for io and cfg access, when io_cfg_atu_shared is 1, io and cfg use the same atu index, otherwise use different atu index
+    pub io_atu_index: u64,
+    // Shared hardware interrupt ID for this DWC RC MSI block
+    pub dw_msi_irq: u64,
 }
 
 impl HvDwcAtuConfig {
@@ -273,6 +283,8 @@ impl HvDwcAtuConfig {
             cfg_base: 0,
             cfg_size: 0,
             io_cfg_atu_shared: 0,
+            io_atu_index: 0,
+            dw_msi_irq: 0,
         }
     }
 }

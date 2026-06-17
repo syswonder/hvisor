@@ -354,9 +354,11 @@ pub const ROOT_DWC_ATU_CONFIG: &[HvDwcAtuConfig] = &[HvDwcAtuConfig {
     cfg_base: 0xf2000000,
     cfg_size: 0x80000 * 2,
     io_cfg_atu_shared: 0,
+    io_atu_index: 0,
+    dw_msi_irq: 0,
 }];
 
 pub const ROOT_PCI_DEVS: [HvPciDevConfig; 2] = [
-    pci_dev!(0x0, 0x00, 0x0, 0x0, VpciDevType::Physical),
-    pci_dev!(0x0, 0x01, 0x0, 0x0, VpciDevType::Physical),
+    pci_dev!(0x0, 0x00, 0x0, 0x0 => 0x00, 0x0, 0x0, VpciDevType::Physical),
+    pci_dev!(0x0, 0x01, 0x0, 0x0 => 0x01, 0x0, 0x0, VpciDevType::Physical),
 ];

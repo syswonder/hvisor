@@ -162,7 +162,8 @@ where
         assert!(pt_level >= 3 && pt_level <= 5, "pt_level must be 3, 4 or 5");
         // Note: riscv spec requires G-stage's root page table addr to be 16KB aligned.
         Self {
-            root: Frame::new_16().expect("failed to allocate root frame for host page table"),
+            root: Frame::new_contiguous(4, 16 * 1024)
+                .expect("failed to allocate root frame for host page table"),
             pt_level: pt_level,
             _phantom: PhantomData,
         }
