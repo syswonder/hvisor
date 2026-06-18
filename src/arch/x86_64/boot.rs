@@ -26,7 +26,7 @@ use alloc::string::{String, ToString};
 use bit_field::BitField;
 use core::{
     arch::{self, global_asm},
-    ffi::{c_char, CStr},
+    ffi::CStr,
     mem::size_of,
     ptr::{copy, copy_nonoverlapping},
 };
@@ -534,50 +534,154 @@ pub fn print_memory_map() {
     }
 }
 
-/// copy kernel modules to the right place
+const MAX_MODULES: usize = 16;
+
+#[derive(Clone, Copy)]
+struct BootModule {
+    /// Address grub loaded the module at.
+    src: usize,
+    /// Size of the module in bytes.
+    size: usize,
+    /// Final address of the module. Equal to `src` when the module's command
+    /// line is `0`, i.e. it is left where grub placed it.
+    dst: usize,
+    /// Whether the module still has to be copied to `dst`.
+    pending: bool,
+}
+
+/// Whether two half-open byte ranges intersect.
+fn ranges_overlap(base_a: usize, len_a: usize, base_b: usize, len_b: usize) -> bool {
+    base_a < base_b + len_b && base_b < base_a + len_a
+}
+
+/// Relocate multiboot2 modules to the physical addresses encoded in their
+/// command lines. A command line of `0` keeps the module where grub loaded it.
+///
+/// Copies are delayed while they would overwrite another pending module's
+/// source range.
 pub fn module_init(info_addr: usize) {
-    println!("module_init");
-    let mut cur = info_addr;
-    let total_size = unsafe { *(cur as *const u32) } as usize;
+    let total_size = unsafe { *(info_addr as *const u32) } as usize;
+    let info_end = info_addr
+        .checked_add(total_size)
+        .expect("multiboot info size overflows");
 
-    let mut cnt = 0;
-    cur += 8;
-    while cur < info_addr + total_size {
+    let mut modules = [BootModule {
+        src: 0,
+        size: 0,
+        dst: 0,
+        pending: false,
+    }; MAX_MODULES];
+    let mut count = 0;
+
+    let mut cur = info_addr + 8;
+    // Every tag starts with a u32 type and a u32 size.
+    while cur + 8 <= info_end {
         let tag_type = unsafe { *(cur as *const u32) };
-        let ptr = cur as *const multiboot_tag::Modules;
-        cur += ((unsafe { *((cur + 4) as *const u32) } as usize + 7) & (!7));
-
+        let tag_size = unsafe { *((cur + 4) as *const u32) } as usize;
         if tag_type == multiboot_tag::END {
             break;
         }
-        if tag_type != multiboot_tag::MODULES {
-            continue;
+        // Tags must hold a header, fit in the info buffer, and advance the loop.
+        if tag_size < 8 || cur.checked_add(tag_size).map_or(true, |end| end > info_end) {
+            panic!("malformed multiboot tag");
         }
+        if tag_type == multiboot_tag::MODULES {
+            if count == MAX_MODULES {
+                panic!("more than {} boot modules", MAX_MODULES);
+            }
+            // Validate the module header before dereferencing it.
+            if tag_size < size_of::<Modules>() {
+                panic!("malformed boot module tag");
+            }
+            let module = unsafe { &*(cur as *const Modules) };
+            let src = module.mod_start as usize;
+            // The multiboot2 module end address is exclusive.
+            let size = (module.mod_end as usize)
+                .checked_sub(src)
+                .expect("boot module end precedes start");
+            src.checked_add(size).expect("boot module source overflows");
 
-        let module = unsafe { *ptr };
-        let dst = unsafe {
-            usize::from_str_radix(
-                CStr::from_ptr(((ptr as usize) + size_of::<Modules>()) as *const c_char)
-                    .to_str()
-                    .unwrap(),
-                16,
-            )
-            .unwrap()
-        };
-        println!("module: {:#x?}, addr: {:#x?}", module, dst);
-        cnt += 1;
+            // Bound the command-line read to the module tag.
+            let cmdline_len = tag_size
+                .checked_sub(size_of::<Modules>())
+                .expect("boot module tag too small");
+            let cmdline_bytes = unsafe {
+                core::slice::from_raw_parts((cur + size_of::<Modules>()) as *const u8, cmdline_len)
+            };
+            let cmdline = CStr::from_bytes_until_nul(cmdline_bytes)
+                .ok()
+                .and_then(|s| s.to_str().ok())
+                .expect("boot module command line is not a valid string");
+            let dst = match usize::from_str_radix(cmdline.trim(), 16) {
+                Ok(0) => src,
+                Ok(dst) => dst,
+                Err(_) => panic!("boot module command line is not a hex address"),
+            };
+            dst.checked_add(size)
+                .expect("boot module destination overflows");
 
-        if dst == 0x0 {
-            continue;
+            modules[count] = BootModule {
+                src,
+                size,
+                dst,
+                pending: dst != src,
+            };
+            count += 1;
         }
-
-        unsafe {
-            core::ptr::copy(
-                module.mod_start as *mut u8,
-                dst as *mut u8,
-                (module.mod_end - module.mod_start + 1) as usize,
-            )
-        };
+        cur += (tag_size + 7) & !7;
     }
-    println!("module cnt: {:x}", cnt);
+
+    // Two modules must never share a final address range.
+    for i in 0..count {
+        for j in (i + 1)..count {
+            if ranges_overlap(
+                modules[i].dst,
+                modules[i].size,
+                modules[j].dst,
+                modules[j].size,
+            ) {
+                panic!("boot module destinations overlap");
+            }
+        }
+    }
+
+    let mut remaining = (0..count).filter(|&i| modules[i].pending).count();
+    while remaining > 0 {
+        let mut progressed = false;
+        for i in 0..count {
+            if !modules[i].pending {
+                continue;
+            }
+            // Do not overwrite the source of a module that still needs copying.
+            let blocked = (0..count).any(|j| {
+                j != i
+                    && modules[j].pending
+                    && ranges_overlap(
+                        modules[i].dst,
+                        modules[i].size,
+                        modules[j].src,
+                        modules[j].size,
+                    )
+            });
+            if blocked {
+                continue;
+            }
+            unsafe {
+                copy(
+                    modules[i].src as *const u8,
+                    modules[i].dst as *mut u8,
+                    modules[i].size,
+                );
+            }
+            modules[i].pending = false;
+            remaining -= 1;
+            progressed = true;
+        }
+        if !progressed {
+            // Cyclic moves need scratch space that is not available this early.
+            panic!("boot module relocation has a cyclic dependency");
+        }
+    }
+
+    info!("relocated {} boot module(s)", count);
 }
