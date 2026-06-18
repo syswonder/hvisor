@@ -11,6 +11,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <getopt.h>
+#include <inttypes.h>
 #include <limits.h>
 #include <signal.h>
 #include <stdatomic.h>
@@ -51,14 +52,19 @@ pthread_mutex_t RES_MUTEX = PTHREAD_MUTEX_INITIALIZER;
 VirtIODevice *vdevs[MAX_DEVS];
 int vdevs_num;
 
-// the index of `zone_mem[i]`
-#define VIRT_ADDR 0
-#define ZONE0_IPA 1
-#define ZONEX_IPA 2
-#define MEM_SIZE 3
+struct zone_mem_region {
+    uintptr_t virt_addr;
+    uintptr_t zone0_ipa;
+    uintptr_t zonex_ipa;
+    uintptr_t mem_size;
+};
 
-#define MAX_RAMS 4
-unsigned long long zone_mem[MAX_ZONES][MAX_RAMS][4];
+struct zone_mem {
+    struct zone_mem_region regions[CONFIG_MAX_MEMORY_REGIONS];
+    size_t num_regions;
+};
+
+struct zone_mem zone_mem[MAX_ZONES];
 
 const char *virtio_device_type_to_string(VirtioDeviceType type) {
     switch (type) {
@@ -88,21 +94,6 @@ int set_nonblocking(int fd) {
         return -1;
     }
     return 0;
-}
-
-int get_zone_ram_index(void *zonex_ipa, int zone_id) {
-    for (int i = 0; i < MAX_RAMS; i++) {
-        if (zone_mem[zone_id][i][MEM_SIZE] == 0)
-            continue;
-        ;
-        if ((uintptr_t)zonex_ipa >= zone_mem[zone_id][i][ZONEX_IPA] &&
-            (uintptr_t)zonex_ipa < zone_mem[zone_id][i][ZONEX_IPA] +
-                                       zone_mem[zone_id][i][MEM_SIZE]) {
-            return i;
-        }
-    }
-    log_error("can't find zone mem index for zonex ipa %#x", zonex_ipa);
-    return -1;
 }
 
 inline int is_queue_full(unsigned int front, unsigned int rear,
@@ -379,9 +370,19 @@ bool desc_is_writable(volatile VirtqDesc *desc_table, uint16_t idx) {
 }
 
 void *get_virt_addr(void *zonex_ipa, int zone_id) {
-    int ram_idx = get_zone_ram_index(zonex_ipa, zone_id);
-    return zone_mem[zone_id][ram_idx][VIRT_ADDR] -
-           zone_mem[zone_id][ram_idx][ZONEX_IPA] + zonex_ipa;
+    struct zone_mem *z = &zone_mem[zone_id];
+    uintptr_t ipa = (uintptr_t)zonex_ipa;
+
+    for (size_t i = 0; i < z->num_regions; i++) {
+        uintptr_t lef = z->regions[i].zonex_ipa;
+        uintptr_t rig = z->regions[i].zonex_ipa + z->regions[i].mem_size;
+        if (lef <= ipa && ipa < rig) {
+            return (void *)(ipa - lef + z->regions[i].virt_addr);
+        }
+    }
+
+    log_error("can't find zone mem index for zonex_ipa = 0x%" PRIxPTR, ipa);
+    return NULL;
 }
 
 // When virtio device is processing virtqueue, driver adding an elem to
@@ -1020,11 +1021,10 @@ void virtio_close() {
 
     munmap((void *)virtio_bridge, MMAP_SIZE);
     for (int i = 0; i < MAX_ZONES; i++) {
-        for (int j = 0; j < MAX_RAMS; j++)
-            if (zone_mem[i][j][MEM_SIZE] != 0) {
-                munmap((void *)zone_mem[i][j][VIRT_ADDR],
-                       zone_mem[i][j][MEM_SIZE]);
-            }
+        struct zone_mem *z = &zone_mem[i];
+        for (size_t j = 0; j < z->num_regions; j++)
+            if (z->regions[j].mem_size != 0)
+                munmap((void *)z->regions[j].virt_addr, z->regions[j].mem_size);
     }
 
     log_warn("virtio daemon exit successfully");
@@ -1444,6 +1444,17 @@ int virtio_start_from_json(char *json_path) {
         }
         int num_mems = SAFE_CJSON_GET_ARRAY_SIZE(memory_region_json);
 
+        if (num_mems > CONFIG_MAX_MEMORY_REGIONS) {
+            log_error("zone %d: %d memory regions exceeds "
+                      "CONFIG_MAX_MEMORY_REGIONS=%d",
+                      zone_id, num_mems, CONFIG_MAX_MEMORY_REGIONS);
+            err = -1;
+            goto err_out;
+        }
+
+        struct zone_mem *z = &zone_mem[zone_id];
+        z->num_regions = num_mems;
+
         // Memory regions
         for (int j = 0; j < num_mems; j++) {
             cJSON *mem_region =
@@ -1487,10 +1498,12 @@ int virtio_start_from_json(char *json_path) {
                 err = -1;
                 goto err_out;
             }
-            zone_mem[zone_id][j][VIRT_ADDR] = (uintptr_t)virt_addr;
-            zone_mem[zone_id][j][ZONE0_IPA] = (uintptr_t)zone0_ipa;
-            zone_mem[zone_id][j][ZONEX_IPA] = (uintptr_t)zonex_ipa;
-            zone_mem[zone_id][j][MEM_SIZE] = mem_size;
+            z->regions[j] = (struct zone_mem_region){
+                .virt_addr = (uintptr_t)virt_addr,
+                .zone0_ipa = (uintptr_t)zone0_ipa,
+                .zonex_ipa = (uintptr_t)zonex_ipa,
+                .mem_size = mem_size,
+            };
         }
 
         num_devices = SAFE_CJSON_GET_ARRAY_SIZE(devices_json);
