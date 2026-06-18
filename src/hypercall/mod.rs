@@ -214,6 +214,10 @@ impl<'a> HyperCall<'a> {
             send_event(boot_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP);
         } else {
             error!("hv_zone_start: cpu {} already on", boot_cpu);
+            // zone_create committed this zone's RAM ranges, but the zone is not
+            // being added to the zone list; roll the ranges back so they do not
+            // block a later zone from reusing that host-physical memory.
+            crate::zone::unregister_zone_memory(config.zone_id as usize);
             return hv_result_err!(EBUSY);
         };
         self.check_cpu_id();
