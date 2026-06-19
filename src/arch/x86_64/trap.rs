@@ -368,12 +368,26 @@ fn handle_msr_write(arch_cpu: &mut ArchCpu) -> HvResult {
 
 fn handle_s2pt_violation(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvResult {
     let fault_info = Stage2PageFaultInfo::new()?;
-    mmio_handle_access(&mut MMIOAccess {
+    let res = mmio_handle_access(&mut MMIOAccess {
         address: fault_info.fault_guest_paddr,
         size: 0,
         is_write: fault_info.access_flags.contains(MemFlags::WRITE),
         value: 0,
-    })?;
+    });
+
+    if let Err(e) = res {
+        // The faulting MMIO access could not be emulated (e.g. an instruction the
+        // decoder does not implement). Rather than bring the whole hypervisor
+        // down, deliver an invalid-opcode (#UD, vector 6) fault to the offending
+        // guest and keep running; the fault is confined to that zone.
+        const UD_VECTOR: u8 = 6;
+        let rip = VmcsGuestNW::RIP.read().unwrap_or(0);
+        warn!(
+            "unemulated mmio at {:#x} (rip {:#x}): {:?}; injecting #UD",
+            fault_info.fault_guest_paddr, rip, e
+        );
+        Vmcs::inject_interrupt(UD_VECTOR, None)?;
+    }
 
     Ok(())
 }
