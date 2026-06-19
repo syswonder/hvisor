@@ -1,0 +1,9 @@
+[package]
+name = "zonelint"
+version = "0.1.0"
+edition = "2021"
+license = "MulanPSL-2.0"
+
+[[bin]]
+name = "zonelint"
+path = "src/zonelint.rs"

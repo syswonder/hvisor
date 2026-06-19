@@ -1,0 +1,6 @@
+target/
+faultinj/build/
+*.o
+*.out.tmp
+__pycache__/
+*.pyc
