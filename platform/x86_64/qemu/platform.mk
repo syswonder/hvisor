@@ -9,7 +9,7 @@ zone1_rootfs := $(image_dir)/virtdisk/rootfs2.img
 
 QEMU_ARGS := -machine q35,kernel-irqchip=split
 QEMU_ARGS += -cpu host,+x2apic,+invtsc,+vmx -accel kvm
-QEMU_ARGS += -smp 4
+QEMU_ARGS += -smp 8
 QEMU_ARGS += -serial mon:stdio
 QEMU_ARGS += -m 4G
 QEMU_ARGS += -bios /usr/share/ovmf/OVMF.fd
@@ -67,6 +67,10 @@ $(hvisor_bin): elf boot
 	else \
 		echo "Warning: $(zone0_vmlinux) not found, skipping"; \
 	fi
+
+	for f in $(image_dir)/kernel/asterinas-setup.bin $(image_dir)/kernel/asterinas-vmlinux.bin $(image_dir)/kernel/initramfs.cpio.gz; do \
+		if [ -f $$f ]; then cp $$f $(image_dir)/iso/boot/kernel; fi; \
+	done
 
 	mkdir -p $(image_dir)/virtdisk
 
