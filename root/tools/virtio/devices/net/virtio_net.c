@@ -238,13 +238,21 @@ static void virtq_tx_handle_one_request(VirtIODevice *vdev, VirtQueue *vq) {
 int virtio_net_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     log_debug("virtio_net_txq_notify_handler");
     virtqueue_disable_notify(vq);
-    while (!virtqueue_is_empty(vq)) {
-        virtq_tx_handle_one_request(vdev, vq);
+    for (;;) {
+        while (!virtqueue_is_empty(vq)) {
+            virtq_tx_handle_one_request(vdev, vq);
+        }
+        virtqueue_enable_notify(vq);
+        // Re-check: guest may have added descriptors between our last
+        // empty check and enable_notify.  Without this, UDP streams
+        // lose descriptors permanently because each sendto() issues
+        // exactly one kick and the suppressed notification never fires.
+        if (!virtqueue_is_empty(vq)) {
+            virtqueue_disable_notify(vq);
+            continue;
+        }
+        break;
     }
-    virtqueue_enable_notify(vq);
-    // TODO: Can we don't inject irq when send packets to improve performance?
-    // Linux will recycle the used ring when send packets.
-    // virtio_inject_irq(vq);
     return 0;
 }
 
