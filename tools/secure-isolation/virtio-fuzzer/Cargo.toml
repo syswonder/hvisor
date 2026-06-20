@@ -1,0 +1,9 @@
+[package]
+name = "virtio-fuzzer"
+version = "0.1.0"
+edition = "2021"
+license = "MulanPSL-2.0"
+
+[[bin]]
+name = "virtio-fuzzer"
+path = "src/fuzz.rs"
