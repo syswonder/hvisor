@@ -153,6 +153,22 @@ fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
 
                 res
             }
+            CpuIdEax::TimeStampCounterInfo => {
+                // Leaf 0x15: TSC / core-crystal-clock ratio (EBX/EAX) and the
+                // crystal frequency in Hz (ECX). Report a 1:1 ratio with the
+                // frequency hvisor measured via the HPET; fall back to the
+                // hardware leaf when it is unavailable or does not fit ECX,
+                // as the ProcessorFrequencyInfo arm does.
+                match hpet::get_tsc_freq_mhz().and_then(|mhz| mhz.checked_mul(1_000_000)) {
+                    Some(crystal_hz) => CpuIdResult {
+                        eax: 1,
+                        ebx: 1,
+                        ecx: crystal_hz,
+                        edx: 0,
+                    },
+                    None => cpuid!(regs.rax, regs.rcx),
+                }
+            }
             CpuIdEax::ProcessorFrequencyInfo => {
                 if let Some(freq_mhz) = hpet::get_tsc_freq_mhz() {
                     CpuIdResult {
