@@ -42,3 +42,6 @@ jenkins-cli.jar
 tools/kconfig/.venv/
 tools/kconfig/__pycache__/
 kernel_build/
+# host-side tools build output
+/tools/*/target
+/platform/*/*/image/.osdk-build

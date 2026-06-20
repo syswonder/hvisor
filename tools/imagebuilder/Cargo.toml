@@ -1,0 +1,8 @@
+[package]
+name = "imagebuilder"
+version = "0.1.0"
+edition = "2021"
+license = "MulanPSL-2.0"
+description = "Split a Linux/x86 bzImage into the setup and protected-mode images that hvisor loads for an x86_64 guest."
+
+[dependencies]
