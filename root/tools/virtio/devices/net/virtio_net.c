@@ -138,6 +138,9 @@ void virtio_net_event_handler(int fd, int epoll_type, void *param) {
         virtio_inject_irq(vq);
         return;
     }
+    uint16_t batch_indices[VIRTQUEUE_NET_MAX_SIZE];
+    uint32_t batch_lens[VIRTQUEUE_NET_MAX_SIZE];
+    int batch_count = 0;
     while (!virtqueue_is_empty(vq)) {
         struct iovec in_buf[NET_IOV_MAX];
         struct VirtioBufConfig cfg = {
@@ -149,8 +152,11 @@ void virtio_net_event_handler(int fd, int epoll_type, void *param) {
         int n = process_descriptor_chain_buf(vq, idx, &cfg, &req);
         if (n < 1 || n > VIRTQUEUE_NET_MAX_SIZE) {
             log_error("process_descriptor_chain failed");
-            if (n >= 1)
-                update_used_ring(vq, idx, 0);
+            if (n >= 1) {
+                batch_indices[batch_count] = idx;
+                batch_lens[batch_count] = 0;
+                batch_count++;
+            }
             break;
         }
 
@@ -158,7 +164,9 @@ void virtio_net_event_handler(int fd, int epoll_type, void *param) {
         vnet_header = req.in_iov[0].iov_base;
         iov_packet = rm_iov_header(req.in_iov, &req.in_count, header_len);
         if (iov_packet == NULL) {
-            update_used_ring(vq, idx, 0);
+            batch_indices[batch_count] = idx;
+            batch_lens[batch_count] = 0;
+            batch_count++;
             break;
         }
         // Read a packet from tap device
@@ -173,13 +181,17 @@ void virtio_net_event_handler(int fd, int epoll_type, void *param) {
 
         if (len < 0) {
             log_error("readv from tap failed, errno %d", errno);
-            update_used_ring(vq, idx, 0);
+            batch_indices[batch_count] = idx;
+            batch_lens[batch_count] = 0;
+            batch_count++;
             break;
         }
 
         if (len == 0) {
             log_error("tap device EOF (closed or bridge down)");
-            update_used_ring(vq, idx, 0);
+            batch_indices[batch_count] = idx;
+            batch_lens[batch_count] = 0;
+            batch_count++;
             net->rx_ready = 0;
             break;
         }
@@ -189,13 +201,19 @@ void virtio_net_event_handler(int fd, int epoll_type, void *param) {
             ((NetHdr *)vnet_header)->num_buffers = 1;
         }
 
-        update_used_ring(vq, idx, len + header_len);
+        batch_indices[batch_count] = idx;
+        batch_lens[batch_count] = len + header_len;
+        batch_count++;
     }
 
+    if (batch_count > 0)
+        update_used_ring_batch(vq, batch_indices, batch_lens, batch_count);
     virtio_inject_irq(vq);
 }
 
-static void virtq_tx_handle_one_request(VirtIODevice *vdev, VirtQueue *vq) {
+static void virtq_tx_handle_one_request(VirtIODevice *vdev, VirtQueue *vq,
+                                        uint16_t *out_indices,
+                                        uint32_t *out_lens, int *out_count) {
     struct iovec out_buf[NET_IOV_MAX];
     struct VirtioBufConfig cfg = {
         .out_iov = out_buf,
@@ -222,7 +240,9 @@ static void virtq_tx_handle_one_request(VirtIODevice *vdev, VirtQueue *vq) {
     // TX: no descriptors are VRING_DESC_F_WRITE → out_iov
     if ((size_t)req.out_iov[0].iov_len < header_len) {
         log_error("malformed TX packet: iov[0] too small for header");
-        update_used_ring(vq, idx, 0);
+        out_indices[*out_count] = idx;
+        out_lens[*out_count] = 0;
+        (*out_count)++;
         return;
     }
 
@@ -244,15 +264,26 @@ static void virtq_tx_handle_one_request(VirtIODevice *vdev, VirtQueue *vq) {
     if (len < 0) {
         log_error("write tap failed, errno %d", errno);
     }
-    update_used_ring(vq, idx, all_len);
+    out_indices[*out_count] = idx;
+    out_lens[*out_count] = all_len;
+    (*out_count)++;
 }
 
 int virtio_net_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     log_debug("virtio_net_txq_notify_handler");
     virtqueue_disable_notify(vq);
+    uint16_t batch_indices[VIRTQUEUE_NET_MAX_SIZE];
+    uint32_t batch_lens[VIRTQUEUE_NET_MAX_SIZE];
+    int batch_count = 0;
     for (;;) {
         while (!virtqueue_is_empty(vq)) {
-            virtq_tx_handle_one_request(vdev, vq);
+            virtq_tx_handle_one_request(vdev, vq, batch_indices, batch_lens,
+                                        &batch_count);
+        }
+        if (batch_count > 0) {
+            update_used_ring_batch(vq, batch_indices, batch_lens, batch_count);
+            batch_count = 0;
+            virtio_inject_irq(vq);
         }
         virtqueue_enable_notify(vq);
         // Re-check: guest may have added descriptors between our last
