@@ -153,6 +153,27 @@ fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
 
                 res
             }
+            CpuIdEax::TscInfo => {
+                // Leaf 0x15 reports TSC = ECX * EBX / EAX. With a 1/1 ratio, ECX
+                // carries the clock directly in Hz. The product is computed in 64
+                // bits and saturated to the 32-bit field. If the frequency is
+                // unknown, report an all-zero (invalid) leaf so the guest falls
+                // back to its other calibration paths rather than a bogus value.
+                match hpet::get_tsc_freq_mhz() {
+                    Some(mhz) => CpuIdResult {
+                        eax: 1,
+                        ebx: 1,
+                        ecx: (mhz as u64 * 1_000_000).min(u32::MAX as u64) as u32,
+                        edx: 0,
+                    },
+                    None => CpuIdResult {
+                        eax: 0,
+                        ebx: 0,
+                        ecx: 0,
+                        edx: 0,
+                    },
+                }
+            }
             CpuIdEax::ProcessorFrequencyInfo => {
                 if let Some(freq_mhz) = hpet::get_tsc_freq_mhz() {
                     CpuIdResult {
