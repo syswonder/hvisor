@@ -1,0 +1,3 @@
+# Generated probe binaries and image-build artifacts.
+/build/
+/artifacts/

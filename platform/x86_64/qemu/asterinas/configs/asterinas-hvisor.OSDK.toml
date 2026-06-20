@@ -1,0 +1,22 @@
+# SPDX-License-Identifier: MulanPSL-2.0
+# Copyright (c) 2026 hvisor contributors
+#
+# Overlay/reference OSDK settings for building an Asterinas image compatible
+# with hvisor's x86 Linux boot protocol path. Copy these settings into the
+# Asterinas workspace OSDK.toml or pass equivalent command-line options.
+
+[boot]
+method = "grub-rescue-iso"
+
+[grub]
+boot_protocol = "linux"
+
+[run.boot]
+kcmd_args = [
+    "SHELL=/bin/sh",
+    "LOGNAME=root",
+    "HOME=/",
+    "USER=root",
+    "PATH=/bin:/benchmark",
+    "init=/init",
+]
