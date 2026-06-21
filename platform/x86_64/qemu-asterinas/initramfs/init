@@ -1,0 +1,25 @@
+#!/bin/sh
+# SPDX-License-Identifier: MulanPSL-2.0
+
+export PATH=/bin:/usr/bin:/sbin:/usr/sbin
+export HOME=/root
+
+/bin/mount -t proc none /proc 2>/dev/null
+/bin/mount -t sysfs none /sys 2>/dev/null
+
+echo "================ asterinas-on-hvisor ================"
+echo "kernel:"
+/bin/uname -a
+echo "online cpus: $(/bin/nproc)"
+echo "meminfo:"
+/bin/head -n 3 /proc/meminfo
+echo "rootfs:"
+/bin/ls /
+echo "tmp file:"
+echo asterinas-on-hvisor-ok > /tmp/marker
+/bin/cat /tmp/marker
+echo "date:"
+/bin/date
+echo "================ init complete ================"
+
+exec /bin/sh
