@@ -203,10 +203,14 @@ impl ModRM {
         if rex.contains(RexPrefixLow::REGISTERS) {
             reg_opcode.set_bit(3, true);
         }
+        let mut rm = byte.get_bits(0..=2) as u32;
+        if rex.contains(RexPrefixLow::BASE) {
+            rm.set_bit(3, true);
+        }
         Self {
             _mod: byte.get_bits(6..=7) as _,
             reg_opcode,
-            rm: byte.get_bits(0..=2) as _,
+            rm,
         }
     }
 
@@ -215,9 +219,19 @@ impl ModRM {
     }
 
     pub fn get_modrm(&self, inst: &Vec<u8>, disp_id: usize) -> Option<OprandType> {
+        // SIB addressing (rm == 0b100, an RSP/R12 base) and RIP-relative /
+        // disp32 addressing (mod == 0, rm == 0b101, an RBP/R13 base) are not
+        // decoded; return None so the caller fails loudly instead of treating
+        // the encoding byte as a plain base register.
+        let rm_low = self.rm & 0b111;
+        if self._mod != 0b11 && rm_low == 0b100 {
+            return None;
+        }
+        if self._mod == 0 && rm_low == 0b101 {
+            return None;
+        }
         let reg: RmReg = self.rm.try_into().unwrap();
         let mut reg_val = reg.read().unwrap();
-        // TODO: SIB
         match self._mod {
             0 => Some(OprandType::Gpa {
                 gpa: gva_to_gpa(reg_val as _).unwrap(),
@@ -379,9 +393,11 @@ fn emulate_inst(
     let mut rex = RexPrefixLow::from_bits_truncate(0);
     if inst[cur_id].get_bits(4..=7) == REX_PREFIX_HIGH {
         rex = RexPrefixLow::from_bits_truncate(inst[cur_id].get_bits(0..=3));
-        // we haven't implemented other situations yet
-        assert!(rex == RexPrefixLow::REGISTERS);
         cur_id += 1;
+        // REX.W selects a 64-bit operand; REX.R/REX.B widen the ModRM fields.
+        if rex.contains(RexPrefixLow::OPERAND_WIDTH) {
+            size = size_of::<u64>();
+        }
     }
 
     let mut two_byte = false;
