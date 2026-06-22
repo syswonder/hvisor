@@ -721,6 +721,12 @@ pub fn get_cpu_id(apic_id: usize) -> usize {
         .unwrap()
 }
 
+/// Like [`get_cpu_id`], but returns `None` for an APIC ID the firmware never
+/// reported instead of panicking. Use this for guest-supplied APIC IDs.
+pub fn try_get_cpu_id(apic_id: usize) -> Option<usize> {
+    ROOT_ACPI.get()?.apic_id_to_cpu_id.get(&apic_id).copied()
+}
+
 pub fn get_apic_id(cpu_id: usize) -> usize {
     *ROOT_ACPI
         .get()

@@ -28,10 +28,7 @@ use crate::{
     },
     cpu_data::{this_cpu_data, this_zone},
     device::{
-        irqchip::{
-            inject_vector,
-            pic::{ioapic::irqs, lapic::VirtLocalApic},
-        },
+        irqchip::{inject_vector, pic::lapic::VirtLocalApic},
         uart::{virt_console_io_read, virt_console_io_write, UartReg},
     },
     error::HvResult,

@@ -24,7 +24,6 @@ use crate::{
     cpu_data::this_cpu_data,
     device::irqchip::pic::pop_vector,
     error::HvResult,
-    memory::Frame,
 };
 use bit_field::BitField;
 use core::{ops::Range, u32};
@@ -102,8 +101,7 @@ impl VirtLocalApic {
             }
             IA32_X2APIC_ICR => {
                 // info!("ICR value: {:x}", value);
-                ipi::send_ipi(value);
-                Ok(())
+                ipi::send_ipi(value)
             }
             IA32_X2APIC_LVT_TIMER => {
                 self.virt_lvt_timer_bits = value as u32;

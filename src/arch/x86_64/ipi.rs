@@ -16,7 +16,7 @@
 
 use crate::{
     arch::{
-        acpi::{get_apic_id, get_cpu_id},
+        acpi::{get_apic_id, try_get_cpu_id},
         cpu::this_cpu_id,
         idt::IdtVector,
     },
@@ -88,8 +88,6 @@ pub fn send_ipi(value: u64) -> HvResult {
     let vector = value.get_bits(0..=7) as u8;
     let delivery_mode: u8 = value.get_bits(8..=10) as u8;
     let dest_shorthand = value.get_bits(18..=19) as u8;
-    let dest = get_cpu_id(value.get_bits(32..=39) as usize);
-    let cnt = value.get_bits(40..=63) as u32;
 
     let mut cpu_set = this_zone().cpu_set();
     let cpu_id = this_cpu_id();
@@ -97,7 +95,18 @@ pub fn send_ipi(value: u64) -> HvResult {
 
     match dest_shorthand {
         IpiDestShorthand::NO_SHORTHAND => {
-            dest_set.set_bit(dest);
+            // x2APIC carries the full 32-bit destination APIC ID in bits 32..=63.
+            // Only physical destination mode (bit 11 clear) is modelled; resolve
+            // the id fallibly and deliver only to a CPU in this zone. A logical
+            // destination mask, or an unknown or out-of-zone id, is dropped, so an
+            // IPI can neither panic on a bogus id nor reach a CPU in another zone.
+            if !value.get_bit(11) {
+                if let Some(dest) = try_get_cpu_id(value.get_bits(32..=63) as usize) {
+                    if cpu_set.contains_cpu(dest) {
+                        dest_set.set_bit(dest);
+                    }
+                }
+            }
         }
         IpiDestShorthand::SELF => {
             dest_set.set_bit(cpu_id);
