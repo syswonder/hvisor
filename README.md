@@ -92,6 +92,7 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
 - [x] Zephyr AArch32
 - [x] RT-Thread
 - [x] Android
+- [x] Asterinas (x86_64, see `platform/x86_64/qemu/asterinas`)
 - [ ] OpenHarmony
 
 ## Getting Started

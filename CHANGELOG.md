@@ -4,6 +4,11 @@
 
 ## CURRENT - v0.5
 
+- [feature] **x86_64**: Boot **Asterinas** as an x86_64 guest via the Linux/x86 boot protocol; add the opt-in `aster_guest` root-zone option and the `platform/x86_64/qemu/asterinas` image/probe package. ([tiniham](https://github.com/tiniham))
+- [feature] **x86_64**: Support 5-level paging (CR4.LA57) in MMIO instruction emulation and extend the instruction decoder (full REX, REX.W operands, SIB and RIP-relative addressing). ([tiniham](https://github.com/tiniham))
+- [feature] **x86_64**: Emulate CPUID leaf `0x15` (TSC/crystal frequency) for guest time-keeping calibration. ([tiniham](https://github.com/tiniham))
+- [bugfix] **x86_64**: Relocate multiboot2 modules in an overlap-safe order so large guest module sets are not corrupted. ([tiniham](https://github.com/tiniham))
+- [bugfix] **x86_64/qemu**: Use the q35 ECAM base (`0xb0000000`) and map the PCIe BAR MMIO window for the root zone. ([tiniham](https://github.com/tiniham))
 - [platform] **aarch64**: Add support for **sysoul_x3300**. ([agicy](https://github.com/agicy))
 - [feature] **aarch64**: Add dual-zone Linux / Android deployment. ([agicy](https://github.com/agicy))
 - [feature] **riscv64**: Add initial support for **RISC-V IOMMU**. ([Jingyu Liu](https://github.com/liulog))
