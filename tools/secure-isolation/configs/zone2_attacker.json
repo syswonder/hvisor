@@ -1,0 +1,108 @@
+{
+  "arch": "x86_64",
+  "name": "linux-attacker",
+  "zone_id": 2,
+  "cpus": [4, 5],
+  "memory_regions": [
+    {
+      "type": "ram",
+      "physical_start": "0x60308000",
+      "virtual_start": "0x8000",
+      "size": "0x8000"
+    },
+    {
+      "type": "ram",
+      "physical_start": "0x60400000",
+      "virtual_start": "0x100000",
+      "size": "0xff00000"
+    },
+    {
+      "type": "ram",
+      "physical_start": "0x710e0000",
+      "virtual_start": "0xe0000",
+      "size": "0x20000"
+    },
+    {
+      "type": "ram",
+      "physical_start": "0x71100000",
+      "virtual_start": "0x11100000",
+      "size": "0x200000"
+    },
+    {
+      "type": "ram",
+      "physical_start": "0x71300000",
+      "virtual_start": "0x11300000",
+      "size": "0x200000"
+    },
+    {
+      "type": "ram",
+      "physical_start": "0x71500000",
+      "virtual_start": "0x11500000",
+      "size": "0x5000"
+    },
+    {
+      "type": "virtio",
+      "physical_start": "0x7150f000",
+      "virtual_start": "0x1120f000",
+      "size": "0x4000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfed01000",
+      "virtual_start": "0xfed01000",
+      "size": "0x1000"
+    }
+  ],
+  "interrupts": [],
+  "ivc_configs": [],
+  "kernel_filepath": "./vmlinux.bin",
+  "dtb_filepath": "",
+  "kernel_load_paddr": "0x60400000",
+  "dtb_load_paddr": "0x0",
+  "entry_point": "0x8000",
+  "arch_config": {
+    "ioapic_base": "0xfec00000",
+    "ioapic_size": "0x1000",
+    "boot_filepath": "./boot.bin",
+    "boot_load_paddr": "0x60308000",
+    "cmdline": "console=hvc0 root=/dev/vda rw init=/init virtio_mmio.device=0x200@0x7150f000:10",
+    "cmdline_load_hpa": "0x6030c000",
+    "cmdline_load_gpa": "0xc000",
+    "kernel_entry_gpa": "0x100000",
+    "setup_filepath": "./linux-setup.bin",
+    "setup_load_hpa": "0x6030d000",
+    "setup_load_gpa": "0xd000",
+    "rsdp_memory_region_id": "0x1",
+    "acpi_memory_region_id": "0x3",
+    "uefi_memory_region_id": "0x4",
+    "screen_base": "0x71000000"
+  },
+  "pci_config": [
+    {
+      "ecam_base": "0xe0200000",
+      "ecam_size": "0x200000",
+      "io_base": "0x0",
+      "io_size": "0x0",
+      "pci_io_base": "0x0",
+      "mem32_base": "0x0",
+      "mem32_size": "0x0",
+      "pci_mem32_base": "0x0",
+      "mem64_base": "0x0",
+      "mem64_size": "0x0",
+      "pci_mem64_base": "0x0",
+      "bus_range_begin": "0x20",
+      "bus_range_end": "0x3f",
+      "domain": "0x0"
+    }
+  ],
+  "num_pci_devs": 1,
+  "alloc_pci_devs": [
+    {
+      "domain": "0x0",
+      "bus": "0x20",
+      "device": "0x0",
+      "function": "0x0",
+      "dev_type": "0x0"
+    }
+  ]
+}

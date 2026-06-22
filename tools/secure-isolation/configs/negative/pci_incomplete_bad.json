@@ -1,0 +1,56 @@
+{
+  "_comment": "NEGATIVE FIXTURE: pci_config omits io_base/mem32_base/mem64_base/etc. This is valid JSON and passes a naive check, but hvisor-tool parse_pci_config (tools/hvisor.c) requires all 14 fields and fails to load it. zonelint must reject it with rule 'pci-config-complete'.",
+  "arch": "x86_64",
+  "name": "pci-incomplete",
+  "zone_id": 1,
+  "cpus": [2, 3],
+  "memory_regions": [
+    {
+      "type": "ram",
+      "physical_start": "0x40308000",
+      "virtual_start": "0x8000",
+      "size": "0x8000"
+    },
+    {
+      "type": "ram",
+      "physical_start": "0x40400000",
+      "virtual_start": "0x100000",
+      "size": "0x14f00000"
+    }
+  ],
+  "interrupts": [],
+  "ivc_configs": [],
+  "kernel_filepath": "./asterinas-vmlinux.bin",
+  "dtb_filepath": "",
+  "kernel_load_paddr": "0x40400000",
+  "dtb_load_paddr": "0x0",
+  "entry_point": "0x8000",
+  "arch_config": {
+    "ioapic_base": "0xfec00000",
+    "ioapic_size": "0x1000",
+    "boot_filepath": "./boot.bin",
+    "boot_load_paddr": "0x40308000",
+    "cmdline": "console=ttyS0 init=/init",
+    "cmdline_load_hpa": "0x4030c000",
+    "cmdline_load_gpa": "0xc000",
+    "kernel_entry_gpa": "0x100000",
+    "setup_filepath": "./asterinas-setup.bin",
+    "setup_load_hpa": "0x4030d000",
+    "setup_load_gpa": "0xd000",
+    "rsdp_memory_region_id": "0x1",
+    "acpi_memory_region_id": "0x3",
+    "uefi_memory_region_id": "0x4",
+    "screen_base": "0x70000000"
+  },
+  "pci_config": [
+    {
+      "ecam_base": "0xe0000000",
+      "ecam_size": "0x200000",
+      "bus_range_begin": "0x0",
+      "bus_range_end": "0x1f",
+      "domain": "0x0"
+    }
+  ],
+  "num_pci_devs": 0,
+  "alloc_pci_devs": []
+}

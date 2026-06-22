@@ -1,0 +1,41 @@
+{
+  "arch": "x86_64",
+  "name": "bad-overlap",
+  "zone_id": 3,
+  "cpus": [3],
+  "memory_regions": [
+    {
+      "type": "ram",
+      "physical_start": "0x40401000",
+      "virtual_start": "0x8000",
+      "size": "0x2000"
+    },
+    {
+      "type": "virtio",
+      "physical_start": "0x5950f000",
+      "virtual_start": "0x1920f000",
+      "size": "0x200"
+    }
+  ],
+  "interrupts": [],
+  "ivc_configs": [],
+  "kernel_filepath": "./bad.bin",
+  "dtb_filepath": "",
+  "kernel_load_paddr": "0x40401000",
+  "dtb_load_paddr": "0x0",
+  "entry_point": "0x8000",
+  "arch_config": {
+    "boot_filepath": "./boot.bin",
+    "boot_load_paddr": "0x40401000",
+    "cmdline": "console=ttyS0 virtio_mmio.device=0x200@0x5950f000:10",
+    "cmdline_load_hpa": "0x40401000",
+    "cmdline_load_gpa": "0x8000",
+    "kernel_entry_gpa": "0x8000",
+    "setup_filepath": "./bad-setup.bin",
+    "setup_load_hpa": "0x40401000",
+    "setup_load_gpa": "0x8000"
+  },
+  "pci_config": [],
+  "num_pci_devs": 0,
+  "alloc_pci_devs": []
+}
