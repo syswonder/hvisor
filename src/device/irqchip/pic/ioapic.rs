@@ -16,28 +16,24 @@
 
 use crate::{
     arch::{
-        acpi::{get_apic_id, get_cpu_id},
-        cpu::this_cpu_id,
-        idt, ipi,
-        mmio::MMIoDevice,
+        acpi::try_get_cpu_id,
+        cpu::{this_apic_id, this_cpu_id},
+        idt::IdtVector,
         zone::HvArchZoneConfig,
     },
+    cpu_data::this_zone,
     device::irqchip::pic::inject_vector,
     error::HvResult,
     memory::{GuestPhysAddr, MMIOAccess},
     platform::ROOT_ZONE_IOAPIC_BASE,
-    zone::{this_zone_id, Zone},
+    zone::{find_zone, this_zone_id, Zone},
 };
-use alloc::{sync::Arc, vec::Vec};
+use alloc::vec::Vec;
 use bit_field::BitField;
-use core::{ops::Range, u32};
+use core::u32;
 use spin::{Mutex, Once};
 use x2apic::ioapic::IoApic;
 use x86_64::instructions::port::Port;
-
-pub mod irqs {
-    pub const UART_COM1_IRQ: u8 = 0x4;
-}
 
 #[allow(non_snake_case)]
 pub mod IoApicReg {
@@ -85,15 +81,20 @@ impl VirtIoApic {
         if gpa == 0 {
             return Ok(ioapic.lock().cur_reg as _);
         }
-        assert!(gpa == 0x10);
+        // Other offsets within the registered MMIO page are not modelled; read
+        // them as zero rather than faulting the hypervisor.
+        if gpa != 0x10 {
+            return Ok(0);
+        }
 
         let inner = ioapic.lock();
         match inner.cur_reg {
             IoApicReg::ID => Ok(0),
             IoApicReg::VERSION => Ok(IOAPIC_MAX_REDIRECT_ENTRIES << 16 | 0x11), // max redirect entries: 0x17, version: 0x11
             IoApicReg::ARBITRATION => Ok(0),
-            mut reg => {
-                reg -= IoApicReg::TABLE_BASE;
+            reg if reg < IoApicReg::TABLE_BASE => Ok(0),
+            reg => {
+                let reg = reg - IoApicReg::TABLE_BASE;
                 let index = (reg >> 1) as usize;
                 if let Some(entry) = inner.rte.get(index) {
                     if reg % 2 == 0 {
@@ -108,10 +109,10 @@ impl VirtIoApic {
         }
     }
 
-    fn write(&self, gpa: GuestPhysAddr, value: u64, size: usize) -> HvResult {
+    fn write(&self, gpa: GuestPhysAddr, value: u64, _size: usize) -> HvResult {
         /*info!(
             "ioapic write! gpa: {:x}, value: {:x}, size: {:x}",
-            gpa, value, size,
+            gpa, value, _size,
         );*/
 
         let zone_id = this_zone_id();
@@ -120,26 +121,69 @@ impl VirtIoApic {
             ioapic.lock().cur_reg = value as _;
             return Ok(());
         }
-        assert!(gpa == 0x10);
+        // Other offsets within the registered MMIO page are not modelled; ignore.
+        if gpa != 0x10 {
+            return Ok(());
+        }
 
         let mut inner = ioapic.lock();
         match inner.cur_reg {
-            IoApicReg::ID | IoApicReg::VERSION | IoApicReg::ARBITRATION => {}
-            mut reg => {
-                reg -= IoApicReg::TABLE_BASE;
+            // ID / VERSION / ARBITRATION and any other non-table register: ignore.
+            reg if reg < IoApicReg::TABLE_BASE => {}
+            reg => {
+                let reg = reg - IoApicReg::TABLE_BASE;
                 let index = (reg >> 1) as usize;
                 if let Some(entry) = inner.rte.get_mut(index) {
                     if reg % 2 == 0 {
                         entry.set_bits(0..=31, value.get_bits(0..=31));
                     } else {
                         entry.set_bits(32..=63, value.get_bits(0..=31));
-
-                        /*if zone_id == 0 {
-                            // info!("1 write {:x} entry: {:x?}", index, *entry);
-                            // only root zone modify the real I/O APIC
-                            // unsafe { configure_gsi_from_raw(index as _, *entry) };
-                        }*/
                     }
+
+                    // hvisor does not model logical delivery, and the root zone
+                    // mirrors this entry into the real I/O APIC, so a logical or
+                    // out-of-zone destination must not survive. Re-evaluate after
+                    // every dword write (mode and destination may be written in
+                    // either order) and force the entry into physical mode with a
+                    // destination CPU owned by this zone unless it already is one;
+                    // neither software injection nor real hardware can then target
+                    // a CPU outside the zone.
+                    let requested = entry.get_bits(56..=63) as usize;
+                    let in_zone_physical = !entry.get_bit(11)
+                        && try_get_cpu_id(requested)
+                            .map_or(false, |cpu| this_zone().cpu_set().contains_cpu(cpu));
+                    if !in_zone_physical {
+                        entry.set_bit(11, false); // physical destination mode
+                        entry.set_bits(56..=63, this_apic_id() as u64);
+                    }
+
+                    // The root zone mirrors this entry into the real I/O APIC, so the
+                    // delivery semantics must be sanitised too, not just the
+                    // destination: force Fixed delivery (bits 8..=10) so a guest
+                    // cannot raise NMI/INIT/ExtINT on a physical CPU, clear the
+                    // reserved bits, and mask any entry whose vector is below the
+                    // first valid IRQ vector (0x20) so it cannot collide with a CPU
+                    // exception vector. The same sanitised entry is what software
+                    // injection reads back, keeping both delivery paths in agreement.
+                    entry.set_bits(8..=10, 0);
+                    entry.set_bits(17..=55, 0);
+                    // Mask the entry if its vector is invalid (below the first IRQ
+                    // vector) or collides with a vector hvisor reserves for its own
+                    // use on the physical CPUs: a guest device firing on the virtual
+                    // IPI / APIC error / spurious / timer vector would otherwise be
+                    // taken by the host IDT and drive hypervisor interrupt handling.
+                    let vector = entry.get_bits(0..=7) as u8;
+                    let reserved = matches!(
+                        vector,
+                        IdtVector::VIRT_IPI_VECTOR
+                            | IdtVector::APIC_ERROR_VECTOR
+                            | IdtVector::APIC_SPURIOUS_VECTOR
+                            | IdtVector::APIC_TIMER_VECTOR
+                    );
+                    if vector < 0x20 || reserved {
+                        entry.set_bit(16, true);
+                    }
+
                     if zone_id == 0 {
                         // only root zone modify the real I/O APIC
                         unsafe { configure_gsi_from_raw(index as _, *entry) };
@@ -151,24 +195,30 @@ impl VirtIoApic {
     }
 
     fn get_irq_cpu(&self, irq: usize, zone_id: usize) -> Option<usize> {
-        let ioapic = self.inner.get(zone_id).unwrap();
-        if let Some(entry) = ioapic.lock().rte.get(irq) {
-            let dest = get_cpu_id(entry.get_bits(56..=63) as usize);
-            return Some(dest);
-        }
-        None
+        // A written entry is clamped to an in-zone destination, but an entry that
+        // was never programmed defaults to APIC id 0, so confirm the resolved CPU
+        // actually belongs to the target zone before trusting it.
+        let entry = *self.inner.get(zone_id).unwrap().lock().rte.get(irq)?;
+        let cpu = try_get_cpu_id(entry.get_bits(56..=63) as usize)?;
+        find_zone(zone_id)?
+            .cpu_set()
+            .contains_cpu(cpu)
+            .then_some(cpu)
     }
 
     fn trigger(&self, irq: usize, allow_repeat: bool) -> HvResult {
         let zone_id = this_zone_id();
         let ioapic = self.inner.get(zone_id).unwrap();
         if let Some(entry) = ioapic.lock().rte.get(irq) {
-            // TODO: physical & logical mode
-            let dest = get_cpu_id(entry.get_bits(56..=63) as usize);
             let masked = entry.get_bit(16);
             let vector = entry.get_bits(0..=7) as u8;
-            // info!("trigger hv: {:x} zone: {:x}", vector, zone_id);
             if !masked && vector >= 0x20 {
+                // Deliver only to a CPU this zone owns: a written entry is clamped
+                // in-zone, but an unprogrammed entry resolves to APIC 0, so filter
+                // by zone membership and otherwise use the current (in-zone) CPU.
+                let dest = try_get_cpu_id(entry.get_bits(56..=63) as usize)
+                    .filter(|&cpu| this_zone().cpu_set().contains_cpu(cpu))
+                    .unwrap_or_else(this_cpu_id);
                 inject_vector(dest, vector, None, allow_repeat);
             }
         }
@@ -197,7 +247,7 @@ fn mmio_ioapic_handler(mmio: &mut MMIOAccess, _: usize) -> HvResult {
             .unwrap()
             .write(mmio.address, mmio.value as _, mmio.size)
     } else {
-        mmio.value = VIRT_IOAPIC.get().unwrap().read(mmio.address).unwrap() as _;
+        mmio.value = VIRT_IOAPIC.get().unwrap().read(mmio.address)? as _;
         Ok(())
     }
 }
@@ -221,13 +271,17 @@ pub fn init_virt_ioapic(max_zones: usize) {
 }
 
 pub fn ioapic_inject_irq(irq: u8, allow_repeat: bool) {
-    VIRT_IOAPIC.get().unwrap().trigger(irq as _, allow_repeat);
+    let _ = VIRT_IOAPIC.get().unwrap().trigger(irq as _, allow_repeat);
 }
 
 pub fn get_irq_cpu(irq: usize, zone_id: usize) -> usize {
+    // If the redirection entry has no resolvable in-zone destination (e.g. a
+    // logical-mode mask), fall back to the target zone's first CPU so routing
+    // stays inside the zone and never panics on a guest-controlled value.
     VIRT_IOAPIC
         .get()
         .unwrap()
         .get_irq_cpu(irq, zone_id)
-        .unwrap()
+        .or_else(|| find_zone(zone_id).and_then(|z| z.cpu_set().first_cpu()))
+        .unwrap_or(0)
 }
