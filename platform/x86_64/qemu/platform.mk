@@ -3,6 +3,7 @@ QEMU := qemu-system-x86_64
 zone0_boot := $(image_dir)/bootloader/out/boot.bin
 zone0_setup := $(image_dir)/kernel/setup.bin
 zone0_vmlinux := $(image_dir)/kernel/vmlinux.bin
+zone0_asterinas := $(image_dir)/kernel/aster-kernel-osdk-bin
 zone0_initrd := $(image_dir)/virtdisk/initramfs.cpio.gz
 zone0_rootfs := $(image_dir)/virtdisk/rootfs1.img
 zone1_rootfs := $(image_dir)/virtdisk/rootfs2.img
@@ -45,35 +46,48 @@ QEMU_ARGS += -nographic
 # QEMU_ARGS += -device loader,file="$(zone0_initrd)",addr=0x1a000000,force-raw=on
 # QEMU_ARGS += -append "initrd_size=$(shell stat -c%s $(zone0_initrd))"
 
+iso_build := $(image_dir)/iso-build
+
 $(hvisor_bin): elf boot
 	$(OBJCOPY) $(hvisor_elf) --strip-all -O binary $@
-	cp $(hvisor_elf) $(image_dir)/iso/boot
-	mkdir -p $(image_dir)/iso/boot/kernel
-
-	if [ -f $(zone0_boot) ]; then \
-		cp $(zone0_boot) $(image_dir)/iso/boot/kernel; \
+# Assemble the bootable image in a build directory so the tracked iso/ tree (only
+# grub.cfg) is never mutated by a build.
+	rm -rf $(iso_build)
+	cp -r $(image_dir)/iso $(iso_build)
+	cp $(hvisor_elf) $(iso_build)/boot
+	mkdir -p $(iso_build)/boot/kernel $(image_dir)/virtdisk
+	for f in $(zone0_boot) $(zone0_setup) $(zone0_vmlinux) $(zone0_asterinas) $(zone0_initrd); do \
+		if [ -f $$f ]; then cp $$f $(iso_build)/boot/kernel; \
+		else echo "Warning: $$f not found, skipping"; fi; \
+	done
+# Default to the Asterinas entry for an aster_guest build; the tracked grub.cfg
+# keeps the Linux entry as its committed default.
+	if echo "$(FEATURES)" | grep -qw aster_guest; then \
+		sed -i 's/^set default=.*/set default=1   # Asterinas/' $(iso_build)/boot/grub/grub.cfg; \
+	fi
+	if [ -n "$(SKIP_ISO)" ]; then \
+		echo "SKIP_ISO set: not creating the bootable ISO"; \
+	elif command -v xorriso >/dev/null 2>&1; then \
+		grub-mkrescue /usr/lib/grub/x86_64-efi -o $(image_dir)/virtdisk/hvisor.iso $(iso_build); \
 	else \
-		echo "Warning: $(zone0_boot) not found, skipping"; \
+		echo "Error: xorriso/grub-mkrescue is required to build the ISO (set SKIP_ISO=1 to skip)" >&2; \
+		exit 1; \
 	fi
 
-	if [ -f $(zone0_setup) ]; then \
-		cp $(zone0_setup) $(image_dir)/iso/boot/kernel; \
-	else \
-		echo "Warning: $(zone0_setup) not found, skipping"; \
-	fi
+# Headless run target for the Asterinas root zone. Build the matching binary with
+#   make ARCH=x86_64 BOARD=qemu FEATURES="<defaults> aster_guest" all
+# then `make ... run-asterinas`. The guest console is on COM1 (mon:stdio); exit
+# QEMU with Ctrl-A x.
+ASTER_QEMU_ARGS := -machine q35,kernel-irqchip=split
+ASTER_QEMU_ARGS += -cpu host,+x2apic,+invtsc,+vmx -accel kvm
+ASTER_QEMU_ARGS += -smp 4 -m 4G
+ASTER_QEMU_ARGS += -bios /usr/share/ovmf/OVMF.fd
+ASTER_QEMU_ARGS += -nographic -serial mon:stdio -nodefaults
+ASTER_QEMU_ARGS += -device intel-iommu,intremap=on,eim=on,caching-mode=on,device-iotlb=on,aw-bits=48
+ASTER_QEMU_ARGS += -device ioh3420,id=pcie.1,chassis=1
+ASTER_QEMU_ARGS += -drive file=$(image_dir)/virtdisk/hvisor.iso,format=raw,index=0,media=disk
 
-	if [ -f $(zone0_vmlinux) ]; then \
-		cp $(zone0_vmlinux) $(image_dir)/iso/boot/kernel; \
-	else \
-		echo "Warning: $(zone0_vmlinux) not found, skipping"; \
-	fi
-
-	mkdir -p $(image_dir)/virtdisk
-
-	if command -v xorriso >/dev/null 2>&1; then \
-		grub-mkrescue /usr/lib/grub/x86_64-efi -o $(image_dir)/virtdisk/hvisor.iso $(image_dir)/iso; \
-	else \
-		echo "Warning: xorriso not installed, skipping ISO creation"; \
-	fi
+run-asterinas: all
+	$(QEMU) $(ASTER_QEMU_ARGS)
 
 include $(image_dir)/bootloader/boot.mk
