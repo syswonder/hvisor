@@ -51,4 +51,11 @@ timeout --kill-after=10 "$SECS" qemu-system-x86_64 \
     -no-reboot || true
 
 echo "--- probe self-test output ---"
-sed 's/\x1b\[[0-9;]*[mHJ]//g; s/\r//g' "$LOG" | awk '/guest probe self-test/{f=1} f'
+clean_log="$(sed 's/\x1b\[[0-9;]*[mHJ]//g; s/\r//g' "$LOG")"
+printf '%s\n' "$clean_log" | awk '/guest probe self-test/{f=1} f'
+if printf '%s\n' "$clean_log" | grep -q 'guest probe self-test COMPLETE'; then
+    echo "Asterinas guest probe self-test: PASS"
+else
+    echo "ERROR: Asterinas guest self-test did not complete (no self-test marker in $LOG); the guest did not boot far enough to run the probes." >&2
+    exit 1
+fi

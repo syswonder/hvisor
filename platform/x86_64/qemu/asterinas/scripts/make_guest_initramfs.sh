@@ -28,6 +28,9 @@ done
 install -m 0755 "$GUEST_BIN/probe_selftest" "$WORK/init"
 
 mkdir -p "$(dirname "$OUT")"
+# Resolve OUT to an absolute path so the cpio redirect below still targets the
+# intended location after the subshell changes into "$WORK".
+OUT="$(cd "$(dirname "$OUT")" && pwd)/$(basename "$OUT")"
 (
   cd "$WORK"
   find . -print0 | cpio --null -ov --format=newc 2>/dev/null | gzip -9 > "$OUT"
