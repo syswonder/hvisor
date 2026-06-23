@@ -23,6 +23,10 @@
 - [ci] Expand board build / test coverage. ([Jingyu Liu](https://github.com/liulog))
 - [ci] Add CI / CD support for **x86_64**. ([Tianhong Liu](https://github.com/Solicey))
 - [ci] Add performance benchmarking scripts for QEMU platforms. ([Xinhao Li](https://github.com/li041))
+- [feature] **x86_64**: Boot **Asterinas** as the root zone through the Linux/x86 boot protocol; add the `qemu-asterinas` board. ([feastwiq](https://github.com/feastwiq))
+- [feature] **x86_64**: Synthesize CPUID leaf `0x15` (TSC frequency) for guests that calibrate the TSC from it. ([feastwiq](https://github.com/feastwiq))
+- [feature] **x86_64**: Make boot module relocation overlap-safe so setup / kernel / initramfs can be placed at fixed addresses. ([feastwiq](https://github.com/feastwiq))
+- [tools] Add `imagebuilder` to split a Linux/x86 bzImage into the setup and protected-mode kernel images hvisor loads. ([feastwiq](https://github.com/feastwiq))
 
 ## History Release
 
