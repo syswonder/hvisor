@@ -27,7 +27,6 @@ use core::{
     hint::spin_loop,
     mem::size_of,
     ptr::{read_volatile, write_volatile},
-    usize,
 };
 use dma_remap_reg::*;
 use spin::{Mutex, Once};
@@ -347,7 +346,7 @@ impl Vtd {
 
     fn issue_qi_request(&mut self, entry: DmarEntry) {
         let mut qi_status: u32 = 0;
-        let qi_status_ptr = &qi_status as *const u32;
+        let qi_status_ptr = &mut qi_status as *mut u32;
 
         unsafe {
             let mut invalidate_desc = &mut *((self.qi_queue_hpa + self.qi_tail) as *mut DmarEntry);
@@ -362,11 +361,13 @@ impl Vtd {
         }
         self.qi_tail = (self.qi_tail + QI_INV_ENTRY_SIZE) % INVALIDATION_QUEUE_SIZE;
 
-        qi_status = INV_STATUS_INCOMPLETED as u32;
+        unsafe {
+            qi_status_ptr.write_volatile(INV_STATUS_INCOMPLETED as u32);
+        }
         self.mmio_write_u32(DMAR_IQT_REG, self.qi_tail as _);
 
         let start_tick = current_time_nanos();
-        while (qi_status != INV_STATUS_COMPLETED as _) {
+        while unsafe { qi_status_ptr.read_volatile() } != INV_STATUS_COMPLETED as _ {
             if (current_time_nanos() - start_tick > 1000000) {
                 error!("issue qi request failed!");
                 break;
@@ -498,7 +499,7 @@ fn parse_root_dmar() -> Mutex<Vtd> {
 
 // called after acpi init
 pub fn iommu_init() {
-    VTD.call_once(|| parse_root_dmar());
+    VTD.call_once(parse_root_dmar);
     VTD.get().unwrap().lock().init();
     // init_msi_cap_hpa_space();
 }

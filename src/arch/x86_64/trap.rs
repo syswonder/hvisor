@@ -17,7 +17,7 @@
 use crate::{
     arch::{
         cpu::{this_cpu_id, ArchCpu},
-        cpuid::{CpuIdEax, ExtendedFeaturesEcx, FeatureInfoFlags},
+        cpuid::{self, CpuIdEax, ExtendedFeaturesEcx, FeatureInfoFlags},
         hpet,
         idt::{IdtStruct, IdtVector},
         ipi,
@@ -131,11 +131,7 @@ fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
                 let mut res = cpuid!(regs.rax, regs.rcx);
                 // Keep the basic-leaf limit consistent with the synthetic
                 // leaves below without exposing unsupported host gaps.
-                let tsc_leaf = CpuIdEax::TimeStampCounterInfo as u32;
-                let max_synth_leaf = CpuIdEax::ProcessorFrequencyInfo as u32;
-                if res.eax + 1 >= tsc_leaf && res.eax < max_synth_leaf {
-                    res.eax = max_synth_leaf;
-                }
+                res.eax = cpuid::vendor_leaf_max_basic(res.eax);
                 res
             }
             CpuIdEax::FeatureInfo => {
@@ -168,24 +164,14 @@ fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
                 // Report the measured TSC frequency as:
                 // ECX (1 MHz crystal) * EBX (freq_mhz) / EAX (1).
                 if let Some(freq_mhz) = hpet::get_tsc_freq_mhz() {
-                    CpuIdResult {
-                        eax: 1,
-                        ebx: freq_mhz,
-                        ecx: 1_000_000,
-                        edx: 0,
-                    }
+                    cpuid::tsc_frequency_leaf(freq_mhz)
                 } else {
                     cpuid!(regs.rax, regs.rcx)
                 }
             }
             CpuIdEax::ProcessorFrequencyInfo => {
                 if let Some(freq_mhz) = hpet::get_tsc_freq_mhz() {
-                    CpuIdResult {
-                        eax: freq_mhz,
-                        ebx: freq_mhz,
-                        ecx: freq_mhz,
-                        edx: 0,
-                    }
+                    cpuid::processor_frequency_leaf(freq_mhz)
                 } else {
                     cpuid!(regs.rax, regs.rcx)
                 }
@@ -226,14 +212,7 @@ fn handle_cr_access(arch_cpu: &mut ArchCpu) -> HvResult {
     panic!(
         "VM-exit: CR{} access:\n{:#x?}",
         cr_access_info.cr_n, arch_cpu
-    );
-
-    match cr_access_info.cr_n {
-        0 => {}
-        _ => {}
-    }
-
-    Ok(())
+    )
 }
 
 fn handle_external_interrupt() -> HvResult {

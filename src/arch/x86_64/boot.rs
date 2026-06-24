@@ -40,6 +40,8 @@ use uefi_raw::table::{
 };
 use uguid::{guid, Guid};
 
+use super::boot_modules::{relocate_modules, BootModule, RelocationError, MAX_MODULES};
+
 const ACPI_20_TABLE_GUID: Guid = guid!("8868E871-E4F1-11D3-BC22-0080C73C8881");
 
 mod multiboot_tag {
@@ -336,7 +338,7 @@ impl BootParams {
         // set system table
         self.efi_info.systab = vaddr.get_bits(0..32) as _;
         self.efi_info.systab_hi = vaddr.get_bits(32..64) as _;
-        let system_table = unsafe { &mut *(paddr as usize as *mut SystemTable) };
+        let system_table = unsafe { &mut *(paddr as *mut SystemTable) };
 
         let system_table_header = Header {
             signature: SystemTable::SIGNATURE,
@@ -498,8 +500,7 @@ pub fn multiboot_init(info_addr: usize) {
                 multiboot_tags.memory_map_addr = Some(cur);
             }
             multiboot_tag::FRAMEBUFFER => {
-                multiboot_tags.framebuffer =
-                    unsafe { *(cur as *const multiboot_tag::Framebuffer) }.clone();
+                multiboot_tags.framebuffer = unsafe { *(cur as *const multiboot_tag::Framebuffer) };
             }
             multiboot_tag::ACPI_V1 => {
                 multiboot_tags.rsdp_addr = Some(cur + 8);
@@ -532,26 +533,6 @@ pub fn print_memory_map() {
         );
         entry_addr += size_of::<multiboot_tag::MemoryMapEntry>();
     }
-}
-
-const MAX_MODULES: usize = 16;
-
-#[derive(Clone, Copy)]
-struct BootModule {
-    /// Address grub loaded the module at.
-    src: usize,
-    /// Size of the module in bytes.
-    size: usize,
-    /// Final address of the module. Equal to `src` when the module's command
-    /// line is `0`, i.e. it is left where grub placed it.
-    dst: usize,
-    /// Whether the module still has to be copied to `dst`.
-    pending: bool,
-}
-
-/// Whether two half-open byte ranges intersect.
-fn ranges_overlap(base_a: usize, len_a: usize, base_b: usize, len_b: usize) -> bool {
-    base_a < base_b + len_b && base_b < base_a + len_a
 }
 
 /// Relocate multiboot2 modules to the physical addresses encoded in their
@@ -631,57 +612,15 @@ pub fn module_init(info_addr: usize) {
         cur += (tag_size + 7) & !7;
     }
 
-    // Two modules must never share a final address range.
-    for i in 0..count {
-        for j in (i + 1)..count {
-            if ranges_overlap(
-                modules[i].dst,
-                modules[i].size,
-                modules[j].dst,
-                modules[j].size,
-            ) {
-                panic!("boot module destinations overlap");
-            }
+    let relocated = relocate_modules(&mut modules[..count], |module| unsafe {
+        copy(module.src as *const u8, module.dst as *mut u8, module.size);
+    })
+    .unwrap_or_else(|err| match err {
+        RelocationError::DestinationOverlap => panic!("boot module destinations overlap"),
+        RelocationError::CyclicDependency => {
+            panic!("boot module relocation has a cyclic dependency")
         }
-    }
+    });
 
-    let mut remaining = (0..count).filter(|&i| modules[i].pending).count();
-    while remaining > 0 {
-        let mut progressed = false;
-        for i in 0..count {
-            if !modules[i].pending {
-                continue;
-            }
-            // Do not overwrite the source of a module that still needs copying.
-            let blocked = (0..count).any(|j| {
-                j != i
-                    && modules[j].pending
-                    && ranges_overlap(
-                        modules[i].dst,
-                        modules[i].size,
-                        modules[j].src,
-                        modules[j].size,
-                    )
-            });
-            if blocked {
-                continue;
-            }
-            unsafe {
-                copy(
-                    modules[i].src as *const u8,
-                    modules[i].dst as *mut u8,
-                    modules[i].size,
-                );
-            }
-            modules[i].pending = false;
-            remaining -= 1;
-            progressed = true;
-        }
-        if !progressed {
-            // Cyclic moves need scratch space that is not available this early.
-            panic!("boot module relocation has a cyclic dependency");
-        }
-    }
-
-    info!("relocated {} boot module(s)", count);
+    info!("relocated {} boot module(s)", relocated);
 }

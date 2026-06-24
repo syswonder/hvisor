@@ -17,6 +17,7 @@
 #![allow(unused)]
 pub mod acpi;
 pub mod boot;
+pub mod boot_modules;
 pub mod consts;
 pub mod cpu;
 pub mod cpuid;

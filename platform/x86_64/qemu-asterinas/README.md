@@ -60,6 +60,9 @@ export VDSO_LIBRARY_DIR=/path/to/linux_vdso
 
 # Build hvisor and run the board.
 make ARCH=x86_64 BOARD=qemu-asterinas run
+
+# Optional boot smoke check. Requires KVM and the guest images above.
+./platform/x86_64/qemu-asterinas/test/boot-smoke.sh
 ```
 
 `build-asterinas-image.sh` writes `asterinas-setup.bin`, `asterinas-vmlinux.bin`

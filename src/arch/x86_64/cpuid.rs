@@ -28,6 +28,34 @@ pub enum CpuIdEax {
 }
 }
 
+pub fn vendor_leaf_max_basic(host_max_basic: u32) -> u32 {
+    let tsc_leaf = CpuIdEax::TimeStampCounterInfo as u32;
+    let max_synth_leaf = CpuIdEax::ProcessorFrequencyInfo as u32;
+    if host_max_basic.saturating_add(1) >= tsc_leaf && host_max_basic < max_synth_leaf {
+        max_synth_leaf
+    } else {
+        host_max_basic
+    }
+}
+
+pub fn tsc_frequency_leaf(freq_mhz: u32) -> raw_cpuid::CpuIdResult {
+    raw_cpuid::CpuIdResult {
+        eax: 1,
+        ebx: freq_mhz,
+        ecx: 1_000_000,
+        edx: 0,
+    }
+}
+
+pub fn processor_frequency_leaf(freq_mhz: u32) -> raw_cpuid::CpuIdResult {
+    raw_cpuid::CpuIdResult {
+        eax: freq_mhz,
+        ebx: freq_mhz,
+        ecx: freq_mhz,
+        edx: 0,
+    }
+}
+
 bitflags::bitflags! {
     /// CPUID leaf 1 feature bits.
     ///
@@ -108,7 +136,7 @@ bitflags::bitflags! {
 
         // SIMD / AVX
         /// On-chip x87 floating-point unit.
-        const FPU = 1 << (32 + 0);
+        const FPU = 1 << 32;
         /// MMX instruction support.
         const MMX = 1 << (32 + 23);
         /// FXSAVE/FXRSTOR support for fast floating-point context save and restore.

@@ -1,0 +1,11 @@
+[package]
+name = "hvisor-x86-helpers"
+version = "0.1.0"
+edition = "2021"
+license = "MulanPSL-2.0"
+description = "Host tests for pure x86_64 hvisor helper logic."
+
+[dependencies]
+bitflags = "2.1"
+numeric-enum-macro = "0.2"
+raw-cpuid = "=10.7.0"
