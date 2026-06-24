@@ -93,11 +93,11 @@ typedef struct {
     EXTRACT_BITS((hdr), SCMI_TOKEN_ID_HIGH, SCMI_TOKEN_ID_LOW)
 
 /* Construct response header */
-#define SCMI_RESP_HDR(token)                                                   \
-    (INSERT_BITS(0x0, SCMI_MSG_ID_HIGH, SCMI_MSG_ID_LOW) |                     \
+#define SCMI_RESP_HDR(protocol_id, msg_id, token)                              \
+    (INSERT_BITS((msg_id), SCMI_MSG_ID_HIGH, SCMI_MSG_ID_LOW) |                \
      INSERT_BITS(SCMI_MSG_TYPE_COMMAND, SCMI_MSG_TYPE_HIGH,                    \
                  SCMI_MSG_TYPE_LOW) |                                          \
-     INSERT_BITS(0x10, SCMI_PROTOCOL_ID_HIGH, SCMI_PROTOCOL_ID_LOW) |          \
+     INSERT_BITS((protocol_id), SCMI_PROTOCOL_ID_HIGH, SCMI_PROTOCOL_ID_LOW) | \
      INSERT_BITS((token), SCMI_TOKEN_ID_HIGH, SCMI_TOKEN_ID_LOW))
 
 /* -------------------------- SCMI Message Type Values
@@ -249,8 +249,8 @@ struct scmi_protocol {
 int scmi_validate_request(size_t req_size, size_t min_req_size,
                           size_t resp_size, size_t min_resp_size);
 
-int scmi_make_response(SCMIDev *dev, uint16_t token, struct iovec *resp_iov,
-                       int32_t status);
+int scmi_make_response(struct iovec *resp_iov, uint8_t protocol_id,
+                       uint8_t msg_id, uint16_t token, int32_t status);
 
 /* Protocol Registration */
 int scmi_register_protocol(const struct scmi_protocol *ops);
