@@ -132,7 +132,8 @@ static int handle_reset_version(SCMIDev *dev, uint16_t token,
 
     struct scmi_response *resp = resp_iov->iov_base;
     uint32_t *version = (uint32_t *)resp->payload;
-    scmi_make_response(dev, token, resp_iov, SCMI_SUCCESS);
+    scmi_make_response(resp_iov, SCMI_PROTO_ID_RESET,
+                        SCMI_COMMON_MSG_VERSION, token, SCMI_SUCCESS);
     *version = SCMI_RESET_VERSION;
     return 0;
 }
@@ -156,7 +157,9 @@ static int handle_reset_protocol_attributes(SCMIDev *dev, uint16_t token,
     uint32_t num_resets = reset_max_num;
     *attributes = (uint32_t)(num_resets & 0xFFFF);
 
-    scmi_make_response(dev, token, resp_iov, SCMI_SUCCESS);
+    scmi_make_response(resp_iov, SCMI_PROTO_ID_RESET,
+                        SCMI_COMMON_MSG_PROTOCOL_ATTRIBUTES, token,
+                        SCMI_SUCCESS);
 
     log_debug("RESET_PROTOCOL_ATTRIBUTES: num_resets=%d", num_resets);
     return 0;
@@ -170,14 +173,18 @@ static int handle_reset_attributes(SCMIDev *dev, uint16_t token,
     uint32_t phys_rst_id;
 
     if (!is_valid_reset_id(domain_id)) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_ENTRY);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_RESET,
+                                   SCMI_RESET_MSG_RESET_ATTRIBUTES, token,
+                                   SCMI_ERR_ENTRY);
     }
 
     // Validate response buffer size
     size_t expected_resp_size = sizeof(struct scmi_response) +
                                 sizeof(struct scmi_msg_resp_reset_attributes);
     if (resp_iov->iov_len < expected_resp_size) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_RANGE);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_RESET,
+                                   SCMI_RESET_MSG_RESET_ATTRIBUTES, token,
+                                   SCMI_ERR_RANGE);
     }
 
     // Map SCMI reset ID to physical reset ID
@@ -201,7 +208,9 @@ static int handle_reset_attributes(SCMIDev *dev, uint16_t token,
               domain_id, phys_rst_id, attr->reset_name, attr->attributes,
               attr->reset_latency);
 
-    scmi_make_response(dev, token, resp_iov, SCMI_SUCCESS);
+    scmi_make_response(resp_iov, SCMI_PROTO_ID_RESET,
+                        SCMI_RESET_MSG_RESET_ATTRIBUTES, token,
+                        SCMI_SUCCESS);
     return 0;
 }
 
@@ -216,13 +225,17 @@ static int handle_reset(SCMIDev *dev, uint16_t token,
     uint32_t reset_state = reset_req->reset_state;
 
     if (!is_valid_reset_id(domain_id)) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_ENTRY);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_RESET,
+                                   SCMI_RESET_MSG_RESET, token,
+                                   SCMI_ERR_ENTRY);
     }
 
     bool async = (flags & (1 << 2)) != 0;
     // For simplicity, we only support synchronous mode
     if (async) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_SUPPORT);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_RESET,
+                                   SCMI_RESET_MSG_RESET, token,
+                                   SCMI_ERR_SUPPORT);
     }
 
     // Prepare ioctl arguments
@@ -235,13 +248,16 @@ static int handle_reset(SCMIDev *dev, uint16_t token,
     // Call the common ioctl function
     int ret = hvisor_scmi_ioctl(HVISOR_SCMI_RESET_RESET, &args, sizeof(args));
     if (ret < 0) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_GENERIC);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_RESET,
+                                   SCMI_RESET_MSG_RESET, token,
+                                   SCMI_ERR_GENERIC);
     }
 
     log_warn("RESET: domain_id=%u, flags=0x%x, reset_state=%u", domain_id,
              flags, reset_state);
 
-    return scmi_make_response(dev, token, resp_iov, SCMI_SUCCESS);
+    return scmi_make_response(resp_iov, SCMI_PROTO_ID_RESET,
+                               SCMI_RESET_MSG_RESET, token, SCMI_SUCCESS);
 }
 
 static int handle_reset_notify(SCMIDev *dev, uint16_t token,
@@ -249,7 +265,9 @@ static int handle_reset_notify(SCMIDev *dev, uint16_t token,
                                __attribute__((unused)),
                                struct iovec *resp_iov) {
     // For simplicity, we don't support reset notifications
-    return scmi_make_response(dev, token, resp_iov, SCMI_ERR_SUPPORT);
+    return scmi_make_response(resp_iov, SCMI_PROTO_ID_RESET,
+                               SCMI_RESET_MSG_RESET_NOTIFY, token,
+                               SCMI_ERR_SUPPORT);
 }
 
 /* Main request handler */

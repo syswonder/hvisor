@@ -56,14 +56,14 @@ int scmi_validate_request(size_t req_size, size_t min_req_size,
 }
 
 /* Create standard SCMI response */
-int scmi_make_response(SCMIDev *dev, uint16_t token, struct iovec *resp_iov,
-                       int32_t status) {
+int scmi_make_response(struct iovec *resp_iov, uint8_t protocol_id,
+                       uint8_t msg_id, uint16_t token, int32_t status) {
     if (resp_iov->iov_len < sizeof(struct scmi_response)) {
         return SCMI_ERR_PARAMS;
     }
 
     struct scmi_response *resp = resp_iov->iov_base;
-    resp->header = SCMI_RESP_HDR(token);
+    resp->header = SCMI_RESP_HDR(protocol_id, msg_id, token);
     resp->status = status;
 
     return 0;

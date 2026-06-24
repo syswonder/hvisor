@@ -103,7 +103,8 @@ static int handle_clock_version(SCMIDev *dev, uint16_t token,
 
     struct scmi_response *resp = resp_iov->iov_base;
     uint32_t *version = (uint32_t *)resp->payload;
-    scmi_make_response(dev, token, resp_iov, SCMI_SUCCESS);
+    scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                        SCMI_COMMON_MSG_VERSION, token, SCMI_SUCCESS);
     *version = SCMI_CLOCK_VERSION;
     return 0;
 }
@@ -155,7 +156,9 @@ static int handle_clock_protocol_attributes(SCMIDev *dev, uint16_t token,
     attr->max_async_req = 1; // support 1 async request
     attr->reserved = 0;
 
-    scmi_make_response(dev, token, resp_iov, SCMI_SUCCESS);
+    scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                        SCMI_COMMON_MSG_PROTOCOL_ATTRIBUTES, token,
+                        SCMI_SUCCESS);
 
     log_debug("CLOCK_PROTOCOL_ATTRIBUTES: num_clocks=%d", attr->num_clocks);
     return 0;
@@ -168,7 +171,9 @@ static int handle_clock_clock_attributes(SCMIDev *dev, uint16_t token,
     uint32_t clock_id = *(uint32_t *)req->payload;
 
     if (!is_valid_clock_id(clock_id)) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_ENTRY);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                                   SCMI_CLOCK_MSG_CLK_ATTRIBUTES, token,
+                                   SCMI_ERR_ENTRY);
     }
 
     // Validate response buffer size
@@ -176,7 +181,9 @@ static int handle_clock_clock_attributes(SCMIDev *dev, uint16_t token,
         sizeof(struct scmi_response) +
         sizeof(struct scmi_msg_resp_clock_clock_attributes);
     if (resp_iov->iov_len < expected_resp_size) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_RANGE);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                                   SCMI_CLOCK_MSG_CLK_ATTRIBUTES, token,
+                                   SCMI_ERR_RANGE);
     }
 
     // Prepare ioctl arguments
@@ -187,7 +194,9 @@ static int handle_clock_clock_attributes(SCMIDev *dev, uint16_t token,
     int ret = hvisor_scmi_ioctl(HVISOR_SCMI_CLOCK_GET_ATTRIBUTES, &args,
                                 sizeof(args));
     if (ret < 0) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_GENERIC);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                                   SCMI_CLOCK_MSG_CLK_ATTRIBUTES, token,
+                                   SCMI_ERR_GENERIC);
     }
 
     struct scmi_response *resp = resp_iov->iov_base;
@@ -228,7 +237,8 @@ static int handle_clock_clock_attributes(SCMIDev *dev, uint16_t token,
         clock_id, attr->clock_name, args.u.clock_attr.enabled,
         args.u.clock_attr.is_valid);
 
-    scmi_make_response(dev, token, resp_iov, SCMI_SUCCESS);
+    scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                        SCMI_CLOCK_MSG_CLK_ATTRIBUTES, token, SCMI_SUCCESS);
     log_debug("CLOCK_ATTRIBUTES: clock_id=%u, name=%s, enabled=%d", clock_id,
               attr->clock_name, args.u.clock_attr.enabled);
     return 0;
@@ -242,7 +252,9 @@ static int handle_clock_describe_rates(SCMIDev *dev, uint16_t token,
 
     /* Validate clock ID */
     if (!is_valid_clock_id(clock_id)) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_ENTRY);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                                   SCMI_CLOCK_MSG_DESCRIBE_RATES, token,
+                                   SCMI_ERR_ENTRY);
     }
 
     /* Calculate required response buffer size */
@@ -250,24 +262,16 @@ static int handle_clock_describe_rates(SCMIDev *dev, uint16_t token,
         sizeof(struct scmi_response); // includes status (4 bytes)
 
     if (resp_iov->iov_len < resp_hdr_size + sizeof(uint32_t)) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_RANGE);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                                   SCMI_CLOCK_MSG_DESCRIBE_RATES, token,
+                                   SCMI_ERR_RANGE);
     }
 
     if (rate_index > 0) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_RANGE);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                                   SCMI_CLOCK_MSG_DESCRIBE_RATES, token,
+                                   SCMI_ERR_RANGE);
     }
-
-    // /* Prepare ioctl arguments */
-    // struct hvisor_scmi_clock_args args;
-    // struct clock_rates_info *rates_info = (struct clock_rates_info
-    // *)&args.u.data; rates_info->clock_id = clock_id; rates_info->rate_index =
-    // rate_index;
-
-    // /* Call the common ioctl function */
-    // int ret = hvisor_scmi_ioctl(HVISOR_SCMI_CLOCK_DESCRIBE_RATES, &args,
-    // sizeof(args)); if (ret < 0) {
-    //     return scmi_make_response(dev, token, resp_iov, SCMI_ERR_GENERIC);
-    // }
 
     /* Prepare response */
     struct scmi_response *resp = (struct scmi_response *)resp_iov->iov_base;
@@ -281,15 +285,7 @@ static int handle_clock_describe_rates(SCMIDev *dev, uint16_t token,
     uint32_t num_rates_flags = (1 << 12) | (3 & 0xFFFU);
     payload[0] = num_rates_flags;
 
-    /* Calculate how many rates we can fit in the response buffer */
-    // size_t available_for_rates = resp_iov->iov_len - resp_hdr_size -
-    // fixed_payload_size; uint32_t max_rates_by_buffer =
-    // (uint32_t)(available_for_rates / rate_entry_size); uint32_t num_return =
-    // (rates_info->num_rates < max_rates_by_buffer) ? rates_info->num_rates :
-    // max_rates_by_buffer;
-
     /* Fill rates: each rate is {low32, high32, step_size} */
-    // All rates are available in one response for simplicity
     uint64_t *rates = &payload[1];
     rates[0] = 0;
     rates[1] = 10000000000ULL; // 10 GHz
@@ -298,7 +294,9 @@ static int handle_clock_describe_rates(SCMIDev *dev, uint16_t token,
     log_debug("CLOCK_DESCRIBE_RATES: clock_id=%u, rate_index=%u, num_rates=%u",
               clock_id, rate_index, 3);
 
-    return scmi_make_response(dev, token, resp_iov, SCMI_SUCCESS);
+    return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                               SCMI_CLOCK_MSG_DESCRIBE_RATES, token,
+                               SCMI_SUCCESS);
 }
 
 static int handle_clock_rate_get(SCMIDev *dev, uint16_t token,
@@ -308,11 +306,15 @@ static int handle_clock_rate_get(SCMIDev *dev, uint16_t token,
     uint32_t clock_id = *(uint32_t *)req->payload;
 
     if (!is_valid_clock_id(clock_id)) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_ENTRY);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                                   SCMI_CLOCK_MSG_RATE_GET, token,
+                                   SCMI_ERR_ENTRY);
     }
 
     if (resp_iov->iov_len < sizeof(struct scmi_response) + 8) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_RANGE);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                                   SCMI_CLOCK_MSG_RATE_GET, token,
+                                   SCMI_ERR_RANGE);
     }
 
     /* Prepare ioctl arguments */
@@ -324,7 +326,9 @@ static int handle_clock_rate_get(SCMIDev *dev, uint16_t token,
     int ret =
         hvisor_scmi_ioctl(HVISOR_SCMI_CLOCK_RATE_GET, &args, sizeof(args));
     if (ret < 0) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_GENERIC);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                                   SCMI_CLOCK_MSG_RATE_GET, token,
+                                   SCMI_ERR_GENERIC);
     }
 
     struct scmi_response *resp = resp_iov->iov_base;
@@ -335,7 +339,8 @@ static int handle_clock_rate_get(SCMIDev *dev, uint16_t token,
     log_debug("CLOCK_RATE_GET: clock_id=%u, rate=%llu Hz", clock_id,
               rate_info->rate);
 
-    return scmi_make_response(dev, token, resp_iov, SCMI_SUCCESS);
+    return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                               SCMI_CLOCK_MSG_RATE_GET, token, SCMI_SUCCESS);
 }
 
 static int handle_clock_rate_set(SCMIDev *dev, uint16_t token,
@@ -353,13 +358,17 @@ static int handle_clock_rate_set(SCMIDev *dev, uint16_t token,
     uint64_t requested_rate = ((uint64_t)rate_hi << 32) | rate_lo;
 
     if (!is_valid_clock_id(clock_id)) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_ENTRY);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                                   SCMI_CLOCK_MSG_RATE_SET, token,
+                                   SCMI_ERR_ENTRY);
     }
 
     bool async = (flags & 0x1) != 0;
     // For simplicity, we only support synchronous mode
     if (async) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_SUPPORT);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                                   SCMI_CLOCK_MSG_RATE_SET, token,
+                                   SCMI_ERR_SUPPORT);
     }
 
     /* Prepare ioctl arguments */
@@ -374,13 +383,16 @@ static int handle_clock_rate_set(SCMIDev *dev, uint16_t token,
     int ret =
         hvisor_scmi_ioctl(HVISOR_SCMI_CLOCK_RATE_SET, &args, sizeof(args));
     if (ret < 0) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_GENERIC);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                                   SCMI_CLOCK_MSG_RATE_SET, token,
+                                   SCMI_ERR_GENERIC);
     }
 
     log_debug("CLOCK_RATE_SET: clock_id=%u, flags=%u, rate=%llu Hz", clock_id,
               flags, requested_rate);
 
-    return scmi_make_response(dev, token, resp_iov, SCMI_SUCCESS);
+    return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                               SCMI_CLOCK_MSG_RATE_SET, token, SCMI_SUCCESS);
 }
 
 static int handle_clock_config_get(SCMIDev *dev, uint16_t token,
@@ -391,18 +403,24 @@ static int handle_clock_config_get(SCMIDev *dev, uint16_t token,
     uint32_t flags = *(uint32_t *)((uint8_t *)req->payload + 4);
 
     if (!is_valid_clock_id(clock_id)) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_ENTRY);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                                   SCMI_CLOCK_MSG_CONFIG_GET, token,
+                                   SCMI_ERR_ENTRY);
     }
 
     uint32_t ext_type = flags & 0xFF;
 
     if (ext_type != 0) {
         // Only support basic enable/disable for now
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_PARAMS);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                                   SCMI_CLOCK_MSG_CONFIG_GET, token,
+                                   SCMI_ERR_PARAMS);
     }
 
     if (resp_iov->iov_len < sizeof(struct scmi_response) + 12) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_RANGE);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                                   SCMI_CLOCK_MSG_CONFIG_GET, token,
+                                   SCMI_ERR_RANGE);
     }
 
     /* Prepare ioctl arguments */
@@ -416,7 +434,9 @@ static int handle_clock_config_get(SCMIDev *dev, uint16_t token,
     int ret =
         hvisor_scmi_ioctl(HVISOR_SCMI_CLOCK_CONFIG_GET, &args, sizeof(args));
     if (ret < 0) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_GENERIC);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                                   SCMI_CLOCK_MSG_CONFIG_GET, token,
+                                   SCMI_ERR_GENERIC);
     }
 
     struct scmi_response *resp = resp_iov->iov_base;
@@ -430,7 +450,9 @@ static int handle_clock_config_get(SCMIDev *dev, uint16_t token,
               clock_id, flags, config_info->config,
               config_info->extended_config_val);
 
-    return scmi_make_response(dev, token, resp_iov, SCMI_SUCCESS);
+    return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                               SCMI_CLOCK_MSG_CONFIG_GET, token,
+                               SCMI_SUCCESS);
 }
 
 static int handle_clock_config_set(SCMIDev *dev, uint16_t token,
@@ -443,7 +465,9 @@ static int handle_clock_config_set(SCMIDev *dev, uint16_t token,
     uint32_t attributes = *(uint32_t *)p;
 
     if (!is_valid_clock_id(clock_id)) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_ENTRY);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                                   SCMI_CLOCK_MSG_CONFIG_SET, token,
+                                   SCMI_ERR_ENTRY);
     }
 
     /* Prepare ioctl arguments */
@@ -454,26 +478,18 @@ static int handle_clock_config_set(SCMIDev *dev, uint16_t token,
     config_info->config = attributes;
 
     /* Call the common ioctl function */
-    // struct timespec start, end;
-    // clock_gettime(CLOCK_MONOTONIC, &start);
-
     int ret =
         hvisor_scmi_ioctl(HVISOR_SCMI_CLOCK_CONFIG_SET, &args, sizeof(args));
 
-    // clock_gettime(CLOCK_MONOTONIC, &end);
-    // double elapsed = (end.tv_sec - start.tv_sec) * 1000000.0 + (end.tv_nsec -
-    // start.tv_nsec) / 1000.0;
-
     if (ret < 0) {
-        // log_error("CLOCK_CONFIG_SET: clock_id=%u, config=%u, ioctl failed in
-        // %.2f us", clock_id, attributes, elapsed);
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_GENERIC);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                                   SCMI_CLOCK_MSG_CONFIG_SET, token,
+                                   SCMI_ERR_GENERIC);
     }
 
-    // log_error("CLOCK_CONFIG_SET: clock_id=%u, config=%u, ioctl took %.2f us",
-    // clock_id, attributes, elapsed);
-
-    return scmi_make_response(dev, token, resp_iov, SCMI_SUCCESS);
+    return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                               SCMI_CLOCK_MSG_CONFIG_SET, token,
+                               SCMI_SUCCESS);
 }
 
 static int handle_clock_name_get(SCMIDev *dev, uint16_t token,
@@ -483,13 +499,17 @@ static int handle_clock_name_get(SCMIDev *dev, uint16_t token,
     uint32_t clock_id = *(uint32_t *)req->payload;
 
     if (!is_valid_clock_id(clock_id)) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_ENTRY);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                                   SCMI_CLOCK_MSG_NAME_GET, token,
+                                   SCMI_ERR_ENTRY);
     }
 
     size_t payload_size = 4 + 64; // flags (4) + name[64]
 
     if (resp_iov->iov_len < sizeof(struct scmi_response) + payload_size) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_RANGE);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                                   SCMI_CLOCK_MSG_NAME_GET, token,
+                                   SCMI_ERR_RANGE);
     }
 
     /* Prepare ioctl arguments */
@@ -501,7 +521,9 @@ static int handle_clock_name_get(SCMIDev *dev, uint16_t token,
     int ret =
         hvisor_scmi_ioctl(HVISOR_SCMI_CLOCK_NAME_GET, &args, sizeof(args));
     if (ret < 0) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_GENERIC);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                                   SCMI_CLOCK_MSG_NAME_GET, token,
+                                   SCMI_ERR_GENERIC);
     }
 
     struct scmi_response *resp = resp_iov->iov_base;
@@ -515,7 +537,8 @@ static int handle_clock_name_get(SCMIDev *dev, uint16_t token,
     log_debug("CLOCK_NAME_GET: clock_id=%u, name=%s", clock_id,
               name_info->name);
 
-    return scmi_make_response(dev, token, resp_iov, SCMI_SUCCESS);
+    return scmi_make_response(resp_iov, SCMI_PROTO_ID_CLOCK,
+                               SCMI_CLOCK_MSG_NAME_GET, token, SCMI_SUCCESS);
 }
 
 /* Main request handler */
