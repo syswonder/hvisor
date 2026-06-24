@@ -3,7 +3,8 @@ QEMU := qemu-system-x86_64
 zone0_boot := $(image_dir)/bootloader/out/boot.bin
 zone0_setup := $(image_dir)/kernel/setup.bin
 zone0_vmlinux := $(image_dir)/kernel/vmlinux.bin
-zone0_initrd := $(image_dir)/virtdisk/initramfs.cpio.gz
+zone0_asterinas := $(image_dir)/kernel/aster-kernel-osdk-bin
+zone0_initrd := $(image_dir)/kernel/initramfs.cpio.gz
 zone0_rootfs := $(image_dir)/virtdisk/rootfs1.img
 zone1_rootfs := $(image_dir)/virtdisk/rootfs2.img
 
@@ -66,6 +67,23 @@ $(hvisor_bin): elf boot
 		cp $(zone0_vmlinux) $(image_dir)/iso/boot/kernel; \
 	else \
 		echo "Warning: $(zone0_vmlinux) not found, skipping"; \
+	fi
+
+	if echo "$(FEATURES)" | tr ',' ' ' | grep -qw asterinas; then \
+		if [ -f $(zone0_asterinas) ]; then \
+			cp $(zone0_asterinas) $(image_dir)/iso/boot/kernel; \
+		else \
+			echo "Warning: $(zone0_asterinas) not found, skipping"; \
+		fi; \
+		if [ -f $(zone0_initrd) ]; then \
+			cp $(zone0_initrd) $(image_dir)/iso/boot/kernel; \
+		else \
+			echo "Warning: $(zone0_initrd) not found, skipping"; \
+		fi; \
+		echo "set default=1" > $(image_dir)/iso/boot/grub/selected.cfg; \
+		echo "grub: selecting Asterinas root zone entry"; \
+	else \
+		rm -f $(image_dir)/iso/boot/grub/selected.cfg; \
 	fi
 
 	mkdir -p $(image_dir)/virtdisk

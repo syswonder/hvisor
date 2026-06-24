@@ -9,6 +9,7 @@
 /platform/*/*/image/bootloader/out
 /platform/*/*/image/iso/boot/kernel/*
 /platform/*/*/image/iso/boot/hvisor
+/platform/*/*/image/iso/boot/grub/selected.cfg
 /tools/hvisor
 /tmp
 *.mod.[co]
