@@ -173,7 +173,7 @@ impl ZoneInner {
             gpm: new_s2_memory_set(),
             mmio: Vec::new(),
             cpu_num: 0,
-            cpu_set: CpuSet::new(MAX_CPU_NUM as usize, 0),
+            cpu_set: CpuSet::new(MAX_CPU_NUM - 1, 0),
             irq_bitmap: [0; 1024 / 32],
             iommu_pt: if cfg!(iommu) {
                 Some(new_s2_memory_set())
@@ -745,7 +745,6 @@ pub fn add_zone(zone: Arc<Zone>) {
 
 /// Remove zone from ZONE_LIST
 pub fn remove_zone(zone_id: usize) {
-    unregister_zone_memory(zone_id);
     let mut zone_list = ZONE_LIST.write();
     let (idx, _) = zone_list
         .iter()
@@ -753,34 +752,104 @@ pub fn remove_zone(zone_id: usize) {
         .find(|(_, zone)| zone.id() == zone_id)
         .unwrap();
     let removed_zone = zone_list.remove(idx);
+    unregister_zone_memory(zone_id);
     assert_eq!(Arc::strong_count(&removed_zone), 1);
 }
 
-/// Physical RAM ranges `[start, end)` already committed to a live zone, keyed
-/// by zone id. Consulted by `validate_zone_memory` to reject cross-zone RAM
-/// (host-physical) aliasing before a new zone is created.
-static ZONE_PHYS_RANGES: RwLock<Vec<(usize, u64, u64)>> = RwLock::new(Vec::new());
-
-fn ranges_overlap(a_start: u64, a_end: u64, b_start: u64, b_end: u64) -> bool {
-    a_start < b_end && b_start < a_end
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct ZonePhysRange {
+    zone_id: usize,
+    start: u64,
+    end: u64,
 }
 
-/// Validate a zone configuration before any resources are committed.
-///
-/// hvisor already rejects duplicate zone ids and refuses to hand the same
-/// physical CPU to two zones (the per-CPU `get_cpu_data(..).zone` check). It
-/// does not verify that the host-physical RAM backing two zones is disjoint,
-/// nor that `entry_point` lands inside mapped guest RAM. Overlapping HPA
-/// silently aliases physical memory across zones and breaks spatial isolation;
-/// a bad `entry_point` faults the guest on launch.
-/// Inclusive-of-overflow end of a `[start, start+size)` range; saturates so an
-/// overflowing region conservatively covers the rest of the address space.
-fn region_end(start: u64, size: u64) -> u64 {
-    start.saturating_add(size)
+impl ZonePhysRange {
+    fn overlaps(&self, other: &Self) -> bool {
+        self.start < other.end && other.start < self.end
+    }
 }
 
-fn validate_zone_memory(config: &HvZoneConfig) -> HvResult {
+/// Physical RAM ranges `[start, end)` already reserved for a zone, keyed by
+/// zone id. The write lock is held across validation and insertion so two
+/// concurrent zone starts cannot both pass the overlap check.
+static ZONE_PHYS_RANGES: RwLock<Vec<ZonePhysRange>> = RwLock::new(Vec::new());
+
+fn region_end(zone_id: u32, start: u64, size: u64) -> HvResult<u64> {
+    if size == 0 {
+        return hv_result_err!(
+            EINVAL,
+            format!("zone {}: RAM region at {:#x} has zero size", zone_id, start)
+        );
+    }
+    start.checked_add(size).ok_or_else(|| {
+        hv_err!(
+            EINVAL,
+            format!(
+                "zone {}: RAM region [{:#x}, +{:#x}) overflows",
+                zone_id, start, size
+            )
+        )
+    })
+}
+
+fn collect_zone_ram_ranges(config: &HvZoneConfig) -> HvResult<Vec<ZonePhysRange>> {
     let regions = config.memory_regions();
+    let mut ranges = Vec::new();
+
+    for r in regions.iter().filter(|r| r.mem_type == MEM_TYPE_RAM) {
+        ranges.push(ZonePhysRange {
+            zone_id: config.zone_id as usize,
+            start: r.physical_start,
+            end: region_end(config.zone_id, r.physical_start, r.size)?,
+        });
+    }
+
+    Ok(ranges)
+}
+
+fn validate_zone_cpus(config: &HvZoneConfig) -> HvResult<Vec<usize>> {
+    let mut cpus = Vec::new();
+    for cpu_id in config.cpus() {
+        let cpu_id = cpu_id as usize;
+        if cpu_id >= MAX_CPU_NUM {
+            return hv_result_err!(
+                EINVAL,
+                format!(
+                    "zone {}: cpu {} is outside the board CPU range 0..{}",
+                    config.zone_id, cpu_id, MAX_CPU_NUM
+                )
+            );
+        }
+        if cpus.contains(&cpu_id) {
+            return hv_result_err!(
+                EINVAL,
+                format!(
+                    "zone {}: cpu {} is listed more than once",
+                    config.zone_id, cpu_id
+                )
+            );
+        }
+        cpus.push(cpu_id);
+    }
+
+    if cpus.is_empty() {
+        return hv_result_err!(
+            EINVAL,
+            format!("zone {}: at least one CPU is required", config.zone_id)
+        );
+    }
+
+    Ok(cpus)
+}
+
+/// Validate a zone configuration before mutable CPU or zone-list state is
+/// published.
+fn validate_zone_memory(config: &HvZoneConfig, ranges: &[ZonePhysRange]) -> HvResult {
+    let regions = config.memory_regions();
+
+    for r in regions.iter().filter(|r| r.mem_type == MEM_TYPE_RAM) {
+        let _ = region_end(config.zone_id, r.virtual_start, r.size)?;
+    }
 
     // entry_point must fall inside a RAM region's guest-physical range. This
     // holds on x86_64, where entry_point is a guest-physical address; other
@@ -789,11 +858,15 @@ fn validate_zone_memory(config: &HvZoneConfig) -> HvResult {
     #[cfg(target_arch = "x86_64")]
     {
         let entry = config.entry_point;
-        let entry_ok = regions.iter().any(|r| {
-            r.mem_type == MEM_TYPE_RAM
-                && r.virtual_start <= entry
-                && entry < region_end(r.virtual_start, r.size)
-        });
+        let entry_ok = regions
+            .iter()
+            .filter(|r| r.mem_type == MEM_TYPE_RAM)
+            .any(
+                |r| match region_end(config.zone_id, r.virtual_start, r.size) {
+                    Ok(end) => r.virtual_start <= entry && entry < end,
+                    Err(_) => false,
+                },
+            );
         if !entry_ok {
             return hv_result_err!(
                 EINVAL,
@@ -806,41 +879,14 @@ fn validate_zone_memory(config: &HvZoneConfig) -> HvResult {
     }
 
     // RAM regions within this config must not overlap each other in HPA.
-    for (i, a) in regions.iter().enumerate() {
-        if a.mem_type != MEM_TYPE_RAM {
-            continue;
-        }
-        let a_end = region_end(a.physical_start, a.size);
-        for b in regions.iter().skip(i + 1) {
-            if b.mem_type != MEM_TYPE_RAM {
-                continue;
-            }
-            let b_end = region_end(b.physical_start, b.size);
-            if ranges_overlap(a.physical_start, a_end, b.physical_start, b_end) {
+    for (i, a) in ranges.iter().enumerate() {
+        for b in ranges.iter().skip(i + 1) {
+            if a.overlaps(b) {
                 return hv_result_err!(
                     EINVAL,
                     format!(
                         "zone {}: RAM [{:#x},{:#x}) overlaps RAM [{:#x},{:#x}) in the same config",
-                        config.zone_id, a.physical_start, a_end, b.physical_start, b_end
-                    )
-                );
-            }
-        }
-    }
-
-    // This zone's RAM must not overlap RAM already committed to another zone.
-    let committed = ZONE_PHYS_RANGES.read();
-    for a in regions.iter().filter(|r| r.mem_type == MEM_TYPE_RAM) {
-        let a_end = region_end(a.physical_start, a.size);
-        for &(other_id, b_start, b_end) in committed.iter() {
-            if other_id != config.zone_id as usize
-                && ranges_overlap(a.physical_start, a_end, b_start, b_end)
-            {
-                return hv_result_err!(
-                    EINVAL,
-                    format!(
-                        "zone {}: RAM [{:#x},{:#x}) overlaps zone {} RAM [{:#x},{:#x})",
-                        config.zone_id, a.physical_start, a_end, other_id, b_start, b_end
+                        config.zone_id, a.start, a.end, b.start, b.end
                     )
                 );
             }
@@ -850,26 +896,81 @@ fn validate_zone_memory(config: &HvZoneConfig) -> HvResult {
     Ok(())
 }
 
-/// Record a zone's RAM HPA ranges after a successful `zone_create`.
-fn register_zone_memory(config: &HvZoneConfig) {
-    let mut committed = ZONE_PHYS_RANGES.write();
-    for r in config
-        .memory_regions()
-        .iter()
-        .filter(|r| r.mem_type == MEM_TYPE_RAM)
-    {
-        committed.push((
-            config.zone_id as usize,
-            r.physical_start,
-            region_end(r.physical_start, r.size),
-        ));
+struct ZoneMemoryReservation {
+    zone_id: usize,
+    active: bool,
+}
+
+impl ZoneMemoryReservation {
+    fn commit(mut self) {
+        self.active = false;
     }
 }
 
-/// Drop a zone's recorded RAM ranges. Called from `remove_zone`, and from the
-/// zone-start path to roll back a `zone_create` that did not commit the zone.
-pub fn unregister_zone_memory(zone_id: usize) {
-    ZONE_PHYS_RANGES.write().retain(|&(id, _, _)| id != zone_id);
+impl Drop for ZoneMemoryReservation {
+    fn drop(&mut self) {
+        if self.active {
+            unregister_zone_memory(self.zone_id);
+        }
+    }
+}
+
+/// Reserve a zone's RAM HPA ranges before resources are committed.
+fn reserve_zone_memory(config: &HvZoneConfig) -> HvResult<ZoneMemoryReservation> {
+    let ranges = collect_zone_ram_ranges(config)?;
+    validate_zone_memory(config, &ranges)?;
+
+    let mut committed = ZONE_PHYS_RANGES.write();
+    for a in &ranges {
+        for b in committed.iter() {
+            if b.zone_id != a.zone_id && a.overlaps(b) {
+                return hv_result_err!(
+                    EINVAL,
+                    format!(
+                        "zone {}: RAM [{:#x},{:#x}) overlaps zone {} RAM [{:#x},{:#x})",
+                        config.zone_id, a.start, a.end, b.zone_id, b.start, b.end
+                    )
+                );
+            }
+        }
+    }
+
+    for range in ranges {
+        committed.push(range);
+    }
+
+    Ok(ZoneMemoryReservation {
+        zone_id: config.zone_id as usize,
+        active: true,
+    })
+}
+
+/// Drop a zone's recorded RAM ranges. Called from `remove_zone` and failed
+/// zone-start rollback.
+fn unregister_zone_memory(zone_id: usize) {
+    ZONE_PHYS_RANGES
+        .write()
+        .retain(|range| range.zone_id != zone_id);
+}
+
+pub fn rollback_zone_create(zone: &Arc<Zone>) {
+    let zone_id = zone.id();
+    let cpu_set = zone.cpu_set();
+    cpu_set.iter().for_each(|cpu_id| {
+        let cpu_data = get_cpu_data(cpu_id);
+        if cpu_data
+            .zone
+            .as_ref()
+            .map(|assigned| assigned.id() == zone_id)
+            .unwrap_or(false)
+        {
+            cpu_data.zone = None;
+            cpu_data.boot_cpu = false;
+            cpu_data.cpu_on_entry = INVALID_ADDRESS;
+            cpu_data.dtb_ipa = INVALID_ADDRESS;
+        }
+    });
+    unregister_zone_memory(zone_id);
 }
 
 pub fn find_zone(zone_id: usize) -> Option<Arc<Zone>> {
@@ -902,6 +1003,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
     // we create the new zone here
     // TODO: create Zone with cpu_set
     let zone_id = config.zone_id as usize;
+    let cpus = validate_zone_cpus(config)?;
 
     if find_zone(zone_id).is_some() {
         return hv_result_err!(
@@ -910,17 +1012,8 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
         );
     }
 
-    // Reject overlapping RAM and an out-of-RAM entry_point before committing
-    // any resources.
-    validate_zone_memory(config)?;
-
-    let mut zone = Zone::new(zone_id, &config.name);
-    zone.pt_init(config.memory_regions())?;
-    zone.mmio_init(&config.arch_config);
-
-    let mut cpu_num = 0;
-    for cpu_id in config.cpus().iter() {
-        if let Some(existing_zone) = get_cpu_data(*cpu_id as _).zone.clone() {
+    for cpu_id in &cpus {
+        if let Some(existing_zone) = get_cpu_data(*cpu_id).zone.clone() {
             return hv_result_err!(
                 EBUSY,
                 format!(
@@ -930,7 +1023,17 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
                 )
             );
         }
-        zone.write().cpu_set_mut().set_bit(*cpu_id as _);
+    }
+
+    let memory_reservation = reserve_zone_memory(config)?;
+
+    let mut zone = Zone::new(zone_id, &config.name);
+    zone.pt_init(config.memory_regions())?;
+    zone.mmio_init(&config.arch_config);
+
+    let mut cpu_num = 0;
+    for cpu_id in &cpus {
+        zone.write().cpu_set_mut().set_bit(*cpu_id);
         cpu_num += 1;
     }
     zone.write().set_cpu_num(cpu_num);
@@ -1028,7 +1131,11 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
     for region in config.memory_regions() {
         // region contains config.dtb_load_paddr?
         if region.physical_start <= config.dtb_load_paddr
-            && region.physical_start + region.size > config.dtb_load_paddr
+            && region
+                .physical_start
+                .checked_add(region.size)
+                .map(|end| end > config.dtb_load_paddr)
+                .unwrap_or(false)
         {
             dtb_ipa = region.virtual_start + config.dtb_load_paddr - region.physical_start;
         }
@@ -1036,11 +1143,11 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
 
     let new_zone_pointer = Arc::new(zone);
     {
-        cpu_set.iter().for_each(|cpuid| {
-            let cpu_data = get_cpu_data(cpuid);
+        cpus.iter().for_each(|cpuid| {
+            let cpu_data = get_cpu_data(*cpuid);
             cpu_data.zone = Some(new_zone_pointer.clone());
             //chose boot cpu
-            if cpuid == cpu_set.first_cpu().unwrap() {
+            if *cpuid == cpu_set.first_cpu().unwrap() {
                 cpu_data.boot_cpu = true;
             }
             cpu_data.cpu_on_entry = config.entry_point as _;
@@ -1052,8 +1159,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
         });
     }
 
-    // Commit this zone's RAM ranges so later zones are checked against them.
-    register_zone_memory(config);
+    memory_reservation.commit();
 
     Ok(new_zone_pointer)
 }
@@ -1092,4 +1198,33 @@ fn test_add_and_remove_zone() {
         remove_zone(i);
     }
     assert_eq!(ZONE_LIST.read().len(), zone_count_before);
+}
+
+#[test_case]
+fn test_zone_memory_reservation_overlap_rules() {
+    let committed = [ZonePhysRange {
+        zone_id: 1,
+        start: 0x1000,
+        end: 0x2000,
+    }];
+    let candidate = [ZonePhysRange {
+        zone_id: 2,
+        start: 0x1f00,
+        end: 0x3000,
+    }];
+
+    assert!(
+        candidate[0].overlaps(&committed[0]),
+        "overlapping host-physical RAM must be detected"
+    );
+
+    let abutting = ZonePhysRange {
+        zone_id: 2,
+        start: 0x2000,
+        end: 0x3000,
+    };
+    assert!(
+        !abutting.overlaps(&committed[0]),
+        "abutting [start,end) ranges are valid"
+    );
 }
