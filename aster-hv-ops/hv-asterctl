@@ -1,0 +1,145 @@
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MulanPSL-2.0
+"""hv-asterctl -- control plane for running Asterinas as an hvisor root zone.
+
+Subcommands:
+  build     build the Asterinas bzImage, the initramfs, and the hvisor ISO
+  run       boot the zone under QEMU/KVM and print the captured console
+  verify    boot the functional-verification initramfs and check the result
+  bench     measure cold-start latency over N runs
+
+All generated state stays under aster-hv-ops/build and aster-hv-ops/results.
+"""
+import argparse
+import json
+import os
+import re
+import shlex
+import subprocess
+import sys
+
+OPS = os.path.dirname(os.path.abspath(__file__))
+HV_ROOT = os.path.dirname(OPS)
+SCRIPTS = os.path.join(OPS, "scripts")
+BUILD = os.path.join(OPS, "build")
+RESULTS = os.path.join(OPS, "results")
+IMAGE = os.path.join(HV_ROOT, "platform/x86_64/qemu/image")
+ISO = os.path.join(IMAGE, "virtdisk/hvisor.iso")
+DEFAULT_FEATURES = "pci ecam_pcie no_pcie_bar_realloc uart16550a intel_vtd aster_guest"
+
+
+def sh(*args):
+    """Run a command from a token list (no shell), echoing it safely."""
+    print("+ " + " ".join(shlex.quote(a) for a in args), flush=True)
+    subprocess.run(list(args), check=True)
+
+
+def write_json(path, obj):
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(obj, f, indent=2)
+        f.write("\n")
+
+
+def stage_images(mode):
+    """Build the guest initramfs in the requested mode and stage both guest
+    images into the qemu image tree the ISO is assembled from."""
+    os.makedirs(BUILD, exist_ok=True)
+    os.makedirs(os.path.join(IMAGE, "kernel"), exist_ok=True)
+    os.makedirs(os.path.join(IMAGE, "virtdisk"), exist_ok=True)
+    initramfs = os.path.join(BUILD, "initramfs.cpio")
+    sh("env", f"MODE={mode}", os.path.join(SCRIPTS, "mkinitramfs.sh"), initramfs)
+    sh("cp", os.path.join(BUILD, "aster-kernel-osdk-bin"),
+       os.path.join(IMAGE, "kernel/aster-kernel-osdk-bin"))
+    sh("cp", initramfs + ".gz", os.path.join(IMAGE, "virtdisk/initramfs.cpio.gz"))
+
+
+def build_hvisor():
+    env = dict(os.environ, FEATURES=DEFAULT_FEATURES)
+    print(f"+ FEATURES='{DEFAULT_FEATURES}' build-hvisor.sh", flush=True)
+    subprocess.run([os.path.join(SCRIPTS, "build-hvisor.sh")], check=True, env=env)
+
+
+def cmd_build(args):
+    os.makedirs(BUILD, exist_ok=True)
+    if args.guest or not os.path.exists(os.path.join(BUILD, "aster-kernel-osdk-bin")):
+        sh(os.path.join(SCRIPTS, "build-asterinas.sh"))
+    stage_images("selftest" if args.selftest else "interactive")
+    build_hvisor()
+
+
+def cmd_run(args):
+    os.makedirs(RESULTS, exist_ok=True)
+    log = os.path.join(RESULTS, "run.log")
+    sh(os.path.join(SCRIPTS, "run.sh"), ISO, log, str(args.timeout))
+    with open(log, encoding="utf-8", errors="replace") as f:
+        print(f.read())
+
+
+def cmd_verify(args):
+    os.makedirs(RESULTS, exist_ok=True)
+    stage_images("selftest")
+    build_hvisor()
+    raw = os.path.join(RESULTS, "run.log")
+    sh(os.path.join(SCRIPTS, "run.sh"), ISO, raw, str(args.timeout))
+    with open(raw, encoding="utf-8", errors="replace") as f:
+        text = f.read()
+    ok = "FUNCTIONAL VERIFICATION COMPLETE: PASS" in text
+    syscalls = sorted(set(re.findall(r"SYS_[A-Z0-9_]+", text)))
+
+    # Distil a clean transcript: the selftest sections without the per-syscall
+    # info trace (the full trace stays in the regenerable run.log).
+    trace = re.compile(r"pid=|^\[\s*[0-9]+\.[0-9]+\]\s+(?:INFO|WARN|ERROR)")
+    clean, keep = [], False
+    for line in text.splitlines():
+        if "ASTERINAS-ON-HVISOR FUNCTIONAL VERIFICATION" in line:
+            keep = True
+        if keep and line.strip() and not trace.search(line):
+            clean.append(line)
+        if "VERIFICATION COMPLETE" in line:
+            break
+    with open(os.path.join(RESULTS, "functional_verification.log"), "w", encoding="utf-8") as f:
+        f.write("\n".join(clean) + "\n")
+
+    write_json(os.path.join(RESULTS, "verification.json"),
+               {"pass": ok, "syscall_count": len(syscalls), "syscalls": syscalls,
+                "log": "results/functional_verification.log"})
+    print(f"verify: {'PASS' if ok else 'FAIL'} ({len(syscalls)} distinct syscalls observed)")
+    return 0 if ok else 1
+
+
+def cmd_bench(args):
+    os.makedirs(RESULTS, exist_ok=True)
+    stage_images("selftest")
+    build_hvisor()
+    out = os.path.join(RESULTS, "coldstart_bench.json")
+    sh("python3", os.path.join(SCRIPTS, "bench-coldstart.py"), ISO, str(args.runs), out)
+
+
+def main():
+    p = argparse.ArgumentParser(prog="hv-asterctl", description=__doc__,
+                                formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    b = sub.add_parser("build", help="build guest images and the hvisor ISO")
+    b.add_argument("--guest", action="store_true", help="force rebuild of the Asterinas bzImage")
+    b.add_argument("--selftest", action="store_true", help="stage the selftest initramfs")
+    b.set_defaults(func=cmd_build)
+
+    r = sub.add_parser("run", help="boot the zone and print the captured console")
+    r.add_argument("--timeout", type=int, default=45)
+    r.set_defaults(func=cmd_run)
+
+    v = sub.add_parser("verify", help="run the functional verification suite")
+    v.add_argument("--timeout", type=int, default=55)
+    v.set_defaults(func=cmd_verify)
+
+    bn = sub.add_parser("bench", help="measure cold-start latency")
+    bn.add_argument("--runs", type=int, default=7)
+    bn.set_defaults(func=cmd_bench)
+
+    args = p.parse_args()
+    sys.exit(args.func(args) or 0)
+
+
+if __name__ == "__main__":
+    main()
