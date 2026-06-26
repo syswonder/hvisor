@@ -1,0 +1,8 @@
+Mozilla Public License Version 2.0
+
+The full license text is available on Debian/Ubuntu systems at:
+
+  /usr/share/common-licenses/MPL-2.0
+
+This file is included so downstream Asterinas-derived changes can keep their
+MPL-2.0 notice. No Asterinas source is vendored in this directory.

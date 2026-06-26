@@ -1,0 +1,14 @@
+# SPDX-License-Identifier: MPL-2.0
+
+# Copy the relevant settings into Asterinas OSDK.toml when building Env A or C,
+# or pass equivalent cargo-osdk CLI flags.
+
+[boot]
+method = "grub-rescue-iso"
+initramfs = "../_build/initramfs.cpio.gz"
+
+[grub]
+boot_protocol = "linux"
+
+[build]
+strip_elf = true

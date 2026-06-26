@@ -1,0 +1,102 @@
+#!/bin/sh
+# SPDX-License-Identifier: MulanPSL-2.0
+#
+# Guest init for the ABI harness. Two modes:
+#   * autorun  (kernel cmdline contains "abi.autorun=1"): mount pseudo-fs, run
+#     the layered ABI suite, frame the JSON result file as base64 between
+#     unambiguous markers on the console, then halt. The host extractor decodes
+#     the framed block; base64 lines are immune to interleaved kernel logs.
+#   * interactive (default): mount pseudo-fs, optionally run the suite, exec sh.
+busybox() { /bin/busybox "$@"; }
+mount -t proc proc /proc 2>/dev/null || true
+mount -t sysfs sysfs /sys 2>/dev/null || true
+mount -t devtmpfs devtmpfs /dev 2>/dev/null || mount -t tmpfs tmpfs /dev 2>/dev/null || true
+mkdir -p /tmp /run /usr/bin
+chmod 1777 /tmp 2>/dev/null || true
+export PATH=/usr/bin:/bin:/sbin:/usr/sbin
+export HOME=/
+export SHELL=/bin/sh
+
+# Bring up loopback so the L4 socket tests measure ABI rather than network
+# config. Linux leaves `lo` DOWN until configured; some kernels bring it up
+# automatically. Try both tools; ignore failures.
+ip link set lo up 2>/dev/null || ifconfig lo up 2>/dev/null || ifconfig lo 127.0.0.1 up 2>/dev/null || true
+
+CMDLINE=""
+[ -r /proc/cmdline ] && CMDLINE="$(cat /proc/cmdline 2>/dev/null)"
+
+# Autorun selection. Asterinas forwards unknown `key=value` cmdline tokens to
+# the init process as environment variables (not into /proc/cmdline argv), and
+# tokens containing a dot are not valid shell identifiers. To make autorun
+# deterministic regardless of cmdline quirks, the initramfs build can stamp a
+# marker file. We honor either the marker, the env var, or the cmdline token.
+ABI_ENV_ID="${ABI_ENV:-unknown}"
+ABI_AUTORUN=0
+if [ -f /etc/abi-autorun ]; then
+    ABI_AUTORUN=1
+    # Use `read` rather than $(cat ...) -- command substitution proved flaky in
+    # the guest shell, whereas redirected `read` is reliable.
+    if [ -f /etc/abi-env ]; then read ABI_ENV_ID < /etc/abi-env 2>/dev/null || ABI_ENV_ID=unknown; fi
+    if [ -f /etc/abi-timeout ]; then read ABI_TEST_TIMEOUT < /etc/abi-timeout 2>/dev/null && export ABI_TEST_TIMEOUT; fi
+fi
+for tok in $CMDLINE; do
+    case "$tok" in
+        abi.autorun=1) ABI_AUTORUN=1 ;;
+        abi.env=*) ABI_ENV_ID="${tok#abi.env=}" ;;
+        abi.timeout=*) ABI_TEST_TIMEOUT="${tok#abi.timeout=}"; export ABI_TEST_TIMEOUT ;;
+    esac
+done
+export ABI_ENV_ID
+export ABI_MEASUREMENT_STATUS=measured
+export ABI_RESULT_JSON=/tmp/test_results.json
+
+run_suite() {
+    # Prefer the compiled runner (robust timeouts; no reliance on guest `sleep`
+    # or command substitution). Fall back to the shell runner if absent.
+    if [ -x /usr/bin/abi_runner ]; then
+        /usr/bin/abi_runner
+    elif [ -x /usr/bin/run_all.sh ]; then
+        /usr/bin/run_all.sh
+    else
+        echo "no ABI runner found" >&2
+    fi
+}
+
+emit_results() {
+    # Frame the JSON as a hex stream (od is always present in busybox). Each
+    # payload line is prefixed with ABIHEX: so it survives interleaving with
+    # kernel log lines on the shared serial console. The host decodes the hex.
+    echo "===ABI-RESULTS-BEGIN==="
+    if [ -f "$ABI_RESULT_JSON" ]; then
+        busybox od -An -v -tx1 "$ABI_RESULT_JSON" 2>/dev/null | while IFS= read -r l; do
+            echo "ABIHEX:$l"
+        done
+    else
+        echo "ABIHEX:(no result file)"
+    fi
+    echo "===ABI-RESULTS-END==="
+    echo "===ABI-DONE==="
+}
+
+halt_now() {
+    sync 2>/dev/null || true
+    # Best-effort power off across kernels; the host also kills QEMU on the
+    # ABI-DONE marker, so any of these failing is harmless.
+    busybox poweroff -f 2>/dev/null
+    busybox halt -f 2>/dev/null
+    sleep 5
+    exec /bin/sh
+}
+
+case "$ABI_AUTORUN" in
+    1)
+        echo "===ABI-INIT=== env=$ABI_ENV_ID autorun"
+        run_suite
+        emit_results
+        halt_now
+        ;;
+    *)
+        run_suite
+        exec /bin/sh
+        ;;
+esac
