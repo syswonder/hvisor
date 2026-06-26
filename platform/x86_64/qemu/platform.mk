@@ -1,4 +1,6 @@
 QEMU := qemu-system-x86_64
+QEMU_PREFIX := $(shell qemu_path="$$(command -v $(QEMU) 2>/dev/null)"; if [ -n "$$qemu_path" ]; then cd "$$(dirname "$$qemu_path")/.." && pwd; fi)
+OVMF ?= $(firstword $(wildcard $(QEMU_PREFIX)/share/ovmf/OVMF.fd $(QEMU_PREFIX)/share/OVMF/OVMF.fd $(QEMU_PREFIX)/share/OVMF/OVMF_CODE.fd $(QEMU_PREFIX)/share/edk2/ovmf/OVMF_CODE.fd))
 
 zone0_boot := $(image_dir)/bootloader/out/boot.bin
 zone0_setup := $(image_dir)/kernel/setup.bin
@@ -13,7 +15,9 @@ QEMU_ARGS += -cpu host,+x2apic,+invtsc,+vmx -accel kvm
 QEMU_ARGS += -smp 4
 QEMU_ARGS += -serial mon:stdio
 QEMU_ARGS += -m 4G
-QEMU_ARGS += -bios /usr/share/ovmf/OVMF.fd
+ifneq ($(OVMF),)
+QEMU_ARGS += -bios $(OVMF)
+endif
 QEMU_ARGS += -vga std
 # QEMU_ARGS += -nographic
 
@@ -68,7 +72,7 @@ $(hvisor_bin): elf boot
 	if [ -n "$(SKIP_ISO)" ]; then \
 		echo "SKIP_ISO set: not creating the bootable ISO"; \
 	elif command -v xorriso >/dev/null 2>&1; then \
-		grub-mkrescue /usr/lib/grub/x86_64-efi -o $(image_dir)/virtdisk/hvisor.iso $(iso_build); \
+		grub-mkrescue -o $(image_dir)/virtdisk/hvisor.iso $(iso_build); \
 	else \
 		echo "Error: xorriso/grub-mkrescue is required to build the ISO (set SKIP_ISO=1 to skip)" >&2; \
 		exit 1; \
@@ -81,13 +85,16 @@ $(hvisor_bin): elf boot
 ASTER_QEMU_ARGS := -machine q35,kernel-irqchip=split
 ASTER_QEMU_ARGS += -cpu host,+x2apic,+invtsc,+vmx -accel kvm
 ASTER_QEMU_ARGS += -smp 4 -m 4G
-ASTER_QEMU_ARGS += -bios /usr/share/ovmf/OVMF.fd
+ifneq ($(OVMF),)
+ASTER_QEMU_ARGS += -bios $(OVMF)
+endif
 ASTER_QEMU_ARGS += -nographic -serial mon:stdio -nodefaults
 ASTER_QEMU_ARGS += -device intel-iommu,intremap=on,eim=on,caching-mode=on,device-iotlb=on,aw-bits=48
 ASTER_QEMU_ARGS += -device ioh3420,id=pcie.1,chassis=1
 ASTER_QEMU_ARGS += -drive file=$(image_dir)/virtdisk/hvisor.iso,format=raw,index=0,media=disk
 
 run-asterinas: all
+	@test -n "$(OVMF)" || { echo "OVMF firmware not found; set OVMF=..."; exit 1; }
 	$(QEMU) $(ASTER_QEMU_ARGS)
 
 include $(image_dir)/bootloader/boot.mk

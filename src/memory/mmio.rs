@@ -63,6 +63,26 @@ impl MMIORegion {
     }
 }
 
+#[test_case]
+fn test_mmio_region_contains_region_bounds() {
+    let region = MMIORegion {
+        start: 0x1000,
+        size: 0x100,
+    };
+
+    assert!(region.contains_region(0x1000, 0));
+    assert!(region.contains_region(0x10f0, 0x10));
+    assert!(!region.contains_region(0x1100, 0));
+    assert!(!region.contains_region(0x10ff, 2));
+
+    let high = MMIORegion {
+        start: usize::MAX - 0xf,
+        size: 0x10,
+    };
+    assert!(high.contains_region(usize::MAX - 0xf, 1));
+    assert!(!high.contains_region(usize::MAX - 0x7, 0x10));
+}
+
 pub fn mmio_perform_access(base: usize, mmio: &mut MMIOAccess) {
     let addr = base as usize + mmio.address;
 

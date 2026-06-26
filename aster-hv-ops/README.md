@@ -26,10 +26,13 @@ aster-hv-ops/
 ## Prerequisites
 
 - A host with `/dev/kvm` and Intel VT-x (nested virtualization if itself a guest).
-- `qemu-system-x86_64` (>= 6.2) and `/usr/share/ovmf/OVMF.fd`.
+- `qemu-system-x86_64` (>= 6.2) and OVMF firmware discoverable from the QEMU
+  install prefix, or set with `OVMF`.
 - `grub-mkrescue` + `xorriso`, a static `busybox`, `git`, `python3`.
 - The Rust toolchains hvisor and Asterinas pin (`rust-toolchain.toml` in each
-  tree); the Asterinas build installs its in-tree `cargo-osdk`.
+  tree); the Asterinas build installs its in-tree `cargo-osdk` under
+  `aster-hv-ops/build/osdk` and fetches the pinned `linux_vdso` checkout unless
+  `VDSO_LIBRARY_DIR` is already set.
 
 ## Quick start
 
@@ -42,6 +45,10 @@ cd aster-hv-ops
 ./hv-asterctl verify     # boot the selftest initramfs, assert PASS
 ./hv-asterctl bench      # cold-start latency, writes results/coldstart_bench.json
 ```
+
+`build`, `verify`, and `bench` rebuild the guest image by default. Pass
+`--reuse-guest` only when intentionally testing a previously built
+`build/aster-kernel-osdk-bin`.
 
 Without privileges you can still inspect a prebuilt bzImage:
 

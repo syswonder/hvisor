@@ -59,10 +59,22 @@ def build_hvisor():
     subprocess.run([os.path.join(SCRIPTS, "build-hvisor.sh")], check=True, env=env)
 
 
-def cmd_build(args):
+def guest_image():
+    return os.path.join(BUILD, "aster-kernel-osdk-bin")
+
+
+def ensure_guest(reuse):
     os.makedirs(BUILD, exist_ok=True)
-    if args.guest or not os.path.exists(os.path.join(BUILD, "aster-kernel-osdk-bin")):
+    if reuse:
+        if not os.path.exists(guest_image()):
+            raise SystemExit("cached Asterinas bzImage not found; rerun without --reuse-guest")
+        print(f"+ reusing cached guest image: {guest_image()}", flush=True)
+    else:
         sh(os.path.join(SCRIPTS, "build-asterinas.sh"))
+
+
+def cmd_build(args):
+    ensure_guest(args.reuse_guest)
     stage_images("selftest" if args.selftest else "interactive")
     build_hvisor()
 
@@ -77,6 +89,7 @@ def cmd_run(args):
 
 def cmd_verify(args):
     os.makedirs(RESULTS, exist_ok=True)
+    ensure_guest(args.reuse_guest)
     stage_images("selftest")
     build_hvisor()
     raw = os.path.join(RESULTS, "run.log")
@@ -109,6 +122,7 @@ def cmd_verify(args):
 
 def cmd_bench(args):
     os.makedirs(RESULTS, exist_ok=True)
+    ensure_guest(args.reuse_guest)
     stage_images("selftest")
     build_hvisor()
     out = os.path.join(RESULTS, "coldstart_bench.json")
@@ -121,9 +135,12 @@ def main():
     sub = p.add_subparsers(dest="cmd", required=True)
 
     b = sub.add_parser("build", help="build guest images and the hvisor ISO")
-    b.add_argument("--guest", action="store_true", help="force rebuild of the Asterinas bzImage")
+    b.add_argument("--guest", action="store_false", dest="reuse_guest",
+                   help=argparse.SUPPRESS)
+    b.add_argument("--reuse-guest", action="store_true",
+                   help="reuse build/aster-kernel-osdk-bin instead of rebuilding it")
     b.add_argument("--selftest", action="store_true", help="stage the selftest initramfs")
-    b.set_defaults(func=cmd_build)
+    b.set_defaults(func=cmd_build, reuse_guest=False)
 
     r = sub.add_parser("run", help="boot the zone and print the captured console")
     r.add_argument("--timeout", type=int, default=45)
@@ -131,10 +148,14 @@ def main():
 
     v = sub.add_parser("verify", help="run the functional verification suite")
     v.add_argument("--timeout", type=int, default=55)
+    v.add_argument("--reuse-guest", action="store_true",
+                   help="reuse build/aster-kernel-osdk-bin instead of rebuilding it")
     v.set_defaults(func=cmd_verify)
 
     bn = sub.add_parser("bench", help="measure cold-start latency")
     bn.add_argument("--runs", type=int, default=7)
+    bn.add_argument("--reuse-guest", action="store_true",
+                    help="reuse build/aster-kernel-osdk-bin instead of rebuilding it")
     bn.set_defaults(func=cmd_bench)
 
     args = p.parse_args()

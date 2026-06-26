@@ -31,7 +31,7 @@ use crate::{
         irqchip::{inject_vector, pic::lapic::VirtLocalApic},
         uart::{virt_console_io_read, virt_console_io_write, UartReg},
     },
-    error::HvResult,
+    error::{HvErrorNum, HvResult},
     hypercall::HyperCall,
     memory::{mmio_handle_access, MMIOAccess, MemFlags},
     zone::this_zone_id,
@@ -58,6 +58,8 @@ const VM_EXIT_INSTR_LEN_HLT: u8 = 1;
 const VM_EXIT_INSTR_LEN_RDMSR: u8 = 2;
 const VM_EXIT_INSTR_LEN_WRMSR: u8 = 2;
 const VM_EXIT_INSTR_LEN_VMCALL: u8 = 3;
+const INVALID_OPCODE_VECTOR: u8 = 6;
+const GENERAL_PROTECTION_VECTOR: u8 = 13;
 
 #[repr(C)]
 #[derive(Debug, Default, Clone, Copy)]
@@ -115,7 +117,6 @@ fn handle_irq(vector: u8) {
 
 fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
     use raw_cpuid::{cpuid, CpuIdResult};
-    // TODO: temporary hypervisor hack
     let signature = unsafe { &*("ACRNACRNACRN".as_ptr() as *const [u32; 3]) };
     let cr4_flags = Cr4Flags::from_bits_truncate(arch_cpu.cr(4) as _);
     let regs = arch_cpu.regs_mut();
@@ -214,19 +215,14 @@ fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
     Ok(())
 }
 
-fn handle_cr_access(arch_cpu: &mut ArchCpu) -> HvResult {
+fn handle_cr_access(_arch_cpu: &mut ArchCpu) -> HvResult {
     let cr_access_info = VmxCrAccessInfo::new()?;
-    panic!(
-        "VM-exit: CR{} access:\n{:#x?}",
-        cr_access_info.cr_n, arch_cpu
+    warn!(
+        "unsupported guest CR{} access at rip {:#x}; injecting #GP",
+        cr_access_info.cr_n,
+        VmcsGuestNW::RIP.read().unwrap_or(0)
     );
-
-    match cr_access_info.cr_n {
-        0 => {}
-        _ => {}
-    }
-
-    Ok(())
+    inject_gp()
 }
 
 fn handle_external_interrupt() -> HvResult {
@@ -334,26 +330,32 @@ fn handle_msr_read(arch_cpu: &mut ArchCpu) -> HvResult {
     let rcx = arch_cpu.regs().rcx as u32;
 
     if let Ok(msr) = Msr::try_from(rcx) {
-        let res = if msr == IA32_APIC_BASE {
+        if msr == IA32_APIC_BASE {
             let mut apic_base = unsafe { IA32_APIC_BASE.read() };
             // info!("APIC BASE: {:x}", apic_base);
             apic_base |= 1 << 11 | 1 << 10; // enable xAPIC and x2APIC
-            Ok(apic_base)
+            debug!("VM exit: RDMSR({:#x}) -> {:#x}", rcx, apic_base);
+            arch_cpu.regs_mut().rax = apic_base & 0xffff_ffff;
+            arch_cpu.regs_mut().rdx = apic_base >> 32;
         } else if VirtLocalApic::msr_range().contains(&rcx) {
-            arch_cpu.virt_lapic.rdmsr(msr)
+            match arch_cpu.virt_lapic.rdmsr(msr) {
+                Ok(value) => {
+                    debug!("VM exit: RDMSR({:#x}) -> {:#x}", rcx, value);
+                    arch_cpu.regs_mut().rax = value & 0xffff_ffff;
+                    arch_cpu.regs_mut().rdx = value >> 32;
+                }
+                Err(e) => {
+                    warn!("unsupported RDMSR({:#x}): {:?}; injecting #GP", rcx, e);
+                    return inject_gp();
+                }
+            }
         } else {
-            hv_result_err!(ENOSYS)
-        };
-
-        if let Ok(value) = res {
-            debug!("VM exit: RDMSR({:#x}) -> {:#x}", rcx, value);
-            arch_cpu.regs_mut().rax = value & 0xffff_ffff;
-            arch_cpu.regs_mut().rdx = value >> 32;
-        } else {
-            warn!("Failed to handle RDMSR({:#x}): {:?}", rcx, res);
+            warn!("unsupported RDMSR({:#x}); injecting #GP", rcx);
+            return inject_gp();
         }
     } else {
-        // warn!("Unrecognized RDMSR({:#x})", rcx);
+        warn!("unrecognized RDMSR({:#x}); injecting #GP", rcx);
+        return inject_gp();
     }
 
     arch_cpu.advance_guest_rip(VM_EXIT_INSTR_LEN_RDMSR)?;
@@ -362,24 +364,35 @@ fn handle_msr_read(arch_cpu: &mut ArchCpu) -> HvResult {
 
 fn handle_msr_write(arch_cpu: &mut ArchCpu) -> HvResult {
     let rcx = arch_cpu.regs().rcx as u32;
-    let msr = Msr::try_from(rcx).unwrap();
     let value = (arch_cpu.regs().rax & 0xffff_ffff) | (arch_cpu.regs().rdx << 32);
     debug!("VM exit: WRMSR({:#x}) <- {:#x}", rcx, value);
 
-    let res = if msr == IA32_APIC_BASE {
-        Ok(()) // ignore
-    } else if VirtLocalApic::msr_range().contains(&rcx) || msr == IA32_TSC_DEADLINE {
-        arch_cpu.virt_lapic.wrmsr(msr, value)
+    if let Ok(msr) = Msr::try_from(rcx) {
+        if msr == IA32_APIC_BASE {
+            // ignore
+        } else if VirtLocalApic::msr_range().contains(&rcx) || msr == IA32_TSC_DEADLINE {
+            if let Err(e) = arch_cpu.virt_lapic.wrmsr(msr, value) {
+                warn!(
+                    "unsupported WRMSR({:#x}) <- {:#x}: {:?}; injecting #GP",
+                    rcx, value, e
+                );
+                return inject_gp();
+            }
+        } else {
+            warn!(
+                "unsupported WRMSR({:#x}) <- {:#x}; injecting #GP",
+                rcx, value
+            );
+            return inject_gp();
+        }
     } else {
-        hv_result_err!(ENOSYS)
-    };
-
-    if res.is_err() {
         warn!(
-            "Failed to handle WRMSR({:#x}) <- {:#x}: {:?}\n{:#x?}",
-            rcx, value, res, arch_cpu
+            "unrecognized WRMSR({:#x}) <- {:#x}; injecting #GP",
+            rcx, value
         );
+        return inject_gp();
     }
+
     arch_cpu.advance_guest_rip(VM_EXIT_INSTR_LEN_WRMSR)?;
     Ok(())
 }
@@ -398,25 +411,45 @@ fn handle_s2pt_violation(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
         // decoder does not implement). Rather than bring the whole hypervisor
         // down, deliver an invalid-opcode (#UD, vector 6) fault to the offending
         // guest and keep running; the fault is confined to that zone.
-        const UD_VECTOR: u8 = 6;
         let rip = VmcsGuestNW::RIP.read().unwrap_or(0);
         warn!(
             "unemulated mmio at {:#x} (rip {:#x}): {:?}; injecting #UD",
             fault_info.fault_guest_paddr, rip, e
         );
-        Vmcs::inject_interrupt(UD_VECTOR, None)?;
+        inject_ud()?;
     }
 
     Ok(())
 }
 
-fn handle_triple_fault(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvResult {
-    panic!(
-        "VM exit: Triple fault @ {:#x}, instr length: {:x}\n {:#x?}",
-        exit_info.guest_rip, exit_info.exit_instruction_length, arch_cpu
+fn inject_ud() -> HvResult {
+    Vmcs::inject_interrupt(INVALID_OPCODE_VECTOR, None)
+}
+
+fn inject_gp() -> HvResult {
+    Vmcs::inject_interrupt(GENERAL_PROTECTION_VECTOR, Some(0))
+}
+
+fn handle_unsupported_vmexit(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvResult {
+    warn!(
+        "unsupported VM-exit reason {:?} at rip {:#x}; injecting #UD\n{:#x?}",
+        exit_info.exit_reason, exit_info.guest_rip, arch_cpu
     );
-    // arch_cpu.advance_guest_rip(exit_info.exit_instruction_length as _)?;
-    Ok(())
+    inject_ud()
+}
+
+fn handle_triple_fault(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvResult {
+    let zone = this_zone();
+    error!(
+        "zone {} triple fault at rip {:#x}, instr length: {:x}; parking CPU {}",
+        zone.id(),
+        exit_info.guest_rip,
+        exit_info.exit_instruction_length,
+        this_cpu_id()
+    );
+    zone.set_err();
+    drop(zone);
+    arch_cpu.idle();
 }
 
 pub fn handle_vmexit(arch_cpu: &mut ArchCpu) -> HvResult {
@@ -442,19 +475,19 @@ pub fn handle_vmexit(arch_cpu: &mut ArchCpu) -> HvResult {
         VmxExitReason::MSR_READ => handle_msr_read(arch_cpu),
         VmxExitReason::MSR_WRITE => handle_msr_write(arch_cpu),
         VmxExitReason::EPT_VIOLATION => handle_s2pt_violation(arch_cpu, &exit_info),
-        _ => panic!(
-            "Unhandled VM-Exit reason {:?}:\n{:#x?}",
-            exit_info.exit_reason, arch_cpu
-        ),
+        _ => handle_unsupported_vmexit(arch_cpu, &exit_info),
     };
 
-    if res.is_err() {
-        panic!(
-            "Failed to handle VM-exit {:?}:\n{:#x?}\n{:?}",
-            exit_info.exit_reason,
-            arch_cpu,
-            res.err()
-        );
+    if let Err(e) = res {
+        if e.num == HvErrorNum::ENOSYS {
+            warn!(
+                "unsupported VM-exit {:?} at rip {:#x}: {:?}; injecting #UD",
+                exit_info.exit_reason, exit_info.guest_rip, e
+            );
+            inject_ud()?;
+        } else {
+            return Err(e);
+        }
     }
 
     Ok(())

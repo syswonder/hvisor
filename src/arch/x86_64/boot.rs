@@ -116,6 +116,63 @@ pub fn boot_module_size(addr: usize) -> Option<usize> {
         .map(|&(_, len)| len)
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+struct BootModule {
+    src: usize,
+    len: usize,
+    dst: usize,
+}
+
+fn ranges_overlap(s0: usize, l0: usize, s1: usize, l1: usize) -> bool {
+    s0 < s1.saturating_add(l1) && s1 < s0.saturating_add(l0)
+}
+
+fn boot_module_final_addr(module: BootModule) -> usize {
+    if module.dst == 0 || module.dst == module.src {
+        module.src
+    } else {
+        module.dst
+    }
+}
+
+fn module_relocation_order(
+    modules: &[BootModule; MAX_MODULES],
+    count: usize,
+) -> Option<[usize; MAX_MODULES]> {
+    let mut moved = [false; MAX_MODULES];
+    let mut order = [0usize; MAX_MODULES];
+    let mut ordered = 0;
+    let mut remaining = count;
+    while remaining > 0 {
+        let mut progress = false;
+        for i in 0..count {
+            if moved[i] {
+                continue;
+            }
+            let m = modules[i];
+            if m.dst != 0 && m.dst != m.src {
+                let blocked = (0..count).any(|j| {
+                    j != i
+                        && !moved[j]
+                        && ranges_overlap(m.dst, m.len, modules[j].src, modules[j].len)
+                });
+                if blocked {
+                    continue;
+                }
+            }
+            moved[i] = true;
+            order[ordered] = i;
+            ordered += 1;
+            remaining -= 1;
+            progress = true;
+        }
+        if !progress {
+            return None;
+        }
+    }
+    Some(order)
+}
+
 const E820_MAX_ENTRIES_ZEROPAGE: usize = 128;
 
 const EFI64_LOADER_SIGNATURE: u32 = 0x34364c45; // EL64
@@ -604,24 +661,7 @@ pub fn print_memory_map() {
 /// copies are ordered: a module is moved only once nothing still pending
 /// occupies its target range. For a fixed, non-cyclic layout this terminates.
 pub fn module_init(info_addr: usize) {
-    #[derive(Clone, Copy)]
-    struct Module {
-        src: usize,
-        len: usize,
-        dst: usize,
-    }
-
-    // Two half-open [start, start+len) ranges overlap. Saturating so a malformed
-    // (huge) length cannot wrap the comparison.
-    let overlaps = |s0: usize, l0: usize, s1: usize, l1: usize| {
-        s0 < s1.saturating_add(l1) && s1 < s0.saturating_add(l0)
-    };
-
-    let mut modules = [Module {
-        src: 0,
-        len: 0,
-        dst: 0,
-    }; MAX_MODULES];
+    let mut modules = [BootModule::default(); MAX_MODULES];
     let mut count = 0;
 
     let total_size = unsafe { *(info_addr as *const u32) } as usize;
@@ -669,7 +709,7 @@ pub fn module_init(info_addr: usize) {
                 .expect("multiboot2 module load address is not valid hex");
             // mod_end is the address past the last byte, so the module is
             // `end - start` bytes long.
-            modules[count] = Module {
+            modules[count] = BootModule {
                 src: start,
                 len: end - start,
                 dst,
@@ -696,24 +736,16 @@ pub fn module_init(info_addr: usize) {
         );
     }
 
-    // The address each module ends up occupying: its load address, or its source
-    // when it is left in place (a destination of zero or equal to the source).
-    // These ranges must be disjoint, otherwise relocating one module would
-    // overwrite another that is already where it belongs.
-    let final_addr = |m: Module| {
-        if m.dst == 0 || m.dst == m.src {
-            m.src
-        } else {
-            m.dst
-        }
-    };
+    // The address each module ends up occupying must be disjoint, otherwise
+    // relocating one module would overwrite another that is already where it
+    // belongs.
     for i in 0..count {
         for j in (i + 1)..count {
             assert!(
-                !overlaps(
-                    final_addr(modules[i]),
+                !ranges_overlap(
+                    boot_module_final_addr(modules[i]),
                     modules[i].len,
-                    final_addr(modules[j]),
+                    boot_module_final_addr(modules[j]),
                     modules[j].len
                 ),
                 "multiboot2 module load addresses overlap"
@@ -727,44 +759,61 @@ pub fn module_init(info_addr: usize) {
     // -- what a bootloader hands over -- always terminates. A cyclic layout (two
     // modules each needing the other's current location) cannot be relocated in
     // place without scratch space and is rejected below rather than mishandled.
-    let mut moved = [false; MAX_MODULES];
-    let mut remaining = count;
-    while remaining > 0 {
-        let mut progress = false;
-        for i in 0..count {
-            if moved[i] {
-                continue;
+    let order = module_relocation_order(&modules, count)
+        .expect("multiboot2 module relocation stalled: cyclic load layout is unsupported");
+    for &i in &order[..count] {
+        let m = modules[i];
+        // A destination of zero (or equal to the source) means "leave in place".
+        if m.dst != 0 && m.dst != m.src {
+            unsafe {
+                copy(m.src as *const u8, m.dst as *mut u8, m.len);
             }
-            let m = modules[i];
-            // A destination of zero (or equal to the source) means "leave in place".
-            if m.dst != 0 && m.dst != m.src {
-                let blocked = (0..count).any(|j| {
-                    j != i && !moved[j] && overlaps(m.dst, m.len, modules[j].src, modules[j].len)
-                });
-                if blocked {
-                    continue;
-                }
-                unsafe {
-                    core::ptr::copy(m.src as *const u8, m.dst as *mut u8, m.len);
-                }
-            }
-            moved[i] = true;
-            remaining -= 1;
-            progress = true;
         }
-        assert!(
-            progress,
-            "multiboot2 module relocation stalled: cyclic load layout is unsupported"
-        );
     }
 
     // Record each module's final address and real byte length so the boot params
     // can report the exact initramfs size rather than its reservation window.
     let mut sizes = [(0usize, 0usize); MAX_MODULES];
     for i in 0..count {
-        sizes[i] = (final_addr(modules[i]), modules[i].len);
+        sizes[i] = (boot_module_final_addr(modules[i]), modules[i].len);
     }
     BOOT_MODULES.call_once(|| (count, sizes));
 
     println!("relocated {} boot module(s)", count);
+}
+
+#[test_case]
+fn test_module_relocation_order_waits_for_overlapping_source() {
+    let mut modules = [BootModule::default(); MAX_MODULES];
+    modules[0] = BootModule {
+        src: 0x1000,
+        len: 0x100,
+        dst: 0x3000,
+    };
+    modules[1] = BootModule {
+        src: 0x3000,
+        len: 0x100,
+        dst: 0x5000,
+    };
+
+    let order = module_relocation_order(&modules, 2).unwrap();
+    assert_eq!(order[0], 1);
+    assert_eq!(order[1], 0);
+}
+
+#[test_case]
+fn test_module_relocation_order_rejects_cycle() {
+    let mut modules = [BootModule::default(); MAX_MODULES];
+    modules[0] = BootModule {
+        src: 0x1000,
+        len: 0x100,
+        dst: 0x2000,
+    };
+    modules[1] = BootModule {
+        src: 0x2000,
+        len: 0x100,
+        dst: 0x1000,
+    };
+
+    assert!(module_relocation_order(&modules, 2).is_none());
 }

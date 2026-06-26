@@ -63,6 +63,32 @@ pub struct VirtIoApic {
     inner: Vec<Mutex<VirtIoApicUnlocked>>,
 }
 
+fn sanitize_redirection_entry(entry: &mut u64, fallback_apic_id: usize, in_zone_physical: bool) {
+    // hvisor does not model logical delivery, and the root zone mirrors this
+    // entry into the real I/O APIC, so a logical or out-of-zone destination must
+    // not survive.
+    if !in_zone_physical {
+        entry.set_bit(11, false); // physical destination mode
+        entry.set_bits(56..=63, fallback_apic_id as u64);
+    }
+
+    // Force Fixed delivery (bits 8..=10), clear reserved bits, and mask any
+    // vector below the first valid IRQ vector or reserved by hvisor's host IDT.
+    entry.set_bits(8..=10, 0);
+    entry.set_bits(17..=55, 0);
+    let vector = entry.get_bits(0..=7) as u8;
+    let reserved = matches!(
+        vector,
+        IdtVector::VIRT_IPI_VECTOR
+            | IdtVector::APIC_ERROR_VECTOR
+            | IdtVector::APIC_SPURIOUS_VECTOR
+            | IdtVector::APIC_TIMER_VECTOR
+    );
+    if vector < 0x20 || reserved {
+        entry.set_bit(16, true);
+    }
+}
+
 impl VirtIoApic {
     pub fn new(max_zones: usize) -> Self {
         let mut vs = vec![];
@@ -140,49 +166,11 @@ impl VirtIoApic {
                         entry.set_bits(32..=63, value.get_bits(0..=31));
                     }
 
-                    // hvisor does not model logical delivery, and the root zone
-                    // mirrors this entry into the real I/O APIC, so a logical or
-                    // out-of-zone destination must not survive. Re-evaluate after
-                    // every dword write (mode and destination may be written in
-                    // either order) and force the entry into physical mode with a
-                    // destination CPU owned by this zone unless it already is one;
-                    // neither software injection nor real hardware can then target
-                    // a CPU outside the zone.
                     let requested = entry.get_bits(56..=63) as usize;
                     let in_zone_physical = !entry.get_bit(11)
                         && try_get_cpu_id(requested)
                             .map_or(false, |cpu| this_zone().cpu_set().contains_cpu(cpu));
-                    if !in_zone_physical {
-                        entry.set_bit(11, false); // physical destination mode
-                        entry.set_bits(56..=63, this_apic_id() as u64);
-                    }
-
-                    // The root zone mirrors this entry into the real I/O APIC, so the
-                    // delivery semantics must be sanitised too, not just the
-                    // destination: force Fixed delivery (bits 8..=10) so a guest
-                    // cannot raise NMI/INIT/ExtINT on a physical CPU, clear the
-                    // reserved bits, and mask any entry whose vector is below the
-                    // first valid IRQ vector (0x20) so it cannot collide with a CPU
-                    // exception vector. The same sanitised entry is what software
-                    // injection reads back, keeping both delivery paths in agreement.
-                    entry.set_bits(8..=10, 0);
-                    entry.set_bits(17..=55, 0);
-                    // Mask the entry if its vector is invalid (below the first IRQ
-                    // vector) or collides with a vector hvisor reserves for its own
-                    // use on the physical CPUs: a guest device firing on the virtual
-                    // IPI / APIC error / spurious / timer vector would otherwise be
-                    // taken by the host IDT and drive hypervisor interrupt handling.
-                    let vector = entry.get_bits(0..=7) as u8;
-                    let reserved = matches!(
-                        vector,
-                        IdtVector::VIRT_IPI_VECTOR
-                            | IdtVector::APIC_ERROR_VECTOR
-                            | IdtVector::APIC_SPURIOUS_VECTOR
-                            | IdtVector::APIC_TIMER_VECTOR
-                    );
-                    if vector < 0x20 || reserved {
-                        entry.set_bit(16, true);
-                    }
+                    sanitize_redirection_entry(entry, this_apic_id(), in_zone_physical);
 
                     if zone_id == 0 {
                         // only root zone modify the real I/O APIC
@@ -284,4 +272,32 @@ pub fn get_irq_cpu(irq: usize, zone_id: usize) -> usize {
         .get_irq_cpu(irq, zone_id)
         .or_else(|| find_zone(zone_id).and_then(|z| z.cpu_set().first_cpu()))
         .unwrap_or(0)
+}
+
+#[test_case]
+fn test_ioapic_redirection_sanitizes_destination_and_delivery() {
+    let mut entry = 0x31u64;
+    entry.set_bit(11, true);
+    entry.set_bits(8..=10, 4);
+    entry.set_bits(17..=55, 0x7fff);
+    entry.set_bits(56..=63, 0xaa);
+
+    sanitize_redirection_entry(&mut entry, 0x2, false);
+
+    assert!(!entry.get_bit(11));
+    assert_eq!(entry.get_bits(56..=63), 0x2);
+    assert_eq!(entry.get_bits(8..=10), 0);
+    assert_eq!(entry.get_bits(17..=55), 0);
+    assert!(!entry.get_bit(16));
+}
+
+#[test_case]
+fn test_ioapic_redirection_masks_reserved_vectors() {
+    let mut exception_vector = 0xdu64;
+    sanitize_redirection_entry(&mut exception_vector, 0, true);
+    assert!(exception_vector.get_bit(16));
+
+    let mut host_timer = IdtVector::APIC_TIMER_VECTOR as u64;
+    sanitize_redirection_entry(&mut host_timer, 0, true);
+    assert!(host_timer.get_bit(16));
 }

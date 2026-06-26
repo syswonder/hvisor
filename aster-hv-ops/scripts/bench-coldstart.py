@@ -9,13 +9,19 @@ and min/median/max/mean) are written as JSON.
 
 Usage:
   bench-coldstart.py <iso> [runs] [out.json]
+
+Environment:
+  OVMF   override the OVMF firmware path
+  OVMF_SEARCH_DIRS   extra search directories, separated by os.pathsep
 """
 import json
 import os
+from pathlib import Path
 import pty
 import re
 import select
 import signal
+import shutil
 import statistics
 import sys
 import time
@@ -42,11 +48,33 @@ def repo_rel(path):
     return rel if not rel.startswith(os.pardir) else os.path.basename(path)
 
 
+def find_ovmf():
+    if os.environ.get("OVMF"):
+        return os.environ["OVMF"]
+
+    roots = [Path(p) for p in os.environ.get("OVMF_SEARCH_DIRS", "").split(os.pathsep) if p]
+    qemu = shutil.which("qemu-system-x86_64")
+    if qemu:
+        roots.append(Path(qemu).resolve().parent.parent / "share")
+
+    for root in roots:
+        for rel in (
+            "ovmf/OVMF.fd",
+            "OVMF/OVMF.fd",
+            "OVMF/OVMF_CODE.fd",
+            "edk2/ovmf/OVMF_CODE.fd",
+        ):
+            path = root / rel
+            if path.is_file():
+                return str(path)
+    raise FileNotFoundError("OVMF firmware not found; set OVMF or OVMF_SEARCH_DIRS")
+
+
 def qemu_argv(iso):
     return [
         "qemu-system-x86_64", "-machine", "q35,kernel-irqchip=split",
         "-cpu", "host,+x2apic,+invtsc,+vmx", "-accel", "kvm",
-        "-smp", "4", "-m", "4G", "-bios", "/usr/share/ovmf/OVMF.fd",
+        "-smp", "4", "-m", "4G", "-bios", find_ovmf(),
         "-nographic", "-serial", "stdio", "-monitor", "none", "-nodefaults",
         "-device", "intel-iommu,intremap=on,eim=on,caching-mode=on,device-iotlb=on,aw-bits=48",
         "-device", "ioh3420,id=pcie.1,chassis=1",

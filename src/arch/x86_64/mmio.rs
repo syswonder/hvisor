@@ -772,6 +772,30 @@ fn region_offset(gpa: usize, base: usize, region_len: usize, size: usize) -> HvR
     }
 }
 
+#[test_case]
+fn test_mmio_region_offset_requires_full_containment() {
+    assert_eq!(region_offset(0x1080, 0x1000, 0x100, 4).unwrap(), 0x80);
+    assert!(region_offset(0x0fff, 0x1000, 0x100, 1).is_err());
+    assert!(region_offset(0x10ff, 0x1000, 0x100, 2).is_err());
+    assert!(region_offset(usize::MAX - 1, 0, usize::MAX, 4).is_err());
+}
+
+#[test_case]
+fn test_mmio_instruction_fetch_helpers_are_bounds_checked() {
+    let inst = [0x48, 0x8b, 0x05, 0x01];
+    assert_eq!(inst_byte(&inst, 1).unwrap(), 0x8b);
+    assert_eq!(inst_slice(&inst, 1..3).unwrap(), &[0x8b, 0x05]);
+    assert!(inst_byte(&inst, inst.len()).is_err());
+    assert!(inst_slice(&inst, 2..6).is_err());
+}
+
+#[test_case]
+fn test_mmio_modrm_rex_extends_register_field() {
+    let rex = RexPrefixLow::REGISTERS;
+    let modrm = ModRM::new(0b0000_0000, &rex);
+    assert_eq!(modrm.reg_opcode, RmReg::R8 as u32);
+}
+
 pub fn instruction_emulator(
     handler: &MMIOHandler,
     mmio: &mut MMIOAccess,
