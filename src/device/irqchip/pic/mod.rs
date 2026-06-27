@@ -18,7 +18,10 @@ pub mod ioapic;
 pub mod lapic;
 
 use crate::{
-    arch::{acpi, cpu::this_cpu_id, idt, iommu, ipi, msr, pio, vmcs::Vmcs}, consts::{MAX_CPU_NUM, MAX_ZONE_NUM}, cpu_data::this_zone, zone::Zone
+    arch::{acpi, cpu::this_cpu_id, idt, iommu, ipi, msr, pio, vmcs::Vmcs},
+    consts::{MAX_CPU_NUM, MAX_ZONE_NUM},
+    cpu_data::this_zone,
+    zone::Zone,
 };
 use alloc::{collections::vec_deque::VecDeque, vec::Vec};
 use core::arch::asm;

@@ -1,6 +1,7 @@
 QEMU := qemu-system-x86_64
 
 zone0_boot := $(image_dir)/bootloader/out/boot.bin
+zone1_mb2_boot := $(image_dir)/mb2_bootloader/out/mb2_boot.bin
 zone0_setup := $(image_dir)/kernel/setup.bin
 zone0_vmlinux := $(image_dir)/kernel/vmlinux.bin
 zone0_asterinas := $(image_dir)/kernel/aster-kernel-osdk-bin
@@ -53,7 +54,7 @@ QEMU_ARGS += -drive file=$(image_dir)/virtdisk/hvisor.iso,format=raw,index=0,med
 # QEMU_ARGS += -device loader,file="$(zone0_initrd)",addr=0x1a000000,force-raw=on
 # QEMU_ARGS += -append "initrd_size=$(shell stat -c%s $(zone0_initrd))"
 
-$(hvisor_bin): elf boot
+$(hvisor_bin): elf boot mb2_boot
 	$(OBJCOPY) $(hvisor_elf) --strip-all -O binary $@
 	cp $(hvisor_elf) $(image_dir)/iso/boot
 	mkdir -p $(image_dir)/iso/boot/kernel
@@ -89,6 +90,9 @@ $(hvisor_bin): elf boot
 	else \
 		echo "Warning: $(zone0_initrd) not found, skipping"; \
 	fi
+	if [ -f $(zone1_mb2_boot) ]; then \
+		cp $(zone1_mb2_boot) $(image_dir)/iso/boot/kernel; \
+	fi
 
 	if command -v xorriso >/dev/null 2>&1; then \
 		grub-mkrescue /usr/lib/grub/x86_64-efi -o $(image_dir)/virtdisk/hvisor.iso $(image_dir)/iso; \
@@ -97,3 +101,4 @@ $(hvisor_bin): elf boot
 	fi
 
 include $(image_dir)/bootloader/boot.mk
+include $(image_dir)/mb2_bootloader/mb2_boot.mk

@@ -23,7 +23,7 @@ pub const MEM_TYPE_RAM: u32 = 0;
 pub const MEM_TYPE_IO: u32 = 1;
 pub const MEM_TYPE_VIRTIO: u32 = 2;
 
-pub const CONFIG_MAGIC_VERSION: usize = 0x5;
+pub const CONFIG_MAGIC_VERSION: usize = 0x7;
 pub const CONFIG_MAX_MEMORY_REGIONS: usize = 64;
 
 pub type BitmapWord = u32;
@@ -218,6 +218,9 @@ pub struct HvPciDevConfig {
     pub bus: u8,
     pub device: u8,
     pub function: u8,
+    pub v_bus: u8,
+    pub v_device: u8,
+    pub v_function: u8,
     pub dev_type: VpciDevType,
 }
 
@@ -229,6 +232,9 @@ macro_rules! pci_dev {
             bus: $bus,
             device: $dev,
             function: $func,
+            v_bus: 0,
+            v_device: 0,
+            v_function: 0,
             dev_type: $dev_type,
         }
     };

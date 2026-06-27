@@ -63,13 +63,23 @@ use crate::platform::IRQ_WAKEUP_VIRTIO_DEVICE;
 
 /// non root zone's virtio request handler
 pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
-    // debug!("mmio virtio handler");
     let cpu_id = this_cpu_id() as usize;
     let need_interrupt = if mmio.address == QUEUE_NOTIFY { 1 } else { 0 };
     if need_interrupt == 1 {
         trace!("notify !!!, cpu id is {}", cpu_id);
     }
     mmio.address += base;
+
+    // If the virtio bridge is not enabled (daemon not running), the device is
+    // absent. Return 0 for reads so the guest sees MagicValue != VIRT_MAGIC
+    // and skips this MMIO address.
+    if !VIRTIO_BRIDGE.is_enable.load(Ordering::Acquire) {
+        if !mmio.is_write {
+            mmio.value = 0;
+        }
+        return Ok(());
+    }
+
     // Ensure read old_cfg_flag before push_req
     let old_cfg_flag = VIRTIO_BRIDGE.cfg_flag(cpu_id);
     fence(Ordering::Acquire);
@@ -77,7 +87,16 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     // Try to push req to req_list (in VirtioBridge critical area)
     // To avoid concurrent access to req_list, hvisor should lock VIRTIO_BRIDGE's req_list related part (here use req_agent)
     let mut backoff = 1;
-    let mut req_agent = VIRTIO_BRIDGE.req_agent();
+    let mut req_agent = match VIRTIO_BRIDGE.req_agent() {
+        Some(agent) => agent,
+        None => {
+            // Bridge disabled between the is_enable check and now.
+            if !mmio.is_write {
+                mmio.value = 0;
+            }
+            return Ok(());
+        }
+    };
     while req_agent.is_full() {
         // When root linux's cpu is in el2's finish req handler and is getting the dev lock,
         // if we don't release dev lock, it will cause a dead lock.
@@ -88,7 +107,7 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
         }
         backoff <<= 1;
         backoff = backoff.min(MAX_BACKOFF);
-        req_agent = VIRTIO_BRIDGE.req_agent();
+        req_agent = VIRTIO_BRIDGE.req_agent().unwrap();
     }
     let hreq = HvisorDeviceReq::new(
         cpu_id as _,
@@ -99,7 +118,6 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
         mmio.is_write,
         need_interrupt,
     );
-    // debug!("non root sends req: {:#x?}", hreq);
     req_agent.push_req(hreq);
     drop(req_agent);
 
@@ -128,15 +146,12 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
                 );
                 count = 0;
             }
-            // check_need_wakeup_and_send_ipi(&mut is_ipi_sent);
         }
         if !mmio.is_write {
             // ensure cfg value is right.
             mmio.value = VIRTIO_BRIDGE.cfg_value(cpu_id) as _;
-            // debug!("non root receives value: {:#x?}", mmio.value);
         }
     }
-    // debug!("non root returns");
     Ok(())
 }
 
@@ -189,27 +204,27 @@ impl VirtioBridgeController {
     }
 
     /// Get req list agent.
-    fn req_agent(&self) -> ReqAgent {
+    fn req_agent(&self) -> Option<ReqAgent> {
         if !self.is_enable.load(Ordering::Acquire) {
-            panic!("VirtioBridge not enabled");
+            return None;
         }
         let guard = self.req_lock.lock();
-        ReqAgent {
+        Some(ReqAgent {
             base: self.base_address.load(Ordering::Relaxed),
             _guard: guard,
-        }
+        })
     }
 
     /// Get res list agent.
-    pub fn res_agent(&self) -> ResAgent {
+    pub fn res_agent(&self) -> Option<ResAgent> {
         if !self.is_enable.load(Ordering::Acquire) {
-            panic!("VirtioBridge not enabled");
+            return None;
         }
         let guard = self.res_lock.lock();
-        ResAgent {
+        Some(ResAgent {
             base: self.base_address.load(Ordering::Relaxed),
             _guard: guard,
-        }
+        })
     }
 
     /// Get cfg flags (0..MAX_CPUS)

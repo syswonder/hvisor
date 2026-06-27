@@ -319,6 +319,13 @@ impl ArchCpu {
         self.vm_launch_guest_regs.rsi = rsi;
     }
 
+    pub fn set_multiboot_boot_regs(&mut self, multiboot_info_addr: u64, kernel_entry: u64) {
+        const MULTIBOOT2_MAGIC: u64 = 0x36D76289;
+        self.vm_launch_guest_regs.rax = MULTIBOOT2_MAGIC;
+        self.vm_launch_guest_regs.rbx = multiboot_info_addr;
+        self.vm_launch_guest_regs.rsi = kernel_entry;
+    }
+
     fn activate_vmx(&mut self) -> HvResult {
         if self.vmx_on {
             return Ok(());
@@ -383,9 +390,11 @@ impl ArchCpu {
         Vmcs::clear(start_paddr)?;
         Vmcs::load(start_paddr)?;
 
+        // Setup VMCS control fields first (includes secondary controls like UNRESTRICTED_GUEST)
+        // This must be done before setup_vmcs_guest so that guest state is properly initialized
+        self.setup_vmcs_control()?;
         self.setup_vmcs_host(&self.host_stack_top as *const _ as usize)?;
         self.setup_vmcs_guest(entry, ROOT_ZONE_BOOT_STACK)?;
-        self.setup_vmcs_control()?;
 
         Ok(())
     }
@@ -419,18 +428,47 @@ impl ArchCpu {
 
         // enable EPT, RDTSCP, INVPCID, and unrestricted guest
         use SecondaryControls as CpuCtrl2;
-        Vmcs::set_control(
+
+        // Debug: print secondary controls capability
+        let sec_ctl_cap = Msr::IA32_VMX_PROCBASED_CTLS2.read();
+        let sec_ctl_allowed0 = sec_ctl_cap as u32;
+        let sec_ctl_allowed1 = (sec_ctl_cap >> 32) as u32;
+        debug!(
+            "[VMX] Secondary controls capability: allowed0={:#x}, allowed1={:#x}",
+            sec_ctl_allowed0, sec_ctl_allowed1
+        );
+        debug!(
+            "[VMX] UNRESTRICTED_GUEST bit in allowed1: {}",
+            (sec_ctl_allowed1 >> 7) & 1
+        );
+
+        let desired_sec_ctl = (CpuCtrl2::ENABLE_EPT
+            | CpuCtrl2::ENABLE_RDTSCP
+            | CpuCtrl2::ENABLE_INVPCID
+            | CpuCtrl2::UNRESTRICTED_GUEST)
+            .bits();
+        debug!("[VMX] Desired secondary controls: {:#x}", desired_sec_ctl);
+
+        match Vmcs::set_control(
             VmcsControl32::SECONDARY_PROCBASED_EXEC_CONTROLS,
             Msr::IA32_VMX_PROCBASED_CTLS2,
             0,
-            (CpuCtrl2::ENABLE_EPT
-                | CpuCtrl2::ENABLE_RDTSCP
-                // | CpuCtrl2::VIRTUALIZE_X2APIC
-                | CpuCtrl2::ENABLE_INVPCID
-                | CpuCtrl2::UNRESTRICTED_GUEST)
-                .bits(),
+            desired_sec_ctl,
             0,
-        )?;
+        ) {
+            Ok(_) => {
+                let actual = VmcsControl32::SECONDARY_PROCBASED_EXEC_CONTROLS
+                    .read()
+                    .unwrap_or(0);
+                debug!(
+                    "[VMX] Secondary controls set successfully, actual={:#x}",
+                    actual
+                );
+            }
+            Err(e) => {
+                error!("[VMX] Failed to set secondary controls: {:?}", e);
+            }
+        }
 
         // load guest IA32_PAT/IA32_EFER on VM entry
         use EntryControls as EntryCtrl;
@@ -462,8 +500,8 @@ impl ArchCpu {
         VmcsControl32::VMEXIT_MSR_STORE_COUNT.write(0)?;
         VmcsControl32::VMEXIT_MSR_LOAD_COUNT.write(0)?;
         VmcsControl32::VMENTRY_MSR_LOAD_COUNT.write(0)?;
+        VmcsControl32::VMENTRY_INTERRUPTION_INFO_FIELD.write(0)?;
 
-        // pass-through exceptions, set I/O bitmap and MSR bitmaps
         VmcsControl32::EXCEPTION_BITMAP.write(0)?;
 
         if self.power_on {
@@ -527,7 +565,7 @@ impl ArchCpu {
         VmcsGuest32::ACTIVITY_STATE.write(0)?;
         VmcsGuest32::VMX_PREEMPTION_TIMER_VALUE.write(0)?;
 
-        VmcsGuest64::LINK_PTR.write(u64::MAX)?; // SDM Vol. 3C, Section 24.4.2
+        VmcsGuest64::LINK_PTR.write(u64::MAX)?;
         VmcsGuest64::IA32_DEBUGCTL.write(0)?;
         VmcsGuest64::IA32_PAT.write(Msr::IA32_PAT.read())?;
         VmcsGuest64::IA32_EFER.write(0)?;

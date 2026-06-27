@@ -139,7 +139,10 @@ impl<'a> HyperCall<'a> {
                 "Virtio send irq operation over non-root zones: unsupported!"
             );
         }
-        let mut res_agent = VIRTIO_BRIDGE.res_agent();
+        let mut res_agent = match VIRTIO_BRIDGE.res_agent() {
+            Some(agent) => agent,
+            None => return HyperCallResult::Ok(0),
+        };
         let mut map_irq = VIRTIO_IRQS.lock();
         while !res_agent.is_empty() {
             let (_res_front, irq_id, target_zone) = res_agent.peek_front();
@@ -176,6 +179,17 @@ impl<'a> HyperCall<'a> {
         let config_ipa = config as *const HvZoneConfig as u64;
         let config_pa = self.hv_get_real_pa(config_ipa);
         let config = unsafe { &*(config_pa as *const HvZoneConfig) };
+
+        debug!(
+            "[ZONE_START] hv_zone_start called for zone_id={}, config_size={}, expected={}",
+            config.zone_id,
+            config_size,
+            core::mem::size_of::<HvZoneConfig>()
+        );
+        debug!(
+            "[ZONE_START] kernel_load_paddr={:#x}, entry_point={:#x}",
+            config.kernel_load_paddr, config.entry_point
+        );
 
         debug!("hv_zone_start: config: {:#x?}", config);
         if !is_this_root_zone() {

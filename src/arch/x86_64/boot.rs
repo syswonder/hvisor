@@ -174,10 +174,12 @@ pub struct BootParams {
 
 impl BootParams {
     pub fn fill(config: &HvZoneConfig, gpm: &mut MemorySet<Stage2PageTable>) -> HvResult {
-        if config.arch_config.setup_load_gpa == 0 {
+        if config.arch_config.setup_load_gpa == 0 && config.arch_config.multiboot_enabled == 0 {
             panic!("setup addr not set yet!");
         }
-
+        if config.arch_config.multiboot_enabled != 0 {
+            return Ok(());
+        }
         let boot_params_hpa = unsafe {
             gpm.page_table_query(config.arch_config.setup_load_gpa)
                 .unwrap()
@@ -493,7 +495,6 @@ pub fn multiboot_init(info_addr: usize) {
 
         // println!("{:#x?}", tag_type);
         match tag_type {
-            multiboot_tag::MODULES => {}
             multiboot_tag::MEMORY_MAP => {
                 multiboot_tags.memory_map_addr = Some(cur);
             }
@@ -534,7 +535,6 @@ pub fn print_memory_map() {
     }
 }
 
-/// copy kernel modules to the right place
 pub fn module_init(info_addr: usize) {
     println!("module_init");
 
@@ -548,7 +548,12 @@ pub fn module_init(info_addr: usize) {
         string_ptr: usize,
     }
 
-    let mut modules = [ModuleInfo { start: 0, end: 0, dst: 0, string_ptr: 0 }; MAX_MODULES];
+    let mut modules = [ModuleInfo {
+        start: 0,
+        end: 0,
+        dst: 0,
+        string_ptr: 0,
+    }; MAX_MODULES];
     let mut module_count = 0;
 
     let mut cur = info_addr;
@@ -578,7 +583,10 @@ pub fn module_init(info_addr: usize) {
     for i in 0..module_count {
         let cstr = unsafe { CStr::from_ptr(modules[i].string_ptr as *const c_char) };
         modules[i].dst = usize::from_str_radix(cstr.to_str().unwrap(), 16).unwrap();
-        println!("module: start={:#x}, end={:#x}, dst={:#x}", modules[i].start, modules[i].end, modules[i].dst);
+        println!(
+            "module: start={:#x}, end={:#x}, dst={:#x}",
+            modules[i].start, modules[i].end, modules[i].dst
+        );
     }
 
     // now move in order
@@ -608,7 +616,8 @@ pub fn module_init(info_addr: usize) {
                 if modules[i].dst != 0 {
                     let size = modules[i].end - modules[i].start + 1;
                     let dst_end = modules[i].dst + size;
-                    let overlaps_self = modules[i].dst < modules[i].end && dst_end > modules[i].start;
+                    let overlaps_self =
+                        modules[i].dst < modules[i].end && dst_end > modules[i].start;
                     unsafe {
                         if overlaps_self {
                             core::ptr::copy(

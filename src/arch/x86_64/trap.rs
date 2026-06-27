@@ -16,20 +16,30 @@
 
 use crate::{
     arch::{
-        cpu::{ArchCpu, this_cpu_id}, cpuid::{CpuIdEax, ExtendedFeaturesEcx, FeatureInfoFlags}, hpet, idt::{IdtStruct, IdtVector}, ipi, msr::Msr::{self, *}, pio::I8042_PORT, s2pt::Stage2PageFaultInfo, vmcs::*, vmx::{VmxCrAccessInfo, VmxExitInfo, VmxExitReason, VmxInterruptInfo, VmxIoExitInfo}
+        cpu::{this_cpu_id, ArchCpu},
+        cpuid::{CpuIdEax, ExtendedFeaturesEcx, FeatureInfoFlags},
+        hpet,
+        idt::{IdtStruct, IdtVector},
+        ipi,
+        msr::Msr::{self, *},
+        s2pt::Stage2PageFaultInfo,
+        vmcs::*,
+        vmx::{
+            VmxCrAccessInfo, VmxExitInfo, VmxExitReason, VmxInstructionError, VmxInterruptInfo,
+            VmxIoExitInfo,
+        },
     },
-    cpu_data::{this_cpu_data, this_zone},
+    cpu_data::this_cpu_data,
     device::{
         irqchip::{
             inject_vector,
             pic::{ioapic::irqs, lapic::VirtLocalApic},
         },
-        uart::{UartReg, virt_console_io_read, virt_console_io_write},
+        uart::{virt_console_io_read, virt_console_io_write, UartReg},
     },
     error::HvResult,
     hypercall::HyperCall,
-    memory::{MMIOAccess, MemFlags, mmio_handle_access},
-    zone::this_zone_id,
+    memory::{mmio_handle_access, MMIOAccess, MemFlags},
 };
 use bit_field::BitField;
 use core::mem::size_of;
@@ -98,7 +108,6 @@ fn handle_irq(vector: u8) {
         IdtVector::VIRT_IPI_VECTOR => {
             ipi::handle_virt_ipi();
         }
-        IdtVector::I8042_KEYBOARD_VECTOR => {}
         IdtVector::APIC_SPURIOUS_VECTOR | IdtVector::APIC_ERROR_VECTOR => {}
         _ => {
             if vector >= 0x20 && this_cpu_data().arch_cpu.power_on {
@@ -147,10 +156,10 @@ fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
                 res
             }
             CpuIdEax::TscInfo => CpuIdResult {
-                eax: 1, // Numerator for TSC frequency
-                ebx: 1, // Denominator for TSC frequency
-                ecx: hpet::get_tsc_freq_mhz().unwrap_or(0) * 1_000_000, // TSC frequency in Hz
-                edx: 0, // Reserved, typically 0
+                eax: 1,
+                ebx: 1,
+                ecx: hpet::get_tsc_freq_mhz().unwrap_or(0) * 1_000_000,
+                edx: 0,
             },
             CpuIdEax::ProcessorFrequencyInfo => {
                 if let Some(freq_mhz) = hpet::get_tsc_freq_mhz() {
@@ -214,9 +223,6 @@ fn handle_external_interrupt() -> HvResult {
     let int_info = VmxInterruptInfo::new()?;
     trace!("VM-exit: external interrupt: {:#x?}", int_info);
     assert!(int_info.valid);
-    if int_info.vector == 0x21 {
-        // info!("External interrupt: IRQ1 (keyboard)");
-    }
     handle_irq(int_info.vector);
     Ok(())
 }
@@ -277,14 +283,12 @@ fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
         {
             handle_pci_config_port_write(&io_info, value);
         } else if UART_COM1_PORT.contains(&io_info.port) {
-            if this_zone_id() == 0 {
-                virt_console_io_write(io_info.port, value);
-            } else {
-                virt_console_io_write(io_info.port, value);
-                // info!("zone1 uart write from {:x}: {:x}", io_info.port, value);
-            }
-        } else if I8042_PORT.contains(&io_info.port) {
-            // info!("unhandled port io write {:x} value: {:x}", io_info.port, value);
+            virt_console_io_write(io_info.port, value);
+        } else {
+            /* info!(
+                "unhandled port io write {:x} value: {:x}",
+                io_info.port, value
+            ); */
         }
     } else {
         if PCI_CONFIG_ADDR_PORT.contains(&io_info.port)
@@ -292,17 +296,8 @@ fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
         {
             value = handle_pci_config_port_read(&io_info);
         } else if UART_COM1_PORT.contains(&io_info.port) {
-            if this_zone_id() == 0 {
-                value = virt_console_io_read(io_info.port);
-            } else {
-                value = 0xff;
-                value = virt_console_io_read(io_info.port);
-                // info!("zone1 uart read from {:x}: {:x}", io_info.port, value);         
-            }
-        } else if I8042_PORT.contains(&io_info.port) {
-            value = 0xff;
-        }
-        else {
+            value = virt_console_io_read(io_info.port);
+        } else {
             // info!("unhandled port io read {:x}", io_info.port);
             value = 0x0;
         }
@@ -328,27 +323,44 @@ fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
 fn handle_msr_read(arch_cpu: &mut ArchCpu) -> HvResult {
     let rcx = arch_cpu.regs().rcx as u32;
 
-    if let Ok(msr) = Msr::try_from(rcx) {
-        let res = if msr == IA32_APIC_BASE {
-            let mut apic_base = unsafe { IA32_APIC_BASE.read() };
-            // info!("APIC BASE: {:x}", apic_base);
-            apic_base |= 1 << 11 | 1 << 10; // enable xAPIC and x2APIC
-            Ok(apic_base)
-        } else if VirtLocalApic::msr_range().contains(&rcx) {
+    let res: HvResult<u64> = if rcx == IA32_APIC_BASE as u32 {
+        let mut apic_base = unsafe { IA32_APIC_BASE.read() };
+        apic_base |= 1 << 11 | 1 << 10; // report xAPIC and x2APIC enabled
+        Ok(apic_base)
+    } else if VirtLocalApic::msr_range().contains(&rcx) {
+        if let Ok(msr) = Msr::try_from(rcx) {
             arch_cpu.virt_lapic.rdmsr(msr)
         } else {
+            // MSR not in our enum but in x2APIC range — return 0 (safe default).
+            Ok(0)
+        }
+    } else if let Ok(msr) = Msr::try_from(rcx) {
+        if msr == IA32_GS_BASE {
+            VmcsGuestNW::GS_BASE
+                .read()
+                .map(|v| v as u64)
+                .map_err(|_| hv_err!(EIO))
+        } else if msr == IA32_FS_BASE {
+            VmcsGuestNW::FS_BASE
+                .read()
+                .map(|v| v as u64)
+                .map_err(|_| hv_err!(EIO))
+        } else {
             hv_result_err!(ENOSYS)
-        };
+        }
+    } else {
+        hv_result_err!(ENOSYS)
+    };
 
-        if let Ok(value) = res {
+    match res {
+        Ok(value) => {
             debug!("VM exit: RDMSR({:#x}) -> {:#x}", rcx, value);
             arch_cpu.regs_mut().rax = value & 0xffff_ffff;
             arch_cpu.regs_mut().rdx = value >> 32;
-        } else {
-            warn!("Failed to handle RDMSR({:#x}): {:?}", rcx, res);
         }
-    } else {
-        // warn!("Unrecognized RDMSR({:#x})", rcx);
+        Err(e) => {
+            warn!("Failed to handle RDMSR({:#x}): {:?}", rcx, e);
+        }
     }
 
     arch_cpu.advance_guest_rip(VM_EXIT_INSTR_LEN_RDMSR)?;
@@ -357,14 +369,31 @@ fn handle_msr_read(arch_cpu: &mut ArchCpu) -> HvResult {
 
 fn handle_msr_write(arch_cpu: &mut ArchCpu) -> HvResult {
     let rcx = arch_cpu.regs().rcx as u32;
-    let msr = Msr::try_from(rcx).unwrap();
     let value = (arch_cpu.regs().rax & 0xffff_ffff) | (arch_cpu.regs().rdx << 32);
     debug!("VM exit: WRMSR({:#x}) <- {:#x}", rcx, value);
 
-    let res = if msr == IA32_APIC_BASE {
-        Ok(()) // ignore
-    } else if VirtLocalApic::msr_range().contains(&rcx) || msr == IA32_TSC_DEADLINE {
-        arch_cpu.virt_lapic.wrmsr(msr, value)
+    let msr_opt = Msr::try_from(rcx).ok();
+
+    let res: HvResult<()> = if rcx == IA32_APIC_BASE as u32 {
+        Ok(()) // ignore — guest can't change APIC mode
+    } else if VirtLocalApic::msr_range().contains(&rcx) {
+        if let Some(msr) = msr_opt {
+            arch_cpu.virt_lapic.wrmsr(msr, value)
+        } else {
+            // x2APIC MSR not in our enum (e.g. SELF_IPI at 0x83F).
+            // Silently ignore — the guest thinks it succeeded.
+            Ok(())
+        }
+    } else if msr_opt == Some(IA32_TSC_DEADLINE) {
+        arch_cpu.virt_lapic.wrmsr(IA32_TSC_DEADLINE, value)
+    } else if msr_opt == Some(IA32_GS_BASE) {
+        VmcsGuestNW::GS_BASE
+            .write(value as usize)
+            .map_err(|_| hv_err!(EIO))
+    } else if msr_opt == Some(IA32_FS_BASE) {
+        VmcsGuestNW::FS_BASE
+            .write(value as usize)
+            .map_err(|_| hv_err!(EIO))
     } else {
         hv_result_err!(ENOSYS)
     };
@@ -381,6 +410,7 @@ fn handle_msr_write(arch_cpu: &mut ArchCpu) -> HvResult {
 
 fn handle_s2pt_violation(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvResult {
     let fault_info = Stage2PageFaultInfo::new()?;
+
     mmio_handle_access(&mut MMIOAccess {
         address: fault_info.fault_guest_paddr,
         size: 0,
@@ -392,12 +422,41 @@ fn handle_s2pt_violation(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
 }
 
 fn handle_triple_fault(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvResult {
+    // Print more details for debugging
+    info!("Triple fault details:");
+    info!(
+        "  RIP={:#x}, RSP={:#x}",
+        exit_info.guest_rip,
+        VmcsGuestNW::RSP.read().unwrap_or(0)
+    );
+    info!(
+        "  RAX={:#x}, RBX={:#x}, RCX={:#x}, RDX={:#x}",
+        arch_cpu.regs().rax,
+        arch_cpu.regs().rbx,
+        arch_cpu.regs().rcx,
+        arch_cpu.regs().rdx
+    );
+    info!(
+        "  RSI={:#x}, RDI={:#x}",
+        arch_cpu.regs().rsi,
+        arch_cpu.regs().rdi
+    );
+    info!(
+        "  CR0={:#x}, CR3={:#x}, CR4={:#x}",
+        VmcsGuestNW::CR0.read().unwrap_or(0),
+        VmcsGuestNW::CR3.read().unwrap_or(0),
+        VmcsGuestNW::CR4.read().unwrap_or(0)
+    );
+    info!(
+        "  CS selector={:#x}, GDTR base={:#x}",
+        VmcsGuest16::CS_SELECTOR.read().unwrap_or(0),
+        VmcsGuestNW::GDTR_BASE.read().unwrap_or(0)
+    );
+
     panic!(
         "VM exit: Triple fault @ {:#x}, instr length: {:x}\n {:#x?}",
         exit_info.guest_rip, exit_info.exit_instruction_length, arch_cpu
     );
-    // arch_cpu.advance_guest_rip(exit_info.exit_instruction_length as _)?;
-    Ok(())
 }
 
 pub fn handle_vmexit(arch_cpu: &mut ArchCpu) -> HvResult {
@@ -405,6 +464,35 @@ pub fn handle_vmexit(arch_cpu: &mut ArchCpu) -> HvResult {
     debug!("VM exit: {:#x?}", exit_info);
 
     if exit_info.entry_failure {
+        // Get VM instruction error for more details
+        let vm_instr_error =
+            Vmcs::instruction_error().unwrap_or_else(|_| VmxInstructionError::from(0xFF));
+
+        // Read all guest state for debugging
+        let cr0 = VmcsGuestNW::CR0.read().unwrap_or(0);
+        let cr3 = VmcsGuestNW::CR3.read().unwrap_or(0);
+        let cr4 = VmcsGuestNW::CR4.read().unwrap_or(0);
+        let cs_ar = VmcsGuest32::CS_ACCESS_RIGHTS.read().unwrap_or(0);
+        let ss_ar = VmcsGuest32::SS_ACCESS_RIGHTS.read().unwrap_or(0);
+        let tr_ar = VmcsGuest32::TR_ACCESS_RIGHTS.read().unwrap_or(0);
+        let tr_limit = VmcsGuest32::TR_LIMIT.read().unwrap_or(0);
+        let gdtr_base = VmcsGuestNW::GDTR_BASE.read().unwrap_or(0);
+        let idtr_base = VmcsGuestNW::IDTR_BASE.read().unwrap_or(0);
+
+        error!("VM entry failed!");
+        error!(
+            "  VM-instruction error: {:?} ({})",
+            vm_instr_error,
+            vm_instr_error.as_str()
+        );
+        error!("  Guest state:");
+        error!("    CR0={:#x}, CR3={:#x}, CR4={:#x}", cr0, cr3, cr4);
+        error!(
+            "    CS_AR={:#x}, SS_AR={:#x}, TR_AR={:#x}, TR_LIMIT={:#x}",
+            cs_ar, ss_ar, tr_ar, tr_limit
+        );
+        error!("    GDTR_BASE={:#x}, IDTR_BASE={:#x}", gdtr_base, idtr_base);
+
         panic!("VM entry failed: {:#x?}", exit_info);
     }
 

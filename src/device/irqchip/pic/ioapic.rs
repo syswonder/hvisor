@@ -21,7 +21,13 @@ use crate::{
         idt, ipi,
         mmio::MMIoDevice,
         zone::HvArchZoneConfig,
-    }, cpu_data::this_zone, device::irqchip::pic::inject_vector, error::HvResult, memory::{GuestPhysAddr, MMIOAccess}, platform::ROOT_ZONE_IOAPIC_BASE, zone::{Zone, this_zone_id}
+    },
+    cpu_data::this_zone,
+    device::irqchip::pic::inject_vector,
+    error::HvResult,
+    memory::{GuestPhysAddr, MMIOAccess},
+    platform::ROOT_ZONE_IOAPIC_BASE,
+    zone::{this_zone_id, Zone},
 };
 use alloc::{sync::Arc, vec::Vec};
 use bit_field::BitField;
@@ -133,11 +139,18 @@ impl VirtIoApic {
                         entry.set_bits(0..=31, value.get_bits(0..=31));
                     } else {
                         let dest = value.get_bits(24..=31);
-                        if this_zone().read().cpu_set.contains_cpu(get_cpu_id(dest as usize)) {
+                        if this_zone()
+                            .read()
+                            .cpu_set
+                            .contains_cpu(get_cpu_id(dest as usize))
+                        {
                             entry.set_bits(56..=63, dest);
                         } else {
                             let dest = this_apic_id() as u64;
-                            info!("redirect irq {:x} to cpu {:x} in another zone! entry: {:x?}", index, dest, *entry);
+                            info!(
+                                "redirect irq {:x} to cpu {:x} in another zone! entry: {:x?}",
+                                index, dest, *entry
+                            );
                             entry.set_bits(56..=63, dest);
                         }
 
