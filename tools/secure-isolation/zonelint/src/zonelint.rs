@@ -861,6 +861,7 @@ fn check_virtio_consistency(
 }
 
 fn check_virtio_memory_regions(virtio: &VirtioCfg, violations: &mut Vec<Violation>) {
+    let mut zone0_ranges = Vec::new();
     for zone in &virtio.zones {
         for (idx, mem) in zone.memory_regions.iter().enumerate() {
             if mem.size == 0 {
@@ -880,6 +881,24 @@ fn check_virtio_memory_regions(virtio: &VirtioCfg, violations: &mut Vec<Violatio
                     format!("virtio zone {} memory_region {} overflows", zone.id, idx),
                 ));
             }
+            if let Some(end) = mem.zone0_ipa.checked_add(mem.size) {
+                zone0_ranges.push((mem.zone0_ipa, end, zone.id, idx));
+            }
+        }
+    }
+
+    zone0_ranges.sort_by_key(|r| (r.0, r.1));
+    for pair in zone0_ranges.windows(2) {
+        let (a_start, a_end, a_zone, a_idx) = pair[0];
+        let (b_start, b_end, b_zone, b_idx) = pair[1];
+        if a_end > b_start {
+            violations.push(Violation::new(
+                "virtio-memory-overlap",
+                format!(
+                    "virtio zone {} memory_region {} [0x{:x},0x{:x}) overlaps zone {} memory_region {} [0x{:x},0x{:x}) in zone0 IPA",
+                    a_zone, a_idx, a_start, a_end, b_zone, b_idx, b_start, b_end
+                ),
+            ));
         }
     }
 }
@@ -997,5 +1016,85 @@ impl Json {
             Json::String(v) => Ok(v),
             _ => Err(format!("{context}: expected string, got {self:?}")),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn zone(name: &str, id: u64, cpus: Vec<u64>, regions: Vec<Region>) -> ZoneConfig {
+        ZoneConfig {
+            name: name.to_string(),
+            zone_id: id,
+            cpus,
+            memory_regions: regions,
+            entry_point: 0x8000,
+            kernel_load_paddr: 0x100000,
+            arch: BTreeMap::new(),
+            pci_config: Vec::new(),
+        }
+    }
+
+    fn ram(physical_start: u64, virtual_start: u64, size: u64) -> Region {
+        Region {
+            kind: "ram".to_string(),
+            physical_start,
+            virtual_start,
+            size,
+        }
+    }
+
+    #[test]
+    fn cmdline_virtio_parser_accepts_hex_tuples() {
+        let tuples = parse_cmdline_virtio_devices("console virtio_mmio.device=0x200@0x5950f000:10");
+        assert_eq!(
+            tuples,
+            vec![VirtioTuple {
+                addr: 0x5950_f000,
+                len: 0x200,
+                irq: 10
+            }]
+        );
+    }
+
+    #[test]
+    fn ram_overlap_is_reported_across_zones() {
+        let zones = vec![
+            zone("a", 1, vec![1], vec![ram(0x1000, 0x8000, 0x2000)]),
+            zone("b", 2, vec![2], vec![ram(0x2000, 0x8000, 0x1000)]),
+        ];
+        let mut violations = Vec::new();
+        check_ram_overlap(&zones, &mut violations);
+        assert!(violations.iter().any(|v| v.rule == "ram-overlap"));
+    }
+
+    #[test]
+    fn virtio_zone0_memory_overlap_is_reported() {
+        let virtio = VirtioCfg {
+            zones: vec![
+                VirtioZone {
+                    id: 1,
+                    memory_regions: vec![VirtioMem {
+                        zone0_ipa: 0x1000,
+                        zonex_ipa: 0,
+                        size: 0x1000,
+                    }],
+                    devices: Vec::new(),
+                },
+                VirtioZone {
+                    id: 2,
+                    memory_regions: vec![VirtioMem {
+                        zone0_ipa: 0x1800,
+                        zonex_ipa: 0,
+                        size: 0x1000,
+                    }],
+                    devices: Vec::new(),
+                },
+            ],
+        };
+        let mut violations = Vec::new();
+        check_virtio_memory_regions(&virtio, &mut violations);
+        assert!(violations.iter().any(|v| v.rule == "virtio-memory-overlap"));
     }
 }

@@ -11,14 +11,12 @@
 //     via mmio_virtio_handler / the VirtioBridge trampoline.
 //
 // Each malformed case targets a concrete code path in process_descriptor_chain()
-// / get_virt_addr() (virtio.c) and is now defended by harden_virtio_backend.patch:
-//   - circular_descriptor : desc[0].next loops -> walk loop `vq->desc_table[next]`
-//                           (defended by the MAX_DESC_CHAIN_DEPTH step bound).
+// / get_virt_addr() (virtio.c):
+//   - circular_descriptor : desc[0].next loops -> walk loop `vq->desc_table[next]`.
 //   - oversize_len        : desc[0].len = 0xffffffff -> iov_len / indirect malloc
-//                           sizing (defended by virtio_buffer_in_zone + entries
-//                           bound).
+//                           sizing.
 //   - oob_addr            : desc[0].addr outside the zone -> get_virt_addr()
-//                           (defended by the get_zone_ram_index() < 0 -> NULL fix).
+//                           translation.
 //   - unaligned_addr      : misaligned buffer base -> descriptor2iov().
 //   - corrupt_avail_idx   : avail.idx = 0xffff -> avail-ring indexing.
 //
@@ -756,6 +754,34 @@ fn parse_case(value: &str) -> Result<FuzzCase, String> {
         "unaligned_addr" | "unaligned" => Ok(FuzzCase::UnalignedAddr),
         "corrupt_avail_idx" | "avail" => Ok(FuzzCase::CorruptAvailIdx),
         _ => Err(format!("unknown case: {value}")),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_all_fuzz_cases() {
+        for case in FuzzCase::all() {
+            assert_eq!(parse_case(case.name()).unwrap(), case);
+        }
+    }
+
+    #[test]
+    fn circular_descriptor_sets_self_referencing_next() {
+        let mut ring = VirtqueueRing::new(0x100000);
+        mutate(FuzzCase::CircularDescriptor, &mut ring);
+        assert_eq!(ring.desc[0].flags, VRING_DESC_F_NEXT);
+        assert_eq!(ring.desc[0].next, 0);
+    }
+
+    #[test]
+    fn out_of_bounds_case_moves_buffer_outside_zone() {
+        let mut ring = VirtqueueRing::new(0x100000);
+        mutate(FuzzCase::OutOfBoundsAddr, &mut ring);
+        assert_eq!(ring.desc[0].addr, 0xdead_beef);
+        assert_eq!(ring.desc[0].len, 4096);
     }
 }
 

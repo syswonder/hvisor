@@ -10,7 +10,7 @@ set -euo pipefail
 ISO="${1:?usage: run_hvisor_qemu.sh <hvisor.iso> <zone0_rootfs.img> [serial-log]}"
 ROOTFS="${2:?usage: run_hvisor_qemu.sh <hvisor.iso> <zone0_rootfs.img> [serial-log]}"
 SERIAL="${3:-hvisor-serial.log}"
-SMP="${SMP:-4}"
+SMP="${SMP:-6}"
 MEM="${MEM:-4G}"
 TIMEOUT="${TIMEOUT:-120}"
 OVMF="${OVMF:-/usr/share/ovmf/OVMF.fd}"
@@ -23,6 +23,7 @@ fi
 echo "booting $ISO (rootfs=$ROOTFS, smp=$SMP, mem=$MEM, timeout=${TIMEOUT}s)"
 echo "serial -> $SERIAL"
 
+set +e
 timeout "$TIMEOUT" qemu-system-x86_64 \
     -machine q35,kernel-irqchip=split \
     -cpu host,+x2apic,+invtsc,+vmx -accel kvm \
@@ -35,7 +36,15 @@ timeout "$TIMEOUT" qemu-system-x86_64 \
     -drive if=none,file="$ROOTFS",id=X10008000,format=raw \
     -device virtio-blk-pci,bus=pcie.1,drive=X10008000,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on \
     -drive file="$ISO",format=raw,index=0,media=disk \
-    </dev/null || true
+    </dev/null
+status=$?
+set -e
 
 echo "=== serial tail ==="
-tail -n 20 "$SERIAL" | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g'
+if [ -f "$SERIAL" ]; then
+    tail -n 20 "$SERIAL" | sed 's/\x1b\[[0-9;]*[a-zA-Z]//g'
+else
+    echo "serial log was not created"
+fi
+
+exit "$status"

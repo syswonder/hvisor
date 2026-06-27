@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# Host-side isolation checks that do not require KVM:
-# zonelint positives and negatives, the VirtIO backend guard, the fuzzer dry-run,
-# and the fault probes.
+# Host-side checks that do not require KVM. Guest isolation results still require
+# booting hvisor and running the probes in the target non-root zones.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -17,7 +16,9 @@ echo "=== zonelint: build ==="
 # where cargo is unavailable.
 if command -v cargo >/dev/null 2>&1; then
     ( cd zonelint && cargo build --release >/dev/null )
+    ( cd zonelint && cargo test --release )
     ZL="zonelint/target/release/zonelint"
+    ok "zonelint unit tests"
 else
     echo "cargo not found; using the Python zonelint"
     ZL="python3 zonelint/zonelint.py"
@@ -35,18 +36,20 @@ echo "=== zonelint: pci-incomplete negative (expect FAIL) ==="
 if $ZL --zone configs/negative/pci_incomplete_bad.json; then
     bad "pci-incomplete negative was accepted"; else ok "pci-incomplete negative rejected"; fi
 
-echo "=== virtio backend before/after demo (expect 0 unexpected outcomes) ==="
-demo="$(mktemp -d)/backend_guard_demo"
-cc -O2 -Wall -Wextra -std=c11 virtio-fuzzer/backend_guard_demo.c -o "$demo"
-if "$demo"; then ok "backend guard demo"; else bad "backend guard demo"; fi
+echo "=== zonelint: virtio overlap negative (expect FAIL) ==="
+if $ZL --zone configs/zone1_victim.json --zone configs/zone2_attacker.json \
+        --virtio configs/negative/virtio_overlap_bad.json; then
+    bad "virtio overlap negative was accepted"; else ok "virtio overlap negative rejected"; fi
 
 echo "=== virtio-fuzzer dry-run ==="
+( cd virtio-fuzzer && cargo test --quiet --release ) \
+    && ok "virtio-fuzzer unit tests" || bad "virtio-fuzzer unit tests"
 ( cd virtio-fuzzer && cargo run --quiet --release -- --case all --dry-run >/dev/null ) \
     && ok "virtio-fuzzer dry-run" || bad "virtio-fuzzer dry-run"
 
-echo "=== fault probe (unmapped IPA, expect trap) ==="
+echo "=== guest fault probes: build only ==="
 make -C faultinj all >/dev/null
-if faultinj/build/test_unmapped_ipa 0x20000000; then ok "fault probe trapped"; else bad "fault probe"; fi
+ok "fault probes build"
 
 echo
 echo "summary: $pass passed, $fail failed"

@@ -5,6 +5,16 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 FAULT_DIR="$ROOT/faultinj"
 
+if [ "${RUN_GUEST_PROBES:-0}" != "1" ]; then
+    cat <<'EOF'
+This script is intended to run inside a started non-root guest. Set
+RUN_GUEST_PROBES=1 after the zones are running to execute the address probes.
+Host execution only proves host signal behavior and is not an hvisor isolation
+result.
+EOF
+    exit 2
+fi
+
 echo "=== build guest-side probes ==="
 make -C "$FAULT_DIR" all
 
@@ -29,21 +39,10 @@ else
     echo "SKIP: neither cargo nor python3 found."
 fi
 
-echo
-echo "=== virtio backend hardening before/after demo (host-native) ==="
-if command -v cc >/dev/null 2>&1; then
-    out="$(mktemp -d)/backend_guard_demo"
-    cc -O2 -Wall -Wextra -std=c11 "$ROOT/virtio-fuzzer/backend_guard_demo.c" -o "$out" \
-        && "$out" || echo "WARNING: backend guard demo issue"
-else
-    echo "SKIP: no C compiler for backend guard demo."
-fi
-
 cat <<'EOF'
 
 Target-platform checks (need a KVM host):
-1. Build hvisor and apply hardening-patches/harden_virtio_backend.patch to
-   hvisor-tool if the VirtIO backend change is under test.
+1. Build hvisor and the matching hvisor-tool control plane for the rootfs.
 2. Boot the zones: scripts/run_hvisor_qemu.sh <hvisor.iso> <zone0_rootfs.img>;
    then start zone1/zone2 from zone0 with configs/*.json.
 3. Run these probes inside the intended guest zones.

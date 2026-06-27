@@ -12,14 +12,12 @@ ranges, and support Asterinas boot through the Linux/x86 boot protocol.
 ## Contents
 
 - `zonelint/` - Rust and Python validators for zone and VirtIO JSON.
-- `virtio-fuzzer/` - split-virtqueue input generator plus a host-side backend
-  buffer-boundary check.
+- `virtio-fuzzer/` - split-virtqueue input generator for dry-run and live guest
+  execution.
 - `faultinj/` - guest probes for unmapped IPA, cross-zone memory, unauthorized
   MMIO, and noisy-neighbor latency.
 - `configs/` - sample zone and VirtIO JSON, including negative fixtures.
 - `scripts/` - local build, boot, fuzz, and probe helpers.
-- `hardening-patches/harden_virtio_backend.patch` - hvisor-tool VirtIO backend
-  bounds checks for descriptor walks and descriptor buffers.
 - `threat-model/THREAT_MODEL.md` - isolation assumptions and hardening notes.
 
 ## Host Checks
@@ -31,9 +29,9 @@ cd tools/secure-isolation
 scripts/reproduce.sh
 ```
 
-The script builds `zonelint`, checks the positive and negative fixtures, runs the
-VirtIO backend guard, exercises the fuzzer in dry-run mode, and builds the fault
-probe binaries.
+The script builds and tests `zonelint`, checks the positive and negative
+fixtures, exercises the fuzzer in dry-run mode, and builds the guest probe
+binaries. It does not claim that host signals are hvisor isolation results.
 
 Individual checks can also be run directly:
 
@@ -48,25 +46,8 @@ Individual checks can also be run directly:
     --zone configs/zone1_victim.json \
     --zone configs/negative/zone_overlap_bad.json
 
-cc -O2 -Wall -Wextra -std=c11 \
-    virtio-fuzzer/backend_guard_demo.c -o /tmp/backend_guard_demo
-/tmp/backend_guard_demo
-
 ( cd virtio-fuzzer && cargo run --release -- --case all --dry-run )
 make -C faultinj all
-faultinj/build/test_unmapped_ipa 0x20000000
-```
-
-## hvisor-tool Backend Patch
-
-Apply the VirtIO backend patch from an hvisor-tool source tree:
-
-```bash
-git -C <hvisor-tool> apply --check \
-    tools/secure-isolation/hardening-patches/harden_virtio_backend.patch
-git -C <hvisor-tool> apply \
-    tools/secure-isolation/hardening-patches/harden_virtio_backend.patch
-make -C <hvisor-tool>/tools hvisor ARCH=x86_64 LOG=LOG_INFO
 ```
 
 ## QEMU/KVM Boot Helper
@@ -80,6 +61,13 @@ scripts/run_hvisor_qemu.sh <hvisor.iso> <zone0_rootfs.img> serial.log
 
 The helper requires `/dev/kvm`; hvisor is a VMX hypervisor and does not boot
 under TCG.
+
+For the Asterinas root-boot GRUB entry, split the Asterinas `bzImage` before
+building the ISO:
+
+```bash
+scripts/split_bzimage.sh <asterinas-bzImage> ../../platform/x86_64/qemu/image/kernel
+```
 
 ## Guest Checks
 

@@ -4,12 +4,14 @@ set -euo pipefail
 ITERS="${1:-10000}"
 OUT="${2:-latency.log}"
 : > "$OUT"
+PROBE_FILE="$(mktemp "${TMPDIR:-.}/hvisor_latency_probe.XXXXXX")"
+trap 'rm -f "$PROBE_FILE"' EXIT INT TERM
 
 i=0
 while [ "$i" -lt "$ITERS" ]; do
     start="$(date +%s%N)"
-    printf x > /tmp/hvisor_latency_probe
-    cat /tmp/hvisor_latency_probe >/dev/null
+    printf x > "$PROBE_FILE"
+    cat "$PROBE_FILE" >/dev/null
     end="$(date +%s%N)"
     echo $((end - start)) >> "$OUT"
     i=$((i + 1))

@@ -1,7 +1,7 @@
 # Asterinas Non-Root Guest Isolation Notes
 
 This note describes the isolation assumptions for running Asterinas as an hvisor
-non-root x86_64 guest and the hardening covered by the accompanying tools.
+non-root x86_64 guest and the checks covered by the accompanying tools.
 
 ## Topology
 
@@ -66,16 +66,10 @@ set, and the virtual serial line entry is hidden from non-root guests.
 ### VirtIO
 
 The zone0 VirtIO backend consumes descriptor tables and available rings supplied
-by a guest. The backend patch in `hardening-patches/` adds bounds checks for:
-
-- descriptor indices from the available ring and `next` fields;
-- circular chains through a maximum walk depth;
-- indirect descriptor table length and address range;
-- descriptor buffer `[addr, addr + len)` containment inside zone RAM;
-- NULL returns and allocation failures.
-
-Malformed chains are dropped before device emulation sees a partially translated
-`iovec`.
+by a guest. This repository contains the hvisor-side trampoline and the fuzzer
+inputs used to exercise malformed split-virtqueue state. Backend descriptor
+validation belongs to the hvisor-tool control plane and must be tested with the
+matching hvisor-tool build used in the root zone image.
 
 ## Static Config Checks
 

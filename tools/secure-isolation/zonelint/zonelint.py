@@ -215,6 +215,7 @@ def validate(zones: list[Zone], virtio: dict | None) -> list[str]:
     if virtio is not None:
         zones_by_id = {z.zone_id: z for z in zones}
         virtio_by_id = {parse_int(z["id"]): z for z in virtio["zones"]}
+        virtio_zone0_ranges: list[tuple[int, int, int, int]] = []
         for zone in zones:
             cmdline_set = parse_cmdline_virtio(zone.arch_config.get("cmdline", ""))
             vzone = virtio_by_id.get(zone.zone_id)
@@ -246,6 +247,21 @@ def validate(zones: list[Zone], virtio: dict | None) -> list[str]:
         for zone_id in virtio_by_id:
             if zone_id not in zones_by_id:
                 add(violations, "virtio-zone-known", f"unknown zone id {zone_id}")
+
+        for vzone in virtio["zones"]:
+            zone_id = parse_int(vzone["id"])
+            for idx, mem in enumerate(vzone["memory_region"]):
+                start = parse_int(mem["zone0_ipa"])
+                size = parse_int(mem["size"])
+                if size <= 0:
+                    add(violations, "virtio-memory-nonzero", f"zone {zone_id} region {idx}")
+                    continue
+                virtio_zone0_ranges.append((start, start + size, zone_id, idx))
+
+        virtio_zone0_ranges.sort()
+        for left, right in zip(virtio_zone0_ranges, virtio_zone0_ranges[1:]):
+            if left[1] > right[0]:
+                add(violations, "virtio-memory-overlap", f"{left} overlaps {right}")
 
     return violations
 
