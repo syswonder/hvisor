@@ -366,7 +366,7 @@ impl Vtd {
         self.mmio_write_u32(DMAR_IQT_REG, self.qi_tail as _);
 
         let start_tick = current_time_nanos();
-        while (qi_status != INV_STATUS_COMPLETED as _) {
+        while unsafe { qi_status_ptr.read_volatile() } != INV_STATUS_COMPLETED as _ {
             if (current_time_nanos() - start_tick > 1000000) {
                 error!("issue qi request failed!");
                 break;
