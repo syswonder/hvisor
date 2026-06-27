@@ -255,7 +255,7 @@ struct ReqAgent<'a> {
 }
 
 impl<'a> ReqAgent<'a> {
-    fn region(&self) -> &mut VirtioBridge {
+    fn region(&mut self) -> &mut VirtioBridge {
         unsafe { &mut *(self.base as *mut VirtioBridge) }
     }
 
@@ -294,7 +294,7 @@ pub struct ResAgent<'a> {
 }
 
 impl<'a> ResAgent<'a> {
-    fn region(&self) -> &mut VirtioBridge {
+    fn region(&mut self) -> &mut VirtioBridge {
         unsafe { &mut *(self.base as *mut VirtioBridge) }
     }
 
