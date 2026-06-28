@@ -23,6 +23,10 @@
 - [ci] Expand board build / test coverage. ([Jingyu Liu](https://github.com/liulog))
 - [ci] Add CI / CD support for **x86_64**. ([Tianhong Liu](https://github.com/Solicey))
 - [ci] Add performance benchmarking scripts for QEMU platforms. ([Xinhao Li](https://github.com/li041))
+- [feature] **x86_64**: Boot Asterinas as the root zone on the `qemu` board behind the `asterinas` feature (Linux boot protocol, ECAM config space, initramfs). ([booren30](https://github.com/booren30))
+- [feature] **x86_64**: Emulate CPUID leaf `0x15` (TSC / core-crystal-clock) so guests can derive the TSC frequency. ([booren30](https://github.com/booren30))
+- [bugfix] **x86_64**: Decode `REX.B` / `REX.W` prefixes in the MMIO instruction emulator. ([booren30](https://github.com/booren30))
+- [tools] Add the Asterinas Linux-ABI differential test harness under `tools/asterinas-abi`. ([booren30](https://github.com/booren30))
 
 ## History Release
 
