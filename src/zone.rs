@@ -229,8 +229,30 @@ impl ZoneInner {
             mmio.handler = handler;
             mmio.arg = arg;
         } else {
+            let new_region = MMIORegion { start, size };
+
+            // Check for overlap with existing mmio handler regions.
+            if let Some(existing) = self
+                .mmio
+                .iter()
+                .find(|cfg| cfg.region.is_overlap_with(&new_region))
+            {
+                panic!(
+                    "New MMIO handler region {:#x?} overlaps with existing handler {:#x?}",
+                    new_region, existing.region
+                );
+            }
+
+            // Check for overlap with passthrough regions in the stage-2 page table.
+            if self.gpm.is_range_overlap(start, size) {
+                panic!(
+                    "New MMIO handler region {:#x?} overlaps with passthrough region in stage-2 page table",
+                    new_region
+                );
+            }
+
             self.mmio.push(MMIOConfig {
-                region: MMIORegion { start, size },
+                region: new_region,
                 handler,
                 arg,
             })
@@ -258,6 +280,12 @@ impl ZoneInner {
             .iter()
             .find(|cfg| cfg.region.contains_region(addr, size))
             .map(|cfg| (cfg.region, cfg.handler, cfg.arg))
+    }
+
+    /// Check whether `[start, start+size)` overlaps with any registered MMIO handler region.
+    pub fn is_mmio_handler_overlap(&self, start: GuestPhysAddr, size: usize) -> bool {
+        let region = MMIORegion { start, size };
+        self.mmio.iter().any(|cfg| cfg.region.is_overlap_with(&region))
     }
     /// If irq_id belongs to this zone
     pub fn irq_in_zone(&self, irq_id: u32) -> bool {

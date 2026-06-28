@@ -53,6 +53,17 @@ impl Zone {
             let mem_type = region.mem_type;
             match mem_type {
                 MEM_TYPE_RAM => {
+                    // Check for overlap with registered MMIO handler regions.
+                    if inner.is_mmio_handler_overlap(
+                        region.virtual_start as GuestPhysAddr,
+                        region.size as _,
+                    ) {
+                        panic!(
+                            "Passthrough region [{:#x}, {:#x}) overlaps with existing MMIO handler",
+                            region.virtual_start,
+                            region.virtual_start as u64 + region.size
+                        );
+                    }
                     inner
                         .gpm_mut()
                         .insert(MemoryRegion::new_with_offset_mapper(
@@ -63,6 +74,17 @@ impl Zone {
                         ))?;
                 }
                 MEM_TYPE_IO => {
+                    // Check for overlap with registered MMIO handler regions.
+                    if inner.is_mmio_handler_overlap(
+                        region.virtual_start as GuestPhysAddr,
+                        region.size as _,
+                    ) {
+                        panic!(
+                            "Passthrough region [{:#x}, {:#x}) overlaps with existing MMIO handler",
+                            region.virtual_start,
+                            region.virtual_start as u64 + region.size
+                        );
+                    }
                     inner
                         .gpm_mut()
                         .insert(MemoryRegion::new_with_offset_mapper(
@@ -77,6 +99,15 @@ impl Zone {
                         "loongarch64: pt_init: register virtio mmio region: {:#x?}",
                         region
                     );
+                    // Register the mmio handler first, so that the overlap check
+                    // against the stage-2 page table in mmio_region_register does
+                    // not find the VIRTIO trap page we are about to insert.
+                    inner.mmio_region_register(
+                        region.physical_start as _,
+                        region.size as _,
+                        mmio_virtio_handler,
+                        region.physical_start as _,
+                    );
                     inner
                         .gpm_mut()
                         .insert(MemoryRegion::new_with_offset_mapper(
@@ -85,12 +116,6 @@ impl Zone {
                             PAGE_SIZE, // since we only need 0x200 size for virtio mmio, but the minimal size is PAGE_SIZE
                             MemFlags::USER, // we use the USER as a hint flag for invalidating this stage-2 PTE
                         ))?;
-                    inner.mmio_region_register(
-                        region.physical_start as _,
-                        region.size as _,
-                        mmio_virtio_handler,
-                        region.physical_start as _,
-                    );
                 }
                 _ => {
                     error!("loongarch64: pt_init: unknown mem type: {}", mem_type);
