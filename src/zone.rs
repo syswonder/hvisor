@@ -285,7 +285,9 @@ impl ZoneInner {
     /// Check whether `[start, start+size)` overlaps with any registered MMIO handler region.
     pub fn is_mmio_handler_overlap(&self, start: GuestPhysAddr, size: usize) -> bool {
         let region = MMIORegion { start, size };
-        self.mmio.iter().any(|cfg| cfg.region.is_overlap_with(&region))
+        self.mmio
+            .iter()
+            .any(|cfg| cfg.region.is_overlap_with(&region))
     }
     /// If irq_id belongs to this zone
     pub fn irq_in_zone(&self, irq_id: u32) -> bool {
