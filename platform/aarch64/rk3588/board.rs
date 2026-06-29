@@ -16,7 +16,7 @@
 use crate::{
     arch::{
         mmu::MemoryType,
-        zone::{GicConfig, Gicv3Config, HvArchZoneConfig},
+        zone::{GicConfig, Gicv3Config, HvArchZoneConfig, UefiConfig},
     },
     config::*,
     pci::vpci_dev::VpciDevType,
@@ -193,6 +193,7 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
         gits_base: 0x8080000,
         gits_size: 0x20000,
     }),
+    uefi_config: UefiConfig::NoUefi
 };
 
 pub const ROOT_PCI_CONFIG: HvPciConfig = HvPciConfig {

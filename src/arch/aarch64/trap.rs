@@ -353,7 +353,7 @@ fn handle_sysreg(regs: &mut GeneralRegisters) {
         let val = regs.usr[rt as usize];
         trace!("esr_el2 rt{}: {:#x?}", rt, val);
         let sgi_id: u64 = (val & (0xf << 24)) >> 24;
-        if !this_cpu_data().vcpu_state.is_running()  {
+        if !this_cpu_data().vcpu_state.is_running() {
             trace!("skip send sgi {:#x?}", sgi_id);
         } else {
             trace!("send sgi {:#x?}", sgi_id);

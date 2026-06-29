@@ -16,7 +16,7 @@
 use crate::{
     arch::{
         mmu::MemoryType,
-        zone::{GicConfig, Gicv3Config, HvArchZoneConfig, Uefi, UefiConfig},
+        zone::{GicConfig, Gicv3Config, HvArchZoneConfig, UefiConfig},
     },
     config::*,
     pci::vpci_dev::VpciDevType,
@@ -105,8 +105,9 @@ pub const IRQ_WAKEUP_VIRTIO_PCI_DATA: usize = 32 + 0x22;
 // 33 -> pl011
 // 79 -> virtio
 // 65 -> ivc
-pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] =
-    &get_irqs_bitmap(&[33, 34, 39, 45, 46, 47, 48, 64, 77, 79, 35, 36, 37, 38, 65, 66, 67]);
+pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[
+    33, 34, 39, 45, 46, 47, 48, 64, 77, 79, 35, 36, 37, 38, 65, 66, 67,
+]);
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     is_aarch32: 0,
@@ -118,7 +119,7 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
         gits_base: 0x8080000,
         gits_size: 0x20000,
     }),
-    uefi_config: UefiConfig::NoUefi
+    uefi_config: UefiConfig::NoUefi,
 };
 
 pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [HvPciConfig {

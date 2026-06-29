@@ -16,7 +16,7 @@
 use crate::{
     arch::{
         mmu::MemoryType,
-        zone::{GicConfig, Gicv2Config, HvArchZoneConfig, Uefi, UefiConfig},
+        zone::{GicConfig, Gicv2Config, HvArchZoneConfig, UefiConfig},
     },
     config::*,
     pci::vpci_dev::VpciDevType,
@@ -122,11 +122,7 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
         gicv_base: 0x8040000,
         gicv_size: 0x10000,
     }),
-    uefi_config: UefiConfig::Uefi(Uefi {
-        memory_map_addr: 0xB0000000,
-        memory_map_size: 0x570,
-        sys_map_addr: 0xB1000000,
-    }),
+    uefi_config: UefiConfig::NoUefi
 };
 
 pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [HvPciConfig {

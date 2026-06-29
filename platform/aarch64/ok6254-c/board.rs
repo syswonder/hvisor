@@ -17,7 +17,7 @@
 use crate::{
     arch::{
         mmu::MemoryType,
-        zone::{GicConfig, Gicv3Config, HvArchZoneConfig},
+        zone::{GicConfig, Gicv3Config, HvArchZoneConfig, UefiConfig},
     },
     config::*,
 };
@@ -141,6 +141,7 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
         gits_base: 0,
         gits_size: 0,
     }),
+    uefi_config: UefiConfig::NoUefi
 };
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
