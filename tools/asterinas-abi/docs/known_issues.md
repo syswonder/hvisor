@@ -11,7 +11,6 @@
 - `t_ext2_rw` `SKIP`: no block device attached (`ABI_EXT2_DEVICE` unset).
 - `gdb_batch` / `strace_echo` `SKIP`: they need host `gdb` / host `strace`
   (ptrace), which are not shipped in the minimal initramfs.
-- `hello_rust` `SKIP`: the optional static Rust binary is not built.
 
 ## hvisor zone0 boot dependencies
 

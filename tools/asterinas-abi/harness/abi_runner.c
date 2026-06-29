@@ -19,7 +19,6 @@
  *   ABI_ENV_ID      (default unknown)
  *   ABI_MEASUREMENT_STATUS (default measured)
  */
-#define _GNU_SOURCE
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>

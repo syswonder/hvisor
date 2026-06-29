@@ -15,6 +15,7 @@ import binascii
 import json
 import os
 import re
+import select
 import signal
 import shutil
 import subprocess
@@ -113,6 +114,34 @@ def build_qemu_cmd(args, vars_path: Path) -> list[str]:
     return cmd
 
 
+def qemu_version(qemu: str) -> str:
+    try:
+        proc = subprocess.run(
+            [qemu, "--version"],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return Path(qemu).name
+    first = (proc.stdout or proc.stderr).splitlines()
+    return first[0] if first else Path(qemu).name
+
+
+def should_echo_console_line(line: str) -> bool:
+    clean = strip_ansi(line).rstrip()
+    if not clean or "ABIHEX:" in clean:
+        return False
+    return (
+        "ABI-" in clean
+        or clean.startswith("[")
+        or "OSTD" in clean
+        or "panic" in clean.lower()
+        or "unpacking" in clean
+    )
+
+
 def main(argv: list[str]) -> int:
     p = argparse.ArgumentParser()
     p.add_argument("--mode", choices=["iso", "linux"], default="iso",
@@ -180,35 +209,40 @@ def main(argv: list[str]) -> int:
     with console_log.open("w", encoding="utf-8", errors="replace") as logf:
         proc = subprocess.Popen(
             cmd, stdin=subprocess.DEVNULL, stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT, bufsize=1, text=True, errors="replace", env=env,
+            stderr=subprocess.STDOUT, bufsize=0, env=env,
         )
         try:
             assert proc.stdout is not None
-            last_beat = start
-            for line in proc.stdout:
-                logf.write(line)
-                logf.flush()
-                captured.append(line)
+            os.set_blocking(proc.stdout.fileno(), False)
+            pending = ""
+            while proc.poll() is None:
                 now = time.monotonic()
-                # Heartbeat so the operator sees progress without flooding.
-                clean = strip_ansi(line).rstrip()
-                if clean and (
-                    "ABI-" in clean
-                    or clean.startswith("[")
-                    or "OSTD" in clean
-                    or "panic" in clean.lower()
-                    or "unpacking" in clean
-                ):
-                    if "ABIHEX:" not in clean:
-                        print(f"  | {clean[:120]}")
-                if DONE in line:
-                    done_seen = True
-                    print("[collect] ABI-DONE marker seen; stopping guest.")
-                    break
                 if now - start > args.max_seconds:
                     print("[collect] hard time cap reached; stopping guest.")
                     break
-                last_beat = now
+                timeout = min(0.5, max(0.0, args.max_seconds - (now - start)))
+                ready, _, _ = select.select([proc.stdout], [], [], timeout)
+                if not ready:
+                    continue
+                chunk = os.read(proc.stdout.fileno(), 4096)
+                if not chunk:
+                    break
+                text = chunk.decode("utf-8", errors="replace")
+                logf.write(text)
+                logf.flush()
+                captured.append(text)
+                pending += text
+                done_in_chunk = DONE in pending
+                while "\n" in pending:
+                    line, pending = pending.split("\n", 1)
+                    if should_echo_console_line(line):
+                        print(f"  | {strip_ansi(line).rstrip()[:120]}")
+                if done_in_chunk:
+                    done_seen = True
+                    print("[collect] ABI-DONE marker seen; stopping guest.")
+                    break
+            if pending and should_echo_console_line(pending):
+                print(f"  | {strip_ansi(pending).rstrip()[:120]}")
         finally:
             if proc.poll() is None:
                 proc.send_signal(signal.SIGTERM)
@@ -222,8 +256,9 @@ def main(argv: list[str]) -> int:
                 try:
                     rest = proc.stdout.read()
                     if rest:
-                        logf.write(rest)
-                        captured.append(rest)
+                        text = rest.decode("utf-8", errors="replace")
+                        logf.write(text)
+                        captured.append(text)
                 except Exception:
                     pass
 
@@ -251,8 +286,8 @@ def main(argv: list[str]) -> int:
     meta["label"] = args.label
     meta["measurement_status"] = "measured"
     meta["wall_clock_seconds"] = round(elapsed, 1)
-    meta["accel"] = "tcg"
-    meta["qemu"] = "9.2.3"
+    meta["accel"] = args.accel
+    meta["qemu"] = qemu_version(args.qemu)
 
     args.out.parent.mkdir(parents=True, exist_ok=True)
     with args.out.open("w", encoding="utf-8") as f:

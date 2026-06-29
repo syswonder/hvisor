@@ -15,11 +15,14 @@ TEST_BINS := $(patsubst tests/%.c,$(BUILD)/tests/%.test,$(TEST_SRCS))
 TEST_SCRIPTS := $(shell find tests/l5_observability tests/real_apps -type f -name '*.sh' | sort)
 STAGED_SCRIPTS := $(patsubst tests/%.sh,$(BUILD)/tests/%.sh,$(TEST_SCRIPTS))
 
-.PHONY: all tests smoke report fixture verify clean initramfs lint-tools runner
+.PHONY: all tests clean-tests smoke report fixture verify clean initramfs lint-tools runner
 
 all: tests runner
 
-tests: $(TEST_BINS) $(STAGED_SCRIPTS)
+tests: clean-tests $(TEST_BINS) $(STAGED_SCRIPTS)
+
+clean-tests:
+	@rm -rf "$(BUILD)/tests"
 
 runner: $(BUILD)/abi_runner.test
 
@@ -46,7 +49,7 @@ $(BUILD)/tests/%.sh: tests/%.sh
 	@cp "$<" "$@"
 	@chmod +x "$@"
 
-smoke: tests
+smoke: tests runner
 	@mkdir -p "$(BUILD)"
 	@ABI_TEST_ROOT="$(BUILD)/tests" ABI_RESULT_JSON="$(BUILD)/smoke_results.json" \
 		sh tests/run_all.sh

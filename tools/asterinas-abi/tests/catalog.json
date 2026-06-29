@@ -59,7 +59,6 @@
     {"name": "gdb_batch", "layer": "L5", "description": "optional gdb batch smoke"},
     {"name": "strace_echo", "layer": "L5", "description": "optional strace echo smoke"},
 
-    {"name": "busybox_suite", "layer": "App", "description": "busybox applet smoke suite"},
-    {"name": "hello_rust", "layer": "App", "description": "static Rust demo binary smoke"}
+    {"name": "busybox_suite", "layer": "App", "description": "busybox applet smoke suite"}
   ]
 }

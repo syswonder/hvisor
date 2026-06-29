@@ -71,7 +71,7 @@ Markdown, CSV, and HTML output under `report/out/`.
 
 ## Layout
 
-- `tests/` 56 ABI cases L1–L5 + apps, catalog, `run_all.sh`.
+- `tests/` ABI cases L1–L5 + apps, catalog, `run_all.sh`.
 - `harness/` `abi_runner.c` (compiled in-guest runner), `boot_collect.py`
   (boot + capture + decode), `stability_run.py`.
 - `initramfs/` `build_initramfs.sh` (+ autorun stamping), `init`.

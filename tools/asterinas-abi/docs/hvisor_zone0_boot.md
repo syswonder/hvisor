@@ -71,21 +71,24 @@ before. The root-zone boot config is gated behind the `asterinas` cargo feature.
 ## Build and boot with QEMU/KVM
 
 ```sh
-# 1. Build hvisor with the asterinas feature and the x86_64/qemu board:
+# 1. Build the harness initramfs from tracked sources:
+(cd tools/asterinas-abi && make initramfs)
+
+# 2. Build hvisor with the asterinas feature and the x86_64/qemu board.
+#    ASTERINAS_KERNEL points at the OSDK-built Asterinas bzImage. If
+#    ASTERINAS_INITRD is omitted, the build uses tools/asterinas-abi/_build/
+#    initramfs.cpio.gz when it exists.
 make ARCH=x86_64 BOARD=qemu \
-  FEATURES="pci ecam_pcie no_pcie_bar_realloc uart16550a intel_vtd asterinas"
+  FEATURES="pci ecam_pcie no_pcie_bar_realloc uart16550a intel_vtd asterinas" \
+  ASTERINAS_KERNEL=aster-kernel-osdk-bin
 
-# 2. Stage the Asterinas OSDK bzImage and the initramfs into the qemu board image:
-#    platform/x86_64/qemu/image/kernel/aster-kernel-osdk-bin
-#    platform/x86_64/qemu/image/kernel/initramfs.cpio.gz
-
-# 3. Boot the hvisor ISO under QEMU 9.2.3 + KVM with VT-x and the VT-d IOMMU:
+# 3. Boot the hvisor ISO under QEMU/KVM with VT-x and the VT-d IOMMU:
 qemu-system-x86_64 \
   -cpu host,+vmx -accel kvm \
   -machine q35,kernel-irqchip=split \
   -smp 4 -m 4G \
   -device intel-iommu,intremap=on,eim=on,caching-mode=on,device-iotlb=on,aw-bits=48 \
-  -drive file=hvisor-asterinas.iso,format=raw,index=0,media=disk \
+  -drive file=platform/x86_64/qemu/image/virtdisk/hvisor.iso,format=raw,index=0,media=disk \
   -nographic -serial mon:stdio -no-reboot
 ```
 

@@ -5,6 +5,7 @@ zone0_setup := $(image_dir)/kernel/setup.bin
 zone0_vmlinux := $(image_dir)/kernel/vmlinux.bin
 zone0_asterinas := $(image_dir)/kernel/aster-kernel-osdk-bin
 zone0_initrd := $(image_dir)/kernel/initramfs.cpio.gz
+asterinas_initrd_build := tools/asterinas-abi/_build/initramfs.cpio.gz
 zone0_rootfs := $(image_dir)/virtdisk/rootfs1.img
 zone1_rootfs := $(image_dir)/virtdisk/rootfs2.img
 
@@ -70,16 +71,31 @@ $(hvisor_bin): elf boot
 	fi
 
 	if echo "$(FEATURES)" | tr ',' ' ' | grep -qw asterinas; then \
+		mkdir -p $(image_dir)/kernel; \
+		if [ -n "$(ASTERINAS_KERNEL)" ]; then \
+			cp "$(ASTERINAS_KERNEL)" $(zone0_asterinas); \
+		fi; \
+		if [ -n "$(ASTERINAS_INITRD)" ]; then \
+			cp "$(ASTERINAS_INITRD)" $(zone0_initrd); \
+		elif [ -f $(asterinas_initrd_build) ]; then \
+			cp $(asterinas_initrd_build) $(zone0_initrd); \
+		fi; \
+		missing=0; \
 		if [ -f $(zone0_asterinas) ]; then \
 			cp $(zone0_asterinas) $(image_dir)/iso/boot/kernel; \
 		else \
-			echo "Warning: $(zone0_asterinas) not found, skipping"; \
+			echo "ERROR: missing Asterinas kernel: $(zone0_asterinas)"; \
+			echo "       pass ASTERINAS_KERNEL=aster-kernel-osdk-bin"; \
+			missing=1; \
 		fi; \
 		if [ -f $(zone0_initrd) ]; then \
 			cp $(zone0_initrd) $(image_dir)/iso/boot/kernel; \
 		else \
-			echo "Warning: $(zone0_initrd) not found, skipping"; \
+			echo "ERROR: missing Asterinas initramfs: $(zone0_initrd)"; \
+			echo "       run 'cd tools/asterinas-abi && make initramfs' or pass ASTERINAS_INITRD=initramfs.cpio.gz"; \
+			missing=1; \
 		fi; \
+		if [ "$$missing" -ne 0 ]; then exit 1; fi; \
 		echo "set default=1" > $(image_dir)/iso/boot/grub/selected.cfg; \
 		echo "grub: selecting Asterinas root zone entry"; \
 	else \

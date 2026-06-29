@@ -48,7 +48,7 @@ bitflags::bitflags! {
         const HYPERVISOR = 1 << 31; // bit 31: hypervisor
 
         // CPUID.01H EDX bits.
-        const FPU = 1 << (32 + 0); // bit 32: x87 FPU
+        const FPU = 1 << 32; // bit 32: x87 FPU
         const VME = 1 << (32 + 1); // bit 33: VME
         const DE = 1 << (32 + 2); // bit 34: debug extensions
         const PSE = 1 << (32 + 3); // bit 35: page size extension
@@ -113,4 +113,56 @@ pub enum CpuIdEax {
     HypervisorInfo = 0x4000_0000,
     HypervisorFeatures = 0x4000_0001,
 }
+}
+
+pub(crate) fn emulate_tsc_cpuid_leaf(
+    tsc_freq_mhz: Option<u32>,
+    fallback: raw_cpuid::CpuIdResult,
+) -> raw_cpuid::CpuIdResult {
+    match tsc_freq_mhz.and_then(|mhz| mhz.checked_mul(1_000_000)) {
+        Some(crystal_hz) => raw_cpuid::CpuIdResult {
+            eax: 1,
+            ebx: 1,
+            ecx: crystal_hz,
+            edx: 0,
+        },
+        None => fallback,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test_case]
+    fn cpuid_leaf_0x15_uses_measured_tsc_frequency() {
+        let fallback = raw_cpuid::CpuIdResult {
+            eax: 7,
+            ebx: 8,
+            ecx: 9,
+            edx: 10,
+        };
+        let result = emulate_tsc_cpuid_leaf(Some(2_400), fallback);
+
+        assert_eq!(result.eax, 1);
+        assert_eq!(result.ebx, 1);
+        assert_eq!(result.ecx, 2_400_000_000);
+        assert_eq!(result.edx, 0);
+    }
+
+    #[test_case]
+    fn cpuid_leaf_0x15_falls_back_without_safe_frequency() {
+        let fallback = raw_cpuid::CpuIdResult {
+            eax: 7,
+            ebx: 8,
+            ecx: 9,
+            edx: 10,
+        };
+        let result = emulate_tsc_cpuid_leaf(Some(u32::MAX), fallback);
+
+        assert_eq!(result.eax, 7);
+        assert_eq!(result.ebx, 8);
+        assert_eq!(result.ecx, 9);
+        assert_eq!(result.edx, 10);
+    }
 }

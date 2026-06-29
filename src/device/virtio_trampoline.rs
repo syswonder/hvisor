@@ -66,7 +66,7 @@ use crate::platform::IRQ_WAKEUP_VIRTIO_DEVICE;
 /// non root zone's virtio request handler
 pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     // debug!("mmio virtio handler");
-    let cpu_id = this_cpu_id() as usize;
+    let cpu_id = this_cpu_id();
     let need_interrupt = if mmio.address == QUEUE_NOTIFY { 1 } else { 0 };
     if need_interrupt == 1 {
         trace!("notify !!!, cpu id is {}", cpu_id);
@@ -244,7 +244,7 @@ impl VirtioBridgeController {
     pub fn need_wakeup(&self) -> bool {
         let base = self.base_address.load(Ordering::Relaxed);
         fence(Ordering::SeqCst);
-        let need_wakeup = unsafe { (&*(base as *const VirtioBridge)).need_wakeup.get() };
+        let need_wakeup = unsafe { (*(base as *const VirtioBridge)).need_wakeup.get() };
         need_wakeup == 1
     }
 }
@@ -255,7 +255,7 @@ struct ReqAgent<'a> {
 }
 
 impl<'a> ReqAgent<'a> {
-    fn region(&self) -> &mut VirtioBridge {
+    fn region(&mut self) -> &mut VirtioBridge {
         unsafe { &mut *(self.base as *mut VirtioBridge) }
     }
 
@@ -294,7 +294,7 @@ pub struct ResAgent<'a> {
 }
 
 impl<'a> ResAgent<'a> {
-    fn region(&self) -> &mut VirtioBridge {
+    fn region(&mut self) -> &mut VirtioBridge {
         unsafe { &mut *(self.base as *mut VirtioBridge) }
     }
 

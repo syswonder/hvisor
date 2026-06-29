@@ -88,10 +88,6 @@ for script in "$ROOT"/tests/l5_observability/*.sh "$ROOT"/tests/real_apps/*.sh; 
     chmod +x "$STAGE/usr/bin/abi-tests/$rel"
 done
 
-if [ -x "$BUILD/hello_rust" ]; then
-    cp "$BUILD/hello_rust" "$STAGE/usr/bin/hello_rust"
-fi
-
 mkdir -p "$(dirname "$OUT")"
 (cd "$STAGE" && find . -print0 | cpio --null -ov --format=newc 2>/dev/null | gzip -9 > "$OUT")
 echo "$OUT"

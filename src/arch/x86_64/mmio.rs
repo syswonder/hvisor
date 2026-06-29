@@ -185,6 +185,22 @@ const OPERAND_SIZE_OVERRIDE_PREFIX: u8 = 0x66;
 
 const TWO_BYTE_ESCAPE: u8 = 0xf;
 
+fn decode_rex_prefix(byte: u8) -> Option<RexPrefixLow> {
+    if byte.get_bits(4..=7) == REX_PREFIX_HIGH {
+        Some(RexPrefixLow::from_bits_truncate(byte.get_bits(0..=3)))
+    } else {
+        None
+    }
+}
+
+fn apply_rex_operand_width(rex: &RexPrefixLow, size: usize) -> usize {
+    if rex.contains(RexPrefixLow::OPERAND_WIDTH) {
+        size_of::<u64>()
+    } else {
+        size
+    }
+}
+
 // len stands for instruction len
 enum OprandType {
     Reg { reg: RmReg, len: usize },
@@ -218,7 +234,7 @@ impl ModRM {
         self.reg_opcode.try_into().unwrap()
     }
 
-    pub fn get_modrm(&self, inst: &Vec<u8>, disp_id: usize) -> Option<OprandType> {
+    pub fn get_modrm(&self, inst: &[u8], disp_id: usize) -> Option<OprandType> {
         // SIB addressing (rm == 0b100, an RSP/R12 base) and RIP-relative /
         // disp32 addressing (mod == 0, rm == 0b101, an RBP/R13 base) are not
         // decoded; return None so the caller fails loudly instead of treating
@@ -360,7 +376,7 @@ fn get_default_operand_size() -> HvResult<usize> {
         let cs_l = cs_desc.get_bit(53);
 
         // in 64-bit long mode or set CS.D to 1
-        if (!cs_d && cs_l) || cs_d {
+        if cs_d || cs_l {
             size = size_of::<u32>();
         }
     }
@@ -369,12 +385,12 @@ fn get_default_operand_size() -> HvResult<usize> {
 }
 
 fn emulate_inst(
-    inst: &Vec<u8>,
+    inst: &[u8],
     handler: &MMIOHandler,
     mmio: &mut MMIOAccess,
     base: usize,
 ) -> HvResult<usize> {
-    assert!(inst.len() > 0);
+    assert!(!inst.is_empty());
 
     let mut size = get_default_operand_size()?;
     let mut size_override = false;
@@ -391,13 +407,10 @@ fn emulate_inst(
     }
 
     let mut rex = RexPrefixLow::from_bits_truncate(0);
-    if inst[cur_id].get_bits(4..=7) == REX_PREFIX_HIGH {
-        rex = RexPrefixLow::from_bits_truncate(inst[cur_id].get_bits(0..=3));
+    if let Some(prefix) = decode_rex_prefix(inst[cur_id]) {
+        rex = prefix;
         cur_id += 1;
-        // REX.W selects a 64-bit operand; REX.R/REX.B widen the ModRM fields.
-        if rex.contains(RexPrefixLow::OPERAND_WIDTH) {
-            size = size_of::<u64>();
-        }
+        size = apply_rex_operand_width(&rex, size);
     }
 
     let mut two_byte = false;
@@ -543,6 +556,38 @@ fn emulate_inst(
                 )
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test_case]
+    fn rex_b_extends_modrm_base_register() {
+        let rex = RexPrefixLow::BASE;
+        let modrm = ModRM::new(0x02, &rex);
+
+        assert_eq!(modrm.rm, RmReg::R10 as u32);
+    }
+
+    #[test_case]
+    fn rex_r_extends_modrm_register_field() {
+        let rex = RexPrefixLow::REGISTERS;
+        let modrm = ModRM::new(0x08, &rex);
+
+        assert_eq!(modrm.reg_opcode, RmReg::R9 as u32);
+    }
+
+    #[test_case]
+    fn rex_w_selects_64_bit_operand() {
+        let rex = decode_rex_prefix(0x49).unwrap();
+
+        assert!(rex.contains(RexPrefixLow::OPERAND_WIDTH));
+        assert_eq!(
+            apply_rex_operand_width(&rex, size_of::<u32>()),
+            size_of::<u64>()
+        );
     }
 }
 

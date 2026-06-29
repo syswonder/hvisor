@@ -15,6 +15,10 @@ case "$ROOT" in
 esac
 
 mkdir -p "$LB"
+if [ -d "$LB/linux-$KVER" ] && [ ! -f "$LB/linux-$KVER/Makefile" ]; then
+    echo "cached Linux tree is incomplete; recreating $LB/linux-$KVER" >&2
+    rm -rf "$LB/linux-$KVER"
+fi
 if [ ! -d "$LB/linux-$KVER" ]; then
     echo "[1/4] fetch Linux $KVER source"
     if [ ! -f "$LB/linux-$KVER.tar.gz" ] && [ ! -f "$LB/linux-$KVER.tar.xz" ]; then
@@ -25,6 +29,10 @@ if [ ! -d "$LB/linux-$KVER" ]; then
             "https://cdn.kernel.org/pub/linux/kernel/v${KVER%%.*}.x/linux-$KVER.tar.xz"
     fi
     tar xf "$LB"/linux-$KVER.tar.* -C "$LB"
+fi
+if [ ! -f "$LB/linux-$KVER/Makefile" ]; then
+    echo "ERROR: Linux source tree is incomplete: $LB/linux-$KVER" >&2
+    exit 1
 fi
 
 echo "[2/4] configure (defconfig + virtio/initrd/serial/ext)"

@@ -17,7 +17,7 @@
 use crate::{
     arch::{
         cpu::{this_cpu_id, ArchCpu},
-        cpuid::{CpuIdEax, ExtendedFeaturesEcx, FeatureInfoFlags},
+        cpuid::{emulate_tsc_cpuid_leaf, CpuIdEax, ExtendedFeaturesEcx, FeatureInfoFlags},
         hpet,
         idt::{IdtStruct, IdtVector},
         ipi,
@@ -159,15 +159,7 @@ fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
                 // frequency hvisor measured via the HPET; fall back to the
                 // hardware leaf when it is unavailable or does not fit ECX,
                 // as the ProcessorFrequencyInfo arm does.
-                match hpet::get_tsc_freq_mhz().and_then(|mhz| mhz.checked_mul(1_000_000)) {
-                    Some(crystal_hz) => CpuIdResult {
-                        eax: 1,
-                        ebx: 1,
-                        ecx: crystal_hz,
-                        edx: 0,
-                    },
-                    None => cpuid!(regs.rax, regs.rcx),
-                }
+                emulate_tsc_cpuid_leaf(hpet::get_tsc_freq_mhz(), cpuid!(regs.rax, regs.rcx))
             }
             CpuIdEax::ProcessorFrequencyInfo => {
                 if let Some(freq_mhz) = hpet::get_tsc_freq_mhz() {
@@ -218,11 +210,6 @@ fn handle_cr_access(arch_cpu: &mut ArchCpu) -> HvResult {
         "VM-exit: CR{} access:\n{:#x?}",
         cr_access_info.cr_n, arch_cpu
     );
-
-    match cr_access_info.cr_n {
-        0 => {}
-        _ => {}
-    }
 
     Ok(())
 }
