@@ -14,6 +14,7 @@ bids:
     tests:
       mode: qemu
       uboot_cmd: bootm 0x40400000 - 0x40000000
+      uboot_ready_pattern: =>
       cases:
         - zone0_start
         - zone1_start
@@ -38,6 +39,6 @@ bids:
       mode: qemu
       cases:
         - zone0_start
-        - zone1_start  
+        - zone1_start
 
 

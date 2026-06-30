@@ -106,6 +106,12 @@ fi
 
 cp "${ZONE1_BOOT_SCRIPT}" "${ROOTFS_DIR}/root/"
 
+CHECK_SERIAL_SCRIPT="${WORKSPACE_ROOT}/jenkins/check_serial.sh"
+if [ -f "${CHECK_SERIAL_SCRIPT}" ]; then
+    cp "${CHECK_SERIAL_SCRIPT}" "${ROOTFS_DIR}/root/"
+    chmod +x "${ROOTFS_DIR}/root/check_serial.sh"
+fi
+
 if [ -f "${ROOTFS_DIR}/root/boot_zone1.sh" ]; then
     chmod +x "${ROOTFS_DIR}/root/boot_zone1.sh"
 fi

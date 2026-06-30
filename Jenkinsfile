@@ -188,7 +188,7 @@ pipeline {
         always {
             echo "=== DEBUG: Branch ${env.BRANCH_NAME} ==="
             echo "=== DEBUG: Commit ${env.GIT_COMMIT} ==="
-            deleteDir()
+            sh 'rm -rf .matrix'
         }
     }
 
