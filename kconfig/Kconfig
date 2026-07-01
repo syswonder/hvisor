@@ -231,6 +231,11 @@ config SPLIT_SCREEN
 config PRINT_TIMESTAMP
 	bool "Print timestamp in logs"
 	default n
+
+config ASTERINAS_ROOT
+	bool "Boot Asterinas (instead of Linux) as the x86_64/qemu root zone"
+	depends on ARCH_X86_64
+	default n
 endmenu
 
 menu "Debug"

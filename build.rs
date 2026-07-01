@@ -208,15 +208,15 @@ fn main() {
     std::os::unix::fs::symlink(source_path, target_path).expect("Failed to create symlink");
     log("Linking successful");
 
-    // When the `asterinas_root` feature is enabled, capture the byte length of
+    // When CONFIG_ASTERINAS_ROOT is enabled, capture the byte length of
     // the staged *uncompressed* initramfs so the root-zone boot params can
     // advertise the true ramdisk size without a hand-edited constant. The value
     // is written to OUT_DIR and `include!`d by board.rs. It is 0 (and the boot
-    // params carry no ramdisk) when the feature is off or the file is not staged
+    // params carry no ramdisk) when the option is off or the file is not staged
     // yet; staging the initramfs then triggers a rebuild via rerun-if-changed.
     let out_dir = env::var("OUT_DIR").expect("OUT_DIR not set");
     let initrd_rs_path = format!("{}/asterinas_initrd.rs", out_dir);
-    let initrd_size: u64 = if env::var("CARGO_FEATURE_ASTERINAS_ROOT").is_ok() {
+    let initrd_size: u64 = if enabled.contains("CONFIG_ASTERINAS_ROOT") {
         let img = format!("{}/platform/x86_64/qemu/image", pwd.display());
         let setup_path = format!("{}/kernel/asterinas-setup.bin", img);
         let vmlinux_path = format!("{}/kernel/asterinas-vmlinux.bin", img);
