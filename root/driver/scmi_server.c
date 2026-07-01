@@ -358,7 +358,6 @@ static int reset_domain(u32 reset_id, u32 flags, u32 reset_state) {
             // Fallback to assert + deassert if reset is not supported
             pr_debug("Fallback to assert+deassert for reset domain %u\n",
                      reset_id);
-            pr_debug("Fallback to assert+deassert for reset domain %u\n", reset_id);
             ret = reset_control_assert(rstc);
             if (ret) {
                 pr_err("Failed to assert reset domain %u: %d\n", reset_id, ret);

@@ -95,7 +95,7 @@ static int handle_power_version(SCMIDev *dev, uint16_t token,
 
     struct scmi_response *resp = resp_iov->iov_base;
     uint32_t *version = (uint32_t *)resp->payload;
-    scmi_make_response(dev, token, resp_iov, SCMI_SUCCESS);
+    scmi_make_response(resp_iov, SCMI_PROTO_ID_POWER, SCMI_COMMON_MSG_VERSION, token, SCMI_SUCCESS);
     *version = SCMI_POWER_VERSION;
     return 0;
 }
@@ -118,7 +118,7 @@ static int handle_power_protocol_attributes(SCMIDev *dev, uint16_t token,
     extern uint32_t power_max_num;
     *attributes = (uint32_t)(power_max_num & 0xFFFF);
 
-    scmi_make_response(dev, token, resp_iov, SCMI_SUCCESS);
+    scmi_make_response(resp_iov, SCMI_PROTO_ID_POWER, SCMI_COMMON_MSG_PROTOCOL_ATTRIBUTES, token, SCMI_SUCCESS);
 
     log_debug("POWER_PROTOCOL_ATTRIBUTES: num_domains=%d", power_max_num);
     return 0;
@@ -131,13 +131,13 @@ static int handle_power_domain_attributes(SCMIDev *dev, uint16_t token,
     uint32_t domain_id = *(uint32_t *)req->payload;
 
     if (!is_valid_power_id(domain_id)) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_ENTRY);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_POWER, SCMI_POWER_MSG_POWER_DOMAIN_ATTRIBUTES, token, SCMI_ERR_ENTRY);
     }
 
     size_t expected_resp_size = sizeof(struct scmi_response) +
                                 sizeof(struct scmi_msg_resp_power_domain_attributes);
     if (resp_iov->iov_len < expected_resp_size) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_RANGE);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_POWER, SCMI_POWER_MSG_POWER_DOMAIN_ATTRIBUTES, token, SCMI_ERR_RANGE);
     }
 
     /* Prepare ioctl arguments */
@@ -146,7 +146,7 @@ static int handle_power_domain_attributes(SCMIDev *dev, uint16_t token,
 
     int ret = hvisor_scmi_ioctl(HVISOR_SCMI_POWER_GET_ATTRIBUTES, &args, sizeof(args));
     if (ret < 0) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_GENERIC);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_POWER, SCMI_POWER_MSG_POWER_DOMAIN_ATTRIBUTES, token, SCMI_ERR_GENERIC);
     }
 
     struct scmi_response *resp = resp_iov->iov_base;
@@ -166,7 +166,7 @@ static int handle_power_domain_attributes(SCMIDev *dev, uint16_t token,
     log_debug("POWER_DOMAIN_ATTRIBUTES: domain=%u, name=%s, flags=0x%x",
               domain_id, attr->name, attr->flags);
 
-    return scmi_make_response(dev, token, resp_iov, SCMI_SUCCESS);
+    return scmi_make_response(resp_iov, SCMI_PROTO_ID_POWER, SCMI_POWER_MSG_POWER_DOMAIN_ATTRIBUTES, token, SCMI_SUCCESS);
 }
 
 static int handle_power_state_set(SCMIDev *dev, uint16_t token,
@@ -181,12 +181,12 @@ static int handle_power_state_set(SCMIDev *dev, uint16_t token,
     uint32_t power_state = power_req->power_state;
 
     if (!is_valid_power_id(domain_id)) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_ENTRY);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_POWER, SCMI_POWER_MSG_POWER_STATE_SET, token, SCMI_ERR_ENTRY);
     }
 
     /* Reject async mode */
     if (flags & 0x1) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_SUPPORT);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_POWER, SCMI_POWER_MSG_POWER_STATE_SET, token, SCMI_ERR_SUPPORT);
     }
 
     /* Prepare ioctl arguments */
@@ -196,13 +196,13 @@ static int handle_power_state_set(SCMIDev *dev, uint16_t token,
 
     int ret = hvisor_scmi_ioctl(HVISOR_SCMI_POWER_STATE_SET, &args, sizeof(args));
     if (ret < 0) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_GENERIC);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_POWER, SCMI_POWER_MSG_POWER_STATE_SET, token, SCMI_ERR_GENERIC);
     }
 
     log_debug("POWER_STATE_SET: domain=%u, state=0x%x, flags=0x%x",
               domain_id, power_state, flags);
 
-    return scmi_make_response(dev, token, resp_iov, SCMI_SUCCESS);
+    return scmi_make_response(resp_iov, SCMI_PROTO_ID_POWER, SCMI_POWER_MSG_POWER_STATE_SET, token, SCMI_SUCCESS);
 }
 
 static int handle_power_state_get(SCMIDev *dev, uint16_t token,
@@ -212,11 +212,11 @@ static int handle_power_state_get(SCMIDev *dev, uint16_t token,
     uint32_t domain_id = *(uint32_t *)req->payload;
 
     if (!is_valid_power_id(domain_id)) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_ENTRY);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_POWER, SCMI_POWER_MSG_POWER_STATE_GET, token, SCMI_ERR_ENTRY);
     }
 
     if (resp_iov->iov_len < sizeof(struct scmi_response) + sizeof(uint32_t)) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_RANGE);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_POWER, SCMI_POWER_MSG_POWER_STATE_GET, token, SCMI_ERR_RANGE);
     }
 
     /* Prepare ioctl arguments */
@@ -225,7 +225,7 @@ static int handle_power_state_get(SCMIDev *dev, uint16_t token,
 
     int ret = hvisor_scmi_ioctl(HVISOR_SCMI_POWER_STATE_GET, &args, sizeof(args));
     if (ret < 0) {
-        return scmi_make_response(dev, token, resp_iov, SCMI_ERR_GENERIC);
+        return scmi_make_response(resp_iov, SCMI_PROTO_ID_POWER, SCMI_POWER_MSG_POWER_STATE_GET, token, SCMI_ERR_GENERIC);
     }
 
     struct scmi_response *resp = resp_iov->iov_base;
@@ -235,14 +235,14 @@ static int handle_power_state_get(SCMIDev *dev, uint16_t token,
     log_debug("POWER_STATE_GET: domain=%u, state=0x%x",
               domain_id, *state);
 
-    return scmi_make_response(dev, token, resp_iov, SCMI_SUCCESS);
+    return scmi_make_response(resp_iov, SCMI_PROTO_ID_POWER, SCMI_POWER_MSG_POWER_STATE_GET, token, SCMI_SUCCESS);
 }
 
 static int handle_power_state_notify(SCMIDev *dev, uint16_t token,
                                      const struct iovec *req_iov __attribute__((unused)),
                                      struct iovec *resp_iov) {
     /* Power state change notifications are not supported */
-    return scmi_make_response(dev, token, resp_iov, SCMI_ERR_SUPPORT);
+    return scmi_make_response(resp_iov, SCMI_PROTO_ID_POWER, SCMI_POWER_MSG_POWER_STATE_NOTIFY, token, SCMI_ERR_SUPPORT);
 }
 
 /* Main request handler */
@@ -261,7 +261,7 @@ static int virtio_scmi_power_handle_req(SCMIDev *dev, uint8_t msg_id, uint16_t t
             return handle_power_protocol_attributes(dev, token, req_iov, resp_iov);
         case SCMI_COMMON_MSG_MESSAGE_ATTRIBUTES:
             /* Message attributes not implemented - return not supported */
-            return scmi_make_response(dev, token, resp_iov, SCMI_ERR_SUPPORT);
+            return scmi_make_response(resp_iov, SCMI_PROTO_ID_POWER, msg_id, token, SCMI_ERR_SUPPORT);
         case SCMI_POWER_MSG_POWER_DOMAIN_ATTRIBUTES:
             return handle_power_domain_attributes(dev, token, req_iov, resp_iov);
         case SCMI_POWER_MSG_POWER_STATE_SET:

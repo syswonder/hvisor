@@ -127,6 +127,9 @@ typedef struct {
 #define SCMI_COMMON_MSG_VERSION                        0x0  /* Version request */
 #define SCMI_COMMON_MSG_PROTOCOL_ATTRIBUTES            0x1  /* Protocol attributes */
 #define SCMI_COMMON_MSG_MESSAGE_ATTRIBUTES             0x2  /* Protocol message attributes */
+#define SCMI_BASE_MSG_DISCOVER_VENDOR 0x3
+#define SCMI_BASE_MSG_DISCOVER_SUB_VENDOR 0x4
+#define SCMI_BASE_MSG_DISCOVER_IMPL_VERSION 0x5
 #define SCMI_BASE_MSG_DISCOVER_LIST_PROTOCOLS 0x6
 #define SCMI_BASE_MSG_DISCOVER_AGENT 0x7
 #define SCMI_BASE_MSG_NOTIFY_ERRORS 0x8
