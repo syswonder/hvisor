@@ -43,10 +43,11 @@ platform/x86_64/qemu/asterinas/scripts/build_asterinas.sh
 platform/x86_64/qemu/asterinas/scripts/run_asterinas.sh
 ```
 
-`run_asterinas.sh` builds hvisor with `FEATURES="... aster_guest"`, selects the
-`Asterinas` GRUB entry and boots it headless. The probe self-test runs as PID 1
-and prints the SMP topology, context-switch rate, timer jitter and cross-core
-round-trip summaries to the serial console.
+`run_asterinas.sh` runs `make ARCH=x86_64 BOARD=qemu defconfig` and flips
+`CONFIG_ASTER_GUEST=y` on in the generated `.config` before building, selects
+the `Asterinas` GRUB entry and boots it headless. The probe self-test runs as
+PID 1 and prints the SMP topology, context-switch rate, timer jitter and
+cross-core round-trip summaries to the serial console.
 
 The default `make ARCH=x86_64 BOARD=qemu` build is unchanged and still boots the
 Linux root zone from its virtio-blk disk.

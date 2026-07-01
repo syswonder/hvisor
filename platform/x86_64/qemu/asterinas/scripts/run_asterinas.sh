@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: MulanPSL-2.0
 # Copyright (c) 2026 hvisor contributors
 #
-# Turnkey Asterinas-on-hvisor run: build hvisor with the aster_guest feature,
+# Turnkey Asterinas-on-hvisor run: build hvisor with CONFIG_ASTER_GUEST=y,
 # boot it under QEMU/KVM with the Asterinas GRUB entry selected, and capture the
 # serial console (the probe self-test runs as PID 1 and prints to it).
 #
@@ -17,7 +17,6 @@ GRUB_CFG="$IMG/iso/boot/grub/grub.cfg"
 LOG="${1:-$HERE/artifacts/asterinas-console.log}"
 SECS="${2:-90}"
 SMP="${3:-8}"
-FEATURES="pci ecam_pcie no_pcie_bar_realloc uart16550a intel_vtd aster_guest"
 
 if [ ! -s "$IMG/kernel/asterinas-vmlinux.bin" ]; then
     echo "Asterinas image not staged; run scripts/build_asterinas.sh first." >&2
@@ -33,7 +32,14 @@ restore_grub_default() { sed -i 's/^set default=1/set default=0/' "$GRUB_CFG"; }
 trap restore_grub_default EXIT
 sed -i 's/^set default=0/set default=1/' "$GRUB_CFG"
 
-make -C "$HV_ROOT" ARCH=x86_64 BOARD=qemu FEATURES="$FEATURES"
+make -C "$HV_ROOT" ARCH=x86_64 BOARD=qemu defconfig
+sed -i 's/^# CONFIG_ASTER_GUEST is not set$/CONFIG_ASTER_GUEST=y/' "$HV_ROOT/.config"
+# Deliberately not `make ... MODE=release all`: the "all" chain runs the
+# "vscode" step, which re-invokes the Kconfig defconfig generator and would
+# silently overwrite the CONFIG_ASTER_GUEST=y edit above before the actual
+# build. Ask for the same non-vscode targets "all" would otherwise build.
+make -C "$HV_ROOT" ARCH=x86_64 BOARD=qemu MODE=release \
+    gen_cargo_config target/x86_64-unknown-none/release/hvisor.bin check-hv-mem-overlap
 
 mkdir -p "$(dirname "$LOG")"
 : > "$LOG"

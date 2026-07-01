@@ -52,18 +52,18 @@ const ROOT_ZONE_UEFI_REGION: HvConfigMemoryRegion = HvConfigMemoryRegion {
 };
 const ROOT_ZONE_UEFI_REGION_ID: usize = 0x3;
 
-#[cfg(not(feature = "aster_guest"))]
+#[cfg(not(aster_guest))]
 pub const ROOT_ZONE_NAME: &str = "root-linux";
-#[cfg(feature = "aster_guest")]
+#[cfg(aster_guest)]
 pub const ROOT_ZONE_NAME: &str = "root-asterinas";
 
 // Linux boots from the virtio-blk root disk; Asterinas runs entirely from the
 // CPIO initramfs staged by the x86_64/qemu/asterinas package, with its kernel log
 // routed to the COM1 serial console it shares with hvisor.
-#[cfg(not(feature = "aster_guest"))]
+#[cfg(not(aster_guest))]
 pub const ROOT_ZONE_CMDLINE: &str =
     "console=ttyS0 earlyprintk=serial nointremap no_timer_check efi=noruntime pci=pcie_scan_all,lastbus=1 root=/dev/vda rw init=/init\0";
-#[cfg(feature = "aster_guest")]
+#[cfg(aster_guest)]
 pub const ROOT_ZONE_CMDLINE: &str = "ostd.log_level=off console=ttyS0 init=/init -- /init\0";
 
 pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 11] = [
@@ -132,13 +132,13 @@ const ROOT_ZONE_SCREEN_BASE_ADDR: GuestPhysAddr = 0x7000_0000;
 // from the initrd region: the archive must fit within it and within the
 // surrounding RAM region (the CPIO/gzip parser stops at the archive's own end),
 // so 16 MiB comfortably covers musl- and glibc-built probe initramfs images.
-#[cfg(not(feature = "aster_guest"))]
+#[cfg(not(aster_guest))]
 const ROOT_ZONE_INITRD_GPA: usize = 0;
-#[cfg(not(feature = "aster_guest"))]
+#[cfg(not(aster_guest))]
 const ROOT_ZONE_INITRD_SIZE: usize = 0;
-#[cfg(feature = "aster_guest")]
+#[cfg(aster_guest)]
 const ROOT_ZONE_INITRD_GPA: usize = 0x1530_0000;
-#[cfg(feature = "aster_guest")]
+#[cfg(aster_guest)]
 const ROOT_ZONE_INITRD_SIZE: usize = 0x100_0000;
 
 pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 0x6;

@@ -231,6 +231,11 @@ config SPLIT_SCREEN
 config PRINT_TIMESTAMP
 	bool "Print timestamp in logs"
 	default n
+
+config ASTER_GUEST
+	bool "Boot Asterinas as the root zone guest instead of Linux"
+	depends on ARCH_X86_64
+	default n
 endmenu
 
 menu "Debug"
