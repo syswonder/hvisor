@@ -42,7 +42,7 @@ space through ECAM at the firmware MCFG base `0xb000_0000`.
 
 The root-zone boot config and the hvisor changes that make the boot work (CPUID
 leaf `0x15`, MMIO REX.B/REX.W decoding, ECAM base, BAR window mapping) are gated
-behind the `asterinas` cargo feature. Booting under QEMU with KVM requires the
+behind the `asterinas` Kconfig option. Booting under QEMU with KVM requires the
 `intel-iommu` device and Intel VT-x with nested VMX. See
 `docs/hvisor_zone0_boot.md` for the memory layout and boot command.
 

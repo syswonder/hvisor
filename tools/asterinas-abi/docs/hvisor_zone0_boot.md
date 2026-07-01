@@ -22,7 +22,7 @@ gunzipped initramfs is a second module.
 ## hvisor changes used by this path
 
 Asterinas exercises x86 paths that the hvisor `x86_64/qemu` board had not run
-before. The root-zone boot config is gated behind the `asterinas` cargo feature.
+before. The root-zone boot config is gated behind the `asterinas` Kconfig option.
 
 1. **CPUID leaf `0x15` (TSC / crystal-clock) emulation.** Asterinas calibrates its
    timer from CPUID leaf `0x15`; hvisor previously did not answer that leaf.
@@ -35,14 +35,14 @@ before. The root-zone boot config is gated behind the `asterinas` cargo feature.
 3. **ECAM (PCI MMCONFIG) base.** Asterinas reaches PCI config space exclusively
    through ECAM at the firmware MCFG base (`0xb000_0000` on QEMU q35). Linux on
    this board uses the legacy `0xcf8`/`0xcfc` ports, so the ECAM window had never
-   been exercised. The ECAM base is selected by the `asterinas` cargo feature.
+   been exercised. The ECAM base is selected by the `asterinas` Kconfig option.
 
 4. **PCI 32-bit MMIO BAR window mapped through to the zone.** Asterinas consumes
    the firmware-assigned device BARs it reads over ECAM. hvisor's lazy BAR mapping
    only runs on legacy-port BAR writes, so the 32-bit MMIO BAR window is mapped up
    front for the Asterinas zone.
 
-5. **Root-zone boot config behind the `asterinas` cargo feature.** The OSDK
+5. **Root-zone boot config behind the `asterinas` Kconfig option.** The OSDK
    bzImage is loaded as one module (setup / boot-params at GPA `0xf_f000`, 32-bit
    entry at `0x10_0000`; the OSDK image header reports boot protocol `0x020f`,
    while the hvisor code only requires `>= 0x0204`); the initramfs is a separate
@@ -74,12 +74,13 @@ before. The root-zone boot config is gated behind the `asterinas` cargo feature.
 # 1. Build the harness initramfs from tracked sources:
 (cd tools/asterinas-abi && make initramfs)
 
-# 2. Build hvisor with the asterinas feature and the x86_64/qemu board.
+# 2. Build hvisor with the asterinas option and the x86_64/qemu board.
 #    ASTERINAS_KERNEL points at the OSDK-built Asterinas bzImage. If
 #    ASTERINAS_INITRD is omitted, the build uses tools/asterinas-abi/_build/
 #    initramfs.cpio.gz when it exists.
+make ARCH=x86_64 BOARD=qemu defconfig
+sed -i 's/^# CONFIG_ASTERINAS is not set$/CONFIG_ASTERINAS=y/' .config
 make ARCH=x86_64 BOARD=qemu \
-  FEATURES="pci ecam_pcie no_pcie_bar_realloc uart16550a intel_vtd asterinas" \
   ASTERINAS_KERNEL=aster-kernel-osdk-bin
 
 # 3. Boot the hvisor ISO under QEMU/KVM with VT-x and the VT-d IOMMU:

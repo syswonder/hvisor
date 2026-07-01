@@ -52,17 +52,17 @@ const ROOT_ZONE_UEFI_REGION: HvConfigMemoryRegion = HvConfigMemoryRegion {
 };
 const ROOT_ZONE_UEFI_REGION_ID: usize = 0x3;
 
-#[cfg(not(feature = "asterinas"))]
+#[cfg(not(asterinas))]
 pub const ROOT_ZONE_NAME: &str = "root-linux";
-#[cfg(feature = "asterinas")]
+#[cfg(asterinas)]
 pub const ROOT_ZONE_NAME: &str = "root-asterinas";
 
-#[cfg(not(feature = "asterinas"))]
+#[cfg(not(asterinas))]
 pub const ROOT_ZONE_CMDLINE: &str =
     "console=tty0 console=ttyS0 earlycon=efifb earlyprintk=serial nointremap no_timer_check efi=noruntime pci=pcie_scan_all,lastbus=1 root=/dev/vda rw init=/init\0";
 // Asterinas parses the part before "--" as kernel arguments and the part after
 // it as the init process argv (see the OSDK Linux boot protocol).
-#[cfg(feature = "asterinas")]
+#[cfg(asterinas)]
 pub const ROOT_ZONE_CMDLINE: &str =
     "SHELL=/bin/sh LOGNAME=root HOME=/ USER=root PATH=/bin ostd.log_level=info console=ttyS0 -- /init\0";
 
@@ -114,7 +114,7 @@ const ROOT_ZONE_ZONE1_HIGH: HvConfigMemoryRegion = HvConfigMemoryRegion {
 // when it sees the write. Asterinas instead consumes the firmware-assigned BARs
 // it reads over ECAM and never re-programs them, so the window is mapped through
 // up front as identity-mapped device memory.
-#[cfg(feature = "asterinas")]
+#[cfg(asterinas)]
 const ROOT_ZONE_PCI_MMIO: HvConfigMemoryRegion = HvConfigMemoryRegion {
     mem_type: MEM_TYPE_IO,
     physical_start: 0xfe00_0000,
@@ -122,7 +122,7 @@ const ROOT_ZONE_PCI_MMIO: HvConfigMemoryRegion = HvConfigMemoryRegion {
     size: 0xc0_0000,
 };
 
-#[cfg(not(feature = "asterinas"))]
+#[cfg(not(asterinas))]
 pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 10] = [
     ROOT_ZONE_RAM_LOW,
     ROOT_ZONE_RSDP_REGION,
@@ -136,7 +136,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 10] = [
     ROOT_ZONE_ZONE1_HIGH,
 ];
 
-#[cfg(feature = "asterinas")]
+#[cfg(asterinas)]
 pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 11] = [
     ROOT_ZONE_RAM_LOW,
     ROOT_ZONE_RSDP_REGION,
@@ -155,9 +155,9 @@ const ROOT_ZONE_CMDLINE_ADDR: GuestPhysAddr = 0x9000;
 // Linux loads a standalone setup.bin (boot params) at 0xa000. Asterinas is a
 // single bzImage whose first setup_sects+1 sectors hold the boot params; loaded
 // just below the protected-mode entry so the kernel body lands at 0x10_0000.
-#[cfg(not(feature = "asterinas"))]
+#[cfg(not(asterinas))]
 const ROOT_ZONE_SETUP_ADDR: GuestPhysAddr = 0xa000;
-#[cfg(feature = "asterinas")]
+#[cfg(asterinas)]
 const ROOT_ZONE_SETUP_ADDR: GuestPhysAddr = 0xf_f000;
 const ROOT_ZONE_VMLINUX_ENTRY_ADDR: GuestPhysAddr = 0x10_0000;
 const ROOT_ZONE_SCREEN_BASE_ADDR: GuestPhysAddr = 0x7000_0000;
@@ -173,16 +173,16 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     setup_load_gpa: ROOT_ZONE_SETUP_ADDR,
     // Linux mounts a root disk; Asterinas boots from the initramfs supplied as a
     // separate module at GPA 0x1530_0000 (HPA 0x1a30_0000).
-    #[cfg(not(feature = "asterinas"))]
+    #[cfg(not(asterinas))]
     initrd_load_gpa: 0,
-    #[cfg(feature = "asterinas")]
+    #[cfg(asterinas)]
     initrd_load_gpa: 0x1530_0000,
-    #[cfg(not(feature = "asterinas"))]
+    #[cfg(not(asterinas))]
     initrd_size: 0,
     // GRUB gunzips the module, so this bounds the decompressed cpio. The cpio
     // reader stops at the archive trailer, so a ceiling above the real image is
     // fine; it stays inside the 0x2000_0000-byte RAM region at 0x1530_0000.
-    #[cfg(feature = "asterinas")]
+    #[cfg(asterinas)]
     initrd_size: 0x0400_0000,
     rsdp_memory_region_id: ROOT_ZONE_RSDP_REGION_ID,
     acpi_memory_region_id: ROOT_ZONE_ACPI_REGION_ID,
@@ -198,9 +198,9 @@ pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [HvPciConfig {
     // ports, so the ECAM window is unused. Asterinas uses ECAM exclusively and
     // takes its base from the firmware MCFG table, which on QEMU q35 is at
     // 0xb000_0000; the virtual ECAM must be registered at the same address.
-    #[cfg(not(feature = "asterinas"))]
+    #[cfg(not(asterinas))]
     ecam_base: 0xe0000000,
-    #[cfg(feature = "asterinas")]
+    #[cfg(asterinas)]
     ecam_base: 0xb0000000,
     ecam_size: 0x200000,
     io_base: 0x0,

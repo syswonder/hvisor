@@ -70,7 +70,7 @@ $(hvisor_bin): elf boot
 		echo "Warning: $(zone0_vmlinux) not found, skipping"; \
 	fi
 
-	if echo "$(FEATURES)" | tr ',' ' ' | grep -qw asterinas; then \
+	if [ -f .config ] && grep -qx 'CONFIG_ASTERINAS=y' .config; then \
 		mkdir -p $(image_dir)/kernel; \
 		if [ -n "$(ASTERINAS_KERNEL)" ]; then \
 			cp "$(ASTERINAS_KERNEL)" $(zone0_asterinas); \

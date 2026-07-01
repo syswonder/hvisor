@@ -55,7 +55,7 @@ python3 harness/boot_collect.py --mode linux \
 
 ## Run Asterinas as hvisor zone0
 
-Build hvisor with the `asterinas` cargo feature, stage the Asterinas OSDK bzImage
+Build hvisor with the `CONFIG_ASTERINAS` Kconfig option, stage the Asterinas OSDK bzImage
 and harness initramfs into the qemu board image, boot the hvisor ISO under QEMU
 with KVM and nested VMX, and capture the framed JSON from the serial console.
 The memory layout and boot command are documented in `docs/hvisor_zone0_boot.md`.
