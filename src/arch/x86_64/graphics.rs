@@ -94,18 +94,18 @@ pub fn font_init(psf: &'static [u8]) {
             cursor_x: 0,
             cursor_y: 0,
             max_char_nr_x: (framebuffer.width / font_width) as _,
-            #[cfg(not(feature = "split_screen"))]
+            #[cfg(not(split_screen))]
             max_char_nr_y: (framebuffer.height / psf_header.height) as _,
-            #[cfg(all(feature = "split_screen"))]
+            #[cfg(all(split_screen))]
             max_char_nr_y: (framebuffer.height / 2 / psf_header.height) as _,
-            #[cfg(not(feature = "split_screen"))]
+            #[cfg(not(split_screen))]
             addr: framebuffer.addr as _,
-            #[cfg(all(feature = "split_screen"))]
+            #[cfg(all(split_screen))]
             addr: mid_addr as _,
             width: framebuffer.width as _,
-            #[cfg(not(feature = "split_screen"))]
+            #[cfg(not(split_screen))]
             height: framebuffer.height as _,
-            #[cfg(all(feature = "split_screen"))]
+            #[cfg(all(split_screen))]
             height: (framebuffer.height / 2) as _,
         })
     });

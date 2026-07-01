@@ -15,7 +15,7 @@
 //
 use super::cpu::ArchCpu;
 use crate::arch::sbi::sbi_vs_handler;
-#[cfg(feature = "plic")]
+#[cfg(plic)]
 use crate::device::irqchip::plic::{inject_irq, plic_get_hwirq};
 use crate::event::check_events;
 use crate::memory::GuestPhysAddr;
@@ -417,7 +417,7 @@ pub fn handle_software_interrupt(_current_cpu: &mut ArchCpu) {
 
 /// Handle supervisor external interrupt.
 pub fn handle_external_interrupt(_current_cpu: &mut ArchCpu) {
-    #[cfg(feature = "plic")]
+    #[cfg(plic)]
     {
         // Note: in hvisor, all external interrupts are assigned to VS.
         // 1. claim hw irq.
@@ -431,7 +431,7 @@ pub fn handle_external_interrupt(_current_cpu: &mut ArchCpu) {
         // 2. inject hw irq to zone.
         inject_irq(irq_id as usize, true);
     }
-    #[cfg(feature = "aia")]
+    #[cfg(aia)]
     {
         // Note: no irq belongs to hvisor, so hvisor won't handle external interrupt.
         panic!("HS extensional interrupt")

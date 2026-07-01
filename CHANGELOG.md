@@ -53,7 +53,7 @@
 - [platform] **aarch64**: Improve QEMU GICv2/GICv3 configurations and add zone1-linux support. ([agicy](https://github.com/agicy))
 - [platform] **loongarch64**: Add support for Loongson 3A5 / 3A6 platforms and improve clock and trap handling. ([wheatfox](https://github.com/enkerewpo))
 - [feature] Add **aarch32** support. ([Guowei Li](https://github.com/KouweiLee))
-- [feature] **riscv64** enhancements: g-stage dynamic detection, eic770x_soc, and syscrg emulation. ([Jingyu Liu](https://github.com/liulog))
+- [feature] **riscv64** enhancements: g-stage dynamic detection, hypervisor_v0_6 (EIC770x SoC), and syscrg emulation. ([Jingyu Liu](https://github.com/liulog))
 - [infra] Unify UART / MPIDR mapping, centralize IOMMU configuration, remove redundant arch feature flags, and tidy Cargo/zone/hypercall code. ([Nehckl](https://github.com/Inquisitor-201), [Ren HangQi](https://github.com/ForeverYolo))
 - [infra/tool] **aarch64**: Optimized the structure of GIC parameters ([Ren HangQi](https://github.com/ForeverYolo))
 - [ci/misc] Update dependencies, add ccache support, and improve build/tooling workflows. ([Jingyu Liu](https://github.com/liulog))

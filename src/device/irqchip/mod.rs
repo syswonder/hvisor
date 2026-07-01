@@ -17,32 +17,32 @@ use crate::arch::zone::HvArchZoneConfig;
 use crate::config::HvZoneConfig;
 use crate::zone::Zone;
 
-#[cfg(all(feature = "gicv2", target_arch = "aarch64"))]
+#[cfg(all(irq_gicv2, target_arch = "aarch64"))]
 pub mod gicv2;
-#[cfg(all(feature = "gicv2", target_arch = "aarch64"))]
+#[cfg(all(irq_gicv2, target_arch = "aarch64"))]
 pub use gicv2::{
     gic::inject_irq, gicd::set_ispender, percpu_init, primary_init_early, primary_init_late,
     vgic::set_sgi_irq,
 };
 
-#[cfg(all(feature = "gicv3", target_arch = "aarch64"))]
+#[cfg(all(irq_gicv3, target_arch = "aarch64"))]
 pub mod gicv3;
-#[cfg(all(feature = "gicv3", target_arch = "aarch64"))]
+#[cfg(all(irq_gicv3, target_arch = "aarch64"))]
 pub use gicv3::{
     gicd::set_ispender, inject_irq, percpu_init, primary_init_early, primary_init_late,
 };
 
 #[cfg(target_arch = "aarch64")]
 pub fn gic_handle_irq() {
-    #[cfg(feature = "gicv2")]
+    #[cfg(irq_gicv2)]
     gicv2::gic::gicv2_handle_irq();
-    #[cfg(feature = "gicv3")]
+    #[cfg(irq_gicv3)]
     gicv3::gicv3_handle_irq_el1();
 }
 
 #[cfg(target_arch = "aarch64")]
 pub fn gic_send_event(cpu_id: u64, sgi_num: u64) {
-    #[cfg(feature = "gicv3")]
+    #[cfg(irq_gicv3)]
     {
         /*Actually, the value passed to ICC_SGI1R_EL1 should be derived from
         the MPIDR of the target CPU. However, since we cannot access this
@@ -63,7 +63,7 @@ pub fn gic_send_event(cpu_id: u64, sgi_num: u64) {
         write_sysreg!(icc_sgi1r_el1, val);
         debug!("write sgi sys value = {:#x}", val);
     }
-    #[cfg(feature = "gicv2")]
+    #[cfg(irq_gicv2)]
     {
         let sgi_id: u64 = sgi_num;
         let target_list: u64 = 1 << cpu_id;
@@ -73,11 +73,11 @@ pub fn gic_send_event(cpu_id: u64, sgi_num: u64) {
 
 impl Zone {
     pub fn virqc_init(&mut self, _config: &HvZoneConfig) {
-        #[cfg(all(feature = "plic", target_arch = "riscv64"))]
+        #[cfg(all(plic, target_arch = "riscv64"))]
         {
             self.vplic_init(_config);
         }
-        #[cfg(all(feature = "aia", target_arch = "riscv64"))]
+        #[cfg(all(aia, target_arch = "riscv64"))]
         {
             self.vaplic_init(_config);
             self.vimsic_init(_config);
@@ -85,28 +85,28 @@ impl Zone {
     }
 
     pub fn mmio_init(&mut self, hv_config: &HvArchZoneConfig) {
-        #[cfg(all(feature = "gicv2", target_arch = "aarch64"))]
+        #[cfg(all(irq_gicv2, target_arch = "aarch64"))]
         {
             self.vgicv2_mmio_init(hv_config);
             self.vgicv2_remap_init(hv_config);
         }
-        #[cfg(all(feature = "gicv3", target_arch = "aarch64"))]
+        #[cfg(all(irq_gicv3, target_arch = "aarch64"))]
         {
             self.vgicv3_mmio_init(hv_config);
         }
-        #[cfg(all(feature = "plic", target_arch = "riscv64"))]
+        #[cfg(all(plic, target_arch = "riscv64"))]
         {
             self.vplic_mmio_init(hv_config);
         }
-        #[cfg(all(feature = "aia", target_arch = "riscv64"))]
+        #[cfg(all(aia, target_arch = "riscv64"))]
         {
             self.vaplic_mmio_init(hv_config);
         }
-        #[cfg(all(feature = "eic770x_soc", target_arch = "riscv64"))]
+        #[cfg(all(hypervisor_v0_6, target_arch = "riscv64"))]
         {
-            #[cfg(feature = "sifive_ccache")]
+            #[cfg(sifive_ccache)]
             self.virtual_sifive_ccache_mmio_init();
-            #[cfg(feature = "eic7700_sysreg")]
+            #[cfg(eic7700_sysreg)]
             self.virtual_syscon_mmio_init();
         }
         #[cfg(target_arch = "x86_64")]
@@ -117,30 +117,30 @@ impl Zone {
     }
 }
 
-#[cfg(all(feature = "aclint", target_arch = "riscv64"))]
+#[cfg(all(aclint, target_arch = "riscv64"))]
 pub mod aclint;
 
-#[cfg(all(feature = "plic", target_arch = "riscv64"))]
+#[cfg(all(plic, target_arch = "riscv64"))]
 pub mod plic;
 
-#[cfg(all(feature = "plic", target_arch = "riscv64"))]
+#[cfg(all(plic, target_arch = "riscv64"))]
 pub use plic::{inject_irq, percpu_init, primary_init_late};
 
-#[cfg(all(feature = "aia", target_arch = "riscv64"))]
+#[cfg(all(aia, target_arch = "riscv64"))]
 pub mod aia;
 
-#[cfg(all(feature = "aia", target_arch = "riscv64"))]
+#[cfg(all(aia, target_arch = "riscv64"))]
 pub use aia::{host_aplic, inject_irq, percpu_init, primary_init_late};
 
 #[cfg(target_arch = "riscv64")]
 pub fn primary_init_early() {
     // aclint is local interrupt controller
     // plic & aia is global interrupt controller
-    #[cfg(feature = "plic")]
+    #[cfg(plic)]
     plic::primary_init_early();
-    #[cfg(feature = "aia")]
+    #[cfg(aia)]
     aia::primary_init_early();
-    #[cfg(feature = "aclint")]
+    #[cfg(aclint)]
     aclint::aclint_init(crate::platform::ACLINT_SSWI_BASE);
 }
 

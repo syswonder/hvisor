@@ -263,7 +263,7 @@ impl PagingInstr for S2PTInstr {
 
         // if this cpu is boot cpu and it is running
         if this_cpu_data().vcpu_state.is_running() && this_cpu_data().boot_cpu {
-            #[cfg(feature = "intel_vtd")]
+            #[cfg(intel_vtd)]
             iommu::fill_dma_translation_tables(this_zone_id(), root_paddr);
         }
     }

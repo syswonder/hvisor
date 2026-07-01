@@ -65,11 +65,7 @@ impl PciRegionMmio {
     }
 }
 
-#[cfg(all(
-    not(feature = "ecam_pcie"),
-    not(feature = "dwc_pcie"),
-    not(feature = "loongarch64_pcie")
-))]
+#[cfg(not(pci))]
 impl PciConfigMmio {
     pub fn access<T>(&self, offset: PciConfigAddress) -> *mut T {
         (self.base + offset) as *mut T
@@ -147,13 +143,13 @@ pub enum PciAccessorType {
 }
 
 // Export accessor implementations
-#[cfg(feature = "ecam_pcie")]
+#[cfg(ecam_pcie)]
 pub mod ecam;
 
-#[cfg(feature = "dwc_pcie")]
+#[cfg(dwc_pcie)]
 pub mod dwc;
-#[cfg(feature = "dwc_pcie")]
+#[cfg(dwc_pcie)]
 pub mod dwc_atu;
 
-#[cfg(feature = "loongarch64_pcie")]
+#[cfg(loongarch64_pcie)]
 pub mod loongarch64;

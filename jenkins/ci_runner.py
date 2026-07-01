@@ -11,7 +11,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
-from ci_config import get_bid_entry, load_ci
+from ci_config import get_bid_entry, load_ci, parse_bid
 from terminal import Terminal, TerminalCommandError, TerminalTimeoutError
 
 
@@ -180,7 +180,7 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     if not pts_numbers:
         raise TerminalCommandError("failed to find numeric pts from 'ls -1 /dev/pts/[0-9]*'")
     max_pts = pts_numbers[-1]
-    _ = run_and_print_send_only(term, f"screen /dev/pts/{max_pts}", read_duration=5.0)
+    _ = run_and_print_send_only(term, f"screen /dev/pts/{max_pts}", read_duration=20.0)
     _ = run_and_print_send_only(term, "\n", read_duration=2.0)
     _, _ = run_and_print_quiet(term, "ls", quiet_seconds=1.0, max_duration=15.0)
     if boot_rc != 0:
@@ -205,15 +205,16 @@ def parse_args() -> argparse.Namespace:
 def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
     ci = load_ci()
     bid_entry = get_bid_entry(ci, args.bid)
-    build_args = bid_entry["build_args"]
     tests = bid_entry["tests"]
 
-    arch = build_args.get("ARCH", "").strip()
-    board = build_args.get("BOARD", "").strip()
+    try:
+        arch, board = parse_bid(args.bid)
+    except ValueError as exc:
+        raise SystemExit(str(exc)) from exc
     mode = bid_entry.get("mode", "").strip()
     cases = bid_entry.get("cases", [])
-    if not arch or not board or not mode:
-        raise SystemExit(f"incomplete config for bid '{args.bid}': ARCH/BOARD/mode are required")
+    if not mode:
+        raise SystemExit(f"incomplete config for bid '{args.bid}': tests.mode is required")
     if not cases:
         raise SystemExit(f"no test cases configured for bid '{args.bid}'")
 

@@ -14,13 +14,13 @@
 // Authors:
 //
 
-#[cfg(all(feature = "dwc_pcie", feature = "pci_init_delay"))]
+#[cfg(all(dwc_pcie, pci_init_delay))]
 use alloc::collections::btree_map::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
-#[cfg(all(feature = "dwc_pcie", feature = "pci_init_delay"))]
+#[cfg(all(dwc_pcie, pci_init_delay))]
 use spin::Lazy;
-#[cfg(all(feature = "dwc_pcie", feature = "pci_init_delay"))]
+#[cfg(all(dwc_pcie, pci_init_delay))]
 use spin::Mutex;
 
 use crate::cpu_data::this_zone;
@@ -41,7 +41,7 @@ use super::PciConfigAddress;
 #[cfg(target_arch = "x86_64")]
 use crate::zone::this_zone_id;
 
-#[cfg(feature = "dwc_pcie")]
+#[cfg(dwc_pcie)]
 use crate::pci::config_accessors::{
     dwc::DwcConfigRegionBackend,
     dwc_atu::{
@@ -53,15 +53,15 @@ use crate::pci::config_accessors::{
     PciRegionMmio,
 };
 
-#[cfg(all(feature = "dwc_msi", feature = "dwc_pcie"))]
+#[cfg(all(dwc_msi, dwc_pcie))]
 use super::dwc_msi::{
     PCIE_MSI_ADDR_HI, PCIE_MSI_ADDR_LO, PCIE_MSI_INTR0_ENABLE, PCIE_MSI_INTR0_MASK,
     PCIE_MSI_INTR0_STATUS,
 };
 
-#[cfg(not(feature = "dwc_msi"))]
+#[cfg(not(dwc_msi))]
 const PCIE_MSI_ADDR_LO: usize = 0x820;
-#[cfg(not(feature = "dwc_msi"))]
+#[cfg(not(dwc_msi))]
 const PCIE_MSI_INTR0_STATUS: usize = 0x830;
 
 const SRIOV_CTRL_OFFSET: PciConfigAddress = 0x08;
@@ -386,7 +386,7 @@ fn handle_cap_access(
             }
         }
     } else if offset >= 0x100 {
-        #[cfg(feature = "sriov")]
+        #[cfg(sriov)]
         if let Some(cap_offset) = dev.with_sriov_info(|sriov_info| sriov_info.cap_offset) {
             if offset >= cap_offset && offset < cap_offset + SRIOV_CAP_SIZE {
                 if is_write {
@@ -402,7 +402,7 @@ fn handle_cap_access(
 
         // When `sriov` feature is disabled, hide the SR-IOV extended capability
         // from guest VMs by patching the ext-cap linked list on the fly.
-        #[cfg(not(feature = "sriov"))]
+        #[cfg(not(sriov))]
         if let Some(hide) = dev.with_hide_sriov(|h| h.clone()) {
             use bit_field::BitField;
             // Accesses inside the SR-IOV cap range: return 0 / silently drop writes.
@@ -485,7 +485,7 @@ fn handle_cap_access(
                     matches!(relative_offset, 8 | 9)
                 };
 
-                #[cfg(all(feature = "dwc_msi", feature = "dwc_pcie"))]
+                #[cfg(all(dwc_msi, dwc_pcie))]
                 {
                     if is_write {
                         if _is_addr_low {
@@ -637,7 +637,7 @@ fn handle_endpoint_access(
             let bar_type = dev.with_bar_ref(slot, |bar| bar.get_type());
 
             // Check if this BAR contains MSIX table (only when dwc_msi feature is enabled)
-            #[cfg(all(feature = "dwc_msi", feature = "dwc_pcie"))]
+            #[cfg(all(dwc_msi, dwc_pcie))]
             let is_msix_bar = {
                 let msix_check_slot = if bar_type == PciMemType::Mem64High && slot > 0 {
                     slot - 1
@@ -656,7 +656,7 @@ fn handle_endpoint_access(
                     .unwrap_or(false)
             };
 
-            #[cfg(not(feature = "dwc_msi"))]
+            #[cfg(not(dwc_msi))]
             let is_msix_bar = false;
 
             if bar_type != PciMemType::default() {
@@ -798,7 +798,7 @@ fn handle_endpoint_access(
                                     core::arch::asm!("tlbi vmalls12e1is");
                                     core::arch::asm!("dsb nsh");
                                 }
-                                #[cfg(all(target_arch = "x86_64", feature = "intel_vtd"))]
+                                #[cfg(all(target_arch = "x86_64", intel_vtd))]
                                 {
                                     let vbdf = dev.get_vbdf();
                                     crate::device::iommu::flush(
@@ -944,7 +944,7 @@ fn handle_endpoint_access(
                                 /* after update gpm, need to flush iommu table
                                  * in x86_64
                                  */
-                                #[cfg(all(target_arch = "x86_64", feature = "intel_vtd"))]
+                                #[cfg(all(target_arch = "x86_64", intel_vtd))]
                                 {
                                     let vbdf = dev.get_vbdf();
                                     crate::device::iommu::flush(
@@ -1090,7 +1090,7 @@ fn handle_endpoint_access(
                                 /* after update gpm, need to flush iommu table
                                  * in x86_64
                                  */
-                                #[cfg(all(target_arch = "x86_64", feature = "intel_vtd"))]
+                                #[cfg(all(target_arch = "x86_64", intel_vtd))]
                                 {
                                     let vbdf = dev.get_vbdf();
                                     crate::device::iommu::flush(
@@ -1153,7 +1153,7 @@ fn handle_pci_bridge_access(
             let bar_type = dev.with_bar_ref(slot, |bar| bar.get_type());
 
             // Check if this BAR contains MSIX table (only when dwc_msi feature is enabled)
-            #[cfg(all(feature = "dwc_msi", feature = "dwc_pcie"))]
+            #[cfg(all(dwc_msi, dwc_pcie))]
             let is_msix_bar = {
                 let msix_check_slot = if bar_type == PciMemType::Mem64High && slot > 0 {
                     slot - 1
@@ -1172,7 +1172,7 @@ fn handle_pci_bridge_access(
                     .unwrap_or(false)
             };
 
-            #[cfg(not(feature = "dwc_msi"))]
+            #[cfg(not(dwc_msi))]
             let is_msix_bar = false;
 
             if bar_type != PciMemType::default() {
@@ -1294,7 +1294,7 @@ fn handle_pci_bridge_access(
                                     core::arch::asm!("tlbi vmalls12e1is");
                                     core::arch::asm!("dsb nsh");
                                 }
-                                #[cfg(all(target_arch = "x86_64", feature = "intel_vtd"))]
+                                #[cfg(all(target_arch = "x86_64", intel_vtd))]
                                 {
                                     let vbdf = dev.get_vbdf();
                                     crate::device::iommu::flush(
@@ -1420,7 +1420,7 @@ fn handle_pci_bridge_access(
                                 /* after update gpm, need to flush iommu table
                                  * in x86_64
                                  */
-                                #[cfg(all(target_arch = "x86_64", feature = "intel_vtd"))]
+                                #[cfg(all(target_arch = "x86_64", intel_vtd))]
                                 {
                                     let vbdf = dev.get_vbdf();
                                     crate::device::iommu::flush(
@@ -1561,7 +1561,7 @@ fn handle_pci_bridge_access(
                                 /* after update gpm, need to flush iommu table
                                  * in x86_64
                                  */
-                                #[cfg(all(target_arch = "x86_64", feature = "intel_vtd"))]
+                                #[cfg(all(target_arch = "x86_64", intel_vtd))]
                                 {
                                     let vbdf = dev.get_vbdf();
                                     crate::device::iommu::flush(
@@ -1817,7 +1817,7 @@ pub fn mmio_vpci_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     Ok(())
 }
 
-#[cfg(feature = "dwc_pcie")]
+#[cfg(dwc_pcie)]
 pub fn mmio_dwc_io_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     {
         let zone = this_zone();
@@ -1858,7 +1858,7 @@ pub fn mmio_dwc_io_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     Ok(())
 }
 
-#[cfg(feature = "dwc_pcie")]
+#[cfg(dwc_pcie)]
 pub fn mmio_dwc_cfg_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     // info!("mmio_dwc_cfg_handler {:#x}", mmio.address + _base);
     let zone = this_zone();
@@ -1993,7 +1993,7 @@ pub fn mmio_dwc_cfg_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     Ok(())
 }
 
-#[cfg(feature = "dwc_pcie")]
+#[cfg(dwc_pcie)]
 pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     // info!("mmio_vpci_handler_dbi {:#x}", mmio.address);
 
@@ -2006,7 +2006,7 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     let domain_id = (_base & 0xF) as u8;
     let ecam_base = _base - (domain_id as usize);
 
-    #[cfg(all(feature = "pci_init_delay", feature = "dwc_pcie"))]
+    #[cfg(all(pci_init_delay, dwc_pcie))]
     {
         // Delay mode semantics:
         // - Before init-done, accesses to non-zero DBI regs are normally passed through.
@@ -2014,7 +2014,7 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
         // - Access to DBI reg 0 triggers hvisor PCI init, then normal DBI virtualization continues.
         if !is_pci_init_done(domain_id) {
             if mmio.address != 0 {
-                #[cfg(feature = "dwc_msi")]
+                #[cfg(dwc_msi)]
                 match mmio.address {
                     PCIE_MSI_ADDR_LO | PCIE_MSI_ADDR_HI => {
                         let zone = this_zone();
@@ -2071,7 +2071,7 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                 num_pci_bus,
             )?;
 
-            #[cfg(feature = "dwc_msi")]
+            #[cfg(dwc_msi)]
             {
                 // Why this is inside init-delay only:
                 // before init-done, VM may have already written MSI_ADDR_LO/HI and those writes were
@@ -2246,7 +2246,7 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
             mmio_perform_access(ecam_base, mmio);
         } else if mmio.address >= PCIE_MSI_ADDR_LO && mmio.address <= PCIE_MSI_INTR0_STATUS {
             // Handle MSI registers - virtuize only if dwc_msi feature enabled
-            #[cfg(all(feature = "dwc_msi", feature = "dwc_pcie"))]
+            #[cfg(all(dwc_msi, dwc_pcie))]
             {
                 // Non-delay path (or delay after init-done) uses this handler for MSI DBI regs.
                 // LO/HI writes are virtualized and synchronized with hvisor-managed doorbell here.
@@ -2451,7 +2451,7 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                 }
             }
 
-            #[cfg(not(feature = "dwc_msi"))]
+            #[cfg(not(dwc_msi))]
             {
                 // Without dwc_msi feature, directly pass through MSI register access
                 mmio_perform_access(ecam_base, mmio);
@@ -2515,11 +2515,11 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     Ok(())
 }
 
-#[cfg(all(feature = "dwc_pcie", feature = "pci_init_delay"))]
+#[cfg(all(dwc_pcie, pci_init_delay))]
 static DBI_PCI_INIT_DONE: Lazy<Mutex<BTreeMap<u8, bool>>> =
     Lazy::new(|| Mutex::new(BTreeMap::new()));
 
-#[cfg(all(feature = "dwc_pcie", feature = "pci_init_delay"))]
+#[cfg(all(dwc_pcie, pci_init_delay))]
 pub fn is_pci_init_done(domain_id: u8) -> bool {
     DBI_PCI_INIT_DONE
         .lock()
@@ -2528,7 +2528,7 @@ pub fn is_pci_init_done(domain_id: u8) -> bool {
         .unwrap_or(false)
 }
 
-#[cfg(all(feature = "dwc_pcie", feature = "pci_init_delay"))]
+#[cfg(all(dwc_pcie, pci_init_delay))]
 fn set_pci_init_done(domain_id: u8) {
     DBI_PCI_INIT_DONE.lock().insert(domain_id, true);
 }
@@ -2640,7 +2640,7 @@ pub fn mmio_msix_table_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
                         });
 
                         // Replace with hvisor's doorbell before writing to hardware
-                        #[cfg(all(feature = "dwc_msi", feature = "dwc_pcie"))]
+                        #[cfg(all(dwc_msi, dwc_pcie))]
                         {
                             if _domain_id != 0xFF {
                                 let hw_paddr =
@@ -2658,7 +2658,7 @@ pub fn mmio_msix_table_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
                         });
 
                         // Replace with hvisor's doorbell before writing to hardware
-                        #[cfg(all(feature = "dwc_msi", feature = "dwc_pcie"))]
+                        #[cfg(all(dwc_msi, dwc_pcie))]
                         {
                             if _domain_id != 0xFF {
                                 let hw_paddr =
@@ -2670,7 +2670,7 @@ pub fn mmio_msix_table_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
                     }
                     8..=11 => {
                         // Convert VM vector index to hardware vector index.
-                        #[cfg(all(feature = "dwc_msi", feature = "dwc_pcie"))]
+                        #[cfg(all(dwc_msi, dwc_pcie))]
                         {
                             if _domain_id != 0xFF {
                                 let zone = this_zone();
@@ -2722,7 +2722,7 @@ pub fn mmio_msix_table_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
                     }
                     8..=11 => {
                         mmio.value = hw_value;
-                        #[cfg(all(feature = "dwc_msi", feature = "dwc_pcie"))]
+                        #[cfg(all(dwc_msi, dwc_pcie))]
                         {
                             if _domain_id != 0xFF {
                                 let zone = this_zone();

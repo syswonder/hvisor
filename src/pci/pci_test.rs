@@ -25,7 +25,7 @@ use super::{
     pci_struct::{Bdf, VirtualPciConfigSpace, CONFIG_LENTH},
 };
 
-#[cfg(feature = "ecam_pcie")]
+#[cfg(ecam_pcie)]
 use super::{mem_alloc::BaseAllocator, pci_struct::RootComplex};
 
 use crate::{
@@ -40,7 +40,7 @@ pub static GLOBAL_PCIE_LIST_TEST: Lazy<Mutex<BTreeMap<Bdf, VirtualPciConfigSpace
         Mutex::new(m)
     });
 
-#[cfg(feature = "ecam_pcie")]
+#[cfg(ecam_pcie)]
 pub fn pcie_test() {
     warn!("pcie test");
     let mut allocator = BaseAllocator::default();

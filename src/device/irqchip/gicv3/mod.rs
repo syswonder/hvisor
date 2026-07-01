@@ -111,7 +111,7 @@ pub fn gicv3_handle_irq_el1() {
             warn!("skip sgi {}", irq_id);
             deactivate_irq(irq_id);
         } else {
-            #[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+            #[cfg(all(dwc_pcie, dwc_msi))]
             let mut is_dwc_msi_irq = false;
 
             if irq_id == 27 {
@@ -133,7 +133,7 @@ pub fn gicv3_handle_irq_el1() {
                 //inject phy irq
                 trace!("*** get spi_irq id = {}", irq_id);
 
-                #[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+                #[cfg(all(dwc_pcie, dwc_msi))]
                 {
                     if let Some(domain_id) =
                         crate::pci::dwc_msi::get_domain_id_by_irq(irq_id as u32)
@@ -146,12 +146,12 @@ pub fn gicv3_handle_irq_el1() {
                 warn!("not konw irq id = {}", irq_id);
             }
 
-            #[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+            #[cfg(all(dwc_pcie, dwc_msi))]
             if irq_id != 25 && !is_dwc_msi_irq {
                 inject_irq(irq_id, true);
             }
 
-            #[cfg(not(all(feature = "dwc_pcie", feature = "dwc_msi")))]
+            #[cfg(not(all(dwc_pcie, dwc_msi)))]
             if irq_id != 25 {
                 inject_irq(irq_id, true);
             }

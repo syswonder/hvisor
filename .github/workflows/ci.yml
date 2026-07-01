@@ -5,15 +5,15 @@
 
 name: CI
 on:
-  push:
-    branches:
-      - main
-      - dev
-  pull_request:
-    branches:
-      - main
-      - dev
-  workflow_dispatch:
+  # push:
+  #   branches:
+  #     - main
+  #     - dev
+  # pull_request:
+  #   branches:
+  #     - main
+  #     - dev
+  # workflow_dispatch:
 env:
   MODE: debug
 jobs:
@@ -31,7 +31,7 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget
+          sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget python3-venv
           cargo install --version 0.3.0 --locked cargo-binutils
       - name: Format Check
         run: make fmt-test

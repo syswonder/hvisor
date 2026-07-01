@@ -15,7 +15,7 @@
 //      Jingyu Liu <liujingyu24s@ict.ac.cn>
 //
 use crate::consts::IPI_EVENT_SEND_IPI;
-#[cfg(feature = "plic")]
+#[cfg(plic)]
 use crate::consts::IPI_EVENT_UPDATE_HART_LINE;
 use crate::platform::BOARD_HARTID_MAP;
 
@@ -23,9 +23,9 @@ use crate::platform::BOARD_HARTID_MAP;
 pub fn arch_send_event(cpu_id: u64, _sgi_num: u64) {
     let hart_id = BOARD_HARTID_MAP[cpu_id as usize];
     debug!("arch_send_event: cpu_id: {}", hart_id);
-    #[cfg(feature = "aclint")]
+    #[cfg(aclint)]
     crate::device::irqchip::aclint::aclint_send_ipi(hart_id as usize);
-    #[cfg(not(feature = "aclint"))]
+    #[cfg(not(aclint))]
     {
         let sbi_ret: sbi_rt::SbiRet =
             sbi_rt::send_ipi(sbi_rt::HartMask::from_mask_base(1 << hart_id, 0));
@@ -44,7 +44,7 @@ pub fn arch_ipi_handler() {
 
 pub fn arch_check_events(event: Option<usize>) {
     match event {
-        #[cfg(feature = "plic")]
+        #[cfg(plic)]
         Some(IPI_EVENT_UPDATE_HART_LINE) => {
             use crate::device::irqchip::plic::update_hart_line;
             update_hart_line();

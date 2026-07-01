@@ -73,5 +73,5 @@ Both the root zone and zone1 are assigned one virtio-pci-blk device(using wired-
 
 Please confirm qemu-system-riscv64 version >= 10.0.0, add iommu-sys=on for machine param and iommu_platform=on for devices linked behind iommu. (refer to platform.mk)
 
-Add `iommu` and `share_s2pt` features for hvisor.
+Enable IOMMU in **`kconfig/defconfig`** (`CONFIG_IOMMU`, `CONFIG_RISCV_IOMMU`, `CONFIG_SHARE_S2PT`, etc.) for hvisor.
 

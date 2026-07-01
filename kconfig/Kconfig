@@ -1,0 +1,242 @@
+mainmenu "hvisor platform options"
+
+menu "Target architecture"
+choice
+	prompt "CPU architecture"
+	default ARCH_AARCH64
+
+config ARCH_AARCH64
+	bool "aarch64"
+
+config ARCH_RISCV64
+	bool "riscv64"
+
+config ARCH_LOONGARCH64
+	bool "loongarch64"
+
+config ARCH_X86_64
+	bool "x86_64"
+
+endchoice
+endmenu
+
+menu "Interrupt controller"
+	depends on ARCH_AARCH64 || ARCH_RISCV64 || ARCH_LOONGARCH64
+
+choice
+	prompt "GIC version"
+	optional
+	default IRQ_GICV3
+	depends on ARCH_AARCH64
+
+config IRQ_GICV2
+	bool "GICv2"
+
+config IRQ_GICV3
+	bool "GICv3"
+
+endchoice
+
+config PLIC
+	bool "PLIC"
+	depends on ARCH_RISCV64
+	default n
+
+config DP1000_PLIC
+	bool "DP1000 PLIC variant"
+	depends on ARCH_RISCV64 && PLIC
+	default n
+
+config AIA
+	bool "AIA (APLIC/IMSIC)"
+	depends on ARCH_RISCV64
+	default n
+
+config ACLINT
+	bool "ACLINT (MTI/MSI)"
+	depends on ARCH_RISCV64
+	default n
+
+config LOONGSON_7A2000
+	bool "Loongson 7A2000"
+	depends on ARCH_LOONGARCH64
+	default n
+
+endmenu
+
+menu "RISC-V options"
+	depends on ARCH_RISCV64
+
+config SSTC
+	bool "Sstc"
+	default n
+
+config HYPERVISOR_V0_6
+	bool "Hypervisor v0.6"
+	default n
+
+config EIC7700_SYSREG
+	bool "EIC7700 system registers"
+	depends on HYPERVISOR_V0_6
+	default n
+
+config SIFIVE_CCACHE
+	bool "SiFive ccache"
+	depends on HYPERVISOR_V0_6
+	default n
+
+endmenu
+
+menu "LoongArch platform"
+	depends on ARCH_LOONGARCH64
+
+config LOONGSON_3A5000
+	bool "Loongson 3A5000 CPU profile"
+	default n
+
+config LOONGSON_3A6000
+	bool "Loongson 3A6000 CPU profile"
+	default n
+endmenu
+
+menu "UART"
+
+config PL011
+	bool "PL011"
+	depends on ARCH_AARCH64
+	default n
+
+config IMX_UART
+	bool "iMX UART"
+	depends on ARCH_AARCH64
+	default n
+
+config XUARTPS
+	bool "XUARTPS"
+	depends on ARCH_AARCH64
+	default n
+
+config UART_16550
+	bool "UART_16550"
+	depends on ARCH_AARCH64
+	default n
+
+config UART16550A
+	bool "UART16550A"
+	depends on ARCH_X86_64
+	default n
+
+config LOONGSON_UART
+	bool "Loongson UART"
+	depends on ARCH_LOONGARCH64
+	default n
+endmenu
+
+menu "PCIe"
+
+config PCI
+	bool "PCI/PCIe support"
+	default n
+
+choice
+	prompt "PCIe Architecture"
+	depends on PCI
+	default PCIE_ECAM
+
+config PCIE_ECAM
+	bool "ECAM PCIe"
+
+config PCIE_DWC
+	bool "DesignWare Core PCIe"
+
+config PCIE_LOONGARCH64
+	bool "LoongArch PCIe"
+	depends on ARCH_LOONGARCH64
+
+endchoice
+
+config NO_PCIE_BAR_REALLOC
+	bool "Do not reallocate PCIe BARs (board-specific)"
+	depends on PCI
+	default n
+
+config DWC_MSI
+	bool "DesignWare native MSI"
+	depends on PCIE_DWC
+	default n
+
+config PCI_INIT_DELAY
+	bool "Delay PCI init until guest DBI offset 0 access"
+	depends on PCIE_DWC
+	default n
+
+config SRIOV
+	bool "SR-IOV PF/VF enumeration and passthrough"
+	depends on PCI
+	default n
+
+config VIRTIO_PCI
+	bool "Virtio over PCI"
+	depends on PCI && IRQ_GICV3
+	default n
+endmenu
+
+menu "IOMMU"
+
+config IOMMU
+	bool
+	default n
+
+config ARM_SMMU
+	bool "ARM SMMU"
+	depends on ARCH_AARCH64
+	select IOMMU
+	default n
+
+config INTEL_VTD
+	bool "Intel VT-d"
+	depends on ARCH_X86_64
+	select IOMMU
+	default n
+
+config RISCV_IOMMU
+	bool "RISC-V IOMMU"
+	depends on ARCH_RISCV64
+	select IOMMU
+	default n
+
+config SHARE_S2PT
+	bool "Share stage-2 page tables with IOMMU (RISC-V IOMMU only)"
+	depends on RISCV_IOMMU
+	default n
+
+config VIOMMU
+	bool "Virtual RISC-V IOMMU"
+	depends on RISCV_IOMMU
+	default n
+endmenu
+
+menu "x86-specific options"
+	depends on ARCH_X86_64
+
+config GRAPHICS
+	bool "Framebuffer / graphics"
+	default n
+
+config SPLIT_SCREEN
+	bool "Split screen layout"
+	depends on GRAPHICS
+	default n
+
+config PRINT_TIMESTAMP
+	bool "Print timestamp in logs"
+	default n
+endmenu
+
+menu "Debug"
+
+config EXTIOI_DEBUG
+	bool "EXTIOI debug (LoongArch LS7A2000)"
+	depends on ARCH_LOONGARCH64
+	default n
+endmenu

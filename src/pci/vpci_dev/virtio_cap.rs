@@ -44,7 +44,7 @@ const VIRTIO_F_VERSION_1: usize = 32;
 
 // #[allow(unused_variables)]
 // pub unsafe fn virtio_pci_intercept_its(deviceid: usize, event_id: usize, intid: usize) {
-//     #[cfg(feature = "virtio_pci")]
+//     #[cfg(virtio_pci)]
 //     unsafe {
 //         use crate::pci::msix::MAPTI_INTERCEPTOR;
 
@@ -56,7 +56,7 @@ const VIRTIO_F_VERSION_1: usize = 32;
 
 // #[allow(unused_variables)]
 // pub unsafe fn virtio_pci_add_pending_data_req_id(data_req_id: u64) {
-//     #[cfg(feature = "virtio_pci")]
+//     #[cfg(virtio_pci)]
 //     unsafe {
 //         use crate::pci::msix::VIRTIO_MSIX_MANAGER;
 
@@ -68,7 +68,7 @@ const VIRTIO_F_VERSION_1: usize = 32;
 
 // #[allow(unused_variables)]
 // pub unsafe fn virtio_pci_activate_all_pending_irq() {
-//     #[cfg(feature = "virtio_pci")]
+//     #[cfg(virtio_pci)]
 //     unsafe {
 //         use crate::pci::msix::VIRTIO_MSIX_MANAGER;
 

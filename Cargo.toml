@@ -47,67 +47,6 @@ acpi = "=5.2.0"
 uguid = "=2.2.0"
 uefi-raw = "=0.9.0"
 
-[features]
-############# general ##############
-iommu = [] # supported by: aarch64, riscv64
-pci = [] # supported by: aarch64, riscv64,loongarch64
-sriov = ["pci"] # SR-IOV PF/VF enumeration and passthrough
-print_timestamp = [] # print timestamp when logging
-
-############# IOMMU ##############
-riscv_iommu = ["iommu"]
-arm_smmu = ["iommu"]
-intel_vtd = ["iommu"]
-share_s2pt = ["iommu"]
-viommu = ["iommu"]  # supported by: riscv64
-
-############# PCIe access mechanism ##############
-ecam_pcie = [] # Standard ECAM mechanism (default for most platforms)
-dwc_pcie = [] # DesignWare PCIe Core mechanism (CFG0/CFG1, used by RK3568)
-loongarch64_pcie = [] # LoongArch PCIe mechanism (used by LoongArch platforms)
-no_pcie_bar_realloc = []
-dwc_msi = ["dwc_pcie"] # DesignWare Native MSI (used when arch doesn't provide MSI, e.g., ARM without ITS)
-pci_init_delay = ["dwc_pcie"] # Delay hvisor PCI init until guest DBI offset 0 access
-virtio_pci = [] # Virtual virtio pci support
-
-############# aarch64 ##############
-# irqchip driver
-gicv2 = []
-gicv3 = []
-
-# uart driver
-pl011 = []
-xuartps = []
-imx_uart = []
-uart_16550 = []
-sifive_ccache = []
-eic7700_sysreg = []
-uart16550a = []
-
-############## riscv64 #############
-# irqchip driver
-plic = []
-dp1000_plic = []
-aia = []
-aclint = []
-# extensions
-sstc = []
-# platform specific
-eic770x_soc = []
-
-########### loongarch64 ############
-# irqchip driver
-loongson_7a2000 = []
-# uart driver
-loongson_uart = []
-# cpu (not used for now)
-loongson_3a5000 = []
-loongson_3a6000 = []
-
-############# x86_64 ###############
-graphics = []
-split_screen = []
-
 [profile.dev]
 # panic = "abort" # avoid cargo test failure, this is a bug of cargo
 debug = 2

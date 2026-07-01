@@ -1,8 +1,6 @@
 bids:
   - bid: riscv64/qemu-plic
     build_args:
-      - ARCH=riscv64
-      - BOARD=qemu-plic
       - KDIR=/home/light/DEMO/linux/linux-6.10
     tests:
       mode: qemu
@@ -12,8 +10,6 @@ bids:
 
   - bid: aarch64/qemu-gicv3
     build_args:
-      - ARCH=aarch64
-      - BOARD=qemu-gicv3
       - KDIR=/home/light/DEMO/linux/linux-5.4
     tests:
       mode: qemu
@@ -24,8 +20,6 @@ bids:
 
   # - bid: aarch64/rk3568
   #   build_args:
-  #     - ARCH=aarch64
-  #     - BOARD=rk3568
   #     - KDIR=/home/light/DEMO/sdk/rk356x-up4-2c/kernel
   #   tests:
   #     mode: board
@@ -39,8 +33,6 @@ bids:
 
   - bid: x86_64/qemu
     build_args:
-      - ARCH=x86_64
-      - BOARD=qemu
       - KDIR=/home/light/DEMO/linux/linux-5.19
     tests:
       mode: qemu

@@ -20,9 +20,9 @@ use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM};
 use crate::pci::pci_struct::VirtualRootComplex;
 use spin::{RwLock, RwLockReadGuard, RwLockWriteGuard};
 
-#[cfg(feature = "dwc_pcie")]
+#[cfg(dwc_pcie)]
 use crate::pci::{config_accessors::dwc_atu::AtuConfig, PciConfigAddress};
-#[cfg(feature = "dwc_pcie")]
+#[cfg(dwc_pcie)]
 use alloc::collections::btree_map::BTreeMap;
 
 use crate::arch::mm::new_s2_memory_set;
@@ -36,14 +36,14 @@ use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
 use core::panic;
 use core::sync::atomic::{AtomicBool, Ordering};
 
-#[cfg(all(feature = "pci_init_delay", feature = "dwc_pcie"))]
+#[cfg(all(pci_init_delay, dwc_pcie))]
 use crate::config::{HvPciConfig, HvPciDevConfig, CONFIG_MAX_PCI_DEV, CONFIG_PCI_BUS_MAXNUM};
-#[cfg(all(feature = "pci_init_delay", feature = "dwc_pcie"))]
+#[cfg(all(pci_init_delay, dwc_pcie))]
 use crate::pci::pci_config::GLOBAL_PCIE_LIST;
-#[cfg(all(feature = "pci_init_delay", feature = "dwc_pcie"))]
+#[cfg(all(pci_init_delay, dwc_pcie))]
 use crate::pci::pci_struct::Bdf;
 
-#[cfg(feature = "dwc_pcie")]
+#[cfg(dwc_pcie)]
 #[derive(Debug)]
 pub struct VirtualAtuConfigs {
     ecam_to_atu: BTreeMap<usize, AtuConfig>,
@@ -51,7 +51,7 @@ pub struct VirtualAtuConfigs {
     cfg_base_to_ecam: BTreeMap<PciConfigAddress, usize>,
 }
 
-#[cfg(feature = "dwc_pcie")]
+#[cfg(dwc_pcie)]
 impl VirtualAtuConfigs {
     pub fn new() -> Self {
         Self {
@@ -123,7 +123,7 @@ pub struct ZoneInner {
     gpm: MemorySet<Stage2PageTable>,
     iommu_pt: Option<MemorySet<Stage2PageTable>>,
     vpci_bus: VirtualRootComplex,
-    #[cfg(feature = "dwc_pcie")]
+    #[cfg(dwc_pcie)]
     atu_configs: VirtualAtuConfigs,
 }
 
@@ -175,13 +175,13 @@ impl ZoneInner {
             cpu_num: 0,
             cpu_set: CpuSet::new(MAX_CPU_NUM as usize, 0),
             irq_bitmap: [0; 1024 / 32],
-            iommu_pt: if cfg!(feature = "iommu") {
+            iommu_pt: if cfg!(iommu) {
                 Some(new_s2_memory_set())
             } else {
                 None
             },
             vpci_bus: VirtualRootComplex::new(),
-            #[cfg(feature = "dwc_pcie")]
+            #[cfg(dwc_pcie)]
             atu_configs: VirtualAtuConfigs::new(),
         }
     }
@@ -308,17 +308,17 @@ impl ZoneInner {
         &mut self.vpci_bus
     }
 
-    #[cfg(feature = "dwc_pcie")]
+    #[cfg(dwc_pcie)]
     pub fn atu_configs(&self) -> &VirtualAtuConfigs {
         &self.atu_configs
     }
 
-    #[cfg(feature = "dwc_pcie")]
+    #[cfg(dwc_pcie)]
     pub fn atu_configs_mut(&mut self) -> &mut VirtualAtuConfigs {
         &mut self.atu_configs
     }
 
-    #[cfg(all(feature = "pci_init_delay", feature = "dwc_pcie"))]
+    #[cfg(all(pci_init_delay, dwc_pcie))]
     pub fn guest_pci_init_delay(
         &mut self,
         _zone_id: usize,
@@ -340,7 +340,7 @@ impl ZoneInner {
             let bus_range_begin = target_pci_config.bus_range_begin as u8;
 
             // Create accessor for VirtualRootComplex, similar to RootComplex
-            #[cfg(feature = "dwc_pcie")]
+            #[cfg(dwc_pcie)]
             {
                 use crate::pci::config_accessors::dwc::DwcConfigAccessor;
                 use crate::platform;
@@ -363,7 +363,7 @@ impl ZoneInner {
                 }
             }
 
-            #[cfg(feature = "loongarch64_pcie")]
+            #[cfg(loongarch64_pcie)]
             {
                 use crate::pci::config_accessors::loongarch64::LoongArchConfigAccessor;
                 use alloc::sync::Arc;
@@ -377,7 +377,7 @@ impl ZoneInner {
                 self.vpci_bus_mut().set_accessor(accessor);
             }
 
-            #[cfg(feature = "ecam_pcie")]
+            #[cfg(ecam_pcie)]
             {
                 use crate::pci::config_accessors::ecam::EcamConfigAccessor;
                 use alloc::sync::Arc;
@@ -420,8 +420,8 @@ impl ZoneInner {
                 info!("set bdf {:#?} to vbdf {:#?}", bdf, vbdf);
 
                 #[cfg(any(
-                    all(feature = "iommu", target_arch = "aarch64"),
-                    all(feature = "iommu", target_arch = "riscv64"),
+                    all(iommu, target_arch = "aarch64"),
+                    all(iommu, target_arch = "riscv64"),
                     target_arch = "x86_64"
                 ))]
                 {
@@ -433,13 +433,13 @@ impl ZoneInner {
                     let device_id = (dev_config.bus as usize) << 8
                         | (dev_config.device as usize) << 3
                         | dev_config.function as usize;
-                    #[cfg(feature = "share_s2pt")]
+                    #[cfg(share_s2pt)]
                     crate::device::iommu::iommu_add_device_with_root_pt_addr(
                         _zone_id,
                         device_id as _,
                         self.gpm().root_paddr(),
                     );
-                    #[cfg(not(feature = "share_s2pt"))]
+                    #[cfg(not(share_s2pt))]
                     crate::device::iommu::iommu_add_device_with_root_pt_addr(
                         _zone_id,
                         device_id as _,
@@ -490,7 +490,7 @@ impl ZoneInner {
                     }
                 } else {
                     warn!("can not find dev {:#?} in GLOBAL_PCIE_LIST (not detected during enumeration)", bdf);
-                    #[cfg(feature = "ecam_pcie")]
+                    #[cfg(ecam_pcie)]
                     {
                         use crate::pci::pci_struct::VirtualPciConfigSpace;
                         use crate::pci::vpci_dev::{get_handler, VpciDevType};
@@ -519,7 +519,7 @@ impl ZoneInner {
 
             // After processing all devices for this domain, allocate hardware MSI bits
             if domain_msi_count > 0 {
-                #[cfg(all(feature = "dwc_msi", feature = "dwc_pcie"))]
+                #[cfg(all(dwc_msi, dwc_pcie))]
                 {
                     // Get the DW MSI domain allocator and allocate hwbit
                     if let Some(mut domain_lock) =
@@ -548,7 +548,7 @@ impl ZoneInner {
                     }
                 }
 
-                #[cfg(not(feature = "dwc_msi"))]
+                #[cfg(not(dwc_msi))]
                 {
                     // Without dwc_msi feature, just register without hardware bit allocation
                     self.vpci_bus_mut().add_msi_count_for_domain(
@@ -563,7 +563,7 @@ impl ZoneInner {
         Ok(())
     }
 
-    #[cfg(all(feature = "pci_init_delay", feature = "dwc_pcie"))]
+    #[cfg(all(pci_init_delay, dwc_pcie))]
     pub fn virtual_pci_dbi_pref_init(
         &mut self,
         pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
@@ -587,20 +587,20 @@ impl ZoneInner {
         }
     }
 
-    #[cfg(all(feature = "pci_init_delay", feature = "dwc_pcie"))]
+    #[cfg(all(pci_init_delay, dwc_pcie))]
     pub fn virtual_pci_mmio_init_delay(
         &mut self,
         pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
         _num_pci_config: usize,
     ) {
-        #[cfg(feature = "loongarch64_pcie")]
+        #[cfg(loongarch64_pcie)]
         let mut emergency_map_regions: alloc::vec::Vec<(usize, usize)> = alloc::vec::Vec::new();
 
         for rootcomplex_config in pci_rootcomplex_config {
             if rootcomplex_config.ecam_base == 0 {
                 continue;
             }
-            #[cfg(feature = "ecam_pcie")]
+            #[cfg(ecam_pcie)]
             {
                 use crate::pci::pci_handler::mmio_vpci_handler;
 
@@ -611,7 +611,7 @@ impl ZoneInner {
                     rootcomplex_config.ecam_base as usize,
                 );
             }
-            #[cfg(feature = "dwc_pcie")]
+            #[cfg(dwc_pcie)]
             {
                 use crate::memory::mmio_generic_handler;
                 use crate::pci::config_accessors::dwc_atu::AtuConfig;
@@ -700,7 +700,7 @@ impl ZoneInner {
                     );
                 }
             }
-            #[cfg(feature = "loongarch64_pcie")]
+            #[cfg(loongarch64_pcie)]
             {
                 use crate::pci::pci_handler::mmio_vpci_direct_handler;
 
@@ -715,11 +715,7 @@ impl ZoneInner {
                     rootcomplex_config.ecam_size as usize,
                 ));
             }
-            #[cfg(not(any(
-                feature = "ecam_pcie",
-                feature = "dwc_pcie",
-                feature = "loongarch64_pcie"
-            )))]
+            #[cfg(not(any(ecam_pcie, dwc_pcie, loongarch64_pcie)))]
             {
                 warn!(
                     "No extend config found for base 0x{:x}",
@@ -818,11 +814,11 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
     }
     zone.write().set_cpu_num(cpu_num);
 
-    #[cfg(feature = "pci")]
+    #[cfg(pci)]
     {
-        #[cfg(feature = "pci_init_delay")]
+        #[cfg(pci_init_delay)]
         {
-            #[cfg(feature = "dwc_pcie")]
+            #[cfg(dwc_pcie)]
             {
                 let num_pci_bus = config.num_pci_bus as usize;
                 if zone_id == 0 {
@@ -841,7 +837,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
             }
         }
 
-        #[cfg(all(feature = "pci", not(feature = "pci_init_delay")))]
+        #[cfg(not(pci_init_delay))]
         {
             let _ = zone.virtual_pci_mmio_init(&config.pci_config, config.num_pci_bus as usize);
             let _ = zone.guest_pci_init(
@@ -854,7 +850,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
         }
     }
 
-    #[cfg(feature = "viommu")]
+    #[cfg(viommu)]
     {
         use crate::platform::{IOMMU_SYS_BASE, IOMMU_SYS_SIZE};
         // Create viommu instance and register mmio handler for target zone.
@@ -880,7 +876,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
     // #[cfg(target_arch = "aarch64")]
     // zone.ivc_init(config.ivc_config());
 
-    #[cfg(all(feature = "iommu", target_arch = "aarch64"))]
+    #[cfg(all(iommu, target_arch = "aarch64"))]
     zone.iommu_pt_init(config.memory_regions(), &config.arch_config)?;
 
     /* loongarch page table emergency */

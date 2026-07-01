@@ -52,7 +52,7 @@ impl ArchCpu {
             stack_top: 0,
             cpuid,
             // first_cpu: 0,
-            sstc: cfg!(feature = "sstc"),
+            sstc: cfg!(sstc),
         };
         ret
     }
@@ -68,7 +68,7 @@ impl ArchCpu {
         write_csr!(CSR_SSCRATCH, self as *const _ as usize); //arch cpu pointer
         self.sepc = entry;
         self.hstatus = 1 << 7 | 2 << 32; // HSTATUS_SPV | HSTATUS_VSXL_64
-        #[cfg(feature = "aia")]
+        #[cfg(aia)]
         {
             self.hstatus |= 1 << 12; // HSTATUS_VGEIN
         }
@@ -87,7 +87,7 @@ impl ArchCpu {
             set_csr!(CSR_VSTIMECMP, usize::MAX);
         } else {
             // In megrez board, this instruction is not supported. (illegal instruction)
-            #[cfg(not(feature = "eic770x_soc"))]
+            #[cfg(not(hypervisor_v0_6))]
             set_csr!(CSR_HENVCFG, 0);
         }
         set_csr!(CSR_HCOUNTEREN, 1 << 1); // HCOUNTEREN_TM

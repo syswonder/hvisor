@@ -32,10 +32,13 @@ flash.img*
 .vscode/settings.json
 compile.sh
 src/platform/__board.rs
-.config
+.config*
 .cursorrules
 .vscode/extensions.json
 # systemtest
 rootfs1.zip*
 jenkins/__pycache__
 jenkins-cli.jar
+tools/kconfig/.venv/
+tools/kconfig/__pycache__/
+kernel_build/

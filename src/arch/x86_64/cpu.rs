@@ -296,7 +296,7 @@ impl ArchCpu {
 
         if per_cpu.boot_cpu {
             // must be called after activate_gpm()
-            #[cfg(feature = "intel_vtd")]
+            #[cfg(intel_vtd)]
             iommu::activate();
             self.guest_regs = self.vm_launch_guest_regs.clone();
         }

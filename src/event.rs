@@ -25,7 +25,7 @@ use crate::{
     device::{irqchip::inject_irq, virtio_trampoline::handle_virtio_irq},
     platform::IRQ_WAKEUP_VIRTIO_DEVICE,
 };
-#[cfg(feature = "virtio_pci")]
+#[cfg(virtio_pci)]
 use crate::{
     pci::msix::activate_msix,
     platform::{IRQ_WAKEUP_VIRTIO_PCI_CONFIG, IRQ_WAKEUP_VIRTIO_PCI_DATA},
@@ -114,28 +114,23 @@ pub fn check_events() -> bool {
             true
         }
         Some(IPI_EVENT_DWC_MSI_INJECT) => {
-            #[cfg(all(
-                target_arch = "aarch64",
-                feature = "gicv3",
-                feature = "dwc_pcie",
-                feature = "dwc_msi"
-            ))]
+            #[cfg(all(target_arch = "aarch64", irq_gicv3, dwc_pcie, dwc_msi))]
             {
                 crate::pci::dwc_msi::handle_dwc_msi_inject_event();
             }
             true
         }
-        #[cfg(feature = "virtio_pci")]
+        #[cfg(virtio_pci)]
         Some(IPI_EVENT_VIRTIO_PCI_CONFIG) => {
             inject_irq(IRQ_WAKEUP_VIRTIO_PCI_CONFIG, false);
             true
         }
-        #[cfg(feature = "virtio_pci")]
+        #[cfg(virtio_pci)]
         Some(IPI_EVENT_VIRTIO_PCI_DATA) => {
             inject_irq(IRQ_WAKEUP_VIRTIO_PCI_DATA, false);
             true
         }
-        #[cfg(feature = "virtio_pci")]
+        #[cfg(virtio_pci)]
         Some(IPI_EVENT_VIRTIO_PCI_DONE) => {
             // Virtio PCI notice
             // unsafe {
@@ -160,7 +155,7 @@ pub fn check_events() -> bool {
         //     irqchip::ls7a2000::clear_hwi_injected_irq();
         //     true
         // }
-        // #[cfg(all(target_arch = "riscv64", feature = "plic"))]
+        // #[cfg(all(target_arch = "riscv64", plic))]
         // Some(IPI_EVENT_UPDATE_HART_LINE) => {
         //     use crate::device::irqchip;
         //     info!("cpu {} update hart line", cpu_data.id);

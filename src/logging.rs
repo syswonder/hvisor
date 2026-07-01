@@ -133,7 +133,7 @@ pub fn init() {
 struct SimpleLogger;
 
 impl SimpleLogger {
-    #[cfg(feature = "graphics")]
+    #[cfg(graphics)]
     fn print(
         &self,
         level: Level,
@@ -154,7 +154,7 @@ impl SimpleLogger {
         );
     }
 
-    #[cfg(not(feature = "graphics"))]
+    #[cfg(not(graphics))]
     fn print(
         &self,
         level: Level,
@@ -165,7 +165,7 @@ impl SimpleLogger {
         args_color: ColorCode,
         record: &Record,
     ) {
-        #[cfg(feature = "print_timestamp")]
+        #[cfg(print_timestamp)]
         {
             let time_us: u64 = crate::arch::time::get_time_us();
             let sec = time_us / 1_000_000;
@@ -180,7 +180,7 @@ impl SimpleLogger {
                 with_color!(args_color, "{}", record.args()),
             ));
         }
-        #[cfg(not(feature = "print_timestamp"))]
+        #[cfg(not(print_timestamp))]
         print(with_color!(
             ColorCode::White,
             "[{} {}] {} {}\n",

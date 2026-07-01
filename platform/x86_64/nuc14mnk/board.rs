@@ -200,6 +200,6 @@ pub const ROOT_PCI_DEVS: [HvPciDevConfig; 18] = [
     pci_dev!(0x0, 0x2, 0x0, 0x0 => 0x2, 0x0, 0x0, VpciDevType::Physical),  // memory controller
 ];
 
-#[cfg(all(feature = "graphics"))]
+#[cfg(all(graphics))]
 pub const GRAPHICS_FONT: &[u8] =
     include_bytes!("../../platform/x86_64/qemu/image/font/spleen-6x12.psf");

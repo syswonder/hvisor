@@ -108,7 +108,7 @@ pub(super) fn virt_dev_init(
     base: PciConfigAddress,
     dev_type: VpciDevType,
 ) -> Option<VirtualPciConfigSpace> {
-    #[cfg(feature = "virtio_pci")]
+    #[cfg(virtio_pci)]
     {
         // Create initial VirtualPciConfigSpace with default values
 
@@ -139,7 +139,7 @@ pub(super) fn virt_dev_init(
             }
         }
     }
-    #[cfg(not(feature = "virtio_pci"))]
+    #[cfg(not(virtio_pci))]
     {
         warn!(
             "Try to initialize a virtual virtio pci device when feature virtio-pci is not enabled"

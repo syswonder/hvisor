@@ -1,0 +1,2 @@
+PySocks>=1.7.1
+kconfiglib>=14.1.0

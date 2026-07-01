@@ -311,7 +311,7 @@ pub fn vgicv3_dist_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
         reg if reg_range(GICD_IROUTER, 1024, 8).contains(&reg) => {
             let irq = (reg - GICD_IROUTER) as u32 / 8;
 
-            #[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+            #[cfg(all(dwc_pcie, dwc_msi))]
             {
                 // For zone0, the domainmsiinfo is empty, but it will always register the intterrupt to cpu0
                 // So this remap operation is needed for other zones

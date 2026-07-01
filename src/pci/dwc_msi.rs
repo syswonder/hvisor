@@ -15,18 +15,18 @@
 //
 
 use alloc::collections::btree_map::BTreeMap;
-#[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+#[cfg(all(dwc_pcie, dwc_msi))]
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
 use spin::{Lazy, Mutex};
 
-#[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+#[cfg(all(dwc_pcie, dwc_msi))]
 use crate::cpu_data::this_cpu_data;
 use crate::error::HvResult;
-#[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+#[cfg(all(dwc_pcie, dwc_msi))]
 use crate::event::send_event;
 use crate::memory::Frame;
-#[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+#[cfg(all(dwc_pcie, dwc_msi))]
 use crate::{
     consts::{IPI_EVENT_DWC_MSI_INJECT, MAX_CPU_NUM},
     device::irqchip::inject_irq,
@@ -143,7 +143,7 @@ impl DwMsiDomain {
 pub static DW_MSI_DOMAINS: Lazy<Mutex<BTreeMap<u8, DwMsiDomain>>> =
     Lazy::new(|| Mutex::new(BTreeMap::new()));
 
-#[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+#[cfg(all(dwc_pcie, dwc_msi))]
 static DWC_MSI_IPI_PENDING_IRQS: Lazy<Mutex<Vec<VecDeque<usize>>>> = Lazy::new(|| {
     let mut queues = Vec::with_capacity(MAX_CPU_NUM);
     for _ in 0..MAX_CPU_NUM {
@@ -231,7 +231,7 @@ pub fn get_domain_owner_by_hwirq_bit(domain_id: u8, hwbit: u32) -> Option<DwMsiB
         .and_then(|domain| domain.find_owner_by_hwbit(hwbit))
 }
 
-#[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+#[cfg(all(dwc_pcie, dwc_msi))]
 fn get_domain_dbi_base(domain_id: u8) -> Option<usize> {
     let ecam_base = crate::platform::ROOT_PCI_CONFIG
         .iter()
@@ -244,7 +244,7 @@ fn get_domain_dbi_base(domain_id: u8) -> Option<usize> {
         .map(|cfg| cfg.dbi_base as usize)
 }
 
-#[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+#[cfg(all(dwc_pcie, dwc_msi))]
 fn first_set_bit(mask: u32) -> Option<u32> {
     if mask == 0 {
         None
@@ -253,12 +253,12 @@ fn first_set_bit(mask: u32) -> Option<u32> {
     }
 }
 
-#[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+#[cfg(all(dwc_pcie, dwc_msi))]
 fn find_target_cpu(domain_id: u8, irq_bit: usize) -> Option<usize> {
     get_domain_owner_by_hwirq_bit(domain_id, irq_bit as u32).map(|owner| owner.target_cpu)
 }
 
-#[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+#[cfg(all(dwc_pcie, dwc_msi))]
 fn dwc_msi_pending_irq_bit(domain_id: u8) -> Option<u32> {
     let dbi_base = get_domain_dbi_base(domain_id)?;
     let status =
@@ -266,7 +266,7 @@ fn dwc_msi_pending_irq_bit(domain_id: u8) -> Option<u32> {
     first_set_bit(status)
 }
 
-#[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+#[cfg(all(dwc_pcie, dwc_msi))]
 pub fn get_domain_id_by_irq(irq: u32) -> Option<u8> {
     let domains = DW_MSI_DOMAINS.lock();
     domains.iter().find_map(|(domain_id, domain)| {
@@ -278,7 +278,7 @@ pub fn get_domain_id_by_irq(irq: u32) -> Option<u8> {
     })
 }
 
-#[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+#[cfg(all(dwc_pcie, dwc_msi))]
 fn enqueue_dwc_msi_ipi_irq(target_cpu: usize, irq_id: usize) -> bool {
     if target_cpu >= MAX_CPU_NUM {
         error!(
@@ -297,7 +297,7 @@ fn enqueue_dwc_msi_ipi_irq(target_cpu: usize, irq_id: usize) -> bool {
     }
 }
 
-#[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+#[cfg(all(dwc_pcie, dwc_msi))]
 fn pop_dwc_msi_ipi_irq(cpu_id: usize) -> Option<usize> {
     if cpu_id >= MAX_CPU_NUM {
         return None;
@@ -307,7 +307,7 @@ fn pop_dwc_msi_ipi_irq(cpu_id: usize) -> Option<usize> {
     queues.get_mut(cpu_id).and_then(|queue| queue.pop_front())
 }
 
-#[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+#[cfg(all(dwc_pcie, dwc_msi))]
 pub fn dwc_msi_transfer_and_inject(domain_id: u8, irq_id: usize) {
     if let Some(irq_bit) = dwc_msi_pending_irq_bit(domain_id) {
         if let Some(target_cpu) = find_target_cpu(domain_id, irq_bit as usize) {
@@ -331,7 +331,7 @@ pub fn dwc_msi_transfer_and_inject(domain_id: u8, irq_id: usize) {
     }
 }
 
-#[cfg(all(feature = "dwc_pcie", feature = "dwc_msi"))]
+#[cfg(all(dwc_pcie, dwc_msi))]
 pub fn handle_dwc_msi_inject_event() {
     let cpu_id = this_cpu_data().id;
     if let Some(irq_id) = pop_dwc_msi_ipi_irq(cpu_id) {

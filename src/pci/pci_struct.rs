@@ -1730,7 +1730,7 @@ impl<B: BarAllocator> PciIterator<B> {
 
                 let _ = node.capability_enumerate();
                 node.ext_capability_enumerate();
-                #[cfg(feature = "sriov")]
+                #[cfg(sriov)]
                 let _ = node.build_sriov_info();
                 // Build MSI/MSIX info once during device discovery
                 node.build_msi_info();
@@ -1758,7 +1758,7 @@ impl<B: BarAllocator> PciIterator<B> {
 
                 let _ = node.capability_enumerate();
                 node.ext_capability_enumerate();
-                #[cfg(feature = "sriov")]
+                #[cfg(sriov)]
                 let _ = node.build_sriov_info();
                 // Build MSI/MSIX info once during device discovery
                 node.build_msi_info();
@@ -1989,7 +1989,7 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
                         // (UEFI/BIOS) may skip bus numbers for subordinate bus reservation,
                         // causing calculated bus numbers to diverge from actual hardware
                         // bus assignments — making devices behind bridges invisible.
-                        #[cfg(feature = "no_pcie_bar_realloc")]
+                        #[cfg(no_pcie_bar_realloc)]
                         let next_bus = {
                             let bridge_base = node.get_base();
                             let bus_reg = unsafe {
@@ -2024,7 +2024,7 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
                                 parent.subordinate_bus + 1
                             }
                         };
-                        #[cfg(not(feature = "no_pcie_bar_realloc"))]
+                        #[cfg(not(no_pcie_bar_realloc))]
                         let next_bus = parent.subordinate_bus + 1;
 
                         let bdf = Bdf::new(domain, next_bus, 0, 0);
@@ -2131,10 +2131,10 @@ impl Bridge {
         }
         // When no_pcie_bar_realloc is enabled, firmware already assigned correct bus
         // numbers — don't overwrite them.
-        #[cfg(feature = "no_pcie_bar_realloc")]
+        #[cfg(no_pcie_bar_realloc)]
         return;
 
-        #[cfg(not(feature = "no_pcie_bar_realloc"))]
+        #[cfg(not(no_pcie_bar_realloc))]
         {
             // we need to update the bridge bus number if we want linux not to update bus number
             unsafe {
@@ -2291,9 +2291,9 @@ impl VirtualRootComplex {
         let _parent_bus = dev.parent_bdf.bus();
         let _offset = 0;
         let base = if let Some(accessor) = &self.accessor {
-            #[cfg(feature = "dwc_pcie")]
+            #[cfg(dwc_pcie)]
             let addr = accessor.get_pci_addr_base(bdf);
-            #[cfg(not(feature = "dwc_pcie"))]
+            #[cfg(not(dwc_pcie))]
             let addr = accessor.get_physical_address(bdf, _offset, _parent_bus);
             match addr {
                 Ok(addr) => addr,
@@ -2315,7 +2315,7 @@ impl VirtualRootComplex {
         // let host_bdf = dev.get_bdf();
         // let vbdf = dev.get_vbdf();
 
-        // #[cfg(feature = "dwc_pcie")]
+        // #[cfg(dwc_pcie)]
         // let key = {
         //     let bus = bdf.bus() as PciConfigAddress;
         //     let device = bdf.device() as PciConfigAddress;
@@ -2328,10 +2328,10 @@ impl VirtualRootComplex {
         //     }
         // };
 
-        // #[cfg(not(feature = "dwc_pcie"))]
+        // #[cfg(not(dwc_pcie))]
         // let key = base;
 
-        // #[cfg(feature = "dwc_pcie")]
+        // #[cfg(dwc_pcie)]
         // {
         //     let bus = bdf.bus() as PciConfigAddress;
         //     let device = bdf.device() as PciConfigAddress;
@@ -2350,7 +2350,7 @@ impl VirtualRootComplex {
         //     );
         // }
 
-        // #[cfg(not(feature = "dwc_pcie"))]
+        // #[cfg(not(dwc_pcie))]
         // info!(
         //     "vpci insert: base_to_bdf[{:#x}] = key_bdf {:#?}, source base, base {:#x}, dev_host_bdf {:#?}, dev_vbdf {:#?}, remapped {}",
         //     key,
@@ -3304,7 +3304,7 @@ impl VirtualPciConfigSpace {
 
         // When the `sriov` feature is disabled, record info needed to splice
         // the SR-IOV cap out of the ext-cap linked list for guest VMs.
-        #[cfg(not(feature = "sriov"))]
+        #[cfg(not(sriov))]
         {
             use bit_field::BitField;
             let sriov_offset = ext_caps

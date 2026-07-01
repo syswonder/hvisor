@@ -17,7 +17,7 @@
 use alloc::vec::Vec;
 
 use crate::consts::PAGE_SIZE;
-#[cfg(feature = "iommu")]
+#[cfg(iommu)]
 use crate::device::iommu::iommu_msi_pt_tlb_invalid;
 use crate::memory::Frame;
 use crate::memory::GuestPhysAddr;
@@ -78,7 +78,7 @@ fn msi_pt_fill(
         // Fill MSI PTE to MSI PT.
         frame.as_slice_mut()[off..off + MSI_PTE_BYTES].copy_from_slice(&pte);
         // After change the MSI PTE, invalidate the related TLBs in IOMMU.
-        #[cfg(feature = "iommu")]
+        #[cfg(iommu)]
         iommu_msi_pt_tlb_invalid(zone_id as u16, imsic_gpa as usize);
     }
 }

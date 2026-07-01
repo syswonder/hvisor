@@ -235,7 +235,7 @@ impl Plic {
          */
 
         let mut hwirq = 0;
-        if cfg!(feature = "dp1000_plic") {
+        if cfg!(dp1000_plic) {
             let mut ie: [u32; 32] = [0; 32]; // max 1024 irqs
             hwirq = if self.plic_check_enable_first_pending(context, &mut ie) {
                 self.claim(context)

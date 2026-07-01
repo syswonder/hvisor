@@ -51,7 +51,7 @@ pub fn activate_msix() {
 
 #[allow(unreachable_code)]
 pub fn get_arch_msix_backend() -> Option<Arc<RwLock<dyn MsixBackend>>> {
-    #[cfg(all(target_arch = "aarch64", feature = "gicv3"))]
+    #[cfg(all(target_arch = "aarch64", irq_gicv3))]
     {
         use crate::device::irqchip::gicv3::msix_backend::get_gicv3_backend;
         return Some(get_gicv3_backend());

@@ -113,15 +113,15 @@ fn get_iommu<'a>() -> &'a Mutex<Iommu> {
 
 /// Initialize IOMMU with default mode
 pub fn iommu_init() {
-    #[cfg(feature = "iommu")]
+    #[cfg(iommu)]
     riscv_iommu_init();
-    #[cfg(not(feature = "iommu"))]
+    #[cfg(not(iommu))]
     info!("RISC-V IOMMU: do nothing now");
 }
 
 /// Add a device to IOMMU
 pub fn iommu_add_device(vm_id: usize, device_id: usize, root_pt: usize) {
-    #[cfg(feature = "iommu")]
+    #[cfg(iommu)]
     {
         info!(
             "RV IOMMU: Add device, root_pt {:#x}, vm_id {}, device_id {}",
@@ -130,13 +130,13 @@ pub fn iommu_add_device(vm_id: usize, device_id: usize, root_pt: usize) {
         let iommu = get_iommu();
         iommu.lock().rv_iommu_add_device(device_id, vm_id, root_pt);
     }
-    #[cfg(not(feature = "iommu"))]
+    #[cfg(not(iommu))]
     info!("RISC-V: iommu_add_device do nothing now");
 }
 
 /// Remove a device from IOMMU (reserved for future hot-unplug paths).
 pub fn iommu_remove_device(vm_id: usize, device_id: usize) {
-    #[cfg(feature = "iommu")]
+    #[cfg(iommu)]
     {
         info!(
             "RV IOMMU: Remove device, vm_id {}, device_id {}",
@@ -145,12 +145,12 @@ pub fn iommu_remove_device(vm_id: usize, device_id: usize) {
         let iommu = get_iommu();
         iommu.lock().rv_iommu_remove_device(device_id);
     }
-    #[cfg(not(feature = "iommu"))]
+    #[cfg(not(iommu))]
     info!("RISC-V: iommu_remove_device do nothing now");
 }
 
 pub fn iommu_msi_pt_tlb_invalid(gscid: u16, msi_gpa: usize) {
-    #[cfg(feature = "iommu")]
+    #[cfg(iommu)]
     {
         // If software changes a MSI page-table entry identified by interrupt file number I that corresponds to an
         //  untranslated MSI address A then the following invalidations must be performed:
@@ -170,7 +170,7 @@ pub fn iommu_msi_pt_tlb_invalid(gscid: u16, msi_gpa: usize) {
         let iommu = get_iommu();
         iommu.lock().rv_iommu_msi_pt_tlb_invalid(gscid, msi_gpa);
     }
-    #[cfg(not(feature = "iommu"))]
+    #[cfg(not(iommu))]
     info!("RISC-V: iommu_msi_pt_tlb_invalid do nothing now");
 }
 
