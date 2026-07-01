@@ -385,8 +385,16 @@ pipeline {
                                                 "${prepareScript}"
                                         """
                                     } else if (mode == 'board') {
-                                        // Placeholder for future board artifact distribution by network.
-                                        echo "Board prepare placeholder [BID=${env.BID}]"
+                                        def tftpDir = (testsCfg.tftp_dir ?: '/home/light/tftp').toString()
+                                        echo "Deploy TFTP artifacts [BID=${env.BID}, TFTP_DIR=${tftpDir}]"
+                                        sh """
+                                            TFTP_DIR="${tftpDir}"
+                                            mkdir -p "\$TFTP_DIR"
+                                            ${toolchainPathShell()}
+                                            make cp ARCH=${arch} BOARD=${board} MODE=release TFTP_DIR="\$TFTP_DIR"
+                                            cp platform/${arch}/${board}/image/dts/rk3568_limit_zone0.dtb "\$TFTP_DIR/"
+                                            cp ${kdir}/arch/arm64/boot/Image "\$TFTP_DIR/"
+                                        """
                                     } else {
                                         error("jenkins/ci.yaml BID=${env.BID}: unsupported tests.mode='${mode}'")
                                     }

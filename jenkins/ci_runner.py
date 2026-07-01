@@ -105,6 +105,36 @@ def close_qemu_terminal(cfg: dict[str, Any]) -> None:
         cfg["_qemu_term"] = None
 
 
+def close_board_terminal(cfg: dict[str, Any]) -> None:
+    term = cfg.get("_board_term")
+    if term is not None:
+        term.close()
+        cfg["_board_term"] = None
+
+
+def get_active_terminal(cfg: dict[str, Any]) -> Terminal | None:
+    return cfg.get("_qemu_term") or cfg.get("_board_term")
+
+
+def close_active_terminal(cfg: dict[str, Any]) -> None:
+    close_qemu_terminal(cfg)
+    close_board_terminal(cfg)
+
+
+def board_power_script(cfg: dict[str, Any]) -> Path:
+    return cfg["workspace"] / "jenkins" / "board_power.sh"
+
+
+def board_power_cycle(cfg: dict[str, Any]) -> None:
+    power_port = str(cfg.get("power_serial", "")).strip()
+    if not power_port:
+        return
+    script = board_power_script(cfg)
+    if not script.is_file():
+        raise SystemExit(f"board power script not found: {script}")
+    subprocess.run(["bash", str(script), "cycle", power_port], check=True, cwd=cfg["workspace"])
+
+
 def save_inner_serial_log(cfg: dict[str, Any], content: str) -> None:
     if not content:
         return
@@ -137,7 +167,25 @@ def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
             raise TerminalTimeoutError("timed out waiting for zone0 boot")
         return 0
     if cfg["mode"] == "board":
-        # TODO: reboot board
+        board_power_cycle(cfg)
+
+        log_path = logs_dir(cfg) / "zone0_console.log"
+        log_path.write_text("", encoding="utf-8")
+
+        board_term = build_terminal(cfg, log_path)
+        board_term.open()
+        cfg["_board_term"] = board_term
+
+        uboot_cmd = cfg.get("uboot_cmd", "")
+        uboot_ready = cfg.get("uboot_ready_pattern", "")
+        if uboot_cmd:
+            if not uboot_ready:
+                uboot_ready = r"*=>"
+            if not board_term.wait_pattern(uboot_ready, timeout=60.0):
+                raise TerminalTimeoutError("timed out waiting for U-Boot prompt")
+            board_term.send(uboot_cmd)
+        if not board_term.wait_pattern(r"buildroot|login:|# ", timeout=180.0):
+            raise TerminalTimeoutError("timed out waiting for zone0 boot")
         return 0
     return 0
 
@@ -210,9 +258,11 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
         "workspace": cell_root,
         "socket_path": str((cell_root / ".qemu" / "qemu.sock").resolve()),
         "serial_port": str(tests.get("serial", "/dev/null")),
+        "power_serial": str(tests.get("power_serial", "")).strip(),
         "baudrate": int(tests.get("baudrate", 1500000)),
         "uboot_cmd": str(tests.get("uboot_cmd", "")).strip(),
         "uboot_ready_pattern": str(tests.get("uboot_ready_pattern", "")).strip(),
+        "tftp_dir": str(tests.get("tftp_dir", "/home/light/tftp")).strip(),
     }
 
 
@@ -239,7 +289,7 @@ def main() -> int:
                 time.sleep(5.0)
                 continue
 
-            term = cfg.get("_qemu_term")
+            term = get_active_terminal(cfg)
             if term is None:
                 log_path = logs_dir(cfg) / "zone1_console.log"
                 log_path.write_text("", encoding="utf-8")
@@ -262,7 +312,7 @@ def main() -> int:
             time.sleep(5.0)
         return 0
     finally:
-        close_qemu_terminal(cfg)
+        close_active_terminal(cfg)
         terminate_managed_process(cfg)
 
 
