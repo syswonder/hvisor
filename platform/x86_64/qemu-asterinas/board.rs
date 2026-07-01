@@ -157,6 +157,6 @@ pub const ROOT_PCI_DEVS: [HvPciDevConfig; 4] = [
     pci_dev!(0x0, 0x0, 0x1f, 0x3 => 0x0, 0x1f, 0x3, VpciDevType::Physical), // SMBus
 ];
 
-#[cfg(feature = "graphics")]
+#[cfg(graphics)]
 pub const GRAPHICS_FONT: &[u8] =
     include_bytes!("../../platform/x86_64/qemu/image/font/spleen-6x12.psf");
