@@ -569,7 +569,9 @@ impl ZoneInner {
         pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
         _num_pci_config: usize,
     ) {
+        use crate::memory::mmio_generic_handler;
         use crate::pci::pci_handler::mmio_vpci_handler_dbi;
+        use crate::platform;
 
         for rootcomplex_config in pci_rootcomplex_config {
             if rootcomplex_config.ecam_base == 0 {
@@ -584,6 +586,20 @@ impl ZoneInner {
                 mmio_vpci_handler_dbi,
                 encoded_arg,
             );
+
+            let extend_config = platform::ROOT_DWC_ATU_CONFIG
+                .iter()
+                .find(|cfg| cfg.ecam_base == rootcomplex_config.ecam_base);
+            if let Some(extend_config) = extend_config {
+                if extend_config.apb_base != 0 && extend_config.apb_size != 0 {
+                    self.mmio_region_register(
+                        extend_config.apb_base as usize,
+                        extend_config.apb_size as usize,
+                        mmio_generic_handler,
+                        extend_config.apb_base as usize,
+                    );
+                }
+            }
         }
     }
 
