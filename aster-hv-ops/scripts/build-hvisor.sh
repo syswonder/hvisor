@@ -7,13 +7,15 @@
 #
 # Usage:
 #   build-hvisor.sh
-# Environment:
-#   FEATURES   cargo features (default: the qemu defaults plus aster_guest)
+#
+# Board options come from the qemu defconfig (pci, ecam_pcie,
+# no_pcie_bar_realloc, uart16550a, intel_vtd); this script additionally flips
+# on the opt-in CONFIG_ASTER_GUEST toggle by editing the generated .config,
+# since the old FEATURES=... make override was removed upstream.
 set -eu
 
 HERE="$(cd -- "$(dirname -- "$0")" && pwd)"
 HV_ROOT="$(cd -- "$HERE/../.." && pwd)"
-FEATURES="${FEATURES:-pci ecam_pcie no_pcie_bar_realloc uart16550a intel_vtd aster_guest}"
 
 cd "$HV_ROOT"
 ISO="platform/x86_64/qemu/image/virtdisk/hvisor.iso"
@@ -21,9 +23,12 @@ ISO="platform/x86_64/qemu/image/virtdisk/hvisor.iso"
 # caught by the existence check below instead of passing on a stale image.
 rm -f "$ISO"
 
-echo "[hvisor] FEATURES=$FEATURES"
+make ARCH=x86_64 BOARD=qemu defconfig
+sed -i 's/^# CONFIG_ASTER_GUEST is not set$/CONFIG_ASTER_GUEST=y/' .config
+
+echo "[hvisor] CONFIG_ASTER_GUEST=y"
 echo "[hvisor] toolchain: $(rustc --version)"
-make ARCH=x86_64 BOARD=qemu FEATURES="$FEATURES" all
+make ARCH=x86_64 BOARD=qemu all
 
 [ -f "$ISO" ] || {
     echo "[hvisor] ISO not produced at $ISO (is xorriso/grub-mkrescue installed?)" >&2

@@ -25,7 +25,6 @@ BUILD = os.path.join(OPS, "build")
 RESULTS = os.path.join(OPS, "results")
 IMAGE = os.path.join(HV_ROOT, "platform/x86_64/qemu/image")
 ISO = os.path.join(IMAGE, "virtdisk/hvisor.iso")
-DEFAULT_FEATURES = "pci ecam_pcie no_pcie_bar_realloc uart16550a intel_vtd aster_guest"
 
 
 def sh(*args):
@@ -54,9 +53,10 @@ def stage_images(mode):
 
 
 def build_hvisor():
-    env = dict(os.environ, FEATURES=DEFAULT_FEATURES)
-    print(f"+ FEATURES='{DEFAULT_FEATURES}' build-hvisor.sh", flush=True)
-    subprocess.run([os.path.join(SCRIPTS, "build-hvisor.sh")], check=True, env=env)
+    # build-hvisor.sh runs `make defconfig` for the qemu board and then flips on
+    # CONFIG_ASTER_GUEST=y in the generated .config itself; there is no FEATURES=
+    # make override anymore.
+    sh(os.path.join(SCRIPTS, "build-hvisor.sh"))
 
 
 def guest_image():

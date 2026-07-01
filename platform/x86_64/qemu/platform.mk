@@ -66,7 +66,7 @@ $(hvisor_bin): elf boot
 	done
 # Default to the Asterinas entry for an aster_guest build; the tracked grub.cfg
 # keeps the Linux entry as its committed default.
-	if echo "$(FEATURES)" | grep -qw aster_guest; then \
+	if grep -q '^CONFIG_ASTER_GUEST=y' .config 2>/dev/null; then \
 		sed -i 's/^set default=.*/set default=1   # Asterinas/' $(iso_build)/boot/grub/grub.cfg; \
 	fi
 	if [ -n "$(SKIP_ISO)" ]; then \
@@ -79,7 +79,9 @@ $(hvisor_bin): elf boot
 	fi
 
 # Headless run target for the Asterinas root zone. Build the matching binary with
-#   make ARCH=x86_64 BOARD=qemu FEATURES="<defaults> aster_guest" all
+#   make ARCH=x86_64 BOARD=qemu defconfig
+#   sed -i 's/^# CONFIG_ASTER_GUEST is not set$/CONFIG_ASTER_GUEST=y/' .config
+#   make ARCH=x86_64 BOARD=qemu all
 # then `make ... run-asterinas`. The guest console is on COM1 (mon:stdio); exit
 # QEMU with Ctrl-A x.
 ASTER_QEMU_ARGS := -machine q35,kernel-irqchip=split

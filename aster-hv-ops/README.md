@@ -60,9 +60,10 @@ Equivalently, hvisor's own Makefile drives the build and a headless run:
 
 ```sh
 # from the hvisor repo root
-FEATURES="pci ecam_pcie no_pcie_bar_realloc uart16550a intel_vtd aster_guest"
-make ARCH=x86_64 BOARD=qemu FEATURES="$FEATURES" all
-make ARCH=x86_64 BOARD=qemu FEATURES="$FEATURES" run-asterinas
+make ARCH=x86_64 BOARD=qemu defconfig
+sed -i 's/^# CONFIG_ASTER_GUEST is not set$/CONFIG_ASTER_GUEST=y/' .config
+make ARCH=x86_64 BOARD=qemu all
+make ARCH=x86_64 BOARD=qemu run-asterinas
 ```
 
 ## Notes
