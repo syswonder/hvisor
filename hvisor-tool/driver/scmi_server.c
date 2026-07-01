@@ -2,11 +2,11 @@
 #include "hvisor.h"
 #include <linux/delay.h>
 #include <linux/of.h>
-#include <linux/reset.h>
-#include <linux/uaccess.h>
+#include <linux/platform_device.h>
 #include <linux/pm_domain.h>
 #include <linux/pm_runtime.h>
-#include <linux/platform_device.h>
+#include <linux/reset.h>
+#include <linux/uaccess.h>
 
 #ifdef ENABLE_VIRTIO_SCMI
 
@@ -391,7 +391,8 @@ static int reset_domain(u32 reset_id, u32 flags, u32 reset_state) {
     return ret;
 }
 
-/* ======================== Power Domain (genpd) Support ======================== */
+/* ======================== Power Domain (genpd) Support
+ * ======================== */
 
 static uint32_t power_provider_phandle = 0;
 
@@ -406,8 +407,7 @@ struct power_domain_dev {
 static struct power_domain_dev power_devices[MAX_POWER_DOMAINS];
 static struct device_node *power_provider_np = NULL;
 
-static struct device_node *get_power_provider_node(void)
-{
+static struct device_node *get_power_provider_node(void) {
     if (!power_provider_np) {
         power_provider_np = of_find_node_by_phandle(power_provider_phandle);
         if (!power_provider_np)
@@ -417,8 +417,7 @@ static struct device_node *get_power_provider_node(void)
     return power_provider_np;
 }
 
-static int power_domain_get_count(u32 *count)
-{
+static int power_domain_get_count(u32 *count) {
     /* The count is managed by userspace (power_max_num from JSON config).
      * This subcommand is not used; we just return 0 and let userspace
      * provide the correct count from the configuration. */
@@ -426,8 +425,7 @@ static int power_domain_get_count(u32 *count)
     return 0;
 }
 
-static int power_domain_init(u32 domain_id)
-{
+static int power_domain_init(u32 domain_id) {
     struct of_phandle_args args;
     struct platform_device *pdev;
     int ret;
@@ -461,8 +459,8 @@ static int power_domain_init(u32 domain_id)
 
     ret = of_genpd_add_device(&args, &pdev->dev);
     if (ret) {
-        pr_err("Failed to attach device to power domain %u: %d\n",
-               domain_id, ret);
+        pr_err("Failed to attach device to power domain %u: %d\n", domain_id,
+               ret);
         platform_device_unregister(pdev);
         goto err;
     }
@@ -481,8 +479,7 @@ err:
     return ret;
 }
 
-static int power_domain_state_set(u32 domain_id, u32 power_state)
-{
+static int power_domain_state_set(u32 domain_id, u32 power_state) {
     struct device *dev;
     int ret;
 
@@ -511,8 +508,7 @@ static int power_domain_state_set(u32 domain_id, u32 power_state)
     return -EINVAL;
 }
 
-static int power_domain_state_get(u32 domain_id, u32 *power_state)
-{
+static int power_domain_state_get(u32 domain_id, u32 *power_state) {
     struct device *dev;
 
     if (domain_id >= MAX_POWER_DOMAINS || !power_devices[domain_id].attached)
@@ -521,15 +517,13 @@ static int power_domain_state_get(u32 domain_id, u32 *power_state)
     dev = &power_devices[domain_id].pdev->dev;
 
     /* Check runtime PM status: RPM_ACTIVE = on, RPM_SUSPENDED = off */
-    *power_state = pm_runtime_active(dev) ?
-                   SCMI_POWER_STATE_GENERIC_ON :
-                   SCMI_POWER_STATE_GENERIC_OFF;
+    *power_state = pm_runtime_active(dev) ? SCMI_POWER_STATE_GENERIC_ON
+                                          : SCMI_POWER_STATE_GENERIC_OFF;
 
     return 0;
 }
 
-static int power_domain_get_attributes(u32 domain_id, u32 *flags, char *name)
-{
+static int power_domain_get_attributes(u32 domain_id, u32 *flags, char *name) {
     struct device *dev;
 
     if (domain_id >= MAX_POWER_DOMAINS || !power_devices[domain_id].attached)
@@ -550,8 +544,7 @@ static int power_domain_get_attributes(u32 domain_id, u32 *flags, char *name)
     return 0;
 }
 
-int hvisor_scmi_power_ioctl(struct hvisor_scmi_power_args __user *user_args)
-{
+int hvisor_scmi_power_ioctl(struct hvisor_scmi_power_args __user *user_args) {
     struct hvisor_scmi_power_args args;
 
     if (copy_from_user(&args, user_args, sizeof(struct hvisor_scmi_power_args)))
@@ -566,7 +559,8 @@ int hvisor_scmi_power_ioctl(struct hvisor_scmi_power_args __user *user_args)
         if (ret < 0)
             return ret;
         args.u.power_count = count;
-        if (copy_to_user(&user_args->u.power_count, &args.u.power_count, sizeof(u32)))
+        if (copy_to_user(&user_args->u.power_count, &args.u.power_count,
+                         sizeof(u32)))
             return -EFAULT;
         return 0;
     }
@@ -580,8 +574,8 @@ int hvisor_scmi_power_ioctl(struct hvisor_scmi_power_args __user *user_args)
         if (ret < 0)
             return ret;
 
-        ret = power_domain_get_attributes(args.u.power_attr.domain_id,
-                                          &flags, name);
+        ret = power_domain_get_attributes(args.u.power_attr.domain_id, &flags,
+                                          name);
         if (ret < 0)
             return ret;
 

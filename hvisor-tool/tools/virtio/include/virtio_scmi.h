@@ -50,7 +50,7 @@ typedef struct {
 #define BITMASK(high, low) (((1u << ((high) - (low) + 1)) - 1) << (low))
 
 /* Extract field: mask first, then right shift */
-#define EXTRACT_BITS(val, high, low) (((val)&BITMASK((high), (low))) >> (low))
+#define EXTRACT_BITS(val, high, low) (((val) & BITMASK((high), (low))) >> (low))
 
 /* Insert field: left shift first, then mask */
 #define INSERT_BITS(val, high, low) (((val) << (low)) & BITMASK((high), (low)))
@@ -107,10 +107,10 @@ typedef struct {
 #define SCMI_MSG_TYPE_NOTIFICATION 3 /* Notification */
 
 /* -------------------------- SCMI Protocol IDs -------------------------- */
-#define SCMI_PROTO_ID_BASE     0x10    /* Base Protocol */
-#define SCMI_PROTO_ID_POWER    0x11    /* Power Domain Protocol */
-#define SCMI_PROTO_ID_CLOCK    0x14    /* Clock Protocol */
-#define SCMI_PROTO_ID_RESET    0x16    /* Reset Protocol */
+#define SCMI_PROTO_ID_BASE 0x10  /* Base Protocol */
+#define SCMI_PROTO_ID_POWER 0x11 /* Power Domain Protocol */
+#define SCMI_PROTO_ID_CLOCK 0x14 /* Clock Protocol */
+#define SCMI_PROTO_ID_RESET 0x16 /* Reset Protocol */
 
 /* -------------------------- SCMI Reset Protocol Message IDs ---------- */
 #define SCMI_RESET_MSG_RESET_ATTRIBUTES 0x3 /* Reset domain attributes */
@@ -118,15 +118,16 @@ typedef struct {
 #define SCMI_RESET_MSG_RESET_NOTIFY 0x5     /* Reset notify */
 
 /* -------------------------- SCMI Power Protocol Message IDs ---------- */
-#define SCMI_POWER_MSG_POWER_DOMAIN_ATTRIBUTES  0x3  /* Power domain attributes */
-#define SCMI_POWER_MSG_POWER_STATE_SET          0x4  /* Set power state */
-#define SCMI_POWER_MSG_POWER_STATE_GET          0x5  /* Get power state */
-#define SCMI_POWER_MSG_POWER_STATE_NOTIFY       0x6  /* Power state notify */
+#define SCMI_POWER_MSG_POWER_DOMAIN_ATTRIBUTES 0x3 /* Power domain attr */
+#define SCMI_POWER_MSG_POWER_STATE_SET 0x4         /* Set power state */
+#define SCMI_POWER_MSG_POWER_STATE_GET 0x5         /* Get power state */
+#define SCMI_POWER_MSG_POWER_STATE_NOTIFY 0x6      /* Power state notify */
 
-/* -------------------------- SCMI Common Protocol Message IDs -------------------------- */
-#define SCMI_COMMON_MSG_VERSION                        0x0  /* Version request */
-#define SCMI_COMMON_MSG_PROTOCOL_ATTRIBUTES            0x1  /* Protocol attributes */
-#define SCMI_COMMON_MSG_MESSAGE_ATTRIBUTES             0x2  /* Protocol message attributes */
+/* -------------------------- SCMI Common Protocol Message IDs
+ * -------------------------- */
+#define SCMI_COMMON_MSG_VERSION 0x0             /* Version request */
+#define SCMI_COMMON_MSG_PROTOCOL_ATTRIBUTES 0x1 /* Protocol attributes */
+#define SCMI_COMMON_MSG_MESSAGE_ATTRIBUTES 0x2  /* Protocol msg attributes */
 #define SCMI_BASE_MSG_DISCOVER_VENDOR 0x3
 #define SCMI_BASE_MSG_DISCOVER_SUB_VENDOR 0x4
 #define SCMI_BASE_MSG_DISCOVER_IMPL_VERSION 0x5
