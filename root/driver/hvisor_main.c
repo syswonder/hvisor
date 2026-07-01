@@ -314,7 +314,8 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
             (struct hvisor_scmi_reset_args __user *)arg);
         break;
     case HVISOR_SCMI_POWER_IOCTL:
-        err = hvisor_scmi_power_ioctl((struct hvisor_scmi_power_args __user *)arg);
+        err = hvisor_scmi_power_ioctl(
+            (struct hvisor_scmi_power_args __user *)arg);
         break;
 #endif
 #ifdef LOONGARCH64

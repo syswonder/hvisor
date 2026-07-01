@@ -120,7 +120,7 @@ struct hvisor_load_image_args {
 #define HVISOR_SCMI_POWER_SET_PHANDLE 0xff
 
 /* SCMI Power State Macros */
-#define SCMI_POWER_STATE_GENERIC_ON  0x00000000
+#define SCMI_POWER_STATE_GENERIC_ON 0x00000000
 #define SCMI_POWER_STATE_GENERIC_OFF 0x40000000
 
 /* SCMI Clock ioctl argument structure */
@@ -199,8 +199,9 @@ struct hvisor_scmi_power_args {
         } power_attr; /* For GET_ATTRIBUTES */
         struct {
             __u32 domain_id;
-            __u32 power_state; /* Power state value (SCMI_POWER_STATE_GENERIC_ON/OFF) */
-        } power_state_info; /* For STATE_SET/STATE_GET */
+            __u32 power_state; /* Power state value
+                                  (SCMI_POWER_STATE_GENERIC_ON/OFF) */
+        } power_state_info;    /* For STATE_SET/STATE_GET */
         struct {
             __u32 phandle;
         } power_phandle_info; /* For SET_PHANDLE */

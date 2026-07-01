@@ -1511,12 +1511,14 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
             return -1;
         }
         // Parse power_map (optional) and power_max_num (optional)
-        cJSON *power_map_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "power_map");
+        cJSON *power_map_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "power_map");
         if (power_max_num_json) {
             power_max_num = power_max_num_json->valueint;
             log_info("SCMI power_max_num set to %u", power_max_num);
             extern int virtio_scmi_power_init_map(cJSON *, cJSON *);
-            if (virtio_scmi_power_init_map(allowed_list_json, power_map_json) < 0) {
+            if (virtio_scmi_power_init_map(allowed_list_json, power_map_json) <
+                0) {
                 log_error("Failed to initialize SCMI power domain map");
                 return -1;
             }
