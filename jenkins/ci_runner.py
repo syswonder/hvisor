@@ -182,7 +182,10 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     max_pts = pts_numbers[-1]
     _ = run_and_print_send_only(term, f"screen /dev/pts/{max_pts}", read_duration=20.0)
     _ = run_and_print_send_only(term, "\n", read_duration=2.0)
-    _, _ = run_and_print_quiet(term, "ls", quiet_seconds=1.0, max_duration=15.0)
+    if cfg["arch"] == "x86_64":
+        _ = run_and_print_send_only(term, "ls; echo zone1_started successfully", read_duration=10.0)
+    else:
+        _, _ = run_and_print_quiet(term, "ls", quiet_seconds=1.0, max_duration=15.0)
     if boot_rc != 0:
         raise TerminalCommandError(f"command failed with rc={boot_rc}: sh ./boot_zone1.sh")
     else:
