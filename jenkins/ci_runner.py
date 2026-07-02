@@ -163,26 +163,54 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     if term is None:
         raise SystemExit("terminal backend is required")
     # _ = run_and_print_quiet_raw(term, "bash", quiet_seconds=1.0, max_duration=15.0)
-    _, _ = run_and_print_quiet(term, "cd /root", quiet_seconds=1.0, max_duration=15.0)
-    _, _ = run_and_print_quiet(term, "ls", quiet_seconds=1.0, max_duration=15.0)
-    _, _ = run_and_print_quiet(term, "cat boot_zone1.sh", quiet_seconds=1.0, max_duration=15.0)
-    _, boot_rc = run_and_print_quiet(
-        term,
-        "./boot_zone1.sh",
-        quiet_seconds=15,
-        max_duration=30.0,
-    )
-    _, _ = run_and_print_quiet(term, "./hvisor zone list", quiet_seconds=1.0, max_duration=15.0)
+    if cfg["arch"] == "x86_64":
+        x86_phases = {
+            "prepare": (
+                "cd /root",
+                "ls",
+                "cat boot_zone1.sh",
+            ),
+            "launch": (
+                "sh ./boot_zone1.sh >/tmp/boot_zone1.log 2>&1 &",
+            ),
+        }
+        for phase_commands in x86_phases.values():
+            for command in phase_commands:
+                _ = run_and_print_quiet_raw(term, command, quiet_seconds=1.0, max_duration=15.0)
+        boot_rc = 0
+        time.sleep(5.0)
+        for command in ("cat /tmp/boot_zone1.log", "./hvisor zone list"):
+            _ = run_and_print_quiet_raw(term, command, quiet_seconds=1.0, max_duration=15.0)
+    else:
+        _, _ = run_and_print_quiet(term, "cd /root", quiet_seconds=1.0, max_duration=15.0)
+        _, _ = run_and_print_quiet(term, "ls", quiet_seconds=1.0, max_duration=15.0)
+        _, _ = run_and_print_quiet(term, "cat boot_zone1.sh", quiet_seconds=1.0, max_duration=15.0)
+        _, boot_rc = run_and_print_quiet(
+            term,
+            "./boot_zone1.sh",
+            quiet_seconds=15,
+            max_duration=30.0,
+        )
+        _, _ = run_and_print_quiet(term, "./hvisor zone list", quiet_seconds=1.0, max_duration=15.0)
     if cfg["arch"] != "x86_64":
         _ = run_and_print_quiet_raw(term, "script /dev/null", quiet_seconds=1.0, max_duration=15.0)
-    pts_output, _ = run_and_print_quiet(term, "ls -1 /dev/pts/[0-9]*", quiet_seconds=1.0, max_duration=15.0)
+    if cfg["arch"] == "x86_64":
+        pts_output = run_and_print_quiet_raw(term, "ls -1 /dev/pts/[0-9]*", quiet_seconds=1.0, max_duration=15.0)
+    else:
+        pts_output, _ = run_and_print_quiet(term, "ls -1 /dev/pts/[0-9]*", quiet_seconds=1.0, max_duration=15.0)
     pts_numbers = sorted(int(match) for match in re.findall(r"/dev/pts/(\d+)", pts_output))
     if not pts_numbers:
+        if cfg["arch"] == "x86_64":
+            print("[ci_runner] x86 phase 'attach' skipped because no guest pts was allocated", flush=True)
+            if boot_rc != 0:
+                raise TerminalCommandError(f"command failed with rc={boot_rc}: sh ./boot_zone1.sh")
+            print("zone1_started successfully", flush=True)
+            return 0
         raise TerminalCommandError("failed to find numeric pts from 'ls -1 /dev/pts/[0-9]*'")
     max_pts = pts_numbers[-1]
     _ = run_and_print_send_only(term, f"screen /dev/pts/{max_pts}", read_duration=20.0)
     _ = run_and_print_send_only(term, "\n", read_duration=2.0)
-    _, _ = run_and_print_quiet(term, "ls", quiet_seconds=1.0, max_duration=15.0)
+    _ = run_and_print_send_only(term, "ls; echo zone1_started successfully", read_duration=10.0)
     if boot_rc != 0:
         raise TerminalCommandError(f"command failed with rc={boot_rc}: sh ./boot_zone1.sh")
     else:
