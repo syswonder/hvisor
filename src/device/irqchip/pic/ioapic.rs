@@ -26,7 +26,7 @@ use crate::{
     error::HvResult,
     memory::{GuestPhysAddr, MMIOAccess},
     platform::ROOT_ZONE_IOAPIC_BASE,
-    zone::{this_zone_id, Zone},
+    zone::{find_zone, this_zone_id, Zone},
 };
 use alloc::{sync::Arc, vec::Vec};
 use bit_field::BitField;
@@ -150,11 +150,38 @@ impl VirtIoApic {
         Ok(())
     }
 
+    fn resolve_irq_dest_cpu(&self, entry: u64, zone_id: usize) -> usize {
+        let rte_apic_id = entry.get_bits(56..=63) as usize;
+        let rte_cpu = get_cpu_id(rte_apic_id);
+
+        if zone_id == 0 {
+            return rte_cpu;
+        }
+
+        find_zone(zone_id)
+            .and_then(|zone| {
+                let cpu_set = zone.read().cpu_set();
+                if cpu_set.contains_cpu(rte_cpu) {
+                    // The guest used a physical APIC ID that already maps to a CPU in
+                    // this zone. Keep the original hvisor mapping.
+                    Some(rte_cpu)
+                } else {
+                    // Some guests program the virtual I/O APIC with guest-local APIC
+                    // IDs (0, 1, ...). Translate that local ordinal to the zone's
+                    // physical CPU set, falling back to the boot CPU.
+                    cpu_set
+                        .iter()
+                        .nth(rte_apic_id)
+                        .or_else(|| cpu_set.first_cpu())
+                }
+            })
+            .unwrap_or(rte_cpu)
+    }
+
     fn get_irq_cpu(&self, irq: usize, zone_id: usize) -> Option<usize> {
         let ioapic = self.inner.get(zone_id).unwrap();
         if let Some(entry) = ioapic.lock().rte.get(irq) {
-            let dest = get_cpu_id(entry.get_bits(56..=63) as usize);
-            return Some(dest);
+            return Some(self.resolve_irq_dest_cpu(*entry, zone_id));
         }
         None
     }
@@ -164,10 +191,9 @@ impl VirtIoApic {
         let ioapic = self.inner.get(zone_id).unwrap();
         if let Some(entry) = ioapic.lock().rte.get(irq) {
             // TODO: physical & logical mode
-            let dest = get_cpu_id(entry.get_bits(56..=63) as usize);
+            let dest = self.resolve_irq_dest_cpu(*entry, zone_id);
             let masked = entry.get_bit(16);
             let vector = entry.get_bits(0..=7) as u8;
-            // info!("trigger hv: {:x} zone: {:x}", vector, zone_id);
             if !masked && vector >= 0x20 {
                 inject_vector(dest, vector, None, allow_repeat);
             }

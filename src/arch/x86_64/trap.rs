@@ -153,6 +153,21 @@ fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
 
                 res
             }
+            CpuIdEax::TscInfo => {
+                if let Some(freq_mhz) = hpet::get_tsc_freq_mhz() {
+                    // CPUID.15H: TSC frequency = ECX * EBX / EAX.
+                    // Advertise a 1 MHz crystal clock and a multiplier in MHz so
+                    // guests can avoid PIT-based TSC calibration.
+                    CpuIdResult {
+                        eax: 1,
+                        ebx: freq_mhz,
+                        ecx: 1_000_000,
+                        edx: 0,
+                    }
+                } else {
+                    cpuid!(regs.rax, regs.rcx)
+                }
+            }
             CpuIdEax::ProcessorFrequencyInfo => {
                 if let Some(freq_mhz) = hpet::get_tsc_freq_mhz() {
                     CpuIdResult {

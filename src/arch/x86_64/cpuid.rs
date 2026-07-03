@@ -21,6 +21,8 @@ pub enum CpuIdEax {
     VendorInfo = 0x0,
     FeatureInfo = 0x1,
     StructuredExtendedFeatureInfo = 0x7,
+    /// TSC/crystal-clock ratio information (CPUID leaf 0x15).
+    TscInfo = 0x15,
     ProcessorFrequencyInfo = 0x16,
     HypervisorInfo = 0x4000_0000,
     HypervisorFeatures = 0x4000_0001,
