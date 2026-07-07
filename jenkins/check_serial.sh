@@ -1,6 +1,6 @@
 #!/bin/sh
-# Non-interactive serial check for inner zone virtio-console (/dev/pts/x).
-# Usage: check_serial.sh <pts_dev> <log_file> <command...>
+# Non-interactive virtio-console check for inner zone (/dev/pts/x).
+# Usage: check_serial.sh <pts_dev> <log_file> [timeout_sec] [command...]
 
 set -eu
 
@@ -8,21 +8,42 @@ pts_dev=${1:?pts device required}
 log_file=${2:?log file required}
 shift 2
 
+prompt_timeout=180
+if [ $# -gt 0 ] && [ "$1" -eq "$1" ] 2>/dev/null; then
+    prompt_timeout=$1
+    shift
+fi
+
 : > "$log_file"
 
-stty -F "$pts_dev" 115200 cs8 -cstopb -parenb -ixon -ixoff -echo 2>/dev/null \
-    || stty -F "$pts_dev" raw -echo 2>/dev/null \
-    || true
+read_pts() {
+    timeout "${1:-2}" cat "$pts_dev" 2>/dev/null >> "$log_file" || true
+}
 
-{
-    printf '%s\r\n' "$*"
-    sleep 3
-    timeout 10 cat "$pts_dev" 2>/dev/null || true
-} >> "$log_file" 2>&1
+has_shell_prompt() {
+    tr -d '\r' < "$log_file" | grep -qE '^#[[:space:]]*$' \
+        || tr -d '\r' < "$log_file" | grep -qE '^root@[^[:space:]]+#[[:space:]]*$'
+}
 
-if [ ! -s "$log_file" ]; then
-    echo "check_serial: no output from $pts_dev" >> "$log_file"
+deadline=$(( $(date +%s) + prompt_timeout ))
+while [ "$(date +%s)" -lt "$deadline" ]; do
+    read_pts 2
+    if has_shell_prompt; then
+        break
+    fi
+    sleep 0.2
+done
+
+if ! has_shell_prompt; then
+    echo "check_serial: timed out after ${prompt_timeout}s waiting for shell prompt on $pts_dev" \
+        >> "$log_file"
     exit 1
+fi
+
+if [ $# -gt 0 ]; then
+    printf '%s\r\n' "$@"
+    sleep 1
+    read_pts 10
 fi
 
 exit 0

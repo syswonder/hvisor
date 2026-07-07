@@ -53,6 +53,9 @@
             "bus": "0x0",
             "device": "0x0",
             "function": "0x0",
+            "v_bus": "0x0",
+            "v_device": "0x0",
+            "v_function": "0x0",
             "dev_type": "0"
         },
         {
@@ -60,6 +63,9 @@
             "bus": "0x0",
             "device": "0x2",
             "function": "0x0",
+            "v_bus": "0x0",
+            "v_device": "0x1",
+            "v_function": "0x0",
             "dev_type": "0"
         }
     ]

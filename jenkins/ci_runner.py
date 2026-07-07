@@ -19,6 +19,7 @@ CaseFunc = Callable[[dict[str, Any], Terminal | None], int]
 
 # Wait for an interactive shell prompt, not login: (getty shows that before MOTD/shell).
 ZONE0_READY_PATTERN = r"root@[^\r\n]*[#$]\s|(?:\r?\n)#\s"
+ZONE1_INNER_PROMPT_TIMEOUT = 180.0
 
 
 def bid_log_key(bid: str) -> str:
@@ -171,22 +172,23 @@ def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
             raise TerminalTimeoutError("timed out waiting for zone0 shell prompt")
         return 0
     if cfg["mode"] == "board":
-        board_power_cycle(cfg)
-
         log_path = logs_dir(cfg) / "zone0_console.log"
         log_path.write_text("", encoding="utf-8")
 
         board_term = build_terminal(cfg, log_path)
         board_term.open()
         cfg["_board_term"] = board_term
+        board_power_cycle(cfg)
 
         uboot_cmd = cfg.get("uboot_cmd", "")
         uboot_ready = cfg.get("uboot_ready_pattern", "")
         if uboot_cmd:
             if not uboot_ready:
-                uboot_ready = r"*=>"
-            if not board_term.wait_pattern(uboot_ready, timeout=60.0):
+                uboot_ready = r"Net:.*\n=> "
+            if not board_term.wait_pattern(uboot_ready, timeout=120.0):
                 raise TerminalTimeoutError("timed out waiting for U-Boot prompt")
+            time.sleep(0.3)
+            board_term.flush_input()
             board_term.send(uboot_cmd)
         if not board_term.wait_pattern(ZONE0_READY_PATTERN, timeout=180.0):
             raise TerminalTimeoutError("timed out waiting for zone0 shell prompt")
@@ -210,8 +212,8 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
 
     check_rc, _ = term.run(
         "zone1_serial_check",
-        f"./check_serial.sh /dev/pts/{max_pts} {inner_log} ls",
-        timeout=30.0,
+        f"./check_serial.sh /dev/pts/{max_pts} {inner_log} {int(ZONE1_INNER_PROMPT_TIMEOUT)}",
+        timeout=ZONE1_INNER_PROMPT_TIMEOUT + 30.0,
     )
     _, inner_output = term.run("zone1_inner_log", f"cat {inner_log}", timeout=15.0)
     save_inner_serial_log(cfg, inner_output)
@@ -219,7 +221,9 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     if boot_rc != 0:
         raise TerminalCommandError(f"command failed with rc={boot_rc}: ./boot_zone1.sh")
     if check_rc != 0:
-        raise TerminalCommandError(f"command failed with rc={check_rc}: check_serial.sh")
+        raise TerminalCommandError(
+            f"command failed with rc={check_rc}: check_serial.sh (no shell prompt)"
+        )
     print("zone1_started successfully", flush=True)
     return 0
 

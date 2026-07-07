@@ -47,6 +47,10 @@ class TerminalBackend(ABC):
     def write(self, data: bytes) -> None:
         pass
 
+    @abstractmethod
+    def flush_input(self) -> None:
+        pass
+
 
 @dataclass
 class QemuSocketBackend(TerminalBackend):
@@ -86,6 +90,14 @@ class QemuSocketBackend(TerminalBackend):
             raise RuntimeError("QEMU socket is not open")
         self._sock.sendall(data)
 
+    def flush_input(self) -> None:
+        if self._sock is None:
+            return
+        while True:
+            chunk = self.read()
+            if not chunk:
+                break
+
 
 @dataclass
 class SerialBackend(TerminalBackend):
@@ -120,6 +132,11 @@ class SerialBackend(TerminalBackend):
             raise RuntimeError("Serial device is not open")
         self._serial.write(data)
         self._serial.flush()
+
+    def flush_input(self) -> None:
+        if self._serial is None:
+            return
+        self._serial.reset_input_buffer()
 
 
 class LogCollector:
@@ -266,6 +283,10 @@ class Terminal:
 
     def __exit__(self, exc_type, exc, tb) -> None:
         self.close()
+
+    def flush_input(self) -> None:
+        self._ensure_open()
+        self.backend.flush_input()
 
     def send(self, command: str) -> None:
         self._ensure_open()

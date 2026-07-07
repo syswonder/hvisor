@@ -409,14 +409,24 @@ pipeline {
                         steps {
                             dir(matrixCellDir()) {
                                 script {
-                                    echo "Run tests via ci_runner [BID=${env.BID}]"
-                                    sh """
-                                        export TERM=\${TERM:-xterm}
-                                        ${toolchainPathShell()}
-                                        ${qemuPathShell()}
-                                        python3 jenkins/ci_runner.py \
-                                            --bid "${env.BID}"
-                                    """
+                                    def bidCfg = getBidConfig(loadCiYaml(), env.BID)
+                                    def mode = (bidCfg.tests?.mode ?: '').toString().trim()
+                                    echo "Run tests via ci_runner [BID=${env.BID}, mode=${mode}]"
+                                    if (mode == 'board') {
+                                        sh """
+                                            export TERM=\${TERM:-xterm}
+                                            sudo -E python3 jenkins/ci_runner.py \
+                                                --bid "${env.BID}"
+                                        """
+                                    } else {
+                                        sh """
+                                            export TERM=\${TERM:-xterm}
+                                            ${toolchainPathShell()}
+                                            ${qemuPathShell()}
+                                            python3 jenkins/ci_runner.py \
+                                                --bid "${env.BID}"
+                                        """
+                                    }
                                 }
                             }
                         }
