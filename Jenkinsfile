@@ -389,11 +389,10 @@ pipeline {
                                         echo "Deploy TFTP artifacts [BID=${env.BID}, TFTP_DIR=${env.TFTP_DIR}]"
                                         sh """
                                             export TERM=\${TERM:-xterm}
-                                            ${toolchainPathShell()}
-                                            mkdir -p "${env.TFTP_DIR}"
-                                            make cp ARCH=${arch} BOARD=${board} MODE=release TFTP_DIR="${env.TFTP_DIR}"
-                                            cp platform/${arch}/${board}/image/dts/rk3568_limit_zone0.dtb "${env.TFTP_DIR}/"
-                                            cp ${kdir}/arch/arm64/boot/Image "${env.TFTP_DIR}/"
+                                            sudo mkdir -p "${env.TFTP_DIR}"
+                                            sudo make cp ARCH=${arch} BOARD=${board} MODE=release TFTP_DIR="${env.TFTP_DIR}"
+                                            sudo cp platform/${arch}/${board}/image/dts/rk3568_limit_zone0.dtb "${env.TFTP_DIR}/"
+                                            sudo cp ${kdir}/arch/arm64/boot/Image "${env.TFTP_DIR}/"
                                         """
                                     } else {
                                         error("jenkins/ci.yaml BID=${env.BID}: unsupported tests.mode='${mode}'")
