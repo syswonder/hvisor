@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import queue
 import re
 import select
 import socket
@@ -159,9 +160,16 @@ class LogCollector:
         self._buffer = ""
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._console_queue: queue.SimpleQueue[str | None] = queue.SimpleQueue()
+        self._console_thread: threading.Thread | None = None
 
     def start(self) -> None:
         self.log_path.parent.mkdir(parents=True, exist_ok=True)
+        if self.console:
+            self._console_thread = threading.Thread(
+                target=self._console_loop, name="LogCollectorConsole", daemon=True
+            )
+            self._console_thread.start()
         self._thread = threading.Thread(target=self._run_loop, name="LogCollector", daemon=True)
         self._thread.start()
 
@@ -176,7 +184,12 @@ class LogCollector:
             chunk = self.backend.read()
             if not chunk:
                 break
-            self._append(chunk.decode(self.encoding, errors="replace"))
+            self._append(chunk.decode(self.encoding, errors="replace"), emit_console=False)
+        if self.console:
+            self._console_queue.put(None)
+            if self._console_thread is not None:
+                self._console_thread.join(timeout=5.0)
+                self._console_thread = None
 
     def offset(self) -> int:
         with self._lock:
@@ -192,7 +205,7 @@ class LogCollector:
         with self._lock:
             return self._buffer
 
-    def _append(self, chunk: str) -> None:
+    def _append(self, chunk: str, *, emit_console: bool = True) -> None:
         if not chunk:
             return
         with self._lock:
@@ -202,7 +215,14 @@ class LogCollector:
                 fh.write(chunk)
         except OSError:
             pass
-        if self.console:
+        if emit_console and self.console:
+            self._console_queue.put(chunk)
+
+    def _console_loop(self) -> None:
+        while True:
+            chunk = self._console_queue.get()
+            if chunk is None:
+                return
             print(chunk, end="", flush=True)
 
     def _run_loop(self) -> None:

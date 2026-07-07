@@ -97,6 +97,13 @@
 			#address-cells = <0x03>;
 		};
 
+		virtio_mmio@10006000 {
+			interrupts = <0x06>;
+			interrupt-parent = <0x02>;
+			reg = <0x00 0x10006000 0x00 0x1000>;
+			compatible = "virtio,mmio";
+		};
+
 		virtio_mmio@10007000 {
 			interrupts = <0x07>;
 			interrupt-parent = <0x02>;

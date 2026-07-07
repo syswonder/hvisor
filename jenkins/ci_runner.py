@@ -19,7 +19,8 @@ CaseFunc = Callable[[dict[str, Any], Terminal | None], int]
 
 # Wait for an interactive shell prompt, not login: (getty shows that before MOTD/shell).
 ZONE0_READY_PATTERN = r"root@[^\r\n]*[#$]\s|(?:\r?\n)#\s"
-ZONE1_INNER_PROMPT_TIMEOUT = 180.0
+ZONE1_INNER_PROMPT_TIMEOUT = 60.0
+ZONE1_INNER_LOG_FETCH_TIMEOUT = 30.0
 
 
 def bid_log_key(bid: str) -> str:
@@ -215,7 +216,12 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
         f"./check_serial.sh /dev/pts/{max_pts} {inner_log} {int(ZONE1_INNER_PROMPT_TIMEOUT)}",
         timeout=ZONE1_INNER_PROMPT_TIMEOUT + 30.0,
     )
-    _, inner_output = term.run("zone1_inner_log", f"cat {inner_log}", timeout=15.0)
+    # Fetch via tail to limit serial traffic; generous timeout for slow Jenkins consoles.
+    _, inner_output = term.run(
+        "zone1_inner_log",
+        f"tail -c 131072 {inner_log}",
+        timeout=ZONE1_INNER_LOG_FETCH_TIMEOUT,
+    )
     save_inner_serial_log(cfg, inner_output)
 
     if boot_rc != 0:

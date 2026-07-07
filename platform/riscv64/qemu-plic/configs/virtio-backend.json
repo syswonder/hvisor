@@ -10,14 +10,22 @@
                 }
             ],
             "devices": [
-                    {
-                        "type": "console",
-                        "addr": "0x10007000",
-                        "len": "0x1000",
-                        "irq": 7,
-                        "status": "enable"
-                    }
-                ]
+                {
+                    "type": "blk",
+                    "addr": "0x10006000",
+                    "len": "0x1000",
+                    "irq": 6,
+                    "img": "rootfs2.ext4",
+                    "status": "enable"
+                },
+                {
+                    "type": "console",
+                    "addr": "0x10007000",
+                    "len": "0x1000",
+                    "irq": 7,
+                    "status": "enable"
+                }
+            ]
         }
     ]
 }

@@ -8,7 +8,7 @@ pts_dev=${1:?pts device required}
 log_file=${2:?log file required}
 shift 2
 
-prompt_timeout=180
+prompt_timeout=60
 if [ $# -gt 0 ] && [ "$1" -eq "$1" ] 2>/dev/null; then
     prompt_timeout=$1
     shift
@@ -21,8 +21,8 @@ read_pts() {
 }
 
 has_shell_prompt() {
-    tr -d '\r' < "$log_file" | grep -qE '^#[[:space:]]*$' \
-        || tr -d '\r' < "$log_file" | grep -qE '^root@[^[:space:]]+#[[:space:]]*$'
+    tr -d '\r' < "$log_file" | sed 's/\x1b\[[0-9;?]*[ -\/]*[@-~]//g' \
+        | grep -qE 'root@[^[:space:]]*[#$][[:space:]]*$|^[[:space:]]*#[[:space:]]*$'
 }
 
 deadline=$(( $(date +%s) + prompt_timeout ))
