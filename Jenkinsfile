@@ -205,6 +205,7 @@ pipeline {
         LOONGARCH64_TOOLCHAIN_PATH = '/home/light/DEMO/toolchain/loongarch_cross_tools'
         // All toolchain bins on PATH; same for every matrix cell (no per-arch selection).
         TOOLCHAIN_PATHS = "${env.RISCV_TOOLCHAIN_PATH}/bin:${env.AARCH64_TOOLCHAIN_PATH}/bin:${env.LOONGARCH64_TOOLCHAIN_PATH}/bin"
+        TFTP_DIR = '/home/light/tftp'
     }
 
     stages {
@@ -385,15 +386,14 @@ pipeline {
                                                 "${prepareScript}"
                                         """
                                     } else if (mode == 'board') {
-                                        def tftpDir = (testsCfg.tftp_dir ?: '/home/light/tftp').toString()
-                                        echo "Deploy TFTP artifacts [BID=${env.BID}, TFTP_DIR=${tftpDir}]"
+                                        echo "Deploy TFTP artifacts [BID=${env.BID}, TFTP_DIR=${env.TFTP_DIR}]"
                                         sh """
-                                            TFTP_DIR="${tftpDir}"
-                                            mkdir -p "\$TFTP_DIR"
+                                            export TERM=\${TERM:-xterm}
                                             ${toolchainPathShell()}
-                                            make cp ARCH=${arch} BOARD=${board} MODE=release TFTP_DIR="\$TFTP_DIR"
-                                            cp platform/${arch}/${board}/image/dts/rk3568_limit_zone0.dtb "\$TFTP_DIR/"
-                                            cp ${kdir}/arch/arm64/boot/Image "\$TFTP_DIR/"
+                                            mkdir -p "${env.TFTP_DIR}"
+                                            make cp ARCH=${arch} BOARD=${board} MODE=release TFTP_DIR="${env.TFTP_DIR}"
+                                            cp platform/${arch}/${board}/image/dts/rk3568_limit_zone0.dtb "${env.TFTP_DIR}/"
+                                            cp ${kdir}/arch/arm64/boot/Image "${env.TFTP_DIR}/"
                                         """
                                     } else {
                                         error("jenkins/ci.yaml BID=${env.BID}: unsupported tests.mode='${mode}'")
