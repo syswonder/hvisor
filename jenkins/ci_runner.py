@@ -17,6 +17,10 @@ from terminal import Terminal, TerminalCommandError, TerminalTimeoutError
 
 CaseFunc = Callable[[dict[str, Any], Terminal | None], int]
 
+# Wait for an interactive shell prompt, not login: (getty shows that before MOTD/shell).
+ZONE0_READY_PATTERN = r"root@[^\r\n]*[#$]\s|(?:\r?\n)#\s"
+
+
 def bid_log_key(bid: str) -> str:
     return bid.replace("/", "__")
 
@@ -163,8 +167,8 @@ def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
             if not qemu_term.wait_pattern(uboot_ready, timeout=10.0):
                 raise TerminalTimeoutError("timed out waiting for U-Boot prompt")
             qemu_term.send(uboot_cmd)
-        if not qemu_term.wait_pattern(r"buildroot|login:|# ", timeout=180.0):
-            raise TerminalTimeoutError("timed out waiting for zone0 boot")
+        if not qemu_term.wait_pattern(ZONE0_READY_PATTERN, timeout=180.0):
+            raise TerminalTimeoutError("timed out waiting for zone0 shell prompt")
         return 0
     if cfg["mode"] == "board":
         board_power_cycle(cfg)
@@ -184,8 +188,8 @@ def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
             if not board_term.wait_pattern(uboot_ready, timeout=60.0):
                 raise TerminalTimeoutError("timed out waiting for U-Boot prompt")
             board_term.send(uboot_cmd)
-        if not board_term.wait_pattern(r"buildroot|login:|# ", timeout=180.0):
-            raise TerminalTimeoutError("timed out waiting for zone0 boot")
+        if not board_term.wait_pattern(ZONE0_READY_PATTERN, timeout=180.0):
+            raise TerminalTimeoutError("timed out waiting for zone0 shell prompt")
         return 0
     return 0
 
