@@ -118,3 +118,22 @@ fi
 if [ -f "${ROOTFS_DIR}/root/screen_zone1.sh" ]; then
     chmod +x "${ROOTFS_DIR}/root/screen_zone1.sh"
 fi
+
+ROOTFS2_IMG=""
+if [ -f "${VIRTDISK_DIR}/rootfs2.ext4" ]; then
+    ROOTFS2_IMG="${VIRTDISK_DIR}/rootfs2.ext4"
+elif [ -f "${VIRTDISK_DIR}/rootfs2.img" ]; then
+    ROOTFS2_IMG="${VIRTDISK_DIR}/rootfs2.img"
+fi
+
+if [ -n "${ROOTFS2_IMG}" ]; then
+    ROOTFS2_MNT="${VIRTDISK_DIR}/rootfs2"
+    mkdir -p "${ROOTFS2_MNT}"
+    mount -o loop "${ROOTFS2_IMG}" "${ROOTFS2_MNT}"
+    if [ -f "${ROOTFS2_MNT}/init" ]; then
+        chmod +x "${ROOTFS2_MNT}/init"
+    fi
+    umount "${ROOTFS2_MNT}"
+    rmdir "${ROOTFS2_MNT}"
+    cp "${ROOTFS2_IMG}" "${ROOTFS_DIR}/root/"
+fi

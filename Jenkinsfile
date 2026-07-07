@@ -45,6 +45,8 @@ def syncWorkspaceTo(String destDir) {
             --exclude '.jenkins/' \\
             --exclude '.matrix/' \\
             --exclude '.jenkins-matrix/' \\
+            --exclude '__pycache__/' \\
+            --exclude '*.pyc' \\
             '${env.WORKSPACE}/' '${destDir}/'
     """
 }
@@ -188,7 +190,7 @@ pipeline {
         always {
             echo "=== DEBUG: Branch ${env.BRANCH_NAME} ==="
             echo "=== DEBUG: Commit ${env.GIT_COMMIT} ==="
-            sh 'rm -rf .matrix'
+            sh 'sudo rm -rf .matrix 2>/dev/null || rm -rf .matrix || true'
         }
     }
 
@@ -206,6 +208,7 @@ pipeline {
         // All toolchain bins on PATH; same for every matrix cell (no per-arch selection).
         TOOLCHAIN_PATHS = "${env.RISCV_TOOLCHAIN_PATH}/bin:${env.AARCH64_TOOLCHAIN_PATH}/bin:${env.LOONGARCH64_TOOLCHAIN_PATH}/bin"
         TFTP_DIR = '/home/light/tftp'
+        PYTHONDONTWRITEBYTECODE = '1'
     }
 
     stages {
