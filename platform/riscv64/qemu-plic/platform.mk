@@ -7,8 +7,11 @@ FSIMG2 := $(image_dir)/virtdisk/rootfs2.ext4
 HVISOR_ENTRY_PA := 0x80200000
 zone0_kernel := $(image_dir)/kernel/Image
 zone0_dtb    := $(image_dir)/dts/zone0.dtb
-# zone1_kernel := $(image_dir)/kernel/Image
-# zone1_dtb    := $(image_dir)/devicetree/linux.dtb
+# zone1 (Asterinas) images
+# All zone1 images (kernel, dtb, initramfs) are loaded by hvisor-tool from zone0
+# See zone1-asterinas.json for the modules configuration
+zone1_kernel := $(image_dir)/kernel/asterinas.bin
+zone1_dtb    := $(image_dir)/dts/zone1-asterinas.dtb
 
 QEMU_ARGS := -machine virt,aclint=on # ,iommu-sys=on # -d trace:*iommu*
 QEMU_ARGS += -bios default
@@ -20,8 +23,8 @@ QEMU_ARGS += -nographic
 QEMU_ARGS += -kernel $(hvisor_bin)
 QEMU_ARGS += -device loader,file="$(zone0_kernel)",addr=0x90000000,force-raw=on
 QEMU_ARGS += -device loader,file="$(zone0_dtb)",addr=0x8f000000,force-raw=on
-# QEMU_ARGS += -device loader,file="$(zone1_kernel)",addr=0x84000000,force-raw=on
-# QEMU_ARGS += -device loader,file="$(zone1_dtb)",addr=0x83000000,force-raw=on
+# zone1 images (kernel, dtb, initramfs) are all loaded by hvisor-tool from zone0
+# See zone1-asterinas.json for the modules configuration
 
 QEMU_ARGS += -drive if=none,file=$(FSIMG1),id=hd0,format=raw
 # QEMU_ARGS += -device virtio-blk-device,drive=hd0,bus=virtio-mmio-bus.7

@@ -14,6 +14,7 @@
 // Authors:
 //
 use super::cpu::ArchCpu;
+use super::csr::*;
 use crate::arch::sbi::sbi_vs_handler;
 #[cfg(plic)]
 use crate::device::irqchip::plic::{inject_irq, plic_get_hwirq};
@@ -39,6 +40,7 @@ interrupts_arch_handle=sym interrupts_arch_handle);
 pub mod ExceptionType {
     pub const ECALL_VU: usize = 8;
     pub const ECALL_VS: usize = 10;
+    pub const INSTRUCTION_GUEST_PAGE_FAULT: usize = 20;
     pub const LOAD_GUEST_PAGE_FAULT: usize = 21;
     pub const STORE_GUEST_PAGE_FAULT: usize = 23;
 }
@@ -134,6 +136,29 @@ pub fn sync_exception_handler(current_cpu: &mut ArchCpu) {
             trace!("ECALL_VS");
             sbi_vs_handler(current_cpu);
             current_cpu.sepc += 4; // For ecall, skip the ecall instruction.
+        }
+        ExceptionType::INSTRUCTION_GUEST_PAGE_FAULT => {
+            trace!("INSTRUCTION_GUEST_PAGE_FAULT");
+            // When guest hasn't set up its trap vector (vtvec=0), a timer interrupt
+            // can cause guest to jump to 0x0, leading to instruction page fault.
+            // Recover by disabling the timer interrupt and resuming from VSEPC.
+            let guest_vtvec = read_csr!(CSR_VSTVEC);
+            if guest_vtvec == 0 {
+                let vsepc = read_csr!(CSR_VSEPC);
+                warn!(
+                    "Guest trapped to 0x0 (vtvec=0), VSEPC={:#x}. \
+                    Disabling VSTIMECMP and resuming.",
+                    vsepc
+                );
+                write_csr!(CSR_VSTIMECMP, usize::MAX);
+                unsafe {
+                    hvip::clear_vstip();
+                    sie::clear_stimer();
+                }
+                current_cpu.sepc = vsepc;
+                return;
+            }
+            guest_page_fault_handler(current_cpu);
         }
         ExceptionType::LOAD_GUEST_PAGE_FAULT => {
             trace!("LOAD_GUEST_PAGE_FAULT");

@@ -1,0 +1,58 @@
+{
+    "arch": "riscv",
+    "name": "asterinas",
+    "zone_id": 1,
+    "cpus": [
+        2
+    ],
+    "memory_regions": [
+        {
+            "type": "ram",
+            "physical_start": "0x80200000",
+            "virtual_start": "0x80200000",
+            "size": "0x10000000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x10000000",
+            "virtual_start": "0x10000000",
+            "size": "0x100"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x10007000",
+            "virtual_start": "0x10007000",
+            "size": "0x1000"
+        },
+        {
+            "type": "ram",
+            "physical_start": "0x87e00000",
+            "virtual_start": "0x87e00000",
+            "size": "0x00200000"
+        }
+    ],
+    "interrupts": [
+        7,
+        10
+    ],
+    "ivc_configs": [],
+    "kernel_filepath": "./asterinas.bin",
+    "dtb_filepath": "./zone1-asterinas.dtb",
+    "kernel_load_paddr": "0x84000000",
+    "dtb_load_paddr": "0x83000000",
+    "entry_point": "0x84000000",
+    "modules": [
+        {
+            "name": "initramfs",
+            "filepath": "./initramfs.cpio.gz",
+            "load_paddr": "0x87e00000"
+        }
+    ],
+    "arch_config": {
+        "plic_base": "0xc000000",
+        "plic_size": "0x600000"
+    },
+    "pci_config": [],
+    "num_pci_devs": 0,
+    "alloc_pci_devs": []
+}

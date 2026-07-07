@@ -1,0 +1,94 @@
+/dts-v1/;
+
+/ {
+	#address-cells = <0x2>;
+	#size-cells = <0x2>;
+	model = "asterinas,dummy-virt";
+	compatible = "asterinas,dummy-virt";
+
+	cpus {
+		#address-cells = <0x1>;
+		#size-cells = <0x0>;
+		timebase-frequency = <10000000>;
+
+		cpu@2 {
+			device_type = "cpu";
+			reg = <0x2>;
+			status = "okay";
+			compatible = "riscv";
+			riscv,isa = "rv64imafdcsu_sstc";
+			mmu-type = "riscv,sv48";
+
+			cpu2_intc: interrupt-controller {
+				#interrupt-cells = <0x1>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+			};
+		};
+	};
+
+	memory@80200000 {
+		device_type = "memory";
+		reg = <0x0 0x80200000 0x0 0x10000000>;
+	};
+
+	reserved-memory {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+
+		opensbi+hvisor@80000000 {
+			no-map;
+			reg = <0x00 0x80000000 0x00 0x05000000>;
+		};
+
+		dtbfile@83000000 {
+			no-map;
+			reg = <0x00 0x83000000 0x00 0x01000000>;
+		};
+
+		initramfs@87e00000 {
+			no-map;
+			reg = <0x00 0x87e00000 0x00 0x00200000>;
+		};
+	};
+
+	soc {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		compatible = "simple-bus";
+		ranges;
+
+		plic: interrupt-controller@c000000 {
+			phandle = <0x03>;
+			riscv,ndev = <0x5f>;
+			reg = <0x00 0xc000000 0x00 0x600000>;
+			interrupts-extended = <&cpu2_intc 11 &cpu2_intc 9>;
+			interrupt-controller;
+			compatible = "riscv,plic0";
+			#interrupt-cells = <0x1>;
+		};
+
+		uart@10000000 {
+			interrupts = <0x0a>;
+			interrupt-parent = <&plic>;
+			clock-frequency = "\08@";
+			reg = <0x00 0x10000000 0x00 0x100>;
+			compatible = "ns16550a";
+		};
+
+		virtio_mmio@10007000 {
+			interrupts = <0x07>;
+			interrupt-parent = <&plic>;
+			reg = <0x00 0x10007000 0x00 0x1000>;
+			compatible = "virtio,mmio";
+		};
+	};
+
+	chosen {
+		bootargs = "init=/init console=ttyS0 ostd.log_level=debug";
+		stdout-path = "serial0:115200n8";
+		linux,initrd-start = <0x00 0x87e00000>;
+		linux,initrd-end = <0x00 0x88000000>;
+	};
+};

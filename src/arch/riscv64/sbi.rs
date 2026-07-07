@@ -33,14 +33,24 @@ use sbi_spec::{base, hsm, legacy, rfnc, spi, time};
 // Reserved for hvisor-tool.
 pub const EID_HVISOR: usize = 0x114514;
 
+// SBI Debug Console Extension (DBCN)
+pub const EID_DBCN: usize = 0x4442434E;
+pub const DBCN_CONSOLE_WRITE_BYTE: usize = 2;
+
+// SBI System Reset Extension (SRST)
+pub const EID_SRST: usize = 0x53525354;
+pub const SRST_SYSTEM_RESET: usize = 0;
+
 // Hvisor supported SBI extensions.
-pub const NUM_EXT: usize = 6;
+pub const NUM_EXT: usize = 8;
 pub const EXT_TABLE: [usize; NUM_EXT] = [
     base::EID_BASE,
     time::EID_TIME,
     hsm::EID_HSM,
     spi::EID_SPI,
     rfnc::EID_RFNC,
+    EID_DBCN,
+    EID_SRST,
     EID_HVISOR,
 ];
 
@@ -90,6 +100,14 @@ pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
         // Hvisor Extension (Hvisor Defined)
         EID_HVISOR => {
             sbi_ret = sbi_hvisor_handler(current_cpu);
+        }
+        // Debug Console Extension (DBCN)
+        EID_DBCN => {
+            sbi_ret = sbi_dbcn_handler(fid, current_cpu);
+        }
+        // System Reset Extension (SRST)
+        EID_SRST => {
+            sbi_ret = sbi_srst_handler(fid, current_cpu);
         }
         // Note: hvisor don't suggest to use Legacy Extension.
         // But for compatibility, we still support some legacy SBI calls.
@@ -364,5 +382,67 @@ pub fn sbi_hvisor_handler(current_cpu: &mut ArchCpu) -> SbiRet {
                 value: e.code() as _,
             }
         }
+    }
+}
+
+/// SBI Debug Console Extension handler.
+/// Directly writes to UART hardware to avoid recursive SBI traps.
+pub fn sbi_dbcn_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
+    match fid {
+        DBCN_CONSOLE_WRITE_BYTE => {
+            let byte = current_cpu.x[10] as u8;
+            // Directly write to UART hardware (QEMU virt 16550 at 0x10000000)
+            const UART0_BASE: usize = 0x1000_0000;
+            unsafe {
+                core::ptr::write_volatile(UART0_BASE as *mut u8, byte);
+            }
+            SbiRet {
+                error: RET_SUCCESS,
+                value: 1, // 1 byte written
+            }
+        }
+        _ => SbiRet {
+            error: RET_ERR_NOT_SUPPORTED,
+            value: 0,
+        },
+    }
+}
+
+/// SBI System Reset Extension handler.
+/// Handles guest system reset requests (shutdown/reboot).
+pub fn sbi_srst_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
+    if fid != SRST_SYSTEM_RESET {
+        return SbiRet {
+            error: RET_ERR_NOT_SUPPORTED,
+            value: 0,
+        };
+    }
+    let reset_type = current_cpu.x[10] as u32;
+    let reset_reason = current_cpu.x[11] as u32;
+    info!(
+        "SBI SRST: system_reset type={}, reason={}",
+        reset_type, reset_reason
+    );
+    // Use sbi_rt to perform the actual system reset.
+    // reset_type: 0 = shutdown, 1 = cold reboot, 2 = warm reboot
+    // reset_reason: 0 = none, 1 = failure, 2 = system failure
+    use sbi_rt::{ColdReboot, NoReason, Shutdown, SystemFailure, WarmReboot};
+    let result = match (reset_type, reset_reason) {
+        (0, 0) => sbi_rt::system_reset(Shutdown, NoReason),
+        (0, 1) => sbi_rt::system_reset(Shutdown, SystemFailure),
+        (1, 0) => sbi_rt::system_reset(ColdReboot, NoReason),
+        (1, 1) => sbi_rt::system_reset(ColdReboot, SystemFailure),
+        (2, 0) => sbi_rt::system_reset(WarmReboot, NoReason),
+        (2, 1) => sbi_rt::system_reset(WarmReboot, SystemFailure),
+        _ => {
+            return SbiRet {
+                error: RET_ERR_NOT_SUPPORTED,
+                value: 0,
+            }
+        }
+    };
+    SbiRet {
+        error: result.error,
+        value: result.value,
     }
 }

@@ -67,7 +67,7 @@ impl ArchCpu {
         //self.sepc = guest_test as usize as u64;
         write_csr!(CSR_SSCRATCH, self as *const _ as usize); //arch cpu pointer
         self.sepc = entry;
-        self.hstatus = 1 << 7 | 2 << 32; // HSTATUS_SPV | HSTATUS_VSXL_64
+        self.hstatus = 1 << 7 | 2 << 32 | 1 << 56; // HSTATUS_SPV | HSTATUS_VSXL_64 | HSTATUS_SPVTW
         #[cfg(aia)]
         {
             self.hstatus |= 1 << 12; // HSTATUS_VGEIN
@@ -83,12 +83,12 @@ impl ArchCpu {
         if self.sstc {
             // hvisor doesn't handle timer interrupt.
             set_csr!(CSR_STIMECMP, usize::MAX);
-            set_csr!(CSR_HENVCFG, 1 << 63);
+            set_csr!(CSR_HENVCFG, 1 << 63 | 1 << 61); // STCE | ADUE (enable hardware A/D bit update for guest)
             set_csr!(CSR_VSTIMECMP, usize::MAX);
         } else {
             // In megrez board, this instruction is not supported. (illegal instruction)
             #[cfg(not(hypervisor_v0_6))]
-            set_csr!(CSR_HENVCFG, 0);
+            set_csr!(CSR_HENVCFG, 1 << 61); // ADUE (enable hardware A/D bit update for guest)
         }
         set_csr!(CSR_HCOUNTEREN, 1 << 1); // HCOUNTEREN_TM
                                           // In VU-mode, a counter is not readable unless the applicable bits are set in both hcounteren and scounteren.
