@@ -33,6 +33,7 @@ bids:
         - zone0_start
         - zone1_start
 
+
   - bid: x86_64/qemu
     build_args:
       - KDIR=/home/light/DEMO/linux/linux-5.19

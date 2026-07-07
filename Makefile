@@ -86,6 +86,9 @@ endif
 # Defconfig / menuconfig: see tools/kconfig/kconfig_cli.py
 kconfig_python := tools/kconfig/.venv/bin/python
 
+# Defconfig / menuconfig: see tools/kconfig/kconfig_cli.py
+kconfig_python := tools/kconfig/.venv/bin/python
+
 # Targets
 .PHONY: all elf disa run gdb monitor clean tools rootfs vscode ci-run defconfig menuconfig savedefconfig ensure_config clean_check kconfig_venv link_board check-hv-mem-overlap
 kconfig_venv:
