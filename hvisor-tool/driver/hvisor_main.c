@@ -9,6 +9,8 @@
  *      Guowei Li <2401213322@stu.pku.edu.cn>
  */
 #include <asm/cacheflush.h>
+#include <linux/clk.h>
+#include <linux/delay.h>
 #include <linux/eventfd.h>
 #include <linux/gfp.h>
 #include <linux/init.h>
@@ -21,6 +23,7 @@
 #include <linux/of.h>
 #include <linux/of_irq.h>
 #include <linux/of_reserved_mem.h>
+#include <linux/reset.h>
 #include <linux/sched/signal.h>
 #include <linux/slab.h>
 #include <linux/string.h>
@@ -30,6 +33,32 @@
 
 #include "hvisor.h"
 #include "zone_config.h"
+
+#ifdef ENABLE_VIRTIO_SCMI
+#include "scmi_server.h"
+#endif
+
+extern bool __clk_is_enabled(const struct clk *clk);
+extern const char *__clk_get_name(const struct clk *clk);
+extern unsigned long clk_get_rate(struct clk *clk);
+extern int clk_set_rate(struct clk *clk, unsigned long rate);
+extern int clk_prepare_enable(struct clk *clk);
+extern void clk_disable_unprepare(struct clk *clk);
+
+/* Reset controller functions */
+#include <linux/reset.h>
+
+extern struct reset_control *reset_control_get(struct device *dev,
+                                               const char *id);
+extern struct reset_control *reset_control_get_optional(struct device *dev,
+                                                        const char *id);
+extern struct reset_control *devm_reset_control_get(struct device *dev,
+                                                    const char *id);
+extern void reset_control_put(struct reset_control *rstc);
+extern int reset_control_reset(struct reset_control *rstc);
+extern int reset_control_assert(struct reset_control *rstc);
+extern int reset_control_deassert(struct reset_control *rstc);
+extern struct reset_control *get_reset_domain_by_id(unsigned int reset_id);
 
 struct virtio_bridge *virtio_bridge;
 int virtio_irq = -1;
@@ -147,8 +176,6 @@ out:
 
 static int hvisor_zone_start(zone_config_t __user *arg) {
     int err = 0;
-    int i = 0;
-
     zone_config_t *zone_config = kmalloc(sizeof(zone_config_t), GFP_KERNEL);
 
     if (zone_config == NULL) {
@@ -161,7 +188,7 @@ static int hvisor_zone_start(zone_config_t __user *arg) {
         return -EFAULT;
     }
 
-    pr_info("hvisor.ko: invoking hypercall to start the zone\n");
+    pr_debug("hvisor.ko: invoking hypercall to start the zone\n");
 
     err = hvisor_call(HVISOR_HC_START_ZONE, __pa(zone_config),
                       sizeof(zone_config_t));
@@ -277,6 +304,20 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
     case HVISOR_LOAD_IMAGE:
         err = hvisor_load_image((struct hvisor_load_image_args __user *)arg);
         break;
+#ifdef ENABLE_VIRTIO_SCMI
+    case HVISOR_SCMI_CLOCK_IOCTL:
+        err = hvisor_scmi_clock_ioctl(
+            (struct hvisor_scmi_clock_args __user *)arg);
+        break;
+    case HVISOR_SCMI_RESET_IOCTL:
+        err = hvisor_scmi_reset_ioctl(
+            (struct hvisor_scmi_reset_args __user *)arg);
+        break;
+    case HVISOR_SCMI_POWER_IOCTL:
+        err = hvisor_scmi_power_ioctl(
+            (struct hvisor_scmi_power_args __user *)arg);
+        break;
+#endif
 #ifdef LOONGARCH64
     case HVISOR_CLEAR_INJECT_IRQ:
         err = hvisor_call(HVISOR_HC_CLEAR_INJECT_IRQ, 0, 0);
@@ -302,7 +343,7 @@ static int hvisor_map(struct file *filp, struct vm_area_struct *vma) {
                               vma->vm_end - vma->vm_start, vma->vm_page_prot);
         if (err)
             return err;
-        pr_info("virtio bridge mmap succeed!\n");
+        pr_debug("virtio bridge mmap succeed!\n");
     } else {
         size_t size = vma->vm_end - vma->vm_start;
         // TODO: add check for non root memory region.
@@ -316,7 +357,7 @@ static int hvisor_map(struct file *filp, struct vm_area_struct *vma) {
                               vma->vm_page_prot);
         if (err)
             return err;
-        pr_info("non root region mmap succeed!\n");
+        pr_debug("non root region mmap succeed!\n");
     }
     return 0;
 }
@@ -415,7 +456,7 @@ static int __init hvisor_init(void) {
 
     kfree(irq);
 #endif /* X86_64 */
-    pr_info("hvisor init done!!!\n");
+    pr_debug("hvisor init done!!!\n");
     return 0;
 err_out:
     pr_err("hvisor cannot register IRQ, err is %d\n", err);
@@ -438,7 +479,7 @@ static void __exit hvisor_exit(void) {
         free_pages((unsigned long)virtio_bridge, 0);
     }
     misc_deregister(&hvisor_misc_dev);
-    pr_info("hvisor exit!!!\n");
+    pr_debug("hvisor exit!!!\n");
 }
 
 module_init(hvisor_init);

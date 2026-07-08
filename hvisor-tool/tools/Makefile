@@ -5,6 +5,7 @@ include ./virtio/devices/blk/Makefile
 include ./virtio/devices/console/Makefile
 include ./virtio/devices/net/Makefile
 include ./virtio/devices/gpu/Makefile
+include ./virtio/devices/scmi/Makefile
 
 objects ?= $(sources:.c=.o)
 ivc_demo_object ?= ivc_demo.o
@@ -51,6 +52,12 @@ LDFLAGS := -lpthread -static
 ifeq ($(VIRTIO_GPU), y)
 	CFLAGS += -DENABLE_VIRTIO_GPU
 endif
+
+ifeq ($(VIRTIO_SCMI), y)
+	CFLAGS += -DENABLE_VIRTIO_SCMI
+endif
+
+
 
 include $(sources:.c=.d)
 
