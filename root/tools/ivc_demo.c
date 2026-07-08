@@ -68,9 +68,9 @@ int main(int argc, char *argv[]) {
         offset += tb->out_sec_size;
         in = mmap(NULL, tb->out_sec_size, PROT_READ, MAP_SHARED, fd, offset);
         char *msg = "hello zone1! I'm zone0.";
-        strcpy(out, msg);
+        strcpy((char *)out, msg);
         tb->ipi_invoke = 1;
-        printf("ivc_demo: zone0 sent: %s\n", out);
+        printf("ivc_demo: zone0 sent: %s\n", (char *)out);
         ret = poll(&pfd, 1, -1);
         if (pfd.revents & POLLIN)
             printf("ivc_demo: zone0 received: %s\n", in);
@@ -86,14 +86,14 @@ int main(int argc, char *argv[]) {
             printf("ivc_demo: zone1 received: %s\n", in);
         else
             printf("ivc_demo: zone1 poll failed, ret is %d\n", ret);
-        strcpy(out, "I'm zone1. hello zone0! ");
+        strcpy((char *)out, "I'm zone1. hello zone0! ");
         tb->ipi_invoke = 0;
-        printf("ivc_demo: zone1 sent: %s\n", out);
+        printf("ivc_demo: zone1 sent: %s\n", (char *)out);
     }
 
     close(fd);
-    munmap(in, tb->out_sec_size);
-    munmap(out, tb->rw_sec_size);
+    munmap((void *)in, tb->out_sec_size);
+    munmap((void *)out, tb->rw_sec_size);
     munmap(tb_virt, 0x1000);
     return 0;
 }

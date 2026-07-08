@@ -48,7 +48,8 @@ typedef enum {
     VirtioTNet,
     VirtioTBlock,
     VirtioTConsole,
-    VirtioTGPU = 16
+    VirtioTGPU = 16,
+    VirtioTSCMI = 32,
 } VirtioDeviceType;
 
 // Convert VirtioDeviceType to const char *

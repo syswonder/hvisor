@@ -1,0 +1,52 @@
+{
+    "zones": [
+        {
+            "id": 1,
+            "memory_region": [
+                {
+                    "zone0_ipa": "0x50000000",
+                    "zonex_ipa": "0x50000000",
+                    "size": "0x25000000"
+                }
+            ],
+            "devices": [
+                {
+                    "type": "blk",
+                    "addr": "0xff9d0000",
+                    "len": "0x200",
+                    "irq": 78,
+                    "img": "rootfs.ext4",
+                    "status": "enable"
+                },
+                {
+                    "type": "console",
+                    "addr": "0xff9e0000",
+                    "len": "0x200",
+                    "irq": 76,
+                    "status": "enable"
+                },
+                {
+                    "type": "scmi",
+                    "addr": "0xff9c0000",
+                    "len": "0x200",
+                    "irq": 75,
+                    "status": "enable",
+                    "clock_phandle": 2,
+                    "reset_phandle": 2,
+                    "clock_max_num": 721,
+                    "reset_max_num": 1,
+                    "power_phandle": 93,
+                    "power_max_num": 44,
+                    "allowed_list": {
+                        "power_ids": ["*"],
+                        "reset_ids": [0],
+                        "clock_ids": ["*"]
+                    },
+                    "reset_map": {
+                        "0": 523
+                    }
+                }
+            ]
+        }
+    ]
+}
