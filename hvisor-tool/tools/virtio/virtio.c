@@ -113,21 +113,6 @@ int set_nonblocking(int fd) {
     return 0;
 }
 
-int get_zone_ram_index(void *zonex_ipa, int zone_id) {
-    uintptr_t addr = (uintptr_t)zonex_ipa;
-    for (int i = 0; i < MAX_RAMS; i++) {
-        if (zone_mem[zone_id][i][MEM_SIZE] == 0)
-            continue;
-
-        if ((uintptr_t)zonex_ipa >= zone_mem[zone_id][i][ZONEX_IPA] &&
-            (uintptr_t)zonex_ipa < zone_mem[zone_id][i][ZONEX_IPA] +
-                                       zone_mem[zone_id][i][MEM_SIZE]) {
-            return i;
-        }
-    }
-    log_error("can't find zone mem index for zonex ipa %#x", zonex_ipa);
-    return -1;
-}
 inline int is_queue_full(unsigned int front, unsigned int rear,
                          unsigned int size) {
     if (((rear + 1) & (size - 1)) == front) {
