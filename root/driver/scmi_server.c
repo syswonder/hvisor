@@ -524,21 +524,14 @@ static int power_domain_state_get(u32 domain_id, u32 *power_state) {
 }
 
 static int power_domain_get_attributes(u32 domain_id, u32 *flags, char *name) {
-    struct device *dev;
-
     if (domain_id >= MAX_POWER_DOMAINS || !power_devices[domain_id].attached)
         return -ENODEV;
-
-    dev = &power_devices[domain_id].pdev->dev;
 
     /* Register an idle notification to ensure genpd info is populated */
     *flags = 0;
 
-    /* Set name: use genpd name if available, else fallback */
-    if (dev->pm_domain_name)
-        snprintf(name, 63, "%s", dev->pm_domain_name);
-    else
-        snprintf(name, 63, "pd_%u", domain_id);
+    /* Set name: fallback to pd_N format (Linux 6.1 lacks pm_domain_name) */
+    snprintf(name, 63, "pd_%u", domain_id);
     name[63] = '\0';
 
     return 0;
