@@ -61,8 +61,8 @@ static int handle_base_attributes(SCMIDev *dev, uint16_t token,
         (struct scmi_msg_resp_base_attributes *)resp->payload;
 
     scmi_make_response(resp_iov, SCMI_PROTO_ID_BASE,
-                        SCMI_COMMON_MSG_PROTOCOL_ATTRIBUTES, token,
-                        SCMI_SUCCESS);
+                       SCMI_COMMON_MSG_PROTOCOL_ATTRIBUTES, token,
+                       SCMI_SUCCESS);
     attr->num_protocols = scmi_get_protocol_count();
     attr->num_agents = 1;
     attr->reserved = 0;
@@ -87,7 +87,7 @@ static int handle_base_version(SCMIDev *dev, uint16_t token,
     uint32_t *version = (uint32_t *)resp->payload;
 
     scmi_make_response(resp_iov, SCMI_PROTO_ID_BASE, SCMI_COMMON_MSG_VERSION,
-                        token, SCMI_SUCCESS);
+                       token, SCMI_SUCCESS);
     *version = SCMI_BASE_VERSION;
     return 0;
 }
@@ -107,9 +107,9 @@ static int handle_base_vendor(SCMIDev *dev, uint16_t token,
     char *vendor_id = (char *)resp->payload;
 
     scmi_make_response(resp_iov, SCMI_PROTO_ID_BASE,
-                        sub_vendor ? SCMI_BASE_MSG_DISCOVER_SUB_VENDOR
-                                   : SCMI_BASE_MSG_DISCOVER_VENDOR,
-                        token, SCMI_SUCCESS);
+                       sub_vendor ? SCMI_BASE_MSG_DISCOVER_SUB_VENDOR
+                                  : SCMI_BASE_MSG_DISCOVER_VENDOR,
+                       token, SCMI_SUCCESS);
     strncpy(vendor_id, sub_vendor ? "SUB_HVIS" : "HVIS",
             SCMI_BASE_VENDOR_ID_LEN);
     return 0;
@@ -132,8 +132,8 @@ static int handle_base_protocol_list(SCMIDev *dev, uint16_t token,
     uint32_t *protocols = (uint32_t *)resp->payload;
 
     scmi_make_response(resp_iov, SCMI_PROTO_ID_BASE,
-                        SCMI_BASE_MSG_DISCOVER_LIST_PROTOCOLS, token,
-                        SCMI_SUCCESS);
+                       SCMI_BASE_MSG_DISCOVER_LIST_PROTOCOLS, token,
+                       SCMI_SUCCESS);
 
     int count = get_protocol_list(
         protocols, skip, resp_iov->iov_len - sizeof(struct scmi_response));
@@ -164,7 +164,7 @@ static int handle_base_discover_agent(SCMIDev *dev, uint16_t token,
     char *name = (char *)resp->payload;
 
     scmi_make_response(resp_iov, SCMI_PROTO_ID_BASE,
-                        SCMI_BASE_MSG_DISCOVER_AGENT, token, SCMI_SUCCESS);
+                       SCMI_BASE_MSG_DISCOVER_AGENT, token, SCMI_SUCCESS);
     memset(name, 0, 16);
 
     if (agent_id == 0xFFFFFFFF) {
@@ -193,8 +193,8 @@ static int handle_base_impl_version(SCMIDev *dev, uint16_t token,
     uint32_t *impl_ver = (uint32_t *)resp->payload;
 
     scmi_make_response(resp_iov, SCMI_PROTO_ID_BASE,
-                        SCMI_BASE_MSG_DISCOVER_IMPL_VERSION, token,
-                        SCMI_SUCCESS);
+                       SCMI_BASE_MSG_DISCOVER_IMPL_VERSION, token,
+                       SCMI_SUCCESS);
     *impl_ver = 0x1; /* Implementation version 1 */
     return 0;
 }

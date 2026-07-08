@@ -50,7 +50,7 @@ typedef struct {
 #define BITMASK(high, low) (((1u << ((high) - (low) + 1)) - 1) << (low))
 
 /* Extract field: mask first, then right shift */
-#define EXTRACT_BITS(val, high, low) (((val) & BITMASK((high), (low))) >> (low))
+#define EXTRACT_BITS(val, high, low) (((val)&BITMASK((high), (low))) >> (low))
 
 /* Insert field: left shift first, then mask */
 #define INSERT_BITS(val, high, low) (((val) << (low)) & BITMASK((high), (low)))
