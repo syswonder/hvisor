@@ -441,7 +441,7 @@ void virtqueue_enable_notify(VirtQueue *vq) {
     if (vq->event_idx_enabled) {
         VQ_AVAIL_EVENT(vq) = vq->avail_ring->idx;
     } else {
-        vq->used_ring->flags &= !(uint16_t)VRING_USED_F_NO_NOTIFY;
+        vq->used_ring->flags &= ~(uint16_t)VRING_USED_F_NO_NOTIFY;
     }
     write_barrier();
 }
