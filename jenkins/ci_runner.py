@@ -141,7 +141,21 @@ def board_power_cycle(cfg: dict[str, Any]) -> None:
     subprocess.run(["bash", str(script), "cycle", power_port], check=True, cwd=cfg["workspace"])
 
 
-def save_inner_serial_log(cfg: dict[str, Any], content: str) -> None:
+def board_wake_console(term: Terminal, *, repeats: int = 3) -> None:
+    for _ in range(repeats):
+        term.send("")
+        time.sleep(0.2)
+
+
+def board_wait_uboot_prompt(term: Terminal, pattern: str, timeout: float) -> None:
+    """Wait for U-Boot prompt, periodically waking an idle console."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        remaining = deadline - time.monotonic()
+        if term.wait_pattern(pattern, timeout=min(5.0, remaining), from_offset=0):
+            return
+        board_wake_console(term)
+    raise TerminalTimeoutError(f"timed out waiting for U-Boot prompt (pattern={pattern!r})")
     if not content:
         return
     path = logs_dir(cfg) / "zone1_inner_serial.log"
@@ -180,20 +194,78 @@ def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
         board_term.open()
         cfg["_board_term"] = board_term
         board_power_cycle(cfg)
+        time.sleep(3.0)
+        board_wake_console(board_term)
 
         uboot_cmd = cfg.get("uboot_cmd", "")
         uboot_ready = cfg.get("uboot_ready_pattern", "")
         if uboot_cmd:
             if not uboot_ready:
-                uboot_ready = r"Net:.*\n=> "
-            if not board_term.wait_pattern(uboot_ready, timeout=120.0):
-                raise TerminalTimeoutError("timed out waiting for U-Boot prompt")
+                uboot_ready = r"=>"
+            board_wait_uboot_prompt(board_term, uboot_ready, timeout=120.0)
             time.sleep(0.3)
-            board_term.flush_input()
             board_term.send(uboot_cmd)
         if not board_term.wait_pattern(ZONE0_READY_PATTERN, timeout=180.0):
             raise TerminalTimeoutError("timed out waiting for zone0 shell prompt")
         return 0
+    return 0
+
+
+def lspci_expected_cfg(cfg: dict[str, Any]) -> dict[str, Any]:
+    raw = cfg.get("lspci") or {}
+    if not isinstance(raw, dict):
+        raw = {}
+    expected_bdfs = [str(x) for x in raw.get("expected_bdfs") or []]
+    min_count = int(raw.get("min_count", len(expected_bdfs) or 1))
+    return {"expected_bdfs": expected_bdfs, "min_count": min_count}
+
+
+def save_lspci_artifacts(cfg: dict[str, Any], name: str, content: str) -> None:
+    path = logs_dir(cfg) / name
+    path.write_text(content, encoding="utf-8")
+    print(f"[lspci] saved {path}", flush=True)
+
+
+def lspci(cfg: dict[str, Any], term: Terminal | None) -> int:
+    print("————————————————\ncase: lspci\n————————————————\n", flush=True)
+    if term is None:
+        raise SystemExit("terminal backend is required (run zone0_start first)")
+
+    expected = lspci_expected_cfg(cfg)
+
+    _, output = term.run(
+        "lspci",
+        "timeout 20 lspci -D > /tmp/ci_lspci.log 2>&1; cat /tmp/ci_lspci.log",
+        timeout=60.0,
+    )
+    save_lspci_artifacts(cfg, "lspci.log", f"=== lspci -D ===\n{output}\n")
+
+    matched = [bdf for bdf in expected["expected_bdfs"] if bdf in output]
+    missing = [bdf for bdf in expected["expected_bdfs"] if bdf not in output]
+    line_count = len([line for line in output.splitlines() if line.strip()])
+
+    print(f"[lspci] devices listed: {line_count}", flush=True)
+    if expected["expected_bdfs"]:
+        print(
+            f"[lspci] matched expected BDFs ({len(matched)}/{len(expected['expected_bdfs'])}): {matched}",
+            flush=True,
+        )
+        if missing:
+            print(f"[lspci] missing expected BDFs: {missing}", flush=True)
+
+    if expected["expected_bdfs"]:
+        if len(matched) < expected["min_count"]:
+            raise TerminalCommandError(
+                "lspci found "
+                f"{len(matched)}/{expected['min_count']} expected devices; "
+                f"missing: {missing}"
+            )
+    elif line_count < expected["min_count"]:
+        raise TerminalCommandError(
+            f"lspci listed {line_count} devices, expected at least {expected['min_count']}"
+        )
+
+    print("lspci verification passed", flush=True)
     return 0
 
 
@@ -236,6 +308,7 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
 
 CASE_HANDLERS: dict[str, CaseFunc] = {
     "zone0_start": zone0_start,
+    "lspci": lspci,
     "zone1_start": zone1_start,
 }
 
@@ -277,6 +350,7 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
         "uboot_cmd": str(tests.get("uboot_cmd", "")).strip(),
         "uboot_ready_pattern": str(tests.get("uboot_ready_pattern", "")).strip(),
         "tftp_dir": str(tests.get("tftp_dir", "/home/light/tftp")).strip(),
+        "lspci": tests.get("lspci") or {},
     }
 
 
