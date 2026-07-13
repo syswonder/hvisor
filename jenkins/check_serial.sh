@@ -20,22 +20,22 @@ read_pts() {
     timeout "${1:-2}" cat "$pts_dev" 2>/dev/null >> "$log_file" || true
 }
 
-has_shell_prompt() {
+has_console_ready() {
     tr -d '\r' < "$log_file" | sed 's/\x1b\[[0-9;?]*[ -\/]*[@-~]//g' \
-        | grep -qE 'root@[^[:space:]]*[#$][[:space:]]*$|^[[:space:]]*#[[:space:]]*$'
+        | grep -qE 'root@[^[:space:]]*[#$][[:space:]]*$|^[[:space:]]*#[[:space:]]*$|login:[[:space:]]*$'
 }
 
 deadline=$(( $(date +%s) + prompt_timeout ))
 while [ "$(date +%s)" -lt "$deadline" ]; do
     read_pts 2
-    if has_shell_prompt; then
+    if has_console_ready; then
         break
     fi
     sleep 0.2
 done
 
-if ! has_shell_prompt; then
-    echo "check_serial: timed out after ${prompt_timeout}s waiting for shell prompt on $pts_dev" \
+if ! has_console_ready; then
+    echo "check_serial: timed out after ${prompt_timeout}s waiting for console prompt on $pts_dev" \
         >> "$log_file"
     exit 1
 fi

@@ -1623,7 +1623,7 @@ fn handle_pci_bridge_access(
                 Ok(None)
             } else {
                 let reg = dev.with_config_value(|cv| cv.get_bridge_bus_reg());
-                Ok(Some((((reg >> ((reg_offset - 0x18) * 8)) & 0xff)) as usize))
+                Ok(Some(((reg >> ((reg_offset - 0x18) * 8)) & 0xff) as usize))
             }
         }
         BridgeField::BusNumbers => {
@@ -1633,7 +1633,9 @@ fn handle_pci_bridge_access(
                 }
                 Ok(None)
             } else {
-                Ok(Some(dev.with_config_value(|cv| cv.get_bridge_bus_reg()) as usize))
+                Ok(Some(
+                    dev.with_config_value(|cv| cv.get_bridge_bus_reg()) as usize
+                ))
             }
         }
         _ => Ok(None),
@@ -1996,18 +1998,15 @@ pub fn mmio_dwc_cfg_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                         ((pci_target >> 19) & 0x1f) as u8,
                         ((pci_target >> 16) & 0x7) as u8,
                     );
-                    global_pcie_list
-                        .get(&target_bdf)
-                        .cloned()
-                        .or_else(|| {
-                            global_pcie_list
-                                .values()
-                                .find(|dev| {
-                                    let dev_guard = dev.read();
-                                    dev_guard.get_base() == pci_target
-                                })
-                                .cloned()
-                        })
+                    global_pcie_list.get(&target_bdf).cloned().or_else(|| {
+                        global_pcie_list
+                            .values()
+                            .find(|dev| {
+                                let dev_guard = dev.read();
+                                dev_guard.get_base() == pci_target
+                            })
+                            .cloned()
+                    })
                 };
                 dev_clone
             }
@@ -2105,11 +2104,7 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
 
             let zone = crate::zone::root_zone();
             let mut inner = zone.write();
-            inner.virtual_pci_mmio_init_delay(
-                &root_config.pci_config,
-                num_pci_bus,
-                domain_id,
-            );
+            inner.virtual_pci_mmio_init_delay(&root_config.pci_config, num_pci_bus, domain_id);
             drop(inner);
 
             if let Some(domain_cfg) = root_config.pci_config[..num_pci_bus]

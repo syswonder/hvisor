@@ -17,7 +17,7 @@ from terminal import Terminal, TerminalCommandError, TerminalTimeoutError
 
 CaseFunc = Callable[[dict[str, Any], Terminal | None], int]
 
-# Wait for an interactive shell prompt, not login: (getty shows that before MOTD/shell).
+# Wait for zone1 inner console: shell prompt (#/$) or login:.
 ZONE0_READY_PATTERN = r"root@[^\r\n]*[#$]\s|(?:\r?\n)#\s"
 ZONE1_INNER_PROMPT_TIMEOUT = 60.0
 ZONE1_INNER_LOG_FETCH_TIMEOUT = 30.0
@@ -156,6 +156,9 @@ def board_wait_uboot_prompt(term: Terminal, pattern: str, timeout: float) -> Non
             return
         board_wake_console(term)
     raise TerminalTimeoutError(f"timed out waiting for U-Boot prompt (pattern={pattern!r})")
+
+
+def save_inner_serial_log(cfg: dict[str, Any], content: str) -> None:
     if not content:
         return
     path = logs_dir(cfg) / "zone1_inner_serial.log"
@@ -202,7 +205,7 @@ def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
         if uboot_cmd:
             if not uboot_ready:
                 uboot_ready = r"=>"
-            board_wait_uboot_prompt(board_term, uboot_ready, timeout=120.0)
+            board_wait_uboot_prompt(board_term, uboot_ready, timeout=10.0)
             time.sleep(0.3)
             board_term.send(uboot_cmd)
         if not board_term.wait_pattern(ZONE0_READY_PATTERN, timeout=180.0):
@@ -269,6 +272,80 @@ def lspci(cfg: dict[str, Any], term: Terminal | None) -> int:
     return 0
 
 
+def ping_success(output: str) -> bool:
+    if re.search(r"\b0% (?:packet )?loss\b", output):
+        return True
+    match = re.search(r"(\d+) packets? received", output)
+    return bool(match and int(match.group(1)) > 0)
+
+
+def network(cfg: dict[str, Any], term: Terminal | None) -> int:
+    print("————————————————\ncase: network\n————————————————\n", flush=True)
+    if cfg["mode"] != "board":
+        print("[network] skipped (not board mode)", flush=True)
+        return 0
+    if term is None:
+        raise SystemExit("terminal backend is required (run zone0_start first)")
+
+    host_ip = cfg["network_host_ip"]
+    ping_count = cfg["network_ping_count"]
+    _, output = term.run(
+        "network_ping",
+        f"ping -c {ping_count} -W 5 {host_ip}",
+        timeout=30.0,
+    )
+    save_lspci_artifacts(cfg, "network_ping.log", f"=== ping {host_ip} ===\n{output}\n")
+
+    if not ping_success(output):
+        raise TerminalCommandError(f"ping {host_ip} failed")
+
+    print(f"[network] ping {host_ip} ok, staging files on host", flush=True)
+    script = cfg["workspace"] / "jenkins" / "board_scp.sh"
+    if not script.is_file():
+        raise SystemExit(f"board scp script not found: {script}")
+
+    env = os.environ.copy()
+    env["ARCH"] = cfg["arch"]
+    env["BOARD"] = cfg["board"]
+    if cfg["kdir"]:
+        env["KDIR"] = cfg["kdir"]
+    env["WORKSPACE_ROOT"] = str(cfg["workspace"])
+    env["HVISOR_TOOL_PATH"] = cfg["hvisor_tool_path"]
+    env["STAGING_DIR"] = cfg["network_staging_dir"]
+    if cfg.get("zone1_dtb"):
+        zone1_dtb = Path(cfg["zone1_dtb"])
+        if not zone1_dtb.is_absolute():
+            zone1_dtb = cfg["workspace"] / zone1_dtb
+        env["ZONE1_DTB"] = str(zone1_dtb.resolve())
+
+    subprocess.run(["bash", str(script)], check=True, cwd=cfg["workspace"], env=env)
+
+    # Let host staging finish and drain any buffered serial output before scp.
+    time.sleep(3.0)
+
+    host_user = cfg["network_host_user"]
+    staging_dir = cfg["network_staging_dir"]
+    term.run(
+        "network_scp_env",
+        f"export CI_H={host_ip} CI_U={host_user} CI_D={staging_dir}",
+        timeout=30.0,
+    )
+    # Keep the scp line short: serial consoles truncate long commands.
+    scp_cmd = "scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $CI_U@$CI_H:$CI_D/* /root/"
+    print(f"[network] pulling staged files from {host_user}@{host_ip}:{staging_dir}", flush=True)
+    pull_rc, _ = term.run("network_scp_pull", scp_cmd, timeout=300.0)
+    if pull_rc != 0:
+        raise TerminalCommandError(f"board scp pull failed with rc={pull_rc}")
+
+    term.run(
+        "network_chmod",
+        "chmod +x /root/boot_zone1.sh /root/check_serial.sh 2>/dev/null || true",
+        timeout=15.0,
+    )
+    print("network test and file deploy passed", flush=True)
+    return 0
+
+
 def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     print("————————————————\ncase: zone1_start\n————————————————\n", flush=True)
     if term is None:
@@ -300,7 +377,7 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
         raise TerminalCommandError(f"command failed with rc={boot_rc}: ./boot_zone1.sh")
     if check_rc != 0:
         raise TerminalCommandError(
-            f"command failed with rc={check_rc}: check_serial.sh (no shell prompt)"
+            f"command failed with rc={check_rc}: check_serial.sh (no console prompt)"
         )
     print("zone1_started successfully", flush=True)
     return 0
@@ -308,6 +385,7 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
 
 CASE_HANDLERS: dict[str, CaseFunc] = {
     "zone0_start": zone0_start,
+    "network": network,
     "lspci": lspci,
     "zone1_start": zone1_start,
 }
@@ -336,6 +414,15 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
         raise SystemExit(f"no test cases configured for bid '{args.bid}'")
 
     cell_root = Path.cwd()
+    build_args = bid_entry.get("build_args") or {}
+    network_cfg = tests.get("network") or {}
+    if not isinstance(network_cfg, dict):
+        network_cfg = {}
+    hvisor_tool_path = os.environ.get("HVISOR_TOOL_PATH", "").strip()
+    if not hvisor_tool_path:
+        hvisor_tool_path = str((cell_root / "hvisor-tool").resolve())
+    elif not Path(hvisor_tool_path).is_absolute():
+        hvisor_tool_path = str((cell_root / hvisor_tool_path).resolve())
     return {
         "bid": args.bid,
         "arch": arch,
@@ -343,6 +430,8 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
         "mode": mode,
         "cases": cases,
         "workspace": cell_root,
+        "kdir": str(build_args.get("KDIR", "")).strip(),
+        "hvisor_tool_path": hvisor_tool_path,
         "socket_path": str((cell_root / ".qemu" / "qemu.sock").resolve()),
         "serial_port": str(tests.get("serial", "/dev/null")),
         "power_serial": str(tests.get("power_serial", "")).strip(),
@@ -351,6 +440,13 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
         "uboot_ready_pattern": str(tests.get("uboot_ready_pattern", "")).strip(),
         "tftp_dir": str(tests.get("tftp_dir", "/home/light/tftp")).strip(),
         "lspci": tests.get("lspci") or {},
+        "network_host_ip": str(network_cfg.get("host_ip", "192.168.1.181")).strip(),
+        "network_host_user": str(network_cfg.get("host_user", "light")).strip(),
+        "network_staging_dir": str(
+            network_cfg.get("staging_dir", "/home/light/tftp/ci_deploy")
+        ).strip(),
+        "network_ping_count": int(network_cfg.get("ping_count", 3)),
+        "zone1_dtb": str(network_cfg.get("zone1_dtb", "")).strip(),
     }
 
 

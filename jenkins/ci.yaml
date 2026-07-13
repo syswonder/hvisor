@@ -29,6 +29,11 @@ bids:
       baudrate: 1500000
       uboot_ready_pattern: '=>'
       uboot_cmd: pci enum;setenv serverip 192.168.1.181; setenv ipaddr 192.168.1.240; setenv loadaddr 0x60800000; setenv fdt_addr 0xa0000000; setenv zone0_kernel_addr 0x00280000; tftp ${loadaddr} ${serverip}:hvisor.bin; tftp ${fdt_addr} ${serverip}:rk3568_limit_zone0.dtb; tftp ${zone0_kernel_addr} ${serverip}:Image; bootm ${loadaddr} - ${fdt_addr};
+      network:
+        host_ip: 192.168.1.181
+        host_user: light
+        staging_dir: /home/light/tftp/ci_deploy
+        zone1_dtb: platform/aarch64/rk3568/image/dts/rk3568_limit_zone1.dtb
       lspci:
         expected_bdfs:
           - "0001:10:00.0"
@@ -38,6 +43,7 @@ bids:
         min_count: 4
       cases:
         - zone0_start
+        - network
         - lspci
         - zone1_start
 
