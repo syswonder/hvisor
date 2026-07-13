@@ -326,11 +326,12 @@ impl ZoneInner {
         num_pci_devs: u64,
         pci_config: &[HvPciConfig],
         _num_pci_config: usize,
+        domain_id: u8,
     ) -> HvResult {
         let guard = GLOBAL_PCIE_LIST.lock();
         for target_pci_config in pci_config {
             // Skip empty config
-            if target_pci_config.ecam_base == 0 {
+            if target_pci_config.ecam_base == 0 || target_pci_config.domain != domain_id {
                 continue;
             }
 
@@ -455,7 +456,7 @@ impl ZoneInner {
                         })
                     {
                         let mut vdev = dev.read().config_space.clone();
-                        vdev.set_vbdf(vbdf);
+                        vdev.set_vbdf(vbdf, target_pci_config.bus_range_end as u8);
                         let msi_count = vdev.get_msi_count();
                         domain_msi_count += msi_count;
                         self.vpci_bus_mut().insert(vbdf, vdev);
@@ -475,7 +476,7 @@ impl ZoneInner {
                             } else {
                                 dev.set_zone_id(Some(_zone_id as u32));
                                 let mut vdev_inner = dev.read().config_space.clone();
-                                vdev_inner.set_vbdf(vbdf);
+                                vdev_inner.set_vbdf(vbdf, target_pci_config.bus_range_end as u8);
                                 let msi_count = vdev_inner.get_msi_count();
                                 domain_msi_count += msi_count;
                                 self.vpci_bus_mut().insert(vbdf, vdev_inner);
@@ -608,12 +609,13 @@ impl ZoneInner {
         &mut self,
         pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
         _num_pci_config: usize,
+        domain_id: u8,
     ) {
         #[cfg(loongarch64_pcie)]
         let mut emergency_map_regions: alloc::vec::Vec<(usize, usize)> = alloc::vec::Vec::new();
 
         for rootcomplex_config in pci_rootcomplex_config {
-            if rootcomplex_config.ecam_base == 0 {
+            if rootcomplex_config.ecam_base == 0 || rootcomplex_config.domain != domain_id {
                 continue;
             }
             #[cfg(ecam_pcie)]

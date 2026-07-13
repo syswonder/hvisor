@@ -34,7 +34,7 @@ use crate::zone::is_this_root_zone;
 
 use super::pci_access::{BridgeField, EndpointField, HeaderType, PciField, PciMemType};
 use super::pci_config::GLOBAL_PCIE_LIST;
-use super::pci_struct::{ArcRwLockVirtualPciConfigSpace, BIT_LENTH};
+use super::pci_struct::{ArcRwLockVirtualPciConfigSpace, Bdf, BIT_LENTH};
 use super::vpci_dev::VpciDevType;
 use super::PciConfigAddress;
 
@@ -1606,6 +1606,36 @@ fn handle_pci_bridge_access(
                 Ok(None)
             }
         }
+        BridgeField::PrimaryBusNumber
+        | BridgeField::SecondaryBusNumber
+        | BridgeField::SubordinateBusNumber
+        | BridgeField::SecondaryLatencyTimer => {
+            let reg_offset = field.to_offset() as usize;
+            if is_write {
+                if is_dev_belong_to_zone || (is_direct && is_root) {
+                    dev.with_config_value_mut(|cv| {
+                        let mut reg = cv.get_bridge_bus_reg();
+                        let shift = (reg_offset - 0x18) * 8;
+                        reg = (reg & !((0xffu32) << shift)) | (((value as u32) & 0xff) << shift);
+                        cv.set_bridge_bus_reg(reg);
+                    });
+                }
+                Ok(None)
+            } else {
+                let reg = dev.with_config_value(|cv| cv.get_bridge_bus_reg());
+                Ok(Some((((reg >> ((reg_offset - 0x18) * 8)) & 0xff)) as usize))
+            }
+        }
+        BridgeField::BusNumbers => {
+            if is_write {
+                if is_dev_belong_to_zone || (is_direct && is_root) {
+                    dev.with_config_value_mut(|cv| cv.set_bridge_bus_reg(value as u32));
+                }
+                Ok(None)
+            } else {
+                Ok(Some(dev.with_config_value(|cv| cv.get_bridge_bus_reg()) as usize))
+            }
+        }
         _ => Ok(None),
     }
 }
@@ -1879,6 +1909,7 @@ pub fn mmio_dwc_cfg_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     if let Some((atu, ecam_base)) = atu_config {
         // Get dbi_base from platform config (usually dbi_base == ecam_base)
         use crate::platform;
+        let pci_target = atu.pci_target();
         if let Some(extend_config) = platform::ROOT_DWC_ATU_CONFIG
             .iter()
             .find(|cfg| cfg.ecam_base == ecam_base as u64)
@@ -1889,7 +1920,6 @@ pub fn mmio_dwc_cfg_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
             let dbi_region = PciRegionMmio::new(dbi_base, dbi_size);
             let dbi_backend = DwcConfigRegionBackend::new(dbi_region);
 
-            let pci_target = atu.pci_target();
             let target_bus = ((pci_target >> 24) & 0xff) as u8;
             let target_device = ((pci_target >> 19) & 0x1f) as u8;
             let target_function = ((pci_target >> 16) & 0x7) as u8;
@@ -1903,7 +1933,7 @@ pub fn mmio_dwc_cfg_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                         && vbdf.device() == target_device
                         && vbdf.function() == target_function
                     {
-                        Some((dev.get_bdf(), dev.get_parent_bus()))
+                        Some(dev.get_bdf())
                     } else {
                         None
                     }
@@ -1914,40 +1944,39 @@ pub fn mmio_dwc_cfg_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
             let mut atu_type = atu.atu_type();
             let mut config_base = atu.cpu_base();
             let mut cpu_limit = atu.cpu_limit();
-            if let Some((host_bdf, parent_bus)) = mapped_target {
+            if let Some(host_bdf) = mapped_target {
                 hw_pci_target = ((host_bdf.bus() as u64) << 24)
                     + ((host_bdf.device() as u64) << 19)
                     + ((host_bdf.function() as u64) << 16);
-                (config_base, atu_type) = if parent_bus == 0 {
-                    (extend_config.cfg_base, AtuType::Cfg0)
+                let half = extend_config.cfg_size / 2;
+                config_base = _base as u64;
+                atu_type = if config_base >= extend_config.cfg_base + half {
+                    AtuType::Cfg1
                 } else {
-                    (
-                        extend_config.cfg_base + (extend_config.cfg_size / 2),
-                        AtuType::Cfg1,
-                    )
+                    AtuType::Cfg0
                 };
-                cpu_limit = config_base + (extend_config.cfg_size / 2) - 1;
+                cpu_limit = config_base + half - 1;
             }
 
-            // Program hardware ATU with translated host target when remap exists.
-            let mut hw_atu = atu;
-            hw_atu.set_pci_target(hw_pci_target);
-            hw_atu.set_atu_type(atu_type);
-            hw_atu.set_cpu_base(config_base);
-            hw_atu.set_cpu_limit(cpu_limit);
-            AtuUnroll::dw_pcie_prog_outbound_atu_unroll(&dbi_backend, &hw_atu)?;
+            // Program hardware ATU only when host/guest BDF remapping is required.
+            if hw_pci_target != pci_target {
+                let mut hw_atu = atu;
+                hw_atu.set_pci_target(hw_pci_target);
+                hw_atu.set_atu_type(atu_type);
+                hw_atu.set_cpu_base(config_base);
+                hw_atu.set_cpu_limit(cpu_limit);
+                AtuUnroll::dw_pcie_prog_outbound_atu_unroll(&dbi_backend, &hw_atu)?;
+            }
         }
 
         let offset = (mmio.address & 0xfff) as PciConfigAddress;
         let zone = this_zone();
         let mut is_dev_belong_to_zone = false;
 
-        let base = mmio.address as PciConfigAddress - offset + atu.pci_target();
-
         let dev: Option<ArcRwLockVirtualPciConfigSpace> = {
             let mut guard = zone.write();
             let vbus = guard.vpci_bus_mut();
-            if let Some(dev) = vbus.get_device_by_base(base) {
+            if let Some(dev) = vbus.get_device_by_base(pci_target) {
                 is_dev_belong_to_zone = true;
                 Some(dev)
             } else {
@@ -1956,13 +1985,29 @@ pub fn mmio_dwc_cfg_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
                 // This avoids holding multiple locks simultaneously
                 let dev_clone = {
                     let global_pcie_list = GLOBAL_PCIE_LIST.lock();
+                    let domain = platform::ROOT_PCI_CONFIG
+                        .iter()
+                        .find(|cfg| cfg.ecam_base as usize == ecam_base)
+                        .map(|cfg| cfg.domain)
+                        .unwrap_or(0);
+                    let target_bdf = Bdf::new(
+                        domain,
+                        ((pci_target >> 24) & 0xff) as u8,
+                        ((pci_target >> 19) & 0x1f) as u8,
+                        ((pci_target >> 16) & 0x7) as u8,
+                    );
                     global_pcie_list
-                        .values()
-                        .find(|dev| {
-                            let dev_guard = dev.read();
-                            dev_guard.get_base() == base
-                        })
+                        .get(&target_bdf)
                         .cloned()
+                        .or_else(|| {
+                            global_pcie_list
+                                .values()
+                                .find(|dev| {
+                                    let dev_guard = dev.read();
+                                    dev_guard.get_base() == pci_target
+                                })
+                                .cloned()
+                        })
                 };
                 dev_clone
             }
@@ -2058,17 +2103,32 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
             let root_config = platform::platform_root_zone_config();
             let num_pci_bus = root_config.num_pci_bus as usize;
 
-            crate::pci::pci_config::hvisor_pci_init(&root_config.pci_config[..num_pci_bus])?;
-
             let zone = crate::zone::root_zone();
             let mut inner = zone.write();
-            inner.virtual_pci_mmio_init_delay(&root_config.pci_config, num_pci_bus);
+            inner.virtual_pci_mmio_init_delay(
+                &root_config.pci_config,
+                num_pci_bus,
+                domain_id,
+            );
+            drop(inner);
+
+            if let Some(domain_cfg) = root_config.pci_config[..num_pci_bus]
+                .iter()
+                .find(|cfg| cfg.domain == domain_id && cfg.ecam_base != 0)
+            {
+                crate::pci::pci_config::hvisor_pci_init(core::slice::from_ref(domain_cfg))?;
+            } else {
+                warn!("No PCI config found for domain {}", domain_id);
+            }
+
+            let mut inner = zone.write();
             inner.guest_pci_init_delay(
                 0,
                 &root_config.alloc_pci_devs,
                 root_config.num_pci_devs,
                 &root_config.pci_config,
                 num_pci_bus,
+                domain_id,
             )?;
 
             #[cfg(dwc_msi)]

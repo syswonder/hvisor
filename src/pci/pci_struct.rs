@@ -55,6 +55,7 @@ pub struct ConfigValue {
     class_and_revision_id: (BaseClass, SubClass, Interface, DeviceRevision),
     bar_value: [u32; 6],
     rom_value: u32,
+    bridge_bus_reg: u32,
 }
 
 impl Default for ConfigValue {
@@ -64,6 +65,7 @@ impl Default for ConfigValue {
             class_and_revision_id: (0xFFu8, 0u8, 0u8, 0u8),
             bar_value: [0; 6],
             rom_value: 0,
+            bridge_bus_reg: 0,
         }
     }
 }
@@ -78,6 +80,7 @@ impl ConfigValue {
             class_and_revision_id,
             bar_value: [0; 6],
             rom_value: 0,
+            bridge_bus_reg: 0,
         }
     }
 
@@ -142,6 +145,14 @@ impl ConfigValue {
 
     pub fn set_rom_value(&mut self, value: u32) {
         self.rom_value = value;
+    }
+
+    pub fn get_bridge_bus_reg(&self) -> u32 {
+        self.bridge_bus_reg
+    }
+
+    pub fn set_bridge_bus_reg(&mut self, value: u32) {
+        self.bridge_bus_reg = value;
     }
 }
 
@@ -361,6 +372,7 @@ impl VirtualPciAccessBits {
     pub fn bridge() -> Self {
         let mut bits = BitArray::ZERO;
         bits[0x10..0x18].fill(true); // BARs
+        bits[0x18..0x1c].fill(true); // Primary/Secondary/Subordinate bus + latency
         bits[0x38..0x3c].fill(true); // ROM
         bits[0x34..0x38].fill(true); // Capability Pointer
         bits[0x40..0x100].fill(true); // Capability region (caps start at 0x40)
@@ -1394,8 +1406,20 @@ impl VirtualPciConfigSpace {
         self.config_type
     }
 
-    pub fn set_vbdf(&mut self, vbdf: Bdf) {
+    pub fn set_vbdf(&mut self, vbdf: Bdf, domain_bus_range_end: u8) {
         self.vbdf = vbdf;
+        if self.config_type == HeaderType::PciBridge {
+            self.init_bridge_bus_reg(domain_bus_range_end);
+        }
+    }
+
+    fn init_bridge_bus_reg(&mut self, domain_bus_range_end: u8) {
+        let primary = self.vbdf.bus();
+        let secondary = primary.saturating_add(1);
+        let subordinate = domain_bus_range_end;
+        self.config_value.set_bridge_bus_reg(
+            ((subordinate as u32) << 16) | ((secondary as u32) << 8) | (primary as u32),
+        );
     }
 
     pub fn get_base(&self) -> PciConfigAddress {
@@ -1734,6 +1758,7 @@ impl<B: BarAllocator> PciIterator<B> {
                 let _ = node.build_sriov_info();
                 // Build MSI/MSIX info once during device discovery
                 node.build_msi_info();
+                node.set_vbdf(bdf, self.bus_range.end as u8);
 
                 Some(node)
             }
@@ -1762,6 +1787,7 @@ impl<B: BarAllocator> PciIterator<B> {
                 let _ = node.build_sriov_info();
                 // Build MSI/MSIX info once during device discovery
                 node.build_msi_info();
+                node.set_vbdf(bdf, self.bus_range.end as u8);
 
                 Some(node)
             }

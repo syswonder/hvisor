@@ -116,6 +116,9 @@ class SerialBackend(TerminalBackend):
             timeout=self.timeout,
             write_timeout=self.timeout,
         )
+        # CH340 adapters often need DTR asserted before the target UART TX is enabled.
+        self._serial.dtr = True
+        self._serial.rts = False
 
     def close(self) -> None:
         if self._serial is None:
