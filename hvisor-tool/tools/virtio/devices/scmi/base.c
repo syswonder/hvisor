@@ -10,19 +10,19 @@
  */
 #include "log.h"
 #include "virtio_scmi.h"
+#include <stdint.h>
 #include <string.h>
 
-/* Protocol Attributes */
-#define SCMI_BASE_VENDOR_ID_LEN 16
+/* Base protocol handlers are stateless - dev and token are unused */
+#pragma GCC diagnostic ignored "-Wunused-parameter"
 
 /* SCMI version 2.1 */
 #define SCMI_BASE_VERSION 0x20001
 
-/* Helper to get protocol list */
+/* Helper to get protocol list from global registration table */
 static int get_protocol_list(uint32_t *buffer, int skip, int max) {
-    int num = scmi_get_protocol_count();
-    log_info("Total protocols: %d, skip: %d, max: %d", num, skip, max);
-    int remaining = num - skip;
+    int total = scmi_get_protocol_count();
+    int remaining = total - skip;
 
     if (remaining <= 0) {
         buffer[0] = 0;
@@ -33,12 +33,12 @@ static int get_protocol_list(uint32_t *buffer, int skip, int max) {
     buffer[0] = count;
 
     for (int i = 0; i < count; i++) {
-        log_info("Protocol %d: %u", skip + i,
-                 scmi_get_protocol_by_index(skip + i)->id);
+        const struct scmi_protocol *p = scmi_get_protocol_by_index(skip + i);
+        uint8_t pid = p ? p->id : 0;
+        log_info("Protocol %d: %u", skip + i, pid);
         if (i % 4 == 0)
             buffer[i / 4 + 1] = 0;
-        buffer[i / 4 + 1] |= scmi_get_protocol_by_index(skip + i)->id
-                             << ((i % 4) * 8);
+        buffer[i / 4 + 1] |= pid << ((i % 4) * 8);
     }
     return count;
 }
@@ -63,6 +63,8 @@ static int handle_base_attributes(SCMIDev *dev, uint16_t token,
     scmi_make_response(resp_iov, SCMI_PROTO_ID_BASE,
                        SCMI_COMMON_MSG_PROTOCOL_ATTRIBUTES, token,
                        SCMI_SUCCESS);
+
+    /* Always report 4 protocols: BASE, POWER, CLOCK, RESET */
     attr->num_protocols = scmi_get_protocol_count();
     attr->num_agents = 1;
     attr->reserved = 0;
@@ -217,10 +219,9 @@ static int handle_base_error_notify(SCMIDev *dev, uint16_t token,
 }
 
 /* Base Protocol Request Dispatcher */
-static int virtio_scmi_base_handle_req(SCMIDev *dev, uint8_t msg_id,
-                                       uint16_t token,
-                                       const struct iovec *req_iov,
-                                       struct iovec *resp_iov) {
+int virtio_scmi_base_handle_req(SCMIDev *dev, uint8_t msg_id, uint16_t token,
+                                const struct iovec *req_iov,
+                                struct iovec *resp_iov) {
     /* Validate response buffer */
     if (resp_iov->iov_len < sizeof(struct scmi_response) ||
         resp_iov->iov_base == NULL) {
@@ -251,13 +252,11 @@ static int virtio_scmi_base_handle_req(SCMIDev *dev, uint8_t msg_id,
     }
 }
 
-/* Base Protocol Operations */
 static const struct scmi_protocol base_protocol = {
     .id = SCMI_PROTO_ID_BASE,
     .handle_request = virtio_scmi_base_handle_req,
 };
 
-/* Initialize Base Protocol */
 int virtio_scmi_base_init(void) {
     return scmi_register_protocol(&base_protocol);
 }

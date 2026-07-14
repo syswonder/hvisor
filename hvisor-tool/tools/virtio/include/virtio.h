@@ -149,8 +149,6 @@ int set_nonblocking(int fd);
 /// Check if circular queue is full. size must be a power of 2
 int is_queue_full(unsigned int front, unsigned int rear, unsigned int size);
 
-int is_queue_empty(unsigned int front, unsigned int rear);
-
 void write_barrier(void);
 
 void read_barrier(void);
