@@ -2,115 +2,73 @@
 #include "server.h"
 #include <linux/clk.h>
 #include <linux/of.h>
+#include <linux/slab.h>
 #include <linux/uaccess.h>
-
-#ifdef ENABLE_VIRTIO_SCMI
 
 extern bool __clk_is_enabled(const struct clk *clk);
 extern const char *__clk_get_name(const struct clk *clk);
 
-/* Clock provider phandle - configurable via ioctl */
-static uint32_t clock_provider_phandle = 0;
+static struct clk **clock_cache;
+static u32 clock_max_num;
 
-static struct device_node *get_clock_provider_node(void) {
-    struct device_node *provider_np =
-        of_find_node_by_phandle(clock_provider_phandle);
-    if (!provider_np) {
-        pr_err("Failed to find clock provider node\n");
-    }
-    return provider_np;
-}
+int clock_init(void) {
+    struct device_node *np;
+    int c;
 
-static struct clk *get_clock_by_id(u32 clk_id,
-                                   struct device_node *provider_np) {
-    struct of_phandle_args clkspec;
-
-    if (!provider_np) {
-        return ERR_PTR(-ENODEV);
-    }
-
-    clkspec.np = provider_np;
-    clkspec.args[0] = clk_id;
-    clkspec.args_count = 1;
-
-    return of_clk_get_from_provider(&clkspec);
-}
-
-static int get_clock_count(void) {
-    struct device_node *provider_np;
-    struct clk *clk;
-    int count = 0;
-
-    provider_np = get_clock_provider_node();
-    if (!provider_np) {
+    np = hvisor_get_node();
+    if (!np)
         return -ENODEV;
+
+    c = of_count_phandle_with_args(np, "clocks", "#clock-cells");
+    if (c == -ENOENT) {
+        pr_debug(
+            "no clocks property in hvisor node, clock protocol disabled\n");
+        clock_max_num = 0;
+        clock_cache = NULL;
+        return 0;
     }
-
-    while (1) {
-        clk = get_clock_by_id(count, provider_np);
-
-        if (IS_ERR(clk)) {
-            if (PTR_ERR(clk) == -EINVAL)
-                break;
-        } else {
-            clk_put(clk);
-        }
-
-        count++;
-    }
-
-    of_node_put(provider_np);
-    return count;
+    if (c < 0)
+        return c;
+    clock_max_num = (u32)c;
+    clock_cache = kcalloc(clock_max_num, sizeof(*clock_cache), GFP_KERNEL);
+    if (!clock_cache)
+        return -ENOMEM;
+    return 0;
 }
+
+static struct clk *clock_get_cached(u32 clk_id) {
+    if (clk_id >= clock_max_num)
+        return ERR_PTR(-ENOENT);
+
+    if (clock_cache[clk_id])
+        return clock_cache[clk_id];
+
+    clock_cache[clk_id] = of_clk_get(hvisor_get_node(), clk_id);
+    return clock_cache[clk_id];
+}
+
+static int get_clock_count(void) { return (int)clock_max_num; }
 
 static int get_clock_config(u32 clock_id, u32 *config,
                             u32 *extended_config_val) {
-    struct device_node *provider_np;
     struct clk *clk;
-    u32 clk_config = 0;
 
-    provider_np = get_clock_provider_node();
-    if (!provider_np) {
-        return -ENODEV;
-    }
+    clk = clock_get_cached(clock_id);
+    if (IS_ERR(clk))
+        return PTR_ERR(clk) == -ENOENT ? -ENOENT : PTR_ERR(clk);
 
-    clk = get_clock_by_id(clock_id, provider_np);
-    if (IS_ERR(clk)) {
-        of_node_put(provider_np);
-        if (PTR_ERR(clk) == -ENOENT)
-            return -ENOENT;
-        return PTR_ERR(clk);
-    }
-
-    if (__clk_is_enabled(clk))
-        clk_config |= 1;
-
-    *config = clk_config;
+    *config = __clk_is_enabled(clk) ? 1 : 0;
     *extended_config_val = 0;
-
-    clk_put(clk);
-    of_node_put(provider_np);
-
     return 0;
 }
 
 static int get_clock_name(u32 clock_id, char *name) {
-    struct device_node *provider_np;
     struct clk *clk;
     const char *clk_name;
 
-    provider_np = get_clock_provider_node();
-    if (!provider_np) {
-        return -ENODEV;
-    }
-
-    clk = get_clock_by_id(clock_id, provider_np);
-    if (IS_ERR(clk)) {
-        of_node_put(provider_np);
-        if (PTR_ERR(clk) == -ENOENT)
-            return -ENOENT;
-        return PTR_ERR(clk);
-    }
+    clk = clock_get_cached(clock_id);
+    if (IS_ERR(clk))
+        return PTR_ERR(clk) == -ENOENT ? -ENOENT : PTR_ERR(clk);
 
     clk_name = __clk_get_name(clk);
     if (clk_name) {
@@ -119,43 +77,21 @@ static int get_clock_name(u32 clock_id, char *name) {
     } else {
         snprintf(name, 64, "unknown_clk_%u", clock_id);
     }
-
-    clk_put(clk);
-    of_node_put(provider_np);
-
     return 0;
 }
 
 static int get_clock_attributes(u32 clock_id, u32 *enabled, u32 *parent_id,
                                 char *clock_name, u32 *is_valid) {
-    struct device_node *provider_np;
-    struct clk *clk, *parent_clk;
+    struct clk *clk;
     const char *name;
 
-    provider_np = get_clock_provider_node();
-    if (!provider_np) {
-        return -ENODEV;
-    }
-
-    clk = get_clock_by_id(clock_id, provider_np);
-    if (IS_ERR(clk)) {
-        of_node_put(provider_np);
-        *is_valid = 0;
-        *enabled = 0;
-        *parent_id = -1;
-        snprintf(clock_name, 64, "inv_%u", clock_id);
-        return 0;
-    }
+    clk = clock_get_cached(clock_id);
+    if (IS_ERR(clk))
+        return PTR_ERR(clk) == -ENOENT ? -ENOENT : PTR_ERR(clk);
 
     *is_valid = 1;
     *enabled = __clk_is_enabled(clk) ? 1 : 0;
-
-    parent_clk = clk_get_parent(clk);
-    if (IS_ERR(parent_clk) || !parent_clk) {
-        *parent_id = -1;
-    } else {
-        *parent_id = -1;
-    }
+    *parent_id = -1;
 
     name = __clk_get_name(clk);
     if (name) {
@@ -164,93 +100,70 @@ static int get_clock_attributes(u32 clock_id, u32 *enabled, u32 *parent_id,
     } else {
         snprintf(clock_name, 64, "unknown_clk_%u", clock_id);
     }
-
-    clk_put(clk);
-    of_node_put(provider_np);
-
     return 0;
 }
 
 static int get_clock_rate(u32 clock_id, u64 *rate) {
-    struct device_node *provider_np;
     struct clk *clk;
-    unsigned long clk_rate;
 
-    provider_np = get_clock_provider_node();
-    if (!provider_np) {
-        return -ENODEV;
-    }
+    clk = clock_get_cached(clock_id);
+    if (IS_ERR(clk))
+        return PTR_ERR(clk) == -ENOENT ? -ENOENT : PTR_ERR(clk);
 
-    clk = get_clock_by_id(clock_id, provider_np);
-    if (IS_ERR(clk)) {
-        of_node_put(provider_np);
-        if (PTR_ERR(clk) == -ENOENT)
-            return -ENOENT;
-        return PTR_ERR(clk);
-    }
-
-    clk_rate = clk_get_rate(clk);
-    *rate = (u64)clk_rate;
-
-    clk_put(clk);
-    of_node_put(provider_np);
-
+    *rate = (u64)clk_get_rate(clk);
     return 0;
 }
 
 static int set_clock_rate(u32 clock_id, u64 rate) {
-    struct device_node *provider_np;
-    struct clk *clk;
     int ret;
+    struct clk *clk;
 
-    provider_np = get_clock_provider_node();
-    if (!provider_np) {
-        return -ENODEV;
-    }
-
-    clk = get_clock_by_id(clock_id, provider_np);
-    if (IS_ERR(clk)) {
-        of_node_put(provider_np);
-        if (PTR_ERR(clk) == -ENOENT)
-            return -ENOENT;
-        return PTR_ERR(clk);
-    }
+    clk = clock_get_cached(clock_id);
+    if (IS_ERR(clk))
+        return PTR_ERR(clk) == -ENOENT ? -ENOENT : PTR_ERR(clk);
 
     ret = clk_set_rate(clk, (unsigned long)rate);
-
-    clk_put(clk);
-    of_node_put(provider_np);
-
+    if (ret)
+        pr_err("Failed to set clock[%u] rate to %llu Hz, error=%d\n", clock_id,
+               rate, ret);
     return ret;
 }
 
 static int set_clock_config(u32 clock_id, u32 config) {
-    struct device_node *provider_np;
-    struct clk *clk;
     int ret = 0;
+    struct clk *clk;
 
-    provider_np = get_clock_provider_node();
-    if (!provider_np) {
-        return -ENODEV;
-    }
-
-    clk = get_clock_by_id(clock_id, provider_np);
-    if (IS_ERR(clk)) {
-        of_node_put(provider_np);
-        if (PTR_ERR(clk) == -ENOENT)
-            return -ENOENT;
-        return PTR_ERR(clk);
-    }
+    clk = clock_get_cached(clock_id);
+    if (IS_ERR(clk))
+        return PTR_ERR(clk) == -ENOENT ? -ENOENT : PTR_ERR(clk);
 
     if (config & 1)
         ret = clk_prepare_enable(clk);
     else
         clk_disable_unprepare(clk);
 
-    clk_put(clk);
-    of_node_put(provider_np);
-
+    if (ret)
+        pr_err("Failed to set clock[%u] config 0x%x, error=%d\n", clock_id,
+               config, ret);
     return ret;
+}
+
+void clock_ctrl_finish(void) {
+    u32 i;
+
+    if (!clock_cache)
+        goto out;
+
+    for (i = 0; i < clock_max_num; i++) {
+        if (clock_cache[i] && !IS_ERR(clock_cache[i]))
+            clk_put(clock_cache[i]);
+        clock_cache[i] = NULL;
+    }
+
+out:
+    kfree(clock_cache);
+    clock_cache = NULL;
+    clock_max_num = 0;
 }
 
 int hvisor_scmi_clock_ioctl(struct hvisor_scmi_clock_args __user *user_args) {
@@ -285,9 +198,8 @@ int hvisor_scmi_clock_ioctl(struct hvisor_scmi_clock_args __user *user_args) {
             return -EFAULT;
         return 0;
     }
-    case HVISOR_SCMI_CLOCK_DESCRIBE_RATES: {
+    case HVISOR_SCMI_CLOCK_DESCRIBE_RATES:
         return 0;
-    }
     case HVISOR_SCMI_CLOCK_RATE_GET: {
         u64 rate = 0;
         int ret = get_clock_rate(args.u.clock_rate_info.clock_id, &rate);
@@ -297,10 +209,9 @@ int hvisor_scmi_clock_ioctl(struct hvisor_scmi_clock_args __user *user_args) {
             return -EFAULT;
         return 0;
     }
-    case HVISOR_SCMI_CLOCK_RATE_SET: {
+    case HVISOR_SCMI_CLOCK_RATE_SET:
         return set_clock_rate(args.u.clock_rate_set_info.clock_id,
                               args.u.clock_rate_set_info.rate);
-    }
     case HVISOR_SCMI_CLOCK_CONFIG_GET: {
         u32 config, extended_config_val;
         int ret = get_clock_config(args.u.clock_config_info.clock_id, &config,
@@ -315,10 +226,9 @@ int hvisor_scmi_clock_ioctl(struct hvisor_scmi_clock_args __user *user_args) {
             return -EFAULT;
         return 0;
     }
-    case HVISOR_SCMI_CLOCK_CONFIG_SET: {
+    case HVISOR_SCMI_CLOCK_CONFIG_SET:
         return set_clock_config(args.u.clock_config_info.clock_id,
                                 args.u.clock_config_info.config);
-    }
     case HVISOR_SCMI_CLOCK_NAME_GET: {
         char name[64];
         int ret = get_clock_name(args.u.clock_name_info.clock_id, name);
@@ -331,14 +241,7 @@ int hvisor_scmi_clock_ioctl(struct hvisor_scmi_clock_args __user *user_args) {
             return -EFAULT;
         return 0;
     }
-    case HVISOR_SCMI_CLOCK_SET_PHANDLE: {
-        clock_provider_phandle = args.u.clock_phandle_info.phandle;
-        pr_info("Clock provider phandle set to %u\n", clock_provider_phandle);
-        return 0;
-    }
     default:
         return -EINVAL;
     }
 }
-
-#endif /* ENABLE_VIRTIO_SCMI */
