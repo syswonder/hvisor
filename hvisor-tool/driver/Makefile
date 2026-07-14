@@ -28,7 +28,8 @@ endif
 
 hvisor-y := hvisor_main.o
 ifeq ($(VIRTIO_SCMI), y)
-	hvisor-y += scmi_server.o reset-domains.o
+	hvisor-y += virtio/scmi/server.o virtio/scmi/clock.o virtio/scmi/reset.o virtio/scmi/power.o
+	hvisor-y += reset-domains.o
 endif
 ivc-y := ivc_driver.o
 

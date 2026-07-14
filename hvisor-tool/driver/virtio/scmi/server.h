@@ -3,7 +3,7 @@
 
 #ifdef ENABLE_VIRTIO_SCMI
 
-#include "../include/hvisor.h"
+#include "hvisor.h"
 #include <linux/clk.h>
 #include <linux/reset.h>
 

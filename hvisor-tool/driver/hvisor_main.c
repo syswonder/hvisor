@@ -35,7 +35,7 @@
 #include "zone_config.h"
 
 #ifdef ENABLE_VIRTIO_SCMI
-#include "scmi_server.h"
+#include "virtio/scmi/server.h"
 #endif
 
 extern bool __clk_is_enabled(const struct clk *clk);
@@ -334,10 +334,14 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
         err = hvisor_scmi_clock_ioctl(
             (struct hvisor_scmi_clock_args __user *)arg);
         break;
+#endif
+#ifdef ENABLE_VIRTIO_SCMI
     case HVISOR_SCMI_RESET_IOCTL:
         err = hvisor_scmi_reset_ioctl(
             (struct hvisor_scmi_reset_args __user *)arg);
         break;
+#endif
+#ifdef ENABLE_VIRTIO_SCMI
     case HVISOR_SCMI_POWER_IOCTL:
         err = hvisor_scmi_power_ioctl(
             (struct hvisor_scmi_power_args __user *)arg);
