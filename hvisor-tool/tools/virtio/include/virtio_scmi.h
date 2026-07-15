@@ -137,26 +137,26 @@
 struct scmi_request {
     uint32_t header;   /* Packed SCMI message header */
     uint8_t payload[]; /* Message-specific payload */
-};
+} __attribute__((packed));
 
 struct scmi_response {
     uint32_t header;   /* Packed SCMI message header */
     uint32_t status;   /* Command status */
     uint8_t payload[]; /* Message-specific payload */
-};
+} __attribute__((packed));
 
 /* SCMI Base Protocol Attributes Response */
 struct scmi_msg_resp_base_attributes {
     uint8_t num_protocols;
     uint8_t num_agents;
     uint16_t reserved;
-};
+} __attribute__((packed));
 
 struct scmi_msg_resp_clock_attributes {
     uint16_t num_clocks;
     uint8_t max_async_req;
     uint8_t reserved;
-};
+} __attribute__((packed));
 
 typedef struct virtio_scmi_dev {
     int fd;
@@ -196,7 +196,8 @@ enum scmi_error_codes {
 struct scmi_protocol {
     uint8_t id;
     int (*handle_request)(SCMIDev *dev, uint8_t msg_id, uint16_t token,
-                          const struct iovec *req_iov, struct iovec *resp_iov);
+                          const struct iovec *req_iov,
+                          struct scmi_resp_ctx *ctx);
 };
 
 int scmi_register_protocol(const struct scmi_protocol *proto);
@@ -224,7 +225,7 @@ struct scmi_base_error_notify_payld {
     uint32_t agent_id;
     uint32_t error_status;
     uint64_t msg_reports[SCMI_BASE_MAX_CMD_ERR_COUNT];
-};
+} __attribute__((packed));
 
 struct scmi_base_error_report {
     uint64_t timestamp;
@@ -232,18 +233,29 @@ struct scmi_base_error_report {
     bool fatal;
     uint32_t cmd_count;
     uint64_t reports[SCMI_BASE_MAX_CMD_ERR_COUNT];
+} __attribute__((packed));
+
+/* Response context — tracks written bytes, replaces raw iovec access */
+struct scmi_resp_ctx {
+    struct iovec *iov; /* underlying response iovec */
+    size_t written;    /* bytes written so far */
+    size_t capacity;   /* total capacity (original iov_len) */
 };
+
+void scmi_resp_ctx_init(struct scmi_resp_ctx *ctx, struct iovec *resp_iov);
+
+void *scmi_resp_write(struct scmi_resp_ctx *ctx, size_t size);
 
 /* Core SCMI Functions */
 int scmi_validate_request(size_t req_size, size_t min_req_size,
                           size_t resp_size, size_t min_resp_size);
 
-int scmi_make_response(struct iovec *resp_iov, uint8_t protocol_id,
+int scmi_make_response(struct scmi_resp_ctx *ctx, uint8_t protocol_id,
                        uint8_t msg_id, uint16_t token, int32_t status);
 
 int scmi_handle_message(SCMIDev *dev, uint8_t protocol_id, uint8_t msg_id,
                         uint16_t token, const struct iovec *req_iov,
-                        struct iovec *resp_iov);
+                        struct scmi_resp_ctx *ctx);
 
 SCMIDev *scmi_dev_create(void);
 void scmi_dev_free(SCMIDev *dev);
