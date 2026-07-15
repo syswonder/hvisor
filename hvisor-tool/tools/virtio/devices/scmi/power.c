@@ -273,12 +273,3 @@ int virtio_scmi_power_handle_req(SCMIDev *dev, uint8_t msg_id, uint16_t token,
         return SCMI_ERR_SUPPORT;
     }
 }
-
-static const struct scmi_protocol power_protocol = {
-    .id = SCMI_PROTO_ID_POWER,
-    .handle_request = virtio_scmi_power_handle_req,
-};
-
-int virtio_scmi_power_init(void) {
-    return scmi_register_protocol(&power_protocol);
-}

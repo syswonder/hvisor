@@ -19,9 +19,11 @@
 /* SCMI version 2.1 */
 #define SCMI_BASE_VERSION 0x20001
 
-/* Helper to get protocol list from global registration table */
-static int get_protocol_list(uint32_t *buffer, int skip, int max) {
-    int total = scmi_get_protocol_count();
+/* Helper to get protocol list — per-device table first, then global */
+static int get_protocol_list(SCMIDev *dev, uint32_t *buffer, int skip,
+                             int max) {
+    int total =
+        dev->protocol_count ? dev->protocol_count : scmi_get_protocol_count();
     int remaining = total - skip;
 
     if (remaining <= 0) {
@@ -33,8 +35,14 @@ static int get_protocol_list(uint32_t *buffer, int skip, int max) {
     buffer[0] = count;
 
     for (int i = 0; i < count; i++) {
-        const struct scmi_protocol *p = scmi_get_protocol_by_index(skip + i);
-        uint8_t pid = p ? p->id : 0;
+        uint8_t pid;
+        if (dev->protocol_count)
+            pid = dev->protocols[skip + i].protocol_id;
+        else {
+            const struct scmi_protocol *p =
+                scmi_get_protocol_by_index(skip + i);
+            pid = p ? p->id : 0;
+        }
         log_info("Protocol %d: %u", skip + i, pid);
         if (i % 4 == 0)
             buffer[i / 4 + 1] = 0;
@@ -62,7 +70,8 @@ static int handle_base_attributes(SCMIDev *dev, uint16_t token,
 
     struct scmi_msg_resp_base_attributes *attr =
         scmi_resp_write(ctx, sizeof(struct scmi_msg_resp_base_attributes));
-    attr->num_protocols = scmi_get_protocol_count();
+    attr->num_protocols =
+        dev->protocol_count ? dev->protocol_count : scmi_get_protocol_count();
     attr->num_agents = 1;
     attr->reserved = 0;
 
@@ -132,7 +141,7 @@ static int handle_base_protocol_list(SCMIDev *dev, uint16_t token,
     uint32_t *protocols =
         (uint32_t *)((uint8_t *)ctx->iov->iov_base + ctx->written);
     size_t max_protos = remaining / sizeof(uint32_t);
-    int count = get_protocol_list(protocols, skip, max_protos);
+    int count = get_protocol_list(dev, protocols, skip, max_protos);
     ctx->written += sizeof(uint32_t) + ((count + 3) / 4) * sizeof(uint32_t);
     if (count < 0) {
         log_error("Invalid skip value: %u", skip);
@@ -242,13 +251,4 @@ int virtio_scmi_base_handle_req(SCMIDev *dev, uint8_t msg_id, uint16_t token,
         log_warn("Unsupported Base protocol message: 0x%x", msg_id);
         return SCMI_ERR_SUPPORT;
     }
-}
-
-static const struct scmi_protocol base_protocol = {
-    .id = SCMI_PROTO_ID_BASE,
-    .handle_request = virtio_scmi_base_handle_req,
-};
-
-int virtio_scmi_base_init(void) {
-    return scmi_register_protocol(&base_protocol);
 }
