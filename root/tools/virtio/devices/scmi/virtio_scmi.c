@@ -91,6 +91,8 @@ static int virtq_tx_handle_one_request(void *dev, VirtQueue *vq) {
     uint16_t *flags = NULL;
     int ret = process_descriptor_chain(vq, &desc_idx, &iov, &flags,
                                        SCMI_MAX_DESCRIPTORS, true);
+    // desc_idx is valid iff ret > 0 (a descriptor was consumed from avail ring)
+    bool desc_valid = (ret > 0);
 
     if (ret <= 0 || iov == NULL || flags == NULL) {
         log_error("Failed to process descriptor chain or allocate memory");
@@ -120,22 +122,28 @@ static int virtq_tx_handle_one_request(void *dev, VirtQueue *vq) {
         goto error;
     }
 
+    // Initialize response context from the response iovec
+    struct scmi_resp_ctx ctx;
+    scmi_resp_ctx_init(&ctx, &iov[1]);
+
     // Dispatch request to protocol handler
     int status =
-        scmi_handle_message(dev, protocol_id, msg_id, token, &iov[0], &iov[1]);
+        scmi_handle_message(dev, protocol_id, msg_id, token, &iov[0], &ctx);
 
     if (status != 0) {
         log_error("Protocol handler failed: %d", status);
         goto error;
     }
 
-    // Update used ring with response length only (device only writes to iov[1])
-    update_used_ring(vq, desc_idx, iov[1].iov_len);
+    // Update used ring with actual bytes written, not the guest's buffer size
+    update_used_ring(vq, desc_idx, ctx.written);
     free(iov);
     free(flags);
     return 0;
 
 error:
+    if (desc_valid)
+        update_used_ring(vq, desc_idx, 0);
     free(iov);
     free(flags);
     return -EINVAL;

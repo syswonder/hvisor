@@ -50,19 +50,19 @@ int scmi_register_protocol(const struct scmi_protocol *proto) {
 extern int virtio_scmi_base_handle_req(SCMIDev *dev, uint8_t msg_id,
                                        uint16_t token,
                                        const struct iovec *req_iov,
-                                       struct iovec *resp_iov);
+                                       struct scmi_resp_ctx *ctx);
 extern int virtio_scmi_clock_handle_req(SCMIDev *dev, uint8_t msg_id,
                                         uint16_t token,
                                         const struct iovec *req_iov,
-                                        struct iovec *resp_iov);
+                                        struct scmi_resp_ctx *ctx);
 extern int virtio_scmi_power_handle_req(SCMIDev *dev, uint8_t msg_id,
                                         uint16_t token,
                                         const struct iovec *req_iov,
-                                        struct iovec *resp_iov);
+                                        struct scmi_resp_ctx *ctx);
 extern int virtio_scmi_reset_handle_req(SCMIDev *dev, uint8_t msg_id,
                                         uint16_t token,
                                         const struct iovec *req_iov,
-                                        struct iovec *resp_iov);
+                                        struct scmi_resp_ctx *ctx);
 
 /* Validate request/response buffers */
 int scmi_validate_request(size_t req_size, size_t min_req_size,
@@ -80,16 +80,40 @@ int scmi_validate_request(size_t req_size, size_t min_req_size,
     return SCMI_SUCCESS;
 }
 
-/* Create standard SCMI response */
-int scmi_make_response(struct iovec *resp_iov, uint8_t protocol_id,
-                       uint8_t msg_id, uint16_t token, int32_t status) {
-    if (resp_iov->iov_len < sizeof(struct scmi_response)) {
-        return SCMI_ERR_PARAMS;
-    }
+/* Initialize response context from an iovec */
+void scmi_resp_ctx_init(struct scmi_resp_ctx *ctx, struct iovec *resp_iov) {
+    ctx->iov = resp_iov;
+    ctx->written = 0;
+    ctx->capacity = resp_iov->iov_len;
+}
 
-    struct scmi_response *resp = resp_iov->iov_base;
+/* Reserve space in response buffer and return write pointer */
+void *scmi_resp_write(struct scmi_resp_ctx *ctx, size_t size) {
+    if (!ctx || !ctx->iov) {
+        log_error("scmi_resp_write: NULL ctx or iov");
+        return NULL;
+    }
+    if (ctx->written + size > ctx->capacity) {
+        log_error(
+            "scmi_resp_write: overflow (written=%zu + size=%zu > capacity=%zu)",
+            ctx->written, size, ctx->capacity);
+        return NULL;
+    }
+    void *ptr = (uint8_t *)ctx->iov->iov_base + ctx->written;
+    ctx->written += size;
+    return ptr;
+}
+
+/* Create standard SCMI response header + status */
+int scmi_make_response(struct scmi_resp_ctx *ctx, uint8_t protocol_id,
+                       uint8_t msg_id, uint16_t token, int32_t status) {
+    if (ctx->capacity < sizeof(struct scmi_response))
+        return SCMI_ERR_PARAMS;
+
+    struct scmi_response *resp = ctx->iov->iov_base;
     resp->header = SCMI_RESP_HDR(protocol_id, msg_id, token);
     resp->status = status;
+    ctx->written = sizeof(struct scmi_response);
 
     return 0;
 }
@@ -97,13 +121,13 @@ int scmi_make_response(struct iovec *resp_iov, uint8_t protocol_id,
 /* Dispatch SCMI message to protocol handler via registration table */
 int scmi_handle_message(SCMIDev *dev, uint8_t protocol_id, uint8_t msg_id,
                         uint16_t token, const struct iovec *req_iov,
-                        struct iovec *resp_iov) {
+                        struct scmi_resp_ctx *ctx) {
     const struct scmi_protocol *proto = scmi_get_protocol_by_id(protocol_id);
     if (!proto) {
         log_warn("Unsupported protocol: 0x%x", protocol_id);
         return SCMI_ERR_SUPPORT;
     }
-    return proto->handle_request(dev, msg_id, token, req_iov, resp_iov);
+    return proto->handle_request(dev, msg_id, token, req_iov, ctx);
 }
 
 /* Unified ioctl helper shared by clock/reset/power userspace.
