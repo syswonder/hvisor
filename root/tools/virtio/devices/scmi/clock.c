@@ -540,13 +540,3 @@ int virtio_scmi_clock_handle_req(SCMIDev *dev, uint8_t msg_id, uint16_t token,
         return SCMI_ERR_SUPPORT;
     }
 }
-
-/* Clock Protocol Operations */
-static const struct scmi_protocol clock_protocol = {
-    .id = SCMI_PROTO_ID_CLOCK,
-    .handle_request = virtio_scmi_clock_handle_req,
-};
-
-int virtio_scmi_clock_init(void) {
-    return scmi_register_protocol(&clock_protocol);
-}

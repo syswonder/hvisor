@@ -211,12 +211,3 @@ int virtio_scmi_reset_handle_req(SCMIDev *dev, uint8_t msg_id, uint16_t token,
         return SCMI_ERR_SUPPORT;
     }
 }
-
-static const struct scmi_protocol reset_protocol = {
-    .id = SCMI_PROTO_ID_RESET,
-    .handle_request = virtio_scmi_reset_handle_req,
-};
-
-int virtio_scmi_reset_init(void) {
-    return scmi_register_protocol(&reset_protocol);
-}

@@ -14,56 +14,6 @@
 #include <string.h>
 #include <sys/ioctl.h>
 
-/* Per-protocol dispatch table — populated by scmi_register_protocol(). */
-static const struct scmi_protocol *protocols[SCMI_MAX_PROTOCOLS];
-static int protocol_count;
-
-const struct scmi_protocol *scmi_get_protocol_by_id(uint8_t protocol_id) {
-    for (int i = 0; i < protocol_count; i++)
-        if (protocols[i]->id == protocol_id)
-            return protocols[i];
-    return NULL;
-}
-
-const struct scmi_protocol *scmi_get_protocol_by_index(int index) {
-    if (index < 0 || index >= protocol_count)
-        return NULL;
-    return protocols[index];
-}
-
-int scmi_get_protocol_count(void) { return protocol_count; }
-
-int scmi_register_protocol(const struct scmi_protocol *proto) {
-    if (!proto)
-        return SCMI_ERR_PARAMS;
-    for (int i = 0; i < protocol_count; i++)
-        if (protocols[i]->id == proto->id)
-            return SCMI_ERR_ENTRY;
-    if (protocol_count >= SCMI_MAX_PROTOCOLS)
-        return SCMI_ERR_ENTRY;
-    protocols[protocol_count++] = proto;
-    return SCMI_SUCCESS;
-}
-
-/* Protocol handler entry points (defined in base.c, clock.c, power.c, reset.c)
- */
-extern int virtio_scmi_base_handle_req(SCMIDev *dev, uint8_t msg_id,
-                                       uint16_t token,
-                                       const struct iovec *req_iov,
-                                       struct scmi_resp_ctx *ctx);
-extern int virtio_scmi_clock_handle_req(SCMIDev *dev, uint8_t msg_id,
-                                        uint16_t token,
-                                        const struct iovec *req_iov,
-                                        struct scmi_resp_ctx *ctx);
-extern int virtio_scmi_power_handle_req(SCMIDev *dev, uint8_t msg_id,
-                                        uint16_t token,
-                                        const struct iovec *req_iov,
-                                        struct scmi_resp_ctx *ctx);
-extern int virtio_scmi_reset_handle_req(SCMIDev *dev, uint8_t msg_id,
-                                        uint16_t token,
-                                        const struct iovec *req_iov,
-                                        struct scmi_resp_ctx *ctx);
-
 /* Validate request/response buffers */
 int scmi_validate_request(size_t req_size, size_t min_req_size,
                           size_t resp_size, size_t min_resp_size) {
@@ -118,16 +68,41 @@ int scmi_make_response(struct scmi_resp_ctx *ctx, uint8_t protocol_id,
     return 0;
 }
 
-/* Dispatch SCMI message to protocol handler via registration table */
+/* Per-device protocol registration */
+int scmi_dev_register_protocol(SCMIDev *dev, uint8_t protocol_id,
+                               int (*handler)(SCMIDev *dev, uint8_t msg_id,
+                                              uint16_t token,
+                                              const struct iovec *req_iov,
+                                              struct scmi_resp_ctx *ctx)) {
+    if (dev->protocol_count >= SCMI_MAX_PROTOCOLS) {
+        log_error("scmi_dev_register_protocol: per-device table full (max %d)",
+                  SCMI_MAX_PROTOCOLS);
+        return -1;
+    }
+    for (int i = 0; i < dev->protocol_count; i++)
+        if (dev->protocols[i].protocol_id == protocol_id) {
+            log_warn(
+                "scmi_dev_register_protocol: protocol %u already registered",
+                protocol_id);
+            return 0;
+        }
+    dev->protocols[dev->protocol_count].protocol_id = protocol_id;
+    dev->protocols[dev->protocol_count].handler = handler;
+    dev->protocol_count++;
+    return 0;
+}
+
+/* Dispatch SCMI message to protocol handler — per-device table first, then
+ * global */
 int scmi_handle_message(SCMIDev *dev, uint8_t protocol_id, uint8_t msg_id,
                         uint16_t token, const struct iovec *req_iov,
                         struct scmi_resp_ctx *ctx) {
-    const struct scmi_protocol *proto = scmi_get_protocol_by_id(protocol_id);
-    if (!proto) {
-        log_warn("Unsupported protocol: 0x%x", protocol_id);
-        return SCMI_ERR_SUPPORT;
-    }
-    return proto->handle_request(dev, msg_id, token, req_iov, ctx);
+    for (int i = 0; i < dev->protocol_count; i++)
+        if (dev->protocols[i].protocol_id == protocol_id)
+            return dev->protocols[i].handler(dev, msg_id, token, req_iov, ctx);
+
+    log_warn("Unsupported protocol: 0x%x", protocol_id);
+    return SCMI_ERR_SUPPORT;
 }
 
 /* Unified ioctl helper shared by clock/reset/power userspace.

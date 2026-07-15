@@ -1556,12 +1556,6 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
             return -1;
         }
 
-        /* Register global protocol handlers (called once, idempotent) */
-        virtio_scmi_base_init();
-        virtio_scmi_clock_init();
-        virtio_scmi_power_init();
-        virtio_scmi_reset_init();
-
         cJSON *clock_ids = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "clock_ids");
         cJSON *reset_ids = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "reset_ids");
         cJSON *power_ids = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "power_ids");
@@ -1572,6 +1566,19 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
             scmi_dev_free(scmi_dev);
             return -1;
         }
+
+        /* Register protocols per-device: BASE always, others only if present */
+        scmi_dev_register_protocol(scmi_dev, SCMI_PROTO_ID_BASE,
+                                   virtio_scmi_base_handle_req);
+        if (scmi_dev->clock_count > 0)
+            scmi_dev_register_protocol(scmi_dev, SCMI_PROTO_ID_CLOCK,
+                                       virtio_scmi_clock_handle_req);
+        if (scmi_dev->power_count > 0)
+            scmi_dev_register_protocol(scmi_dev, SCMI_PROTO_ID_POWER,
+                                       virtio_scmi_power_handle_req);
+        if (scmi_dev->reset_count > 0)
+            scmi_dev_register_protocol(scmi_dev, SCMI_PROTO_ID_RESET,
+                                       virtio_scmi_reset_handle_req);
 
         arg0 = scmi_dev;
         log_info("SCMI device created: clocks=%u resets=%u powers=%u",

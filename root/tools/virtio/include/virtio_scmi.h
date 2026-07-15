@@ -158,6 +158,20 @@ struct scmi_msg_resp_clock_attributes {
     uint8_t reserved;
 } __attribute__((packed));
 
+struct scmi_resp_ctx {
+    struct iovec *iov; /* underlying response iovec */
+    size_t written;    /* bytes written so far */
+    size_t capacity;   /* total capacity (original iov_len) */
+};
+
+struct virtio_scmi_dev;
+
+struct scmi_dev_protocol_entry {
+    uint8_t protocol_id;
+    int (*handler)(struct virtio_scmi_dev *dev, uint8_t msg_id, uint16_t token,
+                   const struct iovec *req_iov, struct scmi_resp_ctx *ctx);
+};
+
 typedef struct virtio_scmi_dev {
     int fd;
     uint32_t *clock_ids; /* NULL = protocol not supported */
@@ -166,6 +180,8 @@ typedef struct virtio_scmi_dev {
     uint32_t reset_count;
     uint32_t *power_ids;
     uint32_t power_count;
+    struct scmi_dev_protocol_entry protocols[SCMI_MAX_PROTOCOLS];
+    int protocol_count;
 } SCMIDev;
 
 enum scmi_error_codes {
@@ -188,28 +204,12 @@ enum scmi_error_codes {
 #define SCMI_MAX_BUFFER_SIZE (1024 * 1024) // 1MB
 #define SCMI_MAX_PROTOCOLS 16
 
-/*
- * Global protocol registration (classic SCMI model).
- * Each protocol file declares a static const scmi_protocol and
- * calls scmi_register_protocol() at startup.
- */
-struct scmi_protocol {
-    uint8_t id;
-    int (*handle_request)(SCMIDev *dev, uint8_t msg_id, uint16_t token,
-                          const struct iovec *req_iov,
-                          struct scmi_resp_ctx *ctx);
-};
-
-int scmi_register_protocol(const struct scmi_protocol *proto);
-const struct scmi_protocol *scmi_get_protocol_by_id(uint8_t protocol_id);
-const struct scmi_protocol *scmi_get_protocol_by_index(int index);
-int scmi_get_protocol_count(void);
-
-/* Per-protocol init functions (called once at startup) */
-int virtio_scmi_base_init(void);
-int virtio_scmi_clock_init(void);
-int virtio_scmi_power_init(void);
-int virtio_scmi_reset_init(void);
+/* Per-device protocol registration */
+int scmi_dev_register_protocol(SCMIDev *dev, uint8_t protocol_id,
+                               int (*handler)(SCMIDev *dev, uint8_t msg_id,
+                                              uint16_t token,
+                                              const struct iovec *req_iov,
+                                              struct scmi_resp_ctx *ctx));
 
 /* Notification support */
 #define SCMI_MAX_QUEUES 2
@@ -235,16 +235,23 @@ struct scmi_base_error_report {
     uint64_t reports[SCMI_BASE_MAX_CMD_ERR_COUNT];
 } __attribute__((packed));
 
-/* Response context — tracks written bytes, replaces raw iovec access */
-struct scmi_resp_ctx {
-    struct iovec *iov; /* underlying response iovec */
-    size_t written;    /* bytes written so far */
-    size_t capacity;   /* total capacity (original iov_len) */
-};
-
 void scmi_resp_ctx_init(struct scmi_resp_ctx *ctx, struct iovec *resp_iov);
 
 void *scmi_resp_write(struct scmi_resp_ctx *ctx, size_t size);
+
+/* Protocol handler entry points */
+int virtio_scmi_base_handle_req(SCMIDev *dev, uint8_t msg_id, uint16_t token,
+                                const struct iovec *req_iov,
+                                struct scmi_resp_ctx *ctx);
+int virtio_scmi_clock_handle_req(SCMIDev *dev, uint8_t msg_id, uint16_t token,
+                                 const struct iovec *req_iov,
+                                 struct scmi_resp_ctx *ctx);
+int virtio_scmi_power_handle_req(SCMIDev *dev, uint8_t msg_id, uint16_t token,
+                                 const struct iovec *req_iov,
+                                 struct scmi_resp_ctx *ctx);
+int virtio_scmi_reset_handle_req(SCMIDev *dev, uint8_t msg_id, uint16_t token,
+                                 const struct iovec *req_iov,
+                                 struct scmi_resp_ctx *ctx);
 
 /* Core SCMI Functions */
 int scmi_validate_request(size_t req_size, size_t min_req_size,
