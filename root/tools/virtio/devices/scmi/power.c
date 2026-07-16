@@ -20,8 +20,6 @@
 /* Power Protocol version 2.0 */
 #define SCMI_POWER_VERSION 0x20000
 
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-
 /* Response for POWER_DOMAIN_ATTRIBUTES (Message ID 0x3) */
 struct scmi_msg_resp_power_domain_attributes {
     uint32_t flags;
@@ -54,6 +52,7 @@ static uint32_t pwr_phys_id(SCMIDev *dev, uint32_t dom_id, bool *valid) {
 static int handle_power_version(SCMIDev *dev, uint16_t token,
                                 const struct iovec *req_iov,
                                 struct scmi_resp_ctx *ctx) {
+    (void)dev;
     int ret = scmi_validate_request(
         req_iov->iov_len, sizeof(struct scmi_request), ctx->capacity,
         sizeof(struct scmi_response) + sizeof(uint32_t));
@@ -65,6 +64,10 @@ static int handle_power_version(SCMIDev *dev, uint16_t token,
     scmi_make_response(ctx, SCMI_PROTO_ID_POWER, SCMI_COMMON_MSG_VERSION, token,
                        SCMI_SUCCESS);
     uint32_t *version = scmi_resp_write(ctx, sizeof(uint32_t));
+    if (!version) {
+        log_error("handle_power_version: scmi_resp_write failed");
+        return SCMI_ERR_PARAMS;
+    }
     *version = SCMI_POWER_VERSION;
     return 0;
 }
@@ -84,6 +87,10 @@ static int handle_power_protocol_attributes(SCMIDev *dev, uint16_t token,
                        SCMI_COMMON_MSG_PROTOCOL_ATTRIBUTES, token,
                        SCMI_SUCCESS);
     uint32_t *attributes = scmi_resp_write(ctx, sizeof(uint32_t));
+    if (!attributes) {
+        log_error("handle_power_protocol_attributes: scmi_resp_write failed");
+        return SCMI_ERR_PARAMS;
+    }
     *attributes = (uint32_t)(dev->power_count & 0xFFFF);
 
     log_debug("POWER_PROTOCOL_ATTRIBUTES: num_domains=%d", dev->power_count);
@@ -101,6 +108,8 @@ static int handle_power_domain_attributes(SCMIDev *dev, uint16_t token,
     uint32_t phys_id = pwr_phys_id(dev, domain_id, &valid);
 
     if (!valid) {
+        log_warn("handle_power_domain_attributes: invalid domain_id=%u",
+                 domain_id);
         return scmi_make_response(ctx, SCMI_PROTO_ID_POWER,
                                   SCMI_POWER_MSG_POWER_DOMAIN_ATTRIBUTES, token,
                                   SCMI_ERR_ENTRY);
@@ -158,6 +167,7 @@ static int handle_power_state_set(SCMIDev *dev, uint16_t token,
     uint32_t phys_id = pwr_phys_id(dev, domain_id, &valid);
 
     if (!valid) {
+        log_warn("handle_power_state_set: invalid domain_id=%u", domain_id);
         return scmi_make_response(ctx, SCMI_PROTO_ID_POWER,
                                   SCMI_POWER_MSG_POWER_STATE_SET, token,
                                   SCMI_ERR_ENTRY);
@@ -201,6 +211,7 @@ static int handle_power_state_get(SCMIDev *dev, uint16_t token,
     uint32_t phys_id = pwr_phys_id(dev, domain_id, &valid);
 
     if (!valid) {
+        log_warn("handle_power_state_get: invalid domain_id=%u", domain_id);
         return scmi_make_response(ctx, SCMI_PROTO_ID_POWER,
                                   SCMI_POWER_MSG_POWER_STATE_GET, token,
                                   SCMI_ERR_ENTRY);
@@ -227,6 +238,10 @@ static int handle_power_state_get(SCMIDev *dev, uint16_t token,
     scmi_make_response(ctx, SCMI_PROTO_ID_POWER, SCMI_POWER_MSG_POWER_STATE_GET,
                        token, SCMI_SUCCESS);
     uint32_t *state = scmi_resp_write(ctx, sizeof(uint32_t));
+    if (!state) {
+        log_error("handle_power_state_get: scmi_resp_write failed");
+        return SCMI_ERR_PARAMS;
+    }
     *state = args.u.power_state_info.power_state;
 
     log_debug("POWER_STATE_GET: domain=%u, state=0x%x", domain_id, *state);
@@ -234,9 +249,11 @@ static int handle_power_state_get(SCMIDev *dev, uint16_t token,
 }
 
 static int handle_power_state_notify(SCMIDev *dev, uint16_t token,
-                                     const struct iovec *req_iov
-                                     __attribute__((unused)),
+                                     const struct iovec *req_iov,
                                      struct scmi_resp_ctx *ctx) {
+    (void)dev;
+    (void)req_iov;
+    log_debug("handle_power_state_notify: unsupported");
     return scmi_make_response(ctx, SCMI_PROTO_ID_POWER,
                               SCMI_POWER_MSG_POWER_STATE_NOTIFY, token,
                               SCMI_ERR_SUPPORT);

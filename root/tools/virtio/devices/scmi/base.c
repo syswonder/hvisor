@@ -13,9 +13,6 @@
 #include <stdint.h>
 #include <string.h>
 
-/* Base protocol handlers are stateless - dev and token are unused */
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-
 /* SCMI version 2.1 */
 #define SCMI_BASE_VERSION 0x20001
 
@@ -63,6 +60,10 @@ static int handle_base_attributes(SCMIDev *dev, uint16_t token,
 
     struct scmi_msg_resp_base_attributes *attr =
         scmi_resp_write(ctx, sizeof(struct scmi_msg_resp_base_attributes));
+    if (!attr) {
+        log_error("handle_base_attributes: scmi_resp_write failed");
+        return SCMI_ERR_PARAMS;
+    }
     attr->num_protocols = dev->protocol_count;
     attr->num_agents = 1;
     attr->reserved = 0;
@@ -75,6 +76,7 @@ static int handle_base_attributes(SCMIDev *dev, uint16_t token,
 static int handle_base_version(SCMIDev *dev, uint16_t token,
                                const struct iovec *req_iov,
                                struct scmi_resp_ctx *ctx) {
+    (void)dev;
     int ret = scmi_validate_request(
         req_iov->iov_len, sizeof(struct scmi_request), ctx->capacity,
         sizeof(struct scmi_response) + sizeof(uint32_t));
@@ -86,6 +88,10 @@ static int handle_base_version(SCMIDev *dev, uint16_t token,
     scmi_make_response(ctx, SCMI_PROTO_ID_BASE, SCMI_COMMON_MSG_VERSION, token,
                        SCMI_SUCCESS);
     uint32_t *version = scmi_resp_write(ctx, sizeof(uint32_t));
+    if (!version) {
+        log_error("handle_base_version: scmi_resp_write failed");
+        return SCMI_ERR_PARAMS;
+    }
     *version = SCMI_BASE_VERSION;
     return 0;
 }
@@ -93,6 +99,7 @@ static int handle_base_version(SCMIDev *dev, uint16_t token,
 static int handle_base_vendor(SCMIDev *dev, uint16_t token,
                               const struct iovec *req_iov,
                               struct scmi_resp_ctx *ctx, bool sub_vendor) {
+    (void)dev;
     int ret = scmi_validate_request(
         req_iov->iov_len, sizeof(struct scmi_request), ctx->capacity,
         sizeof(struct scmi_response) + SCMI_BASE_VENDOR_ID_LEN);
@@ -106,6 +113,10 @@ static int handle_base_vendor(SCMIDev *dev, uint16_t token,
                                   : SCMI_BASE_MSG_DISCOVER_VENDOR,
                        token, SCMI_SUCCESS);
     char *vendor_id = scmi_resp_write(ctx, SCMI_BASE_VENDOR_ID_LEN);
+    if (!vendor_id) {
+        log_error("handle_base_vendor: scmi_resp_write failed");
+        return SCMI_ERR_PARAMS;
+    }
     strncpy(vendor_id, sub_vendor ? "SUB_HVIS" : "HVIS",
             SCMI_BASE_VENDOR_ID_LEN);
     return 0;
@@ -155,6 +166,7 @@ static int handle_base_protocol_list(SCMIDev *dev, uint16_t token,
 static int handle_base_discover_agent(SCMIDev *dev, uint16_t token,
                                       const struct iovec *req_iov,
                                       struct scmi_resp_ctx *ctx) {
+    (void)dev;
     int ret = scmi_validate_request(
         req_iov->iov_len, sizeof(struct scmi_request) + sizeof(uint32_t),
         ctx->capacity, sizeof(struct scmi_response) + 16);
@@ -166,27 +178,32 @@ static int handle_base_discover_agent(SCMIDev *dev, uint16_t token,
     struct scmi_request *req = req_iov->iov_base;
     uint32_t agent_id = *(uint32_t *)req->payload;
 
+    if (agent_id != 0xFFFFFFFF && agent_id != 0) {
+        log_error("Agent not found: %u", agent_id);
+        return scmi_make_response(ctx, SCMI_PROTO_ID_BASE,
+                                  SCMI_BASE_MSG_DISCOVER_AGENT, token,
+                                  SCMI_ERR_ENTRY);
+    }
+
     scmi_make_response(ctx, SCMI_PROTO_ID_BASE, SCMI_BASE_MSG_DISCOVER_AGENT,
                        token, SCMI_SUCCESS);
     char *name = scmi_resp_write(ctx, 16);
-    memset(name, 0, 16);
-
-    if (agent_id == 0xFFFFFFFF) {
-        strncpy(name, "OSPM", 16);
-    } else if (agent_id == 0) {
-        strncpy(name, "platform", 16);
-    } else {
-        ctx->written = sizeof(struct scmi_response);
-        scmi_make_response(ctx, SCMI_PROTO_ID_BASE,
-                           SCMI_BASE_MSG_DISCOVER_AGENT, token, SCMI_ERR_ENTRY);
-        log_error("Agent not found: %u", agent_id);
+    if (!name) {
+        log_error("handle_base_discover_agent: scmi_resp_write failed");
+        return SCMI_ERR_PARAMS;
     }
+
+    if (agent_id == 0xFFFFFFFF)
+        strncpy(name, "OSPM", 16);
+    else
+        strncpy(name, "platform", 16);
     return 0;
 }
 
 static int handle_base_impl_version(SCMIDev *dev, uint16_t token,
                                     const struct iovec *req_iov,
                                     struct scmi_resp_ctx *ctx) {
+    (void)dev;
     int ret = scmi_validate_request(
         req_iov->iov_len, sizeof(struct scmi_request), ctx->capacity,
         sizeof(struct scmi_response) + sizeof(uint32_t));
@@ -199,6 +216,10 @@ static int handle_base_impl_version(SCMIDev *dev, uint16_t token,
                        SCMI_BASE_MSG_DISCOVER_IMPL_VERSION, token,
                        SCMI_SUCCESS);
     uint32_t *impl_ver = scmi_resp_write(ctx, sizeof(uint32_t));
+    if (!impl_ver) {
+        log_error("handle_base_impl_version: scmi_resp_write failed");
+        return SCMI_ERR_PARAMS;
+    }
     *impl_ver = 0x1;
     return 0;
 }
@@ -207,17 +228,21 @@ static int handle_base_impl_version(SCMIDev *dev, uint16_t token,
 static int handle_base_error_notify(SCMIDev *dev, uint16_t token,
                                     const struct iovec *req_iov,
                                     struct scmi_resp_ctx *ctx) {
-    int ret = scmi_validate_request(req_iov->iov_len, sizeof(uint32_t),
-                                    ctx->capacity, 0);
+    (void)dev;
+    int ret = scmi_validate_request(
+        req_iov->iov_len, sizeof(struct scmi_request) + sizeof(uint32_t),
+        ctx->capacity, 0);
     if (ret != SCMI_SUCCESS) {
         log_error("Invalid error notification request");
         return ret;
     }
 
-    uint32_t event_control = *(uint32_t *)req_iov->iov_base;
+    struct scmi_request *req = req_iov->iov_base;
+    uint32_t event_control = *(uint32_t *)req->payload;
     log_debug("Error notification %s",
               (event_control & BASE_TP_NOTIFY_ALL) ? "enabled" : "disabled");
-    return 0;
+    return scmi_make_response(ctx, SCMI_PROTO_ID_BASE,
+                              SCMI_BASE_MSG_NOTIFY_ERRORS, token, SCMI_SUCCESS);
 }
 
 /* Base Protocol Request Dispatcher */

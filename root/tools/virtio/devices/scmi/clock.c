@@ -20,8 +20,6 @@
 /* Clock Protocol version 3.0 */
 #define SCMI_CLOCK_VERSION 0x30000
 
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-
 /* SCMI Clock Subcommands */
 #define HVISOR_SCMI_CLOCK_DESCRIBE_RATES 0x03
 #define HVISOR_SCMI_CLOCK_RATE_GET 0x04
@@ -122,6 +120,7 @@ static uint32_t clk_phys_id(SCMIDev *dev, uint32_t clk_id, bool *valid) {
 static int handle_clock_version(SCMIDev *dev, uint16_t token,
                                 const struct iovec *req_iov,
                                 struct scmi_resp_ctx *ctx) {
+    (void)dev;
     int ret = scmi_validate_request(
         req_iov->iov_len, sizeof(struct scmi_request), ctx->capacity,
         sizeof(struct scmi_response) + sizeof(uint32_t));
@@ -133,6 +132,10 @@ static int handle_clock_version(SCMIDev *dev, uint16_t token,
     scmi_make_response(ctx, SCMI_PROTO_ID_CLOCK, SCMI_COMMON_MSG_VERSION, token,
                        SCMI_SUCCESS);
     uint32_t *version = scmi_resp_write(ctx, sizeof(uint32_t));
+    if (!version) {
+        log_error("handle_clock_version: scmi_resp_write failed");
+        return SCMI_ERR_PARAMS;
+    }
     *version = SCMI_CLOCK_VERSION;
     return 0;
 }
@@ -176,6 +179,8 @@ static int handle_clock_clock_attributes(SCMIDev *dev, uint16_t token,
     uint32_t phys_id = clk_phys_id(dev, clock_id, &valid);
 
     if (!valid) {
+        log_warn("handle_clock_clock_attributes: invalid clock_id=%u",
+                 clock_id);
         return scmi_make_response(ctx, SCMI_PROTO_ID_CLOCK,
                                   SCMI_CLOCK_MSG_CLK_ATTRIBUTES, token,
                                   SCMI_ERR_ENTRY);
@@ -233,6 +238,8 @@ static int handle_clock_describe_rates(SCMIDev *dev, uint16_t token,
 
     clk_phys_id(dev, r->clock_id, &valid);
     if (!valid) {
+        log_warn("handle_clock_describe_rates: invalid clock_id=%u",
+                 r->clock_id);
         return scmi_make_response(ctx, SCMI_PROTO_ID_CLOCK,
                                   SCMI_CLOCK_MSG_DESCRIBE_RATES, token,
                                   SCMI_ERR_ENTRY);
@@ -281,6 +288,7 @@ static int handle_clock_rate_get(SCMIDev *dev, uint16_t token,
     uint32_t phys_id = clk_phys_id(dev, clock_id, &valid);
 
     if (!valid) {
+        log_warn("handle_clock_rate_get: invalid clock_id=%u", clock_id);
         return scmi_make_response(ctx, SCMI_PROTO_ID_CLOCK,
                                   SCMI_CLOCK_MSG_RATE_GET, token,
                                   SCMI_ERR_ENTRY);
@@ -309,6 +317,10 @@ static int handle_clock_rate_get(SCMIDev *dev, uint16_t token,
                        SCMI_SUCCESS);
 
     uint32_t *payload = scmi_resp_write(ctx, sizeof(uint64_t));
+    if (!payload) {
+        log_error("handle_clock_rate_get: scmi_resp_write failed");
+        return SCMI_ERR_PARAMS;
+    }
     payload[0] = (uint32_t)(rate_info->rate & 0xFFFFFFFFULL);
     payload[1] = (uint32_t)((rate_info->rate >> 32) & 0xFFFFFFFFULL);
 
@@ -330,6 +342,7 @@ static int handle_clock_rate_set(SCMIDev *dev, uint16_t token,
     uint32_t phys_id = clk_phys_id(dev, clock_id, &valid);
 
     if (!valid) {
+        log_warn("handle_clock_rate_set: invalid clock_id=%u", clock_id);
         return scmi_make_response(ctx, SCMI_PROTO_ID_CLOCK,
                                   SCMI_CLOCK_MSG_RATE_SET, token,
                                   SCMI_ERR_ENTRY);
@@ -376,6 +389,7 @@ static int handle_clock_config_get(SCMIDev *dev, uint16_t token,
     uint32_t phys_id = clk_phys_id(dev, clock_id, &valid);
 
     if (!valid) {
+        log_warn("handle_clock_config_get: invalid clock_id=%u", clock_id);
         return scmi_make_response(ctx, SCMI_PROTO_ID_CLOCK,
                                   SCMI_CLOCK_MSG_CONFIG_GET, token,
                                   SCMI_ERR_ENTRY);
@@ -413,6 +427,10 @@ static int handle_clock_config_get(SCMIDev *dev, uint16_t token,
                        token, SCMI_SUCCESS);
 
     uint32_t *payload = scmi_resp_write(ctx, sizeof(uint32_t) * 3);
+    if (!payload) {
+        log_error("handle_clock_config_get: scmi_resp_write failed");
+        return SCMI_ERR_PARAMS;
+    }
     payload[0] = 0;
     payload[1] = config_info->config;
     payload[2] = config_info->extended_config_val;
@@ -432,6 +450,7 @@ static int handle_clock_config_set(SCMIDev *dev, uint16_t token,
     uint32_t phys_id = clk_phys_id(dev, r->clock_id, &valid);
 
     if (!valid) {
+        log_warn("handle_clock_config_set: invalid clock_id=%u", r->clock_id);
         return scmi_make_response(ctx, SCMI_PROTO_ID_CLOCK,
                                   SCMI_CLOCK_MSG_CONFIG_SET, token,
                                   SCMI_ERR_ENTRY);
@@ -469,6 +488,7 @@ static int handle_clock_name_get(SCMIDev *dev, uint16_t token,
     uint32_t phys_id = clk_phys_id(dev, clock_id, &valid);
 
     if (!valid) {
+        log_warn("handle_clock_name_get: invalid clock_id=%u", clock_id);
         return scmi_make_response(ctx, SCMI_PROTO_ID_CLOCK,
                                   SCMI_CLOCK_MSG_NAME_GET, token,
                                   SCMI_ERR_ENTRY);

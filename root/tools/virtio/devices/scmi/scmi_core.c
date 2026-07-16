@@ -57,8 +57,11 @@ void *scmi_resp_write(struct scmi_resp_ctx *ctx, size_t size) {
 /* Create standard SCMI response header + status */
 int scmi_make_response(struct scmi_resp_ctx *ctx, uint8_t protocol_id,
                        uint8_t msg_id, uint16_t token, int32_t status) {
-    if (ctx->capacity < sizeof(struct scmi_response))
+    if (ctx->capacity < sizeof(struct scmi_response)) {
+        log_error("scmi_make_response: buffer too small (%zu < %zu)",
+                  ctx->capacity, sizeof(struct scmi_response));
         return SCMI_ERR_PARAMS;
+    }
 
     struct scmi_response *resp = ctx->iov->iov_base;
     resp->header = SCMI_RESP_HDR(protocol_id, msg_id, token);
@@ -92,8 +95,7 @@ int scmi_dev_register_protocol(SCMIDev *dev, uint8_t protocol_id,
     return 0;
 }
 
-/* Dispatch SCMI message to protocol handler — per-device table first, then
- * global */
+/* Dispatch SCMI message to per-device protocol handler */
 int scmi_handle_message(SCMIDev *dev, uint8_t protocol_id, uint8_t msg_id,
                         uint16_t token, const struct iovec *req_iov,
                         struct scmi_resp_ctx *ctx) {
