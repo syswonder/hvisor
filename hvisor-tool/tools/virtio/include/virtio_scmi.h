@@ -152,6 +152,15 @@ struct scmi_msg_resp_base_attributes {
     uint16_t reserved;
 } __attribute__((packed));
 
+#define SCMI_MAX_DESCRIPTORS 16
+#define SCMI_MAX_BUFFER_SIZE (1024 * 1024) // 1MB
+#define SCMI_MAX_PROTOCOLS 16
+
+struct scmi_msg_resp_base_protocol_list {
+    uint32_t count;
+    uint32_t protocol_slots[(SCMI_MAX_PROTOCOLS + 3) / 4];
+} __attribute__((packed));
+
 struct scmi_msg_resp_clock_attributes {
     uint16_t num_clocks;
     uint8_t max_async_req;
@@ -199,10 +208,6 @@ enum scmi_error_codes {
 };
 
 #define SCMI_SUPPORTED_FEATURES (1ULL << VIRTIO_F_VERSION_1)
-
-#define SCMI_MAX_DESCRIPTORS 16
-#define SCMI_MAX_BUFFER_SIZE (1024 * 1024) // 1MB
-#define SCMI_MAX_PROTOCOLS 16
 
 /* Per-device protocol registration */
 int scmi_dev_register_protocol(SCMIDev *dev, uint8_t protocol_id,

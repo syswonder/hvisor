@@ -20,33 +20,26 @@
 #define SCMI_BASE_VERSION 0x20001
 
 /* Helper to get protocol list — per-device table first, then global */
-static int get_protocol_list(SCMIDev *dev, uint32_t *buffer, int skip,
-                             int max) {
-    int total =
-        dev->protocol_count ? dev->protocol_count : scmi_get_protocol_count();
+static int get_protocol_list(SCMIDev *dev,
+                             struct scmi_msg_resp_base_protocol_list *resp,
+                             int skip, int max) {
+    int total = dev->protocol_count;
     int remaining = total - skip;
 
     if (remaining <= 0) {
-        buffer[0] = 0;
+        resp->count = 0;
         return 0;
     }
 
     int count = (remaining < max) ? remaining : max;
-    buffer[0] = count;
+    resp->count = count;
 
     for (int i = 0; i < count; i++) {
-        uint8_t pid;
-        if (dev->protocol_count)
-            pid = dev->protocols[skip + i].protocol_id;
-        else {
-            const struct scmi_protocol *p =
-                scmi_get_protocol_by_index(skip + i);
-            pid = p ? p->id : 0;
-        }
+        uint8_t pid = dev->protocols[skip + i].protocol_id;
         log_info("Protocol %d: %u", skip + i, pid);
         if (i % 4 == 0)
-            buffer[i / 4 + 1] = 0;
-        buffer[i / 4 + 1] |= pid << ((i % 4) * 8);
+            resp->protocol_slots[i / 4] = 0;
+        resp->protocol_slots[i / 4] |= (uint32_t)pid << ((i % 4) * 8);
     }
     return count;
 }
@@ -70,8 +63,7 @@ static int handle_base_attributes(SCMIDev *dev, uint16_t token,
 
     struct scmi_msg_resp_base_attributes *attr =
         scmi_resp_write(ctx, sizeof(struct scmi_msg_resp_base_attributes));
-    attr->num_protocols =
-        dev->protocol_count ? dev->protocol_count : scmi_get_protocol_count();
+    attr->num_protocols = dev->protocol_count;
     attr->num_agents = 1;
     attr->reserved = 0;
 
@@ -137,12 +129,20 @@ static int handle_base_protocol_list(SCMIDev *dev, uint16_t token,
                        SCMI_BASE_MSG_DISCOVER_LIST_PROTOCOLS, token,
                        SCMI_SUCCESS);
 
-    size_t remaining = ctx->capacity - ctx->written;
-    uint32_t *protocols =
-        (uint32_t *)((uint8_t *)ctx->iov->iov_base + ctx->written);
-    size_t max_protos = remaining / sizeof(uint32_t);
-    int count = get_protocol_list(dev, protocols, skip, max_protos);
-    ctx->written += sizeof(uint32_t) + ((count + 3) / 4) * sizeof(uint32_t);
+    /* Allocate payload via scmi_resp_write using the struct */
+    struct scmi_msg_resp_base_protocol_list *resp =
+        scmi_resp_write(ctx, sizeof(*resp));
+    if (!resp) {
+        log_error("handle_base_protocol_list: scmi_resp_write failed");
+        return SCMI_ERR_PARAMS;
+    }
+
+    int total = dev->protocol_count;
+    int max_protos = total > skip ? total - skip : 0;
+    int count = get_protocol_list(dev, resp, skip, max_protos);
+    /* Adjust to actual bytes written */
+    size_t actual = sizeof(uint32_t) + ((count + 3) / 4) * sizeof(uint32_t);
+    ctx->written = sizeof(struct scmi_response) + actual;
     if (count < 0) {
         log_error("Invalid skip value: %u", skip);
     } else {
