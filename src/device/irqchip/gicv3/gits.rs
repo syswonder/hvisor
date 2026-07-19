@@ -154,7 +154,11 @@ pub struct Cmdq {
 
 impl Cmdq {
     fn new() -> Self {
-        let f = Frame::new_contiguous(CMDQ_PAGES_NUM, CMDQ_PAGES_NUM * CMDQ_PAGE_SIZE).unwrap();
+        let f = Frame::new_contiguous_with_base(
+            CMDQ_PAGES_NUM,
+            CMDQ_PAGES_NUM.trailing_zeros() as usize,
+        )
+        .unwrap();
         let r = Self {
             phy_addr: f.start_paddr(),
             readr: 0,

@@ -424,7 +424,9 @@ impl Smmuv3 {
             frame_count,
             5 + self.strtab.sid_max_bits
         );
-        if let Ok(frame) = Frame::new_contiguous(frame_count, 1 << (5 + self.strtab.sid_max_bits)) {
+        let align_log2 =
+            (5 + self.strtab.sid_max_bits).saturating_sub(PAGE_SIZE.trailing_zeros() as usize);
+        if let Ok(frame) = Frame::new_contiguous_with_base(frame_count, align_log2) {
             self.strtab.init_with_base(frame.start_paddr(), frame);
         } else {
             error!("stream table frames alloc err!!!")
