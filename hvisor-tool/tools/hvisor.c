@@ -990,7 +990,7 @@ static int zone_start_from_json(const char *json_config_path,
 
     close(fd);
 
-    return 0;
+    return err;
 err_out:
     if (root)
         cJSON_Delete(root);
