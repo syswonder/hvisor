@@ -95,9 +95,7 @@ ZONE1_ASSETS_DIR=${ZONE1_ASSETS_DIR:-/home/light/tftp/zone1_assets}
 if [ -f "${ZONE1_ASSETS_DIR}/Image" ]; then
     cp "${ZONE1_ASSETS_DIR}/Image" "${STAGING_DIR}/"
 fi
-if [ -f "${ZONE1_ASSETS_DIR}/rootfs2.ext4" ]; then
-    cp "${ZONE1_ASSETS_DIR}/rootfs2.ext4" "${STAGING_DIR}/"
-fi
+# rootfs2.ext4 is large and persistent on the board; do not re-stage/pull every run.
 
 chmod -R a+rX "${STAGING_DIR}"
 echo "board staging completed: ${STAGING_DIR}"

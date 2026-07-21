@@ -331,7 +331,7 @@ def network(cfg: dict[str, Any], term: Terminal | None) -> int:
     term.run(
         "network_chmod",
         "chmod +x /root/boot_zone1.sh /root/check_serial.sh 2>/dev/null || true",
-        timeout=15.0,
+        timeout=60.0,
     )
     print("network test and file deploy passed", flush=True)
     return 0
