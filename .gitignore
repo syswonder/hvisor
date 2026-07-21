@@ -39,7 +39,7 @@ src/platform/__board.rs
 rootfs1.zip*
 jenkins/__pycache__
 jenkins/logs/
-/logs/
+logs/
 jenkins-cli.jar
 tools/kconfig/.venv/
 tools/kconfig/__pycache__/

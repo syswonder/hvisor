@@ -32,6 +32,33 @@ def matrixCellDir() {
     return "${env.WORKSPACE}/.matrix/${bid.replace('/', '__')}"
 }
 
+/** Stable directory name for a BID under ``$WORKSPACE/logs/``. */
+def bidLogKey(String bid = env.BID) {
+    return (bid ?: '').replace('/', '__')
+}
+
+/** Copy per-cell logs out to ``$WORKSPACE/logs/<bid>`` before ``.matrix`` is removed. */
+def collectCellLogs() {
+    def src = "${matrixCellDir()}/logs"
+    def dest = "${env.WORKSPACE}/logs/${bidLogKey()}"
+    def logsRoot = "${env.WORKSPACE}/logs"
+    sh """
+        if [ ! -d '${src}' ]; then
+            echo "No cell logs to collect: ${src}"
+            exit 0
+        fi
+        mkdir -p '${dest}' 2>/dev/null || sudo mkdir -p '${dest}'
+        sudo chown -R "\$(id -u):\$(id -g)" '${logsRoot}' 2>/dev/null || true
+        # Source may be root-owned after board sudo ci_runner.
+        if ! cp -a '${src}/.' '${dest}/' 2>/dev/null; then
+            sudo cp -a '${src}/.' '${dest}/'
+            sudo chown -R "\$(id -u):\$(id -g)" '${dest}'
+        fi
+        echo "Collected cell logs -> ${dest}"
+        ls -la '${dest}' || true
+    """
+}
+
 /** Isolated workspace for top-level CI jobs (linter, license-checker, …). */
 def jenkinsJobDir(String name) {
     return "${env.WORKSPACE}/.jenkins/${name}"
@@ -45,6 +72,7 @@ def syncWorkspaceTo(String destDir) {
             --exclude '.jenkins/' \\
             --exclude '.matrix/' \\
             --exclude '.jenkins-matrix/' \\
+            --exclude 'logs/' \\
             --exclude '__pycache__/' \\
             --exclude '*.pyc' \\
             '${env.WORKSPACE}/' '${destDir}/'
@@ -190,7 +218,9 @@ pipeline {
         always {
             echo "=== DEBUG: Branch ${env.BRANCH_NAME} ==="
             echo "=== DEBUG: Commit ${env.GIT_COMMIT} ==="
+            // Keep $WORKSPACE/logs (collected from cells); only tear down sandboxes.
             sh 'sudo rm -rf .matrix 2>/dev/null || rm -rf .matrix || true'
+            archiveArtifacts artifacts: 'logs/**/*', allowEmptyArchive: true
         }
     }
 
@@ -438,7 +468,10 @@ pipeline {
 
                 post {
                     always {
-                        script { finishGithubCheck(matrixCheckName(), currentBuild.currentResult) }
+                        script {
+                            collectCellLogs()
+                            finishGithubCheck(matrixCheckName(), currentBuild.currentResult)
+                        }
                     }
                 }
             }
