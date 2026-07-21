@@ -93,6 +93,19 @@ static int hvisor_finish_req(void) {
     return 0;
 }
 
+#ifdef LOONGARCH64
+static int hvisor_deassert_irq(struct hvisor_irq_line_args __user *arg) {
+    struct hvisor_irq_line_args kargs;
+
+    if (copy_from_user(&kargs, arg, sizeof(kargs)))
+        return -EFAULT;
+
+    pr_debug("hvisor.ko: deassert zone=%u irq=%u\n", kargs.zone_id,
+             kargs.irq_id);
+    return hvisor_call(HVISOR_HC_CLEAR_INJECT_IRQ, kargs.zone_id, kargs.irq_id);
+}
+#endif
+
 // Flush mapped cache range to memory.
 static int flush_cache_mapped(void *vaddr, __u64 size) {
     unsigned long start, end, addr, line_size;
@@ -375,8 +388,8 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
         break;
 #endif
 #ifdef LOONGARCH64
-    case HVISOR_CLEAR_INJECT_IRQ:
-        err = hvisor_call(HVISOR_HC_CLEAR_INJECT_IRQ, 0, 0);
+    case HVISOR_DEASSERT_IRQ:
+        err = hvisor_deassert_irq((struct hvisor_irq_line_args __user *)arg);
         break;
 #endif
     default:

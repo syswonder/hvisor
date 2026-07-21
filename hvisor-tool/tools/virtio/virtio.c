@@ -67,6 +67,32 @@ volatile struct virtio_bridge *virtio_bridge;
 pthread_mutex_t RES_MUTEX = PTHREAD_MUTEX_INITIALIZER;
 VirtIODevice *vdevs[MAX_DEVS];
 int vdevs_num;
+static _Atomic uint64_t virtio_irq_trace_seq;
+
+static bool virtio_trace_sample(uint64_t seq) {
+    return seq < 128 || (seq != 0 && (seq & (seq - 1)) == 0);
+}
+
+static int virtio_deassert_line_locked(VirtIODevice *vdev) {
+#ifdef LOONGARCH64
+    struct hvisor_irq_line_args args = {
+        .zone_id = vdev->zone_id,
+        .irq_id = vdev->irq_id,
+    };
+    int ret;
+    do {
+        ret = ioctl(ko_fd, HVISOR_DEASSERT_IRQ, &args);
+    } while (ret < 0 && errno == EINTR);
+    if (ret < 0) {
+        log_error("deassert failed: zone=%u irq=%u errno=%d (%s)",
+                  vdev->zone_id, vdev->irq_id, errno, strerror(errno));
+    }
+    return ret;
+#else
+    (void)vdev;
+    return 0;
+#endif
+}
 
 struct zone_mem_region {
     uintptr_t virt_addr;
@@ -192,6 +218,8 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
     vdev->zone_id = zone_id;
     vdev->irq_id = irq_id;
     vdev->type = dev_type;
+    pthread_mutex_init(&vdev->interrupt_lock, NULL);
+    vdev->interrupt_line_asserted = false;
 
     switch (dev_type) {
     case VirtioTBlock:
@@ -364,9 +392,17 @@ void init_mmio_regs(VirtMmioRegs *regs, VirtioDeviceType type) {
 void virtio_dev_reset(VirtIODevice *vdev) {
     // When driver read first 4 encoded messages, it will reset dev.
     log_debug("virtio dev reset");
+    pthread_mutex_lock(&vdev->interrupt_lock);
+    if (vdev->interrupt_line_asserted) {
+        if (virtio_deassert_line_locked(vdev) == 0) {
+            vdev->interrupt_line_asserted = false;
+        }
+    }
+    if (!vdev->interrupt_line_asserted) {
+        vdev->regs.interrupt_status = 0;
+    }
+    pthread_mutex_unlock(&vdev->interrupt_lock);
     vdev->regs.status = 0;
-    vdev->regs.interrupt_status = 0;
-    vdev->regs.interrupt_count = 0;
     int idx = vdev->regs.queue_sel;
     vdev->vqs[idx].ready = 0;
     for (uint32_t i = 0; i < vdev->vqs_len; i++) {
@@ -856,16 +892,21 @@ uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size) {
     case VIRTIO_MMIO_QUEUE_READY:
         log_debug("read VIRTIO_MMIO_QUEUE_READY");
         return vdev->vqs[vdev->regs.queue_sel].ready;
-    case VIRTIO_MMIO_INTERRUPT_STATUS:
-        log_debug("(%s) current interrupt status is %d", __func__,
-                  vdev->regs.interrupt_status);
-#ifdef LOONGARCH64
-        // clear lvz gintc irq injection bit to avoid endless interrupt...
-        log_warn(
-            "clear lvz gintc irq injection bit to avoid endless interrupt...");
-        ioctl(ko_fd, HVISOR_CLEAR_INJECT_IRQ);
-#endif
-        return vdev->regs.interrupt_status;
+    case VIRTIO_MMIO_INTERRUPT_STATUS: {
+        pthread_mutex_lock(&vdev->interrupt_lock);
+        uint32_t interrupt_status = vdev->regs.interrupt_status;
+        pthread_mutex_unlock(&vdev->interrupt_lock);
+        uint64_t trace_seq = atomic_fetch_add_explicit(&virtio_irq_trace_seq, 1,
+                                                       memory_order_relaxed);
+        if (virtio_trace_sample(trace_seq)) {
+            log_info("[VDBG:status-read] seq=%llu zone=%u dev=%s irq=%u "
+                     "status=%#x",
+                     (unsigned long long)trace_seq, vdev->zone_id,
+                     virtio_device_type_to_string(vdev->type), vdev->irq_id,
+                     interrupt_status);
+        }
+        return interrupt_status;
+    }
     case VIRTIO_MMIO_STATUS:
         log_debug("read VIRTIO_MMIO_STATUS");
         return vdev->regs.status;
@@ -987,20 +1028,36 @@ void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t value,
                   virtio_device_type_to_string(vdev->type));
 
         break;
-    case VIRTIO_MMIO_INTERRUPT_ACK:
-        log_debug("write VIRTIO_MMIO_INTERRUPT_ACK");
-
-        if (value == regs->interrupt_status && regs->interrupt_count > 0) {
-            regs->interrupt_count--;
-            break;
-        } else if (value != regs->interrupt_status) {
-            log_error("interrupt_status %d is not equal to ack %d, type is %d",
-                      regs->interrupt_status, value, vdev->type);
+    case VIRTIO_MMIO_INTERRUPT_ACK: {
+        pthread_mutex_lock(&vdev->interrupt_lock);
+        uint32_t status_before = regs->interrupt_status;
+        uint32_t ack =
+            (uint32_t)value & (VIRTIO_MMIO_INT_VRING | VIRTIO_MMIO_INT_CONFIG);
+        uint32_t status_after = status_before & ~ack;
+        int deassert_ret = 0;
+        if (status_before != 0 && status_after == 0 &&
+            vdev->interrupt_line_asserted) {
+            deassert_ret = virtio_deassert_line_locked(vdev);
         }
-        regs->interrupt_status &= !value;
-        log_debug("(%s) clearing! interrupt_status -> %d", __func__,
-                  regs->interrupt_status);
+        if (deassert_ret == 0) {
+            regs->interrupt_status = status_after;
+            if (status_after == 0)
+                vdev->interrupt_line_asserted = false;
+        } else {
+            status_after = status_before;
+        }
+        uint64_t trace_seq = atomic_fetch_add_explicit(&virtio_irq_trace_seq, 1,
+                                                       memory_order_relaxed);
+        if (virtio_trace_sample(trace_seq)) {
+            log_info("[VDBG:ack] seq=%llu zone=%u dev=%s irq=%u before=%#x "
+                     "ack=%#x after=%#x deassert_ret=%d",
+                     (unsigned long long)trace_seq, vdev->zone_id,
+                     virtio_device_type_to_string(vdev->type), vdev->irq_id,
+                     status_before, ack, status_after, deassert_ret);
+        }
+        pthread_mutex_unlock(&vdev->interrupt_lock);
         break;
+    }
     case VIRTIO_MMIO_STATUS:
         log_debug("write VIRTIO_MMIO_STATUS");
 
@@ -1088,6 +1145,21 @@ void virtio_inject_irq(VirtQueue *vq) {
             return;
         }
     }
+    pthread_mutex_lock(&vq->dev->interrupt_lock);
+    vq->dev->regs.interrupt_status |= VIRTIO_MMIO_INT_VRING;
+    if (vq->dev->interrupt_line_asserted) {
+        uint64_t trace_seq = atomic_fetch_add_explicit(&virtio_irq_trace_seq, 1,
+                                                       memory_order_relaxed);
+        if (virtio_trace_sample(trace_seq)) {
+            log_info("[VDBG:assert-merge] seq=%llu zone=%u dev=%s irq=%u "
+                     "status=%#x",
+                     (unsigned long long)trace_seq, vq->dev->zone_id,
+                     virtio_device_type_to_string(vq->dev->type),
+                     vq->dev->irq_id, vq->dev->regs.interrupt_status);
+        }
+        pthread_mutex_unlock(&vq->dev->interrupt_lock);
+        return;
+    }
     volatile struct device_res *res;
 
     // virtio_bridge is a global resource located in shared memory.
@@ -1109,12 +1181,28 @@ void virtio_inject_irq(VirtQueue *vq) {
     write_barrier();
     virtio_bridge->res_rear = (res_rear + 1) & (MAX_REQ - 1);
     write_barrier();
-    vq->dev->regs.interrupt_status = VIRTIO_MMIO_INT_VRING;
-    vq->dev->regs.interrupt_count++;
     pthread_mutex_unlock(&RES_MUTEX);
-    log_debug("inject irq to device %s, vq is %d",
-              virtio_device_type_to_string(vq->dev->type), vq->vq_idx);
-    ioctl(ko_fd, HVISOR_FINISH_REQ);
+    int ret;
+    do {
+        ret = ioctl(ko_fd, HVISOR_FINISH_REQ);
+    } while (ret < 0 && errno == EINTR);
+    if (ret < 0) {
+        log_error("assert failed: zone=%u irq=%u errno=%d (%s)",
+                  vq->dev->zone_id, vq->dev->irq_id, errno, strerror(errno));
+    }
+    if (ret == 0)
+        vq->dev->interrupt_line_asserted = true;
+    uint64_t trace_seq = atomic_fetch_add_explicit(&virtio_irq_trace_seq, 1,
+                                                   memory_order_relaxed);
+    if (virtio_trace_sample(trace_seq)) {
+        log_info("[VDBG:assert] seq=%llu zone=%u dev=%s irq=%u vq=%u "
+                 "status=%#x line=%u ret=%d",
+                 (unsigned long long)trace_seq, vq->dev->zone_id,
+                 virtio_device_type_to_string(vq->dev->type), vq->dev->irq_id,
+                 (unsigned)vq->vq_idx, vq->dev->regs.interrupt_status,
+                 vq->dev->interrupt_line_asserted, ret);
+    }
+    pthread_mutex_unlock(&vq->dev->interrupt_lock);
 }
 
 void virtio_finish_cfg_req(uint32_t target_cpu, uint64_t value) {
