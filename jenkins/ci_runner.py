@@ -23,20 +23,9 @@ ZONE1_INNER_PROMPT_TIMEOUT = 60.0
 ZONE1_INNER_LOG_FETCH_TIMEOUT = 30.0
 
 
-def bid_log_key(bid: str) -> str:
-    return bid.replace("/", "__")
-
-
-def jenkins_workspace_root(fallback: Path) -> Path:
-    workspace = os.environ.get("WORKSPACE", "").strip()
-    if workspace:
-        return Path(workspace)
-    return fallback
-
-
 def logs_dir(cfg: dict[str, Any]) -> Path:
-    root = jenkins_workspace_root(cfg["workspace"])
-    path = root / "logs" / bid_log_key(cfg["bid"])
+    """Per-cell log directory: ``<matrix-cell-workspace>/logs``."""
+    path = Path(cfg["workspace"]) / "logs"
     path.mkdir(parents=True, exist_ok=True)
     return path
 
@@ -168,14 +157,16 @@ def save_inner_serial_log(cfg: dict[str, Any], content: str) -> None:
 def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     print("————————————————\ncase: zone0_start\n————————————————\n", flush=True)
     if cfg["mode"] == "qemu":
+        # Create log dir before starting QEMU so a permission failure does not
+        # leave a running guest that must be SIGTERM'd from finally.
+        log_path = logs_dir(cfg) / "zone0_console.log"
+        log_path.write_text("", encoding="utf-8")
+
         cmd = ["make", f"ARCH={cfg['arch']}", f"BOARD={cfg['board']}", "MODE=release", "ci-run"]
         proc = subprocess.Popen(cmd, cwd=cfg["workspace"], start_new_session=True)
         cfg["_managed_proc"] = proc
         cfg["_managed_proc_name"] = "qemu ci-run"
         wait_qemu_socket(cfg["socket_path"], timeout=30.0)
-
-        log_path = logs_dir(cfg) / "zone0_console.log"
-        log_path.write_text("", encoding="utf-8")
 
         qemu_term = ensure_qemu_terminal(cfg, log_path)
         uboot_cmd = cfg.get("uboot_cmd", "")
