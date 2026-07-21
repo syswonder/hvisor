@@ -20,6 +20,15 @@ config ARCH_X86_64
 endchoice
 endmenu
 
+menu "AArch64 options"
+	depends on ARCH_AARCH64
+
+config AARCH64_UEFI_SUPPORT
+	bool "UEFI memory map virtualization"
+	default n
+
+endmenu
+
 menu "Interrupt controller"
 	depends on ARCH_AARCH64 || ARCH_RISCV64 || ARCH_LOONGARCH64
 
@@ -167,6 +176,11 @@ config UART16550A
 config LOONGSON_UART
 	bool "Loongson UART"
 	depends on ARCH_LOONGARCH64
+	default n
+
+config SEQUENTIAL_OUTPUT
+	bool "Wait for UART before writing console output"
+	depends on ARCH_AARCH64 && (PL011 || UART_16550)
 	default n
 endmenu
 

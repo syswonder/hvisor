@@ -256,6 +256,7 @@ pipeline {
                         name 'BID'
                         values(
                             'aarch64/imx8mp',
+                            'aarch64/jeston-orin',
                             'aarch64/ok6254-c',
                             'aarch64/phytium-pi',
                             'aarch64/qemu-gicv2',
