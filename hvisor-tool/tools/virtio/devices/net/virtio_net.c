@@ -53,7 +53,8 @@ static int open_tap(char *devname) {
     }
     memset(&ifr, 0, sizeof(ifr));
     // IFF_NO_PI tells kernel do not provide message header
-    ifr.ifr_flags = IFF_TAP | IFF_NO_PI;
+    // IFF_VNET_HDR enables virtio-net header passthrough with TAP
+    ifr.ifr_flags = IFF_TAP | IFF_NO_PI | IFF_VNET_HDR;
     strncpy(ifr.ifr_name, devname, IFNAMSIZ);
     ifr.ifr_name[IFNAMSIZ - 1] = '\0';
     if (ioctl(tunfd, TUNSETIFF, (void *)&ifr) < 0) {
@@ -77,26 +78,6 @@ int virtio_net_rxq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     }
     return 0;
 }
-/// remove the header in iov, return the new iov. the new iov num is in niov.
-static inline struct iovec *rm_iov_header(struct iovec *iov, int *niov,
-                                          int header_len) {
-    if (iov == NULL || *niov == 0 || iov[0].iov_len < (size_t)header_len) {
-        log_error("invalid iov");
-        return NULL;
-    }
-
-    iov[0].iov_len -= header_len;
-    if (iov[0].iov_len > 0) {
-        iov[0].iov_base = (char *)iov[0].iov_base + header_len;
-        return iov;
-    } else {
-        *niov = *niov - 1;
-        if (*niov == 0)
-            return NULL;
-        return iov + 1;
-    }
-}
-
 size_t get_nethdr_size(VirtIODevice *vdev) {
     // Virtio 1.0 specifies the header as NetHdr. But the legacy version
     // specifies the headr as NetHdrLegacy
@@ -111,12 +92,9 @@ size_t get_nethdr_size(VirtIODevice *vdev) {
 void virtio_net_event_handler(int fd, int epoll_type, void *param) {
     log_debug("virtio_net_event_handler");
     VirtIODevice *vdev = param;
-    void *vnet_header;
-    struct iovec *iov_packet;
     NetDev *net = vdev->dev;
     VirtQueue *vq = &vdev->vqs[NET_QUEUE_RX];
     int len;
-    size_t header_len = get_nethdr_size(vdev);
     if (fd != net->tapfd || !(epoll_type & EPOLLIN)) {
         log_error("invalid event");
         return;
@@ -161,16 +139,8 @@ void virtio_net_event_handler(int fd, int epoll_type, void *param) {
         }
 
         // RX: all buffers are VRING_DESC_F_WRITE → in_iov
-        vnet_header = req.in_iov[0].iov_base;
-        iov_packet = rm_iov_header(req.in_iov, &req.in_count, header_len);
-        if (iov_packet == NULL) {
-            batch_indices[batch_count] = idx;
-            batch_lens[batch_count] = 0;
-            batch_count++;
-            break;
-        }
-        // Read a packet from tap device
-        len = readv(net->tapfd, iov_packet, req.in_count);
+        // IFF_VNET_HDR: TAP writes [virtio_net_hdr | packet] directly
+        len = readv(net->tapfd, req.in_iov, req.in_count);
 
         if (len < 0 && errno == EWOULDBLOCK) {
             // No more packets from tapfd, restore last_avail_idx.
@@ -196,13 +166,8 @@ void virtio_net_event_handler(int fd, int epoll_type, void *param) {
             break;
         }
 
-        memset(vnet_header, 0, header_len);
-        if (vdev->regs.drv_feature & (1ULL << VIRTIO_F_VERSION_1)) {
-            ((NetHdr *)vnet_header)->num_buffers = 1;
-        }
-
         batch_indices[batch_count] = idx;
-        batch_lens[batch_count] = len + header_len;
+        batch_lens[batch_count] = len;
         batch_count++;
     }
 
@@ -250,8 +215,6 @@ static void virtq_tx_handle_one_request(VirtIODevice *vdev, VirtQueue *vq,
         all_len += req.out_iov[i].iov_len;
 
     packet_len = all_len - header_len;
-    req.out_iov[0].iov_base += header_len;
-    req.out_iov[0].iov_len -= header_len;
     log_debug("packet send: %d bytes", packet_len);
 
     // The mininum packet for data link layer is 64 bytes.
@@ -299,6 +262,22 @@ int virtio_net_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     return 0;
 }
 
+void net_on_status(VirtIODevice *vdev, uint32_t status) {
+    NetDev *net = vdev->dev;
+
+    // FEATURES_OK indicates guest has finished writing DRIVER_FEATURES.
+    // Configure TAP virtio-net header size to match the negotiated format.
+    if (status & VIRTIO_CONFIG_S_FEATURES_OK) {
+        int hdr_sz = get_nethdr_size(vdev);
+        if (ioctl(net->tapfd, TUNSETVNETHDRSZ, &hdr_sz) < 0)
+            log_error("TUNSETVNETHDRSZ(%d) failed", hdr_sz);
+    }
+
+    if (status == 0) {
+        net->rx_ready = 0;
+    }
+}
+
 int virtio_net_init(VirtIODevice *vdev, char *devname) {
     log_info("virtio net init");
     NetDev *net = vdev->dev;
@@ -322,6 +301,7 @@ int virtio_net_init(VirtIODevice *vdev, char *devname) {
         net->tapfd = -1;
         return -1;
     }
+    vdev->status_changed = net_on_status;
     vdev->virtio_close = virtio_net_close;
     return 0;
 }
