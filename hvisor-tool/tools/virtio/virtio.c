@@ -1007,6 +1007,8 @@ void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t value,
         if (regs->status == 0) {
             virtio_dev_reset(vdev);
         }
+        if (vdev->status_changed)
+            vdev->status_changed(vdev, value);
         break;
     case VIRTIO_MMIO_QUEUE_DESC_LOW:
         log_debug("write VIRTIO_MMIO_QUEUE_DESC_LOW");
