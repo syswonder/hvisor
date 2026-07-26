@@ -127,7 +127,9 @@ struct VirtIODevice {
               // is ConsoleDev Pointer to the specific device's special config
     void (*virtio_close)(
         VirtIODevice *vdev); // Function called when closing the virtio device
-    bool activated;          // Whether the current virtio device is activated
+    void (*status_changed)(VirtIODevice *vdev,
+                           uint32_t status); // Called on STATUS register write
+    bool activated; // Whether the current virtio device is activated
 };
 
 // used event idx for driver telling device when to notify driver.
