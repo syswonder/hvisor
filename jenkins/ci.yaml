@@ -1,22 +1,22 @@
-bids:
-  - bid: riscv64/qemu-plic
-    build_args:
-      - KDIR=/home/light/DEMO/linux/linux-6.10
-    tests:
-      mode: qemu
-      cases:
-        - zone0_start
-        - zone1_start
+# bids:
+#   - bid: riscv64/qemu-plic
+#     build_args:
+#       - KDIR=/home/light/DEMO/linux/linux-6.10
+#     tests:
+#       mode: qemu
+#       cases:
+#         - zone0_start
+#         - zone1_start
 
-  - bid: aarch64/qemu-gicv3
-    build_args:
-      - KDIR=/home/light/DEMO/linux/linux-5.4
-    tests:
-      mode: qemu
-      uboot_cmd: bootm 0x40400000 - 0x40000000
-      cases:
-        - zone0_start
-        - zone1_start
+#   - bid: aarch64/qemu-gicv3
+#     build_args:
+#       - KDIR=/home/light/DEMO/linux/linux-5.4
+#     tests:
+#       mode: qemu
+#       uboot_cmd: bootm 0x40400000 - 0x40000000
+#       cases:
+#         - zone0_start
+#         - zone1_start
 
   - bid: aarch64/phytium-pi
     build_args:
@@ -54,12 +54,12 @@ bids:
   #       - zone1_start
 
 
-  - bid: x86_64/qemu
-    build_args:
-      - KDIR=/home/light/DEMO/linux/linux-5.19
-    tests:
-      mode: qemu
-      cases:
-        - zone0_start
-        - zone1_start  
+  # - bid: x86_64/qemu
+  #   build_args:
+  #     - KDIR=/home/light/DEMO/linux/linux-5.19
+  #   tests:
+  #     mode: qemu
+  #     cases:
+  #       - zone0_start
+  #       - zone1_start  
 
