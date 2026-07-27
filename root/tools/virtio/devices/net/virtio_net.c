@@ -230,7 +230,7 @@ static void virtq_tx_handle_one_request(VirtIODevice *vdev, VirtQueue *vq,
         log_error("write tap failed, errno %d", errno);
     }
     out_indices[*out_count] = idx;
-    out_lens[*out_count] = all_len;
+    out_lens[*out_count] = (len < 0) ? 0 : all_len;
     (*out_count)++;
 }
 
