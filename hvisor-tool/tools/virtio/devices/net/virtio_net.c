@@ -117,7 +117,7 @@ void virtio_net_event_handler(int fd, int epoll_type, void *param) {
     }
     uint16_t batch_indices[VIRTQUEUE_NET_MAX_SIZE];
     uint32_t batch_lens[VIRTQUEUE_NET_MAX_SIZE];
-    int batch_count = 0;
+    size_t batch_count = 0;
     while (!virtqueue_is_empty(vq)) {
         struct VirtioBufConfig cfg = {
             .in_iov = net->in_iov,
@@ -176,7 +176,7 @@ void virtio_net_event_handler(int fd, int epoll_type, void *param) {
 
 static void virtq_tx_handle_one_request(VirtIODevice *vdev, VirtQueue *vq,
                                         uint16_t *out_indices,
-                                        uint32_t *out_lens, int *out_count) {
+                                        uint32_t *out_lens, size_t *out_count) {
     NetDev *net = vdev->dev;
     if (net->tapfd == -1) {
         log_error("tap device is invalid");
@@ -233,7 +233,7 @@ int virtio_net_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     virtqueue_disable_notify(vq);
     uint16_t batch_indices[VIRTQUEUE_NET_MAX_SIZE];
     uint32_t batch_lens[VIRTQUEUE_NET_MAX_SIZE];
-    int batch_count = 0;
+    size_t batch_count = 0;
     for (;;) {
         while (!virtqueue_is_empty(vq)) {
             virtq_tx_handle_one_request(vdev, vq, batch_indices, batch_lens,

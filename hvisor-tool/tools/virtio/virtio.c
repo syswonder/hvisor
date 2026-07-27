@@ -706,11 +706,11 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen) {
 }
 
 void update_used_ring_batch(VirtQueue *vq, const uint16_t *indices,
-                            const uint32_t *lens, int count) {
+                            const uint32_t *lens, size_t count) {
     volatile VirtqUsed *used_ring;
     uint16_t used_idx, mask;
 
-    if (count <= 0)
+    if (count == 0)
         return;
 
     // Ensure prior stores (e.g. readv into guest buffers) are globally
@@ -721,7 +721,7 @@ void update_used_ring_batch(VirtQueue *vq, const uint16_t *indices,
     used_idx = used_ring->idx;
     mask = vq->num - 1;
 
-    for (int i = 0; i < count; i++) {
+    for (size_t i = 0; i < count; i++) {
         used_ring->ring[(used_idx + i) & mask].id = indices[i];
         used_ring->ring[(used_idx + i) & mask].len = lens[i];
     }
