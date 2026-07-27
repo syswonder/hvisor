@@ -1,4 +1,4 @@
-# bids:
+bids:
 #   - bid: riscv64/qemu-plic
 #     build_args:
 #       - KDIR=/home/light/DEMO/linux/linux-6.10
