@@ -389,7 +389,7 @@ pipeline {
                                         echo "Prepare board artifacts [BID=${env.BID}]"
                                         sh """
                                             chmod +x "${prepareScript}"
-                                            env \\
+                                            sudo -E env \\
                                                 ARCH="${arch}" \\
                                                 BOARD="${board}" \\
                                                 WORKSPACE_ROOT="\$(pwd)" \\

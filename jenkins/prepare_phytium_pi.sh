@@ -61,7 +61,19 @@ cp "${EXTERNAL_DIR}/rootfs2.ext4" "${SCP_SRC}/rootfs2.ext4"
 cp "${EXTERNAL_DIR}/start.sh" "${SCP_SRC}/start.sh"
 cp "${CONFIGS_DIR}/zone1-linux-virtio.json" "${SCP_SRC}/zone1-linux-virtio.json"
 cp "${CONFIGS_DIR}/zone1-linux.json" "${SCP_SRC}/zone1-linux.json"
+chmod a+r "${TFTP_DIR}/hvisor.bin" \
+    "${TFTP_DIR}/linux1.dtb" \
+    "${TFTP_DIR}/phytium-pi-board-v2.dtb" \
+    "${TFTP_DIR}/Image" \
+    "${SCP_SRC}/hvisor" \
+    "${SCP_SRC}/hvisor.ko" \
+    "${SCP_SRC}/linux2.dtb" \
+    "${SCP_SRC}/Image" \
+    "${SCP_SRC}/rootfs2.ext4" \
+    "${SCP_SRC}/zone1-linux-virtio.json" \
+    "${SCP_SRC}/zone1-linux.json"
 chmod +x "${SCP_SRC}/start.sh"
+chmod a+r "${SCP_SRC}/start.sh"
 
 echo "Prepared Phytium-Pi TFTP artifacts in ${TFTP_DIR}"
 echo "Prepared Phytium-Pi SCP artifacts in ${SCP_SRC}"
