@@ -6,6 +6,7 @@ import os
 import re
 import socket
 import signal
+import shutil
 import subprocess
 import time
 from pathlib import Path
@@ -16,6 +17,7 @@ from terminal import Terminal, TerminalCommandError, TerminalTimeoutError
 
 
 CaseFunc = Callable[[dict[str, Any], Terminal | None], int]
+ZONE_ID_PATTERN = re.compile(r"(?m)^\s*1\s+")
 
 
 def wait_qemu_socket(path: str, timeout: float = 30.0) -> None:
@@ -127,6 +129,178 @@ def run_and_print_send_only(
     return output
 
 
+def wait_for_pattern(
+    term: Terminal,
+    pattern: str,
+    timeout: float,
+    *,
+    flags: int = 0,
+    echo: bool = True,
+) -> str:
+    regex = re.compile(pattern, flags)
+    deadline = time.monotonic() + timeout
+    buf = ""
+    while time.monotonic() < deadline:
+        chunk = term.backend.read()
+        if chunk:
+            text = chunk.decode(term.encoding, errors="replace")
+            buf += text
+            if echo:
+                print(text, end="", flush=True)
+            if regex.search(buf):
+                return buf
+            continue
+        time.sleep(0.05)
+    raise TerminalTimeoutError(f"timed out waiting for pattern: {pattern}")
+
+
+def send_and_wait(
+    term: Terminal,
+    command: str,
+    pattern: str,
+    timeout: float,
+    *,
+    flags: int = 0,
+) -> str:
+    term.send(command)
+    return wait_for_pattern(term, pattern, timeout, flags=flags)
+
+
+def ensure_board_login(cfg: dict[str, Any], term: Terminal, timeout: float = 90.0) -> None:
+    term.send("")
+    output = wait_for_pattern(
+        term,
+        r"(Phytium-Pi login:|[$#]\s*$)",
+        timeout,
+        flags=re.MULTILINE,
+    )
+    if re.search(r"[$#]\s*$", output, re.MULTILINE):
+        return
+    send_and_wait(term, cfg["board_user"], r"Password:", 15.0)
+    send_and_wait(term, cfg["board_pass"], r"[$#]\s*$", 30.0, flags=re.MULTILINE)
+
+
+def remote_command_prefix(cfg: dict[str, Any]) -> list[str]:
+    target = f"{cfg['board_user']}@{cfg['board_ip']}"
+    base = [
+        "ssh",
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+    ]
+    if cfg.get("board_pass") and shutil.which("sshpass"):
+        return ["sshpass", "-p", cfg["board_pass"], *base, target]
+    return [*base, target]
+
+
+def scp_command_prefix(cfg: dict[str, Any]) -> list[str]:
+    base = [
+        "scp",
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+    ]
+    if cfg.get("board_pass") and shutil.which("sshpass"):
+        return ["sshpass", "-p", cfg["board_pass"], *base]
+    return base
+
+
+def run_host_command(cmd: list[str], timeout: float = 60.0) -> None:
+    print("+ " + " ".join(cmd), flush=True)
+    subprocess.run(cmd, check=True, timeout=timeout)
+
+
+def set_board_ip(cfg: dict[str, Any], term: Terminal) -> None:
+    cmd = (
+        f"echo {cfg['board_pass']} | sudo -S "
+        f"ifconfig {cfg['board_iface']} {cfg['board_ip']}"
+    )
+    _, _ = run_and_print_quiet(term, cmd, quiet_seconds=1.0, max_duration=20.0)
+
+
+def clear_board_zone1_dir(cfg: dict[str, Any]) -> None:
+    remote_cmd = f"mkdir -p '{cfg['scp_dst']}' && find '{cfg['scp_dst']}' -mindepth 1 -maxdepth 1 -exec rm -rf {{}} +"
+    run_host_command([*remote_command_prefix(cfg), remote_cmd], timeout=60.0)
+
+
+def copy_zone1_files(cfg: dict[str, Any]) -> None:
+    src = Path(cfg["scp_src"])
+    required = [
+        "hvisor",
+        "hvisor.ko",
+        "linux2.dtb",
+        "Image",
+        "rootfs2.ext4",
+        "start.sh",
+        "zone1-linux-virtio.json",
+        "zone1-linux.json",
+    ]
+    missing = [name for name in required if not (src / name).is_file()]
+    if missing:
+        raise SystemExit(f"missing zone1 staging files in {src}: {', '.join(missing)}")
+    target = f"{cfg['board_user']}@{cfg['board_ip']}:{cfg['scp_dst']}/"
+    run_host_command([*scp_command_prefix(cfg), *[str(src / name) for name in required], target], timeout=180.0)
+
+
+def phytium_deploy_zone1(cfg: dict[str, Any], term: Terminal | None) -> int:
+    print("————————————————\ncase: phytium_deploy_zone1\n————————————————\n", flush=True)
+    if term is None:
+        raise SystemExit("terminal backend is required")
+    ensure_board_login(cfg, term)
+    set_board_ip(cfg, term)
+    clear_board_zone1_dir(cfg)
+    copy_zone1_files(cfg)
+    print("zone1 files deployed successfully", flush=True)
+    return 0
+
+
+def phytium_boot_zone0(cfg: dict[str, Any], term: Terminal | None) -> int:
+    print("————————————————\ncase: phytium_boot_zone0\n————————————————\n", flush=True)
+    if term is None:
+        raise SystemExit("terminal backend is required")
+    print("Reset or power-cycle the Phytium-Pi board now.", flush=True)
+    wait_for_pattern(
+        term,
+        r"(Hit any key to stop autoboot|Autoboot|Phytium-Pi#)",
+        timeout=float(cfg["uboot_wait_timeout"]),
+    )
+    term.send("")
+    wait_for_pattern(term, r"Phytium-Pi#", timeout=20.0)
+    run_and_print_quiet_raw(
+        term,
+        cfg["uboot_cmd"],
+        quiet_seconds=3.0,
+        max_duration=float(cfg["zone0_boot_timeout"]),
+    )
+    return 0
+
+
+def phytium_start_zone1(cfg: dict[str, Any], term: Terminal | None) -> int:
+    print("————————————————\ncase: phytium_start_zone1\n————————————————\n", flush=True)
+    if term is None:
+        raise SystemExit("terminal backend is required")
+    ensure_board_login(cfg, term, timeout=float(cfg["zone0_login_timeout"]))
+    _, _ = run_and_print_quiet(term, f"cd {cfg['scp_dst']}", quiet_seconds=1.0, max_duration=15.0)
+    _, _ = run_and_print_quiet(term, "chmod +x start.sh", quiet_seconds=1.0, max_duration=15.0)
+    _, _ = run_and_print_quiet(term, "./start.sh", quiet_seconds=5.0, max_duration=60.0)
+    time.sleep(float(cfg["zone1_start_wait"]))
+    return 0
+
+
+def phytium_check_zone(cfg: dict[str, Any], term: Terminal | None) -> int:
+    print("————————————————\ncase: phytium_check_zone\n————————————————\n", flush=True)
+    if term is None:
+        raise SystemExit("terminal backend is required")
+    _, _ = run_and_print_quiet(term, f"cd {cfg['scp_dst']}", quiet_seconds=1.0, max_duration=15.0)
+    output, _ = run_and_print_quiet(term, "./hvisor zone list", quiet_seconds=1.0, max_duration=20.0)
+    if not ZONE_ID_PATTERN.search(output):
+        raise TerminalCommandError("zone id 1 was not found in './hvisor zone list' output")
+    print("phytium-pi zone1 check passed", flush=True)
+    return 0
+
+
 def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     print("————————————————\ncase: zone0_start\n————————————————\n", flush=True)
     if cfg["mode"] == "qemu":
@@ -191,6 +365,10 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
 
 
 CASE_HANDLERS: dict[str, CaseFunc] = {
+    "phytium_boot_zone0": phytium_boot_zone0,
+    "phytium_check_zone": phytium_check_zone,
+    "phytium_deploy_zone1": phytium_deploy_zone1,
+    "phytium_start_zone1": phytium_start_zone1,
     "zone0_start": zone0_start,
     "zone1_start": zone1_start,
 }
@@ -218,7 +396,7 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
     if not cases:
         raise SystemExit(f"no test cases configured for bid '{args.bid}'")
 
-    return {
+    cfg = {
         "bid": args.bid,
         "arch": arch,
         "board": board,
@@ -228,7 +406,25 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
         "socket_path": str((Path(__file__).resolve().parent.parent / ".qemu" / "qemu.sock").resolve()),
         "serial_port": str(tests.get("serial", "/dev/null")),
         "baudrate": int(tests.get("baudrate", 1500000)),
+        "board_ip": str(tests.get("board_ip", "")),
+        "server_ip": str(tests.get("server_ip", "")),
+        "board_user": str(tests.get("board_user", "user")),
+        "board_pass": str(tests.get("board_pass", "")),
+        "board_iface": str(tests.get("board_iface", "eth0")),
+        "scp_src": str(tests.get("scp_src", "")),
+        "scp_dst": str(tests.get("scp_dst", "/home/user/zone1")),
+        "uboot_cmd": str(tests.get("uboot_cmd", "run boot_root_linux")),
+        "uboot_wait_timeout": float(tests.get("uboot_wait_timeout", 300.0)),
+        "zone0_boot_timeout": float(tests.get("zone0_boot_timeout", 180.0)),
+        "zone0_login_timeout": float(tests.get("zone0_login_timeout", 180.0)),
+        "zone1_start_wait": float(tests.get("zone1_start_wait", 30.0)),
     }
+    if mode == "board":
+        required = ["serial_port", "board_ip", "board_user", "scp_src", "scp_dst", "uboot_cmd"]
+        missing = [key for key in required if not str(cfg.get(key, "")).strip()]
+        if missing:
+            raise SystemExit(f"incomplete board config for bid '{args.bid}': missing {', '.join(missing)}")
+    return cfg
 
 
 def build_terminal(cfg: dict[str, Any]) -> Terminal:

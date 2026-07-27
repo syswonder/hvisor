@@ -18,6 +18,29 @@ bids:
         - zone0_start
         - zone1_start
 
+  - bid: aarch64/phytium-pi
+    build_args:
+      - KDIR=/home/light/DEMO/linux/kernel-5.10
+    tests:
+      mode: board
+      serial: /dev/ttyUSB1
+      baudrate: 115200
+      board_ip: 192.168.1.178
+      server_ip: 192.168.1.181
+      board_user: user
+      board_pass: user
+      board_iface: eth0
+      scp_src: /home/light/DEMO/tmp
+      scp_dst: /home/user/zone1
+      tftp_dir: /home/light/tftp/phytium-pi-zone0
+      external_dir: /home/light/DEMO/phytium-pi-external
+      uboot_cmd: run boot_root_linux
+      cases:
+        - phytium_deploy_zone1
+        - phytium_boot_zone0
+        - phytium_start_zone1
+        - phytium_check_zone
+
   # - bid: aarch64/rk3568
   #   build_args:
   #     - KDIR=/home/light/DEMO/sdk/rk356x-up4-2c/kernel
@@ -39,5 +62,4 @@ bids:
       cases:
         - zone0_start
         - zone1_start  
-
 

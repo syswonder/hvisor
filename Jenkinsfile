@@ -385,8 +385,20 @@ pipeline {
                                                 "${prepareScript}"
                                         """
                                     } else if (mode == 'board') {
-                                        // Placeholder for future board artifact distribution by network.
-                                        echo "Board prepare placeholder [BID=${env.BID}]"
+                                        def prepareScript = "jenkins/prepare_phytium_pi.sh"
+                                        echo "Prepare board artifacts [BID=${env.BID}]"
+                                        sh """
+                                            chmod +x "${prepareScript}"
+                                            env \\
+                                                ARCH="${arch}" \\
+                                                BOARD="${board}" \\
+                                                WORKSPACE_ROOT="\$(pwd)" \\
+                                                HVISOR_TOOL_PATH="${env.HVISOR_TOOL_PATH}" \\
+                                                TFTP_DIR="${testsCfg.tftp_dir}" \\
+                                                SCP_SRC="${testsCfg.scp_src}" \\
+                                                EXTERNAL_DIR="${testsCfg.external_dir}" \\
+                                                "${prepareScript}"
+                                        """
                                     } else {
                                         error("jenkins/ci.yaml BID=${env.BID}: unsupported tests.mode='${mode}'")
                                     }
@@ -402,14 +414,26 @@ pipeline {
                         steps {
                             dir(matrixCellDir()) {
                                 script {
+                                    def bidCfg = getBidConfig(loadCiYaml(), env.BID)
+                                    def testsCfg = bidCfg.tests ?: [:]
+                                    def mode = (testsCfg.mode ?: '').toString().trim()
                                     echo "Run tests via ci_runner [BID=${env.BID}]"
-                                    sh """
-                                        export TERM=\${TERM:-xterm}
-                                        ${toolchainPathShell()}
-                                        ${qemuPathShell()}
-                                        python3 jenkins/ci_runner.py \
-                                            --bid "${env.BID}"
-                                    """
+                                    if (mode == 'board') {
+                                        sh """
+                                            export TERM=\${TERM:-xterm}
+                                            ${toolchainPathShell()}
+                                            flock /tmp/hvisor-${env.BID.replace('/', '-')}.lock \\
+                                                python3 jenkins/ci_runner.py --bid "${env.BID}"
+                                        """
+                                    } else {
+                                        sh """
+                                            export TERM=\${TERM:-xterm}
+                                            ${toolchainPathShell()}
+                                            ${qemuPathShell()}
+                                            python3 jenkins/ci_runner.py \\
+                                                --bid "${env.BID}"
+                                        """
+                                    }
                                 }
                             }
                         }
