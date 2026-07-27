@@ -24,7 +24,7 @@ bids:
       - KDIR=/home/light/DEMO/sdk/rk356x-up4-2c/kernel
     tests:
       mode: board
-      serial: /dev/serial/by-id/usb-1a86_USB2.0-Ser_-if00-port0
+      serial: /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0
       power_serial: /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0
       baudrate: 1500000
       uboot_ready_pattern: '=>'
