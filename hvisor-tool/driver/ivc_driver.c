@@ -25,6 +25,7 @@
 #include <linux/slab.h>
 #include <linux/types.h>
 #include <linux/uaccess.h>
+#include <linux/version.h>
 #include <linux/wait.h>
 
 #include "hvisor.h"
@@ -216,7 +217,13 @@ static int __init ivc_init(void) {
         goto err1;
     pr_info("ivc get major id: %d\n", MAJOR(mdev_id));
 
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 4, 0)
+    // Linux 6.4+: class_create(name) - kernel commit 1aaba11da9aa
+    ivc_class = class_create("hivc");
+#else
+    // older: class_create(THIS_MODULE, name)
     ivc_class = class_create(THIS_MODULE, "hivc");
+#endif
     if (IS_ERR(ivc_class)) {
         err = PTR_ERR(ivc_class);
         goto err1;
