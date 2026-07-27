@@ -127,12 +127,13 @@ void virtio_net_event_handler(int fd, int epoll_type, void *param) {
         uint16_t idx = vq->avail_ring->ring[vq->last_avail_idx & (vq->num - 1)];
         int n = process_descriptor_chain_buf(vq, idx, &cfg, &req);
         if (n < 1 || n > VIRTQUEUE_NET_MAX_SIZE) {
-            log_error("process_descriptor_chain failed");
-            if (n >= 1) {
-                batch_indices[batch_count] = idx;
-                batch_lens[batch_count] = 0;
-                batch_count++;
+            log_error("process_descriptor_chain_buf failed: %d", n);
+            if (n < 1) {
+                vq->last_avail_idx++;
             }
+            batch_indices[batch_count] = idx;
+            batch_lens[batch_count] = 0;
+            batch_count++;
             break;
         }
 
@@ -193,6 +194,11 @@ static void virtq_tx_handle_one_request(VirtIODevice *vdev, VirtQueue *vq,
 
     int n = process_descriptor_chain_buf(vq, idx, &cfg, &req);
     if (n < 1) {
+        log_error("process_descriptor_chain_buf failed: %d", n);
+        vq->last_avail_idx++;
+        out_indices[*out_count] = idx;
+        out_lens[*out_count] = 0;
+        (*out_count)++;
         return;
     }
 
