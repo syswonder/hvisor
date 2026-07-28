@@ -1,6 +1,7 @@
 #!/bin/sh
 # Stage zone1 test artifacts on the CI host for board pull via scp.
-# Zone0 boot Image stays on TFTP; only zone1 Image/rootfs are staged here.
+# Zone0 boot Image， Image and rootfs2.ext4 are large and
+# persistent on the board; do not re-stage them every CI run.
 
 set -eux
 
@@ -90,12 +91,6 @@ fi
 if [ -f "${CHECK_SERIAL_SCRIPT}" ]; then
     cp "${CHECK_SERIAL_SCRIPT}" "${STAGING_DIR}/"
 fi
-
-ZONE1_ASSETS_DIR=${ZONE1_ASSETS_DIR:-/home/light/tftp/zone1_assets}
-if [ -f "${ZONE1_ASSETS_DIR}/Image" ]; then
-    cp "${ZONE1_ASSETS_DIR}/Image" "${STAGING_DIR}/"
-fi
-# rootfs2.ext4 is large and persistent on the board; do not re-stage/pull every run.
 
 chmod -R a+rX "${STAGING_DIR}"
 echo "board staging completed: ${STAGING_DIR}"
