@@ -86,28 +86,45 @@ int scmi_dev_parse_power_ids(SCMIDev *dev, void *json_array) {
 }
 
 static int virtq_tx_handle_one_request(void *dev, VirtQueue *vq) {
-    uint16_t desc_idx;
-    struct iovec *iov = NULL;
-    uint16_t *flags = NULL;
-    int ret = process_descriptor_chain(vq, &desc_idx, &iov, &flags,
-                                       SCMI_MAX_DESCRIPTORS, true);
-    // desc_idx is valid iff ret > 0 (a descriptor was consumed from avail ring)
-    bool desc_valid = (ret > 0);
+    struct iovec out_iov[2], in_iov[2];
+    struct VirtioBufConfig cfg = {
+        .out_iov = out_iov,
+        .max_out = 2,
+        .in_iov = in_iov,
+        .max_in = 2,
+    };
+    struct VirtioRequest vreq;
 
-    if (ret <= 0 || iov == NULL || flags == NULL) {
-        log_error("Failed to process descriptor chain or allocate memory");
-        goto error;
+    uint16_t desc_idx =
+        vq->avail_ring->ring[vq->last_avail_idx & (vq->num - 1)];
+    int ret = process_descriptor_chain_buf(vq, desc_idx, &cfg, &vreq);
+    if (ret <= 0) {
+        log_error("Failed to process descriptor chain");
+        return -EINVAL;
     }
 
-    // Check buffer sizes and pointers - accept 4-byte packed header
-    if (ret < 2 || iov[0].iov_len < sizeof(uint32_t) ||
-        iov[0].iov_base == NULL || iov[0].iov_len > SCMI_MAX_BUFFER_SIZE) {
+    // SCMI expects: one readable (request header+payload) and one writable
+    // (response buffer).  More than that is a malformed chain.
+    if (vreq.out_count != 1 || vreq.in_count != 1) {
+        log_error("Invalid descriptor chain layout: out=%d, in=%d",
+                  vreq.out_count, vreq.in_count);
+        update_used_ring(vq, desc_idx, 0);
+        return -EINVAL;
+    }
+
+    struct iovec *req_iov = &vreq.out_iov[0];
+    struct iovec *resp_iov = &vreq.in_iov[0];
+
+    // Check the request buffer: must have a 4-byte packed header
+    if (req_iov->iov_len < sizeof(uint32_t) ||
+        req_iov->iov_base == NULL || req_iov->iov_len > SCMI_MAX_BUFFER_SIZE) {
         log_error("Invalid request buffer");
-        goto error;
+        update_used_ring(vq, desc_idx, 0);
+        return -EINVAL;
     }
 
     // Parse packed 32-bit header
-    uint32_t packed_header = *(uint32_t *)iov[0].iov_base;
+    uint32_t packed_header = *(uint32_t *)req_iov->iov_base;
     uint8_t protocol_id = SCMI_PROTOCOL_ID(packed_header);
     uint8_t msg_id = SCMI_MSG_ID(packed_header);
     uint8_t msg_type = SCMI_MSG_TYPE(packed_header);
@@ -116,37 +133,25 @@ static int virtq_tx_handle_one_request(void *dev, VirtQueue *vq) {
     log_debug("SCMI request: protocol=0x%x, msg=0x%x, type=%d, token=0x%x",
               protocol_id, msg_id, msg_type, token);
 
-    // Validate message type
     if (msg_type != SCMI_MSG_TYPE_COMMAND) {
         log_error("Invalid message type: %d", msg_type);
-        goto error;
+        update_used_ring(vq, desc_idx, 0);
+        return -EINVAL;
     }
 
     // Initialize response context from the response iovec
     struct scmi_resp_ctx ctx;
-    scmi_resp_ctx_init(&ctx, &iov[1]);
+    scmi_resp_ctx_init(&ctx, resp_iov);
 
-    // Dispatch request to protocol handler
-    int status =
-        scmi_handle_message(dev, protocol_id, msg_id, token, &iov[0], &ctx);
-
-    if (status != 0) {
-        log_error("Protocol handler failed: %d", status);
-        goto error;
+    if (scmi_handle_message(dev, protocol_id, msg_id, token, req_iov,
+                            &ctx) != 0) {
+        log_error("Protocol handler failed");
+        update_used_ring(vq, desc_idx, 0);
+        return -EINVAL;
     }
 
-    // Update used ring with actual bytes written, not the guest's buffer size
     update_used_ring(vq, desc_idx, ctx.written);
-    free(iov);
-    free(flags);
     return 0;
-
-error:
-    if (desc_valid)
-        update_used_ring(vq, desc_idx, 0);
-    free(iov);
-    free(flags);
-    return -EINVAL;
 }
 
 int virtio_scmi_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
