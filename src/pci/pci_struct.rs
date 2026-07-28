@@ -26,7 +26,7 @@ use core::{
 use spin::RwLock;
 
 use super::{
-    config_accessors::{PciConfigAccessor, PciConfigMmio},
+    config_accessors::{PciConfigAccessor, PciConfigMmio, PciRegion},
     mem_alloc::BarAllocator,
     pci_access::{
         Bar, EndpointField, EndpointHeader, HeaderType, PciBarRW, PciBridgeHeader, PciCommand,
@@ -166,6 +166,9 @@ const PCI_EXP_TYPE_ROOT_PORT: u16 = 4;
 const PCI_EXP_TYPE_UPSTREAM: u16 = 5;
 const PCI_EXP_TYPE_DOWNSTREAM: u16 = 6;
 const PCI_EXP_TYPE_PCIE_BRIDGE: u16 = 8;
+const PCIE_DEVICE_CAPABILITIES_2_OFFSET: PciConfigAddress = 0x24;
+const PCIE_DEVICE_CONTROL_2_OFFSET: PciConfigAddress = 0x28;
+const PCIE_ARI_FORWARDING: u32 = 1 << 5;
 
 pub(crate) const SRIOV_CAP_SIZE: PciConfigAddress = 0x40;
 const SRIOV_CTRL_OFFSET: PciConfigAddress = 0x08;
@@ -175,9 +178,12 @@ const SRIOV_NUM_VFS_OFFSET: PciConfigAddress = 0x10;
 const SRIOV_FIRST_VF_OFFSET: PciConfigAddress = 0x14;
 const SRIOV_VF_STRIDE_OFFSET: PciConfigAddress = 0x16;
 const SRIOV_VF_DEVICE_ID_OFFSET: PciConfigAddress = 0x1a;
+const SRIOV_SUPPORTED_PAGE_SIZE_OFFSET: PciConfigAddress = 0x1c;
+const SRIOV_SYSTEM_PAGE_SIZE_OFFSET: PciConfigAddress = 0x20;
 pub(crate) const SRIOV_VF_BAR_OFFSET: PciConfigAddress = 0x24;
 pub(crate) const SRIOV_VF_BAR_END: PciConfigAddress = SRIOV_VF_BAR_OFFSET + 6 * 4;
 const SRIOV_CTRL_VF_ENABLE: u16 = 1 << 0;
+const SRIOV_CTRL_ARI_CAPABLE_HIERARCHY: u16 = 1 << 4;
 
 #[derive(Clone, Copy, Eq, PartialEq, Default)]
 pub struct Bdf {
@@ -812,6 +818,34 @@ impl VirtualPciConfigSpace {
             .find_map(|(offset, cap)| (cap.cap_type == cap_type).then_some(*offset))
     }
 
+    fn sriov_write_system_page_size(&self, cap_offset: PciConfigAddress) -> HvResult<()> {
+        let supported = self
+            .backend
+            .read(cap_offset + SRIOV_SUPPORTED_PAGE_SIZE_OFFSET, 4)? as u32;
+        if supported == 0 {
+            return Ok(());
+        }
+
+        let page_size = supported & supported.wrapping_neg();
+        self.backend.write(
+            cap_offset + SRIOV_SYSTEM_PAGE_SIZE_OFFSET,
+            4,
+            page_size as usize,
+        )
+    }
+
+    fn sriov_latch_routing_fields(
+        &self,
+        cap_offset: PciConfigAddress,
+        num_vfs: u16,
+    ) -> HvResult<(u16, u16)> {
+        self.backend
+            .write(cap_offset + SRIOV_NUM_VFS_OFFSET, 2, num_vfs as usize)?;
+        let first_vf_offset = self.backend.read(cap_offset + SRIOV_FIRST_VF_OFFSET, 2)? as u16;
+        let vf_stride = self.backend.read(cap_offset + SRIOV_VF_STRIDE_OFFSET, 2)? as u16;
+        Ok((first_vf_offset, vf_stride))
+    }
+
     fn parse_sriov_vf_bars(&self, cap_offset: PciConfigAddress) -> HvResult<Bar> {
         let mut bararr = Bar::default();
         let mut slot = 0usize;
@@ -904,7 +938,7 @@ impl VirtualPciConfigSpace {
         Ok(bararr)
     }
 
-    pub fn build_sriov_info(&mut self) -> HvResult<()> {
+    pub fn build_sriov_info(&mut self, upstream: Option<&Bridge>) -> HvResult<()> {
         let Some(cap_offset) = self.find_ext_cap_offset(ExtCapabilityType::SingleRootIov) else {
             return Ok(());
         };
@@ -913,17 +947,77 @@ impl VirtualPciConfigSpace {
             .backend
             .read(cap_offset + SRIOV_INITIAL_VFS_OFFSET, 2)? as u16;
         let total_vfs = self.backend.read(cap_offset + SRIOV_TOTAL_VFS_OFFSET, 2)? as u16;
-        let first_vf_offset = self.backend.read(cap_offset + SRIOV_FIRST_VF_OFFSET, 2)? as u16;
-        let vf_stride = self.backend.read(cap_offset + SRIOV_VF_STRIDE_OFFSET, 2)? as u16;
         let vf_device_id = self
             .backend
             .read(cap_offset + SRIOV_VF_DEVICE_ID_OFFSET, 2)? as u16;
 
-        if total_vfs == 0 || first_vf_offset == 0 || vf_stride == 0 {
+        if total_vfs == 0 {
             return Ok(());
         }
 
+        let ari_forwarding =
+            upstream.is_some_and(|bridge| bridge.enable_ari_forwarding().unwrap_or(false));
+
+        let mut ctrl = self.backend.read(cap_offset + SRIOV_CTRL_OFFSET, 2)? as u16;
+        if ctrl & SRIOV_CTRL_VF_ENABLE != 0 {
+            self.backend.write(cap_offset + SRIOV_CTRL_OFFSET, 2, 0)?;
+            ctrl = 0;
+        }
+        self.backend
+            .write(cap_offset + SRIOV_NUM_VFS_OFFSET, 2, 0)?;
+
+        let sriov_ctrl = if ari_forwarding {
+            ctrl | SRIOV_CTRL_ARI_CAPABLE_HIERARCHY
+        } else {
+            ctrl & !SRIOV_CTRL_ARI_CAPABLE_HIERARCHY
+        };
+        self.sriov_write_system_page_size(cap_offset)?;
+        self.backend
+            .write(cap_offset + SRIOV_CTRL_OFFSET, 2, sriov_ctrl as usize)?;
+
+        let (first_vf_offset, vf_stride) =
+            self.sriov_latch_routing_fields(cap_offset, total_vfs)?;
+        if first_vf_offset == 0 || vf_stride == 0 {
+            warn!(
+                "SR-IOV on {:#?}: invalid routing fields offset={:#x} stride={} InitialVFs={} TotalVFs={} ari={} ctrl={:#x}",
+                self.bdf,
+                first_vf_offset,
+                vf_stride,
+                initial_vfs,
+                total_vfs,
+                ari_forwarding,
+                sriov_ctrl
+            );
+            return Ok(());
+        }
+
+        let confirmed_ctrl = self.backend.read(cap_offset + SRIOV_CTRL_OFFSET, 2)? as u16;
+        if ari_forwarding && confirmed_ctrl & SRIOV_CTRL_ARI_CAPABLE_HIERARCHY == 0 {
+            warn!(
+                "SR-IOV ARI hierarchy bit did not stick for {:#?}: ctrl={:#x}",
+                self.bdf, confirmed_ctrl
+            );
+        } else if !ari_forwarding {
+            warn!(
+                "SR-IOV on {:#?}: upstream ARI forwarding is not enabled; VF routing may use non-ARI offsets",
+                self.bdf
+            );
+        }
+
+        info!(
+            "SR-IOV on {:#?}: latched offset={:#x} stride={} NumVFs={} InitialVFs={} TotalVFs={} ari={} ctrl={:#x}",
+            self.bdf,
+            first_vf_offset,
+            vf_stride,
+            total_vfs,
+            initial_vfs,
+            total_vfs,
+            ari_forwarding,
+            confirmed_ctrl
+        );
+
         let vf_bars = self.parse_sriov_vf_bars(cap_offset)?;
+
         let mut vf_bdfs = Vec::with_capacity(total_vfs as usize);
         for vf_index in 0..total_vfs {
             let route_offset = match first_vf_offset.checked_add(vf_stride.saturating_mul(vf_index))
@@ -946,13 +1040,10 @@ impl VirtualPciConfigSpace {
             access.set_bits(cap_offset as usize..(cap_offset as usize + 0x40));
         });
 
-        self.backend
-            .write(cap_offset + SRIOV_NUM_VFS_OFFSET, 2, total_vfs as usize)?;
-        let ctrl = self.backend.read(cap_offset + SRIOV_CTRL_OFFSET, 2)? as u16;
         self.backend.write(
             cap_offset + SRIOV_CTRL_OFFSET,
             2,
-            (ctrl | SRIOV_CTRL_VF_ENABLE) as usize,
+            (sriov_ctrl | SRIOV_CTRL_VF_ENABLE) as usize,
         )?;
 
         let mut sriov_info = SriovInfo::new(
@@ -965,7 +1056,7 @@ impl VirtualPciConfigSpace {
             vf_bars,
             vf_bdfs,
         );
-        sriov_info.enabled_vfs = total_vfs;
+        sriov_info.enabled_vfs = sriov_info.vf_bdfs.len() as u16;
         self.sriov_info = Some(sriov_info);
 
         Ok(())
@@ -1683,13 +1774,13 @@ impl<B: BarAllocator> PciIterator<B> {
 
         let address = self.address(parent_bus, bdf);
         let pci_addr_base = self.get_pci_addr_base(bdf);
-        info!("get node {:x} {:#?}", address, bdf);
+        // info!("get node {:x} {:#?}", address, bdf);
 
         let region = PciConfigMmio::new(address, CONFIG_LENTH);
         let pci_header = PciConfigHeader::new_with_region(region);
         let (vender_id, device_id) = pci_header.id();
 
-        warn!("vender_id {:#x}", vender_id);
+        // warn!("vender_id {:#x}", vender_id);
 
         // Check if device exists
         if vender_id == 0xffff || self.accessor.skip_device(bdf) {
@@ -1755,7 +1846,10 @@ impl<B: BarAllocator> PciIterator<B> {
                 let _ = node.capability_enumerate();
                 node.ext_capability_enumerate();
                 #[cfg(sriov)]
-                let _ = node.build_sriov_info();
+                {
+                    let upstream = self.stack.last().filter(|b| !b.mmio.is_placeholder());
+                    let _ = node.build_sriov_info(upstream);
+                }
                 // Build MSI/MSIX info once during device discovery
                 node.build_msi_info();
                 node.set_vbdf(bdf, self.bus_range.end as u8);
@@ -1784,7 +1878,10 @@ impl<B: BarAllocator> PciIterator<B> {
                 let _ = node.capability_enumerate();
                 node.ext_capability_enumerate();
                 #[cfg(sriov)]
-                let _ = node.build_sriov_info();
+                {
+                    let upstream = self.stack.last().filter(|b| !b.mmio.is_placeholder());
+                    let _ = node.build_sriov_info(upstream);
+                }
                 // Build MSI/MSIX info once during device discovery
                 node.build_msi_info();
                 node.set_vbdf(bdf, self.bus_range.end as u8);
@@ -2053,15 +2150,8 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
                         #[cfg(not(no_pcie_bar_realloc))]
                         let next_bus = parent.subordinate_bus + 1;
 
-                        let bdf = Bdf::new(domain, next_bus, 0, 0);
-                        // Use the current bridge's own bus as the immediate parent bus for
-                        // CFG address computation. For multi-level bridges (especially on
-                        // DWC), using parent.primary_bus (the upstream of the *parent*)
-                        // would select the wrong CFG0/CFG1 path and fail to reach devices
-                        // behind deeper bridges.
-                        let immediate_parent_bus = parent.bus;
                         Some(self.get_bridge().next_bridge(
-                            self.address(immediate_parent_bus, bdf),
+                            node.get_base(),
                             node.has_only_one_child(),
                             self.is_mulitple_function,
                             self.function,
@@ -2150,6 +2240,54 @@ impl Bridge {
         }
     }
 
+    fn find_pcie_cap_offset(&self) -> Option<PciConfigAddress> {
+        if self.mmio.is_placeholder() {
+            return None;
+        }
+
+        let mut offset = (self.mmio.read_u8(0x34).ok()? as PciConfigAddress) & !0x3;
+        for _ in 0..48 {
+            if offset < 0x40 || offset >= CONFIG_LENTH {
+                return None;
+            }
+
+            let cap_id = self.mmio.read_u8(offset).ok()? as PciConfigAddress;
+            if cap_id == CapabilityType::PciExpress.to_id() {
+                return Some(offset);
+            }
+
+            let next = (self.mmio.read_u8(offset + 1).ok()? as PciConfigAddress) & !0x3;
+            if next == 0 || next == offset {
+                return None;
+            }
+            offset = next;
+        }
+
+        None
+    }
+
+    pub fn enable_ari_forwarding(&self) -> HvResult<bool> {
+        let Some(pcie_cap_offset) = self.find_pcie_cap_offset() else {
+            return Ok(false);
+        };
+
+        let dev_cap2 = self
+            .mmio
+            .read_u32(pcie_cap_offset + PCIE_DEVICE_CAPABILITIES_2_OFFSET)?;
+        if (dev_cap2 & PCIE_ARI_FORWARDING) == 0 {
+            return Ok(false);
+        }
+
+        let dev_ctrl2_offset = pcie_cap_offset + PCIE_DEVICE_CONTROL_2_OFFSET;
+        let dev_ctrl2 = self.mmio.read_u16(dev_ctrl2_offset)?;
+        let ari_ctrl2 = dev_ctrl2 | (PCIE_ARI_FORWARDING as u16);
+        if ari_ctrl2 != dev_ctrl2 {
+            self.mmio.write_u16(dev_ctrl2_offset, ari_ctrl2)?;
+        }
+
+        Ok(true)
+    }
+
     pub fn update_bridge_bus(&mut self) {
         // Skip update for placeholder bridges (they don't have real mmio)
         if self.mmio.is_placeholder() {
@@ -2221,10 +2359,15 @@ impl RootComplex {
             return Vec::new();
         };
 
+        if sriov_info.enabled_vfs == 0 {
+            return Vec::new();
+        }
+
         sriov_info
             .vf_bdfs
             .iter()
             .copied()
+            .take(sriov_info.enabled_vfs as usize)
             .enumerate()
             .filter_map(|(vf_index, vf_bdf)| {
                 let backend_base = self

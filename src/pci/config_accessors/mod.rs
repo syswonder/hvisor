@@ -96,6 +96,7 @@ impl PciRegion for PciRegionMmio {
     }
 }
 
+#[cfg(not(loongarch64_pcie))]
 impl PciRegion for PciConfigMmio {
     fn read_u8(&self, offset: PciConfigAddress) -> HvResult<u8> {
         unsafe { Ok(self.access::<u8>(offset).read_volatile() as u8) }

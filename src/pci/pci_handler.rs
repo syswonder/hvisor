@@ -2590,8 +2590,19 @@ fn set_pci_init_done(domain_id: u8) {
 
 pub fn mmio_vpci_direct_handler(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
     let zone = this_zone();
-    let offset = (mmio.address & 0xfff) as PciConfigAddress;
-    let base = mmio.address as PciConfigAddress - offset + _base as PciConfigAddress;
+    #[cfg(loongarch64_pcie)]
+    let (offset, base) = {
+        let access_addr = mmio.address as PciConfigAddress + _base as PciConfigAddress;
+        let offset = (access_addr & 0xff) | ((access_addr >> 16) & 0xf00);
+        let addroff = (offset & 0xff) | ((offset & 0xf00) << 16);
+        (offset, access_addr - addroff)
+    };
+    #[cfg(not(loongarch64_pcie))]
+    let (offset, base) = {
+        let offset = (mmio.address & 0xfff) as PciConfigAddress;
+        let base = mmio.address as PciConfigAddress - offset + _base as PciConfigAddress;
+        (offset, base)
+    };
     let mut is_dev_belong_to_zone = false;
 
     let dev: Option<ArcRwLockVirtualPciConfigSpace> = {

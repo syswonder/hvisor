@@ -1,0 +1,89 @@
+{
+    "arch": "arm64",
+    "name": "zone1-ohos",
+    "zone_id": 1,
+    "cpus": [
+        2,
+        3
+    ],
+    "memory_regions": [
+        {
+            "type": "ram",
+            "physical_start": "0x10000000",
+            "virtual_start": "0x10000000",
+            "size": "0x20000000"
+        },
+        {
+            "type": "ram",
+            "physical_start": "0x50000000",
+            "virtual_start": "0x50000000",
+            "size": "0x04000000"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0xff9d0000",
+            "virtual_start": "0xff9d0000",
+            "size": "0x200"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0xff9e0000",
+            "virtual_start": "0xff9e0000",
+            "size": "0x200"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x100000",
+            "virtual_start": "0x100000",
+            "size": "0x10000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0xf0000000",
+            "virtual_start": "0xf0000000",
+            "size": "0x00300000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0xfd520000",
+            "virtual_start": "0xfd520000",
+            "size": "0x1140000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0xfd410000",
+            "virtual_start": "0xfd410000",
+            "size": "0x50000"
+        }
+    ],
+    "interrupts": [
+        "0x82",
+        "0x8c",
+        "0x8e"
+    ],
+    "ivc_configs": [],
+    "kernel_filepath": "./zone1-ohos.kernel",
+    "dtb_filepath": "./zone1-ohos.dtb",
+    "kernel_load_paddr": "0x50600000",
+    "dtb_load_paddr": "0x50000000",
+    "entry_point": "0x50600000",
+    "kernel_args": "",
+    "modules": [
+        {
+            "name": "ramdisk",
+            "filepath": "./zone1-ohos.ramdisk",
+            "load_paddr": "0x50200000"
+        }
+    ],
+    "arch_config": {
+        "gic_version": "v3",
+        "gicd_base": "0xfd400000",
+        "gicd_size": "0x10000",
+        "gicr_base": "0xfd460000",
+        "gicr_size": "0xc0000",
+        "gits_base": "0x0",
+        "gits_size": "0x0"
+    },
+    "pci_config": [],
+    "alloc_pci_devs": []
+}
