@@ -181,8 +181,12 @@ struct scmi_dev_protocol_entry {
                    const struct iovec *req_iov, struct scmi_resp_ctx *ctx);
 };
 
+struct virtio_scmi_config {
+    uint64_t reserved[8];
+};
+
 typedef struct virtio_scmi_dev {
-    int fd;
+    struct virtio_scmi_config config;
     uint32_t *clock_ids; /* NULL = protocol not supported */
     uint32_t clock_count;
     uint32_t *reset_ids;

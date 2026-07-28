@@ -54,12 +54,7 @@ static int parse_id_array(cJSON *json_array, uint32_t **ids_out,
     return 0;
 }
 
-SCMIDev *scmi_dev_create(void) {
-    SCMIDev *dev = calloc(1, sizeof(SCMIDev));
-    if (dev)
-        dev->fd = -1;
-    return dev;
-}
+SCMIDev *scmi_dev_create(void) { return calloc(1, sizeof(SCMIDev)); }
 
 void scmi_dev_free(SCMIDev *dev) {
     if (!dev)
