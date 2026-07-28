@@ -11,6 +11,7 @@
 #include "virtio_net.h"
 #include "event_monitor.h"
 #include "log.h"
+
 #include "virtio.h"
 #include <errno.h>
 #include <fcntl.h>
@@ -21,8 +22,6 @@
 #include <sys/ioctl.h>
 #include <sys/uio.h>
 #include <unistd.h>
-// The max bytes of a packet in data link layer is 1518 bytes.
-static uint8_t trashbuf[1600];
 
 NetDev *init_net_dev(uint8_t mac[]) {
     NetDev *dev = malloc(sizeof(NetDev));
@@ -36,6 +35,8 @@ NetDev *init_net_dev(uint8_t mac[]) {
     dev->tapfd = -1;
     dev->rx_ready = 0;
     dev->event = NULL;
+    dev->in_iov = NULL;
+    dev->out_iov = NULL;
     return dev;
 }
 
@@ -51,7 +52,8 @@ static int open_tap(char *devname) {
     }
     memset(&ifr, 0, sizeof(ifr));
     // IFF_NO_PI tells kernel do not provide message header
-    ifr.ifr_flags = IFF_TAP | IFF_NO_PI;
+    // IFF_VNET_HDR enables virtio-net header passthrough with TAP
+    ifr.ifr_flags = IFF_TAP | IFF_NO_PI | IFF_VNET_HDR;
     strncpy(ifr.ifr_name, devname, IFNAMSIZ);
     ifr.ifr_name[IFNAMSIZ - 1] = '\0';
     if (ioctl(tunfd, TUNSETIFF, (void *)&ifr) < 0) {
@@ -75,26 +77,6 @@ int virtio_net_rxq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     }
     return 0;
 }
-/// remove the header in iov, return the new iov. the new iov num is in niov.
-static inline struct iovec *rm_iov_header(struct iovec *iov, int *niov,
-                                          int header_len) {
-    if (iov == NULL || *niov == 0 || iov[0].iov_len < (size_t)header_len) {
-        log_error("invalid iov");
-        return NULL;
-    }
-
-    iov[0].iov_len -= header_len;
-    if (iov[0].iov_len > 0) {
-        iov[0].iov_base = (char *)iov[0].iov_base + header_len;
-        return iov;
-    } else {
-        *niov = *niov - 1;
-        if (*niov == 0)
-            return NULL;
-        return iov + 1;
-    }
-}
-
 size_t get_nethdr_size(VirtIODevice *vdev) {
     // Virtio 1.0 specifies the header as NetHdr. But the legacy version
     // specifies the headr as NetHdrLegacy
@@ -109,13 +91,9 @@ size_t get_nethdr_size(VirtIODevice *vdev) {
 void virtio_net_event_handler(int fd, int epoll_type, void *param) {
     log_debug("virtio_net_event_handler");
     VirtIODevice *vdev = param;
-    void *vnet_header;
-    struct iovec *iov, *iov_packet;
     NetDev *net = vdev->dev;
     VirtQueue *vq = &vdev->vqs[NET_QUEUE_RX];
-    int n, len;
-    uint16_t idx;
-    size_t header_len = get_nethdr_size(vdev);
+    ssize_t len;
     if (fd != net->tapfd || !(epoll_type & EPOLLIN)) {
         log_error("invalid event");
         return;
@@ -126,6 +104,7 @@ void virtio_net_event_handler(int fd, int epoll_type, void *param) {
     }
 
     // if vq is not setup, drop the packet
+    uint8_t trashbuf[1600];
     if (!net->rx_ready) {
         read(net->tapfd, trashbuf, sizeof(trashbuf));
         return;
@@ -136,94 +115,169 @@ void virtio_net_event_handler(int fd, int epoll_type, void *param) {
         virtio_inject_irq(vq);
         return;
     }
+    uint16_t batch_indices[VIRTQUEUE_NET_MAX_SIZE];
+    uint32_t batch_lens[VIRTQUEUE_NET_MAX_SIZE];
+    size_t batch_count = 0;
     while (!virtqueue_is_empty(vq)) {
-        n = process_descriptor_chain(vq, &idx, &iov, NULL, 0, false);
+        struct VirtioBufConfig cfg = {
+            .in_iov = net->in_iov,
+            .max_in = NET_IOV_MAX,
+        };
+        struct VirtioRequest req;
+        uint16_t idx = vq->avail_ring->ring[vq->last_avail_idx & (vq->num - 1)];
+        int n = process_descriptor_chain_buf(vq, idx, &cfg, &req);
         if (n < 1 || n > VIRTQUEUE_NET_MAX_SIZE) {
-            log_error("process_descriptor_chain failed");
-            goto free_iov;
+            log_error("process_descriptor_chain_buf failed: %d", n);
+            if (n < 1) {
+                vq->last_avail_idx++;
+            }
+            batch_indices[batch_count] = idx;
+            batch_lens[batch_count] = 0;
+            batch_count++;
+            break;
         }
-        vnet_header = iov[0].iov_base;
-        iov_packet = rm_iov_header(iov, &n, header_len);
-        if (iov_packet == NULL)
-            goto free_iov;
-        // Read a packet from tap device
-        len = readv(net->tapfd, iov_packet, n);
+
+        // RX: all buffers are VRING_DESC_F_WRITE → in_iov
+        // IFF_VNET_HDR: TAP writes [virtio_net_hdr | packet] directly
+        len = readv(net->tapfd, req.in_iov, req.in_count);
 
         if (len < 0 && errno == EWOULDBLOCK) {
             // No more packets from tapfd, restore last_avail_idx.
             log_info("no more packets");
             vq->last_avail_idx--;
-            free(iov);
             break;
         }
 
-        memset(vnet_header, 0, header_len);
-        if (vdev->regs.drv_feature & (1ULL << VIRTIO_F_VERSION_1)) {
-            ((NetHdr *)vnet_header)->num_buffers = 1;
+        if (len < 0) {
+            log_error("readv from tap failed, errno %d", errno);
+            batch_indices[batch_count] = idx;
+            batch_lens[batch_count] = 0;
+            batch_count++;
+            break;
         }
 
-        update_used_ring(vq, idx, len + header_len);
-        free(iov);
+        if (len == 0) {
+            log_error("tap device EOF (closed or bridge down)");
+            batch_indices[batch_count] = idx;
+            batch_lens[batch_count] = 0;
+            batch_count++;
+            net->rx_ready = 0;
+            break;
+        }
+
+        batch_indices[batch_count] = idx;
+        batch_lens[batch_count] = len;
+        batch_count++;
     }
 
+    if (batch_count > 0)
+        update_used_ring_batch(vq, batch_indices, batch_lens, batch_count);
     virtio_inject_irq(vq);
-    return;
-free_iov:
-    free(iov);
 }
 
-static void virtq_tx_handle_one_request(VirtIODevice *vdev, VirtQueue *vq) {
-    struct iovec *iov = NULL;
-    int i, n;
-    int packet_len, all_len; // all_len include the header length.
-    uint16_t idx;
-    static char pad[64];
-    ssize_t len;
+static void virtq_tx_handle_one_request(VirtIODevice *vdev, VirtQueue *vq,
+                                        uint16_t *out_indices,
+                                        uint32_t *out_lens, size_t *out_count) {
     NetDev *net = vdev->dev;
-    size_t header_len = get_nethdr_size(vdev);
     if (net->tapfd == -1) {
         log_error("tap device is invalid");
         return;
     }
 
-    n = process_descriptor_chain(vq, &idx, &iov, NULL, 1, false);
+    size_t header_len = get_nethdr_size(vdev);
+    struct VirtioBufConfig cfg = {
+        .out_iov = net->out_iov,
+        .max_out = NET_IOV_MAX - 1,
+    };
+    struct VirtioRequest req;
+    uint16_t idx = vq->avail_ring->ring[vq->last_avail_idx & (vq->num - 1)];
+
+    int n = process_descriptor_chain_buf(vq, idx, &cfg, &req);
     if (n < 1) {
+        log_error("process_descriptor_chain_buf failed: %d", n);
+        vq->last_avail_idx++;
+        out_indices[*out_count] = idx;
+        out_lens[*out_count] = 0;
+        (*out_count)++;
         return;
     }
 
-    for (i = 0, all_len = 0; i < n; i++)
-        all_len += iov[i].iov_len;
+    // TX: no descriptors are VRING_DESC_F_WRITE → out_iov
+    if ((size_t)req.out_iov[0].iov_len < header_len) {
+        log_error("malformed TX packet: iov[0] too small for header");
+        out_indices[*out_count] = idx;
+        out_lens[*out_count] = 0;
+        (*out_count)++;
+        return;
+    }
 
-    packet_len = all_len - header_len;
-    iov[0].iov_base += header_len;
-    iov[0].iov_len -= header_len;
-    log_debug("packet send: %d bytes", packet_len);
+    size_t all_len = 0;
+    for (size_t i = 0; i < req.out_count; i++)
+        all_len += req.out_iov[i].iov_len;
+
+    size_t packet_len = all_len - header_len;
+    log_debug("packet send: %zu bytes", packet_len);
 
     // The mininum packet for data link layer is 64 bytes.
+    char pad[64] = {0};
     if (packet_len < 64) {
-        iov[n].iov_base = pad;
-        iov[n].iov_len = 64 - packet_len;
-        n++;
+        req.out_iov[req.out_count].iov_base = pad;
+        req.out_iov[req.out_count].iov_len = 64 - packet_len;
+        req.out_count++;
     }
-    len = writev(net->tapfd, iov, n);
+    ssize_t len = writev(net->tapfd, req.out_iov, req.out_count);
     if (len < 0) {
         log_error("write tap failed, errno %d", errno);
     }
-    update_used_ring(vq, idx, all_len);
-    free(iov);
+    out_indices[*out_count] = idx;
+    out_lens[*out_count] = (len < 0) ? 0 : all_len;
+    (*out_count)++;
 }
 
 int virtio_net_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     log_debug("virtio_net_txq_notify_handler");
     virtqueue_disable_notify(vq);
-    while (!virtqueue_is_empty(vq)) {
-        virtq_tx_handle_one_request(vdev, vq);
+    uint16_t batch_indices[VIRTQUEUE_NET_MAX_SIZE];
+    uint32_t batch_lens[VIRTQUEUE_NET_MAX_SIZE];
+    size_t batch_count = 0;
+    for (;;) {
+        while (!virtqueue_is_empty(vq)) {
+            virtq_tx_handle_one_request(vdev, vq, batch_indices, batch_lens,
+                                        &batch_count);
+        }
+        if (batch_count > 0) {
+            update_used_ring_batch(vq, batch_indices, batch_lens, batch_count);
+            batch_count = 0;
+            virtio_inject_irq(vq);
+        }
+        virtqueue_enable_notify(vq);
+        // Re-check: guest may have added descriptors between our last
+        // empty check and enable_notify.  Without this, UDP streams
+        // lose descriptors permanently because each sendto() issues
+        // exactly one kick and the suppressed notification never fires.
+        if (!virtqueue_is_empty(vq)) {
+            virtqueue_disable_notify(vq);
+            continue;
+        }
+        break;
     }
-    virtqueue_enable_notify(vq);
-    // TODO: Can we don't inject irq when send packets to improve performance?
-    // Linux will recycle the used ring when send packets.
-    // virtio_inject_irq(vq);
     return 0;
+}
+
+void net_on_status(VirtIODevice *vdev, uint32_t status) {
+    NetDev *net = vdev->dev;
+
+    // FEATURES_OK indicates guest has finished writing DRIVER_FEATURES.
+    // Configure TAP virtio-net header size to match the negotiated format.
+    if (status & VIRTIO_CONFIG_S_FEATURES_OK) {
+        int hdr_sz = (int)get_nethdr_size(vdev);
+        if (ioctl(net->tapfd, TUNSETVNETHDRSZ, &hdr_sz) < 0)
+            log_error("TUNSETVNETHDRSZ(%d) failed", hdr_sz);
+    }
+
+    if (status == 0) {
+        net->rx_ready = 0;
+    }
 }
 
 int virtio_net_init(VirtIODevice *vdev, char *devname) {
@@ -249,6 +303,19 @@ int virtio_net_init(VirtIODevice *vdev, char *devname) {
         net->tapfd = -1;
         return -1;
     }
+    net->in_iov = malloc(sizeof(struct iovec) * NET_IOV_MAX);
+    net->out_iov = malloc(sizeof(struct iovec) * NET_IOV_MAX);
+    if (!net->in_iov || !net->out_iov) {
+        log_error("failed to allocate iov buffers");
+        free(net->in_iov);
+        free(net->out_iov);
+        net->in_iov = NULL;
+        net->out_iov = NULL;
+        close(net->tapfd);
+        net->tapfd = -1;
+        return -1;
+    }
+    vdev->status_changed = net_on_status;
     vdev->virtio_close = virtio_net_close;
     return 0;
 }
@@ -257,6 +324,8 @@ void virtio_net_close(VirtIODevice *vdev) {
     NetDev *dev = vdev->dev;
     close(dev->tapfd);
     free(dev->event);
+    free(dev->in_iov);
+    free(dev->out_iov);
     free(dev);
     free(vdev->vqs);
     free(vdev);

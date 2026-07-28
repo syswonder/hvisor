@@ -441,7 +441,7 @@ void virtqueue_enable_notify(VirtQueue *vq) {
     if (vq->event_idx_enabled) {
         VQ_AVAIL_EVENT(vq) = vq->avail_ring->idx;
     } else {
-        vq->used_ring->flags &= !(uint16_t)VRING_USED_F_NO_NOTIFY;
+        vq->used_ring->flags &= ~(uint16_t)VRING_USED_F_NO_NOTIFY;
     }
     write_barrier();
 }
@@ -484,6 +484,110 @@ inline int descriptor2iov(int i, volatile VirtqDesc *vd, struct iovec *iov,
         flags[i] = vd->flags;
 
     return 0;
+}
+
+// Dispatch a descriptor into cfg->out_iov or cfg->in_iov based on flags.
+static inline int push_descriptor(uint16_t flags, void *address,
+                                  uint32_t length,
+                                  const struct VirtioBufConfig *cfg,
+                                  size_t *out_count, size_t *in_count) {
+    struct iovec *buffer;
+    size_t max;
+    size_t *count;
+
+    if (flags & VRING_DESC_F_WRITE) {
+        buffer = cfg->in_iov;
+        max = cfg->max_in;
+        count = in_count;
+    } else {
+        buffer = cfg->out_iov;
+        max = cfg->max_out;
+        count = out_count;
+    }
+
+    if (*count >= max)
+        return -1;
+
+    buffer[*count].iov_base = address;
+    buffer[*count].iov_len = length;
+    (*count)++;
+    return 0;
+}
+
+/// record one descriptor list to iov, caller-provided buffer (no malloc)
+int process_descriptor_chain_buf(VirtQueue *virtqueue, uint16_t descriptor_head,
+                                 const struct VirtioBufConfig *cfg,
+                                 struct VirtioRequest *req) {
+
+    // Single-pass traversal; virtqueue->num guards against circular chains.
+    size_t out_count = 0, in_count = 0;
+    uint16_t next = descriptor_head;
+    volatile VirtqDesc *descriptor_table = virtqueue->desc_table;
+    for (size_t iter = 0; iter < virtqueue->num; iter++) {
+        VirtqDesc descriptor = descriptor_table[next];
+
+        if (descriptor.flags & VRING_DESC_F_INDIRECT) {
+            const size_t indirect_count = descriptor.len / sizeof(VirtqDesc);
+
+            volatile VirtqDesc *indirect_table = get_virt_addr(
+                (void *)(uintptr_t)descriptor.addr, virtqueue->dev->zone_id);
+            uint16_t indirect_next = 0;
+            for (size_t j = 0; j < indirect_count; j++) {
+                if (indirect_next >= indirect_count) {
+                    log_error("indirect_next is not less than indirect_count: "
+                              "%zu >= %zu",
+                              indirect_next, indirect_count);
+                    return -1;
+                }
+
+                VirtqDesc indirect_descriptor = indirect_table[indirect_next];
+                void *address =
+                    get_virt_addr((void *)(uintptr_t)indirect_descriptor.addr,
+                                  virtqueue->dev->zone_id);
+                if (!address) {
+                    log_error("address is null");
+                    return -1;
+                }
+
+                if (push_descriptor(indirect_descriptor.flags, address,
+                                    indirect_descriptor.len, cfg, &out_count,
+                                    &in_count) < 0) {
+                    log_error("descriptor buffer overflow");
+                    return -1;
+                }
+                if (!(indirect_descriptor.flags & VRING_DESC_F_NEXT))
+                    break;
+                indirect_next = indirect_descriptor.next;
+            }
+        } else {
+            void *address = get_virt_addr((void *)(uintptr_t)descriptor.addr,
+                                          virtqueue->dev->zone_id);
+            if (!address) {
+                log_error("address is null");
+                return -1;
+            }
+
+            if (push_descriptor(descriptor.flags, address, descriptor.len, cfg,
+                                &out_count, &in_count) < 0) {
+                log_error("descriptor buffer overflow");
+                return -1;
+            }
+        }
+
+        if (!(descriptor.flags & VRING_DESC_F_NEXT))
+            break;
+        next = descriptor.next;
+    }
+
+    *req = (struct VirtioRequest){
+        .out_iov = cfg->out_iov,
+        .out_count = out_count,
+        .in_iov = cfg->in_iov,
+        .in_count = in_count,
+    };
+
+    virtqueue->last_avail_idx++;
+    return out_count + in_count;
 }
 
 /// record one descriptor list to iov
@@ -599,6 +703,32 @@ void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen) {
     log_debug(
         "update used ring: used_idx is %d, elem->idx is %d, vq->num is %d",
         used_idx, idx, vq->num);
+}
+
+void update_used_ring_batch(VirtQueue *vq, const uint16_t *indices,
+                            const uint32_t *lens, size_t count) {
+    volatile VirtqUsed *used_ring;
+    uint16_t used_idx, mask;
+
+    if (count == 0)
+        return;
+
+    // Ensure prior stores (e.g. readv into guest buffers) are globally
+    // visible before any used-ring entry becomes observable.
+    write_barrier();
+
+    used_ring = vq->used_ring;
+    used_idx = used_ring->idx;
+    mask = vq->num - 1;
+
+    for (size_t i = 0; i < count; i++) {
+        used_ring->ring[(used_idx + i) & mask].id = indices[i];
+        used_ring->ring[(used_idx + i) & mask].len = lens[i];
+    }
+
+    write_barrier(); // make all entries visible
+    used_ring->idx = used_idx + count;
+    write_barrier(); // make idx update visible
 }
 
 // function for translating virtio offset to meaning string
@@ -877,6 +1007,8 @@ void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t value,
         if (regs->status == 0) {
             virtio_dev_reset(vdev);
         }
+        if (vdev->status_changed)
+            vdev->status_changed(vdev, value);
         break;
     case VIRTIO_MMIO_QUEUE_DESC_LOW:
         log_debug("write VIRTIO_MMIO_QUEUE_DESC_LOW");
