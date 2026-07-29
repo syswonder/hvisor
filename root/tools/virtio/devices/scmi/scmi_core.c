@@ -64,7 +64,7 @@ int scmi_make_response(struct scmi_resp_ctx *ctx, uint8_t protocol_id,
     }
 
     struct scmi_response *resp = ctx->iov->iov_base;
-    resp->header = SCMI_RESP_HDR(protocol_id, msg_id, token);
+    scmi_build_header(&resp->header, protocol_id, msg_id, token);
     resp->status = status;
     ctx->written = sizeof(struct scmi_response);
 

@@ -24,68 +24,30 @@
  * +--------------+--------------+----------+------+---------------+
  */
 
-/* -------------------------- Bitfield Operation Macros
- * -------------------------- */
-
-/* Generate mask, e.g. GENMASK(7,0)=0xFF */
-#define BITMASK(high, low) (((1u << ((high) - (low) + 1)) - 1) << (low))
-
-/* Extract field: mask first, then right shift */
-#define EXTRACT_BITS(val, high, low) (((val)&BITMASK((high), (low))) >> (low))
-
-/* Insert field: left shift first, then mask */
-#define INSERT_BITS(val, high, low) (((val) << (low)) & BITMASK((high), (low)))
-
-/* -------------------------- SCMI Header Field Definitions
- * -------------------------- */
-
-/* Message ID: bits [7:0] */
-#define SCMI_MSG_ID_LOW 0
-#define SCMI_MSG_ID_HIGH 7
-
-/* Message Type: bits [9:8] */
-#define SCMI_MSG_TYPE_LOW 8
-#define SCMI_MSG_TYPE_HIGH 9
-
-/* Protocol ID: bits [17:10] */
-#define SCMI_PROTOCOL_ID_LOW 10
-#define SCMI_PROTOCOL_ID_HIGH 17
-
-/* Token ID: bits [27:18] */
-#define SCMI_TOKEN_ID_LOW 18
-#define SCMI_TOKEN_ID_HIGH 27
-
-/* -------------------------- SCMI Header Parsing Macros
- * -------------------------- */
-
-/* Extract message ID */
-#define SCMI_MSG_ID(hdr) EXTRACT_BITS((hdr), SCMI_MSG_ID_HIGH, SCMI_MSG_ID_LOW)
-
-/* Extract message type */
-#define SCMI_MSG_TYPE(hdr)                                                     \
-    EXTRACT_BITS((hdr), SCMI_MSG_TYPE_HIGH, SCMI_MSG_TYPE_LOW)
-
-/* Extract protocol ID */
-#define SCMI_PROTOCOL_ID(hdr)                                                  \
-    EXTRACT_BITS((hdr), SCMI_PROTOCOL_ID_HIGH, SCMI_PROTOCOL_ID_LOW)
-
-/* Extract Token ID */
-#define SCMI_TOKEN_ID(hdr)                                                     \
-    EXTRACT_BITS((hdr), SCMI_TOKEN_ID_HIGH, SCMI_TOKEN_ID_LOW)
-
-/* Construct response header */
-#define SCMI_RESP_HDR(protocol_id, msg_id, token)                              \
-    (INSERT_BITS((msg_id), SCMI_MSG_ID_HIGH, SCMI_MSG_ID_LOW) |                \
-     INSERT_BITS(SCMI_MSG_TYPE_COMMAND, SCMI_MSG_TYPE_HIGH,                    \
-                 SCMI_MSG_TYPE_LOW) |                                          \
-     INSERT_BITS((protocol_id), SCMI_PROTOCOL_ID_HIGH, SCMI_PROTOCOL_ID_LOW) | \
-     INSERT_BITS((token), SCMI_TOKEN_ID_HIGH, SCMI_TOKEN_ID_LOW))
+struct scmi_msg_header {
+    uint32_t msg_id : 8;
+    uint32_t msg_type : 2;
+    uint32_t protocol_id : 8;
+    uint32_t token : 10;
+    uint32_t reserved : 4;
+} __attribute__((packed));
 
 /* -------------------------- SCMI Message Type Values
  * -------------------------- */
 #define SCMI_MSG_TYPE_COMMAND 0      /* Command */
 #define SCMI_MSG_TYPE_DELAYED_RESP 2 /* Delayed Response */
 #define SCMI_MSG_TYPE_NOTIFICATION 3 /* Notification */
+
+static inline void scmi_build_header(struct scmi_msg_header *hdr,
+                                     uint8_t protocol_id, uint8_t msg_id,
+                                     uint16_t token) {
+    *hdr = (struct scmi_msg_header){
+        .msg_id = msg_id,
+        .msg_type = SCMI_MSG_TYPE_COMMAND,
+        .protocol_id = protocol_id,
+        .token = token,
+    };
+}
 
 /* -------------------------- SCMI Protocol IDs -------------------------- */
 #define SCMI_PROTO_ID_BASE 0x10  /* Base Protocol */
@@ -135,13 +97,13 @@
 #define SCMI_BASE_MAX_CMD_ERR_COUNT 5
 
 struct scmi_request {
-    uint32_t header;   /* Packed SCMI message header */
+    struct scmi_msg_header header;
     uint8_t payload[]; /* Message-specific payload */
 } __attribute__((packed));
 
 struct scmi_response {
-    uint32_t header;   /* Packed SCMI message header */
-    uint32_t status;   /* Command status */
+    struct scmi_msg_header header;
+    int32_t status;    /* SCMI spec: int32 status code */
     uint8_t payload[]; /* Message-specific payload */
 } __attribute__((packed));
 
