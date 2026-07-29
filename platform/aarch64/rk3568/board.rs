@@ -204,12 +204,12 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
     //     virtual_start: 0x10f000,
     //     size: 0x1000,
     // }, //scmi-shmem
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_RAM,
-        physical_start: 0xfd440000,
-        virtual_start: 0xfd440000,
-        size: 0x20000,
-    }, // its
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_RAM,
+    //     physical_start: 0xfd440000,
+    //     virtual_start: 0xfd440000,
+    //     size: 0x20000,
+    // }, // its
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x1f0000000,
