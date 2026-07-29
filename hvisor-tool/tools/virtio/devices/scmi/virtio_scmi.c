@@ -111,35 +111,30 @@ static int virtq_tx_handle_one_request(void *dev, VirtQueue *vq) {
     struct iovec *resp_iov = &vreq.in_iov[0];
 
     // Check the request buffer: must have a 4-byte packed header
-    if (req_iov->iov_len < sizeof(uint32_t) ||
-        req_iov->iov_base == NULL || req_iov->iov_len > SCMI_MAX_BUFFER_SIZE) {
+    if (req_iov->iov_len < sizeof(uint32_t) || req_iov->iov_base == NULL ||
+        req_iov->iov_len > SCMI_MAX_BUFFER_SIZE) {
         log_error("Invalid request buffer");
         update_used_ring(vq, desc_idx, 0);
         return -EINVAL;
     }
 
-    // Parse packed 32-bit header
-    uint32_t packed_header = *(uint32_t *)req_iov->iov_base;
-    uint8_t protocol_id = SCMI_PROTOCOL_ID(packed_header);
-    uint8_t msg_id = SCMI_MSG_ID(packed_header);
-    uint8_t msg_type = SCMI_MSG_TYPE(packed_header);
-    uint16_t token = SCMI_TOKEN_ID(packed_header);
+    // Parse packed 32-bit header via bitfield struct
+    struct scmi_msg_header *hdr = req_iov->iov_base;
 
     log_debug("SCMI request: protocol=0x%x, msg=0x%x, type=%d, token=0x%x",
-              protocol_id, msg_id, msg_type, token);
+              hdr->protocol_id, hdr->msg_id, hdr->msg_type, hdr->token);
 
-    if (msg_type != SCMI_MSG_TYPE_COMMAND) {
-        log_error("Invalid message type: %d", msg_type);
+    if (hdr->msg_type != SCMI_MSG_TYPE_COMMAND) {
+        log_error("Invalid message type: %d", hdr->msg_type);
         update_used_ring(vq, desc_idx, 0);
         return -EINVAL;
     }
 
-    // Initialize response context from the response iovec
     struct scmi_resp_ctx ctx;
     scmi_resp_ctx_init(&ctx, resp_iov);
 
-    if (scmi_handle_message(dev, protocol_id, msg_id, token, req_iov,
-                            &ctx) != 0) {
+    if (scmi_handle_message(dev, hdr->protocol_id, hdr->msg_id, hdr->token,
+                            req_iov, &ctx) != 0) {
         log_error("Protocol handler failed");
         update_used_ring(vq, desc_idx, 0);
         return -EINVAL;
