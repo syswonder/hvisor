@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shutil
 import socket
 import signal
 import subprocess
@@ -127,7 +128,11 @@ def board_power_cycle(cfg: dict[str, Any]) -> None:
     script = board_power_script(cfg)
     if not script.is_file():
         raise SystemExit(f"board power script not found: {script}")
-    subprocess.run(["bash", str(script), "cycle", power_port], check=True, cwd=cfg["workspace"])
+    subprocess.run(
+        ["bash", str(script), "cycle", power_port, str(cfg.get("power_channel", 4))],
+        check=True,
+        cwd=cfg["workspace"],
+    )
 
 
 def board_wake_console(term: Terminal, *, repeats: int = 3) -> None:
@@ -152,6 +157,109 @@ def save_inner_serial_log(cfg: dict[str, Any], content: str) -> None:
         return
     path = logs_dir(cfg) / "zone1_inner_serial.log"
     path.write_text(content, encoding="utf-8")
+
+
+def stage_board_files(cfg: dict[str, Any]) -> None:
+    script = cfg["workspace"] / "jenkins" / "board_scp.sh"
+    if not script.is_file():
+        raise SystemExit(f"board scp script not found: {script}")
+
+    env = os.environ.copy()
+    env["ARCH"] = cfg["arch"]
+    env["BOARD"] = cfg["board"]
+    if cfg["kdir"]:
+        env["KDIR"] = cfg["kdir"]
+    env["WORKSPACE_ROOT"] = str(cfg["workspace"])
+    env["HVISOR_TOOL_PATH"] = cfg["hvisor_tool_path"]
+    env["STAGING_DIR"] = cfg["network_staging_dir"]
+    if cfg.get("zone1_dtb"):
+        zone1_dtb = Path(cfg["zone1_dtb"])
+        if not zone1_dtb.is_absolute():
+            zone1_dtb = cfg["workspace"] / zone1_dtb
+        env["ZONE1_DTB"] = str(zone1_dtb.resolve())
+    if cfg.get("external_dir"):
+        env["EXTERNAL_DIR"] = cfg["external_dir"]
+    if cfg.get("start_script"):
+        env["START_SCRIPT"] = cfg["start_script"]
+    env["COPY_HVISOR_BIN"] = "true" if cfg.get("copy_hvisor_bin", True) else "false"
+
+    subprocess.run(["bash", str(script)], check=True, cwd=cfg["workspace"], env=env)
+
+
+def board_login_if_needed(cfg: dict[str, Any], term: Terminal, timeout: float = 120.0) -> None:
+    term.send("")
+    if term.wait_pattern(r"[$#]\s", timeout=5.0):
+        return
+    if not term.wait_pattern(r"Phytium-Pi login:", timeout=timeout, from_offset=0):
+        raise TerminalTimeoutError("timed out waiting for Phytium-Pi login prompt")
+    term.send(cfg["board_user"])
+    if not term.wait_pattern(r"Password:", timeout=20.0):
+        raise TerminalTimeoutError("timed out waiting for Phytium-Pi password prompt")
+    term.send(cfg["board_pass"])
+    if not term.wait_pattern(r"[$#]\s", timeout=30.0):
+        raise TerminalTimeoutError("timed out waiting for Phytium-Pi shell prompt")
+
+
+def host_ssh_prefix(cfg: dict[str, Any]) -> list[str]:
+    target = f"{cfg['board_user']}@{cfg['board_ip']}"
+    base = [
+        "ssh",
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+        target,
+    ]
+    if cfg["board_pass"]:
+        if shutil.which("sshpass") is None:
+            raise SystemExit("sshpass is required for password-based board ssh/scp")
+        return ["sshpass", "-p", cfg["board_pass"], *base]
+    return base
+
+
+def host_scp_prefix(cfg: dict[str, Any]) -> list[str]:
+    base = [
+        "scp",
+        "-o",
+        "StrictHostKeyChecking=no",
+        "-o",
+        "UserKnownHostsFile=/dev/null",
+    ]
+    if cfg["board_pass"]:
+        if shutil.which("sshpass") is None:
+            raise SystemExit("sshpass is required for password-based board ssh/scp")
+        return ["sshpass", "-p", cfg["board_pass"], *base]
+    return base
+
+
+def run_host_command(cmd: list[str], timeout: float) -> None:
+    print("+ " + " ".join(cmd), flush=True)
+    subprocess.run(cmd, check=True, timeout=timeout)
+
+
+def phytium_deploy_zone1(cfg: dict[str, Any], term: Terminal | None) -> int:
+    print("————————————————\ncase: phytium_deploy_zone1\n————————————————\n", flush=True)
+    if term is None:
+        raise SystemExit("terminal backend is required")
+    board_login_if_needed(cfg, term)
+    term.run(
+        "phytium_set_ip",
+        f"echo {cfg['board_pass']} | sudo -S ifconfig {cfg['board_iface']} {cfg['board_ip']}",
+        timeout=30.0,
+    )
+    stage_board_files(cfg)
+    remote_clean = (
+        f"mkdir -p '{cfg['scp_dst']}' && "
+        f"find '{cfg['scp_dst']}' -mindepth 1 -maxdepth 1 -exec rm -rf {{}} +"
+    )
+    run_host_command([*host_ssh_prefix(cfg), remote_clean], timeout=60.0)
+    src = Path(cfg["network_staging_dir"])
+    run_host_command(
+        [*host_scp_prefix(cfg), *[str(p) for p in sorted(src.iterdir())], f"{cfg['board_user']}@{cfg['board_ip']}:{cfg['scp_dst']}/"],
+        timeout=300.0,
+    )
+    print("phytium zone1 files deployed successfully", flush=True)
+    return 0
 
 
 def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
@@ -189,14 +297,14 @@ def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
         cfg["_board_term"] = board_term
         board_power_cycle(cfg)
         time.sleep(3.0)
-        board_wake_console(board_term)
+        board_wake_console(board_term, repeats=8 if cfg["board"] == "phytium-pi" else 3)
 
         uboot_cmd = cfg.get("uboot_cmd", "")
         uboot_ready = cfg.get("uboot_ready_pattern", "")
         if uboot_cmd:
             if not uboot_ready:
                 uboot_ready = r"=>"
-            board_wait_uboot_prompt(board_term, uboot_ready, timeout=10.0)
+            board_wait_uboot_prompt(board_term, uboot_ready, timeout=float(cfg["uboot_prompt_timeout"]))
             time.sleep(0.3)
             board_term.send(uboot_cmd)
         if not board_term.wait_pattern(ZONE0_READY_PATTERN, timeout=180.0):
@@ -291,25 +399,7 @@ def network(cfg: dict[str, Any], term: Terminal | None) -> int:
         raise TerminalCommandError(f"ping {host_ip} failed")
 
     print(f"[network] ping {host_ip} ok, staging files on host", flush=True)
-    script = cfg["workspace"] / "jenkins" / "board_scp.sh"
-    if not script.is_file():
-        raise SystemExit(f"board scp script not found: {script}")
-
-    env = os.environ.copy()
-    env["ARCH"] = cfg["arch"]
-    env["BOARD"] = cfg["board"]
-    if cfg["kdir"]:
-        env["KDIR"] = cfg["kdir"]
-    env["WORKSPACE_ROOT"] = str(cfg["workspace"])
-    env["HVISOR_TOOL_PATH"] = cfg["hvisor_tool_path"]
-    env["STAGING_DIR"] = cfg["network_staging_dir"]
-    if cfg.get("zone1_dtb"):
-        zone1_dtb = Path(cfg["zone1_dtb"])
-        if not zone1_dtb.is_absolute():
-            zone1_dtb = cfg["workspace"] / zone1_dtb
-        env["ZONE1_DTB"] = str(zone1_dtb.resolve())
-
-    subprocess.run(["bash", str(script)], check=True, cwd=cfg["workspace"], env=env)
+    stage_board_files(cfg)
 
     # Let host staging finish and drain any buffered serial output before scp.
     time.sleep(3.0)
@@ -334,6 +424,22 @@ def network(cfg: dict[str, Any], term: Terminal | None) -> int:
         timeout=60.0,
     )
     print("network test and file deploy passed", flush=True)
+    return 0
+
+
+def phytium_start_zone1(cfg: dict[str, Any], term: Terminal | None) -> int:
+    print("————————————————\ncase: phytium_start_zone1\n————————————————\n", flush=True)
+    if term is None:
+        raise SystemExit("terminal backend is required")
+
+    term.run("phytium_zone1_cd", f"cd {cfg['scp_dst']}", timeout=15.0)
+    term.run("phytium_zone1_chmod", "chmod +x start.sh hvisor 2>/dev/null || true", timeout=30.0)
+    term.run("phytium_zone1_start", "./start.sh", timeout=120.0)
+    time.sleep(float(cfg["zone1_start_wait"]))
+    _, output = term.run("phytium_zone_list", "./hvisor zone list", timeout=30.0)
+    if not re.search(r"(?m)^\s*\|?\s*1\s*(?:\||\s)", output):
+        raise TerminalCommandError("zone id 1 was not found in './hvisor zone list' output")
+    print("phytium-pi zone1 check passed", flush=True)
     return 0
 
 
@@ -375,6 +481,8 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
 
 
 CASE_HANDLERS: dict[str, CaseFunc] = {
+    "phytium_deploy_zone1": phytium_deploy_zone1,
+    "phytium_start_zone1": phytium_start_zone1,
     "zone0_start": zone0_start,
     "network": network,
     "lspci": lspci,
@@ -409,6 +517,9 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
     network_cfg = tests.get("network") or {}
     if not isinstance(network_cfg, dict):
         network_cfg = {}
+    copy_hvisor_bin = network_cfg.get("copy_hvisor_bin", True)
+    if isinstance(copy_hvisor_bin, str):
+        copy_hvisor_bin = copy_hvisor_bin.lower() not in ("0", "false", "no")
     hvisor_tool_path = os.environ.get("HVISOR_TOOL_PATH", "").strip()
     if not hvisor_tool_path:
         hvisor_tool_path = str((cell_root / "hvisor-tool").resolve())
@@ -426,11 +537,18 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
         "socket_path": str((cell_root / ".qemu" / "qemu.sock").resolve()),
         "serial_port": str(tests.get("serial", "/dev/null")),
         "power_serial": str(tests.get("power_serial", "")).strip(),
+        "power_channel": int(tests.get("power_channel", 4)),
         "baudrate": int(tests.get("baudrate", 1500000)),
         "uboot_cmd": str(tests.get("uboot_cmd", "")).strip(),
         "uboot_ready_pattern": str(tests.get("uboot_ready_pattern", "")).strip(),
+        "uboot_prompt_timeout": float(tests.get("uboot_prompt_timeout", 20.0)),
         "tftp_dir": str(tests.get("tftp_dir", "/home/light/tftp")).strip(),
         "lspci": tests.get("lspci") or {},
+        "board_ip": str(tests.get("board_ip", "")).strip(),
+        "board_iface": str(tests.get("board_iface", "eth0")).strip(),
+        "board_user": str(tests.get("board_user", "root")).strip(),
+        "board_pass": str(tests.get("board_pass", "")).strip(),
+        "scp_dst": str(tests.get("scp_dst", "/root")).strip(),
         "network_host_ip": str(network_cfg.get("host_ip", "192.168.1.181")).strip(),
         "network_host_user": str(network_cfg.get("host_user", "light")).strip(),
         "network_staging_dir": str(
@@ -438,6 +556,10 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
         ).strip(),
         "network_ping_count": int(network_cfg.get("ping_count", 3)),
         "zone1_dtb": str(network_cfg.get("zone1_dtb", "")).strip(),
+        "external_dir": str(network_cfg.get("external_dir", "")).strip(),
+        "start_script": str(network_cfg.get("start_script", "")).strip(),
+        "copy_hvisor_bin": bool(copy_hvisor_bin),
+        "zone1_start_wait": float(tests.get("zone1_start_wait", 30.0)),
     }
 
 

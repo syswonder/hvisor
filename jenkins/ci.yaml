@@ -26,9 +26,13 @@ bids:
       mode: board
       serial: /dev/serial/by-id/usb-1a86_USB2.0-Ser_-if00-port0
       power_serial: /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0
+      power_channel: 4
       baudrate: 1500000
+      tftp_dir: /home/light/tftp/rk3568
+      zone0_dtbs:
+        - platform/aarch64/rk3568/image/dts/rk3568_limit_zone0.dtb
       uboot_ready_pattern: '=>'
-      uboot_cmd: pci enum;setenv serverip 192.168.1.181; setenv ipaddr 192.168.1.240; setenv loadaddr 0x60800000; setenv fdt_addr 0xa0000000; setenv zone0_kernel_addr 0x00280000; tftp ${loadaddr} ${serverip}:hvisor.bin; tftp ${fdt_addr} ${serverip}:rk3568_limit_zone0.dtb; tftp ${zone0_kernel_addr} ${serverip}:Image; bootm ${loadaddr} - ${fdt_addr};
+      uboot_cmd: pci enum;setenv serverip 192.168.1.181; setenv ipaddr 192.168.1.240; setenv loadaddr 0x60800000; setenv fdt_addr 0xa0000000; setenv zone0_kernel_addr 0x00280000; tftp ${loadaddr} ${serverip}:rk3568/hvisor.bin && tftp ${fdt_addr} ${serverip}:rk3568/rk3568_limit_zone0.dtb && tftp ${zone0_kernel_addr} ${serverip}:rk3568/Image && bootm ${loadaddr} - ${fdt_addr};
       network:
         host_ip: 192.168.1.181
         host_user: light
@@ -47,6 +51,40 @@ bids:
         - lspci
         - zone1_start
 
+  - bid: aarch64/phytium-pi
+    build_args:
+      - KDIR=/home/light/DEMO/linux/kernel-5.10
+    tests:
+      mode: board
+      serial: /dev/serial/by-id/phytium-pi-uart
+      power_serial: /dev/serial/by-id/usb-1a86_USB_Serial-if00-port0
+      power_channel: 3
+      baudrate: 115200
+      tftp_dir: /home/light/tftp/phytium-pi
+      zone0_dtbs:
+        - platform/aarch64/phytium-pi/image/dts/linux1.dtb
+        - platform/aarch64/phytium-pi/image/dts/phytium-pi-board-v2.dtb
+      zone0_image: /home/light/DEMO/phytium-pi-external/Image
+      uboot_ready_pattern: 'Phytium-Pi#'
+      uboot_cmd: setenv serverip 192.168.1.181; setenv ipaddr 192.168.1.178; setenv loadaddr 0x90100000; setenv fdt_addr 0x90000000; setenv zone0_kernel_addr 0xa0400000; setenv zone0_fdt_addr 0xa0000000; tftp ${loadaddr} ${serverip}:phytium-pi/hvisor.bin && tftp ${fdt_addr} ${serverip}:phytium-pi/phytium-pi-board-v2.dtb && tftp ${zone0_kernel_addr} ${serverip}:phytium-pi/Image && tftp ${zone0_fdt_addr} ${serverip}:phytium-pi/linux1.dtb && bootm ${loadaddr} - ${fdt_addr};
+      board_ip: 192.168.1.178
+      board_iface: eth0
+      board_user: user
+      board_pass: user
+      scp_dst: /home/user/zone1
+      network:
+        host_ip: 192.168.1.181
+        host_user: light
+        staging_dir: /home/light/DEMO/tmp
+        zone1_dtb: platform/aarch64/phytium-pi/image/dts/linux2.dtb
+        external_dir: /home/light/DEMO/phytium-pi-external
+        start_script: /home/light/DEMO/phytium-pi-external/start.sh
+        copy_hvisor_bin: false
+      cases:
+        - phytium_deploy_zone1
+        - zone0_start
+        - phytium_start_zone1
+
 
   - bid: x86_64/qemu
     build_args:
@@ -56,5 +94,3 @@ bids:
       cases:
         - zone0_start
         - zone1_start
-
-
