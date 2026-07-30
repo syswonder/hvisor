@@ -186,11 +186,22 @@ def stage_board_files(cfg: dict[str, Any]) -> None:
     subprocess.run(["bash", str(script)], check=True, cwd=cfg["workspace"], env=env)
 
 
-def board_login_if_needed(cfg: dict[str, Any], term: Terminal, timeout: float = 120.0) -> None:
-    term.send("")
-    if term.wait_pattern(r"[$#]\s", timeout=5.0):
-        return
-    if not term.wait_pattern(r"Phytium-Pi login:", timeout=timeout, from_offset=0):
+def board_login_if_needed(
+    cfg: dict[str, Any],
+    term: Terminal,
+    timeout: float = 120.0,
+    *,
+    wake: bool = True,
+) -> None:
+    if wake:
+        term.send("")
+        if term.wait_pattern(r"[$#]\s", timeout=5.0):
+            return
+    if wake:
+        login_ready = term.wait_pattern(r"Phytium-Pi login:", timeout=timeout, from_offset=0)
+    else:
+        login_ready = term.wait_pattern(r"Phytium-Pi login:", timeout=timeout)
+    if not login_ready:
         raise TerminalTimeoutError("timed out waiting for Phytium-Pi login prompt")
     term.send(cfg["board_user"])
     if not term.wait_pattern(r"Password:", timeout=20.0):
@@ -241,7 +252,8 @@ def phytium_deploy_zone1(cfg: dict[str, Any], term: Terminal | None) -> int:
     print("————————————————\ncase: phytium_deploy_zone1\n————————————————\n", flush=True)
     if term is None:
         raise SystemExit("terminal backend is required")
-    board_login_if_needed(cfg, term)
+    board_power_cycle(cfg)
+    board_login_if_needed(cfg, term, wake=False)
     term.run(
         "phytium_set_ip",
         f"echo {cfg['board_pass']} | sudo -S ifconfig {cfg['board_iface']} {cfg['board_ip']}",
@@ -436,10 +448,20 @@ def phytium_start_zone1(cfg: dict[str, Any], term: Terminal | None) -> int:
     term.run("phytium_zone1_chmod", "chmod +x start.sh hvisor 2>/dev/null || true", timeout=30.0)
     term.run("phytium_zone1_start", "./start.sh", timeout=120.0)
     time.sleep(float(cfg["zone1_start_wait"]))
-    _, output = term.run("phytium_zone_list", "./hvisor zone list", timeout=30.0)
-    if not re.search(r"(?m)^\s*\|?\s*1\s*(?:\||\s)", output):
-        raise TerminalCommandError("zone id 1 was not found in './hvisor zone list' output")
-    print("phytium-pi zone1 check passed", flush=True)
+
+    term.send("script -q /dev/null")
+    if not term.wait_pattern(r"[$#]\s", timeout=15.0):
+        raise TerminalTimeoutError("timed out waiting for shell after starting script")
+
+    term.send("screen /dev/pts/0")
+    if not term.wait_pattern(r"(?:login:|[$#]\s)", timeout=60.0):
+        raise TerminalTimeoutError("timed out waiting for Phytium-Pi zone1 console")
+
+    term.send("su")
+    if not term.wait_pattern(r"root@\(none\):/#\s", timeout=30.0):
+        raise TerminalTimeoutError("timed out waiting for Phytium-Pi zone1 root prompt")
+
+    print("phytium-pi zone1 root console check passed", flush=True)
     return 0
 
 
