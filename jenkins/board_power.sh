@@ -11,11 +11,6 @@ channel=${3:-4}
 lock_file=${RELAY_LOCK_FILE:-/var/lock/hvisor-relay.lock}
 lock_timeout=${RELAY_LOCK_TIMEOUT:-300}
 
-if ! command -v flock >/dev/null 2>&1; then
-    echo "error: flock is required for relay serial locking" >&2
-    exit 1
-fi
-
 case "${channel}" in
     1|2|3|4) ;;
     *)
@@ -24,47 +19,41 @@ case "${channel}" in
         ;;
 esac
 
-checksum() {
-    state=$1
-    printf '%02X' "$((0xA0 + channel + state))"
-}
-
 send_frame() {
     state=$1
-    frame=$(printf '%s%02X%s%02X%s%s' '\\xA0\\x' "${channel}" '\\x' "${state}" '\\x' "$(checksum "${state}")")
-    printf '%b' "$frame" | sudo socat - "$port,b9600,raw,echo=0"
+    checksum=$((0xA0 + channel + state))
+    printf '[power] send port=%s channel=%s state=%s frame=A0%02X%02X%02X\n' \
+        "$port" "$channel" "$state" "$channel" "$state" "$checksum"
+    frame=$(printf '\\%03o\\%03o\\%03o\\%03o' 160 "$channel" "$state" "$checksum")
+    if [ "$(id -u)" -eq 0 ]; then
+        printf '%b' "$frame" | socat - "$port,b9600,raw,echo=0"
+    else
+        printf '%b' "$frame" | sudo socat - "$port,b9600,raw,echo=0"
+    fi
 }
 
-run_locked() {
-    if ! flock -w "${lock_timeout}" 9; then
-        echo "error: timed out waiting for relay lock: ${lock_file}" >&2
-        exit 1
-    fi
-
-    case "$action" in
-        off)
-            send_frame 0
-            ;;
-        on)
-            send_frame 1
-            ;;
-        cycle)
-            send_frame 0
-            sleep 3
-            send_frame 1
-            ;;
-        *)
-            echo "usage: $0 off|on|cycle <port> [channel]" >&2
-            exit 1
-            ;;
-    esac
+command -v flock >/dev/null 2>&1 || {
+    echo "error: flock is required for relay serial locking" >&2
+    exit 1
 }
 
 exec 9>"${lock_file}"
+flock -w "${lock_timeout}" 9 || {
+    echo "error: timed out waiting for relay lock: ${lock_file}" >&2
+    exit 1
+}
 
 case "$action" in
-    off|on|cycle)
-        run_locked
+    off)
+        send_frame 0
+        ;;
+    on)
+        send_frame 1
+        ;;
+    cycle)
+        send_frame 0
+        sleep 3
+        send_frame 1
         ;;
     *)
         echo "usage: $0 off|on|cycle <port> [channel]" >&2

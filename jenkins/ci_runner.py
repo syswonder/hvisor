@@ -124,15 +124,19 @@ def board_power_script(cfg: dict[str, Any]) -> Path:
 def board_power_cycle(cfg: dict[str, Any]) -> None:
     power_port = str(cfg.get("power_serial", "")).strip()
     if not power_port:
+        print("[power] skip cycle: power_serial is empty", flush=True)
         return
     script = board_power_script(cfg)
     if not script.is_file():
         raise SystemExit(f"board power script not found: {script}")
+    power_channel = str(cfg.get("power_channel", 4))
+    print(f"[power] cycle port={power_port} channel={power_channel}", flush=True)
     subprocess.run(
-        ["bash", str(script), "cycle", power_port, str(cfg.get("power_channel", 4))],
+        ["bash", str(script), "cycle", power_port, power_channel],
         check=True,
         cwd=cfg["workspace"],
     )
+    print("[power] cycle completed", flush=True)
 
 
 def board_wake_console(term: Terminal, *, repeats: int = 3) -> None:
@@ -248,11 +252,7 @@ def run_host_command(cmd: list[str], timeout: float) -> None:
     subprocess.run(cmd, check=True, timeout=timeout)
 
 
-def phytium_deploy_zone1(cfg: dict[str, Any], term: Terminal | None) -> int:
-    print("————————————————\ncase: phytium_deploy_zone1\n————————————————\n", flush=True)
-    if term is None:
-        raise SystemExit("terminal backend is required")
-    board_power_cycle(cfg)
+def phytium_deploy_zone1_with_terminal(cfg: dict[str, Any], term: Terminal) -> int:
     board_login_if_needed(cfg, term, wake=False)
     term.run(
         "phytium_set_ip",
@@ -272,6 +272,18 @@ def phytium_deploy_zone1(cfg: dict[str, Any], term: Terminal | None) -> int:
     )
     print("phytium zone1 files deployed successfully", flush=True)
     return 0
+
+
+def phytium_deploy_zone1(cfg: dict[str, Any], term: Terminal | None) -> int:
+    print("————————————————\ncase: phytium_deploy_zone1\n————————————————\n", flush=True)
+    board_power_cycle(cfg)
+    if term is not None:
+        return phytium_deploy_zone1_with_terminal(cfg, term)
+
+    log_path = logs_dir(cfg) / "zone1_console.log"
+    log_path.write_text("", encoding="utf-8")
+    with build_terminal(cfg, log_path) as board_term:
+        return phytium_deploy_zone1_with_terminal(cfg, board_term)
 
 
 def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
@@ -601,7 +613,7 @@ def main() -> int:
                 available = ", ".join(sorted(CASE_HANDLERS.keys()))
                 raise SystemExit(f"unknown case '{case_name}', available: {available}")
 
-            if case_name == "zone0_start":
+            if case_name in ("phytium_deploy_zone1", "zone0_start"):
                 rc = case_fn(cfg, None)
                 if rc != 0:
                     return rc
