@@ -282,7 +282,7 @@ static void virtio_blk_close(VirtIODevice *vdev) {
     BlkDev *dev = vdev->dev;
     if (dev) {
         pthread_mutex_lock(&dev->mtx);
-        dev->close = 1;
+        dev->close = true;
         pthread_cond_signal(&dev->cond);
         pthread_mutex_unlock(&dev->mtx);
         pthread_join(dev->tid, NULL);

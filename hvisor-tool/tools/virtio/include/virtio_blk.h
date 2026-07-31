@@ -13,6 +13,7 @@
 #include "virtio.h"
 #include <linux/virtio_blk.h>
 #include <pthread.h>
+#include <stdbool.h>
 #include <stdint.h>
 #include <sys/queue.h>
 
@@ -44,12 +45,14 @@ struct blkp_req {
 typedef struct virtio_blk_dev {
     BlkConfig config;
     int img_fd;
-    // describe the worker thread that executes read, write and ioctl.
     pthread_t tid;
     pthread_mutex_t mtx;
     pthread_cond_t cond;
     TAILQ_HEAD(, blkp_req) procq;
-    int close;
+    bool close;
+    bool thread_started;
+    struct iovec out_buf[VIRTQUEUE_BLK_MAX_SIZE];
+    struct iovec in_buf[VIRTQUEUE_BLK_MAX_SIZE];
 } BlkDev;
 
 struct virtio_blk_init_params {
