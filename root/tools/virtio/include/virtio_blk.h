@@ -15,7 +15,6 @@
 #include <pthread.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <sys/queue.h>
 
 /// Maximum number of segments in a request.
 #define BLK_SEG_MAX 512
@@ -32,23 +31,12 @@
 typedef struct virtio_blk_config BlkConfig;
 typedef struct virtio_blk_outhdr BlkReqHead;
 
-// A request needed to process by blk thread.
-struct blkp_req {
-    TAILQ_ENTRY(blkp_req) link;
-    struct iovec *iov;
-    int iovcnt;
-    uint64_t offset;
-    uint32_t type;
-    uint16_t idx;
-};
-
 typedef struct virtio_blk_dev {
     BlkConfig config;
     int img_fd;
     pthread_t tid;
     pthread_mutex_t mtx;
     pthread_cond_t cond;
-    TAILQ_HEAD(, blkp_req) procq;
     bool close;
     bool thread_started;
     struct iovec out_buf[VIRTQUEUE_BLK_MAX_SIZE];
