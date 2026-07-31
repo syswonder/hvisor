@@ -54,6 +54,23 @@ static int get_breq(BlkDev *dev, struct blkp_req **req) {
     return 1;
 }
 
+/**
+ * VIRTIO_BLK_T_FLUSH — persist all previously completed writes.
+ *
+ * Virtio descriptor layout: out_iov=[header], in_iov=[status].
+ * Implemented via fdatasync(2); guarantees data is on stable storage.
+ *
+ * @param fd  backing file descriptor
+ * @return    0 on success, errno on failure
+ */
+static int blk_do_flush(int fd) {
+    if (fdatasync(fd) < 0) {
+        log_error("fdatasync failed, errno=%d", errno);
+        return errno;
+    }
+    return 0;
+}
+
 static void blkproc(BlkDev *dev, struct blkp_req *req, VirtQueue *vq) {
     struct iovec *iov = req->iov;
     int n = req->iovcnt, err = 0;
@@ -84,10 +101,7 @@ static void blkproc(BlkDev *dev, struct blkp_req *req, VirtQueue *vq) {
         }
         break;
     case VIRTIO_BLK_T_FLUSH:
-        if (fsync(dev->img_fd) < 0) {
-            log_error("fsync failed");
-            err = errno;
-        }
+        err = blk_do_flush(dev->img_fd);
         break;
     case VIRTIO_BLK_T_GET_ID: {
         char s[20] = "hvisor-virblk";
