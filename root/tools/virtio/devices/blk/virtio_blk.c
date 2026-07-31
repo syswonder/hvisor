@@ -14,6 +14,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/param.h>
@@ -69,6 +70,96 @@ static int blk_do_flush(int fd) {
         return errno;
     }
     return 0;
+}
+
+/**
+ * VIRTIO_BLK_T_IN — read sectors from the backing file.
+ *
+ * Virtio descriptor layout: out_iov=[header], in_iov=[data…, status].
+ *
+ * @param fd    backing file descriptor
+ * @param wlen  [out] bytes successfully read
+ * @param iov   guest data buffers (device-writable in_iov)
+ * @param cnt   number of iov entries
+ * @param off   byte offset (= sector * 512)
+ * @return      0 on success, errno on failure
+ */
+static int blk_do_read(int fd, ssize_t *wlen, struct iovec *iov, int cnt,
+                       uint64_t off) {
+    ssize_t len = preadv(fd, iov, cnt, off);
+    log_debug("preadv, len=%zd, offset=%ld", len, off);
+    if (len < 0) {
+        log_error("preadv failed, errno=%d", errno);
+        return errno;
+    }
+    *wlen = len;
+    return 0;
+}
+
+/**
+ * VIRTIO_BLK_T_OUT — write sectors to the backing file.
+ *
+ * Virtio descriptor layout: out_iov=[header, data…], in_iov=[status].
+ *
+ * @param fd   backing file descriptor
+ * @param iov  guest data buffers (device-readable out_iov, excluding header)
+ * @param cnt  number of iov entries
+ * @param off  byte offset (= sector * 512)
+ * @return     0 on success, errno on failure
+ */
+static int blk_do_write(int fd, struct iovec *iov, int cnt, uint64_t off) {
+    ssize_t len = pwritev(fd, iov, cnt, off);
+    log_debug("pwritev, len=%zd, offset=%ld", len, off);
+    if (len < 0) {
+        log_error("pwritev failed, errno=%d", errno);
+        return errno;
+    }
+    return 0;
+}
+
+/**
+ * VIRTIO_BLK_T_GET_ID — return the device identification string.
+ *
+ * Virtio descriptor layout: out_iov=[header], in_iov=[id_buf, status].
+ * The string is NUL-terminated unless the buffer is exactly 20 bytes
+ * (VIRTIO_BLK_ID_BYTES).
+ *
+ * @param iov  guest ID buffer (first in_iov entry)
+ * @return     number of bytes written (= strlen + 1, capped at iov_len)
+ */
+static ssize_t blk_do_get_id(struct iovec *iov) {
+    int n = snprintf(iov->iov_base, iov->iov_len, "hvisor-virblk");
+    return MIN(n + 1, (ssize_t)iov->iov_len);
+}
+
+/**
+ * Set the status byte and push a used-ring entry.
+ *
+ * Every consumed descriptor — including corrupt ones, which are completed
+ * with @p wlen = 0 — must call this to keep avail- and used-ring indices
+ * in sync.  The used-ring length is @p wlen + 1 to account for the status
+ * byte itself.
+ *
+ * @param vq    target virtqueue
+ * @param idx   descriptor index (id field in used-ring element)
+ * @param st    pointer to the status byte in guest memory (may be NULL if
+ *              the descriptor chain was malformed and no status byte exists)
+ * @param err   0 for success, EOPNOTSUPP, or an errno value
+ * @param wlen  data bytes transferred (0 for FLUSH, discard, or errors)
+ */
+static void blk_complete(VirtQueue *vq, uint16_t idx, uint8_t *st, int err,
+                         ssize_t wlen) {
+    if (st) {
+        if (err == 0)
+            *st = VIRTIO_BLK_S_OK;
+        else if (err == EOPNOTSUPP)
+            *st = VIRTIO_BLK_S_UNSUPP;
+        else
+            *st = VIRTIO_BLK_S_IOERR;
+    }
+    if (err && err != EOPNOTSUPP)
+        log_error("virtio-block error, err=%d", err);
+    update_used_ring(vq, idx, wlen + 1);
 }
 
 static void blkproc(BlkDev *dev, struct blkp_req *req, VirtQueue *vq) {
