@@ -15,8 +15,10 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <linux/fs.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <sys/ioctl.h>
 #include <sys/param.h>
 #include <sys/stat.h>
 
@@ -262,23 +264,64 @@ static void *blkproc_thread(void *arg) {
     return NULL;
 }
 
-// create blk dev.
+/*
+ * Allocate and zero-initialize a BlkDev. The worker thread is NOT started
+ * here - start_blk_worker() is called after virtio_blk_init() succeeds.
+ */
 static BlkDev *init_blk_dev(VirtIODevice *vdev) {
-    BlkDev *dev = malloc(sizeof(BlkDev));
+    BlkDev *dev = calloc(1, sizeof(BlkDev));
+    if (!dev) {
+        log_error("failed to allocate blk device");
+        return NULL;
+    }
+
     vdev->dev = dev;
     dev->config.capacity = -1;
     dev->config.size_max = -1;
     dev->config.seg_max = BLK_SEG_MAX;
     dev->config.blk_size = SECTOR_BSIZE;
     dev->img_fd = -1;
-    dev->close = false;
-    pthread_mutex_init(&dev->mtx, NULL);
-    pthread_cond_init(&dev->cond, NULL);
-    pthread_create(&dev->tid, NULL, blkproc_thread, vdev);
+
+    if (pthread_mutex_init(&dev->mtx, NULL) != 0) {
+        log_error("failed to init blk mutex");
+        free(dev);
+        vdev->dev = NULL;
+        return NULL;
+    }
+
+    if (pthread_cond_init(&dev->cond, NULL) != 0) {
+        log_error("failed to init blk cond");
+        pthread_mutex_destroy(&dev->mtx);
+        free(dev);
+        vdev->dev = NULL;
+        return NULL;
+    }
+
     return dev;
 }
 
+/*
+ * Start the per-device I/O worker thread. Must be called after the virtqueue
+ * is allocated (init_virtio_queue) and the backing image is opened
+ * (virtio_blk_init), but before the guest activates the device.
+ */
+static int start_blk_worker(VirtIODevice *vdev) {
+    BlkDev *dev = vdev->dev;
+
+    if (dev->thread_started)
+        return 0;
+
+    if (pthread_create(&dev->tid, NULL, blkproc_thread, vdev) != 0) {
+        log_error("failed to create blk thread");
+        return -1;
+    }
+
+    dev->thread_started = true;
+    return 0;
+}
+
 static int virtio_blk_init(VirtIODevice *vdev, const char *img_path) {
+
     BlkDev *dev = vdev->dev;
     if (!dev) {
         log_error("virtio_blk_init: vdev->dev is nullptr");
@@ -297,6 +340,16 @@ static int virtio_blk_init(VirtIODevice *vdev, const char *img_path) {
         return -1;
     }
     uint64_t blk_size = st.st_size / SECTOR_BSIZE;
+    if (blk_size == 0) {
+        // st_size may be 0 for real block devices; try BLKGETSIZE64
+        uint64_t size64;
+        if (ioctl(dev->img_fd, BLKGETSIZE64, &size64) == 0) {
+            blk_size = size64 / SECTOR_BSIZE;
+        } else {
+            log_error("cannot determine block device size for %s", img_path);
+            return -1;
+        }
+    }
     dev->config.capacity = blk_size;
     dev->config.size_max = blk_size;
 
@@ -332,11 +385,13 @@ static void virtio_blk_close(VirtIODevice *vdev) {
 
     BlkDev *dev = vdev->dev;
     if (dev) {
-        pthread_mutex_lock(&dev->mtx);
-        dev->close = true;
-        pthread_cond_signal(&dev->cond);
-        pthread_mutex_unlock(&dev->mtx);
-        pthread_join(dev->tid, NULL);
+        if (dev->thread_started) {
+            pthread_mutex_lock(&dev->mtx);
+            dev->close = true;
+            pthread_cond_signal(&dev->cond);
+            pthread_mutex_unlock(&dev->mtx);
+            pthread_join(dev->tid, NULL);
+        }
         pthread_mutex_destroy(&dev->mtx);
         pthread_cond_destroy(&dev->cond);
         if (dev->img_fd >= 0)
@@ -356,6 +411,10 @@ static int virtio_blk_do_init(VirtIODevice *vdev, const void *params) {
     if (!init_blk_dev(vdev))
         return -ENOMEM;
     if (virtio_blk_init(vdev, p->img_path) != 0)
+        return -EIO;
+    // The worker is only started once the backing image is open; the
+    // virtqueue was already allocated by init_virtio_queue() before init.
+    if (start_blk_worker(vdev) != 0)
         return -EIO;
     return 0;
 }
