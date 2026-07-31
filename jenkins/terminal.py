@@ -16,9 +16,7 @@ from pathlib import Path
 
 import serial
 
-RUN_RESULT_RE = re.compile(
-    r"__CI_RUN_RESULT__ case=(?P<case>[^\s]+) run_id=(?P<run_id>[a-f0-9]+) rc=(?P<rc>\d+)"
-)
+RUN_RESULT_RE = re.compile(r"__R__(?P<run_id>[a-f0-9]+):(?P<rc>\d+)")
 
 
 class TerminalTimeoutError(TimeoutError):
@@ -311,6 +309,10 @@ class Terminal:
         self._ensure_open()
         self.backend.flush_input()
 
+    def offset(self) -> int:
+        self._ensure_open()
+        return self._collector.offset()
+
     def send(self, command: str) -> None:
         self._ensure_open()
         payload = command.rstrip("\n") + "\n"
@@ -322,16 +324,18 @@ class Terminal:
         command: str,
         timeout: float = 30.0,
         poll_interval: float = 0.05,
+        wake_interval: float | None = None,
     ) -> tuple[int, str]:
-        """Run a shell command and wait for __CI_RUN_RESULT__ in the log."""
+        """Run a shell command and wait for the compact result marker in the log."""
         self._ensure_open()
-        run_id = uuid.uuid4().hex
+        run_id = uuid.uuid4().hex[:8]
         offset = self._collector.offset()
-        wrapped = f"{command}; echo __CI_RUN_RESULT__ case={case} run_id={run_id} rc=$?"
+        wrapped = f"{command}; echo __R__{run_id}:$?"
         self.send(wrapped)
 
         deadline = time.monotonic() + timeout
-        run_id_needle = f"run_id={run_id}"
+        next_wake = time.monotonic() + wake_interval if wake_interval else None
+        run_id_needle = f"__R__{run_id}:"
         while time.monotonic() < deadline:
             chunk = self._collector.tail_since(offset)
             if run_id_needle in chunk:
@@ -341,6 +345,9 @@ class Terminal:
                         rc = int(match.group("rc"))
                         output = chunk[: match.start()]
                         return rc, output
+            if next_wake is not None and time.monotonic() >= next_wake:
+                self.send("")
+                next_wake = time.monotonic() + wake_interval
             time.sleep(poll_interval)
 
         raise TerminalTimeoutError(

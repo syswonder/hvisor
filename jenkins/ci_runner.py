@@ -4,6 +4,7 @@ from __future__ import annotations
 import argparse
 import os
 import re
+import shlex
 import shutil
 import socket
 import signal
@@ -208,7 +209,7 @@ def board_login_if_needed(
     if not login_ready:
         raise TerminalTimeoutError("timed out waiting for Phytium-Pi login prompt")
     term.send(cfg["board_user"])
-    if not term.wait_pattern(r"Password:", timeout=20.0):
+    if not term.wait_pattern(r"(?:Password|密码)[:：]", timeout=20.0):
         raise TerminalTimeoutError("timed out waiting for Phytium-Pi password prompt")
     term.send(cfg["board_pass"])
     if not term.wait_pattern(r"[$#]\s", timeout=30.0):
@@ -252,6 +253,20 @@ def run_host_command(cmd: list[str], timeout: float) -> None:
     subprocess.run(cmd, check=True, timeout=timeout)
 
 
+def run_host_command_with_pty(cmd: list[str], timeout: float) -> None:
+    shell_cmd = shlex.join(cmd)
+    print("+ " + shell_cmd, flush=True)
+    subprocess.run(["script", "-qfec", shell_cmd, "/dev/null"], check=True, timeout=timeout)
+
+
+def describe_staged_files(src: Path) -> list[Path]:
+    files = sorted(p for p in src.iterdir() if p.is_file())
+    print(f"[scp] staging dir: {src}", flush=True)
+    for path in files:
+        print(f"[scp]   {path.name} ({path.stat().st_size} bytes)", flush=True)
+    return files
+
+
 def phytium_deploy_zone1_with_terminal(cfg: dict[str, Any], term: Terminal) -> int:
     board_login_if_needed(cfg, term, wake=False)
     term.run(
@@ -260,16 +275,23 @@ def phytium_deploy_zone1_with_terminal(cfg: dict[str, Any], term: Terminal) -> i
         timeout=30.0,
     )
     stage_board_files(cfg)
+    src = Path(cfg["network_staging_dir"])
+    staged_files = describe_staged_files(src)
+
     remote_clean = (
         f"mkdir -p '{cfg['scp_dst']}' && "
         f"find '{cfg['scp_dst']}' -mindepth 1 -maxdepth 1 -exec rm -rf {{}} +"
     )
+    print(f"[scp] cleaning {cfg['board_user']}@{cfg['board_ip']}:{cfg['scp_dst']}", flush=True)
     run_host_command([*host_ssh_prefix(cfg), remote_clean], timeout=60.0)
-    src = Path(cfg["network_staging_dir"])
-    run_host_command(
-        [*host_scp_prefix(cfg), *[str(p) for p in sorted(src.iterdir())], f"{cfg['board_user']}@{cfg['board_ip']}:{cfg['scp_dst']}/"],
+    print(f"[scp] copying {len(staged_files)} files to {cfg['board_ip']}:{cfg['scp_dst']}", flush=True)
+    run_host_command_with_pty(
+        [*host_scp_prefix(cfg), *[str(p) for p in staged_files], f"{cfg['board_user']}@{cfg['board_ip']}:{cfg['scp_dst']}/"],
         timeout=300.0,
     )
+    print(f"[scp] syncing remote files on {cfg['board_ip']} before power cycle", flush=True)
+    run_host_command([*host_ssh_prefix(cfg), "sync; sleep 5; sync"], timeout=120.0)
+    print("[scp] remote sync completed", flush=True)
     print("phytium zone1 files deployed successfully", flush=True)
     return 0
 
@@ -430,15 +452,13 @@ def network(cfg: dict[str, Any], term: Terminal | None) -> int:
 
     host_user = cfg["network_host_user"]
     staging_dir = cfg["network_staging_dir"]
-    term.run(
-        "network_scp_env",
-        f"export CI_H={host_ip} CI_U={host_user} CI_D={staging_dir}",
-        timeout=30.0,
-    )
+    term.run("network_scp_host", f"CI_H={host_ip}", timeout=15.0)
+    term.run("network_scp_user", f"CI_U={host_user}", timeout=15.0)
+    term.run("network_scp_dir", f"CI_D={staging_dir}", timeout=15.0)
     # Keep the scp line short: serial consoles truncate long commands.
     scp_cmd = "scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $CI_U@$CI_H:$CI_D/* /root/"
     print(f"[network] pulling staged files from {host_user}@{host_ip}:{staging_dir}", flush=True)
-    pull_rc, _ = term.run("network_scp_pull", scp_cmd, timeout=300.0)
+    pull_rc, _ = term.run("network_scp_pull", scp_cmd, timeout=900.0)
     if pull_rc != 0:
         raise TerminalCommandError(f"board scp pull failed with rc={pull_rc}")
 
@@ -456,21 +476,31 @@ def phytium_start_zone1(cfg: dict[str, Any], term: Terminal | None) -> int:
     if term is None:
         raise SystemExit("terminal backend is required")
 
+    print("[phytium] sending zone0 su", flush=True)
+    term.send("su")
+    if not term.wait_pattern(r"root@\(none\):[^\r\n]*#\s", timeout=30.0):
+        raise TerminalTimeoutError("timed out waiting for Phytium-Pi zone0 root prompt")
+
     term.run("phytium_zone1_cd", f"cd {cfg['scp_dst']}", timeout=15.0)
     term.run("phytium_zone1_chmod", "chmod +x start.sh hvisor 2>/dev/null || true", timeout=30.0)
-    term.run("phytium_zone1_start", "./start.sh", timeout=120.0)
-    time.sleep(float(cfg["zone1_start_wait"]))
+    term.send("./start.sh")
+    print("[phytium] start.sh sent, wait 20s before opening zone1 console", flush=True)
+    time.sleep(20.0)
 
-    term.send("script -q /dev/null")
-    if not term.wait_pattern(r"[$#]\s", timeout=15.0):
-        raise TerminalTimeoutError("timed out waiting for shell after starting script")
-
+    print("[phytium] sending enter before script", flush=True)
+    term.send("")
+    time.sleep(1.0)
+    print("[phytium] sending: script /dev/null", flush=True)
+    term.send("script /dev/null")
+    time.sleep(2.0)
+    print("[phytium] sending: screen /dev/pts/0", flush=True)
     term.send("screen /dev/pts/0")
-    if not term.wait_pattern(r"(?:login:|[$#]\s)", timeout=60.0):
-        raise TerminalTimeoutError("timed out waiting for Phytium-Pi zone1 console")
+    time.sleep(3.0)
 
+    print("[phytium] sending zone1 su", flush=True)
+    su_offset = term.offset()
     term.send("su")
-    if not term.wait_pattern(r"root@\(none\):/#\s", timeout=30.0):
+    if not term.wait_pattern(r"root@\(none\):[^\r\n]*#\s", timeout=30.0, from_offset=su_offset):
         raise TerminalTimeoutError("timed out waiting for Phytium-Pi zone1 root prompt")
 
     print("phytium-pi zone1 root console check passed", flush=True)
