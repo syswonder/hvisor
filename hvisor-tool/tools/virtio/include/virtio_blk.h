@@ -26,7 +26,7 @@
 // for some reason we disable them for now.
 #define BLK_SUPPORTED_FEATURES                                                 \
     ((1ULL << VIRTIO_BLK_F_SEG_MAX) | (1ULL << VIRTIO_BLK_F_SIZE_MAX) |        \
-     (1ULL << VIRTIO_F_VERSION_1))
+     (1ULL << VIRTIO_BLK_F_FLUSH) | (1ULL << VIRTIO_F_VERSION_1))
 
 typedef struct virtio_blk_config BlkConfig;
 typedef struct virtio_blk_outhdr BlkReqHead;
