@@ -72,7 +72,7 @@ impl Pl011Uart {
     }
 
     fn check_fr(&mut self) -> bool {
-        self.regs().fr.get() & (1 << 4) != 0
+        self.regs().fr.get() & (1 << 3) == 0
     }
 
     fn getchar(&mut self) -> Option<u8> {

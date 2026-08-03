@@ -85,7 +85,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 7] = [
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x9020000,
-        virtual_start: 0x8020000,
+        virtual_start: 0x9020000,
         size: 0x1000,
     }, // fw-cfg
     HvConfigMemoryRegion {

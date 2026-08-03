@@ -74,7 +74,7 @@ impl Uart16550 {
     }
 
     pub fn check_lsr(&mut self) -> bool {
-        return self.regs().LSR.get() & (1 << 5) != 0;
+        self.regs().LSR.get() & (1 << 6) != 0
     }
 
     #[inline]
@@ -96,5 +96,5 @@ pub fn console_getchar() -> Option<u8> {
 }
 
 pub fn console_free_check() -> bool {
-    return unsafe { UART.check_lsr() };
+    unsafe { UART.check_lsr() }
 }

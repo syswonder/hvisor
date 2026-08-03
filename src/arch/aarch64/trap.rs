@@ -14,6 +14,7 @@
 // Authors:
 //
 use aarch64_cpu::{asm::wfi, registers::*};
+use bit_field::BitField;
 use core::arch::global_asm;
 
 use super::cpu::GeneralRegisters;
@@ -305,29 +306,16 @@ struct SysRegEncoding {
 }
 
 fn decode_sysreg(esr: u64) -> SysRegEncoding {
-    let iss = esr & 0x01ff_ffff;
+    let iss = esr.get_bits(0..=24);
 
     SysRegEncoding {
-        // bit[0]: Direction (0 = MSR, 1 = MRS)
-        is_read: (iss & 1) != 0,
-
-        // Op0 = iss[21:20]
-        op0: ((iss >> 20) & 0x3) as u8,
-
-        // Op2 = iss[19:17]
-        op2: ((iss >> 17) & 0x7) as u8,
-
-        // Op1 = iss[16:14]
-        op1: ((iss >> 14) & 0x7) as u8,
-
-        // CRn = iss[13:10]
-        crn: ((iss >> 10) & 0xF) as u8,
-
-        // Rt = iss[9:5]
-        rt: ((iss >> 5) & 0x1F) as u8,
-
-        // CRm = iss[4:1]
-        crm: ((iss >> 1) & 0xF) as u8,
+        is_read: iss.get_bit(0),
+        op0: iss.get_bits(20..=21) as u8,
+        op1: iss.get_bits(14..=16) as u8,
+        crn: iss.get_bits(10..=13) as u8,
+        crm: iss.get_bits(1..=4) as u8,
+        op2: iss.get_bits(17..=19) as u8,
+        rt: iss.get_bits(5..=9) as u8,
     }
 }
 
@@ -349,8 +337,8 @@ fn handle_sysreg(regs: &mut GeneralRegisters) {
 
     if is_icc_sgi1r_el1(&sys) {
         trace!("handle sgi el1");
-        let rt = (ESR_EL2.get() >> 5) & 0x1f;
-        let val = regs.usr[rt as usize];
+        let rt = sys.rt as usize;
+        let val = if rt == 31 { 0 } else { regs.usr[rt] };
         trace!("esr_el2 rt{}: {:#x?}", rt, val);
         let sgi_id: u64 = (val & (0xf << 24)) >> 24;
         if !this_cpu_data().vcpu_state.is_running() {

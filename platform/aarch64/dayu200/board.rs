@@ -17,7 +17,7 @@
 use crate::{
     arch::{
         mmu::MemoryType,
-        zone::{GicConfig, Gicv3Config, HvArchZoneConfig},
+        zone::{GicConfig, Gicv3Config, HvArchZoneConfig, UefiConfig},
     },
     config::*,
 };
@@ -35,6 +35,9 @@ pub static BOARD_MPIDR_MAPPINGS: [u64; BOARD_NCPUS] = [
     0x200,   // cpu2
     0x300,   // cpu3
 ];
+
+/// Early boot cache invalidate mask (per CPU): bit0->L1(D), bit1->L2, bit2->L3.
+pub static BOARD_EARLY_CACHE_INVALIDATE_MASKS: [u64; BOARD_NCPUS] = [0b011; BOARD_NCPUS];
 
 /// The physical memory layout of the board.
 /// Each address should align to 2M (0x200000).
@@ -104,8 +107,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 8] = [
 ];
 
 pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[
-    0x33, 0x38, 0x3b, 0x3d, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x4e, 0x85, 0x8b, 0x8d,
-    0x96,
+    0x33, 0x38, 0x3b, 0x3d, 0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x4e, 0x85, 0x8b, 0x8d, 0x96,
 ]);
 
 pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x6b;
@@ -120,6 +122,7 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
         gits_base: 0,
         gits_size: 0,
     }),
+    uefi_config: UefiConfig::NoUefi,
 };
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];

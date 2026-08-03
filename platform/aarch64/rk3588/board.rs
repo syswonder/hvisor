@@ -49,6 +49,9 @@ pub static BOARD_MPIDR_MAPPINGS: [u64; BOARD_NCPUS] = [
     0x700,   // cpu7
 ];
 
+/// Early boot cache invalidate mask (per CPU): bit0->L1(D), bit1->L2, bit2->L3.
+pub static BOARD_EARLY_CACHE_INVALIDATE_MASKS: [u64; BOARD_NCPUS] = [0b111; BOARD_NCPUS];
+
 /// The physical memory layout of the board.
 /// Each address should align to 2M (0x200000).
 /// Addresses must be in ascending order.
