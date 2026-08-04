@@ -109,9 +109,26 @@ union GicConfig {
     struct Gicv3Payload gicv3;
 };
 
+struct Uefi {
+    __u64 memory_map_addr;
+    __u64 memory_map_size;
+    __u64 sys_map_addr;
+};
+
+struct UefiPayload {
+    __u64 uefi_tag;
+    struct Uefi uefi;
+};
+
+union UefiConfig {
+    struct UefiPayload uefi_payload;
+    __u64 no_uefi_tag;
+};
+
 struct arch_zone_config {
     __u8 is_aarch32;
     union GicConfig gic_config;
+    union UefiConfig uefi_config;
 };
 #endif
 
@@ -160,7 +177,7 @@ struct ivc_config {
 };
 typedef struct ivc_config ivc_config_t;
 
-#define CONFIG_MAGIC_VERSION 0x05
+#define CONFIG_MAGIC_VERSION 0x06
 
 // Every time you change the struct, you should also change the
 // `CONFIG_MAGIC_VERSION`
