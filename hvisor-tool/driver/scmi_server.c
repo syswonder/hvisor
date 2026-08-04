@@ -52,17 +52,24 @@ static int get_clock_count(void) {
     struct device_node *provider_np;
     struct clk *clk;
     int count = 0;
+    const int max_probe_count = 512;
 
+    pr_warn("get_clock_count: begin\n");
     provider_np = get_clock_provider_node();
     if (!provider_np) {
+        pr_warn("get_clock_count: no clock provider node\n");
         return -ENODEV;
     }
+    pr_warn("get_clock_count: provider node found, phandle=%u\n",
+            clock_provider_phandle);
 
-    while (1) {
+    while (count < max_probe_count) {
         clk = get_clock_by_id(count, provider_np);
 
         if (IS_ERR(clk)) {
-            if (PTR_ERR(clk) == -EINVAL)
+            long err = PTR_ERR(clk);
+            pr_warn("get_clock_count: clock id %d returned %ld\n", count, err);
+            if (err == -EINVAL)
                 break; // idx >= provider->data->clk_num, which means no more
                        // clocks
         } else {
@@ -70,6 +77,9 @@ static int get_clock_count(void) {
         }
 
         count++;
+    }
+    if (count == max_probe_count) {
+        pr_warn("get_clock_count: reached probe limit %d\n", max_probe_count);
     }
 
     of_node_put(provider_np);

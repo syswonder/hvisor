@@ -1,0 +1,82 @@
+{
+    "name": "linux2",
+    "zone_id": 1,
+    "cpus": [4, 5],
+    "memory_regions": [
+        {
+            "type": "ram",
+            "physical_start": "0x100000000",
+            "virtual_start":  "0x100000000",
+            "size": "0x100000000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0xc360000",
+            "virtual_start":  "0xc360000",
+            "size": "0x50000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x2200000",
+            "virtual_start":  "0x2200000",
+            "size": "0x20000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x2430000",
+            "virtual_start":  "0x2430000",
+            "size": "0x20000"
+        },
+        {
+            "type": "io",
+            "physical_start": "0x3400000",
+            "virtual_start":  "0x3400000",
+            "size": "0x20000"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0xff9c000",
+            "virtual_start":  "0xff9c000",
+            "size": "0x200"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0xff9d000",
+            "virtual_start":  "0xff9d000",
+            "size": "0x200"
+        },
+        {
+            "type": "virtio",
+            "physical_start": "0xff9e000",
+            "virtual_start":  "0xff9e000",
+            "size": "0x200"
+        }
+    ],
+    "interrupts": [75, 76, 78, 94, 320, 321, 322, 323, 324, 325, 326, 327, 328, 329, 330, 331, 
+    332, 333, 334, 335, 336, 337, 338, 339, 340, 341, 342, 343, 344, 345, 346, 347, 348, 349,
+    350, 351, 352, 353, 354, 355, 356, 357, 358, 359, 360, 361, 362, 363, 364, 365, 366, 367],
+    "ivc_configs": [],
+    "pci_config": [],
+    "kernel_filepath": "./Image",
+    "dtb_filepath": "./linux2.dtb",
+    "kernel_load_paddr": "0x100400000",
+    "dtb_load_paddr":   "0x100000000",
+    "entry_point":      "0x100400000",
+    "modules": [
+        {
+            "name": "ramdisk",
+            "filepath": "./initrd",
+            "load_paddr": "0x110000000"
+        }
+    ],
+    "arch_config": {
+        "gic_version": "v3",
+        "gicd_base": "0xf400000",
+        "gicd_size": "0x10000",
+        "gicr_base": "0xf440000",
+        "gicr_size": "0x200000",
+        "gits_base": "0x0",
+        "gits_size": "0x0",
+        "is_aarch32": false
+    }
+}

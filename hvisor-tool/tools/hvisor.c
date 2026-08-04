@@ -274,6 +274,12 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "gits_size");
     cJSON *is_aarch32_json =
         SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "is_aarch32");
+    cJSON *memory_map_addr_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "memory_map_addr");
+    cJSON *memory_map_size_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "memory_map_size");
+    cJSON *sys_map_addr_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "sys_map_addr");
     CHECK_JSON_NULL(gic_version_json, "gic_version");
     char *gic_version = gic_version_json->valuestring;
     if (!strcmp(gic_version, "v2")) {
@@ -341,6 +347,29 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
         arch_config->is_aarch32 = 0;
     } else {
         arch_config->is_aarch32 = is_aarch32_json->valueint;
+    }
+    if (memory_map_addr_json == NULL) {
+        arch_config->uefi_config.no_uefi_tag = 1;
+        log_info("No Uefi Config found. This is a normal phenomenon. "
+                 "Currently, hvisor "
+                 "nonroot only supports legacy.\n");
+    } else {
+        CHECK_JSON_NULL(memory_map_addr_json, "memory_map_addr");
+        CHECK_JSON_NULL(memory_map_size_json, "memory_map_size");
+        CHECK_JSON_NULL(sys_map_addr_json, "sys_map_addr");
+        struct UefiPayload *uefi_payload =
+            &arch_config->uefi_config.uefi_payload;
+        struct Uefi *uefi = &uefi_payload->uefi;
+
+        uefi_payload->uefi_tag = 0;
+        if (parse_json_linux_u64(memory_map_addr_json,
+                                 &uefi->memory_map_addr) != 0 ||
+            parse_json_linux_u64(memory_map_size_json,
+                                 &uefi->memory_map_size) != 0 ||
+            parse_json_linux_u64(sys_map_addr_json, &uefi->sys_map_addr) != 0) {
+            log_error("Failed to parse uefi config\n");
+            return -1;
+        }
     }
 #endif
 

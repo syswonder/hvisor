@@ -1,0 +1,277 @@
+/dts-v1/;
+
+/ {
+	#address-cells = <0x02>;
+	model = "NVIDIA Jetson Orin Nano Engineering Reference Developer Kit Super";
+	serial-number = "1421425085427\0";
+	#size-cells = <0x02>;
+	interrupt-parent = <0x01>;
+	compatible = "nvidia,p3768-0000+p3767-0005-super\0nvidia,p3767-0005\0nvidia,tegra234";
+
+	bus@0 {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		compatible = "simple-bus";
+		ranges = <0x00 0x00 0x00 0x00 0x100 0x00>;
+
+		interrupt-controller@f400000 {
+			#redistributor-regions = <0x01>;
+			interrupts = <0x01 0x09 0xf04>;
+			interrupt-parent = <0x01>;
+			compatible = "arm,gic-v3";
+			#interrupt-cells = <0x03>;
+			reg = <0x00 0xf400000 0x00 0x10000 0x00 0xf440000 0x00 0x200000>;
+			phandle = <0x01>;
+			interrupt-controller;
+		};
+
+		host1x@13e00000 {
+			compatible = "nvidia,tegra234-host1x";
+			reg = <0x00 0x13e00000 0x00 0x10000 0x00 0x13e10000 0x00 0x10000 0x00 0x13e40000 0x00 0x10000 0x00 0x13ef0000 0x00 0x60000>;
+			reg-names = "common\0hypervisor\0vm\0actmon";
+			interrupts = <0x00 0x1c0 0x04 0x00 0x1c1 0x04 0x00 0x1c2 0x04 0x00 0x1c3 0x04 0x00 0x1c4 0x04 0x00 0x1c5 0x04 0x00 0x1c6 0x04 0x00 0x1c7 0x04 0x00 0x107 0x04>;
+			interrupt-names = "syncpt0\0syncpt1\0syncpt2\0syncpt3\0syncpt4\0syncpt5\0syncpt6\0syncpt7\0host1x";
+			clocks = <0x02 0x2e 0x02 0x01>;
+			clock-names = "host1x\0actmon";
+			#address-cells = <0x02>;
+			#size-cells = <0x02>;
+			ranges = <0x00 0x14800000 0x00 0x14800000 0x00 0x2000000 0x00 0x24700000 0x00 0x24700000 0x00 0x80000>;
+			// interconnects = <0x57 0x16 0x58>;
+			// interconnect-names = "dma-mem";
+			dma-coherent;
+			interrupt-parent = <0x01>;
+			assigned-clocks = <0x02 0x2e>;
+			assigned-clock-rates = <0xc28cb00>;
+			phandle = <0x110>;
+		};
+
+		gpu@17000000 {
+			compatible = "nvidia,ga10b";
+			reg = <0x00 0x17000000 0x00 0x1000000 0x00 0x18000000 0x00 0x1000000 0x00 0x3b41000 0x00 0x1000>;
+			interrupt-parent = <0x01>;
+			interrupts = <0x00 0x44 0x04 0x00 0x46 0x04 0x00 0x47 0x04 0x00 0x43 0x04>;
+			interrupt-names = "stall0\0stall1\0stall2\0nonstall";
+			// power-domains = <0x03 0x23>;
+			// interconnects = <0x57 0xb8 0x58 0x57 0xb9 0x58>;
+			// interconnect-names = "dma-mem\0write";
+			clocks = <0x02 0x130 0x02 0x29 0x02 0xec>;
+			clock-names = "sysclk\0gpc0clk\0gpc1clk";
+			resets = <0x1002 0x13>;
+			dma-coherent;
+			// nvidia,bpmp = <0x03>;
+			status = "okay";
+			#cooling-cells = <0x02>;
+			phandle = <0x1d7>;
+		};
+
+		memory-controller@2c00000 {
+			//dma-ranges = <0x00 0x00 0x00 0x00 0x80 0x00>;
+			#address-cells = <0x02>;
+			reg-names = "sid\0broadcast\0ch0\0ch1\0ch2\0ch3\0ch4\0ch5\0ch6\0ch7\0ch8\0ch9\0ch10\0ch11\0ch12\0ch13\0ch14\0ch15";
+			interrupts = <0x00 0xdf 0x04>;
+			#interconnect-cells = <0x01>;
+			#size-cells = <0x02>;
+			compatible = "nvidia,tegra234-mc";
+			ranges = <0x00 0x1700000 0x00 0x1700000 0x00 0x100000 0x00 0x2b80000 0x00 0x2b80000 0x00 0x40000 0x00 0x2c00000 0x00 0x2c00000 0x00 0x100000>;
+			status = "okay";
+			reg = <0x00 0x2c00000 0x00 0x10000 0x00 0x2c10000 0x00 0x10000 0x00 0x2c20000 0x00 0x10000 0x00 0x2c30000 0x00 0x10000 0x00 0x2c40000 0x00 0x10000 0x00 0x2c50000 0x00 0x10000 0x00 0x2b80000 0x00 0x10000 0x00 0x2b90000 0x00 0x10000 0x00 0x2ba0000 0x00 0x10000 0x00 0x2bb0000 0x00 0x10000 0x00 0x1700000 0x00 0x10000 0x00 0x1710000 0x00 0x10000 0x00 0x1720000 0x00 0x10000 0x00 0x1730000 0x00 0x10000 0x00 0x1740000 0x00 0x10000 0x00 0x1750000 0x00 0x10000 0x00 0x1760000 0x00 0x10000 0x00 0x1770000 0x00 0x10000>;
+			phandle = <0x57>;
+
+			external-memory-controller@2c60000 {
+				// nvidia,bpmp = <0x03>;
+				clock-names = "emc";
+				interrupts = <0x00 0xe0 0x04>;
+				clocks = <0x02 0x1f>;
+				#interconnect-cells = <0x00>;
+				compatible = "nvidia,tegra234-emc";
+				status = "okay";
+				reg = <0x00 0x2c60000 0x00 0x90000 0x00 0x1780000 0x00 0x80000>;
+				phandle = <0x58>;
+			};
+		};
+	};
+
+	
+	memory@0 {
+		device_type = "memory";
+		reg = <0x01 0x00000000 0x01 0x00000000>;
+	};
+
+	psci {
+		method = "smc";
+		compatible = "arm,psci-1.0";
+		status = "okay";
+	};
+
+	timer {
+		always-on;
+		interrupts = <0x01 0x0d 0xf08 0x01 0x0e 0xf08 0x01 0x0b 0xf08 0x01 0x0a 0xf08>;
+		interrupt-parent = <0x01>;
+		compatible = "arm,armv8-timer";
+	};
+
+	firmware {
+		scmi {
+			compatible = "arm,scmi-virtio";
+			#address-cells = <1>;
+			#size-cells = <0>;
+			phandle = <0x1000>;
+
+			/* 时钟协议 - Protocol ID 0x14 */
+			protocol@14 {
+				reg = <0x14>;
+				#clock-cells = <1>;
+				phandle = <0x02>;
+			};
+
+			/* 复位协议 - Protocol ID 0x16 */
+			protocol@16 {
+				reg = <0x16>;
+				#reset-cells = <1>;
+				phandle = <0x1002>;
+			};
+		};
+	};
+
+	aliases {
+	};
+
+	virtio_mmio@ff9c000 {
+		dma-coherent;
+		interrupt-parent = <0x01>; 
+		interrupts = <0x0 0x2b 0x1>;
+		reg = <0x0 0xff9c000 0x0 0x200>;
+		compatible = "virtio,mmio";
+	};
+
+	virtio_mmio@ff9d000 {
+		dma-coherent;
+		interrupt-parent = <0x01>;
+		interrupts = <0x00 0x2e 0x01>;
+		reg = <0x00 0xff9d000 0x00 0x200>;
+		compatible = "virtio,mmio";
+	};
+
+	virtio_mmio@ff9e000 {
+		dma-coherent;
+		interrupt-parent = <0x01>;
+		interrupts = <0x00 0x2c 0x01>;
+		reg = <0x00 0xff9e000 0x00 0x200>;
+		compatible = "virtio,mmio";
+	};
+
+
+
+	chosen {
+		bootargs = "earlycon=virtio,mmio,0xff9e000 console=hvc0 root=/dev/vda rootwait rw";
+		stdout-path = "/virtio_mmio@0xff9e000";
+		linux,initrd-start = <0x01 0x10000000>;
+		linux,initrd-end   = <0x01 0x15000000>;
+	};
+
+	pmu {
+		interrupts = <0x01 0x07 0x04>;
+		compatible = "arm,cortex-a78-pmu";
+		status = "okay";
+	};
+
+	cpus {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+
+		l2-cache13 {
+			cache-size = <0x40000>;
+			cache-level = <0x02>;
+			cache-sets = <0x200>;
+			cache-unified;
+			compatible = "cache";
+			cache-line-size = <0x40>;
+			next-level-cache = <0x141>;
+			phandle = <0x12e>;
+		};
+
+		idle-states {
+			entry-method = "psci";
+
+			c7 {
+				idle-state-name = "Core powergate";
+				wakeup-latency-us = <0x1388>;
+				arm,psci-suspend-param = <0x40000007>;
+				compatible = "arm,idle-state";
+				status = "okay";
+				phandle = <0x126>;
+				min-residency-us = <0x7530>;
+			};
+		};
+
+		cpu-map {
+
+			cluster1 {
+
+				core1 {
+					cpu = <0x13b>;
+				};
+
+				core0 {
+					cpu = <0x13a>;
+				};
+			};
+		};
+
+		l3-cache1 {
+			cache-size = <0x200000>;
+			cache-level = <0x03>;
+			cache-sets = <0x800>;
+			cache-unified;
+			compatible = "cache";
+			cache-line-size = <0x40>;
+			phandle = <0x141>;
+		};
+
+		cpu@10300 {
+			d-cache-line-size = <0x40>;
+			interconnects = <0x57 0x3ec 0x58>;
+			i-cache-line-size = <0x40>;
+			cpu-idle-states = <0x126>;
+			device_type = "cpu";
+			compatible = "arm,cortex-a78";
+			d-cache-size = <0x10000>;
+			next-level-cache = <0x12e>;
+			i-cache-size = <0x10000>;
+			reg = <0x10300>;
+			enable-method = "psci";
+			phandle = <0x13b>;
+			d-cache-sets = <0x100>;
+			i-cache-sets = <0x100>;
+		};
+
+		l2-cache12 {
+			cache-size = <0x40000>;
+			cache-level = <0x02>;
+			cache-sets = <0x200>;
+			cache-unified;
+			compatible = "cache";
+			cache-line-size = <0x40>;
+			next-level-cache = <0x141>;
+			phandle = <0x12d>;
+		};
+
+		cpu@10200 {
+			d-cache-line-size = <0x40>;
+			interconnects = <0x57 0x3ec 0x58>;
+			i-cache-line-size = <0x40>;
+			cpu-idle-states = <0x126>;
+			device_type = "cpu";
+			compatible = "arm,cortex-a78";
+			d-cache-size = <0x10000>;
+			next-level-cache = <0x12d>;
+			i-cache-size = <0x10000>;
+			reg = <0x10200>;
+			enable-method = "psci";
+			phandle = <0x13a>;
+			d-cache-sets = <0x100>;
+			i-cache-sets = <0x100>;
+			#cooling-cells = <0x02>;
+		};
+	};
+};
