@@ -122,22 +122,30 @@ def board_power_script(cfg: dict[str, Any]) -> Path:
     return cfg["workspace"] / "jenkins" / "board_power.sh"
 
 
-def board_power_cycle(cfg: dict[str, Any]) -> None:
+def board_power(cfg: dict[str, Any], action: str) -> None:
     power_port = str(cfg.get("power_serial", "")).strip()
     if not power_port:
-        print("[power] skip cycle: power_serial is empty", flush=True)
+        print(f"[power] skip {action}: power_serial is empty", flush=True)
         return
     script = board_power_script(cfg)
     if not script.is_file():
         raise SystemExit(f"board power script not found: {script}")
     power_channel = str(cfg.get("power_channel", 4))
-    print(f"[power] cycle port={power_port} channel={power_channel}", flush=True)
+    print(f"[power] {action} port={power_port} channel={power_channel}", flush=True)
     subprocess.run(
-        ["bash", str(script), "cycle", power_port, power_channel],
+        ["bash", str(script), action, power_port, power_channel],
         check=True,
         cwd=cfg["workspace"],
     )
-    print("[power] cycle completed", flush=True)
+    print(f"[power] {action} completed", flush=True)
+
+
+def board_power_cycle(cfg: dict[str, Any]) -> None:
+    board_power(cfg, "cycle")
+
+
+def board_power_off(cfg: dict[str, Any]) -> None:
+    board_power(cfg, "off")
 
 
 def board_wake_console(term: Terminal, *, repeats: int = 3) -> None:
@@ -675,6 +683,8 @@ def main() -> int:
     finally:
         close_active_terminal(cfg)
         terminate_managed_process(cfg)
+        if cfg.get("mode") == "board":
+            board_power_off(cfg)
 
 
 if __name__ == "__main__":
