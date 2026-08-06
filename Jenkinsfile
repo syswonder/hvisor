@@ -419,13 +419,30 @@ pipeline {
                                                 "${prepareScript}"
                                         """
                                     } else if (mode == 'board') {
-                                        echo "Deploy TFTP artifacts [BID=${env.BID}, TFTP_DIR=${env.TFTP_DIR}]"
+                                        def tftpDir = (testsCfg.tftp_dir ?: env.TFTP_DIR).toString()
+                                        def zone0Dtbs = testsCfg.zone0_dtbs ?: []
+                                        if (testsCfg.zone0_dtb) {
+                                            zone0Dtbs = [testsCfg.zone0_dtb]
+                                        }
+                                        def zone0Image = (testsCfg.zone0_image ?: "${kdir}/arch/arm64/boot/Image").toString()
+                                        echo "Deploy TFTP artifacts [BID=${env.BID}, TFTP_DIR=${tftpDir}]"
                                         sh """
                                             export TERM=\${TERM:-xterm}
-                                            sudo mkdir -p "${env.TFTP_DIR}"
-                                            sudo make cp ARCH=${arch} BOARD=${board} MODE=release TFTP_DIR="${env.TFTP_DIR}"
-                                            sudo cp platform/${arch}/${board}/image/dts/rk3568_limit_zone0.dtb "${env.TFTP_DIR}/"
-                                            sudo cp ${kdir}/arch/arm64/boot/Image "${env.TFTP_DIR}/"
+                                            sudo mkdir -p "${tftpDir}"
+                                            sudo find "${tftpDir}" -mindepth 1 -maxdepth 1 -type f -delete
+                                            sudo make cp ARCH=${arch} BOARD=${board} MODE=release TFTP_DIR="${tftpDir}"
+                                        """
+                                        zone0Dtbs.each { dtb ->
+                                            sh """
+                                                test -f "${dtb}"
+                                                sudo cp "${dtb}" "${tftpDir}/"
+                                            """
+                                        }
+                                        sh """
+                                            test -f "${zone0Image}"
+                                            sudo cp "${zone0Image}" "${tftpDir}/Image"
+                                            sudo chmod -R a+rX "${tftpDir}"
+                                            ls -la "${tftpDir}"
                                         """
                                     } else {
                                         error("jenkins/ci.yaml BID=${env.BID}: unsupported tests.mode='${mode}'")

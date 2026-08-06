@@ -1,32 +1,62 @@
 #!/bin/sh
 # Relay power control for board CI (socat hex frames).
-# Usage: board_power.sh off|on|cycle <port>
+# Usage: board_power.sh off|on|cycle <port> [channel]
 #   cycle: off, wait 3s, on
 
 set -eu
 
 action=${1:?action required (off|on|cycle)}
 port=${2:?serial port required, e.g. /dev/ttyUSB1}
+channel=${3:-4}
+lock_file=${RELAY_LOCK_FILE:-/var/lock/hvisor-relay.lock}
+lock_timeout=${RELAY_LOCK_TIMEOUT:-300}
+
+case "${channel}" in
+    1|2|3|4) ;;
+    *)
+        echo "invalid relay channel: ${channel}" >&2
+        exit 1
+        ;;
+esac
 
 send_frame() {
-    frame=$1
-    printf '%b' "$frame" | sudo socat - "$port"
+    state=$1
+    checksum=$((0xA0 + channel + state))
+    printf '[power] send port=%s channel=%s state=%s frame=A0%02X%02X%02X\n' \
+        "$port" "$channel" "$state" "$channel" "$state" "$checksum"
+    frame=$(printf '\\%03o\\%03o\\%03o\\%03o' 160 "$channel" "$state" "$checksum")
+    if [ "$(id -u)" -eq 0 ]; then
+        printf '%b' "$frame" | socat - "$port,b9600,raw,echo=0"
+    else
+        printf '%b' "$frame" | sudo socat - "$port,b9600,raw,echo=0"
+    fi
+}
+
+command -v flock >/dev/null 2>&1 || {
+    echo "error: flock is required for relay serial locking" >&2
+    exit 1
+}
+
+exec 9>"${lock_file}"
+flock -w "${lock_timeout}" 9 || {
+    echo "error: timed out waiting for relay lock: ${lock_file}" >&2
+    exit 1
 }
 
 case "$action" in
     off)
-        send_frame '\xA0\x04\x00\xA4'
+        send_frame 0
         ;;
     on)
-        send_frame '\xA0\x04\x01\xA5'
+        send_frame 1
         ;;
     cycle)
-        send_frame '\xA0\x04\x00\xA4'
+        send_frame 0
         sleep 3
-        send_frame '\xA0\x04\x01\xA5'
+        send_frame 1
         ;;
     *)
-        echo "usage: $0 off|on|cycle <port>" >&2
+        echo "usage: $0 off|on|cycle <port> [channel]" >&2
         exit 1
         ;;
 esac

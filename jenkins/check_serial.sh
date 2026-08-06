@@ -27,6 +27,7 @@ has_console_ready() {
 
 deadline=$(( $(date +%s) + prompt_timeout ))
 while [ "$(date +%s)" -lt "$deadline" ]; do
+    printf '\r\n' > "$pts_dev" 2>/dev/null || true
     read_pts 2
     if has_console_ready; then
         break
