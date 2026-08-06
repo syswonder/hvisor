@@ -133,11 +133,11 @@
     "alloc_pci_devs": [
         {
             "domain": "0x0",
-            "bus": "0x6",
-            "device": "0x1",
+            "bus": "0x7",
+            "device": "0x10",
             "function": "0x0",
             "v_bus": "0x6",
-            "v_device": "0x1",
+            "v_device": "0x0",
             "v_function": "0x0",
             "dev_type": "0"
         }

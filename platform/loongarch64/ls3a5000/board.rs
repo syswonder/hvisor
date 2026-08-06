@@ -209,6 +209,15 @@ pub const ROOT_PCI_DEVS: &[HvPciDevConfig] = &[
     pci_dev!(0x0, 0x2, 0x0, 0x0 => 0x2, 0x0, 0x0, VpciDevType::Physical), // 02:00.0
     pci_dev!(0x0, 0x5, 0x0, 0x0 => 0x5, 0x0, 0x0, VpciDevType::Physical), // 05:00.0
     pci_dev!(0x0, 0x6, 0x0, 0x0 => 0x6, 0x0, 0x0, VpciDevType::Physical), // 06:00.0
+                                                                          // VFs BELONGS TO 06:00.0
+                                                                          // pci_dev!(0x0, 0x7, 0x10, 0x0 => 0x7, 0x10, 0x0, VpciDevType::Physical), // 07:10.0
+                                                                          // pci_dev!(0x0, 0x7, 0x10, 0x4 => 0x7, 0x10, 0x4, VpciDevType::Physical), // 07:10.4
+                                                                          // pci_dev!(0x0, 0x7, 0x11, 0x0 => 0x7, 0x11, 0x0, VpciDevType::Physical), // 07:11.0
+                                                                          // pci_dev!(0x0, 0x7, 0x11, 0x4 => 0x7, 0x11, 0x4, VpciDevType::Physical), // 07:11.4
+                                                                          // pci_dev!(0x0, 0x7, 0x12, 0x0 => 0x7, 0x12, 0x0, VpciDevType::Physical), // 07:12.0
+                                                                          // pci_dev!(0x0, 0x7, 0x12, 0x4 => 0x7, 0x12, 0x4, VpciDevType::Physical), // 07:12.4
+                                                                          // pci_dev!(0x0, 0x7, 0x13, 0x0 => 0x7, 0x13, 0x0, VpciDevType::Physical), // 07:13.0
+                                                                          // pci_dev!(0x0, 0x7, 0x13, 0x4 => 0x7, 0x13, 0x4, VpciDevType::Physical), // 07:13.4
 ];
 
 // bus << 8 | dev << 5 | func << 3

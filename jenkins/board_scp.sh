@@ -1,6 +1,7 @@
 #!/bin/sh
 # Stage zone1 test artifacts on the CI host for board pull via scp.
-# Zone0 boot Image stays on TFTP; only zone1 Image/rootfs are staged here.
+# Zone0 boot Image， Image and rootfs2.ext4 are large and
+# persistent on the board; do not re-stage them every CI run.
 
 set -eux
 
