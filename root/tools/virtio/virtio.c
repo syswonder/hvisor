@@ -33,6 +33,7 @@
 
 #include "hvisor.h"
 #include "json_parse.h"
+#include "loader.h"
 #include "log.h"
 #include "safe_cjson.h"
 #include "virtio.h"
