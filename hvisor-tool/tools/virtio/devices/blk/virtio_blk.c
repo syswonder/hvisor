@@ -82,6 +82,12 @@ static void blkproc(BlkDev *dev, struct blkp_req *req, VirtQueue *vq) {
             err = errno;
         }
         break;
+    case VIRTIO_BLK_T_FLUSH:
+        if (fsync(dev->img_fd) < 0) {
+            log_error("fsync failed");
+            err = errno;
+        }
+        break;
     case VIRTIO_BLK_T_GET_ID: {
         char s[20] = "hvisor-virblk";
         strncpy(iov[1].iov_base, s, MIN(sizeof(s), iov[1].iov_len));
@@ -128,6 +134,7 @@ BlkDev *init_blk_dev(VirtIODevice *vdev) {
     dev->config.capacity = -1;
     dev->config.size_max = -1;
     dev->config.seg_max = BLK_SEG_MAX;
+    dev->config.blk_size = SECTOR_BSIZE;
     dev->img_fd = -1;
     dev->close = 0;
     // TODO: chang to thread poll
