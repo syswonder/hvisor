@@ -15,10 +15,14 @@
 
 #include "hvisor.h"
 
-void *read_file(const char *filename, uint64_t *filesize);
-__u64 load_buffer_to_memory(const void *buf, __u64 size, __u64 load_paddr);
+struct cJSON;
 
+int multiboot2_enabled(struct cJSON *root);
 int load_elf_kernel(const char *elf_path, uint64_t *entry_point,
                     uint64_t *total_size, int64_t gpa_to_hpa_offset);
+int multiboot2_prepare_zone(zone_config_t *config, struct cJSON *root,
+                            __u64 *multiboot_info_paddr);
+int multiboot2_set_boot_mode(int fd, uint32_t zone_id,
+                             __u64 multiboot_info_paddr);
 
 #endif /* __MULTIBOOT2_H */
