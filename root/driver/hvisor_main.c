@@ -196,6 +196,28 @@ static int hvisor_zone_start(zone_config_t __user *arg) {
     return err;
 }
 
+static int hvisor_set_boot_mode(struct hv_zone_boot_mode __user *arg) {
+    int err;
+    struct hv_zone_boot_mode *boot_mode =
+        kmalloc(sizeof(struct hv_zone_boot_mode), GFP_KERNEL);
+
+    if (boot_mode == NULL) {
+        pr_err("hvisor.ko: failed to allocate memory for boot mode\n");
+        return -ENOMEM;
+    }
+
+    if (copy_from_user(boot_mode, arg, sizeof(struct hv_zone_boot_mode))) {
+        pr_err("hvisor.ko: failed to copy boot mode from user\n");
+        kfree(boot_mode);
+        return -EFAULT;
+    }
+
+    err = hvisor_call(HVISOR_HC_SET_BOOT_MODE, __pa(boot_mode),
+                      sizeof(struct hv_zone_boot_mode));
+    kfree(boot_mode);
+    return err;
+}
+
 // #ifndef LOONGARCH64
 // static int is_reserved_memory(unsigned long phys, unsigned long size) {
 //     struct device_node *parent, *child;
@@ -277,6 +299,9 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
         break;
     case HVISOR_ZONE_START:
         err = hvisor_zone_start((zone_config_t __user *)arg);
+        break;
+    case HVISOR_SET_BOOT_MODE:
+        err = hvisor_set_boot_mode((struct hv_zone_boot_mode __user *)arg);
         break;
     case HVISOR_ZONE_SHUTDOWN:
         err = hvisor_call(HVISOR_HC_SHUTDOWN_ZONE, arg, 0);

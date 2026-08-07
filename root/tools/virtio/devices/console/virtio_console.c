@@ -124,6 +124,7 @@ int virtio_console_init(VirtIODevice *vdev) {
     // from echoing the characters sent from the master back to the master.
     tcgetattr(slave_fd, &term_io);
     cfmakeraw(&term_io);
+    term_io.c_oflag |= ONLCR;
     tcsetattr(slave_fd, TCSAFLUSH, &term_io);
     dev->slave_keepalive_fd = slave_fd;
 
