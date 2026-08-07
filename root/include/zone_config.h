@@ -165,6 +165,12 @@ struct arch_zone_config {
 
 typedef struct arch_zone_config arch_zone_config_t;
 
+struct hv_zone_boot_mode {
+    __u32 zone_id;
+    __u32 multiboot_enabled;
+    __u64 multiboot_info_paddr;
+};
+
 struct ivc_config {
     __u32 ivc_id;
     __u32 peer_id;
