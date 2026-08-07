@@ -27,6 +27,7 @@
 #include "hvisor.h"
 #include "json_parse.h"
 #include "log.h"
+#include "multiboot2.h"
 #include "safe_cjson.h"
 #include "virtio.h"
 #include "zone_config.h"
@@ -98,8 +99,7 @@ int open_dev() {
     return fd;
 }
 
-static __u64 load_buffer_to_memory(const void *buf, __u64 size,
-                                   __u64 load_paddr) {
+__u64 load_buffer_to_memory(const void *buf, __u64 size, __u64 load_paddr) {
     int fd;
     long page_size;
     __u64 map_size;
@@ -238,7 +238,8 @@ static int parse_modules(const cJSON *const modules_json) {
         goto err_out;                                                          \
     }
 
-static int parse_arch_config(cJSON *root, zone_config_t *config) {
+static int parse_arch_config(cJSON *root, zone_config_t *config,
+                             int64_t gpa_to_hpa_offset, int multiboot_enabled) {
     cJSON *arch_config_json = SAFE_CJSON_GET_OBJECT_ITEM(root, "arch_config");
     CHECK_JSON_NULL(arch_config_json, "arch_config");
 
@@ -443,8 +444,10 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
             0 ||
         parse_json_linux_u64(ioapic_size_json, &arch_config->ioapic_size) !=
             0 ||
-        parse_json_linux_u64(kernel_entry_gpa_json,
-                             &arch_config->kernel_entry_gpa) != 0) {
+        (multiboot_enabled
+             ? 0
+             : parse_json_linux_u64(kernel_entry_gpa_json,
+                                    &arch_config->kernel_entry_gpa)) != 0) {
         log_error("Failed to parse ioapic or kernel_entry_gpa\n");
         return -1;
     }
@@ -455,8 +458,10 @@ static int parse_arch_config(cJSON *root, zone_config_t *config) {
             log_error("Failed to parse boot_load_paddr\n");
             return -1;
         }
+        __u64 boot_load_hpa =
+            (__u64)((int64_t)boot_load_paddr + gpa_to_hpa_offset);
         __u64 size = load_image_to_memory(boot_filepath_json->valuestring,
-                                          boot_load_paddr);
+                                          boot_load_hpa);
 
         log_info("boot size: %llu", size);
     }
@@ -681,6 +686,8 @@ err_out:
 static int zone_start_from_json(const char *json_config_path,
                                 zone_config_t *config) {
     cJSON *root = NULL;
+    int multiboot_enabled = 0;
+    __u64 multiboot_info_paddr = 0;
 
     FILE *file = fopen(json_config_path, "r");
     if (file == NULL) {
@@ -876,10 +883,47 @@ static int zone_start_from_json(const char *json_config_path,
                   "dtb_load_paddr\n");
         goto err_out;
     }
+    // MULTIBOOT SUPPORT: Check for Multiboot mode first
+    cJSON *multiboot_json = cJSON_GetObjectItem(root, "multiboot_enabled");
+    if (multiboot_json != NULL && cJSON_IsBool(multiboot_json)) {
+        multiboot_enabled = cJSON_IsTrue(multiboot_json) ? 1 : 0;
+    } else {
+        multiboot_enabled = 0; // Default: disabled
+    }
+
+    // Calculate GPA-to-HPA offset from first memory region
+    // This is used to translate ELF p_paddr (GPA) to actual load address (HPA)
+    int64_t gpa_to_hpa_offset = 0;
+    if (multiboot_enabled && num_memory_regions > 0) {
+        // Use first RAM region for offset calculation
+        for (int i = 0; i < num_memory_regions; i++) {
+            memory_region_t *mem_region = &config->memory_regions[i];
+            if (mem_region->type == MEM_TYPE_RAM) {
+                gpa_to_hpa_offset = (int64_t)mem_region->physical_start -
+                                    (int64_t)mem_region->virtual_start;
+                break;
+            }
+        }
+    }
 
     // Load kernel image to memory
-    config->kernel_size = load_image_to_memory(
-        kernel_filepath_json->valuestring, config->kernel_load_paddr);
+    if (multiboot_enabled) {
+        // For Multiboot/ELF kernels, properly load each ELF segment
+        uint64_t elf_entry = 0;
+        uint64_t total_size = 0;
+        int ret = load_elf_kernel(kernel_filepath_json->valuestring, &elf_entry,
+                                  &total_size, gpa_to_hpa_offset);
+        if (ret != 0) {
+            log_error("Failed to load ELF segments for Multiboot kernel\n");
+            goto err_out;
+        }
+        config->kernel_size = total_size;
+        config->arch_config.kernel_entry_gpa = elf_entry;
+    } else {
+        // Non-Multiboot: load entire image to kernel_load_paddr
+        config->kernel_size = load_image_to_memory(
+            kernel_filepath_json->valuestring, config->kernel_load_paddr);
+    }
 
 // Load dtb to memory
 // x86_64 uses ACPI
@@ -890,6 +934,62 @@ static int zone_start_from_json(const char *json_config_path,
 
     log_info("Kernel size: %llu, DTB size: %llu", config->kernel_size,
              config->dtb_size);
+
+    if (multiboot_enabled) {
+        // Get kernel command line
+        cJSON *kcmdline_json = cJSON_GetObjectItem(root, "kernel_cmdline");
+        const char *cmdline = "";
+        if (kcmdline_json != NULL && kcmdline_json->valuestring != NULL) {
+            cmdline = kcmdline_json->valuestring;
+        }
+
+        // Get Multiboot info address from JSON (or use default)
+        // This is the GPA where guest expects multiboot info
+        cJSON *mb_info_paddr_json =
+            cJSON_GetObjectItem(root, "multiboot_info_paddr");
+        multiboot_info_paddr = 0x9000000; // Default GPA
+        if (mb_info_paddr_json != NULL) {
+            parse_json_linux_u64(mb_info_paddr_json, &multiboot_info_paddr);
+        }
+
+        // Copy cmdline to its own GPA so hvisor can read it before building
+        // the Multiboot2 info structure.
+        cJSON *arch_config_json = cJSON_GetObjectItem(root, "arch_config");
+        cJSON *cmdline_load_gpa_json =
+            cJSON_GetObjectItem(arch_config_json, "cmdline_load_gpa");
+        __u64 cmdline_gpa = multiboot_info_paddr;
+        if (cmdline_load_gpa_json != NULL) {
+            parse_json_linux_u64(cmdline_load_gpa_json, &cmdline_gpa);
+        }
+        if (cmdline[0] != '\0') {
+            config->arch_config.cmdline_load_gpa = cmdline_gpa;
+            uint64_t cmdline_hpa =
+                (uint64_t)((int64_t)cmdline_gpa + gpa_to_hpa_offset);
+            load_buffer_to_memory(cmdline, strlen(cmdline) + 1, cmdline_hpa);
+        }
+
+        // Load initramfs for Multiboot2 (if specified)
+        __u64 initramfs_gpa = 0;
+        uint64_t initramfs_size = 0;
+        cJSON *initramfs_filepath_json =
+            cJSON_GetObjectItem(root, "initramfs_filepath");
+        cJSON *initramfs_load_gpa_json =
+            cJSON_GetObjectItem(root, "initramfs_load_gpa");
+        if (initramfs_filepath_json != NULL &&
+            initramfs_load_gpa_json != NULL &&
+            initramfs_filepath_json->valuestring != NULL &&
+            strcmp(initramfs_filepath_json->valuestring, "null") != 0) {
+            parse_json_linux_u64(initramfs_load_gpa_json, &initramfs_gpa);
+            uint64_t initramfs_hpa =
+                (uint64_t)((int64_t)initramfs_gpa + gpa_to_hpa_offset);
+            initramfs_size = load_image_to_memory(
+                initramfs_filepath_json->valuestring, initramfs_hpa);
+            // Pass initramfs info to hvisor so it can build the Multiboot2
+            // module tag.
+            config->arch_config.initrd_load_gpa = initramfs_gpa;
+            config->arch_config.initrd_size = initramfs_size;
+        }
+    }
 
     // modules configuration is optional, return -1 if failed, otherwise 0
     if (parse_modules(modules_json)) {
@@ -907,7 +1007,7 @@ static int zone_start_from_json(const char *json_config_path,
 
 #ifndef LOONGARCH64
     // Parse architecture-specific configurations (interrupts for each platform)
-    if (parse_arch_config(root, config))
+    if (parse_arch_config(root, config, gpa_to_hpa_offset, multiboot_enabled))
         goto err_out;
 
 #endif
@@ -924,6 +1024,19 @@ static int zone_start_from_json(const char *json_config_path,
     if (fd < 0) {
         perror("zone_start: open hvisor failed");
         goto err_out;
+    }
+
+    if (multiboot_enabled) {
+        struct hv_zone_boot_mode boot_mode = {
+            .zone_id = config->zone_id,
+            .multiboot_enabled = multiboot_enabled,
+            .multiboot_info_paddr = multiboot_info_paddr,
+        };
+        if (ioctl(fd, HVISOR_SET_BOOT_MODE, &boot_mode)) {
+            perror("zone_start: set boot mode failed");
+            close(fd);
+            return -1;
+        }
     }
 
     log_info("Calling ioctl to start zone: [%s]", config->name);

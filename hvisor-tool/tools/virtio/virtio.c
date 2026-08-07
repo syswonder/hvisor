@@ -848,6 +848,9 @@ uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size) {
         }
     case VIRTIO_MMIO_QUEUE_NUM_MAX:
         log_debug("read VIRTIO_MMIO_QUEUE_NUM_MAX");
+        if (vdev->regs.queue_sel >= vdev->vqs_len) {
+            return 0;
+        }
         return vdev->vqs[vdev->regs.queue_sel].queue_num_max;
     case VIRTIO_MMIO_QUEUE_READY:
         log_debug("read VIRTIO_MMIO_QUEUE_READY");
@@ -955,10 +958,7 @@ void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t value,
         log_debug("zone %d driver set device %s, selecting queue %d",
                   vdev->zone_id, virtio_device_type_to_string(vdev->type),
                   value);
-
-        if (value < vdev->vqs_len) {
-            regs->queue_sel = value;
-        }
+        regs->queue_sel = value;
         break;
     case VIRTIO_MMIO_QUEUE_NUM:
         log_debug("zone %d driver set device %s, use virtqueue num %d",
@@ -1138,8 +1138,9 @@ int virtio_handle_req(volatile struct device_req *req) {
     if (i == vdevs_num) {
         log_warn("no matched virtio dev in zone %d, address is 0x%x",
                  req->src_zone, req->address);
-        value = virtio_mmio_read(NULL, 0, 0);
-        virtio_finish_cfg_req(req->src_cpu, value);
+        // No device at this address; return 0 so the guest sees an absent
+        // device (MagicValue != VIRT_MAGIC).
+        virtio_finish_cfg_req(req->src_cpu, 0);
         return -1;
     }
 
