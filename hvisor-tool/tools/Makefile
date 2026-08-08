@@ -42,7 +42,7 @@ ifneq ($(ROOT),)
 CFLAGS += --sysroot=$(ROOT)
 endif
 
-include_dirs := -I../include -I./include -I./virtio/include -I../cJSON
+include_dirs := -I../include -I./include -I./virtio/include -I../cJSON -I.
 
 ifeq ($(LIBC), musl)
 include_dirs += -I./compat/
