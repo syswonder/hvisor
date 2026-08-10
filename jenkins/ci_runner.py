@@ -160,7 +160,8 @@ def board_wait_uboot_prompt(term: Terminal, pattern: str, timeout: float) -> Non
         remaining = deadline - time.monotonic()
         if term.wait_pattern(pattern, timeout=min(5.0, remaining), from_offset=0):
             return
-        board_wake_console(term)
+        term.send(" ")
+        time.sleep(0.2)
     raise TerminalTimeoutError(f"timed out waiting for U-Boot prompt (pattern={pattern!r})")
 
 
@@ -282,6 +283,41 @@ def deploy(cfg: dict[str, Any], term: Terminal | None) -> int:
     return deploy_board_pull(cfg, term)
 
 
+def zone0_ready_pattern(cfg: dict[str, Any]) -> str:
+    custom = str(cfg.get("zone0_ready_pattern", "")).strip()
+    if custom:
+        return custom
+    return ZONE0_READY_PATTERN
+
+
+def uboot_commands(cfg: dict[str, Any]) -> list[str]:
+    raw = cfg.get("uboot_cmds")
+    if isinstance(raw, list):
+        cmds = [str(item).strip() for item in raw if str(item).strip()]
+        if cmds:
+            return cmds
+    cmd = str(cfg.get("uboot_cmd", "")).strip()
+    return [cmd] if cmd else []
+
+
+def send_board_uboot_commands(cfg: dict[str, Any], term: Terminal) -> None:
+    cmds = uboot_commands(cfg)
+    if not cmds:
+        return
+    uboot_ready = cfg.get("uboot_ready_pattern", "") or r"=>"
+    initial_timeout = float(cfg.get("uboot_prompt_timeout", 20.0))
+    step_timeout = float(cfg.get("uboot_step_timeout", 0.0))
+    if step_timeout <= 0:
+        step_timeout = max(initial_timeout, 60.0)
+    board_wait_uboot_prompt(term, uboot_ready, timeout=initial_timeout)
+    for index, cmd in enumerate(cmds):
+        if index > 0:
+            time.sleep(0.3)
+            board_wait_uboot_prompt(term, uboot_ready, timeout=step_timeout)
+            time.sleep(0.3)
+        term.send(cmd)
+
+
 def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     print("————————————————\ncase: zone0_start\n————————————————\n", flush=True)
     if cfg["mode"] == "qemu":
@@ -297,15 +333,14 @@ def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
         wait_qemu_socket(cfg["socket_path"], timeout=30.0)
 
         qemu_term = ensure_qemu_terminal(cfg, log_path)
-        uboot_cmd = cfg.get("uboot_cmd", "")
-        uboot_ready = cfg.get("uboot_ready_pattern", "")
-        if uboot_cmd:
-            if not uboot_ready:
-                uboot_ready = r"*=>"
+        cmds = uboot_commands(cfg)
+        if cmds:
+            uboot_ready = cfg.get("uboot_ready_pattern", "") or r"*=>"
             if not qemu_term.wait_pattern(uboot_ready, timeout=10.0):
                 raise TerminalTimeoutError("timed out waiting for U-Boot prompt")
-            qemu_term.send(uboot_cmd)
-        if not qemu_term.wait_pattern(ZONE0_READY_PATTERN, timeout=180.0):
+            for cmd in cmds:
+                qemu_term.send(cmd)
+        if not qemu_term.wait_pattern(zone0_ready_pattern(cfg), timeout=180.0):
             raise TerminalTimeoutError("timed out waiting for zone0 shell prompt")
         return 0
     if cfg["mode"] == "board":
@@ -319,16 +354,9 @@ def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
         time.sleep(3.0)
         board_wake_console(board_term)
 
-        uboot_cmd = cfg.get("uboot_cmd", "")
-        uboot_ready = cfg.get("uboot_ready_pattern", "")
-        if uboot_cmd:
-            if not uboot_ready:
-                uboot_ready = r"=>"
-            board_wait_uboot_prompt(board_term, uboot_ready, timeout=float(cfg["uboot_prompt_timeout"]))
-            time.sleep(0.3)
-            board_term.send(uboot_cmd)
+        send_board_uboot_commands(cfg, board_term)
         zone0_timeout = float(cfg.get("zone0_shell_timeout", 180.0))
-        if not board_term.wait_pattern(ZONE0_READY_PATTERN, timeout=zone0_timeout):
+        if not board_term.wait_pattern(zone0_ready_pattern(cfg), timeout=zone0_timeout):
             raise TerminalTimeoutError("timed out waiting for zone0 shell prompt")
         return 0
     return 0
@@ -541,8 +569,11 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
         "power_channel": int(tests.get("power_channel", 4)),
         "baudrate": int(tests.get("baudrate", 1500000)),
         "uboot_cmd": str(tests.get("uboot_cmd", "")).strip(),
+        "uboot_cmds": tests.get("uboot_cmds") or [],
         "uboot_ready_pattern": str(tests.get("uboot_ready_pattern", "")).strip(),
         "uboot_prompt_timeout": float(tests.get("uboot_prompt_timeout", 20.0)),
+        "uboot_step_timeout": float(tests.get("uboot_step_timeout", 0.0)),
+        "zone0_ready_pattern": str(tests.get("zone0_ready_pattern", "")).strip(),
         "zone0_shell_timeout": float(tests.get("zone0_shell_timeout", 300.0 if mode == "board" else 180.0)),
         "tftp_dir": str(tests.get("tftp_dir", "/home/light/tftp")).strip(),
         "lspci": tests.get("lspci") or {},
@@ -583,7 +614,11 @@ def main() -> int:
 
             standalone = case_name == "zone0_start"
             if standalone:
-                rc = case_fn(cfg, None)
+                try:
+                    rc = case_fn(cfg, None)
+                except (TerminalTimeoutError, TerminalCommandError) as exc:
+                    print(f"[ci_runner] terminal command failed in case '{case_name}': {exc}", flush=True)
+                    return 1
                 if rc != 0:
                     return rc
                 time.sleep(5.0)

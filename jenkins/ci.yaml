@@ -32,13 +32,10 @@ bids:
       zone0_dtbs:
         - platform/aarch64/rk3568/image/dts/rk3568_limit_zone0.dtb
       uboot_ready_pattern: '=>'
+      zone0_ready_pattern: '(?:\r?\n)#\s'
       zone0_shell_timeout: 60
       uboot_cmd: pci enum;setenv serverip 192.168.1.181; setenv ipaddr 192.168.1.240; setenv loadaddr 0x60800000; setenv fdt_addr 0xa0000000; setenv zone0_kernel_addr 0x00280000; tftp ${loadaddr} ${serverip}:rk3568/hvisor.bin && tftp ${fdt_addr} ${serverip}:rk3568/rk3568_limit_zone0.dtb && tftp ${zone0_kernel_addr} ${serverip}:rk3568/Image && bootm ${loadaddr} - ${fdt_addr};
       deploy:
-        board_ip: 192.168.1.240
-        board_iface: eth0
-        link_wait: 3
-        ping_retries: 3
         host_ip: 192.168.1.181
         host_user: light
         board_ssh_key: /home/light/.ssh/hvisor_board_pull
@@ -72,10 +69,15 @@ bids:
         - platform/aarch64/phytium-pi/image/dts/phytium-pi-board-v2.dtb
       zone0_image: /home/light/DEMO/phytium-pi-external/Image
       uboot_ready_pattern: 'Phytium-Pi#'
-      zone0_shell_timeout: 60
-      uboot_cmd: run boot_root_linux
+      zone0_ready_pattern: '(?:\r?\n)#\s'
+      zone0_shell_timeout: 120
+      uboot_prompt_timeout: 30
+      uboot_step_timeout: 90
+      uboot_cmds:
+        - setenv serverip 192.168.1.181; setenv ipaddr 192.168.1.179; setenv loadaddr 0x90100000; setenv fdt_addr 0x90000000; setenv zone0_kernel_addr 0xa0400000; setenv zone0_fdt_addr 0xa0000000; tftp ${loadaddr} ${serverip}:hvisor.bin;
+        - tftp ${fdt_addr} ${serverip}:phytium-pi-board-v2.dtb; tftp ${zone0_kernel_addr} ${serverip}:Image; tftp ${zone0_fdt_addr} ${serverip}:linux1.dtb; bootm ${loadaddr} - ${fdt_addr};
       deploy:
-        board_ip: 192.168.1.178
+        board_ip: 192.168.1.179
         board_iface: eth0
         link_wait: 3
         ping_retries: 3
