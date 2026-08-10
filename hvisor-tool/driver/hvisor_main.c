@@ -260,6 +260,34 @@ static int hvisor_config_check(u64 __user *arg) {
     return err;
 }
 
+static int hvisor_get_ecam_base(u64 __user *arg) {
+    int err = 0;
+    u64 *ecam_base;
+
+    ecam_base = kmalloc(sizeof(u64), GFP_KERNEL);
+    if (ecam_base == NULL) {
+        pr_err("hvisor.ko: failed to allocate memory for ecam base\n");
+        return -ENOMEM;
+    }
+    *ecam_base = 0;
+
+    err = hvisor_call(HVISOR_HC_GET_ECAM_BASE, __pa(ecam_base), 0);
+    if (err != 0) {
+        pr_err("hvisor.ko: failed to get ecam base\n");
+        kfree(ecam_base);
+        return err;
+    }
+
+    if (copy_to_user(arg, ecam_base, sizeof(u64))) {
+        pr_err("hvisor.ko: failed to copy ecam base to user\n");
+        kfree(ecam_base);
+        return -EFAULT;
+    }
+
+    kfree(ecam_base);
+    return 0;
+}
+
 static int hvisor_zone_list(zone_list_args_t __user *arg) {
     int ret;
     zone_info_t *zones;
@@ -314,6 +342,9 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
         break;
     case HVISOR_CONFIG_CHECK:
         err = hvisor_config_check((u64 __user *)arg);
+        break;
+    case HVISOR_GET_ECAM_BASE:
+        err = hvisor_get_ecam_base((u64 __user *)arg);
         break;
     case HVISOR_SET_EVENTFD: {
         struct eventfd_ctx *ctx = eventfd_ctx_fdget((int)arg);
