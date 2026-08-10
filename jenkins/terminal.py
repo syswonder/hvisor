@@ -22,6 +22,10 @@ RUN_RESULT_RE = re.compile(r"__R__(?P<run_id>[a-f0-9]+):(?P<rc>\d+)")
 class TerminalTimeoutError(TimeoutError):
     """Raised when terminal command wait times out."""
 
+    def __init__(self, message: str, *, partial_output: str = "") -> None:
+        super().__init__(message)
+        self.partial_output = partial_output
+
 
 class TerminalCommandError(RuntimeError):
     """Raised when a terminal command exits with non-zero status."""
@@ -313,6 +317,10 @@ class Terminal:
         self._ensure_open()
         return self._collector.offset()
 
+    def tail_since(self, offset: int) -> str:
+        self._ensure_open()
+        return self._collector.tail_since(offset)
+
     def send(self, command: str) -> None:
         self._ensure_open()
         payload = command.rstrip("\n") + "\n"
@@ -350,8 +358,10 @@ class Terminal:
                 next_wake = time.monotonic() + wake_interval
             time.sleep(poll_interval)
 
+        partial = self._collector.tail_since(offset)
         raise TerminalTimeoutError(
-            f"timed out waiting for run result (case={case}, run_id={run_id}): {command}"
+            f"timed out waiting for run result (case={case}, run_id={run_id}): {command}",
+            partial_output=partial,
         )
 
     def wait_pattern(

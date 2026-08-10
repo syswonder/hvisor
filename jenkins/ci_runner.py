@@ -2,9 +2,9 @@
 from __future__ import annotations
 
 import argparse
-import base64
 import os
 import re
+import shlex
 import socket
 import signal
 import subprocess
@@ -19,9 +19,14 @@ from terminal import Terminal, TerminalCommandError, TerminalTimeoutError
 CaseFunc = Callable[[dict[str, Any], Terminal | None], int]
 
 # Wait for zone1 inner console: shell prompt (#/$) or login:.
-ZONE0_READY_PATTERN = r"root@[^\r\n]*[#$]\s|(?:\r?\n)#\s"
+ZONE0_READY_PATTERN = r"root@[^\r\n]*#\s?|(?:\r?\n)#\s*(?:\r?\n|$)"
 ZONE1_INNER_PROMPT_TIMEOUT = 60.0
 ZONE1_INNER_LOG_FETCH_TIMEOUT = 30.0
+DEPLOY_GUNZIP_ARTIFACTS = {"hvisor.gz": "hvisor"}
+DEPLOY_LARGE_PULL_BYTES = 512 * 1024
+BOARD_PUBKEY_LINE = re.compile(r"^ssh-(?:ed25519|rsa)\s+\S+")
+BOARD_ROOT_SHELL_PATTERN = r"root@[^\r\n]*:\/#\s?|(?:\r?\n)#\s?(?:\r?\n|$)"
+BOARD_SU_PASSWORD_PROMPT = r"Password:|password:"
 
 
 def logs_dir(cfg: dict[str, Any]) -> Path:
@@ -147,22 +152,30 @@ def board_power_off(cfg: dict[str, Any]) -> None:
     board_power(cfg, "off")
 
 
-def board_wake_console(term: Terminal, *, repeats: int = 3) -> None:
-    for _ in range(repeats):
+def board_wait_uboot_prompt(
+    term: Terminal,
+    pattern: str,
+    timeout: float,
+    *,
+    after_offset: int | None = None,
+    autoboot_window: float = 0.0,
+) -> None:
+    """Wake the console and wait for a U-Boot prompt."""
+    offset = term.offset() if after_offset is None else after_offset
+    if autoboot_window > 0 and after_offset is None:
+        deadline = time.monotonic() + autoboot_window
+        while time.monotonic() < deadline:
+            if term.wait_pattern(pattern, timeout=0.2, from_offset=offset):
+                return
+            term.send(" ")
+            time.sleep(0.1)
+    elif after_offset is None:
         term.send("")
         time.sleep(0.2)
-
-
-def board_wait_uboot_prompt(term: Terminal, pattern: str, timeout: float) -> None:
-    """Wait for U-Boot prompt, periodically waking an idle console."""
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        remaining = deadline - time.monotonic()
-        if term.wait_pattern(pattern, timeout=min(5.0, remaining), from_offset=0):
-            return
-        term.send(" ")
+        term.send("")
         time.sleep(0.2)
-    raise TerminalTimeoutError(f"timed out waiting for U-Boot prompt (pattern={pattern!r})")
+    if not term.wait_pattern(pattern, timeout=timeout, from_offset=offset):
+        raise TerminalTimeoutError(f"timed out waiting for U-Boot prompt (pattern={pattern!r})")
 
 
 def save_inner_serial_log(cfg: dict[str, Any], content: str) -> None:
@@ -173,9 +186,9 @@ def save_inner_serial_log(cfg: dict[str, Any], content: str) -> None:
 
 
 def stage_board_files(cfg: dict[str, Any]) -> None:
-    script = cfg["workspace"] / "jenkins" / "board_scp.sh"
+    script = cfg["workspace"] / "jenkins" / "board_stage.sh"
     if not script.is_file():
-        raise SystemExit(f"board scp script not found: {script}")
+        raise SystemExit(f"board stage script not found: {script}")
 
     env = os.environ.copy()
     env["ARCH"] = cfg["arch"]
@@ -185,45 +198,94 @@ def stage_board_files(cfg: dict[str, Any]) -> None:
     env["WORKSPACE_ROOT"] = str(cfg["workspace"])
     env["HVISOR_TOOL_PATH"] = cfg["hvisor_tool_path"]
     env["STAGING_DIR"] = cfg["network_staging_dir"]
-    env["TFTP_DIR"] = cfg["tftp_dir"]
     if cfg.get("zone1_dtb"):
         zone1_dtb = Path(cfg["zone1_dtb"])
         if not zone1_dtb.is_absolute():
             zone1_dtb = cfg["workspace"] / zone1_dtb
         env["ZONE1_DTB"] = str(zone1_dtb.resolve())
-    env["COPY_HVISOR_BIN"] = "true" if cfg.get("copy_hvisor_bin", True) else "false"
 
     subprocess.run(["bash", str(script)], check=True, cwd=cfg["workspace"], env=env)
 
 
-def deploy_chmod(cfg: dict[str, Any], term: Terminal) -> None:
-    work_dir = cfg["zone1_work_dir"]
-    boot_script = cfg["zone1_boot_script"]
+def save_case_log(cfg: dict[str, Any], name: str, content: str) -> None:
+    path = logs_dir(cfg) / name
+    path.write_text(content, encoding="utf-8")
+    print(f"[ci_runner] saved {path}", flush=True)
+
+
+def netmask_prefix(netmask: str) -> int:
+    try:
+        return sum(bin(int(part)).count("1") for part in netmask.split("."))
+    except (ValueError, AttributeError):
+        return 24
+
+
+def board_sudo(cmd: str) -> str:
+    """Wrap a board shell command to run with sudo -E (preserve HOME etc.)."""
+    cmd = cmd.strip()
+    if cmd.startswith("sudo "):
+        return cmd
+    if cmd.startswith("export "):
+        return cmd
+    return f"sudo -E sh -c {shlex.quote(cmd)}"
+
+
+def board_priv(cfg: dict[str, Any], cmd: str) -> str:
+    """Run privileged board commands; skip sudo when the shell is already root."""
+    if cfg.get("board_is_root"):
+        return cmd.strip()
+    return board_sudo(cmd)
+
+
+def board_ssh_paths(cfg: dict[str, Any]) -> tuple[str, str, str]:
+    """Absolute SSH key paths from the prepared board shell home."""
+    home = str(cfg.get("board_home") or "/root")
+    ssh_dir = f"{home}/.ssh"
+    key = f"{ssh_dir}/id_ed25519"
+    return key, f"{key}.pub", ssh_dir
+
+
+def _setup_board_interface(cfg: dict[str, Any], term: Terminal) -> None:
+    """Assign a static IP and cycle the interface."""
+    board_ip = str(cfg.get("board_ip", "")).strip()
+    board_iface = str(cfg.get("board_iface", "")).strip()
+    if not board_ip or not board_iface:
+        return
+
+    netmask = str(cfg.get("board_netmask", "255.255.255.0")).strip() or "255.255.255.0"
+    prefix = netmask_prefix(netmask)
     term.run(
-        "deploy_chmod",
-        f"chmod +x {work_dir}/{boot_script} {work_dir}/check_serial.sh 2>/dev/null || true",
-        timeout=60.0,
+        "deploy_set_ip",
+        board_priv(
+            cfg,
+            f"ip addr flush dev {board_iface} 2>/dev/null || true; "
+            f"ip addr add {board_ip}/{prefix} dev {board_iface}",
+        ),
+        timeout=30.0,
+    )
+    term.run(
+        "deploy_iface_down",
+        board_priv(cfg, f"ip link set {board_iface} down"),
+        timeout=15.0,
+    )
+    term.run(
+        "deploy_iface_up",
+        board_priv(cfg, f"ip link set {board_iface} up"),
+        timeout=15.0,
     )
 
-
-def deploy_board_pull(cfg: dict[str, Any], term: Terminal) -> int:
-    """Board pulls staged zone1 files from the CI host via scp (zone0 serial console)."""
-    board_ip = cfg.get("board_ip")
-    board_iface = cfg.get("board_iface")
-    if board_ip and board_iface:
-        term.run(
-            "deploy_set_ip",
-            f"ifconfig {board_iface} {board_ip} netmask 255.255.255.0 up",
-            timeout=30.0,
+    link_wait = float(cfg.get("deploy_link_wait", 0.0))
+    if link_wait > 0:
+        print(
+            f"[deploy] waiting {link_wait}s for {board_iface} link on {board_ip}",
+            flush=True,
         )
-        link_wait = float(cfg.get("deploy_link_wait", 0.0))
-        if link_wait > 0:
-            print(
-                f"[deploy] waiting {link_wait}s for {board_iface} link on {board_ip}",
-                flush=True,
-            )
-            time.sleep(link_wait)
+        time.sleep(link_wait)
+    time.sleep(2.0)
 
+
+def _board_ping_host(cfg: dict[str, Any], term: Terminal) -> None:
+    """Verify layer-3 reachability to the CI host before SSH setup."""
     host_ip = cfg["network_host_ip"]
     ping_count = cfg["network_ping_count"]
     ping_retries = int(cfg.get("deploy_ping_retries", 1))
@@ -235,39 +297,194 @@ def deploy_board_pull(cfg: dict[str, Any], term: Terminal) -> int:
             time.sleep(retry_wait)
         _, ping_output = term.run(
             "deploy_ping",
-            f"ping -c {ping_count} -W 5 {host_ip}",
+            board_priv(
+                cfg,
+                f"ping -c {ping_count} -W 5 {host_ip} > /tmp/ci_ping.log 2>&1; cat /tmp/ci_ping.log",
+            ),
             timeout=30.0 + ping_count * 5.0,
+            wake_interval=2.0,
         )
         if ping_success(ping_output):
             break
-    save_lspci_artifacts(cfg, "deploy_ping.log", f"=== ping {host_ip} ===\n{ping_output}\n")
-
+    save_case_log(cfg, "deploy_ping.log", f"=== ping {host_ip} ===\n{ping_output}\n")
     if not ping_success(ping_output):
         raise TerminalCommandError(f"ping {host_ip} failed")
+    print(f"[deploy] ping {host_ip} ok", flush=True)
 
-    print(f"[deploy] ping {host_ip} ok, staging files on host", flush=True)
-    stage_board_files(cfg)
-    time.sleep(3.0)
 
-    board_key = install_board_ssh_key(cfg, term)
-    identity = board_scp_identity(cfg, board_key)
+def ensure_board_net(cfg: dict[str, Any], term: Terminal) -> None:
+    """Configure network, verify ping, and probe SSH to the CI host."""
+    prepare_board_shell(cfg, term)
+    _setup_board_interface(cfg, term)
+    _board_ping_host(cfg, term)
+    _board_ssh_probe(cfg, term)
 
+
+def board_pubkey_from_output(output: str) -> str | None:
+    for line in output.splitlines():
+        candidate = line.strip()
+        if BOARD_PUBKEY_LINE.match(candidate):
+            return candidate
+    return None
+
+
+def _board_ssh_probe(cfg: dict[str, Any], term: Terminal) -> None:
+    key, pub, _ = board_ssh_paths(cfg)
+    key_rc, _ = term.run(
+        "board_ssh_check",
+        board_priv(cfg, f"test -f {shlex.quote(key)}"),
+        timeout=15.0,
+    )
+    if key_rc != 0:
+        raise TerminalCommandError(
+            f"board ssh private key not found: {key}\n"
+            "copy or generate ~/.ssh/id_ed25519 on the board manually."
+        )
+
+    host_user = cfg["network_host_user"]
+    host_ip = cfg["network_host_ip"]
+    host = shlex.quote(f"{host_user}@{host_ip}")
+    opts = board_ssh_opts(cfg, key)
+    probe_timeout = float(int(cfg.get("deploy_ssh_connect_timeout", 30)) + 30)
+    probe_rc, probe_out = term.run(
+        "deploy_ssh_probe",
+        board_priv(cfg, f"ssh {opts} {host} true"),
+        timeout=probe_timeout,
+    )
+    if probe_rc == 0:
+        print("[deploy] ssh to CI host ok", flush=True)
+        return
+
+    pub_rc, pub_out = term.run(
+        "board_ssh_pubkey",
+        board_priv(cfg, f"cat {shlex.quote(pub)}"),
+        timeout=15.0,
+    )
+    pubkey = board_pubkey_from_output(pub_out) if pub_rc == 0 else None
+    if not pubkey:
+        raise TerminalCommandError(
+            f"ssh probe to {host_user}@{host_ip} failed and board public key not found: {pub}\n"
+            f"{probe_out.strip()}"
+        )
+
+    auth_keys = f"/home/{host_user}/.ssh/authorized_keys"
+    raise TerminalCommandError(
+        f"ssh probe to {host_user}@{host_ip} failed; add this board public key to "
+        f"{auth_keys} on the CI host:\n{pubkey}"
+    )
+
+
+def boot_board_zone0_shell(cfg: dict[str, Any], term: Terminal, *, power_cycle: bool = True) -> None:
+    """Power-cycle (optional), run U-Boot commands, and prepare the zone0 shell."""
+    if power_cycle:
+        board_power_cycle(cfg)
+    send_board_uboot_commands(cfg, term)
+    timeout = float(cfg.get("zone0_shell_timeout", 180.0))
+    if not term.wait_pattern(zone0_ready_pattern(cfg), timeout=timeout):
+        raise TerminalTimeoutError("timed out waiting for zone0 shell prompt")
+    prepare_board_shell(cfg, term)
+
+
+def deploy_board_pull(cfg: dict[str, Any], term: Terminal) -> int:
+    """Board pulls staged zone1 files from the CI host over ssh."""
+    ensure_board_net(cfg, term)
+
+    host_ip = cfg["network_host_ip"]
     host_user = cfg["network_host_user"]
     staging_dir = cfg["network_staging_dir"]
     work_dir = cfg["zone1_work_dir"]
-    term.run("deploy_scp_host", f"CI_H={host_ip}", timeout=15.0)
-    term.run("deploy_scp_user", f"CI_U={host_user}", timeout=15.0)
-    term.run("deploy_scp_dir", f"CI_D={staging_dir}", timeout=15.0)
-    scp_cmd = (
-        f"scp {identity}-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
-        f"$CI_U@$CI_H:$CI_D/* {work_dir}/"
-    )
-    print(f"[deploy] pulling staged files from {host_user}@{host_ip}:{staging_dir}", flush=True)
-    pull_rc, _ = term.run("deploy_scp_pull", scp_cmd, timeout=900.0)
-    if pull_rc != 0:
-        raise TerminalCommandError(f"board scp pull failed with rc={pull_rc}")
 
-    deploy_chmod(cfg, term)
+    print(f"[deploy] staging files on host", flush=True)
+    stage_board_files(cfg)
+
+    staging_path = Path(staging_dir)
+    if not staging_path.is_dir():
+        raise TerminalCommandError(f"staging dir not found: {staging_path}")
+    staged_files = sorted(
+        (p.name for p in staging_path.iterdir() if p.is_file()),
+        key=lambda name: staging_path.joinpath(name).stat().st_size,
+    )
+    if not staged_files:
+        raise TerminalCommandError(f"no staged files in {staging_path}")
+
+    key, _, _ = board_ssh_paths(cfg)
+    pull_timeout = float(cfg.get("deploy_pull_timeout", 600.0))
+    deadline = time.monotonic() + pull_timeout
+    all_logs: list[str] = []
+
+    stale_names = list(staged_files)
+    for gz_name, raw_name in DEPLOY_GUNZIP_ARTIFACTS.items():
+        if gz_name in stale_names:
+            stale_names.append(raw_name)
+    stale_paths = " ".join(shlex.quote(f"{work_dir}/{name}") for name in stale_names)
+    print(f"[deploy] removing stale files in {work_dir}", flush=True)
+    term.run("deploy_clean", board_priv(cfg, f"rm -f {stale_paths}"), timeout=30.0)
+
+    print(
+        f"[deploy] pulling {len(staged_files)} file(s) via ssh from {host_user}@{host_ip}:{staging_dir}",
+        flush=True,
+    )
+    for index, name in enumerate(staged_files, start=1):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            save_case_log(cfg, "deploy_scp.log", "".join(all_logs))
+            raise TerminalTimeoutError(
+                f"deploy pull timed out before {name!r}",
+                partial_output="".join(all_logs),
+            )
+
+        file_size = staging_path.joinpath(name).stat().st_size
+        file_timeout = deploy_file_pull_timeout(file_size, remaining)
+        large_transfer = file_size >= DEPLOY_LARGE_PULL_BYTES
+        pull_cmd = board_ssh_pull_file_cmd(
+            cfg, key, staging_dir, name, work_dir, file_size, large_transfer=large_transfer
+        )
+        print(
+            f"[deploy] pull ({index}/{len(staged_files)}): {name} ({file_size} bytes, timeout={file_timeout:.0f}s)",
+            flush=True,
+        )
+        try:
+            pull_rc, pull_out = term.run(f"deploy_pull_{name}", pull_cmd, timeout=file_timeout)
+        except TerminalTimeoutError as exc:
+            pull_out = exc.partial_output or ""
+            all_logs.append(f"=== deploy_pull_{name} (timed out) ===\n{pull_out}\n")
+            save_case_log(cfg, "deploy_scp.log", "".join(all_logs))
+            raise
+        all_logs.append(f"=== deploy_pull_{name} ===\n{pull_out}\n")
+        if pull_rc != 0:
+            save_case_log(cfg, "deploy_scp.log", "".join(all_logs))
+            raise TerminalCommandError(
+                f"board pull failed for {name!r} with rc={pull_rc}: {pull_out.strip()}"
+            )
+
+        raw_name = DEPLOY_GUNZIP_ARTIFACTS.get(name)
+        if raw_name:
+            raw_path = Path(cfg["hvisor_tool_path"]) / "output" / raw_name
+            raw_size = raw_path.stat().st_size
+            gunzip_cmd = (
+                f"gunzip -f {shlex.quote(f'{work_dir}/{name}')} && "
+                f"test $(wc -c < {shlex.quote(f'{work_dir}/{raw_name}')}) -eq {raw_size}"
+            )
+            print(f"[deploy] gunzip: {name} -> {raw_name}", flush=True)
+            gz_rc, gz_out = term.run(f"deploy_gunzip_{raw_name}", gunzip_cmd, timeout=60.0)
+            all_logs.append(f"=== deploy_gunzip_{raw_name} ===\n{gz_out}\n")
+            if gz_rc != 0:
+                save_case_log(cfg, "deploy_scp.log", "".join(all_logs))
+                raise TerminalCommandError(
+                    f"board gunzip failed for {name!r} with rc={gz_rc}: {gz_out.strip()}"
+                )
+
+    save_case_log(cfg, "deploy_scp.log", "".join(all_logs))
+
+    boot_script = cfg["zone1_boot_script"]
+    term.run(
+        "deploy_chmod",
+        board_priv(
+            cfg,
+            f"chmod +x {work_dir}/{boot_script} {work_dir}/check_serial.sh 2>/dev/null || true",
+        ),
+        timeout=60.0,
+    )
     print("[deploy] board_pull completed", flush=True)
     return 0
 
@@ -290,6 +507,16 @@ def zone0_ready_pattern(cfg: dict[str, Any]) -> str:
     return ZONE0_READY_PATTERN
 
 
+def board_shell_ready_pattern(cfg: dict[str, Any]) -> str:
+    custom = str(cfg.get("board_shell_ready_pattern", "")).strip()
+    if custom:
+        return custom
+    board_user = str(cfg.get("board_user", "root")).strip() or "root"
+    if board_user == "root":
+        return BOARD_ROOT_SHELL_PATTERN
+    return rf"{re.escape(board_user)}@[^\r\n]*[$#]\s?"
+
+
 def uboot_commands(cfg: dict[str, Any]) -> list[str]:
     raw = cfg.get("uboot_cmds")
     if isinstance(raw, list):
@@ -309,13 +536,24 @@ def send_board_uboot_commands(cfg: dict[str, Any], term: Terminal) -> None:
     step_timeout = float(cfg.get("uboot_step_timeout", 0.0))
     if step_timeout <= 0:
         step_timeout = max(initial_timeout, 60.0)
-    board_wait_uboot_prompt(term, uboot_ready, timeout=initial_timeout)
+
+    autoboot_window = float(cfg.get("uboot_autoboot_window", 0.0))
+    board_wait_uboot_prompt(
+        term,
+        uboot_ready,
+        timeout=initial_timeout,
+        autoboot_window=autoboot_window,
+    )
     for index, cmd in enumerate(cmds):
-        if index > 0:
-            time.sleep(0.3)
-            board_wait_uboot_prompt(term, uboot_ready, timeout=step_timeout)
-            time.sleep(0.3)
+        send_offset = term.offset()
         term.send(cmd)
+        if index < len(cmds) - 1:
+            board_wait_uboot_prompt(
+                term,
+                uboot_ready,
+                timeout=step_timeout,
+                after_offset=send_offset,
+            )
 
 
 def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
@@ -350,14 +588,7 @@ def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
         board_term = build_terminal(cfg, log_path)
         board_term.open()
         cfg["_board_term"] = board_term
-        board_power_cycle(cfg)
-        time.sleep(3.0)
-        board_wake_console(board_term)
-
-        send_board_uboot_commands(cfg, board_term)
-        zone0_timeout = float(cfg.get("zone0_shell_timeout", 180.0))
-        if not board_term.wait_pattern(zone0_ready_pattern(cfg), timeout=zone0_timeout):
-            raise TerminalTimeoutError("timed out waiting for zone0 shell prompt")
+        boot_board_zone0_shell(cfg, board_term, power_cycle=True)
         return 0
     return 0
 
@@ -371,12 +602,6 @@ def lspci_expected_cfg(cfg: dict[str, Any]) -> dict[str, Any]:
     return {"expected_bdfs": expected_bdfs, "min_count": min_count}
 
 
-def save_lspci_artifacts(cfg: dict[str, Any], name: str, content: str) -> None:
-    path = logs_dir(cfg) / name
-    path.write_text(content, encoding="utf-8")
-    print(f"[lspci] saved {path}", flush=True)
-
-
 def lspci(cfg: dict[str, Any], term: Terminal | None) -> int:
     print("————————————————\ncase: lspci\n————————————————\n", flush=True)
     if term is None:
@@ -386,10 +611,10 @@ def lspci(cfg: dict[str, Any], term: Terminal | None) -> int:
 
     _, output = term.run(
         "lspci",
-        "timeout 20 lspci -D > /tmp/ci_lspci.log 2>&1; cat /tmp/ci_lspci.log",
+        board_priv(cfg, "timeout 20 lspci -D > /tmp/ci_lspci.log 2>&1; cat /tmp/ci_lspci.log"),
         timeout=60.0,
     )
-    save_lspci_artifacts(cfg, "lspci.log", f"=== lspci -D ===\n{output}\n")
+    save_case_log(cfg, "lspci.log", f"=== lspci -D ===\n{output}\n")
 
     matched = [bdf for bdf in expected["expected_bdfs"] if bdf in output]
     missing = [bdf for bdf in expected["expected_bdfs"] if bdf not in output]
@@ -421,36 +646,119 @@ def lspci(cfg: dict[str, Any], term: Terminal | None) -> int:
 
 
 def ping_success(output: str) -> bool:
-    if re.search(r"\b0% (?:packet )?loss\b", output):
+    if re.search(r"0%\s*(?:packet\s*)?loss\b", output, re.I):
         return True
-    match = re.search(r"(\d+) packets? received", output)
+    if re.search(r"0%\s*包丢失", output):
+        return True
+    match = re.search(r"(\d+)\s*packets?\s*received", output, re.I)
+    if match and int(match.group(1)) > 0:
+        return True
+    match = re.search(r"已接收\s*(\d+)\s*个包", output)
     return bool(match and int(match.group(1)) > 0)
 
 
-def install_board_ssh_key(cfg: dict[str, Any], term: Terminal) -> str | None:
-    """Install a host-side private key on the board for scp pull. Returns key path on board."""
-    key_path = cfg.get("deploy_board_ssh_key", "").strip()
-    if not key_path:
-        return None
-    host_key = Path(key_path).expanduser()
-    if not host_key.is_file():
-        raise SystemExit(f"deploy board_ssh_key not found: {host_key}")
+def board_login_user(term: Terminal) -> str:
+    _, out = term.run("board_id", "id -un", timeout=15.0)
+    for line in out.splitlines():
+        candidate = line.strip()
+        if candidate and "__R__" not in candidate and re.fullmatch(r"[\w.-]+", candidate):
+            return candidate
+    raise TerminalCommandError(f"failed to detect board login user: {out.strip()!r}")
 
-    board_key = f"/root/.ssh/{host_key.name}"
-    key_b64 = base64.b64encode(host_key.read_bytes()).decode("ascii")
-    cmd = (
-        "mkdir -p /root/.ssh && chmod 700 /root/.ssh && "
-        f"echo {key_b64} | base64 -d > {board_key} && chmod 600 {board_key}"
+
+def ensure_board_shell_user(cfg: dict[str, Any], term: Terminal) -> None:
+    """Switch shell user when board_shell_su_cmd is set in ci.yaml."""
+    su_cmd = str(cfg.get("board_shell_su_cmd", "")).strip()
+    if not su_cmd:
+        return
+    target = str(cfg.get("board_user", "root")).strip() or "root"
+    if board_login_user(term) == target:
+        return
+
+    shell_prompt = board_shell_ready_pattern(cfg)
+    password = str(cfg.get("board_su_password", ""))
+    print(f"[deploy] {su_cmd}", flush=True)
+    offset = term.offset()
+    term.send(su_cmd)
+    deadline = time.monotonic() + 20.0
+    sent_password = False
+    while time.monotonic() < deadline:
+        chunk = term.tail_since(offset)
+        if not sent_password and re.search(BOARD_SU_PASSWORD_PROMPT, chunk):
+            term.send(password)
+            sent_password = True
+        if re.search(shell_prompt, chunk):
+            break
+        time.sleep(0.1)
+    else:
+        raise TerminalCommandError(f"timed out waiting for shell after {su_cmd!r}")
+
+    # Serial su may print job-control errors; an extra enter wakes the ready shell.
+    time.sleep(0.3)
+    term.send("")
+    time.sleep(0.3)
+    if board_login_user(term) != target:
+        raise TerminalCommandError(f"failed to switch shell user to {target}")
+
+
+def prepare_board_shell(cfg: dict[str, Any], term: Terminal) -> None:
+    """Enter board shell once: optional su, detect root/user, export HOME."""
+    if cfg.get("_board_shell_ready"):
+        return
+
+    ensure_board_shell_user(cfg, term)
+    user = board_login_user(term)
+    cfg["board_is_root"] = user == "root"
+    home = "/root" if cfg["board_is_root"] else f"/home/{user}"
+    cfg["board_home"] = home
+    term.run("board_home_export", f"export HOME={shlex.quote(home)}", timeout=15.0)
+    cfg["_board_shell_ready"] = True
+    print(f"[board] shell ready: user={user} home={home}", flush=True)
+
+
+def board_ssh_opts(cfg: dict[str, Any], key: str, *, large_transfer: bool = False) -> str:
+    timeout = int(cfg.get("deploy_ssh_connect_timeout", 30))
+    opts = (
+        f"-i {key} -o BatchMode=yes -o ConnectTimeout={timeout} "
+        "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
     )
-    term.run("deploy_install_ssh_key", cmd, timeout=30.0)
-    print(f"[deploy] installed board ssh key at {board_key}", flush=True)
-    return board_key
+    if large_transfer:
+        # ServerAlive probes can drop bulk transfers ("server not responding").
+        opts += " -o ServerAliveInterval=0 -o TCPKeepAlive=yes"
+    else:
+        opts += " -o ServerAliveInterval=15 -o ServerAliveCountMax=8"
+    return opts
 
 
-def board_scp_identity(cfg: dict[str, Any], board_key: str | None) -> str:
-    if board_key:
-        return f"-i {board_key} "
-    return ""
+def deploy_file_pull_timeout(file_size: int, remaining: float) -> float:
+    """Per-file timeout from size (8 KiB/s floor) capped by the deploy deadline."""
+    min_bps = 8192.0
+    needed = max(90.0, file_size / min_bps + 45.0)
+    return min(remaining, needed)
+
+
+def board_ssh_pull_file_cmd(
+    cfg: dict[str, Any],
+    key: str,
+    staging_dir: str,
+    name: str,
+    work_dir: str,
+    expected_size: int,
+    *,
+    large_transfer: bool = False,
+) -> str:
+    """Pull one staged file over ssh cat (more reliable than scp on some boards)."""
+    host_ip = cfg["network_host_ip"]
+    host_user = cfg["network_host_user"]
+    opts = board_ssh_opts(cfg, key, large_transfer=large_transfer)
+    remote = f"{host_user}@{host_ip}"
+    remote_file = f"{staging_dir}/{name}"
+    local_file = f"{work_dir}/{name}"
+    return (
+        f"ssh {opts} {shlex.quote(remote)} "
+        f"'cat {shlex.quote(remote_file)}' > {shlex.quote(local_file)} && "
+        f"test $(wc -c < {shlex.quote(local_file)}) -eq {expected_size}"
+    )
 
 
 def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
@@ -458,19 +766,12 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     if term is None:
         raise SystemExit("terminal backend is required")
 
-    work_dir = cfg["zone1_work_dir"]
+    work_dir = shlex.quote(cfg["zone1_work_dir"])
     boot_script = cfg["zone1_boot_script"]
     inner_log = "/tmp/zone1_inner.log"
-    _, _ = term.run("zone1_cd", f"cd {work_dir}", timeout=15.0)
-    _, _ = term.run("zone1_ls", "ls", timeout=15.0)
-    _, _ = term.run(
-        "zone1_chmod",
-        f"chmod +x {boot_script} hvisor check_serial.sh 2>/dev/null || true",
-        timeout=30.0,
-    )
-    _, _ = term.run("zone1_cat_boot", f"cat {boot_script}", timeout=15.0)
-    boot_rc, _ = term.run("zone1_boot", f"./{boot_script}", timeout=120.0)
-    _, _ = term.run("zone1_list", "./hvisor zone list", timeout=15.0)
+    _, _ = term.run("zone1_ls", f"cd {work_dir} && ls", timeout=15.0)
+    boot_rc, _ = term.run("zone1_boot", f"cd {work_dir} && ./{boot_script}", timeout=120.0)
+    _, _ = term.run("zone1_list", f"cd {work_dir} && ./hvisor zone list", timeout=15.0)
 
     start_wait = float(cfg.get("zone1_start_wait", 0.0))
     if start_wait > 0:
@@ -481,10 +782,12 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
 
     check_rc, _ = term.run(
         "zone1_serial_check",
-        f"./check_serial.sh /dev/pts/{max_pts} {inner_log} {int(ZONE1_INNER_PROMPT_TIMEOUT)}",
+        (
+            f"cd {work_dir} && ./check_serial.sh /dev/pts/{max_pts} {inner_log} "
+            f"{int(ZONE1_INNER_PROMPT_TIMEOUT)}"
+        ),
         timeout=ZONE1_INNER_PROMPT_TIMEOUT + 30.0,
     )
-    # Fetch via tail to limit serial traffic; generous timeout for slow Jenkins consoles.
     _, inner_output = term.run(
         "zone1_inner_log",
         f"tail -c 131072 {inner_log}",
@@ -542,13 +845,9 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
         raw = deploy_cfg.get(key, tests.get(key, default))
         return str(raw).strip() if raw is not None else default
 
-    deploy_method = str(deploy_cfg.get("method", "")).strip()
-    if deploy_method and deploy_method != "board_pull":
-        raise SystemExit(f"unsupported deploy method '{deploy_method}', only board_pull is supported")
     board_ip = cfg_str("board_ip")
-    copy_hvisor_bin = deploy_cfg.get("copy_hvisor_bin", True)
-    if isinstance(copy_hvisor_bin, str):
-        copy_hvisor_bin = copy_hvisor_bin.lower() not in ("0", "false", "no")
+    board_user = cfg_str("board_user", "root") or "root"
+    default_work_dir = "/root" if board_user == "root" else f"/home/{board_user}"
     hvisor_tool_path = os.environ.get("HVISOR_TOOL_PATH", "").strip()
     if not hvisor_tool_path:
         hvisor_tool_path = str((cell_root / "hvisor-tool").resolve())
@@ -573,25 +872,29 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
         "uboot_ready_pattern": str(tests.get("uboot_ready_pattern", "")).strip(),
         "uboot_prompt_timeout": float(tests.get("uboot_prompt_timeout", 20.0)),
         "uboot_step_timeout": float(tests.get("uboot_step_timeout", 0.0)),
+        "uboot_autoboot_window": float(tests.get("uboot_autoboot_window", 0.0)),
         "zone0_ready_pattern": str(tests.get("zone0_ready_pattern", "")).strip(),
+        "board_shell_ready_pattern": str(tests.get("board_shell_ready_pattern", "")).strip(),
+        "board_shell_su_cmd": str(tests.get("board_shell_su_cmd", "")).strip(),
         "zone0_shell_timeout": float(tests.get("zone0_shell_timeout", 300.0 if mode == "board" else 180.0)),
         "tftp_dir": str(tests.get("tftp_dir", "/home/light/tftp")).strip(),
         "lspci": tests.get("lspci") or {},
         "board_ip": board_ip,
+        "board_user": board_user,
         "board_iface": cfg_str("board_iface", "eth0"),
-        "zone1_work_dir": cfg_str("zone1_work_dir", "/root"),
+        "board_netmask": cfg_str("netmask", "255.255.255.0"),
+        "board_su_password": cfg_str("su_password", ""),
+        "zone1_work_dir": cfg_str("zone1_work_dir", default_work_dir),
         "zone1_boot_script": cfg_str("zone1_boot_script", "boot_zone1.sh"),
         "network_host_ip": cfg_str("host_ip", "192.168.1.181"),
         "network_host_user": cfg_str("host_user", "light"),
-        "network_staging_dir": cfg_str("staging_dir", "/home/light/tftp/ci_deploy"),
+        "network_staging_dir": cfg_str("staging_dir", "/home/light/ci_deploy"),
         "network_ping_count": int(deploy_cfg.get("ping_count", tests.get("ping_count", 3))),
         "deploy_link_wait": float(deploy_cfg.get("link_wait", 0.0)),
         "deploy_ping_retries": int(deploy_cfg.get("ping_retries", 1)),
-        "deploy_board_ssh_key": cfg_str(
-            "board_ssh_key", "/home/light/.ssh/hvisor_board_pull"
-        ),
+        "deploy_ssh_connect_timeout": int(deploy_cfg.get("ssh_connect_timeout", 30)),
+        "deploy_pull_timeout": float(deploy_cfg.get("pull_timeout", 600.0)),
         "zone1_dtb": cfg_str("zone1_dtb"),
-        "copy_hvisor_bin": bool(copy_hvisor_bin),
         "zone1_start_wait": float(tests.get("zone1_start_wait", 30.0)),
     }
 
