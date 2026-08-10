@@ -28,9 +28,15 @@ use crate::{memory::addr::VirtAddr, platform::BOARD_NCPUS};
 use core::arch::global_asm;
 
 /// Size of the hypervisor heap.
+#[cfg(loongson_3a6000)]
+pub const HV_HEAP_SIZE: usize = 8 * 1024 * 1024; // 8 MiB
+#[cfg(not(loongson_3a6000))]
 pub const HV_HEAP_SIZE: usize = 1024 * 1024; // 1 MiB
 
-/// Size of the hypervisor memory pool used for dynamic allocation.
+/// Size of the hypervisor memory pool used for dynamic stage-2 page tables.
+#[cfg(loongson_3a6000)]
+pub const HV_MEM_POOL_SIZE: usize = 0x1000_0000; // 256 MiB
+#[cfg(not(loongson_3a6000))]
 pub const HV_MEM_POOL_SIZE: usize = 64 * 1024 * 1024; // 64 MiB
 
 /// Size of the per-CPU data area, including stack and CPU-local data.

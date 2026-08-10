@@ -314,5 +314,6 @@
     "gicr_size": "0x100000",
     "gits_base": "0x0",
     "gits_size": "0x0"
-  }
+  },
+  "pci_config": []
 }

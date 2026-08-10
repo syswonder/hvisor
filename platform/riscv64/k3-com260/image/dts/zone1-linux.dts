@@ -1,0 +1,286 @@
+/dts-v1/;
+
+/ {
+	#address-cells = <0x02>;
+	#size-cells = <0x02>;
+	model = "SpacemiT K3 Com260 IFX";
+	compatible = "spacemit,k3-com260-ifx";
+
+	cpus {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+		timebase-frequency = <0x16e3600>;
+
+		cpu@4 {
+			device_type = "cpu";
+			reg = <0x04>;
+			model = "Spacemit(R) X100";
+			status = "okay";
+			compatible = "riscv";
+			riscv,isa = "rv64imafdcv";
+			riscv,isa-base = "rv64i";
+			riscv,isa-extensions = "i\0m\0a\0f\0d\0c\0v\0smaia\0smstateen\0ssaia\0sscofpmf\0sstc\0svpbmt\0svinval\0svnapot\0zawrs\0zba\0zbb\0zbc\0zbs\0zcb\0zca\0zcmop\0zfa\0zfh\0zfhmin\0zkt\0zicbom\0zicbop\0zicboz\0zicntr\0zicond\0zicsr\0zifencei\0zihintpause\0zihintntl\0zimop\0zvbb\0zvbc\0zvfh\0zvfhmin\0zvkb\0zvkg\0zvkn\0zvknc\0zvkned\0zvkng\0zvknha\0zvknhb\0zvks\0zvksc\0zvksed\0zvksh\0zvksg\0zvkt\0zcd";
+			riscv,cbom-block-size = <0x40>;
+			riscv,cboz-block-size = <0x40>;
+			riscv,cbop-block-size = <0x40>;
+			i-cache-block-size = <0x40>;
+			i-cache-size = <0x10000>;
+			i-cache-sets = <0x100>;
+			d-cache-block-size = <0x40>;
+			d-cache-size = <0x10000>;
+			d-cache-sets = <0x100>;
+			next-level-cache = <0x07>;
+			// cpu-idle-states = <0x02 0x03>;
+			mmu-type = "riscv,sv39";
+			#cooling-cells = <0x02>;
+			clst-supply = <0x04>;
+			clocks = <0x05 0x04 0x05 0x05>;
+			clock-names = "cls0\0cls1";
+			// operating-points-v2 = <0x06>;
+			phandle = <0x0f>;
+
+			interrupt-controller {
+				#interrupt-cells = <0x01>;
+				compatible = "riscv,cpu-intc";
+				interrupt-controller;
+				phandle = <0x6d>;
+			};
+		};
+
+		cpu@5 {
+			device_type = "cpu";
+			reg = <0x05>;
+			model = "Spacemit(R) X100";
+			status = "okay";
+			compatible = "riscv";
+			riscv,isa = "rv64imafdcv";
+			riscv,isa-base = "rv64i";
+			riscv,isa-extensions = "i\0m\0a\0f\0d\0c\0v\0smaia\0smstateen\0ssaia\0sscofpmf\0sstc\0svpbmt\0svinval\0svnapot\0zawrs\0zba\0zbb\0zbc\0zbs\0zcb\0zca\0zcmop\0zfa\0zfh\0zfhmin\0zkt\0zicbom\0zicbop\0zicboz\0zicntr\0zicond\0zicsr\0zifencei\0zihintpause\0zihintntl\0zimop\0zvbb\0zvbc\0zvfh\0zvfhmin\0zvkb\0zvkg\0zvkn\0zvknc\0zvkned\0zvkng\0zvknha\0zvknhb\0zvks\0zvksc\0zvksed\0zvksh\0zvksg\0zvkt\0zcd";
+			riscv,cbom-block-size = <0x40>;
+			riscv,cboz-block-size = <0x40>;
+			riscv,cbop-block-size = <0x40>;
+			i-cache-block-size = <0x40>;
+			i-cache-size = <0x10000>;
+			i-cache-sets = <0x100>;
+			d-cache-block-size = <0x40>;
+			d-cache-size = <0x10000>;
+			d-cache-sets = <0x100>;
+			next-level-cache = <0x07>;
+			// cpu-idle-states = <0x02 0x03>;
+			mmu-type = "riscv,sv39";
+			#cooling-cells = <0x02>;
+			clst-supply = <0x04>;
+			clocks = <0x05 0x04 0x05 0x05>;
+			clock-names = "cls0\0cls1";
+			// operating-points-v2 = <0x06>;
+			phandle = <0x10>;
+
+			interrupt-controller {
+				#interrupt-cells = <0x01>;
+				compatible = "riscv,cpu-intc";
+				interrupt-controller;
+				phandle = <0x6e>;
+			};
+		};
+
+		cpu@6 {
+			device_type = "cpu";
+			reg = <0x06>;
+			model = "Spacemit(R) X100";
+			status = "okay";
+			compatible = "riscv";
+			riscv,isa = "rv64imafdcv";
+			riscv,isa-base = "rv64i";
+			riscv,isa-extensions = "i\0m\0a\0f\0d\0c\0v\0smaia\0smstateen\0ssaia\0sscofpmf\0sstc\0svpbmt\0svinval\0svnapot\0zawrs\0zba\0zbb\0zbc\0zbs\0zcb\0zca\0zcmop\0zfa\0zfh\0zfhmin\0zkt\0zicbom\0zicbop\0zicboz\0zicntr\0zicond\0zicsr\0zifencei\0zihintpause\0zihintntl\0zimop\0zvbb\0zvbc\0zvfh\0zvfhmin\0zvkb\0zvkg\0zvkn\0zvknc\0zvkned\0zvkng\0zvknha\0zvknhb\0zvks\0zvksc\0zvksed\0zvksh\0zvksg\0zvkt\0zcd";
+			riscv,cbom-block-size = <0x40>;
+			riscv,cboz-block-size = <0x40>;
+			riscv,cbop-block-size = <0x40>;
+			i-cache-block-size = <0x40>;
+			i-cache-size = <0x10000>;
+			i-cache-sets = <0x100>;
+			d-cache-block-size = <0x40>;
+			d-cache-size = <0x10000>;
+			d-cache-sets = <0x100>;
+			next-level-cache = <0x07>;
+			// cpu-idle-states = <0x02 0x03>;
+			mmu-type = "riscv,sv39";
+			#cooling-cells = <0x02>;
+			clst-supply = <0x04>;
+			clocks = <0x05 0x04 0x05 0x05>;
+			clock-names = "cls0\0cls1";
+			// operating-points-v2 = <0x06>;
+			phandle = <0x11>;
+
+			interrupt-controller {
+				#interrupt-cells = <0x01>;
+				compatible = "riscv,cpu-intc";
+				interrupt-controller;
+				phandle = <0x6f>;
+			};
+		};
+
+		cpu@7 {
+			device_type = "cpu";
+			reg = <0x07>;
+			model = "Spacemit(R) X100";
+			status = "okay";
+			compatible = "riscv";
+			riscv,isa = "rv64imafdcv";
+			riscv,isa-base = "rv64i";
+			riscv,isa-extensions = "i\0m\0a\0f\0d\0c\0v\0smaia\0smstateen\0ssaia\0sscofpmf\0sstc\0svpbmt\0svinval\0svnapot\0zawrs\0zba\0zbb\0zbc\0zbs\0zcb\0zca\0zcmop\0zfa\0zfh\0zfhmin\0zkt\0zicbom\0zicbop\0zicboz\0zicntr\0zicond\0zicsr\0zifencei\0zihintpause\0zihintntl\0zimop\0zvbb\0zvbc\0zvfh\0zvfhmin\0zvkb\0zvkg\0zvkn\0zvknc\0zvkned\0zvkng\0zvknha\0zvknhb\0zvks\0zvksc\0zvksed\0zvksh\0zvksg\0zvkt\0zcd";
+			riscv,cbom-block-size = <0x40>;
+			riscv,cboz-block-size = <0x40>;
+			riscv,cbop-block-size = <0x40>;
+			i-cache-block-size = <0x40>;
+			i-cache-size = <0x10000>;
+			i-cache-sets = <0x100>;
+			d-cache-block-size = <0x40>;
+			d-cache-size = <0x10000>;
+			d-cache-sets = <0x100>;
+			next-level-cache = <0x07>;
+			// cpu-idle-states = <0x02 0x03>;
+			mmu-type = "riscv,sv39";
+			#cooling-cells = <0x02>;
+			clst-supply = <0x04>;
+			clocks = <0x05 0x04 0x05 0x05>;
+			clock-names = "cls0\0cls1";
+			// operating-points-v2 = <0x06>;
+			phandle = <0x12>;
+
+			interrupt-controller {
+				#interrupt-cells = <0x01>;
+				compatible = "riscv,cpu-intc";
+				interrupt-controller;
+				phandle = <0x70>;
+			};
+		};
+
+		l2-cache1 {
+			compatible = "cache";
+			cache-block-size = <0x40>;
+			cache-level = <0x02>;
+			cache-size = <0x400000>;
+			cache-sets = <0x1000>;
+			cache-unified;
+			phandle = <0x01>;
+		};
+
+		l2-cache2 {
+			compatible = "cache";
+			cache-block-size = <0x40>;
+			cache-level = <0x02>;
+			cache-size = <0x400000>;
+			cache-sets = <0x1000>;
+			cache-unified;
+			phandle = <0x07>;
+		};
+
+		cpu-map {
+			cluster0 {
+				core0 {
+					cpu = <0x0b>;
+				};
+
+				core1 {
+					cpu = <0x0c>;
+				};
+
+				core2 {
+					cpu = <0x0d>;
+				};
+
+				core3 {
+					cpu = <0x0e>;
+				};
+			};
+
+			cluster1 {
+
+				core0 {
+					cpu = <0x0f>;
+				};
+
+				core1 {
+					cpu = <0x10>;
+				};
+
+				core2 {
+					cpu = <0x11>;
+				};
+
+				core3 {
+					cpu = <0x12>;
+				};
+			};
+		};
+	};
+
+	soc {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		compatible = "simple-bus";
+		dma-noncoherent;
+		ranges;
+
+		//system-controller@d4282800 {
+		//	compatible = "spacemit,k3-syscon-apmu";
+		//	reg = <0x00 0xd4282800 0x00 0x400>;
+		//	clocks = <0x7a 0x7b 0x7c 0x7d 0x7e 0x7f>;
+		//	clock-names = "osc_32k\0vctcxo_1m\0vctcxo_3m\0vctcxo_24m\0reserved_clk\0external_clk";
+		//	#clock-cells = <0x01>;
+		//	#power-domain-cells = <0x01>;
+		//	#reset-cells = <0x01>;
+		//	phandle = <0x05>;
+		//};
+
+		interrupt-controller@e0400000 {
+			compatible = "riscv,imsics";
+			interrupts-extended = <0x6d 0x09 0x6e 0x09 0x6f 0x09 0x70 0x09>;
+			reg = <0x00 0xe0400000 0x00 0x4000>;
+			interrupt-controller;
+			#interrupt-cells = <0x00>;
+			#msi-cells = <0x00>;
+			msi-controller;
+			riscv,num-ids = <0x1ff>;
+			riscv,num-guest-ids = <0x1ff>;
+			riscv,hart-index-bits = <2>;
+			riscv,guest-index-bits = <0>;
+			status = "okay";
+			phandle = <0x79>;
+		};
+
+		interrupt-controller@e0804000 {
+			compatible = "riscv,aplic";
+			reg = <0x00 0xe0804000 0x00 0x4000>;
+			msi-parent = <0x79>;
+			#interrupt-cells = <0x02>;
+			interrupt-controller;
+			riscv,num-sources = <0x200>;
+			status = "okay";
+			phandle = <0x82>;
+		};
+
+		virtio_mmio@10006000 {
+			interrupts = <0x06 0x04>;
+			interrupt-parent = <0x82>;
+			reg = <0x00 0x10006000 0x00 0x1000>;
+			compatible = "virtio,mmio";
+		};
+
+		virtio_mmio@10007000 {
+			interrupts = <0x07 0x04>;
+			interrupt-parent = <0x82>;
+			reg = <0x00 0x10007000 0x00 0x1000>;
+			compatible = "virtio,mmio";
+		};
+	};
+
+	memory@180000000 {
+		device_type = "memory";
+		reg = <0x01 0x80000000 0x0 0x80000000>;
+	};
+
+	chosen {
+		bootargs = "earlycon=sbi console=hvc0 loglevel=8 root=/dev/vda rootwait rw";
+	};
+};

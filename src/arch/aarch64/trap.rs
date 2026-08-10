@@ -14,6 +14,7 @@
 // Authors:
 //
 use aarch64_cpu::{asm::wfi, registers::*};
+use bit_field::BitField;
 use core::arch::global_asm;
 
 use super::cpu::GeneralRegisters;
@@ -293,22 +294,64 @@ fn handle_dabt(regs: &mut GeneralRegisters) {
     arch_skip_instruction(regs);
 }
 
+#[derive(Debug)]
+struct SysRegEncoding {
+    is_read: bool, // true = MRS, false = MSR
+    op0: u8,
+    op1: u8,
+    crn: u8,
+    crm: u8,
+    op2: u8,
+    rt: u8,
+}
+
+fn decode_sysreg(esr: u64) -> SysRegEncoding {
+    let iss = esr.get_bits(0..=24);
+
+    SysRegEncoding {
+        is_read: iss.get_bit(0),
+        op0: iss.get_bits(20..=21) as u8,
+        op1: iss.get_bits(14..=16) as u8,
+        crn: iss.get_bits(10..=13) as u8,
+        crm: iss.get_bits(1..=4) as u8,
+        op2: iss.get_bits(17..=19) as u8,
+        rt: iss.get_bits(5..=9) as u8,
+    }
+}
+
+fn is_icc_sgi1r_el1(sys: &SysRegEncoding) -> bool {
+    !sys.is_read &&          // Must be MSR
+        sys.op0 == 3 &&
+        sys.op1 == 0 &&
+        sys.crn == 12 &&
+        sys.crm == 11 &&
+        sys.op2 == 5
+}
+
 fn handle_sysreg(regs: &mut GeneralRegisters) {
-    //TODO check sysreg type
     //send sgi
     trace!("esr_el2: iss {:#x?}", ESR_EL2.read(ESR_EL2::ISS));
-    let rt = (ESR_EL2.get() >> 5) & 0x1f;
-    let val = regs.usr[rt as usize];
-    trace!("esr_el2 rt{}: {:#x?}", rt, val);
-    let sgi_id: u64 = (val & (0xf << 24)) >> 24;
-    if !this_cpu_data().vcpu_state.is_running() {
-        warn!("skip send sgi {:#x?}", sgi_id);
-    } else {
-        trace!("send sgi {:#x?}", sgi_id);
-        write_sysreg!(icc_sgi1r_el1, val);
-    }
 
-    arch_skip_instruction(regs); //skip sgi write
+    let esr = ESR_EL2.get();
+    let sys = decode_sysreg(esr);
+
+    if is_icc_sgi1r_el1(&sys) {
+        trace!("handle sgi el1");
+        let rt = sys.rt as usize;
+        let val = if rt == 31 { 0 } else { regs.usr[rt] };
+        trace!("esr_el2 rt{}: {:#x?}", rt, val);
+        let sgi_id: u64 = (val & (0xf << 24)) >> 24;
+        if !this_cpu_data().vcpu_state.is_running() {
+            trace!("skip send sgi {:#x?}", sgi_id);
+        } else {
+            trace!("send sgi {:#x?}", sgi_id);
+            write_sysreg!(icc_sgi1r_el1, val);
+        }
+        arch_skip_instruction(regs); //skip sgi write
+    } else {
+        error!("unhandled msr or mrs sys: {:#x?}", sys);
+        loop {}
+    }
 }
 
 fn handle_hvc(regs: &mut GeneralRegisters) {

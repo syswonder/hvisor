@@ -1,8 +1,10 @@
 QEMU := qemu-system-x86_64
 
 zone0_boot := $(image_dir)/bootloader/out/boot.bin
+zone1_mb2_boot := $(image_dir)/mb2_bootloader/out/mb2_boot.bin
 zone0_setup := $(image_dir)/kernel/setup.bin
 zone0_vmlinux := $(image_dir)/kernel/vmlinux.bin
+zone0_asterinas := $(image_dir)/kernel/aster-kernel-osdk-bin
 zone0_initrd := $(image_dir)/virtdisk/initramfs.cpio.gz
 zone0_rootfs := $(image_dir)/virtdisk/rootfs1.img
 zone1_rootfs := $(image_dir)/virtdisk/rootfs2.img
@@ -10,19 +12,28 @@ zone1_rootfs := $(image_dir)/virtdisk/rootfs2.img
 QEMU_ARGS := -machine q35,kernel-irqchip=split
 QEMU_ARGS += -cpu host,+x2apic,+invtsc,+vmx -accel kvm
 QEMU_ARGS += -smp 4
+# TODO: Asterinas
 QEMU_ARGS += -serial mon:stdio
 QEMU_ARGS += -m 4G
 QEMU_ARGS += -bios /usr/share/ovmf/OVMF.fd
 QEMU_ARGS += -vga std
-# QEMU_ARGS += -nographic
+QEMU_ARGS += -nographic
 
 QEMU_ARGS += -nodefaults
 QEMU_ARGS += -net nic -net user
 
 QEMU_ARGS += -device intel-iommu,intremap=on,eim=on,caching-mode=on,device-iotlb=on,aw-bits=48
 QEMU_ARGS += -device ioh3420,id=pcie.1,chassis=1
+
+# TODO: Asterinas
 QEMU_ARGS += -drive if=none,file="$(zone0_rootfs)",id=X10008000,format=raw
 QEMU_ARGS += -device virtio-blk-pci,bus=pcie.1,drive=X10008000,disable-legacy=on,disable-modern=off,iommu_platform=on,ats=on
+
+# TODO: Asterinas
+# QEMU_ARGS += -device virtio-serial
+# QEMU_ARGS += -device virtconsole,chardev=mux
+# QEMU_ARGS += -serial chardev:mux
+# QEMU_ARGS += -chardev stdio,id=mux,mux=on,signal=off
 
 # QEMU_ARGS += -drive if=none,file="$(zone0_rootfs)",id=X10009000,format=raw
 # QEMU_ARGS += -device nvme,serial=deadbeef,drive=X10009000
@@ -45,7 +56,7 @@ QEMU_ARGS += -nographic
 # QEMU_ARGS += -device loader,file="$(zone0_initrd)",addr=0x1a000000,force-raw=on
 # QEMU_ARGS += -append "initrd_size=$(shell stat -c%s $(zone0_initrd))"
 
-$(hvisor_bin): elf boot
+$(hvisor_bin): elf boot mb2_boot
 	$(OBJCOPY) $(hvisor_elf) --strip-all -O binary $@
 	cp $(hvisor_elf) $(image_dir)/iso/boot
 	mkdir -p $(image_dir)/iso/boot/kernel
@@ -68,7 +79,22 @@ $(hvisor_bin): elf boot
 		echo "Warning: $(zone0_vmlinux) not found, skipping"; \
 	fi
 
+	if [ -f $(zone0_asterinas) ]; then \
+		cp $(zone0_asterinas) $(image_dir)/iso/boot/kernel; \
+	else \
+		echo "Warning: $(zone0_asterinas) not found, skipping"; \
+	fi
+
 	mkdir -p $(image_dir)/virtdisk
+
+	if [ -f $(zone0_initrd) ]; then \
+		cp $(zone0_initrd) $(image_dir)/iso/boot/kernel; \
+	else \
+		echo "Warning: $(zone0_initrd) not found, skipping"; \
+	fi
+	if [ -f $(zone1_mb2_boot) ]; then \
+		cp $(zone1_mb2_boot) $(image_dir)/iso/boot/kernel; \
+	fi
 
 	if command -v xorriso >/dev/null 2>&1; then \
 		grub-mkrescue /usr/lib/grub/x86_64-efi -o $(image_dir)/virtdisk/hvisor.iso $(image_dir)/iso; \
@@ -77,3 +103,4 @@ $(hvisor_bin): elf boot
 	fi
 
 include $(image_dir)/bootloader/boot.mk
+include $(image_dir)/mb2_bootloader/mb2_boot.mk

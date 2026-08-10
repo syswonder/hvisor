@@ -28,7 +28,8 @@ use crate::{
 };
 use bit_field::BitField;
 use core::{ops::Range, u32};
-use x2apic::lapic::{LocalApic, LocalApicBuilder, TimerMode};
+use x2apic::lapic::{LocalApic, LocalApicBuilder};
+use x86::msr::wrmsr;
 
 pub struct VirtLocalApic {
     pub phys_lapic: LocalApic,
@@ -96,7 +97,6 @@ impl VirtLocalApic {
     pub fn wrmsr(&mut self, msr: Msr, value: u64) -> HvResult {
         match msr {
             IA32_X2APIC_EOI => {
-                // info!("eoi");
                 pop_vector(this_cpu_id());
                 Ok(())
             }
@@ -106,28 +106,12 @@ impl VirtLocalApic {
                 Ok(())
             }
             IA32_X2APIC_LVT_TIMER => {
+                let value = value & 0xffff_ffff;
+                let vector = value.get_bits(0..=7);
                 self.virt_lvt_timer_bits = value as u32;
-                let timer = value.get_bits(0..=7) as u8;
-                if timer != self.virt_timer_vector {
-                    self.virt_timer_vector = timer;
-                    self.phys_lapic = Self::new_phys_lapic(
-                        timer as _,
-                        IdtVector::APIC_ERROR_VECTOR as _,
-                        IdtVector::APIC_SPURIOUS_VECTOR as _,
-                    )
-                }
+                self.virt_timer_vector = vector as u8;
                 unsafe {
-                    self.phys_lapic
-                        .set_timer_mode(match value.get_bits(17..19) {
-                            0 => TimerMode::OneShot,
-                            1 => TimerMode::Periodic,
-                            _ => TimerMode::TscDeadline,
-                        });
-                    if value.get_bit(16) {
-                        self.phys_lapic.disable_timer();
-                    } else {
-                        self.phys_lapic.enable_timer();
-                    }
+                    wrmsr(IA32_X2APIC_LVT_TIMER as u32, value);
                 }
                 Ok(())
             }

@@ -319,6 +319,13 @@ impl ArchCpu {
         self.vm_launch_guest_regs.rsi = rsi;
     }
 
+    pub fn set_multiboot_boot_regs(&mut self, multiboot_info_addr: u64, kernel_entry: u64) {
+        const MULTIBOOT2_MAGIC: u64 = 0x36D76289;
+        self.vm_launch_guest_regs.rax = MULTIBOOT2_MAGIC;
+        self.vm_launch_guest_regs.rbx = multiboot_info_addr;
+        self.vm_launch_guest_regs.rsi = kernel_entry;
+    }
+
     fn activate_vmx(&mut self) -> HvResult {
         if self.vmx_on {
             return Ok(());
@@ -383,9 +390,11 @@ impl ArchCpu {
         Vmcs::clear(start_paddr)?;
         Vmcs::load(start_paddr)?;
 
+        // Setup VMCS control fields first (includes secondary controls like UNRESTRICTED_GUEST)
+        // This must be done before setup_vmcs_guest so that guest state is properly initialized
+        self.setup_vmcs_control()?;
         self.setup_vmcs_host(&self.host_stack_top as *const _ as usize)?;
         self.setup_vmcs_guest(entry, ROOT_ZONE_BOOT_STACK)?;
-        self.setup_vmcs_control()?;
 
         Ok(())
     }

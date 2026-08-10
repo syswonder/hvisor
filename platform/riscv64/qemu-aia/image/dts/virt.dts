@@ -47,10 +47,10 @@
 			riscv,cbop-block-size = <0x40>;
 			riscv,cboz-block-size = <0x40>;
 			riscv,cbom-block-size = <0x40>;
-			riscv,isa-extensions = "i\0m\0a\0f\0d\0c\0h\0zic64b\0zicbom\0zicbop\0zicboz\0ziccamoa\0ziccif\0zicclsm\0ziccrse\0zicntr\0zicsr\0zifencei\0zihintntl\0zihintpause\0zihpm\0zmmul\0za64rs\0zaamo\0zalrsc\0zawrs\0zfa\0zca\0zcd\0zba\0zbb\0zbc\0zbs\0sdtrig\0shcounterenw\0shgatpa\0shtvala\0shvsatpa\0shvstvala\0shvstvecd\0smaia\0ssaia\0ssccptr\0sscounterenw\0ssstrict\0sstc\0sstvala\0sstvecd\0ssu64xl\0svadu\0svvptc";
+			riscv,isa-extensions = "i\0m\0a\0f\0d\0c\0b\0v\0h\0zic64b\0zicbom\0zicbop\0zicboz\0ziccamoa\0ziccif\0zicclsm\0ziccrse\0zicond\0zicntr\0zicsr\0zifencei\0zihintntl\0zihintpause\0zihpm\0zimop\0zmmul\0za64rs\0zaamo\0zalrsc\0zawrs\0zfa\0zfhmin\0zca\0zcb\0zcd\0zcmop\0zba\0zbb\0zbs\0zkt\0zvbb\0zve32f\0zve32x\0zve64f\0zve64d\0zve64x\0zvfhmin\0zvkb\0zvkt\0sdtrig\0shcounterenw\0sha\0shgatpa\0shtvala\0shvsatpa\0shvstvala\0shvstvecd\0smaia\0smnpm\0smstateen\0ssaia\0ssccptr\0sscofpmf\0sscounterenw\0ssnpm\0ssstateen\0ssstrict\0sstc\0sstvala\0sstvecd\0ssu64xl\0supm\0svade\0svinval\0svnapot\0svpbmt";
 			riscv,isa-base = "rv64i";
-			riscv,isa = "rv64imafdch_zic64b_zicbom_zicbop_zicboz_ziccamoa_ziccif_zicclsm_ziccrse_zicntr_zicsr_zifencei_zihintntl_zihintpause_zihpm_zmmul_za64rs_zaamo_zalrsc_zawrs_zfa_zca_zcd_zba_zbb_zbc_zbs_sdtrig_shcounterenw_shgatpa_shtvala_shvsatpa_shvstvala_shvstvecd_smaia_ssaia_ssccptr_sscounterenw_ssstrict_sstc_sstvala_sstvecd_ssu64xl_svadu_svvptc";
-			mmu-type = "riscv,sv57";
+			riscv,isa = "rv64imafdcbvh_zic64b_zicbom_zicbop_zicboz_ziccamoa_ziccif_zicclsm_ziccrse_zicond_zicntr_zicsr_zifencei_zihintntl_zihintpause_zihpm_zimop_zmmul_za64rs_zaamo_zalrsc_zawrs_zfa_zfhmin_zca_zcb_zcd_zcmop_zba_zbb_zbs_zkt_zvbb_zve32f_zve32x_zve64f_zve64d_zve64x_zvfhmin_zvkb_zvkt_sdtrig_shcounterenw_sha_shgatpa_shtvala_shvsatpa_shvstvala_shvstvecd_smaia_smnpm_smstateen_ssaia_ssccptr_sscofpmf_sscounterenw_ssnpm_ssstateen_ssstrict_sstc_sstvala_sstvecd_ssu64xl_supm_svade_svinval_svnapot_svpbmt";
+			mmu-type = "riscv,sv39";
 
 			interrupt-controller {
 				#interrupt-cells = <0x01>;
@@ -69,10 +69,10 @@
 			riscv,cbop-block-size = <0x40>;
 			riscv,cboz-block-size = <0x40>;
 			riscv,cbom-block-size = <0x40>;
-			riscv,isa-extensions = "i\0m\0a\0f\0d\0c\0h\0zic64b\0zicbom\0zicbop\0zicboz\0ziccamoa\0ziccif\0zicclsm\0ziccrse\0zicntr\0zicsr\0zifencei\0zihintntl\0zihintpause\0zihpm\0zmmul\0za64rs\0zaamo\0zalrsc\0zawrs\0zfa\0zca\0zcd\0zba\0zbb\0zbc\0zbs\0sdtrig\0shcounterenw\0shgatpa\0shtvala\0shvsatpa\0shvstvala\0shvstvecd\0smaia\0ssaia\0ssccptr\0sscounterenw\0ssstrict\0sstc\0sstvala\0sstvecd\0ssu64xl\0svadu\0svvptc";
+			riscv,isa-extensions = "i\0m\0a\0f\0d\0c\0b\0v\0h\0zic64b\0zicbom\0zicbop\0zicboz\0ziccamoa\0ziccif\0zicclsm\0ziccrse\0zicond\0zicntr\0zicsr\0zifencei\0zihintntl\0zihintpause\0zihpm\0zimop\0zmmul\0za64rs\0zaamo\0zalrsc\0zawrs\0zfa\0zfhmin\0zca\0zcb\0zcd\0zcmop\0zba\0zbb\0zbs\0zkt\0zvbb\0zve32f\0zve32x\0zve64f\0zve64d\0zve64x\0zvfhmin\0zvkb\0zvkt\0sdtrig\0shcounterenw\0sha\0shgatpa\0shtvala\0shvsatpa\0shvstvala\0shvstvecd\0smaia\0smnpm\0smstateen\0ssaia\0ssccptr\0sscofpmf\0sscounterenw\0ssnpm\0ssstateen\0ssstrict\0sstc\0sstvala\0sstvecd\0ssu64xl\0supm\0svade\0svinval\0svnapot\0svpbmt";
 			riscv,isa-base = "rv64i";
-			riscv,isa = "rv64imafdch_zic64b_zicbom_zicbop_zicboz_ziccamoa_ziccif_zicclsm_ziccrse_zicntr_zicsr_zifencei_zihintntl_zihintpause_zihpm_zmmul_za64rs_zaamo_zalrsc_zawrs_zfa_zca_zcd_zba_zbb_zbc_zbs_sdtrig_shcounterenw_shgatpa_shtvala_shvsatpa_shvstvala_shvstvecd_smaia_ssaia_ssccptr_sscounterenw_ssstrict_sstc_sstvala_sstvecd_ssu64xl_svadu_svvptc";
-			mmu-type = "riscv,sv57";
+			riscv,isa = "rv64imafdcbvh_zic64b_zicbom_zicbop_zicboz_ziccamoa_ziccif_zicclsm_ziccrse_zicond_zicntr_zicsr_zifencei_zihintntl_zihintpause_zihpm_zimop_zmmul_za64rs_zaamo_zalrsc_zawrs_zfa_zfhmin_zca_zcb_zcd_zcmop_zba_zbb_zbs_zkt_zvbb_zve32f_zve32x_zve64f_zve64d_zve64x_zvfhmin_zvkb_zvkt_sdtrig_shcounterenw_sha_shgatpa_shtvala_shvsatpa_shvstvala_shvstvecd_smaia_smnpm_smstateen_ssaia_ssccptr_sscofpmf_sscounterenw_ssnpm_ssstateen_ssstrict_sstc_sstvala_sstvecd_ssu64xl_supm_svade_svinval_svnapot_svpbmt";
+			mmu-type = "riscv,sv39";
 
 			interrupt-controller {
 				#interrupt-cells = <0x01>;
@@ -91,10 +91,10 @@
 			riscv,cbop-block-size = <0x40>;
 			riscv,cboz-block-size = <0x40>;
 			riscv,cbom-block-size = <0x40>;
-			riscv,isa-extensions = "i\0m\0a\0f\0d\0c\0h\0zic64b\0zicbom\0zicbop\0zicboz\0ziccamoa\0ziccif\0zicclsm\0ziccrse\0zicntr\0zicsr\0zifencei\0zihintntl\0zihintpause\0zihpm\0zmmul\0za64rs\0zaamo\0zalrsc\0zawrs\0zfa\0zca\0zcd\0zba\0zbb\0zbc\0zbs\0sdtrig\0shcounterenw\0shgatpa\0shtvala\0shvsatpa\0shvstvala\0shvstvecd\0smaia\0ssaia\0ssccptr\0sscounterenw\0ssstrict\0sstc\0sstvala\0sstvecd\0ssu64xl\0svadu\0svvptc";
+			riscv,isa-extensions = "i\0m\0a\0f\0d\0c\0b\0v\0h\0zic64b\0zicbom\0zicbop\0zicboz\0ziccamoa\0ziccif\0zicclsm\0ziccrse\0zicond\0zicntr\0zicsr\0zifencei\0zihintntl\0zihintpause\0zihpm\0zimop\0zmmul\0za64rs\0zaamo\0zalrsc\0zawrs\0zfa\0zfhmin\0zca\0zcb\0zcd\0zcmop\0zba\0zbb\0zbs\0zkt\0zvbb\0zve32f\0zve32x\0zve64f\0zve64d\0zve64x\0zvfhmin\0zvkb\0zvkt\0sdtrig\0shcounterenw\0sha\0shgatpa\0shtvala\0shvsatpa\0shvstvala\0shvstvecd\0smaia\0smnpm\0smstateen\0ssaia\0ssccptr\0sscofpmf\0sscounterenw\0ssnpm\0ssstateen\0ssstrict\0sstc\0sstvala\0sstvecd\0ssu64xl\0supm\0svade\0svinval\0svnapot\0svpbmt";
 			riscv,isa-base = "rv64i";
-			riscv,isa = "rv64imafdch_zic64b_zicbom_zicbop_zicboz_ziccamoa_ziccif_zicclsm_ziccrse_zicntr_zicsr_zifencei_zihintntl_zihintpause_zihpm_zmmul_za64rs_zaamo_zalrsc_zawrs_zfa_zca_zcd_zba_zbb_zbc_zbs_sdtrig_shcounterenw_shgatpa_shtvala_shvsatpa_shvstvala_shvstvecd_smaia_ssaia_ssccptr_sscounterenw_ssstrict_sstc_sstvala_sstvecd_ssu64xl_svadu_svvptc";
-			mmu-type = "riscv,sv57";
+			riscv,isa = "rv64imafdcbvh_zic64b_zicbom_zicbop_zicboz_ziccamoa_ziccif_zicclsm_ziccrse_zicond_zicntr_zicsr_zifencei_zihintntl_zihintpause_zihpm_zimop_zmmul_za64rs_zaamo_zalrsc_zawrs_zfa_zfhmin_zca_zcb_zcd_zcmop_zba_zbb_zbs_zkt_zvbb_zve32f_zve32x_zve64f_zve64d_zve64x_zvfhmin_zvkb_zvkt_sdtrig_shcounterenw_sha_shgatpa_shtvala_shvsatpa_shvstvala_shvstvecd_smaia_smnpm_smstateen_ssaia_ssccptr_sscofpmf_sscounterenw_ssnpm_ssstateen_ssstrict_sstc_sstvala_sstvecd_ssu64xl_supm_svade_svinval_svnapot_svpbmt";
+			mmu-type = "riscv,sv39";
 
 			interrupt-controller {
 				#interrupt-cells = <0x01>;
@@ -113,10 +113,10 @@
 			riscv,cbop-block-size = <0x40>;
 			riscv,cboz-block-size = <0x40>;
 			riscv,cbom-block-size = <0x40>;
-			riscv,isa-extensions = "i\0m\0a\0f\0d\0c\0h\0zic64b\0zicbom\0zicbop\0zicboz\0ziccamoa\0ziccif\0zicclsm\0ziccrse\0zicntr\0zicsr\0zifencei\0zihintntl\0zihintpause\0zihpm\0zmmul\0za64rs\0zaamo\0zalrsc\0zawrs\0zfa\0zca\0zcd\0zba\0zbb\0zbc\0zbs\0sdtrig\0shcounterenw\0shgatpa\0shtvala\0shvsatpa\0shvstvala\0shvstvecd\0smaia\0ssaia\0ssccptr\0sscounterenw\0ssstrict\0sstc\0sstvala\0sstvecd\0ssu64xl\0svadu\0svvptc";
+			riscv,isa-extensions = "i\0m\0a\0f\0d\0c\0b\0v\0h\0zic64b\0zicbom\0zicbop\0zicboz\0ziccamoa\0ziccif\0zicclsm\0ziccrse\0zicond\0zicntr\0zicsr\0zifencei\0zihintntl\0zihintpause\0zihpm\0zimop\0zmmul\0za64rs\0zaamo\0zalrsc\0zawrs\0zfa\0zfhmin\0zca\0zcb\0zcd\0zcmop\0zba\0zbb\0zbs\0zkt\0zvbb\0zve32f\0zve32x\0zve64f\0zve64d\0zve64x\0zvfhmin\0zvkb\0zvkt\0sdtrig\0shcounterenw\0sha\0shgatpa\0shtvala\0shvsatpa\0shvstvala\0shvstvecd\0smaia\0smnpm\0smstateen\0ssaia\0ssccptr\0sscofpmf\0sscounterenw\0ssnpm\0ssstateen\0ssstrict\0sstc\0sstvala\0sstvecd\0ssu64xl\0supm\0svade\0svinval\0svnapot\0svpbmt";
 			riscv,isa-base = "rv64i";
-			riscv,isa = "rv64imafdch_zic64b_zicbom_zicbop_zicboz_ziccamoa_ziccif_zicclsm_ziccrse_zicntr_zicsr_zifencei_zihintntl_zihintpause_zihpm_zmmul_za64rs_zaamo_zalrsc_zawrs_zfa_zca_zcd_zba_zbb_zbc_zbs_sdtrig_shcounterenw_shgatpa_shtvala_shvsatpa_shvstvala_shvstvecd_smaia_ssaia_ssccptr_sscounterenw_ssstrict_sstc_sstvala_sstvecd_ssu64xl_svadu_svvptc";
-			mmu-type = "riscv,sv57";
+			riscv,isa = "rv64imafdcbvh_zic64b_zicbom_zicbop_zicboz_ziccamoa_ziccif_zicclsm_ziccrse_zicond_zicntr_zicsr_zifencei_zihintntl_zihintpause_zihpm_zimop_zmmul_za64rs_zaamo_zalrsc_zawrs_zfa_zfhmin_zca_zcb_zcd_zcmop_zba_zbb_zbs_zkt_zvbb_zve32f_zve32x_zve64f_zve64d_zve64x_zvfhmin_zvkb_zvkt_sdtrig_shcounterenw_sha_shgatpa_shtvala_shvsatpa_shvstvala_shvstvecd_smaia_smnpm_smstateen_ssaia_ssccptr_sscofpmf_sscounterenw_ssnpm_ssstateen_ssstrict_sstc_sstvala_sstvecd_ssu64xl_supm_svade_svinval_svnapot_svpbmt";
+			mmu-type = "riscv,sv39";
 
 			interrupt-controller {
 				#interrupt-cells = <0x01>;
@@ -172,7 +172,7 @@
 
 	chosen {
 		stdout-path = "/soc/serial@10000000";
-		rng-seed = <0xa7312a61 0xb4333ebb 0x2b9e3913 0x2ffef846 0x3fdd1be9 0x53a17643 0x37180ee 0x9010f234>;
+		rng-seed = <0xd84b7de8 0x55c728a4 0xadbe81a1 0x824d757b 0x2208e43d 0x1b7ba0d5 0x9ef0cf9d 0x28cf7f82>;
 	};
 
 	soc {

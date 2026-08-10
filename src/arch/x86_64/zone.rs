@@ -22,7 +22,7 @@ use crate::{
     error::HvResult,
     memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet},
     platform::MEM_TYPE_RESERVED,
-    zone::Zone,
+    zone::{zone_boot_mode, Zone},
 };
 use alloc::vec::Vec;
 
@@ -80,6 +80,10 @@ impl Zone {
                     ));
                 }
                 MEM_TYPE_VIRTIO => {
+                    info!(
+                        "Registering virtio mmio region: physical_start: {:#x}, size: {:#x}",
+                        mem_region.physical_start, mem_region.size
+                    );
                     inner.mmio_region_register(
                         mem_region.physical_start as _,
                         mem_region.size as _,
@@ -101,17 +105,34 @@ impl Zone {
 
     /// called after cpu_set is initialized
     pub fn arch_zone_pre_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
+        let zone_id = config.zone_id as usize;
         let inner = self.read();
-        inner.cpu_set().iter().for_each(|cpuid| {
-            let cpu_data = get_cpu_data(cpuid);
-            // boot cpu
-            if cpuid == inner.cpu_set().first_cpu().unwrap() {
-                cpu_data.arch_cpu.set_boot_cpu_vm_launch_regs(
-                    config.arch_config.kernel_entry_gpa as _,
-                    config.arch_config.setup_load_gpa as _,
-                );
-            }
-        });
+        let boot_mode = zone_boot_mode(zone_id);
+
+        if zone_id != 0 && boot_mode.multiboot_enabled != 0 {
+            info!("[ZONE{}] Using Multiboot2 boot mode", zone_id);
+
+            inner.cpu_set().iter().for_each(|cpuid| {
+                let cpu_data = get_cpu_data(cpuid);
+                if cpuid == inner.cpu_set().first_cpu().unwrap() {
+                    cpu_data.arch_cpu.set_multiboot_boot_regs(
+                        boot_mode.multiboot_info_paddr as _,
+                        config.arch_config.kernel_entry_gpa as _,
+                    );
+                }
+            });
+        } else {
+            inner.cpu_set().iter().for_each(|cpuid| {
+                let cpu_data = get_cpu_data(cpuid);
+                // boot cpu
+                if cpuid == inner.cpu_set().first_cpu().unwrap() {
+                    cpu_data.arch_cpu.set_boot_cpu_vm_launch_regs(
+                        config.arch_config.kernel_entry_gpa as _,
+                        config.arch_config.setup_load_gpa as _,
+                    );
+                }
+            });
+        }
         drop(inner);
 
         set_msr_bitmap(config.zone_id as _);
@@ -148,9 +169,17 @@ impl Zone {
             self.pci_bars_register(&config.pci_config);
         }*/
 
-        boot::BootParams::fill(&config, inner.gpm_mut());
+        let boot_mode = zone_boot_mode(self.id());
+        if boot_mode.multiboot_enabled != 0 {
+            boot::multiboot2_info_fill(
+                config,
+                inner.gpm_mut(),
+                boot_mode.multiboot_info_paddr as _,
+            )?;
+        } else {
+            boot::BootParams::fill(&config, inner.gpm_mut());
+        }
         acpi::copy_to_guest_memory_region(&config, &inner.cpu_set());
-
         Ok(())
     }
 

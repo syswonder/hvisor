@@ -22,7 +22,10 @@ use crate::{
     memory::{GuestPhysAddr, HostPhysAddr, MemFlags, MemoryRegion, MemorySet, PAGE_SIZE},
     platform::MEM_TYPE_RESERVED,
 };
-use alloc::string::{String, ToString};
+use alloc::{
+    string::{String, ToString},
+    vec::Vec,
+};
 use bit_field::BitField;
 use core::{
     arch::{self, global_asm},
@@ -185,7 +188,7 @@ impl BootParams {
         } as HostPhysAddr;
         let boot_params = unsafe { &mut *(boot_params_hpa as *mut BootParams) };
 
-        // info!("boot_proto_version: {:x?}", boot_params.boot_proto_version);
+        info!("boot_proto_version: {:x?}", boot_params.boot_proto_version);
         if boot_params.boot_proto_version < 0x0204 {
             panic!("kernel boot protocol version older than 2.04 not supported!");
         }
@@ -415,7 +418,7 @@ impl BootParams {
         self.screen_info.red_pos = 16;
         self.screen_info.alpha_size = 8;
         self.screen_info.alpha_pos = 24;
-        self.screen_info.orig_video_is_vga = VIDEO_TYPE_EFI;
+        self.screen_info.orig_video_is_vga = VIDEO_TYPE_VLFB;
         self.screen_info.capabilities = 0;
         self.vid_mode = 0xffff;
 
@@ -534,50 +537,336 @@ pub fn print_memory_map() {
     }
 }
 
+/// Construct Multiboot2 info structure in guest memory at `multiboot_info_paddr`.
+pub fn multiboot2_info_fill(
+    config: &HvZoneConfig,
+    gpm: &mut MemorySet<Stage2PageTable>,
+    multiboot_info_paddr: GuestPhysAddr,
+) -> HvResult {
+    let info_gpa = multiboot_info_paddr;
+    let (info_hpa, _, _) = unsafe {
+        gpm.page_table_query(info_gpa)
+            .expect("multiboot2 info GPA unmapped")
+    };
+
+    // Read raw cmdline from guest memory FIRST, before writing tags
+    // (cmdline is at the same GPA as multiboot info, so writing tags
+    // would overwrite it)
+    let mut cmdline_buf = [0u8; 256];
+    let cmdline_len = {
+        let cmdline_gpa = config.arch_config.cmdline_load_gpa as GuestPhysAddr;
+        if cmdline_gpa != 0 {
+            if let Ok((cmdline_hpa, _, _)) = unsafe { gpm.page_table_query(cmdline_gpa) } {
+                let src = cmdline_hpa as *const u8;
+                let mut len = 0usize;
+                while len < 255 && unsafe { *src.add(len) } != 0 {
+                    cmdline_buf[len] = unsafe { *src.add(len) };
+                    len += 1;
+                }
+                len
+            } else {
+                0
+            }
+        } else {
+            0
+        }
+    };
+
+    let info_ptr = info_hpa as *mut u8;
+
+    const TAG_END: u32 = 0;
+    const TAG_CMDLINE: u32 = 1;
+    const TAG_BASIC_MEMINFO: u32 = 4;
+    const TAG_MMAP: u32 = 6;
+    const MB_MEM_AVAILABLE: u32 = 1;
+    const LOW_MEM_TOP: u64 = 0xC0000000;
+    const LOW_MMIO_TOP: u64 = 0x100000000;
+
+    let mut offset = 8usize;
+
+    // Tag 1: Basic memory info
+    let total_ram: u64 = config
+        .memory_regions()
+        .iter()
+        .filter(|r| r.mem_type == MEM_TYPE_RAM)
+        .map(|r| r.size)
+        .sum();
+    let mem_upper_kb = if total_ram > 0x100000 {
+        ((total_ram - 0x100000) / 1024) as u32
+    } else {
+        0
+    };
+    unsafe {
+        let t = info_ptr.add(offset);
+        *(t as *mut u32) = TAG_BASIC_MEMINFO;
+        *(t.add(4) as *mut u32) = 16;
+        *(t.add(8) as *mut u32) = 640;
+        *(t.add(12) as *mut u32) = mem_upper_kb;
+    }
+    offset += 16;
+
+    // Tag 2: Memory map. Available RAM is carved around reserved regions so
+    // Asterinas cannot reclaim the bootloader, kernel, cmdline, info buffer,
+    // or initramfs pages.
+    const BOOTLOADER_RESERVED_END: u64 = 0x10000;
+
+    let entry_size = 24usize;
+    let mmap_hdr = offset;
+    offset += 16;
+    let mut entry_count = 0u32;
+
+    let mut reserved: Vec<(u64, u64)> = Vec::new();
+    if config.kernel_size > 0 {
+        let kernel_start = config.kernel_load_paddr;
+        reserved.push((kernel_start, kernel_start + config.kernel_size));
+    }
+    reserved.push((info_gpa as u64, info_gpa as u64 + PAGE_SIZE as u64));
+    if config.arch_config.cmdline_load_gpa != 0
+        && config.arch_config.cmdline_load_gpa as u64 != info_gpa as u64
+    {
+        let cmdline_gpa = config.arch_config.cmdline_load_gpa as u64;
+        reserved.push((cmdline_gpa, cmdline_gpa + PAGE_SIZE as u64));
+    }
+    let initrd_gpa = config.arch_config.initrd_load_gpa as u64;
+    let initrd_size = config.arch_config.initrd_size as u64;
+    if initrd_size > 0 {
+        reserved.push((initrd_gpa, initrd_gpa + initrd_size));
+    }
+    reserved.push((0x8000, BOOTLOADER_RESERVED_END));
+    reserved.sort_unstable();
+
+    let mut available: Vec<(u64, u64)> = Vec::new();
+    for r in config
+        .memory_regions()
+        .iter()
+        .filter(|r| r.mem_type == MEM_TYPE_RAM)
+    {
+        let start = r.virtual_start;
+        let end = start + r.size;
+        let mut cursor = start;
+        for &(reserved_start, reserved_end) in &reserved {
+            if reserved_end <= cursor || reserved_start >= end {
+                continue;
+            }
+            let s = reserved_start.max(cursor);
+            if s > cursor {
+                available.push((cursor, s.min(end)));
+            }
+            cursor = reserved_end.max(cursor);
+            if cursor >= end {
+                break;
+            }
+        }
+        if cursor < end {
+            available.push((cursor, end));
+        }
+    }
+
+    for (start, end) in available {
+        if start < LOW_MEM_TOP {
+            let s = start;
+            let e = end.min(LOW_MEM_TOP);
+            if e > s {
+                unsafe {
+                    let p = info_ptr.add(offset);
+                    *(p as *mut u64) = s;
+                    *(p.add(8) as *mut u64) = e - s;
+                    *(p.add(16) as *mut u32) = MB_MEM_AVAILABLE;
+                    *(p.add(20) as *mut u32) = 0;
+                }
+                offset += entry_size;
+                entry_count += 1;
+            }
+        }
+        if end > LOW_MMIO_TOP {
+            let s = start.max(LOW_MMIO_TOP);
+            if end > s {
+                unsafe {
+                    let p = info_ptr.add(offset);
+                    *(p as *mut u64) = s;
+                    *(p.add(8) as *mut u64) = end - s;
+                    *(p.add(16) as *mut u32) = MB_MEM_AVAILABLE;
+                    *(p.add(20) as *mut u32) = 0;
+                }
+                offset += entry_size;
+                entry_count += 1;
+            }
+        }
+    }
+
+    let mmap_tag_size = (16 + entry_count as usize * entry_size) as u32;
+    unsafe {
+        *(info_ptr.add(mmap_hdr) as *mut u32) = TAG_MMAP;
+        *(info_ptr.add(mmap_hdr + 4) as *mut u32) = mmap_tag_size;
+        *(info_ptr.add(mmap_hdr + 8) as *mut u32) = entry_size as u32;
+        *(info_ptr.add(mmap_hdr + 12) as *mut u32) = 0;
+    }
+    offset = (offset + 7) & !7;
+
+    // Tag 3: Command line (from pre-read buffer)
+    if cmdline_len > 0 {
+        let tag_size = ((8 + cmdline_len + 1 + 7) & !7) as u32;
+        unsafe {
+            *(info_ptr.add(offset) as *mut u32) = TAG_CMDLINE;
+            *(info_ptr.add(offset + 4) as *mut u32) = tag_size;
+            for i in 0..cmdline_len {
+                *info_ptr.add(offset + 8 + i) = cmdline_buf[i];
+            }
+            *info_ptr.add(offset + 8 + cmdline_len) = 0;
+        }
+        offset += tag_size as usize;
+    }
+
+    // Tag 4: Module (initramfs)
+    let initrd_gpa = config.arch_config.initrd_load_gpa as u64;
+    let initrd_size = config.arch_config.initrd_size as u64;
+    if initrd_size > 0 {
+        const TAG_MODULE: u32 = 3;
+        let mod_cmd = b"./initramfs.cpio.gz\0";
+        let mod_cmd_len = mod_cmd.len();
+        let tag_size = ((8 + 8 + mod_cmd_len + 7) & !7) as u32;
+        unsafe {
+            *(info_ptr.add(offset) as *mut u32) = TAG_MODULE;
+            *(info_ptr.add(offset + 4) as *mut u32) = tag_size;
+            *(info_ptr.add(offset + 8) as *mut u32) = initrd_gpa as u32;
+            *(info_ptr.add(offset + 12) as *mut u32) = (initrd_gpa + initrd_size) as u32;
+            for i in 0..mod_cmd_len {
+                *info_ptr.add(offset + 16 + i) = mod_cmd[i];
+            }
+        }
+        offset += tag_size as usize;
+    }
+
+    // End tag
+    unsafe {
+        *(info_ptr.add(offset) as *mut u32) = TAG_END;
+        *(info_ptr.add(offset + 4) as *mut u32) = 8;
+    }
+    offset += 8;
+
+    // Header
+    unsafe {
+        *(info_ptr as *mut u32) = offset as u32;
+        *(info_ptr.add(4) as *mut u32) = 0;
+    }
+
+    info!(
+        "Multiboot2 info: {} bytes, {} mmap entries, RAM {:#x}",
+        offset, entry_count, total_ram
+    );
+    Ok(())
+}
+
 /// copy kernel modules to the right place
 pub fn module_init(info_addr: usize) {
     println!("module_init");
+
+    const MAX_MODULES: usize = 16;
+
+    #[derive(Clone, Copy)]
+    struct ModuleInfo {
+        start: usize,
+        end: usize,
+        dst: usize,
+        string_ptr: usize,
+    }
+
+    let mut modules = [ModuleInfo {
+        start: 0,
+        end: 0,
+        dst: 0,
+        string_ptr: 0,
+    }; MAX_MODULES];
+    let mut module_count = 0;
+
     let mut cur = info_addr;
     let total_size = unsafe { *(cur as *const u32) } as usize;
-
-    let mut cnt = 0;
     cur += 8;
-    while cur < info_addr + total_size {
+    while cur < info_addr + total_size && module_count < MAX_MODULES {
         let tag_type = unsafe { *(cur as *const u32) };
-        let ptr = cur as *const multiboot_tag::Modules;
-        cur += ((unsafe { *((cur + 4) as *const u32) } as usize + 7) & (!7));
-
         if tag_type == multiboot_tag::END {
             break;
         }
-        if tag_type != multiboot_tag::MODULES {
-            continue;
+        if tag_type == multiboot_tag::MODULES {
+            let ptr = cur as *const multiboot_tag::Modules;
+            let module = unsafe { *ptr };
+            let string_ptr = (ptr as usize) + size_of::<Modules>();
+            modules[module_count] = ModuleInfo {
+                start: module.mod_start as usize,
+                end: module.mod_end as usize,
+                dst: 0, // parse later
+                string_ptr,
+            };
+            module_count += 1;
         }
-
-        let module = unsafe { *ptr };
-        let dst = unsafe {
-            usize::from_str_radix(
-                CStr::from_ptr(((ptr as usize) + size_of::<Modules>()) as *const c_char)
-                    .to_str()
-                    .unwrap(),
-                16,
-            )
-            .unwrap()
-        };
-        println!("module: {:#x?}, addr: {:#x?}", module, dst);
-        cnt += 1;
-
-        if dst == 0x0 {
-            continue;
-        }
-
-        unsafe {
-            core::ptr::copy(
-                module.mod_start as *mut u8,
-                dst as *mut u8,
-                (module.mod_end - module.mod_start + 1) as usize,
-            )
-        };
+        cur += ((unsafe { *((cur + 4) as *const u32) } as usize + 7) & (!7));
     }
-    println!("module cnt: {:x}", cnt);
+
+    // parse dst
+    for i in 0..module_count {
+        let cstr = unsafe { CStr::from_ptr(modules[i].string_ptr as *const c_char) };
+        modules[i].dst = usize::from_str_radix(cstr.to_str().unwrap(), 16).unwrap();
+        println!(
+            "module: start={:#x}, end={:#x}, dst={:#x}",
+            modules[i].start, modules[i].end, modules[i].dst
+        );
+    }
+
+    // now move in order
+    let mut moved = [false; MAX_MODULES];
+    let mut moved_count = 0;
+    while moved_count < module_count {
+        let mut found = false;
+        for i in 0..module_count {
+            if moved[i] {
+                continue;
+            }
+            let dst = modules[i].dst;
+            let dst_end = dst + (modules[i].end - modules[i].start);
+            let mut can_move = true;
+            for j in 0..module_count {
+                if moved[j] || i == j {
+                    continue;
+                }
+                let start = modules[j].start;
+                let end = modules[j].end;
+                if dst < end && dst_end > start {
+                    can_move = false;
+                    break;
+                }
+            }
+            if can_move {
+                if modules[i].dst != 0 {
+                    let size = modules[i].end - modules[i].start + 1;
+                    let dst_end = modules[i].dst + size;
+                    let overlaps_self =
+                        modules[i].dst < modules[i].end && dst_end > modules[i].start;
+                    unsafe {
+                        if overlaps_self {
+                            core::ptr::copy(
+                                modules[i].start as *const u8,
+                                modules[i].dst as *mut u8,
+                                size,
+                            );
+                        } else {
+                            core::ptr::copy_nonoverlapping(
+                                modules[i].start as *const u8,
+                                modules[i].dst as *mut u8,
+                                size,
+                            );
+                        }
+                    }
+                }
+                moved[i] = true;
+                moved_count += 1;
+                found = true;
+                break;
+            }
+        }
+        if !found {
+            panic!("Cannot move modules due to overlapping addresses");
+        }
+    }
+
+    println!("module cnt: {:x}", module_count);
 }

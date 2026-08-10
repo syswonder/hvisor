@@ -14,7 +14,7 @@
 // Authors:
 //
 use crate::consts::PER_CPU_SIZE;
-use crate::platform::BOARD_MPIDR_MAPPINGS;
+use crate::platform::{BOARD_EARLY_CACHE_INVALIDATE_MASKS, BOARD_MPIDR_MAPPINGS};
 
 const INVALID_CPUID: usize = (-1) as _;
 
@@ -52,21 +52,48 @@ pub unsafe extern "C" fn arch_entry() -> ! {
             msr sctlr_el2, x1           //  SCTLR_EL2 &= ~0xf;
             isb
 
+            // clear i-cache and sync
+            dsb sy
+            ic  iallu
+            isb
+
+            // flush tlb
+            tlbi alle2is
+
+            // per-cpu mask bits: bit0->L1(D), bit1->L2, bit2->L3.
+            adrp x9, {cache_inv_masks}             // Get Symbol Table Page Address
+            add  x9, x9, :lo12:{cache_inv_masks}   // Get Symbol Table Page Offset
+            lsl  x10, x19, #3
+            add x9, x9, x10
+            ldr x9, [x9]
+
             // cache_invalidate(0): clear dl1$
+            tbz x9, #0, 20f
             mov x0, #0
             bl  {cache_invalidate}
 
-            // invalidate all instruction caches to PoU, and ensure completion of the invalidation.
-            ic  iallu
+        20:
+            // cache_invalidate(2): clear l2$
+            tbz x9, #1, 21f
+            mov x0, #2
+            bl  {cache_invalidate}
+
+        21:
+            // cache_invalidate(4): clear l3$
+            tbz x9, #2, 22f
+            mov x0, #4
+            bl  {cache_invalidate}
+
+        22:
+            // clear i-cache and sync
             dsb sy
+            ic  iallu
             isb
 
+            // if cpuid == 0, clear bss and init boot page table.
             cmp x19, 0
             b.ne 1f
 
-            // if (cpu_id == 0) cache_invalidate(2): clear l2$
-            mov x0, #2
-            bl  {cache_invalidate}
             bl {clear_bss}
             bl {boot_pt_init}
         1:
@@ -80,6 +107,7 @@ pub unsafe extern "C" fn arch_entry() -> ! {
             ",
             options(noreturn),
             boot_cpuid_get = sym boot_cpuid_get,
+            cache_inv_masks = sym BOARD_EARLY_CACHE_INVALIDATE_MASKS,
             cache_invalidate = sym cache_invalidate,
             per_cpu_size = const PER_CPU_SIZE,
             rust_main = sym crate::rust_main,

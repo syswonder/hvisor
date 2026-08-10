@@ -20,7 +20,7 @@
 #[cfg(all(pl011, target_arch = "aarch64"))]
 mod pl011;
 #[cfg(all(pl011, target_arch = "aarch64"))]
-pub use pl011::{console_getchar, console_putchar};
+pub use pl011::{console_free_check, console_getchar, console_putchar};
 
 #[cfg(all(imx_uart, target_arch = "aarch64"))]
 mod imx_uart;
@@ -45,7 +45,7 @@ pub use loongson_uart::{console_getchar, console_putchar};
 #[cfg(all(uart_16550, target_arch = "aarch64"))]
 mod uart_16550;
 #[cfg(all(uart_16550, target_arch = "aarch64"))]
-pub use uart_16550::{console_getchar, console_putchar};
+pub use uart_16550::{console_free_check, console_getchar, console_putchar};
 
 #[cfg(all(uart16550a, target_arch = "x86_64"))]
 mod uart16550a;

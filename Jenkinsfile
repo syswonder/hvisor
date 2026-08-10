@@ -229,7 +229,7 @@ pipeline {
         HVISOR_TOOL_PATH = 'hvisor-tool'
         RUST_HOME = '/usr/local/rustup'
         CARGO_HOME = '/usr/local/cargo'
-        QEMU_PATH = '/home/light/DEMO/qemu-9.2.3/build'
+        QEMU_PATH = '/home/light/DEMO/qemu-10.1.0/build'
         TEST_IMG_BASE = '/home/light/DEMO/syswonder/test_img'
         KCONFIG_VENV = "/home/light/DEMO/syswonder/test_img/venv"
         RISCV_TOOLCHAIN_PATH = '/home/light/DEMO/toolchain/riscv64-glibc-ubuntu-24.04-gcc'
@@ -290,6 +290,7 @@ pipeline {
                         name 'BID'
                         values(
                             'aarch64/imx8mp',
+                            'aarch64/jeston-orin',
                             'aarch64/ok6254-c',
                             'aarch64/phytium-pi',
                             'aarch64/qemu-gicv2',

@@ -17,7 +17,7 @@
 #![allow(unreachable_patterns)]
 
 use crate::arch::cpu::get_target_cpu;
-use crate::config::HvZoneConfig;
+use crate::config::{HvZoneBootMode, HvZoneConfig};
 use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, MAX_WAIT_TIMES, PAGE_SIZE};
 use crate::cpu_data::{get_cpu_data, PerCpu, VcpuState};
 use crate::device::virtio_trampoline::{
@@ -27,7 +27,8 @@ use crate::device::virtio_trampoline::{
 use crate::error::HvResult;
 use crate::pci::pci_config::GLOBAL_PCIE_LIST;
 use crate::zone::{
-    add_zone, all_zones_info, find_zone, is_this_root_zone, remove_zone, zone_create, ZoneInfo,
+    add_zone, all_zones_info, clear_zone_boot_mode, find_zone, is_this_root_zone, remove_zone,
+    set_zone_boot_mode, zone_create, ZoneInfo,
 };
 
 use crate::event::{
@@ -51,6 +52,7 @@ numeric_enum! {
         HvIvcInfo = 5,
         HvConfigCheck = 6,
         HvVirtioPCI = 7,
+        HvZoneSetBootMode = 8,
     }
 }
 pub const SGI_IPI_ID: u64 = 7;
@@ -102,6 +104,7 @@ impl<'a> HyperCall<'a> {
                 HyperCallCode::HvIvcInfo => self.hv_ivc_info(arg0),
                 HyperCallCode::HvConfigCheck => self.hv_zone_config_check(arg0 as *mut u64),
                 HyperCallCode::HvVirtioPCI => self.hv_virtio_pci(arg0, arg1),
+                HyperCallCode::HvZoneSetBootMode => self.hv_zone_set_boot_mode(arg0, arg1),
                 _ => {
                     warn!("hypercall id={} unsupported!", code as u64);
                     Ok(0)
@@ -179,13 +182,48 @@ impl<'a> HyperCall<'a> {
         HyperCallResult::Ok(0)
     }
 
+    pub fn hv_zone_set_boot_mode(
+        &mut self,
+        boot_mode_ipa: u64,
+        boot_mode_size: u64,
+    ) -> HyperCallResult {
+        if !is_this_root_zone() {
+            return hv_result_err!(
+                EPERM,
+                "Set zone boot mode over non-root zones: unsupported!"
+            );
+        }
+        if boot_mode_size != core::mem::size_of::<HvZoneBootMode>() as _ {
+            return hv_result_err!(
+                EINVAL,
+                format!(
+                    "hv_zone_set_boot_mode: config size should be {} bytes, but got {}",
+                    core::mem::size_of::<HvZoneBootMode>(),
+                    boot_mode_size
+                )
+            );
+        }
+
+        let boot_mode_pa = self.hv_get_real_pa(boot_mode_ipa);
+        let boot_mode = unsafe { &*(boot_mode_pa as *const HvZoneBootMode) };
+        if boot_mode.zone_id == 0 {
+            return hv_result_err!(EINVAL, "boot mode is not supported for the root zone");
+        }
+
+        set_zone_boot_mode(boot_mode.zone_id as usize, *boot_mode);
+        info!(
+            "hv_zone_set_boot_mode: zone_id={}, multiboot_enabled={}, info_paddr={:#x}",
+            boot_mode.zone_id, boot_mode.multiboot_enabled, boot_mode.multiboot_info_paddr
+        );
+        HyperCallResult::Ok(0)
+    }
+
     pub fn hv_zone_start(&mut self, config: &HvZoneConfig, config_size: u64) -> HyperCallResult {
         let config_ipa = config as *const HvZoneConfig as u64;
         let config_pa = self.hv_get_real_pa(config_ipa);
         let config = unsafe { &*(config_pa as *const HvZoneConfig) };
 
         info!("hv_zone_start: config: {:#x?},pa:{:#x}", config, config_pa);
-        // return HyperCallResult::Ok(0);
         if !is_this_root_zone() {
             return hv_result_err!(
                 EPERM,
@@ -202,7 +240,9 @@ impl<'a> HyperCall<'a> {
                 )
             );
         }
-        let zone = zone_create(config)?;
+        let zone_result = zone_create(config);
+        clear_zone_boot_mode(config.zone_id as usize);
+        let zone = zone_result?;
         let boot_cpu = zone.read().cpu_set().first_cpu().unwrap();
 
         let target_data = get_cpu_data(boot_cpu as _);

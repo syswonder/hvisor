@@ -1,0 +1,28 @@
+/dts-v1/;
+
+/ {
+    description = "Hypervisor FIT Image";
+    #address-cells = <2>;
+
+    images {
+        hvisor {
+            description = "Hypervisor Kernel";
+            data = /incbin/("hvisor.bin.tmp");
+            type = "kernel";
+            arch = "riscv";
+            os = "linux";
+            compression = "none";
+
+            load = <0x1 0x02200000>;
+            entry = <0x1 0x02200000>;
+        };
+    };
+
+    configurations {
+        default = "config_1";
+        config_1 {
+            description = "Boot Hypervisor with External FDT";
+            kernel = "hvisor";
+        };
+    };
+};

@@ -16,7 +16,8 @@
 			reg = <0x0>;
 			status = "okay";
 			compatible = "riscv";
-			riscv,isa = "rv64imafdcsu_sstc";
+			// Advertise the Vector extension to the root-zone kernel.
+			riscv,isa = "rv64imafdcvsu_sstc_svpbmt";
 			mmu-type = "riscv,sv39";
 
 			cpu0_intc: interrupt-controller {
@@ -31,7 +32,8 @@
 			reg = <0x1>;
 			status = "okay";
 			compatible = "riscv";
-			riscv,isa = "rv64imafdcsu_sstc";
+			// Advertise the Vector extension to the root-zone kernel.
+			riscv,isa = "rv64imafdcvsu_sstc_svpbmt";
 			mmu-type = "riscv,sv39";
 
 			cpu1_intc: interrupt-controller {

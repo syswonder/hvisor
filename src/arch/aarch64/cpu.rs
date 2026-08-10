@@ -123,7 +123,9 @@ impl ArchCpu {
                 + HCR_EL2::TSC::EnableTrapEl1SmcToEl2
                 + HCR_EL2::VM::SET
                 + HCR_EL2::IMO::SET
-                + HCR_EL2::FMO::SET,
+                + HCR_EL2::FMO::SET
+                + HCR_EL2::API::SET
+                + HCR_EL2::APK::SET,
         );
     }
 
@@ -131,6 +133,7 @@ impl ArchCpu {
         PER_CPU_ARRAY_PTR as VirtAddr + (self.cpuid + 1) as usize * PER_CPU_SIZE
     }
 
+    #[allow(clippy::mut_from_ref)]
     fn guest_reg(&self) -> &mut GeneralRegisters {
         unsafe { &mut *((self.stack_top() - 32 * 8) as *mut GeneralRegisters) }
     }

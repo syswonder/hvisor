@@ -137,12 +137,9 @@ pub fn inject_irq(irq_id: usize, is_sgi: bool) -> bool {
         /* inject gruop 0 irq */
         // config vint bit 0-9
         let mut val = irq_id;
-        // config pending state bit 31
+        // config pending state bit 28
         val = val | GICV2_GICH_LR_PENDING_STATE;
-        if is_sgi {
-            // config cpu bit 10-12
-            val |= 1 << GICV2_GICH_LR_CPUID_SHIFT;
-        } else {
+        if !is_sgi {
             // config pint bit 10-19
             val = val | (irq_id << GICV2_GICH_LR_PHYSID_SHIFT);
             // config hw bit 31

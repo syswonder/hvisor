@@ -28,6 +28,12 @@ pub mod sysreg;
 pub mod time;
 pub mod trap;
 pub mod zone;
-
 pub use s2pt::stage2_mode_detect;
 pub use s2pt::Stage2PageTable;
+#[cfg(aarch64_uefi_support)]
+pub mod uefi;
+
+pub fn arch_config_by_args(_cpuid: usize, _host_dtb: usize) {
+    #[cfg(aarch64_uefi_support)]
+    uefi::memory_map_init(_host_dtb);
+}

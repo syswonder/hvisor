@@ -34,3 +34,7 @@ pub mod zone;
 pub use s1pt::Stage1PageTable;
 pub use s2pt::stage2_mode_detect;
 pub use s2pt::Stage2PageTable;
+
+pub fn arch_config_by_args(_cpuid: usize, _host_dtb: usize) {
+    // Do nothing now.
+}

@@ -39,5 +39,6 @@
         "gicr_size": "0xf60000",
         "gits_base": "0x8080000",
         "gits_size": "0x20000"
-    }
+    },
+    "pci_config": []
 }

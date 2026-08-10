@@ -255,6 +255,7 @@ struct ReqAgent<'a> {
 }
 
 impl<'a> ReqAgent<'a> {
+    #[allow(clippy::mut_from_ref)]
     fn region(&self) -> &mut VirtioBridge {
         unsafe { &mut *(self.base as *mut VirtioBridge) }
     }
@@ -294,6 +295,7 @@ pub struct ResAgent<'a> {
 }
 
 impl<'a> ResAgent<'a> {
+    #[allow(clippy::mut_from_ref)]
     fn region(&self) -> &mut VirtioBridge {
         unsafe { &mut *(self.base as *mut VirtioBridge) }
     }

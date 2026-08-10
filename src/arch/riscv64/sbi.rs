@@ -17,12 +17,15 @@
 
 use super::cpu::ArchCpu;
 use crate::arch::cpu::hartid_to_cpuid;
-use crate::arch::csr::*;
+#[cfg(isa_sstc)]
+use crate::arch::csr::{write_csr, CSR_VSTIMECMP};
 use crate::consts::IPI_EVENT_SEND_IPI;
 use crate::cpu_data::{get_cpu_data, this_cpu_data, VcpuState};
 use crate::event::{send_event, IPI_EVENT_WAKEUP};
 use crate::hypercall::HyperCall;
+#[cfg(not(isa_sstc))]
 use riscv::register::sie;
+#[cfg(not(isa_sstc))]
 use riscv_h::register::hvip;
 use sbi_rt::{HartMask, SbiRet};
 use sbi_spec::binary::{
@@ -193,11 +196,24 @@ pub fn sbi_time_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
         };
     }
     let stime_value = current_cpu.x[10];
-    if current_cpu.sstc {
-        // Set the vstimecmp, and don't need to inject timer interrupt.
+    // `cfg(isa_sstc)` describes whether the host platform supports Sstc
+    // and can safely access vstimecmp.
+    #[cfg(isa_sstc)]
+    {
+        // HS-mode can program the guest timer whenever the platform supports
+        // Sstc. `ArchCpu.sstc` only controls whether VS-mode may access
+        // vstimecmp directly through HENVCFG.STCE.
         write_csr!(CSR_VSTIMECMP, stime_value);
-    } else {
-        // Hvisor should receive timer interrupt and inject it to guest.
+        SbiRet {
+            error: RET_SUCCESS,
+            value: 0,
+        }
+    }
+
+    #[cfg(not(isa_sstc))]
+    {
+        // The host platform lacks Sstc. Let hvisor receive the timer interrupt
+        // and inject a virtual timer interrupt into the guest.
         sbi_rt::set_timer(stime_value as _);
         unsafe {
             // clear guest timer interrupt pending
@@ -205,10 +221,10 @@ pub fn sbi_time_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
             // enable timer interrupt
             sie::set_stimer();
         }
-    }
-    SbiRet {
-        error: RET_SUCCESS,
-        value: 0,
+        SbiRet {
+            error: RET_SUCCESS,
+            value: 0,
+        }
     }
 }
 

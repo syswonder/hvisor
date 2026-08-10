@@ -3,32 +3,15 @@
     "name": "linux1",
     "zone_id": 1,
     "cpus": [
-        1
+        2,
+        3
     ],
     "memory_regions": [
         {
             "type": "ram",
-            "physical_start": "0xc0000000",
-            "virtual_start": "0xc0000000",
-            "size": "0x10000000"
-        },
-        {
-            "type": "ram",
-            "physical_start": "0xd0000000",
-            "virtual_start": "0xd0000000",
-            "size": "0x10000000"
-        },
-        {
-            "type": "io",
-            "physical_start": "0x1fe00000",
-            "virtual_start": "0x1fe00000",
-            "size": "0x1000"
-        },
-        {
-            "type": "io",
-            "physical_start": "0x10080000",
-            "virtual_start": "0x10080000",
-            "size": "0x1000"
+            "physical_start": "0x21cc00000",
+            "virtual_start": "0x21cc00000",
+            "size": "0x200000000"
         },
         {
             "type": "virtio",
@@ -41,30 +24,6 @@
             "physical_start": "0x30002000",
             "virtual_start": "0x30002000",
             "size": "0x200"
-        },
-        {
-            "type": "io",
-            "physical_start": "0xffffffff0000",
-            "virtual_start": "0xffffffff0000",
-            "size": "0x1000"
-        },
-        {
-            "type": "io",
-            "physical_start": "0x10000000",
-            "virtual_start": "0x10000000",
-            "size": "0x1000"
-        },
-        {
-            "type": "io",
-            "physical_start": "0x100d0000",
-            "virtual_start": "0x100d0000",
-            "size": "0x1000"
-        },
-        {
-            "type": "io",
-            "physical_start": "0x10010000",
-            "virtual_start": "0x10010000",
-            "size": "0x00010000"
         },
         {
             "type": "ram",
@@ -80,34 +39,49 @@
         },
         {
             "type": "ram",
-            "physical_start": "0x140000000",
-            "virtual_start": "0x140000000",
-            "size": "0x800000"
+            "physical_start": "0x200c00000",
+            "virtual_start": "0x200c00000",
+            "size": "0x04000000"
         },
         {
             "type": "ram",
-            "physical_start": "0x140800000",
-            "virtual_start": "0x140800000",
-            "size": "0x800000"
+            "physical_start": "0x204c00000",
+            "virtual_start": "0x204c00000",
+            "size": "0x04000000"
         },
         {
             "type": "ram",
-            "physical_start": "0x141000000",
-            "virtual_start": "0x141000000",
-            "size": "0x800000"
+            "physical_start": "0x210c00000",
+            "virtual_start": "0x210c00000",
+            "size": "0x04000000"
+        },
+        {
+            "type": "ram",
+            "physical_start": "0x214c00000",
+            "virtual_start": "0x214c00000",
+            "size": "0x04000000"
         }
     ],
     "interrupts": [
         4,
         5
     ],
-    "ivc_configs": [],
+    "ivc_configs": [{
+        "ivc_id": 0,
+        "peer_id": 1,
+        "control_table_ipa": "0x200be0000",
+        "shared_mem_ipa": "0x200be1000",
+        "rw_sec_size": 0,
+        "out_sec_size": "0x1000",
+        "interrupt_num": 148,
+        "max_peers": 2
+    }],
     "kernel_args": "NOT_USED_YET",
     "kernel_filepath": "/tool/nonroot/vmlinux-linux1.bin",
     "dtb_filepath": "/tool/test.bin",
-    "kernel_load_paddr": "0xc0200000",
-    "dtb_load_paddr": "0xc0000000",
-    "entry_point": "0x90000000c0dff000",
+    "kernel_load_paddr": "0x21ce00000",
+    "dtb_load_paddr": "0x21cc00000",
+    "entry_point": "0x900000021da22000",
     "arch_config": {
         "dummy": "0x1234"
     },
@@ -120,19 +94,22 @@
         "mem32_base": "0x0",
         "mem32_size": "0x0",
         "pci_mem32_base": "0x0",
-        "mem64_base": "0x60000000",
-        "mem64_size": "0x20000000",
-        "pci_mem64_base": "0x60000000",
-        "bus_range_begin": "0x0",
-        "bus_range_end": "0x1f",
+        "mem64_base": "0x75300000",
+        "mem64_size": "0x1000000",
+        "pci_mem64_base": "0x75300000",
+        "bus_range_begin": "0x6",
+        "bus_range_end": "0x6",
         "domain": "0x0"
     }],
     "num_pci_devs": 1,
     "alloc_pci_devs": [{
         "domain": "0x0",
         "bus": "0x6",
-        "device": "0x1",
-        "function": "0x0",
+        "device": "0x0",
+        "function": "0x1",
+        "v_bus": "0x6",
+        "v_device": "0x0",
+        "v_function": "0x1",
         "dev_type": "0"
     }]
 }

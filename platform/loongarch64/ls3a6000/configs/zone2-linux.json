@@ -121,6 +121,9 @@
         "bus": "0x6",
         "device": "0x2",
         "function": "0x0",
+        "v_bus": "0x6",
+        "v_device": "0x2",
+        "v_function": "0x0",
         "dev_type": "0"
     }]
 }

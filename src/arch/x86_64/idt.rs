@@ -24,6 +24,7 @@ const VECTOR_CNT: usize = 256;
 
 #[allow(non_snake_case)]
 pub mod IdtVector {
+    pub const I8042_KEYBOARD_VECTOR: u8 = 0x21;
     pub const VIRT_IPI_VECTOR: u8 = 0xef;
     pub const APIC_ERROR_VECTOR: u8 = 0xfc;
     pub const APIC_SPURIOUS_VECTOR: u8 = 0xfd;

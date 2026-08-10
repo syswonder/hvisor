@@ -194,6 +194,7 @@ impl LinearStreamTable {
         self.sid_max_bits
     }
 
+    #[allow(clippy::mut_from_ref)]
     fn ste(&self, sid: usize) -> &mut StreamTableEntry {
         let base = self.base + sid * STRTAB_STE_SIZE;
         unsafe { &mut *(base as *mut StreamTableEntry) }

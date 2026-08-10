@@ -32,9 +32,9 @@ use gits::gits_init;
 use spin::{Lazy, Mutex, Once};
 
 use self::gicd::{enable_gic_are_ns, GICD_ICACTIVER, GICD_ICENABLER};
-use self::gicr::enable_ipi;
+use self::gicr::{enable_ipi, GICR_BASE_LAYOUT};
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
-use crate::arch::cpu::{cpuid_to_mpidr_affinity, this_cpu_id};
+use crate::arch::cpu::this_cpu_id;
 use crate::arch::zone::GicConfig;
 use crate::config::root_zone_config;
 use crate::consts::{self, MAX_CPU_NUM};
@@ -374,38 +374,14 @@ pub fn host_gicd_base() -> usize {
     GIC.get().unwrap().gicd_base
 }
 
+pub static CPU_UNUSED_GICR_BASE: Lazy<Vec<usize>> = Lazy::new(|| {
+    let unused_bases = GICR_BASE_LAYOUT.unused_bases();
+    debug!("Unused GICR bases: {:#x?}", unused_bases);
+    unused_bases
+});
+
 static CPU_GICR_BASE: Lazy<Vec<usize>> = Lazy::new(|| {
-    let mut bases = vec![0; MAX_CPU_NUM];
-    let gic = GIC.get().unwrap();
-    let base = gic.gicr_base;
-    let mut found_cpus = 0;
-
-    // Scan through all GICR frames once
-    let mut curr_base = base;
-
-    for _ in 0..MAX_CPU_NUM {
-        let typer =
-            unsafe { core::ptr::read_volatile((curr_base + gicr::GICR_TYPER) as *const u64) };
-        let affinity = (typer & GICR_TYPER_AFFINITY_VALUE_MASK) >> GICR_TYPER_AFFINITY_VALUE_SHIFT;
-
-        // Find which CPU this GICR belongs to
-        if let Some(cpu_id) = (0..MAX_CPU_NUM).position(|cpu_id| {
-            let (aff3, aff2, aff1, aff0) = cpuid_to_mpidr_affinity(cpu_id as u64);
-            let aff = (aff3 << 24) | (aff2 << 16) | (aff1 << 8) | aff0;
-            aff == affinity
-        }) {
-            bases[cpu_id] = curr_base;
-            found_cpus += 1;
-        }
-        curr_base += PER_GICR_SIZE;
-    }
-
-    if found_cpus != MAX_CPU_NUM {
-        panic!(
-            "Could not find GICR for all CPUs, only found {}",
-            found_cpus
-        );
-    }
+    let bases = GICR_BASE_LAYOUT.cpu_bases();
     info!("GICR bases: {:#x?}", bases);
     bases
 });

@@ -48,5 +48,6 @@
     "gich_size": "0x10000",
     "gicv_base": "0x8040000",
     "gicv_size": "0x10000"
-  }
+  },
+  "pci_config": []
 }

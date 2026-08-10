@@ -697,6 +697,13 @@ pub fn root_get_config_space_info() -> Option<(usize, usize)> {
     Some((acpi.config_space_base, acpi.config_space_size))
 }
 
+pub fn try_get_cpu_id(apic_id: usize) -> Option<usize> {
+    ROOT_ACPI
+        .get()
+        .and_then(|acpi| acpi.apic_id_to_cpu_id.get(&apic_id))
+        .copied()
+}
+
 fn contains_apic_id(apic_id: usize) -> bool {
     ROOT_ACPI
         .get()

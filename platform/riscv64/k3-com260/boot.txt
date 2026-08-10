@@ -1,0 +1,14 @@
+setenv serverip 192.168.137.1;
+setenv ipaddr 192.168.137.200;
+setenv netmask 255.255.255.0;
+
+setenv hvisor_fit_addr 0x122200000;
+tftpboot ${hvisor_fit_addr} ${serverip}:hvisor.bin;
+
+setenv zone0_fdt_addr 0x10f000000;
+tftpboot ${zone0_fdt_addr} ${serverip}:zone0.dtb;
+
+setenv zone0_kernel_addr 0x110000000;
+tftpboot ${zone0_kernel_addr} ${serverip}:Image;
+
+bootm ${hvisor_fit_addr} - ${zone0_fdt_addr};

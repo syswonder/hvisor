@@ -18,7 +18,7 @@ use crate::pci_dev;
 use crate::{
     arch::{
         mmu::MemoryType,
-        zone::{GicConfig, Gicv3Config, HvArchZoneConfig},
+        zone::{GicConfig, Gicv3Config, HvArchZoneConfig, UefiConfig},
     },
     config::*,
     pci::vpci_dev::VpciDevType,
@@ -40,6 +40,9 @@ pub static BOARD_MPIDR_MAPPINGS: [u64; BOARD_NCPUS] = [
     0x600,   // cpu6
     0x700,   // cpu7
 ];
+
+/// Early boot cache invalidate mask (per CPU): bit0->L1(D), bit1->L2, bit2->L3.
+pub static BOARD_EARLY_CACHE_INVALIDATE_MASKS: [u64; BOARD_NCPUS] = [0b111; BOARD_NCPUS];
 
 /// The physical memory layout of the board.
 /// Each address should align to 2M (0x20_0000).
@@ -211,6 +214,7 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
         gits_base: 0x0,
         gits_size: 0x0,
     }),
+    uefi_config: UefiConfig::NoUefi
 };
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];

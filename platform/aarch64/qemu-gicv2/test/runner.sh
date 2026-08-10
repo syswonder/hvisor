@@ -6,13 +6,9 @@ PWD=$(pwd)
 THIS=$(basename $0)
 CARGO_BUILD_INPUT_ARG0=$1
 
-# capture env: FEATURES, ARCH
-
 ARCH=${ARCH}
-FEATURES=${FEATURES}
 BOARD=${BOARD}
 
-UBOOT_GICV3=u-boot-atf.bin
 UBOOT_GICV2=u-boot-v2.bin
 
 HVISOR_ELF=$CARGO_BUILD_INPUT_ARG0
@@ -41,7 +37,7 @@ if ! command -v mkimage &>/dev/null; then
     fi
 fi
 
-info "Running cargo test with env: ARCH=$ARCH, FEATURES=$FEATURES, BOARD=$BOARD"
+info "Running cargo test with env: ARCH=$ARCH, BOARD=$BOARD"
 
 info "Building hvisor with $CARGO_BUILD_INPUT_ARG0"
 info "PWD=$PWD, running cargo test"
@@ -53,17 +49,10 @@ if [ "$ARCH" == "aarch64" ]; then
 
     info "Running QEMU with $HVISOR_BIN"
 
-    # if we have gicv2,gicv3 in FEATURES, we get the number from it
-    AARCH64_GIC_TEST_VERSION=3
-    if [[ $FEATURES == *"gicv2"* ]]; then
-        AARCH64_GIC_TEST_VERSION=2
-    fi
+    AARCH64_GIC_TEST_VERSION=2
     info "Using GIC version: $AARCH64_GIC_TEST_VERSION"
 
-    UBOOT=$UBOOT_GICV3
-    if [ $AARCH64_GIC_TEST_VERSION -eq 2 ]; then
-        UBOOT=$UBOOT_GICV2
-    fi
+    UBOOT=$UBOOT_GICV2
     UBOOT=$PWD/platform/$ARCH/$BOARD/image/bootloader/$UBOOT
     info "Using U-Boot: $UBOOT"
 

@@ -1,0 +1,6 @@
+[target.riscv64gc-unknown-none-elf]
+runner = "platform/__ARCH__/__BOARD__/test/runner.sh"
+rustflags = [
+    "-Clink-arg=-Tplatform/__ARCH__/__BOARD__/linker.ld",
+    "-Cforce-frame-pointers=yes",
+]

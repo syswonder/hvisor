@@ -53,7 +53,7 @@ const ROOT_ZONE_UEFI_REGION: HvConfigMemoryRegion = HvConfigMemoryRegion {
 const ROOT_ZONE_UEFI_REGION_ID: usize = 0x3;
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
-pub const ROOT_ZONE_CMDLINE: &str = "video=vesafb console=tty0 nointremap no_timer_check efi=noruntime pci=pcie_scan_all root=/dev/nvme0n1p5 rw init=/init rootwait\0";
+pub const ROOT_ZONE_CMDLINE: &str = "video=vesafb console=tty0 earlycon=efifb nointremap no_timer_check efi=noruntime pci=pcie_scan_all root=/dev/nvme0n1p5 rw init=/init rootwait\0";
 // pub const ROOT_ZONE_CMDLINE: &str = "video=vesafb console=ttyS0 earlyprintk=serial nointremap no_timer_check pci=pcie_scan_all root=/dev/vda rw init=/init\0";
 //"console=ttyS0 earlyprintk=serial rdinit=/init nokaslr nointremap\0"; // noapic
 // video=vesafb
@@ -113,9 +113,9 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 15] = [
     }, // pnp 00:05
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RESERVED,
-        physical_start: 0xfe01_1000,
-        virtual_start: 0xfe01_1000,
-        size: 0x40_0000,
+        physical_start: 0xfe00_0000,
+        virtual_start: 0xfe00_0000,
+        size: 0xd0_0000,
     }, // reserved
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RESERVED,

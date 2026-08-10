@@ -12,7 +12,7 @@ zone0_dtb    := $(image_dir)/dts/zone0.dtb
 
 QEMU_ARGS := -machine virt,aclint=on # ,iommu-sys=on # -d trace:*iommu*
 QEMU_ARGS += -bios default
-QEMU_ARGS += -cpu rv64
+QEMU_ARGS += -cpu rva23s64
 QEMU_ARGS += -smp 4
 QEMU_ARGS += -m 4G
 QEMU_ARGS += -nographic

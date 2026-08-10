@@ -52,12 +52,45 @@ pub const CSR_HGEIP: u64 = 0xE07;
 /* Hypervisor Configuration */
 pub const CSR_HENVCFG: u64 = 0x60A;
 pub const CSR_HENVCFGH: u64 = 0x61A;
+pub const CSR_HSTATEEN0: u64 = 0x60C;
 
 /* Sstc Extension */
 pub const CSR_STIMECMP: u64 = 0x14D;
 pub const CSR_STIMECMPH: u64 = 0x15D;
 
 pub const HSTATUS_SPV: u64 = 1 << 7;
+
+// sstatus/vsstatus state fields.
+pub const SSTATUS_SPP: usize = 1 << 8;
+pub const SSTATUS_FS_DIRTY: usize = 0b11 << 13;
+// vsstatus.VS: vector state is dirty and available to VS/VU-mode.
+pub const SSTATUS_VS_SHIFT: usize = 9;
+pub const SSTATUS_VS_DIRTY: usize = 0b11 << SSTATUS_VS_SHIFT;
+
+// HENVCFG.STCE: enable vstimecmp access from VS-mode (Sstc).
+pub const HENVCFG_STCE: usize = 1 << 63;
+// HENVCFG.PBMTE: enable page-based memory types from Svpbmt in VS-mode.
+pub const HENVCFG_PBMTE: usize = 1 << 62;
+// HENVCFG controls for cache-block operations advertised to VS-mode.
+// Zicbom uses CBIE[5:4]=01 for CBO.INVAL (performed as a flush) and CBCFE for
+// CBO.CLEAN/CBO.FLUSH. Zicboz uses CBZE for CBO.ZERO. Zicbop prefetch hints
+// do not require an HENVCFG enable bit.
+pub const HENVCFG_CBIE: usize = 1 << 4;
+pub const HENVCFG_CBCFE: usize = 1 << 6;
+pub const HENVCFG_CBZE: usize = 1 << 7;
+
+// HSTATEEN0 controls access to extension state from VS/VU-mode.
+// These fields are defined by Smstateen/Ssstateen and AIA:
+//   bit 58: IMSIC guest interrupt-file state, including vstopei.
+//   bit 59: AIA state not covered by CSRIND or IMSIC.
+//   bit 60: indirect CSR state (siselect/sireg, exposed as vsiselect/vsireg).
+//   bit 62: senvcfg state.
+//   bit 63: sstateen* CSRs, i.e. the supervisor state-enable view for VS-mode.
+pub const HSTATEEN0_IMSIC: usize = 1 << 58;
+pub const HSTATEEN0_AIA: usize = 1 << 59;
+pub const HSTATEEN0_CSRIND: usize = 1 << 60;
+pub const HSTATEEN0_SENVCFG: usize = 1 << 62;
+pub const HSTATEEN0_SSTATEEN: usize = 1 << 63;
 
 macro_rules! read_csr {
     ($csr_number:expr) => {

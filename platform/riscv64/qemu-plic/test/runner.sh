@@ -6,10 +6,7 @@ PWD=$(pwd)
 THIS=$(basename $0)
 CARGO_BUILD_INPUT_ARG0=$1
 
-# capture env: FEATURES, ARCH
-
 ARCH=${ARCH}
-FEATURES=${FEATURES}
 BOARD=${BOARD}
 
 HVISOR_ELF=$CARGO_BUILD_INPUT_ARG0
@@ -25,7 +22,7 @@ info() {
     echo "[INFO | $THIS] $1"
 }
 
-info "Running cargo test with env: ARCH=$ARCH, FEATURES=$FEATURES, BOARD=$BOARD"
+info "Running cargo test with env: ARCH=$ARCH, BOARD=$BOARD"
 
 info "Building hvisor with $CARGO_BUILD_INPUT_ARG0"
 info "PWD=$PWD, running cargo test"
@@ -33,7 +30,7 @@ $OBJCOPY $HVISOR_ELF --strip-all -O binary $HVISOR_BIN
 
 qemu-system-riscv64 \
     -machine virt,aclint=on \
-    -bios default -cpu rv64 -smp 4 -m 4G -nographic \
+    -bios default -cpu rva23s64 -smp 4 -m 4G -nographic \
     -kernel $HVISOR_BIN
 
 exit 0

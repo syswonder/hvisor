@@ -37,6 +37,11 @@ pub struct ArchCpu {
     pub stack_top: usize,
     pub cpuid: usize,
     // pub first_cpu: usize,
+    /// Whether Sstc is exposed to this VS-mode guest.
+    ///
+    /// This is distinct from `cfg(isa_sstc)`, which describes host-platform
+    /// support. They currently have the same value, but may differ when Sstc
+    /// exposure becomes configurable per guest.
     pub sstc: bool,
 }
 
@@ -52,7 +57,8 @@ impl ArchCpu {
             stack_top: 0,
             cpuid,
             // first_cpu: 0,
-            sstc: cfg!(sstc),
+            // Initially expose Sstc whenever the host platform supports it.
+            sstc: cfg!(isa_sstc),
         };
         ret
     }
@@ -72,7 +78,27 @@ impl ArchCpu {
         {
             self.hstatus |= 1 << 12; // HSTATUS_VGEIN
         }
-        self.sstatus = 1 << 8 | 1 << 63 | 3 << 13 | 3 << 15; //SPP
+        #[cfg(all(aia, rva23))]
+        {
+            // Permit the AIA guest state advertised by qemu-aia. Without these
+            // enables, accesses from VS-mode to the corresponding state raise a
+            // virtual-instruction exception.
+            set_csr!(
+                CSR_HSTATEEN0,
+                HSTATEEN0_IMSIC
+                    | HSTATEEN0_AIA
+                    | HSTATEEN0_CSRIND
+                    | HSTATEEN0_SENVCFG
+                    | HSTATEEN0_SSTATEEN
+            );
+        }
+        self.sstatus = SSTATUS_SPP | SSTATUS_FS_DIRTY;
+        #[cfg(isa_vector)]
+        {
+            // With V=1, vector instructions require both the HS-level
+            // sstatus.VS and the guest's vsstatus.VS to be enabled.
+            self.sstatus |= SSTATUS_VS_DIRTY;
+        }
         self.stack_top = self.stack_top() as usize;
         for i in 0..32 {
             self.x[i] = 0;
@@ -80,20 +106,58 @@ impl ArchCpu {
         self.x[10] = cpu_id; // cpu id
         self.x[11] = dtb; // dtb addr
 
-        if self.sstc {
-            // hvisor doesn't handle timer interrupt.
+        // Hypervisor v0.6 does not define henvcfg, so never access this CSR
+        // when building for that version.
+        #[cfg(not(hypervisor_v0_6))]
+        {
+            #[cfg(any(isa_sstc, isa_svpbmt, isa_cmo))]
+            let mut henvcfg = 0;
+            #[cfg(not(any(isa_sstc, isa_svpbmt, isa_cmo)))]
+            let henvcfg = 0;
+            #[cfg(isa_sstc)]
+            {
+                // STCE controls whether this guest may access vstimecmp.
+                if self.sstc {
+                    henvcfg |= HENVCFG_STCE;
+                } else {
+                    // Sstc is not exposed to this guest; keep STCE clear.
+                }
+            }
+            #[cfg(isa_svpbmt)]
+            {
+                henvcfg |= HENVCFG_PBMTE;
+            }
+            #[cfg(isa_cmo)]
+            {
+                // Zicbom uses CBIE for CBO.INVAL and CBCFE for
+                // CBO.CLEAN/CBO.FLUSH. Zicboz uses CBZE for CBO.ZERO.
+                // Zicbop prefetch hints require no HENVCFG enable bit.
+                henvcfg |= HENVCFG_CBIE | HENVCFG_CBCFE | HENVCFG_CBZE;
+            }
+            // Write the complete value once so a vCPU reset cannot retain stale bits.
+            write_csr!(CSR_HENVCFG, henvcfg);
+        }
+
+        #[cfg(isa_sstc)]
+        {
+            // The host-platform Sstc timer is not used by hvisor.
             set_csr!(CSR_STIMECMP, usize::MAX);
-            set_csr!(CSR_HENVCFG, 1 << 63);
+            // HS-mode can program vstimecmp whenever the platform supports
+            // Sstc, regardless of whether direct access is exposed to VS-mode.
             set_csr!(CSR_VSTIMECMP, usize::MAX);
-        } else {
-            // In megrez board, this instruction is not supported. (illegal instruction)
-            #[cfg(not(hypervisor_v0_6))]
-            set_csr!(CSR_HENVCFG, 0);
         }
         set_csr!(CSR_HCOUNTEREN, 1 << 1); // HCOUNTEREN_TM
                                           // In VU-mode, a counter is not readable unless the applicable bits are set in both hcounteren and scounteren.
         write_csr!(CSR_HTIMEDELTA, 0);
         write_csr!(CSR_HIE, 0);
+        // Initialize the guest's virtual supervisor floating-point state on
+        // every platform. SD and XS are read-only summary fields.
+        write_csr!(CSR_VSSTATUS, SSTATUS_FS_DIRTY);
+        #[cfg(isa_vector)]
+        {
+            // Expose Vector state to the guest when the V extension is enabled.
+            set_csr!(CSR_VSSTATUS, SSTATUS_VS_DIRTY);
+        }
         write_csr!(CSR_VSTVEC, 0);
         write_csr!(CSR_VSSCRATCH, 0);
         write_csr!(CSR_VSEPC, 0);
@@ -105,10 +169,21 @@ impl ArchCpu {
 
     pub fn init_interrupt(&self) {
         // Used before enter into VM.
-        set_csr!(CSR_HIDELEG, 1 << 2 | 1 << 6 | 1 << 10); // HIDELEG_VSSI | HIDELEG_VSTI | HIDELEG_VSEI
-                                                          // Note: Breakpoint exception is temporarily needed.
-                                                          // TODO: This is need to be checked in the future.
-        set_csr!(CSR_HEDELEG, 1 << 3 | 1 << 8 | 1 << 12 | 1 << 13 | 1 << 15); // HEDELEG_ECU | HEDELEG_IPF | HEDELEG_LPF | HEDELEG_SPF
+        // HIDELEG_VSSI | HIDELEG_VSTI | HIDELEG_VSEI
+        set_csr!(CSR_HIDELEG, 1 << 2 | 1 << 6 | 1 << 10);
+        // Linux uses an illegal-instruction trap on the first Vector use of an allowed user thread while vsstatus.VS is Off,
+        // then allocates and enables the thread's Vector context. Delegate the exception so the guest handles this first-use path.
+        // Delegated synchronous exceptions in HEDELEG:
+        //   bit 2  - Illegal instruction
+        //   bit 3  - Breakpoint
+        //   bit 8  - Environment call from U-mode or VU-mode
+        //   bit 12 - Instruction page fault
+        //   bit 13 - Load page fault
+        //   bit 15 - Store/AMO page fault
+        set_csr!(
+            CSR_HEDELEG,
+            1 << 2 | 1 << 3 | 1 << 8 | 1 << 12 | 1 << 13 | 1 << 15
+        );
         set_csr!(CSR_SIE, 1 << 9 | 1 << 5 | 1 << 1); // Enable all interrupts (SEIE STIE SSIE).
     }
 

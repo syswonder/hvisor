@@ -7,6 +7,7 @@
 /platform/*/*/image/kernel/*
 /platform/*/*/image/virtdisk/*
 /platform/*/*/image/bootloader/out
+/platform/*/*/image/mb2_bootloader/out
 /platform/*/*/image/iso/boot/kernel/*
 /platform/*/*/image/iso/boot/hvisor
 /tools/hvisor

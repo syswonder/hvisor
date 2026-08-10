@@ -23,7 +23,7 @@ pub const MEM_TYPE_RAM: u32 = 0;
 pub const MEM_TYPE_IO: u32 = 1;
 pub const MEM_TYPE_VIRTIO: u32 = 2;
 
-pub const CONFIG_MAGIC_VERSION: usize = 0x5;
+pub const CONFIG_MAGIC_VERSION: usize = 0x6;
 pub const CONFIG_MAX_MEMORY_REGIONS: usize = 64;
 
 pub type BitmapWord = u32;
@@ -106,6 +106,14 @@ pub struct HvZoneConfig {
     pub pci_config: [HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
     pub num_pci_devs: u64,
     pub alloc_pci_devs: [HvPciDevConfig; CONFIG_MAX_PCI_DEV],
+}
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+pub struct HvZoneBootMode {
+    pub zone_id: u32,
+    pub multiboot_enabled: u32,
+    pub multiboot_info_paddr: u64,
 }
 
 impl HvZoneConfig {

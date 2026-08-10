@@ -18,9 +18,9 @@
 			riscv,cbop-block-size = <0x40>;
 			riscv,cboz-block-size = <0x40>;
 			riscv,cbom-block-size = <0x40>;
-			riscv,isa-extensions = "i\0m\0a\0f\0d\0c\0ssaia\0sstc";
+			riscv,isa-extensions = "i\0m\0a\0f\0d\0c\0v\0ssstateen\0ssaia\0sstc\0svpbmt\0zicbom\0zicbop\0zicboz";
 			riscv,isa-base = "rv64i";
-			riscv,isa = "rv64imafdc_ssaia_sstc";
+			riscv,isa = "rv64imafdcv_ssstateen_ssaia_sstc_svpbmt_zicbom_zicbop_zicboz";
 			mmu-type = "riscv,sv57";
 
 			interrupt-controller {

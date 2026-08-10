@@ -22,6 +22,7 @@ use crate::{
         idt::{IdtStruct, IdtVector},
         ipi,
         msr::Msr::{self, *},
+        pio::I8042_PORT,
         s2pt::Stage2PageFaultInfo,
         vmcs::*,
         vmx::{VmxCrAccessInfo, VmxExitInfo, VmxExitReason, VmxInterruptInfo, VmxIoExitInfo},
@@ -102,11 +103,14 @@ pub fn arch_handle_trap(tf: &mut TrapFrame) {
 }
 
 fn handle_irq(vector: u8) {
+    let is_timer = vector == this_cpu_data().arch_cpu.virt_lapic.virt_timer_vector;
+
     match vector {
-        IdtVector::VIRT_IPI_VECTOR => {
+        IdtVector::VIRT_IPI_VECTOR if !is_timer => {
             ipi::handle_virt_ipi();
         }
-        IdtVector::APIC_SPURIOUS_VECTOR | IdtVector::APIC_ERROR_VECTOR => {}
+        IdtVector::I8042_KEYBOARD_VECTOR if !is_timer => {}
+        IdtVector::APIC_SPURIOUS_VECTOR | IdtVector::APIC_ERROR_VECTOR if !is_timer => {}
         _ => {
             if vector >= 0x20 && this_cpu_data().vcpu_state.is_running() {
                 inject_vector(this_cpu_id(), vector, None, false);
@@ -153,6 +157,12 @@ fn handle_cpuid(arch_cpu: &mut ArchCpu) -> HvResult {
 
                 res
             }
+            CpuIdEax::TscInfo => CpuIdResult {
+                eax: 1,                                                 // Numerator for TSC frequency
+                ebx: 1, // Denominator for TSC frequency
+                ecx: hpet::get_tsc_freq_mhz().unwrap_or(0) * 1_000_000, // TSC frequency in Hz
+                edx: 0, // Reserved, typically 0
+            },
             CpuIdEax::ProcessorFrequencyInfo => {
                 if let Some(freq_mhz) = hpet::get_tsc_freq_mhz() {
                     CpuIdResult {
@@ -215,6 +225,9 @@ fn handle_external_interrupt() -> HvResult {
     let int_info = VmxInterruptInfo::new()?;
     trace!("VM-exit: external interrupt: {:#x?}", int_info);
     assert!(int_info.valid);
+    if int_info.vector == 0x21 {
+        // info!("External interrupt: IRQ1 (keyboard)");
+    }
     handle_irq(int_info.vector);
     Ok(())
 }
@@ -275,12 +288,14 @@ fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
         {
             handle_pci_config_port_write(&io_info, value);
         } else if UART_COM1_PORT.contains(&io_info.port) {
-            virt_console_io_write(io_info.port, value);
-        } else {
-            /* info!(
-                "unhandled port io write {:x} value: {:x}",
-                io_info.port, value
-            ); */
+            if this_zone_id() == 0 {
+                virt_console_io_write(io_info.port, value);
+            } else {
+                virt_console_io_write(io_info.port, value);
+                // info!("zone1 uart write from {:x}: {:x}", io_info.port, value);
+            }
+        } else if I8042_PORT.contains(&io_info.port) {
+            // info!("unhandled port io write {:x} value: {:x}", io_info.port, value);
         }
     } else {
         if PCI_CONFIG_ADDR_PORT.contains(&io_info.port)
@@ -288,7 +303,15 @@ fn handle_io_instruction(arch_cpu: &mut ArchCpu, exit_info: &VmxExitInfo) -> HvR
         {
             value = handle_pci_config_port_read(&io_info);
         } else if UART_COM1_PORT.contains(&io_info.port) {
-            value = virt_console_io_read(io_info.port);
+            if this_zone_id() == 0 {
+                value = virt_console_io_read(io_info.port);
+            } else {
+                value = 0xff;
+                value = virt_console_io_read(io_info.port);
+                // info!("zone1 uart read from {:x}: {:x}", io_info.port, value);
+            }
+        } else if I8042_PORT.contains(&io_info.port) {
+            value = 0xff;
         } else {
             // info!("unhandled port io read {:x}", io_info.port);
             value = 0x0;

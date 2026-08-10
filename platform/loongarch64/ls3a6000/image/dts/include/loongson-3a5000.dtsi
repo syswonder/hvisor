@@ -21,6 +21,14 @@
 			next-level-cache = <&scache0>;
 			numa-node-id = <0>;
 		};
+		cpu@1 {
+			compatible = "loongson,loongson3";
+			device_type = "cpu";
+			reg = <0x1>;
+			l2-cache = <&vcache1>;
+			next-level-cache = <&scache0>;
+			numa-node-id = <0>;
+		};
 		vcache0: l2-cache0 {
 			compatible = "cache";
 			next-level-cache = <&scache0>;

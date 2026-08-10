@@ -71,5 +71,6 @@
         "plic_size": "0x4000000",
         "aplic_base": "0xd000000",
         "aplic_size": "0x8000"
-    }
+    },
+    "pci_config": []
 }

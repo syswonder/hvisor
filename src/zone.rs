@@ -16,9 +16,9 @@
 use alloc::sync::Arc;
 use alloc::vec::Vec;
 // use psci::error::INVALID_ADDRESS;
-use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM};
+use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, MAX_ZONE_NUM};
 use crate::pci::pci_struct::VirtualRootComplex;
-use spin::{RwLock, RwLockReadGuard, RwLockWriteGuard};
+use spin::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};
 
 #[cfg(dwc_pcie)]
 use crate::pci::{config_accessors::dwc_atu::AtuConfig, PciConfigAddress};
@@ -27,7 +27,7 @@ use alloc::collections::btree_map::BTreeMap;
 
 use crate::arch::mm::new_s2_memory_set;
 use crate::arch::s2pt::Stage2PageTable;
-use crate::config::{HvZoneConfig, CONFIG_NAME_MAXLEN};
+use crate::config::{HvZoneBootMode, HvZoneConfig, CONFIG_NAME_MAXLEN};
 
 use crate::cpu_data::{get_cpu_data, this_zone, CpuSet};
 use crate::error::HvResult;
@@ -119,6 +119,10 @@ pub struct ZoneInner {
     mmio: Vec<MMIOConfig>,
     cpu_num: usize,
     cpu_set: CpuSet,
+    // Guest-visible CPU ids are not guaranteed to be dense or equal to pCPU ids.
+    // Keep explicit maps here; CpuSet only records physical CPU ownership.
+    guest_to_phys_cpu: [Option<usize>; MAX_CPU_NUM],
+    phys_to_guest_cpu: [Option<usize>; MAX_CPU_NUM],
     irq_bitmap: [u32; 1024 / 32],
     gpm: MemorySet<Stage2PageTable>,
     iommu_pt: Option<MemorySet<Stage2PageTable>>,
@@ -174,6 +178,8 @@ impl ZoneInner {
             mmio: Vec::new(),
             cpu_num: 0,
             cpu_set: CpuSet::new(MAX_CPU_NUM as usize, 0),
+            guest_to_phys_cpu: [None; MAX_CPU_NUM],
+            phys_to_guest_cpu: [None; MAX_CPU_NUM],
             irq_bitmap: [0; 1024 / 32],
             iommu_pt: if cfg!(iommu) {
                 Some(new_s2_memory_set())
@@ -274,6 +280,36 @@ impl ZoneInner {
 
     pub fn cpu_set_mut(&mut self) -> &mut CpuSet {
         &mut self.cpu_set
+    }
+
+    pub fn map_cpu(&mut self, guest_cpu: usize, phys_cpu: usize) {
+        if guest_cpu >= MAX_CPU_NUM || phys_cpu >= MAX_CPU_NUM {
+            warn!(
+                "ignore invalid CPU map guest_cpu={}, phys_cpu={}",
+                guest_cpu, phys_cpu
+            );
+            return;
+        }
+        if let Some(old_phys_cpu) = self.guest_to_phys_cpu[guest_cpu] {
+            if self.phys_to_guest_cpu[old_phys_cpu] == Some(guest_cpu) {
+                self.phys_to_guest_cpu[old_phys_cpu] = None;
+            }
+        }
+        if let Some(old_guest_cpu) = self.phys_to_guest_cpu[phys_cpu] {
+            if self.guest_to_phys_cpu[old_guest_cpu] == Some(phys_cpu) {
+                self.guest_to_phys_cpu[old_guest_cpu] = None;
+            }
+        }
+        self.guest_to_phys_cpu[guest_cpu] = Some(phys_cpu);
+        self.phys_to_guest_cpu[phys_cpu] = Some(guest_cpu);
+    }
+
+    pub fn guest_to_phys_cpu(&self, guest_cpu: usize) -> Option<usize> {
+        self.guest_to_phys_cpu.get(guest_cpu).copied().flatten()
+    }
+
+    pub fn phys_to_guest_cpu(&self, phys_cpu: usize) -> Option<usize> {
+        self.phys_to_guest_cpu.get(phys_cpu).copied().flatten()
     }
 
     pub fn irq_bitmap(&self) -> &[u32; 1024 / 32] {
@@ -747,6 +783,29 @@ impl ZoneInner {
 }
 
 static ZONE_LIST: RwLock<Vec<Arc<Zone>>> = RwLock::new(vec![]);
+static ZONE_BOOT_MODES: Mutex<[Option<HvZoneBootMode>; MAX_ZONE_NUM]> =
+    Mutex::new([None; MAX_ZONE_NUM]);
+
+pub fn set_zone_boot_mode(zone_id: usize, mode: HvZoneBootMode) {
+    if let Some(slot) = ZONE_BOOT_MODES.lock().get_mut(zone_id) {
+        *slot = Some(mode);
+    }
+}
+
+pub fn zone_boot_mode(zone_id: usize) -> HvZoneBootMode {
+    ZONE_BOOT_MODES
+        .lock()
+        .get(zone_id)
+        .copied()
+        .flatten()
+        .unwrap_or_default()
+}
+
+pub fn clear_zone_boot_mode(zone_id: usize) {
+    if let Some(slot) = ZONE_BOOT_MODES.lock().get_mut(zone_id) {
+        *slot = None;
+    }
+}
 
 pub fn root_zone() -> Arc<Zone> {
     ZONE_LIST.read().get(0).cloned().unwrap()
@@ -816,7 +875,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
     zone.mmio_init(&config.arch_config);
 
     let mut cpu_num = 0;
-    for cpu_id in config.cpus().iter() {
+    for (guest_cpu, cpu_id) in config.cpus().iter().enumerate() {
         if let Some(existing_zone) = get_cpu_data(*cpu_id as _).zone.clone() {
             return hv_result_err!(
                 EBUSY,
@@ -827,7 +886,12 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
                 )
             );
         }
-        zone.write().cpu_set_mut().set_bit(*cpu_id as _);
+        let cpu_id = *cpu_id as usize;
+        let mut zone_inner = zone.write();
+        zone_inner.cpu_set_mut().set_bit(cpu_id);
+        // The config lists physical CPUs, while guests use dense CPU ids from
+        // zero. Preserve that distinction for non-root SMP zones.
+        zone_inner.map_cpu(guest_cpu, cpu_id);
         cpu_num += 1;
     }
     zone.write().set_cpu_num(cpu_num);

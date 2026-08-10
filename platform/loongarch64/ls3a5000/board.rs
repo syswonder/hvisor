@@ -77,8 +77,11 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
         mem_type: MEM_TYPE_IO,
         physical_start: 0x1fe00000,
         virtual_start: 0x1fe00000,
-        size: 0x1000,
-    }, // uart0
+        size: 0x3000,
+    }, // IOCSR MMIO: uart0, IPI, EXTIOI.
+    // Reference:
+    //  IPI: <https://loongson.github.io/LoongArch-Documentation/Loongson-3A5000-usermanual-EN.html#accessing-by-address-3>
+    //  EXTIOI: <https://loongson.github.io/LoongArch-Documentation/Loongson-3A5000-usermanual-EN.html#accessing-by-address-5>
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x10080000,
