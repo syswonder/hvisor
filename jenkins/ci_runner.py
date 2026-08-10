@@ -2,10 +2,9 @@
 from __future__ import annotations
 
 import argparse
+import base64
 import os
 import re
-import shlex
-import shutil
 import socket
 import signal
 import subprocess
@@ -185,135 +184,102 @@ def stage_board_files(cfg: dict[str, Any]) -> None:
     env["WORKSPACE_ROOT"] = str(cfg["workspace"])
     env["HVISOR_TOOL_PATH"] = cfg["hvisor_tool_path"]
     env["STAGING_DIR"] = cfg["network_staging_dir"]
+    env["TFTP_DIR"] = cfg["tftp_dir"]
     if cfg.get("zone1_dtb"):
         zone1_dtb = Path(cfg["zone1_dtb"])
         if not zone1_dtb.is_absolute():
             zone1_dtb = cfg["workspace"] / zone1_dtb
         env["ZONE1_DTB"] = str(zone1_dtb.resolve())
-    if cfg.get("external_dir"):
-        env["EXTERNAL_DIR"] = cfg["external_dir"]
-    if cfg.get("start_script"):
-        env["START_SCRIPT"] = cfg["start_script"]
     env["COPY_HVISOR_BIN"] = "true" if cfg.get("copy_hvisor_bin", True) else "false"
 
     subprocess.run(["bash", str(script)], check=True, cwd=cfg["workspace"], env=env)
 
 
-def board_login_if_needed(
-    cfg: dict[str, Any],
-    term: Terminal,
-    timeout: float = 120.0,
-    *,
-    wake: bool = True,
-) -> None:
-    if wake:
-        term.send("")
-        if term.wait_pattern(r"[$#]\s", timeout=5.0):
-            return
-    if wake:
-        login_ready = term.wait_pattern(r"Phytium-Pi login:", timeout=timeout, from_offset=0)
-    else:
-        login_ready = term.wait_pattern(r"Phytium-Pi login:", timeout=timeout)
-    if not login_ready:
-        raise TerminalTimeoutError("timed out waiting for Phytium-Pi login prompt")
-    term.send(cfg["board_user"])
-    if not term.wait_pattern(r"(?:Password|密码)[:：]", timeout=20.0):
-        raise TerminalTimeoutError("timed out waiting for Phytium-Pi password prompt")
-    term.send(cfg["board_pass"])
-    if not term.wait_pattern(r"[$#]\s", timeout=30.0):
-        raise TerminalTimeoutError("timed out waiting for Phytium-Pi shell prompt")
-
-
-def host_ssh_prefix(cfg: dict[str, Any]) -> list[str]:
-    target = f"{cfg['board_user']}@{cfg['board_ip']}"
-    base = [
-        "ssh",
-        "-o",
-        "StrictHostKeyChecking=no",
-        "-o",
-        "UserKnownHostsFile=/dev/null",
-        target,
-    ]
-    if cfg["board_pass"]:
-        if shutil.which("sshpass") is None:
-            raise SystemExit("sshpass is required for password-based board ssh/scp")
-        return ["sshpass", "-p", cfg["board_pass"], *base]
-    return base
-
-
-def host_scp_prefix(cfg: dict[str, Any]) -> list[str]:
-    base = [
-        "scp",
-        "-o",
-        "StrictHostKeyChecking=no",
-        "-o",
-        "UserKnownHostsFile=/dev/null",
-    ]
-    if cfg["board_pass"]:
-        if shutil.which("sshpass") is None:
-            raise SystemExit("sshpass is required for password-based board ssh/scp")
-        return ["sshpass", "-p", cfg["board_pass"], *base]
-    return base
-
-
-def run_host_command(cmd: list[str], timeout: float) -> None:
-    print("+ " + " ".join(cmd), flush=True)
-    subprocess.run(cmd, check=True, timeout=timeout)
-
-
-def run_host_command_with_pty(cmd: list[str], timeout: float) -> None:
-    shell_cmd = shlex.join(cmd)
-    print("+ " + shell_cmd, flush=True)
-    subprocess.run(["script", "-qfec", shell_cmd, "/dev/null"], check=True, timeout=timeout)
-
-
-def describe_staged_files(src: Path) -> list[Path]:
-    files = sorted(p for p in src.iterdir() if p.is_file())
-    print(f"[scp] staging dir: {src}", flush=True)
-    for path in files:
-        print(f"[scp]   {path.name} ({path.stat().st_size} bytes)", flush=True)
-    return files
-
-
-def phytium_deploy_zone1_with_terminal(cfg: dict[str, Any], term: Terminal) -> int:
-    board_login_if_needed(cfg, term, wake=False)
+def deploy_chmod(cfg: dict[str, Any], term: Terminal) -> None:
+    work_dir = cfg["zone1_work_dir"]
+    boot_script = cfg["zone1_boot_script"]
     term.run(
-        "phytium_set_ip",
-        f"echo {cfg['board_pass']} | sudo -S ifconfig {cfg['board_iface']} {cfg['board_ip']}",
-        timeout=30.0,
+        "deploy_chmod",
+        f"chmod +x {work_dir}/{boot_script} {work_dir}/check_serial.sh 2>/dev/null || true",
+        timeout=60.0,
     )
-    stage_board_files(cfg)
-    src = Path(cfg["network_staging_dir"])
-    staged_files = describe_staged_files(src)
 
-    remote_clean = (
-        f"mkdir -p '{cfg['scp_dst']}' && "
-        f"find '{cfg['scp_dst']}' -mindepth 1 -maxdepth 1 -exec rm -rf {{}} +"
+
+def deploy_board_pull(cfg: dict[str, Any], term: Terminal) -> int:
+    """Board pulls staged zone1 files from the CI host via scp (zone0 serial console)."""
+    board_ip = cfg.get("board_ip")
+    board_iface = cfg.get("board_iface")
+    if board_ip and board_iface:
+        term.run(
+            "deploy_set_ip",
+            f"ifconfig {board_iface} {board_ip} netmask 255.255.255.0 up",
+            timeout=30.0,
+        )
+        link_wait = float(cfg.get("deploy_link_wait", 0.0))
+        if link_wait > 0:
+            print(
+                f"[deploy] waiting {link_wait}s for {board_iface} link on {board_ip}",
+                flush=True,
+            )
+            time.sleep(link_wait)
+
+    host_ip = cfg["network_host_ip"]
+    ping_count = cfg["network_ping_count"]
+    ping_retries = int(cfg.get("deploy_ping_retries", 1))
+    ping_output = ""
+    for attempt in range(ping_retries):
+        if attempt > 0:
+            retry_wait = float(cfg.get("deploy_link_wait", 5.0)) or 5.0
+            print(f"[deploy] ping retry {attempt + 1}/{ping_retries} after {retry_wait}s", flush=True)
+            time.sleep(retry_wait)
+        _, ping_output = term.run(
+            "deploy_ping",
+            f"ping -c {ping_count} -W 5 {host_ip}",
+            timeout=30.0 + ping_count * 5.0,
+        )
+        if ping_success(ping_output):
+            break
+    save_lspci_artifacts(cfg, "deploy_ping.log", f"=== ping {host_ip} ===\n{ping_output}\n")
+
+    if not ping_success(ping_output):
+        raise TerminalCommandError(f"ping {host_ip} failed")
+
+    print(f"[deploy] ping {host_ip} ok, staging files on host", flush=True)
+    stage_board_files(cfg)
+    time.sleep(3.0)
+
+    board_key = install_board_ssh_key(cfg, term)
+    identity = board_scp_identity(cfg, board_key)
+
+    host_user = cfg["network_host_user"]
+    staging_dir = cfg["network_staging_dir"]
+    work_dir = cfg["zone1_work_dir"]
+    term.run("deploy_scp_host", f"CI_H={host_ip}", timeout=15.0)
+    term.run("deploy_scp_user", f"CI_U={host_user}", timeout=15.0)
+    term.run("deploy_scp_dir", f"CI_D={staging_dir}", timeout=15.0)
+    scp_cmd = (
+        f"scp {identity}-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "
+        f"$CI_U@$CI_H:$CI_D/* {work_dir}/"
     )
-    print(f"[scp] cleaning {cfg['board_user']}@{cfg['board_ip']}:{cfg['scp_dst']}", flush=True)
-    run_host_command([*host_ssh_prefix(cfg), remote_clean], timeout=60.0)
-    print(f"[scp] copying {len(staged_files)} files to {cfg['board_ip']}:{cfg['scp_dst']}", flush=True)
-    run_host_command_with_pty(
-        [*host_scp_prefix(cfg), *[str(p) for p in staged_files], f"{cfg['board_user']}@{cfg['board_ip']}:{cfg['scp_dst']}/"],
-        timeout=300.0,
-    )
-    print(f"[scp] syncing remote files on {cfg['board_ip']} before power cycle", flush=True)
-    run_host_command([*host_ssh_prefix(cfg), "sync; sleep 5; sync"], timeout=120.0)
-    print("[scp] remote sync completed", flush=True)
-    print("phytium zone1 files deployed successfully", flush=True)
+    print(f"[deploy] pulling staged files from {host_user}@{host_ip}:{staging_dir}", flush=True)
+    pull_rc, _ = term.run("deploy_scp_pull", scp_cmd, timeout=900.0)
+    if pull_rc != 0:
+        raise TerminalCommandError(f"board scp pull failed with rc={pull_rc}")
+
+    deploy_chmod(cfg, term)
+    print("[deploy] board_pull completed", flush=True)
     return 0
 
 
-def phytium_deploy_zone1(cfg: dict[str, Any], term: Terminal | None) -> int:
-    print("————————————————\ncase: phytium_deploy_zone1\n————————————————\n", flush=True)
-    board_power_cycle(cfg)
-    if term is not None:
-        return phytium_deploy_zone1_with_terminal(cfg, term)
+def deploy(cfg: dict[str, Any], term: Terminal | None) -> int:
+    print("————————————————\ncase: deploy\n————————————————\n", flush=True)
+    if cfg["mode"] != "board":
+        print("[deploy] skipped (not board mode)", flush=True)
+        return 0
 
-    log_path = logs_dir(cfg) / "zone1_console.log"
-    log_path.write_text("", encoding="utf-8")
-    with build_terminal(cfg, log_path) as board_term:
-        return phytium_deploy_zone1_with_terminal(cfg, board_term)
+    if term is None:
+        raise SystemExit("terminal backend is required (run zone0_start first)")
+    return deploy_board_pull(cfg, term)
 
 
 def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
@@ -351,7 +317,7 @@ def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
         cfg["_board_term"] = board_term
         board_power_cycle(cfg)
         time.sleep(3.0)
-        board_wake_console(board_term, repeats=8 if cfg["board"] == "phytium-pi" else 3)
+        board_wake_console(board_term)
 
         uboot_cmd = cfg.get("uboot_cmd", "")
         uboot_ready = cfg.get("uboot_ready_pattern", "")
@@ -361,7 +327,8 @@ def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
             board_wait_uboot_prompt(board_term, uboot_ready, timeout=float(cfg["uboot_prompt_timeout"]))
             time.sleep(0.3)
             board_term.send(uboot_cmd)
-        if not board_term.wait_pattern(ZONE0_READY_PATTERN, timeout=180.0):
+        zone0_timeout = float(cfg.get("zone0_shell_timeout", 180.0))
+        if not board_term.wait_pattern(ZONE0_READY_PATTERN, timeout=zone0_timeout):
             raise TerminalTimeoutError("timed out waiting for zone0 shell prompt")
         return 0
     return 0
@@ -432,87 +399,30 @@ def ping_success(output: str) -> bool:
     return bool(match and int(match.group(1)) > 0)
 
 
-def network(cfg: dict[str, Any], term: Terminal | None) -> int:
-    print("————————————————\ncase: network\n————————————————\n", flush=True)
-    if cfg["mode"] != "board":
-        print("[network] skipped (not board mode)", flush=True)
-        return 0
-    if term is None:
-        raise SystemExit("terminal backend is required (run zone0_start first)")
+def install_board_ssh_key(cfg: dict[str, Any], term: Terminal) -> str | None:
+    """Install a host-side private key on the board for scp pull. Returns key path on board."""
+    key_path = cfg.get("deploy_board_ssh_key", "").strip()
+    if not key_path:
+        return None
+    host_key = Path(key_path).expanduser()
+    if not host_key.is_file():
+        raise SystemExit(f"deploy board_ssh_key not found: {host_key}")
 
-    host_ip = cfg["network_host_ip"]
-    ping_count = cfg["network_ping_count"]
-    _, output = term.run(
-        "network_ping",
-        f"ping -c {ping_count} -W 5 {host_ip}",
-        timeout=30.0,
+    board_key = f"/root/.ssh/{host_key.name}"
+    key_b64 = base64.b64encode(host_key.read_bytes()).decode("ascii")
+    cmd = (
+        "mkdir -p /root/.ssh && chmod 700 /root/.ssh && "
+        f"echo {key_b64} | base64 -d > {board_key} && chmod 600 {board_key}"
     )
-    save_lspci_artifacts(cfg, "network_ping.log", f"=== ping {host_ip} ===\n{output}\n")
-
-    if not ping_success(output):
-        raise TerminalCommandError(f"ping {host_ip} failed")
-
-    print(f"[network] ping {host_ip} ok, staging files on host", flush=True)
-    stage_board_files(cfg)
-
-    # Let host staging finish and drain any buffered serial output before scp.
-    time.sleep(3.0)
-
-    host_user = cfg["network_host_user"]
-    staging_dir = cfg["network_staging_dir"]
-    term.run("network_scp_host", f"CI_H={host_ip}", timeout=15.0)
-    term.run("network_scp_user", f"CI_U={host_user}", timeout=15.0)
-    term.run("network_scp_dir", f"CI_D={staging_dir}", timeout=15.0)
-    # Keep the scp line short: serial consoles truncate long commands.
-    scp_cmd = "scp -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null $CI_U@$CI_H:$CI_D/* /root/"
-    print(f"[network] pulling staged files from {host_user}@{host_ip}:{staging_dir}", flush=True)
-    pull_rc, _ = term.run("network_scp_pull", scp_cmd, timeout=900.0)
-    if pull_rc != 0:
-        raise TerminalCommandError(f"board scp pull failed with rc={pull_rc}")
-
-    term.run(
-        "network_chmod",
-        "chmod +x /root/boot_zone1.sh /root/check_serial.sh 2>/dev/null || true",
-        timeout=60.0,
-    )
-    print("network test and file deploy passed", flush=True)
-    return 0
+    term.run("deploy_install_ssh_key", cmd, timeout=30.0)
+    print(f"[deploy] installed board ssh key at {board_key}", flush=True)
+    return board_key
 
 
-def phytium_start_zone1(cfg: dict[str, Any], term: Terminal | None) -> int:
-    print("————————————————\ncase: phytium_start_zone1\n————————————————\n", flush=True)
-    if term is None:
-        raise SystemExit("terminal backend is required")
-
-    print("[phytium] sending zone0 su", flush=True)
-    term.send("su")
-    if not term.wait_pattern(r"root@\(none\):[^\r\n]*#\s", timeout=30.0):
-        raise TerminalTimeoutError("timed out waiting for Phytium-Pi zone0 root prompt")
-
-    term.run("phytium_zone1_cd", f"cd {cfg['scp_dst']}", timeout=15.0)
-    term.run("phytium_zone1_chmod", "chmod +x start.sh hvisor 2>/dev/null || true", timeout=30.0)
-    term.send("./start.sh")
-    print("[phytium] start.sh sent, wait 20s before opening zone1 console", flush=True)
-    time.sleep(20.0)
-
-    print("[phytium] sending enter before script", flush=True)
-    term.send("")
-    time.sleep(1.0)
-    print("[phytium] sending: script /dev/null", flush=True)
-    term.send("script /dev/null")
-    time.sleep(2.0)
-    print("[phytium] sending: screen /dev/pts/0", flush=True)
-    term.send("screen /dev/pts/0")
-    time.sleep(3.0)
-
-    print("[phytium] sending zone1 su", flush=True)
-    su_offset = term.offset()
-    term.send("su")
-    if not term.wait_pattern(r"root@\(none\):[^\r\n]*#\s", timeout=30.0, from_offset=su_offset):
-        raise TerminalTimeoutError("timed out waiting for Phytium-Pi zone1 root prompt")
-
-    print("phytium-pi zone1 root console check passed", flush=True)
-    return 0
+def board_scp_identity(cfg: dict[str, Any], board_key: str | None) -> str:
+    if board_key:
+        return f"-i {board_key} "
+    return ""
 
 
 def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
@@ -520,12 +430,24 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     if term is None:
         raise SystemExit("terminal backend is required")
 
+    work_dir = cfg["zone1_work_dir"]
+    boot_script = cfg["zone1_boot_script"]
     inner_log = "/tmp/zone1_inner.log"
-    _, _ = term.run("zone1_cd", "cd /root", timeout=15.0)
+    _, _ = term.run("zone1_cd", f"cd {work_dir}", timeout=15.0)
     _, _ = term.run("zone1_ls", "ls", timeout=15.0)
-    _, _ = term.run("zone1_cat_boot", "cat boot_zone1.sh", timeout=15.0)
-    boot_rc, _ = term.run("zone1_boot", "./boot_zone1.sh", timeout=120.0)
+    _, _ = term.run(
+        "zone1_chmod",
+        f"chmod +x {boot_script} hvisor check_serial.sh 2>/dev/null || true",
+        timeout=30.0,
+    )
+    _, _ = term.run("zone1_cat_boot", f"cat {boot_script}", timeout=15.0)
+    boot_rc, _ = term.run("zone1_boot", f"./{boot_script}", timeout=120.0)
     _, _ = term.run("zone1_list", "./hvisor zone list", timeout=15.0)
+
+    start_wait = float(cfg.get("zone1_start_wait", 0.0))
+    if start_wait > 0:
+        print(f"[zone1] waiting {start_wait}s for zone1 console", flush=True)
+        time.sleep(start_wait)
 
     max_pts = find_zone1_pts(term)
 
@@ -543,7 +465,7 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     save_inner_serial_log(cfg, inner_output)
 
     if boot_rc != 0:
-        raise TerminalCommandError(f"command failed with rc={boot_rc}: ./boot_zone1.sh")
+        raise TerminalCommandError(f"command failed with rc={boot_rc}: ./{boot_script}")
     if check_rc != 0:
         raise TerminalCommandError(
             f"command failed with rc={check_rc}: check_serial.sh (no console prompt)"
@@ -553,10 +475,8 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
 
 
 CASE_HANDLERS: dict[str, CaseFunc] = {
-    "phytium_deploy_zone1": phytium_deploy_zone1,
-    "phytium_start_zone1": phytium_start_zone1,
+    "deploy": deploy,
     "zone0_start": zone0_start,
-    "network": network,
     "lspci": lspci,
     "zone1_start": zone1_start,
 }
@@ -586,10 +506,19 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
 
     cell_root = Path.cwd()
     build_args = bid_entry.get("build_args") or {}
-    network_cfg = tests.get("network") or {}
-    if not isinstance(network_cfg, dict):
-        network_cfg = {}
-    copy_hvisor_bin = network_cfg.get("copy_hvisor_bin", True)
+    deploy_cfg = tests.get("deploy") or tests.get("network") or {}
+    if not isinstance(deploy_cfg, dict):
+        deploy_cfg = {}
+
+    def cfg_str(key: str, default: str = "") -> str:
+        raw = deploy_cfg.get(key, tests.get(key, default))
+        return str(raw).strip() if raw is not None else default
+
+    deploy_method = str(deploy_cfg.get("method", "")).strip()
+    if deploy_method and deploy_method != "board_pull":
+        raise SystemExit(f"unsupported deploy method '{deploy_method}', only board_pull is supported")
+    board_ip = cfg_str("board_ip")
+    copy_hvisor_bin = deploy_cfg.get("copy_hvisor_bin", True)
     if isinstance(copy_hvisor_bin, str):
         copy_hvisor_bin = copy_hvisor_bin.lower() not in ("0", "false", "no")
     hvisor_tool_path = os.environ.get("HVISOR_TOOL_PATH", "").strip()
@@ -614,22 +543,23 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
         "uboot_cmd": str(tests.get("uboot_cmd", "")).strip(),
         "uboot_ready_pattern": str(tests.get("uboot_ready_pattern", "")).strip(),
         "uboot_prompt_timeout": float(tests.get("uboot_prompt_timeout", 20.0)),
+        "zone0_shell_timeout": float(tests.get("zone0_shell_timeout", 300.0 if mode == "board" else 180.0)),
         "tftp_dir": str(tests.get("tftp_dir", "/home/light/tftp")).strip(),
         "lspci": tests.get("lspci") or {},
-        "board_ip": str(tests.get("board_ip", "")).strip(),
-        "board_iface": str(tests.get("board_iface", "eth0")).strip(),
-        "board_user": str(tests.get("board_user", "root")).strip(),
-        "board_pass": str(tests.get("board_pass", "")).strip(),
-        "scp_dst": str(tests.get("scp_dst", "/root")).strip(),
-        "network_host_ip": str(network_cfg.get("host_ip", "192.168.1.181")).strip(),
-        "network_host_user": str(network_cfg.get("host_user", "light")).strip(),
-        "network_staging_dir": str(
-            network_cfg.get("staging_dir", "/home/light/tftp/ci_deploy")
-        ).strip(),
-        "network_ping_count": int(network_cfg.get("ping_count", 3)),
-        "zone1_dtb": str(network_cfg.get("zone1_dtb", "")).strip(),
-        "external_dir": str(network_cfg.get("external_dir", "")).strip(),
-        "start_script": str(network_cfg.get("start_script", "")).strip(),
+        "board_ip": board_ip,
+        "board_iface": cfg_str("board_iface", "eth0"),
+        "zone1_work_dir": cfg_str("zone1_work_dir", "/root"),
+        "zone1_boot_script": cfg_str("zone1_boot_script", "boot_zone1.sh"),
+        "network_host_ip": cfg_str("host_ip", "192.168.1.181"),
+        "network_host_user": cfg_str("host_user", "light"),
+        "network_staging_dir": cfg_str("staging_dir", "/home/light/tftp/ci_deploy"),
+        "network_ping_count": int(deploy_cfg.get("ping_count", tests.get("ping_count", 3))),
+        "deploy_link_wait": float(deploy_cfg.get("link_wait", 0.0)),
+        "deploy_ping_retries": int(deploy_cfg.get("ping_retries", 1)),
+        "deploy_board_ssh_key": cfg_str(
+            "board_ssh_key", "/home/light/.ssh/hvisor_board_pull"
+        ),
+        "zone1_dtb": cfg_str("zone1_dtb"),
         "copy_hvisor_bin": bool(copy_hvisor_bin),
         "zone1_start_wait": float(tests.get("zone1_start_wait", 30.0)),
     }
@@ -651,7 +581,8 @@ def main() -> int:
                 available = ", ".join(sorted(CASE_HANDLERS.keys()))
                 raise SystemExit(f"unknown case '{case_name}', available: {available}")
 
-            if case_name in ("phytium_deploy_zone1", "zone0_start"):
+            standalone = case_name == "zone0_start"
+            if standalone:
                 rc = case_fn(cfg, None)
                 if rc != 0:
                     return rc

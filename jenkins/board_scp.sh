@@ -1,7 +1,5 @@
 #!/bin/sh
 # Stage zone1 test artifacts on the CI host for board pull via scp.
-# Zone0 boot Image， Image and rootfs2.ext4 are large and
-# persistent on the board; do not re-stage them every CI run.
 
 set -eux
 
@@ -11,6 +9,7 @@ WORKSPACE_ROOT=${WORKSPACE_ROOT:-$(pwd)}
 HVISOR_TOOL_PATH=${HVISOR_TOOL_PATH:-${WORKSPACE_ROOT}/hvisor-tool}
 MODE=${MODE:-release}
 STAGING_DIR=${STAGING_DIR:-/home/light/tftp/ci_deploy}
+TFTP_DIR=${TFTP_DIR:-}
 
 case "${HVISOR_TOOL_PATH}" in
     /*) ;;
@@ -23,8 +22,6 @@ IMAGE_DIR="${PLATFORM_DIR}/image"
 SCRIPTS_DIR="${PLATFORM_DIR}/scripts"
 ZONE1_BOOT_SCRIPT="${SCRIPTS_DIR}/boot_zone1.sh"
 CHECK_SERIAL_SCRIPT="${WORKSPACE_ROOT}/jenkins/check_serial.sh"
-EXTERNAL_DIR=${EXTERNAL_DIR:-}
-START_SCRIPT=${START_SCRIPT:-}
 COPY_HVISOR_BIN=${COPY_HVISOR_BIN:-true}
 
 case "${ARCH}" in
@@ -40,14 +37,16 @@ esac
 BUILD_PATH="${WORKSPACE_ROOT}/target/${RUSTC_TARGET}/${MODE}"
 HVISOR_BIN="${BUILD_PATH}/hvisor.bin"
 
-if [ -n "${ZONE1_DTB:-}" ]; then
-    :
-elif [ -f "${IMAGE_DIR}/dts/rk3568_limit_zone1.dtb" ]; then
-    ZONE1_DTB="${IMAGE_DIR}/dts/rk3568_limit_zone1.dtb"
-elif [ -f "${IMAGE_DIR}/dts/zone1-linux.dtb" ]; then
-    ZONE1_DTB="${IMAGE_DIR}/dts/zone1-linux.dtb"
-else
-    ZONE1_DTB="${IMAGE_DIR}/dts/zone1-linux.dtb"
+if [ -z "${ZONE1_DTB:-}" ]; then
+    for candidate in \
+        "${IMAGE_DIR}/dts/zone1-linux.dtb" \
+        "${IMAGE_DIR}/dts/linux2.dtb"; do
+        if [ -f "${candidate}" ]; then
+            ZONE1_DTB="${candidate}"
+            break
+        fi
+    done
+    ZONE1_DTB=${ZONE1_DTB:-${IMAGE_DIR}/dts/zone1-linux.dtb}
 fi
 
 echo "ARCH: ${ARCH}"
@@ -67,15 +66,6 @@ if [ "${COPY_HVISOR_BIN}" != "false" ] && [ ! -f "${HVISOR_BIN}" ]; then
     echo "error: hvisor.bin not found: ${HVISOR_BIN}"
     exit 1
 fi
-if [ -n "${START_SCRIPT}" ]; then
-    ZONE1_BOOT_SCRIPT="${START_SCRIPT}"
-    ZONE1_SCRIPT_DEST="start.sh"
-elif [ -n "${EXTERNAL_DIR}" ] && [ -f "${EXTERNAL_DIR}/start.sh" ]; then
-    ZONE1_BOOT_SCRIPT="${EXTERNAL_DIR}/start.sh"
-    ZONE1_SCRIPT_DEST="start.sh"
-else
-    ZONE1_SCRIPT_DEST="$(basename "${ZONE1_BOOT_SCRIPT}")"
-fi
 if [ ! -f "${ZONE1_BOOT_SCRIPT}" ]; then
     echo "error: zone1 start script not found: ${ZONE1_BOOT_SCRIPT}"
     exit 1
@@ -94,7 +84,7 @@ if [ "${COPY_HVISOR_BIN}" != "false" ]; then
     cp "${HVISOR_BIN}" "${STAGING_DIR}/"
 fi
 cp "${CONFIGS_DIR}/"* "${STAGING_DIR}/"
-cp "${ZONE1_BOOT_SCRIPT}" "${STAGING_DIR}/${ZONE1_SCRIPT_DEST}"
+cp "${ZONE1_BOOT_SCRIPT}" "${STAGING_DIR}/"
 
 if [ -f "${ZONE1_DTB}" ]; then
     cp "${ZONE1_DTB}" "${STAGING_DIR}/"
@@ -107,17 +97,14 @@ if [ -f "${CHECK_SERIAL_SCRIPT}" ]; then
 fi
 
 ZONE1_ASSETS_DIR=${ZONE1_ASSETS_DIR:-/home/light/tftp/zone1_assets}
-if [ -n "${EXTERNAL_DIR}" ] && [ -f "${EXTERNAL_DIR}/Image" ]; then
-    cp "${EXTERNAL_DIR}/Image" "${STAGING_DIR}/"
+if [ -n "${TFTP_DIR}" ] && [ -f "${TFTP_DIR}/Image" ]; then
+    cp "${TFTP_DIR}/Image" "${STAGING_DIR}/"
 elif [ -f "${ZONE1_ASSETS_DIR}/Image" ]; then
     cp "${ZONE1_ASSETS_DIR}/Image" "${STAGING_DIR}/"
 fi
-if [ -n "${EXTERNAL_DIR}" ] && [ -f "${EXTERNAL_DIR}/rootfs2.ext4" ]; then
-    cp "${EXTERNAL_DIR}/rootfs2.ext4" "${STAGING_DIR}/"
-fi
-# rk3568 rootfs2.ext4 is large and persistent on the board; do not re-stage/pull every run.
+# rootfs2.ext4 is large and persistent on the board; do not stage in CI.
 
 chmod -R a+rX "${STAGING_DIR}"
-chmod +x "${STAGING_DIR}/${ZONE1_SCRIPT_DEST}"
+chmod +x "${STAGING_DIR}/boot_zone1.sh"
 echo "board staging completed: ${STAGING_DIR}"
 ls -la "${STAGING_DIR}"

@@ -207,12 +207,12 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
     //     virtual_start: 0x10f000,
     //     size: 0x1000,
     // }, //scmi-shmem
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_RAM,
-    //     physical_start: 0xfd440000,
-    //     virtual_start: 0xfd440000,
-    //     size: 0x20000,
-    // }, // its
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xfd440000,
+        virtual_start: 0xfd440000,
+        size: 0x20000,
+    }, // its passthrough
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x1f0000000,
@@ -342,8 +342,8 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
         gicd_size: 0x10000,
         gicr_base: 0xfd460000,
         gicr_size: 0xc0000,
-        gits_base: 0xfd440000,
-        gits_size: 0x20000,
+        gits_base: 0,
+        gits_size: 0,
     }),
     uefi_config: UefiConfig::NoUefi
 };
