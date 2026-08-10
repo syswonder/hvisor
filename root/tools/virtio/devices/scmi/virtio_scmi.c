@@ -95,6 +95,11 @@ static int virtq_tx_handle_one_request(void *dev, VirtQueue *vq) {
     int ret = process_descriptor_chain_buf(vq, desc_idx, &cfg, &vreq);
     if (ret <= 0) {
         log_error("Failed to process descriptor chain");
+        // process_descriptor_chain_buf failed without advancing last_avail_idx
+        // or completing the descriptor: consume it and report a zero-length
+        // completion so the guest request does not hang forever.
+        vq->last_avail_idx++;
+        update_used_ring(vq, desc_idx, 0);
         return -EINVAL;
     }
 
@@ -149,8 +154,12 @@ int virtio_scmi_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
         virtqueue_disable_notify(vq);
         while (!virtqueue_is_empty(vq)) {
             if (virtq_tx_handle_one_request(vdev->dev, vq) < 0) {
+                // The failed request was already consumed and completed
+                // inside virtq_tx_handle_one_request; stop this batch but
+                // still re-enable notifications and inject the completion
+                // interrupt so the guest is not left waiting forever.
                 log_error("Failed to handle SCMI request");
-                return -1;
+                break;
             }
         }
         virtqueue_enable_notify(vq);
