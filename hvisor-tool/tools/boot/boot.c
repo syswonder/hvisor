@@ -8,19 +8,31 @@
  * Authors:
  *      yyda <snowmantin@foxmail.com>
  */
+#include <string.h>
+
 #include "boot.h"
+#include "json_parse.h"
 #include "log.h"
 #include "multiboot2.h"
 
 int boot_mode_parse(struct boot_mode *mode, struct cJSON *root) {
     *mode = (struct boot_mode){0};
-    if (multiboot2_enabled(root)) {
+    if (boot_mode_is_multiboot2(root)) {
         mode->kind = BOOT_MODE_MULTIBOOT2;
     }
     return 0;
 }
 
 int boot_mode_is_multiboot2(struct cJSON *root) {
+    cJSON *protocol = cJSON_GetObjectItem(root, "boot_protocol");
+    if (protocol != NULL && cJSON_IsString(protocol)) {
+        if (strcmp(protocol->valuestring, "multiboot2") == 0) {
+            return 1;
+        }
+        log_warn("Unsupported boot_protocol: %s", protocol->valuestring);
+        return 0;
+    }
+
     return multiboot2_enabled(root);
 }
 
