@@ -73,6 +73,7 @@ typedef struct ioctl_zone_list_args zone_list_args_t;
 #define HVISOR_CONFIG_CHECK _IOR(1, 6, __u64 *)
 #define HVISOR_SET_EVENTFD _IOW(1, 7, int)
 #define HVISOR_SET_BOOT_MODE _IOW(1, 9, struct hv_zone_boot_mode *)
+#define HVISOR_GET_ECAM_BASE _IOR(1, 10, __u64 *)
 #define HVISOR_SCMI_CLOCK_IOCTL _IOWR(1, 32, struct hvisor_scmi_clock_args)
 #define HVISOR_SCMI_RESET_IOCTL _IOWR(1, 33, struct hvisor_scmi_reset_args)
 #define HVISOR_SCMI_POWER_IOCTL _IOWR(1, 34, struct hvisor_scmi_power_args)
@@ -92,6 +93,7 @@ struct hvisor_load_image_args {
 #define HVISOR_HC_ZONE_LIST 4
 #define HVISOR_HC_CONFIG_CHECK 6
 #define HVISOR_HC_SET_BOOT_MODE 8
+#define HVISOR_HC_GET_ECAM_BASE 9
 
 #ifdef X86_64
 
