@@ -1,4 +1,4 @@
-sources ?= $(wildcard *.c) $(wildcard ./virtio/*.c) ../cJSON/cJSON.c
+sources ?= $(wildcard *.c) $(wildcard ./boot/*.c) $(wildcard ./virtio/*.c) ../cJSON/cJSON.c
 
 # Include device-specific Makefiles
 include ./virtio/devices/blk/Makefile
@@ -42,7 +42,7 @@ ifneq ($(ROOT),)
 CFLAGS += --sysroot=$(ROOT)
 endif
 
-include_dirs := -I../include -I./include -I./virtio/include -I../cJSON -I.
+include_dirs := -I../include -I./include -I./boot -I./virtio/include -I../cJSON -I.
 
 ifeq ($(LIBC), musl)
 include_dirs += -I./compat/
@@ -111,4 +111,4 @@ rpmsg_demo: $(rpmsg_demo_object)
 	$(CC) -o $@ $^ $(CFLAGS) $(include_dirs) $(LDFLAGS) $(LIBS)
 
 clean:
-	@rm -f hvisor ivc_demo rpmsg_demo *.o *.d *.d.* virtio/*.o virtio/*.d virtio/*.d.* virtio/devices/*/*.o virtio/devices/*/*.d virtio/devices/*/*.d.* ../cJSON/*.o ../cJSON/*.d ../cJSON/*.d.*
+	@rm -f hvisor ivc_demo rpmsg_demo *.o *.d *.d.* boot/*.o boot/*.d boot/*.d.* virtio/*.o virtio/*.d virtio/*.d.* virtio/devices/*/*.o virtio/devices/*/*.d virtio/devices/*/*.d.* ../cJSON/*.o ../cJSON/*.d ../cJSON/*.d.*

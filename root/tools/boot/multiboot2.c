@@ -20,6 +20,7 @@
 #include "safe_cjson.h"
 
 int multiboot2_enabled(struct cJSON *root) {
+    /* Legacy compatibility; new configs should use "boot_protocol". */
     cJSON *multiboot_json = cJSON_GetObjectItem(root, "multiboot_enabled");
     if (multiboot_json != NULL && cJSON_IsBool(multiboot_json)) {
         return cJSON_IsTrue(multiboot_json) ? 1 : 0;
