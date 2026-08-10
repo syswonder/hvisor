@@ -682,6 +682,34 @@ err_out:
     return -1;
 }
 
+/*
+ * Non-x86 hypercall implementations currently return 0
+ */
+static int zone_apply_dynamic_ecam(int fd, zone_config_t *config) {
+    uint64_t ecam_base = 0;
+
+    if (config->num_pci_bus == 0) {
+        return 0;
+    }
+
+    if (ioctl(fd, HVISOR_GET_ECAM_BASE, &ecam_base) != 0) {
+        perror("zone_start: HVISOR_GET_ECAM_BASE failed");
+        return -1;
+    }
+
+    if (ecam_base == 0) {
+        return 0;
+    }
+
+    if (config->pci_config[0].ecam_base != ecam_base) {
+        log_info("zone %s: dynamic ECAM base 0x%llx -> 0x%llx", config->name,
+                 config->pci_config[0].ecam_base, ecam_base);
+        config->pci_config[0].ecam_base = ecam_base;
+    }
+
+    return 0;
+}
+
 static int zone_start_from_json(const char *json_config_path,
                                 zone_config_t *config) {
     cJSON *root = NULL;
@@ -939,6 +967,11 @@ static int zone_start_from_json(const char *json_config_path,
     if (fd < 0) {
         perror("zone_start: open hvisor failed");
         goto err_out;
+    }
+
+    if (zone_apply_dynamic_ecam(fd, config) != 0) {
+        close(fd);
+        return -1;
     }
 
     if (boot_mode.kind != BOOT_MODE_NONE) {
