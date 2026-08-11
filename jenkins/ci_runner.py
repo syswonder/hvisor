@@ -232,7 +232,7 @@ def board_sudo(cmd: str) -> str:
 
 def board_priv(cfg: dict[str, Any], cmd: str) -> str:
     """Run privileged board commands; skip sudo when the shell is already root."""
-    if cfg.get("board_is_root"):
+    if cfg.get("board_is_root") or cfg.get("mode") == "qemu":
         return cmd.strip()
     return board_sudo(cmd)
 
@@ -328,6 +328,27 @@ def board_pubkey_from_output(output: str) -> str | None:
     return None
 
 
+def _export_board_ssh_env(cfg: dict[str, Any], term: Terminal) -> None:
+    if cfg.get("_board_ssh_env"):
+        return
+    key, _, _ = board_ssh_paths(cfg)
+    host = f"{cfg['network_host_user']}@{cfg['network_host_ip']}"
+    term.run(
+        "board_ssh_env",
+        f"export CI_SSH_KEY={shlex.quote(key)} CI_SSH_HOST={shlex.quote(host)}",
+        timeout=15.0,
+    )
+    cfg["_board_ssh_env"] = True
+
+
+def _board_ssh_opts_short(cfg: dict[str, Any], *, large_transfer: bool = False) -> str:
+    timeout = int(cfg.get("deploy_ssh_connect_timeout", 30))
+    opts = f"-o BatchMode=yes -o ConnectTimeout={timeout} -o StrictHostKeyChecking=no"
+    if large_transfer:
+        opts += " -o ServerAliveInterval=0 -o TCPKeepAlive=yes"
+    return opts
+
+
 def _board_ssh_probe(cfg: dict[str, Any], term: Terminal) -> None:
     key, pub, _ = board_ssh_paths(cfg)
     key_rc, _ = term.run(
@@ -341,14 +362,14 @@ def _board_ssh_probe(cfg: dict[str, Any], term: Terminal) -> None:
             "copy or generate ~/.ssh/id_ed25519 on the board manually."
         )
 
+    _export_board_ssh_env(cfg, term)
     host_user = cfg["network_host_user"]
     host_ip = cfg["network_host_ip"]
-    host = shlex.quote(f"{host_user}@{host_ip}")
-    opts = board_ssh_opts(cfg, key)
+    opts = _board_ssh_opts_short(cfg)
     probe_timeout = float(int(cfg.get("deploy_ssh_connect_timeout", 30)) + 30)
     probe_rc, probe_out = term.run(
         "deploy_ssh_probe",
-        board_priv(cfg, f"ssh {opts} {host} true"),
+        board_priv(cfg, f"ssh -i $CI_SSH_KEY {opts} $CI_SSH_HOST true </dev/null"),
         timeout=probe_timeout,
     )
     if probe_rc == 0:
@@ -407,7 +428,6 @@ def deploy_board_pull(cfg: dict[str, Any], term: Terminal) -> int:
     if not staged_files:
         raise TerminalCommandError(f"no staged files in {staging_path}")
 
-    key, _, _ = board_ssh_paths(cfg)
     pull_timeout = float(cfg.get("deploy_pull_timeout", 600.0))
     deadline = time.monotonic() + pull_timeout
     all_logs: list[str] = []
@@ -416,9 +436,10 @@ def deploy_board_pull(cfg: dict[str, Any], term: Terminal) -> int:
     for gz_name, raw_name in DEPLOY_GUNZIP_ARTIFACTS.items():
         if gz_name in stale_names:
             stale_names.append(raw_name)
-    stale_paths = " ".join(shlex.quote(f"{work_dir}/{name}") for name in stale_names)
     print(f"[deploy] removing stale files in {work_dir}", flush=True)
-    term.run("deploy_clean", board_priv(cfg, f"rm -f {stale_paths}"), timeout=30.0)
+    for name in stale_names:
+        stale_path = shlex.quote(f"{work_dir}/{name}")
+        term.run(f"deploy_clean_{name}", board_priv(cfg, f"rm -f {stale_path}"), timeout=15.0)
 
     print(
         f"[deploy] pulling {len(staged_files)} file(s) via ssh from {host_user}@{host_ip}:{staging_dir}",
@@ -437,7 +458,7 @@ def deploy_board_pull(cfg: dict[str, Any], term: Terminal) -> int:
         file_timeout = deploy_file_pull_timeout(file_size, remaining)
         large_transfer = file_size >= DEPLOY_LARGE_PULL_BYTES
         pull_cmd = board_ssh_pull_file_cmd(
-            cfg, key, staging_dir, name, work_dir, file_size, large_transfer=large_transfer
+            cfg, staging_dir, name, work_dir, file_size, large_transfer=large_transfer
         )
         print(
             f"[deploy] pull ({index}/{len(staged_files)}): {name} ({file_size} bytes, timeout={file_timeout:.0f}s)",
@@ -481,7 +502,7 @@ def deploy_board_pull(cfg: dict[str, Any], term: Terminal) -> int:
         "deploy_chmod",
         board_priv(
             cfg,
-            f"chmod +x {work_dir}/{boot_script} {work_dir}/check_serial.sh 2>/dev/null || true",
+            f"chmod +x {work_dir}/{boot_script} {work_dir}/hvisor {work_dir}/check_serial.sh 2>/dev/null || true",
         ),
         timeout=60.0,
     )
@@ -580,6 +601,9 @@ def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
                 qemu_term.send(cmd)
         if not qemu_term.wait_pattern(zone0_ready_pattern(cfg), timeout=180.0):
             raise TerminalTimeoutError("timed out waiting for zone0 shell prompt")
+        cfg["board_is_root"] = True
+        cfg["board_home"] = "/root"
+        cfg["_board_shell_ready"] = True
         return 0
     if cfg["mode"] == "board":
         log_path = logs_dir(cfg) / "zone0_console.log"
@@ -716,20 +740,6 @@ def prepare_board_shell(cfg: dict[str, Any], term: Terminal) -> None:
     print(f"[board] shell ready: user={user} home={home}", flush=True)
 
 
-def board_ssh_opts(cfg: dict[str, Any], key: str, *, large_transfer: bool = False) -> str:
-    timeout = int(cfg.get("deploy_ssh_connect_timeout", 30))
-    opts = (
-        f"-i {key} -o BatchMode=yes -o ConnectTimeout={timeout} "
-        "-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null"
-    )
-    if large_transfer:
-        # ServerAlive probes can drop bulk transfers ("server not responding").
-        opts += " -o ServerAliveInterval=0 -o TCPKeepAlive=yes"
-    else:
-        opts += " -o ServerAliveInterval=15 -o ServerAliveCountMax=8"
-    return opts
-
-
 def deploy_file_pull_timeout(file_size: int, remaining: float) -> float:
     """Per-file timeout from size (8 KiB/s floor) capped by the deploy deadline."""
     min_bps = 8192.0
@@ -739,7 +749,6 @@ def deploy_file_pull_timeout(file_size: int, remaining: float) -> float:
 
 def board_ssh_pull_file_cmd(
     cfg: dict[str, Any],
-    key: str,
     staging_dir: str,
     name: str,
     work_dir: str,
@@ -747,16 +756,13 @@ def board_ssh_pull_file_cmd(
     *,
     large_transfer: bool = False,
 ) -> str:
-    """Pull one staged file over ssh cat (more reliable than scp on some boards)."""
-    host_ip = cfg["network_host_ip"]
-    host_user = cfg["network_host_user"]
-    opts = board_ssh_opts(cfg, key, large_transfer=large_transfer)
-    remote = f"{host_user}@{host_ip}"
+    """Pull one staged file over ssh cat using CI_SSH_KEY/CI_SSH_HOST env vars."""
     remote_file = f"{staging_dir}/{name}"
     local_file = f"{work_dir}/{name}"
+    opts = _board_ssh_opts_short(cfg, large_transfer=large_transfer)
     return (
-        f"ssh {opts} {shlex.quote(remote)} "
-        f"'cat {shlex.quote(remote_file)}' > {shlex.quote(local_file)} && "
+        f"ssh -i $CI_SSH_KEY {opts} $CI_SSH_HOST "
+        f"'cat {shlex.quote(remote_file)}' > {shlex.quote(local_file)} </dev/null && "
         f"test $(wc -c < {shlex.quote(local_file)}) -eq {expected_size}"
     )
 
@@ -771,7 +777,11 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     inner_log = "/tmp/zone1_inner.log"
     _, _ = term.run("zone1_ls", f"cd {work_dir} && ls", timeout=15.0)
     boot_rc, _ = term.run("zone1_boot", f"cd {work_dir} && ./{boot_script}", timeout=120.0)
-    _, _ = term.run("zone1_list", f"cd {work_dir} && ./hvisor zone list", timeout=15.0)
+    if str(cfg.get("board_user", "root")).strip() not in ("", "root"):
+        zone_list_cmd = f"cd {work_dir} && sudo ./hvisor zone list"
+    else:
+        zone_list_cmd = f"cd {work_dir} && ./hvisor zone list"
+    _, _ = term.run("zone1_list", zone_list_cmd, timeout=15.0)
 
     start_wait = float(cfg.get("zone1_start_wait", 0.0))
     if start_wait > 0:

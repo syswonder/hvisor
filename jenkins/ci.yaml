@@ -49,6 +49,7 @@ bids:
         host_ip: 192.168.1.181
         host_user: light
         staging_dir: /home/light/ci_deploy
+        zone1_work_dir: /root
         ssh_connect_timeout: 60
         zone1_dtb: platform/aarch64/rk3568/image/dts/rk3568_limit_zone1.dtb
       lspci:
@@ -79,9 +80,7 @@ bids:
         - platform/aarch64/phytium-pi/image/dts/phytium-pi-board-v2.dtb
       zone0_image: /home/light/DEMO/phytium-pi-external/Image
       uboot_ready_pattern: 'Phytium-Pi#'
-      zone0_ready_pattern: 'user@[^\r\n]*[$#]\s?|root@[^\r\n]*:\/#\s?|(?:\r?\n)#\s*(?:\r?\n|$)'
-      board_shell_su_cmd: 'su - user -P'
-      board_shell_ready_pattern: 'user@[^\r\n]*[$#]\s?'
+      zone0_ready_pattern: 'root@[^\r\n]*:\/#\s?|(?:\r?\n)#\s*(?:\r?\n|$)'
       zone0_shell_timeout: 300
       uboot_prompt_timeout: 60
       uboot_step_timeout: 600
@@ -94,7 +93,6 @@ bids:
         - tftp ${zone0_fdt_addr} ${serverip}:phytium-pi/linux1.dtb
         - bootm ${loadaddr} - ${fdt_addr}
       deploy:
-        board_user: user
         board_ip: 192.168.1.179
         board_iface: eth0
         link_wait: 8
@@ -102,6 +100,7 @@ bids:
         host_ip: 192.168.1.181
         host_user: light
         staging_dir: /home/light/ci_deploy
+        zone1_work_dir: /root
         pull_timeout: 900
         zone1_dtb: platform/aarch64/phytium-pi/image/dts/linux2.dtb
       cases:
