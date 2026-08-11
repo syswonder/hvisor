@@ -1,0 +1,366 @@
+/dts-v1/;
+
+/ {
+	compatible = "rockchip,xiuos_rk3588\0rockchip,rk3588";
+	interrupt-parent = <0x01>;
+	#address-cells = <0x02>;
+	#size-cells = <0x02>;
+	model = "Rockchip RK3588 XIUOS Board (Zone1-Linux with NPU + VirtIO-SCMI)";
+
+	memory {
+		reg = <0x00 0x30000000 0x00 0x10000000>,
+		      <0x01 0x00000000 0x01 0xfc000000>;
+		device_type = "memory";
+	};
+
+	reserved-memory {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+
+		npu_reserved: npu-memory@38000000 {
+			compatible = "shared-dma-pool";
+			reg = <0x00 0x38000000 0x00 0x04000000>;
+		};
+	};
+
+	cpus {
+		#address-cells = <0x1>;
+		#size-cells = <0x0>;
+
+		cpu-map {
+			cluster0 {
+				core0 {
+					cpu = <0x06>;
+				};
+
+				core1 {
+					cpu = <0x07>;
+				};
+			};
+		};
+
+		cpu@600 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a76";
+			reg = <0x600>;
+			enable-method = "psci";
+			capacity-dmips-mhz = <0x400>;
+			cpu-idle-states = <0x10>;
+			i-cache-size = <0x10000>;
+			i-cache-line-size = <0x40>;
+			i-cache-sets = <0x100>;
+			d-cache-size = <0x10000>;
+			d-cache-line-size = <0x40>;
+			d-cache-sets = <0x100>;
+			next-level-cache = <0x1b>;
+			phandle = <0x06>;
+		};
+
+		cpu@700 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a76";
+			reg = <0x700>;
+			enable-method = "psci";
+			capacity-dmips-mhz = <0x400>;
+			cpu-idle-states = <0x10>;
+			i-cache-size = <0x10000>;
+			i-cache-line-size = <0x40>;
+			i-cache-sets = <0x100>;
+			d-cache-size = <0x10000>;
+			d-cache-line-size = <0x40>;
+			d-cache-sets = <0x100>;
+			next-level-cache = <0x1d>;
+			phandle = <0x07>;
+		};
+
+		idle-states {
+			entry-method = "psci";
+
+			cpu-sleep {
+				compatible = "arm,idle-state";
+				local-timer-stop;
+				arm,psci-suspend-param = <0x10000>;
+				entry-latency-us = <0x64>;
+				exit-latency-us = <0x78>;
+				min-residency-us = <0x3e8>;
+				phandle = <0x10>;
+			};
+		};
+
+		l2-cache-l0 {
+			compatible = "cache";
+			cache-size = <0x20000>;
+			cache-line-size = <0x40>;
+			cache-sets = <0x200>;
+			next-level-cache = <0x1e>;
+			phandle = <0x11>;
+		};
+
+		l2-cache-l1 {
+			compatible = "cache";
+			cache-size = <0x20000>;
+			cache-line-size = <0x40>;
+			cache-sets = <0x200>;
+			next-level-cache = <0x1e>;
+			phandle = <0x13>;
+		};
+
+		l2-cache-b0 {
+			compatible = "cache";
+			cache-size = <0x80000>;
+			cache-line-size = <0x40>;
+			cache-sets = <0x400>;
+			next-level-cache = <0x1e>;
+			phandle = <0x17>;
+		};
+
+		l2-cache-b1 {
+			compatible = "cache";
+			cache-size = <0x80000>;
+			cache-line-size = <0x40>;
+			cache-sets = <0x400>;
+			next-level-cache = <0x1e>;
+			phandle = <0x19>;
+		};
+
+		l2-cache-b2 {
+			compatible = "cache";
+			cache-size = <0x80000>;
+			cache-line-size = <0x40>;
+			cache-sets = <0x400>;
+			next-level-cache = <0x1e>;
+			phandle = <0x1b>;
+		};
+
+		l2-cache-b3 {
+			compatible = "cache";
+			cache-size = <0x80000>;
+			cache-line-size = <0x40>;
+			cache-sets = <0x400>;
+			next-level-cache = <0x1e>;
+			phandle = <0x1d>;
+		};
+
+		l3-cache {
+			compatible = "cache";
+			cache-size = <0x300000>;
+			cache-line-size = <0x40>;
+			cache-sets = <0x1000>;
+			phandle = <0x1e>;
+		};
+	};
+
+	psci {
+		compatible = "arm,psci-1.0";
+		method = "smc";
+	};
+
+	arm-pmu {
+		compatible = "arm,armv8-pmuv3";
+		interrupts = <0x01 0x07 0x08>;
+		interrupt-affinity = <0x06 0x07>;
+		phandle = <0x220>;
+	};
+
+	timer {
+		compatible = "arm,armv8-timer";
+		interrupts = <0x01 0x0d 0xf04 0x01 0x0e 0xf04 0x01 0x0b 0xf04 0x01 0x0a 0xf04>;
+	};
+
+	interrupt-controller@fe600000 {
+		compatible = "arm,gic-v3";
+		#interrupt-cells = <0x03>;
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+		interrupt-controller;
+		reg = <0x00 0xfe600000 0x00 0x10000 0x00 0xfe680000 0x00 0x100000>;
+		interrupts = <0x01 0x09 0x04>;
+		phandle = <0x01>;
+	};
+
+	aliases {
+	};
+
+	// ========== VirtIO-SCMI (Clock, Reset & Power via VirtIO) ==========
+	firmware {
+		scmi {
+			compatible = "arm,scmi-virtio";
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			phandle = <0x1000>;
+
+			scmi_clk: protocol@14 {   // clock protocol
+				reg = <0x14>;
+				#clock-cells = <0x01>;
+			};
+
+			scmi_rst: protocol@16 {   // reset protocol
+				reg = <0x16>;
+				#reset-cells = <0x01>;
+			};
+
+			scmi_pwr: protocol@11 {   // power domain protocol
+				reg = <0x11>;
+				#power-domain-cells = <0x01>;
+			};
+		};
+	};
+
+	// virtio-mmio for SCMI
+	virtio_mmio@ff9c0000 {
+		dma-coherent;
+		interrupt-parent = <0x01>;
+		interrupts = <0x0 0x24 0x1>;
+		reg = <0x0 0xff9c0000 0x0 0x200>;
+		compatible = "virtio,mmio";
+	};
+
+	// virtio-mmio for blk
+	virtio_mmio@ff9d0000 {
+		dma-coherent;
+		interrupt-parent = <0x01>;
+		interrupts = <0x0 0x21 0x1>;
+		reg = <0x0 0xff9d0000 0x0 0x200>;
+		compatible = "virtio,mmio";
+	};
+
+	// virtio-mmio for serial/console
+	virtio_mmio@ff9e0000 {
+		dma-coherent;
+		interrupt-parent = <0x01>;
+		interrupts = <0x0 0x22 0x1>;
+		reg = <0x0 0xff9e0000 0x0 0x200>;
+		compatible = "virtio,mmio";
+	};
+
+	// virtio-mmio for net
+	virtio_mmio@ffa00000 {
+		dma-coherent;
+		interrupt-parent = <0x01>;
+		interrupts = <0x0 0x25 0x1>;
+		reg = <0x0 0xffa00000 0x0 0x200>;
+		compatible = "virtio,mmio";
+	};
+
+	// ========== NPU OPP Table ==========
+
+	npu-opp-table {
+		compatible = "operating-points-v2";
+		phandle = <0x70>;
+
+		opp-300000000 {
+			opp-hz = <0x00 0x11e1a300>;
+			opp-microvolt = <0xa4cb8>;
+		};
+
+		opp-500000000 {
+			opp-hz = <0x00 0x1dcd6500>;
+			opp-microvolt = <0xa4cb8>;
+		};
+
+		opp-700000000 {
+			opp-hz = <0x00 0x29b92700>;
+			opp-microvolt = <0xaae60>;
+		};
+
+		opp-900000000 {
+			opp-hz = <0x00 0x35a4e900>;
+			opp-microvolt = <0xc3500>;
+		};
+	};
+
+	// ========== GPU OPP Table ==========
+
+
+	// ========== GPU ==========
+
+
+	// ========== Display Dependencies (GRF) ==========
+
+	pmu0_grf: syscon@fd588000 {
+		compatible = "rockchip,rk3588-pmu0-grf", "syscon", "simple-mfd";
+		reg = <0x00 0xfd588000 0x00 0x1000>;
+	};
+
+	/* sys_grf (0xfd58c000) intentionally NOT exposed to this zone:
+	 * system-wide GRF; zone1 has no consumer for it, and probing it as a
+	 * syscon would generate unmapped MMIO accesses (hvisor shuts the zone
+	 * down on unhandled MMIO faults). */
+
+
+
+
+
+	// ========== HDMIPHYs ==========
+
+
+
+	// ========== VOP + VOP MMU ==========
+
+
+
+	// ========== HDMI Fixed Clocks ==========
+
+	hclk_vo1_fixed: hclk-vo1-fixed {
+		compatible = "fixed-clock";
+		#clock-cells = <0>;
+		clock-frequency = <400000000>;
+	};
+
+	// ========== HDMI0 ==========
+
+
+	// ========== HDMI1 ==========
+
+
+
+	// ========== NPU (no IOMMU mode) ==========
+
+	rknpu: npu@fdab0000 {
+		compatible = "rockchip,rk3588-rknpu";
+		reg = <0x00 0xfdab0000 0x00 0x10000>,
+		      <0x00 0xfdac0000 0x00 0x10000>,
+		      <0x00 0xfdad0000 0x00 0x10000>;
+		interrupts = <0x00 0x6e 0x04>,
+		             <0x00 0x6f 0x04>,
+		             <0x00 0x70 0x04>;
+		interrupt-names = "npu0_irq", "npu1_irq", "npu2_irq";
+		// All clocks via SCMI (virtual IDs 0-7, mapped by hvisor DT order)
+		clocks = <&scmi_clk 0>,
+		         <&scmi_clk 1>,
+		         <&scmi_clk 2>,
+		         <&scmi_clk 3>,
+		         <&scmi_clk 4>,
+		         <&scmi_clk 5>,
+		         <&scmi_clk 6>,
+		         <&scmi_clk 7>;
+		clock-names = "clk_npu", "aclk0", "aclk1", "aclk2",
+		              "hclk0", "hclk1", "hclk2", "pclk";
+		// All resets via SCMI (virtual IDs 0-5)
+		resets = <&scmi_rst 0>,
+		         <&scmi_rst 1>,
+		         <&scmi_rst 2>,
+		         <&scmi_rst 3>,
+		         <&scmi_rst 4>,
+		         <&scmi_rst 5>;
+		reset-names = "srst_a0", "srst_a1", "srst_a2",
+		              "srst_h0", "srst_h1", "srst_h2";
+		// Power domains via SCMI (virtual IDs 0-2)
+		power-domains = <&scmi_pwr 0>,
+		                <&scmi_pwr 1>,
+		                <&scmi_pwr 2>;
+		power-domain-names = "npu0", "npu1", "npu2";
+		// Operating points (via SCMI clock)
+		operating-points-v2 = <0x70>;
+		// Reserved memory for DMA (non-IOMMU mode)
+		memory-region = <&npu_reserved>;
+		status = "okay";
+	};
+
+	chosen {
+		bootargs = "earlycon=virtio,mmio,0xff9e0000 console=hvc0 root=/dev/vda rootwait rw";
+		stdout-path = "/virtio_mmio@0xff9e0000";
+	};
+};
