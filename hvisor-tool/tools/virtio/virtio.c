@@ -43,19 +43,7 @@
 #ifdef ENABLE_VIRTIO_GPU
 #include "virtio_gpu.h"
 #endif
-#ifdef ENABLE_VIRTIO_SCMI
 #include "virtio_scmi.h"
-
-// Global variables to store phandle values
-uint32_t clock_phandle = 0;
-uint32_t reset_phandle = 0;
-uint32_t power_phandle = 0;
-
-// Global variables to store max num values
-uint32_t clock_max_num = 0;
-uint32_t reset_max_num = 0;
-uint32_t power_max_num = 0;
-#endif
 
 /// hvisor kernel module fd
 int ko_fd;
@@ -217,15 +205,11 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
         break;
 
     case VirtioTSCMI:
-#ifdef ENABLE_VIRTIO_SCMI
         vdev->regs.dev_feature = SCMI_SUPPORTED_FEATURES;
-        vdev->dev = init_scmi_dev();
+        vdev->dev = arg0 ? arg0 : scmi_dev_create();
+        vdev->virtio_close = virtio_scmi_close;
         init_virtio_queue(vdev, dev_type);
         is_err = 0;
-#else
-        log_error("virtio-scmi is not enabled");
-        goto err;
-#endif
         break;
 
     case VirtioTGPU:
@@ -334,7 +318,6 @@ void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type) {
         break;
 
     case VirtioTSCMI:
-#ifdef ENABLE_VIRTIO_SCMI
         vdev->vqs_len = SCMI_MAX_QUEUES;
         vqs = malloc(sizeof(VirtQueue) * SCMI_MAX_QUEUES);
         for (int i = 0; i < SCMI_MAX_QUEUES; ++i) {
@@ -344,9 +327,6 @@ void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type) {
         }
         vqs[SCMI_QUEUE_TX].notify_handler = virtio_scmi_txq_notify_handler;
         vdev->vqs = vqs;
-#else
-        log_error("virtio scmi is not enabled");
-#endif
         break;
 
     default:
@@ -1569,95 +1549,64 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
         return -1;
 #endif
     } else if (dev_type == VirtioTSCMI) {
-// virtio-scmi
-#ifdef ENABLE_VIRTIO_SCMI
-        // Parse allowed_list, reset_map and clock_map
-        cJSON *allowed_list_json =
-            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "allowed_list");
-        cJSON *reset_map_json =
-            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "reset_map");
-        cJSON *clock_map_json =
-            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "clock_map");
-        // Parse clock_phandle and reset_phandle first
-        cJSON *clock_phandle_json =
-            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "clock_phandle");
-        cJSON *reset_phandle_json =
-            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "reset_phandle");
-        cJSON *power_phandle_json =
-            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "power_phandle");
-        if (clock_phandle_json) {
-            clock_phandle = clock_phandle_json->valueint;
-            log_info("SCMI clock_phandle set to %u", clock_phandle);
-        }
-        if (reset_phandle_json) {
-            reset_phandle = reset_phandle_json->valueint;
-            log_info("SCMI reset_phandle set to %u", reset_phandle);
-        }
-        if (power_phandle_json) {
-            power_phandle = power_phandle_json->valueint;
-            log_info("SCMI power_phandle set to %u", power_phandle);
+        // virtio-scmi
+        SCMIDev *scmi_dev = scmi_dev_create();
+        if (!scmi_dev) {
+            log_error("Failed to create SCMI device");
+            return -1;
         }
 
-        // Parse clock_max_num, reset_max_num and power_max_num
-        cJSON *clock_max_num_json =
-            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "clock_max_num");
-        cJSON *reset_max_num_json =
-            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "reset_max_num");
-        cJSON *power_max_num_json =
-            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "power_max_num");
-        if (!clock_max_num_json) {
-            log_error("Missing required field: clock_max_num");
+        cJSON *clock_ids = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "clock_ids");
+        cJSON *reset_ids = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "reset_ids");
+        cJSON *power_ids = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "power_ids");
+
+        if (scmi_dev_parse_clock_ids(scmi_dev, clock_ids) < 0 ||
+            scmi_dev_parse_reset_ids(scmi_dev, reset_ids) < 0 ||
+            scmi_dev_parse_power_ids(scmi_dev, power_ids) < 0) {
+            scmi_dev_free(scmi_dev);
             return -1;
         }
-        if (!reset_max_num_json) {
-            log_error("Missing required field: reset_max_num");
-            return -1;
-        }
-        clock_max_num = clock_max_num_json->valueint;
-        reset_max_num = reset_max_num_json->valueint;
-        log_info("SCMI clock_max_num set to %u", clock_max_num);
-        log_info("SCMI reset_max_num set to %u", reset_max_num);
-        // Initialize reset map
-        extern int virtio_scmi_reset_init_map(cJSON *, cJSON *);
-        if (virtio_scmi_reset_init_map(allowed_list_json, reset_map_json) < 0) {
-            log_error("Failed to initialize SCMI reset map");
-            return -1;
-        }
-        // Initialize clock allowed list and map
-        extern int virtio_scmi_clock_init_map(cJSON *, cJSON *);
-        if (virtio_scmi_clock_init_map(allowed_list_json, clock_map_json) < 0) {
-            log_error("Failed to initialize SCMI clock allowed list and map");
-            return -1;
-        }
-        // Parse power_map (optional) and power_max_num (optional)
-        cJSON *power_map_json =
-            SAFE_CJSON_GET_OBJECT_ITEM(device_json, "power_map");
-        if (power_max_num_json) {
-            power_max_num = power_max_num_json->valueint;
-            log_info("SCMI power_max_num set to %u", power_max_num);
-            extern int virtio_scmi_power_init_map(cJSON *, cJSON *);
-            if (virtio_scmi_power_init_map(allowed_list_json, power_map_json) <
-                0) {
-                log_error("Failed to initialize SCMI power domain map");
-                return -1;
-            }
-        }
-#else
-        log_error(
-            "virtio-scmi is not enabled, please add VIRTIO_SCMI=y in make cmd");
-        return -1;
-#endif
+
+        /* Register protocols per-device: BASE always, others only if present */
+        scmi_dev_register_protocol(scmi_dev, SCMI_PROTO_ID_BASE,
+                                   virtio_scmi_base_handle_req);
+        if (scmi_dev->clock_count > 0)
+            scmi_dev_register_protocol(scmi_dev, SCMI_PROTO_ID_CLOCK,
+                                       virtio_scmi_clock_handle_req);
+        if (scmi_dev->power_count > 0)
+            scmi_dev_register_protocol(scmi_dev, SCMI_PROTO_ID_POWER,
+                                       virtio_scmi_power_handle_req);
+        if (scmi_dev->reset_count > 0)
+            scmi_dev_register_protocol(scmi_dev, SCMI_PROTO_ID_RESET,
+                                       virtio_scmi_reset_handle_req);
+
+        arg0 = scmi_dev;
+        log_info("SCMI device created: clocks=%u resets=%u powers=%u",
+                 scmi_dev->clock_count, scmi_dev->reset_count,
+                 scmi_dev->power_count);
     }
 
     // Check for missing fields
     if (base_addr == 0 || len == 0 || irq_id == 0) {
         log_error("missing arguments");
+        if (dev_type == VirtioTSCMI)
+            scmi_dev_free(arg0);
+#ifdef ENABLE_VIRTIO_GPU
+        if (dev_type == VirtioTGPU)
+            free(arg0);
+#endif
         return -1;
     }
 
     // Create virtio_device
     if (!create_virtio_device(dev_type, zone_id, base_addr, len, irq_id, arg0,
                               arg1)) {
+        if (dev_type == VirtioTSCMI)
+            scmi_dev_free(arg0);
+#ifdef ENABLE_VIRTIO_GPU
+        if (dev_type == VirtioTGPU)
+            free(arg0);
+#endif
         return -1;
     }
 

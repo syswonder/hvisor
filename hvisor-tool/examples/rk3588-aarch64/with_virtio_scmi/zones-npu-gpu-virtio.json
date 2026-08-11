@@ -1,0 +1,180 @@
+{
+    "zones": [
+        {
+            "id": 1,
+            "memory_region": [
+                {
+                    "zone0_ipa": "0x30000000",
+                    "zonex_ipa": "0x30000000",
+                    "size": "0x10000000"
+                },
+                {
+                    "zone0_ipa": "0x100000000",
+                    "zonex_ipa": "0x100000000",
+                    "size": "0x1fc000000"
+                }
+            ],
+            "devices": [
+                {
+                    "type": "scmi",
+                    "addr": "0xff9c0000",
+                    "len": "0x200",
+                    "irq": "0x44",
+                    "status": "enable",
+                    "clock_ids": [
+                        0,
+                        1,
+                        2,
+                        3,
+                        4,
+                        5,
+                        6,
+                        7
+                    ],
+                    "reset_ids": [
+                        0,
+                        1,
+                        2,
+                        3,
+                        4,
+                        5
+                    ],
+                    "power_ids": [
+                        0,
+                        1,
+                        2
+                    ]
+                },
+                {
+                    "type": "blk",
+                    "addr": "0xff9d0000",
+                    "len": "0x200",
+                    "irq": "0x41",
+                    "img": "202605-rootfs.img",
+                    "status": "enable"
+                },
+                {
+                    "type": "console",
+                    "addr": "0xff9e0000",
+                    "len": "0x200",
+                    "irq": "0x42",
+                    "status": "enable"
+                },
+                {
+                    "type": "net",
+                    "addr": "0xffa00000",
+                    "len": "0x200",
+                    "irq": "0x45",
+                    "tap": "tap0",
+                    "mac": [
+                        "0x00",
+                        "0x11",
+                        "0x22",
+                        "0x33",
+                        "0x44",
+                        "0x55"
+                    ],
+                    "status": "enable"
+                }
+            ]
+        },
+        {
+            "id": 2,
+            "memory_region": [
+                {
+                    "zone0_ipa": "0x58000000",
+                    "zonex_ipa": "0x58000000",
+                    "size": "0x80000000"
+                }
+            ],
+            "devices": [
+                {
+                    "type": "scmi",
+                    "addr": "0xffa10000",
+                    "len": "0x200",
+                    "irq": "0x66",
+                    "status": "enable",
+                    "clock_ids": [
+                        8,
+                        9,
+                        10,
+                        11,
+                        12,
+                        13,
+                        14,
+                        15,
+                        16,
+                        17,
+                        18,
+                        19,
+                        20,
+                        21,
+                        22,
+                        23,
+                        24,
+                        25,
+                        26,
+                        27,
+                        28,
+                        29,
+                        35,
+                        36
+                    ],
+                    "power_ids": [
+                        3,
+                        4,
+                        5
+                    ],
+                    "reset_ids": [
+                        6,
+                        7,
+                        8,
+                        9,
+                        10,
+                        11,
+                        12,
+                        13,
+                        16,
+                        17,
+                        18,
+                        19,
+                        20,
+                        21,
+                        22
+                    ]
+                },
+                {
+                    "type": "blk",
+                    "addr": "0xffa20000",
+                    "len": "0x200",
+                    "irq": "0x67",
+                    "img": "202605-rootfs-gpu.img",
+                    "status": "enable"
+                },
+                {
+                    "type": "console",
+                    "addr": "0xffa30000",
+                    "len": "0x200",
+                    "irq": "0x68",
+                    "status": "enable"
+                },
+                {
+                    "type": "net",
+                    "addr": "0xffa50000",
+                    "len": "0x200",
+                    "irq": "0x69",
+                    "tap": "tap1",
+                    "mac": [
+                        "0x00",
+                        "0x11",
+                        "0x22",
+                        "0x33",
+                        "0x44",
+                        "0x66"
+                    ],
+                    "status": "enable"
+                }
+            ]
+        }
+    ]
+}

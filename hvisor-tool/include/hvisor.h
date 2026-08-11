@@ -110,18 +110,16 @@ struct hvisor_load_image_args {
 #define HVISOR_SCMI_CLOCK_CONFIG_GET 0x06
 #define HVISOR_SCMI_CLOCK_CONFIG_SET 0x07
 #define HVISOR_SCMI_CLOCK_NAME_GET 0x08
-#define HVISOR_SCMI_CLOCK_SET_PHANDLE 0xff
 
 /* SCMI Reset Subcommands */
-#define HVISOR_SCMI_RESET_RESET 0x01
-#define HVISOR_SCMI_RESET_SET_PHANDLE 0xff
+#define HVISOR_SCMI_RESET_GET_COUNT 0x01
+#define HVISOR_SCMI_RESET_RESET 0x02
 
 /* SCMI Power Subcommands */
 #define HVISOR_SCMI_POWER_GET_COUNT 0x01
 #define HVISOR_SCMI_POWER_GET_ATTRIBUTES 0x02
 #define HVISOR_SCMI_POWER_STATE_SET 0x03
 #define HVISOR_SCMI_POWER_STATE_GET 0x04
-#define HVISOR_SCMI_POWER_SET_PHANDLE 0xff
 
 /* SCMI Power State Macros */
 #define SCMI_POWER_STATE_GENERIC_ON 0x00000000
@@ -166,10 +164,7 @@ struct hvisor_scmi_clock_args {
             __u32 clock_id;
             char name[64];
         } clock_name_info; /* For NAME_GET */
-        struct {
-            __u32 phandle;
-        } clock_phandle_info; /* For SET_PHANDLE */
-        __u8 data[0];         /* For other commands */
+        __u8 data[0];      /* For other commands */
     } u;
 };
 
@@ -178,15 +173,13 @@ struct hvisor_scmi_reset_args {
     __u32 subcmd;   /* Subcommand ID */
     __u32 data_len; /* Length of data buffer */
     union {
+        __u32 reset_count; /* For GET_COUNT */
         struct {
             __u32 domain_id;
             __u32 flags;
             __u32 reset_state;
         } reset_info; /* For RESET */
-        struct {
-            __u32 phandle;
-        } reset_phandle_info; /* For SET_PHANDLE */
-        __u8 data[0];         /* For other commands */
+        __u8 data[0]; /* For other commands */
     } u;
 };
 
@@ -204,11 +197,8 @@ struct hvisor_scmi_power_args {
         struct {
             __u32 domain_id;
             __u32 power_state; /* Power state value
-                                  (SCMI_POWER_STATE_GENERIC_ON/OFF) */
+                                   (SCMI_POWER_STATE_GENERIC_ON/OFF) */
         } power_state_info;    /* For STATE_SET/STATE_GET */
-        struct {
-            __u32 phandle;
-        } power_phandle_info; /* For SET_PHANDLE */
         __u8 data[0];
     } u;
 };

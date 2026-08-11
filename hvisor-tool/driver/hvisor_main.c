@@ -34,9 +34,7 @@
 #include "hvisor.h"
 #include "zone_config.h"
 
-#ifdef ENABLE_VIRTIO_SCMI
-#include "scmi_server.h"
-#endif
+#include "virtio/scmi/server.h"
 
 extern bool __clk_is_enabled(const struct clk *clk);
 extern const char *__clk_get_name(const struct clk *clk);
@@ -188,7 +186,7 @@ static int hvisor_zone_start(zone_config_t __user *arg) {
         return -EFAULT;
     }
 
-    pr_debug("hvisor.ko: invoking hypercall to start the zone\n");
+    pr_info("hvisor.ko: invoking hypercall to start the zone\n");
 
     err = hvisor_call(HVISOR_HC_START_ZONE, __pa(zone_config),
                       sizeof(zone_config_t));
@@ -360,7 +358,6 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
     case HVISOR_LOAD_IMAGE:
         err = hvisor_load_image((struct hvisor_load_image_args __user *)arg);
         break;
-#ifdef ENABLE_VIRTIO_SCMI
     case HVISOR_SCMI_CLOCK_IOCTL:
         err = hvisor_scmi_clock_ioctl(
             (struct hvisor_scmi_clock_args __user *)arg);
@@ -373,7 +370,6 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
         err = hvisor_scmi_power_ioctl(
             (struct hvisor_scmi_power_args __user *)arg);
         break;
-#endif
 #ifdef LOONGARCH64
     case HVISOR_CLEAR_INJECT_IRQ:
         err = hvisor_call(HVISOR_HC_CLEAR_INJECT_IRQ, 0, 0);
@@ -399,7 +395,7 @@ static int hvisor_map(struct file *filp, struct vm_area_struct *vma) {
                               vma->vm_end - vma->vm_start, vma->vm_page_prot);
         if (err)
             return err;
-        pr_debug("virtio bridge mmap succeed!\n");
+        pr_info("virtio bridge mmap succeed!\n");
     } else {
         size_t size = vma->vm_end - vma->vm_start;
         // TODO: add check for non root memory region.
@@ -413,7 +409,7 @@ static int hvisor_map(struct file *filp, struct vm_area_struct *vma) {
                               vma->vm_page_prot);
         if (err)
             return err;
-        pr_debug("non root region mmap succeed!\n");
+        pr_info("non root region mmap succeed!\n");
     }
     return 0;
 }
@@ -471,12 +467,23 @@ static irqreturn_t virtio_irq_handler(int irq, void *dev_id) {
 static int __init hvisor_init(void) {
     int err;
     struct device_node *node = NULL;
+
     // u32 *irq;
     err = misc_register(&hvisor_misc_dev);
     if (err) {
         pr_err("hvisor_misc_register failed!!!\n");
         return err;
     }
+#ifndef X86_64
+    // SCMI server is backed by the device tree (of_clk_get etc.); x86_64 has
+    // no DT, so skip it there.
+    err = hvisor_scmi_init();
+    if (err) {
+        pr_err("hvisor SCMI init failed: %d\n", err);
+        misc_deregister(&hvisor_misc_dev);
+        return err;
+    }
+#endif
 #ifndef X86_64
     // probe hvisor virtio device.
     // The irq number must be retrieved from dtb node, because it is different
@@ -489,7 +496,8 @@ static int __init hvisor_init(void) {
         pr_err("       compatible = \"hvisor\";\n");
         pr_err("       interrupts = <0x00 0x20 0x01>;\n");
         pr_err("   };\n");
-        return -ENODEV;
+        err = -ENODEV;
+        goto err_misc;
     }
 
     virtio_irq = of_irq_get(node, 0);
@@ -503,22 +511,35 @@ static int __init hvisor_init(void) {
 #else
     // we don't use device tree in x86_64, so we have to get IRQ using hypercall
     u32 *irq = kmalloc(sizeof(u32), GFP_KERNEL);
+    if (!irq) {
+        err = -ENOMEM;
+        goto err_misc;
+    }
     err = hvisor_call(HVISOR_HC_GET_VIRTIO_IRQ, __pa(irq), 0);
+    if (err) {
+        kfree(irq);
+        goto err_misc;
+    }
     virtio_irq = *irq;
+    kfree(irq);
     err = request_irq(virtio_irq, virtio_irq_handler, IRQF_SHARED,
                       "hvisor_virtio_device", &hvisor_misc_dev);
     if (err)
         goto err_out;
-
-    kfree(irq);
 #endif /* X86_64 */
-    pr_debug("hvisor init done!!!\n");
+    pr_info("hvisor init done!!!\n");
     return 0;
+
 err_out:
     pr_err("hvisor cannot register IRQ, err is %d\n", err);
     if (virtio_irq != -1)
         free_irq(virtio_irq, &hvisor_misc_dev);
+    of_node_put(node);
+err_misc:
     misc_deregister(&hvisor_misc_dev);
+#ifndef X86_64
+    hvisor_scmi_cleanup();
+#endif
     return err;
 }
 
@@ -535,7 +556,11 @@ static void __exit hvisor_exit(void) {
         free_pages((unsigned long)virtio_bridge, 0);
     }
     misc_deregister(&hvisor_misc_dev);
-    pr_debug("hvisor exit!!!\n");
+#ifndef X86_64
+    hvisor_scmi_cleanup();
+    hvisor_put_node();
+#endif
+    pr_info("hvisor exit!!!\n");
 }
 
 module_init(hvisor_init);
