@@ -104,11 +104,18 @@ static int reset_domain(u32 reset_id, u32 flags, u32 reset_state) {
     if (IS_ERR(rstc))
         return PTR_ERR(rstc);
 
+/*
+ * reset_control_acquire()/reset_control_release() were added in v5.2
+ * together with the 'acquired' state for exclusive reset controls.
+ * Older kernels hold exclusive resets by default; assert/deassert directly.
+ */
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 2, 0)
     ret = reset_control_acquire(rstc);
     if (ret) {
         pr_err("Failed to acquire reset domain %u: %d\n", reset_id, ret);
         return ret;
     }
+#endif
 
     switch (flags) {
     case SCMI_RESET_DEASSERT:
@@ -133,7 +140,9 @@ static int reset_domain(u32 reset_id, u32 flags, u32 reset_state) {
     }
 
 out:
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 2, 0)
     reset_control_release(rstc);
+#endif
     return ret;
 }
 
