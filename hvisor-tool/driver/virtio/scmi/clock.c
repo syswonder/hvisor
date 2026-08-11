@@ -188,6 +188,8 @@ int hvisor_scmi_clock_ioctl(struct hvisor_scmi_clock_args __user *user_args) {
         char clock_name[64];
         int ret = get_clock_attributes(args.u.clock_attr.clock_id, &enabled,
                                        &parent_id, clock_name, &is_valid);
+        if (ret < 0)
+            return ret;
         args.u.clock_attr.enabled = enabled;
         args.u.clock_attr.parent_id = parent_id;
         args.u.clock_attr.is_valid = is_valid;
@@ -203,6 +205,8 @@ int hvisor_scmi_clock_ioctl(struct hvisor_scmi_clock_args __user *user_args) {
     case HVISOR_SCMI_CLOCK_RATE_GET: {
         u64 rate = 0;
         int ret = get_clock_rate(args.u.clock_rate_info.clock_id, &rate);
+        if (ret < 0)
+            return ret;
         args.u.clock_rate_info.rate = rate;
         if (copy_to_user(&user_args->u.clock_rate_info, &args.u.clock_rate_info,
                          sizeof(args.u.clock_rate_info)))
