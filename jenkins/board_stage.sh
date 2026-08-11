@@ -77,5 +77,25 @@ fi
 
 chmod -R a+rX "${STAGING_DIR}"
 chmod +x "${STAGING_DIR}/boot_zone1.sh"
+
+if [ "$(id -u)" -eq 0 ] && id light >/dev/null 2>&1; then
+    chown -R light:light "${STAGING_DIR}"
+fi
+
+DEPLOY_SPLIT_CHUNK_BYTES=${DEPLOY_SPLIT_CHUNK_BYTES:-262144}
+for staged_file in "${STAGING_DIR}"/*; do
+    [ -f "${staged_file}" ] || continue
+    staged_name=$(basename "${staged_file}")
+    case "${staged_name}" in
+        *.part.*) continue ;;
+    esac
+    size=$(stat -c%s "${staged_file}")
+    if [ "${size}" -gt "${DEPLOY_SPLIT_CHUNK_BYTES}" ]; then
+        split -b "${DEPLOY_SPLIT_CHUNK_BYTES}" "${staged_file}" "${STAGING_DIR}/${staged_name}.part."
+        rm -f "${staged_file}"
+        echo "split ${staged_name}: ${size} bytes into ${DEPLOY_SPLIT_CHUNK_BYTES}-byte chunks"
+    fi
+done
+
 echo "board staging completed: ${STAGING_DIR}"
 ls -la "${STAGING_DIR}"
