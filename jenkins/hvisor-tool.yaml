@@ -1,0 +1,23 @@
+# CI checkout source for hvisor-tool (Jenkins stage "Checkout hvisor-tool", after Linter).
+# ref: branch name, refs/pull/<N>/head, refs/tags/<tag>, or commit SHA.
+#
+# Examples (uncomment one repo/ref pair):
+#
+# repo: https://github.com/syswonder/hvisor-tool.git
+# ref: main
+#
+# repo: https://github.com/syswonder/hvisor-tool.git
+# ref: feature/my-change
+#
+# repo: https://github.com/syswonder/hvisor-tool.git
+# ref: refs/pull/123/head
+#
+# repo: https://github.com/syswonder/hvisor-tool.git
+# ref: v0.3.1
+#
+# repo: https://github.com/alice/hvisor-tool.git
+# ref: my-branch
+#
+# "hvisor-tool on the branch of test" fails unless ref is main.
+repo: https://github.com/syswonder/hvisor-tool.git
+ref: refs/pull/117/head

@@ -406,8 +406,31 @@ def boot_board_zone0_shell(cfg: dict[str, Any], term: Terminal, *, power_cycle: 
     prepare_board_shell(cfg, term)
 
 
+def board_term_run(
+    cfg: dict[str, Any],
+    term: Terminal,
+    case_id: str,
+    command: str,
+    timeout: float,
+    *,
+    retries: int = 1,
+) -> tuple[int, str]:
+    last_exc: TerminalTimeoutError | None = None
+    for attempt in range(retries + 1):
+        if attempt > 0:
+            print(f"[deploy] retry {case_id} ({attempt}/{retries})", flush=True)
+            time.sleep(3.0)
+        run_id = case_id if attempt == 0 else f"{case_id}_retry{attempt}"
+        try:
+            return term.run(run_id, board_priv(cfg, command), timeout=timeout)
+        except TerminalTimeoutError as exc:
+            last_exc = exc
+    assert last_exc is not None
+    raise last_exc
+
+
 def deploy_board_pull(cfg: dict[str, Any], term: Terminal) -> int:
-    """Board pulls staged zone1 files from the CI host over ssh."""
+    """Board pulls staged zone1 files from the CI host over scp."""
     ensure_board_net(cfg, term)
 
     host_ip = cfg["network_host_ip"]
@@ -415,7 +438,7 @@ def deploy_board_pull(cfg: dict[str, Any], term: Terminal) -> int:
     staging_dir = cfg["network_staging_dir"]
     work_dir = cfg["zone1_work_dir"]
 
-    print(f"[deploy] staging files on host", flush=True)
+    print("[deploy] staging files on host", flush=True)
     stage_board_files(cfg)
 
     staging_path = Path(staging_dir)
@@ -442,10 +465,12 @@ def deploy_board_pull(cfg: dict[str, Any], term: Terminal) -> int:
         term.run(f"deploy_clean_{name}", board_priv(cfg, f"rm -f {stale_path}"), timeout=15.0)
 
     print(
-        f"[deploy] pulling {len(staged_files)} file(s) via ssh from {host_user}@{host_ip}:{staging_dir}",
+        f"[deploy] pulling {len(staged_files)} file(s) via scp from {host_user}@{host_ip}:{staging_dir}",
         flush=True,
     )
     for index, name in enumerate(staged_files, start=1):
+        if index > 1:
+            time.sleep(2.0)
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             save_case_log(cfg, "deploy_scp.log", "".join(all_logs))
@@ -457,25 +482,44 @@ def deploy_board_pull(cfg: dict[str, Any], term: Terminal) -> int:
         file_size = staging_path.joinpath(name).stat().st_size
         file_timeout = deploy_file_pull_timeout(file_size, remaining)
         large_transfer = file_size >= DEPLOY_LARGE_PULL_BYTES
-        pull_cmd = board_ssh_pull_file_cmd(
-            cfg, staging_dir, name, work_dir, file_size, large_transfer=large_transfer
+        pull_cmd = board_ssh_scp_pull_file_cmd(
+            cfg, staging_dir, name, work_dir, large_transfer=large_transfer
         )
         print(
-            f"[deploy] pull ({index}/{len(staged_files)}): {name} ({file_size} bytes, timeout={file_timeout:.0f}s)",
+            f"[deploy] scp ({index}/{len(staged_files)}): {name} ({file_size} bytes, timeout={file_timeout:.0f}s)",
             flush=True,
         )
         try:
-            pull_rc, pull_out = term.run(f"deploy_pull_{name}", pull_cmd, timeout=file_timeout)
+            pull_rc, pull_out = board_term_run(
+                cfg, term, f"deploy_scp_{name}", pull_cmd, file_timeout, retries=1
+            )
         except TerminalTimeoutError as exc:
             pull_out = exc.partial_output or ""
-            all_logs.append(f"=== deploy_pull_{name} (timed out) ===\n{pull_out}\n")
+            all_logs.append(f"=== deploy_scp_{name} (timed out) ===\n{pull_out}\n")
             save_case_log(cfg, "deploy_scp.log", "".join(all_logs))
             raise
-        all_logs.append(f"=== deploy_pull_{name} ===\n{pull_out}\n")
+        all_logs.append(f"=== deploy_scp_{name} ===\n{pull_out}\n")
         if pull_rc != 0:
             save_case_log(cfg, "deploy_scp.log", "".join(all_logs))
             raise TerminalCommandError(
-                f"board pull failed for {name!r} with rc={pull_rc}: {pull_out.strip()}"
+                f"board scp failed for {name!r} with rc={pull_rc}: {pull_out.strip()}"
+            )
+
+        verify_cmd = f"test $(wc -c < {shlex.quote(f'{work_dir}/{name}')}) -eq {file_size}"
+        try:
+            verify_rc, verify_out = board_term_run(
+                cfg, term, f"deploy_verify_{name}", verify_cmd, 30.0, retries=1
+            )
+        except TerminalTimeoutError as exc:
+            verify_out = exc.partial_output or ""
+            all_logs.append(f"=== deploy_verify_{name} (timed out) ===\n{verify_out}\n")
+            save_case_log(cfg, "deploy_scp.log", "".join(all_logs))
+            raise
+        all_logs.append(f"=== deploy_verify_{name} ===\n{verify_out}\n")
+        if verify_rc != 0:
+            save_case_log(cfg, "deploy_scp.log", "".join(all_logs))
+            raise TerminalCommandError(
+                f"board scp verify failed for {name!r} with rc={verify_rc}: {verify_out.strip()}"
             )
 
         raw_name = DEPLOY_GUNZIP_ARTIFACTS.get(name)
@@ -747,23 +791,22 @@ def deploy_file_pull_timeout(file_size: int, remaining: float) -> float:
     return min(remaining, needed)
 
 
-def board_ssh_pull_file_cmd(
+def board_ssh_scp_pull_file_cmd(
     cfg: dict[str, Any],
     staging_dir: str,
     name: str,
     work_dir: str,
-    expected_size: int,
     *,
     large_transfer: bool = False,
 ) -> str:
-    """Pull one staged file over ssh cat using CI_SSH_KEY/CI_SSH_HOST env vars."""
+    """Pull one staged file over scp using CI_SSH_KEY/CI_SSH_HOST env vars."""
     remote_file = f"{staging_dir}/{name}"
     local_file = f"{work_dir}/{name}"
     opts = _board_ssh_opts_short(cfg, large_transfer=large_transfer)
     return (
-        f"ssh -i $CI_SSH_KEY {opts} $CI_SSH_HOST "
-        f"'cat {shlex.quote(remote_file)}' > {shlex.quote(local_file)} </dev/null && "
-        f"test $(wc -c < {shlex.quote(local_file)}) -eq {expected_size}"
+        f"scp -i $CI_SSH_KEY {opts} "
+        f"$CI_SSH_HOST:{shlex.quote(remote_file)} "
+        f"{shlex.quote(local_file)} </dev/null"
     )
 
 

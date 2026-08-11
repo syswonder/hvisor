@@ -88,6 +88,55 @@ def loadCiYaml() {
     return data
 }
 
+def loadHvisorToolConfig() {
+    def path = 'jenkins/hvisor-tool.yaml'
+    def defaults = [
+        repo: env.HVISOR_TOOL_URL ?: 'https://github.com/syswonder/hvisor-tool.git',
+        ref : 'main',
+    ]
+    if (!fileExists(path)) {
+        return defaults
+    }
+    def data = readYaml file: path
+    def repo = (data?.repo ?: defaults.repo).toString().trim()
+    def ref = (data?.ref ?: defaults.ref).toString().trim()
+    if (!repo || !ref) {
+        error("${path}: 'repo' and 'ref' must be non-empty")
+    }
+    return [repo: repo, ref: ref]
+}
+
+def checkoutHvisorTool(Map toolCfg, String targetDir) {
+    def url = toolCfg.repo.toString().trim()
+    def ref = (toolCfg.ref ?: '').trim()
+
+    if (ref ==~ /^[0-9a-fA-F]{7,40}$/) {
+        sh """
+            set -eux
+            rm -rf '${targetDir}'
+            git init '${targetDir}'
+            git -C '${targetDir}' remote add origin '${url}'
+            git -C '${targetDir}' fetch --depth 50 origin '${ref}'
+            git -C '${targetDir}' checkout FETCH_HEAD
+        """
+    } else if (ref.startsWith('refs/')) {
+        sh """
+            set -eux
+            rm -rf '${targetDir}'
+            git init '${targetDir}'
+            git -C '${targetDir}' remote add origin '${url}'
+            git -C '${targetDir}' fetch --depth 1 origin '${ref}:ci-ref'
+            git -C '${targetDir}' checkout ci-ref
+        """
+    } else {
+        sh """
+            set -eux
+            rm -rf '${targetDir}'
+            git clone --depth 1 --branch '${ref}' '${url}' '${targetDir}'
+        """
+    }
+}
+
 def getBidConfig(ci, String bid) {
     return (ci.bids ?: []).find { entry ->
         return (entry?.bid ?: '').toString().trim() == bid
@@ -157,10 +206,6 @@ def publishGithubCheckCompleted(String checkName, String conclusion) {
 
 def publishMatrixCheckInProgress() {
     publishGithubCheckInProgress(matrixCheckName())
-}
-
-def publishMatrixCheckCompleted(String conclusion) {
-    publishGithubCheckCompleted(matrixCheckName(), conclusion)
 }
 
 def finishGithubCheck(String checkName, String buildResult) {
@@ -258,6 +303,16 @@ pipeline {
             post {
                 always {
                     script { finishGithubCheck('linter', currentBuild.currentResult) }
+                }
+            }
+        }
+
+        stage('Checkout hvisor-tool') {
+            steps {
+                script {
+                    def toolCfg = loadHvisorToolConfig()
+                    echo "Checkout hvisor-tool [repo=${toolCfg.repo}, ref=${toolCfg.ref}]"
+                    checkoutHvisorTool(toolCfg, env.HVISOR_TOOL_PATH)
                 }
             }
         }
@@ -364,17 +419,6 @@ pipeline {
                                     }
 
                                     echo "Build hvisor-tool [BID=${env.BID}, TARCH=${tarch}, KDIR=${kdir}]"
-                                    if (!fileExists(env.HVISOR_TOOL_PATH)) {
-                                        sh "mkdir -p ${env.HVISOR_TOOL_PATH}"
-                                    }
-                                    dir(env.HVISOR_TOOL_PATH) {
-                                        checkout([
-                                            $class: 'GitSCM',
-                                            branches: [[name: '*/main']],
-                                            extensions: [[$class: 'CloneOption', depth: 1, noTags: true]],
-                                            userRemoteConfigs: [[url: env.HVISOR_TOOL_URL]]
-                                        ])
-                                    }
                                     sh """
                                         export PATH=${env.TOOLCHAIN_PATHS}:\$PATH
                                         make -C ${env.HVISOR_TOOL_PATH} all ARCH=${tarch} KDIR=${kdir}
@@ -491,6 +535,25 @@ pipeline {
                             finishGithubCheck(matrixCheckName(), currentBuild.currentResult)
                         }
                     }
+                }
+            }
+        }
+
+        stage('hvisor-tool on the branch of test') {
+            steps {
+                script {
+                    def checkName = 'hvisor-tool on the branch of test'
+                    publishGithubCheckInProgress(checkName)
+                    def ref = loadHvisorToolConfig().ref
+                    echo "Verify hvisor-tool pin [ref=${ref}]"
+                    if (ref != 'main') {
+                        error("hvisor-tool ref must be main for merge (current ref=${ref}). Restore ref: main in jenkins/hvisor-tool.yaml.")
+                    }
+                }
+            }
+            post {
+                always {
+                    script { finishGithubCheck('hvisor-tool on the branch of test', currentBuild.currentResult) }
                 }
             }
         }

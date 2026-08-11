@@ -12,7 +12,8 @@ while read -r file; do
   fi
 done < <(find . -type f -name "*.rs" \
   -not \( -path "./vendor/*" -prune \) \
-  -not \( -path "./target/*" -prune \))
+  -not \( -path "./target/*" -prune \) \
+  -not \( -path "./hvisor-tool/*" -prune \))
 
 echo $ec
 exit $ec
