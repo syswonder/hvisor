@@ -153,7 +153,6 @@ int virtio_console_init(VirtIODevice *vdev) {
         return -1;
     }
 
-    vdev->virtio_close = virtio_console_close;
     return 0;
 }
 

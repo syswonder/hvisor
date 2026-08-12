@@ -315,8 +315,6 @@ int virtio_net_init(VirtIODevice *vdev, char *devname) {
         net->tapfd = -1;
         return -1;
     }
-    vdev->status_changed = net_on_status;
-    vdev->virtio_close = virtio_net_close;
     return 0;
 }
 

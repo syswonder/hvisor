@@ -169,9 +169,7 @@ void rw_barrier(void);
 
 VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
                                    uint64_t base_addr, uint64_t len,
-                                   uint32_t irq_id, void *arg0, void *arg1);
-
-void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type);
+                                   uint32_t irq_id, void *params);
 
 void init_mmio_regs(VirtMmioRegs *regs, VirtioDeviceType type);
 
