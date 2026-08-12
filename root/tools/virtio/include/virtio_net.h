@@ -23,6 +23,11 @@
 
 #define VIRTQUEUE_NET_MAX_SIZE 256
 
+struct virtio_net_init_params {
+    const uint8_t *mac;
+    const char *tap;
+};
+
 // Max iov entries for a single descriptor chain.  Each descriptor in the
 // chain contributes at most one iov entry, and a chain can never exceed
 // the total queue size (a single descriptor's next field cannot wrap past
@@ -56,5 +61,9 @@ int virtio_net_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq);
 void virtio_net_event_handler(int fd, int epoll_type, void *param);
 int virtio_net_init(VirtIODevice *vdev, char *devname);
 void virtio_net_close(VirtIODevice *vdev);
+void virtio_net_reset(VirtIODevice *vdev);
 void net_on_status(VirtIODevice *vdev, uint32_t status);
+
+extern const struct virtio_device_ops virtio_net_ops;
+
 #endif //_HVISOR_VIRTIO_NET_H

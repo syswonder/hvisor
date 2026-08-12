@@ -52,9 +52,16 @@ typedef struct virtio_blk_dev {
     int close;
 } BlkDev;
 
+struct virtio_blk_init_params {
+    const char *img_path;
+};
+
 BlkDev *init_blk_dev(VirtIODevice *vdev);
 int virtio_blk_init(VirtIODevice *vdev, const char *img_path);
 int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq);
 void virtio_blk_close(VirtIODevice *vdev);
+void virtio_blk_reset(VirtIODevice *vdev);
+
+extern const struct virtio_device_ops virtio_blk_ops;
 
 #endif /* _HVISOR_VIRTIO_BLK_H */
