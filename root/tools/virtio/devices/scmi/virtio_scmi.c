@@ -193,6 +193,22 @@ static void virtio_scmi_close(VirtIODevice *vdev) {
     free(vdev);
 }
 
+/*
+ * Deep-copy a count-sized uint32 id array; count == 0 keeps *dst NULL.
+ * Failure cleanup is deferred to ops->close (scmi_dev_free tolerates
+ * NULL id arrays), so a non-zero return just needs to propagate.
+ */
+static int scmi_copy_id_array(uint32_t **dst, const uint32_t *src,
+                              uint32_t count) {
+    if (count == 0)
+        return 0;
+    *dst = calloc(count, sizeof(uint32_t));
+    if (!*dst)
+        return -ENOMEM;
+    memcpy(*dst, src, count * sizeof(uint32_t));
+    return 0;
+}
+
 static int virtio_scmi_do_init(VirtIODevice *vdev, const void *params) {
     const struct virtio_scmi_init_params *p = params;
     SCMIDev *dev;
@@ -201,34 +217,16 @@ static int virtio_scmi_do_init(VirtIODevice *vdev, const void *params) {
         dev = calloc(1, sizeof(SCMIDev));
         if (!dev)
             return -ENOMEM;
+        vdev->dev = dev;
 
         // Deep-copy id arrays so that SCMIDev and the caller each own their
         // copies — no ownership transfer, no double-free risk.
-        if (p->clock_count > 0) {
-            dev->clock_ids = calloc(p->clock_count, sizeof(uint32_t));
-            if (!dev->clock_ids)
-                goto err_copy;
-            memcpy(dev->clock_ids, p->clock_ids,
-                   p->clock_count * sizeof(uint32_t));
-        }
+        if (scmi_copy_id_array(&dev->clock_ids, p->clock_ids, p->clock_count) ||
+            scmi_copy_id_array(&dev->reset_ids, p->reset_ids, p->reset_count) ||
+            scmi_copy_id_array(&dev->power_ids, p->power_ids, p->power_count))
+            return -ENOMEM;
         dev->clock_count = p->clock_count;
-
-        if (p->reset_count > 0) {
-            dev->reset_ids = calloc(p->reset_count, sizeof(uint32_t));
-            if (!dev->reset_ids)
-                goto err_copy;
-            memcpy(dev->reset_ids, p->reset_ids,
-                   p->reset_count * sizeof(uint32_t));
-        }
         dev->reset_count = p->reset_count;
-
-        if (p->power_count > 0) {
-            dev->power_ids = calloc(p->power_count, sizeof(uint32_t));
-            if (!dev->power_ids)
-                goto err_copy;
-            memcpy(dev->power_ids, p->power_ids,
-                   p->power_count * sizeof(uint32_t));
-        }
         dev->power_count = p->power_count;
 
         scmi_dev_register_protocol(dev, SCMI_PROTO_ID_BASE,
@@ -246,17 +244,10 @@ static int virtio_scmi_do_init(VirtIODevice *vdev, const void *params) {
         dev = scmi_dev_create();
         if (!dev)
             return -ENOMEM;
+        vdev->dev = dev;
     }
 
-    vdev->dev = dev;
     return 0;
-
-err_copy:
-    free(dev->clock_ids);
-    free(dev->reset_ids);
-    free(dev->power_ids);
-    free(dev);
-    return -ENOMEM;
 }
 
 const struct virtio_device_ops virtio_scmi_ops = {

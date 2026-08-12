@@ -118,10 +118,28 @@ int initialize_event_monitor() {
     }
 }
 
+void remove_event(struct hvisor_event *hevent) {
+    int i;
+
+    if (!hevent)
+        return;
+
+    for (i = 0; i < events_num; i++) {
+        if (events[i] == hevent) {
+            epoll_ctl(epoll_fd, EPOLL_CTL_DEL, hevent->fd, NULL);
+            events[i] = NULL;
+            return;
+        }
+    }
+}
+
 void destroy_event_monitor() {
     int i;
-    for (i = 0; i < events_num; i++)
-        epoll_ctl(epoll_fd, EPOLL_CTL_DEL, events[i]->fd, NULL);
+    for (i = 0; i < events_num; i++) {
+        if (events[i] != NULL)
+            epoll_ctl(epoll_fd, EPOLL_CTL_DEL, events[i]->fd, NULL);
+        events[i] = NULL;
+    }
     close(epoll_fd);
     // When the main thread exits, the epoll thread will also exit. Therefore,
     // we do not directly terminate the epoll thread here.

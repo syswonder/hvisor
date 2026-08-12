@@ -26,12 +26,7 @@
 
 static NetDev *init_net_dev(const uint8_t mac[]) {
     NetDev *dev = malloc(sizeof(NetDev));
-    dev->config.mac[0] = mac[0];
-    dev->config.mac[1] = mac[1];
-    dev->config.mac[2] = mac[2];
-    dev->config.mac[3] = mac[3];
-    dev->config.mac[4] = mac[4];
-    dev->config.mac[5] = mac[5];
+    memcpy(dev->config.mac, mac, sizeof(dev->config.mac));
     dev->config.status = VIRTIO_NET_S_LINK_UP;
     dev->tapfd = -1;
     dev->rx_ready = 0;
@@ -293,27 +288,19 @@ static int virtio_net_init(VirtIODevice *vdev, const char *devname) {
     // set tap device O_NONBLOCK. If io operation like readv blocks, then return
     // errno EWOULDBLOCK
     if (set_nonblocking(net->tapfd) < 0) {
-        close(net->tapfd);
-        net->tapfd = -1;
+        log_error("failed to set tap nonblocking");
+        return -1;
     }
     // register an epoll read event for tap device
     net->event = add_event(net->tapfd, EPOLLIN, virtio_net_event_handler, vdev);
     if (net->event == NULL) {
         log_error("Can't register net event");
-        close(net->tapfd);
-        net->tapfd = -1;
         return -1;
     }
     net->in_iov = malloc(sizeof(struct iovec) * NET_IOV_MAX);
     net->out_iov = malloc(sizeof(struct iovec) * NET_IOV_MAX);
     if (!net->in_iov || !net->out_iov) {
         log_error("failed to allocate iov buffers");
-        free(net->in_iov);
-        free(net->out_iov);
-        net->in_iov = NULL;
-        net->out_iov = NULL;
-        close(net->tapfd);
-        net->tapfd = -1;
         return -1;
     }
     return 0;
@@ -334,6 +321,7 @@ static void virtio_net_close(VirtIODevice *vdev) {
     if (dev) {
         if (dev->tapfd >= 0)
             close(dev->tapfd);
+        remove_event(dev->event);
         free(dev->event);
         free(dev->in_iov);
         free(dev->out_iov);
