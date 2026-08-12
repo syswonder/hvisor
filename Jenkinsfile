@@ -32,33 +32,6 @@ def matrixCellDir() {
     return "${env.WORKSPACE}/.matrix/${bid.replace('/', '__')}"
 }
 
-/** Stable directory name for a BID under ``$WORKSPACE/logs/``. */
-def bidLogKey(String bid = env.BID) {
-    return (bid ?: '').replace('/', '__')
-}
-
-/** Copy per-cell logs out to ``$WORKSPACE/logs/<bid>`` before ``.matrix`` is removed. */
-def collectCellLogs() {
-    def src = "${matrixCellDir()}/logs"
-    def dest = "${env.WORKSPACE}/logs/${bidLogKey()}"
-    def logsRoot = "${env.WORKSPACE}/logs"
-    sh """
-        if [ ! -d '${src}' ]; then
-            echo "No cell logs to collect: ${src}"
-            exit 0
-        fi
-        mkdir -p '${dest}' 2>/dev/null || sudo mkdir -p '${dest}'
-        sudo chown -R "\$(id -u):\$(id -g)" '${logsRoot}' 2>/dev/null || true
-        # Source may be root-owned after board sudo ci_runner.
-        if ! cp -a '${src}/.' '${dest}/' 2>/dev/null; then
-            sudo cp -a '${src}/.' '${dest}/'
-            sudo chown -R "\$(id -u):\$(id -g)" '${dest}'
-        fi
-        echo "Collected cell logs -> ${dest}"
-        ls -la '${dest}' || true
-    """
-}
-
 /** Isolated workspace for top-level CI jobs (linter, license-checker, …). */
 def jenkinsJobDir(String name) {
     return "${env.WORKSPACE}/.jenkins/${name}"
@@ -72,9 +45,6 @@ def syncWorkspaceTo(String destDir) {
             --exclude '.jenkins/' \\
             --exclude '.matrix/' \\
             --exclude '.jenkins-matrix/' \\
-            --exclude 'logs/' \\
-            --exclude '__pycache__/' \\
-            --exclude '*.pyc' \\
             '${env.WORKSPACE}/' '${destDir}/'
     """
 }
@@ -86,55 +56,6 @@ def loadCiYaml() {
         error("jenkins/ci.yaml: 'bids' must be a list")
     }
     return data
-}
-
-def loadHvisorToolConfig() {
-    def path = 'jenkins/hvisor-tool.yaml'
-    def defaults = [
-        repo: env.HVISOR_TOOL_URL ?: 'https://github.com/syswonder/hvisor-tool.git',
-        ref : 'main',
-    ]
-    if (!fileExists(path)) {
-        return defaults
-    }
-    def data = readYaml file: path
-    def repo = (data?.repo ?: defaults.repo).toString().trim()
-    def ref = (data?.ref ?: defaults.ref).toString().trim()
-    if (!repo || !ref) {
-        error("${path}: 'repo' and 'ref' must be non-empty")
-    }
-    return [repo: repo, ref: ref]
-}
-
-def checkoutHvisorTool(Map toolCfg, String targetDir) {
-    def url = toolCfg.repo.toString().trim()
-    def ref = (toolCfg.ref ?: '').trim()
-
-    if (ref ==~ /^[0-9a-fA-F]{7,40}$/) {
-        sh """
-            set -eux
-            rm -rf '${targetDir}'
-            git init '${targetDir}'
-            git -C '${targetDir}' remote add origin '${url}'
-            git -C '${targetDir}' fetch --depth 50 origin '${ref}'
-            git -C '${targetDir}' checkout FETCH_HEAD
-        """
-    } else if (ref.startsWith('refs/')) {
-        sh """
-            set -eux
-            rm -rf '${targetDir}'
-            git init '${targetDir}'
-            git -C '${targetDir}' remote add origin '${url}'
-            git -C '${targetDir}' fetch --depth 1 origin '${ref}:ci-ref'
-            git -C '${targetDir}' checkout ci-ref
-        """
-    } else {
-        sh """
-            set -eux
-            rm -rf '${targetDir}'
-            git clone --depth 1 --branch '${ref}' '${url}' '${targetDir}'
-        """
-    }
 }
 
 def getBidConfig(ci, String bid) {
@@ -208,6 +129,10 @@ def publishMatrixCheckInProgress() {
     publishGithubCheckInProgress(matrixCheckName())
 }
 
+def publishMatrixCheckCompleted(String conclusion) {
+    publishGithubCheckCompleted(matrixCheckName(), conclusion)
+}
+
 def finishGithubCheck(String checkName, String buildResult) {
     if (!isGithubCheckStarted(checkName)) {
         echo "Skip GitHub check completion for '${checkName}' (in-progress was never published)"
@@ -263,9 +188,7 @@ pipeline {
         always {
             echo "=== DEBUG: Branch ${env.BRANCH_NAME} ==="
             echo "=== DEBUG: Commit ${env.GIT_COMMIT} ==="
-            // Keep $WORKSPACE/logs (collected from cells); only tear down sandboxes.
-            sh 'sudo rm -rf .matrix 2>/dev/null || rm -rf .matrix || true'
-            archiveArtifacts artifacts: 'logs/**/*', allowEmptyArchive: true
+            deleteDir()
         }
     }
 
@@ -282,8 +205,6 @@ pipeline {
         LOONGARCH64_TOOLCHAIN_PATH = '/home/light/DEMO/toolchain/loongarch_cross_tools'
         // All toolchain bins on PATH; same for every matrix cell (no per-arch selection).
         TOOLCHAIN_PATHS = "${env.RISCV_TOOLCHAIN_PATH}/bin:${env.AARCH64_TOOLCHAIN_PATH}/bin:${env.LOONGARCH64_TOOLCHAIN_PATH}/bin"
-        TFTP_DIR = '/home/light/tftp'
-        PYTHONDONTWRITEBYTECODE = '1'
     }
 
     stages {
@@ -303,16 +224,6 @@ pipeline {
             post {
                 always {
                     script { finishGithubCheck('linter', currentBuild.currentResult) }
-                }
-            }
-        }
-
-        stage('Checkout hvisor-tool') {
-            steps {
-                script {
-                    def toolCfg = loadHvisorToolConfig()
-                    echo "Checkout hvisor-tool [repo=${toolCfg.repo}, ref=${toolCfg.ref}]"
-                    checkoutHvisorTool(toolCfg, env.HVISOR_TOOL_PATH)
                 }
             }
         }
@@ -419,6 +330,17 @@ pipeline {
                                     }
 
                                     echo "Build hvisor-tool [BID=${env.BID}, TARCH=${tarch}, KDIR=${kdir}]"
+                                    if (!fileExists(env.HVISOR_TOOL_PATH)) {
+                                        sh "mkdir -p ${env.HVISOR_TOOL_PATH}"
+                                    }
+                                    dir(env.HVISOR_TOOL_PATH) {
+                                        checkout([
+                                            $class: 'GitSCM',
+                                            branches: [[name: '*/main']],
+                                            extensions: [[$class: 'CloneOption', depth: 1, noTags: true]],
+                                            userRemoteConfigs: [[url: env.HVISOR_TOOL_URL]]
+                                        ])
+                                    }
                                     sh """
                                         export PATH=${env.TOOLCHAIN_PATHS}:\$PATH
                                         make -C ${env.HVISOR_TOOL_PATH} all ARCH=${tarch} KDIR=${kdir}
@@ -464,31 +386,8 @@ pipeline {
                                                 "${prepareScript}"
                                         """
                                     } else if (mode == 'board') {
-                                        def tftpDir = (testsCfg.tftp_dir ?: env.TFTP_DIR).toString()
-                                        def zone0Dtbs = testsCfg.zone0_dtbs ?: []
-                                        if (testsCfg.zone0_dtb) {
-                                            zone0Dtbs = [testsCfg.zone0_dtb]
-                                        }
-                                        def zone0Image = (testsCfg.zone0_image ?: "${kdir}/arch/arm64/boot/Image").toString()
-                                        echo "Deploy TFTP artifacts [BID=${env.BID}, TFTP_DIR=${tftpDir}]"
-                                        sh """
-                                            export TERM=\${TERM:-xterm}
-                                            sudo mkdir -p "${tftpDir}"
-                                            sudo find "${tftpDir}" -mindepth 1 -maxdepth 1 -type f -delete
-                                            sudo make cp ARCH=${arch} BOARD=${board} MODE=release TFTP_DIR="${tftpDir}"
-                                        """
-                                        zone0Dtbs.each { dtb ->
-                                            sh """
-                                                test -f "${dtb}"
-                                                sudo cp "${dtb}" "${tftpDir}/"
-                                            """
-                                        }
-                                        sh """
-                                            test -f "${zone0Image}"
-                                            sudo cp "${zone0Image}" "${tftpDir}/Image"
-                                            sudo chmod -R a+rX "${tftpDir}"
-                                            ls -la "${tftpDir}"
-                                        """
+                                        // Placeholder for future board artifact distribution by network.
+                                        echo "Board prepare placeholder [BID=${env.BID}]"
                                     } else {
                                         error("jenkins/ci.yaml BID=${env.BID}: unsupported tests.mode='${mode}'")
                                     }
@@ -504,24 +403,14 @@ pipeline {
                         steps {
                             dir(matrixCellDir()) {
                                 script {
-                                    def bidCfg = getBidConfig(loadCiYaml(), env.BID)
-                                    def mode = (bidCfg.tests?.mode ?: '').toString().trim()
-                                    echo "Run tests via ci_runner [BID=${env.BID}, mode=${mode}]"
-                                    if (mode == 'board') {
-                                        sh """
-                                            export TERM=\${TERM:-xterm}
-                                            sudo -E python3 jenkins/ci_runner.py \
-                                                --bid "${env.BID}"
-                                        """
-                                    } else {
-                                        sh """
-                                            export TERM=\${TERM:-xterm}
-                                            ${toolchainPathShell()}
-                                            ${qemuPathShell()}
-                                            python3 jenkins/ci_runner.py \
-                                                --bid "${env.BID}"
-                                        """
-                                    }
+                                    echo "Run tests via ci_runner [BID=${env.BID}]"
+                                    sh """
+                                        export TERM=\${TERM:-xterm}
+                                        ${toolchainPathShell()}
+                                        ${qemuPathShell()}
+                                        python3 jenkins/ci_runner.py \
+                                            --bid "${env.BID}"
+                                    """
                                 }
                             }
                         }
@@ -530,30 +419,8 @@ pipeline {
 
                 post {
                     always {
-                        script {
-                            collectCellLogs()
-                            finishGithubCheck(matrixCheckName(), currentBuild.currentResult)
-                        }
+                        script { finishGithubCheck(matrixCheckName(), currentBuild.currentResult) }
                     }
-                }
-            }
-        }
-
-        stage('hvisor-tool on the branch of test') {
-            steps {
-                script {
-                    def checkName = 'hvisor-tool on the branch of test'
-                    publishGithubCheckInProgress(checkName)
-                    def ref = loadHvisorToolConfig().ref
-                    echo "Verify hvisor-tool pin [ref=${ref}]"
-                    if (ref != 'main') {
-                        error("hvisor-tool ref must be main for merge (current ref=${ref}). Restore ref: main in jenkins/hvisor-tool.yaml.")
-                    }
-                }
-            }
-            post {
-                always {
-                    script { finishGithubCheck('hvisor-tool on the branch of test', currentBuild.currentResult) }
                 }
             }
         }

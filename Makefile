@@ -66,25 +66,13 @@ ifeq ($(MODE), release)
   build_args += --release
 endif
 
-# color code (skip tput when TERM is unset, e.g. Jenkins sh steps)
-ifdef TERM
-COLOR_GREEN := $(shell tput setaf 2 2>/dev/null)
-COLOR_RED := $(shell tput setaf 1 2>/dev/null)
-COLOR_YELLOW := $(shell tput setaf 3 2>/dev/null)
-COLOR_BLUE := $(shell tput setaf 4 2>/dev/null)
-COLOR_BOLD := $(shell tput bold 2>/dev/null)
-COLOR_RESET := $(shell tput sgr0 2>/dev/null)
-else
-COLOR_GREEN :=
-COLOR_RED :=
-COLOR_YELLOW :=
-COLOR_BLUE :=
-COLOR_BOLD :=
-COLOR_RESET :=
-endif
-
-# Defconfig / menuconfig: see tools/kconfig/kconfig_cli.py
-kconfig_python := tools/kconfig/.venv/bin/python
+# color code
+COLOR_GREEN := $(shell tput setaf 2)
+COLOR_RED := $(shell tput setaf 1)
+COLOR_YELLOW := $(shell tput setaf 3)
+COLOR_BLUE := $(shell tput setaf 4)
+COLOR_BOLD := $(shell tput bold)
+COLOR_RESET := $(shell tput sgr0)
 
 # Defconfig / menuconfig: see tools/kconfig/kconfig_cli.py
 kconfig_python := tools/kconfig/.venv/bin/python
@@ -199,11 +187,8 @@ monitor:
 jlink-server:
 	JLinkGDBServer -select USB -if JTAG -device Cortex-A53 -port 1234
 
-TFTP_DIR ?= $(HOME)/tftp
-
 cp:
-	@mkdir -p "$(TFTP_DIR)"
-	cp $(hvisor_bin) "$(TFTP_DIR)/"
+	cp $(hvisor_bin) ~/tftp
 
 test-pre: download-test-img
 	chmod +x platform/$(ARCH)/$(BOARD)/test/runner.sh

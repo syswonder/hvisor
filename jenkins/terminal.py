@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 import queue
 import re
 import select
@@ -15,8 +16,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import serial
-
-RUN_RESULT_RE = re.compile(r"__R__(?P<run_id>[a-f0-9]+):(?P<rc>\d+)")
 
 
 class TerminalTimeoutError(TimeoutError):
@@ -146,7 +145,7 @@ class SerialBackend(TerminalBackend):
 
 
 class LogCollector:
-    """Background reader that writes terminal output to a log file and console."""
+    """Background reader that continuously captures terminal output."""
 
     def __init__(
         self,
@@ -183,7 +182,6 @@ class LogCollector:
         if self._thread is not None:
             self._thread.join(timeout=5.0)
             self._thread = None
-        # Drain any bytes still buffered in the backend after the reader exits.
         deadline = time.monotonic() + 1.0
         while time.monotonic() < deadline:
             chunk = self.backend.read()
@@ -205,10 +203,6 @@ class LogCollector:
             if offset < 0 or offset > len(self._buffer):
                 return self._buffer
             return self._buffer[offset:]
-
-    def text(self) -> str:
-        with self._lock:
-            return self._buffer
 
     def _append(self, chunk: str, *, emit_console: bool = True) -> None:
         if not chunk:
@@ -239,35 +233,42 @@ class LogCollector:
             time.sleep(self.poll_interval)
 
 
+def _default_log_path() -> Path:
+    return Path(f"/tmp/hvisor-terminal-{os.getpid()}.log")
+
+
 class Terminal:
-    """High level terminal wrapper with log-file-driven command helpers."""
+    """High level terminal wrapper with command helpers."""
 
     def __init__(
         self,
         backend: TerminalBackend,
-        log_path: Path,
         encoding: str = "utf-8",
+        log_path: Path | None = None,
         console: bool = True,
     ) -> None:
         self.backend = backend
         self.encoding = encoding
-        self._collector = LogCollector(backend, log_path, encoding=encoding, console=console)
+        self._log_path = log_path or _default_log_path()
+        self._collector = LogCollector(
+            backend, self._log_path, encoding=encoding, console=console
+        )
         self._opened = False
 
     @classmethod
     def from_qemu_socket(
         cls,
         path: str,
-        log_path: Path,
         connect_timeout: float = 10.0,
         io_timeout: float = 0.2,
         encoding: str = "utf-8",
+        log_path: Path | None = None,
         console: bool = True,
     ) -> "Terminal":
         return cls(
             QemuSocketBackend(path=path, connect_timeout=connect_timeout, io_timeout=io_timeout),
-            log_path=log_path,
             encoding=encoding,
+            log_path=log_path,
             console=console,
         )
 
@@ -275,16 +276,16 @@ class Terminal:
     def from_serial(
         cls,
         port: str,
-        log_path: Path,
         baudrate: int = 115200,
         timeout: float = 0.2,
         encoding: str = "utf-8",
+        log_path: Path | None = None,
         console: bool = True,
     ) -> "Terminal":
         return cls(
             SerialBackend(port=port, baudrate=baudrate, timeout=timeout),
-            log_path=log_path,
             encoding=encoding,
+            log_path=log_path,
             console=console,
         )
 
@@ -313,57 +314,6 @@ class Terminal:
         self._ensure_open()
         self.backend.flush_input()
 
-    def offset(self) -> int:
-        self._ensure_open()
-        return self._collector.offset()
-
-    def tail_since(self, offset: int) -> str:
-        self._ensure_open()
-        return self._collector.tail_since(offset)
-
-    def send(self, command: str) -> None:
-        self._ensure_open()
-        payload = command.rstrip("\n") + "\n"
-        self.backend.write(payload.encode(self.encoding, errors="replace"))
-
-    def run(
-        self,
-        case: str,
-        command: str,
-        timeout: float = 30.0,
-        poll_interval: float = 0.05,
-        wake_interval: float | None = None,
-    ) -> tuple[int, str]:
-        """Run a shell command and wait for the compact result marker in the log."""
-        self._ensure_open()
-        run_id = uuid.uuid4().hex[:8]
-        offset = self._collector.offset()
-        wrapped = f"{command}; echo __R__{run_id}:$?"
-        self.send(wrapped)
-
-        deadline = time.monotonic() + timeout
-        next_wake = time.monotonic() + wake_interval if wake_interval else None
-        run_id_needle = f"__R__{run_id}:"
-        while time.monotonic() < deadline:
-            chunk = self._collector.tail_since(offset)
-            if run_id_needle in chunk:
-                matches = list(RUN_RESULT_RE.finditer(chunk))
-                for match in reversed(matches):
-                    if match.group("run_id") == run_id:
-                        rc = int(match.group("rc"))
-                        output = chunk[: match.start()]
-                        return rc, output
-            if next_wake is not None and time.monotonic() >= next_wake:
-                self.send("")
-                next_wake = time.monotonic() + wake_interval
-            time.sleep(poll_interval)
-
-        partial = self._collector.tail_since(offset)
-        raise TerminalTimeoutError(
-            f"timed out waiting for run result (case={case}, run_id={run_id}): {command}",
-            partial_output=partial,
-        )
-
     def wait_pattern(
         self,
         pattern: str,
@@ -383,6 +333,176 @@ class Terminal:
             time.sleep(poll_interval)
         return False
 
+    def send(self, command: str) -> None:
+        self._ensure_open()
+        payload = command.rstrip("\n") + "\n"
+        self.backend.write(payload.encode(self.encoding, errors="replace"))
+
+    def read_for(
+        self,
+        duration: float = 2.0,
+        poll_interval: float = 0.05,
+    ) -> str:
+        self._ensure_open()
+        offset = self._collector.offset()
+        deadline = time.monotonic() + duration
+        while time.monotonic() < deadline:
+            time.sleep(poll_interval)
+        return self._collector.tail_since(offset)
+
+    def send_until_get(
+        self,
+        command: str,
+        timeout: float = 30.0,
+        poll_interval: float = 0.05,
+        include_marker_line: bool = False,
+    ) -> str:
+        self._ensure_open()
+        marker = f"__HV_TERMINAL_DONE_{uuid.uuid4().hex}__"
+        offset = self._collector.offset()
+        self.send(f"{command}; echo {marker}")
+
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            buf = self._collector.tail_since(offset)
+            if marker in buf:
+                if include_marker_line:
+                    return buf
+                return self._trim_after_marker(buf, marker)
+            time.sleep(poll_interval)
+        raise TerminalTimeoutError(
+            f"timed out waiting for terminal marker: {marker}",
+            partial_output=self._collector.tail_since(offset),
+        )
+
+    def send_until_quiet(
+        self,
+        command: str,
+        quiet_seconds: float = 1.0,
+        max_duration: float = 30.0,
+        poll_interval: float = 0.05,
+    ) -> str:
+        self._ensure_open()
+        offset = self._collector.offset()
+        self.send(command)
+        return self._wait_quiet(offset, quiet_seconds, max_duration, poll_interval, context=command)
+
+    def send_and_drain(
+        self,
+        command: str,
+        read_duration: float = 0.5,
+        poll_interval: float = 0.05,
+    ) -> str:
+        """Send command and collect best-effort output for a fixed duration."""
+        self._ensure_open()
+        offset = self._collector.offset()
+        self.send(command)
+        deadline = time.monotonic() + read_duration
+        while time.monotonic() < deadline:
+            time.sleep(poll_interval)
+        return self._collector.tail_since(offset)
+
+    def read_until_quiet(
+        self,
+        quiet_seconds: float = 3.0,
+        max_duration: float = 120.0,
+        poll_interval: float = 0.05,
+    ) -> str:
+        """Continuously read until quiet for x seconds or total timeout."""
+        self._ensure_open()
+        offset = self._collector.offset()
+        try:
+            return self._wait_quiet(
+                offset, quiet_seconds, max_duration, poll_interval, context="read"
+            )
+        except TerminalTimeoutError:
+            return self._collector.tail_since(offset)
+
+    def run_until_quiet_with_status(
+        self,
+        command: str,
+        quiet_seconds: float = 1.0,
+        max_duration: float = 30.0,
+        poll_interval: float = 0.05,
+    ) -> tuple[str, int]:
+        marker = f"__HV_TERMINAL_RC_{uuid.uuid4().hex}__"
+        wrapped = f"{command}; echo {marker}0"
+        self._ensure_open()
+        offset = self._collector.offset()
+        self.send(wrapped)
+
+        deadline = time.monotonic() + max_duration
+        marker_pattern = re.compile(re.escape(marker) + r"(\d+)")
+        rc = -1
+        marker_seen_at = 0.0
+
+        while time.monotonic() < deadline:
+            buf = self._collector.tail_since(offset)
+            matches = list(marker_pattern.finditer(buf))
+            if matches:
+                last = matches[-1]
+                rc = int(last.group(1))
+                if marker_seen_at <= 0.0:
+                    marker_seen_at = time.monotonic()
+            elif marker_seen_at <= 0.0:
+                time.sleep(poll_interval)
+                continue
+
+            if marker_seen_at > 0.0 and (time.monotonic() - marker_seen_at) >= quiet_seconds:
+                cleaned = self._strip_status_marker(buf, marker)
+                return cleaned, rc
+
+            time.sleep(poll_interval)
+
+        raise TerminalTimeoutError(
+            f"timed out waiting for command status marker: {marker}",
+            partial_output=self._collector.tail_since(offset),
+        )
+
+    def _wait_quiet(
+        self,
+        offset: int,
+        quiet_seconds: float,
+        max_duration: float,
+        poll_interval: float,
+        *,
+        context: str,
+    ) -> str:
+        start = time.monotonic()
+        deadline = start + max_duration
+        last_len = self._collector.offset()
+        last_output_at = start
+
+        while time.monotonic() < deadline:
+            current_len = self._collector.offset()
+            if current_len > last_len:
+                last_len = current_len
+                last_output_at = time.monotonic()
+            elif (time.monotonic() - last_output_at) >= quiet_seconds:
+                return self._collector.tail_since(offset)
+
+            time.sleep(poll_interval)
+
+        raise TerminalTimeoutError(
+            f"timed out waiting for terminal quiet period after command: {context}",
+            partial_output=self._collector.tail_since(offset),
+        )
+
     def _ensure_open(self) -> None:
         if not self._opened:
             self.open()
+
+    @staticmethod
+    def _trim_after_marker(output: str, marker: str) -> str:
+        idx = output.find(marker)
+        if idx < 0:
+            return output
+        return output[:idx]
+
+    @staticmethod
+    def _strip_status_marker(output: str, marker: str) -> str:
+        pattern = re.compile(re.escape(marker) + r"\d+")
+        matches = list(pattern.finditer(output))
+        if not matches:
+            return output
+        return output[: matches[-1].start()]
