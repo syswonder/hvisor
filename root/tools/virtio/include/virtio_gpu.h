@@ -212,14 +212,6 @@ typedef struct virtio_gpu_control_cmd {
 /*********************************************************************
   virtio_gpu_base.c
  */
-// Initialize GPUDev structure
-GPUDev *init_gpu_dev(GPURequestedState *requested_states);
-
-// Initialize virtio-gpu device
-
-// Close virtio-gpu device
-
-// Reset virtio-gpu device
 
 extern const struct virtio_device_ops virtio_gpu_ops;
 extern const struct virtio_config_ops virtio_gpu_config_ops;

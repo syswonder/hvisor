@@ -229,7 +229,7 @@ static int init_virtio_queue(VirtIODevice *vdev,
 // create a virtio device.
 VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
                                    uint64_t base_addr, uint64_t len,
-                                   uint32_t irq_id, void *params) {
+                                   uint32_t irq_id, const void *params) {
     const struct virtio_device_ops *ops = lookup_ops(dev_type);
     if (!ops) {
         log_error("unsupported virtio device type %d", dev_type);
@@ -1498,7 +1498,7 @@ unmap:
     return -1;
 }
 
-int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
+int create_virtio_device_from_json(const cJSON *device_json, int zone_id) {
     char *status =
         SAFE_CJSON_GET_OBJECT_ITEM(device_json, "status")->valuestring;
     if (strcmp(status, "disable") == 0)

@@ -24,7 +24,7 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
-static NetDev *init_net_dev(uint8_t mac[]) {
+static NetDev *init_net_dev(const uint8_t mac[]) {
     NetDev *dev = malloc(sizeof(NetDev));
     dev->config.mac[0] = mac[0];
     dev->config.mac[1] = mac[1];
@@ -42,7 +42,7 @@ static NetDev *init_net_dev(uint8_t mac[]) {
 }
 
 // open tap device
-static int open_tap(char *devname) {
+static int open_tap(const char *devname) {
     log_info("virtio net tap open");
     int tunfd;
     struct ifreq ifr;
@@ -281,7 +281,7 @@ static void net_on_status(VirtIODevice *vdev, uint32_t status) {
     }
 }
 
-static int virtio_net_init(VirtIODevice *vdev, char *devname) {
+static int virtio_net_init(VirtIODevice *vdev, const char *devname) {
     log_info("virtio net init");
     NetDev *net = vdev->dev;
     // open tap device
@@ -345,14 +345,14 @@ static void virtio_net_close(VirtIODevice *vdev) {
     free(vdev);
 }
 
-static int virtio_net_do_init(VirtIODevice *vdev, void *params) {
+static int virtio_net_do_init(VirtIODevice *vdev, const void *params) {
     const struct virtio_net_init_params *p = params;
     if (!p)
         return -EINVAL;
-    vdev->dev = init_net_dev((uint8_t *)p->mac);
+    vdev->dev = init_net_dev(p->mac);
     if (!vdev->dev)
         return -ENOMEM;
-    return virtio_net_init(vdev, (char *)p->tap);
+    return virtio_net_init(vdev, p->tap);
 }
 
 const struct virtio_device_ops virtio_net_ops = {
@@ -371,7 +371,7 @@ const struct virtio_device_ops virtio_net_ops = {
         },
 };
 
-static int virtio_net_parse_params(cJSON *json, void **out) {
+static int virtio_net_parse_params(const cJSON *json, void **out) {
     struct virtio_net_init_params *p = calloc(1, sizeof(*p));
     if (!p)
         return -ENOMEM;

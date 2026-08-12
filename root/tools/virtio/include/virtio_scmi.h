@@ -249,13 +249,13 @@ void scmi_dev_free(SCMIDev *dev);
 
 extern const struct virtio_device_ops virtio_scmi_ops;
 
-/* JSON array parsing: fills dev->clock_ids / dev->reset_ids / dev->power_ids */
+/* JSON array parsing: fills p->clock_ids / p->reset_ids / p->power_ids */
 int scmi_dev_parse_clock_ids(struct virtio_scmi_init_params *p,
-                             void *json_array);
+                             const cJSON *json_array);
 int scmi_dev_parse_reset_ids(struct virtio_scmi_init_params *p,
-                             void *json_array);
+                             const cJSON *json_array);
 int scmi_dev_parse_power_ids(struct virtio_scmi_init_params *p,
-                             void *json_array);
+                             const cJSON *json_array);
 void scmi_dev_free_params(struct virtio_scmi_init_params *p);
 
 /* /dev/hvisor fd, opened once in virtio_start() */

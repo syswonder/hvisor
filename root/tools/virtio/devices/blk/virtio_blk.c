@@ -280,7 +280,7 @@ static void virtio_blk_close(VirtIODevice *vdev) {
     free(vdev);
 }
 
-static int virtio_blk_do_init(VirtIODevice *vdev, void *params) {
+static int virtio_blk_do_init(VirtIODevice *vdev, const void *params) {
     const struct virtio_blk_init_params *p = params;
     if (!p)
         return -EINVAL;
@@ -302,7 +302,7 @@ const struct virtio_device_ops virtio_blk_ops = {
     .notify_handlers = {virtio_blk_notify_handler},
 };
 
-static int virtio_blk_parse_params(cJSON *json, void **out) {
+static int virtio_blk_parse_params(const cJSON *json, void **out) {
     struct virtio_blk_init_params *p = calloc(1, sizeof(*p));
     if (!p)
         return -ENOMEM;

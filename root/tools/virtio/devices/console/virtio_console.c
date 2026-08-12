@@ -226,7 +226,7 @@ static void virtio_console_close(VirtIODevice *vdev) {
     free(vdev);
 }
 
-static int virtio_console_do_init(VirtIODevice *vdev, void *params) {
+static int virtio_console_do_init(VirtIODevice *vdev, const void *params) {
     (void)params;
     vdev->dev = init_console_dev();
     if (!vdev->dev)
@@ -249,7 +249,7 @@ const struct virtio_device_ops virtio_console_ops = {
         },
 };
 
-static int virtio_console_parse_params(cJSON *json, void **out) {
+static int virtio_console_parse_params(const cJSON *json, void **out) {
     (void)json;
     *out = NULL;
     return 0;
