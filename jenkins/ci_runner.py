@@ -25,6 +25,7 @@ ZONE1_INNER_LOG_FETCH_TIMEOUT = 30.0
 DEPLOY_GUNZIP_ARTIFACTS = {"hvisor.gz": "hvisor"}
 DEPLOY_LARGE_PULL_BYTES = 512 * 1024
 DEPLOY_BOARD_TMP_DIR = "/tmp/ci_pull"
+DEPLOY_BOARD_TMP_FILE = f"{DEPLOY_BOARD_TMP_DIR}/f"
 DEPLOY_SPLIT_PART_RE = re.compile(r"^(.+)\.part\.[a-z]{2}$")
 BOARD_HOME = "~"
 BOARD_PUBKEY_LINE = re.compile(r"^ssh-(?:ed25519|rsa)\s+\S+")
@@ -248,10 +249,6 @@ def board_path(work_dir: str, *parts: str) -> str:
     return f"{work_dir}/{rel}" if rel else work_dir
 
 
-def deploy_pull_tmp_path(name: str) -> str:
-    return f"{DEPLOY_BOARD_TMP_DIR}/{name.replace('/', '_')}"
-
-
 def board_ssh_host(cfg: dict[str, Any]) -> str:
     return f"{cfg['network_host_user']}@{cfg['network_host_ip']}"
 
@@ -342,31 +339,29 @@ def board_pubkey_from_output(output: str) -> str | None:
 def _export_board_ssh_env(cfg: dict[str, Any], term: Terminal) -> None:
     if cfg.get("_board_ssh_env"):
         return
+    connect = int(cfg.get("deploy_ssh_connect_timeout", 30))
     term.run(
         "board_ssh_env",
-        f"export CI_SSH_HOST={shlex.quote(board_ssh_host(cfg))}",
+        (
+            f"export CI_SSH_HOST={shlex.quote(board_ssh_host(cfg))} "
+            f"CI_SSH_OPTS='-o BatchMode=yes -o ConnectTimeout={connect} "
+            f"-o StrictHostKeyChecking=no'"
+        ),
         timeout=15.0,
     )
     cfg["_board_ssh_env"] = True
-
-
-def _board_ssh_opts_short(cfg: dict[str, Any], *, large_transfer: bool = False) -> str:
-    timeout = int(cfg.get("deploy_ssh_connect_timeout", 30))
-    opts = f"-o BatchMode=yes -o ConnectTimeout={timeout} -o StrictHostKeyChecking=no"
-    if large_transfer:
-        opts += " -o ServerAliveInterval=0 -o TCPKeepAlive=yes"
-    return opts
 
 
 def _board_ssh_probe(cfg: dict[str, Any], term: Terminal) -> None:
     _export_board_ssh_env(cfg, term)
     host_user = cfg["network_host_user"]
     host_ip = cfg["network_host_ip"]
-    opts = _board_ssh_opts_short(cfg)
-    probe_timeout = float(int(cfg.get("deploy_ssh_connect_timeout", 30)) + 30)
+    connect_timeout = int(cfg.get("deploy_ssh_connect_timeout", 30))
+    board_limit = connect_timeout + 15
+    probe_timeout = float(board_limit + 30)
     probe_rc, probe_out = term.run(
         "deploy_ssh_probe",
-        board_priv(cfg, f"ssh {opts} $CI_SSH_HOST true </dev/null"),
+        board_priv(cfg, f"timeout {board_limit} ssh $CI_SSH_OPTS $CI_SSH_HOST true </dev/null"),
         timeout=probe_timeout,
     )
     if probe_rc == 0:
@@ -413,6 +408,17 @@ def resolve_staging_dir(raw: str, arch: str, board: str) -> str:
     if base.endswith(suffix):
         return base
     return f"{base}/{suffix}"
+
+
+def deploy_board_staging_alias(cfg: dict[str, Any]) -> str:
+    """Symlink under /tmp so board scp commands fit the serial line limit."""
+    alias = Path("/tmp/s") / cfg["board"].replace("/", "_")
+    target = Path(cfg["network_staging_dir"])
+    alias.parent.mkdir(parents=True, exist_ok=True)
+    if alias.is_symlink() or alias.exists():
+        alias.unlink()
+    alias.symlink_to(target, target_is_directory=True)
+    return str(alias)
 
 
 def deploy_ensure_work_dir(cfg: dict[str, Any], term: Terminal) -> str:
@@ -493,6 +499,60 @@ def deploy_board_cmd(
     return out
 
 
+def deploy_scp_to_tmp(
+    cfg: dict[str, Any],
+    term: Terminal,
+    all_logs: list[str],
+    name: str,
+    tmp_path: str,
+    file_size: int,
+    file_timeout: float,
+) -> None:
+    """Scp one file to tmp_path; recover when serial loses the result marker."""
+    scp_cmd = (
+        f"scp -q $CI_SSH_OPTS $CI_SSH_HOST:$CI_D/{name} {tmp_path} </dev/null 2>/dev/null"
+    )
+    case_id = f"deploy_scp_{name}"
+    try:
+        deploy_board_cmd(
+            cfg, term, all_logs, case_id, scp_cmd, file_timeout,
+            f"board scp failed for {name!r}", retries=0,
+        )
+    except TerminalTimeoutError:
+        check = f"test $(wc -c < {tmp_path}) -eq {file_size}"
+        rc, out = board_term_run(cfg, term, f"{case_id}_recover", check, 20.0, retries=0)
+        if rc != 0:
+            deploy_fail(cfg, all_logs, f"{case_id} (timed out)", out)
+            raise
+        all_logs.append(f"=== {case_id} (recovered) ===\n{out}\n")
+        print(f"[deploy] scp recovered after serial timeout: {name}", flush=True)
+
+
+def deploy_install_from_tmp(
+    cfg: dict[str, Any],
+    term: Terminal,
+    all_logs: list[str],
+    name: str,
+    final_path: str,
+    file_size: int,
+) -> None:
+    install_cmd = f"cp $CI_F {final_path} && rm -f $CI_F"
+    case_id = f"deploy_install_{name}"
+    try:
+        deploy_board_cmd(
+            cfg, term, all_logs, case_id, install_cmd, 30.0,
+            f"board install failed for {name!r}", retries=0,
+        )
+    except TerminalTimeoutError:
+        check = f"test $(wc -c < {final_path}) -eq {file_size}"
+        rc, out = board_term_run(cfg, term, f"{case_id}_recover", check, 20.0, retries=0)
+        if rc != 0:
+            deploy_fail(cfg, all_logs, f"{case_id} (timed out)", out)
+            raise
+        all_logs.append(f"=== {case_id} (recovered) ===\n{out}\n")
+        print(f"[deploy] install recovered after serial timeout: {name}", flush=True)
+
+
 def deploy_board_pull_file(
     cfg: dict[str, Any],
     term: Terminal,
@@ -516,33 +576,14 @@ def deploy_board_pull_file(
 
     file_size = staging_path.joinpath(name).stat().st_size
     file_timeout = deploy_file_pull_timeout(file_size, remaining)
-    tmp_path = deploy_pull_tmp_path(name)
+    tmp_path = DEPLOY_BOARD_TMP_FILE
     final_path = board_path(work_dir, name)
-    pull_cmd = board_ssh_scp_pull_file_cmd(
-        cfg,
-        staging_dir,
-        name,
-        tmp_path,
-        large_transfer=file_size >= DEPLOY_LARGE_PULL_BYTES,
-    )
     print(
         f"[deploy] scp ({index}/{total}): {name} ({file_size} bytes, timeout={file_timeout:.0f}s)",
         flush=True,
     )
-    deploy_board_cmd(
-        cfg, term, all_logs, f"deploy_scp_{name}", pull_cmd, file_timeout,
-        f"board scp failed for {name!r}", retries=1,
-    )
-    deploy_board_cmd(
-        cfg, term, all_logs, f"deploy_verify_{name}",
-        f"test $(wc -c < {tmp_path}) -eq {file_size}", 30.0,
-        f"board scp verify failed for {name!r}", retries=1,
-    )
-    deploy_board_cmd(
-        cfg, term, all_logs, f"deploy_install_{name}",
-        f"mkdir -p {board_path(work_dir)} && mv {tmp_path} {final_path}", 30.0,
-        f"board install failed for {name!r}", retries=1,
-    )
+    deploy_scp_to_tmp(cfg, term, all_logs, name, tmp_path, file_size, file_timeout)
+    deploy_install_from_tmp(cfg, term, all_logs, name, final_path, file_size)
 
 
 def deploy_assemble_split_file(
@@ -623,12 +664,12 @@ def deploy_board_pull(cfg: dict[str, Any], term: Terminal) -> int:
 
     host_ip = cfg["network_host_ip"]
     host_user = cfg["network_host_user"]
-    staging_dir = cfg["network_staging_dir"]
 
     print("[deploy] staging files on host", flush=True)
     stage_board_files(cfg)
 
-    staging_path = Path(staging_dir)
+    staging_dir = deploy_board_staging_alias(cfg)
+    staging_path = Path(cfg["network_staging_dir"])
     if not staging_path.is_dir():
         raise TerminalCommandError(f"staging dir not found: {staging_path}")
 
@@ -655,9 +696,18 @@ def deploy_board_pull(cfg: dict[str, Any], term: Terminal) -> int:
     if split_groups:
         print(f"[deploy] split artifacts: {', '.join(sorted(split_groups))}", flush=True)
 
+    board_term_run(
+        cfg,
+        term,
+        "deploy_pull_env",
+        f"export CI_D={shlex.quote(staging_dir)} CI_F={DEPLOY_BOARD_TMP_FILE}",
+        30.0,
+        retries=0,
+    )
+
     for index, name in enumerate(pull_files, start=1):
         if index > 1:
-            time.sleep(2.0)
+            time.sleep(3.0)
         deploy_board_pull_file(
             cfg,
             term,
@@ -926,24 +976,6 @@ def deploy_file_pull_timeout(file_size: int, remaining: float) -> float:
     min_bps = 8192.0
     needed = max(90.0, file_size / min_bps + 45.0)
     return min(remaining, needed)
-
-
-def board_ssh_scp_pull_file_cmd(
-    cfg: dict[str, Any],
-    staging_dir: str,
-    name: str,
-    dest_path: str,
-    *,
-    large_transfer: bool = False,
-) -> str:
-    """Pull one staged file over scp using default board SSH identity."""
-    remote_file = f"{staging_dir}/{name}"
-    opts = _board_ssh_opts_short(cfg, large_transfer=large_transfer)
-    return (
-        f"scp {opts} "
-        f"$CI_SSH_HOST:{shlex.quote(remote_file)} "
-        f"{dest_path} </dev/null"
-    )
 
 
 def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
