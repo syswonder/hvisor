@@ -274,4 +274,6 @@ struct hvisor_scmi_ioctl_hdr {
 int hvisor_scmi_ioctl_cmd(int ioctl_cmd, void *args, size_t args_size,
                           uint32_t subcmd, const char *proto_name);
 
+extern const struct virtio_config_ops virtio_scmi_config_ops;
+
 #endif

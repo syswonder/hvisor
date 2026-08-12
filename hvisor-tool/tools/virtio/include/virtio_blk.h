@@ -63,5 +63,6 @@ void virtio_blk_close(VirtIODevice *vdev);
 void virtio_blk_reset(VirtIODevice *vdev);
 
 extern const struct virtio_device_ops virtio_blk_ops;
+extern const struct virtio_config_ops virtio_blk_config_ops;
 
 #endif /* _HVISOR_VIRTIO_BLK_H */

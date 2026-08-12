@@ -8,6 +8,7 @@
  * Authors:
  *      
  */
+#include "json_parse.h"
 #include "log.h"
 #include "sys/queue.h"
 #include "unistd.h"
@@ -269,6 +270,27 @@ const struct virtio_device_ops virtio_gpu_ops = {
             [GPU_CONTROL_QUEUE] = virtio_gpu_ctrl_notify_handler,
             [GPU_CURSOR_QUEUE] = virtio_gpu_cursor_notify_handler,
         },
+};
+
+static int virtio_gpu_parse_params(cJSON *json, void **out) {
+    GPURequestedState *s = calloc(1, sizeof(*s));
+    if (!s)
+        return -ENOMEM;
+
+    if (parse_json_u32(cJSON_GetObjectItem(json, "width"), &s->width) != 0 ||
+        parse_json_u32(cJSON_GetObjectItem(json, "height"), &s->height) != 0) {
+        free(s);
+        return -EINVAL;
+    }
+    *out = s;
+    return 0;
+}
+
+static void virtio_gpu_free_params(void *params) { free(params); }
+
+const struct virtio_config_ops virtio_gpu_config_ops = {
+    .parse = virtio_gpu_parse_params,
+    .free = virtio_gpu_free_params,
 };
 
 int virtio_gpu_ctrl_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {

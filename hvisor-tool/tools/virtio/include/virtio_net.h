@@ -24,7 +24,7 @@
 #define VIRTQUEUE_NET_MAX_SIZE 256
 
 struct virtio_net_init_params {
-    const uint8_t *mac;
+    uint8_t mac[6];
     const char *tap;
 };
 
@@ -65,5 +65,6 @@ void virtio_net_reset(VirtIODevice *vdev);
 void net_on_status(VirtIODevice *vdev, uint32_t status);
 
 extern const struct virtio_device_ops virtio_net_ops;
+extern const struct virtio_config_ops virtio_net_config_ops;
 
 #endif //_HVISOR_VIRTIO_NET_H

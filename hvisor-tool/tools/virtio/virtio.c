@@ -201,6 +201,24 @@ static const struct virtio_device_ops *lookup_ops(VirtioDeviceType type) {
     return device_ops_table[type];
 }
 
+static const struct virtio_config_ops *const config_ops_table[] = {
+    [VirtioTBlock] = &virtio_blk_config_ops,
+    [VirtioTNet] = &virtio_net_config_ops,
+    [VirtioTConsole] = &virtio_console_config_ops,
+    [VirtioTSCMI] = &virtio_scmi_config_ops,
+#ifdef ENABLE_VIRTIO_GPU
+    [VirtioTGPU] = &virtio_gpu_config_ops,
+#endif
+};
+
+static const struct virtio_config_ops *
+lookup_config_ops(VirtioDeviceType type) {
+    int n = (int)(sizeof(config_ops_table) / sizeof(config_ops_table[0]));
+    if (type <= VirtioTNone || (int)type >= n)
+        return NULL;
+    return config_ops_table[type];
+}
+
 static int init_virtio_queue(VirtIODevice *vdev,
                              const struct virtio_device_ops *ops);
 
@@ -1481,46 +1499,36 @@ unmap:
 }
 
 int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
-    VirtioDeviceType dev_type = VirtioTNone;
-    uint64_t base_addr = 0, len = 0;
-    uint32_t irq_id = 0;
-
     char *status =
         SAFE_CJSON_GET_OBJECT_ITEM(device_json, "status")->valuestring;
     if (strcmp(status, "disable") == 0)
         return 0;
 
-    // Get device type
     char *type = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "type")->valuestring;
-    void *params = NULL;
-    struct virtio_scmi_init_params scmi_params = {0};
 
-    // Mapping table for device types
     static const struct {
         const char *name;
         VirtioDeviceType type;
     } device_type_map[] = {
         {"blk", VirtioTBlock},       {"net", VirtioTNet},
         {"console", VirtioTConsole}, {"gpu", VirtioTGPU},
-        {"scmi", VirtioTSCMI},       {NULL, VirtioTNone} // Sentinel
+        {"scmi", VirtioTSCMI},       {NULL, VirtioTNone},
     };
 
-    // Find device type in mapping table
-    dev_type = VirtioTNone;
+    VirtioDeviceType dev_type = VirtioTNone;
     for (int i = 0; device_type_map[i].name != NULL; i++) {
         if (strcmp(type, device_type_map[i].name) == 0) {
             dev_type = device_type_map[i].type;
             break;
         }
     }
-
     if (dev_type == VirtioTNone) {
         log_error("unknown device type %s", type);
         return -1;
     }
 
-    // Get base_addr, len, irq_id (mmio region base address and length, device
-    // interrupt number)
+    uint64_t base_addr = 0, len = 0;
+    uint32_t irq_id = 0;
     if (parse_json_u64(SAFE_CJSON_GET_OBJECT_ITEM(device_json, "addr"),
                        &base_addr) != 0 ||
         parse_json_u64(SAFE_CJSON_GET_OBJECT_ITEM(device_json, "len"), &len) !=
@@ -1531,99 +1539,26 @@ int create_virtio_device_from_json(cJSON *device_json, int zone_id) {
         return -1;
     }
 
-    // Handle other fields according to the device type
-    if (dev_type == VirtioTBlock) {
-        // virtio-blk
-        char *img = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "img")->valuestring;
-        struct virtio_blk_init_params blk_params = {.img_path = img};
-        params = &blk_params;
-        log_info("debug: img is %s", img);
-    } else if (dev_type == VirtioTNet) {
-        // virtio-net
-        char *tap = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "tap")->valuestring;
-        cJSON *mac_json = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "mac");
-        uint8_t mac[6];
-        for (int i = 0; i < 6; i++) {
-            if (parse_json_u8(SAFE_CJSON_GET_ARRAY_ITEM(mac_json, i),
-                              &mac[i]) != 0) {
-                log_error("failed to parse mac address");
-                return -1;
-            }
-        }
-        struct virtio_net_init_params net_params = {.mac = mac, .tap = tap};
-        params = &net_params;
-    } else if (dev_type == VirtioTConsole) {
-        // virtio-console
-        params = NULL;
-    } else if (dev_type == VirtioTGPU) {
-// virtio-gpu
-#ifdef ENABLE_VIRTIO_GPU
-        // TODO: Add display device settings
-        GPURequestedState *requested_state = NULL;
-        requested_state =
-            (GPURequestedState *)malloc(sizeof(GPURequestedState));
-        memset(requested_state, 0, sizeof(GPURequestedState));
-        if (parse_json_u32(SAFE_CJSON_GET_OBJECT_ITEM(device_json, "width"),
-                           &requested_state->width) != 0 ||
-            parse_json_u32(SAFE_CJSON_GET_OBJECT_ITEM(device_json, "height"),
-                           &requested_state->height) != 0) {
-            log_error("failed to parse gpu width or height");
-            free(requested_state);
-            return -1;
-        }
-        params = requested_state;
-#else
-        log_error(
-            "virtio-gpu is not enabled, please add VIRTIO_GPU=y in make cmd");
-        return -1;
-#endif
-    } else if (dev_type == VirtioTSCMI) {
-        // virtio-scmi — just extract ID arrays, wrapper creates SCMIDev
-        memset(&scmi_params, 0, sizeof(scmi_params));
-        cJSON *clock_ids = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "clock_ids");
-        cJSON *reset_ids = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "reset_ids");
-        cJSON *power_ids = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "power_ids");
-
-        if (scmi_dev_parse_clock_ids(&scmi_params, clock_ids) < 0 ||
-            scmi_dev_parse_reset_ids(&scmi_params, reset_ids) < 0 ||
-            scmi_dev_parse_power_ids(&scmi_params, power_ids) < 0) {
-            scmi_dev_free_params(&scmi_params);
-            return -1;
-        }
-
-        params = &scmi_params;
-        log_info("SCMI device: clocks=%u resets=%u powers=%u",
-                 scmi_params.clock_count, scmi_params.reset_count,
-                 scmi_params.power_count);
-    }
-
-    // Check for missing fields
     if (base_addr == 0 || len == 0 || irq_id == 0) {
         log_error("missing arguments");
-        if (dev_type == VirtioTSCMI)
-            scmi_dev_free_params(&scmi_params);
-#ifdef ENABLE_VIRTIO_GPU
-        if (dev_type == VirtioTGPU)
-            free(params);
-#endif
         return -1;
     }
 
-    // Create virtio_device
+    const struct virtio_config_ops *cfg_ops = lookup_config_ops(dev_type);
+    void *params = NULL;
+    if (cfg_ops && cfg_ops->parse &&
+        cfg_ops->parse(device_json, &params) != 0) {
+        return -1;
+    }
+
     VirtIODevice *vdev =
         create_virtio_device(dev_type, zone_id, base_addr, len, irq_id, params);
 
-    // init_gpu_dev copies what it needs — free regardless of outcome
-#ifdef ENABLE_VIRTIO_GPU
-    if (dev_type == VirtioTGPU && params)
-        free(params);
-#endif
-    if (dev_type == VirtioTSCMI)
-        scmi_dev_free_params(&scmi_params);
+    if (cfg_ops && cfg_ops->free)
+        cfg_ops->free(params);
 
-    if (!vdev) {
+    if (!vdev)
         return -1;
-    }
 
     return 0;
 }
