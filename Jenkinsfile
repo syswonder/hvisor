@@ -7,6 +7,11 @@ def parseBid(String bid) {
     return [arch: parts[0], board: parts[1]]
 }
 
+/** Optional platform_board in ci.yaml maps BID board to make/platform board. */
+def platformBoard(String bid, String configuredBoard = '') {
+    return configuredBoard ?: parseBid(bid).board
+}
+
 def parseCiBuildArgs(cfg) {
     def buildArgs = [:]
     if (!cfg?.build_args) {
@@ -173,7 +178,7 @@ def kconfigSetupShell(String arch, String board) {
             mkdir -p tools/kconfig
             ln -sfn ${env.KCONFIG_VENV} tools/kconfig/.venv
         fi
-        make defconfig ARCH=${arch} BOARD=${board}
+        make defconfig ARCH=${arch} BOARD=${board} BID=
     """
 }
 
@@ -277,6 +282,7 @@ pipeline {
                             'x86_64/ecx-2300f-peg',
                             'x86_64/nuc14mnk',
                             'x86_64/qemu',
+                            'x86_64/qemu_asterinas',
                         )
                     }
                 }
@@ -297,18 +303,20 @@ pipeline {
                                 script {
                                     def bid = parseBid(env.BID)
                                     def arch = bid.arch
-                                    def board = bid.board
+                                    // BID may name a test variant (qemu_asterinas); platform_board selects the actual make/platform board (qemu).
+                                    def bidCfg = getBidConfig(loadCiYaml(), env.BID)
+                                    def board = platformBoard(env.BID, bidCfg?.platform_board?.toString() ?: '')
                                     echo "Compile hvisor [BID=${env.BID}, ARCH=${arch}, BOARD=${board}]"
                                     sh kconfigSetupShell(arch, board)
                                     if (arch != 'x86_64') {
                                         sh """
                                             ${toolchainPathShell()}
-                                            make dtb ARCH=${arch} BOARD=${board}
+                                            make dtb ARCH=${arch} BOARD=${board} BID=
                                         """
                                     }
                                     sh """
                                         ${toolchainPathShell()}
-                                        make all ARCH=${arch} BOARD=${board} MODE=release
+                                        make all ARCH=${arch} BOARD=${board} MODE=release BID=
                                     """
                                 }
                             }
@@ -363,9 +371,11 @@ pipeline {
                                     def buildArgs = parseCiBuildArgs(bidCfg)
                                     def bidParsed = parseBid(env.BID)
                                     def arch = bidParsed.arch
-                                    def board = bidParsed.board
+                                    // Keep the server artifact BID separate from the real platform board used by make and prepare.sh.
+                                    def board = platformBoard(env.BID, bidCfg?.platform_board?.toString() ?: '')
                                     def kdir = (buildArgs.KDIR ?: '').toString()
                                     def testsCfg = bidCfg.tests ?: [:]
+                                    def artifactDir = testsCfg.artifact_dir ?: bidParsed.board
                                     def mode = (testsCfg.mode ?: '').toString().trim()
                                     if (!kdir || !mode) {
                                         error("jenkins/ci.yaml BID=${env.BID}: tests.mode and build_args KDIR are required")
@@ -373,11 +383,17 @@ pipeline {
 
                                     if (mode == 'qemu') {
                                         def prepareScript = "jenkins/prepare.sh"
-                                        def externalFile = "${env.TEST_IMG_BASE}/${arch}/${board}"
+                                        def externalFile = "${env.TEST_IMG_BASE}/${arch}/${artifactDir}"
                                         def configure = "./platform/${arch}/${board}/"
                                         echo "Prepare rootfs [BID=${env.BID}]"
                                         sh """
                                             cp -r ${externalFile}/* ${configure}
+                                            if [ "${artifactDir}" != "${board}" ]; then
+                                                mkdir -p "${configure}/image/kernel" "${configure}/image/virtdisk"
+                                                cp "${env.TEST_IMG_BASE}/${arch}/${board}/image/kernel/setup.bin" "${configure}/image/kernel/setup.bin"
+                                                cp "${env.TEST_IMG_BASE}/${arch}/${board}/image/kernel/vmlinux.bin" "${configure}/image/kernel/vmlinux.bin"
+                                                cp "${env.TEST_IMG_BASE}/${arch}/${board}/image/virtdisk/rootfs1.img" "${configure}/image/virtdisk/rootfs1.img"
+                                            fi
                                             chmod +x "${prepareScript}"
                                             sudo -E env \\
                                                 ARCH="${arch}" \\

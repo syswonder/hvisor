@@ -29,6 +29,10 @@ from terminal import Terminal, TerminalCommandError, TerminalTimeoutError
 CaseFunc = Callable[[dict[str, Any], Terminal | None], int]
 
 
+def platform_board(board: str, configured: str = "") -> str:
+    return configured.strip() or board
+
+
 def wait_qemu_socket(path: str, timeout: float = 30.0) -> None:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -142,7 +146,9 @@ def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     print("————————————————\ncase: zone0_start\n————————————————\n", flush=True)
     if cfg["mode"] == "qemu":
         cmd = ["make", f"ARCH={cfg['arch']}", f"BOARD={cfg['board']}", "MODE=release", "ci-run"]
-        proc = subprocess.Popen(cmd, cwd=cfg["workspace"], start_new_session=True)
+        env = os.environ.copy()
+        env["BID"] = ""
+        proc = subprocess.Popen(cmd, cwd=cfg["workspace"], start_new_session=True, env=env)
         cfg["_managed_proc"] = proc
         wait_qemu_socket(cfg["socket_path"], timeout=30.0)
         with build_terminal(cfg) as qemu_term:
@@ -158,7 +164,7 @@ def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
                     qemu_term.send(uboot)
                 else:
                     qemu_term.send("bootm 0x40400000 - 0x40000000")
-            if bid == "x86_64/qemu":
+            if bid in ("x86_64/qemu", "x86_64/qemu_asterinas"):
                 time.sleep(10.0)
             _ = read_and_print_until_quiet(
                 qemu_term,
@@ -234,11 +240,85 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     return 0
 
 
+def asterinas_zone1_regression(cfg: dict[str, Any], term: Terminal | None) -> int:
+    print("————————————————\ncase: asterinas_zone1_regression\n————————————————\n", flush=True)
+    if term is None:
+        raise SystemExit("terminal backend is required")
+
+    _, _ = run_and_print_quiet(term, "cd /root", quiet_seconds=1.0, max_duration=15.0)
+    _, _ = run_and_print_quiet(
+        term,
+        "cat boot_zone1_asterinas.sh",
+        quiet_seconds=1.0,
+        max_duration=15.0,
+    )
+    _, _ = run_and_print_quiet(
+        term,
+        "bash boot_zone1_asterinas.sh",
+        quiet_seconds=15,
+        max_duration=45.0,
+    )
+    zone_list_out, _ = run_and_print_quiet(
+        term,
+        "./hvisor zone list",
+        quiet_seconds=1.0,
+        max_duration=15.0,
+        check_exit=False,
+    )
+    zone_list_shows_running(zone_list_out, "asterinas")
+
+    pts_output, _ = run_and_print_quiet(
+        term,
+        "ls -1 /dev/pts/[0-9]*",
+        quiet_seconds=1.0,
+        max_duration=15.0,
+    )
+    pts_numbers = sorted(int(match) for match in re.findall(r"/dev/pts/(\d+)", pts_output))
+    if not pts_numbers:
+        raise TerminalCommandError("failed to find numeric pts from 'ls -1 /dev/pts/[0-9]*'")
+    max_pts = pts_numbers[-1]
+
+    _ = run_and_print_send_only(term, f"screen /dev/pts/{max_pts}", read_duration=20.0)
+    _ = read_and_print_until_quiet(term, quiet_seconds=3.0, max_duration=30.0)
+
+    regression_marker = "__HV_REGRESSION_RC_"
+    term.send_one_by_one(f"/test/run_regression_test.sh; echo {regression_marker}$?")
+    output = ""
+    deadline = time.monotonic() + 900.0
+    while time.monotonic() < deadline:
+        chunk = term.read_for(duration=2.0)
+        if not chunk:
+            continue
+        output += chunk
+        print(chunk, end="", flush=True)
+
+        rc_match = re.search(re.escape(regression_marker) + r"(\d+)", output)
+        if rc_match is not None and rc_match.group(1) != "0":
+            raise TerminalCommandError(
+                f"Asterinas regression exited with rc={rc_match.group(1)}"
+            )
+        if rc_match is not None and "All regression tests passed" in output:
+            break
+    if "All regression tests passed" not in output:
+        raise TerminalCommandError("Asterinas regression completion marker not found")
+
+    # Ctrl-A d detaches from GNU screen; Ctrl-A Ctrl-A d is not a detach.
+    term.backend.write(b"\x01d")
+    time.sleep(1.0)
+    term.backend.write(b"\r")
+    detach_output = read_and_print_until_quiet(term, quiet_seconds=2.0, max_duration=10.0)
+    if "root@zone0" not in detach_output:
+        raise TerminalCommandError("failed to return to zone0 after screen detach")
+    print("asterinas_zone1_regression_passed", flush=True)
+    return 0
+
+
 CASE_HANDLERS: dict[str, CaseFunc] = {
     "zone0_start": zone0_start,
     "login": login,
     "network_and_trans": network_and_trans,
     "zone1_start": zone1_start,
+    "asterinas_zone1_regression": asterinas_zone1_regression,
 }
 
 
@@ -257,9 +337,10 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
         deploy = {}
 
     try:
-        arch, board = parse_bid(args.bid)
+        arch, bid_board = parse_bid(args.bid)
     except ValueError as exc:
         raise SystemExit(str(exc)) from exc
+    board = platform_board(bid_board, bid_entry.get("platform_board", ""))
     mode = bid_entry.get("mode", "").strip()
     cases = bid_entry.get("cases", [])
     if not mode:

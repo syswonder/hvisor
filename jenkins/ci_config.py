@@ -67,6 +67,7 @@ def get_bid_entry(data: dict[str, Any], bid: str) -> dict[str, Any]:
                 raise RuntimeError(f"{bid}: tests.cases must be a list")
             return {
                 "bid": bid,
+                "platform_board": str(entry.get("platform_board") or "").strip(),
                 "build_args": build_args,
                 "mode": mode,
                 "cases": [str(x) for x in cases if str(x).strip()],
