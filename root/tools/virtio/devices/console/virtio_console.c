@@ -239,3 +239,16 @@ const struct virtio_device_ops virtio_console_ops = {
             [CONSOLE_QUEUE_TX] = virtio_console_txq_notify_handler,
         },
 };
+
+static int virtio_console_parse_params(cJSON *json, void **out) {
+    (void)json;
+    *out = NULL;
+    return 0;
+}
+
+static void virtio_console_free_params(void *params) { (void)params; }
+
+const struct virtio_config_ops virtio_console_config_ops = {
+    .parse = virtio_console_parse_params,
+    .free = virtio_console_free_params,
+};

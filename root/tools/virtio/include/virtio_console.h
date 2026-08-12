@@ -38,5 +38,6 @@ void virtio_console_close(VirtIODevice *vdev);
 void virtio_console_reset(VirtIODevice *vdev);
 
 extern const struct virtio_device_ops virtio_console_ops;
+extern const struct virtio_config_ops virtio_console_config_ops;
 
 #endif

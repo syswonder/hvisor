@@ -265,3 +265,32 @@ const struct virtio_device_ops virtio_scmi_ops = {
             [SCMI_QUEUE_TX] = virtio_scmi_txq_notify_handler,
         },
 };
+
+static int virtio_scmi_parse_params(cJSON *json, void **out) {
+    struct virtio_scmi_init_params *p = calloc(1, sizeof(*p));
+    if (!p)
+        return -ENOMEM;
+
+    cJSON *clock_ids = cJSON_GetObjectItem(json, "clock_ids");
+    cJSON *reset_ids = cJSON_GetObjectItem(json, "reset_ids");
+    cJSON *power_ids = cJSON_GetObjectItem(json, "power_ids");
+
+    if (scmi_dev_parse_clock_ids(p, clock_ids) < 0 ||
+        scmi_dev_parse_reset_ids(p, reset_ids) < 0 ||
+        scmi_dev_parse_power_ids(p, power_ids) < 0) {
+        scmi_dev_free_params(p);
+        return -EINVAL;
+    }
+
+    *out = p;
+    return 0;
+}
+
+static void virtio_scmi_free_params(void *params) {
+    scmi_dev_free_params(params);
+}
+
+const struct virtio_config_ops virtio_scmi_config_ops = {
+    .parse = virtio_scmi_parse_params,
+    .free = virtio_scmi_free_params,
+};

@@ -293,3 +293,24 @@ const struct virtio_device_ops virtio_blk_ops = {
     .reset = virtio_blk_reset,
     .notify_handlers = {virtio_blk_notify_handler},
 };
+
+static int virtio_blk_parse_params(cJSON *json, void **out) {
+    struct virtio_blk_init_params *p = calloc(1, sizeof(*p));
+    if (!p)
+        return -ENOMEM;
+    cJSON *img = cJSON_GetObjectItem(json, "img");
+    if (!cJSON_IsString(img) || !img->valuestring[0]) {
+        free(p);
+        return -EINVAL;
+    }
+    p->img_path = img->valuestring;
+    *out = p;
+    return 0;
+}
+
+static void virtio_blk_free_params(void *params) { free(params); }
+
+const struct virtio_config_ops virtio_blk_config_ops = {
+    .parse = virtio_blk_parse_params,
+    .free = virtio_blk_free_params,
+};

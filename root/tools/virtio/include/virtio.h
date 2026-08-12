@@ -144,6 +144,10 @@ struct virtio_device_ops {
     int (*notify_handlers[VIRTIO_MAX_VQUEUES])(VirtIODevice *, VirtQueue *);
 };
 
+struct virtio_config_ops {
+    int (*parse)(cJSON *json, void **params_out);
+    void (*free)(void *params);
+};
 // used event idx for driver telling device when to notify driver.
 #define VQ_USED_EVENT(vq) ((vq)->avail_ring->ring[(vq)->num])
 // avail event idx for device telling driver when to notify device.

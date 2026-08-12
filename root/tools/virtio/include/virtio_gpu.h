@@ -224,6 +224,7 @@ void virtio_gpu_close(VirtIODevice *vdev);
 void virtio_gpu_reset(VirtIODevice *vdev);
 
 extern const struct virtio_device_ops virtio_gpu_ops;
+extern const struct virtio_config_ops virtio_gpu_config_ops;
 
 // Handler function when controlq has requests to process
 int virtio_gpu_ctrl_notify_handler(VirtIODevice *vdev, VirtQueue *vq);

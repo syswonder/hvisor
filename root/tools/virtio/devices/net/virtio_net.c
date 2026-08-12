@@ -10,6 +10,7 @@
  */
 #include "virtio_net.h"
 #include "event_monitor.h"
+#include "json_parse.h"
 #include "log.h"
 
 #include "virtio.h"
@@ -360,4 +361,40 @@ const struct virtio_device_ops virtio_net_ops = {
             [NET_QUEUE_RX] = virtio_net_rxq_notify_handler,
             [NET_QUEUE_TX] = virtio_net_txq_notify_handler,
         },
+};
+
+static int virtio_net_parse_params(cJSON *json, void **out) {
+    struct virtio_net_init_params *p = calloc(1, sizeof(*p));
+    if (!p)
+        return -ENOMEM;
+
+    cJSON *tap = cJSON_GetObjectItem(json, "tap");
+    if (!cJSON_IsString(tap) || !tap->valuestring[0]) {
+        free(p);
+        return -EINVAL;
+    }
+    p->tap = tap->valuestring;
+
+    cJSON *mac_json = cJSON_GetObjectItem(json, "mac");
+    if (cJSON_GetArraySize(mac_json) != 6) {
+        free(p);
+        return -EINVAL;
+    }
+    for (int i = 0; i < 6; i++) {
+        if (parse_json_u8(cJSON_GetArrayItem(mac_json, i), &p->mac[i]) != 0) {
+            log_error("failed to parse mac byte %d", i);
+            free(p);
+            return -EINVAL;
+        }
+    }
+
+    *out = p;
+    return 0;
+}
+
+static void virtio_net_free_params(void *params) { free(params); }
+
+const struct virtio_config_ops virtio_net_config_ops = {
+    .parse = virtio_net_parse_params,
+    .free = virtio_net_free_params,
 };
