@@ -24,7 +24,7 @@
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 
-static GPUDev *init_gpu_dev(GPURequestedState *requested_state) {
+static GPUDev *init_gpu_dev(const GPURequestedState *requested_state) {
     log_info("initializing GPUDev");
 
     if (requested_state == NULL) {
@@ -255,7 +255,7 @@ static void virtio_gpu_reset(VirtIODevice *vdev) {
     }
 }
 
-static int virtio_gpu_do_init(VirtIODevice *vdev, void *params) {
+static int virtio_gpu_do_init(VirtIODevice *vdev, const void *params) {
     vdev->dev = init_gpu_dev(params);
     if (!vdev->dev)
         return -ENOMEM;

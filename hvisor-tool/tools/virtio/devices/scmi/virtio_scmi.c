@@ -19,7 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int parse_id_array(cJSON *json_array, uint32_t **ids_out,
+static int parse_id_array(const cJSON *json_array, uint32_t **ids_out,
                           uint32_t *count_out) {
     if (!json_array || !cJSON_IsArray(json_array)) {
         *ids_out = NULL;
@@ -66,18 +66,18 @@ void scmi_dev_free(SCMIDev *dev) {
 }
 
 int scmi_dev_parse_clock_ids(struct virtio_scmi_init_params *p,
-                             void *json_array) {
-    return parse_id_array((cJSON *)json_array, &p->clock_ids, &p->clock_count);
+                             const cJSON *json_array) {
+    return parse_id_array(json_array, &p->clock_ids, &p->clock_count);
 }
 
 int scmi_dev_parse_reset_ids(struct virtio_scmi_init_params *p,
-                             void *json_array) {
-    return parse_id_array((cJSON *)json_array, &p->reset_ids, &p->reset_count);
+                             const cJSON *json_array) {
+    return parse_id_array(json_array, &p->reset_ids, &p->reset_count);
 }
 
 int scmi_dev_parse_power_ids(struct virtio_scmi_init_params *p,
-                             void *json_array) {
-    return parse_id_array((cJSON *)json_array, &p->power_ids, &p->power_count);
+                             const cJSON *json_array) {
+    return parse_id_array(json_array, &p->power_ids, &p->power_count);
 }
 
 void scmi_dev_free_params(struct virtio_scmi_init_params *p) {
@@ -193,7 +193,7 @@ static void virtio_scmi_close(VirtIODevice *vdev) {
     free(vdev);
 }
 
-static int virtio_scmi_do_init(VirtIODevice *vdev, void *params) {
+static int virtio_scmi_do_init(VirtIODevice *vdev, const void *params) {
     const struct virtio_scmi_init_params *p = params;
     SCMIDev *dev;
 
@@ -273,7 +273,7 @@ const struct virtio_device_ops virtio_scmi_ops = {
         },
 };
 
-static int virtio_scmi_parse_params(cJSON *json, void **out) {
+static int virtio_scmi_parse_params(const cJSON *json, void **out) {
     struct virtio_scmi_init_params *p = calloc(1, sizeof(*p));
     if (!p)
         return -ENOMEM;
