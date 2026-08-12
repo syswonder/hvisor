@@ -158,7 +158,7 @@ static int virtq_tx_handle_one_request(void *dev, VirtQueue *vq) {
     return 0;
 }
 
-int virtio_scmi_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
+static int virtio_scmi_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     while (!virtqueue_is_empty(vq)) {
         virtqueue_disable_notify(vq);
         while (!virtqueue_is_empty(vq)) {
@@ -177,12 +177,19 @@ int virtio_scmi_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     return 0;
 }
 
-void virtio_scmi_reset(VirtIODevice *vdev) { (void)vdev; }
+static void virtio_scmi_reset(VirtIODevice *vdev) { (void)vdev; }
 
-void virtio_scmi_close(VirtIODevice *vdev) {
+static void virtio_scmi_close(VirtIODevice *vdev) {
+    if (!vdev)
+        return;
+
     SCMIDev *dev = vdev->dev;
-    scmi_dev_free(dev);
+    if (dev) {
+        scmi_dev_free(dev);
+        vdev->dev = NULL;
+    }
     free(vdev->vqs);
+    vdev->vqs = NULL;
     free(vdev);
 }
 

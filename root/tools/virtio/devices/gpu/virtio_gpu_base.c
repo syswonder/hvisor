@@ -24,7 +24,7 @@
 #include <xf86drm.h>
 #include <xf86drmMode.h>
 
-GPUDev *init_gpu_dev(GPURequestedState *requested_state) {
+static GPUDev *init_gpu_dev(GPURequestedState *requested_state) {
     log_info("initializing GPUDev");
 
     if (requested_state == NULL) {
@@ -92,7 +92,7 @@ GPUDev *init_gpu_dev(GPURequestedState *requested_state) {
     return gdev;
 }
 
-int virtio_gpu_init(VirtIODevice *vdev) {
+static int virtio_gpu_init(VirtIODevice *vdev) {
     log_info("entering %s", __func__);
 
     // TODO: Display device initialization
@@ -179,11 +179,12 @@ int virtio_gpu_init(VirtIODevice *vdev) {
     pthread_create(&gdev->gpu_thread, NULL, virtio_gpu_handler, vdev);
     pthread_cond_init(&gdev->gpu_cond, NULL);
     pthread_mutex_init(&gdev->queue_mutex, NULL);
+    gdev->async_started = true;
 
     return 0;
 }
 
-void virtio_gpu_close(VirtIODevice *vdev) {
+static void virtio_gpu_close(VirtIODevice *vdev) {
     if (!vdev)
         return;
 
@@ -222,10 +223,14 @@ void virtio_gpu_close(VirtIODevice *vdev) {
 
         // Reclaim async part
         gdev->close = true;
-        pthread_cond_signal(&gdev->gpu_cond);
-        pthread_join(gdev->gpu_thread, NULL);
-        pthread_cond_destroy(&gdev->gpu_cond);
-        pthread_mutex_destroy(&gdev->queue_mutex);
+        // gpu_cond/gpu_thread only exist once virtio_gpu_init finished;
+        // on a partial init (e.g. drm open failure) skip them entirely.
+        if (gdev->async_started) {
+            pthread_cond_signal(&gdev->gpu_cond);
+            pthread_join(gdev->gpu_thread, NULL);
+            pthread_cond_destroy(&gdev->gpu_cond);
+            pthread_mutex_destroy(&gdev->queue_mutex);
+        }
 
         free(gdev);
         vdev->dev = NULL;
@@ -236,7 +241,7 @@ void virtio_gpu_close(VirtIODevice *vdev) {
     free(vdev);
 }
 
-void virtio_gpu_reset(VirtIODevice *vdev) {
+static void virtio_gpu_reset(VirtIODevice *vdev) {
     if (!vdev || !vdev->dev)
         return;
 
@@ -257,22 +262,7 @@ static int virtio_gpu_do_init(VirtIODevice *vdev, void *params) {
     return virtio_gpu_init(vdev);
 }
 
-const struct virtio_device_ops virtio_gpu_ops = {
-    .type = VirtioTGPU,
-    .features = GPU_SUPPORTED_FEATURES,
-    .num_queues = GPU_MAX_QUEUES,
-    .queue_max_size = VIRTQUEUE_GPU_MAX_SIZE,
-    .init = virtio_gpu_do_init,
-    .close = virtio_gpu_close,
-    .reset = virtio_gpu_reset,
-    .notify_handlers =
-        {
-            [GPU_CONTROL_QUEUE] = virtio_gpu_ctrl_notify_handler,
-            [GPU_CURSOR_QUEUE] = virtio_gpu_cursor_notify_handler,
-        },
-};
-
-static int virtio_gpu_parse_params(cJSON *json, void **out) {
+static int virtio_gpu_parse_params(const cJSON *json, void **out) {
     GPURequestedState *s = calloc(1, sizeof(*s));
     if (!s)
         return -ENOMEM;
@@ -293,7 +283,7 @@ const struct virtio_config_ops virtio_gpu_config_ops = {
     .free = virtio_gpu_free_params,
 };
 
-int virtio_gpu_ctrl_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
+static int virtio_gpu_ctrl_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     log_debug("entering %s", __func__);
 
     GPUDev *gdev = vdev->dev;
@@ -321,7 +311,7 @@ int virtio_gpu_ctrl_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     return 0;
 }
 
-int virtio_gpu_cursor_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
+static int virtio_gpu_cursor_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     log_debug("entering %s", __func__);
 
     virtqueue_disable_notify(vq);
@@ -339,6 +329,21 @@ int virtio_gpu_cursor_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
 
     return 0;
 }
+
+const struct virtio_device_ops virtio_gpu_ops = {
+    .type = VirtioTGPU,
+    .features = GPU_SUPPORTED_FEATURES,
+    .num_queues = GPU_MAX_QUEUES,
+    .queue_max_size = VIRTQUEUE_GPU_MAX_SIZE,
+    .init = virtio_gpu_do_init,
+    .close = virtio_gpu_close,
+    .reset = virtio_gpu_reset,
+    .notify_handlers =
+        {
+            [GPU_CONTROL_QUEUE] = virtio_gpu_ctrl_notify_handler,
+            [GPU_CURSOR_QUEUE] = virtio_gpu_cursor_notify_handler,
+        },
+};
 
 int virtio_gpu_handle_single_request(VirtIODevice *vdev, VirtQueue *vq,
                                      uint32_t from) {

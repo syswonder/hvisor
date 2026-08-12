@@ -23,7 +23,7 @@
 
 static uint8_t trashbuf[1024];
 
-ConsoleDev *init_console_dev() {
+static ConsoleDev *init_console_dev() {
     ConsoleDev *dev = (ConsoleDev *)malloc(sizeof(ConsoleDev));
     dev->config.cols = 80;
     dev->config.rows = 25;
@@ -87,7 +87,7 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
     return;
 }
 
-int virtio_console_init(VirtIODevice *vdev) {
+static int virtio_console_init(VirtIODevice *vdev) {
     ConsoleDev *dev = (ConsoleDev *)vdev->dev;
     int master_fd, slave_fd;
     char *slave_name;
@@ -156,7 +156,8 @@ int virtio_console_init(VirtIODevice *vdev) {
     return 0;
 }
 
-int virtio_console_rxq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
+static int virtio_console_rxq_notify_handler(VirtIODevice *vdev,
+                                             VirtQueue *vq) {
     log_debug("%s", __func__);
     ConsoleDev *dev = (ConsoleDev *)vdev->dev;
     if (dev->rx_ready <= 0) {
@@ -190,7 +191,8 @@ static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq) {
     free(iov);
 }
 
-int virtio_console_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
+static int virtio_console_txq_notify_handler(VirtIODevice *vdev,
+                                             VirtQueue *vq) {
     log_debug("%s", __func__);
     while (!virtqueue_is_empty(vq)) {
         virtqueue_disable_notify(vq);
@@ -203,17 +205,24 @@ int virtio_console_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     return 0;
 }
 
-void virtio_console_reset(VirtIODevice *vdev) { (void)vdev; }
+static void virtio_console_reset(VirtIODevice *vdev) { (void)vdev; }
 
-void virtio_console_close(VirtIODevice *vdev) {
+static void virtio_console_close(VirtIODevice *vdev) {
+    if (!vdev)
+        return;
+
     ConsoleDev *dev = vdev->dev;
-    close(dev->master_fd);
-    if (dev->slave_keepalive_fd >= 0) {
-        close(dev->slave_keepalive_fd);
+    if (dev) {
+        if (dev->master_fd >= 0)
+            close(dev->master_fd);
+        if (dev->slave_keepalive_fd >= 0)
+            close(dev->slave_keepalive_fd);
+        free(dev->event);
+        free(dev);
+        vdev->dev = NULL;
     }
-    free(dev->event);
-    free(dev);
     free(vdev->vqs);
+    vdev->vqs = NULL;
     free(vdev);
 }
 

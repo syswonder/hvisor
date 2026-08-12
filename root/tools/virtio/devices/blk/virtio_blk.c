@@ -128,7 +128,7 @@ static void *blkproc_thread(void *arg) {
 }
 
 // create blk dev.
-BlkDev *init_blk_dev(VirtIODevice *vdev) {
+static BlkDev *init_blk_dev(VirtIODevice *vdev) {
     BlkDev *dev = malloc(sizeof(BlkDev));
     vdev->dev = dev;
     dev->config.capacity = -1;
@@ -145,7 +145,7 @@ BlkDev *init_blk_dev(VirtIODevice *vdev) {
     return dev;
 }
 
-int virtio_blk_init(VirtIODevice *vdev, const char *img_path) {
+static int virtio_blk_init(VirtIODevice *vdev, const char *img_path) {
     int img_fd = open(img_path, O_RDWR);
     BlkDev *dev = vdev->dev;
     struct stat st;
@@ -226,7 +226,7 @@ err_out:
     return NULL;
 }
 
-int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
+static int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     log_debug("virtio blk notify handler enter");
     BlkDev *blkDev = (BlkDev *)vdev->dev;
     struct blkp_req *breq;
@@ -251,24 +251,32 @@ int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     return 0;
 }
 
-void virtio_blk_reset(VirtIODevice *vdev) { (void)vdev; }
+static void virtio_blk_reset(VirtIODevice *vdev) { (void)vdev; }
 
 /*
  * Shut down the blk device: signal close, wait for the worker to exit,
  * then release all resources.
  */
-void virtio_blk_close(VirtIODevice *vdev) {
+static void virtio_blk_close(VirtIODevice *vdev) {
+    if (!vdev)
+        return;
+
     BlkDev *dev = vdev->dev;
-    pthread_mutex_lock(&dev->mtx);
-    dev->close = 1;
-    pthread_cond_signal(&dev->cond);
-    pthread_mutex_unlock(&dev->mtx);
-    pthread_join(dev->tid, NULL);
-    pthread_mutex_destroy(&dev->mtx);
-    pthread_cond_destroy(&dev->cond);
-    close(dev->img_fd);
-    free(dev);
+    if (dev) {
+        pthread_mutex_lock(&dev->mtx);
+        dev->close = 1;
+        pthread_cond_signal(&dev->cond);
+        pthread_mutex_unlock(&dev->mtx);
+        pthread_join(dev->tid, NULL);
+        pthread_mutex_destroy(&dev->mtx);
+        pthread_cond_destroy(&dev->cond);
+        if (dev->img_fd >= 0)
+            close(dev->img_fd);
+        free(dev);
+        vdev->dev = NULL;
+    }
     free(vdev->vqs);
+    vdev->vqs = NULL;
     free(vdev);
 }
 

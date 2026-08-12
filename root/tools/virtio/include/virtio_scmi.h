@@ -246,9 +246,6 @@ struct virtio_scmi_init_params {
 
 SCMIDev *scmi_dev_create(void);
 void scmi_dev_free(SCMIDev *dev);
-int virtio_scmi_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq);
-void virtio_scmi_close(VirtIODevice *vdev);
-void virtio_scmi_reset(VirtIODevice *vdev);
 
 extern const struct virtio_device_ops virtio_scmi_ops;
 
