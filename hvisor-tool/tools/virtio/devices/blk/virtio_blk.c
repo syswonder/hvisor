@@ -13,6 +13,7 @@
 #include "virtio.h"
 #include <errno.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/param.h>
@@ -146,25 +147,28 @@ static BlkDev *init_blk_dev(VirtIODevice *vdev) {
 }
 
 static int virtio_blk_init(VirtIODevice *vdev, const char *img_path) {
-    int img_fd = open(img_path, O_RDWR);
     BlkDev *dev = vdev->dev;
-    struct stat st;
-    uint64_t blk_size;
-    if (img_fd == -1) {
+    if (!dev) {
+        log_error("virtio_blk_init: vdev->dev is nullptr");
+        return -1;
+    }
+
+    dev->img_fd = open(img_path, O_RDWR);
+    if (dev->img_fd == -1) {
         log_error("cannot open %s, Error code is %d", img_path, errno);
-        close(img_fd);
         return -1;
     }
-    if (fstat(img_fd, &st) == -1) {
+
+    struct stat st;
+    if (fstat(dev->img_fd, &st) == -1) {
         log_error("cannot stat %s, Error code is %d", img_path, errno);
-        close(img_fd);
         return -1;
     }
-    blk_size = st.st_size / 512; // 512 bytes per block
+    uint64_t blk_size = st.st_size / SECTOR_BSIZE;
     dev->config.capacity = blk_size;
     dev->config.size_max = blk_size;
-    dev->img_fd = img_fd;
-    log_info("debug: virtio_blk_init: %s, size is %lld", img_path,
+
+    log_info("virtio_blk_init: %s, size is %" PRIu64, img_path,
              dev->config.capacity);
     return 0;
 }

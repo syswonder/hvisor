@@ -115,8 +115,6 @@ static int virtio_console_init(VirtIODevice *vdev) {
     slave_fd = open(slave_name, O_RDWR);
     if (slave_fd < 0) {
         log_error("Failed to open slave pty, errno is %d", errno);
-        close(master_fd);
-        dev->master_fd = -1;
         return -1;
     }
 
@@ -129,13 +127,7 @@ static int virtio_console_init(VirtIODevice *vdev) {
     dev->slave_keepalive_fd = slave_fd;
 
     if (set_nonblocking(dev->master_fd) < 0) {
-        close(dev->master_fd);
-        if (dev->slave_keepalive_fd >= 0) {
-            close(dev->slave_keepalive_fd);
-            dev->slave_keepalive_fd = -1;
-        }
-        dev->master_fd = -1;
-        log_error("Failed to set nonblocking mode, fd closed!");
+        log_error("Failed to set nonblocking mode");
         return -1;
     }
 
@@ -144,12 +136,6 @@ static int virtio_console_init(VirtIODevice *vdev) {
 
     if (dev->event == NULL) {
         log_error("Can't register console event");
-        close(master_fd);
-        if (dev->slave_keepalive_fd >= 0) {
-            close(dev->slave_keepalive_fd);
-            dev->slave_keepalive_fd = -1;
-        }
-        dev->master_fd = -1;
         return -1;
     }
 
@@ -217,6 +203,7 @@ static void virtio_console_close(VirtIODevice *vdev) {
             close(dev->master_fd);
         if (dev->slave_keepalive_fd >= 0)
             close(dev->slave_keepalive_fd);
+        remove_event(dev->event);
         free(dev->event);
         free(dev);
         vdev->dev = NULL;
