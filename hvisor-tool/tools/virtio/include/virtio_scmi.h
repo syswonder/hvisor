@@ -235,15 +235,31 @@ int scmi_handle_message(SCMIDev *dev, uint8_t protocol_id, uint8_t msg_id,
                         uint16_t token, const struct iovec *req_iov,
                         struct scmi_resp_ctx *ctx);
 
+struct virtio_scmi_init_params {
+    uint32_t *clock_ids;
+    uint32_t clock_count;
+    uint32_t *reset_ids;
+    uint32_t reset_count;
+    uint32_t *power_ids;
+    uint32_t power_count;
+};
+
 SCMIDev *scmi_dev_create(void);
 void scmi_dev_free(SCMIDev *dev);
 int virtio_scmi_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq);
 void virtio_scmi_close(VirtIODevice *vdev);
+void virtio_scmi_reset(VirtIODevice *vdev);
+
+extern const struct virtio_device_ops virtio_scmi_ops;
 
 /* JSON array parsing: fills dev->clock_ids / dev->reset_ids / dev->power_ids */
-int scmi_dev_parse_clock_ids(SCMIDev *dev, void *json_array);
-int scmi_dev_parse_reset_ids(SCMIDev *dev, void *json_array);
-int scmi_dev_parse_power_ids(SCMIDev *dev, void *json_array);
+int scmi_dev_parse_clock_ids(struct virtio_scmi_init_params *p,
+                             void *json_array);
+int scmi_dev_parse_reset_ids(struct virtio_scmi_init_params *p,
+                             void *json_array);
+int scmi_dev_parse_power_ids(struct virtio_scmi_init_params *p,
+                             void *json_array);
+void scmi_dev_free_params(struct virtio_scmi_init_params *p);
 
 /* /dev/hvisor fd, opened once in virtio_start() */
 extern int ko_fd;

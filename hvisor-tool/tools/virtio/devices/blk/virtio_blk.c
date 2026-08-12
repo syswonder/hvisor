@@ -252,6 +252,12 @@ int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     return 0;
 }
 
+void virtio_blk_reset(VirtIODevice *vdev) { (void)vdev; }
+
+/*
+ * Shut down the blk device: signal close, wait for the worker to exit,
+ * then release all resources.
+ */
 void virtio_blk_close(VirtIODevice *vdev) {
     BlkDev *dev = vdev->dev;
     pthread_mutex_lock(&dev->mtx);
@@ -266,3 +272,25 @@ void virtio_blk_close(VirtIODevice *vdev) {
     free(vdev->vqs);
     free(vdev);
 }
+
+static int virtio_blk_do_init(VirtIODevice *vdev, void *params) {
+    const struct virtio_blk_init_params *p = params;
+    if (!p)
+        return -EINVAL;
+    if (!init_blk_dev(vdev))
+        return -ENOMEM;
+    if (virtio_blk_init(vdev, p->img_path) != 0)
+        return -EIO;
+    return 0;
+}
+
+const struct virtio_device_ops virtio_blk_ops = {
+    .type = VirtioTBlock,
+    .features = BLK_SUPPORTED_FEATURES,
+    .num_queues = 1,
+    .queue_max_size = VIRTQUEUE_BLK_MAX_SIZE,
+    .init = virtio_blk_do_init,
+    .close = virtio_blk_close,
+    .reset = virtio_blk_reset,
+    .notify_handlers = {virtio_blk_notify_handler},
+};

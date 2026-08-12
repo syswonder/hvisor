@@ -320,6 +320,13 @@ int virtio_net_init(VirtIODevice *vdev, char *devname) {
     return 0;
 }
 
+void virtio_net_reset(VirtIODevice *vdev) {
+    if (!vdev || !vdev->dev)
+        return;
+    NetDev *dev = vdev->dev;
+    dev->rx_ready = false;
+}
+
 void virtio_net_close(VirtIODevice *vdev) {
     NetDev *dev = vdev->dev;
     close(dev->tapfd);
@@ -330,3 +337,29 @@ void virtio_net_close(VirtIODevice *vdev) {
     free(vdev->vqs);
     free(vdev);
 }
+
+static int virtio_net_do_init(VirtIODevice *vdev, void *params) {
+    const struct virtio_net_init_params *p = params;
+    if (!p)
+        return -EINVAL;
+    vdev->dev = init_net_dev((uint8_t *)p->mac);
+    if (!vdev->dev)
+        return -ENOMEM;
+    return virtio_net_init(vdev, (char *)p->tap);
+}
+
+const struct virtio_device_ops virtio_net_ops = {
+    .type = VirtioTNet,
+    .features = NET_SUPPORTED_FEATURES,
+    .num_queues = NET_MAX_QUEUES,
+    .queue_max_size = VIRTQUEUE_NET_MAX_SIZE,
+    .init = virtio_net_do_init,
+    .close = virtio_net_close,
+    .reset = virtio_net_reset,
+    .status_changed = net_on_status,
+    .notify_handlers =
+        {
+            [NET_QUEUE_RX] = virtio_net_rxq_notify_handler,
+            [NET_QUEUE_TX] = virtio_net_txq_notify_handler,
+        },
+};

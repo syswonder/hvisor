@@ -65,19 +65,28 @@ void scmi_dev_free(SCMIDev *dev) {
     free(dev);
 }
 
-int scmi_dev_parse_clock_ids(SCMIDev *dev, void *json_array) {
-    return parse_id_array((cJSON *)json_array, &dev->clock_ids,
-                          &dev->clock_count);
+int scmi_dev_parse_clock_ids(struct virtio_scmi_init_params *p,
+                             void *json_array) {
+    return parse_id_array((cJSON *)json_array, &p->clock_ids, &p->clock_count);
 }
 
-int scmi_dev_parse_reset_ids(SCMIDev *dev, void *json_array) {
-    return parse_id_array((cJSON *)json_array, &dev->reset_ids,
-                          &dev->reset_count);
+int scmi_dev_parse_reset_ids(struct virtio_scmi_init_params *p,
+                             void *json_array) {
+    return parse_id_array((cJSON *)json_array, &p->reset_ids, &p->reset_count);
 }
 
-int scmi_dev_parse_power_ids(SCMIDev *dev, void *json_array) {
-    return parse_id_array((cJSON *)json_array, &dev->power_ids,
-                          &dev->power_count);
+int scmi_dev_parse_power_ids(struct virtio_scmi_init_params *p,
+                             void *json_array) {
+    return parse_id_array((cJSON *)json_array, &p->power_ids, &p->power_count);
+}
+
+void scmi_dev_free_params(struct virtio_scmi_init_params *p) {
+    if (!p)
+        return;
+    free(p->clock_ids);
+    free(p->reset_ids);
+    free(p->power_ids);
+    free(p);
 }
 
 static int virtq_tx_handle_one_request(void *dev, VirtQueue *vq) {
@@ -168,9 +177,91 @@ int virtio_scmi_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     return 0;
 }
 
+void virtio_scmi_reset(VirtIODevice *vdev) { (void)vdev; }
+
 void virtio_scmi_close(VirtIODevice *vdev) {
     SCMIDev *dev = vdev->dev;
     scmi_dev_free(dev);
     free(vdev->vqs);
     free(vdev);
 }
+
+static int virtio_scmi_do_init(VirtIODevice *vdev, void *params) {
+    const struct virtio_scmi_init_params *p = params;
+    SCMIDev *dev;
+
+    if (p) {
+        dev = calloc(1, sizeof(SCMIDev));
+        if (!dev)
+            return -ENOMEM;
+
+        // Deep-copy id arrays so that SCMIDev and the caller each own their
+        // copies — no ownership transfer, no double-free risk.
+        if (p->clock_count > 0) {
+            dev->clock_ids = calloc(p->clock_count, sizeof(uint32_t));
+            if (!dev->clock_ids)
+                goto err_copy;
+            memcpy(dev->clock_ids, p->clock_ids,
+                   p->clock_count * sizeof(uint32_t));
+        }
+        dev->clock_count = p->clock_count;
+
+        if (p->reset_count > 0) {
+            dev->reset_ids = calloc(p->reset_count, sizeof(uint32_t));
+            if (!dev->reset_ids)
+                goto err_copy;
+            memcpy(dev->reset_ids, p->reset_ids,
+                   p->reset_count * sizeof(uint32_t));
+        }
+        dev->reset_count = p->reset_count;
+
+        if (p->power_count > 0) {
+            dev->power_ids = calloc(p->power_count, sizeof(uint32_t));
+            if (!dev->power_ids)
+                goto err_copy;
+            memcpy(dev->power_ids, p->power_ids,
+                   p->power_count * sizeof(uint32_t));
+        }
+        dev->power_count = p->power_count;
+
+        scmi_dev_register_protocol(dev, SCMI_PROTO_ID_BASE,
+                                   virtio_scmi_base_handle_req);
+        if (dev->clock_count > 0)
+            scmi_dev_register_protocol(dev, SCMI_PROTO_ID_CLOCK,
+                                       virtio_scmi_clock_handle_req);
+        if (dev->power_count > 0)
+            scmi_dev_register_protocol(dev, SCMI_PROTO_ID_POWER,
+                                       virtio_scmi_power_handle_req);
+        if (dev->reset_count > 0)
+            scmi_dev_register_protocol(dev, SCMI_PROTO_ID_RESET,
+                                       virtio_scmi_reset_handle_req);
+    } else {
+        dev = scmi_dev_create();
+        if (!dev)
+            return -ENOMEM;
+    }
+
+    vdev->dev = dev;
+    return 0;
+
+err_copy:
+    free(dev->clock_ids);
+    free(dev->reset_ids);
+    free(dev->power_ids);
+    free(dev);
+    return -ENOMEM;
+}
+
+const struct virtio_device_ops virtio_scmi_ops = {
+    .type = VirtioTSCMI,
+    .features = SCMI_SUPPORTED_FEATURES,
+    .num_queues = SCMI_MAX_QUEUES,
+    .queue_max_size = VIRTQUEUE_SCMI_MAX_SIZE,
+    .init = virtio_scmi_do_init,
+    .close = virtio_scmi_close,
+    .reset = virtio_scmi_reset,
+    .notify_handlers =
+        {
+            [SCMI_QUEUE_TX] = virtio_scmi_txq_notify_handler,
+        },
+};

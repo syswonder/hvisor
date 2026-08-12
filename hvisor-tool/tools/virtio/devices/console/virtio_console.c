@@ -204,6 +204,8 @@ int virtio_console_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     return 0;
 }
 
+void virtio_console_reset(VirtIODevice *vdev) { (void)vdev; }
+
 void virtio_console_close(VirtIODevice *vdev) {
     ConsoleDev *dev = vdev->dev;
     close(dev->master_fd);
@@ -215,3 +217,26 @@ void virtio_console_close(VirtIODevice *vdev) {
     free(vdev->vqs);
     free(vdev);
 }
+
+static int virtio_console_do_init(VirtIODevice *vdev, void *params) {
+    (void)params;
+    vdev->dev = init_console_dev();
+    if (!vdev->dev)
+        return -ENOMEM;
+    return virtio_console_init(vdev);
+}
+
+const struct virtio_device_ops virtio_console_ops = {
+    .type = VirtioTConsole,
+    .features = CONSOLE_SUPPORTED_FEATURES,
+    .num_queues = CONSOLE_MAX_QUEUES,
+    .queue_max_size = VIRTQUEUE_CONSOLE_MAX_SIZE,
+    .init = virtio_console_do_init,
+    .close = virtio_console_close,
+    .reset = virtio_console_reset,
+    .notify_handlers =
+        {
+            [CONSOLE_QUEUE_RX] = virtio_console_rxq_notify_handler,
+            [CONSOLE_QUEUE_TX] = virtio_console_txq_notify_handler,
+        },
+};

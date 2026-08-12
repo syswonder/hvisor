@@ -131,6 +131,19 @@ struct VirtIODevice {
     bool interrupt_line_asserted;
 };
 
+struct virtio_device_ops {
+    VirtioDeviceType type;
+    uint64_t features;
+    uint32_t num_queues;
+    uint32_t queue_max_size;
+    int (*init)(VirtIODevice *vdev, void *params);
+    void (*close)(VirtIODevice *vdev);
+    void (*reset)(VirtIODevice *vdev);
+    void (*status_changed)(VirtIODevice *vdev, uint32_t status);
+#define VIRTIO_MAX_VQUEUES 4
+    int (*notify_handlers[VIRTIO_MAX_VQUEUES])(VirtIODevice *, VirtQueue *);
+};
+
 // used event idx for driver telling device when to notify driver.
 #define VQ_USED_EVENT(vq) ((vq)->avail_ring->ring[(vq)->num])
 // avail event idx for device telling driver when to notify device.
