@@ -24,7 +24,7 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
-NetDev *init_net_dev(uint8_t mac[]) {
+static NetDev *init_net_dev(uint8_t mac[]) {
     NetDev *dev = malloc(sizeof(NetDev));
     dev->config.mac[0] = mac[0];
     dev->config.mac[1] = mac[1];
@@ -67,7 +67,7 @@ static int open_tap(char *devname) {
 }
 
 /// When driver notifies rxq, it means the rx process can now begin
-int virtio_net_rxq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
+static int virtio_net_rxq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     log_debug("virtio_net_rxq_notify_handler");
     NetDev *net = vdev->dev;
     if (net->rx_ready <= 0) {
@@ -89,7 +89,7 @@ size_t get_nethdr_size(VirtIODevice *vdev) {
 }
 
 /// Called when tap device received packets
-void virtio_net_event_handler(int fd, int epoll_type, void *param) {
+static void virtio_net_event_handler(int fd, int epoll_type, void *param) {
     log_debug("virtio_net_event_handler");
     VirtIODevice *vdev = param;
     NetDev *net = vdev->dev;
@@ -235,7 +235,7 @@ static void virtq_tx_handle_one_request(VirtIODevice *vdev, VirtQueue *vq,
     (*out_count)++;
 }
 
-int virtio_net_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
+static int virtio_net_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     log_debug("virtio_net_txq_notify_handler");
     virtqueue_disable_notify(vq);
     uint16_t batch_indices[VIRTQUEUE_NET_MAX_SIZE];
@@ -265,7 +265,7 @@ int virtio_net_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     return 0;
 }
 
-void net_on_status(VirtIODevice *vdev, uint32_t status) {
+static void net_on_status(VirtIODevice *vdev, uint32_t status) {
     NetDev *net = vdev->dev;
 
     // FEATURES_OK indicates guest has finished writing DRIVER_FEATURES.
@@ -281,7 +281,7 @@ void net_on_status(VirtIODevice *vdev, uint32_t status) {
     }
 }
 
-int virtio_net_init(VirtIODevice *vdev, char *devname) {
+static int virtio_net_init(VirtIODevice *vdev, char *devname) {
     log_info("virtio net init");
     NetDev *net = vdev->dev;
     // open tap device
@@ -319,21 +319,29 @@ int virtio_net_init(VirtIODevice *vdev, char *devname) {
     return 0;
 }
 
-void virtio_net_reset(VirtIODevice *vdev) {
+static void virtio_net_reset(VirtIODevice *vdev) {
     if (!vdev || !vdev->dev)
         return;
     NetDev *dev = vdev->dev;
     dev->rx_ready = false;
 }
 
-void virtio_net_close(VirtIODevice *vdev) {
+static void virtio_net_close(VirtIODevice *vdev) {
+    if (!vdev)
+        return;
+
     NetDev *dev = vdev->dev;
-    close(dev->tapfd);
-    free(dev->event);
-    free(dev->in_iov);
-    free(dev->out_iov);
-    free(dev);
+    if (dev) {
+        if (dev->tapfd >= 0)
+            close(dev->tapfd);
+        free(dev->event);
+        free(dev->in_iov);
+        free(dev->out_iov);
+        free(dev);
+        vdev->dev = NULL;
+    }
     free(vdev->vqs);
+    vdev->vqs = NULL;
     free(vdev);
 }
 

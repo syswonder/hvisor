@@ -30,13 +30,6 @@ typedef struct virtio_console_dev {
     struct hvisor_event *event;
 } ConsoleDev;
 
-ConsoleDev *init_console_dev();
-int virtio_console_init(VirtIODevice *vdev);
-int virtio_console_rxq_notify_handler(VirtIODevice *vdev, VirtQueue *vq);
-int virtio_console_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq);
-void virtio_console_close(VirtIODevice *vdev);
-void virtio_console_reset(VirtIODevice *vdev);
-
 extern const struct virtio_device_ops virtio_console_ops;
 extern const struct virtio_config_ops virtio_console_config_ops;
 
