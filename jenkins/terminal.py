@@ -18,6 +18,9 @@ from pathlib import Path
 import serial
 
 
+RUN_RESULT_RE = re.compile(r"__R__(?P<run_id>[a-f0-9]+):(?P<rc>\d+)")
+
+
 class TerminalTimeoutError(TimeoutError):
     """Raised when terminal command wait times out."""
 
@@ -314,6 +317,52 @@ class Terminal:
         self._ensure_open()
         self.backend.flush_input()
 
+    def offset(self) -> int:
+        self._ensure_open()
+        return self._collector.offset()
+
+    def tail_since(self, offset: int) -> str:
+        self._ensure_open()
+        return self._collector.tail_since(offset)
+
+    def run(
+        self,
+        case: str,
+        command: str,
+        timeout: float = 30.0,
+        poll_interval: float = 0.05,
+        wake_interval: float | None = None,
+    ) -> tuple[int, str]:
+        """Run a shell command and wait for the compact result marker in the log."""
+        self._ensure_open()
+        run_id = uuid.uuid4().hex[:8]
+        offset = self._collector.offset()
+        wrapped = f"{command}; echo __R__{run_id}:$?"
+        self.send(wrapped)
+
+        deadline = time.monotonic() + timeout
+        next_wake = time.monotonic() + wake_interval if wake_interval else None
+        run_id_needle = f"__R__{run_id}:"
+        while time.monotonic() < deadline:
+            chunk = self._collector.tail_since(offset)
+            if run_id_needle in chunk:
+                matches = list(RUN_RESULT_RE.finditer(chunk))
+                for match in reversed(matches):
+                    if match.group("run_id") == run_id:
+                        rc = int(match.group("rc"))
+                        output = chunk[: match.start()]
+                        return rc, output
+            if next_wake is not None and time.monotonic() >= next_wake:
+                self.send("")
+                next_wake = time.monotonic() + wake_interval
+            time.sleep(poll_interval)
+
+        partial = self._collector.tail_since(offset)
+        raise TerminalTimeoutError(
+            f"timed out waiting for run result (case={case}, run_id={run_id}): {command}",
+            partial_output=partial,
+        )
+
     def wait_pattern(
         self,
         pattern: str,
@@ -426,7 +475,7 @@ class Terminal:
         poll_interval: float = 0.05,
     ) -> tuple[str, int]:
         marker = f"__HV_TERMINAL_RC_{uuid.uuid4().hex}__"
-        wrapped = f"{command}; echo {marker}0"
+        wrapped = f"{command}; echo {marker}$?"
         self._ensure_open()
         offset = self._collector.offset()
         self.send(wrapped)

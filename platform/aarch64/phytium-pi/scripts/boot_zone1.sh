@@ -6,5 +6,5 @@ mount -t sysfs sysfs /sys 2>/dev/null || true
 rm -f nohup.out
 mkdir -p /dev/pts
 mount -t devpts devpts /dev/pts 2>/dev/null || true
-nohup ./hvisor virtio start virtio.json &
-./hvisor zone start linux2.json
+./hvisor virtio start zone1-linux-virtio.json &
+./hvisor zone start zone1-linux.json
