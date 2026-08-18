@@ -20,6 +20,7 @@ from board_flow import (
     close_board_terminal,
     get_board_terminal,
     logs_dir,
+    release_logs_ownership,
 )
 from ci_config import get_bid_entry, load_ci, parse_bid
 from terminal import Terminal, TerminalCommandError, TerminalTimeoutError
@@ -59,6 +60,14 @@ def terminate_managed_process(cfg: dict[str, Any]) -> None:
             os.killpg(proc.pid, signal.SIGKILL)
         except ProcessLookupError:
             pass
+
+
+def zone_list_shows_running(output: str, zone_name: str = "linux2") -> None:
+    """hvisor-tool zone list returns zone count as exit code; validate output instead."""
+    if zone_name not in output or "running" not in output:
+        raise TerminalCommandError(
+            f"zone list missing running {zone_name!r}:\n{output.strip()}"
+        )
 
 
 def run_and_print_quiet(
@@ -197,13 +206,21 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     if term is None:
         raise SystemExit("terminal backend is required")
     _, _ = run_and_print_quiet(term, "cd /root", quiet_seconds=1.0, max_duration=15.0)
-    _, boot_rc = run_and_print_quiet(
+    _, _ = run_and_print_quiet(
         term,
         "./boot_zone1.sh",
         quiet_seconds=15,
-        max_duration=30.0,
+        max_duration=120.0,
+        check_exit=False,
     )
-    _, _ = run_and_print_quiet(term, "./hvisor zone list", quiet_seconds=1.0, max_duration=15.0)
+    zone_list_out, _ = run_and_print_quiet(
+        term,
+        "./hvisor zone list",
+        quiet_seconds=1.0,
+        max_duration=15.0,
+        check_exit=False,
+    )
+    zone_list_shows_running(zone_list_out, str(cfg.get("zone1_name", "linux2")))
     if cfg["arch"] != "x86_64":
         _ = run_and_print_quiet_raw(term, "script /dev/null", quiet_seconds=1.0, max_duration=15.0)
     pts_output, _ = run_and_print_quiet(term, "ls -1 /dev/pts/[0-9]*", quiet_seconds=1.0, max_duration=15.0)
@@ -213,8 +230,6 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     max_pts = pts_numbers[-1]
     _ = run_and_print_send_only(term, f"screen /dev/pts/{max_pts}", read_duration=20.0)
     _ = run_and_print_send_only(term, "\n", read_duration=2.0)
-    if boot_rc != 0:
-        raise TerminalCommandError("command failed: ./boot_zone1.sh")
     print("zone1_started successfully", flush=True)
     return 0
 
@@ -371,6 +386,7 @@ def main() -> int:
             time.sleep(5.0)
         return 0
     finally:
+        release_logs_ownership(cfg)
         close_board_terminal(cfg)
         terminate_managed_process(cfg)
         if cfg.get("mode") == "board":

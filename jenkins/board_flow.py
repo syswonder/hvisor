@@ -21,7 +21,7 @@ ZONE1_PTS_PATTERN = r"/dev/pts/\d+"
 GUNZIP_ARTIFACTS = {"hvisor.gz": "hvisor"}
 SPLIT_PART_RE = re.compile(r"^(.+)\.part\.[a-z]{2}$")
 BOARD_PUBKEY_LINE = re.compile(r"^ssh-(?:ed25519|rsa)\s+\S+")
-BOARD_CMD_MARKER_RE = re.compile(r"__HV_M_(?P<run_id>[a-f0-9]+):(?P<rc>\d+)")
+BOARD_CMD_MARKER_RE = re.compile(r"__HV_M_(?P<run_id>[a-f0-9]{4}):(?P<rc>\d+)")
 MAX_BOARD_CMD_LEN = 128
 LOGIN_TOOLS_DEFAULT = [
     "ping",
@@ -42,6 +42,26 @@ def logs_dir(cfg: dict[str, Any]) -> Path:
     path = Path(cfg["workspace"]) / "logs"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def release_logs_ownership(cfg: dict[str, Any]) -> None:
+    """Return logs/ to the invoking user when ci_runner ran under sudo."""
+    if os.geteuid() != 0:
+        return
+    sudo_uid = os.environ.get("SUDO_UID")
+    sudo_gid = os.environ.get("SUDO_GID")
+    if not sudo_uid or not sudo_gid:
+        return
+    uid, gid = int(sudo_uid), int(sudo_gid)
+    path = Path(cfg["workspace"]) / "logs"
+    if not path.is_dir():
+        return
+    for root, dirs, files in os.walk(path, topdown=False):
+        for name in files:
+            os.chown(os.path.join(root, name), uid, gid)
+        for name in dirs:
+            os.chown(os.path.join(root, name), uid, gid)
+    os.chown(path, uid, gid)
 
 
 def save_case_log(cfg: dict[str, Any], name: str, content: str) -> None:
@@ -98,7 +118,7 @@ def board_run(
         raise ValueError(
             f"board command too long ({len(command)} > {MAX_BOARD_CMD_LEN}): {command!r}"
         )
-    run_id = uuid.uuid4().hex[:8]
+    run_id = uuid.uuid4().hex[:4]
     marker_needle = rf"__HV_M_{run_id}:\d+"
     offset = term.offset()
     term.send(f"{command}; echo __HV_M_{run_id}:$?")

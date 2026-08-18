@@ -397,9 +397,18 @@ pipeline {
                                         echo "Deploy TFTP artifacts [BID=${env.BID}, TFTP_DIR=${tftpDir}]"
                                         sh """
                                             export TERM=\${TERM:-xterm}
+                                            ${toolchainPathShell()}
+                                            tftp_staging="\$(pwd)/.tftp-staging"
+                                            rm -rf "\${tftp_staging}"
+                                            make cp ARCH=${arch} BOARD=${board} MODE=release TFTP_DIR="\${tftp_staging}"
+                                            test -f "\${tftp_staging}/hvisor.bin"
                                             sudo mkdir -p "${tftpDir}"
                                             sudo find "${tftpDir}" -mindepth 1 -maxdepth 1 -type f -delete
-                                            sudo make cp ARCH=${arch} BOARD=${board} MODE=release TFTP_DIR="${tftpDir}"
+                                            sudo cp "\${tftp_staging}/hvisor.bin" "${tftpDir}/"
+                                            test -f "${tftpDir}/hvisor.bin" || {
+                                                echo "error: hvisor.bin missing in ${tftpDir}" >&2
+                                                exit 1
+                                            }
                                         """
                                         zone0Dtbs.each { dtb ->
                                             sh """
@@ -408,8 +417,15 @@ pipeline {
                                             """
                                         }
                                         sh """
-                                            test -f "${zone0Image}"
+                                            test -f "${zone0Image}" || {
+                                                echo "error: zone0 kernel Image not found: ${zone0Image}" >&2
+                                                exit 1
+                                            }
                                             sudo cp "${zone0Image}" "${tftpDir}/Image"
+                                            test -f "${tftpDir}/Image" || {
+                                                echo "error: Image missing in ${tftpDir}" >&2
+                                                exit 1
+                                            }
                                             sudo chmod -R a+rX "${tftpDir}"
                                             ls -la "${tftpDir}"
                                         """

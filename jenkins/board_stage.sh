@@ -82,7 +82,7 @@ if [ "$(id -u)" -eq 0 ] && id light >/dev/null 2>&1; then
     chown -R light:light "${STAGING_DIR}"
 fi
 
-DEPLOY_SPLIT_CHUNK_BYTES=${DEPLOY_SPLIT_CHUNK_BYTES:-1048576}
+DEPLOY_SPLIT_CHUNK_BYTES=${DEPLOY_SPLIT_CHUNK_BYTES:-524288}
 for staged_file in "${STAGING_DIR}"/*; do
     [ -f "${staged_file}" ] || continue
     staged_name=$(basename "${staged_file}")

@@ -30,6 +30,7 @@ bids:
       tftp_dir: /home/light/tftp/rk3568
       zone0_dtbs:
         - platform/aarch64/rk3568/image/dts/rk3568_limit_zone0.dtb
+      zone0_image: /home/light/DEMO/sdk/rk356x-up4-2c/kernel/arch/arm64/boot/Image
       uboot_ready_pattern: '=>'
       zone0_ready_pattern: 'root@linux:[^\r\n]*#\s?'
       zone0_shell_timeout: 180
