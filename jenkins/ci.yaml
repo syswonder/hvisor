@@ -18,18 +18,81 @@ bids:
         - zone0_start
         - zone1_start
 
-  # - bid: aarch64/rk3568
-  #   build_args:
-  #     - KDIR=/home/light/DEMO/sdk/rk356x-up4-2c/kernel
-  #   tests:
-  #     mode: board
-  #     serial: /dev/serial/by-id/usb-1a86_USB2.0-Ser_-if00-port0
-  #     baudrate: 115200
-  #     uboot_cmd: pci enum;setenv serverip 192.168.0.1; setenv ipaddr 192.168.0.2; setenv loadaddr 0x60800000; setenv fdt_addr 0xa0000000; setenv zone0_kernel_addr 0x00280000; tftp ${loadaddr} ${serverip}:hvisor.bin; tftp ${fdt_addr} ${serverip}:rk3568_limit_zone0.dtb; tftp ${zone0_kernel_addr} ${serverip}:Image_test5; bootm ${loadaddr} - ${fdt_addr};
-  #     cases:
-  #       - zone0_start
-  #       - zone1_start
+  - bid: aarch64/rk3568
+    build_args:
+      - KDIR=/home/light/DEMO/sdk/rk356x-up4-2c/kernel
+    tests:
+      mode: board
+      serial: /dev/serial/by-path/pci-0000:00:14.0-usb-0:9:1.0-port0
+      power_serial: /dev/serial/by-path/pci-0000:00:14.0-usb-0:10:1.0-port0
+      power_channel: 4
+      baudrate: 1500000
+      tftp_dir: /home/light/tftp/rk3568
+      zone0_dtbs:
+        - platform/aarch64/rk3568/image/dts/rk3568_limit_zone0.dtb
+      zone0_image: /home/light/DEMO/sdk/rk356x-up4-2c/kernel/arch/arm64/boot/Image
+      uboot_ready_pattern: '=>'
+      zone0_ready_pattern: 'root@linux:[^\r\n]*#\s?'
+      zone0_shell_timeout: 180
+      uboot_step_timeout: 90
+      uboot_cmds:
+        - pci enum; setenv serverip 192.168.1.181; setenv ipaddr 192.168.1.240; setenv loadaddr 0x60800000; setenv fdt_addr 0xa0000000; setenv zone0_kernel_addr 0x00280000
+        - tftp ${loadaddr} ${serverip}:rk3568/hvisor.bin
+        - tftp ${fdt_addr} ${serverip}:rk3568/rk3568_limit_zone0.dtb
+        - tftp ${zone0_kernel_addr} ${serverip}:rk3568/Image
+        - bootm ${loadaddr} - ${fdt_addr}
+      deploy:
+        board_ip: 192.168.1.240
+        board_iface: eth0
+        link_wait: 3
+        host_ip: 192.168.1.181
+        host_user: light
+        zone1_dtb: platform/aarch64/rk3568/image/dts/rk3568_limit_zone1.dtb
+      cases:
+        - zone0_start
+        - login
+        - network_and_trans
+        - zone1_start
 
+  - bid: aarch64/phytium-pi
+    build_args:
+      - KDIR=/home/light/DEMO/linux/kernel-5.10
+    tests:
+      mode: board
+      serial: /dev/serial/by-path/pci-0000:00:14.0-usb-0:7:1.0-port0
+      power_serial: /dev/serial/by-path/pci-0000:00:14.0-usb-0:10:1.0-port0
+      power_channel: 3
+      baudrate: 115200
+      tftp_dir: /home/light/tftp/phytium-pi
+      zone0_dtbs:
+        - platform/aarch64/phytium-pi/image/dts/linux1.dtb
+        - platform/aarch64/phytium-pi/image/dts/phytium-pi-board-v2.dtb
+      zone0_image: /home/light/DEMO/phytium-pi-external/Image
+      uboot_ready_pattern: 'Phytium-Pi#'
+      zone0_ready_pattern: 'root@[^\r\n]*:\/#\s?|(?:\r?\n)#\s*(?:\r?\n|$)'
+      zone0_shell_timeout: 300
+      uboot_step_timeout: 600
+      uboot_autoboot_window: 15
+      uboot_cmds:
+        - setenv serverip 192.168.1.181; setenv ipaddr 192.168.1.179; setenv loadaddr 0x90100000; setenv fdt_addr 0x90000000; setenv zone0_kernel_addr 0xa0400000; setenv zone0_fdt_addr 0xa0000000
+        - tftp ${loadaddr} ${serverip}:phytium-pi/hvisor.bin
+        - tftp ${fdt_addr} ${serverip}:phytium-pi/phytium-pi-board-v2.dtb
+        - tftp ${zone0_kernel_addr} ${serverip}:phytium-pi/Image
+        - tftp ${zone0_fdt_addr} ${serverip}:phytium-pi/linux1.dtb
+        - bootm ${loadaddr} - ${fdt_addr}
+      deploy:
+        board_ip: 192.168.1.179
+        board_iface: eth0
+        link_wait: 8
+        ping_retries: 3
+        host_ip: 192.168.1.181
+        host_user: light
+        pull_timeout: 900
+      cases:
+        - zone0_start
+        - login
+        - network_and_trans
+        - zone1_start
 
   - bid: x86_64/qemu
     build_args:
@@ -38,6 +101,4 @@ bids:
       mode: qemu
       cases:
         - zone0_start
-        - zone1_start  
-
-
+        - zone1_start

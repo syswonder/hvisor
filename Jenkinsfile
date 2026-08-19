@@ -205,6 +205,8 @@ pipeline {
         LOONGARCH64_TOOLCHAIN_PATH = '/home/light/DEMO/toolchain/loongarch_cross_tools'
         // All toolchain bins on PATH; same for every matrix cell (no per-arch selection).
         TOOLCHAIN_PATHS = "${env.RISCV_TOOLCHAIN_PATH}/bin:${env.AARCH64_TOOLCHAIN_PATH}/bin:${env.LOONGARCH64_TOOLCHAIN_PATH}/bin"
+        TFTP_DIR = '/home/light/tftp'
+        PYTHONDONTWRITEBYTECODE = '1'
     }
 
     stages {
@@ -386,8 +388,47 @@ pipeline {
                                                 "${prepareScript}"
                                         """
                                     } else if (mode == 'board') {
-                                        // Placeholder for future board artifact distribution by network.
-                                        echo "Board prepare placeholder [BID=${env.BID}]"
+                                        def tftpDir = (testsCfg.tftp_dir ?: env.TFTP_DIR).toString()
+                                        def zone0Dtbs = testsCfg.zone0_dtbs ?: []
+                                        if (testsCfg.zone0_dtb) {
+                                            zone0Dtbs = [testsCfg.zone0_dtb]
+                                        }
+                                        def zone0Image = (testsCfg.zone0_image ?: "${kdir}/arch/arm64/boot/Image").toString()
+                                        echo "Deploy TFTP artifacts [BID=${env.BID}, TFTP_DIR=${tftpDir}]"
+                                        sh """
+                                            export TERM=\${TERM:-xterm}
+                                            ${toolchainPathShell()}
+                                            tftp_staging="\$(pwd)/.tftp-staging"
+                                            rm -rf "\${tftp_staging}"
+                                            make cp ARCH=${arch} BOARD=${board} MODE=release TFTP_DIR="\${tftp_staging}"
+                                            test -f "\${tftp_staging}/hvisor.bin"
+                                            sudo mkdir -p "${tftpDir}"
+                                            sudo find "${tftpDir}" -mindepth 1 -maxdepth 1 -type f -delete
+                                            sudo cp "\${tftp_staging}/hvisor.bin" "${tftpDir}/"
+                                            test -f "${tftpDir}/hvisor.bin" || {
+                                                echo "error: hvisor.bin missing in ${tftpDir}" >&2
+                                                exit 1
+                                            }
+                                        """
+                                        zone0Dtbs.each { dtb ->
+                                            sh """
+                                                test -f "${dtb}"
+                                                sudo cp "${dtb}" "${tftpDir}/"
+                                            """
+                                        }
+                                        sh """
+                                            test -f "${zone0Image}" || {
+                                                echo "error: zone0 kernel Image not found: ${zone0Image}" >&2
+                                                exit 1
+                                            }
+                                            sudo cp "${zone0Image}" "${tftpDir}/Image"
+                                            test -f "${tftpDir}/Image" || {
+                                                echo "error: Image missing in ${tftpDir}" >&2
+                                                exit 1
+                                            }
+                                            sudo chmod -R a+rX "${tftpDir}"
+                                            ls -la "${tftpDir}"
+                                        """
                                     } else {
                                         error("jenkins/ci.yaml BID=${env.BID}: unsupported tests.mode='${mode}'")
                                     }
@@ -403,14 +444,24 @@ pipeline {
                         steps {
                             dir(matrixCellDir()) {
                                 script {
-                                    echo "Run tests via ci_runner [BID=${env.BID}]"
-                                    sh """
-                                        export TERM=\${TERM:-xterm}
-                                        ${toolchainPathShell()}
-                                        ${qemuPathShell()}
-                                        python3 jenkins/ci_runner.py \
-                                            --bid "${env.BID}"
-                                    """
+                                    def bidCfg = getBidConfig(loadCiYaml(), env.BID)
+                                    def mode = (bidCfg.tests?.mode ?: '').toString().trim()
+                                    echo "Run tests via ci_runner [BID=${env.BID}, mode=${mode}]"
+                                    if (mode == 'board') {
+                                        sh """
+                                            export TERM=\${TERM:-xterm}
+                                            sudo -E python3 jenkins/ci_runner.py \
+                                                --bid "${env.BID}"
+                                        """
+                                    } else {
+                                        sh """
+                                            export TERM=\${TERM:-xterm}
+                                            ${toolchainPathShell()}
+                                            ${qemuPathShell()}
+                                            python3 jenkins/ci_runner.py \
+                                                --bid "${env.BID}"
+                                        """
+                                    }
                                 }
                             }
                         }

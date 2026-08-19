@@ -18,6 +18,14 @@ from pathlib import Path
 import serial
 
 
+MARKER_ID_LEN = 4
+HV_M_MARKER_RE = re.compile(rf"__HV_M_(?P<run_id>[a-f0-9]{{{MARKER_ID_LEN}}}):(?P<rc>\d+)")
+
+
+def new_marker_id() -> str:
+    return uuid.uuid4().hex[:MARKER_ID_LEN]
+
+
 class TerminalTimeoutError(TimeoutError):
     """Raised when terminal command wait times out."""
 
@@ -314,6 +322,52 @@ class Terminal:
         self._ensure_open()
         self.backend.flush_input()
 
+    def offset(self) -> int:
+        self._ensure_open()
+        return self._collector.offset()
+
+    def tail_since(self, offset: int) -> str:
+        self._ensure_open()
+        return self._collector.tail_since(offset)
+
+    def run(
+        self,
+        case: str,
+        command: str,
+        timeout: float = 30.0,
+        poll_interval: float = 0.05,
+        wake_interval: float | None = None,
+    ) -> tuple[int, str]:
+        """Run a shell command and wait for the compact result marker in the log."""
+        self._ensure_open()
+        run_id = new_marker_id()
+        offset = self._collector.offset()
+        wrapped = f"{command}; echo __HV_M_{run_id}:$?"
+        self.send(wrapped)
+
+        deadline = time.monotonic() + timeout
+        next_wake = time.monotonic() + wake_interval if wake_interval else None
+        marker_needle = rf"__HV_M_{run_id}:\d+"
+        while time.monotonic() < deadline:
+            chunk = self._collector.tail_since(offset)
+            if re.search(marker_needle, chunk):
+                matches = [m for m in HV_M_MARKER_RE.finditer(chunk) if m.group("run_id") == run_id]
+                if matches:
+                    match = matches[-1]
+                    rc = int(match.group("rc"))
+                    output = chunk[: match.start()]
+                    return rc, output
+            if next_wake is not None and time.monotonic() >= next_wake:
+                self.send("")
+                next_wake = time.monotonic() + wake_interval
+            time.sleep(poll_interval)
+
+        partial = self._collector.tail_since(offset)
+        raise TerminalTimeoutError(
+            f"timed out waiting for run result (case={case}, run_id={run_id}): {command}",
+            partial_output=partial,
+        )
+
     def wait_pattern(
         self,
         pattern: str,
@@ -358,7 +412,8 @@ class Terminal:
         include_marker_line: bool = False,
     ) -> str:
         self._ensure_open()
-        marker = f"__HV_TERMINAL_DONE_{uuid.uuid4().hex}__"
+        run_id = new_marker_id()
+        marker = f"__HV_M_{run_id}:0"
         offset = self._collector.offset()
         self.send(f"{command}; echo {marker}")
 
@@ -425,14 +480,15 @@ class Terminal:
         max_duration: float = 30.0,
         poll_interval: float = 0.05,
     ) -> tuple[str, int]:
-        marker = f"__HV_TERMINAL_RC_{uuid.uuid4().hex}__"
-        wrapped = f"{command}; echo {marker}0"
+        run_id = new_marker_id()
+        marker = f"__HV_M_{run_id}"
+        wrapped = f"{command}; echo {marker}:$?"
         self._ensure_open()
         offset = self._collector.offset()
         self.send(wrapped)
 
         deadline = time.monotonic() + max_duration
-        marker_pattern = re.compile(re.escape(marker) + r"(\d+)")
+        marker_pattern = re.compile(re.escape(marker) + r":(\d+)")
         rc = -1
         marker_seen_at = 0.0
 
@@ -449,13 +505,13 @@ class Terminal:
                 continue
 
             if marker_seen_at > 0.0 and (time.monotonic() - marker_seen_at) >= quiet_seconds:
-                cleaned = self._strip_status_marker(buf, marker)
+                cleaned = self._strip_hv_m_marker(buf, marker)
                 return cleaned, rc
 
             time.sleep(poll_interval)
 
         raise TerminalTimeoutError(
-            f"timed out waiting for command status marker: {marker}",
+            f"timed out waiting for command status marker {marker}:$?",
             partial_output=self._collector.tail_since(offset),
         )
 
@@ -500,8 +556,8 @@ class Terminal:
         return output[:idx]
 
     @staticmethod
-    def _strip_status_marker(output: str, marker: str) -> str:
-        pattern = re.compile(re.escape(marker) + r"\d+")
+    def _strip_hv_m_marker(output: str, marker: str) -> str:
+        pattern = re.compile(re.escape(marker) + r":\d+")
         matches = list(pattern.finditer(output))
         if not matches:
             return output
