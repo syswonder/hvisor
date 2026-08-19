@@ -10,6 +10,7 @@
  */
 #include "virtio_net.h"
 #include "event_monitor.h"
+#include "json_parse.h"
 #include "log.h"
 
 #include "virtio.h"
@@ -23,14 +24,9 @@
 #include <sys/uio.h>
 #include <unistd.h>
 
-NetDev *init_net_dev(uint8_t mac[]) {
+static NetDev *init_net_dev(const uint8_t mac[]) {
     NetDev *dev = malloc(sizeof(NetDev));
-    dev->config.mac[0] = mac[0];
-    dev->config.mac[1] = mac[1];
-    dev->config.mac[2] = mac[2];
-    dev->config.mac[3] = mac[3];
-    dev->config.mac[4] = mac[4];
-    dev->config.mac[5] = mac[5];
+    memcpy(dev->config.mac, mac, sizeof(dev->config.mac));
     dev->config.status = VIRTIO_NET_S_LINK_UP;
     dev->tapfd = -1;
     dev->rx_ready = 0;
@@ -41,7 +37,7 @@ NetDev *init_net_dev(uint8_t mac[]) {
 }
 
 // open tap device
-static int open_tap(char *devname) {
+static int open_tap(const char *devname) {
     log_info("virtio net tap open");
     int tunfd;
     struct ifreq ifr;
@@ -66,7 +62,7 @@ static int open_tap(char *devname) {
 }
 
 /// When driver notifies rxq, it means the rx process can now begin
-int virtio_net_rxq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
+static int virtio_net_rxq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     log_debug("virtio_net_rxq_notify_handler");
     NetDev *net = vdev->dev;
     if (net->rx_ready <= 0) {
@@ -88,7 +84,7 @@ size_t get_nethdr_size(VirtIODevice *vdev) {
 }
 
 /// Called when tap device received packets
-void virtio_net_event_handler(int fd, int epoll_type, void *param) {
+static void virtio_net_event_handler(int fd, int epoll_type, void *param) {
     log_debug("virtio_net_event_handler");
     VirtIODevice *vdev = param;
     NetDev *net = vdev->dev;
@@ -234,7 +230,7 @@ static void virtq_tx_handle_one_request(VirtIODevice *vdev, VirtQueue *vq,
     (*out_count)++;
 }
 
-int virtio_net_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
+static int virtio_net_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     log_debug("virtio_net_txq_notify_handler");
     virtqueue_disable_notify(vq);
     uint16_t batch_indices[VIRTQUEUE_NET_MAX_SIZE];
@@ -264,7 +260,7 @@ int virtio_net_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     return 0;
 }
 
-void net_on_status(VirtIODevice *vdev, uint32_t status) {
+static void net_on_status(VirtIODevice *vdev, uint32_t status) {
     NetDev *net = vdev->dev;
 
     // FEATURES_OK indicates guest has finished writing DRIVER_FEATURES.
@@ -280,7 +276,7 @@ void net_on_status(VirtIODevice *vdev, uint32_t status) {
     }
 }
 
-int virtio_net_init(VirtIODevice *vdev, char *devname) {
+static int virtio_net_init(VirtIODevice *vdev, const char *devname) {
     log_info("virtio net init");
     NetDev *net = vdev->dev;
     // open tap device
@@ -292,41 +288,109 @@ int virtio_net_init(VirtIODevice *vdev, char *devname) {
     // set tap device O_NONBLOCK. If io operation like readv blocks, then return
     // errno EWOULDBLOCK
     if (set_nonblocking(net->tapfd) < 0) {
-        close(net->tapfd);
-        net->tapfd = -1;
+        log_error("failed to set tap nonblocking");
+        return -1;
     }
     // register an epoll read event for tap device
     net->event = add_event(net->tapfd, EPOLLIN, virtio_net_event_handler, vdev);
     if (net->event == NULL) {
         log_error("Can't register net event");
-        close(net->tapfd);
-        net->tapfd = -1;
         return -1;
     }
     net->in_iov = malloc(sizeof(struct iovec) * NET_IOV_MAX);
     net->out_iov = malloc(sizeof(struct iovec) * NET_IOV_MAX);
     if (!net->in_iov || !net->out_iov) {
         log_error("failed to allocate iov buffers");
-        free(net->in_iov);
-        free(net->out_iov);
-        net->in_iov = NULL;
-        net->out_iov = NULL;
-        close(net->tapfd);
-        net->tapfd = -1;
         return -1;
     }
-    vdev->status_changed = net_on_status;
-    vdev->virtio_close = virtio_net_close;
     return 0;
 }
 
-void virtio_net_close(VirtIODevice *vdev) {
+static void virtio_net_reset(VirtIODevice *vdev) {
+    if (!vdev || !vdev->dev)
+        return;
     NetDev *dev = vdev->dev;
-    close(dev->tapfd);
-    free(dev->event);
-    free(dev->in_iov);
-    free(dev->out_iov);
-    free(dev);
+    dev->rx_ready = false;
+}
+
+static void virtio_net_close(VirtIODevice *vdev) {
+    if (!vdev)
+        return;
+
+    NetDev *dev = vdev->dev;
+    if (dev) {
+        if (dev->tapfd >= 0)
+            close(dev->tapfd);
+        remove_event(dev->event);
+        free(dev->event);
+        free(dev->in_iov);
+        free(dev->out_iov);
+        free(dev);
+        vdev->dev = NULL;
+    }
     free(vdev->vqs);
+    vdev->vqs = NULL;
     free(vdev);
 }
+
+static int virtio_net_do_init(VirtIODevice *vdev, const void *params) {
+    const struct virtio_net_init_params *p = params;
+    if (!p)
+        return -EINVAL;
+    vdev->dev = init_net_dev(p->mac);
+    if (!vdev->dev)
+        return -ENOMEM;
+    return virtio_net_init(vdev, p->tap);
+}
+
+const struct virtio_device_ops virtio_net_ops = {
+    .type = VirtioTNet,
+    .features = NET_SUPPORTED_FEATURES,
+    .num_queues = NET_MAX_QUEUES,
+    .queue_max_size = VIRTQUEUE_NET_MAX_SIZE,
+    .init = virtio_net_do_init,
+    .close = virtio_net_close,
+    .reset = virtio_net_reset,
+    .status_changed = net_on_status,
+    .notify_handlers =
+        {
+            [NET_QUEUE_RX] = virtio_net_rxq_notify_handler,
+            [NET_QUEUE_TX] = virtio_net_txq_notify_handler,
+        },
+};
+
+static int virtio_net_parse_params(const cJSON *json, void **out) {
+    struct virtio_net_init_params *p = calloc(1, sizeof(*p));
+    if (!p)
+        return -ENOMEM;
+
+    cJSON *tap = cJSON_GetObjectItem(json, "tap");
+    if (!cJSON_IsString(tap) || !tap->valuestring[0]) {
+        free(p);
+        return -EINVAL;
+    }
+    p->tap = tap->valuestring;
+
+    cJSON *mac_json = cJSON_GetObjectItem(json, "mac");
+    if (cJSON_GetArraySize(mac_json) != 6) {
+        free(p);
+        return -EINVAL;
+    }
+    for (int i = 0; i < 6; i++) {
+        if (parse_json_u8(cJSON_GetArrayItem(mac_json, i), &p->mac[i]) != 0) {
+            log_error("failed to parse mac byte %d", i);
+            free(p);
+            return -EINVAL;
+        }
+    }
+
+    *out = p;
+    return 0;
+}
+
+static void virtio_net_free_params(void *params) { free(params); }
+
+const struct virtio_config_ops virtio_net_config_ops = {
+    .parse = virtio_net_parse_params,
+    .free = virtio_net_free_params,
+};

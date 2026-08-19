@@ -19,7 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-static int parse_id_array(cJSON *json_array, uint32_t **ids_out,
+static int parse_id_array(const cJSON *json_array, uint32_t **ids_out,
                           uint32_t *count_out) {
     if (!json_array || !cJSON_IsArray(json_array)) {
         *ids_out = NULL;
@@ -65,19 +65,28 @@ void scmi_dev_free(SCMIDev *dev) {
     free(dev);
 }
 
-int scmi_dev_parse_clock_ids(SCMIDev *dev, void *json_array) {
-    return parse_id_array((cJSON *)json_array, &dev->clock_ids,
-                          &dev->clock_count);
+int scmi_dev_parse_clock_ids(struct virtio_scmi_init_params *p,
+                             const cJSON *json_array) {
+    return parse_id_array(json_array, &p->clock_ids, &p->clock_count);
 }
 
-int scmi_dev_parse_reset_ids(SCMIDev *dev, void *json_array) {
-    return parse_id_array((cJSON *)json_array, &dev->reset_ids,
-                          &dev->reset_count);
+int scmi_dev_parse_reset_ids(struct virtio_scmi_init_params *p,
+                             const cJSON *json_array) {
+    return parse_id_array(json_array, &p->reset_ids, &p->reset_count);
 }
 
-int scmi_dev_parse_power_ids(SCMIDev *dev, void *json_array) {
-    return parse_id_array((cJSON *)json_array, &dev->power_ids,
-                          &dev->power_count);
+int scmi_dev_parse_power_ids(struct virtio_scmi_init_params *p,
+                             const cJSON *json_array) {
+    return parse_id_array(json_array, &p->power_ids, &p->power_count);
+}
+
+void scmi_dev_free_params(struct virtio_scmi_init_params *p) {
+    if (!p)
+        return;
+    free(p->clock_ids);
+    free(p->reset_ids);
+    free(p->power_ids);
+    free(p);
 }
 
 static int virtq_tx_handle_one_request(void *dev, VirtQueue *vq) {
@@ -149,7 +158,7 @@ static int virtq_tx_handle_one_request(void *dev, VirtQueue *vq) {
     return 0;
 }
 
-int virtio_scmi_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
+static int virtio_scmi_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     while (!virtqueue_is_empty(vq)) {
         virtqueue_disable_notify(vq);
         while (!virtqueue_is_empty(vq)) {
@@ -168,9 +177,118 @@ int virtio_scmi_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     return 0;
 }
 
-void virtio_scmi_close(VirtIODevice *vdev) {
+static void virtio_scmi_reset(VirtIODevice *vdev) { (void)vdev; }
+
+static void virtio_scmi_close(VirtIODevice *vdev) {
+    if (!vdev)
+        return;
+
     SCMIDev *dev = vdev->dev;
-    scmi_dev_free(dev);
+    if (dev) {
+        scmi_dev_free(dev);
+        vdev->dev = NULL;
+    }
     free(vdev->vqs);
+    vdev->vqs = NULL;
     free(vdev);
 }
+
+/*
+ * Deep-copy a count-sized uint32 id array; count == 0 keeps *dst NULL.
+ * Failure cleanup is deferred to ops->close (scmi_dev_free tolerates
+ * NULL id arrays), so a non-zero return just needs to propagate.
+ */
+static int scmi_copy_id_array(uint32_t **dst, const uint32_t *src,
+                              uint32_t count) {
+    if (count == 0)
+        return 0;
+    *dst = calloc(count, sizeof(uint32_t));
+    if (!*dst)
+        return -ENOMEM;
+    memcpy(*dst, src, count * sizeof(uint32_t));
+    return 0;
+}
+
+static int virtio_scmi_do_init(VirtIODevice *vdev, const void *params) {
+    const struct virtio_scmi_init_params *p = params;
+    SCMIDev *dev;
+
+    if (p) {
+        dev = calloc(1, sizeof(SCMIDev));
+        if (!dev)
+            return -ENOMEM;
+        vdev->dev = dev;
+
+        // Deep-copy id arrays so that SCMIDev and the caller each own their
+        // copies — no ownership transfer, no double-free risk.
+        if (scmi_copy_id_array(&dev->clock_ids, p->clock_ids, p->clock_count) ||
+            scmi_copy_id_array(&dev->reset_ids, p->reset_ids, p->reset_count) ||
+            scmi_copy_id_array(&dev->power_ids, p->power_ids, p->power_count))
+            return -ENOMEM;
+        dev->clock_count = p->clock_count;
+        dev->reset_count = p->reset_count;
+        dev->power_count = p->power_count;
+
+        scmi_dev_register_protocol(dev, SCMI_PROTO_ID_BASE,
+                                   virtio_scmi_base_handle_req);
+        if (dev->clock_count > 0)
+            scmi_dev_register_protocol(dev, SCMI_PROTO_ID_CLOCK,
+                                       virtio_scmi_clock_handle_req);
+        if (dev->power_count > 0)
+            scmi_dev_register_protocol(dev, SCMI_PROTO_ID_POWER,
+                                       virtio_scmi_power_handle_req);
+        if (dev->reset_count > 0)
+            scmi_dev_register_protocol(dev, SCMI_PROTO_ID_RESET,
+                                       virtio_scmi_reset_handle_req);
+    } else {
+        dev = scmi_dev_create();
+        if (!dev)
+            return -ENOMEM;
+        vdev->dev = dev;
+    }
+
+    return 0;
+}
+
+const struct virtio_device_ops virtio_scmi_ops = {
+    .type = VirtioTSCMI,
+    .features = SCMI_SUPPORTED_FEATURES,
+    .num_queues = SCMI_MAX_QUEUES,
+    .queue_max_size = VIRTQUEUE_SCMI_MAX_SIZE,
+    .init = virtio_scmi_do_init,
+    .close = virtio_scmi_close,
+    .reset = virtio_scmi_reset,
+    .notify_handlers =
+        {
+            [SCMI_QUEUE_TX] = virtio_scmi_txq_notify_handler,
+        },
+};
+
+static int virtio_scmi_parse_params(const cJSON *json, void **out) {
+    struct virtio_scmi_init_params *p = calloc(1, sizeof(*p));
+    if (!p)
+        return -ENOMEM;
+
+    cJSON *clock_ids = cJSON_GetObjectItem(json, "clock_ids");
+    cJSON *reset_ids = cJSON_GetObjectItem(json, "reset_ids");
+    cJSON *power_ids = cJSON_GetObjectItem(json, "power_ids");
+
+    if (scmi_dev_parse_clock_ids(p, clock_ids) < 0 ||
+        scmi_dev_parse_reset_ids(p, reset_ids) < 0 ||
+        scmi_dev_parse_power_ids(p, power_ids) < 0) {
+        scmi_dev_free_params(p);
+        return -EINVAL;
+    }
+
+    *out = p;
+    return 0;
+}
+
+static void virtio_scmi_free_params(void *params) {
+    scmi_dev_free_params(params);
+}
+
+const struct virtio_config_ops virtio_scmi_config_ops = {
+    .parse = virtio_scmi_parse_params,
+    .free = virtio_scmi_free_params,
+};

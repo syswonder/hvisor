@@ -131,6 +131,23 @@ struct VirtIODevice {
     bool interrupt_line_asserted;
 };
 
+struct virtio_device_ops {
+    VirtioDeviceType type;
+    uint64_t features;
+    uint32_t num_queues;
+    uint32_t queue_max_size;
+    int (*init)(VirtIODevice *vdev, const void *params);
+    void (*close)(VirtIODevice *vdev);
+    void (*reset)(VirtIODevice *vdev);
+    void (*status_changed)(VirtIODevice *vdev, uint32_t status);
+#define VIRTIO_MAX_VQUEUES 4
+    int (*notify_handlers[VIRTIO_MAX_VQUEUES])(VirtIODevice *, VirtQueue *);
+};
+
+struct virtio_config_ops {
+    int (*parse)(const cJSON *json, void **params_out);
+    void (*free)(void *params);
+};
 // used event idx for driver telling device when to notify driver.
 #define VQ_USED_EVENT(vq) ((vq)->avail_ring->ring[(vq)->num])
 // avail event idx for device telling driver when to notify device.
@@ -156,9 +173,7 @@ void rw_barrier(void);
 
 VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
                                    uint64_t base_addr, uint64_t len,
-                                   uint32_t irq_id, void *arg0, void *arg1);
-
-void init_virtio_queue(VirtIODevice *vdev, VirtioDeviceType type);
+                                   uint32_t irq_id, const void *params);
 
 void init_mmio_regs(VirtMmioRegs *regs, VirtioDeviceType type);
 
@@ -241,7 +256,7 @@ void handle_virtio_requests();
 
 int virtio_init();
 
-int create_virtio_device_from_json(cJSON *device_json, int zone_id);
+int create_virtio_device_from_json(const cJSON *device_json, int zone_id);
 
 int virtio_start_from_json(char *json_path);
 

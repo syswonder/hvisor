@@ -13,6 +13,7 @@
 #include "virtio.h"
 #include <errno.h>
 #include <fcntl.h>
+#include <inttypes.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/param.h>
@@ -128,7 +129,7 @@ static void *blkproc_thread(void *arg) {
 }
 
 // create blk dev.
-BlkDev *init_blk_dev(VirtIODevice *vdev) {
+static BlkDev *init_blk_dev(VirtIODevice *vdev) {
     BlkDev *dev = malloc(sizeof(BlkDev));
     vdev->dev = dev;
     dev->config.capacity = -1;
@@ -145,27 +146,29 @@ BlkDev *init_blk_dev(VirtIODevice *vdev) {
     return dev;
 }
 
-int virtio_blk_init(VirtIODevice *vdev, const char *img_path) {
-    int img_fd = open(img_path, O_RDWR);
+static int virtio_blk_init(VirtIODevice *vdev, const char *img_path) {
     BlkDev *dev = vdev->dev;
-    struct stat st;
-    uint64_t blk_size;
-    if (img_fd == -1) {
+    if (!dev) {
+        log_error("virtio_blk_init: vdev->dev is nullptr");
+        return -1;
+    }
+
+    dev->img_fd = open(img_path, O_RDWR);
+    if (dev->img_fd == -1) {
         log_error("cannot open %s, Error code is %d", img_path, errno);
-        close(img_fd);
         return -1;
     }
-    if (fstat(img_fd, &st) == -1) {
+
+    struct stat st;
+    if (fstat(dev->img_fd, &st) == -1) {
         log_error("cannot stat %s, Error code is %d", img_path, errno);
-        close(img_fd);
         return -1;
     }
-    blk_size = st.st_size / 512; // 512 bytes per block
+    uint64_t blk_size = st.st_size / SECTOR_BSIZE;
     dev->config.capacity = blk_size;
     dev->config.size_max = blk_size;
-    dev->img_fd = img_fd;
-    vdev->virtio_close = virtio_blk_close;
-    log_info("debug: virtio_blk_init: %s, size is %lld", img_path,
+
+    log_info("virtio_blk_init: %s, size is %" PRIu64, img_path,
              dev->config.capacity);
     return 0;
 }
@@ -227,7 +230,7 @@ err_out:
     return NULL;
 }
 
-int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
+static int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     log_debug("virtio blk notify handler enter");
     BlkDev *blkDev = (BlkDev *)vdev->dev;
     struct blkp_req *breq;
@@ -252,17 +255,74 @@ int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     return 0;
 }
 
-void virtio_blk_close(VirtIODevice *vdev) {
+static void virtio_blk_reset(VirtIODevice *vdev) { (void)vdev; }
+
+/*
+ * Shut down the blk device: signal close, wait for the worker to exit,
+ * then release all resources.
+ */
+static void virtio_blk_close(VirtIODevice *vdev) {
+    if (!vdev)
+        return;
+
     BlkDev *dev = vdev->dev;
-    pthread_mutex_lock(&dev->mtx);
-    dev->close = 1;
-    pthread_cond_signal(&dev->cond);
-    pthread_mutex_unlock(&dev->mtx);
-    pthread_join(dev->tid, NULL);
-    pthread_mutex_destroy(&dev->mtx);
-    pthread_cond_destroy(&dev->cond);
-    close(dev->img_fd);
-    free(dev);
+    if (dev) {
+        pthread_mutex_lock(&dev->mtx);
+        dev->close = 1;
+        pthread_cond_signal(&dev->cond);
+        pthread_mutex_unlock(&dev->mtx);
+        pthread_join(dev->tid, NULL);
+        pthread_mutex_destroy(&dev->mtx);
+        pthread_cond_destroy(&dev->cond);
+        if (dev->img_fd >= 0)
+            close(dev->img_fd);
+        free(dev);
+        vdev->dev = NULL;
+    }
     free(vdev->vqs);
+    vdev->vqs = NULL;
     free(vdev);
 }
+
+static int virtio_blk_do_init(VirtIODevice *vdev, const void *params) {
+    const struct virtio_blk_init_params *p = params;
+    if (!p)
+        return -EINVAL;
+    if (!init_blk_dev(vdev))
+        return -ENOMEM;
+    if (virtio_blk_init(vdev, p->img_path) != 0)
+        return -EIO;
+    return 0;
+}
+
+const struct virtio_device_ops virtio_blk_ops = {
+    .type = VirtioTBlock,
+    .features = BLK_SUPPORTED_FEATURES,
+    .num_queues = 1,
+    .queue_max_size = VIRTQUEUE_BLK_MAX_SIZE,
+    .init = virtio_blk_do_init,
+    .close = virtio_blk_close,
+    .reset = virtio_blk_reset,
+    .notify_handlers = {virtio_blk_notify_handler},
+};
+
+static int virtio_blk_parse_params(const cJSON *json, void **out) {
+    struct virtio_blk_init_params *p = calloc(1, sizeof(*p));
+    if (!p)
+        return -ENOMEM;
+    cJSON *img = cJSON_GetObjectItem(json, "img");
+    if (!cJSON_IsString(img) || !img->valuestring[0]) {
+        free(p);
+        return -EINVAL;
+    }
+    p->img_path = img->valuestring;
+    *out = p;
+    return 0;
+}
+
+static void virtio_blk_free_params(void *params) { free(params); }
+
+const struct virtio_config_ops virtio_blk_config_ops = {
+    .parse = virtio_blk_parse_params,
+    .free = virtio_blk_free_params,
+};

@@ -193,6 +193,7 @@ typedef struct virtio_gpu_dev {
     pthread_cond_t gpu_cond;
     pthread_mutex_t queue_mutex;
     bool close;
+    bool async_started; // True once the async worker thread exists
 } GPUDev;
 
 typedef struct virtio_gpu_control_cmd {
@@ -211,23 +212,13 @@ typedef struct virtio_gpu_control_cmd {
 /*********************************************************************
   virtio_gpu_base.c
  */
-// Initialize GPUDev structure
-GPUDev *init_gpu_dev(GPURequestedState *requested_states);
 
-// Initialize virtio-gpu device
-int virtio_gpu_init(VirtIODevice *vdev);
-
-// Close virtio-gpu device
-void virtio_gpu_close(VirtIODevice *vdev);
-
-// Reset virtio-gpu device
-void virtio_gpu_reset();
+extern const struct virtio_device_ops virtio_gpu_ops;
+extern const struct virtio_config_ops virtio_gpu_config_ops;
 
 // Handler function when controlq has requests to process
-int virtio_gpu_ctrl_notify_handler(VirtIODevice *vdev, VirtQueue *vq);
 
 // Handler function when cursorq has requests to process
-int virtio_gpu_cursor_notify_handler(VirtIODevice *vdev, VirtQueue *vq);
 
 // Process a single request
 int virtio_gpu_handle_single_request(VirtIODevice *vdev, VirtQueue *vq,
