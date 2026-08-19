@@ -15,7 +15,6 @@
 //  Solicey <lzoi_lth@163.com>
 
 use crate::{
-    arch::cpu::this_cpu_id,
     config::CONFIG_MAGIC_VERSION,
     cpu_data::this_zone,
     device::virtio_trampoline::MAX_DEVS,
@@ -74,11 +73,6 @@ impl<'a> HyperCall<'a> {
             CONFIG_MAGIC_VERSION
         );
         HyperCallResult::Ok(0)
-    }
-
-    pub fn check_cpu_id(&self) {
-        let cpuid = this_cpu_id();
-        trace!("CPU ID: {} Start Zone", cpuid);
     }
 
     pub fn hv_virtio_get_irq(&self, virtio_irq: *mut u32) -> HyperCallResult {

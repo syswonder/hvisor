@@ -15,8 +15,13 @@
 //
 
 use crate::device::irqchip::gic_send_event;
+
 pub fn arch_send_event(cpu_id: u64, sgi_num: u64) {
     gic_send_event(cpu_id, sgi_num);
+}
+
+pub fn arch_notify_event(cpu_id: u64, sgi_num: u64, _event_id: usize, _queue_was_empty: bool) {
+    arch_send_event(cpu_id, sgi_num);
 }
 
 pub fn arch_check_events(event: Option<usize>) {
@@ -28,8 +33,4 @@ pub fn arch_check_events(event: Option<usize>) {
             );
         }
     }
-}
-
-pub fn arch_prepare_send_event(_cpu_id: usize, _ipi_int_id: usize, _event_id: usize) {
-    debug!("aarch64 arch_prepare_send_event: do nothing now.")
 }

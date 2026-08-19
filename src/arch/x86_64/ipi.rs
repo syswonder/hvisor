@@ -144,6 +144,10 @@ pub fn arch_send_event(dest: u64, _: u64) {
     };
 }
 
+pub fn arch_notify_event(dest: u64, vector: u64, _event_id: usize, _queue_was_empty: bool) {
+    arch_send_event(dest, vector);
+}
+
 pub fn handle_virt_ipi() {
     // this may never return!
     loop {
@@ -163,8 +167,4 @@ pub fn arch_check_events(event: Option<usize>) {
             );
         }
     }
-}
-
-pub fn arch_prepare_send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
-    debug!("x86_64 arch_prepare_send_event: do nothing now.")
 }

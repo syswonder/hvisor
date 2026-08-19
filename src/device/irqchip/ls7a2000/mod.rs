@@ -24,19 +24,16 @@ use crate::{
         register::{read_gcsr_estat, write_gcsr_estat},
     },
     consts::MAX_CPU_NUM,
+    event::{send_event, IPI_EVENT_VIRTIO_INJECT_IRQ},
+    hypercall::SGI_IPI_ID,
     zone::Zone,
 };
 use chip::*;
-use loongArch64::register::tcfg;
-use spin::Mutex;
+use core::sync::atomic::{AtomicU32, Ordering};
 
 pub mod chip;
 
 pub fn primary_init_early() {
-    if this_cpu_id() != 0 {
-        info!("loongarch64: irqchip: primary_init_early: do nothing on secondary cpus");
-        return;
-    }
     info!("loongarch64: irqchip: primary_init_early: checking iochip configs");
     print_chip_info();
     csr_disable_new_codec();
@@ -89,8 +86,8 @@ pub fn clock_cpucfg_dump() {
 pub fn percpu_init() {
     info!("loongarch64: irqchip: percpu_init: running percpu_init");
 
-    clear_all_ipi(this_cpu_id());
-    enable_ipi(this_cpu_id());
+    clear_all_ipi();
+    enable_ipi();
     ecfg_ipi_enable();
     clock_cpucfg_dump();
     // timer_test_tick();
@@ -110,6 +107,65 @@ const INT_PERF: usize = 10;
 const INT_TIMER: usize = 11;
 const INT_IPI: usize = 12;
 
+static GUEST_HWI_ASSERTED: [AtomicU32; MAX_CPU_NUM] = {
+    const C: AtomicU32 = AtomicU32::new(0);
+    [C; MAX_CPU_NUM]
+};
+
+pub fn set_guest_irq_line(cpu: usize, irq: usize, asserted: bool) -> bool {
+    if cpu >= MAX_CPU_NUM || !(INT_HWI0..=INT_HWI7).contains(&irq) {
+        error!(
+            "loongarch64: invalid guest IRQ line: cpu={} irq={} asserted={}",
+            cpu, irq, asserted
+        );
+        return false;
+    }
+
+    let mask = 1u32 << (irq - INT_HWI0);
+    let state = &GUEST_HWI_ASSERTED[cpu];
+    let old = if asserted {
+        state.fetch_or(mask, Ordering::AcqRel)
+    } else {
+        state.fetch_and(!mask, Ordering::AcqRel)
+    };
+    let new = if asserted { old | mask } else { old & !mask };
+    if old == new {
+        return true;
+    }
+
+    if cpu == this_cpu_id() {
+        sync_guest_irqs();
+    } else {
+        send_event(cpu, SGI_IPI_ID as usize, IPI_EVENT_VIRTIO_INJECT_IRQ);
+    }
+    true
+}
+
+pub fn clear_guest_irq_lines(cpu: usize) {
+    if cpu >= MAX_CPU_NUM {
+        return;
+    }
+    let old = GUEST_HWI_ASSERTED[cpu].swap(0, Ordering::AcqRel);
+    if old == 0 {
+        return;
+    }
+    if cpu == this_cpu_id() {
+        sync_guest_irqs();
+    } else {
+        send_event(cpu, SGI_IPI_ID as usize, IPI_EVENT_VIRTIO_INJECT_IRQ);
+    }
+}
+
+pub fn sync_guest_irqs() {
+    let cpu = this_cpu_id();
+    let desired_vip = GUEST_HWI_ASSERTED[cpu].load(Ordering::Acquire) as usize & 0xff;
+    use crate::arch::register::gintc;
+    let old_vip = gintc::read().vip();
+    if old_vip != desired_vip {
+        gintc::write_vip(desired_vip);
+    }
+}
+
 /// inject irq to THIS cpu
 pub fn inject_irq(_irq: usize, is_hardware: bool) {
     debug!(
@@ -122,41 +178,32 @@ pub fn inject_irq(_irq: usize, is_hardware: bool) {
     }
     let bit = 1 << _irq;
     if _irq >= INT_HWI0 && _irq <= INT_HWI7 {
-        // use gintc to inject
-        use crate::arch::register::gintc;
-        gintc::set_hwis(bit >> INT_HWI0);
+        set_guest_irq_line(this_cpu_id(), _irq, true);
     } else {
         // use gcsr to inject, just set the bit
         let mut gcsr_estat = read_gcsr_estat();
         gcsr_estat |= bit;
         write_gcsr_estat(gcsr_estat);
     }
-    let mut status = GLOBAL_IRQ_INJECT_STATUS.lock();
-    status.cpu_status[this_cpu_id()].status = InjectionStatus::Injecting;
-
-    tcfg::set_en(true); // start timer to avoid endless timer injection
-                        // please only enable this for debugging because it may cause overheads for realtime nonroots
 }
 
-/// clear the injecting irq ctrl bit on THIS cpu
-pub fn clear_hwi_injected_irq() {
-    use crate::arch::register::gintc;
-    gintc::set_hwis(0);
-    // gintc::set_hwip(0);
-    // gintc::set_hwic(0xff);
-    let mut gintc_raw = 0usize;
-    use core::arch::asm;
-    unsafe {
-        asm!("csrrd {0}, 0x52", out(reg) gintc_raw);
+pub fn clear_injected_irq(_irq: usize) {
+    debug!("loongarch64: clear_injected_irq: _irq: {}", _irq);
+    if _irq > INT_IPI {
+        error!(
+            "loongarch64: clear_injected_irq: _irq > {}, not valid",
+            INT_IPI
+        );
+        return;
     }
-    debug!(
-        "loongarch64: clear_hwi_injected_irq: current gintc: {:#x}",
-        gintc_raw
-    );
-    let mut status = GLOBAL_IRQ_INJECT_STATUS.lock();
-    status.cpu_status[this_cpu_id()].status = InjectionStatus::Idle;
-
-    tcfg::set_en(false); // stop timer
+    let bit = 1 << _irq;
+    if _irq >= INT_HWI0 && _irq <= INT_HWI7 {
+        set_guest_irq_line(this_cpu_id(), _irq, false);
+    } else {
+        let mut gcsr_estat = read_gcsr_estat();
+        gcsr_estat &= !bit;
+        write_gcsr_estat(gcsr_estat);
+    }
 }
 
 impl Zone {
@@ -170,28 +217,3 @@ impl Zone {
         );
     }
 }
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub enum InjectionStatus {
-    Injecting,
-    Idle,
-}
-
-#[derive(Debug, Clone, Copy, PartialEq)]
-pub struct PercpuInjectionStatus {
-    pub status: InjectionStatus,
-    pub irqs: [u32; 32],
-}
-
-#[derive(Debug)]
-pub struct GlobalInjectionStatus {
-    pub cpu_status: [PercpuInjectionStatus; MAX_CPU_NUM],
-}
-
-pub static GLOBAL_IRQ_INJECT_STATUS: Mutex<GlobalInjectionStatus> =
-    Mutex::new(GlobalInjectionStatus {
-        cpu_status: [PercpuInjectionStatus {
-            status: InjectionStatus::Idle,
-            irqs: [0; 32],
-        }; MAX_CPU_NUM],
-    });

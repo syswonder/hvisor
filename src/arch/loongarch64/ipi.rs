@@ -15,81 +15,61 @@
 //      Yulong Han <wheatfox17@icloud.com>
 //
 use crate::arch::cpu::this_cpu_id;
-use crate::consts::IPI_EVENT_CLEAR_INJECT_IRQ;
-use crate::device::common::MMIODerefWrapper;
+use crate::consts::{IPI_EVENT_CLEAR_INJECT_IRQ, IPI_EVENT_SEND_IPI};
 use core::arch::asm;
 use core::ptr::write_volatile;
-use loongArch64::cpu;
 use loongArch64::register::ecfg::LineBasedInterrupt;
 use loongArch64::register::*;
-use loongArch64::time;
-use tock_registers::fields::FieldValue;
-use tock_registers::interfaces::{ReadWriteable, Readable, Writeable};
-use tock_registers::register_bitfields;
-use tock_registers::register_structs;
-use tock_registers::registers::{ReadOnly, ReadWrite, WriteOnly};
 
 pub fn arch_send_event(cpu_id: u64, sgi_num: u64) {
     debug!(
         "loongarch64: arch_send_event: sending event to cpu: {}, sgi_num: {}",
         cpu_id, sgi_num
     );
-    // just call ipi_write_action
-    ipi_write_action(cpu_id as usize, sgi_num as usize);
+    // Route hvisor event doorbells through the IOCSR sender, whose payload
+    // carries the target CPU ID instead of indexing the fixed legacy table.
+    ipi_write_action_percore(cpu_id as usize, sgi_num as usize);
 }
 
-register_bitfields! [
-  u32,
-  pub IpiStatus [ IPISTATUS OFFSET(0) NUMBITS(32) ],
-  pub IpiEnable [ IPIENABLE OFFSET(0) NUMBITS(32) ],
-  pub IpiSet [ IPISET OFFSET(0) NUMBITS(32) ],
-  pub IpiClear [ IPICLEAR OFFSET(0) NUMBITS(32) ],
-];
-
-register_bitfields! [
-  u64,
-  pub Mailbox0 [ MAILBOX0 OFFSET(0) NUMBITS(64) ],
-  pub Mailbox1 [ MAILBOX1 OFFSET(0) NUMBITS(64) ],
-  pub Mailbox2 [ MAILBOX2 OFFSET(0) NUMBITS(64) ],
-  pub Mailbox3 [ MAILBOX3 OFFSET(0) NUMBITS(64) ],
-];
-
-register_structs! {
-  #[allow(non_snake_case)]
-  pub IpiRegisters {
-    (0x00 => pub ipi_status: ReadOnly<u32, IpiStatus::Register>),
-    (0x04 => pub ipi_enable: ReadWrite<u32, IpiEnable::Register>),
-    (0x08 => pub ipi_set: WriteOnly<u32, IpiSet::Register>),
-    (0x0c => pub ipi_clear: WriteOnly<u32, IpiClear::Register>),
-    (0x10 => _reserved0: [u8; 0x10]),
-    (0x20 => pub mailbox0: ReadWrite<u64, Mailbox0::Register>),
-    (0x28 => pub mailbox1: ReadWrite<u64, Mailbox1::Register>),
-    (0x30 => pub mailbox2: ReadWrite<u64, Mailbox2::Register>),
-    (0x38 => pub mailbox3: ReadWrite<u64, Mailbox3::Register>),
-    (0x40 => @END),
-  }
+pub fn arch_notify_event(cpu_id: u64, sgi_num: u64, event_id: usize, queue_was_empty: bool) {
+    debug!(
+        "loongarch64: notify event: cpu={}, ipi={}, event={}, queue_was_empty={}",
+        cpu_id, sgi_num, event_id, queue_was_empty
+    );
+    if queue_was_empty {
+        arch_send_event(cpu_id, sgi_num);
+    }
 }
 
 const MMIO_BASE: usize = 0x8000_0000_1fe0_0000;
-const IPI_MMIO_BASE: usize = MMIO_BASE;
-const IPI_ANY_SEND_BASE: usize = MMIO_BASE + 0x1158;
+const IOCSR_IPI_STATUS: usize = 0x1000;
+const IOCSR_IPI_ENABLE: usize = 0x1004;
+const IOCSR_IPI_CLEAR: usize = 0x100c;
 
-// IPI registers, use this if you don't want to use the percore-IPI feature
-pub static CORE0_IPI: MMIODerefWrapper<IpiRegisters> =
-    unsafe { MMIODerefWrapper::new(IPI_MMIO_BASE + 0x1000) };
-pub static CORE1_IPI: MMIODerefWrapper<IpiRegisters> =
-    unsafe { MMIODerefWrapper::new(IPI_MMIO_BASE + 0x1100) };
-pub static CORE2_IPI: MMIODerefWrapper<IpiRegisters> =
-    unsafe { MMIODerefWrapper::new(IPI_MMIO_BASE + 0x1200) };
-pub static CORE3_IPI: MMIODerefWrapper<IpiRegisters> =
-    unsafe { MMIODerefWrapper::new(IPI_MMIO_BASE + 0x1300) };
+#[inline]
+fn iocsr_read32(reg: usize) -> u32 {
+    let value: usize;
+    unsafe {
+        asm!("iocsrrd.w {}, {}", out(reg) value, in(reg) reg);
+    }
+    value as u32
+}
+
+#[inline]
+fn iocsr_write32(value: u32, reg: usize) {
+    unsafe {
+        asm!("iocsrwr.w {}, {}", in(reg) value as usize, in(reg) reg);
+    }
+}
 
 // ipi actions
 pub const SMP_BOOT_CPU: usize = 0x1;
 pub const SMP_RESCHEDULE: usize = 0x2;
 pub const SMP_CALL_FUNCTION: usize = 0x4;
 // customized actions :), since there is no docs on this yet
-pub const HVISOR_START_VCPU: usize = 0x8;
+/// Dedicated physical IPI bit used only as the hvisor event-queue doorbell.
+/// Linux SMP actions use bits 0..=2, so sharing those bits can drop guest IPI work.
+pub const HVISOR_EVENT_DOORBELL: usize = 0x8;
 
 fn iocsr_mbuf_send_box_lo(a: usize) -> usize {
     a << 1
@@ -182,115 +162,32 @@ pub fn ipi_write_action_percore(cpu_id: usize, _action: usize) {
     );
 }
 
-pub fn ipi_write_action(cpu_id: usize, _action: usize) {
-    // just write _action directly to the target cpu legacy IPI registers
-    // which is the IPI_SET register
-    debug!(
-        "ipi_write_action_legacy: sending action: {:#x} to cpu: {}",
-        _action, cpu_id
-    );
-    let ipi: &MMIODerefWrapper<IpiRegisters> = match cpu_id {
-        0 => &CORE0_IPI,
-        1 => &CORE1_IPI,
-        2 => &CORE2_IPI,
-        3 => &CORE3_IPI,
-        _ => {
-            error!("ipi_write_action_legacy: invalid cpu_id: {}", cpu_id);
-            return;
-        }
-    };
-    ipi.ipi_set.write(IpiSet::IPISET.val(_action as u32));
-    debug!(
-        "ipi_write_action_legacy: finished sending action: {:#x} to cpu: {}",
-        _action, cpu_id
-    );
+pub fn enable_ipi() {
+    iocsr_write32(u32::MAX, IOCSR_IPI_ENABLE);
+    debug!("enable_ipi: IPI enabled for cpu {}", this_cpu_id());
 }
 
-pub fn mail_send(data: usize, cpu_id: usize, mailbox_id: usize) {
-    // just write data to the target cpu mailbox registers
-    // which is the mailbox0 register
-    debug!(
-        "mail_send: sending data: {:#x} to cpu: {}, mailbox_id: {}",
-        data, cpu_id, mailbox_id
-    );
-    let ipi: &MMIODerefWrapper<IpiRegisters> = match cpu_id {
-        0 => &CORE0_IPI,
-        1 => &CORE1_IPI,
-        2 => &CORE2_IPI,
-        3 => &CORE3_IPI,
-        _ => {
-            error!("mail_send: invalid cpu_id: {}", cpu_id);
-            return;
-        }
-    };
-    match mailbox_id {
-        0 => ipi.mailbox0.write(Mailbox0::MAILBOX0.val(data as u64)),
-        1 => ipi.mailbox1.write(Mailbox1::MAILBOX1.val(data as u64)),
-        2 => ipi.mailbox2.write(Mailbox2::MAILBOX2.val(data as u64)),
-        3 => ipi.mailbox3.write(Mailbox3::MAILBOX3.val(data as u64)),
-        _ => {
-            error!("mail_send: invalid mailbox_id: {}", mailbox_id);
-            return;
-        }
-    }
-    debug!(
-        "mail_send: finished sending data: {:#x} to cpu: {}, mailbox_id: {}",
-        data, cpu_id, mailbox_id
-    );
-}
-
-pub fn enable_ipi(cpu_id: usize) {
-    let ipi: &MMIODerefWrapper<IpiRegisters> = match cpu_id {
-        0 => &CORE0_IPI,
-        1 => &CORE1_IPI,
-        2 => &CORE2_IPI,
-        3 => &CORE3_IPI,
-        _ => {
-            error!("enable_ipi: invalid cpu_id: {}", cpu_id);
-            return;
-        }
-    };
-    ipi.ipi_enable.write(IpiEnable::IPIENABLE.val(0xffffffff));
-    debug!("enable_ipi: IPI enabled for cpu {}", cpu_id);
-}
-
-pub fn clear_all_ipi(cpu_id: usize) {
-    let ipi: &MMIODerefWrapper<IpiRegisters> = match cpu_id {
-        0 => &CORE0_IPI,
-        1 => &CORE1_IPI,
-        2 => &CORE2_IPI,
-        3 => &CORE3_IPI,
-        _ => {
-            error!("clear_all_ipi: invalid cpu_id: {}", cpu_id);
-            return;
-        }
-    };
-    ipi.ipi_clear.write(IpiClear::IPICLEAR.val(0xffffffff));
+pub fn clear_all_ipi() {
+    iocsr_write32(u32::MAX, IOCSR_IPI_CLEAR);
     debug!(
         "clear_all_ipi: IPI status for cpu {}: {:#x}",
-        cpu_id,
-        ipi.ipi_status.read(IpiStatus::IPISTATUS)
+        this_cpu_id(),
+        iocsr_read32(IOCSR_IPI_STATUS)
     );
 }
 
-pub fn reset_ipi(cpu_id: usize) {
-    // clear all IPIs and enable all IPIs
-    clear_all_ipi(cpu_id);
-    enable_ipi(cpu_id);
+pub fn clear_ipi_bits(mask: u32) {
+    iocsr_write32(mask, IOCSR_IPI_CLEAR);
 }
 
-pub fn get_ipi_status(cpu_id: usize) -> u32 {
-    let ipi: &MMIODerefWrapper<IpiRegisters> = match cpu_id {
-        0 => &CORE0_IPI,
-        1 => &CORE1_IPI,
-        2 => &CORE2_IPI,
-        3 => &CORE3_IPI,
-        _ => {
-            error!("get_ipi_status: invalid cpu_id: {}", cpu_id);
-            return 0;
-        }
-    };
-    ipi.ipi_status.read(IpiStatus::IPISTATUS)
+pub fn reset_ipi() {
+    // clear all IPIs and enable all IPIs
+    clear_all_ipi();
+    enable_ipi();
+}
+
+pub fn get_ipi_status() -> u32 {
+    iocsr_read32(IOCSR_IPI_STATUS)
 }
 
 pub fn ecfg_ipi_enable() {
@@ -315,53 +212,16 @@ pub fn ecfg_ipi_disable() {
     );
 }
 
-pub fn dump_ipi_registers() {
-    info!(
-        "dump_ipi_registers: dumping IPI registers for this cpu {}",
-        this_cpu_id()
-    );
-    let ipi: &MMIODerefWrapper<IpiRegisters> = match this_cpu_id() {
-        0 => &CORE0_IPI,
-        1 => &CORE1_IPI,
-        2 => &CORE2_IPI,
-        3 => &CORE3_IPI,
-        _ => {
-            error!("dump_ipi_registers: invalid cpu_id: {}", this_cpu_id());
-            return;
-        }
-    };
-    println!(
-        "ipi_status: {:#x}, ipi_enable: {:#x}",
-        ipi.ipi_status.read(IpiStatus::IPISTATUS),
-        ipi.ipi_enable.read(IpiEnable::IPIENABLE),
-    );
-    println!(
-        "mailbox0: {:#x}, mailbox1: {:#x}, mailbox2: {:#x}, mailbox3: {:#x}",
-        ipi.mailbox0.read(Mailbox0::MAILBOX0),
-        ipi.mailbox1.read(Mailbox1::MAILBOX1),
-        ipi.mailbox2.read(Mailbox2::MAILBOX2),
-        ipi.mailbox3.read(Mailbox3::MAILBOX3)
-    );
-}
-
 pub fn arch_check_events(event: Option<usize>) {
     match event {
         Some(IPI_EVENT_CLEAR_INJECT_IRQ) => {
-            // clear the injected IPI interrupt
-            use crate::device::irqchip::ls7a2000::clear_hwi_injected_irq;
-            clear_hwi_injected_irq();
+            warn!("legacy CLEAR_INJECT_IRQ event ignored; use the per-IRQ line API");
+        }
+        Some(IPI_EVENT_SEND_IPI) => {
+            crate::arch::zone::sync_virtual_ipi_line();
         }
         _ => {
             panic!("arch_check_events: unhandled event: {:?}", event);
         }
     }
-}
-
-pub fn arch_prepare_send_event(cpu_id: usize, ipi_int_id: usize, event_id: usize) {
-    use crate::event::fetch_event;
-    while !fetch_event(cpu_id).is_none() {}
-    debug!(
-        "loongarch64:: send_event: cpu_id: {}, ipi_int_id: {}, event_id: {}",
-        cpu_id, ipi_int_id, event_id
-    );
 }

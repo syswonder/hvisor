@@ -14,7 +14,6 @@
 // Authors:
 //  ForeverYolo <2572131118@qq.com>
 
-use crate::arch::cpu::this_cpu_id;
 use crate::config::CONFIG_MAGIC_VERSION;
 use crate::device::virtio_trampoline::MAX_DEVS;
 use crate::hypercall::HyperCall;
@@ -54,11 +53,6 @@ impl<'a> HyperCall<'a> {
     pub fn hv_get_real_list_pa(&mut self, list_addr: u64) -> u64 {
         // RISC-V does not have a specific prefix for cached memory, so we return the address as is.
         return list_addr;
-    }
-
-    pub fn check_cpu_id(&self) {
-        let cpuid = this_cpu_id();
-        trace!("CPU ID: {} Start Zone", cpuid);
     }
 
     pub fn hv_virtio_get_irq(&self, _virtio_irq: *mut u32) -> HyperCallResult {

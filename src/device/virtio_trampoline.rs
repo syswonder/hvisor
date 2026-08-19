@@ -21,15 +21,18 @@
 #![deny(unused)]
 
 #[cfg(not(target_arch = "loongarch64"))]
+use crate::device::irqchip::inject_irq;
+#[cfg(not(target_arch = "loongarch64"))]
 use crate::{
     arch::cpu::get_target_cpu,
     event::{send_event, IPI_EVENT_WAKEUP_VIRTIO_DEVICE},
     hypercall::SGI_IPI_ID,
 };
 use crate::{
-    arch::cpu::this_cpu_id, consts::MAX_WAIT_TIMES, device::irqchip::inject_irq, error::HvResult,
-    memory::MMIOAccess, zone::this_zone_id,
+    arch::cpu::this_cpu_id, consts::MAX_WAIT_TIMES, error::HvResult, memory::MMIOAccess,
+    zone::this_zone_id,
 };
+#[cfg(not(target_arch = "loongarch64"))]
 use alloc::collections::BTreeMap;
 use core::{
     fmt::{Debug, Formatter, Result},
@@ -43,6 +46,7 @@ use tock_registers::{
 };
 
 /// Save the irqs the virtio-device wants to inject. The format is <cpu_id, List<irq_id>>, and the first elem of List<irq_id> is the valid len of it.
+#[cfg(not(target_arch = "loongarch64"))]
 pub static VIRTIO_IRQS: Mutex<BTreeMap<usize, [u64; MAX_DEVS + 1]>> = Mutex::new(BTreeMap::new());
 // Controller of the shared memory the root linux's virtio device and hvisor shares.
 pub static VIRTIO_PCI_BRIDGE: Mutex<VirtioPCIBridge> = Mutex::new(VirtioPCIBridge::dummy());
@@ -157,6 +161,7 @@ pub fn check_need_wakeup_and_send_ipi(is_send_ipi: &mut bool) {
 
 /// When virtio req type is notify, root zone will send sgi to non root, \
 /// and non root will call this function.
+#[cfg(not(target_arch = "loongarch64"))]
 pub fn handle_virtio_irq() {
     let mut map = VIRTIO_IRQS.lock();
     let irq_list = map.get_mut(&this_cpu_id()).unwrap();

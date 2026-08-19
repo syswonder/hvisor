@@ -17,6 +17,16 @@ use crate::arch::zone::HvArchZoneConfig;
 use crate::config::HvZoneConfig;
 use crate::zone::Zone;
 
+#[cfg(target_arch = "loongarch64")]
+pub fn handle_virtio_irq_event() {
+    ls7a2000::sync_guest_irqs();
+}
+
+#[cfg(not(target_arch = "loongarch64"))]
+pub fn handle_virtio_irq_event() {
+    crate::device::virtio_trampoline::handle_virtio_irq();
+}
+
 #[cfg(all(irq_gicv2, target_arch = "aarch64"))]
 pub mod gicv2;
 #[cfg(all(irq_gicv2, target_arch = "aarch64"))]

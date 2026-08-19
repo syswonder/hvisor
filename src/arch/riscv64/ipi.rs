@@ -19,7 +19,6 @@ use crate::consts::IPI_EVENT_SEND_IPI;
 use crate::consts::IPI_EVENT_UPDATE_HART_LINE;
 use crate::platform::BOARD_HARTID_MAP;
 
-// arch_send_event
 pub fn arch_send_event(cpu_id: u64, _sgi_num: u64) {
     let hart_id = BOARD_HARTID_MAP[cpu_id as usize];
     debug!("arch_send_event: cpu_id: {}", hart_id);
@@ -33,6 +32,10 @@ pub fn arch_send_event(cpu_id: u64, _sgi_num: u64) {
             error!("arch_send_event: send_ipi failed: {:?}", sbi_ret);
         }
     }
+}
+
+pub fn arch_notify_event(cpu_id: u64, sgi_num: u64, _event_id: usize, _queue_was_empty: bool) {
+    arch_send_event(cpu_id, sgi_num);
 }
 
 /// Handle send_ipi event.
@@ -57,8 +60,4 @@ pub fn arch_check_events(event: Option<usize>) {
             panic!("arch_check_events: unhandled event: {:?}", event);
         }
     }
-}
-
-pub fn arch_prepare_send_event(_cpu_id: usize, _ipi_int_id: usize, _event_id: usize) {
-    debug!("risc-v arch_prepare_send_event: do nothing now.")
 }
