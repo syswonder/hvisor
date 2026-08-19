@@ -334,12 +334,15 @@ void virtio_dev_reset(VirtIODevice *vdev) {
     vdev->regs.status = 0;
     int idx = vdev->regs.queue_sel;
     vdev->vqs[idx].ready = 0;
-    for (uint32_t i = 0; i < vdev->vqs_len; i++) {
-        virtqueue_reset(&vdev->vqs[i], i);
-    }
+    // Run the device reset op before re-initializing the virtqueues: reset
+    // ops (e.g. virtio-blk's) quiesce worker threads that touch the vq
+    // structs, which must not race with virtqueue_reset() below.
     const struct virtio_device_ops *ops = lookup_ops(vdev->type);
     if (ops && ops->reset)
         ops->reset(vdev);
+    for (uint32_t i = 0; i < vdev->vqs_len; i++) {
+        virtqueue_reset(&vdev->vqs[i], i);
+    }
     vdev->activated = false;
 }
 
