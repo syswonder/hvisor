@@ -29,8 +29,12 @@
  *
  *   main thread   (epoll loop in virtio.c)
  *     - calls notify_handler when the guest kicks the virtqueue.
+ *     - calls virtio_blk_reset on guest STATUS=0: pauses the worker (via
+ *       dev->reset / dev->worker_paused) BEFORE virtqueue_reset()
+ * re-initializes the vq structs, so the worker is never mid-drain during the
+ * memset.
  *     - calls virtio_blk_close on shutdown.
- *     - does NOT touch the virtqueue or BlkDev (except mtx/cond/close).
+ *     - does NOT touch the virtqueue or BlkDev (except mtx/cond/close/reset).
  *
  *   worker thread (blkproc_thread, one per blk device)
  *     - owns the virtqueue exclusively: drains avail_ring, performs disk I/O,
@@ -236,12 +240,30 @@ static void *blkproc_thread(void *arg) {
     VirtQueue *vq = vdev->vqs;
 
     for (bool closing = false; !closing;) {
-        // Hold mtx to check the close flag and wait on cond.
+        // Hold mtx to check the close/reset flags and wait on cond.
         pthread_mutex_lock(&dev->mtx);
-        while (vq_is_empty(vq) && !dev->close)
+        while (vq_is_empty(vq) && !dev->close && !dev->reset)
             pthread_cond_wait(&dev->cond, &dev->mtx);
         closing = dev->close;
+        bool resetting = dev->reset;
         pthread_mutex_unlock(&dev->mtx);
+
+        // A device reset is in progress: the main thread is about to
+        // re-initialize the virtqueue (virtio_dev_reset), so stop touching
+        // it. Signal worker_paused so the reset op can proceed, then wait
+        // for the guest's next kick to clear dev->reset
+        // (see virtio_blk_notify_handler).
+        if (resetting) {
+            pthread_mutex_lock(&dev->mtx);
+            while (dev->reset && !dev->close) {
+                dev->worker_paused = true;
+                pthread_cond_broadcast(&dev->cond);
+                pthread_cond_wait(&dev->cond, &dev->mtx);
+            }
+            dev->worker_paused = false;
+            pthread_mutex_unlock(&dev->mtx);
+            continue;
+        }
 
         // Drain all pending requests. The double-checked loop follows the
         // standard virtio pattern: disable-notify, process until empty,
@@ -367,13 +389,37 @@ static int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     (void)vq;
 
     // Wake up the worker thread. mtx pairs with the worker's cond_wait.
+    // A kick also ends a device reset: after STATUS=0 the guest only kicks
+    // once it has re-initialized the virtqueue, so the paused worker may
+    // resume safely.
     pthread_mutex_lock(&dev->mtx);
-    pthread_cond_signal(&dev->cond);
+    dev->reset = false;
+    pthread_cond_broadcast(&dev->cond);
     pthread_mutex_unlock(&dev->mtx);
     return 0;
 }
 
-static void virtio_blk_reset(VirtIODevice *vdev) { (void)vdev; }
+/*
+ * Called by the main thread from virtio_dev_reset BEFORE the virtqueues are
+ * re-initialized. Pause the worker so virtqueue_reset() can safely memset
+ * the vq structs: wait until the worker has stopped touching them
+ * (dev->worker_paused). The worker stays paused until the guest's next kick
+ * clears dev->reset (see virtio_blk_notify_handler).
+ */
+static void virtio_blk_reset(VirtIODevice *vdev) {
+    BlkDev *dev = vdev->dev;
+    if (!dev || !dev->thread_started)
+        return;
+
+    pthread_mutex_lock(&dev->mtx);
+    dev->reset = true;
+    // Wake the worker if it is waiting on the condition; if it is mid-drain
+    // it pauses once the current batch completes.
+    pthread_cond_signal(&dev->cond);
+    while (!dev->worker_paused)
+        pthread_cond_wait(&dev->cond, &dev->mtx);
+    pthread_mutex_unlock(&dev->mtx);
+}
 
 /*
  * Shut down the blk device: signal close, wait for the worker to exit,

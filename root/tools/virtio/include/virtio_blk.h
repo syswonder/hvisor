@@ -39,6 +39,8 @@ typedef struct virtio_blk_dev {
     pthread_cond_t cond;
     bool close;
     bool thread_started;
+    bool reset; // Device reset in progress: worker must not touch the vq
+    bool worker_paused; // Worker parked in reset wait; vq not touched
     struct iovec out_buf[VIRTQUEUE_BLK_MAX_SIZE];
     struct iovec in_buf[VIRTQUEUE_BLK_MAX_SIZE];
 } BlkDev;
