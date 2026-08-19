@@ -65,9 +65,16 @@ extern u8 __dtb_hivc_template_begin[], __dtb_hivc_template_end[];
 
 static int hvisor_ivc_info(void) {
     int err = 0;
-    if (ivc_info == NULL)
-        ivc_info = kmalloc(sizeof(ivc_info_t), GFP_KERNEL);
+    if (ivc_info == NULL) {
+        ivc_info = kzalloc(sizeof(ivc_info_t), GFP_KERNEL);
+        if (!ivc_info)
+            return -ENOMEM;
+    }
     err = hvisor_call(HVISOR_HC_IVC_INFO, __pa(ivc_info), sizeof(ivc_info_t));
+    if (err)
+        return err;
+    if (ivc_info->len == 0 || ivc_info->len > CONFIG_MAX_IVC_CONFIGS)
+        return -EINVAL;
     return err;
 }
 
@@ -167,51 +174,20 @@ static irqreturn_t ivc_irq_handler(int irq, void *dev_id) {
     return IRQ_HANDLED;
 }
 
-// static struct property *alloc_property(const char *name, int len) {
-//     struct property *prop;
-//     prop = kzalloc(sizeof(struct property), GFP_KERNEL);
-//     prop->name = kstrdup(name, GFP_KERNEL);
-//     prop->length = len;
-//     prop->value = kzalloc(len, GFP_KERNEL);
-//     return prop;
-// }
-
-// static int add_ivc_device_node(void)
-// {
-//     int err, i, j, overlay_id;
-//     struct device_node *node = NULL;
-//     struct property *prop;
-//     u32* values;
-//     err = of_overlay_fdt_apply(__dtb_hivc_template_begin,
-//         __dtb_hivc_template_end - __dtb_hivc_template_begin,
-//         &overlay_id);
-//     if (err) return err;
-
-//     struct of_changeset overlay_changeset;
-//     of_changeset_init(&overlay_changeset);
-// 	node = of_find_node_by_path("/hvisor_ivc_device");
-
-//     // TODO: Add detection for gic interrupt cell and error handling
-//     prop = alloc_property("interrupts", sizeof(u32)*3*dev_len);
-//     values = prop->value;
-//     for(i=0; i<dev_len; i++) {
-//         j = i * 3;
-//         values[j++] = 0x00;
-//         values[j++] = ivc_info->ivc_irqs[i] - 32;
-//         values[j++] = 0x01;
-//     }
-//     of_changeset_add_property(&overlay_changeset, node, prop);
-//     of_changeset_apply(&overlay_changeset);
-//     return 0;
-// }
-
 static int __init ivc_init(void) {
     int err, i, soft_irq;
     struct device_node *node = NULL;
-    hvisor_ivc_info();
+    err = hvisor_ivc_info();
+    if (err)
+        goto err1;
     dev_len = ivc_info->len;
 
-    ivc_devs = kmalloc(sizeof(struct ivc_dev) * dev_len, GFP_KERNEL);
+    pr_info("ivc: hypervisor reports %d channel(s)\n", dev_len);
+    ivc_devs = kcalloc(dev_len, sizeof(struct ivc_dev), GFP_KERNEL);
+    if (!ivc_devs) {
+        err = -ENOMEM;
+        goto err1;
+    }
     err = alloc_chrdev_region(&mdev_id, 0, dev_len, "hivc");
     if (err)
         goto err1;
@@ -233,6 +209,7 @@ static int __init ivc_init(void) {
         ivc_devs[i].ivc_id = ivc_info->ivc_ids[i];
         ivc_devs[i].dev_id = MKDEV(MAJOR(mdev_id), i);
         ivc_devs[i].idx = i;
+        ivc_devs[i].ivc_irq = -1;
         ivc_devs[i].cdev.owner = THIS_MODULE;
         ivc_devs[i].received_irq = 0;
         init_waitqueue_head(&ivc_devs[i].wq);
@@ -254,13 +231,20 @@ static int __init ivc_init(void) {
     } else {
         for (i = 0; i < dev_len; i++) {
             soft_irq = of_irq_get(node, i);
+            if (soft_irq < 0) {
+                pr_err("ivc: of_irq_get channel %d failed (%d)\n", i, soft_irq);
+                continue;
+            }
             err = request_irq(soft_irq, ivc_irq_handler,
                               IRQF_SHARED | IRQF_TRIGGER_RISING,
                               "hvisor_ivc_device", &ivc_devs[i]);
             if (err) {
-                pr_err("request irq failed\n");
+                pr_err("ivc: request irq channel %d failed (%d)\n", i, err);
                 goto err2;
             }
+            ivc_devs[i].ivc_irq = soft_irq;
+            pr_info("ivc: ch%d id=%d linux_irq=%d hv_irq=%u\n", i,
+                    ivc_devs[i].ivc_id, soft_irq, ivc_info->ivc_irqs[i]);
         }
     }
     of_node_put(node);
@@ -269,8 +253,13 @@ static int __init ivc_init(void) {
 
 err2:
     for (i = 0; i < dev_len; i++) {
+        if (ivc_devs[i].ivc_irq >= 0) {
+            free_irq(ivc_devs[i].ivc_irq, &ivc_devs[i]);
+            ivc_devs[i].ivc_irq = -1;
+        }
         cdev_del(&ivc_devs[i].cdev);
-        device_destroy(ivc_class, ivc_devs[i].dev_id);
+        if (ivc_class && !IS_ERR(ivc_class))
+            device_destroy(ivc_class, ivc_devs[i].dev_id);
     }
     class_destroy(ivc_class);
     unregister_chrdev_region(mdev_id, dev_len);
@@ -281,7 +270,39 @@ err1:
 }
 
 static void __exit ivc_exit(void) {
-    // TODO
+    int i;
+
+    if (!ivc_devs || dev_len <= 0) {
+        kfree(ivc_info);
+        ivc_info = NULL;
+        pr_info("ivc exit done!!!\n");
+        return;
+    }
+    /* Free the IRQ first to prevent user-space and kernel paths from being
+     * woken. */
+    for (i = 0; i < dev_len; i++) {
+        if (ivc_devs[i].ivc_irq >= 0) {
+            free_irq(ivc_devs[i].ivc_irq, &ivc_devs[i]);
+            ivc_devs[i].ivc_irq = -1;
+        }
+    }
+
+    /* Destroy the character devices and sysfs device nodes. */
+    if (ivc_class && !IS_ERR(ivc_class)) {
+        for (i = 0; i < dev_len; i++) {
+            cdev_del(&ivc_devs[i].cdev);
+            device_destroy(ivc_class, ivc_devs[i].dev_id);
+        }
+        class_destroy(ivc_class);
+    }
+    unregister_chrdev_region(mdev_id, dev_len);
+
+    kfree(ivc_devs);
+    ivc_devs = NULL;
+    kfree(ivc_info);
+    ivc_info = NULL;
+    dev_len = 0;
+
     pr_info("ivc exit done!!!\n");
 }
 

@@ -42,6 +42,11 @@ struct device_res {
     __u32 irq_id;
 };
 
+struct hvisor_irq_line_args {
+    __u32 zone_id;
+    __u32 irq_id;
+};
+
 struct virtio_bridge {
     __u32 req_front;
     __u32 req_rear;
@@ -205,8 +210,8 @@ struct hvisor_scmi_power_args {
 
 #ifdef LOONGARCH64
 
-#define HVISOR_CLEAR_INJECT_IRQ _IO(1, 6) // used for ioctl
-#define HVISOR_HC_CLEAR_INJECT_IRQ 20     // hvcall code in hvisor
+#define HVISOR_DEASSERT_IRQ _IOW(1, 11, struct hvisor_irq_line_args)
+#define HVISOR_HC_CLEAR_INJECT_IRQ 11 // hvcall code in hvisor
 
 #endif /* LOONGARCH64 */
 #ifdef LOONGARCH64
