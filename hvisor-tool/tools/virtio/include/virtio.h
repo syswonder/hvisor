@@ -34,9 +34,6 @@ typedef struct VirtMmioRegs {
     uint32_t queue_sel; // The driver frontend writes this register to select
                         // which virtqueue to use
     uint32_t interrupt_status;
-    // interrupt_count doesn't exist in virtio specification,
-    // only used for ensuring the correctness of interrupt_status.
-    uint32_t interrupt_count;
     uint32_t status;
     uint32_t generation;
     uint64_t dev_feature; // device_features
@@ -130,6 +127,8 @@ struct VirtIODevice {
     void (*status_changed)(VirtIODevice *vdev,
                            uint32_t status); // Called on STATUS register write
     bool activated; // Whether the current virtio device is activated
+    pthread_mutex_t interrupt_lock;
+    bool interrupt_line_asserted;
 };
 
 // used event idx for driver telling device when to notify driver.
