@@ -23,7 +23,7 @@
 
 static uint8_t trashbuf[1024];
 
-ConsoleDev *init_console_dev() {
+static ConsoleDev *init_console_dev() {
     ConsoleDev *dev = (ConsoleDev *)malloc(sizeof(ConsoleDev));
     dev->config.cols = 80;
     dev->config.rows = 25;
@@ -87,7 +87,7 @@ static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
     return;
 }
 
-int virtio_console_init(VirtIODevice *vdev) {
+static int virtio_console_init(VirtIODevice *vdev) {
     ConsoleDev *dev = (ConsoleDev *)vdev->dev;
     int master_fd, slave_fd;
     char *slave_name;
@@ -115,8 +115,6 @@ int virtio_console_init(VirtIODevice *vdev) {
     slave_fd = open(slave_name, O_RDWR);
     if (slave_fd < 0) {
         log_error("Failed to open slave pty, errno is %d", errno);
-        close(master_fd);
-        dev->master_fd = -1;
         return -1;
     }
 
@@ -129,13 +127,7 @@ int virtio_console_init(VirtIODevice *vdev) {
     dev->slave_keepalive_fd = slave_fd;
 
     if (set_nonblocking(dev->master_fd) < 0) {
-        close(dev->master_fd);
-        if (dev->slave_keepalive_fd >= 0) {
-            close(dev->slave_keepalive_fd);
-            dev->slave_keepalive_fd = -1;
-        }
-        dev->master_fd = -1;
-        log_error("Failed to set nonblocking mode, fd closed!");
+        log_error("Failed to set nonblocking mode");
         return -1;
     }
 
@@ -144,20 +136,14 @@ int virtio_console_init(VirtIODevice *vdev) {
 
     if (dev->event == NULL) {
         log_error("Can't register console event");
-        close(master_fd);
-        if (dev->slave_keepalive_fd >= 0) {
-            close(dev->slave_keepalive_fd);
-            dev->slave_keepalive_fd = -1;
-        }
-        dev->master_fd = -1;
         return -1;
     }
 
-    vdev->virtio_close = virtio_console_close;
     return 0;
 }
 
-int virtio_console_rxq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
+static int virtio_console_rxq_notify_handler(VirtIODevice *vdev,
+                                             VirtQueue *vq) {
     log_debug("%s", __func__);
     ConsoleDev *dev = (ConsoleDev *)vdev->dev;
     if (dev->rx_ready <= 0) {
@@ -191,7 +177,8 @@ static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq) {
     free(iov);
 }
 
-int virtio_console_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
+static int virtio_console_txq_notify_handler(VirtIODevice *vdev,
+                                             VirtQueue *vq) {
     log_debug("%s", __func__);
     while (!virtqueue_is_empty(vq)) {
         virtqueue_disable_notify(vq);
@@ -204,14 +191,60 @@ int virtio_console_txq_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
     return 0;
 }
 
-void virtio_console_close(VirtIODevice *vdev) {
+static void virtio_console_reset(VirtIODevice *vdev) { (void)vdev; }
+
+static void virtio_console_close(VirtIODevice *vdev) {
+    if (!vdev)
+        return;
+
     ConsoleDev *dev = vdev->dev;
-    close(dev->master_fd);
-    if (dev->slave_keepalive_fd >= 0) {
-        close(dev->slave_keepalive_fd);
+    if (dev) {
+        if (dev->master_fd >= 0)
+            close(dev->master_fd);
+        if (dev->slave_keepalive_fd >= 0)
+            close(dev->slave_keepalive_fd);
+        remove_event(dev->event);
+        free(dev->event);
+        free(dev);
+        vdev->dev = NULL;
     }
-    free(dev->event);
-    free(dev);
     free(vdev->vqs);
+    vdev->vqs = NULL;
     free(vdev);
 }
+
+static int virtio_console_do_init(VirtIODevice *vdev, const void *params) {
+    (void)params;
+    vdev->dev = init_console_dev();
+    if (!vdev->dev)
+        return -ENOMEM;
+    return virtio_console_init(vdev);
+}
+
+const struct virtio_device_ops virtio_console_ops = {
+    .type = VirtioTConsole,
+    .features = CONSOLE_SUPPORTED_FEATURES,
+    .num_queues = CONSOLE_MAX_QUEUES,
+    .queue_max_size = VIRTQUEUE_CONSOLE_MAX_SIZE,
+    .init = virtio_console_do_init,
+    .close = virtio_console_close,
+    .reset = virtio_console_reset,
+    .notify_handlers =
+        {
+            [CONSOLE_QUEUE_RX] = virtio_console_rxq_notify_handler,
+            [CONSOLE_QUEUE_TX] = virtio_console_txq_notify_handler,
+        },
+};
+
+static int virtio_console_parse_params(const cJSON *json, void **out) {
+    (void)json;
+    *out = NULL;
+    return 0;
+}
+
+static void virtio_console_free_params(void *params) { (void)params; }
+
+const struct virtio_config_ops virtio_console_config_ops = {
+    .parse = virtio_console_parse_params,
+    .free = virtio_console_free_params,
+};
