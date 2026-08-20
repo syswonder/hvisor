@@ -178,6 +178,18 @@ static void virtq_blk_handle_one_request(BlkDev *dev, VirtQueue *vq) {
         return;
     }
 
+    // Validate the request layout from the direction-split groups: the
+    // first read-only buffer must be the header, the last writable buffer
+    // must be the 1-byte status byte, and the data buffers must lie on the
+    // side the request type requires. A data buffer on the wrong side
+    // changes the group counts, which is the split-equivalent of the
+    // per-descriptor direction check the pre-refactor code performed.
+    if (ret < 2 || ret > BLK_SEG_MAX + 2) {
+        log_error("invalid chain length %d", ret);
+        blk_complete(vq, desc_idx, NULL, EIO, 0);
+        return;
+    }
+
     if (vreq.out_count < 1 || vreq.out_iov[0].iov_len != sizeof(BlkReqHead)) {
         log_error("invalid header");
         blk_complete(vq, desc_idx, NULL, EIO, 0);
@@ -191,6 +203,18 @@ static void virtq_blk_handle_one_request(BlkDev *dev, VirtQueue *vq) {
     }
 
     BlkReqHead *hdr = vreq.out_iov[0].iov_base;
+    // OUT carries its data in the read-only part, so only the status byte
+    // stays in the writable part (in_count == 1). IN/FLUSH/GET_ID carry
+    // their data in the writable part, so only the header stays in the
+    // read-only part (out_count == 1).
+    if (hdr->type == VIRTIO_BLK_T_OUT ? vreq.in_count != 1
+                                      : vreq.out_count != 1) {
+        log_error("descriptor direction conflicts with operation type %u",
+                  hdr->type);
+        blk_complete(vq, desc_idx, NULL, EIO, 0);
+        return;
+    }
+
     uint8_t *vstatus = vreq.in_iov[vreq.in_count - 1].iov_base;
     int err = 0;
     ssize_t wlen = 0;
