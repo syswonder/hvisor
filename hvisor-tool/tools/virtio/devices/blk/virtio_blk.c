@@ -276,8 +276,11 @@ static void *blkproc_thread(void *arg) {
         // re-initialize the virtqueue (virtio_dev_reset), so stop touching
         // it. Signal worker_paused so the reset op can proceed, then wait
         // for the guest's next kick to clear dev->reset
-        // (see virtio_blk_notify_handler).
-        if (resetting) {
+        // (see virtio_blk_notify_handler). Close takes precedence: once
+        // shutdown is requested, never (re-)enter the reset wait, so
+        // virtio_blk_close()'s pthread_join() always completes even if the
+        // guest never kicks again after STATUS=0.
+        if (resetting && !closing) {
             pthread_mutex_lock(&dev->mtx);
             while (dev->reset && !dev->close) {
                 dev->worker_paused = true;
