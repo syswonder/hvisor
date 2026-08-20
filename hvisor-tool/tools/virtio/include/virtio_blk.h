@@ -13,8 +13,8 @@
 #include "virtio.h"
 #include <linux/virtio_blk.h>
 #include <pthread.h>
+#include <stdbool.h>
 #include <stdint.h>
-#include <sys/queue.h>
 
 /// Maximum number of segments in a request.
 #define BLK_SEG_MAX 512
@@ -26,30 +26,23 @@
 // for some reason we disable them for now.
 #define BLK_SUPPORTED_FEATURES                                                 \
     ((1ULL << VIRTIO_BLK_F_SEG_MAX) | (1ULL << VIRTIO_BLK_F_SIZE_MAX) |        \
-     (1ULL << VIRTIO_F_VERSION_1))
+     (1ULL << VIRTIO_BLK_F_FLUSH) | (1ULL << VIRTIO_F_VERSION_1))
 
 typedef struct virtio_blk_config BlkConfig;
 typedef struct virtio_blk_outhdr BlkReqHead;
 
-// A request needed to process by blk thread.
-struct blkp_req {
-    TAILQ_ENTRY(blkp_req) link;
-    struct iovec *iov;
-    int iovcnt;
-    uint64_t offset;
-    uint32_t type;
-    uint16_t idx;
-};
-
 typedef struct virtio_blk_dev {
     BlkConfig config;
     int img_fd;
-    // describe the worker thread that executes read, write and ioctl.
     pthread_t tid;
     pthread_mutex_t mtx;
     pthread_cond_t cond;
-    TAILQ_HEAD(, blkp_req) procq;
-    int close;
+    bool close;
+    bool thread_started;
+    bool reset; // Device reset in progress: worker must not touch the vq
+    bool worker_paused; // Worker parked in reset wait; vq not touched
+    struct iovec out_buf[VIRTQUEUE_BLK_MAX_SIZE];
+    struct iovec in_buf[VIRTQUEUE_BLK_MAX_SIZE];
 } BlkDev;
 
 struct virtio_blk_init_params {

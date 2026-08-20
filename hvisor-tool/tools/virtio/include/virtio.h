@@ -103,6 +103,13 @@ struct VirtQueue {
     pthread_mutex_t used_ring_lock; // Used ring lock
 };
 
+static inline bool vq_is_empty(VirtQueue *vq) {
+    if (vq->avail_ring == NULL)
+        return true;
+    return __atomic_load_n(&vq->avail_ring->idx, __ATOMIC_ACQUIRE) ==
+           vq->last_avail_idx;
+}
+
 // The highest abstruct representations of virtio device
 struct VirtIODevice {
     uint32_t vqs_len; // Number of virtqueues

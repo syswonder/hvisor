@@ -8,145 +8,369 @@
  * Authors:
  *      Guowei Li <2401213322@stu.pku.edu.cn>
  */
+
 #include "virtio_blk.h"
 #include "log.h"
 #include "virtio.h"
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
+#include <linux/fs.h>
+#include <stdio.h>
 #include <stdlib.h>
-#include <string.h>
+#include <sys/ioctl.h>
 #include <sys/param.h>
 #include <sys/stat.h>
 
-static void complete_block_operation(BlkDev *dev, struct blkp_req *req,
-                                     VirtQueue *vq, int err,
-                                     ssize_t written_len) {
-    uint8_t *vstatus = (uint8_t *)(req->iov[req->iovcnt - 1].iov_base);
-    int is_empty = 0;
-    if (err == EOPNOTSUPP)
-        *vstatus = VIRTIO_BLK_S_UNSUPP;
-    else if (err != 0)
-        *vstatus = VIRTIO_BLK_S_IOERR;
-    else
-        *vstatus = VIRTIO_BLK_S_OK;
-    if (err != 0) {
-        log_error("virt blk err, num is %d", err);
+/*
+ * Threading model
+ * ---------------
+ * Two threads touch a virtio-blk device:
+ *
+ *   main thread   (epoll loop in virtio.c)
+ *     - calls notify_handler when the guest kicks the virtqueue.
+ *     - calls virtio_blk_reset on guest STATUS=0: pauses the worker (via
+ *       dev->reset / dev->worker_paused) BEFORE virtqueue_reset()
+ * re-initializes the vq structs, so the worker is never mid-drain during the
+ * memset.
+ *     - calls virtio_blk_close on shutdown.
+ *     - does NOT touch the virtqueue or BlkDev (except mtx/cond/close/reset).
+ *
+ *   worker thread (blkproc_thread, one per blk device)
+ *     - owns the virtqueue exclusively: drains avail_ring, performs disk I/O,
+ *       updates used_ring, and injects IRQs back to the guest.
+ *     - only it reads/writes vq->last_avail_idx and vq->last_used_idx.
+ *
+ * The virtqueue (avail_ring, desc_table) is single-threaded - the main thread
+ * never accesses it. This avoids the intermediate procq and the extra locking
+ * the old design required.
+ *
+ * Cross-CPU shared memory (guest <-> worker)
+ * ------------------------------------------
+ * avail_ring->idx is written by the guest and read by the worker, hence the
+ * ACQUIRE load in vq_is_empty(). used_ring is written by the worker and read
+ * by the guest, hence write_barrier() in update_used_ring().
+ */
+
+/**
+ * VIRTIO_BLK_T_IN — read sectors from the backing file.
+ *
+ * Virtio descriptor layout: out_iov=[header], in_iov=[data…, status].
+ *
+ * @param fd    backing file descriptor
+ * @param wlen  [out] bytes successfully read
+ * @param iov   guest data buffers (device-writable in_iov)
+ * @param cnt   number of iov entries
+ * @param off   byte offset (= sector * 512)
+ * @return      0 on success, errno on failure
+ */
+static int blk_do_read(int fd, ssize_t *wlen, struct iovec *iov, int cnt,
+                       uint64_t off) {
+    ssize_t len = preadv(fd, iov, cnt, off);
+    log_debug("preadv, len=%zd, offset=%ld", len, off);
+    if (len < 0) {
+        log_error("preadv failed, errno=%d", errno);
+        return errno;
     }
-    update_used_ring(vq, req->idx, written_len + 1);
-    pthread_mutex_lock(&dev->mtx);
-    is_empty = TAILQ_EMPTY(&dev->procq);
-    pthread_mutex_unlock(&dev->mtx);
-    if (is_empty)
-        virtio_inject_irq(vq);
-    free(req->iov);
-    free(req);
-}
-// get a blk req from procq
-static int get_breq(BlkDev *dev, struct blkp_req **req) {
-    struct blkp_req *elem;
-    elem = TAILQ_FIRST(&dev->procq);
-    if (elem == NULL) {
-        return 0;
-    }
-    TAILQ_REMOVE(&dev->procq, elem, link);
-    *req = elem;
-    return 1;
+    *wlen = len;
+    return 0;
 }
 
-static void blkproc(BlkDev *dev, struct blkp_req *req, VirtQueue *vq) {
-    struct iovec *iov = req->iov;
-    int n = req->iovcnt, err = 0;
-    ssize_t len, written_len = 0;
+/**
+ * VIRTIO_BLK_T_OUT — write sectors to the backing file.
+ *
+ * Virtio descriptor layout: out_iov=[header, data…], in_iov=[status].
+ *
+ * @param fd   backing file descriptor
+ * @param iov  guest data buffers (device-readable out_iov, excluding header)
+ * @param cnt  number of iov entries
+ * @param off  byte offset (= sector * 512)
+ * @return     0 on success, errno on failure
+ */
+static int blk_do_write(int fd, struct iovec *iov, int cnt, uint64_t off) {
+    ssize_t len = pwritev(fd, iov, cnt, off);
+    log_debug("pwritev, len=%zd, offset=%ld", len, off);
+    if (len < 0) {
+        log_error("pwritev failed, errno=%d", errno);
+        return errno;
+    }
+    return 0;
+}
 
-    switch (req->type) {
+/**
+ * VIRTIO_BLK_T_FLUSH — persist all previously completed writes.
+ *
+ * Virtio descriptor layout: out_iov=[header], in_iov=[status].
+ * Implemented via fdatasync(2); guarantees data is on stable storage.
+ *
+ * @param fd  backing file descriptor
+ * @return    0 on success, errno on failure
+ */
+static int blk_do_flush(int fd) {
+    if (fdatasync(fd) < 0) {
+        log_error("fdatasync failed, errno=%d", errno);
+        return errno;
+    }
+    return 0;
+}
+
+/**
+ * VIRTIO_BLK_T_GET_ID — return the device identification string.
+ *
+ * Virtio descriptor layout: out_iov=[header], in_iov=[id_buf, status].
+ * The string is NUL-terminated unless the buffer is exactly 20 bytes
+ * (VIRTIO_BLK_ID_BYTES).
+ *
+ * @param iov  guest ID buffer (first in_iov entry)
+ * @return     number of bytes written (= strlen + 1, capped at iov_len)
+ */
+static ssize_t blk_do_get_id(struct iovec *iov) {
+    int n = snprintf(iov->iov_base, iov->iov_len, "hvisor-virblk");
+    return MIN(n + 1, (ssize_t)iov->iov_len);
+}
+
+/**
+ * Set the status byte and push a used-ring entry.
+ *
+ * Every consumed descriptor — including corrupt ones, which are completed
+ * with @p wlen = 0 — must call this to keep avail- and used-ring indices
+ * in sync.  The used-ring length is @p wlen + 1 to account for the status
+ * byte itself.
+ *
+ * @param vq    target virtqueue
+ * @param idx   descriptor index (id field in used-ring element)
+ * @param st    pointer to the status byte in guest memory (may be NULL if
+ *              the descriptor chain was malformed and no status byte exists)
+ * @param err   0 for success, EOPNOTSUPP, or an errno value
+ * @param wlen  data bytes transferred (0 for FLUSH, discard, or errors)
+ */
+static void blk_complete(VirtQueue *vq, uint16_t idx, uint8_t *st, int err,
+                         ssize_t wlen) {
+    if (st) {
+        if (err == 0)
+            *st = VIRTIO_BLK_S_OK;
+        else if (err == EOPNOTSUPP)
+            *st = VIRTIO_BLK_S_UNSUPP;
+        else
+            *st = VIRTIO_BLK_S_IOERR;
+    }
+    if (err && err != EOPNOTSUPP)
+        log_error("virtio-block error, err=%d", err);
+    update_used_ring(vq, idx, wlen + 1);
+}
+
+static void virtq_blk_handle_one_request(BlkDev *dev, VirtQueue *vq) {
+    struct VirtioBufConfig cfg = {
+        .out_iov = dev->out_buf,
+        .max_out = VIRTQUEUE_BLK_MAX_SIZE,
+        .in_iov = dev->in_buf,
+        .max_in = VIRTQUEUE_BLK_MAX_SIZE,
+    };
+    uint16_t desc_idx =
+        vq->avail_ring->ring[vq->last_avail_idx & (vq->num - 1)];
+
+    struct VirtioRequest vreq;
+    int ret = process_descriptor_chain_buf(vq, desc_idx, &cfg, &vreq);
+    if (ret <= 0) {
+        log_error("failed to process descriptor chain, ret=%d", ret);
+        vq->last_avail_idx++;
+        blk_complete(vq, desc_idx, NULL, EIO, 0);
+        return;
+    }
+
+    // Validate the request layout from the direction-split groups: the
+    // first read-only buffer must be the header, the last writable buffer
+    // must be the 1-byte status byte, and the data buffers must lie on the
+    // side the request type requires. A data buffer on the wrong side
+    // changes the group counts, which is the split-equivalent of the
+    // per-descriptor direction check the pre-refactor code performed.
+    if (ret < 2 || ret > BLK_SEG_MAX + 2) {
+        log_error("invalid chain length %d", ret);
+        blk_complete(vq, desc_idx, NULL, EIO, 0);
+        return;
+    }
+
+    if (vreq.out_count < 1 || vreq.out_iov[0].iov_len != sizeof(BlkReqHead)) {
+        log_error("invalid header");
+        blk_complete(vq, desc_idx, NULL, EIO, 0);
+        return;
+    }
+
+    if (vreq.in_count < 1 || vreq.in_iov[vreq.in_count - 1].iov_len != 1) {
+        log_error("invalid status byte");
+        blk_complete(vq, desc_idx, NULL, EIO, 0);
+        return;
+    }
+
+    BlkReqHead *hdr = vreq.out_iov[0].iov_base;
+    // OUT carries its data in the read-only part, so only the status byte
+    // stays in the writable part (in_count == 1). IN/FLUSH/GET_ID carry
+    // their data in the writable part, so only the header stays in the
+    // read-only part (out_count == 1).
+    if (hdr->type == VIRTIO_BLK_T_OUT ? vreq.in_count != 1
+                                      : vreq.out_count != 1) {
+        log_error("descriptor direction conflicts with operation type %u",
+                  hdr->type);
+        blk_complete(vq, desc_idx, NULL, EIO, 0);
+        return;
+    }
+
+    uint8_t *vstatus = vreq.in_iov[vreq.in_count - 1].iov_base;
+    int err = 0;
+    ssize_t wlen = 0;
+
+    switch (hdr->type) {
     case VIRTIO_BLK_T_IN:
-        written_len = len = preadv(dev->img_fd, &iov[1], n - 2, req->offset);
-        // log_debug("readv data is ");
-        // for(int i = 1; i < n-1; i++) {
-        //     log_debug("n-1 is %d, iov[i].iov_len is %d", n-1,
-        //     iov[i].iov_len); for (int j = 0; j < iov[i].iov_len; j++)
-        //         printf("%x", *(int*)(iov[i].iov_base + j));
-        //     printf("\n");
-        // }
-        log_debug("preadv, len is %d, offset is %d", len, req->offset);
-        if (len < 0) {
-            log_error("pread failed");
-            err = errno;
-        }
+        err = blk_do_read(dev->img_fd, &wlen, vreq.in_iov, vreq.in_count - 1,
+                          hdr->sector * SECTOR_BSIZE);
         break;
     case VIRTIO_BLK_T_OUT:
-        len = pwritev(dev->img_fd, &iov[1], n - 2, req->offset);
-        log_debug("pwritev, len is %d, offset is %d", len, req->offset);
-        if (len < 0) {
-            log_error("pwrite failed");
-            err = errno;
-        }
+        err = blk_do_write(dev->img_fd, &vreq.out_iov[1], vreq.out_count - 1,
+                           hdr->sector * SECTOR_BSIZE);
         break;
     case VIRTIO_BLK_T_FLUSH:
-        if (fsync(dev->img_fd) < 0) {
-            log_error("fsync failed");
-            err = errno;
-        }
+        err = blk_do_flush(dev->img_fd);
         break;
-    case VIRTIO_BLK_T_GET_ID: {
-        char s[20] = "hvisor-virblk";
-        strncpy(iov[1].iov_base, s, MIN(sizeof(s), iov[1].iov_len));
+    case VIRTIO_BLK_T_GET_ID:
+        wlen = blk_do_get_id(&vreq.in_iov[0]);
         break;
-    }
     default:
-        log_fatal("Operation is not supported");
         err = EOPNOTSUPP;
+        log_error("unsupported operation type %u", hdr->type);
         break;
     }
-    complete_block_operation(dev, req, vq, err, written_len);
+
+    blk_complete(vq, desc_idx, vstatus, err, wlen);
 }
 
-// Every virtio-blk has a blkproc_thread that is used for reading and writing.
+/*
+ * Worker thread entry point - one per virtio-blk device.
+ *
+ * The worker is the sole owner of the virtqueue:
+ *   1. Wait on cond until notify_handler signals or close is set.
+ *   2. Drain the avail_ring in a disable-notify / process / enable-notify
+ *      loop to suppress redundant guest notifications while we're busy.
+ *   3. Inject a single IRQ after each batch to tell the guest about
+ *      completed requests.
+ *   4. Loop back to step 1.
+ *
+ * virtio_inject_irq() is only called when the queue was non-empty, so
+ * used_ring is guaranteed to be valid (set up by the guest before the
+ * first kick).
+ */
 static void *blkproc_thread(void *arg) {
-    VirtIODevice *vdev = arg;
+    VirtIODevice *vdev = (VirtIODevice *)arg;
     BlkDev *dev = vdev->dev;
-    struct blkp_req *breq;
-    // get_breq will access the critical section, so lock it.
-    pthread_mutex_lock(&dev->mtx);
+    VirtQueue *vq = vdev->vqs;
 
-    for (;;) {
-        while (get_breq(dev, &breq)) {
-            // blk_proc don't access the critical section, so unlock.
-            pthread_mutex_unlock(&dev->mtx);
-            blkproc(dev, breq, vdev->vqs);
+    for (bool closing = false; !closing;) {
+        // Hold mtx to check the close/reset flags and wait on cond.
+        pthread_mutex_lock(&dev->mtx);
+        while (vq_is_empty(vq) && !dev->close && !dev->reset)
+            pthread_cond_wait(&dev->cond, &dev->mtx);
+        closing = dev->close;
+        bool resetting = dev->reset;
+        pthread_mutex_unlock(&dev->mtx);
+
+        // A device reset is in progress: the main thread is about to
+        // re-initialize the virtqueue (virtio_dev_reset), so stop touching
+        // it. Signal worker_paused so the reset op can proceed, then wait
+        // for the guest's next kick to clear dev->reset
+        // (see virtio_blk_notify_handler). Close takes precedence: once
+        // shutdown is requested, never (re-)enter the reset wait, so
+        // virtio_blk_close()'s pthread_join() always completes even if the
+        // guest never kicks again after STATUS=0.
+        if (resetting && !closing) {
             pthread_mutex_lock(&dev->mtx);
+            while (dev->reset && !dev->close) {
+                dev->worker_paused = true;
+                pthread_cond_broadcast(&dev->cond);
+                pthread_cond_wait(&dev->cond, &dev->mtx);
+            }
+            dev->worker_paused = false;
+            pthread_mutex_unlock(&dev->mtx);
+            continue;
         }
 
-        if (dev->close) {
-            pthread_mutex_unlock(&dev->mtx);
-            break;
+        // Drain all pending requests. The double-checked loop follows the
+        // standard virtio pattern: disable-notify, process until empty,
+        // enable-notify, then re-check in case the guest added buffers
+        // while notifications were suppressed.
+        if (!vq_is_empty(vq)) {
+            do {
+                virtqueue_disable_notify(vq);
+                while (!vq_is_empty(vq))
+                    virtq_blk_handle_one_request(dev, vq);
+                virtqueue_enable_notify(vq);
+            } while (!vq_is_empty(vq));
+
+            // Tell the guest that used-ring entries are available.
+            virtio_inject_irq(vq);
         }
-        pthread_cond_wait(&dev->cond, &dev->mtx);
     }
+
     pthread_exit(NULL);
     return NULL;
 }
 
-// create blk dev.
+/*
+ * Allocate and zero-initialize a BlkDev. The worker thread is NOT started
+ * here - start_blk_worker() is called after virtio_blk_init() succeeds.
+ */
 static BlkDev *init_blk_dev(VirtIODevice *vdev) {
-    BlkDev *dev = malloc(sizeof(BlkDev));
+    BlkDev *dev = calloc(1, sizeof(BlkDev));
+    if (!dev) {
+        log_error("failed to allocate blk device");
+        return NULL;
+    }
+
     vdev->dev = dev;
     dev->config.capacity = -1;
     dev->config.size_max = -1;
     dev->config.seg_max = BLK_SEG_MAX;
     dev->config.blk_size = SECTOR_BSIZE;
     dev->img_fd = -1;
-    dev->close = 0;
-    // TODO: chang to thread poll
-    pthread_mutex_init(&dev->mtx, NULL);
-    pthread_cond_init(&dev->cond, NULL);
-    TAILQ_INIT(&dev->procq);
-    pthread_create(&dev->tid, NULL, blkproc_thread, vdev);
+
+    if (pthread_mutex_init(&dev->mtx, NULL) != 0) {
+        log_error("failed to init blk mutex");
+        free(dev);
+        vdev->dev = NULL;
+        return NULL;
+    }
+
+    if (pthread_cond_init(&dev->cond, NULL) != 0) {
+        log_error("failed to init blk cond");
+        pthread_mutex_destroy(&dev->mtx);
+        free(dev);
+        vdev->dev = NULL;
+        return NULL;
+    }
+
     return dev;
 }
 
+/*
+ * Start the per-device I/O worker thread. Must be called after the virtqueue
+ * is allocated (init_virtio_queue) and the backing image is opened
+ * (virtio_blk_init), but before the guest activates the device.
+ */
+static int start_blk_worker(VirtIODevice *vdev) {
+    BlkDev *dev = vdev->dev;
+
+    if (dev->thread_started)
+        return 0;
+
+    if (pthread_create(&dev->tid, NULL, blkproc_thread, vdev) != 0) {
+        log_error("failed to create blk thread");
+        return -1;
+    }
+
+    dev->thread_started = true;
+    return 0;
+}
+
 static int virtio_blk_init(VirtIODevice *vdev, const char *img_path) {
+
     BlkDev *dev = vdev->dev;
     if (!dev) {
         log_error("virtio_blk_init: vdev->dev is nullptr");
@@ -165,6 +389,16 @@ static int virtio_blk_init(VirtIODevice *vdev, const char *img_path) {
         return -1;
     }
     uint64_t blk_size = st.st_size / SECTOR_BSIZE;
+    if (blk_size == 0) {
+        // st_size may be 0 for real block devices; try BLKGETSIZE64
+        uint64_t size64;
+        if (ioctl(dev->img_fd, BLKGETSIZE64, &size64) == 0) {
+            blk_size = size64 / SECTOR_BSIZE;
+        } else {
+            log_error("cannot determine block device size for %s", img_path);
+            return -1;
+        }
+    }
     dev->config.capacity = blk_size;
     dev->config.size_max = blk_size;
 
@@ -173,89 +407,46 @@ static int virtio_blk_init(VirtIODevice *vdev, const char *img_path) {
     return 0;
 }
 
-// handle one descriptor list
-static struct blkp_req *virtq_blk_handle_one_request(VirtQueue *vq) {
-    log_debug("virtq_blk_handle_one_request enter");
-    struct blkp_req *breq;
-    struct iovec *iov = NULL;
-    uint16_t *flags;
-    int i, n;
-    BlkReqHead *hdr;
-    breq = malloc(sizeof(struct blkp_req));
-    n = process_descriptor_chain(vq, &breq->idx, &iov, &flags, 0, true);
-    breq->iov = iov;
-    if (n < 2 || n > BLK_SEG_MAX + 2) {
-        log_error("iov's num is wrong, n is %d", n);
-        goto err_out;
-    }
-
-    if ((flags[0] & VRING_DESC_F_WRITE) != 0) {
-        log_error("virt queue's desc chain header should not be writable!");
-        goto err_out;
-    }
-
-    if (iov[0].iov_len != sizeof(BlkReqHead)) {
-        log_error("the size of blk header is %d, it should be %d!",
-                  iov[0].iov_len, sizeof(BlkReqHead));
-        goto err_out;
-    }
-
-    if (iov[n - 1].iov_len != 1 || ((flags[n - 1] & VRING_DESC_F_WRITE) == 0)) {
-        log_error(
-            "status iov is invalid!, status len is %d, flag is %d, n is %d",
-            iov[n - 1].iov_len, flags[n - 1], n);
-        goto err_out;
-    }
-
-    hdr = (BlkReqHead *)(iov[0].iov_base);
-    uint64_t offset = hdr->sector * SECTOR_BSIZE;
-    breq->type = hdr->type;
-    breq->iovcnt = n;
-    breq->offset = offset;
-
-    for (i = 1; i < n - 1; i++)
-        if (((flags[i] & VRING_DESC_F_WRITE) == 0) !=
-            (breq->type == VIRTIO_BLK_T_OUT)) {
-            log_error("flag is conflict with operation");
-            goto err_out;
-        }
-
-    free(flags);
-    return breq;
-
-err_out:
-    free(flags);
-    free(iov);
-    free(breq);
-    return NULL;
-}
-
+/*
+ * Called by the main thread when the guest writes to the queue_notify MMIO
+ * register. Wakes up the worker thread so it can drain the virtqueue.
+ */
 static int virtio_blk_notify_handler(VirtIODevice *vdev, VirtQueue *vq) {
-    log_debug("virtio blk notify handler enter");
-    BlkDev *blkDev = (BlkDev *)vdev->dev;
-    struct blkp_req *breq;
-    TAILQ_HEAD(, blkp_req) procq;
-    TAILQ_INIT(&procq);
-    while (!virtqueue_is_empty(vq)) {
-        virtqueue_disable_notify(vq);
-        while (!virtqueue_is_empty(vq)) {
-            breq = virtq_blk_handle_one_request(vq);
-            TAILQ_INSERT_TAIL(&procq, breq, link);
-        }
-        virtqueue_enable_notify(vq);
-    }
-    if (TAILQ_EMPTY(&procq)) {
-        log_debug("virtio blk notify handler exit, procq is empty");
-        return 0;
-    }
-    pthread_mutex_lock(&blkDev->mtx);
-    TAILQ_CONCAT(&blkDev->procq, &procq, link);
-    pthread_cond_signal(&blkDev->cond);
-    pthread_mutex_unlock(&blkDev->mtx);
+    BlkDev *dev = vdev->dev;
+    (void)vq;
+
+    // Wake up the worker thread. mtx pairs with the worker's cond_wait.
+    // A kick also ends a device reset: after STATUS=0 the guest only kicks
+    // once it has re-initialized the virtqueue, so the paused worker may
+    // resume safely.
+    pthread_mutex_lock(&dev->mtx);
+    dev->reset = false;
+    pthread_cond_broadcast(&dev->cond);
+    pthread_mutex_unlock(&dev->mtx);
     return 0;
 }
 
-static void virtio_blk_reset(VirtIODevice *vdev) { (void)vdev; }
+/*
+ * Called by the main thread from virtio_dev_reset BEFORE the virtqueues are
+ * re-initialized. Pause the worker so virtqueue_reset() can safely memset
+ * the vq structs: wait until the worker has stopped touching them
+ * (dev->worker_paused). The worker stays paused until the guest's next kick
+ * clears dev->reset (see virtio_blk_notify_handler).
+ */
+static void virtio_blk_reset(VirtIODevice *vdev) {
+    BlkDev *dev = vdev->dev;
+    if (!dev || !dev->thread_started)
+        return;
+
+    pthread_mutex_lock(&dev->mtx);
+    dev->reset = true;
+    // Wake the worker if it is waiting on the condition; if it is mid-drain
+    // it pauses once the current batch completes.
+    pthread_cond_signal(&dev->cond);
+    while (!dev->worker_paused)
+        pthread_cond_wait(&dev->cond, &dev->mtx);
+    pthread_mutex_unlock(&dev->mtx);
+}
 
 /*
  * Shut down the blk device: signal close, wait for the worker to exit,
@@ -267,11 +458,13 @@ static void virtio_blk_close(VirtIODevice *vdev) {
 
     BlkDev *dev = vdev->dev;
     if (dev) {
-        pthread_mutex_lock(&dev->mtx);
-        dev->close = 1;
-        pthread_cond_signal(&dev->cond);
-        pthread_mutex_unlock(&dev->mtx);
-        pthread_join(dev->tid, NULL);
+        if (dev->thread_started) {
+            pthread_mutex_lock(&dev->mtx);
+            dev->close = true;
+            pthread_cond_signal(&dev->cond);
+            pthread_mutex_unlock(&dev->mtx);
+            pthread_join(dev->tid, NULL);
+        }
         pthread_mutex_destroy(&dev->mtx);
         pthread_cond_destroy(&dev->cond);
         if (dev->img_fd >= 0)
@@ -291,6 +484,10 @@ static int virtio_blk_do_init(VirtIODevice *vdev, const void *params) {
     if (!init_blk_dev(vdev))
         return -ENOMEM;
     if (virtio_blk_init(vdev, p->img_path) != 0)
+        return -EIO;
+    // The worker is only started once the backing image is open; the
+    // virtqueue was already allocated by init_virtio_queue() before init.
+    if (start_blk_worker(vdev) != 0)
         return -EIO;
     return 0;
 }

@@ -334,12 +334,15 @@ void virtio_dev_reset(VirtIODevice *vdev) {
     vdev->regs.status = 0;
     int idx = vdev->regs.queue_sel;
     vdev->vqs[idx].ready = 0;
-    for (uint32_t i = 0; i < vdev->vqs_len; i++) {
-        virtqueue_reset(&vdev->vqs[i], i);
-    }
+    // Run the device reset op before re-initializing the virtqueues: reset
+    // ops (e.g. virtio-blk's) quiesce worker threads that touch the vq
+    // structs, which must not race with virtqueue_reset() below.
     const struct virtio_device_ops *ops = lookup_ops(vdev->type);
     if (ops && ops->reset)
         ops->reset(vdev);
+    for (uint32_t i = 0; i < vdev->vqs_len; i++) {
+        virtqueue_reset(&vdev->vqs[i], i);
+    }
     vdev->activated = false;
 }
 
@@ -359,19 +362,7 @@ void virtqueue_reset(VirtQueue *vq, int idx) {
 }
 
 // check if virtqueue has new requests
-bool virtqueue_is_empty(VirtQueue *vq) {
-    if (vq->avail_ring == NULL) {
-        log_error("virtqueue's avail ring is invalid");
-        return true;
-    }
-    // read_barrier();
-    log_debug("vq->last_avail_idx is %d, vq->avail_ring->idx is %d",
-              vq->last_avail_idx, vq->avail_ring->idx);
-    if (vq->last_avail_idx == vq->avail_ring->idx)
-        return true;
-    else
-        return false;
-}
+bool virtqueue_is_empty(VirtQueue *vq) { return vq_is_empty(vq); }
 
 bool desc_is_writable(volatile VirtqDesc *desc_table, uint16_t idx) {
     if (desc_table[idx].flags & VRING_DESC_F_WRITE)
