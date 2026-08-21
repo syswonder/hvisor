@@ -22,11 +22,11 @@
 
 #[cfg(not(target_arch = "loongarch64"))]
 use crate::device::irqchip::inject_irq;
-#[cfg(not(target_arch = "loongarch64"))]
 use crate::{
     arch::cpu::get_target_cpu,
     event::{send_event, IPI_EVENT_WAKEUP_VIRTIO_DEVICE},
     hypercall::SGI_IPI_ID,
+    platform::IRQ_WAKEUP_VIRTIO_DEVICE,
 };
 use crate::{
     arch::cpu::this_cpu_id, consts::MAX_WAIT_TIMES, error::HvResult, memory::MMIOAccess,
@@ -63,9 +63,6 @@ const MAX_PCI_DATA_REQ: usize = 32;
 pub const VIRTIO_PCI_HYPERCALL_VERSION: u16 = 1;
 
 pub const MAX_BACKOFF: usize = 1024;
-
-#[cfg(not(target_arch = "loongarch64"))]
-use crate::platform::IRQ_WAKEUP_VIRTIO_DEVICE;
 
 /// non root zone's virtio request handler
 pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
@@ -109,10 +106,8 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     req_agent.push_req(hreq);
     drop(req_agent);
 
-    #[cfg(not(target_arch = "loongarch64"))]
     let mut is_ipi_sent = false;
     // If backend is sleep, hvisor needs to send ipi to wake it up.
-    #[cfg(not(target_arch = "loongarch64"))]
     check_need_wakeup_and_send_ipi(&mut is_ipi_sent);
 
     let mut count: usize = 0;
@@ -134,7 +129,6 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
                 );
                 count = 0;
             }
-            // check_need_wakeup_and_send_ipi(&mut is_ipi_sent);
         }
         if !mmio.is_write {
             // ensure cfg value is right.
@@ -146,7 +140,6 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
     Ok(())
 }
 
-#[cfg(not(target_arch = "loongarch64"))]
 pub fn check_need_wakeup_and_send_ipi(is_send_ipi: &mut bool) {
     if !(*is_send_ipi) && VIRTIO_BRIDGE.need_wakeup() {
         debug!("need wakeup (recheck), sending ipi to wake up virtio device");
