@@ -29,7 +29,6 @@ use crate::{
     zone::Zone,
 };
 use chip::*;
-use core::sync::atomic::{AtomicU32, Ordering};
 use spin::Mutex;
 
 pub mod chip;
@@ -108,28 +107,35 @@ const INT_PERF: usize = 10;
 const INT_TIMER: usize = 11;
 const INT_IPI: usize = 12;
 
-static GUEST_HWI_ASSERTED: [AtomicU32; MAX_CPU_NUM] = {
-    const C: AtomicU32 = AtomicU32::new(0);
-    [C; MAX_CPU_NUM]
-};
-
-/// Serializes the software HWI bitmap with GINTC VIP updates for this pCPU.
+/// Per-pCPU software HWI bitmap, serialized with GINTC VIP updates.
 #[percpu::def_percpu]
-static GUEST_HWI_LOCK: Mutex<()> = Mutex::new(());
+static GUEST_HWI_ASSERTED: Mutex<u32> = Mutex::new(0);
 
 // The caller ensures the cpu_id is valid.
 #[inline(always)]
-fn get_guest_hwi_lock(cpu: usize) -> &'static Mutex<()> {
-    unsafe { GUEST_HWI_LOCK.remote_ref_raw(cpu) }
+fn get_guest_hwi_state(cpu: usize) -> &'static Mutex<u32> {
+    unsafe { GUEST_HWI_ASSERTED.remote_ref_raw(cpu) }
 }
 
-fn sync_guest_irqs_unlocked(cpu: usize) {
-    use crate::arch::register::gintc;
-    let desired_vip = GUEST_HWI_ASSERTED[cpu].load(Ordering::Relaxed) as usize & 0xff;
-    let old_vip = gintc::read().vip();
-    if old_vip != desired_vip {
-        gintc::write_vip(desired_vip);
+fn sync_guest_irqs_for_cpu(cpu: usize, update: impl FnOnce(&mut u32) -> bool) -> bool {
+    let mut state = get_guest_hwi_state(cpu).lock();
+    let changed = update(&mut state);
+
+    // GINTC.VIP is a per-CPU register, so only the local CPU can apply the
+    // bitmap immediately. Remote CPUs are kicked after the lock is released.
+    if cpu == this_cpu_id() {
+        use crate::arch::register::gintc;
+        let desired_vip = (*state as usize) & 0xff;
+        let old_vip = gintc::read().vip();
+        if old_vip != desired_vip {
+            gintc::write_vip(desired_vip);
+        }
     }
+    changed && cpu != this_cpu_id()
+}
+
+pub fn sync_guest_irqs() {
+    sync_guest_irqs_for_cpu(this_cpu_id(), |_| false);
 }
 
 pub fn set_guest_irq_line(cpu: usize, irq: usize, asserted: bool) -> bool {
@@ -142,23 +148,16 @@ pub fn set_guest_irq_line(cpu: usize, irq: usize, asserted: bool) -> bool {
     }
 
     let mask = 1u32 << (irq - INT_HWI0);
-    let need_remote_sync = {
-        let _guard = get_guest_hwi_lock(cpu).lock();
-        let state = &GUEST_HWI_ASSERTED[cpu];
-        let old = state.load(Ordering::Relaxed);
+    let need_remote_sync = sync_guest_irqs_for_cpu(cpu, |state| {
+        let old = *state;
         let new = if asserted { old | mask } else { old & !mask };
         if old == new {
             false
         } else {
-            state.store(new, Ordering::Relaxed);
-            if cpu == this_cpu_id() {
-                sync_guest_irqs_unlocked(cpu);
-                false
-            } else {
-                true
-            }
+            *state = new;
+            true
         }
-    };
+    });
     // Drop the lock before kicking the target; its handler takes the same lock.
     if need_remote_sync {
         send_event(cpu, SGI_IPI_ID as usize, IPI_EVENT_VIRTIO_INJECT_IRQ);
@@ -170,27 +169,14 @@ pub fn clear_guest_irq_lines(cpu: usize) {
     if cpu >= MAX_CPU_NUM {
         return;
     }
-    let need_remote_sync = {
-        let _guard = get_guest_hwi_lock(cpu).lock();
-        let old = GUEST_HWI_ASSERTED[cpu].swap(0, Ordering::Relaxed);
-        if old == 0 {
-            false
-        } else if cpu == this_cpu_id() {
-            sync_guest_irqs_unlocked(cpu);
-            false
-        } else {
-            true
-        }
-    };
+    let need_remote_sync = sync_guest_irqs_for_cpu(cpu, |state| {
+        let old = *state;
+        *state = 0;
+        old != 0
+    });
     if need_remote_sync {
         send_event(cpu, SGI_IPI_ID as usize, IPI_EVENT_VIRTIO_INJECT_IRQ);
     }
-}
-
-pub fn sync_guest_irqs() {
-    let cpu = this_cpu_id();
-    let _guard = get_guest_hwi_lock(cpu).lock();
-    sync_guest_irqs_unlocked(cpu);
 }
 
 /// inject irq to THIS cpu
