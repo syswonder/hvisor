@@ -71,9 +71,6 @@ impl Zone {
                         "loongarch64: pt_init: register virtio mmio region: {:#x?}",
                         region
                     );
-                    // Register the mmio handler first, so that the overlap check
-                    // against the stage-2 page table in mmio_region_register does
-                    // not find the VIRTIO trap page we are about to insert.
                     inner.mmio_region_register(
                         region.physical_start as _,
                         region.size as _,

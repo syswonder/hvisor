@@ -298,10 +298,6 @@ impl ZoneInner {
             .any(|cfg| cfg.region.is_overlap_with(&region))
     }
 
-    /// Insert a passthrough mapping into the stage-2 page table, returning
-    /// `EINVAL` if it overlaps with a registered MMIO handler region. Such an
-    /// overlap would otherwise make the handler unreachable behind a stage-2
-    /// mapping, so it must be rejected rather than silently shadowed.
     pub fn insert_passthrough_region(
         &mut self,
         region: MemoryRegion<GuestPhysAddr>,
@@ -319,10 +315,6 @@ impl ZoneInner {
         self.gpm.insert(region)
     }
 
-    /// Like [`Self::insert_passthrough_region`], but silently ignores a
-    /// stage-2 overlap (mirroring `MemorySet::try_insert_quiet`) so that guest
-    /// BAR writes do not fail on transient re-mapping. The MMIO handler
-    /// cross-check is still enforced.
     pub fn try_insert_passthrough_region_quiet(
         &mut self,
         region: MemoryRegion<GuestPhysAddr>,
