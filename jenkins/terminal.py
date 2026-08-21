@@ -392,6 +392,23 @@ class Terminal:
         payload = command.rstrip("\n") + "\n"
         self.backend.write(payload.encode(self.encoding, errors="replace"))
 
+    def send_one_by_one(
+        self,
+        command: str,
+        char_delay: float = 0.02,
+    ) -> None:
+        """Send a command one character at a time for lossy consoles.
+
+        Asterinas' virtio-console currently consumes one byte per interrupt, so
+        pasting a complete command can drop characters. This helper keeps the
+        command readable while avoiding that loss.
+        """
+        self._ensure_open()
+        for char in command.rstrip("\n"):
+            self.backend.write(char.encode(self.encoding, errors="replace"))
+            time.sleep(char_delay)
+        self.backend.write(b"\n")
+
     def read_for(
         self,
         duration: float = 2.0,

@@ -24,7 +24,16 @@ ROOTFS_IMG=""
 ZONE1_DTB="${IMAGE_DIR}/dts/zone1-linux.dtb"
 ZONE1_DTS_DIR="${IMAGE_DIR}/dts"
 ZONE1_BOOT_SCRIPT="${SCRIPTS_DIR}/boot_zone1.sh"
+ZONE1_ASTERINAS_BOOT_SCRIPT="${SCRIPTS_DIR}/boot_zone1_asterinas.sh"
 KERNEL_IMAGE=""
+
+# Asterinas CI artifacts follow the qemu_asterinas layout:
+#   image/kernel/aster-kernel-osdk-bin
+#   image/virtdisk/initramfs.cpio.gz
+# ASTERINAS_KERNEL/ASTERINAS_INITRAMFS override these for local validation.
+ASTERINAS_KERNEL_DEFAULT="${IMAGE_DIR}/kernel/aster-kernel-osdk-bin"
+ASTERINAS_INITRAMFS_DEFAULT="${VIRTDISK_DIR}/initramfs.cpio.gz"
+ZONE1_DISK_SIZE_MB="${ZONE1_DISK_SIZE_MB:-512}"
 
 case "${ARCH}" in
     x86_64)
@@ -87,6 +96,35 @@ if [ "${ARCH}" = "x86_64" ]; then
     cp "${JUMP}" "${ROOTFS_DIR}/root/"
 fi
 
+if [ -n "${ASTERINAS_KERNEL:-}" ] || [ -f "${ASTERINAS_KERNEL_DEFAULT}" ] ||
+    [ -n "${ASTERINAS_INITRAMFS:-}" ] || [ -f "${ASTERINAS_INITRAMFS_DEFAULT}" ]; then
+    ASTERINAS_KERNEL="${ASTERINAS_KERNEL:-${ASTERINAS_KERNEL_DEFAULT}}"
+    ASTERINAS_INITRAMFS="${ASTERINAS_INITRAMFS:-${ASTERINAS_INITRAMFS_DEFAULT}}"
+    if [ ! -f "${ASTERINAS_KERNEL}" ]; then
+        echo "error: Asterinas kernel not found: ${ASTERINAS_KERNEL}"
+        exit 1
+    fi
+    if [ ! -f "${ASTERINAS_INITRAMFS}" ]; then
+        echo "error: Asterinas initramfs not found: ${ASTERINAS_INITRAMFS}"
+        exit 1
+    fi
+    cp "${ASTERINAS_KERNEL}" "${ROOTFS_DIR}/root/aster-kernel-osdk-bin"
+    cp "${ASTERINAS_INITRAMFS}" "${ROOTFS_DIR}/root/initramfs.cpio.gz"
+
+    MB2_BOOT="${IMAGE_DIR}/mb2_bootloader/out/mb2_boot.bin"
+    if [ -f "${MB2_BOOT}" ]; then
+        cp "${MB2_BOOT}" "${ROOTFS_DIR}/root/"
+    else
+        echo "error: Multiboot2 bootloader not found: ${MB2_BOOT}"
+        exit 1
+    fi
+
+    ZONE1_DISK="${ROOTFS_DIR}/zone1_disk.img"
+    rm -f "${ZONE1_DISK}"
+    truncate -s "${ZONE1_DISK_SIZE_MB}M" "${ZONE1_DISK}"
+    mkfs.ext2 -F -b 4096 "${ZONE1_DISK}"
+fi
+
 if [ "${ARCH}" != "x86_64" ]; then
     if [ ! -f "${ZONE1_DTB}" ]; then
         if [ -d "${ZONE1_DTS_DIR}" ]; then
@@ -105,9 +143,15 @@ if [ "${ARCH}" != "x86_64" ]; then
 fi
 
 cp "${ZONE1_BOOT_SCRIPT}" "${ROOTFS_DIR}/root/"
+if [ -f "${ZONE1_ASTERINAS_BOOT_SCRIPT}" ]; then
+    cp "${ZONE1_ASTERINAS_BOOT_SCRIPT}" "${ROOTFS_DIR}/root/"
+fi
 
 if [ -f "${ROOTFS_DIR}/root/boot_zone1.sh" ]; then
     chmod +x "${ROOTFS_DIR}/root/boot_zone1.sh"
+fi
+if [ -f "${ROOTFS_DIR}/root/boot_zone1_asterinas.sh" ]; then
+    chmod +x "${ROOTFS_DIR}/root/boot_zone1_asterinas.sh"
 fi
 if [ -f "${ROOTFS_DIR}/root/screen_zone1.sh" ]; then
     chmod +x "${ROOTFS_DIR}/root/screen_zone1.sh"
