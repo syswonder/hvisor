@@ -301,11 +301,11 @@ impl Zone {
         }
     }
 
-    pub fn vplic_mmio_init(&mut self, arch: &HvArchZoneConfig) {
+    pub fn vplic_mmio_init(&mut self, arch: &HvArchZoneConfig) -> HvResult {
         if arch.plic_base == 0 {
             panic!("vplic_mmio_init: plic_base is null");
         }
         self.write()
-            .mmio_region_register(arch.plic_base, arch.plic_size, vplic_handler, 0);
+            .mmio_region_register(arch.plic_base, arch.plic_size, vplic_handler, 0)
     }
 }

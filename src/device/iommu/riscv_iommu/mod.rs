@@ -34,6 +34,7 @@ mod reg_bits;
 mod viommu;
 
 use super::Iommu;
+use crate::error::HvResult;
 use crate::zone::Zone;
 use cmd::*;
 use iommu_hw::*;
@@ -102,10 +103,16 @@ impl Iommu for RiscvIommu {
             zone_id
         );
     }
-    fn viommu_mmio_handler_register(&self, zone: &Zone, viommu_base: usize, viommu_size: usize) {
+    fn viommu_mmio_handler_register(
+        &self,
+        zone: &Zone,
+        viommu_base: usize,
+        viommu_size: usize,
+    ) -> HvResult {
         #[cfg(viommu)]
-        viommu_mmio_handler_register(zone, viommu_base, viommu_size);
+        viommu_mmio_handler_register(zone, viommu_base, viommu_size)?;
         #[cfg(not(viommu))]
         warn!("Virtual IOMMU is not enabled, skipping viommu mmio handler for zone {}, viommu_base {}, viommu_size {}.", zone.id(), viommu_base, viommu_size);
+        Ok(())
     }
 }

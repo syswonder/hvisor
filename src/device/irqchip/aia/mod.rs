@@ -278,11 +278,11 @@ impl Zone {
         }
     }
 
-    pub fn vaplic_mmio_init(&mut self, arch: &HvArchZoneConfig) {
+    pub fn vaplic_mmio_init(&mut self, arch: &HvArchZoneConfig) -> HvResult {
         if arch.aplic_base == 0 {
             panic!("vplic_mmio_init: plic_base is null");
         }
         self.write()
-            .mmio_region_register(arch.aplic_base, arch.aplic_size, vaplic_handler, 0);
+            .mmio_region_register(arch.aplic_base, arch.aplic_size, vaplic_handler, 0)
     }
 }

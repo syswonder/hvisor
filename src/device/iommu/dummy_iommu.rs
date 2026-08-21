@@ -15,6 +15,7 @@
 //      Jingyu Liu <liujingyu24s@ict.ac.cn>
 
 use super::Iommu;
+use crate::error::HvResult;
 use crate::memory::{GuestPhysAddr, MemoryRegion};
 use crate::zone::Zone;
 use alloc::vec::Vec;
@@ -51,7 +52,13 @@ impl Iommu for DummyIommu {
     fn viommu_remove(&self, zone_id: usize) {
         info!("No IOMMU implementation available, cannot remove VIOMMU for Zone id {}", zone_id);
     }
-    fn viommu_mmio_handler_register(&self, zone: &Zone, _viommu_base: usize, _viommu_size: usize) {        
+    fn viommu_mmio_handler_register(
+        &self,
+        zone: &Zone,
+        _viommu_base: usize,
+        _viommu_size: usize,
+    ) -> HvResult {
         info!("No IOMMU implementation available, cannot handle VIOMMU MMIO for Zone id {}", zone.id());
+        Ok(())
     }
 }

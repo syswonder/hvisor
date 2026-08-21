@@ -14,6 +14,7 @@
 // Authors:
 //      Jingyu Liu <liujingyu24s@ict.ac.cn>
 
+use crate::error::HvResult;
 use crate::memory::{GuestPhysAddr, MemoryRegion};
 use crate::zone::Zone;
 use alloc::vec::Vec;
@@ -39,5 +40,10 @@ pub(crate) trait Iommu {
     /// Remove the Virtual IOMMU for the Zone
     fn viommu_remove(&self, zone_id: usize);
     /// Register the Virtual IOMMU MMIO handler for the Zone
-    fn viommu_mmio_handler_register(&self, zone: &Zone, viommu_base: usize, viommu_size: usize);
+    fn viommu_mmio_handler_register(
+        &self,
+        zone: &Zone,
+        viommu_base: usize,
+        viommu_size: usize,
+    ) -> HvResult;
 }

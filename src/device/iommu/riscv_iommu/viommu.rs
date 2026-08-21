@@ -213,9 +213,13 @@ pub(super) fn viommu_remove(zone_id: usize) {
 }
 
 /// Register viommu mmio handler for target zone.
-pub(super) fn viommu_mmio_handler_register(zone: &Zone, viommu_base: usize, viommu_size: usize) {
+pub(super) fn viommu_mmio_handler_register(
+    zone: &Zone,
+    viommu_base: usize,
+    viommu_size: usize,
+) -> HvResult {
     zone.write()
-        .mmio_region_register(viommu_base, viommu_size, viommu_emul_handler, zone.id());
+        .mmio_region_register(viommu_base, viommu_size, viommu_emul_handler, zone.id())
 }
 
 /// Handle Zone's iommu mmio access.
@@ -602,7 +606,17 @@ impl VirtualIommuInner {
         // SAFETY: flush stage-2 translations after changing guest mappings.
         unsafe { riscv_h::asm::hfence_gvma(0, 0) };
         // Keep zone_id as 0 for now to preserve current behavior.
-        zone_inner.mmio_region_register(ddt_gpa, VIOMMU_DDT1LVL_SIZE, viommu_ddt_emul_handler, 0);
+        if let Err(err) = zone_inner.mmio_region_register(
+            ddt_gpa,
+            VIOMMU_DDT1LVL_SIZE,
+            viommu_ddt_emul_handler,
+            0,
+        ) {
+            error!("vIOMMU ddtp mmio handler register failed: {:?}", err);
+            send_event_to_all(cpu_set, 0, IPI_EVENT_VCPU_RESUME);
+            signal_other_vcpus_resume(cpu_set);
+            return false;
+        }
         send_event_to_all(cpu_set, 0, IPI_EVENT_VCPU_RESUME);
         signal_other_vcpus_resume(cpu_set);
         true

@@ -133,11 +133,13 @@ pub struct PciMem {
 }
 
 impl PciMem {
-    pub fn write(&mut self, value: u32) {
+    pub fn write(&mut self, value: u32) -> HvResult {
         if value == 0xffff_ffff {
             self.set_size_read();
+            Ok(())
         } else if value == 0x0 {
             // do nothing
+            Ok(())
         } else {
             match self.handler {
                 Some(handler) => {
@@ -148,13 +150,15 @@ impl PciMem {
                         self.size as usize,
                         handler,
                         value as usize,
-                    );
+                    )?;
                     drop(guard);
                     self.clear_size_read();
                     self.set_virtual_value(value as u64);
+                    Ok(())
                 }
                 None => {
                     warn!("This bar has not register handler!");
+                    Ok(())
                 }
             }
         }
@@ -470,8 +474,8 @@ pub struct Bar {
 }
 
 impl Bar {
-    pub fn write_bar(&mut self, index: usize, value: u32) {
-        self.bararr[index].write(value);
+    pub fn write_bar(&mut self, index: usize, value: u32) -> HvResult {
+        self.bararr[index].write(value)
     }
 
     pub fn read_bar(&self, index: usize) -> u32 {

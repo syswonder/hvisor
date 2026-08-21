@@ -31,34 +31,21 @@ impl Zone {
                 flags |= MemFlags::EXECUTE;
             }
             match mem_region.mem_type {
-                MEM_TYPE_RAM | MEM_TYPE_IO => {
-                    // Check for overlap with registered MMIO handler regions.
-                    if inner.is_mmio_handler_overlap(
+                MEM_TYPE_RAM | MEM_TYPE_IO => inner.insert_passthrough_region(
+                    MemoryRegion::new_with_offset_mapper(
                         mem_region.virtual_start as GuestPhysAddr,
+                        mem_region.physical_start as HostPhysAddr,
                         mem_region.size as _,
-                    ) {
-                        panic!(
-                            "Passthrough region [{:#x}, {:#x}) overlaps with existing MMIO handler",
-                            mem_region.virtual_start,
-                            mem_region.virtual_start as u64 + mem_region.size
-                        );
-                    }
-                    inner
-                        .gpm_mut()
-                        .insert(MemoryRegion::new_with_offset_mapper(
-                            mem_region.virtual_start as GuestPhysAddr,
-                            mem_region.physical_start as HostPhysAddr,
-                            mem_region.size as _,
-                            flags,
-                        ))?
-                }
+                        flags,
+                    ),
+                )?,
                 MEM_TYPE_VIRTIO => {
                     inner.mmio_region_register(
                         mem_region.physical_start as _,
                         mem_region.size as _,
                         mmio_virtio_handler,
                         mem_region.physical_start as _,
-                    );
+                    )?;
                 }
                 _ => {
                     panic!("Unsupported memory type: {}", mem_region.mem_type)

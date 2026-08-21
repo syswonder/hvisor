@@ -36,7 +36,7 @@ pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> 
 }
 
 impl Zone {
-    pub fn vgicv3_mmio_init(&mut self, arch: &HvArchZoneConfig) {
+    pub fn vgicv3_mmio_init(&mut self, arch: &HvArchZoneConfig) -> HvResult {
         let mut inner = self.write();
         match arch.gic_config {
             GicConfig::Gicv2(_) => {
@@ -54,13 +54,13 @@ impl Zone {
                     gicv3_config.gicd_size,
                     vgicv3_dist_handler,
                     0,
-                );
+                )?;
                 inner.mmio_region_register(
                     gicv3_config.gits_base,
                     gicv3_config.gits_size,
                     vgicv3_its_handler,
                     0,
-                );
+                )?;
 
                 for cpu in 0..MAX_CPU_NUM {
                     let gicr_base = host_gicr_base(cpu);
@@ -73,7 +73,7 @@ impl Zone {
                         PER_GICR_SIZE,
                         vgicv3_redist_handler,
                         cpu,
-                    );
+                    )?;
                 }
 
                 for base in CPU_UNUSED_GICR_BASE.iter() {
@@ -91,6 +91,7 @@ impl Zone {
                 }
             }
         }
+        Ok(())
     }
 
     pub fn irq_bitmap_init(&mut self, irqs_bitmap: &[BitmapWord]) {

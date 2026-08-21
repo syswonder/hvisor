@@ -201,16 +201,16 @@ impl VirtIoApic {
 }
 
 impl Zone {
-    pub fn ioapic_mmio_init(&mut self, arch: &HvArchZoneConfig) {
+    pub fn ioapic_mmio_init(&mut self, arch: &HvArchZoneConfig) -> HvResult {
         if arch.ioapic_base == 0 || arch.ioapic_size == 0 {
-            return;
+            return Ok(());
         }
         self.write().mmio_region_register(
             arch.ioapic_base,
             arch.ioapic_size,
             mmio_ioapic_handler,
             arch.ioapic_base,
-        );
+        )
     }
 }
 

@@ -20,6 +20,7 @@ mod vtd_hw;
 
 use super::Iommu;
 use crate::cpu_data::this_zone;
+use crate::error::HvResult;
 use crate::memory::Frame;
 use crate::zone::Zone;
 use alloc::vec::Vec;
@@ -91,7 +92,12 @@ impl Iommu for IntelVtd {
             zone_id
         );
     }
-    fn viommu_mmio_handler_register(&self, zone: &Zone, _viommu_base: usize, _viommu_size: usize) {
+    fn viommu_mmio_handler_register(
+        &self,
+        zone: &Zone,
+        _viommu_base: usize,
+        _viommu_size: usize,
+    ) -> HvResult {
         todo!(
             "IntelVtd viommu handler for zone id {} not implemented yet.",
             zone.id()

@@ -109,7 +109,7 @@ impl VpciDeviceHandler for StandardHandler {
                         bar_size as usize,
                         mmio_vdev_standard_handler,
                         value,
-                    );
+                    )?;
                 }
 
                 Ok(PciConfigAccessStatus::Done(value))

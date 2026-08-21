@@ -15,6 +15,7 @@
 //
 use crate::arch::zone::HvArchZoneConfig;
 use crate::config::HvZoneConfig;
+use crate::error::HvResult;
 use crate::zone::Zone;
 
 #[cfg(target_arch = "loongarch64")]
@@ -94,36 +95,37 @@ impl Zone {
         }
     }
 
-    pub fn mmio_init(&mut self, hv_config: &HvArchZoneConfig) {
+    pub fn mmio_init(&mut self, hv_config: &HvArchZoneConfig) -> HvResult {
         #[cfg(all(irq_gicv2, target_arch = "aarch64"))]
         {
-            self.vgicv2_mmio_init(hv_config);
+            self.vgicv2_mmio_init(hv_config)?;
             self.vgicv2_remap_init(hv_config);
         }
         #[cfg(all(irq_gicv3, target_arch = "aarch64"))]
         {
-            self.vgicv3_mmio_init(hv_config);
+            self.vgicv3_mmio_init(hv_config)?;
         }
         #[cfg(all(plic, target_arch = "riscv64"))]
         {
-            self.vplic_mmio_init(hv_config);
+            self.vplic_mmio_init(hv_config)?;
         }
         #[cfg(all(aia, target_arch = "riscv64"))]
         {
-            self.vaplic_mmio_init(hv_config);
+            self.vaplic_mmio_init(hv_config)?;
         }
         #[cfg(all(hypervisor_v0_6, target_arch = "riscv64"))]
         {
             #[cfg(sifive_ccache)]
-            self.virtual_sifive_ccache_mmio_init();
+            self.virtual_sifive_ccache_mmio_init()?;
             #[cfg(eic7700_sysreg)]
-            self.virtual_syscon_mmio_init();
+            self.virtual_syscon_mmio_init()?;
         }
         #[cfg(target_arch = "x86_64")]
         {
-            self.ioapic_mmio_init(hv_config);
+            self.ioapic_mmio_init(hv_config)?;
             // self.pci_config_space_mmio_init(hv_config);
         }
+        Ok(())
     }
 }
 

@@ -444,7 +444,7 @@ impl Zone {
         &mut self,
         pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
         _num_pci_config: usize,
-    ) {
+    ) -> HvResult {
         #[cfg(loongarch64_pcie)]
         let mut emergency_map_regions: Vec<(usize, usize)> = Vec::new();
 
@@ -464,7 +464,7 @@ impl Zone {
                     mmio_vpci_handler,
                     // mmio_vpci_direct_handler,
                     rootcomplex_config.ecam_base as usize,
-                );
+                )?;
             }
             #[cfg(dwc_pcie)]
             {
@@ -478,7 +478,7 @@ impl Zone {
                     rootcomplex_config.ecam_size as usize,
                     mmio_vpci_handler_dbi,
                     encoded_arg,
-                );
+                )?;
 
                 let extend_config = platform::ROOT_DWC_ATU_CONFIG
                     .iter()
@@ -491,7 +491,7 @@ impl Zone {
                             extend_config.apb_size as usize,
                             mmio_generic_handler,
                             extend_config.apb_base as usize,
-                        );
+                        )?;
                     }
 
                     let cfg_size_half = extend_config.cfg_size / 2;
@@ -502,7 +502,7 @@ impl Zone {
                             cfg_size_half as usize,
                             mmio_dwc_cfg_handler,
                             cfg0_base as usize,
-                        );
+                        )?;
                     }
 
                     let cfg1_base = extend_config.cfg_base + cfg_size_half;
@@ -512,7 +512,7 @@ impl Zone {
                             cfg_size_half as usize,
                             mmio_dwc_cfg_handler,
                             cfg1_base as usize,
-                        );
+                        )?;
                     }
 
                     if extend_config.io_cfg_atu_shared != 0 {
@@ -521,7 +521,7 @@ impl Zone {
                             rootcomplex_config.io_size as usize,
                             mmio_dwc_io_handler,
                             rootcomplex_config.io_base as usize,
-                        );
+                        )?;
                     }
 
                     let mut atu = AtuConfig::default();
@@ -558,7 +558,7 @@ impl Zone {
                     rootcomplex_config.ecam_size as usize,
                     mmio_vpci_direct_handler,
                     rootcomplex_config.ecam_base as usize,
-                );
+                )?;
                 emergency_map_regions.push((
                     rootcomplex_config.ecam_base as usize,
                     rootcomplex_config.ecam_size as usize,
@@ -580,5 +580,7 @@ impl Zone {
                 let _ = self.page_table_emergency(base, size);
             }
         }
+
+        Ok(())
     }
 }

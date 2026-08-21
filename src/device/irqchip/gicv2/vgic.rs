@@ -39,7 +39,7 @@ const GICV2_REG_WIDTH: usize = 4;
 
 impl Zone {
     // trap all Guest OS accesses to the GIC Distributor registers.
-    pub fn vgicv2_mmio_init(&mut self, arch: &HvArchZoneConfig) {
+    pub fn vgicv2_mmio_init(&mut self, arch: &HvArchZoneConfig) -> HvResult {
         let zone_id = self.id();
         let mut inner = self.write();
         match arch.gic_config {
@@ -56,9 +56,10 @@ impl Zone {
                     gicv2_config.gicd_size,
                     vgicv2_dist_handler,
                     0,
-                );
+                )?;
             }
         }
+        Ok(())
     }
 
     // remap the GIC CPU interface register address space to point to the GIC virtual CPU interface registers.

@@ -141,7 +141,7 @@ fn handle_virtio_pci_write(
 ) -> HvResult<Option<usize>> {
     match EndpointField::from(offset as usize, size) {
         EndpointField::Bar(n) => dev.with_bar_ref_mut(n, |x| {
-            x.write(value as u32);
+            x.write(value as u32)?;
             Ok(Some(0))
         }),
         _ => {
@@ -774,7 +774,7 @@ fn handle_endpoint_access(
                                         bar_size as usize,
                                         mmio_msix_table_handler,
                                         paddr as usize,
-                                    );
+                                    )?;
                                 } else {
                                     let gpm = guard.gpm_mut();
                                     if !gpm
@@ -784,7 +784,7 @@ fn handle_endpoint_access(
                                         )
                                         .is_ok()
                                     {}
-                                    gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
+                                    guard.try_insert_passthrough_region_quiet(MemoryRegion::new_with_offset_mapper(
                                         new_vaddr_aligned as GuestPhysAddr,
                                         paddr as HostPhysAddr,
                                         bar_size as _,
@@ -911,7 +911,7 @@ fn handle_endpoint_access(
                                         bar_size as usize,
                                         mmio_msix_table_handler,
                                         paddr as usize,
-                                    );
+                                    )?;
                                 } else {
                                     // Delete old gpm mapping if it exists
                                     let gpm = guard.gpm_mut();
@@ -925,7 +925,7 @@ fn handle_endpoint_access(
                                         // warn!("delete bar {}: can not found 0x{:x}", slot, old_vaddr);
                                     }
                                     // Insert new gpm mapping at new address
-                                    gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
+                                    guard.try_insert_passthrough_region_quiet(MemoryRegion::new_with_offset_mapper(
                                         new_vaddr as GuestPhysAddr,
                                         paddr as HostPhysAddr,
                                         bar_size as _,
@@ -1072,7 +1072,7 @@ fn handle_endpoint_access(
                                 {
                                     // warn!("delete rom bar: can not found 0x{:x}", old_vaddr);
                                 }
-                                gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
+                                guard.try_insert_passthrough_region_quiet(MemoryRegion::new_with_offset_mapper(
                                     new_vaddr_aligned as GuestPhysAddr,
                                     paddr as HostPhysAddr,
                                     rom_size as _,
@@ -1270,7 +1270,7 @@ fn handle_pci_bridge_access(
                                         bar_size as usize,
                                         mmio_msix_table_handler,
                                         paddr as usize,
-                                    );
+                                    )?;
                                 } else {
                                     let gpm = guard.gpm_mut();
                                     if !gpm
@@ -1280,7 +1280,7 @@ fn handle_pci_bridge_access(
                                         )
                                         .is_ok()
                                     {}
-                                    gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
+                                    guard.try_insert_passthrough_region_quiet(MemoryRegion::new_with_offset_mapper(
                                         new_vaddr_aligned as GuestPhysAddr,
                                         paddr as HostPhysAddr,
                                         bar_size as _,
@@ -1387,7 +1387,7 @@ fn handle_pci_bridge_access(
                                         bar_size as usize,
                                         mmio_msix_table_handler,
                                         paddr as usize,
-                                    );
+                                    )?;
                                 } else {
                                     // Delete old gpm mapping if it exists
                                     let gpm = guard.gpm_mut();
@@ -1401,7 +1401,7 @@ fn handle_pci_bridge_access(
                                         // warn!("delete bar {}: can not found 0x{:x}", slot, old_vaddr);
                                     }
                                     // Insert new gpm mapping at new address
-                                    gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
+                                    guard.try_insert_passthrough_region_quiet(MemoryRegion::new_with_offset_mapper(
                                         new_vaddr_aligned as GuestPhysAddr,
                                         paddr as HostPhysAddr,
                                         bar_size as _,
@@ -1543,7 +1543,7 @@ fn handle_pci_bridge_access(
                                 {
                                     // warn!("delete rom bar: can not found 0x{:x}", old_vaddr);
                                 }
-                                gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
+                                guard.try_insert_passthrough_region_quiet(MemoryRegion::new_with_offset_mapper(
                                     new_vaddr_aligned as GuestPhysAddr,
                                     paddr as HostPhysAddr,
                                     rom_size as _,
@@ -2104,7 +2104,7 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
 
             let zone = crate::zone::root_zone();
             let mut inner = zone.write();
-            inner.virtual_pci_mmio_init_delay(&root_config.pci_config, num_pci_bus, domain_id);
+            inner.virtual_pci_mmio_init_delay(&root_config.pci_config, num_pci_bus, domain_id)?;
             drop(inner);
 
             if let Some(domain_cfg) = root_config.pci_config[..num_pci_bus]

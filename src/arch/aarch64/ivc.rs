@@ -191,7 +191,7 @@ impl Zone {
                     PAGE_SIZE,
                     mmio_ivc_handler,
                     ivc_config.control_table_ipa as _,
-                );
+                )?;
             } else {
                 return hv_result_err!(EINVAL);
             }

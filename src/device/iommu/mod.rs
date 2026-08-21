@@ -22,6 +22,7 @@ mod iommu_impl;
 mod iommu_trait;
 
 use crate::consts::MAX_ZONE_NUM;
+use crate::error::HvResult;
 use crate::zone::Zone;
 use iommu_impl::iommu_impl;
 use iommu_trait::Iommu;
@@ -85,8 +86,12 @@ pub(crate) fn viommu_remove(zone_id: usize) {
     }
 }
 
-pub(crate) fn viommu_mmio_handler_register(zone: &Zone, viommu_base: usize, viommu_size: usize) {
-    iommu_impl().viommu_mmio_handler_register(zone, viommu_base, viommu_size);
+pub(crate) fn viommu_mmio_handler_register(
+    zone: &Zone,
+    viommu_base: usize,
+    viommu_size: usize,
+) -> HvResult {
+    iommu_impl().viommu_mmio_handler_register(zone, viommu_base, viommu_size)
 }
 
 /////////////////////////////////////////////////////////////////////////

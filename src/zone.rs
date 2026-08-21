@@ -32,7 +32,7 @@ use crate::config::{HvZoneBootMode, HvZoneConfig, CONFIG_NAME_MAXLEN};
 use crate::cpu_data::{get_cpu_data, this_zone, CpuSet};
 use crate::error::HvResult;
 use crate::memory::addr::GuestPhysAddr;
-use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
+use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemoryRegion, MemorySet};
 use core::panic;
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -220,7 +220,7 @@ impl ZoneInner {
         size: usize,
         handler: MMIOHandler,
         arg: usize,
-    ) {
+    ) -> HvResult {
         if let Some(mmio) = self.mmio.iter_mut().find(|mmio| mmio.region.start == start) {
             warn!("duplicated mmio region {:#x?}", mmio);
             if mmio.region.size != size {
@@ -228,6 +228,7 @@ impl ZoneInner {
             }
             mmio.handler = handler;
             mmio.arg = arg;
+            Ok(())
         } else {
             let new_region = MMIORegion { start, size };
 
@@ -237,17 +238,23 @@ impl ZoneInner {
                 .iter()
                 .find(|cfg| cfg.region.is_overlap_with(&new_region))
             {
-                panic!(
-                    "New MMIO handler region {:#x?} overlaps with existing handler {:#x?}",
-                    new_region, existing.region
+                return hv_result_err!(
+                    EINVAL,
+                    format!(
+                        "New MMIO handler region {:#x?} overlaps with existing handler {:#x?}",
+                        new_region, existing.region
+                    )
                 );
             }
 
             // Check for overlap with passthrough regions in the stage-2 page table.
             if self.gpm.is_range_overlap(start, size) {
-                panic!(
-                    "New MMIO handler region {:#x?} overlaps with passthrough region in stage-2 page table",
-                    new_region
+                return hv_result_err!(
+                    EINVAL,
+                    format!(
+                        "New MMIO handler region {:#x?} overlaps with passthrough region in stage-2 page table",
+                        new_region
+                    )
                 );
             }
 
@@ -255,7 +262,8 @@ impl ZoneInner {
                 region: new_region,
                 handler,
                 arg,
-            })
+            });
+            Ok(())
         }
     }
     #[allow(dead_code)]
@@ -288,6 +296,48 @@ impl ZoneInner {
         self.mmio
             .iter()
             .any(|cfg| cfg.region.is_overlap_with(&region))
+    }
+
+    /// Insert a passthrough mapping into the stage-2 page table, returning
+    /// `EINVAL` if it overlaps with a registered MMIO handler region. Such an
+    /// overlap would otherwise make the handler unreachable behind a stage-2
+    /// mapping, so it must be rejected rather than silently shadowed.
+    pub fn insert_passthrough_region(
+        &mut self,
+        region: MemoryRegion<GuestPhysAddr>,
+    ) -> HvResult {
+        if self.is_mmio_handler_overlap(region.start, region.size) {
+            return hv_result_err!(
+                EINVAL,
+                format!(
+                    "Passthrough region [{:#x}, {:#x}) overlaps with existing MMIO handler",
+                    region.start,
+                    region.start + region.size
+                )
+            );
+        }
+        self.gpm.insert(region)
+    }
+
+    /// Like [`Self::insert_passthrough_region`], but silently ignores a
+    /// stage-2 overlap (mirroring `MemorySet::try_insert_quiet`) so that guest
+    /// BAR writes do not fail on transient re-mapping. The MMIO handler
+    /// cross-check is still enforced.
+    pub fn try_insert_passthrough_region_quiet(
+        &mut self,
+        region: MemoryRegion<GuestPhysAddr>,
+    ) -> HvResult {
+        if self.is_mmio_handler_overlap(region.start, region.size) {
+            return hv_result_err!(
+                EINVAL,
+                format!(
+                    "Passthrough region [{:#x}, {:#x}) overlaps with existing MMIO handler",
+                    region.start,
+                    region.start + region.size
+                )
+            );
+        }
+        self.gpm.try_insert_quiet(region)
     }
     /// If irq_id belongs to this zone
     pub fn irq_in_zone(&self, irq_id: u32) -> bool {
@@ -635,7 +685,7 @@ impl ZoneInner {
         &mut self,
         pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
         _num_pci_config: usize,
-    ) {
+    ) -> HvResult {
         use crate::memory::mmio_generic_handler;
         use crate::pci::pci_handler::mmio_vpci_handler_dbi;
         use crate::platform;
@@ -652,7 +702,7 @@ impl ZoneInner {
                 rootcomplex_config.ecam_size as usize,
                 mmio_vpci_handler_dbi,
                 encoded_arg,
-            );
+            )?;
 
             let extend_config = platform::ROOT_DWC_ATU_CONFIG
                 .iter()
@@ -664,10 +714,11 @@ impl ZoneInner {
                         extend_config.apb_size as usize,
                         mmio_generic_handler,
                         extend_config.apb_base as usize,
-                    );
+                    )?;
                 }
             }
         }
+        Ok(())
     }
 
     #[cfg(all(pci_init_delay, dwc_pcie))]
@@ -676,7 +727,7 @@ impl ZoneInner {
         pci_rootcomplex_config: &[HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
         _num_pci_config: usize,
         domain_id: u8,
-    ) {
+    ) -> HvResult {
         #[cfg(loongarch64_pcie)]
         let mut emergency_map_regions: alloc::vec::Vec<(usize, usize)> = alloc::vec::Vec::new();
 
@@ -693,7 +744,7 @@ impl ZoneInner {
                     rootcomplex_config.ecam_size as usize,
                     mmio_vpci_handler,
                     rootcomplex_config.ecam_base as usize,
-                );
+                )?;
             }
             #[cfg(dwc_pcie)]
             {
@@ -712,7 +763,7 @@ impl ZoneInner {
                     rootcomplex_config.ecam_size as usize,
                     mmio_vpci_handler_dbi,
                     encoded_arg,
-                );
+                )?;
 
                 let extend_config = platform::ROOT_DWC_ATU_CONFIG
                     .iter()
@@ -725,7 +776,7 @@ impl ZoneInner {
                             extend_config.apb_size as usize,
                             mmio_generic_handler,
                             extend_config.apb_base as usize,
-                        );
+                        )?;
                     }
 
                     let cfg_size_half = extend_config.cfg_size / 2;
@@ -736,7 +787,7 @@ impl ZoneInner {
                             cfg_size_half as usize,
                             mmio_dwc_cfg_handler,
                             cfg0_base as usize,
-                        );
+                        )?;
                     }
 
                     let cfg1_base = extend_config.cfg_base + cfg_size_half;
@@ -746,7 +797,7 @@ impl ZoneInner {
                             cfg_size_half as usize,
                             mmio_dwc_cfg_handler,
                             cfg1_base as usize,
-                        );
+                        )?;
                     }
 
                     if extend_config.io_cfg_atu_shared != 0 {
@@ -755,7 +806,7 @@ impl ZoneInner {
                             rootcomplex_config.io_size as usize,
                             mmio_dwc_io_handler,
                             rootcomplex_config.io_base as usize,
-                        );
+                        )?;
                     }
 
                     let mut atu = AtuConfig::default();
@@ -793,7 +844,7 @@ impl ZoneInner {
                     rootcomplex_config.ecam_size as usize,
                     mmio_vpci_direct_handler,
                     rootcomplex_config.ecam_base as usize,
-                );
+                )?;
                 emergency_map_regions.push((
                     rootcomplex_config.ecam_base as usize,
                     rootcomplex_config.ecam_size as usize,
@@ -807,6 +858,8 @@ impl ZoneInner {
                 );
             }
         }
+
+        Ok(())
 
         // Note: emergency_map_regions requires access to self (for Zone), so this must be handled at Zone level
     }
@@ -902,7 +955,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
 
     let mut zone = Zone::new(zone_id, &config.name);
     zone.pt_init(config.memory_regions())?;
-    zone.mmio_init(&config.arch_config);
+    zone.mmio_init(&config.arch_config)?;
 
     let mut cpu_num = 0;
     for (guest_cpu, cpu_id) in config.cpus().iter().enumerate() {
@@ -935,9 +988,9 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
                 let num_pci_bus = config.num_pci_bus as usize;
                 if zone_id == 0 {
                     let mut inner = zone.write();
-                    inner.virtual_pci_dbi_pref_init(&config.pci_config, num_pci_bus);
+                    inner.virtual_pci_dbi_pref_init(&config.pci_config, num_pci_bus)?;
                 } else {
-                    let _ = zone.virtual_pci_mmio_init(&config.pci_config, num_pci_bus);
+                    zone.virtual_pci_mmio_init(&config.pci_config, num_pci_bus)?;
                     let _ = zone.guest_pci_init(
                         zone_id,
                         &config.alloc_pci_devs,
@@ -951,7 +1004,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
 
         #[cfg(not(pci_init_delay))]
         {
-            let _ = zone.virtual_pci_mmio_init(&config.pci_config, config.num_pci_bus as usize);
+            zone.virtual_pci_mmio_init(&config.pci_config, config.num_pci_bus as usize)?;
             let _ = zone.guest_pci_init(
                 zone_id,
                 &config.alloc_pci_devs,
@@ -967,7 +1020,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
         use crate::platform::{IOMMU_SYS_BASE, IOMMU_SYS_SIZE};
         // Create viommu instance and register mmio handler for target zone.
         crate::device::iommu::viommu_init(zone_id);
-        crate::device::iommu::viommu_mmio_handler_register(&zone, IOMMU_SYS_BASE, IOMMU_SYS_SIZE);
+        crate::device::iommu::viommu_mmio_handler_register(&zone, IOMMU_SYS_BASE, IOMMU_SYS_SIZE)?;
     }
 
     // #[cfg(target_arch = "aarch64")]

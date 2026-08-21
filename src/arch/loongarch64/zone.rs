@@ -52,48 +52,20 @@ impl Zone {
             trace!("loongarch64: pt_init: process region: {:#x?}", region);
             let mem_type = region.mem_type;
             match mem_type {
-                MEM_TYPE_RAM => {
-                    // Check for overlap with registered MMIO handler regions.
-                    if inner.is_mmio_handler_overlap(
+                MEM_TYPE_RAM => inner.insert_passthrough_region(
+                    MemoryRegion::new_with_offset_mapper(
                         region.virtual_start as GuestPhysAddr,
+                        region.physical_start as HostPhysAddr,
                         region.size as _,
-                    ) {
-                        panic!(
-                            "Passthrough region [{:#x}, {:#x}) overlaps with existing MMIO handler",
-                            region.virtual_start,
-                            region.virtual_start as u64 + region.size
-                        );
-                    }
-                    inner
-                        .gpm_mut()
-                        .insert(MemoryRegion::new_with_offset_mapper(
-                            region.virtual_start as GuestPhysAddr,
-                            region.physical_start as HostPhysAddr,
-                            region.size as _,
-                            MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
-                        ))?;
-                }
-                MEM_TYPE_IO => {
-                    // Check for overlap with registered MMIO handler regions.
-                    if inner.is_mmio_handler_overlap(
-                        region.virtual_start as GuestPhysAddr,
-                        region.size as _,
-                    ) {
-                        panic!(
-                            "Passthrough region [{:#x}, {:#x}) overlaps with existing MMIO handler",
-                            region.virtual_start,
-                            region.virtual_start as u64 + region.size
-                        );
-                    }
-                    inner
-                        .gpm_mut()
-                        .insert(MemoryRegion::new_with_offset_mapper(
-                            region.virtual_start as GuestPhysAddr,
-                            region.physical_start as HostPhysAddr,
-                            region.size as _,
-                            MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
-                        ))?;
-                }
+                        MemFlags::READ | MemFlags::WRITE | MemFlags::EXECUTE,
+                    ),
+                )?,
+                MEM_TYPE_IO => inner.insert_passthrough_region(MemoryRegion::new_with_offset_mapper(
+                    region.virtual_start as GuestPhysAddr,
+                    region.physical_start as HostPhysAddr,
+                    region.size as _,
+                    MemFlags::READ | MemFlags::WRITE | MemFlags::IO,
+                ))?,
                 MEM_TYPE_VIRTIO => {
                     info!(
                         "loongarch64: pt_init: register virtio mmio region: {:#x?}",
@@ -107,7 +79,7 @@ impl Zone {
                         region.size as _,
                         mmio_virtio_handler,
                         region.physical_start as _,
-                    );
+                    )?;
                     inner
                         .gpm_mut()
                         .insert(MemoryRegion::new_with_offset_mapper(
@@ -130,7 +102,7 @@ impl Zone {
         // 3. chip configuration
 
         info!("loongarch64: pt_init: add mmio handler for 0x1fe0_xxxx mmio region");
-        inner.mmio_region_register(0x1fe0_0000, 0x3000, loongarch_generic_mmio_handler, 0x1234);
+        inner.mmio_region_register(0x1fe0_0000, 0x3000, loongarch_generic_mmio_handler, 0x1234)?;
 
         info!("zone stage-2 memory set: {:#x?}", inner.gpm());
         unsafe {
