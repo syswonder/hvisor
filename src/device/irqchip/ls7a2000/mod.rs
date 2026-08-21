@@ -113,11 +113,15 @@ static GUEST_HWI_ASSERTED: [AtomicU32; MAX_CPU_NUM] = {
     [C; MAX_CPU_NUM]
 };
 
-/// Serializes the software HWI bitmap with GINTC VIP updates for each pCPU.
-static GUEST_HWI_LOCKS: [Mutex<()>; MAX_CPU_NUM] = {
-    const L: Mutex<()> = Mutex::new(());
-    [L; MAX_CPU_NUM]
-};
+/// Serializes the software HWI bitmap with GINTC VIP updates for this pCPU.
+#[percpu::def_percpu]
+static GUEST_HWI_LOCK: Mutex<()> = Mutex::new(());
+
+// The caller ensures the cpu_id is valid.
+#[inline(always)]
+fn get_guest_hwi_lock(cpu: usize) -> &'static Mutex<()> {
+    unsafe { GUEST_HWI_LOCK.remote_ref_raw(cpu) }
+}
 
 fn sync_guest_irqs_unlocked(cpu: usize) {
     use crate::arch::register::gintc;
@@ -139,7 +143,7 @@ pub fn set_guest_irq_line(cpu: usize, irq: usize, asserted: bool) -> bool {
 
     let mask = 1u32 << (irq - INT_HWI0);
     let need_remote_sync = {
-        let _guard = GUEST_HWI_LOCKS[cpu].lock();
+        let _guard = get_guest_hwi_lock(cpu).lock();
         let state = &GUEST_HWI_ASSERTED[cpu];
         let old = state.load(Ordering::Relaxed);
         let new = if asserted { old | mask } else { old & !mask };
@@ -167,7 +171,7 @@ pub fn clear_guest_irq_lines(cpu: usize) {
         return;
     }
     let need_remote_sync = {
-        let _guard = GUEST_HWI_LOCKS[cpu].lock();
+        let _guard = get_guest_hwi_lock(cpu).lock();
         let old = GUEST_HWI_ASSERTED[cpu].swap(0, Ordering::Relaxed);
         if old == 0 {
             false
@@ -185,7 +189,7 @@ pub fn clear_guest_irq_lines(cpu: usize) {
 
 pub fn sync_guest_irqs() {
     let cpu = this_cpu_id();
-    let _guard = GUEST_HWI_LOCKS[cpu].lock();
+    let _guard = get_guest_hwi_lock(cpu).lock();
     sync_guest_irqs_unlocked(cpu);
 }
 

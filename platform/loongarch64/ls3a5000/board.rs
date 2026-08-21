@@ -154,7 +154,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
     }, // SHARD_MEM
 ];
 
-pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 32 + 0x20;
+pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 4;
 pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[]);
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig { dummy: 0 };
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
