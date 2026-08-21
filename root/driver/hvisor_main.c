@@ -471,6 +471,12 @@ static irqreturn_t virtio_irq_handler(int irq, void *dev_id) {
         pr_err("eventfd_signal: counter overflow or no increment\n");
 #endif
 
+#ifdef LOONGARCH64
+    /* Re-arm the level-like wakeup line after recording the eventfd kick. */
+    if (hvisor_call(HVISOR_HC_CLEAR_INJECT_IRQ, 0, HVISOR_VIRTIO_WAKEUP_HWI))
+        pr_err_ratelimited("failed to acknowledge virtio wakeup HWI\n");
+#endif
+
     return IRQ_HANDLED;
 }
 
