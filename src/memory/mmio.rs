@@ -51,6 +51,13 @@ impl MMIORegion {
     pub fn contains_region(&self, addr: GuestPhysAddr, sz: usize) -> bool {
         addr >= self.start && addr + (sz as usize) <= self.start + (self.size as usize)
     }
+
+    /// Check whether this region overlaps with `other`.
+    pub fn is_overlap_with(&self, other: &MMIORegion) -> bool {
+        let self_end = self.start + self.size;
+        let other_end = other.start + other.size;
+        !(self_end <= other.start || self.start >= other_end)
+    }
 }
 
 pub fn mmio_perform_access(base: usize, mmio: &mut MMIOAccess) {

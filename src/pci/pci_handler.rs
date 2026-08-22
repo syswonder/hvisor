@@ -784,12 +784,14 @@ fn handle_endpoint_access(
                                         )
                                         .is_ok()
                                     {}
-                                    gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
-                                        new_vaddr_aligned as GuestPhysAddr,
-                                        paddr as HostPhysAddr,
-                                        bar_size as _,
-                                        MemFlags::READ | MemFlags::WRITE,
-                                    ))?;
+                                    guard.insert_passthrough_region_quiet(
+                                        MemoryRegion::new_with_offset_mapper(
+                                            new_vaddr_aligned as GuestPhysAddr,
+                                            paddr as HostPhysAddr,
+                                            bar_size as _,
+                                            MemFlags::READ | MemFlags::WRITE,
+                                        ),
+                                    )?;
                                 }
                                 drop(guard);
                                 #[cfg(target_arch = "aarch64")]
@@ -925,12 +927,14 @@ fn handle_endpoint_access(
                                         // warn!("delete bar {}: can not found 0x{:x}", slot, old_vaddr);
                                     }
                                     // Insert new gpm mapping at new address
-                                    gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
-                                        new_vaddr as GuestPhysAddr,
-                                        paddr as HostPhysAddr,
-                                        bar_size as _,
-                                        MemFlags::READ | MemFlags::WRITE,
-                                    ))?;
+                                    guard.insert_passthrough_region_quiet(
+                                        MemoryRegion::new_with_offset_mapper(
+                                            new_vaddr as GuestPhysAddr,
+                                            paddr as HostPhysAddr,
+                                            bar_size as _,
+                                            MemFlags::READ | MemFlags::WRITE,
+                                        ),
+                                    )?;
                                 }
                                 drop(guard);
                                 /* after update gpm, mem barrier is needed
@@ -1072,12 +1076,14 @@ fn handle_endpoint_access(
                                 {
                                     // warn!("delete rom bar: can not found 0x{:x}", old_vaddr);
                                 }
-                                gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
-                                    new_vaddr_aligned as GuestPhysAddr,
-                                    paddr as HostPhysAddr,
-                                    rom_size as _,
-                                    MemFlags::READ | MemFlags::WRITE,
-                                ))?;
+                                guard.insert_passthrough_region_quiet(
+                                    MemoryRegion::new_with_offset_mapper(
+                                        new_vaddr_aligned as GuestPhysAddr,
+                                        paddr as HostPhysAddr,
+                                        rom_size as _,
+                                        MemFlags::READ | MemFlags::WRITE,
+                                    ),
+                                )?;
                                 drop(guard);
                                 /* after update gpm, mem barrier is needed
                                  */
@@ -1280,12 +1286,14 @@ fn handle_pci_bridge_access(
                                         )
                                         .is_ok()
                                     {}
-                                    gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
-                                        new_vaddr_aligned as GuestPhysAddr,
-                                        paddr as HostPhysAddr,
-                                        bar_size as _,
-                                        MemFlags::READ | MemFlags::WRITE,
-                                    ))?;
+                                    guard.insert_passthrough_region_quiet(
+                                        MemoryRegion::new_with_offset_mapper(
+                                            new_vaddr_aligned as GuestPhysAddr,
+                                            paddr as HostPhysAddr,
+                                            bar_size as _,
+                                            MemFlags::READ | MemFlags::WRITE,
+                                        ),
+                                    )?;
                                 }
                                 drop(guard);
                                 #[cfg(target_arch = "aarch64")]
@@ -1401,12 +1409,14 @@ fn handle_pci_bridge_access(
                                         // warn!("delete bar {}: can not found 0x{:x}", slot, old_vaddr);
                                     }
                                     // Insert new gpm mapping at new address
-                                    gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
-                                        new_vaddr_aligned as GuestPhysAddr,
-                                        paddr as HostPhysAddr,
-                                        bar_size as _,
-                                        MemFlags::READ | MemFlags::WRITE,
-                                    ))?;
+                                    guard.insert_passthrough_region_quiet(
+                                        MemoryRegion::new_with_offset_mapper(
+                                            new_vaddr_aligned as GuestPhysAddr,
+                                            paddr as HostPhysAddr,
+                                            bar_size as _,
+                                            MemFlags::READ | MemFlags::WRITE,
+                                        ),
+                                    )?;
                                 }
                                 drop(guard);
                                 /* after update gpm, mem barrier is needed
@@ -1543,12 +1553,14 @@ fn handle_pci_bridge_access(
                                 {
                                     // warn!("delete rom bar: can not found 0x{:x}", old_vaddr);
                                 }
-                                gpm.try_insert_quiet(MemoryRegion::new_with_offset_mapper(
-                                    new_vaddr_aligned as GuestPhysAddr,
-                                    paddr as HostPhysAddr,
-                                    rom_size as _,
-                                    MemFlags::READ | MemFlags::WRITE,
-                                ))?;
+                                guard.insert_passthrough_region_quiet(
+                                    MemoryRegion::new_with_offset_mapper(
+                                        new_vaddr_aligned as GuestPhysAddr,
+                                        paddr as HostPhysAddr,
+                                        rom_size as _,
+                                        MemFlags::READ | MemFlags::WRITE,
+                                    ),
+                                )?;
                                 drop(guard);
                                 /* after update gpm, mem barrier is needed
                                  */

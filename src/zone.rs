@@ -32,7 +32,7 @@ use crate::config::{HvZoneBootMode, HvZoneConfig, CONFIG_NAME_MAXLEN};
 use crate::cpu_data::{get_cpu_data, this_zone, CpuSet};
 use crate::error::HvResult;
 use crate::memory::addr::GuestPhysAddr;
-use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemorySet};
+use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemoryRegion, MemorySet};
 use core::panic;
 use core::sync::atomic::{AtomicBool, Ordering};
 
@@ -221,6 +221,15 @@ impl ZoneInner {
         handler: MMIOHandler,
         arg: usize,
     ) {
+        // TODO: add error handling instead of just warning.
+        // See https://github.com/syswonder/hvisor/issues/385
+        if self.gpm.is_range_overlap(start, size) {
+            warn!(
+                "MMIO handler region [{:#x}, {:#x}) overlaps with passthrough region",
+                start,
+                start + size
+            );
+        }
         if let Some(mmio) = self.mmio.iter_mut().find(|mmio| mmio.region.start == start) {
             warn!("duplicated mmio region {:#x?}", mmio);
             if mmio.region.size != size {
@@ -258,6 +267,29 @@ impl ZoneInner {
             .iter()
             .find(|cfg| cfg.region.contains_region(addr, size))
             .map(|cfg| (cfg.region, cfg.handler, cfg.arg))
+    }
+    /// Check whether `[start, start+size)` overlaps with any registered MMIO handler region.
+    pub fn is_mmio_handler_overlap(&self, start: GuestPhysAddr, size: usize) -> bool {
+        let region = MMIORegion { start, size };
+        self.mmio
+            .iter()
+            .any(|cfg| cfg.region.is_overlap_with(&region))
+    }
+    /// Insert a passthrough region, warning if it overlaps an MMIO handler region.
+    pub fn insert_passthrough_region_quiet(
+        &mut self,
+        region: MemoryRegion<GuestPhysAddr>,
+    ) -> HvResult {
+        // TODO: add error handling instead of just warning.
+        // See https://github.com/syswonder/hvisor/issues/385
+        if self.is_mmio_handler_overlap(region.start, region.size) {
+            warn!(
+                "passthrough region [{:#x}, {:#x}) overlaps with MMIO handler region",
+                region.start,
+                region.start + region.size
+            );
+        }
+        self.gpm.try_insert_quiet(region)
     }
     /// If irq_id belongs to this zone
     pub fn irq_in_zone(&self, irq_id: u32) -> bool {
