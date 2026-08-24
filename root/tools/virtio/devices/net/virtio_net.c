@@ -25,7 +25,9 @@
 #include <unistd.h>
 
 static NetDev *init_net_dev(const uint8_t mac[]) {
-    NetDev *dev = malloc(sizeof(NetDev));
+    NetDev *dev = calloc(1, sizeof(NetDev));
+    if (!dev)
+        return NULL;
     memcpy(dev->config.mac, mac, sizeof(dev->config.mac));
     dev->config.status = VIRTIO_NET_S_LINK_UP;
     dev->tapfd = -1;
@@ -321,8 +323,12 @@ static void virtio_net_close(VirtIODevice *vdev) {
     if (dev) {
         if (dev->tapfd >= 0)
             close(dev->tapfd);
-        remove_event(dev->event);
-        free(dev->event);
+        dev->tapfd = -1;
+        if (dev->event) {
+            remove_event(dev->event);
+            free(dev->event);
+            dev->event = NULL;
+        }
         free(dev->in_iov);
         free(dev->out_iov);
         free(dev);
@@ -369,7 +375,11 @@ static int virtio_net_parse_params(const cJSON *json, void **out) {
         free(p);
         return -EINVAL;
     }
-    p->tap = tap->valuestring;
+    if (strlen(tap->valuestring) >= sizeof(p->tap)) {
+        free(p);
+        return -ENAMETOOLONG;
+    }
+    memcpy(p->tap, tap->valuestring, strlen(tap->valuestring) + 1);
 
     cJSON *mac_json = cJSON_GetObjectItem(json, "mac");
     if (cJSON_GetArraySize(mac_json) != 6) {

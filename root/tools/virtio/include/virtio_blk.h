@@ -11,6 +11,7 @@
 #ifndef _HVISOR_VIRTIO_BLK_H
 #define _HVISOR_VIRTIO_BLK_H
 #include "virtio.h"
+#include <limits.h>
 #include <linux/virtio_blk.h>
 #include <pthread.h>
 #include <stdbool.h>
@@ -39,6 +40,8 @@ typedef struct virtio_blk_dev {
     pthread_cond_t cond;
     bool close;
     bool thread_started;
+    bool mutex_initialized;
+    bool cond_initialized;
     bool reset; // Device reset in progress: worker must not touch the vq
     bool worker_paused; // Worker parked in reset wait; vq not touched
     struct iovec out_buf[VIRTQUEUE_BLK_MAX_SIZE];
@@ -46,7 +49,7 @@ typedef struct virtio_blk_dev {
 } BlkDev;
 
 struct virtio_blk_init_params {
-    const char *img_path;
+    char img_path[PATH_MAX];
 };
 
 extern const struct virtio_device_ops virtio_blk_ops;

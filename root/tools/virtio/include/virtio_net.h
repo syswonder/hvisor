@@ -13,6 +13,7 @@
 #include "event_monitor.h"
 #include "virtio.h"
 #include <linux/virtio_net.h>
+#include <net/if.h>
 
 // Queue idx for virtio net.
 #define NET_QUEUE_RX 0
@@ -25,7 +26,7 @@
 
 struct virtio_net_init_params {
     uint8_t mac[6];
-    const char *tap;
+    char tap[IFNAMSIZ];
 };
 
 // Max iov entries for a single descriptor chain.  Each descriptor in the
