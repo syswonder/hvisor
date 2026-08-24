@@ -25,6 +25,8 @@ static uint8_t trashbuf[1024];
 
 static ConsoleDev *init_console_dev() {
     ConsoleDev *dev = (ConsoleDev *)malloc(sizeof(ConsoleDev));
+    if (!dev)
+        return NULL;
     dev->config.cols = 80;
     dev->config.rows = 25;
     dev->master_fd = -1;
@@ -96,18 +98,25 @@ static int virtio_console_init(VirtIODevice *vdev) {
     master_fd = posix_openpt(O_RDWR | O_NOCTTY);
     if (master_fd < 0) {
         log_error("Failed to open master pty, errno is %d", errno);
+        return -1;
     }
     if (grantpt(master_fd) < 0) {
         log_error("Failed to grant pty, errno is %d", errno);
+        close(master_fd);
+        return -1;
     }
     if (unlockpt(master_fd) < 0) {
         log_error("Failed to unlock pty, errno is %d", errno);
+        close(master_fd);
+        return -1;
     }
     dev->master_fd = master_fd;
 
     slave_name = ptsname(master_fd);
     if (slave_name == NULL) {
         log_error("Failed to get slave name, errno is %d", errno);
+        close(master_fd);
+        return -1;
     }
     log_info("char device redirected to %s", slave_name);
     // Open and keep a slave fd in this process. Without a slave peer,
@@ -115,6 +124,7 @@ static int virtio_console_init(VirtIODevice *vdev) {
     slave_fd = open(slave_name, O_RDWR);
     if (slave_fd < 0) {
         log_error("Failed to open slave pty, errno is %d", errno);
+        close(master_fd);
         return -1;
     }
 
