@@ -352,16 +352,18 @@ pub(crate) fn translate_bridge_bus_reg(
     // Device/function remapping does not change bridge routing. If every bus
     // visible through this bridge keeps its number, preserve the full firmware
     // value, including reserved subordinate ranges and the latency byte.
+    let mut visible_bus_mappings = bus_map
+        .iter()
+        .filter(|config| {
+            config.domain == bdf.domain()
+                && (config.bus == physical_primary
+                    || (config.bus >= physical_secondary && config.bus <= physical_subordinate))
+        })
+        .peekable();
     let identity_bus_map = physical_primary == bdf.bus()
         && bdf.bus() == vbdf.bus()
-        && bus_map
-            .iter()
-            .filter(|config| {
-                config.domain == bdf.domain()
-                    && (config.bus == physical_primary
-                        || (config.bus >= physical_secondary && config.bus <= physical_subordinate))
-            })
-            .all(|config| config.bus == config.v_bus);
+        && visible_bus_mappings.peek().is_some()
+        && visible_bus_mappings.all(|config| config.bus == config.v_bus);
     if identity_bus_map {
         return firmware_reg;
     }
@@ -1981,6 +1983,7 @@ impl<B: BarAllocator> PciIterator<B> {
                 }
                 // Build MSI/MSIX info once during device discovery
                 node.build_msi_info();
+                node.config_value_init();
                 node.set_vbdf(bdf, self.bus_range.end as u8);
 
                 Some(node)
@@ -2013,6 +2016,7 @@ impl<B: BarAllocator> PciIterator<B> {
                 }
                 // Build MSI/MSIX info once during device discovery
                 node.build_msi_info();
+                node.config_value_init();
                 node.set_vbdf(bdf, self.bus_range.end as u8);
 
                 Some(node)
@@ -2020,12 +2024,14 @@ impl<B: BarAllocator> PciIterator<B> {
             _ => {
                 warn!("unknown type");
                 let pci_header = Arc::new(pci_header);
-                Some(VirtualPciConfigSpace::unknown(
+                let mut node = VirtualPciConfigSpace::unknown(
                     bdf,
                     pci_addr_base,
                     pci_header,
                     (device_id, vender_id),
-                ))
+                );
+                node.config_value_init();
+                Some(node)
             }
         }
     }
@@ -2209,7 +2215,6 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
     fn next(&mut self) -> Option<Self::Item> {
         while !self.is_finish {
             if let Some(mut node) = self.get_node() {
-                node.config_value_init();
                 let bus_begin = self.bus_range.start as u8;
                 let domain = self.domain;
                 /*
