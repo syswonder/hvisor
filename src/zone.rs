@@ -524,7 +524,11 @@ impl ZoneInner {
                         })
                     {
                         let mut vdev = dev.read().config_space.clone();
-                        vdev.set_vbdf(vbdf, target_pci_config.bus_range_end as u8);
+                        vdev.set_vbdf_with_bus_map(
+                            vbdf,
+                            target_pci_config.bus_range_end as u8,
+                            &filtered_devices,
+                        );
                         let msi_count = vdev.get_msi_count();
                         domain_msi_count += msi_count;
                         self.vpci_bus_mut().insert(vbdf, vdev);
@@ -544,7 +548,11 @@ impl ZoneInner {
                             } else {
                                 dev.set_zone_id(Some(_zone_id as u32));
                                 let mut vdev_inner = dev.read().config_space.clone();
-                                vdev_inner.set_vbdf(vbdf, target_pci_config.bus_range_end as u8);
+                                vdev_inner.set_vbdf_with_bus_map(
+                                    vbdf,
+                                    target_pci_config.bus_range_end as u8,
+                                    &filtered_devices,
+                                );
                                 let msi_count = vdev_inner.get_msi_count();
                                 domain_msi_count += msi_count;
                                 self.vpci_bus_mut().insert(vbdf, vdev_inner);

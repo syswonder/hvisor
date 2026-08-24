@@ -56,6 +56,7 @@ pub struct ConfigValue {
     bar_value: [u32; 6],
     rom_value: u32,
     bridge_bus_reg: u32,
+    firmware_bridge_bus_reg: Option<u32>,
 }
 
 impl Default for ConfigValue {
@@ -66,6 +67,7 @@ impl Default for ConfigValue {
             bar_value: [0; 6],
             rom_value: 0,
             bridge_bus_reg: 0,
+            firmware_bridge_bus_reg: None,
         }
     }
 }
@@ -81,6 +83,7 @@ impl ConfigValue {
             bar_value: [0; 6],
             rom_value: 0,
             bridge_bus_reg: 0,
+            firmware_bridge_bus_reg: None,
         }
     }
 
@@ -153,6 +156,14 @@ impl ConfigValue {
 
     pub fn set_bridge_bus_reg(&mut self, value: u32) {
         self.bridge_bus_reg = value;
+    }
+
+    pub fn get_firmware_bridge_bus_reg(&self) -> Option<u32> {
+        self.firmware_bridge_bus_reg
+    }
+
+    pub fn set_firmware_bridge_bus_reg(&mut self, value: u32) {
+        self.firmware_bridge_bus_reg = Some(value);
     }
 }
 
@@ -319,6 +330,68 @@ impl Debug for Bdf {
             0, self.bus, self.device, self.function
         )
     }
+}
+
+fn default_bridge_bus_reg(primary: u8, domain_bus_range_end: u8) -> u32 {
+    let secondary = primary.saturating_add(1);
+    ((domain_bus_range_end as u32) << 16) | ((secondary as u32) << 8) | (primary as u32)
+}
+
+#[cfg(no_pcie_bar_realloc)]
+pub(crate) fn translate_bridge_bus_reg(
+    firmware_reg: u32,
+    bdf: Bdf,
+    vbdf: Bdf,
+    bus_map: &[HvPciDevConfig],
+    domain_bus_range_end: u8,
+) -> u32 {
+    let physical_primary = firmware_reg as u8;
+    let physical_secondary = (firmware_reg >> 8) as u8;
+    let physical_subordinate = (firmware_reg >> 16) as u8;
+
+    // Device/function remapping does not change bridge routing. If every bus
+    // visible through this bridge keeps its number, preserve the full firmware
+    // value, including reserved subordinate ranges and the latency byte.
+    let identity_bus_map = physical_primary == bdf.bus()
+        && bdf.bus() == vbdf.bus()
+        && bus_map
+            .iter()
+            .filter(|config| {
+                config.domain == bdf.domain()
+                    && (config.bus == physical_primary
+                        || (config.bus >= physical_secondary && config.bus <= physical_subordinate))
+            })
+            .all(|config| config.bus == config.v_bus);
+    if identity_bus_map {
+        return firmware_reg;
+    }
+
+    let mapped_bus = |physical_bus: u8| {
+        bus_map
+            .iter()
+            .find(|config| config.domain == bdf.domain() && config.bus == physical_bus)
+            .map(|config| config.v_bus)
+    };
+
+    let virtual_primary = vbdf.bus();
+    let virtual_secondary =
+        mapped_bus(physical_secondary).unwrap_or_else(|| virtual_primary.saturating_add(1));
+    let virtual_subordinate = bus_map
+        .iter()
+        .filter(|config| {
+            config.domain == bdf.domain()
+                && config.bus >= physical_secondary
+                && config.bus <= physical_subordinate
+        })
+        .map(|config| config.v_bus)
+        .max()
+        .unwrap_or(domain_bus_range_end)
+        .max(virtual_secondary);
+
+    (firmware_reg & 0xff00_0000)
+        | ((virtual_subordinate as u32) << 16)
+        | ((virtual_secondary as u32) << 8)
+        | virtual_primary as u32
 }
 
 /* 0: ro;
@@ -1500,32 +1573,55 @@ impl VirtualPciConfigSpace {
     pub fn set_vbdf(&mut self, vbdf: Bdf, domain_bus_range_end: u8) {
         self.vbdf = vbdf;
         if self.config_type == HeaderType::PciBridge {
-            self.init_bridge_bus_reg(domain_bus_range_end);
+            self.init_bridge_bus_reg(domain_bus_range_end, None);
         }
     }
 
-    fn init_bridge_bus_reg(&mut self, domain_bus_range_end: u8) {
-        // LoongArch firmware programs the physical PCI topology before hvisor
-        // starts.  Preserve those bus numbers for an identity-mapped bridge:
-        // different root ports may use non-consecutive secondary bus numbers.
-        #[cfg(all(no_pcie_bar_realloc, loongarch64_pcie))]
-        if self.dev_type == VpciDevType::Physical && self.vbdf == self.bdf {
-            if let Ok(value) = self.backend.read(0x18, 4) {
-                self.config_value.set_bridge_bus_reg(value as u32);
+    pub fn set_vbdf_with_bus_map(
+        &mut self,
+        vbdf: Bdf,
+        domain_bus_range_end: u8,
+        bus_map: &[HvPciDevConfig],
+    ) {
+        self.vbdf = vbdf;
+        if self.config_type == HeaderType::PciBridge {
+            self.init_bridge_bus_reg(domain_bus_range_end, Some(bus_map));
+        }
+    }
+
+    fn init_bridge_bus_reg(
+        &mut self,
+        domain_bus_range_end: u8,
+        bus_map: Option<&[HvPciDevConfig]>,
+    ) {
+        #[cfg(not(no_pcie_bar_realloc))]
+        let _ = bus_map;
+
+        #[cfg(no_pcie_bar_realloc)]
+        if self.dev_type == VpciDevType::Physical {
+            if let Some(firmware_reg) = self.config_value.get_firmware_bridge_bus_reg() {
+                let value = if let Some(bus_map) = bus_map {
+                    translate_bridge_bus_reg(
+                        firmware_reg,
+                        self.bdf,
+                        self.vbdf,
+                        bus_map,
+                        domain_bus_range_end,
+                    )
+                } else if self.bdf.bus() == self.vbdf.bus() {
+                    firmware_reg
+                } else {
+                    default_bridge_bus_reg(self.vbdf.bus(), domain_bus_range_end)
+                };
+                self.config_value.set_bridge_bus_reg(value);
                 return;
             }
-            warn!(
-                "LoongArch PCI bridge {:#?}: failed to read firmware bus numbers, using virtual defaults",
-                self.bdf
-            );
         }
 
-        let primary = self.vbdf.bus();
-        let secondary = primary.saturating_add(1);
-        let subordinate = domain_bus_range_end;
-        self.config_value.set_bridge_bus_reg(
-            ((subordinate as u32) << 16) | ((secondary as u32) << 8) | (primary as u32),
-        );
+        self.config_value.set_bridge_bus_reg(default_bridge_bus_reg(
+            self.vbdf.bus(),
+            domain_bus_range_end,
+        ));
     }
 
     pub fn get_base(&self) -> PciConfigAddress {
@@ -1621,6 +1717,24 @@ impl VirtualPciConfigSpace {
         for slot in 0..6 {
             let bar_value = self.bararr[slot].get_value();
             self.config_value.set_bar_value(slot, bar_value as u32);
+        }
+
+        // With BAR reallocation disabled, enumeration follows the topology
+        // already programmed by firmware. Cache the bridge bus register here
+        // so every backend can later preserve or translate the same topology.
+        #[cfg(no_pcie_bar_realloc)]
+        if self.config_type == HeaderType::PciBridge && self.dev_type == VpciDevType::Physical {
+            match self.backend.read(0x18, 4) {
+                Ok(value) => {
+                    let value = value as u32;
+                    self.config_value.set_firmware_bridge_bus_reg(value);
+                    self.config_value.set_bridge_bus_reg(value);
+                }
+                Err(_) => warn!(
+                    "PCI bridge {:#?}: failed to preserve firmware bus numbers, using virtual defaults",
+                    self.bdf
+                ),
+            }
         }
     }
 
@@ -2129,12 +2243,7 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
                         // bus assignments — making devices behind bridges invisible.
                         #[cfg(no_pcie_bar_realloc)]
                         let next_bus = {
-                            let bridge_base = node.get_base();
-                            let bus_reg = unsafe {
-                                let ptr = PciConfigMmio::new(bridge_base, CONFIG_LENTH)
-                                    .access::<u32>(0x18);
-                                ptr.read_volatile()
-                            };
+                            let bus_reg = node.config_value.get_bridge_bus_reg();
                             let fw_secondary = ((bus_reg >> 8) & 0xFF) as u8;
                             let fw_subordinate = ((bus_reg >> 16) & 0xFF) as u8;
                             info!(
