@@ -147,6 +147,22 @@ nohup ./hvisor virtio start virtio_cfg.json &
 
 要使用virtio-gpu设备，需要在hvisor-tool编译命令中加入`VIRTIO_GPU=y`字段，同时还需安装`libdrm`并进行其他配置，具体请见[hvisor-book](https://hvisor.syswonder.org/chap04/subchap03/VirtIO/GPUDevice.html)和[配置文件示例](./examples/qemu-aarch64/with_virtio_gpu/README.md)。配置文件中如果`gpu`设备`status`属性为`enable`，则会创建一个 Virtio-gpu 设备，其 MMIO 区域从 `0xa003400` 开始，长度为 `0x200`，中断号为 74。默认的扫描输出(scanout)尺寸为宽度 `1280px`，高度 `800px`。
 
+#### 向运行中的守护进程添加 Virtio 设备
+
+使用`virtio start`启动Virtio守护进程后，可以通过`virtio add`向运行中的守护进程发送新的Virtio设备配置：
+
+```bash
+nohup ./hvisor virtio start virtio_cfg.json &
+./hvisor virtio add virtio_add_config.json
+./hvisor zone start <vm_config.json>
+```
+
+`virtio add`使用与`virtio start`相同的`zones`、`memory_region`和`devices` JSON结构。配置文件应描述目标zone使用的内存区域和已启用的Virtio设备。守护进程通过`/run/hvisor-virtio.sock`接收请求；该Unix domain socket由`virtio start`创建，不需要手动管理。
+
+命令成功时输出`virtio add succeeded`，如果配置校验、内存映射或设备初始化失败，则输出`virtio add failed`。一次请求包含多个已启用设备时，守护进程会先创建临时设备，只有全部初始化成功后才发布这些设备。如果其中一个设备失败，本次请求创建的临时设备及其资源会被清理，已有的设备表不会被修改。
+
+该流程是在对应zone启动前向守护进程添加Virtio设备，不表示可以向已经运行的guest热插拔此前不存在的MMIO设备。
+
 #### 关闭Virtio设备
 
 执行该命令即可关闭Virtio守护进程及所有创建的设备：
