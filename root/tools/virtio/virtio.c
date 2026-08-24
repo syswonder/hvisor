@@ -25,9 +25,11 @@
 #include <sys/mman.h>
 #include <sys/prctl.h>
 #include <sys/signalfd.h>
+#include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/time.h>
 #include <sys/uio.h>
+#include <sys/un.h>
 #include <time.h>
 #include <unistd.h>
 
@@ -53,9 +55,34 @@ static int epoll_fd = -1;
 volatile struct virtio_bridge *virtio_bridge;
 
 pthread_mutex_t RES_MUTEX = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t VDEV_MUTEX = PTHREAD_MUTEX_INITIALIZER;
+static pthread_mutex_t ZONE_MEM_MUTEX = PTHREAD_MUTEX_INITIALIZER;
 VirtIODevice *vdevs[MAX_DEVS];
 int vdevs_num;
+
+#define VIRTIO_CTRL_SOCKET_PATH "/run/hvisor-virtio.sock"
+#define VIRTIO_CTRL_OP_ADD "add"
+#define VIRTIO_CTRL_MSG_LEN 256
+
+typedef struct virtio_control_request {
+    char op[16];
+    char json_path[PATH_MAX];
+} VirtioControlRequest;
+
+typedef struct virtio_control_response {
+    int status;
+    char message[VIRTIO_CTRL_MSG_LEN];
+} VirtioControlResponse;
+
+static int ctrl_fd = -1;
+static pthread_t ctrl_tid;
+static atomic_bool ctrl_running = false;
+static bool ctrl_thread_started;
+static pthread_mutex_t ctrl_client_lock = PTHREAD_MUTEX_INITIALIZER;
+static int ctrl_client_fd = -1;
 static _Atomic uint64_t virtio_irq_trace_seq;
+
+static void stop_virtio_control_server(void);
 
 static bool virtio_trace_sample(uint64_t seq) {
     return seq < 128 || (seq != 0 && (seq & (seq - 1)) == 0);
@@ -95,6 +122,36 @@ struct zone_mem {
 };
 
 struct zone_mem zone_mem[MAX_ZONES];
+
+typedef struct virtio_memory_region_config {
+    uint64_t zone0_ipa;
+    uint64_t zonex_ipa;
+    uint64_t size;
+} VirtioMemoryRegionConfig;
+
+typedef struct virtio_device_config {
+    VirtioDeviceType type;
+    uint32_t zone_id;
+    uint64_t addr;
+    uint64_t len;
+    uint32_t irq;
+    bool enabled;
+    const struct virtio_config_ops *config_ops;
+    void *params;
+} VirtioDeviceConfig;
+
+typedef struct virtio_zone_config {
+    uint32_t zone_id;
+    size_t memory_region_num;
+    VirtioMemoryRegionConfig memory_regions[CONFIG_MAX_MEMORY_REGIONS];
+    size_t device_num;
+    VirtioDeviceConfig devices[MAX_DEVS];
+} VirtioZoneConfig;
+
+typedef struct virtio_config {
+    size_t zone_num;
+    VirtioZoneConfig zones[MAX_ZONES];
+} VirtioConfig;
 
 const char *virtio_device_type_to_string(VirtioDeviceType type) {
     switch (type) {
@@ -226,10 +283,40 @@ static int init_virtio_queue(VirtIODevice *vdev,
 // Device creation — fully table-driven.
 // ---------------------------------------------------------------------------
 
-// create a virtio device.
-VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
-                                   uint64_t base_addr, uint64_t len,
-                                   uint32_t irq_id, const void *params) {
+static void destroy_unpublished_virtio_device(VirtIODevice *vdev) {
+    if (!vdev)
+        return;
+
+    if (vdev->virtio_close) {
+        vdev->virtio_close(vdev);
+        return;
+    }
+
+    free(vdev->vqs);
+    free(vdev);
+}
+
+static int publish_virtio_devices(VirtIODevice **new_devs, size_t count) {
+    if (count == 0)
+        return 0;
+
+    pthread_mutex_lock(&VDEV_MUTEX);
+    if (count > MAX_DEVS - (size_t)vdevs_num) {
+        pthread_mutex_unlock(&VDEV_MUTEX);
+        log_error("virtio device num exceed max limit");
+        return -1;
+    }
+
+    for (size_t i = 0; i < count; i++)
+        vdevs[vdevs_num++] = new_devs[i];
+    pthread_mutex_unlock(&VDEV_MUTEX);
+    return 0;
+}
+
+static VirtIODevice *
+create_virtio_device_unpublished(VirtioDeviceType dev_type, uint32_t zone_id,
+                                 uint64_t base_addr, uint64_t len,
+                                 uint32_t irq_id, const void *params) {
     const struct virtio_device_ops *ops = lookup_ops(dev_type);
     if (!ops) {
         log_error("unsupported virtio device type %d", dev_type);
@@ -241,11 +328,6 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
         "irq id %d",
         virtio_device_type_to_string(dev_type), zone_id, base_addr, len,
         irq_id);
-
-    if (vdevs_num >= MAX_DEVS) {
-        log_error("virtio device num exceed max limit");
-        return NULL;
-    }
 
     VirtIODevice *vdev = calloc(1, sizeof(VirtIODevice));
     if (!vdev) {
@@ -276,12 +358,27 @@ VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
         goto err;
 
     log_info("create %s success", virtio_device_type_to_string(dev_type));
-    vdevs[vdevs_num++] = vdev;
     return vdev;
 
 err:
     ops->close(vdev);
     return NULL;
+}
+
+// Create and publish one device for the legacy virtio start path.
+VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
+                                   uint64_t base_addr, uint64_t len,
+                                   uint32_t irq_id, const void *params) {
+    VirtIODevice *vdev = create_virtio_device_unpublished(
+        dev_type, zone_id, base_addr, len, irq_id, params);
+    if (!vdev)
+        return NULL;
+
+    if (publish_virtio_devices(&vdev, 1) != 0) {
+        destroy_unpublished_virtio_device(vdev);
+        return NULL;
+    }
+    return vdev;
 }
 
 static int init_virtio_queue(VirtIODevice *vdev,
@@ -371,6 +468,10 @@ bool desc_is_writable(volatile VirtqDesc *desc_table, uint16_t idx) {
 }
 
 void *get_virt_addr(void *zonex_ipa, int zone_id) {
+    if (zone_id < 0 || zone_id >= MAX_ZONES)
+        return NULL;
+
+    pthread_mutex_lock(&ZONE_MEM_MUTEX);
     struct zone_mem *z = &zone_mem[zone_id];
     uintptr_t ipa = (uintptr_t)zonex_ipa;
 
@@ -378,10 +479,13 @@ void *get_virt_addr(void *zonex_ipa, int zone_id) {
         uintptr_t lef = z->regions[i].zonex_ipa;
         uintptr_t rig = z->regions[i].zonex_ipa + z->regions[i].mem_size;
         if (lef <= ipa && ipa < rig) {
-            return (void *)(ipa - lef + z->regions[i].virt_addr);
+            void *virt_addr = (void *)(ipa - lef + z->regions[i].virt_addr);
+            pthread_mutex_unlock(&ZONE_MEM_MUTEX);
+            return virt_addr;
         }
     }
 
+    pthread_mutex_unlock(&ZONE_MEM_MUTEX);
     log_error("can't find zone mem index for zonex_ipa = 0x%" PRIxPTR, ipa);
     return NULL;
 }
@@ -1141,18 +1245,21 @@ void virtio_finish_cfg_req(uint32_t target_cpu, uint64_t value) {
 }
 
 int virtio_handle_req(volatile struct device_req *req) {
-    int i;
     uint64_t value = 0;
+    VirtIODevice *vdev = NULL;
 
     // Check if the request corresponds to a virtio device in a specific zone
-    for (i = 0; i < vdevs_num; ++i) {
+    pthread_mutex_lock(&VDEV_MUTEX);
+    for (int i = 0; i < vdevs_num; ++i) {
         if ((req->src_zone == vdevs[i]->zone_id) &&
-            in_range(req->address, vdevs[i]->base_addr,
-                     vdevs[i]->len)) // Check if memory regions overlap
+            in_range(req->address, vdevs[i]->base_addr, vdevs[i]->len)) {
+            vdev = vdevs[i];
             break;
+        }
     }
+    pthread_mutex_unlock(&VDEV_MUTEX);
 
-    if (i == vdevs_num) {
+    if (!vdev) {
         log_warn("no matched virtio dev in zone %d, address is 0x%x",
                  req->src_zone, req->address);
         // No device at this address; return 0 so the guest sees an absent
@@ -1160,8 +1267,6 @@ int virtio_handle_req(volatile struct device_req *req) {
         virtio_finish_cfg_req(req->src_cpu, 0);
         return -1;
     }
-
-    VirtIODevice *vdev = vdevs[i];
 
     uint64_t offs = req->address - vdev->base_addr;
 
@@ -1186,10 +1291,20 @@ int virtio_handle_req(volatile struct device_req *req) {
 
 void virtio_close() {
     log_warn("virtio devices will be closed");
+    stop_virtio_control_server();
     destroy_event_monitor();
-    for (int i = 0; i < vdevs_num; i++)
-        vdevs[i]->virtio_close(vdevs[i]);
-    close(ko_fd);
+    pthread_mutex_lock(&VDEV_MUTEX);
+    for (int i = 0; i < vdevs_num; i++) {
+        if (vdevs[i] && vdevs[i]->virtio_close)
+            vdevs[i]->virtio_close(vdevs[i]);
+        vdevs[i] = NULL;
+    }
+    vdevs_num = 0;
+    pthread_mutex_unlock(&VDEV_MUTEX);
+    if (ko_fd >= 0) {
+        close(ko_fd);
+        ko_fd = -1;
+    }
 
     if (efd >= 0) {
         close(efd);
@@ -1206,13 +1321,19 @@ void virtio_close() {
         epoll_fd = -1;
     }
 
-    munmap((void *)virtio_bridge, MMAP_SIZE);
+    if (virtio_bridge && virtio_bridge != MAP_FAILED) {
+        munmap((void *)virtio_bridge, MMAP_SIZE);
+        virtio_bridge = NULL;
+    }
+    pthread_mutex_lock(&ZONE_MEM_MUTEX);
     for (int i = 0; i < MAX_ZONES; i++) {
         struct zone_mem *z = &zone_mem[i];
         for (size_t j = 0; j < z->num_regions; j++)
             if (z->regions[j].mem_size != 0)
                 munmap((void *)z->regions[j].virt_addr, z->regions[j].mem_size);
+        memset(z, 0, sizeof(*z));
     }
+    pthread_mutex_unlock(&ZONE_MEM_MUTEX);
 
     log_warn("virtio daemon exit successfully");
 }
@@ -1496,212 +1617,544 @@ unmap:
     return -1;
 }
 
-int create_virtio_device_from_json(const cJSON *device_json, int zone_id) {
-    char *status =
-        SAFE_CJSON_GET_OBJECT_ITEM(device_json, "status")->valuestring;
-    if (strcmp(status, "disable") == 0)
-        return 0;
-
-    char *type = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "type")->valuestring;
-
-    static const struct {
-        const char *name;
-        VirtioDeviceType type;
-    } device_type_map[] = {
-        {"blk", VirtioTBlock},       {"net", VirtioTNet},
-        {"console", VirtioTConsole}, {"gpu", VirtioTGPU},
-        {"scmi", VirtioTSCMI},       {NULL, VirtioTNone},
-    };
-
-    VirtioDeviceType dev_type = VirtioTNone;
-    for (int i = 0; device_type_map[i].name != NULL; i++) {
-        if (strcmp(type, device_type_map[i].name) == 0) {
-            dev_type = device_type_map[i].type;
-            break;
-        }
-    }
-    if (dev_type == VirtioTNone) {
+static int parse_virtio_device_type(const char *type,
+                                    VirtioDeviceType *dev_type) {
+    if (strcmp(type, "blk") == 0)
+        *dev_type = VirtioTBlock;
+    else if (strcmp(type, "net") == 0)
+        *dev_type = VirtioTNet;
+    else if (strcmp(type, "console") == 0)
+        *dev_type = VirtioTConsole;
+    else if (strcmp(type, "gpu") == 0)
+        *dev_type = VirtioTGPU;
+    else if (strcmp(type, "scmi") == 0)
+        *dev_type = VirtioTSCMI;
+    else {
         log_error("unknown device type %s", type);
         return -1;
     }
+    return 0;
+}
 
-    uint64_t base_addr = 0, len = 0;
-    uint32_t irq_id = 0;
+static void free_virtio_device_config(VirtioDeviceConfig *cfg) {
+    if (cfg->params && cfg->config_ops && cfg->config_ops->free)
+        cfg->config_ops->free(cfg->params);
+    cfg->params = NULL;
+}
+
+static void free_virtio_config(VirtioConfig *cfg) {
+    for (size_t zi = 0; zi < cfg->zone_num; zi++)
+        for (size_t di = 0; di < cfg->zones[zi].device_num; di++)
+            free_virtio_device_config(&cfg->zones[zi].devices[di]);
+}
+
+static int parse_virtio_device_config(const cJSON *device_json,
+                                      uint32_t zone_id,
+                                      VirtioDeviceConfig *cfg) {
+    memset(cfg, 0, sizeof(*cfg));
+    cfg->zone_id = zone_id;
+
+    cJSON *status = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "status");
+    if (!cJSON_IsString(status)) {
+        log_error("failed to parse device status");
+        return -1;
+    }
+    if (strcmp(status->valuestring, "disable") == 0)
+        return 0;
+    if (strcmp(status->valuestring, "enable") != 0) {
+        log_error("unknown device status %s", status->valuestring);
+        return -1;
+    }
+    cfg->enabled = true;
+
+    cJSON *type = SAFE_CJSON_GET_OBJECT_ITEM(device_json, "type");
+    if (!cJSON_IsString(type) ||
+        parse_virtio_device_type(type->valuestring, &cfg->type) != 0)
+        return -1;
+
     if (parse_json_u64(SAFE_CJSON_GET_OBJECT_ITEM(device_json, "addr"),
-                       &base_addr) != 0 ||
-        parse_json_u64(SAFE_CJSON_GET_OBJECT_ITEM(device_json, "len"), &len) !=
-            0 ||
+                       &cfg->addr) != 0 ||
+        parse_json_u64(SAFE_CJSON_GET_OBJECT_ITEM(device_json, "len"),
+                       &cfg->len) != 0 ||
         parse_json_u32(SAFE_CJSON_GET_OBJECT_ITEM(device_json, "irq"),
-                       &irq_id) != 0) {
+                       &cfg->irq) != 0 ||
+        cfg->addr == 0 || cfg->len == 0 || cfg->irq == 0) {
         log_error("failed to parse addr, len, or irq");
         return -1;
     }
 
-    if (base_addr == 0 || len == 0 || irq_id == 0) {
-        log_error("missing arguments");
+    cfg->config_ops = lookup_config_ops(cfg->type);
+    if (!cfg->config_ops || !cfg->config_ops->parse ||
+        cfg->config_ops->parse(device_json, &cfg->params) != 0) {
+        log_error("failed to parse parameters for %s",
+                  virtio_device_type_to_string(cfg->type));
+        free_virtio_device_config(cfg);
         return -1;
     }
-
-    const struct virtio_config_ops *cfg_ops = lookup_config_ops(dev_type);
-    void *params = NULL;
-    if (cfg_ops && cfg_ops->parse &&
-        cfg_ops->parse(device_json, &params) != 0) {
-        return -1;
-    }
-
-    VirtIODevice *vdev =
-        create_virtio_device(dev_type, zone_id, base_addr, len, irq_id, params);
-
-    if (cfg_ops && cfg_ops->free)
-        cfg_ops->free(params);
-
-    if (!vdev)
-        return -1;
-
     return 0;
 }
 
-int virtio_start_from_json(char *json_path) {
-    char *buffer = NULL;
-    uint64_t file_size;
-    int zone_id, num_devices = 0, err = 0, num_zones = 0;
-    void *zone0_ipa, *zonex_ipa, *virt_addr;
-    unsigned long long mem_size;
-    buffer = read_file(json_path, &file_size);
-    buffer[file_size] = '\0';
+static int parse_virtio_memory_region_config(const cJSON *mem_json,
+                                             VirtioMemoryRegionConfig *cfg) {
+    return parse_json_u64(SAFE_CJSON_GET_OBJECT_ITEM(mem_json, "zone0_ipa"),
+                          &cfg->zone0_ipa) != 0 ||
+                   parse_json_u64(
+                       SAFE_CJSON_GET_OBJECT_ITEM(mem_json, "zonex_ipa"),
+                       &cfg->zonex_ipa) != 0 ||
+                   parse_json_u64(SAFE_CJSON_GET_OBJECT_ITEM(mem_json, "size"),
+                                  &cfg->size) != 0
+               ? -1
+               : 0;
+}
 
-    // Read zones
-    cJSON *root = SAFE_CJSON_PARSE(buffer);
-    cJSON *zones_json = SAFE_CJSON_GET_OBJECT_ITEM(root, "zones");
-    num_zones = SAFE_CJSON_GET_ARRAY_SIZE(zones_json);
-    if (num_zones > MAX_ZONES) {
-        log_error("Exceed maximum zone number");
-        err = -1;
-        goto err_out;
+static int parse_virtio_zone_config(const cJSON *zone_json,
+                                    VirtioZoneConfig *cfg) {
+    memset(cfg, 0, sizeof(*cfg));
+    cJSON *id = SAFE_CJSON_GET_OBJECT_ITEM(zone_json, "id");
+    if (!id)
+        id = SAFE_CJSON_GET_OBJECT_ITEM(zone_json, "zone_id");
+    if (parse_json_u32(id, &cfg->zone_id) != 0 || cfg->zone_id >= MAX_ZONES)
+        return -1;
+
+    cJSON *memory = SAFE_CJSON_GET_OBJECT_ITEM(zone_json, "memory_region");
+    int memory_num = SAFE_CJSON_GET_ARRAY_SIZE(memory);
+    if (memory_num < 0 || memory_num > CONFIG_MAX_MEMORY_REGIONS)
+        return -1;
+    cfg->memory_region_num = (size_t)memory_num;
+    for (size_t i = 0; i < cfg->memory_region_num; i++)
+        if (parse_virtio_memory_region_config(
+                SAFE_CJSON_GET_ARRAY_ITEM(memory, i),
+                &cfg->memory_regions[i]) != 0)
+            return -1;
+
+    cJSON *devices = SAFE_CJSON_GET_OBJECT_ITEM(zone_json, "devices");
+    int device_num = SAFE_CJSON_GET_ARRAY_SIZE(devices);
+    if (device_num < 0 || device_num > MAX_DEVS)
+        return -1;
+    cfg->device_num = (size_t)device_num;
+    for (size_t i = 0; i < cfg->device_num; i++) {
+        if (parse_virtio_device_config(SAFE_CJSON_GET_ARRAY_ITEM(devices, i),
+                                       cfg->zone_id, &cfg->devices[i]) != 0)
+            return -1;
+    }
+    return 0;
+}
+
+static int parse_virtio_config(const cJSON *root, VirtioConfig *cfg) {
+    memset(cfg, 0, sizeof(*cfg));
+    cJSON *zones = cJSON_GetObjectItemCaseSensitive(root, "zones");
+    if (!zones) {
+        cfg->zone_num = 1;
+        return parse_virtio_zone_config(root, &cfg->zones[0]);
     }
 
-    // Match zone information
-    for (int i = 0; i < num_zones; i++) {
-        cJSON *zone_json = SAFE_CJSON_GET_ARRAY_ITEM(zones_json, i);
-        cJSON *zone_id_json = SAFE_CJSON_GET_OBJECT_ITEM(zone_json, "id");
-        cJSON *memory_region_json =
-            SAFE_CJSON_GET_OBJECT_ITEM(zone_json, "memory_region");
-        cJSON *devices_json = SAFE_CJSON_GET_OBJECT_ITEM(zone_json, "devices");
-        uint32_t parsed_zone_id;
-        if (parse_json_u32(zone_id_json, &parsed_zone_id) != 0) {
-            log_error("failed to parse zone id");
-            err = -1;
-            goto err_out;
-        }
-        zone_id = (int)parsed_zone_id;
-        if (zone_id >= MAX_ZONES) {
-            log_error("Exceed maximum zone number");
-            err = -1;
-            goto err_out;
-        }
-        int num_mems = SAFE_CJSON_GET_ARRAY_SIZE(memory_region_json);
+    int zone_num = SAFE_CJSON_GET_ARRAY_SIZE(zones);
+    if (zone_num < 0 || zone_num > MAX_ZONES)
+        return -1;
+    cfg->zone_num = (size_t)zone_num;
+    for (size_t i = 0; i < cfg->zone_num; i++)
+        if (parse_virtio_zone_config(SAFE_CJSON_GET_ARRAY_ITEM(zones, i),
+                                     &cfg->zones[i]) != 0)
+            return -1;
+    return 0;
+}
 
-        if (num_mems > CONFIG_MAX_MEMORY_REGIONS) {
-            log_error("zone %d: %d memory regions exceeds "
-                      "CONFIG_MAX_MEMORY_REGIONS=%d",
-                      zone_id, num_mems, CONFIG_MAX_MEMORY_REGIONS);
-            err = -1;
-            goto err_out;
-        }
+static uint64_t range_end(uint64_t base, uint64_t len) {
+    return UINT64_MAX - base < len ? UINT64_MAX : base + len;
+}
 
-        struct zone_mem *z = &zone_mem[zone_id];
-        z->num_regions = num_mems;
+static bool ranges_overlap(uint64_t base_a, uint64_t len_a, uint64_t base_b,
+                           uint64_t len_b) {
+    if (len_a == 0 || len_b == 0)
+        return false;
+    return base_a < range_end(base_b, len_b) &&
+           base_b < range_end(base_a, len_a);
+}
 
-        // Memory regions
-        for (int j = 0; j < num_mems; j++) {
-            cJSON *mem_region =
-                SAFE_CJSON_GET_ARRAY_ITEM(memory_region_json, j);
-            uintptr_t zone0_ipa_val = 0, zonex_ipa_val = 0;
-            uint64_t mem_size_val = 0;
-            if (parse_json_address(
-                    SAFE_CJSON_GET_OBJECT_ITEM(mem_region, "zone0_ipa"),
-                    &zone0_ipa_val) != 0 ||
-                parse_json_address(
-                    SAFE_CJSON_GET_OBJECT_ITEM(mem_region, "zonex_ipa"),
-                    &zonex_ipa_val) != 0 ||
-                parse_json_u64(SAFE_CJSON_GET_OBJECT_ITEM(mem_region, "size"),
-                               &mem_size_val) != 0) {
-                log_error("failed to parse memory region");
-                err = -1;
-                goto err_out;
-            }
-            zone0_ipa = (void *)zone0_ipa_val;
-            zonex_ipa = (void *)zonex_ipa_val;
-            mem_size = mem_size_val;
-            if (mem_size == 0) {
-                log_error("Invalid memory size");
+static bool same_memory_region(const VirtioMemoryRegionConfig *a,
+                               const VirtioMemoryRegionConfig *b) {
+    return a->zone0_ipa == b->zone0_ipa && a->zonex_ipa == b->zonex_ipa &&
+           a->size == b->size;
+}
+
+static int find_zone_memory_region_locked(uint32_t zone_id,
+                                          const VirtioMemoryRegionConfig *mem) {
+    struct zone_mem *z = &zone_mem[zone_id];
+    for (size_t i = 0; i < z->num_regions; i++) {
+        struct zone_mem_region *existing = &z->regions[i];
+        VirtioMemoryRegionConfig current = {
+            .zone0_ipa = existing->zone0_ipa,
+            .zonex_ipa = existing->zonex_ipa,
+            .size = existing->mem_size,
+        };
+        if (same_memory_region(&current, mem))
+            return (int)i;
+        if (ranges_overlap(mem->zone0_ipa, mem->size, current.zone0_ipa,
+                           current.size) ||
+            ranges_overlap(mem->zonex_ipa, mem->size, current.zonex_ipa,
+                           current.size))
+            return -2;
+    }
+    return -1;
+}
+
+static int validate_virtio_config_devices(const VirtioConfig *cfg) {
+    size_t total = 0;
+    pthread_mutex_lock(&VDEV_MUTEX);
+    total = (size_t)vdevs_num;
+    for (size_t zi = 0; zi < cfg->zone_num; zi++) {
+        const VirtioZoneConfig *zone = &cfg->zones[zi];
+        for (size_t di = 0; di < zone->device_num; di++) {
+            const VirtioDeviceConfig *dev = &zone->devices[di];
+            if (!dev->enabled)
                 continue;
-            }
-
-            log_info(
-                "debug: zone0_ipa is %lx, zonex_ipa is %lx, mem_size is %lx",
-                zone0_ipa, zonex_ipa, mem_size);
-
-            // Map from zone0_ipa
-            virt_addr = mmap(NULL, mem_size, PROT_READ | PROT_WRITE, MAP_SHARED,
-                             ko_fd, (off_t)zone0_ipa);
-
-            log_info("debug: mmap zone0_ipa is %lx, zonex_ipa is %lx, "
-                     "mem_size is %lx finished",
-                     zone0_ipa, zonex_ipa, mem_size);
-
-            if (virt_addr == (void *)-1) {
-                log_error("mmap failed");
-                err = -1;
-                goto err_out;
-            }
-            z->regions[j] = (struct zone_mem_region){
-                .virt_addr = (uintptr_t)virt_addr,
-                .zone0_ipa = (uintptr_t)zone0_ipa,
-                .zonex_ipa = (uintptr_t)zonex_ipa,
-                .mem_size = mem_size,
-            };
-        }
-
-        num_devices = SAFE_CJSON_GET_ARRAY_SIZE(devices_json);
-        for (int j = 0; j < num_devices; j++) {
-            cJSON *device = SAFE_CJSON_GET_ARRAY_ITEM(devices_json, j);
-            err = create_virtio_device_from_json(device, zone_id);
-            if (err) {
-                log_error("create virtio device failed");
-                goto err_out;
+            if (++total > MAX_DEVS)
+                goto fail;
+            for (int i = 0; i < vdevs_num; i++)
+                if (vdevs[i]->zone_id == dev->zone_id &&
+                    ranges_overlap(dev->addr, dev->len, vdevs[i]->base_addr,
+                                   vdevs[i]->len))
+                    goto fail;
+            for (size_t pzi = 0; pzi <= zi; pzi++) {
+                const VirtioZoneConfig *previous = &cfg->zones[pzi];
+                size_t limit = pzi == zi ? di : previous->device_num;
+                for (size_t pdi = 0; pdi < limit; pdi++) {
+                    const VirtioDeviceConfig *previous_dev =
+                        &previous->devices[pdi];
+                    if (previous_dev->enabled &&
+                        previous_dev->zone_id == dev->zone_id &&
+                        ranges_overlap(dev->addr, dev->len, previous_dev->addr,
+                                       previous_dev->len))
+                        goto fail;
+                }
             }
         }
     }
+    pthread_mutex_unlock(&VDEV_MUTEX);
+    return 0;
+fail:
+    pthread_mutex_unlock(&VDEV_MUTEX);
+    log_error("virtio device limit or MMIO range conflict");
+    return -1;
+}
 
-err_out:
+static int mmap_virtio_zone_memory(const VirtioZoneConfig *cfg) {
+    for (size_t i = 0; i < cfg->memory_region_num; i++) {
+        const VirtioMemoryRegionConfig *mem = &cfg->memory_regions[i];
+        pthread_mutex_lock(&ZONE_MEM_MUTEX);
+        int found = find_zone_memory_region_locked(cfg->zone_id, mem);
+        if (found >= 0) {
+            pthread_mutex_unlock(&ZONE_MEM_MUTEX);
+            continue;
+        }
+        if (found == -2 || mem->size == 0 ||
+            zone_mem[cfg->zone_id].num_regions >= CONFIG_MAX_MEMORY_REGIONS) {
+            pthread_mutex_unlock(&ZONE_MEM_MUTEX);
+            return -1;
+        }
+        size_t slot = zone_mem[cfg->zone_id].num_regions;
+        pthread_mutex_unlock(&ZONE_MEM_MUTEX);
+
+        void *virt_addr = mmap(NULL, mem->size, PROT_READ | PROT_WRITE,
+                               MAP_SHARED, ko_fd, (off_t)mem->zone0_ipa);
+        if (virt_addr == MAP_FAILED)
+            return -1;
+
+        pthread_mutex_lock(&ZONE_MEM_MUTEX);
+        if (slot != zone_mem[cfg->zone_id].num_regions) {
+            pthread_mutex_unlock(&ZONE_MEM_MUTEX);
+            munmap(virt_addr, mem->size);
+            return -1;
+        }
+        zone_mem[cfg->zone_id].regions[slot] = (struct zone_mem_region){
+            .virt_addr = (uintptr_t)virt_addr,
+            .zone0_ipa = mem->zone0_ipa,
+            .zonex_ipa = mem->zonex_ipa,
+            .mem_size = mem->size,
+        };
+        zone_mem[cfg->zone_id].num_regions++;
+        pthread_mutex_unlock(&ZONE_MEM_MUTEX);
+    }
+    return 0;
+}
+
+static int create_virtio_config_devices(const VirtioConfig *cfg) {
+    VirtIODevice *new_devs[MAX_DEVS] = {0};
+    size_t count = 0;
+    for (size_t zi = 0; zi < cfg->zone_num; zi++) {
+        const VirtioZoneConfig *zone = &cfg->zones[zi];
+        for (size_t di = 0; di < zone->device_num; di++) {
+            const VirtioDeviceConfig *dev = &zone->devices[di];
+            if (!dev->enabled)
+                continue;
+            VirtIODevice *vdev = create_virtio_device_unpublished(
+                dev->type, dev->zone_id, dev->addr, dev->len, dev->irq,
+                dev->params);
+            if (!vdev || count == MAX_DEVS) {
+                if (vdev)
+                    destroy_unpublished_virtio_device(vdev);
+                for (size_t i = 0; i < count; i++)
+                    destroy_unpublished_virtio_device(new_devs[i]);
+                return -1;
+            }
+            new_devs[count++] = vdev;
+        }
+    }
+    if (publish_virtio_devices(new_devs, count) != 0) {
+        for (size_t i = 0; i < count; i++)
+            destroy_unpublished_virtio_device(new_devs[i]);
+        return -1;
+    }
+    return 0;
+}
+
+static ssize_t read_full(int fd, void *buf, size_t len) {
+    size_t off = 0;
+    while (off < len) {
+        ssize_t ret = read(fd, (char *)buf + off, len - off);
+        if (ret == 0)
+            return (ssize_t)off;
+        if (ret < 0) {
+            if (errno == EINTR)
+                continue;
+            return -1;
+        }
+        off += (size_t)ret;
+    }
+    return (ssize_t)off;
+}
+
+static ssize_t write_full(int fd, const void *buf, size_t len) {
+    size_t off = 0;
+    while (off < len) {
+        ssize_t ret = write(fd, (const char *)buf + off, len - off);
+        if (ret < 0) {
+            if (errno == EINTR)
+                continue;
+            return -1;
+        }
+        if (ret == 0)
+            return (ssize_t)off;
+        off += (size_t)ret;
+    }
+    return (ssize_t)off;
+}
+
+int virtio_start_from_json(char *json_path) {
+    uint64_t file_size = 0;
+    char *buffer = read_file(json_path, &file_size);
+    if (!buffer)
+        return -1;
+    buffer[file_size] = '\0';
+    cJSON *root = SAFE_CJSON_PARSE(buffer);
+    VirtioConfig config;
+    int err = -1;
+    if (!root)
+        goto out;
+    if (parse_virtio_config(root, &config) != 0 ||
+        validate_virtio_config_devices(&config) != 0)
+        goto out_config;
+    for (size_t i = 0; i < config.zone_num; i++)
+        if (mmap_virtio_zone_memory(&config.zones[i]) != 0)
+            goto out_config;
+    if (create_virtio_config_devices(&config) != 0)
+        goto out_config;
+    err = 0;
+out_config:
+    free_virtio_config(&config);
     cJSON_Delete(root);
+out:
     free(buffer);
     return err;
 }
 
-int virtio_start(int argc, char *argv[]) {
-    int opt, err = 0;
-    err = virtio_init(); // Initialize virtio dependencies
+static int virtio_add_from_json(const char *json_path) {
+    int err = virtio_start_from_json((char *)json_path);
     if (err)
-        return -1;
-
-    err = virtio_start_from_json(
-        argv[3]); // Start virtio devices based on virtio_cfg_*.json
-    if (err)
-        goto err_out;
-
-    for (int i = 0; i < vdevs_num; i++) {
+        return err;
+    pthread_mutex_lock(&VDEV_MUTEX);
+    for (int i = 0; i < vdevs_num; i++)
         virtio_bridge->mmio_addrs[i] = vdevs[i]->base_addr;
-    }
-
+    pthread_mutex_unlock(&VDEV_MUTEX);
     write_barrier();
     virtio_bridge->mmio_avail = 1;
     write_barrier();
+    return 0;
+}
 
-    handle_virtio_requests(); // Handle virtio requests
+static void fill_control_response(VirtioControlResponse *resp, int status,
+                                  const char *message) {
+    memset(resp, 0, sizeof(*resp));
+    resp->status = status;
+    snprintf(resp->message, sizeof(resp->message), "%s", message);
+}
+
+static void handle_control_client(int client_fd) {
+    VirtioControlRequest req;
+    VirtioControlResponse resp;
+    memset(&req, 0, sizeof(req));
+    if (read_full(client_fd, &req, sizeof(req)) != sizeof(req))
+        return;
+    req.op[sizeof(req.op) - 1] = '\0';
+    req.json_path[sizeof(req.json_path) - 1] = '\0';
+    if (strcmp(req.op, VIRTIO_CTRL_OP_ADD) != 0)
+        fill_control_response(&resp, -1,
+                              "unsupported virtio control operation");
+    else if (virtio_add_from_json(req.json_path) != 0)
+        fill_control_response(&resp, -1, "virtio add failed");
+    else
+        fill_control_response(&resp, 0, "virtio add succeeded");
+    if (atomic_load(&ctrl_running))
+        write_full(client_fd, &resp, sizeof(resp));
+}
+
+static void *virtio_control_loop(void *arg) {
+    (void)arg;
+    while (atomic_load(&ctrl_running)) {
+        int client_fd = accept(ctrl_fd, NULL, NULL);
+        if (client_fd < 0) {
+            if (errno == EINTR)
+                continue;
+            if (!atomic_load(&ctrl_running) &&
+                (errno == EINVAL || errno == EBADF || errno == ENOTSOCK))
+                break;
+            if (!atomic_load(&ctrl_running))
+                break;
+            log_error("accept virtio control client failed, errno is %d",
+                      errno);
+            continue;
+        }
+        pthread_mutex_lock(&ctrl_client_lock);
+        if (!atomic_load(&ctrl_running)) {
+            pthread_mutex_unlock(&ctrl_client_lock);
+            shutdown(client_fd, SHUT_RDWR);
+            close(client_fd);
+            break;
+        }
+        ctrl_client_fd = client_fd;
+        pthread_mutex_unlock(&ctrl_client_lock);
+        handle_control_client(client_fd);
+        pthread_mutex_lock(&ctrl_client_lock);
+        if (ctrl_client_fd == client_fd)
+            ctrl_client_fd = -1;
+        pthread_mutex_unlock(&ctrl_client_lock);
+        close(client_fd);
+    }
+    return NULL;
+}
+
+static int start_virtio_control_server(void) {
+    struct sockaddr_un addr;
+    unlink(VIRTIO_CTRL_SOCKET_PATH);
+    ctrl_fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (ctrl_fd < 0)
+        return -1;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    snprintf(addr.sun_path, sizeof(addr.sun_path), "%s",
+             VIRTIO_CTRL_SOCKET_PATH);
+    if (bind(ctrl_fd, (struct sockaddr *)&addr, sizeof(addr)) != 0 ||
+        listen(ctrl_fd, 8) != 0) {
+        close(ctrl_fd);
+        ctrl_fd = -1;
+        unlink(VIRTIO_CTRL_SOCKET_PATH);
+        return -1;
+    }
+    pthread_mutex_lock(&ctrl_client_lock);
+    ctrl_client_fd = -1;
+    pthread_mutex_unlock(&ctrl_client_lock);
+    atomic_store(&ctrl_running, true);
+    if (pthread_create(&ctrl_tid, NULL, virtio_control_loop, NULL) != 0) {
+        atomic_store(&ctrl_running, false);
+        close(ctrl_fd);
+        ctrl_fd = -1;
+        unlink(VIRTIO_CTRL_SOCKET_PATH);
+        return -1;
+    }
+    ctrl_thread_started = true;
+    return 0;
+}
+
+static void stop_virtio_control_server(void) {
+    if (!ctrl_thread_started && ctrl_fd < 0)
+        return;
+    atomic_store(&ctrl_running, false);
+    if (ctrl_fd >= 0)
+        shutdown(ctrl_fd, SHUT_RDWR);
+    pthread_mutex_lock(&ctrl_client_lock);
+    int client_fd = ctrl_client_fd;
+    pthread_mutex_unlock(&ctrl_client_lock);
+    if (client_fd >= 0)
+        shutdown(client_fd, SHUT_RDWR);
+    if (ctrl_thread_started) {
+        pthread_join(ctrl_tid, NULL);
+        ctrl_thread_started = false;
+    }
+    pthread_mutex_lock(&ctrl_client_lock);
+    ctrl_client_fd = -1;
+    pthread_mutex_unlock(&ctrl_client_lock);
+    if (ctrl_fd >= 0) {
+        close(ctrl_fd);
+        ctrl_fd = -1;
+    }
+    unlink(VIRTIO_CTRL_SOCKET_PATH);
+}
+
+int virtio_start(int argc, char *argv[]) {
+    int err;
+    if (argc < 4)
+        return -1;
+    err = virtio_init();
+    if (err)
+        return err;
+    err = virtio_start_from_json(argv[3]);
+    if (err)
+        goto err_out;
+    if (start_virtio_control_server() != 0) {
+        err = -1;
+        goto err_out;
+    }
+    pthread_mutex_lock(&VDEV_MUTEX);
+    for (int i = 0; i < vdevs_num; i++)
+        virtio_bridge->mmio_addrs[i] = vdevs[i]->base_addr;
+    pthread_mutex_unlock(&VDEV_MUTEX);
+    write_barrier();
+    virtio_bridge->mmio_avail = 1;
+    write_barrier();
+    handle_virtio_requests();
     return 0;
 err_out:
     virtio_close();
     return err;
+}
+
+int virtio_add(int argc, char *argv[]) {
+    VirtioControlRequest req;
+    VirtioControlResponse resp;
+    struct sockaddr_un addr;
+    char path[PATH_MAX];
+    if (argc < 4 || !realpath(argv[3], path))
+        return -1;
+    int fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0)
+        return -1;
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    snprintf(addr.sun_path, sizeof(addr.sun_path), "%s",
+             VIRTIO_CTRL_SOCKET_PATH);
+    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        close(fd);
+        return -1;
+    }
+    memset(&req, 0, sizeof(req));
+    snprintf(req.op, sizeof(req.op), "%s", VIRTIO_CTRL_OP_ADD);
+    snprintf(req.json_path, sizeof(req.json_path), "%s", path);
+    if (write_full(fd, &req, sizeof(req)) != sizeof(req) ||
+        read_full(fd, &resp, sizeof(resp)) != sizeof(resp)) {
+        close(fd);
+        return -1;
+    }
+    close(fd);
+    printf("%s\n", resp.message);
+    return resp.status;
 }
