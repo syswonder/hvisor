@@ -1505,6 +1505,21 @@ impl VirtualPciConfigSpace {
     }
 
     fn init_bridge_bus_reg(&mut self, domain_bus_range_end: u8) {
+        // LoongArch firmware programs the physical PCI topology before hvisor
+        // starts.  Preserve those bus numbers for an identity-mapped bridge:
+        // different root ports may use non-consecutive secondary bus numbers.
+        #[cfg(all(no_pcie_bar_realloc, loongarch64_pcie))]
+        if self.dev_type == VpciDevType::Physical && self.vbdf == self.bdf {
+            if let Ok(value) = self.backend.read(0x18, 4) {
+                self.config_value.set_bridge_bus_reg(value as u32);
+                return;
+            }
+            warn!(
+                "LoongArch PCI bridge {:#?}: failed to read firmware bus numbers, using virtual defaults",
+                self.bdf
+            );
+        }
+
         let primary = self.vbdf.bus();
         let secondary = primary.saturating_add(1);
         let subordinate = domain_bus_range_end;
