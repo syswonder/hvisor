@@ -18,6 +18,7 @@
 #include <linux/fs.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/ioctl.h>
 #include <sys/param.h>
 #include <sys/stat.h>
@@ -337,6 +338,7 @@ static BlkDev *init_blk_dev(VirtIODevice *vdev) {
         vdev->dev = NULL;
         return NULL;
     }
+    dev->mutex_initialized = true;
 
     if (pthread_cond_init(&dev->cond, NULL) != 0) {
         log_error("failed to init blk cond");
@@ -345,6 +347,7 @@ static BlkDev *init_blk_dev(VirtIODevice *vdev) {
         vdev->dev = NULL;
         return NULL;
     }
+    dev->cond_initialized = true;
 
     return dev;
 }
@@ -464,11 +467,15 @@ static void virtio_blk_close(VirtIODevice *vdev) {
             pthread_cond_signal(&dev->cond);
             pthread_mutex_unlock(&dev->mtx);
             pthread_join(dev->tid, NULL);
+            dev->thread_started = false;
         }
-        pthread_mutex_destroy(&dev->mtx);
-        pthread_cond_destroy(&dev->cond);
+        if (dev->cond_initialized)
+            pthread_cond_destroy(&dev->cond);
+        if (dev->mutex_initialized)
+            pthread_mutex_destroy(&dev->mtx);
         if (dev->img_fd >= 0)
             close(dev->img_fd);
+        dev->img_fd = -1;
         free(dev);
         vdev->dev = NULL;
     }
@@ -512,7 +519,11 @@ static int virtio_blk_parse_params(const cJSON *json, void **out) {
         free(p);
         return -EINVAL;
     }
-    p->img_path = img->valuestring;
+    if (strlen(img->valuestring) >= sizeof(p->img_path)) {
+        free(p);
+        return -ENAMETOOLONG;
+    }
+    memcpy(p->img_path, img->valuestring, strlen(img->valuestring) + 1);
     *out = p;
     return 0;
 }

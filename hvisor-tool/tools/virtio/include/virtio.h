@@ -263,10 +263,10 @@ void handle_virtio_requests();
 
 int virtio_init();
 
-int create_virtio_device_from_json(const cJSON *device_json, int zone_id);
-
 int virtio_start_from_json(char *json_path);
 
 int virtio_start(int argc, char *argv[]);
+
+int virtio_add(int argc, char *argv[]);
 
 #endif /* __HVISOR_VIRTIO_H */

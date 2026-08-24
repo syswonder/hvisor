@@ -41,7 +41,8 @@ static void __attribute__((noreturn)) help(int exit_status) {
     printf("  zone start    <config.json>    Initialize an isolation zone\n");
     printf("  zone shutdown -id <zone_id>   Terminate a zone by ID\n");
     printf("  zone list                      List all active zones\n");
-    printf("  virtio start  <virtio.json>    Activate virtio devices\n\n");
+    printf("  virtio start  <virtio.json>    Activate virtio devices\n");
+    printf("  virtio add    <virtio.json>    Add virtio devices to daemon\n\n");
     printf("Options:\n");
     printf("  --id <zone_id>    Specify zone ID for shutdown\n");
     printf("  --help            Show this help message\n\n");
@@ -1128,6 +1129,8 @@ int main(int argc, char *argv[]) {
 
         if (strcmp(argv[2], "start") == 0) {
             err = virtio_start(argc, argv);
+        } else if (strcmp(argv[2], "add") == 0) {
+            err = virtio_add(argc, argv);
         } else {
             help(1);
         }
