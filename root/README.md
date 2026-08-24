@@ -147,10 +147,26 @@ If the `net` device's `status` attribute is set to `enable`, a Virtio-net device
 
 To use the Virtio-gpu device, the `VIRTIO_GPU=y` option must be added to the `hvisor-tool` compile command, and `libdrm` should be installed along with other configurations. For more details, please refer to [hvisor-book](https://hvisor.syswonder.org/chap04/subchap03/VirtIO/GPUDevice.html) and the [configuration example](./examples/qemu-aarch64/with_virtio_gpu/README.md). If the `gpu` device's `status` attribute is set to `enable`, a Virtio-gpu device will be created, with the MMIO region starting at `0xa003400`, the length set to `0x200`, and the interrupt number set to 74. The default scanout dimensions are a width of `1280px` and a height of `800px`.
 
+#### Adding Virtio Devices to a Running Daemon
+
+After the Virtio daemon has been started with `virtio start`, additional Virtio devices can be sent to the running daemon with `virtio add`:
+
+```bash
+nohup ./hvisor virtio start virtio_cfg.json &
+./hvisor virtio add virtio_add_config.json
+./hvisor zone start <vm_config.json>
+```
+
+The `virtio add` configuration uses the same `zones`, `memory_region`, and `devices` JSON structure as `virtio start`. It should describe the memory regions and enabled Virtio devices for the zone that will use them. The daemon receives requests through the Unix domain socket at `/run/hvisor-virtio.sock`; the socket is created by `virtio start` and does not need to be managed manually.
+
+The command prints `virtio add succeeded` when the request is accepted, or `virtio add failed` when validation, memory mapping, or device initialization fails. When one request contains multiple enabled devices, the devices are created temporarily and published only after all of them have initialized successfully. If any device fails, the temporary devices and their resources are cleaned up, and the existing device table is left unchanged.
+
+This flow adds Virtio devices to the daemon before the corresponding zone is started. It does not promise hot-plugging an MMIO device into a guest that is already running.
+
 #### Shut down Virtio Devices
 
 To shut down the Virtio daemon and all the created devices, execute the following command:
 
 ```
 pkill hvisor-virtio
-``` 
+```
