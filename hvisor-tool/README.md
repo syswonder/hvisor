@@ -17,12 +17,12 @@ All operations should be performed in the `hvisor-tool` directory on an x86 host
 * Compile the command-line tools and kernel modules
 
 ```bash
-make all ARCH=<arch> LOG=<log> KDIR=/path/to/your-linux LIBC=[gnu/musl] VIRTIO_GPU=[y/n] ROOT=/path/to/target_rootfs
+make all ARCH=<arch> LOG=<log> KDIR=/path/to/your-linux LIBC=[gnu/musl] VIRTIO_GPU=[y/n]
 ```
 
-Where `<arch>` should be either `arm64` or `riscv`.
+Where `<arch>` should be one of `arm64`, `riscv`, `loongarch`, or `x86_64`.
 
-`<log>` can be one of the following: `LOG_TRACE`, `LOG_DEBUG`, `LOG_INFO`, `LOG_WARN`, `LOG_ERROR`, or `LOG_FATAL`, to control the log output level of the Virtio daemon.
+`<log>` can be one of the following: `LOG_DEBUG`, `LOG_INFO`, `LOG_WARNING`, `LOG_ERR`, or `LOG_CRIT`, to control the log output level of the Virtio daemon.
 
 `/path/to/your-linux` is the kernel source directory for the root Linux. Specific compilation options can be found in [Makefile](./Makefile), [tools/Makefile](./tools/Makefile), and [driver/Makefile](./driver/Makefile).
 
@@ -31,7 +31,7 @@ Where `<arch>` should be either `arm64` or `riscv`.
 For example, to compile the command-line tools for `arm64`, you can run:
 
 ```bash
-make all ARCH=arm64 LOG=LOG_WARN KDIR=~/linux
+make all ARCH=arm64 LOG=LOG_WARNING KDIR=~/linux
 ```
 
 This will generate the tools in `tools/hvisor` and the kernel module in `driver/hvisor.ko`, which you can copy to the root Linux root filesystem and use.

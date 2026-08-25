@@ -17,12 +17,12 @@ hvisor-tool
 * 编译命令行工具及内核模块
 
 ```bash
-make all ARCH=<arch> LOG=<log> KDIR=/path/to/your-linux LIBC=[gnu/musl] VIRTIO_GPU=[y/n] ROOT=/path/to/target_rootfs
+make all ARCH=<arch> LOG=<log> KDIR=/path/to/your-linux LIBC=[gnu/musl] VIRTIO_GPU=[y/n]
 ```
 
-其中，`<arch>`应该为`arm64`和`riscv`之一。
+其中，`<arch>`应为`arm64`、`riscv`、`loongarch`和`x86_64`之一。
 
-`<log>`为`LOG_TRACE`、`LOG_DEBUG`、`LOG_INFO`、`LOG_WARN`、`LOG_ERROR`、`LOG_FATAL`之一，用来控制Virtio守护进程的日志输出等级。
+`<log>`为`LOG_DEBUG`、`LOG_INFO`、`LOG_WARNING`、`LOG_ERR`、`LOG_CRIT`之一，用来控制Virtio守护进程的日志输出等级。
 
 `/path/to/your-linux`为root linux的kernel源码目录。具体的编译选项请见[Makefile](./Makefile)、[tools/Makefile](./tools/Makefile)、[driver/Makefile](./driver/Makefile)。
 
@@ -31,7 +31,7 @@ make all ARCH=<arch> LOG=<log> KDIR=/path/to/your-linux LIBC=[gnu/musl] VIRTIO_G
 例如，要编译面向`arm64`的命令行工具，可以执行：
 
 ```bash
-make all ARCH=arm64 LOG=LOG_WARN KDIR=~/linux
+make all ARCH=arm64 LOG=LOG_WARNING KDIR=~/linux
 ```
 
 即可在`tools/hvisor`和`driver/hvisor.ko`，将其复制到root linux的根文件系统，使用即可。
