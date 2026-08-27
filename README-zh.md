@@ -67,6 +67,7 @@ hvisor 是一个用 Rust 实现的 Type-1 裸机虚拟机监控器，采用分�
 - [x] Forlinx OK6254-C
 - [x] Phytium Pi
 - [x] Jetson Orin
+- [x] Dayu200
 
 ### riscv64
 

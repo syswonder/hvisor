@@ -66,6 +66,7 @@ hvisor is a Type-1 bare-metal virtual machine monitor implemented in Rust, featu
 - [x] Forlinx OK6254-C
 - [x] Phytium Pi
 - [x] Jetson Orin
+- [x] Dayu200
 
 ### riscv64
 
