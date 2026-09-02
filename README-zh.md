@@ -103,6 +103,8 @@ hvisor 是一个用 Rust 实现的 Type-1 裸机虚拟机监控器，采用分�
 
 请参阅 hvisor 文档，获取所有支持平台的快速上手指南、构建和运行说明：[hvisor 文档](https://hvisor.syswonder.org/)
 
+贡献代码前请阅读：[贡献指南](./CONTRIBUTING.md)
+
 ## 路线图
 
 ### 已完成
