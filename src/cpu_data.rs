@@ -13,6 +13,42 @@
 //
 // Authors:
 //
+// Per-CPU data model
+// ------------------
+// Each physical CPU owns one PerCpu slot of PER_CPU_SIZE bytes starting at
+// PER_CPU_ARRAY_PTR + cpuid * PER_CPU_SIZE; the per-CPU stack sits above the
+// slot. `id` is deliberately the first field: the per-arch register cache
+// reads the id back from slot offset 0.
+//
+// `PerCpu::new` caches the slot base once per CPU in an architecture register
+// (also materialized in `self_ptr` on x86_64, where a gs-relative load needs
+// the pointer in memory). `this_cpu_data()`/`this_cpu_id()` are then a 1-2
+// instruction read instead of a CPU-id lookup plus table scan:
+//
+//   | arch        | register       | guest can corrupt it?                  |
+//   |-------------|----------------|----------------------------------------|
+//   | aarch64     | TPIDR_EL2      | no - EL2-private                       |
+//   | riscv64     | CSR_SSCRATCH   | no - HS level, guest uses VSSCRATCH    |
+//   | x86_64      | IA32_GS_BASE   | no - VMCS host-state reloads per exit  |
+//   | loongarch64 | root CSR SAVE0 | no - root CSR, guest GCSR file separate|
+//
+// Safety invariants
+// -----------------
+// 1. The register is written only in `PerCpu::new`. Log records (logging.rs
+//    routes every record through this_cpu_data().id) can only fire after the
+//    logger is installed in `primary_init_early`, which every CPU reaches
+//    only after `PerCpu::new` (ENTERED_CPUS gate), so no core ever reads the
+//    cache before writing it. `println!` does not go through the logger.
+// 2. riscv64: sscratch must keep pointing at `&PerCpu.arch_cpu` because
+//    trap.S swaps x31/sscratch to reach guest registers at ArchCpu offset 0.
+//    set_this_cpu_pointer() takes the slot base and adds the field offset, so
+//    this invariant never depends on callers.
+// 3. x86_64: setup_vmcs_host snapshots IA32_GS_BASE into the VMCS host-state
+//    field on every run/idle, i.e. strictly after PerCpu::new on the same
+//    CPU, so hardware reloads the cached base on each VM exit.
+// 4. loongarch64: SAVE3/SAVE4 stay reserved for the trap handoff; SAVE0 is
+//    per-core root state and the guest's SAVE0 lives in the GCSR file.
+//
 use alloc::sync::Arc;
 use spin::Mutex;
 
