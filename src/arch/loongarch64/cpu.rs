@@ -17,13 +17,13 @@
 use super::ipi::*;
 use super::zone::ZoneContext;
 use crate::arch::zone::disable_hwi_through;
-use crate::cpu_data::{this_cpu_data, VcpuState};
+use crate::cpu_data::{this_cpu_data, PerCpu, VcpuState};
 use crate::zone::find_zone;
 use core::arch::asm;
 use core::fmt::{self, Debug, Formatter};
+use loongArch64::register::crmd;
 use loongArch64::register::crmd::Crmd;
 use loongArch64::register::pgdl;
-use loongArch64::register::{cpuid, crmd};
 
 use crate::{
     consts::{MAX_CPU_NUM, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
@@ -142,7 +142,10 @@ impl ArchCpu {
 }
 
 pub fn this_cpu_id() -> usize {
-    cpuid::read().core_id()
+    // SAVE0 caches the PerCpu slot base (written once per core in
+    // PerCpu::new); the id sits at slot offset 0. cpuid::read() (CSR 0x20)
+    // stays available for code that wants the raw core id.
+    unsafe { (*(this_cpu_pointer() as *const PerCpu)).id }
 }
 
 pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
@@ -157,9 +160,37 @@ pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
     ipi_write_action_percore(cpuid, SMP_BOOT_CPU);
 }
 
-pub fn store_cpu_pointer_to_reg(pointer: usize) {
-    // println!("loongarch64 doesn't support store cpu pointer to reg, pointer: {:#x}", pointer);
-    return;
+/// Free root CSR used to cache the PerCpu slot base of the current core.
+///
+/// CSR 0x21 (PRCFG1) is read-only and SAVE3/SAVE4 are the active trap
+/// handoff (run/idle write the ctx/stack pointers), so the root SAVE0 is
+/// the pragmatic free slot. Guest-state SAVE0 lives in the separate GCSR
+/// file (trap.rs gcsrrd/gcsrwr) and is unaffected.
+const CSR_SAVE0: usize = 0x30;
+
+/// Cache the PerCpu slot base of the current core in root CSR SAVE0.
+pub fn set_this_cpu_pointer(slot_base: usize) {
+    unsafe {
+        asm!(
+            "csrwr {}, {LOONGARCH_CSR_SAVE0}",
+            in(reg) slot_base,
+            LOONGARCH_CSR_SAVE0 = const CSR_SAVE0,
+        );
+    }
+}
+
+/// PerCpu slot base of the current core, cached in SAVE0 by
+/// `set_this_cpu_pointer` at `PerCpu::new` time.
+pub fn this_cpu_pointer() -> usize {
+    let ptr: usize;
+    unsafe {
+        asm!(
+            "csrrd {}, {LOONGARCH_CSR_SAVE0}",
+            out(reg) ptr,
+            LOONGARCH_CSR_SAVE0 = const CSR_SAVE0,
+        );
+    }
+    ptr
 }
 
 pub fn get_target_cpu(irq: usize, zone_id: usize) -> usize {
