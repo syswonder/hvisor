@@ -16,7 +16,7 @@
 use alloc::sync::Arc;
 use spin::Mutex;
 
-use crate::arch::cpu::{store_cpu_pointer_to_reg, this_cpu_id, ArchCpu};
+use crate::arch::cpu::{set_this_cpu_pointer, this_cpu_id, this_cpu_pointer, ArchCpu};
 use crate::consts::{INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::memory::addr::VirtAddr;
 use crate::zone::Zone;
@@ -110,6 +110,10 @@ pub struct PerCpu {
     pub zone: Option<Arc<Zone>>,
     pub ctrl_lock: Mutex<()>,
     pub boot_cpu: bool,
+    /// Slot base address of this PerCpu. Written once by `PerCpu::new`; x86_64
+    /// materializes it here because gs-segment accesses need the pointer in
+    /// memory, other architectures ignore it and read the register cache.
+    pub self_ptr: usize,
     // percpu stack
 }
 
@@ -128,20 +132,13 @@ impl PerCpu {
                 zone: None,
                 ctrl_lock: Mutex::new(()),
                 boot_cpu: false,
+                self_ptr: ret as usize,
             })
         };
-        unsafe {
-            let pointer = &ret.as_mut().unwrap().arch_cpu as *const _ as usize;
-            store_cpu_pointer_to_reg(pointer);
-        }
-        // #[cfg(target_arch = "riscv64")]
-        // {
-        //     use crate::arch::csr::{write_csr, CSR_SSCRATCH};
-        //     write_csr!(
-        //         CSR_SSCRATCH,
-        //         &ret.as_mut().unwrap().arch_cpu as *const _ as usize
-        //     ); //arch cpu pointer
-        // }
+        // Each CPU caches its own PerCpu slot base in the architecture register
+        // backing this_cpu_pointer()/this_cpu_id(). All later per-CPU accesses
+        // on this core read that cache instead of re-deriving the slot address.
+        set_this_cpu_pointer(ret as usize);
         unsafe { ret.as_mut().unwrap() }
     }
 
@@ -171,8 +168,9 @@ pub fn get_cpu_data<'a>(cpu_id: usize) -> &'a mut PerCpu {
 }
 
 pub fn this_cpu_data<'a>() -> &'a mut PerCpu {
-    // Note: this_cpu_id() should return logical cpu_id 0..BOARD_NCPUS
-    get_cpu_data(this_cpu_id())
+    // Slot base is cached per CPU in an architecture register at PerCpu::new
+    // time, so this is a 1-2 instruction read with no CPU-id lookup involved.
+    unsafe { &mut *(this_cpu_pointer() as *mut PerCpu) }
 }
 
 #[allow(unused)]
