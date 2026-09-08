@@ -23,7 +23,7 @@ use crate::consts::MAX_CPU_NUM;
 use crate::cpu_data::this_cpu_data;
 use crate::device::irqchip::inject_irq;
 use crate::device::irqchip::ls7a2000::chip::*;
-use crate::event::{dump_events, handle_next_event};
+use crate::event::{dump_events, handle_next_event, has_pending_events};
 use crate::hypercall::{SGI_IPI_ID, *};
 use crate::memory::{addr, mmio_handle_access, MMIOAccess};
 use crate::zone::Zone;
@@ -1286,8 +1286,16 @@ fn handle_interrupt(is: usize) {
             // producer enqueues concurrently, its doorbell remains pending and
             // re-fires. Clearing after the fetch could lose that coalesced wakeup.
             clear_ipi_bits(hvisor_mask);
-            while handle_next_event() {
-                clear_ipi_bits(hvisor_mask);
+            // Virtual IPI status is posted state, not a generic event. Sync it
+            // directly and only enter the generic event drain when another
+            // producer actually queued work for this CPU.
+            if crate::arch::loongarch64::zone::virtual_ipi_pending(cpu_id) {
+                crate::arch::loongarch64::zone::sync_virtual_ipi_line();
+            }
+            if has_pending_events(cpu_id) {
+                while handle_next_event() {
+                    clear_ipi_bits(hvisor_mask);
+                }
             }
         }
 
