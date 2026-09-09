@@ -32,7 +32,7 @@ bids:
         - platform/aarch64/rk3568/image/dts/rk3568_limit_zone0.dtb
       zone0_image: /home/light/DEMO/sdk/rk356x-up4-2c/kernel/arch/arm64/boot/Image
       uboot_ready_pattern: '=>'
-      zone0_ready_pattern: 'root@linux:[^\r\n]*#\s?'
+      zone0_ready_pattern: 'root@(linux|localhost):[^\r\n]*#\s?'
       zone0_shell_timeout: 180
       uboot_step_timeout: 90
       uboot_cmds:
@@ -44,7 +44,8 @@ bids:
       deploy:
         board_ip: 192.168.1.240
         board_iface: eth0
-        link_wait: 3
+        link_wait: 8
+        ping_retries: 3
         host_ip: 192.168.1.181
         host_user: light
         zone1_dtb: platform/aarch64/rk3568/image/dts/rk3568_limit_zone1.dtb
