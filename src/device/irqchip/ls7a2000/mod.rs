@@ -108,13 +108,19 @@ const INT_TIMER: usize = 11;
 const INT_IPI: usize = 12;
 
 /// Per-pCPU software HWI bitmap, serialized with GINTC VIP updates.
-#[percpu::def_percpu]
-static GUEST_HWI_ASSERTED: Mutex<u32> = Mutex::new(0);
+/// Indexed by logical CPU id; repr-aligned so adjacent states do not share
+/// cache lines (same 64-byte stride the percpu crate's `.percpu` section
+/// used). Only ever accessed remotely (by target CPU id).
+#[repr(align(64))]
+struct GuestHwiState(Mutex<u32>);
+
+static GUEST_HWI_ASSERTED: [GuestHwiState; MAX_CPU_NUM] =
+    [const { GuestHwiState(Mutex::new(0)) }; MAX_CPU_NUM];
 
 // The caller ensures the cpu_id is valid.
 #[inline(always)]
 fn get_guest_hwi_state(cpu: usize) -> &'static Mutex<u32> {
-    unsafe { GUEST_HWI_ASSERTED.remote_ref_raw(cpu) }
+    &GUEST_HWI_ASSERTED[cpu].0
 }
 
 fn sync_guest_irqs_for_cpu(cpu: usize, update: impl FnOnce(&mut u32) -> bool) -> bool {
