@@ -2,8 +2,8 @@
     "name": "linux2",
     "zone_id": 1,
     "cpus": [
-        3,
-        4
+        2,
+        3
     ],
     "memory_regions": [
         {
