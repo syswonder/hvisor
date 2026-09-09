@@ -17,10 +17,14 @@ from board_flow import (
     board_power_off,
     board_zone1_start,
     boot_board_zone0_with_retry,
+    boot_zone1_from_script,
     close_board_terminal,
     get_board_terminal,
     logs_dir,
     release_logs_ownership,
+    retry_attach_zone1_screen,
+    retry_find_zone1_pts,
+    run_zone1_inner_cmds,
 )
 from ci_config import get_bid_entry, load_ci, parse_bid
 from terminal import Terminal, TerminalCommandError, TerminalTimeoutError
@@ -212,13 +216,7 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     if term is None:
         raise SystemExit("terminal backend is required")
     _, _ = run_and_print_quiet(term, "cd /root", quiet_seconds=1.0, max_duration=15.0)
-    _, _ = run_and_print_quiet(
-        term,
-        "./boot_zone1.sh",
-        quiet_seconds=15,
-        max_duration=120.0,
-        check_exit=False,
-    )
+    boot_zone1_from_script(cfg, term)
     zone_list_out, _ = run_and_print_quiet(
         term,
         "./hvisor zone list",
@@ -227,15 +225,11 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
         check_exit=False,
     )
     zone_list_shows_running(zone_list_out, str(cfg.get("zone1_name", "linux2")))
+    max_pts = retry_find_zone1_pts(cfg, term)
     if cfg["arch"] != "x86_64":
         _ = run_and_print_quiet_raw(term, "script /dev/null", quiet_seconds=1.0, max_duration=15.0)
-    pts_output, _ = run_and_print_quiet(term, "ls -1 /dev/pts/[0-9]*", quiet_seconds=1.0, max_duration=15.0)
-    pts_numbers = sorted(int(match) for match in re.findall(r"/dev/pts/(\d+)", pts_output))
-    if not pts_numbers:
-        raise TerminalCommandError("failed to find numeric pts from 'ls -1 /dev/pts/[0-9]*'")
-    max_pts = pts_numbers[-1]
-    _ = run_and_print_send_only(term, f"screen /dev/pts/{max_pts}", read_duration=20.0)
-    _ = run_and_print_send_only(term, "\n", read_duration=2.0)
+    retry_attach_zone1_screen(cfg, term, max_pts)
+    run_zone1_inner_cmds(cfg, term)
     print("zone1_started successfully", flush=True)
     return 0
 
@@ -278,7 +272,7 @@ def asterinas_zone1_regression(cfg: dict[str, Any], term: Terminal | None) -> in
         raise TerminalCommandError("failed to find numeric pts from 'ls -1 /dev/pts/[0-9]*'")
     max_pts = pts_numbers[-1]
 
-    _ = run_and_print_send_only(term, f"screen /dev/pts/{max_pts}", read_duration=20.0)
+    _ = run_and_print_send_only(term, f"screen -S hvisor-zone1 /dev/pts/{max_pts}", read_duration=20.0)
     _ = read_and_print_until_quiet(term, quiet_seconds=3.0, max_duration=30.0)
 
     regression_marker = "__HV_REGRESSION_RC_"
@@ -399,11 +393,19 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
         ),
         "zone1_work_dir": str(deploy.get("zone1_work_dir", "/root")).strip() or "/root",
         "zone1_dtb": str(deploy.get("zone1_dtb", "")).strip(),
+        "zone1_cmds": [
+            str(item).strip()
+            for item in (tests.get("zone1_cmds") or [])
+            if str(item).strip()
+        ]
+        if isinstance(tests.get("zone1_cmds"), list)
+        else [],
+        "zone1_ready_pattern": str(tests.get("zone1_ready_pattern", "")).strip(),
+        "zone1_shell_timeout": float(tests.get("zone1_shell_timeout", 60.0)),
         "scp_tmp_dir": scp_tmp_dir,
         "scp_tmp_file": f"{scp_tmp_dir}/f",
         "retry_zone0": 2,
         "retry_network": 2,
-        "retry_zone1": 1,
     }
 
 
