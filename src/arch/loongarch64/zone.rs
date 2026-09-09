@@ -21,7 +21,7 @@ use crate::{
         Stage2PageTable,
     },
     config::*,
-    consts::{IPI_EVENT_SEND_IPI, MAX_CPU_NUM, PAGE_SIZE},
+    consts::{MAX_CPU_NUM, PAGE_SIZE},
     cpu_data::{get_cpu_data, this_cpu_data, VcpuState},
     device::virtio_trampoline::mmio_virtio_handler,
     error::{HvError, HvResult},
@@ -658,11 +658,18 @@ pub fn sync_virtual_ipi_line() {
     }
 }
 
+pub fn virtual_ipi_pending(cpu: usize) -> bool {
+    cpu < MAX_CPU_NUM && VIRTUAL_IPI_STATUS[cpu].load(Ordering::Acquire) != 0
+}
+
 fn sync_or_notify_virtual_ipi_line(cpu: usize) {
     if cpu == this_cpu_id() {
         sync_virtual_ipi_line();
     } else {
-        send_event(cpu, SGI_IPI_ID as usize, IPI_EVENT_SEND_IPI);
+        // The virtual IPI status is already the pending state. Use the
+        // dedicated physical doorbell directly instead of allocating a
+        // one-item generic event just to call sync_virtual_ipi_line().
+        crate::arch::ipi::arch_send_event(cpu as _, SGI_IPI_ID as _);
     }
 }
 
