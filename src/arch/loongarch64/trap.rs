@@ -1271,6 +1271,14 @@ const HWI7: usize = 1 << 9;
 
 /// handle loongarch64 interrupts here
 fn handle_interrupt(is: usize) {
+    let timer_pending = is & TIMER_BIT != 0;
+    if timer_pending {
+        // Clear the timer before processing IPI work. A combined IPI+timer
+        // exception must not let the IPI path starve the timer indefinitely.
+        loongArch64::register::ticlr::clear_timer_interrupt();
+        debug!("Timer interrupt received");
+    }
+
     // Handle IPI interrupts
     if is & IPI_BIT != 0 {
         let cpu_id = this_cpu_id();
@@ -1313,13 +1321,9 @@ fn handle_interrupt(is: usize) {
                 cpu_id, unhandled
             );
         }
-        return;
     }
 
-    // Handle timer interrupts
-    if is & TIMER_BIT != 0 {
-        debug!("Timer interrupt received");
-        loongArch64::register::ticlr::clear_timer_interrupt();
+    if is & (IPI_BIT | TIMER_BIT) != 0 {
         return;
     }
 
