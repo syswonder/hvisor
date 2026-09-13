@@ -1280,26 +1280,33 @@ fn handle_interrupt(is: usize) {
             cpu_id, ipi_status
         );
 
-        let hvisor_mask = SGI_IPI_ID as u32;
-        if ipi_status & hvisor_mask != 0 {
-            // Clear before each fetch. If the fetch observes an empty queue while a
-            // producer enqueues concurrently, its doorbell remains pending and
-            // re-fires. Clearing after the fetch could lose that coalesced wakeup.
-            clear_ipi_bits(hvisor_mask);
-            // Virtual IPI status is posted state, not a generic event. Sync it
-            // directly and only enter the generic event drain when another
-            // producer actually queued work for this CPU.
+        let event_doorbell = SGI_IPI_ID as u32;
+        let virtual_ipi_doorbell = HVISOR_VIPI_DOORBELL as u32;
+
+        // Virtual IPI status is posted state, not a generic event. Its
+        // dedicated physical doorbell must never cause the event FIFO to be
+        // inspected or drained.
+        if ipi_status & virtual_ipi_doorbell != 0 {
+            clear_ipi_bits(virtual_ipi_doorbell);
             if crate::arch::loongarch64::zone::virtual_ipi_pending(cpu_id) {
                 crate::arch::loongarch64::zone::sync_virtual_ipi_line();
             }
+        }
+
+        if ipi_status & event_doorbell != 0 {
+            // Clear before each fetch. If the fetch observes an empty queue while a
+            // producer enqueues concurrently, its doorbell remains pending and
+            // re-fires. Clearing after the fetch could lose that coalesced wakeup.
+            clear_ipi_bits(event_doorbell);
             if has_pending_events(cpu_id) {
                 while handle_next_event() {
-                    clear_ipi_bits(hvisor_mask);
+                    clear_ipi_bits(event_doorbell);
                 }
             }
         }
 
-        let unhandled = ipi_status & !hvisor_mask;
+        let handled_mask = event_doorbell | virtual_ipi_doorbell;
+        let unhandled = ipi_status & !handled_mask;
         if unhandled != 0 {
             error!(
                 "CPU {} has unhandled physical IPI status {:#x}; preserving those bits",

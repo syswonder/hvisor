@@ -669,7 +669,7 @@ fn sync_or_notify_virtual_ipi_line(cpu: usize) {
         // The virtual IPI status is already the pending state. Use the
         // dedicated physical doorbell directly instead of allocating a
         // one-item generic event just to call sync_virtual_ipi_line().
-        crate::arch::ipi::arch_send_event(cpu as _, SGI_IPI_ID as _);
+        crate::arch::ipi::arch_send_virtual_ipi(cpu);
     }
 }
 
