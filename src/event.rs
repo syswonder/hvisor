@@ -73,6 +73,13 @@ pub fn fetch_event(cpu: usize) -> Option<usize> {
     get_percpu_events(cpu).lock().pop_front()
 }
 
+pub fn has_pending_events(cpu: usize) -> bool {
+    if cpu >= MAX_CPU_NUM {
+        return false;
+    }
+    !get_percpu_events(cpu).lock().is_empty()
+}
+
 pub fn dump_events() {
     for cpu in 0..MAX_CPU_NUM {
         let events = get_percpu_events(cpu).lock();
