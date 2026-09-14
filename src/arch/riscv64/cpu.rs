@@ -14,7 +14,7 @@
 // Authors:
 //
 use super::csr::*;
-use crate::cpu_data::{this_cpu_data, VcpuState};
+use crate::cpu_data::{this_cpu_data, PerCpu, VcpuState};
 use crate::platform::{BOARD_HARTID_MAP, BOARD_NCPUS};
 use crate::{
     arch::mm::new_s2_memory_set,
@@ -275,6 +275,12 @@ impl ArchCpu {
     }
 }
 
+// CSR_SSCRATCH caches the per-pCPU scheduling-context pointer of this hart:
+// the `ArchCpu` of this pCPU's PerCpu slot (guest registers live in
+// `ArchCpu.x` at offset 0, which trap.S reaches by swapping via x31/sscratch,
+// so the cached value must keep being `&slot.arch_cpu`). In a future N:M
+// vCPU schedule this pointer is updated at vCPU switch points instead of
+// staying fixed per boot.
 fn this_cpu_arch() -> &'static mut ArchCpu {
     let sscratch = read_csr!(CSR_SSCRATCH);
     if sscratch == 0 {
@@ -286,6 +292,14 @@ fn this_cpu_arch() -> &'static mut ArchCpu {
 /// Get the logical cpu_id 0..BOARD_NCPUS.
 pub fn this_cpu_id() -> usize {
     this_cpu_arch().get_cpuid()
+}
+
+/// PerCpu slot base of the current hart: the sscratch-cached `&ArchCpu` minus
+/// the `arch_cpu` field offset (container_of). Kept as the sum of a csrr and
+/// a constant subtraction so this_cpu_data() costs no id lookup or table scan.
+pub fn this_cpu_pointer() -> usize {
+    let arch_offset = core::mem::offset_of!(PerCpu, arch_cpu);
+    this_cpu_arch() as *const _ as usize - arch_offset
 }
 
 pub fn hartid_to_cpuid(hartid: usize) -> usize {
@@ -301,11 +315,16 @@ pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
     }
 }
 
-pub fn store_cpu_pointer_to_reg(pointer: usize) {
-    // Store the pointer to the current CPU's ArchCpu structure in CSR_SSCRATCH
-    write_csr!(CSR_SSCRATCH, pointer);
-    // println!("Stored CPU pointer to CSR_SSCRATCH: {:#x}", pointer);
-    return;
+/// Cache the PerCpu slot base of the current hart in CSR_SSCRATCH.
+///
+/// SSCRATCH must keep pointing at this CPU's `ArchCpu` (trap.S constraint),
+/// so the slot base handed in by PerCpu::new is translated to `&arch_cpu`
+/// here; reset_regs() re-writes the same value before every VM entry.
+pub fn set_this_cpu_pointer(slot_base: usize) {
+    write_csr!(
+        CSR_SSCRATCH,
+        slot_base + core::mem::offset_of!(PerCpu, arch_cpu)
+    );
 }
 
 pub fn get_target_cpu(_irq: usize, zone_id: usize) -> usize {
