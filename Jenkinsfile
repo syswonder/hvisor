@@ -482,6 +482,18 @@ pipeline {
                             }
                         }
                     }
+
+                    stage('Check console log severity') {
+                        when {
+                            expression { return hasCiTests() }
+                        }
+                        steps {
+                            dir(matrixCellDir()) {
+                                echo "Scan console logs for WARN/ERROR/panic [BID=${env.BID}]"
+                                sh "python3 jenkins/check_log_severity.py --bid '${env.BID}'"
+                            }
+                        }
+                    }
                 }
 
                 post {
