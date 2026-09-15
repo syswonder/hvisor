@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from board_flow import (
+    bid_log_path,
     board_login,
     board_network_and_trans,
     board_power_off,
@@ -20,7 +21,6 @@ from board_flow import (
     boot_zone1_from_script,
     close_board_terminal,
     get_board_terminal,
-    logs_dir,
     release_logs_ownership,
     retry_attach_zone1_screen,
     retry_find_zone1_pts,
@@ -177,9 +177,7 @@ def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
             )
         return 0
     if cfg["mode"] == "board":
-        log_path = logs_dir(cfg) / "zone0_console.log"
-        log_path.write_text("", encoding="utf-8")
-        board_term = build_terminal(cfg, log_path)
+        board_term = build_terminal(cfg)
         board_term.open()
         cfg["_board_term"] = board_term
         boot_board_zone0_with_retry(cfg, board_term)
@@ -410,18 +408,23 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
 
 
 def build_terminal(cfg: dict[str, Any], log_path: Path | None = None) -> Terminal:
+    path = log_path or cfg["log_path"]
     if cfg["mode"] == "qemu":
-        return Terminal.from_qemu_socket(path=cfg["socket_path"], log_path=log_path)
+        return Terminal.from_qemu_socket(path=cfg["socket_path"], log_path=path)
     return Terminal.from_serial(
         port=cfg["serial_port"],
         baudrate=cfg["baudrate"],
-        log_path=log_path,
+        log_path=path,
     )
 
 
 def main() -> int:
     args = parse_args()
     cfg = load_runtime_config(args)
+    log_path = bid_log_path(cfg)
+    log_path.write_text("", encoding="utf-8")
+    cfg["log_path"] = log_path
+    print(f"[ci_runner] console log -> {log_path}", flush=True)
     try:
         for case_name in cfg["cases"]:
             case_fn = CASE_HANDLERS.get(case_name)
@@ -442,9 +445,7 @@ def main() -> int:
 
             term = get_board_terminal(cfg) if cfg["mode"] == "board" else None
             if term is None and cfg["mode"] == "board":
-                log_path = logs_dir(cfg) / "board_console.log"
-                log_path.write_text("", encoding="utf-8")
-                term = build_terminal(cfg, log_path)
+                term = build_terminal(cfg)
                 term.open()
                 cfg["_board_term"] = term
 

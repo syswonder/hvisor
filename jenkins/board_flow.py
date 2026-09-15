@@ -50,6 +50,16 @@ def logs_dir(cfg: dict[str, Any]) -> Path:
     return path
 
 
+def bid_log_name(bid: str) -> str:
+    """Map BID arch/board -> logs/<arch>__<board>.log."""
+    return f"{bid.strip().replace('/', '__')}.log"
+
+
+def bid_log_path(cfg: dict[str, Any]) -> Path:
+    """Ensure logs/ exists and return the run console log path for this BID."""
+    return logs_dir(cfg) / bid_log_name(str(cfg["bid"]))
+
+
 def release_logs_ownership(cfg: dict[str, Any]) -> None:
     """Return logs/ to the invoking user when ci_runner ran under sudo."""
     if os.geteuid() != 0:

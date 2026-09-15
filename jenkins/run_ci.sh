@@ -204,12 +204,18 @@ run_ci() {
     fi
 }
 
+check_log_severity() {
+    echo "Check console log severity [BID=${BID}]"
+    python3 "${ROOT}/jenkins/check_log_severity.py" --bid "${BID}"
+}
+
 case "${MODE}" in
     qemu)
         ensure_hvisor_tool
         build_hvisor_tool
         prepare_qemu
         run_ci
+        check_log_severity
         ;;
     board)
         free_board_serial
@@ -218,6 +224,7 @@ case "${MODE}" in
         deploy_board_tftp
         free_board_serial
         run_ci
+        check_log_severity
         ;;
     *)
         echo "error: unsupported tests.mode='${MODE}' for BID ${BID}" >&2
