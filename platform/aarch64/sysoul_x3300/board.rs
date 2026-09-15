@@ -60,9 +60,9 @@ pub const BOARD_PHYSMEM_LIST: &[(u64, u64, MemoryType)] = &[
     (0x4_f000_0000, 0x5_0000_0000, MemoryType::Normal),
 ];
 
-pub const ROOT_ZONE_DTB_ADDR: u64 = 0x1000_0000;
-pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x1040_0000;
-pub const ROOT_ZONE_ENTRY: u64 = 0x1040_0000;
+pub const ROOT_ZONE_DTB_ADDR: u64 = 0x2000_0000;
+pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x2040_0000;
+pub const ROOT_ZONE_ENTRY: u64 = 0x2040_0000;
 pub const ROOT_ZONE_CPUS: u64 = (1 << 2) - 1;
 
 pub const ROOT_ZONE_NAME: &str = "root-linux";
@@ -98,15 +98,18 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x2000_0000,
         virtual_start: 0x2000_0000,
-        size: 0x8000_0000,
-    }, // this is a gap allocated for android modules
+        size: 0x2000_0000,
+    }, // zone0 kernel/dtb area
+    // Root RAM 0x4000_0000..0xf000_0000; the 0x5800_0000..0xd800_0000
+    // sub-range belongs to zone2 (android) and is no-map reserved in zone0.dts.
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
-        physical_start: 0xa000_0000,
-        virtual_start: 0xa000_0000,
-        size: 0x5000_0000,
+        physical_start: 0x4000_0000,
+        virtual_start: 0x4000_0000,
+        size: 0xb000_0000,
     },
-    // memory allocated to android
+    // Root high RAM; the 0x1_0000_0000..0x2_fc00_0000 sub-range belongs to
+    // zone1 (npu) and is no-map reserved in zone0.dts.
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_RAM,
         physical_start: 0x1_0000_0000,
@@ -133,17 +136,44 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
         size: 0x000f_0000,
     },
     // /proc/iomem Devices I/O
-    HvConfigMemoryRegion {
-        mem_type: MEM_TYPE_IO,
-        physical_start: 0xfb00_0000,
-        virtual_start: 0xfb00_0000,
-        size: 0x0020_0000,
-    },
+    // GPU region (0xfb00_0000-0xfb20_0000) moved to zone2 (android)
+    // HvConfigMemoryRegion {
+    //     mem_type: MEM_TYPE_IO,
+    //     physical_start: 0xfb00_0000,
+    //     virtual_start: 0xfb00_0000,
+    //     size: 0x0020_0000,
+    // },
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0xfc00_0000,
         virtual_start: 0xfc00_0000,
-        size: 0x0200_0000,
+        size: 0x15a_4000, // fc000000..fd5a4000
+    },
+    // VOP-GRF: keep in root zone for DDR MCU access
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xfd5a_4000,
+        virtual_start: 0xfd5a_4000,
+        size: 0x2000, // fd5a4000..fd5a6000
+    },
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xfd5a_6000,
+        virtual_start: 0xfd5a_6000,
+        size: 0x7ea_000, // fd5a6000..fdd90000
+    },
+    // VOP: keep in root zone for DDR MCU line-flag synchronization
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xfdd9_0000,
+        virtual_start: 0xfdd9_0000,
+        size: 0x8000, // fdd90000..fdd98000
+    },
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xfdd9_8000,
+        virtual_start: 0xfdd9_8000,
+        size: 0x26_8000, // fdd98000..fe000000
     },
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
@@ -178,34 +208,51 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
         virtual_start: 0x0010_0000,
         size: 0xf000,
     },
+    // Unknown Region, maybe we should ask vendor for help
+    HvConfigMemoryRegion {
+        mem_type: MEM_TYPE_IO,
+        physical_start: 0xa_0000_0000,
+        virtual_start: 0xa_0000_0000,
+        size: 0x1_0000_0000,
+    },
 ];
 
 pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[
-    0x27, // arm_pmu
+    // core / platform
+    0x27, // arm-pmu
     0x29, // gic
-    0x2a, 0x2b, 0x2d, 0x2e, // timer
-    0x40, // hvisor
+    0x2a, 0x2b, 0x2d, 0x2e, // arch timer
+    0x40, // hvisor_virtio_device
     0x69, // dmc
-    0xeb, // sdmmc
-    0x103, 0x102, // gmac0
-    0x10a, 0x109, // gmac1
-    0x135, // gpio0
-    0x136, // gpio1
-    0x137, // gpio2
-    0x138, // gpio3
-    0x139, // gpio4
-    0x141, // rktimer
-    0x15d, // i2c0
-    0x15e, // i2c1
-    0x166, // spi0
-    0x168, // spi2
-    0x16e, // uart3
-    0x1ad, // tsadc
-    0x1b0, // rng
+    0x76, 0x77, 0x78, 0x79, // dma-controller@fea10000/fea30000
+    0x7a, 0x7b, // dma-controller@fed10000
+    0xeb, // sdmmc@fe2c0000 (root SD rootfs)
+    0x109, 0x10a, // ethernet@fe1c0000 (gmac1, root network)
+    0x135, // gpio@fd8a0000 (gpio0: SD vmmc enable, rk806 int etc.)
+    // 0x137, // gpio2 -> zone2 (android panel reset/enable)
+    0x138, // gpio@fec40000 (gpio3)
+    0x139, // gpio@fec50000 (gpio4)
+    0x141, // timer@feae0000 (rktimer)
+    0x15d, // i2c@fd880000 (i2c0: rk860/pmic aux)
+    0x163, // i2c@fec80000 (i2c6: rtc hym8563)
+    0x168, // spi@feb20000 (spi2: rk806 PMIC)
+    0x16d, // serial@feb50000 (uart2: root console ttyS2)
+    0x1ad, // tsadc@fec00000
+    0x1c7, // fiq-debugger (uart2 console ttyFIQ0, irq-mode)
+    0x1ae, // saradc@fec10000
+    0x1b0, // rng@fe378000
+    // usb: only usbdrd3_1 (usb@fc400000) + its usb2phy stay in root;
+    // usb@fc000000/fcd00000 dwc3, ehci/ohci pairs, usb2phy0-2 and the
+    // usb iommus moved to zone2 (android), see zone2-android.dts/json.
+    0xfd, // usb@fc400000 dwc3 (usbdrd3_1)
+    0x1aa, // usb2phy1 (usb2-phy@4000, root usbdrd3_1 companion)
+    // Everything else (camera/mpp/audio/pcie/sata/touch/extra uart/i2c/spi/
+    // mailbox/display chains) is disabled in zone0.dts &{...} overrides or
+    // passed through to zone1/zone2 - see image/dts/zone0.dts.
 ]);
-
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     is_aarch32: 0,
+    uefi_config: UefiConfig::NoUefi,
     gic_config: GicConfig::Gicv3(Gicv3Config {
         gicd_base: 0xfe60_0000,
         gicd_size: 0x0001_0000,
@@ -214,7 +261,6 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
         gits_base: 0x0,
         gits_size: 0x0,
     }),
-    uefi_config: UefiConfig::NoUefi
 };
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];

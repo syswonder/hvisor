@@ -23,7 +23,7 @@ use crate::consts::MAX_CPU_NUM;
 use crate::cpu_data::this_cpu_data;
 use crate::device::irqchip::inject_irq;
 use crate::device::irqchip::ls7a2000::chip::*;
-use crate::event::{dump_events, handle_next_event};
+use crate::event::{dump_events, handle_next_event, has_pending_events};
 use crate::hypercall::{SGI_IPI_ID, *};
 use crate::memory::{addr, mmio_handle_access, MMIOAccess};
 use crate::zone::Zone;
@@ -1271,6 +1271,14 @@ const HWI7: usize = 1 << 9;
 
 /// handle loongarch64 interrupts here
 fn handle_interrupt(is: usize) {
+    let timer_pending = is & TIMER_BIT != 0;
+    if timer_pending {
+        // Clear the timer before processing IPI work. A combined IPI+timer
+        // exception must not let the IPI path starve the timer indefinitely.
+        loongArch64::register::ticlr::clear_timer_interrupt();
+        debug!("Timer interrupt received");
+    }
+
     // Handle IPI interrupts
     if is & IPI_BIT != 0 {
         let cpu_id = this_cpu_id();
@@ -1280,31 +1288,42 @@ fn handle_interrupt(is: usize) {
             cpu_id, ipi_status
         );
 
-        let hvisor_mask = SGI_IPI_ID as u32;
-        if ipi_status & hvisor_mask != 0 {
-            // Clear before each fetch. If the fetch observes an empty queue while a
-            // producer enqueues concurrently, its doorbell remains pending and
-            // re-fires. Clearing after the fetch could lose that coalesced wakeup.
-            clear_ipi_bits(hvisor_mask);
-            while handle_next_event() {
-                clear_ipi_bits(hvisor_mask);
+        let event_doorbell = SGI_IPI_ID as u32;
+        let virtual_ipi_doorbell = HVISOR_VIPI_DOORBELL as u32;
+
+        // Virtual IPI status is posted state, not a generic event. Its
+        // dedicated physical doorbell must never cause the event FIFO to be
+        // inspected or drained.
+        if ipi_status & virtual_ipi_doorbell != 0 {
+            clear_ipi_bits(virtual_ipi_doorbell);
+            if crate::arch::loongarch64::zone::virtual_ipi_pending(cpu_id) {
+                crate::arch::loongarch64::zone::sync_virtual_ipi_line();
             }
         }
 
-        let unhandled = ipi_status & !hvisor_mask;
+        if ipi_status & event_doorbell != 0 {
+            // Clear before each fetch. If the fetch observes an empty queue while a
+            // producer enqueues concurrently, its doorbell remains pending and
+            // re-fires. Clearing after the fetch could lose that coalesced wakeup.
+            clear_ipi_bits(event_doorbell);
+            if has_pending_events(cpu_id) {
+                while handle_next_event() {
+                    clear_ipi_bits(event_doorbell);
+                }
+            }
+        }
+
+        let handled_mask = event_doorbell | virtual_ipi_doorbell;
+        let unhandled = ipi_status & !handled_mask;
         if unhandled != 0 {
             error!(
                 "CPU {} has unhandled physical IPI status {:#x}; preserving those bits",
                 cpu_id, unhandled
             );
         }
-        return;
     }
 
-    // Handle timer interrupts
-    if is & TIMER_BIT != 0 {
-        debug!("Timer interrupt received");
-        loongArch64::register::ticlr::clear_timer_interrupt();
+    if is & (IPI_BIT | TIMER_BIT) != 0 {
         return;
     }
 

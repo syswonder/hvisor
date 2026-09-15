@@ -68,8 +68,17 @@ pub const SMP_RESCHEDULE: usize = 0x2;
 pub const SMP_CALL_FUNCTION: usize = 0x4;
 // customized actions :), since there is no docs on this yet
 /// Dedicated physical IPI bit used only as the hvisor event-queue doorbell.
-/// Linux SMP actions use bits 0..=2, so sharing those bits can drop guest IPI work.
+/// Keep this separate from the guest virtual-IPI doorbell below.
 pub const HVISOR_EVENT_DOORBELL: usize = 0x8;
+/// Dedicated physical IPI bit used only to notify a target CPU that its
+/// guest virtual-IPI status changed. This must not enter the generic event
+/// queue path.
+pub const HVISOR_VIPI_DOORBELL: usize = 0x10;
+
+#[inline]
+pub fn arch_send_virtual_ipi(cpu_id: usize) {
+    arch_send_event(cpu_id as u64, HVISOR_VIPI_DOORBELL as u64);
+}
 
 fn iocsr_mbuf_send_box_lo(a: usize) -> usize {
     a << 1

@@ -1,11 +1,43 @@
+// SPDX-License-Identifier: GPL-2.0
+/*
+ * sysoul_x3300-dual zone2 (Android) device tree
+ *
+ * Derived from the working passthrough android dts (zone1-android.dts)
+ * by stripping to the zone2 device set:
+ *   - cpus 6/7 only, 2 GB RAM at 0x58000000
+ *   - passthrough: Mali GPU, VOP2 + VOP IOMMU, DSI0 + dcphy0, eMMC
+ *     (mmc@fe2e0000), gpio2 (panel), lcd backlight pwm, needed GRFs
+ *   - all clocks/resets/power-domains of the passed devices come from
+ *     VirtIO-SCMI (virtual ids match configs/zone2-android.json); the
+ *     cru/pmucru/power-controller nodes stay as dead phandle anchors
+ *     (status disabled, registers not mapped)
+ *   - console=hvc0 over virtio (no physical uart in this zone); no
+ *     earlycon (kernel 5.10 has no earlycon=virtio,mmio)
+ *   - androidboot.boot_devices=fe2e0000.mmc: android boots from the
+ *     passthrough eMMC exactly like the previous zone1 config
+ *
+ * Known deltas vs bare-metal android:
+ *   - gpu clk_mali arrives via VirtIO-SCMI virtual id 0 (same SCP
+ *     clock, served by root); native arm,scmi-smc node removed; CPU
+ *     DVFS/SCP cpufreq unavailable -> CPUs run at u-boot frequency
+ *   - assigned-clocks/rates stripped (no cru provider); the clock tree
+ *     stays in the u-boot state, scmi requests manage gating only
+ *   - mali-supply/vop-supply removed (vdd regulators live behind the
+ *     root zone's SPI2 PMIC); GPU DVFS must be validated at fixed freq
+ *   - pwm1 "active" pinctrl stripped (pin mux regs live in pmu-grf,
+ *     which stays with root) - backlight pin mux comes from u-boot
+ *
+ * Requires the android 5.10 kernel with virtio-scmi transport
+ * (CONFIG_ARM_SCMI_TRANSPORT_VIRTIO backport) enabled.
+ */
 /dts-v1/;
 
 / {
-	compatible = "rockchip,xiuos_rk3588\0rockchip,rk3588";
+	compatible = "rockchip,xiuos_rk3588", "rockchip,rk3588";
 	interrupt-parent = <0x01>;
 	#address-cells = <0x02>;
 	#size-cells = <0x02>;
-	model = "Rockchip RK3588 XIUOS Board";
+	model = "Rockchip RK3588 XIUOS Board (Zone2 Android + VirtIO-SCMI)";
 
 	aliases {
 		csi2dcphy0 = "/csi2-dcphy0";
@@ -116,6 +148,7 @@
 			#power-domain-cells = <0x01>;
 			#clock-cells = <0x00>;
 			phandle = <0x05>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		aclk_vdpu_low_pre@fd7c08b0 {
@@ -125,6 +158,7 @@
 			clocks = <0x02 0x1bc>;
 			#power-domain-cells = <0x01>;
 			#clock-cells = <0x00>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		hclk_vo0@fd7c08dc {
@@ -135,6 +169,7 @@
 			#power-domain-cells = <0x01>;
 			#clock-cells = <0x00>;
 			phandle = <0x04>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		hclk_usb@fd7c08a8 {
@@ -144,6 +179,7 @@
 			clocks = <0x02 0x264>;
 			#power-domain-cells = <0x01>;
 			#clock-cells = <0x00>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		hclk_nvm@fd7c087c {
@@ -154,6 +190,7 @@
 			#power-domain-cells = <0x01>;
 			#clock-cells = <0x00>;
 			phandle = <0x03>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		aclk_usb@fd7c08a8 {
@@ -163,6 +200,7 @@
 			clocks = <0x02 0x263>;
 			#power-domain-cells = <0x01>;
 			#clock-cells = <0x00>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		hclk_isp1_pre@fd7c0868 {
@@ -172,6 +210,7 @@
 			clocks = <0x02 0x1e1>;
 			#power-domain-cells = <0x01>;
 			#clock-cells = <0x00>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		aclk_isp1_pre@fd7c0868 {
@@ -181,6 +220,7 @@
 			clocks = <0x02 0x1e0>;
 			#power-domain-cells = <0x01>;
 			#clock-cells = <0x00>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		aclk_rkvdec0_pre@fd7c08a0 {
@@ -190,6 +230,7 @@
 			clocks = <0x02 0x1bc>;
 			#power-domain-cells = <0x01>;
 			#clock-cells = <0x00>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		hclk_rkvdec0_pre@fd7c08a0 {
@@ -199,6 +240,7 @@
 			clocks = <0x02 0x1be>;
 			#power-domain-cells = <0x01>;
 			#clock-cells = <0x00>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		aclk_rkvdec1_pre@fd7c08a4 {
@@ -208,6 +250,7 @@
 			clocks = <0x02 0x1bc>;
 			#power-domain-cells = <0x01>;
 			#clock-cells = <0x00>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		hclk_rkvdec1_pre@fd7c08a4 {
@@ -217,6 +260,7 @@
 			clocks = <0x02 0x1be>;
 			#power-domain-cells = <0x01>;
 			#clock-cells = <0x00>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		aclk_jpeg_decoder_pre@fd7c08b0 {
@@ -226,6 +270,7 @@
 			clocks = <0x02 0x1bc>;
 			#power-domain-cells = <0x01>;
 			#clock-cells = <0x00>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		aclk_rkvenc1_pre@fd7c08c0 {
@@ -235,6 +280,7 @@
 			clocks = <0x02 0x1c5>;
 			#power-domain-cells = <0x01>;
 			#clock-cells = <0x00>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		hclk_rkvenc1_pre@fd7c08c0 {
@@ -244,6 +290,7 @@
 			clocks = <0x02 0x1c4>;
 			#power-domain-cells = <0x01>;
 			#clock-cells = <0x00>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		aclk_hdcp0_pre@fd7c08dc {
@@ -253,6 +300,7 @@
 			clocks = <0x02 0x26c>;
 			#power-domain-cells = <0x01>;
 			#clock-cells = <0x00>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		aclk_hdcp1_pre@fd7c08ec {
@@ -262,6 +310,7 @@
 			clocks = <0x02 0x263>;
 			#power-domain-cells = <0x01>;
 			#clock-cells = <0x00>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		pclk_av1_pre@fd7c0910 {
@@ -271,6 +320,7 @@
 			clocks = <0x02 0x1be>;
 			#power-domain-cells = <0x01>;
 			#clock-cells = <0x00>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		aclk_av1_pre@fd7c0910 {
@@ -280,6 +330,7 @@
 			clocks = <0x02 0x1bc>;
 			#power-domain-cells = <0x01>;
 			#clock-cells = <0x00>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		hclk_sdio_pre@fd7c092c {
@@ -289,6 +340,7 @@
 			clocks = <0x03>;
 			#power-domain-cells = <0x01>;
 			#clock-cells = <0x00>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		pclk_vo0_grf@fd7c08dc {
@@ -298,6 +350,7 @@
 			clock-names = "link";
 			#clock-cells = <0x00>;
 			phandle = <0x59>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		pclk_vo1_grf@fd7c08ec {
@@ -307,6 +360,7 @@
 			clock-names = "link";
 			#clock-cells = <0x00>;
 			phandle = <0x5a>;
+			status = "disabled"; /* gate regs inside CRU, unmapped in zone2 */
 		};
 
 		mclkin-i2s0 {
@@ -393,127 +447,48 @@
 		#size-cells = <0x00>;
 
 		cpu-map {
-
 			cluster0 {
-
 				core0 {
+					cpu = <0x2100>;
 				};
-
 				core1 {
-				};
-
-				core2 {
-				};
-
-				core3 {
-				};
-			};
-
-			cluster1 {
-
-				core0 {
-					cpu = <0x06>;
-				};
-
-				core1 {
-					cpu = <0x07>;
-				};
-			};
-
-			cluster2 {
-
-				core0 {
-					cpu = <0x08>;
-				};
-
-				core1 {
-					cpu = <0x09>;
+					cpu = <0x2101>;
 				};
 			};
 		};
 
-		cpu@400 {
+		cpu@200 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a76";
-			reg = <0x400>;
+			reg = <0x200>;
 			enable-method = "psci";
 			capacity-dmips-mhz = <0x400>;
-			clocks = <0x0a 0x02>;
-			operating-points-v2 = <0x0b>;
-			cpu-idle-states = <0x0c>;
+			cpu-idle-states = <0x2103>;
 			i-cache-size = <0x10000>;
 			i-cache-line-size = <0x40>;
 			i-cache-sets = <0x100>;
 			d-cache-size = <0x10000>;
 			d-cache-line-size = <0x40>;
 			d-cache-sets = <0x100>;
-			next-level-cache = <0x0d>;
-			#cooling-cells = <0x02>;
-			dynamic-power-coefficient = <0x12c>;
-			cpu-supply = <0x0e>;
-			mem-supply = <0x0e>;
-			phandle = <0x06>;
+			next-level-cache = <0x2104>;
+			phandle = <0x2100>;
 		};
 
-		cpu@500 {
+		cpu@300 {
 			device_type = "cpu";
 			compatible = "arm,cortex-a76";
-			reg = <0x500>;
+			reg = <0x300>;
 			enable-method = "psci";
 			capacity-dmips-mhz = <0x400>;
-			clocks = <0x0a 0x02>;
-			operating-points-v2 = <0x0b>;
-			cpu-idle-states = <0x0c>;
+			cpu-idle-states = <0x2103>;
 			i-cache-size = <0x10000>;
 			i-cache-line-size = <0x40>;
 			i-cache-sets = <0x100>;
 			d-cache-size = <0x10000>;
 			d-cache-line-size = <0x40>;
 			d-cache-sets = <0x100>;
-			next-level-cache = <0x0f>;
-			phandle = <0x07>;
-		};
-
-		cpu@600 {
-			device_type = "cpu";
-			compatible = "arm,cortex-a76";
-			reg = <0x600>;
-			enable-method = "psci";
-			capacity-dmips-mhz = <0x400>;
-			clocks = <0x0a 0x03>;
-			operating-points-v2 = <0x10>;
-			cpu-idle-states = <0x0c>;
-			i-cache-size = <0x10000>;
-			i-cache-line-size = <0x40>;
-			i-cache-sets = <0x100>;
-			d-cache-size = <0x10000>;
-			d-cache-line-size = <0x40>;
-			d-cache-sets = <0x100>;
-			next-level-cache = <0x11>;
-			#cooling-cells = <0x02>;
-			dynamic-power-coefficient = <0x12c>;
-			cpu-supply = <0x12>;
-			mem-supply = <0x12>;
-			phandle = <0x08>;
-		};
-
-		cpu@700 {
-			device_type = "cpu";
-			compatible = "arm,cortex-a76";
-			reg = <0x700>;
-			enable-method = "psci";
-			capacity-dmips-mhz = <0x400>;
-			clocks = <0x0a 0x03>;
-			operating-points-v2 = <0x10>;
-			cpu-idle-states = <0x0c>;
-			i-cache-size = <0x10000>;
-			i-cache-line-size = <0x40>;
-			i-cache-sets = <0x100>;
-			d-cache-size = <0x10000>;
-			d-cache-line-size = <0x40>;
-			d-cache-sets = <0x100>;
-			next-level-cache = <0x13>;
-			phandle = <0x09>;
+			next-level-cache = <0x2105>;
+			phandle = <0x2101>;
 		};
 
 		idle-states {
@@ -526,76 +501,26 @@
 				entry-latency-us = <0x64>;
 				exit-latency-us = <0x78>;
 				min-residency-us = <0x3e8>;
-				phandle = <0x0c>;
+				phandle = <0x2103>;
 			};
 		};
 
-		l2-cache-l0 {
-			compatible = "cache";
-			cache-size = <0x20000>;
-			cache-line-size = <0x40>;
-			cache-sets = <0x200>;
-			next-level-cache = <0x14>;
-		};
-
-		l2-cache-l1 {
-			compatible = "cache";
-			cache-size = <0x20000>;
-			cache-line-size = <0x40>;
-			cache-sets = <0x200>;
-			next-level-cache = <0x14>;
-		};
-
-		l2-cache-l2 {
-			compatible = "cache";
-			cache-size = <0x20000>;
-			cache-line-size = <0x40>;
-			cache-sets = <0x200>;
-			next-level-cache = <0x14>;
-		};
-
-		l2-cache-l3 {
-			compatible = "cache";
-			cache-size = <0x20000>;
-			cache-line-size = <0x40>;
-			cache-sets = <0x200>;
-			next-level-cache = <0x14>;
-		};
-
-		l2-cache-b0 {
+		l2-cache-c0 {
 			compatible = "cache";
 			cache-size = <0x80000>;
 			cache-line-size = <0x40>;
 			cache-sets = <0x400>;
-			next-level-cache = <0x14>;
-			phandle = <0x0d>;
+			next-level-cache = <0x2106>;
+			phandle = <0x2104>;
 		};
 
-		l2-cache-b1 {
+		l2-cache-c1 {
 			compatible = "cache";
 			cache-size = <0x80000>;
 			cache-line-size = <0x40>;
 			cache-sets = <0x400>;
-			next-level-cache = <0x14>;
-			phandle = <0x0f>;
-		};
-
-		l2-cache-b2 {
-			compatible = "cache";
-			cache-size = <0x80000>;
-			cache-line-size = <0x40>;
-			cache-sets = <0x400>;
-			next-level-cache = <0x14>;
-			phandle = <0x11>;
-		};
-
-		l2-cache-b3 {
-			compatible = "cache";
-			cache-size = <0x80000>;
-			cache-line-size = <0x40>;
-			cache-sets = <0x400>;
-			next-level-cache = <0x14>;
-			phandle = <0x13>;
+			next-level-cache = <0x2106>;
+			phandle = <0x2105>;
 		};
 
 		l3-cache {
@@ -603,15 +528,16 @@
 			cache-size = <0x300000>;
 			cache-line-size = <0x40>;
 			cache-sets = <0x1000>;
-			phandle = <0x14>;
+			phandle = <0x2106>;
 		};
 	};
+
 
 	cluster0-opp-table {
 		compatible = "operating-points-v2";
 		opp-shared;
 		nvmem-cells = <0x15 0x16 0x17>;
-		nvmem-cell-names = "leakage\0opp-info\0specification_serial_number";
+		nvmem-cell-names = "leakage", "opp-info", "specification_serial_number";
 		rockchip,supported-hw;
 		rockchip,opp-shared-dsu;
 		rockchip,pvtm-hw = <0x06>;
@@ -637,6 +563,7 @@
 		rockchip,high-temp = <0x14c08>;
 		rockchip,high-temp-max-freq = <0x188940>;
 
+		status = "disabled"; /* not exposed to zone2 */
 		opp-408000000 {
 			opp-supported-hw = <0xf9 0xffff>;
 			opp-hz = <0x00 0x18519600>;
@@ -804,7 +731,7 @@
 		compatible = "operating-points-v2";
 		opp-shared;
 		nvmem-cells = <0x1a 0x1b 0x17>;
-		nvmem-cell-names = "leakage\0opp-info\0specification_serial_number";
+		nvmem-cell-names = "leakage", "opp-info", "specification_serial_number";
 		rockchip,supported-hw;
 		rockchip,pvtm-hw = <0x06>;
 		rockchip,pvtm-voltage-sel-hw = <0x00 0x603 0x00 0x604 0x61c 0x01 0x61d 0x635 0x02 0x636 0x64e 0x03 0x64f 0x66c 0x04 0x66d 0x68a 0x05 0x68b 0x6a8 0x06 0x6a9 0x270f 0x07>;
@@ -831,6 +758,7 @@
 		rockchip,high-temp-max-freq = <0x21b100>;
 		phandle = <0x0b>;
 
+		status = "disabled"; /* not exposed to zone2 */
 		opp-408000000 {
 			opp-supported-hw = <0xf9 0xffff>;
 			opp-hz = <0x00 0x18519600>;
@@ -1053,7 +981,7 @@
 		compatible = "operating-points-v2";
 		opp-shared;
 		nvmem-cells = <0x1d 0x1e 0x17>;
-		nvmem-cell-names = "leakage\0opp-info\0specification_serial_number";
+		nvmem-cell-names = "leakage", "opp-info", "specification_serial_number";
 		rockchip,supported-hw;
 		rockchip,pvtm-hw = <0x06>;
 		rockchip,pvtm-voltage-sel-hw = <0x00 0x603 0x00 0x604 0x61c 0x01 0x61d 0x635 0x02 0x636 0x64e 0x03 0x64f 0x66c 0x04 0x66d 0x68a 0x05 0x68b 0x6a8 0x06 0x6a9 0x270f 0x07>;
@@ -1080,6 +1008,7 @@
 		rockchip,high-temp-max-freq = <0x21b100>;
 		phandle = <0x10>;
 
+		status = "disabled"; /* not exposed to zone2 */
 		opp-408000000 {
 			opp-supported-hw = <0xf9 0xffff>;
 			opp-hz = <0x00 0x18519600>;
@@ -1299,76 +1228,77 @@
 	arm-pmu {
 		compatible = "arm,armv8-pmuv3";
 		interrupts = <0x01 0x07 0x08>;
-		interrupt-affinity = <0x06 0x07 0x08 0x09>;
+		interrupt-affinity = <0x2100 0x2101>;
 	};
 
 	cpuinfo {
 		compatible = "rockchip,cpuinfo";
 		nvmem-cells = <0x20 0x21 0x22>;
-		nvmem-cell-names = "id\0cpu-version\0cpu-code";
+		nvmem-cell-names = "id", "cpu-version", "cpu-code";
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	csi2-dcphy0 {
 		compatible = "rockchip,rk3588-csi2-dphy";
 		rockchip,hw = <0x23 0x24>;
-		phys = <0x25 0x26>;
-		phy-names = "dcphy0\0dcphy1";
+		phys = <&dcphy0 0x26>;
+		phy-names = "dcphy0", "dcphy1";
 		status = "disabled";
 	};
 
 	csi2-dcphy1 {
 		compatible = "rockchip,rk3588-csi2-dphy";
 		rockchip,hw = <0x23 0x24>;
-		phys = <0x25 0x26>;
-		phy-names = "dcphy0\0dcphy1";
+		phys = <&dcphy0 0x26>;
+		phy-names = "dcphy0", "dcphy1";
 		status = "disabled";
 	};
 
 	csi2-dphy0 {
 		compatible = "rockchip,rk3588-csi2-dphy";
 		rockchip,hw = <0x23 0x24>;
-		phys = <0x25 0x26>;
-		phy-names = "dcphy0\0dcphy1";
+		phys = <&dcphy0 0x26>;
+		phy-names = "dcphy0", "dcphy1";
 		status = "disabled";
 	};
 
 	csi2-dphy1 {
 		compatible = "rockchip,rk3588-csi2-dphy";
 		rockchip,hw = <0x23 0x24>;
-		phys = <0x25 0x26>;
-		phy-names = "dcphy0\0dcphy1";
+		phys = <&dcphy0 0x26>;
+		phy-names = "dcphy0", "dcphy1";
 		status = "disabled";
 	};
 
 	csi2-dphy2 {
 		compatible = "rockchip,rk3588-csi2-dphy";
 		rockchip,hw = <0x23 0x24>;
-		phys = <0x25 0x26>;
-		phy-names = "dcphy0\0dcphy1";
+		phys = <&dcphy0 0x26>;
+		phy-names = "dcphy0", "dcphy1";
 		status = "disabled";
 	};
 
 	csi2-dphy3 {
 		compatible = "rockchip,rk3588-csi2-dphy";
 		rockchip,hw = <0x23 0x24>;
-		phys = <0x25 0x26>;
-		phy-names = "dcphy0\0dcphy1";
+		phys = <&dcphy0 0x26>;
+		phy-names = "dcphy0", "dcphy1";
 		status = "disabled";
 	};
 
 	csi2-dphy4 {
 		compatible = "rockchip,rk3588-csi2-dphy";
 		rockchip,hw = <0x23 0x24>;
-		phys = <0x25 0x26>;
-		phy-names = "dcphy0\0dcphy1";
+		phys = <&dcphy0 0x26>;
+		phy-names = "dcphy0", "dcphy1";
 		status = "disabled";
 	};
 
 	csi2-dphy5 {
 		compatible = "rockchip,rk3588-csi2-dphy";
 		rockchip,hw = <0x23 0x24>;
-		phys = <0x25 0x26>;
-		phy-names = "dcphy0\0dcphy1";
+		phys = <&dcphy0 0x26>;
+		phy-names = "dcphy0", "dcphy1";
 		status = "disabled";
 	};
 
@@ -1425,7 +1355,7 @@
 			};
 
 			route-hdmi0 {
-				status = "okay";
+				status = "disabled";
 				logo,uboot = "logo.bmp";
 				logo,kernel = "logo_kernel.bmp";
 				logo,mode = "center";
@@ -1482,7 +1412,7 @@
 	dmc-opp-table {
 		compatible = "operating-points-v2";
 		nvmem-cells = <0x35 0x36 0x17>;
-		nvmem-cell-names = "leakage\0opp-info\0specification_serial_number";
+		nvmem-cell-names = "leakage", "opp-info", "specification_serial_number";
 		rockchip,supported-hw;
 		rockchip,leakage-voltage-sel = <0x01 0x1f 0x00 0x20 0x2c 0x01 0x2d 0x39 0x02 0x3a 0xfe 0x03>;
 		rockchip,temp-hysteresis = <0x1388>;
@@ -1490,6 +1420,7 @@
 		rockchip,low-temp-min-volt = <0xb71b0>;
 		phandle = <0x32>;
 
+		status = "disabled"; /* not exposed to zone2 */
 		opp-528000000 {
 			opp-supported-hw = <0xf9 0xffff>;
 			opp-hz = <0x00 0x1f78a400>;
@@ -1558,28 +1489,36 @@
 	};
 
 	firmware {
-
+		/* VirtIO-SCMI (backend runs in root-linux). protocol ids:
+		 * 0x14 clock / 0x16 reset / 0x11 power-domain. Native rockchip
+		 * arm,scmi-smc node removed: gpu clk_mali arrives via virtual
+		 * id 0 (same SCP clock); CPU DVFS stays at u-boot freq. */
 		scmi {
-			compatible = "arm,scmi-smc";
-			shmem = <0x37>;
-			arm,smc-id = <0x82000010>;
+			compatible = "arm,scmi-virtio";
 			#address-cells = <0x01>;
 			#size-cells = <0x00>;
+			phandle = <0x2000>;
 
-			protocol@14 {
+			scmi_clk: protocol@14 {
 				reg = <0x14>;
 				#clock-cells = <0x01>;
-				assigned-clocks = <0x0a 0x00 0x0a 0x02 0x0a 0x03>;
-				assigned-clock-rates = <0x30a32c00 0x30a32c00 0x30a32c00>;
-				phandle = <0x0a>;
+				phandle = <0x2001>;
 			};
 
-			protocol@16 {
+			scmi_rst: protocol@16 {
 				reg = <0x16>;
 				#reset-cells = <0x01>;
-				phandle = <0x10a>;
+				phandle = <0x2002>;
+			};
+
+			scmi_pwr: protocol@11 {
+				reg = <0x11>;
+				#power-domain-cells = <0x01>;
+				phandle = <0x2003>;
 			};
 		};
+
+
 
 		sdei {
 			compatible = "arm,sdei-1.0";
@@ -1594,7 +1533,7 @@
 
 	jpege-ccu {
 		compatible = "rockchip,vpu-jpege-ccu";
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0xa1>;
 	};
 
@@ -1638,7 +1577,7 @@
 		compatible = "rockchip,mpp-service";
 		rockchip,taskqueue-count = <0x0c>;
 		rockchip,resetgroup-count = <0x01>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0x9c>;
 	};
 
@@ -1851,7 +1790,7 @@
 
 	rkvenc-ccu {
 		compatible = "rockchip,rkv-encoder-v2-ccu";
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0xa7>;
 	};
 
@@ -1875,6 +1814,7 @@
 		#size-cells = <0x01>;
 		ranges = <0x00 0x00 0x10f000 0x100>;
 
+		status = "disabled"; /* not exposed to zone2 */
 		sram@0 {
 			compatible = "arm,scmi-shmem";
 			reg = <0x00 0x100>;
@@ -1886,26 +1826,22 @@
 		compatible = "arm,mali-bifrost";
 		reg = <0x00 0xfb000000 0x00 0x200000>;
 		interrupts = <0x00 0x5e 0x04 0x00 0x5d 0x04 0x00 0x5c 0x04>;
-		interrupt-names = "GPU\0MMU\0JOB";
-		clocks = <0x0a 0x05 0x02 0x115 0x02 0x116 0x02 0x114>;
-		clock-names = "clk_mali\0clk_gpu_coregroup\0clk_gpu_stacks\0clk_gpu";
-		assigned-clocks = <0x0a 0x05>;
-		assigned-clock-rates = <0xbebc200>;
-		power-domains = <0x49 0x0c>;
+		interrupt-names = "GPU", "MMU", "JOB";
+		clocks = <&scmi_clk 0 &scmi_clk 1 &scmi_clk 2 &scmi_clk 3>;
+		clock-names = "clk_mali", "clk_gpu_coregroup", "clk_gpu_stacks", "clk_gpu";
+		power-domains = <&scmi_pwr 0>;
 		operating-points-v2 = <0x4a>;
 		#cooling-cells = <0x02>;
 		dynamic-power-coefficient = <0xba6>;
 		upthreshold = <0x1e>;
 		downdifferential = <0x0a>;
 		status = "okay";
-		mali-supply = <0x4b>;
-		mem-supply = <0x4b>;
 	};
 
 	gpu-opp-table {
 		compatible = "operating-points-v2";
 		nvmem-cells = <0x4c 0x4d 0x17>;
-		nvmem-cell-names = "leakage\0opp-info\0specification_serial_number";
+		nvmem-cell-names = "leakage", "opp-info", "specification_serial_number";
 		rockchip,supported-hw;
 		rockchip,pvtm-hw = <0x04>;
 		rockchip,pvtm-voltage-sel-hw = <0x00 0x31f 0x00 0x320 0x333 0x01 0x334 0x34c 0x02 0x34d 0x365 0x03 0x366 0x37e 0x04 0x37f 0x270f 0x05>;
@@ -1931,6 +1867,7 @@
 		rockchip,high-temp-max-freq = "\0\f5";
 		phandle = <0x4a>;
 
+		status = "disabled"; /* not exposed to zone2 */
 		opp-300000000 {
 			opp-supported-hw = <0xf9 0xffff>;
 			opp-hz = <0x00 0x11e1a300>;
@@ -2069,9 +2006,9 @@
 	};
 
 	usbdrd3_0 {
-		compatible = "rockchip,rk3588-dwc3\0rockchip,rk3399-dwc3";
-		clocks = <0x02 0x1a3 0x02 0x1a2 0x02 0x1a1>;
-		clock-names = "ref\0suspend\0bus";
+		compatible = "rockchip,rk3588-dwc3", "rockchip,rk3399-dwc3";
+		clocks = <&scmi_clk 30 &scmi_clk 31 &scmi_clk 32>;
+		clock-names = "ref", "suspend", "bus";
 		#address-cells = <0x02>;
 		#size-cells = <0x02>;
 		ranges;
@@ -2080,13 +2017,13 @@
 		usb@fc000000 {
 			compatible = "snps,dwc3";
 			reg = <0x00 0xfc000000 0x00 0x400000>;
-			interrupts = <0x00 0xdc 0x04>;
-			power-domains = <0x49 0x1f>;
-			resets = <0x02 0x2a4>;
+			interrupts = <0x00 &lcd_rst_gpio 0x04>;
+			power-domains = <&scmi_pwr 2>;
+			resets = <&scmi_rst 16>;
 			reset-names = "usb3-otg";
 			dr_mode = "peripheral";
 			phys = <0x4f 0x50>;
-			phy-names = "usb2-phy\0usb3-phy";
+			phy-names = "usb2-phy", "usb3-phy";
 			phy_type = "utmi_wide";
 			linux,sysdev_is_parent;
 			snps,dis_enblslpm_quirk;
@@ -2103,15 +2040,15 @@
 	};
 
 	usb@fc800000 {
-		compatible = "rockchip,rk3588-ehci\0generic-ehci";
+		compatible = "rockchip,rk3588-ehci", "generic-ehci";
 		reg = <0x00 0xfc800000 0x00 0x40000>;
 		interrupts = <0x00 0xd7 0x04>;
-		clocks = <0x02 0x19d 0x02 0x19e 0x51>;
-		clock-names = "usbhost\0arbiter\0utmi";
+		clocks = <&scmi_clk 33 &scmi_clk 34 0x51>;
+		clock-names = "usbhost", "arbiter", "utmi";
 		companion = <0x52>;
 		phys = <0x53>;
 		phy-names = "usb2-phy";
-		power-domains = <0x49 0x1f>;
+		power-domains = <&scmi_pwr 2>;
 		status = "okay";
 	};
 
@@ -2119,37 +2056,37 @@
 		compatible = "generic-ohci";
 		reg = <0x00 0xfc840000 0x00 0x40000>;
 		interrupts = <0x00 0xd8 0x04>;
-		clocks = <0x02 0x19d 0x02 0x19e 0x51>;
-		clock-names = "usbhost\0arbiter\0utmi";
+		clocks = <&scmi_clk 33 &scmi_clk 34 0x51>;
+		clock-names = "usbhost", "arbiter", "utmi";
 		phys = <0x53>;
 		phy-names = "usb2-phy";
-		power-domains = <0x49 0x1f>;
+		power-domains = <&scmi_pwr 2>;
 		status = "okay";
 		phandle = <0x52>;
 	};
 
 	usb@fc880000 {
-		compatible = "rockchip,rk3588-ehci\0generic-ehci";
+		compatible = "rockchip,rk3588-ehci", "generic-ehci";
 		reg = <0x00 0xfc880000 0x00 0x40000>;
-		interrupts = <0x00 0xda 0x04>;
-		clocks = <0x02 0x19f 0x02 0x1a0 0x54>;
-		clock-names = "usbhost\0arbiter\0utmi";
+		interrupts = <0x00 &backlight 0x04>;
+		clocks = <&scmi_clk 35 &scmi_clk 36 0x54>;
+		clock-names = "usbhost", "arbiter", "utmi";
 		companion = <0x55>;
 		phys = <0x56>;
 		phy-names = "usb2-phy";
-		power-domains = <0x49 0x1f>;
+		power-domains = <&scmi_pwr 2>;
 		status = "okay";
 	};
 
 	usb@fc8c0000 {
 		compatible = "generic-ohci";
 		reg = <0x00 0xfc8c0000 0x00 0x40000>;
-		interrupts = <0x00 0xdb 0x04>;
-		clocks = <0x02 0x19f 0x02 0x1a0 0x54>;
-		clock-names = "usbhost\0arbiter\0utmi";
+		interrupts = <0x00 &vcc3v3_lcd0_n 0x04>;
+		clocks = <&scmi_clk 35 &scmi_clk 36 0x54>;
+		clock-names = "usbhost", "arbiter", "utmi";
 		phys = <0x56>;
 		phy-names = "usb2-phy";
-		power-domains = <0x49 0x1f>;
+		power-domains = <&scmi_pwr 2>;
 		status = "okay";
 		phandle = <0x55>;
 	};
@@ -2158,7 +2095,7 @@
 		compatible = "arm,smmu-v3";
 		reg = <0x00 0xfc900000 0x00 0x200000>;
 		interrupts = <0x00 0x171 0x04 0x00 0x173 0x04 0x00 0x176 0x04 0x00 0x16f 0x04>;
-		interrupt-names = "eventq\0gerror\0priq\0cmdq-sync";
+		interrupt-names = "eventq", "gerror", "priq", "cmdq-sync";
 		#iommu-cells = <0x01>;
 		status = "disabled";
 	};
@@ -2167,15 +2104,15 @@
 		compatible = "arm,smmu-v3";
 		reg = <0x00 0xfcb00000 0x00 0x200000>;
 		interrupts = <0x00 0x17d 0x04 0x00 0x17f 0x04 0x00 0x182 0x04 0x00 0x17b 0x04>;
-		interrupt-names = "eventq\0gerror\0priq\0cmdq-sync";
+		interrupt-names = "eventq", "gerror", "priq", "cmdq-sync";
 		#iommu-cells = <0x01>;
 		status = "disabled";
 	};
 
 	usbhost3_0 {
-		compatible = "rockchip,rk3588-dwc3\0rockchip,rk3399-dwc3";
-		clocks = <0x02 0x179 0x02 0x178 0x02 0x177 0x02 0x17a 0x02 0x166 0x02 0x181>;
-		clock-names = "ref\0suspend\0bus\0utmi\0php\0pipe";
+		compatible = "rockchip,rk3588-dwc3", "rockchip,rk3399-dwc3";
+		clocks = <&scmi_clk 38 &scmi_clk 39 &scmi_clk 40 &scmi_clk 41 &scmi_clk 42 &scmi_clk 43>;
+		clock-names = "ref", "suspend", "bus", "utmi", "php", "pipe";
 		#address-cells = <0x02>;
 		#size-cells = <0x02>;
 		ranges;
@@ -2185,7 +2122,7 @@
 			compatible = "snps,dwc3";
 			reg = <0x00 0xfcd00000 0x00 0x400000>;
 			interrupts = <0x00 0xde 0x04>;
-			resets = <0x02 0x237>;
+			resets = <&scmi_rst 17>;
 			reset-names = "usb3-host";
 			dr_mode = "host";
 			phys = <0x57 0x04>;
@@ -2203,9 +2140,10 @@
 	};
 
 	syscon@fd588000 {
-		compatible = "rockchip,rk3588-pmu0-grf\0syscon\0simple-mfd";
+		compatible = "rockchip,rk3588-pmu0-grf", "syscon", "simple-mfd";
 		reg = <0x00 0xfd588000 0x00 0x2000>;
 
+		status = "disabled"; /* not exposed to zone2 */
 		reboot-mode {
 			compatible = "syscon-reboot-mode";
 			offset = <0x80>;
@@ -2223,13 +2161,14 @@
 	};
 
 	syscon@fd58a000 {
-		compatible = "rockchip,rk3588-pmu1-grf\0syscon";
+		compatible = "rockchip,rk3588-pmu1-grf", "syscon";
 		reg = <0x00 0xfd58a000 0x00 0x2000>;
 		phandle = <0xf3>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
-	syscon@fd58c000 {
-		compatible = "rockchip,rk3588-sys-grf\0syscon\0simple-mfd";
+	sys_grf: syscon@fd58c000 {
+		compatible = "rockchip,rk3588-sys-grf", "syscon", "simple-mfd";
 		reg = <0x00 0xfd58c000 0x00 0x1000>;
 		phandle = <0xad>;
 
@@ -2260,105 +2199,118 @@
 	};
 
 	syscon@fd590000 {
-		compatible = "rockchip,rk3588-bigcore0-grf\0syscon";
+		compatible = "rockchip,rk3588-bigcore0-grf", "syscon";
 		reg = <0x00 0xfd590000 0x00 0x100>;
 		phandle = <0x1c>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	syscon@fd592000 {
-		compatible = "rockchip,rk3588-bigcore1-grf\0syscon";
+		compatible = "rockchip,rk3588-bigcore1-grf", "syscon";
 		reg = <0x00 0xfd592000 0x00 0x100>;
 		phandle = <0x1f>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	syscon@fd594000 {
-		compatible = "rockchip,rk3588-litcore-grf\0syscon";
+		compatible = "rockchip,rk3588-litcore-grf", "syscon";
 		reg = <0x00 0xfd594000 0x00 0x100>;
 		phandle = <0x18>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	syscon@fd598000 {
-		compatible = "rockchip,rk3588-dsu-grf\0syscon";
+		compatible = "rockchip,rk3588-dsu-grf", "syscon";
 		reg = <0x00 0xfd598000 0x00 0x100>;
 		phandle = <0x19>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	syscon@fd5a0000 {
-		compatible = "rockchip,rk3588-gpu-grf\0syscon";
+		compatible = "rockchip,rk3588-gpu-grf", "syscon";
 		reg = <0x00 0xfd5a0000 0x00 0x100>;
 		phandle = <0x4e>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	syscon@fd5a2000 {
-		compatible = "rockchip,rk3588-npu-grf\0syscon";
+		compatible = "rockchip,rk3588-npu-grf", "syscon";
 		reg = <0x00 0xfd5a2000 0x00 0x100>;
 		phandle = <0x9a>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
-	syscon@fd5a4000 {
-		compatible = "rockchip,rk3588-vop-grf\0syscon";
+	vop_grf: syscon@fd5a4000 {
+		compatible = "rockchip,rk3588-vop-grf", "syscon";
 		reg = <0x00 0xfd5a4000 0x00 0x2000>;
 		phandle = <0xbc>;
 	};
 
 	syscon@fd5a6000 {
-		compatible = "rockchip,rk3588-vo-grf\0syscon";
+		compatible = "rockchip,rk3588-vo-grf", "syscon";
 		reg = <0x00 0xfd5a6000 0x00 0x2000>;
 		clocks = <0x59>;
 		phandle = <0xe3>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
-	syscon@fd5a8000 {
-		compatible = "rockchip,rk3588-vo-grf\0syscon";
+	vo1_grf: syscon@fd5a8000 {
+		compatible = "rockchip,rk3588-vo-grf", "syscon";
 		reg = <0x00 0xfd5a8000 0x00 0x100>;
-		clocks = <0x5a>;
 		phandle = <0xbd>;
 	};
 
 	syscon@fd5ac000 {
-		compatible = "rockchip,rk3588-usb-grf\0syscon";
+		compatible = "rockchip,rk3588-usb-grf", "syscon";
 		reg = <0x00 0xfd5ac000 0x00 0x4000>;
 		phandle = <0x5b>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	syscon@fd5b0000 {
-		compatible = "rockchip,rk3588-php-grf\0syscon";
+		compatible = "rockchip,rk3588-php-grf", "syscon";
 		reg = <0x00 0xfd5b0000 0x00 0x1000>;
 		phandle = <0x5d>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	syscon@fd5b4000 {
-		compatible = "rockchip,mipi-dphy-grf\0syscon";
+		compatible = "rockchip,mipi-dphy-grf", "syscon";
 		reg = <0x00 0xfd5b4000 0x00 0x1000>;
 		phandle = <0x177>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	syscon@fd5b5000 {
-		compatible = "rockchip,mipi-dphy-grf\0syscon";
+		compatible = "rockchip,mipi-dphy-grf", "syscon";
 		reg = <0x00 0xfd5b5000 0x00 0x1000>;
 		phandle = <0x178>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	syscon@fd5bc000 {
-		compatible = "rockchip,pipe-phy-grf\0syscon";
+		compatible = "rockchip,pipe-phy-grf", "syscon";
 		reg = <0x00 0xfd5bc000 0x00 0x100>;
 		phandle = <0x179>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	syscon@fd5c4000 {
-		compatible = "rockchip,pipe-phy-grf\0syscon";
+		compatible = "rockchip,pipe-phy-grf", "syscon";
 		reg = <0x00 0xfd5c4000 0x00 0x100>;
 		phandle = <0x17a>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	syscon@fd5c8000 {
-		compatible = "rockchip,rk3588-usbdpphy-grf\0syscon";
+		compatible = "rockchip,rk3588-usbdpphy-grf", "syscon";
 		reg = <0x00 0xfd5c8000 0x00 0x4000>;
 		phandle = <0x173>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	syscon@fd5d0000 {
-		compatible = "rockchip,rk3588-usb2phy-grf\0syscon\0simple-mfd";
+		compatible = "rockchip,rk3588-usb2phy-grf", "syscon", "simple-mfd";
 		reg = <0x00 0xfd5d0000 0x00 0x4000>;
 		#address-cells = <0x01>;
 		#size-cells = <0x01>;
@@ -2368,9 +2320,9 @@
 			compatible = "rockchip,rk3588-usb2phy";
 			reg = <0x00 0x10>;
 			interrupts = <0x00 0x189 0x04>;
-			resets = <0x02 0xc0047 0x02 0x488>;
-			reset-names = "phy\0apb";
-			clocks = <0x02 0x2b5>;
+			resets = <&scmi_rst 18 &scmi_rst 19>;
+			reset-names = "phy", "apb";
+			clocks = <&scmi_clk 37>;
 			clock-names = "phyclk";
 			clock-output-names = "usb480m_phy0";
 			#clock-cells = <0x00>;
@@ -2387,7 +2339,7 @@
 	};
 
 	syscon@fd5d8000 {
-		compatible = "rockchip,rk3588-usb2phy-grf\0syscon\0simple-mfd";
+		compatible = "rockchip,rk3588-usb2phy-grf", "syscon", "simple-mfd";
 		reg = <0x00 0xfd5d8000 0x00 0x4000>;
 		#address-cells = <0x01>;
 		#size-cells = <0x01>;
@@ -2396,9 +2348,9 @@
 			compatible = "rockchip,rk3588-usb2phy";
 			reg = <0x8000 0x10>;
 			interrupts = <0x00 0x187 0x04>;
-			resets = <0x02 0xc0049 0x02 0x48a>;
-			reset-names = "phy\0apb";
-			clocks = <0x02 0x2b5>;
+			resets = <&scmi_rst 20 &scmi_rst 21>;
+			reset-names = "phy", "apb";
+			clocks = <&scmi_clk 37>;
 			clock-names = "phyclk";
 			clock-output-names = "usb480m_phy2";
 			#clock-cells = <0x00>;
@@ -2414,7 +2366,7 @@
 	};
 
 	syscon@fd5dc000 {
-		compatible = "rockchip,rk3588-usb2phy-grf\0syscon\0simple-mfd";
+		compatible = "rockchip,rk3588-usb2phy-grf", "syscon", "simple-mfd";
 		reg = <0x00 0xfd5dc000 0x00 0x4000>;
 		#address-cells = <0x01>;
 		#size-cells = <0x01>;
@@ -2423,9 +2375,9 @@
 			compatible = "rockchip,rk3588-usb2phy";
 			reg = <0xc000 0x10>;
 			interrupts = <0x00 0x188 0x04>;
-			resets = <0x02 0xc004a 0x02 0x48b>;
-			reset-names = "phy\0apb";
-			clocks = <0x02 0x2b5>;
+			resets = <&scmi_rst 22 &scmi_rst 23>;
+			reset-names = "phy", "apb";
+			clocks = <&scmi_clk 37>;
 			clock-names = "phyclk";
 			clock-output-names = "usb480m_phy3";
 			#clock-cells = <0x00>;
@@ -2435,32 +2387,33 @@
 			host-port {
 				#phy-cells = <0x00>;
 				status = "okay";
-				phy-supply = <0x5c>;
 				phandle = <0x56>;
 			};
 		};
 	};
 
 	syscon@fd5e0000 {
-		compatible = "rockchip,rk3588-hdptxphy-grf\0syscon";
+		compatible = "rockchip,rk3588-hdptxphy-grf", "syscon";
 		reg = <0x00 0xfd5e0000 0x00 0x100>;
 		phandle = <0x171>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	syscon@fd5e8000 {
-		compatible = "rockchip,mipi-dcphy-grf\0syscon";
+		compatible = "rockchip,mipi-dcphy-grf", "syscon";
 		reg = <0x00 0xfd5e8000 0x00 0x4000>;
 		phandle = <0x175>;
 	};
 
 	syscon@fd5ec000 {
-		compatible = "rockchip,mipi-dcphy-grf\0syscon";
+		compatible = "rockchip,mipi-dcphy-grf", "syscon";
 		reg = <0x00 0xfd5ec000 0x00 0x4000>;
 		phandle = <0x176>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	syscon@fd5f0000 {
-		compatible = "rockchip,rk3588-ioc\0syscon";
+		compatible = "rockchip,rk3588-ioc", "syscon";
 		reg = <0x00 0xfd5f0000 0x00 0x10000>;
 		phandle = <0x17b>;
 	};
@@ -2471,22 +2424,23 @@
 		reg = <0x00 0xfd7c0000 0x00 0x5c000>;
 		#clock-cells = <0x01>;
 		#reset-cells = <0x01>;
-		assigned-clocks = <0x02 0x09 0x02 0x05 0x02 0x08 0x02 0x07 0x02 0xd8 0x02 0xda 0x02 0xd9 0x02 0x10e 0x02 0x10f 0x02 0x110 0x02 0x299 0x02 0x29a 0x02 0x7b 0x02 0xec 0x02 0x114 0x02 0x208 0x02 0x20e 0x02 0x21f 0x02 0x77>;
+		assigned-clocks = <0x02 0x09 0x02 0x05 0x02 0x08 0x02 0x07 0x02 0xd8 0x02 &backlight 0x02 0xd9 0x02 0x10e 0x02 0x10f 0x02 0x110 0x02 0x299 0x02 0x29a 0x02 0x7b 0x02 0xec 0x02 0x114 0x02 0x208 0x02 0x20e 0x02 0x21f 0x02 0x77>;
 		assigned-clock-rates = <0x4190ab00 0x2ee00000 0x32a9f880 0x46cf7100 0x29d7ab80 0x17d78400 0x1dcd6500 0x2cb41780 0x5f5e100 0x17d78400 0x5f5e100 0xbebc200 0x165a0bc0 0x8f0d180 0xbebc200 0xb71b00 0xb71b00 0x5e69ec0 0x1312d00>;
 		phandle = <0x02>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	i2c@fd880000 {
-		compatible = "rockchip,rk3588-i2c\0rockchip,rk3399-i2c";
+		compatible = "rockchip,rk3588-i2c", "rockchip,rk3399-i2c";
 		reg = <0x00 0xfd880000 0x00 0x1000>;
 		clocks = <0x02 0x287 0x02 0x286>;
-		clock-names = "i2c\0pclk";
+		clock-names = "i2c", "pclk";
 		interrupts = <0x00 0x13d 0x04>;
 		pinctrl-names = "default";
 		pinctrl-0 = <0x5e>;
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 
 		rk8602@42 {
 			compatible = "rockchip,rk8602";
@@ -2528,11 +2482,11 @@
 	};
 
 	serial@fd890000 {
-		compatible = "rockchip,rk3588-uart\0snps,dw-apb-uart";
+		compatible = "rockchip,rk3588-uart", "snps,dw-apb-uart";
 		reg = <0x00 0xfd890000 0x00 0x100>;
 		interrupts = <0x00 0x14b 0x04>;
 		clocks = <0x02 0x2ae 0x02 0x2af>;
-		clock-names = "baudclk\0apb_pclk";
+		clock-names = "baudclk", "apb_pclk";
 		reg-shift = <0x02>;
 		reg-io-width = <0x04>;
 		dmas = <0x60 0x06 0x60 0x07>;
@@ -2542,56 +2496,55 @@
 	};
 
 	pwm@fd8b0000 {
-		compatible = "rockchip,rk3588-pwm\0rockchip,rk3328-pwm";
+		compatible = "rockchip,rk3588-pwm", "rockchip,rk3328-pwm";
 		reg = <0x00 0xfd8b0000 0x00 0x10>;
 		interrupts = <0x00 0x158 0x04>;
 		#pwm-cells = <0x03>;
 		pinctrl-names = "active";
 		pinctrl-0 = <0x62>;
 		clocks = <0x02 0x2a5 0x02 0x2a4>;
-		clock-names = "pwm\0pclk";
+		clock-names = "pwm", "pclk";
 		status = "disabled";
 	};
 
-	pwm@fd8b0010 {
-		compatible = "rockchip,rk3588-pwm\0rockchip,rk3328-pwm";
+	pwm1: pwm@fd8b0010 {
+
+		compatible = "rockchip,rk3588-pwm", "rockchip,rk3328-pwm";
 		reg = <0x00 0xfd8b0010 0x00 0x10>;
 		interrupts = <0x00 0x158 0x04>;
 		#pwm-cells = <0x03>;
-		pinctrl-names = "active";
-		pinctrl-0 = <0x63>;
-		clocks = <0x02 0x2a5 0x02 0x2a4>;
-		clock-names = "pwm\0pclk";
+		clocks = <&scmi_clk 28 &scmi_clk 29>;
+		clock-names = "pwm", "pclk";
 		status = "okay";
 		phandle = <0x1b2>;
 	};
 
 	pwm@fd8b0020 {
-		compatible = "rockchip,rk3588-pwm\0rockchip,rk3328-pwm";
+		compatible = "rockchip,rk3588-pwm", "rockchip,rk3328-pwm";
 		reg = <0x00 0xfd8b0020 0x00 0x10>;
 		interrupts = <0x00 0x158 0x04>;
 		#pwm-cells = <0x03>;
 		pinctrl-names = "active";
 		pinctrl-0 = <0x64>;
 		clocks = <0x02 0x2a5 0x02 0x2a4>;
-		clock-names = "pwm\0pclk";
+		clock-names = "pwm", "pclk";
 		status = "disabled";
 	};
 
 	pwm@fd8b0030 {
-		compatible = "rockchip,rk3588-pwm\0rockchip,rk3328-pwm";
+		compatible = "rockchip,rk3588-pwm", "rockchip,rk3328-pwm";
 		reg = <0x00 0xfd8b0030 0x00 0x10>;
 		interrupts = <0x00 0x158 0x04 0x00 0x159 0x04>;
 		#pwm-cells = <0x03>;
 		pinctrl-names = "active";
 		pinctrl-0 = <0x65>;
 		clocks = <0x02 0x2a5 0x02 0x2a4>;
-		clock-names = "pwm\0pclk";
+		clock-names = "pwm", "pclk";
 		status = "disabled";
 	};
 
-	power-management@fd8d8000 {
-		compatible = "rockchip,rk3588-pmu\0syscon\0simple-mfd";
+	pmu: power-management@fd8d8000 {
+		compatible = "rockchip,rk3588-pmu", "syscon", "simple-mfd";
 		reg = <0x00 0xfd8d8000 0x00 0x400>;
 		phandle = <0xbe>;
 
@@ -2600,7 +2553,7 @@
 			#power-domain-cells = <0x01>;
 			#address-cells = <0x01>;
 			#size-cells = <0x00>;
-			status = "okay";
+			status = "disabled" /* not exposed to zone2 */;
 			phandle = <0x49>;
 
 			power-domain@8 {
@@ -2671,7 +2624,7 @@
 				reg = <0x15>;
 				#address-cells = <0x01>;
 				#size-cells = <0x00>;
-				clocks = <0x02 0x1be 0x02 0x1bd 0x02 0x1bc 0x02 0x1bf 0x02 0x1aa 0x02 0x1a9 0x02 0x1ac 0x02 0x1ad 0x02 0x1ae 0x02 0x1af 0x02 0x1b0 0x02 0x1b1 0x02 0x1b2 0x02 0x1b3 0x02 0x1b4 0x02 0x1b5 0x02 0x1b7 0x02 0x1b6>;
+				clocks = <0x02 0x1be 0x02 0x1bd 0x02 0x1bc 0x02 0x1bf 0x02 0x1aa 0x02 0x1a9 0x02 0x1ac 0x02 0x1ad 0x02 0x1ae 0x02 0x1af 0x02 0x1b0 0x02 0x1b1 0x02 &pwm1 0x02 0x1b3 0x02 0x1b4 0x02 0x1b5 0x02 0x1b7 0x02 0x1b6>;
 				pm_qos = <0x77 0x78 0x79 0x7a 0x7b 0x7c 0x7d 0x7e>;
 
 				power-domain@23 {
@@ -2762,7 +2715,7 @@
 			};
 
 			power-domain@37 {
-				reg = <0x25>;
+				reg = <&dcphy0>;
 				clocks = <0x02 0x199 0x02 0x140>;
 				pm_qos = <0x93>;
 			};
@@ -2785,10 +2738,11 @@
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
 
+		status = "disabled"; /* not exposed to zone2 */
 		pvtm@0 {
 			reg = <0x00>;
 			clocks = <0x02 0x2c6 0x02 0x15>;
-			clock-names = "clk\0pclk";
+			clock-names = "clk", "pclk";
 		};
 	};
 
@@ -2798,10 +2752,11 @@
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
 
+		status = "disabled"; /* not exposed to zone2 */
 		pvtm@1 {
 			reg = <0x01>;
 			clocks = <0x02 0x2c8 0x02 0x17>;
-			clock-names = "clk\0pclk";
+			clock-names = "clk", "pclk";
 		};
 	};
 
@@ -2811,10 +2766,11 @@
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
 
+		status = "disabled"; /* not exposed to zone2 */
 		pvtm@2 {
 			reg = <0x02>;
 			clocks = <0x02 0x2ca 0x02 0x1b>;
-			clock-names = "clk\0pclk";
+			clock-names = "clk", "pclk";
 		};
 	};
 
@@ -2824,12 +2780,13 @@
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
 
+		status = "disabled"; /* not exposed to zone2 */
 		pvtm@3 {
 			reg = <0x03>;
 			clocks = <0x02 0x12b 0x02 0x129>;
-			clock-names = "clk\0pclk";
+			clock-names = "clk", "pclk";
 			resets = <0x02 0x1de 0x02 0x1dc>;
-			reset-names = "rts\0rst-p";
+			reset-names = "rts", "rst-p";
 		};
 	};
 
@@ -2839,12 +2796,13 @@
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
 
+		status = "disabled"; /* not exposed to zone2 */
 		pvtm@4 {
 			reg = <0x04>;
 			clocks = <0x02 0x118>;
 			clock-names = "clk";
 			resets = <0x02 0x430 0x02 0x42f>;
-			reset-names = "rts\0rst-p";
+			reset-names = "rts", "rst-p";
 		};
 	};
 
@@ -2852,18 +2810,18 @@
 		compatible = "rockchip,rk3588-rknpu";
 		reg = <0x00 0xfdab0000 0x00 0x10000 0x00 0xfdac0000 0x00 0x10000 0x00 0xfdad0000 0x00 0x10000>;
 		interrupts = <0x00 0x6e 0x04 0x00 0x6f 0x04 0x00 0x70 0x04>;
-		interrupt-names = "npu0_irq\0npu1_irq\0npu2_irq";
+		interrupt-names = "npu0_irq", "npu1_irq", "npu2_irq";
 		clocks = <0x0a 0x06 0x02 0x12d 0x02 0x122 0x02 0x124 0x02 0x12e 0x02 0x123 0x02 0x125 0x02 0x131>;
-		clock-names = "clk_npu\0aclk0\0aclk1\0aclk2\0hclk0\0hclk1\0hclk2\0pclk";
+		clock-names = "clk_npu", "aclk0", "aclk1", "aclk2", "hclk0", "hclk1", "hclk2", "pclk";
 		assigned-clocks = <0x0a 0x06>;
 		assigned-clock-rates = <0xbebc200>;
-		resets = <0x02 0x1e6 0x02 0x1b0 0x02 0x1c0 0x02 0x1e8 0x02 0x1b2 0x02 0x1c2>;
-		reset-names = "srst_a0\0srst_a1\0srst_a2\0srst_h0\0srst_h1\0srst_h2";
+		resets = <0x02 0x1e6 0x02 0x1b0 0x02 0x1c0 0x02 0x1e8 0x02 &pwm1 0x02 0x1c2>;
+		reset-names = "srst_a0", "srst_a1", "srst_a2", "srst_h0", "srst_h1", "srst_h2";
 		power-domains = <0x49 0x09 0x49 0x0a 0x49 0x0b>;
-		power-domain-names = "npu0\0npu1\0npu2";
+		power-domain-names = "npu0", "npu1", "npu2";
 		operating-points-v2 = <0x95>;
 		iommus = <0x96>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		rknpu-supply = <0x97>;
 		mem-supply = <0x97>;
 	};
@@ -2871,7 +2829,7 @@
 	npu-opp-table {
 		compatible = "operating-points-v2";
 		nvmem-cells = <0x98 0x99 0x17>;
-		nvmem-cell-names = "leakage\0opp-info\0specification_serial_number";
+		nvmem-cell-names = "leakage", "opp-info", "specification_serial_number";
 		rockchip,supported-hw;
 		rockchip,pvtm-hw = <0x06>;
 		rockchip,pvtm-voltage-sel-hw = <0x00 0x31f 0x00 0x320 0x333 0x01 0x334 0x34c 0x02 0x34d 0x365 0x03 0x366 0x37e 0x04 0x37f 0x270f 0x05>;
@@ -2898,6 +2856,7 @@
 		rockchip,high-temp-max-freq = "\0\f5";
 		phandle = <0x95>;
 
+		status = "disabled"; /* not exposed to zone2 */
 		opp-300000000 {
 			opp-supported-hw = <0xf9 0xffff>;
 			opp-hz = <0x00 0x11e1a300>;
@@ -3035,11 +2994,11 @@
 		compatible = "rockchip,iommu-v2";
 		reg = <0x00 0xfdab9000 0x00 0x100 0x00 0xfdaba000 0x00 0x100 0x00 0xfdaca000 0x00 0x100 0x00 0xfdada000 0x00 0x100>;
 		interrupts = <0x00 0x6e 0x04 0x00 0x6f 0x04 0x00 0x70 0x04>;
-		interrupt-names = "npu0_mmu\0npu1_mmu\0npu2_mmu";
+		interrupt-names = "npu0_mmu", "npu1_mmu", "npu2_mmu";
 		clocks = <0x02 0x12d 0x02 0x122 0x02 0x124 0x02 0x12e 0x02 0x123 0x02 0x125>;
-		clock-names = "aclk0\0aclk1\0aclk2\0iface0\0iface1\0iface2";
+		clock-names = "aclk0", "aclk1", "aclk2", "iface0", "iface1", "iface2";
 		#iommu-cells = <0x00>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0x96>;
 	};
 
@@ -3049,12 +3008,12 @@
 		interrupts = <0x00 0x78 0x04>;
 		interrupt-names = "irq_vepu";
 		clocks = <0x02 0x1c0 0x02 0x1c1>;
-		clock-names = "aclk_vcodec\0hclk_vcodec";
+		clock-names = "aclk_vcodec", "hclk_vcodec";
 		rockchip,normal-rates = <0x2367b880 0x00>;
 		assigned-clocks = <0x02 0x1c0>;
 		assigned-clock-rates = <0x2367b880>;
 		resets = <0x02 0x2c8 0x02 0x2c9>;
-		reset-names = "shared_video_a\0shared_video_h";
+		reset-names = "shared_video_a", "shared_video_h";
 		rockchip,skip-pmu-idle-request;
 		rockchip,disable-auto-freq;
 		iommus = <0x9b>;
@@ -3062,7 +3021,7 @@
 		rockchip,taskqueue-node = <0x00>;
 		rockchip,resetgroup-node = <0x00>;
 		power-domains = <0x49 0x15>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 	};
 
 	vdpu@fdb50400 {
@@ -3071,12 +3030,12 @@
 		interrupts = <0x00 0x77 0x04>;
 		interrupt-names = "irq_vdpu";
 		clocks = <0x02 0x1c0 0x02 0x1c1>;
-		clock-names = "aclk_vcodec\0hclk_vcodec";
+		clock-names = "aclk_vcodec", "hclk_vcodec";
 		rockchip,normal-rates = <0x2367b880 0x00>;
 		assigned-clocks = <0x02 0x1c0>;
 		assigned-clock-rates = <0x2367b880>;
 		resets = <0x02 0x2c8 0x02 0x2c9>;
-		reset-names = "shared_video_a\0shared_video_h";
+		reset-names = "shared_video_a", "shared_video_h";
 		rockchip,skip-pmu-idle-request;
 		rockchip,disable-auto-freq;
 		iommus = <0x9b>;
@@ -3084,7 +3043,7 @@
 		rockchip,taskqueue-node = <0x00>;
 		rockchip,resetgroup-node = <0x00>;
 		power-domains = <0x49 0x15>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 	};
 
 	iommu@fdb50800 {
@@ -3093,10 +3052,10 @@
 		interrupts = <0x00 0x76 0x04>;
 		interrupt-names = "irq_vdpu_mmu";
 		clocks = <0x02 0x1c0 0x02 0x1c1>;
-		clock-names = "aclk\0iface";
+		clock-names = "aclk", "iface";
 		power-domains = <0x49 0x15>;
 		#iommu-cells = <0x00>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0x9b>;
 	};
 
@@ -3106,12 +3065,12 @@
 		interrupts = <0x00 0x77 0x04>;
 		interrupt-names = "irq_avsd";
 		clocks = <0x02 0x1c0 0x02 0x1c1>;
-		clock-names = "aclk_vcodec\0hclk_vcodec";
+		clock-names = "aclk_vcodec", "hclk_vcodec";
 		rockchip,normal-rates = <0x2367b880 0x00>;
 		assigned-clocks = <0x02 0x1c0>;
 		assigned-clock-rates = <0x2367b880>;
 		resets = <0x02 0x2c8 0x02 0x2c9>;
-		reset-names = "shared_video_a\0shared_video_h";
+		reset-names = "shared_video_a", "shared_video_h";
 		rockchip,skip-pmu-idle-request;
 		rockchip,disable-auto-freq;
 		iommus = <0x9b>;
@@ -3119,7 +3078,7 @@
 		rockchip,srv = <0x9c>;
 		rockchip,taskqueue-node = <0x00>;
 		rockchip,resetgroup-node = <0x00>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 	};
 
 	rga@fdb60000 {
@@ -3128,10 +3087,10 @@
 		interrupts = <0x00 0x72 0x04>;
 		interrupt-names = "rga3_core0_irq";
 		clocks = <0x02 0x1ba 0x02 0x1b9 0x02 0x1bb>;
-		clock-names = "aclk_rga3_0\0hclk_rga3_0\0clk_rga3_0";
+		clock-names = "aclk_rga3_0", "hclk_rga3_0", "clk_rga3_0";
 		power-domains = <0x49 0x16>;
 		iommus = <0x9d>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 	};
 
 	iommu@fdb60f00 {
@@ -3140,10 +3099,10 @@
 		interrupts = <0x00 0x72 0x04>;
 		interrupt-names = "rga3_0_mmu";
 		clocks = <0x02 0x1ba 0x02 0x1b9>;
-		clock-names = "aclk\0iface";
+		clock-names = "aclk", "iface";
 		power-domains = <0x49 0x16>;
 		#iommu-cells = <0x00>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0x9d>;
 	};
 
@@ -3153,10 +3112,10 @@
 		interrupts = <0x00 0x73 0x04>;
 		interrupt-names = "rga3_core1_irq";
 		clocks = <0x02 0x18a 0x02 0x189 0x02 0x18b>;
-		clock-names = "aclk_rga3_1\0hclk_rga3_1\0clk_rga3_1";
+		clock-names = "aclk_rga3_1", "hclk_rga3_1", "clk_rga3_1";
 		power-domains = <0x49 0x1e>;
 		iommus = <0x9e>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 	};
 
 	iommu@fdb70f00 {
@@ -3165,10 +3124,10 @@
 		interrupts = <0x00 0x73 0x04>;
 		interrupt-names = "rga3_1_mmu";
 		clocks = <0x02 0x18a 0x02 0x189>;
-		clock-names = "aclk\0iface";
+		clock-names = "aclk", "iface";
 		power-domains = <0x49 0x1e>;
 		#iommu-cells = <0x00>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0x9e>;
 	};
 
@@ -3178,9 +3137,9 @@
 		interrupts = <0x00 0x74 0x04>;
 		interrupt-names = "rga2_irq";
 		clocks = <0x02 0x1b7 0x02 0x1b6 0x02 0x1b8>;
-		clock-names = "aclk_rga2\0hclk_rga2\0clk_rga2";
+		clock-names = "aclk_rga2", "hclk_rga2", "clk_rga2";
 		power-domains = <0x49 0x15>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 	};
 
 	jpegd@fdb90000 {
@@ -3189,18 +3148,18 @@
 		interrupts = <0x00 0x81 0x04>;
 		interrupt-names = "irq_jpegd";
 		clocks = <0x02 0x1b4 0x02 0x1b5>;
-		clock-names = "aclk_vcodec\0hclk_vcodec";
+		clock-names = "aclk_vcodec", "hclk_vcodec";
 		rockchip,normal-rates = <0x23c34600 0x00>;
 		assigned-clocks = <0x02 0x1b4>;
 		assigned-clock-rates = <0x23c34600>;
 		resets = <0x02 0x2d2 0x02 0x2d3>;
-		reset-names = "video_a\0video_h";
+		reset-names = "video_a", "video_h";
 		rockchip,skip-pmu-idle-request;
 		iommus = <0x9f>;
 		rockchip,srv = <0x9c>;
 		rockchip,taskqueue-node = <0x01>;
 		power-domains = <0x49 0x15>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 	};
 
 	iommu@fdb90480 {
@@ -3209,10 +3168,10 @@
 		interrupts = <0x00 0x82 0x04>;
 		interrupt-names = "irq_jpegd_mmu";
 		clocks = <0x02 0x1b4 0x02 0x1b5>;
-		clock-names = "aclk\0iface";
+		clock-names = "aclk", "iface";
 		power-domains = <0x49 0x15>;
 		#iommu-cells = <0x00>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0x9f>;
 	};
 
@@ -3222,12 +3181,12 @@
 		interrupts = <0x00 0x7a 0x04>;
 		interrupt-names = "irq_jpege0";
 		clocks = <0x02 0x1ac 0x02 0x1ad>;
-		clock-names = "aclk_vcodec\0hclk_vcodec";
+		clock-names = "aclk_vcodec", "hclk_vcodec";
 		rockchip,normal-rates = <0x2367b880 0x00>;
 		assigned-clocks = <0x02 0x1ac>;
 		assigned-clock-rates = <0x2367b880>;
 		resets = <0x02 0x2ca 0x02 0x2cb>;
-		reset-names = "video_a\0video_h";
+		reset-names = "video_a", "video_h";
 		rockchip,skip-pmu-idle-request;
 		rockchip,disable-auto-freq;
 		iommus = <0xa0>;
@@ -3235,7 +3194,7 @@
 		rockchip,taskqueue-node = <0x02>;
 		rockchip,ccu = <0xa1>;
 		power-domains = <0x49 0x15>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 	};
 
 	iommu@fdba0800 {
@@ -3244,10 +3203,10 @@
 		interrupts = <0x00 0x79 0x04>;
 		interrupt-names = "irq_jpege0_mmu";
 		clocks = <0x02 0x1ac 0x02 0x1ad>;
-		clock-names = "aclk\0iface";
+		clock-names = "aclk", "iface";
 		power-domains = <0x49 0x15>;
 		#iommu-cells = <0x00>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0xa0>;
 	};
 
@@ -3257,12 +3216,12 @@
 		interrupts = <0x00 0x7c 0x04>;
 		interrupt-names = "irq_jpege1";
 		clocks = <0x02 0x1ae 0x02 0x1af>;
-		clock-names = "aclk_vcodec\0hclk_vcodec";
+		clock-names = "aclk_vcodec", "hclk_vcodec";
 		rockchip,normal-rates = <0x2367b880 0x00>;
 		assigned-clocks = <0x02 0x1ae>;
 		assigned-clock-rates = <0x2367b880>;
 		resets = <0x02 0x2cc 0x02 0x2cd>;
-		reset-names = "video_a\0video_h";
+		reset-names = "video_a", "video_h";
 		rockchip,skip-pmu-idle-request;
 		rockchip,disable-auto-freq;
 		iommus = <0xa2>;
@@ -3270,7 +3229,7 @@
 		rockchip,taskqueue-node = <0x02>;
 		rockchip,ccu = <0xa1>;
 		power-domains = <0x49 0x15>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 	};
 
 	iommu@fdba4800 {
@@ -3279,10 +3238,10 @@
 		interrupts = <0x00 0x7b 0x04>;
 		interrupt-names = "irq_jpege1_mmu";
 		clocks = <0x02 0x1ae 0x02 0x1af>;
-		clock-names = "aclk\0iface";
+		clock-names = "aclk", "iface";
 		power-domains = <0x49 0x15>;
 		#iommu-cells = <0x00>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0xa2>;
 	};
 
@@ -3292,12 +3251,12 @@
 		interrupts = <0x00 0x7e 0x04>;
 		interrupt-names = "irq_jpege2";
 		clocks = <0x02 0x1b0 0x02 0x1b1>;
-		clock-names = "aclk_vcodec\0hclk_vcodec";
+		clock-names = "aclk_vcodec", "hclk_vcodec";
 		rockchip,normal-rates = <0x2367b880 0x00>;
 		assigned-clocks = <0x02 0x1b0>;
 		assigned-clock-rates = <0x2367b880>;
 		resets = <0x02 0x2ce 0x02 0x2cf>;
-		reset-names = "video_a\0video_h";
+		reset-names = "video_a", "video_h";
 		rockchip,skip-pmu-idle-request;
 		rockchip,disable-auto-freq;
 		iommus = <0xa3>;
@@ -3305,7 +3264,7 @@
 		rockchip,taskqueue-node = <0x02>;
 		rockchip,ccu = <0xa1>;
 		power-domains = <0x49 0x15>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 	};
 
 	iommu@fdba8800 {
@@ -3314,10 +3273,10 @@
 		interrupts = <0x00 0x7d 0x04>;
 		interrupt-names = "irq_jpege2_mmu";
 		clocks = <0x02 0x1b0 0x02 0x1b1>;
-		clock-names = "aclk\0iface";
+		clock-names = "aclk", "iface";
 		power-domains = <0x49 0x15>;
 		#iommu-cells = <0x00>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0xa3>;
 	};
 
@@ -3326,13 +3285,13 @@
 		reg = <0x00 0xfdbac000 0x00 0x400>;
 		interrupts = <0x00 0x80 0x04>;
 		interrupt-names = "irq_jpege3";
-		clocks = <0x02 0x1b2 0x02 0x1b3>;
-		clock-names = "aclk_vcodec\0hclk_vcodec";
+		clocks = <0x02 &pwm1 0x02 0x1b3>;
+		clock-names = "aclk_vcodec", "hclk_vcodec";
 		rockchip,normal-rates = <0x2367b880 0x00>;
-		assigned-clocks = <0x02 0x1b2>;
+		assigned-clocks = <0x02 &pwm1>;
 		assigned-clock-rates = <0x2367b880>;
 		resets = <0x02 0x2d0 0x02 0x2d1>;
-		reset-names = "video_a\0video_h";
+		reset-names = "video_a", "video_h";
 		rockchip,skip-pmu-idle-request;
 		rockchip,disable-auto-freq;
 		iommus = <0xa4>;
@@ -3340,7 +3299,7 @@
 		rockchip,taskqueue-node = <0x02>;
 		rockchip,ccu = <0xa1>;
 		power-domains = <0x49 0x15>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 	};
 
 	iommu@fdbac800 {
@@ -3348,11 +3307,11 @@
 		reg = <0x00 0xfdbac800 0x00 0x40>;
 		interrupts = <0x00 0x7f 0x04>;
 		interrupt-names = "irq_jpege3_mmu";
-		clocks = <0x02 0x1b2 0x02 0x1b3>;
-		clock-names = "aclk\0iface";
+		clocks = <0x02 &pwm1 0x02 0x1b3>;
+		clock-names = "aclk", "iface";
 		power-domains = <0x49 0x15>;
 		#iommu-cells = <0x00>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0xa4>;
 	};
 
@@ -3362,19 +3321,19 @@
 		interrupts = <0x00 0x75 0x04>;
 		interrupt-names = "irq_iep";
 		clocks = <0x02 0x1aa 0x02 0x1a9 0x02 0x1ab>;
-		clock-names = "aclk\0hclk\0sclk";
+		clock-names = "aclk", "hclk", "sclk";
 		rockchip,normal-rates = <0x2367b880 0x00>;
 		assigned-clocks = <0x02 0x1aa>;
 		assigned-clock-rates = <0x2367b880>;
 		resets = <0x02 0x2d5 0x02 0x2d4 0x02 0x2d6>;
-		reset-names = "rst_a\0rst_h\0rst_s";
+		reset-names = "rst_a", "rst_h", "rst_s";
 		rockchip,skip-pmu-idle-request;
 		rockchip,disable-auto-freq;
 		power-domains = <0x49 0x15>;
 		rockchip,srv = <0x9c>;
 		rockchip,taskqueue-node = <0x06>;
 		iommus = <0xa5>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 	};
 
 	iommu@fdbb0800 {
@@ -3383,10 +3342,10 @@
 		interrupts = <0x00 0x75 0x04>;
 		interrupt-names = "irq_iep_mmu";
 		clocks = <0x02 0x1aa 0x02 0x1a9>;
-		clock-names = "aclk\0iface";
+		clock-names = "aclk", "iface";
 		#iommu-cells = <0x00>;
 		power-domains = <0x49 0x15>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0xa5>;
 	};
 
@@ -3396,12 +3355,12 @@
 		interrupts = <0x00 0x65 0x04>;
 		interrupt-names = "irq_rkvenc0";
 		clocks = <0x02 0x1c5 0x02 0x1c4 0x02 0x1c6>;
-		clock-names = "aclk_vcodec\0hclk_vcodec\0clk_core";
+		clock-names = "aclk_vcodec", "hclk_vcodec", "clk_core";
 		rockchip,normal-rates = <0x1dcd6500 0x00 0x2faf0800>;
 		assigned-clocks = <0x02 0x1c5 0x02 0x1c6>;
 		assigned-clock-rates = <0x1dcd6500 0x2faf0800>;
 		resets = <0x02 0x2f5 0x02 0x2f4 0x02 0x2f6>;
-		reset-names = "video_a\0video_h\0video_core";
+		reset-names = "video_a", "video_h", "video_core";
 		rockchip,skip-pmu-idle-request;
 		iommus = <0xa6>;
 		rockchip,srv = <0x9c>;
@@ -3410,7 +3369,7 @@
 		rockchip,task-capacity = <0x08>;
 		power-domains = <0x49 0x10>;
 		operating-points-v2 = <0xa8>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		venc-supply = <0xa9>;
 		mem-supply = <0xa9>;
 	};
@@ -3419,15 +3378,15 @@
 		compatible = "rockchip,iommu-v2";
 		reg = <0x00 0xfdbdf000 0x00 0x40 0x00 0xfdbdf040 0x00 0x40>;
 		interrupts = <0x00 0x63 0x04 0x00 0x64 0x04>;
-		interrupt-names = "irq_rkvenc0_mmu0\0irq_rkvenc0_mmu1";
+		interrupt-names = "irq_rkvenc0_mmu0", "irq_rkvenc0_mmu1";
 		clocks = <0x02 0x1c5 0x02 0x1c4>;
-		clock-names = "aclk\0iface";
+		clock-names = "aclk", "iface";
 		rockchip,disable-mmu-reset;
 		rockchip,enable-cmd-retry;
 		rockchip,shootdown-entire;
 		#iommu-cells = <0x00>;
 		power-domains = <0x49 0x10>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0xa6>;
 	};
 
@@ -3437,12 +3396,12 @@
 		interrupts = <0x00 0x68 0x04>;
 		interrupt-names = "irq_rkvenc1";
 		clocks = <0x02 0x1ca 0x02 0x1c9 0x02 0x1cb>;
-		clock-names = "aclk_vcodec\0hclk_vcodec\0clk_core";
+		clock-names = "aclk_vcodec", "hclk_vcodec", "clk_core";
 		rockchip,normal-rates = <0x1dcd6500 0x00 0x2faf0800>;
 		assigned-clocks = <0x02 0x1ca 0x02 0x1cb>;
 		assigned-clock-rates = <0x1dcd6500 0x2faf0800>;
 		resets = <0x02 0x305 0x02 0x304 0x02 0x306>;
-		reset-names = "video_a\0video_h\0video_core";
+		reset-names = "video_a", "video_h", "video_core";
 		rockchip,skip-pmu-idle-request;
 		iommus = <0xaa>;
 		rockchip,srv = <0x9c>;
@@ -3451,7 +3410,7 @@
 		rockchip,task-capacity = <0x08>;
 		power-domains = <0x49 0x11>;
 		operating-points-v2 = <0xa8>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		venc-supply = <0xa9>;
 		mem-supply = <0xa9>;
 	};
@@ -3460,27 +3419,28 @@
 		compatible = "rockchip,iommu-v2";
 		reg = <0x00 0xfdbef000 0x00 0x40 0x00 0xfdbef040 0x00 0x40>;
 		interrupts = <0x00 0x66 0x04 0x00 0x67 0x04>;
-		interrupt-names = "irq_rkvenc1_mmu0\0irq_rkvenc1_mmu1";
+		interrupt-names = "irq_rkvenc1_mmu0", "irq_rkvenc1_mmu1";
 		clocks = <0x02 0x1ca 0x02 0x1c9>;
-		lock-names = "aclk\0iface";
+		lock-names = "aclk", "iface";
 		rockchip,disable-mmu-reset;
 		rockchip,enable-cmd-retry;
 		rockchip,shootdown-entire;
 		#iommu-cells = <0x00>;
 		power-domains = <0x49 0x11>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0xaa>;
 	};
 
 	venc-opp-table {
 		compatible = "operating-points-v2";
 		nvmem-cells = <0xab 0xac>;
-		nvmem-cell-names = "leakage\0opp-info";
+		nvmem-cell-names = "leakage", "opp-info";
 		rockchip,leakage-voltage-sel = <0x01 0x0f 0x00 0x10 0x19 0x01 0x1a 0xfe 0x02>;
-		rockchip,grf = <0xad>;
+		rockchip,grf = <&sys_grf>;
 		volt-mem-read-margin = <0xd0bd8 0x01 0xbac48 0x02 0xa4cb8 0x03 0x78d98 0x04>;
 		phandle = <0xa8>;
 
+		status = "disabled"; /* not exposed to zone2 */
 		opp-800000000 {
 			opp-hz = <0x00 0x2faf0800>;
 			opp-microvolt = <0xb71b0 0xb71b0 0xcf850 0xb71b0 0xb71b0 0xcf850>;
@@ -3503,23 +3463,23 @@
 		rockchip,skip-pmu-idle-request;
 		rockchip,ccu-mode = <0x01>;
 		power-domains = <0x49 0x0e>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0xaf>;
 	};
 
 	rkvdec-core@fdc38000 {
 		compatible = "rockchip,rkv-decoder-v2";
 		reg = <0x00 0xfdc38100 0x00 0x400 0x00 0xfdc38000 0x00 0x100>;
-		reg-names = "regs\0link";
+		reg-names = "regs", "link";
 		interrupts = <0x00 0x5f 0x04>;
 		interrupt-names = "irq_rkvdec0";
 		clocks = <0x02 0x190 0x02 0x18f 0x02 0x193 0x02 0x191 0x02 0x192>;
-		clock-names = "aclk_vcodec\0hclk_vcodec\0clk_core\0clk_cabac\0clk_hevc_cabac";
+		clock-names = "aclk_vcodec", "hclk_vcodec", "clk_core", "clk_cabac", "clk_hevc_cabac";
 		rockchip,normal-rates = <0x2faf0800 0x00 0x23c34600 0x23c34600 0x3b9aca00>;
 		assigned-clocks = <0x02 0x190 0x02 0x193 0x02 0x191 0x02 0x192>;
 		assigned-clock-rates = <0x2faf0800 0x23c34600 0x23c34600 0x3b9aca00>;
 		resets = <0x02 0x284 0x02 0x283 0x02 0x289 0x02 0x287 0x02 0x288>;
-		reset-names = "video_a\0video_h\0video_core\0video_cabac\0video_hevc_cabac";
+		reset-names = "video_a", "video_h", "video_core", "video_cabac", "video_hevc_cabac";
 		rockchip,skip-pmu-idle-request;
 		iommus = <0xae>;
 		rockchip,srv = <0x9c>;
@@ -3532,7 +3492,7 @@
 		rockchip,rcb-info = <0x88 0x6000 0x89 0xc000 0x8d 0x16000 0x8c 0xc000 0x8b 0x2c000 0x85 0xc000 0x86 0x2000 0x87 0x1100 0x8a 0x3300 0x8e 0x47300>;
 		rockchip,rcb-min-width = <0x200>;
 		power-domains = <0x49 0x0e>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 	};
 
 	iommu@fdc38700 {
@@ -3541,30 +3501,30 @@
 		interrupts = <0x00 0x60 0x04>;
 		interrupt-names = "irq_rkvdec0_mmu";
 		clocks = <0x02 0x190 0x02 0x18f>;
-		clock-names = "aclk\0iface";
+		clock-names = "aclk", "iface";
 		rockchip,disable-mmu-reset;
 		rockchip,enable-cmd-retry;
 		rockchip,shootdown-entire;
 		rockchip,master-handle-irq;
 		#iommu-cells = <0x00>;
 		power-domains = <0x49 0x0e>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0xae>;
 	};
 
 	rkvdec-core@fdc48000 {
 		compatible = "rockchip,rkv-decoder-v2";
 		reg = <0x00 0xfdc48100 0x00 0x400 0x00 0xfdc48000 0x00 0x100>;
-		reg-names = "regs\0link";
+		reg-names = "regs", "link";
 		interrupts = <0x00 0x61 0x04>;
 		interrupt-names = "irq_rkvdec1";
 		clocks = <0x02 0x195 0x02 0x194 0x02 0x198 0x02 0x196 0x02 0x197>;
-		clock-names = "aclk_vcodec\0hclk_vcodec\0clk_core\0clk_cabac\0clk_hevc_cabac";
+		clock-names = "aclk_vcodec", "hclk_vcodec", "clk_core", "clk_cabac", "clk_hevc_cabac";
 		rockchip,normal-rates = <0x2faf0800 0x00 0x23c34600 0x23c34600 0x3b9aca00>;
 		assigned-clocks = <0x02 0x195 0x02 0x198 0x02 0x196 0x02 0x197>;
 		assigned-clock-rates = <0x2faf0800 0x23c34600 0x23c34600 0x3b9aca00>;
 		resets = <0x02 0x293 0x02 0x292 0x02 0x298 0x02 0x296 0x02 0x297>;
-		reset-names = "video_a\0video_h\0video_core\0video_cabac\0video_hevc_cabac";
+		reset-names = "video_a", "video_h", "video_core", "video_cabac", "video_hevc_cabac";
 		rockchip,skip-pmu-idle-request;
 		iommus = <0xb1>;
 		rockchip,srv = <0x9c>;
@@ -3577,7 +3537,7 @@
 		rockchip,rcb-info = <0x88 0x6000 0x89 0xc000 0x8d 0x16000 0x8c 0xc000 0x8b 0x2c000 0x85 0xc000 0x86 0x2000 0x87 0x1100 0x8a 0x3300 0x8e 0x47300>;
 		rockchip,rcb-min-width = <0x200>;
 		power-domains = <0x49 0x0f>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 	};
 
 	iommu@fdc48700 {
@@ -3586,30 +3546,30 @@
 		interrupts = <0x00 0x62 0x04>;
 		interrupt-names = "irq_rkvdec1_mmu";
 		clocks = <0x02 0x195 0x02 0x194>;
-		clock-names = "aclk\0iface";
+		clock-names = "aclk", "iface";
 		rockchip,disable-mmu-reset;
 		rockchip,enable-cmd-retry;
 		rockchip,shootdown-entire;
 		rockchip,master-handle-irq;
 		#iommu-cells = <0x00>;
 		power-domains = <0x49 0x0f>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0xb1>;
 	};
 
 	av1d@fdc70000 {
 		compatible = "rockchip,av1-decoder";
 		reg = <0x00 0xfdc70000 0x00 0x800 0x00 0xfdc80000 0x00 0x400 0x00 0xfdc90000 0x00 0x400>;
-		reg-names = "vcd\0cache\0afbc";
+		reg-names = "vcd", "cache", "afbc";
 		interrupts = <0x00 0x6c 0x04 0x00 0x6b 0x04 0x00 0x6a 0x04>;
-		interrupt-names = "irq_av1d\0irq_cache\0irq_afbc";
+		interrupt-names = "irq_av1d", "irq_cache", "irq_afbc";
 		clocks = <0x02 0x49 0x02 0x4b>;
-		clock-names = "aclk_vcodec\0hclk_vcodec";
+		clock-names = "aclk_vcodec", "hclk_vcodec";
 		rockchip,normal-rates = <0x17d78400 0x17d78400>;
 		assigned-clocks = <0x02 0x49 0x02 0x4b>;
 		assigned-clock-rates = <0x17d78400 0x17d78400>;
 		resets = <0x02 0x442 0x02 0x445>;
-		reset-names = "video_a\0video_h";
+		reset-names = "video_a", "video_h";
 		iommus = <0xb3>;
 		rockchip,srv = <0x9c>;
 		rockchip,taskqueue-node = <0x0b>;
@@ -3623,10 +3583,10 @@
 		interrupts = <0x00 0x6d 0x04>;
 		interrupt-names = "irq_av1d_mmu";
 		clocks = <0x02 0x49 0x02 0x4b>;
-		clock-names = "aclk\0iface";
+		clock-names = "aclk", "iface";
 		#iommu-cells = <0x00>;
 		power-domains = <0x49 0x17>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0xb3>;
 	};
 
@@ -3634,9 +3594,9 @@
 		compatible = "rockchip,rk3588-rkisp-unite";
 		reg = <0x00 0xfdcb0000 0x00 0x10000 0x00 0xfdcc0000 0x00 0x10000>;
 		interrupts = <0x00 0x87 0x04 0x00 0x89 0x04 0x00 0x8a 0x04>;
-		interrupt-names = "isp_irq\0mi_irq\0mipi_irq";
+		interrupt-names = "isp_irq", "mi_irq", "mipi_irq";
 		clocks = <0x02 0x1de 0x02 0x1df 0x02 0x1db 0x02 0x1dc 0x02 0x1dd 0x02 0x120 0x02 0x121 0x02 0x11d 0x02 0x11e 0x02 0x11f>;
-		clock-names = "aclk_isp0\0hclk_isp0\0clk_isp_core0\0clk_isp_core_marvin0\0clk_isp_core_vicap0\0aclk_isp1\0hclk_isp1\0clk_isp_core1\0clk_isp_core_marvin1\0clk_isp_core_vicap1";
+		clock-names = "aclk_isp0", "hclk_isp0", "clk_isp_core0", "clk_isp_core_marvin0", "clk_isp_core_vicap0", "aclk_isp1", "hclk_isp1", "clk_isp_core1", "clk_isp_core_marvin1", "clk_isp_core_vicap1";
 		power-domains = <0x49 0x1c>;
 		iommus = <0xb4>;
 		status = "disabled";
@@ -3646,9 +3606,9 @@
 		compatible = "rockchip,rk3588-rkisp";
 		reg = <0x00 0xfdcb0000 0x00 0x7f00>;
 		interrupts = <0x00 0x83 0x04 0x00 0x85 0x04 0x00 0x86 0x04>;
-		interrupt-names = "isp_irq\0mi_irq\0mipi_irq";
+		interrupt-names = "isp_irq", "mi_irq", "mipi_irq";
 		clocks = <0x02 0x1de 0x02 0x1df 0x02 0x1db 0x02 0x1dc 0x02 0x1dd>;
-		clock-names = "aclk_isp\0hclk_isp\0clk_isp_core\0clk_isp_core_marvin\0clk_isp_core_vicap";
+		clock-names = "aclk_isp", "hclk_isp", "clk_isp_core", "clk_isp_core_marvin", "clk_isp_core_vicap";
 		power-domains = <0x49 0x1b>;
 		iommus = <0xb5>;
 		status = "disabled";
@@ -3659,9 +3619,9 @@
 		compatible = "rockchip,iommu-v2";
 		reg = <0x00 0xfdcb7f00 0x00 0x100 0x00 0xfdcc7f00 0x00 0x100>;
 		interrupts = <0x00 0x84 0x04 0x00 0x88 0x04>;
-		interrupt-names = "isp0_mmu\0isp1_mmu";
+		interrupt-names = "isp0_mmu", "isp1_mmu";
 		clocks = <0x02 0x1de 0x02 0x1df 0x02 0x120 0x02 0x121>;
-		clock-names = "aclk0\0iface0\0aclk1\0iface1";
+		clock-names = "aclk0", "iface0", "aclk1", "iface1";
 		power-domains = <0x49 0x1c>;
 		#iommu-cells = <0x00>;
 		rockchip,disable-mmu-reset;
@@ -3675,7 +3635,7 @@
 		interrupts = <0x00 0x84 0x04>;
 		interrupt-names = "isp0_mmu";
 		clocks = <0x02 0x1de 0x02 0x1df>;
-		clock-names = "aclk\0iface";
+		clock-names = "aclk", "iface";
 		power-domains = <0x49 0x1b>;
 		#iommu-cells = <0x00>;
 		rockchip,disable-mmu-reset;
@@ -3687,9 +3647,9 @@
 		compatible = "rockchip,rk3588-rkisp";
 		reg = <0x00 0xfdcc0000 0x00 0x7f00>;
 		interrupts = <0x00 0x87 0x04 0x00 0x89 0x04 0x00 0x8a 0x04>;
-		interrupt-names = "isp_irq\0mi_irq\0mipi_irq";
+		interrupt-names = "isp_irq", "mi_irq", "mipi_irq";
 		clocks = <0x02 0x120 0x02 0x121 0x02 0x11d 0x02 0x11e 0x02 0x11f>;
-		clock-names = "aclk_isp\0hclk_isp\0clk_isp_core\0clk_isp_core_marvin\0clk_isp_core_vicap";
+		clock-names = "aclk_isp", "hclk_isp", "clk_isp_core", "clk_isp_core_marvin", "clk_isp_core_vicap";
 		power-domains = <0x49 0x1c>;
 		iommus = <0xb6>;
 		status = "disabled";
@@ -3702,7 +3662,7 @@
 		interrupts = <0x00 0x88 0x04>;
 		interrupt-names = "isp1_mmu";
 		clocks = <0x02 0x120 0x02 0x121>;
-		clock-names = "aclk\0iface";
+		clock-names = "aclk", "iface";
 		power-domains = <0x49 0x1c>;
 		#iommu-cells = <0x00>;
 		rockchip,disable-mmu-reset;
@@ -3716,7 +3676,7 @@
 		interrupts = <0x00 0x8b 0x04>;
 		interrupt-names = "fec_irq";
 		clocks = <0x02 0x1d5 0x02 0x1d6 0x02 0x1d7>;
-		clock-names = "aclk_ispp\0hclk_ispp\0clk_ispp";
+		clock-names = "aclk_ispp", "hclk_ispp", "clk_ispp";
 		assigned-clocks = <0x02 0x1d6>;
 		assigned-clock-rates = <0x5f5e100>;
 		power-domains = <0x49 0x1d>;
@@ -3731,7 +3691,7 @@
 		interrupts = <0x00 0x8c 0x04>;
 		interrupt-names = "fec0_mmu";
 		clocks = <0x02 0x1d5 0x02 0x1d6 0x02 0x1d7>;
-		clock-names = "aclk\0iface\0pclk";
+		clock-names = "aclk", "iface", "pclk";
 		power-domains = <0x49 0x1d>;
 		#iommu-cells = <0x00>;
 		rockchip,disable-mmu-reset;
@@ -3745,7 +3705,7 @@
 		interrupts = <0x00 0x8d 0x04>;
 		interrupt-names = "fec_irq";
 		clocks = <0x02 0x1d8 0x02 0x1d9 0x02 0x1da>;
-		clock-names = "aclk_ispp\0hclk_ispp\0clk_ispp";
+		clock-names = "aclk_ispp", "hclk_ispp", "clk_ispp";
 		assigned-clocks = <0x02 0x1d9>;
 		assigned-clock-rates = <0x5f5e100>;
 		power-domains = <0x49 0x1d>;
@@ -3760,7 +3720,7 @@
 		interrupts = <0x00 0x8e 0x04>;
 		interrupt-names = "fec1_mmu";
 		clocks = <0x02 0x1d8 0x02 0x1d9 0x02 0x1da>;
-		clock-names = "aclk\0iface\0pclk";
+		clock-names = "aclk", "iface", "pclk";
 		power-domains = <0x49 0x1d>;
 		#iommu-cells = <0x00>;
 		rockchip,disable-mmu-reset;
@@ -3775,16 +3735,16 @@
 		interrupts = <0x00 0x9b 0x04>;
 		interrupt-names = "cif-intr";
 		clocks = <0x02 0x1e4 0x02 0x1e5 0x02 0x1e3 0x02 0x1cd 0x02 0x1ce>;
-		clock-names = "aclk_cif\0hclk_cif\0dclk_cif\0iclk_host0\0iclk_host1";
+		clock-names = "aclk_cif", "hclk_cif", "dclk_cif", "iclk_host0", "iclk_host1";
 		resets = <0x02 0x317 0x02 0x318 0x02 0x316 0x02 0x334 0x02 0x335 0x02 0x336 0x02 0x337 0x02 0x338 0x02 0x339>;
-		reset-names = "rst_cif_a\0rst_cif_h\0rst_cif_d\0rst_cif_host0\0rst_cif_host1\0rst_cif_host2\0rst_cif_host3\0rst_cif_host4\0rst_cif_host5";
+		reset-names = "rst_cif_a", "rst_cif_h", "rst_cif_d", "rst_cif_host0", "rst_cif_host1", "rst_cif_host2", "rst_cif_host3", "rst_cif_host4", "rst_cif_host5";
 		assigned-clocks = <0x02 0x1e3>;
 		assigned-clock-rates = <0x23c34600>;
 		power-domains = <0x49 0x1b>;
-		rockchip,grf = <0xad>;
+		rockchip,grf = <&sys_grf>;
 		iommus = <0x3f>;
 		nvmem-cells = <0x17 0xb9 0xba>;
-		nvmem-cell-names = "specification\0package_low\0package_high";
+		nvmem-cell-names = "specification", "package_low", "package_high";
 		status = "disabled";
 		phandle = <0x3e>;
 	};
@@ -3795,7 +3755,7 @@
 		interrupts = <0x00 0x71 0x04>;
 		interrupt-names = "cif_mmu";
 		clocks = <0x02 0x1e4 0x02 0x1e5>;
-		clock-names = "aclk\0iface";
+		clock-names = "aclk", "iface";
 		power-domains = <0x49 0x1b>;
 		rockchip,disable-mmu-reset;
 		#iommu-cells = <0x00>;
@@ -3808,12 +3768,12 @@
 		reg = <0x00 0xfdd10000 0x00 0x10000>;
 		reg-names = "csihost_regs";
 		interrupts = <0x00 0x8f 0x04 0x00 0x90 0x04>;
-		interrupt-names = "csi-intr1\0csi-intr2";
+		interrupt-names = "csi-intr1", "csi-intr2";
 		clocks = <0x02 0x1cf>;
 		clock-names = "pclk_csi2host";
 		resets = <0x02 0x324>;
 		reset-names = "srst_csihost_p";
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0x38>;
 	};
 
@@ -3822,12 +3782,12 @@
 		reg = <0x00 0xfdd20000 0x00 0x10000>;
 		reg-names = "csihost_regs";
 		interrupts = <0x00 0x91 0x04 0x00 0x92 0x04>;
-		interrupt-names = "csi-intr1\0csi-intr2";
+		interrupt-names = "csi-intr1", "csi-intr2";
 		clocks = <0x02 0x1d0>;
 		clock-names = "pclk_csi2host";
 		resets = <0x02 0x325>;
 		reset-names = "srst_csihost_p";
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0x39>;
 	};
 
@@ -3836,12 +3796,12 @@
 		reg = <0x00 0xfdd30000 0x00 0x10000>;
 		reg-names = "csihost_regs";
 		interrupts = <0x00 0x93 0x04 0x00 0x94 0x04>;
-		interrupt-names = "csi-intr1\0csi-intr2";
+		interrupt-names = "csi-intr1", "csi-intr2";
 		clocks = <0x02 0x1d1>;
 		clock-names = "pclk_csi2host";
 		resets = <0x02 0x326>;
 		reset-names = "srst_csihost_p";
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0x3a>;
 	};
 
@@ -3850,12 +3810,12 @@
 		reg = <0x00 0xfdd40000 0x00 0x10000>;
 		reg-names = "csihost_regs";
 		interrupts = <0x00 0x95 0x04 0x00 0x96 0x04>;
-		interrupt-names = "csi-intr1\0csi-intr2";
+		interrupt-names = "csi-intr1", "csi-intr2";
 		clocks = <0x02 0x1d2>;
 		clock-names = "pclk_csi2host";
 		resets = <0x02 0x327>;
 		reset-names = "srst_csihost_p";
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0x3b>;
 	};
 
@@ -3864,12 +3824,12 @@
 		reg = <0x00 0xfdd50000 0x00 0x10000>;
 		reg-names = "csihost_regs";
 		interrupts = <0x00 0x97 0x04 0x00 0x98 0x04>;
-		interrupt-names = "csi-intr1\0csi-intr2";
+		interrupt-names = "csi-intr1", "csi-intr2";
 		clocks = <0x02 0x1d3>;
 		clock-names = "pclk_csi2host";
 		resets = <0x02 0x328>;
 		reset-names = "srst_csihost_p";
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0x3c>;
 	};
 
@@ -3878,32 +3838,30 @@
 		reg = <0x00 0xfdd60000 0x00 0x10000>;
 		reg-names = "csihost_regs";
 		interrupts = <0x00 0x99 0x04 0x00 0x9a 0x04>;
-		interrupt-names = "csi-intr1\0csi-intr2";
+		interrupt-names = "csi-intr1", "csi-intr2";
 		clocks = <0x02 0x1d4>;
 		clock-names = "pclk_csi2host";
 		resets = <0x02 0x329>;
 		reset-names = "srst_csihost_p";
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0x3d>;
 	};
 
 	vop@fdd90000 {
 		compatible = "rockchip,rk3588-vop";
 		reg = <0x00 0xfdd90000 0x00 0x4200 0x00 0xfdd95000 0x00 0x1000>;
-		reg-names = "regs\0gamma_lut";
+		reg-names = "regs", "gamma_lut";
 		interrupts = <0x00 0x9c 0x04>;
-		clocks = <0x02 0x270 0x02 0x26f 0x02 0x274 0x02 0x275 0x02 0x276 0x02 0x277 0x02 0x26e 0x02 0x271 0x02 0x272 0x02 0x273>;
-		clock-names = "aclk_vop\0hclk_vop\0dclk_vp0\0dclk_vp1\0dclk_vp2\0dclk_vp3\0pclk_vop\0dclk_src_vp0\0dclk_src_vp1\0dclk_src_vp2";
-		assigned-clocks = <0x02 0x270>;
-		assigned-clock-rates = <0x2cb41780>;
-		resets = <0x02 0x349 0x02 0x348 0x02 0x34d 0x02 0x350 0x02 0x351 0x02 0x352>;
-		reset-names = "axi\0ahb\0dclk_vp0\0dclk_vp1\0dclk_vp2\0dclk_vp3";
-		iommus = <0xbb>;
-		power-domains = <0x49 0x18>;
-		rockchip,grf = <0xad>;
-		rockchip,vop-grf = <0xbc>;
-		rockchip,vo1-grf = <0xbd>;
-		rockchip,pmu = <0xbe>;
+		clocks = <&scmi_clk 4 &scmi_clk 5 &scmi_clk 6 &scmi_clk 7 &scmi_clk 8 &scmi_clk 9 &scmi_clk 10 &scmi_clk 11 &scmi_clk 12 &scmi_clk 13>;
+		clock-names = "aclk_vop", "hclk_vop", "dclk_vp0", "dclk_vp1", "dclk_vp2", "dclk_vp3", "pclk_vop", "dclk_src_vp0", "dclk_src_vp1", "dclk_src_vp2";
+		resets = <&scmi_rst 0 &scmi_rst 1 &scmi_rst 2 &scmi_rst 3 &scmi_rst 4 &scmi_rst 5>;
+		reset-names = "axi", "ahb", "dclk_vp0", "dclk_vp1", "dclk_vp2", "dclk_vp3";
+		iommus = <&vop_mmu>;
+		power-domains = <&scmi_pwr 1>;
+		rockchip,grf = <&sys_grf>;
+		rockchip,vop-grf = <&vop_grf>;
+		rockchip,vo1-grf = <&vo1_grf>;
+		rockchip,pmu = <&pmu>;
 		status = "okay";
 		support-multi-area;
 
@@ -4004,8 +3962,6 @@
 				#address-cells = <0x01>;
 				#size-cells = <0x00>;
 				reg = <0x02>;
-				assigned-clocks = <0x02 0x273>;
-				assigned-clock-parents = <0x02 0x04>;
 				rockchip,plane-mask = <0x140>;
 				rockchip,primary-plane = <0x08>;
 
@@ -4086,13 +4042,13 @@
 		};
 	};
 
-	iommu@fdd97e00 {
+	vop_mmu: iommu@fdd97e00 {
 		compatible = "rockchip,iommu-v2";
 		reg = <0x00 0xfdd97e00 0x00 0x100 0x00 0xfdd97f00 0x00 0x100>;
 		interrupts = <0x00 0x9c 0x04>;
 		interrupt-names = "vop_mmu";
-		clocks = <0x02 0x270 0x02 0x26f>;
-		clock-names = "aclk\0iface";
+		clocks = <&scmi_clk 4 &scmi_clk 5>;
+		clock-names = "aclk", "iface";
 		#iommu-cells = <0x00>;
 		rockchip,disable-device-link-resume;
 		rockchip,shootdown-entire;
@@ -4101,12 +4057,12 @@
 	};
 
 	spdif-tx@fddb0000 {
-		compatible = "rockchip,rk3588-spdif\0rockchip,rk3568-spdif";
+		compatible = "rockchip,rk3588-spdif", "rockchip,rk3568-spdif";
 		reg = <0x00 0xfddb0000 0x00 0x1000>;
 		interrupts = <0x00 0xc3 0x04>;
 		dmas = <0xd6 0x06>;
 		dma-names = "tx";
-		clock-names = "mclk\0hclk";
+		clock-names = "mclk", "hclk";
 		clocks = <0x02 0x209 0x02 0x204>;
 		assigned-clocks = <0x02 0x205>;
 		assigned-clock-parents = <0x02 0x05>;
@@ -4121,7 +4077,7 @@
 		reg = <0x00 0xfddc0000 0x00 0x1000>;
 		interrupts = <0x00 0xb8 0x04>;
 		clocks = <0x02 0x1fb 0x02 0x1fb 0x02 0x1f0>;
-		clock-names = "mclk_tx\0mclk_rx\0hclk";
+		clock-names = "mclk_tx", "mclk_rx", "hclk";
 		assigned-clocks = <0x02 0x1f9>;
 		assigned-clock-parents = <0x02 0x05>;
 		dmas = <0xd7 0x00>;
@@ -4135,12 +4091,12 @@
 	};
 
 	spdif-tx@fdde0000 {
-		compatible = "rockchip,rk3588-spdif\0rockchip,rk3568-spdif";
+		compatible = "rockchip,rk3588-spdif", "rockchip,rk3568-spdif";
 		reg = <0x00 0xfdde0000 0x00 0x1000>;
 		interrupts = <0x00 0xc4 0x04>;
 		dmas = <0xd6 0x07>;
 		dma-names = "tx";
-		clock-names = "mclk\0hclk";
+		clock-names = "mclk", "hclk";
 		clocks = <0x02 0x257 0x02 0x253>;
 		assigned-clocks = <0x02 0x254>;
 		assigned-clock-parents = <0x02 0x05>;
@@ -4154,7 +4110,7 @@
 		reg = <0x00 0xfddf0000 0x00 0x1000>;
 		interrupts = <0x00 0xb9 0x04>;
 		clocks = <0x02 0x246 0x02 0x246 0x02 0x248>;
-		clock-names = "mclk_tx\0mclk_rx\0hclk";
+		clock-names = "mclk_tx", "mclk_rx", "hclk";
 		assigned-clocks = <0x02 0x243>;
 		assigned-clock-parents = <0x02 0x07>;
 		dmas = <0xd7 0x02>;
@@ -4174,9 +4130,9 @@
 	i2s@fddfc000 {
 		compatible = "rockchip,rk3588-i2s-tdm";
 		reg = <0x00 0xfddfc000 0x00 0x1000>;
-		interrupts = <0x00 0xbd 0x04>;
+		interrupts = <0x00 &vo1_grf 0x04>;
 		clocks = <0x02 0x242 0x02 0x242 0x02 0x23e>;
-		clock-names = "mclk_tx\0mclk_rx\0hclk";
+		clock-names = "mclk_tx", "mclk_rx", "hclk";
 		assigned-clocks = <0x02 0x23f>;
 		assigned-clock-parents = <0x02 0x05>;
 		dmas = <0xd7 0x17>;
@@ -4190,11 +4146,11 @@
 	};
 
 	spdif-rx@fde08000 {
-		compatible = "rockchip,rk3588-spdifrx\0rockchip,rk3308-spdifrx";
+		compatible = "rockchip,rk3588-spdifrx", "rockchip,rk3308-spdifrx";
 		reg = <0x00 0xfde08000 0x00 0x1000>;
 		interrupts = <0x00 0xc7 0x04>;
 		clocks = <0x02 0x25e 0x02 0x25d>;
-		clock-names = "mclk\0hclk";
+		clock-names = "mclk", "hclk";
 		assigned-clocks = <0x02 0x25e>;
 		assigned-clock-parents = <0x02 0x05>;
 		dmas = <0x60 0x15>;
@@ -4210,14 +4166,14 @@
 		compatible = "rockchip,rk3588-mipi-dsi2";
 		reg = <0x00 0xfde20000 0x00 0x10000>;
 		interrupts = <0x00 0xa7 0x04>;
-		clocks = <0x02 0x278 0x02 0x27a>;
-		clock-names = "pclk\0sys_clk";
-		resets = <0x02 0x354>;
+		clocks = <&scmi_clk 17 &scmi_clk 18>;
+		clock-names = "pclk", "sys_clk";
+		resets = <&scmi_rst 11>;
 		reset-names = "apb";
-		power-domains = <0x49 0x18>;
-		phys = <0x25>;
+		power-domains = <&scmi_pwr 1>;
+		phys = <&dcphy0>;
 		phy-names = "dcphy";
-		rockchip,grf = <0xbc>;
+		rockchip,grf = <&vop_grf>;
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
 		status = "okay";
@@ -4260,7 +4216,7 @@
 			status = "okay";
 			compatible = "simple-panel-dsi";
 			reg = <0x00>;
-			backlight = <0xda>;
+			backlight = <&backlight>;
 			reset-delay-ms = <0x0a>;
 			enable-delay-ms = <0x0a>;
 			prepare-delay-ms = <0x0a>;
@@ -4271,9 +4227,9 @@
 			dsi,lanes = <0x04>;
 			panel-init-sequence = [13 00 02 80 ac 13 00 02 81 b8 13 00 02 82 09 13 00 02 83 78 13 00 02 84 7f 13 00 02 85 bb 13 00 02 86 70];
 			panel-exit-sequence = <0x5000128 0x5000110>;
-			power-supply = <0xdb>;
+			power-supply = <&vcc3v3_lcd0_n>;
 			pinctrl-names = "default";
-			pinctrl-0 = <0xdc>;
+			pinctrl-0 = <&lcd_rst_gpio>;
 
 			display-timings {
 				native-mode = <0xdd>;
@@ -4317,13 +4273,13 @@
 		reg = <0x00 0xfde30000 0x00 0x10000>;
 		interrupts = <0x00 0xa8 0x04>;
 		clocks = <0x02 0x279 0x02 0x27b>;
-		clock-names = "pclk\0sys_clk";
+		clock-names = "pclk", "sys_clk";
 		resets = <0x02 0x355>;
 		reset-names = "apb";
 		power-domains = <0x49 0x18>;
 		phys = <0x26>;
 		phy-names = "dcphy";
-		rockchip,grf = <0xbc>;
+		rockchip,grf = <&vop_grf>;
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
 		status = "disabled";
@@ -4363,10 +4319,10 @@
 		};
 
 		panel@0 {
-			status = "okay";
+			status = "disabled" /* not exposed to zone2 */;
 			compatible = "simple-panel-dsi";
 			reg = <0x00>;
-			backlight = <0xda>;
+			backlight = <&backlight>;
 			reset-delay-ms = <0x0a>;
 			enable-delay-ms = <0x0a>;
 			prepare-delay-ms = <0x0a>;
@@ -4420,9 +4376,9 @@
 		reg = <0x00 0xfde40000 0x00 0x80>;
 		interrupts = <0x00 0x9f 0x04>;
 		clocks = <0x02 0x1ed 0x02 0x1ef 0x02 0x1ee 0x02 0x1ec 0x02 0x1f1 0x02 0x1f2>;
-		clock-names = "aclk\0pclk\0hclk\0hclk_key\0aclk_trng\0pclk_trng";
+		clock-names = "aclk", "pclk", "hclk", "hclk_key", "aclk_trng", "pclk_trng";
 		resets = <0x02 0x37f 0x02 0x37d 0x02 0x37c 0x02 0x37b 0x02 0x381>;
-		reset-names = "hdcp\0h_hdcp\0a_hdcp\0hdcp_key\0trng";
+		reset-names = "hdcp", "h_hdcp", "a_hdcp", "hdcp_key", "trng";
 		power-domains = <0x49 0x19>;
 		rockchip,vo-grf = <0xe3>;
 		status = "disabled";
@@ -4433,7 +4389,7 @@
 		reg = <0x00 0xfde50000 0x00 0x4000>;
 		interrupts = <0x00 0xa1 0x04>;
 		clocks = <0x02 0x1e6 0x02 0x2cc 0x02 0x1fb 0x02 0x207 0x04 0x02 0x1ea>;
-		clock-names = "apb\0aux\0i2s\0spdif\0hclk\0hdcp";
+		clock-names = "apb", "aux", "i2s", "spdif", "hclk", "hdcp";
 		assigned-clocks = <0x02 0x2cc>;
 		assigned-clock-rates = <0xf42400>;
 		resets = <0x02 0x388>;
@@ -4488,11 +4444,11 @@
 		reg = <0x00 0xfde70000 0x00 0x80>;
 		interrupts = <0x00 0xa0 0x04>;
 		clocks = <0x02 0x217 0x02 0x219 0x02 0x218 0x02 0x216 0x02 0x228 0x02 0x229>;
-		clock-names = "aclk\0pclk\0hclk\0hclk_key\0aclk_trng\0pclk_trng";
+		clock-names = "aclk", "pclk", "hclk", "hclk_key", "aclk_trng", "pclk_trng";
 		resets = <0x02 0x3c8 0x02 0x3c6 0x02 0x3c5 0x02 0x3c4 0x02 0x3ca>;
-		reset-names = "hdcp\0h_hdcp\0a_hdcp\0hdcp_key\0trng";
+		reset-names = "hdcp", "h_hdcp", "a_hdcp", "hdcp_key", "trng";
 		power-domains = <0x49 0x1a>;
-		rockchip,vo-grf = <0xbd>;
+		rockchip,vo-grf = <&vo1_grf>;
 		status = "disabled";
 	};
 
@@ -4501,15 +4457,15 @@
 		reg = <0x00 0xfde80000 0x00 0x10000 0x00 0xfde90000 0x00 0x10000>;
 		interrupts = <0x00 0xa9 0x04 0x00 0xaa 0x04 0x00 0xab 0x04 0x00 0xac 0x04 0x00 0x168 0x04>;
 		clocks = <0x02 0x221 0x02 0x265 0x02 0x222 0x02 0x223 0x02 0x246 0x02 0x274 0x02 0x275 0x02 0x276 0x02 0x277 0x05 0xe7>;
-		clock-names = "pclk\0hpd\0earc\0hdmitx_ref\0aud\0dclk_vp0\0dclk_vp1\0dclk_vp2\0dclk_vp3\0hclk_vo1\0link_clk";
+		clock-names = "pclk", "hpd", "earc", "hdmitx_ref", "aud", "dclk_vp0", "dclk_vp1", "dclk_vp2", "dclk_vp3", "hclk_vo1", "link_clk";
 		resets = <0x02 0x3d0 0x02 0x49c>;
-		reset-names = "ref\0hdp";
+		reset-names = "ref", "hdp";
 		power-domains = <0x49 0x1a>;
 		pinctrl-names = "default";
 		pinctrl-0 = <0xe8 0xe9 0xea 0xeb>;
 		reg-io-width = <0x04>;
-		rockchip,grf = <0xad>;
-		rockchip,vo1_grf = <0xbd>;
+		rockchip,grf = <&sys_grf>;
+		rockchip,vo1_grf = <&vo1_grf>;
 		phys = <0xec>;
 		phy-names = "hdmi";
 		#sound-dai-cells = <0x00>;
@@ -4529,7 +4485,7 @@
 				endpoint@0 {
 					reg = <0x00>;
 					remote-endpoint = <0x2d>;
-					status = "okay";
+					status = "disabled" /* not exposed to zone2 */;
 					phandle = <0xc1>;
 				};
 
@@ -4555,13 +4511,13 @@
 		reg = <0x00 0xfdec0000 0x00 0x1000>;
 		interrupts = <0x00 0xa3 0x04>;
 		clocks = <0x02 0x211 0x02 0x210 0x02 0x212 0x05>;
-		clock-names = "dp\0pclk\0spdif\0hclk";
+		clock-names = "dp", "pclk", "spdif", "hclk";
 		resets = <0x02 0x3e1 0x02 0x3e0>;
-		reset-names = "dp\0apb";
+		reset-names = "dp", "apb";
 		phys = <0xf0>;
 		phy-names = "dp";
 		power-domains = <0x49 0x1a>;
-		rockchip,grf = <0xbd>;
+		rockchip,grf = <&vo1_grf>;
 		status = "disabled";
 
 		ports {
@@ -4608,307 +4564,355 @@
 		compatible = "syscon";
 		reg = <0x00 0xfdf35000 0x00 0x20>;
 		phandle = <0x6b>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf35200 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf35200 0x00 0x20>;
 		phandle = <0x6c>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf35400 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf35400 0x00 0x20>;
 		phandle = <0x6d>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf35600 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf35600 0x00 0x20>;
 		phandle = <0x6e>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf36000 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf36000 0x00 0x20>;
 		phandle = <0x8e>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf39000 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf39000 0x00 0x20>;
 		phandle = <0x93>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf3d800 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf3d800 0x00 0x20>;
 		phandle = <0x94>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf3e000 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf3e000 0x00 0x20>;
 		phandle = <0x90>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf3e200 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf3e200 0x00 0x20>;
 		phandle = <0x8f>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf3e400 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf3e400 0x00 0x20>;
 		phandle = <0x91>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf3e600 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf3e600 0x00 0x20>;
 		phandle = <0x92>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf40000 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf40000 0x00 0x20>;
 		phandle = <0x8c>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf40200 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf40200 0x00 0x20>;
 		phandle = <0x8d>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf40400 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf40400 0x00 0x20>;
 		phandle = <0x86>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf40500 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf40500 0x00 0x20>;
 		phandle = <0x87>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf40600 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf40600 0x00 0x20>;
 		phandle = <0x88>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf40800 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf40800 0x00 0x20>;
 		phandle = <0x89>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf41000 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf41000 0x00 0x20>;
 		phandle = <0x8a>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf41100 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf41100 0x00 0x20>;
 		phandle = <0x8b>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf60000 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf60000 0x00 0x20>;
 		phandle = <0x71>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf60200 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf60200 0x00 0x20>;
 		phandle = <0x72>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf60400 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf60400 0x00 0x20>;
 		phandle = <0x73>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf61000 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf61000 0x00 0x20>;
 		phandle = <0x74>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf61200 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf61200 0x00 0x20>;
 		phandle = <0x75>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf61400 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf61400 0x00 0x20>;
 		phandle = <0x76>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf62000 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf62000 0x00 0x20>;
 		phandle = <0x6f>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf63000 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf63000 0x00 0x20>;
 		phandle = <0x70>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf64000 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf64000 0x00 0x20>;
 		phandle = <0x7f>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf66000 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf66000 0x00 0x20>;
 		phandle = <0x77>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf66200 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf66200 0x00 0x20>;
 		phandle = <0x78>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf66400 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf66400 0x00 0x20>;
 		phandle = <0x79>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf66600 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf66600 0x00 0x20>;
 		phandle = <0x7a>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf66800 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf66800 0x00 0x20>;
 		phandle = <0x7b>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf66a00 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf66a00 0x00 0x20>;
 		phandle = <0x7c>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf66c00 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf66c00 0x00 0x20>;
 		phandle = <0x7d>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf66e00 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf66e00 0x00 0x20>;
 		phandle = <0x7e>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf67000 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf67000 0x00 0x20>;
 		phandle = <0x80>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf67200 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf67200 0x00 0x20>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf70000 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf70000 0x00 0x20>;
 		phandle = <0x69>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf71000 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf71000 0x00 0x20>;
 		phandle = <0x6a>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf72000 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf72000 0x00 0x20>;
 		phandle = <0x66>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf72200 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf72200 0x00 0x20>;
 		phandle = <0x67>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf72400 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf72400 0x00 0x20>;
 		phandle = <0x68>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf80000 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf80000 0x00 0x20>;
 		phandle = <0x83>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf81000 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf81000 0x00 0x20>;
 		phandle = <0x84>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf81200 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf81200 0x00 0x20>;
 		phandle = <0x85>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf82000 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf82000 0x00 0x20>;
 		phandle = <0x81>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	qos@fdf82200 {
 		compatible = "syscon";
 		reg = <0x00 0xfdf82200 0x00 0x20>;
 		phandle = <0x82>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	dfi@fe060000 {
 		compatible = "rockchip,rk3588-dfi";
 		reg = <0x00 0xfe060000 0x00 0x10000>;
 		rockchip,pmu_grf = <0xf3>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0x31>;
 	};
 
 	pcie@fe180000 {
-		compatible = "rockchip,rk3588-pcie\0snps,dw-pcie";
+		compatible = "rockchip,rk3588-pcie", "snps,dw-pcie";
 		#address-cells = <0x03>;
 		#size-cells = <0x02>;
 		bus-range = <0x30 0x3f>;
 		clocks = <0x02 0x151 0x02 0x156 0x02 0x14c 0x02 0x15c 0x02 0x161 0x02 0x2c5>;
-		clock-names = "aclk_mst\0aclk_slv\0aclk_dbi\0pclk\0aux\0pipe";
+		clock-names = "aclk_mst", "aclk_slv", "aclk_dbi", "pclk", "aux", "pipe";
 		device_type = "pci";
 		interrupts = <0x00 0xf8 0x04 0x00 0xf7 0x04 0x00 0xf6 0x04 0x00 0xf5 0x04 0x00 0xf4 0x04>;
-		interrupt-names = "sys\0pmc\0msg\0legacy\0err";
+		interrupt-names = "sys", "pmc", "msg", "legacy", "err";
 		#interrupt-cells = <0x01>;
 		interrupt-map-mask = <0x00 0x00 0x00 0x07>;
 		interrupt-map = <0x00 0x00 0x00 0x01 0xf4 0x00 0x00 0x00 0x00 0x02 0xf4 0x01 0x00 0x00 0x00 0x03 0xf4 0x02 0x00 0x00 0x00 0x04 0xf4 0x03>;
@@ -4923,9 +4927,9 @@
 		phy-names = "pcie-phy";
 		ranges = <0x800 0x00 0xf3000000 0x00 0xf3000000 0x00 0x100000 0x81000000 0x00 0xf3100000 0x00 0xf3100000 0x00 0x100000 0x82000000 0x00 0xf3200000 0x00 0xf3200000 0x00 0xe00000 0xc3000000 0x09 0xc0000000 0x09 0xc0000000 0x00 0x40000000>;
 		reg = <0x00 0xfe180000 0x00 0x10000 0x0a 0x40c00000 0x00 0x400000>;
-		reg-names = "pcie-apb\0pcie-dbi";
+		reg-names = "pcie-apb", "pcie-dbi";
 		resets = <0x02 0x210 0x02 0x21f>;
-		reset-names = "pcie\0periph";
+		reset-names = "pcie", "periph";
 		rockchip,pipe-grf = <0x5d>;
 		status = "disabled";
 
@@ -4940,15 +4944,15 @@
 	};
 
 	pcie@fe190000 {
-		compatible = "rockchip,rk3588-pcie\0snps,dw-pcie";
+		compatible = "rockchip,rk3588-pcie", "snps,dw-pcie";
 		#address-cells = <0x03>;
 		#size-cells = <0x02>;
 		bus-range = <0x40 0x4f>;
 		clocks = <0x02 0x152 0x02 0x157 0x02 0x14d 0x02 0x15d 0x02 0x162 0x02 0x182>;
-		clock-names = "aclk_mst\0aclk_slv\0aclk_dbi\0pclk\0aux\0pipe";
+		clock-names = "aclk_mst", "aclk_slv", "aclk_dbi", "pclk", "aux", "pipe";
 		device_type = "pci";
 		interrupts = <0x00 0xfd 0x04 0x00 0xfc 0x04 0x00 0xfb 0x04 0x00 0xfa 0x04 0x00 0xf9 0x04>;
-		interrupt-names = "sys\0pmc\0msg\0legacy\0err";
+		interrupt-names = "sys", "pmc", "msg", "legacy", "err";
 		#interrupt-cells = <0x01>;
 		interrupt-map-mask = <0x00 0x00 0x00 0x07>;
 		interrupt-map = <0x00 0x00 0x00 0x01 0xf6 0x00 0x00 0x00 0x00 0x02 0xf6 0x01 0x00 0x00 0x00 0x03 0xf6 0x02 0x00 0x00 0x00 0x04 0xf6 0x03>;
@@ -4963,9 +4967,9 @@
 		phy-names = "pcie-phy";
 		ranges = <0x800 0x00 0xf4000000 0x00 0xf4000000 0x00 0x100000 0x81000000 0x00 0xf4100000 0x00 0xf4100000 0x00 0x100000 0x82000000 0x00 0xf4200000 0x00 0xf4200000 0x00 0xe00000 0xc3000000 0x0a 0x00 0x0a 0x00 0x00 0x40000000>;
 		reg = <0x00 0xfe190000 0x00 0x10000 0x0a 0x41000000 0x00 0x400000>;
-		reg-names = "pcie-apb\0pcie-dbi";
+		reg-names = "pcie-apb", "pcie-dbi";
 		resets = <0x02 0x211 0x02 0x220>;
-		reset-names = "pcie\0periph";
+		reset-names = "pcie", "periph";
 		rockchip,pipe-grf = <0x5d>;
 		status = "disabled";
 
@@ -4987,14 +4991,14 @@
 	};
 
 	ethernet@fe1c0000 {
-		compatible = "rockchip,rk3588-gmac\0snps,dwmac-4.20a";
+		compatible = "rockchip,rk3588-gmac", "snps,dwmac-4.20a";
 		reg = <0x00 0xfe1c0000 0x00 0x10000>;
 		interrupts = <0x00 0xea 0x04 0x00 0xe9 0x04>;
-		interrupt-names = "macirq\0eth_wake_irq";
-		rockchip,grf = <0xad>;
+		interrupt-names = "macirq", "eth_wake_irq";
+		rockchip,grf = <&sys_grf>;
 		rockchip,php_grf = <0x5d>;
 		clocks = <0x02 0x144 0x02 0x145 0x02 0x168 0x02 0x16d 0x02 0x143>;
-		clock-names = "stmmaceth\0clk_mac_ref\0pclk_mac\0aclk_mac\0ptp_ref";
+		clock-names = "stmmaceth", "clk_mac_ref", "pclk_mac", "aclk_mac", "ptp_ref";
 		resets = <0x02 0x20b>;
 		reset-names = "stmmaceth";
 		power-domains = <0x49 0x21>;
@@ -5052,10 +5056,10 @@
 	};
 
 	sata@fe210000 {
-		compatible = "rockchip,rk-ahci\0snps,dwc-ahci";
+		compatible = "rockchip,rk-ahci", "snps,dwc-ahci";
 		reg = <0x00 0xfe210000 0x00 0x1000>;
 		clocks = <0x02 0x171 0x02 0x16e 0x02 0x174 0x02 0x163 0x02 0x17e>;
-		clock-names = "sata\0pmalive\0rxoob\0ref\0asic";
+		clock-names = "sata", "pmalive", "rxoob", "ref", "asic";
 		interrupts = <0x00 0x111 0x04>;
 		interrupt-names = "hostc";
 		phys = <0xf7 0x01>;
@@ -5065,10 +5069,10 @@
 	};
 
 	sata@fe230000 {
-		compatible = "rockchip,rk-ahci\0snps,dwc-ahci";
+		compatible = "rockchip,rk-ahci", "snps,dwc-ahci";
 		reg = <0x00 0xfe230000 0x00 0x1000>;
 		clocks = <0x02 0x173 0x02 0x170 0x02 0x176 0x02 0x165 0x02 0x180>;
-		clock-names = "sata\0pmalive\0rxoob\0ref\0asic";
+		clock-names = "sata", "pmalive", "rxoob", "ref", "asic";
 		interrupts = <0x00 0x113 0x04>;
 		interrupt-names = "hostc";
 		phys = <0x57 0x01>;
@@ -5082,7 +5086,7 @@
 		reg = <0x00 0xfe2b0000 0x00 0x4000>;
 		interrupts = <0x00 0xce 0x04>;
 		clocks = <0x02 0x13d 0x02 0x13e>;
-		clock-names = "clk_sfc\0hclk_sfc";
+		clock-names = "clk_sfc", "hclk_sfc";
 		assigned-clocks = <0x02 0x13d>;
 		assigned-clock-rates = <0x5f5e100>;
 		#address-cells = <0x01>;
@@ -5091,11 +5095,11 @@
 	};
 
 	mmc@fe2c0000 {
-		compatible = "rockchip,rk3588-dw-mshc\0rockchip,rk3288-dw-mshc";
+		compatible = "rockchip,rk3588-dw-mshc", "rockchip,rk3288-dw-mshc";
 		reg = <0x00 0xfe2c0000 0x00 0x4000>;
 		interrupts = <0x00 0xcb 0x04>;
 		clocks = <0x0a 0x17 0x0a 0x09 0x02 0x2c2 0x02 0x2c3>;
-		clock-names = "biu\0ciu\0ciu-drive\0ciu-sample";
+		clock-names = "biu", "ciu", "ciu-drive", "ciu-sample";
 		fifo-depth = <0x100>;
 		max-frequency = <0x8f0d180>;
 		pinctrl-names = "default";
@@ -5114,29 +5118,27 @@
 	};
 
 	mmc@fe2d0000 {
-		compatible = "rockchip,rk3588-dw-mshc\0rockchip,rk3288-dw-mshc";
+		compatible = "rockchip,rk3588-dw-mshc", "rockchip,rk3288-dw-mshc";
 		reg = <0x00 0xfe2d0000 0x00 0x4000>;
 		interrupts = <0x00 0xcc 0x04>;
 		clocks = <0x02 0x199 0x02 0x19a 0x02 0x2c0 0x02 0x2c1>;
-		clock-names = "biu\0ciu\0ciu-drive\0ciu-sample";
+		clock-names = "biu", "ciu", "ciu-drive", "ciu-sample";
 		fifo-depth = <0x100>;
 		max-frequency = <0xbebc200>;
 		pinctrl-names = "default";
 		pinctrl-0 = <0x109>;
-		power-domains = <0x49 0x25>;
+		power-domains = <0x49 &dcphy0>;
 		status = "disabled";
 	};
 
 	mmc@fe2e0000 {
-		compatible = "rockchip,rk3588-dwcmshc\0rockchip,dwcmshc-sdhci";
+		compatible = "rockchip,rk3588-dwcmshc", "rockchip,dwcmshc-sdhci";
 		reg = <0x00 0xfe2e0000 0x00 0x10000>;
 		interrupts = <0x00 0xcd 0x04>;
-		assigned-clocks = <0x02 0x13b 0x02 0x13c 0x02 0x13a>;
-		assigned-clock-rates = <0xbebc200 0x16e3600 0xbebc200>;
-		clocks = <0x02 0x13a 0x02 0x138 0x02 0x139 0x02 0x13b 0x02 0x13c>;
-		clock-names = "core\0bus\0axi\0block\0timer";
-		resets = <0x02 0x1f6 0x02 0x1f4 0x02 0x1f5 0x02 0x1f7 0x02 0x1f8>;
-		reset-names = "core\0bus\0axi\0block\0timer";
+		clocks = <&scmi_clk 21 &scmi_clk 22 &scmi_clk 23 &scmi_clk 24 &scmi_clk 25>;
+		clock-names = "core", "bus", "axi", "block", "timer";
+		resets = <&scmi_rst 6 &scmi_rst 7 &scmi_rst 8 &scmi_rst 9 &scmi_rst 10>;
+		reset-names = "core", "bus", "axi", "block", "timer";
 		max-frequency = <0xbebc200>;
 		status = "okay";
 		bus-width = <0x08>;
@@ -5153,7 +5155,7 @@
 		reg = <0x00 0xfe370000 0x00 0x2000>;
 		interrupts = <0x00 0xd1 0x04>;
 		clocks = <0x0a 0x0b 0x0a 0x0c 0x0a 0x14 0x0a 0x15>;
-		clock-names = "aclk\0hclk\0sclk\0pka";
+		clock-names = "aclk", "hclk", "sclk", "pka";
 		resets = <0x10a 0x0f>;
 		reset-names = "crypto-rst";
 		status = "disabled";
@@ -5167,7 +5169,7 @@
 		clock-names = "hclk_trng";
 		resets = <0x10a 0x30>;
 		reset-names = "reset";
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 	};
 
 	i2s@fe470000 {
@@ -5175,21 +5177,21 @@
 		reg = <0x00 0xfe470000 0x00 0x1000>;
 		interrupts = <0x00 0xb4 0x04>;
 		clocks = <0x02 0x33 0x02 0x37 0x02 0x30>;
-		clock-names = "mclk_tx\0mclk_rx\0hclk";
+		clock-names = "mclk_tx", "mclk_rx", "hclk";
 		assigned-clocks = <0x02 0x31 0x02 0x35>;
 		assigned-clock-parents = <0x02 0x05 0x02 0x05>;
 		dmas = <0x60 0x00 0x60 0x01>;
-		dma-names = "tx\0rx";
+		dma-names = "tx", "rx";
 		power-domains = <0x49 0x26>;
 		resets = <0x02 0x77 0x02 0x7a>;
-		reset-names = "tx-m\0rx-m";
+		reset-names = "tx-m", "rx-m";
 		rockchip,clk-trcm = <0x01>;
-		pinctrl-names = "default\0idle\0clk";
+		pinctrl-names = "default", "idle", "clk";
 		pinctrl-0 = <0x10b 0x10c 0x10d 0x10e>;
 		pinctrl-1 = <0x10f>;
 		pinctrl-2 = <0x10b 0x10c>;
 		#sound-dai-cells = <0x00>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0x1cb>;
 	};
 
@@ -5198,11 +5200,11 @@
 		reg = <0x00 0xfe480000 0x00 0x1000>;
 		interrupts = <0x00 0xb5 0x04>;
 		clocks = <0x02 0x28c 0x02 0x290 0x02 0x288>;
-		clock-names = "mclk_tx\0mclk_rx\0hclk";
+		clock-names = "mclk_tx", "mclk_rx", "hclk";
 		dmas = <0x60 0x02 0x60 0x03>;
-		dma-names = "tx\0rx";
+		dma-names = "tx", "rx";
 		resets = <0x02 0xc002a 0x02 0xc002d>;
-		reset-names = "tx-m\0rx-m";
+		reset-names = "tx-m", "rx-m";
 		rockchip,clk-trcm = <0x01>;
 		pinctrl-names = "default";
 		pinctrl-0 = <0x110 0x111 0x112 0x113 0x114 0x115 0x116 0x117 0x118 0x119>;
@@ -5211,18 +5213,18 @@
 	};
 
 	i2s@fe490000 {
-		compatible = "rockchip,rk3588-i2s\0rockchip,rk3066-i2s";
+		compatible = "rockchip,rk3588-i2s", "rockchip,rk3066-i2s";
 		reg = <0x00 0xfe490000 0x00 0x1000>;
 		interrupts = <0x00 0xb6 0x04>;
 		clocks = <0x02 0x27 0x02 0x22>;
-		clock-names = "i2s_clk\0i2s_hclk";
+		clock-names = "i2s_clk", "i2s_hclk";
 		assigned-clocks = <0x02 0x24>;
 		assigned-clock-parents = <0x02 0x05>;
 		dmas = <0xd6 0x00 0xd6 0x01>;
-		dma-names = "tx\0rx";
+		dma-names = "tx", "rx";
 		power-domains = <0x49 0x26>;
 		rockchip,clk-trcm = <0x01>;
-		pinctrl-names = "default\0idle\0clk";
+		pinctrl-names = "default", "idle", "clk";
 		pinctrl-0 = <0x11a 0x11b 0x11c 0x11d>;
 		pinctrl-1 = <0x11e>;
 		pinctrl-2 = <0x11a 0x11b>;
@@ -5233,18 +5235,18 @@
 	};
 
 	i2s@fe4a0000 {
-		compatible = "rockchip,rk3588-i2s\0rockchip,rk3066-i2s";
+		compatible = "rockchip,rk3588-i2s", "rockchip,rk3066-i2s";
 		reg = <0x00 0xfe4a0000 0x00 0x1000>;
 		interrupts = <0x00 0xb7 0x04>;
 		clocks = <0x02 0x2d 0x02 0x23>;
-		clock-names = "i2s_clk\0i2s_hclk";
+		clock-names = "i2s_clk", "i2s_hclk";
 		assigned-clocks = <0x02 0x2a>;
 		assigned-clock-parents = <0x02 0x05>;
 		dmas = <0xd6 0x02 0xd6 0x03>;
-		dma-names = "tx\0rx";
+		dma-names = "tx", "rx";
 		power-domains = <0x49 0x26>;
 		rockchip,clk-trcm = <0x01>;
-		pinctrl-names = "default\0idle\0clk";
+		pinctrl-names = "default", "idle", "clk";
 		pinctrl-0 = <0x11f 0x120>;
 		pinctrl-1 = <0x121>;
 		pinctrl-2 = <0x122 0x123>;
@@ -5256,10 +5258,10 @@
 		compatible = "rockchip,rk3588-pdm";
 		reg = <0x00 0xfe4b0000 0x00 0x1000>;
 		clocks = <0x02 0x29f 0x02 0x29e>;
-		clock-names = "pdm_clk\0pdm_hclk";
+		clock-names = "pdm_clk", "pdm_hclk";
 		dmas = <0x60 0x04>;
 		dma-names = "rx";
-		pinctrl-names = "default\0idle\0clk";
+		pinctrl-names = "default", "idle", "clk";
 		pinctrl-0 = <0x124 0x125 0x126 0x127>;
 		pinctrl-1 = <0x128>;
 		pinctrl-2 = <0x129 0x12a>;
@@ -5271,13 +5273,13 @@
 		compatible = "rockchip,rk3588-pdm";
 		reg = <0x00 0xfe4c0000 0x00 0x1000>;
 		clocks = <0x02 0x3b 0x02 0x3a>;
-		clock-names = "pdm_clk\0pdm_hclk";
+		clock-names = "pdm_clk", "pdm_hclk";
 		assigned-clocks = <0x02 0x3b>;
 		assigned-clock-parents = <0x02 0x05>;
 		dmas = <0xd6 0x04>;
 		dma-names = "rx";
 		power-domains = <0x49 0x26>;
-		pinctrl-names = "default\0idle\0clk";
+		pinctrl-names = "default", "idle", "clk";
 		pinctrl-0 = <0x12b 0x12c 0x12d 0x12e>;
 		pinctrl-1 = <0x12f>;
 		pinctrl-2 = <0x130 0x131>;
@@ -5300,12 +5302,12 @@
 	};
 
 	spdif-tx@fe4e0000 {
-		compatible = "rockchip,rk3588-spdif\0rockchip,rk3568-spdif";
+		compatible = "rockchip,rk3588-spdif", "rockchip,rk3568-spdif";
 		reg = <0x00 0xfe4e0000 0x00 0x1000>;
 		interrupts = <0x00 0xc1 0x04>;
 		dmas = <0x60 0x05>;
 		dma-names = "tx";
-		clock-names = "mclk\0hclk";
+		clock-names = "mclk", "hclk";
 		clocks = <0x02 0x41 0x02 0x3e>;
 		assigned-clocks = <0x02 0x3f>;
 		assigned-clock-parents = <0x02 0x05>;
@@ -5318,12 +5320,12 @@
 	};
 
 	spdif-tx@fe4f0000 {
-		compatible = "rockchip,rk3588-spdif\0rockchip,rk3568-spdif";
+		compatible = "rockchip,rk3588-spdif", "rockchip,rk3568-spdif";
 		reg = <0x00 0xfe4f0000 0x00 0x1000>;
 		interrupts = <0x00 0xc2 0x04>;
 		dmas = <0xd6 0x05>;
 		dma-names = "tx";
-		clock-names = "mclk\0hclk";
+		clock-names = "mclk", "hclk";
 		clocks = <0x02 0x47 0x02 0x44>;
 		assigned-clocks = <0x02 0x45>;
 		assigned-clock-parents = <0x02 0x05>;
@@ -5336,14 +5338,14 @@
 	};
 
 	codec-digital@fe500000 {
-		compatible = "rockchip,rk3588-codec-digital\0rockchip,codec-digital-v1";
+		compatible = "rockchip,rk3588-codec-digital", "rockchip,codec-digital-v1";
 		reg = <0x00 0xfe500000 0x00 0x1000>;
 		clocks = <0x02 0x29 0x02 0x2f>;
-		clock-names = "dac\0pclk";
+		clock-names = "dac", "pclk";
 		power-domains = <0x49 0x26>;
 		resets = <0x02 0x84>;
 		reset-names = "reset";
-		rockchip,grf = <0xad>;
+		rockchip,grf = <&sys_grf>;
 		rockchip,pwm-output-mode;
 		pinctrl-names = "default";
 		pinctrl-0 = <0x134>;
@@ -5355,6 +5357,7 @@
 		compatible = "rockchip,hwspinlock";
 		reg = <0x00 0xfe5a0000 0x00 0x100>;
 		#hwlock-cells = <0x01>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	interrupt-controller@fe600000 {
@@ -5388,7 +5391,7 @@
 	};
 
 	dma-controller@fea10000 {
-		compatible = "arm,pl330\0arm,primecell";
+		compatible = "arm,pl330", "arm,primecell";
 		reg = <0x00 0xfea10000 0x00 0x4000>;
 		interrupts = <0x00 0x56 0x04 0x00 0x57 0x04>;
 		clocks = <0x02 0x78>;
@@ -5396,10 +5399,11 @@
 		#dma-cells = <0x01>;
 		arm,pl330-periph-burst;
 		phandle = <0x60>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	dma-controller@fea30000 {
-		compatible = "arm,pl330\0arm,primecell";
+		compatible = "arm,pl330", "arm,primecell";
 		reg = <0x00 0xfea30000 0x00 0x4000>;
 		interrupts = <0x00 0x58 0x04 0x00 0x59 0x04>;
 		clocks = <0x02 0x79>;
@@ -5407,6 +5411,7 @@
 		#dma-cells = <0x01>;
 		arm,pl330-periph-burst;
 		phandle = <0xd6>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	can@fea50000 {
@@ -5414,9 +5419,9 @@
 		reg = <0x00 0xfea50000 0x00 0x1000>;
 		interrupts = <0x00 0x155 0x04>;
 		clocks = <0x02 0x70 0x02 0x6f>;
-		clock-names = "baudclk\0apb_pclk";
+		clock-names = "baudclk", "apb_pclk";
 		resets = <0x02 0xb9 0x02 0xb8>;
-		reset-names = "can\0can-apb";
+		reset-names = "can", "can-apb";
 		pinctrl-names = "default";
 		pinctrl-0 = <0x135>;
 		tx-fifo-depth = <0x01>;
@@ -5429,9 +5434,9 @@
 		reg = <0x00 0xfea60000 0x00 0x1000>;
 		interrupts = <0x00 0x156 0x04>;
 		clocks = <0x02 0x72 0x02 0x71>;
-		clock-names = "baudclk\0apb_pclk";
-		resets = <0x02 0xbb 0x02 0xba>;
-		reset-names = "can\0can-apb";
+		clock-names = "baudclk", "apb_pclk";
+		resets = <0x02 &vop_mmu 0x02 0xba>;
+		reset-names = "can", "can-apb";
 		pinctrl-names = "default";
 		pinctrl-0 = <0x136>;
 		tx-fifo-depth = <0x01>;
@@ -5444,9 +5449,9 @@
 		reg = <0x00 0xfea70000 0x00 0x1000>;
 		interrupts = <0x00 0x157 0x04>;
 		clocks = <0x02 0x74 0x02 0x73>;
-		clock-names = "baudclk\0apb_pclk";
-		resets = <0x02 0xbd 0x02 0xbc>;
-		reset-names = "can\0can-apb";
+		clock-names = "baudclk", "apb_pclk";
+		resets = <0x02 &vo1_grf 0x02 &vop_grf>;
+		reset-names = "can", "can-apb";
 		pinctrl-names = "default";
 		pinctrl-0 = <0x137>;
 		tx-fifo-depth = <0x01>;
@@ -5459,23 +5464,23 @@
 		reg = <0x00 0xfea80000 0x00 0x1000>;
 		interrupts = <0x00 0x55 0x04>;
 		clocks = <0x02 0x75 0x02 0x77 0x02 0x76>;
-		clock-names = "aclk\0dclk\0pclk";
+		clock-names = "aclk", "dclk", "pclk";
 		resets = <0x02 0x118>;
 		reset-names = "dresetn";
 		status = "disabled";
 	};
 
 	i2c@fea90000 {
-		compatible = "rockchip,rk3588-i2c\0rockchip,rk3399-i2c";
+		compatible = "rockchip,rk3588-i2c", "rockchip,rk3399-i2c";
 		reg = <0x00 0xfea90000 0x00 0x1000>;
 		clocks = <0x02 0x8d 0x02 0x85>;
-		clock-names = "i2c\0pclk";
+		clock-names = "i2c", "pclk";
 		interrupts = <0x00 0x13e 0x04>;
 		pinctrl-names = "default";
 		pinctrl-0 = <0x138>;
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 
 		rk8602@42 {
 			compatible = "rockchip,rk8602";
@@ -5498,10 +5503,10 @@
 	};
 
 	i2c@feaa0000 {
-		compatible = "rockchip,rk3588-i2c\0rockchip,rk3399-i2c";
+		compatible = "rockchip,rk3588-i2c", "rockchip,rk3399-i2c";
 		reg = <0x00 0xfeaa0000 0x00 0x1000>;
 		clocks = <0x02 0x8e 0x02 0x86>;
-		clock-names = "i2c\0pclk";
+		clock-names = "i2c", "pclk";
 		interrupts = <0x00 0x13f 0x04>;
 		pinctrl-names = "default";
 		pinctrl-0 = <0x139>;
@@ -5511,16 +5516,16 @@
 	};
 
 	i2c@feab0000 {
-		compatible = "rockchip,rk3588-i2c\0rockchip,rk3399-i2c";
+		compatible = "rockchip,rk3588-i2c", "rockchip,rk3399-i2c";
 		reg = <0x00 0xfeab0000 0x00 0x1000>;
 		clocks = <0x02 0x8f 0x02 0x87>;
-		clock-names = "i2c\0pclk";
+		clock-names = "i2c", "pclk";
 		interrupts = <0x00 0x140 0x04>;
 		pinctrl-names = "default";
 		pinctrl-0 = <0x13a>;
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 
 		es8311@19 {
 			status = "okay";
@@ -5542,10 +5547,10 @@
 	};
 
 	i2c@feac0000 {
-		compatible = "rockchip,rk3588-i2c\0rockchip,rk3399-i2c";
+		compatible = "rockchip,rk3588-i2c", "rockchip,rk3399-i2c";
 		reg = <0x00 0xfeac0000 0x00 0x1000>;
-		clocks = <0x02 0x90 0x02 0x88>;
-		clock-names = "i2c\0pclk";
+		clocks = <&scmi_clk 46>, <&scmi_clk 47>;
+		clock-names = "i2c", "pclk";
 		interrupts = <0x00 0x141 0x04>;
 		pinctrl-names = "default";
 		pinctrl-0 = <0x13d>;
@@ -5568,10 +5573,10 @@
 	};
 
 	i2c@fead0000 {
-		compatible = "rockchip,rk3588-i2c\0rockchip,rk3399-i2c";
+		compatible = "rockchip,rk3588-i2c", "rockchip,rk3399-i2c";
 		reg = <0x00 0xfead0000 0x00 0x1000>;
 		clocks = <0x02 0x91 0x02 0x89>;
-		clock-names = "i2c\0pclk";
+		clock-names = "i2c", "pclk";
 		interrupts = <0x00 0x142 0x04>;
 		pinctrl-names = "default";
 		pinctrl-0 = <0x140>;
@@ -5581,11 +5586,11 @@
 	};
 
 	timer@feae0000 {
-		compatible = "rockchip,rk3588-timer\0rockchip,rk3288-timer";
+		compatible = "rockchip,rk3588-timer", "rockchip,rk3288-timer";
 		reg = <0x00 0xfeae0000 0x00 0x20>;
 		interrupts = <0x00 0x121 0x04>;
 		clocks = <0x02 0x5c 0x02 0x5f>;
-		clock-names = "pclk\0timer";
+		clock-names = "pclk", "timer";
 		status = "disabled";
 	};
 
@@ -5593,9 +5598,9 @@
 		compatible = "snps,dw-wdt";
 		reg = <0x00 0xfeaf0000 0x00 0x100>;
 		clocks = <0x02 0x6c 0x02 0x6b>;
-		clock-names = "tclk\0pclk";
+		clock-names = "tclk", "pclk";
 		interrupts = <0x00 0x13b 0x04>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 	};
 
 	spi@feb00000 {
@@ -5605,13 +5610,13 @@
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
 		clocks = <0x02 0xa3 0x02 0x9e>;
-		clock-names = "spiclk\0apb_pclk";
+		clock-names = "spiclk", "apb_pclk";
 		dmas = <0x60 0x0e 0x60 0x0f>;
-		dma-names = "tx\0rx";
+		dma-names = "tx", "rx";
 		pinctrl-names = "default";
 		pinctrl-0 = <0x141 0x142>;
 		num-cs = <0x01>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		max-freq = <0x2faf080>;
 
 		spidev@0 {
@@ -5629,9 +5634,9 @@
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
 		clocks = <0x02 0xa4 0x02 0x9f>;
-		clock-names = "spiclk\0apb_pclk";
+		clock-names = "spiclk", "apb_pclk";
 		dmas = <0x60 0x10 0x60 0x11>;
-		dma-names = "tx\0rx";
+		dma-names = "tx", "rx";
 		pinctrl-names = "default";
 		pinctrl-0 = <0x143 0x144 0x145>;
 		num-cs = <0x02>;
@@ -5645,13 +5650,13 @@
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
 		clocks = <0x02 0xa5 0x02 0xa0>;
-		clock-names = "spiclk\0apb_pclk";
+		clock-names = "spiclk", "apb_pclk";
 		dmas = <0xd6 0x0f 0xd6 0x10>;
-		dma-names = "tx\0rx";
+		dma-names = "tx", "rx";
 		pinctrl-names = "default";
 		pinctrl-0 = <0x146 0x147>;
 		num-cs = <0x01>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		assigned-clocks = <0x02 0xa5>;
 		assigned-clock-rates = <0xbebc200>;
 
@@ -5661,7 +5666,7 @@
 			reg = <0x00>;
 			interrupt-parent = <0x148>;
 			interrupts = <0x07 0x08>;
-			pinctrl-names = "default\0pmic-power-off";
+			pinctrl-names = "default", "pmic-power-off";
 			pinctrl-0 = <0x149 0x14a 0x14b 0x14c>;
 			pinctrl-1 = <0x14d>;
 			low_voltage_threshold = <0xbb8>;
@@ -6048,9 +6053,9 @@
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
 		clocks = <0x02 0xa6 0x02 0xa1>;
-		clock-names = "spiclk\0apb_pclk";
+		clock-names = "spiclk", "apb_pclk";
 		dmas = <0xd6 0x11 0xd6 0x12>;
-		dma-names = "tx\0rx";
+		dma-names = "tx", "rx";
 		pinctrl-names = "default";
 		pinctrl-0 = <0x150 0x151 0x152>;
 		num-cs = <0x02>;
@@ -6058,11 +6063,11 @@
 	};
 
 	serial@feb40000 {
-		compatible = "rockchip,rk3588-uart\0snps,dw-apb-uart";
+		compatible = "rockchip,rk3588-uart", "snps,dw-apb-uart";
 		reg = <0x00 0xfeb40000 0x00 0x100>;
 		interrupts = <0x00 0x14c 0x04>;
 		clocks = <0x02 0xb7 0x02 0xab>;
-		clock-names = "baudclk\0apb_pclk";
+		clock-names = "baudclk", "apb_pclk";
 		reg-shift = <0x02>;
 		reg-io-width = <0x04>;
 		dmas = <0x60 0x08 0x60 0x09>;
@@ -6072,11 +6077,11 @@
 	};
 
 	serial@feb50000 {
-		compatible = "rockchip,rk3588-uart\0snps,dw-apb-uart";
+		compatible = "rockchip,rk3588-uart", "snps,dw-apb-uart";
 		reg = <0x00 0xfeb50000 0x00 0x100>;
 		interrupts = <0x00 0x14d 0x04>;
-		clocks = <0x02 0xbb 0x02 0xac>;
-		clock-names = "baudclk\0apb_pclk";
+		clocks = <0x02 &vop_mmu 0x02 0xac>;
+		clock-names = "baudclk", "apb_pclk";
 		reg-shift = <0x02>;
 		reg-io-width = <0x04>;
 		dmas = <0x60 0x0a 0x60 0x0b>;
@@ -6086,11 +6091,11 @@
 	};
 
 	serial@feb60000 {
-		compatible = "rockchip,rk3588-uart\0snps,dw-apb-uart";
+		compatible = "rockchip,rk3588-uart", "snps,dw-apb-uart";
 		reg = <0x00 0xfeb60000 0x00 0x100>;
 		interrupts = <0x00 0x14e 0x04>;
-		clocks = <0x02 0xbf 0x02 0xad>;
-		clock-names = "baudclk\0apb_pclk";
+		clocks = <0x02 0xbf 0x02 &sys_grf>;
+		clock-names = "baudclk", "apb_pclk";
 		reg-shift = <0x02>;
 		reg-io-width = <0x04>;
 		dmas = <0x60 0x0c 0x60 0x0d>;
@@ -6100,11 +6105,11 @@
 	};
 
 	serial@feb70000 {
-		compatible = "rockchip,rk3588-uart\0snps,dw-apb-uart";
+		compatible = "rockchip,rk3588-uart", "snps,dw-apb-uart";
 		reg = <0x00 0xfeb70000 0x00 0x100>;
 		interrupts = <0x00 0x14f 0x04>;
 		clocks = <0x02 0xc3 0x02 0xae>;
-		clock-names = "baudclk\0apb_pclk";
+		clock-names = "baudclk", "apb_pclk";
 		reg-shift = <0x02>;
 		reg-io-width = <0x04>;
 		dmas = <0xd6 0x09 0xd6 0x0a>;
@@ -6114,11 +6119,11 @@
 	};
 
 	serial@feb80000 {
-		compatible = "rockchip,rk3588-uart\0snps,dw-apb-uart";
+		compatible = "rockchip,rk3588-uart", "snps,dw-apb-uart";
 		reg = <0x00 0xfeb80000 0x00 0x100>;
 		interrupts = <0x00 0x150 0x04>;
 		clocks = <0x02 0xc7 0x02 0xaf>;
-		clock-names = "baudclk\0apb_pclk";
+		clock-names = "baudclk", "apb_pclk";
 		reg-shift = <0x02>;
 		reg-io-width = <0x04>;
 		dmas = <0xd6 0x0b 0xd6 0x0c>;
@@ -6128,11 +6133,11 @@
 	};
 
 	serial@feb90000 {
-		compatible = "rockchip,rk3588-uart\0snps,dw-apb-uart";
+		compatible = "rockchip,rk3588-uart", "snps,dw-apb-uart";
 		reg = <0x00 0xfeb90000 0x00 0x100>;
 		interrupts = <0x00 0x151 0x04>;
 		clocks = <0x02 0xcb 0x02 0xb0>;
-		clock-names = "baudclk\0apb_pclk";
+		clock-names = "baudclk", "apb_pclk";
 		reg-shift = <0x02>;
 		reg-io-width = <0x04>;
 		dmas = <0xd6 0x0d 0xd6 0x0e>;
@@ -6142,11 +6147,11 @@
 	};
 
 	serial@feba0000 {
-		compatible = "rockchip,rk3588-uart\0snps,dw-apb-uart";
+		compatible = "rockchip,rk3588-uart", "snps,dw-apb-uart";
 		reg = <0x00 0xfeba0000 0x00 0x100>;
 		interrupts = <0x00 0x152 0x04>;
 		clocks = <0x02 0xcf 0x02 0xb1>;
-		clock-names = "baudclk\0apb_pclk";
+		clock-names = "baudclk", "apb_pclk";
 		reg-shift = <0x02>;
 		reg-io-width = <0x04>;
 		dmas = <0xd7 0x07 0xd7 0x08>;
@@ -6156,11 +6161,11 @@
 	};
 
 	serial@febb0000 {
-		compatible = "rockchip,rk3588-uart\0snps,dw-apb-uart";
+		compatible = "rockchip,rk3588-uart", "snps,dw-apb-uart";
 		reg = <0x00 0xfebb0000 0x00 0x100>;
 		interrupts = <0x00 0x153 0x04>;
 		clocks = <0x02 0xd3 0x02 0xb2>;
-		clock-names = "baudclk\0apb_pclk";
+		clock-names = "baudclk", "apb_pclk";
 		reg-shift = <0x02>;
 		reg-io-width = <0x04>;
 		dmas = <0xd7 0x09 0xd7 0x0a>;
@@ -6170,11 +6175,11 @@
 	};
 
 	serial@febc0000 {
-		compatible = "rockchip,rk3588-uart\0snps,dw-apb-uart";
+		compatible = "rockchip,rk3588-uart", "snps,dw-apb-uart";
 		reg = <0x00 0xfebc0000 0x00 0x100>;
 		interrupts = <0x00 0x154 0x04>;
 		clocks = <0x02 0xd7 0x02 0xb3>;
-		clock-names = "baudclk\0apb_pclk";
+		clock-names = "baudclk", "apb_pclk";
 		reg-shift = <0x02>;
 		reg-io-width = <0x04>;
 		dmas = <0xd7 0x0b 0xd7 0x0c>;
@@ -6184,146 +6189,146 @@
 	};
 
 	pwm@febd0000 {
-		compatible = "rockchip,rk3588-pwm\0rockchip,rk3328-pwm";
+		compatible = "rockchip,rk3588-pwm", "rockchip,rk3328-pwm";
 		reg = <0x00 0xfebd0000 0x00 0x10>;
 		interrupts = <0x00 0x15a 0x04>;
 		#pwm-cells = <0x03>;
 		pinctrl-names = "active";
 		pinctrl-0 = <0x15c>;
 		clocks = <0x02 0x54 0x02 0x53>;
-		clock-names = "pwm\0pclk";
+		clock-names = "pwm", "pclk";
 		status = "disabled";
 	};
 
 	pwm@febd0010 {
-		compatible = "rockchip,rk3588-pwm\0rockchip,rk3328-pwm";
+		compatible = "rockchip,rk3588-pwm", "rockchip,rk3328-pwm";
 		reg = <0x00 0xfebd0010 0x00 0x10>;
 		interrupts = <0x00 0x15a 0x04>;
 		#pwm-cells = <0x03>;
 		pinctrl-names = "active";
 		pinctrl-0 = <0x15d>;
 		clocks = <0x02 0x54 0x02 0x53>;
-		clock-names = "pwm\0pclk";
+		clock-names = "pwm", "pclk";
 		status = "disabled";
 	};
 
 	pwm@febd0020 {
-		compatible = "rockchip,rk3588-pwm\0rockchip,rk3328-pwm";
+		compatible = "rockchip,rk3588-pwm", "rockchip,rk3328-pwm";
 		reg = <0x00 0xfebd0020 0x00 0x10>;
 		interrupts = <0x00 0x15a 0x04>;
 		#pwm-cells = <0x03>;
 		pinctrl-names = "active";
 		pinctrl-0 = <0x15e>;
 		clocks = <0x02 0x54 0x02 0x53>;
-		clock-names = "pwm\0pclk";
+		clock-names = "pwm", "pclk";
 		status = "disabled";
 	};
 
 	pwm@febd0030 {
-		compatible = "rockchip,rk3588-pwm\0rockchip,rk3328-pwm";
+		compatible = "rockchip,rk3588-pwm", "rockchip,rk3328-pwm";
 		reg = <0x00 0xfebd0030 0x00 0x10>;
 		interrupts = <0x00 0x15a 0x04 0x00 0x15b 0x04>;
 		#pwm-cells = <0x03>;
 		pinctrl-names = "active";
 		pinctrl-0 = <0x15f>;
 		clocks = <0x02 0x54 0x02 0x53>;
-		clock-names = "pwm\0pclk";
+		clock-names = "pwm", "pclk";
 		status = "disabled";
 	};
 
 	pwm@febe0000 {
-		compatible = "rockchip,rk3588-pwm\0rockchip,rk3328-pwm";
+		compatible = "rockchip,rk3588-pwm", "rockchip,rk3328-pwm";
 		reg = <0x00 0xfebe0000 0x00 0x10>;
 		interrupts = <0x00 0x15c 0x04>;
 		#pwm-cells = <0x03>;
 		pinctrl-names = "active";
 		pinctrl-0 = <0x160>;
 		clocks = <0x02 0x57 0x02 0x56>;
-		clock-names = "pwm\0pclk";
+		clock-names = "pwm", "pclk";
 		status = "disabled";
 	};
 
 	pwm@febe0010 {
-		compatible = "rockchip,rk3588-pwm\0rockchip,rk3328-pwm";
+		compatible = "rockchip,rk3588-pwm", "rockchip,rk3328-pwm";
 		reg = <0x00 0xfebe0010 0x00 0x10>;
 		interrupts = <0x00 0x15c 0x04>;
 		#pwm-cells = <0x03>;
 		pinctrl-names = "active";
 		pinctrl-0 = <0x161>;
 		clocks = <0x02 0x57 0x02 0x56>;
-		clock-names = "pwm\0pclk";
+		clock-names = "pwm", "pclk";
 		status = "disabled";
 	};
 
 	pwm@febe0020 {
-		compatible = "rockchip,rk3588-pwm\0rockchip,rk3328-pwm";
+		compatible = "rockchip,rk3588-pwm", "rockchip,rk3328-pwm";
 		reg = <0x00 0xfebe0020 0x00 0x10>;
 		interrupts = <0x00 0x15c 0x04>;
 		#pwm-cells = <0x03>;
 		pinctrl-names = "active";
 		pinctrl-0 = <0x162>;
 		clocks = <0x02 0x57 0x02 0x56>;
-		clock-names = "pwm\0pclk";
+		clock-names = "pwm", "pclk";
 		status = "disabled";
 	};
 
 	pwm@febe0030 {
-		compatible = "rockchip,rk3588-pwm\0rockchip,rk3328-pwm";
+		compatible = "rockchip,rk3588-pwm", "rockchip,rk3328-pwm";
 		reg = <0x00 0xfebe0030 0x00 0x10>;
 		interrupts = <0x00 0x15c 0x04 0x00 0x15d 0x04>;
 		#pwm-cells = <0x03>;
 		pinctrl-names = "active";
 		pinctrl-0 = <0x163>;
 		clocks = <0x02 0x57 0x02 0x56>;
-		clock-names = "pwm\0pclk";
+		clock-names = "pwm", "pclk";
 		status = "disabled";
 	};
 
 	pwm@febf0000 {
-		compatible = "rockchip,rk3588-pwm\0rockchip,rk3328-pwm";
+		compatible = "rockchip,rk3588-pwm", "rockchip,rk3328-pwm";
 		reg = <0x00 0xfebf0000 0x00 0x10>;
 		interrupts = <0x00 0x15e 0x04>;
 		#pwm-cells = <0x03>;
 		pinctrl-names = "active";
 		pinctrl-0 = <0x164>;
 		clocks = <0x02 0x5a 0x02 0x59>;
-		clock-names = "pwm\0pclk";
+		clock-names = "pwm", "pclk";
 		status = "disabled";
 	};
 
 	pwm@febf0010 {
-		compatible = "rockchip,rk3588-pwm\0rockchip,rk3328-pwm";
+		compatible = "rockchip,rk3588-pwm", "rockchip,rk3328-pwm";
 		reg = <0x00 0xfebf0010 0x00 0x10>;
 		interrupts = <0x00 0x15e 0x04>;
 		#pwm-cells = <0x03>;
 		pinctrl-names = "active";
 		pinctrl-0 = <0x165>;
 		clocks = <0x02 0x5a 0x02 0x59>;
-		clock-names = "pwm\0pclk";
+		clock-names = "pwm", "pclk";
 		status = "disabled";
 	};
 
 	pwm@febf0020 {
-		compatible = "rockchip,rk3588-pwm\0rockchip,rk3328-pwm";
+		compatible = "rockchip,rk3588-pwm", "rockchip,rk3328-pwm";
 		reg = <0x00 0xfebf0020 0x00 0x10>;
 		interrupts = <0x00 0x15e 0x04>;
 		#pwm-cells = <0x03>;
 		pinctrl-names = "active";
 		pinctrl-0 = <0x166>;
 		clocks = <0x02 0x5a 0x02 0x59>;
-		clock-names = "pwm\0pclk";
+		clock-names = "pwm", "pclk";
 		status = "disabled";
 	};
 
 	pwm@febf0030 {
-		compatible = "rockchip,rk3588-pwm\0rockchip,rk3328-pwm";
+		compatible = "rockchip,rk3588-pwm", "rockchip,rk3328-pwm";
 		reg = <0x00 0xfebf0030 0x00 0x10>;
 		interrupts = <0x00 0x15e 0x04 0x00 0x15f 0x04>;
 		#pwm-cells = <0x03>;
 		pinctrl-names = "active";
 		pinctrl-0 = <0x167>;
 		clocks = <0x02 0x5a 0x02 0x59>;
-		clock-names = "pwm\0pclk";
+		clock-names = "pwm", "pclk";
 		status = "disabled";
 	};
 
@@ -6332,16 +6337,16 @@
 		reg = <0x00 0xfec00000 0x00 0x400>;
 		interrupts = <0x00 0x18d 0x04>;
 		clocks = <0x02 0xaa 0x02 0xa9>;
-		clock-names = "tsadc\0apb_pclk";
+		clock-names = "tsadc", "apb_pclk";
 		assigned-clocks = <0x02 0xaa>;
 		assigned-clock-rates = <0x1e8480>;
 		resets = <0x02 0xc1 0x02 0xc0>;
-		reset-names = "tsadc\0tsadc-apb";
+		reset-names = "tsadc", "tsadc-apb";
 		#thermal-sensor-cells = <0x01>;
 		rockchip,hw-tshut-temp = <0x1d4c0>;
 		rockchip,hw-tshut-mode = <0x00>;
 		rockchip,hw-tshut-polarity = <0x00>;
-		pinctrl-names = "gpio\0otpout";
+		pinctrl-names = "gpio", "otpout";
 		pinctrl-0 = <0x168>;
 		pinctrl-1 = <0x169>;
 		status = "disabled";
@@ -6353,8 +6358,8 @@
 		interrupts = <0x00 0x18e 0x04>;
 		#io-channel-cells = <0x01>;
 		clocks = <0x02 0x9d 0x02 0x9c>;
-		clock-names = "saradc\0apb_pclk";
-		resets = <0x02 0xbe>;
+		clock-names = "saradc", "apb_pclk";
+		resets = <0x02 &pmu>;
 		reset-names = "saradc-apb";
 		status = "disabled";
 		vref-supply = <0x16a>;
@@ -6362,7 +6367,7 @@
 	};
 
 	mailbox@fec60000 {
-		compatible = "rockchip,rk3588-mailbox\0rockchip,rk3368-mailbox";
+		compatible = "rockchip,rk3588-mailbox", "rockchip,rk3368-mailbox";
 		reg = <0x00 0xfec60000 0x00 0x200>;
 		interrupts = <0x00 0x3d 0x04 0x00 0x3e 0x04 0x00 0x3f 0x04 0x00 0x40 0x04>;
 		clocks = <0x02 0x4c>;
@@ -6372,7 +6377,7 @@
 	};
 
 	mailbox@fec70000 {
-		compatible = "rockchip,rk3588-mailbox\0rockchip,rk3368-mailbox";
+		compatible = "rockchip,rk3588-mailbox", "rockchip,rk3368-mailbox";
 		reg = <0x00 0xfec70000 0x00 0x200>;
 		interrupts = <0x00 0x45 0x04 0x00 0x46 0x04 0x00 0x47 0x04 0x00 0x48 0x04>;
 		clocks = <0x02 0x4d>;
@@ -6382,10 +6387,10 @@
 	};
 
 	i2c@fec80000 {
-		compatible = "rockchip,rk3588-i2c\0rockchip,rk3399-i2c";
+		compatible = "rockchip,rk3588-i2c", "rockchip,rk3399-i2c";
 		reg = <0x00 0xfec80000 0x00 0x1000>;
 		clocks = <0x02 0x92 0x02 0x8a>;
-		clock-names = "i2c\0pclk";
+		clock-names = "i2c", "pclk";
 		interrupts = <0x00 0x143 0x04>;
 		pinctrl-names = "default";
 		pinctrl-0 = <0x16b>;
@@ -6395,10 +6400,10 @@
 	};
 
 	i2c@fec90000 {
-		compatible = "rockchip,rk3588-i2c\0rockchip,rk3399-i2c";
+		compatible = "rockchip,rk3588-i2c", "rockchip,rk3399-i2c";
 		reg = <0x00 0xfec90000 0x00 0x1000>;
 		clocks = <0x02 0x93 0x02 0x8b>;
-		clock-names = "i2c\0pclk";
+		clock-names = "i2c", "pclk";
 		interrupts = <0x00 0x144 0x04>;
 		pinctrl-names = "default";
 		pinctrl-0 = <0x16c>;
@@ -6408,10 +6413,10 @@
 	};
 
 	i2c@feca0000 {
-		compatible = "rockchip,rk3588-i2c\0rockchip,rk3399-i2c";
+		compatible = "rockchip,rk3588-i2c", "rockchip,rk3399-i2c";
 		reg = <0x00 0xfeca0000 0x00 0x1000>;
 		clocks = <0x02 0x94 0x02 0x8c>;
-		clock-names = "i2c\0pclk";
+		clock-names = "i2c", "pclk";
 		interrupts = <0x00 0x145 0x04>;
 		pinctrl-names = "default";
 		pinctrl-0 = <0x16d>;
@@ -6427,9 +6432,9 @@
 		#address-cells = <0x01>;
 		#size-cells = <0x00>;
 		clocks = <0x02 0xa7 0x02 0xa2>;
-		clock-names = "spiclk\0apb_pclk";
+		clock-names = "spiclk", "apb_pclk";
 		dmas = <0xd7 0x0d 0xd7 0x0e>;
-		dma-names = "tx\0rx";
+		dma-names = "tx", "rx";
 		pinctrl-names = "default";
 		pinctrl-0 = <0x16e 0x16f 0x170>;
 		num-cs = <0x02>;
@@ -6442,10 +6447,11 @@
 		#address-cells = <0x01>;
 		#size-cells = <0x01>;
 		clocks = <0x02 0x96 0x02 0x95 0x02 0x97 0x02 0x99>;
-		clock-names = "otpc\0apb\0arb\0phy";
+		clock-names = "otpc", "apb", "arb", "phy";
 		resets = <0x02 0x12a 0x02 0x129 0x02 0x12b>;
-		reset-names = "otpc\0apb\0arb";
+		reset-names = "otpc", "apb", "arb";
 
+		status = "disabled"; /* not exposed to zone2 */
 		cpu-code@2 {
 			reg = <0x02 0x02>;
 			phandle = <0x22>;
@@ -6556,7 +6562,7 @@
 	};
 
 	mailbox@fece0000 {
-		compatible = "rockchip,rk3588-mailbox\0rockchip,rk3368-mailbox";
+		compatible = "rockchip,rk3588-mailbox", "rockchip,rk3368-mailbox";
 		reg = <0x00 0xfece0000 0x00 0x200>;
 		interrupts = <0x00 0x4d 0x04 0x00 0x4e 0x04 0x00 0x4f 0x04 0x00 0x50 0x04>;
 		clocks = <0x02 0x4e>;
@@ -6566,7 +6572,7 @@
 	};
 
 	dma-controller@fed10000 {
-		compatible = "arm,pl330\0arm,primecell";
+		compatible = "arm,pl330", "arm,primecell";
 		reg = <0x00 0xfed10000 0x00 0x4000>;
 		interrupts = <0x00 0x5a 0x04 0x00 0x5b 0x04>;
 		clocks = <0x02 0x7a>;
@@ -6574,15 +6580,16 @@
 		#dma-cells = <0x01>;
 		arm,pl330-periph-burst;
 		phandle = <0xd7>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	phy@fed60000 {
 		compatible = "rockchip,rk3588-hdptx-phy";
 		reg = <0x00 0xfed60000 0x00 0x2000>;
 		clocks = <0x02 0x2b5 0x02 0x267>;
-		clock-names = "ref\0apb";
+		clock-names = "ref", "apb";
 		resets = <0x02 0x485 0x02 0xc003b 0x02 0xc003c 0x02 0xc003d>;
-		reset-names = "apb\0init\0cmn\0lane";
+		reset-names = "apb", "init", "cmn", "lane";
 		rockchip,grf = <0x171>;
 		#phy-cells = <0x00>;
 		status = "disabled";
@@ -6593,12 +6600,12 @@
 		compatible = "rockchip,rk3588-hdptx-phy-hdmi";
 		reg = <0x00 0xfed60000 0x00 0x2000>;
 		clocks = <0x02 0x2b5 0x02 0x267>;
-		clock-names = "ref\0apb";
+		clock-names = "ref", "apb";
 		resets = <0x02 0x48e 0x02 0x485 0x02 0xc003b 0x02 0xc003c 0x02 0xc003d 0x02 0x48c 0x02 0x48d>;
-		reset-names = "phy\0apb\0init\0cmn\0lane\0ropll\0lcpll";
+		reset-names = "phy", "apb", "init", "cmn", "lane", "ropll", "lcpll";
 		rockchip,grf = <0x171>;
 		#phy-cells = <0x00>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0xec>;
 
 		clk-port {
@@ -6616,10 +6623,10 @@
 		rockchip,usbdpphy-grf = <0x173>;
 		rockchip,vo-grf = <0xe3>;
 		clocks = <0x02 0x2b6 0x02 0x27f 0x02 0x269 0x174>;
-		clock-names = "refclk\0immortal\0pclk\0utmi";
+		clock-names = "refclk", "immortal", "pclk", "utmi";
 		resets = <0x02 0x28 0x02 0x29 0x02 0x2a 0x02 0x2b 0x02 0x482>;
-		reset-names = "init\0cmn\0lane\0pcs_apb\0pma_apb";
-		status = "okay";
+		reset-names = "init", "cmn", "lane", "pcs_apb", "pma_apb";
+		status = "disabled" /* not exposed to zone2 */;
 
 		dp-port {
 			#phy-cells = <0x00>;
@@ -6634,14 +6641,14 @@
 		};
 	};
 
-	phy@feda0000 {
+	dcphy0: phy@feda0000 {
 		compatible = "rockchip,rk3588-mipi-dcphy";
 		reg = <0x00 0xfeda0000 0x00 0x10000>;
 		rockchip,grf = <0x175>;
-		clocks = <0x02 0x108 0x02 0x2b6>;
-		clock-names = "pclk\0ref";
-		resets = <0x02 0xc0043 0x02 0x3e 0x02 0x3f 0x02 0xc0044>;
-		reset-names = "m_phy\0apb\0grf\0s_phy";
+		clocks = <&scmi_clk 19 &scmi_clk 20>;
+		clock-names = "pclk", "ref";
+		resets = <&scmi_rst 12 &scmi_rst 13 &scmi_rst 14 &scmi_rst 15>;
+		reset-names = "m_phy", "apb", "grf", "s_phy";
 		#phy-cells = <0x00>;
 		status = "okay";
 		phandle = <0x25>;
@@ -6652,11 +6659,11 @@
 		reg = <0x00 0xfedb0000 0x00 0x10000>;
 		rockchip,grf = <0x176>;
 		clocks = <0x02 0x109 0x02 0x2b6>;
-		clock-names = "pclk\0ref";
+		clock-names = "pclk", "ref";
 		resets = <0x02 0xc0045 0x02 0x43 0x02 0x44 0x02 0xc0046>;
-		reset-names = "m_phy\0apb\0grf\0s_phy";
+		reset-names = "m_phy", "apb", "grf", "s_phy";
 		#phy-cells = <0x00>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0x26>;
 	};
 
@@ -6666,10 +6673,10 @@
 		clocks = <0x02 0x10c>;
 		clock-names = "pclk";
 		resets = <0x02 0x17 0x02 0x16>;
-		reset-names = "srst_csiphy0\0srst_p_csiphy0";
+		reset-names = "srst_csiphy0", "srst_p_csiphy0";
 		rockchip,grf = <0x177>;
-		rockchip,sys_grf = <0xad>;
-		status = "okay";
+		rockchip,sys_grf = <&sys_grf>;
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0x23>;
 	};
 
@@ -6679,10 +6686,10 @@
 		clocks = <0x02 0x10d>;
 		clock-names = "pclk";
 		resets = <0x02 0x19 0x02 0x18>;
-		reset-names = "srst_csiphy1\0srst_p_csiphy1";
+		reset-names = "srst_csiphy1", "srst_p_csiphy1";
 		rockchip,grf = <0x178>;
-		rockchip,sys_grf = <0xad>;
-		status = "okay";
+		rockchip,sys_grf = <&sys_grf>;
+		status = "disabled" /* not exposed to zone2 */;
 		phandle = <0x24>;
 	};
 
@@ -6691,11 +6698,11 @@
 		reg = <0x00 0xfee00000 0x00 0x100>;
 		#phy-cells = <0x01>;
 		clocks = <0x02 0x2bd 0x02 0x185 0x02 0x166>;
-		clock-names = "refclk\0apbclk\0phpclk";
+		clock-names = "refclk", "apbclk", "phpclk";
 		assigned-clocks = <0x02 0x2bd>;
 		assigned-clock-rates = <0x5f5e100>;
 		resets = <0x02 0x20005 0x02 0x4d6>;
-		reset-names = "combphy-apb\0combphy";
+		reset-names = "combphy-apb", "combphy";
 		rockchip,pipe-grf = <0x5d>;
 		rockchip,pipe-phy-grf = <0x179>;
 		status = "disabled";
@@ -6706,12 +6713,12 @@
 		compatible = "rockchip,rk3588-naneng-combphy";
 		reg = <0x00 0xfee20000 0x00 0x100>;
 		#phy-cells = <0x01>;
-		clocks = <0x02 0x2bf 0x02 0x187 0x02 0x166>;
-		clock-names = "refclk\0apbclk\0phpclk";
-		assigned-clocks = <0x02 0x2bf>;
+		clocks = <&scmi_clk 44 &scmi_clk 45 &scmi_clk 42>;
+		clock-names = "refclk", "apbclk", "phpclk";
+		assigned-clocks = <&scmi_clk 44>;
 		assigned-clock-rates = <0x5f5e100>;
-		resets = <0x02 0x20007 0x02 0x4d8>;
-		reset-names = "combphy-apb\0combphy";
+		resets = <&scmi_rst 24 &scmi_rst 25>;
+		reset-names = "combphy-apb", "combphy";
 		rockchip,pipe-grf = <0x5d>;
 		rockchip,pipe-phy-grf = <0x17a>;
 		rockchip,pcie1ln-sel-bits = <0x100 0x01 0x01 0x00>;
@@ -6726,6 +6733,7 @@
 		#size-cells = <0x01>;
 		ranges = <0x00 0x00 0xff001000 0xef000>;
 
+		status = "disabled"; /* not exposed to zone2 */
 		rkvdec-sram@0 {
 			reg = <0x00 0x78000>;
 			phandle = <0xb0>;
@@ -6756,13 +6764,14 @@
 			interrupt-controller;
 			#interrupt-cells = <0x02>;
 			phandle = <0x148>;
+			status = "disabled"; /* bank not given to zone2 */
 		};
 
 		gpio@fec20000 {
 			compatible = "rockchip,gpio-bank";
 			reg = <0x00 0xfec20000 0x00 0x100>;
 			interrupts = <0x00 0x116 0x04>;
-			clocks = <0x02 0x7d 0x02 0x7e>;
+			clocks = <&scmi_clk 48 &scmi_clk 49>;
 			gpio-controller;
 			#gpio-cells = <0x02>;
 			gpio-ranges = <0x17c 0x00 0x20 0x20>;
@@ -6771,11 +6780,11 @@
 			phandle = <0x13f>;
 		};
 
-		gpio@fec30000 {
+		gpio2: gpio@fec30000 {
 			compatible = "rockchip,gpio-bank";
 			reg = <0x00 0xfec30000 0x00 0x100>;
 			interrupts = <0x00 0x117 0x04>;
-			clocks = <0x02 0x7f 0x02 0x80>;
+			clocks = <&scmi_clk 26 &scmi_clk 27>;
 			gpio-controller;
 			#gpio-cells = <0x02>;
 			gpio-ranges = <0x17c 0x00 0x40 0x20>;
@@ -6795,6 +6804,7 @@
 			interrupt-controller;
 			#interrupt-cells = <0x02>;
 			phandle = <0xfc>;
+			status = "disabled"; /* bank not given to zone2 */
 		};
 
 		gpio@fec50000 {
@@ -6808,6 +6818,7 @@
 			interrupt-controller;
 			#interrupt-cells = <0x02>;
 			phandle = <0xed>;
+			status = "disabled"; /* bank not given to zone2 */
 		};
 
 		pcfg-pull-up {
@@ -7765,7 +7776,7 @@
 
 		lcd {
 
-			lcd-rst-gpio {
+			lcd_rst_gpio: lcd-rst-gpio {
 				rockchip,pins = <0x02 0x0c 0x00 0x17d>;
 				phandle = <0xdc>;
 			};
@@ -7845,13 +7856,13 @@
 	};
 
 	usbdrd3_1 {
-		compatible = "rockchip,rk3588-dwc3\0rockchip,rk3399-dwc3";
-		clocks = <0x02 0x1a6 0x02 0x1a5 0x02 0x1a4>;
-		clock-names = "ref\0suspend\0bus";
+		compatible = "rockchip,rk3588-dwc3", "rockchip,rk3399-dwc3";
+		clocks = <0x02 0x1a6 0x02 0x1a5 0x02 &gpio2>;
+		clock-names = "ref", "suspend", "bus";
 		#address-cells = <0x02>;
 		#size-cells = <0x02>;
 		ranges;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 
 		usb@fc400000 {
 			compatible = "snps,dwc3";
@@ -7862,7 +7873,7 @@
 			reset-names = "usb3-otg";
 			dr_mode = "host";
 			phys = <0x188 0x189>;
-			phy-names = "usb2-phy\0usb3-phy";
+			phy-names = "usb2-phy", "usb3-phy";
 			phy_type = "utmi_wide";
 			linux,sysdev_is_parent;
 			snps,dis_enblslpm_quirk;
@@ -7878,25 +7889,28 @@
 	};
 
 	syscon@fd5b8000 {
-		compatible = "rockchip,pcie30-phy-grf\0syscon";
+		compatible = "rockchip,pcie30-phy-grf", "syscon";
 		reg = <0x00 0xfd5b8000 0x00 0x10000>;
 		phandle = <0x1b0>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	syscon@fd5c0000 {
-		compatible = "rockchip,pipe-phy-grf\0syscon";
+		compatible = "rockchip,pipe-phy-grf", "syscon";
 		reg = <0x00 0xfd5c0000 0x00 0x100>;
 		phandle = <0x1af>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	syscon@fd5cc000 {
-		compatible = "rockchip,rk3588-usbdpphy-grf\0syscon";
+		compatible = "rockchip,rk3588-usbdpphy-grf", "syscon";
 		reg = <0x00 0xfd5cc000 0x00 0x4000>;
 		phandle = <0x1ad>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	syscon@fd5d4000 {
-		compatible = "rockchip,rk3588-usb2phy-grf\0syscon\0simple-mfd";
+		compatible = "rockchip,rk3588-usb2phy-grf", "syscon", "simple-mfd";
 		reg = <0x00 0xfd5d4000 0x00 0x4000>;
 		#address-cells = <0x01>;
 		#size-cells = <0x01>;
@@ -7907,13 +7921,13 @@
 			reg = <0x4000 0x10>;
 			interrupts = <0x00 0x18a 0x04>;
 			resets = <0x02 0xc0048 0x02 0x489>;
-			reset-names = "phy\0apb";
+			reset-names = "phy", "apb";
 			clocks = <0x02 0x2b5>;
 			clock-names = "phyclk";
 			clock-output-names = "usb480m_phy1";
 			#clock-cells = <0x00>;
 			rockchip,usbctrl-grf = <0x5b>;
-			status = "okay";
+			status = "disabled" /* not exposed to zone2 */;
 			phandle = <0x1ae>;
 
 			otg-port {
@@ -7925,18 +7939,19 @@
 	};
 
 	syscon@fd5e4000 {
-		compatible = "rockchip,rk3588-hdptxphy-grf\0syscon";
+		compatible = "rockchip,rk3588-hdptxphy-grf", "syscon";
 		reg = <0x00 0xfd5e4000 0x00 0x100>;
 		phandle = <0x1ab>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	spdif-tx@fddb8000 {
-		compatible = "rockchip,rk3588-spdif\0rockchip,rk3568-spdif";
+		compatible = "rockchip,rk3588-spdif", "rockchip,rk3568-spdif";
 		reg = <0x00 0xfddb8000 0x00 0x1000>;
 		interrupts = <0x00 0xc6 0x04>;
 		dmas = <0xd6 0x16>;
 		dma-names = "tx";
-		clock-names = "mclk\0hclk";
+		clock-names = "mclk", "hclk";
 		clocks = <0x02 0x20f 0x02 0x20a>;
 		assigned-clocks = <0x02 0x20b>;
 		assigned-clock-parents = <0x02 0x05>;
@@ -7949,9 +7964,9 @@
 	i2s@fddc8000 {
 		compatible = "rockchip,rk3588-i2s-tdm";
 		reg = <0x00 0xfddc8000 0x00 0x1000>;
-		interrupts = <0x00 0xbc 0x04>;
+		interrupts = <0x00 &vop_grf 0x04>;
 		clocks = <0x02 0x201 0x02 0x1fe>;
-		clock-names = "mclk_tx\0hclk";
+		clock-names = "mclk_tx", "hclk";
 		assigned-clocks = <0x02 0x1ff>;
 		assigned-clock-parents = <0x02 0x05>;
 		dmas = <0xd7 0x16>;
@@ -7965,12 +7980,12 @@
 	};
 
 	spdif-tx@fdde8000 {
-		compatible = "rockchip,rk3588-spdif\0rockchip,rk3568-spdif";
+		compatible = "rockchip,rk3588-spdif", "rockchip,rk3568-spdif";
 		reg = <0x00 0xfdde8000 0x00 0x1000>;
 		interrupts = <0x00 0xc5 0x04>;
 		dmas = <0xd6 0x08>;
 		dma-names = "tx";
-		clock-names = "mclk\0hclk";
+		clock-names = "mclk", "hclk";
 		clocks = <0x02 0x25c 0x02 0x258>;
 		assigned-clocks = <0x02 0x259>;
 		assigned-clock-parents = <0x02 0x05>;
@@ -7984,7 +7999,7 @@
 		reg = <0x00 0xfddf4000 0x00 0x1000>;
 		interrupts = <0x00 0xba 0x04>;
 		clocks = <0x02 0x24c 0x02 0x24c 0x02 0x252>;
-		clock-names = "mclk_tx\0mclk_rx\0hclk";
+		clock-names = "mclk_tx", "mclk_rx", "hclk";
 		assigned-clocks = <0x02 0x249>;
 		assigned-clock-parents = <0x02 0x07>;
 		dmas = <0xd7 0x04>;
@@ -8004,9 +8019,9 @@
 	i2s@fddf8000 {
 		compatible = "rockchip,rk3588-i2s-tdm";
 		reg = <0x00 0xfddf8000 0x00 0x1000>;
-		interrupts = <0x00 0xbb 0x04>;
+		interrupts = <0x00 &vop_mmu 0x04>;
 		clocks = <0x02 0x23c 0x02 0x23c 0x02 0x238>;
-		clock-names = "mclk_tx\0mclk_rx\0hclk";
+		clock-names = "mclk_tx", "mclk_rx", "hclk";
 		assigned-clocks = <0x02 0x239>;
 		assigned-clock-parents = <0x02 0x05>;
 		dmas = <0xd7 0x15>;
@@ -8022,9 +8037,9 @@
 	i2s@fde00000 {
 		compatible = "rockchip,rk3588-i2s-tdm";
 		reg = <0x00 0xfde00000 0x00 0x1000>;
-		interrupts = <0x00 0xbe 0x04>;
+		interrupts = <0x00 &pmu 0x04>;
 		clocks = <0x02 0x237 0x02 0x237 0x02 0x233>;
-		clock-names = "mclk_tx\0mclk_rx\0hclk";
+		clock-names = "mclk_tx", "mclk_rx", "hclk";
 		assigned-clocks = <0x02 0x234>;
 		assigned-clock-parents = <0x02 0x05>;
 		dmas = <0xd7 0x18>;
@@ -8038,11 +8053,11 @@
 	};
 
 	spdif-rx@fde10000 {
-		compatible = "rockchip,rk3588-spdifrx\0rockchip,rk3308-spdifrx";
+		compatible = "rockchip,rk3588-spdifrx", "rockchip,rk3308-spdifrx";
 		reg = <0x00 0xfde10000 0x00 0x1000>;
 		interrupts = <0x00 0xc8 0x04>;
 		clocks = <0x02 0x260 0x02 0x25f>;
-		clock-names = "mclk\0hclk";
+		clock-names = "mclk", "hclk";
 		assigned-clocks = <0x02 0x260>;
 		assigned-clock-parents = <0x02 0x05>;
 		dmas = <0x60 0x16>;
@@ -8055,11 +8070,11 @@
 	};
 
 	spdif-rx@fde18000 {
-		compatible = "rockchip,rk3588-spdifrx\0rockchip,rk3308-spdifrx";
+		compatible = "rockchip,rk3588-spdifrx", "rockchip,rk3308-spdifrx";
 		reg = <0x00 0xfde18000 0x00 0x1000>;
 		interrupts = <0x00 0xc9 0x04>;
 		clocks = <0x02 0x262 0x02 0x261>;
-		clock-names = "mclk\0hclk";
+		clock-names = "mclk", "hclk";
 		assigned-clocks = <0x02 0x262>;
 		assigned-clock-parents = <0x02 0x05>;
 		dmas = <0x60 0x17>;
@@ -8076,7 +8091,7 @@
 		reg = <0x00 0xfde60000 0x00 0x4000>;
 		interrupts = <0x00 0xa2 0x04>;
 		clocks = <0x02 0x1e7 0x02 0x2cd 0x02 0x201 0x02 0x20d 0x04 0x02 0x1eb>;
-		clock-names = "apb\0aux\0i2s\0spdif\0hclk\0hdcp";
+		clock-names = "apb", "aux", "i2s", "spdif", "hclk", "hdcp";
 		assigned-clocks = <0x02 0x2cd>;
 		assigned-clock-rates = <0xf42400>;
 		resets = <0x02 0x389>;
@@ -8129,17 +8144,17 @@
 	hdmi@fdea0000 {
 		compatible = "rockchip,rk3588-dw-hdmi";
 		reg = <0x00 0xfdea0000 0x00 0x10000 0x00 0xfdeb0000 0x00 0x10000>;
-		interrupts = <0x00 0xad 0x04 0x00 0xae 0x04 0x00 0xaf 0x04 0x00 0xb0 0x04 0x00 0x169 0x04>;
+		interrupts = <0x00 &sys_grf 0x04 0x00 0xae 0x04 0x00 0xaf 0x04 0x00 0xb0 0x04 0x00 0x169 0x04>;
 		clocks = <0x02 0x224 0x02 0x266 0x02 0x225 0x02 0x226 0x02 0x24c 0x02 0x274 0x02 0x275 0x02 0x276 0x02 0x277 0x05 0x18d>;
-		clock-names = "pclk\0hpd\0earc\0hdmitx_ref\0aud\0dclk_vp0\0dclk_vp1\0dclk_vp2\0dclk_vp3\0hclk_vo1\0link_clk";
+		clock-names = "pclk", "hpd", "earc", "hdmitx_ref", "aud", "dclk_vp0", "dclk_vp1", "dclk_vp2", "dclk_vp3", "hclk_vo1", "link_clk";
 		resets = <0x02 0x3d7 0x02 0x49d>;
-		reset-names = "ref\0hdp";
+		reset-names = "ref", "hdp";
 		power-domains = <0x49 0x1a>;
 		pinctrl-names = "default";
 		pinctrl-0 = <0x18e 0x18f 0x190 0x191>;
 		reg-io-width = <0x04>;
-		rockchip,grf = <0xad>;
-		rockchip,vo1_grf = <0xbd>;
+		rockchip,grf = <&sys_grf>;
+		rockchip,vo1_grf = <&vo1_grf>;
 		phys = <0x192>;
 		phy-names = "hdmi";
 		#sound-dai-cells = <0x00>;
@@ -8184,13 +8199,13 @@
 		reg = <0x00 0xfded0000 0x00 0x1000>;
 		interrupts = <0x00 0xa4 0x04>;
 		clocks = <0x02 0x214 0x02 0x213 0x02 0x215 0x05>;
-		clock-names = "dp\0pclk\0spdif\0hclk";
+		clock-names = "dp", "pclk", "spdif", "hclk";
 		resets = <0x02 0x3e4 0x02 0x3e3>;
-		reset-names = "dp\0apb";
+		reset-names = "dp", "apb";
 		phys = <0x195>;
 		phy-names = "dp";
 		power-domains = <0x49 0x1a>;
-		rockchip,grf = <0xbd>;
+		rockchip,grf = <&vo1_grf>;
 		status = "disabled";
 
 		ports {
@@ -8234,33 +8249,33 @@
 	};
 
 	hdmirx-controller@fdee0000 {
-		compatible = "rockchip,rk3588-hdmirx-ctrler\0rockchip,hdmirx-ctrler";
+		compatible = "rockchip,rk3588-hdmirx-ctrler", "rockchip,hdmirx-ctrler";
 		reg = <0x00 0xfdee0000 0x00 0x6000>;
 		reg-names = "hdmirx_regs";
 		power-domains = <0x49 0x1a>;
-		rockchip,grf = <0xad>;
-		rockchip,vo1_grf = <0xbd>;
+		rockchip,grf = <&sys_grf>;
+		rockchip,vo1_grf = <&vo1_grf>;
 		interrupts = <0x00 0xb1 0x04 0x00 0x1b4 0x04 0x00 0xb3 0x04>;
-		interrupt-names = "cec\0hdmi\0dma";
+		interrupt-names = "cec", "hdmi", "dma";
 		clocks = <0x02 0x21a 0x02 0x21f 0x02 0x2b2 0x02 0x21b 0x02 0x21c 0x02 0x232 0x05>;
-		clock-names = "aclk\0audio\0cr_para\0pclk\0ref\0hclk_s_hdmirx\0hclk_vo1";
+		clock-names = "aclk", "audio", "cr_para", "pclk", "ref", "hclk_s_hdmirx", "hclk_vo1";
 		resets = <0x02 0x3d9 0x02 0x3da 0x02 0x3db 0x02 0x3b7>;
-		reset-names = "rst_a\0rst_p\0rst_ref\0rst_biu";
+		reset-names = "rst_a", "rst_p", "rst_ref", "rst_biu";
 		pinctrl-0 = <0x199>;
 		pinctrl-names = "default";
 		status = "disabled";
 	};
 
 	pcie@fe150000 {
-		compatible = "rockchip,rk3588-pcie\0snps,dw-pcie";
+		compatible = "rockchip,rk3588-pcie", "snps,dw-pcie";
 		#address-cells = <0x03>;
 		#size-cells = <0x02>;
 		bus-range = <0x00 0x0f>;
 		clocks = <0x02 0x14e 0x02 0x153 0x02 0x149 0x02 0x158 0x02 0x15e 0x02 0x183>;
-		clock-names = "aclk_mst\0aclk_slv\0aclk_dbi\0pclk\0aux\0pipe";
+		clock-names = "aclk_mst", "aclk_slv", "aclk_dbi", "pclk", "aux", "pipe";
 		device_type = "pci";
 		interrupts = <0x00 0x107 0x04 0x00 0x106 0x04 0x00 0x105 0x04 0x00 0x104 0x04 0x00 0x103 0x04>;
-		interrupt-names = "sys\0pmc\0msg\0legacy\0err";
+		interrupt-names = "sys", "pmc", "msg", "legacy", "err";
 		#interrupt-cells = <0x01>;
 		interrupt-map-mask = <0x00 0x00 0x00 0x07>;
 		interrupt-map = <0x00 0x00 0x00 0x01 0x19a 0x00 0x00 0x00 0x00 0x02 0x19a 0x01 0x00 0x00 0x00 0x03 0x19a 0x02 0x00 0x00 0x00 0x04 0x19a 0x03>;
@@ -8276,9 +8291,9 @@
 		power-domains = <0x49 0x22>;
 		ranges = <0x800 0x00 0xf0000000 0x00 0xf0000000 0x00 0x100000 0x81000000 0x00 0xf0100000 0x00 0xf0100000 0x00 0x100000 0x82000000 0x00 0xf0200000 0x00 0xf0200000 0x00 0xe00000 0xc3000000 0x09 0x00 0x09 0x00 0x00 0x40000000>;
 		reg = <0x00 0xfe150000 0x00 0x10000 0x0a 0x40000000 0x00 0x400000>;
-		reg-names = "pcie-apb\0pcie-dbi";
+		reg-names = "pcie-apb", "pcie-dbi";
 		resets = <0x02 0x20d 0x02 0x21c>;
-		reset-names = "pcie\0periph";
+		reset-names = "pcie", "periph";
 		rockchip,pipe-grf = <0x5d>;
 		status = "disabled";
 
@@ -8293,15 +8308,15 @@
 	};
 
 	pcie@fe160000 {
-		compatible = "rockchip,rk3588-pcie\0snps,dw-pcie";
+		compatible = "rockchip,rk3588-pcie", "snps,dw-pcie";
 		#address-cells = <0x03>;
 		#size-cells = <0x02>;
 		bus-range = <0x10 0x1f>;
 		clocks = <0x02 0x14f 0x02 0x154 0x02 0x14a 0x02 0x159 0x02 0x15f 0x02 0x184>;
-		clock-names = "aclk_mst\0aclk_slv\0aclk_dbi\0pclk\0aux\0pipe";
+		clock-names = "aclk_mst", "aclk_slv", "aclk_dbi", "pclk", "aux", "pipe";
 		device_type = "pci";
 		interrupts = <0x00 0x102 0x04 0x00 0x101 0x04 0x00 0x100 0x04 0x00 0xff 0x04 0x00 0xfe 0x04>;
-		interrupt-names = "sys\0pmc\0msg\0legacy\0err";
+		interrupt-names = "sys", "pmc", "msg", "legacy", "err";
 		#interrupt-cells = <0x01>;
 		interrupt-map-mask = <0x00 0x00 0x00 0x07>;
 		interrupt-map = <0x00 0x00 0x00 0x01 0x19d 0x00 0x00 0x00 0x00 0x02 0x19d 0x01 0x00 0x00 0x00 0x03 0x19d 0x02 0x00 0x00 0x00 0x04 0x19d 0x03>;
@@ -8317,9 +8332,9 @@
 		power-domains = <0x49 0x22>;
 		ranges = <0x800 0x00 0xf1000000 0x00 0xf1000000 0x00 0x100000 0x81000000 0x00 0xf1100000 0x00 0xf1100000 0x00 0x100000 0x82000000 0x00 0xf1200000 0x00 0xf1200000 0x00 0xe00000 0xc3000000 0x09 0x40000000 0x09 0x40000000 0x00 0x40000000>;
 		reg = <0x00 0xfe160000 0x00 0x10000 0x0a 0x40400000 0x00 0x400000>;
-		reg-names = "pcie-apb\0pcie-dbi";
+		reg-names = "pcie-apb", "pcie-dbi";
 		resets = <0x02 0x20e 0x02 0x21d>;
-		reset-names = "pcie\0periph";
+		reset-names = "pcie", "periph";
 		rockchip,pipe-grf = <0x5d>;
 		status = "disabled";
 
@@ -8334,15 +8349,15 @@
 	};
 
 	pcie@fe170000 {
-		compatible = "rockchip,rk3588-pcie\0snps,dw-pcie";
+		compatible = "rockchip,rk3588-pcie", "snps,dw-pcie";
 		#address-cells = <0x03>;
 		#size-cells = <0x02>;
 		bus-range = <0x20 0x2f>;
 		clocks = <0x02 0x150 0x02 0x155 0x02 0x14b 0x02 0x15b 0x02 0x160 0x02 0x2c4>;
-		clock-names = "aclk_mst\0aclk_slv\0aclk_dbi\0pclk\0aux\0pipe";
+		clock-names = "aclk_mst", "aclk_slv", "aclk_dbi", "pclk", "aux", "pipe";
 		device_type = "pci";
 		interrupts = <0x00 0xf3 0x04 0x00 0xf2 0x04 0x00 0xf1 0x04 0x00 0xf0 0x04 0x00 0xef 0x04>;
-		interrupt-names = "sys\0pmc\0msg\0legacy\0err";
+		interrupt-names = "sys", "pmc", "msg", "legacy", "err";
 		#interrupt-cells = <0x01>;
 		interrupt-map-mask = <0x00 0x00 0x00 0x07>;
 		interrupt-map = <0x00 0x00 0x00 0x01 0x19e 0x00 0x00 0x00 0x00 0x02 0x19e 0x01 0x00 0x00 0x00 0x03 0x19e 0x02 0x00 0x00 0x00 0x04 0x19e 0x03>;
@@ -8357,9 +8372,9 @@
 		phy-names = "pcie-phy";
 		ranges = <0x800 0x00 0xf2000000 0x00 0xf2000000 0x00 0x100000 0x81000000 0x00 0xf2100000 0x00 0xf2100000 0x00 0x100000 0x82000000 0x00 0xf2200000 0x00 0xf2200000 0x00 0xe00000 0xc3000000 0x09 0x80000000 0x09 0x80000000 0x00 0x40000000>;
 		reg = <0x00 0xfe170000 0x00 0x10000 0x0a 0x40800000 0x00 0x400000>;
-		reg-names = "pcie-apb\0pcie-dbi";
+		reg-names = "pcie-apb", "pcie-dbi";
 		resets = <0x02 0x20f 0x02 0x21e>;
-		reset-names = "pcie\0periph";
+		reset-names = "pcie", "periph";
 		rockchip,pipe-grf = <0x5d>;
 		status = "disabled";
 
@@ -8381,14 +8396,14 @@
 	};
 
 	ethernet@fe1b0000 {
-		compatible = "rockchip,rk3588-gmac\0snps,dwmac-4.20a";
+		compatible = "rockchip,rk3588-gmac", "snps,dwmac-4.20a";
 		reg = <0x00 0xfe1b0000 0x00 0x10000>;
 		interrupts = <0x00 0xe3 0x04 0x00 0xe2 0x04>;
-		interrupt-names = "macirq\0eth_wake_irq";
-		rockchip,grf = <0xad>;
+		interrupt-names = "macirq", "eth_wake_irq";
+		rockchip,grf = <&sys_grf>;
 		rockchip,php_grf = <0x5d>;
 		clocks = <0x02 0x144 0x02 0x145 0x02 0x167 0x02 0x16c 0x02 0x142>;
-		clock-names = "stmmaceth\0clk_mac_ref\0pclk_mac\0aclk_mac\0ptp_ref";
+		clock-names = "stmmaceth", "clk_mac_ref", "pclk_mac", "aclk_mac", "ptp_ref";
 		resets = <0x02 0x20a>;
 		reset-names = "stmmaceth";
 		power-domains = <0x49 0x21>;
@@ -8400,7 +8415,7 @@
 		status = "disabled";
 		phy-mode = "rgmii-rxid";
 		clock_in_out = "output";
-		snps,reset-gpio = <0x1a4 0x0b 0x01>;
+		snps,reset-gpio = <&gpio2 0x0b 0x01>;
 		snps,reset-active-low;
 		snps,reset-delays-us = <0x00 0x4e20 0x186a0>;
 		pinctrl-names = "default";
@@ -8446,10 +8461,10 @@
 	};
 
 	sata@fe220000 {
-		compatible = "rockchip,rk-ahci\0snps,dwc-ahci";
+		compatible = "rockchip,rk-ahci", "snps,dwc-ahci";
 		reg = <0x00 0xfe220000 0x00 0x1000>;
 		clocks = <0x02 0x172 0x02 0x16f 0x02 0x175 0x02 0x164 0x02 0x17f>;
-		clock-names = "sata\0pmalive\0rxoob\0ref\0asic";
+		clock-names = "sata", "pmalive", "rxoob", "ref", "asic";
 		interrupts = <0x00 0x112 0x04>;
 		interrupt-names = "hostc";
 		phys = <0x19f 0x01>;
@@ -8462,9 +8477,9 @@
 		compatible = "rockchip,rk3588-hdptx-phy";
 		reg = <0x00 0xfed70000 0x00 0x2000>;
 		clocks = <0x02 0x2b5 0x02 0x268>;
-		clock-names = "ref\0apb";
+		clock-names = "ref", "apb";
 		resets = <0x02 0x486 0x02 0xc003f 0x02 0xc0040 0x02 0xc0041>;
-		reset-names = "apb\0init\0cmn\0lane";
+		reset-names = "apb", "init", "cmn", "lane";
 		rockchip,grf = <0x1ab>;
 		#phy-cells = <0x00>;
 		status = "disabled";
@@ -8475,9 +8490,9 @@
 		compatible = "rockchip,rk3588-hdptx-phy-hdmi";
 		reg = <0x00 0xfed70000 0x00 0x2000>;
 		clocks = <0x02 0x2b5 0x02 0x268>;
-		clock-names = "ref\0apb";
+		clock-names = "ref", "apb";
 		resets = <0x02 0x491 0x02 0x486 0x02 0xc003f 0x02 0xc0040 0x02 0xc0041 0x02 0x48f 0x02 0x490>;
-		reset-names = "phy\0apb\0init\0cmn\0lane\0ropll\0lcpll";
+		reset-names = "phy", "apb", "init", "cmn", "lane", "ropll", "lcpll";
 		rockchip,grf = <0x1ab>;
 		#phy-cells = <0x00>;
 		status = "disabled";
@@ -8485,7 +8500,7 @@
 
 		clk-port {
 			#clock-cells = <0x00>;
-			status = "okay";
+			status = "disabled" /* not exposed to zone2 */;
 			phandle = <0x18d>;
 		};
 	};
@@ -8498,10 +8513,10 @@
 		rockchip,usbdpphy-grf = <0x1ad>;
 		rockchip,vo-grf = <0xe3>;
 		clocks = <0x02 0x2b6 0x02 0x280 0x02 0x26a 0x1ae>;
-		clock-names = "refclk\0immortal\0pclk\0utmi";
+		clock-names = "refclk", "immortal", "pclk", "utmi";
 		resets = <0x02 0x2f 0x02 0x30 0x02 0x31 0x02 0x32 0x02 0x484>;
-		reset-names = "init\0cmn\0lane\0pcs_apb\0pma_apb";
-		status = "okay";
+		reset-names = "init", "cmn", "lane", "pcs_apb", "pma_apb";
+		status = "disabled" /* not exposed to zone2 */;
 
 		dp-port {
 			#phy-cells = <0x00>;
@@ -8521,11 +8536,11 @@
 		reg = <0x00 0xfee10000 0x00 0x100>;
 		#phy-cells = <0x01>;
 		clocks = <0x02 0x2be 0x02 0x186 0x02 0x166>;
-		clock-names = "refclk\0apbclk\0phpclk";
+		clock-names = "refclk", "apbclk", "phpclk";
 		assigned-clocks = <0x02 0x2be>;
 		assigned-clock-rates = <0x5f5e100>;
 		resets = <0x02 0x20006 0x02 0x4d7>;
-		reset-names = "combphy-apb\0combphy";
+		reset-names = "combphy-apb", "combphy";
 		rockchip,pipe-grf = <0x5d>;
 		rockchip,pipe-phy-grf = <0x1af>;
 		rockchip,pcie1ln-sel-bits = <0x100 0x00 0x00 0x00>;
@@ -8554,6 +8569,7 @@
 		keyup-threshold-microvolt = <0x1b7740>;
 		poll-interval = <0x64>;
 
+		status = "disabled"; /* not exposed to zone2 */
 		vol-up-key {
 			label = "volume up";
 			linux,code = <0x73>;
@@ -8579,11 +8595,11 @@
 		};
 	};
 
-	backlight {
+	backlight: backlight {
 		compatible = "pwm-backlight";
-		brightness-levels = <0x00 0x14 0x14 0x15 0x15 0x16 0x16 0x17 0x17 0x18 0x18 0x19 0x19 0x1a 0x1a 0x1b 0x1b 0x1c 0x1c 0x1d 0x1d 0x1e 0x1e 0x1f 0x1f 0x20 0x20 0x21 0x21 0x22 0x22 0x23 0x23 0x24 0x24 0x25 0x25 0x26 0x26 0x27 0x28 0x29 0x2a 0x2b 0x2c 0x2d 0x2e 0x2f 0x30 0x31 0x32 0x33 0x34 0x35 0x36 0x37 0x38 0x39 0x3a 0x3b 0x3c 0x3d 0x3e 0x3f 0x40 0x41 0x42 0x43 0x44 0x45 0x46 0x47 0x48 0x49 0x4a 0x4b 0x4c 0x4d 0x4e 0x4f 0x50 0x51 0x52 0x53 0x54 0x55 0x56 0x57 0x58 0x59 0x5a 0x5b 0x5c 0x5d 0x5e 0x5f 0x60 0x61 0x62 0x63 0x64 0x65 0x66 0x67 0x68 0x69 0x6a 0x6b 0x6c 0x6d 0x6e 0x6f 0x70 0x71 0x72 0x73 0x74 0x75 0x76 0x77 0x78 0x79 0x7a 0x7b 0x7c 0x7d 0x7e 0x7f 0x80 0x81 0x82 0x83 0x84 0x85 0x86 0x87 0x88 0x89 0x8a 0x8b 0x8c 0x8d 0x8e 0x8f 0x90 0x91 0x92 0x93 0x94 0x95 0x96 0x97 0x98 0x99 0x9a 0x9b 0x9c 0x9d 0x9e 0x9f 0xa0 0xa1 0xa2 0xa3 0xa4 0xa5 0xa6 0xa7 0xa8 0xa9 0xaa 0xab 0xac 0xad 0xae 0xaf 0xb0 0xb1 0xb2 0xb3 0xb4 0xb5 0xb6 0xb7 0xb8 0xb9 0xba 0xbb 0xbc 0xbd 0xbe 0xbf 0xc0 0xc1 0xc2 0xc3 0xc4 0xc5 0xc6 0xc7 0xc8 0xc9 0xca 0xcb 0xcc 0xcd 0xce 0xcf 0xd0 0xd1 0xd2 0xd3 0xd4 0xd5 0xd6 0xd7 0xd8 0xd9 0xda 0xdb 0xdc 0xdd 0xde 0xdf 0xe0 0xe1 0xe2 0xe3 0xe4 0xe5 0xe6 0xe7 0xe8 0xe9 0xea 0xeb 0xec 0xed 0xee 0xef 0xf0 0xf1 0xf2 0xf3 0xf4 0xf5 0xf6 0xf7 0xf8 0xf9 0xfa 0xfb 0xfc 0xfd 0xfe 0xff>;
+		brightness-levels = <0x00 0x14 0x14 0x15 0x15 0x16 0x16 0x17 0x17 0x18 0x18 0x19 0x19 0x1a 0x1a 0x1b 0x1b 0x1c 0x1c 0x1d 0x1d 0x1e 0x1e 0x1f 0x1f 0x20 0x20 0x21 0x21 0x22 0x22 0x23 0x23 0x24 0x24 &dcphy0 &dcphy0 0x26 0x26 0x27 0x28 0x29 0x2a 0x2b 0x2c 0x2d 0x2e 0x2f 0x30 0x31 0x32 0x33 0x34 0x35 0x36 0x37 0x38 0x39 0x3a 0x3b 0x3c 0x3d 0x3e 0x3f 0x40 0x41 0x42 0x43 0x44 0x45 0x46 0x47 0x48 0x49 0x4a 0x4b 0x4c 0x4d 0x4e 0x4f 0x50 0x51 0x52 0x53 0x54 0x55 0x56 0x57 0x58 0x59 0x5a 0x5b 0x5c 0x5d 0x5e 0x5f 0x60 0x61 0x62 0x63 0x64 0x65 0x66 0x67 0x68 0x69 0x6a 0x6b 0x6c 0x6d 0x6e 0x6f 0x70 0x71 0x72 0x73 0x74 0x75 0x76 0x77 0x78 0x79 0x7a 0x7b 0x7c 0x7d 0x7e 0x7f 0x80 0x81 0x82 0x83 0x84 0x85 0x86 0x87 0x88 0x89 0x8a 0x8b 0x8c 0x8d 0x8e 0x8f 0x90 0x91 0x92 0x93 0x94 0x95 0x96 0x97 0x98 0x99 0x9a 0x9b 0x9c 0x9d 0x9e 0x9f 0xa0 0xa1 0xa2 0xa3 0xa4 0xa5 0xa6 0xa7 0xa8 0xa9 0xaa 0xab 0xac &sys_grf 0xae 0xaf 0xb0 0xb1 0xb2 0xb3 0xb4 0xb5 0xb6 0xb7 0xb8 0xb9 0xba &vop_mmu &vop_grf &vo1_grf &pmu 0xbf 0xc0 0xc1 0xc2 0xc3 0xc4 0xc5 0xc6 0xc7 0xc8 0xc9 0xca 0xcb 0xcc 0xcd 0xce 0xcf 0xd0 0xd1 0xd2 0xd3 0xd4 0xd5 0xd6 0xd7 0xd8 0xd9 &backlight &vcc3v3_lcd0_n &lcd_rst_gpio 0xdd 0xde 0xdf 0xe0 0xe1 0xe2 0xe3 0xe4 0xe5 0xe6 0xe7 0xe8 0xe9 0xea 0xeb 0xec 0xed 0xee 0xef 0xf0 0xf1 0xf2 0xf3 0xf4 0xf5 0xf6 0xf7 0xf8 0xf9 0xfa 0xfb 0xfc 0xfd 0xfe 0xff>;
 		default-brightness-level = <0xc8>;
-		pwms = <0x1b2 0x00 0x61a8 0x00>;
+		pwms = <&pwm1 0x00 0x61a8 0x00>;
 		status = "okay";
 		phandle = <0xda>;
 	};
@@ -8613,7 +8629,7 @@
 	};
 
 	hdmi0-sound {
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		compatible = "rockchip,hdmi";
 		rockchip,mclk-fs = <0x80>;
 		rockchip,card-name = "rockchip-hdmi0";
@@ -8718,6 +8734,7 @@
 		regulator-min-microvolt = <0xb71b00>;
 		regulator-max-microvolt = <0xb71b00>;
 		phandle = <0x1c1>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	vcc5v0-sys {
@@ -8729,6 +8746,7 @@
 		regulator-max-microvolt = <0x4c4b40>;
 		vin-supply = <0x1c1>;
 		phandle = <0x5f>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	vcc5v0-usbdcin {
@@ -8740,6 +8758,7 @@
 		regulator-max-microvolt = <0x4c4b40>;
 		vin-supply = <0x1c1>;
 		phandle = <0x1c2>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	vcc5v0-usb {
@@ -8751,22 +8770,29 @@
 		regulator-max-microvolt = <0x4c4b40>;
 		vin-supply = <0x1c2>;
 		phandle = <0x1c7>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
+	/* zone2-android: virtio console (hvc0); no physical uart in this zone.
+	 * No earlycon (5.10 lacks earlycon=virtio,mmio). initrd staged by
+	 * hvisor-tool at 0x5b000000 (see configs/zone2-android.json). */
 	chosen {
-		bootargs = "clk_ignore_unused pd_ignore_unused earlycon=uart8250,mmio32,0xfeb50000 console=ttyFIQ0 irqchip.gicv3_pseudo_nmi=0 firmware_class.path=/vendor/etc/firmware init=/init rootwait ro loop.max_part=7 androidboot.console=ttyFIQ0 androidboot.wificountrycode=CN androidboot.hardware=rk30board androidboot.boot_devices=fe2e0000.mmc androidboot.selinux=permissive buildvariant=userdebug no_console_suspend androidboot.healthd.fake_battery=1 androidboot.reboot_on_failure=0";
-		linux,initrd-start = <0x20100000>;
-		linux,initrd-end = <0x2024bb9c>;
+		bootargs = "console=hvc0 firmware_class.path=/vendor/etc/firmware init=/init rootwait ro loop.max_part=7 androidboot.hardware=rk30board androidboot.boot_devices=fe2e0000.mmc androidboot.selinux=permissive buildvariant=userdebug no_console_suspend androidboot.healthd.fake_battery=1 androidboot.reboot_on_failure=0";
+		linux,initrd-start = <0x5b000000>;
+		linux,initrd-end = <0x5b14bb9c>;
 	};
+
 
 	cspmu@fd10c000 {
 		compatible = "rockchip,cspmu";
 		reg = <0x00 0xfd10c000 0x00 0x1000 0x00 0xfd10d000 0x00 0x1000 0x00 0xfd10e000 0x00 0x1000 0x00 0xfd10f000 0x00 0x1000 0x00 0xfd12c000 0x00 0x1000 0x00 0xfd12d000 0x00 0x1000 0x00 0xfd12e000 0x00 0x1000 0x00 0xfd12f000 0x00 0x1000>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	debug@fd104000 {
 		compatible = "rockchip,debug";
 		reg = <0x00 0xfd104000 0x00 0x1000 0x00 0xfd105000 0x00 0x1000 0x00 0xfd106000 0x00 0x1000 0x00 0xfd107000 0x00 0x1000 0x00 0xfd124000 0x00 0x1000 0x00 0xfd125000 0x00 0x1000 0x00 0xfd126000 0x00 0x1000 0x00 0xfd127000 0x00 0x1000>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	fiq-debugger {
@@ -8778,7 +8804,7 @@
 		interrupts = <0x00 0x1a7 0x08>;
 		pinctrl-names = "default";
 		pinctrl-0 = <0x1c3>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 	};
 
 	minidump {
@@ -8793,6 +8819,7 @@
 		#size-cells = <0x02>;
 		ranges;
 
+		status = "disabled"; /* not exposed to zone2 */
 		cma {
 			compatible = "shared-dma-pool";
 			reusable;
@@ -8816,43 +8843,13 @@
 			reg = <0x00 0x00 0x00 0x00>;
 			phandle = <0x1c6>;
 		};
-
-		ramoops@110000 {
-			compatible = "ramoops";
-			reg = <0x00 0x110000 0x00 0xe0000>;
-			boot-log-size = <0x8000>;
-			boot-log-count = <0x01>;
-			console-size = <0x80000>;
-			pmsg-size = <0x30000>;
-			ftrace-size = <0x00>;
-			record-size = <0x14000>;
-			status = "disabled";
-		};
-
-		minidump-smem@1f0000 {
-			reg = <0x00 0x1f0000 0x00 0x100>;
-			no-map;
-			status = "disabled";
-			phandle = <0x1c4>;
-		};
-
-		minidump-mem@c000000 {
-			reg = <0x00 0xc000000 0x00 0x2000000>;
-			no-map;
-			status = "disabled";
-			phandle = <0x1c5>;
-		};
-
-		other-parts {
-			reg = <0x00 0x200000 0x00 0x8200000 0x00 0x9400000 0x00 0x6c00000 0x00 0x10000000 0x00 0x10000000 0x00 0xa0000000 0x00 0x50000000 0x03 0xfc500000 0x00 0x3a00000 0x04 0xf0000000 0x00 0x10000000>;
-			no-map;
-		};
 	};
+
 
 	vendor-storage {
 		compatible = "rockchip,ram-vendor-storage";
 		memory-region = <0x1c6>;
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 	};
 
 	vcc5v0-host {
@@ -8867,6 +8864,7 @@
 		vin-supply = <0x1c7>;
 		pinctrl-names = "default";
 		phandle = <0x5c>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	vcc-3v3-sd-s0-regulator {
@@ -8882,6 +8880,7 @@
 		regulator-name = "vcc_3v3_sd_s0";
 		vin-supply = <0x1c9>;
 		phandle = <0x108>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
 	vcc-1v1-nldo-s3 {
@@ -8893,21 +8892,21 @@
 		regulator-max-microvolt = <0x10c8e0>;
 		vin-supply = <0x5f>;
 		phandle = <0x14f>;
+		status = "disabled"; /* not exposed to zone2 */
 	};
 
-	vcc3v3-lcd0-n {
+	vcc3v3_lcd0_n: vcc3v3-lcd0-n {
 		compatible = "regulator-fixed";
 		regulator-name = "vcc3v3_lcd0_n";
 		regulator-always-on;
 		regulator-boot-on;
 		enable-active-high;
-		gpio = <0x1a4 0x15 0x00>;
-		vin-supply = <0x1ca>;
+		gpio = <&gpio2 0x15 0x00>;
 		phandle = <0xdb>;
 	};
 
 	i2s0-sound {
-		status = "okay";
+		status = "disabled" /* not exposed to zone2 */;
 		compatible = "simple-audio-card";
 		simple-audio-card,format = "i2s";
 		simple-audio-card,mclk-fs = <0x100>;
@@ -8928,22 +8927,39 @@
 
 	memory {
 		device_type = "memory";
-		reg = <0x00 0x200000 0x00 0x8200000 0x00 0x9400000 0x00 0x6c00000 0x00 0x10000000 0x00 0x10000000 0x00 0x20000000 0x00 0x80000000 0x00 0xa0000000 0x00 0x50000000 0x01 0x00 0x02 0xfc000000 0x03 0xfc500000 0x00 0x3a00000 0x04 0xf0000000 0x00 0x10000000>;
+		reg = <0x00 0x58000000 0x00 0x80000000>;
 	};
 
-	virtio_mmio@ff9e0000 {
+
+
+
+
+
+	/* virtio-mmio for SCMI (zone2, SPI 0x46 = INTID 0x66) */
+	virtio_mmio@ffa10000 {
 		dma-coherent;
 		interrupt-parent = <0x01>;
-		interrupts = <0x00 0x22 0x01>;
-		reg = <0x00 0xff9e0000 0x00 0x200>;
+		interrupts = <0x0 0x46 0x1>;
+		reg = <0x0 0xffa10000 0x0 0x200>;
 		compatible = "virtio,mmio";
 	};
 
-	virtio_mmio@ff9f0000 {
+	/* virtio-mmio for console (zone2, SPI 0x48 = INTID 0x68) */
+	virtio_mmio@ffa30000 {
 		dma-coherent;
 		interrupt-parent = <0x01>;
-		interrupts = <0x00 0x23 0x01>;
-		reg = <0x00 0xff9f0000 0x00 0x200>;
+		interrupts = <0x0 0x48 0x1>;
+		reg = <0x0 0xffa30000 0x0 0x200>;
 		compatible = "virtio,mmio";
 	};
+
+	/* virtio-mmio for net (zone2, SPI 0x49 = INTID 0x69) */
+	virtio_mmio@ffa50000 {
+		dma-coherent;
+		interrupt-parent = <0x01>;
+		interrupts = <0x0 0x49 0x1>;
+		reg = <0x0 0xffa50000 0x0 0x200>;
+		compatible = "virtio,mmio";
+	};
+
 };

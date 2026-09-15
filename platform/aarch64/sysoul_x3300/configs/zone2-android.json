@@ -1,0 +1,452 @@
+{
+  "arch": "arm64",
+  "name": "zone2-android",
+  "zone_id": 2,
+  "cpus": [
+    2,
+    3
+  ],
+  "memory_regions": [
+    {
+      "type": "io",
+      "physical_start": "0x00100000",
+      "virtual_start": "0x00100000",
+      "size": "0xf000"
+    },
+    {
+      "type": "ram",
+      "physical_start": "0x58000000",
+      "virtual_start": "0x58000000",
+      "size": "0x80000000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfb000000",
+      "virtual_start": "0xfb000000",
+      "size": "0x200000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd104000",
+      "virtual_start": "0xfd104000",
+      "size": "0x4000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd58c000",
+      "virtual_start": "0xfd58c000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd8d8000",
+      "virtual_start": "0xfd8d8000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd5a0000",
+      "virtual_start": "0xfd5a0000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd5a4000",
+      "virtual_start": "0xfd5a4000",
+      "size": "0x2000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd5a6000",
+      "virtual_start": "0xfd5a6000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd5a8000",
+      "virtual_start": "0xfd5a8000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd5f0000",
+      "virtual_start": "0xfd5f0000",
+      "size": "0x10000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfdb30000",
+      "virtual_start": "0xfdb30000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfdd90000",
+      "virtual_start": "0xfdd90000",
+      "size": "0x10000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfde20000",
+      "virtual_start": "0xfde20000",
+      "size": "0x10000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd5e8000",
+      "virtual_start": "0xfd5e8000",
+      "size": "0x4000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfe2e0000",
+      "virtual_start": "0xfe2e0000",
+      "size": "0x10000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfec30000",
+      "virtual_start": "0xfec30000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd8b0000",
+      "virtual_start": "0xfd8b0000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfeda0000",
+      "virtual_start": "0xfeda0000",
+      "size": "0x10000"
+    },
+    {
+      "type": "virtio",
+      "physical_start": "0xffa10000",
+      "virtual_start": "0xffa10000",
+      "size": "0x1000"
+    },
+    {
+      "type": "virtio",
+      "physical_start": "0xffa30000",
+      "virtual_start": "0xffa30000",
+      "size": "0x1000"
+    },
+    {
+      "type": "virtio",
+      "physical_start": "0xffa50000",
+      "virtual_start": "0xffa50000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfc000000",
+      "virtual_start": "0xfc000000",
+      "size": "0x400000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfc800000",
+      "virtual_start": "0xfc800000",
+      "size": "0x40000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfc840000",
+      "virtual_start": "0xfc840000",
+      "size": "0x40000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfc880000",
+      "virtual_start": "0xfc880000",
+      "size": "0x40000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfc8c0000",
+      "virtual_start": "0xfc8c0000",
+      "size": "0x40000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfcd00000",
+      "virtual_start": "0xfcd00000",
+      "size": "0x400000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd5ac000",
+      "virtual_start": "0xfd5ac000",
+      "size": "0x4000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd5b0000",
+      "virtual_start": "0xfd5b0000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd5c4000",
+      "virtual_start": "0xfd5c4000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd5d0000",
+      "virtual_start": "0xfd5d0000",
+      "size": "0x4000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd5d8000",
+      "virtual_start": "0xfd5d8000",
+      "size": "0x4000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd5dc000",
+      "virtual_start": "0xfd5dc000",
+      "size": "0x4000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfee20000",
+      "virtual_start": "0xfee20000",
+      "size": "0x10000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd124000",
+      "virtual_start": "0xfd124000",
+      "size": "0x4000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd10c000",
+      "virtual_start": "0xfd10c000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd10d000",
+      "virtual_start": "0xfd10d000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd10e000",
+      "virtual_start": "0xfd10e000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd10f000",
+      "virtual_start": "0xfd10f000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd12c000",
+      "virtual_start": "0xfd12c000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd12d000",
+      "virtual_start": "0xfd12d000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd12e000",
+      "virtual_start": "0xfd12e000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd12f000",
+      "virtual_start": "0xfd12f000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfeac0000",
+      "virtual_start": "0xfeac0000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfec20000",
+      "virtual_start": "0xfec20000",
+      "size": "0x1000"
+    }
+  ],
+  "interrupts": [
+    "0x66",
+    "0x68",
+    "0x69",
+    "0x7c",
+    "0x7d",
+    "0x7e",
+    "0xbc",
+    "0xc7",
+    "0xed",
+    "0x137",
+    "0x178",
+    "0xfc",
+    "0xf7",
+    "0xf8",
+    "0xfa",
+    "0xfb",
+    "0xfe",
+    "0x1a7",
+    "0x1a8",
+    "0x1a9",
+    "0x161",
+    "0x136"
+  ],
+  "devices": [
+    {
+      "type": "scmi",
+      "addr": "0xffa10000",
+      "len": "0x200",
+      "irq": "0x66",
+      "status": "enable",
+      "clock_ids": [
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        47,
+        48,
+        49,
+        50,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        51,
+        52,
+        53,
+        54,
+        55,
+        56,
+        57,
+        58,
+        59,
+        60,
+        61,
+        62,
+        63,
+        64,
+        65,
+        66,
+        67,
+        68,
+        69,
+        70
+      ],
+      "reset_ids": [
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        37,
+        38,
+        39,
+        40,
+        41,
+        42,
+        43,
+        44,
+        45,
+        46,
+        47,
+        48,
+        49
+      ],
+      "power_ids": [
+        3,
+        4,
+        6
+      ]
+    },
+    {
+      "type": "console",
+      "addr": "0xffa30000",
+      "len": "0x200",
+      "irq": "0x68",
+      "status": "enable"
+    },
+    {
+      "type": "net",
+      "addr": "0xffa50000",
+      "len": "0x200",
+      "irq": "0x69",
+      "tap": "tap1",
+      "mac": [
+        "0x02",
+        "0x00",
+        "0x00",
+        "0x00",
+        "0x01",
+        "0x02"
+      ],
+      "status": "enable"
+    }
+  ],
+  "ivc_configs": [],
+  "kernel_filepath": "./202609-android-Image",
+  "dtb_filepath": "./202609-sysoul_x3300_zone2-android.dtb",
+  "kernel_load_paddr": "0x58400000",
+  "dtb_load_paddr": "0x58000000",
+  "entry_point": "0x58400000",
+  "kernel_args": "",
+  "modules": [
+    {
+      "name": "ramdisk",
+      "filepath": "./202609-android-ramdisk",
+      "load_paddr": "0x5b000000"
+    }
+  ],
+  "arch_config": {
+    "gic_version": "v3",
+    "gicd_base": "0xfe600000",
+    "gicd_size": "0x10000",
+    "gicr_base": "0xfe680000",
+    "gicr_size": "0x100000",
+    "gits_base": "0x0",
+    "gits_size": "0x0"
+  },
+  "pci_config": []
+}
