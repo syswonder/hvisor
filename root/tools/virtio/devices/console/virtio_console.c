@@ -18,6 +18,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <sys/time.h>
 #include <termios.h>
 
@@ -223,7 +224,8 @@ static void virtio_console_close(VirtIODevice *vdev) {
     free(vdev);
 }
 
-static int virtio_console_do_init(VirtIODevice *vdev, const void *params) {
+static int virtio_console_do_init(VirtIODevice *vdev,
+                                  const VirtioDeviceParams *params) {
     (void)params;
     vdev->dev = init_console_dev();
     if (!vdev->dev)
@@ -246,13 +248,16 @@ const struct virtio_device_ops virtio_console_ops = {
         },
 };
 
-static int virtio_console_parse_params(const cJSON *json, void **out) {
+static int virtio_console_parse_params(const cJSON *json,
+                                       VirtioDeviceParams *out) {
     (void)json;
-    *out = NULL;
+    memset(out, 0, sizeof(*out));
     return 0;
 }
 
-static void virtio_console_free_params(void *params) { (void)params; }
+static void virtio_console_free_params(VirtioDeviceParams *params) {
+    (void)params;
+}
 
 const struct virtio_config_ops virtio_console_config_ops = {
     .parse = virtio_console_parse_params,
