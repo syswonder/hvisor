@@ -209,8 +209,9 @@ static int scmi_copy_id_array(uint32_t **dst, const uint32_t *src,
     return 0;
 }
 
-static int virtio_scmi_do_init(VirtIODevice *vdev, const void *params) {
-    const struct virtio_scmi_init_params *p = params;
+static int virtio_scmi_do_init(VirtIODevice *vdev,
+                               const VirtioDeviceParams *params) {
+    const struct virtio_scmi_init_params *p = params ? params->scmi : NULL;
     SCMIDev *dev;
 
     if (p) {
@@ -264,7 +265,8 @@ const struct virtio_device_ops virtio_scmi_ops = {
         },
 };
 
-static int virtio_scmi_parse_params(const cJSON *json, void **out) {
+static int virtio_scmi_parse_params(const cJSON *json,
+                                    VirtioDeviceParams *out) {
     struct virtio_scmi_init_params *p = calloc(1, sizeof(*p));
     if (!p)
         return -ENOMEM;
@@ -280,12 +282,13 @@ static int virtio_scmi_parse_params(const cJSON *json, void **out) {
         return -EINVAL;
     }
 
-    *out = p;
+    out->scmi = p;
     return 0;
 }
 
-static void virtio_scmi_free_params(void *params) {
-    scmi_dev_free_params(params);
+static void virtio_scmi_free_params(VirtioDeviceParams *params) {
+    scmi_dev_free_params(params->scmi);
+    params->scmi = NULL;
 }
 
 const struct virtio_config_ops virtio_scmi_config_ops = {

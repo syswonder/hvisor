@@ -339,8 +339,9 @@ static void virtio_net_close(VirtIODevice *vdev) {
     free(vdev);
 }
 
-static int virtio_net_do_init(VirtIODevice *vdev, const void *params) {
-    const struct virtio_net_init_params *p = params;
+static int virtio_net_do_init(VirtIODevice *vdev,
+                              const VirtioDeviceParams *params) {
+    const struct virtio_net_init_params *p = params ? params->net : NULL;
     if (!p)
         return -EINVAL;
     vdev->dev = init_net_dev(p->mac);
@@ -365,7 +366,7 @@ const struct virtio_device_ops virtio_net_ops = {
         },
 };
 
-static int virtio_net_parse_params(const cJSON *json, void **out) {
+static int virtio_net_parse_params(const cJSON *json, VirtioDeviceParams *out) {
     struct virtio_net_init_params *p = calloc(1, sizeof(*p));
     if (!p)
         return -ENOMEM;
@@ -394,11 +395,14 @@ static int virtio_net_parse_params(const cJSON *json, void **out) {
         }
     }
 
-    *out = p;
+    out->net = p;
     return 0;
 }
 
-static void virtio_net_free_params(void *params) { free(params); }
+static void virtio_net_free_params(VirtioDeviceParams *params) {
+    free(params->net);
+    params->net = NULL;
+}
 
 const struct virtio_config_ops virtio_net_config_ops = {
     .parse = virtio_net_parse_params,
