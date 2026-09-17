@@ -18,13 +18,9 @@ from board_flow import (
     board_power_off,
     board_zone1_start,
     boot_board_zone0_with_retry,
-    boot_zone1_from_script,
     close_board_terminal,
     get_board_terminal,
     release_logs_ownership,
-    retry_attach_zone1_screen,
-    retry_find_zone1_pts,
-    run_zone1_inner_cmds,
 )
 from ci_config import get_bid_entry, load_ci, parse_bid
 from terminal import Terminal, TerminalCommandError, TerminalTimeoutError
@@ -207,29 +203,9 @@ def network_and_trans(cfg: dict[str, Any], term: Terminal | None) -> int:
 
 def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     print("————————————————\ncase: zone1_start\n————————————————\n", flush=True)
-    if cfg["mode"] == "board":
-        if term is None:
-            raise SystemExit("terminal backend is required")
-        return board_zone1_start(cfg, term)
     if term is None:
         raise SystemExit("terminal backend is required")
-    _, _ = run_and_print_quiet(term, "cd /root", quiet_seconds=1.0, max_duration=15.0)
-    boot_zone1_from_script(cfg, term)
-    zone_list_out, _ = run_and_print_quiet(
-        term,
-        "./hvisor zone list",
-        quiet_seconds=1.0,
-        max_duration=15.0,
-        check_exit=False,
-    )
-    zone_list_shows_running(zone_list_out, str(cfg.get("zone1_name", "linux2")))
-    max_pts = retry_find_zone1_pts(cfg, term)
-    if cfg["arch"] != "x86_64":
-        _ = run_and_print_quiet_raw(term, "script /dev/null", quiet_seconds=1.0, max_duration=15.0)
-    retry_attach_zone1_screen(cfg, term, max_pts)
-    run_zone1_inner_cmds(cfg, term)
-    print("zone1_started successfully", flush=True)
-    return 0
+    return board_zone1_start(cfg, term)
 
 
 def asterinas_zone1_regression(cfg: dict[str, Any], term: Terminal | None) -> int:
