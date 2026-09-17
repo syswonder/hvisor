@@ -15,9 +15,12 @@ from typing import Any
 
 from terminal import Terminal, TerminalCommandError, TerminalTimeoutError
 
-ZONE0_READY_PATTERN = r"root@[^\r\n]*#\s?|(?:\r?\n)#\s*(?:\r?\n|$)"
+ZONE0_READY_PATTERN = r"root@[^\r\n]*#\s?|(?:\r?\n)#\s?"
+# Match root shell, busybox "#", or getty "login:" on zone1 virtio-console.
+ZONE1_READY_PATTERN = (
+    r"root@[^\r\n]*[#$]\s?|(?:\r?\n)#\s?|(?:^|\r?\n)\s*#\s*(?:\r?\n|$)|login:"
+)
 ZONE1_INNER_PROMPT_TIMEOUT = 60.0
-ZONE1_PTS_PATTERN = r"/dev/pts/\d+"
 GUNZIP_ARTIFACTS = {"hvisor.gz": "hvisor"}
 SPLIT_PART_RE = re.compile(r"^(.+)\.part\.[a-z]{2}$")
 BOARD_PUBKEY_LINE = re.compile(r"^ssh-(?:ed25519|rsa)\s+\S+")
@@ -42,6 +45,16 @@ def logs_dir(cfg: dict[str, Any]) -> Path:
     path = Path(cfg["workspace"]) / "logs"
     path.mkdir(parents=True, exist_ok=True)
     return path
+
+
+def bid_log_name(bid: str) -> str:
+    """Map BID arch/board -> logs/<arch>__<board>.log."""
+    return f"{bid.strip().replace('/', '__')}.log"
+
+
+def bid_log_path(cfg: dict[str, Any]) -> Path:
+    """Ensure logs/ exists and return the run console log path for this BID."""
+    return logs_dir(cfg) / bid_log_name(str(cfg["bid"]))
 
 
 def release_logs_ownership(cfg: dict[str, Any]) -> None:
@@ -338,9 +351,10 @@ def board_path(work_dir: str, *parts: str) -> str:
 
 
 def ping_success(output: str) -> bool:
-    if re.search(r"0%\s*(?:packet\s*)?loss\b", output, re.I):
+    # Require a non-digit before 0% so "100% packet loss" does not match.
+    if re.search(r"(?<!\d)0%\s*(?:packet\s*)?loss\b", output, re.I):
         return True
-    if re.search(r"0%\s*包丢失", output):
+    if re.search(r"(?<!\d)0%\s*包丢失", output):
         return True
     match = re.search(r"(\d+)\s*packets?\s*received", output, re.I)
     if match and int(match.group(1)) > 0:
@@ -593,7 +607,7 @@ def install_tmp_to_workdir(cfg: dict[str, Any], term: Terminal, names: list[str]
     board_run(term, f"mkdir -p {work_dir}", timeout=15.0)
     for name in names:
         board_run_check(term, f"cp {tmp}/{name} {board_path(work_dir, name)}", timeout=60.0)
-    for script in ("boot_zone1.sh", "hvisor", "check_serial.sh"):
+    for script in ("boot_zone1.sh", "hvisor"):
         board_run(term, f"chmod +x {board_path(work_dir, script)} 2>/dev/null || true", timeout=15.0)
     print(f"[trans] installed {len(names)} file(s) to {work_dir}", flush=True)
 
@@ -648,7 +662,7 @@ def strip_board_markers(text: str) -> str:
     return BOARD_CMD_MARKER_RE.sub("", text)
 
 
-def parse_boot_script_lines(content: str) -> list[str]:
+def parse_script_lines(content: str) -> list[str]:
     content = strip_board_markers(content)
     lines: list[str] = []
     for raw in content.splitlines():
@@ -661,71 +675,6 @@ def parse_boot_script_lines(content: str) -> list[str]:
             continue
         lines.append(line)
     return lines
-
-
-def board_zone_list_shows_running(
-    term: Terminal,
-    zone_name: str = "linux2",
-) -> None:
-    # hvisor-tool returns zone count (non-zero) from zone list; validate output instead.
-    _, out = board_run(term, "./hvisor zone list", timeout=15.0)
-    if zone_name not in out or "running" not in out:
-        raise TerminalCommandError(
-            f"zone list missing running {zone_name!r}:\n{out.strip()}"
-        )
-
-
-def boot_line_command(work_dir: str, line: str) -> str:
-    stripped = line.rstrip()
-    if stripped.startswith("cd "):
-        inner = stripped
-    else:
-        inner = f"cd {work_dir} && {stripped}"
-    if stripped.endswith("&"):
-        return f"( {inner} )"
-    return inner
-
-
-def line_timeout(line: str) -> float:
-    if "&" in line or "nohup" in line:
-        return 30.0
-    return 120.0
-
-
-def find_zone1_pts(term: Terminal, timeout: float = 60.0) -> int:
-    """Return the newest virtio-console pts number (poll ls until it appears)."""
-    deadline = time.monotonic() + timeout
-    last_output = ""
-    while time.monotonic() < deadline:
-        _, pts_output = board_run(term, "ls -1 /dev/pts/[0-9]*", timeout=15.0)
-        last_output = pts_output
-        pts_numbers = sorted(int(m) for m in re.findall(r"/dev/pts/(\d+)", pts_output))
-        if pts_numbers:
-            return pts_numbers[-1]
-        time.sleep(1.0)
-    raise TerminalCommandError(
-        f"timed out waiting for zone1 pts device (last ls output: {last_output.strip()!r})"
-    )
-
-
-def run_boot_script_lines(cfg: dict[str, Any], term: Terminal) -> None:
-    work_dir = cfg["zone1_work_dir"]
-    boot_script = "boot_zone1.sh"
-    _, content = board_run(term, f"cat {board_path(work_dir, boot_script)}", timeout=30.0)
-    lines = parse_boot_script_lines(content)
-    if not lines:
-        raise TerminalCommandError(f"no executable lines in {boot_script}")
-    print(f"[zone1] running {len(lines)} line(s) from {boot_script}", flush=True)
-    for index, line in enumerate(lines, start=1):
-        cmd = boot_line_command(work_dir, line)
-        if len(cmd) > MAX_BOARD_CMD_LEN:
-            raise TerminalCommandError(
-                f"boot line {index} too long ({len(cmd)} > {MAX_BOARD_CMD_LEN}): {line!r}"
-            )
-        try:
-            board_run_check(term, cmd, timeout=line_timeout(line))
-        except TerminalCommandError as exc:
-            raise TerminalCommandError(f"boot line {index} failed: {line}\n{exc}") from exc
 
 
 def boot_board_zone0_with_retry(cfg: dict[str, Any], term: Terminal) -> None:
@@ -776,34 +725,145 @@ def board_zone1_stop(cfg: dict[str, Any], term: Terminal) -> None:
 
 
 def board_zone1_start(cfg: dict[str, Any], term: Terminal) -> int:
-    work_dir = cfg["zone1_work_dir"]
-    inner_log = "/tmp/zone1_inner.log"
+    """Boot zone1 from script, attach screen to its console, run smoke cmds."""
+    work_dir = str(cfg.get("zone1_work_dir", "/root")).strip() or "/root"
+    zone_name = str(cfg.get("zone1_name", "linux2"))
+    session = str(cfg.get("zone1_screen_session", "hvisor-zone1")).strip() or "hvisor-zone1"
+    zone0_pat = zone0_ready_pattern(cfg)
+    zone1_pat = str(cfg.get("zone1_ready_pattern", "")).strip() or ZONE1_READY_PATTERN
+    shell_timeout = float(cfg.get("zone1_shell_timeout", ZONE1_INNER_PROMPT_TIMEOUT))
 
-    def run_zone1() -> None:
-        board_run(term, f"cd {work_dir}", timeout=15.0)
-        board_run(term, "ls", timeout=15.0)
-        run_boot_script_lines(cfg, term)
-        board_zone_list_shows_running(
-            term, str(cfg.get("zone1_name", "linux2"))
-        )
-        max_pts = find_zone1_pts(term)
-        board_run(term, f"cd {work_dir}", timeout=15.0)
-        check_rc, _ = board_run(
-            term,
-            f"./check_serial.sh /dev/pts/{max_pts} {inner_log} {int(ZONE1_INNER_PROMPT_TIMEOUT)}",
-            timeout=ZONE1_INNER_PROMPT_TIMEOUT + 30.0,
-        )
-        if check_rc != 0:
-            raise TerminalCommandError("check_serial.sh failed (no console prompt)")
-        _, inner_output = board_run(term, f"tail -c 131072 {inner_log}", timeout=30.0)
-        if inner_output:
-            save_case_log(cfg, "zone1_inner_serial.log", inner_output)
+    def wait_prompt(pattern: str, timeout: float, *, from_offset: int | None = None, cr: bool = False) -> bool:
+        deadline = time.monotonic() + timeout
+        nudged = False
+        while time.monotonic() < deadline:
+            remaining = deadline - time.monotonic()
+            first_slice = 8.0 if cr else 3.0
+            slice_timeout = min(first_slice if not nudged else 5.0, remaining)
+            if slice_timeout <= 0:
+                break
+            if term.wait_pattern(pattern, timeout=slice_timeout, from_offset=from_offset):
+                return True
+            if cr:
+                term.backend.write(b"\r")
+            else:
+                term.send("")
+            nudged = True
+        return False
 
-    retry_step(
-        "zone1_start",
-        run_zone1,
-        retries=int(cfg.get("retry_zone1", 1)),
-        on_retry=lambda: board_zone1_stop(cfg, term),
-    )
+    # --- boot zone1 (send boot_zone1.sh line by line) ---
+    board_run(term, f"cd {work_dir}", timeout=15.0)
+    board_run(term, "ls", timeout=15.0)
+    script_path = board_path(work_dir, "boot_zone1.sh")
+    _rc, content = term.run("cat_boot", f"cat {script_path}", timeout=30.0)
+    boot_lines = parse_script_lines(content)
+    if not boot_lines:
+        raise TerminalCommandError("no executable lines in boot_zone1.sh")
+    print(f"[zone1] sending {len(boot_lines)} boot line(s)", flush=True)
+    for index, line in enumerate(boot_lines, start=1):
+        print(f"[zone1] boot {index}/{len(boot_lines)}: {line}", flush=True)
+        term.send_one_by_one(line)
+        bg = "&" in line or "nohup" in line
+        timeout = 30.0 if bg else 120.0
+        if bg:
+            term.read_until_quiet(quiet_seconds=1.0, max_duration=timeout)
+            continue
+        if not wait_prompt(zone0_pat, timeout):
+            raise TerminalTimeoutError(f"timed out after boot line {index}: {line}")
+
+    # --- confirm zone is running ---
+    _, zone_list_out = board_run(term, "./hvisor zone list", timeout=15.0)
+    if zone_name not in zone_list_out or "running" not in zone_list_out:
+        raise TerminalCommandError(
+            f"zone list missing running {zone_name!r}:\n{zone_list_out.strip()}"
+        )
+
+    # --- find virtio-console pts ---
+    pts = -1
+    last_pts_out = ""
+    for attempt in range(3):
+        if attempt > 0:
+            print(f"[zone1] retry find_pts ({attempt}/2)", flush=True)
+            time.sleep(3.0)
+        deadline = time.monotonic() + 20.0
+        while time.monotonic() < deadline:
+            try:
+                _rc, last_pts_out = term.run("ls_pts", "ls -1 /dev/pts/[0-9]*", timeout=15.0)
+            except TerminalTimeoutError as exc:
+                last_pts_out = exc.partial_output
+            pts_numbers = sorted(int(m) for m in re.findall(r"/dev/pts/(\d+)", last_pts_out))
+            if pts_numbers:
+                pts = pts_numbers[-1]
+                break
+            time.sleep(1.0)
+        if pts >= 0:
+            break
+    if pts < 0:
+        raise TerminalCommandError(
+            f"timed out waiting for zone1 pts (last ls: {last_pts_out.strip()!r})"
+        )
+    print(f"[zone1] pts={pts}", flush=True)
+
+    # --- attach screen (retry with quit+pkill cleanup) ---
+    if cfg.get("arch") != "x86_64":
+        print("[zone1] script /dev/null before screen", flush=True)
+        term.send_one_by_one("script /dev/null")
+        if not wait_prompt(zone0_pat, 15.0):
+            raise TerminalTimeoutError("timed out after script /dev/null")
+
+    screen_ok = False
+    last_screen_exc: Exception | None = None
+    for attempt in range(3):
+        if attempt > 0:
+            print(f"[zone1] retry screen ({attempt}/2)", flush=True)
+            print("[zone1] quit leftover screen", flush=True)
+            term.backend.write(b"\x01")
+            time.sleep(0.2)
+            term.backend.write(b":quit\n")
+            time.sleep(1.0)
+            term.backend.write(b"\x01\\")
+            time.sleep(0.3)
+            term.backend.write(b"y")
+            time.sleep(1.0)
+            term.send("pkill -9 screen; screen -wipe")
+            term.read_until_quiet(quiet_seconds=1.0, max_duration=8.0)
+            term.send("")
+            wait_prompt(zone0_pat, 15.0)
+            time.sleep(3.0)
+        try:
+            # TERM=linux avoids xterm keypad modes that break automated Enter on rk3568.
+            term.send_one_by_one("export TERM=linux")
+            term.read_until_quiet(quiet_seconds=0.5, max_duration=5.0)
+            cmd = f"screen -S {session} /dev/pts/{pts}"
+            print(f"[zone1] {cmd}", flush=True)
+            offset = term.offset()
+            term.send(cmd)
+            term.read_for(duration=5.0)
+            term.backend.write(b"\r")
+            if not wait_prompt(zone1_pat, shell_timeout, from_offset=offset, cr=True):
+                raise TerminalTimeoutError(f"timed out waiting for zone1 prompt after {cmd}")
+            screen_ok = True
+            break
+        except (TerminalTimeoutError, TerminalCommandError) as exc:
+            last_screen_exc = exc
+    if not screen_ok:
+        assert last_screen_exc is not None
+        raise last_screen_exc
+
+    # --- smoke cmds inside zone1 ---
+    raw_cmds = cfg.get("zone1_cmds") or []
+    cmds = [str(item).strip() for item in raw_cmds if str(item).strip()] if isinstance(raw_cmds, list) else []
+    if not cmds or cmds[0] != "ls":
+        cmds = ["ls", *cmds]
+    for cmd in cmds:
+        print(f"[zone1] inner cmd: {cmd}", flush=True)
+        offset = term.offset()
+        for char in cmd.rstrip("\n"):
+            term.backend.write(char.encode("utf-8", errors="replace"))
+            time.sleep(0.02)
+        term.backend.write(b"\r")
+        if not wait_prompt(zone1_pat, shell_timeout, from_offset=offset, cr=True):
+            raise TerminalTimeoutError(f"timed out waiting for zone1 prompt after cmd: {cmd}")
+
     print("zone1_started successfully", flush=True)
     return 0
