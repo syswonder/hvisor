@@ -23,6 +23,7 @@ use crate::consts::IPI_EVENT_SEND_IPI;
 use crate::cpu_data::{get_cpu_data, this_cpu_data, VcpuState};
 use crate::event::{send_event, IPI_EVENT_WAKEUP};
 use crate::hypercall::HyperCall;
+use core::sync::atomic::{AtomicU8, Ordering};
 #[cfg(not(isa_sstc))]
 use riscv::register::sie;
 #[cfg(not(isa_sstc))]
@@ -49,16 +50,84 @@ pub const EXT_TABLE: [usize; NUM_EXT] = [
 
 /// Use sbi call to putchar in console (qemu uart handler)
 pub fn sbi_console_putchar(c: u8) {
-    #[allow(deprecated)]
-    sbi_rt::legacy::console_putchar(c as _);
+    firmware_console_putchar(c as _);
 }
 
 /// Use sbi call to getchar from console (qemu uart handler)
 pub fn sbi_console_getchar() -> Option<u8> {
-    #[allow(deprecated)]
-    match sbi_rt::legacy::console_getchar() {
+    match firmware_console_getchar() {
         x if x <= 0xff => Some(x as _),
         _ => None,
+    }
+}
+
+/// Console backend used for hvisor -> firmware traffic.
+///
+/// Legacy (EID `0x01`/`0x02`) is deprecated and missing from firmwares that
+/// only implement DBCN (EID `0x4442434E`, e.g. RustSBI), so DBCN is preferred
+/// and legacy is kept as the fallback.
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(u8)]
+enum ConsoleBackend {
+    Unprobed = 0,
+    Dbcn = 1,
+    Legacy = 2,
+}
+
+/// One-time DBCN probe result, shared by all harts.
+static CONSOLE_BACKEND: AtomicU8 = AtomicU8::new(ConsoleBackend::Unprobed as u8);
+
+/// Probe the firmware on first use and cache the backend.
+///
+/// Only DBCN is probed: `PROBE_EXTENSION(0x01)` reports legacy as available on
+/// OpenSBI but not on RustSBI, so legacy is only ever a fallback.
+fn console_backend() -> ConsoleBackend {
+    let cached = CONSOLE_BACKEND.load(Ordering::Relaxed);
+    if cached == ConsoleBackend::Dbcn as u8 {
+        return ConsoleBackend::Dbcn;
+    } else if cached == ConsoleBackend::Legacy as u8 {
+        return ConsoleBackend::Legacy;
+    }
+
+    let probed = if sbi_rt::probe_extension(sbi_rt::Console).is_available() {
+        ConsoleBackend::Dbcn
+    } else {
+        ConsoleBackend::Legacy
+    };
+    CONSOLE_BACKEND.store(probed as u8, Ordering::Relaxed);
+    probed
+}
+
+/// Write one byte, returning the SBI call's `a0` value (`0` on success).
+#[allow(deprecated)]
+fn firmware_console_putchar(c: usize) -> usize {
+    match console_backend() {
+        ConsoleBackend::Dbcn => sbi_rt::console_write_byte(c as u8).error,
+        ConsoleBackend::Legacy | ConsoleBackend::Unprobed => sbi_rt::legacy::console_putchar(c),
+    }
+}
+
+/// Read one byte, returning the byte or `-1` when none is available.
+#[allow(deprecated)]
+fn firmware_console_getchar() -> usize {
+    match console_backend() {
+        ConsoleBackend::Dbcn => {
+            // DBCN has no single byte read, and `console_read` takes a physical
+            // address.
+            let mut buf = [0u8; 1];
+            let bytes = sbi_rt::Physical::new(
+                buf.len(),
+                crate::memory::addr::virt_to_phys(buf.as_mut_ptr() as usize),
+                0,
+            );
+            let ret = sbi_rt::console_read(bytes);
+            if ret.error == RET_SUCCESS && ret.value == buf.len() {
+                buf[0] as usize
+            } else {
+                -1isize as usize
+            }
+        }
+        ConsoleBackend::Legacy | ConsoleBackend::Unprobed => sbi_rt::legacy::console_getchar(),
     }
 }
 
@@ -96,18 +165,16 @@ pub fn sbi_vs_handler(current_cpu: &mut ArchCpu) {
         }
         // Note: hvisor don't suggest to use Legacy Extension.
         // But for compatibility, we still support some legacy SBI calls.
-        // Legacy::Console putchar (usually used), temporily don't support other legacy extensions.
+        // Guest EIDs stay 0x01/0x02; forward to the backend used for logging.
         legacy::LEGACY_CONSOLE_PUTCHAR => {
             sbi_ret = SbiRet {
-                #[allow(deprecated)]
-                error: sbi_rt::legacy::console_putchar(current_cpu.x[10] as _),
+                error: firmware_console_putchar(current_cpu.x[10]),
                 value: 0,
             };
         }
         legacy::LEGACY_CONSOLE_GETCHAR => {
             sbi_ret = SbiRet {
-                #[allow(deprecated)]
-                error: sbi_rt::legacy::console_getchar(),
+                error: firmware_console_getchar(),
                 value: 0,
             };
         }
