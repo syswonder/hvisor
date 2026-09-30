@@ -815,15 +815,14 @@ def board_zone1_start(cfg: dict[str, Any], term: Terminal) -> int:
     for attempt in range(3):
         if attempt > 0:
             print(f"[zone1] retry screen ({attempt}/2)", flush=True)
-            print("[zone1] quit leftover screen", flush=True)
+            print("[zone1] quit leftover screen (Ctrl-A :quit)", flush=True)
             term.backend.write(b"\x01")
             time.sleep(0.2)
-            term.backend.write(b":quit\n")
+            term.backend.write(b":quit\r")
             time.sleep(1.0)
-            term.backend.write(b"\x01\\")
-            time.sleep(0.3)
-            term.backend.write(b"y")
-            time.sleep(1.0)
+            print("[zone1] send Enter after quit", flush=True)
+            term.backend.write(b"\r")
+            time.sleep(0.5)
             term.send("pkill -9 screen; screen -wipe")
             term.read_until_quiet(quiet_seconds=1.0, max_duration=8.0)
             term.send("")
@@ -838,6 +837,7 @@ def board_zone1_start(cfg: dict[str, Any], term: Terminal) -> int:
             offset = term.offset()
             term.send(cmd)
             term.read_for(duration=5.0)
+            print("[zone1] send Enter after screen", flush=True)
             term.backend.write(b"\r")
             if not wait_prompt(zone1_pat, shell_timeout, from_offset=offset, cr=True):
                 raise TerminalTimeoutError(f"timed out waiting for zone1 prompt after {cmd}")
