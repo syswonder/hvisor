@@ -20,7 +20,6 @@ CONFIGS_DIR="${PLATFORM_DIR}/configs"
 IMAGE_DIR="${PLATFORM_DIR}/image"
 SCRIPTS_DIR="${PLATFORM_DIR}/scripts"
 ZONE1_BOOT_SCRIPT="${SCRIPTS_DIR}/boot_zone1.sh"
-CHECK_SERIAL_SCRIPT="${WORKSPACE_ROOT}/jenkins/check_serial.sh"
 
 if [ -z "${ZONE1_DTB:-}" ]; then
     for candidate in \
@@ -69,10 +68,6 @@ if [ -f "${ZONE1_DTB}" ]; then
     cp "${ZONE1_DTB}" "${STAGING_DIR}/"
 else
     echo "warning: zone1 dtb unavailable, skip copying ${ZONE1_DTB}"
-fi
-
-if [ -f "${CHECK_SERIAL_SCRIPT}" ]; then
-    cp "${CHECK_SERIAL_SCRIPT}" "${STAGING_DIR}/"
 fi
 
 chmod -R a+rX "${STAGING_DIR}"

@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any, Callable
 
 from board_flow import (
+    bid_log_path,
     board_login,
     board_network_and_trans,
     board_power_off,
@@ -19,7 +20,6 @@ from board_flow import (
     boot_board_zone0_with_retry,
     close_board_terminal,
     get_board_terminal,
-    logs_dir,
     release_logs_ownership,
 )
 from ci_config import get_bid_entry, load_ci, parse_bid
@@ -173,9 +173,7 @@ def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
             )
         return 0
     if cfg["mode"] == "board":
-        log_path = logs_dir(cfg) / "zone0_console.log"
-        log_path.write_text("", encoding="utf-8")
-        board_term = build_terminal(cfg, log_path)
+        board_term = build_terminal(cfg)
         board_term.open()
         cfg["_board_term"] = board_term
         boot_board_zone0_with_retry(cfg, board_term)
@@ -205,39 +203,9 @@ def network_and_trans(cfg: dict[str, Any], term: Terminal | None) -> int:
 
 def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     print("————————————————\ncase: zone1_start\n————————————————\n", flush=True)
-    if cfg["mode"] == "board":
-        if term is None:
-            raise SystemExit("terminal backend is required")
-        return board_zone1_start(cfg, term)
     if term is None:
         raise SystemExit("terminal backend is required")
-    _, _ = run_and_print_quiet(term, "cd /root", quiet_seconds=1.0, max_duration=15.0)
-    _, _ = run_and_print_quiet(
-        term,
-        "./boot_zone1.sh",
-        quiet_seconds=15,
-        max_duration=120.0,
-        check_exit=False,
-    )
-    zone_list_out, _ = run_and_print_quiet(
-        term,
-        "./hvisor zone list",
-        quiet_seconds=1.0,
-        max_duration=15.0,
-        check_exit=False,
-    )
-    zone_list_shows_running(zone_list_out, str(cfg.get("zone1_name", "linux2")))
-    if cfg["arch"] != "x86_64":
-        _ = run_and_print_quiet_raw(term, "script /dev/null", quiet_seconds=1.0, max_duration=15.0)
-    pts_output, _ = run_and_print_quiet(term, "ls -1 /dev/pts/[0-9]*", quiet_seconds=1.0, max_duration=15.0)
-    pts_numbers = sorted(int(match) for match in re.findall(r"/dev/pts/(\d+)", pts_output))
-    if not pts_numbers:
-        raise TerminalCommandError("failed to find numeric pts from 'ls -1 /dev/pts/[0-9]*'")
-    max_pts = pts_numbers[-1]
-    _ = run_and_print_send_only(term, f"screen /dev/pts/{max_pts}", read_duration=20.0)
-    _ = run_and_print_send_only(term, "\n", read_duration=2.0)
-    print("zone1_started successfully", flush=True)
-    return 0
+    return board_zone1_start(cfg, term)
 
 
 def asterinas_zone1_regression(cfg: dict[str, Any], term: Terminal | None) -> int:
@@ -278,7 +246,7 @@ def asterinas_zone1_regression(cfg: dict[str, Any], term: Terminal | None) -> in
         raise TerminalCommandError("failed to find numeric pts from 'ls -1 /dev/pts/[0-9]*'")
     max_pts = pts_numbers[-1]
 
-    _ = run_and_print_send_only(term, f"screen /dev/pts/{max_pts}", read_duration=20.0)
+    _ = run_and_print_send_only(term, f"screen -S hvisor-zone1 /dev/pts/{max_pts}", read_duration=20.0)
     _ = read_and_print_until_quiet(term, quiet_seconds=3.0, max_duration=30.0)
 
     regression_marker = "__HV_REGRESSION_RC_"
@@ -399,27 +367,40 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
         ),
         "zone1_work_dir": str(deploy.get("zone1_work_dir", "/root")).strip() or "/root",
         "zone1_dtb": str(deploy.get("zone1_dtb", "")).strip(),
+        "zone1_cmds": [
+            str(item).strip()
+            for item in (tests.get("zone1_cmds") or [])
+            if str(item).strip()
+        ]
+        if isinstance(tests.get("zone1_cmds"), list)
+        else [],
+        "zone1_ready_pattern": str(tests.get("zone1_ready_pattern", "")).strip(),
+        "zone1_shell_timeout": float(tests.get("zone1_shell_timeout", 60.0)),
         "scp_tmp_dir": scp_tmp_dir,
         "scp_tmp_file": f"{scp_tmp_dir}/f",
         "retry_zone0": 2,
         "retry_network": 2,
-        "retry_zone1": 1,
     }
 
 
 def build_terminal(cfg: dict[str, Any], log_path: Path | None = None) -> Terminal:
+    path = log_path or cfg["log_path"]
     if cfg["mode"] == "qemu":
-        return Terminal.from_qemu_socket(path=cfg["socket_path"], log_path=log_path)
+        return Terminal.from_qemu_socket(path=cfg["socket_path"], log_path=path)
     return Terminal.from_serial(
         port=cfg["serial_port"],
         baudrate=cfg["baudrate"],
-        log_path=log_path,
+        log_path=path,
     )
 
 
 def main() -> int:
     args = parse_args()
     cfg = load_runtime_config(args)
+    log_path = bid_log_path(cfg)
+    log_path.write_text("", encoding="utf-8")
+    cfg["log_path"] = log_path
+    print(f"[ci_runner] console log -> {log_path}", flush=True)
     try:
         for case_name in cfg["cases"]:
             case_fn = CASE_HANDLERS.get(case_name)
@@ -440,9 +421,7 @@ def main() -> int:
 
             term = get_board_terminal(cfg) if cfg["mode"] == "board" else None
             if term is None and cfg["mode"] == "board":
-                log_path = logs_dir(cfg) / "board_console.log"
-                log_path.write_text("", encoding="utf-8")
-                term = build_terminal(cfg, log_path)
+                term = build_terminal(cfg)
                 term.open()
                 cfg["_board_term"] = term
 
