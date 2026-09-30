@@ -41,13 +41,21 @@ pub const IPI_EVENT_VIRTIO_PCI_CONFIG: usize = 7;
 pub const IPI_EVENT_VIRTIO_PCI_DATA: usize = 8;
 pub const IPI_EVENT_VIRTIO_PCI_DONE: usize = 9;
 
-#[percpu::def_percpu]
-static PERCPU_EVENTS: Mutex<VecDeque<usize>> = Mutex::new(VecDeque::new());
+/// Per-CPU event queue indexed by logical CPU id. Repr-aligned so adjacent
+/// queues do not share cache lines (same 64-byte stride the percpu crate's
+/// `.percpu` section used). This is a plain array now: the queues are only
+/// ever accessed remotely (by target CPU id), so no per-CPU register or
+/// link-time section machinery is needed.
+#[repr(align(64))]
+struct EventQueue(Mutex<VecDeque<usize>>);
+
+static PERCPU_EVENTS: [EventQueue; MAX_CPU_NUM] =
+    [const { EventQueue(Mutex::new(VecDeque::new())) }; MAX_CPU_NUM];
 
 // The caller ensures the cpu_id is valid
 #[inline(always)]
 fn get_percpu_events(cpu: usize) -> &'static Mutex<VecDeque<usize>> {
-    unsafe { PERCPU_EVENTS.remote_ref_raw(cpu) }
+    &PERCPU_EVENTS[cpu].0
 }
 
 /// Enqueue an event and report whether the target queue was previously empty.

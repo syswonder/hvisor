@@ -196,14 +196,15 @@ fn rust_main(cpuid: usize, host_dtb: usize) {
     if MASTER_CPU.load(Ordering::Acquire) == -1 {
         MASTER_CPU.store(cpuid as i32, Ordering::Release);
         is_primary = true;
-        percpu::init();
         memory::heap::init();
         memory::heap::test();
         arch::time::init_timebase();
         arch_post_heap_init(host_dtb);
     }
-    percpu::init_percpu_reg(cpuid);
 
+    // PerCpu::new caches the per-CPU slot base in the architecture register
+    // backing this_cpu_pointer()/this_cpu_id(); nothing else needs a
+    // per-CPU register setup at boot.
     let cpu = PerCpu::new(cpuid);
 
     println!(

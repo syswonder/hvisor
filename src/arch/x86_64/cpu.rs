@@ -30,7 +30,7 @@ use crate::{
         vmx::*,
     },
     consts::{self, core_end, PER_CPU_SIZE},
-    cpu_data::{this_cpu_data, this_zone, VcpuState},
+    cpu_data::{this_cpu_data, this_zone, PerCpu, VcpuState},
     device::iommu,
     device::irqchip::pic::{check_pending_vectors, clear_vectors, ioapic, lapic::VirtLocalApic},
     error::{HvError, HvResult},
@@ -188,7 +188,11 @@ pub struct ArchCpu {
 
 impl ArchCpu {
     pub fn new(cpuid: usize) -> Self {
-        let cpuid = this_cpu_id();
+        // The boot entry hands the raw APIC id in; translate it to the logical
+        // id here. This keeps ArchCpu::new free of this_cpu_id(), whose gs:[0]
+        // read requires GS_BASE to be cached first (set_this_cpu_pointer runs
+        // later in PerCpu::new) - this is the last pre-cache call site.
+        let cpuid = crate::arch::acpi::get_cpu_id(cpuid);
         Self {
             guest_regs: GeneralRegisters::default(),
             host_stack_top: 0,
@@ -565,6 +569,11 @@ impl ArchCpu {
         VmcsHost16::FS_SELECTOR.write(x86::segmentation::fs().bits())?;
         VmcsHost16::GS_SELECTOR.write(x86::segmentation::gs().bits())?;
         VmcsHostNW::FS_BASE.write(Msr::IA32_FS_BASE.read() as _)?;
+        // Timing note: set_this_cpu_pointer() (PerCpu::new) has already cached
+        // this CPU's slot base in IA32_GS_BASE by the time setup_vmcs_host()
+        // runs (run/idle happen after PerCpu::new). The hardware reloads this
+        // snapshot on every VM exit, which keeps gs-relative accesses in host
+        // mode pointing at the right PerCpu slot at all times.
         VmcsHostNW::GS_BASE.write(Msr::IA32_GS_BASE.read() as _)?;
 
         let tr = unsafe { x86::task::tr() };
@@ -633,7 +642,19 @@ impl ArchCpu {
 }
 
 pub fn this_cpu_id() -> usize {
-    crate::arch::acpi::get_cpu_id(this_apic_id())
+    // IA32_GS_BASE caches the PerCpu slot base (set once per CPU by
+    // set_this_cpu_pointer in PerCpu::new); the id sits at slot offset 0, so
+    // this is a single gs-relative load - no serializing CPUID leaf-1 and no
+    // ACPI lookup. Deliberately no `nomem` option: the asm does read gs:[0].
+    let id: usize;
+    unsafe {
+        asm!(
+            "mov {}, qword ptr gs:[0]",
+            out(reg) id,
+            options(nostack, preserves_flags)
+        );
+    }
+    id
 }
 
 pub fn this_apic_id() -> usize {
@@ -684,9 +705,31 @@ impl Debug for ArchCpu {
     }
 }
 
-pub fn store_cpu_pointer_to_reg(pointer: usize) {
-    // println!("x86_64 doesn't support store cpu pointer to reg, pointer: {:#x}", pointer);
-    return;
+/// Cache the PerCpu slot base of the current CPU in the IA32_GS_BASE MSR.
+///
+/// setup_vmcs_host snapshots the MSR into the VMCS host-state field (0x6C08)
+/// before every VM launch, so the hardware reloads GS_BASE on each VM exit;
+/// the guest GS_BASE is a separate VMCS guest-state field (0x6810) whose
+/// semantics and MSR interception policy are unchanged.
+pub fn set_this_cpu_pointer(slot_base: usize) {
+    unsafe { Msr::IA32_GS_BASE.write(slot_base as u64) }
+}
+
+/// PerCpu slot base of the current CPU. GS_BASE itself holds the base; the
+/// slot's `self_ptr` (written by PerCpu::new) is materialized in memory so a
+/// gs-relative load can recover it without a slow MSR read.
+#[inline(always)]
+pub fn this_cpu_pointer() -> usize {
+    let ptr: usize;
+    unsafe {
+        asm!(
+            "mov {}, qword ptr gs:[{}]",
+            out(reg) ptr,
+            const core::mem::offset_of!(PerCpu, self_ptr),
+            options(nostack, preserves_flags)
+        );
+    }
+    ptr
 }
 
 pub fn get_target_cpu(irq: usize, zone_id: usize) -> usize {

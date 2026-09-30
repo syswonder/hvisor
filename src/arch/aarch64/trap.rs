@@ -108,8 +108,6 @@ pub enum TrapReturn {
 
 /*From hyp_vec->handle_vmexit x0:guest regs x1:exit_reason sp =stack_top-32*8*/
 pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> ! {
-    let mpidr = MPIDR_EL1.get();
-    let _cpu_id = mpidr_to_cpuid(mpidr);
     trace!("cpu exit, exit_reson:{:#x?}", regs.exit_reason);
     match regs.exit_reason as u64 {
         ExceptionType::EXIT_REASON_EL1_IRQ | ExceptionType::EXIT_REASON_EL1_AARCH32_IRQ => {

@@ -2,6 +2,10 @@
 
 > ⚠️ Please update this file for any changes to the hvisor project along with your name and GitHub profile link under the CURRENT section.
 
+## CURRENT - next release
+
+- [refactor] **all archs**: Cache the per-CPU slot pointer in an architecture register (`TPIDR_EL2` / `IA32_GS_BASE` / root CSR `SAVE0` / `sscratch`) so `this_cpu_id()`/`this_cpu_data()` stop re-deriving it on every access, and remove the dead `percpu` crate with its `.percpu` link-time sections (23 boards). ([agicy](https://github.com/agicy))
+
 ## CURRENT - v0.6
 
 - [feature] **PCIe/virtio**: Add emulated virtio PCI device support. ([PR #287](https://github.com/syswonder/hvisor/pull/287), [ZZJJWarth](https://github.com/ZZJJWarth))
