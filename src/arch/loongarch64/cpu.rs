@@ -78,8 +78,9 @@ impl ArchCpu {
             .and_then(|zone| zone.read().phys_to_guest_cpu(physical_cpu))
             .unwrap_or(0);
         info!(
-            "[[CPU virtualization]] CPU{} run@{:#x}",
+            "[[CPU virtualization]] CPU{} guest_cpuid={} run@{:#x}",
             self.get_cpuid(),
+            self.ctx.gcsr_cpuid,
             self.ctx.sepc
         );
         debug!("loongarch64: @{:#x?}", self);

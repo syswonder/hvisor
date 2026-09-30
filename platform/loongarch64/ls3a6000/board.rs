@@ -19,7 +19,7 @@ use crate::{arch::zone::HvArchZoneConfig, config::*, pci::vpci_dev::VpciDevType}
 
 pub const BOARD_NAME: &str = "ls3a6000";
 
-pub const BOARD_NCPUS: usize = 4;
+pub const BOARD_NCPUS: usize = 4; //supported max 8 cores
 
 pub const ROOT_ZONE_DTB_ADDR: u64 = 0x10000f000;
 pub const ROOT_ZONE_KERNEL_ADDR: u64 = 0x200000;

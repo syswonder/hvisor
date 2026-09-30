@@ -221,8 +221,10 @@ pub fn clear_injected_irq(_irq: usize) {
 
 impl Zone {
     pub fn arch_irqchip_reset(&self) {
-        // clear all SR regs
-        clear_extioi_sr();
+        // Other zones may still be running and must retain their pending IRQs.
+        for cpu in self.cpu_set().iter() {
+            clear_extioi_sr_for_cpu(cpu);
+        }
         let extioi_sr = get_extioi_sr();
         info!(
             "loongarch64: irqchip: arch_irqchip_reset: extioi_sr: {}",
