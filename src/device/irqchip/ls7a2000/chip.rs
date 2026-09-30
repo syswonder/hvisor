@@ -788,10 +788,7 @@ fn extioi_init_nodemap(node_mmio_base: usize) {
     for i in 0..8 {
         let data = ((1u32 << (i * 2 + 1)) << 16) | (1u32 << (i * 2));
         unsafe {
-            write_volatile(
-                (node_mmio_base + 0x14a0 + i * 4) as *mut u32,
-                data,
-            );
+            write_volatile((node_mmio_base + 0x14a0 + i * 4) as *mut u32, data);
         }
     }
 }
@@ -885,7 +882,6 @@ pub fn clear_extioi_sr() {
     }
     debug!("clear_extioi_sr: done, status={}", get_extioi_sr());
 }
-
 
 /******************************************** */
 /*             PCI STUFFS :)                  */
