@@ -7,10 +7,17 @@ BOARD ?= qemu-gicv3
 BID ?=
 ptest ?=
 
+# `make` builds everything by default; `make ptest=<irq|net|mem|blk>` runs that
+# benchmark instead. Set explicitly so that adding a target above `all` cannot
+# silently change what a bare `make` does.
 ifeq ($(origin ptest),command line)
 ifneq ($(strip $(ptest)),)
 .DEFAULT_GOAL := ptest
+else
+.DEFAULT_GOAL := all
 endif
+else
+.DEFAULT_GOAL := all
 endif
 
 # if user uses `make ID=aarch64/qemu-gicv2`, we parse it into ARCH and BOARD
