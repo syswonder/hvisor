@@ -79,6 +79,29 @@ kconfig_python := tools/kconfig/.venv/bin/python
 
 # Targets
 .PHONY: all elf disa run gdb monitor clean tools rootfs vscode ci-run defconfig menuconfig savedefconfig ensure_config clean_check kconfig_venv link_board check-hv-mem-overlap
+
+# `all` must stay the first target: a bare `make` runs the first target in this file.
+all: ensure_config gen_cargo_config vscode $(hvisor_bin) check-hv-mem-overlap
+	@printf "\n"
+	@printf "$(COLOR_GREEN)$(COLOR_BOLD)hvisor build summary:$(COLOR_RESET)\n"
+	@printf "%-10s %s\n" "ARCH            =" "$(COLOR_BOLD)$(ARCH)$(COLOR_RESET)"
+	@printf "%-10s %s\n" "BOARD           =" "$(COLOR_BOLD)$(BOARD)$(COLOR_RESET)"
+	@printf "%-10s %s\n" "BID             =" "$(COLOR_BOLD)$(BID)$(COLOR_RESET)"
+	@printf "%-10s %s\n" "LOG             =" "$(COLOR_BOLD)$(LOG)$(COLOR_RESET)"
+	@printf "%-10s %s\n" "DEFCONFIG       =" "$(COLOR_BOLD)platform/$(ARCH)/$(BOARD)/kconfig/defconfig$(COLOR_RESET)"
+	@printf "%-10s %s\n" "RUSTC_TARGET    =" "$(COLOR_BOLD)$(RUSTC_TARGET)$(COLOR_RESET)"
+	@printf "%-10s %s\n" "BUILD_PATH      =" "$(COLOR_BOLD)$(build_path)$(COLOR_RESET)"
+	@printf "%-10s %s\n" "HVISON_BIN_SIZE =" "$(COLOR_BOLD)$(shell du -h $(hvisor_bin) | cut -f1)$(COLOR_RESET)"
+	@start_addr=$$(rust-nm $(hvisor_elf) | grep skernel | awk '{print $$1}'); \
+	 end_addr=$$(rust-nm $(hvisor_elf) | grep __hv_end | awk '{print $$1}'); \
+	 size=$$(echo "obase=16; ibase=16; $$(echo $$end_addr | tr 'a-z' 'A-Z') - $$(echo $$start_addr | tr 'a-z' 'A-Z')" | bc | tr 'A-Z' 'a-z'); \
+	 printf "%-10s %s\n" "START_ADDR      =" "$(COLOR_BOLD)0x$$start_addr$(COLOR_RESET)"; \
+	 printf "%-10s %s\n" "MEM_SIZE        =" "$(COLOR_BOLD)0x$$size$(COLOR_RESET)"; \
+	 printf "%-10s %s\n" "END_ADDR        =" "$(COLOR_BOLD)0x$$end_addr$(COLOR_RESET)"
+	@printf "%-10s %s\n" "BUILD TIME      =" "$(COLOR_BOLD)$(shell date)$(COLOR_RESET)"
+	@printf "\n"
+	@printf "$(COLOR_GREEN)$(COLOR_BOLD)hvisor build success!$(COLOR_RESET)\n"
+
 kconfig_venv:
 	@if [ ! -x $(kconfig_python) ]; then \
 		echo "$(COLOR_YELLOW)Creating tools/kconfig/.venv (kconfiglib)...$(COLOR_RESET)"; \
@@ -117,27 +140,6 @@ menuconfig: kconfig_venv
 
 savedefconfig:
 	@./tools/kconfig/save_defconfig.sh "$(ARCH)" "$(BOARD)"
-
-all: ensure_config gen_cargo_config vscode $(hvisor_bin) check-hv-mem-overlap
-	@printf "\n"
-	@printf "$(COLOR_GREEN)$(COLOR_BOLD)hvisor build summary:$(COLOR_RESET)\n"
-	@printf "%-10s %s\n" "ARCH            =" "$(COLOR_BOLD)$(ARCH)$(COLOR_RESET)"
-	@printf "%-10s %s\n" "BOARD           =" "$(COLOR_BOLD)$(BOARD)$(COLOR_RESET)"
-	@printf "%-10s %s\n" "BID             =" "$(COLOR_BOLD)$(BID)$(COLOR_RESET)"
-	@printf "%-10s %s\n" "LOG             =" "$(COLOR_BOLD)$(LOG)$(COLOR_RESET)"
-	@printf "%-10s %s\n" "DEFCONFIG       =" "$(COLOR_BOLD)platform/$(ARCH)/$(BOARD)/kconfig/defconfig$(COLOR_RESET)"
-	@printf "%-10s %s\n" "RUSTC_TARGET    =" "$(COLOR_BOLD)$(RUSTC_TARGET)$(COLOR_RESET)"
-	@printf "%-10s %s\n" "BUILD_PATH      =" "$(COLOR_BOLD)$(build_path)$(COLOR_RESET)"
-	@printf "%-10s %s\n" "HVISON_BIN_SIZE =" "$(COLOR_BOLD)$(shell du -h $(hvisor_bin) | cut -f1)$(COLOR_RESET)"
-	@start_addr=$$(rust-nm $(hvisor_elf) | grep skernel | awk '{print $$1}'); \
-	 end_addr=$$(rust-nm $(hvisor_elf) | grep __hv_end | awk '{print $$1}'); \
-	 size=$$(echo "obase=16; ibase=16; $$(echo $$end_addr | tr 'a-z' 'A-Z') - $$(echo $$start_addr | tr 'a-z' 'A-Z')" | bc | tr 'A-Z' 'a-z'); \
-	 printf "%-10s %s\n" "START_ADDR      =" "$(COLOR_BOLD)0x$$start_addr$(COLOR_RESET)"; \
-	 printf "%-10s %s\n" "MEM_SIZE        =" "$(COLOR_BOLD)0x$$size$(COLOR_RESET)"; \
-	 printf "%-10s %s\n" "END_ADDR        =" "$(COLOR_BOLD)0x$$end_addr$(COLOR_RESET)"
-	@printf "%-10s %s\n" "BUILD TIME      =" "$(COLOR_BOLD)$(shell date)$(COLOR_RESET)"
-	@printf "\n"
-	@printf "$(COLOR_GREEN)$(COLOR_BOLD)hvisor build success!$(COLOR_RESET)\n"
 
 gen_cargo_config:
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)generating .cargo/config.toml...$(COLOR_RESET)\n"
