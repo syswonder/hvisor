@@ -85,7 +85,7 @@ COLOR_RESET := $(shell tput sgr0)
 kconfig_python := tools/kconfig/.venv/bin/python
 
 # Targets
-.PHONY: all elf disa run gdb monitor clean tools rootfs vscode ci-run defconfig menuconfig savedefconfig ensure_config clean_check kconfig_venv link_board check-hv-mem-overlap
+.PHONY: all elf disa run gdb monitor clean tools rootfs vscode ci-run defconfig menuconfig savedefconfig ensure_config kconfig_venv link_board check-hv-mem-overlap
 
 # `all` must stay the first target: a bare `make` runs the first target in this file.
 all: ensure_config gen_cargo_config vscode $(hvisor_bin) check-hv-mem-overlap
@@ -131,8 +131,6 @@ ensure_config:
 		./tools/clean.sh; \
 		$(MAKE) --no-print-directory defconfig; \
 	fi
-
-clean_check: ensure_config
 
 link_board:
 	@mkdir -p src/platform
