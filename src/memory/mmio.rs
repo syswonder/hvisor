@@ -101,7 +101,7 @@ pub fn mmio_handle_access(mmio: &mut MMIOAccess) -> HvResult {
             // x86_64 requires instruction emulation for mmio access
             #[cfg(target_arch = "x86_64")]
             if mmio.size == 0 {
-                return crate::arch::mmio::instruction_emulator(&handler, mmio, arg);
+                return crate::arch::mmio::instruction_emulator(&handler, mmio, region.start, arg);
             }
 
             match handler(mmio, arg) {
