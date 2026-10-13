@@ -177,6 +177,7 @@ pub struct ArchCpu {
     // guest_regs and host_stack_top should always be at first.
     guest_regs: GeneralRegisters,
     host_stack_top: u64,
+    guest_cr2: usize,
     pub cpuid: usize,
     pub virt_lapic: VirtLocalApic,
     vmx_on: bool,
@@ -192,6 +193,7 @@ impl ArchCpu {
         Self {
             guest_regs: GeneralRegisters::default(),
             host_stack_top: 0,
+            guest_cr2: 0,
             cpuid,
             virt_lapic: VirtLocalApic::new(),
             vmx_on: false,
@@ -205,6 +207,10 @@ impl ArchCpu {
     /// Advance guest `RIP` by `instr_len` bytes.
     pub fn advance_guest_rip(&mut self, instr_len: u8) -> HvResult {
         Ok(VmcsGuestNW::RIP.write(VmcsGuestNW::RIP.read()? + instr_len as usize)?)
+    }
+
+    pub fn set_guest_cr2(&mut self, addr: usize) {
+        self.guest_cr2 = addr;
     }
 
     pub fn cr(&self, cr_idx: usize) -> usize {
@@ -589,7 +595,12 @@ impl ArchCpu {
 
     fn vmexit_handler(&mut self) {
         crate::arch::trap::handle_vmexit(self).unwrap();
-        if this_cpu_data().vcpu_state.is_running() {
+        let entry_event_pending = VmcsControl32::VMENTRY_INTERRUPTION_INFO_FIELD
+            .read()
+            .unwrap()
+            & (1 << 31)
+            != 0;
+        if this_cpu_data().vcpu_state.is_running() && !entry_event_pending {
             check_pending_vectors(self.cpuid);
         }
     }
@@ -603,14 +614,19 @@ impl ArchCpu {
         asm!(
             save_regs_to_stack!(),
             "mov    r15, rsp",                      // save temporary RSP to r15
+            "mov    rax, cr2",
+            "mov    [rsp + {guest_cr2}], rax",
             "mov    rdi, rsp",                      // set the first arg to RSP
             "mov    rsp, [rsp + {host_stack_top}]", // set RSP to host_stack_top
             "call   {vmexit_handler}",              // call vmexit_handler
             "mov    rsp, r15",                      // load temporary RSP from r15
+            "mov    rax, [rsp + {guest_cr2}]",
+            "mov    cr2, rax",
             restore_regs_from_stack!(),
             "vmresume",
             "jmp    {failed}",
             host_stack_top = const size_of::<GeneralRegisters>(),
+            guest_cr2 = const core::mem::offset_of!(ArchCpu, guest_cr2),
             vmexit_handler = sym Self::vmexit_handler,
             failed = sym Self::vmx_entry_failed,
             options(noreturn),
@@ -622,10 +638,13 @@ impl ArchCpu {
         asm!(
             // "mov    [rdi + {host_stack_top}], rsp", // save current RSP to host_stack_top
             "mov    rsp, rdi",                      // set RSP to guest regs area
+            "mov    rax, [rsp + {guest_cr2}]",
+            "mov    cr2, rax",
             restore_regs_from_stack!(),
             "vmlaunch",
             "jmp    {failed}",
             // host_stack_top = const size_of::<GeneralRegisters>(),
+            guest_cr2 = const core::mem::offset_of!(ArchCpu, guest_cr2),
             failed = sym Self::vmx_entry_failed,
             options(noreturn),
         )
