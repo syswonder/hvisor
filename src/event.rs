@@ -37,9 +37,9 @@ pub const IPI_EVENT_WAKEUP: usize = 0;
 pub const IPI_EVENT_SHUTDOWN: usize = 1;
 pub const IPI_EVENT_VIRTIO_INJECT_IRQ: usize = 2;
 pub const IPI_EVENT_WAKEUP_VIRTIO_DEVICE: usize = 3;
-pub const IPI_EVENT_VIRTIO_PCI_CONFIG: usize = 7;
-pub const IPI_EVENT_VIRTIO_PCI_DATA: usize = 8;
-pub const IPI_EVENT_VIRTIO_PCI_DONE: usize = 9;
+pub const IPI_EVENT_VIRTIO_PCI_CONFIG: usize = 10;
+pub const IPI_EVENT_VIRTIO_PCI_DATA: usize = 11;
+pub const IPI_EVENT_VIRTIO_PCI_DONE: usize = 12;
 
 #[percpu::def_percpu]
 static PERCPU_EVENTS: Mutex<VecDeque<usize>> = Mutex::new(VecDeque::new());
