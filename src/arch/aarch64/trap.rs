@@ -476,10 +476,12 @@ fn handle_psci_smc(
             for cpu_id in zone.read().cpu_set().iter_except(this_cpu_data().id) {
                 let target_cpu = get_cpu_data(cpu_id);
                 let _lock = target_cpu.ctrl_lock.lock();
+                target_cpu.vcpu.clear_irq_state();
                 target_cpu.zone = None;
                 send_event(cpu_id, SGI_IPI_ID as _, IPI_EVENT_SHUTDOWN);
             }
 
+            this_cpu_data().vcpu.clear_irq_state();
             this_cpu_data().zone = None;
             drop(zone);
             remove_zone(zone_id);

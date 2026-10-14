@@ -14,12 +14,140 @@
 // Authors:
 //
 use alloc::sync::Arc;
+use core::sync::atomic::AtomicU64;
 use spin::Mutex;
 
-use crate::arch::cpu::{store_cpu_pointer_to_reg, this_cpu_id, ArchCpu};
+use crate::arch::{
+    cpu::{store_cpu_pointer_to_reg, this_cpu_id, ArchCpu},
+    ArchVcpu,
+};
 use crate::consts::{INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::memory::addr::VirtAddr;
 use crate::zone::Zone;
+
+const GUEST_IRQ_WORD_BITS: usize = u64::BITS as usize;
+const GUEST_IRQ_WORDS: usize = (crate::config::CONFIG_MAX_INTERRUPTS + 63) / 64;
+
+/// Pending software IRQ state owned by one guest CPU.
+///
+/// Bits are guest INTIDs directly. Architecture-specific LR metadata remains
+/// in `ArchVcpu`; this state is the common producer/consumer contract.
+pub struct GuestCpuIrqState {
+    pub pending: [AtomicU64; GUEST_IRQ_WORDS],
+}
+
+impl GuestCpuIrqState {
+    pub const fn new() -> Self {
+        const ZERO_WORD: AtomicU64 = AtomicU64::new(0);
+        Self {
+            pending: [ZERO_WORD; GUEST_IRQ_WORDS],
+        }
+    }
+
+    pub fn set(&self, irq_id: usize) -> bool {
+        if irq_id >= crate::config::CONFIG_MAX_INTERRUPTS {
+            return false;
+        }
+        self.pending[irq_id / GUEST_IRQ_WORD_BITS].fetch_or(
+            1u64 << (irq_id % GUEST_IRQ_WORD_BITS),
+            core::sync::atomic::Ordering::Release,
+        );
+        true
+    }
+
+    pub fn clear(&self, irq_id: usize) -> bool {
+        if irq_id >= crate::config::CONFIG_MAX_INTERRUPTS {
+            return false;
+        }
+        self.pending[irq_id / GUEST_IRQ_WORD_BITS].fetch_and(
+            !(1u64 << (irq_id % GUEST_IRQ_WORD_BITS)),
+            core::sync::atomic::Ordering::AcqRel,
+        );
+        true
+    }
+
+    pub fn clear_all(&self) {
+        for word in &self.pending {
+            word.store(0, core::sync::atomic::Ordering::Release);
+        }
+    }
+
+    pub fn pending_mask(&self, first_irq: usize, count: usize) -> u64 {
+        if count == 0 || count > GUEST_IRQ_WORD_BITS {
+            return 0;
+        }
+        let word = first_irq / GUEST_IRQ_WORD_BITS;
+        let offset = first_irq % GUEST_IRQ_WORD_BITS;
+        let mut value = self
+            .pending
+            .get(word)
+            .map(|pending| pending.load(core::sync::atomic::Ordering::Acquire) >> offset)
+            .unwrap_or(0);
+        if offset != 0 {
+            value |= self
+                .pending
+                .get(word + 1)
+                .map(|pending| {
+                    pending.load(core::sync::atomic::Ordering::Acquire)
+                        << (GUEST_IRQ_WORD_BITS - offset)
+                })
+                .unwrap_or(0);
+        }
+        if count == GUEST_IRQ_WORD_BITS {
+            value
+        } else {
+            value & ((1u64 << count) - 1)
+        }
+    }
+
+    /// Atomically claim the lowest pending INTID in one bitmap word.
+    pub fn claim_pending_intid(&self, word_index: usize) -> Option<usize> {
+        let word = self.pending.get(word_index)?;
+        loop {
+            let old = word.load(core::sync::atomic::Ordering::Acquire);
+            if old == 0 {
+                return None;
+            }
+            let bit = old.trailing_zeros() as usize;
+            let mask = 1u64 << bit;
+            if word
+                .compare_exchange(
+                    old,
+                    old & !mask,
+                    core::sync::atomic::Ordering::AcqRel,
+                    core::sync::atomic::Ordering::Acquire,
+                )
+                .is_ok()
+            {
+                return Some(word_index * GUEST_IRQ_WORD_BITS + bit);
+            }
+        }
+    }
+
+    pub fn has_pending(&self) -> bool {
+        self.pending
+            .iter()
+            .any(|word| word.load(core::sync::atomic::Ordering::Acquire) != 0)
+    }
+
+    /// Claim pending INTIDs and let the controller adapter install each one.
+    ///
+    /// The adapter owns INTID classes and LR encoding. Returning `false` means
+    /// the adapter could not install the claimed INTID, so this helper puts it
+    /// back and reports that maintenance must remain armed.
+    pub fn flush_pending_with(&self, mut install: impl FnMut(usize) -> bool) -> bool {
+        for word_index in 0..self.pending.len() {
+            while let Some(irq_id) = self.claim_pending_intid(word_index) {
+                if install(irq_id) {
+                    continue;
+                }
+                self.set(irq_id);
+                return true;
+            }
+        }
+        false
+    }
+}
 use crate::ENTERED_CPUS;
 use core::fmt::{Debug, Formatter, Result};
 use core::sync::atomic::{AtomicU8, Ordering};
@@ -100,12 +228,37 @@ impl Debug for VcpuStateCell {
     }
 }
 
+/// vCPU state temporarily colocated with its pinned host pCPU.
+///
+/// This object, including its architecture-private `arch` member, is the unit
+/// that can later move out of `PerCpu` when fixed 1:N vCPU scheduling returns.
+pub struct Vcpu {
+    pub irq: GuestCpuIrqState,
+    pub arch: ArchVcpu,
+}
+
+impl Vcpu {
+    pub const fn new() -> Self {
+        Self {
+            irq: GuestCpuIrqState::new(),
+            arch: ArchVcpu::new(),
+        }
+    }
+
+    pub fn clear_irq_state(&self) {
+        self.irq.clear_all();
+        self.arch.clear_irq_state();
+    }
+}
+
 #[repr(C)]
 pub struct PerCpu {
     pub id: usize,
     pub cpu_on_entry: usize,
     pub dtb_ipa: usize,
     pub vcpu_state: VcpuStateCell,
+    /// Current pCPU:vCPU=1:1 temporary colocation; move out for fixed 1:N.
+    pub vcpu: Vcpu,
     pub arch_cpu: ArchCpu,
     pub zone: Option<Arc<Zone>>,
     pub ctrl_lock: Mutex<()>,
@@ -124,6 +277,7 @@ impl PerCpu {
                 cpu_on_entry: INVALID_ADDRESS,
                 dtb_ipa: INVALID_ADDRESS,
                 vcpu_state: VcpuStateCell::new(VcpuState::Stopped),
+                vcpu: Vcpu::new(),
                 arch_cpu,
                 zone: None,
                 ctrl_lock: Mutex::new(()),
@@ -179,7 +333,6 @@ pub fn this_cpu_data<'a>() -> &'a mut PerCpu {
 pub fn this_zone() -> Arc<Zone> {
     this_cpu_data().zone.clone().unwrap()
 }
-
 /// Enter blocked state and wait until another CPU resumes it.
 #[allow(unused)]
 pub fn vcpu_suspend() {
