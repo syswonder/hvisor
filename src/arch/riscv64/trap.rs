@@ -17,7 +17,7 @@ use super::cpu::ArchCpu;
 use crate::arch::sbi::sbi_vs_handler;
 #[cfg(plic)]
 use crate::device::irqchip::plic::{inject_irq, plic_get_hwirq};
-use crate::event::check_events;
+use crate::event::{check_events, dispatch_host_events};
 use crate::memory::GuestPhysAddr;
 use crate::memory::{mmio_handle_access, MMIOAccess};
 use core::arch::{asm, global_asm};
@@ -407,12 +407,10 @@ pub fn handle_timer_interrupt(_current_cpu: &mut ArchCpu) {
 
 /// Handle supervisor software interrupt.
 pub fn handle_software_interrupt(_current_cpu: &mut ArchCpu) {
-    while check_events() {
-        // Get next event to handle, it is handled in check_events function.
-    }
     unsafe {
         riscv::register::sip::clear_ssoft();
     }
+    dispatch_host_events(|| while check_events() {});
 }
 
 /// Handle supervisor external interrupt.

@@ -21,10 +21,7 @@ use super::cpu::GeneralRegisters;
 use crate::arch::sysreg::smc_call;
 use crate::zone::zone_error;
 use crate::{
-    arch::{
-        cpu::mpidr_to_cpuid,
-        sysreg::{read_sysreg, write_sysreg},
-    },
+    arch::{cpu::mpidr_to_cpuid, sysreg::read_sysreg},
     cpu_data::{get_cpu_data, this_cpu_data, this_zone, VcpuState},
     device::irqchip::gic_handle_irq,
     event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_WAKEUP},
@@ -122,6 +119,7 @@ pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> ! {
         ExceptionType::EXIT_REASON_EL2_IRQ => irqchip_handle_irq2(),
         _ => arch_dump_exit(regs.exit_reason),
     }
+    crate::device::irqchip::flush_current_guest_irqs();
     unsafe { vmreturn(regs as *const _ as usize) }
 }
 
@@ -344,8 +342,8 @@ fn handle_sysreg(regs: &mut GeneralRegisters) {
         if !this_cpu_data().vcpu_state.is_running() {
             trace!("skip send sgi {:#x?}", sgi_id);
         } else {
-            trace!("send sgi {:#x?}", sgi_id);
-            write_sysreg!(icc_sgi1r_el1, val);
+            trace!("post guest sgi {:#x?}", sgi_id);
+            crate::arch::ipi::handle_guest_sgi1r(val);
         }
         arch_skip_instruction(regs); //skip sgi write
     } else {

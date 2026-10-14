@@ -15,6 +15,8 @@
 //
 use crate::arch::zone::HvArchZoneConfig;
 use crate::config::HvZoneConfig;
+use crate::cpu_data::{get_cpu_data, this_cpu_data, GuestCpuIrqState};
+use crate::hypercall::SGI_IPI_ID;
 use crate::zone::Zone;
 
 #[cfg(target_arch = "loongarch64")]
@@ -25,6 +27,79 @@ pub fn handle_virtio_irq_event() {
 #[cfg(not(target_arch = "loongarch64"))]
 pub fn handle_virtio_irq_event() {
     crate::device::virtio_trampoline::handle_virtio_irq();
+}
+
+/// Synchronize posted IRQ state owned by the current vCPU.
+///
+#[inline]
+pub fn flush_current_guest_irqs() {
+    #[cfg(all(irq_gicv2, target_arch = "aarch64"))]
+    gicv2::gic::flush_current_guest_irqs();
+    #[cfg(all(irq_gicv3, target_arch = "aarch64"))]
+    gicv3::flush_current_guest_irqs();
+}
+
+/// Run the controller-independent pending claim/retry flow.
+pub fn flush_guest_irq_state(
+    state: &GuestCpuIrqState,
+    install: impl FnMut(usize) -> bool,
+    rearm_maintenance: impl FnOnce(),
+) {
+    if state.flush_pending_with(install) {
+        rearm_maintenance();
+    }
+}
+
+/// Publish a guest software IRQ in the target guest CPU's common pending
+/// bitmap and kick its fixed home pCPU. `source_cpu` is used only by GICv2 to
+/// reconstruct the SGI source field in the virtual LR.
+pub fn post_guest_irq(target_cpu: usize, irq_id: usize, source_cpu: Option<usize>) -> bool {
+    if irq_id >= crate::config::CONFIG_MAX_INTERRUPTS {
+        return false;
+    }
+    let target = get_cpu_data(target_cpu);
+    #[cfg(not(irq_gicv2))]
+    let _ = source_cpu;
+    let control = target.ctrl_lock.lock();
+    if target.zone.is_none() || target.vcpu_state.is_stopped() {
+        return false;
+    }
+    #[cfg(irq_gicv2)]
+    if irq_id < 16 {
+        let Some(source_cpu) = source_cpu.filter(|source_cpu| *source_cpu < 8) else {
+            return false;
+        };
+        let source_bit = 1u8 << source_cpu;
+        let previous_sources = target.vcpu.arch.sgi_source[irq_id]
+            .fetch_or(source_bit, core::sync::atomic::Ordering::AcqRel);
+        // A repeated SGI from the same source coalesces with the occurrence
+        // already represented by the source bit, including while it is being
+        // claimed by the target CPU.
+        if previous_sources & source_bit != 0 {
+            return true;
+        }
+    }
+    if !target.vcpu.irq.set(irq_id) {
+        return false;
+    }
+    drop(control);
+    kick_vcpu(target_cpu);
+    true
+}
+
+/// Ring the host doorbell for the pCPU to which the target vCPU is pinned.
+///
+/// Current mapping is pCPU:vCPU=1:1. A local target relies on the common
+/// exit/entry flush hook and does not receive a self IPI. A future scheduler
+/// can replace `target_pcpu_id` with a resolved `VcpuTarget`.
+pub fn kick_vcpu(target_pcpu_id: usize) {
+    let target = get_cpu_data(target_pcpu_id);
+    if target.zone.is_none() || target.vcpu_state.is_stopped() {
+        return;
+    }
+    if target_pcpu_id != this_cpu_data().id {
+        crate::arch::ipi::arch_send_event(target_pcpu_id as u64, SGI_IPI_ID);
+    }
 }
 
 #[cfg(all(irq_gicv2, target_arch = "aarch64"))]

@@ -149,13 +149,7 @@ pub fn arch_notify_event(dest: u64, vector: u64, _event_id: usize, _queue_was_em
 }
 
 pub fn handle_virt_ipi() {
-    // this may never return!
-    loop {
-        let ret = event::check_events();
-        if !ret {
-            break;
-        }
-    }
+    event::dispatch_host_events(|| while event::check_events() {});
 }
 
 pub fn arch_check_events(event: Option<usize>) {
