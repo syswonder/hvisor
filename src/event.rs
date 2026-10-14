@@ -41,6 +41,10 @@ pub const IPI_EVENT_VIRTIO_PCI_CONFIG: usize = 10;
 pub const IPI_EVENT_VIRTIO_PCI_DATA: usize = 11;
 pub const IPI_EVENT_VIRTIO_PCI_DONE: usize = 12;
 
+// Legacy per-CPU event FIFO, used by `send_event()` and drained through
+// `check_events()`/`handle_next_event()`.
+//
+// FIXME: Remove this queue and its API once every event class has left `PERCPU_EVENTS`.
 #[percpu::def_percpu]
 static PERCPU_EVENTS: Mutex<VecDeque<usize>> = Mutex::new(VecDeque::new());
 
@@ -171,6 +175,19 @@ fn handle_event(event: Option<usize>) -> bool {
 
 pub fn check_events() -> bool {
     handle_event(fetch_event(this_cpu_data().id))
+}
+
+/// Run the migration-time IRQ flush hooks around an architecture's existing
+/// legacy event dispatch behavior.
+///
+/// New posted IRQ state and the legacy FIFO intentionally coexist during the
+/// migration. Each architecture retains its existing legacy FIFO drain
+/// behavior through `drain_legacy_events`; this layer adds no batching or
+/// scheduling policy. The IRQ flush is controller-specific.
+pub fn dispatch_host_events<T>(drain_legacy_events: impl FnOnce() -> T) -> T {
+    crate::device::irqchip::flush_current_guest_irqs();
+    let result = drain_legacy_events();
+    result
 }
 
 /// Handle one queued event, returning whether an event was present.

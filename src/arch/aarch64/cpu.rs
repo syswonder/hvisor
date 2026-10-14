@@ -205,6 +205,7 @@ impl ArchCpu {
             self.cpuid,
             this_cpu_data().cpu_on_entry
         );
+        crate::device::irqchip::flush_current_guest_irqs();
         unsafe {
             vmreturn(self.guest_reg() as *mut _ as usize);
         }

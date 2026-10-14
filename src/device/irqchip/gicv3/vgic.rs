@@ -271,6 +271,35 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
                     mmio.value &= !(1 << MAINTENACE_INTERRUPT);
                     mmio.value &= !(1 << SGI_IPI_ID);
                 }
+
+                let is_sgi_set_pending = reg == GICR_SGI_BASE + GICR_ISPENDR;
+                let is_sgi_clear_pending = reg == GICR_SGI_BASE + GICR_ICPENDR;
+                if is_sgi_set_pending || is_sgi_clear_pending {
+                    if mmio.is_write {
+                        let mask = mmio.value as u32 & 0xffff;
+                        for irq_id in 0..16 {
+                            if mask & (1 << irq_id) == 0 {
+                                continue;
+                            }
+                            if is_sgi_set_pending {
+                                crate::device::irqchip::post_guest_irq(cpu, irq_id, None);
+                            } else {
+                                super::clear_guest_sgi(cpu, irq_id);
+                            }
+                        }
+                        // Preserve physical PPI writes in bits 16..31 only.
+                        mmio.value &= !0xffff;
+                        mmio_perform_access(gicr_base, mmio);
+                    } else {
+                        mmio_perform_access(gicr_base, mmio);
+                        let mut value = get_cpu_data(cpu).vcpu.irq.pending_mask(0, 16) as u32;
+                        if cpu == crate::arch::cpu::this_cpu_id() {
+                            value |= super::lr_pending_sgi_mask();
+                        }
+                        mmio.value = (mmio.value & !0xffff) | value as usize;
+                    }
+                    return HvResult::Ok(());
+                }
                 // ignore access to foreign redistributors
                 mmio_perform_access(gicr_base, mmio);
             } else {
