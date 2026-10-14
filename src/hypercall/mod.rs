@@ -363,6 +363,7 @@ impl<'a> HyperCall<'a> {
 
         zone_w.cpu_set().iter().for_each(|cpu_id| {
             let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
+            get_cpu_data(cpu_id).vcpu.clear_irq_state();
             get_cpu_data(cpu_id).zone = None;
         });
 

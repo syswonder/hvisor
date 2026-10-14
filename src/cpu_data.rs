@@ -14,15 +14,126 @@
 // Authors:
 //
 use alloc::sync::Arc;
+use core::fmt::{Debug, Formatter, Result};
+use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};
 use spin::Mutex;
 
-use crate::arch::cpu::{store_cpu_pointer_to_reg, this_cpu_id, ArchCpu};
+use crate::arch::{
+    cpu::{store_cpu_pointer_to_reg, this_cpu_id, ArchCpu},
+    ArchVcpu,
+};
 use crate::consts::{INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::memory::addr::VirtAddr;
 use crate::zone::Zone;
 use crate::ENTERED_CPUS;
-use core::fmt::{Debug, Formatter, Result};
-use core::sync::atomic::{AtomicU8, Ordering};
+
+#[repr(C)]
+pub struct PerCpu {
+    pub id: usize,
+    pub cpu_on_entry: usize,
+    pub dtb_ipa: usize,
+    pub vcpu_state: VcpuStateCell,
+    // Currently each pCPU is bound to exactly one vCPU (temporary 1:1 mapping).
+    // TODO: Move the vCPU out of PerCpu once fixed 1:N binding is supported.
+    pub vcpu: Vcpu,
+    pub arch_cpu: ArchCpu,
+    pub zone: Option<Arc<Zone>>,
+    pub ctrl_lock: Mutex<()>,
+    pub boot_cpu: bool,
+    // percpu stack
+}
+
+impl PerCpu {
+    pub fn new<'a>(cpu_id: usize) -> &'static mut PerCpu {
+        let arch_cpu = ArchCpu::new(cpu_id);
+        let vaddr = PER_CPU_ARRAY_PTR as VirtAddr + arch_cpu.cpuid as usize * PER_CPU_SIZE;
+        let ret = vaddr as *mut Self;
+        unsafe {
+            ret.write_volatile(PerCpu {
+                id: arch_cpu.cpuid,
+                cpu_on_entry: INVALID_ADDRESS,
+                dtb_ipa: INVALID_ADDRESS,
+                vcpu_state: VcpuStateCell::new(VcpuState::Stopped),
+                vcpu: Vcpu::new(),
+                arch_cpu,
+                zone: None,
+                ctrl_lock: Mutex::new(()),
+                boot_cpu: false,
+            })
+        };
+        unsafe {
+            let pointer = &ret.as_mut().unwrap().arch_cpu as *const _ as usize;
+            store_cpu_pointer_to_reg(pointer);
+        }
+        // #[cfg(target_arch = "riscv64")]
+        // {
+        //     use crate::arch::csr::{write_csr, CSR_SSCRATCH};
+        //     write_csr!(
+        //         CSR_SSCRATCH,
+        //         &ret.as_mut().unwrap().arch_cpu as *const _ as usize
+        //     ); //arch cpu pointer
+        // }
+        unsafe { ret.as_mut().unwrap() }
+    }
+
+    pub fn run_vm(&mut self) {
+        if !self.boot_cpu {
+            info!("CPU{}: Idling the CPU before starting VM...", self.id);
+            self.arch_cpu.idle();
+        }
+        info!("CPU{}: Running the VM...", self.id);
+        self.arch_cpu.run();
+    }
+
+    pub fn entered_cpus() -> u32 {
+        ENTERED_CPUS.load(Ordering::Acquire)
+    }
+
+    pub fn activate_gpm(&self) {
+        unsafe {
+            self.zone.clone().unwrap().read().gpm().activate();
+        }
+    }
+}
+
+pub fn get_cpu_data<'a>(cpu_id: usize) -> &'a mut PerCpu {
+    let cpu_data: usize = PER_CPU_ARRAY_PTR as VirtAddr + cpu_id as usize * PER_CPU_SIZE;
+    unsafe { &mut *(cpu_data as *mut PerCpu) }
+}
+
+pub fn this_cpu_data<'a>() -> &'a mut PerCpu {
+    // Note: this_cpu_id() should return logical cpu_id 0..BOARD_NCPUS
+    get_cpu_data(this_cpu_id())
+}
+
+#[allow(unused)]
+pub fn this_zone() -> Arc<Zone> {
+    this_cpu_data().zone.clone().unwrap()
+}
+
+/// Per-vCPU state: posted guest IRQs and architecture-private data.
+//
+// Temporarily colocated with its pinned host pCPU. This object, including its
+// `arch` member, is the unit that can later move out of `PerCpu` when fixed
+// 1:N vCPU scheduling returns.
+pub struct Vcpu {
+    pub irq: GuestCpuIrqState,
+    pub arch: ArchVcpu,
+}
+
+impl Vcpu {
+    pub const fn new() -> Self {
+        Self {
+            irq: GuestCpuIrqState::new(),
+            arch: ArchVcpu::new(),
+        }
+    }
+
+    pub fn clear_irq_state(&self) {
+        self.irq.clear_all();
+        self.arch.clear_irq_state();
+    }
+}
 
 // global_asm!(include_str!("./arch/aarch64/page_table.S"),);
 
@@ -100,84 +211,115 @@ impl Debug for VcpuStateCell {
     }
 }
 
-#[repr(C)]
-pub struct PerCpu {
-    pub id: usize,
-    pub cpu_on_entry: usize,
-    pub dtb_ipa: usize,
-    pub vcpu_state: VcpuStateCell,
-    pub arch_cpu: ArchCpu,
-    pub zone: Option<Arc<Zone>>,
-    pub ctrl_lock: Mutex<()>,
-    pub boot_cpu: bool,
-    // percpu stack
+const GUEST_IRQ_WORD_BITS: usize = u64::BITS as usize;
+const GUEST_IRQ_WORDS: usize = (crate::config::CONFIG_MAX_INTERRUPTS + 63) / 64;
+
+/// Pending software IRQ state owned by one guest CPU. Bits are guest INTIDs.
+//
+// Architecture-specific LR metadata remains in `ArchVcpu`; this state is the
+// common producer/consumer contract.
+pub struct GuestCpuIrqState {
+    pending: [AtomicU64; GUEST_IRQ_WORDS],
 }
 
-impl PerCpu {
-    pub fn new<'a>(cpu_id: usize) -> &'static mut PerCpu {
-        let arch_cpu = ArchCpu::new(cpu_id);
-        let vaddr = PER_CPU_ARRAY_PTR as VirtAddr + arch_cpu.cpuid as usize * PER_CPU_SIZE;
-        let ret = vaddr as *mut Self;
-        unsafe {
-            ret.write_volatile(PerCpu {
-                id: arch_cpu.cpuid,
-                cpu_on_entry: INVALID_ADDRESS,
-                dtb_ipa: INVALID_ADDRESS,
-                vcpu_state: VcpuStateCell::new(VcpuState::Stopped),
-                arch_cpu,
-                zone: None,
-                ctrl_lock: Mutex::new(()),
-                boot_cpu: false,
-            })
-        };
-        unsafe {
-            let pointer = &ret.as_mut().unwrap().arch_cpu as *const _ as usize;
-            store_cpu_pointer_to_reg(pointer);
-        }
-        // #[cfg(target_arch = "riscv64")]
-        // {
-        //     use crate::arch::csr::{write_csr, CSR_SSCRATCH};
-        //     write_csr!(
-        //         CSR_SSCRATCH,
-        //         &ret.as_mut().unwrap().arch_cpu as *const _ as usize
-        //     ); //arch cpu pointer
-        // }
-        unsafe { ret.as_mut().unwrap() }
-    }
-
-    pub fn run_vm(&mut self) {
-        if !self.boot_cpu {
-            info!("CPU{}: Idling the CPU before starting VM...", self.id);
-            self.arch_cpu.idle();
-        }
-        info!("CPU{}: Running the VM...", self.id);
-        self.arch_cpu.run();
-    }
-
-    pub fn entered_cpus() -> u32 {
-        ENTERED_CPUS.load(Ordering::Acquire)
-    }
-
-    pub fn activate_gpm(&self) {
-        unsafe {
-            self.zone.clone().unwrap().read().gpm().activate();
+impl GuestCpuIrqState {
+    pub const fn new() -> Self {
+        Self {
+            pending: [const { AtomicU64::new(0) }; GUEST_IRQ_WORDS],
         }
     }
-}
 
-pub fn get_cpu_data<'a>(cpu_id: usize) -> &'a mut PerCpu {
-    let cpu_data: usize = PER_CPU_ARRAY_PTR as VirtAddr + cpu_id as usize * PER_CPU_SIZE;
-    unsafe { &mut *(cpu_data as *mut PerCpu) }
-}
+    pub fn set(&self, irq_id: usize) -> bool {
+        if irq_id >= crate::config::CONFIG_MAX_INTERRUPTS {
+            return false;
+        }
+        self.pending[irq_id / GUEST_IRQ_WORD_BITS]
+            .fetch_or(1u64 << (irq_id % GUEST_IRQ_WORD_BITS), Ordering::Release);
+        true
+    }
 
-pub fn this_cpu_data<'a>() -> &'a mut PerCpu {
-    // Note: this_cpu_id() should return logical cpu_id 0..BOARD_NCPUS
-    get_cpu_data(this_cpu_id())
-}
+    /// Claim pending INTIDs and let the controller adapter install each one.
+    /// Returns `true` when `install` refused an INTID; that INTID is put back
+    /// and maintenance must stay armed.
+    //
+    // The adapter owns INTID classes and LR encoding.
+    pub fn flush_pending_with(&self, mut install: impl FnMut(usize) -> bool) -> bool {
+        for word_index in 0..self.pending.len() {
+            while let Some(irq_id) = self.claim_pending_intid(word_index) {
+                if install(irq_id) {
+                    continue;
+                }
+                self.set(irq_id);
+                return true;
+            }
+        }
+        false
+    }
 
-#[allow(unused)]
-pub fn this_zone() -> Arc<Zone> {
-    this_cpu_data().zone.clone().unwrap()
+    /// Atomically claim the lowest pending INTID in one bitmap word.
+    pub fn claim_pending_intid(&self, word_index: usize) -> Option<usize> {
+        let word = self.pending.get(word_index)?;
+        loop {
+            let old = word.load(Ordering::Acquire);
+            if old == 0 {
+                return None;
+            }
+            let bit = old.trailing_zeros() as usize;
+            let mask = 1u64 << bit;
+            if word
+                .compare_exchange(old, old & !mask, Ordering::AcqRel, Ordering::Acquire)
+                .is_ok()
+            {
+                return Some(word_index * GUEST_IRQ_WORD_BITS + bit);
+            }
+        }
+    }
+
+    pub fn clear(&self, irq_id: usize) -> bool {
+        if irq_id >= crate::config::CONFIG_MAX_INTERRUPTS {
+            return false;
+        }
+        self.pending[irq_id / GUEST_IRQ_WORD_BITS]
+            .fetch_and(!(1u64 << (irq_id % GUEST_IRQ_WORD_BITS)), Ordering::AcqRel);
+        true
+    }
+
+    pub fn clear_all(&self) {
+        for word in &self.pending {
+            word.store(0, Ordering::Release);
+        }
+    }
+
+    pub fn has_pending(&self) -> bool {
+        self.pending
+            .iter()
+            .any(|word| word.load(Ordering::Acquire) != 0)
+    }
+
+    pub fn pending_mask(&self, first_irq: usize, count: usize) -> u64 {
+        if count == 0 || count > GUEST_IRQ_WORD_BITS {
+            return 0;
+        }
+        let word = first_irq / GUEST_IRQ_WORD_BITS;
+        let offset = first_irq % GUEST_IRQ_WORD_BITS;
+        let mut value = self
+            .pending
+            .get(word)
+            .map(|pending| pending.load(Ordering::Acquire) >> offset)
+            .unwrap_or(0);
+        if offset != 0 {
+            value |= self
+                .pending
+                .get(word + 1)
+                .map(|pending| pending.load(Ordering::Acquire) << (GUEST_IRQ_WORD_BITS - offset))
+                .unwrap_or(0);
+        }
+        if count == GUEST_IRQ_WORD_BITS {
+            value
+        } else {
+            value & ((1u64 << count) - 1)
+        }
+    }
 }
 
 /// Enter blocked state and wait until another CPU resumes it.

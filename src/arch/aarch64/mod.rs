@@ -27,9 +27,11 @@ pub mod s2pt;
 pub mod sysreg;
 pub mod time;
 pub mod trap;
+pub mod vcpu;
 pub mod zone;
 pub use s2pt::stage2_mode_detect;
 pub use s2pt::Stage2PageTable;
+pub use vcpu::ArchVcpu;
 #[cfg(aarch64_uefi_support)]
 pub mod uefi;
 
