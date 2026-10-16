@@ -17,7 +17,7 @@
 use crate::arch::cpu::this_cpu_id;
 use crate::consts::{IPI_EVENT_CLEAR_INJECT_IRQ, IPI_EVENT_SEND_IPI};
 use core::arch::asm;
-use core::ptr::write_volatile;
+use loongArch64::iocsr::{iocsr_write_d, iocsr_write_w};
 use loongArch64::register::ecfg::LineBasedInterrupt;
 use loongArch64::register::*;
 
@@ -41,7 +41,6 @@ pub fn arch_notify_event(cpu_id: u64, sgi_num: u64, event_id: usize, queue_was_e
     }
 }
 
-const MMIO_BASE: usize = 0x8000_0000_1fe0_0000;
 const IOCSR_IPI_STATUS: usize = 0x1000;
 const IOCSR_IPI_ENABLE: usize = 0x1004;
 const IOCSR_IPI_CLEAR: usize = 0x100c;
@@ -101,20 +100,14 @@ pub fn mail_send_percore(data: usize, cpu_id: usize, mailbox_id: usize) {
     val |= cpu_id << 16;
     val |= high << 32;
     // debug!("(mail_send) sending high 32 bits, actual packed value: {:#x}", val);
-    unsafe {
-        // asm!("iocsrwr.d {}, {}", in(reg) val, in(reg) 0x1048);
-        write_volatile(IPI_MMIO_MAIL_SEND as *mut u64, val as u64);
-    }
+    iocsr_write_d(IOCSR_MBUF_SEND, val as u64);
     // send low 32 bits
     val = 1 << 31;
     val |= iocsr_mbuf_send_box_lo(mailbox_id) << 2;
     val |= cpu_id << 16;
     val |= low << 32;
     // debug!("(mail_send) sending low 32 bits, actual packed value: {:#x}", val);
-    unsafe {
-        // asm!("iocsrwr.d {}, {}", in(reg) val, in(reg) 0x1048);
-        write_volatile(IPI_MMIO_MAIL_SEND as *mut u64, val as u64);
-    }
+    iocsr_write_d(IOCSR_MBUF_SEND, val as u64);
 }
 
 fn ffs(a: usize) -> usize {
@@ -132,8 +125,8 @@ fn ffs(a: usize) -> usize {
     i + 1
 }
 
-const IPI_MMIO_IPI_SEND: usize = MMIO_BASE + 0x1040; // 32 bits Write Only
-const IPI_MMIO_MAIL_SEND: usize = MMIO_BASE + 0x1048; // 64 bits Write Only
+const IOCSR_IPI_SEND: usize = 0x1040; // 32 bits Write Only
+const IOCSR_MBUF_SEND: usize = 0x1048; // 64 bits Write Only
 
 #[allow(unused_assignments)]
 pub fn ipi_write_action_percore(cpu_id: usize, _action: usize) {
@@ -152,13 +145,10 @@ pub fn ipi_write_action_percore(cpu_id: usize, _action: usize) {
         val |= irq - 1;
         val |= (cpu_id as u32) << 16;
         debug!(
-            "loongarch64::ipi_write_action writing value {:#x} to MMIO address: {:#x}",
-            val, IPI_MMIO_IPI_SEND
+            "loongarch64::ipi_write_action writing value {:#x} to IOCSR: {:#x}",
+            val, IOCSR_IPI_SEND
         );
-        unsafe {
-            //     asm!("iocsrwr.w {}, {}", in(reg) val, in(reg) 0x1040);
-            write_volatile(IPI_MMIO_IPI_SEND as *mut u32, val);
-        }
+        iocsr_write_w(IOCSR_IPI_SEND, val);
         debug!(
             "loongarch64::ipi_write_action sent irq: {} to cpu: {} !",
             irq, cpu_id

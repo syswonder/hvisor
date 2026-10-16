@@ -18,6 +18,7 @@
 // wheatfox 2024.2.27
 
 use crate::device::common::MMIODerefWrapper;
+use crate::platform::BOARD_NCPUS;
 use alloc::string::String;
 use core::ptr::*;
 use tock_registers::fields::FieldValue;
@@ -450,6 +451,68 @@ register_structs! {
   }
 }
 
+/// Physical base of chip config space (node 0). 3A6000 on-chip node 1 is +0x10000 (0x1fe10000).
+pub const CHIP_CFG_PHY_BASE: usize = 0x1fe0_0000;
+/// Logical cores covered by one EIOINTC node (Linux: CORES_PER_EIO_NODE)
+pub const CORES_PER_EIO_NODE: usize = 4;
+/// Stride between adjacent on-chip node config spaces
+pub const EIO_NODE_STRIDE: usize = 0x1_0000;
+
+/// Number of EIO nodes: 3A5000=1 (4 cores), 3A6000=2 (8 logical cores)
+#[inline]
+pub fn eio_num_nodes() -> usize {
+    (BOARD_NCPUS + CORES_PER_EIO_NODE - 1) / CORES_PER_EIO_NODE
+}
+
+#[inline]
+pub fn eio_cpu_to_node(cpu: usize) -> usize {
+    cpu / CORES_PER_EIO_NODE
+}
+
+#[inline]
+pub fn eio_cpu_to_local(cpu: usize) -> usize {
+    cpu % CORES_PER_EIO_NODE
+}
+
+/// MMIO base of node `node` config space (with DMW uncached prefix)
+#[inline]
+pub fn eio_node_mmio_base(node: usize) -> usize {
+    PHY_TO_DMW_UNCACHED!(CHIP_CFG_PHY_BASE + node * EIO_NODE_STRIDE)
+}
+
+/// COREn_EXT_IOIsr base for a logical CPU
+#[inline]
+pub fn eio_core_isr_mmio_base(cpu: usize) -> usize {
+    let node = eio_cpu_to_node(cpu);
+    let local = eio_cpu_to_local(cpu);
+    eio_node_mmio_base(node) + 0x1800 + local * 0x100
+}
+
+#[inline]
+fn extioi_enable_regs(node: usize) -> MMIODerefWrapper<ChipExtioiEnableRegs> {
+    unsafe { MMIODerefWrapper::new(eio_node_mmio_base(node) + 0x1600) }
+}
+
+#[inline]
+fn extioi_bounce_regs(node: usize) -> MMIODerefWrapper<ChipExtioiBounceRegs> {
+    unsafe { MMIODerefWrapper::new(eio_node_mmio_base(node) + 0x1680) }
+}
+
+#[inline]
+fn extioi_status_regs(node: usize) -> MMIODerefWrapper<ChipExtioiStatusRegs> {
+    unsafe { MMIODerefWrapper::new(eio_node_mmio_base(node) + 0x1700) }
+}
+
+#[inline]
+fn extioi_core_status_regs(cpu: usize) -> MMIODerefWrapper<ChipExtioiStatusRegs> {
+    unsafe { MMIODerefWrapper::new(eio_core_isr_mmio_base(cpu)) }
+}
+
+#[inline]
+fn extioi_route_pin_regs(node: usize) -> MMIODerefWrapper<ChipExtioiRouteRegs> {
+    unsafe { MMIODerefWrapper::new(eio_node_mmio_base(node) + 0x14c0) }
+}
+
 const MMIO_BASE: usize = PHY_TO_DMW_UNCACHED!(0x1fe0_0000);
 const CHIP_CONFIG_BASE: usize = MMIO_BASE + 0x0;
 const CHIP_OTHER_FUNCTION_BASE: usize = MMIO_BASE + 0x420;
@@ -659,10 +722,13 @@ pub fn extioi_is_enabled() -> bool {
 }
 
 pub fn extioi_int_enable_all() {
-    CHIP_EXTIOI_ENABLE.extioi_en0.set(0xffff_ffff_ffff_ffff);
-    CHIP_EXTIOI_ENABLE.extioi_en1.set(0xffff_ffff_ffff_ffff);
-    CHIP_EXTIOI_ENABLE.extioi_en2.set(0xffff_ffff_ffff_ffff);
-    CHIP_EXTIOI_ENABLE.extioi_en3.set(0xffff_ffff_ffff_ffff);
+    for node in 0..eio_num_nodes() {
+        let regs = extioi_enable_regs(node);
+        regs.extioi_en0.set(u64::MAX);
+        regs.extioi_en1.set(u64::MAX);
+        regs.extioi_en2.set(u64::MAX);
+        regs.extioi_en3.set(u64::MAX);
+    }
     #[cfg(extioi_debug)]
     {
         // dump ht int vector and enable
@@ -699,153 +765,122 @@ pub fn extioi_int_enable_all() {
 // rcore refenrence
 // https://github.com/Godones/rCoreloongArch/blob/master/kernel/src/loongarch/extioi.rs
 pub fn extioi_int_route_pin_all() {
-    csr_disable_new_codec(); // use legacy vector codec
-    let mask = 0b0000_0001u8; // INT1
-    CHIP_EXTIOI_ROUTE.extioi_map0.set(mask);
-    CHIP_EXTIOI_ROUTE.extioi_map1.set(mask);
-    CHIP_EXTIOI_ROUTE.extioi_map2.set(mask);
-    CHIP_EXTIOI_ROUTE.extioi_map3.set(mask);
-    CHIP_EXTIOI_ROUTE.extioi_map4.set(mask);
-    CHIP_EXTIOI_ROUTE.extioi_map5.set(mask);
-    CHIP_EXTIOI_ROUTE.extioi_map6.set(mask);
-    CHIP_EXTIOI_ROUTE.extioi_map7.set(mask);
+    csr_disable_new_codec();
+    // BIT(0) => IP0/INT0
+    let mask = 0b0000_0001u8;
+    for node in 0..eio_num_nodes() {
+        let route = extioi_route_pin_regs(node);
+        route.extioi_map0.set(mask);
+        route.extioi_map1.set(mask);
+        route.extioi_map2.set(mask);
+        route.extioi_map3.set(mask);
+        route.extioi_map4.set(mask);
+        route.extioi_map5.set(mask);
+        route.extioi_map6.set(mask);
+        route.extioi_map7.set(mask);
+    }
+}
+
+/// Program EXTIOI nodemap (0x14a0, 8 x u32) like Linux eiointc:
+/// nodetype[k] gets bit k set, so route byte [7:4]=k selects destination node k.
+fn extioi_init_nodemap(node_mmio_base: usize) {
+    // 256 vectors / 32 = 8 words; each word packs two u16 nodetype entries
+    for i in 0..8 {
+        let data = ((1u32 << (i * 2 + 1)) << 16) | (1u32 << (i * 2));
+        unsafe {
+            write_volatile((node_mmio_base + 0x14a0 + i * 4) as *mut u32, data);
+        }
+    }
 }
 
 pub fn extioi_int_route_core_all() {
-    // first disable all extioi bounce
-    CHIP_EXTIOI_BOUNCE.extioi_bounce0.set(0);
-    CHIP_EXTIOI_BOUNCE.extioi_bounce1.set(0);
-    CHIP_EXTIOI_BOUNCE.extioi_bounce2.set(0);
-    CHIP_EXTIOI_BOUNCE.extioi_bounce3.set(0);
-    // write CHIP_EXTIOI_NODE_TYPE_BASE mmio (each with 2 bytes)
-    unsafe {
-        // set to 16'b0000_0000_0000_0001
-        // which means only trigger node0
-        core::ptr::write_volatile(CHIP_EXTIOI_NODE_TYPE_BASE as *mut u16, 0x0001);
-    }
-    // from CHIP_EXTIOI_ROUTE_CORE_BASE tp CHIP_EXTIOI_ROUTE_CORE_BASE + 0xff
-    // for each MMIO byte, set to cput core 0, data = 8'b0000_0001
-    // which is [EXT_IOI_node_type0][CPU0 MASK]
-    let mask = 0b0000_0001u8;
-    for i in 0..256 {
-        let addr = CHIP_EXTIOI_ROUTE_CORE_BASE + i;
-        unsafe {
-            core::ptr::write_volatile(addr as *mut u8, mask);
+    for node in 0..eio_num_nodes() {
+        let base = eio_node_mmio_base(node);
+        let bounce = extioi_bounce_regs(node);
+        bounce.extioi_bounce0.set(0);
+        bounce.extioi_bounce1.set(0);
+        bounce.extioi_bounce2.set(0);
+        bounce.extioi_bounce3.set(0);
+
+        extioi_init_nodemap(base);
+
+        // [7:4]=nodetype index (= node id after nodemap init), [3:0]=local CPU bitmap
+        // Keep the initial destination on root CPU0.
+        let mask = 0b0000_0001u8;
+        for i in 0..256 {
+            let addr = base + 0x1c00 + i;
+            unsafe {
+                write_volatile(addr as *mut u8, mask);
+            }
         }
     }
+}
+
+fn read_extioi_status_words(status: &ChipExtioiStatusRegs) -> (u64, u64, u64, u64) {
+    (
+        status.extioi_sr0.get(),
+        status.extioi_sr1.get(),
+        status.extioi_sr2.get(),
+        status.extioi_sr3.get(),
+    )
+}
+
+/// Write-1-to-clear all pending bits (avoids RMW race of read-then-write).
+fn clear_extioi_status_words(status: &ChipExtioiStatusRegs) {
+    const ALL: u64 = !0;
+    status.extioi_sr0.set(ALL);
+    status.extioi_sr1.set(ALL);
+    status.extioi_sr2.set(ALL);
+    status.extioi_sr3.set(ALL);
 }
 
 pub fn get_extioi_sr() -> String {
     let mut sr = String::new();
-    // in one line, compact style
-    // core0: u64,u64,u64,u64; core1: u64,u64,u64,u64; core2: u64,u64,u64,u64; core3: u64,u64,u64,u64;
-    // so we need to read 4 * 4 = 16 u64
-    for core_id in 0..4 {
-        let (sr0, sr1, sr2, sr3) = match core_id {
-            0 => (
-                CHIP_EXTIOI_CORE0_STATUS.extioi_sr0.get(),
-                CHIP_EXTIOI_CORE0_STATUS.extioi_sr1.get(),
-                CHIP_EXTIOI_CORE0_STATUS.extioi_sr2.get(),
-                CHIP_EXTIOI_CORE0_STATUS.extioi_sr3.get(),
-            ),
-            1 => (
-                CHIP_EXTIOI_CORE1_STATUS.extioi_sr0.get(),
-                CHIP_EXTIOI_CORE1_STATUS.extioi_sr1.get(),
-                CHIP_EXTIOI_CORE1_STATUS.extioi_sr2.get(),
-                CHIP_EXTIOI_CORE1_STATUS.extioi_sr3.get(),
-            ),
-            2 => (
-                CHIP_EXTIOI_CORE2_STATUS.extioi_sr0.get(),
-                CHIP_EXTIOI_CORE2_STATUS.extioi_sr1.get(),
-                CHIP_EXTIOI_CORE2_STATUS.extioi_sr2.get(),
-                CHIP_EXTIOI_CORE2_STATUS.extioi_sr3.get(),
-            ),
-            3 => (
-                CHIP_EXTIOI_CORE3_STATUS.extioi_sr0.get(),
-                CHIP_EXTIOI_CORE3_STATUS.extioi_sr1.get(),
-                CHIP_EXTIOI_CORE3_STATUS.extioi_sr2.get(),
-                CHIP_EXTIOI_CORE3_STATUS.extioi_sr3.get(),
-            ),
-            _ => panic!("get_extioi_sr: invalid core id: {}", core_id),
-        };
+    for node in 0..eio_num_nodes() {
+        let (sr0, sr1, sr2, sr3) = read_extioi_status_words(&extioi_status_regs(node));
         sr.push_str(
             format!(
-                "core{}: {:#x},{:#x},{:#x},{:#x}; ",
-                core_id, sr0, sr1, sr2, sr3
+                "node{}-global: {:#x},{:#x},{:#x},{:#x}; ",
+                node, sr0, sr1, sr2, sr3
             )
             .as_str(),
         );
+        for local in 0..CORES_PER_EIO_NODE {
+            let cpu = node * CORES_PER_EIO_NODE + local;
+            if cpu >= BOARD_NCPUS {
+                break;
+            }
+            let (c0, c1, c2, c3) = read_extioi_status_words(&extioi_core_status_regs(cpu));
+            sr.push_str(
+                format!(
+                    "cpu{}(n{}l{}): {:#x},{:#x},{:#x},{:#x}; ",
+                    cpu, node, local, c0, c1, c2, c3
+                )
+                .as_str(),
+            );
+        }
     }
     sr
 }
 
+/// Clear only this CPU's pending vectors; used when resetting one zone.
+pub fn clear_extioi_sr_for_cpu(cpu: usize) {
+    assert!(cpu < BOARD_NCPUS);
+    clear_extioi_status_words(&extioi_core_status_regs(cpu));
+}
+
 pub fn clear_extioi_sr() {
-    warn!(
-        "clear_extioi_sr: clearing extioi SR regs, before: {}",
-        get_extioi_sr()
-    );
-    // step one, for each sr reg, we read it and find any pending bit
-    for core_id in 0..4 {
-        let (sr0, sr1, sr2, sr3) = match core_id {
-            0 => (
-                CHIP_EXTIOI_CORE0_STATUS.extioi_sr0.get(),
-                CHIP_EXTIOI_CORE0_STATUS.extioi_sr1.get(),
-                CHIP_EXTIOI_CORE0_STATUS.extioi_sr2.get(),
-                CHIP_EXTIOI_CORE0_STATUS.extioi_sr3.get(),
-            ),
-            1 => (
-                CHIP_EXTIOI_CORE1_STATUS.extioi_sr0.get(),
-                CHIP_EXTIOI_CORE1_STATUS.extioi_sr1.get(),
-                CHIP_EXTIOI_CORE1_STATUS.extioi_sr2.get(),
-                CHIP_EXTIOI_CORE1_STATUS.extioi_sr3.get(),
-            ),
-            2 => (
-                CHIP_EXTIOI_CORE2_STATUS.extioi_sr0.get(),
-                CHIP_EXTIOI_CORE2_STATUS.extioi_sr1.get(),
-                CHIP_EXTIOI_CORE2_STATUS.extioi_sr2.get(),
-                CHIP_EXTIOI_CORE2_STATUS.extioi_sr3.get(),
-            ),
-            3 => (
-                CHIP_EXTIOI_CORE3_STATUS.extioi_sr0.get(),
-                CHIP_EXTIOI_CORE3_STATUS.extioi_sr1.get(),
-                CHIP_EXTIOI_CORE3_STATUS.extioi_sr2.get(),
-                CHIP_EXTIOI_CORE3_STATUS.extioi_sr3.get(),
-            ),
-            _ => panic!("clear_extioi_sr: invalid core id: {}", core_id),
-        };
-        // then we directly write them back to clear the status
-        match core_id {
-            0 => {
-                CHIP_EXTIOI_CORE0_STATUS.extioi_sr0.set(sr0);
-                CHIP_EXTIOI_CORE0_STATUS.extioi_sr1.set(sr1);
-                CHIP_EXTIOI_CORE0_STATUS.extioi_sr2.set(sr2);
-                CHIP_EXTIOI_CORE0_STATUS.extioi_sr3.set(sr3);
+    for node in 0..eio_num_nodes() {
+        clear_extioi_status_words(&extioi_status_regs(node));
+        for local in 0..CORES_PER_EIO_NODE {
+            let cpu = node * CORES_PER_EIO_NODE + local;
+            if cpu >= BOARD_NCPUS {
+                break;
             }
-            1 => {
-                CHIP_EXTIOI_CORE1_STATUS.extioi_sr0.set(sr0);
-                CHIP_EXTIOI_CORE1_STATUS.extioi_sr1.set(sr1);
-                CHIP_EXTIOI_CORE1_STATUS.extioi_sr2.set(sr2);
-                CHIP_EXTIOI_CORE1_STATUS.extioi_sr3.set(sr3);
-            }
-            2 => {
-                CHIP_EXTIOI_CORE2_STATUS.extioi_sr0.set(sr0);
-                CHIP_EXTIOI_CORE2_STATUS.extioi_sr1.set(sr1);
-                CHIP_EXTIOI_CORE2_STATUS.extioi_sr2.set(sr2);
-                CHIP_EXTIOI_CORE2_STATUS.extioi_sr3.set(sr3);
-            }
-            3 => {
-                CHIP_EXTIOI_CORE3_STATUS.extioi_sr0.set(sr0);
-                CHIP_EXTIOI_CORE3_STATUS.extioi_sr1.set(sr1);
-                CHIP_EXTIOI_CORE3_STATUS.extioi_sr2.set(sr2);
-                CHIP_EXTIOI_CORE3_STATUS.extioi_sr3.set(sr3);
-            }
-            _ => panic!("clear_extioi_sr: invalid core id: {}", core_id),
+            clear_extioi_status_words(&extioi_core_status_regs(cpu));
         }
     }
-    warn!(
-        "clear_extioi_sr: clearing extioi SR regs, after: {}",
-        get_extioi_sr()
-    );
+    debug!("clear_extioi_sr: done, status={}", get_extioi_sr());
 }
 
 /******************************************** */
