@@ -37,9 +37,9 @@ pub const IPI_EVENT_WAKEUP: usize = 0;
 pub const IPI_EVENT_SHUTDOWN: usize = 1;
 pub const IPI_EVENT_VIRTIO_INJECT_IRQ: usize = 2;
 pub const IPI_EVENT_WAKEUP_VIRTIO_DEVICE: usize = 3;
-pub const IPI_EVENT_VIRTIO_PCI_CONFIG: usize = 7;
-pub const IPI_EVENT_VIRTIO_PCI_DATA: usize = 8;
-pub const IPI_EVENT_VIRTIO_PCI_DONE: usize = 9;
+pub const IPI_EVENT_VIRTIO_PCI_CONFIG: usize = 10;
+pub const IPI_EVENT_VIRTIO_PCI_DATA: usize = 11;
+pub const IPI_EVENT_VIRTIO_PCI_DONE: usize = 12;
 
 #[percpu::def_percpu]
 static PERCPU_EVENTS: Mutex<VecDeque<usize>> = Mutex::new(VecDeque::new());
@@ -171,6 +171,19 @@ fn handle_event(event: Option<usize>) -> bool {
 
 pub fn check_events() -> bool {
     handle_event(fetch_event(this_cpu_data().id))
+}
+
+/// Run the migration-time IRQ flush hooks around an architecture's existing
+/// legacy event dispatch behavior.
+///
+/// New posted IRQ state and the legacy FIFO intentionally coexist during the
+/// migration. Each architecture retains its existing legacy FIFO drain
+/// behavior through `drain_legacy_events`; this layer adds no batching or
+/// scheduling policy. The IRQ flush is controller-specific.
+pub fn dispatch_host_events<T>(drain_legacy_events: impl FnOnce() -> T) -> T {
+    crate::device::irqchip::flush_current_guest_irqs();
+    let result = drain_legacy_events();
+    result
 }
 
 /// Handle one queued event, returning whether an event was present.

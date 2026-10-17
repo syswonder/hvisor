@@ -13,17 +13,19 @@
 //
 // Authors:
 //    Hangqi Ren <2572131118@qq.com>
+use crate::arch::cpu::this_cpu_id;
 use crate::arch::zone::{GicConfig, Gicv2Config, HvArchZoneConfig};
 use crate::config::{BitmapWord, CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD};
-use crate::cpu_data::this_zone;
+use crate::cpu_data::{get_cpu_data, this_zone};
 use crate::device::irqchip::gicv2::gicd::{
-    get_max_int_num, GICD, GICD_CTRL_REG_OFFSET, GICD_ICACTIVER_REG_OFFSET,
-    GICD_ICENABLER_REG_OFFSET, GICD_ICFGR_REG_OFFSET, GICD_ICPENDR_REG_OFFSET,
-    GICD_IDENTIFICATION_NUM, GICD_IDENTIFICATION_OFFSET, GICD_IGROUPR_REG_OFFSET,
-    GICD_IIDR_REG_OFFSET, GICD_IPRIORITYR_REG_OFFSET, GICD_ISACTIVER_REG_OFFSET,
-    GICD_ISENABLER_REG_OFFSET, GICD_ISPENDR_REG_OFFSET, GICD_ITARGETSR_REG_OFFSET, GICD_LOCK,
-    GICD_SGIR_REG_OFFSET, GICD_SGIR_ROUTING_SHIFT, GICD_SGIR_TARGET_LIST_FILTER_SHIFT,
-    GICD_TYPER_REG_OFFSET, GICV2_CONFIG_REGS_NUM, GICV2_INT_REGS_NUM, GICV2_PRIO_REGS_NUM,
+    get_max_int_num, GICD, GICD_CPENDSGIR_REG_OFFSET, GICD_CTRL_REG_OFFSET,
+    GICD_ICACTIVER_REG_OFFSET, GICD_ICENABLER_REG_OFFSET, GICD_ICFGR_REG_OFFSET,
+    GICD_ICPENDR_REG_OFFSET, GICD_IDENTIFICATION_NUM, GICD_IDENTIFICATION_OFFSET,
+    GICD_IGROUPR_REG_OFFSET, GICD_IIDR_REG_OFFSET, GICD_IPRIORITYR_REG_OFFSET,
+    GICD_ISACTIVER_REG_OFFSET, GICD_ISENABLER_REG_OFFSET, GICD_ISPENDR_REG_OFFSET,
+    GICD_ITARGETSR_REG_OFFSET, GICD_LOCK, GICD_SGIR_REG_OFFSET, GICD_SGIR_ROUTING_SHIFT,
+    GICD_SGIR_TARGET_LIST_FILTER_SHIFT, GICD_SPENDSGIR_REG_OFFSET, GICD_TYPER_REG_OFFSET,
+    GICV2_CONFIG_REGS_NUM, GICV2_INT_REGS_NUM, GICV2_PRIO_REGS_NUM, GICV2_SGI_REGS_NUM,
     GICV2_TARGET_REGS_NUM,
 };
 use crate::device::irqchip::gicv2::GICV2;
@@ -272,6 +274,133 @@ pub fn set_sgi_irq(irq_id: usize, target_list: usize, routing_mode: usize) {
     GICD.get().unwrap().set_sgir(val as u32);
 }
 
+fn read_guest_sgi_source_mask(target_cpu: usize, irq_id: usize, lr_source_mask: u8) -> u8 {
+    let target = get_cpu_data(target_cpu);
+    let software = if target.vcpu.irq.pending_mask(irq_id, 1) != 0 {
+        target.vcpu.arch.sgi_source[irq_id].load(core::sync::atomic::Ordering::Acquire)
+    } else {
+        0
+    };
+    software | lr_source_mask
+}
+
+fn handle_gicd_sgi_pending_access(mmio: &mut MMIOAccess, is_clear: bool) -> HvResult {
+    let target_cpu = this_cpu_id();
+    let word_offset = mmio.address & 0x3;
+    let shift = word_offset * 8;
+    let width_mask = if mmio.size == 4 {
+        u32::MAX
+    } else {
+        ((1u32 << (mmio.size * 8)) - 1) << shift
+    };
+    if mmio.is_write {
+        let value = ((mmio.value as u32) << shift) & width_mask;
+        for byte in 0..4 {
+            if width_mask & (0xff << (byte * 8)) == 0 {
+                continue;
+            }
+            let source_mask = ((value >> (byte * 8)) & 0xff) as u8;
+            let base = if is_clear {
+                GICD_CPENDSGIR_REG_OFFSET
+            } else {
+                GICD_SPENDSGIR_REG_OFFSET
+            };
+            let irq_id = ((mmio.address & !3) - base) / 4 * 4 + byte;
+            if irq_id >= 16 {
+                continue;
+            }
+            if is_clear {
+                crate::device::irqchip::gicv2::gic::clear_guest_sgi_pending_sources(
+                    target_cpu,
+                    irq_id,
+                    source_mask,
+                );
+            } else {
+                for source in 0..8 {
+                    if source_mask & (1 << source) != 0 {
+                        crate::device::irqchip::post_guest_irq(target_cpu, irq_id, Some(source));
+                    }
+                }
+            }
+        }
+        return Ok(());
+    }
+
+    let register_base = if is_clear {
+        GICD_CPENDSGIR_REG_OFFSET
+    } else {
+        GICD_SPENDSGIR_REG_OFFSET
+    };
+    let word_index = ((mmio.address & !3) - register_base) / 4;
+    let lr_summary = crate::device::irqchip::gicv2::gic::read_pending_sgi_lr_summary();
+    let mut value = 0u32;
+    for byte in 0..4 {
+        let irq_id = word_index * 4 + byte;
+        value |= (read_guest_sgi_source_mask(target_cpu, irq_id, lr_summary.source_masks[irq_id])
+            as u32)
+            << (byte * 8);
+    }
+    mmio.value = ((value & width_mask) >> shift) as usize;
+    Ok(())
+}
+
+fn handle_gicd_spendsgir_access(mmio: &mut MMIOAccess) -> HvResult {
+    handle_gicd_sgi_pending_access(mmio, false)
+}
+
+fn handle_gicd_cpendsgir_access(mmio: &mut MMIOAccess) -> HvResult {
+    handle_gicd_sgi_pending_access(mmio, true)
+}
+
+fn handle_gicd_intid_pending_access(
+    mmio: &mut MMIOAccess,
+    is_clear: bool,
+    gicd_base: usize,
+) -> HvResult {
+    let target_cpu = this_cpu_id();
+    let shift = (mmio.address & 0x3) * 8;
+    let width_mask = if mmio.size == 4 {
+        u32::MAX
+    } else {
+        ((1u32 << (mmio.size * 8)) - 1) << shift
+    };
+    if mmio.is_write {
+        let value = ((mmio.value as u32) << shift) & width_mask;
+        for irq_id in 0..16 {
+            if value & (1 << irq_id) == 0 {
+                continue;
+            }
+            if is_clear {
+                crate::device::irqchip::gicv2::gic::clear_guest_sgi_pending(target_cpu, irq_id);
+            } else {
+                crate::device::irqchip::post_guest_irq(target_cpu, irq_id, Some(target_cpu));
+            }
+        }
+        if mmio.size == 4 && shift == 0 {
+            mmio.value = (value & !0xffff) as usize;
+            mmio_perform_access(gicd_base, mmio);
+        } else if shift >= 16 {
+            mmio_perform_access(gicd_base, mmio);
+        }
+        return Ok(());
+    }
+    mmio_perform_access(gicd_base, mmio);
+    let physical_value = ((mmio.value as u32) << shift) & width_mask;
+    let lr_pending = crate::device::irqchip::gicv2::gic::read_pending_sgi_lr_summary();
+    let mut value = get_cpu_data(target_cpu).vcpu.irq.pending_mask(0, 16) as u32;
+    value |= lr_pending.pending_mask;
+    mmio.value = ((((physical_value & !0xffff) | value) & width_mask) >> shift) as usize;
+    Ok(())
+}
+
+fn handle_gicd_ispendr_access(mmio: &mut MMIOAccess, gicd_base: usize) -> HvResult {
+    handle_gicd_intid_pending_access(mmio, false, gicd_base)
+}
+
+fn handle_gicd_icpendr_access(mmio: &mut MMIOAccess, gicd_base: usize) -> HvResult {
+    handle_gicd_intid_pending_access(mmio, true, gicd_base)
+}
+
 // Handle GIC Distributor register accesses.
 pub fn vgicv2_dist_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
     let gicd_base = GICV2.get().unwrap().gicd_base;
@@ -282,8 +411,32 @@ pub fn vgicv2_dist_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
             if !mmio.is_write {
                 return Ok(());
             }
-            mmio_perform_access(gicd_base, mmio);
+            crate::arch::ipi::handle_guest_sgir(mmio.value as u32);
             Ok(())
+        }
+        reg if reg_range(GICD_ISPENDR_REG_OFFSET, 1, GICV2_REG_WIDTH).contains(&reg) => {
+            handle_gicd_ispendr_access(mmio, gicd_base)
+        }
+        reg if reg_range(GICD_ICPENDR_REG_OFFSET, 1, GICV2_REG_WIDTH).contains(&reg) => {
+            handle_gicd_icpendr_access(mmio, gicd_base)
+        }
+        reg if reg_range(
+            GICD_CPENDSGIR_REG_OFFSET,
+            GICV2_SGI_REGS_NUM,
+            GICV2_REG_WIDTH,
+        )
+        .contains(&reg) =>
+        {
+            handle_gicd_cpendsgir_access(mmio)
+        }
+        reg if reg_range(
+            GICD_SPENDSGIR_REG_OFFSET,
+            GICV2_SGI_REGS_NUM,
+            GICV2_REG_WIDTH,
+        )
+        .contains(&reg) =>
+        {
+            handle_gicd_spendsgir_access(mmio)
         }
         reg if reg_range(
             GICD_ITARGETSR_REG_OFFSET,

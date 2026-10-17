@@ -112,7 +112,7 @@ fn handle_irq(vector: u8) {
         IdtVector::I8042_KEYBOARD_VECTOR if !is_timer => {}
         IdtVector::APIC_SPURIOUS_VECTOR | IdtVector::APIC_ERROR_VECTOR if !is_timer => {}
         _ => {
-            if vector >= 0x20 && this_cpu_data().vcpu_state.is_running() {
+            if vector >= 0x20 && this_cpu_data().vcpu.state.is_running() {
                 inject_vector(this_cpu_id(), vector, None, false);
             }
         }

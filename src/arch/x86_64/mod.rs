@@ -36,9 +36,11 @@ pub mod s1pt;
 pub mod s2pt;
 pub mod time;
 pub mod trap;
+pub mod vcpu;
 pub mod vmcs;
 pub mod vmx;
 pub mod zone;
+pub use vcpu::ArchVcpu;
 
 pub use s1pt::Stage1PageTable;
 pub use s2pt::stage2_mode_detect;

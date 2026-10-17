@@ -347,12 +347,12 @@ pub fn sbi_hsm_start_handler(current_cpu: &mut ArchCpu) -> SbiRet {
         );
         let target_cpu = get_cpu_data(cpuid);
         let _lock = target_cpu.ctrl_lock.lock();
-        if !target_cpu.vcpu_state.is_stopped() {
+        if !target_cpu.vcpu.state.is_stopped() {
             sbi_ret.error = RET_ERR_FAILED;
         } else {
             target_cpu.cpu_on_entry = start_addr;
             target_cpu.dtb_ipa = opaque;
-            target_cpu.vcpu_state.store(VcpuState::Ready);
+            target_cpu.vcpu.state.store(VcpuState::Ready);
             send_event(cpuid, 0, IPI_EVENT_WAKEUP);
         }
         drop(_lock);
