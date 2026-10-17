@@ -679,13 +679,13 @@ fn virtual_ipi_send(target_guest_cpu: usize, ipi_bits: u32, blocking: bool) -> H
         let entry = VIRTUAL_IPI_MAILBOX[target_cpu * 4].load(Ordering::Acquire) as usize;
         let target_data = get_cpu_data(target_cpu);
         let _lock = target_data.ctrl_lock.lock();
-        if target_data.vcpu_state.is_stopped() {
+        if target_data.vcpu.state.is_stopped() {
             debug!(
                 "loongarch64: guest boots vCPU{}(pCPU{}) through IPI, entry={:#x}",
                 target_guest_cpu, target_cpu, entry
             );
             target_data.cpu_on_entry = entry;
-            target_data.vcpu_state.store(VcpuState::Ready);
+            target_data.vcpu.state.store(VcpuState::Ready);
             send_event(target_cpu, SGI_IPI_ID as usize, IPI_EVENT_WAKEUP);
         } else {
             warn!(

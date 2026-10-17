@@ -199,7 +199,7 @@ impl ArchCpu {
             // Return to AArch32 Supervisor (SVC) mode, disable IRQ, FIQ, ABT
             SPSR_EL2.set(0x1D3);
         }
-        this_cpu_data().vcpu_state.store(VcpuState::Running);
+        this_cpu_data().vcpu.state.store(VcpuState::Running);
         info!(
             "cpu {} started at {:#x?}",
             self.cpuid,
@@ -216,7 +216,7 @@ impl ArchCpu {
         assert!(this_cpu_id() == self.cpuid);
         let cpu_data = this_cpu_data();
         let _lock = cpu_data.ctrl_lock.lock();
-        cpu_data.vcpu_state.store(VcpuState::Stopped);
+        cpu_data.vcpu.state.store(VcpuState::Stopped);
         drop(_lock);
 
         // reset current cpu -> pc = 0x0 (wfi)

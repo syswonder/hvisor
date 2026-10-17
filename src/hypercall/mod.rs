@@ -293,9 +293,9 @@ impl<'a> HyperCall<'a> {
         let target_data = get_cpu_data(boot_cpu as _);
         let _lock = target_data.ctrl_lock.lock();
 
-        if target_data.vcpu_state.is_stopped() {
+        if target_data.vcpu.state.is_stopped() {
             info!("boot_cpu: {}", boot_cpu);
-            target_data.vcpu_state.store(VcpuState::Ready);
+            target_data.vcpu.state.store(VcpuState::Ready);
             send_event(boot_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP);
         } else {
             error!("hv_zone_start: cpu {} already on", boot_cpu);
@@ -350,7 +350,7 @@ impl<'a> HyperCall<'a> {
         // wait all zone's cpus shutdown (Stopped only: includes Blocked / Ready / Running)
         while zone_w.cpu_set().iter().any(|cpu_id| {
             let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
-            let not_stopped = !get_cpu_data(cpu_id).vcpu_state.is_stopped();
+            let not_stopped = !get_cpu_data(cpu_id).vcpu.state.is_stopped();
             count += 1;
             if count > MAX_WAIT_TIMES {
                 if not_stopped {

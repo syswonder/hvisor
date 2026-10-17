@@ -232,7 +232,7 @@ impl ArchCpu {
 
         assert!(this_cpu_id() == self.cpuid);
 
-        this_cpu_data().vcpu_state.store(VcpuState::Stopped);
+        this_cpu_data().vcpu.state.store(VcpuState::Stopped);
         self.activate_vmx().unwrap();
 
         // info!("idle! cpuid: {:x}", self.cpuid);
@@ -274,7 +274,7 @@ impl ArchCpu {
     }
 
     pub fn run(&mut self) {
-        if this_cpu_data().vcpu_state.is_running() {
+        if this_cpu_data().vcpu.state.is_running() {
             // x86 wake up cpu will send ipi twice, but we only want once
             return;
         }
@@ -286,7 +286,7 @@ impl ArchCpu {
 
         // info!("run! cpuid: {:x}", self.cpuid);
 
-        per_cpu.vcpu_state.store(VcpuState::Running);
+        per_cpu.vcpu.state.store(VcpuState::Running);
         self.activate_vmx().unwrap();
 
         if !per_cpu.boot_cpu {
@@ -481,7 +481,7 @@ impl ArchCpu {
         // pass-through exceptions, set I/O bitmap and MSR bitmaps
         VmcsControl32::EXCEPTION_BITMAP.write(0)?;
 
-        if this_cpu_data().vcpu_state.is_running() {
+        if this_cpu_data().vcpu.state.is_running() {
             let pio_bitmap = get_pio_bitmap(this_zone_id());
             VmcsControl64::IO_BITMAP_A_ADDR.write(pio_bitmap.a.start_paddr() as _)?;
             VmcsControl64::IO_BITMAP_B_ADDR.write(pio_bitmap.b.start_paddr() as _)?;
@@ -548,7 +548,7 @@ impl ArchCpu {
         VmcsGuest64::IA32_EFER.write(0)?;
 
         // for AP start up, set CS_BASE to entry address, and RIP to 0.
-        if this_cpu_data().vcpu_state.is_running() && !this_cpu_data().boot_cpu {
+        if this_cpu_data().vcpu.state.is_running() && !this_cpu_data().boot_cpu {
             VmcsGuestNW::RIP.write(0)?;
             VmcsGuestNW::CS_BASE.write(entry)?;
         }
@@ -600,7 +600,7 @@ impl ArchCpu {
             .unwrap()
             & (1 << 31)
             != 0;
-        if this_cpu_data().vcpu_state.is_running() && !entry_event_pending {
+        if this_cpu_data().vcpu.state.is_running() && !entry_event_pending {
             check_pending_vectors(self.cpuid);
         }
     }

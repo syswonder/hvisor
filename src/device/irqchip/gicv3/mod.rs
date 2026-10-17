@@ -250,7 +250,7 @@ fn install_pending_guest_irq(irq_id: usize) -> bool {
 
 pub fn flush_current_guest_irqs() {
     let cpu = this_cpu_data();
-    if cpu.zone.is_none() || cpu.vcpu_state.is_stopped() {
+    if cpu.zone.is_none() || cpu.vcpu.state.is_stopped() {
         return;
     }
     let state = &cpu.vcpu.irq;
