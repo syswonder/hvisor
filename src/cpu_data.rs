@@ -233,6 +233,7 @@ impl Debug for VcpuStateCell {
 /// This object, including its architecture-private `arch` member, is the unit
 /// that can later move out of `PerCpu` when fixed 1:N vCPU scheduling returns.
 pub struct Vcpu {
+    pub state: VcpuStateCell,
     pub irq: GuestCpuIrqState,
     pub arch: ArchVcpu,
 }
@@ -240,6 +241,7 @@ pub struct Vcpu {
 impl Vcpu {
     pub const fn new() -> Self {
         Self {
+            state: VcpuStateCell::new(VcpuState::Stopped),
             irq: GuestCpuIrqState::new(),
             arch: ArchVcpu::new(),
         }
@@ -256,7 +258,6 @@ pub struct PerCpu {
     pub id: usize,
     pub cpu_on_entry: usize,
     pub dtb_ipa: usize,
-    pub vcpu_state: VcpuStateCell,
     /// Current pCPU:vCPU=1:1 temporary colocation; move out for fixed 1:N.
     pub vcpu: Vcpu,
     pub arch_cpu: ArchCpu,
@@ -276,7 +277,6 @@ impl PerCpu {
                 id: arch_cpu.cpuid,
                 cpu_on_entry: INVALID_ADDRESS,
                 dtb_ipa: INVALID_ADDRESS,
-                vcpu_state: VcpuStateCell::new(VcpuState::Stopped),
                 vcpu: Vcpu::new(),
                 arch_cpu,
                 zone: None,
@@ -337,16 +337,16 @@ pub fn this_zone() -> Arc<Zone> {
 #[allow(unused)]
 pub fn vcpu_suspend() {
     info!("cpu {} suspending...", this_cpu_data().id);
-    this_cpu_data().vcpu_state.store(VcpuState::Blocked);
+    this_cpu_data().vcpu.state.store(VcpuState::Blocked);
     loop {
         // TODO: use wfi to optimize the loop
-        if !this_cpu_data().vcpu_state.is_blocked() {
+        if !this_cpu_data().vcpu.state.is_blocked() {
             break;
         }
         core::hint::spin_loop();
     }
     // Remote sets `Ready` to leave Blocked; this hart then marks itself `Running` again.
-    this_cpu_data().vcpu_state.store(VcpuState::Running);
+    this_cpu_data().vcpu.state.store(VcpuState::Running);
     info!("cpu {} resumed from suspend.", this_cpu_data().id);
 }
 
@@ -359,7 +359,7 @@ pub fn wait_for_other_vcpus_suspend(cpu_set: CpuSet) {
             continue;
         }
         loop {
-            if get_cpu_data(target_cpu_id).vcpu_state.is_blocked() {
+            if get_cpu_data(target_cpu_id).vcpu.state.is_blocked() {
                 break;
             }
             core::hint::spin_loop();
@@ -376,7 +376,8 @@ pub fn signal_other_vcpus_resume(cpu_set: CpuSet) {
             continue;
         }
         get_cpu_data(target_cpu_id)
-            .vcpu_state
+            .vcpu
+            .state
             .store(VcpuState::Ready);
     }
 }

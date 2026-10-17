@@ -200,7 +200,7 @@ impl ArchCpu {
         }
 
         assert!(this_cpu_id() == self.cpuid);
-        this_cpu_data().vcpu_state.store(VcpuState::Running);
+        this_cpu_data().vcpu.state.store(VcpuState::Running);
         self.init_interrupt();
 
         // reset all registers related
@@ -223,7 +223,7 @@ impl ArchCpu {
             fn vcpu_arch_entry() -> !;
         }
         assert!(this_cpu_id() == self.cpuid);
-        this_cpu_data().vcpu_state.store(VcpuState::Stopped);
+        this_cpu_data().vcpu.state.store(VcpuState::Stopped);
 
         PARKING_MEMORY_SET.call_once(|| {
             let parking_code: [u8; 8] = [0x73, 0x00, 0x50, 0x10, 0x6F, 0xF0, 0xDF, 0xFF]; // 1: wfi; b 1b

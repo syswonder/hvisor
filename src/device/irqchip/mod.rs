@@ -61,7 +61,7 @@ pub fn post_guest_irq(target_cpu: usize, irq_id: usize, source_cpu: Option<usize
     #[cfg(not(irq_gicv2))]
     let _ = source_cpu;
     let control = target.ctrl_lock.lock();
-    if target.zone.is_none() || target.vcpu_state.is_stopped() {
+    if target.zone.is_none() || target.vcpu.state.is_stopped() {
         return false;
     }
     #[cfg(irq_gicv2)]
@@ -94,7 +94,7 @@ pub fn post_guest_irq(target_cpu: usize, irq_id: usize, source_cpu: Option<usize
 /// can replace `target_pcpu_id` with a resolved `VcpuTarget`.
 pub fn kick_vcpu(target_pcpu_id: usize) {
     let target = get_cpu_data(target_pcpu_id);
-    if target.zone.is_none() || target.vcpu_state.is_stopped() {
+    if target.zone.is_none() || target.vcpu.state.is_stopped() {
         return;
     }
     if target_pcpu_id != this_cpu_data().id {
