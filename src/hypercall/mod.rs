@@ -295,6 +295,7 @@ impl<'a> HyperCall<'a> {
 
         if target_data.vcpu.state.is_stopped() {
             info!("boot_cpu: {}", boot_cpu);
+            target_data.vcpu.clear_irq_state();
             target_data.vcpu.state.store(VcpuState::Ready);
             send_event(boot_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP);
         } else {

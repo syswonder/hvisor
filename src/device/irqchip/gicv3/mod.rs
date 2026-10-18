@@ -27,6 +27,7 @@ use core::sync::atomic::AtomicU64;
 
 use alloc::collections::vec_deque::VecDeque;
 use alloc::vec::Vec;
+use bit_field::BitField;
 use gicr::init_lpi_prop;
 use gits::gits_init;
 use spin::{Lazy, Mutex, Once};
@@ -39,6 +40,7 @@ use crate::arch::zone::GicConfig;
 use crate::config::root_zone_config;
 use crate::consts::{self, MAX_CPU_NUM};
 use crate::cpu_data::this_cpu_data;
+use crate::device::irqchip::SGIS_NUM;
 
 use crate::device::irqchip::gicv3::gits::gits_reset;
 use crate::event::{check_events, dispatch_host_events};
@@ -73,8 +75,7 @@ pub fn gicc_init() {
 
 fn gicv3_clear_pending_irqs() {
     let vtr = read_sysreg!(ich_vtr_el2) as usize;
-    let lr_num: usize = (vtr & 0xf) + 1;
-    for i in 0..lr_num {
+    for i in 0..list_regs_num() {
         write_lr(i, 0) //clear lr
     }
     let num_priority_bits = (vtr >> 29) + 1;
@@ -158,13 +159,55 @@ pub fn gicv3_handle_irq_el1() {
     trace!("handle done")
 }
 
-const LR_VINTID_MASK: u64 = (1 << 32) - 1;
-const LR_PENDING: u64 = 1 << 62;
-const LR_ACTIVE: u64 = 1 << 63;
-const LR_STATE_MASK: u64 = LR_PENDING | LR_ACTIVE;
+/// An ICH_LR<n>_EL2 value.
+#[derive(Clone, Copy)]
+struct IchLr(u64);
+
+impl IchLr {
+    fn new_pending(vintid: usize) -> Self {
+        let mut lr = Self(0);
+        lr.0.set_bits(0..32, vintid as u64);
+        lr.0.set_bit(60, true);
+        lr.set_pending(true);
+        lr
+    }
+
+    fn read(index: usize) -> Self {
+        Self(read_lr(index))
+    }
+
+    fn write(self, index: usize) {
+        write_lr(index, self.0);
+    }
+
+    fn vintid(self) -> usize {
+        self.0.get_bits(0..32) as usize
+    }
+
+    fn is_pending(self) -> bool {
+        self.0.get_bit(62)
+    }
+
+    fn set_pending(&mut self, pending: bool) {
+        self.0.set_bit(62, pending);
+    }
+
+    fn is_active(self) -> bool {
+        self.0.get_bit(63)
+    }
+}
+
+/// Number of implemented List registers.
+//
+// ICH_VTR_EL2.ListRegs[4:0] holds that number minus one. GICv3 defines at
+// most 16 (`ICH_LR0..15_EL2`), which is also all `read_lr()`/`write_lr()` can
+// reach.
+fn list_regs_num() -> usize {
+    (read_sysreg!(ich_vtr_el2).get_bits(0..5) as usize + 1).min(16)
+}
 
 pub fn clear_guest_sgi(target_cpu: usize, irq_id: usize) -> bool {
-    if irq_id >= 16 {
+    if irq_id >= SGIS_NUM {
         return false;
     }
     let target = crate::cpu_data::get_cpu_data(target_cpu);
@@ -181,43 +224,43 @@ pub fn clear_guest_sgi(target_cpu: usize, irq_id: usize) -> bool {
 
 fn try_install_software_sgi(irq_id: usize) -> bool {
     let elsr = read_sysreg!(ich_elrsr_el2);
-    let lr_num = (read_sysreg!(ich_vtr_el2) as usize & 0xf) + 1;
     let mut free_lr = None;
-    for index in 0..lr_num {
-        if (1 << index) & elsr != 0 {
+    for index in 0..list_regs_num() {
+        if elsr.get_bit(index) {
             free_lr.get_or_insert(index);
             continue;
         }
-        let lr = read_lr(index);
-        if lr & LR_VINTID_MASK != irq_id as u64 {
+        let mut lr = IchLr::read(index);
+        if lr.vintid() != irq_id {
             continue;
         }
-        let state = lr & LR_STATE_MASK;
-        if state == 0 || state == LR_ACTIVE {
-            write_lr(index, lr | LR_PENDING);
+        // Active-only LRs become pending; pending ones coalesce.
+        if !lr.is_pending() {
+            lr.set_pending(true);
+            lr.write(index);
         }
         return true;
     }
     let Some(index) = free_lr else {
         return false;
     };
-    write_lr(index, irq_id as u64 | (1 << 60) | LR_PENDING);
+    IchLr::new_pending(irq_id).write(index);
     true
 }
 
 pub(crate) fn clear_lr_pending_irq(irq_id: usize) {
     let elsr = read_sysreg!(ich_elrsr_el2);
-    let lr_num = (read_sysreg!(ich_vtr_el2) as usize & 0xf) + 1;
-    for index in 0..lr_num {
-        if (1 << index) & elsr != 0 {
+    for index in 0..list_regs_num() {
+        if elsr.get_bit(index) {
             continue;
         }
-        let lr = read_lr(index);
-        if lr & LR_VINTID_MASK != irq_id as u64 || lr & LR_PENDING == 0 {
+        let mut lr = IchLr::read(index);
+        if lr.vintid() != irq_id || !lr.is_pending() {
             continue;
         }
-        if lr & LR_ACTIVE != 0 {
-            write_lr(index, lr & !LR_PENDING);
+        if lr.is_active() {
+            lr.set_pending(false);
+            lr.write(index);
         } else {
             write_lr(index, 0);
         }
@@ -226,23 +269,22 @@ pub(crate) fn clear_lr_pending_irq(irq_id: usize) {
 
 pub(crate) fn lr_pending_sgi_mask() -> u32 {
     let elsr = read_sysreg!(ich_elrsr_el2);
-    let lr_num = (read_sysreg!(ich_vtr_el2) as usize & 0xf) + 1;
-    let mut pending = 0;
-    for index in 0..lr_num {
-        if (1 << index) & elsr != 0 {
+    let mut pending = 0u32;
+    for index in 0..list_regs_num() {
+        if elsr.get_bit(index) {
             continue;
         }
-        let lr = read_lr(index);
-        let irq_id = (lr & LR_VINTID_MASK) as usize;
-        if irq_id < 16 && lr & LR_PENDING != 0 {
-            pending |= 1 << irq_id;
+        let lr = IchLr::read(index);
+        let irq_id = lr.vintid();
+        if irq_id < SGIS_NUM && lr.is_pending() {
+            pending.set_bit(irq_id, true);
         }
     }
     pending
 }
 
 fn install_pending_guest_irq(irq_id: usize) -> bool {
-    if irq_id >= 16 {
+    if irq_id >= SGIS_NUM {
         return false;
     }
     try_install_software_sgi(irq_id)
@@ -415,8 +457,7 @@ pub fn inject_irq(irq_id: usize, is_hardware: bool) -> bool {
     const LR_VIRTIRQ_MASK: usize = (1 << 32) - 1;
 
     let elsr: u64 = read_sysreg!(ich_elrsr_el2);
-    let vtr = read_sysreg!(ich_vtr_el2) as usize;
-    let lr_num: usize = (vtr & 0xf) + 1;
+    let lr_num = list_regs_num();
     let mut free_ir = -1 as isize;
     for i in 0..lr_num {
         // find a free list register

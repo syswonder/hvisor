@@ -15,7 +15,7 @@
 //
 use alloc::sync::Arc;
 use core::fmt::{Debug, Formatter, Result};
-use core::sync::atomic::{AtomicU64, AtomicU8, Ordering};
+use core::sync::atomic::{fence, AtomicU64, AtomicU8, Ordering};
 use spin::Mutex;
 
 use crate::arch::{
@@ -129,6 +129,17 @@ impl Vcpu {
         }
     }
 
+    /// Mark `Running` before guest entry.
+    //
+    // The fence pairs with `kick_vcpu()` so a posted IRQ is never missed.
+    pub fn set_running(&self) {
+        self.state.store(VcpuState::Running);
+        fence(Ordering::SeqCst);
+    }
+
+    /// Drop the pending bitmap and architecture-private IRQ state. Call with
+    /// the pCPU's `ctrl_lock` held, on zone shutdown or before handing a
+    /// stopped vCPU to a zone.
     pub fn clear_irq_state(&self) {
         self.irq.clear_all();
         self.arch.clear_irq_state();
@@ -335,7 +346,7 @@ pub fn vcpu_suspend() {
         core::hint::spin_loop();
     }
     // Remote sets `Ready` to leave Blocked; this hart then marks itself `Running` again.
-    this_cpu_data().vcpu.state.store(VcpuState::Running);
+    this_cpu_data().vcpu.set_running();
     info!("cpu {} resumed from suspend.", this_cpu_data().id);
 }
 

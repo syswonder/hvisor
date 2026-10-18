@@ -16,58 +16,85 @@
 
 use crate::device::irqchip::gic_send_event;
 #[cfg(irq_gicv2)]
-use crate::{
-    arch::cpu::this_cpu_id,
-    cpu_data::this_zone,
-    device::irqchip::gicv2::gicd::{GICD_SGIR_ROUTING_SHIFT, GICD_SGIR_TARGET_LIST_FILTER_SHIFT},
-};
+use crate::{arch::cpu::this_cpu_id, cpu_data::this_zone};
 #[cfg(irq_gicv3)]
 use crate::{
     arch::cpu::{cpuid_to_mpidr_affinity, this_cpu_id},
     cpu_data::this_zone,
 };
+use bit_field::BitField;
 
-#[cfg(irq_gicv3)]
-const ICC_SGI1R_TARGET_LIST_MASK: u64 = 0xffff;
+// An ICC_SGI1R_EL1 value written by the guest.
+#[derive(Clone, Copy)]
+struct Sgi1r(u64);
 
-#[cfg(irq_gicv3)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-struct Sgi1r {
-    target_list: u16,
-    aff1: u8,
-    intid: usize,
-    aff2: u8,
-    irm: bool,
-    range_selector: u8,
-    aff3: u8,
-}
-
-#[cfg(irq_gicv3)]
 impl Sgi1r {
-    fn decode(value: u64) -> Self {
-        Self {
-            target_list: (value & ICC_SGI1R_TARGET_LIST_MASK) as u16,
-            aff1: ((value >> 16) & 0xff) as u8,
-            intid: ((value >> 24) & 0xf) as usize,
-            aff2: ((value >> 32) & 0xff) as u8,
-            irm: value & (1 << 40) != 0,
-            range_selector: ((value >> 44) & 0xf) as u8,
-            aff3: ((value >> 48) & 0xff) as u8,
-        }
+    fn target_list(self) -> u16 {
+        self.0.get_bits(0..16) as u16
     }
 
+    fn intid(self) -> usize {
+        self.0.get_bits(24..28) as usize
+    }
+
+    // Interrupt Routing Mode: target every PE except the requester.
+    fn irm(self) -> bool {
+        self.0.get_bit(40)
+    }
+
+    #[cfg(irq_gicv3)]
+    fn aff1(self) -> u64 {
+        self.0.get_bits(16..24)
+    }
+
+    #[cfg(irq_gicv3)]
+    fn aff2(self) -> u64 {
+        self.0.get_bits(32..40)
+    }
+
+    #[cfg(irq_gicv3)]
+    fn range_selector(self) -> u64 {
+        self.0.get_bits(44..48)
+    }
+
+    #[cfg(irq_gicv3)]
+    fn aff3(self) -> u64 {
+        self.0.get_bits(48..56)
+    }
+
+    #[cfg(irq_gicv3)]
     fn targets(self, cpu_id: usize, source_cpu: usize) -> bool {
-        if self.irm {
+        if self.irm() {
             return cpu_id != source_cpu;
         }
         let (aff3, aff2, aff1, aff0) = cpuid_to_mpidr_affinity(cpu_id as u64);
-        let target_aff0 = self.range_selector as u64 * 16;
-        aff3 == self.aff3 as u64
-            && aff2 == self.aff2 as u64
-            && aff1 == self.aff1 as u64
+        let target_aff0 = self.range_selector() * 16;
+        aff3 == self.aff3()
+            && aff2 == self.aff2()
+            && aff1 == self.aff1()
             && aff0 >= target_aff0
             && aff0 < target_aff0 + 16
-            && self.target_list & (1 << (aff0 - target_aff0)) != 0
+            && self.target_list().get_bit((aff0 - target_aff0) as usize)
+    }
+}
+
+// A GICD_SGIR value written by the guest.
+#[cfg(irq_gicv2)]
+#[derive(Clone, Copy)]
+struct Sgir(u32);
+
+#[cfg(irq_gicv2)]
+impl Sgir {
+    fn intid(self) -> usize {
+        self.0.get_bits(0..4) as usize
+    }
+
+    fn target_list(self) -> u8 {
+        self.0.get_bits(16..24) as u8
+    }
+
+    fn target_list_filter(self) -> u32 {
+        self.0.get_bits(24..26)
     }
 }
 
@@ -92,14 +119,15 @@ pub fn arch_check_events(event: Option<usize>) {
 
 #[cfg(irq_gicv3)]
 pub fn handle_guest_sgi1r(value: u64) {
-    let sgi = Sgi1r::decode(value);
+    let sgi = Sgi1r(value);
     let source_cpu = this_cpu_id();
     for target_cpu in this_zone().cpu_set().iter() {
         if sgi.targets(target_cpu, source_cpu) {
-            if !crate::device::irqchip::post_guest_irq(target_cpu, sgi.intid, None) {
+            if !crate::device::irqchip::post_guest_irq(target_cpu, sgi.intid(), None) {
                 error!(
                     "failed to post guest SGI {} to CPU{}",
-                    sgi.intid, target_cpu
+                    sgi.intid(),
+                    target_cpu
                 );
             }
         }
@@ -108,25 +136,22 @@ pub fn handle_guest_sgi1r(value: u64) {
 
 #[cfg(irq_gicv2)]
 pub fn handle_guest_sgi1r(value: u64) {
-    let target_list = (value & 0xffff) as usize;
-    let routing_mode = if value & (1 << 40) != 0 { 1 } else { 0 };
-    let irq_id = ((value >> 24) & 0xf) as usize;
-    handle_guest_sgir(
-        irq_id as u32
-            | ((target_list as u32) << GICD_SGIR_TARGET_LIST_FILTER_SHIFT)
-            | ((routing_mode as u32) << GICD_SGIR_ROUTING_SHIFT),
-    );
+    let sgi = Sgi1r(value);
+    post_guest_sgi(sgi.intid(), sgi.target_list() as u8, sgi.irm() as u32);
 }
 
 #[cfg(irq_gicv2)]
 pub fn handle_guest_sgir(value: u32) {
+    let sgi = Sgir(value);
+    post_guest_sgi(sgi.intid(), sgi.target_list(), sgi.target_list_filter());
+}
+
+#[cfg(irq_gicv2)]
+fn post_guest_sgi(irq_id: usize, target_list: u8, filter: u32) {
     let source_cpu = this_cpu_id();
-    let irq_id = (value & 0xf) as usize;
-    let target_list = ((value >> GICD_SGIR_TARGET_LIST_FILTER_SHIFT) & 0xff) as usize;
-    let routing_mode = (value >> GICD_SGIR_ROUTING_SHIFT) & 0x3;
     for target_cpu in this_zone().cpu_set().iter() {
-        let selected = match routing_mode {
-            0 => target_list & (1 << target_cpu) != 0,
+        let selected = match filter {
+            0 => target_cpu < 8 && target_list.get_bit(target_cpu),
             1 => target_cpu != source_cpu,
             2 => target_cpu == source_cpu,
             _ => false,

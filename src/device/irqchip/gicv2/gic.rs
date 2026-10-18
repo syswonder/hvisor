@@ -18,8 +18,8 @@ use crate::cpu_data::this_cpu_data;
 use crate::device::irqchip::gicv2::gicc::GICC;
 use crate::device::irqchip::gicv2::gicd::GICV2_SGIS_NUM;
 use crate::device::irqchip::gicv2::gich::{
-    GICH, GICV2_GICH_HCR_UIE, GICV2_GICH_LR_ACTIVE_STATE, GICV2_GICH_LR_CPUID_SHIFT,
-    GICV2_GICH_LR_HW, GICV2_GICH_LR_PENDING_STATE, GICV2_GICH_LR_PHYSID_SHIFT,
+    GicHypervisorInterface, GichLr, GICH, GICV2_GICH_HCR_UIE, GICV2_GICH_LR_HW,
+    GICV2_GICH_LR_PENDING_STATE, GICV2_GICH_LR_PHYSID_SHIFT,
 };
 use crate::event::{check_events, dispatch_host_events};
 use crate::hypercall::SGI_IPI_ID;
@@ -29,6 +29,8 @@ use crate::hypercall::SGI_IPI_ID;
 /// 1. gicv2 spec : https://www.cl.cam.ac.uk/research/srg/han/ACS-P35/zynq/arm_gic_architecture_specification.pdf
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
+use bit_field::BitField;
+use core::sync::atomic::Ordering;
 use spin::{Mutex, Once};
 
 // gicv2 support max 8 cpus
@@ -85,6 +87,7 @@ pub fn change_underflow_maintenance(is_enable: bool) {
 
 fn handle_maintenace_interrupt() {
     info!("handle_maintenace_interrupt");
+    handle_sgi_eoi_maintenance();
     flush_current_guest_irqs();
     while let Some((irq_id, is_sgi)) = PENDING_VIRQS.get().unwrap().fetch_irq() {
         let is_injected: bool = inject_irq(irq_id, is_sgi);
@@ -104,62 +107,104 @@ fn has_pending_maintenance_work() -> bool {
     this_cpu_data().vcpu.irq.has_pending() || PENDING_VIRQS.get().unwrap().has_pending()
 }
 
-const VINTID_MASK: usize = 0x3ff;
+fn empty_lr_mask(gich: &GicHypervisorInterface) -> u64 {
+    (gich.get_elrsr(1) as u64) << 32 | gich.get_elrsr(0) as u64
+}
 
-fn try_install_software_sgi(irq_id: usize, source_cpu: usize) -> bool {
+enum SgiInstall {
+    Installed,
+    // Another source of the same SGI occupies an LR; EOI maintenance was
+    // requested on that LR.
+    Deferred,
+    NoFreeLr,
+}
+
+// Install one SGI source into the local LRs.
+//
+// GICv2 requires every valid LR of a virtual CPU interface to have a unique
+// VirtualID, so the same SGI from another source cannot get its own LR. That
+// source waits for the guest to deactivate the current LR, which raises an EOI
+// maintenance interrupt because of `GICH_LR.EOI`.
+fn try_install_software_sgi(irq_id: usize, source_cpu: usize) -> SgiInstall {
     let gich = GICH.get().unwrap();
-    let elrsr = (gich.get_elrsr(1) as u64) << 32 | gich.get_elrsr(0) as u64;
-    let lr_num = gich.get_lrs_num() as usize;
+    let empty_lrs = empty_lr_mask(gich);
     let mut free_lr = None;
-    for index in 0..lr_num {
-        if elrsr & (1u64 << index) != 0 {
+    for index in 0..=gich.get_lr_num() as usize {
+        if empty_lrs.get_bit(index) {
             free_lr.get_or_insert(index);
             continue;
         }
-        let lr = gich.get_lr(index) as usize;
-        let lr_source = (lr >> GICV2_GICH_LR_CPUID_SHIFT) & 0x7;
-        if lr & VINTID_MASK != irq_id || lr_source != source_cpu {
+        let mut lr = GichLr::read(index);
+        if lr.vintid() != irq_id {
             continue;
         }
-        if lr & GICV2_GICH_LR_PENDING_STATE != 0 {
-            return true;
+        if lr.source_cpu() == source_cpu {
+            lr.set_pending(true);
+            lr.write(index);
+            return SgiInstall::Installed;
         }
-        gich.set_lr(
-            index,
-            (lr | GICV2_GICH_LR_PENDING_STATE | (source_cpu << GICV2_GICH_LR_CPUID_SHIFT)) as u32,
-        );
-        return true;
+        lr.set_eoi(true);
+        lr.write(index);
+        return SgiInstall::Deferred;
     }
     let Some(index) = free_lr else {
-        return false;
+        return SgiInstall::NoFreeLr;
     };
-    gich.set_lr(
-        index,
-        (irq_id | GICV2_GICH_LR_PENDING_STATE | (source_cpu << GICV2_GICH_LR_CPUID_SHIFT)) as u32,
-    );
-    true
+    GichLr::new_pending_sgi(irq_id, source_cpu).write(index);
+    SgiInstall::Installed
 }
 
 fn install_pending_guest_irq(cpu: &crate::cpu_data::PerCpu, irq_id: usize) -> bool {
     if irq_id >= GICV2_SGIS_NUM {
         return false;
     }
-    let source_mask = cpu.vcpu.arch.sgi_source[irq_id].load(core::sync::atomic::Ordering::Acquire);
-    let source_cpu = source_mask.trailing_zeros() as usize;
+    let sources = &cpu.vcpu.arch.sgi_source[irq_id];
+    let source_cpu = sources.load(Ordering::Acquire).trailing_zeros() as usize;
     if source_cpu >= 8 {
-        return false;
+        // Every source was cleared after the SGI was posted.
+        return true;
     }
-    cpu.vcpu.arch.sgi_source[irq_id]
-        .fetch_and(!(1u8 << source_cpu), core::sync::atomic::Ordering::AcqRel);
-    if !try_install_software_sgi(irq_id, source_cpu) {
-        cpu.vcpu.arch.sgi_source[irq_id]
-            .fetch_or(1u8 << source_cpu, core::sync::atomic::Ordering::AcqRel);
-        return false;
+    let source_bit = 1u8 << source_cpu;
+    sources.fetch_and(!source_bit, Ordering::AcqRel);
+    match try_install_software_sgi(irq_id, source_cpu) {
+        SgiInstall::Installed => {
+            if sources.load(Ordering::Acquire) != 0 {
+                cpu.vcpu.irq.set(irq_id);
+            }
+            true
+        }
+        SgiInstall::Deferred => {
+            // The source stays in `sgi_source`; EOI maintenance reposts it.
+            sources.fetch_or(source_bit, Ordering::AcqRel);
+            true
+        }
+        SgiInstall::NoFreeLr => {
+            sources.fetch_or(source_bit, Ordering::AcqRel);
+            false
+        }
     }
-    if cpu.vcpu.arch.sgi_source[irq_id].load(core::sync::atomic::Ordering::Acquire) != 0 {
-        cpu.vcpu.irq.set(irq_id);
+}
+
+// Handle EOI maintenance for SGI LRs: free each deactivated SGI LR that
+// requested it for a deferred source, and repost that SGI if any source is
+// still pending.
+fn handle_sgi_eoi_maintenance() {
+    let cpu = this_cpu_data();
+    let gich = GICH.get().unwrap();
+    let eoi_lrs = (gich.get_eisr(1) as u64) << 32 | gich.get_eisr(0) as u64;
+    for index in 0..=gich.get_lr_num() as usize {
+        if !eoi_lrs.get_bit(index) {
+            continue;
+        }
+        let irq_id = GichLr::read(index).vintid();
+        if irq_id >= GICV2_SGIS_NUM {
+            continue;
+        }
+        gich.set_lr(index, 0);
+        if cpu.vcpu.arch.sgi_source[irq_id].load(Ordering::Acquire) != 0 {
+            cpu.vcpu.irq.set(irq_id);
+        }
     }
-    true
 }
 
 pub fn flush_current_guest_irqs() {
@@ -185,11 +230,9 @@ pub fn clear_guest_sgi_pending_sources(target_cpu: usize, irq_id: usize, source_
     }
     let target = crate::cpu_data::get_cpu_data(target_cpu);
     let control = target.ctrl_lock.lock();
-    target.vcpu.arch.sgi_source[irq_id]
-        .fetch_and(!source_mask, core::sync::atomic::Ordering::AcqRel);
-    let pending_cleared =
-        target.vcpu.arch.sgi_source[irq_id].load(core::sync::atomic::Ordering::Acquire) == 0
-            && target.vcpu.irq.clear(irq_id);
+    target.vcpu.arch.sgi_source[irq_id].fetch_and(!source_mask, Ordering::AcqRel);
+    let pending_cleared = target.vcpu.arch.sgi_source[irq_id].load(Ordering::Acquire) == 0
+        && target.vcpu.irq.clear(irq_id);
     drop(control);
     if target_cpu == this_cpu_id() {
         clear_lr_pending_sgi(irq_id, source_mask);
@@ -199,23 +242,26 @@ pub fn clear_guest_sgi_pending_sources(target_cpu: usize, irq_id: usize, source_
 
 fn clear_lr_pending_sgi(irq_id: usize, source_mask: u8) {
     let gich = GICH.get().unwrap();
-    let elrsr = (gich.get_elrsr(1) as u64) << 32 | gich.get_elrsr(0) as u64;
-    for index in 0..gich.get_lrs_num() as usize {
-        if elrsr & (1u64 << index) != 0 {
+    let empty_lrs = empty_lr_mask(gich);
+    for index in 0..=gich.get_lr_num() as usize {
+        if empty_lrs.get_bit(index) {
             continue;
         }
-        let lr = gich.get_lr(index) as usize;
-        let source = (lr >> GICV2_GICH_LR_CPUID_SHIFT) & 0x7;
-        if lr & VINTID_MASK != irq_id
-            || lr & GICV2_GICH_LR_PENDING_STATE == 0
-            || source_mask & (1 << source) == 0
-        {
+        let mut lr = GichLr::read(index);
+        if lr.vintid() != irq_id || !lr.is_pending() || !source_mask.get_bit(lr.source_cpu()) {
             continue;
         }
-        if lr & GICV2_GICH_LR_ACTIVE_STATE != 0 {
-            gich.set_lr(index, (lr & !GICV2_GICH_LR_PENDING_STATE) as u32);
+        if lr.is_active() {
+            lr.set_pending(false);
+            lr.write(index);
         } else {
             gich.set_lr(index, 0);
+            // The freed LR may have carried the EOI request of a deferred
+            // source, so hand that source back to the pending bitmap.
+            let cpu = this_cpu_data();
+            if cpu.vcpu.arch.sgi_source[irq_id].load(Ordering::Acquire) != 0 {
+                cpu.vcpu.irq.set(irq_id);
+            }
         }
     }
 }
@@ -227,34 +273,23 @@ pub(crate) struct PendingSgiLrSummary {
 
 pub(crate) fn read_pending_sgi_lr_summary() -> PendingSgiLrSummary {
     let gich = GICH.get().unwrap();
-    let elrsr = (gich.get_elrsr(1) as u64) << 32 | gich.get_elrsr(0) as u64;
+    let empty_lrs = empty_lr_mask(gich);
     let mut summary = PendingSgiLrSummary {
         pending_mask: 0,
         source_masks: [0; GICV2_SGIS_NUM],
     };
-    for index in 0..gich.get_lrs_num() as usize {
-        if elrsr & (1u64 << index) != 0 {
+    for index in 0..=gich.get_lr_num() as usize {
+        if empty_lrs.get_bit(index) {
             continue;
         }
-        let lr = gich.get_lr(index) as usize;
-        let irq_id = lr & VINTID_MASK;
-        if irq_id < GICV2_SGIS_NUM && lr & GICV2_GICH_LR_PENDING_STATE != 0 {
-            summary.pending_mask |= 1 << irq_id;
-            summary.source_masks[irq_id] |= 1 << ((lr >> GICV2_GICH_LR_CPUID_SHIFT) & 0x7);
+        let lr = GichLr::read(index);
+        let irq_id = lr.vintid();
+        if irq_id < GICV2_SGIS_NUM && lr.is_pending() {
+            summary.pending_mask.set_bit(irq_id, true);
+            summary.source_masks[irq_id].set_bit(lr.source_cpu(), true);
         }
     }
     summary
-}
-
-pub fn read_lr_pending_sgi_source_mask(irq_id: usize) -> u8 {
-    if irq_id >= GICV2_SGIS_NUM {
-        return 0;
-    }
-    read_pending_sgi_lr_summary().source_masks[irq_id]
-}
-
-pub fn read_lr_pending_sgi_mask() -> u32 {
-    read_pending_sgi_lr_summary().pending_mask
 }
 
 pub fn inject_irq(irq_id: usize, is_sgi: bool) -> bool {

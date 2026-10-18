@@ -177,17 +177,12 @@ pub fn check_events() -> bool {
     handle_event(fetch_event(this_cpu_data().id))
 }
 
-/// Run the migration-time IRQ flush hooks around an architecture's existing
-/// legacy event dispatch behavior.
-///
-/// New posted IRQ state and the legacy FIFO intentionally coexist during the
-/// migration. Each architecture retains its existing legacy FIFO drain
-/// behavior through `drain_legacy_events`; this layer adds no batching or
-/// scheduling policy. The IRQ flush is controller-specific.
-pub fn dispatch_host_events<T>(drain_legacy_events: impl FnOnce() -> T) -> T {
+/// Flush posted guest IRQs, then drain the legacy `PERCPU_EVENTS` FIFO.
+//
+// FIXME: Only the flush remains once every event class has left `PERCPU_EVENTS`.
+pub fn dispatch_host_events(drain_legacy_events: impl FnOnce()) {
     crate::device::irqchip::flush_current_guest_irqs();
-    let result = drain_legacy_events();
-    result
+    drain_legacy_events();
 }
 
 /// Handle one queued event, returning whether an event was present.

@@ -286,7 +286,7 @@ impl ArchCpu {
 
         // info!("run! cpuid: {:x}", self.cpuid);
 
-        per_cpu.vcpu.state.store(VcpuState::Running);
+        per_cpu.vcpu.set_running();
         self.activate_vmx().unwrap();
 
         if !per_cpu.boot_cpu {

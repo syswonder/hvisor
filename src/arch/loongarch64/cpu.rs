@@ -62,7 +62,7 @@ impl ArchCpu {
     pub fn run(&mut self) -> ! {
         assert!(this_cpu_id() == self.get_cpuid());
         this_cpu_data().activate_gpm();
-        this_cpu_data().vcpu.state.store(VcpuState::Running);
+        this_cpu_data().vcpu.set_running();
         if !self.init {
             self.init(this_cpu_data().cpu_on_entry, this_cpu_data().id, 0);
             self.init = true;

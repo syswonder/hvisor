@@ -15,6 +15,7 @@
 //
 use super::CPU_UNUSED_GICR_BASE;
 use super::{gicd::GICD_LOCK, is_spi};
+use crate::device::irqchip::PendingR0;
 use crate::platform::BOARD_MPIDR_MAPPINGS;
 use crate::{
     arch::zone::{GicConfig, HvArchZoneConfig},
@@ -31,6 +32,8 @@ use crate::{
     zone::{this_zone_id, Zone},
 };
 use alloc::sync::Arc;
+use bit_field::BitField;
+
 pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> {
     base..(base + n * size)
 }
@@ -275,10 +278,23 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
                 let is_sgi_set_pending = reg == GICR_SGI_BASE + GICR_ISPENDR;
                 let is_sgi_clear_pending = reg == GICR_SGI_BASE + GICR_ICPENDR;
                 if is_sgi_set_pending || is_sgi_clear_pending {
+                    // GICR_ISPENDR0/ICPENDR0 only support aligned 32-bit
+                    // accesses; others would misplace the SGI/PPI split.
+                    if mmio.size != 4 || mmio.address % 4 != 0 {
+                        warn!(
+                            "ignore unsupported GICR SGI pending access at {:#x} with size {}",
+                            mmio.address, mmio.size
+                        );
+                        if !mmio.is_write {
+                            mmio.value = 0;
+                        }
+                        return HvResult::Ok(());
+                    }
                     if mmio.is_write {
-                        let mask = mmio.value as u32 & 0xffff;
-                        for irq_id in 0..16 {
-                            if mask & (1 << irq_id) == 0 {
+                        let mut reg = PendingR0::from_raw(mmio.value as u32);
+                        let sgis = reg.sgis();
+                        for irq_id in 0..crate::device::irqchip::SGIS_NUM {
+                            if !sgis.get_bit(irq_id) {
                                 continue;
                             }
                             if is_sgi_set_pending {
@@ -288,15 +304,22 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
                             }
                         }
                         // Preserve physical PPI writes in bits 16..31 only.
-                        mmio.value &= !0xffff;
+                        reg.set_sgis(0);
+                        mmio.value = reg.raw() as usize;
                         mmio_perform_access(gicr_base, mmio);
                     } else {
                         mmio_perform_access(gicr_base, mmio);
-                        let mut value = get_cpu_data(cpu).vcpu.irq.pending_mask(0, 16) as u32;
+                        let mut sgis = get_cpu_data(cpu)
+                            .vcpu
+                            .irq
+                            .pending_mask(0, crate::device::irqchip::SGIS_NUM)
+                            as u32;
                         if cpu == crate::arch::cpu::this_cpu_id() {
-                            value |= super::lr_pending_sgi_mask();
+                            sgis |= super::lr_pending_sgi_mask();
                         }
-                        mmio.value = (mmio.value & !0xffff) | value as usize;
+                        let mut reg = PendingR0::from_raw(mmio.value as u32);
+                        reg.set_sgis(sgis as u16);
+                        mmio.value = reg.raw() as usize;
                     }
                     return HvResult::Ok(());
                 }

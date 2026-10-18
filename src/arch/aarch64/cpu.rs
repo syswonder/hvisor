@@ -199,7 +199,7 @@ impl ArchCpu {
             // Return to AArch32 Supervisor (SVC) mode, disable IRQ, FIQ, ABT
             SPSR_EL2.set(0x1D3);
         }
-        this_cpu_data().vcpu.state.store(VcpuState::Running);
+        this_cpu_data().vcpu.set_running();
         info!(
             "cpu {} started at {:#x?}",
             self.cpuid,

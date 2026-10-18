@@ -29,7 +29,7 @@ use tock_registers::registers::{ReadOnly, ReadWrite};
 
 // GICV2 interrupt layout.
 pub const GICV2_INTS_MAX: usize = 1024;
-pub const GICV2_SGIS_NUM: usize = 16;
+pub const GICV2_SGIS_NUM: usize = crate::device::irqchip::SGIS_NUM;
 pub const GICV2_PPIS_NUM: usize = 16;
 pub const GICV2_PRIVATE_INTS_NUM: usize = GICV2_SGIS_NUM + GICV2_PPIS_NUM;
 

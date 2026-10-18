@@ -200,7 +200,7 @@ impl ArchCpu {
         }
 
         assert!(this_cpu_id() == self.cpuid);
-        this_cpu_data().vcpu.state.store(VcpuState::Running);
+        this_cpu_data().vcpu.set_running();
         self.init_interrupt();
 
         // reset all registers related

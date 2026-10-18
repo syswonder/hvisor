@@ -432,6 +432,7 @@ fn psci_emulate_cpu_on(regs: &mut GeneralRegisters) -> u64 {
 
     if target_data.vcpu.state.is_stopped() {
         target_data.cpu_on_entry = regs.usr[2] as _;
+        target_data.vcpu.clear_irq_state();
         target_data.vcpu.state.store(VcpuState::Ready);
         send_event(cpu as _, SGI_IPI_ID as _, IPI_EVENT_WAKEUP);
     } else {
@@ -479,8 +480,12 @@ fn handle_psci_smc(
                 send_event(cpu_id, SGI_IPI_ID as _, IPI_EVENT_SHUTDOWN);
             }
 
-            this_cpu_data().vcpu.clear_irq_state();
-            this_cpu_data().zone = None;
+            {
+                let cpu_data = this_cpu_data();
+                let _lock = cpu_data.ctrl_lock.lock();
+                cpu_data.vcpu.clear_irq_state();
+                cpu_data.zone = None;
+            }
             drop(zone);
             remove_zone(zone_id);
 
