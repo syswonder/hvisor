@@ -108,6 +108,10 @@ impl GicHypervisorInterface {
         self.ELRSR[index].get()
     }
 
+    pub fn get_eisr(&self, index: usize) -> u32 {
+        self.EISR[index].get()
+    }
+
     pub fn get_lr(&self, index: usize) -> u32 {
         self.LR[index].get()
     }
