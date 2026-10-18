@@ -18,8 +18,9 @@ use crate::cpu_data::this_cpu_data;
 use crate::device::irqchip::gicv2::gicc::GICC;
 use crate::device::irqchip::gicv2::gicd::GICV2_SGIS_NUM;
 use crate::device::irqchip::gicv2::gich::{
-    GICH, GICV2_GICH_HCR_UIE, GICV2_GICH_LR_ACTIVE_STATE, GICV2_GICH_LR_CPUID_SHIFT,
-    GICV2_GICH_LR_HW, GICV2_GICH_LR_PENDING_STATE, GICV2_GICH_LR_PHYSID_SHIFT,
+    GicHypervisorInterface, GICH, GICV2_GICH_HCR_UIE, GICV2_GICH_LR_ACTIVE_BIT,
+    GICV2_GICH_LR_CPUID_BITS, GICV2_GICH_LR_EOI_BIT, GICV2_GICH_LR_HW, GICV2_GICH_LR_PENDING_BIT,
+    GICV2_GICH_LR_PENDING_STATE, GICV2_GICH_LR_PHYSID_SHIFT, GICV2_GICH_LR_VIRTUALID_BITS,
 };
 use crate::event::{check_events, dispatch_host_events};
 use crate::hypercall::SGI_IPI_ID;
@@ -29,6 +30,8 @@ use crate::hypercall::SGI_IPI_ID;
 /// 1. gicv2 spec : https://www.cl.cam.ac.uk/research/srg/han/ACS-P35/zynq/arm_gic_architecture_specification.pdf
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
+use bit_field::BitField;
+use core::sync::atomic::Ordering;
 use spin::{Mutex, Once};
 
 // gicv2 support max 8 cpus
@@ -185,11 +188,9 @@ pub fn clear_guest_sgi_pending_sources(target_cpu: usize, irq_id: usize, source_
     }
     let target = crate::cpu_data::get_cpu_data(target_cpu);
     let control = target.ctrl_lock.lock();
-    target.vcpu.arch.sgi_source[irq_id]
-        .fetch_and(!source_mask, core::sync::atomic::Ordering::AcqRel);
-    let pending_cleared =
-        target.vcpu.arch.sgi_source[irq_id].load(core::sync::atomic::Ordering::Acquire) == 0
-            && target.vcpu.irq.clear(irq_id);
+    target.vcpu.arch.sgi_source[irq_id].fetch_and(!source_mask, Ordering::AcqRel);
+    let pending_cleared = target.vcpu.arch.sgi_source[irq_id].load(Ordering::Acquire) == 0
+        && target.vcpu.irq.clear(irq_id);
     drop(control);
     if target_cpu == this_cpu_id() {
         clear_lr_pending_sgi(irq_id, source_mask);
@@ -199,23 +200,30 @@ pub fn clear_guest_sgi_pending_sources(target_cpu: usize, irq_id: usize, source_
 
 fn clear_lr_pending_sgi(irq_id: usize, source_mask: u8) {
     let gich = GICH.get().unwrap();
-    let elrsr = (gich.get_elrsr(1) as u64) << 32 | gich.get_elrsr(0) as u64;
-    for index in 0..gich.get_lrs_num() as usize {
-        if elrsr & (1u64 << index) != 0 {
+    let empty_lrs = empty_lr_mask(gich);
+    for index in 0..=gich.get_lr_num() as usize {
+        if empty_lrs.get_bit(index) {
             continue;
         }
-        let lr = gich.get_lr(index) as usize;
-        let source = (lr >> GICV2_GICH_LR_CPUID_SHIFT) & 0x7;
-        if lr & VINTID_MASK != irq_id
-            || lr & GICV2_GICH_LR_PENDING_STATE == 0
-            || source_mask & (1 << source) == 0
+        let mut lr = gich.get_lr(index);
+        let source = lr.get_bits(GICV2_GICH_LR_CPUID_BITS);
+        if lr.get_bits(GICV2_GICH_LR_VIRTUALID_BITS) as usize != irq_id
+            || !lr.get_bit(GICV2_GICH_LR_PENDING_BIT)
+            || !source_mask.get_bit(source as usize)
         {
             continue;
         }
-        if lr & GICV2_GICH_LR_ACTIVE_STATE != 0 {
-            gich.set_lr(index, (lr & !GICV2_GICH_LR_PENDING_STATE) as u32);
+        if lr.get_bit(GICV2_GICH_LR_ACTIVE_BIT) {
+            lr.set_bit(GICV2_GICH_LR_PENDING_BIT, false);
+            gich.set_lr(index, lr);
         } else {
             gich.set_lr(index, 0);
+            // The freed LR may have carried the EOI request of a deferred
+            // source, so hand that source back to the pending bitmap.
+            let cpu = this_cpu_data();
+            if cpu.vcpu.arch.sgi_source[irq_id].load(Ordering::Acquire) != 0 {
+                cpu.vcpu.irq.set(irq_id);
+            }
         }
     }
 }
@@ -227,34 +235,24 @@ pub(crate) struct PendingSgiLrSummary {
 
 pub(crate) fn read_pending_sgi_lr_summary() -> PendingSgiLrSummary {
     let gich = GICH.get().unwrap();
-    let elrsr = (gich.get_elrsr(1) as u64) << 32 | gich.get_elrsr(0) as u64;
+    let empty_lrs = empty_lr_mask(gich);
     let mut summary = PendingSgiLrSummary {
         pending_mask: 0,
         source_masks: [0; GICV2_SGIS_NUM],
     };
-    for index in 0..gich.get_lrs_num() as usize {
-        if elrsr & (1u64 << index) != 0 {
+    for index in 0..=gich.get_lr_num() as usize {
+        if empty_lrs.get_bit(index) {
             continue;
         }
-        let lr = gich.get_lr(index) as usize;
-        let irq_id = lr & VINTID_MASK;
-        if irq_id < GICV2_SGIS_NUM && lr & GICV2_GICH_LR_PENDING_STATE != 0 {
-            summary.pending_mask |= 1 << irq_id;
-            summary.source_masks[irq_id] |= 1 << ((lr >> GICV2_GICH_LR_CPUID_SHIFT) & 0x7);
+        let lr = gich.get_lr(index);
+        let irq_id = lr.get_bits(GICV2_GICH_LR_VIRTUALID_BITS) as usize;
+        if irq_id < GICV2_SGIS_NUM && lr.get_bit(GICV2_GICH_LR_PENDING_BIT) {
+            summary.pending_mask.set_bit(irq_id, true);
+            summary.source_masks[irq_id]
+                .set_bit(lr.get_bits(GICV2_GICH_LR_CPUID_BITS) as usize, true);
         }
     }
     summary
-}
-
-pub fn read_lr_pending_sgi_source_mask(irq_id: usize) -> u8 {
-    if irq_id >= GICV2_SGIS_NUM {
-        return 0;
-    }
-    read_pending_sgi_lr_summary().source_masks[irq_id]
-}
-
-pub fn read_lr_pending_sgi_mask() -> u32 {
-    read_pending_sgi_lr_summary().pending_mask
 }
 
 pub fn inject_irq(irq_id: usize, is_sgi: bool) -> bool {

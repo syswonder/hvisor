@@ -27,6 +27,7 @@ use core::sync::atomic::AtomicU64;
 
 use alloc::collections::vec_deque::VecDeque;
 use alloc::vec::Vec;
+use bit_field::BitField;
 use gicr::init_lpi_prop;
 use gits::gits_init;
 use spin::{Lazy, Mutex, Once};
@@ -158,13 +159,20 @@ pub fn gicv3_handle_irq_el1() {
     trace!("handle done")
 }
 
-const LR_VINTID_MASK: u64 = (1 << 32) - 1;
-const LR_PENDING: u64 = 1 << 62;
-const LR_ACTIVE: u64 = 1 << 63;
-const LR_STATE_MASK: u64 = LR_PENDING | LR_ACTIVE;
+// ICH_LR<n>_EL2 and ICH_VTR_EL2 fields, for use with `bit_field::BitField`.
+const ICH_LR_VINTID_BITS: core::ops::Range<usize> = 0..32;
+const ICH_LR_GROUP_BIT: usize = 60;
+const ICH_LR_PENDING_BIT: usize = 62;
+const ICH_LR_ACTIVE_BIT: usize = 63;
+const ICH_VTR_LIST_REGS_BITS: core::ops::Range<usize> = 0..5;
+const SGIS_NUM: usize = 16;
+
+fn list_regs_num() -> usize {
+    read_sysreg!(ich_vtr_el2).get_bits(ICH_VTR_LIST_REGS_BITS) as usize + 1
+}
 
 pub fn clear_guest_sgi(target_cpu: usize, irq_id: usize) -> bool {
-    if irq_id >= 16 {
+    if irq_id >= SGIS_NUM {
         return false;
     }
     let target = crate::cpu_data::get_cpu_data(target_cpu);
@@ -181,43 +189,47 @@ pub fn clear_guest_sgi(target_cpu: usize, irq_id: usize) -> bool {
 
 fn try_install_software_sgi(irq_id: usize) -> bool {
     let elsr = read_sysreg!(ich_elrsr_el2);
-    let lr_num = (read_sysreg!(ich_vtr_el2) as usize & 0xf) + 1;
     let mut free_lr = None;
-    for index in 0..lr_num {
-        if (1 << index) & elsr != 0 {
+    for index in 0..list_regs_num() {
+        if elsr.get_bit(index) {
             free_lr.get_or_insert(index);
             continue;
         }
-        let lr = read_lr(index);
-        if lr & LR_VINTID_MASK != irq_id as u64 {
+        let mut lr = read_lr(index);
+        if lr.get_bits(ICH_LR_VINTID_BITS) as usize != irq_id {
             continue;
         }
-        let state = lr & LR_STATE_MASK;
-        if state == 0 || state == LR_ACTIVE {
-            write_lr(index, lr | LR_PENDING);
+        // Active-only LRs become pending; pending ones coalesce.
+        if !lr.get_bit(ICH_LR_PENDING_BIT) {
+            lr.set_bit(ICH_LR_PENDING_BIT, true);
+            write_lr(index, lr);
         }
         return true;
     }
     let Some(index) = free_lr else {
         return false;
     };
-    write_lr(index, irq_id as u64 | (1 << 60) | LR_PENDING);
+    let mut lr = 0u64;
+    lr.set_bits(ICH_LR_VINTID_BITS, irq_id as u64);
+    lr.set_bit(ICH_LR_GROUP_BIT, true);
+    lr.set_bit(ICH_LR_PENDING_BIT, true);
+    write_lr(index, lr);
     true
 }
 
 pub(crate) fn clear_lr_pending_irq(irq_id: usize) {
     let elsr = read_sysreg!(ich_elrsr_el2);
-    let lr_num = (read_sysreg!(ich_vtr_el2) as usize & 0xf) + 1;
-    for index in 0..lr_num {
-        if (1 << index) & elsr != 0 {
+    for index in 0..list_regs_num() {
+        if elsr.get_bit(index) {
             continue;
         }
-        let lr = read_lr(index);
-        if lr & LR_VINTID_MASK != irq_id as u64 || lr & LR_PENDING == 0 {
+        let mut lr = read_lr(index);
+        if lr.get_bits(ICH_LR_VINTID_BITS) as usize != irq_id || !lr.get_bit(ICH_LR_PENDING_BIT) {
             continue;
         }
-        if lr & LR_ACTIVE != 0 {
-            write_lr(index, lr & !LR_PENDING);
+        if lr.get_bit(ICH_LR_ACTIVE_BIT) {
+            lr.set_bit(ICH_LR_PENDING_BIT, false);
+            write_lr(index, lr);
         } else {
             write_lr(index, 0);
         }
@@ -226,23 +238,22 @@ pub(crate) fn clear_lr_pending_irq(irq_id: usize) {
 
 pub(crate) fn lr_pending_sgi_mask() -> u32 {
     let elsr = read_sysreg!(ich_elrsr_el2);
-    let lr_num = (read_sysreg!(ich_vtr_el2) as usize & 0xf) + 1;
-    let mut pending = 0;
-    for index in 0..lr_num {
-        if (1 << index) & elsr != 0 {
+    let mut pending = 0u32;
+    for index in 0..list_regs_num() {
+        if elsr.get_bit(index) {
             continue;
         }
         let lr = read_lr(index);
-        let irq_id = (lr & LR_VINTID_MASK) as usize;
-        if irq_id < 16 && lr & LR_PENDING != 0 {
-            pending |= 1 << irq_id;
+        let irq_id = lr.get_bits(ICH_LR_VINTID_BITS) as usize;
+        if irq_id < SGIS_NUM && lr.get_bit(ICH_LR_PENDING_BIT) {
+            pending.set_bit(irq_id, true);
         }
     }
     pending
 }
 
 fn install_pending_guest_irq(irq_id: usize) -> bool {
-    if irq_id >= 16 {
+    if irq_id >= SGIS_NUM {
         return false;
     }
     try_install_software_sgi(irq_id)

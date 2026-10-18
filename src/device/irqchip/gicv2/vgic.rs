@@ -25,8 +25,8 @@ use crate::device::irqchip::gicv2::gicd::{
     GICD_ISACTIVER_REG_OFFSET, GICD_ISENABLER_REG_OFFSET, GICD_ISPENDR_REG_OFFSET,
     GICD_ITARGETSR_REG_OFFSET, GICD_LOCK, GICD_SGIR_REG_OFFSET, GICD_SGIR_ROUTING_SHIFT,
     GICD_SGIR_TARGET_LIST_FILTER_SHIFT, GICD_SPENDSGIR_REG_OFFSET, GICD_TYPER_REG_OFFSET,
-    GICV2_CONFIG_REGS_NUM, GICV2_INT_REGS_NUM, GICV2_PRIO_REGS_NUM, GICV2_SGI_REGS_NUM,
-    GICV2_TARGET_REGS_NUM,
+    GICV2_CONFIG_REGS_NUM, GICV2_INT_REGS_NUM, GICV2_PRIO_REGS_NUM, GICV2_SGIS_NUM,
+    GICV2_SGI_REGS_NUM, GICV2_TARGET_REGS_NUM,
 };
 use crate::device::irqchip::gicv2::GICV2;
 use crate::error::HvResult;
@@ -36,8 +36,12 @@ use crate::memory::{mmio_perform_access, MMIOAccess, MemFlags, MemoryRegion};
 /// reference:
 /// 1. gicv2 spec : https://www.cl.cam.ac.uk/research/srg/han/ACS-P35/zynq/arm_gic_architecture_specification.pdf
 use crate::zone::Zone;
+use bit_field::BitField;
+use core::sync::atomic::Ordering;
 
 const GICV2_REG_WIDTH: usize = 4;
+/// SGI bits of GICD_ISPENDR0/ICPENDR0; bits 16..32 are physical PPIs.
+const SGI_PENDING_BITS: core::ops::Range<usize> = 0..16;
 
 impl Zone {
     // trap all Guest OS accesses to the GIC Distributor registers.
@@ -317,7 +321,7 @@ fn handle_gicd_sgi_pending_access(mmio: &mut MMIOAccess, is_clear: bool) -> HvRe
                 );
             } else {
                 for source in 0..8 {
-                    if source_mask & (1 << source) != 0 {
+                    if source_mask.get_bit(source) {
                         crate::device::irqchip::post_guest_irq(target_cpu, irq_id, Some(source));
                     }
                 }
@@ -326,19 +330,14 @@ fn handle_gicd_sgi_pending_access(mmio: &mut MMIOAccess, is_clear: bool) -> HvRe
         return Ok(());
     }
 
-    let register_base = if is_clear {
-        GICD_CPENDSGIR_REG_OFFSET
-    } else {
-        GICD_SPENDSGIR_REG_OFFSET
-    };
-    let word_index = ((mmio.address & !3) - register_base) / 4;
     let lr_summary = crate::device::irqchip::gicv2::gic::read_pending_sgi_lr_summary();
     let mut value = 0u32;
     for byte in 0..4 {
-        let irq_id = word_index * 4 + byte;
-        value |= (read_guest_sgi_source_mask(target_cpu, irq_id, lr_summary.source_masks[irq_id])
-            as u32)
-            << (byte * 8);
+        let irq_id = first_irq + byte;
+        value.set_bits(
+            byte * 8..byte * 8 + 8,
+            read_guest_sgi_source_mask(target_cpu, irq_id, lr_summary.source_masks[irq_id]) as u32,
+        );
     }
     mmio.value = ((value & width_mask) >> shift) as usize;
     Ok(())

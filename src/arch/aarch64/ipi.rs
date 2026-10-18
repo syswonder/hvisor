@@ -16,12 +16,10 @@
 
 use crate::device::irqchip::gic_send_event;
 
+use bit_field::BitField;
+
 #[cfg(irq_gicv2)]
-use crate::{
-    arch::cpu::this_cpu_id,
-    cpu_data::this_zone,
-    device::irqchip::gicv2::gicd::{GICD_SGIR_ROUTING_SHIFT, GICD_SGIR_TARGET_LIST_FILTER_SHIFT},
-};
+use crate::{arch::cpu::this_cpu_id, cpu_data::this_zone};
 
 #[cfg(irq_gicv3)]
 use crate::{
@@ -29,8 +27,26 @@ use crate::{
     cpu_data::this_zone,
 };
 
+// ICC_SGI1R_EL1 fields.
+const ICC_SGI1R_TARGET_LIST_BITS: core::ops::Range<usize> = 0..16;
 #[cfg(irq_gicv3)]
-const ICC_SGI1R_TARGET_LIST_MASK: u64 = 0xffff;
+const ICC_SGI1R_AFF1_BITS: core::ops::Range<usize> = 16..24;
+const ICC_SGI1R_INTID_BITS: core::ops::Range<usize> = 24..28;
+#[cfg(irq_gicv3)]
+const ICC_SGI1R_AFF2_BITS: core::ops::Range<usize> = 32..40;
+const ICC_SGI1R_IRM_BIT: usize = 40;
+#[cfg(irq_gicv3)]
+const ICC_SGI1R_RS_BITS: core::ops::Range<usize> = 44..48;
+#[cfg(irq_gicv3)]
+const ICC_SGI1R_AFF3_BITS: core::ops::Range<usize> = 48..56;
+
+// GICD_SGIR fields.
+#[cfg(irq_gicv2)]
+const GICD_SGIR_INTID_BITS: core::ops::Range<usize> = 0..4;
+#[cfg(irq_gicv2)]
+const GICD_SGIR_TARGET_LIST_BITS: core::ops::Range<usize> = 16..24;
+#[cfg(irq_gicv2)]
+const GICD_SGIR_TARGET_LIST_FILTER_BITS: core::ops::Range<usize> = 24..26;
 
 #[cfg(irq_gicv3)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -48,13 +64,13 @@ struct Sgi1r {
 impl Sgi1r {
     fn decode(value: u64) -> Self {
         Self {
-            target_list: (value & ICC_SGI1R_TARGET_LIST_MASK) as u16,
-            aff1: ((value >> 16) & 0xff) as u8,
-            intid: ((value >> 24) & 0xf) as usize,
-            aff2: ((value >> 32) & 0xff) as u8,
-            irm: value & (1 << 40) != 0,
-            range_selector: ((value >> 44) & 0xf) as u8,
-            aff3: ((value >> 48) & 0xff) as u8,
+            target_list: value.get_bits(ICC_SGI1R_TARGET_LIST_BITS) as u16,
+            aff1: value.get_bits(ICC_SGI1R_AFF1_BITS) as u8,
+            intid: value.get_bits(ICC_SGI1R_INTID_BITS) as usize,
+            aff2: value.get_bits(ICC_SGI1R_AFF2_BITS) as u8,
+            irm: value.get_bit(ICC_SGI1R_IRM_BIT),
+            range_selector: value.get_bits(ICC_SGI1R_RS_BITS) as u8,
+            aff3: value.get_bits(ICC_SGI1R_AFF3_BITS) as u8,
         }
     }
 
@@ -69,7 +85,7 @@ impl Sgi1r {
             && aff1 == self.aff1 as u64
             && aff0 >= target_aff0
             && aff0 < target_aff0 + 16
-            && self.target_list & (1 << (aff0 - target_aff0)) != 0
+            && self.target_list.get_bit((aff0 - target_aff0) as usize)
     }
 }
 
@@ -99,25 +115,28 @@ pub fn handle_guest_sgi1r(value: u64) {
 
 #[cfg(irq_gicv2)]
 pub fn handle_guest_sgi1r(value: u64) {
-    let target_list = (value & 0xffff) as usize;
-    let routing_mode = if value & (1 << 40) != 0 { 1 } else { 0 };
-    let irq_id = ((value >> 24) & 0xf) as usize;
-    handle_guest_sgir(
-        irq_id as u32
-            | ((target_list as u32) << GICD_SGIR_TARGET_LIST_FILTER_SHIFT)
-            | ((routing_mode as u32) << GICD_SGIR_ROUTING_SHIFT),
+    post_guest_sgi(
+        value.get_bits(ICC_SGI1R_INTID_BITS) as usize,
+        value.get_bits(ICC_SGI1R_TARGET_LIST_BITS) as u8,
+        value.get_bit(ICC_SGI1R_IRM_BIT) as u32,
     );
 }
 
 #[cfg(irq_gicv2)]
 pub fn handle_guest_sgir(value: u32) {
+    post_guest_sgi(
+        value.get_bits(GICD_SGIR_INTID_BITS) as usize,
+        value.get_bits(GICD_SGIR_TARGET_LIST_BITS) as u8,
+        value.get_bits(GICD_SGIR_TARGET_LIST_FILTER_BITS),
+    );
+}
+
+#[cfg(irq_gicv2)]
+fn post_guest_sgi(irq_id: usize, target_list: u8, filter: u32) {
     let source_cpu = this_cpu_id();
-    let irq_id = (value & 0xf) as usize;
-    let target_list = ((value >> GICD_SGIR_TARGET_LIST_FILTER_SHIFT) & 0xff) as usize;
-    let routing_mode = (value >> GICD_SGIR_ROUTING_SHIFT) & 0x3;
     for target_cpu in this_zone().cpu_set().iter() {
-        let selected = match routing_mode {
-            0 => target_list & (1 << target_cpu) != 0,
+        let selected = match filter {
+            0 => target_cpu < 8 && target_list.get_bit(target_cpu),
             1 => target_cpu != source_cpu,
             2 => target_cpu == source_cpu,
             _ => false,

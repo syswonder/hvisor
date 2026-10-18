@@ -30,8 +30,13 @@ pub const GICV2_GICH_VMCR_VMGRP1EN: u32 = 0x1 << 1;
 pub const GICV2_GICH_VMCR_VMGRP0EN: u32 = 0x1;
 pub const GICV2_GICH_LR_GRP1: u32 = 0x1 << 30;
 pub const GICV2_GICH_LR_PENDING_STATE: usize = 0x1 << 28;
-pub const GICV2_GICH_LR_ACTIVE_STATE: usize = 0x1 << 29;
 pub const GICV2_GICH_LR_HW: usize = 0x1 << 31;
+// GICH_LR field positions, for use with `bit_field::BitField`.
+pub const GICV2_GICH_LR_VIRTUALID_BITS: core::ops::Range<usize> = 0..10;
+pub const GICV2_GICH_LR_CPUID_BITS: core::ops::Range<usize> = 10..13;
+pub const GICV2_GICH_LR_EOI_BIT: usize = 19;
+pub const GICV2_GICH_LR_PENDING_BIT: usize = 28;
+pub const GICV2_GICH_LR_ACTIVE_BIT: usize = 29;
 pub const GICV2_GICH_HCR_REG_OFFSET: usize = 0x0000;
 pub const GICV2_GICH_VTR_REG_OFFSET: usize = 0x0004;
 pub const GICV2_GICH_VMCR_REG_OFFSET: usize = 0x0008;

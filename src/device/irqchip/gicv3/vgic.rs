@@ -31,6 +31,11 @@ use crate::{
     zone::{this_zone_id, Zone},
 };
 use alloc::sync::Arc;
+use bit_field::BitField;
+
+/// SGI bits of GICR_ISPENDR0/ICPENDR0; bits 16..32 are physical PPIs.
+const SGI_PENDING_BITS: core::ops::Range<usize> = 0..16;
+
 pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> {
     base..(base + n * size)
 }
@@ -275,10 +280,22 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
                 let is_sgi_set_pending = reg == GICR_SGI_BASE + GICR_ISPENDR;
                 let is_sgi_clear_pending = reg == GICR_SGI_BASE + GICR_ICPENDR;
                 if is_sgi_set_pending || is_sgi_clear_pending {
+                    // GICR_ISPENDR0/ICPENDR0 only support aligned 32-bit
+                    // accesses; others would misplace the SGI/PPI split.
+                    if mmio.size != 4 || mmio.address % 4 != 0 {
+                        warn!(
+                            "ignore unsupported GICR SGI pending access at {:#x} with size {}",
+                            mmio.address, mmio.size
+                        );
+                        if !mmio.is_write {
+                            mmio.value = 0;
+                        }
+                        return HvResult::Ok(());
+                    }
                     if mmio.is_write {
-                        let mask = mmio.value as u32 & 0xffff;
-                        for irq_id in 0..16 {
-                            if mask & (1 << irq_id) == 0 {
+                        let sgis = mmio.value.get_bits(SGI_PENDING_BITS);
+                        for irq_id in SGI_PENDING_BITS {
+                            if !sgis.get_bit(irq_id) {
                                 continue;
                             }
                             if is_sgi_set_pending {
@@ -288,7 +305,7 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
                             }
                         }
                         // Preserve physical PPI writes in bits 16..31 only.
-                        mmio.value &= !0xffff;
+                        mmio.value.set_bits(SGI_PENDING_BITS, 0);
                         mmio_perform_access(gicr_base, mmio);
                     } else {
                         mmio_perform_access(gicr_base, mmio);
@@ -296,7 +313,7 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
                         if cpu == crate::arch::cpu::this_cpu_id() {
                             value |= super::lr_pending_sgi_mask();
                         }
-                        mmio.value = (mmio.value & !0xffff) | value as usize;
+                        mmio.value.set_bits(SGI_PENDING_BITS, value as usize);
                     }
                     return HvResult::Ok(());
                 }
