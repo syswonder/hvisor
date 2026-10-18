@@ -278,41 +278,47 @@ pub fn set_sgi_irq(irq_id: usize, target_list: usize, routing_mode: usize) {
     GICD.get().unwrap().set_sgir(val as u32);
 }
 
+/// Pending SGI sources not held by a local LR. A source deferred behind an LR
+/// of the same SGI stays here while its pending bitmap bit is clear.
 fn read_guest_sgi_source_mask(target_cpu: usize, irq_id: usize, lr_source_mask: u8) -> u8 {
-    let target = get_cpu_data(target_cpu);
-    let software = if target.vcpu.irq.pending_mask(irq_id, 1) != 0 {
-        target.vcpu.arch.sgi_source[irq_id].load(core::sync::atomic::Ordering::Acquire)
-    } else {
-        0
-    };
-    software | lr_source_mask
+    get_cpu_data(target_cpu).vcpu.arch.sgi_source[irq_id].load(Ordering::Acquire) | lr_source_mask
+}
+
+fn ignore_unsupported_gicd_access(mmio: &mut MMIOAccess) -> HvResult {
+    warn!(
+        "ignore unsupported GICD access at {:#x} with size {}",
+        mmio.address, mmio.size
+    );
+    if !mmio.is_write {
+        mmio.value = 0;
+    }
+    Ok(())
 }
 
 fn handle_gicd_sgi_pending_access(mmio: &mut MMIOAccess, is_clear: bool) -> HvResult {
+    // Reject unaligned or wider accesses such as a 64-bit one.
+    if !matches!(mmio.size, 1 | 2 | 4) || mmio.address % mmio.size != 0 {
+        return ignore_unsupported_gicd_access(mmio);
+    }
+    let shift = (mmio.address % GICV2_REG_WIDTH) * 8;
+    let width_mask = (u32::MAX >> (32 - mmio.size * 8)) << shift;
     let target_cpu = this_cpu_id();
-    let word_offset = mmio.address & 0x3;
-    let shift = word_offset * 8;
-    let width_mask = if mmio.size == 4 {
-        u32::MAX
+    let register_base = if is_clear {
+        GICD_CPENDSGIR_REG_OFFSET
     } else {
-        ((1u32 << (mmio.size * 8)) - 1) << shift
+        GICD_SPENDSGIR_REG_OFFSET
     };
+    // Each register holds four SGIs, one byte of source CPU bits per SGI.
+    let first_irq = (mmio.address & !0x3) - register_base;
     if mmio.is_write {
         let value = ((mmio.value as u32) << shift) & width_mask;
         for byte in 0..4 {
-            if width_mask & (0xff << (byte * 8)) == 0 {
+            let lane = byte * 8..byte * 8 + 8;
+            let irq_id = first_irq + byte;
+            if width_mask.get_bits(lane.clone()) == 0 || irq_id >= GICV2_SGIS_NUM {
                 continue;
             }
-            let source_mask = ((value >> (byte * 8)) & 0xff) as u8;
-            let base = if is_clear {
-                GICD_CPENDSGIR_REG_OFFSET
-            } else {
-                GICD_SPENDSGIR_REG_OFFSET
-            };
-            let irq_id = ((mmio.address & !3) - base) / 4 * 4 + byte;
-            if irq_id >= 16 {
-                continue;
-            }
+            let source_mask = value.get_bits(lane) as u8;
             if is_clear {
                 crate::device::irqchip::gicv2::gic::clear_guest_sgi_pending_sources(
                     target_cpu,
@@ -356,17 +362,15 @@ fn handle_gicd_intid_pending_access(
     is_clear: bool,
     gicd_base: usize,
 ) -> HvResult {
+    // GICD_ISPENDR0/ICPENDR0 only support aligned 32-bit accesses.
+    if mmio.size != GICV2_REG_WIDTH || mmio.address % GICV2_REG_WIDTH != 0 {
+        return ignore_unsupported_gicd_access(mmio);
+    }
     let target_cpu = this_cpu_id();
-    let shift = (mmio.address & 0x3) * 8;
-    let width_mask = if mmio.size == 4 {
-        u32::MAX
-    } else {
-        ((1u32 << (mmio.size * 8)) - 1) << shift
-    };
     if mmio.is_write {
-        let value = ((mmio.value as u32) << shift) & width_mask;
-        for irq_id in 0..16 {
-            if value & (1 << irq_id) == 0 {
+        let mut value = mmio.value as u32;
+        for irq_id in 0..GICV2_SGIS_NUM {
+            if !value.get_bit(irq_id) {
                 continue;
             }
             if is_clear {
@@ -375,20 +379,23 @@ fn handle_gicd_intid_pending_access(
                 crate::device::irqchip::post_guest_irq(target_cpu, irq_id, Some(target_cpu));
             }
         }
-        if mmio.size == 4 && shift == 0 {
-            mmio.value = (value & !0xffff) as usize;
-            mmio_perform_access(gicd_base, mmio);
-        } else if shift >= 16 {
-            mmio_perform_access(gicd_base, mmio);
-        }
+        // Forward only the physical PPI bits.
+        value.set_bits(SGI_PENDING_BITS, 0);
+        mmio.value = value as usize;
+        mmio_perform_access(gicd_base, mmio);
         return Ok(());
     }
     mmio_perform_access(gicd_base, mmio);
-    let physical_value = ((mmio.value as u32) << shift) & width_mask;
-    let lr_pending = crate::device::irqchip::gicv2::gic::read_pending_sgi_lr_summary();
-    let mut value = get_cpu_data(target_cpu).vcpu.irq.pending_mask(0, 16) as u32;
-    value |= lr_pending.pending_mask;
-    mmio.value = ((((physical_value & !0xffff) | value) & width_mask) >> shift) as usize;
+    let mut sgi_pending =
+        crate::device::irqchip::gicv2::gic::read_pending_sgi_lr_summary().pending_mask;
+    for irq_id in 0..GICV2_SGIS_NUM {
+        if read_guest_sgi_source_mask(target_cpu, irq_id, 0) != 0 {
+            sgi_pending.set_bit(irq_id, true);
+        }
+    }
+    let mut value = mmio.value as u32;
+    value.set_bits(SGI_PENDING_BITS, sgi_pending);
+    mmio.value = value as usize;
     Ok(())
 }
 
