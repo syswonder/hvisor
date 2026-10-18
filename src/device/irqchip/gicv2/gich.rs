@@ -83,14 +83,8 @@ pub fn gich_init(gich_base: usize) {
 }
 
 impl GicHypervisorInterface {
-    // init GICH for each CPU.
-    pub fn get_lrs_num(&self) -> u32 {
-        let vtr = self.VTR.get();
-        (vtr & 0b11111) + 1
-    }
-
     pub fn clear_all_lr(&self) {
-        for i in 0..self.get_lrs_num() as usize {
+        for i in 0..=self.get_lr_num() as usize {
             self.LR[i].set(0);
         }
         self.APR.set(0);
@@ -104,6 +98,8 @@ impl GicHypervisorInterface {
         self.VMCR.set(value);
     }
 
+    /// Returns `GICH_VTR.ListRegs`, the index of the last List register
+    /// (number of List registers minus one).
     pub fn get_lr_num(&self) -> u32 {
         self.VTR.get() & 0b11111
     }
