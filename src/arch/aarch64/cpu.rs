@@ -14,7 +14,10 @@
 // Authors:
 //
 use crate::{
-    arch::{mm::new_s2_memory_set, sysreg::write_sysreg},
+    arch::{
+        mm::new_s2_memory_set,
+        sysreg::{read_sysreg, write_sysreg},
+    },
     consts::{MAX_CPU_NUM, PAGE_SIZE, PER_CPU_ARRAY_PTR, PER_CPU_SIZE},
     cpu_data::{this_cpu_data, VcpuState},
     memory::{
@@ -24,9 +27,7 @@ use crate::{
     platform::BOARD_MPIDR_MAPPINGS,
     zone::find_zone,
 };
-use aarch64_cpu::registers::{
-    Readable, Writeable, ELR_EL2, HCR_EL2, MPIDR_EL1, SCTLR_EL1, SPSR_EL2, VTCR_EL2,
-};
+use aarch64_cpu::registers::{Writeable, ELR_EL2, HCR_EL2, SCTLR_EL1, SPSR_EL2, VTCR_EL2};
 use core::ptr::addr_of;
 
 use super::{
@@ -263,12 +264,25 @@ pub fn cpuid_to_mpidr_affinity(cpuid: u64) -> (u64, u64, u64, u64) {
 }
 
 pub fn this_cpu_id() -> usize {
-    mpidr_to_cpuid(MPIDR_EL1.get()) as _
+    // TPIDR_EL2 caches the PerCpu slot base (written once per CPU in
+    // PerCpu::new); the id sits at slot offset 0, so this is a register read
+    // plus one load - no MPIDR_EL1 read and no BOARD_MPIDR_MAPPINGS scan.
+    this_cpu_data().id
 }
 
-pub fn store_cpu_pointer_to_reg(_pointer: usize) {
-    // println!("aarch64 doesn't support store cpu pointer to reg, pointer: {:#x}", pointer);
-    return;
+/// Cache the PerCpu slot base of the current CPU in TPIDR_EL2.
+///
+/// TPIDR_EL2 is EL2-private and hvisor never lets a guest touch EL2 state, so
+/// the value survives VM exits without any save/restore. (EL0/EL1 TPIDR_* are
+/// only ever zeroed for a fresh guest in `reset_vm_regs`.)
+pub fn set_this_cpu_pointer(slot_base: usize) {
+    write_sysreg!(TPIDR_EL2, slot_base as u64);
+}
+
+/// PerCpu slot base of the current CPU, cached in TPIDR_EL2 by
+/// `set_this_cpu_pointer` at `PerCpu::new` time.
+pub fn this_cpu_pointer() -> usize {
+    read_sysreg!(TPIDR_EL2) as usize
 }
 
 pub fn get_target_cpu(_irq: usize, zone_id: usize) -> usize {
