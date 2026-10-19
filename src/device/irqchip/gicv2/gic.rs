@@ -313,7 +313,7 @@ pub fn inject_irq(irq_id: usize, is_sgi: bool) -> bool {
     let lr_num: isize = GICH.get().unwrap().get_lr_num() as isize;
     let lr_pint_mask: usize = 0x3ff << 10;
     let mut free_lr: isize = -1;
-    for i in 0..lr_num {
+    for i in 0..=lr_num {
         if (1 << i) & elrsr > 0 {
             free_lr = i;
             continue;
@@ -327,7 +327,7 @@ pub fn inject_irq(irq_id: usize, is_sgi: bool) -> bool {
     }
     if free_lr == -1 {
         warn!("no free lr");
-        for i in 0..lr_num {
+        for i in 0..=lr_num {
             let lr = GICH.get().unwrap().get_lr(i as usize) as usize;
             warn!("lr[{}]: {:#x}", i, lr);
         }
