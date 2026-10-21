@@ -27,6 +27,7 @@ use core::sync::atomic::AtomicU64;
 
 use alloc::collections::vec_deque::VecDeque;
 use alloc::vec::Vec;
+use bit_field::BitField;
 use gicr::init_lpi_prop;
 use gits::gits_init;
 use spin::{Lazy, Mutex, Once};
@@ -38,9 +39,10 @@ use crate::arch::cpu::this_cpu_id;
 use crate::arch::zone::GicConfig;
 use crate::config::root_zone_config;
 use crate::consts::{self, MAX_CPU_NUM};
+use crate::cpu_data::this_cpu_data;
 
 use crate::device::irqchip::gicv3::gits::gits_reset;
-use crate::event::check_events;
+use crate::event::{check_events, dispatch_host_events};
 use crate::hypercall::SGI_IPI_ID;
 use crate::zone::Zone;
 
@@ -96,20 +98,15 @@ const TIMER_INTERRUPT_PRINT_INTERVAL: u64 = 50;
 
 pub fn gicv3_handle_irq_el1() {
     while let Some(irq_id) = pending_irq() {
-        if irq_id < 8 {
-            trace!("sgi get {}, try to handle...", irq_id);
+        if irq_id < 16 {
             deactivate_irq(irq_id);
-            let mut ipi_handled = false;
-            if irq_id == SGI_IPI_ID as _ {
-                ipi_handled = check_events();
+            if irq_id == SGI_IPI_ID as usize {
+                // SGI 7 is the reserved physical host doorbell. Guest SGIs,
+                // including guest SGI 7, are posted through software state.
+                dispatch_host_events(|| while check_events() {});
+            } else {
+                warn!("unexpected physical SGI {}", irq_id);
             }
-            if !ipi_handled {
-                trace!("sgi get {}, inject", irq_id);
-                inject_irq(irq_id, false);
-            }
-        } else if irq_id < 16 {
-            warn!("skip sgi {}", irq_id);
-            deactivate_irq(irq_id);
         } else {
             #[cfg(all(dwc_pcie, dwc_msi))]
             let mut is_dwc_msi_irq = false;
@@ -160,6 +157,145 @@ pub fn gicv3_handle_irq_el1() {
         }
     }
     trace!("handle done")
+}
+
+pub(crate) const SGIS_NUM: usize = 16;
+
+/// An ICH_LR<n>_EL2 value.
+#[derive(Clone, Copy)]
+struct IchLr(u64);
+
+impl IchLr {
+    fn new_pending(vintid: usize) -> Self {
+        let mut lr = Self(0);
+        lr.0.set_bits(0..32, vintid as u64);
+        lr.0.set_bit(60, true);
+        lr.set_pending(true);
+        lr
+    }
+
+    fn read(index: usize) -> Self {
+        Self(read_lr(index))
+    }
+
+    fn write(self, index: usize) {
+        write_lr(index, self.0);
+    }
+
+    fn vintid(self) -> usize {
+        self.0.get_bits(0..32) as usize
+    }
+
+    fn is_pending(self) -> bool {
+        self.0.get_bit(62)
+    }
+
+    fn set_pending(&mut self, pending: bool) {
+        self.0.set_bit(62, pending);
+    }
+
+    fn is_active(self) -> bool {
+        self.0.get_bit(63)
+    }
+}
+
+fn list_regs_num() -> usize {
+    read_sysreg!(ich_vtr_el2).get_bits(0..5) as usize + 1
+}
+
+pub fn clear_guest_sgi(target_cpu: usize, irq_id: usize) -> bool {
+    if irq_id >= SGIS_NUM {
+        return false;
+    }
+    let target = crate::cpu_data::get_cpu_data(target_cpu);
+    let control = target.ctrl_lock.lock();
+    if !target.vcpu.irq.clear(irq_id) {
+        return false;
+    }
+    drop(control);
+    if target_cpu == this_cpu_id() {
+        clear_lr_pending_irq(irq_id);
+    }
+    true
+}
+
+fn try_install_software_sgi(irq_id: usize) -> bool {
+    let elsr = read_sysreg!(ich_elrsr_el2);
+    let mut free_lr = None;
+    for index in 0..list_regs_num() {
+        if elsr.get_bit(index) {
+            free_lr.get_or_insert(index);
+            continue;
+        }
+        let mut lr = IchLr::read(index);
+        if lr.vintid() != irq_id {
+            continue;
+        }
+        // Active-only LRs become pending; pending ones coalesce.
+        if !lr.is_pending() {
+            lr.set_pending(true);
+            lr.write(index);
+        }
+        return true;
+    }
+    let Some(index) = free_lr else {
+        return false;
+    };
+    IchLr::new_pending(irq_id).write(index);
+    true
+}
+
+pub(crate) fn clear_lr_pending_irq(irq_id: usize) {
+    let elsr = read_sysreg!(ich_elrsr_el2);
+    for index in 0..list_regs_num() {
+        if elsr.get_bit(index) {
+            continue;
+        }
+        let mut lr = IchLr::read(index);
+        if lr.vintid() != irq_id || !lr.is_pending() {
+            continue;
+        }
+        if lr.is_active() {
+            lr.set_pending(false);
+            lr.write(index);
+        } else {
+            write_lr(index, 0);
+        }
+    }
+}
+
+pub(crate) fn lr_pending_sgi_mask() -> u32 {
+    let elsr = read_sysreg!(ich_elrsr_el2);
+    let mut pending = 0u32;
+    for index in 0..list_regs_num() {
+        if elsr.get_bit(index) {
+            continue;
+        }
+        let lr = IchLr::read(index);
+        let irq_id = lr.vintid();
+        if irq_id < SGIS_NUM && lr.is_pending() {
+            pending.set_bit(irq_id, true);
+        }
+    }
+    pending
+}
+
+fn install_pending_guest_irq(irq_id: usize) -> bool {
+    if irq_id >= SGIS_NUM {
+        return false;
+    }
+    try_install_software_sgi(irq_id)
+}
+
+pub fn flush_current_guest_irqs() {
+    let cpu = this_cpu_data();
+    if cpu.zone.is_none() || cpu.vcpu.state.is_stopped() {
+        return;
+    }
+    let state = &cpu.vcpu.irq;
+    crate::device::irqchip::flush_guest_irq_state(state, install_pending_guest_irq, || {
+        enable_maintenace_interrupt(true)
+    });
 }
 
 fn pending_irq() -> Option<usize> {
@@ -268,6 +404,13 @@ impl PendingIrqs {
             _ => None,
         }
     }
+
+    fn has_pending(&self) -> bool {
+        self.inner
+            .get(this_cpu_id())
+            .map(|pending_irqs| !pending_irqs.lock().is_empty())
+            .unwrap_or(false)
+    }
 }
 
 // Enable or disable an underflow maintenace interrupt.
@@ -285,6 +428,7 @@ fn enable_maintenace_interrupt(is_enable: bool) {
 
 fn handle_maintenace_interrupt() {
     trace!("handle_maintenace_interrupt");
+    flush_current_guest_irqs();
     let pending_irqs = PENDING_VIRQS.get().unwrap();
     while let Some((irq_id, is_hardware)) = pending_irqs.fetch_irq() {
         let is_injected: bool = inject_irq(irq_id, is_hardware);
@@ -297,7 +441,11 @@ fn handle_maintenace_interrupt() {
             return;
         }
     }
-    enable_maintenace_interrupt(false);
+    enable_maintenace_interrupt(has_pending_maintenance_work());
+}
+
+fn has_pending_maintenance_work() -> bool {
+    this_cpu_data().vcpu.irq.has_pending() || PENDING_VIRQS.get().unwrap().has_pending()
 }
 
 /// Inject virtual interrupt to vCPU, return whether it not needs to add pending queue.

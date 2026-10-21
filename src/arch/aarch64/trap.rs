@@ -21,10 +21,7 @@ use super::cpu::GeneralRegisters;
 use crate::arch::sysreg::smc_call;
 use crate::zone::zone_error;
 use crate::{
-    arch::{
-        cpu::mpidr_to_cpuid,
-        sysreg::{read_sysreg, write_sysreg},
-    },
+    arch::{cpu::mpidr_to_cpuid, sysreg::read_sysreg},
     cpu_data::{get_cpu_data, this_cpu_data, this_zone, VcpuState},
     device::irqchip::gic_handle_irq,
     event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_WAKEUP},
@@ -122,6 +119,7 @@ pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> ! {
         ExceptionType::EXIT_REASON_EL2_IRQ => irqchip_handle_irq2(),
         _ => arch_dump_exit(regs.exit_reason),
     }
+    crate::device::irqchip::flush_current_guest_irqs();
     unsafe { vmreturn(regs as *const _ as usize) }
 }
 
@@ -341,11 +339,11 @@ fn handle_sysreg(regs: &mut GeneralRegisters) {
         let val = if rt == 31 { 0 } else { regs.usr[rt] };
         trace!("esr_el2 rt{}: {:#x?}", rt, val);
         let sgi_id: u64 = (val & (0xf << 24)) >> 24;
-        if !this_cpu_data().vcpu_state.is_running() {
+        if !this_cpu_data().vcpu.state.is_running() {
             trace!("skip send sgi {:#x?}", sgi_id);
         } else {
-            trace!("send sgi {:#x?}", sgi_id);
-            write_sysreg!(icc_sgi1r_el1, val);
+            trace!("post guest sgi {:#x?}", sgi_id);
+            crate::arch::ipi::handle_guest_sgi1r(val);
         }
         arch_skip_instruction(regs); //skip sgi write
     } else {
@@ -432,9 +430,9 @@ fn psci_emulate_cpu_on(regs: &mut GeneralRegisters) -> u64 {
     let target_data = get_cpu_data(cpu as _);
     let _lock = target_data.ctrl_lock.lock();
 
-    if target_data.vcpu_state.is_stopped() {
+    if target_data.vcpu.state.is_stopped() {
         target_data.cpu_on_entry = regs.usr[2] as _;
-        target_data.vcpu_state.store(VcpuState::Ready);
+        target_data.vcpu.state.store(VcpuState::Ready);
         send_event(cpu as _, SGI_IPI_ID as _, IPI_EVENT_WAKEUP);
     } else {
         error!("psci: cpu {} already on", cpu);
@@ -463,7 +461,7 @@ fn handle_psci_smc(
             todo!();
         }
         PsciFnId::PSCI_AFFINITY_INFO_32 | PsciFnId::PSCI_AFFINITY_INFO_64 => {
-            !get_cpu_data(arg0 as _).vcpu_state.is_online() as _
+            !get_cpu_data(arg0 as _).vcpu.state.is_online() as _
         }
         PsciFnId::PSCI_MIG_INFO_TYPE => PSCI_TOS_NOT_PRESENT_MP,
         PsciFnId::PSCI_FEATURES => psci_emulate_features_info(regs.usr[1]),
@@ -476,10 +474,12 @@ fn handle_psci_smc(
             for cpu_id in zone.read().cpu_set().iter_except(this_cpu_data().id) {
                 let target_cpu = get_cpu_data(cpu_id);
                 let _lock = target_cpu.ctrl_lock.lock();
+                target_cpu.vcpu.clear_irq_state();
                 target_cpu.zone = None;
                 send_event(cpu_id, SGI_IPI_ID as _, IPI_EVENT_SHUTDOWN);
             }
 
+            this_cpu_data().vcpu.clear_irq_state();
             this_cpu_data().zone = None;
             drop(zone);
             remove_zone(zone_id);

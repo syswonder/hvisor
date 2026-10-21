@@ -62,7 +62,7 @@ impl ArchCpu {
     pub fn run(&mut self) -> ! {
         assert!(this_cpu_id() == self.get_cpuid());
         this_cpu_data().activate_gpm();
-        this_cpu_data().vcpu_state.store(VcpuState::Running);
+        this_cpu_data().vcpu.state.store(VcpuState::Running);
         if !self.init {
             self.init(this_cpu_data().cpu_on_entry, this_cpu_data().id, 0);
             self.init = true;
@@ -132,7 +132,7 @@ impl ArchCpu {
             );
         }
         info!("loongarch64: ArchCpu::idle: cpuid={}", self.get_cpuid());
-        this_cpu_data().vcpu_state.store(VcpuState::Stopped);
+        this_cpu_data().vcpu.state.store(VcpuState::Stopped);
         // enable ipi on ecfg
         ecfg_ipi_enable();
         // The trap vector is installed with interrupts disabled. Enable them only

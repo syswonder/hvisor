@@ -23,7 +23,7 @@ use crate::consts::MAX_CPU_NUM;
 use crate::cpu_data::this_cpu_data;
 use crate::device::irqchip::inject_irq;
 use crate::device::irqchip::ls7a2000::chip::*;
-use crate::event::{dump_events, handle_next_event, has_pending_events};
+use crate::event::{dispatch_host_events, dump_events, handle_next_event, has_pending_events};
 use crate::hypercall::{SGI_IPI_ID, *};
 use crate::memory::{addr, mmio_handle_access, MMIOAccess};
 use crate::zone::Zone;
@@ -1302,15 +1302,17 @@ fn handle_interrupt(is: usize) {
         }
 
         if ipi_status & event_doorbell != 0 {
-            // Clear before each fetch. If the fetch observes an empty queue while a
-            // producer enqueues concurrently, its doorbell remains pending and
-            // re-fires. Clearing after the fetch could lose that coalesced wakeup.
+            // Clear the observed host doorbell before checking logical state.
+            // A concurrent producer is either drained by the dispatcher or
+            // leaves/re-arms a later notification.
             clear_ipi_bits(event_doorbell);
-            if has_pending_events(cpu_id) {
-                while handle_next_event() {
-                    clear_ipi_bits(event_doorbell);
+            dispatch_host_events(|| {
+                if has_pending_events(cpu_id) {
+                    while handle_next_event() {
+                        clear_ipi_bits(event_doorbell);
+                    }
                 }
-            }
+            });
         }
 
         let handled_mask = event_doorbell | virtual_ipi_doorbell;

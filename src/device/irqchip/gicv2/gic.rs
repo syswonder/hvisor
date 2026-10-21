@@ -14,13 +14,14 @@
 // Authors:
 //      Hangqi Ren <2572131118@qq.com>
 use crate::arch::cpu::this_cpu_id;
+use crate::cpu_data::this_cpu_data;
 use crate::device::irqchip::gicv2::gicc::GICC;
 use crate::device::irqchip::gicv2::gicd::GICV2_SGIS_NUM;
 use crate::device::irqchip::gicv2::gich::{
-    GICH, GICV2_GICH_HCR_UIE, GICV2_GICH_LR_CPUID_SHIFT, GICV2_GICH_LR_HW,
+    GicHypervisorInterface, GichLr, GICH, GICV2_GICH_HCR_UIE, GICV2_GICH_LR_HW,
     GICV2_GICH_LR_PENDING_STATE, GICV2_GICH_LR_PHYSID_SHIFT,
 };
-use crate::event::check_events;
+use crate::event::{check_events, dispatch_host_events};
 use crate::hypercall::SGI_IPI_ID;
 /// This file defines and implements the functional functions of physical gicv2.
 /// author: ForeverYolo
@@ -28,6 +29,8 @@ use crate::hypercall::SGI_IPI_ID;
 /// 1. gicv2 spec : https://www.cl.cam.ac.uk/research/srg/han/ACS-P35/zynq/arm_gic_architecture_specification.pdf
 use alloc::collections::VecDeque;
 use alloc::vec::Vec;
+use bit_field::BitField;
+use core::sync::atomic::Ordering;
 use spin::{Mutex, Once};
 
 // gicv2 support max 8 cpus
@@ -36,17 +39,13 @@ pub const MAINTENACE_INTERRUPT: u64 = 25;
 
 pub fn gicv2_handle_irq() {
     if let Some(irq_id) = get_pending_irq() {
-        if irq_id < 8 {
+        if irq_id < GICV2_SGIS_NUM {
             deactivate_irq(irq_id);
-            let mut ipi_handled = false;
             if irq_id == SGI_IPI_ID as _ {
-                ipi_handled = check_events();
+                dispatch_host_events(|| while check_events() {});
+            } else {
+                warn!("unexpected physical SGI {}", irq_id);
             }
-            if !ipi_handled {
-                inject_irq(irq_id, true);
-            }
-        } else if irq_id < GICV2_SGIS_NUM {
-            deactivate_irq(irq_id);
         } else if irq_id == MAINTENACE_INTERRUPT as usize {
             handle_maintenace_interrupt();
         } else {
@@ -88,6 +87,8 @@ pub fn change_underflow_maintenance(is_enable: bool) {
 
 fn handle_maintenace_interrupt() {
     info!("handle_maintenace_interrupt");
+    handle_sgi_eoi_maintenance();
+    flush_current_guest_irqs();
     while let Some((irq_id, is_sgi)) = PENDING_VIRQS.get().unwrap().fetch_irq() {
         let is_injected: bool = inject_irq(irq_id, is_sgi);
         if is_injected {
@@ -99,7 +100,196 @@ fn handle_maintenace_interrupt() {
             return;
         }
     }
-    change_underflow_maintenance(false);
+    change_underflow_maintenance(has_pending_maintenance_work());
+}
+
+fn has_pending_maintenance_work() -> bool {
+    this_cpu_data().vcpu.irq.has_pending() || PENDING_VIRQS.get().unwrap().has_pending()
+}
+
+fn empty_lr_mask(gich: &GicHypervisorInterface) -> u64 {
+    (gich.get_elrsr(1) as u64) << 32 | gich.get_elrsr(0) as u64
+}
+
+enum SgiInstall {
+    Installed,
+    /// Another source of the same SGI occupies an LR; EOI maintenance was
+    /// requested on that LR.
+    Deferred,
+    NoFreeLr,
+}
+
+/// Install one SGI source into the local LRs.
+///
+/// GICv2 requires every valid LR of a virtual CPU interface to have a unique
+/// VirtualID, so the same SGI from another source cannot get its own LR. That
+/// source waits for the guest to deactivate the current LR, which raises an EOI
+/// maintenance interrupt because of `GICH_LR.EOI`.
+fn try_install_software_sgi(irq_id: usize, source_cpu: usize) -> SgiInstall {
+    let gich = GICH.get().unwrap();
+    let empty_lrs = empty_lr_mask(gich);
+    let mut free_lr = None;
+    for index in 0..=gich.get_lr_num() as usize {
+        if empty_lrs.get_bit(index) {
+            free_lr.get_or_insert(index);
+            continue;
+        }
+        let mut lr = GichLr::read(index);
+        if lr.vintid() != irq_id {
+            continue;
+        }
+        if lr.source_cpu() == source_cpu {
+            lr.set_pending(true);
+            lr.write(index);
+            return SgiInstall::Installed;
+        }
+        lr.set_eoi(true);
+        lr.write(index);
+        return SgiInstall::Deferred;
+    }
+    let Some(index) = free_lr else {
+        return SgiInstall::NoFreeLr;
+    };
+    GichLr::new_pending_sgi(irq_id, source_cpu).write(index);
+    SgiInstall::Installed
+}
+
+fn install_pending_guest_irq(cpu: &crate::cpu_data::PerCpu, irq_id: usize) -> bool {
+    if irq_id >= GICV2_SGIS_NUM {
+        return false;
+    }
+    let sources = &cpu.vcpu.arch.sgi_source[irq_id];
+    let source_cpu = sources.load(Ordering::Acquire).trailing_zeros() as usize;
+    if source_cpu >= 8 {
+        // Every source was cleared after the SGI was posted.
+        return true;
+    }
+    let source_bit = 1u8 << source_cpu;
+    sources.fetch_and(!source_bit, Ordering::AcqRel);
+    match try_install_software_sgi(irq_id, source_cpu) {
+        SgiInstall::Installed => {
+            if sources.load(Ordering::Acquire) != 0 {
+                cpu.vcpu.irq.set(irq_id);
+            }
+            true
+        }
+        SgiInstall::Deferred => {
+            // The source stays in `sgi_source`; EOI maintenance reposts it.
+            sources.fetch_or(source_bit, Ordering::AcqRel);
+            true
+        }
+        SgiInstall::NoFreeLr => {
+            sources.fetch_or(source_bit, Ordering::AcqRel);
+            false
+        }
+    }
+}
+
+/// Handle EOI maintenance for SGI LRs: free each deactivated SGI LR that
+/// requested it for a deferred source, and repost that SGI if any source is
+/// still pending.
+fn handle_sgi_eoi_maintenance() {
+    let cpu = this_cpu_data();
+    let gich = GICH.get().unwrap();
+    let eoi_lrs = (gich.get_eisr(1) as u64) << 32 | gich.get_eisr(0) as u64;
+    for index in 0..=gich.get_lr_num() as usize {
+        if !eoi_lrs.get_bit(index) {
+            continue;
+        }
+        let irq_id = GichLr::read(index).vintid();
+        if irq_id >= GICV2_SGIS_NUM {
+            continue;
+        }
+        gich.set_lr(index, 0);
+        if cpu.vcpu.arch.sgi_source[irq_id].load(Ordering::Acquire) != 0 {
+            cpu.vcpu.irq.set(irq_id);
+        }
+    }
+}
+
+pub fn flush_current_guest_irqs() {
+    let cpu = this_cpu_data();
+    if cpu.zone.is_none() || cpu.vcpu.state.is_stopped() {
+        return;
+    }
+    let state = &cpu.vcpu.irq;
+    crate::device::irqchip::flush_guest_irq_state(
+        state,
+        |irq_id| install_pending_guest_irq(cpu, irq_id),
+        || change_underflow_maintenance(true),
+    );
+}
+
+pub fn clear_guest_sgi_pending(target_cpu: usize, irq_id: usize) -> bool {
+    clear_guest_sgi_pending_sources(target_cpu, irq_id, u8::MAX)
+}
+
+pub fn clear_guest_sgi_pending_sources(target_cpu: usize, irq_id: usize, source_mask: u8) -> bool {
+    if irq_id >= GICV2_SGIS_NUM {
+        return false;
+    }
+    let target = crate::cpu_data::get_cpu_data(target_cpu);
+    let control = target.ctrl_lock.lock();
+    target.vcpu.arch.sgi_source[irq_id].fetch_and(!source_mask, Ordering::AcqRel);
+    let pending_cleared = target.vcpu.arch.sgi_source[irq_id].load(Ordering::Acquire) == 0
+        && target.vcpu.irq.clear(irq_id);
+    drop(control);
+    if target_cpu == this_cpu_id() {
+        clear_lr_pending_sgi(irq_id, source_mask);
+    }
+    pending_cleared
+}
+
+fn clear_lr_pending_sgi(irq_id: usize, source_mask: u8) {
+    let gich = GICH.get().unwrap();
+    let empty_lrs = empty_lr_mask(gich);
+    for index in 0..=gich.get_lr_num() as usize {
+        if empty_lrs.get_bit(index) {
+            continue;
+        }
+        let mut lr = GichLr::read(index);
+        if lr.vintid() != irq_id || !lr.is_pending() || !source_mask.get_bit(lr.source_cpu()) {
+            continue;
+        }
+        if lr.is_active() {
+            lr.set_pending(false);
+            lr.write(index);
+        } else {
+            gich.set_lr(index, 0);
+            // The freed LR may have carried the EOI request of a deferred
+            // source, so hand that source back to the pending bitmap.
+            let cpu = this_cpu_data();
+            if cpu.vcpu.arch.sgi_source[irq_id].load(Ordering::Acquire) != 0 {
+                cpu.vcpu.irq.set(irq_id);
+            }
+        }
+    }
+}
+
+pub(crate) struct PendingSgiLrSummary {
+    pub pending_mask: u32,
+    pub source_masks: [u8; GICV2_SGIS_NUM],
+}
+
+pub(crate) fn read_pending_sgi_lr_summary() -> PendingSgiLrSummary {
+    let gich = GICH.get().unwrap();
+    let empty_lrs = empty_lr_mask(gich);
+    let mut summary = PendingSgiLrSummary {
+        pending_mask: 0,
+        source_masks: [0; GICV2_SGIS_NUM],
+    };
+    for index in 0..=gich.get_lr_num() as usize {
+        if empty_lrs.get_bit(index) {
+            continue;
+        }
+        let lr = GichLr::read(index);
+        let irq_id = lr.vintid();
+        if irq_id < GICV2_SGIS_NUM && lr.is_pending() {
+            summary.pending_mask.set_bit(irq_id, true);
+            summary.source_masks[irq_id].set_bit(lr.source_cpu(), true);
+        }
+    }
+    summary
 }
 
 pub fn inject_irq(irq_id: usize, is_sgi: bool) -> bool {
@@ -108,7 +298,7 @@ pub fn inject_irq(irq_id: usize, is_sgi: bool) -> bool {
     let lr_num: isize = GICH.get().unwrap().get_lr_num() as isize;
     let lr_pint_mask: usize = 0x3ff << 10;
     let mut free_lr: isize = -1;
-    for i in 0..lr_num {
+    for i in 0..=lr_num {
         if (1 << i) & elrsr > 0 {
             free_lr = i;
             continue;
@@ -122,7 +312,7 @@ pub fn inject_irq(irq_id: usize, is_sgi: bool) -> bool {
     }
     if free_lr == -1 {
         warn!("no free lr");
-        for i in 0..lr_num {
+        for i in 0..=lr_num {
             let lr = GICH.get().unwrap().get_lr(i as usize) as usize;
             warn!("lr[{}]: {:#x}", i, lr);
         }
@@ -185,5 +375,12 @@ impl PendingIrqs {
             }
             _ => None,
         }
+    }
+
+    fn has_pending(&self) -> bool {
+        self.inner
+            .get(this_cpu_id())
+            .map(|pending_irqs| !pending_irqs.lock().is_empty())
+            .unwrap_or(false)
     }
 }
