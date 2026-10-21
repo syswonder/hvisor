@@ -15,6 +15,7 @@
 //
 use super::CPU_UNUSED_GICR_BASE;
 use super::{gicd::GICD_LOCK, is_spi};
+use crate::device::irqchip::PendingR0;
 use crate::platform::BOARD_MPIDR_MAPPINGS;
 use crate::{
     arch::zone::{GicConfig, HvArchZoneConfig},
@@ -32,9 +33,6 @@ use crate::{
 };
 use alloc::sync::Arc;
 use bit_field::BitField;
-
-/// SGI bits of GICR_ISPENDR0/ICPENDR0; bits 16..32 are physical PPIs.
-const SGI_PENDING_BITS: core::ops::Range<usize> = 0..16;
 
 pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> {
     base..(base + n * size)
@@ -293,8 +291,9 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
                         return HvResult::Ok(());
                     }
                     if mmio.is_write {
-                        let sgis = mmio.value.get_bits(SGI_PENDING_BITS);
-                        for irq_id in SGI_PENDING_BITS {
+                        let mut reg = PendingR0(mmio.value as u32);
+                        let sgis = reg.sgis();
+                        for irq_id in 0..super::SGIS_NUM {
                             if !sgis.get_bit(irq_id) {
                                 continue;
                             }
@@ -305,15 +304,19 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
                             }
                         }
                         // Preserve physical PPI writes in bits 16..31 only.
-                        mmio.value.set_bits(SGI_PENDING_BITS, 0);
+                        reg.set_sgis(0);
+                        mmio.value = reg.0 as usize;
                         mmio_perform_access(gicr_base, mmio);
                     } else {
                         mmio_perform_access(gicr_base, mmio);
-                        let mut value = get_cpu_data(cpu).vcpu.irq.pending_mask(0, 16) as u32;
+                        let mut sgis =
+                            get_cpu_data(cpu).vcpu.irq.pending_mask(0, super::SGIS_NUM) as u32;
                         if cpu == crate::arch::cpu::this_cpu_id() {
-                            value |= super::lr_pending_sgi_mask();
+                            sgis |= super::lr_pending_sgi_mask();
                         }
-                        mmio.value.set_bits(SGI_PENDING_BITS, value as usize);
+                        let mut reg = PendingR0(mmio.value as u32);
+                        reg.set_sgis(sgis as u16);
+                        mmio.value = reg.0 as usize;
                     }
                     return HvResult::Ok(());
                 }

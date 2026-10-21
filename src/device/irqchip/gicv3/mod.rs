@@ -159,16 +159,48 @@ pub fn gicv3_handle_irq_el1() {
     trace!("handle done")
 }
 
-// ICH_LR<n>_EL2 and ICH_VTR_EL2 fields, for use with `bit_field::BitField`.
-const ICH_LR_VINTID_BITS: core::ops::Range<usize> = 0..32;
-const ICH_LR_GROUP_BIT: usize = 60;
-const ICH_LR_PENDING_BIT: usize = 62;
-const ICH_LR_ACTIVE_BIT: usize = 63;
-const ICH_VTR_LIST_REGS_BITS: core::ops::Range<usize> = 0..5;
-const SGIS_NUM: usize = 16;
+pub(crate) const SGIS_NUM: usize = 16;
+
+/// An ICH_LR<n>_EL2 value.
+#[derive(Clone, Copy)]
+struct IchLr(u64);
+
+impl IchLr {
+    fn new_pending(vintid: usize) -> Self {
+        let mut lr = Self(0);
+        lr.0.set_bits(0..32, vintid as u64);
+        lr.0.set_bit(60, true);
+        lr.set_pending(true);
+        lr
+    }
+
+    fn read(index: usize) -> Self {
+        Self(read_lr(index))
+    }
+
+    fn write(self, index: usize) {
+        write_lr(index, self.0);
+    }
+
+    fn vintid(self) -> usize {
+        self.0.get_bits(0..32) as usize
+    }
+
+    fn is_pending(self) -> bool {
+        self.0.get_bit(62)
+    }
+
+    fn set_pending(&mut self, pending: bool) {
+        self.0.set_bit(62, pending);
+    }
+
+    fn is_active(self) -> bool {
+        self.0.get_bit(63)
+    }
+}
 
 fn list_regs_num() -> usize {
-    read_sysreg!(ich_vtr_el2).get_bits(ICH_VTR_LIST_REGS_BITS) as usize + 1
+    read_sysreg!(ich_vtr_el2).get_bits(0..5) as usize + 1
 }
 
 pub fn clear_guest_sgi(target_cpu: usize, irq_id: usize) -> bool {
@@ -195,25 +227,21 @@ fn try_install_software_sgi(irq_id: usize) -> bool {
             free_lr.get_or_insert(index);
             continue;
         }
-        let mut lr = read_lr(index);
-        if lr.get_bits(ICH_LR_VINTID_BITS) as usize != irq_id {
+        let mut lr = IchLr::read(index);
+        if lr.vintid() != irq_id {
             continue;
         }
         // Active-only LRs become pending; pending ones coalesce.
-        if !lr.get_bit(ICH_LR_PENDING_BIT) {
-            lr.set_bit(ICH_LR_PENDING_BIT, true);
-            write_lr(index, lr);
+        if !lr.is_pending() {
+            lr.set_pending(true);
+            lr.write(index);
         }
         return true;
     }
     let Some(index) = free_lr else {
         return false;
     };
-    let mut lr = 0u64;
-    lr.set_bits(ICH_LR_VINTID_BITS, irq_id as u64);
-    lr.set_bit(ICH_LR_GROUP_BIT, true);
-    lr.set_bit(ICH_LR_PENDING_BIT, true);
-    write_lr(index, lr);
+    IchLr::new_pending(irq_id).write(index);
     true
 }
 
@@ -223,13 +251,13 @@ pub(crate) fn clear_lr_pending_irq(irq_id: usize) {
         if elsr.get_bit(index) {
             continue;
         }
-        let mut lr = read_lr(index);
-        if lr.get_bits(ICH_LR_VINTID_BITS) as usize != irq_id || !lr.get_bit(ICH_LR_PENDING_BIT) {
+        let mut lr = IchLr::read(index);
+        if lr.vintid() != irq_id || !lr.is_pending() {
             continue;
         }
-        if lr.get_bit(ICH_LR_ACTIVE_BIT) {
-            lr.set_bit(ICH_LR_PENDING_BIT, false);
-            write_lr(index, lr);
+        if lr.is_active() {
+            lr.set_pending(false);
+            lr.write(index);
         } else {
             write_lr(index, 0);
         }
@@ -243,9 +271,9 @@ pub(crate) fn lr_pending_sgi_mask() -> u32 {
         if elsr.get_bit(index) {
             continue;
         }
-        let lr = read_lr(index);
-        let irq_id = lr.get_bits(ICH_LR_VINTID_BITS) as usize;
-        if irq_id < SGIS_NUM && lr.get_bit(ICH_LR_PENDING_BIT) {
+        let lr = IchLr::read(index);
+        let irq_id = lr.vintid();
+        if irq_id < SGIS_NUM && lr.is_pending() {
             pending.set_bit(irq_id, true);
         }
     }

@@ -30,6 +30,7 @@ use crate::device::irqchip::gicv2::gicd::{
     GICV2_SGI_REGS_NUM, GICV2_TARGET_REGS_NUM,
 };
 use crate::device::irqchip::gicv2::GICV2;
+use crate::device::irqchip::PendingR0;
 use crate::error::HvResult;
 use crate::memory::{mmio_perform_access, MMIOAccess, MemFlags, MemoryRegion};
 /// This file defines and implements the functional functions of virtual gicv2.
@@ -41,8 +42,6 @@ use bit_field::BitField;
 use core::sync::atomic::Ordering;
 
 const GICV2_REG_WIDTH: usize = 4;
-/// SGI bits of GICD_ISPENDR0/ICPENDR0; bits 16..32 are physical PPIs.
-const SGI_PENDING_BITS: core::ops::Range<usize> = 0..16;
 
 impl Zone {
     // trap all Guest OS accesses to the GIC Distributor registers.
@@ -381,9 +380,10 @@ fn handle_gicd_intid_pending_access(
     }
     let target_cpu = this_cpu_id();
     if mmio.is_write {
-        let mut value = mmio.value as u32;
+        let mut reg = PendingR0(mmio.value as u32);
+        let sgis = reg.sgis();
         for irq_id in 0..GICV2_SGIS_NUM {
-            if !value.get_bit(irq_id) {
+            if !sgis.get_bit(irq_id) {
                 continue;
             }
             if is_clear {
@@ -393,9 +393,8 @@ fn handle_gicd_intid_pending_access(
             }
         }
         // Forward only the physical PPI bits owned by this zone.
-        value.set_bits(SGI_PENDING_BITS, 0);
-        value &= zone_owned_ppi_mask();
-        mmio.value = value as usize;
+        reg.set_sgis(0);
+        mmio.value = (reg.0 & zone_owned_ppi_mask()) as usize;
         mmio_perform_access(gicd_base, mmio);
         return Ok(());
     }
@@ -408,9 +407,9 @@ fn handle_gicd_intid_pending_access(
         }
     }
     // Hide host-owned PPI pending state, then overlay the software SGI state.
-    let mut value = (mmio.value as u32) & zone_owned_ppi_mask();
-    value.set_bits(SGI_PENDING_BITS, sgi_pending);
-    mmio.value = value as usize;
+    let mut reg = PendingR0(mmio.value as u32 & zone_owned_ppi_mask());
+    reg.set_sgis(sgi_pending as u16);
+    mmio.value = reg.0 as usize;
     Ok(())
 }
 

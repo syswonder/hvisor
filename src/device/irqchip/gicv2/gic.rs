@@ -18,9 +18,8 @@ use crate::cpu_data::this_cpu_data;
 use crate::device::irqchip::gicv2::gicc::GICC;
 use crate::device::irqchip::gicv2::gicd::GICV2_SGIS_NUM;
 use crate::device::irqchip::gicv2::gich::{
-    GicHypervisorInterface, GICH, GICV2_GICH_HCR_UIE, GICV2_GICH_LR_ACTIVE_BIT,
-    GICV2_GICH_LR_CPUID_BITS, GICV2_GICH_LR_EOI_BIT, GICV2_GICH_LR_HW, GICV2_GICH_LR_PENDING_BIT,
-    GICV2_GICH_LR_PENDING_STATE, GICV2_GICH_LR_PHYSID_SHIFT, GICV2_GICH_LR_VIRTUALID_BITS,
+    GicHypervisorInterface, GichLr, GICH, GICV2_GICH_HCR_UIE, GICV2_GICH_LR_HW,
+    GICV2_GICH_LR_PENDING_STATE, GICV2_GICH_LR_PHYSID_SHIFT,
 };
 use crate::event::{check_events, dispatch_host_events};
 use crate::hypercall::SGI_IPI_ID;
@@ -112,15 +111,6 @@ fn empty_lr_mask(gich: &GicHypervisorInterface) -> u64 {
     (gich.get_elrsr(1) as u64) << 32 | gich.get_elrsr(0) as u64
 }
 
-/// GICH_LR value for a pending SGI from `source_cpu` (HW=0, no EOI request).
-fn encode_pending_sgi_lr(irq_id: usize, source_cpu: usize) -> u32 {
-    let mut lr = 0u32;
-    lr.set_bits(GICV2_GICH_LR_VIRTUALID_BITS, irq_id as u32);
-    lr.set_bits(GICV2_GICH_LR_CPUID_BITS, source_cpu as u32);
-    lr.set_bit(GICV2_GICH_LR_PENDING_BIT, true);
-    lr
-}
-
 enum SgiInstall {
     Installed,
     /// Another source of the same SGI occupies an LR; EOI maintenance was
@@ -144,23 +134,23 @@ fn try_install_software_sgi(irq_id: usize, source_cpu: usize) -> SgiInstall {
             free_lr.get_or_insert(index);
             continue;
         }
-        let mut lr = gich.get_lr(index);
-        if lr.get_bits(GICV2_GICH_LR_VIRTUALID_BITS) as usize != irq_id {
+        let mut lr = GichLr::read(index);
+        if lr.vintid() != irq_id {
             continue;
         }
-        if lr.get_bits(GICV2_GICH_LR_CPUID_BITS) as usize == source_cpu {
-            lr.set_bit(GICV2_GICH_LR_PENDING_BIT, true);
-            gich.set_lr(index, lr);
+        if lr.source_cpu() == source_cpu {
+            lr.set_pending(true);
+            lr.write(index);
             return SgiInstall::Installed;
         }
-        lr.set_bit(GICV2_GICH_LR_EOI_BIT, true);
-        gich.set_lr(index, lr);
+        lr.set_eoi(true);
+        lr.write(index);
         return SgiInstall::Deferred;
     }
     let Some(index) = free_lr else {
         return SgiInstall::NoFreeLr;
     };
-    gich.set_lr(index, encode_pending_sgi_lr(irq_id, source_cpu));
+    GichLr::new_pending_sgi(irq_id, source_cpu).write(index);
     SgiInstall::Installed
 }
 
@@ -206,7 +196,7 @@ fn handle_sgi_eoi_maintenance() {
         if !eoi_lrs.get_bit(index) {
             continue;
         }
-        let irq_id = gich.get_lr(index).get_bits(GICV2_GICH_LR_VIRTUALID_BITS) as usize;
+        let irq_id = GichLr::read(index).vintid();
         if irq_id >= GICV2_SGIS_NUM {
             continue;
         }
@@ -257,17 +247,13 @@ fn clear_lr_pending_sgi(irq_id: usize, source_mask: u8) {
         if empty_lrs.get_bit(index) {
             continue;
         }
-        let mut lr = gich.get_lr(index);
-        let source = lr.get_bits(GICV2_GICH_LR_CPUID_BITS);
-        if lr.get_bits(GICV2_GICH_LR_VIRTUALID_BITS) as usize != irq_id
-            || !lr.get_bit(GICV2_GICH_LR_PENDING_BIT)
-            || !source_mask.get_bit(source as usize)
-        {
+        let mut lr = GichLr::read(index);
+        if lr.vintid() != irq_id || !lr.is_pending() || !source_mask.get_bit(lr.source_cpu()) {
             continue;
         }
-        if lr.get_bit(GICV2_GICH_LR_ACTIVE_BIT) {
-            lr.set_bit(GICV2_GICH_LR_PENDING_BIT, false);
-            gich.set_lr(index, lr);
+        if lr.is_active() {
+            lr.set_pending(false);
+            lr.write(index);
         } else {
             gich.set_lr(index, 0);
             // The freed LR may have carried the EOI request of a deferred
@@ -296,12 +282,11 @@ pub(crate) fn read_pending_sgi_lr_summary() -> PendingSgiLrSummary {
         if empty_lrs.get_bit(index) {
             continue;
         }
-        let lr = gich.get_lr(index);
-        let irq_id = lr.get_bits(GICV2_GICH_LR_VIRTUALID_BITS) as usize;
-        if irq_id < GICV2_SGIS_NUM && lr.get_bit(GICV2_GICH_LR_PENDING_BIT) {
+        let lr = GichLr::read(index);
+        let irq_id = lr.vintid();
+        if irq_id < GICV2_SGIS_NUM && lr.is_pending() {
             summary.pending_mask.set_bit(irq_id, true);
-            summary.source_masks[irq_id]
-                .set_bit(lr.get_bits(GICV2_GICH_LR_CPUID_BITS) as usize, true);
+            summary.source_masks[irq_id].set_bit(lr.source_cpu(), true);
         }
     }
     summary

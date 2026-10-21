@@ -117,6 +117,23 @@ pub use gicv3::{
     gicd::set_ispender, inject_irq, percpu_init, primary_init_early, primary_init_late,
 };
 
+/// A GICD/GICR ISPENDR0 or ICPENDR0 value: SGIs in bits [15:0], PPIs in
+/// bits [31:16].
+#[cfg(target_arch = "aarch64")]
+#[derive(Clone, Copy)]
+pub(crate) struct PendingR0(pub u32);
+
+#[cfg(target_arch = "aarch64")]
+impl PendingR0 {
+    pub fn sgis(self) -> u16 {
+        bit_field::BitField::get_bits(&self.0, 0..16) as u16
+    }
+
+    pub fn set_sgis(&mut self, sgis: u16) {
+        bit_field::BitField::set_bits(&mut self.0, 0..16, sgis as u32);
+    }
+}
+
 #[cfg(target_arch = "aarch64")]
 pub fn gic_handle_irq() {
     #[cfg(irq_gicv2)]
