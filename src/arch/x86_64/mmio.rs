@@ -17,20 +17,130 @@
 use crate::{
     arch::{
         s2pt::DescriptorAttr,
-        vmcs::{VmcsGuest16, VmcsGuestNW},
+        vmcs::{Vmcs, VmcsGuest16, VmcsGuestNW},
     },
     cpu_data::{this_cpu_data, this_zone},
-    error::HvResult,
+    error::{HvError, HvResult},
     memory::{
         addr::{GuestPhysAddr, GuestVirtAddr, HostPhysAddr},
-        MMIOAccess, MMIOHandler,
+        MMIOAccess, MMIOHandler, PAGE_SIZE,
     },
 };
 use alloc::{sync::Arc, vec::Vec};
 use bit_field::BitField;
-use core::{mem::size_of, ops::Range, ptr::write_volatile, slice::from_raw_parts};
+use core::{
+    mem::size_of,
+    ops::Range,
+    ptr::{read_volatile, write_volatile},
+};
 use spin::Mutex;
 use x86::controlregs::{Cr0, Cr4};
+use x86::irq::PAGE_FAULT_VECTOR;
+
+const MAX_INSTRUCTION_LEN: usize = 15;
+const GUEST_PTE_ADDR_MASK: usize = 0x000f_ffff_ffff_f000;
+
+#[derive(Debug)]
+enum InstructionError {
+    PageFault {
+        address: GuestVirtAddr,
+        error_code: u32,
+    },
+    Other(HvError),
+}
+
+type InstructionResult<T = ()> = Result<T, InstructionError>;
+
+impl From<HvError> for InstructionError {
+    fn from(error: HvError) -> Self {
+        Self::Other(error)
+    }
+}
+
+impl From<x86::vmx::VmFail> for InstructionError {
+    fn from(error: x86::vmx::VmFail) -> Self {
+        Self::Other(error.into())
+    }
+}
+
+// Fetch only bytes consumed by the decoder; a valid instruction may end at a page boundary.
+struct InstructionStream<F> {
+    rip: GuestVirtAddr,
+    len: usize,
+    fetch: F,
+}
+
+impl<F> InstructionStream<F>
+where
+    F: FnMut(GuestVirtAddr) -> InstructionResult<u8>,
+{
+    fn new(rip: GuestVirtAddr, fetch: F) -> Self {
+        Self { rip, len: 0, fetch }
+    }
+
+    fn read_u8(&mut self) -> InstructionResult<u8> {
+        if self.len == MAX_INSTRUCTION_LEN {
+            return Err(hv_err!(E2BIG, "x86 instruction exceeds 15 bytes").into());
+        }
+        let address = self
+            .rip
+            .checked_add(self.len)
+            .ok_or_else(|| hv_err!(EFAULT, "instruction address overflow"))?;
+        let byte = (self.fetch)(address)?;
+        self.len += 1;
+        Ok(byte)
+    }
+
+    fn read_i8(&mut self) -> InstructionResult<i8> {
+        Ok(self.read_u8()? as i8)
+    }
+
+    fn read_i32(&mut self) -> InstructionResult<i32> {
+        let bytes = [
+            self.read_u8()?,
+            self.read_u8()?,
+            self.read_u8()?,
+            self.read_u8()?,
+        ];
+        Ok(i32::from_le_bytes(bytes))
+    }
+}
+
+struct GuestInstructionBytes {
+    // Guest-adjacent pages need not be adjacent in host memory.
+    cached_page: Option<(GuestVirtAddr, HostPhysAddr)>,
+    real_mode: bool,
+}
+
+impl GuestInstructionBytes {
+    fn new() -> HvResult<Self> {
+        let cr0 = VmcsGuestNW::CR0.read()?;
+        Ok(Self {
+            cached_page: None,
+            real_mode: cr0 & Cr0::CR0_PROTECTED_MODE.bits() == 0,
+        })
+    }
+
+    fn read(&mut self, address: GuestVirtAddr) -> InstructionResult<u8> {
+        let page = address & !(PAGE_SIZE - 1);
+        let offset = address & (PAGE_SIZE - 1);
+        let host_page = match self.cached_page {
+            Some((cached, host_page)) if !self.real_mode && cached == page => host_page,
+            _ => {
+                let gpa = translate_guest_gva(address, true)?;
+                let hpa = gpa_to_hpa(gpa)?;
+                // The real-mode CS base may not align with a RIP page boundary.
+                if self.real_mode {
+                    return Ok(unsafe { read_volatile(hpa as *const u8) });
+                }
+                let host_page = hpa - offset;
+                self.cached_page = Some((page, host_page));
+                host_page
+            }
+        };
+        Ok(unsafe { read_volatile((host_page + offset) as *const u8) })
+    }
+}
 
 pub trait MMIoDevice: Send + Sync {
     fn gpa_range(&self) -> &Vec<Range<usize>>;
@@ -185,10 +295,9 @@ const OPERAND_SIZE_OVERRIDE_PREFIX: u8 = 0x66;
 
 const TWO_BYTE_ESCAPE: u8 = 0xf;
 
-// len stands for instruction len
 enum OprandType {
-    Reg { reg: RmReg, len: usize },
-    Gpa { gpa: usize, len: usize },
+    Reg(RmReg),
+    Gpa(usize),
 }
 
 struct ModRM {
@@ -210,49 +319,44 @@ impl ModRM {
         }
     }
 
-    pub fn get_reg(&self) -> RmReg {
-        self.reg_opcode.try_into().unwrap()
+    pub fn get_reg(&self) -> InstructionResult<RmReg> {
+        self.reg_opcode
+            .try_into()
+            .map_err(|_| InstructionError::Other(hv_err!(EINVAL, "invalid ModRM register")))
     }
 
-    pub fn get_modrm(&self, inst: &Vec<u8>, disp_id: usize) -> Option<OprandType> {
-        let reg: RmReg = self.rm.try_into().unwrap();
-        let mut reg_val = reg.read().unwrap();
-        // TODO: SIB
+    pub fn get_modrm<F>(&self, inst: &mut InstructionStream<F>) -> InstructionResult<OprandType>
+    where
+        F: FnMut(GuestVirtAddr) -> InstructionResult<u8>,
+    {
+        let reg: RmReg = self
+            .rm
+            .try_into()
+            .map_err(|_| hv_err!(EINVAL, "invalid ModRM operand"))?;
+        if self._mod == 3 {
+            return Ok(OprandType::Reg(reg));
+        }
+        if self.rm == 4 || (self._mod == 0 && self.rm == 5) {
+            return Err(
+                hv_err!(ENOSYS, "SIB and RIP-relative MMIO operands are unsupported").into(),
+            );
+        }
+        let reg_val = reg.read()?;
         match self._mod {
-            0 => Some(OprandType::Gpa {
-                gpa: gva_to_gpa(reg_val as _).unwrap(),
-                len: 0,
-            }),
+            0 => Ok(OprandType::Gpa(gva_to_gpa(reg_val as _)?)),
             1 => {
-                let mut buf = [0u8; 1];
-                buf[0..1].copy_from_slice(&inst[disp_id..disp_id + 1]);
-                let disp_8 = i8::from_ne_bytes(buf);
-                if disp_8 > 0 {
-                    reg_val += (disp_8 as u64);
-                } else {
-                    reg_val -= ((-disp_8) as u64);
-                }
-                Some(OprandType::Gpa {
-                    gpa: gva_to_gpa(reg_val as _).unwrap(),
-                    len: 1,
-                })
+                let disp = inst.read_i8()? as i64;
+                Ok(OprandType::Gpa(gva_to_gpa(
+                    reg_val.wrapping_add_signed(disp) as _,
+                )?))
             }
             2 => {
-                let mut buf = [0u8; 4];
-                buf[0..4].copy_from_slice(&inst[disp_id..disp_id + 4]);
-                let disp_32 = i32::from_ne_bytes(buf);
-                if disp_32 > 0 {
-                    reg_val += (disp_32 as u64);
-                } else {
-                    reg_val -= ((-disp_32) as u64);
-                }
-                Some(OprandType::Gpa {
-                    gpa: gva_to_gpa(reg_val as _).unwrap(),
-                    len: 4,
-                })
+                let disp = inst.read_i32()? as i64;
+                Ok(OprandType::Gpa(gva_to_gpa(
+                    reg_val.wrapping_add_signed(disp) as _,
+                )?))
             }
-            3 => Some(OprandType::Reg { reg, len: 0 }),
-            _ => None,
+            _ => Err(hv_err!(EINVAL, "invalid ModRM mode").into()),
         }
     }
 }
@@ -263,27 +367,52 @@ fn gpa_to_hpa(gpa: GuestPhysAddr) -> HvResult<HostPhysAddr> {
 }
 
 fn get_page_entry(pt_hpa: HostPhysAddr, pte_id: usize) -> usize {
-    unsafe { (*((pt_hpa + (pte_id * size_of::<usize>())) as *const usize)) & 0x7ffffffffffffusize }
+    unsafe { read_volatile((pt_hpa + pte_id * size_of::<usize>()) as *const usize) }
 }
 
 fn gva_to_gpa(gva: GuestVirtAddr) -> HvResult<GuestPhysAddr> {
-    let mut gpa: GuestPhysAddr = 0;
+    translate_guest_gva(gva, false).map_err(|error| match error {
+        InstructionError::PageFault { .. } => hv_err!(EFAULT, "guest page is not present"),
+        InstructionError::Other(error) => error,
+    })
+}
+
+fn check_guest_pte(
+    entry: usize,
+    address: GuestVirtAddr,
+    is_instruction: bool,
+) -> InstructionResult {
+    if entry & 1 == 0 {
+        // A missing instruction page must fault in the guest, not the hypervisor.
+        let user = (VmcsGuest16::CS_SELECTOR.read()? & 3 != 0) as u32;
+        return Err(InstructionError::PageFault {
+            address,
+            error_code: (user << 2) | ((is_instruction as u32) << 4),
+        });
+    }
+    Ok(())
+}
+
+fn translate_guest_gva(
+    gva: GuestVirtAddr,
+    is_instruction: bool,
+) -> InstructionResult<GuestPhysAddr> {
     let cr0 = VmcsGuestNW::CR0.read()?;
     let cr4 = VmcsGuestNW::CR4.read()?;
 
     // guest hasn't enabled paging, va = pa
     if cr0 & Cr0::CR0_ENABLE_PAGING.bits() == 0 {
-        gpa = gva;
+        let mut gpa = gva;
         // still in real mode, apply cs
         if cr0 & Cr0::CR0_PROTECTED_MODE.bits() == 0 {
             let cs_selector = VmcsGuest16::CS_SELECTOR.read()? as usize;
-            gpa = (cs_selector << 4) | gva;
+            gpa = (cs_selector << 4).wrapping_add(gva);
         }
         return Ok(gpa);
     }
 
     if cr4 & Cr4::CR4_ENABLE_PAE.bits() == 0 {
-        panic!("protected mode gva_to_gpa not implemented yet!");
+        return Err(hv_err!(ENOSYS, "non-PAE guest address translation is unsupported").into());
     }
 
     // lookup guest page table in long mode
@@ -292,39 +421,43 @@ fn gva_to_gpa(gva: GuestVirtAddr) -> HvResult<GuestPhysAddr> {
     let p4_hpa = gpa_to_hpa(p4_gpa)?;
     let p4_entry_id = (gva >> 39) & 0x1ff;
     let p4_entry = get_page_entry(p4_hpa, p4_entry_id);
+    check_guest_pte(p4_entry, gva, is_instruction)?;
 
-    let p3_gpa = p4_entry & !(0xfff);
+    let p3_gpa = p4_entry & GUEST_PTE_ADDR_MASK;
     let p3_entry_id = (gva >> 30) & 0x1ff;
     let p3_hpa = gpa_to_hpa(p3_gpa)?;
     let p3_entry = get_page_entry(p3_hpa, p3_entry_id);
+    check_guest_pte(p3_entry, gva, is_instruction)?;
 
     // info!("p3_entry: {:x}", p3_entry);
 
     if p3_entry & (DescriptorAttr::HUGE_PAGE.bits() as usize) != 0 {
-        let page_gpa = p3_entry & !(0xfff);
+        let page_gpa = p3_entry & GUEST_PTE_ADDR_MASK & !0x3fff_ffff;
         return Ok(page_gpa | (gva & 0x3fffffff));
     }
 
-    let p2_gpa = p3_entry & !(0xfff);
+    let p2_gpa = p3_entry & GUEST_PTE_ADDR_MASK;
     let p2_entry_id = (gva >> 21) & 0x1ff;
     let p2_hpa = gpa_to_hpa(p2_gpa)?;
     let p2_entry = get_page_entry(p2_hpa, p2_entry_id);
+    check_guest_pte(p2_entry, gva, is_instruction)?;
 
     // info!("p2_entry: {:x}", p2_entry);
 
     if p2_entry & (DescriptorAttr::HUGE_PAGE.bits() as usize) != 0 {
-        let page_gpa = p2_entry & !(0xfff);
+        let page_gpa = p2_entry & GUEST_PTE_ADDR_MASK & !0x1f_ffff;
         return Ok(page_gpa | (gva & 0x1fffff));
     }
 
-    let p1_gpa = p2_entry & !(0xfff);
+    let p1_gpa = p2_entry & GUEST_PTE_ADDR_MASK;
     let p1_entry_id = (gva >> 12) & 0x1ff;
     let p1_hpa = gpa_to_hpa(p1_gpa)?;
     let p1_entry = get_page_entry(p1_hpa, p1_entry_id);
+    check_guest_pte(p1_entry, gva, is_instruction)?;
 
     // info!("p1_entry: {:x}", p1_entry);
 
-    let page_gpa: usize = p1_entry & !(0xfff);
+    let page_gpa: usize = p1_entry & GUEST_PTE_ADDR_MASK;
     Ok(page_gpa | (gva & 0xfff))
 }
 
@@ -354,48 +487,51 @@ fn get_default_operand_size() -> HvResult<usize> {
     Ok(size)
 }
 
-fn emulate_inst(
-    inst: &Vec<u8>,
+fn emulate_inst<F>(
+    inst: &mut InstructionStream<F>,
     handler: &MMIOHandler,
     mmio: &mut MMIOAccess,
     base: usize,
-) -> HvResult<usize> {
-    assert!(inst.len() > 0);
+    arg: usize,
+) -> InstructionResult<usize>
+where
+    F: FnMut(GuestVirtAddr) -> InstructionResult<u8>,
+{
+    let mmio_offset = |gpa: usize| -> InstructionResult<usize> {
+        gpa.checked_sub(base)
+            .ok_or_else(|| hv_err!(EFAULT, "MMIO address is below handler region").into())
+    };
 
     let mut size = get_default_operand_size()?;
     let mut size_override = false;
-    let mut cur_id = 0;
+    let mut byte = inst.read_u8()?;
 
-    if inst[cur_id] == OPERAND_SIZE_OVERRIDE_PREFIX {
+    if byte == OPERAND_SIZE_OVERRIDE_PREFIX {
         if size == size_of::<u32>() {
             size = size_of::<u16>();
         } else {
             size = size_of::<u32>();
         }
-        cur_id += 1;
         size_override = true;
+        byte = inst.read_u8()?;
     }
 
     let mut rex = RexPrefixLow::from_bits_truncate(0);
-    if inst[cur_id].get_bits(4..=7) == REX_PREFIX_HIGH {
-        rex = RexPrefixLow::from_bits_truncate(inst[cur_id].get_bits(0..=3));
-        // we haven't implemented other situations yet
-        assert!(rex == RexPrefixLow::REGISTERS);
-        cur_id += 1;
+    if byte.get_bits(4..=7) == REX_PREFIX_HIGH {
+        rex = RexPrefixLow::from_bits_truncate(byte.get_bits(0..=3));
+        if rex != RexPrefixLow::REGISTERS {
+            return Err(hv_err!(ENOSYS, "unsupported REX prefix in MMIO instruction").into());
+        }
+        byte = inst.read_u8()?;
     }
 
-    let mut two_byte = false;
-    if inst[cur_id] == TWO_BYTE_ESCAPE {
-        two_byte = true;
-        cur_id += 1;
-    }
+    let two_byte = byte == TWO_BYTE_ESCAPE;
+    let opcode_byte = if two_byte { inst.read_u8()? } else { byte };
 
     if !two_byte {
-        if OneByteOpCode::try_from(inst[cur_id]).is_err() {
-            error!("inst: {:#x?}", inst);
-        }
-        let opcode: OneByteOpCode = inst[cur_id].try_into().unwrap();
-        cur_id += 1;
+        let opcode: OneByteOpCode = opcode_byte
+            .try_into()
+            .map_err(|_| hv_err!(ENOSYS, "unsupported MMIO instruction opcode"))?;
 
         if !size_override {
             size = match opcode {
@@ -406,75 +542,51 @@ fn emulate_inst(
 
         match opcode {
             OneByteOpCode::MovEbGb | OneByteOpCode::MovEvGv => {
-                let mod_rm = ModRM::new(inst[cur_id], &rex);
-                cur_id += 1;
-
-                let src = mod_rm.get_reg();
-                let src_val = src.read().unwrap();
-
-                let dst = mod_rm.get_modrm(inst, cur_id).unwrap();
+                let mod_rm = ModRM::new(inst.read_u8()?, &rex);
+                let src_val = mod_rm.get_reg()?.read()?;
+                let dst = mod_rm.get_modrm(inst)?;
                 match dst {
-                    OprandType::Reg { reg, len } => {
-                        cur_id += len;
-                        reg.write(src_val, size).unwrap();
+                    OprandType::Reg(reg) => {
+                        reg.write(src_val, size)?;
                     }
-                    OprandType::Gpa { gpa, len } => {
-                        cur_id += len;
-
-                        mmio.address = gpa - base;
+                    OprandType::Gpa(gpa) => {
+                        mmio.address = mmio_offset(gpa)?;
                         mmio.is_write = true;
                         mmio.size = size;
                         mmio.value = src_val as _;
-
-                        handler(mmio, base);
+                        handler(mmio, arg)?;
                     }
-                    _ => {}
                 }
-
-                Ok(cur_id)
+                Ok(inst.len)
             }
             OneByteOpCode::MovGbEb | OneByteOpCode::MovGvEv => {
-                let mod_rm = ModRM::new(inst[cur_id], &rex);
-                cur_id += 1;
-
-                let dst = mod_rm.get_reg();
-
-                let src = mod_rm.get_modrm(inst, cur_id).unwrap();
+                let mod_rm = ModRM::new(inst.read_u8()?, &rex);
+                let dst = mod_rm.get_reg()?;
+                let src = mod_rm.get_modrm(inst)?;
                 let src_val = match src {
-                    OprandType::Reg { reg, len } => {
-                        cur_id += len;
-                        reg.read().unwrap()
-                    }
-                    OprandType::Gpa { gpa, len } => {
-                        cur_id += len;
-
-                        mmio.address = gpa - base;
+                    OprandType::Reg(reg) => reg.read()?,
+                    OprandType::Gpa(gpa) => {
+                        mmio.address = mmio_offset(gpa)?;
                         mmio.is_write = false;
                         mmio.size = size;
                         mmio.value = 0;
-                        // info!("src_val: {:x}", gpa);
-
-                        handler(mmio, base);
+                        handler(mmio, arg)?;
                         mmio.value as u64
                     }
                 };
-
-                dst.write(src_val, size).unwrap();
-                Ok(cur_id)
+                dst.write(src_val, size)?;
+                Ok(inst.len)
             }
-            _ => {
-                hv_result_err!(
-                    ENOSYS,
-                    format!("Unimplemented opcode: 0x{:x}", opcode as u8)
-                )
-            }
+            _ => Err(hv_err!(
+                ENOSYS,
+                format!("Unimplemented opcode: 0x{:x}", opcode as u8)
+            )
+            .into()),
         }
     } else {
-        if TwoByteOpCode::try_from(inst[cur_id]).is_err() {
-            error!("inst: {:#x?}", inst);
-        }
-        let opcode: TwoByteOpCode = inst[cur_id].try_into().unwrap();
-        cur_id += 1;
+        let opcode: TwoByteOpCode = opcode_byte
+            .try_into()
+            .map_err(|_| hv_err!(ENOSYS, "unsupported two-byte MMIO opcode"))?;
 
         if !size_override {
             size = match opcode {
@@ -486,27 +598,17 @@ fn emulate_inst(
 
         match opcode {
             TwoByteOpCode::MovZxGvEb | TwoByteOpCode::MovZxGvEw => {
-                let mod_rm = ModRM::new(inst[cur_id], &rex);
-                cur_id += 1;
-
-                let dst = mod_rm.get_reg();
-
-                let src = mod_rm.get_modrm(inst, cur_id).unwrap();
+                let mod_rm = ModRM::new(inst.read_u8()?, &rex);
+                let dst = mod_rm.get_reg()?;
+                let src = mod_rm.get_modrm(inst)?;
                 let src_val = match src {
-                    OprandType::Reg { reg, len } => {
-                        cur_id += len;
-                        reg.read().unwrap()
-                    }
-                    OprandType::Gpa { gpa, len } => {
-                        cur_id += len;
-
-                        mmio.address = gpa - base;
+                    OprandType::Reg(reg) => reg.read()?,
+                    OprandType::Gpa(gpa) => {
+                        mmio.address = mmio_offset(gpa)?;
                         mmio.is_write = false;
                         mmio.size = size;
                         mmio.value = 0;
-                        // info!("src_val: {:x}", gpa);
-
-                        handler(mmio, base);
+                        handler(mmio, arg)?;
                         mmio.value as u64
                     }
                 };
@@ -517,29 +619,39 @@ fn emulate_inst(
                     _ => src_val,
                 };
 
-                dst.write(src_val_zero_extend, 8).unwrap();
-                Ok(cur_id)
+                dst.write(src_val_zero_extend, 8)?;
+                Ok(inst.len)
             }
-            _ => {
-                hv_result_err!(
-                    ENOSYS,
-                    format!("Unimplemented opcode: 0x{:x}", opcode as u8)
-                )
-            }
+            _ => Err(hv_err!(
+                ENOSYS,
+                format!("Unimplemented opcode: 0x{:x}", opcode as u8)
+            )
+            .into()),
         }
     }
 }
 
-pub fn instruction_emulator(handler: &MMIOHandler, mmio: &mut MMIOAccess, base: usize) -> HvResult {
-    let rip_hpa = gpa_to_hpa(gva_to_gpa(VmcsGuestNW::RIP.read()?)?)? as *const u8;
-    let inst = unsafe { from_raw_parts(rip_hpa, 15) }.to_vec();
-
-    let len = emulate_inst(&inst, handler, mmio, base).unwrap();
-    // info!("rip_hpa: {:?}, inst: {:x?}, len: {:x}", rip_hpa, inst, len);
-
-    this_cpu_data().arch_cpu.advance_guest_rip(len as _)?;
-
-    Ok(())
+pub fn instruction_emulator(
+    handler: &MMIOHandler,
+    mmio: &mut MMIOAccess,
+    base: usize,
+    arg: usize,
+) -> HvResult {
+    let rip = VmcsGuestNW::RIP.read()?;
+    let mut bytes = GuestInstructionBytes::new()?;
+    let mut inst = InstructionStream::new(rip, |address| bytes.read(address));
+    match emulate_inst(&mut inst, handler, mmio, base, arg) {
+        Ok(len) => this_cpu_data().arch_cpu.advance_guest_rip(len as u8),
+        Err(InstructionError::PageFault {
+            address,
+            error_code,
+        }) => {
+            // Retry the same instruction after the guest handles the page fault.
+            this_cpu_data().arch_cpu.set_guest_cr2(address);
+            Vmcs::inject_interrupt(PAGE_FAULT_VECTOR, Some(error_code))
+        }
+        Err(InstructionError::Other(error)) => Err(error),
+    }
 }
 
 pub fn mmio_empty_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
