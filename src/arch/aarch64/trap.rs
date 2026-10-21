@@ -400,7 +400,7 @@ fn handle_smc(regs: &mut GeneralRegisters) {
         }
         _ => {
             warn!("unsupported smc {:#x?}", code);
-            0
+            ARM_SMCCC_NOT_SUPPORTED as u64
         }
     };
     regs.usr[0] = result;
@@ -420,7 +420,7 @@ fn psci_emulate_features_info(code: u64) -> u64 {
         | PsciFnId::PSCI_AFFINITY_INFO_64
         | PsciFnId::PSCI_FEATURES
         | SMCccFnId::SMCCC_VERSION => 0,
-        _ => !0,
+        _ => ARM_SMCCC_NOT_SUPPORTED as u64,
     }
 }
 
@@ -493,7 +493,7 @@ fn handle_psci_smc(
 
         _ => {
             warn!("unsupported smc standard service {:#x?}", code);
-            0
+            ARM_SMCCC_NOT_SUPPORTED as u64
         }
     }
 }
@@ -507,10 +507,10 @@ fn handle_arch_smc(
 ) -> u64 {
     match code {
         SMCccFnId::SMCCC_VERSION => ARM_SMCCC_VERSION_1_1,
-        SMCccFnId::SMCCC_ARCH_FEATURES => !0,
+        SMCccFnId::SMCCC_ARCH_FEATURES => ARM_SMCCC_NOT_SUPPORTED as u64,
         _ => {
-            error!("unsupported ARM smc service");
-            return !0;
+            warn!("unsupported ARM smc service {:#x?}", code);
+            ARM_SMCCC_NOT_SUPPORTED as u64
         }
     }
 }
