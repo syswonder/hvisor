@@ -34,7 +34,7 @@ $(error "Unsupported architecture $(ARCH)")
 	endif
 endif
 
-CFLAGS := -Wall -Wextra -DHLOG=$(LOG) -pthread
+CFLAGS := -Wall -Wextra -DHLOG=$(LOG) -pthread -MMD -MP
 
 # Conditionally add sysroot if ROOT is set
 # Otherwise use default flags from cross-compiler
@@ -57,8 +57,6 @@ endif
 ifeq ($(VIRTIO_SCMI), y)
 	CFLAGS += -DENABLE_VIRTIO_SCMI
 endif
-
-include $(sources:.c=.d)
 
 ifeq ($(DEBUG), y)
 	CFLAGS += -g -O0
@@ -92,12 +90,6 @@ endif
 
 all: hvisor $(demo_targets)
 
-%.d: %.c
-	@set -e; rm -f $@; \
-	$(CC) -MM $(include_dirs) $< > $@.$$$$; \
-	sed 's,\($*\)\.o[ :]*,\1.o $@ : ,g' < $@.$$$$ > $@; \
-	rm -f $@.$$$$
-
 $(objects): %.o: %.c
 	$(CC) $(CFLAGS) $(include_dirs) $(LIBS) -c -o $@ $<
 
@@ -112,3 +104,8 @@ rpmsg_demo: $(rpmsg_demo_object)
 
 clean:
 	@rm -f hvisor ivc_demo rpmsg_demo *.o *.d *.d.* boot/*.o boot/*.d boot/*.d.* virtio/*.o virtio/*.d virtio/*.d.* virtio/devices/*/*.o virtio/devices/*/*.d virtio/devices/*/*.d.* ../cJSON/*.o ../cJSON/*.d ../cJSON/*.d.*
+
+# Keep this at the end: an included depfile defines a rule, and a rule seen
+# before the first explicit target would change make's default goal from "all"
+# to whichever object happens to be listed first.
+-include $(objects:.o=.d)
