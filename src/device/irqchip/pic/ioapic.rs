@@ -62,6 +62,7 @@ static VIRT_IOAPIC: Once<VirtIoApic> = Once::new();
 struct VirtIoApicUnlocked {
     cur_reg: u32,
     rte: [u64; (IOAPIC_MAX_REDIRECT_ENTRIES + 1) as usize],
+    pending: u32,
 }
 
 pub struct VirtIoApic {
@@ -129,6 +130,7 @@ impl VirtIoApic {
         assert!(gpa == 0x10);
 
         let mut inner = ioapic.lock();
+        let mut replay = None;
         match inner.cur_reg {
             IoApicReg::ID | IoApicReg::VERSION | IoApicReg::ARBITRATION => {}
             mut reg => {
@@ -169,8 +171,20 @@ impl VirtIoApic {
                         // only root zone modify the real I/O APIC
                         unsafe { configure_gsi_from_raw(index as _, *entry) };
                     }
+                    let entry = *entry;
+                    let vector = entry.get_bits(0..=7) as u8;
+                    if !entry.get_bit(16) && vector >= 0x20 && inner.pending.get_bit(index) {
+                        inner.pending.set_bit(index, false);
+                        let dest = try_get_cpu_id(entry.get_bits(56..=63) as usize)
+                            .unwrap_or_else(this_cpu_id);
+                        replay = Some((dest, vector));
+                    }
                 }
             }
+        }
+        drop(inner);
+        if let Some((dest, vector)) = replay {
+            inject_vector(dest, vector, None, false);
         }
         Ok(())
     }
@@ -187,13 +201,17 @@ impl VirtIoApic {
     fn trigger(&self, irq: usize, allow_repeat: bool) -> HvResult {
         let zone_id = this_zone_id();
         let ioapic = self.inner.get(zone_id).unwrap();
-        if let Some(entry) = ioapic.lock().rte.get(irq) {
+        let mut inner = ioapic.lock();
+        if let Some(&entry) = inner.rte.get(irq) {
             // TODO: physical & logical mode
             let dest = try_get_cpu_id(entry.get_bits(56..=63) as usize).unwrap_or_else(this_cpu_id);
             let masked = entry.get_bit(16);
             let vector = entry.get_bits(0..=7) as u8;
             if !masked && vector >= 0x20 {
+                drop(inner);
                 inject_vector(dest, vector, None, allow_repeat);
+            } else {
+                inner.pending.set_bit(irq, true);
             }
         }
         Ok(())

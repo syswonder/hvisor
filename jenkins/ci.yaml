@@ -99,9 +99,13 @@ bids:
       - KDIR=/home/light/DEMO/linux/linux-5.19
     tests:
       mode: qemu
+      zone1_iterations: 1
+      zone1_boot_timeout: 60
+      zone1_io_timeout: 120
+      zone1_io_size_mb: 100
       cases:
         - zone0_start
-        - zone1_start
+        - x86_qemu_zone1_regression
 
   - bid: x86_64/qemu_asterinas
     platform_board: qemu
