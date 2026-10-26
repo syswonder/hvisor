@@ -185,7 +185,7 @@ static void virtq_blk_handle_one_request(BlkDev *dev, VirtQueue *vq) {
     // side the request type requires. A data buffer on the wrong side
     // changes the group counts, which is the split-equivalent of the
     // per-descriptor direction check the pre-refactor code performed.
-    if (ret < 2 || ret > BLK_SEG_MAX + 2) {
+    if (ret < 2 || ret > VIRTQUEUE_BLK_MAX_SIZE) {
         log_error("invalid chain length %d", ret);
         blk_complete(vq, desc_idx, NULL, EIO, 0);
         return;
