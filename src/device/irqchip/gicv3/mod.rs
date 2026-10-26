@@ -470,6 +470,13 @@ pub fn inject_irq(irq_id: usize, is_hardware: bool) -> bool {
         let lr_val = read_lr(i) as usize;
         // if a virtual interrupt is enabled and equals to the physical interrupt irq_id
         if (lr_val & LR_VIRTIRQ_MASK) == irq_id {
+            // A software IRQ the guest has acknowledged but not yet
+            // deactivated would otherwise lose this injection.
+            let mut lr = IchLr(lr_val as u64);
+            if !is_hardware && lr.is_active() && !lr.is_pending() {
+                lr.set_pending(true);
+                lr.write(i);
+            }
             trace!("virtual irq {} enables again", irq_id);
             return true;
         }
