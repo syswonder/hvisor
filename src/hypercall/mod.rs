@@ -16,6 +16,7 @@
 #![allow(dead_code)]
 #![allow(unreachable_patterns)]
 
+#[cfg(not(target_arch = "x86_64"))]
 use crate::arch::cpu::get_target_cpu;
 use crate::config::{HvZoneBootMode, HvZoneConfig};
 use crate::consts::{INVALID_ADDRESS, MAX_WAIT_TIMES, PAGE_SIZE};
@@ -23,7 +24,7 @@ use crate::cpu_data::{get_cpu_data, PerCpu, VcpuState};
 use crate::device::virtio_trampoline::{
     VirtioPCIHypercallOp, VIRTIO_BRIDGE, VIRTIO_PCI_BRIDGE, VIRTIO_PCI_HYPERCALL_VERSION,
 };
-#[cfg(not(target_arch = "loongarch64"))]
+#[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
 use crate::device::virtio_trampoline::{MAX_DEVS, VIRTIO_IRQS};
 use crate::error::HvResult;
 use crate::pci::pci_config::GLOBAL_PCIE_LIST;
@@ -32,7 +33,7 @@ use crate::zone::{
     set_zone_boot_mode, zone_create, ZoneInfo,
 };
 
-#[cfg(not(target_arch = "loongarch64"))]
+#[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
 use crate::event::IPI_EVENT_VIRTIO_INJECT_IRQ;
 use crate::event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_VIRTIO_PCI_DONE, IPI_EVENT_WAKEUP};
 use core::convert::TryFrom;
@@ -147,17 +148,17 @@ impl<'a> HyperCall<'a> {
             );
         }
         let mut res_agent = VIRTIO_BRIDGE.res_agent();
-        #[cfg(not(target_arch = "loongarch64"))]
+        #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
         let mut map_irq = VIRTIO_IRQS.lock();
         while !res_agent.is_empty() {
             let (_res_front, irq_id, target_zone) = res_agent.peek_front();
-            let target_cpu = match find_zone(target_zone as _) {
-                Some(_zone) => get_target_cpu(irq_id as _, target_zone as _),
-                _ => {
-                    res_agent.advance_front();
-                    continue;
-                }
-            };
+            if find_zone(target_zone as _).is_none() {
+                res_agent.advance_front();
+                continue;
+            }
+
+            #[cfg(not(target_arch = "x86_64"))]
+            let target_cpu = get_target_cpu(irq_id as _, target_zone as _);
 
             #[cfg(target_arch = "loongarch64")]
             {
@@ -170,7 +171,18 @@ impl<'a> HyperCall<'a> {
                 continue;
             }
 
-            #[cfg(not(target_arch = "loongarch64"))]
+            #[cfg(target_arch = "x86_64")]
+            {
+                crate::device::irqchip::pic::ioapic::ioapic_set_line(
+                    target_zone as usize,
+                    irq_id as usize,
+                    true,
+                );
+                res_agent.advance_front();
+                continue;
+            }
+
+            #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
             {
                 let irq_list = map_irq.entry(target_cpu).or_insert([0; MAX_DEVS + 1]);
                 self.wait_for_interrupt(irq_list);
@@ -187,7 +199,7 @@ impl<'a> HyperCall<'a> {
                 }
             }
 
-            #[cfg(not(target_arch = "loongarch64"))]
+            #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
             res_agent.advance_front();
         }
         drop(res_agent);
@@ -241,9 +253,9 @@ impl<'a> HyperCall<'a> {
             return hv_result_err!(EINVAL, format!("zone {} does not exist", target_zone));
         }
 
-        let target_cpu = get_target_cpu(irq_id, target_zone);
         #[cfg(target_arch = "loongarch64")]
         {
+            let target_cpu = get_target_cpu(irq_id, target_zone);
             if !crate::device::irqchip::ls7a2000::set_guest_irq_line(target_cpu, irq_id, false) {
                 return hv_result_err!(
                     EINVAL,
@@ -256,7 +268,15 @@ impl<'a> HyperCall<'a> {
             return HyperCallResult::Ok(0);
         }
 
-        #[cfg(not(target_arch = "loongarch64"))]
+        #[cfg(target_arch = "x86_64")]
+        {
+            if !crate::device::irqchip::pic::ioapic::ioapic_set_line(target_zone, irq_id, false) {
+                return hv_result_err!(EINVAL, format!("invalid x86 IOAPIC pin {}", irq_id));
+            }
+            return HyperCallResult::Ok(0);
+        }
+
+        #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
         hv_result_err!(
             ENOSYS,
             "per-IRQ Virtio deassert is not implemented on this architecture"
@@ -319,7 +339,7 @@ impl<'a> HyperCall<'a> {
             return hv_result_err!(EINVAL);
         }
         // avoid virtio daemon send sgi to the shutdowning zone
-        #[cfg(not(target_arch = "loongarch64"))]
+        #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
         let mut map_irq = VIRTIO_IRQS.lock();
 
         let zone = match find_zone(zone_id as _) {
@@ -331,6 +351,8 @@ impl<'a> HyperCall<'a> {
                 )
             }
         };
+        #[cfg(target_arch = "x86_64")]
+        crate::device::irqchip::pic::ioapic::ioapic_begin_shutdown(zone_id as usize);
         let zone_w = zone.write();
 
         zone_w.cpu_set().iter().for_each(|cpu_id| {
@@ -340,7 +362,7 @@ impl<'a> HyperCall<'a> {
             crate::device::irqchip::ls7a2000::clear_guest_irq_lines(cpu_id);
             send_event(cpu_id, SGI_IPI_ID as _, IPI_EVENT_SHUTDOWN);
             // set the virtio irq list's len to 0
-            #[cfg(not(target_arch = "loongarch64"))]
+            #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
             if let Some(irq_list) = map_irq.get_mut(&cpu_id) {
                 irq_list[0] = 0;
             }
@@ -370,6 +392,9 @@ impl<'a> HyperCall<'a> {
 
         drop(zone_w);
         zone.arch_irqchip_reset();
+
+        #[cfg(target_arch = "x86_64")]
+        crate::device::irqchip::pic::ioapic::ioapic_reset(zone_id as usize);
 
         // Remove viommu instance related to this zone.
         #[cfg(viommu)]
