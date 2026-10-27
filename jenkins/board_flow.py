@@ -805,10 +805,11 @@ def board_zone1_start(cfg: dict[str, Any], term: Terminal) -> int:
     print(f"[zone1] pts={pts}", flush=True)
 
     # --- attach screen (retry with quit+pkill cleanup) ---
-    print("[zone1] script /dev/null before screen", flush=True)
-    term.send_one_by_one("script /dev/null")
-    if not wait_prompt(zone0_pat, 15.0):
-        raise TerminalTimeoutError("timed out after script /dev/null")
+    if cfg["arch"] != "x86_64":
+        print("[zone1] script /dev/null before screen", flush=True)
+        term.send_one_by_one("script /dev/null")
+        if not wait_prompt(zone0_pat, 15.0):
+            raise TerminalTimeoutError("timed out after script /dev/null")
 
     screen_ok = False
     last_screen_exc: Exception | None = None
