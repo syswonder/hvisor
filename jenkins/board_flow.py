@@ -742,7 +742,12 @@ def board_zone1_start(cfg: dict[str, Any], term: Terminal) -> int:
             slice_timeout = min(first_slice if not nudged else 5.0, remaining)
             if slice_timeout <= 0:
                 break
-            if term.wait_pattern(pattern, timeout=slice_timeout, from_offset=from_offset):
+            if term.wait_pattern(
+                pattern,
+                timeout=slice_timeout,
+                from_offset=from_offset,
+                strip_ansi=True,
+            ):
                 return True
             if cr:
                 term.backend.write(b"\r")
@@ -804,50 +809,24 @@ def board_zone1_start(cfg: dict[str, Any], term: Terminal) -> int:
         )
     print(f"[zone1] pts={pts}", flush=True)
 
-    # --- attach screen (retry with quit+pkill cleanup) ---
+    # --- attach screen ---
     if cfg["arch"] != "x86_64":
         print("[zone1] script /dev/null before screen", flush=True)
         term.send_one_by_one("script /dev/null")
         if not wait_prompt(zone0_pat, 15.0):
             raise TerminalTimeoutError("timed out after script /dev/null")
 
-    screen_ok = False
-    last_screen_exc: Exception | None = None
-    for attempt in range(3):
-        if attempt > 0:
-            print(f"[zone1] retry screen ({attempt}/2)", flush=True)
-            print("[zone1] quit leftover screen (Ctrl-A :quit)", flush=True)
-            term.backend.write(b"\x01")
-            time.sleep(0.2)
-            term.backend.write(b":quit\r")
-            time.sleep(1.0)
-            print("[zone1] send Enter after quit", flush=True)
-            term.backend.write(b"\r")
-            time.sleep(0.5)
-            term.send("pkill -9 screen; screen -wipe")
-            term.read_until_quiet(quiet_seconds=1.0, max_duration=8.0)
-            term.send("")
-            wait_prompt(zone0_pat, 15.0)
-            time.sleep(3.0)
-        try:
-            # TERM=linux avoids xterm keypad modes that break automated Enter on rk3568.
-            term.send_one_by_one("export TERM=linux")
-            term.read_until_quiet(quiet_seconds=0.5, max_duration=5.0)
-            cmd = f"screen -S {session} /dev/pts/{pts}"
-            print(f"[zone1] {cmd}", flush=True)
-            offset = term.offset()
-            term.send(cmd)
-            print("[zone1] send Enter after screen", flush=True)
-            term.backend.write(b"\r")
-            if not wait_prompt(zone1_pat, shell_timeout, from_offset=offset, cr=True):
-                raise TerminalTimeoutError(f"timed out waiting for zone1 prompt after {cmd}")
-            screen_ok = True
-            break
-        except (TerminalTimeoutError, TerminalCommandError) as exc:
-            last_screen_exc = exc
-    if not screen_ok:
-        assert last_screen_exc is not None
-        raise last_screen_exc
+    # TERM=linux avoids xterm keypad modes that break automated Enter on rk3568.
+    term.send_one_by_one("export TERM=linux")
+    term.read_until_quiet(quiet_seconds=0.5, max_duration=5.0)
+    cmd = f"screen -S {session} /dev/pts/{pts}"
+    print(f"[zone1] {cmd}", flush=True)
+    offset = term.offset()
+    term.send(cmd)
+    print("[zone1] send Enter after screen", flush=True)
+    term.backend.write(b"\r")
+    if not wait_prompt(zone1_pat, shell_timeout, from_offset=offset, cr=True):
+        raise TerminalTimeoutError(f"timed out waiting for zone1 prompt after {cmd}")
 
     # --- smoke cmds inside zone1 ---
     raw_cmds = cfg.get("zone1_cmds") or []
