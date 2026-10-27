@@ -250,23 +250,19 @@ def asterinas_zone1_regression(cfg: dict[str, Any], term: Terminal | None) -> in
     _ = read_and_print_until_quiet(term, quiet_seconds=3.0, max_duration=30.0)
 
     regression_marker = "__HV_REGRESSION_RC_"
+    marker_re = re.escape(regression_marker) + r"(\d+)"
+    offset = term.offset()
     term.send_one_by_one(f"/test/run_regression_test.sh; echo {regression_marker}$?")
-    output = ""
-    deadline = time.monotonic() + 900.0
-    while time.monotonic() < deadline:
-        chunk = term.read_for(duration=2.0)
-        if not chunk:
-            continue
-        output += chunk
-        print(chunk, end="", flush=True)
-
-        rc_match = re.search(re.escape(regression_marker) + r"(\d+)", output)
-        if rc_match is not None and rc_match.group(1) != "0":
-            raise TerminalCommandError(
-                f"Asterinas regression exited with rc={rc_match.group(1)}"
-            )
-        if rc_match is not None and "All regression tests passed" in output:
-            break
+    if not term.wait_pattern(marker_re, timeout=900.0, from_offset=offset):
+        raise TerminalCommandError("Asterinas regression completion marker not found")
+    output = term.tail_since(offset)
+    rc_match = re.search(marker_re, output)
+    if rc_match is None:
+        raise TerminalCommandError("Asterinas regression completion marker not found")
+    if rc_match.group(1) != "0":
+        raise TerminalCommandError(
+            f"Asterinas regression exited with rc={rc_match.group(1)}"
+        )
     if "All regression tests passed" not in output:
         raise TerminalCommandError("Asterinas regression completion marker not found")
 

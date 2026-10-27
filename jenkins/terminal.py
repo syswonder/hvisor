@@ -409,18 +409,6 @@ class Terminal:
             time.sleep(char_delay)
         self.backend.write(b"\n")
 
-    def read_for(
-        self,
-        duration: float = 2.0,
-        poll_interval: float = 0.05,
-    ) -> str:
-        self._ensure_open()
-        offset = self._collector.offset()
-        deadline = time.monotonic() + duration
-        while time.monotonic() < deadline:
-            time.sleep(poll_interval)
-        return self._collector.tail_since(offset)
-
     def send_until_get(
         self,
         command: str,

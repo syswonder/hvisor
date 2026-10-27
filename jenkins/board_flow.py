@@ -837,7 +837,6 @@ def board_zone1_start(cfg: dict[str, Any], term: Terminal) -> int:
             print(f"[zone1] {cmd}", flush=True)
             offset = term.offset()
             term.send(cmd)
-            term.read_for(duration=5.0)
             print("[zone1] send Enter after screen", flush=True)
             term.backend.write(b"\r")
             if not wait_prompt(zone1_pat, shell_timeout, from_offset=offset, cr=True):
