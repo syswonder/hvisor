@@ -816,17 +816,30 @@ def board_zone1_start(cfg: dict[str, Any], term: Terminal) -> int:
         if not wait_prompt(zone0_pat, 15.0):
             raise TerminalTimeoutError("timed out after script /dev/null")
 
+    def show_zone1_output(since: int) -> None:
+        # Jenkins drops raw ESC bytes, so also print the text with CSI removed.
+        text = re.sub(r"\x1b\[[0-9;?]*[ -/]*[@-~]", "", term.tail_since(since))
+        text = text.replace("\r", "")
+        print("[zone1] output received:", flush=True)
+        print(text if text else "<empty>", flush=True)
+
     # TERM=linux avoids xterm keypad modes that break automated Enter on rk3568.
-    term.send_one_by_one("export TERM=linux")
-    term.read_until_quiet(quiet_seconds=0.5, max_duration=5.0)
+    # term.send_one_by_one("export TERM=linux")
+    # term.read_until_quiet(quiet_seconds=0.5, max_duration=5.0)
     cmd = f"screen -S {session} /dev/pts/{pts}"
     print(f"[zone1] {cmd}", flush=True)
     offset = term.offset()
     term.send(cmd)
-    print("[zone1] send Enter after screen", flush=True)
-    term.backend.write(b"\r")
-    if not wait_prompt(zone1_pat, shell_timeout, from_offset=offset, cr=True):
-        raise TerminalTimeoutError(f"timed out waiting for zone1 prompt after {cmd}")
+    # The prompt is often already in the pty. Give screen a moment to draw it
+    # before sending a key. One Enter only if that draw did not show the prompt.
+    if not term.wait_pattern(zone1_pat, timeout=20.0, from_offset=offset, strip_ansi=True):
+        print("[zone1] send Enter after screen", flush=True)
+        term.backend.write(b"\r")
+        if not term.wait_pattern(
+            zone1_pat, timeout=shell_timeout, from_offset=offset, strip_ansi=True
+        ):
+            show_zone1_output(offset)
+            raise TerminalTimeoutError(f"timed out waiting for zone1 prompt after {cmd}")
 
     # --- smoke cmds inside zone1 ---
     raw_cmds = cfg.get("zone1_cmds") or []
@@ -841,6 +854,7 @@ def board_zone1_start(cfg: dict[str, Any], term: Terminal) -> int:
             time.sleep(0.02)
         term.backend.write(b"\r")
         if not wait_prompt(zone1_pat, shell_timeout, from_offset=offset, cr=True):
+            show_zone1_output(offset)
             raise TerminalTimeoutError(f"timed out waiting for zone1 prompt after cmd: {cmd}")
 
     print("zone1_started successfully", flush=True)
