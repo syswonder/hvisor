@@ -18,9 +18,10 @@ ANSI_RE = re.compile(
     r"\x1b\[[0-9;?]*[ -/]*[@-~]|\x1b\][^\x07\x1b]*\x07|\x1b[()][\w0-9]?|\r"
 )
 WARN_RE = re.compile(r"\[\s*WARN\b")
-ERROR_RE = re.compile(r"\[\s*(ERROR|ERR|CRIT)\b")
+ERROR_RE = re.compile(r"\[\s*(ERROR|ERR)\b")
 PANIC_RE = re.compile(
-    r"\b(Kernel panic|panicked at|PANIC|Oops:|BUG:)\b", re.IGNORECASE
+    r"\b(?:Kernel panic|panicked at)\b|\[\s*PANIC\b|\b(?:Oops|BUG):",
+    re.IGNORECASE,
 )
 
 
