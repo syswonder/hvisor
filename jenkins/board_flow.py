@@ -733,13 +733,12 @@ def board_zone1_start(cfg: dict[str, Any], term: Terminal) -> int:
     zone1_pat = str(cfg.get("zone1_ready_pattern", "")).strip() or ZONE1_READY_PATTERN
     shell_timeout = float(cfg.get("zone1_shell_timeout", ZONE1_INNER_PROMPT_TIMEOUT))
 
-    def wait_prompt(pattern: str, timeout: float, *, from_offset: int | None = None, cr: bool = False) -> bool:
+    def wait_prompt(pattern: str, timeout: float, *, from_offset: int | None = None) -> bool:
         deadline = time.monotonic() + timeout
         nudged = False
         while time.monotonic() < deadline:
             remaining = deadline - time.monotonic()
-            first_slice = 8.0 if cr else 3.0
-            slice_timeout = min(first_slice if not nudged else 5.0, remaining)
+            slice_timeout = min(3.0 if not nudged else 5.0, remaining)
             if slice_timeout <= 0:
                 break
             if term.wait_pattern(
@@ -749,10 +748,7 @@ def board_zone1_start(cfg: dict[str, Any], term: Terminal) -> int:
                 strip_ansi=True,
             ):
                 return True
-            if cr:
-                term.backend.write(b"\r")
-            else:
-                term.send("")
+            term.send("")
             nudged = True
         return False
 
@@ -849,11 +845,10 @@ def board_zone1_start(cfg: dict[str, Any], term: Terminal) -> int:
     for cmd in cmds:
         print(f"[zone1] inner cmd: {cmd}", flush=True)
         offset = term.offset()
-        for char in cmd.rstrip("\n"):
-            term.backend.write(char.encode("utf-8", errors="replace"))
-            time.sleep(0.02)
-        term.backend.write(b"\r")
-        if not wait_prompt(zone1_pat, shell_timeout, from_offset=offset, cr=True):
+        term.send(cmd)
+        if not term.wait_pattern(
+            zone1_pat, timeout=shell_timeout, from_offset=offset, strip_ansi=True
+        ):
             show_zone1_output(offset)
             raise TerminalTimeoutError(f"timed out waiting for zone1 prompt after cmd: {cmd}")
 
