@@ -815,11 +815,11 @@ def board_zone1_start(cfg: dict[str, Any], term: Terminal) -> int:
     print(f"[zone1] pts={pts}", flush=True)
 
     # --- attach screen ---
-    if cfg["arch"] != "x86_64":
-        print("[zone1] script /dev/null before screen", flush=True)
-        term.send_one_by_one("script /dev/null")
-        if not wait_prompt(zone0_pat, 15.0):
-            raise TerminalTimeoutError("timed out after script /dev/null")
+    # if cfg["arch"] != "x86_64":
+    print("[zone1] script /dev/null before screen", flush=True)
+    term.send_one_by_one("script /dev/null")
+    if not wait_prompt(zone0_pat, 15.0):
+        raise TerminalTimeoutError("timed out after script /dev/null")
 
     def show_zone1_output(since: int) -> None:
         # Jenkins drops raw ESC bytes, so also print the text with CSI removed.
@@ -847,7 +847,6 @@ def board_zone1_start(cfg: dict[str, Any], term: Terminal) -> int:
             show_zone1_output(offset)
             raise TerminalTimeoutError(f"timed out waiting for zone1 prompt after {cmd}")
 
-    # --- smoke cmds inside zone1 ---
     raw_cmds = cfg.get("zone1_cmds") or []
     cmds = [str(item).strip() for item in raw_cmds if str(item).strip()] if isinstance(raw_cmds, list) else []
     if not cmds or cmds[0] != "ls":
