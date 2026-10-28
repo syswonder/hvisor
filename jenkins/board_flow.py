@@ -125,6 +125,7 @@ def board_run(
     command: str,
     *,
     timeout: float = 30.0,
+    slow: bool = False,
 ) -> tuple[int, str]:
     """Run a short shell command; completion is detected via wait_pattern on a marker."""
     if len(command) > MAX_BOARD_CMD_LEN:
@@ -134,7 +135,12 @@ def board_run(
     run_id = uuid.uuid4().hex[:4]
     marker_needle = rf"__HV_M_{run_id}:\d+"
     offset = term.offset()
-    term.send(f"{command}; echo __HV_M_{run_id}:$?")
+    wrapped = f"{command}; echo __HV_M_{run_id}:$?"
+    # Inside GNU screen, one write is treated as a paste and never reaches the guest.
+    if slow:
+        term.send_one_by_one(wrapped)
+    else:
+        term.send(wrapped)
 
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -160,8 +166,9 @@ def board_run_check(
     command: str,
     *,
     timeout: float = 30.0,
+    slow: bool = False,
 ) -> str:
-    rc, output = board_run(term, command, timeout=timeout)
+    rc, output = board_run(term, command, timeout=timeout, slow=slow)
     if rc != 0:
         raise TerminalCommandError(f"command failed with rc={rc}: {command}\n{output.strip()}")
     return output
@@ -664,6 +671,8 @@ def strip_board_markers(text: str) -> str:
 
 def parse_script_lines(content: str) -> list[str]:
     content = strip_board_markers(content)
+    # cat's bracketed-paste framing (ESC[?2004l) is not part of the script.
+    content = re.sub(r"\x1b\[[0-9;?]*[ -/]*[@-~]", "", content)
     lines: list[str] = []
     for raw in content.splitlines():
         line = raw.strip()
@@ -846,7 +855,7 @@ def board_zone1_start(cfg: dict[str, Any], term: Terminal) -> int:
     for cmd in cmds:
         print(f"[zone1] inner cmd: {cmd}", flush=True)
         try:
-            board_run_check(term, cmd, timeout=shell_timeout)
+            board_run_check(term, cmd, timeout=shell_timeout, slow=True)
         except TerminalTimeoutError as exc:
             print("[zone1] output received:", flush=True)
             print(exc.partial_output if exc.partial_output else "<empty>", flush=True)
