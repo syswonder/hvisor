@@ -6,9 +6,9 @@
     "memory_regions": [
         {
             "type": "ram",
-            "physical_start": "0x83000000",
-            "virtual_start":  "0x83000000",
-            "size": "0x0C000000"
+            "physical_start": "0x85000000",
+            "virtual_start":  "0x85000000",
+            "size": "0x0A000000"
         },
         {
             "type": "virtio",
@@ -27,9 +27,9 @@
     "ivc_configs": [],
     "kernel_filepath": "./Image",
     "dtb_filepath": "./zone1-linux.dtb",
-    "kernel_load_paddr": "0x84000000",
-    "dtb_load_paddr":   "0x83000000",
-    "entry_point":      "0x84000000",
+    "kernel_load_paddr": "0x86000000",
+    "dtb_load_paddr":   "0x85000000",
+    "entry_point":      "0x86000000",
     "arch_config": {
         "plic_base": "0xc000000",
         "plic_size": "0x4000000",
