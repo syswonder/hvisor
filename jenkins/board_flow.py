@@ -820,8 +820,9 @@ def board_zone1_start(cfg: dict[str, Any], term: Terminal) -> int:
         print(text if text else "<empty>", flush=True)
 
     # TERM=linux avoids xterm keypad modes that break automated Enter on rk3568.
-    # term.send_one_by_one("export TERM=linux")
-    # term.read_until_quiet(quiet_seconds=0.5, max_duration=5.0)
+    if cfg["mode"] == "board":
+        term.send_one_by_one("export TERM=linux")
+        term.read_until_quiet(quiet_seconds=0.5, max_duration=5.0)
     cmd = f"screen -S {session} /dev/pts/{pts}"
     print(f"[zone1] {cmd}", flush=True)
     offset = term.offset()
