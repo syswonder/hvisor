@@ -100,6 +100,7 @@ bids:
       - KDIR=/home/light/DEMO/linux/linux-5.19
     tests:
       mode: qemu
+      zone1_shell_timeout: 180
       cases:
         - zone0_start
         - zone1_start

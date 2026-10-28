@@ -845,13 +845,12 @@ def board_zone1_start(cfg: dict[str, Any], term: Terminal) -> int:
         cmds = ["ls", *cmds]
     for cmd in cmds:
         print(f"[zone1] inner cmd: {cmd}", flush=True)
-        offset = term.offset()
-        term.send(cmd)
-        if not term.wait_pattern(
-            zone1_pat, timeout=shell_timeout, from_offset=offset, strip_ansi=True
-        ):
-            show_zone1_output(offset)
-            raise TerminalTimeoutError(f"timed out waiting for zone1 prompt after cmd: {cmd}")
+        try:
+            board_run_check(term, cmd, timeout=shell_timeout)
+        except TerminalTimeoutError as exc:
+            print("[zone1] output received:", flush=True)
+            print(exc.partial_output if exc.partial_output else "<empty>", flush=True)
+            raise
 
     print("zone1_started successfully", flush=True)
     return 0
