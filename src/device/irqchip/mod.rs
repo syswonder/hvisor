@@ -93,9 +93,9 @@ pub fn kick_vcpu(vcpu: &Vcpu, target_pcpu_id: usize) {
 #[inline]
 pub fn flush_current_guest_irqs() {
     #[cfg(all(irq_gicv2, target_arch = "aarch64"))]
-    gicv2::gic::flush_current_guest_irqs();
+    gicv2::lr::flush_current_guest_irqs();
     #[cfg(all(irq_gicv3, target_arch = "aarch64"))]
-    gicv3::flush_current_guest_irqs();
+    gicv3::lr::flush_current_guest_irqs();
 }
 
 /// Run the controller-independent pending claim/retry flow.
@@ -113,7 +113,7 @@ pub fn flush_guest_irq_state(
 pub mod gicv2;
 #[cfg(all(irq_gicv2, target_arch = "aarch64"))]
 pub use gicv2::{
-    gic::inject_irq, gicd::set_ispender, percpu_init, primary_init_early, primary_init_late,
+    gicd::set_ispender, lr::inject_irq, percpu_init, primary_init_early, primary_init_late,
     vgic::set_sgi_irq,
 };
 
@@ -121,7 +121,7 @@ pub use gicv2::{
 pub mod gicv3;
 #[cfg(all(irq_gicv3, target_arch = "aarch64"))]
 pub use gicv3::{
-    gicd::set_ispender, inject_irq, percpu_init, primary_init_early, primary_init_late,
+    gicd::set_ispender, lr::inject_irq, percpu_init, primary_init_early, primary_init_late,
 };
 
 /// ISPENDR0/ICPENDR0 value: SGIs in bits [15:0], PPIs in bits [31:16].
@@ -153,7 +153,7 @@ pub fn gic_handle_irq() {
     #[cfg(irq_gicv2)]
     gicv2::gic::gicv2_handle_irq();
     #[cfg(irq_gicv3)]
-    gicv3::gicv3_handle_irq_el1();
+    gicv3::gic::gicv3_handle_irq_el1();
 }
 
 #[cfg(target_arch = "aarch64")]

@@ -17,10 +17,6 @@
 #![allow(dead_code)]
 use crate::device::irqchip::gicv2::gic_ref::GicRef;
 use crate::device::irqchip::gicv2::GICV2;
-/// gicd layout definition and functions for gicd operations.
-/// author : ForeverYolo
-/// reference:
-/// 1. gicv2 spec : https://www.cl.cam.ac.uk/research/srg/han/ACS-P35/zynq/arm_gic_architecture_specification.pdf
 use spin::{Mutex, Once};
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;

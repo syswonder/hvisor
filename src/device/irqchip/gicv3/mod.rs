@@ -15,500 +15,35 @@
 //
 
 #![allow(dead_code)]
+pub mod gic;
 pub mod gicd;
+pub mod gich;
 pub mod gicr;
 pub mod gits;
+pub mod lr;
 pub mod msix_backend;
+pub mod pending;
 pub mod vgic;
 
 use core::arch::asm;
 use core::ptr::write_volatile;
-use core::sync::atomic::AtomicU64;
 
-use alloc::collections::vec_deque::VecDeque;
 use alloc::vec::Vec;
-use bit_field::BitField;
 use gicr::init_lpi_prop;
 use gits::gits_init;
-use spin::{Lazy, Mutex, Once};
+use spin::{Lazy, Once};
 
 use self::gicd::{enable_gic_are_ns, GICD_ICACTIVER, GICD_ICENABLER};
+use self::gich::{list_regs_num, write_lr};
 use self::gicr::{enable_ipi, GICR_BASE_LAYOUT};
+use self::pending::{PendingIrqs, PENDING_VIRQS};
 use crate::arch::aarch64::sysreg::{read_sysreg, smc_arg1, write_sysreg};
-use crate::arch::cpu::this_cpu_id;
 use crate::arch::zone::GicConfig;
 use crate::config::root_zone_config;
 use crate::consts::{self, MAX_CPU_NUM};
-use crate::cpu_data::this_cpu_data;
-use crate::device::irqchip::SGIS_NUM;
 
 use crate::device::irqchip::gicv3::gits::gits_reset;
-use crate::event::{check_events, dispatch_host_events};
-use crate::hypercall::SGI_IPI_ID;
 use crate::zone::Zone;
-
-const ICH_HCR_UIE: u64 = 1 << 1;
-
-//TODO: add Distributor init
-pub fn gicc_init() {
-    //TODO: add Redistributor init
-    let sdei_ver = unsafe { smc_arg1!(0xc4000020) }; //sdei_check();
-
-    // Make ICC_EOIR1_EL1 provide priority drop functionality only. ICC_DIR_EL1 provides interrupt deactivation functionality.
-    let _ctlr = read_sysreg!(icc_ctlr_el1);
-    write_sysreg!(icc_ctlr_el1, 0x2);
-    // Set Interrupt Controller Interrupt Priority Mask Register
-    let pmr = read_sysreg!(icc_pmr_el1);
-    write_sysreg!(icc_pmr_el1, 0xf0);
-    // Enable group 1 irq
-    let _igrpen = read_sysreg!(icc_igrpen1_el1);
-    write_sysreg!(icc_igrpen1_el1, 0x1);
-
-    gicv3_clear_pending_irqs();
-    let _vtr = read_sysreg!(ich_vtr_el2);
-    let vmcr = ((pmr & 0xff) << 24) | (1 << 1); //VPMR|VENG1
-    write_sysreg!(ich_vmcr_el2, vmcr);
-    write_sysreg!(ich_hcr_el2, 0x1); //enable virt cpu interface
-
-    info!("gicc init done, sdei_ver = {}", sdei_ver);
-}
-
-fn gicv3_clear_pending_irqs() {
-    let vtr = read_sysreg!(ich_vtr_el2) as usize;
-    for i in 0..list_regs_num() {
-        write_lr(i, 0) //clear lr
-    }
-    let num_priority_bits = (vtr >> 29) + 1;
-    /* Clear active priority bits */
-    if num_priority_bits >= 5 {
-        write_sysreg!(ICH_AP1R0_EL2, 0); //Interrupt Controller Hyp Active Priorities Group 1 Register 0 No interrupt active
-    }
-    if num_priority_bits >= 6 {
-        write_sysreg!(ICH_AP1R1_EL2, 0);
-    }
-    if num_priority_bits > 6 {
-        write_sysreg!(ICH_AP1R2_EL2, 0);
-        write_sysreg!(ICH_AP1R3_EL2, 0);
-    }
-}
-
-static TIMER_INTERRUPT_COUNTER: AtomicU64 = AtomicU64::new(0);
-// how often to print timer interrupt counter
-const TIMER_INTERRUPT_PRINT_INTERVAL: u64 = 50;
-
-pub fn gicv3_handle_irq_el1() {
-    while let Some(irq_id) = pending_irq() {
-        if irq_id < 16 {
-            deactivate_irq(irq_id);
-            if irq_id == SGI_IPI_ID as usize {
-                // SGI 7 is the reserved physical host doorbell. Guest SGIs,
-                // including guest SGI 7, are posted through software state.
-                dispatch_host_events(|| while check_events() {});
-            } else {
-                warn!("unexpected physical SGI {}", irq_id);
-            }
-        } else {
-            #[cfg(all(dwc_pcie, dwc_msi))]
-            let mut is_dwc_msi_irq = false;
-
-            if irq_id == 27 {
-                // virtual timer interrupt
-                TIMER_INTERRUPT_COUNTER.fetch_add(1, core::sync::atomic::Ordering::SeqCst);
-                if TIMER_INTERRUPT_COUNTER.load(core::sync::atomic::Ordering::SeqCst)
-                    % TIMER_INTERRUPT_PRINT_INTERVAL
-                    == 0
-                {
-                    trace!(
-                        "Virtual timer interrupt, counter = {}",
-                        TIMER_INTERRUPT_COUNTER.load(core::sync::atomic::Ordering::SeqCst)
-                    );
-                }
-            } else if irq_id == 25 {
-                // maintenace interrupt
-                handle_maintenace_interrupt();
-            } else if irq_id > 31 {
-                //inject phy irq
-                trace!("*** get spi_irq id = {}", irq_id);
-
-                #[cfg(all(dwc_pcie, dwc_msi))]
-                {
-                    if let Some(domain_id) =
-                        crate::pci::dwc_msi::get_domain_id_by_irq(irq_id as u32)
-                    {
-                        is_dwc_msi_irq = true;
-                        crate::pci::dwc_msi::dwc_msi_transfer_and_inject(domain_id, irq_id);
-                    }
-                }
-            } else {
-                warn!("not konw irq id = {}", irq_id);
-            }
-
-            #[cfg(all(dwc_pcie, dwc_msi))]
-            if irq_id != 25 && !is_dwc_msi_irq {
-                inject_irq(irq_id, true);
-            }
-
-            #[cfg(not(all(dwc_pcie, dwc_msi)))]
-            if irq_id != 25 {
-                inject_irq(irq_id, true);
-            }
-
-            deactivate_irq(irq_id);
-        }
-    }
-    trace!("handle done")
-}
-
-/// An ICH_LR<n>_EL2 value.
-#[derive(Clone, Copy)]
-struct IchLr(u64);
-
-impl IchLr {
-    fn new_pending(vintid: usize) -> Self {
-        let mut lr = Self(0);
-        lr.0.set_bits(0..32, vintid as u64);
-        lr.0.set_bit(60, true);
-        lr.set_pending(true);
-        lr
-    }
-
-    fn read(index: usize) -> Self {
-        Self(read_lr(index))
-    }
-
-    fn write(self, index: usize) {
-        write_lr(index, self.0);
-    }
-
-    fn vintid(self) -> usize {
-        self.0.get_bits(0..32) as usize
-    }
-
-    fn is_pending(self) -> bool {
-        self.0.get_bit(62)
-    }
-
-    fn set_pending(&mut self, pending: bool) {
-        self.0.set_bit(62, pending);
-    }
-
-    fn is_active(self) -> bool {
-        self.0.get_bit(63)
-    }
-}
-
-/// Number of implemented List registers.
-//
-// ICH_VTR_EL2.ListRegs[4:0] holds that number minus one. GICv3 defines at
-// most 16 (`ICH_LR0..15_EL2`), which is also all `read_lr()`/`write_lr()` can
-// reach.
-fn list_regs_num() -> usize {
-    (read_sysreg!(ich_vtr_el2).get_bits(0..5) as usize + 1).min(16)
-}
-
-pub fn clear_guest_sgi(target_cpu: usize, irq_id: usize) -> bool {
-    if irq_id >= SGIS_NUM {
-        return false;
-    }
-    let target = crate::cpu_data::get_cpu_data(target_cpu);
-    let control = target.ctrl_lock.lock();
-    if !target.vcpu.irq.clear(irq_id) {
-        return false;
-    }
-    drop(control);
-    if target_cpu == this_cpu_id() {
-        clear_lr_pending_irq(irq_id);
-    }
-    true
-}
-
-fn try_install_software_sgi(irq_id: usize) -> bool {
-    let elsr = read_sysreg!(ich_elrsr_el2);
-    let mut free_lr = None;
-    for index in 0..list_regs_num() {
-        if elsr.get_bit(index) {
-            free_lr.get_or_insert(index);
-            continue;
-        }
-        let mut lr = IchLr::read(index);
-        if lr.vintid() != irq_id {
-            continue;
-        }
-        // Active-only LRs become pending; pending ones coalesce.
-        if !lr.is_pending() {
-            lr.set_pending(true);
-            lr.write(index);
-        }
-        return true;
-    }
-    let Some(index) = free_lr else {
-        return false;
-    };
-    IchLr::new_pending(irq_id).write(index);
-    true
-}
-
-pub(crate) fn clear_lr_pending_irq(irq_id: usize) {
-    let elsr = read_sysreg!(ich_elrsr_el2);
-    for index in 0..list_regs_num() {
-        if elsr.get_bit(index) {
-            continue;
-        }
-        let mut lr = IchLr::read(index);
-        if lr.vintid() != irq_id || !lr.is_pending() {
-            continue;
-        }
-        if lr.is_active() {
-            lr.set_pending(false);
-            lr.write(index);
-        } else {
-            write_lr(index, 0);
-        }
-    }
-}
-
-pub(crate) fn lr_pending_sgi_mask() -> u32 {
-    let elsr = read_sysreg!(ich_elrsr_el2);
-    let mut pending = 0u32;
-    for index in 0..list_regs_num() {
-        if elsr.get_bit(index) {
-            continue;
-        }
-        let lr = IchLr::read(index);
-        let irq_id = lr.vintid();
-        if irq_id < SGIS_NUM && lr.is_pending() {
-            pending.set_bit(irq_id, true);
-        }
-    }
-    pending
-}
-
-fn install_pending_guest_irq(irq_id: usize) -> bool {
-    if irq_id >= SGIS_NUM {
-        return false;
-    }
-    try_install_software_sgi(irq_id)
-}
-
-pub fn flush_current_guest_irqs() {
-    let cpu = this_cpu_data();
-    if cpu.zone.is_none() || cpu.vcpu.state.is_stopped() {
-        return;
-    }
-    let state = &cpu.vcpu.irq;
-    crate::device::irqchip::flush_guest_irq_state(state, install_pending_guest_irq, || {
-        enable_maintenace_interrupt(true)
-    });
-}
-
-fn pending_irq() -> Option<usize> {
-    let iar = read_sysreg!(icc_iar1_el1) as usize;
-    if iar == 0x3ff {
-        None
-    } else {
-        Some(iar as _)
-    }
-}
-
-fn deactivate_irq(irq_id: usize) {
-    write_sysreg!(icc_eoir1_el1, irq_id as u64);
-    if irq_id < 16 || irq_id == 25 {
-        write_sysreg!(icc_dir_el1, irq_id as u64);
-    }
-}
-
-fn read_lr(id: usize) -> u64 {
-    let id = id as u64;
-    match id {
-        //TODO get lr size from gic reg
-        0 => read_sysreg!(ich_lr0_el2),
-        1 => read_sysreg!(ich_lr1_el2),
-        2 => read_sysreg!(ich_lr2_el2),
-        3 => read_sysreg!(ich_lr3_el2),
-        4 => read_sysreg!(ich_lr4_el2),
-        5 => read_sysreg!(ich_lr5_el2),
-        6 => read_sysreg!(ich_lr6_el2),
-        7 => read_sysreg!(ich_lr7_el2),
-        8 => read_sysreg!(ich_lr8_el2),
-        9 => read_sysreg!(ich_lr9_el2),
-        10 => read_sysreg!(ich_lr10_el2),
-        11 => read_sysreg!(ich_lr11_el2),
-        12 => read_sysreg!(ich_lr12_el2),
-        13 => read_sysreg!(ich_lr13_el2),
-        14 => read_sysreg!(ich_lr14_el2),
-        15 => read_sysreg!(ich_lr15_el2),
-        _ => {
-            error!("lr over");
-            loop {}
-        }
-    }
-}
-
-fn write_lr(id: usize, val: u64) {
-    let id = id as u64;
-    match id {
-        0 => write_sysreg!(ich_lr0_el2, val),
-        1 => write_sysreg!(ich_lr1_el2, val),
-        2 => write_sysreg!(ich_lr2_el2, val),
-        3 => write_sysreg!(ich_lr3_el2, val),
-        4 => write_sysreg!(ich_lr4_el2, val),
-        5 => write_sysreg!(ich_lr5_el2, val),
-        6 => write_sysreg!(ich_lr6_el2, val),
-        7 => write_sysreg!(ich_lr7_el2, val),
-        8 => write_sysreg!(ich_lr8_el2, val),
-        9 => write_sysreg!(ich_lr9_el2, val),
-        10 => write_sysreg!(ich_lr10_el2, val),
-        11 => write_sysreg!(ich_lr11_el2, val),
-        12 => write_sysreg!(ich_lr12_el2, val),
-        13 => write_sysreg!(ich_lr13_el2, val),
-        14 => write_sysreg!(ich_lr14_el2, val),
-        15 => write_sysreg!(ich_lr15_el2, val),
-        _ => {
-            error!("lr over");
-            loop {}
-        }
-    }
-}
-
-// virtual interrupts waiting to inject
-static PENDING_VIRQS: Once<PendingIrqs> = Once::new();
-pub const MAINTENACE_INTERRUPT: u64 = 25;
-struct PendingIrqs {
-    inner: Vec<Mutex<VecDeque<(usize, bool)>>>,
-}
-
-impl PendingIrqs {
-    fn new(max_cpus: usize) -> Self {
-        let mut vs = vec![];
-        for _ in 0..max_cpus {
-            let v = Mutex::new(VecDeque::new());
-            vs.push(v)
-        }
-        Self { inner: vs }
-    }
-
-    fn add_irq(&self, irq_id: usize, is_hardware: bool) -> Option<()> {
-        match self.inner.get(this_cpu_id()) {
-            Some(pending_irqs) => {
-                let mut irqs = pending_irqs.lock();
-                irqs.push_back((irq_id, is_hardware));
-                Some(())
-            }
-            _ => None,
-        }
-    }
-
-    fn fetch_irq(&self) -> Option<(usize, bool)> {
-        match self.inner.get(this_cpu_id()) {
-            Some(pending_irqs) => {
-                let mut irqs = pending_irqs.lock();
-                irqs.pop_front()
-            }
-            _ => None,
-        }
-    }
-
-    fn has_pending(&self) -> bool {
-        self.inner
-            .get(this_cpu_id())
-            .map(|pending_irqs| !pending_irqs.lock().is_empty())
-            .unwrap_or(false)
-    }
-}
-
-// Enable or disable an underflow maintenace interrupt.
-fn enable_maintenace_interrupt(is_enable: bool) {
-    trace!("enable_maintenace_interrupt, is_enable is {}", is_enable);
-    let mut hcr = read_sysreg!(ich_hcr_el2);
-    trace!("hcr is {}", hcr);
-    if is_enable {
-        hcr |= ICH_HCR_UIE;
-    } else {
-        hcr &= !ICH_HCR_UIE;
-    }
-    write_sysreg!(ich_hcr_el2, hcr);
-}
-
-fn handle_maintenace_interrupt() {
-    trace!("handle_maintenace_interrupt");
-    flush_current_guest_irqs();
-    let pending_irqs = PENDING_VIRQS.get().unwrap();
-    while let Some((irq_id, is_hardware)) = pending_irqs.fetch_irq() {
-        let is_injected: bool = inject_irq(irq_id, is_hardware);
-        if is_injected {
-            trace!("inject pending irq in maintenace interrupt");
-        }
-        if !is_injected {
-            pending_irqs.add_irq(irq_id, is_hardware);
-            enable_maintenace_interrupt(true);
-            return;
-        }
-    }
-    enable_maintenace_interrupt(has_pending_maintenance_work());
-}
-
-fn has_pending_maintenance_work() -> bool {
-    this_cpu_data().vcpu.irq.has_pending() || PENDING_VIRQS.get().unwrap().has_pending()
-}
-
-/// Inject virtual interrupt to vCPU, return whether it not needs to add pending queue.
-pub fn inject_irq(irq_id: usize, is_hardware: bool) -> bool {
-    // mask
-    const LR_VIRTIRQ_MASK: usize = (1 << 32) - 1;
-
-    let elsr: u64 = read_sysreg!(ich_elrsr_el2);
-    let lr_num = list_regs_num();
-    let mut free_ir = -1 as isize;
-    for i in 0..lr_num {
-        // find a free list register
-        if (1 << i) & elsr > 0 {
-            if free_ir == -1 {
-                free_ir = i as isize;
-            }
-            continue;
-        }
-        let lr_val = read_lr(i) as usize;
-        // if a virtual interrupt is enabled and equals to the physical interrupt irq_id
-        if (lr_val & LR_VIRTIRQ_MASK) == irq_id {
-            // A software IRQ the guest has acknowledged but not yet
-            // deactivated would otherwise lose this injection.
-            let mut lr = IchLr(lr_val as u64);
-            if !is_hardware && lr.is_active() && !lr.is_pending() {
-                lr.set_pending(true);
-                lr.write(i);
-            }
-            trace!("virtual irq {} enables again", irq_id);
-            return true;
-        }
-    }
-    trace!("To Inject IRQ {}, find lr {}", irq_id, free_ir);
-
-    if free_ir == -1 {
-        trace!("all list registers are valid, add to pending queue");
-        // If all list registers are valid, add this virtual irq to pending queue,
-        // and enable an underflow maintenace interrupt. When list registers are
-        // all invalid or only one is valid, the maintenace interrupt will occur,
-        // hvisor will execute handle_maintenace_interrupt function.
-        PENDING_VIRQS
-            .get()
-            .unwrap()
-            .add_irq(irq_id, is_hardware)
-            .unwrap();
-        enable_maintenace_interrupt(true);
-        return false;
-    } else {
-        let mut val = irq_id as u64; //v intid
-        val |= 1 << 60; //group 1
-        val |= 1 << 62; //state pending
-
-        if !is_sgi(irq_id as _) && is_hardware {
-            val |= 1 << 61; //map hardware
-            val |= (irq_id as u64) << 32; //pINTID
-        }
-        write_lr(free_ir as usize, val);
-        return true;
-    }
-}
 
 pub static GIC: Once<Gic> = Once::new();
 pub const PER_GICR_SIZE: usize = 0x20000;
@@ -631,6 +166,49 @@ pub fn primary_init_late() {
 pub fn percpu_init() {
     gicc_init();
     enable_ipi();
+}
+
+//TODO: add Distributor init
+pub fn gicc_init() {
+    //TODO: add Redistributor init
+    let sdei_ver = unsafe { smc_arg1!(0xc4000020) }; //sdei_check();
+
+    // Make ICC_EOIR1_EL1 provide priority drop functionality only. ICC_DIR_EL1 provides interrupt deactivation functionality.
+    let _ctlr = read_sysreg!(icc_ctlr_el1);
+    write_sysreg!(icc_ctlr_el1, 0x2);
+    // Set Interrupt Controller Interrupt Priority Mask Register
+    let pmr = read_sysreg!(icc_pmr_el1);
+    write_sysreg!(icc_pmr_el1, 0xf0);
+    // Enable group 1 irq
+    let _igrpen = read_sysreg!(icc_igrpen1_el1);
+    write_sysreg!(icc_igrpen1_el1, 0x1);
+
+    gicv3_clear_pending_irqs();
+    let _vtr = read_sysreg!(ich_vtr_el2);
+    let vmcr = ((pmr & 0xff) << 24) | (1 << 1); //VPMR|VENG1
+    write_sysreg!(ich_vmcr_el2, vmcr);
+    write_sysreg!(ich_hcr_el2, 0x1); //enable virt cpu interface
+
+    info!("gicc init done, sdei_ver = {}", sdei_ver);
+}
+
+fn gicv3_clear_pending_irqs() {
+    let vtr = read_sysreg!(ich_vtr_el2) as usize;
+    for i in 0..list_regs_num() {
+        write_lr(i, 0) //clear lr
+    }
+    let num_priority_bits = (vtr >> 29) + 1;
+    /* Clear active priority bits */
+    if num_priority_bits >= 5 {
+        write_sysreg!(ICH_AP1R0_EL2, 0); //Interrupt Controller Hyp Active Priorities Group 1 Register 0 No interrupt active
+    }
+    if num_priority_bits >= 6 {
+        write_sysreg!(ICH_AP1R1_EL2, 0);
+    }
+    if num_priority_bits > 6 {
+        write_sysreg!(ICH_AP1R2_EL2, 0);
+        write_sysreg!(ICH_AP1R3_EL2, 0);
+    }
 }
 
 impl Zone {

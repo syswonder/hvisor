@@ -13,6 +13,7 @@
 //
 // Authors:
 //
+use super::lr::{clear_guest_sgi, lr_pending_sgi_mask, MAINTENACE_INTERRUPT};
 use super::CPU_UNUSED_GICR_BASE;
 use super::{gicd::GICD_LOCK, is_spi};
 use crate::device::irqchip::PendingR0;
@@ -23,8 +24,7 @@ use crate::{
     consts::MAX_CPU_NUM,
     cpu_data::{get_cpu_data, this_zone},
     device::irqchip::gicv3::{
-        gicd::*, gicr::*, gits::*, host_gicd_base, host_gicr_base, host_gits_base,
-        MAINTENACE_INTERRUPT, PER_GICR_SIZE,
+        gicd::*, gicr::*, gits::*, host_gicd_base, host_gicr_base, host_gits_base, PER_GICR_SIZE,
     },
     error::HvResult,
     hypercall::SGI_IPI_ID,
@@ -300,7 +300,7 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
                             if is_sgi_set_pending {
                                 crate::device::irqchip::post_guest_irq(cpu, irq_id, None);
                             } else {
-                                super::clear_guest_sgi(cpu, irq_id);
+                                clear_guest_sgi(cpu, irq_id);
                             }
                         }
                         // Preserve physical PPI writes in bits 16..31 only.
@@ -315,7 +315,7 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
                             .pending_mask(0, crate::device::irqchip::SGIS_NUM)
                             as u32;
                         if cpu == crate::arch::cpu::this_cpu_id() {
-                            sgis |= super::lr_pending_sgi_mask();
+                            sgis |= lr_pending_sgi_mask();
                         }
                         let mut reg = PendingR0::from_raw(mmio.value as u32);
                         reg.set_sgis(sgis as u16);

@@ -17,7 +17,6 @@ use crate::arch::cpu::this_cpu_id;
 use crate::arch::zone::{GicConfig, Gicv2Config, HvArchZoneConfig};
 use crate::config::{BitmapWord, CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD};
 use crate::cpu_data::{get_cpu_data, this_zone};
-use crate::device::irqchip::gicv2::gic::MAINTENACE_INTERRUPT;
 use crate::device::irqchip::gicv2::gicd::{
     get_max_int_num, GICD, GICD_CPENDSGIR_REG_OFFSET, GICD_CTRL_REG_OFFSET,
     GICD_ICACTIVER_REG_OFFSET, GICD_ICENABLER_REG_OFFSET, GICD_ICFGR_REG_OFFSET,
@@ -29,14 +28,14 @@ use crate::device::irqchip::gicv2::gicd::{
     GICV2_CONFIG_REGS_NUM, GICV2_INT_REGS_NUM, GICV2_PRIO_REGS_NUM, GICV2_SGIS_NUM,
     GICV2_SGI_REGS_NUM, GICV2_TARGET_REGS_NUM,
 };
+use crate::device::irqchip::gicv2::lr::{
+    clear_guest_sgi_pending, clear_guest_sgi_pending_sources, read_pending_sgi_lr_summary,
+    MAINTENACE_INTERRUPT,
+};
 use crate::device::irqchip::gicv2::GICV2;
 use crate::device::irqchip::PendingR0;
 use crate::error::HvResult;
 use crate::memory::{mmio_perform_access, MMIOAccess, MemFlags, MemoryRegion};
-/// This file defines and implements the functional functions of virtual gicv2.
-/// author: ForeverYolo
-/// reference:
-/// 1. gicv2 spec : https://www.cl.cam.ac.uk/research/srg/han/ACS-P35/zynq/arm_gic_architecture_specification.pdf
 use crate::zone::Zone;
 use bit_field::BitField;
 use core::sync::atomic::Ordering;
@@ -412,7 +411,7 @@ fn handle_gicd_intid_pending_access(
                 continue;
             }
             if is_clear {
-                crate::device::irqchip::gicv2::gic::clear_guest_sgi_pending(target_cpu, irq_id);
+                clear_guest_sgi_pending(target_cpu, irq_id);
             } else {
                 crate::device::irqchip::post_guest_irq(target_cpu, irq_id, Some(target_cpu));
             }
@@ -424,8 +423,7 @@ fn handle_gicd_intid_pending_access(
         return Ok(());
     }
     mmio_perform_access(gicd_base, mmio);
-    let mut sgi_pending =
-        crate::device::irqchip::gicv2::gic::read_pending_sgi_lr_summary().pending_mask;
+    let mut sgi_pending = read_pending_sgi_lr_summary().pending_mask;
     for irq_id in 0..GICV2_SGIS_NUM {
         if read_guest_sgi_source_mask(target_cpu, irq_id, 0) != 0 {
             sgi_pending.set_bit(irq_id, true);
@@ -471,11 +469,7 @@ fn handle_gicd_sgi_pending_access(mmio: &mut MMIOAccess, is_clear: bool) -> HvRe
             }
             let source_mask = value.get_bits(lane) as u8;
             if is_clear {
-                crate::device::irqchip::gicv2::gic::clear_guest_sgi_pending_sources(
-                    target_cpu,
-                    irq_id,
-                    source_mask,
-                );
+                clear_guest_sgi_pending_sources(target_cpu, irq_id, source_mask);
             } else {
                 for source in 0..8 {
                     if source_mask.get_bit(source) {
@@ -487,7 +481,7 @@ fn handle_gicd_sgi_pending_access(mmio: &mut MMIOAccess, is_clear: bool) -> HvRe
         return Ok(());
     }
 
-    let lr_summary = crate::device::irqchip::gicv2::gic::read_pending_sgi_lr_summary();
+    let lr_summary = read_pending_sgi_lr_summary();
     let mut value = 0u32;
     for byte in 0..4 {
         let irq_id = first_irq + byte;

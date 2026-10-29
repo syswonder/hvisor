@@ -30,7 +30,8 @@ use super::{
         GICD_ICACTIVER, GICD_ICENABLER, GICD_ICFGR, GICD_ICPENDR, GICD_IGROUPR, GICD_IPRIORITYR,
         GICD_ISACTIVER, GICD_ISENABLER, GICD_ISPENDR, GICD_TYPER,
     },
-    host_gicd_base, host_gicr_base, MAINTENACE_INTERRUPT,
+    host_gicd_base, host_gicr_base,
+    lr::MAINTENACE_INTERRUPT,
 };
 
 pub const GICR_CTLR: usize = 0x0000;

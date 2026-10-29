@@ -14,17 +14,13 @@
 // Authors:
 //    Hangqi Ren <2572131118@qq.com>
 use crate::arch::zone::{GicConfig, Gicv2Config, HvArchZoneConfig};
-use crate::device::irqchip::gicv2::gic::MAX_CPU_NUM;
 use crate::device::irqchip::gicv2::gicc::gicc_init;
-/// The outer layer is defined using gicv2.
-/// author: ForeverYolo
-/// reference:
-/// 1. gicv2 spec : https://www.cl.cam.ac.uk/research/srg/han/ACS-P35/zynq/arm_gic_architecture_specification.pdf
 use crate::device::irqchip::gicv2::gicc::GICC;
 use crate::device::irqchip::gicv2::gicd::gicd_init;
 use crate::device::irqchip::gicv2::gicd::GICD;
 use crate::device::irqchip::gicv2::gich::gich_init;
 use crate::device::irqchip::gicv2::gicv::gicv_init;
+use crate::device::irqchip::gicv2::pending::MAX_CPU_NUM;
 use crate::platform::ROOT_ARCH_ZONE_CONFIG;
 use crate::zone::Zone;
 use spin::Once;
@@ -40,6 +36,12 @@ pub mod vgic;
 
 // Physical GIC realization.
 pub mod gic;
+
+// GIC List register management.
+pub mod lr;
+
+// Virtual IRQs waiting for a free List register.
+pub mod pending;
 
 // GIC Hypervisor Interface Definition.
 pub mod gich;
@@ -107,7 +109,7 @@ pub fn primary_init_early() {
             );
         }
     };
-    gic::PENDING_VIRQS.call_once(|| gic::PendingIrqs::new(MAX_CPU_NUM));
+    pending::PENDING_VIRQS.call_once(|| pending::PendingIrqs::new(MAX_CPU_NUM));
 }
 
 pub fn percpu_init() {

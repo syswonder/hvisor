@@ -19,8 +19,6 @@ use crate::device::irqchip::gicv2::gic_ref::GicRef;
 use crate::device::irqchip::gicv2::GICV2;
 use bit_field::BitField;
 use spin::Once;
-/// gich layout definition and functions for gich operations.
-/// author : ForeverYolo
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite};
@@ -69,15 +67,6 @@ register_structs! {
 }
 unsafe impl Sync for GicHypervisorInterface {}
 
-// Each CPU holds one GICH.
-pub static GICH: Once<GicRef<GicHypervisorInterface>> = Once::new();
-
-pub fn gich_init(gich_base: usize) {
-    unsafe {
-        GICH.call_once(|| GicRef::new(gich_base as *const GicHypervisorInterface));
-    }
-}
-
 impl GicHypervisorInterface {
     pub fn clear_all_lr(&self) {
         for i in 0..=self.get_lr_num() as usize {
@@ -118,6 +107,15 @@ impl GicHypervisorInterface {
 
     pub fn get_hcr(&self) -> u32 {
         self.HCR.get()
+    }
+}
+
+// Each CPU holds one GICH.
+pub static GICH: Once<GicRef<GicHypervisorInterface>> = Once::new();
+
+pub fn gich_init(gich_base: usize) {
+    unsafe {
+        GICH.call_once(|| GicRef::new(gich_base as *const GicHypervisorInterface));
     }
 }
 
