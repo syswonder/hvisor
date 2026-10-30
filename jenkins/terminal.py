@@ -20,6 +20,8 @@ import serial
 
 MARKER_ID_LEN = 4
 HV_M_MARKER_RE = re.compile(rf"__HV_M_(?P<run_id>[a-f0-9]{{{MARKER_ID_LEN}}}):(?P<rc>\d+)")
+# Same CSI removal as jenkins/check_serial.sh before prompt matching.
+_ANSI_CSI_RE = re.compile(r"\x1b\[[0-9;?]*[ -/]*[@-~]")
 
 
 def new_marker_id() -> str:
@@ -374,6 +376,8 @@ class Terminal:
         timeout: float = 120.0,
         poll_interval: float = 0.05,
         from_offset: int | None = None,
+        *,
+        strip_ansi: bool = False,
     ) -> bool:
         """Wait until regex pattern appears in the collected log."""
         self._ensure_open()
@@ -382,6 +386,8 @@ class Terminal:
         deadline = time.monotonic() + timeout
         while time.monotonic() < deadline:
             chunk = self._collector.tail_since(offset)
+            if strip_ansi:
+                chunk = _ANSI_CSI_RE.sub("", chunk)
             if compiled.search(chunk):
                 return True
             time.sleep(poll_interval)
@@ -408,18 +414,6 @@ class Terminal:
             self.backend.write(char.encode(self.encoding, errors="replace"))
             time.sleep(char_delay)
         self.backend.write(b"\n")
-
-    def read_for(
-        self,
-        duration: float = 2.0,
-        poll_interval: float = 0.05,
-    ) -> str:
-        self._ensure_open()
-        offset = self._collector.offset()
-        deadline = time.monotonic() + duration
-        while time.monotonic() < deadline:
-            time.sleep(poll_interval)
-        return self._collector.tail_since(offset)
 
     def send_until_get(
         self,
