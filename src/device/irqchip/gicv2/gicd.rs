@@ -17,10 +17,6 @@
 #![allow(dead_code)]
 use crate::device::irqchip::gicv2::gic_ref::GicRef;
 use crate::device::irqchip::gicv2::GICV2;
-/// gicd layout definition and functions for gicd operations.
-/// author : ForeverYolo
-/// reference:
-/// 1. gicv2 spec : https://www.cl.cam.ac.uk/research/srg/han/ACS-P35/zynq/arm_gic_architecture_specification.pdf
 use spin::{Mutex, Once};
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
@@ -29,7 +25,7 @@ use tock_registers::registers::{ReadOnly, ReadWrite};
 
 // GICV2 interrupt layout.
 pub const GICV2_INTS_MAX: usize = 1024;
-pub const GICV2_SGIS_NUM: usize = 16;
+pub const GICV2_SGIS_NUM: usize = crate::device::irqchip::SGIS_NUM;
 pub const GICV2_PPIS_NUM: usize = 16;
 pub const GICV2_PRIVATE_INTS_NUM: usize = GICV2_SGIS_NUM + GICV2_PPIS_NUM;
 

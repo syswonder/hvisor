@@ -24,10 +24,6 @@ use crate::device::irqchip::gicv2::gich::{
 };
 use crate::device::irqchip::gicv2::GICV2;
 use spin::Once;
-/// gicc layout definition and functions for gicc operations.
-/// author : ForeverYolo
-/// reference:
-/// 1. gicv2 spec : https://www.cl.cam.ac.uk/research/srg/han/ACS-P35/zynq/arm_gic_architecture_specification.pdf
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
 use tock_registers::registers::{ReadOnly, ReadWrite, WriteOnly};

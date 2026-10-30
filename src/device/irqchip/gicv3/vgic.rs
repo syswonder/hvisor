@@ -13,8 +13,10 @@
 //
 // Authors:
 //
+use super::lr::{clear_guest_sgi, lr_pending_sgi_mask, MAINTENACE_INTERRUPT};
 use super::CPU_UNUSED_GICR_BASE;
 use super::{gicd::GICD_LOCK, is_spi};
+use crate::device::irqchip::PendingR0;
 use crate::platform::BOARD_MPIDR_MAPPINGS;
 use crate::{
     arch::zone::{GicConfig, HvArchZoneConfig},
@@ -22,8 +24,7 @@ use crate::{
     consts::MAX_CPU_NUM,
     cpu_data::{get_cpu_data, this_zone},
     device::irqchip::gicv3::{
-        gicd::*, gicr::*, gits::*, host_gicd_base, host_gicr_base, host_gits_base,
-        MAINTENACE_INTERRUPT, PER_GICR_SIZE,
+        gicd::*, gicr::*, gits::*, host_gicd_base, host_gicr_base, host_gits_base, PER_GICR_SIZE,
     },
     error::HvResult,
     hypercall::SGI_IPI_ID,
@@ -31,6 +32,8 @@ use crate::{
     zone::{this_zone_id, Zone},
 };
 use alloc::sync::Arc;
+use bit_field::BitField;
+
 pub fn reg_range(base: usize, n: usize, size: usize) -> core::ops::Range<usize> {
     base..(base + n * size)
 }
@@ -270,6 +273,55 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
                 if reg == GICR_SGI_BASE + GICR_ICENABLER {
                     mmio.value &= !(1 << MAINTENACE_INTERRUPT);
                     mmio.value &= !(1 << SGI_IPI_ID);
+                }
+
+                let is_sgi_set_pending = reg == GICR_SGI_BASE + GICR_ISPENDR;
+                let is_sgi_clear_pending = reg == GICR_SGI_BASE + GICR_ICPENDR;
+                if is_sgi_set_pending || is_sgi_clear_pending {
+                    // GICR_ISPENDR0/ICPENDR0 only support aligned 32-bit
+                    // accesses; others would misplace the SGI/PPI split.
+                    if mmio.size != 4 || mmio.address % 4 != 0 {
+                        warn!(
+                            "ignore unsupported GICR SGI pending access at {:#x} with size {}",
+                            mmio.address, mmio.size
+                        );
+                        if !mmio.is_write {
+                            mmio.value = 0;
+                        }
+                        return HvResult::Ok(());
+                    }
+                    if mmio.is_write {
+                        let mut reg = PendingR0::from_raw(mmio.value as u32);
+                        let sgis = reg.sgis();
+                        for irq_id in 0..crate::device::irqchip::SGIS_NUM {
+                            if !sgis.get_bit(irq_id) {
+                                continue;
+                            }
+                            if is_sgi_set_pending {
+                                crate::device::irqchip::post_guest_irq(cpu, irq_id, None);
+                            } else {
+                                clear_guest_sgi(cpu, irq_id);
+                            }
+                        }
+                        // Preserve physical PPI writes in bits 16..31 only.
+                        reg.set_sgis(0);
+                        mmio.value = reg.raw() as usize;
+                        mmio_perform_access(gicr_base, mmio);
+                    } else {
+                        mmio_perform_access(gicr_base, mmio);
+                        let mut sgis = get_cpu_data(cpu)
+                            .vcpu
+                            .irq
+                            .pending_mask(0, crate::device::irqchip::SGIS_NUM)
+                            as u32;
+                        if cpu == crate::arch::cpu::this_cpu_id() {
+                            sgis |= lr_pending_sgi_mask();
+                        }
+                        let mut reg = PendingR0::from_raw(mmio.value as u32);
+                        reg.set_sgis(sgis as u16);
+                        mmio.value = reg.raw() as usize;
+                    }
+                    return HvResult::Ok(());
                 }
                 // ignore access to foreign redistributors
                 mmio_perform_access(gicr_base, mmio);
