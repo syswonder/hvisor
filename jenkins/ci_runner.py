@@ -2,8 +2,10 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import os
 import re
+import shlex
 import socket
 import signal
 import subprocess
@@ -68,10 +70,13 @@ def terminate_managed_process(cfg: dict[str, Any]) -> None:
 
 def zone_list_shows_running(output: str, zone_name: str = "linux2") -> None:
     """hvisor-tool zone list returns zone count as exit code; validate output instead."""
-    if zone_name not in output or "running" not in output:
-        raise TerminalCommandError(
-            f"zone list missing running {zone_name!r}:\n{output.strip()}"
-        )
+    for line in output.splitlines():
+        columns = [column.strip() for column in line.strip().strip("|").split("|")]
+        if len(columns) == 4 and columns[2] == zone_name and columns[3] == "running":
+            return
+    raise TerminalCommandError(
+        f"zone list missing running {zone_name!r}:\n{output.strip()}"
+    )
 
 
 def run_and_print_quiet(
@@ -240,6 +245,109 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     return 0
 
 
+def x86_qemu_zone1_regression(cfg: dict[str, Any], term: Terminal | None) -> int:
+    if term is None:
+        raise SystemExit("terminal backend is required")
+    iterations = int(cfg.get("zone1_iterations", 1))
+    boot_timeout = float(cfg.get("zone1_boot_timeout", 60.0))
+    io_timeout = float(cfg.get("zone1_io_timeout", 120.0))
+    io_size_mb = int(cfg.get("zone1_io_size_mb", 100))
+    if min(iterations, boot_timeout, io_timeout, io_size_mb) <= 0:
+        raise TerminalCommandError("zone1 iteration count, timeouts and I/O size must be positive")
+
+    digest = hashlib.sha256()
+    for _ in range(io_size_mb):
+        digest.update(bytes(1024 * 1024))
+    # Write on the root disk, not /tmp (which could be tmpfs). Direct I/O
+    # exercises virtio completions even when the guest page cache is warm.
+    io_script = (
+        "set -eu; "
+        'test "$(id -u)" = 0; test "$(uname -m)" = x86_64; '
+        "test ! -e /dev/hvisor; "
+        "grep -Eq '^/dev/(vda|root) / ext4 ' /proc/mounts; "
+        "file=$(mktemp /ci-zone1-io.XXXXXX); "
+        "trap 'rm -f \"$file\"' EXIT; "
+        f'dd if=/dev/zero of="$file" bs=1M count={io_size_mb} oflag=direct conv=fsync; '
+        f'actual=$(dd if="$file" bs=1M count={io_size_mb} iflag=direct | sha256sum); '
+        'printf "%s\\n" "$actual"; '
+        f'test "${{actual%% *}}" = {digest.hexdigest()}; '
+        'rm -f "$file"; sync'
+    )
+
+    def checked_run(command: str, timeout: float = 30.0) -> str:
+        rc, output = term.run("x86_zone1", command, timeout=timeout)
+        if rc != 0:
+            raise TerminalCommandError(f"zone1 regression command failed with rc={rc}: {command}")
+        return output
+
+    checked_run("cd /root")
+    before_pts = set(re.findall(r"/dev/pts/\d+", checked_run("ls -1 /dev/pts/[0-9]*")))
+    pts = ""
+    for iteration in range(1, iterations + 1):
+        print(f"[x86 zone1] iteration {iteration}/{iterations}", flush=True)
+        offset = term.offset()
+        attached = False
+        try:
+            if iteration == 1:
+                checked_run("./boot_zone1.sh", timeout=120.0)
+                after_pts = set(re.findall(r"/dev/pts/\d+", checked_run("ls -1 /dev/pts/[0-9]*")))
+                new_pts = after_pts - before_pts
+                if len(new_pts) != 1:
+                    raise TerminalCommandError(f"expected one new zone1 console, got {sorted(new_pts)}")
+                pts = new_pts.pop()
+            else:
+                checked_run("./hvisor zone start zone1_linux.json", timeout=30.0)
+
+            _, listing = term.run("zone_list", "./hvisor zone list", timeout=15.0)
+            zone_list_shows_running(listing, str(cfg.get("zone1_name", "linux2")))
+
+            # Use Ctrl-T for screen so QEMU's Ctrl-A escape cannot swallow
+            # detach. Keep an offset from before attaching to retain the prompt.
+            prompt_offset = term.offset()
+            term.send(f"screen -S hvisor-ci-zone1 -e '^Tt' {pts}")
+            attached = True
+            term.send("")
+            if not term.wait_pattern(
+                r"(?m)root@(?!zone0:)[^\r\n]*[#$][ \t]*$",
+                timeout=boot_timeout,
+                from_offset=prompt_offset,
+            ):
+                raise TerminalTimeoutError("zone1 did not reach a root shell")
+
+            # A prompt alone is insufficient: require a fresh command status
+            # marker, then require disk I/O to finish with the expected hash.
+            checked_run('test "$(uname -m)" = x86_64 && test ! -e /dev/hvisor', timeout=boot_timeout)
+            checked_run("sh -c " + shlex.quote(io_script), timeout=io_timeout)
+            detach_offset = term.offset()
+            term.backend.write(b"\x14d")
+            if not term.wait_pattern(
+                r"(?m)root@zone0:[^\r\n]*[#$][ \t]*$",
+                timeout=15.0,
+                from_offset=detach_offset,
+            ):
+                raise TerminalTimeoutError("failed to return to zone0 after screen detach")
+            attached = False
+            checked_run("test -c /dev/hvisor", timeout=15.0)
+            # A detached screen keeps reading the PTY. Close it before the
+            # next boot so two screen sessions cannot steal each other's data.
+            checked_run("screen -S hvisor-ci-zone1 -X quit", timeout=15.0)
+            if iteration < iterations:
+                checked_run("./hvisor zone shutdown -id 1", timeout=30.0)
+            print(f"[x86 zone1] iteration {iteration} passed", flush=True)
+        finally:
+            if attached:
+                try:
+                    term.backend.write(b"\x14d")
+                except OSError as exc:
+                    print(f"[x86 zone1] could not detach console: {exc}", flush=True)
+            path = logs_dir(cfg) / f"x86_zone1_iteration_{iteration}.log"
+            path.write_text(term.tail_since(offset), encoding="utf-8")
+            print(f"[x86 zone1] saved {path}", flush=True)
+
+    print("zone1_started successfully; console and disk regression passed", flush=True)
+    return 0
+
+
 def asterinas_zone1_regression(cfg: dict[str, Any], term: Terminal | None) -> int:
     print("————————————————\ncase: asterinas_zone1_regression\n————————————————\n", flush=True)
     if term is None:
@@ -318,6 +426,7 @@ CASE_HANDLERS: dict[str, CaseFunc] = {
     "login": login,
     "network_and_trans": network_and_trans,
     "zone1_start": zone1_start,
+    "x86_qemu_zone1_regression": x86_qemu_zone1_regression,
     "asterinas_zone1_regression": asterinas_zone1_regression,
 }
 
@@ -382,6 +491,10 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
         "uboot_autoboot_window": float(tests.get("uboot_autoboot_window", 0.0)),
         "zone0_ready_pattern": str(tests.get("zone0_ready_pattern", "")).strip(),
         "zone0_shell_timeout": float(tests.get("zone0_shell_timeout", 180.0)),
+        "zone1_iterations": int(tests.get("zone1_iterations", 1)),
+        "zone1_boot_timeout": float(tests.get("zone1_boot_timeout", 60.0)),
+        "zone1_io_timeout": float(tests.get("zone1_io_timeout", 120.0)),
+        "zone1_io_size_mb": int(tests.get("zone1_io_size_mb", 100)),
         "board_ip": str(deploy.get("board_ip", "")).strip(),
         "board_iface": str(deploy.get("board_iface", "eth0")).strip(),
         "board_netmask": str(deploy.get("board_netmask", "255.255.255.0")).strip(),

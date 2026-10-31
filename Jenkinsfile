@@ -486,7 +486,15 @@ pipeline {
 
                 post {
                     always {
-                        script { finishGithubCheck(matrixCheckName(), currentBuild.currentResult) }
+                        script {
+                            try {
+                                dir(matrixCellDir()) {
+                                    archiveArtifacts artifacts: 'logs/**', allowEmptyArchive: true
+                                }
+                            } finally {
+                                finishGithubCheck(matrixCheckName(), currentBuild.currentResult)
+                            }
+                        }
                     }
                 }
             }
