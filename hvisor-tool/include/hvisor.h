@@ -208,11 +208,13 @@ struct hvisor_scmi_power_args {
     } u;
 };
 
-#ifdef LOONGARCH64
-
+#if defined(LOONGARCH64) || defined(X86_64)
 #define HVISOR_DEASSERT_IRQ _IOW(1, 11, struct hvisor_irq_line_args)
 #define HVISOR_HC_CLEAR_INJECT_IRQ 11 // hvcall code in hvisor
-#define HVISOR_VIRTIO_WAKEUP_HWI 4    // LoongArch CPUINTC HWI2
+#endif
+
+#ifdef LOONGARCH64
+#define HVISOR_VIRTIO_WAKEUP_HWI 4 // LoongArch CPUINTC HWI2
 
 #endif /* LOONGARCH64 */
 #ifdef LOONGARCH64
