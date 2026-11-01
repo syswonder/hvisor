@@ -89,7 +89,7 @@ static bool virtio_trace_sample(uint64_t seq) {
 }
 
 static int virtio_deassert_line_locked(VirtIODevice *vdev) {
-#ifdef LOONGARCH64
+#if defined(LOONGARCH64) || defined(X86_64)
     struct hvisor_irq_line_args args = {
         .zone_id = vdev->zone_id,
         .irq_id = vdev->irq_id,
