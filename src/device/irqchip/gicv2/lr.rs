@@ -276,7 +276,7 @@ fn handle_sgi_eoi_maintenance() {
 }
 
 fn has_pending_maintenance_work() -> bool {
-    this_cpu_data().vcpu.irq.has_pending() || PENDING_VIRQS.get().unwrap().has_pending()
+    this_cpu_data().vcpu.irq.has_pending_edges() || PENDING_VIRQS.get().unwrap().has_pending()
 }
 
 pub fn change_underflow_maintenance(is_enable: bool) {

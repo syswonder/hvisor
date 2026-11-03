@@ -20,7 +20,7 @@ use spin::Mutex;
 
 use crate::arch::{
     cpu::{store_cpu_pointer_to_reg, this_cpu_id, ArchCpu},
-    ArchVcpu, GUEST_IRQ_NR,
+    ArchVcpu, GUEST_IRQ_NR, GUEST_LINES,
 };
 use crate::consts::{INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::memory::addr::VirtAddr;
@@ -225,18 +225,74 @@ impl Debug for VcpuStateCell {
 const GUEST_IRQ_WORD_BITS: usize = u64::BITS as usize;
 const GUEST_IRQ_WORDS: usize = (GUEST_IRQ_NR + 63) / 64;
 
+const LINE_MASK: [u64; GUEST_IRQ_WORDS] = {
+    let mut mask = [0; GUEST_IRQ_WORDS];
+    let mut i = 0;
+    while i < GUEST_LINES.len() {
+        let irq_id = GUEST_LINES[i];
+        mask[irq_id / GUEST_IRQ_WORD_BITS] |= 1 << (irq_id % GUEST_IRQ_WORD_BITS);
+        i += 1;
+    }
+    mask
+};
+
 /// Pending interrupt inputs of one guest CPU, numbered below `GUEST_IRQ_NR`.
 //
+// An edge bit asks for an install at the next flush. A level bit holds the
+// line value; `line_dirty` marks lines the next flush must sync.
 // Architecture-private metadata remains in `ArchVcpu`; this state is the
 // common producer/consumer contract.
 pub struct GuestCpuIrqState {
     pending: [AtomicU64; GUEST_IRQ_WORDS],
+    line_dirty: [AtomicU64; GUEST_IRQ_WORDS],
 }
 
 impl GuestCpuIrqState {
     pub const fn new() -> Self {
         Self {
             pending: [const { AtomicU64::new(0) }; GUEST_IRQ_WORDS],
+            line_dirty: [const { AtomicU64::new(0) }; GUEST_IRQ_WORDS],
+        }
+    }
+
+    pub const fn is_line(irq_id: usize) -> bool {
+        irq_id < GUEST_IRQ_NR
+            && LINE_MASK[irq_id / GUEST_IRQ_WORD_BITS] & (1 << (irq_id % GUEST_IRQ_WORD_BITS)) != 0
+    }
+
+    /// Set a level line and mark it dirty. Returns whether the level changed.
+    pub fn set_level(&self, irq_id: usize, level: bool) -> bool {
+        debug_assert!(Self::is_line(irq_id));
+        let word = irq_id / GUEST_IRQ_WORD_BITS;
+        let mask = 1u64 << (irq_id % GUEST_IRQ_WORD_BITS);
+        let old = if level {
+            self.pending[word].fetch_or(mask, Ordering::AcqRel)
+        } else {
+            self.pending[word].fetch_and(!mask, Ordering::AcqRel)
+        };
+        if (old & mask != 0) == level {
+            return false;
+        }
+        self.line_dirty[word].fetch_or(mask, Ordering::Release);
+        true
+    }
+
+    /// Take the dirty lines and pass each one's current level to `sync`.
+    pub fn take_dirty_lines(&self, mut sync: impl FnMut(usize, bool)) {
+        for word in 0..GUEST_IRQ_WORDS {
+            if LINE_MASK[word] == 0 {
+                continue;
+            }
+            let mut dirty = self.line_dirty[word].swap(0, Ordering::AcqRel);
+            if dirty == 0 {
+                continue;
+            }
+            let levels = self.pending[word].load(Ordering::Acquire);
+            while dirty != 0 {
+                let bit = dirty.trailing_zeros() as usize;
+                dirty &= dirty - 1;
+                sync(word * GUEST_IRQ_WORD_BITS + bit, levels & (1 << bit) != 0);
+            }
         }
     }
 
@@ -270,12 +326,13 @@ impl GuestCpuIrqState {
     /// Atomically claim the lowest pending IRQ number in one bitmap word.
     pub fn claim_pending_irq(&self, word_index: usize) -> Option<usize> {
         let word = self.pending.get(word_index)?;
+        let edges = !LINE_MASK[word_index];
         loop {
             let old = word.load(Ordering::Acquire);
-            if old == 0 {
+            if old & edges == 0 {
                 return None;
             }
-            let bit = old.trailing_zeros() as usize;
+            let bit = (old & edges).trailing_zeros() as usize;
             let mask = 1u64 << bit;
             if word
                 .compare_exchange(old, old & !mask, Ordering::AcqRel, Ordering::Acquire)
@@ -296,15 +353,17 @@ impl GuestCpuIrqState {
     }
 
     pub fn clear_all(&self) {
-        for word in &self.pending {
-            word.store(0, Ordering::Release);
+        for word in 0..GUEST_IRQ_WORDS {
+            let old = self.pending[word].swap(0, Ordering::AcqRel);
+            if old & LINE_MASK[word] != 0 {
+                self.line_dirty[word].fetch_or(old & LINE_MASK[word], Ordering::Release);
+            }
         }
     }
 
-    pub fn has_pending(&self) -> bool {
-        self.pending
-            .iter()
-            .any(|word| word.load(Ordering::Acquire) != 0)
+    pub fn has_pending_edges(&self) -> bool {
+        (0..GUEST_IRQ_WORDS)
+            .any(|word| self.pending[word].load(Ordering::Acquire) & !LINE_MASK[word] != 0)
     }
 
     pub fn pending_mask(&self, first_irq: usize, count: usize) -> u64 {

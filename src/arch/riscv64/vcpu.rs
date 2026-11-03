@@ -16,6 +16,9 @@
 /// Pending bitmap size; bits are `hvip` local interrupt numbers.
 pub const GUEST_IRQ_NR: usize = 64;
 
+/// Level-triggered bitmap numbers; the rest are edges.
+pub const GUEST_LINES: &[usize] = &[];
+
 /// VSSIP bit in `hvip`.
 pub const IRQ_VS_SOFT: usize = 2;
 
