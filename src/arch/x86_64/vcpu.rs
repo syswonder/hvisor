@@ -13,7 +13,11 @@
 //
 // Authors:
 //
+/// Pending bitmap size; bits are local APIC vectors.
+pub const GUEST_IRQ_NR: usize = 256;
+
 // Architecture-private vCPU state placeholder.
+// Guest interrupts still go through `PENDING_VECTORS` via `inject_vector()`.
 pub struct ArchVcpu;
 
 impl ArchVcpu {
@@ -21,5 +25,12 @@ impl ArchVcpu {
         Self
     }
 
+    #[inline]
+    pub fn prepare_post(&self, _irq_id: usize, _source_cpu: Option<usize>) -> bool {
+        true
+    }
+
     pub fn clear_irq_state(&self) {}
 }
+
+pub fn flush_guest_irqs() {}

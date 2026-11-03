@@ -13,6 +13,9 @@
 //
 // Authors:
 //
+/// Pending bitmap size; bits are guest ESTAT.IS lines (0..=12).
+pub const GUEST_IRQ_NR: usize = 13;
+
 // Architecture-private vCPU state placeholder.
 pub struct ArchVcpu;
 
@@ -21,5 +24,12 @@ impl ArchVcpu {
         Self
     }
 
+    #[inline]
+    pub fn prepare_post(&self, _irq_id: usize, _source_cpu: Option<usize>) -> bool {
+        true
+    }
+
     pub fn clear_irq_state(&self) {}
 }
+
+pub fn flush_guest_irqs() {}

@@ -13,6 +13,9 @@
 //
 // Authors:
 //
+/// Pending bitmap size; bits are `hvip` local interrupt numbers.
+pub const GUEST_IRQ_NR: usize = 64;
+
 // Architecture-private vCPU state placeholder.
 pub struct ArchVcpu;
 
@@ -21,5 +24,13 @@ impl ArchVcpu {
         Self
     }
 
+    #[allow(dead_code)]
+    #[inline]
+    pub fn prepare_post(&self, _irq_id: usize, _source_cpu: Option<usize>) -> bool {
+        true
+    }
+
     pub fn clear_irq_state(&self) {}
 }
+
+pub fn flush_guest_irqs() {}

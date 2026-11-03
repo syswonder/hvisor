@@ -38,6 +38,10 @@ pub fn arch_notify_event(cpu_id: u64, sgi_num: u64, _event_id: usize, _queue_was
     arch_send_event(cpu_id, sgi_num);
 }
 
+// Same IRQ as the event doorbell.
+#[allow(dead_code)]
+pub const VCPU_KICK_DOORBELL: u64 = crate::hypercall::SGI_IPI_ID;
+
 /// Handle send_ipi event.
 pub fn arch_ipi_handler() {
     unsafe {

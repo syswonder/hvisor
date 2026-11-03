@@ -79,6 +79,8 @@ pub fn arch_send_virtual_ipi(cpu_id: usize) {
     arch_send_event(cpu_id as u64, HVISOR_VIPI_DOORBELL as u64);
 }
 
+pub const VCPU_KICK_DOORBELL: u64 = HVISOR_VIPI_DOORBELL as u64;
+
 fn iocsr_mbuf_send_box_lo(a: usize) -> usize {
     a << 1
 }

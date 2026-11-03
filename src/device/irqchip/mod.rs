@@ -13,10 +13,11 @@
 //
 // Authors:
 //
+use crate::arch::ipi;
 use crate::arch::zone::HvArchZoneConfig;
+use crate::arch::GUEST_IRQ_NR;
 use crate::config::HvZoneConfig;
 use crate::cpu_data::{get_cpu_data, this_cpu_data, GuestCpuIrqState, Vcpu, VcpuState};
-use crate::hypercall::SGI_IPI_ID;
 use crate::zone::Zone;
 use core::sync::atomic::{fence, Ordering};
 
@@ -36,7 +37,7 @@ pub fn handle_virtio_irq_event() {
 /// Post a guest software IRQ to the target vCPU and kick its pCPU.
 /// `source_cpu` is the SGI source, used only by GICv2.
 pub fn post_guest_irq(target_cpu: usize, irq_id: usize, source_cpu: Option<usize>) -> bool {
-    if irq_id >= crate::config::CONFIG_MAX_INTERRUPTS {
+    if irq_id >= GUEST_IRQ_NR {
         return false;
     }
     #[cfg(target_arch = "aarch64")]
@@ -44,24 +45,13 @@ pub fn post_guest_irq(target_cpu: usize, irq_id: usize, source_cpu: Option<usize
         return false;
     }
     let target = get_cpu_data(target_cpu);
-    #[cfg(not(irq_gicv2))]
-    let _ = source_cpu;
     let control = target.ctrl_lock.lock();
     if target.zone.is_none() || target.vcpu.state.is_stopped() {
         return false;
     }
-    #[cfg(irq_gicv2)]
-    if irq_id < SGIS_NUM {
-        let Some(source_cpu) = source_cpu.filter(|source_cpu| *source_cpu < 8) else {
-            return false;
-        };
-        let source_bit = 1u8 << source_cpu;
-        let previous_sources = target.vcpu.arch.sgi_source[irq_id]
-            .fetch_or(source_bit, core::sync::atomic::Ordering::AcqRel);
-        // A repeated SGI from the same source coalesces.
-        if previous_sources & source_bit != 0 {
-            return true;
-        }
+    // Coalesced with a pending post.
+    if !target.vcpu.arch.prepare_post(irq_id, source_cpu) {
+        return true;
     }
     if !target.vcpu.irq.set(irq_id) {
         return false;
@@ -82,20 +72,17 @@ pub fn kick_vcpu(vcpu: &Vcpu, target_pcpu_id: usize) {
     fence(Ordering::SeqCst);
     match vcpu.state.load() {
         VcpuState::Running | VcpuState::Blocked => {
-            crate::arch::ipi::arch_send_event(target_pcpu_id as u64, SGI_IPI_ID);
+            ipi::arch_send_event(target_pcpu_id as u64, ipi::VCPU_KICK_DOORBELL);
         }
         VcpuState::Ready | VcpuState::Stopped => {}
     }
 }
 
-/// Install the current vCPU's posted guest IRQs into the interrupt controller
-/// (consumer side of `post_guest_irq()`).
+/// Install the current vCPU's posted guest IRQs (consumer side of
+/// `post_guest_irq()`).
 #[inline]
 pub fn flush_current_guest_irqs() {
-    #[cfg(all(irq_gicv2, target_arch = "aarch64"))]
-    gicv2::lr::flush_current_guest_irqs();
-    #[cfg(all(irq_gicv3, target_arch = "aarch64"))]
-    gicv3::lr::flush_current_guest_irqs();
+    crate::arch::vcpu::flush_guest_irqs();
 }
 
 /// Run the controller-independent pending claim/retry flow.

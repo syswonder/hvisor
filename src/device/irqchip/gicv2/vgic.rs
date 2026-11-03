@@ -32,6 +32,7 @@ use crate::device::irqchip::gicv2::lr::{
     clear_guest_sgi_pending, clear_guest_sgi_pending_sources, read_pending_sgi_lr_summary,
     MAINTENACE_INTERRUPT,
 };
+use crate::device::irqchip::gicv2::pending::MAX_CPU_NUM;
 use crate::device::irqchip::gicv2::GICV2;
 use crate::device::irqchip::PendingR0;
 use crate::error::HvResult;
@@ -412,6 +413,12 @@ fn handle_gicd_intid_pending_access(
             }
             if is_clear {
                 clear_guest_sgi_pending(target_cpu, irq_id);
+            } else if target_cpu >= MAX_CPU_NUM {
+                // GICv2 can only encode sources 0..8.
+                warn!(
+                    "GICv2 SGI {} from CPU{} has no valid source",
+                    irq_id, target_cpu
+                );
             } else {
                 crate::device::irqchip::post_guest_irq(target_cpu, irq_id, Some(target_cpu));
             }

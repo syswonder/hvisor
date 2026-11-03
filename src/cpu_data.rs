@@ -20,7 +20,7 @@ use spin::Mutex;
 
 use crate::arch::{
     cpu::{store_cpu_pointer_to_reg, this_cpu_id, ArchCpu},
-    ArchVcpu,
+    ArchVcpu, GUEST_IRQ_NR,
 };
 use crate::consts::{INVALID_ADDRESS, PER_CPU_ARRAY_PTR, PER_CPU_SIZE};
 use crate::memory::addr::VirtAddr;
@@ -223,11 +223,11 @@ impl Debug for VcpuStateCell {
 }
 
 const GUEST_IRQ_WORD_BITS: usize = u64::BITS as usize;
-const GUEST_IRQ_WORDS: usize = (crate::config::CONFIG_MAX_INTERRUPTS + 63) / 64;
+const GUEST_IRQ_WORDS: usize = (GUEST_IRQ_NR + 63) / 64;
 
-/// Pending software IRQ state owned by one guest CPU. Bits are guest INTIDs.
+/// Pending interrupt inputs of one guest CPU, numbered below `GUEST_IRQ_NR`.
 //
-// Architecture-specific LR metadata remains in `ArchVcpu`; this state is the
+// Architecture-private metadata remains in `ArchVcpu`; this state is the
 // common producer/consumer contract.
 pub struct GuestCpuIrqState {
     pending: [AtomicU64; GUEST_IRQ_WORDS],
@@ -241,7 +241,7 @@ impl GuestCpuIrqState {
     }
 
     pub fn set(&self, irq_id: usize) -> bool {
-        if irq_id >= crate::config::CONFIG_MAX_INTERRUPTS {
+        if irq_id >= GUEST_IRQ_NR {
             return false;
         }
         self.pending[irq_id / GUEST_IRQ_WORD_BITS]
@@ -249,14 +249,14 @@ impl GuestCpuIrqState {
         true
     }
 
-    /// Claim pending INTIDs and let the controller adapter install each one.
-    /// Returns `true` when `install` refused an INTID; that INTID is put back
-    /// and maintenance must stay armed.
+    /// Claim pending IRQ numbers and let the architecture install each one.
+    /// Returns `true` when `install` refused one; it is put back and a retry
+    /// (e.g. GIC maintenance) must stay armed.
     //
-    // The adapter owns INTID classes and LR encoding.
+    // The architecture owns the number space and the install path.
     pub fn flush_pending_with(&self, mut install: impl FnMut(usize) -> bool) -> bool {
         for word_index in 0..self.pending.len() {
-            while let Some(irq_id) = self.claim_pending_intid(word_index) {
+            while let Some(irq_id) = self.claim_pending_irq(word_index) {
                 if install(irq_id) {
                     continue;
                 }
@@ -267,8 +267,8 @@ impl GuestCpuIrqState {
         false
     }
 
-    /// Atomically claim the lowest pending INTID in one bitmap word.
-    pub fn claim_pending_intid(&self, word_index: usize) -> Option<usize> {
+    /// Atomically claim the lowest pending IRQ number in one bitmap word.
+    pub fn claim_pending_irq(&self, word_index: usize) -> Option<usize> {
         let word = self.pending.get(word_index)?;
         loop {
             let old = word.load(Ordering::Acquire);
@@ -287,7 +287,7 @@ impl GuestCpuIrqState {
     }
 
     pub fn clear(&self, irq_id: usize) -> bool {
-        if irq_id >= crate::config::CONFIG_MAX_INTERRUPTS {
+        if irq_id >= GUEST_IRQ_NR {
             return false;
         }
         self.pending[irq_id / GUEST_IRQ_WORD_BITS]
