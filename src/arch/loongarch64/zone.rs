@@ -15,9 +15,13 @@
 //      Yulong Han <wheatfox17@icloud.com>
 //
 use crate::device::irqchip::ls7a2000::chip::eio_core_isr_mmio_base;
+use crate::device::irqchip::GuestIrqSignal;
 use crate::{
     arch::{
-        cpu::this_cpu_id, ipi::SMP_BOOT_CPU, trap::GLOBAL_TRAP_CONTEXT_HELPER_PER_CPU,
+        cpu::this_cpu_id,
+        ipi::SMP_BOOT_CPU,
+        trap::GLOBAL_TRAP_CONTEXT_HELPER_PER_CPU,
+        vcpu::{VirtIpiRegs, INT_IPI},
         Stage2PageTable,
     },
     config::*,
@@ -503,31 +507,7 @@ const IPI_CLEAR: usize = 0x0c;
 const IPI_MAILBOX_BASE: usize = 0x20;
 const IPI_MAILBOX_SIZE: usize = 0x20;
 
-static VIRTUAL_IPI_STATUS: [AtomicU32; MAX_CPU_NUM] = {
-    const C: AtomicU32 = AtomicU32::new(0);
-    [C; MAX_CPU_NUM]
-};
-static VIRTUAL_IPI_ENABLE: [AtomicU32; MAX_CPU_NUM] = {
-    const C: AtomicU32 = AtomicU32::new(0xffff_ffff);
-    [C; MAX_CPU_NUM]
-};
-static VIRTUAL_IPI_MAILBOX: [AtomicU64; MAX_CPU_NUM * 4] = {
-    const C: AtomicU64 = AtomicU64::new(0);
-    [C; MAX_CPU_NUM * 4]
-};
 const IOCSR_IPI_SEND_BLOCKING: u32 = 1 << 31;
-
-pub fn reset_virtual_ipi_state(cpu: usize) {
-    if cpu >= MAX_CPU_NUM {
-        return;
-    }
-
-    VIRTUAL_IPI_STATUS[cpu].store(0, Ordering::Release);
-    VIRTUAL_IPI_ENABLE[cpu].store(0xffff_ffff, Ordering::Release);
-    for mailbox in 0..4 {
-        VIRTUAL_IPI_MAILBOX[cpu * 4 + mailbox].store(0, Ordering::Release);
-    }
-}
 
 fn handle_uart_mmio(mmio: &mut MMIOAccess, base_addr: usize) -> HvResult {
     mmio_perform_access(base_addr, mmio);
@@ -640,30 +620,22 @@ fn guest_cpu_to_physical_cpu(guest_cpu: usize) -> Option<usize> {
         .and_then(|zone| zone.read().guest_to_phys_cpu(guest_cpu))
 }
 
-pub fn sync_virtual_ipi_line() {
-    let cpu = this_cpu_id();
-    let status = VIRTUAL_IPI_STATUS[cpu].load(Ordering::Acquire);
-
-    if status != 0 {
-        crate::device::irqchip::ls7a2000::inject_irq(12, false);
-    } else {
-        crate::device::irqchip::ls7a2000::clear_injected_irq(12);
-    }
+fn ipi_regs(cpu: usize) -> &'static VirtIpiRegs {
+    &get_cpu_data(cpu).vcpu.arch.ipi
 }
 
-pub fn virtual_ipi_pending(cpu: usize) -> bool {
-    cpu < MAX_CPU_NUM && VIRTUAL_IPI_STATUS[cpu].load(Ordering::Acquire) != 0
-}
-
-fn sync_or_notify_virtual_ipi_line(cpu: usize) {
-    if cpu == this_cpu_id() {
-        sync_virtual_ipi_line();
-    } else {
-        // The virtual IPI status is already the pending state. Use the
-        // dedicated physical doorbell directly instead of allocating a
-        // one-item generic event just to call sync_virtual_ipi_line().
-        crate::arch::ipi::arch_send_virtual_ipi(cpu);
+// Update IPI_STATUS and post INT_IPI as `status != 0` under `status_lock`.
+// Returns the old status.
+fn update_ipi_status(cpu: usize, update: impl FnOnce(u32) -> u32) -> u32 {
+    let regs = ipi_regs(cpu);
+    let _lock = regs.status_lock.lock();
+    let old = regs.status.load(Ordering::Acquire);
+    let new = update(old);
+    regs.status.store(new, Ordering::Release);
+    if (old != 0) != (new != 0) {
+        crate::device::irqchip::post_guest_irq(cpu, INT_IPI, None, GuestIrqSignal::Level(new != 0));
     }
+    old
 }
 
 fn virtual_ipi_send(target_guest_cpu: usize, ipi_bits: u32, blocking: bool) -> HvResult {
@@ -676,7 +648,7 @@ fn virtual_ipi_send(target_guest_cpu: usize, ipi_bits: u32, blocking: bool) -> H
     };
 
     if ipi_bits & SMP_BOOT_CPU as u32 != 0 {
-        let entry = VIRTUAL_IPI_MAILBOX[target_cpu * 4].load(Ordering::Acquire) as usize;
+        let entry = ipi_regs(target_cpu).mailbox[0].load(Ordering::Acquire) as usize;
         let target_data = get_cpu_data(target_cpu);
         let _lock = target_data.ctrl_lock.lock();
         if target_data.vcpu.state.is_stopped() {
@@ -704,17 +676,13 @@ fn virtual_ipi_send(target_guest_cpu: usize, ipi_bits: u32, blocking: bool) -> H
     }
 
     // Match the in-kernel LoongArch IPI model: commit the status update before
-    // returning from the send write, merge repeated actions, and only notify on
-    // the zero-to-nonzero transition. Bit 31 does not wait for guest IPI_CLEAR.
-    let old = VIRTUAL_IPI_STATUS[target_cpu].fetch_or(pending, Ordering::AcqRel);
-    let new = old | pending;
-    if old == 0 && new != 0 {
-        sync_or_notify_virtual_ipi_line(target_cpu);
-    }
+    // returning from the send write and merge repeated actions. Bit 31 does
+    // not wait for guest IPI_CLEAR.
+    update_ipi_status(target_cpu, |status| status | pending);
 
     if blocking {
-        // The emulated send is synchronous: the target status and event queue
-        // are globally visible before the trapped IOCSR write completes.
+        // The emulated send is synchronous: the target status is globally
+        // visible before the trapped IOCSR write completes.
         fence(Ordering::SeqCst);
     }
 
@@ -774,7 +742,7 @@ fn handle_ipi_mail_send_mmio(mmio: &mut MMIOAccess) -> HvResult {
         return Ok(());
     }
 
-    let slot = &VIRTUAL_IPI_MAILBOX[target_cpu * 4 + mailbox];
+    let slot = &ipi_regs(target_cpu).mailbox[mailbox];
     if is_high {
         let old = slot.load(Ordering::Acquire);
         let new = (old & 0x0000_0000_ffff_ffff) | ((data as u64) << 32);
@@ -810,7 +778,7 @@ fn handle_ipi_mmio(mmio: &mut MMIOAccess) -> HvResult {
     match reg {
         IPI_STATUS => {
             if !mmio.is_write {
-                mmio.value = VIRTUAL_IPI_STATUS[cpu].load(Ordering::Acquire) as usize;
+                mmio.value = ipi_regs(cpu).status.load(Ordering::Acquire) as usize;
                 if mmio.value != 0 {
                     debug!(
                         "loongarch64: guest cpu{} reads IPI_STATUS cpu{} = {:#x}",
@@ -823,9 +791,11 @@ fn handle_ipi_mmio(mmio: &mut MMIOAccess) -> HvResult {
         }
         IPI_ENABLE => {
             if mmio.is_write {
-                VIRTUAL_IPI_ENABLE[cpu].store(mmio.value as u32, Ordering::Release);
+                ipi_regs(cpu)
+                    .enable
+                    .store(mmio.value as u32, Ordering::Release);
             } else {
-                mmio.value = VIRTUAL_IPI_ENABLE[cpu].load(Ordering::Acquire) as usize;
+                mmio.value = ipi_regs(cpu).enable.load(Ordering::Acquire) as usize;
             }
         }
         IPI_SET => {
@@ -838,11 +808,7 @@ fn handle_ipi_mmio(mmio: &mut MMIOAccess) -> HvResult {
         IPI_CLEAR => {
             if mmio.is_write {
                 let mask = mmio.value as u32;
-                let old = VIRTUAL_IPI_STATUS[cpu].fetch_and(!mask, Ordering::AcqRel);
-                let new = old & !mask;
-                if old != 0 && new == 0 {
-                    sync_or_notify_virtual_ipi_line(cpu);
-                }
+                let old = update_ipi_status(cpu, |status| status & !mask);
                 if old != 0 || mmio.value != 0 {
                     debug!(
                         "loongarch64: guest cpu{} clears IPI_STATUS cpu{}, mask={:#x}, old={:#x}",
@@ -859,10 +825,9 @@ fn handle_ipi_mmio(mmio: &mut MMIOAccess) -> HvResult {
         IPI_MAILBOX_BASE..=0x3f if reg < IPI_MAILBOX_BASE + IPI_MAILBOX_SIZE => {
             let mailbox = (reg - IPI_MAILBOX_BASE) / 8;
             if mmio.is_write {
-                VIRTUAL_IPI_MAILBOX[cpu * 4 + mailbox].store(mmio.value as u64, Ordering::Release);
+                ipi_regs(cpu).mailbox[mailbox].store(mmio.value as u64, Ordering::Release);
             } else {
-                mmio.value =
-                    VIRTUAL_IPI_MAILBOX[cpu * 4 + mailbox].load(Ordering::Acquire) as usize;
+                mmio.value = ipi_regs(cpu).mailbox[mailbox].load(Ordering::Acquire) as usize;
             }
         }
         _ => {
@@ -996,7 +961,10 @@ impl Zone {
 
     pub fn arch_zone_reset(&mut self, config: &HvZoneConfig) -> HvResult {
         for cpu in config.cpus().iter() {
-            reset_virtual_ipi_state(*cpu as usize);
+            let cpu = *cpu as usize;
+            if cpu < MAX_CPU_NUM {
+                ipi_regs(cpu).reset();
+            }
         }
         Ok(())
     }

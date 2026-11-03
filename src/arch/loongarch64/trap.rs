@@ -21,7 +21,6 @@ use crate::arch::cpu::this_cpu_id;
 use crate::arch::ipi::*;
 use crate::consts::MAX_CPU_NUM;
 use crate::cpu_data::this_cpu_data;
-use crate::device::irqchip::inject_irq;
 use crate::device::irqchip::ls7a2000::chip::*;
 use crate::event::{dispatch_host_events, dump_events, handle_next_event, has_pending_events};
 use crate::hypercall::{SGI_IPI_ID, *};
@@ -647,6 +646,9 @@ pub fn _vcpu_return(ctx: usize) -> ! {
         "loongarch64: _vcpu_return: calling _hyp_trap_return with ctx = {:#x}",
         ctx
     );
+    if this_cpu_data().zone.is_some() {
+        crate::device::irqchip::flush_current_guest_irqs();
+    }
     unsafe {
         _hyp_trap_return(ctx);
     }
@@ -1257,7 +1259,6 @@ fn imm12toi64(imm12: usize) -> isize {
     imm12 >> 52
 }
 
-const INT_IPI: usize = 12;
 const IPI_BIT: usize = 1 << 12;
 const TIMER_BIT: usize = 1 << 11;
 const HWI0: usize = 1 << 2;
@@ -1291,14 +1292,8 @@ fn handle_interrupt(is: usize) {
         let event_doorbell = SGI_IPI_ID as u32;
         let virtual_ipi_doorbell = HVISOR_VIPI_DOORBELL as u32;
 
-        // Virtual IPI status is posted state, not a generic event. Its
-        // dedicated physical doorbell must never cause the event FIFO to be
-        // inspected or drained.
         if ipi_status & virtual_ipi_doorbell != 0 {
             clear_ipi_bits(virtual_ipi_doorbell);
-            if crate::arch::loongarch64::zone::virtual_ipi_pending(cpu_id) {
-                crate::arch::loongarch64::zone::sync_virtual_ipi_line();
-            }
         }
 
         if ipi_status & event_doorbell != 0 {
@@ -1566,125 +1561,6 @@ fn emulate_iocsr(ins: usize, ctx: &mut ZoneContext) {
                 "mmio access failed, error = {:?}, this is a real page fault",
                 e
             );
-        }
-    }
-}
-
-fn emulate_iocsr_legacy(ins: usize, ctx: &mut ZoneContext) {
-    // iocsrrd.b rd, rj     0000011001 001000000000 rj[9:5] rd[4:0]
-    // iocsrrd.h rd, rj     0000011001 001000000001 rj[9:5] rd[4:0]
-    // iocsrrd.w rd, rj     0000011001 001000000010 rj[9:5] rd[4:0]
-    // iocsrrd.d rd, rj     0000011001 001000000011 rj[9:5] rd[4:0]
-    // iocsrwr.b rd, rj     0000011001 001000000100 rj[9:5] rd[4:0]
-    // iocsrwr.h rd, rj     0000011001 001000000101 rj[9:5] rd[4:0]
-    // iocsrwr.w rd, rj     0000011001 001000000110 rj[9:5] rd[4:0]
-    // iocsrwr.d rd, rj     0000011001 001000000111 rj[9:5] rd[4:0]
-    // let ty = (ins >> 10) & 0x7;
-    // let rd = ins & 0x1f;
-    // let rj = (ins >> 5) & 0x1f;
-    let ty = extract_field(ins, 10, 3);
-    let rd = extract_field(ins, 0, 5);
-    let rj = extract_field(ins, 5, 5);
-    debug!("iocsr emulation, ty = {}, rd = {}, rj = {}", ty, rd, rj);
-    debug!("GPR[rd] = {:#x}, GPR[rj] = {:#x}", ctx.x[rd], ctx.x[rj]);
-    match ty {
-        0 => {
-            // iocsrrd.b
-            // GPR[rd] = iocsrrd.b(GPR[rj])
-            let mut val = 0;
-            unsafe {
-                asm!("iocsrrd.b {}, {}", out(reg) val, in(reg) ctx.x[rj]);
-            }
-            ctx.x[rd] = val & 0xff;
-        }
-        1 => {
-            // iocsrrd.h
-            // GPR[rd] = iocsrrd.h(GPR[rj])
-            let mut val = 0;
-            unsafe {
-                asm!("iocsrrd.h {}, {}", out(reg) val, in(reg) ctx.x[rj]);
-            }
-            ctx.x[rd] = val & 0xffff;
-        }
-        2 => {
-            // iocsrrd.w
-            // GPR[rd] = iocsrrd.w(GPR[rj])
-            let mut val = 0;
-            unsafe {
-                asm!("iocsrrd.w {}, {}", out(reg) val, in(reg) ctx.x[rj]);
-            }
-            ctx.x[rd] = val & 0xffffffff;
-        }
-        3 => {
-            // iocsrrd.d
-            // GPR[rd] = iocsrrd.d(GPR[rj])
-            let mut val = 0;
-            unsafe {
-                asm!("iocsrrd.d {}, {}", out(reg) val, in(reg) ctx.x[rj]);
-            }
-            ctx.x[rd] = val;
-        }
-        4 => {
-            // iocsrwr.b
-            // iocsrwr.b(GPR[rd], GPR[rj])
-            unsafe {
-                asm!("iocsrwr.b {}, {}", in(reg) ctx.x[rd], in(reg) ctx.x[rj]);
-            }
-        }
-        5 => {
-            // iocsrwr.h
-            // iocsrwr.h(GPR[rd], GPR[rj])
-            unsafe {
-                asm!("iocsrwr.h {}, {}", in(reg) ctx.x[rd], in(reg) ctx.x[rj]);
-            }
-        }
-        6 => {
-            // iocsrwr.w
-            // iocsrwr.w(GPR[rd], GPR[rj])
-
-            // hack: since guest linux will use iocsrwr.w [xxx] 0x1014 to send IPI to itself (ACTION_IRQ_WORK)
-            // we need to check if ctx.x[rj] is 0x1014, if so, we should parse ctx.x[rd][31:0]
-            // then inject IPI bit to GCSR_ESTAT, and prepare the 7A2000's IPI register to have the exact target status
-            // using the debug ANY_SEND register (TODO)
-
-            let target_io = ctx.x[rj];
-            let target_write_data = ctx.x[rd];
-
-            match target_io {
-                0x1014 => {
-                    // IPI send issued from guest is tricky ...
-                    // IPI_send is 32 bit, we ignore the upper 32 bits
-                    // bit [31]: wait for completion
-                    // bit [25:16] target cpu id
-                    // bit [4:0] ipi id (IPI_status, 32 bit) indicates the IPI type (0-31)
-                    let ipi_send = target_write_data as u32;
-                    let ipi_id = ipi_send & 0x1f;
-                    let target_cpu_id = (ipi_send >> 16) & 0x3ff;
-                    let wait_for_completion = (ipi_send >> 31) & 0x1;
-                    warn!("IPI send issued from guest, ipi_id = {:#x}, target_cpu_id = {:#x}, wait_for_completion = {:#x}", ipi_id, target_cpu_id, wait_for_completion);
-                    if target_cpu_id == this_cpu_id() as u32 {
-                        warn!("send IPI to itself, injecting IPI to GCSR_ESTAT");
-                        inject_irq(INT_IPI, false);
-                    } else {
-                        // TODO
-                        panic!("send IPI from guest to other cpu is not supported yet!");
-                    }
-                }
-                _ => unsafe {
-                    asm!("iocsrwr.w {}, {}", in(reg) ctx.x[rd], in(reg) ctx.x[rj]);
-                },
-            }
-        }
-        7 => {
-            // iocsrwr.d
-            // iocsrwr.d(GPR[rd], GPR[rj])
-            unsafe {
-                asm!("iocsrwr.d {}, {}", in(reg) ctx.x[rd], in(reg) ctx.x[rj]);
-            }
-        }
-        _ => {
-            // should not reach here
-            panic!("invalid iocsr type, this is impossible");
         }
     }
 }

@@ -15,7 +15,7 @@
 //      Yulong Han <wheatfox17@icloud.com>
 //
 use crate::arch::cpu::this_cpu_id;
-use crate::consts::{IPI_EVENT_CLEAR_INJECT_IRQ, IPI_EVENT_SEND_IPI};
+use crate::consts::IPI_EVENT_CLEAR_INJECT_IRQ;
 use core::arch::asm;
 use loongArch64::iocsr::{iocsr_write_d, iocsr_write_w};
 use loongArch64::register::ecfg::LineBasedInterrupt;
@@ -73,11 +73,6 @@ pub const HVISOR_EVENT_DOORBELL: usize = 0x8;
 /// guest virtual-IPI status changed. This must not enter the generic event
 /// queue path.
 pub const HVISOR_VIPI_DOORBELL: usize = 0x10;
-
-#[inline]
-pub fn arch_send_virtual_ipi(cpu_id: usize) {
-    arch_send_event(cpu_id as u64, HVISOR_VIPI_DOORBELL as u64);
-}
 
 pub const VCPU_KICK_DOORBELL: u64 = HVISOR_VIPI_DOORBELL as u64;
 
@@ -217,9 +212,6 @@ pub fn arch_check_events(event: Option<usize>) {
     match event {
         Some(IPI_EVENT_CLEAR_INJECT_IRQ) => {
             warn!("legacy CLEAR_INJECT_IRQ event ignored; use the per-IRQ line API");
-        }
-        Some(IPI_EVENT_SEND_IPI) => {
-            crate::arch::zone::sync_virtual_ipi_line();
         }
         _ => {
             panic!("arch_check_events: unhandled event: {:?}", event);
