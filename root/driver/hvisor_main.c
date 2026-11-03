@@ -91,7 +91,7 @@ static int hvisor_finish_req(void) {
     return 0;
 }
 
-#ifdef LOONGARCH64
+#if defined(LOONGARCH64) || defined(X86_64)
 static int hvisor_deassert_irq(struct hvisor_irq_line_args __user *arg) {
     struct hvisor_irq_line_args kargs;
 
@@ -383,7 +383,7 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
         err = hvisor_scmi_power_ioctl(
             (struct hvisor_scmi_power_args __user *)arg);
         break;
-#ifdef LOONGARCH64
+#if defined(LOONGARCH64) || defined(X86_64)
     case HVISOR_DEASSERT_IRQ:
         err = hvisor_deassert_irq((struct hvisor_irq_line_args __user *)arg);
         break;
