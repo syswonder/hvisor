@@ -126,7 +126,7 @@ pub fn handle_guest_sgi1r(value: u64) {
     let source_cpu = this_cpu_id();
     for target_cpu in this_zone().cpu_set().iter() {
         if sgi.targets(target_cpu, source_cpu) {
-            if !crate::device::irqchip::post_guest_irq(target_cpu, sgi.intid(), None) {
+            if !crate::device::irqchip::post_guest_irq(target_cpu, sgi.intid(), None, true) {
                 error!(
                     "failed to post guest SGI {} to CPU{}",
                     sgi.intid(),
@@ -167,7 +167,8 @@ fn post_guest_sgi(irq_id: usize, target_list: u8, filter: u32) {
             2 => target_cpu == source_cpu,
             _ => false,
         };
-        if selected && !crate::device::irqchip::post_guest_irq(target_cpu, irq_id, Some(source_cpu))
+        if selected
+            && !crate::device::irqchip::post_guest_irq(target_cpu, irq_id, Some(source_cpu), true)
         {
             warn!("failed to post guest SGI {} to CPU{}", irq_id, target_cpu);
         }

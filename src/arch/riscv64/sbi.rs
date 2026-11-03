@@ -378,7 +378,7 @@ pub fn sbi_ipi_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
         // hart_mask is 64 bits
         if hart_mask_bits.has_bit(hart_id) {
             let cpu_id = hartid_to_cpuid(hart_id);
-            if !crate::device::irqchip::post_guest_irq(cpu_id, IRQ_VS_SOFT, None) {
+            if !crate::device::irqchip::post_guest_irq(cpu_id, IRQ_VS_SOFT, None, true) {
                 warn!("SBI: failed to post IPI to hart {}", hart_id);
             }
         }

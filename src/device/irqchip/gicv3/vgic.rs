@@ -298,7 +298,7 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
                                 continue;
                             }
                             if is_sgi_set_pending {
-                                crate::device::irqchip::post_guest_irq(cpu, irq_id, None);
+                                crate::device::irqchip::post_guest_irq(cpu, irq_id, None, true);
                             } else {
                                 clear_guest_sgi(cpu, irq_id);
                             }

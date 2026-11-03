@@ -420,7 +420,7 @@ fn handle_gicd_intid_pending_access(
                     irq_id, target_cpu
                 );
             } else {
-                crate::device::irqchip::post_guest_irq(target_cpu, irq_id, Some(target_cpu));
+                crate::device::irqchip::post_guest_irq(target_cpu, irq_id, Some(target_cpu), true);
             }
         }
         // Forward only the physical PPI bits owned by this zone.
@@ -480,7 +480,12 @@ fn handle_gicd_sgi_pending_access(mmio: &mut MMIOAccess, is_clear: bool) -> HvRe
             } else {
                 for source in 0..8 {
                     if source_mask.get_bit(source) {
-                        crate::device::irqchip::post_guest_irq(target_cpu, irq_id, Some(source));
+                        crate::device::irqchip::post_guest_irq(
+                            target_cpu,
+                            irq_id,
+                            Some(source),
+                            true,
+                        );
                     }
                 }
             }

@@ -16,6 +16,9 @@
 /// Pending bitmap size; bits are local APIC vectors.
 pub const GUEST_IRQ_NR: usize = 256;
 
+/// Level-triggered bitmap numbers; the rest are edges.
+pub const GUEST_LINES: &[usize] = &[];
+
 // Architecture-private vCPU state placeholder.
 // Guest interrupts still go through `PENDING_VECTORS` via `inject_vector()`.
 pub struct ArchVcpu;

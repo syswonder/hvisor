@@ -34,9 +34,14 @@ pub fn handle_virtio_irq_event() {
     crate::device::virtio_trampoline::handle_virtio_irq();
 }
 
-/// Post a guest software IRQ to the target vCPU and kick its pCPU.
-/// `source_cpu` is the SGI source, used only by GICv2.
-pub fn post_guest_irq(target_cpu: usize, irq_id: usize, source_cpu: Option<usize>) -> bool {
+/// Post a guest IRQ to the target vCPU and kick its pCPU. `source_cpu` is used
+/// only by GICv2; `level` is the new line value, or `true` for an edge.
+pub fn post_guest_irq(
+    target_cpu: usize,
+    irq_id: usize,
+    source_cpu: Option<usize>,
+    level: bool,
+) -> bool {
     if irq_id >= GUEST_IRQ_NR {
         return false;
     }
@@ -46,7 +51,18 @@ pub fn post_guest_irq(target_cpu: usize, irq_id: usize, source_cpu: Option<usize
     }
     let target = get_cpu_data(target_cpu);
     let control = target.ctrl_lock.lock();
-    if target.zone.is_none() || target.vcpu.state.is_stopped() {
+    if target.zone.is_none() {
+        return false;
+    }
+    if GuestCpuIrqState::is_line(irq_id) {
+        let changed = target.vcpu.irq.set_level(irq_id, level);
+        drop(control);
+        if changed {
+            kick_vcpu(&target.vcpu, target_cpu);
+        }
+        return true;
+    }
+    if !level || target.vcpu.state.is_stopped() {
         return false;
     }
     // Coalesced with a pending post.
