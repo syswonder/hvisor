@@ -16,6 +16,9 @@
 /// Pending bitmap size; bits are guest ESTAT.IS lines (0..=12).
 pub const GUEST_IRQ_NR: usize = 13;
 
+/// Level-triggered bitmap numbers; the rest are edges.
+pub const GUEST_LINES: &[usize] = &[];
+
 // Architecture-private vCPU state placeholder.
 pub struct ArchVcpu;
 

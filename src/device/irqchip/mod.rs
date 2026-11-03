@@ -34,9 +34,27 @@ pub fn handle_virtio_irq_event() {
     crate::device::virtio_trampoline::handle_virtio_irq();
 }
 
-/// Post a guest software IRQ to the target vCPU and kick its pCPU.
-/// `source_cpu` is the SGI source, used only by GICv2.
-pub fn post_guest_irq(target_cpu: usize, irq_id: usize, source_cpu: Option<usize>) -> bool {
+/// What a `post_guest_irq()` call does to the guest IRQ.
+//
+// Each IRQ number has a fixed trigger type: numbers in `GUEST_LINES` are
+// level-triggered and take `Level`; all others are edge-triggered and take
+// `Edge`. `post_guest_irq()` returns `false` on a mismatch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum GuestIrqSignal {
+    /// Latch one interrupt until the next flush claims it.
+    Edge,
+    /// Drive the line to this value; the next flush syncs it to the guest.
+    Level(bool),
+}
+
+/// Post a guest IRQ to the target vCPU and kick its pCPU. `source_cpu` is used
+/// only by GICv2.
+pub fn post_guest_irq(
+    target_cpu: usize,
+    irq_id: usize,
+    source_cpu: Option<usize>,
+    signal: GuestIrqSignal,
+) -> bool {
     if irq_id >= GUEST_IRQ_NR {
         return false;
     }
@@ -46,7 +64,21 @@ pub fn post_guest_irq(target_cpu: usize, irq_id: usize, source_cpu: Option<usize
     }
     let target = get_cpu_data(target_cpu);
     let control = target.ctrl_lock.lock();
-    if target.zone.is_none() || target.vcpu.state.is_stopped() {
+    if target.zone.is_none() {
+        return false;
+    }
+    if GuestCpuIrqState::is_line(irq_id) {
+        let GuestIrqSignal::Level(level) = signal else {
+            return false;
+        };
+        let changed = target.vcpu.irq.set_level(irq_id, level);
+        drop(control);
+        if changed {
+            kick_vcpu(&target.vcpu, target_cpu);
+        }
+        return true;
+    }
+    if signal != GuestIrqSignal::Edge || target.vcpu.state.is_stopped() {
         return false;
     }
     // Coalesced with a pending post.

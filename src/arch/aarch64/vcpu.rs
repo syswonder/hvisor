@@ -21,6 +21,9 @@ use core::sync::atomic::{AtomicU8, Ordering};
 /// Pending bitmap size; bits are GIC vINTIDs.
 pub const GUEST_IRQ_NR: usize = crate::config::CONFIG_MAX_INTERRUPTS;
 
+/// Level-triggered bitmap numbers; the rest are edges.
+pub const GUEST_LINES: &[usize] = &[];
+
 /// Architecture-private vCPU state, separate from the host pCPU's `ArchCpu`.
 pub struct ArchVcpu {
     #[cfg(irq_gicv2)]
