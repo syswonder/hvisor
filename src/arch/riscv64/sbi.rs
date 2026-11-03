@@ -19,7 +19,7 @@ use super::cpu::ArchCpu;
 use crate::arch::cpu::hartid_to_cpuid;
 #[cfg(isa_sstc)]
 use crate::arch::csr::{write_csr, CSR_VSTIMECMP};
-use crate::consts::IPI_EVENT_SEND_IPI;
+use crate::arch::vcpu::IRQ_VS_SOFT;
 use crate::cpu_data::{get_cpu_data, this_cpu_data, VcpuState};
 use crate::event::{send_event, IPI_EVENT_WAKEUP};
 use crate::hypercall::HyperCall;
@@ -30,7 +30,8 @@ use riscv::register::sie;
 use riscv_h::register::hvip;
 use sbi_rt::{HartMask, SbiRet};
 use sbi_spec::binary::{
-    RET_ERR_ALREADY_AVAILABLE, RET_ERR_FAILED, RET_ERR_NOT_SUPPORTED, RET_SUCCESS,
+    RET_ERR_ALREADY_AVAILABLE, RET_ERR_FAILED, RET_ERR_INVALID_PARAM, RET_ERR_NOT_SUPPORTED,
+    RET_SUCCESS,
 };
 use sbi_spec::{base, hsm, legacy, rfnc, spi, time};
 
@@ -335,7 +336,11 @@ pub fn sbi_hsm_start_handler(current_cpu: &mut ArchCpu) -> SbiRet {
         error: RET_SUCCESS,
         value: 0,
     };
-    let cpuid = hartid_to_cpuid(current_cpu.x[10]); // convert to hvisor's logical cpuid
+    // convert to hvisor's logical cpuid
+    let Some(cpuid) = hartid_to_cpuid(current_cpu.x[10]) else {
+        sbi_ret.error = RET_ERR_INVALID_PARAM;
+        return sbi_ret;
+    };
     let start_addr = current_cpu.x[11];
     let opaque = current_cpu.x[12];
     if cpuid == current_cpu.cpuid {
@@ -377,8 +382,15 @@ pub fn sbi_ipi_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
     for hart_id in 0..64 {
         // hart_mask is 64 bits
         if hart_mask_bits.has_bit(hart_id) {
-            // the second parameter is ignored is riscv64.
-            send_event(hartid_to_cpuid(hart_id), 0, IPI_EVENT_SEND_IPI);
+            let Some(cpu_id) = hartid_to_cpuid(hart_id) else {
+                return SbiRet {
+                    error: RET_ERR_INVALID_PARAM,
+                    value: 0,
+                };
+            };
+            if !crate::device::irqchip::post_guest_irq(cpu_id, IRQ_VS_SOFT, None) {
+                warn!("SBI: failed to post IPI to hart {}", hart_id);
+            }
         }
     }
     SbiRet {
