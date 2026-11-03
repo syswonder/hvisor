@@ -18,8 +18,8 @@ use crate::{
     arch::cpu::this_cpu_id,
     arch::ipi::{arch_check_events, arch_notify_event},
     consts::{
-        IPI_EVENT_CLEAR_INJECT_IRQ, IPI_EVENT_DWC_MSI_INJECT, IPI_EVENT_SEND_IPI,
-        IPI_EVENT_UPDATE_HART_LINE, IPI_EVENT_VCPU_SUSPEND, MAX_CPU_NUM,
+        IPI_EVENT_CLEAR_INJECT_IRQ, IPI_EVENT_DWC_MSI_INJECT, IPI_EVENT_UPDATE_HART_LINE,
+        IPI_EVENT_VCPU_SUSPEND, MAX_CPU_NUM,
     },
     cpu_data::{this_cpu_data, vcpu_suspend, CpuSet},
     device::irqchip::{handle_virtio_irq_event, inject_irq},
@@ -159,9 +159,7 @@ fn handle_event(event: Option<usize>) -> bool {
             activate_msix();
             true
         }
-        Some(IPI_EVENT_CLEAR_INJECT_IRQ)
-        | Some(IPI_EVENT_UPDATE_HART_LINE)
-        | Some(IPI_EVENT_SEND_IPI) => {
+        Some(IPI_EVENT_CLEAR_INJECT_IRQ) | Some(IPI_EVENT_UPDATE_HART_LINE) => {
             arch_check_events(event);
             true
         }
