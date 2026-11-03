@@ -213,6 +213,7 @@ impl ArchCpu {
 
         info!("CPU{} run@{:#x}", self.cpuid, self.sepc);
         info!("CPU{:#x?}", self);
+        crate::device::irqchip::flush_current_guest_irqs();
         unsafe {
             vcpu_arch_entry();
         }

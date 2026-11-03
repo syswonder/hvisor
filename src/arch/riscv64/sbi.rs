@@ -19,7 +19,7 @@ use super::cpu::ArchCpu;
 use crate::arch::cpu::hartid_to_cpuid;
 #[cfg(isa_sstc)]
 use crate::arch::csr::{write_csr, CSR_VSTIMECMP};
-use crate::consts::IPI_EVENT_SEND_IPI;
+use crate::arch::vcpu::IRQ_VS_SOFT;
 use crate::cpu_data::{get_cpu_data, this_cpu_data, VcpuState};
 use crate::event::{send_event, IPI_EVENT_WAKEUP};
 use crate::hypercall::HyperCall;
@@ -377,8 +377,10 @@ pub fn sbi_ipi_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
     for hart_id in 0..64 {
         // hart_mask is 64 bits
         if hart_mask_bits.has_bit(hart_id) {
-            // the second parameter is ignored is riscv64.
-            send_event(hartid_to_cpuid(hart_id), 0, IPI_EVENT_SEND_IPI);
+            let cpu_id = hartid_to_cpuid(hart_id);
+            if !crate::device::irqchip::post_guest_irq(cpu_id, IRQ_VS_SOFT, None) {
+                warn!("SBI: failed to post IPI to hart {}", hart_id);
+            }
         }
     }
     SbiRet {
