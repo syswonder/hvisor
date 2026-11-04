@@ -154,14 +154,3 @@ pub const VCPU_KICK_DOORBELL: u64 = SGI_IPI_ID;
 pub fn handle_virt_ipi() {
     event::dispatch_host_events(|| while event::check_events() {});
 }
-
-pub fn arch_check_events(event: Option<usize>) {
-    match event {
-        _ => {
-            info!(
-                "x86_64: arch_check_events: event={:#x?} do nothing now",
-                event
-            );
-        }
-    }
-}

@@ -15,7 +15,6 @@
 //      Yulong Han <wheatfox17@icloud.com>
 //
 use crate::arch::cpu::this_cpu_id;
-use crate::consts::IPI_EVENT_CLEAR_INJECT_IRQ;
 use core::arch::asm;
 use loongArch64::iocsr::{iocsr_write_d, iocsr_write_w};
 use loongArch64::register::ecfg::LineBasedInterrupt;
@@ -206,15 +205,4 @@ pub fn ecfg_ipi_disable() {
         this_cpu_id(),
         lie_
     );
-}
-
-pub fn arch_check_events(event: Option<usize>) {
-    match event {
-        Some(IPI_EVENT_CLEAR_INJECT_IRQ) => {
-            warn!("legacy CLEAR_INJECT_IRQ event ignored; use the per-IRQ line API");
-        }
-        _ => {
-            panic!("arch_check_events: unhandled event: {:?}", event);
-        }
-    }
 }

@@ -13,14 +13,19 @@
 //
 // Authors:
 //
+use riscv_h::register::hvip;
+
 /// Pending bitmap size; bits are `hvip` local interrupt numbers.
 pub const GUEST_IRQ_NR: usize = 64;
 
 /// Level-triggered bitmap numbers; the rest are edges.
-pub const GUEST_LINES: &[usize] = &[];
+pub const GUEST_LINES: &[usize] = &[IRQ_VS_EXT];
 
 /// VSSIP bit in `hvip`.
 pub const IRQ_VS_SOFT: usize = 2;
+
+/// VSEIP bit in `hvip`.
+pub const IRQ_VS_EXT: usize = 10;
 
 // Architecture-private vCPU state placeholder.
 pub struct ArchVcpu;
@@ -38,16 +43,19 @@ impl ArchVcpu {
     pub fn clear_irq_state(&self) {}
 }
 
-/// Raise posted IRQs of the current vCPU in `hvip`.
+/// Sync dirty lines and raise posted IRQs of the current vCPU in `hvip`.
 pub fn flush_guest_irqs() {
-    crate::cpu_data::this_cpu_data()
-        .vcpu
-        .irq
-        .flush_pending_with(|irq_id| {
-            match irq_id {
-                IRQ_VS_SOFT => unsafe { riscv_h::register::hvip::set_vssip() },
-                _ => warn!("RISC-V: unexpected posted guest IRQ {}", irq_id),
-            }
-            true
-        });
+    let irq = &crate::cpu_data::this_cpu_data().vcpu.irq;
+    irq.take_dirty_lines(|irq_id, level| match (irq_id, level) {
+        (IRQ_VS_EXT, true) => unsafe { hvip::set_vseip() },
+        (IRQ_VS_EXT, false) => unsafe { hvip::clear_vseip() },
+        _ => warn!("RISC-V: unexpected guest line {}", irq_id),
+    });
+    irq.flush_pending_with(|irq_id| {
+        match irq_id {
+            IRQ_VS_SOFT => unsafe { hvip::set_vssip() },
+            _ => warn!("RISC-V: unexpected posted guest IRQ {}", irq_id),
+        }
+        true
+    });
 }
