@@ -14,7 +14,6 @@
 // Authors:
 //      Jingyu Liu <liujingyu24s@ict.ac.cn>
 //
-use crate::consts::IPI_EVENT_SEND_IPI;
 #[cfg(plic)]
 use crate::consts::IPI_EVENT_UPDATE_HART_LINE;
 use crate::platform::BOARD_HARTID_MAP;
@@ -38,12 +37,8 @@ pub fn arch_notify_event(cpu_id: u64, sgi_num: u64, _event_id: usize, _queue_was
     arch_send_event(cpu_id, sgi_num);
 }
 
-/// Handle send_ipi event.
-pub fn arch_ipi_handler() {
-    unsafe {
-        riscv_h::register::hvip::set_vssip();
-    }
-}
+// Same IRQ as the event doorbell.
+pub const VCPU_KICK_DOORBELL: u64 = crate::hypercall::SGI_IPI_ID;
 
 pub fn arch_check_events(event: Option<usize>) {
     match event {
@@ -51,10 +46,6 @@ pub fn arch_check_events(event: Option<usize>) {
         Some(IPI_EVENT_UPDATE_HART_LINE) => {
             use crate::device::irqchip::plic::update_hart_line;
             update_hart_line();
-        }
-        Some(IPI_EVENT_SEND_IPI) => {
-            use crate::arch::riscv64::ipi::arch_ipi_handler;
-            arch_ipi_handler();
         }
         _ => {
             panic!("arch_check_events: unhandled event: {:?}", event);

@@ -106,6 +106,9 @@ pub fn arch_notify_event(cpu_id: u64, sgi_num: u64, _event_id: usize, _queue_was
     arch_send_event(cpu_id, sgi_num);
 }
 
+// Same IRQ as the event doorbell.
+pub const VCPU_KICK_DOORBELL: u64 = crate::hypercall::SGI_IPI_ID;
+
 pub fn arch_check_events(event: Option<usize>) {
     match event {
         _ => {
@@ -123,7 +126,7 @@ pub fn handle_guest_sgi1r(value: u64) {
     let source_cpu = this_cpu_id();
     for target_cpu in this_zone().cpu_set().iter() {
         if sgi.targets(target_cpu, source_cpu) {
-            if !crate::device::irqchip::post_guest_irq(target_cpu, sgi.intid(), None) {
+            if !crate::device::irqchip::post_guest_irq(target_cpu, sgi.intid(), None, true) {
                 error!(
                     "failed to post guest SGI {} to CPU{}",
                     sgi.intid(),
@@ -149,6 +152,14 @@ pub fn handle_guest_sgir(value: u32) {
 #[cfg(irq_gicv2)]
 fn post_guest_sgi(irq_id: usize, target_list: u8, filter: u32) {
     let source_cpu = this_cpu_id();
+    // GICv2 can only encode sources 0..8.
+    if source_cpu >= crate::device::irqchip::gicv2::pending::MAX_CPU_NUM {
+        warn!(
+            "GICv2 SGI {} from CPU{} has no valid source",
+            irq_id, source_cpu
+        );
+        return;
+    }
     for target_cpu in this_zone().cpu_set().iter() {
         let selected = match filter {
             0 => target_cpu < 8 && target_list.get_bit(target_cpu),
@@ -156,7 +167,8 @@ fn post_guest_sgi(irq_id: usize, target_list: u8, filter: u32) {
             2 => target_cpu == source_cpu,
             _ => false,
         };
-        if selected && !crate::device::irqchip::post_guest_irq(target_cpu, irq_id, Some(source_cpu))
+        if selected
+            && !crate::device::irqchip::post_guest_irq(target_cpu, irq_id, Some(source_cpu), true)
         {
             warn!("failed to post guest SGI {} to CPU{}", irq_id, target_cpu);
         }
