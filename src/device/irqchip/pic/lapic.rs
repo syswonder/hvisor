@@ -22,9 +22,8 @@ use crate::{
         msr::Msr::{self, *},
     },
     cpu_data::this_cpu_data,
-    device::irqchip::pic::pop_vector,
+    device::irqchip::pic::{ioapic::ioapic_eoi, isr, pop_vector, tmr},
     error::HvResult,
-    memory::Frame,
 };
 use bit_field::BitField;
 use core::{ops::Range, u32};
@@ -82,8 +81,15 @@ impl VirtLocalApic {
             IA32_X2APIC_ISR0 | IA32_X2APIC_ISR1 | IA32_X2APIC_ISR2 | IA32_X2APIC_ISR3
             | IA32_X2APIC_ISR4 | IA32_X2APIC_ISR5 | IA32_X2APIC_ISR6 | IA32_X2APIC_ISR7 => {
                 // info!("isr!");
-                Ok(0)
+                let register = (msr as u32 - IA32_X2APIC_ISR0 as u32) as usize;
+                Ok(isr(this_cpu_id(), register) as u64)
             }
+            IA32_X2APIC_TMR0 | IA32_X2APIC_TMR1 | IA32_X2APIC_TMR2 | IA32_X2APIC_TMR3
+            | IA32_X2APIC_TMR4 | IA32_X2APIC_TMR5 | IA32_X2APIC_TMR6 | IA32_X2APIC_TMR7 => Ok(tmr(
+                this_cpu_id(),
+                (msr as u32 - IA32_X2APIC_TMR0 as u32) as usize,
+            )
+                as u64),
             IA32_X2APIC_IRR0 | IA32_X2APIC_IRR1 | IA32_X2APIC_IRR2 | IA32_X2APIC_IRR3
             | IA32_X2APIC_IRR4 | IA32_X2APIC_IRR5 | IA32_X2APIC_IRR6 | IA32_X2APIC_IRR7 => {
                 // info!("irr!");
@@ -97,7 +103,9 @@ impl VirtLocalApic {
     pub fn wrmsr(&mut self, msr: Msr, value: u64) -> HvResult {
         match msr {
             IA32_X2APIC_EOI => {
-                pop_vector(this_cpu_id());
+                if let Some(vector) = pop_vector(this_cpu_id()) {
+                    ioapic_eoi(crate::zone::this_zone_id(), vector);
+                }
                 Ok(())
             }
             IA32_X2APIC_ICR => {

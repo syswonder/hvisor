@@ -85,6 +85,15 @@ pub enum Msr {
     /// In-Service register bits [223:192].
     IA32_X2APIC_ISR7 = 0x817,
 
+    IA32_X2APIC_TMR0 = 0x818,
+    IA32_X2APIC_TMR1 = 0x819,
+    IA32_X2APIC_TMR2 = 0x81a,
+    IA32_X2APIC_TMR3 = 0x81b,
+    IA32_X2APIC_TMR4 = 0x81c,
+    IA32_X2APIC_TMR5 = 0x81d,
+    IA32_X2APIC_TMR6 = 0x81e,
+    IA32_X2APIC_TMR7 = 0x81f,
+
     /// Interrupt Request register bits [31:0].
     IA32_X2APIC_IRR0 = 0x820,
     /// Interrupt Request register bits [63:32].
@@ -205,6 +214,12 @@ impl MsrBitmap {
         bitmap.set_write_intercept(IA32_X2APIC_LVT_TIMER, true);
 
         for addr in (IA32_X2APIC_ISR0 as u32)..(IA32_X2APIC_ISR7 as u32 + 1) {
+            if let Ok(msr) = Msr::try_from(addr) {
+                bitmap.set_read_intercept(msr, true);
+            }
+        }
+
+        for addr in (IA32_X2APIC_TMR0 as u32)..(IA32_X2APIC_TMR7 as u32 + 1) {
             if let Ok(msr) = Msr::try_from(addr) {
                 bitmap.set_read_intercept(msr, true);
             }
