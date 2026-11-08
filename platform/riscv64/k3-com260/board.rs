@@ -134,10 +134,10 @@ pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[
 ]);
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
-    plic_base: 0x0,
-    plic_size: 0x0,
-    aplic_base: APLIC_S_BASE,
-    aplic_size: APLIC_S_SIZE,
+    plic_base: 0x0 as u64,
+    plic_size: 0x0 as u64,
+    aplic_base: APLIC_S_BASE as u64,
+    aplic_size: APLIC_S_SIZE as u64,
 };
 
 pub const ROOT_PCI_CONFIG: [HvPciConfig; 0] = [];

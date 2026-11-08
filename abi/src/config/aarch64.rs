@@ -14,7 +14,7 @@ pub struct Aarch64ArchConfig {
     pub uefi_config: UefiConfig,
 }
 
-#[repr(C, usize)]
+#[repr(C, u64)]
 #[derive(Debug, Clone)]
 #[allow(unused)]
 pub enum UefiConfig {
@@ -31,7 +31,7 @@ pub struct HvUefiConfig {
     pub sys_map_addr: u64,
 }
 
-#[repr(C, usize)]
+#[repr(C, u64)]
 #[derive(Debug, Clone)]
 #[allow(unused)]
 pub enum GicConfig {
@@ -42,26 +42,26 @@ pub enum GicConfig {
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct Gicv2Config {
-    pub gicd_base: usize,
-    pub gicd_size: usize,
-    pub gicc_base: usize,
-    pub gicc_size: usize,
-    pub gicc_offset: usize,
-    pub gich_base: usize,
-    pub gich_size: usize,
-    pub gicv_base: usize,
-    pub gicv_size: usize,
+    pub gicd_base: u64,
+    pub gicd_size: u64,
+    pub gicc_base: u64,
+    pub gicc_size: u64,
+    pub gicc_offset: u64,
+    pub gich_base: u64,
+    pub gich_size: u64,
+    pub gicv_base: u64,
+    pub gicv_size: u64,
 }
 
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct Gicv3Config {
-    pub gicd_base: usize,
-    pub gicd_size: usize,
-    pub gicr_base: usize,
-    pub gicr_size: usize,
-    pub gits_base: usize,
-    pub gits_size: usize,
+    pub gicd_base: u64,
+    pub gicd_size: u64,
+    pub gicr_base: u64,
+    pub gicr_size: u64,
+    pub gits_base: u64,
+    pub gits_size: u64,
 }
 
 #[repr(C)]

@@ -681,8 +681,8 @@ pub fn copy_to_guest_memory_region(config: &HvZoneConfig, cpu_set: &CpuSet) {
         banned.insert(Signature::SSDT);
     }
     ROOT_ACPI.get().unwrap().copy_to_zone_region(
-        &config.memory_regions()[config.arch_config.rsdp_memory_region_id],
-        &config.memory_regions()[config.arch_config.acpi_memory_region_id],
+        &config.memory_regions()[config.arch_config.rsdp_memory_region_id as usize],
+        &config.memory_regions()[config.arch_config.acpi_memory_region_id as usize],
         &banned,
         cpu_set,
     );

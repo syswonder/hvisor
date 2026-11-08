@@ -11,5 +11,14 @@ _Static_assert(sizeof(Loongarch64ZoneConfig) == 3184,
                "Loongarch64ZoneConfig size");
 _Static_assert(sizeof(X86_64ZoneConfig) == 3264, "X86_64ZoneConfig size");
 _Static_assert(sizeof(HvPciDevConfig) == 12, "HvPciDevConfig size");
+_Static_assert(sizeof(IvcInfo) == 56, "IvcInfo size");
+_Static_assert(HvVirtioGetIrq == 86, "hypercall value");
+_Static_assert(sizeof(ZoneInfo) == 56, "ZoneInfo size");
+_Static_assert(sizeof(HvZoneListArgs) == 16, "HvZoneListArgs size");
+_Static_assert(sizeof(HvLoadImageArgs) == 24, "HvLoadImageArgs size");
+_Static_assert(sizeof(HvIrqLineArgs) == 8, "HvIrqLineArgs size");
+_Static_assert(sizeof(HvIvcUserInfo) == 12, "HvIvcUserInfo size");
+_Static_assert(sizeof(HvIvcControlTable) == 24, "HvIvcControlTable size");
+_Static_assert(sizeof(HvVirtioBridge) > 0, "HvVirtioBridge size");
 
 int main(void) { return 0; }

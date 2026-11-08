@@ -223,8 +223,8 @@ pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[
 ]);
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
-    plic_base: PLIC_BASE,
-    plic_size: PLIC_SIZE,
-    aplic_base: 0x0,
-    aplic_size: 0x0,
+    plic_base: PLIC_BASE as u64,
+    plic_size: PLIC_SIZE as u64,
+    aplic_base: 0x0 as u64,
+    aplic_size: 0x0 as u64,
 };

@@ -9,7 +9,7 @@ use super::zone::impl_zone_config;
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct Loongarch64ArchConfig {
-    pub dummy: usize,
+    pub dummy: u64,
 }
 
 #[repr(C)]

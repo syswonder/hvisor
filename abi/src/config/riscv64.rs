@@ -9,10 +9,10 @@ use super::zone::impl_zone_config;
 #[repr(C)]
 #[derive(Debug, Clone)]
 pub struct Riscv64ArchConfig {
-    pub plic_base: usize,
-    pub plic_size: usize,
-    pub aplic_base: usize,
-    pub aplic_size: usize,
+    pub plic_base: u64,
+    pub plic_size: u64,
+    pub aplic_base: u64,
+    pub aplic_size: u64,
 }
 
 #[repr(C)]

@@ -22,5 +22,9 @@
 extern crate alloc;
 
 pub mod config;
+pub mod hypercall;
+pub mod ioctl;
+pub mod ivc;
+pub mod virtio;
 
 pub use config::*;

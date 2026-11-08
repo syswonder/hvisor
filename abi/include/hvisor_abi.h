@@ -14,7 +14,7 @@
 
 #define MEM_TYPE_VIRTIO 2
 
-#define CONFIG_MAGIC_VERSION 6
+#define CONFIG_MAGIC_VERSION 7
 
 #define CONFIG_MAX_MEMORY_REGIONS 64
 
@@ -30,6 +30,70 @@
 
 #define CONFIG_MAX_PCI_DEV 32
 
+#define HVISOR_INIT_VIRTIO 256
+
+#define HVISOR_GET_TASK 257
+
+#define HVISOR_FINISH_REQ 258
+
+#define HVISOR_ZONE_START 1074266371
+
+#define HVISOR_ZONE_SHUTDOWN 1074266372
+
+#define HVISOR_ZONE_LIST 2148008197
+
+#define HVISOR_CONFIG_CHECK 2148008198
+
+#define HVISOR_SET_EVENTFD 1074004231
+
+#define HVISOR_LOAD_IMAGE 1075314952
+
+#define HVISOR_SET_BOOT_MODE 1074266377
+
+#define HVISOR_GET_ECAM_BASE 2148008202
+
+#define HVISOR_IVC_USER_INFO 2148026624
+
+#define MAX_REQ 32
+
+#define MAX_DEVS 8
+
+#define MAX_CPUS 32
+
+#define MAX_VQ 16
+
+#define VIRTIO_PCI_HYPERCALL_VERSION 1
+
+#define MAX_PCI_CONFIG_REQ 4
+
+#define MAX_PCI_CONFIG_RES 4
+
+#define MAX_PCI_DATA_REQ 32
+
+enum HyperCallCode
+#if __STDC_VERSION__ >= 202311L
+  : uint64_t
+#endif // __STDC_VERSION__ >= 202311L
+ {
+  HvVirtioInit = 0,
+  HvVirtioInjectIrq = 1,
+  HvVirtioGetIrq = 86,
+  HvZoneStart = 2,
+  HvZoneShutdown = 3,
+  HvZoneList = 4,
+  HvClearInjectIrq = 11,
+  HvIvcInfo = 5,
+  HvConfigCheck = 6,
+  HvVirtioPCI = 7,
+  HvZoneSetBootMode = 8,
+  HvGetEcamBase = 9,
+};
+#if __STDC_VERSION__ >= 202311L
+typedef enum HyperCallCode HyperCallCode;
+#else
+typedef uint64_t HyperCallCode;
+#endif // __STDC_VERSION__ >= 202311L
+
 typedef enum VpciDevType {
   Physical = 0,
   StandardVdev = 1,
@@ -43,6 +107,51 @@ typedef struct HvConfigMemoryRegion {
   uint64_t virtual_start;
   uint64_t size;
 } HvConfigMemoryRegion;
+
+typedef struct IvcInfo {
+  uint64_t len;
+  uint64_t ivc_ct_ipas[CONFIG_MAX_IVC_CONFIGS];
+  uint64_t ivc_shmem_ipas[CONFIG_MAX_IVC_CONFIGS];
+  uint32_t ivc_ids[CONFIG_MAX_IVC_CONFIGS];
+  uint32_t ivc_irqs[CONFIG_MAX_IVC_CONFIGS];
+} IvcInfo;
+
+typedef struct HvIvcControlTable {
+  uint32_t ivc_id;
+  uint32_t max_peers;
+  uint32_t rw_sec_size;
+  uint32_t out_sec_size;
+  uint32_t peer_id;
+  uint32_t ipi_invoke;
+} HvIvcControlTable;
+
+typedef struct HvIvcUserInfo {
+  int32_t len;
+  int32_t ivc_ids[2];
+} HvIvcUserInfo;
+
+typedef struct HvIrqLineArgs {
+  uint32_t zone_id;
+  uint32_t irq_id;
+} HvIrqLineArgs;
+
+typedef struct HvLoadImageArgs {
+  uint64_t user_buffer;
+  uint64_t size;
+  uint64_t load_paddr;
+} HvLoadImageArgs;
+
+typedef struct ZoneInfo {
+  uint32_t zone_id;
+  uint64_t cpus;
+  uint8_t name[32];
+  uint8_t is_err;
+} ZoneInfo;
+
+typedef struct HvZoneListArgs {
+  uint64_t cnt;
+  struct ZoneInfo *zones;
+} HvZoneListArgs;
 
 typedef struct HvPciConfig {
   uint64_t ecam_base;
@@ -118,29 +227,29 @@ typedef struct HvZoneConfigCommon {
 } HvZoneConfigCommon;
 
 typedef struct Gicv2Config {
-  uintptr_t gicd_base;
-  uintptr_t gicd_size;
-  uintptr_t gicc_base;
-  uintptr_t gicc_size;
-  uintptr_t gicc_offset;
-  uintptr_t gich_base;
-  uintptr_t gich_size;
-  uintptr_t gicv_base;
-  uintptr_t gicv_size;
+  uint64_t gicd_base;
+  uint64_t gicd_size;
+  uint64_t gicc_base;
+  uint64_t gicc_size;
+  uint64_t gicc_offset;
+  uint64_t gich_base;
+  uint64_t gich_size;
+  uint64_t gicv_base;
+  uint64_t gicv_size;
 } Gicv2Config;
 
 typedef struct Gicv3Config {
-  uintptr_t gicd_base;
-  uintptr_t gicd_size;
-  uintptr_t gicr_base;
-  uintptr_t gicr_size;
-  uintptr_t gits_base;
-  uintptr_t gits_size;
+  uint64_t gicd_base;
+  uint64_t gicd_size;
+  uint64_t gicr_base;
+  uint64_t gicr_size;
+  uint64_t gits_base;
+  uint64_t gits_size;
 } Gicv3Config;
 
 enum GicConfig_Tag
 #if __STDC_VERSION__ >= 202311L
-  : uintptr_t
+  : uint64_t
 #endif // __STDC_VERSION__ >= 202311L
  {
   Gicv2,
@@ -149,7 +258,7 @@ enum GicConfig_Tag
 #if __STDC_VERSION__ >= 202311L
 typedef enum GicConfig_Tag GicConfig_Tag;
 #else
-typedef uintptr_t GicConfig_Tag;
+typedef uint64_t GicConfig_Tag;
 #endif // __STDC_VERSION__ >= 202311L
 
 typedef struct GicConfig {
@@ -172,7 +281,7 @@ typedef struct HvUefiConfig {
 
 enum UefiConfig_Tag
 #if __STDC_VERSION__ >= 202311L
-  : uintptr_t
+  : uint64_t
 #endif // __STDC_VERSION__ >= 202311L
  {
   Uefi,
@@ -181,7 +290,7 @@ enum UefiConfig_Tag
 #if __STDC_VERSION__ >= 202311L
 typedef enum UefiConfig_Tag UefiConfig_Tag;
 #else
-typedef uintptr_t UefiConfig_Tag;
+typedef uint64_t UefiConfig_Tag;
 #endif // __STDC_VERSION__ >= 202311L
 
 typedef struct UefiConfig {
@@ -200,58 +309,58 @@ typedef struct Aarch64ArchConfig {
 } Aarch64ArchConfig;
 
 typedef struct Riscv64ArchConfig {
-  uintptr_t plic_base;
-  uintptr_t plic_size;
-  uintptr_t aplic_base;
-  uintptr_t aplic_size;
+  uint64_t plic_base;
+  uint64_t plic_size;
+  uint64_t aplic_base;
+  uint64_t aplic_size;
 } Riscv64ArchConfig;
 
 typedef struct Loongarch64ArchConfig {
-  uintptr_t dummy;
+  uint64_t dummy;
 } Loongarch64ArchConfig;
 
 typedef struct X86_64ArchConfig {
   /**
    * Base address of IOAPIC MMIO registers, usually 0xfec00000.
    */
-  uintptr_t ioapic_base;
+  uint64_t ioapic_base;
   /**
    * Size of IOAPIC MMIO registers, usually 0x1000.
    */
-  uintptr_t ioapic_size;
+  uint64_t ioapic_size;
   /**
    * Start GPA of vmlinux.bin, usually 0x100000.
    */
-  uintptr_t kernel_entry_gpa;
+  uint64_t kernel_entry_gpa;
   /**
    * GPA of the Linux boot command line.
    */
-  uintptr_t cmdline_load_gpa;
+  uint64_t cmdline_load_gpa;
   /**
    * Start GPA of setup.bin, address length no bigger than 16 bits.
    */
-  uintptr_t setup_load_gpa;
+  uint64_t setup_load_gpa;
   /**
    * Start GPA of initrd, or zero when unused.
    */
-  uintptr_t initrd_load_gpa;
+  uint64_t initrd_load_gpa;
   /**
    * Size of initrd.
    */
-  uintptr_t initrd_size;
+  uint64_t initrd_size;
   /**
    * Memory region ID where the RSDP table is copied.
    */
-  uintptr_t rsdp_memory_region_id;
+  uint64_t rsdp_memory_region_id;
   /**
    * Memory region ID where other ACPI tables are copied.
    */
-  uintptr_t acpi_memory_region_id;
-  uintptr_t uefi_memory_region_id;
+  uint64_t acpi_memory_region_id;
+  uint64_t uefi_memory_region_id;
   /**
    * Start GPA of the framebuffer, or zero when unused.
    */
-  uintptr_t screen_base;
+  uint64_t screen_base;
 } X86_64ArchConfig;
 
 typedef struct Aarch64ZoneConfig {
@@ -273,5 +382,98 @@ typedef struct X86_64ZoneConfig {
   struct HvZoneConfigCommon common;
   struct X86_64ArchConfig arch_config;
 } X86_64ZoneConfig;
+
+typedef struct HvisorDeviceReq {
+  uint64_t src_cpu;
+  uint64_t address;
+  uint64_t size;
+  uint64_t value;
+  uint32_t src_zone;
+  uint8_t is_write;
+  uint8_t need_interrupt;
+  uint16_t _padding;
+} HvisorDeviceReq;
+
+typedef struct HvisorDeviceRes {
+  uint32_t target_zone;
+  uint32_t irq_id;
+} HvisorDeviceRes;
+
+typedef struct HvVirtioBridge {
+  uint32_t req_front;
+  uint32_t req_rear;
+  uint32_t res_front;
+  uint32_t res_rear;
+  struct HvisorDeviceReq req_list[MAX_REQ];
+  struct HvisorDeviceRes res_list[MAX_REQ];
+  uint64_t cfg_flags[MAX_CPUS];
+  uint64_t cfg_values[MAX_CPUS];
+  uint64_t mmio_addrs[MAX_DEVS];
+  uint8_t mmio_avail;
+  uint8_t need_wakeup;
+} HvVirtioBridge;
+
+typedef struct VirtioPCIHypercallInfo {
+  uint16_t version;
+  uint16_t op;
+  uint32_t target_cpu;
+  uint32_t request_id;
+  uint32_t status;
+} VirtioPCIHypercallInfo;
+
+typedef struct VirtqueueAreaInfo {
+  uint64_t desc_area;
+  uint64_t avail_area;
+  uint64_t used_area;
+  uint64_t queue_size;
+} VirtqueueAreaInfo;
+
+typedef struct VirtioPCIConfigInfo {
+  uint64_t features;
+  uint16_t dev_id;
+  uint16_t num_of_queues;
+  uint16_t dtype;
+  uint16_t padding;
+  struct VirtqueueAreaInfo vqs[MAX_VQ];
+} VirtioPCIConfigInfo;
+
+typedef struct VirtioPCIConfigReq {
+  uint32_t request_id;
+  uint32_t padding;
+  struct VirtioPCIConfigInfo info;
+} VirtioPCIConfigReq;
+
+typedef struct VirtioPCIConfigRes {
+  uint32_t request_id;
+  uint32_t status;
+  uint16_t dev_id;
+  uint16_t padding;
+} VirtioPCIConfigRes;
+
+typedef struct VirtioPCIDataInfo {
+  uint16_t dev_id;
+  uint16_t queue_id;
+  uint16_t cpu_id;
+  uint16_t msix_vector_idx;
+} VirtioPCIDataInfo;
+
+typedef struct VirtioPCIDataReq {
+  uint32_t request_id;
+  uint32_t padding;
+  struct VirtioPCIDataInfo info;
+} VirtioPCIDataReq;
+
+typedef struct HvVirtioPCIBridgeRegion {
+  struct VirtioPCIHypercallInfo hypercall_info;
+  uint32_t config_req_front;
+  uint32_t config_req_rear;
+  uint32_t config_res_front;
+  uint32_t config_res_rear;
+  uint32_t data_req_front;
+  uint32_t data_req_rear;
+  struct VirtioPCIConfigReq config_req_list[MAX_PCI_CONFIG_REQ];
+  struct VirtioPCIConfigRes config_res_list[MAX_PCI_CONFIG_RES];
+  struct VirtioPCIDataReq data_req_list[MAX_PCI_DATA_REQ];
+} HvVirtioPCIBridgeRegion;
 
 #endif  /* HVISOR_ABI_H */

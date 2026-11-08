@@ -89,8 +89,8 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
 ];
 // No mapped io regions in root zone.
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
-    plic_base: PLIC_BASE,
-    plic_size: PLIC_SIZE,
+    plic_base: PLIC_BASE as u64,
+    plic_size: PLIC_SIZE as u64,
     aplic_base: 0x0, // UNUSED for PLIC
     aplic_size: 0x0, // UNUSED for PLIC
 };

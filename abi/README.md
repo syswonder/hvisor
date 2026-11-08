@@ -34,6 +34,10 @@ producing concrete types that cbindgen can export to C.
 
 The generated header and the C static assertions are checked in.
 
+## Check
+
+    ./abi/check.sh
+
 ## Rules
 
 - keep the crate no_std and dependency-free outside core/alloc;
@@ -45,6 +49,7 @@ The generated header and the C static assertions are checked in.
 
 ## Not extracted yet
 
-- hypercall and ioctl IDs;
-- IVC and virtio shared-memory layouts;
-- replacing the remaining usize fields with fixed-width integers.
+- ioctl IDs;
+- virtio controller/volatile layout is still owned by hvisor; the plain shared-memory mirror is exported by abi.
+- adding CI checks for the generated C header;
+- adding C layout assertions for every exported structure.

@@ -107,17 +107,17 @@ impl Zone {
 
         match hv_config.gic_config {
             GicConfig::Gicv3(ref gicv3_config) => {
-                if gicv3_config.gits_size != 0 {
+                if gicv3_config.gits_size as usize != 0 {
                     // map gits
                     pt.insert(MemoryRegion::new_with_offset_mapper(
-                        gicv3_config.gits_base as GuestPhysAddr,
-                        gicv3_config.gits_base as HostPhysAddr,
-                        gicv3_config.gits_size as _,
+                        gicv3_config.gits_base as usize as GuestPhysAddr,
+                        gicv3_config.gits_base as usize as HostPhysAddr,
+                        gicv3_config.gits_size as usize as _,
                         flags | MemFlags::IO,
                     ))?;
                     info!(
                         "iommu map: vaddr:{} - paddr:{}",
-                        gicv3_config.gits_base, gicv3_config.gits_base
+                        gicv3_config.gits_base as usize, gicv3_config.gits_base as usize
                     );
                 }
             }

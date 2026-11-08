@@ -15,6 +15,8 @@ pub mod pci;
 pub mod riscv64;
 pub mod x86_64;
 pub mod zone;
+pub mod zone_list;
 
 pub use common::*;
 pub use pci::*;
+pub use zone_list::*;

@@ -123,18 +123,18 @@ pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 0x6;
 pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[0; 32]);
 pub const ROOT_ZONE_IOAPIC_BASE: usize = 0xfec0_0000;
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
-    ioapic_base: ROOT_ZONE_IOAPIC_BASE,
-    ioapic_size: 0x1000,
-    kernel_entry_gpa: ROOT_ZONE_VMLINUX_ENTRY_ADDR,
-    cmdline_load_gpa: ROOT_ZONE_CMDLINE_ADDR,
-    setup_load_gpa: ROOT_ZONE_SETUP_ADDR,
-    initrd_load_gpa: 0, // 0x1500_0000,
-    initrd_size: 0,     // 0x26_b000,
-    rsdp_memory_region_id: ROOT_ZONE_RSDP_REGION_ID,
-    acpi_memory_region_id: ROOT_ZONE_ACPI_REGION_ID,
-    uefi_memory_region_id: ROOT_ZONE_UEFI_REGION_ID,
+    ioapic_base: ROOT_ZONE_IOAPIC_BASE as u64,
+    ioapic_size: 0x1000 as u64,
+    kernel_entry_gpa: ROOT_ZONE_VMLINUX_ENTRY_ADDR as u64,
+    cmdline_load_gpa: ROOT_ZONE_CMDLINE_ADDR as u64,
+    setup_load_gpa: ROOT_ZONE_SETUP_ADDR as u64,
+    initrd_load_gpa: 0, // 0x1500_0000 as u64,
+    initrd_size: 0,     // 0x26_b000 as u64,
+    rsdp_memory_region_id: ROOT_ZONE_RSDP_REGION_ID as u64,
+    acpi_memory_region_id: ROOT_ZONE_ACPI_REGION_ID as u64,
+    uefi_memory_region_id: ROOT_ZONE_UEFI_REGION_ID as u64,
     // not longer than 32 bits
-    screen_base: ROOT_ZONE_SCREEN_BASE_ADDR,
+    screen_base: ROOT_ZONE_SCREEN_BASE_ADDR as u64,
 };
 
 pub const ROOT_PCI_CONFIG: [HvPciConfig; 1] = [HvPciConfig {

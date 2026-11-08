@@ -71,41 +71,44 @@ pub fn primary_init_early() {
             info!("GICv2 detected");
             GICV2.call_once(|| {
                 Gicv2 {
-                    gicd_base: gicv2_config.gicd_base,
+                    gicd_base: gicv2_config.gicd_base as usize,
                     /*
                      * Some boards have the GIC CPU interface registers alias, which will overlap DIR register, so we need to add an offset to
                      * find the last gic cpu alias region.
                      * ref: https://github.com/Xilinx/qemu-devicetrees/commit/09d4c3200538dc90082fbda9289e2af9794b9a28
                      */
-                    gicc_base: gicv2_config.gicc_base + gicv2_config.gicc_offset,
-                    gich_base: gicv2_config.gich_base,
-                    gicv_base: gicv2_config.gicv_base,
+                    gicc_base: gicv2_config.gicc_base as usize + gicv2_config.gicc_offset as usize,
+                    gich_base: gicv2_config.gich_base as usize,
+                    gicv_base: gicv2_config.gicv_base as usize,
                 }
             });
-            gicd_init(gicv2_config.gicd_base);
-            gicc_init(gicv2_config.gicc_base + gicv2_config.gicc_offset);
-            gich_init(gicv2_config.gich_base);
-            gicv_init(gicv2_config.gicv_base);
+            gicd_init(gicv2_config.gicd_base as usize);
+            gicc_init(gicv2_config.gicc_base as usize + gicv2_config.gicc_offset as usize);
+            gich_init(gicv2_config.gich_base as usize);
+            gicv_init(gicv2_config.gicv_base as usize);
             info!(
                 "GIC Distributor base: {:#x}, size: {:#x}",
                 GICV2.get().unwrap().gicd_base,
-                gicv2_config.gicd_size
+                gicv2_config.gicd_size as usize
             );
             info!(
                 "GIC CPU Interface base: {:#x}, size: {:#x}",
                 GICV2.get().unwrap().gicc_base,
-                gicv2_config.gicc_size
+                gicv2_config.gicc_size as usize
             );
-            info!("GIC CPU Interface offset: {:#x}", gicv2_config.gicc_offset);
+            info!(
+                "GIC CPU Interface offset: {:#x}",
+                gicv2_config.gicc_offset as usize
+            );
             info!(
                 "GIC Hypervisor Interface base: {:#x}, size: {:#x}",
                 GICV2.get().unwrap().gich_base,
-                gicv2_config.gich_size
+                gicv2_config.gich_size as usize
             );
             info!(
                 "GIC Virtual CPU Interface base: {:#x}, size: {:#x}",
                 GICV2.get().unwrap().gicv_base,
-                gicv2_config.gicv_size
+                gicv2_config.gicv_size as usize
             );
         }
     };

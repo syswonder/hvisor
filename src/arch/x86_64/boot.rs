@@ -182,7 +182,7 @@ impl BootParams {
         }
 
         let boot_params_hpa = unsafe {
-            gpm.page_table_query(config.arch_config.setup_load_gpa)
+            gpm.page_table_query(config.arch_config.setup_load_gpa as usize)
                 .unwrap()
                 .0
         } as HostPhysAddr;
@@ -209,7 +209,7 @@ impl BootParams {
             unsafe {
                 core::ptr::copy_nonoverlapping(
                     crate::platform::ROOT_ZONE_CMDLINE.as_ptr(),
-                    gpm.page_table_query(config.arch_config.cmdline_load_gpa)
+                    gpm.page_table_query(config.arch_config.cmdline_load_gpa as usize)
                         .unwrap()
                         .0 as *mut u8,
                     crate::platform::ROOT_ZONE_CMDLINE.len(),
@@ -247,11 +247,11 @@ impl BootParams {
             let mem_region = &config.memory_regions()[i];
             let mut e820_type = E820Type::E820_DEFAULT;
 
-            if i == config.arch_config.rsdp_memory_region_id
-                || i == config.arch_config.acpi_memory_region_id
+            if i == config.arch_config.rsdp_memory_region_id as usize
+                || i == config.arch_config.acpi_memory_region_id as usize
             {
                 e820_type = E820Type::E820_ACPI;
-            } else if i == config.arch_config.uefi_memory_region_id {
+            } else if i == config.arch_config.uefi_memory_region_id as usize {
                 e820_type = E820Type::E820_RESERVED;
             } else if mem_region.mem_type == MEM_TYPE_RAM {
                 e820_type = E820Type::E820_RAM;
@@ -287,11 +287,11 @@ impl BootParams {
 
             let mut mem_desc_type = MemoryType::RESERVED;
 
-            if i == config.arch_config.rsdp_memory_region_id
-                || i == config.arch_config.acpi_memory_region_id
+            if i == config.arch_config.rsdp_memory_region_id as usize
+                || i == config.arch_config.acpi_memory_region_id as usize
             {
                 mem_desc_type = MemoryType::ACPI_RECLAIM;
-            } else if i == config.arch_config.uefi_memory_region_id {
+            } else if i == config.arch_config.uefi_memory_region_id as usize {
                 mem_desc_type = MemoryType::RUNTIME_SERVICES_DATA;
             } else if mem_region.mem_type == MEM_TYPE_RAM {
                 mem_desc_type = MemoryType::CONVENTIONAL;
@@ -332,7 +332,8 @@ impl BootParams {
     fn set_uefi_info(&mut self, config: &HvZoneConfig) {
         self.efi_info.loader_signature = EFI64_LOADER_SIGNATURE;
 
-        let uefi_region = &config.memory_regions()[config.arch_config.uefi_memory_region_id];
+        let uefi_region =
+            &config.memory_regions()[config.arch_config.uefi_memory_region_id as usize];
         let mut vaddr = uefi_region.virtual_start as usize;
         let mut paddr = uefi_region.physical_start as usize;
 
@@ -370,7 +371,8 @@ impl BootParams {
             unsafe { &mut *(paddr as *mut [ConfigurationTable; CONFIG_TABLE_ENTRIES]) };
 
         // ACPI_20_TABLE_GUID
-        let rsdp_region = &config.memory_regions()[config.arch_config.rsdp_memory_region_id];
+        let rsdp_region =
+            &config.memory_regions()[config.arch_config.rsdp_memory_region_id as usize];
         config_table[0].vendor_guid = ACPI_20_TABLE_GUID;
         config_table[0].vendor_table = unsafe { rsdp_region.virtual_start as _ };
 

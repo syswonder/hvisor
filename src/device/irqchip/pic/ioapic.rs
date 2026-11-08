@@ -235,10 +235,10 @@ impl Zone {
             return;
         }
         self.write().mmio_region_register(
-            arch.ioapic_base,
-            arch.ioapic_size,
+            arch.ioapic_base as usize,
+            arch.ioapic_size as usize,
             mmio_ioapic_handler,
-            arch.ioapic_base,
+            arch.ioapic_base as usize,
         );
     }
 }
