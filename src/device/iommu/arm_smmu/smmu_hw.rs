@@ -373,7 +373,7 @@ impl Smmuv3 {
         let stb_support = extract_bits(idr0, IDR0_ST_LEVEL_OFF, IDR0_ST_LEVEL_LEN);
         match stb_support {
             0 => info!("Smmuv3 Linear Stream Table Supported."),
-            1 => info!("Smmuv3 2-level Stream Table Supoorted."),
+            1 => info!("Smmuv3 2-level Stream Table Supported."),
             _ => error!("Smmuv3 don't support any stream table."),
         }
         // supported address translation stages.

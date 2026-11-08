@@ -19,7 +19,7 @@ use alloc::boxed::Box;
 use spin::Once;
 
 /// Global IOMMU implementation instance
-/// Note: concret implementations don't contain any mutable global state, only common interfaces define in the trait.
+/// Note: concrete implementations don't contain any mutable global state, only common interfaces define in the trait.
 static IOMMU_IMPL: Once<Box<dyn Iommu + Sync + Send>> = Once::new();
 
 // Dispatch to the appropriate IOMMU implementation based on hardware support

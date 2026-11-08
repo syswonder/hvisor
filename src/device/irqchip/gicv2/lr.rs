@@ -26,7 +26,7 @@ use crate::device::irqchip::gicv2::pending::PENDING_VIRQS;
 use bit_field::BitField;
 use core::sync::atomic::Ordering;
 
-pub const MAINTENACE_INTERRUPT: u64 = 25;
+pub const MAINTENANCE_INTERRUPT: u64 = 25;
 
 pub fn flush_current_guest_irqs() {
     let cpu = this_cpu_data();
@@ -147,7 +147,7 @@ pub fn inject_irq(irq_id: usize, is_sgi: bool) -> bool {
         change_underflow_maintenance(true);
         false
     } else {
-        /* inject gruop 0 irq */
+        /* inject group 0 irq */
         // config vint bit 0-9
         let mut val = irq_id;
         // config pending state bit 28
@@ -235,14 +235,14 @@ pub(crate) fn read_pending_sgi_lr_summary() -> PendingSgiLrSummary {
     summary
 }
 
-pub(super) fn handle_maintenace_interrupt() {
-    info!("handle_maintenace_interrupt");
+pub(super) fn handle_maintenance_interrupt() {
+    info!("handle_maintenance_interrupt");
     handle_sgi_eoi_maintenance();
     flush_current_guest_irqs();
     while let Some((irq_id, is_sgi)) = PENDING_VIRQS.get().unwrap().fetch_irq() {
         let is_injected: bool = inject_irq(irq_id, is_sgi);
         if is_injected {
-            info!("inject pending irq {:#x} in maintenace interrupt", irq_id);
+            info!("inject pending irq {:#x} in maintenance interrupt", irq_id);
         }
         if !is_injected {
             PENDING_VIRQS.get().unwrap().add_irq(irq_id, is_sgi);
@@ -280,7 +280,7 @@ fn has_pending_maintenance_work() -> bool {
 }
 
 pub fn change_underflow_maintenance(is_enable: bool) {
-    trace!("enable_maintenace_interrupt, is_enable is {}", is_enable);
+    trace!("enable_maintenance_interrupt, is_enable is {}", is_enable);
     let mut hcr = GICH.get().unwrap().get_hcr();
     trace!("hcr is {}", hcr);
     if is_enable {

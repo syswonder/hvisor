@@ -107,7 +107,7 @@ pub enum TrapReturn {
 pub fn arch_handle_exit(regs: &mut GeneralRegisters) -> ! {
     let mpidr = MPIDR_EL1.get();
     let _cpu_id = mpidr_to_cpuid(mpidr);
-    trace!("cpu exit, exit_reson:{:#x?}", regs.exit_reason);
+    trace!("cpu exit, exit_reason:{:#x?}", regs.exit_reason);
     match regs.exit_reason as u64 {
         ExceptionType::EXIT_REASON_EL1_IRQ | ExceptionType::EXIT_REASON_EL1_AARCH32_IRQ => {
             irqchip_handle_irq1()

@@ -14,7 +14,7 @@
 // Authors:
 //
 // Physical GICv3 interrupt entry: acknowledge, dispatch and deactivate.
-use super::lr::{handle_maintenace_interrupt, inject_irq};
+use super::lr::{handle_maintenance_interrupt, inject_irq};
 use crate::arch::aarch64::sysreg::{read_sysreg, write_sysreg};
 use crate::event::{check_events, dispatch_host_events};
 use crate::hypercall::SGI_IPI_ID;
@@ -52,8 +52,8 @@ pub fn gicv3_handle_irq_el1() {
                     );
                 }
             } else if irq_id == 25 {
-                // maintenace interrupt
-                handle_maintenace_interrupt();
+                // maintenance interrupt
+                handle_maintenance_interrupt();
             } else if irq_id > 31 {
                 //inject phy irq
                 trace!("*** get spi_irq id = {}", irq_id);
@@ -68,7 +68,7 @@ pub fn gicv3_handle_irq_el1() {
                     }
                 }
             } else {
-                warn!("not konw irq id = {}", irq_id);
+                warn!("not know irq id = {}", irq_id);
             }
 
             #[cfg(all(dwc_pcie, dwc_msi))]

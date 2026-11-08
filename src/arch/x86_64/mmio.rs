@@ -295,7 +295,7 @@ const OPERAND_SIZE_OVERRIDE_PREFIX: u8 = 0x66;
 
 const TWO_BYTE_ESCAPE: u8 = 0xf;
 
-enum OprandType {
+enum OperandType {
     Reg(RmReg),
     Gpa(usize),
 }
@@ -325,7 +325,7 @@ impl ModRM {
             .map_err(|_| InstructionError::Other(hv_err!(EINVAL, "invalid ModRM register")))
     }
 
-    pub fn get_modrm<F>(&self, inst: &mut InstructionStream<F>) -> InstructionResult<OprandType>
+    pub fn get_modrm<F>(&self, inst: &mut InstructionStream<F>) -> InstructionResult<OperandType>
     where
         F: FnMut(GuestVirtAddr) -> InstructionResult<u8>,
     {
@@ -334,7 +334,7 @@ impl ModRM {
             .try_into()
             .map_err(|_| hv_err!(EINVAL, "invalid ModRM operand"))?;
         if self._mod == 3 {
-            return Ok(OprandType::Reg(reg));
+            return Ok(OperandType::Reg(reg));
         }
         if self.rm == 4 || (self._mod == 0 && self.rm == 5) {
             return Err(
@@ -343,16 +343,16 @@ impl ModRM {
         }
         let reg_val = reg.read()?;
         match self._mod {
-            0 => Ok(OprandType::Gpa(gva_to_gpa(reg_val as _)?)),
+            0 => Ok(OperandType::Gpa(gva_to_gpa(reg_val as _)?)),
             1 => {
                 let disp = inst.read_i8()? as i64;
-                Ok(OprandType::Gpa(gva_to_gpa(
+                Ok(OperandType::Gpa(gva_to_gpa(
                     reg_val.wrapping_add_signed(disp) as _,
                 )?))
             }
             2 => {
                 let disp = inst.read_i32()? as i64;
-                Ok(OprandType::Gpa(gva_to_gpa(
+                Ok(OperandType::Gpa(gva_to_gpa(
                     reg_val.wrapping_add_signed(disp) as _,
                 )?))
             }
@@ -546,10 +546,10 @@ where
                 let src_val = mod_rm.get_reg()?.read()?;
                 let dst = mod_rm.get_modrm(inst)?;
                 match dst {
-                    OprandType::Reg(reg) => {
+                    OperandType::Reg(reg) => {
                         reg.write(src_val, size)?;
                     }
-                    OprandType::Gpa(gpa) => {
+                    OperandType::Gpa(gpa) => {
                         mmio.address = mmio_offset(gpa)?;
                         mmio.is_write = true;
                         mmio.size = size;
@@ -564,8 +564,8 @@ where
                 let dst = mod_rm.get_reg()?;
                 let src = mod_rm.get_modrm(inst)?;
                 let src_val = match src {
-                    OprandType::Reg(reg) => reg.read()?,
-                    OprandType::Gpa(gpa) => {
+                    OperandType::Reg(reg) => reg.read()?,
+                    OperandType::Gpa(gpa) => {
                         mmio.address = mmio_offset(gpa)?;
                         mmio.is_write = false;
                         mmio.size = size;
@@ -602,8 +602,8 @@ where
                 let dst = mod_rm.get_reg()?;
                 let src = mod_rm.get_modrm(inst)?;
                 let src_val = match src {
-                    OprandType::Reg(reg) => reg.read()?,
-                    OprandType::Gpa(gpa) => {
+                    OperandType::Reg(reg) => reg.read()?,
+                    OperandType::Gpa(gpa) => {
                         mmio.address = mmio_offset(gpa)?;
                         mmio.is_write = false;
                         mmio.size = size;

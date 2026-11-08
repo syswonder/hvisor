@@ -62,7 +62,7 @@ pub const ROOT_ZONE_ENTRY: u64 = 0x90000000;
 pub const ROOT_ZONE_CPUS: u64 = 0x3; // core0,1,2,3
 #[rustfmt::skip]
 pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
-    // Main memory (~32GB), reserved 0x500_0000 (80M) for high-level privilege softwares (opensbi & hvisor).
+    // Main memory (~32GB), reserved 0x500_0000 (80M) for high-level privilege software (opensbi & hvisor).
     HvConfigMemoryRegion { mem_type: MEM_TYPE_RAM, physical_start: 0x8500_0000, virtual_start: 0x8500_0000, size: 0x8_0000_0000 - 0x500_0000 },
     // Serial0
     HvConfigMemoryRegion { mem_type: MEM_TYPE_IO, physical_start: 0x2030_0000, virtual_start: 0x2030_0000, size: 0x1_0000 },

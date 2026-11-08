@@ -225,7 +225,7 @@ pub fn sbi_base_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
             sbi_ret.value = sbi_rt::get_sbi_impl_id();
         }
         base::PROBE_EXTENSION => {
-            // This function needs one arg(extesion_id).
+            // This function needs one arg(extension_id).
             let ext_id = current_cpu.x[10];
             // Returns 0 if the given SBI extension ID (EID) is not available or 1 if it is available
             // unless defined as any other non-zero value by the implementation.
@@ -426,7 +426,7 @@ pub fn sbi_rfence_handler(fid: usize, current_cpu: &mut ArchCpu) -> SbiRet {
 
 /// SBI hvisor handler.
 pub fn sbi_hvisor_handler(current_cpu: &mut ArchCpu) -> SbiRet {
-    // Todo: according SBI spec, use a6 instead of a0 to tranfer code is more reasonable.
+    // Todo: according SBI spec, use a6 instead of a0 to transfer code is more reasonable.
     let (code, arg0, arg1) = (current_cpu.x[10], current_cpu.x[11], current_cpu.x[12]);
     let cpu_data = this_cpu_data();
     debug!(

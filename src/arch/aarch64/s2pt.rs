@@ -37,9 +37,9 @@ bitflags::bitflags! {
         const NON_BLOCK =   1 << 1;
         /// Memory attributes index field.
         const ATTR      =   0b1111 << 2;
-        /// Access permission: accessable at EL0/1, Read / Write.
+        /// Access permission: accessible at EL0/1, Read / Write.
         const S2AP_R      =   1 << 6;
-        /// Access permission: accessable at EL0/1, Write.
+        /// Access permission: accessible at EL0/1, Write.
         const S2AP_W      =   1 << 7;
         /// Shareability: Inner Shareable (otherwise Outer Shareable).
         const INNER     =   1 << 8;

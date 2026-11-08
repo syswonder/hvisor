@@ -13,7 +13,7 @@
 //
 // Authors:
 //
-use super::lr::{clear_guest_sgi, lr_pending_sgi_mask, MAINTENACE_INTERRUPT};
+use super::lr::{clear_guest_sgi, lr_pending_sgi_mask, MAINTENANCE_INTERRUPT};
 use super::CPU_UNUSED_GICR_BASE;
 use super::{gicd::GICD_LOCK, is_spi};
 use crate::device::irqchip::PendingR0;
@@ -271,7 +271,7 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
             if Arc::ptr_eq(&this_zone(), get_cpu_data(cpu).zone.as_ref().unwrap()) {
                 // avoid linux disable maintenance interrupt
                 if reg == GICR_SGI_BASE + GICR_ICENABLER {
-                    mmio.value &= !(1 << MAINTENACE_INTERRUPT);
+                    mmio.value &= !(1 << MAINTENANCE_INTERRUPT);
                     mmio.value &= !(1 << SGI_IPI_ID);
                 }
 
@@ -384,7 +384,7 @@ pub fn vgicv3_dist_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
 
             #[cfg(all(dwc_pcie, dwc_msi))]
             {
-                // For zone0, the domainmsiinfo is empty, but it will always register the intterrupt to cpu0
+                // For zone0, the domainmsiinfo is empty, but it will always register the interrupt to cpu0
                 // So this remap operation is needed for other zones
                 if mmio.is_write && crate::pci::dwc_msi::is_dwc_msi_hwirq(irq) {
                     info!("remap dwc msi hwirq {} to cpu0!", irq);

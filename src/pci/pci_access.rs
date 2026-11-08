@@ -111,15 +111,15 @@ impl Debug for PciMemType {
     }
 }
 
-pub type PciBARMMIOHanlder = fn(mmio: &mut MMIOAccess, base: usize) -> HvResult;
+pub type PciBARMMIOHandler = fn(mmio: &mut MMIOAccess, base: usize) -> HvResult;
 
 /* PciMem
- * virtaul_value: the vaddr guset zone can rw, same with as the corresponding value in virtualconfigspace.space
+ * virtual_value: the vaddr guset zone can rw, same with as the corresponding value in virtualconfigspace.space
  * value: the paddr which hvisor and hw can rw, init when hvisor init the pci bus
  * size: the size of mem region, when size_read is true return !(size - 1)
  *
  * size_read: if software write 0xffff_ffff to bar, size_read will set so next time hvisor can rerturn !(size - 1) indicating size to the software
- * acutally size_read is not used now, we keep it just in case of possible special register handling in the future
+ * actually size_read is not used now, we keep it just in case of possible special register handling in the future
  */
 #[derive(Default, Clone)]
 pub struct PciMem {
@@ -129,7 +129,7 @@ pub struct PciMem {
     size: u64,
     prefetchable: bool,
     size_read: bool,
-    handler: Option<PciBARMMIOHanlder>, // cap_handler:Option<BTreeMap<usize,usize>>
+    handler: Option<PciBARMMIOHandler>, // cap_handler:Option<BTreeMap<usize,usize>>
 }
 
 impl PciMem {
@@ -262,7 +262,7 @@ impl PciMem {
         prefetchable: bool,
         size: u64,
         value: u64,
-        handler: Option<PciBARMMIOHanlder>,
+        handler: Option<PciBARMMIOHandler>,
     ) {
         self.set_bar_type(bar_type);
         self.set_prefetchable(prefetchable);
@@ -295,7 +295,7 @@ impl PciMem {
         self.value as u64
     }
 
-    pub fn set_handler(&mut self, handler: Option<PciBARMMIOHanlder>) {
+    pub fn set_handler(&mut self, handler: Option<PciBARMMIOHandler>) {
         self.handler = handler
     }
 
@@ -389,7 +389,7 @@ impl PciMem {
             }
             PciMemType::Rom => {}
             _ => {
-                warn!("unkown bar type: {:#?}", self.bar_type);
+                warn!("unknown bar type: {:#?}", self.bar_type);
             }
         }
         // info!("self.virtual_value = {}", val);

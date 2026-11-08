@@ -238,7 +238,7 @@ impl VirtualPLIC {
                         );
                         inner.vplic_set_enable(irq, vcontext_id, irq_enable);
                         if inner.hw[irq] {
-                            // vcontext_id to pcontext_id shuold move to here.
+                            // vcontext_id to pcontext_id should move to here.
                             let pcontext_id = super::vcontext_to_pcontext(vcontext_id);
                             super::host_plic().set_enable_num(pcontext_id, irq, irq_enable);
                         } else {

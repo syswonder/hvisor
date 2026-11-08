@@ -33,7 +33,7 @@ pub static IVC_INFOS: Mutex<BTreeMap<usize, IvcInfo>> = Mutex::new(BTreeMap::new
 
 #[repr(C, packed)]
 #[derive(Clone, Copy, Debug)]
-/// The ivc info that one zone should first accquire
+/// The ivc info that one zone should first acquire
 pub struct IvcInfo {
     /// The number that one zone participates in ivc region
     pub len: u64,

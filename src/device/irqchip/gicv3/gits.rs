@@ -39,7 +39,7 @@ pub const GITS_CWRITER: usize = 0x0088; // rw, write an command to the cmdq, wri
 pub const GITS_CREADR: usize = 0x0090; // read-only, hardware changes it
 pub const GITS_BASER: usize = 0x0100; // device table, itt, desc
 pub const GITS_COLLECTION_BASER: usize = GITS_BASER + 0x8;
-pub const GITS_TRANSLATER: usize = 0x10000 + 0x0040; // to signal an interrupt, written by devices
+pub const GITS_TRANSLATOR: usize = 0x10000 + 0x0040; // to signal an interrupt, written by devices
 
 pub const CMDQ_PAGE_SIZE: usize = 0x1000; // 4KB
 pub const CMDQ_PAGES_NUM: usize = 16; // 16 pages, 64KB
@@ -186,7 +186,7 @@ impl Cmdq {
         let reg = host_gits_base() + GITS_CBASER;
         let writer = host_gits_base() + GITS_CWRITER;
         let mut val = 0xb800000000000400 | self.phy_addr;
-        val = val | (CMDQ_PAGES_NUM - 1); // 16 contigous 4KB pages
+        val = val | (CMDQ_PAGES_NUM - 1); // 16 contiguous 4KB pages
         let ctrl = host_gits_base() + GITS_CTRL;
         unsafe {
             let origin_ctrl = ptr::read_volatile(ctrl as *mut u32);
@@ -247,7 +247,7 @@ impl Cmdq {
     }
 
     // it's ok to add qemu-args: -info gicv3_gits_cmd_*, remember to remain `enable one lpi`
-    // we need changge vicid to icid here
+    // we need change vicid to icid here
     fn analyze_cmd(&self, value: [u64; 4]) -> [u64; 4] {
         let code = (value[0] & 0xff) as usize;
         let mut new_cmd = value.clone();

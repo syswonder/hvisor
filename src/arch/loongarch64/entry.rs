@@ -38,7 +38,7 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
     //      li.d	\temp1, CACHE_BASE (0x9000_0000_0000_0000)
     //      pcaddi	\temp2, 0
     //      or		\temp1, \temp1, \temp2
-    //      jirl    zero, \temp1, 0xc // 0xc is beacuse the above pcaddi + 0xc will jump to exacly the next instruction after jirl - wheatfox
+    //      jirl    zero, \temp1, 0xc // 0xc is because the above pcaddi + 0xc will jump to exactly the next instruction after jirl - wheatfox
     // .endm
     core::arch::asm!(
         "

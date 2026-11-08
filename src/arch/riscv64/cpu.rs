@@ -261,7 +261,7 @@ impl ArchCpu {
         // unsafe {
         //     core::arch::asm!("wfi");
         // }
-        // //according to riscv priv spec, after wfi, interrupt trap will be taken on the following instruction,then excute the code after wfi.
+        // //according to riscv priv spec, after wfi, interrupt trap will be taken on the following instruction,then execute the code after wfi.
         // //but in qemu, it seems that the interrupt trap will be taken after sret in vcpu_arch_entry().
         // //this may cause error in hardware.
         // info!("CPU{} wakeup!", self.cpuid);
@@ -278,7 +278,7 @@ impl ArchCpu {
 fn this_cpu_arch() -> &'static mut ArchCpu {
     let sscratch = read_csr!(CSR_SSCRATCH);
     if sscratch == 0 {
-        panic!("CSR_SSCRATCH unintialized!");
+        panic!("CSR_SSCRATCH uninitialized!");
     }
     unsafe { &mut *(sscratch as *mut ArchCpu) }
 }

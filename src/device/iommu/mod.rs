@@ -49,7 +49,7 @@ pub fn iommu_init() {
 }
 
 /// Public interface for adding a device to the IOMMU
-/// It can be call during VM creation, the concret implementation need
+/// It can be call during VM creation, the concrete implementation need
 pub fn iommu_add_device_with_root_pt_addr(zone_id: usize, did: usize, root_pt_addr: usize) {
     match check_zone_id(zone_id) {
         Ok(()) => {

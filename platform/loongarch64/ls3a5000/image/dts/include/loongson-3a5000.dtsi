@@ -46,7 +46,7 @@
 			next-level-cache = <&scache1>;
 		};
 		vcache6: l2-cache6 {
-			compatible = "cahce";
+			compatible = "cache";
 			next-level-cache = <&scache1>;
 		};
 		vcache7: l2-cache7 {

@@ -18,7 +18,7 @@ use crate::memory::{GuestPhysAddr, MemoryRegion};
 use crate::zone::Zone;
 use alloc::vec::Vec;
 
-/// IOMMU trait defining the required methods for diffent IOMMU implementations
+/// IOMMU trait defining the required methods for different IOMMU implementations
 #[rustfmt::skip]
 pub(crate) trait Iommu {
     fn initialize(&self);

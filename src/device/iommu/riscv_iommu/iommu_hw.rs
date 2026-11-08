@@ -347,7 +347,7 @@ impl IommuHw {
         }
         // If capabilities.MSI_FLAT is 1 then the Extended Format is used else the Base Format is used.
         if !self.caps.is_set(IOMMU_CAPS::MSI_FLAT) {
-            // Current DDT Entry only supports Extented-for
+            // Current DDT Entry only supports Extended-for
             todo!("To support Base-format DDT Entry");
         }
     }

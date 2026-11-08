@@ -31,7 +31,7 @@ use super::{
         GICD_ISACTIVER, GICD_ISENABLER, GICD_ISPENDR, GICD_TYPER,
     },
     host_gicd_base, host_gicr_base,
-    lr::MAINTENACE_INTERRUPT,
+    lr::MAINTENANCE_INTERRUPT,
 };
 
 pub const GICR_CTLR: usize = 0x0000;
@@ -74,7 +74,7 @@ pub fn enable_ipi() {
 
         let gicr_isenabler0 = (base + GICR_ISENABLER) as *mut u32;
         let gicr_ipriorityr0 = (base + GICR_IPRIORITYR) as *mut u32;
-        for irq_id in [SGI_IPI_ID, MAINTENACE_INTERRUPT] {
+        for irq_id in [SGI_IPI_ID, MAINTENANCE_INTERRUPT] {
             let reg = irq_id / 4;
             let offset = irq_id % 4 * 8;
             let mask = ((1 << 8) - 1) << offset;

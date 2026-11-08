@@ -53,7 +53,7 @@ pub fn stage2_mode_detect() {
             hfence_gvma_all();
             return;
         }
-        // Attemp to set the HGATP.mode to Sv48x4.
+        // Attempt to set the HGATP.mode to Sv48x4.
         let mode_sv48x4 = HGATP_MODE_SV48X4 << HGATP_MODE_SHIFT;
         write_csr!(CSR_HGATP, mode_sv48x4);
         if (read_csr!(CSR_HGATP) >> HGATP_MODE_SHIFT) == HGATP_MODE_SV48X4 {
