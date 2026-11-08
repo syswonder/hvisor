@@ -62,6 +62,18 @@ typedef struct VirtIODevice VirtIODevice;
 struct VirtQueue;
 typedef struct VirtQueue VirtQueue;
 
+struct virtio_blk_init_params;
+struct virtio_net_init_params;
+struct virtio_gpu_requested_state;
+struct virtio_scmi_init_params;
+
+typedef union virtio_device_params {
+    struct virtio_blk_init_params *blk;
+    struct virtio_net_init_params *net;
+    struct virtio_gpu_requested_state *gpu;
+    struct virtio_scmi_init_params *scmi;
+} VirtioDeviceParams;
+
 struct VirtQueue {
     VirtIODevice *dev; // The device which the virtqueue belongs to
     uint64_t vq_idx;   // Index of the virtqueue
@@ -143,7 +155,7 @@ struct virtio_device_ops {
     uint64_t features;
     uint32_t num_queues;
     uint32_t queue_max_size;
-    int (*init)(VirtIODevice *vdev, const void *params);
+    int (*init)(VirtIODevice *vdev, const VirtioDeviceParams *params);
     void (*close)(VirtIODevice *vdev);
     void (*reset)(VirtIODevice *vdev);
     void (*status_changed)(VirtIODevice *vdev, uint32_t status);
@@ -152,8 +164,8 @@ struct virtio_device_ops {
 };
 
 struct virtio_config_ops {
-    int (*parse)(const cJSON *json, void **params_out);
-    void (*free)(void *params);
+    int (*parse)(const cJSON *json, VirtioDeviceParams *params_out);
+    void (*free)(VirtioDeviceParams *params);
 };
 // used event idx for driver telling device when to notify driver.
 #define VQ_USED_EVENT(vq) ((vq)->avail_ring->ring[(vq)->num])
@@ -180,7 +192,8 @@ void rw_barrier(void);
 
 VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
                                    uint64_t base_addr, uint64_t len,
-                                   uint32_t irq_id, const void *params);
+                                   uint32_t irq_id,
+                                   const VirtioDeviceParams *params);
 
 void init_mmio_regs(VirtMmioRegs *regs, VirtioDeviceType type);
 
