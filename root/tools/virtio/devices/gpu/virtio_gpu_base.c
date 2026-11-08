@@ -255,14 +255,15 @@ static void virtio_gpu_reset(VirtIODevice *vdev) {
     }
 }
 
-static int virtio_gpu_do_init(VirtIODevice *vdev, const void *params) {
-    vdev->dev = init_gpu_dev(params);
+static int virtio_gpu_do_init(VirtIODevice *vdev,
+                              const VirtioDeviceParams *params) {
+    vdev->dev = init_gpu_dev(params ? params->gpu : NULL);
     if (!vdev->dev)
         return -ENOMEM;
     return virtio_gpu_init(vdev);
 }
 
-static int virtio_gpu_parse_params(const cJSON *json, void **out) {
+static int virtio_gpu_parse_params(const cJSON *json, VirtioDeviceParams *out) {
     GPURequestedState *s = calloc(1, sizeof(*s));
     if (!s)
         return -ENOMEM;
@@ -272,11 +273,14 @@ static int virtio_gpu_parse_params(const cJSON *json, void **out) {
         free(s);
         return -EINVAL;
     }
-    *out = s;
+    out->gpu = s;
     return 0;
 }
 
-static void virtio_gpu_free_params(void *params) { free(params); }
+static void virtio_gpu_free_params(VirtioDeviceParams *params) {
+    free(params->gpu);
+    params->gpu = NULL;
+}
 
 const struct virtio_config_ops virtio_gpu_config_ops = {
     .parse = virtio_gpu_parse_params,

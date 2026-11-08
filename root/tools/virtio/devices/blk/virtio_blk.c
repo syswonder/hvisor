@@ -484,8 +484,9 @@ static void virtio_blk_close(VirtIODevice *vdev) {
     free(vdev);
 }
 
-static int virtio_blk_do_init(VirtIODevice *vdev, const void *params) {
-    const struct virtio_blk_init_params *p = params;
+static int virtio_blk_do_init(VirtIODevice *vdev,
+                              const VirtioDeviceParams *params) {
+    const struct virtio_blk_init_params *p = params ? params->blk : NULL;
     if (!p)
         return -EINVAL;
     if (!init_blk_dev(vdev))
@@ -510,7 +511,7 @@ const struct virtio_device_ops virtio_blk_ops = {
     .notify_handlers = {virtio_blk_notify_handler},
 };
 
-static int virtio_blk_parse_params(const cJSON *json, void **out) {
+static int virtio_blk_parse_params(const cJSON *json, VirtioDeviceParams *out) {
     struct virtio_blk_init_params *p = calloc(1, sizeof(*p));
     if (!p)
         return -ENOMEM;
@@ -524,11 +525,14 @@ static int virtio_blk_parse_params(const cJSON *json, void **out) {
         return -ENAMETOOLONG;
     }
     memcpy(p->img_path, img->valuestring, strlen(img->valuestring) + 1);
-    *out = p;
+    out->blk = p;
     return 0;
 }
 
-static void virtio_blk_free_params(void *params) { free(params); }
+static void virtio_blk_free_params(VirtioDeviceParams *params) {
+    free(params->blk);
+    params->blk = NULL;
+}
 
 const struct virtio_config_ops virtio_blk_config_ops = {
     .parse = virtio_blk_parse_params,
