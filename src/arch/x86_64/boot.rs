@@ -205,7 +205,7 @@ impl BootParams {
 
         boot_params.cmd_line_ptr = config.arch_config.cmdline_load_gpa as _;
         // copy cmdline manually for root zone
-        if config.zone_id == 0 {
+        if config.common.zone_id == 0 {
             unsafe {
                 core::ptr::copy_nonoverlapping(
                     crate::platform::ROOT_ZONE_CMDLINE.as_ptr(),
@@ -234,7 +234,7 @@ impl BootParams {
         }
 
         // set efi_info
-        // if (config.zone_id == 0) {
+        // if (config.common.zone_id == 0) {
         boot_params.set_uefi_info(config);
         // }
 
@@ -268,8 +268,8 @@ impl BootParams {
         }
 
         self.e820_table[index] = BootE820Entry {
-            addr: config.pci_config[0].ecam_base as _,
-            size: config.pci_config[0].ecam_size as _,
+            addr: config.common.pci_config[0].ecam_base as _,
+            size: config.common.pci_config[0].ecam_size as _,
             _type: E820Type::E820_RESERVED,
         };
         index += 1;
@@ -313,9 +313,9 @@ impl BootParams {
         let mem_desc = unsafe { &mut *mem_map };
         *mem_desc = MemoryDescriptor {
             ty: MemoryType::MMIO,
-            phys_start: config.pci_config[0].ecam_base,
-            virt_start: config.pci_config[0].ecam_base,
-            page_count: config.pci_config[0].ecam_size / (PAGE_SIZE as u64),
+            phys_start: config.common.pci_config[0].ecam_base,
+            virt_start: config.common.pci_config[0].ecam_base,
+            page_count: config.common.pci_config[0].ecam_size / (PAGE_SIZE as u64),
             att: MemoryAttribute::UNCACHEABLE,
         };
         cnt += 1;
@@ -616,9 +616,9 @@ pub fn multiboot2_info_fill(
     let mut entry_count = 0u32;
 
     let mut reserved: Vec<(u64, u64)> = Vec::new();
-    if config.kernel_size > 0 {
-        let kernel_start = config.kernel_load_paddr;
-        reserved.push((kernel_start, kernel_start + config.kernel_size));
+    if config.common.kernel_size > 0 {
+        let kernel_start = config.common.kernel_load_paddr;
+        reserved.push((kernel_start, kernel_start + config.common.kernel_size));
     }
     reserved.push((info_gpa as u64, info_gpa as u64 + PAGE_SIZE as u64));
     if config.arch_config.cmdline_load_gpa != 0

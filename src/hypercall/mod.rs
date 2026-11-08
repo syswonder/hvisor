@@ -316,7 +316,7 @@ impl<'a> HyperCall<'a> {
             );
         }
         let zone_result = zone_create(config);
-        clear_zone_boot_mode(config.zone_id as usize);
+        clear_zone_boot_mode(config.common.zone_id as usize);
         let zone = zone_result?;
         let boot_cpu = zone.read().cpu_set().first_cpu().unwrap();
 

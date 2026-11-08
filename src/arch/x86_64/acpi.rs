@@ -676,7 +676,7 @@ pub fn root_init() {
 
 pub fn copy_to_guest_memory_region(config: &HvZoneConfig, cpu_set: &CpuSet) {
     let mut banned: BTreeSet<Signature> = BTreeSet::new();
-    if config.zone_id != 0 {
+    if config.common.zone_id != 0 {
         banned.insert(Signature::FADT);
         banned.insert(Signature::SSDT);
     }

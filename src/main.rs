@@ -138,9 +138,9 @@ fn primary_init_early() {
     let root_config = root_zone_config();
 
     #[cfg(all(pci, not(pci_init_delay)))]
-    if root_config.num_pci_bus > 0 {
-        let num_pci_bus = root_config.num_pci_bus as usize;
-        let _ = hvisor_pci_init(&root_config.pci_config[..num_pci_bus]);
+    if root_config.common.num_pci_bus > 0 {
+        let num_pci_bus = root_config.common.num_pci_bus as usize;
+        let _ = hvisor_pci_init(&root_config.common.pci_config[..num_pci_bus]);
     }
 
     #[cfg(not(test))]

@@ -1,0 +1,38 @@
+language = "C"
+include_guard = "HVISOR_ABI_H"
+pragma_once = true
+documentation = true
+documentation_style = "doxy"
+
+[parse]
+parse_deps = false
+
+[export]
+include = [
+    "MEM_TYPE_RAM",
+    "MEM_TYPE_IO",
+    "MEM_TYPE_VIRTIO",
+    "CONFIG_MAGIC_VERSION",
+    "CONFIG_MAX_MEMORY_REGIONS",
+    "CONFIG_MAX_INTERRUPTS",
+    "CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD",
+    "CONFIG_NAME_MAXLEN",
+    "CONFIG_MAX_IVC_CONFIGS",
+    "CONFIG_PCI_BUS_MAXNUM",
+    "CONFIG_MAX_PCI_DEV",
+    "HvConfigMemoryRegion",
+    "HvPciConfig",
+    "HvIvcConfig",
+    "HvZoneBootMode",
+    "HvPciDevConfig",
+    "VpciDevType",
+    "HvZoneConfigCommon",
+    "Aarch64ArchConfig",
+    "Riscv64ArchConfig",
+    "Loongarch64ArchConfig",
+    "X86_64ArchConfig",
+    "Aarch64ZoneConfig",
+    "Riscv64ZoneConfig",
+    "Loongarch64ZoneConfig",
+    "X86_64ZoneConfig",
+]
