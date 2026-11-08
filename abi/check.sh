@@ -5,7 +5,7 @@ cd "$(dirname "$0")/.."
 tmp="$(mktemp)"
 trap 'rm -f "$tmp"' EXIT
 
-cbindgen --config abi/cbindgen.toml --crate hvisor-abi --output "$tmp"
+./abi/generate-header.sh "$tmp"
 if ! cmp -s abi/include/hvisor_abi.h "$tmp"; then
     echo "abi/include/hvisor_abi.h is out of date" >&2
     diff -u abi/include/hvisor_abi.h "$tmp" || true

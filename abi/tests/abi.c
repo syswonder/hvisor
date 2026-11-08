@@ -20,5 +20,12 @@ _Static_assert(sizeof(HvIrqLineArgs) == 8, "HvIrqLineArgs size");
 _Static_assert(sizeof(HvIvcUserInfo) == 12, "HvIvcUserInfo size");
 _Static_assert(sizeof(HvIvcControlTable) == 24, "HvIvcControlTable size");
 _Static_assert(sizeof(HvVirtioBridge) > 0, "HvVirtioBridge size");
+_Static_assert(sizeof(HvScmiClockArgs) == 88, "HvScmiClockArgs size");
+_Static_assert(sizeof(HvScmiResetArgs) == 20, "HvScmiResetArgs size");
+_Static_assert(sizeof(HvScmiPowerArgs) == 80, "HvScmiPowerArgs size");
+_Static_assert(HVISOR_SCMI_CLOCK_IOCTL == 0xC0580120, "clock ioctl");
+_Static_assert(HVISOR_SCMI_RESET_IOCTL == 0xC0140121, "reset ioctl");
+_Static_assert(HVISOR_SCMI_POWER_IOCTL == 0xC0500122, "power ioctl");
+_Static_assert(HVISOR_DEASSERT_IRQ == 0x4008010b, "deassert irq ioctl");
 
 int main(void) { return 0; }

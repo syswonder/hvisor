@@ -3,10 +3,12 @@
 
 #pragma once
 
-#include <stdarg.h>
+#if defined(__KERNEL__)
+#include <linux/types.h>
+#else
 #include <stdbool.h>
 #include <stdint.h>
-#include <stdlib.h>
+#endif
 
 #define MEM_TYPE_RAM 0
 
@@ -23,6 +25,8 @@
 #define CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD 32
 
 #define CONFIG_NAME_MAXLEN 32
+
+#define CONFIG_MAX_ZONES 32
 
 #define CONFIG_MAX_IVC_CONFIGS 2
 
@@ -52,7 +56,47 @@
 
 #define HVISOR_GET_ECAM_BASE 2148008202
 
+#define HVISOR_DEASSERT_IRQ 1074266379
+
 #define HVISOR_IVC_USER_INFO 2148026624
+
+#define HVISOR_SCMI_CLOCK_GET_COUNT 1
+
+#define HVISOR_SCMI_CLOCK_GET_ATTRIBUTES 2
+
+#define HVISOR_SCMI_CLOCK_DESCRIBE_RATES 3
+
+#define HVISOR_SCMI_CLOCK_RATE_GET 4
+
+#define HVISOR_SCMI_CLOCK_RATE_SET 5
+
+#define HVISOR_SCMI_CLOCK_CONFIG_GET 6
+
+#define HVISOR_SCMI_CLOCK_CONFIG_SET 7
+
+#define HVISOR_SCMI_CLOCK_NAME_GET 8
+
+#define HVISOR_SCMI_RESET_GET_COUNT 1
+
+#define HVISOR_SCMI_RESET_RESET 2
+
+#define HVISOR_SCMI_POWER_GET_COUNT 1
+
+#define HVISOR_SCMI_POWER_GET_ATTRIBUTES 2
+
+#define HVISOR_SCMI_POWER_STATE_SET 3
+
+#define HVISOR_SCMI_POWER_STATE_GET 4
+
+#define SCMI_POWER_STATE_GENERIC_ON 0
+
+#define SCMI_POWER_STATE_GENERIC_OFF 1073741824
+
+#define HVISOR_SCMI_CLOCK_IOCTL 3226992928
+
+#define HVISOR_SCMI_RESET_IOCTL 3222536481
+
+#define HVISOR_SCMI_POWER_IOCTL 3226468642
 
 #define MAX_REQ 32
 
@@ -412,6 +456,104 @@ typedef struct HvVirtioBridge {
   uint8_t mmio_avail;
   uint8_t need_wakeup;
 } HvVirtioBridge;
+
+typedef struct HvScmiPowerAttr {
+  uint32_t domain_id;
+  uint32_t flags;
+  uint8_t name[64];
+} HvScmiPowerAttr;
+
+typedef struct HvScmiPowerStateInfo {
+  uint32_t domain_id;
+  uint32_t power_state;
+} HvScmiPowerStateInfo;
+
+typedef union HvScmiPowerData {
+  uint32_t power_count;
+  struct HvScmiPowerAttr power_attr;
+  struct HvScmiPowerStateInfo power_state_info;
+  uint8_t data[0];
+} HvScmiPowerData;
+
+typedef struct HvScmiPowerArgs {
+  uint32_t subcmd;
+  uint32_t data_len;
+  union HvScmiPowerData u;
+} HvScmiPowerArgs;
+
+typedef struct HvScmiResetInfo {
+  uint32_t domain_id;
+  uint32_t flags;
+  uint32_t reset_state;
+} HvScmiResetInfo;
+
+typedef union HvScmiResetData {
+  uint32_t reset_count;
+  struct HvScmiResetInfo reset_info;
+  uint8_t data[0];
+} HvScmiResetData;
+
+typedef struct HvScmiResetArgs {
+  uint32_t subcmd;
+  uint32_t data_len;
+  union HvScmiResetData u;
+} HvScmiResetArgs;
+
+typedef struct HvScmiClockAttr {
+  uint32_t clock_id;
+  uint32_t enabled;
+  uint32_t parent_id;
+  uint8_t clock_name[64];
+  uint32_t is_valid;
+} HvScmiClockAttr;
+
+typedef struct HvScmiClockRatesInfo {
+  uint32_t clock_id;
+  uint32_t rate_index;
+  uint32_t num_rates;
+  uint32_t remaining;
+  uint64_t rates[8];
+} HvScmiClockRatesInfo;
+
+typedef struct HvScmiClockRateInfo {
+  uint32_t clock_id;
+  uint64_t rate;
+} HvScmiClockRateInfo;
+
+typedef struct HvScmiClockRateSetInfo {
+  uint32_t clock_id;
+  uint32_t flags;
+  uint64_t rate;
+} HvScmiClockRateSetInfo;
+
+typedef struct HvScmiClockConfigInfo {
+  uint32_t clock_id;
+  uint32_t flags;
+  uint32_t config;
+  uint32_t extended_config_val;
+} HvScmiClockConfigInfo;
+
+typedef struct HvScmiClockNameInfo {
+  uint32_t clock_id;
+  uint8_t name[64];
+} HvScmiClockNameInfo;
+
+typedef union HvScmiClockData {
+  uint32_t clock_count;
+  struct HvScmiClockAttr clock_attr;
+  struct HvScmiClockRatesInfo clock_rates_info;
+  struct HvScmiClockRateInfo clock_rate_info;
+  struct HvScmiClockRateSetInfo clock_rate_set_info;
+  struct HvScmiClockConfigInfo clock_config_info;
+  struct HvScmiClockNameInfo clock_name_info;
+  uint8_t data[0];
+} HvScmiClockData;
+
+typedef struct HvScmiClockArgs {
+  uint32_t subcmd;
+  uint32_t data_len;
+  union HvScmiClockData u;
+} HvScmiClockArgs;
 
 typedef struct VirtioPCIHypercallInfo {
   uint16_t version;

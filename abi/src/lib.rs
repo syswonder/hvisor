@@ -25,6 +25,7 @@ pub mod config;
 pub mod hypercall;
 pub mod ioctl;
 pub mod ivc;
+pub mod scmi;
 pub mod virtio;
 
 pub use config::*;

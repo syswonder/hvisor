@@ -28,8 +28,7 @@ producing concrete types that cbindgen can export to C.
 
 ## Generate the C header
 
-    cbindgen --config abi/cbindgen.toml --crate hvisor-abi \
-        --output abi/include/hvisor_abi.h
+    ./abi/generate-header.sh abi/include/hvisor_abi.h
     cc -std=c11 -Iabi/include -c abi/tests/abi.c -o /tmp/abi.o
 
 The generated header and the C static assertions are checked in.
@@ -49,7 +48,7 @@ The generated header and the C static assertions are checked in.
 
 ## Not extracted yet
 
-- ioctl IDs;
+- platform-specific ioctl IDs not yet moved;
 - virtio controller/volatile layout is still owned by hvisor; the plain shared-memory mirror is exported by abi.
 - adding CI checks for the generated C header;
 - adding C layout assertions for every exported structure.
