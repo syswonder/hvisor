@@ -15,6 +15,7 @@
 //  Solicey <lzoi_lth@163.com>
 
 pub mod ioapic;
+mod ioapic_state;
 pub mod lapic;
 
 use crate::{
@@ -31,8 +32,9 @@ use spin::{Mutex, Once};
 static PENDING_VECTORS: Once<PendingVectors> = Once::new();
 
 struct InnerPendingVectors {
-    pub queue: VecDeque<(u8, Option<u32>)>,
+    pub queue: VecDeque<(u8, Option<u32>, bool)>,
     pub has_eoi: bool,
+    pub in_service: Option<(u8, bool)>,
 }
 
 struct PendingVectors {
@@ -46,26 +48,34 @@ impl PendingVectors {
             let v = Mutex::new(InnerPendingVectors {
                 queue: VecDeque::new(),
                 has_eoi: true,
+                in_service: None,
             });
             vs.push(v);
         }
         Self { inner: vs }
     }
 
-    fn add_vector(&self, cpu_id: usize, vector: u8, err_code: Option<u32>, allow_repeat: bool) {
+    fn add_vector(
+        &self,
+        cpu_id: usize,
+        vector: u8,
+        err_code: Option<u32>,
+        allow_repeat: bool,
+        level: bool,
+    ) {
         let mut vectors = self.inner.get(cpu_id).unwrap().lock();
         if vectors.queue.len() > 10 {
             warn!("too many pending vectors! cnt: {:x?}", vectors.queue.len());
         }
-        if allow_repeat || !vectors.queue.contains(&(vector, err_code)) {
-            vectors.queue.push_back((vector, err_code));
+        if allow_repeat || !vectors.queue.contains(&(vector, err_code, level)) {
+            vectors.queue.push_back((vector, err_code, level));
         }
     }
 
     fn check_pending_vectors(&self, cpu_id: usize) -> bool {
         let mut vectors = self.inner.get(cpu_id).unwrap().lock();
 
-        if let Some(vector) = vectors.queue.front() {
+        if let Some(&vector) = vectors.queue.front() {
             let allow_interrupt = Vmcs::allow_interrupt().unwrap() && vectors.has_eoi;
             if vector.0 < 32 || allow_interrupt {
                 if vectors.queue.len() > 10 {
@@ -73,7 +83,10 @@ impl PendingVectors {
                 }
                 // if it's an exception, or an interrupt that is not blocked, inject it directly.
                 Vmcs::inject_interrupt(vector.0, vector.1).unwrap();
-                vectors.has_eoi = false;
+                if vector.0 >= 32 {
+                    vectors.has_eoi = false;
+                    vectors.in_service = Some((vector.0, vector.2));
+                }
                 vectors.queue.pop_front();
                 return true;
             } else if vectors.has_eoi {
@@ -84,22 +97,55 @@ impl PendingVectors {
         false
     }
 
-    fn pop_vector(&self, cpu_id: usize) {
+    fn pop_vector(&self, cpu_id: usize) -> Option<(u8, bool)> {
         let mut vectors = self.inner.get(cpu_id).unwrap().lock();
         vectors.has_eoi = true;
+        vectors.in_service.take()
+    }
+
+    fn tmr(&self, cpu_id: usize, register: usize) -> u32 {
+        let vectors = self.inner.get(cpu_id).unwrap().lock();
+        let Some((vector, true)) = vectors.in_service else {
+            return 0;
+        };
+        if vector as usize / 32 == register {
+            1 << (vector % 32)
+        } else {
+            0
+        }
+    }
+
+    fn isr(&self, cpu_id: usize, register: usize) -> u32 {
+        let vectors = self.inner.get(cpu_id).unwrap().lock();
+        let Some((vector, _)) = vectors.in_service else {
+            return 0;
+        };
+        if vector as usize / 32 == register {
+            1 << (vector % 32)
+        } else {
+            0
+        }
     }
 
     fn clear_vectors(&self, cpu_id: usize) {
         let mut vectors = self.inner.get(cpu_id).unwrap().lock();
         vectors.queue.clear();
+        vectors.has_eoi = true;
+        vectors.in_service = None;
     }
 }
 
-pub fn inject_vector(cpu_id: usize, vector: u8, err_code: Option<u32>, allow_repeat: bool) {
+pub fn inject_vector(
+    cpu_id: usize,
+    vector: u8,
+    err_code: Option<u32>,
+    allow_repeat: bool,
+    level: bool,
+) {
     PENDING_VECTORS
         .get()
         .unwrap()
-        .add_vector(cpu_id, vector, err_code, allow_repeat);
+        .add_vector(cpu_id, vector, err_code, allow_repeat, level);
     if cpu_id != this_cpu_id() {
         // wake up dest
         ipi::arch_send_event(cpu_id as _, 0);
@@ -110,8 +156,16 @@ pub fn check_pending_vectors(cpu_id: usize) -> bool {
     PENDING_VECTORS.get().unwrap().check_pending_vectors(cpu_id)
 }
 
-pub fn pop_vector(cpu_id: usize) {
-    PENDING_VECTORS.get().unwrap().pop_vector(cpu_id);
+pub fn pop_vector(cpu_id: usize) -> Option<(u8, bool)> {
+    PENDING_VECTORS.get().unwrap().pop_vector(cpu_id)
+}
+
+pub fn tmr(cpu_id: usize, register: usize) -> u32 {
+    PENDING_VECTORS.get().unwrap().tmr(cpu_id, register)
+}
+
+pub fn isr(cpu_id: usize, register: usize) -> u32 {
+    PENDING_VECTORS.get().unwrap().isr(cpu_id, register)
 }
 
 pub fn clear_vectors(cpu_id: usize) {
