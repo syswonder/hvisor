@@ -30,7 +30,7 @@ else
 endif
 
 ifeq ($(ARCH),aarch64)
-    RUSTC_TARGET := aarch64-unknown-none
+    RUSTC_TARGET := aarch64-unknown-none-softfloat
 	GDB_ARCH := aarch64
 else ifeq ($(ARCH),riscv64)
 	RUSTC_TARGET := riscv64gc-unknown-none-elf

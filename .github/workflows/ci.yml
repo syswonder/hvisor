@@ -26,7 +26,7 @@ jobs:
       - name: Install Rust Toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: aarch64-unknown-none
+          targets: aarch64-unknown-none-softfloat
           components: rust-src rustfmt
       - name: Install Dependencies
         run: |

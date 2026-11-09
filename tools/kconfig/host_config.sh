@@ -86,7 +86,7 @@ cmd_vscode() {
 
 	local TARGET
 	case "$ARCH" in
-	aarch64) TARGET="aarch64-unknown-none" ;;
+	aarch64) TARGET="aarch64-unknown-none-softfloat" ;;
 	riscv64) TARGET="riscv64gc-unknown-none-elf" ;;
 	loongarch64) TARGET="loongarch64-unknown-none" ;;
 	x86_64) TARGET="x86_64-unknown-none" ;;
