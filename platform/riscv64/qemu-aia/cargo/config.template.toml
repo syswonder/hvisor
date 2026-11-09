@@ -1,4 +1,4 @@
-[target.riscv64gc-unknown-none-elf]
+[target.riscv64imac-unknown-none-elf]
 runner = "platform/__ARCH__/__BOARD__/test/runner.sh"
 rustflags = [
     "-Clink-arg=-Tplatform/__ARCH__/__BOARD__/linker.ld",

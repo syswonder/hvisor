@@ -33,7 +33,7 @@ ifeq ($(ARCH),aarch64)
     RUSTC_TARGET := aarch64-unknown-none-softfloat
 	GDB_ARCH := aarch64
 else ifeq ($(ARCH),riscv64)
-	RUSTC_TARGET := riscv64gc-unknown-none-elf
+	RUSTC_TARGET := riscv64imac-unknown-none-elf
 	GDB_ARCH := riscv:rv64
 else ifeq ($(ARCH),loongarch64)
 	RUSTC_TARGET := loongarch64-unknown-none
