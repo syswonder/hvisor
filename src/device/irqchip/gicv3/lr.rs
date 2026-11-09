@@ -24,7 +24,7 @@ use crate::cpu_data::this_cpu_data;
 use crate::device::irqchip::SGIS_NUM;
 use bit_field::BitField;
 
-pub const MAINTENACE_INTERRUPT: u64 = 25;
+pub const MAINTENANCE_INTERRUPT: u64 = 25;
 
 pub fn flush_current_guest_irqs() {
     let cpu = this_cpu_data();
@@ -33,7 +33,7 @@ pub fn flush_current_guest_irqs() {
     }
     let state = &cpu.vcpu.irq;
     crate::device::irqchip::flush_guest_irq_state(state, install_pending_guest_irq, || {
-        enable_maintenace_interrupt(true)
+        enable_maintenance_interrupt(true)
     });
 }
 
@@ -105,15 +105,15 @@ pub fn inject_irq(irq_id: usize, is_hardware: bool) -> bool {
     if free_ir == -1 {
         trace!("all list registers are valid, add to pending queue");
         // If all list registers are valid, add this virtual irq to pending queue,
-        // and enable an underflow maintenace interrupt. When list registers are
-        // all invalid or only one is valid, the maintenace interrupt will occur,
-        // hvisor will execute handle_maintenace_interrupt function.
+        // and enable an underflow maintenance interrupt. When list registers are
+        // all invalid or only one is valid, the maintenance interrupt will occur,
+        // hvisor will execute handle_maintenance_interrupt function.
         PENDING_VIRQS
             .get()
             .unwrap()
             .add_irq(irq_id, is_hardware)
             .unwrap();
-        enable_maintenace_interrupt(true);
+        enable_maintenance_interrupt(true);
         return false;
     } else {
         let mut val = irq_id as u64; //v intid
@@ -180,31 +180,31 @@ pub(crate) fn lr_pending_sgi_mask() -> u32 {
     pending
 }
 
-pub(super) fn handle_maintenace_interrupt() {
-    trace!("handle_maintenace_interrupt");
+pub(super) fn handle_maintenance_interrupt() {
+    trace!("handle_maintenance_interrupt");
     flush_current_guest_irqs();
     let pending_irqs = PENDING_VIRQS.get().unwrap();
     while let Some((irq_id, is_hardware)) = pending_irqs.fetch_irq() {
         let is_injected: bool = inject_irq(irq_id, is_hardware);
         if is_injected {
-            trace!("inject pending irq in maintenace interrupt");
+            trace!("inject pending irq in maintenance interrupt");
         }
         if !is_injected {
             pending_irqs.add_irq(irq_id, is_hardware);
-            enable_maintenace_interrupt(true);
+            enable_maintenance_interrupt(true);
             return;
         }
     }
-    enable_maintenace_interrupt(has_pending_maintenance_work());
+    enable_maintenance_interrupt(has_pending_maintenance_work());
 }
 
 fn has_pending_maintenance_work() -> bool {
     this_cpu_data().vcpu.irq.has_pending() || PENDING_VIRQS.get().unwrap().has_pending()
 }
 
-// Enable or disable an underflow maintenace interrupt.
-fn enable_maintenace_interrupt(is_enable: bool) {
-    trace!("enable_maintenace_interrupt, is_enable is {}", is_enable);
+// Enable or disable an underflow maintenance interrupt.
+fn enable_maintenance_interrupt(is_enable: bool) {
+    trace!("enable_maintenance_interrupt, is_enable is {}", is_enable);
     let mut hcr = read_sysreg!(ich_hcr_el2);
     trace!("hcr is {}", hcr);
     if is_enable {

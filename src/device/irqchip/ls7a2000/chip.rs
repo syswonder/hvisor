@@ -570,7 +570,7 @@ pub static CHIP_EXTIOI_BOUNCE: MMIODerefWrapper<ChipExtioiBounceRegs> =
     unsafe { MMIODerefWrapper::new(CHIP_EXTIOI_BOUNCE_BASE as usize) };
 
 /******************************************** */
-/*             SOME BASIC FUCNTIONS           */
+/*             SOME BASIC FUNCTIONS           */
 /******************************************** */
 
 pub fn get_chip_conf_ver() -> u64 {
@@ -655,7 +655,7 @@ pub fn print_chip_info() {
 }
 
 /******************************************** */
-/*            LEGACY INT FUCNTIONS            */
+/*            LEGACY INT FUNCTIONS            */
 /******************************************** */
 
 pub fn legacy_int_enable_all() {
@@ -699,7 +699,7 @@ pub fn legacy_int_dump() {
 }
 
 /******************************************** */
-/*            EXTIOI FUCNTIONS               */
+/*            EXTIOI FUNCTIONS               */
 /******************************************** */
 
 pub fn extioi_mode_enable() {
@@ -762,7 +762,7 @@ pub fn extioi_int_enable_all() {
     }
 }
 
-// rcore refenrence
+// rcore reference
 // https://github.com/Godones/rCoreloongArch/blob/master/kernel/src/loongarch/extioi.rs
 pub fn extioi_int_route_pin_all() {
     csr_disable_new_codec();

@@ -58,7 +58,7 @@ register_bitfields! {u64,
             PrivRO = 0b10,
             PrivRO_UnprivRO = 0b11
         ],
-        AttrIndx    OFFSET(2) NUMBITS(3) [
+        AttrIndex    OFFSET(2) NUMBITS(3) [
             Attr0 = 0b000,
             Attr1 = 0b001,
             Attr2 = 0b010
@@ -107,15 +107,15 @@ impl PTEDescriptor {
                     + S1PageAndBlockDescriptor::VALID::True
                     + match mem_type {
                         MemoryType::Device => {
-                            S1PageAndBlockDescriptor::AttrIndx::Attr0
+                            S1PageAndBlockDescriptor::AttrIndex::Attr0
                                 + S1PageAndBlockDescriptor::SH::OuterShareable
                         }
                         MemoryType::Normal => {
-                            S1PageAndBlockDescriptor::AttrIndx::Attr1
+                            S1PageAndBlockDescriptor::AttrIndex::Attr1
                                 + S1PageAndBlockDescriptor::SH::InnerShareable
                         }
                         _ => {
-                            S1PageAndBlockDescriptor::AttrIndx::Attr0
+                            S1PageAndBlockDescriptor::AttrIndex::Attr0
                                 + S1PageAndBlockDescriptor::SH::OuterShareable
                         }
                     })

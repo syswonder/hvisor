@@ -67,7 +67,7 @@ screen /dev/xxx (Replace xxx with the actual number.)
 
 ### Notes
 In the current configuration, the virtio-console backend runs inside root Linux, not in QEMU.
-Both the root zone and zone1 are assigned one virtio-pci-blk device(using wired-interupt) each.
+Both the root zone and zone1 are assigned one virtio-pci-blk device(using wired-interrupt) each.
 
 ### IOMMU (draft)
 

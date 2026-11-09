@@ -13,7 +13,7 @@
 //
 // Authors:
 //
-// This used for transfering the software interrupt to the target hart
+// This used for transferring the software interrupt to the target hart
 
 //  Offset	    Width	Attr	Name	    Description
 //  0x0000_0000 4B      RW      SETSSIP0    HART index 0 set supervisor-level IPI register

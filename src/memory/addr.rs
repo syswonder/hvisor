@@ -13,7 +13,7 @@
 //
 // Authors:
 //
-//! Definition of phyical and virtual addresses.
+//! Definition of physical and virtual addresses.
 
 #![allow(dead_code)]
 

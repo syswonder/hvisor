@@ -5671,8 +5671,8 @@
 			pinctrl-1 = <0x14d>;
 			low_voltage_threshold = <0xbb8>;
 			shutdown_voltage_threshold = <0xa8c>;
-			shutdown_temperture_threshold = <0xa0>;
-			hotdie_temperture_threshold = <0x73>;
+			shutdown_temperature_threshold = <0xa0>;
+			hotdie_temperature_threshold = <0x73>;
 			pmic-reset-func = <0x01>;
 			vcc1-supply = <0x5f>;
 			vcc2-supply = <0x5f>;

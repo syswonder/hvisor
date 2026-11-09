@@ -19,17 +19,17 @@ use core::{fmt::Debug, ops::Range};
 pub type Mem32Address = u64;
 pub type Mem64Address = u64;
 
-trait Algin {
+trait Align {
     fn align_up(self, align: Self) -> Self;
 }
 
-impl Algin for Mem32Address {
+impl Align for Mem32Address {
     fn align_up(self, align: Self) -> Self {
         (self + align - 1) & !(align - 1)
     }
 }
 
-// impl Algin for Mem64Address {
+// impl Align for Mem64Address {
 //     fn align_up(self, align: Self) -> Self {
 //         (self + align - 1) & !(align - 1)
 //     }

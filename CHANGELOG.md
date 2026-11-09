@@ -95,7 +95,7 @@
 
 ### hvisor v0.1.1
 
-- [platform] seperate board definitions into `platform` folder with re-designed cargo feature system for hvisor ([wheatfox](https://github.com/enkerewpo))
+- [platform] separate board definitions into `platform` folder with re-designed cargo feature system for hvisor ([wheatfox](https://github.com/enkerewpo))
 
 ### hvisor v0.1.0
 

@@ -88,7 +88,7 @@
 		#size-cells = <0x02>;
 		ranges;
 
-        // 0x8000_0000 - 0x8500_0000 is reserverd for low-level software
+        // 0x8000_0000 - 0x8500_0000 is reserved for low-level software
 		opensbi@80000000 {
 			no-map;
 			reg = <0x00 0x80000000 0x00 0x00200000>;

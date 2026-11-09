@@ -34,7 +34,7 @@ use crate::zone::is_this_root_zone;
 
 use super::pci_access::{BridgeField, EndpointField, HeaderType, PciField, PciMemType};
 use super::pci_config::GLOBAL_PCIE_LIST;
-use super::pci_struct::{ArcRwLockVirtualPciConfigSpace, Bdf, BIT_LENTH};
+use super::pci_struct::{ArcRwLockVirtualPciConfigSpace, Bdf, BIT_LENGTH};
 use super::vpci_dev::VpciDevType;
 use super::PciConfigAddress;
 
@@ -959,7 +959,7 @@ fn handle_endpoint_access(
                                 }
                                 #[cfg(target_arch = "riscv64")]
                                 unsafe {
-                                    // TOOD: add remote fence support (using sbi rfence spec?)
+                                    // TODO: add remote fence support (using sbi rfence spec?)
                                     core::arch::asm!("hfence.gvma");
                                 }
                             }
@@ -1107,7 +1107,7 @@ fn handle_endpoint_access(
                                 }
                                 #[cfg(target_arch = "riscv64")]
                                 unsafe {
-                                    // TOOD: add remote fence support (using sbi rfence spec?)
+                                    // TODO: add remote fence support (using sbi rfence spec?)
                                     core::arch::asm!("hfence.gvma");
                                 }
                             } else {
@@ -1584,7 +1584,7 @@ fn handle_pci_bridge_access(
                                 }
                                 #[cfg(target_arch = "riscv64")]
                                 unsafe {
-                                    // TOOD: add remote fence support (using sbi rfence spec?)
+                                    // TODO: add remote fence support (using sbi rfence spec?)
                                     core::arch::asm!("hfence.gvma");
                                 }
                             } else {
@@ -1656,7 +1656,7 @@ fn handle_pci_bridge_access(
 
 /*
  * is_direct: if true, root can allocate resource for device belonging
- *            to ohter zone but can't drive it
+ *            to other zone but can't drive it
  * is_root: if the access is from the root zone
  * is_dev_belong_to_zone: if the access is from the device that belongs to the zone
  */
@@ -1670,8 +1670,8 @@ fn handle_config_space_access(
 ) -> HvResult {
     let is_write = mmio.is_write;
 
-    // the lenth of access and control bits are limited by BIT_LENTH
-    if (offset as usize) >= BIT_LENTH {
+    // the length of access and control bits are limited by BIT_LENGTH
+    if (offset as usize) >= BIT_LENGTH {
         warn!("invalid pci offset {:#x}", offset);
         if !is_write {
             mmio.value = 0;
@@ -2306,7 +2306,7 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
             }
         } else if mmio.address > ATU_BASE {
             mmio_perform_access(ecam_base, mmio);
-        } else if mmio.address >= BIT_LENTH
+        } else if mmio.address >= BIT_LENGTH
             && !(mmio.address >= PCIE_MSI_ADDR_LO && mmio.address <= PCIE_MSI_INTR0_STATUS)
         {
             // dbi read

@@ -1,0 +1,49 @@
+# Proper nouns and identifiers that typos must not rewrite.
+# Keep this list limited to entries required by the current tree.
+[default.extend-words]
+# Existing x86 symbol name; never rewrite this ABI identifier.
+SEGEMENT = "SEGEMENT"
+
+# GitHub username in CHANGELOG; typos tokenizes it as "likey".
+likey = "likey"
+
+# Device and architecture register names.
+mis = "mis"
+som = "som"
+matc = "matc"
+SXL = "SXL"
+INE = "INE"
+sie = "sie"
+thr = "thr"
+BA = "BA"
+CMO = "CMO"
+aer = "aer"
+HDA = "HDA"
+
+# External APIs and vendor strings.
+Writeable = "Writeable"
+synopsys = "synopsys"
+cros = "cros"
+
+# Tokens from Linux configs and DTS files.
+TME = "TME"
+als = "als"
+INES = "INES"
+PN = "PN"
+OT = "OT"
+FO = "FO"
+SER = "SER"
+WIL = "WIL"
+GUD = "GUD"
+RELA = "RELA"
+HED = "HED"
+HTE = "HTE"
+HSI = "HSI"
+EDE = "EDE"
+ADIN = "ADIN"
+EXPORTFS = "EXPORTFS"
+EMAC = "EMAC"
+DAMON = "DAMON"
+CONEXANT = "CONEXANT"
+toi = "toi"
+alle = "alle"

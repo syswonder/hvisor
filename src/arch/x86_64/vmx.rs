@@ -81,7 +81,7 @@ impl VmxCrAccessInfo {
     }
 }
 
-/// VM-Exit Informations. (SDM Vol. 3C, Section 24.9.1)
+/// VM-Exit Information. (SDM Vol. 3C, Section 24.9.1)
 #[derive(Debug)]
 pub struct VmxExitInfo {
     /// VM-entry failure. (0 = true VM exit; 1 = VM-entry failure)

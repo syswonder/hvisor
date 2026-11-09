@@ -67,7 +67,7 @@ pub fn primary_init_late() {
 }
 
 // actually these configures are from cpucfg, not irqchip, but we put all
-// configuartion stuff here for convenience
+// configuration stuff here for convenience
 pub fn clock_cpucfg_dump() {
     info!(
         "loongarch64: irqchip: clock_cpucfg_dump: cc_freq: {}",

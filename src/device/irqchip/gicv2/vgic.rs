@@ -30,7 +30,7 @@ use crate::device::irqchip::gicv2::gicd::{
 };
 use crate::device::irqchip::gicv2::lr::{
     clear_guest_sgi_pending, clear_guest_sgi_pending_sources, read_pending_sgi_lr_summary,
-    MAINTENACE_INTERRUPT,
+    MAINTENANCE_INTERRUPT,
 };
 use crate::device::irqchip::gicv2::GICV2;
 use crate::device::irqchip::PendingR0;
@@ -86,7 +86,7 @@ impl Zone {
                     panic!("vgicv2_remap_init: gicv_size not equal to gicc_size");
                 }
                 info!(
-                    "Remaping GICv2 GICV MMIO regions to GICC MMIO regions for zone {}",
+                    "Remapping GICv2 GICV MMIO regions to GICC MMIO regions for zone {}",
                     zone_id
                 );
                 // map gicv memory region to gicc memory region.
@@ -499,7 +499,7 @@ fn zone_owned_ppi_mask() -> u32 {
     let zone_r = zone.read();
     let mut mask = 0u32;
     for irq in GICV2_SGIS_NUM..32 {
-        if irq != MAINTENACE_INTERRUPT as usize && zone_r.irq_in_zone(irq as u32) {
+        if irq != MAINTENANCE_INTERRUPT as usize && zone_r.irq_in_zone(irq as u32) {
             mask.set_bit(irq, true);
         }
     }

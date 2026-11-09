@@ -47,7 +47,7 @@ use crate::{
     },
 };
 
-type VirtualPciConfigBits = BitArr!(for BIT_LENTH, in u8, Lsb0);
+type VirtualPciConfigBits = BitArr!(for BIT_LENGTH, in u8, Lsb0);
 
 #[derive(Clone, Debug)]
 pub struct ConfigValue {
@@ -169,8 +169,8 @@ impl ConfigValue {
 
 const MAX_DEVICE: u8 = 31;
 const MAX_FUNCTION: u8 = 7;
-pub const CONFIG_LENTH: u64 = 256;
-pub const BIT_LENTH: usize = 512 * 8; // 4096 bytes = full PCIe extended config space
+pub const CONFIG_LENGTH: u64 = 256;
+pub const BIT_LENGTH: usize = 512 * 8; // 4096 bytes = full PCIe extended config space
 
 // PCIe Device/Port Type values
 const PCI_EXP_TYPE_ROOT_PORT: u16 = 4;
@@ -581,7 +581,7 @@ pub struct HideSriovInfo {
  * bdf: the bdf hvisor seeing(same with the bdf without hvisor)
  * vbdf: the bdf zone seeing, it can set just you like without sr-iov
  * config_value: tmp value for config space
- * control: control the satus of rw every bit in config space
+ * control: control the status of rw every bit in config space
  * access: Determines whether the variable is read from config_value or hw
  * backend: the hw rw interface
  */
@@ -1150,7 +1150,7 @@ impl VirtualPciConfigSpace {
             pci_addr_base,
             Arc::new(EndpointHeader::new_with_region(PciConfigMmio::new(
                 backend_base,
-                CONFIG_LENTH,
+                CONFIG_LENGTH,
             ))),
             sriov_info.vf_bars.clone(),
             PciMem::default(),
@@ -1386,7 +1386,7 @@ impl VirtualPciConfigSpace {
             access: VirtualPciAccessBits::virt_dev(),
             backend: Arc::new(EndpointHeader::new_with_region(PciConfigMmio::new(
                 base,
-                CONFIG_LENTH,
+                CONFIG_LENGTH,
             ))),
             bararr,
             rom: PciMem::default(),
@@ -1859,7 +1859,7 @@ pub struct PciIterator<B: BarAllocator> {
     bus_range: Range<usize>,
     domain: u8,
     function: u8,
-    is_mulitple_function: bool,
+    is_multiple_function: bool,
     is_finish: bool,
     accessor: Arc<dyn PciConfigAccessor>,
 }
@@ -1907,7 +1907,7 @@ impl<B: BarAllocator> PciIterator<B> {
         let pci_addr_base = self.get_pci_addr_base(bdf);
         // info!("get node {:x} {:#?}", address, bdf);
 
-        let region = PciConfigMmio::new(address, CONFIG_LENTH);
+        let region = PciConfigMmio::new(address, CONFIG_LENGTH);
         let pci_header = PciConfigHeader::new_with_region(region);
         let (vender_id, device_id) = pci_header.id();
 
@@ -1923,7 +1923,7 @@ impl<B: BarAllocator> PciIterator<B> {
                 //     bdf
                 // );
                 self.function = 0;
-                self.is_mulitple_function = false;
+                self.is_multiple_function = false;
             } else {
                 // Function > 0 doesn't exist, but device might have other functions
                 // warn!(
@@ -1934,9 +1934,9 @@ impl<B: BarAllocator> PciIterator<B> {
             return None;
         }
 
-        // only check is_mulitple_function for function 0
+        // only check is_multiple_function for function 0
         if self.function == 0 {
-            self.is_mulitple_function = pci_header.has_multiple_functions();
+            self.is_multiple_function = pci_header.has_multiple_functions();
         }
 
         let class_and_revision = pci_header.revision_and_class();
@@ -1949,7 +1949,7 @@ impl<B: BarAllocator> PciIterator<B> {
                     let host_bridge = Bridge::host_bridge(
                         self.segment,
                         bus_begin,
-                        self.is_mulitple_function,
+                        self.is_multiple_function,
                         self.function,
                     );
                     self.stack.push(host_bridge);
@@ -2160,7 +2160,7 @@ impl<B: BarAllocator> PciIterator<B> {
 
                     parent.update_bridge_bus();
                     self.function = parent.function;
-                    self.is_mulitple_function = parent.is_mulitple_function;
+                    self.is_multiple_function = parent.is_multiple_function;
                     return true;
                 } else {
                     self.is_finish = true;
@@ -2183,7 +2183,7 @@ impl<B: BarAllocator> PciIterator<B> {
 
             self.stack.push(bridge.clone());
 
-            if self.is_mulitple_function && self.function < MAX_FUNCTION {
+            if self.is_multiple_function && self.function < MAX_FUNCTION {
                 // Device supports multiple functions and we haven't checked all functions yet
                 self.function += 1;
                 return;
@@ -2194,7 +2194,7 @@ impl<B: BarAllocator> PciIterator<B> {
         }
 
         // Try next function first if device supports multiple functions
-        if self.is_mulitple_function && self.function < MAX_FUNCTION {
+        if self.is_multiple_function && self.function < MAX_FUNCTION {
             // Device supports multiple functions and we haven't checked all functions yet
             self.function += 1;
             return;
@@ -2226,7 +2226,7 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
                     let host_bridge = Bridge::host_bridge(
                         self.segment,
                         bus_begin,
-                        self.is_mulitple_function,
+                        self.is_multiple_function,
                         self.function,
                     );
                     self.stack.push(host_bridge);
@@ -2282,7 +2282,7 @@ impl<B: BarAllocator> Iterator for PciIterator<B> {
                         Some(self.get_bridge().next_bridge(
                             node.get_base(),
                             node.has_only_one_child(),
-                            self.is_mulitple_function,
+                            self.is_multiple_function,
                             self.function,
                             next_bus,
                         ))
@@ -2308,7 +2308,7 @@ pub struct Bridge {
     primary_bus: u8,
     mmio: PciConfigMmio,
     has_only_one_child: bool,
-    is_mulitple_function: bool,
+    is_multiple_function: bool,
 }
 
 impl Bridge {
@@ -2324,14 +2324,14 @@ impl Bridge {
             primary_bus: 0,
             mmio: PciConfigMmio::new(0, 0), // Dummy mmio for placeholder
             has_only_one_child: false,
-            is_mulitple_function: false,
+            is_multiple_function: false,
         }
     }
 
     pub fn host_bridge(
         address: PciConfigAddress,
         bus_begin: u8,
-        is_mulitple_function: bool,
+        is_multiple_function: bool,
         function: u8,
     ) -> Self {
         Self {
@@ -2341,9 +2341,9 @@ impl Bridge {
             subordinate_bus: bus_begin,
             secondary_bus: bus_begin,
             primary_bus: bus_begin,
-            mmio: PciConfigMmio::new(address, CONFIG_LENTH),
+            mmio: PciConfigMmio::new(address, CONFIG_LENGTH),
             has_only_one_child: false,
-            is_mulitple_function,
+            is_multiple_function,
         }
     }
 
@@ -2351,11 +2351,11 @@ impl Bridge {
         &self,
         address: PciConfigAddress,
         has_only_one_child: bool,
-        is_mulitple_function: bool,
+        is_multiple_function: bool,
         function: u8,
         target_bus: u8,
     ) -> Self {
-        let mmio = PciConfigMmio::new(address, CONFIG_LENTH);
+        let mmio = PciConfigMmio::new(address, CONFIG_LENGTH);
         Self {
             bus: target_bus,
             device: 0,
@@ -2365,7 +2365,7 @@ impl Bridge {
             primary_bus: self.bus,
             mmio,
             has_only_one_child,
-            is_mulitple_function,
+            is_multiple_function,
         }
     }
 
@@ -2376,7 +2376,7 @@ impl Bridge {
 
         let mut offset = (self.mmio.read_u8(0x34).ok()? as PciConfigAddress) & !0x3;
         for _ in 0..48 {
-            if offset < 0x40 || offset >= CONFIG_LENTH {
+            if offset < 0x40 || offset >= CONFIG_LENGTH {
                 return None;
             }
 
@@ -2468,7 +2468,7 @@ impl RootComplex {
             bus_range: range,
             domain,
             function: 0,
-            is_mulitple_function: false,
+            is_multiple_function: false,
             is_finish: false,
             accessor: self.accessor.clone(), // accessor to iterator
         }

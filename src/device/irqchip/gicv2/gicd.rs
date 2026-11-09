@@ -67,7 +67,7 @@ pub const GICD_SGIR_TARGET_LIST_FILTER_SHIFT: usize = 16;
 // GICD Register layout.
 register_structs! {
     #[allow(non_snake_case)]
-    pub GicDistributer {
+    pub GicDistributor {
         (0x0000 => CTRL: ReadWrite<u32>),
         (0x0004 => TYPER: ReadOnly<u32>),
         (0x0008 => IIDR: ReadOnly<u32>),
@@ -93,17 +93,17 @@ register_structs! {
         (0x1000 => @END),
     }
 }
-unsafe impl Sync for GicDistributer {}
+unsafe impl Sync for GicDistributor {}
 
 // GICD is globally unique.
-pub static GICD: Once<GicRef<GicDistributer>> = Once::new();
+pub static GICD: Once<GicRef<GicDistributor>> = Once::new();
 pub static GICD_LOCK: Mutex<()> = Mutex::new(());
 
 pub fn gicd_init(gicd_base: usize) {
-    GICD.call_once(|| unsafe { GicRef::new(gicd_base as *const GicDistributer) });
+    GICD.call_once(|| unsafe { GicRef::new(gicd_base as *const GicDistributor) });
 }
 
-impl GicDistributer {
+impl GicDistributor {
     // init GICD globally and enable it.
     pub fn global_init(&self) {
         let prev = self.CTRL.get();

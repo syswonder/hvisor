@@ -22,7 +22,7 @@ use spin::{lazy::Lazy, mutex::Mutex};
 
 use super::{
     pci_handler::mmio_vpci_direct_handler,
-    pci_struct::{Bdf, VirtualPciConfigSpace, CONFIG_LENTH},
+    pci_struct::{Bdf, VirtualPciConfigSpace, CONFIG_LENGTH},
 };
 
 #[cfg(ecam_pcie)]
@@ -65,7 +65,7 @@ pub fn pcie_guest_init() {
     let vbdf = Bdf::from_str("0000:00:00.0").unwrap();
     let bdf = Bdf::from_str("0000:00:00.0").unwrap();
     let base = 0x4010000000; // Base address for test
-    let backend = EndpointHeader::new_with_region(PciConfigMmio::new(base, CONFIG_LENTH));
+    let backend = EndpointHeader::new_with_region(PciConfigMmio::new(base, CONFIG_LENGTH));
     let dev =
         VirtualPciConfigSpace::host_bridge(bdf, base, Arc::new(backend), (0x6u8, 0u8, 0u8, 0x0));
     vbus.insert(vbdf, dev);
@@ -132,7 +132,7 @@ pub fn ecam_pcie_guest_test() {
     };
     let _ = mmio_vpci_direct_handler(&mut mmio, 0);
     info!(
-        "mmio offset {:x}, is_wirte {}, size {}, value 0x{:x}",
+        "mmio offset {:x}, is_write {}, size {}, value 0x{:x}",
         mmio.address, mmio.is_write, mmio.size, mmio.value
     );
 
@@ -144,7 +144,7 @@ pub fn ecam_pcie_guest_test() {
     };
     let _ = mmio_vpci_direct_handler(&mut mmio, 0);
     info!(
-        "mmio offset {:x}, is_wirte {}, size {}, value 0x{:x}",
+        "mmio offset {:x}, is_write {}, size {}, value 0x{:x}",
         mmio.address, mmio.is_write, mmio.size, mmio.value
     );
 
@@ -156,7 +156,7 @@ pub fn ecam_pcie_guest_test() {
     };
     let _ = mmio_vpci_direct_handler(&mut mmio, 0);
     info!(
-        "mmio offset {:x}, is_wirte {}, size {}, value 0x{:x}",
+        "mmio offset {:x}, is_write {}, size {}, value 0x{:x}",
         mmio.address, mmio.is_write, mmio.size, mmio.value
     );
 
@@ -168,7 +168,7 @@ pub fn ecam_pcie_guest_test() {
     };
     let _ = mmio_vpci_direct_handler(&mut mmio, 0);
     info!(
-        "mmio offset {:x}, is_wirte {}, size {}, value 0x{:x}",
+        "mmio offset {:x}, is_write {}, size {}, value 0x{:x}",
         mmio.address, mmio.is_write, mmio.size, mmio.value
     );
 
@@ -180,7 +180,7 @@ pub fn ecam_pcie_guest_test() {
     };
     let _ = mmio_vpci_direct_handler(&mut mmio, 0);
     info!(
-        "mmio offset {:x}, is_wirte {}, size {}, value 0x{:x}",
+        "mmio offset {:x}, is_write {}, size {}, value 0x{:x}",
         mmio.address, mmio.is_write, mmio.size, mmio.value
     );
 
@@ -192,7 +192,7 @@ pub fn ecam_pcie_guest_test() {
     };
     let _ = mmio_vpci_direct_handler(&mut mmio, 0);
     info!(
-        "mmio offset {:x}, is_wirte {}, size {}, value 0x{:x}",
+        "mmio offset {:x}, is_write {}, size {}, value 0x{:x}",
         mmio.address, mmio.is_write, mmio.size, mmio.value
     );
 
@@ -204,7 +204,7 @@ pub fn ecam_pcie_guest_test() {
     };
     let _ = mmio_vpci_direct_handler(&mut mmio, 0);
     info!(
-        "mmio offset {:x}, is_wirte {}, size {}, value 0x{:x}",
+        "mmio offset {:x}, is_write {}, size {}, value 0x{:x}",
         mmio.address, mmio.is_write, mmio.size, mmio.value
     );
 
@@ -224,7 +224,7 @@ pub fn dwc_pcie_guest_test() {
     let ret = mmio_perform_access(0, &mut mmio);
     info!("{:#?}", ret);
     info!(
-        "mmio offset {:x}, is_wirte {}, size {}, value 0x{:x}",
+        "mmio offset {:x}, is_write {}, size {}, value 0x{:x}",
         mmio.address, mmio.is_write, mmio.size, mmio.value
     );
     use core::ptr::read_volatile;

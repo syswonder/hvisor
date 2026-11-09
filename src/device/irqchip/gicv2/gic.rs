@@ -16,7 +16,7 @@
 use crate::device::irqchip::gicv2::gicc::GICC;
 use crate::device::irqchip::gicv2::gicd::GICV2_SGIS_NUM;
 use crate::device::irqchip::gicv2::lr::{
-    handle_maintenace_interrupt, inject_irq, MAINTENACE_INTERRUPT,
+    handle_maintenance_interrupt, inject_irq, MAINTENANCE_INTERRUPT,
 };
 use crate::event::{check_events, dispatch_host_events};
 use crate::hypercall::SGI_IPI_ID;
@@ -30,8 +30,8 @@ pub fn gicv2_handle_irq() {
             } else {
                 warn!("unexpected physical SGI {}", irq_id);
             }
-        } else if irq_id == MAINTENACE_INTERRUPT as usize {
-            handle_maintenace_interrupt();
+        } else if irq_id == MAINTENANCE_INTERRUPT as usize {
+            handle_maintenance_interrupt();
         } else {
             deactivate_irq(irq_id);
             inject_irq(irq_id, false);
