@@ -1,7 +1,6 @@
-[target.aarch64-unknown-none]
+[target.aarch64-unknown-none-softfloat]
 runner = "platform/__ARCH__/__BOARD__/test/runner.sh"
 rustflags = [
     "-Clink-arg=-Tplatform/__ARCH__/__BOARD__/linker.ld",
-    "-Ctarget-feature=+a72,+v8a,+strict-align,-neon,-fp-armv8",
     "-Cforce-frame-pointers=yes",
 ]

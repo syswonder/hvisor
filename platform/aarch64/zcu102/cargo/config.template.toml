@@ -1,6 +1,7 @@
-[target.aarch64-unknown-none]
+[target.aarch64-unknown-none-softfloat]
 rustflags = [
     "-Clink-arg=-Tplatform/__ARCH__/__BOARD__/linker.ld",
-    "-Ctarget-feature=+a53,+v8a,+strict-align,-neon,-fp-armv8",
+    # Soft-float target lacks the hard-float A53 erratum pre-link arg.
+    "-Clink-arg=--fix-cortex-a53-843419",
     "-Cforce-frame-pointers=yes",
 ]

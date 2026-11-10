@@ -86,9 +86,9 @@ cmd_vscode() {
 
 	local TARGET
 	case "$ARCH" in
-	aarch64) TARGET="aarch64-unknown-none" ;;
-	riscv64) TARGET="riscv64gc-unknown-none-elf" ;;
-	loongarch64) TARGET="loongarch64-unknown-none" ;;
+	aarch64) TARGET="aarch64-unknown-none-softfloat" ;;
+	riscv64) TARGET="riscv64imac-unknown-none-elf" ;;
+	loongarch64) TARGET="loongarch64-unknown-none-softfloat" ;;
 	x86_64) TARGET="x86_64-unknown-none" ;;
 	*)
 		echo "ERROR: Unsupported ARCH value: $ARCH" >&2

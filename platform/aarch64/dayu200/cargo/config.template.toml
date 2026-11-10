@@ -1,6 +1,5 @@
-[target.aarch64-unknown-none]
+[target.aarch64-unknown-none-softfloat]
 rustflags = [
     "-Clink-arg=-Tplatform/__ARCH__/__BOARD__/linker.ld",
-    "-Ctarget-feature=+a55,+v8a,+strict-align,-neon,-fp-armv8",
     "-Cforce-frame-pointers=yes",
 ]
