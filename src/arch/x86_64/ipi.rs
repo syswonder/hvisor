@@ -116,10 +116,10 @@ pub fn send_ipi(value: u64) -> HvResult {
         match delivery_mode {
             IpiDeliveryMode::FIXED => {
                 // info!("dest: {:x}, vector: {:x}", dest, vector);
-                inject_vector(dest, vector, None, false);
+                inject_vector(dest, vector, None, false, false);
             }
             IpiDeliveryMode::NMI => {
-                inject_vector(dest, 2, None, false);
+                inject_vector(dest, 2, None, false, false);
             }
             IpiDeliveryMode::INIT => {}
             IpiDeliveryMode::START_UP => {

@@ -32,7 +32,7 @@ use crate::{
     consts::{self, core_end, PER_CPU_SIZE},
     cpu_data::{this_cpu_data, this_zone, VcpuState},
     device::iommu,
-    device::irqchip::pic::{check_pending_vectors, clear_vectors, ioapic, lapic::VirtLocalApic},
+    device::irqchip::pic::{check_pending_vectors, ioapic, lapic::VirtLocalApic},
     error::{HvError, HvResult},
     memory::{
         addr::{phys_to_virt, PHYS_VIRT_OFFSET},
@@ -312,8 +312,6 @@ impl ArchCpu {
         }
 
         self.host_stack_top = (core_end() + (self.cpuid + 1) * PER_CPU_SIZE) as _;
-
-        clear_vectors(self.cpuid);
 
         unsafe { self.vmx_launch() };
 

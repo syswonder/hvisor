@@ -18,20 +18,18 @@ use crate::{
     arch::{
         acpi::try_get_cpu_id,
         cpu::{this_apic_id, this_cpu_id},
-        idt, ipi,
-        mmio::MMIoDevice,
         zone::HvArchZoneConfig,
     },
     cpu_data::this_zone,
     device::irqchip::pic::inject_vector,
+    device::irqchip::pic::ioapic_state::{Delivery, IoApicState},
     error::HvResult,
     memory::{GuestPhysAddr, MMIOAccess},
     platform::ROOT_ZONE_IOAPIC_BASE,
     zone::{this_zone_id, Zone},
 };
-use alloc::{sync::Arc, vec::Vec};
+use alloc::vec::Vec;
 use bit_field::BitField;
-use core::{ops::Range, u32};
 use spin::{Mutex, Once};
 use x2apic::ioapic::IoApic;
 use x86_64::instructions::port::Port;
@@ -61,7 +59,7 @@ static VIRT_IOAPIC: Once<VirtIoApic> = Once::new();
 #[derive(Default)]
 struct VirtIoApicUnlocked {
     cur_reg: u32,
-    rte: [u64; (IOAPIC_MAX_REDIRECT_ENTRIES + 1) as usize],
+    state: IoApicState,
 }
 
 pub struct VirtIoApic {
@@ -101,11 +99,11 @@ impl VirtIoApic {
                     //FIXME: we do not allow non-root to use uart interrupt
                     return Ok(0xffff_ffff_ffff_ffff);
                 }
-                if let Some(entry) = inner.rte.get(index) {
+                if let Some(entry) = inner.state.entry(index) {
                     if reg % 2 == 0 {
-                        Ok((*entry).get_bits(0..=31))
+                        Ok(entry.get_bits(0..=31))
                     } else {
-                        Ok((*entry).get_bits(32..=63))
+                        Ok(entry.get_bits(32..=63))
                     }
                 } else {
                     Ok(0)
@@ -129,74 +127,105 @@ impl VirtIoApic {
         assert!(gpa == 0x10);
 
         let mut inner = ioapic.lock();
+        let mut replay = None;
         match inner.cur_reg {
             IoApicReg::ID | IoApicReg::VERSION | IoApicReg::ARBITRATION => {}
             mut reg => {
                 reg -= IoApicReg::TABLE_BASE;
                 let index = (reg >> 1) as usize;
-                if let Some(entry) = inner.rte.get_mut(index) {
-                    if reg % 2 == 0 {
-                        entry.set_bits(0..=31, value.get_bits(0..=31));
+                if let Some(entry) = inner.state.entry(index) {
+                    let value = if reg % 2 == 0 {
+                        value as u32
                     } else {
                         let original_dest = value.get_bits(24..=31);
-                        if let Some(dest_cpu) = try_get_cpu_id(original_dest as usize) {
+                        let dest = if let Some(dest_cpu) = try_get_cpu_id(original_dest as usize) {
                             if this_zone().read().cpu_set().contains_cpu(dest_cpu) {
-                                entry.set_bits(56..=63, original_dest);
+                                original_dest
                             } else {
-                                let dest = this_apic_id() as u64;
-                                info!(
-                                    "redirect irq {:x} to cpu {:x} in another zone! entry: {:x?}",
-                                    index, dest, *entry
-                                );
-                                entry.set_bits(56..=63, dest);
+                                this_apic_id() as u64
                             }
                         } else {
-                            let dest = this_apic_id() as u64;
-                            info!(
-                                "redirect irq {:x} to cpu {:x} in another zone, unknown dest {:x}! entry: {:x?}",
-                                index, dest, original_dest, *entry
-                            );
-                            entry.set_bits(56..=63, dest);
-                        }
-
-                        /*if zone_id == 0 {
-                            // info!("1 write {:x} entry: {:x?}", index, *entry);
-                            // only root zone modify the real I/O APIC
-                            // unsafe { configure_gsi_from_raw(index as _, *entry) };
-                        }*/
-                    }
+                            this_apic_id() as u64
+                        };
+                        (value as u32 & 0x00ff_ffff) | ((dest as u32) << 24)
+                    };
+                    replay = inner.state.write_half(index, reg % 2 != 0, value);
                     if zone_id == 0 {
-                        // only root zone modify the real I/O APIC
-                        unsafe { configure_gsi_from_raw(index as _, *entry) };
+                        let entry = inner.state.entry(index).unwrap_or(entry);
+                        unsafe { configure_gsi_from_raw(index as _, entry) };
                     }
                 }
             }
         }
+        if let Some(delivery) = replay {
+            Self::inject_delivery(delivery, false);
+        }
         Ok(())
+    }
+
+    fn inject_delivery(delivery: Delivery, allow_repeat: bool) {
+        let dest =
+            try_get_cpu_id(delivery.entry.get_bits(56..=63) as usize).unwrap_or_else(this_cpu_id);
+        inject_vector(
+            dest,
+            delivery.entry as u8,
+            None,
+            allow_repeat,
+            delivery.level,
+        );
     }
 
     fn get_irq_cpu(&self, irq: usize, zone_id: usize) -> Option<usize> {
-        let ioapic = self.inner.get(zone_id).unwrap();
-        if let Some(entry) = ioapic.lock().rte.get(irq) {
-            let dest = try_get_cpu_id(entry.get_bits(56..=63) as usize).unwrap_or_else(this_cpu_id);
-            return Some(dest);
-        }
-        None
+        let ioapic = self.inner.get(zone_id)?;
+        let entry = ioapic.lock().state.entry(irq)?;
+        Some(try_get_cpu_id(entry.get_bits(56..=63) as usize).unwrap_or_else(this_cpu_id))
     }
 
-    fn trigger(&self, irq: usize, allow_repeat: bool) -> HvResult {
-        let zone_id = this_zone_id();
-        let ioapic = self.inner.get(zone_id).unwrap();
-        if let Some(entry) = ioapic.lock().rte.get(irq) {
-            // TODO: physical & logical mode
-            let dest = try_get_cpu_id(entry.get_bits(56..=63) as usize).unwrap_or_else(this_cpu_id);
-            let masked = entry.get_bit(16);
-            let vector = entry.get_bits(0..=7) as u8;
-            if !masked && vector >= 0x20 {
-                inject_vector(dest, vector, None, allow_repeat);
-            }
+    fn pulse(&self, irq: usize, allow_repeat: bool) {
+        let ioapic = self.inner.get(this_zone_id()).unwrap();
+        let mut inner = ioapic.lock();
+        let delivery = inner.state.pulse(irq);
+        if let Some(delivery) = delivery {
+            Self::inject_delivery(delivery, allow_repeat);
         }
-        Ok(())
+    }
+
+    fn set_line(&self, zone_id: usize, irq: usize, high: bool) -> bool {
+        let Some(ioapic) = self.inner.get(zone_id) else {
+            return false;
+        };
+        let mut inner = ioapic.lock();
+        if inner.state.entry(irq).is_none() {
+            return false;
+        }
+        let delivery = inner.state.set_line(irq, high);
+        if let Some(delivery) = delivery {
+            Self::inject_delivery(delivery, false);
+        }
+        true
+    }
+
+    fn eoi(&self, zone_id: usize, vector: u8) {
+        let Some(ioapic) = self.inner.get(zone_id) else {
+            return;
+        };
+        let mut inner = ioapic.lock();
+        let deliveries = inner.state.eoi(vector);
+        for delivery in deliveries.into_iter().flatten() {
+            Self::inject_delivery(delivery, false);
+        }
+    }
+
+    fn reset(&self, zone_id: usize) {
+        if let Some(ioapic) = self.inner.get(zone_id) {
+            ioapic.lock().state = IoApicState::default();
+        }
+    }
+
+    fn begin_shutdown(&self, zone_id: usize) {
+        if let Some(ioapic) = self.inner.get(zone_id) {
+            ioapic.lock().state.begin_shutdown();
+        }
     }
 }
 
@@ -245,7 +274,7 @@ pub fn init_virt_ioapic(max_zones: usize) {
 }
 
 pub fn ioapic_inject_irq(irq: u8, allow_repeat: bool) {
-    VIRT_IOAPIC.get().unwrap().trigger(irq as _, allow_repeat);
+    VIRT_IOAPIC.get().unwrap().pulse(irq as _, allow_repeat);
 }
 
 pub fn get_irq_cpu(irq: usize, zone_id: usize) -> usize {
@@ -254,4 +283,20 @@ pub fn get_irq_cpu(irq: usize, zone_id: usize) -> usize {
         .unwrap()
         .get_irq_cpu(irq, zone_id)
         .unwrap()
+}
+
+pub fn ioapic_set_line(zone_id: usize, irq: usize, high: bool) -> bool {
+    VIRT_IOAPIC.get().unwrap().set_line(zone_id, irq, high)
+}
+
+pub fn ioapic_eoi(zone_id: usize, vector: u8) {
+    VIRT_IOAPIC.get().unwrap().eoi(zone_id, vector);
+}
+
+pub fn ioapic_reset(zone_id: usize) {
+    VIRT_IOAPIC.get().unwrap().reset(zone_id);
+}
+
+pub fn ioapic_begin_shutdown(zone_id: usize) {
+    VIRT_IOAPIC.get().unwrap().begin_shutdown(zone_id);
 }
