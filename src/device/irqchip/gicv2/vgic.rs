@@ -32,8 +32,9 @@ use crate::device::irqchip::gicv2::lr::{
     clear_guest_sgi_pending, clear_guest_sgi_pending_sources, read_pending_sgi_lr_summary,
     MAINTENANCE_INTERRUPT,
 };
+use crate::device::irqchip::gicv2::pending::MAX_CPU_NUM;
 use crate::device::irqchip::gicv2::GICV2;
-use crate::device::irqchip::PendingR0;
+use crate::device::irqchip::{GuestIrqSignal, PendingR0};
 use crate::error::HvResult;
 use crate::memory::{mmio_perform_access, MMIOAccess, MemFlags, MemoryRegion};
 use crate::zone::Zone;
@@ -412,8 +413,19 @@ fn handle_gicd_intid_pending_access(
             }
             if is_clear {
                 clear_guest_sgi_pending(target_cpu, irq_id);
+            } else if target_cpu >= MAX_CPU_NUM {
+                // GICv2 can only encode sources 0..8.
+                warn!(
+                    "GICv2 SGI {} from CPU{} has no valid source",
+                    irq_id, target_cpu
+                );
             } else {
-                crate::device::irqchip::post_guest_irq(target_cpu, irq_id, Some(target_cpu));
+                crate::device::irqchip::post_guest_irq(
+                    target_cpu,
+                    irq_id,
+                    Some(target_cpu),
+                    GuestIrqSignal::Edge,
+                );
             }
         }
         // Forward only the physical PPI bits owned by this zone.
@@ -473,7 +485,12 @@ fn handle_gicd_sgi_pending_access(mmio: &mut MMIOAccess, is_clear: bool) -> HvRe
             } else {
                 for source in 0..8 {
                     if source_mask.get_bit(source) {
-                        crate::device::irqchip::post_guest_irq(target_cpu, irq_id, Some(source));
+                        crate::device::irqchip::post_guest_irq(
+                            target_cpu,
+                            irq_id,
+                            Some(source),
+                            GuestIrqSignal::Edge,
+                        );
                     }
                 }
             }

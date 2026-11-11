@@ -158,6 +158,7 @@ pub fn sync_exception_handler(current_cpu: &mut ArchCpu) {
             panic!("Unhandled sync exception");
         }
     }
+    crate::device::irqchip::flush_current_guest_irqs();
 }
 
 /// Check if the instruction is compressed.
@@ -395,6 +396,7 @@ pub fn interrupts_arch_handle(current_cpu: &mut ArchCpu) {
             );
         }
     }
+    crate::device::irqchip::flush_current_guest_irqs();
 }
 
 /// Handle supervisor timer interrupt.

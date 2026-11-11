@@ -16,7 +16,7 @@
 use super::lr::{clear_guest_sgi, lr_pending_sgi_mask, MAINTENANCE_INTERRUPT};
 use super::CPU_UNUSED_GICR_BASE;
 use super::{gicd::GICD_LOCK, is_spi};
-use crate::device::irqchip::PendingR0;
+use crate::device::irqchip::{GuestIrqSignal, PendingR0};
 use crate::platform::BOARD_MPIDR_MAPPINGS;
 use crate::{
     arch::zone::{GicConfig, HvArchZoneConfig},
@@ -298,7 +298,12 @@ pub fn vgicv3_redist_handler(mmio: &mut MMIOAccess, cpu: usize) -> HvResult {
                                 continue;
                             }
                             if is_sgi_set_pending {
-                                crate::device::irqchip::post_guest_irq(cpu, irq_id, None);
+                                crate::device::irqchip::post_guest_irq(
+                                    cpu,
+                                    irq_id,
+                                    None,
+                                    GuestIrqSignal::Edge,
+                                );
                             } else {
                                 clear_guest_sgi(cpu, irq_id);
                             }
