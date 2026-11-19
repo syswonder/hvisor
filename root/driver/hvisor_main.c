@@ -1,0 +1,591 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/**
+ * Copyright (c) 2025 Syswonder
+ *
+ * Syswonder Website:
+ *      https://www.syswonder.org
+ *
+ * Authors:
+ *      Guowei Li <2401213322@stu.pku.edu.cn>
+ */
+#include <asm/cacheflush.h>
+#include <linux/clk.h>
+#include <linux/delay.h>
+#include <linux/eventfd.h>
+#include <linux/gfp.h>
+#include <linux/init.h>
+#include <linux/interrupt.h>
+#include <linux/io.h>
+#include <linux/kernel.h>
+#include <linux/miscdevice.h>
+#include <linux/mm.h>
+#include <linux/module.h>
+#include <linux/of.h>
+#include <linux/of_irq.h>
+#include <linux/of_reserved_mem.h>
+#include <linux/reset.h>
+#include <linux/sched/signal.h>
+#include <linux/slab.h>
+#include <linux/string.h>
+#include <linux/uaccess.h>
+#include <linux/version.h>
+#include <linux/vmalloc.h>
+
+#include "hvisor.h"
+#include "zone_config.h"
+
+#include "virtio/scmi/server.h"
+
+extern bool __clk_is_enabled(const struct clk *clk);
+extern const char *__clk_get_name(const struct clk *clk);
+extern unsigned long clk_get_rate(struct clk *clk);
+extern int clk_set_rate(struct clk *clk, unsigned long rate);
+extern int clk_prepare_enable(struct clk *clk);
+extern void clk_disable_unprepare(struct clk *clk);
+
+/* Reset controller functions */
+#include <linux/reset.h>
+
+extern struct reset_control *reset_control_get(struct device *dev,
+                                               const char *id);
+extern struct reset_control *reset_control_get_optional(struct device *dev,
+                                                        const char *id);
+extern struct reset_control *devm_reset_control_get(struct device *dev,
+                                                    const char *id);
+extern void reset_control_put(struct reset_control *rstc);
+extern int reset_control_reset(struct reset_control *rstc);
+extern int reset_control_assert(struct reset_control *rstc);
+extern int reset_control_deassert(struct reset_control *rstc);
+extern struct reset_control *get_reset_domain_by_id(unsigned int reset_id);
+
+struct virtio_bridge *virtio_bridge;
+int virtio_irq = -1;
+static struct task_struct *task = NULL;
+struct eventfd_ctx *virtio_irq_ctx = NULL;
+
+// initial virtio el2 shared region
+static int hvisor_init_virtio(void) {
+    int err;
+    if (virtio_irq == -1) {
+        pr_err("virtio device is not available\n");
+        return ENOTTY;
+    }
+    virtio_bridge = (struct virtio_bridge *)__get_free_pages(GFP_KERNEL, 0);
+    if (virtio_bridge == NULL)
+        return -ENOMEM;
+    SetPageReserved(virt_to_page(virtio_bridge));
+    // init device region
+    memset(virtio_bridge, 0, sizeof(struct virtio_bridge));
+    err = hvisor_call(HVISOR_HC_INIT_VIRTIO, __pa(virtio_bridge), 0);
+    if (err)
+        return err;
+    return 0;
+}
+
+// finish virtio req and send result to el2
+static int hvisor_finish_req(void) {
+    int err;
+    err = hvisor_call(HVISOR_HC_FINISH_REQ, 0, 0);
+    if (err)
+        return err;
+    return 0;
+}
+
+#if defined(LOONGARCH64) || defined(X86_64)
+static int hvisor_deassert_irq(struct hvisor_irq_line_args __user *arg) {
+    struct hvisor_irq_line_args kargs;
+
+    if (copy_from_user(&kargs, arg, sizeof(kargs)))
+        return -EFAULT;
+
+    pr_debug("hvisor.ko: deassert zone=%u irq=%u\n", kargs.zone_id,
+             kargs.irq_id);
+    return hvisor_call(HVISOR_HC_CLEAR_INJECT_IRQ, kargs.zone_id, kargs.irq_id);
+}
+#endif
+
+// Flush mapped cache range to memory.
+static int flush_cache_mapped(void *vaddr, __u64 size) {
+    unsigned long start, end, addr, line_size;
+    size = PAGE_ALIGN(size);
+    start = (unsigned long)vaddr;
+    end = start + size;
+
+#if defined(ARM64)
+    asm volatile("mrs %0, ctr_el0" : "=r"(line_size));
+    line_size = 4 << ((line_size >> 16) & 0xf);
+    // Clean and Invalidate Data Cache to Point of Coherency (PoC)
+    addr = start & ~(line_size - 1);
+    while (addr < end) {
+        asm volatile("dc civac, %0" : : "r"(addr) : "memory");
+        addr += line_size;
+    }
+    // barrier, confirm operations are completed and other cores can see the
+    // changes.
+    asm volatile("dsb sy" : : : "memory");
+#elif defined(RISCV64)
+    // TODO: implement riscv64 flush operation
+#elif defined(LOONGARCH64)
+    // TODO: implement loongarch64 flush operation
+#elif defined(X86_64)
+    // TODO: implement x86_64 flush operation
+#else
+    pr_err("hvisor.ko: unsupported architecture\n");
+#endif
+    return 0;
+}
+
+static int hvisor_load_image(struct hvisor_load_image_args __user *arg) {
+    struct hvisor_load_image_args kargs;
+    void *vaddr = NULL;
+    __u64 map_phys;
+    __u64 page_offs;
+    __u64 map_size;
+    void *dst;
+    int ret = 0;
+
+    if (copy_from_user(&kargs, arg, sizeof(kargs)))
+        return -EFAULT;
+
+    if (!kargs.user_buffer || !kargs.size)
+        return -EINVAL;
+
+    // Align to page boundary
+    map_phys = kargs.load_paddr & PAGE_MASK;
+    page_offs = kargs.load_paddr - map_phys;
+    if (kargs.size > U64_MAX - page_offs)
+        return -EINVAL;
+    map_size = PAGE_ALIGN(kargs.size + page_offs);
+    if (map_size < kargs.size)
+        return -EINVAL;
+
+    // This is physical RAM for image loading, not MMIO, so keep it WB
+    // cacheable.
+    vaddr = memremap(map_phys, map_size, MEMREMAP_WB);
+    if (!vaddr) {
+        return -ENOMEM;
+    }
+
+    dst = (char *)vaddr + page_offs;
+    if (copy_from_user(dst, u64_to_user_ptr(kargs.user_buffer), kargs.size)) {
+        ret = -EFAULT;
+        goto out;
+    }
+
+    // Clean D-cache to PoC first so new contents are visible globally.
+    ret = flush_cache_mapped(vaddr, map_size);
+    if (ret)
+        goto out;
+
+    // Then invalidate I-cache for the written image range.
+    flush_icache_range((unsigned long)dst, (unsigned long)dst + kargs.size);
+
+out:
+    memunmap(vaddr);
+    return ret;
+}
+
+static int hvisor_zone_start(zone_config_t __user *arg) {
+    int err = 0;
+    zone_config_t *zone_config = kmalloc(sizeof(zone_config_t), GFP_KERNEL);
+
+    if (zone_config == NULL) {
+        pr_err("hvisor.ko: failed to allocate memory for zone_config\n");
+    }
+
+    if (copy_from_user(zone_config, arg, sizeof(zone_config_t))) {
+        pr_err("hvisor.ko: failed to copy from user\n");
+        kfree(zone_config);
+        return -EFAULT;
+    }
+
+    pr_info("hvisor.ko: invoking hypercall to start the zone\n");
+
+    err = hvisor_call(HVISOR_HC_START_ZONE, __pa(zone_config),
+                      sizeof(zone_config_t));
+    kfree(zone_config);
+    return err;
+}
+
+static int hvisor_set_boot_mode(struct hv_zone_boot_mode __user *arg) {
+    int err;
+    struct hv_zone_boot_mode *boot_mode =
+        kmalloc(sizeof(struct hv_zone_boot_mode), GFP_KERNEL);
+
+    if (boot_mode == NULL) {
+        pr_err("hvisor.ko: failed to allocate memory for boot mode\n");
+        return -ENOMEM;
+    }
+
+    if (copy_from_user(boot_mode, arg, sizeof(struct hv_zone_boot_mode))) {
+        pr_err("hvisor.ko: failed to copy boot mode from user\n");
+        kfree(boot_mode);
+        return -EFAULT;
+    }
+
+    err = hvisor_call(HVISOR_HC_SET_BOOT_MODE, __pa(boot_mode),
+                      sizeof(struct hv_zone_boot_mode));
+    kfree(boot_mode);
+    return err;
+}
+
+// #ifndef LOONGARCH64
+// static int is_reserved_memory(unsigned long phys, unsigned long size) {
+//     struct device_node *parent, *child;
+//     struct reserved_mem *rmem;
+//     phys_addr_t mem_base;
+//     size_t mem_size;
+//     int count = 0;
+//     parent = of_find_node_by_path("/reserved-memory");
+//     count = of_get_child_count(parent);
+
+//     for_each_child_of_node(parent, child) {
+//         rmem = of_reserved_mem_lookup(child);
+//         mem_base = rmem->base;
+//         mem_size = rmem->size;
+//         if (mem_base <= phys && (mem_base + mem_size) >= (phys + size)) {
+//             return 1;
+//         }
+//     }
+//     return 0;
+// }
+// #endif
+
+static int hvisor_config_check(u64 __user *arg) {
+    int err = 0;
+    u64 *config;
+    config = kmalloc(sizeof(u64), GFP_KERNEL);
+    err = hvisor_call(HVISOR_HC_CONFIG_CHECK, __pa(config), 0);
+
+    if (err != 0) {
+        pr_err("hvisor.ko: failed to get hvisor config\n");
+    }
+
+    if (copy_to_user(arg, config, sizeof(u64))) {
+        pr_err("hvisor.ko: failed to copy to user\n");
+        kfree(config);
+        return -EFAULT;
+    }
+
+    kfree(config);
+    return err;
+}
+
+static int hvisor_get_ecam_base(u64 __user *arg) {
+    int err = 0;
+    u64 *ecam_base;
+
+    ecam_base = kmalloc(sizeof(u64), GFP_KERNEL);
+    if (ecam_base == NULL) {
+        pr_err("hvisor.ko: failed to allocate memory for ecam base\n");
+        return -ENOMEM;
+    }
+    *ecam_base = 0;
+
+    err = hvisor_call(HVISOR_HC_GET_ECAM_BASE, __pa(ecam_base), 0);
+    if (err != 0) {
+        pr_err("hvisor.ko: failed to get ecam base\n");
+        kfree(ecam_base);
+        return err;
+    }
+
+    if (copy_to_user(arg, ecam_base, sizeof(u64))) {
+        pr_err("hvisor.ko: failed to copy ecam base to user\n");
+        kfree(ecam_base);
+        return -EFAULT;
+    }
+
+    kfree(ecam_base);
+    return 0;
+}
+
+static int hvisor_zone_list(zone_list_args_t __user *arg) {
+    int ret;
+    zone_info_t *zones;
+    zone_list_args_t args;
+
+    /* Copy user provided arguments to kernel space */
+    if (copy_from_user(&args, arg, sizeof(zone_list_args_t))) {
+        pr_err("hvisor.ko: failed to copy from user\n");
+        return -EFAULT;
+    }
+
+    zones = kmalloc(args.cnt * sizeof(zone_info_t), GFP_KERNEL);
+    memset(zones, 0, args.cnt * sizeof(zone_info_t));
+
+    ret = hvisor_call(HVISOR_HC_ZONE_LIST, __pa(zones), args.cnt);
+    if (ret < 0) {
+        pr_err("hvisor.ko: failed to get zone list\n");
+        goto out;
+    }
+    // copy result back to user space
+    if (copy_to_user(args.zones, zones, ret * sizeof(zone_info_t))) {
+        pr_err("hvisor.ko: failed to copy to user\n");
+        goto out;
+    }
+out:
+    kfree(zones);
+    return ret;
+}
+
+static long hvisor_ioctl(struct file *file, unsigned int ioctl,
+                         unsigned long arg) {
+    int err = 0;
+    switch (ioctl) {
+    case HVISOR_INIT_VIRTIO:
+        err = hvisor_init_virtio();
+        task = get_current(); // get hvisor user process
+        break;
+    case HVISOR_ZONE_START:
+        err = hvisor_zone_start((zone_config_t __user *)arg);
+        break;
+    case HVISOR_SET_BOOT_MODE:
+        err = hvisor_set_boot_mode((struct hv_zone_boot_mode __user *)arg);
+        break;
+    case HVISOR_ZONE_SHUTDOWN:
+        err = hvisor_call(HVISOR_HC_SHUTDOWN_ZONE, arg, 0);
+        break;
+    case HVISOR_ZONE_LIST:
+        err = hvisor_zone_list((zone_list_args_t __user *)arg);
+        break;
+    case HVISOR_FINISH_REQ:
+        err = hvisor_finish_req();
+        break;
+    case HVISOR_CONFIG_CHECK:
+        err = hvisor_config_check((u64 __user *)arg);
+        break;
+    case HVISOR_GET_ECAM_BASE:
+        err = hvisor_get_ecam_base((u64 __user *)arg);
+        break;
+    case HVISOR_SET_EVENTFD: {
+        struct eventfd_ctx *ctx = eventfd_ctx_fdget((int)arg);
+        if (IS_ERR(ctx)) {
+            err = PTR_ERR(ctx);
+        } else {
+            if (virtio_irq_ctx)
+                eventfd_ctx_put(virtio_irq_ctx);
+            virtio_irq_ctx = ctx;
+        }
+        break;
+    }
+    case HVISOR_LOAD_IMAGE:
+        err = hvisor_load_image((struct hvisor_load_image_args __user *)arg);
+        break;
+    case HVISOR_SCMI_CLOCK_IOCTL:
+        err = hvisor_scmi_clock_ioctl(
+            (struct hvisor_scmi_clock_args __user *)arg);
+        break;
+    case HVISOR_SCMI_RESET_IOCTL:
+        err = hvisor_scmi_reset_ioctl(
+            (struct hvisor_scmi_reset_args __user *)arg);
+        break;
+    case HVISOR_SCMI_POWER_IOCTL:
+        err = hvisor_scmi_power_ioctl(
+            (struct hvisor_scmi_power_args __user *)arg);
+        break;
+#if defined(LOONGARCH64) || defined(X86_64)
+    case HVISOR_DEASSERT_IRQ:
+        err = hvisor_deassert_irq((struct hvisor_irq_line_args __user *)arg);
+        break;
+#endif
+    default:
+        err = -EINVAL;
+        break;
+    }
+    return err;
+}
+
+// Kernel mmap handler
+static int hvisor_map(struct file *filp, struct vm_area_struct *vma) {
+    unsigned long phys;
+    int err;
+    if (vma->vm_pgoff == 0) {
+        // virtio_bridge must be aligned to one page.
+        phys = virt_to_phys(virtio_bridge);
+        // vma->vm_flags |= (VM_IO | VM_LOCKED | (VM_DONTEXPAND | VM_DONTDUMP));
+        // Not sure should we add this line.
+        err = remap_pfn_range(vma, vma->vm_start, phys >> PAGE_SHIFT,
+                              vma->vm_end - vma->vm_start, vma->vm_page_prot);
+        if (err)
+            return err;
+        pr_info("virtio bridge mmap succeed!\n");
+    } else {
+        size_t size = vma->vm_end - vma->vm_start;
+        // TODO: add check for non root memory region.
+        // memremap(0x50000000, 0x30000000, MEMREMAP_WB);
+        // vm_pgoff is the physical page number.
+        // if (!is_reserved_memory(vma->vm_pgoff << PAGE_SHIFT, size)) {
+        //     pr_err("The physical address to be mapped is not within the
+        //     reserved memory\n"); return -EFAULT;
+        // }
+        err = remap_pfn_range(vma, vma->vm_start, vma->vm_pgoff, size,
+                              vma->vm_page_prot);
+        if (err)
+            return err;
+        pr_info("non root region mmap succeed!\n");
+    }
+    return 0;
+}
+
+static const struct file_operations hvisor_fops = {
+    .owner = THIS_MODULE,
+    .unlocked_ioctl = hvisor_ioctl,
+    .compat_ioctl = hvisor_ioctl,
+    .mmap = hvisor_map,
+};
+
+static struct miscdevice hvisor_misc_dev = {
+    .minor = MISC_DYNAMIC_MINOR,
+    .name = "hvisor",
+    .fops = &hvisor_fops,
+};
+
+/**
+ * @brief Virtio interrupt handler for hypervisor virtio devices
+ *
+ * This function handles virtio interrupts by signaling the userspace virtio
+ * daemon via an eventfd. It validates the device context and signals the
+ * eventfd to wake up the userspace process handling virtio operations.
+ *
+ * @param irq The interrupt number (unused in this handler)
+ * @param dev_id Pointer to the device identifier structure
+ * @return irqreturn_t IRQ_HANDLED if interrupt was processed successfully,
+ *         IRQ_NONE if the interrupt was not for this device or context was
+ * invalid
+ */
+static irqreturn_t virtio_irq_handler(int irq, void *dev_id) {
+    // Check the device id and virtio_irq_ctx is valid.
+    if (dev_id != &hvisor_misc_dev || !virtio_irq_ctx) {
+        return IRQ_NONE;
+    }
+
+    // Wake up the userspace virtio daemon.
+    // Linux 6.8+ simplified eventfd_signal to one argument and return void
+    // static inline void eventfd_signal(struct eventfd_ctx *ctx) in eventfd.h
+#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 8, 0)
+    eventfd_signal(virtio_irq_ctx);
+#else
+    /* e.g. Linux 5.10: eventfd_signal(ctx, n) returns __u64 (amount
+     * incremented). */
+    if (eventfd_signal(virtio_irq_ctx, 1) == 0)
+        pr_err("eventfd_signal: counter overflow or no increment\n");
+#endif
+
+#ifdef LOONGARCH64
+    /* Re-arm the level-like wakeup line after recording the eventfd kick. */
+    if (hvisor_call(HVISOR_HC_CLEAR_INJECT_IRQ, 0, HVISOR_VIRTIO_WAKEUP_HWI))
+        pr_err_ratelimited("failed to acknowledge virtio wakeup HWI\n");
+#endif
+
+    return IRQ_HANDLED;
+}
+
+/*
+** Module Init function
+*/
+static int __init hvisor_init(void) {
+    int err;
+    struct device_node *node = NULL;
+
+    // u32 *irq;
+    err = misc_register(&hvisor_misc_dev);
+    if (err) {
+        pr_err("hvisor_misc_register failed!!!\n");
+        return err;
+    }
+#ifndef X86_64
+    // SCMI server is backed by the device tree (of_clk_get etc.); x86_64 has
+    // no DT, so skip it there.
+    err = hvisor_scmi_init();
+    if (err) {
+        pr_err("hvisor SCMI init failed: %d\n", err);
+        misc_deregister(&hvisor_misc_dev);
+        return err;
+    }
+#endif
+#ifndef X86_64
+    // probe hvisor virtio device.
+    // The irq number must be retrieved from dtb node, because it is different
+    // from GIC's IRQ number.
+    node = of_find_node_by_path("/hvisor_virtio_device");
+    if (!node) {
+        pr_err("Critical: Missing device tree node!\n");
+        pr_err("   Please add the following to your device tree:\n");
+        pr_err("   hvisor_virtio_device {\n");
+        pr_err("       compatible = \"hvisor\";\n");
+        pr_err("       interrupts = <0x00 0x20 0x01>;\n");
+        pr_err("   };\n");
+        err = -ENODEV;
+        goto err_misc;
+    }
+
+    virtio_irq = of_irq_get(node, 0);
+    err = request_irq(virtio_irq, virtio_irq_handler,
+                      IRQF_SHARED | IRQF_TRIGGER_RISING, "hvisor_virtio_device",
+                      &hvisor_misc_dev);
+    if (err)
+        goto err_out;
+
+    of_node_put(node);
+#else
+    // we don't use device tree in x86_64, so we have to get IRQ using hypercall
+    u32 *irq = kmalloc(sizeof(u32), GFP_KERNEL);
+    if (!irq) {
+        err = -ENOMEM;
+        goto err_misc;
+    }
+    err = hvisor_call(HVISOR_HC_GET_VIRTIO_IRQ, __pa(irq), 0);
+    if (err) {
+        kfree(irq);
+        goto err_misc;
+    }
+    virtio_irq = *irq;
+    kfree(irq);
+    err = request_irq(virtio_irq, virtio_irq_handler, IRQF_SHARED,
+                      "hvisor_virtio_device", &hvisor_misc_dev);
+    if (err)
+        goto err_out;
+#endif /* X86_64 */
+    pr_info("hvisor init done!!!\n");
+    return 0;
+
+err_out:
+    pr_err("hvisor cannot register IRQ, err is %d\n", err);
+    if (virtio_irq != -1)
+        free_irq(virtio_irq, &hvisor_misc_dev);
+    of_node_put(node);
+err_misc:
+    misc_deregister(&hvisor_misc_dev);
+#ifndef X86_64
+    hvisor_scmi_cleanup();
+#endif
+    return err;
+}
+
+/*
+** Module Exit function
+*/
+static void __exit hvisor_exit(void) {
+    if (virtio_irq != -1)
+        free_irq(virtio_irq, &hvisor_misc_dev);
+    if (virtio_irq_ctx)
+        eventfd_ctx_put(virtio_irq_ctx);
+    if (virtio_bridge != NULL) {
+        ClearPageReserved(virt_to_page(virtio_bridge));
+        free_pages((unsigned long)virtio_bridge, 0);
+    }
+    misc_deregister(&hvisor_misc_dev);
+#ifndef X86_64
+    hvisor_scmi_cleanup();
+    hvisor_put_node();
+#endif
+    pr_info("hvisor exit!!!\n");
+}
+
+module_init(hvisor_init);
+module_exit(hvisor_exit);
+
+MODULE_LICENSE("GPL");
+MODULE_AUTHOR("KouweiLee <15035660024@163.com>");
+MODULE_DESCRIPTION("The hvisor device driver");
+MODULE_VERSION("1:0.0");
