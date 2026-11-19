@@ -216,7 +216,7 @@ static void virtq_tx_handle_one_request(VirtIODevice *vdev, VirtQueue *vq,
     size_t packet_len = all_len - header_len;
     log_debug("packet send: %zu bytes", packet_len);
 
-    // The mininum packet for data link layer is 64 bytes.
+    // The minimum packet for data link layer is 64 bytes.
     char pad[64] = {0};
     if (packet_len < 64) {
         req.out_iov[req.out_count].iov_base = pad;

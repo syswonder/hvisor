@@ -214,10 +214,10 @@ void virtio_gpu_resource_unref(VirtIODevice *vdev, GPUCommand *gcmd) {
         return;
     }
 
-    virtio_gpu_resource_destory(gdev, res);
+    virtio_gpu_resource_destroy(gdev, res);
 }
 
-void virtio_gpu_resource_destory(GPUDev *gdev, GPUSimpleResource *res) {
+void virtio_gpu_resource_destroy(GPUDev *gdev, GPUSimpleResource *res) {
     if (res->scanout_bitmask) {
         for (int i = 0; i < HVISOR_VIRTIO_GPU_MAX_SCANOUTS; ++i) {
             if (res->scanout_bitmask & (1 << i)) {
@@ -474,16 +474,16 @@ void virtio_gpu_remove_drm_framebuffer(GPUScanout *scanout) {
         return;
     }
 
-    struct drm_mode_destroy_dumb destory = {0};
-    destory.handle = fb->drm_dumb_handle;
+    struct drm_mode_destroy_dumb destroy = {0};
+    destroy.handle = fb->drm_dumb_handle;
 
     drmModeRmFB(scanout->card0_fd, fb->fb_id);
     if (fb->fb_addr != NULL) {
         munmap(fb->fb_addr, fb->drm_dumb_size);
     }
-    drmIoctl(scanout->card0_fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destory);
+    drmIoctl(scanout->card0_fd, DRM_IOCTL_MODE_DESTROY_DUMB, &destroy);
 
-    log_debug("%s destoryed drm_framebuffer with id: %d, handle: %d, size: %d",
+    log_debug("%s destroyed drm_framebuffer with id: %d, handle: %d, size: %d",
               __func__, fb->fb_id, fb->drm_dumb_handle, fb->drm_dumb_size);
 
     // Reserve others
@@ -629,7 +629,7 @@ void virtio_gpu_transfer_to_host_2d(VirtIODevice *vdev, GPUCommand *gcmd) {
     }
 
     log_debug(
-        "%s transfering a region (%d, %d) + %d, %d from resource %d %d, %d",
+        "%s transferring a region (%d, %d) + %d, %d from resource %d %d, %d",
         __func__, transfer_2d.r.x, transfer_2d.r.y, transfer_2d.r.width,
         transfer_2d.r.height, res->resource_id, res->width, res->height);
 

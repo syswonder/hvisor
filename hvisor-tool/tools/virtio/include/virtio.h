@@ -122,7 +122,7 @@ static inline bool vq_is_empty(VirtQueue *vq) {
            vq->last_avail_idx;
 }
 
-// The highest abstruct representations of virtio device
+// The highest abstract representations of virtio device
 struct VirtIODevice {
     uint32_t vqs_len; // Number of virtqueues
     uint32_t zone_id; // ID of the zone to which it belongs, initialized in

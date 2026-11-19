@@ -320,7 +320,7 @@ uint32_t calc_image_hostmem(int bits_per_pixel, uint32_t width,
 void virtio_gpu_resource_unref(VirtIODevice *vdev, GPUCommand *gcmd);
 
 // Destroy the specified resource
-void virtio_gpu_resource_destory(GPUDev *gdev, GPUSimpleResource *res);
+void virtio_gpu_resource_destroy(GPUDev *gdev, GPUSimpleResource *res);
 
 // Unregister the resource of the given scanout, making the scanout invalid
 void virtio_gpu_disable_scanout(GPUDev *gdev, int scanout_id);
