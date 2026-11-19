@@ -1,6 +1,6 @@
 obj-m += hvisor.o
 obj-m += ivc.o
-ccflags-y += -I$(src)/../include
+ccflags-y += -I$(src)/../../common/include
 ccflags-y += -Wno-unused-variable
 ccflags-y += -Wno-unused-function
 ccflags-y += -fno-stack-protector
