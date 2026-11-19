@@ -47,3 +47,9 @@ DAMON = "DAMON"
 CONEXANT = "CONEXANT"
 toi = "toi"
 alle = "alle"
+
+# Linux kernel file-pointer naming convention.
+filp = "filp"
+
+# Vendor DTS property names; preserve the hardware binding spelling.
+temperture = "temperture"
