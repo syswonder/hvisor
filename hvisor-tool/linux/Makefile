@@ -1,27 +1,30 @@
 ROOT_DIR := ..
 COMMON_DIR := $(ROOT_DIR)/common
 TOOL_DIR := tool
-DAEMON_DIR := daemon/virtio
+DAEMON_DIR := daemon
+VIRTIO_DIR := $(DAEMON_DIR)/virtio
 CJSON_DIR := $(COMMON_DIR)/third_party/cJSON
 
-sources := $(wildcard $(COMMON_DIR)/*.c) \
-           $(wildcard $(TOOL_DIR)/*.c) \
-           $(wildcard $(TOOL_DIR)/boot/*.c) \
-           $(wildcard $(DAEMON_DIR)/*.c) \
-           $(wildcard $(DAEMON_DIR)/devices/blk/*.c) \
-           $(wildcard $(DAEMON_DIR)/devices/console/*.c) \
-           $(wildcard $(DAEMON_DIR)/devices/net/*.c) \
-           $(wildcard $(DAEMON_DIR)/devices/scmi/*.c) \
-           $(CJSON_DIR)/cJSON.c
+COMMON_SOURCES := $(wildcard $(COMMON_DIR)/*.c)
+TOOL_SOURCES := $(wildcard $(TOOL_DIR)/*.c) \
+                $(wildcard $(TOOL_DIR)/boot/*.c)
+DAEMON_SOURCES := $(wildcard $(VIRTIO_DIR)/*.c) \
+                  $(wildcard $(VIRTIO_DIR)/devices/blk/*.c) \
+                  $(wildcard $(VIRTIO_DIR)/devices/console/*.c) \
+                  $(wildcard $(VIRTIO_DIR)/devices/net/*.c) \
+                  $(wildcard $(VIRTIO_DIR)/devices/scmi/*.c) \
+                  $(DAEMON_DIR)/main.c
 
 ifeq ($(VIRTIO_GPU), y)
-sources += $(wildcard $(DAEMON_DIR)/devices/gpu/*.c)
+DAEMON_SOURCES += $(wildcard $(VIRTIO_DIR)/devices/gpu/*.c)
 endif
 
-objects := $(sources:.c=.o)
-ivc_demo_object := $(TOOL_DIR)/ivc_demo.o
-rpmsg_demo_object := $(TOOL_DIR)/rpmsg_demo.o
-hvisor_objects := $(filter-out $(ivc_demo_object) $(rpmsg_demo_object), $(objects))
+COMMON_OBJECTS := $(COMMON_SOURCES:.c=.o)
+TOOL_OBJECTS := $(TOOL_SOURCES:.c=.o)
+DAEMON_OBJECTS := $(DAEMON_SOURCES:.c=.o)
+CJSON_OBJECT := $(CJSON_DIR)/cJSON.o
+TOOL_HVISOR_OBJECTS := $(filter-out $(TOOL_DIR)/ivc_demo.o $(TOOL_DIR)/rpmsg_demo.o,$(TOOL_OBJECTS))
+
 BUILD_DEMOS ?= n
 ROOT ?=
 LIBC ?= gnu
@@ -51,7 +54,7 @@ endif
 
 include_dirs := -I$(COMMON_DIR)/include -I$(COMMON_DIR) \
                 -I$(TOOL_DIR)/include -I$(TOOL_DIR)/boot \
-                -I$(DAEMON_DIR)/include -I$(CJSON_DIR) -I$(TOOL_DIR)
+                -I$(VIRTIO_DIR)/include -I$(CJSON_DIR) -I$(TOOL_DIR)
 
 ifeq ($(LIBC), musl)
 include_dirs += -I$(TOOL_DIR)/compat/
@@ -93,22 +96,27 @@ ifeq ($(BUILD_DEMOS),y)
 demo_targets := $(TOOL_DIR)/ivc_demo $(TOOL_DIR)/rpmsg_demo
 endif
 
-.PHONY: all tools driver clean check-kdir
+.PHONY: all tools daemon driver clean check-kdir
 
-all: tools driver
+all: tools daemon
 
 tools: $(TOOL_DIR)/hvisor $(demo_targets)
 
-$(TOOL_DIR)/hvisor: $(hvisor_objects)
+daemon: $(DAEMON_DIR)/hvisor-virtio-daemon
+
+$(TOOL_DIR)/hvisor: $(COMMON_OBJECTS) $(TOOL_HVISOR_OBJECTS) $(CJSON_OBJECT)
 	$(CC) -o $@ $^ $(CFLAGS) $(include_dirs) $(LDFLAGS) $(LIBS)
 
-$(TOOL_DIR)/ivc_demo: $(ivc_demo_object)
+$(DAEMON_DIR)/hvisor-virtio-daemon: $(COMMON_OBJECTS) $(DAEMON_OBJECTS) $(CJSON_OBJECT)
 	$(CC) -o $@ $^ $(CFLAGS) $(include_dirs) $(LDFLAGS) $(LIBS)
 
-$(TOOL_DIR)/rpmsg_demo: $(rpmsg_demo_object)
+$(TOOL_DIR)/ivc_demo: $(COMMON_OBJECTS) $(TOOL_DIR)/ivc_demo.o $(CJSON_OBJECT)
 	$(CC) -o $@ $^ $(CFLAGS) $(include_dirs) $(LDFLAGS) $(LIBS)
 
-$(objects): %.o: %.c
+$(TOOL_DIR)/rpmsg_demo: $(COMMON_OBJECTS) $(TOOL_DIR)/rpmsg_demo.o $(CJSON_OBJECT)
+	$(CC) -o $@ $^ $(CFLAGS) $(include_dirs) $(LDFLAGS) $(LIBS)
+
+$(COMMON_OBJECTS) $(TOOL_OBJECTS) $(DAEMON_OBJECTS) $(CJSON_OBJECT): %.o: %.c
 	$(CC) $(CFLAGS) $(include_dirs) $(LIBS) -c -o $@ $<
 
 check-kdir:
@@ -120,8 +128,12 @@ driver: check-kdir
 	$(MAKE) -C driver all VIRTIO_SCMI=$(VIRTIO_SCMI)
 
 clean:
-	@rm -f $(objects) $(objects:.o=.d) \
-		$(TOOL_DIR)/hvisor $(TOOL_DIR)/ivc_demo $(TOOL_DIR)/rpmsg_demo
+	@rm -f $(COMMON_OBJECTS) $(COMMON_OBJECTS:.o=.d) \
+		$(TOOL_OBJECTS) $(TOOL_OBJECTS:.o=.d) \
+		$(DAEMON_OBJECTS) $(DAEMON_OBJECTS:.o=.d) \
+		$(CJSON_OBJECT) $(CJSON_OBJECT:.o=.d) \
+		$(TOOL_DIR)/hvisor $(TOOL_DIR)/ivc_demo $(TOOL_DIR)/rpmsg_demo \
+		$(DAEMON_DIR)/hvisor-virtio-daemon
 	@$(MAKE) -C driver clean KDIR=$(KDIR) 2>/dev/null || true
 
--include $(objects:.o=.d)
+-include $(COMMON_OBJECTS:.o=.d) $(TOOL_OBJECTS:.o=.d) $(DAEMON_OBJECTS:.o=.d) $(CJSON_OBJECT:.o=.d)
