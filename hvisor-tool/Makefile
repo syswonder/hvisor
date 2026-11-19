@@ -13,7 +13,7 @@ export VIRTIO_GPU
 export VIRTIO_SCMI
 export LIBC
 
-.PHONY: all help env tools driver clean transfer tftp transfer_nxp check-kdir check-config-change
+.PHONY: all help env tools driver clean tftp check-kdir check-config-change
 
 OUTPUT_DIR ?= output
 TFTP_DIR ?= ~/tftp
@@ -63,10 +63,6 @@ driver: env check-kdir check-config-change
 	$(MAKE) -C driver all VIRTIO_SCMI=$(VIRTIO_SCMI)
 	@mkdir -p $(OUTPUT_DIR)
 	cp driver/hvisor.ko $(OUTPUT_DIR)
-
-transfer: all
-	./trans_file.sh ./tools/hvisor
-	./trans_file.sh ./driver/hvisor.ko
 
 tftp:
 	@mkdir -p $(OUTPUT_DIR)
