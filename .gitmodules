@@ -1,3 +1,3 @@
-[submodule "root/cJSON"]
-	path = root/cJSON
+[submodule "root/common/third_party/cJSON"]
+	path = root/common/third_party/cJSON
 	url = https://github.com/DaveGamble/cJSON.git

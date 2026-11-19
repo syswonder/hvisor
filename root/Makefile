@@ -55,18 +55,18 @@ check-config-change:
 	fi
 
 tools: env check-config-change
-	$(MAKE) -C tools all
+	$(MAKE) -C linux tools
 	@mkdir -p $(OUTPUT_DIR)
-	cp tools/hvisor $(OUTPUT_DIR)
+	cp linux/tool/hvisor $(OUTPUT_DIR)
 
 driver: env check-kdir check-config-change
-	$(MAKE) -C driver all VIRTIO_SCMI=$(VIRTIO_SCMI)
+	$(MAKE) -C linux driver
 	@mkdir -p $(OUTPUT_DIR)
-	cp driver/hvisor.ko $(OUTPUT_DIR)
+	cp linux/driver/hvisor.ko $(OUTPUT_DIR)
 
 transfer: all
-	./trans_file.sh ./tools/hvisor
-	./trans_file.sh ./driver/hvisor.ko
+	./trans_file.sh ./linux/tool/hvisor
+	./trans_file.sh ./linux/driver/hvisor.ko
 
 tftp:
 	@mkdir -p $(OUTPUT_DIR)
@@ -80,13 +80,11 @@ tftp:
 
 clean: check-kdir
 	@echo "Cleaning sub-projects and output directory..."
-	@$(MAKE) -C tools clean
-	@$(MAKE) -C driver clean
+	@$(MAKE) -C linux clean
 	@rm -rf $(OUTPUT_DIR)
 
 fmt:
-# if clang-format is not installed, ask to install
 ifeq ($(shell which clang-format),)
 	$(error clang-format is not installed. Please install it.)
 endif
-	find ./tools/ ./include/ ./driver/ -name "*.c" ! -name "*.mod.c" -o -name "*.h" | xargs clang-format -i
+	find ./common/ ./linux/ -name "*.c" ! -name "*.mod.c" -o -name "*.h" | xargs clang-format -i
