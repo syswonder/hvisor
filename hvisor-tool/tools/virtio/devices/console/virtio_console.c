@@ -1,0 +1,265 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/**
+ * Copyright (c) 2025 Syswonder
+ *
+ * Syswonder Website:
+ *      https://www.syswonder.org
+ *
+ * Authors:
+ *      Guowei Li <2401213322@stu.pku.edu.cn>
+ */
+#define _GNU_SOURCE
+
+#include "virtio_console.h"
+#include "log.h"
+#include "virtio.h"
+#include <errno.h>
+#include <fcntl.h>
+#include <math.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/time.h>
+#include <termios.h>
+
+static uint8_t trashbuf[1024];
+
+static ConsoleDev *init_console_dev() {
+    ConsoleDev *dev = (ConsoleDev *)malloc(sizeof(ConsoleDev));
+    if (!dev)
+        return NULL;
+    dev->config.cols = 80;
+    dev->config.rows = 25;
+    dev->master_fd = -1;
+    dev->slave_keepalive_fd = -1;
+    dev->rx_ready = -1;
+    dev->event = NULL;
+    return dev;
+}
+
+static void virtio_console_event_handler(int fd, int epoll_type, void *param) {
+    // log_debug("%s", __func__);
+    VirtIODevice *vdev = (VirtIODevice *)param;
+    ConsoleDev *dev = (ConsoleDev *)vdev->dev;
+    VirtQueue *vq = &vdev->vqs[CONSOLE_QUEUE_RX];
+    int n;
+    ssize_t len;
+    struct iovec *iov = NULL;
+    uint16_t idx;
+
+    if (fd != dev->master_fd || !(epoll_type & EPOLLIN)) {
+        log_error("Invalid console event");
+        return;
+    }
+    if (dev->master_fd <= 0 || vdev->type != VirtioTConsole) {
+        log_error("console event handler should not be called");
+        return;
+    }
+    if (dev->rx_ready <= 0) {
+        read(dev->master_fd, trashbuf, sizeof(trashbuf));
+        return;
+    }
+    if (virtqueue_is_empty(vq)) {
+        read(dev->master_fd, trashbuf, sizeof(trashbuf));
+        virtio_inject_irq(vq);
+        return;
+    }
+
+    while (!virtqueue_is_empty(vq)) {
+        n = process_descriptor_chain(vq, &idx, &iov, NULL, 0, false);
+        if (n < 1) {
+            log_error("process_descriptor_chain failed");
+            break;
+        }
+        len = readv(dev->master_fd, iov, n);
+        if (len < 0 && errno == EWOULDBLOCK) {
+            log_debug("no more bytes");
+            vq->last_avail_idx--;
+            free(iov);
+            break;
+        } else if (len < 0) {
+            log_debug("Failed to read from console, errno is %d", errno);
+            vq->last_avail_idx--;
+            free(iov);
+            break;
+        }
+        update_used_ring(vq, idx, len);
+        free(iov);
+    }
+    virtio_inject_irq(vq);
+    return;
+}
+
+static int virtio_console_init(VirtIODevice *vdev) {
+    ConsoleDev *dev = (ConsoleDev *)vdev->dev;
+    int master_fd, slave_fd;
+    char *slave_name;
+    struct termios term_io;
+
+    master_fd = posix_openpt(O_RDWR | O_NOCTTY);
+    if (master_fd < 0) {
+        log_error("Failed to open master pty, errno is %d", errno);
+        return -1;
+    }
+    if (grantpt(master_fd) < 0) {
+        log_error("Failed to grant pty, errno is %d", errno);
+        close(master_fd);
+        return -1;
+    }
+    if (unlockpt(master_fd) < 0) {
+        log_error("Failed to unlock pty, errno is %d", errno);
+        close(master_fd);
+        return -1;
+    }
+    dev->master_fd = master_fd;
+
+    slave_name = ptsname(master_fd);
+    if (slave_name == NULL) {
+        log_error("Failed to get slave name, errno is %d", errno);
+        close(master_fd);
+        return -1;
+    }
+    log_info("char device redirected to %s", slave_name);
+    // Open and keep a slave fd in this process. Without a slave peer,
+    // master poll/epoll keeps reporting EPOLLHUP and can cause busy loops.
+    slave_fd = open(slave_name, O_RDWR);
+    if (slave_fd < 0) {
+        log_error("Failed to open slave pty, errno is %d", errno);
+        close(master_fd);
+        return -1;
+    }
+
+    // Disable line discipline to prevent the TTY
+    // from echoing the characters sent from the master back to the master.
+    tcgetattr(slave_fd, &term_io);
+    cfmakeraw(&term_io);
+    term_io.c_oflag |= ONLCR;
+    tcsetattr(slave_fd, TCSAFLUSH, &term_io);
+    dev->slave_keepalive_fd = slave_fd;
+
+    if (set_nonblocking(dev->master_fd) < 0) {
+        log_error("Failed to set nonblocking mode");
+        return -1;
+    }
+
+    dev->event =
+        add_event(dev->master_fd, EPOLLIN, virtio_console_event_handler, vdev);
+
+    if (dev->event == NULL) {
+        log_error("Can't register console event");
+        return -1;
+    }
+
+    return 0;
+}
+
+static int virtio_console_rxq_notify_handler(VirtIODevice *vdev,
+                                             VirtQueue *vq) {
+    log_debug("%s", __func__);
+    ConsoleDev *dev = (ConsoleDev *)vdev->dev;
+    if (dev->rx_ready <= 0) {
+        dev->rx_ready = 1;
+        virtqueue_disable_notify(vq);
+    }
+    return 0;
+}
+
+static void virtq_tx_handle_one_request(ConsoleDev *dev, VirtQueue *vq) {
+    int n;
+    uint16_t idx;
+    ssize_t len;
+    struct iovec *iov = NULL;
+    if (dev->master_fd <= 0) {
+        log_error("Console master fd is not ready");
+        return;
+    }
+
+    n = process_descriptor_chain(vq, &idx, &iov, NULL, 0, false);
+
+    if (n < 1) {
+        return;
+    }
+
+    len = writev(dev->master_fd, iov, n);
+    if (len < 0) {
+        log_error("Failed to write to console, errno is %d", errno);
+    }
+    update_used_ring(vq, idx, 0);
+    free(iov);
+}
+
+static int virtio_console_txq_notify_handler(VirtIODevice *vdev,
+                                             VirtQueue *vq) {
+    log_debug("%s", __func__);
+    while (!virtqueue_is_empty(vq)) {
+        virtqueue_disable_notify(vq);
+        while (!virtqueue_is_empty(vq)) {
+            virtq_tx_handle_one_request(vdev->dev, vq);
+        }
+        virtqueue_enable_notify(vq);
+    }
+    virtio_inject_irq(vq);
+    return 0;
+}
+
+static void virtio_console_reset(VirtIODevice *vdev) { (void)vdev; }
+
+static void virtio_console_close(VirtIODevice *vdev) {
+    if (!vdev)
+        return;
+
+    ConsoleDev *dev = vdev->dev;
+    if (dev) {
+        if (dev->master_fd >= 0)
+            close(dev->master_fd);
+        if (dev->slave_keepalive_fd >= 0)
+            close(dev->slave_keepalive_fd);
+        remove_event(dev->event);
+        free(dev->event);
+        free(dev);
+        vdev->dev = NULL;
+    }
+    free(vdev->vqs);
+    vdev->vqs = NULL;
+    free(vdev);
+}
+
+static int virtio_console_do_init(VirtIODevice *vdev,
+                                  const VirtioDeviceParams *params) {
+    (void)params;
+    vdev->dev = init_console_dev();
+    if (!vdev->dev)
+        return -ENOMEM;
+    return virtio_console_init(vdev);
+}
+
+const struct virtio_device_ops virtio_console_ops = {
+    .type = VirtioTConsole,
+    .features = CONSOLE_SUPPORTED_FEATURES,
+    .num_queues = CONSOLE_MAX_QUEUES,
+    .queue_max_size = VIRTQUEUE_CONSOLE_MAX_SIZE,
+    .init = virtio_console_do_init,
+    .close = virtio_console_close,
+    .reset = virtio_console_reset,
+    .notify_handlers =
+        {
+            [CONSOLE_QUEUE_RX] = virtio_console_rxq_notify_handler,
+            [CONSOLE_QUEUE_TX] = virtio_console_txq_notify_handler,
+        },
+};
+
+static int virtio_console_parse_params(const cJSON *json,
+                                       VirtioDeviceParams *out) {
+    (void)json;
+    memset(out, 0, sizeof(*out));
+    return 0;
+}
+
+static void virtio_console_free_params(VirtioDeviceParams *params) {
+    (void)params;
+}
+
+const struct virtio_config_ops virtio_console_config_ops = {
+    .parse = virtio_console_parse_params,
+    .free = virtio_console_free_params,
+};

@@ -1,0 +1,48 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/**
+ * Copyright (c) 2025 Syswonder
+ *
+ * Syswonder Website:
+ *      https://www.syswonder.org
+ *
+ * Authors:
+ *      Guowei Li <2401213322@stu.pku.edu.cn>
+ */
+/**
+ * Copyright (c) 2020 rxi
+ *
+ * This library is free software; you can redistribute it and/or modify it
+ * under the terms of the MIT license. See `log.c` for details.
+ */
+
+#ifndef LOG_H
+#define LOG_H
+
+#include <stdarg.h>
+#include <stdbool.h>
+
+#define LOG_VERSION "0.1.0"
+
+#include <syslog.h>
+
+#define log_debug(...) log_log(LOG_DEBUG, __FILE__, __LINE__, __VA_ARGS__)
+#define log_info(...) log_log(LOG_INFO, __FILE__, __LINE__, __VA_ARGS__)
+#define log_warn(...) log_log(LOG_WARNING, __FILE__, __LINE__, __VA_ARGS__)
+#define log_error(...) log_log(LOG_ERR, __FILE__, __LINE__, __VA_ARGS__)
+#define log_fatal(...) log_log(LOG_CRIT, __FILE__, __LINE__, __VA_ARGS__)
+
+/**
+ * @brief Configure the default syslog log level used by hvisor tools.
+ *
+ * This function applies the compile-time log level policy shared by the main
+ * CLI and the virtio backend after syslog has been initialized.
+ */
+void initialize_log(void);
+
+void log_set_level(int level);
+void log_set_quiet(bool enable);
+
+void log_log(int level, const char *file, int line, const char *fmt, ...);
+void multithread_log_init();
+void multithread_log_exit();
+#endif

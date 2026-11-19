@@ -1,0 +1,549 @@
+/dts-v1/;
+
+/ {
+	compatible = "rockchip,xiuos_rk3588\0rockchip,rk3588";
+	interrupt-parent = <0x01>;
+	#address-cells = <0x02>;
+	#size-cells = <0x02>;
+	model = "Rockchip RK3588 XIUOS Board (Zone2-Linux with GPU + VirtIO-SCMI)";
+
+	memory {
+		reg = <0x00 0x58000000 0x00 0x80000000>;
+		device_type = "memory";
+	};
+
+	cpus {
+		#address-cells = <0x1>;
+		#size-cells = <0x0>;
+
+		cpu-map {
+			cluster0 {
+				core0 {
+					cpu = <0x04>;
+				};
+				core1 {
+					cpu = <0x05>;
+				};
+			};
+		};
+
+		cpu@400 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a76";
+			reg = <0x400>;
+			enable-method = "psci";
+			capacity-dmips-mhz = <0x400>;
+			cpu-idle-states = <0x10>;
+			i-cache-size = <0x10000>;
+			i-cache-line-size = <0x40>;
+			i-cache-sets = <0x100>;
+			d-cache-size = <0x10000>;
+			d-cache-line-size = <0x40>;
+			d-cache-sets = <0x100>;
+			next-level-cache = <0x1b>;
+			phandle = <0x04>;
+		};
+
+		cpu@500 {
+			device_type = "cpu";
+			compatible = "arm,cortex-a76";
+			reg = <0x500>;
+			enable-method = "psci";
+			capacity-dmips-mhz = <0x400>;
+			cpu-idle-states = <0x10>;
+			i-cache-size = <0x10000>;
+			i-cache-line-size = <0x40>;
+			i-cache-sets = <0x100>;
+			d-cache-size = <0x10000>;
+			d-cache-line-size = <0x40>;
+			d-cache-sets = <0x100>;
+			next-level-cache = <0x1d>;
+			phandle = <0x05>;
+		};
+
+		idle-states {
+			entry-method = "psci";
+
+			cpu-sleep {
+				compatible = "arm,idle-state";
+				local-timer-stop;
+				arm,psci-suspend-param = <0x10000>;
+				entry-latency-us = <0x64>;
+				exit-latency-us = <0x78>;
+				min-residency-us = <0x3e8>;
+				phandle = <0x10>;
+			};
+		};
+
+		l2-cache-b0 {
+			compatible = "cache";
+			cache-size = <0x80000>;
+			cache-line-size = <0x40>;
+			cache-sets = <0x400>;
+			next-level-cache = <0x1e>;
+			phandle = <0x1b>;
+		};
+
+		l2-cache-b1 {
+			compatible = "cache";
+			cache-size = <0x80000>;
+			cache-line-size = <0x40>;
+			cache-sets = <0x400>;
+			next-level-cache = <0x1e>;
+			phandle = <0x1d>;
+		};
+
+		l3-cache {
+			compatible = "cache";
+			cache-size = <0x300000>;
+			cache-line-size = <0x40>;
+			cache-sets = <0x1000>;
+			phandle = <0x1e>;
+		};
+	};
+
+	psci {
+		compatible = "arm,psci-1.0";
+		method = "smc";
+	};
+
+	arm-pmu {
+		compatible = "arm,armv8-pmuv3";
+		interrupts = <0x01 0x07 0x08>;
+		interrupt-affinity = <0x04 0x05>;
+		phandle = <0x220>;
+	};
+
+	timer {
+		compatible = "arm,armv8-timer";
+		interrupts = <0x01 0x0d 0xf04 0x01 0x0e 0xf04 0x01 0x0b 0xf04 0x01 0x0a 0xf04>;
+	};
+
+	interrupt-controller@fe600000 {
+		compatible = "arm,gic-v3";
+		#interrupt-cells = <0x03>;
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		ranges;
+		interrupt-controller;
+		reg = <0x00 0xfe600000 0x00 0x10000 0x00 0xfe680000 0x00 0x100000>;
+		interrupts = <0x01 0x09 0x04>;
+		phandle = <0x01>;
+	};
+
+	aliases {
+	};
+
+	// ========== VirtIO-SCMI ==========
+	firmware {
+		scmi {
+			compatible = "arm,scmi-virtio";
+			#address-cells = <0x01>;
+			#size-cells = <0x00>;
+			phandle = <0x1000>;
+
+			scmi_clk: protocol@14 {
+				reg = <0x14>;
+				#clock-cells = <0x01>;
+			};
+
+			scmi_rst: protocol@16 {
+				reg = <0x16>;
+				#reset-cells = <0x01>;
+			};
+
+			scmi_pwr: protocol@11 {
+				reg = <0x11>;
+				#power-domain-cells = <0x01>;
+			};
+		};
+	};
+
+	// virtio-mmio for SCMI (zone2 IPA, mapped by hvisor)
+	virtio_mmio@ffa10000 {
+		dma-coherent;
+		interrupt-parent = <0x01>;
+		interrupts = <0x0 0x46 0x1>;
+		reg = <0x0 0xffa10000 0x0 0x200>;
+		compatible = "virtio,mmio";
+	};
+
+	// virtio-mmio for blk
+	virtio_mmio@ffa20000 {
+		dma-coherent;
+		interrupt-parent = <0x01>;
+		interrupts = <0x0 0x47 0x1>;
+		reg = <0x0 0xffa20000 0x0 0x200>;
+		compatible = "virtio,mmio";
+	};
+
+	// virtio-mmio for serial/console
+	virtio_mmio@ffa30000 {
+		dma-coherent;
+		interrupt-parent = <0x01>;
+		interrupts = <0x0 0x48 0x1>;
+		reg = <0x0 0xffa30000 0x0 0x200>;
+		compatible = "virtio,mmio";
+	};
+
+	// virtio-mmio for net
+	virtio_mmio@ffa50000 {
+		dma-coherent;
+		interrupt-parent = <0x01>;
+		interrupts = <0x0 0x49 0x1>;
+		reg = <0x0 0xffa50000 0x0 0x200>;
+		compatible = "virtio,mmio";
+	};
+
+	
+        // ========== VOP/HDMI Dependencies ==========
+        //
+        // IMPORTANT: SYS_GRF (0xfd58c000) and PMU_GRF (0xfd588000) are
+        // intentionally NOT exposed to this zone.  They are system-wide GRFs:
+        // GPIO0/GPIO1 IOMUX lives in PMU_GRF, and zone0's SPI2 (PMIC rk806)
+        // uses GPIO0 pins — passing these GRFs through let a guest driver
+        // clobber the SPI2 pinmux, breaking PMIC communication.
+        //
+        // VOP/HDMI drivers access "rockchip,grf" / "rockchip,pmu" /
+        // "rockchip,ioc-grf" regmaps unconditionally (vop2_grf_readl has no
+        // NULL guard), so instead of removing the properties we point them at
+        // VO1_GRF (0xfd5a8000), which IS passed through.  VO1_GRF is
+        // display-only: its valid registers live at low offsets (0x0004-0x0024)
+        // while the drivers' sys-grf offsets (0x0304/0x0308/0x0384) land in
+        // undefined space inside the VO1_GRF block — reads return 0, writes
+        // are dropped by the hardware.  GRF blocks are decoded at block
+        // granularity, so these accesses cannot hang the bus.
+
+        vop_grf: syscon@fd5a4000 {
+                compatible = "rockchip,rk3588-vop-grf", "syscon";
+                reg = <0x00 0xfd5a4000 0x00 0x2000>;
+        };
+
+        vo1_grf: syscon@fd5a8000 {
+                compatible = "rockchip,rk3588-vo-grf", "syscon";
+                reg = <0x00 0xfd5a8000 0x00 0x1000>;
+        };
+
+        hdptx_grf: syscon@fd5e0000 {
+                compatible = "rockchip,rk3588-hdptxphy-grf", "syscon";
+                reg = <0x00 0xfd5e0000 0x00 0x1000>;
+        };
+
+        ioc: syscon@fd5f0000 {
+                compatible = "rockchip,rk3588-ioc", "syscon";
+                reg = <0x00 0xfd5f0000 0x00 0x10000>;
+        };
+
+        sys_grf: syscon@fd58c000 {
+                compatible = "rockchip,rk3588-sys-grf", "syscon";
+                reg = <0x00 0xfd58c000 0x00 0x1000>;
+        };
+
+        pinctrl: pinctrl {
+                compatible = "rockchip,rk3588-pinctrl";
+                rockchip,grf = <&ioc>;
+                #address-cells = <0x02>;
+                #size-cells = <0x02>;
+                ranges;
+
+                hdmi {
+                        hdmim0_tx0_cec: hdmim0-tx0-cec {
+                                rockchip,pins = <4 17 5 &pcfg_pull_none>;
+                        };
+                        hdmim0_tx0_hpd: hdmim0-tx0-hpd {
+                                rockchip,pins = <1 5 5 &pcfg_pull_none>;
+                        };
+                        hdmim0_tx0_scl: hdmim0-tx0-scl {
+                                rockchip,pins = <4 15 5 &pcfg_pull_none_drv_level_5_smt>;
+                        };
+                        hdmim0_tx0_sda: hdmim0-tx0-sda {
+                                rockchip,pins = <4 16 5 &pcfg_pull_none_drv_level_1_smt>;
+                        };
+                };
+
+                pcfg_pull_none: pcfg-pull-none {
+                        bias-disable;
+                };
+                pcfg_pull_none_drv_level_5_smt: pcfg-pull-none-drv-level-5-smt {
+                        bias-disable;
+                        drive-strength = <5>;
+                        input-schmitt-enable;
+                };
+                pcfg_pull_none_drv_level_1_smt: pcfg-pull-none-drv-level-1-smt {
+                        bias-disable;
+                        drive-strength = <1>;
+                        input-schmitt-enable;
+                };
+        };
+
+        /*
+         * VOP IOMMU (rk_iommu, passthrough).  Without it the VOP has no
+         * scatter-gather support: rockchip_gem_prime_import_sg_table then
+         * requires physically contiguous buffers, which the Mali GPU (own
+         * MMU) does not provide -> gbm front buffer import fails.  With the
+         * IOMMU the DRM core uses the iommu map path instead.
+         */
+        vop_mmu: iommu@fdd97e00 {
+                compatible = "rockchip,iommu-v2";
+                reg = <0x00 0xfdd97e00 0x00 0x100>,
+                      <0x00 0xfdd97f00 0x00 0x100>;
+                interrupts = <0x00 0x9c 0x04>;
+                interrupt-names = "vop_mmu";
+                clocks = <&scmi_clk 4>, <&scmi_clk 5>;
+                clock-names = "aclk", "iface";
+                #iommu-cells = <0x00>;
+                rockchip,disable-device-link-resume;
+                rockchip,shootdown-entire;
+                status = "okay";
+        };
+
+        display_subsystem: display-subsystem {
+                compatible = "rockchip,display-subsystem";
+                ports = <&vop_out>;
+                /*
+                 * hdmi0_phy_pll = clk_hdmiphy_pixel0, the HDPTX PLL output
+                 * clock registered LOCALLY by this zone's phy driver
+                 * (fed60000 is passed through).  NOT an SCMI virtual clock:
+                 * the PLL registers live in this zone.  vop2_extend_clk_init
+                 * looks it up on the DRM master device (this node) by name,
+                 * which lets mode_valid accept HDMI modes without the v0pll
+                 * parent check.  fw_devlink (clocks phandle) makes sure the
+                 * phy probes before this master.
+                 */
+                clocks = <&hdmiphy0>;
+                clock-names = "hdmi0_phy_pll";
+                status = "okay";
+        };
+
+        vop@fdd90000 {
+                compatible = "rockchip,rk3588-vop";
+                reg = <0x00 0xfdd90000 0x00 0x4200>,
+                      <0x00 0xfdd95000 0x00 0x1000>;
+                reg-names = "regs", "gamma_lut";
+                interrupts = <0x00 0x9c 0x04>;
+                clocks = <&scmi_clk 4>, <&scmi_clk 5>,
+                         <&scmi_clk 6>, <&scmi_clk 7>,
+                         <&scmi_clk 8>, <&scmi_clk 9>,
+                         <&scmi_clk 10>, <&scmi_clk 11>,
+                         <&scmi_clk 12>, <&scmi_clk 13>,
+                         <&scmi_clk 14>, <&scmi_clk 15>,
+                         <&scmi_clk 16>;
+                clock-names = "aclk_vop", "hclk_vop",
+                              "dclk_vp0", "dclk_vp1",
+                              "dclk_vp2", "dclk_vp3",
+                              "pclk_vop", "dclk_src_vp0",
+                              "dclk_src_vp1", "dclk_src_vp2",
+                              "aclk_dovi", "aclk_vop_div2_src",
+                              "aclk_vop_root";
+                resets = <&scmi_rst 0>, <&scmi_rst 1>,
+                         <&scmi_rst 2>, <&scmi_rst 3>,
+                         <&scmi_rst 4>, <&scmi_rst 5>;
+                reset-names = "axi", "ahb", "dclk_vp0",
+                              "dclk_vp1", "dclk_vp2", "dclk_vp3";
+                power-domains = <&scmi_pwr 1>;
+                iommus = <&vop_mmu>;
+                /* sys_grf/pmu/ioc redirected to vo1_grf — see note above */
+                rockchip,grf = <&vo1_grf>;
+                rockchip,vop-grf = <&vop_grf>;
+                rockchip,vo1-grf = <&vo1_grf>;
+                rockchip,pmu = <&vo1_grf>;
+                rockchip,ioc-grf = <&vo1_grf>;
+                status = "okay";
+
+                vop_out: ports {
+                        #address-cells = <0x01>;
+                        #size-cells = <0x00>;
+
+                        /*
+                         * Plane assignment strategy (rk3588 win phys ids:
+                         * Cluster0=0 Cluster1=1 Esmart0=2 Esmart1=3
+                         * Cluster2=6 Cluster3=7 Esmart2=8 Esmart3=9).
+                         *
+                         * ALL windows are assigned to VP0 (0x3cf) - the only
+                         * VP that has a connector and ever gets driven.
+                         * VP1/VP2/VP3 are left with mask 0 and are never
+                         * registered as CRTCs.
+                         *
+                         * The vop2 driver requires every window to be
+                         * assigned to exactly one VP (the plane masks must
+                         * sum to 0x3cf), otherwise it discards the DTS
+                         * assignment and uses its default (VP0 = 0x145,
+                         * which adds Cluster0/2 + Esmart2 to VP0).
+                         *
+                         * Why everything on VP0: u-boot leaves the VOP
+                         * hardware in a dirty state - it drives the HDMI
+                         * logo on VP0 and enables arbitrary windows (seen:
+                         * Esmart1/Esmart3 with a stale DMA address
+                         * 0xedeb8000).  Those stale windows are only
+                         * disabled by vop2_disable_all_planes_for_crtc(),
+                         * which iterates vp->win_mask (= plane mask) and is
+                         * only invoked when the new mode differs from the
+                         * current hardware mode (vop2_crtc_mode_update).
+                         * If a stale window is NOT in VP0's mask it can
+                         * never be disabled: it keeps scanning the stale
+                         * address through the IOMMU, faults, and shows a
+                         * green screen.  Putting every window on VP0 makes
+                         * any mode switch clean all of them.
+                         */
+                        vp0: port@0 {
+                                reg = <0x00>;
+                                #address-cells = <0x01>;
+                                #size-cells = <0x00>;
+                                rockchip,plane-mask = <0x3cf>;   /* all 12 windows */
+                                rockchip,primary-plane = <0x02>; /* Esmart0 */
+
+                                vp0_out_hdmi0: endpoint@0 {
+                                        reg = <0x00>;
+                                        remote-endpoint = <&hdmi0_in>;
+                                };
+                        };
+                        vp1: port@1 {
+                                reg = <0x01>;
+                                #address-cells = <0x01>;
+                                #size-cells = <0x00>;
+                                rockchip,plane-mask = <0x00>;
+                        };
+                        vp2: port@2 {
+                                reg = <0x02>;
+                                #address-cells = <0x01>;
+                                #size-cells = <0x00>;
+                                rockchip,plane-mask = <0x00>;
+                        };
+                };
+        };
+
+        hdmiphy0: hdmiphy@fed60000 {
+                compatible = "rockchip,rk3588-hdptx-phy-hdmi";
+                reg = <0x00 0xfed60000 0x00 0x2000>;
+                clocks = <&scmi_clk 22>, <&scmi_clk 23>;
+                clock-names = "ref", "apb";
+                clock-output-names = "clk_hdmiphy_pixel0";
+                #clock-cells = <0x00>;
+                resets = <&scmi_rst 8>, <&scmi_rst 9>, <&scmi_rst 10>,
+                         <&scmi_rst 11>, <&scmi_rst 12>, <&scmi_rst 13>,
+                         <&scmi_rst 14>;
+                reset-names = "phy", "apb", "init", "cmn", "lane", "ropll",
+                              "lcpll";
+                rockchip,grf = <&hdptx_grf>;
+                #phy-cells = <0x00>;
+                status = "okay";
+        };
+
+        hdmi@fde80000 {
+                compatible = "rockchip,rk3588-dw-hdmi";
+                reg = <0x00 0xfde80000 0x00 0x10000>,
+                      <0x00 0xfde90000 0x00 0x10000>;
+                interrupts = <0x00 0xa9 0x04>, <0x00 0xaa 0x04>,
+                             <0x00 0xab 0x04>, <0x00 0xac 0x04>,
+                             <0x00 0x168 0x04>;
+                clocks = <&scmi_clk 17>, <&scmi_clk 18>,
+                         <&scmi_clk 19>, <&scmi_clk 20>,
+                         <&scmi_clk 21>, <&scmi_clk 7>,
+                         <&scmi_clk 8>, <&scmi_clk 9>,
+                         <&scmi_clk 10>, <&hdmiphy0>;
+                clock-names = "pclk", "hpd", "earc",
+                              "hdmitx_ref", "aud",
+                              "dclk_vp0", "dclk_vp1",
+                              "dclk_vp2", "dclk_vp3",
+                              "link_clk";
+                resets = <&scmi_rst 6>, <&scmi_rst 7>;
+                reset-names = "ref", "hdp";
+                power-domains = <&scmi_pwr 2>;
+                reg-io-width = <0x04>;
+                rockchip,grf = <&sys_grf>;
+                rockchip,vo1_grf = <&vo1_grf>;
+                phys = <&hdmiphy0>;
+                phy-names = "hdmi";
+                #sound-dai-cells = <0x00>;
+                status = "okay";
+                pinctrl-names = "default";
+                pinctrl-0 = <&hdmim0_tx0_cec &hdmim0_tx0_hpd &hdmim0_tx0_scl &hdmim0_tx0_sda>;
+
+                ports {
+                        #address-cells = <0x01>;
+                        #size-cells = <0x00>;
+                        port@0 {
+                                reg = <0x00>;
+                                #address-cells = <0x01>;
+                                #size-cells = <0x00>;
+
+                                hdmi0_in: endpoint@0 {
+                                        reg = <0x00>;
+                                        remote-endpoint = <&vp0_out_hdmi0>;
+                                };
+                        };
+                };
+        };
+
+        // ========== GPU Dependencies ==========
+
+	syscon@fd5a0000 {
+		compatible = "rockchip,rk3588-gpu-grf\0syscon";
+		reg = <0x00 0xfd5a0000 0x00 0x100>;
+		phandle = <0x66>;
+	};
+
+	pvtm@fdb30000 {
+		compatible = "rockchip,rk3588-gpu-pvtm";
+		reg = <0x00 0xfdb30000 0x00 0x100>;
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+	};
+
+	// ========== GPU OPP Table ==========
+
+	gpu-opp-table {
+		compatible = "operating-points-v2";
+		phandle = <0x71>;
+
+		opp-300000000 {
+			opp-hz = <0x00 0x11e1a300>;
+			opp-microvolt = <0xa4cb8>;
+		};
+		opp-500000000 {
+			opp-hz = <0x00 0x1dcd6500>;
+			opp-microvolt = <0xa4cb8>;
+		};
+		opp-800000000 {
+			opp-hz = <0x00 0x2faf0800>;
+			opp-microvolt = <0xb71b0>;
+		};
+		opp-1000000000 {
+			opp-hz = <0x00 0x3b9aca00>;
+			opp-microvolt = <0xcf850>;
+		};
+	};
+
+	// ========== GPU ==========
+
+	gpu@fb000000 {
+		compatible = "arm,mali-valhall";
+		reg = <0x00 0xfb000000 0x00 0x200000>;
+		interrupts = <0x00 0x5e 0x04>,
+		             <0x00 0x5d 0x04>,
+		             <0x00 0x5c 0x04>;
+		interrupt-names = "GPU", "MMU", "JOB";
+		/*
+		 * SCMI virtual IDs 0-3 mapped via clock_ids [8,9,10,11]:
+		 *   0 → hvisor clock[8]  = clk_gpu
+		 *   1 → hvisor clock[9]  = clk_gpu_coregroup
+		 *   2 → hvisor clock[10] = clk_gpu_stacks
+		 *   3 → hvisor clock[11] = clk_mali
+		 */
+		clocks = <&scmi_clk 0>, <&scmi_clk 1>,
+		         <&scmi_clk 2>, <&scmi_clk 3>;
+		clock-names = "clk_mali", "clk_gpu_coregroup",
+		              "clk_gpu_stacks", "clk_gpu";
+		operating-points-v2 = <0x71>;
+		/*
+		 * SCMI virtual ID 0 → power_ids[0] = 3 → hvisor power[3] = 0x0c
+		 */
+		power-domains = <&scmi_pwr 0>;
+		status = "okay";
+	};
+
+	chosen {
+		bootargs = "earlycon=virtio,mmio,0xffa30000 console=hvc0 root=/dev/vda rootwait rw";
+		stdout-path = "/virtio_mmio@0xffa30000";
+	};
+};

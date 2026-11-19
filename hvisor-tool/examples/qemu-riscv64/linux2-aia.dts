@@ -1,0 +1,79 @@
+/dts-v1/;
+
+/ {
+	#address-cells = <0x02>;
+	#size-cells = <0x02>;
+
+	cpus {
+		#address-cells = <0x01>;
+		#size-cells = <0x00>;
+		timebase-frequency = <0x989680>;
+
+		cpu@3 {
+			device_type = "cpu";
+			reg = <0x03>;
+			status = "okay";
+			compatible = "riscv";
+			riscv,isa = "rv64imafdch_ssaia_sstc";
+			mmu-type = "riscv,sv39";
+
+			interrupt-controller {
+				#interrupt-cells = <0x01>;
+				interrupt-controller;
+				compatible = "riscv,cpu-intc";
+				phandle = <0x01>;
+			};
+		};
+	};
+
+	memory@84000000 {
+		device_type = "memory";
+		reg = <0x00 0x84000000 0x00 0x8000000>;
+	};
+
+	soc {
+		#address-cells = <0x02>;
+		#size-cells = <0x02>;
+		compatible = "simple-bus";
+		ranges;
+
+		aplic@d000000 {
+			phandle = <0x08>;
+			riscv,num-sources = <0x60>;
+			reg = <0x00 0xd000000 0x00 0x8000>;
+			msi-parent = <0x06>;
+			interrupt-controller;
+			#interrupt-cells = <0x02>;
+			compatible = "riscv,aplic";
+		};
+
+		imsics@28000000 {
+			phandle = <0x06>;
+			riscv,num-ids = <0xff>;
+			reg = <0x00 0x28000000 0x00 0x4000>;
+			interrupts-extended = <0x01 0x09>;
+			msi-controller;
+			interrupt-controller;
+			#interrupt-cells = <0x00>;
+			compatible = "riscv,imsics";
+		};
+
+		virtio_mmio@10007000 {
+			interrupts = <0x07 0x01>;
+			interrupt-parent = <0x08>;
+			reg = <0x00 0x10007000 0x00 0x1000>;
+			compatible = "virtio,mmio";
+		};
+
+		virtio_mmio@10006000 {
+			interrupts = <0x06 0x01>;
+			interrupt-parent = <0x08>;
+			reg = <0x00 0x10006000 0x00 0x1000>;
+			compatible = "virtio,mmio";
+		};
+	};
+
+	chosen {
+		bootargs = "root=/dev/vda rw earlycon console=hvc0";
+	};
+};
