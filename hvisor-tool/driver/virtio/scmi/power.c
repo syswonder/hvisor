@@ -209,7 +209,7 @@ int hvisor_scmi_power_ioctl(struct hvisor_scmi_power_args __user *user_args) {
             return ret;
 
         args.u.power_attr.flags = flags;
-        strncpy(args.u.power_attr.name, name, 63);
+        strscpy(args.u.power_attr.name, name, 64);
         args.u.power_attr.name[63] = '\0';
 
         if (copy_to_user(&user_args->u.power_attr, &args.u.power_attr,

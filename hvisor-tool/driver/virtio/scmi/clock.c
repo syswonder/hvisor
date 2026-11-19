@@ -3,6 +3,7 @@
 #include <linux/clk.h>
 #include <linux/of.h>
 #include <linux/slab.h>
+#include <linux/string.h>
 #include <linux/uaccess.h>
 
 extern bool __clk_is_enabled(const struct clk *clk);
@@ -72,7 +73,7 @@ static int get_clock_name(u32 clock_id, char *name) {
 
     clk_name = __clk_get_name(clk);
     if (clk_name) {
-        strncpy(name, clk_name, 63);
+        strscpy(name, clk_name, 64);
         name[63] = '\0';
     } else {
         snprintf(name, 64, "unknown_clk_%u", clock_id);
@@ -95,7 +96,7 @@ static int get_clock_attributes(u32 clock_id, u32 *enabled, u32 *parent_id,
 
     name = __clk_get_name(clk);
     if (name) {
-        strncpy(clock_name, name, 63);
+        strscpy(clock_name, name, 64);
         clock_name[63] = '\0';
     } else {
         snprintf(clock_name, 64, "unknown_clk_%u", clock_id);
@@ -193,7 +194,7 @@ int hvisor_scmi_clock_ioctl(struct hvisor_scmi_clock_args __user *user_args) {
         args.u.clock_attr.enabled = enabled;
         args.u.clock_attr.parent_id = parent_id;
         args.u.clock_attr.is_valid = is_valid;
-        strncpy(args.u.clock_attr.clock_name, clock_name, 63);
+        strscpy((char *)args.u.clock_attr.clock_name, clock_name, 64);
         args.u.clock_attr.clock_name[63] = '\0';
         if (copy_to_user(&user_args->u.clock_attr, &args.u.clock_attr,
                          sizeof(args.u.clock_attr)))
@@ -238,7 +239,7 @@ int hvisor_scmi_clock_ioctl(struct hvisor_scmi_clock_args __user *user_args) {
         int ret = get_clock_name(args.u.clock_name_info.clock_id, name);
         if (ret < 0)
             return ret;
-        strncpy(args.u.clock_name_info.name, name, 63);
+        strscpy((char *)args.u.clock_name_info.name, name, 64);
         args.u.clock_name_info.name[63] = '\0';
         if (copy_to_user(&user_args->u.clock_name_info, &args.u.clock_name_info,
                          sizeof(args.u.clock_name_info)))
