@@ -142,7 +142,7 @@ static int handle_power_domain_attributes(SCMIDev *dev, uint16_t token,
     struct scmi_msg_resp_power_domain_attributes *attr = scmi_resp_write(
         ctx, sizeof(struct scmi_msg_resp_power_domain_attributes));
     attr->flags = (1U << 29);
-    strncpy(attr->name, args.u.power_attr.name, 15);
+    strncpy(attr->name, (char *)args.u.power_attr.name, 15);
     attr->name[15] = '\0';
 
     log_debug("POWER_DOMAIN_ATTRIBUTES: domain=%u, name=%s, flags=0x%x",

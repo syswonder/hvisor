@@ -51,7 +51,7 @@ typedef struct virtio_config {
     VirtioZoneConfig zones[MAX_ZONES];
 } VirtioConfig;
 
-extern volatile struct virtio_bridge *virtio_bridge;
+extern volatile struct HvVirtioBridge *virtio_bridge;
 extern int ko_fd;
 extern VirtIODevice *vdevs[MAX_DEVS];
 extern int vdevs_num;

@@ -1,5 +1,6 @@
 ROOT_DIR := ..
 COMMON_DIR := $(ROOT_DIR)/common
+ABI_DIR := $(ROOT_DIR)/../abi/include
 TOOL_DIR := tool
 DAEMON_DIR := daemon
 VIRTIO_DIR := $(DAEMON_DIR)/virtio
@@ -52,7 +53,7 @@ ifneq ($(ROOT),)
 CFLAGS += --sysroot=$(ROOT)
 endif
 
-include_dirs := -I$(COMMON_DIR)/include -I$(COMMON_DIR) \
+include_dirs := -I$(COMMON_DIR)/include -I$(COMMON_DIR) -I$(ABI_DIR) \
                 -I$(TOOL_DIR)/include -I$(TOOL_DIR)/boot \
                 -I$(VIRTIO_DIR)/include -I$(CJSON_DIR) -I$(TOOL_DIR)
 

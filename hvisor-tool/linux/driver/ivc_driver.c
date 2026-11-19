@@ -33,14 +33,7 @@
 
 #ifdef ARM64
 
-struct ivc_info {
-    __u64 len;
-    __u64 ivc_ct_ipas[CONFIG_MAX_IVC_CONFIGS];
-    __u64 ivc_shmem_ipas[CONFIG_MAX_IVC_CONFIGS];
-    __u32 ivc_ids[CONFIG_MAX_IVC_CONFIGS];
-    __u32 ivc_irqs[CONFIG_MAX_IVC_CONFIGS];
-} __attribute__((packed));
-typedef struct ivc_info ivc_info_t;
+typedef IvcInfo ivc_info_t;
 
 struct ivc_dev {
     dev_t dev_id;

@@ -121,9 +121,9 @@ int multiboot2_prepare_zone(zone_config_t *config, struct cJSON *root,
                             __u64 *multiboot_info_paddr) {
 #ifdef X86_64
     int64_t gpa_to_hpa_offset = 0;
-    for (uint32_t i = 0; i < config->num_memory_regions; i++) {
-        memory_region_t *mem_region = &config->memory_regions[i];
-        if (mem_region->type == MEM_TYPE_RAM) {
+    for (uint32_t i = 0; i < config->common.num_memory_regions; i++) {
+        memory_region_t *mem_region = &config->common.memory_regions[i];
+        if (mem_region->mem_type == MEM_TYPE_RAM) {
             gpa_to_hpa_offset = (int64_t)mem_region->physical_start -
                                 (int64_t)mem_region->virtual_start;
             break;
@@ -144,7 +144,7 @@ int multiboot2_prepare_zone(zone_config_t *config, struct cJSON *root,
         log_error("Failed to load ELF segments for Multiboot kernel\n");
         return -1;
     }
-    config->kernel_size = total_size;
+    config->common.kernel_size = total_size;
     config->arch_config.kernel_entry_gpa = elf_entry;
 
     cJSON *kcmdline_json = cJSON_GetObjectItem(root, "kernel_cmdline");

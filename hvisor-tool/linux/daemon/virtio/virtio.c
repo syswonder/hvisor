@@ -53,7 +53,7 @@ int ko_fd;
 static int efd = -1;
 static int sfd = -1;
 static int epoll_fd = -1;
-volatile struct virtio_bridge *virtio_bridge;
+volatile struct HvVirtioBridge *virtio_bridge;
 
 pthread_mutex_t RES_MUTEX = PTHREAD_MUTEX_INITIALIZER;
 
@@ -1327,7 +1327,7 @@ int virtio_init() {
 
     // mmap: create shared memory
     // Map the virtio_bridge set by the kernel module to this space
-    virtio_bridge = (struct virtio_bridge *)mmap(
+    virtio_bridge = (struct HvVirtioBridge *)mmap(
         NULL, MMAP_SIZE, PROT_READ | PROT_WRITE, MAP_SHARED, ko_fd, 0);
     if (virtio_bridge == (void *)-1) {
         log_error("mmap failed");
