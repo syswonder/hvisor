@@ -869,7 +869,13 @@ pub fn remove_zone(zone_id: usize) {
         .find(|(_, zone)| zone.id() == zone_id)
         .unwrap();
     let removed_zone = zone_list.remove(idx);
-    assert_eq!(Arc::strong_count(&removed_zone), 1);
+    // In-flight IRQ producers may still hold the zone; it is freed on the last drop.
+    if Arc::strong_count(&removed_zone) > 1 {
+        warn!(
+            "zone {} is still referenced, deferring its release",
+            zone_id
+        );
+    }
 }
 
 pub fn find_zone(zone_id: usize) -> Option<Arc<Zone>> {

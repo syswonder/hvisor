@@ -16,8 +16,6 @@
 #![allow(dead_code)]
 #![allow(unreachable_patterns)]
 
-#[cfg(not(target_arch = "x86_64"))]
-use crate::arch::cpu::get_target_cpu;
 use crate::config::{HvZoneBootMode, HvZoneConfig};
 use crate::consts::{INVALID_ADDRESS, MAX_WAIT_TIMES, PAGE_SIZE};
 use crate::cpu_data::{get_cpu_data, PerCpu, VcpuState};
@@ -160,13 +158,15 @@ impl<'a> HyperCall<'a> {
         let mut map_irq = VIRTIO_IRQS.lock();
         while !res_agent.is_empty() {
             let (_res_front, irq_id, target_zone) = res_agent.peek_front();
-            if find_zone(target_zone as _).is_none() {
+            let Some(zone) = find_zone(target_zone as _) else {
                 res_agent.advance_front();
                 continue;
-            }
-
+            };
+            // Reuse `zone`: a second lookup may panic if the zone is shut down.
             #[cfg(not(target_arch = "x86_64"))]
-            let target_cpu = get_target_cpu(irq_id as _, target_zone as _);
+            let target_cpu = zone.read().cpu_set().first_cpu().unwrap();
+            #[cfg(target_arch = "x86_64")]
+            drop(zone);
 
             #[cfg(target_arch = "loongarch64")]
             {
@@ -259,13 +259,17 @@ impl<'a> HyperCall<'a> {
         }
         #[cfg(target_arch = "x86_64")]
         let _irq_lifecycle = X86_IOAPIC_LIFECYCLE.read();
-        if find_zone(target_zone).is_none() {
+        let Some(zone) = find_zone(target_zone) else {
             return hv_result_err!(EINVAL, format!("zone {} does not exist", target_zone));
-        }
+        };
+        // Reuse `zone`: a second lookup may panic if the zone is shut down.
+        #[cfg(target_arch = "loongarch64")]
+        let target_cpu = zone.read().cpu_set().first_cpu().unwrap();
+        #[cfg(not(target_arch = "loongarch64"))]
+        drop(zone);
 
         #[cfg(target_arch = "loongarch64")]
         {
-            let target_cpu = get_target_cpu(irq_id, target_zone);
             if !crate::device::irqchip::ls7a2000::set_guest_irq_line(target_cpu, irq_id, false) {
                 return hv_result_err!(
                     EINVAL,
