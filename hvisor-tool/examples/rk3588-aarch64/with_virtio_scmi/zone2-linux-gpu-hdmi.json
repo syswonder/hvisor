@@ -1,0 +1,151 @@
+{
+  "arch": "arm64",
+  "name": "zone2-gpu-hdmi",
+  "zone_id": 2,
+  "cpus": [
+    4,
+    5
+  ],
+  "memory_regions": [
+    {
+      "type": "io",
+      "physical_start": "0x00100000",
+      "virtual_start": "0x00100000",
+      "size": "0xf000"
+    },
+    {
+      "type": "ram",
+      "physical_start": "0x58000000",
+      "virtual_start": "0x58000000",
+      "size": "0x80000000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfb000000",
+      "virtual_start": "0xfb000000",
+      "size": "0x200000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd5a0000",
+      "virtual_start": "0xfd5a0000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfdb30000",
+      "virtual_start": "0xfdb30000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfdd90000",
+      "virtual_start": "0xfdd90000",
+      "size": "0x10000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfde80000",
+      "virtual_start": "0xfde80000",
+      "size": "0x20000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfed60000",
+      "virtual_start": "0xfed60000",
+      "size": "0x10000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd5a8000",
+      "virtual_start": "0xfd5a8000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd5a6000",
+      "virtual_start": "0xfd5a6000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd5e0000",
+      "virtual_start": "0xfd5e0000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd5f0000",
+      "virtual_start": "0xfd5f0000",
+      "size": "0x10000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd58c000",
+      "virtual_start": "0xfd58c000",
+      "size": "0x1000"
+    },
+    {
+      "type": "virtio",
+      "physical_start": "0xffa10000",
+      "virtual_start": "0xffa10000",
+      "size": "0x1000"
+    },
+    {
+      "type": "virtio",
+      "physical_start": "0xffa20000",
+      "virtual_start": "0xffa20000",
+      "size": "0x1000"
+    },
+    {
+      "type": "virtio",
+      "physical_start": "0xffa30000",
+      "virtual_start": "0xffa30000",
+      "size": "0x1000"
+    },
+    {
+      "type": "virtio",
+      "physical_start": "0xffa50000",
+      "virtual_start": "0xffa50000",
+      "size": "0x1000"
+    },
+    {
+      "type": "io",
+      "physical_start": "0xfd5a4000",
+      "virtual_start": "0xfd5a4000",
+      "size": "0x2000"
+    }
+  ],
+  "interrupts": [
+    "0x66",
+    "0x67",
+    "0x68",
+    "0x69",
+    "0x7e",
+    "0x7d",
+    "0x7c",
+    "0xbc",
+    "0xc9",
+    "0xca",
+    "0xcb",
+    "0xcc",
+    "0x188"
+  ],
+  "ivc_configs": [],
+  "kernel_filepath": "./Image",
+  "dtb_filepath": "./zone2-linux-gpu-hdmi.dtb",
+  "kernel_load_paddr": "0x58400000",
+  "dtb_load_paddr": "0x58000000",
+  "entry_point": "0x58400000",
+  "kernel_args": "",
+  "arch_config": {
+    "gic_version": "v3",
+    "gicd_base": "0xfe600000",
+    "gicd_size": "0x10000",
+    "gicr_base": "0xfe680000",
+    "gicr_size": "0x100000",
+    "gits_base": "0x0",
+    "gits_size": "0x0"
+  },
+  "pci_config": []
+}

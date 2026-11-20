@@ -26,6 +26,8 @@ Thank you for contributing to hvisor. hvisor is a Type-1 hypervisor that runs on
 
 hvisor's runtime, management tools, and developer documentation are maintained in separate repositories. Before making a change, trace its impact through the runtime implementation, management entry point, and user documentation. A successful hvisor build alone does not demonstrate that a cross-repository feature works.
 
+> **Monorepo transition note:** hvisor-tool is being imported into this repository under `hvisor-tool/`. Until the standalone hvisor-tool repository is retired, changes to the in-tree `hvisor-tool/` tree must go through this repository, and any companion change in the standalone repository must be linked explicitly. This note is a temporary bridge; the repository responsibilities section below will be rewritten once the import is complete.
+
 ### Repository Responsibilities
 
 | Repository | Responsibilities | Relationship |

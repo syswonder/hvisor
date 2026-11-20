@@ -1,0 +1,285 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/**
+ * Copyright (c) 2025 Syswonder
+ *
+ * Syswonder Website:
+ *      https://www.syswonder.org
+ *
+ * Authors:
+ *      Guowei Li <2401213322@stu.pku.edu.cn>
+ */
+#ifndef __HVISOR_VIRTIO_H
+#define __HVISOR_VIRTIO_H
+#include "hvisor.h"
+#include "safe_cjson.h"
+#include <linux/virtio_config.h>
+#include <linux/virtio_mmio.h>
+#include <linux/virtio_ring.h>
+#include <pthread.h>
+#include <stdbool.h>
+#include <stdint.h>
+#include <sys/uio.h>
+#include <unistd.h>
+
+#define VIRT_QUEUE_SIZE 512
+
+typedef struct VirtMmioRegs {
+    uint32_t device_id;       // Device type id, see VirtioDeviceType
+    uint32_t dev_feature_sel; // device_features_selection, the driver frontend
+                              // writes this register to obtain a group of
+                              // 32-bit device_features
+    uint32_t drv_feature_sel; // driver_features_selection, the driver frontend
+                              // writes this register to specify a group of
+                              // 32-bit activated device_features
+    uint32_t queue_sel; // The driver frontend writes this register to select
+                        // which virtqueue to use
+    uint32_t interrupt_status;
+    uint32_t status;
+    uint32_t generation;
+    uint64_t dev_feature; // device_features
+    uint64_t drv_feature;
+} VirtMmioRegs;
+
+typedef enum {
+    VirtioTNone,
+    VirtioTNet,
+    VirtioTBlock,
+    VirtioTConsole,
+    VirtioTGPU = 16,
+    VirtioTSCMI = 32,
+} VirtioDeviceType;
+
+// Convert VirtioDeviceType to const char *
+const char *virtio_device_type_to_string(VirtioDeviceType type);
+
+typedef struct vring_desc VirtqDesc;
+typedef struct vring_avail VirtqAvail;
+typedef struct vring_used_elem VirtqUsedElem;
+typedef struct vring_used VirtqUsed;
+
+struct VirtIODevice;
+typedef struct VirtIODevice VirtIODevice;
+struct VirtQueue;
+typedef struct VirtQueue VirtQueue;
+
+struct virtio_blk_init_params;
+struct virtio_net_init_params;
+struct virtio_gpu_requested_state;
+struct virtio_scmi_init_params;
+
+typedef union virtio_device_params {
+    struct virtio_blk_init_params *blk;
+    struct virtio_net_init_params *net;
+    struct virtio_gpu_requested_state *gpu;
+    struct virtio_scmi_init_params *scmi;
+} VirtioDeviceParams;
+
+struct VirtQueue {
+    VirtIODevice *dev; // The device which the virtqueue belongs to
+    uint64_t vq_idx;   // Index of the virtqueue
+    uint64_t
+        num; // The capacity of the virtqueue determined by the driver frontend
+    uint32_t queue_num_max; // The maximum capacity of the virtqueue, informed
+                            // by the backend
+
+    uint64_t desc_table_addr; // Descriptor table address (physical address set
+                              // by zonex)
+    uint64_t
+        avail_addr; // Available ring address (physical address set by zonex)
+    uint64_t used_addr; // Used ring address (physical address set by zonex)
+
+    // Obtained by get_virt_addr
+    volatile VirtqDesc
+        *desc_table; // Descriptor table (physical address set by zone0)
+    volatile VirtqAvail
+        *avail_ring; // Available ring (physical address set by zone0)
+    volatile VirtqUsed *used_ring; // Used ring (physical address set by zone0)
+    int (*notify_handler)(
+        VirtIODevice *vdev,
+        VirtQueue *vq); // Called when the virtqueue has requests to process
+
+    uint16_t last_avail_idx; // The tail idx of the available ring during the
+                             // last processing (tail/newest request idx)
+    uint16_t last_used_idx;  // The tail idx of the used ring during the last
+                             // processing (tail/newest response idx)
+
+    uint8_t ready;             // Whether it is ready
+    uint8_t event_idx_enabled; // Whether the VIRTIO_RING_F_EVENT_IDX feature is
+                               // enabled This feature allows the device to
+                               // record the current position of the element on
+                               // the Avail Ring being processed in the last
+                               // element of the Used Ring, thereby informing
+                               // the frontend driver of the backend processing
+                               // progress Enabling this feature will change the
+                               // flags field of the avail_ring
+    pthread_mutex_t used_ring_lock; // Used ring lock
+};
+
+static inline bool vq_is_empty(VirtQueue *vq) {
+    if (vq->avail_ring == NULL)
+        return true;
+    return __atomic_load_n(&vq->avail_ring->idx, __ATOMIC_ACQUIRE) ==
+           vq->last_avail_idx;
+}
+
+// The highest abstract representations of virtio device
+struct VirtIODevice {
+    uint32_t vqs_len; // Number of virtqueues
+    uint32_t zone_id; // ID of the zone to which it belongs, initialized in
+                      // create_virtio_device
+    uint32_t irq_id; // Device interrupt ID, initialized in create_virtio_device
+    uint64_t base_addr; // The virtio device's base address in non-root zone's
+                        // memory, initialized in create_virtio_device
+    uint64_t
+        len; // Length of the mmio region, initialized in create_virtio_device
+    VirtioDeviceType type; // Device type, initialized in create_virtio_device
+    VirtMmioRegs regs;     // MMIO registers of the device
+                           // Initialized in create_virtio_device, subsequently
+                           // negotiated by the driver frontend
+    VirtQueue *vqs;        // Array of virtqueues of the device, initialized in
+                           // init_virtio_queue
+    void
+        *dev; // According to device type, blk is BlkDev, net is NetDev, console
+              // is ConsoleDev Pointer to the specific device's special config
+    void (*virtio_close)(
+        VirtIODevice *vdev); // Function called when closing the virtio device
+    void (*status_changed)(VirtIODevice *vdev,
+                           uint32_t status); // Called on STATUS register write
+    bool activated; // Whether the current virtio device is activated
+    pthread_mutex_t interrupt_lock;
+    bool interrupt_line_asserted;
+};
+
+struct virtio_device_ops {
+    VirtioDeviceType type;
+    uint64_t features;
+    uint32_t num_queues;
+    uint32_t queue_max_size;
+    int (*init)(VirtIODevice *vdev, const VirtioDeviceParams *params);
+    void (*close)(VirtIODevice *vdev);
+    void (*reset)(VirtIODevice *vdev);
+    void (*status_changed)(VirtIODevice *vdev, uint32_t status);
+#define VIRTIO_MAX_VQUEUES 4
+    int (*notify_handlers[VIRTIO_MAX_VQUEUES])(VirtIODevice *, VirtQueue *);
+};
+
+struct virtio_config_ops {
+    int (*parse)(const cJSON *json, VirtioDeviceParams *params_out);
+    void (*free)(VirtioDeviceParams *params);
+};
+// used event idx for driver telling device when to notify driver.
+#define VQ_USED_EVENT(vq) ((vq)->avail_ring->ring[(vq)->num])
+// avail event idx for device telling driver when to notify device.
+#define VQ_AVAIL_EVENT(vq) (*(uint16_t *)&(vq)->used_ring->ring[(vq)->num])
+
+#define VIRT_MAGIC 0x74726976 /* 'virt' */
+
+#define VIRT_VERSION 2
+
+#define VIRT_VENDOR 0x48564953 /* 'HVIS' */
+
+// Set net and console to non-blocking
+int set_nonblocking(int fd);
+
+/// Check if circular queue is full. size must be a power of 2
+int is_queue_full(unsigned int front, unsigned int rear, unsigned int size);
+
+void write_barrier(void);
+
+void read_barrier(void);
+
+void rw_barrier(void);
+
+VirtIODevice *create_virtio_device(VirtioDeviceType dev_type, uint32_t zone_id,
+                                   uint64_t base_addr, uint64_t len,
+                                   uint32_t irq_id,
+                                   const VirtioDeviceParams *params);
+
+void init_mmio_regs(VirtMmioRegs *regs, VirtioDeviceType type);
+
+void virtio_dev_reset(VirtIODevice *vdev);
+
+void virtqueue_reset(VirtQueue *vq, int idx);
+
+bool virtqueue_is_empty(VirtQueue *vq);
+
+// uint16_t virtqueue_pop_desc_chain_head(VirtQueue *vq);
+
+void virtqueue_disable_notify(VirtQueue *vq);
+
+void virtqueue_enable_notify(VirtQueue *vq);
+
+bool desc_is_writable(volatile VirtqDesc *desc_table, uint16_t idx);
+
+void *get_virt_addr(void *zonex_ipa, int zone_id);
+
+void virtqueue_set_avail(VirtQueue *vq);
+
+void virtqueue_set_used(VirtQueue *vq);
+
+int descriptor2iov(int i, volatile VirtqDesc *vd, struct iovec *iov,
+                   uint16_t *flags, int zone_id, bool copy_flags);
+
+int process_descriptor_chain(VirtQueue *vq, uint16_t *desc_idx,
+                             struct iovec **iov, uint16_t **flags,
+                             int append_len, bool copy_flags);
+
+// Caller-provided buffer arrays for process_descriptor_chain_buf().
+// out_iov / in_iov point to the arrays; max_out / max_in are their capacities.
+struct VirtioBufConfig {
+    struct iovec *out_iov;
+    size_t max_out;
+    struct iovec *in_iov;
+    size_t max_in;
+};
+
+// Parsed descriptor chain split by direction.  iov pointers alias the
+// caller-provided buffers in VirtioBufConfig; counts are the number
+// of populated entries.
+struct VirtioRequest {
+    struct iovec *out_iov;
+    unsigned int out_count;
+    struct iovec *in_iov;
+    unsigned int in_count;
+};
+
+// Fill req from the descriptor chain starting at desc_head into the
+// buffers described by cfg.  Returns total chain_len (out_count +
+// in_count) on success, -1 if either buffer is too small.
+int process_descriptor_chain_buf(VirtQueue *vq, uint16_t descriptor_head,
+                                 const struct VirtioBufConfig *cfg,
+                                 struct VirtioRequest *req);
+
+void update_used_ring(VirtQueue *vq, uint16_t idx, uint32_t iolen);
+
+// Batch version of update_used_ring: writes `count` used-ring entries
+// with a single pair of write barriers instead of two per entry.
+void update_used_ring_batch(VirtQueue *vq, const uint16_t *indices,
+                            const uint32_t *lens, size_t count);
+
+uint64_t virtio_mmio_read(VirtIODevice *vdev, uint64_t offset, unsigned size);
+
+void virtio_mmio_write(VirtIODevice *vdev, uint64_t offset, uint64_t value,
+                       unsigned size);
+
+bool in_range(uint64_t value, uint64_t lower, uint64_t len);
+
+void virtio_inject_irq(VirtQueue *vq); // unused
+
+void virtio_finish_cfg_req(uint32_t target_cpu, uint64_t value);
+
+int virtio_handle_req(volatile struct device_req *req);
+
+void virtio_close();
+
+void handle_virtio_requests();
+
+int virtio_init();
+
+int virtio_start_from_json(char *json_path);
+
+int virtio_start(int argc, char *argv[]);
+
+int virtio_add(int argc, char *argv[]);
+
+#endif /* __HVISOR_VIRTIO_H */

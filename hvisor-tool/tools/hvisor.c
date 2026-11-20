@@ -1,0 +1,1142 @@
+// SPDX-License-Identifier: GPL-2.0-only
+/**
+ * Copyright (c) 2025 Syswonder
+ *
+ * Syswonder Website:
+ *      https://www.syswonder.org
+ *
+ * Authors:
+ *      Guowei Li <2401213322@stu.pku.edu.cn>
+ */
+#include <errno.h>
+#include <fcntl.h>
+#include <getopt.h>
+#include <inttypes.h>
+#include <limits.h>
+#include <pthread.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/ioctl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
+
+#include "boot.h"
+#include "event_monitor.h"
+#include "hvisor.h"
+#include "json_parse.h"
+#include "loader.h"
+#include "log.h"
+#include "safe_cjson.h"
+#include "virtio.h"
+#include "zone_config.h"
+
+static void __attribute__((noreturn)) help(int exit_status) {
+    printf("Hypervisor Management Tool\n\n");
+    printf("Usage:\n");
+    printf("  hvisor <command> [options]\n\n");
+    printf("Commands:\n");
+    printf("  zone start    <config.json>    Initialize an isolation zone\n");
+    printf("  zone shutdown -id <zone_id>   Terminate a zone by ID\n");
+    printf("  zone list                      List all active zones\n");
+    printf("  virtio start  <virtio.json>    Activate virtio devices\n");
+    printf("  virtio add    <virtio.json>    Add virtio devices to daemon\n\n");
+    printf("Options:\n");
+    printf("  --id <zone_id>    Specify zone ID for shutdown\n");
+    printf("  --help            Show this help message\n\n");
+    printf("Examples:\n");
+    printf("  Start zone:    hvisor zone start /path/to/vm.json\n");
+    printf("  Shutdown zone: hvisor zone shutdown -id 1\n");
+    printf("  List zones:    hvisor zone list\n");
+    exit(exit_status);
+}
+
+void *read_file(const char *filename, uint64_t *filesize) {
+    int fd;
+    struct stat st;
+    void *buf;
+    ssize_t len;
+
+    fd = open(filename, O_RDONLY);
+    if (fd < 0) {
+        log_error("read_file: open file %s failed", filename);
+        exit(1);
+    }
+
+    if (fstat(fd, &st) < 0) {
+        log_error("read_file: fstat %s failed", filename);
+        exit(1);
+    }
+
+    long page_size = sysconf(_SC_PAGESIZE);
+
+    // Calculate buffer size, ensuring alignment to page boundary
+    ssize_t buf_size = (st.st_size + page_size - 1) & ~(page_size - 1);
+
+    buf = malloc(buf_size);
+    memset(buf, 0, buf_size);
+
+    len = read(fd, buf, st.st_size);
+    if (len < 0) {
+        perror("read_file: read failed");
+        exit(1);
+    }
+
+    if (filesize)
+        *filesize = len;
+
+    close(fd);
+
+    return buf;
+}
+
+int open_dev() {
+    int fd = open(HVISOR_DEVICE, O_RDWR);
+    if (fd < 0) {
+        log_error("Failed to open %s!", HVISOR_DEVICE);
+        exit(1);
+    }
+    return fd;
+}
+
+__u64 load_buffer_to_memory(const void *buf, __u64 size, __u64 load_paddr) {
+    int fd;
+    long page_size;
+    __u64 map_size;
+    struct hvisor_load_image_args args;
+
+    if (size == 0) {
+        return 0;
+    }
+
+    page_size = sysconf(_SC_PAGESIZE);
+    map_size = (size + page_size - 1) & ~((__u64)page_size - 1);
+
+    fd = open_dev();
+    args.user_buffer = (__u64)(uintptr_t)buf;
+    args.size = size;
+    args.load_paddr = load_paddr;
+    if (ioctl(fd, HVISOR_LOAD_IMAGE, &args) != 0) {
+        perror("load_buffer_to_memory: HVISOR_LOAD_IMAGE failed");
+        close(fd);
+        exit(1);
+    }
+    close(fd);
+
+    return map_size;
+}
+
+static __u64 load_str_to_memory(const char *str, __u64 load_paddr) {
+    /* Include trailing '\0' so guest side can safely parse cmdline. */
+    __u64 size = strlen(str) + 1;
+    return load_buffer_to_memory(str, size, load_paddr);
+}
+
+__u64 load_image_to_memory(const char *path, __u64 load_paddr) {
+    if (strcmp(path, "null") == 0) {
+        return 0;
+    }
+    __u64 size;
+    __u64 map_size;
+    void *image_content;
+
+    image_content = read_file(path, (uint64_t *)&size);
+    map_size = load_buffer_to_memory(image_content, size, load_paddr);
+    free(image_content);
+    return map_size;
+}
+
+/**
+ * @brief Parse modules configuration from a JSON array.
+ *
+ * This function parses modules configuration from a JSON array. Each module
+ * configuration item should contain string fields: `name`, `filepath`, and
+ * `load_paddr`.
+ *
+ * @param modules_json The JSON array containing modules configuration.
+ * @return 0 on success, -1 on error.
+ */
+static int parse_modules(const cJSON *const modules_json) {
+    // if not configured, just info it and return success
+    if (modules_json == NULL || !cJSON_IsArray(modules_json)) {
+        log_info("No additional modules configured, skip loading.");
+        return 0;
+    }
+
+    // info total number of modules
+    size_t num_modules = SAFE_CJSON_GET_ARRAY_SIZE(modules_json);
+    log_info("Found %zu module configurations in JSON", num_modules);
+
+    // parse each module configuration item, and load them to memory
+    for (size_t i = 0; i < num_modules; i++) {
+        const cJSON *const module_json =
+            SAFE_CJSON_GET_ARRAY_ITEM(modules_json, i);
+        const cJSON *const name_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(module_json, "name");
+        const cJSON *const filepath_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(module_json, "filepath");
+        const cJSON *const load_paddr_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(module_json, "load_paddr");
+
+        // name, filepath, load_paddr are required
+        if (name_json == NULL || !cJSON_IsString(name_json) ||
+            filepath_json == NULL || !cJSON_IsString(filepath_json) ||
+            load_paddr_json == NULL || !cJSON_IsString(load_paddr_json)) {
+            log_error(
+                "Missing required string field (name, filepath, load_paddr) "
+                "in module configuration at index %zu",
+                i);
+            return -1;
+        }
+
+        // check file accessibility
+        if (access(filepath_json->valuestring, R_OK) != 0) {
+            log_error("Cannot access module file: %s - %s",
+                      filepath_json->valuestring, strerror(errno));
+            return -1;
+        }
+
+        // load module image to memory
+        uintptr_t item_load_paddr;
+        if (parse_json_address(load_paddr_json, &item_load_paddr) != 0) {
+            log_error("Failed to parse module load_paddr");
+            return -1;
+        }
+
+        size_t item_size =
+            load_image_to_memory(filepath_json->valuestring, item_load_paddr);
+
+        // record module info
+        log_info("Loaded index %zu module '%s' (path: %s) to memory at "
+                 "0x%" PRIxPTR ", size: %zu bytes",
+                 i, name_json->valuestring, filepath_json->valuestring,
+                 item_load_paddr, item_size);
+
+        // warn if loaded size is 0
+        if (item_size == 0) {
+            log_warn("Module '%s' loaded with size 0, "
+                     "please check the file content.",
+                     name_json->valuestring);
+        }
+    }
+
+    // info total number of modules loaded
+    log_info("Total %zu modules loaded", num_modules);
+
+    return 0;
+}
+
+#define CHECK_JSON_NULL(json_ptr, json_name)                                   \
+    if (json_ptr == NULL) {                                                    \
+        log_error("\'%s\' is missing in json file.", json_name);               \
+        return -1;                                                             \
+    }
+
+#define CHECK_JSON_NULL_ERR_OUT(json_ptr, json_name)                           \
+    if (json_ptr == NULL) {                                                    \
+        log_error("\'%s\' is missing in json file.", json_name);               \
+        goto err_out;                                                          \
+    }
+
+static int parse_arch_config(cJSON *root, zone_config_t *config) {
+    cJSON *arch_config_json = SAFE_CJSON_GET_OBJECT_ITEM(root, "arch_config");
+    CHECK_JSON_NULL(arch_config_json, "arch_config");
+
+    arch_zone_config_t *arch_config = &config->arch_config;
+#ifdef ARM64
+    cJSON *gic_version_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "gic_version");
+    cJSON *gicd_base_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "gicd_base");
+    cJSON *gicr_base_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "gicr_base");
+    cJSON *gits_base_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "gits_base");
+    cJSON *gicc_base_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "gicc_base");
+    cJSON *gich_base_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "gich_base");
+    cJSON *gicv_base_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "gicv_base");
+    cJSON *gicc_offset_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "gicc_offset");
+    cJSON *gicv_size_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "gicv_size");
+    cJSON *gich_size_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "gich_size");
+    cJSON *gicc_size_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "gicc_size");
+    cJSON *gicd_size_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "gicd_size");
+    cJSON *gicr_size_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "gicr_size");
+    cJSON *gits_size_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "gits_size");
+    cJSON *is_aarch32_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "is_aarch32");
+    cJSON *memory_map_addr_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "memory_map_addr");
+    cJSON *memory_map_size_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "memory_map_size");
+    cJSON *sys_map_addr_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "sys_map_addr");
+    CHECK_JSON_NULL(gic_version_json, "gic_version");
+    char *gic_version = gic_version_json->valuestring;
+    if (!strcmp(gic_version, "v2")) {
+        CHECK_JSON_NULL(gicd_base_json, "gicd_base")
+        CHECK_JSON_NULL(gicd_size_json, "gicd_size")
+        CHECK_JSON_NULL(gicc_base_json, "gicc_base")
+        CHECK_JSON_NULL(gicc_size_json, "gicc_size")
+        CHECK_JSON_NULL(gicc_offset_json, "gicc_offset")
+        CHECK_JSON_NULL(gich_base_json, "gich_base")
+        CHECK_JSON_NULL(gich_size_json, "gich_size")
+        CHECK_JSON_NULL(gicv_base_json, "gicv_base")
+        CHECK_JSON_NULL(gicv_size_json, "gicv_size")
+
+        struct Gicv2Payload *gicv2_payload = &arch_config->gic_config.gicv2;
+        struct Gicv2Config *gicv2 = &gicv2_payload->gicv2_config;
+
+        gicv2_payload->gic_version_tag = 0;
+        if (parse_json_linux_u64(gicd_base_json, &gicv2->gicd_base) != 0 ||
+            parse_json_linux_u64(gicd_size_json, &gicv2->gicd_size) != 0 ||
+            parse_json_linux_u64(gicc_base_json, &gicv2->gicc_base) != 0 ||
+            parse_json_linux_u64(gicc_size_json, &gicv2->gicc_size) != 0 ||
+            parse_json_linux_u64(gicc_offset_json, &gicv2->gicc_offset) != 0 ||
+            parse_json_linux_u64(gich_base_json, &gicv2->gich_base) != 0 ||
+            parse_json_linux_u64(gich_size_json, &gicv2->gich_size) != 0 ||
+            parse_json_linux_u64(gicv_base_json, &gicv2->gicv_base) != 0 ||
+            parse_json_linux_u64(gicv_size_json, &gicv2->gicv_size) != 0) {
+            log_error("Failed to parse gicv2 config\n");
+            return -1;
+        }
+    } else if (!strcmp(gic_version, "v3")) {
+        CHECK_JSON_NULL(gicd_base_json, "gicd_base")
+        CHECK_JSON_NULL(gicr_base_json, "gicr_base")
+        CHECK_JSON_NULL(gicd_size_json, "gicd_size")
+        CHECK_JSON_NULL(gicr_size_json, "gicr_size")
+
+        struct Gicv3Payload *gicv3_payload = &arch_config->gic_config.gicv3;
+        struct Gicv3Config *gicv3 = &gicv3_payload->gicv3_config;
+
+        gicv3_payload->gic_version_tag = 1;
+        if (parse_json_linux_u64(gicd_base_json, &gicv3->gicd_base) != 0 ||
+            parse_json_linux_u64(gicd_size_json, &gicv3->gicd_size) != 0 ||
+            parse_json_linux_u64(gicr_base_json, &gicv3->gicr_base) != 0 ||
+            parse_json_linux_u64(gicr_size_json, &gicv3->gicr_size) != 0) {
+            log_error("Failed to parse gicv3 config\n");
+            return -1;
+        }
+
+        if (gits_base_json == NULL || gits_size_json == NULL) {
+            log_warn("No gits fields in arch_config.\n");
+        } else {
+            if (parse_json_linux_u64(gits_base_json, &gicv3->gits_base) != 0 ||
+                parse_json_linux_u64(gits_size_json, &gicv3->gits_size) != 0) {
+                log_error("Failed to parse gits config\n");
+                return -1;
+            }
+        }
+    } else {
+        log_error("Invalid GIC version. It should be either of v2 or v3\n");
+        return -1;
+    }
+    if (is_aarch32_json == NULL) {
+        log_warn("No is_aarch32 field in arch_config. If you are booting an "
+                 "aarch32 guest, "
+                 "please set it to true.\n");
+        arch_config->is_aarch32 = 0;
+    } else {
+        arch_config->is_aarch32 = is_aarch32_json->valueint;
+    }
+    if (memory_map_addr_json == NULL) {
+        arch_config->uefi_config.no_uefi_tag = 1;
+        log_info("No Uefi Config found. This is a normal phenomenon. "
+                 "Currently, hvisor "
+                 "nonroot only supports legacy.\n");
+    } else {
+        CHECK_JSON_NULL(memory_map_addr_json, "memory_map_addr");
+        CHECK_JSON_NULL(memory_map_size_json, "memory_map_size");
+        CHECK_JSON_NULL(sys_map_addr_json, "sys_map_addr");
+        struct UefiPayload *uefi_payload =
+            &arch_config->uefi_config.uefi_payload;
+        struct Uefi *uefi = &uefi_payload->uefi;
+
+        uefi_payload->uefi_tag = 0;
+        if (parse_json_linux_u64(memory_map_addr_json,
+                                 &uefi->memory_map_addr) != 0 ||
+            parse_json_linux_u64(memory_map_size_json,
+                                 &uefi->memory_map_size) != 0 ||
+            parse_json_linux_u64(sys_map_addr_json, &uefi->sys_map_addr) != 0) {
+            log_error("Failed to parse uefi config\n");
+            return -1;
+        }
+    }
+#endif
+
+#ifdef RISCV64
+    cJSON *plic_base_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "plic_base");
+    cJSON *plic_size_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "plic_size");
+    cJSON *aplic_base_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "aplic_base");
+    cJSON *aplic_size_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "aplic_size");
+
+    if (plic_base_json == NULL || plic_size_json == NULL) {
+        log_warn("Missing fields in arch_config.");
+        return -1;
+    }
+    if (aplic_base_json == NULL || aplic_size_json == NULL) {
+        log_warn("Missing fields in arch_config.");
+        return -1;
+    }
+
+    if (parse_json_linux_u64(plic_base_json, &arch_config->plic_base) != 0 ||
+        parse_json_linux_u64(plic_size_json, &arch_config->plic_size) != 0 ||
+        parse_json_linux_u64(aplic_base_json, &arch_config->aplic_base) != 0 ||
+        parse_json_linux_u64(aplic_size_json, &arch_config->aplic_size) != 0) {
+        log_error("Failed to parse plic/aplic config\n");
+        return -1;
+    }
+#endif
+
+#ifdef X86_64
+    int multiboot_enabled = boot_mode_is_multiboot2(root);
+
+    cJSON *ioapic_base_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "ioapic_base");
+    cJSON *ioapic_size_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "ioapic_size");
+    cJSON *boot_filepath_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "boot_filepath");
+    cJSON *boot_load_paddr_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "boot_load_paddr");
+    cJSON *cmdline_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "cmdline");
+    cJSON *cmdline_load_hpa_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "cmdline_load_hpa");
+    cJSON *cmdline_load_gpa_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "cmdline_load_gpa");
+    cJSON *kernel_entry_gpa_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "kernel_entry_gpa");
+    cJSON *setup_filepath_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "setup_filepath");
+    cJSON *setup_load_hpa_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "setup_load_hpa");
+    cJSON *setup_load_gpa_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "setup_load_gpa");
+    cJSON *initrd_filepath_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "initrd_filepath");
+    cJSON *initrd_load_hpa_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "initrd_load_hpa");
+    cJSON *initrd_load_gpa_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "initrd_load_gpa");
+    cJSON *rsdp_memory_region_id_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "rsdp_memory_region_id");
+    cJSON *acpi_memory_region_id_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "acpi_memory_region_id");
+    cJSON *uefi_memory_region_id_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "uefi_memory_region_id");
+    cJSON *screen_base_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(arch_config_json, "screen_base");
+
+    if (parse_json_linux_u64(ioapic_base_json, &arch_config->ioapic_base) !=
+            0 ||
+        parse_json_linux_u64(ioapic_size_json, &arch_config->ioapic_size) !=
+            0 ||
+        (!multiboot_enabled &&
+         parse_json_linux_u64(kernel_entry_gpa_json,
+                              &arch_config->kernel_entry_gpa)) != 0) {
+        log_error("Failed to parse ioapic or kernel_entry_gpa\n");
+        return -1;
+    }
+
+    if (boot_filepath_json != NULL && !multiboot_enabled) {
+        __u64 boot_load_paddr;
+        if (parse_json_linux_u64(boot_load_paddr_json, &boot_load_paddr) != 0) {
+            log_error("Failed to parse boot_load_paddr\n");
+            return -1;
+        }
+        __u64 size = load_image_to_memory(boot_filepath_json->valuestring,
+                                          boot_load_paddr);
+
+        log_info("boot size: %llu", size);
+    }
+
+    if (setup_filepath_json != NULL) {
+        __u64 setup_load_hpa;
+        if (parse_json_linux_u64(setup_load_gpa_json,
+                                 &arch_config->setup_load_gpa) != 0 ||
+            parse_json_linux_u64(setup_load_hpa_json, &setup_load_hpa) != 0) {
+            log_error("Failed to parse setup_load_gpa or setup_load_hpa\n");
+            return -1;
+        }
+        __u64 size = load_image_to_memory(setup_filepath_json->valuestring,
+                                          setup_load_hpa);
+
+        log_info("setup size: %llu", size);
+    }
+
+    if (cmdline_json != NULL) {
+        __u64 cmdline_load_hpa;
+        if (parse_json_linux_u64(cmdline_load_gpa_json,
+                                 &arch_config->cmdline_load_gpa) != 0 ||
+            parse_json_linux_u64(cmdline_load_hpa_json, &cmdline_load_hpa) !=
+                0) {
+            log_error("Failed to parse cmdline_load_gpa or cmdline_load_hpa\n");
+            return -1;
+        }
+        __u64 size =
+            load_str_to_memory(cmdline_json->valuestring, cmdline_load_hpa);
+
+        log_info("cmdline size: %llu", size);
+    }
+
+    if (initrd_filepath_json != NULL) {
+        __u64 initrd_load_hpa;
+        if (parse_json_linux_u64(initrd_load_gpa_json,
+                                 &arch_config->initrd_load_gpa) != 0 ||
+            parse_json_linux_u64(initrd_load_hpa_json, &initrd_load_hpa) != 0) {
+            log_error("Failed to parse initrd_load_gpa or initrd_load_hpa\n");
+            return -1;
+        }
+        arch_config->initrd_size = load_image_to_memory(
+            initrd_filepath_json->valuestring, initrd_load_hpa);
+
+        log_info("initrd size: %llu", arch_config->initrd_size);
+    }
+
+    if (parse_json_linux_u64(rsdp_memory_region_id_json,
+                             &arch_config->rsdp_memory_region_id) != 0 ||
+        parse_json_linux_u64(acpi_memory_region_id_json,
+                             &arch_config->acpi_memory_region_id) != 0 ||
+        parse_json_linux_u64(uefi_memory_region_id_json,
+                             &arch_config->uefi_memory_region_id) != 0 ||
+        parse_json_linux_u64(screen_base_json, &arch_config->screen_base) !=
+            0) {
+        log_error("Failed to parse region ids or screen_base\n");
+        return -1;
+    }
+#endif
+
+    return 0;
+}
+
+/**
+ * @brief Parse PCI configuration from zone JSON.
+ *
+ * This function requires the top-level `pci_config` section to be present, but
+ * allows it to be an empty array when the zone does not expose any PCI buses.
+ * Once `pci_config` contains entries, all required fields inside each PCI bus
+ * entry must be valid, otherwise the function returns an error.
+ *
+ * @param root Parsed zone configuration JSON object.
+ * @param config Zone configuration output structure to populate.
+ *
+ * @return 0 on success, -1 if the provided PCI configuration is invalid.
+ */
+static int parse_pci_config(cJSON *root, zone_config_t *config) {
+    cJSON *pci_configs_json = SAFE_CJSON_GET_OBJECT_ITEM(root, "pci_config");
+    CHECK_JSON_NULL_ERR_OUT(pci_configs_json, "pci_config")
+
+    int num_pci_bus = SAFE_CJSON_GET_ARRAY_SIZE(pci_configs_json);
+    if (num_pci_bus > CONFIG_PCI_BUS_MAXNUM) {
+        log_error("Exceeded maximum allowed pci configs.");
+        goto err_out;
+    }
+
+    config->num_pci_bus = num_pci_bus;
+    log_info("num pci bus %d", num_pci_bus);
+
+    for (int i = 0; i < num_pci_bus; i++) {
+        cJSON *pci_config_json = SAFE_CJSON_GET_ARRAY_ITEM(pci_configs_json, i);
+        pci_config_t *pci_config = &config->pci_config[i];
+
+        cJSON *ecam_base_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "ecam_base");
+        CHECK_JSON_NULL_ERR_OUT(ecam_base_json, "ecam_base")
+        cJSON *ecam_size_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "ecam_size");
+        CHECK_JSON_NULL_ERR_OUT(ecam_size_json, "ecam_size")
+        cJSON *io_base_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "io_base");
+        CHECK_JSON_NULL_ERR_OUT(io_base_json, "io_base")
+        cJSON *io_size_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "io_size");
+        CHECK_JSON_NULL_ERR_OUT(io_size_json, "io_size")
+        cJSON *pci_io_base_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "pci_io_base");
+        CHECK_JSON_NULL_ERR_OUT(pci_io_base_json, "pci_io_base")
+        cJSON *mem32_base_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "mem32_base");
+        CHECK_JSON_NULL_ERR_OUT(mem32_base_json, "mem32_base")
+        cJSON *mem32_size_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "mem32_size");
+        CHECK_JSON_NULL_ERR_OUT(mem32_size_json, "mem32_size")
+        cJSON *pci_mem32_base_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "pci_mem32_base");
+        CHECK_JSON_NULL_ERR_OUT(pci_mem32_base_json, "pci_mem32_base")
+        cJSON *mem64_base_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "mem64_base");
+        CHECK_JSON_NULL_ERR_OUT(mem64_base_json, "mem64_base")
+        cJSON *mem64_size_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "mem64_size");
+        CHECK_JSON_NULL_ERR_OUT(mem64_size_json, "mem64_size")
+        cJSON *pci_mem64_base_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "pci_mem64_base");
+        CHECK_JSON_NULL_ERR_OUT(pci_mem64_base_json, "pci_mem64_base")
+        cJSON *bus_range_begin_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "bus_range_begin");
+        CHECK_JSON_NULL_ERR_OUT(bus_range_begin_json, "bus_range_begin")
+        cJSON *bus_range_end_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "bus_range_end");
+        CHECK_JSON_NULL_ERR_OUT(bus_range_end_json, "bus_range_end")
+        cJSON *domain_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(pci_config_json, "domain");
+        CHECK_JSON_NULL_ERR_OUT(domain_json, "domain")
+
+        if (parse_json_linux_u64(ecam_base_json, &pci_config->ecam_base) != 0 ||
+            parse_json_linux_u64(ecam_size_json, &pci_config->ecam_size) != 0 ||
+            parse_json_linux_u64(io_base_json, &pci_config->io_base) != 0 ||
+            parse_json_linux_u64(io_size_json, &pci_config->io_size) != 0 ||
+            parse_json_linux_u64(pci_io_base_json, &pci_config->pci_io_base) !=
+                0 ||
+            parse_json_linux_u64(mem32_base_json, &pci_config->mem32_base) !=
+                0 ||
+            parse_json_linux_u64(mem32_size_json, &pci_config->mem32_size) !=
+                0 ||
+            parse_json_linux_u64(pci_mem32_base_json,
+                                 &pci_config->pci_mem32_base) != 0 ||
+            parse_json_linux_u64(mem64_base_json, &pci_config->mem64_base) !=
+                0 ||
+            parse_json_linux_u64(mem64_size_json, &pci_config->mem64_size) !=
+                0 ||
+            parse_json_linux_u64(pci_mem64_base_json,
+                                 &pci_config->pci_mem64_base) != 0 ||
+            parse_json_linux_u32(bus_range_begin_json,
+                                 &pci_config->bus_range_begin) != 0 ||
+            parse_json_linux_u32(bus_range_end_json,
+                                 &pci_config->bus_range_end) != 0 ||
+            parse_json_linux_u8(domain_json, &pci_config->domain) != 0) {
+            log_error("Failed to parse pci_config\n");
+            goto err_out;
+        }
+
+        // log_info("pci_config %d: ecam_base=0x%llx, ecam_size=0x%llx, "
+        //          "io_base=0x%llx, io_size=0x%llx, "
+        //          "pci_io_base=0x%llx, mem32_base=0x%llx, mem32_size=0x%llx, "
+        //          "pci_mem32_base=0x%llx, mem64_base=0x%llx,
+        //          mem64_size=0x%llx, " "pci_mem64_base=0x%llx", i,
+        //          pci_config->ecam_base, pci_config->ecam_size,
+        //          pci_config->io_base, pci_config->io_size,
+        //          pci_config->pci_io_base, pci_config->mem32_base,
+        //          pci_config->mem32_size, pci_config->pci_mem32_base,
+        //          pci_config->mem64_base, pci_config->mem64_size,
+        //          pci_config->pci_mem64_base);
+    }
+
+    cJSON *alloc_pci_devs_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(root, "alloc_pci_devs");
+    int num_pci_devs = SAFE_CJSON_GET_ARRAY_SIZE(alloc_pci_devs_json);
+    config->num_pci_devs = num_pci_devs;
+    for (int i = 0; i < num_pci_devs; i++) {
+        cJSON *dev_config_json =
+            SAFE_CJSON_GET_ARRAY_ITEM(alloc_pci_devs_json, i);
+        hv_pci_dev_config_t *dev_config = &config->alloc_pci_devs[i];
+
+        cJSON *dev_domain_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "domain");
+        cJSON *dev_bus_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "bus");
+        cJSON *dev_device_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "device");
+        cJSON *dev_function_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "function");
+        cJSON *dev_vbus_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "v_bus");
+        cJSON *dev_vdevice_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "v_device");
+        cJSON *dev_vfunction_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "v_function");
+        cJSON *dev_type_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(dev_config_json, "dev_type");
+
+        if (parse_json_linux_u8(dev_domain_json, &dev_config->domain) != 0 ||
+            parse_json_linux_u8(dev_bus_json, &dev_config->bus) != 0 ||
+            parse_json_linux_u8(dev_device_json, &dev_config->device) != 0 ||
+            parse_json_linux_u8(dev_function_json, &dev_config->function) !=
+                0 ||
+            parse_json_linux_u8(dev_vbus_json, &dev_config->v_bus) != 0 ||
+            parse_json_linux_u8(dev_vdevice_json, &dev_config->v_device) != 0 ||
+            parse_json_linux_u8(dev_vfunction_json, &dev_config->v_function) !=
+                0 ||
+            parse_json_linux_u32(dev_type_json, &dev_config->dev_type) != 0) {
+            log_error("Failed to parse pci device config\n");
+            goto err_out;
+        }
+    }
+    return 0;
+err_out:
+    return -1;
+}
+
+/*
+ * Non-x86 hypercall implementations currently return 0
+ */
+static int zone_apply_dynamic_ecam(int fd, zone_config_t *config) {
+    uint64_t ecam_base = 0;
+
+    if (config->num_pci_bus == 0) {
+        return 0;
+    }
+
+    if (ioctl(fd, HVISOR_GET_ECAM_BASE, &ecam_base) != 0) {
+        perror("zone_start: HVISOR_GET_ECAM_BASE failed");
+        return -1;
+    }
+
+    if (ecam_base == 0) {
+        return 0;
+    }
+
+    if (config->pci_config[0].ecam_base != ecam_base) {
+        log_info("zone %s: dynamic ECAM base 0x%llx -> 0x%llx", config->name,
+                 config->pci_config[0].ecam_base, ecam_base);
+        config->pci_config[0].ecam_base = ecam_base;
+    }
+
+    return 0;
+}
+
+static int zone_start_from_json(const char *json_config_path,
+                                zone_config_t *config) {
+    cJSON *root = NULL;
+    struct boot_mode boot_mode;
+
+    FILE *file = fopen(json_config_path, "r");
+    if (file == NULL) {
+        log_error("Error opening json file: %s", json_config_path);
+        exit(1);
+    }
+    fseek(file, 0, SEEK_END);
+    long file_size = ftell(file);
+    fseek(file, 0, SEEK_SET);
+    char *buffer = malloc(file_size + 1);
+    if (fread(buffer, 1, file_size, file) == 0) {
+        log_error("Error reading json file: %s", json_config_path);
+        fclose(file);
+        goto err_out;
+    }
+    fclose(file);
+    buffer[file_size] = '\0';
+
+    // parse JSON
+    root = SAFE_CJSON_PARSE(buffer);
+    cJSON *zone_id_json = SAFE_CJSON_GET_OBJECT_ITEM(root, "zone_id");
+    cJSON *cpus_json = SAFE_CJSON_GET_OBJECT_ITEM(root, "cpus");
+    cJSON *name_json = SAFE_CJSON_GET_OBJECT_ITEM(root, "name");
+    cJSON *memory_regions_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(root, "memory_regions");
+    cJSON *kernel_filepath_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(root, "kernel_filepath");
+    cJSON *dtb_filepath_json = SAFE_CJSON_GET_OBJECT_ITEM(root, "dtb_filepath");
+    cJSON *kernel_load_paddr_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(root, "kernel_load_paddr");
+    cJSON *dtb_load_paddr_json =
+        SAFE_CJSON_GET_OBJECT_ITEM(root, "dtb_load_paddr");
+    cJSON *entry_point_json = SAFE_CJSON_GET_OBJECT_ITEM(root, "entry_point");
+    cJSON *interrupts_json = SAFE_CJSON_GET_OBJECT_ITEM(root, "interrupts");
+    cJSON *ivc_configs_json = SAFE_CJSON_GET_OBJECT_ITEM(root, "ivc_configs");
+    cJSON *modules_json = SAFE_CJSON_GET_OBJECT_ITEM(root, "modules");
+
+    CHECK_JSON_NULL_ERR_OUT(zone_id_json, "zone_id")
+    CHECK_JSON_NULL_ERR_OUT(cpus_json, "cpus")
+    CHECK_JSON_NULL_ERR_OUT(name_json, "name")
+    CHECK_JSON_NULL_ERR_OUT(memory_regions_json, "memory_regions")
+    CHECK_JSON_NULL_ERR_OUT(kernel_filepath_json, "kernel_filepath")
+    CHECK_JSON_NULL_ERR_OUT(dtb_filepath_json, "dtb_filepath")
+    CHECK_JSON_NULL_ERR_OUT(kernel_load_paddr_json, "kernel_load_paddr")
+    CHECK_JSON_NULL_ERR_OUT(dtb_load_paddr_json, "dtb_load_paddr")
+    CHECK_JSON_NULL_ERR_OUT(entry_point_json, "entry_point")
+    CHECK_JSON_NULL_ERR_OUT(interrupts_json, "interrupts")
+    CHECK_JSON_NULL_ERR_OUT(ivc_configs_json, "ivc_configs")
+    // modules is an optional configuration, just skip it here
+
+    config->zone_id = zone_id_json->valueint;
+
+    int num_cpus = SAFE_CJSON_GET_ARRAY_SIZE(cpus_json);
+
+    for (int i = 0; i < num_cpus; i++) {
+        config->cpus |=
+            (1ULL << SAFE_CJSON_GET_ARRAY_ITEM(cpus_json, i)->valueint);
+    }
+
+    int num_memory_regions = SAFE_CJSON_GET_ARRAY_SIZE(memory_regions_json);
+    int num_interrupts = SAFE_CJSON_GET_ARRAY_SIZE(interrupts_json);
+
+    if (num_memory_regions > CONFIG_MAX_MEMORY_REGIONS ||
+        num_interrupts > CONFIG_MAX_INTERRUPTS) {
+        log_error("Exceeded maximum allowed regions/interrupts.");
+        goto err_out;
+    }
+
+    // Iterate through each memory region of the zone
+    // Including memory and MMIO regions of the zone
+    config->num_memory_regions = num_memory_regions;
+    for (int i = 0; i < num_memory_regions; i++) {
+        cJSON *region = SAFE_CJSON_GET_ARRAY_ITEM(memory_regions_json, i);
+        memory_region_t *mem_region = &config->memory_regions[i];
+
+        cJSON *physical_start_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(region, "physical_start");
+        cJSON *virtual_start_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(region, "virtual_start");
+        cJSON *size_json = SAFE_CJSON_GET_OBJECT_ITEM(region, "size");
+
+        if (parse_json_linux_u64(physical_start_json,
+                                 &mem_region->physical_start) != 0 ||
+            parse_json_linux_u64(virtual_start_json,
+                                 &mem_region->virtual_start) != 0 ||
+            parse_json_linux_u64(size_json, &mem_region->size) != 0) {
+            log_error("Failed to parse memory region %d\n", i);
+            goto err_out;
+        }
+
+        const char *type_str =
+            SAFE_CJSON_GET_OBJECT_ITEM(region, "type")->valuestring;
+        if (strcmp(type_str, "ram") == 0) {
+            mem_region->type = MEM_TYPE_RAM;
+        } else if (strcmp(type_str, "io") == 0) {
+            // io device
+            mem_region->type = MEM_TYPE_IO;
+        } else if (strcmp(type_str, "virtio") == 0) {
+            // virtio device
+            mem_region->type = MEM_TYPE_VIRTIO;
+        } else {
+            log_error("Unknown memory region type: %s", type_str);
+            goto err_out;
+        }
+
+        log_debug("memory_region %d: type %d, physical_start %llx, "
+                  "virtual_start %llx, size %llx",
+                  i, mem_region->type, mem_region->physical_start,
+                  mem_region->virtual_start, mem_region->size);
+    }
+
+    // irq
+    log_info("num interrupts %d", num_interrupts);
+    memset(config->interrupts_bitmap, 0, sizeof(config->interrupts_bitmap));
+    log_info("interrupts_bitmap %p, size %zu, is cleared",
+             config->interrupts_bitmap, sizeof(config->interrupts_bitmap));
+    for (int i = 0; i < num_interrupts; i++) {
+        const cJSON *const item = SAFE_CJSON_GET_ARRAY_ITEM(interrupts_json, i);
+
+        size_t irq;
+        if (parse_json_size(item, &irq) != 0) {
+            log_error("Failed to parse irq %d", i);
+            goto err_out;
+        }
+
+        if (irq >= CONFIG_MAX_INTERRUPTS) {
+            log_error("irq %zu is out of range", irq);
+            goto err_out;
+        }
+
+        // irq is valid, set the bit in the bitmap
+        const size_t word_index = irq / CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD;
+        const size_t bit_index = irq % CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD;
+        config->interrupts_bitmap[word_index] |= ((BitmapWord)1) << bit_index;
+        log_info("irq %zu is valid, set the bit in the bitmap", irq);
+    }
+
+    // ivc
+    int num_ivc_configs = SAFE_CJSON_GET_ARRAY_SIZE(ivc_configs_json);
+    if (num_ivc_configs > CONFIG_MAX_IVC_CONFIGS) {
+        log_error("Exceeded maximum allowed ivc configs.");
+        goto err_out;
+    }
+
+    config->num_ivc_configs = num_ivc_configs;
+    for (int i = 0; i < num_ivc_configs; i++) {
+        cJSON *ivc_config_json = SAFE_CJSON_GET_ARRAY_ITEM(ivc_configs_json, i);
+        ivc_config_t *ivc_config = &config->ivc_configs[i];
+        ivc_config->ivc_id =
+            SAFE_CJSON_GET_OBJECT_ITEM(ivc_config_json, "ivc_id")->valueint;
+        ivc_config->peer_id =
+            SAFE_CJSON_GET_OBJECT_ITEM(ivc_config_json, "peer_id")->valueint;
+
+        cJSON *shared_mem_ipa_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(ivc_config_json, "shared_mem_ipa");
+        cJSON *control_table_ipa_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(ivc_config_json, "control_table_ipa");
+        cJSON *rw_sec_size_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(ivc_config_json, "rw_sec_size");
+        cJSON *out_sec_size_json =
+            SAFE_CJSON_GET_OBJECT_ITEM(ivc_config_json, "out_sec_size");
+
+        if (parse_json_linux_u64(shared_mem_ipa_json,
+                                 &ivc_config->shared_mem_ipa) != 0 ||
+            parse_json_linux_u64(control_table_ipa_json,
+                                 &ivc_config->control_table_ipa) != 0 ||
+            parse_json_linux_u32(rw_sec_size_json, &ivc_config->rw_sec_size) !=
+                0 ||
+            parse_json_linux_u32(out_sec_size_json,
+                                 &ivc_config->out_sec_size) != 0) {
+            log_error("Failed to parse ivc config\n");
+            goto err_out;
+        }
+
+        ivc_config->interrupt_num =
+            SAFE_CJSON_GET_OBJECT_ITEM(ivc_config_json, "interrupt_num")
+                ->valueint;
+        ivc_config->max_peers =
+            SAFE_CJSON_GET_OBJECT_ITEM(ivc_config_json, "max_peers")->valueint;
+        log_info("ivc_config %d: ivc_id %d, peer_id %d, shared_mem_ipa %llx, "
+                 "interrupt_num %d, max_peers %d\n",
+                 i, ivc_config->ivc_id, ivc_config->peer_id,
+                 ivc_config->shared_mem_ipa, ivc_config->interrupt_num,
+                 ivc_config->max_peers);
+    }
+
+    if (parse_json_linux_u64(entry_point_json, &config->entry_point) != 0 ||
+        parse_json_linux_u64(kernel_load_paddr_json,
+                             &config->kernel_load_paddr) != 0 ||
+        parse_json_linux_u64(dtb_load_paddr_json, &config->dtb_load_paddr) !=
+            0) {
+        log_error("Failed to parse entry_point, kernel_load_paddr or "
+                  "dtb_load_paddr\n");
+        goto err_out;
+    }
+    // BOOT MODE SUPPORT: Check for a zone boot mode first
+    boot_mode_parse(&boot_mode, root);
+
+    // Load kernel image to memory
+    if (boot_mode.kind != BOOT_MODE_NONE) {
+        if (boot_mode_prepare_zone(&boot_mode, config, root) != 0) {
+            log_error("Failed to prepare zone boot mode\n");
+            goto err_out;
+        }
+    } else {
+        // Default boot path: load the whole kernel image to kernel_load_paddr.
+        config->kernel_size = load_image_to_memory(
+            kernel_filepath_json->valuestring, config->kernel_load_paddr);
+    }
+
+// Load dtb to memory
+// x86_64 uses ACPI
+#ifndef X86_64
+    config->dtb_size = load_image_to_memory(dtb_filepath_json->valuestring,
+                                            config->dtb_load_paddr);
+#endif
+
+    log_info("Kernel size: %llu, DTB size: %llu", config->kernel_size,
+             config->dtb_size);
+
+    // modules configuration is optional, return -1 if failed, otherwise 0
+    if (parse_modules(modules_json)) {
+        goto err_out;
+    }
+
+    // check name length
+    if (strlen(name_json->valuestring) > CONFIG_NAME_MAXLEN) {
+        log_error("Zone name too long: %s", name_json->valuestring);
+        goto err_out;
+    }
+    strncpy(config->name, name_json->valuestring, CONFIG_NAME_MAXLEN);
+
+    log_info("Zone name: %s", config->name);
+
+#ifndef LOONGARCH64
+    // Parse architecture-specific configurations (interrupts for each platform)
+    if (parse_arch_config(root, config))
+        goto err_out;
+
+#endif
+
+    if (parse_pci_config(root, config))
+        goto err_out;
+
+    if (root)
+        cJSON_Delete(root);
+    if (buffer)
+        free(buffer);
+
+    int fd = open_dev();
+    if (fd < 0) {
+        perror("zone_start: open hvisor failed");
+        goto err_out;
+    }
+
+    if (zone_apply_dynamic_ecam(fd, config) != 0) {
+        close(fd);
+        return -1;
+    }
+
+    if (boot_mode.kind != BOOT_MODE_NONE) {
+        if (boot_mode_apply(fd, config->zone_id, &boot_mode) != 0) {
+            close(fd);
+            return -1;
+        }
+    }
+
+    log_info("Calling ioctl to start zone: [%s]", config->name);
+
+    int err = ioctl(fd, HVISOR_ZONE_START, config);
+
+    if (err)
+        perror("zone_start: ioctl failed");
+
+    close(fd);
+
+    return err;
+err_out:
+    if (root)
+        cJSON_Delete(root);
+    if (buffer)
+        free(buffer);
+    return -1;
+}
+
+// ./hvisor zone start <path_to_config_file>
+static int zone_start(int argc, char *argv[]) {
+    char *json_config_path = NULL;
+    zone_config_t config;
+    int fd, ret;
+    uint64_t hvisor_config_version;
+
+    if (argc != 4) {
+        help(1);
+    }
+    json_config_path = argv[3];
+
+    memset(&config, 0, sizeof(zone_config_t));
+
+    fd = open_dev();
+    ret = ioctl(fd, HVISOR_CONFIG_CHECK, &hvisor_config_version);
+    close(fd);
+
+    if (ret) {
+        log_error("ioctl: hvisor config check failed, ret %d", ret);
+        return -1;
+    }
+
+    if (hvisor_config_version != CONFIG_MAGIC_VERSION) {
+        log_error("zone start failed because config versions mismatch, "
+                  "hvisor-tool is 0x%x, hvisor is 0x%x",
+                  CONFIG_MAGIC_VERSION, hvisor_config_version);
+        return -1;
+    } else {
+        log_info("zone config check pass");
+    }
+
+    return zone_start_from_json(json_config_path, &config);
+}
+
+// ./hvisor zone shutdown -id 1
+static int zone_shutdown(int argc, char *argv[]) {
+    if (argc != 2 || strcmp(argv[0], "-id") != 0) {
+        help(1);
+    }
+    uint64_t zone_id;
+    sscanf(argv[1], "%lu", &zone_id);
+    int fd = open_dev();
+    int err = ioctl(fd, HVISOR_ZONE_SHUTDOWN, zone_id);
+    if (err)
+        perror("zone_shutdown: ioctl failed");
+    close(fd);
+    return err;
+}
+
+static void print_cpu_list(uint64_t cpu_mask, char *outbuf, size_t bufsize) {
+    int found_cpu = 0;
+    char *buf = outbuf;
+
+    for (size_t i = 0; i < MAX_CPUS && (size_t)(buf - outbuf) < bufsize; i++) {
+        if ((cpu_mask & (1ULL << i)) != 0) {
+            if (found_cpu) {
+                *buf++ = ',';
+                *buf++ = ' ';
+            }
+            snprintf(buf, bufsize - (buf - outbuf), "%zu", i);
+            buf += strlen(buf);
+            found_cpu = 1;
+        }
+    }
+    if (!found_cpu) {
+        memcpy(outbuf, "none", 5);
+    }
+}
+
+// ./hvisor zone list
+static int zone_list(int argc, char *argv[]) {
+    if (argc != 0) {
+        help(1);
+    }
+    uint64_t cnt = CONFIG_MAX_ZONES;
+    zone_info_t *zones = malloc(sizeof(zone_info_t) * cnt);
+    zone_list_args_t args = {cnt, zones};
+    // printf("zone_list: cnt %llu, zones %p\n", cnt, zones);
+    int fd = open_dev();
+    int ret = ioctl(fd, HVISOR_ZONE_LIST, &args);
+    if (ret < 0)
+        perror("zone_list: ioctl failed");
+
+    printf("| %11s     | %10s        | %9s       | %10s |\n", "zone_id", "cpus",
+           "name", "status");
+
+    for (int i = 0; i < ret; i++) {
+        char cpu_list_str[256]; // Assuming this buffer size is enough
+        memset(cpu_list_str, 0, sizeof(cpu_list_str));
+        print_cpu_list(zones[i].cpus, cpu_list_str, sizeof(cpu_list_str));
+        printf("| %15u | %17s | %15s | %10s |\n", zones[i].zone_id,
+               cpu_list_str, zones[i].name,
+               zones[i].is_err ? "error" : "running");
+    }
+    free(zones);
+    close(fd);
+    return ret;
+}
+
+int main(int argc, char *argv[]) {
+    int err = 0;
+
+    multithread_log_init();
+    initialize_log();
+    atexit(multithread_log_exit);
+
+    if (argc < 3)
+        help(1);
+
+    if (strcmp(argv[1], "zone") == 0) {
+        if (argc < 3)
+            help(1);
+
+        if (strcmp(argv[2], "start") == 0) {
+            err = zone_start(argc, argv);
+        } else if (strcmp(argv[2], "shutdown") == 0) {
+            err = zone_shutdown(argc - 3, &argv[3]);
+        } else if (strcmp(argv[2], "list") == 0) {
+            err = zone_list(argc - 3, &argv[3]);
+        } else {
+            help(1);
+        }
+    } else if (strcmp(argv[1], "virtio") == 0) {
+        if (argc < 3)
+            help(1);
+
+        if (strcmp(argv[2], "start") == 0) {
+            err = virtio_start(argc, argv);
+        } else if (strcmp(argv[2], "add") == 0) {
+            err = virtio_add(argc, argv);
+        } else {
+            help(1);
+        }
+    } else {
+        help(1);
+    }
+
+    return err ? 1 : 0;
+}
