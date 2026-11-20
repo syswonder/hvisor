@@ -22,15 +22,15 @@ jobs:
           script: |
             const title = context.payload.pull_request.title.toLowerCase();
             const labels = [];
-            
+
             if (title.includes('feat') || title.includes('feature')) {
               labels.push('feature');
             }
-            
+
             if (title.includes('fix') || title.includes('bug')) {
               labels.push('bug');
             }
-            
+
             if (title.includes('docs') || title.includes('documentation')) {
               labels.push('documentation');
             }

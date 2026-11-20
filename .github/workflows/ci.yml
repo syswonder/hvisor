@@ -1,7 +1,7 @@
 # hvisor Github Actions CI
 # wheatfox <wheatfox17@icloud.com>
 #
-# GitHub: format + license checks only. 
+# GitHub: format + license checks only.
 
 name: CI
 on:

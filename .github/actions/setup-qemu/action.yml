@@ -1,14 +1,14 @@
-name: 'QEMU Source Installation'
-description: 'Install QEMU from source'
+name: "QEMU Source Installation"
+description: "Install QEMU from source"
 inputs:
   qemu-version:
-    description: 'QEMU version to install'
+    description: "QEMU version to install"
     required: false
-    default: '10.1.0'
+    default: "10.1.0"
   install-path:
-    description: 'Custom installation path'
+    description: "Custom installation path"
     required: false
-    default: '/opt/qemu'
+    default: "/opt/qemu"
 
 runs:
   using: "composite"
