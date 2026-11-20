@@ -24,7 +24,7 @@ use core::sync::atomic::{fence, Ordering};
 #[cfg(target_arch = "aarch64")]
 pub(crate) const SGIS_NUM: usize = SGI_RANGE.end;
 
-#[cfg(not(target_arch = "loongarch64"))]
+#[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
 pub fn handle_virtio_irq_event() {
     crate::device::virtio_trampoline::handle_virtio_irq();
 }
@@ -53,8 +53,12 @@ pub fn post_guest_irq(
     if irq_id >= GUEST_IRQ_NR {
         return false;
     }
+    // Only SGIs and SPIs can be posted so far; the LR flush has no PPI path
+    // yet. PPIs (e.g. a vCPU virtual timer) and LPIs (virtio-pci or
+    // passthrough MSI) still go through `inject_irq()`. Posting LPIs (>= 8192)
+    // will also need storage beyond `GUEST_IRQ_NR`.
     #[cfg(target_arch = "aarch64")]
-    if irq_id >= SGIS_NUM {
+    if !is_sgi(irq_id) && !is_spi(irq_id) {
         return false;
     }
     let target = get_cpu_data(target_cpu);
@@ -85,6 +89,20 @@ pub fn post_guest_irq(
     }
     drop(control);
     kick_vcpu(&target.vcpu, target_cpu);
+    true
+}
+
+/// Post a software SPI, one with no physical interrupt behind it. Returns
+/// `false` for an INTID that is not an SPI.
+#[cfg(target_arch = "aarch64")]
+pub fn post_guest_spi(target_cpu: usize, irq_id: usize) -> bool {
+    if !is_spi(irq_id) {
+        error!("invalid guest SPI {} for CPU{}", irq_id, target_cpu);
+        return false;
+    }
+    // A CPU leaving its zone may reject the post; that is not an argument
+    // error.
+    post_guest_irq(target_cpu, irq_id, None, GuestIrqSignal::Edge);
     true
 }
 

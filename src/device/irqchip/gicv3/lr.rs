@@ -20,7 +20,7 @@ use super::pending::PENDING_VIRQS;
 use crate::arch::aarch64::sysreg::{read_sysreg, write_sysreg};
 use crate::arch::cpu::this_cpu_id;
 use crate::cpu_data::this_cpu_data;
-use crate::device::irqchip::is_sgi;
+use crate::device::irqchip::{is_sgi, is_spi};
 use bit_field::BitField;
 
 pub const MAINTENANCE_INTERRUPT: u64 = 25;
@@ -37,13 +37,18 @@ pub fn flush_current_guest_irqs() {
 }
 
 fn install_pending_guest_irq(irq_id: usize) -> bool {
-    if !is_sgi(irq_id) {
-        return false;
+    if !is_sgi(irq_id) && !is_spi(irq_id) {
+        // `post_guest_irq()` only accepts SGIs and SPIs for now, so nothing else
+        // should get here. Returning `false` would mean "LR full" and rearm
+        // maintenance forever, so drop it instead. Extend this together with
+        // `post_guest_irq()` when PPIs or LPIs start being posted.
+        warn!("dropping unexpected guest IRQ {}", irq_id);
+        return true;
     }
-    try_install_software_sgi(irq_id)
+    try_install_software_irq(irq_id)
 }
 
-fn try_install_software_sgi(irq_id: usize) -> bool {
+fn try_install_software_irq(irq_id: usize) -> bool {
     let elsr = read_sysreg!(ich_elrsr_el2);
     let mut free_lr = None;
     for index in 0..list_regs_num() {

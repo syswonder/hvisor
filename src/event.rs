@@ -14,9 +14,9 @@
 // Authors:
 //
 #![allow(unused)]
-#[cfg(not(target_arch = "loongarch64"))]
+#[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
 use crate::device::irqchip::handle_virtio_irq_event;
-#[cfg(any(not(target_arch = "loongarch64"), virtio_pci))]
+#[cfg(any(target_arch = "riscv64", target_arch = "x86_64", virtio_pci))]
 use crate::device::irqchip::inject_irq;
 use crate::{
     arch::cpu::this_cpu_id,
@@ -124,12 +124,12 @@ fn handle_event(event: Option<usize>) -> bool {
             cpu_data.arch_cpu.idle();
             false
         }
-        #[cfg(not(target_arch = "loongarch64"))]
+        #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
         Some(IPI_EVENT_VIRTIO_INJECT_IRQ) => {
             handle_virtio_irq_event();
             true
         }
-        #[cfg(not(target_arch = "loongarch64"))]
+        #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
         Some(IPI_EVENT_WAKEUP_VIRTIO_DEVICE) => {
             inject_irq(IRQ_WAKEUP_VIRTIO_DEVICE, false);
             true

@@ -22,7 +22,7 @@ use crate::cpu_data::{get_cpu_data, PerCpu, VcpuState};
 use crate::device::virtio_trampoline::{
     VirtioPCIHypercallOp, VIRTIO_BRIDGE, VIRTIO_PCI_BRIDGE, VIRTIO_PCI_HYPERCALL_VERSION,
 };
-#[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+#[cfg(target_arch = "riscv64")]
 use crate::device::virtio_trampoline::{MAX_DEVS, VIRTIO_IRQS};
 use crate::error::HvResult;
 use crate::pci::pci_config::GLOBAL_PCIE_LIST;
@@ -31,7 +31,7 @@ use crate::zone::{
     set_zone_boot_mode, zone_create, ZoneInfo,
 };
 
-#[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+#[cfg(target_arch = "riscv64")]
 use crate::event::IPI_EVENT_VIRTIO_INJECT_IRQ;
 use crate::event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_VIRTIO_PCI_DONE, IPI_EVENT_WAKEUP};
 use core::convert::TryFrom;
@@ -154,7 +154,7 @@ impl<'a> HyperCall<'a> {
         #[cfg(target_arch = "x86_64")]
         let _irq_lifecycle = X86_IOAPIC_LIFECYCLE.read();
         let mut res_agent = VIRTIO_BRIDGE.res_agent();
-        #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+        #[cfg(target_arch = "riscv64")]
         let mut map_irq = VIRTIO_IRQS.lock();
         while !res_agent.is_empty() {
             let (_res_front, irq_id, target_zone) = res_agent.peek_front();
@@ -175,6 +175,13 @@ impl<'a> HyperCall<'a> {
                 continue;
             }
 
+            #[cfg(target_arch = "aarch64")]
+            {
+                crate::device::irqchip::post_guest_spi(target_cpu, irq_id as usize);
+                res_agent.advance_front();
+                continue;
+            }
+
             #[cfg(target_arch = "x86_64")]
             {
                 crate::device::irqchip::pic::ioapic::ioapic_set_line(
@@ -186,7 +193,7 @@ impl<'a> HyperCall<'a> {
                 continue;
             }
 
-            #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+            #[cfg(target_arch = "riscv64")]
             {
                 let irq_list = map_irq.entry(target_cpu).or_insert([0; MAX_DEVS + 1]);
                 self.wait_for_interrupt(irq_list);
@@ -203,7 +210,7 @@ impl<'a> HyperCall<'a> {
                 }
             }
 
-            #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+            #[cfg(target_arch = "riscv64")]
             res_agent.advance_front();
         }
         drop(res_agent);
@@ -360,7 +367,7 @@ impl<'a> HyperCall<'a> {
             return hv_result_err!(EINVAL);
         }
         // avoid virtio daemon send sgi to the shutdowning zone
-        #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+        #[cfg(target_arch = "riscv64")]
         let mut map_irq = VIRTIO_IRQS.lock();
 
         let zone = match find_zone(zone_id as _) {
@@ -386,7 +393,7 @@ impl<'a> HyperCall<'a> {
             get_cpu_data(cpu_id).vcpu.clear_irq_state();
             send_event(cpu_id, SGI_IPI_ID as _, IPI_EVENT_SHUTDOWN);
             // set the virtio irq list's len to 0
-            #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+            #[cfg(target_arch = "riscv64")]
             if let Some(irq_list) = map_irq.get_mut(&cpu_id) {
                 irq_list[0] = 0;
             }

@@ -22,7 +22,7 @@ use crate::device::irqchip::gicv2::gich::{
     GICV2_GICH_LR_PENDING_STATE, GICV2_GICH_LR_PHYSID_SHIFT,
 };
 use crate::device::irqchip::gicv2::pending::PENDING_VIRQS;
-use crate::device::irqchip::{is_sgi, SGIS_NUM};
+use crate::device::irqchip::{is_sgi, is_spi, SGIS_NUM};
 use bit_field::BitField;
 use core::sync::atomic::Ordering;
 
@@ -42,8 +42,16 @@ pub fn flush_current_guest_irqs() {
 }
 
 fn install_pending_guest_irq(cpu: &crate::cpu_data::PerCpu, irq_id: usize) -> bool {
+    if is_spi(irq_id) {
+        return try_install_software_spi(irq_id);
+    }
     if !is_sgi(irq_id) {
-        return false;
+        // `post_guest_irq()` only accepts SGIs and SPIs for now, so nothing else
+        // should get here. Returning `false` would mean "LR full" and rearm
+        // maintenance forever, so drop it instead. Extend this together with
+        // `post_guest_irq()` when PPIs or LPIs start being posted.
+        warn!("dropping unexpected guest IRQ {}", irq_id);
+        return true;
     }
     let sources = &cpu.vcpu.arch.sgi_source[irq_id];
     let source_cpu = sources.load(Ordering::Acquire).trailing_zeros() as usize;
@@ -113,6 +121,34 @@ fn try_install_software_sgi(irq_id: usize, source_cpu: usize) -> SgiInstall {
     };
     GichLr::new_pending_sgi(irq_id, source_cpu).write(index);
     SgiInstall::Installed
+}
+
+// Install a software SPI; LRs of the same VirtualID coalesce as for SGIs.
+fn try_install_software_spi(irq_id: usize) -> bool {
+    let gich = GICH.get().unwrap();
+    let empty_lrs = empty_lr_mask(gich);
+    let mut free_lr = None;
+    for index in 0..=gich.get_lr_num() as usize {
+        if empty_lrs.get_bit(index) {
+            free_lr.get_or_insert(index);
+            continue;
+        }
+        let mut lr = GichLr::read(index);
+        if lr.vintid() != irq_id {
+            continue;
+        }
+        // Active-only LRs become pending; pending ones coalesce.
+        if !lr.is_pending() {
+            lr.set_pending(true);
+            lr.write(index);
+        }
+        return true;
+    }
+    let Some(index) = free_lr else {
+        return false;
+    };
+    GichLr::new_pending_spi(irq_id).write(index);
+    true
 }
 
 pub fn inject_irq(irq_id: usize, is_sgi: bool) -> bool {
