@@ -13,9 +13,10 @@
 //
 // Authors:
 //
+use super::gicd::GICD_LOCK;
 use super::lr::{clear_guest_sgi, lr_pending_sgi_mask, MAINTENANCE_INTERRUPT};
 use super::CPU_UNUSED_GICR_BASE;
-use super::{gicd::GICD_LOCK, is_spi};
+use crate::device::irqchip::is_spi;
 use crate::device::irqchip::{GuestIrqSignal, PendingR0};
 use crate::platform::BOARD_MPIDR_MAPPINGS;
 use crate::{
@@ -344,7 +345,7 @@ fn vgicv3_handle_irq_ops(mmio: &mut MMIOAccess, irq: u32) -> HvResult {
     let zone = this_zone();
     let zone_r = zone.read();
 
-    if !is_spi(irq) || !zone_r.irq_in_zone(irq) {
+    if !is_spi(irq as usize) || !zone_r.irq_in_zone(irq) {
         debug!(
             "gicd-mmio: skip irq {} access, reg = {:#x?}",
             irq, mmio.address

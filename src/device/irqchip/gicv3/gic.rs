@@ -14,8 +14,9 @@
 // Authors:
 //
 // Physical GICv3 interrupt entry: acknowledge, dispatch and deactivate.
-use super::lr::{handle_maintenance_interrupt, inject_irq};
+use super::lr::{handle_maintenance_interrupt, inject_irq, MAINTENANCE_INTERRUPT};
 use crate::arch::aarch64::sysreg::{read_sysreg, write_sysreg};
+use crate::device::irqchip::{is_lpi, is_sgi, is_spi};
 use crate::event::{check_events, dispatch_host_events};
 use crate::hypercall::SGI_IPI_ID;
 use core::sync::atomic::AtomicU64;
@@ -26,7 +27,7 @@ const TIMER_INTERRUPT_PRINT_INTERVAL: u64 = 50;
 
 pub fn gicv3_handle_irq_el1() {
     while let Some(irq_id) = pending_irq() {
-        if irq_id < 16 {
+        if is_sgi(irq_id) {
             deactivate_irq(irq_id);
             if irq_id == SGI_IPI_ID as usize {
                 // SGI 7 is the reserved physical host doorbell. Guest SGIs,
@@ -51,12 +52,11 @@ pub fn gicv3_handle_irq_el1() {
                         TIMER_INTERRUPT_COUNTER.load(core::sync::atomic::Ordering::SeqCst)
                     );
                 }
-            } else if irq_id == 25 {
+            } else if irq_id == MAINTENANCE_INTERRUPT as usize {
                 // maintenance interrupt
                 handle_maintenance_interrupt();
-            } else if irq_id > 31 {
-                //inject phy irq
-                trace!("*** get spi_irq id = {}", irq_id);
+            } else if is_spi(irq_id) || is_lpi(irq_id) {
+                trace!("*** get spi/lpi irq id = {}", irq_id);
 
                 #[cfg(all(dwc_pcie, dwc_msi))]
                 {
@@ -72,12 +72,12 @@ pub fn gicv3_handle_irq_el1() {
             }
 
             #[cfg(all(dwc_pcie, dwc_msi))]
-            if irq_id != 25 && !is_dwc_msi_irq {
+            if irq_id != MAINTENANCE_INTERRUPT as usize && !is_dwc_msi_irq {
                 inject_irq(irq_id, true);
             }
 
             #[cfg(not(all(dwc_pcie, dwc_msi)))]
-            if irq_id != 25 {
+            if irq_id != MAINTENANCE_INTERRUPT as usize {
                 inject_irq(irq_id, true);
             }
 
@@ -98,7 +98,7 @@ fn pending_irq() -> Option<usize> {
 
 fn deactivate_irq(irq_id: usize) {
     write_sysreg!(icc_eoir1_el1, irq_id as u64);
-    if irq_id < 16 || irq_id == 25 {
+    if is_sgi(irq_id) || irq_id == MAINTENANCE_INTERRUPT as usize {
         write_sysreg!(icc_dir_el1, irq_id as u64);
     }
 }

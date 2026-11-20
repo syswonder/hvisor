@@ -14,7 +14,7 @@
 // Authors:
 //
 #[cfg(irq_gicv2)]
-use crate::device::irqchip::gicv2::{gicd::GICV2_SGIS_NUM, pending::MAX_CPU_NUM};
+use crate::device::irqchip::{gicv2::pending::MAX_CPU_NUM, is_sgi, SGIS_NUM};
 #[cfg(irq_gicv2)]
 use core::sync::atomic::{AtomicU8, Ordering};
 
@@ -27,21 +27,21 @@ pub const GUEST_LINES: &[usize] = &[];
 /// Architecture-private vCPU state, separate from the host pCPU's `ArchCpu`.
 pub struct ArchVcpu {
     #[cfg(irq_gicv2)]
-    pub sgi_source: [AtomicU8; GICV2_SGIS_NUM],
+    pub sgi_source: [AtomicU8; SGIS_NUM],
 }
 
 impl ArchVcpu {
     pub const fn new() -> Self {
         Self {
             #[cfg(irq_gicv2)]
-            sgi_source: [const { AtomicU8::new(0) }; GICV2_SGIS_NUM],
+            sgi_source: [const { AtomicU8::new(0) }; SGIS_NUM],
         }
     }
 
     #[inline]
     pub fn prepare_post(&self, irq_id: usize, source_cpu: Option<usize>) -> bool {
         #[cfg(irq_gicv2)]
-        if irq_id < GICV2_SGIS_NUM {
+        if is_sgi(irq_id) {
             let source_cpu = source_cpu
                 .filter(|source_cpu| *source_cpu < MAX_CPU_NUM)
                 .expect("GICv2 SGI source must be validated by the caller");

@@ -22,7 +22,7 @@ use crate::zone::Zone;
 use core::sync::atomic::{fence, Ordering};
 
 #[cfg(target_arch = "aarch64")]
-pub(crate) const SGIS_NUM: usize = 16;
+pub(crate) const SGIS_NUM: usize = SGI_RANGE.end;
 
 #[cfg(not(target_arch = "loongarch64"))]
 pub fn handle_virtio_irq_event() {
@@ -137,6 +137,32 @@ pub mod gicv3;
 pub use gicv3::{
     gicd::set_ispender, lr::inject_irq, percpu_init, primary_init_early, primary_init_late,
 };
+
+// GIC INTID ranges, shared by GICv2 and GICv3.
+#[cfg(target_arch = "aarch64")]
+pub(crate) const SGI_RANGE: core::ops::Range<usize> = 0..16;
+// INTIDs 1020..1024 are special and never name an interrupt.
+#[cfg(target_arch = "aarch64")]
+pub(crate) const SPI_RANGE: core::ops::Range<usize> = 32..1020;
+
+#[cfg(target_arch = "aarch64")]
+pub(crate) fn is_sgi(intid: usize) -> bool {
+    SGI_RANGE.contains(&intid)
+}
+
+#[cfg(target_arch = "aarch64")]
+pub(crate) fn is_spi(intid: usize) -> bool {
+    SPI_RANGE.contains(&intid)
+}
+
+// LPIs exist only on GICv3 (delivered through the ITS).
+#[cfg(all(irq_gicv3, target_arch = "aarch64"))]
+pub(crate) const LPI_START: usize = 8192;
+
+#[cfg(all(irq_gicv3, target_arch = "aarch64"))]
+pub(crate) fn is_lpi(intid: usize) -> bool {
+    intid >= LPI_START
+}
 
 /// ISPENDR0/ICPENDR0 value: SGIs in bits [15:0], PPIs in bits [31:16].
 #[cfg(target_arch = "aarch64")]

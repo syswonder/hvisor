@@ -25,8 +25,8 @@ use crate::device::irqchip::gicv2::gicd::{
     GICD_ISACTIVER_REG_OFFSET, GICD_ISENABLER_REG_OFFSET, GICD_ISPENDR_REG_OFFSET,
     GICD_ITARGETSR_REG_OFFSET, GICD_LOCK, GICD_SGIR_REG_OFFSET, GICD_SGIR_ROUTING_SHIFT,
     GICD_SGIR_TARGET_LIST_FILTER_SHIFT, GICD_SPENDSGIR_REG_OFFSET, GICD_TYPER_REG_OFFSET,
-    GICV2_CONFIG_REGS_NUM, GICV2_INT_REGS_NUM, GICV2_PRIO_REGS_NUM, GICV2_SGIS_NUM,
-    GICV2_SGI_REGS_NUM, GICV2_TARGET_REGS_NUM,
+    GICV2_CONFIG_REGS_NUM, GICV2_INT_REGS_NUM, GICV2_PRIO_REGS_NUM, GICV2_SGI_REGS_NUM,
+    GICV2_TARGET_REGS_NUM,
 };
 use crate::device::irqchip::gicv2::lr::{
     clear_guest_sgi_pending, clear_guest_sgi_pending_sources, read_pending_sgi_lr_summary,
@@ -34,7 +34,7 @@ use crate::device::irqchip::gicv2::lr::{
 };
 use crate::device::irqchip::gicv2::pending::MAX_CPU_NUM;
 use crate::device::irqchip::gicv2::GICV2;
-use crate::device::irqchip::{GuestIrqSignal, PendingR0};
+use crate::device::irqchip::{is_sgi, GuestIrqSignal, PendingR0, SGIS_NUM, SPI_RANGE};
 use crate::error::HvResult;
 use crate::memory::{mmio_perform_access, MMIOAccess, MemFlags, MemoryRegion};
 use crate::zone::Zone;
@@ -407,7 +407,7 @@ fn handle_gicd_intid_pending_access(
     if mmio.is_write {
         let mut reg = PendingR0::from_raw(mmio.value as u32);
         let sgis = reg.sgis();
-        for irq_id in 0..GICV2_SGIS_NUM {
+        for irq_id in 0..SGIS_NUM {
             if !sgis.get_bit(irq_id) {
                 continue;
             }
@@ -436,7 +436,7 @@ fn handle_gicd_intid_pending_access(
     }
     mmio_perform_access(gicd_base, mmio);
     let mut sgi_pending = read_pending_sgi_lr_summary().pending_mask;
-    for irq_id in 0..GICV2_SGIS_NUM {
+    for irq_id in 0..SGIS_NUM {
         if read_guest_sgi_source_mask(target_cpu, irq_id, 0) != 0 {
             sgi_pending.set_bit(irq_id, true);
         }
@@ -476,7 +476,7 @@ fn handle_gicd_sgi_pending_access(mmio: &mut MMIOAccess, is_clear: bool) -> HvRe
         for byte in 0..4 {
             let lane = byte * 8..byte * 8 + 8;
             let irq_id = first_irq + byte;
-            if width_mask.get_bits(lane.clone()) == 0 || irq_id >= GICV2_SGIS_NUM {
+            if width_mask.get_bits(lane.clone()) == 0 || !is_sgi(irq_id) {
                 continue;
             }
             let source_mask = value.get_bits(lane) as u8;
@@ -515,7 +515,7 @@ fn zone_owned_ppi_mask() -> u32 {
     let zone = this_zone();
     let zone_r = zone.read();
     let mut mask = 0u32;
-    for irq in GICV2_SGIS_NUM..32 {
+    for irq in SGIS_NUM..SPI_RANGE.start {
         if irq != MAINTENANCE_INTERRUPT as usize && zone_r.irq_in_zone(irq as u32) {
             mask.set_bit(irq, true);
         }

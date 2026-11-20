@@ -17,12 +17,12 @@
 // tracking, and the maintenance interrupt.
 use crate::arch::cpu::this_cpu_id;
 use crate::cpu_data::this_cpu_data;
-use crate::device::irqchip::gicv2::gicd::GICV2_SGIS_NUM;
 use crate::device::irqchip::gicv2::gich::{
     GicHypervisorInterface, GichLr, GICH, GICV2_GICH_HCR_UIE, GICV2_GICH_LR_HW,
     GICV2_GICH_LR_PENDING_STATE, GICV2_GICH_LR_PHYSID_SHIFT,
 };
 use crate::device::irqchip::gicv2::pending::PENDING_VIRQS;
+use crate::device::irqchip::{is_sgi, SGIS_NUM};
 use bit_field::BitField;
 use core::sync::atomic::Ordering;
 
@@ -42,7 +42,7 @@ pub fn flush_current_guest_irqs() {
 }
 
 fn install_pending_guest_irq(cpu: &crate::cpu_data::PerCpu, irq_id: usize) -> bool {
-    if irq_id >= GICV2_SGIS_NUM {
+    if !is_sgi(irq_id) {
         return false;
     }
     let sources = &cpu.vcpu.arch.sgi_source[irq_id];
@@ -168,7 +168,7 @@ pub fn clear_guest_sgi_pending(target_cpu: usize, irq_id: usize) -> bool {
 }
 
 pub fn clear_guest_sgi_pending_sources(target_cpu: usize, irq_id: usize, source_mask: u8) -> bool {
-    if irq_id >= GICV2_SGIS_NUM {
+    if !is_sgi(irq_id) {
         return false;
     }
     let target = crate::cpu_data::get_cpu_data(target_cpu);
@@ -211,7 +211,7 @@ fn clear_lr_pending_sgi(irq_id: usize, source_mask: u8) {
 
 pub(crate) struct PendingSgiLrSummary {
     pub pending_mask: u32,
-    pub source_masks: [u8; GICV2_SGIS_NUM],
+    pub source_masks: [u8; SGIS_NUM],
 }
 
 pub(crate) fn read_pending_sgi_lr_summary() -> PendingSgiLrSummary {
@@ -219,7 +219,7 @@ pub(crate) fn read_pending_sgi_lr_summary() -> PendingSgiLrSummary {
     let empty_lrs = empty_lr_mask(gich);
     let mut summary = PendingSgiLrSummary {
         pending_mask: 0,
-        source_masks: [0; GICV2_SGIS_NUM],
+        source_masks: [0; SGIS_NUM],
     };
     for index in 0..=gich.get_lr_num() as usize {
         if empty_lrs.get_bit(index) {
@@ -227,7 +227,7 @@ pub(crate) fn read_pending_sgi_lr_summary() -> PendingSgiLrSummary {
         }
         let lr = GichLr::read(index);
         let irq_id = lr.vintid();
-        if irq_id < GICV2_SGIS_NUM && lr.is_pending() {
+        if is_sgi(irq_id) && lr.is_pending() {
             summary.pending_mask.set_bit(irq_id, true);
             summary.source_masks[irq_id].set_bit(lr.source_cpu(), true);
         }
@@ -265,7 +265,7 @@ fn handle_sgi_eoi_maintenance() {
             continue;
         }
         let irq_id = GichLr::read(index).vintid();
-        if irq_id >= GICV2_SGIS_NUM {
+        if !is_sgi(irq_id) {
             continue;
         }
         gich.set_lr(index, 0);
