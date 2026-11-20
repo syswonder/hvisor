@@ -170,11 +170,7 @@ impl<'a> HyperCall<'a> {
 
             #[cfg(target_arch = "loongarch64")]
             {
-                crate::device::irqchip::ls7a2000::set_guest_irq_line(
-                    target_cpu,
-                    irq_id as usize,
-                    true,
-                );
+                crate::device::irqchip::ls7a2000::post_guest_hwi(target_cpu, irq_id as usize, true);
                 res_agent.advance_front();
                 continue;
             }
@@ -270,7 +266,7 @@ impl<'a> HyperCall<'a> {
 
         #[cfg(target_arch = "loongarch64")]
         {
-            if !crate::device::irqchip::ls7a2000::set_guest_irq_line(target_cpu, irq_id, false) {
+            if !crate::device::irqchip::ls7a2000::post_guest_hwi(target_cpu, irq_id, false) {
                 return hv_result_err!(
                     EINVAL,
                     format!(
@@ -387,7 +383,7 @@ impl<'a> HyperCall<'a> {
             let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
             get_cpu_data(cpu_id).cpu_on_entry = INVALID_ADDRESS;
             #[cfg(target_arch = "loongarch64")]
-            crate::device::irqchip::ls7a2000::clear_guest_irq_lines(cpu_id);
+            get_cpu_data(cpu_id).vcpu.clear_irq_state();
             send_event(cpu_id, SGI_IPI_ID as _, IPI_EVENT_SHUTDOWN);
             // set the virtio irq list's len to 0
             #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]

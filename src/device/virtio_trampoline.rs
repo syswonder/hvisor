@@ -22,15 +22,17 @@
 
 #[cfg(not(target_arch = "loongarch64"))]
 use crate::device::irqchip::inject_irq;
-use crate::{
-    arch::cpu::get_target_cpu,
-    event::{send_event, IPI_EVENT_WAKEUP_VIRTIO_DEVICE},
-    hypercall::SGI_IPI_ID,
-    platform::IRQ_WAKEUP_VIRTIO_DEVICE,
-};
+#[cfg(target_arch = "loongarch64")]
+use crate::device::irqchip::ls7a2000::post_guest_hwi;
+use crate::{arch::cpu::get_target_cpu, platform::IRQ_WAKEUP_VIRTIO_DEVICE};
 use crate::{
     arch::cpu::this_cpu_id, consts::MAX_WAIT_TIMES, error::HvResult, memory::MMIOAccess,
     zone::this_zone_id,
+};
+#[cfg(not(target_arch = "loongarch64"))]
+use crate::{
+    event::{send_event, IPI_EVENT_WAKEUP_VIRTIO_DEVICE},
+    hypercall::SGI_IPI_ID,
 };
 #[cfg(not(target_arch = "loongarch64"))]
 use alloc::collections::BTreeMap;
@@ -143,11 +145,11 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
 pub fn check_need_wakeup_and_send_ipi(is_send_ipi: &mut bool) {
     if !(*is_send_ipi) && VIRTIO_BRIDGE.need_wakeup() {
         debug!("need wakeup (recheck), sending ipi to wake up virtio device");
-        send_event(
-            get_target_cpu(IRQ_WAKEUP_VIRTIO_DEVICE, 0),
-            SGI_IPI_ID as _,
-            IPI_EVENT_WAKEUP_VIRTIO_DEVICE,
-        );
+        let root_cpu = get_target_cpu(IRQ_WAKEUP_VIRTIO_DEVICE, 0);
+        #[cfg(target_arch = "loongarch64")]
+        post_guest_hwi(root_cpu, IRQ_WAKEUP_VIRTIO_DEVICE, true);
+        #[cfg(not(target_arch = "loongarch64"))]
+        send_event(root_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP_VIRTIO_DEVICE);
         *is_send_ipi = true;
     }
 }

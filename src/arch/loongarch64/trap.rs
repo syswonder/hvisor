@@ -1232,10 +1232,10 @@ fn handle_interrupt(is: usize) {
         );
 
         let event_doorbell = SGI_IPI_ID as u32;
-        let virtual_ipi_doorbell = HVISOR_VIPI_DOORBELL as u32;
+        let virq_doorbell = HVISOR_VIRQ_DOORBELL as u32;
 
-        if ipi_status & virtual_ipi_doorbell != 0 {
-            clear_ipi_bits(virtual_ipi_doorbell);
+        if ipi_status & virq_doorbell != 0 {
+            clear_ipi_bits(virq_doorbell);
         }
 
         if ipi_status & event_doorbell != 0 {
@@ -1252,7 +1252,7 @@ fn handle_interrupt(is: usize) {
             });
         }
 
-        let handled_mask = event_doorbell | virtual_ipi_doorbell;
+        let handled_mask = event_doorbell | virq_doorbell;
         let unhandled = ipi_status & !handled_mask;
         if unhandled != 0 {
             error!(

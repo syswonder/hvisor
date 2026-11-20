@@ -19,10 +19,12 @@ use core::fmt::Debug;
 use alloc::{collections::btree_map::BTreeMap, sync::Arc, vec::Vec};
 use spin::RwLock;
 
+#[cfg(not(target_arch = "loongarch64"))]
+use crate::device::irqchip::inject_irq;
 use crate::{
     arch::cpu::this_cpu_id,
     cpu_data::this_zone,
-    device::{irqchip::inject_irq, virtio_trampoline::VirtioPCIDataInfo},
+    device::virtio_trampoline::VirtioPCIDataInfo,
     error::HvResult,
     memory::MMIOAccess,
     pci::pci_struct::{AreaInBar, PciCapabilityRegion},
@@ -247,8 +249,13 @@ impl MsixTableEntry {
     pub fn activate_irq(&self) {
         // info!("entry:{:x?}", self);
         match self.intid {
+            #[cfg(not(target_arch = "loongarch64"))]
             Some(x) => {
                 inject_irq(x, false);
+            }
+            #[cfg(target_arch = "loongarch64")]
+            Some(x) => {
+                warn!("MSI-X injection is not supported on LoongArch, intid {}", x);
             }
             None => {
                 warn!("this msix vector has not gotten a intid:{:x?}", self);

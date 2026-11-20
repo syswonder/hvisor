@@ -24,11 +24,6 @@ use core::sync::atomic::{fence, Ordering};
 #[cfg(target_arch = "aarch64")]
 pub(crate) const SGIS_NUM: usize = 16;
 
-#[cfg(target_arch = "loongarch64")]
-pub fn handle_virtio_irq_event() {
-    ls7a2000::sync_guest_irqs();
-}
-
 #[cfg(not(target_arch = "loongarch64"))]
 pub fn handle_virtio_irq_event() {
     crate::device::virtio_trampoline::handle_virtio_irq();
@@ -286,7 +281,7 @@ pub mod ls7a2000;
 pub mod pic;
 
 #[cfg(target_arch = "loongarch64")]
-pub use ls7a2000::{inject_irq, percpu_init, primary_init_early, primary_init_late};
+pub use ls7a2000::{percpu_init, primary_init_early, primary_init_late};
 
 #[cfg(target_arch = "x86_64")]
 pub use pic::{inject_irq, inject_vector, percpu_init, primary_init_early, primary_init_late};
