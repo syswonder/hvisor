@@ -68,7 +68,7 @@ bids:
         - platform/aarch64/phytium-pi/image/dts/linux1.dtb
         - platform/aarch64/phytium-pi/image/dts/phytium-pi-board-v2.dtb
       zone0_image: /home/light/DEMO/phytium-pi-external/Image
-      uboot_ready_pattern: 'Phytium-Pi#'
+      uboot_ready_pattern: "Phytium-Pi#"
       zone0_ready_pattern: 'root@[^\r\n]*:\/#\s?|(?:\r?\n)#\s*(?:\r?\n|$)'
       zone0_shell_timeout: 300
       uboot_step_timeout: 600
