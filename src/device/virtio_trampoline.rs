@@ -54,7 +54,7 @@ pub static VIRTIO_BRIDGE: VirtioBridgeController = VirtioBridgeController::new()
 
 const QUEUE_NOTIFY: usize = 0x50;
 pub const MAX_REQ: u32 = 32;
-pub const MAX_DEVS: usize = 8; // Attention: The max virtio-dev number for vm is 8 (loongarch64 needs 3 consoles and 3 disks for zgclab project).
+pub const MAX_DEVS: usize = 128; // Attention: The max virtio-dev number for vm is 128.
 pub const MAX_CPUS: usize = 32;
 pub const MAX_VQ: usize = 16;
 const MAX_PCI_CONFIG_REQ: usize = 4;

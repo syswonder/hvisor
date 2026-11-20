@@ -59,7 +59,7 @@ pub const INVALID_ADDRESS: usize = usize::MAX;
 pub const MAX_CPU_NUM: usize = BOARD_NCPUS;
 
 /// Maximum number of memory zones supported.
-pub const MAX_ZONE_NUM: usize = 4;
+pub const MAX_ZONE_NUM: usize = 16;
 
 /// Maximum number of spin-wait iterations before timing out.
 pub const MAX_WAIT_TIMES: usize = 100000000;
