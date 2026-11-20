@@ -84,7 +84,6 @@ pub fn plic_get_hwirq() -> u32 {
 
 pub fn inject_irq(irq: usize, is_hardware: bool) {
     debug!("inject_irq: {} is_hardware: {}", irq, is_hardware);
-    let vcontext_id = pcontext_to_vcontext(this_cpu_id() * NUM_CONTEXTS_PER_HART + 1);
     // this_cpu_data()
     //     .zone
     //     .as_ref()
@@ -94,44 +93,12 @@ pub fn inject_irq(irq: usize, is_hardware: bool) {
     //     .inject_irq(vcontext_id, irq, is_hardware);
     let zone = this_cpu_data().zone.as_ref().unwrap().clone();
     let vplic = zone.get_vplic();
+    let Some(vcontext_id) = vplic.pcpu_to_vcontext(this_cpu_id()) else {
+        warn!("vPLIC: cpu {} not in zone, drop irq {}", this_cpu_id(), irq);
+        return;
+    };
     // Avoid holding the read lock when calling inject_irq
     vplic.inject_irq(vcontext_id, irq, is_hardware);
-}
-
-/// Convert vcontext id to pcontext id.
-pub fn vcontext_to_pcontext(vcontext_id: usize) -> usize {
-    let pcpu_set = this_cpu_data()
-        .zone
-        .as_ref()
-        .unwrap()
-        .cpu_set()
-        .iter()
-        .collect::<Vec<_>>();
-    let index = vcontext_id / NUM_CONTEXTS_PER_HART;
-    // convert to physical hart S-mode
-    pcpu_set[index] * NUM_CONTEXTS_PER_HART + 1
-}
-
-/// Convert pcontext id to vcontext id.
-pub fn pcontext_to_vcontext(_pcontext_id: usize) -> usize {
-    // vcpu is the pcpus index of the pcpu_set
-    let pcpu_set = this_cpu_data()
-        .zone
-        .as_ref()
-        .unwrap()
-        .cpu_set()
-        .iter()
-        .collect::<Vec<_>>();
-    let pcpu_id = this_cpu_id();
-    let mut index = 0;
-    for (i, &id) in pcpu_set.iter().enumerate() {
-        if id == pcpu_id {
-            index = i;
-            break;
-        }
-    }
-    // convert to virtual hart S-mode
-    index * NUM_CONTEXTS_PER_HART + 1
 }
 
 /// handle Zone's plic mmio access.
@@ -152,23 +119,6 @@ pub fn vplic_handler(mmio: &mut MMIOAccess, _arg: usize) -> HvResult {
         mmio.value = value as usize;
     }
     Ok(())
-}
-
-/// Update hart line handler.
-pub fn update_hart_line() {
-    let pcontext_id = this_cpu_id() * NUM_CONTEXTS_PER_HART + 1;
-    let vcontext_id = pcontext_to_vcontext(pcontext_id);
-    // this_cpu_data()
-    //     .zone
-    //     .as_ref()
-    //     .unwrap()
-    //     .read()
-    //     .get_vplic()
-    //     .update_hart_line(vcontext_id);
-    let zone = this_cpu_data().zone.as_ref().unwrap().clone();
-    let vplic = zone.get_vplic();
-    // Avoid holding the read lock when calling update_hart_line
-    vplic.update_hart_line(vcontext_id);
 }
 
 /// Print all keys in the VPLIC_MAP for debugging purposes.
@@ -199,7 +149,7 @@ impl Zone {
         let vplic = vplic::VirtualPLIC::new(
             config.arch_config.plic_base,
             BOARD_PLIC_INTERRUPTS_NUM,
-            self.read().cpu_num() * NUM_CONTEXTS_PER_HART,
+            self.cpu_set().iter().collect::<Vec<_>>(),
         );
         // Insert into Map <zone_id, vplic>
         map.insert(self.id(), Arc::new(vplic));

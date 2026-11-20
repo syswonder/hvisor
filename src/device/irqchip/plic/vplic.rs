@@ -15,7 +15,8 @@
 //      Jingyu Liu <liujingyu24s@ict.ac.cn>
 //
 
-use crate::arch::cpu::this_cpu_id;
+use crate::arch::vcpu::IRQ_VS_EXT;
+use crate::device::irqchip::{post_guest_irq, GuestIrqSignal};
 use crate::platform::NUM_CONTEXTS_PER_HART;
 use alloc::vec::Vec;
 use bitvec::prelude::*;
@@ -30,6 +31,8 @@ pub struct VirtualPLIC {
     max_interrupts: usize,
     /// Number of Hart contexts (contains S-mode and M-mode), only S-mode works
     num_contexts: usize,
+    /// pCPU of each vCPU; index with vcontext / NUM_CONTEXTS_PER_HART.
+    pcpu_set: Vec<usize>,
     /// Inner state of the vPLIC (thread-safe)
     inner: Mutex<VirtualPLICInner>,
 }
@@ -51,8 +54,10 @@ struct VirtualPLICInner {
 }
 
 impl VirtualPLIC {
-    /// Create a new VirtualPLIC, need to specify the max num of interrupts and num of hart contexts.
-    pub fn new(base_addr: usize, max_interrupts: usize, num_contexts: usize) -> Self {
+    /// Create a new VirtualPLIC, need to specify the max num of interrupts and
+    /// the zone's pCPUs in vCPU order.
+    pub fn new(base_addr: usize, max_interrupts: usize, pcpu_set: Vec<usize>) -> Self {
+        let num_contexts = pcpu_set.len() * NUM_CONTEXTS_PER_HART;
         let vplic = VirtualPLICInner {
             hw: bitvec![0; max_interrupts + 1],
             active: bitvec![0; max_interrupts + 1],
@@ -68,6 +73,7 @@ impl VirtualPLIC {
             base_addr,
             max_interrupts,
             num_contexts,
+            pcpu_set,
             inner: Mutex::new(vplic),
         }
     }
@@ -97,7 +103,7 @@ impl VirtualPLIC {
             // write to pending
             inner.vplic_set_pending(intr_id, true);
             if inner.hw[intr_id] {
-                inner.vplic_update_hart_line(vcontext_id);
+                self.update_hart_line(&inner, vcontext_id);
             } else {
                 for vcontext_id in 0..self.num_contexts {
                     if vcontext_id % NUM_CONTEXTS_PER_HART != 1 {
@@ -107,16 +113,37 @@ impl VirtualPLIC {
                         && inner.vplic_get_priority(intr_id)
                             > inner.vplic_get_threshold(vcontext_id)
                     {
-                        inner.vplic_update_hart_line(vcontext_id);
+                        self.update_hart_line(&inner, vcontext_id);
                     }
                 }
             }
         }
     }
 
-    pub fn update_hart_line(&self, vcontext_id: usize) {
-        let inner = self.inner.lock();
-        inner.vplic_update_hart_line(vcontext_id);
+    // Post under the `inner` lock so the last posted level matches the latest vPLIC state.
+    fn update_hart_line(&self, inner: &VirtualPLICInner, vcontext_id: usize) {
+        let level = inner.vplic_get_next_pending(vcontext_id) != 0;
+        post_guest_irq(
+            self.vcontext_to_pcpu(vcontext_id),
+            IRQ_VS_EXT,
+            None,
+            GuestIrqSignal::Level(level),
+        );
+    }
+
+    pub fn pcpu_to_vcontext(&self, pcpu: usize) -> Option<usize> {
+        self.pcpu_set
+            .iter()
+            .position(|&id| id == pcpu)
+            .map(|index| index * NUM_CONTEXTS_PER_HART + 1)
+    }
+
+    fn vcontext_to_pcpu(&self, vcontext_id: usize) -> usize {
+        self.pcpu_set[vcontext_id / NUM_CONTEXTS_PER_HART]
+    }
+
+    fn vcontext_to_pcontext(&self, vcontext_id: usize) -> usize {
+        self.vcontext_to_pcpu(vcontext_id) * NUM_CONTEXTS_PER_HART + 1
     }
 
     /// vPLIC emul access.
@@ -177,7 +204,7 @@ impl VirtualPLIC {
                                 continue;
                             }
                             if inner.vplic_get_enable(intr_id, vcontext_id) {
-                                inner.vplic_update_hart_line(vcontext_id);
+                                self.update_hart_line(&inner, vcontext_id);
                             }
                         }
                     }
@@ -239,10 +266,10 @@ impl VirtualPLIC {
                         inner.vplic_set_enable(irq, vcontext_id, irq_enable);
                         if inner.hw[irq] {
                             // vcontext_id to pcontext_id should move to here.
-                            let pcontext_id = super::vcontext_to_pcontext(vcontext_id);
+                            let pcontext_id = self.vcontext_to_pcontext(vcontext_id);
                             super::host_plic().set_enable_num(pcontext_id, irq, irq_enable);
                         } else {
-                            inner.vplic_update_hart_line(vcontext_id);
+                            self.update_hart_line(&inner, vcontext_id);
                         }
                     }
                     return 0;
@@ -271,9 +298,9 @@ impl VirtualPLIC {
                 let mut inner = self.inner.lock();
                 if is_write {
                     inner.vplic_set_threshold(vcontext_id, value as u32);
-                    let pcontext_id = super::vcontext_to_pcontext(vcontext_id);
+                    let pcontext_id = self.vcontext_to_pcontext(vcontext_id);
                     super::host_plic().set_threshold(pcontext_id, value as u32);
-                    inner.vplic_update_hart_line(vcontext_id);
+                    self.update_hart_line(&inner, vcontext_id);
                     return 0;
                 } else {
                     return inner.vplic_get_threshold(vcontext_id);
@@ -292,13 +319,13 @@ impl VirtualPLIC {
                     // implement complete operation
                     let irq_id = value;
                     if inner.hw[value] {
-                        let pcontext_id = super::vcontext_to_pcontext(vcontext_id);
+                        let pcontext_id = self.vcontext_to_pcontext(vcontext_id);
                         super::host_plic().complete(pcontext_id, irq_id);
                     }
                     inner.active.set(irq_id, false);
 
                     // if there is still pending interrupt, set the VSEIP bit.
-                    inner.vplic_update_hart_line(vcontext_id);
+                    self.update_hart_line(&inner, vcontext_id);
                     return 0;
                 } else {
                     // implement claim operation
@@ -307,7 +334,7 @@ impl VirtualPLIC {
                     inner.active.set(claimed_irq as usize, true);
 
                     // if there is still pending interrupt, set the VSEIP bit.
-                    inner.vplic_update_hart_line(vcontext_id);
+                    self.update_hart_line(&inner, vcontext_id);
                     return claimed_irq as u32;
                 }
             }
@@ -398,35 +425,6 @@ impl VirtualPLICInner {
             next_irq as u32
         } else {
             0
-        }
-    }
-
-    /// Update line like physical PLIC.
-    fn vplic_update_hart_line(&self, vcontext_id: usize) {
-        // Due to vplic's state update, we should signal related vontext like physical PLIC does.
-        let pcontext_id = super::vcontext_to_pcontext(vcontext_id);
-        debug!(
-            "vPLIC update line to vcontext_id {}, pcontext_id {}",
-            vcontext_id, pcontext_id
-        );
-        if pcontext_id / NUM_CONTEXTS_PER_HART == this_cpu_id() {
-            let irq_id = self.vplic_get_next_pending(vcontext_id);
-            if irq_id != 0 {
-                unsafe {
-                    riscv_h::register::hvip::set_vseip();
-                }
-            } else {
-                unsafe {
-                    riscv_h::register::hvip::clear_vseip();
-                }
-            }
-        } else {
-            use crate::consts::IPI_EVENT_UPDATE_HART_LINE;
-            use crate::event::send_event;
-            let cpu_id = pcontext_id / NUM_CONTEXTS_PER_HART;
-            info!("vplic_update_hart_line to cpu {}", cpu_id);
-            // the second arg don't need.
-            send_event(cpu_id, 0, IPI_EVENT_UPDATE_HART_LINE);
         }
     }
 }
