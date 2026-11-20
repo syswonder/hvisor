@@ -47,3 +47,14 @@ jobs:
         run: |
           git ls-files -z -- '*.rs' ':!src/**' \
             | xargs -0 rustfmt --check --edition 2021
+
+      - name: Install C formatter
+        run: |
+          python3 -m pip install --user clang-format==23.1.5
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: C format
+        run: |
+          clang-format --version
+          git ls-files -z -- '*.c' '*.h' \
+            | xargs -0 clang-format --dry-run --Werror
