@@ -40,32 +40,31 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 4] = [
         physical_start: 0x30800000,
         virtual_start: 0x30800000,
         size: 0x400000,
-    }, 
+    },
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0x32c00000,
         virtual_start: 0x32c00000,
         size: 0x400000,
-    }
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0x38000000,
-    //     virtual_start: 0x38000000,
-    //     size: 0x8000,
-    // },
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0x38008000,
-    //     virtual_start: 0x38008000,
-    //     size: 0x8000,
-    // },
-    // HvConfigMemoryRegion {
-    //     mem_type: MEM_TYPE_IO,
-    //     physical_start: 0x38500000,
-    //     virtual_start: 0x38500000,
-    //     size: 0x20000,
-    // }
-    // bus@30800000
+    }, // HvConfigMemoryRegion {
+       //     mem_type: MEM_TYPE_IO,
+       //     physical_start: 0x38000000,
+       //     virtual_start: 0x38000000,
+       //     size: 0x8000,
+       // },
+       // HvConfigMemoryRegion {
+       //     mem_type: MEM_TYPE_IO,
+       //     physical_start: 0x38008000,
+       //     virtual_start: 0x38008000,
+       //     size: 0x8000,
+       // },
+       // HvConfigMemoryRegion {
+       //     mem_type: MEM_TYPE_IO,
+       //     physical_start: 0x38500000,
+       //     virtual_start: 0x38500000,
+       //     size: 0x20000,
+       // }
+       // bus@30800000
        // HvConfigMemoryRegion {
        //     mem_type: MEM_TYPE_IO,
        //     physical_start: 0x30890000,
@@ -75,7 +74,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 4] = [
 ];
 
 pub const ROOT_ZONE_IRQS: [u32; 20] = [
-    36, 52, 55, 59, 64, 67, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 150, 151, 152, 120
+    36, 52, 55, 59, 64, 67, 96, 97, 98, 99, 100, 101, 102, 103, 104, 105, 150, 151, 152, 120,
 ];
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
@@ -116,13 +115,13 @@ pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];
 //         physical_start: 0x30c00000,
 //         virtual_start: 0x30c00000,
 //         size: 0x400000,
-//     }, 
+//     },
 //     HvConfigMemoryRegion {
 //         mem_type: MEM_TYPE_IO,
 //         physical_start: 0x30800000,
 //         virtual_start: 0x30800000,
 //         size: 0x400000,
-//     }, 
+//     },
 //     HvConfigMemoryRegion {
 //         mem_type: MEM_TYPE_IO,
 //         physical_start: 0x38000000,

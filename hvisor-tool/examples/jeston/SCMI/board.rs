@@ -14,9 +14,12 @@
 // Authors:
 //
 use crate::{
-    arch::{mmu::MemoryType, zone::{HvArchZoneConfig,GicConfig,Gicv3Config}},
+    arch::{
+        mmu::MemoryType,
+        zone::{GicConfig, Gicv3Config, HvArchZoneConfig},
+    },
     config::*,
-    uefi::UefiConfig
+    uefi::UefiConfig,
 };
 
 pub const BOARD_NAME: &str = "jeston-orin";
@@ -105,20 +108,9 @@ pub const ROOT_ZONE_MEMORY_REGIONS: [HvConfigMemoryRegion; 8] = [
 // serial-c - phy - pcie - phy - hsp - timer - hsp - phy - phy - memory-controller - external-memory-controller
 // pcie - phy - phy
 pub const ROOT_ZONE_IRQS: [u32; 27] = [
-    146,
-    372,
-    83, 84,
-    373,
-    165, 166, 167, 168,
-    208, 152, 153, 154, 155, 156, 157, 158, 159,
-    374,
-    375,
-    255,
-    256,
-    64,
-    388, 389,
-    253,
-    254];
+    146, 372, 83, 84, 373, 165, 166, 167, 168, 208, 152, 153, 154, 155, 156, 157, 158, 159, 374,
+    375, 255, 256, 64, 388, 389, 253, 254,
+];
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     is_aarch32: 0,
@@ -132,12 +124,10 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     }),
 };
 
-
 pub const ROOT_UEFI_CONFIG: UefiConfig = UefiConfig {
     memory_map_addr: 0xB0000000,
     memory_map_size: 0x990,
     sys_map_addr: 0xB1000000,
 };
-
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];

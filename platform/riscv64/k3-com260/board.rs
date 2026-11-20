@@ -70,7 +70,7 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
         physical_start: 0xd4015000,
         virtual_start: 0xd4015000,
         size: 0x1000,
-    }, // system-controller@d4015000  
+    }, // system-controller@d4015000
     HvConfigMemoryRegion {
         mem_type: MEM_TYPE_IO,
         physical_start: 0xd4090000,
@@ -117,18 +117,18 @@ pub const ROOT_ZONE_MEMORY_REGIONS: &[HvConfigMemoryRegion] = &[
 
 pub const IRQ_WAKEUP_VIRTIO_DEVICE: usize = 0x20;
 pub const HW_IRQS: &[u32] = &[
-    42, // serial@d4017000
-    58, // gpio@d4019000
-    60, // pinctrl@d401e000
-    99, // mmc@d4280000
+    42,  // serial@d4017000
+    58,  // gpio@d4019000
+    60,  // pinctrl@d401e000
+    99,  // mmc@d4280000
     135, // ufshc@0xc0e00000
     133, 277, // ethernet@cac82000
 ];
 pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[
-    42, // serial@d4017000
-    58, // gpio@d4019000
-    60, // pinctrl@d401e000
-    99, // mmc@d4280000
+    42,  // serial@d4017000
+    58,  // gpio@d4019000
+    60,  // pinctrl@d401e000
+    99,  // mmc@d4280000
     135, // ufshc@0xc0e00000
     133, 277, // ethernet@cac82000
 ]);

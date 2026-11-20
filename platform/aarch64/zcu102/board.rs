@@ -136,7 +136,7 @@ pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
         gicv_base: 0xf9060000,
         gicv_size: 0x20000,
     }),
-    uefi_config: UefiConfig::NoUefi
+    uefi_config: UefiConfig::NoUefi,
 };
 
 pub const ROOT_ZONE_IVC_CONFIG: [HvIvcConfig; 0] = [];

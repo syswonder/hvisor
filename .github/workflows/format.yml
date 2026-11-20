@@ -33,3 +33,17 @@ jobs:
 
       - name: YAML format
         run: prettier --check "**/*.{yml,yaml}" --tab-width 2
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly-2026-11-01
+          components: rustfmt
+
+      - name: Rust format
+        run: cargo fmt --all -- --check
+
+      - name: Rust non-src format
+        run: |
+          git ls-files -z -- '*.rs' ':!src/**' \
+            | xargs -0 rustfmt --check --edition 2021

@@ -1,7 +1,7 @@
 # hvisor Github Actions CI
 # wheatfox <wheatfox17@icloud.com>
 #
-# GitHub: format + license checks only.
+# GitHub: license checks only.
 
 name: CI
 on:
@@ -17,25 +17,6 @@ on:
 env:
   MODE: debug
 jobs:
-  linter:
-    name: linter
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
-      - name: Install Rust Toolchain
-        uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-unknown-none-softfloat
-          components: rust-src rustfmt
-      - name: Install Dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget python3-venv
-          cargo install --version 0.3.0 --locked cargo-binutils
-      - name: Format Check
-        run: cargo fmt --all -- --check
-
   license-checker:
     name: license-checker
     runs-on: ubuntu-latest

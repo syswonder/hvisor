@@ -246,9 +246,9 @@ pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[
     // usb iommus moved to zone2 (android), see zone2-android.dts/json.
     0xfd, // usb@fc400000 dwc3 (usbdrd3_1)
     0x1aa, // usb2phy1 (usb2-phy@4000, root usbdrd3_1 companion)
-    // Everything else (camera/mpp/audio/pcie/sata/touch/extra uart/i2c/spi/
-    // mailbox/display chains) is disabled in zone0.dts &{...} overrides or
-    // passed through to zone1/zone2 - see image/dts/zone0.dts.
+          // Everything else (camera/mpp/audio/pcie/sata/touch/extra uart/i2c/spi/
+          // mailbox/display chains) is disabled in zone0.dts &{...} overrides or
+          // passed through to zone1/zone2 - see image/dts/zone0.dts.
 ]);
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
     is_aarch32: 0,
