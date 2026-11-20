@@ -58,7 +58,7 @@ extern int reset_control_assert(struct reset_control *rstc);
 extern int reset_control_deassert(struct reset_control *rstc);
 extern struct reset_control *get_reset_domain_by_id(unsigned int reset_id);
 
-struct virtio_bridge *virtio_bridge;
+struct HvVirtioBridge *virtio_bridge;
 int virtio_irq = -1;
 static struct task_struct *task = NULL;
 struct eventfd_ctx *virtio_irq_ctx = NULL;
@@ -70,12 +70,12 @@ static int hvisor_init_virtio(void) {
         pr_err("virtio device is not available\n");
         return ENOTTY;
     }
-    virtio_bridge = (struct virtio_bridge *)__get_free_pages(GFP_KERNEL, 0);
+    virtio_bridge = (struct HvVirtioBridge *)__get_free_pages(GFP_KERNEL, 0);
     if (virtio_bridge == NULL)
         return -ENOMEM;
     SetPageReserved(virt_to_page(virtio_bridge));
     // init device region
-    memset(virtio_bridge, 0, sizeof(struct virtio_bridge));
+    memset(virtio_bridge, 0, sizeof(struct HvVirtioBridge));
     err = hvisor_call(HVISOR_HC_INIT_VIRTIO, __pa(virtio_bridge), 0);
     if (err)
         return err;

@@ -1,0 +1,9 @@
+[package]
+name = "hvisor-abi"
+version = "0.1.0"
+edition = "2021"
+description = "Stable ABI definitions shared by hvisor and hvisor-tool"
+license = "MulanPSL-2.0"
+
+[lib]
+path = "src/lib.rs"

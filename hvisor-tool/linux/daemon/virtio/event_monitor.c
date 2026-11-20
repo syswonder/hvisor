@@ -24,7 +24,8 @@ pthread_t emonitor_tid;
 int closing;
 #define MAX_EVENTS 16
 struct hvisor_event *events[MAX_EVENTS];
-static void *epoll_loop() {
+static void *epoll_loop(void *arg) {
+    (void)arg;
     struct epoll_event events[MAX_EVENTS];
     struct hvisor_event *hevent;
     int ret, i;

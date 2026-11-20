@@ -45,6 +45,8 @@ use tock_registers::{
     registers::ReadWrite,
 };
 
+pub use hvisor_abi::virtio::*;
+
 /// Save the irqs the virtio-device wants to inject. The format is <cpu_id, List<irq_id>>, and the first elem of List<irq_id> is the valid len of it.
 #[cfg(not(target_arch = "loongarch64"))]
 pub static VIRTIO_IRQS: Mutex<BTreeMap<usize, [u64; MAX_DEVS + 1]>> = Mutex::new(BTreeMap::new());
@@ -53,14 +55,9 @@ pub static VIRTIO_PCI_BRIDGE: Mutex<VirtioPCIBridge> = Mutex::new(VirtioPCIBridg
 pub static VIRTIO_BRIDGE: VirtioBridgeController = VirtioBridgeController::new();
 
 const QUEUE_NOTIFY: usize = 0x50;
-pub const MAX_REQ: u32 = 32;
-pub const MAX_DEVS: usize = 8; // Attention: The max virtio-dev number for vm is 8 (loongarch64 needs 3 consoles and 3 disks for zgclab project).
-pub const MAX_CPUS: usize = 32;
-pub const MAX_VQ: usize = 16;
 const MAX_PCI_CONFIG_REQ: usize = 4;
 const MAX_PCI_CONFIG_RES: usize = 4;
 const MAX_PCI_DATA_REQ: usize = 32;
-pub const VIRTIO_PCI_HYPERCALL_VERSION: u16 = 1;
 
 pub const MAX_BACKOFF: usize = 1024;
 
@@ -331,230 +328,6 @@ impl<'a> ResAgent<'a> {
 }
 
 #[repr(C)]
-#[derive(Clone, Copy, Debug)]
-pub struct VirtqueueAreaInfo {
-    pub desc_area: u64,
-    pub avail_area: u64,
-    pub used_area: u64,
-
-    pub queue_size: u64,
-}
-
-impl VirtqueueAreaInfo {
-    pub fn new(desc: u64, avail: u64, used: u64, queue_size: u64) -> Self {
-        Self {
-            desc_area: desc,
-            avail_area: avail,
-            used_area: used,
-            queue_size,
-        }
-    }
-
-    pub fn dummy() -> Self {
-        Self {
-            desc_area: 0,
-            avail_area: 0,
-            used_area: 0,
-            queue_size: 0,
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
-pub struct VirtioPCIConfigInfo {
-    features: u64,
-    dev_id: u16,
-    num_of_queues: u16,
-    dtype: u16,
-    padding: u16,
-    vqs: [VirtqueueAreaInfo; MAX_VQ],
-}
-
-impl VirtioPCIConfigInfo {
-    pub fn dummy() -> Self {
-        Self {
-            features: 0,
-            dev_id: 0,
-            num_of_queues: 0,
-            dtype: 0,
-            padding: 0,
-            vqs: [VirtqueueAreaInfo::dummy(); 16],
-        }
-    }
-
-    pub fn set_features(&mut self, val: u64) {
-        self.features = val;
-    }
-
-    // pub fn set_dev_id(&mut self, val: u16) {
-    //     self.dev_id = val;
-    // }
-
-    pub fn set_num_of_queues(&mut self, val: u16) {
-        self.num_of_queues = val;
-    }
-
-    pub fn set_dtype(&mut self, val: u16) {
-        self.dtype = val;
-    }
-
-    pub fn set_vqs(&mut self, idx: usize, val: VirtqueueAreaInfo) {
-        if idx >= MAX_VQ {
-            error!("It's illegal to have idx:0x{:x} exceeding MAX_VQ", idx);
-            return;
-        }
-        self.vqs[idx] = val;
-    }
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
-pub struct VirtioPCIConfigReq {
-    request_id: u32,
-    padding: u32,
-    info: VirtioPCIConfigInfo,
-}
-
-impl VirtioPCIConfigReq {
-    fn new(request_id: u32, info: VirtioPCIConfigInfo) -> Self {
-        Self {
-            request_id,
-            padding: 0,
-            info,
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
-pub struct VirtioPCIConfigRes {
-    request_id: u32,
-    status: u32,
-    dev_id: u16,
-    padding: u16,
-}
-
-impl VirtioPCIConfigRes {
-    #[allow(unused)]
-    pub fn success(request_id: u32, dev_id: u16) -> Self {
-        Self {
-            request_id,
-            status: 0,
-            dev_id,
-            padding: 0,
-        }
-    }
-}
-
-#[repr(u16)]
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum VirtioPCIHypercallOp {
-    None = 0,
-    ConfigReqComplete = 1,
-    DataReqComplete = 2,
-    Reset = 3,
-}
-
-impl TryFrom<u16> for VirtioPCIHypercallOp {
-    type Error = ();
-
-    fn try_from(value: u16) -> core::result::Result<Self, Self::Error> {
-        match value {
-            0 => Ok(Self::None),
-            1 => Ok(Self::ConfigReqComplete),
-            2 => Ok(Self::DataReqComplete),
-            3 => Ok(Self::Reset),
-            _ => Err(()),
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Clone, Copy, Debug)]
-pub struct VirtioPCIHypercallInfo {
-    pub version: u16,
-    pub op: u16,
-    pub target_cpu: u32,
-    pub request_id: u32,
-    pub status: u32,
-}
-
-impl VirtioPCIHypercallInfo {
-    pub const fn new() -> Self {
-        Self {
-            version: VIRTIO_PCI_HYPERCALL_VERSION,
-            op: VirtioPCIHypercallOp::None as u16,
-            target_cpu: 0,
-            request_id: 0,
-            status: 0,
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-pub struct VirtioPCIDataInfo {
-    dev_id: u16,
-    queue_id: u16,
-    cpu_id: u16,
-    msix_vector_idx: u16,
-}
-
-impl VirtioPCIDataInfo {
-    pub fn new(dev_id: u16, queue_id: u16, msix_vector_idx: u16) -> Self {
-        let cpu_id = this_cpu_id() as u16;
-        Self {
-            dev_id,
-            queue_id,
-            cpu_id,
-            msix_vector_idx,
-        }
-    }
-
-    pub fn get_identifier(&self) -> u64 {
-        (self.dev_id as u64) | ((self.queue_id as u64) << 16) | ((self.cpu_id as u64) << 32)
-    }
-
-    // pub fn from_u64(data_req_id:u64)->Self{
-    //     let dev_id = data_req_id&0x0000_0000_0000_ffff;
-    //     let msix_vector_idx = data_req_id&0x0000_0000_ffff_0000;
-    //     let cpu_id = data_req_id&0x0000_ffff_0000_0000;
-    //     Self { dev_id: dev_id as u16, msix_vector_idx: msix_vector_idx as u16, cpu_id: cpu_id as u16, _padding: 0x0000 }
-    // }
-
-    // pub fn get_dev_id(&self)->u16{
-    //     self.dev_id
-    // }
-
-    pub fn get_msix_vector_idx(&self) -> u16 {
-        self.msix_vector_idx
-    }
-
-    // pub fn get_cpu_id(&self)->u16{
-    //     self.cpu_id
-    // }
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Debug)]
-pub struct VirtioPCIDataReq {
-    request_id: u32,
-    padding: u32,
-    info: VirtioPCIDataInfo,
-}
-
-impl VirtioPCIDataReq {
-    fn new(request_id: u32, info: VirtioPCIDataInfo) -> Self {
-        Self {
-            request_id,
-            padding: 0,
-            info,
-        }
-    }
-}
-
-#[repr(C)]
 struct VirtioPCIBridgeRegion {
     hypercall_info: VirtioPCIHypercallInfo,
     config_req_front: ReadWrite<u32>,
@@ -783,6 +556,8 @@ struct VirtioBridge {
     need_wakeup: ReadWrite<u8>,
 }
 
+const _: () = assert!(size_of::<VirtioBridge>() == size_of::<hvisor_abi::virtio::HvVirtioBridge>());
+
 impl Debug for VirtioBridge {
     fn fmt(&self, f: &mut Formatter<'_>) -> Result {
         f.debug_struct("VirtioBridge")
@@ -791,44 +566,6 @@ impl Debug for VirtioBridge {
             .field("res_front", &self.res_front.get())
             .field("res_rear", &self.res_rear.get())
             .finish()
-    }
-}
-
-/// Hvisor device requests
-#[repr(C)]
-#[derive(Debug)]
-struct HvisorDeviceReq {
-    src_cpu: u64,
-    address: u64,
-    size: u64,
-    value: u64,
-    src_zone: u32,
-    is_write: u8,
-    need_interrupt: u8,
-    _padding: u16,
-}
-
-impl HvisorDeviceReq {
-    fn new(
-        src_cpu: u64,
-        address: u64,
-        size: u64,
-        value: u64,
-        src_zone: u32,
-        is_write: bool,
-        need_interrupt: u8,
-    ) -> Self {
-        let is_write = if is_write { 1 } else { 0 };
-        Self {
-            src_cpu,
-            address,
-            size,
-            value,
-            src_zone,
-            is_write,
-            need_interrupt,
-            _padding: 0,
-        }
     }
 }
 

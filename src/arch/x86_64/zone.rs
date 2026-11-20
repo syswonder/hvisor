@@ -26,41 +26,7 @@ use crate::{
 };
 use alloc::vec::Vec;
 
-#[repr(C)]
-#[derive(Debug, Clone)]
-pub struct HvArchZoneConfig {
-    /// base address of ioapic mmio registers, usually 0xfec00000
-    pub ioapic_base: usize,
-    /// size of ioapic mmio registers, usually 0x1000
-    pub ioapic_size: usize,
-    /// start gpa of vmlinux.bin, usually 0x100000
-    pub kernel_entry_gpa: usize,
-    /// gpa of linux boot command line
-    pub cmdline_load_gpa: usize,
-    /// start gpa of setup.bin, address length no bigger than 16 bits
-    pub setup_load_gpa: usize,
-    /// If you want to use initrd, set initrd_load_gpa and initrd_size.
-    /// Otherwise, leave them as zero. The memory region type of
-    /// initrd should be set to MEM_TYPE_RESERVED.
-    /// initrd_load_gpa is the start gpa of initrd
-    pub initrd_load_gpa: usize,
-    /// size of initrd
-    pub initrd_size: usize,
-    /// RSDP table will be copied to the memory region with this id.
-    /// The start gpa of this memory region should 0xe_0000
-    /// and the size should be 0x2_0000. Set its type to MEM_TYPE_RAM.
-    pub rsdp_memory_region_id: usize,
-    /// Other ACPI tables will be copied to the memory region with this id.
-    /// no restriction on start gpa and size, but its type should be MEM_TYPE_RAM as well.
-    /// Usually, the DSDT table is large, so the size of this region should be large enough.
-    pub acpi_memory_region_id: usize,
-    pub uefi_memory_region_id: usize,
-    /// If you want to use a graphical console, set screen_base to a preferred gpa
-    /// as the start of the framebuffer. Otherwise, leave it as zero.
-    /// No need to add a memory region for the framebuffer,
-    /// Hvisor will do the job. **IMPORTANT: screen_base should be no longer than 32 bits.**
-    pub screen_base: usize,
-}
+pub use hvisor_abi::config::x86_64::X86_64ArchConfig as HvArchZoneConfig;
 
 impl Zone {
     pub fn pt_init(&mut self, mem_regions: &[HvConfigMemoryRegion]) -> HvResult {
@@ -105,7 +71,7 @@ impl Zone {
 
     /// called after cpu_set is initialized
     pub fn arch_zone_pre_configuration(&mut self, config: &HvZoneConfig) -> HvResult {
-        let zone_id = config.zone_id as usize;
+        let zone_id = config.common.zone_id as usize;
         let inner = self.read();
         let boot_mode = zone_boot_mode(zone_id);
 
@@ -135,8 +101,8 @@ impl Zone {
         }
         drop(inner);
 
-        set_msr_bitmap(config.zone_id as _);
-        set_pio_bitmap(config.zone_id as _);
+        set_msr_bitmap(config.common.zone_id as _);
+        set_pio_bitmap(config.common.zone_id as _);
 
         Ok(())
     }
@@ -166,7 +132,7 @@ impl Zone {
         }
 
         if self.id() == 0 {
-            self.pci_bars_register(&config.pci_config);
+            self.pci_bars_register(&config.common.pci_config);
         }*/
 
         let boot_mode = zone_boot_mode(self.id());

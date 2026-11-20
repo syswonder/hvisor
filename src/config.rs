@@ -13,181 +13,27 @@
 //
 // Authors:
 //
-use alloc::vec::Vec;
-use core::fmt::Debug;
+pub use hvisor_abi::{
+    BitmapWord, HvConfigMemoryRegion, HvIvcConfig, HvPciConfig, HvZoneBootMode,
+    CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD, CONFIG_MAGIC_VERSION, CONFIG_MAX_INTERRUPTS,
+    CONFIG_MAX_IVC_CONFIGS, CONFIG_MAX_MEMORY_REGIONS, CONFIG_MAX_PCI_DEV, CONFIG_NAME_MAXLEN,
+    CONFIG_PCI_BUS_MAXNUM, MEM_TYPE_IO, MEM_TYPE_RAM, MEM_TYPE_VIRTIO,
+};
+
+pub use hvisor_abi::HvPciDevConfig;
+
+#[cfg(target_arch = "aarch64")]
+pub use hvisor_abi::config::aarch64::Aarch64ZoneConfig as HvZoneConfig;
+#[cfg(target_arch = "loongarch64")]
+pub use hvisor_abi::config::loongarch64::Loongarch64ZoneConfig as HvZoneConfig;
+#[cfg(target_arch = "riscv64")]
+pub use hvisor_abi::config::riscv64::Riscv64ZoneConfig as HvZoneConfig;
+#[cfg(target_arch = "x86_64")]
+pub use hvisor_abi::config::x86_64::X86_64ZoneConfig as HvZoneConfig;
+
 use spin::Once;
 
-use crate::{arch::zone::HvArchZoneConfig, pci::vpci_dev::VpciDevType, platform};
-
-pub const MEM_TYPE_RAM: u32 = 0;
-pub const MEM_TYPE_IO: u32 = 1;
-pub const MEM_TYPE_VIRTIO: u32 = 2;
-
-pub const CONFIG_MAGIC_VERSION: usize = 0x6;
-pub const CONFIG_MAX_MEMORY_REGIONS: usize = 64;
-
-pub type BitmapWord = u32;
-pub const CONFIG_MAX_INTERRUPTS: usize = 1024;
-pub const CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD: usize = 32;
-
-pub const CONFIG_NAME_MAXLEN: usize = 32;
-pub const CONFIG_MAX_IVC_CONFIGS: usize = 2;
-pub const CONFIG_PCI_BUS_MAXNUM: usize = 4;
-pub const CONFIG_MAX_PCI_DEV: usize = 32;
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-
-pub struct HvConfigMemoryRegion {
-    pub mem_type: u32,
-    pub physical_start: u64,
-    pub virtual_start: u64,
-    pub size: u64,
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy)]
-pub struct HvPciConfig {
-    pub ecam_base: u64,
-    pub ecam_size: u64,
-    pub io_base: u64,
-    pub io_size: u64,
-    pub pci_io_base: u64,
-    pub mem32_base: u64,
-    pub mem32_size: u64,
-    pub pci_mem32_base: u64,
-    pub mem64_base: u64,
-    pub mem64_size: u64,
-    pub pci_mem64_base: u64,
-    pub bus_range_begin: u32,
-    pub bus_range_end: u32,
-    pub domain: u8,
-}
-
-impl HvPciConfig {
-    pub const fn new_empty() -> Self {
-        Self {
-            ecam_base: 0,
-            ecam_size: 0,
-            io_base: 0,
-            io_size: 0,
-            pci_io_base: 0,
-            mem32_base: 0,
-            mem32_size: 0,
-            pci_mem32_base: 0,
-            mem64_base: 0,
-            mem64_size: 0,
-            pci_mem64_base: 0,
-            bus_range_begin: 0,
-            bus_range_end: 0,
-            domain: 0,
-        }
-    }
-}
-// Every time you change the HvZoneConfig, you need to change the `CONFIG_MAGIC_VERSION`
-#[repr(C)]
-#[derive(Debug, Clone)]
-pub struct HvZoneConfig {
-    pub zone_id: u32,
-    cpus: u64,
-    num_memory_regions: u32,
-    memory_regions: [HvConfigMemoryRegion; CONFIG_MAX_MEMORY_REGIONS],
-    interrupts_bitmap: [BitmapWord; CONFIG_MAX_INTERRUPTS / CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD],
-    num_ivc_configs: u32,
-    ivc_configs: [HvIvcConfig; CONFIG_MAX_IVC_CONFIGS],
-    pub entry_point: u64,
-    pub kernel_load_paddr: u64,
-    pub kernel_size: u64,
-    pub dtb_load_paddr: u64,
-    pub dtb_size: u64,
-    pub name: [u8; CONFIG_NAME_MAXLEN],
-    pub arch_config: HvArchZoneConfig,
-    pub num_pci_bus: u64,
-    pub pci_config: [HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
-    pub num_pci_devs: u64,
-    pub alloc_pci_devs: [HvPciDevConfig; CONFIG_MAX_PCI_DEV],
-}
-
-#[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
-pub struct HvZoneBootMode {
-    pub zone_id: u32,
-    pub multiboot_enabled: u32,
-    pub multiboot_info_paddr: u64,
-}
-
-impl HvZoneConfig {
-    pub fn new(
-        zone_id: u32,
-        cpus: u64,
-        num_memory_regions: u32,
-        memory_regions: [HvConfigMemoryRegion; CONFIG_MAX_MEMORY_REGIONS],
-        interrupts_bitmap: [BitmapWord;
-            CONFIG_MAX_INTERRUPTS / CONFIG_INTERRUPTS_BITMAP_BITS_PER_WORD],
-        num_ivc_configs: u32,
-        ivc_configs: [HvIvcConfig; CONFIG_MAX_IVC_CONFIGS],
-        entry_point: u64,
-        kernel_load_paddr: u64,
-        kernel_size: u64,
-        dtb_load_paddr: u64,
-        dtb_size: u64,
-        name: [u8; CONFIG_NAME_MAXLEN],
-        arch: HvArchZoneConfig,
-        num_pci_bus: u64,
-        pci: [HvPciConfig; CONFIG_PCI_BUS_MAXNUM],
-        num_pci_devs: u64,
-        alloc_pci_devs: [HvPciDevConfig; CONFIG_MAX_PCI_DEV],
-    ) -> Self {
-        Self {
-            zone_id,
-            cpus,
-            num_memory_regions,
-            memory_regions,
-            interrupts_bitmap,
-            num_ivc_configs,
-            ivc_configs,
-            entry_point,
-            kernel_load_paddr,
-            kernel_size,
-            dtb_load_paddr,
-            dtb_size,
-            name,
-            arch_config: arch,
-            num_pci_bus,
-            pci_config: pci,
-            num_pci_devs: num_pci_devs,
-            alloc_pci_devs: alloc_pci_devs,
-        }
-    }
-
-    pub fn memory_regions(&self) -> &[HvConfigMemoryRegion] {
-        // hvisor tool will check the length of memory regions, so we can uncheck here.
-        &self.memory_regions[..self.num_memory_regions as usize]
-    }
-
-    pub fn interrupts_bitmap(&self) -> &[BitmapWord] {
-        &self.interrupts_bitmap
-    }
-
-    pub fn cpus(&self) -> Vec<u64> {
-        let mut v = Vec::new();
-        for i in 0..64u64 {
-            if (self.cpus >> i) & 1 == 1 {
-                v.push(i);
-            }
-        }
-        v
-    }
-
-    pub fn ivc_config(&self) -> &[HvIvcConfig] {
-        &self.ivc_configs[..self.num_ivc_configs as usize]
-    }
-
-    #[allow(unused)]
-    pub fn pci_config(&self) -> &[HvPciConfig] {
-        &self.pci_config[..self.num_pci_bus as usize]
-    }
-}
+use crate::platform;
 
 pub static mut HV_ROOT_ZONE_CONFIG: Once<HvZoneConfig> = Once::new();
 
@@ -206,32 +52,6 @@ pub const IVC_PROTOCOL_USER: u32 = 0x0;
 #[allow(unused)]
 pub const IVC_PROTOCOL_HVISOR: u32 = 0x1;
 
-#[repr(C)]
-#[derive(Debug, Copy, Clone, Default)]
-pub struct HvIvcConfig {
-    pub ivc_id: u32,
-    pub peer_id: u32,
-    pub control_table_ipa: u64,
-    pub shared_mem_ipa: u64,
-    pub rw_sec_size: u32,
-    pub out_sec_size: u32,
-    pub interrupt_num: u32,
-    pub max_peers: u32,
-}
-
-#[repr(C)]
-#[derive(Copy, Clone, Default)]
-pub struct HvPciDevConfig {
-    pub domain: u8,
-    pub bus: u8,
-    pub device: u8,
-    pub function: u8,
-    pub v_bus: u8,
-    pub v_device: u8,
-    pub v_function: u8,
-    pub dev_type: VpciDevType,
-}
-
 #[macro_export]
 macro_rules! pci_dev {
     ($domain:expr, $bus:expr, $dev:expr, $func:expr => $v_bus:expr, $v_dev:expr, $v_func:expr, $dev_type:expr) => {
@@ -246,14 +66,6 @@ macro_rules! pci_dev {
             dev_type: $dev_type,
         }
     };
-}
-
-impl Debug for HvPciDevConfig {
-    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        let bdf =
-            crate::pci::pci_struct::Bdf::new(self.domain, self.bus, self.device, self.function);
-        write!(f, "bdf {:#x?}", bdf)
-    }
 }
 
 #[repr(C)]

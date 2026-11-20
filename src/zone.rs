@@ -901,7 +901,7 @@ pub fn this_zone_id() -> usize {
 pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
     // we create the new zone here
     // TODO: create Zone with cpu_set
-    let zone_id = config.zone_id as usize;
+    let zone_id = config.common.zone_id as usize;
 
     if find_zone(zone_id).is_some() {
         return hv_result_err!(
@@ -910,7 +910,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
         );
     }
 
-    let mut zone = Zone::new(zone_id, &config.name);
+    let mut zone = Zone::new(zone_id, &config.common.name);
     zone.pt_init(config.memory_regions())?;
     zone.mmio_init(&config.arch_config);
 
@@ -942,17 +942,17 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
         {
             #[cfg(dwc_pcie)]
             {
-                let num_pci_bus = config.num_pci_bus as usize;
+                let num_pci_bus = config.common.num_pci_bus as usize;
                 if zone_id == 0 {
                     let mut inner = zone.write();
-                    inner.virtual_pci_dbi_pref_init(&config.pci_config, num_pci_bus);
+                    inner.virtual_pci_dbi_pref_init(&config.common.pci_config, num_pci_bus);
                 } else {
-                    let _ = zone.virtual_pci_mmio_init(&config.pci_config, num_pci_bus);
+                    let _ = zone.virtual_pci_mmio_init(&config.common.pci_config, num_pci_bus);
                     let _ = zone.guest_pci_init(
                         zone_id,
-                        &config.alloc_pci_devs,
-                        config.num_pci_devs,
-                        &config.pci_config,
+                        &config.common.alloc_pci_devs,
+                        config.common.num_pci_devs,
+                        &config.common.pci_config,
                         num_pci_bus,
                     );
                 }
@@ -961,13 +961,16 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
 
         #[cfg(not(pci_init_delay))]
         {
-            let _ = zone.virtual_pci_mmio_init(&config.pci_config, config.num_pci_bus as usize);
+            let _ = zone.virtual_pci_mmio_init(
+                &config.common.pci_config,
+                config.common.num_pci_bus as usize,
+            );
             let _ = zone.guest_pci_init(
                 zone_id,
-                &config.alloc_pci_devs,
-                config.num_pci_devs,
-                &config.pci_config,
-                config.num_pci_bus as usize,
+                &config.common.alloc_pci_devs,
+                config.common.num_pci_devs,
+                &config.common.pci_config,
+                config.common.num_pci_bus as usize,
             );
         }
     }
@@ -987,8 +990,8 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
     /* Kai: Maybe unnecessary but i can't boot vms on my 3A6000 PC without this function. */
     // #[cfg(target_arch = "loongarch64")]
     // zone.page_table_emergency(
-    //     config.pci_config[0].ecam_base as _,
-    //     config.pci_config[0].ecam_size as _,
+    //     config.common.pci_config[0].ecam_base as _,
+    //     config.common.pci_config[0].ecam_size as _,
     // )?;
 
     let cpu_set = zone.read().cpu_set();
@@ -1005,14 +1008,14 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
     /* Kai: Maybe unnecessary but i can't boot vms on my 3A6000 PC without this function. */
     // #[cfg(target_arch = "loongarch64")]
     // zone.page_table_emergency(
-    //     config.pci_config.ecam_base as _,
-    //     config.pci_config.ecam_size as _,
+    //     config.common.pci_config.ecam_base as _,
+    //     config.common.pci_config.ecam_size as _,
     // )?;
 
     /*zone.pci_init(
-        &config.pci_config,
-        config.num_pci_devs as _,
-        &config.alloc_pci_devs,
+        &config.common.pci_config,
+        config.common.num_pci_devs as _,
+        &config.common.alloc_pci_devs,
     );*/
 
     zone.arch_zone_post_configuration(config)?;
@@ -1027,11 +1030,11 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
 
     let mut dtb_ipa = INVALID_ADDRESS as u64;
     for region in config.memory_regions() {
-        // region contains config.dtb_load_paddr?
-        if region.physical_start <= config.dtb_load_paddr
-            && region.physical_start + region.size > config.dtb_load_paddr
+        // region contains config.common.dtb_load_paddr?
+        if region.physical_start <= config.common.dtb_load_paddr
+            && region.physical_start + region.size > config.common.dtb_load_paddr
         {
-            dtb_ipa = region.virtual_start + config.dtb_load_paddr - region.physical_start;
+            dtb_ipa = region.virtual_start + config.common.dtb_load_paddr - region.physical_start;
         }
     }
 
@@ -1044,7 +1047,7 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
             if cpuid == cpu_set.first_cpu().unwrap() {
                 cpu_data.boot_cpu = true;
             }
-            cpu_data.cpu_on_entry = config.entry_point as _;
+            cpu_data.cpu_on_entry = config.common.entry_point as _;
             cpu_data.dtb_ipa = dtb_ipa as _;
             #[cfg(target_arch = "aarch64")]
             {

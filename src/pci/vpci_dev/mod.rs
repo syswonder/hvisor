@@ -51,16 +51,7 @@ pub(crate) enum PciConfigAccessStatus {
     Reject,
 }
 
-#[derive(Default, Debug, Clone, Copy, PartialEq, Eq)]
-#[repr(C, align(4))]
-pub enum VpciDevType {
-    #[default]
-    Physical = 0,
-    StandardVdev = 1,
-    VirtioRng = 2,
-    VirtioBlk = 3,
-    // Add new device types here
-}
+pub use hvisor_abi::VpciDevType;
 
 pub trait VpciDeviceHandler: Sync + Send {
     fn read_cfg(
