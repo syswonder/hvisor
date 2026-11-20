@@ -45,3 +45,14 @@ jobs:
           mkdir -p src/platform
           ln -sfn ../../platform/aarch64/qemu-gicv3/board.rs src/platform/__board.rs
           cargo fmt --all -- --check
+
+      - name: Install C formatter
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+
+      - name: C format
+        run: |
+          git ls-files -z -- '*.c' '*.h' \
+            | xargs -0 clang-format --dry-run --Werror
+
