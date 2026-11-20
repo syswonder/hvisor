@@ -226,11 +226,11 @@ pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[
     // 0x7e, // gpu@fb000000
     // 0x7d, // gpu@fb000000
     // 0x7c, // gpu@fb000000
-    0xfc, // usb@fc000000
-    0xf7, // usb@fc800000
-    0xf8, // usb@fc840000
-    0xfa, // usb@fc880000
-    0xfb, // usb@fc8c0000
+    0xfc,  // usb@fc000000
+    0xf7,  // usb@fc800000
+    0xf8,  // usb@fc840000
+    0xfa,  // usb@fc880000
+    0xfb,  // usb@fc8c0000
     0x191, // iommu@fc900000
     0x193, // iommu@fc900000
     0x196, // iommu@fc900000
@@ -239,7 +239,7 @@ pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[
     0x19f, // iommu@fcb00000
     0x1a2, // iommu@fcb00000
     0x19b, // iommu@fcb00000
-    0xfe, // usb@fcd00000
+    0xfe,  // usb@fcd00000
     0x1a9, // usb2-phy@0
     0x1a7, // usb2-phy@8000
     0x1a8, // usb2-phy@c000
@@ -337,7 +337,7 @@ pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[
     // 0xcb, // hdmi@fde80000 — moved to zone1
     // 0xcc, // hdmi@fde80000 — moved to zone1
     // 0x188, // hdmi@fde80000 — moved to zone1
-    0xc3, // edp@fdec0000
+    0xc3,  // edp@fdec0000
     0x118, // pcie@fe180000
     0x117, // pcie@fe180000
     0x116, // pcie@fe180000
@@ -354,28 +354,28 @@ pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[
     0x109, // ethernet@fe1c0000
     0x131, // sata@fe210000
     0x133, // sata@fe230000
-    0xee, // spi@fe2b0000
-    0xeb, // mmc@fe2c0000
-    0xec, // mmc@fe2d0000
-    0xed, // mmc@fe2e0000
-    0xf1, // crypto@fe370000
+    0xee,  // spi@fe2b0000
+    0xeb,  // mmc@fe2c0000
+    0xec,  // mmc@fe2d0000
+    0xed,  // mmc@fe2e0000
+    0xf1,  // crypto@fe370000
     0x1b0, // rng@fe378000
-    0xd4, // i2s@fe470000
-    0xd5, // i2s@fe480000
-    0xd6, // i2s@fe490000
-    0xd7, // i2s@fe4a0000
-    0xea, // vad@fe4d0000
-    0xe1, // spdif-tx@fe4e0000
-    0xe2, // spdif-tx@fe4f0000
-    0x29, // interrupt-controller@fe600000
-    0x76, // dma-controller@fea10000
-    0x77, // dma-controller@fea10000
-    0x78, // dma-controller@fea30000
-    0x79, // dma-controller@fea30000
+    0xd4,  // i2s@fe470000
+    0xd5,  // i2s@fe480000
+    0xd6,  // i2s@fe490000
+    0xd7,  // i2s@fe4a0000
+    0xea,  // vad@fe4d0000
+    0xe1,  // spdif-tx@fe4e0000
+    0xe2,  // spdif-tx@fe4f0000
+    0x29,  // interrupt-controller@fe600000
+    0x76,  // dma-controller@fea10000
+    0x77,  // dma-controller@fea10000
+    0x78,  // dma-controller@fea30000
+    0x79,  // dma-controller@fea30000
     0x175, // can@fea50000
     0x176, // can@fea60000
     0x177, // can@fea70000
-    0x75, // decompress@fea80000
+    0x75,  // decompress@fea80000
     0x15e, // i2c@fea90000
     0x15f, // i2c@feaa0000
     0x160, // i2c@feab0000
@@ -413,53 +413,53 @@ pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[
     0x17f, // pwm@febf0030
     0x1ad, // tsadc@fec00000
     0x1ae, // saradc@fec10000
-    0x5d, // mailbox@fec60000
-    0x5e, // mailbox@fec60000
-    0x5f, // mailbox@fec60000
-    0x60, // mailbox@fec60000
-    0x65, // mailbox@fec70000
-    0x66, // mailbox@fec70000
-    0x67, // mailbox@fec70000
-    0x68, // mailbox@fec70000
+    0x5d,  // mailbox@fec60000
+    0x5e,  // mailbox@fec60000
+    0x5f,  // mailbox@fec60000
+    0x60,  // mailbox@fec60000
+    0x65,  // mailbox@fec70000
+    0x66,  // mailbox@fec70000
+    0x67,  // mailbox@fec70000
+    0x68,  // mailbox@fec70000
     0x163, // i2c@fec80000
     0x164, // i2c@fec90000
     0x165, // i2c@feca0000
     0x16a, // spi@fecb0000
-    0x6d, // mailbox@fece0000
-    0x6e, // mailbox@fece0000
-    0x6f, // mailbox@fece0000
-    0x70, // mailbox@fece0000
-    0x7a, // dma-controller@fed10000
-    0x7b, // dma-controller@fed10000
+    0x6d,  // mailbox@fece0000
+    0x6e,  // mailbox@fece0000
+    0x6f,  // mailbox@fece0000
+    0x70,  // mailbox@fece0000
+    0x7a,  // dma-controller@fed10000
+    0x7b,  // dma-controller@fed10000
     0x135, // gpio@fd8a0000
     0x136, // gpio@fec20000
     0x137, // gpio@fec30000
     0x138, // gpio@fec40000
     0x139, // gpio@fec50000
-    0xfd, // usb@fc400000
+    0xfd,  // usb@fc400000
     0x1aa, // usb2-phy@4000
-    0xb7, // mipi4-csi2@fdd50000
-    0xb8, // mipi4-csi2@fdd50000
-    0xb9, // mipi5-csi2@fdd60000
-    0xba, // mipi5-csi2@fdd60000
-    0xe6, // spdif-tx@fddb8000
-    0xdc, // i2s@fddc8000
-    0xe5, // spdif-tx@fdde8000
-    0xda, // i2s@fddf4000
-    0xdb, // i2s@fddf8000
-    0xde, // i2s@fde00000
-    0xe8, // spdif-rx@fde10000
-    0xe9, // spdif-rx@fde18000
-    0xc2, // dp@fde60000
+    0xb7,  // mipi4-csi2@fdd50000
+    0xb8,  // mipi4-csi2@fdd50000
+    0xb9,  // mipi5-csi2@fdd60000
+    0xba,  // mipi5-csi2@fdd60000
+    0xe6,  // spdif-tx@fddb8000
+    0xdc,  // i2s@fddc8000
+    0xe5,  // spdif-tx@fdde8000
+    0xda,  // i2s@fddf4000
+    0xdb,  // i2s@fddf8000
+    0xde,  // i2s@fde00000
+    0xe8,  // spdif-rx@fde10000
+    0xe9,  // spdif-rx@fde18000
+    0xc2,  // dp@fde60000
     // 0xcd, // hdmi@fdea0000 — moved to zone1
     // 0xce, // hdmi@fdea0000 — moved to zone1
     // 0xcf, // hdmi@fdea0000 — moved to zone1
     // 0xd0, // hdmi@fdea0000 — moved to zone1
     // 0x189, // hdmi@fdea0000 — moved to zone1
-    0xc4, // edp@fded0000
-    0xd1, // hdmirx-controller@fdee0000
+    0xc4,  // edp@fded0000
+    0xd1,  // hdmirx-controller@fdee0000
     0x1d4, // hdmirx-controller@fdee0000
-    0xd3, // hdmirx-controller@fdee0000
+    0xd3,  // hdmirx-controller@fdee0000
     0x127, // pcie@fe150000
     0x126, // pcie@fe150000
     0x125, // pcie@fe150000
@@ -482,7 +482,7 @@ pub const ROOT_ZONE_IRQS_BITMAP: &[BitmapWord] = &get_irqs_bitmap(&[
     0x102, // ethernet@fe1b0000
     0x132, // sata@fe220000
     0x1c7, // fiq-debugger
-    0x40, // hvisor_virtio_device
+    0x40,  // hvisor_virtio_device
 ]);
 
 pub const ROOT_ARCH_ZONE_CONFIG: HvArchZoneConfig = HvArchZoneConfig {
