@@ -33,8 +33,6 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y qemu-system-aarch64 qemu-system-riscv64 gdb-multiarch llvm-dev libclang-dev wget python3-venv
           cargo install --version 0.3.0 --locked cargo-binutils
-      - name: Format Check
-        run: make fmt-test
 
   license-checker:
     name: license-checker

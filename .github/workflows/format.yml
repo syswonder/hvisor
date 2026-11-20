@@ -33,3 +33,15 @@ jobs:
 
       - name: YAML format
         run: prettier --check "**/*.{yml,yaml}" --tab-width 2
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly-2024-05-05
+          components: rustfmt
+
+      - name: Rust format
+        run: |
+          mkdir -p src/platform
+          ln -sfn ../../platform/aarch64/qemu-gicv3/board.rs src/platform/__board.rs
+          cargo fmt --all -- --check
