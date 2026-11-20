@@ -33,7 +33,7 @@ pub mod time;
 pub mod trap;
 pub mod vcpu;
 pub mod zone;
-pub use vcpu::ArchVcpu;
+pub use vcpu::{ArchVcpu, GUEST_IRQ_NR, GUEST_LINES};
 
 // pub use s1pt::Stage1PageTable;
 pub use s2pt::stage2_mode_detect;

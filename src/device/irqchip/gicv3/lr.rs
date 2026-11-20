@@ -199,7 +199,7 @@ pub(super) fn handle_maintenance_interrupt() {
 }
 
 fn has_pending_maintenance_work() -> bool {
-    this_cpu_data().vcpu.irq.has_pending() || PENDING_VIRQS.get().unwrap().has_pending()
+    this_cpu_data().vcpu.irq.has_pending_edges() || PENDING_VIRQS.get().unwrap().has_pending()
 }
 
 // Enable or disable an underflow maintenance interrupt.

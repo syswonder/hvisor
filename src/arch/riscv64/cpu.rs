@@ -213,6 +213,7 @@ impl ArchCpu {
 
         info!("CPU{} run@{:#x}", self.cpuid, self.sepc);
         info!("CPU{:#x?}", self);
+        crate::device::irqchip::flush_current_guest_irqs();
         unsafe {
             vcpu_arch_entry();
         }
@@ -288,10 +289,8 @@ pub fn this_cpu_id() -> usize {
     this_cpu_arch().get_cpuid()
 }
 
-pub fn hartid_to_cpuid(hartid: usize) -> usize {
-    (0..BOARD_NCPUS)
-        .find(|&i| BOARD_HARTID_MAP[i] == hartid)
-        .unwrap()
+pub fn hartid_to_cpuid(hartid: usize) -> Option<usize> {
+    (0..BOARD_NCPUS).find(|&i| BOARD_HARTID_MAP[i] == hartid)
 }
 
 pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {

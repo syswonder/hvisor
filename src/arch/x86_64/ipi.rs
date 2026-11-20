@@ -148,6 +148,9 @@ pub fn arch_notify_event(dest: u64, vector: u64, _event_id: usize, _queue_was_em
     arch_send_event(dest, vector);
 }
 
+// Same IRQ as the event doorbell.
+pub const VCPU_KICK_DOORBELL: u64 = SGI_IPI_ID;
+
 pub fn handle_virt_ipi() {
     event::dispatch_host_events(|| while event::check_events() {});
 }
