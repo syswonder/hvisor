@@ -1,4 +1,2 @@
 [target.loongarch64-unknown-none-softfloat]
-rustflags = [
-    "-Cforce-frame-pointers=yes",
-]
+rustflags = ["-Cforce-frame-pointers=yes"]
