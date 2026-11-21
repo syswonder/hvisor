@@ -2,10 +2,7 @@
     "arch": "arm64",
     "name": "linux2",
     "zone_id": 1,
-    "cpus": [
-        2,
-        3
-    ],
+    "cpus": [2, 3],
     "memory_regions": [
         {
             "type": "ram",
@@ -68,21 +65,7 @@
             "size": "0x20000"
         }
     ],
-    "interrupts": [
-        35,
-        37,
-        38,
-        45,
-        56,
-        57,
-        61,
-        75,
-        76,
-        78,
-        135,
-        162,
-        172
-    ],
+    "interrupts": [35, 37, 38, 45, 56, 57, 61, 75, 76, 78, 135, 162, 172],
     "ivc_configs": [],
     "kernel_filepath": "./Image",
     "dtb_filepath": "./linux2.dtb",

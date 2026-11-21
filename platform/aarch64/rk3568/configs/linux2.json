@@ -7,25 +7,25 @@
         {
             "type": "ram",
             "physical_start": "0x50000000",
-            "virtual_start":  "0x50000000",
+            "virtual_start": "0x50000000",
             "size": "0x10000000"
         },
         {
             "type": "io",
             "physical_start": "0xfdc20000",
-            "virtual_start":  "0xfdc20000",
+            "virtual_start": "0xfdc20000",
             "size": "0x10000"
         },
         {
             "type": "virtio",
             "physical_start": "0xff9d0000",
-            "virtual_start":  "0xff9d0000",
+            "virtual_start": "0xff9d0000",
             "size": "0x200"
         },
         {
             "type": "virtio",
             "physical_start": "0xff9e0000",
-            "virtual_start":  "0xff9e0000",
+            "virtual_start": "0xff9e0000",
             "size": "0x200"
         }
     ],
@@ -34,8 +34,8 @@
     "kernel_filepath": "./Image",
     "dtb_filepath": "./rk3568_limit_zone1.dtb",
     "kernel_load_paddr": "0x50400000",
-    "dtb_load_paddr":   "0x50000000",
-    "entry_point":      "0x50400000",
+    "dtb_load_paddr": "0x50000000",
+    "entry_point": "0x50400000",
     "arch_config": {
         "gic_version": "v3",
         "gicd_base": "0xfd400000",

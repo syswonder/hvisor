@@ -2,10 +2,7 @@
     "arch": "arm64",
     "name": "zone1-ohos",
     "zone_id": 1,
-    "cpus": [
-        2,
-        3
-    ],
+    "cpus": [2, 3],
     "memory_regions": [
         {
             "type": "ram",
@@ -56,11 +53,7 @@
             "size": "0x50000"
         }
     ],
-    "interrupts": [
-        "0x82",
-        "0x8c",
-        "0x8e"
-    ],
+    "interrupts": ["0x82", "0x8c", "0x8e"],
     "ivc_configs": [],
     "kernel_filepath": "./zone1-ohos.kernel",
     "dtb_filepath": "./zone1-ohos.dtb",

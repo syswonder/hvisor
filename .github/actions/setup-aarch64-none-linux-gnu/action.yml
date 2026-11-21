@@ -1,14 +1,14 @@
-name: 'ARM GCC Toolchain Setup'
-description: 'Install ARM GCC cross-compiler with caching support'
+name: "ARM GCC Toolchain Setup"
+description: "Install ARM GCC cross-compiler with caching support"
 inputs:
   version:
-    description: 'Toolchain version'
+    description: "Toolchain version"
     required: false
-    default: '10.3-2021.07'
+    default: "10.3-2021.07"
   install-path:
-    description: 'Installation directory'
+    description: "Installation directory"
     required: false
-    default: '/opt/aarch64-none-linux-gnu'
+    default: "/opt/aarch64-none-linux-gnu"
 
 runs:
   using: "composite"

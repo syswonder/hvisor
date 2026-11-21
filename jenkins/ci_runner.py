@@ -150,10 +150,18 @@ def resolve_staging_dir(raw: str, arch: str, board: str) -> str:
 def zone0_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     print("————————————————\ncase: zone0_start\n————————————————\n", flush=True)
     if cfg["mode"] == "qemu":
-        cmd = ["make", f"ARCH={cfg['arch']}", f"BOARD={cfg['board']}", "MODE=release", "ci-run"]
+        cmd = [
+            "make",
+            f"ARCH={cfg['arch']}",
+            f"BOARD={cfg['board']}",
+            "MODE=release",
+            "ci-run",
+        ]
         env = os.environ.copy()
         env["BID"] = ""
-        proc = subprocess.Popen(cmd, cwd=cfg["workspace"], start_new_session=True, env=env)
+        proc = subprocess.Popen(
+            cmd, cwd=cfg["workspace"], start_new_session=True, env=env
+        )
         cfg["_managed_proc"] = proc
         wait_qemu_socket(cfg["socket_path"], timeout=30.0)
         with build_terminal(cfg) as qemu_term:
@@ -233,11 +241,19 @@ def zone1_start(cfg: dict[str, Any], term: Terminal | None) -> int:
     )
     zone_list_shows_running(zone_list_out, str(cfg.get("zone1_name", "linux2")))
     if cfg["arch"] != "x86_64":
-        _ = run_and_print_quiet_raw(term, "script /dev/null", quiet_seconds=1.0, max_duration=15.0)
-    pts_output, _ = run_and_print_quiet(term, "ls -1 /dev/pts/[0-9]*", quiet_seconds=1.0, max_duration=15.0)
-    pts_numbers = sorted(int(match) for match in re.findall(r"/dev/pts/(\d+)", pts_output))
+        _ = run_and_print_quiet_raw(
+            term, "script /dev/null", quiet_seconds=1.0, max_duration=15.0
+        )
+    pts_output, _ = run_and_print_quiet(
+        term, "ls -1 /dev/pts/[0-9]*", quiet_seconds=1.0, max_duration=15.0
+    )
+    pts_numbers = sorted(
+        int(match) for match in re.findall(r"/dev/pts/(\d+)", pts_output)
+    )
     if not pts_numbers:
-        raise TerminalCommandError("failed to find numeric pts from 'ls -1 /dev/pts/[0-9]*'")
+        raise TerminalCommandError(
+            "failed to find numeric pts from 'ls -1 /dev/pts/[0-9]*'"
+        )
     max_pts = pts_numbers[-1]
     _ = run_and_print_send_only(term, f"screen /dev/pts/{max_pts}", read_duration=20.0)
     _ = run_and_print_send_only(term, "\n", read_duration=2.0)
@@ -253,7 +269,9 @@ def x86_qemu_zone1_regression(cfg: dict[str, Any], term: Terminal | None) -> int
     io_timeout = float(cfg.get("zone1_io_timeout", 120.0))
     io_size_mb = int(cfg.get("zone1_io_size_mb", 100))
     if min(iterations, boot_timeout, io_timeout, io_size_mb) <= 0:
-        raise TerminalCommandError("zone1 iteration count, timeouts and I/O size must be positive")
+        raise TerminalCommandError(
+            "zone1 iteration count, timeouts and I/O size must be positive"
+        )
 
     digest = hashlib.sha256()
     for _ in range(io_size_mb):
@@ -277,7 +295,9 @@ def x86_qemu_zone1_regression(cfg: dict[str, Any], term: Terminal | None) -> int
     def checked_run(command: str, timeout: float = 30.0) -> str:
         rc, output = term.run("x86_zone1", command, timeout=timeout)
         if rc != 0:
-            raise TerminalCommandError(f"zone1 regression command failed with rc={rc}: {command}")
+            raise TerminalCommandError(
+                f"zone1 regression command failed with rc={rc}: {command}"
+            )
         return output
 
     checked_run("cd /root")
@@ -290,10 +310,14 @@ def x86_qemu_zone1_regression(cfg: dict[str, Any], term: Terminal | None) -> int
         try:
             if iteration == 1:
                 checked_run("./boot_zone1.sh", timeout=120.0)
-                after_pts = set(re.findall(r"/dev/pts/\d+", checked_run("ls -1 /dev/pts/[0-9]*")))
+                after_pts = set(
+                    re.findall(r"/dev/pts/\d+", checked_run("ls -1 /dev/pts/[0-9]*"))
+                )
                 new_pts = after_pts - before_pts
                 if len(new_pts) != 1:
-                    raise TerminalCommandError(f"expected one new zone1 console, got {sorted(new_pts)}")
+                    raise TerminalCommandError(
+                        f"expected one new zone1 console, got {sorted(new_pts)}"
+                    )
                 pts = new_pts.pop()
             else:
                 checked_run("./hvisor zone start zone1_linux.json", timeout=30.0)
@@ -316,7 +340,10 @@ def x86_qemu_zone1_regression(cfg: dict[str, Any], term: Terminal | None) -> int
 
             # A prompt alone is insufficient: require a fresh command status
             # marker, then require disk I/O to finish with the expected hash.
-            checked_run('test "$(uname -m)" = x86_64 && test ! -e /dev/hvisor', timeout=boot_timeout)
+            checked_run(
+                'test "$(uname -m)" = x86_64 && test ! -e /dev/hvisor',
+                timeout=boot_timeout,
+            )
             checked_run("sh -c " + shlex.quote(io_script), timeout=io_timeout)
             detach_offset = term.offset()
             term.backend.write(b"\x14d")
@@ -325,7 +352,9 @@ def x86_qemu_zone1_regression(cfg: dict[str, Any], term: Terminal | None) -> int
                 timeout=15.0,
                 from_offset=detach_offset,
             ):
-                raise TerminalTimeoutError("failed to return to zone0 after screen detach")
+                raise TerminalTimeoutError(
+                    "failed to return to zone0 after screen detach"
+                )
             attached = False
             checked_run("test -c /dev/hvisor", timeout=15.0)
             # A detached screen keeps reading the PTY. Close it before the
@@ -349,7 +378,10 @@ def x86_qemu_zone1_regression(cfg: dict[str, Any], term: Terminal | None) -> int
 
 
 def asterinas_zone1_regression(cfg: dict[str, Any], term: Terminal | None) -> int:
-    print("————————————————\ncase: asterinas_zone1_regression\n————————————————\n", flush=True)
+    print(
+        "————————————————\ncase: asterinas_zone1_regression\n————————————————\n",
+        flush=True,
+    )
     if term is None:
         raise SystemExit("terminal backend is required")
 
@@ -381,9 +413,13 @@ def asterinas_zone1_regression(cfg: dict[str, Any], term: Terminal | None) -> in
         quiet_seconds=1.0,
         max_duration=15.0,
     )
-    pts_numbers = sorted(int(match) for match in re.findall(r"/dev/pts/(\d+)", pts_output))
+    pts_numbers = sorted(
+        int(match) for match in re.findall(r"/dev/pts/(\d+)", pts_output)
+    )
     if not pts_numbers:
-        raise TerminalCommandError("failed to find numeric pts from 'ls -1 /dev/pts/[0-9]*'")
+        raise TerminalCommandError(
+            "failed to find numeric pts from 'ls -1 /dev/pts/[0-9]*'"
+        )
     max_pts = pts_numbers[-1]
 
     _ = run_and_print_send_only(term, f"screen /dev/pts/{max_pts}", read_duration=20.0)
@@ -414,7 +450,9 @@ def asterinas_zone1_regression(cfg: dict[str, Any], term: Terminal | None) -> in
     term.backend.write(b"\x01d")
     time.sleep(1.0)
     term.backend.write(b"\r")
-    detach_output = read_and_print_until_quiet(term, quiet_seconds=2.0, max_duration=10.0)
+    detach_output = read_and_print_until_quiet(
+        term, quiet_seconds=2.0, max_duration=10.0
+    )
     if "root@zone0" not in detach_output:
         raise TerminalCommandError("failed to return to zone0 after screen detach")
     print("asterinas_zone1_regression_passed", flush=True)
@@ -432,7 +470,9 @@ CASE_HANDLERS: dict[str, CaseFunc] = {
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Run BID test cases from jenkins/ci.yaml")
+    parser = argparse.ArgumentParser(
+        description="Run BID test cases from jenkins/ci.yaml"
+    )
     parser.add_argument("--bid", required=True, help="BID key in jenkins/ci.yaml")
     return parser.parse_args()
 
@@ -453,7 +493,9 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
     mode = bid_entry.get("mode", "").strip()
     cases = bid_entry.get("cases", [])
     if not mode:
-        raise SystemExit(f"incomplete config for bid '{args.bid}': tests.mode is required")
+        raise SystemExit(
+            f"incomplete config for bid '{args.bid}': tests.mode is required"
+        )
     if not cases:
         raise SystemExit(f"no test cases configured for bid '{args.bid}'")
 
@@ -464,7 +506,9 @@ def load_runtime_config(args: argparse.Namespace) -> dict[str, Any]:
     elif not Path(hvisor_tool_path).is_absolute():
         hvisor_tool_path = str((cell_root / hvisor_tool_path).resolve())
 
-    scp_tmp_dir = str(deploy.get("scp_tmp_dir", "/tmp/ci_pull")).strip() or "/tmp/ci_pull"
+    scp_tmp_dir = (
+        str(deploy.get("scp_tmp_dir", "/tmp/ci_pull")).strip() or "/tmp/ci_pull"
+    )
     uboot_step = float(tests.get("uboot_step_timeout", 0.0))
     uboot_prompt = float(tests.get("uboot_prompt_timeout", 60.0))
     if uboot_step <= 0:
@@ -544,7 +588,9 @@ def main() -> int:
                 try:
                     rc = case_fn(cfg, None)
                 except (TerminalTimeoutError, TerminalCommandError) as exc:
-                    print(f"[ci_runner] failed in case '{case_name}': {exc}", flush=True)
+                    print(
+                        f"[ci_runner] failed in case '{case_name}': {exc}", flush=True
+                    )
                     return 1
                 if rc != 0:
                     return rc
@@ -564,7 +610,10 @@ def main() -> int:
                     try:
                         rc = case_fn(cfg, qemu_term)
                     except (TerminalTimeoutError, TerminalCommandError) as exc:
-                        print(f"[ci_runner] failed in case '{case_name}': {exc}", flush=True)
+                        print(
+                            f"[ci_runner] failed in case '{case_name}': {exc}",
+                            flush=True,
+                        )
                         return 1
                     if rc != 0:
                         return rc
@@ -573,7 +622,9 @@ def main() -> int:
                 try:
                     rc = case_fn(cfg, term)
                 except (TerminalTimeoutError, TerminalCommandError) as exc:
-                    print(f"[ci_runner] failed in case '{case_name}': {exc}", flush=True)
+                    print(
+                        f"[ci_runner] failed in case '{case_name}': {exc}", flush=True
+                    )
                     return 1
                 if rc != 0:
                     return rc

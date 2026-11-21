@@ -1,0 +1,74 @@
+name: Format
+
+on:
+  push:
+    branches:
+      - dev
+      - main
+  pull_request:
+    branches:
+      - dev
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  format:
+    name: format
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install Prettier
+        run: npm install -g prettier@3.3.3
+
+      - name: YAML format
+        run: prettier --check "**/*.{yml,yaml}" --tab-width 2
+
+      - name: Install Rust Toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: nightly-2024-05-05
+          components: rustfmt
+
+      - name: Rust format
+        run: |
+          mkdir -p src/platform
+          ln -sfn ../../platform/aarch64/qemu-gicv3/board.rs src/platform/__board.rs
+          cargo fmt --all -- --check
+
+      - name: Install C formatter
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-format
+
+      - name: C format
+        run: |
+          git ls-files -z -- '*.c' '*.h' \
+            | xargs -0 clang-format --dry-run --Werror
+
+      - name: JSON format
+        run: prettier --check "**/*.json" --tab-width 4
+
+      - name: Install Taplo
+        run: npm install -g @taplo/cli@0.7.0
+
+      - name: TOML format
+        run: taplo fmt --check
+
+      - name: Install Ruff
+        run: |
+          pip install --user ruff==0.6.9
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Python format
+        run: ruff format --check .
