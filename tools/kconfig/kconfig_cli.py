@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Kconfig entrypoints: defconfig, menuconfig, vscode-cfgs."""
+
 from __future__ import annotations
 
 import argparse
@@ -47,7 +48,9 @@ def write_root_dot_config(root: Path, arch: str, board: str, kconf) -> None:
         )
     arch_out = derived
     ld = (root / "platform" / arch_out / board / "linker.ld").resolve()
-    tmpl = (root / "platform" / arch_out / board / "cargo" / "config.template.toml").resolve()
+    tmpl = (
+        root / "platform" / arch_out / board / "cargo" / "config.template.toml"
+    ).resolve()
     hvisor_src = str(root.resolve())
     bid = f"{arch_out}/{board}"
     kconf.write_config(str(cfg))
@@ -79,7 +82,10 @@ def cmd_defconfig() -> None:
     try:
         from kconfiglib import Kconfig
     except ImportError:
-        print("error: pip install kconfiglib (see tools/kconfig/requirements.txt)", file=sys.stderr)
+        print(
+            "error: pip install kconfiglib (see tools/kconfig/requirements.txt)",
+            file=sys.stderr,
+        )
         sys.exit(1)
     kconf = Kconfig(str(root / "kconfig" / "Kconfig"))
     defcfg = root / "platform" / arch / board / "kconfig" / "defconfig"
@@ -103,12 +109,17 @@ def cmd_menuconfig() -> None:
         from kconfiglib import Kconfig
     except ImportError as e:
         print(f"error: kconfiglib is not installed: {e}", file=sys.stderr)
-        print("hint: tools/kconfig/.venv/bin/pip install -r tools/kconfig/requirements.txt", file=sys.stderr)
+        print(
+            "hint: tools/kconfig/.venv/bin/pip install -r tools/kconfig/requirements.txt",
+            file=sys.stderr,
+        )
         sys.exit(1)
     try:
         import menuconfig as kc_menu
     except ImportError as e:
-        print(f"error: kconfiglib TUI (menuconfig) could not load: {e}", file=sys.stderr)
+        print(
+            f"error: kconfiglib TUI (menuconfig) could not load: {e}", file=sys.stderr
+        )
         print(
             "hint: the UI needs Python stdlib curses. "
             "Debian/Ubuntu: apt install python3-curses; Fedora: dnf install python3-curses; "
@@ -145,12 +156,17 @@ def main() -> int:
     p = argparse.ArgumentParser(description="hvisor Kconfig helpers")
     sub = p.add_subparsers(dest="cmd", required=True)
 
-    sub.add_parser("defconfig", help="merge board defconfig + Kconfig into repo-root .config (env ARCH, BOARD)")
+    sub.add_parser(
+        "defconfig",
+        help="merge board defconfig + Kconfig into repo-root .config (env ARCH, BOARD)",
+    )
     sub.add_parser(
         "menuconfig",
         help="interactive Kconfig UI (env ARCH, BOARD); do not name this file menuconfig.py",
     )
-    p_vc = sub.add_parser("vscode-cfgs", help="emit JSON array of rustc cfg names for rust-analyzer")
+    p_vc = sub.add_parser(
+        "vscode-cfgs", help="emit JSON array of rustc cfg names for rust-analyzer"
+    )
     p_vc.add_argument("config", type=Path, help="path to repo-root .config")
     p_vc.add_argument("map", type=Path, help="path to kconfig/cfg_map.toml")
 
