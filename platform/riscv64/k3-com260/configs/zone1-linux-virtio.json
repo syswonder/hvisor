@@ -7,13 +7,13 @@
         {
             "type": "ram",
             "physical_start": "0x180000000",
-            "virtual_start":  "0x180000000",
+            "virtual_start": "0x180000000",
             "size": "0x80000000"
         },
         {
             "type": "io",
             "physical_start": "0xd4282000",
-            "virtual_start":  "0xd4282000",
+            "virtual_start": "0xd4282000",
             "size": "0x1000"
         },
         {

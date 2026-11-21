@@ -10,15 +10,15 @@
                 }
             ],
             "devices": [
-                    {
-                        "type": "blk",
-                        "addr": "0xa003c00",
-                        "len": "0x200",
-                        "irq": 78,
-                        "img": "rootfs2.ext4",
-                        "status": "enable"
-                    }
-                ]
+                {
+                    "type": "blk",
+                    "addr": "0xa003c00",
+                    "len": "0x200",
+                    "irq": 78,
+                    "img": "rootfs2.ext4",
+                    "status": "enable"
+                }
+            ]
         }
     ]
 }

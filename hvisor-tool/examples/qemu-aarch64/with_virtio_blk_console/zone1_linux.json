@@ -6,7 +6,7 @@
         {
             "type": "ram",
             "physical_start": "0x50000000",
-            "virtual_start":  "0x50000000",
+            "virtual_start": "0x50000000",
             "size": "0x30000000"
         },
         {
@@ -21,8 +21,8 @@
     "kernel_filepath": "./Image",
     "dtb_filepath": "./linux2.dtb",
     "kernel_load_paddr": "0x50400000",
-    "dtb_load_paddr":   "0x50000000",
-    "entry_point":      "0x50400000",
+    "dtb_load_paddr": "0x50000000",
+    "entry_point": "0x50400000",
     "arch_config": {
         "gic_version": "v3",
         "gicd_base": "0x8000000",

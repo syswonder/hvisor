@@ -1,9 +1,7 @@
 {
     "name": "ruxos_display",
     "zone_id": 1,
-    "cpus": [
-        2
-    ],
+    "cpus": [2],
     "memory_regions": [
         {
             "type": "ram",
@@ -42,13 +40,7 @@
             "size": "0x4000"
         }
     ],
-    "interrupts": [
-        74,
-        75,
-        76,
-        78,
-        66
-    ],
+    "interrupts": [74, 75, 76, 78, 66],
     "ivc_configs": [
         {
             "ivc_id": 0,
