@@ -18,9 +18,12 @@ bitmap-allocator = { git = "https://github.com/rcore-os/bitmap-allocator", rev =
 qemu-exit = "3.0.2"
 cortex-a = "8.1.1"
 cfg-if = "1.0"
-bitvec = { version="1.0.1", default-features = false, features = ["atomic", "alloc"] }
-heapless = { version = "0.8.0 "}
-percpu = { package = "percpu", version="0.2", features=["arm-el2"]}
+bitvec = { version = "1.0.1", default-features = false, features = [
+    "atomic",
+    "alloc",
+] }
+heapless = { version = "0.8.0 " }
+percpu = { package = "percpu", version = "0.2", features = ["arm-el2"] }
 
 [target.'cfg(target_arch = "aarch64")'.dependencies]
 aarch64-cpu = "9.4.0"
@@ -28,9 +31,11 @@ psci = { version = "0.1.0", default-features = false, features = ["smc"] }
 
 [target.'cfg(target_arch = "riscv64")'.dependencies]
 sbi-rt = { version = "0.0.3", features = ["legacy"] }
-sbi-spec = { version = "0.0.8", features = ["legacy"]}
+sbi-spec = { version = "0.0.8", features = ["legacy"] }
 riscv = "0.13.0"
-riscv_h = { package = "riscv", git = "https://github.com/rcore-os/riscv", features = ["inline-asm"] }
+riscv_h = { package = "riscv", git = "https://github.com/rcore-os/riscv", features = [
+    "inline-asm",
+] }
 riscv-decode = "0.2.1"
 riscv-peripheral = "0.2.1"
 riscv-pac = "0.2.0"
@@ -40,7 +45,9 @@ loongArch64 = "0.2.5"
 
 [target.'cfg(target_arch = "x86_64")'.dependencies]
 x86 = "=0.52.0"
-x86_64 = { version = "=0.15.4", default-features = false, features = ["instructions"] }
+x86_64 = { version = "=0.15.4", default-features = false, features = [
+    "instructions",
+] }
 x2apic = "=0.5.1"
 raw-cpuid = "=10.7.0"
 acpi = "=5.2.0"
@@ -50,4 +57,4 @@ uefi-raw = "=0.9.0"
 [profile.dev]
 # panic = "abort" # avoid cargo test failure, this is a bug of cargo
 debug = 2
-opt-level = 0 
+opt-level = 0

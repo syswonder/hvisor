@@ -1,5 +1,3 @@
 [target.aarch64-unknown-none-softfloat]
 runner = "platform/__ARCH__/__BOARD__/test/runner.sh"
-rustflags = [
-    "-Cforce-frame-pointers=yes",
-]
+rustflags = ["-Cforce-frame-pointers=yes"]

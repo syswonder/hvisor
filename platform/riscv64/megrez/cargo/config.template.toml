@@ -1,6 +1,3 @@
 [target.riscv64imac-unknown-none-elf]
 runner = "platform/__ARCH__/__BOARD__/test/runner.sh"
-rustflags = [
-    "-Ctarget-feature=+h",
-    "-Cforce-frame-pointers=yes",
-]
+rustflags = ["-Ctarget-feature=+h", "-Cforce-frame-pointers=yes"]

@@ -62,3 +62,9 @@ jobs:
       - name: JSON format
         run: prettier --check "**/*.json" --tab-width 4
 
+      - name: Install Taplo
+        run: npm install -g @taplo/cli@0.7.0
+
+      - name: TOML format
+        run: taplo fmt --check
+
