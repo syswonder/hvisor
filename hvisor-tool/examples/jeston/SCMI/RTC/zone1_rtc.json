@@ -6,37 +6,37 @@
         {
             "type": "ram",
             "physical_start": "0x100000000",
-            "virtual_start":  "0x100000000",
+            "virtual_start": "0x100000000",
             "size": "0x100000000"
         },
         {
             "type": "io",
             "physical_start": "0xc360000",
-            "virtual_start":  "0xc360000",
+            "virtual_start": "0xc360000",
             "size": "0x50000"
         },
         {
             "type": "io",
             "physical_start": "0xc2a0000",
-            "virtual_start":  "0xc2a0000",
+            "virtual_start": "0xc2a0000",
             "size": "0x10000"
         },
         {
             "type": "virtio",
             "physical_start": "0xff9c000",
-            "virtual_start":  "0xff9c000",
+            "virtual_start": "0xff9c000",
             "size": "0x200"
         },
         {
             "type": "virtio",
             "physical_start": "0xff9d000",
-            "virtual_start":  "0xff9d000",
+            "virtual_start": "0xff9d000",
             "size": "0x200"
         },
         {
             "type": "virtio",
             "physical_start": "0xff9e000",
-            "virtual_start":  "0xff9e000",
+            "virtual_start": "0xff9e000",
             "size": "0x200"
         }
     ],
@@ -46,8 +46,8 @@
     "kernel_filepath": "./Image",
     "dtb_filepath": "./linux2.dtb",
     "kernel_load_paddr": "0x100400000",
-    "dtb_load_paddr":   "0x100000000",
-    "entry_point":      "0x100400000",
+    "dtb_load_paddr": "0x100000000",
+    "entry_point": "0x100400000",
     "modules": [
         {
             "name": "ramdisk",

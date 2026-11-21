@@ -10,14 +10,14 @@
                 }
             ],
             "devices": [
-                    {
-                        "type": "console",
-                        "addr": "0x10007000",
-                        "len": "0x1000",
-                        "irq": 7,
-                        "status": "enable"
-                    }
-                ]
+                {
+                    "type": "console",
+                    "addr": "0x10007000",
+                    "len": "0x1000",
+                    "irq": 7,
+                    "status": "enable"
+                }
+            ]
         }
     ]
 }

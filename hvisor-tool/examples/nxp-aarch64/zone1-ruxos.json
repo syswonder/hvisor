@@ -2,9 +2,7 @@
     "arch": "arm64",
     "name": "ruxos_display",
     "zone_id": 1,
-    "cpus": [
-        2
-    ],
+    "cpus": [2],
     "memory_regions": [
         {
             "type": "ram",
@@ -43,12 +41,7 @@
             "size": "0x200"
         }
     ],
-    "interrupts": [
-        61,
-        74,
-        76,
-        78
-    ],
+    "interrupts": [61, 74, 76, 78],
     "ivc_configs": [],
     "kernel_filepath": "./helloworld_aarch64-qemu-virt.bin",
     "dtb_filepath": "./zone1-ruxos.dtb",

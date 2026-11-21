@@ -1,10 +1,7 @@
 {
     "name": "linux2",
     "zone_id": 1,
-    "cpus": [
-        2,
-        3
-    ],
+    "cpus": [2, 3],
     "memory_regions": [
         {
             "type": "ram",
@@ -31,11 +28,7 @@
             "size": "0x200"
         }
     ],
-    "interrupts": [
-        75,
-        76,
-        78
-    ],
+    "interrupts": [75, 76, 78],
     "ivc_configs": [],
     "kernel_filepath": "./Image",
     "dtb_filepath": "./zone1-linux.dtb",

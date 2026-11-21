@@ -2,9 +2,7 @@
     "arch": "loongarch64",
     "name": "linux3",
     "zone_id": 3,
-    "cpus": [
-        3
-    ],
+    "cpus": [3],
     "memory_regions": [
         {
             "type": "ram",
@@ -85,10 +83,7 @@
             "size": "0x800000"
         }
     ],
-    "interrupts": [
-        4,
-        5
-    ],
+    "interrupts": [4, 5],
     "ivc_configs": [],
     "kernel_args": "NOT_USED_YET",
     "kernel_filepath": "/tool/nonroot/vmlinux-linux3.bin",
