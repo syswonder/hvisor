@@ -2,10 +2,7 @@
     "arch": "x86_64",
     "name": "linux2",
     "zone_id": 1,
-    "cpus": [
-        2,
-        3
-    ],
+    "cpus": [2, 3],
     "memory_regions": [
         {
             "type": "ram",

@@ -58,3 +58,7 @@ jobs:
           clang-format --version
           git ls-files -z -- '*.c' '*.h' \
             | xargs -0 clang-format --dry-run --Werror
+
+      - name: JSON format
+        run: prettier --check "**/*.json" --tab-width 4
+

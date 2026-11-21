@@ -2,9 +2,7 @@
     "arch": "loongarch64",
     "name": "linux1",
     "zone_id": 1,
-    "cpus": [
-        1
-    ],
+    "cpus": [1],
     "memory_regions": [
         {
             "type": "ram",
@@ -97,10 +95,7 @@
             "size": "0x800000"
         }
     ],
-    "interrupts": [
-        4,
-        5
-    ],
+    "interrupts": [4, 5],
     "ivc_configs": [],
     "kernel_args": "NOT_USED_YET",
     "kernel_filepath": "/tool/nonroot/vmlinux-linux1.bin",

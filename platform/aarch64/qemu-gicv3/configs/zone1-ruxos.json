@@ -7,14 +7,14 @@
         {
             "type": "ram",
             "physical_start": "0x50000000",
-            "virtual_start":  "0x40000000",
+            "virtual_start": "0x40000000",
             "size": "0x30000000"
         },
         {
             "type": "io",
             "physical_start": "0x9000000",
-            "virtual_start":  "0x9000000",
-            "size": "0x1000"            
+            "virtual_start": "0x9000000",
+            "size": "0x1000"
         },
         {
             "type": "virtio",
@@ -29,8 +29,8 @@
     "kernel_filepath": "./helloworld_aarch64-qemu-virt.bin",
     "dtb_filepath": "./zone1-ruxos.dtb",
     "kernel_load_paddr": "0x50080000",
-    "dtb_load_paddr":   "0x50000000",
-    "entry_point":      "0x40080000",
+    "dtb_load_paddr": "0x50000000",
+    "entry_point": "0x40080000",
     "arch_config": {
         "gic_version": "v3",
         "gicd_base": "0x8000000",

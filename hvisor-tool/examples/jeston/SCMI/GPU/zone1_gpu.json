@@ -6,78 +6,81 @@
         {
             "type": "ram",
             "physical_start": "0x100000000",
-            "virtual_start":  "0x100000000",
+            "virtual_start": "0x100000000",
             "size": "0x100000000"
         },
         {
             "type": "io",
             "physical_start": "0x13e00000",
-            "virtual_start":  "0x13e00000",
+            "virtual_start": "0x13e00000",
             "size": "0x150000"
         },
         {
             "type": "io",
             "physical_start": "0x14800000",
-            "virtual_start":  "0x14800000",
+            "virtual_start": "0x14800000",
             "size": "0x2000000"
         },
         {
             "type": "io",
             "physical_start": "0x24700000",
-            "virtual_start":  "0x24700000",
+            "virtual_start": "0x24700000",
             "size": "0x80000"
         },
         {
             "type": "io",
             "physical_start": "0x17000000",
-            "virtual_start":  "0x17000000",
+            "virtual_start": "0x17000000",
             "size": "0x2000000"
         },
         {
             "type": "io",
             "physical_start": "0x3b41000",
-            "virtual_start":  "0x3b41000",
+            "virtual_start": "0x3b41000",
             "size": "0x1000"
         },
         {
             "type": "io",
             "physical_start": "0x2b00000",
-            "virtual_start":  "0x2b00000",
+            "virtual_start": "0x2b00000",
             "size": "0x200000"
         },
         {
             "type": "io",
             "physical_start": "0x1700000",
-            "virtual_start":  "0x1700000",
+            "virtual_start": "0x1700000",
             "size": "0x100000"
         },
         {
             "type": "virtio",
             "physical_start": "0xff9c000",
-            "virtual_start":  "0xff9c000",
+            "virtual_start": "0xff9c000",
             "size": "0x200"
         },
         {
             "type": "virtio",
             "physical_start": "0xff9d000",
-            "virtual_start":  "0xff9d000",
+            "virtual_start": "0xff9d000",
             "size": "0x200"
         },
         {
             "type": "virtio",
             "physical_start": "0xff9e000",
-            "virtual_start":  "0xff9e000",
+            "virtual_start": "0xff9e000",
             "size": "0x200"
         }
     ],
-    "interrupts": [75, 76, 78, 480, 481, 482, 483, 484, 485, 486, 487, 295, 99, 100, 102, 103, 255, 256],
+    "interrupts": [
+        75, 76, 78, 480, 481, 482, 483, 484, 485, 486, 487, 295, 99, 100, 102,
+        103, 255, 256
+    ],
     "ivc_configs": [],
     "pci_config": [],
     "kernel_filepath": "./Image",
     "dtb_filepath": "./linux2.dtb",
     "kernel_load_paddr": "0x100400000",
-    "dtb_load_paddr":   "0x100000000",
-    "entry_point":      "0x100400000",
+    "dtb_load_paddr": "0x100000000",
+    "entry_point": "0x100400000",
     "modules": [
         {
             "name": "ramdisk",
