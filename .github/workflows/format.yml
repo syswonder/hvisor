@@ -68,3 +68,10 @@ jobs:
       - name: TOML format
         run: taplo fmt --check
 
+      - name: Install Ruff
+        run: |
+          pip install --user ruff==0.17.6
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+      - name: Python format
+        run: ruff format --check .

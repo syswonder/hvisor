@@ -63,8 +63,10 @@ def parse_root_zone_memory_regions(board_rs_path: str) -> list:
         re.DOTALL,
     )
     if not match:
-        print(f"WARN: ROOT_ZONE_MEMORY_REGIONS not found in {board_rs_path}, skipping check",
-              file=sys.stderr)
+        print(
+            f"WARN: ROOT_ZONE_MEMORY_REGIONS not found in {board_rs_path}, skipping check",
+            file=sys.stderr,
+        )
         return []
 
     regions_str = match.group(1)
@@ -81,11 +83,13 @@ def parse_root_zone_memory_regions(board_rs_path: str) -> list:
         size_m = re.search(r"size\s*:\s*(0x[0-9a-fA-F]+)", block)
 
         if mem_type_m and pstart_m and size_m:
-            regions.append((
-                mem_type_m.group(1),
-                int(pstart_m.group(1), 16),
-                int(size_m.group(1), 16),
-            ))
+            regions.append(
+                (
+                    mem_type_m.group(1),
+                    int(pstart_m.group(1), 16),
+                    int(size_m.group(1), 16),
+                )
+            )
 
     return regions
 
@@ -123,12 +127,16 @@ def main() -> int:
     hv_end = get_symbol_value(elf_path, "__hv_end")
 
     if skernel is None:
-        print(f"WARN: symbol 'skernel' not found in {elf_path}, skipping check",
-              file=sys.stderr)
+        print(
+            f"WARN: symbol 'skernel' not found in {elf_path}, skipping check",
+            file=sys.stderr,
+        )
         return 0
     if hv_end is None:
-        print(f"WARN: symbol '__hv_end' not found in {elf_path}, skipping check",
-              file=sys.stderr)
+        print(
+            f"WARN: symbol '__hv_end' not found in {elf_path}, skipping check",
+            file=sys.stderr,
+        )
         return 0
 
     # Parse root zone memory regions
@@ -149,24 +157,46 @@ def main() -> int:
 
             # --- bold/red error header ---
             print()
-            print(term_bold_red("╔══════════════════════════════════════════════════════════════╗"))
-            print(term_bold_red("║               HVISOR MEMORY REGION OVERLAP!                  ║"))
-            print(term_bold_red("╚══════════════════════════════════════════════════════════════╝"))
+            print(
+                term_bold_red(
+                    "╔══════════════════════════════════════════════════════════════╗"
+                )
+            )
+            print(
+                term_bold_red(
+                    "║               HVISOR MEMORY REGION OVERLAP!                  ║"
+                )
+            )
+            print(
+                term_bold_red(
+                    "╚══════════════════════════════════════════════════════════════╝"
+                )
+            )
             print()
 
             # --- what happened ---
-            print(f"  hvisor physical memory: {term_bold(f'[{skernel:#x}, {hv_end:#x})')}")
-            print(f"  overlaps ROOT_ZONE_MEMORY_REGIONS RAM range: "
-                  f"{term_bold(f'[{pstart:#x}, {pend:#x})')}")
-            print(f"  overlap: {term_bold_red(f'{overlap_bytes} bytes')} "
-                  f"({term_bold(f'[{overlap_start:#x}, {overlap_end:#x})')})")
+            print(
+                f"  hvisor physical memory: {term_bold(f'[{skernel:#x}, {hv_end:#x})')}"
+            )
+            print(
+                f"  overlaps ROOT_ZONE_MEMORY_REGIONS RAM range: "
+                f"{term_bold(f'[{pstart:#x}, {pend:#x})')}"
+            )
+            print(
+                f"  overlap: {term_bold_red(f'{overlap_bytes} bytes')} "
+                f"({term_bold(f'[{overlap_start:#x}, {overlap_end:#x})')})"
+            )
             print()
 
             # --- danger description ---
-            print(f"  {term_bold_red('DANGER')}: Linux in the root zone treats hvisor's")
+            print(
+                f"  {term_bold_red('DANGER')}: Linux in the root zone treats hvisor's"
+            )
             print(f"  physical pages as free memory. The kernel page allocator will")
             print(f"  hand them out to kernel or user code and write to them,")
-            print(f"  {term_bold_red('corrupting hvisor page tables')} and causing unrecoverable panics.")
+            print(
+                f"  {term_bold_red('corrupting hvisor page tables')} and causing unrecoverable panics."
+            )
             print()
 
             # --- fix instructions ---
@@ -187,8 +217,10 @@ def main() -> int:
     if found_overlap:
         return 1
 
-    print(f"OK: hvisor [{term_bold(f'{skernel:#x}')}, {term_bold(f'{hv_end:#x}')}) "
-          f"does not overlap any ROOT_ZONE_MEMORY_REGIONS RAM region")
+    print(
+        f"OK: hvisor [{term_bold(f'{skernel:#x}')}, {term_bold(f'{hv_end:#x}')}) "
+        f"does not overlap any ROOT_ZONE_MEMORY_REGIONS RAM region"
+    )
     return 0
 
 

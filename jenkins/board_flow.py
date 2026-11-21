@@ -99,7 +99,9 @@ def shell_pattern(cfg: dict[str, Any]) -> str:
     return custom or ZONE0_READY_PATTERN
 
 
-def board_wait_shell(term: Terminal, cfg: dict[str, Any], timeout: float = 30.0) -> None:
+def board_wait_shell(
+    term: Terminal, cfg: dict[str, Any], timeout: float = 30.0
+) -> None:
     # Send Enter so the shell prints a fresh prompt in new collector output.
     # wait_pattern only searches from the current offset onward.
     term.send("")
@@ -128,9 +130,15 @@ def board_run(
         remaining = deadline - time.monotonic()
         if remaining <= 0:
             break
-        if term.wait_pattern(marker_needle, timeout=min(0.2, remaining), from_offset=offset):
+        if term.wait_pattern(
+            marker_needle, timeout=min(0.2, remaining), from_offset=offset
+        ):
             chunk = term.tail_since(offset)
-            matches = [m for m in BOARD_CMD_MARKER_RE.finditer(chunk) if m.group("run_id") == run_id]
+            matches = [
+                m
+                for m in BOARD_CMD_MARKER_RE.finditer(chunk)
+                if m.group("run_id") == run_id
+            ]
             if matches:
                 match = matches[-1]
                 rc = int(match.group("rc"))
@@ -150,7 +158,9 @@ def board_run_check(
 ) -> str:
     rc, output = board_run(term, command, timeout=timeout)
     if rc != 0:
-        raise TerminalCommandError(f"command failed with rc={rc}: {command}\n{output.strip()}")
+        raise TerminalCommandError(
+            f"command failed with rc={rc}: {command}\n{output.strip()}"
+        )
     return output
 
 
@@ -249,7 +259,9 @@ def board_wait_uboot_prompt(
         term.send("")
         term.send("")
     if not term.wait_pattern(pattern, timeout=timeout):
-        raise TerminalTimeoutError(f"timed out waiting for U-Boot prompt (pattern={pattern!r})")
+        raise TerminalTimeoutError(
+            f"timed out waiting for U-Boot prompt (pattern={pattern!r})"
+        )
 
 
 def send_board_uboot_commands(cfg: dict[str, Any], term: Terminal) -> None:
@@ -361,9 +373,15 @@ def export_board_ssh_env(cfg: dict[str, Any], term: Terminal) -> None:
     if cfg.get("_board_ssh_env"):
         return
     connect = int(cfg.get("ssh_connect_timeout", 60))
-    board_run(term, f"export CI_SSH_HOST={shlex.quote(board_ssh_host(cfg))}", timeout=15.0)
+    board_run(
+        term, f"export CI_SSH_HOST={shlex.quote(board_ssh_host(cfg))}", timeout=15.0
+    )
     board_run(term, 'export CI_SSH_OPTS="-o BatchMode=yes"', timeout=15.0)
-    board_run(term, f'export CI_SSH_OPTS="$CI_SSH_OPTS -o ConnectTimeout={connect}"', timeout=15.0)
+    board_run(
+        term,
+        f'export CI_SSH_OPTS="$CI_SSH_OPTS -o ConnectTimeout={connect}"',
+        timeout=15.0,
+    )
     board_run(
         term,
         'export CI_SSH_OPTS="$CI_SSH_OPTS -o StrictHostKeyChecking=no"',
@@ -379,7 +397,9 @@ def setup_board_interface(cfg: dict[str, Any], term: Terminal) -> None:
         return
     netmask = str(cfg.get("board_netmask", "255.255.255.0")).strip() or "255.255.255.0"
     prefix = netmask_prefix(netmask)
-    board_run(term, f"ip addr flush dev {board_iface} 2>/dev/null || true", timeout=15.0)
+    board_run(
+        term, f"ip addr flush dev {board_iface} 2>/dev/null || true", timeout=15.0
+    )
     board_run(term, f"ip addr add {board_ip}/{prefix} dev {board_iface}", timeout=30.0)
     board_run(term, f"ip link set {board_iface} down", timeout=15.0)
     board_run(term, f"ip link set {board_iface} up", timeout=15.0)
@@ -434,7 +454,9 @@ def probe_board_ssh(cfg: dict[str, Any], term: Terminal) -> None:
         timeout=15.0,
     )
     if not board_pubkey_from_output(pub_out):
-        _, pub_out2 = board_run(term, "cat ~/.ssh/id_rsa.pub 2>/dev/null || true", timeout=15.0)
+        _, pub_out2 = board_run(
+            term, "cat ~/.ssh/id_rsa.pub 2>/dev/null || true", timeout=15.0
+        )
         pub_out = pub_out + pub_out2
     pubkey = board_pubkey_from_output(pub_out)
     if not pubkey:
@@ -491,7 +513,9 @@ def staging_alias(cfg: dict[str, Any]) -> str:
     return str(alias)
 
 
-def parse_staging(staging_path: Path) -> tuple[list[str], dict[str, list[str]], list[str]]:
+def parse_staging(
+    staging_path: Path,
+) -> tuple[list[str], dict[str, list[str]], list[str]]:
     regular: list[str] = []
     split_groups: dict[str, list[str]] = {}
     for entry in staging_path.iterdir():
@@ -506,7 +530,9 @@ def parse_staging(staging_path: Path) -> tuple[list[str], dict[str, list[str]], 
     for base in split_groups:
         split_groups[base] = sorted(split_groups[base])
     parts = [part for names in split_groups.values() for part in names]
-    pull_files = sorted(regular + parts, key=lambda n: staging_path.joinpath(n).stat().st_size)
+    pull_files = sorted(
+        regular + parts, key=lambda n: staging_path.joinpath(n).stat().st_size
+    )
     return regular, split_groups, pull_files
 
 
@@ -541,7 +567,9 @@ def scp_one_to_tmp(
             raise TerminalCommandError(f"board scp failed for {name!r}: {out.strip()}")
         rc, out = board_run_retry(term, f"cp {tmp_file} {dest_in_tmp}", 30.0, retries=0)
         if rc != 0:
-            raise TerminalCommandError(f"board tmp install failed for {name!r}: {out.strip()}")
+            raise TerminalCommandError(
+                f"board tmp install failed for {name!r}: {out.strip()}"
+            )
     except TerminalTimeoutError:
         check_tmp = f"test $(wc -c < {tmp_file}) -eq {file_size}"
         rc, out = board_run_retry(term, check_tmp, 30.0, retries=0)
@@ -550,7 +578,9 @@ def scp_one_to_tmp(
             raise
         rc, out = board_run_retry(term, f"cp {tmp_file} {dest_in_tmp}", 30.0, retries=0)
         if rc != 0:
-            raise TerminalCommandError(f"board tmp install failed for {name!r}: {out.strip()}")
+            raise TerminalCommandError(
+                f"board tmp install failed for {name!r}: {out.strip()}"
+            )
         print(f"[trans] scp recovered after timeout: {name}", flush=True)
     all_logs.append(f"=== scp_{name} ok ===\n")
 
@@ -570,31 +600,45 @@ def assemble_split_in_tmp(
     board_run_check(term, f"cp {tmp}/{parts[0]} {out_path}", timeout=60.0)
     for part in parts[1:]:
         board_run_check(term, f"cat {tmp}/{part} >> {out_path}", timeout=60.0)
-    board_run_check(term, f"test $(wc -c < {out_path}) -eq {expected_size}", timeout=30.0)
+    board_run_check(
+        term, f"test $(wc -c < {out_path}) -eq {expected_size}", timeout=30.0
+    )
     for part in parts:
         board_run(term, f"rm -f {tmp}/{part}", timeout=15.0)
     all_logs.append(f"=== assemble {base} ===\n")
 
 
-def gunzip_in_tmp(cfg: dict[str, Any], term: Terminal, gz_name: str, all_logs: list[str]) -> None:
+def gunzip_in_tmp(
+    cfg: dict[str, Any], term: Terminal, gz_name: str, all_logs: list[str]
+) -> None:
     raw_name = GUNZIP_ARTIFACTS[gz_name]
     raw_path = Path(cfg["hvisor_tool_path"]) / "output" / raw_name
     raw_size = raw_path.stat().st_size
     tmp = cfg["scp_tmp_dir"]
     print(f"[trans] gunzip in tmp: {gz_name} -> {raw_name}", flush=True)
     board_run_check(term, f"gunzip -f {tmp}/{gz_name}", timeout=120.0)
-    board_run_check(term, f"test $(wc -c < {tmp}/{raw_name}) -eq {raw_size}", timeout=30.0)
+    board_run_check(
+        term, f"test $(wc -c < {tmp}/{raw_name}) -eq {raw_size}", timeout=30.0
+    )
     all_logs.append(f"=== gunzip {raw_name} ===\n")
 
 
-def install_tmp_to_workdir(cfg: dict[str, Any], term: Terminal, names: list[str]) -> None:
+def install_tmp_to_workdir(
+    cfg: dict[str, Any], term: Terminal, names: list[str]
+) -> None:
     work_dir = cfg["zone1_work_dir"]
     tmp = cfg["scp_tmp_dir"]
     board_run(term, f"mkdir -p {work_dir}", timeout=15.0)
     for name in names:
-        board_run_check(term, f"cp {tmp}/{name} {board_path(work_dir, name)}", timeout=60.0)
+        board_run_check(
+            term, f"cp {tmp}/{name} {board_path(work_dir, name)}", timeout=60.0
+        )
     for script in ("boot_zone1.sh", "hvisor", "check_serial.sh"):
-        board_run(term, f"chmod +x {board_path(work_dir, script)} 2>/dev/null || true", timeout=15.0)
+        board_run(
+            term,
+            f"chmod +x {board_path(work_dir, script)} 2>/dev/null || true",
+            timeout=15.0,
+        )
     print(f"[trans] installed {len(names)} file(s) to {work_dir}", flush=True)
 
 
@@ -711,7 +755,9 @@ def find_zone1_pts(term: Terminal, timeout: float = 60.0) -> int:
 def run_boot_script_lines(cfg: dict[str, Any], term: Terminal) -> None:
     work_dir = cfg["zone1_work_dir"]
     boot_script = "boot_zone1.sh"
-    _, content = board_run(term, f"cat {board_path(work_dir, boot_script)}", timeout=30.0)
+    _, content = board_run(
+        term, f"cat {board_path(work_dir, boot_script)}", timeout=30.0
+    )
     lines = parse_boot_script_lines(content)
     if not lines:
         raise TerminalCommandError(f"no executable lines in {boot_script}")
@@ -725,7 +771,9 @@ def run_boot_script_lines(cfg: dict[str, Any], term: Terminal) -> None:
         try:
             board_run_check(term, cmd, timeout=line_timeout(line))
         except TerminalCommandError as exc:
-            raise TerminalCommandError(f"boot line {index} failed: {line}\n{exc}") from exc
+            raise TerminalCommandError(
+                f"boot line {index} failed: {line}\n{exc}"
+            ) from exc
 
 
 def boot_board_zone0_with_retry(cfg: dict[str, Any], term: Terminal) -> None:
@@ -783,9 +831,7 @@ def board_zone1_start(cfg: dict[str, Any], term: Terminal) -> int:
         board_run(term, f"cd {work_dir}", timeout=15.0)
         board_run(term, "ls", timeout=15.0)
         run_boot_script_lines(cfg, term)
-        board_zone_list_shows_running(
-            term, str(cfg.get("zone1_name", "linux2"))
-        )
+        board_zone_list_shows_running(term, str(cfg.get("zone1_name", "linux2")))
         max_pts = find_zone1_pts(term)
         board_run(term, f"cd {work_dir}", timeout=15.0)
         check_rc, _ = board_run(
