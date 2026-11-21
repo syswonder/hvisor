@@ -19,7 +19,9 @@ import serial
 
 
 MARKER_ID_LEN = 4
-HV_M_MARKER_RE = re.compile(rf"__HV_M_(?P<run_id>[a-f0-9]{{{MARKER_ID_LEN}}}):(?P<rc>\d+)")
+HV_M_MARKER_RE = re.compile(
+    rf"__HV_M_(?P<run_id>[a-f0-9]{{{MARKER_ID_LEN}}}):(?P<rc>\d+)"
+)
 
 
 def new_marker_id() -> str:
@@ -182,7 +184,9 @@ class LogCollector:
                 target=self._console_loop, name="LogCollectorConsole", daemon=True
             )
             self._console_thread.start()
-        self._thread = threading.Thread(target=self._run_loop, name="LogCollector", daemon=True)
+        self._thread = threading.Thread(
+            target=self._run_loop, name="LogCollector", daemon=True
+        )
         self._thread.start()
 
     def stop(self) -> None:
@@ -195,7 +199,9 @@ class LogCollector:
             chunk = self.backend.read()
             if not chunk:
                 break
-            self._append(chunk.decode(self.encoding, errors="replace"), emit_console=False)
+            self._append(
+                chunk.decode(self.encoding, errors="replace"), emit_console=False
+            )
         if self.console:
             self._console_queue.put(None)
             if self._console_thread is not None:
@@ -274,7 +280,9 @@ class Terminal:
         console: bool = True,
     ) -> "Terminal":
         return cls(
-            QemuSocketBackend(path=path, connect_timeout=connect_timeout, io_timeout=io_timeout),
+            QemuSocketBackend(
+                path=path, connect_timeout=connect_timeout, io_timeout=io_timeout
+            ),
             encoding=encoding,
             log_path=log_path,
             console=console,
@@ -351,7 +359,11 @@ class Terminal:
         while time.monotonic() < deadline:
             chunk = self._collector.tail_since(offset)
             if re.search(marker_needle, chunk):
-                matches = [m for m in HV_M_MARKER_RE.finditer(chunk) if m.group("run_id") == run_id]
+                matches = [
+                    m
+                    for m in HV_M_MARKER_RE.finditer(chunk)
+                    if m.group("run_id") == run_id
+                ]
                 if matches:
                     match = matches[-1]
                     rc = int(match.group("rc"))
@@ -457,7 +469,9 @@ class Terminal:
         self._ensure_open()
         offset = self._collector.offset()
         self.send(command)
-        return self._wait_quiet(offset, quiet_seconds, max_duration, poll_interval, context=command)
+        return self._wait_quiet(
+            offset, quiet_seconds, max_duration, poll_interval, context=command
+        )
 
     def send_and_drain(
         self,
@@ -521,7 +535,10 @@ class Terminal:
                 time.sleep(poll_interval)
                 continue
 
-            if marker_seen_at > 0.0 and (time.monotonic() - marker_seen_at) >= quiet_seconds:
+            if (
+                marker_seen_at > 0.0
+                and (time.monotonic() - marker_seen_at) >= quiet_seconds
+            ):
                 cleaned = self._strip_hv_m_marker(buf, marker)
                 return cleaned, rc
 
