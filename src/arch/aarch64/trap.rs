@@ -83,6 +83,7 @@ pub mod PsciFnId {
     pub const PSCI_AFFINITY_INFO_32: u64 = 0x84000004;
     pub const PSCI_MIG_INFO_TYPE: u64 = 0x84000006;
     pub const PSCI_SYSTEM_OFF: u64 = 0x84000008;
+    pub const PSCI_SYSTEM_RESET: u64 = 0x84000009;
     pub const PSCI_FEATURES: u64 = 0x8400000a;
 
     pub const PSCI_CPU_SUSPEND_64: u64 = 0xc4000001;
@@ -467,6 +468,27 @@ fn handle_psci_smc(
         PsciFnId::PSCI_MIG_INFO_TYPE => PSCI_TOS_NOT_PRESENT_MP,
         PsciFnId::PSCI_FEATURES => psci_emulate_features_info(regs.usr[1]),
         PsciFnId::PSCI_CPU_ON_32 | PsciFnId::PSCI_CPU_ON_64 => psci_emulate_cpu_on(regs),
+        PsciFnId::PSCI_SYSTEM_RESET => {
+            if !is_this_root_zone() {
+                // SYSTEM_RESET resets the whole machine, not just the caller's
+                // zone, so only the root zone is allowed to trigger it. The
+                // function itself exists, the call is just not permitted, which
+                // is DENIED rather than NOT_SUPPORTED.
+                i64::from(psci::error::Error::Denied) as u64
+            } else {
+                info!("root zone requested system reset, forwarding to EL3");
+                // A real reset never returns. If it does, the machine is still
+                // running, so report a failure instead of telling the guest the
+                // reset succeeded. A PSCI error is passed through as-is.
+                match psci::system_reset() {
+                    Ok(()) => {
+                        error!("system reset returned without resetting the machine");
+                        i64::from(psci::error::Error::InternalFailure) as u64
+                    }
+                    Err(e) => i64::from(e) as u64,
+                }
+            }
+        }
         PsciFnId::PSCI_SYSTEM_OFF => {
             let zone = this_zone();
             let zone_id = zone.id();
