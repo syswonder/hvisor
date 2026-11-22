@@ -412,11 +412,7 @@ impl LoongArch64ZoneContext {
 
 pub type ZoneContext = LoongArch64ZoneContext;
 
-#[repr(C)]
-#[derive(Debug, Clone)]
-pub struct HvArchZoneConfig {
-    pub dummy: usize,
-}
+pub use hvisor_abi::config::loongarch64::Loongarch64ArchConfig as HvArchZoneConfig;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct MMIOAccessKey {

@@ -73,11 +73,4 @@ impl Zone {
     }
 }
 
-#[repr(C)]
-#[derive(Debug, Clone)]
-pub struct HvArchZoneConfig {
-    pub plic_base: usize,
-    pub plic_size: usize,
-    pub aplic_base: usize,
-    pub aplic_size: usize,
-}
+pub use hvisor_abi::config::riscv64::Riscv64ArchConfig as HvArchZoneConfig;

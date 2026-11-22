@@ -31,44 +31,8 @@ static IVC_RECORDS: Mutex<BTreeMap<u32, IvcRecord>> = Mutex::new(BTreeMap::new()
 // zone id -> zone's IvcInfo
 pub static IVC_INFOS: Mutex<BTreeMap<usize, IvcInfo>> = Mutex::new(BTreeMap::new());
 
-#[repr(C, packed)]
-#[derive(Clone, Copy, Debug)]
-/// The ivc info that one zone should first acquire
-pub struct IvcInfo {
-    /// The number that one zone participates in ivc region
-    pub len: u64,
-    /// The ivc control table ipa of each ivc region
-    ivc_ct_ipas: [u64; CONFIG_MAX_IVC_CONFIGS],
-    /// The ivc shared memory ipa of each ivc region
-    ivc_shmem_ipas: [u64; CONFIG_MAX_IVC_CONFIGS],
-    /// The ivc_id of each ivc region
-    ivc_ids: [u32; CONFIG_MAX_IVC_CONFIGS],
-    /// The irq number of each ivc region
-    ivc_irqs: [u32; CONFIG_MAX_IVC_CONFIGS],
-}
+pub use hvisor_abi::ivc::IvcInfo;
 
-impl From<&[HvIvcConfig]> for IvcInfo {
-    fn from(configs: &[HvIvcConfig]) -> Self {
-        let mut ivc_ids = [0; CONFIG_MAX_IVC_CONFIGS];
-        let mut ivc_ct_ipas = [0; CONFIG_MAX_IVC_CONFIGS];
-        let mut ivc_shmem_ipas = [0; CONFIG_MAX_IVC_CONFIGS];
-        let mut ivc_irqs = [0; CONFIG_MAX_IVC_CONFIGS];
-        for i in 0..configs.len() {
-            let config = &configs[i];
-            ivc_ids[i] = config.ivc_id;
-            ivc_ct_ipas[i] = config.control_table_ipa;
-            ivc_shmem_ipas[i] = config.shared_mem_ipa;
-            ivc_irqs[i] = config.interrupt_num;
-        }
-        Self {
-            len: configs.len() as u64,
-            ivc_ids,
-            ivc_shmem_ipas,
-            ivc_ct_ipas,
-            ivc_irqs,
-        }
-    }
-}
 fn insert_ivc_record(ivc_config: &HvIvcConfig, zone_id: u32) -> Result<(bool, usize), ()> {
     let mut recs = IVC_RECORDS.lock();
     let ivc_id = ivc_config.ivc_id;

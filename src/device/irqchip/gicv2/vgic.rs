@@ -53,13 +53,13 @@ impl Zone {
                 panic!("GICv3 is not supported in this version of hvisor");
             }
             GicConfig::Gicv2(ref gicv2_config) => {
-                if gicv2_config.gicd_base == 0 {
+                if gicv2_config.gicd_base as usize == 0 {
                     panic!("vgicv2_mmio_init: gicd_base is null");
                 }
                 info!("Initializing GICv2 MMIO regions for zone {}", zone_id);
                 inner.mmio_region_register(
-                    gicv2_config.gicd_base,
-                    gicv2_config.gicd_size,
+                    gicv2_config.gicd_base as usize,
+                    gicv2_config.gicd_size as usize,
                     vgicv2_dist_handler,
                     0,
                 );
@@ -76,14 +76,14 @@ impl Zone {
                 panic!("GICv3 is not supported in this version of hvisor");
             }
             GicConfig::Gicv2(ref gicv2_config) => {
-                if gicv2_config.gicc_base == 0
-                    || gicv2_config.gicv_base == 0
-                    || gicv2_config.gicc_size == 0
-                    || gicv2_config.gicv_size == 0
+                if gicv2_config.gicc_base as usize == 0
+                    || gicv2_config.gicv_base as usize == 0
+                    || gicv2_config.gicc_size as usize == 0
+                    || gicv2_config.gicv_size as usize == 0
                 {
                     panic!("vgicv2_remap_init: gic related address is null");
                 }
-                if gicv2_config.gicv_size != gicv2_config.gicc_size {
+                if gicv2_config.gicv_size as usize != gicv2_config.gicc_size as usize {
                     panic!("vgicv2_remap_init: gicv_size not equal to gicc_size");
                 }
                 info!(
@@ -94,9 +94,9 @@ impl Zone {
                 inner
                     .gpm_mut()
                     .insert(MemoryRegion::new_with_offset_mapper(
-                        gicv2_config.gicc_base,
-                        gicv2_config.gicv_base,
-                        gicv2_config.gicc_size,
+                        gicv2_config.gicc_base as usize,
+                        gicv2_config.gicv_base as usize,
+                        gicv2_config.gicc_size as usize,
                         MemFlags::READ | MemFlags::WRITE,
                     ))
                     .unwrap();

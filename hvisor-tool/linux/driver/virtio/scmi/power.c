@@ -5,6 +5,7 @@
 #include <linux/pm_domain.h>
 #include <linux/pm_runtime.h>
 #include <linux/slab.h>
+#include <linux/string.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
 
@@ -209,7 +210,7 @@ int hvisor_scmi_power_ioctl(struct hvisor_scmi_power_args __user *user_args) {
             return ret;
 
         args.u.power_attr.flags = flags;
-        strscpy(args.u.power_attr.name, name, 64);
+        strscpy((char *)args.u.power_attr.name, name, 64);
         args.u.power_attr.name[63] = '\0';
 
         if (copy_to_user(&user_args->u.power_attr, &args.u.power_attr,

@@ -1,3 +1,6 @@
+[workspace]
+members = ["abi"]
+
 [package]
 name = "hvisor"
 version = "0.6.0"
@@ -6,6 +9,7 @@ edition = "2021"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+hvisor-abi = { path = "abi" }
 log = "0.4"
 spin = "0.10.0"
 bitflags = "2.1"

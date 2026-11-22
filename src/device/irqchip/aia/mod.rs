@@ -69,7 +69,7 @@ pub fn host_aplic<'a>() -> &'a Aplic {
 pub fn primary_init_early() {
     // Init the physical APLIC global part
     let root_config = root_zone_config();
-    init_aplic(root_config.arch_config.aplic_base as usize);
+    init_aplic(root_config.arch_config.aplic_base as usize as usize);
     host_aplic().init_global(this_cpu_id(), BOARD_APLIC_INTERRUPTS_NUM);
 
     unsafe {
@@ -154,7 +154,7 @@ impl Zone {
                     panic!("VirtualAPLIC for Zone {} already exists!", self.id());
                 }
                 let vaplic = vaplic::VirtualAPLIC::new(
-                    config.arch_config.aplic_base,
+                    config.arch_config.aplic_base as usize,
                     BOARD_APLIC_INTERRUPTS_NUM,
                 );
                 // Insert into Map <zone_id, vplic>
@@ -279,10 +279,14 @@ impl Zone {
     }
 
     pub fn vaplic_mmio_init(&mut self, arch: &HvArchZoneConfig) {
-        if arch.aplic_base == 0 {
+        if arch.aplic_base as usize == 0 {
             panic!("vplic_mmio_init: plic_base is null");
         }
-        self.write()
-            .mmio_region_register(arch.aplic_base, arch.aplic_size, vaplic_handler, 0);
+        self.write().mmio_region_register(
+            arch.aplic_base as usize,
+            arch.aplic_size as usize,
+            vaplic_handler,
+            0,
+        );
     }
 }

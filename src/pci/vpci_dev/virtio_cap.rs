@@ -379,7 +379,12 @@ impl Virtqueue {
     }
 
     pub fn get_data_info(&self) -> VirtioPCIDataInfo {
-        VirtioPCIDataInfo::new(self.this_dev_id, self.queue_id, self.queue_msix_vector)
+        VirtioPCIDataInfo::new(
+            self.this_dev_id,
+            self.queue_id,
+            self.queue_msix_vector,
+            crate::arch::cpu::this_cpu_id() as u16,
+        )
     }
 }
 

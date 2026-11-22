@@ -37,7 +37,6 @@ use crate::zone::{
 use crate::event::IPI_EVENT_VIRTIO_INJECT_IRQ;
 use crate::event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_VIRTIO_PCI_DONE, IPI_EVENT_WAKEUP};
 use core::convert::TryFrom;
-use numeric_enum_macro::numeric_enum;
 #[cfg(target_arch = "x86_64")]
 use spin::RwLock;
 
@@ -45,24 +44,7 @@ use spin::RwLock;
 #[cfg(target_arch = "x86_64")]
 static X86_IOAPIC_LIFECYCLE: RwLock<()> = RwLock::new(());
 
-numeric_enum! {
-    #[repr(u64)]
-    #[derive(Debug, Eq, PartialEq, Copy, Clone)]
-    pub enum HyperCallCode {
-        HvVirtioInit = 0,
-        HvVirtioInjectIrq = 1,
-        HvVirtioGetIrq = 86,
-        HvZoneStart = 2,
-        HvZoneShutdown = 3,
-        HvZoneList = 4,
-        HvClearInjectIrq = 11,
-        HvIvcInfo = 5,
-        HvConfigCheck = 6,
-        HvVirtioPCI = 7,
-        HvZoneSetBootMode = 8,
-        HvGetEcamBase = 9,
-    }
-}
+pub use hvisor_abi::hypercall::HyperCallCode;
 #[cfg(target_arch = "loongarch64")]
 pub const SGI_IPI_ID: u64 = crate::arch::ipi::HVISOR_EVENT_DOORBELL as u64;
 #[cfg(not(target_arch = "loongarch64"))]
@@ -316,7 +298,7 @@ impl<'a> HyperCall<'a> {
             );
         }
         let zone_result = zone_create(config);
-        clear_zone_boot_mode(config.zone_id as usize);
+        clear_zone_boot_mode(config.common.zone_id as usize);
         let zone = zone_result?;
         let boot_cpu = zone.read().cpu_set().first_cpu().unwrap();
 

@@ -124,12 +124,12 @@ pub fn primary_init_early() {
         GicConfig::Gicv3(ref gicv3_config) => {
             info!("GICv3 detected");
             GIC.call_once(|| Gic {
-                gicd_base: gicv3_config.gicd_base,
-                gicr_base: gicv3_config.gicr_base,
-                gicd_size: gicv3_config.gicd_size,
-                gicr_size: gicv3_config.gicr_size,
-                gits_base: gicv3_config.gits_base,
-                gits_size: gicv3_config.gits_size,
+                gicd_base: gicv3_config.gicd_base as usize,
+                gicr_base: gicv3_config.gicr_base as usize,
+                gicd_size: gicv3_config.gicd_size as usize,
+                gicr_size: gicv3_config.gicr_size as usize,
+                gits_base: gicv3_config.gits_base as usize,
+                gits_size: gicv3_config.gits_size as usize,
             });
             info!(
                 "GIC Distributor base: {:#x}, size: {:#x}",

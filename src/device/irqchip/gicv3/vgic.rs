@@ -48,19 +48,19 @@ impl Zone {
             GicConfig::Gicv3(ref gicv3_config) => {
                 // GICv3 specific initialization
                 info!("Initializing GICv3 MMIO regions for zone {}", self.id());
-                if gicv3_config.gicd_base == 0 || gicv3_config.gicr_base == 0 {
+                if gicv3_config.gicd_base as usize == 0 || gicv3_config.gicr_base as usize == 0 {
                     panic!("vgicv3_mmio_init: gicd_base or gicr_base is null");
                 }
 
                 inner.mmio_region_register(
-                    gicv3_config.gicd_base,
-                    gicv3_config.gicd_size,
+                    gicv3_config.gicd_base as usize,
+                    gicv3_config.gicd_size as usize,
                     vgicv3_dist_handler,
                     0,
                 );
                 inner.mmio_region_register(
-                    gicv3_config.gits_base,
-                    gicv3_config.gits_size,
+                    gicv3_config.gits_base as usize,
+                    gicv3_config.gits_size as usize,
                     vgicv3_its_handler,
                     0,
                 );

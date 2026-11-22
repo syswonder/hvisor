@@ -171,6 +171,7 @@ dependencies = [
  "cfg-if",
  "cortex-a",
  "heapless",
+ "hvisor-abi",
  "lazy_static",
  "log",
  "loongArch64",
@@ -194,6 +195,10 @@ dependencies = [
  "x86",
  "x86_64",
 ]
+
+[[package]]
+name = "hvisor-abi"
+version = "0.1.0"
 
 [[package]]
 name = "lazy_static"

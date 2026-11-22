@@ -21,12 +21,6 @@
 #define SCMI_CLOCK_VERSION 0x30000
 
 /* SCMI Clock Subcommands */
-#define HVISOR_SCMI_CLOCK_DESCRIBE_RATES 0x03
-#define HVISOR_SCMI_CLOCK_RATE_GET 0x04
-#define HVISOR_SCMI_CLOCK_RATE_SET 0x05
-#define HVISOR_SCMI_CLOCK_CONFIG_GET 0x06
-#define HVISOR_SCMI_CLOCK_CONFIG_SET 0x07
-#define HVISOR_SCMI_CLOCK_NAME_GET 0x08
 
 /* Define additional structures for clock operations */
 struct clock_rates_info {
@@ -220,7 +214,7 @@ static int handle_clock_clock_attributes(SCMIDev *dev, uint16_t token,
         attributes |= (1U << 28);
 
     attr->attributes = attributes;
-    strncpy(attr->clock_name, args.u.clock_attr.clock_name, 15);
+    strncpy(attr->clock_name, (char *)args.u.clock_attr.clock_name, 15);
     attr->clock_name[15] = '\0';
 
     return 0;
@@ -520,7 +514,7 @@ static int handle_clock_name_get(SCMIDev *dev, uint16_t token,
     uint32_t *flags = scmi_resp_write(ctx, 4 + 64);
     char *name = (char *)(flags + 1);
     *flags = 0;
-    strncpy(name, name_info->name, 63);
+    strncpy(name, (char *)name_info->name, 63);
     name[63] = '\0';
 
     return 0;

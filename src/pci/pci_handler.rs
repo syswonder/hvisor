@@ -2112,14 +2112,18 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
             }
 
             let root_config = platform::platform_root_zone_config();
-            let num_pci_bus = root_config.num_pci_bus as usize;
+            let num_pci_bus = root_config.common.num_pci_bus as usize;
 
             let zone = crate::zone::root_zone();
             let mut inner = zone.write();
-            inner.virtual_pci_mmio_init_delay(&root_config.pci_config, num_pci_bus, domain_id);
+            inner.virtual_pci_mmio_init_delay(
+                &root_config.common.pci_config,
+                num_pci_bus,
+                domain_id,
+            );
             drop(inner);
 
-            if let Some(domain_cfg) = root_config.pci_config[..num_pci_bus]
+            if let Some(domain_cfg) = root_config.common.pci_config[..num_pci_bus]
                 .iter()
                 .find(|cfg| cfg.domain == domain_id && cfg.ecam_base != 0)
             {
@@ -2131,9 +2135,9 @@ pub fn mmio_vpci_handler_dbi(mmio: &mut MMIOAccess, _base: usize) -> HvResult {
             let mut inner = zone.write();
             inner.guest_pci_init_delay(
                 0,
-                &root_config.alloc_pci_devs,
-                root_config.num_pci_devs,
-                &root_config.pci_config,
+                &root_config.common.alloc_pci_devs,
+                root_config.common.num_pci_devs,
+                &root_config.common.pci_config,
                 num_pci_bus,
                 domain_id,
             )?;
