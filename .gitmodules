@@ -1,3 +1,3 @@
-[submodule "hvisor-tool/cJSON"]
-	path = hvisor-tool/cJSON
+[submodule "hvisor-tool/common/third_party/cJSON"]
+	path = hvisor-tool/common/third_party/cJSON
 	url = https://github.com/DaveGamble/cJSON.git
