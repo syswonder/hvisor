@@ -24,13 +24,11 @@
 #include <unistd.h>
 
 #include "boot.h"
-#include "event_monitor.h"
 #include "hvisor.h"
 #include "json_parse.h"
 #include "loader.h"
 #include "log.h"
 #include "safe_cjson.h"
-#include "virtio.h"
 #include "zone_config.h"
 
 static void __attribute__((noreturn)) help(int exit_status) {
@@ -51,45 +49,6 @@ static void __attribute__((noreturn)) help(int exit_status) {
     printf("  Shutdown zone: hvisor zone shutdown -id 1\n");
     printf("  List zones:    hvisor zone list\n");
     exit(exit_status);
-}
-
-void *read_file(const char *filename, uint64_t *filesize) {
-    int fd;
-    struct stat st;
-    void *buf;
-    ssize_t len;
-
-    fd = open(filename, O_RDONLY);
-    if (fd < 0) {
-        log_error("read_file: open file %s failed", filename);
-        exit(1);
-    }
-
-    if (fstat(fd, &st) < 0) {
-        log_error("read_file: fstat %s failed", filename);
-        exit(1);
-    }
-
-    long page_size = sysconf(_SC_PAGESIZE);
-
-    // Calculate buffer size, ensuring alignment to page boundary
-    ssize_t buf_size = (st.st_size + page_size - 1) & ~(page_size - 1);
-
-    buf = malloc(buf_size);
-    memset(buf, 0, buf_size);
-
-    len = read(fd, buf, st.st_size);
-    if (len < 0) {
-        perror("read_file: read failed");
-        exit(1);
-    }
-
-    if (filesize)
-        *filesize = len;
-
-    close(fd);
-
-    return buf;
 }
 
 int open_dev() {
@@ -1100,6 +1059,29 @@ static int zone_list(int argc, char *argv[]) {
     return ret;
 }
 
+static int run_daemon(int argc, char *argv[]) {
+    const char *override = getenv("HVISOR_VIRTIO_DAEMON");
+    if (override && override[0])
+        execvp(override, argv);
+
+    char exe[PATH_MAX];
+    ssize_t len = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
+    if (len > 0) {
+        exe[len] = '\0';
+        char *slash = strrchr(exe, '/');
+        if (slash) {
+            snprintf(slash + 1, sizeof(exe) - (size_t)(slash + 1 - exe),
+                     "hvisor-virtio-daemon");
+            if (access(exe, X_OK) == 0)
+                execv(exe, argv);
+        }
+    }
+
+    execvp("hvisor-virtio-daemon", argv);
+    perror("failed to execute hvisor-virtio-daemon");
+    return -1;
+}
+
 int main(int argc, char *argv[]) {
     int err = 0;
 
@@ -1127,10 +1109,9 @@ int main(int argc, char *argv[]) {
         if (argc < 3)
             help(1);
 
-        if (strcmp(argv[2], "start") == 0) {
-            err = virtio_start(argc, argv);
-        } else if (strcmp(argv[2], "add") == 0) {
-            err = virtio_add(argc, argv);
+        if (strcmp(argv[2], "start") == 0 ||
+            strcmp(argv[2], "add") == 0) {
+            err = run_daemon(argc, argv);
         } else {
             help(1);
         }

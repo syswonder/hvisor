@@ -55,9 +55,10 @@ check-config-change:
 	fi
 
 tools: env check-config-change
-	$(MAKE) -C linux tools
+	$(MAKE) -C linux tools daemon
 	@mkdir -p $(OUTPUT_DIR)
 	cp linux/tool/hvisor $(OUTPUT_DIR)
+	cp linux/daemon/hvisor-virtio-daemon $(OUTPUT_DIR)
 
 driver: env check-kdir check-config-change
 	$(MAKE) -C linux driver
