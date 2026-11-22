@@ -31,13 +31,13 @@ static mut CLEAR_BSS_DONE: usize = 0;
 #[link_section = ".data"]
 static mut ENTER_CPU: usize = usize::MAX; // i.e., -1
 
-#[naked]
+#[unsafe(naked)]
 #[no_mangle]
 #[link_section = ".text.entry"]
 pub unsafe extern "C" fn arch_entry() -> i32 {
     // a0=hart_id, a1=dtb_addr
     // Note: hart_id may not be continuous, we should map it to continuous cpu_id.
-    core::arch::asm!(
+    core::arch::naked_asm!(
         "
         // ================================================
         // Step1: Map hart_id to cpu_id, store cpu_id in a0
@@ -109,6 +109,5 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
         board_hartid_map = sym BOARD_HARTID_MAP,
         per_cpu_size = const PER_CPU_SIZE,
         num_cpus = const BOARD_NCPUS,
-        options(noreturn),
     );
 }

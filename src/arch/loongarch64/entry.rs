@@ -28,7 +28,7 @@ const CSR_DMW1_VSEG: usize = 0x9000;
 const CSR_DMW1_BASE: usize = CSR_DMW1_VSEG << DMW_DA_BITS;
 const CSR_DMW1_INIT: usize = CSR_DMW1_BASE | CSR_DMW1_PLV0 | CSR_DMW1_MAT;
 
-#[naked]
+#[unsafe(naked)]
 #[no_mangle]
 #[link_section = ".text.entry"]
 pub unsafe extern "C" fn arch_entry() -> i32 {
@@ -40,7 +40,7 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
     //      or		\temp1, \temp1, \temp2
     //      jirl    zero, \temp1, 0xc // 0xc is because the above pcaddi + 0xc will jump to exactly the next instruction after jirl - wheatfox
     // .endm
-    core::arch::asm!(
+    core::arch::naked_asm!(
         "
         0:
             li.d        $r12, {CSR_DMW0_INIT} // 0x8
@@ -92,6 +92,5 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
         rust_main = sym crate::rust_main,
         per_cpu_size = const PER_CPU_SIZE,
         CSR_CPUID = const 0x20,
-        options(noreturn),
     );
 }

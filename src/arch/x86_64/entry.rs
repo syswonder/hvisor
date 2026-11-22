@@ -59,11 +59,11 @@ global_asm!(
     efer = const EFER,
 );
 
-#[naked]
+#[unsafe(naked)]
 #[no_mangle]
 #[link_section = ".text.entry"]
 pub unsafe extern "C" fn arch_entry() -> i32 {
-    core::arch::asm!(
+    core::arch::naked_asm!(
         "
         .code32
         cli
@@ -71,7 +71,6 @@ pub unsafe extern "C" fn arch_entry() -> i32 {
         mov esi, ebx    // multiboot info
         jmp bsp_entry32
         ",
-        options(noreturn),
     );
 }
 

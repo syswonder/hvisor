@@ -117,6 +117,7 @@ pub trait GenericPageTableImmut: Sized {
     type VA: From<usize> + Into<usize> + Copy;
 
     fn level(&self) -> usize;
+    #[allow(dead_code)]
     unsafe fn from_root(root_paddr: PhysAddr, pt_level: usize) -> Self;
     fn root_paddr(&self) -> PhysAddr;
     fn query(&self, vaddr: Self::VA) -> PagingResult<(PhysAddr, MemFlags, PageSize)>;
@@ -319,6 +320,7 @@ where
         }
     }
 
+    #[allow(dead_code)]
     unsafe fn from_root(root_paddr: PhysAddr, pt_level: usize) -> Self {
         Self {
             inner: HvPageTableImmut::from_root(root_paddr, pt_level),
