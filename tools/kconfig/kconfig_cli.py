@@ -6,7 +6,9 @@ import argparse
 import json
 import os
 import re
+import stat
 import sys
+import tempfile
 from pathlib import Path
 
 try:
@@ -30,8 +32,14 @@ def arch_from_kconf(kconf) -> str | None:
     return None
 
 
-def write_root_dot_config(root: Path, arch: str, board: str, kconf) -> None:
-    """Write repo-root `.config`: comment metadata (Kconfig-safe) then kconfiglib body."""
+def write_root_dot_config(root: Path, arch: str, board: str, kconf) -> bool:
+    """Write repo-root .config: comment metadata (Kconfig-safe) then kconfiglib body.
+
+    Idempotent: an unchanged file is left untouched (content, mode and mtime are
+    preserved). A changed file is written to a temporary file in the same
+    directory and atomically replaced, keeping the previous mode (or the
+    umask-derived default mode for a new file). Returns True if .config changed.
+    """
     cfg = root / ".config"
     derived = arch_from_kconf(kconf)
     if derived is None:
@@ -46,22 +54,41 @@ def write_root_dot_config(root: Path, arch: str, board: str, kconf) -> None:
             "Fix kconfig/defconfig or pick the correct ARCH/BOARD."
         )
     arch_out = derived
-    ld = (root / "platform" / arch_out / board / "linker.ld").resolve()
-    tmpl = (root / "platform" / arch_out / board / "cargo" / "config.template.toml").resolve()
-    hvisor_src = str(root.resolve())
     bid = f"{arch_out}/{board}"
-    kconf.write_config(str(cfg))
-    body = cfg.read_text()
     meta = (
         f"# ARCH={arch_out}\n"
         f"# BOARD={board}\n"
         f"# BID={bid}\n"
-        f"# HVISOR_SRC={hvisor_src}\n"
-        f"# LD_SCRIPT={ld}\n"
-        f"# TEMPLATE={tmpl}\n"
         "\n"
     )
-    cfg.write_text(meta + body)
+
+    fd, tmp_name = tempfile.mkstemp(prefix=".config.", suffix=".tmp", dir=str(root))
+    os.close(fd)
+    tmp = Path(tmp_name)
+    try:
+        kconf.write_config(str(tmp))
+        content = meta + tmp.read_text()
+        try:
+            old_content = cfg.read_text()
+            old_mode = stat.S_IMODE(cfg.stat().st_mode)
+        except FileNotFoundError:
+            old_content = None
+            old_mode = None
+        if old_content == content:
+            return False
+        tmp.write_text(content)
+        if old_mode is None:
+            umask = os.umask(0)
+            os.umask(umask)
+            old_mode = 0o666 & ~umask
+        os.chmod(tmp, old_mode)
+        os.replace(tmp, cfg)
+        return True
+    finally:
+        # kconfiglib keeps a <file>.old backup next to whatever it writes;
+        # remove that backup along with our temporary file.
+        tmp.unlink(missing_ok=True)
+        Path(str(tmp) + ".old").unlink(missing_ok=True)
 
 
 def _repo_root() -> Path:
@@ -87,8 +114,10 @@ def cmd_defconfig() -> None:
         print(f"error: missing {defcfg}", file=sys.stderr)
         sys.exit(1)
     kconf.load_config(str(defcfg))
-    write_root_dot_config(root, arch, board, kconf)
-    print(f"wrote .config for {arch}/{board}")
+    if write_root_dot_config(root, arch, board, kconf):
+        print(f"wrote .config for {arch}/{board}")
+    else:
+        print(f".config unchanged for {arch}/{board}")
 
 
 def cmd_menuconfig() -> None:
