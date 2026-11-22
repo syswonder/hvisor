@@ -474,16 +474,16 @@ fn handle_psci_smc(
                 // zone, so only the root zone is allowed to trigger it. The
                 // function itself exists, the call is just not permitted, which
                 // is DENIED rather than NOT_SUPPORTED.
-                i64::from(psci::error::Error::Denied) as u64
+                i64::from(smccc::psci::error::Error::Denied) as u64
             } else {
                 info!("root zone requested system reset, forwarding to EL3");
                 // A real reset never returns. If it does, the machine is still
                 // running, so report a failure instead of telling the guest the
                 // reset succeeded. A PSCI error is passed through as-is.
-                match psci::system_reset() {
+                match smccc::psci::system_reset::<smccc::Smc>() {
                     Ok(()) => {
                         error!("system reset returned without resetting the machine");
-                        i64::from(psci::error::Error::InternalFailure) as u64
+                        i64::from(smccc::psci::error::Error::InternalFailure) as u64
                     }
                     Err(e) => i64::from(e) as u64,
                 }
@@ -512,7 +512,7 @@ fn handle_psci_smc(
             remove_zone(zone_id);
 
             if is_root {
-                psci::system_off().unwrap();
+                smccc::psci::system_off::<smccc::Smc>().unwrap();
             }
 
             this_cpu_data().arch_cpu.idle();

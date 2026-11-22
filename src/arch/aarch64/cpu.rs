@@ -43,12 +43,14 @@ pub fn cpu_start(cpuid: usize, start_addr: usize, opaque: usize) {
         }
         BOARD_MPIDR_MAPPINGS[cpuid]
     };
-    psci::cpu_on(new_cpuid, start_addr as _, opaque as _).unwrap_or_else(|err| {
-        if let psci::error::Error::AlreadyOn = err {
-        } else {
-            panic!("can't wake up cpu {}", cpuid);
-        }
-    });
+    smccc::psci::cpu_on::<smccc::Smc>(new_cpuid, start_addr as _, opaque as _).unwrap_or_else(
+        |err| {
+            if let smccc::psci::error::Error::AlreadyOn = err {
+            } else {
+                panic!("can't wake up cpu {}", cpuid);
+            }
+        },
+    );
 }
 
 #[repr(C)]
