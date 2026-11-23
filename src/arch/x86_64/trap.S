@@ -66,6 +66,7 @@ _trap_handlers:
     iretq
 
 .section .rodata
+.balign 8
 .global _hyp_trap_vector
 _hyp_trap_vector:
 .set i, 0
