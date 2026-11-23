@@ -196,10 +196,12 @@ pub const ROOT_PCI_DEVS: [HvPciDevConfig; 18] = [
     pci_dev!(0x0, 0x0, 0x1f, 0x3 => 0x0, 0x1f, 0x3, VpciDevType::Physical), // audio controller
     pci_dev!(0x0, 0x0, 0x1f, 0x4 => 0x0, 0x1f, 0x4, VpciDevType::Physical), // SMBus
     pci_dev!(0x0, 0x0, 0x1f, 0x5 => 0x0, 0x1f, 0x5, VpciDevType::Physical), // serial bus controller
-    pci_dev!(0x0, 0x1, 0x0, 0x0 => 0x1, 0x0, 0x0, VpciDevType::Physical),  // ethernet controller
-    pci_dev!(0x0, 0x2, 0x0, 0x0 => 0x2, 0x0, 0x0, VpciDevType::Physical),  // memory controller
+    pci_dev!(0x0, 0x1, 0x0, 0x0 => 0x1, 0x0, 0x0, VpciDevType::Physical),   // ethernet controller
+    pci_dev!(0x0, 0x2, 0x0, 0x0 => 0x2, 0x0, 0x0, VpciDevType::Physical),   // memory controller
 ];
 
 #[cfg(all(graphics))]
-pub const GRAPHICS_FONT: &[u8] =
-    include_bytes!("../../platform/x86_64/qemu/image/font/spleen-6x12.psf");
+pub const GRAPHICS_FONT: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/platform/x86_64/qemu/image/font/spleen-6x12.psf"
+));

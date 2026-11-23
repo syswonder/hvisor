@@ -16,17 +16,27 @@
 //
 use std::collections::{HashMap, HashSet};
 use std::io::Write;
-use std::{env, fs, path::Path};
+use std::{
+    env, fs,
+    path::{Path, PathBuf},
+};
 
-const BUILD_LOG_FILE: &str = "target/build_rs.log";
+const BUILD_LOG_FILE: &str = "build_rs.log";
+
+fn build_log_path() -> PathBuf {
+    env::var_os("OUT_DIR")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("target"))
+        .join(BUILD_LOG_FILE)
+}
 
 fn log(output: &str) {
-    let log_path = Path::new(BUILD_LOG_FILE);
+    let log_path = build_log_path();
     let mut file = fs::OpenOptions::new()
         .create(true)
         .append(true)
-        .open(log_path)
-        .expect("Failed to open log file");
+        .open(&log_path)
+        .unwrap_or_else(|e| panic!("Failed to open {}: {e}", log_path.display()));
     writeln!(file, "{}", output).expect("Failed to write to log file");
 }
 
@@ -129,9 +139,9 @@ fn parse_enabled_config_keys(config_text: &str) -> HashSet<String> {
 }
 
 fn main() {
-    let log_path = Path::new(BUILD_LOG_FILE);
+    let log_path = build_log_path();
     if log_path.exists() {
-        fs::remove_file(log_path).expect("Failed to remove log file");
+        fs::remove_file(&log_path).expect("Failed to remove log file");
     }
 
     let project_toml_root = env::var("CARGO_MANIFEST_DIR").unwrap();
@@ -145,7 +155,15 @@ fn main() {
             log(&format!("Invalid BID format: {}", build_env.bid));
             panic!(
                 "Invalid BID format, please check the log file({}) for more details",
-                BUILD_LOG_FILE
+                log_path.display()
+            );
+        }
+        if (!build_env.arch.is_empty() && build_env.arch != parts[0])
+            || (!build_env.board.is_empty() && build_env.board != parts[1])
+        {
+            panic!(
+                ".config BID {} disagrees with ARCH={} BOARD={}; run make defconfig",
+                build_env.bid, build_env.arch, build_env.board
             );
         }
         build_env.arch = parts[0].to_string();
@@ -154,13 +172,23 @@ fn main() {
         log("ARCH or BOARD missing in .config");
         panic!(
             "ARCH or BOARD missing in .config (run: make defconfig), see {}",
-            BUILD_LOG_FILE
+            log_path.display()
         );
     }
 
     let arch = build_env.arch;
     let board = build_env.board;
     let bid = build_env.bid;
+
+    let encoded_rustflags = env::var("CARGO_ENCODED_RUSTFLAGS").unwrap_or_default();
+    if encoded_rustflags
+        .split('\x1f')
+        .any(|flag| flag.starts_with("-T") || flag.contains("link-arg=-T"))
+    {
+        panic!(
+            "stale -T in rustflags; remove -Clink-arg=-T from platform/*/*/cargo/config.template.toml"
+        );
+    }
 
     let pwd = env::current_dir().unwrap();
     log(&format!("Current directory: {}", pwd.display()));
@@ -181,36 +209,74 @@ fn main() {
         }
     }
 
-    let target_path_str = format!("{}/src/platform/__board.rs", pwd.display());
-    let target_path = Path::new(&target_path_str);
-    let source_path_str = format!("{}/platform/{}/{}/board.rs", pwd.display(), arch, board);
-    let source_path = Path::new(&source_path_str);
+    let source_path = root
+        .join("platform")
+        .join(&arch)
+        .join(&board)
+        .join("board.rs");
+    let source_path_str = source_path.display().to_string();
 
     log(&format!(
         "Building for ARCH={arch} BOARD={board}, BID={bid}, enabled_cfgs={}",
         enabled.len()
     ));
 
+    // Board-specific linker arguments must not live in RUSTFLAGS. Cargo hashes
+    // RUSTFLAGS into every dependency unit, so a board switch would invalidate
+    // all dependency artifacts. rustc-link-arg only affects this package's
+    // final link and is therefore safe to vary per board.
+    let board_dir = root.join("platform").join(&arch).join(&board);
+    let ld_script = board_dir.join("linker.ld");
+    if !ld_script.is_file() {
+        panic!("missing linker script: {}", ld_script.display());
+    }
+    println!("cargo:rustc-link-arg=-T{}", ld_script.display());
+    println!("cargo:rerun-if-changed={}", ld_script.display());
+
+    // Per-board final-link options are opt-in: only boards that need extra
+    // linker workarounds (for example Cortex-A53 erratum 843419) ship a
+    // `linker.args` file. Keep the policy board-local; build.rs only forwards
+    // the file's entries and contains no board list.
+    let link_args = board_dir.join("linker.args");
+    println!("cargo:rerun-if-changed={}", link_args.display());
+    println!("cargo:rerun-if-changed={}", board_dir.display());
+    if link_args.is_file() {
+        let contents = fs::read_to_string(&link_args)
+            .unwrap_or_else(|e| panic!("failed to read {}: {e}", link_args.display()));
+        for line in contents.lines() {
+            let arg = line.trim();
+            if arg.is_empty() || arg.starts_with('#') {
+                continue;
+            }
+            println!("cargo:rustc-link-arg={arg}");
+        }
+    }
+
+    if !source_path.is_file() {
+        log(&format!("Invalid board.rs path: {source_path_str}"));
+        panic!(
+            "Invalid board.rs, please check the log file({}) for more details",
+            log_path.display()
+        );
+    }
+
+    // Generate the board module in OUT_DIR for the make-driven build.
+    // This keeps the source tree immutable.
+    let out_dir = PathBuf::from(env::var("OUT_DIR").expect("OUT_DIR not set"));
+    let generated = out_dir.join("board.rs");
+    fs::copy(&source_path, &generated).unwrap_or_else(|e| {
+        panic!(
+            "failed to copy {} to {}: {e}",
+            source_path.display(),
+            generated.display()
+        )
+    });
     log(&format!(
-        "Linking board.rs from {} to {}",
-        source_path_str,
-        target_path.display()
+        "Generated board module {} from {}",
+        generated.display(),
+        source_path_str
     ));
 
-    if !source_path.exists() {
-        log(&format!("Invalid board.rs path: {source_path_str}"));
-        panic!("Invalid board.rs, please check the log file({BUILD_LOG_FILE}) for more details");
-    }
-
-    if target_path.exists() {
-        fs::remove_file(target_path).expect("Failed to remove existing __board.rs");
-    }
-    std::os::unix::fs::symlink(source_path, target_path).expect("Failed to create symlink");
-    log("Linking successful");
-
-    println!("cargo:rerun-if-env-changed=ARCH");
-    println!("cargo:rerun-if-env-changed=BOARD");
-    println!("cargo:rerun-if-env-changed=BID");
     println!("cargo:rerun-if-changed={}", config_path.display());
     println!(
         "cargo:rerun-if-changed={}",
@@ -233,5 +299,4 @@ fn main() {
             .display()
     );
     println!("cargo:rerun-if-changed={source_path_str}");
-    println!("cargo:rerun-if-changed={target_path_str}");
 }

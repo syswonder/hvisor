@@ -181,5 +181,7 @@ pub const ROOT_PCI_DEVS: [HvPciDevConfig; 19] = [
 ];
 
 #[cfg(all(graphics))]
-pub const GRAPHICS_FONT: &[u8] =
-    include_bytes!("../../platform/x86_64/qemu/image/font/spleen-6x12.psf");
+pub const GRAPHICS_FONT: &[u8] = include_bytes!(concat!(
+    env!("CARGO_MANIFEST_DIR"),
+    "/platform/x86_64/qemu/image/font/spleen-6x12.psf"
+));

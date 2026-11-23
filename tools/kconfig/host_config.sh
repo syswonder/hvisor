@@ -2,7 +2,7 @@
 # Host-side helpers that consume repo-root .config (Kconfig + metadata from kconfig_cli.py).
 # Usage (from repo root, or any cwd — script cds to root):
 #   ./tools/kconfig/host_config.sh cargo   # write .cargo/config.toml
-#   ./tools/kconfig/host_config.sh vscode # refresh .config + write .vscode/settings.json
+#   ./tools/kconfig/host_config.sh vscode # write .vscode/settings.json from the existing .config
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -12,27 +12,42 @@ cd "$ROOT"
 KPY="$ROOT/tools/kconfig/.venv/bin/python"
 CLI="$ROOT/tools/kconfig/kconfig_cli.py"
 
+# Read one value from repo-root .config. kconfig_cli.py writes the metadata as
+# Kconfig-safe `# KEY=value` comments; also accept a plain `KEY=value` line.
+# Prints an empty string when the key is absent.
+config_value() {
+	local key="$1" value
+	value=$(grep "^# ${key}=" .config 2>/dev/null | head -1 | cut -d= -f2- || true)
+	if [ -z "$value" ]; then
+		value=$(grep "^${key}=" .config 2>/dev/null | head -1 | cut -d= -f2- || true)
+	fi
+	printf '%s\n' "$value"
+}
+
 cmd_gen_cargo() {
 	local CONFIG_TOML=".cargo/config.toml"
-	echo "" >"$CONFIG_TOML"
 
 	if [ ! -f .config ]; then
 		echo "error: missing .config (run: make defconfig)" >&2
 		exit 1
 	fi
+	mkdir -p "$(dirname "$CONFIG_TOML")"
+	echo "" >"$CONFIG_TOML"
+
 	local ARCH BOARD HVISOR_SRC LD_SCRIPT CONFIG_TOML_TEMPLATE
-	ARCH=$(grep '^# ARCH=' .config 2>/dev/null | head -1 | sed 's/^# ARCH=//')
-	[ -n "$ARCH" ] || ARCH=$(grep '^ARCH=' .config | head -1 | cut -d= -f2-)
-	BOARD=$(grep '^# BOARD=' .config 2>/dev/null | head -1 | sed 's/^# BOARD=//')
-	[ -n "$BOARD" ] || BOARD=$(grep '^BOARD=' .config | head -1 | cut -d= -f2-)
-	HVISOR_SRC=$(grep '^# HVISOR_SRC=' .config 2>/dev/null | head -1 | sed 's/^# HVISOR_SRC=//')
-	[ -n "$HVISOR_SRC" ] || HVISOR_SRC=$(grep '^HVISOR_SRC=' .config | head -1 | cut -d= -f2-)
-	LD_SCRIPT=$(grep '^# LD_SCRIPT=' .config 2>/dev/null | head -1 | sed 's/^# LD_SCRIPT=//')
-	[ -n "$LD_SCRIPT" ] || LD_SCRIPT=$(grep '^LD_SCRIPT=' .config | head -1 | cut -d= -f2-)
-	CONFIG_TOML_TEMPLATE=$(grep '^# TEMPLATE=' .config 2>/dev/null | head -1 | sed 's/^# TEMPLATE=//')
-	[ -n "$CONFIG_TOML_TEMPLATE" ] || CONFIG_TOML_TEMPLATE=$(grep '^TEMPLATE=' .config | head -1 | cut -d= -f2-)
-	if [ -z "$ARCH" ] || [ -z "$BOARD" ] || [ -z "$HVISOR_SRC" ] || [ -z "$LD_SCRIPT" ] || [ -z "$CONFIG_TOML_TEMPLATE" ]; then
-		echo "error: .config missing ARCH/BOARD/HVISOR_SRC/LD_SCRIPT/TEMPLATE lines (run: make defconfig)" >&2
+	ARCH=$(config_value ARCH)
+	BOARD=$(config_value BOARD)
+	if [ -z "$ARCH" ] || [ -z "$BOARD" ]; then
+		echo "error: .config missing ARCH/BOARD metadata (run: make defconfig)" >&2
+		exit 1
+	fi
+	# Derive tree-local paths from ARCH/BOARD. Do not trust paths captured
+	# in .config: they may belong to a moved worktree or an older checkout.
+	HVISOR_SRC="$ROOT"
+	LD_SCRIPT="$ROOT/platform/$ARCH/$BOARD/linker.ld"
+	CONFIG_TOML_TEMPLATE="$ROOT/platform/$ARCH/$BOARD/cargo/config.template.toml"
+	if [ ! -f "$LD_SCRIPT" ] || [ ! -f "$CONFIG_TOML_TEMPLATE" ]; then
+		echo "error: missing platform files for $ARCH/$BOARD (run: make defconfig)" >&2
 		exit 1
 	fi
 	local TEMPLATE
@@ -66,20 +81,22 @@ cmd_gen_cargo() {
 }
 
 cmd_vscode() {
-	local ARCH="${ARCH:-}" BOARD="${BOARD:-}"
-	if [ -n "${BID:-}" ]; then
-		ARCH=$(echo "$BID" | cut -d'/' -f1)
-		BOARD=$(echo "$BID" | cut -d'/' -f2)
+	if [ ! -f .config ]; then
+		echo "ERROR: missing .config; run 'make defconfig' first" >&2
+		exit 1
 	fi
+
+	local ARCH BOARD
+	ARCH=$(config_value ARCH)
+	BOARD=$(config_value BOARD)
 	if [ -z "$ARCH" ] || [ -z "$BOARD" ]; then
-		echo "ERROR: ARCH/BOARD not set, use BID=arch/board or ARCH=... BOARD=..." >&2
+		echo "ERROR: .config has no ARCH/BOARD metadata; run 'make defconfig' first" >&2
 		exit 1
 	fi
 	if [ ! -x "$KPY" ]; then
 		echo "ERROR: tools/kconfig/.venv missing. Run: ./tools/kconfig/bootstrap_venv.sh" >&2
 		exit 1
 	fi
-	ARCH="$ARCH" BOARD="$BOARD" "$KPY" "$CLI" defconfig
 
 	local CFG_JSON
 	CFG_JSON=$("$KPY" "$CLI" vscode-cfgs .config kconfig/cfg_map.toml)
@@ -108,7 +125,7 @@ cmd_vscode() {
 	"rust-analyzer.cargo.cfgs": $CFG_JSON
 }
 EOF
-	echo "generated .vscode/settings.json for ARCH=$ARCH BOARD=$BOARD TARGET=$TARGET"
+	echo "generated .vscode/settings.json for ARCH=$ARCH BOARD=$BOARD TARGET=$TARGET (from .config)"
 }
 
 case "${1:-}" in

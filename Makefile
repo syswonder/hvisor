@@ -1,9 +1,10 @@
-ARCH ?= aarch64
+# Defaults come from .config when present; explicit BID/ARCH/BOARD still win.
+ARCH ?= $(shell grep -m1 'ARCH=' .config 2>/dev/null | cut -d= -f2-)
 LOG ?= info
 STATS ?= off
 PORT ?= 2333
 MODE ?= release
-BOARD ?= qemu-gicv3
+BOARD ?= $(shell grep -m1 'BOARD=' .config 2>/dev/null | cut -d= -f2-)
 BID ?=
 ptest ?=
 
@@ -21,12 +22,18 @@ else
 endif
 
 # if user uses `make ID=aarch64/qemu-gicv2`, we parse it into ARCH and BOARD
-ifeq ($(BID),)
-	ARCH := $(ARCH)
-	BOARD := $(BOARD)
+ifeq ($(strip $(BID)),)
+	# Keep the effective selection from .config or the command line.
 else
 	ARCH := $(shell echo $(BID) | cut -d'/' -f1)
 	BOARD := $(shell echo $(BID) | cut -d'/' -f2)
+endif
+
+ifeq ($(strip $(ARCH)),)
+	ARCH := aarch64
+endif
+ifeq ($(strip $(BOARD)),)
+	BOARD := qemu-gicv3
 endif
 
 ifeq ($(ARCH),aarch64)
@@ -85,10 +92,16 @@ COLOR_RESET := $(shell tput sgr0)
 kconfig_python := tools/kconfig/.venv/bin/python
 
 # Targets
-.PHONY: all elf disa run gdb monitor clean tools rootfs vscode ci-run defconfig menuconfig savedefconfig ensure_config kconfig_venv link_board check-hv-mem-overlap
+.PHONY: all elf disa run gdb monitor clean clean-arch clean-hvisor tools rootfs vscode ci-run defconfig menuconfig savedefconfig ensure_config kconfig_venv check-hv-mem-overlap
+
+# Config generation and defconfig mutate shared files. Keep prerequisites
+# serialized even when the user passes -j; cargo itself is still invoked once.
+.NOTPARALLEL:
 
 # `all` must stay the first target: a bare `make` runs the first target in this file.
-all: ensure_config gen_cargo_config vscode $(hvisor_bin) check-hv-mem-overlap
+# `vscode` is deliberately not a dependency: it only refreshes editor settings and
+# must never rewrite .config (or force a rebuild) as a side effect of a normal build.
+all: ensure_config gen_cargo_config $(hvisor_bin) check-hv-mem-overlap
 	@printf "\n"
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)hvisor build summary:$(COLOR_RESET)\n"
 	@printf "%-10s %s\n" "ARCH            =" "$(COLOR_BOLD)$(ARCH)$(COLOR_RESET)"
@@ -115,6 +128,9 @@ kconfig_venv:
 		./tools/kconfig/bootstrap_venv.sh; \
 	fi
 
+# .config is the single source of truth for the effective ARCH/BOARD/BID.
+# Make ARCH/BOARD/BID express the requested selection; ensure_config
+# regenerates .config only when the request differs from the file.
 ensure_config:
 	@CONFIG_ARCH=; CONFIG_BOARD=; \
 	if [ -f .config ]; then \
@@ -127,18 +143,13 @@ ensure_config:
 		echo "$(COLOR_YELLOW)No .config; running defconfig for $(ARCH)/$(BOARD)$(COLOR_RESET)"; \
 		$(MAKE) --no-print-directory defconfig; \
 	elif [ "$$CONFIG_ARCH" != "$(ARCH)" ] || [ "$$CONFIG_BOARD" != "$(BOARD)" ]; then \
-		echo "$(COLOR_YELLOW)$(COLOR_BOLD)ARCH or BOARD changed (OLD: $$CONFIG_ARCH/$$CONFIG_BOARD, NEW: $(ARCH)/$(BOARD)), cleaning and reloading defconfig...$(COLOR_RESET)"; \
-		./tools/clean.sh; \
+		echo "$(COLOR_YELLOW)$(COLOR_BOLD)ARCH or BOARD changed (OLD: $$CONFIG_ARCH/$$CONFIG_BOARD, NEW: $(ARCH)/$(BOARD)), reloading defconfig (reusing target/ cache)...$(COLOR_RESET)"; \
 		$(MAKE) --no-print-directory defconfig; \
 	fi
 
-link_board:
-	@mkdir -p src/platform
-	@ln -sfn ../../platform/$(ARCH)/$(BOARD)/board.rs src/platform/__board.rs
-
 defconfig: kconfig_venv
+	@rm -f $(hvisor_bin) $(hvisor_bin).tmp
 	@$(kconfig_python) tools/kconfig/kconfig_cli.py defconfig
-	@$(MAKE) --no-print-directory link_board
 
 menuconfig: kconfig_venv
 	@$(kconfig_python) tools/kconfig/kconfig_cli.py menuconfig
@@ -159,8 +170,24 @@ check-hv-mem-overlap: $(hvisor_bin) platform/$(ARCH)/$(BOARD)/board.rs
 		(printf "$(COLOR_RED)$(COLOR_BOLD)OVERLAP DETECTED! See details above.$(COLOR_RESET)\n" && \
 		 false)
 
-vscode:
+# Generate .vscode/settings.json from the existing .config only. Run
+# `make defconfig` first if .config is missing or belongs to another board.
+vscode: kconfig_venv
+	@test -f .config || { echo "ERROR: missing .config; run 'make defconfig' first" >&2; exit 1; }
+	@if [ -n "$(BID)" ]; then \
+		cfg_bid=$$(sed -n 's/^# BID=//p' .config | head -1); \
+		[ "$$cfg_bid" = "$(BID)" ] || { echo "ERROR: BID=$(BID) does not match .config ($$cfg_bid); run make defconfig first" >&2; exit 1; }; \
+	fi
+	@if [ -n "$(filter command line environment,$(origin ARCH))" ]; then \
+		cfg_arch=$$(sed -n 's/^# ARCH=//p' .config | head -1); \
+		[ "$(ARCH)" = "$$cfg_arch" ] || { echo "ERROR: ARCH=$(ARCH) does not match .config ($$cfg_arch); run make defconfig first" >&2; exit 1; }; \
+	fi
+	@if [ -n "$(filter command line environment,$(origin BOARD))" ]; then \
+		cfg_board=$$(sed -n 's/^# BOARD=//p' .config | head -1); \
+		[ "$(BOARD)" = "$$cfg_board" ] || { echo "ERROR: BOARD=$(BOARD) does not match .config ($$cfg_board); run make defconfig first" >&2; exit 1; }; \
+	fi
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)generating .vscode/settings.json...$(COLOR_RESET)\n"
+	@$(MAKE) --no-print-directory gen_cargo_config
 	@chmod +x tools/kconfig/host_config.sh 2>/dev/null || true
 	./tools/kconfig/host_config.sh vscode
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)generating .vscode/settings.json success!$(COLOR_RESET)\n"
@@ -224,10 +251,10 @@ download-test-img:
 	else echo "\nflash.img found\n"; \
 	fi
 
-test: clean test-pre ensure_config gen_cargo_config
+test: test-pre ensure_config gen_cargo_config
 	cargo test $(build_args) -vv
 
-stest: clean test-pre ensure_config gen_cargo_config
+stest: test-pre ensure_config gen_cargo_config
 	./platform/$(ARCH)/$(BOARD)/test/systemtest/tcompiledtb.sh
 	./platform/$(ARCH)/$(BOARD)/test/systemtest/tdownload_all.sh
 	./platform/$(ARCH)/$(BOARD)/test/systemtest/trootfs_deploy.sh
@@ -236,7 +263,7 @@ stest: clean test-pre ensure_config gen_cargo_config
 # Performance benchmark: data collection only, does not affect pass/fail.
 # Calls systemtest scripts for DTS, then perftest/tdownload_all.sh when present
 # (fallback to systemtest/tdownload_all.sh), and perftest/trootfs_deploy.sh.
-perf: clean test-pre ensure_config gen_cargo_config
+perf: test-pre ensure_config gen_cargo_config
 	./platform/$(ARCH)/$(BOARD)/test/systemtest/tcompiledtb.sh
 	@if [ -x "$(perftest_tdownload)" ]; then \
 		$(perftest_tdownload); \
@@ -248,7 +275,7 @@ perf: clean test-pre ensure_config gen_cargo_config
 
 # Prepare perf image only: reuse existing rootfs img when present, download
 # missing assets, deploy benchmark scripts/tools into image, and print path.
-perf-prepare-img: clean test-pre ensure_config gen_cargo_config
+perf-prepare-img: test-pre ensure_config gen_cargo_config
 	./platform/$(ARCH)/$(BOARD)/test/systemtest/tcompiledtb.sh
 	@if [ -x "$(perftest_tdownload)" ]; then \
 		$(perftest_tdownload); \
@@ -313,6 +340,19 @@ dtb:
 	make -C platform/$(ARCH)/$(BOARD)/image/dts
 
 clean:
-	./tools/clean.sh
+	cargo clean
+	rm -f .config
+	rm -f .cargo/config.toml
+	rm -f src/platform/__board.rs
+
+# Remove every build artifact for the target selected by Make/.config.
+clean-arch:
+	rm -rf target/$(RUSTC_TARGET)
+
+# Remove only hvisor artifacts for the target/MODE selected by Make/.config
+# (keeps dependency artifacts and .config).
+clean-hvisor:
+	rm -rf $(build_path)/build/hvisor-* $(build_path)/deps/hvisor-* $(build_path)/.fingerprint/hvisor-*
+	rm -f $(build_path)/hvisor $(build_path)/hvisor.d $(build_path)/hvisor.bin $(build_path)/hvisor.bin.tmp
 
 include platform/$(ARCH)/$(BOARD)/platform.mk
