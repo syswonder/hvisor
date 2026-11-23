@@ -28,7 +28,6 @@
 #![no_main]
 // #![feature(core_panic)]
 // #![deny(warnings, missing_docs)]
-#![feature(proc_macro_hygiene)]
 // unittest
 #![feature(custom_test_frameworks)]
 #![test_runner(crate::tests::test_main)]
