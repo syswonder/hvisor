@@ -502,14 +502,53 @@ impl ArchCpu {
         self.set_cr(4, cr4_guest.bits());
 
         macro_rules! set_guest_segment {
-            ($seg: ident, $access_rights: expr) => {{
-                use VmcsGuest16::*;
-                use VmcsGuest32::*;
-                use VmcsGuestNW::*;
-                concat_idents!($seg, _SELECTOR).write(0)?;
-                concat_idents!($seg, _BASE).write(0)?;
-                concat_idents!($seg, _LIMIT).write(0xffff)?;
-                concat_idents!($seg, _ACCESS_RIGHTS).write($access_rights)?;
+            (ES, $access_rights: expr) => {{
+                VmcsGuest16::ES_SELECTOR.write(0)?;
+                VmcsGuestNW::ES_BASE.write(0)?;
+                VmcsGuest32::ES_LIMIT.write(0xffff)?;
+                VmcsGuest32::ES_ACCESS_RIGHTS.write($access_rights)?;
+            }};
+            (CS, $access_rights: expr) => {{
+                VmcsGuest16::CS_SELECTOR.write(0)?;
+                VmcsGuestNW::CS_BASE.write(0)?;
+                VmcsGuest32::CS_LIMIT.write(0xffff)?;
+                VmcsGuest32::CS_ACCESS_RIGHTS.write($access_rights)?;
+            }};
+            (SS, $access_rights: expr) => {{
+                VmcsGuest16::SS_SELECTOR.write(0)?;
+                VmcsGuestNW::SS_BASE.write(0)?;
+                VmcsGuest32::SS_LIMIT.write(0xffff)?;
+                VmcsGuest32::SS_ACCESS_RIGHTS.write($access_rights)?;
+            }};
+            (DS, $access_rights: expr) => {{
+                VmcsGuest16::DS_SELECTOR.write(0)?;
+                VmcsGuestNW::DS_BASE.write(0)?;
+                VmcsGuest32::DS_LIMIT.write(0xffff)?;
+                VmcsGuest32::DS_ACCESS_RIGHTS.write($access_rights)?;
+            }};
+            (FS, $access_rights: expr) => {{
+                VmcsGuest16::FS_SELECTOR.write(0)?;
+                VmcsGuestNW::FS_BASE.write(0)?;
+                VmcsGuest32::FS_LIMIT.write(0xffff)?;
+                VmcsGuest32::FS_ACCESS_RIGHTS.write($access_rights)?;
+            }};
+            (GS, $access_rights: expr) => {{
+                VmcsGuest16::GS_SELECTOR.write(0)?;
+                VmcsGuestNW::GS_BASE.write(0)?;
+                VmcsGuest32::GS_LIMIT.write(0xffff)?;
+                VmcsGuest32::GS_ACCESS_RIGHTS.write($access_rights)?;
+            }};
+            (TR, $access_rights: expr) => {{
+                VmcsGuest16::TR_SELECTOR.write(0)?;
+                VmcsGuestNW::TR_BASE.write(0)?;
+                VmcsGuest32::TR_LIMIT.write(0xffff)?;
+                VmcsGuest32::TR_ACCESS_RIGHTS.write($access_rights)?;
+            }};
+            (LDTR, $access_rights: expr) => {{
+                VmcsGuest16::LDTR_SELECTOR.write(0)?;
+                VmcsGuestNW::LDTR_BASE.write(0)?;
+                VmcsGuest32::LDTR_LIMIT.write(0xffff)?;
+                VmcsGuest32::LDTR_ACCESS_RIGHTS.write($access_rights)?;
             }};
         }
 
@@ -607,44 +646,42 @@ impl ArchCpu {
         panic!("{}", Vmcs::instruction_error().unwrap().as_str());
     }
 
-    #[naked]
+    #[unsafe(naked)]
     unsafe extern "C" fn vmx_exit(&mut self) -> ! {
-        asm!(
-            save_regs_to_stack!(),
-            "mov    r15, rsp",                      // save temporary RSP to r15
-            "mov    rax, cr2",
-            "mov    [rsp + {guest_cr2}], rax",
-            "mov    rdi, rsp",                      // set the first arg to RSP
-            "mov    rsp, [rsp + {host_stack_top}]", // set RSP to host_stack_top
-            "call   {vmexit_handler}",              // call vmexit_handler
-            "mov    rsp, r15",                      // load temporary RSP from r15
-            "mov    rax, [rsp + {guest_cr2}]",
-            "mov    cr2, rax",
-            restore_regs_from_stack!(),
-            "vmresume",
-            "jmp    {failed}",
-            host_stack_top = const size_of::<GeneralRegisters>(),
-            guest_cr2 = const core::mem::offset_of!(ArchCpu, guest_cr2),
-            vmexit_handler = sym Self::vmexit_handler,
-            failed = sym Self::vmx_entry_failed,
-            options(noreturn),
+        core::arch::naked_asm!(
+        save_regs_to_stack!(),
+        "mov    r15, rsp",                      // save temporary RSP to r15
+        "mov    rax, cr2",
+        "mov    [rsp + {guest_cr2}], rax",
+        "mov    rdi, rsp",                      // set the first arg to RSP
+        "mov    rsp, [rsp + {host_stack_top}]", // set RSP to host_stack_top
+        "call   {vmexit_handler}",              // call vmexit_handler
+        "mov    rsp, r15",                      // load temporary RSP from r15
+        "mov    rax, [rsp + {guest_cr2}]",
+        "mov    cr2, rax",
+        restore_regs_from_stack!(),
+        "vmresume",
+        "jmp    {failed}",
+        host_stack_top = const size_of::<GeneralRegisters>(),
+        guest_cr2 = const core::mem::offset_of!(ArchCpu, guest_cr2),
+        vmexit_handler = sym Self::vmexit_handler,
+        failed = sym Self::vmx_entry_failed,
         );
     }
 
-    #[naked]
+    #[unsafe(naked)]
     unsafe extern "C" fn vmx_launch(&mut self) -> ! {
-        asm!(
-            // "mov    [rdi + {host_stack_top}], rsp", // save current RSP to host_stack_top
-            "mov    rsp, rdi",                      // set RSP to guest regs area
-            "mov    rax, [rsp + {guest_cr2}]",
-            "mov    cr2, rax",
-            restore_regs_from_stack!(),
-            "vmlaunch",
-            "jmp    {failed}",
-            // host_stack_top = const size_of::<GeneralRegisters>(),
-            guest_cr2 = const core::mem::offset_of!(ArchCpu, guest_cr2),
-            failed = sym Self::vmx_entry_failed,
-            options(noreturn),
+        core::arch::naked_asm!(
+        // "mov    [rdi + {host_stack_top}], rsp", // save current RSP to host_stack_top
+        "mov    rsp, rdi",                      // set RSP to guest regs area
+        "mov    rax, [rsp + {guest_cr2}]",
+        "mov    cr2, rax",
+        restore_regs_from_stack!(),
+        "vmlaunch",
+        "jmp    {failed}",
+        // host_stack_top = const size_of::<GeneralRegisters>(),
+        guest_cr2 = const core::mem::offset_of!(ArchCpu, guest_cr2),
+        failed = sym Self::vmx_entry_failed,
         )
     }
 }

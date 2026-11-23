@@ -44,6 +44,21 @@ use bit_field::BitField;
 use core::mem::size_of;
 use x86_64::registers::control::Cr4Flags;
 
+#[cfg(irq_diag)]
+use crate::arch::irq_diag::IrqPath;
+
+/// `handle_irq` is reached from both the IDT and the external-interrupt VM-exit
+/// path, and which one it was is worth recording: a vector seen on the VM-exit
+/// path is pumped into the guest by the `check_pending_vectors` that follows,
+/// while one seen on the IDT path waits for the next VM exit. With the
+/// diagnostics compiled out the argument carries no information, so it collapses.
+#[cfg(not(irq_diag))]
+#[derive(Clone, Copy)]
+enum IrqPath {
+    Idt,
+    VmExit,
+}
+
 use super::{
     pci::{handle_pci_config_port_read, handle_pci_config_port_write},
     pio::{PCI_CONFIG_ADDR_PORT, PCI_CONFIG_DATA_PORT, UART_COM1_PORT},
@@ -92,7 +107,7 @@ pub fn install_trap_vector() {
 pub fn arch_handle_trap(tf: &mut TrapFrame) {
     // println!("trap {} @ {:#x}", tf.vector, tf.rip);
     match tf.vector as u8 {
-        IRQ_VECTOR_START..=IRQ_VECTOR_END => handle_irq(tf.vector as u8),
+        IRQ_VECTOR_START..=IRQ_VECTOR_END => handle_irq(tf.vector as u8, IrqPath::Idt),
         _ => {
             println!(
                 "Unhandled exception {} (error_code = {:#x}) @ {:#x}",
@@ -102,14 +117,26 @@ pub fn arch_handle_trap(tf: &mut TrapFrame) {
     }
 }
 
-fn handle_irq(vector: u8) {
+fn handle_irq(vector: u8, path: IrqPath) {
     let is_timer = vector == this_cpu_data().arch_cpu.virt_lapic.virt_timer_vector;
+
+    #[cfg(irq_diag)]
+    crate::arch::irq_diag::note_irq(vector, path);
 
     match vector {
         IdtVector::VIRT_IPI_VECTOR if !is_timer => {
             ipi::handle_virt_ipi();
         }
-        IdtVector::I8042_KEYBOARD_VECTOR if !is_timer => {}
+        // Vector 0x21 is deliberately *not* filtered out here. It is the legacy
+        // keyboard vector, but hvisor does not use the i8042 at all (see the
+        // comment on I8042_PORT in pio.rs), and a guest's own devices are free
+        // to be assigned it -- Linux hands out vectors from 0x20 upwards, so a
+        // passed-through MSI-X entry can easily land on 0x21. Dropping it means
+        // that device's completion interrupt never reaches the guest, which then
+        // waits forever in wait_for_completion(). Nothing is needed to keep a
+        // host keyboard interrupt out of the guest either: zone0's IOAPIC
+        // redirection entries are mirrored to the physical IOAPIC, so only the
+        // sources the guest actually routed can raise an interrupt here.
         IdtVector::APIC_SPURIOUS_VECTOR | IdtVector::APIC_ERROR_VECTOR if !is_timer => {}
         _ => {
             if vector >= 0x20 && this_cpu_data().vcpu.state.is_running() {
@@ -228,7 +255,7 @@ fn handle_external_interrupt() -> HvResult {
     if int_info.vector == 0x21 {
         // info!("External interrupt: IRQ1 (keyboard)");
     }
-    handle_irq(int_info.vector);
+    handle_irq(int_info.vector, IrqPath::VmExit);
     Ok(())
 }
 

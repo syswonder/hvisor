@@ -529,9 +529,19 @@ pub fn flush(zone_id: usize, bus: u8, dev_func: u8) {
 }
 
 fn flush_cache_range(hpa: usize, size: usize) {
+    // CLFLUSHOPT is not in the x86_64 baseline: on CPUs without it (e.g.
+    // Broadwell-EP) the instruction raises #UD and wedges the hypervisor in an
+    // exception loop. Fall back to CLFLUSH, which flushes the same cache line.
+    let clflushopt = crate::arch::x86_64::cpuid::has_clflushopt();
     let mut i = 0usize;
     while i < size {
-        unsafe { asm!("clflushopt [{addr}]", addr = in(reg) hpa + i) };
+        unsafe {
+            if clflushopt {
+                asm!("clflushopt [{addr}]", addr = in(reg) hpa + i);
+            } else {
+                asm!("clflush [{addr}]", addr = in(reg) hpa + i);
+            }
+        }
         i += 64;
     }
 }

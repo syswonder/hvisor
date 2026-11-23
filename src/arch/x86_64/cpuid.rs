@@ -205,4 +205,38 @@ bitflags::bitflags! {
         /// Bit 30: SGX_LC. Supports SGX Launch Configuration if 1.
         const SGX_LC = 1 << 30;
     }
+
+    /// CPUID leaf 7 (Structured Extended Feature Flags), EBX.
+    /// Only the bits hvisor currently needs are listed; extend as required.
+    pub struct StructuredExtendedFeatureInfoEbx: u32 {
+        /// Bit 23: CLFLUSHOPT. A value of 1 indicates the processor supports the
+        /// CLFLUSHOPT instruction, a weakly-ordered cache line flush.
+        const CLFLUSHOPT = 1 << 23;
+    }
+}
+
+/// Execute CPUID for the given leaf and subleaf.
+#[inline]
+pub fn cpuid(leaf: CpuIdEax, subleaf: u32) -> core::arch::x86_64::CpuidResult {
+    // SAFETY: CPUID is available on every x86_64 CPU and has no side effects
+    // beyond its output registers.
+    unsafe { core::arch::x86_64::__cpuid_count(leaf as u32, subleaf) }
+}
+
+/// Whether the CPU supports CLFLUSHOPT (CPUID.07H.0:EBX[23]).
+///
+/// CLFLUSHOPT is not part of the x86_64 baseline: it was introduced with
+/// Skylake and executing it elsewhere raises #UD. CLFLUSH -- which *is*
+/// baseline (CPUID.01H:EDX[19]) -- flushes the same cache line, just with
+/// stricter ordering and lower throughput, so it is a safe fallback.
+pub fn has_clflushopt() -> bool {
+    // On parts predating leaf 7 the query below returns unrelated data, so
+    // gate on the maximum supported leaf first.
+    if cpuid(CpuIdEax::VendorInfo, 0).eax < CpuIdEax::StructuredExtendedFeatureInfo as u32 {
+        return false;
+    }
+    StructuredExtendedFeatureInfoEbx::from_bits_truncate(
+        cpuid(CpuIdEax::StructuredExtendedFeatureInfo, 0).ebx,
+    )
+    .contains(StructuredExtendedFeatureInfoEbx::CLFLUSHOPT)
 }

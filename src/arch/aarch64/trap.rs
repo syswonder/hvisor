@@ -562,10 +562,10 @@ fn arch_dump_exit(reason: u64) {
     loop {}
 }
 
-#[naked]
+#[unsafe(naked)]
 #[no_mangle]
 pub unsafe extern "C" fn vmreturn(_gu_regs: usize) -> ! {
-    core::arch::asm!(
+    core::arch::naked_asm!(
         "
         /* x0: guest registers */
         mov	sp, x0
@@ -589,6 +589,5 @@ pub unsafe extern "C" fn vmreturn(_gu_regs: usize) -> ! {
         eret                            //ret to el2_entry hvc #0 now,depend on ELR_EL2
         
     ",
-        options(noreturn),
     )
 }

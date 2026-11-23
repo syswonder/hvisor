@@ -51,7 +51,11 @@ impl IdtStruct {
             )
         };
         for i in 0..VECTOR_CNT {
-            entries[i].set_handler_fn(unsafe { core::mem::transmute(ENTRIES[i]) });
+            // The vector stubs are plain extern "C" entry points installed by
+            // the assembly trap vector; install their addresses directly.
+            unsafe {
+                entries[i].set_handler_addr(x86_64::VirtAddr::new(ENTRIES[i] as u64));
+            }
         }
         idt
     }
