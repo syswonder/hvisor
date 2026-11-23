@@ -15,7 +15,7 @@
 //
 use alloc::sync::Arc;
 use alloc::vec::Vec;
-// use psci::error::INVALID_ADDRESS;
+// use smccc::psci::error::INVALID_ADDRESS;
 use crate::consts::{INVALID_ADDRESS, MAX_CPU_NUM, MAX_ZONE_NUM};
 use crate::pci::pci_struct::VirtualRootComplex;
 use spin::{Mutex, RwLock, RwLockReadGuard, RwLockWriteGuard};

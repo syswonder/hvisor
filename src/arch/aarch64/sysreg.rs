@@ -27,8 +27,8 @@ macro_rules! read_sysreg {
         }
     }
 }
-use psci::smccc::smc64;
 pub(crate) use read_sysreg;
+use smccc::smc64;
 
 /// Writes the given value to the given aarch64 system register.
 macro_rules! write_sysreg {
