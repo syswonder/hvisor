@@ -431,7 +431,7 @@ impl BootParams {
     }
 }
 
-#[repr(packed)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 /// The E820 memory region entry of the boot protocol ABI:
 pub struct BootE820Entry {
@@ -440,7 +440,7 @@ pub struct BootE820Entry {
     _type: E820Type,
 }
 
-#[repr(packed)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct ScreenInfo {
     pad0: [u8; 0x0f],
@@ -468,7 +468,7 @@ pub struct ScreenInfo {
     pad4: [u8; 6],
 }
 
-#[repr(packed)]
+#[repr(C, packed)]
 #[derive(Debug, Clone, Copy)]
 pub struct EfiInfo {
     loader_signature: u32,
