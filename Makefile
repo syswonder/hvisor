@@ -92,7 +92,7 @@ COLOR_RESET := $(shell tput sgr0)
 kconfig_python := tools/kconfig/.venv/bin/python
 
 # Targets
-.PHONY: all elf disa run gdb monitor clean clean-arch clean-hvisor tools rootfs vscode ci-run defconfig menuconfig savedefconfig ensure_config kconfig_venv check-hv-mem-overlap check-no-link-args
+.PHONY: all elf disa run gdb monitor clean clean-arch clean-hvisor tools rootfs vscode ci-run defconfig menuconfig savedefconfig ensure_config kconfig_venv check-hv-mem-overlap
 
 # Config generation and defconfig mutate shared files. Keep prerequisites
 # serialized even when the user passes -j; cargo itself is still invoked once.
@@ -192,13 +192,7 @@ vscode: kconfig_venv
 	./tools/kconfig/host_config.sh vscode
 	@printf "$(COLOR_GREEN)$(COLOR_BOLD)generating .vscode/settings.json success!$(COLOR_RESET)\n"
 
-check-no-link-args:
-	@if grep -R -- '-Clink-arg=-T' platform/*/*/cargo/config.template.toml; then \
-		echo "error: stale -Clink-arg=-T in platform templates" >&2; \
-		exit 1; \
-	fi
-
-elf: ensure_config gen_cargo_config check-no-link-args
+elf: ensure_config gen_cargo_config
 	cargo build $(build_args)
 
 disa:

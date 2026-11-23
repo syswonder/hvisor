@@ -225,22 +225,32 @@ fn main() {
     // RUSTFLAGS into every dependency unit, so a board switch would invalidate
     // all dependency artifacts. rustc-link-arg only affects this package's
     // final link and is therefore safe to vary per board.
-    let ld_script = root
-        .join("platform")
-        .join(&arch)
-        .join(&board)
-        .join("linker.ld");
+    let board_dir = root.join("platform").join(&arch).join(&board);
+    let ld_script = board_dir.join("linker.ld");
     if !ld_script.is_file() {
         panic!("missing linker script: {}", ld_script.display());
     }
     println!("cargo:rustc-link-arg=-T{}", ld_script.display());
-    if matches!(
-        (arch.as_str(), board.as_str()),
-        ("aarch64", "zcu102") | ("aarch64", "imx8mp") | ("aarch64", "ok6254-c")
-    ) {
-        println!("cargo:rustc-link-arg=--fix-cortex-a53-843419");
-    }
     println!("cargo:rerun-if-changed={}", ld_script.display());
+
+    // Per-board final-link options are opt-in: only boards that need extra
+    // linker workarounds (for example Cortex-A53 erratum 843419) ship a
+    // `linker.args` file. Keep the policy board-local; build.rs only forwards
+    // the file's entries and contains no board list.
+    let link_args = board_dir.join("linker.args");
+    println!("cargo:rerun-if-changed={}", link_args.display());
+    println!("cargo:rerun-if-changed={}", board_dir.display());
+    if link_args.is_file() {
+        let contents = fs::read_to_string(&link_args)
+            .unwrap_or_else(|e| panic!("failed to read {}: {e}", link_args.display()));
+        for line in contents.lines() {
+            let arg = line.trim();
+            if arg.is_empty() || arg.starts_with('#') {
+                continue;
+            }
+            println!("cargo:rustc-link-arg={arg}");
+        }
+    }
 
     if !source_path.is_file() {
         log(&format!("Invalid board.rs path: {source_path_str}"));

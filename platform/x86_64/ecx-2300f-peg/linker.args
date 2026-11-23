@@ -1,0 +1,2 @@
+# hvisor is linked as a non-PIE image.
+-no-pie
