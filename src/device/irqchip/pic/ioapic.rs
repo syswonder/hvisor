@@ -21,8 +21,8 @@ use crate::{
         zone::HvArchZoneConfig,
     },
     cpu_data::this_zone,
-    device::irqchip::pic::inject_vector,
     device::irqchip::pic::ioapic_state::{Delivery, IoApicState},
+    device::irqchip::pic::post_guest_vector,
     error::HvResult,
     memory::{GuestPhysAddr, MMIOAccess},
     platform::ROOT_ZONE_IOAPIC_BASE,
@@ -84,15 +84,21 @@ impl VirtIoApic {
         if gpa == 0 {
             return Ok(ioapic.lock().cur_reg as _);
         }
-        assert!(gpa == 0x10);
+        if gpa != 0x10 {
+            warn!("ignore vIOAPIC read at offset {:#x}", gpa);
+            return Ok(0);
+        }
 
         let inner = ioapic.lock();
         match inner.cur_reg {
             IoApicReg::ID => Ok(0),
             IoApicReg::VERSION => Ok(IOAPIC_MAX_REDIRECT_ENTRIES << 16 | 0x11), // max redirect entries: 0x17, version: 0x11
             IoApicReg::ARBITRATION => Ok(0),
-            mut reg => {
-                reg -= IoApicReg::TABLE_BASE;
+            reg => {
+                // Registers 0x03..0x0f are reserved.
+                let Some(reg) = reg.checked_sub(IoApicReg::TABLE_BASE) else {
+                    return Ok(0);
+                };
                 let index = (reg >> 1) as usize;
                 // info!("ioapic read index: {:x}", index);
                 if this_zone_id() != 0 && index == 4 {
@@ -124,14 +130,20 @@ impl VirtIoApic {
             ioapic.lock().cur_reg = value as _;
             return Ok(());
         }
-        assert!(gpa == 0x10);
+        if gpa != 0x10 {
+            warn!("ignore vIOAPIC write at offset {:#x}", gpa);
+            return Ok(());
+        }
 
         let mut inner = ioapic.lock();
         let mut replay = None;
         match inner.cur_reg {
             IoApicReg::ID | IoApicReg::VERSION | IoApicReg::ARBITRATION => {}
-            mut reg => {
-                reg -= IoApicReg::TABLE_BASE;
+            reg => {
+                // Registers 0x03..0x0f are reserved.
+                let Some(reg) = reg.checked_sub(IoApicReg::TABLE_BASE) else {
+                    return Ok(());
+                };
                 let index = (reg >> 1) as usize;
                 if let Some(entry) = inner.state.entry(index) {
                     let value = if reg % 2 == 0 {
@@ -166,7 +178,7 @@ impl VirtIoApic {
     fn inject_delivery(delivery: Delivery, allow_repeat: bool) {
         let dest =
             try_get_cpu_id(delivery.entry.get_bits(56..=63) as usize).unwrap_or_else(this_cpu_id);
-        inject_vector(
+        post_guest_vector(
             dest,
             delivery.entry as u8,
             None,
@@ -175,19 +187,19 @@ impl VirtIoApic {
         );
     }
 
-    fn get_irq_cpu(&self, irq: usize, zone_id: usize) -> Option<usize> {
-        let ioapic = self.inner.get(zone_id)?;
-        let entry = ioapic.lock().state.entry(irq)?;
-        Some(try_get_cpu_id(entry.get_bits(56..=63) as usize).unwrap_or_else(this_cpu_id))
-    }
-
-    fn pulse(&self, irq: usize, allow_repeat: bool) {
-        let ioapic = self.inner.get(this_zone_id()).unwrap();
+    fn pulse(&self, zone_id: usize, irq: usize, allow_repeat: bool) -> bool {
+        let Some(ioapic) = self.inner.get(zone_id) else {
+            return false;
+        };
         let mut inner = ioapic.lock();
+        if inner.state.entry(irq).is_none() {
+            return false;
+        }
         let delivery = inner.state.pulse(irq);
         if let Some(delivery) = delivery {
             Self::inject_delivery(delivery, allow_repeat);
         }
+        true
     }
 
     fn set_line(&self, zone_id: usize, irq: usize, high: bool) -> bool {
@@ -273,16 +285,9 @@ pub fn init_virt_ioapic(max_zones: usize) {
     VIRT_IOAPIC.call_once(|| VirtIoApic::new(max_zones));
 }
 
-pub fn ioapic_inject_irq(irq: u8, allow_repeat: bool) {
-    VIRT_IOAPIC.get().unwrap().pulse(irq as _, allow_repeat);
-}
-
-pub fn get_irq_cpu(irq: usize, zone_id: usize) -> usize {
-    VIRT_IOAPIC
-        .get()
-        .unwrap()
-        .get_irq_cpu(irq, zone_id)
-        .unwrap()
+/// Pulse an edge on `irq` of zone `zone_id`; the RTE target CPU may be remote.
+pub fn ioapic_pulse(zone_id: usize, irq: usize, allow_repeat: bool) -> bool {
+    VIRT_IOAPIC.get().unwrap().pulse(zone_id, irq, allow_repeat)
 }
 
 pub fn ioapic_set_line(zone_id: usize, irq: usize, high: bool) -> bool {

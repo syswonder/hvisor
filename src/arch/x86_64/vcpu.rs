@@ -20,7 +20,7 @@ pub const GUEST_IRQ_NR: usize = 256;
 pub const GUEST_LINES: &[usize] = &[];
 
 // Architecture-private vCPU state placeholder.
-// Guest interrupts still go through `PENDING_VECTORS` via `inject_vector()`.
+// Guest interrupts still go through `PENDING_VECTORS` via `post_guest_vector()`.
 pub struct ArchVcpu;
 
 impl ArchVcpu {

@@ -30,8 +30,8 @@ use crate::{
     cpu_data::{this_cpu_data, this_zone},
     device::{
         irqchip::{
-            inject_vector,
             pic::{ioapic::irqs, lapic::VirtLocalApic},
+            post_guest_vector,
         },
         uart::{virt_console_io_read, virt_console_io_write, UartReg},
     },
@@ -140,7 +140,7 @@ fn handle_irq(vector: u8, path: IrqPath) {
         IdtVector::APIC_SPURIOUS_VECTOR | IdtVector::APIC_ERROR_VECTOR if !is_timer => {}
         _ => {
             if vector >= 0x20 && this_cpu_data().vcpu.state.is_running() {
-                inject_vector(this_cpu_id(), vector, None, false, false);
+                post_guest_vector(this_cpu_id(), vector, None, false, false);
             }
         }
     }

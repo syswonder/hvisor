@@ -22,11 +22,11 @@ use crate::{
     arch::{acpi, cpu::this_cpu_id, idt, ipi, msr, pio, vmcs::Vmcs},
     consts::{MAX_CPU_NUM, MAX_ZONE_NUM},
     device::iommu,
-    zone::Zone,
+    zone::{this_zone_id, Zone},
 };
 use alloc::{collections::vec_deque::VecDeque, vec::Vec};
 use core::arch::asm;
-use ioapic::ioapic_inject_irq;
+use ioapic::ioapic_pulse;
 use spin::{Mutex, Once};
 
 static PENDING_VECTORS: Once<PendingVectors> = Once::new();
@@ -135,7 +135,7 @@ impl PendingVectors {
     }
 }
 
-pub fn inject_vector(
+pub fn post_guest_vector(
     cpu_id: usize,
     vector: u8,
     err_code: Option<u32>,
@@ -180,8 +180,8 @@ pub fn disable_irq() {
     unsafe { asm!("cli") };
 }
 
-pub fn inject_irq(_irq: usize, allow_repeat: bool) {
-    ioapic_inject_irq(_irq as _, allow_repeat);
+pub fn inject_irq(irq: usize, allow_repeat: bool) {
+    ioapic_pulse(this_zone_id(), irq, allow_repeat);
 }
 
 pub fn percpu_init() {}
