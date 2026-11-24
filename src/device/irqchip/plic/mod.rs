@@ -32,7 +32,7 @@ use crate::cpu_data::this_cpu_data;
 use crate::error::HvResult;
 use crate::memory::mmio::MMIOAccess;
 use crate::platform::*;
-use crate::zone::Zone;
+use crate::zone::{IrqLifecycleGuard, Zone};
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -168,7 +168,7 @@ impl Zone {
             .clone()
     }
 
-    pub fn arch_irqchip_reset(&self) {
+    pub fn arch_irqchip_reset(&self, _irq_lifecycle: &IrqLifecycleGuard) {
         // We should make sure only one cpu to do this.
         // This func will only be called by one root zone's cpu.
         let host_plic = host_plic();

@@ -31,6 +31,8 @@ use crate::device::irqchip::pic::ioapic::ioapic_pulse;
 #[cfg(target_arch = "aarch64")]
 use crate::device::irqchip::post_guest_spi;
 use crate::platform::IRQ_WAKEUP_VIRTIO_DEVICE;
+#[cfg(target_arch = "x86_64")]
+use crate::zone::IrqPostGuard;
 use crate::{
     arch::cpu::this_cpu_id, consts::MAX_WAIT_TIMES, error::HvResult, memory::MMIOAccess,
     zone::this_zone_id,
@@ -158,7 +160,7 @@ pub fn check_need_wakeup_and_send_ipi(is_send_ipi: &mut bool) {
         #[cfg(target_arch = "aarch64")]
         post_guest_spi(root_cpu, IRQ_WAKEUP_VIRTIO_DEVICE);
         #[cfg(target_arch = "x86_64")]
-        ioapic_pulse(0, IRQ_WAKEUP_VIRTIO_DEVICE, false);
+        ioapic_pulse(&IrqPostGuard::lock(), 0, IRQ_WAKEUP_VIRTIO_DEVICE, false);
         #[cfg(target_arch = "riscv64")]
         send_event(root_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP_VIRTIO_DEVICE);
         *is_send_ipi = true;

@@ -22,11 +22,11 @@ use crate::{
     arch::{acpi, cpu::this_cpu_id, idt, ipi, msr, pio, vmcs::Vmcs},
     consts::{MAX_CPU_NUM, MAX_ZONE_NUM},
     device::iommu,
-    zone::{this_zone_id, Zone},
+    zone::{IrqLifecycleGuard, Zone},
 };
 use alloc::{collections::vec_deque::VecDeque, vec::Vec};
 use core::arch::asm;
-use ioapic::ioapic_pulse;
+use ioapic::ioapic_pulse_this_zone;
 use spin::{Mutex, Once};
 
 static PENDING_VECTORS: Once<PendingVectors> = Once::new();
@@ -181,7 +181,7 @@ pub fn disable_irq() {
 }
 
 pub fn inject_irq(irq: usize, allow_repeat: bool) {
-    ioapic_pulse(this_zone_id(), irq, allow_repeat);
+    ioapic_pulse_this_zone(irq, allow_repeat);
 }
 
 pub fn percpu_init() {}
@@ -198,7 +198,7 @@ pub fn primary_init_early() {
 pub fn primary_init_late() {}
 
 impl Zone {
-    pub fn arch_irqchip_reset(&self) {
+    pub fn arch_irqchip_reset(&self, _irq_lifecycle: &IrqLifecycleGuard) {
         #[cfg(intel_vtd)]
         iommu::clear_dma_translation_tables(self.id());
     }

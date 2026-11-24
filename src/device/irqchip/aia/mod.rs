@@ -36,7 +36,7 @@ use crate::platform::{
     BOARD_APLIC_INTERRUPTS_NUM, IMSIC_GUEST_INDEX, IMSIC_GUEST_NUM, IMSIC_S_BASE,
 };
 use crate::root_zone_config;
-use crate::zone::Zone;
+use crate::zone::{IrqLifecycleGuard, Zone};
 pub use aplic::*;
 use heapless::FnvIndexMap;
 pub use imsic::*;
@@ -198,7 +198,7 @@ impl Zone {
         }
     }
 
-    pub fn arch_irqchip_reset(&self) {
+    pub fn arch_irqchip_reset(&self, _irq_lifecycle: &IrqLifecycleGuard) {
         // We should make sure only one cpu to do this.
         // This func will only be called by one root zone's cpu.
         let host_aplic = host_aplic();

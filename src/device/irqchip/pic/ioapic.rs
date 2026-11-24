@@ -26,7 +26,7 @@ use crate::{
     error::HvResult,
     memory::{GuestPhysAddr, MMIOAccess},
     platform::ROOT_ZONE_IOAPIC_BASE,
-    zone::{this_zone_id, Zone},
+    zone::{this_zone_id, IrqLifecycleGuard, IrqPostGuard, Zone},
 };
 use alloc::vec::Vec;
 use bit_field::BitField;
@@ -286,11 +286,27 @@ pub fn init_virt_ioapic(max_zones: usize) {
 }
 
 /// Pulse an edge on `irq` of zone `zone_id`; the RTE target CPU may be remote.
-pub fn ioapic_pulse(zone_id: usize, irq: usize, allow_repeat: bool) -> bool {
+pub fn ioapic_pulse(
+    _irq_post: &IrqPostGuard,
+    zone_id: usize,
+    irq: usize,
+    allow_repeat: bool,
+) -> bool {
     VIRT_IOAPIC.get().unwrap().pulse(zone_id, irq, allow_repeat)
 }
 
-pub fn ioapic_set_line(zone_id: usize, irq: usize, high: bool) -> bool {
+/// Pulse an edge on `irq` of the current CPU's own zone.
+//
+// Needs no `IrqPostGuard`: that zone cannot be started or shut down while one of its CPUs
+// runs this.
+pub fn ioapic_pulse_this_zone(irq: usize, allow_repeat: bool) -> bool {
+    VIRT_IOAPIC
+        .get()
+        .unwrap()
+        .pulse(this_zone_id(), irq, allow_repeat)
+}
+
+pub fn ioapic_set_line(_irq_post: &IrqPostGuard, zone_id: usize, irq: usize, high: bool) -> bool {
     VIRT_IOAPIC.get().unwrap().set_line(zone_id, irq, high)
 }
 
@@ -298,7 +314,7 @@ pub fn ioapic_eoi(zone_id: usize, vector: u8) {
     VIRT_IOAPIC.get().unwrap().eoi(zone_id, vector);
 }
 
-pub fn ioapic_reset(zone_id: usize) {
+pub fn ioapic_reset(_irq_lifecycle: &IrqLifecycleGuard, zone_id: usize) {
     VIRT_IOAPIC.get().unwrap().reset(zone_id);
 }
 
