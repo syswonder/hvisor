@@ -473,8 +473,15 @@ static void virtio_blk_close(VirtIODevice *vdev) {
             pthread_cond_destroy(&dev->cond);
         if (dev->mutex_initialized)
             pthread_mutex_destroy(&dev->mtx);
-        if (dev->img_fd >= 0)
+        if (dev->img_fd >= 0) {
+            /* A virtio FLUSH uses fdatasync; zone shutdown must do the same. */
+            if (blk_do_flush(dev->img_fd) != 0)
+                log_error("virtio_blk_close: fdatasync failed, errno=%d",
+                          errno);
+            else
+                log_info("virtio_blk_close: image flushed");
             close(dev->img_fd);
+        }
         dev->img_fd = -1;
         free(dev);
         vdev->dev = NULL;
