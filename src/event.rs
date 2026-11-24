@@ -14,16 +14,13 @@
 // Authors:
 //
 #![allow(unused)]
-#[cfg(target_arch = "riscv64")]
-use crate::device::irqchip::handle_virtio_irq_event;
-#[cfg(any(target_arch = "riscv64", virtio_pci))]
+#[cfg(virtio_pci)]
 use crate::device::irqchip::inject_irq;
 use crate::{
     arch::cpu::this_cpu_id,
     arch::ipi::arch_notify_event,
     consts::{IPI_EVENT_DWC_MSI_INJECT, IPI_EVENT_VCPU_SUSPEND, MAX_CPU_NUM},
     cpu_data::{this_cpu_data, vcpu_suspend, CpuSet},
-    platform::IRQ_WAKEUP_VIRTIO_DEVICE,
 };
 #[cfg(virtio_pci)]
 use crate::{
@@ -35,8 +32,6 @@ use spin::Mutex;
 
 pub const IPI_EVENT_WAKEUP: usize = 0;
 pub const IPI_EVENT_SHUTDOWN: usize = 1;
-pub const IPI_EVENT_VIRTIO_INJECT_IRQ: usize = 2;
-pub const IPI_EVENT_WAKEUP_VIRTIO_DEVICE: usize = 3;
 pub const IPI_EVENT_VIRTIO_PCI_CONFIG: usize = 10;
 pub const IPI_EVENT_VIRTIO_PCI_DATA: usize = 11;
 pub const IPI_EVENT_VIRTIO_PCI_DONE: usize = 12;
@@ -123,16 +118,6 @@ fn handle_event(event: Option<usize>) -> bool {
             }
             cpu_data.arch_cpu.idle();
             false
-        }
-        #[cfg(target_arch = "riscv64")]
-        Some(IPI_EVENT_VIRTIO_INJECT_IRQ) => {
-            handle_virtio_irq_event();
-            true
-        }
-        #[cfg(target_arch = "riscv64")]
-        Some(IPI_EVENT_WAKEUP_VIRTIO_DEVICE) => {
-            inject_irq(IRQ_WAKEUP_VIRTIO_DEVICE, false);
-            true
         }
         Some(IPI_EVENT_DWC_MSI_INJECT) => {
             #[cfg(all(target_arch = "aarch64", irq_gicv3, dwc_pcie, dwc_msi))]

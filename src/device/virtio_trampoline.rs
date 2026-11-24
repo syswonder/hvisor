@@ -20,30 +20,25 @@
 #![deny(unused_mut)]
 #![deny(unused)]
 
-#[cfg(not(target_arch = "x86_64"))]
+#[cfg(any(target_arch = "aarch64", target_arch = "loongarch64"))]
 use crate::arch::cpu::get_target_cpu;
-#[cfg(target_arch = "riscv64")]
-use crate::device::irqchip::inject_irq;
+#[cfg(all(aia, target_arch = "riscv64"))]
+use crate::device::irqchip::aia::vaplic_pulse;
 #[cfg(target_arch = "loongarch64")]
 use crate::device::irqchip::ls7a2000::post_guest_hwi;
 #[cfg(target_arch = "x86_64")]
 use crate::device::irqchip::pic::ioapic::ioapic_pulse;
+#[cfg(all(plic, target_arch = "riscv64"))]
+use crate::device::irqchip::plic::vplic_pulse;
 #[cfg(target_arch = "aarch64")]
 use crate::device::irqchip::post_guest_spi;
 use crate::platform::IRQ_WAKEUP_VIRTIO_DEVICE;
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
 use crate::zone::IrqPostGuard;
 use crate::{
     arch::cpu::this_cpu_id, consts::MAX_WAIT_TIMES, error::HvResult, memory::MMIOAccess,
     zone::this_zone_id,
 };
-#[cfg(target_arch = "riscv64")]
-use crate::{
-    event::{send_event, IPI_EVENT_WAKEUP_VIRTIO_DEVICE},
-    hypercall::SGI_IPI_ID,
-};
-#[cfg(target_arch = "riscv64")]
-use alloc::collections::BTreeMap;
 use core::{
     fmt::{Debug, Formatter, Result},
     mem::size_of,
@@ -55,9 +50,6 @@ use tock_registers::{
     registers::ReadWrite,
 };
 
-/// Save the irqs the virtio-device wants to inject. The format is <cpu_id, List<irq_id>>, and the first elem of List<irq_id> is the valid len of it.
-#[cfg(target_arch = "riscv64")]
-pub static VIRTIO_IRQS: Mutex<BTreeMap<usize, [u64; MAX_DEVS + 1]>> = Mutex::new(BTreeMap::new());
 // Controller of the shared memory the root linux's virtio device and hvisor shares.
 pub static VIRTIO_PCI_BRIDGE: Mutex<VirtioPCIBridge> = Mutex::new(VirtioPCIBridge::dummy());
 pub static VIRTIO_BRIDGE: VirtioBridgeController = VirtioBridgeController::new();
@@ -153,31 +145,22 @@ pub fn mmio_virtio_handler(mmio: &mut MMIOAccess, base: usize) -> HvResult {
 pub fn check_need_wakeup_and_send_ipi(is_send_ipi: &mut bool) {
     if !(*is_send_ipi) && VIRTIO_BRIDGE.need_wakeup() {
         debug!("need wakeup (recheck), sending ipi to wake up virtio device");
-        #[cfg(not(target_arch = "x86_64"))]
+        #[cfg(any(target_arch = "aarch64", target_arch = "loongarch64"))]
         let root_cpu = get_target_cpu(IRQ_WAKEUP_VIRTIO_DEVICE, 0);
         #[cfg(target_arch = "loongarch64")]
         post_guest_hwi(root_cpu, IRQ_WAKEUP_VIRTIO_DEVICE, true);
         #[cfg(target_arch = "aarch64")]
         post_guest_spi(root_cpu, IRQ_WAKEUP_VIRTIO_DEVICE);
+        #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
+        let irq_post = IrqPostGuard::lock();
         #[cfg(target_arch = "x86_64")]
-        ioapic_pulse(&IrqPostGuard::lock(), 0, IRQ_WAKEUP_VIRTIO_DEVICE, false);
-        #[cfg(target_arch = "riscv64")]
-        send_event(root_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP_VIRTIO_DEVICE);
+        ioapic_pulse(&irq_post, 0, IRQ_WAKEUP_VIRTIO_DEVICE, false);
+        #[cfg(all(plic, target_arch = "riscv64"))]
+        vplic_pulse(&irq_post, 0, IRQ_WAKEUP_VIRTIO_DEVICE);
+        #[cfg(all(aia, target_arch = "riscv64"))]
+        vaplic_pulse(&irq_post, 0, IRQ_WAKEUP_VIRTIO_DEVICE);
         *is_send_ipi = true;
     }
-}
-
-/// When virtio req type is notify, root zone will send sgi to non root, \
-/// and non root will call this function.
-#[cfg(target_arch = "riscv64")]
-pub fn handle_virtio_irq() {
-    let mut map = VIRTIO_IRQS.lock();
-    let irq_list = map.get_mut(&this_cpu_id()).unwrap();
-    let len = irq_list[0] as usize;
-    for irq_id in irq_list[1..=len].iter() {
-        inject_irq(*irq_id as _, false);
-    }
-    irq_list[0] = 0;
 }
 
 /// Virtio bridge controller.

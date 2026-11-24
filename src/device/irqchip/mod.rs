@@ -24,11 +24,6 @@ use core::sync::atomic::{fence, Ordering};
 #[cfg(target_arch = "aarch64")]
 pub(crate) const SGIS_NUM: usize = SGI_RANGE.end;
 
-#[cfg(target_arch = "riscv64")]
-pub fn handle_virtio_irq_event() {
-    crate::device::virtio_trampoline::handle_virtio_irq();
-}
-
 /// What a `post_guest_irq()` call does to the guest IRQ.
 //
 // Each IRQ number has a fixed trigger type: numbers in `GUEST_LINES` are

@@ -825,12 +825,12 @@ impl ZoneInner {
 /// Required to post an IRQ into another zone's virtual irqchip.
 //
 // Excludes zone start and shutdown while held.
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
 pub struct IrqPostGuard {
     _guard: RwLockReadGuard<'static, ()>,
 }
 
-#[cfg(target_arch = "x86_64")]
+#[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
 impl IrqPostGuard {
     pub fn lock() -> Self {
         Self {

@@ -15,7 +15,6 @@
 //  ForeverYolo <2572131118@qq.com>
 
 use crate::config::CONFIG_MAGIC_VERSION;
-use crate::device::virtio_trampoline::MAX_DEVS;
 use crate::hypercall::HyperCall;
 use crate::hypercall::HyperCallResult;
 
@@ -27,10 +26,6 @@ impl<'a> HyperCall<'a> {
     pub fn hv_ivc_info(&mut self, _ivc_info_ipa: u64) -> HyperCallResult {
         warn!("hv_ivc_info is not implemented for Risc-V");
         HyperCallResult::Ok(0)
-    }
-
-    pub fn wait_for_interrupt(&mut self, _irq_list: &mut [u64; MAX_DEVS + 1]) {
-        trace!("wait_for_interrupt is not need for RISC-V");
     }
 
     pub fn hv_zone_config_check(&self, magic_version: *mut u64) -> HyperCallResult {

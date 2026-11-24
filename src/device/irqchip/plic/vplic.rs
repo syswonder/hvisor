@@ -105,17 +105,37 @@ impl VirtualPLIC {
             if inner.hw[intr_id] {
                 self.update_hart_line(&inner, vcontext_id);
             } else {
-                for vcontext_id in 0..self.num_contexts {
-                    if vcontext_id % NUM_CONTEXTS_PER_HART != 1 {
-                        continue;
-                    }
-                    if inner.vplic_get_enable(intr_id, vcontext_id)
-                        && inner.vplic_get_priority(intr_id)
-                            > inner.vplic_get_threshold(vcontext_id)
-                    {
-                        self.update_hart_line(&inner, vcontext_id);
-                    }
-                }
+                self.update_enabled_hart_lines(&inner, intr_id);
+            }
+        }
+    }
+
+    /// Trigger software interrupt `intr_id`; callable from any CPU.
+    /// Returns false if `intr_id` is out of range or a hardware interrupt.
+    pub fn trigger_soft_irq(&self, intr_id: usize) -> bool {
+        if intr_id == 0 || intr_id > self.max_interrupts {
+            return false;
+        }
+        let mut inner = self.inner.lock();
+        if inner.vplic_get_hw(intr_id) {
+            return false;
+        }
+        if !inner.vplic_get_pending(intr_id) {
+            inner.vplic_set_pending(intr_id, true);
+            self.update_enabled_hart_lines(&inner, intr_id);
+        }
+        true
+    }
+
+    fn update_enabled_hart_lines(&self, inner: &VirtualPLICInner, intr_id: usize) {
+        for vcontext_id in 0..self.num_contexts {
+            if vcontext_id % NUM_CONTEXTS_PER_HART != 1 {
+                continue;
+            }
+            if inner.vplic_get_enable(intr_id, vcontext_id)
+                && inner.vplic_get_priority(intr_id) > inner.vplic_get_threshold(vcontext_id)
+            {
+                self.update_hart_line(inner, vcontext_id);
             }
         }
     }

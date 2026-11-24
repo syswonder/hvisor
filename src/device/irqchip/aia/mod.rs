@@ -36,26 +36,26 @@ use crate::platform::{
     BOARD_APLIC_INTERRUPTS_NUM, IMSIC_GUEST_INDEX, IMSIC_GUEST_NUM, IMSIC_S_BASE,
 };
 use crate::root_zone_config;
-use crate::zone::{IrqLifecycleGuard, Zone};
+use crate::zone::{find_zone, this_zone_id, IrqLifecycleGuard, IrqPostGuard, Zone};
+use alloc::sync::Arc;
 pub use aplic::*;
 use heapless::FnvIndexMap;
 pub use imsic::*;
-use spin::Once;
+use spin::{Mutex, Once};
 pub use vaplic::*;
 pub use vimsic::*;
 
 // Physical APLIC
 pub static APLIC: Once<Aplic> = Once::new();
 // The MAX_ZONE_NUM should be the power of 2.
-static mut VAPLIC_MAP: Option<FnvIndexMap<usize, VirtualAPLIC, MAX_ZONE_NUM>> = None;
+static VAPLIC_MAP: Mutex<FnvIndexMap<usize, Arc<VirtualAPLIC>, MAX_ZONE_NUM>> =
+    Mutex::new(FnvIndexMap::new());
 /// Per-zone IOMMU MSI page table (one 4 KiB frame, 16-byte PTEs; invalid entries are all-zero).
-static mut MSI_PT_MAP: Option<FnvIndexMap<usize, Frame, MAX_ZONE_NUM>> = None;
+static MSI_PT_MAP: Mutex<FnvIndexMap<usize, Frame, MAX_ZONE_NUM>> = Mutex::new(FnvIndexMap::new());
 
 /// Physical base of the MSI page-table frame for `zone_id` (`vm_id`), after `vimsic_init`.
 pub fn msi_pt_paddr_for_zone(zone_id: usize) -> Option<PhysAddr> {
-    // Once the MSI_PT for one zone is initialized, it wouldn't change.
-    // Here don't use lock, because it's read-only operation here.
-    unsafe { MSI_PT_MAP.as_ref()?.get(&zone_id).map(|f| f.start_paddr()) }
+    MSI_PT_MAP.lock().get(&zone_id).map(|f| f.start_paddr())
 }
 
 pub fn init_aplic(aplic_base: usize) {
@@ -71,11 +71,6 @@ pub fn primary_init_early() {
     let root_config = root_zone_config();
     init_aplic(root_config.arch_config.aplic_base as usize);
     host_aplic().init_global(this_cpu_id(), BOARD_APLIC_INTERRUPTS_NUM);
-
-    unsafe {
-        VAPLIC_MAP = Some(FnvIndexMap::new());
-        MSI_PT_MAP = Some(FnvIndexMap::new());
-    }
 }
 
 pub fn primary_init_late() {
@@ -110,37 +105,47 @@ pub fn inject_irq(irq: usize, is_hardware: bool) {
     }
     // For hvisor on qemu-aia, only software interrupt will be injected.
     // Hardware interrupt will be transferred to IMSIC's interrupt file directly.
-    let target = this_cpu_data()
-        .zone
-        .as_ref()
-        .unwrap()
-        .get_vaplic()
-        .vaplic_get_target(irq);
-    let mut hart = (target >> 18) & 0x3FFF;
+    let irq_post = IrqPostGuard::lock();
+    vaplic_pulse(&irq_post, this_zone_id(), irq);
+}
+
+/// Pulse software interrupt `irq` in zone `zone_id`'s vAPLIC; callable from any CPU.
+pub fn vaplic_pulse(_irq_post: &IrqPostGuard, zone_id: usize, irq: usize) -> bool {
+    let Some(target) = VAPLIC_MAP
+        .lock()
+        .get(&zone_id)
+        .map(|vaplic| vaplic.vaplic_get_target(irq))
+    else {
+        return false;
+    };
+    let Some(cpu_set) = find_zone(zone_id).map(|zone| zone.read().cpu_set()) else {
+        return false;
+    };
+    let Some(first_cpu) = cpu_set.first_cpu() else {
+        return false;
+    };
+    let vhart = ((target >> 18) & 0x3FFF) as usize;
     // let guest = (target >> 12) & 0x3F;
     let eiid = target & 0x3FF;
-    // Transfer vhart_id to phart_id.
-    hart = hart
-        + this_cpu_data()
-            .zone
-            .as_ref()
-            .unwrap()
-            .read()
-            .cpu_set()
-            .first_cpu()
-            .unwrap() as u32;
-    imsic_trigger(hart, IMSIC_GUEST_INDEX as u32, eiid);
+    // Transfer vhart_id to phart_id. The guest writes the target, so the hart
+    // must stay inside its zone.
+    let hart = vhart + first_cpu;
+    if !cpu_set.contains_cpu(hart) {
+        warn!(
+            "drop vAPLIC IRQ {} of zone {} to hart {} outside the zone",
+            irq, zone_id, hart
+        );
+        return false;
+    }
+    imsic_trigger(hart as u32, IMSIC_GUEST_INDEX as u32, eiid);
+    true
 }
 
 /// Print all keys in the VAPLIC_MAP for debugging purposes.
 fn print_keys() {
     info!("VAPLIC_MAP keys:");
-    unsafe {
-        if let Some(map) = &VAPLIC_MAP {
-            for (&key, _) in map.iter() {
-                info!("\tZone {}'s vaplic in VAPLIC_MAP", key);
-            }
-        }
+    for (&key, _) in VAPLIC_MAP.lock().iter() {
+        info!("\tZone {}'s vaplic in VAPLIC_MAP", key);
     }
 }
 
@@ -148,21 +153,15 @@ impl Zone {
     /// Initial the virtual APLIC related to thiz Zone.
     pub fn vaplic_init(&mut self, config: &HvZoneConfig) {
         // Create a new VirtualAPLIC for this Zone.
-        unsafe {
-            if let Some(map) = &mut VAPLIC_MAP {
-                if map.contains_key(&self.id()) {
-                    panic!("VirtualAPLIC for Zone {} already exists!", self.id());
-                }
-                let vaplic = vaplic::VirtualAPLIC::new(
-                    config.arch_config.aplic_base,
-                    BOARD_APLIC_INTERRUPTS_NUM,
-                );
-                // Insert into Map <zone_id, vplic>
-                let _ = map.insert(self.id(), vaplic);
-            } else {
-                panic!("VAPLIC_MAP is not initialized!");
-            }
+        let mut map = VAPLIC_MAP.lock();
+        if map.contains_key(&self.id()) {
+            panic!("VirtualAPLIC for Zone {} already exists!", self.id());
         }
+        let vaplic =
+            vaplic::VirtualAPLIC::new(config.arch_config.aplic_base, BOARD_APLIC_INTERRUPTS_NUM);
+        // Insert into Map <zone_id, vplic>
+        let _ = map.insert(self.id(), Arc::new(vaplic));
+        drop(map);
         info!(
             "VirtualAPLIC for Zone {} initialized successfully",
             self.id()
@@ -174,28 +173,21 @@ impl Zone {
     pub fn vimsic_init(&self, _config: &HvZoneConfig) {
         info!("Zone {} vIMSIC init", self.id());
         let msi_pt = vimsic::vimsic_init(self, IMSIC_S_BASE, IMSIC_GUEST_NUM);
-        unsafe {
-            if let Some(map) = &mut MSI_PT_MAP {
-                if map.contains_key(&self.id()) {
-                    panic!("MSI page table for Zone {} already exists!", self.id());
-                }
-                if map.insert(self.id(), msi_pt).is_err() {
-                    panic!("MSI_PT_MAP full");
-                }
-            } else {
-                panic!("MSI_PT_MAP is not initialized!");
-            }
+        let mut map = MSI_PT_MAP.lock();
+        if map.contains_key(&self.id()) {
+            panic!("MSI page table for Zone {} already exists!", self.id());
+        }
+        if map.insert(self.id(), msi_pt).is_err() {
+            panic!("MSI_PT_MAP full");
         }
     }
 
-    pub fn get_vaplic(&self) -> &VirtualAPLIC {
-        unsafe {
-            VAPLIC_MAP
-                .as_ref()
-                .expect("VAPLIC_MAP is not initialized!")
-                .get(&self.id())
-                .expect("VirtualAPLIC for this Zone does not exist!")
-        }
+    pub fn get_vaplic(&self) -> Arc<VirtualAPLIC> {
+        VAPLIC_MAP
+            .lock()
+            .get(&self.id())
+            .cloned()
+            .expect("VirtualAPLIC for this Zone does not exist!")
     }
 
     pub fn arch_irqchip_reset(&self, _irq_lifecycle: &IrqLifecycleGuard) {
@@ -226,18 +218,8 @@ impl Zone {
             crate::event::clear_events(cpuid);
         });
 
-        unsafe {
-            if let Some(map) = &mut VAPLIC_MAP {
-                map.remove(&self.id());
-            } else {
-                panic!("VAPLIC_MAP is not initialized!");
-            }
-            if let Some(map) = &mut MSI_PT_MAP {
-                let _ = map.remove(&self.id());
-            } else {
-                panic!("MSI_PT_MAP is not initialized!");
-            }
-        }
+        VAPLIC_MAP.lock().remove(&self.id());
+        MSI_PT_MAP.lock().remove(&self.id());
         print_keys();
     }
 
