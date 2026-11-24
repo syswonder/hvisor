@@ -321,14 +321,14 @@ static void virtio_net_close(VirtIODevice *vdev) {
 
     NetDev *dev = vdev->dev;
     if (dev) {
-        if (dev->tapfd >= 0)
-            close(dev->tapfd);
-        dev->tapfd = -1;
         if (dev->event) {
             remove_event(dev->event);
             free(dev->event);
             dev->event = NULL;
         }
+        if (dev->tapfd >= 0)
+            close(dev->tapfd);
+        dev->tapfd = -1;
         free(dev->in_iov);
         free(dev->out_iov);
         free(dev);

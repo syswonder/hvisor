@@ -16,29 +16,61 @@
 #include <unistd.h>
 
 #include "event_monitor.h"
+#include "hvisor.h"
 #include "log.h"
 
 static int epoll_fd;
 static int events_num;
 pthread_t emonitor_tid;
 int closing;
-#define MAX_EVENTS 16
+#define MAX_EVENTS MAX_DEVS
 struct hvisor_event *events[MAX_EVENTS];
-static void *epoll_loop() {
-    struct epoll_event events[MAX_EVENTS];
-    struct hvisor_event *hevent;
-    int ret, i;
+static pthread_mutex_t event_lock = PTHREAD_MUTEX_INITIALIZER;
+static pthread_cond_t event_done = PTHREAD_COND_INITIALIZER;
+
+static struct hvisor_event *find_event_locked(int fd) {
+    for (int i = 0; i < events_num; i++)
+        if (events[i] && events[i]->fd == fd)
+            return events[i];
+    return NULL;
+}
+
+static void *epoll_loop(void *arg) {
+    (void)arg;
+    struct epoll_event ready[MAX_EVENTS];
+    int ret;
     for (;;) {
-        ret = epoll_wait(epoll_fd, events, MAX_EVENTS, -1);
-        // log_debug("ret is %d, errno is %d", ret, errno);
-        // if (ret < 0 && errno != EINTR)
-        //     log_error("epoll_wait failed, errno is %d", errno);
-        for (i = 0; i < ret; ++i) {
-            // handle active hvisor_event
-            hevent = events[i].data.ptr;
-            if (hevent == NULL)
-                log_error("hevent shouldn't be null");
-            hevent->handler(hevent->fd, events[i].events, hevent->param);
+        ret = epoll_wait(epoll_fd, ready, MAX_EVENTS, -1);
+        if (ret < 0) {
+            if (errno == EINTR)
+                continue;
+            log_error("epoll_wait failed, errno is %d", errno);
+            break;
+        }
+        for (int i = 0; i < ret; ++i) {
+            /*
+             * epoll_event.data.ptr would become stale if remove_event()
+             * freed the event after epoll_wait returned.  Look the event up
+             * by fd under event_lock instead, and hold a per-event active
+             * count while the handler runs.
+             */
+            int fd = ready[i].data.fd;
+            pthread_mutex_lock(&event_lock);
+            struct hvisor_event *hevent = find_event_locked(fd);
+            if (!hevent) {
+                pthread_mutex_unlock(&event_lock);
+                continue;
+            }
+            hevent->active++;
+            pthread_mutex_unlock(&event_lock);
+
+            hevent->handler(fd, ready[i].events, hevent->param);
+
+            pthread_mutex_lock(&event_lock);
+            hevent->active--;
+            if (hevent->active == 0)
+                pthread_cond_broadcast(&event_done);
+            pthread_mutex_unlock(&event_lock);
         }
     }
     pthread_exit(NULL);
@@ -50,10 +82,6 @@ struct hvisor_event *add_event(int fd, int epoll_type,
     struct hvisor_event *hevent;
     struct epoll_event eevent;
     int ret;
-    if (events_num >= MAX_EVENTS) {
-        log_error("events are full");
-        return NULL;
-    }
     if (fd < 0 || handler == NULL) {
         log_error("invalid fd or handler");
         return NULL;
@@ -63,19 +91,37 @@ struct hvisor_event *add_event(int fd, int epoll_type,
     hevent->param = param;
     hevent->fd = fd;
     hevent->epoll_type = epoll_type;
+    hevent->active = 0;
 
     eevent.events = epoll_type;
-    eevent.data.ptr = hevent;
+    eevent.data.fd = fd;
+
+    pthread_mutex_lock(&event_lock);
+    int slot = -1;
+    for (int i = 0; i < MAX_EVENTS; i++) {
+        if (!events[i]) {
+            slot = i;
+            break;
+        }
+    }
+    if (slot < 0) {
+        pthread_mutex_unlock(&event_lock);
+        log_error("events are full");
+        free(hevent);
+        return NULL;
+    }
     ret = epoll_ctl(epoll_fd, EPOLL_CTL_ADD, hevent->fd, &eevent);
     if (ret < 0) {
+        pthread_mutex_unlock(&event_lock);
         log_error("epoll_ctl failed, errno is %d", errno);
         free(hevent);
         return NULL;
-    } else {
-        events[events_num] = hevent;
-        events_num++;
-        return hevent;
     }
+    events[slot] = hevent;
+    if (slot >= events_num)
+        events_num = slot + 1;
+    pthread_mutex_unlock(&event_lock);
+    return hevent;
 }
 
 // Create a thread monitoring events.
@@ -119,18 +165,23 @@ int initialize_event_monitor() {
 }
 
 void remove_event(struct hvisor_event *hevent) {
-    int i;
-
     if (!hevent)
         return;
 
-    for (i = 0; i < events_num; i++) {
+    pthread_mutex_lock(&event_lock);
+    for (int i = 0; i < events_num; i++) {
         if (events[i] == hevent) {
             epoll_ctl(epoll_fd, EPOLL_CTL_DEL, hevent->fd, NULL);
+            while (hevent->active > 0)
+                pthread_cond_wait(&event_done, &event_lock);
             events[i] = NULL;
+            while (events_num > 0 && events[events_num - 1] == NULL)
+                events_num--;
+            pthread_mutex_unlock(&event_lock);
             return;
         }
     }
+    pthread_mutex_unlock(&event_lock);
 }
 
 void destroy_event_monitor() {
