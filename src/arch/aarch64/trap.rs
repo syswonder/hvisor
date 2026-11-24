@@ -388,7 +388,7 @@ fn handle_smc(regs: &mut GeneralRegisters) {
     //);
     let result = match code & SMC_TYPE_MASK {
         SmcType::ARCH_SC => handle_arch_smc(regs, code, arg0, arg1, arg2),
-        SmcType::STANDARD_SC => handle_psci_smc(regs, code, arg0, arg1, arg2),
+        SmcType::STANDARD_SC => handle_psci_smc(code, arg0, arg1, arg2),
         SmcType::TOS_SC_START..=SmcType::TOS_SC_END | SmcType::SIP_SC => {
             let ret = smc_call(code, &regs.usr[1..18]);
             regs.usr[0] = ret[0];
@@ -423,104 +423,187 @@ fn psci_emulate_features_info(code: u64) -> u64 {
     }
 }
 
-fn psci_emulate_cpu_on(regs: &mut GeneralRegisters) -> u64 {
+fn psci_emulate_cpu_on(target_mpidr: u64, entry_point: u64) -> u64 {
     // Todo: Check if `cpu` is in the cpuset of current zone
-    let cpu = mpidr_to_cpuid(regs.usr[1]);
+    let cpu = mpidr_to_cpuid(target_mpidr);
     info!("psci: try to wake up cpu {}", cpu);
 
     let target_data = get_cpu_data(cpu as _);
     let _lock = target_data.ctrl_lock.lock();
 
     if target_data.vcpu.state.is_stopped() {
-        target_data.cpu_on_entry = regs.usr[2] as _;
+        target_data.cpu_on_entry = entry_point as _;
         target_data.vcpu.clear_irq_state();
         target_data.vcpu.state.store(VcpuState::Ready);
         send_event(cpu as _, SGI_IPI_ID as _, IPI_EVENT_WAKEUP);
     } else {
         error!("psci: cpu {} already on", cpu);
-        return u64::MAX - 3;
+        return i64::from(smccc::psci::error::Error::AlreadyOn) as u64;
     };
     drop(_lock);
 
     0
 }
 
-fn handle_psci_smc(
-    regs: &mut GeneralRegisters,
-    code: u64,
-    arg0: u64,
-    _arg1: u64,
-    _arg2: u64,
-) -> u64 {
-    match code {
-        PsciFnId::PSCI_VERSION => PSCI_VERSION_1_1,
-        PsciFnId::PSCI_CPU_SUSPEND_32 | PsciFnId::PSCI_CPU_SUSPEND_64 => {
-            wfi();
-            gic_handle_irq();
-            0
+fn psci_system_reset() -> u64 {
+    if !is_this_root_zone() {
+        // SYSTEM_RESET resets the whole machine, not just the caller's
+        // zone, so only the root zone is allowed to trigger it. The
+        // function itself exists, the call is just not permitted, which
+        // is DENIED rather than NOT_SUPPORTED.
+        i64::from(smccc::psci::error::Error::Denied) as u64
+    } else {
+        info!("root zone requested system reset, forwarding to EL3");
+        // A real reset never returns. If it does, the machine is still
+        // running, so report a failure instead of telling the guest the
+        // reset succeeded. A PSCI error is passed through as-is.
+        match smccc::psci::system_reset::<smccc::Smc>() {
+            Ok(()) => {
+                error!("system reset returned without resetting the machine");
+                i64::from(smccc::psci::error::Error::InternalFailure) as u64
+            }
+            Err(e) => i64::from(e) as u64,
         }
-        PsciFnId::PSCI_CPU_OFF_32 | PsciFnId::PSCI_CPU_OFF_64 => {
-            todo!();
-        }
-        PsciFnId::PSCI_AFFINITY_INFO_32 | PsciFnId::PSCI_AFFINITY_INFO_64 => {
-            !get_cpu_data(arg0 as _).vcpu.state.is_online() as _
-        }
-        PsciFnId::PSCI_MIG_INFO_TYPE => PSCI_TOS_NOT_PRESENT_MP,
-        PsciFnId::PSCI_FEATURES => psci_emulate_features_info(regs.usr[1]),
-        PsciFnId::PSCI_CPU_ON_32 | PsciFnId::PSCI_CPU_ON_64 => psci_emulate_cpu_on(regs),
-        PsciFnId::PSCI_SYSTEM_RESET => {
-            if !is_this_root_zone() {
-                // SYSTEM_RESET resets the whole machine, not just the caller's
-                // zone, so only the root zone is allowed to trigger it. The
-                // function itself exists, the call is just not permitted, which
-                // is DENIED rather than NOT_SUPPORTED.
-                i64::from(smccc::psci::error::Error::Denied) as u64
-            } else {
-                info!("root zone requested system reset, forwarding to EL3");
-                // A real reset never returns. If it does, the machine is still
-                // running, so report a failure instead of telling the guest the
-                // reset succeeded. A PSCI error is passed through as-is.
-                match smccc::psci::system_reset::<smccc::Smc>() {
-                    Ok(()) => {
-                        error!("system reset returned without resetting the machine");
-                        i64::from(smccc::psci::error::Error::InternalFailure) as u64
-                    }
-                    Err(e) => i64::from(e) as u64,
+    }
+}
+
+fn psci_system_off() -> u64 {
+    let zone = this_zone();
+    let zone_id = zone.id();
+    let is_root = is_this_root_zone();
+
+    for cpu_id in zone.read().cpu_set().iter_except(this_cpu_data().id) {
+        let target_cpu = get_cpu_data(cpu_id);
+        let _lock = target_cpu.ctrl_lock.lock();
+        target_cpu.vcpu.clear_irq_state();
+        target_cpu.zone = None;
+        send_event(cpu_id, SGI_IPI_ID as _, IPI_EVENT_SHUTDOWN);
+    }
+
+    {
+        let cpu_data = this_cpu_data();
+        let _lock = cpu_data.ctrl_lock.lock();
+        cpu_data.vcpu.clear_irq_state();
+        cpu_data.zone = None;
+    }
+    drop(zone);
+    remove_zone(zone_id);
+
+    if is_root {
+        smccc::psci::system_off::<smccc::Smc>().unwrap();
+    }
+
+    this_cpu_data().arch_cpu.idle();
+}
+
+/// A decoded PSCI call. Variant fields mirror the PSCI-specified argument
+/// list; ignored arguments are still carried, hence the field `dead_code`s.
+enum PsciCall {
+    Version,
+    CpuSuspend {
+        #[allow(dead_code)]
+        power_state: u64,
+        #[allow(dead_code)]
+        entry_point_address: u64,
+        #[allow(dead_code)]
+        context_id: u64,
+    },
+    CpuOff,
+    CpuOn {
+        target_mpidr: u64,
+        entry_point: u64,
+        #[allow(dead_code)]
+        context_id: u64,
+    },
+    AffinityInfo {
+        target_affinity: u64,
+        #[allow(dead_code)]
+        lowest_affinity_level: u64,
+    },
+    MigrateInfoType,
+    Features {
+        function_id: u64,
+    },
+    SystemOff,
+    SystemReset,
+}
+
+impl PsciCall {
+    /// Decodes a PSCI function ID and its arguments into a `PsciCall`;
+    /// unmodelled IDs hit the wildcard and return `Error::NotSupported`, as
+    /// before. Deliberately not modelled (PSCI 1.1): MIGRATE,
+    /// MIGRATE_INFO_UP_CPU, SYSTEM_RESET2, MEM_PROTECT,
+    /// MEM_PROTECT_CHECK_RANGE, CPU_FREEZE, CPU_DEFAULT_SUSPEND,
+    /// NODE_HW_STATE, SYSTEM_SUSPEND, SET_SUSPEND_MODE, STAT_RESIDENCY,
+    /// STAT_COUNT.
+    fn decode(
+        code: u64,
+        arg0: u64,
+        arg1: u64,
+        arg2: u64,
+    ) -> Result<Self, smccc::psci::error::Error> {
+        Ok(match code {
+            PsciFnId::PSCI_VERSION => Self::Version,
+            PsciFnId::PSCI_CPU_SUSPEND_32 | PsciFnId::PSCI_CPU_SUSPEND_64 => Self::CpuSuspend {
+                power_state: arg0,
+                entry_point_address: arg1,
+                context_id: arg2,
+            },
+            PsciFnId::PSCI_CPU_OFF_32 | PsciFnId::PSCI_CPU_OFF_64 => Self::CpuOff,
+            PsciFnId::PSCI_CPU_ON_32 | PsciFnId::PSCI_CPU_ON_64 => Self::CpuOn {
+                target_mpidr: arg0,
+                entry_point: arg1,
+                context_id: arg2,
+            },
+            PsciFnId::PSCI_AFFINITY_INFO_32 | PsciFnId::PSCI_AFFINITY_INFO_64 => {
+                Self::AffinityInfo {
+                    target_affinity: arg0,
+                    lowest_affinity_level: arg1,
                 }
             }
+            PsciFnId::PSCI_MIG_INFO_TYPE => Self::MigrateInfoType,
+            PsciFnId::PSCI_FEATURES => Self::Features { function_id: arg0 },
+            PsciFnId::PSCI_SYSTEM_OFF => Self::SystemOff,
+            PsciFnId::PSCI_SYSTEM_RESET => Self::SystemReset,
+            _ => return Err(smccc::psci::error::Error::NotSupported),
+        })
+    }
+
+    /// Executes a decoded PSCI call. The match has no wildcard on purpose:
+    /// adding a variant without handling it here is a compile error.
+    fn execute(self) -> u64 {
+        match self {
+            Self::Version => PSCI_VERSION_1_1,
+            Self::CpuSuspend { .. } => {
+                wfi();
+                gic_handle_irq();
+                0
+            }
+            Self::CpuOff => {
+                todo!();
+            }
+            Self::CpuOn {
+                target_mpidr,
+                entry_point,
+                ..
+            } => psci_emulate_cpu_on(target_mpidr, entry_point),
+            Self::AffinityInfo {
+                target_affinity, ..
+            } => !get_cpu_data(target_affinity as _).vcpu.state.is_online() as _,
+            Self::MigrateInfoType => PSCI_TOS_NOT_PRESENT_MP,
+            Self::Features { function_id } => psci_emulate_features_info(function_id),
+            Self::SystemReset => psci_system_reset(),
+            Self::SystemOff => psci_system_off(),
         }
-        PsciFnId::PSCI_SYSTEM_OFF => {
-            let zone = this_zone();
-            let zone_id = zone.id();
-            let is_root = is_this_root_zone();
+    }
+}
 
-            for cpu_id in zone.read().cpu_set().iter_except(this_cpu_data().id) {
-                let target_cpu = get_cpu_data(cpu_id);
-                let _lock = target_cpu.ctrl_lock.lock();
-                target_cpu.vcpu.clear_irq_state();
-                target_cpu.zone = None;
-                send_event(cpu_id, SGI_IPI_ID as _, IPI_EVENT_SHUTDOWN);
-            }
-
-            {
-                let cpu_data = this_cpu_data();
-                let _lock = cpu_data.ctrl_lock.lock();
-                cpu_data.vcpu.clear_irq_state();
-                cpu_data.zone = None;
-            }
-            drop(zone);
-            remove_zone(zone_id);
-
-            if is_root {
-                smccc::psci::system_off::<smccc::Smc>().unwrap();
-            }
-
-            this_cpu_data().arch_cpu.idle();
-        }
-
-        _ => {
+fn handle_psci_smc(code: u64, arg0: u64, arg1: u64, arg2: u64) -> u64 {
+    match PsciCall::decode(code, arg0, arg1, arg2) {
+        Ok(call) => call.execute(),
+        Err(e) => {
             warn!("unsupported smc standard service {:#x?}", code);
-            ARM_SMCCC_NOT_SUPPORTED as u64
+            i64::from(e) as u64
         }
     }
 }
