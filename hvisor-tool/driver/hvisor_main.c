@@ -32,6 +32,7 @@
 #include <linux/vmalloc.h>
 
 #include "hvisor.h"
+#include "virtio_pci_backend.h"
 #include "zone_config.h"
 
 #include "virtio/scmi/server.h"
@@ -371,6 +372,14 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
     case HVISOR_LOAD_IMAGE:
         err = hvisor_load_image((struct hvisor_load_image_args __user *)arg);
         break;
+    case HVISOR_GET_VIRTIO_PCI_INFO:
+        err = hvisor_virtio_pci_get_info(
+            (struct hvisor_virtio_pci_info __user *)arg);
+        break;
+    case HVISOR_VIRTIO_PCI_NOTIFY:
+        err = hvisor_virtio_pci_notify(
+            (struct virtio_pci_hypercall_info __user *)arg);
+        break;
     case HVISOR_SCMI_CLOCK_IOCTL:
         err = hvisor_scmi_clock_ioctl(
             (struct hvisor_scmi_clock_args __user *)arg);
@@ -546,6 +555,11 @@ static int __init hvisor_init(void) {
     if (err)
         goto err_out;
 #endif /* X86_64 */
+    err = hvisor_virtio_pci_init();
+    if (err) {
+        free_irq(virtio_irq, &hvisor_misc_dev);
+        goto err_misc;
+    }
     pr_info("hvisor init done!!!\n");
     return 0;
 
@@ -566,6 +580,7 @@ err_misc:
 ** Module Exit function
 */
 static void __exit hvisor_exit(void) {
+    hvisor_virtio_pci_exit();
     if (virtio_irq != -1)
         free_irq(virtio_irq, &hvisor_misc_dev);
     if (virtio_irq_ctx)

@@ -472,6 +472,7 @@ impl<'a> HyperCall<'a> {
     fn hv_virtio_pci(&mut self, arg0: u64, arg1: u64) -> HyperCallResult {
         const VIRTIO_PCI_INIT: u64 = 0;
         const VIRTIO_PCI_DOORBELL: u64 = 1;
+        const VIRTIO_PCI_DEINIT: u64 = 2;
 
         if !is_this_root_zone() {
             return hv_result_err!(
@@ -498,8 +499,16 @@ impl<'a> HyperCall<'a> {
                 }
                 HyperCallResult::Ok(0)
             }
+            VIRTIO_PCI_DEINIT => {
+                let addr = self.hv_get_real_pa(arg1) as usize;
+                VIRTIO_PCI_BRIDGE.lock().deinit(addr)?;
+                HyperCallResult::Ok(0)
+            }
             VIRTIO_PCI_DOORBELL => {
-                let bridge = VIRTIO_PCI_BRIDGE.lock();
+                let mut bridge = VIRTIO_PCI_BRIDGE.lock();
+                if !bridge.is_initialized() {
+                    return hv_result_err!(ENODEV, "VirtIO PCI bridge is not initialized");
+                }
                 let info = bridge.hypercall_info();
                 if info.version != VIRTIO_PCI_HYPERCALL_VERSION {
                     return hv_result_err!(
@@ -523,11 +532,9 @@ impl<'a> HyperCall<'a> {
                         HyperCallResult::Ok(0)
                     }
                     VirtioPCIHypercallOp::DataReqComplete => {
-                        send_event(
-                            info.target_cpu as usize,
-                            SGI_IPI_ID as usize,
-                            IPI_EVENT_VIRTIO_PCI_DONE,
-                        );
+                        if let Some(cpu) = bridge.complete_data_req(info.request_id) {
+                            send_event(cpu, SGI_IPI_ID as usize, IPI_EVENT_VIRTIO_PCI_DONE);
+                        }
                         HyperCallResult::Ok(0)
                     }
                     VirtioPCIHypercallOp::Reset => {

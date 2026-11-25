@@ -30,16 +30,15 @@ use crate::{
 };
 use crate::{
     arch::cpu::this_cpu_id, consts::MAX_WAIT_TIMES, error::HvResult, memory::MMIOAccess,
-    zone::this_zone_id,
+    pci::msix::MsixTable, zone::this_zone_id,
 };
-#[cfg(not(target_arch = "loongarch64"))]
-use alloc::collections::BTreeMap;
+use alloc::{collections::BTreeMap, sync::Arc};
 use core::{
     fmt::{Debug, Formatter, Result},
     mem::size_of,
     sync::atomic::{fence, AtomicBool, AtomicUsize, Ordering},
 };
-use spin::{Mutex, MutexGuard};
+use spin::{Mutex, MutexGuard, RwLock};
 use tock_registers::{
     interfaces::{Readable, Writeable},
     registers::ReadWrite,
@@ -50,6 +49,7 @@ use tock_registers::{
 pub static VIRTIO_IRQS: Mutex<BTreeMap<usize, [u64; MAX_DEVS + 1]>> = Mutex::new(BTreeMap::new());
 // Controller of the shared memory the root linux's virtio device and hvisor shares.
 pub static VIRTIO_PCI_BRIDGE: Mutex<VirtioPCIBridge> = Mutex::new(VirtioPCIBridge::dummy());
+pub static VIRTIO_PCI_CONFIG_LOCK: Mutex<()> = Mutex::new(());
 pub static VIRTIO_BRIDGE: VirtioBridgeController = VirtioBridgeController::new();
 
 const QUEUE_NOTIFY: usize = 0x50;
@@ -571,6 +571,7 @@ struct VirtioPCIBridgeRegion {
 pub struct VirtioPCIBridge {
     base: usize,
     next_request_id: u32,
+    pending_data: BTreeMap<u32, (VirtioPCIDataInfo, Arc<RwLock<MsixTable>>)>,
 }
 
 impl VirtioPCIBridge {
@@ -578,12 +579,26 @@ impl VirtioPCIBridge {
         Self {
             base: 0,
             next_request_id: 1,
+            pending_data: BTreeMap::new(),
         }
+    }
+
+    pub fn is_initialized(&self) -> bool {
+        self.base != 0
+    }
+
+    pub fn deinit(&mut self, addr: usize) -> HvResult {
+        if self.base != addr {
+            return hv_result_err!(EINVAL, "VirtIO PCI bridge address mismatch");
+        }
+        *self = Self::dummy();
+        Ok(())
     }
 
     pub fn init(&mut self, addr: usize) {
         self.base = addr;
         self.next_request_id = 1;
+        self.pending_data.clear();
         assert!(size_of::<VirtioPCIBridgeRegion>() <= crate::consts::PAGE_SIZE);
         unsafe {
             core::ptr::write_bytes(self.base as *mut u8, 0, size_of::<VirtioPCIBridgeRegion>());
@@ -635,14 +650,6 @@ impl VirtioPCIBridge {
         ((rear + 1) & (MAX_PCI_CONFIG_REQ - 1)) == front
     }
 
-    fn is_data_req_full(&self) -> bool {
-        let region = self.immut_region();
-        let front = region.data_req_front.get() as usize;
-        let rear = region.data_req_rear.get() as usize;
-        fence(Ordering::Acquire);
-        ((rear + 1) & (MAX_PCI_DATA_REQ - 1)) == front
-    }
-
     fn is_config_res_empty(&self) -> bool {
         let region = self.immut_region();
         let front = region.config_res_front.get();
@@ -668,6 +675,9 @@ impl VirtioPCIBridge {
     }
 
     pub fn push_config_req(&mut self, config: VirtioPCIConfigInfo) -> HvResult<u32> {
+        if !self.is_initialized() {
+            return hv_result_err!(ENODEV, "VirtIO PCI bridge is not initialized");
+        }
         self.wait_for_queue_slot(Self::is_config_req_full, "config request")?;
         let request_id = self.alloc_request_id();
         let region = self.region();
@@ -685,11 +695,70 @@ impl VirtioPCIBridge {
         Ok(request_id)
     }
 
-    pub fn push_data_req(&mut self, data_info: VirtioPCIDataInfo) -> HvResult<u32> {
-        self.wait_for_queue_slot(Self::is_data_req_full, "data request")?;
-        let request_id = self.alloc_request_id();
-        let region = self.region();
+    pub fn enqueue_data(
+        data_info: VirtioPCIDataInfo,
+        msix_table: &Arc<RwLock<MsixTable>>,
+    ) -> HvResult {
+        let mut waited = 0;
+        let mut backoff = 1;
+        loop {
+            if VIRTIO_PCI_BRIDGE
+                .lock()
+                .try_push_data_req(data_info, msix_table)?
+            {
+                return Ok(());
+            }
+            // The backend may be waiting for the bridge lock to finish a request.
+            for _ in 0..backoff {
+                core::hint::spin_loop();
+            }
+            waited += backoff;
+            if waited >= MAX_WAIT_TIMES {
+                return hv_result_err!(EBUSY, "VirtIO PCI data request queue is full");
+            }
+            backoff = (backoff << 1).min(MAX_BACKOFF);
+        }
+    }
+
+    fn try_push_data_req(
+        &mut self,
+        data_info: VirtioPCIDataInfo,
+        msix_table: &Arc<RwLock<MsixTable>>,
+    ) -> HvResult<bool> {
+        if !self.is_initialized() {
+            return hv_result_err!(ENODEV, "VirtIO PCI bridge is not initialized");
+        }
+        let region = self.immut_region();
+        let front = region.data_req_front.get() as usize;
         let rear = region.data_req_rear.get() as usize;
+        let next = (rear + 1) & (MAX_PCI_DATA_REQ - 1);
+        fence(Ordering::Acquire);
+
+        // A kick already queued for this virtqueue will also see the newly
+        // published descriptors. The backend advances front before handling it.
+        let mut slot = front;
+        while slot != rear {
+            let queued = unsafe { core::ptr::read_volatile(&region.data_req_list[slot]) };
+            if queued.info.dev_id == data_info.dev_id
+                && queued.info.queue_id == data_info.queue_id
+                && queued.info.msix_vector_idx == data_info.msix_vector_idx
+            {
+                fence(Ordering::Acquire);
+                if region.data_req_front.get() as usize == front {
+                    return Ok(true);
+                }
+                break;
+            }
+            slot = (slot + 1) & (MAX_PCI_DATA_REQ - 1);
+        }
+
+        if next == region.data_req_front.get() as usize {
+            return Ok(false);
+        }
+        let request_id = self.alloc_request_id();
+        self.pending_data
+            .insert(request_id, (data_info, Arc::clone(msix_table)));
+        let region = self.region();
         unsafe {
             core::ptr::write_volatile(
                 &mut region.data_req_list[rear] as *mut VirtioPCIDataReq,
@@ -697,10 +766,16 @@ impl VirtioPCIBridge {
             );
         }
         fence(Ordering::Release);
-        region
-            .data_req_rear
-            .set(((rear + 1) & (MAX_PCI_DATA_REQ - 1)) as u32);
-        Ok(request_id)
+        region.data_req_rear.set(next as u32);
+        Ok(true)
+    }
+
+    pub fn complete_data_req(&mut self, request_id: u32) -> Option<usize> {
+        let (info, table) = self.pending_data.remove(&request_id)?;
+        table
+            .write()
+            .add_pending_msix(info.get_msix_vector_idx() as usize);
+        Some(info.cpu_id as usize)
     }
 
     fn peek_config_res(&self) -> VirtioPCIConfigRes {
@@ -719,23 +794,25 @@ impl VirtioPCIBridge {
             .set(((front + 1) & (MAX_PCI_CONFIG_RES - 1)) as u32);
     }
 
-    pub fn til_config_finish(&mut self, request_id: u32) -> HvResult<u16> {
+    pub fn wait_for_config(request_id: u32) -> HvResult<u16> {
         let mut count = 0usize;
         let mut backoff = 1usize;
 
         loop {
-            if !self.is_config_res_empty() {
-                let res = self.peek_config_res();
-                self.advance_config_res();
-                if res.request_id != request_id {
-                    return hv_result_err!(
-                        EIO,
-                        format!(
-                            "virtio pci config response mismatch: expect {}, got {}",
-                            request_id, res.request_id
-                        )
-                    );
+            let response = {
+                let mut bridge = VIRTIO_PCI_BRIDGE.lock();
+                if !bridge.is_initialized() {
+                    return hv_result_err!(ENODEV, "VirtIO PCI bridge is not initialized");
                 }
+                if bridge.is_config_res_empty() {
+                    None
+                } else {
+                    let response = bridge.peek_config_res();
+                    bridge.advance_config_res();
+                    Some(response)
+                }
+            };
+            if let Some(res) = response.filter(|res| res.request_id == request_id) {
                 if res.status != 0 {
                     return hv_result_err!(
                         EIO,

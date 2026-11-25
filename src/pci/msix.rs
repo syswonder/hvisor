@@ -318,7 +318,9 @@ impl MsixTable {
     }
 
     pub fn add_pending_msix(&mut self, msix_idx: usize) {
-        self.pending_msix_idx.push(msix_idx);
+        if msix_idx < self.table.len() {
+            self.pending_msix_idx.push(msix_idx);
+        }
     }
 
     pub fn get_pending_msix_vector(&mut self) -> Option<Vec<MsixTableEntry>> {

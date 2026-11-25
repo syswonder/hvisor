@@ -42,6 +42,7 @@
 #include "virtio_blk.h"
 #include "virtio_console.h"
 #include "virtio_net.h"
+#include "virtio_pci_userspace.h"
 #ifdef ENABLE_VIRTIO_GPU
 #include "virtio_gpu.h"
 #endif
@@ -1033,6 +1034,7 @@ int virtio_handle_req(volatile struct device_req *req) {
 void virtio_close() {
     log_warn("virtio devices will be closed");
     stop_virtio_control_server();
+    virtio_pci_userspace_backend_shutdown();
     destroy_event_monitor();
     virtio_destroy_all_devices();
     if (ko_fd >= 0) {
@@ -1336,6 +1338,13 @@ int virtio_init() {
 
     // Initialize event_monitor used by console and net devices
     initialize_event_monitor();
+    err = virtio_pci_userspace_backend_init();
+    if (err) {
+        log_error("failed to start VirtIO PCI userspace backend: %s",
+                  strerror(-err));
+        virtio_close();
+        return -1;
+    }
     log_info("hvisor init okay!");
     return 0;
 unmap:

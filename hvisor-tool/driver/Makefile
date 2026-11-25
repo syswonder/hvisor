@@ -22,7 +22,7 @@ ifeq ($(ARCH), loongarch)
 	ccflags-y += -DLOONGARCH64
 endif
 
-hvisor-y := hvisor_main.o
+hvisor-y := hvisor_main.o virtio_pci_backend.o virtio_pci_blk_backend.o
 hvisor-y += virtio/scmi/server.o virtio/scmi/clock.o virtio/scmi/reset.o virtio/scmi/power.o
 ivc-y := ivc_driver.o
 
