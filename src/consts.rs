@@ -91,8 +91,6 @@ pub fn hv_end() -> VirtAddr {
 }
 
 /// arch specific constants
-pub const IPI_EVENT_CLEAR_INJECT_IRQ: usize = 4;
-pub const IPI_EVENT_UPDATE_HART_LINE: usize = 5;
 pub const IPI_EVENT_DWC_MSI_INJECT: usize = 9;
 /// ipi events for vcpu management
 pub const IPI_EVENT_VCPU_SUSPEND: usize = 7;

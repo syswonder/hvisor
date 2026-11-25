@@ -110,17 +110,6 @@ pub fn arch_notify_event(cpu_id: u64, sgi_num: u64, _event_id: usize, _queue_was
 // Same IRQ as the event doorbell.
 pub const VCPU_KICK_DOORBELL: u64 = crate::hypercall::SGI_IPI_ID;
 
-pub fn arch_check_events(event: Option<usize>) {
-    match event {
-        _ => {
-            info!(
-                "aarch64: arch_check_events: event={:#x?} do nothing now",
-                event
-            );
-        }
-    }
-}
-
 #[cfg(irq_gicv3)]
 pub fn handle_guest_sgi1r(value: u64) {
     let sgi = Sgi1r(value);
