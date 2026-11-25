@@ -105,7 +105,7 @@ static int userspace_blk_collect_chain(volatile struct virtq_desc *desc,
 }
 
 static int userspace_blk_rw(UserspacePciBlkDev *blk, struct virtq_desc *chain,
-                            int chain_len, int zone_id,
+                            int chain_len, const struct virtio_pci_owner *owner,
                             const struct virtio_blk_outhdr *hdr,
                             __u32 *total_len) {
     off_t offset;
@@ -113,8 +113,10 @@ static int userspace_blk_rw(UserspacePciBlkDev *blk, struct virtq_desc *chain,
     bool is_write;
     int i;
 
-    offset = (off_t)(userspace_pci_le64_to_cpu(hdr->sector) *
-                     HVISOR_VIRTIO_BLK_SECTOR_SIZE);
+    uint64_t sector = userspace_pci_le64_to_cpu(hdr->sector);
+    if (sector >= blk->capacity_sectors)
+        return -EIO;
+    offset = sector * HVISOR_VIRTIO_BLK_SECTOR_SIZE;
     is_write = userspace_pci_le32_to_cpu(hdr->type) == VIRTIO_BLK_T_OUT;
 
     for (i = 1; i < chain_len - 1; i++) {
@@ -125,7 +127,7 @@ static int userspace_blk_rw(UserspacePciBlkDev *blk, struct virtq_desc *chain,
             (uint64_t)offset + chain[i].len >
                 blk->capacity_sectors * HVISOR_VIRTIO_BLK_SECTOR_SIZE)
             return -EIO;
-        if (userspace_pci_translate_addr(zone_id, chain[i].addr, chain[i].len,
+        if (userspace_pci_translate_addr(owner, chain[i].addr, chain[i].len,
                                          &buf) != 0)
             return -EIO;
 
@@ -171,14 +173,16 @@ int userspace_pci_blk_process_vq(UserspacePciDev *dev,
         return -EINVAL;
 
     used_idx = vq->used->idx;
-    while (used_idx != vq->avail->idx) {
+    for (unsigned int budget = 0;
+         budget < vq->queue_size && used_idx != vq->avail->idx; budget++) {
         struct virtq_desc chain[HVISOR_VIRTIO_BLK_MAX_SEGS + 2];
-        struct virtio_blk_outhdr *hdr;
+        struct virtio_blk_outhdr hdr;
+        void *header_buf;
         void *status_buf;
         __u16 slot = used_idx % vq->queue_size;
         __u16 head = vq->avail->ring[slot];
         __u16 used_slot = used_idx % vq->queue_size;
-        __u32 total_len = 1;
+        __u32 total_len = 0;
         uint8_t status = VIRTIO_BLK_S_OK;
         int chain_len;
         int i;
@@ -186,33 +190,35 @@ int userspace_pci_blk_process_vq(UserspacePciDev *dev,
 
         ret = userspace_blk_collect_chain(vq->desc, head, vq->queue_size, chain,
                                           &chain_len);
-        if (ret != 0)
-            return ret;
-        if (chain_len < 2 || chain[0].len < sizeof(*hdr) ||
+        if (ret || chain_len < 2 ||
+            !(chain[chain_len - 1].flags & VRING_DESC_F_WRITE) ||
             chain[chain_len - 1].len < 1)
-            return -EINVAL;
-        if ((chain[0].flags & VRING_DESC_F_WRITE) != 0)
-            return -EINVAL;
-        if ((chain[chain_len - 1].flags & VRING_DESC_F_WRITE) == 0)
-            return -EINVAL;
+            goto complete;
+        if (userspace_pci_translate_addr(vq->owner, chain[chain_len - 1].addr,
+                                         chain[chain_len - 1].len, &status_buf))
+            goto complete;
 
-        if (userspace_pci_translate_addr(vq->zone_id, chain[0].addr,
-                                         sizeof(*hdr), (void **)&hdr) != 0)
-            return -EIO;
+        ret = -EFAULT;
+        if (chain[0].len < sizeof(hdr) ||
+            (chain[0].flags & VRING_DESC_F_WRITE) ||
+            userspace_pci_translate_addr(vq->owner, chain[0].addr, chain[0].len,
+                                         &header_buf))
+            goto write_status;
+        memcpy(&hdr, header_buf, sizeof(hdr));
 
         for (i = 1; i < chain_len - 1; i++) {
             bool should_write =
-                userspace_pci_le32_to_cpu(hdr->type) != VIRTIO_BLK_T_OUT;
+                userspace_pci_le32_to_cpu(hdr.type) != VIRTIO_BLK_T_OUT;
 
             if (((chain[i].flags & VRING_DESC_F_WRITE) != 0) != should_write)
-                return -EINVAL;
+                goto write_status;
         }
 
-        switch (userspace_pci_le32_to_cpu(hdr->type)) {
+        switch (userspace_pci_le32_to_cpu(hdr.type)) {
         case VIRTIO_BLK_T_IN:
         case VIRTIO_BLK_T_OUT:
             ret = userspace_blk_rw(&dev->backend.blk, chain, chain_len,
-                                   vq->zone_id, hdr, &total_len);
+                                   vq->owner, &hdr, &total_len);
             break;
         case VIRTIO_BLK_T_GET_ID: {
             void *id_buf;
@@ -222,7 +228,7 @@ int userspace_pci_blk_process_vq(UserspacePciDev *dev,
                 ret = -EINVAL;
                 break;
             }
-            if (userspace_pci_translate_addr(vq->zone_id, chain[1].addr,
+            if (userspace_pci_translate_addr(vq->owner, chain[1].addr,
                                              chain[1].len, &id_buf) != 0) {
                 ret = -EIO;
                 break;
@@ -241,19 +247,17 @@ int userspace_pci_blk_process_vq(UserspacePciDev *dev,
             break;
         }
 
+    write_status:
         if (ret == -EOPNOTSUPP)
             status = VIRTIO_BLK_S_UNSUPP;
         else if (ret != 0)
             status = VIRTIO_BLK_S_IOERR;
 
-        if (userspace_pci_translate_addr(vq->zone_id, chain[chain_len - 1].addr,
-                                         1, &status_buf) != 0)
-            return -EIO;
         *(uint8_t *)status_buf = status;
-
-        if (ret != 0 && ret != -EOPNOTSUPP)
+        if (ret)
             total_len = 1;
 
+    complete:
         vq->used->ring[used_slot].id = head;
         vq->used->ring[used_slot].len = total_len;
         __sync_synchronize();

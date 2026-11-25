@@ -7,12 +7,13 @@
 
 #define HVISOR_HC_VIRTIO_PCI 7
 #define VIRTIO_PCI_BRIDGE_SIZE 4096
+#define HVISOR_VIRTIO_PCI_SHUTDOWN_DRAINED 1
 #define MAX_VQ 16
 #define MAX_VIRTPCI_DEV 8
 #define MAX_PCI_CONFIG_REQ 4
 #define MAX_PCI_CONFIG_RES 4
 #define MAX_PCI_DATA_REQ 32
-#define VIRTIO_PCI_HYPERCALL_VERSION 1
+#define VIRTIO_PCI_HYPERCALL_VERSION 2
 
 #define VIRTIO_PCI_USERSPACE_BLK (1U << 0)
 #define VIRTIO_PCI_USERSPACE_RNG (1U << 1)
@@ -27,6 +28,9 @@ enum virtio_pci_hypercall_mode {
     VIRTIO_PCI_HC_INIT = 0,
     VIRTIO_PCI_HC_DOORBELL = 1,
     VIRTIO_PCI_HC_DEINIT = 2,
+    VIRTIO_PCI_HC_GET_VERSION = 3,
+    VIRTIO_PCI_HC_RESOLVE_RAM = 4,
+    VIRTIO_PCI_HC_OWNER_ACTIVE = 5,
 };
 
 struct virtio_pci_hypercall_info {
@@ -43,8 +47,26 @@ struct hvisor_virtio_pci_info {
     __u32 reserved;
 };
 
+struct virtio_pci_owner {
+    __u32 zone_id;
+    __u32 zone_generation;
+};
+
+struct virtio_pci_ram_request {
+    __u64 ipa;
+    __u64 len;
+    struct virtio_pci_owner owner;
+    __u64 pa;
+};
+
 #define HVISOR_GET_VIRTIO_PCI_INFO _IOR(1, 12, struct hvisor_virtio_pci_info)
 #define HVISOR_VIRTIO_PCI_NOTIFY _IOW(1, 13, struct virtio_pci_hypercall_info)
+#define HVISOR_VIRTIO_PCI_RESOLVE_RAM                                          \
+    _IOWR(1, 14, struct virtio_pci_ram_request)
+
+#define HVISOR_VIRTIO_PCI_BEGIN_IO _IOR(1, 15, __u32)
+#define HVISOR_VIRTIO_PCI_END_IO _IO(1, 16)
+#define HVISOR_VIRTIO_PCI_OWNER_ACTIVE _IOW(1, 17, struct virtio_pci_owner)
 
 enum virtio_pci_device_type {
     VIRTIO_PCI_BLK = 3,
@@ -60,7 +82,7 @@ struct virtqueue_info {
 
 struct virtio_pci_config_info {
     __u64 features;
-    __u16 dev_id;
+    __u16 zone_id;
     __u16 num_of_queues;
     __u16 dtype;
     __u16 padding;
@@ -69,7 +91,7 @@ struct virtio_pci_config_info {
 
 struct virtio_pci_config_req {
     __u32 request_id;
-    __u32 padding;
+    __u32 zone_generation;
     struct virtio_pci_config_info info;
 };
 
@@ -89,7 +111,7 @@ struct virtio_pci_data_info {
 
 struct virtio_pci_data_req {
     __u32 request_id;
-    __u32 padding;
+    __u32 zone_generation;
     struct virtio_pci_data_info info;
 };
 

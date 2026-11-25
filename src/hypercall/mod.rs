@@ -22,7 +22,8 @@ use crate::config::{HvZoneBootMode, HvZoneConfig};
 use crate::consts::{INVALID_ADDRESS, MAX_WAIT_TIMES, PAGE_SIZE};
 use crate::cpu_data::{get_cpu_data, PerCpu, VcpuState};
 use crate::device::virtio_trampoline::{
-    VirtioPCIHypercallOp, VIRTIO_BRIDGE, VIRTIO_PCI_BRIDGE, VIRTIO_PCI_HYPERCALL_VERSION,
+    VirtioPCIHypercallOp, VirtioPCIRamRequest, VIRTIO_BRIDGE, VIRTIO_PCI_BRIDGE,
+    VIRTIO_PCI_HYPERCALL_VERSION,
 };
 #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
 use crate::device::virtio_trampoline::{MAX_DEVS, VIRTIO_IRQS};
@@ -99,7 +100,7 @@ impl<'a> HyperCall<'a> {
                 HyperCallCode::HvZoneStart => {
                     self.hv_zone_start(&*(arg0 as *const HvZoneConfig), arg1)
                 }
-                HyperCallCode::HvZoneShutdown => self.hv_zone_shutdown(arg0),
+                HyperCallCode::HvZoneShutdown => self.hv_zone_shutdown(arg0, arg1),
                 HyperCallCode::HvZoneList => self.hv_zone_list(&mut *(arg0 as *mut ZoneInfo), arg1),
                 HyperCallCode::HvClearInjectIrq => {
                     self.hv_virtio_deassert_irq(arg0 as usize, arg1 as usize)
@@ -348,7 +349,8 @@ impl<'a> HyperCall<'a> {
         HyperCallResult::Ok(0)
     }
 
-    fn hv_zone_shutdown(&mut self, zone_id: u64) -> HyperCallResult {
+    fn hv_zone_shutdown(&mut self, zone_id: u64, flags: u64) -> HyperCallResult {
+        const VIRTIO_PCI_SHUTDOWN_DRAINED: u64 = 1;
         info!("handle hvc zone shutdown, id={}", zone_id);
         if !is_this_root_zone() {
             return hv_result_err!(
@@ -372,6 +374,9 @@ impl<'a> HyperCall<'a> {
                 )
             }
         };
+        if !zone.try_begin_shutdown(flags & VIRTIO_PCI_SHUTDOWN_DRAINED != 0) {
+            return hv_result_err!(EBUSY, "VirtIO PCI backend must be drained before shutdown");
+        }
         #[cfg(target_arch = "x86_64")]
         {
             let _irq_lifecycle = X86_IOAPIC_LIFECYCLE.write();
@@ -422,6 +427,9 @@ impl<'a> HyperCall<'a> {
         // Remove viommu instance related to this zone.
         #[cfg(viommu)]
         crate::device::iommu::viommu_remove(zone_id as usize);
+        VIRTIO_PCI_BRIDGE
+            .lock()
+            .forget_zone_requests(zone.generation());
         drop(zone);
 
         // Reset zone_id for all devices allocated to this zone
@@ -473,6 +481,9 @@ impl<'a> HyperCall<'a> {
         const VIRTIO_PCI_INIT: u64 = 0;
         const VIRTIO_PCI_DOORBELL: u64 = 1;
         const VIRTIO_PCI_DEINIT: u64 = 2;
+        const VIRTIO_PCI_GET_VERSION: u64 = 3;
+        const VIRTIO_PCI_RESOLVE_RAM: u64 = 4;
+        const VIRTIO_PCI_OWNER_ACTIVE: u64 = 5;
 
         if !is_this_root_zone() {
             return hv_result_err!(
@@ -486,23 +497,49 @@ impl<'a> HyperCall<'a> {
                 let shared_pci_region_addr_pa = self.hv_get_real_pa(arg1) as usize;
                 assert!(shared_pci_region_addr_pa % PAGE_SIZE == 0);
                 let mut bridge = VIRTIO_PCI_BRIDGE.lock();
-                bridge.init(shared_pci_region_addr_pa);
-                let info = bridge.hypercall_info();
-                if info.version != VIRTIO_PCI_HYPERCALL_VERSION {
+                let version = unsafe { (shared_pci_region_addr_pa as *const u16).read_volatile() };
+                if version != VIRTIO_PCI_HYPERCALL_VERSION {
                     return hv_result_err!(
                         EINVAL,
                         format!(
                             "Virtio PCI hypercall version mismatch: expect {}, got {}",
-                            VIRTIO_PCI_HYPERCALL_VERSION, info.version
+                            VIRTIO_PCI_HYPERCALL_VERSION, version
                         )
                     );
                 }
+                bridge.init(shared_pci_region_addr_pa);
                 HyperCallResult::Ok(0)
             }
             VIRTIO_PCI_DEINIT => {
                 let addr = self.hv_get_real_pa(arg1) as usize;
                 VIRTIO_PCI_BRIDGE.lock().deinit(addr)?;
                 HyperCallResult::Ok(0)
+            }
+            VIRTIO_PCI_GET_VERSION => Ok(VIRTIO_PCI_HYPERCALL_VERSION as usize),
+            VIRTIO_PCI_OWNER_ACTIVE => {
+                let zone_id = (arg1 >> 32) as usize;
+                let generation = arg1 as u32;
+                Ok(crate::zone::zone_instance_active(zone_id, generation) as usize)
+            }
+            VIRTIO_PCI_RESOLVE_RAM => {
+                // The root driver passes an aligned, physically contiguous request.
+                let pa = self.hv_get_real_pa(arg1) as usize;
+                let ptr = crate::memory::addr::phys_to_virt(pa) as *mut VirtioPCIRamRequest;
+                let mut req = unsafe { ptr.read_volatile() };
+                req.pa = crate::zone::resolve_guest_ram(
+                    req.zone_id as usize,
+                    req.zone_generation,
+                    req.ipa,
+                    req.len,
+                )
+                .ok_or_else(|| {
+                    hv_err!(
+                        EFAULT,
+                        "VirtIO PCI DMA range is outside the owning zone's RAM"
+                    )
+                })?;
+                unsafe { ptr.write_volatile(req) };
+                Ok(0)
             }
             VIRTIO_PCI_DOORBELL => {
                 let mut bridge = VIRTIO_PCI_BRIDGE.lock();

@@ -39,7 +39,7 @@ int userspace_pci_rng_process_vq(UserspacePciVirtQueue *vq) {
     used_idx = vq->used->idx;
     __sync_synchronize();
     avail_idx = vq->avail->idx;
-    while (used_idx != avail_idx) {
+    for (unsigned int i = 0; i < vq->queue_size && used_idx != avail_idx; i++) {
         __u16 slot = used_idx % vq->queue_size;
         __u16 head = vq->avail->ring[slot];
         __u16 idx = head;
@@ -50,7 +50,7 @@ int userspace_pci_rng_process_vq(UserspacePciVirtQueue *vq) {
             goto complete;
 
         for (;;) {
-            volatile struct virtq_desc *desc;
+            struct virtq_desc desc;
             void *buf;
 
             if (seen++ >= vq->queue_size)
@@ -58,22 +58,22 @@ int userspace_pci_rng_process_vq(UserspacePciVirtQueue *vq) {
             if (idx >= vq->queue_size)
                 goto complete;
 
-            desc = &vq->desc[idx];
-            if (desc->flags & VRING_DESC_F_INDIRECT)
+            desc = vq->desc[idx];
+            if (desc.flags & VRING_DESC_F_INDIRECT)
                 goto complete;
-            if ((desc->flags & VRING_DESC_F_WRITE) == 0)
+            if ((desc.flags & VRING_DESC_F_WRITE) == 0)
                 goto complete;
-            if (userspace_pci_translate_addr(vq->zone_id, desc->addr, desc->len,
+            if (userspace_pci_translate_addr(vq->owner, desc.addr, desc.len,
                                              &buf) != 0)
                 goto complete;
-            if (fill_random(buf, desc->len) != 0) {
+            if (fill_random(buf, desc.len) != 0) {
                 goto complete;
             }
-            total_len += desc->len;
+            total_len += desc.len;
 
-            if ((desc->flags & VRING_DESC_F_NEXT) == 0)
+            if ((desc.flags & VRING_DESC_F_NEXT) == 0)
                 break;
-            idx = desc->next;
+            idx = desc.next;
         }
 
     complete:

@@ -7,6 +7,7 @@
  *
  * Authors:
  */
+#include <linux/capability.h>
 #include <linux/gfp.h>
 #include <linux/interrupt.h>
 #include <linux/io.h>
@@ -18,9 +19,11 @@
 #include <linux/of_irq.h>
 #include <linux/random.h>
 #include <linux/slab.h>
+#include <linux/spinlock.h>
 #include <linux/string.h>
 #include <linux/uaccess.h>
 #include <linux/virtio_ring.h>
+#include <linux/wait.h>
 #include <linux/workqueue.h>
 
 #include "hvisor.h"
@@ -28,29 +31,106 @@
 #include "virtio_pci_blk_backend.h"
 
 struct virtio_pci_dev {
+    struct virtio_pci_owner owner;
+    __u16 dtype;
     __u16 num_of_vq;
     struct virtqueue_info vqs[MAX_VQ];
-    void (*data_req_handler)(struct virtqueue_info *, int queue_id);
 };
 
 static struct virtio_pci_bridge *virtio_pci_bridge;
 static DEFINE_MUTEX(virtio_pci_lock);
+static DEFINE_SPINLOCK(virtio_pci_io_lock);
+static DECLARE_WAIT_QUEUE_HEAD(virtio_pci_io_drained);
+static unsigned int virtio_pci_active_io;
+static bool virtio_pci_io_paused;
+static __u32 virtio_pci_cleanup_epoch;
 
 static int virtio_pci_irq_config = -1;
 static int virtio_pci_irq_data = -1;
 static struct virtio_pci_dev virtpci_dev_list[MAX_VIRTPCI_DEV];
-static int nxt_dev_idx;
 static bool virtio_pci_userspace_blk;
 static bool virtio_pci_userspace_rng;
 
 module_param_named(virtio_pci_userspace_blk, virtio_pci_userspace_blk, bool,
-                   0644);
+                   0444);
 MODULE_PARM_DESC(virtio_pci_userspace_blk,
                  "Delegate virtio-pci blk backend handling to userspace");
 module_param_named(virtio_pci_userspace_rng, virtio_pci_userspace_rng, bool,
-                   0644);
+                   0444);
 MODULE_PARM_DESC(virtio_pci_userspace_rng,
                  "Delegate virtio-pci rng backend handling to userspace");
+
+static bool virtio_pci_begin_io(__u32 *epoch) {
+    bool allowed;
+
+    spin_lock(&virtio_pci_io_lock);
+    allowed = !virtio_pci_io_paused;
+    if (allowed) {
+        virtio_pci_active_io++;
+        if (epoch)
+            *epoch = virtio_pci_cleanup_epoch;
+    }
+    spin_unlock(&virtio_pci_io_lock);
+    return allowed;
+}
+
+static void virtio_pci_end_io(void) {
+    bool drained;
+
+    spin_lock(&virtio_pci_io_lock);
+    virtio_pci_active_io--;
+    drained = virtio_pci_io_paused && !virtio_pci_active_io;
+    spin_unlock(&virtio_pci_io_lock);
+    if (drained)
+        wake_up(&virtio_pci_io_drained);
+}
+
+int hvisor_virtio_pci_begin_io(struct virtio_pci_file *ctx, __u32 __user *arg) {
+    __u32 epoch;
+    int ret = 0;
+
+    if (!virtio_pci_bridge)
+        return -ENODEV;
+    if (!capable(CAP_SYS_ADMIN))
+        return -EPERM;
+
+    mutex_lock(&ctx->lock);
+    if (ctx->io_active) {
+        ret = -EALREADY;
+    } else if (!virtio_pci_begin_io(&epoch)) {
+        ret = -EBUSY;
+    } else if (copy_to_user(arg, &epoch, sizeof(epoch))) {
+        virtio_pci_end_io();
+        ret = -EFAULT;
+    } else {
+        ctx->io_active = true;
+    }
+    mutex_unlock(&ctx->lock);
+    return ret;
+}
+
+void hvisor_virtio_pci_end_io(struct virtio_pci_file *ctx) {
+    mutex_lock(&ctx->lock);
+    if (ctx->io_active) {
+        ctx->io_active = false;
+        virtio_pci_end_io();
+    }
+    mutex_unlock(&ctx->lock);
+}
+
+int hvisor_virtio_pci_owner_active(struct virtio_pci_owner __user *arg) {
+    struct virtio_pci_owner owner;
+    __u64 identity;
+
+    if (!virtio_pci_bridge)
+        return -ENODEV;
+    if (copy_from_user(&owner, arg, sizeof(owner)))
+        return -EFAULT;
+
+    identity = ((__u64)owner.zone_id << 32) | owner.zone_generation;
+    return hvisor_call(HVISOR_HC_VIRTIO_PCI, VIRTIO_PCI_HC_OWNER_ACTIVE,
+                       identity);
+}
 
 static bool virtio_pci_is_userspace_dtype(__u16 dtype) {
     switch (dtype) {
@@ -155,87 +235,142 @@ static struct virtio_pci_data_req *virtio_pci_peek_data_req(void) {
     return &virtio_pci_bridge->data_req_list[front];
 }
 
-static int
-create_virtio_pci_dev(__u16 num_of_vq, struct virtqueue_info *vqs, __u16 dtype,
-                      void (*handler)(struct virtqueue_info *, int q_id)) {
-    int i = 0;
-    int ret = -ENOMEM;
-    struct virtio_pci_dev *birth;
+static int virtio_pci_resolve_ram(struct virtio_pci_ram_request *query) {
+    struct virtio_pci_ram_request *shared;
+    int ret;
 
-    int limit = virtio_pci_userspace_devices() ? VIRTIO_PCI_USERSPACE_DEV_BASE
-                                               : MAX_VIRTPCI_DEV;
+    shared = kmemdup(query, sizeof(*shared), GFP_KERNEL);
+    if (!shared)
+        return -ENOMEM;
 
-    if (nxt_dev_idx >= limit) {
-        pr_err("virtio PCI kernel backend has no free device slots\n");
-        return -ENOSPC;
-    }
-    if (num_of_vq == 0 || num_of_vq > MAX_VQ) {
-        pr_err("num_of_vq > MAX_VQ there are too much virtqueu in the virtio "
-               "device\n");
-        return -EINVAL;
-    }
-
-    birth = &virtpci_dev_list[nxt_dev_idx];
-    memset(birth, 0, sizeof(*birth));
-    birth->num_of_vq = num_of_vq;
-    while (i < num_of_vq) {
-        __u64 queue_size = vqs[i].queue_size;
-
-        if (!is_power_of_2(queue_size) || queue_size > U16_MAX) {
-            pr_err("invalid virtio pci queue size\n");
-            ret = -EINVAL;
-            goto err_unmap;
-        }
-
-        birth->vqs[i].desc_area = (__u64)memremap(
-            vqs[i].desc_area, sizeof(struct virtq_desc) * queue_size,
-            MEMREMAP_WB);
-        birth->vqs[i].avail_area = (__u64)memremap(
-            vqs[i].avail_area, virtio_avail_ring_size(queue_size), MEMREMAP_WB);
-        birth->vqs[i].used_area = (__u64)memremap(
-            vqs[i].used_area, virtio_used_ring_size(queue_size), MEMREMAP_WB);
-        if (!birth->vqs[i].desc_area || !birth->vqs[i].avail_area ||
-            !birth->vqs[i].used_area) {
-            pr_err("virtio pci queue area memremap failed\n");
-            ret = -ENOMEM;
-            goto err_unmap;
-        }
-        birth->vqs[i].queue_size = queue_size;
-        i++;
-    }
-
-    birth->data_req_handler = handler;
-    if (dtype == VIRTIO_PCI_BLK) {
-        ret = hvisor_virtio_pci_blk_init_dev(nxt_dev_idx);
-        if (ret)
-            goto err_unmap;
-    }
-    return nxt_dev_idx++;
-
-err_unmap:
-    if (i >= num_of_vq)
-        i = num_of_vq - 1;
-    while (i >= 0) {
-        if (birth->vqs[i].desc_area)
-            memunmap((void *)(uintptr_t)birth->vqs[i].desc_area);
-        if (birth->vqs[i].avail_area)
-            memunmap((void *)(uintptr_t)birth->vqs[i].avail_area);
-        if (birth->vqs[i].used_area)
-            memunmap((void *)(uintptr_t)birth->vqs[i].used_area);
-        birth->vqs[i].desc_area = 0;
-        birth->vqs[i].avail_area = 0;
-        birth->vqs[i].used_area = 0;
-        birth->vqs[i].queue_size = 0;
-        i--;
-    }
+    ret = hvisor_call(HVISOR_HC_VIRTIO_PCI, VIRTIO_PCI_HC_RESOLVE_RAM,
+                      __pa(shared));
+    if (!ret)
+        query->pa = shared->pa;
+    kfree(shared);
     return ret;
 }
 
-static void virtio_rng_handler(struct virtqueue_info *vq, int queue_id) {
+int hvisor_virtio_pci_resolve_ram(struct virtio_pci_ram_request __user *arg) {
+    struct virtio_pci_ram_request query;
+    int ret;
+
+    if (!virtio_pci_bridge)
+        return -ENODEV;
+    if (copy_from_user(&query, arg, sizeof(query)))
+        return -EFAULT;
+    ret = virtio_pci_resolve_ram(&query);
+    if (ret)
+        return ret;
+    return copy_to_user(arg, &query, sizeof(query)) ? -EFAULT : 0;
+}
+
+void *hvisor_virtio_pci_map_ram(const struct virtio_pci_owner *owner, __u64 ipa,
+                                size_t dma_len, size_t access_len) {
+    struct virtio_pci_ram_request query = {
+        .ipa = ipa,
+        .len = dma_len,
+        .owner = *owner,
+    };
+
+    if (!access_len || access_len > dma_len || virtio_pci_resolve_ram(&query))
+        return NULL;
+    return memremap(query.pa, access_len, MEMREMAP_WB);
+}
+
+static bool virtio_pci_queue_valid(const struct virtqueue_info *queue) {
+    return is_power_of_2(queue->queue_size) && queue->queue_size <= U16_MAX &&
+           IS_ALIGNED(queue->desc_area, 16) &&
+           IS_ALIGNED(queue->avail_area, 2) && IS_ALIGNED(queue->used_area, 4);
+}
+
+static void virtio_pci_unmap_queue(struct virtqueue_info *queue) {
+    if (queue->desc_area)
+        memunmap((void *)(uintptr_t)queue->desc_area);
+    if (queue->avail_area)
+        memunmap((void *)(uintptr_t)queue->avail_area);
+    if (queue->used_area)
+        memunmap((void *)(uintptr_t)queue->used_area);
+}
+
+static int virtio_pci_map_queue(const struct virtio_pci_owner *owner,
+                                const struct virtqueue_info *guest,
+                                struct virtqueue_info *queue) {
+    __u64 size = guest->queue_size;
+
+    if (!virtio_pci_queue_valid(guest))
+        return -EINVAL;
+
+    size_t desc_len = sizeof(struct virtq_desc) * size;
+    size_t avail_len = virtio_avail_ring_size(size);
+    size_t used_len = virtio_used_ring_size(size);
+
+    *queue = (struct virtqueue_info){
+        .queue_size = size,
+        .desc_area = (__u64)hvisor_virtio_pci_map_ram(owner, guest->desc_area,
+                                                      desc_len, desc_len),
+        .avail_area = (__u64)hvisor_virtio_pci_map_ram(owner, guest->avail_area,
+                                                       avail_len, avail_len),
+        .used_area = (__u64)hvisor_virtio_pci_map_ram(owner, guest->used_area,
+                                                      used_len, used_len),
+    };
+    if (!queue->desc_area || !queue->avail_area || !queue->used_area) {
+        virtio_pci_unmap_queue(queue);
+        return -EFAULT;
+    }
+    return 0;
+}
+
+static int create_virtio_pci_dev(const struct virtio_pci_config_req *request) {
+    const struct virtio_pci_config_info *info = &request->info;
+    struct virtio_pci_dev *dev;
+    struct virtio_pci_owner owner = {
+        .zone_id = info->zone_id,
+        .zone_generation = request->zone_generation,
+    };
+    int limit = virtio_pci_userspace_devices() ? VIRTIO_PCI_USERSPACE_DEV_BASE
+                                               : MAX_VIRTPCI_DEV;
+    int i, ret, slot;
+
+    if (!info->num_of_queues || info->num_of_queues > MAX_VQ)
+        return -EINVAL;
+
+    for (slot = 0; slot < limit; slot++) {
+        if (!virtpci_dev_list[slot].num_of_vq)
+            break;
+    }
+    if (slot == limit)
+        return -ENOSPC;
+
+    for (i = 0; i < info->num_of_queues; i++) {
+        struct virtqueue_info mapped;
+
+        ret = virtio_pci_map_queue(&owner, &info->vqs[i], &mapped);
+        if (ret)
+            return ret;
+        virtio_pci_unmap_queue(&mapped);
+    }
+    if (info->dtype == VIRTIO_PCI_BLK) {
+        ret = hvisor_virtio_pci_blk_init_dev(slot);
+        if (ret)
+            return ret;
+    }
+
+    dev = &virtpci_dev_list[slot];
+    dev->owner = owner;
+    dev->dtype = info->dtype;
+    dev->num_of_vq = info->num_of_queues;
+    memcpy(dev->vqs, info->vqs, info->num_of_queues * sizeof(info->vqs[0]));
+    return slot;
+}
+
+static void virtio_rng_handler(const struct virtio_pci_owner *owner,
+                               struct virtqueue_info *vq) {
     __u16 queue_size = (__u16)vq->queue_size;
     struct virtq_desc *desc = (struct virtq_desc *)(uintptr_t)vq->desc_area;
     struct virtq_avail *avail = (struct virtq_avail *)(uintptr_t)vq->avail_area;
     struct virtq_used *used = (struct virtq_used *)(uintptr_t)vq->used_area;
+    unsigned int i;
     __u16 used_idx;
     __u16 avail_idx;
 
@@ -252,7 +387,7 @@ static void virtio_rng_handler(struct virtqueue_info *vq, int queue_id) {
     smp_rmb();
     avail_idx = READ_ONCE(avail->idx);
 
-    while (used_idx != avail_idx) {
+    for (i = 0; i < queue_size && used_idx != avail_idx; i++) {
         __u16 slot = used_idx % queue_size;
         __u16 head = READ_ONCE(avail->ring[slot]);
         __u16 idx = head;
@@ -287,7 +422,8 @@ static void virtio_rng_handler(struct virtqueue_info *vq, int queue_id) {
                 break;
             }
 
-            buffer = memremap(desc_item.addr, desc_item.len, MEMREMAP_WB);
+            buffer = hvisor_virtio_pci_map_ram(owner, desc_item.addr,
+                                               desc_item.len, desc_item.len);
             if (buffer == NULL) {
                 pr_err("virtio rng failed to map desc %u addr=%llx len=%u\n",
                        idx, desc_item.addr, desc_item.len);
@@ -315,8 +451,10 @@ static void virtio_rng_handler(struct virtqueue_info *vq, int queue_id) {
     }
 }
 
-static void virtio_pci_process_config(void) {
-    while (!virtio_pci_config_req_empty()) {
+static bool virtio_pci_process_config(void) {
+    unsigned int i;
+
+    for (i = 0; i < MAX_PCI_CONFIG_REQ && !virtio_pci_config_req_empty(); i++) {
         struct virtio_pci_config_req *peek_req = virtio_pci_peek_config_req();
 
         if (virtio_pci_is_userspace_dtype(peek_req->info.dtype) ||
@@ -325,26 +463,14 @@ static void virtio_pci_process_config(void) {
 
         __u32 status = 0;
         __u16 dev_idx = 0;
-        void (*handler)(struct virtqueue_info *, int) = NULL;
         struct virtio_pci_config_req req = *peek_req;
         struct virtio_pci_config_info *info = &req.info;
         int ret;
 
-        switch (info->dtype) {
-        case VIRTIO_PCI_BLK:
-            handler = NULL;
-            break;
-        case VIRTIO_PCI_RNG:
-            handler = virtio_rng_handler;
-            break;
-        default:
+        if (info->dtype != VIRTIO_PCI_BLK && info->dtype != VIRTIO_PCI_RNG) {
             status = EOPNOTSUPP;
-            break;
-        }
-
-        if (!status) {
-            ret = create_virtio_pci_dev(info->num_of_queues, info->vqs,
-                                        info->dtype, handler);
+        } else {
+            ret = create_virtio_pci_dev(&req);
             if (ret < 0)
                 status = -ret;
             else
@@ -354,11 +480,13 @@ static void virtio_pci_process_config(void) {
         virtio_pci_push_config_res(req.request_id, status, dev_idx);
         virtio_pci_advance_config_req();
     }
+    return i == MAX_PCI_CONFIG_REQ;
 }
 
-static void virtio_pci_process_data(void) {
+static bool virtio_pci_process_data(void) {
+    unsigned int i;
 
-    while (!virtio_pci_data_req_empty()) {
+    for (i = 0; i < MAX_PCI_DATA_REQ && !virtio_pci_data_req_empty(); i++) {
         struct virtio_pci_data_req *peek_req = virtio_pci_peek_data_req();
 
         if (virtio_pci_userspace_devices() &&
@@ -371,42 +499,109 @@ static void virtio_pci_process_data(void) {
         __u64 queue_id = info->queue_id;
         __u32 cpu_id = info->cpu_id;
         struct virtio_pci_dev *dev;
-        struct virtqueue_info *vq;
+        struct virtqueue_info queue;
+        int ret = -EINVAL;
 
-        if (dev_idx >= nxt_dev_idx) {
-            pr_err("the dev_idx given by hvisor is invaild!\n");
-            continue;
-        }
-
+        if (dev_idx >= MAX_VIRTPCI_DEV)
+            goto complete;
         dev = &virtpci_dev_list[dev_idx];
-        if (queue_id >= dev->num_of_vq) {
-            pr_err("the queue_id given by hvisor is invaild!\n");
-            continue;
-        }
-        vq = &dev->vqs[queue_id];
+        if (dev->owner.zone_generation != req.zone_generation ||
+            queue_id >= dev->num_of_vq)
+            goto complete;
 
-        if (dev->data_req_handler != NULL)
-            dev->data_req_handler(vq, queue_id);
+        ret = virtio_pci_map_queue(&dev->owner, &dev->vqs[queue_id], &queue);
+        if (ret)
+            goto complete;
+        if (dev->dtype == VIRTIO_PCI_RNG)
+            virtio_rng_handler(&dev->owner, &queue);
         else
-            hvisor_virtio_pci_blk_handler(info->dev_id, vq, queue_id);
+            hvisor_virtio_pci_blk_handler(info->dev_id, &dev->owner, &queue,
+                                          queue_id);
+        virtio_pci_unmap_queue(&queue);
+    complete:
         virtio_pci_write_hypercall_info(VIRTIO_PCI_HC_OP_DATA_REQ_COMPLETE,
-                                        cpu_id, req.request_id, 0);
+                                        cpu_id, req.request_id, -ret);
         hvisor_call(HVISOR_HC_VIRTIO_PCI, VIRTIO_PCI_HC_DOORBELL, 0);
     }
+    return i == MAX_PCI_DATA_REQ;
+}
+
+static void virtio_pci_workfn(struct work_struct *work, bool (*process)(void)) {
+    bool more;
+
+    if (!virtio_pci_begin_io(NULL))
+        return;
+    mutex_lock(&virtio_pci_lock);
+    more = process();
+    mutex_unlock(&virtio_pci_lock);
+    virtio_pci_end_io();
+
+    if (more)
+        schedule_work(work);
 }
 
 static void virtio_pci_config_workfn(struct work_struct *work) {
-    virtio_pci_process_config();
+    virtio_pci_workfn(work, virtio_pci_process_config);
 }
 
 static void virtio_pci_data_workfn(struct work_struct *work) {
-    mutex_lock(&virtio_pci_lock);
-    virtio_pci_process_data();
-    mutex_unlock(&virtio_pci_lock);
+    virtio_pci_workfn(work, virtio_pci_process_data);
 }
 
 static DECLARE_WORK(virtio_pci_config_work, virtio_pci_config_workfn);
 static DECLARE_WORK(virtio_pci_data_work, virtio_pci_data_workfn);
+
+static void virtio_pci_close_dev(unsigned int slot) {
+    struct virtio_pci_dev *dev = &virtpci_dev_list[slot];
+
+    if (dev->dtype == VIRTIO_PCI_BLK)
+        hvisor_virtio_pci_blk_close_dev(slot);
+    memset(dev, 0, sizeof(*dev));
+}
+
+static bool virtio_pci_io_idle(void) {
+    bool idle;
+
+    spin_lock(&virtio_pci_io_lock);
+    idle = !virtio_pci_active_io;
+    spin_unlock(&virtio_pci_io_lock);
+    return idle;
+}
+
+int hvisor_virtio_pci_shutdown_zone(unsigned long zone_id) {
+    unsigned int slot;
+    int ret;
+
+    if (!virtio_pci_bridge || !zone_id)
+        return hvisor_call(HVISOR_HC_SHUTDOWN_ZONE, zone_id, 0);
+
+    /* Stop admitting DMA before entering EL2 so none can run after it
+     * releases the zone's RAM. Wait here in Linux, where workers can sleep.
+     */
+    spin_lock(&virtio_pci_io_lock);
+    virtio_pci_io_paused = true;
+    spin_unlock(&virtio_pci_io_lock);
+    ret = wait_event_killable(virtio_pci_io_drained, virtio_pci_io_idle());
+    if (!ret)
+        ret = hvisor_call(HVISOR_HC_SHUTDOWN_ZONE, zone_id,
+                          HVISOR_VIRTIO_PCI_SHUTDOWN_DRAINED);
+    if (!ret) {
+        for (slot = 0; slot < MAX_VIRTPCI_DEV; slot++) {
+            if (virtpci_dev_list[slot].num_of_vq &&
+                virtpci_dev_list[slot].owner.zone_id == zone_id)
+                virtio_pci_close_dev(slot);
+        }
+    }
+
+    spin_lock(&virtio_pci_io_lock);
+    if (!ret)
+        virtio_pci_cleanup_epoch++;
+    virtio_pci_io_paused = false;
+    spin_unlock(&virtio_pci_io_lock);
+    schedule_work(&virtio_pci_config_work);
+    schedule_work(&virtio_pci_data_work);
+    return ret;
+}
 
 static irqreturn_t virtio_pci_irq_handler(int irq, void *dev_id) {
     if (irq == virtio_pci_irq_config)
@@ -478,6 +673,12 @@ int hvisor_virtio_pci_init(void) {
             err = -EINVAL;
         goto put_nodes;
     }
+    if (hvisor_call(HVISOR_HC_VIRTIO_PCI, VIRTIO_PCI_HC_GET_VERSION, 0) !=
+        VIRTIO_PCI_HYPERCALL_VERSION) {
+        pr_err("incompatible VirtIO PCI bridge version\n");
+        err = -EPROTONOSUPPORT;
+        goto put_nodes;
+    }
     static_assert(sizeof(struct virtio_pci_bridge) <= VIRTIO_PCI_BRIDGE_SIZE);
     virtio_pci_bridge = (void *)get_zeroed_page(GFP_KERNEL);
     if (!virtio_pci_bridge) {
@@ -485,6 +686,7 @@ int hvisor_virtio_pci_init(void) {
         goto put_nodes;
     }
     SetPageReserved(virt_to_page(virtio_pci_bridge));
+    virtio_pci_bridge->hypercall_info.version = VIRTIO_PCI_HYPERCALL_VERSION;
 
     err = request_irq(virtio_pci_irq_config, virtio_pci_irq_handler, 0,
                       "hvisor_virtio_pci_config", NULL);
@@ -515,7 +717,7 @@ put_nodes:
 }
 
 void hvisor_virtio_pci_exit(void) {
-    int dev_idx, queue;
+    unsigned int slot;
 
     if (!virtio_pci_bridge)
         return;
@@ -527,18 +729,8 @@ void hvisor_virtio_pci_exit(void) {
     hvisor_call(HVISOR_HC_VIRTIO_PCI, VIRTIO_PCI_HC_DEINIT,
                 __pa(virtio_pci_bridge));
 
-    hvisor_virtio_pci_blk_exit();
-    for (dev_idx = 0; dev_idx < nxt_dev_idx; dev_idx++) {
-        struct virtio_pci_dev *dev = &virtpci_dev_list[dev_idx];
-
-        for (queue = 0; queue < dev->num_of_vq; queue++) {
-            struct virtqueue_info *vq = &dev->vqs[queue];
-
-            memunmap((void *)(uintptr_t)vq->desc_area);
-            memunmap((void *)(uintptr_t)vq->avail_area);
-            memunmap((void *)(uintptr_t)vq->used_area);
-        }
-    }
+    for (slot = 0; slot < MAX_VIRTPCI_DEV; slot++)
+        virtio_pci_close_dev(slot);
     ClearPageReserved(virt_to_page(virtio_pci_bridge));
     free_page((unsigned long)virtio_pci_bridge);
     virtio_pci_bridge = NULL;

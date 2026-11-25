@@ -60,7 +60,7 @@ pub const MAX_VQ: usize = 16;
 const MAX_PCI_CONFIG_REQ: usize = 4;
 const MAX_PCI_CONFIG_RES: usize = 4;
 const MAX_PCI_DATA_REQ: usize = 32;
-pub const VIRTIO_PCI_HYPERCALL_VERSION: u16 = 1;
+pub const VIRTIO_PCI_HYPERCALL_VERSION: u16 = 2;
 
 pub const MAX_BACKOFF: usize = 1024;
 
@@ -364,7 +364,7 @@ impl VirtqueueAreaInfo {
 #[derive(Clone, Copy, Debug)]
 pub struct VirtioPCIConfigInfo {
     features: u64,
-    dev_id: u16,
+    zone_id: u16,
     num_of_queues: u16,
     dtype: u16,
     padding: u16,
@@ -375,7 +375,7 @@ impl VirtioPCIConfigInfo {
     pub fn dummy() -> Self {
         Self {
             features: 0,
-            dev_id: 0,
+            zone_id: 0,
             num_of_queues: 0,
             dtype: 0,
             padding: 0,
@@ -386,10 +386,6 @@ impl VirtioPCIConfigInfo {
     pub fn set_features(&mut self, val: u64) {
         self.features = val;
     }
-
-    // pub fn set_dev_id(&mut self, val: u16) {
-    //     self.dev_id = val;
-    // }
 
     pub fn set_num_of_queues(&mut self, val: u16) {
         self.num_of_queues = val;
@@ -412,18 +408,28 @@ impl VirtioPCIConfigInfo {
 #[derive(Clone, Copy, Debug)]
 pub struct VirtioPCIConfigReq {
     request_id: u32,
-    padding: u32,
+    zone_generation: u32,
     info: VirtioPCIConfigInfo,
 }
 
 impl VirtioPCIConfigReq {
-    fn new(request_id: u32, info: VirtioPCIConfigInfo) -> Self {
+    fn new(request_id: u32, zone_generation: u32, info: VirtioPCIConfigInfo) -> Self {
         Self {
             request_id,
-            padding: 0,
+            zone_generation,
             info,
         }
     }
+}
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct VirtioPCIRamRequest {
+    pub ipa: u64,
+    pub len: u64,
+    pub zone_id: u32,
+    pub zone_generation: u32,
+    pub pa: u64,
 }
 
 #[repr(C)]
@@ -540,15 +546,15 @@ impl VirtioPCIDataInfo {
 #[derive(Copy, Clone, Debug)]
 pub struct VirtioPCIDataReq {
     request_id: u32,
-    padding: u32,
+    zone_generation: u32,
     info: VirtioPCIDataInfo,
 }
 
 impl VirtioPCIDataReq {
-    fn new(request_id: u32, info: VirtioPCIDataInfo) -> Self {
+    fn new(request_id: u32, zone_generation: u32, info: VirtioPCIDataInfo) -> Self {
         Self {
             request_id,
-            padding: 0,
+            zone_generation,
             info,
         }
     }
@@ -571,7 +577,7 @@ struct VirtioPCIBridgeRegion {
 pub struct VirtioPCIBridge {
     base: usize,
     next_request_id: u32,
-    pending_data: BTreeMap<u32, (VirtioPCIDataInfo, Arc<RwLock<MsixTable>>)>,
+    pending_data: BTreeMap<u32, (VirtioPCIDataReq, Arc<RwLock<MsixTable>>)>,
 }
 
 impl VirtioPCIBridge {
@@ -658,34 +664,46 @@ impl VirtioPCIBridge {
         front == rear
     }
 
-    fn wait_for_queue_slot(&self, is_full: impl Fn(&Self) -> bool, queue_name: &str) -> HvResult {
+    fn wait_for_config_slot(&self, zone: &crate::zone::Zone) -> HvResult {
         let mut count = 0usize;
         let mut backoff = 1usize;
-        while is_full(self) {
+        while self.is_config_req_full() {
+            if zone.is_stopping() {
+                return hv_result_err!(ENODEV, "VirtIO PCI zone is stopping");
+            }
             for _ in 0..backoff {
                 core::hint::spin_loop();
             }
             count += backoff;
             if count >= MAX_WAIT_TIMES {
-                return hv_result_err!(EBUSY, format!("virtio pci {queue_name} queue is full"));
+                return hv_result_err!(EBUSY, "VirtIO PCI config request queue is full");
             }
             backoff = (backoff << 1).min(MAX_BACKOFF);
         }
         Ok(())
     }
 
-    pub fn push_config_req(&mut self, config: VirtioPCIConfigInfo) -> HvResult<u32> {
+    pub fn push_config_req(&mut self, mut config: VirtioPCIConfigInfo) -> HvResult<u32> {
         if !self.is_initialized() {
             return hv_result_err!(ENODEV, "VirtIO PCI bridge is not initialized");
         }
-        self.wait_for_queue_slot(Self::is_config_req_full, "config request")?;
+        let zone = crate::cpu_data::this_zone();
+        config.zone_id = zone
+            .id()
+            .try_into()
+            .map_err(|_| hv_err!(EINVAL, "VirtIO PCI zone ID is out of range"))?;
+        let zone_generation = zone.generation();
+        self.wait_for_config_slot(&zone)?;
+        if !zone.try_mark_virtio_pci() {
+            return hv_result_err!(ENODEV, "VirtIO PCI zone is stopping");
+        }
         let request_id = self.alloc_request_id();
         let region = self.region();
         let rear = region.config_req_rear.get() as usize;
         unsafe {
             core::ptr::write_volatile(
                 &mut region.config_req_list[rear] as *mut VirtioPCIConfigReq,
-                VirtioPCIConfigReq::new(request_id, config),
+                VirtioPCIConfigReq::new(request_id, zone_generation, config),
             );
         }
         fence(Ordering::Release);
@@ -699,12 +717,17 @@ impl VirtioPCIBridge {
         data_info: VirtioPCIDataInfo,
         msix_table: &Arc<RwLock<MsixTable>>,
     ) -> HvResult {
+        let zone = crate::cpu_data::this_zone();
+        let zone_generation = zone.generation();
         let mut waited = 0;
         let mut backoff = 1;
         loop {
+            if zone.is_stopping() {
+                return hv_result_err!(ENODEV, "VirtIO PCI zone is stopping");
+            }
             if VIRTIO_PCI_BRIDGE
                 .lock()
-                .try_push_data_req(data_info, msix_table)?
+                .try_push_data_req(zone_generation, data_info, msix_table)?
             {
                 return Ok(());
             }
@@ -722,6 +745,7 @@ impl VirtioPCIBridge {
 
     fn try_push_data_req(
         &mut self,
+        zone_generation: u32,
         data_info: VirtioPCIDataInfo,
         msix_table: &Arc<RwLock<MsixTable>>,
     ) -> HvResult<bool> {
@@ -739,7 +763,8 @@ impl VirtioPCIBridge {
         let mut slot = front;
         while slot != rear {
             let queued = unsafe { core::ptr::read_volatile(&region.data_req_list[slot]) };
-            if queued.info.dev_id == data_info.dev_id
+            if queued.zone_generation == zone_generation
+                && queued.info.dev_id == data_info.dev_id
                 && queued.info.queue_id == data_info.queue_id
                 && queued.info.msix_vector_idx == data_info.msix_vector_idx
             {
@@ -756,13 +781,14 @@ impl VirtioPCIBridge {
             return Ok(false);
         }
         let request_id = self.alloc_request_id();
+        let request = VirtioPCIDataReq::new(request_id, zone_generation, data_info);
         self.pending_data
-            .insert(request_id, (data_info, Arc::clone(msix_table)));
+            .insert(request_id, (request, Arc::clone(msix_table)));
         let region = self.region();
         unsafe {
             core::ptr::write_volatile(
                 &mut region.data_req_list[rear] as *mut VirtioPCIDataReq,
-                VirtioPCIDataReq::new(request_id, data_info),
+                request,
             );
         }
         fence(Ordering::Release);
@@ -771,11 +797,17 @@ impl VirtioPCIBridge {
     }
 
     pub fn complete_data_req(&mut self, request_id: u32) -> Option<usize> {
-        let (info, table) = self.pending_data.remove(&request_id)?;
+        let (request, table) = self.pending_data.remove(&request_id)?;
+        let info = request.info;
         table
             .write()
             .add_pending_msix(info.get_msix_vector_idx() as usize);
         Some(info.cpu_id as usize)
+    }
+
+    pub fn forget_zone_requests(&mut self, generation: u32) {
+        self.pending_data
+            .retain(|_, (req, _)| req.zone_generation != generation);
     }
 
     fn peek_config_res(&self) -> VirtioPCIConfigRes {
@@ -795,10 +827,14 @@ impl VirtioPCIBridge {
     }
 
     pub fn wait_for_config(request_id: u32) -> HvResult<u16> {
+        let zone = crate::cpu_data::this_zone();
         let mut count = 0usize;
         let mut backoff = 1usize;
 
         loop {
+            if zone.is_stopping() {
+                return hv_result_err!(ENODEV, "VirtIO PCI zone is stopping");
+            }
             let response = {
                 let mut bridge = VIRTIO_PCI_BRIDGE.lock();
                 if !bridge.is_initialized() {

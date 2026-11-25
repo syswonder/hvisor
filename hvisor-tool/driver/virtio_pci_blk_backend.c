@@ -16,6 +16,7 @@
 #include <linux/string.h>
 #include <linux/virtio_blk.h>
 
+#include "virtio_pci_backend.h"
 #include "virtio_pci_blk_backend.h"
 #include "virtio_pci_bridge.h"
 
@@ -98,24 +99,29 @@ static int virtio_pci_blk_collect_chain(struct virtq_desc *desc, __u16 head,
 
 static int virtio_pci_blk_rw(struct hvisor_virtio_pci_blk_dev *blk,
                              struct virtq_desc *chain, int chain_len,
+                             const struct virtio_pci_owner *owner,
                              struct virtio_blk_outhdr *hdr, u32 *total_len) {
-    loff_t offset =
-        (loff_t)le64_to_cpu(hdr->sector) * HVISOR_VIRTIO_BLK_SECTOR_SIZE;
+    const u64 sector = le64_to_cpu(hdr->sector);
+    const u64 capacity = blk->capacity_sectors * HVISOR_VIRTIO_BLK_SECTOR_SIZE;
+    const bool is_write = le32_to_cpu(hdr->type) == VIRTIO_BLK_T_OUT;
     u32 done = 0;
+    loff_t offset;
     int i;
-    bool is_write = le32_to_cpu(hdr->type) == VIRTIO_BLK_T_OUT;
 
+    if (sector >= blk->capacity_sectors)
+        return -EIO;
+    offset = sector * HVISOR_VIRTIO_BLK_SECTOR_SIZE;
     for (i = 1; i < chain_len - 1; i++) {
-        void *buf = memremap(chain[i].addr, chain[i].len, MEMREMAP_WB);
+        void *buf;
         ssize_t io_len;
 
-        if (buf == NULL)
-            return -ENOMEM;
-        if (offset + chain[i].len >
-            blk->capacity_sectors * HVISOR_VIRTIO_BLK_SECTOR_SIZE) {
-            memunmap(buf);
+        if (chain[i].len > capacity - offset ||
+            (!!(chain[i].flags & VRING_DESC_F_WRITE) == is_write))
             return -EIO;
-        }
+        buf = hvisor_virtio_pci_map_ram(owner, chain[i].addr, chain[i].len,
+                                        chain[i].len);
+        if (!buf)
+            return -EFAULT;
         if (is_write)
             io_len = kernel_write(blk->image, buf, chain[i].len, &offset);
         else
@@ -132,16 +138,18 @@ static int virtio_pci_blk_rw(struct hvisor_virtio_pci_blk_dev *blk,
     return 0;
 }
 
-static int virtio_pci_blk_handle_one(struct hvisor_virtio_pci_blk_dev *blk,
-                                     struct virtq_desc *desc,
-                                     struct virtq_avail *avail,
-                                     struct virtq_used *used, __u16 avail_slot,
-                                     __u16 queue_size) {
+static void virtio_pci_blk_handle_one(struct hvisor_virtio_pci_blk_dev *blk,
+                                      const struct virtio_pci_owner *owner,
+                                      struct virtq_desc *desc,
+                                      struct virtq_avail *avail,
+                                      struct virtq_used *used, __u16 avail_slot,
+                                      __u16 queue_size) {
     struct virtq_desc *chain = blk->chain;
-    struct virtio_blk_outhdr *hdr;
+    struct virtio_blk_outhdr hdr;
+    void *header_buf;
     __u16 head = avail->ring[avail_slot];
     __u16 used_slot = used->idx % queue_size;
-    u32 total_len = 1;
+    u32 total_len = 0;
     u8 status = VIRTIO_BLK_S_OK;
     void *status_buf;
     int chain_len;
@@ -149,30 +157,43 @@ static int virtio_pci_blk_handle_one(struct hvisor_virtio_pci_blk_dev *blk,
 
     ret =
         virtio_pci_blk_collect_chain(desc, head, queue_size, chain, &chain_len);
-    if (ret)
-        return ret;
-    if (chain_len < 2 || chain[0].len < sizeof(*hdr) ||
+    /* An invalid chain may have no safe status byte to update. */
+    if (ret || chain_len < 2 ||
+        !(chain[chain_len - 1].flags & VRING_DESC_F_WRITE) ||
         chain[chain_len - 1].len < 1)
-        return -EINVAL;
+        goto complete;
 
-    hdr = memremap(chain[0].addr, sizeof(*hdr), MEMREMAP_WB);
-    if (hdr == NULL)
-        return -ENOMEM;
+    status_buf =
+        hvisor_virtio_pci_map_ram(owner, chain[chain_len - 1].addr,
+                                  chain[chain_len - 1].len, sizeof(status));
+    if (!status_buf)
+        goto complete;
 
-    switch (le32_to_cpu(hdr->type)) {
+    ret = -EFAULT;
+    if (chain[0].len < sizeof(hdr) || (chain[0].flags & VRING_DESC_F_WRITE))
+        goto write_status;
+    header_buf = hvisor_virtio_pci_map_ram(owner, chain[0].addr, chain[0].len,
+                                           sizeof(hdr));
+    if (!header_buf)
+        goto write_status;
+    memcpy(&hdr, header_buf, sizeof(hdr));
+    memunmap(header_buf);
+
+    switch (le32_to_cpu(hdr.type)) {
     case VIRTIO_BLK_T_IN:
     case VIRTIO_BLK_T_OUT:
-        ret = virtio_pci_blk_rw(blk, chain, chain_len, hdr, &total_len);
+        ret = virtio_pci_blk_rw(blk, chain, chain_len, owner, &hdr, &total_len);
         break;
     case VIRTIO_BLK_T_GET_ID: {
         void *id_buf;
         size_t copy_len;
 
-        if (chain_len != 3) {
+        if (chain_len != 3 || !(chain[1].flags & VRING_DESC_F_WRITE)) {
             ret = -EINVAL;
             break;
         }
-        id_buf = memremap(chain[1].addr, chain[1].len, MEMREMAP_WB);
+        id_buf = hvisor_virtio_pci_map_ram(owner, chain[1].addr, chain[1].len,
+                                           chain[1].len);
         if (id_buf == NULL) {
             ret = -ENOMEM;
             break;
@@ -190,24 +211,19 @@ static int virtio_pci_blk_handle_one(struct hvisor_virtio_pci_blk_dev *blk,
         break;
     }
 
-    memunmap(hdr);
-
+write_status:
     if (ret == -EOPNOTSUPP)
         status = VIRTIO_BLK_S_UNSUPP;
     else if (ret)
         status = VIRTIO_BLK_S_IOERR;
 
-    status_buf = memremap(chain[chain_len - 1].addr, 1, MEMREMAP_WB);
-    if (status_buf == NULL)
-        return -ENOMEM;
     *(u8 *)status_buf = status;
     memunmap(status_buf);
-
-    if (ret && ret != -EOPNOTSUPP)
+    if (ret)
         total_len = 1;
+complete:
     virtio_pci_blk_complete(used, used_slot, head, total_len);
-    used->idx++;
-    return 0;
+    smp_store_release(&used->idx, used->idx + 1);
 }
 
 int hvisor_virtio_pci_blk_init_dev(__u16 dev_id) {
@@ -257,28 +273,24 @@ int hvisor_virtio_pci_blk_init_dev(__u16 dev_id) {
     return 0;
 }
 
-void hvisor_virtio_pci_blk_exit(void) {
-    int i;
+void hvisor_virtio_pci_blk_close_dev(__u16 dev_id) {
+    struct hvisor_virtio_pci_blk_dev *blk = &virtio_pci_blk_devs[dev_id];
 
-    for (i = 0; i < MAX_VIRTPCI_DEV; i++) {
-        if (virtio_pci_blk_devs[i].image != NULL) {
-            filp_close(virtio_pci_blk_devs[i].image, NULL);
-            virtio_pci_blk_devs[i].image = NULL;
-        }
-        kfree(virtio_pci_blk_devs[i].chain);
-        virtio_pci_blk_devs[i].chain = NULL;
-        virtio_pci_blk_devs[i].capacity_sectors = 0;
-        memset(virtio_pci_blk_devs[i].id, 0, sizeof(virtio_pci_blk_devs[i].id));
-    }
+    if (blk->image)
+        filp_close(blk->image, NULL);
+    kfree(blk->chain);
+    memset(blk, 0, sizeof(*blk));
 }
 
-void hvisor_virtio_pci_blk_handler(__u16 dev_id, struct virtqueue_info *vq,
-                                   int queue_id) {
+void hvisor_virtio_pci_blk_handler(__u16 dev_id,
+                                   const struct virtio_pci_owner *owner,
+                                   struct virtqueue_info *vq, int queue_id) {
     struct hvisor_virtio_pci_blk_dev *blk;
     struct virtq_desc *desc;
     struct virtq_avail *avail;
     struct virtq_used *used;
     __u16 queue_size;
+    unsigned int i;
     __u16 used_idx;
 
     if (dev_id >= MAX_VIRTPCI_DEV)
@@ -299,12 +311,13 @@ void hvisor_virtio_pci_blk_handler(__u16 dev_id, struct virtqueue_info *vq,
         return;
     }
 
-    used_idx = used->idx;
-    while (used_idx != avail->idx) {
+    used_idx = READ_ONCE(used->idx);
+    for (i = 0; i < queue_size && used_idx != smp_load_acquire(&avail->idx);
+         i++) {
         __u16 slot = used_idx % queue_size;
 
-        if (virtio_pci_blk_handle_one(blk, desc, avail, used, slot, queue_size))
-            break;
-        used_idx = used->idx;
+        virtio_pci_blk_handle_one(blk, owner, desc, avail, used, slot,
+                                  queue_size);
+        used_idx = READ_ONCE(used->idx);
     }
 }
