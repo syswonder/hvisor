@@ -176,9 +176,15 @@ static int virtio_gpu_init(VirtIODevice *vdev) {
     gdev->scanouts[0].height = connector->modes[0].vdisplay;
 
     // async
-    pthread_create(&gdev->gpu_thread, NULL, virtio_gpu_handler, vdev);
     pthread_cond_init(&gdev->gpu_cond, NULL);
     pthread_mutex_init(&gdev->queue_mutex, NULL);
+    if (pthread_create(&gdev->gpu_thread, NULL, virtio_gpu_handler, vdev) !=
+        0) {
+        pthread_cond_destroy(&gdev->gpu_cond);
+        pthread_mutex_destroy(&gdev->queue_mutex);
+        log_error("%s failed to create gpu worker thread", __func__);
+        return -1;
+    }
     gdev->async_started = true;
 
     return 0;
@@ -192,6 +198,20 @@ static void virtio_gpu_close(VirtIODevice *vdev) {
 
     GPUDev *gdev = vdev->dev;
     if (gdev) {
+        // Stop async worker before freeing scanouts, resources, and commands.
+        // gpu_cond/gpu_thread only exist once virtio_gpu_init finished;
+        // on a partial init (e.g. drm open failure) skip them entirely.
+        if (gdev->async_started) {
+            pthread_mutex_lock(&gdev->queue_mutex);
+            gdev->close = true;
+            pthread_cond_signal(&gdev->gpu_cond);
+            pthread_mutex_unlock(&gdev->queue_mutex);
+            pthread_join(gdev->gpu_thread, NULL);
+            pthread_cond_destroy(&gdev->gpu_cond);
+            pthread_mutex_destroy(&gdev->queue_mutex);
+            gdev->async_started = false;
+        }
+
         // Reclaim memory related to scanouts
         for (int i = 0; i < gdev->scanouts_num; ++i) {
             free(gdev->scanouts[i].current_cursor);
@@ -218,18 +238,8 @@ static void virtio_gpu_close(VirtIODevice *vdev) {
         while (!TAILQ_EMPTY(&gdev->command_queue)) {
             GPUCommand *temp = TAILQ_FIRST(&gdev->command_queue);
             TAILQ_REMOVE(&gdev->command_queue, temp, next);
+            free(temp->resp_iov);
             free(temp);
-        }
-
-        // Reclaim async part
-        gdev->close = true;
-        // gpu_cond/gpu_thread only exist once virtio_gpu_init finished;
-        // on a partial init (e.g. drm open failure) skip them entirely.
-        if (gdev->async_started) {
-            pthread_cond_signal(&gdev->gpu_cond);
-            pthread_join(gdev->gpu_thread, NULL);
-            pthread_cond_destroy(&gdev->gpu_cond);
-            pthread_mutex_destroy(&gdev->queue_mutex);
         }
 
         free(gdev);
