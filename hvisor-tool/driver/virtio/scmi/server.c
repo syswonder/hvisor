@@ -21,6 +21,22 @@ void hvisor_put_node(void) {
 extern void clock_ctrl_finish(void);
 extern void reset_ctrl_finish(void);
 extern void power_ctrl_finish(void);
+int scmi_release_zone(u32 zone) {
+    u32 released = 0;
+    int errors;
+
+    /* Clocks first (stops scanout/DMA, removing the stale-interrupt source),
+     * then power off the domains (the hardware reset). */
+    errors = clock_zone_release(zone, &released);
+    errors += power_zone_release(zone, &released);
+    if (errors)
+        pr_warn("hvisor.ko: failed to release %d scmi resource(s) of zone %u\n",
+                errors, zone);
+    else if (released > 0)
+        pr_info("hvisor.ko: released %u scmi resource(s) of zone %u\n",
+                released, zone);
+    return (int)released;
+}
 
 int hvisor_scmi_init(void) {
     int ret;
@@ -42,6 +58,14 @@ int hvisor_scmi_init(void) {
 }
 
 void hvisor_scmi_cleanup(void) {
+    /* Module unload must not leave resources enabled behind. */
+    for (u32 zone = 0; zone < MAX_ZONES; zone++) {
+        u32 released = 0;
+
+        clock_zone_release(zone, &released);
+        power_zone_release(zone, &released);
+    }
+
     power_ctrl_finish();
     reset_ctrl_finish();
     clock_ctrl_finish();

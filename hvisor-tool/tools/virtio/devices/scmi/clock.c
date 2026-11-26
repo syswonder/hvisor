@@ -195,7 +195,8 @@ static int handle_clock_clock_attributes(SCMIDev *dev, uint16_t token,
                                   SCMI_ERR_RANGE);
     }
 
-    struct hvisor_scmi_clock_args args;
+    struct hvisor_scmi_clock_args args = {0};
+    args.zone_id = dev->zone_id;
     args.u.clock_attr.clock_id = phys_id;
 
     int ret =
@@ -300,7 +301,8 @@ static int handle_clock_rate_get(SCMIDev *dev, uint16_t token,
                                   SCMI_ERR_RANGE);
     }
 
-    struct hvisor_scmi_clock_args args;
+    struct hvisor_scmi_clock_args args = {0};
+    args.zone_id = dev->zone_id;
     struct clock_rate_info *rate_info = (struct clock_rate_info *)&args.u.data;
     rate_info->clock_id = phys_id;
 
@@ -354,8 +356,8 @@ static int handle_clock_rate_set(SCMIDev *dev, uint16_t token,
                                   SCMI_CLOCK_MSG_RATE_SET, token,
                                   SCMI_ERR_SUPPORT);
     }
-
-    struct hvisor_scmi_clock_args args;
+    struct hvisor_scmi_clock_args args = {0};
+    args.zone_id = dev->zone_id;
     struct clock_rate_set_info *rate_set_info =
         (struct clock_rate_set_info *)&args.u.data;
     rate_set_info->clock_id = phys_id;
@@ -408,7 +410,8 @@ static int handle_clock_config_get(SCMIDev *dev, uint16_t token,
                                   SCMI_ERR_RANGE);
     }
 
-    struct hvisor_scmi_clock_args args;
+    struct hvisor_scmi_clock_args args = {0};
+    args.zone_id = dev->zone_id;
     struct clock_config_info *config_info =
         (struct clock_config_info *)&args.u.data;
     config_info->clock_id = phys_id;
@@ -455,8 +458,8 @@ static int handle_clock_config_set(SCMIDev *dev, uint16_t token,
                                   SCMI_CLOCK_MSG_CONFIG_SET, token,
                                   SCMI_ERR_ENTRY);
     }
-
-    struct hvisor_scmi_clock_args args;
+    struct hvisor_scmi_clock_args args = {0};
+    args.zone_id = dev->zone_id;
     struct clock_config_info *config_info =
         (struct clock_config_info *)&args.u.data;
     config_info->clock_id = phys_id;
@@ -501,7 +504,8 @@ static int handle_clock_name_get(SCMIDev *dev, uint16_t token,
                                   SCMI_ERR_RANGE);
     }
 
-    struct hvisor_scmi_clock_args args;
+    struct hvisor_scmi_clock_args args = {0};
+    args.zone_id = dev->zone_id;
     struct clock_name_info *name_info = (struct clock_name_info *)&args.u.data;
     name_info->clock_id = phys_id;
 

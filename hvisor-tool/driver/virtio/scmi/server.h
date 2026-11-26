@@ -31,4 +31,22 @@ int hvisor_scmi_power_ioctl(struct hvisor_scmi_power_args __user *user_args);
 /* Cleanup — called from hvisor_exit() to release SCMI resources */
 void hvisor_scmi_cleanup(void);
 
+/* Per-zone lifecycle for host-refcounted SCMI resources (clocks via
+ * clk_prepare_enable and power domains via pm_runtime_resume_and_get).
+ *
+ * Reset controls (reset.c) are intentionally excluded: they use exclusive
+ * handles acquired and released within each ioctl (idempotent line-level
+ * operations with no persistent kernel refcount), and neither asserting nor
+ * deasserting a reset line on shutdown is universally safe for an unowned
+ * passthrough device; the next guest driver idempotently resets/deasserts
+ * its own lines on probe. */
+int clock_zone_release(u32 zone, u32 *released);
+int power_zone_release(u32 zone, u32 *released);
+/* Release SCMI clock and power-domain references recorded for zone @zone:
+ * disable its clocks first, then power off its domains. Idempotent; safe to
+ * call before a zone starts (any recorded state then belongs to a dead
+ * instance) and after it is shut down. Returns the number of resources
+ * released. */
+int scmi_release_zone(u32 zone);
+
 #endif /* _HVISOR_SCMI_SERVER_H */

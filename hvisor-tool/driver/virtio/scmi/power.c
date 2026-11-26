@@ -1,10 +1,12 @@
 #include "hvisor.h"
 #include "server.h"
+#include <linux/mutex.h>
 #include <linux/of.h>
 #include <linux/platform_device.h>
 #include <linux/pm_domain.h>
 #include <linux/pm_runtime.h>
 #include <linux/slab.h>
+#include <linux/string.h>
 #include <linux/uaccess.h>
 #include <linux/version.h>
 
@@ -15,6 +17,66 @@ struct power_domain_dev {
 
 static struct power_domain_dev *power_devices;
 static u32 power_max_num;
+
+/* Per-zone power-on state (idempotent boolean ownership; see clock.c). */
+static bool **pwr_zone_on;
+static DEFINE_MUTEX(power_zone_lock);
+
+static int power_domain_state_set(u32 domain_id, u32 power_state);
+
+static bool *power_zone_row(u32 zone) {
+    bool *row;
+
+    if (zone == 0 || zone >= MAX_ZONES || power_max_num == 0)
+        return NULL;
+    row = pwr_zone_on ? pwr_zone_on[zone] : NULL;
+    if (!row) {
+        row = kcalloc(power_max_num, sizeof(*row), GFP_KERNEL);
+        if (!row)
+            return NULL;
+        if (!pwr_zone_on) {
+            pwr_zone_on = kcalloc(MAX_ZONES, sizeof(*pwr_zone_on), GFP_KERNEL);
+            if (!pwr_zone_on) {
+                kfree(row);
+                return NULL;
+            }
+        }
+        pwr_zone_on[zone] = row;
+    }
+    return row;
+}
+
+int power_zone_release(u32 zone, u32 *released) {
+    bool *row;
+    u32 domain;
+    int errors = 0;
+
+    mutex_lock(&power_zone_lock);
+    row = (zone > 0 && zone < MAX_ZONES && pwr_zone_on) ? pwr_zone_on[zone]
+                                                        : NULL;
+    if (!row) {
+        mutex_unlock(&power_zone_lock);
+        return 0;
+    }
+    for (domain = 0; domain < power_max_num; domain++) {
+        if (!row[domain])
+            continue;
+        /* pm_runtime_put_sync() drops usage_count before running rpm_idle(),
+         * so clear ownership unconditionally to avoid double-dropping. */
+        int ret = power_domain_state_set(domain, SCMI_POWER_STATE_GENERIC_OFF);
+        row[domain] = false;
+        if (ret != 0) {
+            pr_warn("hvisor.ko: cannot release power domain %u for zone %u: "
+                    "%d\n",
+                    domain, zone, ret);
+            errors++;
+        } else if (released) {
+            (*released)++;
+        }
+    }
+    mutex_unlock(&power_zone_lock);
+    return errors;
+}
 
 /* Control platform device - carrier for the hvisor DT node */
 static struct platform_device *ctrl_pdev;
@@ -103,6 +165,14 @@ void power_ctrl_finish(void) {
         power_devices = NULL;
         power_max_num = 0;
     }
+    if (pwr_zone_on) {
+        u32 z;
+
+        for (z = 0; z < MAX_ZONES; z++)
+            kfree(pwr_zone_on[z]);
+        kfree(pwr_zone_on);
+        pwr_zone_on = NULL;
+    }
 
     if (ctrl_pdev) {
         platform_device_unregister(ctrl_pdev);
@@ -134,10 +204,53 @@ static int power_domain_state_set(u32 domain_id, u32 power_state) {
 #endif
         return ret;
     }
-    if (power_state == SCMI_POWER_STATE_GENERIC_OFF)
-        return pm_runtime_put_sync(dev);
+    if (power_state == SCMI_POWER_STATE_GENERIC_OFF) {
+        ret = pm_runtime_put_sync(dev);
+        return ret < 0 ? ret : 0;
+    }
 
     return -EINVAL;
+}
+
+static int set_zone_power_state(u32 zone, u32 domain_id, u32 power_state) {
+    bool *row;
+    int ret;
+
+    if (zone == 0 || zone >= MAX_ZONES)
+        return -EINVAL;
+    if (power_state != SCMI_POWER_STATE_GENERIC_ON &&
+        power_state != SCMI_POWER_STATE_GENERIC_OFF)
+        return -EINVAL;
+
+    mutex_lock(&power_zone_lock);
+    ret = power_domain_init(domain_id);
+    if (ret < 0) {
+        mutex_unlock(&power_zone_lock);
+        return ret;
+    }
+
+    if (power_state == SCMI_POWER_STATE_GENERIC_ON) {
+        row = power_zone_row(zone);
+        if (!row) {
+            mutex_unlock(&power_zone_lock);
+            return -ENOMEM;
+        }
+        if (!row[domain_id]) {
+            ret =
+                power_domain_state_set(domain_id, SCMI_POWER_STATE_GENERIC_ON);
+            if (ret == 0)
+                row[domain_id] = true;
+        }
+    } else {
+        row = pwr_zone_on ? pwr_zone_on[zone] : NULL;
+        if (row && row[domain_id]) {
+            ret =
+                power_domain_state_set(domain_id, SCMI_POWER_STATE_GENERIC_OFF);
+            row[domain_id] = false;
+        }
+    }
+    mutex_unlock(&power_zone_lock);
+    return ret;
 }
 
 static int power_domain_state_get(u32 domain_id, u32 *power_state) {
@@ -209,7 +322,7 @@ int hvisor_scmi_power_ioctl(struct hvisor_scmi_power_args __user *user_args) {
             return ret;
 
         args.u.power_attr.flags = flags;
-        strscpy(args.u.power_attr.name, name, 64);
+        strscpy(args.u.power_attr.name, name, 63);
         args.u.power_attr.name[63] = '\0';
 
         if (copy_to_user(&user_args->u.power_attr, &args.u.power_attr,
@@ -217,17 +330,10 @@ int hvisor_scmi_power_ioctl(struct hvisor_scmi_power_args __user *user_args) {
             return -EFAULT;
         return 0;
     }
-    case HVISOR_SCMI_POWER_STATE_SET: {
-        u32 domain_id = args.u.power_state_info.domain_id;
-        int ret;
-
-        ret = power_domain_init(domain_id);
-        if (ret < 0)
-            return ret;
-
-        return power_domain_state_set(domain_id,
-                                      args.u.power_state_info.power_state);
-    }
+    case HVISOR_SCMI_POWER_STATE_SET:
+        return set_zone_power_state(args.zone_id,
+                                    args.u.power_state_info.domain_id,
+                                    args.u.power_state_info.power_state);
     case HVISOR_SCMI_POWER_STATE_GET: {
         u32 domain_id = args.u.power_state_info.domain_id;
         u32 power_state;

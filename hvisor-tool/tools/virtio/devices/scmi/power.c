@@ -124,7 +124,8 @@ static int handle_power_domain_attributes(SCMIDev *dev, uint16_t token,
                                   SCMI_ERR_RANGE);
     }
 
-    struct hvisor_scmi_power_args args;
+    struct hvisor_scmi_power_args args = {0};
+    args.zone_id = dev->zone_id;
     args.u.power_attr.domain_id = phys_id;
 
     int ret =
@@ -178,8 +179,8 @@ static int handle_power_state_set(SCMIDev *dev, uint16_t token,
                                   SCMI_POWER_MSG_POWER_STATE_SET, token,
                                   SCMI_ERR_SUPPORT);
     }
-
-    struct hvisor_scmi_power_args args;
+    struct hvisor_scmi_power_args args = {0};
+    args.zone_id = dev->zone_id;
     args.u.power_state_info.domain_id = phys_id;
     args.u.power_state_info.power_state = power_state;
 
@@ -223,7 +224,8 @@ static int handle_power_state_get(SCMIDev *dev, uint16_t token,
                                   SCMI_ERR_RANGE);
     }
 
-    struct hvisor_scmi_power_args args;
+    struct hvisor_scmi_power_args args = {0};
+    args.zone_id = dev->zone_id;
     args.u.power_state_info.domain_id = phys_id;
 
     int ret =

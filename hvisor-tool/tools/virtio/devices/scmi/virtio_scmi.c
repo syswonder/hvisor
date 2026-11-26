@@ -219,6 +219,7 @@ static int virtio_scmi_do_init(VirtIODevice *vdev,
         if (!dev)
             return -ENOMEM;
         vdev->dev = dev;
+        dev->zone_id = vdev->zone_id;
 
         // Deep-copy id arrays so that SCMIDev and the caller each own their
         // copies — no ownership transfer, no double-free risk.
@@ -246,6 +247,7 @@ static int virtio_scmi_do_init(VirtIODevice *vdev,
         if (!dev)
             return -ENOMEM;
         vdev->dev = dev;
+        dev->zone_id = vdev->zone_id;
     }
 
     return 0;
