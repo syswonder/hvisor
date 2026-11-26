@@ -111,6 +111,25 @@ int virtio_mmap_zone_memory(const VirtioZoneConfig *cfg) {
     return 0;
 }
 
+size_t virtio_unmap_zone_memory(uint32_t zone_id) {
+    size_t unmapped = 0;
+
+    if (zone_id >= MAX_ZONES)
+        return 0;
+
+    pthread_mutex_lock(&ZONE_MEM_MUTEX);
+    struct zone_mem *z = &zone_mem[zone_id];
+    for (size_t i = 0; i < z->num_regions; i++) {
+        if (z->regions[i].mem_size != 0) {
+            munmap((void *)z->regions[i].virt_addr, z->regions[i].mem_size);
+            unmapped++;
+        }
+    }
+    memset(z, 0, sizeof(*z));
+    pthread_mutex_unlock(&ZONE_MEM_MUTEX);
+    return unmapped;
+}
+
 void virtio_unmap_all_memory(void) {
     pthread_mutex_lock(&ZONE_MEM_MUTEX);
     for (int i = 0; i < MAX_ZONES; i++) {

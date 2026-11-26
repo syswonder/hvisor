@@ -67,6 +67,9 @@ VirtIODevice *create_virtio_device_unpublished(
 int publish_virtio_devices(VirtIODevice **new_devs, size_t count);
 void destroy_unpublished_virtio_device(VirtIODevice *vdev);
 void virtio_destroy_all_devices(void);
+int virtio_detach_zone(uint32_t zone_id, VirtIODevice **out, int max);
+int virtio_cleanup_zone(uint32_t zone_id);
+size_t virtio_unmap_zone_memory(uint32_t zone_id);
 
 int virtio_validate_config_devices(const VirtioConfig *cfg);
 int virtio_mmap_zone_memory(const VirtioZoneConfig *cfg);

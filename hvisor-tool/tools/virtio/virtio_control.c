@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/time.h>
 #include <sys/un.h>
 #include <unistd.h>
 
@@ -14,6 +16,7 @@
 
 #define VIRTIO_CTRL_SOCKET_PATH "/run/hvisor-virtio.sock"
 #define VIRTIO_CTRL_OP_ADD "add"
+#define VIRTIO_CTRL_OP_CLEANUP_ZONE "cleanup-zone"
 #define VIRTIO_CTRL_MSG_LEN 256
 
 typedef struct virtio_control_request {
@@ -69,6 +72,8 @@ void virtio_publish_mmio_addrs(void) {
     pthread_mutex_lock(&VDEV_MUTEX);
     for (int i = 0; i < vdevs_num; i++)
         virtio_bridge->mmio_addrs[i] = vdevs[i]->base_addr;
+    for (int i = vdevs_num; i < MAX_DEVS; i++)
+        virtio_bridge->mmio_addrs[i] = 0;
     pthread_mutex_unlock(&VDEV_MUTEX);
     write_barrier();
     virtio_bridge->mmio_avail = 1;
@@ -98,13 +103,27 @@ static void handle_control_client(int client_fd) {
         return;
     req.op[sizeof(req.op) - 1] = '\0';
     req.json_path[sizeof(req.json_path) - 1] = '\0';
-    if (strcmp(req.op, VIRTIO_CTRL_OP_ADD) != 0)
+    if (strcmp(req.op, VIRTIO_CTRL_OP_ADD) == 0) {
+        if (virtio_add_from_json(req.json_path) != 0)
+            fill_control_response(&resp, -1, "virtio add failed");
+        else
+            fill_control_response(&resp, 0, "virtio add succeeded");
+    } else if (strcmp(req.op, VIRTIO_CTRL_OP_CLEANUP_ZONE) == 0) {
+        char *end = NULL;
+        errno = 0;
+        unsigned long zone = strtoul(req.json_path, &end, 10);
+        int ret = (errno || end == req.json_path || *end != '\0' || zone == 0 ||
+                   zone >= MAX_ZONES)
+                      ? -EINVAL
+                      : virtio_cleanup_zone((uint32_t)zone);
+        if (ret < 0)
+            fill_control_response(&resp, ret, "virtio cleanup zone failed");
+        else
+            fill_control_response(&resp, ret, "virtio cleanup zone succeeded");
+    } else {
         fill_control_response(&resp, -1,
                               "unsupported virtio control operation");
-    else if (virtio_add_from_json(req.json_path) != 0)
-        fill_control_response(&resp, -1, "virtio add failed");
-    else
-        fill_control_response(&resp, 0, "virtio add succeeded");
+    }
     if (atomic_load(&ctrl_running))
         write_full(client_fd, &resp, sizeof(resp));
 }
@@ -154,8 +173,24 @@ static int start_virtio_control_server(void) {
     addr.sun_family = AF_UNIX;
     snprintf(addr.sun_path, sizeof(addr.sun_path), "%s",
              VIRTIO_CTRL_SOCKET_PATH);
-    if (bind(ctrl_fd, (struct sockaddr *)&addr, sizeof(addr)) != 0 ||
-        listen(ctrl_fd, 8) != 0) {
+    mode_t old_umask = umask(0077);
+    if (bind(ctrl_fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        umask(old_umask);
+        close(ctrl_fd);
+        ctrl_fd = -1;
+        unlink(VIRTIO_CTRL_SOCKET_PATH);
+        return -1;
+    }
+    umask(old_umask);
+    if (chmod(VIRTIO_CTRL_SOCKET_PATH, 0600) != 0) {
+        log_error("could not restrict virtio control socket: %s",
+                  strerror(errno));
+        close(ctrl_fd);
+        ctrl_fd = -1;
+        unlink(VIRTIO_CTRL_SOCKET_PATH);
+        return -1;
+    }
+    if (listen(ctrl_fd, 8) != 0) {
         close(ctrl_fd);
         ctrl_fd = -1;
         unlink(VIRTIO_CTRL_SOCKET_PATH);
@@ -252,4 +287,59 @@ int virtio_add(int argc, char *argv[]) {
     close(fd);
     printf("%s\n", resp.message);
     return resp.status;
+}
+
+/*
+ * Ask the daemon to quiesce/close a zone's virtio devices and unmap its guest
+ * memory before the caller issues HVISOR_ZONE_SHUTDOWN.
+ *
+ * Returns VIRTIO_CTRL_NO_DAEMON (2) when no daemon is listening or when talking
+ * to an older daemon, VIRTIO_CTRL_CLEANUP_RELEASED (1) / NONE (0) on success,
+ * or a negative status on daemon/transport failure.
+ */
+int virtio_control_cleanup_zone(uint32_t zone_id) {
+    VirtioControlRequest req;
+    VirtioControlResponse resp;
+    struct sockaddr_un addr;
+    int fd;
+    int rc;
+
+    fd = socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    if (fd < 0)
+        return -errno;
+    struct timeval tv = {.tv_sec = 30, .tv_usec = 0};
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
+    setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
+    memset(&addr, 0, sizeof(addr));
+    addr.sun_family = AF_UNIX;
+    snprintf(addr.sun_path, sizeof(addr.sun_path), "%s",
+             VIRTIO_CTRL_SOCKET_PATH);
+    if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) != 0) {
+        int err = errno;
+        close(fd);
+        if (err == ENOENT || err == ECONNREFUSED) {
+            log_info("virtio control cleanup zone %u: no daemon", zone_id);
+            return VIRTIO_CTRL_NO_DAEMON;
+        }
+        log_error("virtio control connect failed for zone %u: %s", zone_id,
+                  strerror(err));
+        return -err;
+    }
+    memset(&req, 0, sizeof(req));
+    snprintf(req.op, sizeof(req.op), "%s", VIRTIO_CTRL_OP_CLEANUP_ZONE);
+    snprintf(req.json_path, sizeof(req.json_path), "%u", zone_id);
+    if (write_full(fd, &req, sizeof(req)) != sizeof(req) ||
+        read_full(fd, &resp, sizeof(resp)) != sizeof(resp)) {
+        int err = errno ? errno : EIO;
+        close(fd);
+        return -err;
+    }
+    close(fd);
+    if (resp.status == -1 && strstr(resp.message, "unsupported") != NULL) {
+        log_warn("virtio daemon does not support cleanup-zone, continuing");
+        return VIRTIO_CTRL_NO_DAEMON;
+    }
+    rc = resp.status;
+    log_info("virtio control cleanup zone %u: status %d", zone_id, rc);
+    return rc;
 }

@@ -2,6 +2,8 @@
 #include <errno.h>
 #include <pthread.h>
 #include <stdlib.h>
+#include <time.h>
+#include <unistd.h>
 
 #include "log.h"
 #include "virtio_blk.h"
@@ -161,4 +163,61 @@ void virtio_destroy_all_devices(void) {
     }
     vdevs_num = 0;
     pthread_mutex_unlock(&VDEV_MUTEX);
+}
+
+/*
+ * Detach all devices belonging to a zone from the active lookup and wait for
+ * in-flight MMIO references to drain.  If references do not drain before the
+ * deadline, reinsert the devices and return -EBUSY.
+ */
+int virtio_detach_zone(uint32_t zone_id, VirtIODevice **out, int max) {
+    int removed_count = 0;
+    int kept = 0;
+
+    pthread_mutex_lock(&VDEV_MUTEX);
+    for (int i = 0; i < vdevs_num; i++) {
+        VirtIODevice *vdev = vdevs[i];
+        if (vdev->zone_id == zone_id) {
+            if (removed_count < max)
+                out[removed_count++] = vdev;
+            else
+                vdevs[kept++] = vdev;
+        } else {
+            vdevs[kept++] = vdev;
+        }
+    }
+    vdevs_num = kept;
+    for (int i = kept; i < MAX_DEVS; i++)
+        vdevs[i] = NULL;
+    pthread_mutex_unlock(&VDEV_MUTEX);
+
+    struct timespec deadline;
+    clock_gettime(CLOCK_MONOTONIC, &deadline);
+    deadline.tv_sec += 5;
+
+    for (int i = 0; i < removed_count; i++) {
+        VirtIODevice *vdev = out[i];
+        for (;;) {
+            pthread_mutex_lock(&VDEV_MUTEX);
+            uint32_t refs = vdev->refcount;
+            pthread_mutex_unlock(&VDEV_MUTEX);
+            if (refs == 0)
+                break;
+
+            struct timespec now;
+            clock_gettime(CLOCK_MONOTONIC, &now);
+            if (now.tv_sec > deadline.tv_sec ||
+                (now.tv_sec == deadline.tv_sec &&
+                 now.tv_nsec >= deadline.tv_nsec)) {
+                pthread_mutex_lock(&VDEV_MUTEX);
+                for (int j = 0; j < removed_count; j++)
+                    vdevs[vdevs_num++] = out[j];
+                pthread_mutex_unlock(&VDEV_MUTEX);
+                return -EBUSY;
+            }
+            usleep(1000);
+        }
+    }
+
+    return removed_count;
 }

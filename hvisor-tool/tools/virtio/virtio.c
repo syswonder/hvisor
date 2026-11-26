@@ -995,17 +995,19 @@ int virtio_handle_req(volatile struct device_req *req) {
         if ((req->src_zone == vdevs[i]->zone_id) &&
             in_range(req->address, vdevs[i]->base_addr, vdevs[i]->len)) {
             vdev = vdevs[i];
+            vdev->refcount++;
             break;
         }
     }
     pthread_mutex_unlock(&VDEV_MUTEX);
 
     if (!vdev) {
-        log_warn("no matched virtio dev in zone %d, address is 0x%x",
-                 req->src_zone, req->address);
-        // No device at this address; return 0 so the guest sees an absent
-        // device (MagicValue != VIRT_MAGIC).
-        virtio_finish_cfg_req(req->src_cpu, 0);
+        log_warn("no matched virtio dev in zone %d, address is 0x%llx",
+                 req->src_zone, (unsigned long long)req->address);
+        // No device at this address; return 0 for synchronous MMIO accesses
+        // so the guest sees an absent device (MagicValue != VIRT_MAGIC).
+        if (!req->need_interrupt)
+            virtio_finish_cfg_req(req->src_cpu, 0);
         return -1;
     }
 
@@ -1026,15 +1028,52 @@ int virtio_handle_req(volatile struct device_req *req) {
         virtio_finish_cfg_req(req->src_cpu, value);
     }
 
+    pthread_mutex_lock(&VDEV_MUTEX);
+    vdev->refcount--;
+    pthread_mutex_unlock(&VDEV_MUTEX);
+
     log_debug("src_zone is %d, src_cpu is %lld", req->src_zone, req->src_cpu);
     return 0;
+}
+
+/*
+ * Per-zone virtio teardown.  The daemon detaches and closes only its own
+ * devices (flushing backends and draining worker/epoll threads) and unmaps its
+ * guest RAM mappings; the caller retains responsibility for
+ * HVISOR_ZONE_SHUTDOWN.
+ *
+ * Returns VIRTIO_CTRL_CLEANUP_RELEASED (1) when devices or memory mappings were
+ * reclaimed, VIRTIO_CTRL_CLEANUP_NONE (0) when the zone held none, or a
+ * negative errno on failure (e.g. -EBUSY when in-flight MMIO did not drain).
+ */
+int virtio_cleanup_zone(uint32_t zone_id) {
+    if (zone_id == 0 || zone_id >= MAX_ZONES) {
+        log_error("invalid zone %u for virtio cleanup", zone_id);
+        return -EINVAL;
+    }
+
+    VirtIODevice *removed[MAX_DEVS];
+    int count = virtio_detach_zone(zone_id, removed, MAX_DEVS);
+    if (count < 0) {
+        log_error("cannot detach zone %u devices: %d", zone_id, count);
+        return count;
+    }
+    log_info("virtio cleanup zone %u: detached %d device(s)", zone_id, count);
+
+    for (int i = 0; i < count; i++)
+        removed[i]->virtio_close(removed[i]);
+
+    size_t unmapped = virtio_unmap_zone_memory(zone_id);
+    virtio_publish_mmio_addrs();
+    return (count > 0 || unmapped > 0) ? VIRTIO_CTRL_CLEANUP_RELEASED
+                                       : VIRTIO_CTRL_CLEANUP_NONE;
 }
 
 void virtio_close() {
     log_warn("virtio devices will be closed");
     stop_virtio_control_server();
-    destroy_event_monitor();
     virtio_destroy_all_devices();
+    destroy_event_monitor();
     if (ko_fd >= 0) {
         close(ko_fd);
         ko_fd = -1;
