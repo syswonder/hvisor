@@ -198,7 +198,6 @@ pipeline {
     }
 
     environment {
-        HVISOR_TOOL_URL = 'https://github.com/syswonder/hvisor-tool.git'
         HVISOR_TOOL_PATH = 'hvisor-tool'
         RUST_HOME = '/usr/local/rustup'
         CARGO_HOME = '/usr/local/cargo'
@@ -339,18 +338,7 @@ pipeline {
                                         error("jenkins/ci.yaml BID=${env.BID}: build_args must include KDIR")
                                     }
 
-                                    echo "Build hvisor-tool [BID=${env.BID}, TARCH=${tarch}, KDIR=${kdir}]"
-                                    if (!fileExists(env.HVISOR_TOOL_PATH)) {
-                                        sh "mkdir -p ${env.HVISOR_TOOL_PATH}"
-                                    }
-                                    dir(env.HVISOR_TOOL_PATH) {
-                                        checkout([
-                                            $class: 'GitSCM',
-                                            branches: [[name: '*/main']],
-                                            extensions: [[$class: 'CloneOption', depth: 1, noTags: true]],
-                                            userRemoteConfigs: [[url: env.HVISOR_TOOL_URL]]
-                                        ])
-                                    }
+                                    echo "Build in-tree hvisor-tool [BID=${env.BID}, TARCH=${tarch}, KDIR=${kdir}]"
                                     sh """
                                         export PATH=${env.TOOLCHAIN_PATHS}:\$PATH
                                         make -C ${env.HVISOR_TOOL_PATH} all ARCH=${tarch} KDIR=${kdir}
