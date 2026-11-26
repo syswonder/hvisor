@@ -86,9 +86,9 @@ static inline void scmi_build_header(struct scmi_msg_header *hdr,
 #define SCMI_CLOCK_MSG_DESCRIBE_RATES 0x4 /* Describe supported rates */
 #define SCMI_CLOCK_MSG_RATE_SET 0x5       /* Set clock rate */
 #define SCMI_CLOCK_MSG_RATE_GET 0x6       /* Get current clock rate */
-#define SCMI_CLOCK_MSG_CONFIG_SET 0x7     /* Enable/disable clock */
-#define SCMI_CLOCK_MSG_CONFIG_GET 0x8     /* Get clock enable state */
-#define SCMI_CLOCK_MSG_NAME_GET 0x9       /* Get clock name */
+#define SCMI_CLOCK_MSG_CONFIG_SET 0x7 /* Clock config set (enable/disable) */
+#define SCMI_CLOCK_MSG_NAME_GET 0x8   /* SCMI v3.0 extended clock name */
+#define SCMI_CLOCK_MSG_CONFIG_GET 0xB /* Get clock config (enabled state) */
 
 /* Base protocol constants */
 #define SCMI_BASE_VENDOR_ID_LEN 16
