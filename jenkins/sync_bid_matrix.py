@@ -27,8 +27,9 @@ def find_bid_values_block(lines: list[str]) -> tuple[int, int, str]:
         start = next((j for j in range(i + 1, len(lines)) if lines[j].strip()), None)
         if start is None or lines[start].strip() != "return [":
             raise ValueError("cannot find `return [` in matrixBids()")
-        end = next((j for j in range(start + 1, len(lines))
-                    if lines[j].strip() == "]"), None)
+        end = next(
+            (j for j in range(start + 1, len(lines)) if lines[j].strip() == "]"), None
+        )
         if end is None:
             raise ValueError("cannot find closing `]` for matrixBids()")
         indent = lines[start][: len(lines[start]) - len(lines[start].lstrip(" "))]

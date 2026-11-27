@@ -1,21 +1,21 @@
 {
-  "reserve_mib": 3072,
-  "pause_below_mib": 4096,
-  "resume_at_mib": 5120,
-  "wait_timeout_seconds": 300,
-  "poll_seconds": 5,
-  "priority_bids": [
-    "aarch64/phytium-pi",
-    "x86_64/qemu_asterinas",
-    "aarch64/qemu-gicv3",
-    "riscv64/qemu-plic",
-    "x86_64/qemu"
-  ],
-  "pilot_profile": {
-    "name": "pilot-2x2",
-    "slots": 2,
-    "cargo_jobs": 2,
-    "min_start_available_mib": 11264
-  },
-  "validated_profiles": []
+    "reserve_mib": 3072,
+    "pause_below_mib": 4096,
+    "resume_at_mib": 5120,
+    "wait_timeout_seconds": 300,
+    "poll_seconds": 5,
+    "priority_bids": [
+        "aarch64/phytium-pi",
+        "x86_64/qemu_asterinas",
+        "aarch64/qemu-gicv3",
+        "riscv64/qemu-plic",
+        "x86_64/qemu"
+    ],
+    "pilot_profile": {
+        "name": "pilot-2x2",
+        "slots": 2,
+        "cargo_jobs": 2,
+        "min_start_available_mib": 11264
+    },
+    "validated_profiles": []
 }

@@ -17,8 +17,15 @@ from pathlib import Path
 from typing import Any, Iterator
 
 from ci_resources import (
-    ResourceError, cpu_busy, cpu_times, load_policy, resource_incident,
-    select_with_wait, snapshot, summarize_metrics, utc_now,
+    ResourceError,
+    cpu_busy,
+    cpu_times,
+    load_policy,
+    resource_incident,
+    select_with_wait,
+    snapshot,
+    summarize_metrics,
+    utc_now,
 )
 
 
@@ -43,7 +50,10 @@ class StateStore:
         name = None
         try:
             with tempfile.NamedTemporaryFile(
-                mode="w", encoding="utf-8", dir=self.path.parent, delete=False,
+                mode="w",
+                encoding="utf-8",
+                dir=self.path.parent,
+                delete=False,
                 prefix=".state-",
             ) as stream:
                 name = stream.name
@@ -57,7 +67,9 @@ class StateStore:
     def create(self, state: dict[str, Any]) -> None:
         with self.lock():
             if self.path.exists():
-                raise ResourceError(f"refusing to overwrite existing queue: {self.path}")
+                raise ResourceError(
+                    f"refusing to overwrite existing queue: {self.path}"
+                )
             self._write(state)
 
     @contextmanager
@@ -73,8 +85,11 @@ class StateStore:
 def order_bids(bids: list[str], priority: list[str]) -> list[str]:
     if not isinstance(bids, list) or not bids:
         raise ResourceError("matrix BID list must not be empty")
-    if any(not isinstance(bid, str) or not re.fullmatch(r"[A-Za-z0-9_-]+/[A-Za-z0-9_-]+", bid)
-           for bid in bids):
+    if any(
+        not isinstance(bid, str)
+        or not re.fullmatch(r"[A-Za-z0-9_-]+/[A-Za-z0-9_-]+", bid)
+        for bid in bids
+    ):
         raise ResourceError("invalid matrix BID")
     if len(set(bids)) != len(bids):
         raise ResourceError("duplicate matrix BID")
@@ -83,8 +98,12 @@ def order_bids(bids: list[str], priority: list[str]) -> list[str]:
     return priority + [bid for bid in bids if bid not in priority]
 
 
-def initial_state(bids: list[str], policy: dict[str, Any],
-                  profile: dict[str, Any], observed: dict[str, Any]) -> dict[str, Any]:
+def initial_state(
+    bids: list[str],
+    policy: dict[str, Any],
+    profile: dict[str, Any],
+    observed: dict[str, Any],
+) -> dict[str, Any]:
     ordered = order_bids(bids, policy["priority_bids"])
     return {
         "version": 1,
@@ -99,14 +118,30 @@ def initial_state(bids: list[str], policy: dict[str, Any],
         "finalized": False,
         "unfinished_bids": [],
         "started": observed,
-        "policy": {key: policy[key] for key in (
-            "reserve_mib", "pause_below_mib", "resume_at_mib",
-            "wait_timeout_seconds", "poll_seconds",
-        )},
+        "policy": {
+            key: policy[key]
+            for key in (
+                "reserve_mib",
+                "pause_below_mib",
+                "resume_at_mib",
+                "wait_timeout_seconds",
+                "poll_seconds",
+            )
+        },
     }
 
 
-def claim_next(state: dict[str, Any], worker: str, available: int, now: float) -> dict[str, Any]:
+def update_memory_pause(state: dict[str, Any], available: int, now: float) -> None:
+    policy = state["policy"]
+    if available >= policy["resume_at_mib"]:
+        state["paused_since"] = None
+    elif available < policy["pause_below_mib"] and state["paused_since"] is None:
+        state["paused_since"] = now
+
+
+def claim_next(
+    state: dict[str, Any], worker: str, available: int, now: float
+) -> dict[str, Any]:
     """Caller holds the workspace lock; checking memory/claiming one BID is atomic."""
     slots = state["profile"]["slots"]
     if worker not in {f"slot-{index}" for index in range(1, slots + 1)}:
@@ -124,29 +159,35 @@ def claim_next(state: dict[str, Any], worker: str, available: int, now: float) -
         return {"status": "wait", "reason": "all slots in use"}
 
     policy = state["policy"]
-    if available < policy["pause_below_mib"] and state["paused_since"] is None:
-        state["paused_since"] = now
+    update_memory_pause(state, available, now)
     if state["paused_since"] is not None:
-        if available >= policy["resume_at_mib"]:
-            state["paused_since"] = None
-        elif now - state["paused_since"] >= policy["wait_timeout_seconds"]:
-            reason = ("CI_RESOURCE_PRESSURE: memory did not recover to "
-                      f"{policy['resume_at_mib']} MiB within the dispatch wait")
+        if now - state["paused_since"] >= policy["wait_timeout_seconds"]:
+            reason = (
+                "CI_RESOURCE_PRESSURE: memory did not recover to "
+                f"{policy['resume_at_mib']} MiB within the dispatch wait"
+            )
             state["stop_reason"] = reason
             return {"status": "stopped", "reason": reason, "available_mib": available}
-        else:
-            return {"status": "wait", "reason": "memory pressure",
-                    "available_mib": available}
+        return {
+            "status": "wait",
+            "reason": "memory pressure",
+            "available_mib": available,
+        }
 
     bid = state["pending"].pop(0)
     state["active"][worker] = {"bid": bid, "started": utc_now(), "monotonic": now}
     state["peak_active"] = max(state["peak_active"], len(state["active"]))
-    return {"status": "run", "bid": bid, "active": len(state["active"]),
-            "available_mib": available}
+    return {
+        "status": "run",
+        "bid": bid,
+        "active": len(state["active"]),
+        "available_mib": available,
+    }
 
 
-def complete_bid(state: dict[str, Any], worker: str, bid: str,
-                 result: str, now: float) -> None:
+def complete_bid(
+    state: dict[str, Any], worker: str, bid: str, result: str, now: float
+) -> None:
     if result not in ("SUCCESS", "FAILURE", "ABORTED"):
         raise ResourceError(f"invalid cell result: {result}")
     previous = state["results"].get(bid)
@@ -172,12 +213,15 @@ def stop_dispatch(state: dict[str, Any], reason: str) -> None:
         state["stop_reason"] = reason
 
 
-def claim_observed(state: dict[str, Any], worker: str, observed: dict[str, Any]) -> dict[str, Any]:
+def claim_observed(
+    state: dict[str, Any], worker: str, observed: dict[str, Any]
+) -> dict[str, Any]:
     # A controller restart can interrupt the sampler before its stop is recorded.
     if incident := resource_incident(state["started"], observed):
         stop_dispatch(state, f"CI_RESOURCE_INCIDENT: {incident}")
-    return claim_next(state, worker, observed["effective_available_mib"],
-                      observed["monotonic"])
+    return claim_next(
+        state, worker, observed["effective_available_mib"], observed["monotonic"]
+    )
 
 
 def finalize_state(state: dict[str, Any]) -> dict[str, Any]:
@@ -186,8 +230,10 @@ def finalize_state(state: dict[str, Any]) -> dict[str, Any]:
         for worker, assignment in state["active"].items():
             bid = assignment["bid"]
             state["results"][bid] = {
-                "result": "ABORTED", "worker": worker,
-                "started": assignment["started"], "finished": utc_now(),
+                "result": "ABORTED",
+                "worker": worker,
+                "started": assignment["started"],
+                "finished": utc_now(),
             }
             state["unfinished_bids"].append(bid)
         for bid in state["pending"]:
@@ -198,8 +244,10 @@ def finalize_state(state: dict[str, Any]) -> dict[str, Any]:
         state["finalized"] = True
 
     results = {bid: state["results"][bid] for bid in state["bids"]}
-    counts = {status: sum(item["result"] == status for item in results.values())
-              for status in ("SUCCESS", "FAILURE", "ABORTED", "NOT_BUILT")}
+    counts = {
+        status: sum(item["result"] == status for item in results.values())
+        for status in ("SUCCESS", "FAILURE", "ABORTED", "NOT_BUILT")
+    }
     return {
         "profile": state["profile"],
         "total": len(state["bids"]),
@@ -228,19 +276,26 @@ def monitor(store: StateStore, output: Path, stop_file: Path) -> None:
         first = state["started"]
     with output.open("w", encoding="utf-8") as stream:
         while True:
-            observed = snapshot(details=True)
+            with store.transaction() as state:
+                observed = snapshot(details=True)
+                observed["active_bids"] = [
+                    item["bid"] for item in state["active"].values()
+                ]
+                observed["pending_count"] = len(state["pending"])
+                interval = state["policy"]["poll_seconds"]
+                if incident := resource_incident(first, observed):
+                    stop_dispatch(state, f"CI_RESOURCE_INCIDENT: {incident}")
+                elif state["pending"] and not state["stop_reason"]:
+                    update_memory_pause(
+                        state,
+                        observed["effective_available_mib"],
+                        observed["monotonic"],
+                    )
             current_cpu = cpu_times(Path("/proc"))
             observed["cpu_busy_percent"] = cpu_busy(previous_cpu, current_cpu)
             previous_cpu = current_cpu
-            with store.transaction(write=False) as state:
-                observed["active_bids"] = [item["bid"] for item in state["active"].values()]
-                observed["pending_count"] = len(state["pending"])
-                interval = state["policy"]["poll_seconds"]
             stream.write(json.dumps(observed) + "\n")
             stream.flush()
-            if incident := resource_incident(first, observed):
-                with store.transaction() as state:
-                    stop_dispatch(state, f"CI_RESOURCE_INCIDENT: {incident}")
             if interrupted or stop_file.exists():
                 break
             time.sleep(interval)
@@ -251,7 +306,15 @@ def monitor(store: StateStore, output: Path, stop_file: Path) -> None:
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
-    for name in ("init", "claim", "complete", "stop", "finalize", "monitor", "summarize"):
+    for name in (
+        "init",
+        "claim",
+        "complete",
+        "stop",
+        "finalize",
+        "monitor",
+        "summarize",
+    ):
         command = commands.add_parser(name)
         command.add_argument("--state", type=Path, required=True)
         if name == "init":
@@ -261,8 +324,9 @@ def parse_args() -> argparse.Namespace:
             command.add_argument("--worker", required=True)
         if name == "complete":
             command.add_argument("--bid", required=True)
-            command.add_argument("--result", required=True,
-                                 choices=["SUCCESS", "FAILURE", "ABORTED"])
+            command.add_argument(
+                "--result", required=True, choices=["SUCCESS", "FAILURE", "ABORTED"]
+            )
         if name == "stop":
             command.add_argument("--reason", required=True)
         if name == "monitor":
@@ -285,21 +349,30 @@ def main() -> int:
             selected, observed = select_with_wait(policy)
             state = initial_state(bids, policy, selected, observed)
             store.create(state)
-            result = {"profile": selected, "policy": state["policy"],
-                      "available_mib": observed["effective_available_mib"]}
+            result = {
+                "profile": selected,
+                "policy": state["policy"],
+                "available_mib": observed["effective_available_mib"],
+            }
         elif args.command == "monitor":
             monitor(store, args.output, args.stop_file)
         elif args.command == "summarize":
             with store.transaction(write=False) as state:
                 policy = state["policy"]
-            result = summarize_metrics(args.metrics, policy["reserve_mib"],
-                                       policy["resume_at_mib"], state["started"])
+            result = summarize_metrics(
+                args.metrics,
+                policy["reserve_mib"],
+                policy["resume_at_mib"],
+                state["started"],
+            )
         else:
             with store.transaction() as state:
                 if args.command == "claim":
                     result = claim_observed(state, args.worker, snapshot(details=True))
                 elif args.command == "complete":
-                    complete_bid(state, args.worker, args.bid, args.result, time.monotonic())
+                    complete_bid(
+                        state, args.worker, args.bid, args.result, time.monotonic()
+                    )
                 elif args.command == "stop":
                     stop_dispatch(state, args.reason)
                 elif args.command == "finalize":

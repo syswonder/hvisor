@@ -6,8 +6,16 @@ from pathlib import Path
 from unittest.mock import patch
 
 from ci_resources import (
-    MIB, ResourceError, cpu_busy, load_policy, resource_incident, select_profile,
-    select_with_wait, snapshot, summarize_metrics, validate_policy,
+    MIB,
+    ResourceError,
+    cpu_busy,
+    load_policy,
+    resource_incident,
+    select_profile,
+    select_with_wait,
+    snapshot,
+    summarize_metrics,
+    validate_policy,
 )
 
 
@@ -27,12 +35,22 @@ class ProfileTests(unittest.TestCase):
 
     def test_select_fastest_validated_profile_or_lower_profile(self):
         self.raw["validated_profiles"] = [
-            {"name": "slow", "slots": 1, "cargo_jobs": 1,
-             "min_start_available_mib": 6500, "duration_seconds": 900,
-             "successful_runs": 2},
-            {"name": "fast", "slots": 3, "cargo_jobs": 2,
-             "min_start_available_mib": 11000, "duration_seconds": 400,
-             "successful_runs": 2},
+            {
+                "name": "slow",
+                "slots": 1,
+                "cargo_jobs": 1,
+                "min_start_available_mib": 6500,
+                "duration_seconds": 900,
+                "successful_runs": 2,
+            },
+            {
+                "name": "fast",
+                "slots": 3,
+                "cargo_jobs": 2,
+                "min_start_available_mib": 11000,
+                "duration_seconds": 400,
+                "successful_runs": 2,
+            },
         ]
         policy = validate_policy(self.raw)
         self.assertEqual(select_profile(policy, 12000)["name"], "fast")
@@ -41,34 +59,53 @@ class ProfileTests(unittest.TestCase):
         self.assertIsNone(select_profile(policy, 6000))
 
     def test_no_pilot_after_profiles_are_validated(self):
-        self.raw["validated_profiles"] = [{
-            "name": "high", "slots": 4, "cargo_jobs": 2,
-            "min_start_available_mib": 14000, "duration_seconds": 500,
-            "successful_runs": 2,
-        }]
+        self.raw["validated_profiles"] = [
+            {
+                "name": "high",
+                "slots": 4,
+                "cargo_jobs": 2,
+                "min_start_available_mib": 14000,
+                "duration_seconds": 500,
+                "successful_runs": 2,
+            }
+        ]
         self.assertIsNone(select_profile(validate_policy(self.raw), 12000))
 
     def test_reject_invalid_or_unbounded_profiles(self):
-        for changes in ({"slots": 21}, {"cargo_jobs": 24}, {"slots": 0},
-                        {"min_start_available_mib": 1024}, {"cargo_jobs": True}):
+        for changes in (
+            {"slots": 21},
+            {"cargo_jobs": 24},
+            {"slots": 0},
+            {"min_start_available_mib": 1024},
+            {"cargo_jobs": True},
+        ):
             with self.subTest(changes=changes):
                 raw = copy.deepcopy(self.raw)
                 raw["pilot_profile"].update(changes)
                 with self.assertRaises(ResourceError):
                     validate_policy(raw)
-        self.raw["validated_profiles"] = [{
-            "name": "unproven", "slots": 3, "cargo_jobs": 2,
-            "min_start_available_mib": 12000, "duration_seconds": 400,
-            "successful_runs": 1,
-        }]
+        self.raw["validated_profiles"] = [
+            {
+                "name": "unproven",
+                "slots": 3,
+                "cargo_jobs": 2,
+                "min_start_available_mib": 12000,
+                "duration_seconds": 400,
+                "successful_runs": 1,
+            }
+        ]
         with self.assertRaises(ResourceError):
             validate_policy(self.raw)
 
     def test_preflight_wait_is_bounded(self):
         policy = validate_policy(self.raw)
-        with patch("ci_resources.snapshot", return_value={"effective_available_mib": 1000}), \
-             patch("ci_resources.time.monotonic", side_effect=[0, 301]), \
-             patch("ci_resources.time.sleep") as sleep:
+        with (
+            patch(
+                "ci_resources.snapshot", return_value={"effective_available_mib": 1000}
+            ),
+            patch("ci_resources.time.monotonic", side_effect=[0, 301]),
+            patch("ci_resources.time.sleep") as sleep,
+        ):
             with self.assertRaisesRegex(ResourceError, "CI_RESOURCE_PRESSURE"):
                 select_with_wait(policy)
             sleep.assert_not_called()
@@ -85,7 +122,8 @@ class ObservationTests(unittest.TestCase):
             leaf.mkdir(parents=True)
             (proc / "meminfo").write_text(
                 "MemTotal: 16000000 kB\nMemAvailable: 12288000 kB\n"
-                "SwapTotal: 4194304 kB\nSwapFree: 3145728 kB\n")
+                "SwapTotal: 4194304 kB\nSwapFree: 3145728 kB\n"
+            )
             (proc / "self/cgroup").write_text("0::/system.slice/jenkins.service\n")
             (leaf / "memory.current").write_text(str(3000 * MIB))
             (leaf / "memory.max").write_text("max")
@@ -111,29 +149,44 @@ class ObservationTests(unittest.TestCase):
         self.assertIsNone(cpu_busy(None, (200, 70)))
         baseline = {"cgroup_events": {"oom_kill": 1}, "jenkins_main_pid": 123}
         self.assertIsNone(resource_incident(baseline, baseline))
-        self.assertIn("oom_kill", resource_incident(
-            baseline, {"cgroup_events": {"oom_kill": 2}}))
-        self.assertIn("jenkins_main_pid", resource_incident(
-            baseline, {"jenkins_main_pid": 456}))
+        self.assertIn(
+            "oom_kill", resource_incident(baseline, {"cgroup_events": {"oom_kill": 2}})
+        )
+        self.assertIn(
+            "jenkins_main_pid", resource_incident(baseline, {"jenkins_main_pid": 456})
+        )
         self.assertIsNone(resource_incident(baseline, {}))
 
     def test_summary_uses_preflight_and_distinguishes_missing_data(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "metrics.jsonl"
             baseline = {
-                "effective_available_mib": 12000, "monotonic": 0,
-                "swap_used_mib": 0, "jenkins_main_pid": 100,
-                "jenkins_restarts": 3, "cgroup_events": {"oom_kill": 0},
+                "effective_available_mib": 12000,
+                "monotonic": 0,
+                "swap_used_mib": 0,
+                "jenkins_main_pid": 100,
+                "jenkins_restarts": 3,
+                "cgroup_events": {"oom_kill": 0},
             }
             rows = [
-                {"effective_available_mib": 8000, "monotonic": 5,
-                 "swap_used_mib": 100, "cpu_busy_percent": 75,
-                 "jenkins_main_pid": 100, "jenkins_restarts": 3,
-                 "cgroup_events": {"oom_kill": 0}},
-                {"effective_available_mib": 6000, "monotonic": 10,
-                 "swap_used_mib": 200, "cpu_busy_percent": 50,
-                 "jenkins_main_pid": 100, "jenkins_restarts": 3,
-                 "cgroup_events": {"oom_kill": 0}},
+                {
+                    "effective_available_mib": 8000,
+                    "monotonic": 5,
+                    "swap_used_mib": 100,
+                    "cpu_busy_percent": 75,
+                    "jenkins_main_pid": 100,
+                    "jenkins_restarts": 3,
+                    "cgroup_events": {"oom_kill": 0},
+                },
+                {
+                    "effective_available_mib": 6000,
+                    "monotonic": 10,
+                    "swap_used_mib": 200,
+                    "cpu_busy_percent": 50,
+                    "jenkins_main_pid": 100,
+                    "jenkins_restarts": 3,
+                    "cgroup_events": {"oom_kill": 0},
+                },
             ]
             path.write_text("".join(json.dumps(row) + "\n" for row in rows))
             report = summarize_metrics(path, 3072, 5120, baseline)
@@ -146,17 +199,27 @@ class ObservationTests(unittest.TestCase):
             self.assertIsNone(report["resource_incident"])
             with path.open("a") as stream:
                 stream.write("{truncated\n")
-            self.assertEqual(summarize_metrics(path, 3072, 5120)["malformed_samples"], 1)
-            self.assertEqual(summarize_metrics(path.with_name("missing"), 3072, 5120)["samples"], 0)
+            self.assertEqual(
+                summarize_metrics(path, 3072, 5120)["malformed_samples"], 1
+            )
+            self.assertEqual(
+                summarize_metrics(path.with_name("missing"), 3072, 5120)["samples"], 0
+            )
 
     def test_summary_preserves_observed_oom_even_if_later_sample_lacks_counter(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "metrics.jsonl"
-            base = {"effective_available_mib": 10000, "monotonic": 0,
-                    "cgroup_events": {"oom_kill": 0}}
+            base = {
+                "effective_available_mib": 10000,
+                "monotonic": 0,
+                "cgroup_events": {"oom_kill": 0},
+            }
             rows = [
-                {"effective_available_mib": 2000, "monotonic": 5,
-                 "cgroup_events": {"oom_kill": 1}},
+                {
+                    "effective_available_mib": 2000,
+                    "monotonic": 5,
+                    "cgroup_events": {"oom_kill": 1},
+                },
                 {"effective_available_mib": 10000, "monotonic": 10},
             ]
             path.write_text("\n".join(json.dumps(row) for row in rows) + "\n")

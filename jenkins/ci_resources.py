@@ -33,15 +33,22 @@ def positive_int(value: Any, name: str) -> int:
 
 def validate_policy(raw: dict[str, Any]) -> dict[str, Any]:
     policy = dict(raw)
-    for key in ("reserve_mib", "pause_below_mib", "resume_at_mib",
-                "wait_timeout_seconds", "poll_seconds"):
+    for key in (
+        "reserve_mib",
+        "pause_below_mib",
+        "resume_at_mib",
+        "wait_timeout_seconds",
+        "poll_seconds",
+    ):
         policy[key] = positive_int(policy.get(key), key)
     if not policy["reserve_mib"] < policy["pause_below_mib"] < policy["resume_at_mib"]:
         raise ResourceError("require reserve_mib < pause_below_mib < resume_at_mib")
     if policy["poll_seconds"] > policy["wait_timeout_seconds"]:
         raise ResourceError("poll_seconds must not exceed wait_timeout_seconds")
     priority = policy.get("priority_bids", [])
-    if not isinstance(priority, list) or any(not isinstance(bid, str) for bid in priority):
+    if not isinstance(priority, list) or any(
+        not isinstance(bid, str) for bid in priority
+    ):
         raise ResourceError("priority_bids must be a list of BIDs")
     if len(set(priority)) != len(priority):
         raise ResourceError("duplicate priority BID")
@@ -55,23 +62,34 @@ def validate_policy(raw: dict[str, Any]) -> dict[str, Any]:
             raise ResourceError("profile name must be a non-empty identifier")
         slots = positive_int(item.get("slots"), f"{name}.slots")
         jobs = positive_int(item.get("cargo_jobs"), f"{name}.cargo_jobs")
-        minimum = positive_int(item.get("min_start_available_mib"),
-                               f"{name}.min_start_available_mib")
+        minimum = positive_int(
+            item.get("min_start_available_mib"), f"{name}.min_start_available_mib"
+        )
         # This rollout calibrates at most four cells / three Cargo jobs.
         if slots > 4 or jobs > 3:
             raise ResourceError(f"{name}: exceeds the 4-cell / 3-job calibration range")
         if minimum < policy["resume_at_mib"]:
             raise ResourceError(f"{name}: startup memory must be >= resume_at_mib")
         result = {
-            "name": name, "slots": slots, "cargo_jobs": jobs,
-            "min_start_available_mib": minimum, "validated": validated,
+            "name": name,
+            "slots": slots,
+            "cargo_jobs": jobs,
+            "min_start_available_mib": minimum,
+            "validated": validated,
         }
         if validated:
             duration = item.get("duration_seconds")
             runs = positive_int(item.get("successful_runs"), f"{name}.successful_runs")
-            if (isinstance(duration, bool) or not isinstance(duration, (int, float))
-                    or not math.isfinite(duration) or duration <= 0 or runs < 2):
-                raise ResourceError(f"{name}: need measured duration and >= 2 successful runs")
+            if (
+                isinstance(duration, bool)
+                or not isinstance(duration, (int, float))
+                or not math.isfinite(duration)
+                or duration <= 0
+                or runs < 2
+            ):
+                raise ResourceError(
+                    f"{name}: need measured duration and >= 2 successful runs"
+                )
             result.update(duration_seconds=duration, successful_runs=runs)
         return result
 
@@ -97,13 +115,19 @@ def load_policy(path: Path) -> dict[str, Any]:
 def select_profile(policy: dict[str, Any], available_mib: int) -> dict[str, Any] | None:
     """Use only reviewed profiles once available; never auto-promote a pilot."""
     candidates = policy["validated_profiles"] or [policy["pilot_profile"]]
-    suitable = [item for item in candidates
-                if available_mib >= item["min_start_available_mib"]]
+    suitable = [
+        item for item in candidates if available_mib >= item["min_start_available_mib"]
+    ]
     if not suitable:
         return None
-    return min(suitable, key=lambda item: (
-        item.get("duration_seconds", 0), item["slots"], item["cargo_jobs"]
-    )).copy()
+    return min(
+        suitable,
+        key=lambda item: (
+            item.get("duration_seconds", 0),
+            item["slots"],
+            item["cargo_jobs"],
+        ),
+    ).copy()
 
 
 def read_meminfo(path: Path) -> dict[str, int]:
@@ -127,8 +151,12 @@ def read_int(path: Path) -> int | None:
 
 def read_counters(path: Path) -> dict[str, int]:
     try:
-        return {key: int(value) for key, value in
-                (line.split() for line in path.read_text(encoding="utf-8").splitlines())}
+        return {
+            key: int(value)
+            for key, value in (
+                line.split() for line in path.read_text(encoding="utf-8").splitlines()
+            )
+        }
     except (OSError, ValueError):
         return {}
 
@@ -137,7 +165,9 @@ def cgroup_memory(proc_root: Path, cgroup_root: Path) -> dict[str, Any]:
     """Respect finite cgroup-v2 ancestor limits in addition to host MemAvailable."""
     try:
         groups = (proc_root / "self/cgroup").read_text(encoding="utf-8").splitlines()
-        relative = next(line.split(":", 2)[2] for line in groups if line.startswith("0::"))
+        relative = next(
+            line.split(":", 2)[2] for line in groups if line.startswith("0::")
+        )
         directory = cgroup_root / relative.lstrip("/")
     except (OSError, StopIteration):
         return {}
@@ -166,7 +196,9 @@ def cgroup_memory(proc_root: Path, cgroup_root: Path) -> dict[str, Any]:
 
 def cpu_times(proc_root: Path) -> tuple[int, int] | None:
     try:
-        fields = (proc_root / "stat").read_text(encoding="utf-8").splitlines()[0].split()
+        fields = (
+            (proc_root / "stat").read_text(encoding="utf-8").splitlines()[0].split()
+        )
         if fields[0] != "cpu" or len(fields) < 5:
             return None
         ticks = [int(value) for value in fields[1:9]]
@@ -176,7 +208,9 @@ def cpu_times(proc_root: Path) -> tuple[int, int] | None:
         return None
 
 
-def cpu_busy(previous: tuple[int, int] | None, current: tuple[int, int] | None) -> float | None:
+def cpu_busy(
+    previous: tuple[int, int] | None, current: tuple[int, int] | None
+) -> float | None:
     if previous is None or current is None:
         return None
     total, idle = current[0] - previous[0], current[1] - previous[1]
@@ -189,8 +223,12 @@ def memory_pressure(proc_root: Path) -> dict[str, float]:
     try:
         return {
             fields[0]: float(fields[1].split("=", 1)[1])
-            for fields in (line.split() for line in
-                           (proc_root / "pressure/memory").read_text(encoding="utf-8").splitlines())
+            for fields in (
+                line.split()
+                for line in (proc_root / "pressure/memory")
+                .read_text(encoding="utf-8")
+                .splitlines()
+            )
             if len(fields) >= 2 and fields[1].startswith("avg10=")
         }
     except (OSError, ValueError):
@@ -202,9 +240,14 @@ def jenkins_service_status() -> dict[str, int]:
     try:
         result = subprocess.run(
             ["systemctl", "show", "jenkins", "-p", "MainPID", "-p", "NRestarts"],
-            capture_output=True, text=True, timeout=2, check=True,
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=True,
         )
-        values = dict(line.split("=", 1) for line in result.stdout.splitlines() if "=" in line)
+        values = dict(
+            line.split("=", 1) for line in result.stdout.splitlines() if "=" in line
+        )
         return {
             "jenkins_main_pid": int(values["MainPID"]),
             "jenkins_restarts": int(values["NRestarts"]),
@@ -213,22 +256,31 @@ def jenkins_service_status() -> dict[str, int]:
         return {}
 
 
-def snapshot(proc_root: Path = Path("/proc"), cgroup_root: Path = Path("/sys/fs/cgroup"),
-             *, details: bool = False) -> dict[str, Any]:
+def snapshot(
+    proc_root: Path = Path("/proc"),
+    cgroup_root: Path = Path("/sys/fs/cgroup"),
+    *,
+    details: bool = False,
+) -> dict[str, Any]:
     mem = read_meminfo(proc_root / "meminfo")
     group = cgroup_memory(proc_root, cgroup_root)
     available = mem["MemAvailable"] // 1024
-    effective = min(available, group["cgroup_headroom_mib"]) if (
-        group.get("cgroup_headroom_mib") is not None
-    ) else available
+    effective = (
+        min(available, group["cgroup_headroom_mib"])
+        if (group.get("cgroup_headroom_mib") is not None)
+        else available
+    )
     result = {
         "timestamp": utc_now(),
         "monotonic": time.monotonic(),
         "mem_total_mib": mem["MemTotal"] // 1024,
         "mem_available_mib": available,
         "effective_available_mib": effective,
-        "swap_used_mib": ((mem["SwapTotal"] - mem["SwapFree"]) // 1024
-                          if "SwapTotal" in mem and "SwapFree" in mem else None),
+        "swap_used_mib": (
+            (mem["SwapTotal"] - mem["SwapFree"]) // 1024
+            if "SwapTotal" in mem and "SwapFree" in mem
+            else None
+        ),
         **group,
     }
     if details:
@@ -253,8 +305,12 @@ def select_with_wait(policy: dict[str, Any]) -> tuple[dict[str, Any], dict[str, 
                 "CI_RESOURCE_PRESSURE: no eligible profile; effective available memory "
                 f"{observed['effective_available_mib']} MiB after waiting"
             )
-        print(f"CI_RESOURCE_WAIT: {observed['effective_available_mib']} MiB available; "
-              "no eligible profile", file=sys.stderr, flush=True)
+        print(
+            f"CI_RESOURCE_WAIT: {observed['effective_available_mib']} MiB available; "
+            "no eligible profile",
+            file=sys.stderr,
+            flush=True,
+        )
         time.sleep(min(remaining, policy["poll_seconds"]))
 
 
@@ -271,8 +327,12 @@ def resource_incident(first: dict[str, Any], last: dict[str, Any]) -> str | None
     return None
 
 
-def summarize_metrics(path: Path, reserve_mib: int, resume_at_mib: int,
-                      baseline: dict[str, Any] | None = None) -> dict[str, Any]:
+def summarize_metrics(
+    path: Path,
+    reserve_mib: int,
+    resume_at_mib: int,
+    baseline: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     """Summarize observations, not a claim that no host-wide OOM occurred."""
     rows = []
     malformed = 0
@@ -281,7 +341,10 @@ def summarize_metrics(path: Path, reserve_mib: int, resume_at_mib: int,
             for line in stream:
                 try:
                     row = json.loads(line)
-                    if not isinstance(row, dict) or "effective_available_mib" not in row:
+                    if (
+                        not isinstance(row, dict)
+                        or "effective_available_mib" not in row
+                    ):
                         raise ValueError("missing memory sample")
                     rows.append(row)
                 except (ValueError, TypeError):
@@ -293,18 +356,32 @@ def summarize_metrics(path: Path, reserve_mib: int, resume_at_mib: int,
     observations = [first, *rows]
     low = min(row["effective_available_mib"] for row in observations)
     drop = max(0, first["effective_available_mib"] - low)
-    swap = [row["swap_used_mib"] for row in observations if row.get("swap_used_mib") is not None]
-    cpu = [row["cpu_busy_percent"] for row in rows if row.get("cpu_busy_percent") is not None]
-    current = [row["cgroup_current_mib"] for row in observations
-               if row.get("cgroup_current_mib") is not None]
-    incidents = [incident for row in rows if (incident := resource_incident(first, row))]
+    swap = [
+        row["swap_used_mib"]
+        for row in observations
+        if row.get("swap_used_mib") is not None
+    ]
+    cpu = [
+        row["cpu_busy_percent"]
+        for row in rows
+        if row.get("cpu_busy_percent") is not None
+    ]
+    current = [
+        row["cgroup_current_mib"]
+        for row in observations
+        if row.get("cgroup_current_mib") is not None
+    ]
+    incidents = [
+        incident for row in rows if (incident := resource_incident(first, row))
+    ]
     report.update(
         start_available_mib=first["effective_available_mib"],
         min_available_mib=low,
         observed_drop_mib=drop,
         meets_reserve=low >= reserve_mib,
         suggested_min_start_available_mib=max(
-            resume_at_mib, reserve_mib + math.ceil(1.25 * drop)),
+            resume_at_mib, reserve_mib + math.ceil(1.25 * drop)
+        ),
         max_swap_increase_mib=(max(0, max(swap) - swap[0]) if swap else None),
         max_cgroup_current_mib=max(current) if current else None,
         average_cpu_busy_percent=round(sum(cpu) / len(cpu), 2) if cpu else None,

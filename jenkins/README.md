@@ -52,8 +52,9 @@ capacity. Ordinary PRs run the whole matrix automatically.
 * Start the initial pilot on the current single-executor CI node with at
   least 11 GiB effective available RAM. Linux `MemAvailable` is further
   bounded by any readable finite cgroup-v2 ancestor memory limit.
-* Admission pauses below 4 GiB and resumes at 5 GiB. Startup and dispatch
-  resource waits are bounded to five minutes. If memory does not recover,
+* Admission pauses below 4 GiB and resumes at 5 GiB. The sampler records
+  pressure even while all slots are occupied. Startup and dispatch resource
+  waits are bounded to five minutes. If memory does not recover,
   or the monitor detects a new cgroup OOM kill or changed Jenkins service
   identity, stop new dispatch; incomplete BIDs are not marked successful.
   Work already admitted can finish its normal test cleanup.
@@ -134,5 +135,6 @@ PYTHONDONTWRITEBYTECODE=1 PYTHONPATH=jenkins python3 -m unittest discover -s jen
 
 These tests exercise real lock contention, rolling refill, all 21 BIDs,
 check inventory, memory hysteresis and timeout, failure/abort, resource
-observation and reviewed profile selection. They are not board or live CI
-verification.
+observation and reviewed profile selection. The CLI lifecycle test feeds a
+fixed Linux memory sample on any host that supports `flock`. Board and QEMU
+verification still runs on the Jenkins node.

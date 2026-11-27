@@ -11,17 +11,34 @@ from sync_bid_matrix import find_bid_values_block, sync_jenkinsfile
 ROOT = Path(__file__).resolve().parents[2]
 # PR #452 d02efb6 baseline. Deliberate coverage changes must update this contract.
 EXPECTED_BIDS = [
-    "aarch64/imx8mp", "aarch64/jeston-orin", "aarch64/ok6254-c",
-    "aarch64/phytium-pi", "aarch64/qemu-gicv2", "aarch64/qemu-gicv3",
-    "aarch64/rk3568", "aarch64/rk3588", "aarch64/sysoul_x3300",
-    "aarch64/zcu102", "loongarch64/ls3a5000", "loongarch64/ls3a6000",
-    "riscv64/hifive-premier-p550", "riscv64/megrez", "riscv64/qemu-aia",
-    "riscv64/qemu-plic", "riscv64/ur-dp1000", "x86_64/ecx-2300f-peg",
-    "x86_64/nuc14mnk", "x86_64/qemu", "x86_64/qemu_asterinas",
+    "aarch64/imx8mp",
+    "aarch64/jeston-orin",
+    "aarch64/ok6254-c",
+    "aarch64/phytium-pi",
+    "aarch64/qemu-gicv2",
+    "aarch64/qemu-gicv3",
+    "aarch64/rk3568",
+    "aarch64/rk3588",
+    "aarch64/sysoul_x3300",
+    "aarch64/zcu102",
+    "loongarch64/ls3a5000",
+    "loongarch64/ls3a6000",
+    "riscv64/hifive-premier-p550",
+    "riscv64/megrez",
+    "riscv64/qemu-aia",
+    "riscv64/qemu-plic",
+    "riscv64/ur-dp1000",
+    "x86_64/ecx-2300f-peg",
+    "x86_64/nuc14mnk",
+    "x86_64/qemu",
+    "x86_64/qemu_asterinas",
 ]
 EXPECTED_TESTS = {
-    "aarch64/phytium-pi", "aarch64/qemu-gicv3", "riscv64/qemu-plic",
-    "x86_64/qemu", "x86_64/qemu_asterinas",
+    "aarch64/phytium-pi",
+    "aarch64/qemu-gicv3",
+    "riscv64/qemu-plic",
+    "x86_64/qemu",
+    "x86_64/qemu_asterinas",
 }
 
 
@@ -30,7 +47,7 @@ class MatrixContractTests(unittest.TestCase):
         text = (ROOT / "Jenkinsfile").read_text()
         lines = text.splitlines(keepends=True)
         first, last, _ = find_bid_values_block(lines)
-        bids = [line.strip().strip(",").strip("'") for line in lines[first + 1:last]]
+        bids = [line.strip().strip(",").strip("'") for line in lines[first + 1 : last]]
         self.assertEqual(bids, EXPECTED_BIDS)
         ci_config = (ROOT / "jenkins/ci.yaml").read_text()
         test_bids = set(re.findall(r"^  - bid: (\S+)\s*$", ci_config, re.M))
