@@ -133,6 +133,14 @@ impl GichLr {
         lr
     }
 
+    /// A software (HW=0) SPI in the pending state.
+    pub fn new_pending_spi(vintid: usize) -> Self {
+        let mut lr = Self(0);
+        lr.0.set_bits(0..10, vintid as u32);
+        lr.set_pending(true);
+        lr
+    }
+
     pub fn read(index: usize) -> Self {
         Self(GICH.get().unwrap().get_lr(index))
     }

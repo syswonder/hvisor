@@ -17,12 +17,12 @@
 // tracking, and the maintenance interrupt.
 use crate::arch::cpu::this_cpu_id;
 use crate::cpu_data::this_cpu_data;
-use crate::device::irqchip::gicv2::gicd::GICV2_SGIS_NUM;
 use crate::device::irqchip::gicv2::gich::{
     GicHypervisorInterface, GichLr, GICH, GICV2_GICH_HCR_UIE, GICV2_GICH_LR_HW,
     GICV2_GICH_LR_PENDING_STATE, GICV2_GICH_LR_PHYSID_SHIFT,
 };
 use crate::device::irqchip::gicv2::pending::PENDING_VIRQS;
+use crate::device::irqchip::{is_sgi, is_spi, SGIS_NUM};
 use bit_field::BitField;
 use core::sync::atomic::Ordering;
 
@@ -42,8 +42,16 @@ pub fn flush_current_guest_irqs() {
 }
 
 fn install_pending_guest_irq(cpu: &crate::cpu_data::PerCpu, irq_id: usize) -> bool {
-    if irq_id >= GICV2_SGIS_NUM {
-        return false;
+    if is_spi(irq_id) {
+        return try_install_software_spi(irq_id);
+    }
+    if !is_sgi(irq_id) {
+        // `post_guest_irq()` only accepts SGIs and SPIs for now, so nothing else
+        // should get here. Returning `false` would mean "LR full" and rearm
+        // maintenance forever, so drop it instead. Extend this together with
+        // `post_guest_irq()` when PPIs or LPIs start being posted.
+        warn!("dropping unexpected guest IRQ {}", irq_id);
+        return true;
     }
     let sources = &cpu.vcpu.arch.sgi_source[irq_id];
     let source_cpu = sources.load(Ordering::Acquire).trailing_zeros() as usize;
@@ -115,6 +123,34 @@ fn try_install_software_sgi(irq_id: usize, source_cpu: usize) -> SgiInstall {
     SgiInstall::Installed
 }
 
+// Install a software SPI; LRs of the same VirtualID coalesce as for SGIs.
+fn try_install_software_spi(irq_id: usize) -> bool {
+    let gich = GICH.get().unwrap();
+    let empty_lrs = empty_lr_mask(gich);
+    let mut free_lr = None;
+    for index in 0..=gich.get_lr_num() as usize {
+        if empty_lrs.get_bit(index) {
+            free_lr.get_or_insert(index);
+            continue;
+        }
+        let mut lr = GichLr::read(index);
+        if lr.vintid() != irq_id {
+            continue;
+        }
+        // Active-only LRs become pending; pending ones coalesce.
+        if !lr.is_pending() {
+            lr.set_pending(true);
+            lr.write(index);
+        }
+        return true;
+    }
+    let Some(index) = free_lr else {
+        return false;
+    };
+    GichLr::new_pending_spi(irq_id).write(index);
+    true
+}
+
 pub fn inject_irq(irq_id: usize, is_sgi: bool) -> bool {
     let elrsr: u64 =
         (GICH.get().unwrap().get_elrsr(1) as u64) << 32 | GICH.get().unwrap().get_elrsr(0) as u64;
@@ -168,7 +204,7 @@ pub fn clear_guest_sgi_pending(target_cpu: usize, irq_id: usize) -> bool {
 }
 
 pub fn clear_guest_sgi_pending_sources(target_cpu: usize, irq_id: usize, source_mask: u8) -> bool {
-    if irq_id >= GICV2_SGIS_NUM {
+    if !is_sgi(irq_id) {
         return false;
     }
     let target = crate::cpu_data::get_cpu_data(target_cpu);
@@ -211,7 +247,7 @@ fn clear_lr_pending_sgi(irq_id: usize, source_mask: u8) {
 
 pub(crate) struct PendingSgiLrSummary {
     pub pending_mask: u32,
-    pub source_masks: [u8; GICV2_SGIS_NUM],
+    pub source_masks: [u8; SGIS_NUM],
 }
 
 pub(crate) fn read_pending_sgi_lr_summary() -> PendingSgiLrSummary {
@@ -219,7 +255,7 @@ pub(crate) fn read_pending_sgi_lr_summary() -> PendingSgiLrSummary {
     let empty_lrs = empty_lr_mask(gich);
     let mut summary = PendingSgiLrSummary {
         pending_mask: 0,
-        source_masks: [0; GICV2_SGIS_NUM],
+        source_masks: [0; SGIS_NUM],
     };
     for index in 0..=gich.get_lr_num() as usize {
         if empty_lrs.get_bit(index) {
@@ -227,7 +263,7 @@ pub(crate) fn read_pending_sgi_lr_summary() -> PendingSgiLrSummary {
         }
         let lr = GichLr::read(index);
         let irq_id = lr.vintid();
-        if irq_id < GICV2_SGIS_NUM && lr.is_pending() {
+        if is_sgi(irq_id) && lr.is_pending() {
             summary.pending_mask.set_bit(irq_id, true);
             summary.source_masks[irq_id].set_bit(lr.source_cpu(), true);
         }
@@ -265,7 +301,7 @@ fn handle_sgi_eoi_maintenance() {
             continue;
         }
         let irq_id = GichLr::read(index).vintid();
-        if irq_id >= GICV2_SGIS_NUM {
+        if !is_sgi(irq_id) {
             continue;
         }
         gich.set_lr(index, 0);

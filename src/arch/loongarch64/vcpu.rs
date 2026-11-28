@@ -14,7 +14,7 @@
 // Authors:
 //
 use crate::cpu_data::this_cpu_data;
-use crate::device::irqchip::ls7a2000::{clear_injected_irq, inject_irq};
+use crate::device::irqchip::ls7a2000::sync_guest_line;
 use core::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use spin::Mutex;
 
@@ -25,7 +25,9 @@ pub const GUEST_IRQ_NR: usize = 13;
 pub const INT_IPI: usize = 12;
 
 /// Level-triggered bitmap numbers; the rest are edges.
-pub const GUEST_LINES: &[usize] = &[INT_IPI];
+//
+// HWI0..=HWI7 are ESTAT.IS bits 2..=9.
+pub const GUEST_LINES: &[usize] = &[2, 3, 4, 5, 6, 7, 8, 9, INT_IPI];
 
 const IPI_ENABLE_RESET: u32 = 0xffff_ffff;
 
@@ -77,13 +79,7 @@ impl VirtIpiRegs {
     }
 }
 
-/// Sync dirty guest ESTAT lines.
+/// Sync dirty guest lines to GINTC.VIP and GCSR ESTAT.
 pub fn flush_guest_irqs() {
-    this_cpu_data()
-        .vcpu
-        .irq
-        .take_dirty_lines(|irq_id, level| match level {
-            true => inject_irq(irq_id, false),
-            false => clear_injected_irq(irq_id),
-        });
+    this_cpu_data().vcpu.irq.take_dirty_lines(sync_guest_line);
 }

@@ -17,7 +17,6 @@
 use crate::arch::ivc::{IvcInfo, IVC_INFOS};
 use crate::config::CONFIG_MAGIC_VERSION;
 use crate::cpu_data::this_zone;
-use crate::device::virtio_trampoline::MAX_DEVS;
 use crate::hypercall::HyperCall;
 use crate::hypercall::HyperCallResult;
 use crate::zone::this_zone_id;
@@ -47,10 +46,6 @@ impl<'a> HyperCall<'a> {
             None => return hv_result_err!(ENODEV, "Zone {zone_id} has no ivc config!"),
         }
         HyperCallResult::Ok(0)
-    }
-
-    pub fn wait_for_interrupt(&mut self, _irq_list: &mut [u64; MAX_DEVS + 1]) {
-        trace!("wait_for_interrupt is not need for AArch64");
     }
 
     pub fn hv_zone_config_check(&self, magic_version: *mut u64) -> HyperCallResult {

@@ -99,14 +99,6 @@ pub fn host_gits_size() -> usize {
     GIC.get().unwrap().gits_size
 }
 
-pub fn is_spi(irqn: u32) -> bool {
-    irqn > 31 && irqn < 1020
-}
-
-pub fn is_sgi(irqn: u32) -> bool {
-    irqn < 16
-}
-
 pub fn enable_irqs() {
     unsafe { asm!("msr daifclr, #0xf") };
 }

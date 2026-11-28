@@ -16,15 +16,13 @@
 #![allow(dead_code)]
 #![allow(unreachable_patterns)]
 
-#[cfg(not(target_arch = "x86_64"))]
-use crate::arch::cpu::get_target_cpu;
 use crate::config::{HvZoneBootMode, HvZoneConfig};
 use crate::consts::{INVALID_ADDRESS, MAX_WAIT_TIMES, PAGE_SIZE};
 use crate::cpu_data::{get_cpu_data, PerCpu, VcpuState};
 use crate::device::virtio_trampoline::{
     VirtioPCIHypercallOp, VIRTIO_BRIDGE, VIRTIO_PCI_BRIDGE, VIRTIO_PCI_HYPERCALL_VERSION,
 };
-#[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+#[cfg(target_arch = "riscv64")]
 use crate::device::virtio_trampoline::{MAX_DEVS, VIRTIO_IRQS};
 use crate::error::HvResult;
 use crate::pci::pci_config::GLOBAL_PCIE_LIST;
@@ -33,7 +31,7 @@ use crate::zone::{
     set_zone_boot_mode, zone_create, ZoneInfo,
 };
 
-#[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+#[cfg(target_arch = "riscv64")]
 use crate::event::IPI_EVENT_VIRTIO_INJECT_IRQ;
 use crate::event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_VIRTIO_PCI_DONE, IPI_EVENT_WAKEUP};
 use core::convert::TryFrom;
@@ -156,25 +154,30 @@ impl<'a> HyperCall<'a> {
         #[cfg(target_arch = "x86_64")]
         let _irq_lifecycle = X86_IOAPIC_LIFECYCLE.read();
         let mut res_agent = VIRTIO_BRIDGE.res_agent();
-        #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+        #[cfg(target_arch = "riscv64")]
         let mut map_irq = VIRTIO_IRQS.lock();
         while !res_agent.is_empty() {
             let (_res_front, irq_id, target_zone) = res_agent.peek_front();
-            if find_zone(target_zone as _).is_none() {
+            let Some(zone) = find_zone(target_zone as _) else {
+                res_agent.advance_front();
+                continue;
+            };
+            // Reuse `zone`: a second lookup may panic if the zone is shut down.
+            #[cfg(not(target_arch = "x86_64"))]
+            let target_cpu = zone.read().cpu_set().first_cpu().unwrap();
+            #[cfg(target_arch = "x86_64")]
+            drop(zone);
+
+            #[cfg(target_arch = "loongarch64")]
+            {
+                crate::device::irqchip::ls7a2000::post_guest_hwi(target_cpu, irq_id as usize, true);
                 res_agent.advance_front();
                 continue;
             }
 
-            #[cfg(not(target_arch = "x86_64"))]
-            let target_cpu = get_target_cpu(irq_id as _, target_zone as _);
-
-            #[cfg(target_arch = "loongarch64")]
+            #[cfg(target_arch = "aarch64")]
             {
-                crate::device::irqchip::ls7a2000::set_guest_irq_line(
-                    target_cpu,
-                    irq_id as usize,
-                    true,
-                );
+                crate::device::irqchip::post_guest_spi(target_cpu, irq_id as usize);
                 res_agent.advance_front();
                 continue;
             }
@@ -190,7 +193,7 @@ impl<'a> HyperCall<'a> {
                 continue;
             }
 
-            #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+            #[cfg(target_arch = "riscv64")]
             {
                 let irq_list = map_irq.entry(target_cpu).or_insert([0; MAX_DEVS + 1]);
                 self.wait_for_interrupt(irq_list);
@@ -207,7 +210,7 @@ impl<'a> HyperCall<'a> {
                 }
             }
 
-            #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+            #[cfg(target_arch = "riscv64")]
             res_agent.advance_front();
         }
         drop(res_agent);
@@ -259,14 +262,18 @@ impl<'a> HyperCall<'a> {
         }
         #[cfg(target_arch = "x86_64")]
         let _irq_lifecycle = X86_IOAPIC_LIFECYCLE.read();
-        if find_zone(target_zone).is_none() {
+        let Some(zone) = find_zone(target_zone) else {
             return hv_result_err!(EINVAL, format!("zone {} does not exist", target_zone));
-        }
+        };
+        // Reuse `zone`: a second lookup may panic if the zone is shut down.
+        #[cfg(target_arch = "loongarch64")]
+        let target_cpu = zone.read().cpu_set().first_cpu().unwrap();
+        #[cfg(not(target_arch = "loongarch64"))]
+        drop(zone);
 
         #[cfg(target_arch = "loongarch64")]
         {
-            let target_cpu = get_target_cpu(irq_id, target_zone);
-            if !crate::device::irqchip::ls7a2000::set_guest_irq_line(target_cpu, irq_id, false) {
+            if !crate::device::irqchip::ls7a2000::post_guest_hwi(target_cpu, irq_id, false) {
                 return hv_result_err!(
                     EINVAL,
                     format!(
@@ -360,7 +367,7 @@ impl<'a> HyperCall<'a> {
             return hv_result_err!(EINVAL);
         }
         // avoid virtio daemon send sgi to the shutdowning zone
-        #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+        #[cfg(target_arch = "riscv64")]
         let mut map_irq = VIRTIO_IRQS.lock();
 
         let zone = match find_zone(zone_id as _) {
@@ -383,10 +390,10 @@ impl<'a> HyperCall<'a> {
             let _lock = get_cpu_data(cpu_id).ctrl_lock.lock();
             get_cpu_data(cpu_id).cpu_on_entry = INVALID_ADDRESS;
             #[cfg(target_arch = "loongarch64")]
-            crate::device::irqchip::ls7a2000::clear_guest_irq_lines(cpu_id);
+            get_cpu_data(cpu_id).vcpu.clear_irq_state();
             send_event(cpu_id, SGI_IPI_ID as _, IPI_EVENT_SHUTDOWN);
             // set the virtio irq list's len to 0
-            #[cfg(any(target_arch = "aarch64", target_arch = "riscv64"))]
+            #[cfg(target_arch = "riscv64")]
             if let Some(irq_list) = map_irq.get_mut(&cpu_id) {
                 irq_list[0] = 0;
             }

@@ -14,16 +14,16 @@
 // Authors:
 //      Hangqi Ren <2572131118@qq.com>
 use crate::device::irqchip::gicv2::gicc::GICC;
-use crate::device::irqchip::gicv2::gicd::GICV2_SGIS_NUM;
 use crate::device::irqchip::gicv2::lr::{
     handle_maintenance_interrupt, inject_irq, MAINTENANCE_INTERRUPT,
 };
+use crate::device::irqchip::is_sgi;
 use crate::event::{check_events, dispatch_host_events};
 use crate::hypercall::SGI_IPI_ID;
 
 pub fn gicv2_handle_irq() {
     if let Some(irq_id) = get_pending_irq() {
-        if irq_id < GICV2_SGIS_NUM {
+        if is_sgi(irq_id) {
             deactivate_irq(irq_id);
             if irq_id == SGI_IPI_ID as _ {
                 dispatch_host_events(|| while check_events() {});
@@ -52,7 +52,7 @@ pub fn get_pending_irq() -> Option<usize> {
 // deactivate irq: GIC doesn't care CPU ID.
 pub fn deactivate_irq(irq_id: usize) {
     GICC.get().unwrap().set_eoir(irq_id as u32);
-    if irq_id < GICV2_SGIS_NUM {
+    if is_sgi(irq_id) {
         GICC.get().unwrap().set_dir(irq_id as u32);
     }
 }

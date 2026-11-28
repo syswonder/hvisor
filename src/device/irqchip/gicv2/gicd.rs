@@ -17,6 +17,7 @@
 #![allow(dead_code)]
 use crate::device::irqchip::gicv2::gic_ref::GicRef;
 use crate::device::irqchip::gicv2::GICV2;
+use crate::device::irqchip::{SGIS_NUM, SPI_RANGE};
 use spin::{Mutex, Once};
 use tock_registers::interfaces::{Readable, Writeable};
 use tock_registers::register_structs;
@@ -25,16 +26,14 @@ use tock_registers::registers::{ReadOnly, ReadWrite};
 
 // GICV2 interrupt layout.
 pub const GICV2_INTS_MAX: usize = 1024;
-pub const GICV2_SGIS_NUM: usize = crate::device::irqchip::SGIS_NUM;
-pub const GICV2_PPIS_NUM: usize = 16;
-pub const GICV2_PRIVATE_INTS_NUM: usize = GICV2_SGIS_NUM + GICV2_PPIS_NUM;
+pub const GICV2_PRIVATE_INTS_NUM: usize = SPI_RANGE.start;
 
 // GICD Register numbers;
 pub const GICV2_INT_REGS_NUM: usize = GICV2_INTS_MAX / 32;
 pub const GICV2_PRIO_REGS_NUM: usize = GICV2_INTS_MAX * 8 / 32;
 pub const GICV2_TARGET_REGS_NUM: usize = GICV2_INTS_MAX * 8 / 32;
 pub const GICV2_CONFIG_REGS_NUM: usize = GICV2_INTS_MAX / 16;
-pub const GICV2_SGI_REGS_NUM: usize = GICV2_SGIS_NUM * 8 / 32;
+pub const GICV2_SGI_REGS_NUM: usize = SGIS_NUM * 8 / 32;
 /* OPTIONAL */
 pub const GICV2_NSACR_REGS_NUM: usize = GICV2_INTS_MAX * 2 / 32;
 
@@ -188,11 +187,6 @@ impl GicDistributor {
 pub fn get_max_int_num() -> usize {
     let value = (GICD.get().unwrap().TYPER.get() & 0b11111) as usize;
     (value + 1) * 32
-}
-
-// Check if the interrupt is a sgi.
-pub fn is_spi(irqn: usize) -> bool {
-    irqn > 31 && irqn < 1020
 }
 
 // Get the base address of GICD.

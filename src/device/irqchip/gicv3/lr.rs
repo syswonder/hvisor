@@ -16,12 +16,11 @@
 // GICv3 List register management: virtual IRQ injection, guest SGI clearing,
 // and the maintenance interrupt.
 use super::gich::{list_regs_num, read_lr, write_lr, IchLr, ICH_HCR_UIE};
-use super::is_sgi;
 use super::pending::PENDING_VIRQS;
 use crate::arch::aarch64::sysreg::{read_sysreg, write_sysreg};
 use crate::arch::cpu::this_cpu_id;
 use crate::cpu_data::this_cpu_data;
-use crate::device::irqchip::SGIS_NUM;
+use crate::device::irqchip::{is_sgi, is_spi};
 use bit_field::BitField;
 
 pub const MAINTENANCE_INTERRUPT: u64 = 25;
@@ -38,13 +37,18 @@ pub fn flush_current_guest_irqs() {
 }
 
 fn install_pending_guest_irq(irq_id: usize) -> bool {
-    if irq_id >= SGIS_NUM {
-        return false;
+    if !is_sgi(irq_id) && !is_spi(irq_id) {
+        // `post_guest_irq()` only accepts SGIs and SPIs for now, so nothing else
+        // should get here. Returning `false` would mean "LR full" and rearm
+        // maintenance forever, so drop it instead. Extend this together with
+        // `post_guest_irq()` when PPIs or LPIs start being posted.
+        warn!("dropping unexpected guest IRQ {}", irq_id);
+        return true;
     }
-    try_install_software_sgi(irq_id)
+    try_install_software_irq(irq_id)
 }
 
-fn try_install_software_sgi(irq_id: usize) -> bool {
+fn try_install_software_irq(irq_id: usize) -> bool {
     let elsr = read_sysreg!(ich_elrsr_el2);
     let mut free_lr = None;
     for index in 0..list_regs_num() {
@@ -120,7 +124,7 @@ pub fn inject_irq(irq_id: usize, is_hardware: bool) -> bool {
         val |= 1 << 60; //group 1
         val |= 1 << 62; //state pending
 
-        if !is_sgi(irq_id as _) && is_hardware {
+        if !is_sgi(irq_id) && is_hardware {
             val |= 1 << 61; //map hardware
             val |= (irq_id as u64) << 32; //pINTID
         }
@@ -130,7 +134,7 @@ pub fn inject_irq(irq_id: usize, is_hardware: bool) -> bool {
 }
 
 pub fn clear_guest_sgi(target_cpu: usize, irq_id: usize) -> bool {
-    if irq_id >= SGIS_NUM {
+    if !is_sgi(irq_id) {
         return false;
     }
     let target = crate::cpu_data::get_cpu_data(target_cpu);
@@ -173,7 +177,7 @@ pub(crate) fn lr_pending_sgi_mask() -> u32 {
         }
         let lr = IchLr::read(index);
         let irq_id = lr.vintid();
-        if irq_id < SGIS_NUM && lr.is_pending() {
+        if is_sgi(irq_id) && lr.is_pending() {
             pending.set_bit(irq_id, true);
         }
     }

@@ -22,14 +22,9 @@ use crate::zone::Zone;
 use core::sync::atomic::{fence, Ordering};
 
 #[cfg(target_arch = "aarch64")]
-pub(crate) const SGIS_NUM: usize = 16;
+pub(crate) const SGIS_NUM: usize = SGI_RANGE.end;
 
-#[cfg(target_arch = "loongarch64")]
-pub fn handle_virtio_irq_event() {
-    ls7a2000::sync_guest_irqs();
-}
-
-#[cfg(not(target_arch = "loongarch64"))]
+#[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
 pub fn handle_virtio_irq_event() {
     crate::device::virtio_trampoline::handle_virtio_irq();
 }
@@ -58,8 +53,12 @@ pub fn post_guest_irq(
     if irq_id >= GUEST_IRQ_NR {
         return false;
     }
+    // Only SGIs and SPIs can be posted so far; the LR flush has no PPI path
+    // yet. PPIs (e.g. a vCPU virtual timer) and LPIs (virtio-pci or
+    // passthrough MSI) still go through `inject_irq()`. Posting LPIs (>= 8192)
+    // will also need storage beyond `GUEST_IRQ_NR`.
     #[cfg(target_arch = "aarch64")]
-    if irq_id >= SGIS_NUM {
+    if !is_sgi(irq_id) && !is_spi(irq_id) {
         return false;
     }
     let target = get_cpu_data(target_cpu);
@@ -90,6 +89,20 @@ pub fn post_guest_irq(
     }
     drop(control);
     kick_vcpu(&target.vcpu, target_cpu);
+    true
+}
+
+/// Post a software SPI, one with no physical interrupt behind it. Returns
+/// `false` for an INTID that is not an SPI.
+#[cfg(target_arch = "aarch64")]
+pub fn post_guest_spi(target_cpu: usize, irq_id: usize) -> bool {
+    if !is_spi(irq_id) {
+        error!("invalid guest SPI {} for CPU{}", irq_id, target_cpu);
+        return false;
+    }
+    // A CPU leaving its zone may reject the post; that is not an argument
+    // error.
+    post_guest_irq(target_cpu, irq_id, None, GuestIrqSignal::Edge);
     true
 }
 
@@ -142,6 +155,32 @@ pub mod gicv3;
 pub use gicv3::{
     gicd::set_ispender, lr::inject_irq, percpu_init, primary_init_early, primary_init_late,
 };
+
+// GIC INTID ranges, shared by GICv2 and GICv3.
+#[cfg(target_arch = "aarch64")]
+pub(crate) const SGI_RANGE: core::ops::Range<usize> = 0..16;
+// INTIDs 1020..1024 are special and never name an interrupt.
+#[cfg(target_arch = "aarch64")]
+pub(crate) const SPI_RANGE: core::ops::Range<usize> = 32..1020;
+
+#[cfg(target_arch = "aarch64")]
+pub(crate) fn is_sgi(intid: usize) -> bool {
+    SGI_RANGE.contains(&intid)
+}
+
+#[cfg(target_arch = "aarch64")]
+pub(crate) fn is_spi(intid: usize) -> bool {
+    SPI_RANGE.contains(&intid)
+}
+
+// LPIs exist only on GICv3 (delivered through the ITS).
+#[cfg(all(irq_gicv3, target_arch = "aarch64"))]
+pub(crate) const LPI_START: usize = 8192;
+
+#[cfg(all(irq_gicv3, target_arch = "aarch64"))]
+pub(crate) fn is_lpi(intid: usize) -> bool {
+    intid >= LPI_START
+}
 
 /// ISPENDR0/ICPENDR0 value: SGIs in bits [15:0], PPIs in bits [31:16].
 #[cfg(target_arch = "aarch64")]
@@ -286,7 +325,7 @@ pub mod ls7a2000;
 pub mod pic;
 
 #[cfg(target_arch = "loongarch64")]
-pub use ls7a2000::{inject_irq, percpu_init, primary_init_early, primary_init_late};
+pub use ls7a2000::{percpu_init, primary_init_early, primary_init_late};
 
 #[cfg(target_arch = "x86_64")]
 pub use pic::{inject_irq, inject_vector, percpu_init, primary_init_early, primary_init_late};
