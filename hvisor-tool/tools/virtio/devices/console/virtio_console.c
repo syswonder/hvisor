@@ -210,12 +210,16 @@ static void virtio_console_close(VirtIODevice *vdev) {
 
     ConsoleDev *dev = vdev->dev;
     if (dev) {
+        /* Unregister before closing the fd so epoll cannot dispatch it. */
+        if (dev->event) {
+            remove_event(dev->event);
+            free(dev->event);
+            dev->event = NULL;
+        }
         if (dev->master_fd >= 0)
             close(dev->master_fd);
         if (dev->slave_keepalive_fd >= 0)
             close(dev->slave_keepalive_fd);
-        remove_event(dev->event);
-        free(dev->event);
         free(dev);
         vdev->dev = NULL;
     }

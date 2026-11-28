@@ -20,6 +20,7 @@
 #include <linux/miscdevice.h>
 #include <linux/mm.h>
 #include <linux/module.h>
+#include <linux/mutex.h>
 #include <linux/of.h>
 #include <linux/of_irq.h>
 #include <linux/of_reserved_mem.h>
@@ -32,9 +33,8 @@
 #include <linux/vmalloc.h>
 
 #include "hvisor.h"
-#include "zone_config.h"
-
 #include "virtio/scmi/server.h"
+#include "zone_config.h"
 
 extern bool __clk_is_enabled(const struct clk *clk);
 extern const char *__clk_get_name(const struct clk *clk);
@@ -185,6 +185,35 @@ out:
     return ret;
 }
 
+static DEFINE_MUTEX(scmi_lifecycle_lock);
+
+static bool hvisor_zone_is_alive(u32 zone_id) {
+    zone_info_t *zones;
+    bool found = false;
+    int count;
+
+    zones = kcalloc(MAX_ZONES, sizeof(*zones), GFP_KERNEL);
+    if (!zones)
+        return true;
+
+    count = hvisor_call(HVISOR_HC_ZONE_LIST, __pa(zones), MAX_ZONES);
+    if (count <= 0) {
+        pr_warn("hvisor.ko: zone list unavailable (%d), assuming zone %u is "
+                "alive\n",
+                count, zone_id);
+        found = true;
+    } else {
+        for (int i = 0; i < count; i++)
+            if (zones[i].zone_id == zone_id) {
+                found = true;
+                break;
+            }
+    }
+
+    kfree(zones);
+    return found;
+}
+
 static int hvisor_zone_start(zone_config_t __user *arg) {
     int err = 0;
     zone_config_t *zone_config = kmalloc(sizeof(zone_config_t), GFP_KERNEL);
@@ -199,10 +228,20 @@ static int hvisor_zone_start(zone_config_t __user *arg) {
         return -EFAULT;
     }
 
+    /*
+     * A zone may only be started when no instance of it is alive.  If it is
+     * absent from the zone list, any SCMI accounting still attached to its id
+     * belongs to a dead instance and must be released before the new boot.
+     */
+    mutex_lock(&scmi_lifecycle_lock);
+    if (!hvisor_zone_is_alive(zone_config->zone_id))
+        scmi_release_zone(zone_config->zone_id);
+
     pr_info("hvisor.ko: invoking hypercall to start the zone\n");
 
     err = hvisor_call(HVISOR_HC_START_ZONE, __pa(zone_config),
                       sizeof(zone_config_t));
+    mutex_unlock(&scmi_lifecycle_lock);
     kfree(zone_config);
     return err;
 }
@@ -342,9 +381,19 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
     case HVISOR_SET_BOOT_MODE:
         err = hvisor_set_boot_mode((struct hv_zone_boot_mode __user *)arg);
         break;
-    case HVISOR_ZONE_SHUTDOWN:
+    case HVISOR_ZONE_SHUTDOWN: {
+        int released = 0;
+
+        mutex_lock(&scmi_lifecycle_lock);
         err = hvisor_call(HVISOR_HC_SHUTDOWN_ZONE, arg, 0);
+        if (arg > 0 && arg < MAX_ZONES &&
+            (err == 0 || !hvisor_zone_is_alive((u32)arg)))
+            released = scmi_release_zone((u32)arg);
+        if (err == -EINVAL && released > 0)
+            err = 0;
+        mutex_unlock(&scmi_lifecycle_lock);
         break;
+    }
     case HVISOR_ZONE_LIST:
         err = hvisor_zone_list((zone_list_args_t __user *)arg);
         break;
@@ -372,16 +421,20 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
         err = hvisor_load_image((struct hvisor_load_image_args __user *)arg);
         break;
     case HVISOR_SCMI_CLOCK_IOCTL:
+        mutex_lock(&scmi_lifecycle_lock);
         err = hvisor_scmi_clock_ioctl(
             (struct hvisor_scmi_clock_args __user *)arg);
+        mutex_unlock(&scmi_lifecycle_lock);
         break;
     case HVISOR_SCMI_RESET_IOCTL:
         err = hvisor_scmi_reset_ioctl(
             (struct hvisor_scmi_reset_args __user *)arg);
         break;
     case HVISOR_SCMI_POWER_IOCTL:
+        mutex_lock(&scmi_lifecycle_lock);
         err = hvisor_scmi_power_ioctl(
             (struct hvisor_scmi_power_args __user *)arg);
+        mutex_unlock(&scmi_lifecycle_lock);
         break;
 #if defined(LOONGARCH64) || defined(X86_64)
     case HVISOR_DEASSERT_IRQ:

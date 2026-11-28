@@ -17,6 +17,7 @@ struct hvisor_event {
     void *param;
     int fd;
     int epoll_type;
+    int active; // Number of dispatcher threads currently in handler
 };
 
 int initialize_event_monitor(void);

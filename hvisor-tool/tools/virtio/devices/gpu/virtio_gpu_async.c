@@ -70,6 +70,12 @@ void *virtio_gpu_handler(void *dev) {
             // log_info("%s: request queue empty, kick frontend", __func__);
         }
 
+        if (gdev->close) {
+            pthread_mutex_unlock(&gdev->queue_mutex);
+            pthread_exit(NULL);
+            return NULL;
+        }
+
         pthread_cond_wait(&gdev->gpu_cond, &gdev->queue_mutex);
     }
 }

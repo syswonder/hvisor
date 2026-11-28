@@ -39,12 +39,15 @@ static void __attribute__((noreturn)) help(int exit_status) {
     printf("  hvisor <command> [options]\n\n");
     printf("Commands:\n");
     printf("  zone start    <config.json>    Initialize an isolation zone\n");
-    printf("  zone shutdown -id <zone_id>   Terminate a zone by ID\n");
+    printf(
+        "  zone shutdown -id <zone_id> [-f|--force]  Terminate a zone by ID\n");
     printf("  zone list                      List all active zones\n");
     printf("  virtio start  <virtio.json>    Activate virtio devices\n");
     printf("  virtio add    <virtio.json>    Add virtio devices to daemon\n\n");
     printf("Options:\n");
-    printf("  --id <zone_id>    Specify zone ID for shutdown\n");
+    printf("  -id <zone_id>     Specify zone ID for shutdown\n");
+    printf("  -f, --force       Shut down zone without waiting for virtio "
+           "daemon\n");
     printf("  --help            Show this help message\n\n");
     printf("Examples:\n");
     printf("  Start zone:    hvisor zone start /path/to/vm.json\n");
@@ -1035,18 +1038,65 @@ static int zone_start(int argc, char *argv[]) {
     return zone_start_from_json(json_config_path, &config);
 }
 
-// ./hvisor zone shutdown -id 1
+// ./hvisor zone shutdown -id 1 [-f|--force]
 static int zone_shutdown(int argc, char *argv[]) {
-    if (argc != 2 || strcmp(argv[0], "-id") != 0) {
-        help(1);
+    const char *id_str = NULL;
+    bool force = false;
+
+    for (int i = 0; i < argc; i++) {
+        if (strcmp(argv[i], "-id") == 0 || strcmp(argv[i], "--id") == 0) {
+            if (i + 1 >= argc || id_str != NULL)
+                help(1);
+            id_str = argv[++i];
+        } else if (strcmp(argv[i], "-f") == 0 ||
+                   strcmp(argv[i], "--force") == 0) {
+            force = true;
+        } else {
+            help(1);
+        }
     }
-    uint64_t zone_id;
-    sscanf(argv[1], "%lu", &zone_id);
+    if (!id_str)
+        help(1);
+
+    char *end = NULL;
+    errno = 0;
+    unsigned long long parsed = strtoull(id_str, &end, 10);
+    if (errno || end == id_str || *end != '\0' || parsed == 0 ||
+        parsed >= MAX_ZONES) {
+        log_error("zone_shutdown: invalid zone id '%s'", id_str);
+        return -1;
+    }
+    uint32_t zone_id = (uint32_t)parsed;
+
+    /*
+     * Quiesce/close the zone's virtio devices and unmap its guest RAM in the
+     * daemon first so worker threads cannot touch guest memory after teardown,
+     * then issue HVISOR_ZONE_SHUTDOWN directly from the CLI.  --force skips
+     * the daemon handshake when an unresponsive backend must be bypassed.
+     */
+    int ctrl = VIRTIO_CTRL_NO_DAEMON;
+    if (!force) {
+        ctrl = virtio_control_cleanup_zone(zone_id);
+        if (ctrl < 0) {
+            log_error("zone_shutdown: virtio daemon failed to quiesce zone %u "
+                      "(%d); re-run with --force to shut down anyway",
+                      zone_id, ctrl);
+            return ctrl;
+        }
+    }
+
     int fd = open_dev();
-    int err = ioctl(fd, HVISOR_ZONE_SHUTDOWN, zone_id);
-    if (err)
-        perror("zone_shutdown: ioctl failed");
+    int err = ioctl(fd, HVISOR_ZONE_SHUTDOWN, (uint64_t)zone_id);
+    int saved_errno = errno;
     close(fd);
+    if (err && saved_errno == EINVAL && ctrl == VIRTIO_CTRL_CLEANUP_RELEASED) {
+        log_info("zone %u already stopped; virtio resources released", zone_id);
+        return 0;
+    }
+    if (err) {
+        errno = saved_errno;
+        perror("zone_shutdown: ioctl failed");
+    }
     return err;
 }
 

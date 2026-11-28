@@ -1,6 +1,7 @@
 #include "hvisor.h"
 #include "server.h"
 #include <linux/clk.h>
+#include <linux/mutex.h>
 #include <linux/of.h>
 #include <linux/slab.h>
 #include <linux/string.h>
@@ -11,6 +12,69 @@ extern const char *__clk_get_name(const struct clk *clk);
 
 static struct clk **clock_cache;
 static u32 clock_max_num;
+
+/* Per-zone enable state: clk_zone_en[zone][clock_id] is true while @zone holds
+ * an active clk_prepare_enable() reference through SCMI (rows allocated
+ * lazily).  SCMI CLOCK_CONFIG_SET is an idempotent per-agent state request, so
+ * repeated enables or unmatched disables from a guest must neither over-count
+ * nor underflow the host clock's prepare/enable count. */
+static bool **clk_zone_en;
+static DEFINE_MUTEX(clock_zone_lock);
+
+static struct clk *clock_get_cached(u32 clock_id);
+
+static bool *clock_zone_row(u32 zone) {
+    bool *row;
+
+    if (zone == 0 || zone >= MAX_ZONES || clock_max_num == 0)
+        return NULL;
+    row = clk_zone_en ? clk_zone_en[zone] : NULL;
+    if (!row) {
+        row = kcalloc(clock_max_num, sizeof(*row), GFP_KERNEL);
+        if (!row)
+            return NULL;
+        if (!clk_zone_en) {
+            clk_zone_en = kcalloc(MAX_ZONES, sizeof(*clk_zone_en), GFP_KERNEL);
+            if (!clk_zone_en) {
+                kfree(row);
+                return NULL;
+            }
+        }
+        clk_zone_en[zone] = row;
+    }
+    return row;
+}
+
+int clock_zone_release(u32 zone, u32 *released) {
+    bool *row;
+    u32 clk;
+    int errors = 0;
+
+    mutex_lock(&clock_zone_lock);
+    row = (zone > 0 && zone < MAX_ZONES && clk_zone_en) ? clk_zone_en[zone]
+                                                        : NULL;
+    if (!row) {
+        mutex_unlock(&clock_zone_lock);
+        return 0;
+    }
+    for (clk = 0; clk < clock_max_num; clk++) {
+        if (!row[clk])
+            continue;
+        struct clk *c = clock_get_cached(clk);
+        if (IS_ERR(c)) {
+            pr_warn("hvisor.ko: cannot release clock %u for zone %u: %ld\n",
+                    clk, zone, PTR_ERR(c));
+            errors++;
+            continue;
+        }
+        clk_disable_unprepare(c);
+        row[clk] = false;
+        if (released)
+            (*released)++;
+    }
+    mutex_unlock(&clock_zone_lock);
+    return errors;
+}
 
 int clock_init(void) {
     struct device_node *np;
@@ -73,7 +137,7 @@ static int get_clock_name(u32 clock_id, char *name) {
 
     clk_name = __clk_get_name(clk);
     if (clk_name) {
-        strscpy(name, clk_name, 64);
+        strscpy(name, clk_name, 63);
         name[63] = '\0';
     } else {
         snprintf(name, 64, "unknown_clk_%u", clock_id);
@@ -96,7 +160,7 @@ static int get_clock_attributes(u32 clock_id, u32 *enabled, u32 *parent_id,
 
     name = __clk_get_name(clk);
     if (name) {
-        strscpy(clock_name, name, 64);
+        strscpy(clock_name, name, 63);
         clock_name[63] = '\0';
     } else {
         snprintf(clock_name, 64, "unknown_clk_%u", clock_id);
@@ -130,22 +194,44 @@ static int set_clock_rate(u32 clock_id, u64 rate) {
     return ret;
 }
 
-static int set_clock_config(u32 clock_id, u32 config) {
-    int ret = 0;
+static int set_zone_clock_config(u32 zone, u32 clock_id, u32 config) {
+    bool enable = (config & 1) != 0;
     struct clk *clk;
+    bool *row;
+    int ret = 0;
 
+    if (zone == 0 || zone >= MAX_ZONES)
+        return -EINVAL;
+
+    mutex_lock(&clock_zone_lock);
     clk = clock_get_cached(clock_id);
-    if (IS_ERR(clk))
+    if (IS_ERR(clk)) {
+        mutex_unlock(&clock_zone_lock);
         return PTR_ERR(clk) == -ENOENT ? -ENOENT : PTR_ERR(clk);
+    }
 
-    if (config & 1)
-        ret = clk_prepare_enable(clk);
-    else
-        clk_disable_unprepare(clk);
-
-    if (ret)
-        pr_err("Failed to set clock[%u] config 0x%x, error=%d\n", clock_id,
-               config, ret);
+    if (enable) {
+        row = clock_zone_row(zone);
+        if (!row) {
+            mutex_unlock(&clock_zone_lock);
+            return -ENOMEM;
+        }
+        if (!row[clock_id]) {
+            ret = clk_prepare_enable(clk);
+            if (ret)
+                pr_err("Failed to set clock[%u] config 0x%x, error=%d\n",
+                       clock_id, config, ret);
+            else
+                row[clock_id] = true;
+        }
+    } else {
+        row = clk_zone_en ? clk_zone_en[zone] : NULL;
+        if (row && row[clock_id]) {
+            clk_disable_unprepare(clk);
+            row[clock_id] = false;
+        }
+    }
+    mutex_unlock(&clock_zone_lock);
     return ret;
 }
 
@@ -162,6 +248,14 @@ void clock_ctrl_finish(void) {
     }
 
 out:
+    if (clk_zone_en) {
+        u32 z;
+
+        for (z = 0; z < MAX_ZONES; z++)
+            kfree(clk_zone_en[z]);
+        kfree(clk_zone_en);
+        clk_zone_en = NULL;
+    }
     kfree(clock_cache);
     clock_cache = NULL;
     clock_max_num = 0;
@@ -194,7 +288,7 @@ int hvisor_scmi_clock_ioctl(struct hvisor_scmi_clock_args __user *user_args) {
         args.u.clock_attr.enabled = enabled;
         args.u.clock_attr.parent_id = parent_id;
         args.u.clock_attr.is_valid = is_valid;
-        strscpy((char *)args.u.clock_attr.clock_name, clock_name, 64);
+        strscpy(args.u.clock_attr.clock_name, clock_name, 63);
         args.u.clock_attr.clock_name[63] = '\0';
         if (copy_to_user(&user_args->u.clock_attr, &args.u.clock_attr,
                          sizeof(args.u.clock_attr)))
@@ -232,14 +326,15 @@ int hvisor_scmi_clock_ioctl(struct hvisor_scmi_clock_args __user *user_args) {
         return 0;
     }
     case HVISOR_SCMI_CLOCK_CONFIG_SET:
-        return set_clock_config(args.u.clock_config_info.clock_id,
-                                args.u.clock_config_info.config);
+        return set_zone_clock_config(args.zone_id,
+                                     args.u.clock_config_info.clock_id,
+                                     args.u.clock_config_info.config);
     case HVISOR_SCMI_CLOCK_NAME_GET: {
         char name[64];
         int ret = get_clock_name(args.u.clock_name_info.clock_id, name);
         if (ret < 0)
             return ret;
-        strscpy((char *)args.u.clock_name_info.name, name, 64);
+        strscpy(args.u.clock_name_info.name, name, 63);
         args.u.clock_name_info.name[63] = '\0';
         if (copy_to_user(&user_args->u.clock_name_info, &args.u.clock_name_info,
                          sizeof(args.u.clock_name_info)))

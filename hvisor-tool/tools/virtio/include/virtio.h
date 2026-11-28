@@ -148,6 +148,7 @@ struct VirtIODevice {
     bool activated; // Whether the current virtio device is activated
     pthread_mutex_t interrupt_lock;
     bool interrupt_line_asserted;
+    uint32_t refcount; // Users currently handling an MMIO request
 };
 
 struct virtio_device_ops {
@@ -280,6 +281,11 @@ int virtio_start_from_json(char *json_path);
 
 int virtio_start(int argc, char *argv[]);
 
+#define VIRTIO_CTRL_CLEANUP_NONE 0
+#define VIRTIO_CTRL_CLEANUP_RELEASED 1
+#define VIRTIO_CTRL_NO_DAEMON 2
+
 int virtio_add(int argc, char *argv[]);
+int virtio_control_cleanup_zone(uint32_t zone_id);
 
 #endif /* __HVISOR_VIRTIO_H */
