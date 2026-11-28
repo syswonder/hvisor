@@ -20,7 +20,22 @@ def collect_bids(platform_dir: Path) -> list[str]:
 
 
 def find_bid_values_block(lines: list[str]) -> tuple[int, int, str]:
-    """Return (start_idx, end_idx, values_indent). end_idx points to ')' line."""
+    """Find the explicit BID inventory in a worker pool or a legacy matrix."""
+    for i, line in enumerate(lines):
+        if line.strip() != "def matrixBids() {":
+            continue
+        start = next((j for j in range(i + 1, len(lines)) if lines[j].strip()), None)
+        if start is None or lines[start].strip() != "return [":
+            raise ValueError("cannot find `return [` in matrixBids()")
+        end = next(
+            (j for j in range(start + 1, len(lines)) if lines[j].strip() == "]"), None
+        )
+        if end is None:
+            raise ValueError("cannot find closing `]` for matrixBids()")
+        indent = lines[start][: len(lines[start]) - len(lines[start].lstrip(" "))]
+        return start, end, indent
+
+    # Older branches may still use a Declarative matrix axis.
     bid_line_idx = None
     for i, line in enumerate(lines):
         if "name 'BID'" in line:
