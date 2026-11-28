@@ -1,5 +1,9 @@
 # Proper nouns and identifiers that typos must not rewrite.
 # Keep this list limited to entries required by the current tree.
+[default.extend-identifiers]
+# Linux kernel module parameter documentation macro.
+MODULE_PARM_DESC = "MODULE_PARM_DESC"
+
 [default.extend-words]
 # Existing x86 symbol name; never rewrite this ABI identifier.
 SEGEMENT = "SEGEMENT"

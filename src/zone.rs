@@ -27,14 +27,20 @@ use alloc::collections::btree_map::BTreeMap;
 
 use crate::arch::mm::new_s2_memory_set;
 use crate::arch::s2pt::Stage2PageTable;
-use crate::config::{HvZoneBootMode, HvZoneConfig, CONFIG_NAME_MAXLEN};
+use crate::config::{
+    HvConfigMemoryRegion, HvZoneBootMode, HvZoneConfig, CONFIG_NAME_MAXLEN, MEM_TYPE_RAM,
+};
 
 use crate::cpu_data::{get_cpu_data, this_zone, CpuSet};
 use crate::error::HvResult;
 use crate::memory::addr::GuestPhysAddr;
 use crate::memory::{MMIOConfig, MMIOHandler, MMIORegion, MemoryRegion, MemorySet};
 use core::panic;
-use core::sync::atomic::{AtomicBool, Ordering};
+use core::sync::atomic::{AtomicBool, AtomicU32, AtomicU8, Ordering};
+
+static NEXT_ZONE_GENERATION: AtomicU32 = AtomicU32::new(1);
+const ZONE_STOPPING: u8 = 1;
+const ZONE_VIRTIO_PCI: u8 = 2;
 
 #[cfg(all(pci_init_delay, dwc_pcie))]
 use crate::config::{HvPciConfig, HvPciDevConfig, CONFIG_MAX_PCI_DEV, CONFIG_PCI_BUS_MAXNUM};
@@ -112,6 +118,9 @@ pub struct Zone {
     name: [u8; CONFIG_NAME_MAXLEN],
     id: usize,
     is_err: AtomicBool,
+    dma_lifecycle: AtomicU8,
+    generation: u32,
+    ram: Vec<HvConfigMemoryRegion>,
     inner: RwLock<ZoneInner>,
 }
 
@@ -138,12 +147,52 @@ impl Zone {
             name: name.try_into().unwrap(),
             id: zoneid,
             is_err: AtomicBool::new(false),
+            dma_lifecycle: AtomicU8::new(0),
+            generation: NEXT_ZONE_GENERATION.fetch_add(1, Ordering::Relaxed),
+            ram: Vec::new(),
             inner: RwLock::new(ZoneInner::new()),
         }
     }
 
+    pub fn generation(&self) -> u32 {
+        self.generation
+    }
+
+    pub fn try_begin_shutdown(&self, pci_drained: bool) -> bool {
+        self.dma_lifecycle
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |state| {
+                (pci_drained || state & ZONE_VIRTIO_PCI == 0).then_some(state | ZONE_STOPPING)
+            })
+            .is_ok()
+    }
+
+    #[cfg(target_arch = "aarch64")]
+    pub fn power_off_needs_backend_cleanup(&self) -> bool {
+        self.dma_lifecycle.fetch_or(ZONE_STOPPING, Ordering::AcqRel) & ZONE_VIRTIO_PCI != 0
+    }
+
+    pub fn is_stopping(&self) -> bool {
+        self.dma_lifecycle.load(Ordering::Acquire) & ZONE_STOPPING != 0
+    }
+
+    pub fn accepts_virtio_pci_interrupts(&self) -> bool {
+        self.dma_lifecycle.load(Ordering::Acquire) == ZONE_VIRTIO_PCI
+    }
+
+    pub fn try_mark_virtio_pci(&self) -> bool {
+        self.dma_lifecycle
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |state| {
+                (state & ZONE_STOPPING == 0).then_some(state | ZONE_VIRTIO_PCI)
+            })
+            .is_ok()
+    }
+
     pub fn read(&self) -> RwLockReadGuard<'_, ZoneInner> {
         self.inner.read()
+    }
+
+    pub fn try_read(&self) -> Option<RwLockReadGuard<'_, ZoneInner>> {
+        self.inner.try_read()
     }
 
     pub fn write(&self) -> RwLockWriteGuard<'_, ZoneInner> {
@@ -880,6 +929,35 @@ pub fn find_zone(zone_id: usize) -> Option<Arc<Zone>> {
         .cloned()
 }
 
+pub fn zone_instance_active(zone_id: usize, generation: u32) -> bool {
+    zone_id != 0
+        && ZONE_LIST.read().iter().any(|zone| {
+            zone.id() == zone_id && zone.generation() == generation && !zone.is_stopping()
+        })
+}
+
+/// Resolve a contiguous guest IPA range against the RAM assigned at zone creation.
+pub fn resolve_guest_ram(zone_id: usize, generation: u32, ipa: u64, len: u64) -> Option<u64> {
+    if zone_id == 0 || len == 0 {
+        return None;
+    }
+
+    let zones = ZONE_LIST.read();
+    let zone = zones.iter().find(|zone| {
+        zone.id() == zone_id && zone.generation() == generation && !zone.is_stopping()
+    })?;
+
+    zone.ram.iter().find_map(|region| {
+        let offset = ipa.checked_sub(region.virtual_start)?;
+        if len > region.size.checked_sub(offset)? {
+            return None;
+        }
+        let pa = region.physical_start.checked_add(offset)?;
+        pa.checked_add(len - 1)?;
+        Some(pa)
+    })
+}
+
 pub fn all_zones_info() -> Vec<ZoneInfo> {
     let zone_list = ZONE_LIST.read();
 
@@ -911,6 +989,13 @@ pub fn zone_create(config: &HvZoneConfig) -> HvResult<Arc<Zone>> {
     }
 
     let mut zone = Zone::new(zone_id, &config.name);
+    zone.ram.extend(
+        config
+            .memory_regions()
+            .iter()
+            .filter(|region| region.mem_type == MEM_TYPE_RAM)
+            .copied(),
+    );
     zone.pt_init(config.memory_regions())?;
     zone.mmio_init(&config.arch_config);
 

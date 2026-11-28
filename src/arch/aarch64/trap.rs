@@ -494,6 +494,11 @@ fn handle_psci_smc(
             let zone_id = zone.id();
             let is_root = is_this_root_zone();
 
+            // Keep PCI DMA memory reserved until zone0 drains the backend
+            // through the management shutdown ioctl.
+            let needs_backend_cleanup = zone.power_off_needs_backend_cleanup();
+            let keep_zone = !is_root && needs_backend_cleanup;
+
             for cpu_id in zone.read().cpu_set().iter_except(this_cpu_data().id) {
                 let target_cpu = get_cpu_data(cpu_id);
                 let _lock = target_cpu.ctrl_lock.lock();
@@ -509,7 +514,9 @@ fn handle_psci_smc(
                 cpu_data.zone = None;
             }
             drop(zone);
-            remove_zone(zone_id);
+            if !keep_zone {
+                remove_zone(zone_id);
+            }
 
             if is_root {
                 smccc::psci::system_off::<smccc::Smc>().unwrap();

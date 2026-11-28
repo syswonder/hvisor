@@ -22,7 +22,8 @@ use spin::rwlock::RwLock;
 
 use crate::{
     device::virtio_trampoline::{
-        VirtioPCIConfigInfo, VirtioPCIDataInfo, VirtqueueAreaInfo, MAX_DEVS, VIRTIO_PCI_BRIDGE,
+        VirtioPCIBridge, VirtioPCIConfigInfo, VirtioPCIDataInfo, VirtqueueAreaInfo, MAX_DEVS,
+        VIRTIO_PCI_BRIDGE, VIRTIO_PCI_CONFIG_LOCK,
     },
     error::HvResult,
     event::{send_event, IPI_EVENT_VIRTIO_PCI_CONFIG, IPI_EVENT_VIRTIO_PCI_DATA},
@@ -437,10 +438,10 @@ impl VirtioPciCommonCfg {
         for i in 0..self.num_queue as usize {
             config_info.set_vqs(i, self.queue_list[i].read().get_area_info());
         }
-        let mut pci_bridge = VIRTIO_PCI_BRIDGE.lock();
-        let request_id = pci_bridge.push_config_req(config_info)?;
+        let _config = VIRTIO_PCI_CONFIG_LOCK.lock();
+        let request_id = VIRTIO_PCI_BRIDGE.lock().push_config_req(config_info)?;
         send_event(0, SGI_IPI_ID as usize, IPI_EVENT_VIRTIO_PCI_CONFIG);
-        let dev_id = pci_bridge.til_config_finish(request_id)?;
+        let dev_id = VirtioPCIBridge::wait_for_config(request_id)?;
         for i in self.queue_list.iter() {
             i.write().set_dev_id(dev_id);
         }
@@ -458,8 +459,8 @@ impl VirtioPciCommonCfg {
         if size == 1 {
             match addr {
                 0x14 => {
-                    // we use FEATURES_OK to confirm that initialization is completed
-                    if value & 0x04 != 0 {
+                    const DRIVER_OK: u8 = 0x04;
+                    if value as u8 & DRIVER_OK != 0 && self.device_status & DRIVER_OK == 0 {
                         if let Err(err) = self.init_virtqueue_shared_space() {
                             error!("virtio pci queue init failed: {:?}", err);
                             return false;
@@ -730,13 +731,7 @@ impl AreaInBar for VirtioNotifyCap {
         let offset = mmio_ac.address;
         for i in self.get_queues(offset) {
             let info = i.read().get_data_info();
-            self.msix_table
-                .write()
-                .add_pending_msix(info.get_msix_vector_idx() as usize);
-            if let Err(err) = VIRTIO_PCI_BRIDGE.lock().push_data_req(info) {
-                error!("virtio pci data enqueue failed: {:?}", err);
-                return Err(err);
-            }
+            VirtioPCIBridge::enqueue_data(info, &self.msix_table)?;
             send_event(0, SGI_IPI_ID as usize, IPI_EVENT_VIRTIO_PCI_DATA);
             fence(core::sync::atomic::Ordering::SeqCst);
         }

@@ -32,6 +32,7 @@
 #include <linux/vmalloc.h>
 
 #include "hvisor.h"
+#include "virtio_pci_backend.h"
 #include "zone_config.h"
 
 #include "virtio/scmi/server.h"
@@ -59,6 +60,7 @@ extern int reset_control_deassert(struct reset_control *rstc);
 extern struct reset_control *get_reset_domain_by_id(unsigned int reset_id);
 
 struct virtio_bridge *virtio_bridge;
+static DEFINE_MUTEX(hvisor_zone_lifecycle_lock);
 int virtio_irq = -1;
 static struct task_struct *task = NULL;
 struct eventfd_ctx *virtio_irq_ctx = NULL;
@@ -337,13 +339,17 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
         task = get_current(); // get hvisor user process
         break;
     case HVISOR_ZONE_START:
+        mutex_lock(&hvisor_zone_lifecycle_lock);
         err = hvisor_zone_start((zone_config_t __user *)arg);
+        mutex_unlock(&hvisor_zone_lifecycle_lock);
         break;
     case HVISOR_SET_BOOT_MODE:
         err = hvisor_set_boot_mode((struct hv_zone_boot_mode __user *)arg);
         break;
     case HVISOR_ZONE_SHUTDOWN:
-        err = hvisor_call(HVISOR_HC_SHUTDOWN_ZONE, arg, 0);
+        mutex_lock(&hvisor_zone_lifecycle_lock);
+        err = hvisor_virtio_pci_shutdown_zone(arg);
+        mutex_unlock(&hvisor_zone_lifecycle_lock);
         break;
     case HVISOR_ZONE_LIST:
         err = hvisor_zone_list((zone_list_args_t __user *)arg);
@@ -369,7 +375,32 @@ static long hvisor_ioctl(struct file *file, unsigned int ioctl,
         break;
     }
     case HVISOR_LOAD_IMAGE:
+        mutex_lock(&hvisor_zone_lifecycle_lock);
         err = hvisor_load_image((struct hvisor_load_image_args __user *)arg);
+        mutex_unlock(&hvisor_zone_lifecycle_lock);
+        break;
+    case HVISOR_GET_VIRTIO_PCI_INFO:
+        err = hvisor_virtio_pci_get_info(
+            (struct hvisor_virtio_pci_info __user *)arg);
+        break;
+    case HVISOR_VIRTIO_PCI_NOTIFY:
+        err = hvisor_virtio_pci_notify(
+            (struct virtio_pci_hypercall_info __user *)arg);
+        break;
+    case HVISOR_VIRTIO_PCI_BEGIN_IO:
+        err =
+            hvisor_virtio_pci_begin_io(file->private_data, (__u32 __user *)arg);
+        break;
+    case HVISOR_VIRTIO_PCI_END_IO:
+        hvisor_virtio_pci_end_io(file->private_data);
+        break;
+    case HVISOR_VIRTIO_PCI_OWNER_ACTIVE:
+        err = hvisor_virtio_pci_owner_active(
+            (struct virtio_pci_owner __user *)arg);
+        break;
+    case HVISOR_VIRTIO_PCI_RESOLVE_RAM:
+        err = hvisor_virtio_pci_resolve_ram(
+            (struct virtio_pci_ram_request __user *)arg);
         break;
     case HVISOR_SCMI_CLOCK_IOCTL:
         err = hvisor_scmi_clock_ioctl(
@@ -427,8 +458,28 @@ static int hvisor_map(struct file *filp, struct vm_area_struct *vma) {
     return 0;
 }
 
+static int hvisor_open(struct inode *inode, struct file *file) {
+    struct virtio_pci_file *ctx = kzalloc(sizeof(*ctx), GFP_KERNEL);
+
+    if (!ctx)
+        return -ENOMEM;
+    mutex_init(&ctx->lock);
+    file->private_data = ctx;
+    return 0;
+}
+
+static int hvisor_release(struct inode *inode, struct file *file) {
+    struct virtio_pci_file *ctx = file->private_data;
+
+    hvisor_virtio_pci_end_io(ctx);
+    kfree(ctx);
+    return 0;
+}
+
 static const struct file_operations hvisor_fops = {
     .owner = THIS_MODULE,
+    .open = hvisor_open,
+    .release = hvisor_release,
     .unlocked_ioctl = hvisor_ioctl,
     .compat_ioctl = hvisor_ioctl,
     .mmap = hvisor_map,
@@ -546,6 +597,11 @@ static int __init hvisor_init(void) {
     if (err)
         goto err_out;
 #endif /* X86_64 */
+    err = hvisor_virtio_pci_init();
+    if (err) {
+        free_irq(virtio_irq, &hvisor_misc_dev);
+        goto err_misc;
+    }
     pr_info("hvisor init done!!!\n");
     return 0;
 
@@ -566,6 +622,7 @@ err_misc:
 ** Module Exit function
 */
 static void __exit hvisor_exit(void) {
+    hvisor_virtio_pci_exit();
     if (virtio_irq != -1)
         free_irq(virtio_irq, &hvisor_misc_dev);
     if (virtio_irq_ctx)
