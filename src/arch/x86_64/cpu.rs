@@ -742,7 +742,3 @@ pub fn store_cpu_pointer_to_reg(pointer: usize) {
     // println!("x86_64 doesn't support store cpu pointer to reg, pointer: {:#x}", pointer);
     return;
 }
-
-pub fn get_target_cpu(irq: usize, zone_id: usize) -> usize {
-    ioapic::get_irq_cpu(irq, zone_id)
-}

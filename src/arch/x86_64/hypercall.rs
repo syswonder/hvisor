@@ -17,7 +17,6 @@
 use crate::{
     config::CONFIG_MAGIC_VERSION,
     cpu_data::this_zone,
-    device::virtio_trampoline::MAX_DEVS,
     hypercall::{HyperCall, HyperCallResult},
     zone::{Zone, ZoneInfo},
 };
@@ -39,10 +38,6 @@ impl<'a> HyperCall<'a> {
     pub fn hv_ivc_info(&mut self, ivc_info_ipa: u64) -> HyperCallResult {
         warn!("hv_ivc_info is not implemented for x86_64");
         HyperCallResult::Ok(0)
-    }
-
-    pub fn wait_for_interrupt(&mut self, irq_list: &mut [u64; MAX_DEVS + 1]) {
-        trace!("wait_for_interrupt is not need for x86_64");
     }
 
     pub fn hv_get_real_pa(&mut self, config_addr: u64) -> u64 {

@@ -32,7 +32,7 @@ use crate::cpu_data::this_cpu_data;
 use crate::error::HvResult;
 use crate::memory::mmio::MMIOAccess;
 use crate::platform::*;
-use crate::zone::Zone;
+use crate::zone::{IrqLifecycleGuard, IrqPostGuard, Zone};
 use alloc::collections::BTreeMap;
 use alloc::sync::Arc;
 use alloc::vec::Vec;
@@ -99,6 +99,14 @@ pub fn inject_irq(irq: usize, is_hardware: bool) {
     };
     // Avoid holding the read lock when calling inject_irq
     vplic.inject_irq(vcontext_id, irq, is_hardware);
+}
+
+/// Pulse software interrupt `irq` in zone `zone_id`'s vPLIC; callable from any CPU.
+pub fn vplic_pulse(_irq_post: &IrqPostGuard, zone_id: usize, irq: usize) -> bool {
+    let Some(vplic) = VPLIC_MAP.lock().get(&zone_id).cloned() else {
+        return false;
+    };
+    vplic.trigger_soft_irq(irq)
 }
 
 /// handle Zone's plic mmio access.
@@ -168,7 +176,7 @@ impl Zone {
             .clone()
     }
 
-    pub fn arch_irqchip_reset(&self) {
+    pub fn arch_irqchip_reset(&self, _irq_lifecycle: &IrqLifecycleGuard) {
         // We should make sure only one cpu to do this.
         // This func will only be called by one root zone's cpu.
         let host_plic = host_plic();

@@ -822,7 +822,44 @@ impl ZoneInner {
     }
 }
 
+/// Required to post an IRQ into another zone's virtual irqchip.
+//
+// Excludes zone start and shutdown while held.
+#[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
+pub struct IrqPostGuard {
+    _guard: RwLockReadGuard<'static, ()>,
+}
+
+#[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
+impl IrqPostGuard {
+    pub fn lock() -> Self {
+        Self {
+            _guard: ZONE_IRQ_LIFECYCLE.read(),
+        }
+    }
+}
+
+/// Required to reset a zone's virtual irqchip on zone start or shutdown.
+//
+// Excludes every `IrqPostGuard` holder while held.
+#[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
+pub struct IrqLifecycleGuard {
+    _guard: RwLockWriteGuard<'static, ()>,
+}
+
+#[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
+impl IrqLifecycleGuard {
+    pub fn lock() -> Self {
+        Self {
+            _guard: ZONE_IRQ_LIFECYCLE.write(),
+        }
+    }
+}
+
 static ZONE_LIST: RwLock<Vec<Arc<Zone>>> = RwLock::new(vec![]);
+// Only reachable through `IrqPostGuard` and `IrqLifecycleGuard`.
+#[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
+static ZONE_IRQ_LIFECYCLE: RwLock<()> = RwLock::new(());
 static ZONE_BOOT_MODES: Mutex<[Option<HvZoneBootMode>; MAX_ZONE_NUM]> =
     Mutex::new([None; MAX_ZONE_NUM]);
 

@@ -22,26 +22,18 @@ use crate::cpu_data::{get_cpu_data, PerCpu, VcpuState};
 use crate::device::virtio_trampoline::{
     VirtioPCIHypercallOp, VIRTIO_BRIDGE, VIRTIO_PCI_BRIDGE, VIRTIO_PCI_HYPERCALL_VERSION,
 };
-#[cfg(target_arch = "riscv64")]
-use crate::device::virtio_trampoline::{MAX_DEVS, VIRTIO_IRQS};
 use crate::error::HvResult;
 use crate::pci::pci_config::GLOBAL_PCIE_LIST;
 use crate::zone::{
     add_zone, all_zones_info, clear_zone_boot_mode, find_zone, is_this_root_zone, remove_zone,
     set_zone_boot_mode, zone_create, ZoneInfo,
 };
+#[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
+use crate::zone::{IrqLifecycleGuard, IrqPostGuard};
 
-#[cfg(target_arch = "riscv64")]
-use crate::event::IPI_EVENT_VIRTIO_INJECT_IRQ;
 use crate::event::{send_event, IPI_EVENT_SHUTDOWN, IPI_EVENT_VIRTIO_PCI_DONE, IPI_EVENT_WAKEUP};
 use core::convert::TryFrom;
 use numeric_enum_macro::numeric_enum;
-#[cfg(target_arch = "x86_64")]
-use spin::RwLock;
-
-// Serialize in-flight IRQ-line hypercalls with zone stop and restart.
-#[cfg(target_arch = "x86_64")]
-static X86_IOAPIC_LIFECYCLE: RwLock<()> = RwLock::new(());
 
 numeric_enum! {
     #[repr(u64)]
@@ -151,11 +143,9 @@ impl<'a> HyperCall<'a> {
                 "Virtio send irq operation over non-root zones: unsupported!"
             );
         }
-        #[cfg(target_arch = "x86_64")]
-        let _irq_lifecycle = X86_IOAPIC_LIFECYCLE.read();
+        #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
+        let irq_post = IrqPostGuard::lock();
         let mut res_agent = VIRTIO_BRIDGE.res_agent();
-        #[cfg(target_arch = "riscv64")]
-        let mut map_irq = VIRTIO_IRQS.lock();
         while !res_agent.is_empty() {
             let (_res_front, irq_id, target_zone) = res_agent.peek_front();
             let Some(zone) = find_zone(target_zone as _) else {
@@ -163,9 +153,9 @@ impl<'a> HyperCall<'a> {
                 continue;
             };
             // Reuse `zone`: a second lookup may panic if the zone is shut down.
-            #[cfg(not(target_arch = "x86_64"))]
+            #[cfg(any(target_arch = "aarch64", target_arch = "loongarch64"))]
             let target_cpu = zone.read().cpu_set().first_cpu().unwrap();
-            #[cfg(target_arch = "x86_64")]
+            #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
             drop(zone);
 
             #[cfg(target_arch = "loongarch64")]
@@ -185,6 +175,7 @@ impl<'a> HyperCall<'a> {
             #[cfg(target_arch = "x86_64")]
             {
                 crate::device::irqchip::pic::ioapic::ioapic_set_line(
+                    &irq_post,
                     target_zone as usize,
                     irq_id as usize,
                     true,
@@ -195,23 +186,24 @@ impl<'a> HyperCall<'a> {
 
             #[cfg(target_arch = "riscv64")]
             {
-                let irq_list = map_irq.entry(target_cpu).or_insert([0; MAX_DEVS + 1]);
-                self.wait_for_interrupt(irq_list);
-                if !irq_list[1..=irq_list[0] as usize].contains(&irq_id) {
-                    let len = irq_list[0] as usize;
-                    assert!(len + 1 < MAX_DEVS);
-                    irq_list[len + 1] = irq_id;
-                    irq_list[0] += 1;
-                    send_event(
-                        target_cpu as _,
-                        SGI_IPI_ID as _,
-                        IPI_EVENT_VIRTIO_INJECT_IRQ,
-                    );
+                #[cfg(plic)]
+                let pulsed = crate::device::irqchip::plic::vplic_pulse(
+                    &irq_post,
+                    target_zone as usize,
+                    irq_id as usize,
+                );
+                #[cfg(aia)]
+                let pulsed = crate::device::irqchip::aia::vaplic_pulse(
+                    &irq_post,
+                    target_zone as usize,
+                    irq_id as usize,
+                );
+                if !pulsed {
+                    warn!("virtio: drop irq {} for zone {}", irq_id, target_zone);
                 }
+                res_agent.advance_front();
+                continue;
             }
-
-            #[cfg(target_arch = "riscv64")]
-            res_agent.advance_front();
         }
         drop(res_agent);
         HyperCallResult::Ok(0)
@@ -261,7 +253,7 @@ impl<'a> HyperCall<'a> {
             );
         }
         #[cfg(target_arch = "x86_64")]
-        let _irq_lifecycle = X86_IOAPIC_LIFECYCLE.read();
+        let irq_post = IrqPostGuard::lock();
         let Some(zone) = find_zone(target_zone) else {
             return hv_result_err!(EINVAL, format!("zone {} does not exist", target_zone));
         };
@@ -287,7 +279,12 @@ impl<'a> HyperCall<'a> {
 
         #[cfg(target_arch = "x86_64")]
         {
-            if !crate::device::irqchip::pic::ioapic::ioapic_set_line(target_zone, irq_id, false) {
+            if !crate::device::irqchip::pic::ioapic::ioapic_set_line(
+                &irq_post,
+                target_zone,
+                irq_id,
+                false,
+            ) {
                 return hv_result_err!(EINVAL, format!("invalid x86 IOAPIC pin {}", irq_id));
             }
             return HyperCallResult::Ok(0);
@@ -322,6 +319,8 @@ impl<'a> HyperCall<'a> {
                 )
             );
         }
+        #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
+        let irq_lifecycle = IrqLifecycleGuard::lock();
         let zone_result = zone_create(config);
         clear_zone_boot_mode(config.zone_id as usize);
         let zone = zone_result?;
@@ -329,8 +328,6 @@ impl<'a> HyperCall<'a> {
 
         let target_data = get_cpu_data(boot_cpu as _);
         let _lock = target_data.ctrl_lock.lock();
-        #[cfg(target_arch = "x86_64")]
-        let _irq_lifecycle = X86_IOAPIC_LIFECYCLE.write();
 
         if target_data.vcpu.state.is_stopped() {
             info!("boot_cpu: {}", boot_cpu);
@@ -340,7 +337,10 @@ impl<'a> HyperCall<'a> {
                 zone.read().cpu_set().iter().for_each(|cpu_id| {
                     crate::device::irqchip::pic::clear_vectors(cpu_id);
                 });
-                crate::device::irqchip::pic::ioapic::ioapic_reset(config.zone_id as usize);
+                crate::device::irqchip::pic::ioapic::ioapic_reset(
+                    &irq_lifecycle,
+                    config.zone_id as usize,
+                );
             }
             target_data.vcpu.state.store(VcpuState::Ready);
         } else {
@@ -348,8 +348,8 @@ impl<'a> HyperCall<'a> {
             return hv_result_err!(EBUSY);
         };
         add_zone(zone);
-        #[cfg(target_arch = "x86_64")]
-        drop(_irq_lifecycle);
+        #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
+        drop(irq_lifecycle);
         send_event(boot_cpu, SGI_IPI_ID as _, IPI_EVENT_WAKEUP);
         drop(_lock);
         HyperCallResult::Ok(0)
@@ -366,10 +366,6 @@ impl<'a> HyperCall<'a> {
         if zone_id == 0 {
             return hv_result_err!(EINVAL);
         }
-        // avoid virtio daemon send sgi to the shutdowning zone
-        #[cfg(target_arch = "riscv64")]
-        let mut map_irq = VIRTIO_IRQS.lock();
-
         let zone = match find_zone(zone_id as _) {
             Some(zone) => zone,
             _ => {
@@ -380,10 +376,7 @@ impl<'a> HyperCall<'a> {
             }
         };
         #[cfg(target_arch = "x86_64")]
-        {
-            let _irq_lifecycle = X86_IOAPIC_LIFECYCLE.write();
-            crate::device::irqchip::pic::ioapic::ioapic_begin_shutdown(zone_id as usize);
-        }
+        crate::device::irqchip::pic::ioapic::ioapic_begin_shutdown(zone_id as usize);
         let zone_w = zone.write();
 
         zone_w.cpu_set().iter().for_each(|cpu_id| {
@@ -392,11 +385,6 @@ impl<'a> HyperCall<'a> {
             #[cfg(target_arch = "loongarch64")]
             get_cpu_data(cpu_id).vcpu.clear_irq_state();
             send_event(cpu_id, SGI_IPI_ID as _, IPI_EVENT_SHUTDOWN);
-            // set the virtio irq list's len to 0
-            #[cfg(target_arch = "riscv64")]
-            if let Some(irq_list) = map_irq.get_mut(&cpu_id) {
-                irq_list[0] = 0;
-            }
         });
 
         let mut count: usize = 0;
@@ -424,6 +412,11 @@ impl<'a> HyperCall<'a> {
         });
 
         drop(zone_w);
+        #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
+        let irq_lifecycle = IrqLifecycleGuard::lock();
+        #[cfg(any(target_arch = "riscv64", target_arch = "x86_64"))]
+        zone.arch_irqchip_reset(&irq_lifecycle);
+        #[cfg(not(any(target_arch = "riscv64", target_arch = "x86_64")))]
         zone.arch_irqchip_reset();
 
         // Remove viommu instance related to this zone.
@@ -440,8 +433,6 @@ impl<'a> HyperCall<'a> {
         }
         drop(pci_list);
 
-        #[cfg(target_arch = "x86_64")]
-        let _irq_lifecycle = X86_IOAPIC_LIFECYCLE.write();
         remove_zone(zone_id as _);
         info!("zone {} has been shutdown", zone_id);
         HyperCallResult::Ok(0)

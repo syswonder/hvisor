@@ -16,12 +16,12 @@
 
 use crate::{
     arch::{
-        acpi::{get_apic_id, get_cpu_id},
+        acpi::{get_apic_id, try_get_cpu_id},
         cpu::this_cpu_id,
         idt::IdtVector,
     },
     cpu_data::{this_cpu_data, this_zone, CpuSet},
-    device::irqchip::inject_vector,
+    device::irqchip::post_guest_vector,
     error::HvResult,
     event,
     hypercall::SGI_IPI_ID,
@@ -88,7 +88,7 @@ pub fn send_ipi(value: u64) -> HvResult {
     let vector = value.get_bits(0..=7) as u8;
     let delivery_mode: u8 = value.get_bits(8..=10) as u8;
     let dest_shorthand = value.get_bits(18..=19) as u8;
-    let dest = get_cpu_id(value.get_bits(32..=39) as usize);
+    let dest_apic_id = value.get_bits(32..=39) as usize;
     let cnt = value.get_bits(40..=63) as u32;
 
     let mut cpu_set = this_zone().cpu_set();
@@ -97,7 +97,14 @@ pub fn send_ipi(value: u64) -> HvResult {
 
     match dest_shorthand {
         IpiDestShorthand::NO_SHORTHAND => {
-            dest_set.set_bit(dest);
+            // The guest picks the APIC ID; only CPUs of its own zone are valid.
+            match try_get_cpu_id(dest_apic_id).filter(|dest| cpu_set.contains_cpu(*dest)) {
+                Some(dest) => dest_set.set_bit(dest),
+                None => warn!(
+                    "drop IPI from CPU{} to APIC ID {:#x} outside its zone",
+                    cpu_id, dest_apic_id
+                ),
+            }
         }
         IpiDestShorthand::SELF => {
             dest_set.set_bit(cpu_id);
@@ -116,10 +123,10 @@ pub fn send_ipi(value: u64) -> HvResult {
         match delivery_mode {
             IpiDeliveryMode::FIXED => {
                 // info!("dest: {:x}, vector: {:x}", dest, vector);
-                inject_vector(dest, vector, None, false, false);
+                post_guest_vector(dest, vector, None, false, false);
             }
             IpiDeliveryMode::NMI => {
-                inject_vector(dest, 2, None, false, false);
+                post_guest_vector(dest, 2, None, false, false);
             }
             IpiDeliveryMode::INIT => {}
             IpiDeliveryMode::START_UP => {
