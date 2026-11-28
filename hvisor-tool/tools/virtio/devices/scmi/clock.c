@@ -20,6 +20,17 @@
 /* Clock Protocol version 3.0 */
 #define SCMI_CLOCK_VERSION 0x30000
 
+/*
+ * SCMI Clock attributes (32-bit field of CLOCK_ATTRIBUTES).
+ *
+ * Use named masks instead of magic (1U << N) shifts: the value goes straight
+ * into the guest-visible SCMI payload, so its bit positions must be identical
+ * on every compiler and ABI.
+ */
+#define SCMI_CLK_ATTR_ENABLED (1U << 0)
+#define SCMI_CLK_ATTR_PARENT_CLOCK (1U << 28)
+#define SCMI_CLK_ATTR_EXTENDED_NAME (1U << 29)
+
 /* SCMI Clock Subcommands */
 #define HVISOR_SCMI_CLOCK_DESCRIBE_RATES 0x03
 #define HVISOR_SCMI_CLOCK_RATE_GET 0x04
@@ -95,11 +106,26 @@ struct scmi_msg_req_name_get {
     uint32_t clock_id;
 } __attribute__((packed));
 
-/* Response for CLOCK_ATTRIBUTES (Message ID 0x3) */
+/*
+ * Response for CLOCK_ATTRIBUTES (Message ID 0x3).
+ *
+ * Layout follows the SCMI v3.1 view used by Linux >= 5.19:
+ *   attributes(4) + short name(16) + clock_enable_latency(4)
+ *
+ * Since v5.19 the kernel reads clock_enable_latency whenever the advertised
+ * protocol major version is >= 2, so the field has to be present or the kernel
+ * consumes four bytes of stale SCMI buffer as the latency value. v5.18 only
+ * reads it when the response is long enough to contain it.
+ */
 struct scmi_msg_resp_clock_clock_attributes {
     uint32_t attributes;
     char clock_name[16];
+    uint32_t clock_enable_latency;
 } __attribute__((packed));
+
+_Static_assert(sizeof(struct scmi_msg_resp_clock_clock_attributes) == 24,
+               "SCMI CLOCK_ATTRIBUTES must be attributes(4) + name(16) + "
+               "latency(4) bytes");
 
 /* Helper: validate clock_id and get physical ID */
 static uint32_t clk_phys_id(SCMIDev *dev, uint32_t clk_id, bool *valid) {
@@ -215,13 +241,21 @@ static int handle_clock_clock_attributes(SCMIDev *dev, uint16_t token,
 
     uint32_t attributes = 0;
     if (args.u.clock_attr.enabled)
-        attributes |= (1U << 0);
+        attributes |= SCMI_CLK_ATTR_ENABLED;
     if (args.u.clock_attr.parent_id != (uint32_t)(-1))
-        attributes |= (1U << 28);
+        attributes |= SCMI_CLK_ATTR_PARENT_CLOCK;
+    /*
+     * Advertise extended names. Linux >= 5.19 then issues CLOCK_NAME_GET
+     * (0x8) and replaces the 15-character short name below with the full clock
+     * name, so long host clock names no longer collide inside the guest.
+     */
+    attributes |= SCMI_CLK_ATTR_EXTENDED_NAME;
 
     attr->attributes = attributes;
     strncpy(attr->clock_name, args.u.clock_attr.clock_name, 15);
     attr->clock_name[15] = '\0';
+    /* 0 means "unknown"; Linux maps it to U32_MAX. */
+    attr->clock_enable_latency = 0;
 
     return 0;
 }
